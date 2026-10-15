@@ -2,8 +2,10 @@
 
 """기간으로 시뮬레이션 코드를 찾고, 고른 코드로 시나리오를 등록하는 화면.
 
-1단계는 기간 조회와 스크롤 목록, 2단계는 자동 입력된 등록 폼이다. 저장 경로는 예전과
-같다 — `fetch_core_data_dataset → 충돌보고 → 프리셋 → create_scenario → 활성화 → flash`.
+1단계는 기간 조회와 스크롤 목록, 2단계는 자동 입력된 등록 폼이다. 저장 경로는
+`fetch_core_data_dataset → 충돌보고 → 프리셋 → save_bigdataquery_scenario → 활성화 → flash` 다.
+저장 자체(원천 메타데이터·파이프라인 버전·메모의 상세 조회기간)는 세션을 모르는
+`scenario_registration` 이 맡는다 — 공식버전 자동 갱신이 같은 길로 저장한다.
 
 이 파일에서 순서가 계약인 곳이 하나 있다. 목록(선택 이벤트)이 등록 폼보다 **위**에
 그려져야 프리필의 `st.session_state[...] = ...` 대입이 위젯 생성 전이 된다. 이미 만든
@@ -40,10 +42,10 @@ from capa_simulation.io.company_bigdataquery_adapter import (
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import load_global_display_order
-from capa_simulation.persistence.models import ScenarioCreate
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import activate_persisted_snapshot
 from capa_simulation.scenario_preset_state import capture_full_data_scenario_preset
+from capa_simulation.scenario_registration import registration_note, save_bigdataquery_scenario
 from capa_simulation.services.bigdataquery_catalog_view import (
     SCOPE_ALL,
     SCOPE_OPTIONS,
@@ -66,7 +68,6 @@ from capa_simulation.services.core_data_pipeline import (
 )
 from capa_simulation.services.korean_particle import with_object_particle
 
-PIPELINE_VERSION = "bigdataquery-core-data-v5"
 CONFLICT_REPORT_STATE_KEY = "bigdataquery_reference_conflict_report"
 REGISTRATION_FLASH_KEY = "bigdataquery_registration_flash"
 
@@ -577,9 +578,7 @@ def _save_scenario(
     window = _submitted_detail_window(registered_at, simulation_code=simulation_code)
     if window is None:
         return
-    # 실제로 조회한 기간을 리비전 메모에 남긴다. 기간을 넓혀 다시 받은 리비전과 기본 창으로 받은
-    # 리비전이 어떻게 다른지 나중에 알 수 있어야 한다.
-    note = " · ".join(part for part in (note.strip(), f"상세 조회기간 {window.label()}") if part)
+    note = registration_note(note, window)
     try:
         display_order = load_global_display_order(database_path).rules
         provider = BigDataQueryCoreDataProvider(
@@ -597,18 +596,11 @@ def _save_scenario(
                 prepared.batch.simulation_code,
             )
             preset = capture_full_data_scenario_preset(prepared.reference_tables)
-            snapshot = repository.create_scenario(
-                ScenarioCreate(
-                    scenario_name=scenario_name,
-                    source_simulation_code=prepared.batch.simulation_code,
-                    source_simulation_name=prepared.batch.simulation_name,
-                    source_type=prepared.batch.source_type,
-                    pipeline_version=PIPELINE_VERSION,
-                    source_registered_at=prepared.batch.source_registered_at,
-                ),
-                prepared.reference_tables,
+            snapshot = save_bigdataquery_scenario(
+                repository,
+                prepared,
                 preset,
-                source_data=prepared.source_data,
+                scenario_name=scenario_name,
                 revision_name=revision_name,
                 note=note,
             )

@@ -1509,7 +1509,19 @@ def get_full_capacity_outcome(
     그 활성 시나리오·기준정보여야 한다 — `get_scenario_capacity_and_demand` 와 같은 계약이다.
     """
     del cache_key
-    return _capacity_outcome(_capacity_tables(_scenario_tables, _reference_tables, None))
+    return full_capacity_outcome(_scenario_tables, _reference_tables)
+
+
+def full_capacity_outcome(
+    scenario_tables: Mapping[str, pd.DataFrame],
+    reference_tables: Mapping[str, pd.DataFrame],
+) -> CapacityOutcome:
+    """`get_full_capacity_outcome` 의 캐시 없는 순수 코어 — 같은 표 묶음, 같은 계산, 같은 실패 판정.
+
+    Streamlit 실행 문맥이 없는 배경 작업(공식버전 자동 갱신)이 쓴다. 화면은 이것을 직접 부르지 않고
+    캐시된 `get_full_capacity_outcome` 을 쓴다.
+    """
+    return _capacity_outcome(_capacity_tables(scenario_tables, reference_tables, None))
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

@@ -25,6 +25,10 @@ from capa_simulation.components.capacity_gate import (
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.simulation_cache import (
+    full_capacity_outcome,
+    get_full_capacity_outcome,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -93,6 +97,23 @@ def test_an_error_that_was_already_there_does_not_block_the_save(
         assert verdict.message is not None and "공식버전으로 지정할 수 없습니다" in verdict.message
 
 
+def test_the_uncached_core_judges_like_the_cached_check(tables: dict[str, pd.DataFrame]) -> None:
+    """배경 회차(공식버전 자동 갱신)가 쓰는 순수 코어는 화면 검사와 같은 결과를 낸다."""
+    for candidate in (tables, _broken(tables)):
+        version = _version()
+        cached = get_full_capacity_outcome(
+            (version, pristine_content_token(version)),
+            _scenario_tables=candidate,
+            _reference_tables=candidate,
+        )
+        uncached = full_capacity_outcome(candidate, candidate)
+
+        assert uncached.error == cached.error
+        if cached.required_equipment is not None:
+            assert uncached.required_equipment is not None
+            pd.testing.assert_frame_equal(uncached.required_equipment, cached.required_equipment)
+
+
 def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None:
     """공식버전은 모두의 첫 화면이다. 계산이 안 되면 지정하는 순간 모두의 HOME 이 멈춘다."""
     from capa_simulation.application_bootstrap import ensure_initial_scenario
@@ -137,6 +158,13 @@ def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None
             "_render_revision_save",
             "save_revision",
             "revision_save_verdict",
+        ),
+        # 공식버전 자동 갱신은 세션 없는 배경 회차라 캐시 래퍼 대신 같은 계산의 순수 코어를 쓴다.
+        (
+            "src/capa_simulation/auto_official_update_runner.py",
+            "_publish_filtered_revision",
+            "publish_official_revision",
+            "full_capacity_outcome",
         ),
     ],
 )

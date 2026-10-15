@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from datetime import date, datetime
 
 import pandas as pd
@@ -84,14 +83,37 @@ def capture_scenario_preset(reference_tables: Mapping[str, pd.DataFrame]) -> Sce
 def capture_full_data_scenario_preset(
     reference_tables: Mapping[str, pd.DataFrame],
 ) -> ScenarioPreset:
-    """Use every available month and process for a newly downloaded dataset."""
+    """Use every available month and process for a newly downloaded dataset.
+
+    세션에서 가져오는 것은 레거시 확보·경고 값뿐이다(다음 리비전으로 실어 나르기만 한다). 나머지는
+    세션을 읽지 않는 `full_data_scenario_preset` 이 정한다.
+    """
     preset = capture_scenario_preset(reference_tables)
+    return full_data_scenario_preset(
+        reference_tables,
+        secure_threshold=preset.secure_threshold,
+        warning_threshold=preset.warning_threshold,
+    )
+
+
+def full_data_scenario_preset(
+    reference_tables: Mapping[str, pd.DataFrame],
+    *,
+    secure_threshold: float = DEFAULT_SECURE_THRESHOLD_PERCENT / 100.0,
+    warning_threshold: float = DEFAULT_WARNING_THRESHOLD_PERCENT / 100.0,
+) -> ScenarioPreset:
+    """새로 받은 데이터셋의 프리셋 — 원천 전 기간·`RQ_REQB` 전 공정, 표준 목표 Capa 설정은 비움.
+
+    **세션을 읽지 않는다.** 세션이 없는 배경 작업(공식버전 자동 갱신)도 화면 등록과 같은 프리셋을
+    만든다. 레거시 확보·경고 값(판정에 쓰지 않는다)은 부르는 쪽이 실어 준다.
+    """
     start_month, end_month = _full_data_month_range(reference_tables)
-    return replace(
-        preset,
+    return ScenarioPreset(
         start_month=start_month,
         end_month=end_month,
         included_processes=tuple(_available_processes(reference_tables)),
+        secure_threshold=secure_threshold,
+        warning_threshold=warning_threshold,
         standard_target_processes=(),
         standard_target_start_date=None,
         standard_target_end_date=None,

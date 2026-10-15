@@ -97,6 +97,14 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   오버레이되지 않는다. **소유 컬럼(`scenario_id`·`dataset_id`·`revision_id`)을 두지 않는다** —
   두면 `_owned_tables` 자동 발견이 시나리오 소유로 판정해 시나리오 삭제가 이 프로필 행을
   함께 지운다.
+- `global_auto_official_update`·`auto_official_update_setting_log`·`auto_official_update_run`·
+  `auto_official_update_exclusion`: **공식버전 자동 갱신**(마이그레이션 0035). 설정은 헤더 한 행
+  (켜짐·확인 시각·시뮬레이션명 키워드·기준 확보율 비율, version 대조)이고 저장마다 같은 version 의
+  변경 기록이 한 행 붙는다. 실행 기록은 회차 하나가 한 행이며 `run_key` 유일 제약이 회차 선점이다
+  (예약은 날짜당 하나). 자동 off 기록은 회차·공정마다 한 행(`AUTO` 판정 — 최저 확보율·그 달,
+  `INHERITED` 직전 공식버전의 수동 off 이어받음)이다. 실행이 만든 시나리오·리비전·공식버전은
+  `created_scenario_id`·`filtered_revision_id` 처럼 가리키기만 한다 — 소유 컬럼이 없어 시나리오를
+  지워도 기록이 남는다.
 - `scenario`: 이름, 원천 시뮬레이션 코드/명, 상태, 현재 최신 리비전과 목록 관리 화면이
   지정한 누적 순서(`list_order`, 마이그레이션 0017). 순서를 한 번도 저장하지 않은
   시나리오는 NULL 이며 최근 수정 순으로 뒤에 붙는다. 보관 상태는 삭제로 대체되어

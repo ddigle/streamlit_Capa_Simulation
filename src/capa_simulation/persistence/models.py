@@ -12,6 +12,12 @@ from datetime import date, datetime
 import pandas as pd
 
 from capa_simulation.persistence._sql_helpers import required_text
+from capa_simulation.services.auto_official_update import (
+    AutoUpdateConfig,
+    ExclusionKind,
+    RunStatus,
+    TriggerKind,
+)
 from capa_simulation.services.securement_threshold import (
     SecurementThresholds,
     build_securement_thresholds,
@@ -221,6 +227,84 @@ class GlobalPastData:
     monthly: pd.DataFrame
     plan_detail: pd.DataFrame
     securement: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class AutoOfficialUpdateSettings:
+    """Scenario-independent settings of the automatic official-version update.
+
+    프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`, `updated_at=None`, 설정은
+    코드 기본값(꺼짐 · 07:00 · `PSM` · 80%)이다. 저장하기 전에는 DB 에 쓰지 않는다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    config: AutoUpdateConfig
+
+
+@dataclass(frozen=True)
+class AutoOfficialUpdateSettingChange:
+    """설정 변경 한 건 — 언제·무엇을, 바꾼 사람 이름(선택)."""
+
+    version: int
+    changed_at: datetime
+    changed_by: str | None
+    change_text: str
+
+
+@dataclass(frozen=True)
+class AutoOfficialUpdateRun:
+    """자동 갱신 한 회차의 기록. 단계가 진행될 때마다 같은 행이 채워진다.
+
+    `created_scenario_id`·`base_revision_id`(리비전 1)·`filtered_revision_id`(리비전 2)·
+    `official_release_id` 는 가리키기만 한다 — 그 시나리오를 지워도 기록은 남는다.
+    """
+
+    run_id: str
+    run_key: str
+    trigger_kind: TriggerKind
+    run_date: date
+    status: RunStatus
+    stage: str
+    started_at: datetime
+    finished_at: datetime | None
+    keyword: str
+    threshold: float
+    settings_version: int
+    baseline_release_no: int | None = None
+    baseline_week: int | None = None
+    candidate_count: int | None = None
+    simulation_code: str | None = None
+    simulation_name: str | None = None
+    simulation_week: int | None = None
+    source_registered_at: datetime | None = None
+    detail_window: str | None = None
+    created_scenario_id: str | None = None
+    created_scenario_name: str | None = None
+    base_revision_id: str | None = None
+    filtered_revision_id: str | None = None
+    official_release_id: str | None = None
+    official_release_no: int | None = None
+    auto_off_count: int | None = None
+    inherited_off_count: int | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class AutoOfficialUpdateExclusion:
+    """한 회차가 공정 필터에서 뺀 공정 하나.
+
+    `AUTO` 는 확보율로 판정해 뺀 것(최저 확보율·그 달이 있다), `INHERITED` 는 직전 공식버전에서
+    사람이 손으로 뺀 것을 이어받은 것이다(판정할 달이 없었으면 최저 확보율이 비어 있다).
+    """
+
+    run_id: str
+    filtered_revision_id: str | None
+    process: str
+    kind: ExclusionKind
+    min_rate: float | None
+    min_month: int | None
 
 
 def _optional_date(value: date | None) -> date | None:

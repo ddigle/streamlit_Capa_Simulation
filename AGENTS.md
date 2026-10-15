@@ -1736,6 +1736,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - BigDataQuery 등록·내장 시드 부트스트랩·기간 병합·연도 이동은 검사하지 않는다 — 들어온
     원천을 앱 안에서 고칠 길을 막지 않기 위해서다. 새 저장·발행 경로를 만들면
     `tests/test_capacity_gate.py` 의 쓰기 경로 목록에 더한다(검사가 쓰기보다 먼저인지 본다).
+  - 공식버전 자동 갱신의 발행(`auto_official_update_runner._publish_filtered_revision`)은 세션 없는
+    배경 회차라 캐시 래퍼 대신 같은 계산의 순수 코어(`simulation_cache.full_capacity_outcome`)로
+    검사한다. 그 경로도 쓰기 경로 목록에 있다.
 - `src/capa_simulation/components/capacity_assumption_notice.py`
   - 측정률 행이 없어 **중립값 1.0 으로 이어 간 건수**를 한 줄로 말한다. HOME 과 `산출 결과`
     둘 다 같은 문구를 쓴다.
@@ -1805,6 +1808,41 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 공식버전이 있으면 그대로 사용하고, 완전히 빈 시나리오 저장소에만 내장 시드를 생성한다.
   - 내장 시나리오 생성 뒤 공식 발행 전에 중단된 상태는 다음 시작에서 발행만 복구하며,
     공식버전 없는 사용자 시나리오는 임의 발행하지 않는다.
+- `src/capa_simulation/scenario_registration.py`
+  - BigDataQuery 로 받은 원천을 시나리오(리비전 1)로 저장하는 **세션 없는** 길이다
+    (`save_bigdataquery_scenario`·`registration_note`·`BIGDATAQUERY_PIPELINE_VERSION`). 화면 등록
+    (`components/bigdataquery_registration.py`)과 공식버전 자동 갱신이 같은 함수를 부른다 — 원천
+    메타데이터·파이프라인 버전·메모 뒤의 `상세 조회기간 …` 이 한 곳에서 정해져 자동으로 받은 것과
+    손으로 받은 것이 같은 꼴로 남는다. 세션 활성화는 하지 않는다(화면이 저장 뒤에 한다).
+  - 프리셋은 부르는 쪽이 만든다. 화면은 세션의 레거시 확보·경고 값을 실은
+    `capture_full_data_scenario_preset`, 자동 갱신은 세션을 읽지 않는
+    `scenario_preset_state.full_data_scenario_preset`(원천 전 기간·`RQ_REQB` 전 공정)이다.
+- `src/capa_simulation/auto_official_update_runner.py`
+  - **공식버전 자동 갱신** 한 회차(2026-10-15 사용자 결정)를 세션 없이 돌리고 실행 기록에 남긴다
+    (`run_auto_official_update`). 차례: 회차 선점 → 현재 공식버전의 주차 확인(없으면 오류 —
+    「공식버전에 n주차(W##) 표시가 있어야 합니다」) → 목록 조회(오늘 포함 30일) → 후보 1건(없으면
+    건너뜀) → 상세 조회·리비전 1 등록(화면 등록과 같은 이름·창·메모, `자동 갱신 등록 · …`) → 원
+    확보율 판정 → 리비전 2(`자동 갱신 공정 필터`) 저장 → 발행 검사 → 발행(`{시나리오명} 공식안`,
+    메모 `자동 갱신 · 기준 확보율 n% · off n공정 · 이어받은 수동 off m공정`). 단계 이름이 실행
+    기록 `stage` 에 남고 실패하면 그 단계 이름이 사유 앞에 붙는다. 이미 만든 시나리오·리비전은
+    남긴다.
+  - **배경 스레드에서 돈다.** `st.cache_data` 래퍼와 `st.session_state` 를 쓰지 않는다 — 계산은
+    `simulation_cache.full_capacity_outcome`·`calculate_securement_rate`, 등록은
+    `scenario_registration` 이다. 목록·상세 조회(`AutoUpdateSources`)·시계(`clock`)·발행 뒤
+    정리(`after_publish`)는 주입받는다 — 사외 시험은 가짜 BigDataQuery 로 끝까지 돈다.
+  - **발행하지 않는 경우**(`PUBLISH_SKIPPED`)는 계산 자체가 깨진 것뿐이다: 전체 기간 Capa 계산
+    실패, 확보율 계산 실패(가용 행 없음 등), 공정 필터에 남는 공정 0개(리비전 2 도 저장하지 않는다),
+    발행 검사 실패.
+  - **이어받은 수동 off** 는 직전 공식 리비전 프리셋에서 빠진 공정 가운데 그 리비전과 **조상**의
+    `AUTO` 기록이 아닌 것이다 — 자동 리비전 2 에서 사람이 리비전 3 을 저장해 발행해도 리비전 2 의
+    자동 off 는 자동으로 남는다. 사람이 뺀 공정은 이번에 기준 미만이어도 `INHERITED` 로 적는다(자동
+    off 로 적으면 다음 주 확보율이 오르는 순간 사람 결정과 상관없이 되살아난다).
+  - 레거시 확보·경고 값은 **직전 공식버전 프리셋**에서 실어 온다 — 판정 기준 프로필을 저장하지 않은
+    DB 는 그 기본값을 최신 공식버전 프리셋에서 읽으므로 코드 기본값을 실으면 발행 순간 모든 화면의
+    기준이 바뀐다.
+  - 같은 프로세스에서 회차가 겹치면(예약과 「지금 실행」) 뒤의 것은 선점하지 않고 돌아간다
+    (`_RUN_LOCK`, 기다리지 않는다). `current_official_baseline` 은 화면이 자동 갱신을 켤 때 먼저
+    막는 데 쓰고, `abandon_interrupted_runs` 는 기동 뒤 「실행 중」으로 남은 옛 회차를 닫는다.
 - `src/capa_simulation/services/builtin_seed.py`, `config/bootstrap_display_order.json`
   - GitHub 독립 실행용 78컬럼 합성 Core Data와 비민감 최소 표시순서를 제공한다.
   - `data/input/RQ_DISPLAY_ORDER.csv`가 있으면 최초 공용 표시순서 이관에 우선 사용하되
@@ -2027,7 +2065,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     보간)이 없어 자른 결과가 그 기간만 계산한 결과와 행 차례까지 같다
     (`tests/test_full_period_capacity.py`). 월 컬럼이 있는 `attrs`(제외 목록)는 같이 자르고,
     측정률 가정 건수·달은 시나리오 전체 값을 둔다. 월을 섞는 계산을 새로 넣으면 이 전제가
-    깨지므로 여기부터 고친다.
+    깨지므로 여기부터 고친다. 같은 계산의 **캐시 없는 순수 코어**는 `full_capacity_outcome` 이다 —
+    Streamlit 실행 문맥이 없는 배경 회차(공식버전 자동 갱신)만 부르고 화면은 캐시 래퍼를 쓴다.
   - **어느 달이든 기준정보 오류가 있으면 조회기간과 상관없이 멈춘다**(2026-09-28 사용자
     결정 — 보지 않는 달의 오류가 그 달을 열 때까지 숨으면 조치가 늦어지고 허점이 쌓인다).
     오류가 조회기간 안에도 있으면 원문 그대로, 밖에만 있으면 「조회기간 밖」이라고 말한다
@@ -2248,6 +2287,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   기본값을 만든다. Streamlit 을 import 하지 않는 순수 계층이다. 코드·PLAN 조합당 한 행만
   남기고(적재시각이 행마다 다르면 코드 하나가 수천 행이 된다), 숫자형 등록시각은 버린다
   (`pd.to_datetime` 이 정수를 나노초로 읽어 1970년이 조용히 저장된다).
+
+- `auto_official_update.py`: 공식버전 자동 갱신의 **규칙**(2026-10-15 사용자 결정) — DB·Streamlit 을
+  모르는 순수 함수다. 회차를 돌리는 차례와 기록은 `auto_official_update_runner.py` 가 맡는다.
+  - **주차**는 시뮬레이션명의 `W##`(두 자리 1~53, 앞에 영문자·뒤에 숫자가 붙으면 아니다, 서로 다른
+    주차가 둘이면 없는 것)이고 해는 원천 등록시각에 가장 가까운 해다(`anchor_week_year` — 연말
+    W52 → W01 이 거꾸로 보이지 않는다). 현재 공식버전의 주차는 시나리오명 → 원천 시뮬레이션명 →
+    공식버전명 차례로 처음 적힌 것이고, 같은 주차의 비교 시각은 원천 등록시각(없으면 공식 지정시각)
+    이다(`resolve_official_baseline`, 없으면 `MissingOfficialWeek`).
+  - **후보**(`select_candidate`)는 키워드(기본 `PSM`, 대소문자 무시)·주차·미등록(보관본 포함)·저장
+    가능·원천 등록시각이 있는 코드 가운데 현재보다 큰 주차 또는 같은 주차의 더 늦은 등록, 여럿이면
+    가장 큰 주차 → 가장 늦은 등록 1건이다.
+  - **판정**은 리비전 전체 기간 원 확보율의 공정별 최저(소요 0 인 달 제외, `process_minimum_rates`)가
+    기준 확보율(기본 80%) **미만**이면 off 다(`falls_below_threshold` — 경계는 이 한 곳). 포함 공정은
+    `RQ_REQB` 공정 − 자동 off − 이어받은 수동 off(`included_after_off`·`inherited_manual_off`).
+  - **설정**(`AutoUpdateConfig` — 켜짐·확인 시각(분)·키워드·기준 확보율 1~200%)의 검증과 변경 글
+    (`describe_config_change`), **예약** 규칙(`scheduled_run_key` 날짜당 하나·`next_scheduled_run`·
+    `crossed_slot` — 지정 시각이 직전 확인과 지금 사이에 있어야 돌고, 확인 사이가 10분보다 벌어졌으면
+    그 시각에 떠 있지 않았던 것으로 보고 따라잡지 않는다)도 여기 있다.
 
 - `core_data_derivation.py`: 원천 78컬럼에서 RQ 파생에 쓰는 정규화된 작업 프레임을
   만든다. 제품정보 언더바 정규화와 Area·소요기준 별칭 정리가 이 경계에서 끝난다.
@@ -4442,6 +4499,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `persistence/securement_threshold_store.py`: 공용 확보율 판정 기준 프로필(0029)의 조회·교체 SQL과
   버전 대조(`SecurementThresholdConflict`). 헤더에 기본 확보·경고 값 칸이 있어 헤더를 직접 쓴다.
   미저장일 때의 기본값(최신 공식버전 프리셋 → 코드 기본값)은 Repository 가 정한다.
+- `persistence/auto_official_update_store.py`: 공식버전 자동 갱신(0035)의 설정 프로필(버전 대조
+  `AutoOfficialUpdateSettingsConflict`, 저장마다 같은 version 의 변경 기록 한 행)·실행 기록(`run_key`
+  유일 = 회차 선점, 회차를 잡은 뒤에는 진행 칸 `RUN_UPDATABLE_COLUMNS` 만 고쳐 쓴다)·자동 off 기록의
+  SQL. 네 표 모두 소유 컬럼이 없어 시나리오를 지워도 기록이 남는다.
 - `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·교체 SQL
 - `persistence/key_process_store.py`: 공용 주요공정 프리셋 프로필의 조회·교체 SQL(헤더는 0024, 프리셋은 0028 의 두 표. 프리셋 차례의 맨 앞이 기본, 공정 차례가 곧 히트맵 행 순서)
 - `persistence/home_profile_store.py`: HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체와

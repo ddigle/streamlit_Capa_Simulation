@@ -1,6 +1,7 @@
 # Purpose: bigdataquery registration 관련 정상·예외·회귀 동작을 검증한다.
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -462,4 +463,99 @@ def test_the_selection_builds_the_span_from_every_plan_row_of_the_whole_catalog(
     assert (pick.first_registered_on, pick.last_registered_on) == (
         date(2026, 7, 1),
         date(2026, 9, 2),
+    )
+
+
+SAVE_SCRIPT = """
+from pathlib import Path
+
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.io.core_data_source import CoreDataBatch
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+
+class FakeProvider:
+    def __init__(self, *, simulation_name, source_registered_at, window):
+        st.session_state["__window__"] = window.label()
+        self._name = simulation_name
+        self._registered_at = source_registered_at
+
+    def fetch(self, simulation_code):
+        return CoreDataBatch(
+            simulation_code=simulation_code,
+            simulation_name=self._name,
+            source_type="BIGDATAQUERY",
+            frame=build_builtin_seed_dataset().source_data.copy(),
+            source_registered_at=self._registered_at,
+        )
+
+
+database_path = st.session_state["__database__"]
+if not st.session_state.get("__saved__"):
+    st.session_state["__saved__"] = True
+    original = registration.BigDataQueryCoreDataProvider
+    registration.BigDataQueryCoreDataProvider = FakeProvider
+    try:
+        registration._save_scenario(
+            DuckDBScenarioRepository(Path(database_path)),
+            database_path,
+            existing_names=frozenset(),
+        )
+    finally:
+        registration.BigDataQueryCoreDataProvider = original
+"""
+
+
+def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Path) -> None:
+    """화면 저장은 세션 없는 등록 경로(`scenario_registration`)를 지나도 예전과 같은 것을 남긴다.
+
+    폼의 이름·리비전명·등록시점, 메모 뒤의 상세 조회기간, 세션의 레거시 확보·경고 값, 저장 뒤
+    활성화와 안내 한 줄이다. 공식버전 자동 갱신이 같은 길로 저장한다.
+    """
+    from datetime import datetime
+
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.scenario_preset_state import SECURE_THRESHOLD_KEY, WARNING_THRESHOLD_KEY
+    from capa_simulation.services.builtin_seed import load_builtin_display_order
+
+    database = tmp_path / "registration.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    repository.initialize_global_display_order(load_builtin_display_order())
+
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W41"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W41"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W41 (SIM-W41)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-10-12 09:00:00"
+    app.session_state[registration.FORM_NOTE_KEY] = "원천 PLAN 메모"
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 10, 5)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 10, 15)
+    app.session_state[SECURE_THRESHOLD_KEY] = 110.0
+    app.session_state[WARNING_THRESHOLD_KEY] = 100.0
+    app.run()
+
+    assert not app.exception
+    assert not app.error
+    assert app.session_state["__window__"] == "2026-10-05 ~ 2026-10-15"
+    assert "활성화했습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    [scenario] = repository.list_scenarios()
+    assert (scenario.scenario_name, scenario.source_simulation_code) == (
+        "PSM W41 (SIM-W41)",
+        "SIM-W41",
+    )
+    assert scenario.source_registered_at == datetime(2026, 10, 12, 9, 0)
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    assert snapshot.revision.revision_name == "초기 리비전"
+    assert snapshot.revision.note == "원천 PLAN 메모 · 상세 조회기간 2026-10-05 ~ 2026-10-15"
+    assert (snapshot.preset.secure_threshold, snapshot.preset.warning_threshold) == (1.10, 1.00)
+    assert snapshot.preset.included_processes == (
+        "DEMO_Chip_Attach",
+        "DEMO_Final_Test",
+        "DEMO_Wafer_Inspect",
     )
