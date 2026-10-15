@@ -581,3 +581,65 @@ def test_pkg_equivalent_sums_plan_rows_that_differ_only_by_pack_code() -> None:
 
     # 20 + 10 + 20 = 50. 7키가 같은 두 줄이 접히지 않고 더해진다.
     assert result.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(5.0)
+
+
+# ---------------------- RUN_DAY 는 붙은 (월, 공정)만 검사한다 — 쓰지 않는 칸의 0 은 둔다
+# 기준 정보 적용 검사는 UPEH 경로가 쓰지 않는 칸의 RUN_DAY 0 을 허락한다(대당 Capa 가 멈추지
+# 않는다). 표준 목표가 조회 범위의 `RQ_RUN_DAY` 를 통째로 검사하면 그 0 하나로 멈추고, 재공 현황도
+# 그 결과를 쓰므로 같이 멈춘다(사내 감사 E2).
+
+
+def _weekly_target(run_day: pd.DataFrame) -> pd.DataFrame:
+    return build_weekly_standard_target_capacity(
+        required_equipment=_required_equipment(),
+        run_day=run_day,
+        weekly_availability=pd.DataFrame(
+            {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [2.0]}
+        ),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 9),
+        detail_level="공정",
+    )
+
+
+@pytest.mark.parametrize("unused_value", [0.0, -1.0, None, "N/A"])
+def test_a_run_day_cell_no_demand_uses_does_not_stop_the_standard_target(
+    unused_value: object,
+) -> None:
+    """소요대수가 없는 공정의 칸(0·음수·빈 값·글자)은 표준 목표를 멈추지 않는다."""
+    run_day = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "공정": ["Process-A", "Process-Unused"],
+            "RUN_DAY": [31.0, unused_value],
+        }
+    )
+
+    result = _weekly_target(run_day)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert result["RUN_DAY"].tolist() == pytest.approx([31.0])
+
+
+@pytest.mark.parametrize(
+    ("used_value", "expected"),
+    [
+        (0.0, "RQ_RUN_DAY의 RUN_DAY는 0보다 커야 합니다: 1건, 예시 "),
+        (None, "RQ_RUN_DAY의 RUN_DAY 값이 빈 표준 목표 Capa 기준이 있습니다: 1건, 예시 "),
+        ("N/A", "RQ_RUN_DAY의 RUN_DAY에 숫자가 아닌 값이 있습니다: 1건, 예시 "),
+    ],
+)
+def test_a_run_day_cell_the_demand_uses_stops_with_its_month_and_process(
+    used_value: object, expected: str
+) -> None:
+    """쓰는 칸의 0·빈 값·글자는 그대로 멈춘다. 이제 어느 (월, 공정)인지 적는다."""
+    run_day = pd.DataFrame(
+        {"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [used_value]}
+    )
+
+    with pytest.raises(ValueError) as raised:
+        _weekly_target(run_day)
+
+    message = str(raised.value)
+    assert message.startswith(expected)
+    assert "'공정': 'Process-A'" in message
