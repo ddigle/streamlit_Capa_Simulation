@@ -460,6 +460,7 @@ git push
 | `inspect_real_data_checks.py`(8장, 매번 막혔다) | **처음부터** `--output <저장소 밖 파일>` 을 붙인 두 줄을 사용자에게 준다(8-0). 권한 템플릿 `docs/internal_claude_settings.json` 에 이 스크립트와 1-1 의 `Get-CimInstance` allow 를 더했다(2026-10-10) — `.claude/` 는 배포가 덮지 않으니 사용자가 사내 `.claude/settings.json` 을 새 템플릿으로 바꾼 뒤부터 막히지 않는다(1-2 · 이번 배포의 7장 「권한 템플릿」 줄) |
 | Playwright 설치(6-2) | 설치 한 줄 |
 | `check_deploy_screens.py`(7장 화면 확인, 6-2) | 권한 템플릿에 allow 가 **일부러 없다** — 돌릴 때마다 사용자가 승인한다. 막히면 6-2 의 실행 한 줄(경로까지 채워)을 그대로 준다 |
+| 사본 E2E 의 `git archive`·복사·스크립트(6-3) | 6-3 의 그 줄을 `$e2e` 를 실제 폴더로 바꿔(슬래시로) 그대로 준다 |
 | Space 편집기 입력 · `산출 결과` 히트맵 열기 | 사용자가 눈으로 확인하고 결과를 말로 받는다 — 리뷰에 확인자 「사용자」로 적는다 |
 
 ---
@@ -547,6 +548,149 @@ uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir $HOME/p
 - 끝에 「확인용 앱 프로세스가 남았을 수 있습니다 — 포트 N …」 이 찍히면 이 스크립트가 띄운 앱이다(명령줄에 `--server.port N`).
   1-1 명령으로 사용자와 함께 보고 사용자가 끈다.
 - 블록 머리 둘째 줄의 「마이그레이션 n개를 이 확인이 걸었다」는 4-2 에서 앱을 열지 않아 이 확인의 앱이 건 것이다 — 결함이 아니다.
+
+---
+
+## 6-3. 사용자 앱을 끄지 않고 실 DB 사본으로 확인할 때 (사본 E2E)
+
+사용자가 앱(8501)을 계속 써야 하는데 실데이터로 넓게 봐야 할 때 쓴다 — 전 리비전 계산 · 화면 순회 · HOME 시간.
+`202610120655` 리뷰의 「실데이터 E2E」(전 리비전 54 계산 · 페이지 17 · 탭 49 · HOME cold/warm)가 이 꼴이었다. **7-8 ·
+8장의 대신이 아니다** — 그 둘은 그대로 앱을 끈 채 운영 DB 로 한다. 사본 E2E 는 그 위에 더하는 확인이고, 할지는 7장이 적거나
+사용자가 고른다.
+
+**지키는 것.**
+
+- **사용자 앱과 운영 DB(`data\*.duckdb`)는 건드리지 않는다.** 운영 DB 에 하는 일은 파일 복사뿐이다.
+- **사본(트리·DB)은 저장소 밖에 둔다** — 실데이터라 커밋되면 안 된다. 끝나면 사용자에게 그 폴더와 zip 을 지워 달라고 한다(에이전트
+  권한은 `Remove-Item`·`rm` 을 막는다).
+- **사본 앱은 `127.0.0.1` 에만, 8501·8551 이 아닌 포트(8552 부터)에** 띄운다.
+- **사본에서도 DB 에 쓰는 단추는 누르지 않는다**(7장 「세 가지」의 목록) — 사본이라 운영에 가지는 않지만 확인 범위 밖이다.
+- 결과는 6-2 · 8장과 같은 꼴(개수·있음/없음·초)로만 적는다. 리뷰 문서에 `## 사본 E2E (런북 6-3)` 절을 두고 머리에 「사본 시각
+  <YYYY-MM-DD HH:MM>」 을 적는다 — 사본 뒤 사용자가 저장한 것은 들어 있지 않다.
+
+### 1) 사본 트리 — `git archive`
+
+앱은 **자기 트리의** `data\` 의 DB 를 연다(`settings.DUCKDB_PATH`). 그래서 운영 트리 옆에 커밋된 트리를 하나 더 풀고 거기 `data\`
+에 DB 사본을 둔다. `git worktree` 와 달리 저장소에 아무것도 등록하지 않는다. 사본 트리에는 가상환경도 `.git` 도 없다 — 파이썬은
+**저장소의 `.venv` 를 경로로** 부르고(`uv run` 은 사본 안에 새 환경을 만들려 하므로 쓰지 않는다), git 이 드는 스크립트는 저장소에서
+돌린다.
+
+```powershell
+$e2e = "$HOME\e2e_copy\$(Get-Date -Format yyyyMMddHHmm)"
+New-Item -ItemType Directory -Force (Split-Path $e2e) | Out-Null
+git archive --format=zip -o "$e2e.zip" HEAD
+Expand-Archive "$e2e.zip" $e2e
+$py = "$PWD\.venv\Scripts\python.exe"
+```
+
+`git archive -o` 는 상위 폴더를 만들지 않는다 — 둘째 줄이 없으면 처음 따라 할 때(`e2e_copy` 가 아직 없다) 「could not open
+… for writing」으로 멈춘다. `git archive` 는 커밋된 것만 푼다 — 사용자가 지시한 임시 수정(1-5)은 사본에 없다. 그 수정이 걸린
+채로 봐야 하면 이 확인은 하지 않는다.
+
+### 2) DB 복사 — `.wal` 이 없을 때만
+
+DuckDB 는 저장을 먼저 `<DB>.wal` 에 적고 나중에 본 파일로 옮긴다. `.wal` 이 있는 동안 본 파일만 복사하면 마지막 저장이 빠지거나 사본이
+열리지 않는다. 앱은 rerun 하는 동안만 DB 를 쥐고 쉬는 동안에는 `.wal` 을 남기지 않으므로, **복사 앞뒤로 두 번** 본다. `.wal` 만
+보면 복사 **도중에** 저장과 체크포인트가 다 끝난 경우(앞뒤 모두 `.wal` 없음)를 놓치므로 원본의 크기·마지막 쓴 시각도 앞뒤로 견준다.
+
+```powershell
+$db = "data\capa_simulation.duckdb", "data\equipment_availability.duckdb"
+$wal = "data\capa_simulation.duckdb.wal", "data\equipment_availability.duckdb.wal"
+$before = Get-Item $db | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+Test-Path $wal
+Copy-Item -Force $db "$e2e\data\"
+Test-Path $wal
+$after = Get-Item $db | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+Compare-Object $before $after
+```
+
+`Test-Path` 는 두 번 다 `False` 둘이고 `Compare-Object` 는 아무것도 찍지 않아야 한다. 하나라도 어긋나거나 복사가 「다른 프로세스가
+사용 중」으로 막히면 그사이 누가 저장(rerun)한 것이다 — 1분쯤 뒤 `$before` 줄부터 다시 한다. 사본 시각은 마지막으로 성공한 복사의
+시각이다.
+
+### 3) 사본이 맞는지 — 띄우기 전에 둘을 본다
+
+```powershell
+$env:PYTHONPATH = "$e2e\src"
+& $py -c "import capa_simulation.settings as s; print(s.DUCKDB_PATH.resolve())"
+& $py -c "import duckdb, capa_simulation.settings as s; [print(p.name, duckdb.connect(str(p), read_only=True).execute('SELECT count(*) FROM duckdb_tables()').fetchone()[0]) for p in (s.DUCKDB_PATH, s.EQUIPMENT_DUCKDB_PATH)]"
+```
+
+- 첫 줄이 찍는 경로가 **`$e2e\data\` 아래여야 한다.** 저장소의 `data\` 가 찍히면 멈춘다 — 그대로 띄우면 사본 앱이 사용자 DB 를 연다
+  (`PYTHONPATH` 가 안 먹었다).
+- 둘째 줄은 두 사본이 열리는지만 본다(읽기 전용으로 열어 표 수만 센다 — 몇 초). 파일 이름과 표 수 두 줄이 나와야 하고, 오류가
+  나면 2) 를 다시 한다. 전 리비전 계산은 여기서 하지 않는다 — 수 분이 걸리고 4-a 가 한다.
+
+### 4) 확인 셋 — 고른 것만, 이 차례로
+
+차례를 지킨다 — a 는 사본 DB 를 읽기만 하고, b·c 는 사본 앱이 마이그레이션을 걸 수 있어 사본을 바꾼다. 같은 사본 DB 를 동시에 열면
+`duckdb.IOException` 이니 하나씩 돌린다.
+
+**a. 전 리비전 계산** — `scripts/inspect_revision_calculations.py`. 모든 리비전을 앱과 같은 길로 읽어 대당 Capa → 소요대수 → 확보율을
+돌리고 상태·개수만 찍는다(이름 대신 `S3 r2` 차례 번호). 리비전이 많으면 수 분이라 백그라운드로 돌리고 `--output` 을 읽는다. 오래
+걸리면 `--active-only`(시나리오마다 활성 리비전과 공식버전 대상만).
+
+```powershell
+& $py "$e2e\scripts\inspect_revision_calculations.py" --database "$e2e\data\capa_simulation.duckdb" --output $HOME\revisions.md
+```
+
+`--database` 는 기본값이 없다 — 늘 사본 경로를 준다. 운영 DB(`data\capa_simulation.duckdb`)는 앱이 쉬는 동안 열리기도 하지만, 이
+스크립트가 쥐는 수 분 동안 사용자 앱의 연결이 막힌다.
+
+출력 블록을 고치지 않고 붙인다. 읽는 법은 블록 끝에 있다 — `멈춤` 이 0 이 아니면 그 줄의 원천 묶음·단계·표 이름을 「발견」에 옮긴다.
+
+**b. HOME 시간** — `scripts/benchmark_home.py --data-dir`. **저장소에서** 돌린다(출력 머리의 커밋을 git 으로 읽는다). 저장소의
+`data\` 는 받지 않는다 — 사본 폴더만.
+
+```powershell
+& $py scripts\benchmark_home.py --data-dir "$e2e\data" --output $HOME\home_bench.json
+```
+
+`>` 로 받지 않는다 — 출력은 UTF-8 인데 PowerShell 5.1 의 `>` 는 그것을 콘솔 코드페이지(cp949)로 읽어 한글을 깨뜨린다. `--output`
+파일은 UTF-8 이고 먼저 비운다. `phases` 의 단계마다 `seconds`·`figure_count`, 그리고 `skipped`(입력이 없어 잠긴 토글)·`note`(프로필이
+없어 켠 비용만 잰 토글)를 옮긴다.
+
+실패하면 스크립트가 한 줄만 찍고(표준 오류와 `--output` 파일) 1 로 멈춘다. 그 한 줄은 둘 중 하나다.
+
+- 스크립트 자신의 문장 — 예: `cold_summary의 Figure 수가 8개가 아닙니다: 4`.
+- HOME 이 멈췄을 때 **줄인 줄** — `<단계> 실행 실패 — <예외 종류> <수> · 문구가 가리키는 표 <RQ_*> (사본이라 문구는 찍지
+  않는다)`. 사본 모드는 HOME 의 오류 문구(공정·제품 이름, DB 오류면 사본 경로가 실린다)를 찍지 않는다.
+
+**그 한 줄만** 그대로 적는다. 원문이 필요하면 c 의 사본 앱 화면에서 보고, 리뷰에는 옮기지 않는다.
+
+**c. 화면** — 둘 중 하나.
+
+- 7장 스크립트 항목을 사본으로 — 사본 트리의 `check_deploy_screens.py` 에 `--ignore-other-apps` 와 빈 포트를 준다. **이 옵션은 사본
+  트리에서만 붙인다** — 프로세스 검사는 사용자 앱(8501)을 보고 미루는데, 사본 트리의 스크립트는 사본 DB 만 열고 잠금 확인도 사본
+  DB 로 한다. 저장소에서 돌릴 때는 6-2 그대로다(1-1 확인 없이는 붙이지 않는다).
+
+  ```powershell
+  & $py "$e2e\scripts\check_deploy_screens.py" --ignore-other-apps --port 8552 --playwright-dir $HOME/pw --output $HOME/screens_copy.md
+  ```
+
+- 전 화면 순회 — 사본 앱을 손수 띄워(백그라운드) 페이지·탭을 차례로 연다. 세는 것은 연 페이지·탭 수와 예외·오류 화면 수뿐이고, 화면의
+  이름·값은 옮기지 않는다. 열지 못한 탭(감춘 패널 안 등)은 수만 적는다.
+
+  ```powershell
+  Set-Location $e2e
+  & $py -m streamlit run app.py --server.address 127.0.0.1 --server.port 8553 --server.headless true
+  ```
+
+  주소는 `http://127.0.0.1:8553` 이다. 끝나면 이 프로세스(명령줄에 `--server.port 8553`)만 끈다 — 사용자 앱이 아니다.
+
+### 5) 끝내기
+
+```powershell
+$env:PYTHONPATH = $null
+Set-Location <저장소>
+```
+
+사용자에게 `$e2e` 폴더와 `$e2e.zip` 을 지워 달라고 한다(실데이터 사본이다). 리뷰 문서 `## 사본 E2E (런북 6-3)` 절에는 사본 시각,
+`.wal` 확인 두 번 「없음」과 크기·시각 「같음」, 고른 확인(a·b·c)과 그 블록·수를 적는다. 고르지 않은 것은 「안 함」.
+
+WebIDE(리눅스)면 `$py` 는 `<저장소>/.venv/bin/python` 이고, 트리는 `mkdir -p <사본 폴더> && git archive HEAD | tar -x -C <사본 폴더>`
+(`tar -C` 도 대상 폴더가 있어야 한다), `.wal` 확인은 `ls data/*.wal` 이다(없다고 나와야 한다). 크기·시각은 복사 앞뒤로
+`stat -c '%n %s %y' data/*.duckdb` 를 찍어 두 번이 같아야 한다.
 
 ---
 

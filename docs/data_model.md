@@ -1,6 +1,6 @@
 # DuckDB 데이터 모델
 
-마지막 갱신일: 2026-10-07
+마지막 갱신일: 2026-10-15
 
 ## 운영 원칙
 
@@ -11,9 +11,17 @@
   못한 스냅샷 키와 실행 중 인스턴스의 심장박동을 담는다. 그 파일 자체가 동기화 대상이라 상태를
   DuckDB 안에 두면 순환이 되므로 DB 밖에 둔다. 사이드카를 읽지 못하면 변경 있음으로 본다.
   `local` 모드에서는 사이드카를 만들지 않는다.
-- `시나리오 1개 = 데이터셋 1개`다. 새 시나리오는 RQ 16개를 물리 복제하고 기존
-  데이터셋을 덮어쓰지 않는다.
-- 데이터셋의 읽기 전용 기준정보를 바꾸려면 새 시나리오를 만든다.
+- `시나리오 1개 = 데이터셋 1개`다. 새 시나리오(원천 등록·복제·연도 이동·월 병합)는 새
+  데이터셋과 리비전 1 을 함께 만들고 기존 데이터셋을 덮어쓰지 않는다. RQ 16개는 **두 곳에
+  나눠 한 번씩만** 적는다 — 데이터셋 표 둘(`RQ_DISPLAY_ORDER`·`RQ_MODULE`)은 `ref_data` 에,
+  리비전 표 14개는 리비전 1 의 `rev_data` 에(`repository.DATASET_TABLES`·`REVISION_TABLES`).
+  원천 78컬럼(`raw_data`)은 원천 등록(BigDataQuery·CSV·내장 시드)만 적고, 복제·연도 이동·
+  월 병합은 원천 행 없이 RQ 만 적는다.
+- 데이터셋 표 둘은 편집·리비전 대상이 아니다. 그 시나리오의 모든 리비전이 같은 데이터셋 표를
+  물려받으므로 `RQ_MODULE` 이 모자란 시나리오(예: 덧붙일 쪽에만 있는 공정을 베이스 것만 남긴 월
+  병합)는 앱 안에서 고칠 길이 없다 — 데이터셋의 읽기 전용 기준정보를 바꾸려면 새 시나리오를
+  만든다(원천 다시 등록, 방향을 바꾼 머지). `RQ_DISPLAY_ORDER` 는 화면 정렬에 공용 프로필이
+  앞서므로 데이터셋 사본은 사실상 읽히지 않는다.
 - 계획·수율·Capa·설비대수·Chip 기준 입력 14개는 불변 전체 리비전으로 저장한다.
 - 표시순서는 시나리오와 분리된 단일 공용 프로필로 저장하고 모든 시나리오에 적용한다.
   정렬우선순위는 행 정렬과 분류컬럼 배치에 함께 사용하며, 경로 상세 범위의
@@ -37,39 +45,73 @@
 ## 스키마 관계
 
 ```text
-# data/capa_simulation.duckdb
-app_meta.scenario 1 ── 1 app_meta.dataset
+# data/capa_simulation.duckdb — 시나리오가 소유하는 것(소유 컬럼 scenario_id·dataset_id·revision_id)
+app_meta.scenario 1 ── 1 app_meta.dataset                 (status ACTIVE·ARCHIVED — 보관은 숨김일 뿐)
        │                       │
-       │                       ├── N raw_data.core_data
+       │                       ├── N raw_data.core_data            (원천 등록만 — 복제·파생은 0행)
        │                       ├── 78 raw_data.source_column_profile
-       │                       └── N ref_data.rq_* (데이터셋 소유 2개 — 표시순서·모듈수)
+       │                       └── N ref_data.rq_display_order · rq_module   (데이터셋 표 2 — 편집 대상 아님)
+       │                           ref_data.rq_* 나머지 14 는 0033 이 남긴 옛 사본뿐(읽는 코드 없음)
        │
-       └── N app_meta.scenario_revision
+       └── N app_meta.scenario_revision (append-only, parent_revision_id 로 분기)
                     │
-                    ├── N rev_data.rq_* (편집 14개)
+                    ├── N rev_data.rq_* (리비전 표 14 — 편집·저장 단위)
+                    │     rev_data.rq_display_order 는 0001 의 옛 자리(쓰지 않음, 공용 표시순서 첫 이관 때만 읽음)
                     ├── N app_meta.revision_virtual_product
                     ├── 1 app_meta.scenario_preset
                     ├── N app_meta.scenario_preset_process
                     └── N app_meta.scenario_preset_standard_target_process
 
 app_meta.official_release N ── 1 app_meta.scenario_revision
-        └── 전역 증가 release_no의 공식 발행 이력
+        └── 전역 증가 release_no 의 공식 발행 이력(scenario_id 를 가져 시나리오 삭제가 함께 지운다)
 
-app_meta.global_display_order 1 ── N app_meta.global_display_order_rule
-        └── 시나리오와 독립된 현재 공용 표시순서
+result_data.simulation_run                                 (골격만 — 쓰는 코드 없음)
 
-app_meta.global_process_rename 1 ── N app_meta.global_process_rename_rule
-        └── 시나리오와 독립된 현재 공용 공정 표시명(화면 표기 전용)
+# data/capa_simulation.duckdb — 공용 프로필(소유 컬럼 없음, 단일 행 머리 profile_id = 1 + 자식 행,
+#   교체마다 version+1, 시나리오 삭제·보관이 건드리지 않음)
+app_meta.global_display_order        1 ── N global_display_order_rule        표시순서(0010)
+app_meta.global_process_rename       1 ── N global_process_rename_rule       공정 표시명(0015, 화면 표기 전용)
+app_meta.global_advance_load         1 ── N global_advance_load_month        선행 B/O(0018)
+app_meta.global_past_data            1 ── N global_past_month                과거 구간(0019)
+                                       ├── N global_past_plan_detail
+                                       └── N global_past_securement
+app_meta.global_comparison_scenario  1                                       GAP 비교 대상(0020 — 아래 예외)
+app_meta.global_execution_capacity   1 ── N global_execution_capacity_row    실행 Capa(0021)
+app_meta.global_top5_band            1                                       B/N Top5 구간(0022)
+app_meta.global_summary_note         1                                       HOME Summary 공지(0023)
+app_meta.global_key_process          1 ── N global_key_process_preset        주요공정 프리셋(0024·0028)
+                                       ├── N global_key_process_preset_item
+                                       └── N global_key_process_item         (0024 옛 목록 — 0028 뒤 읽지 않음)
+app_meta.global_securement_threshold 1 ── N global_securement_threshold_month 확보율 판정 기준(0029)
+app_meta.global_advance_shipment     1 ── N global_advance_shipment_month    선행 입고 실적(0031, 계산 밖)
+app_meta.voc_post                    1 ── N voc_reply (post_id)              VOC 게시판(0025, 머리 없음)
 
-# data/equipment_availability.duckdb
+app_meta.schema_migration · (옛 개발 DB 에만) 빈 equipment_ops 스키마(결번 2·3 의 흔적 — migration_catalog.md)
+
+# data/equipment_availability.duckdb — 리비전(append-only 전체 스냅샷)
 equipment_ops.revision
        ├── N equipment_ops.baseline_snapshot
        ├── N equipment_ops.equipment_master_snapshot
-       └── N equipment_ops.downtime_schedule_snapshot
+       ├── N equipment_ops.downtime_schedule_snapshot
+       └── (레거시 — 쓰지 않음) schedule_snapshot(0001) · equipment_snapshot · downtime_snapshot(0002)
 
-equipment_ops.standard_target_weekly_availability
-       └── 공정·Weeknum별 비버전 최신 가용대수
+# data/equipment_availability.duckdb — 리비전 없는 공용 표(설비 리비전을 저장해도 복제되지 않음, 표끼리 FK 없음)
+equipment_ops.standard_target_weekly_availability         공정·Weeknum별 수동 가용대수(0005)
+equipment_ops.process_cutoff                              공정별 Cut-off 일수(0009, PK 공정·product_scope)
+equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017)
+                       (building, floor_name)
+equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017, layout_key 'FAB')
+equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요단축일정 공용 조회 조건(0019)
+equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      진척 비교 기준선(0021 — 고칠 수 없는
+                                     └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다)
+
+equipment_meta.schema_migration
 ```
+
+`app_meta.global_comparison_scenario` 만 공용 프로필인데 `scenario_id`·`revision_id` 를 가진다 — 비교
+대상을 **가리키는** 참조다. 그대로 두면 소유 자동 발견(`repository._owned_tables`)이 시나리오 소유로 보고
+삭제 때 프로필 행을 통째로 지우므로 자동 발견에서 빼고(`_GLOBAL_PROFILE_TABLES`), 보관·삭제가 그 대상을
+명시적으로 비운다(version+1). 공용 프로필을 새로 만들 때는 소유 컬럼을 두지 않는다.
 
 DuckDB 1.5.5는 서로 다른 스키마 사이의 외래 키를 만들 수 없으므로 스키마 간 FK는
 DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에서 소유 관계, 상위 리비전,
@@ -99,9 +141,13 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   함께 지운다.
 - `scenario`: 이름, 원천 시뮬레이션 코드/명, 상태, 현재 최신 리비전과 목록 관리 화면이
   지정한 누적 순서(`list_order`, 마이그레이션 0017). 순서를 한 번도 저장하지 않은
-  시나리오는 NULL 이며 최근 수정 순으로 뒤에 붙는다. 보관 상태는 삭제로 대체되어
-  `status` 는 항상 `ACTIVE` 다.
-- `dataset`: 시나리오 소유 데이터셋, 원천 등록·적재 시각, 원천 해시, 변환 버전
+  시나리오는 NULL 이며 최근 수정 순으로 뒤에 붙는다. `status` 는 `ACTIVE`·`ARCHIVED`(보관)
+  둘이다 — 보관은 목록에서 숨길 뿐 행을 그대로 두고(`repository.archive_scenario`·
+  `restore_scenario`), 보관한 시나리오에는 새 리비전을 저장할 수 없다. 보관본은 목록 관리의
+  「보관된 시나리오 N건」 상자에서 되돌리거나 영구 삭제한다.
+- `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`·
+  `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`),
+  원천 등록·적재 시각, 원천 행 수·해시, 변환 버전, 상태(`LOADING`→`READY`, 보관이면 `ARCHIVED`)
 - `scenario_revision`: 증가하는 리비전 번호, 부모 리비전, 입력 해시와 변경 메모
 - `scenario_preset`: 조회 시작·종료월, 내부 비율의 확보·경고 기준, 프리셋 해시와 표준
   목표 Capa 「조회·집계 설정」(`standard_target_start_date`·`standard_target_end_date`·
@@ -119,6 +165,24 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `global_process_rename`: 공용 공정 표시명 버전, 변경 출처와 갱신시각
 - `global_process_rename_rule`: 원본 `공정` → 화면 `표시명` 규칙과 원본 행 순서.
   `(profile_id, 공정)`·`(profile_id, 표시명)` UNIQUE가 1:1을 받친다.
+- `global_past_data`·`global_past_month`·`global_past_plan_detail`·`global_past_securement`
+  (0019): 적재 시점 이전 과거 구간 — 월별 Density·Wafer Total, 계획 세부수량(제품정보·Stack·
+  Customer), 공정별 확보율. HOME Past Data 가 읽고 계산 입력에는 들지 않는다.
+- `global_comparison_scenario`(0020): GAP 비교 대상 시나리오·리비전. 고르지 않은 상태는 두 값이
+  NULL 이다. 공용 프로필 가운데 유일하게 `scenario_id`·`revision_id` 를 가져 소유 자동 발견에서
+  뺀다(위 「스키마 관계」 아래 문단).
+- `global_top5_band`(0022): B/N Top5 막대가 표현하는 확보율 구간(기본 50~200%).
+- `global_summary_note`(0023): HOME 상단 Summary 공지. 빈 문자열은 「공지를 내린 상태」다.
+- `global_key_process`(0024)·`global_key_process_preset`·`global_key_process_preset_item`(0028):
+  HOME 주요공정 히트맵의 이름 붙은 프리셋 여럿. 머리(version)는 0024 것을 쓰고 `프리셋순서` 0 번이
+  새 세션의 기본이다. 0024 의 단일 목록 `global_key_process_item` 은 0028 이 「기본」 프리셋으로 옮긴
+  뒤 지우지 않고 남겼고 읽는 코드는 없다.
+- `global_securement_threshold`·`global_securement_threshold_month`(0029): 확보율 판정 기준 —
+  기본 확보·경고 기준(비율)과 그 달에만 다른 월별 예외. 저장은 편집 시작 version 과 대조한다.
+  한 번도 저장하지 않아 행이 없으면 최신 공식버전 프리셋의 `secure_threshold`·
+  `warning_threshold`(없으면 코드 기본값)를 쓴다 — 리비전 프리셋 열은 그 대체값으로만 읽힌다.
+- `voc_post`·`voc_reply`(0025): VOC 게시판의 글·답글. 머리 행 없이 `post_id` 로 이어지고, 어느
+  시나리오에도 매이지 않아 시나리오를 지워도 남는다.
 
 `scenario_revision.parent_revision_id`는 과거 리비전에서 새 리비전을 저장하는 분기 이력을
 보존한다. `scenario.active_revision_id`는 가장 최근에 저장한 리비전을 가리키며, 사용자는
@@ -186,8 +250,10 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 나머지 둘(`RQ_DISPLAY_ORDER`·`RQ_MODULE`)은 데이터셋 `ref_data` 를 사용한다. 새 데이터셋은 이
 14개를 `ref_data` 에 적지 않으므로 리비전 1 이 원천 변환 결과의 유일한 사본이다.
 `RQ_REQB`는 STEP 구성 변경을 리비전별로 재현하기 위해 리비전마다 저장한다.
-`RQ_DISPLAY_ORDER`의 데이터셋 기본본과 과거 리비전 복사본은 호환용으로 남길 수 있지만,
-런타임 화면 정렬에는 `app_meta.global_display_order_rule`의 현재 공용 프로필을 우선한다.
+`rev_data` 에는 이 14개 말고 `rq_display_order` 표도 있다(0001 의 옛 자리). 지금은 아무도 쓰지
+않고, 공용 표시순서 프로필이 아직 없을 때 첫 이관(`display_order_store.load_existing_display_order`)이
+옛 리비전·데이터셋 사본을 찾느라 읽을 뿐이다. 런타임 화면 정렬은
+`app_meta.global_display_order_rule`의 현재 공용 프로필을 우선한다.
 
 ### `raw_data`
 
@@ -198,7 +264,10 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 충돌을 검증한다.
 
 동일 시뮬레이션 코드는 불변 원천으로 취급한다. 행 순서와 무관한 multiset 데이터 해시가
-같으면 다른 시나리오에 전체 물리 복제할 수 있지만, 해시가 다르면 등록을 거부한다.
+같으면 같은 코드를 다른 시나리오로 다시 등록할 수 있고(원천 행도 그 데이터셋에 다시 적는다),
+해시가 다르면 등록을 거부한다(보관본 포함). 복제·연도 이동·월 병합은 원천 행을 적지 않는다 —
+이 데이터셋들의 `source_row_count` 는 0 이고, 원천을 읽는 쪽(`repository.load_source_data`)은
+「원천 Core Data 가 저장되어 있지 않다」로 알린다.
 
 ### `result_data`
 
@@ -248,6 +317,29 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   이름표 글자 크기 `font_size`(INTEGER, 9·11·13·16·20·24 화면 px)와 글자 색 `font_color`(영역 색 키)는
   마이그레이션 17 의 NULL 허용 컬럼이다 — NULL 은 자동 크기·기본 글자색이다. `fab_layout_mark`
   (마이그레이션 13)도 같은 두 컬럼을 갖는다.
+- `fab_layout_profile`·`fab_layout_mark`(마이그레이션 13): Space S.PKG FAB 전체 도면. 머리는
+  `layout_key = 'FAB'` 한 행(캔버스·배경 도면 BLOB, `floor_layout_profile` 처럼 UPDATE 로 고친다)이고,
+  요소는 `floor_layout_mark` 와 같은 열(동·층 제외)에 층 블록의 연결 대상 `link_building`·
+  `link_floor` 를 더한 것이다(둘 다 있거나 둘 다 NULL, 층 블록은 필수). 층 표에 「FAB」 가짜 키를
+  넣지 않으려고 표를 따로 둔다. 요소는 전체 교체(DELETE+INSERT)라 PK 가 없고, 요소 행이 없으면
+  화면이 코드의 기본 배치를 그린다. 검사는 `services/fab_layout.py`.
+- `process_cutoff`(마이그레이션 9): 공정별 Cut-off(그 공정 이후 입고까지의 표준 납기) 일수.
+  `(process_name, product_scope)` PK 이고 `product_scope` 는 지금 모두 `'*'`(공정 전체 — 나중
+  제품 축 자리)다. TAT·공정 선후관계가 저장소에 없어 파생값이 아니라 사람이 적는 원장이고,
+  리비전 없는 현행값이다. `cutoff_days` 는 DOUBLE 로 받되 `services/wd_window.py` 가 내림해 쓴다.
+  가용설비 현황 `필요단축일정`·월별 가용대수가 읽는다.
+- `shortening_filter_profile`·`shortening_filter_process`(마이그레이션 19): `필요단축일정` 탭의
+  공용 조회 조건 — 머리 한 행(`start_month`·`end_month` `YYYYMM`, 둘 다 있거나 둘 다 NULL,
+  version)과 고른 공정(`sort_order` 차례). 기간 NULL 은 「저장 안 함 → 조회기간 전체」, 공정 0행은
+  「목표 미달 공정 전체」다. 기간과 공정은 따로 쓰고 쓸 때마다 version+1. 규칙은
+  `services/shortening_filter_profile.py`.
+- `shortening_baseline`·`shortening_baseline_process`·`shortening_baseline_unit`(마이그레이션 21):
+  진척 비교의 **기준선** — 「기준선 저장」을 누른 그때의 필요단축 계획을 얼린 공용 기록이다.
+  UPDATE 가 없고 새로 저장하거나 통째로 지운다(지우기는 자식 행부터 한 트랜잭션). 머리는
+  `baseline_id`(uuid hex) PK·`baseline_name` UNIQUE 와 그때의 출처(설비 리비전·기준정보 버전·
+  시나리오·리비전·`content_token` — 모르면 NULL), 공정 표는 그때 맞댄 공정과 Cut-off, 호기 표는
+  목표(90~130%)마다 당긴 호기와 가상 호기(「추가N」)다. 외래키는 없다. SQL 은
+  `persistence/shortening_baseline_store.py`, 얼리는 규칙은 `services/shortening_baseline.py`.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
 - `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
   보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.
@@ -288,6 +380,10 @@ Dynamic Capa의 표준과 실적은 수명주기가 다르므로 같은 리비�
   다시 산출한다.
 - Rundown·실가동·설비 Down·기타 제약시간의 실제 컬럼, 상호배타성 및 하루/설비 기준 시간
   합계 검증은 실적효율 DB 연결 단계에서 확정한다.
+- **수율 실적**도 같은 원칙을 따른다 — 시나리오마다 복제하지 않는 누적 이력이고, 기준은 리비전의
+  `RQ_YLD`(월·제품정보·Stack·WF 구분의 `EDS_수율`·`BE_수율`)다. 실적을 `RQ_YLD` 에 덮어쓰지
+  않는다. 원천 컬럼·키·집계(투입 가중)·정정 규칙은 아직 계약 전이다(`docs/TODO.md` 「수율 실적
+  DB 계약」). 지금 `수율 실적` 화면의 값은 합성 데모(`services/performance_actuals.py`)다.
 
 ## 마이그레이션과 복구
 
