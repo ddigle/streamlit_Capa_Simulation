@@ -540,7 +540,17 @@ def test_home_process_dialog_buttons_keep_original_callback_and_selection_values
     assert "format_func=process_labels.format_func()" in body
     assert "on_toggle=toggle_process_dialog_selection" in body
     assert "st.data_editor" not in body
-    assert "[process for process in options if process in selected_set]" in body
+    # 적용 목록은 팝업이 원본 공정으로 고른 집합을 원본 선택지 차례로 다시 세운 것이다 — 보이지
+    # 않던 공정을 뒤에 그대로 붙이는 `apply_dialog_selection` 이 그 일을 한다.
+    assert "apply_dialog_selection(selected_set, options," in body
+    selection_path = PROJECT_ROOT / "src/capa_simulation/services/process_selection.py"
+    selection = ast.parse(selection_path.read_text(encoding="utf-8"))
+    apply = next(
+        node
+        for node in ast.walk(selection)
+        if isinstance(node, ast.FunctionDef) and node.name == "apply_dialog_selection"
+    )
+    assert "[process for process in options if process in chosen_set]" in ast.unparse(apply)
 
     renderer_path = PROJECT_ROOT / "src/capa_simulation/components/process_picker.py"
     renderer = ast.parse(renderer_path.read_text(encoding="utf-8"))
