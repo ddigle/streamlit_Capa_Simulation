@@ -1,4 +1,4 @@
-# Purpose: HOME 주요공정 히트맵의 공용 프로필 왕복과 격자 계약을 검증한다.
+# Purpose: HOME 주요공정 히트맵의 공용 프로필 왕복과 격자·칸 누르기 이동 정보 계약을 검증한다.
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from capa_simulation.components.home_figures import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.process_detail_state import HOME_CELL_LINK_FIELDS, parse_home_cell_link
 from capa_simulation.services.key_process import (
     KEY_PROCESS_LIMIT,
     KEY_PROCESS_PRESET_LIMIT,
@@ -137,6 +138,58 @@ def test_a_process_missing_from_the_scenario_is_skipped_without_failing() -> Non
         KEY_PROCESS_HEADER_HEIGHT_PX + 2 * KEY_PROCESS_ROW_HEIGHT_PX
     )
     assert set(month_figure.data[2].text) == {"130%", "80%", "105%"}
+
+
+def test_each_cell_carries_the_original_process_and_month_for_the_detail_page() -> None:
+    """칸을 누르면 공정 Capa 상세가 열린다. 표적 막대 꼬리에 원본 공정·정수 월·숫자 값이 있다.
+
+    hover 칸(앞 여섯)은 그대로다 — 꼬리는 끝에서 센다.
+    """
+    _, month_figure = _figures(["DEMO-A", "DEMO-B"])
+    rows = [list(row) for row in month_figure.data[0].customdata]
+
+    assert all(len(row) == 6 + len(HOME_CELL_LINK_FIELDS) for row in rows)
+    links = [parse_home_cell_link(row) for row in rows]
+    assert {(link.process, link.month) for link in links if link is not None} == {
+        ("DEMO-A", 202601),
+        ("DEMO-A", 202602),
+        ("DEMO-A", 202701),
+        ("DEMO-B", 202601),
+        ("DEMO-B", 202602),
+    }
+    first = links[0]
+    assert first is not None
+    assert first.available == pytest.approx(10.0)
+    assert first.required == pytest.approx(7.7)
+    assert first.raw_rate == pytest.approx(10.0 / 7.7)
+    assert first.displayed_rate == pytest.approx(1.30)
+
+
+def test_a_past_data_cell_is_not_a_link() -> None:
+    """과거 실적 달은 공정 Capa 상세의 달 축 밖이다. 그 칸은 공정 자리가 비어 옮기지 않는다."""
+    _, month_figure = build_key_process_heatmap_figures(
+        securement_rate=_securement_frame(),
+        key_processes=["DEMO-A"],
+        month_labels=list(MONTH_LABELS),
+        thresholds=SecurementThresholds(1.095, 0.995),
+        year_total_labels=YEAR_TOTAL_LABELS,
+        past_month_labels={"26.01"},
+    )
+    links = {
+        str(row[0]): parse_home_cell_link(list(row)) for row in month_figure.data[0].customdata
+    }
+
+    assert links["26.01"] is None
+    assert links["26.02"] is not None
+
+
+def test_a_click_does_not_dim_the_cells_or_the_rate_text() -> None:
+    """선택을 켜면 Plotly 가 고르지 않은 점을 흐린다. 칸·숫자 trace 모두 불투명도 1 이다."""
+    _, month_figure = _figures(["DEMO-A"])
+
+    for trace in month_figure.data:
+        assert trace.unselected.marker.opacity == 1, trace.type
+    assert month_figure.data[2].unselected.textfont.color == tokens.TEXT
 
 
 def test_presets_round_trip_in_order_and_removing_all_still_bumps_the_version(

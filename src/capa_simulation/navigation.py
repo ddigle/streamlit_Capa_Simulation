@@ -122,6 +122,17 @@ STATIC_CAPA = PageSpec(
     ":material/factory:",
     has_condition_cards=True,
 )
+# 공정 하나의 산출 근거·부족한 달·그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15 사용자
+# 결정). HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 열린다 — 여는 쪽이 이
+# 경로를 쓰므로 상수로 둔다(`process_detail_state.open_process_detail`). 설비 운영 스냅샷(설비 DB)을
+# 읽기만 하는데 한 회차에 여러 번 열므로 설비 DB 핀을 선언한다.
+PROCESS_CAPA_DETAIL = PageSpec(
+    "app_pages/process_capa_detail.py",
+    "공정 Capa 상세",
+    ":material/troubleshoot:",
+    has_condition_cards=True,
+    uses_equipment_db=True,
+)
 STATIC_CAPA_SUBPAGES = (
     PageSpec(
         "app_pages/load_conversion.py",
@@ -141,6 +152,7 @@ STATIC_CAPA_SUBPAGES = (
         ":material/monitoring:",
         has_condition_cards=True,
     ),
+    PROCESS_CAPA_DETAIL,
     PageSpec(
         "app_pages/standard_target_capa.py",
         "표준 목표",

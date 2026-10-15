@@ -9,6 +9,7 @@ import pickle
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Generic, NamedTuple, TypeVar, cast
 
 import pandas as pd
@@ -44,6 +45,11 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import theme, tokens
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.performance import PerformanceTrace
+from capa_simulation.process_detail_state import (
+    HOME_BOTTLENECK_SECTION,
+    HOME_KEY_PROCESS_SECTION,
+    open_home_cell,
+)
 from capa_simulation.scenario_state import is_pristine_content_token
 from capa_simulation.services.simulation_cache import shared_home_figure_store
 
@@ -310,8 +316,10 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 대신 `to_dict()` 목록을 넣는 저장 형식, 46 은 기준과 같은 확보율의 색(확보)·선행 B/O 이름
 # (`Density (선행 B/O 전)`)·선행 입고 실적 칸 글자, 47 은 그 글자의 자리(값과 같은 높이)·고정
 # 크기·색, 48 은 묶음별 칸(네 묶음 + 계획 세부수량 묶음의 비교 덤벨), 49 는 덤벨이 과거 구간
-# 달을 빼고 견줌, 50 은 레이아웃 항목을 검증 없이 넣는 길(JSON 은 같다 — 옛 객체를 버릴 뿐).
-HOME_FIGURE_SCHEMA_VERSION = 50
+# 달을 빼고 견줌, 50 은 레이아웃 항목을 검증 없이 넣는 길(JSON 은 같다 — 옛 객체를 버릴 뿐), 51 은
+# 주요공정·상세 B/N 표적 막대 `customdata` 끝의 공정 Capa 상세 이동 정보와 선택 흐림 막기
+# (`unselected`).
+HOME_FIGURE_SCHEMA_VERSION = 51
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -686,6 +694,21 @@ def home_dashboard_panel() -> Iterator[None]:
         yield
 
 
+# 칸을 누르면 공정 Capa 상세로 가는 두 월 그림의 key. 선택 상태가 이 key 의 세션 칸에 들어온다.
+KEY_PROCESS_MONTHS_CHART_KEY = "key_process_heatmap_months"
+BOTTLENECK_MONTHS_CHART_KEY = "bottleneck_detail_months"
+
+
+def open_clicked_home_cell(chart_key: str, section: str) -> None:
+    """월 그림의 칸 선택 콜백. 누른 칸의 공정·달로 공정 Capa 상세를 연다.
+
+    빈 선택(같은 칸을 다시 누르거나 더블클릭)과 공정 없는 점(과거 실적 칸)은 무시한다 — 그때는
+    콜백 위젯의 기본 동작대로 이 프래그먼트만 다시 돈다. 옮길 때는 콜백 안의 `st.switch_page` 라
+    HOME 프래그먼트 본문을 다시 돌리지 않고 상세 화면이 앱 전체 회차로 돈다.
+    """
+    open_home_cell(st.session_state.get(chart_key), section=section)
+
+
 @st.fragment
 def render_home_figures(
     figures: HomeFigureSet | None,
@@ -705,8 +728,11 @@ def render_home_figures(
     않는다(`app_pages/home.py`). 그래도 이 함수는 부른다. 프래그먼트가 감싸는 빈 칸이 늘 같은
     자리에 서야 탭을 오갈 때 본문 배치가 흔들리지 않는다.
 
-    이 안에는 위젯이 없다 — 보는 조건은 사이드바 `LOB 표시 조건` 카드다. 테두리 상자는
-    `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께 감싼다.
+    이 안의 위젯은 `주요공정 확보율`·`상세 B/N 공정` 월 그림의 **칸 선택** 둘뿐이다 — 누르면 그
+    공정·그 달로 공정 Capa 상세가 열린다(`open_clicked_home_cell`, 과거 실적·연간 Total 칸은 제외).
+    보는 조건은 사이드바 `LOB 표시 조건` 카드다. 숨은 탭에서는 그리지 않으므로 그 회차에는 선택
+    위젯도 없다. 테두리 상자는 `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께
+    감싼다.
     """
     if tab_is_hidden(owner_tab) or figures is None:
         return
@@ -831,12 +857,19 @@ def render_home_figures(
                     border=False,
                 )
                 # 히트맵은 hover 로 확보율·가용/필요대수를 읽는다. `staticPlot` 은 hover
-                # 까지 끄므로 상세 B/N 월 Figure 와 같은 config 를 쓴다.
+                # 까지 끄므로 상세 B/N 월 Figure 와 같은 config 를 쓴다. 칸을 누르면 그 공정·
+                # 그 달로 공정 Capa 상세가 열린다 — 선택은 점 하나(`points`)뿐이다.
                 st.plotly_chart(
                     figures.key_process_months,
                     width="stretch",
-                    key="key_process_heatmap_months",
+                    key=KEY_PROCESS_MONTHS_CHART_KEY,
                     config=hover_chart_config(),
+                    on_select=partial(
+                        open_clicked_home_cell,
+                        KEY_PROCESS_MONTHS_CHART_KEY,
+                        HOME_KEY_PROCESS_SECTION,
+                    ),
+                    selection_mode="points",
                 )
                 # 라벨 칸의 `상세 B/N 공정` 제목 줄과 짝이 되는 빈 줄.
                 st.container(
@@ -852,6 +885,12 @@ def render_home_figures(
                 st.plotly_chart(
                     figures.bottleneck_months,
                     width="stretch",
-                    key="bottleneck_detail_months",
+                    key=BOTTLENECK_MONTHS_CHART_KEY,
                     config=hover_chart_config(),
+                    on_select=partial(
+                        open_clicked_home_cell,
+                        BOTTLENECK_MONTHS_CHART_KEY,
+                        HOME_BOTTLENECK_SECTION,
+                    ),
+                    selection_mode="points",
                 )

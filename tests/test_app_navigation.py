@@ -39,11 +39,13 @@ from capa_simulation.navigation import (
     EQUIPMENT_TAB_KEY,
     HOME,
     IMPLEMENTING_SUFFIX,
+    PROCESS_CAPA_DETAIL,
     SCENARIO_MANAGEMENT,
     SIDEBAR_GROUPS,
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
 )
+from capa_simulation.process_detail_state import PROCESS_DETAIL_PROCESS_KEY
 from capa_simulation.scenario_preset_state import (
     MONTH_RANGE_KEY,
 )
@@ -70,6 +72,7 @@ EXPECTED_PAGES = [
     ("app_pages/load_conversion.py", "생산 계획", ":material/scale:", False),
     ("app_pages/reference_data.py", "기준 정보", ":material/settings:", False),
     ("app_pages/calculation_result.py", "산출 결과", ":material/monitoring:", False),
+    ("app_pages/process_capa_detail.py", "공정 Capa 상세", ":material/troubleshoot:", False),
     ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     (
@@ -113,7 +116,12 @@ def test_exactly_one_page_is_the_default_entry_point() -> None:
 
 def test_group_membership_matches_the_sidebar_sections() -> None:
     assert STATIC_CAPA.path == "app_pages/static_capa.py"
-    assert len(STATIC_CAPA_SUBPAGES) == 4
+    assert len(STATIC_CAPA_SUBPAGES) == 5
+    # 공정 Capa 상세는 산출 결과 바로 다음이다(2026-10-15 사용자 결정).
+    static_paths = [spec.path for spec in STATIC_CAPA_SUBPAGES]
+    assert static_paths.index(PROCESS_CAPA_DETAIL.path) == (
+        static_paths.index("app_pages/calculation_result.py") + 1
+    )
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
     # 자원 현황(설비·공간) → 실적(효율·UPEH·수율) → 그 결과가 쌓인 재공 순서다.
     assert len(DYNAMIC_CAPA_SUBPAGES) == 6
@@ -1544,9 +1552,32 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 # 사라진다. 핀은 첫 연결 때 잡히는 게으른 핀이라, 대상으로 적는 것과 실제로 여는 것을 따로 본다.
 
 
-def test_only_the_equipment_status_screen_declares_the_equipment_db_pin() -> None:
+def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
+    """가용설비 현황과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러 번 연다)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
-    assert declared == {DYNAMIC_CAPA_SUBPAGES[0].path}
+    assert declared == {DYNAMIC_CAPA_SUBPAGES[0].path, PROCESS_CAPA_DETAIL.path}
+
+
+def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: AppTest) -> None:
+    """HOME 칸 클릭은 `st.switch_page(공정 Capa 상세, query_params=…)` 다(콜백 쪽은
+    `tests/test_process_detail_state.py`). 실제 `app.py` 내비게이션에서 그 주소로 들어오면 사이드바
+    `공정 상세 조건` 카드의 공정 상자가 그 공정을 보이고, 읽은 키만 지워 테마 인자는 남는다.
+    """
+    app = _app.run()
+    app.switch_page(PROCESS_CAPA_DETAIL.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    target = options[-1]
+
+    app.query_params.update({"process": target, "from": "home"})
+    app.query_params["theme"] = "dark"
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
+    assert "process" not in app.query_params
+    assert "from" not in app.query_params
+    assert app.query_params.get("theme") == ["dark"]
 
 
 def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
@@ -1717,7 +1748,7 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     equipment_pages = (
         DYNAMIC_CAPA_SUBPAGES[0].path,
         DYNAMIC_CAPA_SUBPAGES[1].path,
-        STATIC_CAPA_SUBPAGES[3].path,
+        "app_pages/standard_target_capa.py",
         DYNAMIC_CAPA_SUBPAGES[-1].path,
     )
     callers = {
