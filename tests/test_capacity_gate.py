@@ -117,6 +117,87 @@ def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None
     assert refused.message is not None and "RQ_RUN_RATE" in refused.message
 
 
+def _vital_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """여유율에서 마지막 달을 뺀다. `_broken` 과 **다른** 오류로 멈춘다."""
+    vital = tables["RQ_VITAL"]
+    months = pd.to_numeric(vital["생산계획년월"])
+    return {**tables, "RQ_VITAL": vital.loc[months.ne(months.max())].reset_index(drop=True)}
+
+
+def test_a_different_error_after_the_edit_is_not_called_the_old_one(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """편집 전 오류와 다른 오류를 「편집 전부터 있던 오류」라 부르지 않는다(사내 감사 E7).
+
+    편집 전·후가 둘 다 실패한다는 것만 보면 이번 편집이 새로 깬 것도 「편집 전부터 있던 오류」로
+    저장된다. 계산은 첫 오류에서 멈추므로 다른 오류가 곧 새로 깬 것은 아니다(앞 오류를 고쳐 가려져
+    있던 오류가 드러날 수 있다). 그래서 막지 않고 문구로 가른다.
+    """
+    version = _version()
+
+    verdict = revision_save_verdict(
+        version, _edited(version, _vital_broken(tables)), _broken(tables)
+    )
+
+    assert verdict.allowed
+    assert verdict.message is not None
+    assert "편집 전부터 있던" not in verdict.message
+    assert "편집 전과 다른" in verdict.message
+    assert "RQ_VITAL" in verdict.message and "RQ_RUN_RATE" in verdict.message
+    assert "공식버전으로 지정할 수 없습니다" in verdict.message
+
+
+def _density_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """계획이 있는 제품 하나의 `구분_EQ` 를 0 으로. 대당 Capa·소요대수는 이 값을 쓰지 않는다."""
+    plan = tables["RQ_PKG_PLAN"]
+    planned = plan.loc[pd.to_numeric(plan["생산수량"]).gt(0)].iloc[0]
+    chip_eq = tables["RQ_CHIP_EQ"].copy()
+    target = chip_eq["제품정보"].eq(planned["제품정보"]) & chip_eq["Stack"].eq(planned["Stack"])
+    assert target.any()
+    chip_eq.loc[target, "구분_EQ"] = 0.0
+    return {**tables, "RQ_CHIP_EQ": chip_eq}
+
+
+def test_an_edit_that_stops_the_home_density_is_not_saved(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """HOME 의 Density 환산도 저장 검사가 돌린다(사내 감사 E6).
+
+    계획이 있는 제품의 `구분_EQ` 가 0 이하면 HOME 이 「RQ_CHIP_EQ.구분_EQ 값은 0보다 커야」로
+    멈춘다. 대당 Capa·소요대수만 돌리는 검사는 이 값을 보지 않는다.
+    """
+    version = _version()
+
+    verdict = revision_save_verdict(version, _edited(version, _density_broken(tables)), tables)
+
+    assert not verdict.allowed
+    assert verdict.message is not None and "RQ_CHIP_EQ.구분_EQ" in verdict.message
+
+
+def test_a_revision_whose_density_stops_cannot_become_official(tmp_path: Path) -> None:
+    """공식버전이 되는 순간 모두의 HOME 이 Density 에서 멈춘다. 발행 검사가 전체 기간으로 돌린다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    database = tmp_path / "gate.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    release = ensure_initial_scenario(repository).release
+    assert release is not None
+    snapshot = repository.load_revision(release.revision_id)
+    broken = repository.save_revision(
+        snapshot.scenario.scenario_id,
+        _density_broken({name: snapshot.tables[name] for name in REVISION_TABLES}),
+        snapshot.preset,
+        revision_name="구분_EQ 0",
+        parent_revision_id=release.revision_id,
+    )
+
+    refused = official_publish_verdict(str(database), broken.revision.revision_id)
+
+    assert not refused.allowed
+    assert refused.message is not None and "RQ_CHIP_EQ.구분_EQ" in refused.message
+
+
 @pytest.mark.parametrize(
     "module,function,write_call,gate_call",
     [
