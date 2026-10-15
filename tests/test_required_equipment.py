@@ -556,14 +556,14 @@ def test_reqb_rows_that_differ_only_in_spelling_are_one_route() -> None:
 
 
 def test_registration_and_calculation_fold_the_same_route_rows() -> None:
-    """등록의 경로 접기(`duplicate_route_rows`)와 계산의 접기(`_prepare_reqb`)는 같은 행을 남긴다.
+    """등록의 경로 접기(`duplicate_route_rows`)와 계산의 접기는 같은 행을 남긴다.
 
-    계산은 이미 정규화한 표를 `duplicated` 로 접어 정규화를 두 번 하지 않는다. 두 접기가 갈리면
-    등록이 남긴 행을 계산이 또 접거나 서로 다른 행을 남긴다 — 등록 표의 행 수와 소요대수 행 수가
-    어긋난다.
+    계산(`_prepare_reqb`)은 이미 정규화한 표를 `duplicated` 로 접어 정규화를 두 번 하지 않는다.
+    두 접기가 갈리면 등록이 남긴 행을 계산이 또 접거나 서로 다른 행을 남긴다 — 등록한 표로 계산한
+    결과와 원천 그대로 계산한 결과가 어긋난다.
     """
     from capa_simulation.services.frame_contracts import duplicate_route_rows
-    from capa_simulation.services.required_equipment import REQB_COLUMNS, _prepare_reqb
+    from capa_simulation.services.required_equipment import REQB_COLUMNS
 
     route = {
         "생산계획년월": 202608,
@@ -592,11 +592,46 @@ def test_registration_and_calculation_fold_the_same_route_rows() -> None:
         ]
     )
 
+    canonical = [
+        route,
+        {**route, "공정": "Process-B"},
+        {**route, "STEP_SEQ": "20", "Area_Name": "MI"},
+    ]
+    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    plan = pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}])
+    yield_data = pd.DataFrame(
+        {
+            "생산계획년월": [202608],
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "EDS_수율": [0.8],
+            "BE_수율": [1.0],
+        }
+    )
+    chip_qty = pd.DataFrame(
+        {
+            "제품정보": ["Product-A"],
+            "Stack": ["12H"],
+            "WF 구분": ["Core"],
+            "구분_Chip": [2.0],
+            "Net Die": [500.0],
+        }
+    )
+    unit_capacity = pd.DataFrame(
+        [{key: row[key] for key in CAPACITY_KEYS} for row in canonical]
+    ).assign(**{"대당 Capa": 25.0})
+
     registered = routes.loc[~duplicate_route_rows(routes, REQB_COLUMNS)]
-    calculated = _prepare_reqb(routes)
+    from_source = calculate_required_equipment(routes, plan, yield_data, chip_qty, unit_capacity)
+    from_registered = calculate_required_equipment(
+        registered, plan, yield_data, chip_qty, unit_capacity
+    )
 
     assert len(registered) == 3
-    pd.testing.assert_frame_equal(_prepare_reqb(registered), calculated)
+    assert len(from_source) == 3
+    assert from_source["소요대수"].tolist() == pytest.approx([20.0, 20.0, 20.0])
+    pd.testing.assert_frame_equal(from_registered, from_source)
 
 
 # ------------------------------------------------------------------ 소요기준 PKG
