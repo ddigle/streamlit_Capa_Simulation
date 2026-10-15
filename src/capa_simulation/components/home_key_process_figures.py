@@ -42,6 +42,7 @@ from capa_simulation.components.home_figure_common import (
     _grid_row_rules,
     _text_width_units,
     _truncate_to_units,
+    keep_unselected_opaque,
 )
 from capa_simulation.components.plotly_layout import (
     add_figure_outer_border,
@@ -51,6 +52,7 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
+from capa_simulation.process_detail_state import home_cell_link_values
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
@@ -112,6 +114,10 @@ def build_key_process_heatmap_figures(
     **연간 Total 칸은 그리지 않는다.** 확보율은 합산도 평균도 할 수 없다 — 그 해 평균은
     부하량 가중이 필요한데 이 프레임에 근거가 없다. `Wafer Capa` 가 연간 Total 을 적지
     않는 것과 같은 규칙이고, 그 열은 면색만 깔아 「합계 자리」임을 알린다.
+
+    칸을 누르면 그 공정·그 달로 공정 Capa 상세가 열린다(`home_rendering` 의 선택 콜백). 표적 막대
+    `customdata` 끝에 원본 공정·정수 월·숫자 확보율·가용·소요·실행 증감을 싣고
+    (`process_detail_state.home_cell_link_values`), 과거 실적 칸은 공정을 비워 이동하지 않는다.
     """
     labels = process_labels or ProcessLabels()
     month_count = max(len(month_labels), 1)
@@ -138,7 +144,7 @@ def build_key_process_heatmap_figures(
     cell_bases: list[float] = []
     cell_centers: list[float] = []
     cell_colors: list[str] = []
-    hover_values: list[list[str]] = []
+    hover_values: list[list[object]] = []
     rate_positions: list[float] = []
     rate_centers: list[float] = []
     rate_texts: list[str] = []
@@ -168,6 +174,17 @@ def build_key_process_heatmap_figures(
                 _format_equipment_count(row.get("가용대수")),
                 _format_equipment_count(row.get("소요대수")),
                 _execution_hover_note(row.get("확보율 증감"), row.get("실행 비고")),
+                # 누르면 이 공정·이 달로 공정 Capa 상세를 연다. 과거 실적 칸은 그 화면의 달 축에
+                # 없어 공정 자리를 비운다(콜백이 무시한다).
+                *home_cell_link_values(
+                    process=row["공정"],
+                    month=row["생산계획년월"],
+                    displayed_rate=rate,
+                    available=row.get("가용대수"),
+                    required=row.get("소요대수"),
+                    execution_delta=row.get("확보율 증감"),
+                    linked=past_month_labels is None or str(row["년월"]) not in past_month_labels,
+                ),
             ]
         )
         if not missing_rate:
@@ -313,4 +330,5 @@ def build_key_process_heatmap_figures(
     )
     add_quarter_boundaries(key_process_month_figure, month_labels)
     flush_layout_items(key_process_label_figure, key_process_month_figure)
+    keep_unselected_opaque(key_process_month_figure)
     return key_process_label_figure, key_process_month_figure

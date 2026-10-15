@@ -1,4 +1,4 @@
-# Purpose: 상세 B/N 가로막대의 길이 정규화와 월 열 그리드 계약을 고정한다.
+# Purpose: 상세 B/N 가로막대의 길이 정규화·월 열 그리드·칸 누르기 이동 정보 계약을 고정한다.
 
 import unicodedata
 from typing import Any, cast
@@ -21,6 +21,7 @@ from capa_simulation.components.home_figures import (
     build_bottleneck_detail_figures,
 )
 from capa_simulation.design import tokens
+from capa_simulation.process_detail_state import HOME_CELL_LINK_FIELDS, parse_home_cell_link
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTH_LABELS = ["26.01", "26.02", "26.03"]
@@ -278,6 +279,15 @@ def test_hover_shows_the_real_rate_above_the_bar_cap() -> None:
         "1K",
         # 실행 Capa 조정이 없으면 빈 문자열이라 hover 에 아무 줄도 붙지 않는다.
         "",
+        # 여기부터는 hover 가 읽지 않는 이동 꼬리다(`HOME_CELL_LINK_FIELDS`) — 원본 공정·정수 월·
+        # 표시 확보율·원 확보율(가용 ÷ 소요)·가용·소요·실행 증감.
+        "DEMO_공정",
+        202601,
+        2.0,
+        0.5,
+        10.0,
+        20.0,
+        0.0,
     ]
 
 
@@ -370,3 +380,62 @@ def test_both_figures_share_the_same_horizontal_row_boundaries() -> None:
     # 머리글 밑줄 + 행 사이 격자선이 모두 있어야 비교가 의미를 갖는다.
     assert len(label_boundaries) >= 3
     assert label_boundaries == month_boundaries
+
+
+# ----------------------------------------------------------- 칸 누르기 → 공정 Capa 상세
+
+
+def test_each_cell_carries_its_own_process_and_month_for_the_detail_page() -> None:
+    """같은 순위 행도 달마다 공정이 다르다. 이동 정보는 칸마다 그 칸의 공정·달이다."""
+    _, month_figure = _build(
+        _details_with_execution(
+            [
+                ("26.01", 1, "DEMO_A", 0.9, 1.0, -10.0, "비가동"),
+                ("26.02", 1, "DEMO_B", 1.2, 1.2, 0.0, ""),
+            ]
+        )
+    )
+
+    links = [parse_home_cell_link(list(row)) for row in month_figure.data[0].customdata]
+    assert [(link.process, link.month) for link in links if link is not None] == [
+        ("DEMO_A", 202601),
+        ("DEMO_B", 202602),
+    ]
+    first = links[0]
+    assert first is not None
+    # 표시값은 실행 반영 뒤, 원 확보율은 가용 ÷ 소요 그대로다.
+    assert first.displayed_rate == pytest.approx(0.9)
+    assert first.raw_rate == pytest.approx(0.5)
+    assert first.execution_delta == pytest.approx(-10.0)
+
+
+def test_a_past_data_cell_carries_no_process_so_the_click_is_ignored() -> None:
+    """과거 실적 칸의 달은 공정 Capa 상세의 달 축에 없다. 공정 자리를 비워 콜백이 무시한다."""
+    _, month_figure = build_bottleneck_detail_figures(
+        monthly_bottleneck_details=_details(
+            [("26.01", 1, "DEMO_과거", 0.8), ("26.02", 1, "DEMO_현재", 0.9)]
+        ),
+        month_labels=MONTH_LABELS,
+        thresholds=SecurementThresholds(1.095, 0.995),
+        past_month_labels={"26.01"},
+    )
+
+    past, current = (list(row) for row in month_figure.data[0].customdata)
+    tail = len(HOME_CELL_LINK_FIELDS)
+    assert past[-tail:] == [None] * tail
+    assert parse_home_cell_link(past) is None
+    # hover 칸은 그대로다 — 값은 읽히고 누르기만 막힌다.
+    assert past[1] == "DEMO_과거"
+    assert parse_home_cell_link(current) is not None
+
+
+def test_a_click_does_not_dim_any_trace() -> None:
+    """선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐린다. 모든 trace 에서 막는다."""
+    _, month_figure = _build(
+        _details_with_execution([("26.01", 1, "DEMO_공정", 1.2, 1.0, 20.0, "UPEH 개선")])
+    )
+
+    for trace in month_figure.data:
+        assert trace.unselected.marker.opacity == 1, trace.type
+        if trace.type == "scatter":
+            assert trace.unselected.textfont.color == trace.textfont.color

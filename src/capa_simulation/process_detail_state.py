@@ -1,0 +1,509 @@
+# Purpose: 공정 Capa 상세의 세션·주소 인자 계약과 HOME 칸 클릭으로 그 화면을 여는 전달을 맡는다.
+
+"""공정 Capa 상세로 들어오는 길과 그 화면의 보는 상태.
+
+HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 이 화면이 열린다(2026-10-15
+사용자 결정). 넘기는 길은 둘이다.
+
+- **전달 칸**(`PROCESS_DETAIL_REQUEST_KEY`) — 같은 세션 안의 1차 길. 위젯이 아닌 세션 칸이다. HOME
+  이 상세 화면의 **위젯 키**에 바로 적으면 페이지를 옮긴 첫 회차에 `persist_state` 경로와 엇갈린다
+  (`shared_widget_state`). 상세 화면이 위젯을 만들기 전에 이 칸을 꺼내 위젯 키에 적는다. 누른 칸의
+  HOME 표시값·원 확보율·실행 증감과 그때의 HOME 보기 조건(선행 B/O·실행 Capa·EDP)을 함께 싣는다
+  — 상세 화면의 출처 띠가 「HOME 표시값 = 원 확보율 + …」를 이것으로 적는다. 칸은 상세 화면이
+  **맨 앞에서**(부트스트랩보다 먼저) 꺼낸다(`take_process_detail_request`) — 그 회차가 오류로 멈춰도
+  칸이 남아 나중에 사이드바로 들어온 방문을 「HOME 에서 온 것」으로 읽지 않는다. 옮기지 못한
+  클릭(`StreamlitPageNotFoundError`)도 칸을 남기지 않는다.
+- **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `st.switch_page` 는 주소를
+  **통째로** 바꾸므로 테마 인자(`theme`)는 지금 값을 함께 싣는다. 받는 쪽은 읽은 키만 지운다 —
+  `st.query_params.clear()` 는 테마 인자까지 지워 테마 스크립트가 첫 방문으로 보고 다시 새로고침한다
+  (Space `?floor=` 와 같은 규칙). 한 번 적용한 인자 묶음은 `PROCESS_DETAIL_QUERY_SEEN_KEY` 에 남겨,
+  지운 것이 브라우저에 닿기 전에 옛 주소가 되돌아와도 사용자가 그 뒤 고른 공정을 덮지 않는다. 인자가
+  걷힌 회차에 그 칸을 비우므로 같은 링크로 다시 들어오면 다시 적용한다.
+
+HOME 그림은 표적 막대(trace 0)의 `customdata` **끝**에 이동 정보 일곱 칸(`HOME_CELL_LINK_FIELDS`)을
+싣는다. hover 칸 차례는 그대로이고, 과거 실적 칸은 공정 자리를 비워(`None`) 콜백이 무시한다 — 과거
+구간·연간 Total 달은 이 화면의 달 축(조회기간 ∩ 소요 달)에 없다.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, cast
+
+import streamlit as st
+from streamlit.errors import StreamlitPageNotFoundError
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+from capa_simulation.design.theme import THEME_QUERY_PARAM
+from capa_simulation.home_state import (
+    ADVANCE_TOGGLE_KEY,
+    EDP_TOGGLE_KEY,
+    EXECUTION_TOGGLE_KEY,
+    HOME_TOGGLE_DEFAULTS,
+)
+from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+from capa_simulation.page_bootstrap import prune_choice
+from capa_simulation.services.process_picker import ProcessPickerItem
+from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.sidebar_status import APP_RUN_STATE_KEY
+
+# 사이드바 `공정 상세 조건` 카드의 공정 선택 상자(원본 공정명).
+PROCESS_DETAIL_PROCESS_KEY = "process_detail_process"
+# 지금 보는 달(정수 `YYYYMM`). 위젯이 아니라 세션 칸이다 — 요약 표 칸·이전/다음 단추·HOME 진입이
+# 모두 이 칸 하나를 적는다.
+PROCESS_DETAIL_MONTH_KEY = "process_detail_month"
+# 표 도구 줄의 「제품별 소요대수」 펼침과 펼쳤을 때의 「분류」, 카드의 제품 거르기(펼친 행에만
+# 걸린다).
+PROCESS_DETAIL_EXPAND_KEY = "process_detail_expand_products"
+PROCESS_DETAIL_SPLIT_KEY = "process_detail_product_split"
+PROCESS_DETAIL_PRODUCT_FILTER_KEY = "process_detail_product_filter"
+# HOME 이 적고 상세 화면이 첫 회차에 꺼내(`pop`) 쓰는 전달 칸.
+PROCESS_DETAIL_REQUEST_KEY = "process_detail_request"
+# 출처 띠가 읽는 HOME 칸 스냅숏. 전달 칸을 꺼낸 회차에 옮겨 두고, 공정을 바꾸거나 다른 화면에
+# 다녀오면 걷는다.
+PROCESS_DETAIL_ORIGIN_KEY = "process_detail_origin"
+# 마지막으로 적용한 주소 인자 묶음.
+PROCESS_DETAIL_QUERY_SEEN_KEY = "process_detail_query_seen"
+
+PROCESS_PARAM = "process"
+MONTH_PARAM = "month"
+FROM_PARAM = "from"
+DETAIL_QUERY_PARAMS = (PROCESS_PARAM, MONTH_PARAM, FROM_PARAM)
+FROM_HOME = "home"
+
+# 출처 띠가 부르는 HOME 구획 이름. HOME 의 구획 제목과 같은 글자다.
+HOME_KEY_PROCESS_SECTION = "주요공정 확보율"
+HOME_BOTTLENECK_SECTION = "상세 B/N 공정"
+
+# 표적 막대 `customdata` 끝의 이동 정보 차례. 그림(`home_cell_link_values`)과 콜백
+# (`parse_home_cell_link`)이 이 한 벌을 본다 — 앞의 hover 칸 수와 무관하게 끝에서 센다.
+HOME_CELL_LINK_FIELDS = (
+    "process",
+    "month",
+    "displayed_rate",
+    "raw_rate",
+    "available",
+    "required",
+    "execution_delta",
+)
+
+
+@dataclass(frozen=True)
+class HomeCellLink:
+    """HOME 칸 하나가 싣는 이동 정보. 확보율은 비율(1.05 = 105%), 실행 증감은 퍼센트포인트다."""
+
+    process: str
+    month: int
+    displayed_rate: float | None
+    # 가용대수 ÷ 소요대수 — 실행 Capa·선행 B/O 를 얹기 전의 값.
+    raw_rate: float | None
+    available: float | None
+    required: float | None
+    execution_delta: float
+
+
+@dataclass(frozen=True)
+class ProcessDetailRequest:
+    """전달 칸 하나 — 어느 공정·달을 열지와, HOME 에서 왔으면 누른 칸과 그때의 보기 조건."""
+
+    process: str
+    month: int | None
+    # 주소 `from` 값. HOME 에서 열면 `FROM_HOME`.
+    source: str = FROM_HOME
+    section: str = ""
+    displayed_rate: float | None = None
+    raw_rate: float | None = None
+    available: float | None = None
+    required: float | None = None
+    execution_delta: float = 0.0
+    show_advance: bool = False
+    show_execution: bool = False
+    include_edp: bool = False
+
+
+@dataclass(frozen=True)
+class ProcessDetailEntry:
+    """페이지 첫머리에서 정한 공정·달과 출처."""
+
+    process: str | None
+    month: int | None
+    # 출처 띠의 근거. HOME 에서 넘겨받은 방문 동안, 그 공정을 보는 동안만 있다.
+    origin: ProcessDetailRequest | None = None
+    # 넘겨받은 공정이 지금 공정 목록에 없어 기본 공정을 연 경우 그 공정.
+    missing_process: str | None = None
+    # 넘겨받은 달이 이 화면의 달 축 밖이라 다른 달을 연 경우 그 달.
+    month_outside: int | None = None
+
+
+def _finite(value: object) -> float | None:
+    """유한한 숫자면 float, 아니면(결측·NaN·무한대·글자) None."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(cast(Any, value))
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _month(value: object) -> int | None:
+    """정수 `YYYYMM` 으로 읽는다. 여섯 자리가 아니거나 달이 1~12 가 아니면 None."""
+    number = _finite(value)
+    if number is None or not number.is_integer():
+        return None
+    month = int(number)
+    return month if 100_001 <= month <= 999_912 and 1 <= month % 100 <= 12 else None
+
+
+def home_cell_link_values(
+    *,
+    process: object,
+    month: object,
+    displayed_rate: object,
+    available: object,
+    required: object,
+    execution_delta: object,
+    linked: bool = True,
+) -> list[object]:
+    """표적 막대 칸 하나의 `customdata` 꼬리(`HOME_CELL_LINK_FIELDS` 차례).
+
+    `linked=False`(과거 실적 칸)는 일곱 칸 모두 `None` 이다 — 콜백은 공정 자리가 비면 그 점을
+    무시한다. 원 확보율은 가용대수 ÷ 소요대수로 다시 낸다: HOME 의 `확보율`·`기준 확보율` 은
+    선행 B/O 를 켜면 변동률이 함께 곱해져 원 값이 남지 않는다.
+    """
+    if not linked:
+        return [None] * len(HOME_CELL_LINK_FIELDS)
+    parsed_month = _month(month)
+    available_count = _finite(available)
+    required_count = _finite(required)
+    raw_rate = (
+        available_count / required_count
+        if available_count is not None and required_count is not None and required_count > 0
+        else None
+    )
+    return [
+        str(process).strip() or None,
+        parsed_month,
+        _finite(displayed_rate),
+        raw_rate,
+        available_count,
+        required_count,
+        _finite(execution_delta) or 0.0,
+    ]
+
+
+def parse_home_cell_link(customdata: object) -> HomeCellLink | None:
+    """선택된 점의 `customdata` 꼬리를 읽는다. 공정·달이 없으면(과거 실적 칸 등) None."""
+    if not isinstance(customdata, Sequence) or isinstance(customdata, str):
+        return None
+    width = len(HOME_CELL_LINK_FIELDS)
+    if len(customdata) < width:
+        return None
+    process, month, displayed, raw, available, required, delta = customdata[-width:]
+    if not isinstance(process, str) or not process.strip():
+        return None
+    parsed_month = _month(month)
+    if parsed_month is None:
+        return None
+    return HomeCellLink(
+        process=process.strip(),
+        month=parsed_month,
+        displayed_rate=_finite(displayed),
+        raw_rate=_finite(raw),
+        available=_finite(available),
+        required=_finite(required),
+        execution_delta=_finite(delta) or 0.0,
+    )
+
+
+def first_home_cell_link(selection_state: object) -> HomeCellLink | None:
+    """`st.plotly_chart` 선택 상태(`{"selection": {"points": [...]}}`)에서 이동할 첫 칸.
+
+    빈 선택(같은 칸을 다시 누르거나 더블클릭하면 빈 선택이 온다)과 공정 없는 점은 None 이다.
+    """
+    if not isinstance(selection_state, Mapping):
+        return None
+    selection = selection_state.get("selection")
+    if not isinstance(selection, Mapping):
+        return None
+    points = selection.get("points")
+    if not isinstance(points, Sequence) or isinstance(points, str):
+        return None
+    for point in points:
+        if isinstance(point, Mapping):
+            link = parse_home_cell_link(point.get("customdata"))
+            if link is not None:
+                return link
+    return None
+
+
+def home_cell_request(link: HomeCellLink, *, section: str) -> ProcessDetailRequest:
+    """누른 칸과 **지금** HOME 보기 조건으로 전달 칸 값을 만든다.
+
+    토글은 위젯 키(`home_state`)를 그대로 읽는다. 토글을 바꾸면 HOME 이 앱 전체로 다시 돌아 그림이
+    바뀌므로 누른 그림과 이 값은 늘 같은 조건이다.
+    """
+
+    def toggle(key: str) -> bool:
+        return bool(st.session_state.get(key, HOME_TOGGLE_DEFAULTS[key]))
+
+    return ProcessDetailRequest(
+        process=link.process,
+        month=link.month,
+        source=FROM_HOME,
+        section=section,
+        displayed_rate=link.displayed_rate,
+        raw_rate=link.raw_rate,
+        available=link.available,
+        required=link.required,
+        execution_delta=link.execution_delta,
+        show_advance=toggle(ADVANCE_TOGGLE_KEY),
+        show_execution=toggle(EXECUTION_TOGGLE_KEY),
+        include_edp=toggle(EDP_TOGGLE_KEY),
+    )
+
+
+def request_query_params(request: ProcessDetailRequest, *, theme: str | None) -> dict[str, str]:
+    """`st.switch_page` 에 넘길 주소 인자. 달이 없으면 공정·출처만, 테마는 값이 있을 때만 싣는다."""
+    params = {PROCESS_PARAM: request.process}
+    if request.month is not None:
+        params[MONTH_PARAM] = str(request.month)
+    if request.source:
+        params[FROM_PARAM] = request.source
+    if theme:
+        params[THEME_QUERY_PARAM] = theme
+    return params
+
+
+def open_process_detail(request: ProcessDetailRequest) -> None:
+    """전달 칸을 적고 공정 Capa 상세로 옮긴다. **위젯 콜백 안에서** 부른다.
+
+    콜백 안의 `st.switch_page` 는 Streamlit 1.63 이 지원하는 길이다 — 지금 회차(HOME 프래그먼트)의
+    본문을 돌리지 않고 상세 화면이 앱 전체 회차로 돈다. 갈 곳이 없으면(내비게이션이 없는 단독 실행 —
+    AppTest 는 실행마다 페이지 목록을 새로 만들어 콜백 시점에는 등록된 페이지가 없다) 옮기지 않고
+    적은 전달 칸도 거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
+    """
+    st.session_state[PROCESS_DETAIL_REQUEST_KEY] = request
+    theme = st.query_params.get(THEME_QUERY_PARAM)
+    try:
+        st.switch_page(
+            PROCESS_CAPA_DETAIL.path,
+            query_params=request_query_params(request, theme=theme),
+        )
+    except StreamlitPageNotFoundError:
+        st.session_state.pop(PROCESS_DETAIL_REQUEST_KEY, None)
+
+
+def open_home_cell(selection_state: object, *, section: str) -> bool:
+    """HOME 그림의 선택 상태로 상세 화면을 연다. 열 칸이 없으면(빈 선택·과거 칸) 아무것도 않는다."""
+    link = first_home_cell_link(selection_state)
+    if link is None:
+        return False
+    open_process_detail(home_cell_request(link, section=section))
+    return True
+
+
+def lowest_rate_process(items: Sequence[ProcessPickerItem]) -> str | None:
+    """기본 공정 — 조회기간 최저 확보율이 가장 낮은 공정. 같으면 목록 차례가 앞선 공정이다.
+
+    판정할 확보율이 하나도 없으면(모든 공정이 `unavailable`) 목록 첫 공정, 목록이 비면 None.
+    공정 선택 팝업의 요약(`services/process_picker.build_process_picker_summary`)을 그대로 읽는다.
+    """
+    rated = [item for item in items if item.minimum_rate is not None]
+    if rated:
+        return min(rated, key=lambda item: cast(float, item.minimum_rate)).process
+    return items[0].process if items else None
+
+
+def first_shortfall_month(
+    rates: Iterable[tuple[object, object]], thresholds: SecurementThresholds
+) -> int | None:
+    """기본 달 — 달 차례로 그 달 확보기준에 못 미친 첫 달. 없으면 None(부르는 쪽이 첫 달을 연다).
+
+    `rates` 는 (정수 `YYYYMM`, 확보율) 짝이다. 판정은 HOME·Static Capa 와 같은 `thresholds.status`
+    한 길이다 — 「확보」가 아니면(경고·부족) 미달이다. 확보율이 없는 달은 건너뛴다.
+    """
+    judged = sorted(
+        (month, rate)
+        for month, rate in ((_month(month), _finite(rate)) for month, rate in rates)
+        if month is not None and rate is not None
+    )
+    for month, rate in judged:
+        if thresholds.status(rate, month) != "secure":
+            return month
+    return None
+
+
+def take_process_detail_request() -> ProcessDetailRequest | None:
+    """전달 칸을 꺼낸다(`pop`). 상세 화면이 **맨 앞에서**, 부트스트랩·계산보다 먼저 부른다.
+
+    꺼낸 값은 지역 변수로 들고 있다가 `resolve_process_and_month(request=…)` 에 넘긴다. 칸을
+    공정·달을 정하는 자리에서야 꺼내면, 그 앞에서 부트스트랩·계산 오류로 멈춘 회차가 칸을 남기고 —
+    나중에 사이드바로 들어온 방문이 그 칸을 「HOME 에서 온 것」으로 읽는다. 꺼낸 뒤 사용자 조작으로
+    끊긴 회차는 출처 띠만 잃는다 — 주소 인자(`process`·`month`)는 정하는 자리에서야 지우므로 다음
+    회차가 같은 공정·달을 연다.
+    """
+    request = st.session_state.pop(PROCESS_DETAIL_REQUEST_KEY, None)
+    return request if isinstance(request, ProcessDetailRequest) else None
+
+
+def _read_detail_query() -> tuple[tuple[str, str], ...]:
+    """주소에 있는 이 화면의 인자만 (이름, 값) 차례로. 다른 인자(`theme` 등)는 보지 않는다."""
+    found: list[tuple[str, str]] = []
+    for name in DETAIL_QUERY_PARAMS:
+        if name in st.query_params:
+            found.append((name, str(st.query_params.get(name, ""))))
+    return tuple(found)
+
+
+def _continues_this_page() -> bool:
+    """직전에 끝까지 돈 실행도 이 페이지였나. 판정하지 못하면 False — 새 방문으로 본다.
+
+    `app.py` 맨 위의 실행 표지(`sidebar_status.begin_app_run`)는 실행이 끝까지 돌았을 때 그 페이지를
+    적는다. 이번 실행 도중에 읽으면 직전에 끝까지 돈 실행의 페이지다(`complete` 는 이번 실행이 이미
+    내려 두었으므로 보지 않는다). 표지가 없는 단독 실행(페이지만 띄운 시험)은 늘 새 방문이다.
+    """
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    ctx = get_script_run_ctx(suppress_warning=True)
+    return isinstance(state, dict) and ctx is not None and state.get("page") == ctx.page_script_hash
+
+
+def resolve_process_and_month(
+    processes: Sequence[str],
+    months: Sequence[int],
+    *,
+    request: ProcessDetailRequest | None,
+    default_process: Callable[[], str | None] | str | None,
+    default_month: Callable[[str | None], int | None] | int | None = None,
+) -> ProcessDetailEntry:
+    """페이지 첫머리, **공정 선택 상자를 만들기 전에** 부른다. 공정·달을 정해 세션에 적는다.
+
+    차례:
+    1. 페이지가 맨 앞에서 꺼낸 전달 칸(`request` — `take_process_detail_request`). HOME 이 적은 값이
+       있으면 그것이 답이다.
+    2. 없으면 주소 인자가 마지막으로 적용한 묶음(`PROCESS_DETAIL_QUERY_SEEN_KEY`)과 다를 때만
+       적용한다. 읽은 인자는 그 키만 지운다.
+    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정을 바꿔도 보던 달은 그대로다.
+    4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`. 둘 다 함수일 수
+       있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보기준 미달 달 같은 것), 함수는
+       **기본값이 필요한 회차에만** 부른다. 세션·전달 칸·주소로 공정이 정해진 회차는 기본 공정
+       요약을 만들지 않는다.
+    5. 지금 목록에 맞춘다(`prune_choice`). 넘겨받은 공정이 목록에 없으면 기본 공정을 열고
+       `missing_process` 로, 달이 축 밖이면 기본 달을 열고 `month_outside` 로 알린다.
+
+    밖에서 들어온(1·2) 공정에 달이 없으면 지난번 달이 아니라 그 공정의 기본 달을 연다.
+    """
+    options = [str(process) for process in processes]
+    month_options = [int(month) for month in months]
+
+    query = _read_detail_query()
+    wanted_process: str | None = None
+    wanted_month: int | None = None
+    entered = False
+    if request is not None:
+        wanted_process, wanted_month, entered = request.process, request.month, True
+    elif query and query != st.session_state.get(PROCESS_DETAIL_QUERY_SEEN_KEY):
+        values = dict(query)
+        wanted_process = values.get(PROCESS_PARAM, "").strip() or None
+        wanted_month = _month(values.get(MONTH_PARAM))
+        entered = wanted_process is not None or wanted_month is not None
+    if query:
+        st.session_state[PROCESS_DETAIL_QUERY_SEEN_KEY] = query
+        for name, _ in query:
+            del st.query_params[name]
+    else:
+        # 주소에서 인자가 걷힌 뒤의 회차다. 같은 링크로 다시 들어오면 그때는 다시 적용한다.
+        st.session_state.pop(PROCESS_DETAIL_QUERY_SEEN_KEY, None)
+
+    fallback_memo: list[str | None] = []
+
+    def fallback_process() -> str | None:
+        # 기본 공정은 비쌀 수 있다(공정별 요약). 필요한 회차에 한 번만 낸다.
+        if not fallback_memo:
+            chosen = default_process() if callable(default_process) else default_process
+            fallback_memo.append(chosen if chosen in options else (options[0] if options else None))
+        return fallback_memo[0]
+
+    missing_process: str | None = None
+    if wanted_process is not None:
+        if wanted_process in options:
+            st.session_state[PROCESS_DETAIL_PROCESS_KEY] = wanted_process
+        else:
+            missing_process = wanted_process
+            st.session_state[PROCESS_DETAIL_PROCESS_KEY] = fallback_process()
+    saved_process = st.session_state.get(PROCESS_DETAIL_PROCESS_KEY)
+    keeps_saved = saved_process is not None and str(saved_process) in set(options)
+    process = prune_choice(
+        PROCESS_DETAIL_PROCESS_KEY,
+        options,
+        default=None if keeps_saved else fallback_process(),
+    )
+
+    def default_month_of(chosen: str | None) -> int | None:
+        value = default_month(chosen) if callable(default_month) else default_month
+        if value in month_options:
+            return value
+        return month_options[0] if month_options else None
+
+    month_outside: int | None = None
+    if wanted_month is not None and wanted_month in month_options:
+        month: int | None = wanted_month
+    elif wanted_month is not None or entered:
+        month_outside = wanted_month
+        month = default_month_of(process)
+    else:
+        saved = st.session_state.get(PROCESS_DETAIL_MONTH_KEY)
+        month = saved if isinstance(saved, int) and saved in month_options else None
+        if month is None:
+            month = default_month_of(process)
+    st.session_state[PROCESS_DETAIL_MONTH_KEY] = month
+
+    if request is not None and request.source == FROM_HOME:
+        st.session_state[PROCESS_DETAIL_ORIGIN_KEY] = request
+    elif not _continues_this_page() or entered:
+        st.session_state.pop(PROCESS_DETAIL_ORIGIN_KEY, None)
+    origin = st.session_state.get(PROCESS_DETAIL_ORIGIN_KEY)
+    if not isinstance(origin, ProcessDetailRequest) or origin.process != process:
+        st.session_state.pop(PROCESS_DETAIL_ORIGIN_KEY, None)
+        origin = None
+    return ProcessDetailEntry(
+        process=process,
+        month=month,
+        origin=origin,
+        missing_process=missing_process,
+        month_outside=month_outside,
+    )
+
+
+# 출처 띠 앞 아이콘. 띠는 알림 상자가 아니라 캡션 한 줄이다 — 알림 상자 세 색은 뜻으로 가르고
+# (`docs/design_system.md` 2-3) 출처는 그 어느 뜻도 아니다.
+ORIGIN_BAND_ICON = ":material/call_received:"
+
+
+def _percent(rate: float) -> str:
+    return f"{rate:.0%}"
+
+
+def origin_band_text(origin: ProcessDetailRequest, *, month_text: str) -> str:
+    """출처 띠 한 줄. HOME 표시값이 원 확보율과 어떻게 갈리는지 적는다.
+
+    HOME 확보율 = (원 확보율 + 실행 증감 %p) × 선행 B/O 변동률이다(`execution_capacity`·
+    `advance_load`). 이 화면의 표는 원 확보율이므로 차이를 먼저 밝힌다. 예: 「HOME 주요공정 확보율 ·
+    26.03 칸에서 열었습니다 · 표시 103% = 원 확보율 98% + 실행 Capa +5.0%p · 아래는 원 확보율」.
+    """
+    place = f"{origin.section} · {month_text}" if origin.section else month_text
+    head = f"HOME {place} 칸에서 열었습니다"
+    displayed, raw = origin.displayed_rate, origin.raw_rate
+    if displayed is None or raw is None:
+        return head
+    adjusted = bool(origin.execution_delta) or (origin.show_advance and displayed != raw)
+    if not adjusted:
+        return f"{head} · 표시 {_percent(displayed)} = 원 확보율(아래 표와 같은 값)"
+    formula = f"표시 {_percent(displayed)} = 원 확보율 {_percent(raw)}"
+    if origin.execution_delta:
+        formula += f" + 실행 Capa {origin.execution_delta:+.1f}%p"
+    if origin.show_advance:
+        formula += " (선행 B/O 반영)"
+    return f"{head} · {formula} · 아래는 원 확보율"

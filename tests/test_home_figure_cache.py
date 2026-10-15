@@ -253,6 +253,15 @@ def test_a_new_schema_does_not_reuse_old_figures(conditions: HomeFigureCacheKey)
     assert take_home_figures(LOB_FIGURES, conditions) is None
 
 
+def test_the_schema_moved_past_figures_without_the_detail_link() -> None:
+    """51 부터 주요공정·상세 B/N 표적 막대 `customdata` 끝에 공정 Capa 상세 이동 정보가 있다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(이동 정보 없음)이 새 세션에도 나가 칸을 눌러도
+    아무 데도 가지 않는다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 51
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

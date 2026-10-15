@@ -390,14 +390,16 @@ def _grid_hover_target_bar(
     bases: Sequence[float],
     *,
     row_height: float,
-    customdata: Sequence[Sequence[str]],
+    customdata: Sequence[Sequence[object]],
     hovertemplate: str,
 ) -> go.Bar:
-    """보이지 않는 hover 표적.
+    """보이지 않는 hover·클릭 표적.
 
     눈에 보이는 칸·막대는 행 높이보다 낮고 좌우 인셋만큼 짧아 칸 가장자리에서 툴팁이
     뜨지 않는다. 행 전체를 덮는 이 막대가 표적이므로 막대가 0 길이인 칸에서도 칸
-    어디서나 값이 뜬다.
+    어디서나 값이 뜬다. 칸을 누르는 것도 이 막대다 — 나머지 trace 는 `hoverinfo="skip"` 이라
+    선택되지 않는다. 그래서 공정 Capa 상세로 가는 정보(`process_detail_state.HOME_CELL_LINK_FIELDS`)
+    가 이 막대의 `customdata` 끝에 실린다.
     """
     return go.Bar(
         x=[1.0] * len(centers),
@@ -410,6 +412,25 @@ def _grid_hover_target_bar(
         hovertemplate=hovertemplate,
         showlegend=False,
     )
+
+
+def keep_unselected_opaque(figure: go.Figure) -> None:
+    """칸을 눌러도 나머지 칸·막대·글자가 흐려지지 않게 한다. 그림을 다 만든 뒤 부른다.
+
+    선택을 켠 그림에서 점 하나를 누르면 Plotly 는 같은 축의 **모든** trace 에 선택 점을 넣고,
+    고르지 않은 점을 `DESELECTDIM`(0.2) 배로 흐린다 — `hoverinfo="skip"` 인 색 막대·숫자 글자도
+    흐려진다. 고르지 않은 점의 불투명도를 1 로, 글자색을 원래 색으로 못박아 막는다. 클릭은 화면을
+    옮기는 것이지 고른 칸을 강조하는 것이 아니다.
+    """
+    for trace in figure.data:
+        if trace.type == "bar":
+            trace.unselected = {"marker": {"opacity": 1}}
+        elif trace.type == "scatter":
+            unselected: dict[str, Any] = {"marker": {"opacity": 1}}
+            text_color = trace.textfont.color
+            if isinstance(text_color, str):
+                unselected["textfont"] = {"color": text_color}
+            trace.unselected = unselected
 
 
 def _grid_layout(height: float) -> dict[str, Any]:

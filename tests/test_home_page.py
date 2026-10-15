@@ -1,6 +1,7 @@
 # Purpose: HOME 대시보드가 내장 시드 시나리오에서 렌더링되는 현재 동작을 고정한다.
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,15 @@ from capa_simulation.components.home_dimensions import (
     delta_ink_yshift_px,
 )
 from capa_simulation.components.home_preference import THRESHOLD_POINTER
+from capa_simulation.components.home_rendering import (
+    BOTTLENECK_MONTHS_CHART_KEY,
+    HOME_CELL_CHART_KEYS,
+    KEY_PROCESS_MONTHS_CHART_KEY,
+    open_clicked_home_cell,
+)
 from capa_simulation.design import tokens
 from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
+from capa_simulation.process_detail_state import HOME_BOTTLENECK_SECTION, HOME_KEY_PROCESS_SECTION
 from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
@@ -32,8 +40,9 @@ def _home_script(database_path: Path, *, retain_process_dialog: bool = False) ->
     """app.py의 전역 준비 단계만 재현한 뒤 HOME 페이지를 실행한다.
 
     AppTest에는 plotly_chart 접근자가 없어 st.plotly_chart를 감싸 호출별 trace 수와
-    config를 session_state에 기록한다. Components v2 위젯은 모듈 import 시점에 한 번 등록되므로
-    AppTest 인스턴스를 새로 만들면 레지스트리에 남아 있지 않다. 가로 스크롤바는
+    config·칸 선택(`on_select`·`selection_mode`)을 session_state에 기록한다. Components v2
+    위젯은 모듈 import 시점에 한 번 등록되므로 AppTest 인스턴스를 새로 만들면 레지스트리에 남아
+    있지 않다. 가로 스크롤바는
     특성화 대상이 아니므로 호출 횟수만 세는 스텁으로 대체한다.
 
     AppTest는 매 실행마다 fragment 저장소를 새로 만들어 dialog 내부 클릭도 전체 실행으로
@@ -59,6 +68,7 @@ apply_pending_scenario_preset()
 
 st.session_state["spy_traces"] = []
 st.session_state["spy_configs"] = {{}}
+st.session_state["spy_selections"] = {{}}
 st.session_state["spy_figures"] = {{}}
 st.session_state["spy_scrollbars"] = 0
 _original_plotly_chart = st.plotly_chart
@@ -72,6 +82,13 @@ def _spy_plotly_chart(figure, *args, **kwargs):
     st.session_state["spy_configs"] = {{
         **st.session_state["spy_configs"],
         kwargs.get("key"): dict(kwargs.get("config") or {{}}),
+    }}
+    st.session_state["spy_selections"] = {{
+        **st.session_state["spy_selections"],
+        kwargs.get("key"): (
+            kwargs.get("on_select", "ignore"),
+            kwargs.get("selection_mode", ("points", "box", "lasso")),
+        ),
     }}
     st.session_state["spy_figures"] = {{
         **st.session_state["spy_figures"],
@@ -559,6 +576,32 @@ def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> No
 
     assert configs["production_detail_months"]["staticPlot"] is True
     assert configs["bottleneck_detail_labels"]["staticPlot"] is True
+
+
+def test_only_the_two_month_figures_open_the_process_detail_on_a_cell_click(
+    seeded_database: Path,
+) -> None:
+    """칸을 누르면 공정 Capa 상세가 열리는 그림은 `주요공정 확보율`·`상세 B/N 공정` 월 그림
+    둘뿐이다.
+
+    `on_select` 를 지우면 클릭이 조용히 죽고, 다른 그림에 켜면 그 그림 위 터치 스크롤이 막힌다 —
+    선택을 켠 그림은 정확히 터치 스크롤 막이에 넘기는 묶음(`HOME_CELL_CHART_KEYS`)이어야 한다.
+    """
+    app = _run(seeded_database)
+    selections = app.session_state["spy_selections"]
+
+    assert len(selections) == 8
+    linked = {key for key, (on_select, _) in selections.items() if on_select != "ignore"}
+    assert linked == set(HOME_CELL_CHART_KEYS)
+    for key, section in (
+        (KEY_PROCESS_MONTHS_CHART_KEY, HOME_KEY_PROCESS_SECTION),
+        (BOTTLENECK_MONTHS_CHART_KEY, HOME_BOTTLENECK_SECTION),
+    ):
+        on_select, selection_mode = selections[key]
+        assert isinstance(on_select, partial)
+        # 콜백은 자기 그림의 선택 칸과 자기 구획 이름을 읽는다.
+        assert (on_select.func, on_select.args) == (open_clicked_home_cell, (key, section))
+        assert selection_mode == "points"
 
 
 def test_home_reuses_cached_figures_on_an_unchanged_rerun(seeded_database: Path) -> None:

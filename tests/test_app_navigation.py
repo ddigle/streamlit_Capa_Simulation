@@ -16,7 +16,13 @@ from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
+from capa_simulation.components.home_rendering import (
+    BOTTLENECK_MONTHS_CHART_KEY,
+    HOME_CELL_CHART_KEYS,
+    KEY_PROCESS_MONTHS_CHART_KEY,
+)
 from capa_simulation.components.period_field import PERIOD_DIALOG_KEY, PERIOD_FIELD_KEY
+from capa_simulation.components.plotly_touch_scroll import plotly_touch_scroll_script
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.scenario_status import (
     SAVE_MODE,
@@ -39,11 +45,13 @@ from capa_simulation.navigation import (
     EQUIPMENT_TAB_KEY,
     HOME,
     IMPLEMENTING_SUFFIX,
+    PROCESS_CAPA_DETAIL,
     SCENARIO_MANAGEMENT,
     SIDEBAR_GROUPS,
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
 )
+from capa_simulation.process_detail_state import PROCESS_DETAIL_PROCESS_KEY
 from capa_simulation.scenario_preset_state import (
     MONTH_RANGE_KEY,
 )
@@ -70,6 +78,7 @@ EXPECTED_PAGES = [
     ("app_pages/load_conversion.py", "생산 계획", ":material/scale:", False),
     ("app_pages/reference_data.py", "기준 정보", ":material/settings:", False),
     ("app_pages/calculation_result.py", "산출 결과", ":material/monitoring:", False),
+    ("app_pages/process_capa_detail.py", "공정 Capa 상세", ":material/troubleshoot:", False),
     ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
     ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     (
@@ -113,7 +122,12 @@ def test_exactly_one_page_is_the_default_entry_point() -> None:
 
 def test_group_membership_matches_the_sidebar_sections() -> None:
     assert STATIC_CAPA.path == "app_pages/static_capa.py"
-    assert len(STATIC_CAPA_SUBPAGES) == 4
+    assert len(STATIC_CAPA_SUBPAGES) == 5
+    # 공정 Capa 상세는 산출 결과 바로 다음이다(2026-10-15 사용자 결정).
+    static_paths = [spec.path for spec in STATIC_CAPA_SUBPAGES]
+    assert static_paths.index(PROCESS_CAPA_DETAIL.path) == (
+        static_paths.index("app_pages/calculation_result.py") + 1
+    )
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
     # 자원 현황(설비·공간) → 실적(효율·UPEH·수율) → 그 결과가 쌓인 재공 순서다.
     assert len(DYNAMIC_CAPA_SUBPAGES) == 6
@@ -412,12 +426,13 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     app.run()
 
     # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
-    # Guide·Summary·Print 스크립트 셋을 함께 싣는다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일도
-    # 부트스트랩 앞이다 — 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
+    # Guide·Summary·Print 스크립트 셋과 칸 선택 그림의 터치 스크롤 막이를 함께 싣는다. ⋮ 메뉴
+    # 감춤과 인쇄 규칙을 담은 껍데기 스타일도 부트스트랩 앞이다 — 부트스트랩 오류 화면
+    # (`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
     # 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다 — 오류
     # 화면의 제목도 같은 서체로 선다.
     # 「준비 중」으로 보낸 Summary GAP 은 페이지를 다 그린 **뒤** 만든다(`warm_intro_summary`).
-    one_run = ["intro", "shell", "type", "toolbar:3", "bootstrap", "summary", "warm"]
+    one_run = ["intro", "shell", "type", "toolbar:4", "bootstrap", "summary", "warm"]
     assert order == one_run * 2
     # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
     sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]
@@ -874,6 +889,59 @@ def test_the_dialog_host_opens_and_closes_in_its_own_event_slot(
     assert not list(app.exception), [element.message for element in app.exception]
     assert browser.started == [[host]]
     assert _event_slots(browser.messages) == {host_slot: page_slots[host_slot]}
+
+
+def test_an_ignored_home_cell_click_reruns_the_figures_in_their_own_event_slots(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HOME 월 그림의 무시되는 클릭(과거 실적 칸·같은 칸 다시 누르기·더블클릭)은 그림
+    프래그먼트(`render_home_figures`)만 다시 돌린다. 그 프래그먼트는 스타일만 든 `st.html`(구분
+    컬럼 폭·라벨 칸 내림·월 캔버스 폭)을 이벤트 칸에 쓴다 — 프래그먼트 회차가 전체 실행 때와
+    **같은 자리에 같은 내용**만 쓰는지 진짜 프래그먼트 회차로 본다. 다른 자리를 쓰면 페이지의
+    이벤트 요소(툴바 Guide 단추를 보이게 하는 규칙)를 덮어 다음 전체 실행까지 돌아오지 않는다
+    (2026-10-14 팝업 호스트 결함과 같은 부류).
+
+    AppTest 는 Plotly 선택을 넣지 못한다. 무시되는 클릭의 콜백은 아무것도 하지 않으므로 그 회차는
+    그림 프래그먼트만 도는 회차와 같다.
+    """
+    browser = install_fragment_browser(monkeypatch)
+    app = _open_home_for_fragment_runs(_app)
+    page_slots = _event_slots(browser.messages)
+    figures = browser.fragment_of(BOTTLENECK_MONTHS_CHART_KEY)
+    assert browser.fragment_of(KEY_PROCESS_MONTHS_CHART_KEY) == figures
+    own = {index: slot for index, slot in page_slots.items() if slot[2] == figures}
+    assert own, "그림 프래그먼트가 전체 실행에서 이벤트 칸에 쓴 것이 없다"
+    assert all(kind == "html" and "<style>" in body for kind, body, _ in own.values())
+    assert any(
+        index not in own and "#capa-guide-button" in body and "inline-block" in body
+        for index, (_, body, _) in page_slots.items()
+    )
+
+    browser.fragment_queue = [figures]
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert browser.started == [[figures]]
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    )
+    assert _event_slots(browser.messages) == own
+
+
+def test_the_toolbar_iframe_carries_the_touch_scroll_guard_for_home_cell_charts(
+    _app: AppTest,
+) -> None:
+    """칸 선택을 켠 HOME 그림 위에서 시작한 터치가 화면을 스크롤하게 하는 막이는 테마 버튼
+    iframe 에 한 번 실린다(`components/plotly_touch_scroll.py`). 빠지면 그 그림 위 터치 스크롤이
+    다시 막힌다."""
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    guard = plotly_touch_scroll_script(HOME_CELL_CHART_KEYS)
+    frames = [str(element.proto.srcdoc) for element in app.get("iframe")]
+    assert sum(frame.count(guard) for frame in frames) == 1
 
 
 def test_the_scenario_dialog_writes_nothing_outside_itself_when_switching_to_save(
@@ -1544,9 +1612,32 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 # 사라진다. 핀은 첫 연결 때 잡히는 게으른 핀이라, 대상으로 적는 것과 실제로 여는 것을 따로 본다.
 
 
-def test_only_the_equipment_status_screen_declares_the_equipment_db_pin() -> None:
+def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
+    """가용설비 현황과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러 번 연다)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
-    assert declared == {DYNAMIC_CAPA_SUBPAGES[0].path}
+    assert declared == {DYNAMIC_CAPA_SUBPAGES[0].path, PROCESS_CAPA_DETAIL.path}
+
+
+def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: AppTest) -> None:
+    """HOME 칸 클릭은 `st.switch_page(공정 Capa 상세, query_params=…)` 다(콜백 쪽은
+    `tests/test_process_detail_state.py`). 실제 `app.py` 내비게이션에서 그 주소로 들어오면 사이드바
+    `공정 상세 조건` 카드의 공정 상자가 그 공정을 보이고, 읽은 키만 지워 테마 인자는 남는다.
+    """
+    app = _app.run()
+    app.switch_page(PROCESS_CAPA_DETAIL.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    target = options[-1]
+
+    app.query_params.update({"process": target, "from": "home"})
+    app.query_params["theme"] = "dark"
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
+    assert "process" not in app.query_params
+    assert "from" not in app.query_params
+    assert app.query_params.get("theme") == ["dark"]
 
 
 def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
@@ -1717,7 +1808,7 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     equipment_pages = (
         DYNAMIC_CAPA_SUBPAGES[0].path,
         DYNAMIC_CAPA_SUBPAGES[1].path,
-        STATIC_CAPA_SUBPAGES[3].path,
+        "app_pages/standard_target_capa.py",
         DYNAMIC_CAPA_SUBPAGES[-1].path,
     )
     callers = {

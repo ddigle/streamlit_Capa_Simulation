@@ -39,6 +39,7 @@ from capa_simulation.components.home_figure_common import (
     _grid_row_rules,
     _text_width_units,
     _truncate_to_units,
+    keep_unselected_opaque,
 )
 from capa_simulation.components.plotly_layout import (
     add_figure_outer_border,
@@ -48,6 +49,7 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
+from capa_simulation.process_detail_state import home_cell_link_values
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 # 상세 B/N 공정 시트가 보여줄 순위 상한. 페이지가 서비스에 넘기는 값이고, 자르는 곳은
@@ -159,6 +161,10 @@ def build_bottleneck_detail_figures(
     막대는 확보율 80~150% 구간만 표현한다. 그래서 상위 순위는 대부분 막대가 0 길이다.
     공정명을 막대 안에 넣으면 가장 심각한 병목의 이름이 사라지므로, 이름은 막대와
     별개의 trace 로 각 칸 왼쪽 고정 앵커에 그린다.
+
+    칸을 누르면 그 칸의 공정·달로 공정 Capa 상세가 열린다(`home_rendering` 의 선택 콜백). 같은 행도
+    달마다 공정이 다르므로 이동 정보는 칸마다 표적 막대 `customdata` 끝에 싣는다
+    (`process_detail_state.home_cell_link_values`). 과거 실적 칸은 공정을 비워 이동하지 않는다.
     """
     labels = process_labels or ProcessLabels()
     month_count = max(len(month_labels), 1)
@@ -183,7 +189,7 @@ def build_bottleneck_detail_figures(
     track_bases: list[float] = []
     track_centers: list[float] = []
     track_lengths: list[float] = []
-    hover_values: list[list[str]] = []
+    hover_values: list[list[object]] = []
     bar_bases: list[float] = []
     bar_centers: list[float] = []
     bar_lengths: list[float] = []
@@ -225,6 +231,17 @@ def build_bottleneck_detail_figures(
                 _execution_hover_note(
                     row.get("확보율 증감"),
                     row.get("실행 비고"),
+                ),
+                # 누르면 이 칸의 공정·달로 공정 Capa 상세를 연다. 과거 실적 칸은 그 화면의 달 축에
+                # 없어 공정 자리를 비운다(콜백이 무시한다).
+                *home_cell_link_values(
+                    process=row["공정"],
+                    month=row["생산계획년월"],
+                    displayed_rate=rate,
+                    available=row["가용대수"],
+                    required=row["소요대수"],
+                    execution_delta=row.get("확보율 증감"),
+                    linked=past_month_labels is None or str(row["년월"]) not in past_month_labels,
                 ),
             ]
         )
@@ -451,4 +468,5 @@ def build_bottleneck_detail_figures(
     )
     add_quarter_boundaries(bottleneck_detail_month_figure, month_labels)
     flush_layout_items(bottleneck_detail_label_figure, bottleneck_detail_month_figure)
+    keep_unselected_opaque(bottleneck_detail_month_figure)
     return bottleneck_detail_label_figure, bottleneck_detail_month_figure
