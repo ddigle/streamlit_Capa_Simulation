@@ -51,6 +51,10 @@ from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_contributions,
     span_date_range,
 )
+from capa_simulation.services.process_equipment_timeline import (
+    ProcessEquipmentTimeline,
+    build_process_equipment_timeline,
+)
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -60,6 +64,7 @@ from capa_simulation.services.required_equipment import (
 )
 from capa_simulation.services.required_shortening import (
     TARGET_LEVELS,
+    MonthlyTarget,
     ShorteningPlan,
     plan_required_shortening,
     process_month_export_frame,
@@ -2059,3 +2064,131 @@ def get_milestone_transition_events(
         as_of.isoformat(),
     )
     return _cached_milestone_transition_events(cache_key, equipment)
+
+
+# 공정 Capa 상세의 설비 일정(참고). 필요단축일정 탭과 같은 계산을 공용 판정 기준(달마다 다른
+# 목표)으로 한 벌 더 두고, 공정 하나의 설비 일정(신규 호기·비가동 손실·전월 대비)을 따로 둔다.
+# 탭의 칸(`get_required_shortening`)은 그대로다.
+
+# (필요단축일정 키, 목표 기본값, 기본값과 다른 달의 (월, 목표))
+RequiredShorteningTargetCacheKey = tuple[
+    RequiredShorteningCacheKey, float, tuple[tuple[int, float], ...]
+]
+
+
+def required_shortening_target_cache_key(
+    shortening_key: RequiredShorteningCacheKey, target: MonthlyTarget
+) -> RequiredShorteningTargetCacheKey:
+    """`get_required_shortening_for_target` 의 키 — 탭의 계획 키에 목표(기본값 + 예외 달)를 더한다.
+
+    같은 입력이면 앞 원소가 탭의 키와 같다. 목표는 계산할 달로 좁혀 만든다(`target_from_thresholds`)
+    — 그 밖의 월별 예외가 키를 가르지 않게.
+    """
+    return (shortening_key, float(target.default), tuple(target.monthly))
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_required_shortening_for_target(
+    cache_key: RequiredShorteningTargetCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _required_equipment: Callable[[], pd.DataFrame],
+) -> ShorteningPlan:
+    """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요단축일정. `plan.at(목표)` 로 꺼낸다.
+
+    탭(`get_required_shortening`)과 같은 규칙이다 — 프레임은 해시하지 않고 키가 내용 지문·시나리오
+    키·달·오늘·목표를 모두 싣는다. 소요대수는 빗나갈 때만 로더로 꺼내고, 호기 구간은 같은 구간
+    캐시(`get_equipment_lifecycle_spans`)에서 받는다. 목표는 키에서 다시 세운다 — 키와 다른 목표가
+    들어올 길이 없다. 공정 선택은 이 결과를 고르기만 한다(공정끼리 따로 계산한다).
+    """
+    shortening_key, default, monthly = cache_key
+    _, equipment_digest, downtime_digest, _, _, months, today = shortening_key
+    span = span_date_range(months, _cutoff) if months else None
+    spans = (
+        get_equipment_lifecycle_spans(
+            (equipment_digest, downtime_digest, span[0].isoformat(), span[1].isoformat()),
+            _equipment=_equipment,
+            _downtime=_downtime,
+        )
+        if span is not None
+        else None
+    )
+    return plan_required_shortening(
+        equipment=_equipment,
+        downtime=_downtime,
+        baseline=_baseline,
+        cutoff=_cutoff,
+        required_equipment=_required_equipment(),
+        months=months,
+        today=date.fromisoformat(today),
+        levels=(MonthlyTarget(default=default, monthly=monthly),),
+        spans=spans,
+    )
+
+
+# (설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 공정)
+ProcessEquipmentTimelineCacheKey = tuple[str, str, str, str, tuple[int, ...], str]
+
+
+def process_equipment_timeline_cache_key(
+    *,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    months: Sequence[int],
+    process: str,
+) -> ProcessEquipmentTimelineCacheKey:
+    """`get_process_equipment_timeline` 의 키. 네 표는 거르기 전 그대로의 내용 지문이다.
+
+    **오늘은 넣지 않는다** — 구간·호기별 기여는 오늘을 보지 않는다. 필요단축일정 키를 이미
+    만들었으면 `process_timeline_key_from_shortening` 이 지문을 다시 계산하지 않고 같은 키를 낸다.
+    """
+    return (
+        frame_digest(equipment),
+        frame_digest(downtime),
+        frame_digest(baseline),
+        frame_digest(cutoff),
+        tuple(sorted({int(month) for month in months})),
+        str(process).strip(),
+    )
+
+
+def process_timeline_key_from_shortening(
+    shortening_key: RequiredShorteningCacheKey, process: str
+) -> ProcessEquipmentTimelineCacheKey:
+    """필요단축일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
+    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _ = shortening_key
+    return (
+        equipment_digest,
+        downtime_digest,
+        baseline_digest,
+        cutoff_digest,
+        tuple(sorted({int(month) for month in months})),
+        str(process).strip(),
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_process_equipment_timeline(
+    cache_key: ProcessEquipmentTimelineCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+) -> ProcessEquipmentTimeline:
+    """공정 하나의 설비 일정(`build_process_equipment_timeline`).
+
+    신규 호기·호기별 손실·전월 대비·비가동 화살표를 한 번에 싣는다.
+
+    프레임은 키를 만든 바로 그 표여야 한다(해시하지 않는다). 공정으로 거른 마스터로 구간을 두 번
+    (실제·비가동 없음) 만들므로 **공용 구간 캐시(`get_equipment_lifecycle_spans`)는 쓰지 않는다** —
+    공정 하나·그 공정 축만큼이라 작다. 단축 계획(오늘이 드는 것)은 따로 받아 `unit_events` 로
+    겹친다. 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
+    """
+    *_, months, process = cache_key
+    return build_process_equipment_timeline(
+        _equipment, _downtime, _baseline, _cutoff, process=process, months=months
+    )

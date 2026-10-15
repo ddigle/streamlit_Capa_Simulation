@@ -2066,6 +2066,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     rerun 은 다시 짝짓지 않고, `비교 안 함` 회차는 이 함수까지 오지 않는다. `get_shortening_progress_csv` 는
     그 행의 「진척 비교 CSV」 바이트를 같은 키 + 화면의 카드 차례로 캐시한다(지연 생성 아님). `_plan`·
     `_baseline`·`_rows` 는 그 키로 받은 바로 그것이어야 한다(해시하지 않는다).
+  - 공정 Capa 상세의 설비 일정 두 칸(파일 끝). `get_required_shortening_for_target` 은 달마다 다른 목표
+    하나(`MonthlyTarget`)의 필요단축일정이다 — 키(`required_shortening_target_cache_key`)는 탭의 계획
+    키에 목표(기본값 + 예외 달)를 더한 것이라 같은 입력이면 앞 원소가 탭의 키와 같고, 소요대수 로더·
+    구간 캐시도 탭과 같은 규칙이다. 탭의 `get_required_shortening` 칸은 그대로다.
+    `get_process_equipment_timeline`(max_entries 8)은 공정 하나의 설비 일정이다 — 키는 마스터·비가동·
+    기존보유·Cut-off 지문 + 달 + 공정이고 **오늘은 넣지 않는다**(`process_timeline_key_from_shortening`
+    이 계획 키의 지문으로 같은 키를 낸다). 공정으로 거른 구간을 두 번 만들므로 공용
+    `get_equipment_lifecycle_spans` 칸은 쓰지 않는다.
 
 ### 계산 서비스
 
@@ -3861,6 +3869,40 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     행을 「, 」로 잇는다. 검증이 묶음 안에서 같게 막는 칸(공정대분류·공정소분류·투자구분·동·층) 밖의
     글자(Model·확정상태)가 갈리면 서로 다른 값을 모듈 차례로 잇고, 반입일정은 가장 늦은 모듈의 날이다
     (묶음 Qual 과 같은 규칙).
+  - **달마다 다른 목표**(2026-10-15 사용자 결정 — 공정 Capa 상세의 단축 목표는 HOME → Preference 공용
+    판정 기준의 확보기준을 달마다 쓴다). 목표는 스칼라(탭의 다섯 값) 또는 `MonthlyTarget`(기본값 +
+    기본값과 다른 달의 `(월, 목표)`, 값으로 같고 해시된다)이고 `levels` 에 섞어 넘길 수 있다.
+    `target_from_thresholds(thresholds, months)` 가 `thresholds.for_month(M)` 의 확보 기준을 계산할
+    달로만 좁혀 만든다. 계산은 한 길이다 — `_plan_process`·`_process_month_rows` 가 달마다의 목표
+    벡터를 받고 스칼라는 모든 달에 같은 값을 넣는다. 그래서 다섯 값 계획은 그대로이고, 모든 달이 같은
+    `MonthlyTarget` 은 그 스칼라와 결과가 같다(`tests/test_required_shortening_monthly_target.py`).
+    `LevelPlan.level` 은 스칼라(달마다 다른 목표면 그 기본값), `monthly_target`·`target`·`target_for(M)`
+    가 목표를 알려 주고, `ShorteningPlan.at` 은 스칼라는 스칼라 계획에서(`isclose`), `MonthlyTarget` 은
+    같은 목표의 계획에서만 찾는다. 두 CSV 표의 `목표 확보율(%)` 은 달마다 다른 목표면 그 줄의 달(호기
+    표는 대상 월)의 목표다.
+- `src/capa_simulation/services/process_equipment_timeline.py`
+  - 공정 Capa 상세의 설비 일정(참고)을 만드는 순수 함수 묶음. **어느 DB 도 열지 않고 오늘을 보지
+    않는다.** `production_position(day, cutoff, months)` 는 날짜를 생산월 좌표로 옮긴다 — `day + int(c)`
+    의 달 칸, 칸 안은 `(그 날 - 1) / 그 달 일수`, 축 밖은 0·달 수로 자르고 앞·뒤를 알린다. W/D 구간
+    (`wd_window`)의 모든 날이 그 구간의 달 칸에 차례로 서는 것을 시험이 지킨다. 날짜의 뜻은 엔진과
+    같다(Qual·반입·비가동 경계는 다음 날, 반출·이설은 당일).
+  - `build_process_equipment_timeline` 이 공정 하나(`공정소분류` 완전 일치, 비가동도 그 설비명으로
+    거른다 — 비가동 검증은 거르기 전 마스터로 한다)의 `ProcessEquipmentTimeline` 을 낸다: 신규 호기
+    (`new_unit_rows` — 설비키마다 한 줄, 기존 N·보관 N·HBM·EDP·Qual 있음, 확정 「완료」·반출·이설 예정
+    포함, 묶음 Qual·반입은 가장 늦은 모듈), 호기 x 월 손실(`downtime_loss`), 전월 대비
+    (`availability_bridge`), 비가동 화살표(`downtime_arrows`), 기존보유 합, 축 내내 가용인 설비키 수.
+  - **비가동 손실은 반사실로 잰다** — 공정 호기만으로 구간을 실제·비가동 비움 두 번 만들어
+    (`build_equipment_lifecycle_spans(with_unit_share=True)`) 같은 `build_monthly_equipment_contributions`
+    에 넣은 「가용」 환산대수 차이다. 비가동 한 행의 몫은 비움 쪽 가용 구간을 그 행의 `[시작일, 종료일]`
+    로 잘라 같은 월별 기여에 넣은 값이라 경계 규칙이 엔진 그대로 걸린다. 셋업·보관·입고 전·사용기준
+    제외 호기의 비가동은 깎은 것이 없다(흐린 화살표). 화살표 꼬리는 x(시작 + 1), 촉은 x(종료 + 2)다.
+  - 불변식(시험): `기존보유 + 호기 가용 = 필요단축일정 계획의 가용대수`(같은 공정·달), `전월대비 = 신규
+    + 비가동 + 반출이설`, 화살표 행들이 깎은 기여일수 합 = 그 호기의 (비가동 없음 - 실제) 기여일수.
+  - `unit_events(timeline, plan.at(목표).units)` 가 신규 호기 줄에 단축 계획을 겹친다 — 단축 대상(계획
+    차례) → 나머지 신규(기여 시작이 축 안, 기여 시작 → 호기 번호) → 추가N. 목표 Qual 이 반입보다 이르면
+    `반입 전` 이다. `dynamic_readiness` 는 저장본 → Cut-off → 공정 이름 완전 일치 → HBM·EDP 호기 차례로
+    보고 처음 걸린 까닭 하나를 낸다(기존보유만 있으면 통과하되 호기 줄이 없다). 마스터를 검증하지 않아
+    회차마다 불러도 된다.
 - `src/capa_simulation/services/availability_gap.py`
   - Static(`RQ_EQP_AVBL`)과 Dynamic 을 한 표로 맞대어 GAP 을 낸다. 프레임 둘을 받아 하나를
     돌려주는 순수 함수다.

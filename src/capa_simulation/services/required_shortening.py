@@ -63,12 +63,21 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 당긴 날짜가 반입보다 이르면 엔진으로 다시 재면 0 이 된다 — 그래서 늘어나는 몫은 엔진을 다시
 돌리지 않고 위 식으로 낸다. 그 호기의 **운영 비가동 일정**과 겹친 날은 엔진처럼 기여하지 않는다.
 
+## 목표 — 다섯 값과 달마다 다른 목표
+
+필요단축일정 탭은 다섯 값(`TARGET_LEVELS`, 모든 달이 같은 스칼라)을 한 번에 계산해 고른다. 공정 Capa
+상세는 HOME → Preference 의 공용 판정 기준을 그대로 목표로 쓴다 — 확보기준 기본값에 **월별 예외**가
+있으면 달마다 목표가 다르다(`MonthlyTarget`, `target_from_thresholds`, 2026-10-15 사용자
+결정). 계산은 한 길이다: 달마다 `소요 x 그 달의 목표` 와 가용을 맞댄다. 스칼라 목표는 모든 달에
+같은 값을 넣은 것과 같아서, 모든 달이 같은 값인 `MonthlyTarget` 계획과 결과가 같다.
+
 ## 내보내기
 
 `unit_export_frame` 은 호기마다 한 줄로 기존 일정 → 단축 일정과 설비 마스터 속성, 대상 월의
 부족을 펼친 표다(「호기별 단축 일정 CSV」). 목표 여럿을 넘기면 목표마다 블록으로 잇고
-`목표 확보율(%)` 칸으로 가른다. 마스터 속성은 계산할 때 후보마다 한 번 모아 결과
-(`ShorteningPlan.unit_master`)에 싣는다 — 화면이 rerun 마다 설비 마스터를 다시 검증하지 않게.
+`목표 확보율(%)` 칸으로 가른다. 달마다 다른 목표는 그 칸이 줄의 달(호기 표는 대상 월)의
+목표다. 마스터 속성은 계산할 때 후보마다 한 번 모아 결과(`ShorteningPlan.unit_master`)에
+싣는다 — 화면이 rerun 마다 설비 마스터를 다시 검증하지 않게.
 모듈 묶음은 **옮기는 모듈 행**의 값이고, 묶음 안에서 값이 갈리면 글자는 서로 다른 값을 모듈
 차례로 「, 」로 잇고 반입일정은 가장 늦은 모듈의 날이다(묶음 Qual 과 같은 규칙). 가상 호기
 「추가N」은 마스터에 없으므로 속성·기존 일정이 빈칸이다.
@@ -81,6 +90,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import TypeAlias
 
 import pandas as pd
 
@@ -106,6 +116,7 @@ from capa_simulation.services.monthly_equipment_availability import (
 from capa_simulation.services.process_cutoff import cutoff_lookup
 from capa_simulation.services.securement_cross_check import dynamic_available_equipment
 from capa_simulation.services.securement_rate import calculate_securement_rate
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
 __all__ = [
@@ -131,12 +142,15 @@ __all__ = [
     "CandidateModule",
     "CandidateUnit",
     "LevelPlan",
+    "MonthlyTarget",
     "ShorteningPlan",
+    "TargetLevel",
     "level_percent",
     "plan_from_availability",
     "plan_required_shortening",
     "process_month_export_frame",
     "shortening_candidates",
+    "target_from_thresholds",
     "unit_export_frame",
     "unit_number",
 ]
@@ -190,7 +204,8 @@ UNIT_PLAN_COLUMNS = (
 )
 
 LEVEL_COLUMN = "목표 확보율(%)"
-"""내보내기 표의 목표 칸. 90·100·110·120·130 정수다(`level_percent`)."""
+"""내보내기 표의 목표 칸. 백분율 정수다(`level_percent`) — 다섯 값은 90·100·110·120·130 이고, 달마다
+다른 목표(`MonthlyTarget`)는 그 줄의 달(호기 표는 대상 월)의 목표다."""
 
 # 내보내기 표가 호기 줄에 붙이는 설비 마스터 속성. 이름은 마스터 계약 그대로다.
 _MASTER_TEXT_COLUMNS = (
@@ -286,20 +301,91 @@ class CandidateUnit:
 
 
 @dataclass(frozen=True)
+class MonthlyTarget:
+    """달마다 다른 목표 확보율(비율). `monthly` 에 없는 달은 `default` 다.
+
+    값으로 같고 해시된다 — 같은 기본값과 같은 예외면 같은 목표다. 그래서 기본값과 같은 예외는 지우고
+    달 차례로 둔다. 같은 달이 두 번 들면 `ValueError` 다.
+    """
+
+    default: float
+    monthly: tuple[tuple[int, float], ...] = ()
+    """기본값과 다른 달의 `(YYYYMM, 목표)`. 달 오름차순."""
+
+    def __post_init__(self) -> None:
+        pairs = [(int(month), float(value)) for month, value in self.monthly]
+        months = [month for month, _ in pairs]
+        if len(set(months)) != len(months):
+            raise ValueError(f"같은 달의 목표가 두 번 들어 있습니다: {sorted(months)}")
+        default = float(self.default)
+        object.__setattr__(self, "default", default)
+        object.__setattr__(
+            self, "monthly", tuple(sorted(pair for pair in pairs if pair[1] != default))
+        )
+
+    def for_month(self, month: int) -> float:
+        """그 달의 목표."""
+        for stored, value in self.monthly:
+            if stored == int(month):
+                return value
+        return self.default
+
+
+TargetLevel: TypeAlias = float | MonthlyTarget
+"""목표 하나 — 모든 달에 같은 스칼라(다섯 값) 또는 달마다 다른 목표."""
+
+
+def target_from_thresholds(
+    thresholds: SecurementThresholds, months: Iterable[int]
+) -> MonthlyTarget:
+    """공용 판정 기준의 확보기준을 달마다 목표로 쓴다(`thresholds.for_month(M)` 의 확보 기준).
+
+    `months` 밖의 월별 예외는 싣지 않는다 — 계산하지 않는 달이 목표(캐시 키)를 가르지 않게.
+    """
+    default = float(thresholds.default_secure)
+    return MonthlyTarget(
+        default=default,
+        monthly=tuple(
+            (month, float(thresholds.secure_for(month)))
+            for month in sorted({int(value) for value in months})
+        ),
+    )
+
+
+@dataclass(frozen=True)
 class LevelPlan:
     """목표 확보율 하나의 결과."""
 
     level: float
+    """목표 확보율. 달마다 다른 목표면 그 기본값이다(`monthly_target`)."""
+
     process_months: pd.DataFrame
     """공정 x 월. `PROCESS_MONTH_COLUMNS`."""
 
     units: pd.DataFrame
     """당긴 호기와 가상 호기. `UNIT_PLAN_COLUMNS`."""
 
+    monthly_target: MonthlyTarget | None = None
+    """달마다 다른 목표로 세운 계획이면 그 목표. 다섯 값(스칼라) 계획은 None 이다."""
+
+    @property
+    def target(self) -> TargetLevel:
+        """이 계획을 세운 목표 — `ShorteningPlan.at` 에 그대로 넘기면 이 계획이 나온다."""
+        return self.level if self.monthly_target is None else self.monthly_target
+
+    def target_for(self, month: int) -> float:
+        """그 달의 목표 확보율."""
+        if self.monthly_target is None:
+            return self.level
+        return self.monthly_target.for_month(month)
+
 
 @dataclass(frozen=True)
 class ShorteningPlan:
-    """다섯 목표의 결과와, **맞대지 못한 자리**."""
+    """목표마다의 결과와, **맞대지 못한 자리**.
+
+    필요단축일정 탭은 다섯 값을, 공정 Capa 상세는 달마다 다른 목표 하나를 싣는다.
+    """
 
     months: tuple[int, ...]
     today: date
@@ -326,10 +412,17 @@ class ShorteningPlan:
     설비 마스터에서 나오므로 캐시 키의 마스터 내용 지문이 이것도 덮는다.
     """
 
-    def at(self, level: float) -> LevelPlan:
-        """고른 목표의 결과. 미리 계산하지 않은 목표면 KeyError 다."""
+    def at(self, level: TargetLevel) -> LevelPlan:
+        """고른 목표의 결과. 미리 계산하지 않은 목표면 KeyError 다.
+
+        스칼라는 스칼라 계획에서(`isclose`), 달마다 다른 목표는 같은 목표로 세운 계획에서만 찾는다 —
+        기본값이 같아도 예외 달이 다르면 다른 계획이다.
+        """
         for plan in self.levels:
-            if math.isclose(plan.level, level):
+            if isinstance(level, MonthlyTarget):
+                if plan.monthly_target == level:
+                    return plan
+            elif plan.monthly_target is None and math.isclose(plan.level, level):
                 return plan
         raise KeyError(f"계산하지 않은 목표 확보율입니다: {level}")
 
@@ -437,10 +530,10 @@ def plan_required_shortening(
     required_equipment: pd.DataFrame,
     months: Sequence[int],
     today: date,
-    levels: Sequence[float] = TARGET_LEVELS,
+    levels: Sequence[TargetLevel] = TARGET_LEVELS,
     spans: pd.DataFrame | None = None,
 ) -> ShorteningPlan:
-    """설비 마스터·비가동·기존보유·Cut-off·소요대수로 다섯 목표의 단축 일정을 낸다.
+    """설비 마스터·비가동·기존보유·Cut-off·소요대수로 목표마다(기본 다섯 값) 단축 일정을 낸다.
 
     **어느 DB 도 열지 않는다.** 가용은 Static/Dynamic 탭과 같은 길로 만든다 — W/D 구간이 Cut-off
     만큼 앞으로 밀리므로 호기 구간은 `span_date_range` 가 알려 주는 범위로 만들고, 지분이 바뀌는
@@ -606,18 +699,19 @@ def plan_from_availability(
     processes: Sequence[str],
     months: Sequence[int],
     today: date,
-    levels: Sequence[float] = TARGET_LEVELS,
+    levels: Sequence[TargetLevel] = TARGET_LEVELS,
 ) -> tuple[LevelPlan, ...]:
     """맞댈 공정의 가용(`생산계획년월·공정·가용대수`)과 소요대수로 목표마다의 결과를 낸다.
 
     가용과 소요는 `calculate_securement_rate` 로 `(월, 공정)` 에 모은다 — 교차검증과 같은 함수다.
-    가용 행이 없는 달은 0 대로 채운다(그 달에 가용 분류의 호기가 하나도 없는 것이다).
+    가용 행이 없는 달은 0 대로 채운다(그 달에 가용 분류의 호기가 하나도 없는 것이다). 목표는 달마다
+    펼쳐(`_month_targets`) 같은 계산에 넣는다 — 스칼라는 모든 달에 같은 값이다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
     names = [str(process).strip() for process in processes]
     if not ordered or not names:
         return tuple(
-            LevelPlan(float(level), _empty_process_months(), _empty_units()) for level in levels
+            _level_plan(level, _empty_process_months(), _empty_units()) for level in levels
         )
     grid = pd.MultiIndex.from_product([ordered, names], names=["생산계획년월", "공정"]).to_frame(
         index=False
@@ -652,6 +746,7 @@ def plan_from_availability(
 
     results: list[LevelPlan] = []
     for level in levels:
+        targets = _month_targets(level, ordered)
         month_rows: list[dict[str, object]] = []
         unit_rows: list[dict[str, object]] = []
         for process in names:
@@ -659,18 +754,31 @@ def plan_from_availability(
             base = [by_key.get((month, process), (0.0, 0.0))[0] for month in ordered]
             need = [by_key.get((month, process), (0.0, 0.0))[1] for month in ordered]
             outcome = _plan_process(
-                windows, base, need, by_process.get(process, []), float(level), today
+                windows, base, need, by_process.get(process, []), targets, today
             )
-            month_rows.extend(_process_month_rows(process, outcome, float(level)))
+            month_rows.extend(_process_month_rows(process, outcome, targets))
             unit_rows.extend(_unit_rows(process, outcome))
         results.append(
-            LevelPlan(
-                level=float(level),
-                process_months=_frame(month_rows, PROCESS_MONTH_COLUMNS, _empty_process_months()),
-                units=_unit_frame(unit_rows),
+            _level_plan(
+                level,
+                _frame(month_rows, PROCESS_MONTH_COLUMNS, _empty_process_months()),
+                _unit_frame(unit_rows),
             )
         )
     return tuple(results)
+
+
+def _month_targets(level: TargetLevel, months: Sequence[int]) -> list[float]:
+    """달마다의 목표(`months` 차례). 스칼라는 모든 달에 같은 값이다."""
+    if isinstance(level, MonthlyTarget):
+        return [level.for_month(month) for month in months]
+    return [float(level)] * len(months)
+
+
+def _level_plan(level: TargetLevel, process_months: pd.DataFrame, units: pd.DataFrame) -> LevelPlan:
+    if isinstance(level, MonthlyTarget):
+        return LevelPlan(level.default, process_months, units, monthly_target=level)
+    return LevelPlan(float(level), process_months, units)
 
 
 @dataclass
@@ -711,14 +819,16 @@ def _plan_process(
     base: list[float],
     required: list[float],
     candidates: Sequence[CandidateUnit],
-    level: float,
+    targets: Sequence[float],
     today: date,
 ) -> _ProcessOutcome:
+    """공정 하나의 단축 계획. `targets` 는 `windows` 차례의 달마다 목표 확보율이다."""
     after = list(base)
     states = [_UnitState(unit=unit, target=unit.qual) for unit in candidates]
     virtuals: list[_VirtualState] = []
     actions: list[str] = []
     for index, window in enumerate(windows):
+        level = targets[index]
         if not _short(required[index] * level - after[index]):
             actions.append("")
             continue
@@ -761,7 +871,7 @@ def _plan_process(
         actions.append(action)
     status = [
         _month_status(
-            base[index] - required[index] * level,
+            base[index] - required[index] * targets[index],
             actions[index],
             pulled=any(_adds(state.extra, window.year_month) for state in states),
             added=any(_adds(virtual.extra, window.year_month) for virtual in virtuals),
@@ -859,12 +969,12 @@ def _add_virtual(virtual: _VirtualState, windows: list[WdWindow], after: list[fl
 
 
 def _process_month_rows(
-    process: str, outcome: _ProcessOutcome, level: float
+    process: str, outcome: _ProcessOutcome, targets: Sequence[float]
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for index, window in enumerate(outcome.windows):
         need = outcome.required[index]
-        target = need * level
+        target = need * targets[index]
         before = outcome.base[index]
         after = outcome.after[index]
         rows.append(
@@ -977,14 +1087,15 @@ def _empty_unit_master() -> pd.DataFrame:
 
 def unit_export_frame(
     plan: ShorteningPlan,
-    levels: Sequence[float],
+    levels: Sequence[TargetLevel],
     processes: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """호기마다 한 줄 — 「호기별 단축 일정 CSV」 의 표(`UNIT_EXPORT_COLUMNS`).
 
-    `levels` 마다 블록으로 잇고 `목표 확보율(%)` 칸으로 가른다. 공정은 `processes` 차례(화면의 표시
-    순서)이고, 없으면 맞댄 공정 전체다. 공정 안은 계산 결과의 차례(당긴 호기는 기존 Qual 순, 그
-    뒤에 가상 호기)다. 달은 고르지 않는다 — 결과는 이미 고른 달로만 계산한 것이다.
+    `levels` 마다 블록으로 잇고 `목표 확보율(%)` 칸으로 가른다(달마다 다른 목표는 대상 월의 목표).
+    공정은 `processes` 차례(화면의 표시 순서)이고, 없으면 맞댄 공정 전체다. 공정 안은 계산 결과의
+    차례(당긴 호기는 기존 Qual 순, 그 뒤에 가상 호기)다. 달은 고르지 않는다 — 결과는 이미 고른
+    달로만 계산한 것이다.
 
     - `기존/목표 기여 시작일` 은 Qual 다음 날이다(`services/wd_window.py` 의 규약).
     - `대상 월 부족 대수(단축 전/후)` 는 그 목표에서 대상 월의 `목표대수 - 가용대수` 를 0 아래로
@@ -1042,7 +1153,7 @@ def unit_export_frame(
 def _export_row(
     row: Mapping[str, object],
     *,
-    level: float,
+    level: TargetLevel,
     cutoff_days: int | None,
     master: Mapping[str, Mapping[str, object]],
     gaps: Mapping[tuple[str, int], tuple[float, float]],
@@ -1058,7 +1169,7 @@ def _export_row(
         before, after = gaps.get((process, month), (math.nan, math.nan))
     contributed = "" if _blank(row["해소 기여 월"]) else str(row["해소 기여 월"])
     return {
-        LEVEL_COLUMN: level_percent(level),
+        LEVEL_COLUMN: _target_percent(level, month),
         "공정": process,
         "Cut-off(일)": cutoff_days,
         "호기": row["호기"],
@@ -1081,15 +1192,23 @@ def _export_row(
     }
 
 
+def _target_percent(level: TargetLevel, month: int | None) -> int:
+    """내보내기의 목표 칸. 달마다 다른 목표는 그 달(달이 없으면 기본값)의 목표다."""
+    if isinstance(level, MonthlyTarget):
+        return level_percent(level.default if month is None else level.for_month(month))
+    return level_percent(level)
+
+
 def process_month_export_frame(
     plan: ShorteningPlan,
-    levels: Sequence[float],
+    levels: Sequence[TargetLevel],
     processes: Sequence[str] | None = None,
     months: Sequence[int] | None = None,
 ) -> pd.DataFrame:
     """「공정·월 CSV」 의 표(`PROCESS_MONTH_EXPORT_COLUMNS`).
 
-    목표마다 블록이고 공정은 `processes` 차례, 공정 안은 달 차례다.
+    목표마다 블록이고 공정은 `processes` 차례, 공정 안은 달 차례다. 달마다 다른 목표는 `목표
+    확보율(%)` 칸이 그 줄의 달의 목표다.
     """
     names = list(plan.processes) if processes is None else [str(name) for name in processes]
     wanted = list(plan.months if months is None else (int(month) for month in months))
@@ -1102,7 +1221,11 @@ def process_month_export_frame(
         chosen = chosen.sort_values(["_order", "생산계획년월"], kind="stable").drop(
             columns="_order"
         )
-        chosen.insert(0, LEVEL_COLUMN, level_percent(level))
+        if isinstance(level, MonthlyTarget):
+            percents = [_target_percent(level, int(month)) for month in chosen["생산계획년월"]]
+            chosen.insert(0, LEVEL_COLUMN, pd.Series(percents, index=chosen.index, dtype="int64"))
+        else:
+            chosen.insert(0, LEVEL_COLUMN, level_percent(level))
         blocks.append(chosen)
     if not blocks:
         return pd.DataFrame(columns=list(PROCESS_MONTH_EXPORT_COLUMNS))
