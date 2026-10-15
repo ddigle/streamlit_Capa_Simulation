@@ -330,6 +330,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차만 전과 같은 약 10ms 를 낸다. 컴포넌트 칸은 회차마다 같은 자리에 둔다 — 빼면 그 뒤 본문 요소의
     자리가 밀려 HOME 이 다시 그려진다. AppTest 는 `intro_summary._SUMMARY`(브라우저로 보내는 컴포넌트)만
     바꿔 끼우고 계산은 그대로 돌린다.
+  - **공식버전 자동 갱신 예약(`auto_update_scheduler.ensure_auto_update_scheduler`)은 부트스트랩 바로
+    뒤에서 매 회차 부른다.** 실행 줄 허락(`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 환경변수만 보고
+    돌아가고(화면 확인 스크립트의 자식 앱·AppTest·개발 실행), 있으면 이 프로세스에 배경 스레드가 없을
+    때만 하나 세운다. 부트스트랩 뒤라 마이그레이션이 끝난 DB 에서 돌고, 실패해도 화면을 막지 않는다.
   - 공통 월 선택기는 기본 조회기간과 활성 기준정보의 실제 월 범위의 합집합을 허용한다
     (`services/scenario_month_bounds.py`). 기간을 좁히거나 페이지를 왕복해도 기본 범위
     밖의 저장된 월을 다시 고를 수 있어야 한다. 연도 오류를 판정하는 기능은 아니다.
@@ -1259,8 +1263,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 글 목록 필터(분류·검색·미답변만)는 사이드바 조건 카드 `VOC 필터` 다(2026-09-29). 공통 조건은
     읽지 않지만 카드가 있어 「조회 조건」 제목은 선다. 설명은 Guide(`guides/voc.md`)다.
 - `app_pages/scenario_management.py`
-  - `시나리오 관리`·`BigDataQuery 등록` 두 탭을 제공한다. `표시순서 관리` 는 운영 관리
-    설정이라 Admin Area 로 옮겼다. 두 탭은 항상 그린다(열린 탭만 그리면 다른 탭을 여는 순간 form 입력값이 사라진다). `BigDataQuery
+  - `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭을 제공한다. `표시순서 관리` 는 운영 관리
+    설정이라 Admin Area 로 옮겼다. 세 탭은 항상 그린다(열린 탭만 그리면 다른 탭을 여는 순간 form 입력값이
+    사라진다). `자동 갱신` 탭은 설정·기록을 DB 에서 읽기만 하고 사내 조회·계산은 「지금 실행」을 누른
+    회차에만 돈다(`components/auto_official_update_tab.py`). `BigDataQuery
     등록` 탭에 시뮬레이션 코드 목록 표가 생겼지만 그 표는 세션에 담긴 조회 결과를 표시만
     하고 사내 DB 조회는 버튼 제출로만 돈다 — 다시 드는 비용이 좁힌 뷰의 직렬화뿐이라
     탭 전환에 rerun 을 걸지 않는다.
@@ -1843,6 +1849,35 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 같은 프로세스에서 회차가 겹치면(예약과 「지금 실행」) 뒤의 것은 선점하지 않고 돌아간다
     (`_RUN_LOCK`, 기다리지 않는다). `current_official_baseline` 은 화면이 자동 갱신을 켤 때 먼저
     막는 데 쓰고, `abandon_interrupted_runs` 는 기동 뒤 「실행 중」으로 남은 옛 회차를 닫는다.
+  - `auto_off_marks` 는 리비전과 그 **조상**의 `AUTO` 기록에서 HOME 공정 필터 팝업 표지(공정 →
+    `자동 off(확보율 72%, 26.11)`)를 만든다 — 자동 리비전 2 에서 사람이 리비전 3 을 저장해도 근거가 남는다.
+- `src/capa_simulation/auto_update_scheduler.py`
+  - **공식버전 자동 갱신의 예약 실행** — 앱 프로세스 안 배경 스레드 하나(2026-10-15 사용자 결정 — 사내
+    앱은 늘 띄워 둔다). DuckDB 는 프로세스 배타라 앱 밖 OS 스케줄러로 돌리면 사용자 화면과 잠금을
+    다툰다.
+  - **켜는 조건 둘**: 실행 줄 환경변수 `CAPA_AUTO_OFFICIAL_UPDATE=1`(`1`·`true`·`yes`·`on`)이 있어야
+    스레드가 서고(`scheduler_opted_in`), 공용 설정의 켜짐(화면 토글)을 확인할 때마다 다시 읽는다 — 화면에서
+    끄거나 시각을 바꾸면 다음 확인부터 그 값이다.
+  - **판단**(`AutoUpdateScheduler.tick`): 30초(`TICK_SECONDS`)마다 벽시계를 보고 직전 확인과 지금 사이에
+    지정 시각이 지났으면 그 날 예약 회차(`run_auto_official_update(trigger=SCHEDULED, run_day=…)`)를 돈다
+    (`services.auto_official_update.crossed_slot`). 첫 확인의 「직전」은 스레드를 세운 시각이라 **앱이 그
+    시각에 떠 있지 않았으면(꺼졌거나 그 뒤에 떴거나 10분 넘게 확인이 끊겼으면) 따라잡지 않고 다음 날을
+    기다린다**(사용자 결정). 같은 날 두 번은 DB 회차 선점(날짜 키)이 막는다(재시작·여러 세션에도 하나).
+    다른 회차가 도는 중(`BUSY_MESSAGE`)이거나 선점 전 DB 를 열지 못했으면 **같은 날 안에서만** 다음
+    확인에 다시 시도한다. 설정을 읽지 못한 확인은 「직전」을 옮기지 않는다.
+  - **스레드는 첫 접속 때 선다** — Streamlit 은 세션이 붙어야 `app.py` 를 돌린다. 앱을 다시 띄운 뒤
+    누군가 한 번 들어와야 예약이 시작된다(사내 런북 「자동 갱신 켜는 법」). 시작 직후 첫 일은 옛
+    프로세스가 회차 도중 꺼져 남긴 「실행 중」 기록 닫기다(`abandon_interrupted_runs`).
+  - **프로세스에 하나이고 Streamlit 캐시 경계가 아니다.** `st.cache_resource` 를 쓰지 않는다 — 그 키는
+    함수 소스라 개발 중 코드를 고치면 스레드가 하나 더 선다. 스레드 이름(`THREAD_NAME`)으로 살아 있는
+    것을 찾고(`running_scheduler`), 모듈을 다시 읽어도 같은 답이다. 코드를 바꾸면 앱을 다시 띄워야 새
+    코드로 돈다.
+  - **배경 스레드 규칙**: ScriptRunContext 가 없으므로 `st.*` 화면 명령·`st.session_state`·
+    `st.cache_data` 래퍼를 부르지 않는다. 회차는 세션 없는 runner 가 돌고, 발행 뒤 정리는 전역 범위
+    `st.cache_data` 의 `.clear()`(`persistence.cache.clear_global_securement_threshold_cache`)뿐이다 —
+    전역 범위 캐시는 지우는 데 실행 문맥을 찾지 않는다(`tests/test_auto_update_scheduler.py` 가 문맥을
+    찾으면 실패하게 해 두고 부른다). 어떤 예외도 스레드를 죽이지 않는다 — 회차 안 실패는 실행 기록에,
+    밖(설정 읽기·선점 전 잠금)은 로그와 `SchedulerStatus`(화면 「지금 상태」)에 남는다.
 - `src/capa_simulation/services/builtin_seed.py`, `config/bootstrap_display_order.json`
   - GitHub 독립 실행용 78컬럼 합성 Core Data와 비민감 최소 표시순서를 제공한다.
   - `data/input/RQ_DISPLAY_ORDER.csv`가 있으면 최초 공용 표시순서 이관에 우선 사용하되
@@ -1989,6 +2024,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `persistence/models.py` 이며 페이지는 import 해서 쓴다.
   - 판정 기준 세션 키(`dashboard_*_threshold_percent`)는 **레거시 운반용**이다. 화면 위젯이
     없고, 복원한 프리셋 값을 다음 리비전 저장에 그대로 실어 보낼 뿐 판정에 쓰지 않는다.
+  - 프리셋을 걸 때(`apply_pending_scenario_preset`) HOME 의 직전 공정 선택지 기억(`PROCESS_SEEN_KEY`)을
+    지운다. 그 기억은 **앞 리비전**의 것이라 남기면 HOME 이 새 리비전의 공정 가운데 앞 리비전에 없던
+    것을 「처음 보는 공정」으로 되살린다 — 프리셋이 뺀 공정(공식버전 자동 갱신의 자동 off 등)이 이미
+    HOME 을 본 세션에서만 켜지고, 그 세션이 리비전을 저장하면 off 가 풀린 프리셋이 저장된다(2026-10-15
+    자동 갱신 조사의 「세션 되살림」 함정, `tests/test_process_filter_activation.py`). 지우면 새 세션의 첫
+    화면처럼 프리셋의 포함 목록을 그대로 믿는다.
   - 새 세션에서는 최신 공식 리비전을 한 번 자동 활성화한다.
   - 활성화·활성화 해제는 앞 시나리오의 값 칸(`_STALE_VALUE_KEYS`)을 지우고 HOME 토글 칸에는
     기본값을 **적는다**(`_release_stale_ui_state`). 적은 값이 브라우저에 닿으려면 그 회차에 토글
@@ -2305,6 +2346,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`describe_config_change`), **예약** 규칙(`scheduled_run_key` 날짜당 하나·`next_scheduled_run`·
     `crossed_slot` — 지정 시각이 직전 확인과 지금 사이에 있어야 돌고, 확인 사이가 10분보다 벌어졌으면
     그 시각에 떠 있지 않았던 것으로 보고 따라잡지 않는다)도 여기 있다.
+  - **공정 필터 표지**(`auto_off_mark` — `자동 off(확보율 72%, 26.11)`, 근거가 없으면 `자동 off`)도
+    여기서 정한다. 확보율은 사사오입한 정수 %, 달은 `YY.MM` 이다.
 
 - `core_data_derivation.py`: 원천 78컬럼에서 RQ 파생에 쓰는 정규화된 작업 프레임을
   만든다. 제품정보 언더바 정규화와 Area·소요기준 별칭 정리가 이 경계에서 끝난다.
@@ -3601,6 +3644,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **기준이 없는 첫 렌더에는 저장된 포함 목록을 그대로 믿는다.** 같은 규칙을 쓰면 모든
     공정이 처음 보는 공정이 되어, 공식버전이 저장해 둔 공정 필터가 새 세션의 첫 화면에서
     통째로 덮인다. `seen=None`(기준 없음)과 `seen=[]`(직전에 옵션이 없었다)은 다르다.
+    리비전을 활성화하면 기준이 다시 없어진다(`scenario_preset_state.apply_pending_scenario_preset` 이
+    직전 선택지 기억을 지운다) — 앞 리비전의 선택지로 새 리비전의 프리셋을 덮지 않게.
 - `src/capa_simulation/services/process_picker.py`
   - 최종 월별 확보율을 조회기간의 최소값·최초 동률 월·유효 월 수로 요약한다. 확보 기준
     미달·확보 기준 충족·판정 없음으로 구분하되 입력 옵션 순서와 원본 공정 키를 보존한다.
@@ -3620,6 +3665,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     재현). 버튼을 순번 칸(`home_bn_tile_<i>`)으로 감싸고 그 칸의 `::after` 로 띄운다 — 버튼 key
     의 `st-key-` 클래스는 영문·숫자 밖을 `-` 로 바꿔 한글 공정명끼리 겹칠 수 있다. 풍선은 버튼
     위, 폭은 버튼과 같다(맨 아래 줄·가장자리에서 팝업에 스크롤이 생기지 않게).
+  - **공식버전 자동 갱신이 뺀 공정**의 표지(`marks` — 공정 → `자동 off(확보율 72%, 26.11)`): 목록 위 한
+    줄, 꺼진 버튼의 `auto_mode` 아이콘, 풍선 끝 줄. 버튼 글자는 공정 표시명 그대로다(고정 폭이라 붙이면
+    잘린다). HOME 은 팝업을 여는 회차에만 표지를 읽는다(`auto_official_update_tab.load_auto_off_marks` —
+    이 세션의 활성 리비전과 조상, 읽지 못하면 빈 표지).
 - `src/capa_simulation/services/month_columns.py`
   - 월 축과 연간 Total 열의 규칙. **1~12월이 모두 조회범위 안에 있는 해**만 Total 을 갖고,
     그 해 12월 바로 뒤에 들어간다. 일부 달만 든 해의 합계는 연간이 아니라 "조회한 달의
@@ -4434,8 +4483,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이다 — 마크다운으로 넘기면 줄 앞의 `#`·`-` 가 제목이나 목록으로 바뀌어 적은 사람이
     보던 글과 달라지고, 높이를 주거나 `overflow` 를 걸면 긴 공지가 스크롤 안에 숨는다.
 - `src/capa_simulation/components/scenario_management.py`,
-  `bigdataquery_registration.py`
-  - 시나리오 관리 페이지의 두 탭 UI.
+  `bigdataquery_registration.py`, `auto_official_update_tab.py`
+  - 시나리오 관리 페이지의 세 탭 UI.
+  - `auto_official_update_tab.py` 는 「자동 갱신」 탭이다(2026-10-15 사용자 결정): ① **지금 상태** — 이
+    실행에서 예약 스레드가 서 있는가(없으면 「실행 줄에 `CAPA_AUTO_OFFICIAL_UPDATE=1`」 안내), 마지막
+    확인, 설정 한 줄, 다음 실행 시각, 현재 공식버전의 주차(켜져 있는데 없으면 오류 상자, 꺼져 있으면 상태
+    한 줄) ② **설정** 폼(켜기·확인 시각·시뮬레이션명 키워드·기준 확보율 %·바꾼 사람 선택) — 공용 프로필이라
+    편집을 시작할 때 본 version 을 `SETTINGS_BASE_VERSION_KEY` 에 두고 대조하며, 칸에 key 를 두지 않는다
+    (HOME 판정 기준 편집기와 같은 까닭 — 다른 사람이 바꾼 값을 따라온다). **켤 때** 현재 공식버전에
+    주차(W##)가 없으면 저장하지 않고 오류 ③ **지금 실행** — 같은 회차 함수를 그 세션 스레드에서 바로
+    부른다(켜짐·실행 줄과 상관없이). 선점 키가 누를 때마다 달라 같은 날 예약 회차를 막지도 그것에
+    막히지도 않고(이미 받은 코드는 다시 받지 않는다), 공식버전에 주차가 없으면 회차를 잡지 않고(기록도
+    없이) 오류 ④ 실행 기록(최근 30회차 — 결과·받은 코드·주차·자동 off 와 표지·이어받은 수동 off·발행·
+    기준·사유)·off 공정 목록·설정 변경 기록 표. `sources`·`clock` 인자는 시험이 가짜 BigDataQuery·시계를
+    넣는 자리다.
   - 「현재 활성 RQ 복제」·「새 리비전 저장」 폼의 입력 칸은 **저장에 성공한 회차에만** key 세대를
     올려 새 빈 칸으로 세운다(`clone_field_key`·`revision_field_key`). 남기면 한 번 더 눌러 같은
     이름이 또 서고, 세션 칸만 비우면 브라우저가 옛 글을 되보낸다. 거절된 저장은 적은 글이 남는다.
@@ -4693,7 +4754,10 @@ RQ_MODULE
    `process_rename_management.py` 다. 뒤의 둘은 탭 국소 예외로, 공용 프로필 `version` 만
    키로 쓰고 DB 를 읽지 않는 CSV 직렬화다(항상 그리는 탭이라 그 비용이 모든 rerun 에
    실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource` 를 새로 두지 않으며,
-   이 예외를 늘리려면 여기 목록을 같이 고친다.
+   이 예외를 늘리려면 여기 목록을 같이 고친다. **배경 스레드는 공식버전 자동 갱신 예약
+   (`auto_update_scheduler.py`) 하나뿐**이고 캐시 경계가 아니다 — `st.cache_resource` 없이 스레드
+   이름으로 프로세스에 하나를 지키고, 스레드 안에서는 `st.*`·세션·`st.cache_data` 래퍼를 부르지 않으며
+   전역 범위 `st.cache_data` 의 `.clear()` 만 부른다(9장 「배경 스레드」).
 5. **공식버전은 append-only다.** 특정 시나리오·리비전을 새 공식버전으로 발행하며 과거
    공식 이력을 갱신하지 않는다. 최신 공식 시나리오는 다른 공식 발행 전 삭제하지 않는다.
    그 외 시나리오는 삭제할 수 있고, 그때 그 시나리오의 공식 발행 이력도 함께 사라진다.
@@ -5230,6 +5294,12 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   토글을 그대로 둔다.
 - 비싼 계산을 탭 내부에서 직접 반복하지 않는다. 먼저 캐시된 결과를 만들고 탭은 표시만
   담당하게 한다.
+- **배경 스레드에는 Streamlit 실행 문맥(ScriptRunContext)이 없다.** 그런 스레드는 공식버전 자동 갱신
+  예약(`auto_update_scheduler.py`) 하나이고, 실행 줄 허락(`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 있는 프로세스에만
+  선다. 그 안에서 `st.*` 화면 명령·`st.session_state`·`st.cache_data`/`st.cache_resource` 래퍼를 부르지
+  않는다 — 계산은 순수 코어(`simulation_cache.full_capacity_outcome`·`calculate_securement_rate`), 등록은
+  세션 없는 `scenario_registration` 이다. 캐시 정리는 전역 범위 `st.cache_data` 함수의 `.clear()` 처럼
+  문맥을 찾지 않는 것만 쓴다. 새 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다.
 - **(2026-10-01 브라우저 E2E 점검에서 나온 규칙)**
   - **`st.rerun()` 은 그 화면의 모든 편집표를 그린 뒤에만 부른다.** Streamlit 은 `st.rerun()` 으로
     끝난 회차를 정상 완료로 보고 그 회차에 등록되지 않은 위젯 상태를 서버에서 지운다 — PKG PLAN

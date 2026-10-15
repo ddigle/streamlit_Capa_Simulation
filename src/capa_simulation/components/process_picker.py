@@ -11,9 +11,13 @@
 풍선은 버튼을 감싼 칸(`home_bn_tile_<순번>`)의 `::after` 다. 버튼 key 는 원본 공정명이라 `st-key-`
 클래스로 바뀔 때 영문·숫자 밖의 글자가 모두 `-` 가 된다 — 한글 공정명 둘이 같은 클래스가 될 수
 있어 순번으로 감싼다.
+
+**공식버전 자동 갱신이 뺀 공정**에는 표지를 단다(`marks` — 공정 → `자동 off(확보율 72%,
+26.11)`). 꺼진 버튼은 아이콘이 `auto_mode` 로 바뀌고, 풍선 끝 줄과 목록 위 한 줄이 그 표지를
+적는다. 버튼 글자는 그대로 공정 표시명이다 — 고정 폭이라 표지를 붙이면 공정명이 잘린다.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import streamlit as st
 
@@ -26,8 +30,10 @@ PROCESS_TILE_WIDTH = 168
 TILE_WRAPPER_PREFIX = "home_bn_tile_"
 
 
-def tile_tooltip_text(item: ProcessPickerItem, label: str, *, enabled: bool) -> str:
-    """버튼 위에 띄우는 설명. 표시명·원본 공정·기간 최저 확보율·누르면 무엇이 되는지."""
+def tile_tooltip_text(
+    item: ProcessPickerItem, label: str, *, enabled: bool, mark: str | None = None
+) -> str:
+    """버튼 위에 띄우는 설명. 표시명·원본 공정·기간 최저 확보율·누르면 무엇이 되는지·표지."""
     details = [label]
     if label != item.process:
         details.append(f"원본 공정: {item.process}")
@@ -40,6 +46,8 @@ def tile_tooltip_text(item: ProcessPickerItem, label: str, *, enabled: bool) -> 
             f"(유효 {item.valid_month_count}개월)"
         )
     details.append("ON · 누르면 제외" if enabled else "OFF · 누르면 포함")
+    if mark:
+        details.append(f"공식버전 자동 갱신: {mark}")
     return "\n".join(details)
 
 
@@ -98,14 +106,35 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
 """
 
 
+def auto_off_mark_line(
+    items: Sequence[ProcessPickerItem],
+    marks: Mapping[str, str],
+    format_func: Callable[[str], str],
+) -> str | None:
+    """목록 위 한 줄 — 자동 갱신이 뺀 공정과 그 표지. 이 화면의 공정에 표지가 없으면 None."""
+    marked = [
+        f"{format_func(item.process)} {marks[item.process]}"
+        for item in items
+        if item.process in marks
+    ]
+    if not marked:
+        return None
+    return f"공식버전 자동 갱신이 뺀 공정 {len(marked)}개 · " + " · ".join(marked)
+
+
 def render_process_picker(
     items: Sequence[ProcessPickerItem],
     selected: set[str],
     *,
     format_func: Callable[[str], str],
     on_toggle: Callable[[str], None],
+    marks: Mapping[str, str] | None = None,
 ) -> None:
     """버튼에만 표시명을 쓰고 콜백에는 언제나 원본 공정 키를 넘긴다."""
+    marks = marks or {}
+    mark_line = auto_off_mark_line(items, marks, format_func)
+    if mark_line is not None:
+        st.caption(mark_line)
     groups = (
         ("shortfall", "확보 기준 미달"),
         ("sufficient", "확보 기준 충족"),
@@ -124,17 +153,25 @@ def render_process_picker(
                 for item in members:
                     label = format_func(item.process)
                     enabled = item.process in selected
+                    mark = marks.get(item.process)
                     with st.container(key=f"{TILE_WRAPPER_PREFIX}{len(tooltips)}", width="content"):
                         st.button(
                             label,
                             key=f"home_bn_process_tile_{item.process}",
                             type="primary" if enabled else "secondary",
-                            icon=":material/check:" if enabled else ":material/remove:",
+                            icon=_tile_icon(enabled=enabled, marked=mark is not None),
                             width=PROCESS_TILE_WIDTH,
                             wrap=False,
                             on_click=on_toggle,
                             args=(item.process,),
                         )
-                    tooltips.append(tile_tooltip_text(item, label, enabled=enabled))
+                    tooltips.append(tile_tooltip_text(item, label, enabled=enabled, mark=mark))
     # 스타일만 든 `st.html` 은 이벤트 칸에 들어가 자리를 차지하지 않는다.
     st.html(tile_tooltip_style(tooltips) or "<style></style>")
+
+
+def _tile_icon(*, enabled: bool, marked: bool) -> str:
+    """켜진 버튼은 체크, 꺼진 버튼은 빼기 — 자동 갱신이 뺀 공정이면 `auto_mode`."""
+    if enabled:
+        return ":material/check:"
+    return ":material/auto_mode:" if marked else ":material/remove:"

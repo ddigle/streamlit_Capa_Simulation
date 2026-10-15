@@ -1,11 +1,13 @@
 # Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
 
 
+from collections.abc import Mapping
 from dataclasses import replace
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.auto_official_update_tab import load_auto_off_marks
 from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
@@ -102,7 +104,7 @@ from capa_simulation.persistence.cache import (
     load_global_top5_band,
     load_scenario_plan,
 )
-from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
+from capa_simulation.scenario_preset_state import PROCESS_SEEN_KEY, PROCESS_SELECTION_KEY
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
 )
@@ -569,7 +571,6 @@ applied_key_processes = [
     if process in set(process_options)
 ]
 PROCESS_DIALOG_DRAFT_KEY = "dashboard_bottleneck_process_dialog_draft"
-PROCESS_SEEN_KEY = "dashboard_bottleneck_process_seen"
 if PROCESS_SELECTION_KEY not in st.session_state:
     # 예전 사이드바 토글 키(dashboard_bottleneck_process_{공정})를 읽던 이관 코드였다.
     # 그 토글은 70ad6d0 에서 지워져 항상 기본값 True — 곧 전체 목록이다.
@@ -616,6 +617,7 @@ def show_process_filter_dialog(
     threshold_caption: str,
     start_month: int,
     end_month: int,
+    auto_off_marks: Mapping[str, str] | None = None,
 ) -> None:
     draft_selection = st.session_state.get(PROCESS_DIALOG_DRAFT_KEY, [])
     if not isinstance(draft_selection, list):
@@ -674,6 +676,7 @@ def show_process_filter_dialog(
         selected_set,
         format_func=process_labels.format_func(),
         on_toggle=toggle_process_dialog_selection,
+        marks=auto_off_marks,
     )
     if apply_selection:
         st.session_state[PROCESS_SELECTION_KEY] = [
@@ -722,6 +725,9 @@ if process_field_clicked:
         ),
         effective_start,
         effective_end,
+        # 공식버전 자동 갱신이 이 리비전(과 조상)에서 확보율로 뺀 공정의 표지. 팝업을 여는 회차에만
+        # 읽는다 — HOME 의 다른 회차는 DB 를 더 열지 않는다.
+        load_auto_off_marks(str(DUCKDB_PATH.resolve())),
     )
 # 월 축에 완전한 해의 연간 Total 칸을 끼운다. 표·차트·가로 스크롤 폭이 모두 이 축 하나를
 # 본다 — 축을 두 벌로 만들면 칸이 어긋난다.

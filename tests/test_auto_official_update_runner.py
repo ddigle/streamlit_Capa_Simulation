@@ -11,12 +11,27 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 import pytest
+from auto_update_fakes import (
+    ALL_PROCESSES,
+    CHIP,
+    FINAL,
+    NOW,
+    SEED_SOURCE,
+    WAFER,
+    FakeBigDataQuery,
+    new_repository,
+)
+from auto_update_fakes import catalog_frame as _catalog
+from auto_update_fakes import fixed_clock as _clock
+from auto_update_fakes import official_w40 as _official_w40
+from auto_update_fakes import publish_snapshot as _publish
+from auto_update_fakes import register_code as _register
+from auto_update_fakes import source_frame as _source
 
 import capa_simulation.auto_official_update_runner as runner
 from capa_simulation.auto_official_update_runner import (
@@ -29,19 +44,14 @@ from capa_simulation.auto_official_update_runner import (
     run_auto_official_update,
 )
 from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
-from capa_simulation.io.core_data_source import CoreDataBatch, CoreDataProvider
+from capa_simulation.io.core_data_source import CoreDataProvider
 from capa_simulation.persistence.models import (
     AutoOfficialUpdateRun,
-    OfficialReleaseSummary,
     ScenarioPreset,
     ScenarioSnapshot,
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
-from capa_simulation.scenario_preset_state import full_data_scenario_preset
-from capa_simulation.scenario_registration import (
-    BIGDATAQUERY_PIPELINE_VERSION,
-    save_bigdataquery_scenario,
-)
+from capa_simulation.scenario_registration import BIGDATAQUERY_PIPELINE_VERSION
 from capa_simulation.services.auto_official_update import (
     FILTERED_REVISION_NAME,
     MISSING_WEEK_MESSAGE,
@@ -54,134 +64,12 @@ from capa_simulation.services.auto_official_update import (
     AutoUpdateConfig,
     MissingOfficialWeek,
 )
-from capa_simulation.services.builtin_seed import (
-    build_builtin_seed_dataset,
-    load_builtin_display_order,
-)
-from capa_simulation.services.core_data_pipeline import prepare_core_data_dataset
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
-
-NOW = datetime(2026, 10, 15, 7, 0)
-WAFER = "DEMO_Wafer_Inspect"
-CHIP = "DEMO_Chip_Attach"
-FINAL = "DEMO_Final_Test"
-ALL_PROCESSES = (CHIP, FINAL, WAFER)
-SEED_SOURCE = build_builtin_seed_dataset().source_data
-DISPLAY_ORDER = load_builtin_display_order()
-
-
-def _clock() -> datetime:
-    return NOW
-
-
-def _source(
-    *,
-    zero_available: Sequence[tuple[str, int]] = (),
-    missing_available: Sequence[tuple[str, int]] = (),
-    broken_run_rate_month: int | None = None,
-) -> pd.DataFrame:
-    """내장 시드 원천의 사본. 고른 (공정, 달)의 가용을 0 으로 만들거나 비우고, 가동률을 깨뜨린다."""
-    frame = SEED_SOURCE.copy()
-    for process, month in zero_available:
-        mask = frame["공정"].eq(process) & frame["생산계획년월"].eq(month)
-        frame.loc[mask, "설비보유"] = frame.loc[mask, "설비대여평가"]
-    for process, month in missing_available:
-        mask = frame["공정"].eq(process) & frame["생산계획년월"].eq(month)
-        frame.loc[mask, ["설비보유", "설비대여평가"]] = pd.NA
-    if broken_run_rate_month is not None:
-        mask = frame["생산계획년월"].eq(broken_run_rate_month) & frame["공정"].notna()
-        frame.loc[mask, "CAPA_RUN_RATE"] = pd.NA
-    return frame
-
-
-def _catalog(*rows: tuple[str, str, str]) -> pd.DataFrame:
-    """(시뮬레이션명, 코드, 원천 등록시각) 행의 목록 조회 결과(계약 5컬럼)."""
-    return pd.DataFrame(
-        {
-            "simulation_name": [row[0] for row in rows],
-            "simulation_code": [row[1] for row in rows],
-            "plan_name": ["PLAN A" for _ in rows],
-            "plan_code": ["PLAN-A" for _ in rows],
-            "regist_data": [row[2] for row in rows],
-        }
-    )
-
-
-@dataclass
-class _FakeProvider:
-    request: DetailRequest
-    frame: pd.DataFrame
-
-    def fetch(self, simulation_code: str) -> CoreDataBatch:
-        return CoreDataBatch(
-            simulation_code=simulation_code,
-            simulation_name=self.request.simulation_name,
-            source_type="BIGDATAQUERY",
-            frame=self.frame.copy(),
-            source_registered_at=self.request.registered_at,
-        )
-
-
-@dataclass
-class FakeBigDataQuery:
-    """목록·상세 조회 가짜. 부른 기간과 요청을 남긴다."""
-
-    catalog: pd.DataFrame
-    frames: dict[str, pd.DataFrame] = field(default_factory=dict)
-    catalog_windows: list[QueryWindow] = field(default_factory=list)
-    requests: list[DetailRequest] = field(default_factory=list)
-
-    def fetch_catalog(self, window: QueryWindow) -> pd.DataFrame:
-        self.catalog_windows.append(window)
-        return self.catalog.copy()
-
-    def provider(self, request: DetailRequest) -> CoreDataProvider:
-        self.requests.append(request)
-        return _FakeProvider(request, self.frames.get(request.simulation_code, _source()))
-
-    @property
-    def sources(self) -> AutoUpdateSources:
-        return AutoUpdateSources(fetch_catalog=self.fetch_catalog, detail_provider=self.provider)
 
 
 @pytest.fixture
 def repository(tmp_path: Path) -> DuckDBScenarioRepository:
-    repository = DuckDBScenarioRepository(tmp_path / "auto_runner.duckdb")
-    repository.initialize()
-    repository.initialize_global_display_order(DISPLAY_ORDER)
-    return repository
-
-
-def _register(
-    repository: DuckDBScenarioRepository,
-    *,
-    code: str,
-    name: str,
-    registered_at: datetime,
-    frame: pd.DataFrame | None = None,
-    legacy: tuple[float, float] = (1.095, 0.995),
-) -> ScenarioSnapshot:
-    """화면 등록과 같은 길로 한 코드를 시나리오로 저장한다."""
-    prepared = prepare_core_data_dataset(
-        CoreDataBatch(
-            simulation_code=code,
-            simulation_name=name,
-            source_type="BIGDATAQUERY",
-            frame=_source() if frame is None else frame,
-            source_registered_at=registered_at,
-        ),
-        DISPLAY_ORDER,
-    )
-    return save_bigdataquery_scenario(
-        repository,
-        prepared,
-        full_data_scenario_preset(
-            prepared.reference_tables, secure_threshold=legacy[0], warning_threshold=legacy[1]
-        ),
-        scenario_name=f"{name} ({code})",
-        revision_name="초기 리비전",
-        note="",
-    )
+    return new_repository(tmp_path / "auto_runner.duckdb")
 
 
 def _save_filtered(
@@ -201,28 +89,6 @@ def _save_filtered(
         revision_name="수동 공정 필터",
         parent_revision_id=snapshot.revision.revision_id,
     )
-
-
-def _publish(
-    repository: DuckDBScenarioRepository, snapshot: ScenarioSnapshot
-) -> OfficialReleaseSummary:
-    return repository.publish_official_revision(
-        snapshot.scenario.scenario_id,
-        snapshot.revision.revision_id,
-        release_name=f"{snapshot.scenario.scenario_name} 공식안",
-    )
-
-
-def _official_w40(repository: DuckDBScenarioRepository, **kwargs: object) -> ScenarioSnapshot:
-    snapshot = _register(
-        repository,
-        code="SIM-W40",
-        name="PSM W40",
-        registered_at=datetime(2026, 10, 5, 9, 0),
-        **kwargs,  # type: ignore[arg-type]
-    )
-    _publish(repository, snapshot)
-    return snapshot
 
 
 def _run(

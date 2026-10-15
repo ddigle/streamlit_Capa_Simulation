@@ -69,6 +69,7 @@ from capa_simulation.services.auto_official_update import (
     ProcessMinimum,
     RunStatus,
     TriggerKind,
+    auto_off_mark,
     auto_off_processes,
     auto_update_memo,
     included_after_off,
@@ -508,6 +509,33 @@ def _inherited_manual_off(
         previous_auto_off=previous_auto,
         current_processes=processes,
     )
+
+
+def auto_off_marks(
+    repository: DuckDBScenarioRepository, scenario_id: str, revision_id: str
+) -> dict[str, str]:
+    """리비전(과 그 조상)에서 자동 갱신이 확보율로 뺀 공정 → 표지(`자동 off(확보율 72%, 26.11)`).
+
+    HOME 공정 필터 팝업이 연 회차에 한 번 부른다. 조상까지 보는 것은 이어받은 수동 off 와 같은
+    까닭이다 — 자동 리비전 2 에서 사람이 리비전 3 을 저장해도 리비전 2 의 자동 off 근거는 남는다.
+    가까운 리비전의 기록이 먼저다.
+    """
+    lineage = _revision_lineage(repository, scenario_id, revision_id)
+    order = {revision: index for index, revision in enumerate(lineage)}
+    exclusions = sorted(
+        (
+            exclusion
+            for exclusion in repository.list_auto_official_update_exclusions(
+                filtered_revision_ids=lineage
+            )
+            if exclusion.kind == EXCLUSION_AUTO
+        ),
+        key=lambda exclusion: order.get(str(exclusion.filtered_revision_id), len(order)),
+    )
+    marks: dict[str, str] = {}
+    for exclusion in exclusions:
+        marks.setdefault(exclusion.process, auto_off_mark(exclusion.min_rate, exclusion.min_month))
+    return marks
 
 
 def _revision_lineage(

@@ -558,6 +558,15 @@ def test_the_app_environment_puts_this_repository_first_once() -> None:
     assert twice["PYTHONPATH"] == os.pathsep.join([source, "a"])
 
 
+def test_the_child_app_never_gets_the_auto_update_opt_in() -> None:
+    """사용자 앱을 띄운 창(예약 허락이 든 환경)에서 돌려도 자식 앱은 예약 스레드를 세우지 않는다."""
+    from capa_simulation.auto_update_scheduler import ENV_VAR
+
+    assert screens.AUTO_UPDATE_ENV_VAR == ENV_VAR
+    env = screens.app_environment(PROJECT_ROOT, {ENV_VAR: "1", "OTHER": "x"})
+    assert ENV_VAR not in env and env["OTHER"] == "x"
+
+
 def test_an_app_that_would_open_another_database_is_not_started(tmp_path: Path) -> None:
     seen: dict[str, Any] = {}
     other = (tmp_path / "a.duckdb", tmp_path / "b.duckdb")

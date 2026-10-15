@@ -188,3 +188,40 @@ def test_every_write_path_checks_before_it_writes(
 
     assert gate_call in calls and write_call in calls
     assert calls[gate_call] < calls[write_call]
+
+
+# 공식버전 발행(`publish_official_revision`)을 부르는 자리. 앞의 둘은 위 쓰기 경로 목록이 검사
+# 차례를 보고, 내장 시드 부트스트랩은 검사하지 않는 길이다(빈 저장소의 합성 시드). 시나리오 관리
+# 「자동 갱신」 탭의 「지금 실행」과 예약 스레드는 발행을 직접 부르지 않고 회차 함수
+# (`run_auto_official_update` → `_publish_filtered_revision`)를 지난다.
+PUBLISH_CALLERS = {
+    ("src/capa_simulation/components/scenario_management.py", "_render_official"),
+    ("src/capa_simulation/auto_official_update_runner.py", "_publish_filtered_revision"),
+    ("src/capa_simulation/application_bootstrap.py", "ensure_initial_scenario"),
+}
+
+
+def test_no_new_path_publishes_an_official_version_around_the_check() -> None:
+    """발행을 부르는 함수가 늘면 이 목록과 위 쓰기 경로 목록에 함께 더한다."""
+    found: set[tuple[str, str]] = set()
+    sources = [
+        *sorted((PROJECT_ROOT / "src" / "capa_simulation").rglob("*.py")),
+        *sorted((PROJECT_ROOT / "app_pages").glob("*.py")),
+        PROJECT_ROOT / "app.py",
+    ]
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if node.name == "publish_official_revision":
+                continue
+            if any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "publish_official_revision"
+                for call in ast.walk(node)
+            ):
+                found.add((path.relative_to(PROJECT_ROOT).as_posix(), node.name))
+
+    assert found == PUBLISH_CALLERS

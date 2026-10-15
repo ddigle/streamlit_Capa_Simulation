@@ -445,6 +445,17 @@ def _rate_percent(rate: float) -> str:
     return f"{rate * 100:.0f}%"
 
 
+AUTO_OFF_MARK: Final = "자동 off"
+
+
+def auto_off_mark(min_rate: float | None, month: int | None) -> str:
+    """공정 필터 팝업의 표지 — `자동 off(확보율 72%, 26.11)`. 근거가 없으면 `자동 off` 만."""
+    if min_rate is None or month is None or not math.isfinite(float(min_rate)):
+        return AUTO_OFF_MARK
+    minimum = ProcessMinimum(process="", min_rate=float(min_rate), month=int(month))
+    return f"{AUTO_OFF_MARK}({minimum.label})"
+
+
 def process_minimum_rates(securement_rate: pd.DataFrame) -> tuple[ProcessMinimum, ...]:
     """원 확보율 프레임(`생산계획년월`·`공정`·`확보율`)에서 공정별 최저 확보율. 공정 이름 차례.
 
