@@ -95,6 +95,11 @@ UPEH_EXCLUSION_REASON = "UPEH 0 이하"
 # 대신 무엇이 0 인지 사유에 적는다.
 RUN_RATE_EXCLUSION_REASON = "CAPA_RUN_RATE 0 이하"
 
+# `_join_reference` 가 붙이는 동안만 들고 가는 칸. 붙은 행의 원래 적힌 값·빈 칸 여부·붙었는지.
+_RAW_VALUE = "_원래값"
+_BLANK_VALUE = "_빈값"
+_JOINED = "_연결"
+
 
 def calculate_unit_capacity(
     upeh: pd.DataFrame,
@@ -309,6 +314,11 @@ def _join_reference(
     (b) 가 된다** — 조용히 틀리는 경로를 하나 더 여는 것이다. 측정률은 분모라 실제가
     1 보다 작으면(표본은 모두 그렇다) 대당 Capa 과소 → 소요대수 과대 → 확보율 과소로
     **보수 쪽**이고, 1 보다 큰 경로에서만 낙관 쪽이다.
+
+    **값 검사는 붙인 뒤, 실제로 붙은 행에만 한다.** 표 전체를 먼저 숫자로 검사하면 BOX·PCB 공정이나
+    UPEH 가 없는 달처럼 어느 경로에도 붙지 않는 행의 빈 칸 하나가 계산 전체를 멈추고, 그 값을
+    고칠 편집기조차 못 연다. 붙은 행이 걸리면 빈 값과 숫자가 아닌 값을 갈라 건수·키 예시와 함께
+    알린다. 행 자체가 없는 것(연결값 없음)과도 다른 문장이다.
     """
     require_columns(reference, [*keys, value_column], table_name)
     prepared = reference[[*keys, value_column]].copy()
@@ -319,13 +329,35 @@ def _join_reference(
     if "Area_Name" in keys:
         prepared["Area_Name"] = normalize_area_name(prepared["Area_Name"], table_name)
     assert_unique_keys(prepared, keys, f"{table_name}의 연결 키가")
-    prepared[value_column] = _numeric_column(
+    raw_values = prepared[value_column]
+    blank = raw_values.isna() | raw_values.astype("string").str.strip().eq("").fillna(False)
+    if missing_value_default is not None:
+        raw_values = raw_values.mask(blank, missing_value_default)
+        blank = pd.Series(False, index=prepared.index)
+    prepared[value_column] = pd.to_numeric(raw_values, errors="coerce").astype("float64")
+    prepared[_RAW_VALUE] = raw_values
+    prepared[_BLANK_VALUE] = blank
+    result = base.merge(
         prepared,
-        value_column,
-        table_name,
-        missing_value_default=missing_value_default,
+        on=keys,
+        how="left",
+        validate="many_to_one",
+        indicator=_JOINED,
     )
-    result = base.merge(prepared, on=keys, how="left", validate="many_to_one")
+    attached = result[_JOINED].eq("both")
+    blank_attached = attached & result[_BLANK_VALUE].eq(True)
+    invalid_attached = attached & ~blank_attached & result[value_column].isna()
+    if invalid_attached.any():
+        raise ValueError(
+            f"{table_name}의 {value_column} 컬럼에 숫자가 아닌 값이 있습니다: "
+            + _attached_examples(result, invalid_attached, keys, value_column)
+        )
+    if blank_attached.any():
+        raise ValueError(
+            f"{table_name}의 {value_column} 값이 빈 대당 Capa 기준이 있습니다: "
+            + _attached_examples(result, blank_attached, keys)
+        )
+    result = result.drop(columns=[_RAW_VALUE, _BLANK_VALUE, _JOINED])
     missing = result[value_column].isna()
     if not missing.any():
         return result
@@ -341,21 +373,19 @@ def _join_reference(
     return result
 
 
-def _numeric_column(
-    data: pd.DataFrame,
-    column: str,
-    table_name: str,
-    *,
-    missing_value_default: float | None = None,
-) -> pd.Series:
-    values = data[column]
-    if missing_value_default is not None:
-        blank = values.isna() | values.astype("string").str.strip().eq("").fillna(False)
-        values = values.mask(blank, missing_value_default)
-    numeric = pd.to_numeric(values, errors="coerce")
-    if numeric.isna().any():
-        raise ValueError(f"{table_name}의 {column} 컬럼에 숫자가 아닌 값이 있습니다.")
-    return numeric.astype("float64")
+def _attached_examples(
+    joined: pd.DataFrame,
+    mask: pd.Series,
+    keys: list[str],
+    value_column: str | None = None,
+) -> str:
+    """붙은 행 가운데 걸린 것의 건수와 예시 키 5건. `value_column` 을 주면 원래 적힌 값도 싣는다."""
+    examples = joined.loc[mask, keys].copy()
+    if value_column is not None:
+        examples[value_column] = joined.loc[mask, _RAW_VALUE]
+    records = examples.drop_duplicates(subset=keys).head(5).to_dict("records")
+    count = int(examples.drop_duplicates(subset=keys).shape[0])
+    return f"{count:,}건, 예시 {records}"
 
 
 def _assert_positive(

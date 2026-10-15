@@ -569,3 +569,103 @@ def test_tables_without_a_neutral_default_still_stop_hard() -> None:
 
         with pytest.raises(ValueError, match="연결값이 없는 대당 Capa 기준이 있습니다"):
             calculate_unit_capacity(**inputs)
+
+
+# ------------------------- 계산에 안 쓰는 행의 빈 값은 멈추지 않는다 — 붙은 행만 검사한다
+# 효율·여유율·모듈수·일수 표 전체를 붙이기 **전에** 숫자 검사를 하면, BOX·PCB 처럼 계산이 쓰지
+# 않는 공정이나 UPEH 가 없는 달의 빈 칸 하나가 대당 Capa 전체를 멈춘다. 붙은 행이 걸릴 때는 빈 칸과
+# 숫자가 아닌 값을 갈라 어느 행인지 적는다(사내 감사 P6).
+
+# 표마다 정상값. 빈 칸 하나만 바꿔 넣는다.
+HEALTHY_VALUES = {"run_rate": 0.8, "vital": 1.0, "module": 2.0, "run_day": 30.0}
+REQUIRED_REFERENCES = [
+    ("run_rate", "CAPA_RUN_RATE", "RQ_RUN_RATE", ["생산계획년월", "공정", "양산구분"]),
+    ("vital", "편중률", "RQ_VITAL", VITAL_KEYS),
+    ("module", "모듈수", "RQ_MODULE", MODULE_KEYS),
+    ("run_day", "RUN_DAY", "RQ_RUN_DAY", RUN_DAY_KEYS),
+]
+
+
+@pytest.mark.parametrize(("argument", "column"), [item[:2] for item in REQUIRED_REFERENCES])
+def test_a_blank_value_on_a_box_process_row_does_not_stop_the_calculation(
+    argument: str, column: str
+) -> None:
+    """BOX 공정은 UPEH 단계에서 빠진다. 그 공정의 기준값이 비어도 남은 경로는 계산된다."""
+    inputs = _capacity_inputs(["Process-A", "Process-BOX"])
+    inputs["upeh"] = inputs["upeh"].assign(소요기준=["CHIP", "BOX"])
+    blank: list[Any] = [HEALTHY_VALUES[argument], None]
+    inputs[argument] = inputs[argument].assign(**{column: blank})
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["공정"].tolist() == ["Process-A"]
+    assert result["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY])
+
+
+@pytest.mark.parametrize(
+    ("argument", "column"),
+    [item[:2] for item in REQUIRED_REFERENCES if item[0] != "module"],
+)
+def test_a_blank_value_in_a_month_without_upeh_does_not_stop_the_calculation(
+    argument: str, column: str
+) -> None:
+    """UPEH 가 없는 달의 행은 어느 경로에도 붙지 않는다. 그 칸이 비어도 계산은 그대로다."""
+    inputs = _capacity_inputs(["Process-A"])
+    frame = inputs[argument]
+    doubled = pd.concat([frame, frame.assign(생산계획년월=202609)], ignore_index=True)
+    doubled.loc[1, column] = float("nan")
+    inputs[argument] = doubled
+
+    result = calculate_unit_capacity(**inputs)
+
+    assert result["대당 Capa"].tolist() == pytest.approx([EXPECTED_UNIT_CAPACITY])
+
+
+@pytest.mark.parametrize(("argument", "column", "table_name", "keys"), REQUIRED_REFERENCES)
+def test_a_blank_value_on_a_used_row_is_named_blank_with_its_own_keys(
+    argument: str, column: str, table_name: str, keys: list[str]
+) -> None:
+    """쓰는 행의 빈 칸은 그대로 멈춘다 — 중립값이 없다. 다만 「빈 값」이라 부르고 키를 적는다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    blank: list[Any] = [HEALTHY_VALUES[argument], None]
+    inputs[argument] = inputs[argument].assign(**{column: blank})
+
+    with pytest.raises(ValueError) as error:
+        calculate_unit_capacity(**inputs)
+
+    message = str(error.value)
+    assert message.startswith(f"{table_name}의 {column} 값이 빈 대당 Capa 기준이 있습니다: 1건, ")
+    assert "숫자가 아닌" not in message
+    assert EXAMPLE_KEY_PATTERN.findall(message.split("예시 ", 1)[1]) == keys
+    assert "'공정': 'Process-B'" in message
+
+
+@pytest.mark.parametrize(
+    ("argument", "column", "table_name", "keys"),
+    [
+        *REQUIRED_REFERENCES,
+        ("lot_ratio", "Lot 측정률", "RQ_LOT_RATIO", DETAIL_KEYS),
+        ("wf_ratio", "WF측정률", "RQ_WF_RATIO", DETAIL_KEYS),
+    ],
+)
+def test_a_non_numeric_value_stops_only_on_a_used_row_and_names_the_value(
+    argument: str, column: str, table_name: str, keys: list[str]
+) -> None:
+    """숫자로 못 읽는 값은 쓰는 행에서만 멈춘다. 그때는 그 값과 키를 함께 적는다."""
+    values: list[Any] = [HEALTHY_VALUES.get(argument, 1.0), "N/A"]
+    unused = _capacity_inputs(["Process-A", "Process-BOX"])
+    unused["upeh"] = unused["upeh"].assign(소요기준=["CHIP", "BOX"])
+    unused[argument] = unused[argument].assign(**{column: values})
+
+    assert calculate_unit_capacity(**unused)["공정"].tolist() == ["Process-A"]
+
+    used = _capacity_inputs(["Process-A", "Process-B"])
+    used[argument] = used[argument].assign(**{column: values})
+    with pytest.raises(ValueError) as error:
+        calculate_unit_capacity(**used)
+
+    message = str(error.value)
+    assert message.startswith(f"{table_name}의 {column} 컬럼에 숫자가 아닌 값이 있습니다: 1건, ")
+    assert EXAMPLE_KEY_PATTERN.findall(message.split("예시 ", 1)[1]) == [*keys, column]
+    assert "'공정': 'Process-B'" in message
+    assert f"'{column}': 'N/A'" in message
