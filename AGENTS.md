@@ -1374,7 +1374,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     월 없는 표는 `scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS` 한 곳의 규칙으로 합친다 —
     `RQ_CHIP_QTY`·`RQ_CHIP_EQ`(`제품정보 + Stack`)·`RQ_MODULE`(`공정`)은 겹치는 키를 베이스 값으로
     두고 베이스에 없는 키의 행만 덧붙일 쪽에서 보충하고, `RQ_DISPLAY_ORDER` 는 베이스 그대로다
-    (사내 리뷰 202610120655 1장의 기본안 — 사용자 확인 대기, 사전을 비우면 네 표 모두 베이스).
+    (사내 리뷰 202610120655 1장, 2026-10-15 사용자 결정 — 사전을 비우면 네 표 모두 베이스).
     양쪽 행 수·값 차이·보충 행 수·규칙을 저장 전에 표시한다. 결과 16표는 `merged_table_gaps` 로
     본다: `RQ_UPEH` 가 쓰는 공정(BOX·PCB 제외)에 `RQ_MODULE` 이 없으면 계산이 멈추므로 공정·달
     예시와 함께 **저장 폼을 열지 않고**, 계획(생산수량 > 0) 제품에 `RQ_CHIP_*` 가 없으면 부하량·
