@@ -173,7 +173,13 @@ from capa_simulation.services.product_type import WF_DIVISIONS_BY_PRODUCT_TYPE  
 from capa_simulation.services.required_equipment import (  # noqa: E402
     REQB_COLUMNS,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+    UNROUTED_KEY_MISMATCH_REASON,
+    UNROUTED_LOADS_ATTR,
+    UNROUTED_REASON_COLUMN,
+    UNROUTED_UNKNOWN_PRODUCT_REASON,
+    UNROUTED_UNUSED_REASON,
     calculate_required_equipment,
+    required_exclusion_counts,
 )
 from capa_simulation.services.undated_equipment import (  # noqa: E402
     UNDATED_KIND_COLUMN,
@@ -893,6 +899,7 @@ def _requirement_section(
         "신규가 제외 목록에 둔 키 "
         f"{len(excluded_keys):,}"
     )
+    lines.extend(_left_out_lines(required))
     if not _filled(route, "소요대수"):
         lines.extend(["- 원천 `소요대수` 가 비어 있어 대조 불가", ""])
         return lines
@@ -954,6 +961,59 @@ def _requirement_section(
             lines.extend(_ratio_breakdown(path, compared, required, tables, finest))
         except Exception as exc:  # 가르기가 실패해도 아래 절은 계속 잰다
             lines.extend([f"- ≈60 배 가르기 {_failure(exc)}", ""])
+    return lines
+
+
+# 경로 없는 부하의 사유 → 짧은 이름. 사유는 코드 상수라 찍어도 실데이터 값이 아니다.
+_UNROUTED_REASON_LABELS = {
+    UNROUTED_KEY_MISMATCH_REASON: "키 어긋남",
+    UNROUTED_UNKNOWN_PRODUCT_REASON: "REQB 에 없는 제품",
+    UNROUTED_UNUSED_REASON: "규칙상 미사용",
+}
+
+
+def _left_out_lines(required: pd.DataFrame) -> list[str]:
+    """소요대수에 들지 않은 수요 건수(HOME·발행 검사가 알리는 것과 같은 셈)와 경로 없는 부하의 갈래.
+
+    경로 없는 부하는 사유·소요기준·WF 구분별 개수만 적는다. 세지 않는 「규칙상 미사용」(그 제품에 그
+    소요기준·WF 구분 경로가 없음)도 따로 찍는다 — 세는 두 사유가 한 갈래에 몰려 있으면 아직 규칙으로
+    가르지 못한 구조일 수 있어(경고가 늘 뜨는 잡음) 사외가 규칙을 정할 근거가 된다. 이름은 계약
+    어휘(`KNOWN_BASES`·`DECLARED_DIVISIONS`)만 찍고 그 밖은 「그 밖」으로 묶는다.
+    """
+    counts = required_exclusion_counts(required)
+    lines = [
+        "- 소요대수에 들지 않은 수요(리비전 1 전체 기간) — 기준정보가 없어 부하량에서 빠진 계획 "
+        f"{counts.excluded_plans:,} · 생산수량이 빈 계획 {counts.blank_plans:,} · 경로에 닿지 "
+        f"않은 계획 부하 {counts.unrouted_loads:,} · 대당 Capa 없는 부하 경로 "
+        f"{counts.excluded_routes:,}"
+    ]
+    unrouted = required.attrs.get(UNROUTED_LOADS_ATTR)
+    if not isinstance(unrouted, pd.DataFrame) or unrouted.empty:
+        return lines
+    bases = {name.casefold(): name for name in KNOWN_BASES}
+    divisions = {name.casefold(): name.upper() for name in DECLARED_DIVISIONS}
+    divisions[""] = "(PKG)"
+    reasons = (
+        unrouted[UNROUTED_REASON_COLUMN]
+        if UNROUTED_REASON_COLUMN in unrouted.columns
+        else pd.Series(UNROUTED_KEY_MISMATCH_REASON, index=unrouted.index)
+    )
+    labels = pd.DataFrame(
+        {
+            "reason": reasons.map(_UNROUTED_REASON_LABELS).fillna("그 밖"),
+            "basis": match_key(unrouted["소요기준"]).map(bases).fillna("그 밖"),
+            "division": match_key(unrouted["WF 구분"]).map(divisions).fillna("그 밖"),
+        }
+    )
+    groups = labels.groupby(["reason", "basis", "division"]).size().reset_index(name="count")
+    lines.append(
+        "  - 경로에 닿지 않은 계획 부하의 갈래(사유 · 소요기준 · WF 구분 → 개수, 규칙상 미사용은 "
+        "세지 않음) "
+        + " · ".join(
+            f"{reason} · {basis} · {division} {int(count):,}"
+            for reason, basis, division, count in groups.itertuples(index=False)
+        )
+    )
     return lines
 
 

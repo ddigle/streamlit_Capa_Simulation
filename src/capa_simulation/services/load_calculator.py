@@ -84,6 +84,10 @@ DENSITY_REQUIRED_COLUMNS = [*DENSITY_KEYS, "구분_Chip", "구분_EQ"]
 # 죽는다. 부하량 프레임들은 소요대수 계산에서 실제로 concat 된다.
 LOAD_EXCLUSIONS_ATTR = "excluded_load_rows"
 LOAD_EXCLUSION_COLUMNS = ["생산계획년월", "제품정보", "Stack", "WF 구분", "누락 기준정보"]
+# 생산수량이 빈 계획 행에 다는 사유. **빈 값은 「계획 없음(0)」이다** — 편집 격자·환산·소요대수가
+# 한 뜻으로 읽는다. 다만 원천이 숫자를 빠뜨린 것일 수도 있어 말없이 0 으로 접지 않고 같은 제외
+# 목록에 남긴다.
+PLAN_QUANTITY_BLANK_REASON = "RQ_PKG_PLAN 생산수량 빈 값"
 
 
 def plan_to_edit_table(plan: pd.DataFrame, display_order: DisplayOrderInput = None) -> pd.DataFrame:
@@ -465,12 +469,54 @@ def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
         "Int64"
     )
-    prepared = _to_numeric(prepared, ["생산수량"], "RQ_PKG_PLAN")
+    prepared["생산수량"] = plan_quantities(prepared)
 
     missing_keys = prepared[["생산계획년월", *CLASSIFICATION_COLUMNS]].isna().any(axis=1)
     if missing_keys.any():
         raise ValueError("RQ_PKG_PLAN에 월별 물량 분류 키가 누락된 행이 있습니다.")
-    return drop_unplanned_rows(prepared)
+    # 빈 생산수량은 아래에서 0 처럼 빠진다. 빠진 행은 결과 attrs 로 이어 가도록 여기 적어 둔다
+    # (`_prepare_load_base`·`calculate_density_load`·`build_monthly_volume` 이 읽는다).
+    blanks = blank_quantity_exclusions(prepared)
+    planned = drop_unplanned_rows(prepared)
+    planned.attrs[LOAD_EXCLUSIONS_ATTR] = blanks
+    return planned
+
+
+def plan_quantities(plan: pd.DataFrame) -> pd.Series:
+    """`RQ_PKG_PLAN.생산수량` 을 숫자로. **빈 값은 그대로 둔다**(계획 없음 — 부르는 쪽이 목록에
+    남기거나 0 으로 본다).
+
+    숫자가 아닌 글자는 계획 없음으로 읽을 근거가 없어 막는다. 어느 행인지 키 예시를 함께 적는다.
+    환산·소요대수·표준 목표 PKG 환산이 이 함수 하나로 숫자화한다 — 같은 원천 값을 두고 화면마다
+    다른 문구로 멈추면 한쪽은 고칠 행을 찾을 수 없다. `생산계획년월`·`제품정보`·`Stack` 컬럼을
+    읽는다.
+    """
+    raw = plan["생산수량"]
+    quantities = pd.to_numeric(raw, errors="coerce")
+    invalid = raw.notna() & quantities.isna()
+    if bool(invalid.any()):
+        examples = [
+            f"{month} · {product} · {stack} → {value!r}"
+            for month, product, stack, value in plan.loc[
+                invalid, ["생산계획년월", "제품정보", "Stack", "생산수량"]
+            ]
+            .head(5)
+            .itertuples(index=False)
+        ]
+        raise ValueError(
+            f"RQ_PKG_PLAN.생산수량에 숫자가 아닌 값이 있습니다: {int(invalid.sum()):,}행, "
+            f"예시(년월 · 제품 · Stack) {'; '.join(examples)}."
+        )
+    return quantities
+
+
+def blank_quantity_exclusions(plan: pd.DataFrame) -> tuple[tuple[object, ...], ...]:
+    """생산수량이 빈 계획 행을 제외 목록 레코드로. 숫자로 바꾼 뒤의 프레임을 받는다.
+
+    계산은 그 행을 계획 없음(0)으로 보고 뺀다(`drop_unplanned_rows`). 원천에서 숫자가 빠진 것과
+    정말 계획이 없는 것을 계산은 가를 수 없으므로, 빠진 사실만은 목록으로 남긴다.
+    """
+    return _load_exclusion_rows(plan.loc[plan["생산수량"].isna()], PLAN_QUANTITY_BLANK_REASON)
 
 
 def drop_unplanned_rows(plan: pd.DataFrame) -> pd.DataFrame:
@@ -514,7 +560,10 @@ def _prepare_load_base(
         indicator="_chip_merge",
     )
     chip_missing = expanded["_chip_merge"] != "both"
-    exclusions = [_load_exclusion_rows(expanded.loc[chip_missing], "RQ_CHIP_QTY")]
+    exclusions = [
+        prepared_plan.attrs.get(LOAD_EXCLUSIONS_ATTR, ()),
+        _load_exclusion_rows(expanded.loc[chip_missing], "RQ_CHIP_QTY"),
+    ]
     expanded = expanded.loc[~chip_missing].drop(columns="_chip_merge")
 
     calculation = expanded.merge(
@@ -732,7 +781,10 @@ def calculate_density_load(plan: pd.DataFrame, density_data: pd.DataFrame) -> pd
     # Density 환산은 물론 HOME 대시보드까지 통째로 멈췄다. 용량이 발생하지 않는 제품이나
     # `구분_EQ` 미등록 신규 제품이 계획에 한 줄만 들어와도 그렇게 된다.
     density_missing = calculation["_density_merge"] != "both"
-    exclusions = [_load_exclusion_rows(calculation.loc[density_missing], "RQ_CHIP_EQ")]
+    exclusions = [
+        prepared_plan.attrs.get(LOAD_EXCLUSIONS_ATTR, ()),
+        _load_exclusion_rows(calculation.loc[density_missing], "RQ_CHIP_EQ"),
+    ]
     calculation = calculation.loc[~density_missing].drop(columns="_density_merge")
 
     # 빈 칸도 Chip·Wafer 경로와 같이 제외 목록으로 내린다.
@@ -789,25 +841,29 @@ def build_monthly_volume(
     density_data: pd.DataFrame | None = None,
     display_order: DisplayOrderInput = None,
 ) -> pd.DataFrame:
-    """Return a monthly matrix grouped by production class, product, and stack."""
-    prepared_plan = _prepare_plan(plan)
+    """Return a monthly matrix grouped by production class, product, and stack.
+
+    환산 함수에는 **준비하지 않은** 계획을 넘긴다. 준비(`_prepare_plan`)가 빈 생산수량 행을 걷어내며
+    제외 목록에 적으므로, 이미 걷어낸 계획을 넘기면 그 기록이 다음 준비에서 빈 목록으로 덮인다.
+    """
     if demand_basis == "PKG":
+        prepared_plan = _prepare_plan(plan)
         volume = prepared_plan.rename(columns={"생산수량": "물량"})
         if detailed:
             volume["WF 구분"] = "PKG"
-        return _pivot_monthly(volume, detailed, display_order)
+        return carry_load_exclusions(prepared_plan, _pivot_monthly(volume, detailed, display_order))
     if demand_basis == "Chip":
-        chip_load = calculate_chip_load(prepared_plan, yield_data, chip_qty)
+        chip_load = calculate_chip_load(plan, yield_data, chip_qty)
         return carry_load_exclusions(chip_load, _pivot_monthly(chip_load, detailed, display_order))
     if demand_basis == "Wafer":
-        wafer_load = calculate_wafer_load(prepared_plan, yield_data, chip_qty)
+        wafer_load = calculate_wafer_load(plan, yield_data, chip_qty)
         return carry_load_exclusions(
             wafer_load, _pivot_monthly(wafer_load, detailed, display_order)
         )
     if demand_basis == "Density":
         if density_data is None:
             raise ValueError("Density 계산에 RQ_CHIP_EQ 기준정보가 필요합니다.")
-        density_load = calculate_density_load(prepared_plan, density_data)
+        density_load = calculate_density_load(plan, density_data)
         return carry_load_exclusions(
             density_load, _pivot_monthly(density_load, detailed, display_order)
         )

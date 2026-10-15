@@ -155,8 +155,45 @@ def build_q_core_data(
     # 맞추면 표 사이 조인이 같은 값을 본다. 원천 스냅샷(typed raw)은 그대로 둔다.
     core["CS"] = core["CS"].astype("string").str.strip().str.upper()
     core["양산구분"] = core["CS"].map(dict(CS_PRODUCTION_CLASSES)).astype("string")
+    # 계획 행 표시. `RQ_PKG_PLAN` 이 `Y` 를 글자 그대로 고르므로 ` y ` 로 온 계획 행이 말없이 빠지지
+    # 않게 여기서 맞춘다.
+    core["계획기초정보여부"] = core["계획기초정보여부"].astype("string").str.strip().str.upper()
     core["가용대수"] = core["설비보유"] - core["설비대여평가"]
+    core["WF 구분"] = unify_case_variants(core["WF 구분"])
     # EDP-TSV 의 `Top` 을 `Top_e` 로 가른다. 원천에는 `Top_e` 가 없으므로 입력은 그대로
     # 받고 여기서 한 번만 바꾼다 — 아래로 내려가는 16개 RQ 표와 화면이 전부 같은 값을 본다.
     core = apply_edp_wf_division(core)
     return core
+
+
+def unify_case_variants(values: pd.Series) -> pd.Series:
+    """대소문자·앞뒤 공백만 다른 표기를 한 표기로 맞춘다. 표기가 하나뿐인 값은 공백만 뗀다.
+
+    `WF 구분` 을 맞대는 자리는 둘로 갈린다 — 부하량 ↔ `RQ_REQB`·수율·Chip 구성 조인은 글자
+    그대로, Dummy·PKG Buffer 판정은 대소문자를 없애고(`match_key`) 본다. 원천 한 벌에 `Core` 와
+    `CORE` 가 함께 오면 `RQ_CHIP_QTY` 가 두 줄이 되어 계획이 두 번 펼쳐지고, 한쪽 표기의 부하량은
+    경로에 닿지 않는다. 그래서 파생 경계에서 **한 번** 맞춘다(16개 RQ 표가 모두 이 프레임에서
+    나온다).
+
+    계산 쪽 조인을 대소문자 무시로 바꾸지 않는 까닭: 이미 두 표기로 저장된 리비전에서는 같은 키가
+    두 줄이 되어 `many_to_one` 검증이 계산 전체를 멈춘다. 그런 리비전의 어긋난 부하량은 소요대수
+    결과의 「경로 없는 계획」 목록에 드러난다.
+
+    고르는 표기는 그 값 가운데 **가장 많이 쓰인 것**이고, 같으면 글자 차례가 앞인 것이다. 원천
+    표기를 지어내지 않고(표시는 원천 그대로라는 `product_type` 규칙), 행 차례에도 기대지 않는다.
+    """
+    text = values.astype("string").str.strip()
+    folded = text.str.casefold()
+    spellings = (
+        pd.DataFrame({"folded": folded, "text": text})
+        .dropna()
+        .value_counts()
+        .rename("count")
+        .reset_index()
+    )
+    if spellings["folded"].is_unique:
+        return text
+    chosen = spellings.sort_values(
+        ["folded", "count", "text"], ascending=[True, False, True]
+    ).drop_duplicates("folded")
+    return folded.map(dict(zip(chosen["folded"], chosen["text"], strict=True))).astype("string")

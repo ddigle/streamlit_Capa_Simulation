@@ -66,9 +66,13 @@ from capa_simulation.services.process_equipment_timeline import (
 from capa_simulation.services.product_share import build_product_volume
 from capa_simulation.services.required_equipment import (
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
+    REQUIRED_LOAD_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
+    UNROUTED_LOADS_ATTR,
+    RequiredExclusionCounts,
     calculate_required_equipment,
     required_equipment_to_month_table,
+    required_exclusion_counts,
 )
 from capa_simulation.services.required_shortening import (
     TARGET_LEVELS,
@@ -401,6 +405,9 @@ class ScenarioResultSummary(NamedTuple):
     required_exclusions: pd.DataFrame
     # 소요대수의 공정 고유값(원본 값·원본 차례). 표시순서 정렬은 부르는 쪽이 한다.
     processes: pd.DataFrame
+    # 계획 쪽에서 소요대수에 들지 않은 것 — 부하량에서 빠진 계획과 경로 없는 계획 부하.
+    load_exclusions: pd.DataFrame
+    unrouted_loads: pd.DataFrame
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -429,7 +436,29 @@ def get_scenario_result_summary(
             REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR, pd.DataFrame()
         ),
         processes=processes,
+        load_exclusions=required_equipment.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR, pd.DataFrame()),
+        unrouted_loads=required_equipment.attrs.get(UNROUTED_LOADS_ATTR, pd.DataFrame()),
     )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_scenario_exclusion_counts(
+    cache_key: ScenarioCacheKey,
+    _scenario_tables: Mapping[str, pd.DataFrame],
+    _reference_tables: Mapping[str, pd.DataFrame],
+) -> RequiredExclusionCounts:
+    """소요대수에 들지 않은 수요 건수(조회기간 기준). HOME 이 결론 위 한 줄에 쓴다.
+
+    정수 넷이라 적중 회차의 값이 작다 — 결과 요약(`get_scenario_result_summary`)은 제외 목록
+    프레임째 담아 HOME 의 매 회차에 풀기에는 크다. 키·`_` 인자 계약은
+    `get_scenario_capacity_and_demand` 와 같다.
+    """
+    _, required_equipment = get_scenario_capacity_and_demand(
+        cache_key,
+        _scenario_tables=_scenario_tables,
+        _reference_tables=_reference_tables,
+    )
+    return required_exclusion_counts(required_equipment)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)

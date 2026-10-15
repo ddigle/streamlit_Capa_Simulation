@@ -20,6 +20,7 @@ from test_reference_data_page import (
     EXCLUSION_PROCESS_TEST_SCRIPT,
     REQUIRED_TAB,
     SECUREMENT_TAB,
+    TEST_SCRIPT,
     TWO_PROCESS_RESULT_SCRIPT,
     _open_calc_tab,
 )
@@ -28,6 +29,14 @@ import capa_simulation.services.simulation_cache as simulation_cache
 
 UNIT_CAPACITY_TAB = ":material/insights: 대당 Capa"
 EXCLUSIONS_EXPANDER_KEY = "unit_capacity_exclusions_expander"
+# 경로에 닿지 않는 계획 한 줄을 더한 시나리오. 계산을 실제로 돌려야 attrs 가 생긴다.
+UNROUTED_PLAN_RESULT_SCRIPT = (
+    TEST_SCRIPT.replace('PAGE_NAME = "reference_data.py"', 'PAGE_NAME = "calculation_result.py"')
+    .replace("ADD_UNROUTED_PLAN = False", "ADD_UNROUTED_PLAN = True")
+    .replace("STUB_CALCULATIONS = True", "STUB_CALCULATIONS = False")
+    .replace('"test-capacity-standards-page"', '"test-capacity-unrouted-plan-page"')
+)
+assert "ADD_UNROUTED_PLAN = True" in UNROUTED_PLAN_RESULT_SCRIPT
 
 
 def _record(monkeypatch: pytest.MonkeyPatch, names: tuple[str, ...]) -> list[str]:
@@ -133,3 +142,25 @@ def test_the_required_csv_follows_the_table_filter() -> None:
     app.multiselect(key="required_equipment_filter_공정").set_value([]).run()
     assert not app.exception
     pd.testing.assert_frame_equal(_required_csv(app), both)
+
+
+def test_the_required_tab_lists_plan_load_that_reaches_no_route() -> None:
+    """P2 — 경로에 닿지 않은 계획 부하는 소요대수 탭이 건수·목록·CSV 로 알린다.
+
+    알리지 않으면 그 부하는 어느 공정의 소요대수에도 들지 않은 채 사라진다.
+    """
+    app = _open_calc_tab(
+        AppTest.from_string(UNROUTED_PLAN_RESULT_SCRIPT, default_timeout=60), REQUIRED_TAB
+    )
+
+    warnings = [element.value for element in app.warning]
+    assert any("RQ_REQB 경로에 닿지 않은 계획 부하가 1건" in text for text in warnings), warnings
+    downloads = app.session_state["captured_downloads"]
+    exported = pd.read_csv(
+        BytesIO(bytes(downloads["download_unrouted_loads_csv"]["data"])),
+        encoding="utf-8-sig",
+        dtype="object",
+    )
+    assert exported[["Capa Code", "부하량", "제외사유"]].values.tolist() == [
+        ["CAPA-NO-ROUTE", "40.0", "경로 키 어긋남"]
+    ]

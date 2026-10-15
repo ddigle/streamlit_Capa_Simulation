@@ -558,6 +558,40 @@ def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: 
     assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
 
 
+REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"
+
+
+def test_home_says_how_much_demand_is_left_out_of_the_requirement(tmp_path: Path) -> None:
+    """P1·P3 — 부하량에서 빠진 계획이 있으면 HOME 이 결론 위에 한 줄로 말한다.
+
+    한 제품의 Chip 구성을 빼면 그 제품 계획은 부하량에서 빠지고 소요대수가 그만큼 작아져 확보율이
+    높게 나온다. HOME 이 말하지 않으면 보는 사람은 그 숫자를 그대로 믿는다.
+    """
+    app = AppTest.from_string(_home_script(tmp_path / "scenario.duckdb"), default_timeout=300)
+    app.run()
+    assert not list(app.exception)
+    assert not [item.value for item in app.warning if REQUIRED_EXCLUSION_PHRASE in item.value]
+
+    scenario = app.session_state["active_scenario"]
+    chip = scenario["tables"]["RQ_CHIP_QTY"]
+    product = chip["제품정보"].iloc[-1]
+    updated = dict(scenario)
+    updated["tables"] = {
+        **scenario["tables"],
+        "RQ_CHIP_QTY": chip.loc[chip["제품정보"].ne(product)].reset_index(drop=True),
+    }
+    updated["revision"] = scenario["revision"] + 1
+    updated["content_token"] = f"home-chip-qty-dropped-{tmp_path.name}"
+    app.session_state["active_scenario"] = updated
+    app.run()
+
+    assert not list(app.exception)
+    warnings = [item.value for item in app.warning if REQUIRED_EXCLUSION_PHRASE in item.value]
+    assert len(warnings) == 1, warnings
+    assert "조회기간 기준" in warnings[0]
+    assert "기준정보가 없어 부하량에서 빠진 계획" in warnings[0]
+
+
 def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> None:
     """상세 B/N 월 Figure 의 hover 는 `staticPlot` 을 빼 둔 것이 유일한 근거다.
 

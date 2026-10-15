@@ -217,6 +217,16 @@ if ADD_UNCOUNTED_PKG_ROW:
         [tables["RQ_REQB"], pd.DataFrame([core_row])], ignore_index=True
     )
 
+# `RQ_REQB` 에 없는 Capa Code 의 계획 한 줄. 그 부하는 어느 공정에도 닿지 않는다 — 산출 결과가
+# 「경로에 닿지 않은 계획 부하」로 알려야 한다. 기본은 꺼 둔다.
+ADD_UNROUTED_PLAN = False
+if ADD_UNROUTED_PLAN:
+    unrouted_row = tables["RQ_PKG_PLAN"].iloc[0].to_dict()
+    unrouted_row.update({"Capa Code": "CAPA-NO-ROUTE", "생산수량": 40.0})
+    tables["RQ_PKG_PLAN"] = pd.concat(
+        [tables["RQ_PKG_PLAN"], pd.DataFrame([unrouted_row])], ignore_index=True
+    )
+
 # 공정 필터를 보려면 공정이 둘 이상이어야 한다. 기본은 꺼 두어 다른 테스트의 건수 문구를
 # 건드리지 않는다.
 ADD_SECOND_PROCESS = False

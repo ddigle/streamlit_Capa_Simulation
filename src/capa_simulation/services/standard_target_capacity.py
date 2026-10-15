@@ -17,6 +17,7 @@ from capa_simulation.services.frame_contracts import (
     to_numeric_strict,
 )
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
+from capa_simulation.services.load_calculator import plan_quantities
 from capa_simulation.services.weekly_availability_input import prepare_weekly_availability
 from capa_simulation.services.weighted_unit_capacity import (
     DEMAND_ID_COLUMNS,
@@ -319,7 +320,9 @@ def _prepare_pkg_plan_for_equivalent(data: pd.DataFrame) -> pd.DataFrame:
     text_columns = [column for column in PKG_PLAN_KEYS if column != "생산계획년월"]
     _normalize_text_values(result, text_columns, "RQ_PKG_PLAN")
     assert_complete(result, PKG_PLAN_KEYS, "RQ_PKG_PLAN")
-    result["생산수량"] = to_numeric_strict(result["생산수량"], "RQ_PKG_PLAN.생산수량")
+    # 빈 생산수량은 「계획 없음(0)」이다 — 환산·소요대수와 한 규칙(소요대수 결과가 그 행을 목록으로
+    # 알린다). 숫자가 아닌 글자만 같은 함수·같은 문구(키 예시)로 막는다.
+    result["생산수량"] = plan_quantities(result).fillna(0.0).astype("float64")
     if result["생산수량"].lt(0).any():
         raise ValueError("RQ_PKG_PLAN의 생산수량은 0 이상이어야 합니다.")
     # `Pack Code` 가 업무 키로 올라가 같은 7키에 계획 줄이 여럿 있을 수 있다. 연결 상대인

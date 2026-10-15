@@ -29,6 +29,7 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.required_exclusion_notice import render_plan_exclusion_lists
 from capa_simulation.components.securement_heatmap import render_securement_heatmap
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
@@ -421,6 +422,16 @@ else:
                         ),
                         key="download_required_exclusions_csv",
                     )
+            # 위는 경로 쪽 제외, 이것은 계획 쪽이다 — 어느 경로에도 붙지 못해 위 목록에 없다.
+            render_plan_exclusion_lists(
+                summary.load_exclusions,
+                summary.unrouted_loads,
+                display_order=display_order,
+                page=PAGE_CALCULATION,
+                tab=TAB_REQUIRED,
+                labels=process_labels,
+                file_suffix=f"{effective_start}_{effective_end}",
+            )
             # 내보내기 표 조립·직렬화(합성 표본 상세 2,660행에서 약 70ms, 샘플 관측)는 표 내용
             # 지문 키 캐시다 — 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가
             # 바뀌면 키가 바뀐다.

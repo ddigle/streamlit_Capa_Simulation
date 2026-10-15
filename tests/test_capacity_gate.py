@@ -228,6 +228,111 @@ def test_a_revision_whose_density_stops_cannot_become_official(tmp_path: Path) -
     assert refused.message is not None and "RQ_CHIP_EQ.구분_EQ" in refused.message
 
 
+def _without_chip_qty(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """한 제품의 Chip 구성을 뺀다 — 그 제품 계획은 부하량에서 빠지지만 계산은 멈추지 않는다."""
+    chip = tables["RQ_CHIP_QTY"]
+    product = str(chip["제품정보"].iloc[-1])
+    return {**tables, "RQ_CHIP_QTY": chip.loc[chip["제품정보"].ne(product)].reset_index(drop=True)}
+
+
+def _plan_off_route(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """한 제품의 계획 Capa Code 를 경로에 없는 값으로 바꾼다 — 그 부하는 어느 공정에도 안 닿는다."""
+    plan = tables["RQ_PKG_PLAN"].copy()
+    product = plan["제품정보"].iloc[-1]
+    plan.loc[plan["제품정보"].eq(product), "Capa Code"] = "DEMO_NO_ROUTE"
+    return {**tables, "RQ_PKG_PLAN": plan}
+
+
+def _route_without_capacity(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """한 공정의 UPEH 를 뺀다 — 부하가 있는 그 경로는 대당 Capa 가 없어 소요대수에서 빠진다."""
+    upeh = tables["RQ_UPEH"]
+    process = upeh["공정"].iloc[-1]
+    return {**tables, "RQ_UPEH": upeh.loc[upeh["공정"].ne(process)].reset_index(drop=True)}
+
+
+@pytest.mark.parametrize(
+    "edit,phrase",
+    [
+        (_without_chip_qty, "기준정보가 없어 부하량에서 빠진 계획"),
+        (_plan_off_route, "RQ_REQB 경로에 닿지 않은 계획 부하"),
+        (_route_without_capacity, "대당 Capa 가 없어 뺀 부하 경로"),
+    ],
+    ids=["load_exclusion", "unrouted_load", "route_without_capacity"],
+)
+def test_a_save_that_leaves_demand_out_of_the_requirement_says_how_much(
+    tables: dict[str, pd.DataFrame], edit: object, phrase: str
+) -> None:
+    """P1·P2·P3 — 계산은 되지만 소요대수에 들지 않은 수요가 있으면 저장은 하되 몇 건인지 말한다.
+
+    말하지 않으면 확보율이 그만큼 높게 나온 리비전이 아무 표시 없이 저장·발행된다.
+    """
+    assert callable(edit)
+    version = _version()
+
+    verdict = revision_save_verdict(version, _edited(version, edit(tables)), tables)
+
+    assert verdict.allowed
+    assert verdict.message is not None and phrase in verdict.message
+    assert "시나리오 전체 기간" in verdict.message
+
+
+def _pkg_route_on_one_product(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """한 제품의 한 공정 경로를 소요기준 PKG·WF 구분 BUFFER 로 바꾼다(경로와 UPEH 를 함께).
+
+    사내 실데이터 구조와 같은 꼴이다 — PKG 경로는 한 제품군(HBM)에만 있고, 다른 제품(EDP-TSV)에는
+    PKG 공정이 없다.
+    """
+    reqb = tables["RQ_REQB"].copy()
+    upeh = tables["RQ_UPEH"].copy()
+    product = reqb["제품정보"].iloc[0]
+    process = reqb["공정"].iloc[-1]
+    for frame in (reqb, upeh):
+        rows = frame["제품정보"].eq(product) & frame["공정"].eq(process)
+        frame.loc[rows, ["소요기준", "WF 구분"]] = ["PKG", "BUFFER"]
+    return {**tables, "RQ_REQB": reqb, "RQ_UPEH": upeh}
+
+
+def test_a_product_without_pkg_routes_does_not_make_every_save_warn(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """R1 — PKG 경로가 없는 제품의 PKG 부하는 「경로 없는 계획」이 아니다. 세면 모든 저장·발행이
+    늘 경고하고, 그 경고(「확보율이 실제보다 높게」)는 이 경우 사실도 아니다."""
+    version = _version()
+
+    edited = _edited(version, _pkg_route_on_one_product(tables))
+
+    verdict = revision_save_verdict(version, edited, tables)
+
+    assert verdict.allowed and verdict.message is None
+
+
+def test_publishing_a_revision_with_demand_outside_the_requirement_warns(tmp_path: Path) -> None:
+    """P1·P3 — 발행은 막지 않고 알린다. 공식버전은 모두의 첫 화면이라 지정하는 사람이 알아야
+    한다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    database = tmp_path / "gate-warning.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    release = ensure_initial_scenario(repository).release
+    assert release is not None
+    snapshot = repository.load_revision(release.revision_id)
+    dropped = repository.save_revision(
+        snapshot.scenario.scenario_id,
+        _without_chip_qty({name: snapshot.tables[name] for name in REVISION_TABLES}),
+        snapshot.preset,
+        revision_name="Chip 구성 한 제품 누락",
+        parent_revision_id=release.revision_id,
+    )
+
+    clean = official_publish_verdict(str(database), release.revision_id)
+    warned = official_publish_verdict(str(database), dropped.revision.revision_id)
+
+    assert clean.allowed and clean.message is None
+    assert warned.allowed
+    assert warned.message is not None and "부하량에서 빠진 계획" in warned.message
+
+
 @pytest.mark.parametrize(
     "module,function,write_call,gate_call",
     [

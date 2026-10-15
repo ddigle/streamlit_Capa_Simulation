@@ -190,6 +190,71 @@ def test_area_name_is_normalized_before_rq_derivation() -> None:
         assert prepared.reference_tables[table_name].loc[0, "Area_Name"] == "Main"
 
 
+def test_wf_division_spellings_that_differ_only_in_case_become_one_value_before_derivation() -> (
+    None
+):
+    """P8 — 대소문자·앞뒤 공백만 다른 `WF 구분` 은 파생 경계에서 한 표기로 맞춘다.
+
+    계산의 조인은 표기를 글자 그대로 맞대는 곳(부하량 ↔ `RQ_REQB`, 수율)과 대소문자를 없애고
+    맞대는 곳(Dummy·PKG Buffer 판정)이 섞여 있다. 원천 한 벌에 `Core`·`CORE` 가 함께 오면
+    `RQ_CHIP_QTY` 가 두 줄이 되어 계획이 두 번 펼쳐지고, 한쪽 표기의 부하량은 경로에 닿지 않는다.
+    고르는 표기는 가장 많이 쓰인 것이다(같으면 글자 차례 앞) — 원천 표기를 지어내지 않는다.
+    """
+    from capa_simulation.services.required_equipment import calculate_required_equipment
+    from capa_simulation.services.unit_capacity import calculate_unit_capacity
+
+    source = pd.concat([_core_data_row()] * 3, ignore_index=True)
+    source["계획기초정보여부"] = ["Y", "N", "N"]
+    source["WF 구분"] = pd.array(["Core", "CORE", " CORE "], dtype="string")
+    source["공정"] = pd.array(["Process-A", "Process-B", "Process-C"], dtype="string")
+
+    tables = build_reference_tables(source, _display_order())
+
+    for table_name in (
+        "RQ_YLD",
+        "RQ_CHIP_QTY",
+        "RQ_CHIP_EQ",
+        "RQ_UPEH",
+        "RQ_LOT_RATIO",
+        "RQ_WF_RATIO",
+        "RQ_REQB",
+    ):
+        assert set(tables[table_name]["WF 구분"]) == {"CORE"}, table_name
+    assert len(tables["RQ_CHIP_QTY"]) == 1
+    unit_capacity = calculate_unit_capacity(
+        upeh=tables["RQ_UPEH"],
+        run_rate=tables["RQ_RUN_RATE"],
+        vital=tables["RQ_VITAL"],
+        module=tables["RQ_MODULE"],
+        run_day=tables["RQ_RUN_DAY"],
+        lot_ratio=tables["RQ_LOT_RATIO"],
+        wf_ratio=tables["RQ_WF_RATIO"],
+    )
+    required = calculate_required_equipment(
+        tables["RQ_REQB"],
+        tables["RQ_PKG_PLAN"],
+        tables["RQ_YLD"],
+        tables["RQ_CHIP_QTY"],
+        unit_capacity,
+    )
+    # 세 공정 모두 같은 계획 100 의 부하를 받는다(구분_Chip·수율 1.0). 두 번 펼쳐지지도 않는다.
+    assert required["부하량"].tolist() == [100.0, 100.0, 100.0]
+
+
+def test_a_plan_flag_with_blanks_or_lowercase_still_marks_a_plan_row() -> None:
+    """P8 — `계획기초정보여부` 는 앞뒤 공백을 떼고 대문자로 맞춘 뒤 `Y` 를 본다.
+
+    글자 그대로 `Y` 만 보면 ` y ` 로 온 계획 행이 PKG PLAN 에서 말없이 빠진다.
+    """
+    source = pd.concat([_core_data_row()] * 2, ignore_index=True)
+    source["생산계획년월"] = [202608, 202609]
+    source["계획기초정보여부"] = pd.array([" y ", "Y"], dtype="string")
+
+    tables = build_reference_tables(source, _display_order())
+
+    assert sorted(tables["RQ_PKG_PLAN"]["생산계획년월"].tolist()) == [202608, 202609]
+
+
 def test_cs_codes_map_to_the_two_production_classes_after_trimming_and_casing() -> None:
     """MP·CS 는 양산, ER 은 ER — 앞뒤 공백·소문자는 맞춘 뒤 대조하고 CS 키도 그 값으로 남긴다."""
     source = pd.concat([_core_data_row()] * 6, ignore_index=True)

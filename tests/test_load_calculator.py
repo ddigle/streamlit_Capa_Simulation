@@ -426,3 +426,25 @@ def test_a_plan_without_pack_code_names_the_empty_column_and_asks_for_reregistra
     message = str(error.value)
     assert "Pack Code" in message
     assert "다시 조회" in message
+
+
+def test_monthly_volume_names_the_row_of_a_non_numeric_plan_quantity() -> None:
+    """R3 — 환산도 소요대수·표준 목표 PKG 환산과 같은 문구(년월 · 제품 · Stack 예시)로 멈춘다.
+
+    세 경로가 `plan_quantities` 하나로 숫자화한다. 한 화면만 키 없이 멈추면 고칠 행을 찾을 수
+    없다.
+    """
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["DEMO-A", "DEMO-B"],
+            "Stack": ["8H", "12H"],
+            "생산수량": [100.0, "약 50"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="숫자가 아닌 값") as caught:
+        build_monthly_volume(plan, pd.DataFrame(), pd.DataFrame(), "PKG")
+
+    assert "202608 · DEMO-B · 12H → '약 50'" in str(caught.value)
