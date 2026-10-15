@@ -261,8 +261,20 @@ def test_a_locked_database_says_to_use_a_copy(
     code, output = _run(capsys, "--database", str(simulation_db))
 
     assert code == 1
+    assert "그동안 사용자 앱의 연결이 막힌다" in output
     assert "런북 6-3 대로 사본을 떠" in output
     assert SENTINEL not in output
+
+
+def test_the_database_has_no_default(capsys: pytest.CaptureFixture[str]) -> None:
+    """기본값이 운영 DB 면 저장소에서 부를 때 그것을 연다. 이 앱은 연산마다 연결을 열고 닫아 쉬는
+    동안에는 잠금이 없으니 열리기는 하지만, 수 분 동안 쥐는 사이 사용자 앱의 연결이 다른 프로세스
+    잠금으로 곧바로 실패한다(`_sql_helpers.connect` 는 그 잠금을 다시 시도하지 않는다)."""
+    with pytest.raises(SystemExit) as stopped:
+        script.parse_args([])
+
+    assert stopped.value.code == 2
+    assert "--database" in capsys.readouterr().err
 
 
 def test_a_missing_file_stops_without_its_path(

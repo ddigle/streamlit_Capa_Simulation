@@ -577,39 +577,49 @@ uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir $HOME/p
 
 ```powershell
 $e2e = "$HOME\e2e_copy\$(Get-Date -Format yyyyMMddHHmm)"
+New-Item -ItemType Directory -Force (Split-Path $e2e) | Out-Null
 git archive --format=zip -o "$e2e.zip" HEAD
 Expand-Archive "$e2e.zip" $e2e
 $py = "$PWD\.venv\Scripts\python.exe"
 ```
 
-`git archive` 는 커밋된 것만 푼다 — 사용자가 지시한 임시 수정(1-5)은 사본에 없다. 그 수정이 걸린 채로 봐야 하면 이 확인은 하지
-않는다.
+`git archive -o` 는 상위 폴더를 만들지 않는다 — 둘째 줄이 없으면 처음 따라 할 때(`e2e_copy` 가 아직 없다) 「could not open
+… for writing」으로 멈춘다. `git archive` 는 커밋된 것만 푼다 — 사용자가 지시한 임시 수정(1-5)은 사본에 없다. 그 수정이 걸린
+채로 봐야 하면 이 확인은 하지 않는다.
 
 ### 2) DB 복사 — `.wal` 이 없을 때만
 
 DuckDB 는 저장을 먼저 `<DB>.wal` 에 적고 나중에 본 파일로 옮긴다. `.wal` 이 있는 동안 본 파일만 복사하면 마지막 저장이 빠지거나 사본이
-열리지 않는다. 앱은 rerun 하는 동안만 DB 를 쥐고 쉬는 동안에는 `.wal` 을 남기지 않으므로, **복사 앞뒤로 두 번** 본다.
+열리지 않는다. 앱은 rerun 하는 동안만 DB 를 쥐고 쉬는 동안에는 `.wal` 을 남기지 않으므로, **복사 앞뒤로 두 번** 본다. `.wal` 만
+보면 복사 **도중에** 저장과 체크포인트가 다 끝난 경우(앞뒤 모두 `.wal` 없음)를 놓치므로 원본의 크기·마지막 쓴 시각도 앞뒤로 견준다.
 
 ```powershell
-Test-Path data\capa_simulation.duckdb.wal, data\equipment_availability.duckdb.wal
-Copy-Item -Force data\capa_simulation.duckdb, data\equipment_availability.duckdb "$e2e\data\"
-Test-Path data\capa_simulation.duckdb.wal, data\equipment_availability.duckdb.wal
+$db = "data\capa_simulation.duckdb", "data\equipment_availability.duckdb"
+$wal = "data\capa_simulation.duckdb.wal", "data\equipment_availability.duckdb.wal"
+$before = Get-Item $db | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+Test-Path $wal
+Copy-Item -Force $db "$e2e\data\"
+Test-Path $wal
+$after = Get-Item $db | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
+Compare-Object $before $after
 ```
 
-두 번 다 `False` 둘이어야 한다. 한 번이라도 `True` 가 있거나 복사가 「다른 프로세스가 사용 중」으로 막히면 그사이 누가 저장(rerun)한
-것이다 — 1분쯤 뒤 가운데 줄부터 다시 한다. 사본 시각은 마지막으로 성공한 복사의 시각이다.
+`Test-Path` 는 두 번 다 `False` 둘이고 `Compare-Object` 는 아무것도 찍지 않아야 한다. 하나라도 어긋나거나 복사가 「다른 프로세스가
+사용 중」으로 막히면 그사이 누가 저장(rerun)한 것이다 — 1분쯤 뒤 `$before` 줄부터 다시 한다. 사본 시각은 마지막으로 성공한 복사의
+시각이다.
 
 ### 3) 사본이 맞는지 — 띄우기 전에 둘을 본다
 
 ```powershell
 $env:PYTHONPATH = "$e2e\src"
 & $py -c "import capa_simulation.settings as s; print(s.DUCKDB_PATH.resolve())"
-& $py "$e2e\scripts\inspect_revision_calculations.py" --active-only --output $HOME\revisions_head.md
+& $py -c "import duckdb, capa_simulation.settings as s; [print(p.name, duckdb.connect(str(p), read_only=True).execute('SELECT count(*) FROM duckdb_tables()').fetchone()[0]) for p in (s.DUCKDB_PATH, s.EQUIPMENT_DUCKDB_PATH)]"
 ```
 
 - 첫 줄이 찍는 경로가 **`$e2e\data\` 아래여야 한다.** 저장소의 `data\` 가 찍히면 멈춘다 — 그대로 띄우면 사본 앱이 사용자 DB 를 연다
   (`PYTHONPATH` 가 안 먹었다).
-- 둘째 줄은 사본이 열리는지만 본다 — 「DB 를 열지 못했습니다」·「리비전 목록을 읽지 못했다」면 2) 를 다시 한다.
+- 둘째 줄은 두 사본이 열리는지만 본다(읽기 전용으로 열어 표 수만 센다 — 몇 초). 파일 이름과 표 수 두 줄이 나와야 하고, 오류가
+  나면 2) 를 다시 한다. 전 리비전 계산은 여기서 하지 않는다 — 수 분이 걸리고 4-a 가 한다.
 
 ### 4) 확인 셋 — 고른 것만, 이 차례로
 
@@ -621,8 +631,11 @@ $env:PYTHONPATH = "$e2e\src"
 걸리면 `--active-only`(시나리오마다 활성 리비전과 공식버전 대상만).
 
 ```powershell
-& $py "$e2e\scripts\inspect_revision_calculations.py" --output $HOME\revisions.md
+& $py "$e2e\scripts\inspect_revision_calculations.py" --database "$e2e\data\capa_simulation.duckdb" --output $HOME\revisions.md
 ```
+
+`--database` 는 기본값이 없다 — 늘 사본 경로를 준다. 운영 DB(`data\capa_simulation.duckdb`)는 앱이 쉬는 동안 열리기도 하지만, 이
+스크립트가 쥐는 수 분 동안 사용자 앱의 연결이 막힌다.
 
 출력 블록을 고치지 않고 붙인다. 읽는 법은 블록 끝에 있다 — `멈춤` 이 0 이 아니면 그 줄의 원천 묶음·단계·표 이름을 「발견」에 옮긴다.
 
@@ -630,11 +643,20 @@ $env:PYTHONPATH = "$e2e\src"
 `data\` 는 받지 않는다 — 사본 폴더만.
 
 ```powershell
-& $py scripts\benchmark_home.py --data-dir "$e2e\data" > $HOME\home_bench.json
+& $py scripts\benchmark_home.py --data-dir "$e2e\data" --output $HOME\home_bench.json
 ```
 
-`phases` 의 단계마다 `seconds`·`figure_count`, 그리고 `skipped`(입력이 없어 잠긴 토글)·`note`(프로필이 없어 켠 비용만 잰 토글)를
-옮긴다. `cold_summary` 의 Figure 가 8이 아니면 스크립트가 스스로 멈춘다 — 그 줄을 그대로 적는다.
+`>` 로 받지 않는다 — 출력은 UTF-8 인데 PowerShell 5.1 의 `>` 는 그것을 콘솔 코드페이지(cp949)로 읽어 한글을 깨뜨린다. `--output`
+파일은 UTF-8 이고 먼저 비운다. `phases` 의 단계마다 `seconds`·`figure_count`, 그리고 `skipped`(입력이 없어 잠긴 토글)·`note`(프로필이
+없어 켠 비용만 잰 토글)를 옮긴다.
+
+실패하면 스크립트가 한 줄만 찍고(표준 오류와 `--output` 파일) 1 로 멈춘다. 그 한 줄은 둘 중 하나다.
+
+- 스크립트 자신의 문장 — 예: `cold_summary의 Figure 수가 8개가 아닙니다: 4`.
+- HOME 이 멈췄을 때 **줄인 줄** — `<단계> 실행 실패 — <예외 종류> <수> · 문구가 가리키는 표 <RQ_*> (사본이라 문구는 찍지
+  않는다)`. 사본 모드는 HOME 의 오류 문구(공정·제품 이름, DB 오류면 사본 경로가 실린다)를 찍지 않는다.
+
+**그 한 줄만** 그대로 적는다. 원문이 필요하면 c 의 사본 앱 화면에서 보고, 리뷰에는 옮기지 않는다.
 
 **c. 화면** — 둘 중 하나.
 
@@ -664,10 +686,11 @@ Set-Location <저장소>
 ```
 
 사용자에게 `$e2e` 폴더와 `$e2e.zip` 을 지워 달라고 한다(실데이터 사본이다). 리뷰 문서 `## 사본 E2E (런북 6-3)` 절에는 사본 시각,
-`.wal` 확인 두 번 「없음」, 고른 확인(a·b·c)과 그 블록·수를 적는다. 고르지 않은 것은 「안 함」.
+`.wal` 확인 두 번 「없음」과 크기·시각 「같음」, 고른 확인(a·b·c)과 그 블록·수를 적는다. 고르지 않은 것은 「안 함」.
 
-WebIDE(리눅스)면 `$py` 는 `<저장소>/.venv/bin/python` 이고, 트리는 `git archive HEAD | tar -x -C <사본 폴더>`, `.wal` 확인은
-`ls data/*.wal` 이다(없다고 나와야 한다).
+WebIDE(리눅스)면 `$py` 는 `<저장소>/.venv/bin/python` 이고, 트리는 `mkdir -p <사본 폴더> && git archive HEAD | tar -x -C <사본 폴더>`
+(`tar -C` 도 대상 폴더가 있어야 한다), `.wal` 확인은 `ls data/*.wal` 이다(없다고 나와야 한다). 크기·시각은 복사 앞뒤로
+`stat -c '%n %s %y' data/*.duckdb` 를 찍어 두 번이 같아야 한다.
 
 ---
 

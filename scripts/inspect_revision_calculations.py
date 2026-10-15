@@ -30,8 +30,10 @@ Markdown 블록**을 찍는다.
 **지키는 것** — `inspect_real_data_checks.py` 와 같다.
 
 - **읽기만 한다.** DB 를 `read_only=True` 로 열고 저장소(Repository)를 만들지 않는다
-  — `initialize()` 는 마이그레이션을 건다(쓰기다). 앱이 떠 있는 운영 DB 는 잠겨 있어
-  **사본**을 `--database` 로 준다(런북 6-3).
+  — `initialize()` 는 마이그레이션을 건다(쓰기다).
+- **사본에만 돌린다.** `--database` 는 기본값이 없다. 앱은 연산마다 연결을 열고 닫아 쉬는
+  동안에는 운영 DB 도 열리지만, 이 스크립트가 수 분 동안 쥐는 사이 사용자 앱의 연결은 다른
+  프로세스 잠금으로 곧바로 실패한다. 그래서 **사본** 경로를 늘 적어 준다(런북 6-3).
 - **값을 찍지 않는다.** 개수·상태·초만 찍는다. 시나리오·리비전은 이름 대신 차례
   번호(`S3`·`r2`)로 적는다. 예외는 종류(클래스 이름)와 그 문구에 든 **계약 표
   이름(`RQ_*` 16개)** 만 적는다 — 이 앱의 오류 문구에는 공정·제품 이름이 실린다.
@@ -74,7 +76,6 @@ from capa_simulation.services.unit_capacity import (  # noqa: E402
     CAPACITY_EXCLUSIONS_ATTR,
     calculate_unit_capacity,
 )
-from capa_simulation.settings import DUCKDB_PATH  # noqa: E402
 
 # 원천 종류(`app_meta.dataset.source_type`, 앱이 적는 값)를 묶어 부르는 이름. 표 차례다.
 SOURCE_GROUPS: Final[tuple[tuple[str, str], ...]] = (
@@ -104,8 +105,8 @@ STATUSES: Final[tuple[str, ...]] = (CALCULATED, STOPPED, SECUREMENT_STOPPED, BLO
 
 _HEADER: Final = "<!-- inspect_revision_calculations.py — 아래 블록을 리뷰 문서에 붙인다 -->\n"
 _LOCK_MESSAGE: Final = (
-    "DB 를 열지 못했습니다. 앱이 떠 있는 운영 DB 는 잠겨 있다 — 런북 6-3 대로 사본을 떠 "
-    "`--database` 로 주거나 앱을 끈 뒤 다시 돌린다."
+    "DB 를 열지 못했습니다 — 다른 프로세스가 지금 쥐고 있다. 운영 DB 는 앱이 쉬는 동안 열리기도 "
+    "하지만 그동안 사용자 앱의 연결이 막힌다 — 런북 6-3 대로 사본을 떠 `--database` 로 준다."
 )
 
 
@@ -530,8 +531,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--database",
         type=Path,
-        default=DUCKDB_PATH,
-        help="시뮬레이션 DuckDB(앱이 떠 있으면 사본 경로)",
+        required=True,
+        help="시뮬레이션 DuckDB 사본(런북 6-3). 운영 DB 를 주면 그동안 사용자 앱이 막힌다",
     )
     parser.add_argument(
         "--active-only",
