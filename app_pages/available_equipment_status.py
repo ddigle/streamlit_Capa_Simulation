@@ -31,6 +31,7 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
+from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.navigation import (
     EQUIPMENT_GAP_TAB,
@@ -385,12 +386,17 @@ with rawdata_tab:
 
 
 with shortening_tab:
-    if not tab_is_hidden(shortening_tab):
+    if tab_is_hidden(shortening_tab):
+        # 이 탭의 기준선 알림 자리는 탭이 숨은 회차에도 채운다 — 비워 두면 거기 남은 토스트가 앞으로
+        # 당겨져 다른 탭에서 다시 뜬다(`reserve_baseline_notice_slots`).
+        reserve_baseline_notice_slots()
+    else:
         if using_dashboard_sample and not show_sample_fleet:
             st.info(
                 "등록된 호기가 없습니다. RawData에서 설비 마스터를 입력하거나 "
                 "샘플 데이터를 켜서 화면을 살펴보세요."
             )
+            reserve_baseline_notice_slots()
         else:
             # Static/Dynamic 과 같은 입력을 같은 길로 모은다. 소요대수는 활성 시나리오에 있으므로
             # **이 탭 안에서만** 예외를 잡아 알린다 — 다른 탭과 Cut-off 입력은 막지 않는다.

@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import html
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -110,12 +111,23 @@ NO_COMPARISON = "-"
 """「비교 안 함」. 기준선 id 는 uuid hex 라 이 글자와 겹치지 않는다."""
 
 _BASELINE_FORM_KEY = "equipment_shortening_baseline_form"
+_BASELINE_POPOVER_KEY = "equipment_shortening_baseline_popover"
 _BASELINE_NAME_KEY = "equipment_shortening_baseline_name"
 _BASELINE_SAVED_BY_KEY = "equipment_shortening_baseline_saved_by"
 _BASELINE_FORM_GENERATION_KEY = "equipment_shortening_baseline_form_generation"
 _BASELINE_DELETE_CONFIRM_KEY = "equipment_shortening_baseline_delete_confirm"
 _BASELINE_DELETE_KEY = "equipment_shortening_baseline_delete"
 _BASELINE_NOTICE_KEY = "equipment_shortening_baseline_notice"
+_BASELINE_NOTICE_SHOWN_KEY = "equipment_shortening_baseline_notice_shown"
+_NOTICE_SLOTS = 3
+"""기준선 알림이 이벤트 칸(본문 밖 최상위 칸)에 쓰는 자리 수 — 알림이 있든 없든 늘 이만큼 쓴다.
+
+브라우저는 같은 자리의 토스트가 떠 있는 동안 그 자리에 새 토스트를 띄우지 않으므로, 잇단 알림
+셋까지 보인다."""
+_TOAST_VISIBLE_SECONDS = 6.0
+"""토스트가 아직 떠 있다고 보는 시간 — Streamlit 기본 4초에 망 지연 여유를 더했다."""
+_clock = time.monotonic
+_BASELINE_DELETE_HANDLED_KEY = "equipment_shortening_baseline_delete_handled"
 _BASELINE_WRITTEN_KEY = "equipment_shortening_baseline_written"
 _PROGRESS_CSV_KEY = "equipment_shortening_progress_csv"
 
@@ -217,15 +229,62 @@ def load_selected_baseline(
 
 
 def render_baseline_notice() -> None:
-    """저장·지우기 콜백이 남긴 알림 한 번. 토스트라 아래 위젯의 자리를 밀지 않는다."""
-    notice = st.session_state.pop(_BASELINE_NOTICE_KEY, None)
-    if not isinstance(notice, tuple) or len(notice) != 2:
-        return
-    kind, message = notice
-    st.toast(
-        str(message),
-        icon=":material/check_circle:" if kind == "success" else ":material/block:",
+    """저장·지우기 콜백이 남긴 알림. 이벤트 칸에 늘 `_NOTICE_SLOTS` 자리를 쓴다.
+
+    알림은 첫 자리에 세우고, 그 자리 토스트가 아직 떠 있을 때만 다음 자리로 비킨다 — 첫 자리
+    뒤에 남은 토스트는 앞 자리표시자가 지워지는 회차에 앞으로 당겨져 다시 뜰 수 있어 드물게만 쓴다.
+    """
+    notices = _pop_notices()
+    slot = _free_slot() if notices else None
+    for index in range(_NOTICE_SLOTS):
+        if index == slot:
+            st.toast(
+                "\n\n".join(message for _, message in notices),
+                icon=(
+                    ":material/check_circle:"
+                    if all(kind == "success" for kind, _ in notices)
+                    else ":material/block:"
+                ),
+            )
+        else:
+            st.html("<style></style>")
+
+
+def reserve_baseline_notice_slots() -> None:
+    """알림 자리를 빈 자리표시자로 채운다 — 필요단축일정 머리·본문을 그리지 않는 앱 전체 회차용.
+
+    Streamlit 1.63 프런트는 회차가 쓰지 않은 이벤트 칸 요소를 지울 때 토스트만 남긴다. 그 회차가
+    알림 자리를 비워 두면 둘째·셋째 자리에 남은 토스트가 지워진 자리표시자만큼 앞으로 당겨져
+    다시 뜬다(사라진 「저장했습니다」 가 다른 탭에서 또 보인다).
+    """
+    for _ in range(_NOTICE_SLOTS):
+        st.html("<style></style>")
+
+
+def _free_slot() -> int:
+    """이번 알림을 세울 자리 — 토스트가 떠 있지 않은 첫 자리, 모두 떠 있으면 가장 오래된 자리."""
+    now = _clock()
+    shown = st.session_state.get(_BASELINE_NOTICE_SHOWN_KEY)
+    times = (
+        [float(value) for value in shown]
+        if isinstance(shown, tuple) and len(shown) == _NOTICE_SLOTS
+        else [float("-inf")] * _NOTICE_SLOTS
     )
+    free = [index for index, at in enumerate(times) if now - at >= _TOAST_VISIBLE_SECONDS]
+    slot = free[0] if free else min(range(_NOTICE_SLOTS), key=lambda index: times[index])
+    times[slot] = now
+    st.session_state[_BASELINE_NOTICE_SHOWN_KEY] = tuple(times)
+    return slot
+
+
+def _pop_notices() -> list[tuple[str, str]]:
+    """쌓인 알림을 꺼내 비운다(쌓인 차례대로)."""
+    queued = st.session_state.pop(_BASELINE_NOTICE_KEY, None)
+    return [
+        (str(item[0]), str(item[1]))
+        for item in (queued if isinstance(queued, list) else [])
+        if isinstance(item, tuple) and len(item) == 2
+    ]
 
 
 def render_baseline_controls(
@@ -234,7 +293,9 @@ def render_baseline_controls(
     """CSV 단추 줄의 「기준선 저장」 팝오버와, 고른 기준선이 있으면 「기준선 지우기」 팝오버."""
     if save is None:
         return
-    with st.popover("기준선 저장", icon=":material/bookmark_add:"):
+    # 팝오버 key 에 폼 세대를 붙인다 — 저장에 성공하면 새 블록으로 서서 닫힌 채 그려진다(열린 채
+    # 기본 이름으로 다시 서면 확인 삼아 한 번 더 누른 것이 기본 이름 기준선을 하나 더 남긴다).
+    with st.popover("기준선 저장", icon=":material/bookmark_add:", key=_popover_key()):
         _render_save_form(save)
     if selected is not None:
         with st.popover("기준선 지우기", icon=":material/bookmark_remove:"):
@@ -251,8 +312,12 @@ def _render_save_form(save: BaselineSaveContext) -> None:
         return
     # 이름 칸은 저장에 성공할 때마다 key 세대를 올려 새 칸으로 세운다. 닫힌 팝오버 안의 칸은 세션에
     # 적은 값을 받지 못해 방금 저장한 이름을 들고 있다가 되보낸다(사이드바 저장 폼과 같은 까닭).
+    generation = _generation()
     name_key = _name_key()
-    with st.form(_BASELINE_FORM_KEY, border=False):
+    # 폼 key 에도 세대를 붙인다 — 옛 화면에 남은 제출 단추는 제 세대를 콜백 인자로 든 채
+    # 남아(Streamlit 은 지나간 위젯의 콜백 정보를 지우지 않는다) `_save_baseline` 이 거른다.
+    # key 가 같으면 새 폼의 인자로 덮여, 옛 화면의 누름이 새 칸의 기본 이름을 저장한다.
+    with st.form(_form_key(generation), border=False):
         st.text_input(
             "기준선 이름",
             value=default_baseline_name(save.today),
@@ -273,7 +338,7 @@ def _render_save_form(save: BaselineSaveContext) -> None:
             icon=":material/bookmark_add:",
             width="stretch",
             on_click=_save_baseline,
-            args=(save, name_key),
+            args=(save, name_key, generation),
         )
 
 
@@ -305,12 +370,25 @@ def _name_key() -> str:
     return _BASELINE_NAME_KEY if generation == 0 else f"{_BASELINE_NAME_KEY}__g{generation}"
 
 
+def _form_key(generation: int) -> str:
+    return _BASELINE_FORM_KEY if generation == 0 else f"{_BASELINE_FORM_KEY}__g{generation}"
+
+
+def _popover_key() -> str:
+    return f"{_BASELINE_POPOVER_KEY}__g{_generation()}"
+
+
 def _confirm_key(baseline_id: str) -> str:
     return f"{_BASELINE_DELETE_CONFIRM_KEY}__{baseline_id}"
 
 
 def _notice(kind: str, message: str) -> None:
-    st.session_state[_BASELINE_NOTICE_KEY] = (kind, message)
+    """알림을 쌓는다."""
+    queued = st.session_state.get(_BASELINE_NOTICE_KEY)
+    st.session_state[_BASELINE_NOTICE_KEY] = [
+        *(queued if isinstance(queued, list) else []),
+        (kind, message),
+    ]
 
 
 def consume_baseline_write() -> bool:
@@ -323,13 +401,19 @@ def consume_baseline_write() -> bool:
     return bool(st.session_state.pop(_BASELINE_WRITTEN_KEY, False))
 
 
-def _save_baseline(save: BaselineSaveContext, name_key: str) -> None:
+def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) -> None:
     """「기준선 저장」 콜백. 위젯보다 먼저 돌아 새 기준선이 그 회차의 「진척 비교」 목록에 바로
     선다.
 
     얼리는 계획은 단추를 그린 회차의 것 — 사용자가 보던 화면이다. 이름이 비었거나 겹치면 쓰지 않고
     알린다(이름 칸은 그대로 남아 고쳐 다시 누른다).
+
+    `generation` 은 단추를 그린 회차의 폼 세대다. 지금 세대와 다르면 이미 저장에 쓰인 폼의
+    제출이 한 번 더 들어온 것(빠른 두 번 누름)이라 쓰지도 알리지도 않는다 — 알리면 앞 저장의
+    성공 알림을 「같은 이름」 거절로 덮는다.
     """
+    if generation != _generation():
+        return
     if save.refusal is not None:
         _notice("warning", save.refusal)
         return
@@ -353,7 +437,15 @@ def _save_baseline(save: BaselineSaveContext, name_key: str) -> None:
 
 
 def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
-    """「기준선 지우기」 콜백. 확인 칸을 체크하지 않았으면 지우지 않는다. 지우면 비교를 끈다."""
+    """「기준선 지우기」 콜백. 확인 칸을 체크하지 않았으면 지우지 않는다. 지우면 비교를 끈다.
+
+    이 세션이 이미 지우기를 끝낸 기준선의 누름이 한 번 더 들어오면(빠른 두 번 누름 — 옛 화면의
+    단추도 콜백에 닿는다) 쓰지도 알리지도 않는다. 알리면 앞 지우기의 성공 알림에 「이미 지워진
+    기준선」이 섞인다. 끝낸 기준선 id 는 위젯이 아닌 세션 값에 적는다 — 옛 화면이 함께 보내는
+    위젯 값(비교 칸·확인 칸)과 섞이지 않는다.
+    """
+    if st.session_state.get(_BASELINE_DELETE_HANDLED_KEY) == baseline_id:
+        return
     if not st.session_state.get(_confirm_key(baseline_id)):
         _notice("warning", "「정말 지웁니다」를 체크한 뒤 지우세요.")
         return
@@ -362,15 +454,16 @@ def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
     except BOOTSTRAP_ERRORS as exc:
         _notice("warning", f"기준선을 지우지 못했습니다 — {exc}")
         return
+    # 이미 지워졌으면(다른 세션이 먼저 지웠다) 이 세션은 쓰지 않았다 — 목록 캐시만 비우고
+    # 비교를 끈다. 목록은 프래그먼트가 회차마다 다시 읽으므로 앱 전체 회차 표지는 쓴 때만 남긴다.
+    st.session_state[_BASELINE_DELETE_HANDLED_KEY] = baseline_id
     clear_shortening_baseline_cache()
-    st.session_state[_BASELINE_WRITTEN_KEY] = True
     st.session_state[SHORTENING_COMPARE_KEY] = NO_COMPARISON
-    _notice(
-        "success",
-        f"기준선을 지웠습니다 — 「{name}」."
-        if deleted
-        else f"이미 지워진 기준선입니다 — 「{name}」.",
-    )
+    if not deleted:
+        _notice("warning", f"이미 지워진 기준선입니다 — 「{name}」. 목록을 다시 읽었습니다.")
+        return
+    st.session_state[_BASELINE_WRITTEN_KEY] = True
+    _notice("success", f"기준선을 지웠습니다 — 「{name}」.")
 
 
 # ------------------------------------------------------------------ 데이터 고르기

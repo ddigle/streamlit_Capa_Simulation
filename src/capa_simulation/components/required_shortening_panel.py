@@ -61,6 +61,7 @@ from capa_simulation.components.shortening_progress_panel import (
     render_baseline_notice,
     render_compare_select,
     render_progress_csv,
+    reserve_baseline_notice_slots,
     scope_note,
 )
 from capa_simulation.components.shortening_timeline import month_day as _month_day
@@ -214,7 +215,7 @@ def render_required_shortening_tab(
     equipment_revision_no: int | None = None,
     baseline_refusal: str | None = None,
 ) -> None:
-    """필요단축일정 탭 본문. 숨은 탭이면 아무것도 하지 않는다.
+    """필요단축일정 탭 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
 
     조건 위젯 값은 숨은 동안 `persist_state` 가 지킨다.
 
@@ -238,6 +239,7 @@ def render_required_shortening_tab(
     이 탭의 머리·본문만 다시 그린다. 계획은 다섯 목표를 한 번에 세우므로 목표는 계산 입력이 아니다.
     """
     if tab_is_hidden(owner_tab):
+        reserve_baseline_notice_slots()
         return
     # 기준선을 쓴 뒤 앱 전체를 다시 돌리라는 표지는 앱 전체 회차가 거둔다 — 이 회차가 곧 그것이다.
     consume_baseline_write()
@@ -465,8 +467,9 @@ def _render_body(
         return
 
     thresholds = _thresholds()
-    st.html(_style())
-    st.html(_kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
+    # 서식은 KPI 와 한 `st.html` 에 싣는다. 스타일만 든 `st.html` 은 이벤트 칸(본문 밖 최상위
+    # 칸)으로 가는데, 이 본문은 프래그먼트라 갈래(일반·진척 비교)마다 그 칸에 쓰는 수가 달라진다.
+    st.html(_style() + _kpi_markup(level_plan, level, scope, short, selected=bool(selected)))
     _render_downloads(
         prepared.key,
         plan,
@@ -872,9 +875,12 @@ def _render_progress(
         key, baseline.summary.baseline_id, float(level), _plan=plan, _baseline=baseline
     )
     view = progress_view(rows, ordered=ordered, scope=scope, selected=selected, months=months)
-    st.html(_style())
-    st.html(progress_style())
-    st.html(progress_summary_markup(view, baseline, level, selected=selected))
+    # 서식은 요약과 한 `st.html` 에 싣는다(`_render_body` 와 같은 까닭 — 이벤트 칸에 쓰지 않는다).
+    st.html(
+        _style()
+        + progress_style()
+        + progress_summary_markup(view, baseline, level, selected=selected)
+    )
 
     def controls() -> None:
         render_progress_csv(key, baseline, view, level, plan.today)
