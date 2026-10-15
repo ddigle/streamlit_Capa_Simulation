@@ -74,6 +74,18 @@ def _save_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == "새 시나리오로 저장")
 
 
+def _expected_non_monthly(
+    base: ScenarioSnapshot, donor: ScenarioSnapshot
+) -> dict[str, pd.DataFrame]:
+    """월 없는 표의 기대값. 덧붙일 쪽에만 있는 제품(Product-A · 12H)의 Chip 기준만 보충된다."""
+    expected = {name: base.tables[name] for name in NON_MONTHLY_TABLES}
+    density = donor.tables["RQ_CHIP_EQ"]
+    expected["RQ_CHIP_EQ"] = pd.concat(
+        [base.tables["RQ_CHIP_EQ"], density.loc[density["Stack"].eq("12H")]], ignore_index=True
+    )
+    return expected
+
+
 def _preview(app: AppTest) -> pd.DataFrame:
     return next(item.value for item in app.dataframe if "결과 월 수" in item.value.columns)
 
@@ -168,8 +180,9 @@ def test_preview_reports_monthless_differences_and_does_not_save(sources: Source
     assert set(comparison.index) == set(NON_MONTHLY_TABLES)
     assert comparison.loc["RQ_CHIP_EQ", "베이스 행 수"] == 1
     assert comparison.loc["RQ_CHIP_EQ", "덧붙일 쪽 행 수"] == 2
+    assert comparison.loc["RQ_CHIP_EQ", "보충 행 수"] == 1
     assert comparison.loc["RQ_DISPLAY_ORDER", "비교"] == "다름 · 베이스 유지"
-    assert any("베이스 값만" in warning.value for warning in app.warning)
+    assert any("베이스에 없는 제품" in warning.value for warning in app.warning)
     assert set(_preview(app)["결과 월 수"]) == {3}
     assert set(_preview(app)["행 수 증감"]) == {2}
     assert len(repository.list_scenarios()) == 2
@@ -277,8 +290,8 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
                 saved.tables[name].sort_values("생산계획년월").reset_index(drop=True),
                 expected.sort_values("생산계획년월").reset_index(drop=True),
             )
-        for name in NON_MONTHLY_TABLES:
-            pd.testing.assert_frame_equal(saved.tables[name], base.tables[name])
+        for name, expected in _expected_non_monthly(base, donor).items():
+            pd.testing.assert_frame_equal(saved.tables[name], expected)
         assert _save_button(app).disabled
         assert app.session_state[ACTIVE_SCENARIO_KEY] == sentinel
 
@@ -344,8 +357,8 @@ def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(
     for name in MONTHLY_TABLES:
         expected = pd.concat([base.tables[name], donor.tables[name]], ignore_index=True)
         pd.testing.assert_frame_equal(merged.tables[name], expected)
-    for name in NON_MONTHLY_TABLES:
-        pd.testing.assert_frame_equal(merged.tables[name], base.tables[name])
+    for name, expected in _expected_non_monthly(base, donor).items():
+        pd.testing.assert_frame_equal(merged.tables[name], expected)
     for source in (base, donor):
         reloaded = repository.load_revision(
             source.revision.revision_id, apply_global_display_order=False
@@ -387,8 +400,8 @@ def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(
         expected = pd.concat([base.tables[name], donor_slice], ignore_index=True)
         pd.testing.assert_frame_equal(changed_result.tables[name], expected)
         assert set(changed_result.tables[name]["생산계획년월"]) == {202701, 202802}
-    for name in NON_MONTHLY_TABLES:
-        pd.testing.assert_frame_equal(changed_result.tables[name], base.tables[name])
+    for name, expected in _expected_non_monthly(base, donor).items():
+        pd.testing.assert_frame_equal(changed_result.tables[name], expected)
     for previous in (base, donor, merged):
         reloaded = repository.load_revision(
             previous.revision.revision_id, apply_global_display_order=False
@@ -398,3 +411,101 @@ def test_save_keeps_originals_and_active_draft_and_refreshes_changed_range(
     assert app.session_state[ACTIVE_SCENARIO_KEY] == sentinel
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == "활성 리비전 유지"
     assert _save_button(app).disabled
+
+
+def test_a_module_gap_blocks_the_save_with_examples(sources: Sources) -> None:
+    """사내 머지 ①: 모듈수(RQ_MODULE)가 어느 쪽에도 없는 공정은 계산을 멈춘다 — 저장 전에 막는다.
+
+    RQ_MODULE 은 앱에서 고칠 수 없어 저장해 두면 그 시나리오는 영구히 발행할 수 없다(감사 D2).
+    """
+    repository, database, base, donor = sources
+    tables = dict(donor.tables)
+    upeh = tables["RQ_UPEH"]
+    tables["RQ_UPEH"] = pd.concat([upeh, upeh.assign(공정="Process-Z")], ignore_index=True)
+    no_module = repository.save_revision(
+        donor.scenario.scenario_id,
+        tables,
+        donor.preset,
+        revision_name="모듈수 없는 공정",
+        parent_revision_id=donor.revision.revision_id,
+    )
+
+    app = _app(database, base, no_module)
+
+    blocked = [item.value for item in app.error if "RQ_MODULE" in item.value]
+    assert blocked and "Process-Z" in blocked[0] and "2028-01~2028-02" in blocked[0]
+    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    assert len(repository.list_scenarios()) == 2
+
+
+def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) -> None:
+    """감사 D6: 결과 월 사이의 빈 달은 막지 않고 알린다 — 계획·설비가 없는 달로 보인다."""
+    _, database, base, donor = sources
+
+    app = _app(database, base, donor)
+
+    gaps = [item.value for item in app.warning if "빈 달" in item.value]
+    assert gaps and "11개월" in gaps[0] and "2027-02~2027-12" in gaps[0]
+    assert not _save_button(app).disabled
+
+
+def test_virtual_history_follows_the_result_and_a_clash_is_warned(sources: Sources) -> None:
+    """감사 D1·D4: 이력은 결과 표에 남은 제품만 적고, 다른 쪽에선 실제 제품인 키를 알린다.
+
+    메모의 「가상제품 복제 이력 N건 보존」은 결과에 실제로 남은 건수다.
+    """
+    repository, database, base, donor = sources
+    clash = VirtualProductRecord("Product-A", "8H", "원본 A", "8H")
+    gone = VirtualProductRecord("Product-Gone", "8H", "원본 A", "8H")
+    donor = _with_history(repository, donor, (clash, gone))
+
+    app = _app(database, base, donor)
+
+    warnings = [item.value for item in app.warning]
+    assert any("Product-A · 8H" in item and "실제 제품" in item for item in warnings)
+    assert any("Product-Gone · 8H" in item for item in warnings)
+    app.text_input(key="scenario_merge_name").set_value("이력 정리 머지")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    created = next(s for s in repository.list_scenarios() if s.scenario_name == "이력 정리 머지")
+    pd.testing.assert_frame_equal(
+        repository.list_virtual_products(created.active_revision_id), records_to_frame((clash,))
+    )
+    note = repository.load_revision(created.active_revision_id).revision.note
+    assert note is not None
+    assert "가상제품 복제 이력: 1건 보존" in note
+    assert "결과 표에 없어 뺀 이력 1건" in note
+
+
+def test_a_refused_derived_save_writes_nothing(
+    sources: Sources, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """감사 D3: 결과의 계산 검사에 막히면 저장하지 않고, 허락하며 경고하면 저장 뒤에도 보인다."""
+    import capa_simulation.components.scenario_transform as scenario_transform
+    from capa_simulation.components.capacity_gate import GateVerdict
+
+    repository, database, base, donor = sources
+    monkeypatch.setattr(
+        scenario_transform,
+        "derived_save_verdict",
+        lambda *args: GateVerdict(False, "이번 머지가 깨뜨린 것입니다"),
+    )
+    app = _app(database, base, donor)
+    app.text_input(key="scenario_merge_name").set_value("막힐 머지")
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("이번 머지가 깨뜨린" in item.value for item in app.error)
+    assert len(repository.list_scenarios()) == 2
+    assert not _save_button(app).disabled
+
+    monkeypatch.setattr(
+        scenario_transform,
+        "derived_save_verdict",
+        lambda *args: GateVerdict(True, "원본부터 있던 오류가 남아 있습니다"),
+    )
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(repository.list_scenarios()) == 3
+    assert any("원본부터 있던 오류" in item.value for item in app.warning)

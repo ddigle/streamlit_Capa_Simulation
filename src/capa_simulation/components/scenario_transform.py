@@ -1,12 +1,13 @@
-# Purpose: 파생 시나리오의 저장 리비전 선택과 원본을 유지하는 신규 저장 폼을 제공한다.
+# Purpose: 파생 시나리오의 원본 리비전 선택과 계산 검사를 거치는 신규 저장 폼을 제공한다.
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import asdict, replace
 from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.capacity_gate import derived_save_verdict
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -179,8 +180,13 @@ def render_derived_save(
     key: str,
     request: tuple[str, ...],
     virtual_products: tuple[VirtualProductRecord, ...] = (),
+    gate_sources: Sequence[ScenarioSnapshot] = (),
 ) -> None:
-    """저장 성공을 세션에 남기고 같은 제출의 중복 저장과 활성 편집본 교체를 피한다."""
+    """저장 성공을 세션에 남기고 같은 제출의 중복 저장과 활성 편집본 교체를 피한다.
+
+    제출하면 결과의 Capa 계산을 먼저 검사한다(`derived_save_verdict`). 「편집 전」은 결과를 만든
+    원본 리비전 전부다 — `gate_sources` 가 비면 `source` 하나다(머지는 베이스·덧붙일 쪽 둘).
+    """
     blocked = revision_block_reason(tables)
     if blocked:
         st.error(blocked)
@@ -196,6 +202,8 @@ def render_derived_save(
         st.success(
             f"새 시나리오 ‘{saved['name']}’를 저장했습니다. 목록 관리에서 불러올 수 있습니다."
         )
+        if isinstance(saved.get("warning"), str):
+            st.warning(saved["warning"], icon=":material/warning:")
     st.caption(
         "현재 활성 편집본과 원본 시나리오는 유지합니다. 새 시나리오의 조회기간·포함공정은 "
         "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
@@ -212,6 +220,11 @@ def render_derived_save(
             "새 시나리오로 저장", type="primary", disabled=already_saved
         )
     if not submitted or already_saved:
+        return
+    with st.spinner("저장 전에 결과의 Capa 계산을 검사하는 중입니다..."):
+        verdict = derived_save_verdict(tables, gate_sources or (source,))
+    if not verdict.allowed:
+        st.error(verdict.message)
         return
     preset = replace(
         source.preset,
@@ -241,5 +254,9 @@ def render_derived_save(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
-    st.session_state[saved_key] = {"request": request, "name": snapshot.scenario.scenario_name}
+    st.session_state[saved_key] = {
+        "request": request,
+        "name": snapshot.scenario.scenario_name,
+        "warning": verdict.message,
+    }
     st.rerun()

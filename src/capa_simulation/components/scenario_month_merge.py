@@ -1,4 +1,4 @@
-# Purpose: 월별 출처와 겹침 처리 선택·무월 표 차이를 보여 주고 머지 결과를 신규 저장한다.
+# Purpose: 월별 출처·겹침 처리·무월 표 보충·결과 결손을 보여 주고 머지 결과를 검사해 신규 저장한다.
 
 from typing import cast
 
@@ -18,17 +18,21 @@ from capa_simulation.services.scenario_month_merge import (
     OverlapPolicy,
     compare_non_monthly_tables,
     merge_scenario_months,
+    merged_table_gaps,
     preview_month_sources,
 )
 from capa_simulation.services.scenario_transform import (
     copy_scenario_tables,
     format_month_range,
+    format_month_runs,
+    missing_calendar_months,
     scenario_months,
 )
 from capa_simulation.services.scenario_virtual_products import (
-    merge_virtual_product_records,
+    merge_result_virtual_products,
     virtual_product_records,
 )
+from capa_simulation.services.virtual_product import VirtualProductRecord
 from capa_simulation.settings import format_month
 
 # 원본을 고르는 두 상자의 역할(`render_source_selector` 의 `key` — 원본 메모의 칸 이름이다).
@@ -68,8 +72,9 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     st.dataframe(comparison, hide_index=True, width="stretch")
     if comparison["비교"].ne("같음").any():
         st.warning(
-            "두 시나리오의 월 없는 기준정보가 다릅니다. 표시된 네 표는 베이스 값만 사용하고 "
-            "덧붙일 쪽의 값은 가져오지 않습니다. Density·Chip·모듈 기준 차이를 확인하세요."
+            "두 시나리오의 월 없는 기준정보가 다릅니다. 겹치는 제품·공정은 베이스 값을 쓰고, "
+            "베이스에 없는 제품·공정만 덧붙일 쪽에서 보충합니다 — 표마다의 규칙과 보충할 행 수는 "
+            "위 표에 있습니다. 겹치는 키의 Density·Chip·모듈 기준 차이를 확인하세요."
         )
     st.caption(
         "RQ_DISPLAY_ORDER는 각 리비전에 저장된 값을 비교·보존합니다. "
@@ -133,12 +138,27 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         st.caption("원본 리비전이나 월 범위를 바꾸면 겹침 처리를 다시 선택합니다.")
     result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
     st.success(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
+    empty_months = missing_calendar_months(scenario_months(result))
+    if empty_months:
+        st.warning(
+            f"결과 월 사이에 빈 달이 {len(empty_months)}개월 있습니다: "
+            f"{format_month_runs(empty_months)}. 빈 달은 어느 표에도 없어 계획·설비가 없는 달로 "
+            "남고, 필요단축일정 같은 화면에서 부족이 없는 달처럼 보일 수 있습니다. 이어진 기간이 "
+            "필요하면 원본이나 덧붙일 월 범위를 바꾸세요."
+        )
     preview = month_table_summary(base_tables, label="베이스").merge(
         month_table_summary(result, label="결과"), on="표", validate="one_to_one"
     )
     preview["행 수 증감"] = preview["결과 행 수"] - preview["베이스 행 수"]
     with st.expander("12개 월표 미리보기", expanded=True):
         st.dataframe(preview, hide_index=True, width="stretch")
+    gaps = merged_table_gaps(result)
+    for message in gaps.blocking:
+        st.error(message)
+    for message in gaps.warnings:
+        st.warning(message)
+    if gaps.blocking:
+        return
     base_history = virtual_product_records(
         repository.list_virtual_products(base.revision.revision_id)
     )
@@ -147,10 +167,28 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     )
     if base_history or donor_history:
         st.caption(
-            "가상제품 복제 이력에는 월이 없으므로 선택한 두 리비전의 전체 이력을 보존합니다. "
-            "같은 제품·Stack의 복제 원본이 다르면 저장할 수 없습니다."
+            "가상제품 복제 이력에는 월이 없으므로 선택한 두 리비전의 이력을 합치고, 결과 표에 그 "
+            "제품이 남은 것만 보존합니다. 같은 제품·Stack의 복제 원본이 다르면 저장할 수 없습니다."
         )
-    virtual_products = merge_virtual_product_records(base_history, donor_history)
+    history = merge_result_virtual_products(
+        base_history,
+        donor_history,
+        base_tables=base_tables,
+        donor_tables=donor_tables,
+        result_tables=result,
+    )
+    if history.mixed:
+        st.warning(
+            f"한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키가 {len(history.mixed)}개 "
+            f"있습니다: {_record_keys(history.mixed)}. 결과에서 그 제품은 달마다 그 달 원본의 "
+            "값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 공식버전 지정 "
+            "때 확인을 받습니다."
+        )
+    if history.dropped:
+        st.warning(
+            f"결과 표에 그 제품이 없는 가상제품 이력 {len(history.dropped)}건은 보존하지 "
+            f"않습니다: {_record_keys(history.dropped)}."
+        )
     differences = comparison.loc[comparison["비교"].ne("같음"), "표"].tolist()
     provenance = (
         f"월 머지\n베이스: {source_description(base)}\n덧붙일 쪽: {source_description(donor)}\n"
@@ -164,9 +202,20 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
                 index=False, name=None
             )
         )
-        + "\n월 없는 4표: 베이스 유지\n"
-        f"두 원본의 무월 표 차이: {', '.join(differences) if differences else '없음'}\n"
-        f"가상제품 복제 이력: {len(virtual_products)}건 보존 (동일 이력 중복 제거, 원본 충돌 차단)"
+        + "\n월 없는 4표:\n"
+        + "\n".join(
+            f"{name}: {rule} · 보충 {count}행"
+            for name, rule, count in comparison[["표", "합치는 규칙", "보충 행 수"]].itertuples(
+                index=False, name=None
+            )
+        )
+        + f"\n두 원본의 무월 표 차이: {', '.join(differences) if differences else '없음'}\n"
+        f"가상제품 복제 이력: {len(history.records)}건 보존 (동일 이력 중복 제거, 원본 충돌 차단, "
+        "결과 표에 남은 제품만)"
+        + (f" · 결과 표에 없어 뺀 이력 {len(history.dropped)}건" if history.dropped else "")
+        + (f"\n가상·실제가 섞인 제품: {_record_keys(history.mixed)}" if history.mixed else "")
+        + (f"\n결과의 빈 달: {format_month_runs(empty_months)}" if empty_months else "")
+        + "".join(f"\n경고: {message}" for message in gaps.warnings)
     )
     render_derived_save(
         repository,
@@ -183,8 +232,14 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
             str(end),
             policy,
         ),
-        virtual_products=virtual_products,
+        virtual_products=history.records,
+        gate_sources=(base, donor),
     )
+
+
+def _record_keys(records: tuple[VirtualProductRecord, ...]) -> str:
+    shown = ", ".join(f"{record.product} · {record.stack}" for record in records[:5])
+    return shown + (f" 외 {len(records) - 5}건" if len(records) > 5 else "")
 
 
 def _month_source_display(

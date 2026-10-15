@@ -19,12 +19,16 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.capacity_gate import (
+    derived_save_verdict,
     official_publish_verdict,
     revision_save_verdict,
 )
+from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.scenario_month_merge import merge_scenario_months
+from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -138,6 +142,18 @@ def test_only_a_calculating_revision_can_become_official(tmp_path: Path) -> None
             "save_revision",
             "revision_save_verdict",
         ),
+        (
+            "src/capa_simulation/components/scenario_management.py",
+            "_render_clone",
+            "create_scenario",
+            "revision_save_verdict",
+        ),
+        (
+            "src/capa_simulation/components/scenario_transform.py",
+            "render_derived_save",
+            "create_scenario",
+            "derived_save_verdict",
+        ),
     ],
 )
 def test_every_write_path_checks_before_it_writes(
@@ -160,3 +176,99 @@ def test_every_write_path_checks_before_it_writes(
 
     assert gate_call in calls and write_call in calls
     assert calls[gate_call] < calls[write_call]
+
+
+def _snapshot(
+    repository: DuckDBScenarioRepository, name: str, tables: dict[str, pd.DataFrame]
+) -> ScenarioSnapshot:
+    months = sorted(int(month) for month in tables["RQ_UPEH"]["생산계획년월"].unique())
+    return repository.create_scenario(
+        ScenarioCreate(
+            scenario_name=name,
+            source_simulation_code=f"GATE-{uuid4().hex[:8]}",
+            source_simulation_name=name,
+            source_type="TEST",
+            pipeline_version="test-v1",
+        ),
+        tables,
+        ScenarioPreset(months[0], months[-1], ()),
+    )
+
+
+def test_a_derived_result_that_breaks_the_calculation_is_not_saved(
+    tmp_path: Path, tables: dict[str, pd.DataFrame]
+) -> None:
+    """감사 D3: 월 머지·연도 Shift 결과도 리비전 저장과 같은 규칙으로 검사한다.
+
+    원본이 모두 계산되는데 결과가 안 되면 이 변환이 깨뜨린 것이라 막는다. 원본부터 안 되면
+    허락하되 공식버전으로 못 쓴다고 말한다.
+    """
+    repository = DuckDBScenarioRepository(tmp_path / "derived.duckdb")
+    repository.initialize()
+    healthy = _snapshot(repository, "계산되는 원본", tables)
+    broken = _snapshot(repository, "계산 안 되는 원본", _broken(tables))
+
+    assert derived_save_verdict(tables, (healthy,)) == (True, None)
+    refused = derived_save_verdict(_broken(tables), (healthy,))
+    assert not refused.allowed
+    assert refused.message is not None and "RQ_RUN_RATE" in refused.message
+    inherited = derived_save_verdict(_broken(tables), (healthy, broken))
+    assert inherited.allowed
+    assert inherited.message is not None and "공식버전으로 지정할 수 없습니다" in inherited.message
+
+
+def test_a_merge_left_without_a_module_points_to_a_new_merge(tmp_path: Path) -> None:
+    """감사 D2: 모듈수 결손은 앱에서 못 고친다 — 새 리비전도 물려받는다. 고칠 길을 말한다.
+
+    사내 머지 ①을 줄인 것이다. 월 없는 표를 베이스 것만 남긴 채 저장된 머지 시나리오는 발행
+    검사에서 「다시 머지하라」를 듣고, 같은 두 원본을 지금 규칙으로 다시 머지하면 발행된다.
+    """
+    process = "DEMO_Final_Test"
+    seed = dict(build_builtin_seed_dataset().reference_tables)
+    months = sorted(int(month) for month in seed["RQ_UPEH"]["생산계획년월"].unique())
+    first, second = months[:6], months[6:]
+    base_tables = {
+        name: (
+            frame.loc[frame["생산계획년월"].isin(first)].reset_index(drop=True)
+            if name in MONTHLY_TABLES
+            else frame.copy(deep=True)
+        )
+        for name, frame in seed.items()
+    }
+    for name in (*MONTHLY_TABLES, "RQ_MODULE"):
+        if "공정" in base_tables[name].columns:
+            frame = base_tables[name]
+            base_tables[name] = frame.loc[frame["공정"].ne(process)].reset_index(drop=True)
+    donor_tables = {
+        name: (
+            frame.loc[frame["생산계획년월"].isin(second)].reset_index(drop=True)
+            if name in MONTHLY_TABLES
+            else frame.copy(deep=True)
+        )
+        for name, frame in seed.items()
+    }
+    old_merge = merge_scenario_months(base_tables, donor_tables, second[0], second[-1])
+    old_merge.update({name: base_tables[name] for name in NON_MONTHLY_TABLES})
+    database = tmp_path / "module.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    stuck = _snapshot(repository, "옛 머지", old_merge)
+    resaved = repository.save_revision(
+        stuck.scenario.scenario_id,
+        {name: stuck.tables[name] for name in REVISION_TABLES},
+        stuck.preset,
+        revision_name="고쳐 보려 한 리비전",
+        parent_revision_id=stuck.revision.revision_id,
+    )
+
+    for revision_id in (stuck.revision.revision_id, resaved.revision.revision_id):
+        refused = official_publish_verdict(str(database), revision_id)
+        assert not refused.allowed
+        assert refused.message is not None and "RQ_MODULE" in refused.message
+        assert "다시 머지" in refused.message
+    remerged = _snapshot(
+        repository,
+        "다시 머지",
+        merge_scenario_months(base_tables, donor_tables, second[0], second[-1]),
+    )
+    assert official_publish_verdict(str(database), remerged.revision.revision_id).allowed

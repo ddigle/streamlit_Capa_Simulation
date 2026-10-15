@@ -778,6 +778,13 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     try:
         # 활성 RQ 16개를 새 데이터셋으로 통째로 복제한다. 표가 크면 몇 초가 걸린다.
         with st.spinner("현재 활성 RQ 16개를 새 시나리오로 복제하는 중입니다..."):
+            # 지금 편집본이 새 시나리오의 초기 리비전이 된다 — 리비전 저장과 같은 검사다.
+            verdict = revision_save_verdict(
+                get_effective_reference_version(), active_scenario, reference_tables
+            )
+            if not verdict.allowed:
+                st.error(verdict.message)
+                return
             revision_source = revision_tables_for_save(active_scenario, reference_tables)
             preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)
             virtual_products = revision_virtual_product_rows(
@@ -811,6 +818,8 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             f"{object_particle(snapshot.scenario.scenario_name)} 저장했습니다."
             + virtual_product_save_notice(len(virtual_products))
         )
+        if verdict.message:
+            st.session_state[FLASH_WARNING_KEY] = verdict.message
         st.session_state[CLONE_FORM_GENERATION_KEY] = (
             int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0)) + 1
         )

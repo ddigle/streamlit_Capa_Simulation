@@ -1,6 +1,7 @@
-# Purpose: 가상제품 복제 이력을 변환하고, 원본 충돌 없이 합치거나 새 리비전으로 물려준다.
+# Purpose: 가상제품 복제 이력을 변환하고 충돌 없이 합쳐 머지 결과에 맞추거나 새 리비전으로 물려준다.
 
 from collections.abc import Mapping, Sequence
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -48,6 +49,64 @@ def merge_virtual_product_records(
         else:
             merged[key] = record
     return tuple(merged.values())
+
+
+class MergedVirtualProducts(NamedTuple):
+    """월 머지 결과에 남길 이력과, 빼거나 알릴 것."""
+
+    records: tuple[VirtualProductRecord, ...]
+    # 결과 표 어디에도 그 제품 키가 없어 뺀 이력.
+    dropped: tuple[VirtualProductRecord, ...]
+    # 한쪽에선 가상 제품인데 다른 쪽에선 이력 없이 표에 있는(실제 제품인) 키. 결과에서 두 값이
+    # 섞인다 — 달마다 그 달 원본의 행, 월 없는 표는 베이스 값.
+    mixed: tuple[VirtualProductRecord, ...]
+
+
+def _product_keys(tables: Mapping[str, pd.DataFrame]) -> set[tuple[str, str]]:
+    return {
+        (str(product).strip(), str(stack).strip())
+        for name in clone_table_names(tables)
+        for product, stack in tables[name]
+        .loc[:, list(PRODUCT_KEY_COLUMNS)]
+        .drop_duplicates()
+        .itertuples(index=False, name=None)
+    }
+
+
+def merge_result_virtual_products(
+    base: Sequence[VirtualProductRecord],
+    donor: Sequence[VirtualProductRecord],
+    *,
+    base_tables: Mapping[str, pd.DataFrame],
+    donor_tables: Mapping[str, pd.DataFrame],
+    result_tables: Mapping[str, pd.DataFrame],
+) -> MergedVirtualProducts:
+    """월 머지가 새 시나리오에 남길 가상제품 이력. 두 리비전의 이력을 합친 뒤 결과 표를 본다.
+
+    복제 원본이 다른 같은 키는 막는다(`merge_virtual_product_records`). 남기는 것은 결과 표에 그
+    제품 키가 남은 이력뿐이다 — 리비전 저장이 물려받는 규칙(`inherit_virtual_product_records`)과
+    같다. 한쪽에서만 가상 제품이고 다른 쪽 표에는 이력 없이 있는 키는 남기되 알린다. 이력은 남겨야
+    공식버전 지정 때 확인을 받는다.
+    """
+    merged = merge_virtual_product_records(base, donor)
+    kept = inherit_virtual_product_records(merged, (), result_tables)
+    base_virtual = {(record.product, record.stack) for record in base}
+    donor_virtual = {(record.product, record.stack) for record in donor}
+    base_keys, donor_keys = _product_keys(base_tables), _product_keys(donor_tables)
+    mixed = tuple(
+        record
+        for record in kept
+        if (key := (record.product, record.stack)) not in base_virtual & donor_virtual
+        and (
+            (key in donor_virtual and key in base_keys)
+            or (key in base_virtual and key in donor_keys)
+        )
+    )
+    return MergedVirtualProducts(
+        records=kept,
+        dropped=tuple(record for record in merged if record not in kept),
+        mixed=mixed,
+    )
 
 
 def inherit_virtual_product_records(
