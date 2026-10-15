@@ -10,6 +10,8 @@
 - **원수요는 한 번** — STEP 이 여럿이어도 원수요 부하량을 STEP 수만큼 세지 않는다(합성 표본은
   공정·월당 STEP 이 하나라 STEP 을 하나 더 붙인 픽스처로 본다).
 - **캐시** — 래퍼는 순수 함수와 같은 값을 내고, 적중이면 시나리오 전체 프레임을 풀지 않는다.
+
+HOME 표시 확보율(`home_display_rates`)은 HOME 과 같은 함수·차례로 얹는다(실행 Capa → 선행 B/O).
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from capa_simulation.services.process_capa_detail import (
     build_process_capa_summary,
     build_process_month_trace,
     build_process_product_demand,
+    home_display_rates,
     month_column,
     process_calculation_rows,
     process_capa_kpis,
@@ -817,3 +820,40 @@ def test_the_period_slice_bounds_the_product_months(
     assert outside > END
     assert demand[month_column(outside)].eq(0.0).all()
     assert demand[month_column(START)].gt(0).all()
+
+
+def test_home_display_rates_follow_the_home_chain() -> None:
+    """실행 Capa(%p)를 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
+    securement = pd.DataFrame(
+        {
+            "생산계획년월": [202611, 202612, 202611],
+            "공정": [" Mold ", "Mold", "Saw"],
+            "가용대수": [10.0, 10.0, 5.0],
+            "소요대수": [10.0, 8.0, 5.0],
+            "확보율": [1.0, 1.25, 1.0],
+        }
+    )
+    execution = pd.DataFrame(
+        {"생산계획년월": [202611], "공정": ["Mold"], "증감 확보율": [5.0], "비고": ["점검"]}
+    )
+    advance = pd.DataFrame({"생산계획년월": [202611, 202612], "변동률": [0.5, 1.0]})
+
+    assert home_display_rates(securement, process="Mold", months=[202611, 202612, 202701]) == {
+        202611: 1.0,
+        202612: 1.25,
+        202701: None,
+    }
+    with_execution = home_display_rates(
+        securement, process="Mold", months=[202611, 202612], execution_rows=execution
+    )
+    assert with_execution[202611] == pytest.approx(1.05)
+    assert with_execution[202612] == pytest.approx(1.25)
+    both = home_display_rates(
+        securement,
+        process="Mold",
+        months=[202611, 202612],
+        execution_rows=execution,
+        advance_ratio=advance,
+    )
+    assert both[202611] == pytest.approx(1.05 * 0.5)
+    assert both[202612] == pytest.approx(1.25)

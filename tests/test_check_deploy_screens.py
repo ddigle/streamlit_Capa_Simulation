@@ -1345,6 +1345,7 @@ def test_the_labels_the_items_look_for_exist_in_the_app(path: str, label: str) -
         screens.SPACE_PAGE,
         screens.SCENARIO_MANAGEMENT_PAGE,
         screens.ADMIN_AREA_PAGE,
+        screens.PROCESS_DETAIL_PAGE,
     ],
 )
 def test_the_pages_the_items_open_exist(page: str) -> None:
@@ -1359,6 +1360,7 @@ NEW_ITEM_KEYS = [
     "scenario_popup",
     "period_popup",
     "process_popup",
+    "process_detail",
 ]
 
 
@@ -1664,3 +1666,49 @@ def _no_real_side_effects(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """어느 테스트도 진짜 프로세스를 살피지 않는다."""
     monkeypatch.setattr(screens, "running_app_count", lambda: 0)
     yield
+
+
+# ------------------------------------------------------------------ 공정 Capa 상세
+
+
+def test_the_process_detail_contract_matches_the_app() -> None:
+    from capa_simulation.components import process_capa_canvas, process_capa_view
+    from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+    from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
+
+    assert PROCESS_CAPA_DETAIL.path == f"app_pages/{screens.PROCESS_DETAIL_PAGE}.py"
+    assert screens.PROCESS_DETAIL_KEYS == {
+        "kpi": process_capa_view.KPI_ROW_KEY,
+        "canvas": PROCESS_DETAIL_CANVAS_CHART_KEY,
+        "scroll": f"{process_capa_view.SCROLL_KEY}_scroll",
+        "evidence": process_capa_view.EVIDENCE_PANEL_KEY,
+        "absent": process_capa_view.DYNAMIC_ABSENT_KEY,
+    }
+    assert screens.PROCESS_DETAIL_RATE_ROW_PX == (
+        process_capa_canvas.HEADER_HEIGHT_PX
+        + process_capa_canvas.SUMMARY_TITLE_HEIGHT_PX
+        + process_capa_canvas.VALUE_ROW_HEIGHT_PX * 3
+        + process_capa_canvas.VALUE_ROW_HEIGHT_PX // 2
+    )
+
+
+@pytest.mark.parametrize(
+    ("after", "expected"),
+    [
+        ({"month": "26.03"}, "바뀜"),
+        ({"month": "26.01"}, "그대로"),
+        (None, "못 누름"),
+    ],
+)
+def test_the_process_detail_summary_counts_without_screen_text(
+    after: dict[str, Any] | None, expected: str
+) -> None:
+    before = {"kpis": 4, "canvas": True, "month": "26.01", "cards": 3, "absent": True}
+    line = screens.summarize_process_detail(before, after)
+
+    assert line == (
+        "KPI 4개 · 결합 캔버스 있음 · 근거 카드 3개 · 설비 일정 구획 없음(까닭 카드) · "
+        f"칸 누름 뒤 근거 달 {expected}"
+    )
+    # 달·공정 글자는 찍지 않는다.
+    assert "26." not in line

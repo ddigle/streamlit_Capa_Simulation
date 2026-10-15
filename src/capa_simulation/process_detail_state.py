@@ -59,6 +59,12 @@ PROCESS_DETAIL_MONTH_KEY = "process_detail_month"
 PROCESS_DETAIL_EXPAND_KEY = "process_detail_expand_products"
 PROCESS_DETAIL_SPLIT_KEY = "process_detail_product_split"
 PROCESS_DETAIL_PRODUCT_FILTER_KEY = "process_detail_product_filter"
+# 본문 프래그먼트(표 도구 줄·결합 캔버스·근거 패널)의 key 와 칸 선택을 켠 월 그림의 key. 칸을 누르면
+# 콜백이 지금 보는 달을 적고 이 프래그먼트만 다시 돌린다(`rerun_fragment_if_alone`). 선택을 켠
+# 그림은 그 위 터치 스크롤이 막히므로 `app.py` 가 이 그림 key 를 터치 스크롤
+# 막이(`plotly_touch_scroll`)에 넘긴다.
+PROCESS_DETAIL_VIEW_FRAGMENT_KEY = "process_detail_view"
+PROCESS_DETAIL_CANVAS_CHART_KEY = "process_detail_summary_months"
 # HOME 이 적고 상세 화면이 첫 회차에 꺼내(`pop`) 쓰는 전달 칸.
 PROCESS_DETAIL_REQUEST_KEY = "process_detail_request"
 # 출처 띠가 읽는 HOME 칸 스냅숏. 전달 칸을 꺼낸 회차에 옮겨 두고, 공정을 바꾸거나 다른 화면에
@@ -66,6 +72,10 @@ PROCESS_DETAIL_REQUEST_KEY = "process_detail_request"
 PROCESS_DETAIL_ORIGIN_KEY = "process_detail_origin"
 # 마지막으로 적용한 주소 인자 묶음.
 PROCESS_DETAIL_QUERY_SEEN_KEY = "process_detail_query_seen"
+# 결합 캔버스의 스크롤 시작 달 — (공정, 달). 새 방문·밖에서 들어옴(전달 칸·주소)·공정을 바꾼
+# 회차에만 지금 달로 다시 정한다. 칸을 눌러 달을 옮긴 뒤 다른 조건으로 앱 전체가 돌아도 이 값은
+# 그대로라 가로 스크롤바가 사용자가 옮겨 둔 위치를 그 달로 되돌리지 않는다.
+PROCESS_DETAIL_SCROLL_ANCHOR_KEY = "process_detail_scroll_anchor"
 
 PROCESS_PARAM = "process"
 MONTH_PARAM = "month"
@@ -135,6 +145,8 @@ class ProcessDetailEntry:
     missing_process: str | None = None
     # 넘겨받은 달이 이 화면의 달 축 밖이라 다른 달을 연 경우 그 달.
     month_outside: int | None = None
+    # 결합 캔버스의 스크롤 시작 달(`PROCESS_DETAIL_SCROLL_ANCHOR_KEY`). 회차마다 바뀌지 않는다.
+    scroll_month: int | None = None
 
 
 def _finite(value: object) -> float | None:
@@ -394,6 +406,10 @@ def resolve_process_and_month(
        `missing_process` 로, 달이 축 밖이면 기본 달을 열고 `month_outside` 로 알린다.
 
     밖에서 들어온(1·2) 공정에 달이 없으면 지난번 달이 아니라 그 공정의 기본 달을 연다.
+
+    스크롤 시작 달(`scroll_month`)은 새 방문·밖에서 들어온 회차·공정을 바꾼 회차(그리고 그 달이 축을
+    벗어난 회차)에만 지금 달로 다시 정한다 — 칸을 눌러 달을 옮긴 뒤의 앱 전체 회차(제품 거르기 등)는
+    그 값을 그대로 넘겨 보던 가로 위치를 되돌리지 않는다.
     """
     options = [str(process) for process in processes]
     month_options = [int(month) for month in months]
@@ -460,9 +476,23 @@ def resolve_process_and_month(
             month = default_month_of(process)
     st.session_state[PROCESS_DETAIL_MONTH_KEY] = month
 
+    continues = _continues_this_page()
+    anchor = st.session_state.get(PROCESS_DETAIL_SCROLL_ANCHOR_KEY)
+    if (
+        entered
+        or not continues
+        or not isinstance(anchor, tuple)
+        or len(anchor) != 2
+        or anchor[0] != process
+        or anchor[1] not in month_options
+    ):
+        anchor = (process, month)
+        st.session_state[PROCESS_DETAIL_SCROLL_ANCHOR_KEY] = anchor
+    scroll_month = anchor[1] if isinstance(anchor[1], int) else None
+
     if request is not None and request.source == FROM_HOME:
         st.session_state[PROCESS_DETAIL_ORIGIN_KEY] = request
-    elif not _continues_this_page() or entered:
+    elif not continues or entered:
         st.session_state.pop(PROCESS_DETAIL_ORIGIN_KEY, None)
     origin = st.session_state.get(PROCESS_DETAIL_ORIGIN_KEY)
     if not isinstance(origin, ProcessDetailRequest) or origin.process != process:
@@ -474,6 +504,7 @@ def resolve_process_and_month(
         origin=origin,
         missing_process=missing_process,
         month_outside=month_outside,
+        scroll_month=scroll_month,
     )
 
 

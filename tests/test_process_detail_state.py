@@ -539,3 +539,33 @@ def test_changing_the_process_keeps_the_month_being_viewed() -> None:
     app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
 
     assert (_entry(app).process, _entry(app).month) == ("DEMO-A", 202603)
+
+
+def test_the_scroll_start_stays_while_the_viewed_month_moves() -> None:
+    """스크롤 시작 달은 새 방문·밖에서 들어옴·공정을 바꾼 회차에만 다시 정한다 — 칸을 눌러 달을
+    옮긴 뒤 다른 조건으로 앱 전체가 돌아도 그대로라 보던 가로 위치를 그 달로 되돌리지 않는다."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    assert _entry(app).scroll_month == 202601
+    app.session_state[APP_RUN_STATE_KEY] = {"page": app.session_state["test_page_hash"]}
+
+    # 칸 누름(프래그먼트 콜백)이 세션 달만 옮긴 뒤의 앱 전체 회차.
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
+    app.run()
+    assert (_entry(app).month, _entry(app).scroll_month) == (202603, 202601)
+
+    # 공정을 바꾸면 그 회차의 달로 다시 정한다.
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
+    assert (_entry(app).month, _entry(app).scroll_month) == (202603, 202603)
+
+    # 밖에서 들어오면(전달 칸) 넘겨받은 달이다.
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-A", month=202602
+    )
+    app.run()
+    assert _entry(app).scroll_month == 202602
+
+    # 다른 화면에 다녀오면 새 방문 — 지금 달로 다시 정한다.
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
+    app.session_state[APP_RUN_STATE_KEY] = {"page": "다른 화면"}
+    app.run()
+    assert _entry(app).scroll_month == 202603

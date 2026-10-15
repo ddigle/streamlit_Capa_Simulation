@@ -46,6 +46,7 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import get_scenario_repository
+from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
 from capa_simulation.scenario_activation import (
     bootstrap_latest_official_scenario,
     has_unsaved_scenario_changes,
@@ -132,6 +133,10 @@ def render_condition_dialogs(
         st.html("<style></style>")
 
 
+# 칸 선택(`on_select`)을 켠 그림 전부. 선택을 켜면 그림 위 터치 스크롤이 막히므로 막이에 넘긴다 —
+# 선택을 켠 그림을 더하면 여기에도 더한다.
+CELL_SELECT_CHART_KEYS = (*HOME_CELL_CHART_KEYS, PROCESS_DETAIL_CANVAS_CHART_KEY)
+
 # 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
 # Streamlit 호출보다 앞이다** — 그런 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴
 # 실행이 앞 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만
@@ -163,8 +168,9 @@ render_intro_overlay()
 # (`theme_toggle.TOOLBAR_BUTTON_ORDER`). Guide 는 기본은 감춰 두고 가이드를 단 페이지만 보이게
 # 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
 # 머리칸의 `S.PKG CAPA` 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
-# 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 HOME 그림
-# 위에서 시작한 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.
+# 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 그림(HOME 두
+# 월 그림과 공정 Capa 상세 결합 캔버스 — `CELL_SELECT_CHART_KEYS`) 위에서 시작한 터치가 화면을
+# 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
@@ -182,7 +188,7 @@ render_theme_toggle(
         guide_toolbar_script(),
         summary_label_script(),
         print_toolbar_script(),
-        plotly_touch_scroll_script(HOME_CELL_CHART_KEYS),
+        plotly_touch_scroll_script(CELL_SELECT_CHART_KEYS),
     )
 )
 

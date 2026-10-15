@@ -119,6 +119,17 @@ _LIGHT: Final[dict[str, Any]] = {
     "SURFACE_PAST": "#E3E8EF",
     "SURFACE_PAST_SUBTLE": "#DEE3EB",
     "SURFACE_PAST_YEAR_TOTAL": "#D3D9E2",
+    # ------------------------------------------------------------ 공정 Capa 상세 묶음 면
+    # 공정 Capa 상세 맨 위 요약 표의 [공급](총보유·가용)과 [수요](소요대수·제품 행) 묶음을 가르는
+    # 옅은 면이다. 판정 묶음은 기존 `SURFACE`·`SURFACE_CLASSIFICATION` 을 쓴다. `*_SURFACE` 는 월
+    # 칸, `*_CLASSIFICATION` 은 라벨 칸이고 라벨 칸이 한 단 짙다(분류 칸 음영과 같은 층 방향).
+    # **판정·일정 색으로 읽히지 않아야 한다** — 상태색·Qual 확정색·실행 증감 면색과 정상 시야
+    # ΔE 6 이상, 공급↔수요는 ΔE 3 이상 떨어진 채도 낮은 두 계열(파랑·모래)이고 그 위 `TEXT` 는
+    # 14:1 이상이다(`tests/test_design_tokens.py` 가 거리와 층 방향을 고정한다).
+    "SUMMARY_SUPPLY_SURFACE": "#EBF2FC",
+    "SUMMARY_SUPPLY_CLASSIFICATION": "#DFEAFC",
+    "SUMMARY_DEMAND_SURFACE": "#F9F0E1",
+    "SUMMARY_DEMAND_CLASSIFICATION": "#F3E4C8",
     # ------------------------------------------------------------------ 증감 표기색
     # 선행 반영 전후의 차이를 값 위에 작게 적을 때 쓴다. 좋고 나쁨이 아니라 방향 표시라
     # 상태색(확보·경고·부족)을 재사용하지 않는다 — 재사용하면 계획이 늘어난 달이 그대로
@@ -304,6 +315,12 @@ _DARK: Final[dict[str, Any]] = {
     "SURFACE_PAST": "#242A34",
     "SURFACE_PAST_SUBTLE": "#282E39",
     "SURFACE_PAST_YEAR_TOTAL": "#2C333F",
+    # 공정 Capa 상세 요약 표의 공급·수요 묶음 면. 같은 두 계열을 어두운 띠로 옮겼고 라벨 칸이 한 단
+    # **밝다**(다크의 층 방향). 그 위 `TEXT` 는 11:1 이상이다.
+    "SUMMARY_SUPPLY_SURFACE": "#1C2430",
+    "SUMMARY_SUPPLY_CLASSIFICATION": "#243041",
+    "SUMMARY_DEMAND_SURFACE": "#29241B",
+    "SUMMARY_DEMAND_CLASSIFICATION": "#352D1F",
     # 증감 글자색은 어두운 면에서 읽혀야 하므로 라이트보다 밝은 짝으로 간다.
     "DELTA_INCREASE": "#FBBF24",
     "DELTA_DECREASE": "#7DA8FF",
@@ -378,8 +395,13 @@ _DARK: Final[dict[str, Any]] = {
 }
 
 
-def _complete(palette: dict[str, Any]) -> dict[str, Any]:
-    """별칭과 계산값을 채운다. **손으로 옮겨 적지 않는다** — 원 토큰과 갈라진다."""
+def _complete(palette: dict[str, Any], *, shortage_band_alpha: float) -> dict[str, Any]:
+    """별칭과 계산값을 채운다. **손으로 옮겨 적지 않는다** — 원 토큰과 갈라진다.
+
+    `shortage_band_alpha` 는 부족 달 세로 띠(`SHORTAGE_MONTH_BAND`)의 옅기다. 테마마다 다르다 —
+    어두운 테마의 부족색(`STATUS_SHORTAGE`)은 짙은 자주라 밝은 테마와 같은 옅기면 어두운 면에
+    묻힌다.
+    """
     filled = dict(palette)
     # 모든 Figure 는 배경이 투명한 `st.container(border=True)` 안에 놓여 페이지 바탕 위에
     # 그려진다. 흰 면(SURFACE)을 쓰면 Figure 만 흰 사각형으로 뜬다.
@@ -413,14 +435,18 @@ def _complete(palette: dict[str, Any]) -> dict[str, Any]:
     # 정작 읽어야 할 선이 면에 묻힌다.
     filled["GAP_AREA_SHORTFALL"] = _with_alpha(palette["DELTA_AREA_DECREASE"], 0.35)
     filled["GAP_AREA_SURPLUS"] = _with_alpha(palette["DELTA_AREA_INCREASE"], 0.35)
+    # 공정 Capa 상세 결합 캔버스에서 공식 확보기준에 못 미친 달의 열 전체를 덮는 옅은 띠. 행 면
+    # 위·칸 색 아래에 깔리고 요약 표부터 설비 일정 구획 끝까지 같은 달에 이어진다. 칸을 칠하는
+    # 판정색과 같은 계열이라 「이 달이 부족」이 열로 읽힌다.
+    filled["SHORTAGE_MONTH_BAND"] = _with_alpha(palette["STATUS_SHORTAGE"], shortage_band_alpha)
     # 배경 도면 위에 캔버스를 덮을 때. SPACE_CANVAS 를 바꾸면 함께 바뀐다.
     filled["SPACE_CANVAS_OVERLAY"] = _with_alpha(palette["SPACE_CANVAS"], 0.18)
     return filled
 
 
 _PALETTES: Final[dict[str, dict[str, Any]]] = {
-    "light": _complete(_LIGHT),
-    "dark": _complete(_DARK),
+    "light": _complete(_LIGHT, shortage_band_alpha=0.12),
+    "dark": _complete(_DARK, shortage_band_alpha=0.3),
 }
 
 
@@ -478,6 +504,7 @@ if TYPE_CHECKING:
     SERIES_ACTUAL: Final[str] = ""
     SERIES_EFFECTIVE: Final[str] = ""
     SERIES_STANDARD: Final[str] = ""
+    SHORTAGE_MONTH_BAND: Final[str] = ""
     SPACE_BLOCK_FILL: Final[str] = ""
     SPACE_BORDER: Final[str] = ""
     SPACE_CANVAS: Final[str] = ""
@@ -489,6 +516,10 @@ if TYPE_CHECKING:
     STATUS_SECURE: Final[str] = ""
     STATUS_SHORTAGE: Final[str] = ""
     STATUS_WARNING: Final[str] = ""
+    SUMMARY_DEMAND_CLASSIFICATION: Final[str] = ""
+    SUMMARY_DEMAND_SURFACE: Final[str] = ""
+    SUMMARY_SUPPLY_CLASSIFICATION: Final[str] = ""
+    SUMMARY_SUPPLY_SURFACE: Final[str] = ""
     SURFACE: Final[str] = ""
     SURFACE_CLASSIFICATION: Final[str] = ""
     SURFACE_CLASSIFICATION_GROUP: Final[str] = ""

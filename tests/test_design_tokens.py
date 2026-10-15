@@ -494,3 +494,64 @@ def test_summary_gap_colors_are_the_dark_delta_colors() -> None:
     dark = tokens._PALETTES["dark"]
     assert tokens.INTRO_PALETTE["gap-up"] == dark["DELTA_INCREASE"]
     assert tokens.INTRO_PALETTE["gap-down"] == dark["DELTA_DECREASE"]
+
+
+# 공정 Capa 상세 요약 표의 공급·수요 묶음 면 — (월 칸, 라벨 칸).
+SUMMARY_GROUP_SURFACES = (
+    ("SUMMARY_SUPPLY_SURFACE", "SUMMARY_SUPPLY_CLASSIFICATION"),
+    ("SUMMARY_DEMAND_SURFACE", "SUMMARY_DEMAND_CLASSIFICATION"),
+)
+# 묶음 면이 그것으로 읽히면 안 되는 칠 — 판정 3색·실행 증감 면.
+SUMMARY_RESERVED_FILLS = (
+    "STATUS_SECURE",
+    "STATUS_WARNING",
+    "STATUS_SHORTAGE",
+    "DELTA_AREA_INCREASE",
+    "DELTA_AREA_DECREASE",
+)
+SUMMARY_RESERVED_FLOOR = 6.0  # 정상 시야 OKLab ΔE
+SUMMARY_GROUP_FLOOR = 3.0  # 공급↔수요
+
+
+def test_summary_group_surfaces_do_not_read_as_judgement_or_schedule_colours() -> None:
+    """공정 Capa 상세 요약 표의 공급·수요 묶음 면은 채도 낮은 두 계열이다. 판정 3색·실행 증감 면·
+    Qual 확정색(지연 포함)과 정상 시야 ΔE 6 이상 떨어져 칸 색으로 읽히지 않고, 공급↔수요는 ΔE 3
+    이상 갈리며, 그 위 숫자(`TEXT`)는 7:1 이상이다. 두 팔레트를 다 본다."""
+    failures: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        reserved = {name: palette[name] for name in SUMMARY_RESERVED_FILLS}
+        reserved.update(
+            {f"QUAL {key}": value for key, value in palette["QUAL_CONFIRMATION_COLORS"].items()}
+        )
+        for pair in SUMMARY_GROUP_SURFACES:
+            for name in pair:
+                for other, colour in reserved.items():
+                    distance = _delta_e(palette[name], colour)
+                    if distance < SUMMARY_RESERVED_FLOOR:
+                        failures.append(f"{mode} {name}↔{other}: ΔE {distance:.1f}")
+                ratio = contrast_ratio(palette["TEXT"], palette[name])
+                if ratio < 7.0:
+                    failures.append(f"{mode} {name} 위 글자 {ratio:.2f}:1")
+        for index in (0, 1):
+            supply, demand = (palette[pair[index]] for pair in SUMMARY_GROUP_SURFACES)
+            distance = _delta_e(supply, demand)
+            if distance < SUMMARY_GROUP_FLOOR:
+                failures.append(f"{mode} 공급↔수요({index}): ΔE {distance:.1f}")
+    assert not failures, "요약 표 묶음 면이 구분되지 않습니다:" + _bullets(failures)
+
+
+def test_summary_group_label_cells_follow_the_surface_layer_direction() -> None:
+    """라벨 칸이 한 단 「위」 면이다 — 밝게는 짙고 어둡게는 밝다(분류 칸 음영과 같은 방향)."""
+    light, dark = tokens._PALETTES["light"], tokens._PALETTES["dark"]
+    for surface, label in SUMMARY_GROUP_SURFACES:
+        assert relative_luminance(light[label]) < relative_luminance(light[surface]), label
+        assert relative_luminance(dark[label]) > relative_luminance(dark[surface]), label
+
+
+def test_the_shortage_month_band_is_the_shortage_colour_thinned() -> None:
+    """부족 달 세로 띠는 부족 판정색을 옅게 한 것이다 — 어두운 테마는 짙은 자주라 더 진하게 둔다."""
+    for mode, alpha in (("light", 0.12), ("dark", 0.3)):
+        palette = tokens._PALETTES[mode]
+        assert palette["SHORTAGE_MONTH_BAND"] == tokens._with_alpha(
+            palette["STATUS_SHORTAGE"], alpha
+        )

@@ -209,18 +209,40 @@ def rerun_fragment_if_alone(fragment_key: str, widget_key: str) -> None:
     - 프래그먼트를 찾지 못할 때(이번 실행에 등록되지 않았거나, AppTest 처럼 실행마다 프래그먼트
       저장소가 새로 생길 때). `st.rerun` 이 던지는 재실행 예외는 잡지 않는다.
     """
-    state = st.session_state.get(APP_RUN_STATE_KEY)
-    if not isinstance(state, dict) or not state.get("complete"):
-        return
-    page = _current_page_hash()
-    if page is None or state.get("page") != page:
-        return
-    if not _only_this_widget_changed(widget_key):
+    if not fragment_rerun_is_safe(widget_key):
         return
     try:
         st.rerun(fragment_key)
     except StreamlitAPIException:
         return
+
+
+def fragment_rerun_is_safe(widget_key: str) -> bool:
+    """프래그먼트만 다시 돌려도 되는가 — `rerun_fragment_if_alone` 의 판정 셋.
+
+    직전 전체 실행이 끝까지 돌았고, 이번 실행의 페이지가 그 실행의 페이지이며, 이번 상호작용에서
+    `widget_key` 말고 바뀐 위젯이 없을 때만 참이다. 판정하지 못하면 거짓이다.
+    """
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    if not isinstance(state, dict) or not state.get("complete"):
+        return False
+    page = _current_page_hash()
+    if page is None or state.get("page") != page:
+        return False
+    return _only_this_widget_changed(widget_key)
+
+
+def rerun_app_unless_alone(widget_key: str) -> None:
+    """프래그먼트 **안** 위젯 콜백의 마지막 줄. 그 프래그먼트만 다시 돌면 안 될 때 앱 전체로 올린다.
+
+    프래그먼트 안 위젯의 상호작용은 기본이 그 프래그먼트 회차라 `st.rerun(<key>)` 를 부를 까닭이
+    없다 — 부르면 콜백만 도는 회차 하나가 더 돈다(2026-10-15 진짜 프래그먼트 회차로 실측). 남는
+    일은 반대쪽이다: 직전 전체 실행이 끊겼거나(본문이 반쯤 남았다) 다른 위젯도 함께 바뀌었으면
+    (`fragment_rerun_is_safe` 가 거짓) 프래그먼트만 돌리면 그 나머지가 다시 그려지지 않으므로
+    `st.rerun()` 으로 앱 전체 회차로 바꾼다. 위젯 콜백 안에서만 부른다.
+    """
+    if not fragment_rerun_is_safe(widget_key):
+        st.rerun()
 
 
 def _only_this_widget_changed(key: str) -> bool:

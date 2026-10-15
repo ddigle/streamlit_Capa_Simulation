@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Literal
+from typing import Any, Literal
 
 import streamlit as st
 
@@ -84,14 +84,21 @@ def render_status_metric(
     key: str,
     tone: MetricTone = "neutral",
     help: str | None = None,
+    caption: str | None = None,
 ) -> None:
     """상태색 띠가 붙은 metric 카드 하나를 그린다.
 
     `tone="neutral"` 은 기존 카드와 완전히 같은 모양이다. 색을 붙일 이유가 없는 지표에
     굳이 색을 붙이지 않기 위해 기본값으로 둔다.
+
+    `caption` 은 값 아래 회색 한 줄(그 값의 달·출처 등)이다. 증감이 아니므로 화살표·색 없이
+    `delta` 자리에 적는다.
     """
+    metric_options: dict[str, Any] = {"border": True, "help": help}
+    if caption:
+        metric_options.update(delta=caption, delta_color="off", delta_arrow="off")
     if tone not in _TONE_TOKENS:
-        st.metric(label, value, border=True, help=help)
+        st.metric(label, value, **metric_options)
         return
     color = tone_color(tone)
     st.html(
@@ -106,4 +113,4 @@ def render_status_metric(
         )
     )
     with st.container(key=key):
-        st.metric(label, value, border=True, help=help)
+        st.metric(label, value, **metric_options)
