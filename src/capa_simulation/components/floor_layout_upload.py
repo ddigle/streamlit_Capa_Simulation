@@ -7,9 +7,9 @@
 다시 돌려 레이아웃이 새 도면으로 다시 그려진다.
 
 층과 FAB 전체 도면이 **같은 팝업**을 범위(`_DrawingTarget`)만 바꿔 쓴다. 다른 것은 저장 자리(층 표 /
-FAB 표), 기본 캔버스(100 × 60 / `FAB_CANVAS`), 캔버스 밖 검사의 대상(층은 호기와 저장된 도면 요소,
-FAB 는
-지금 그리는 요소 — 저장된 것이 없으면 기본 배치)과 저장 뒤 정리할 대기분이다.
+FAB 표), 기본 캔버스(100 × 60 / `FAB_CANVAS`), 캔버스 밖 검사의 대상(층은 저장된 설비 마스터의
+그 층 호기 전부와 저장된 도면 요소, FAB 는 지금 그리는 요소 — 저장된 것이 없으면 기본 배치)과 저장
+뒤 정리할 대기분이다.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ from capa_simulation.components.equipment_data_workspace import (
     rebase_floor_canvas,
     stage_floor_canvas,
 )
-from capa_simulation.components.space_layout import invalid_equipment_rows
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -41,6 +40,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_marks,
     load_floor_layout_profile,
 )
+from capa_simulation.services.equipment_validation import floor_equipment_outside_canvas
 from capa_simulation.services.fab_layout import FAB_CANVAS, effective_fab_layout
 from capa_simulation.services.floor_layout_mark import marks_extent
 from capa_simulation.services.floor_layout_profile import (
@@ -128,10 +128,15 @@ def render_floor_layout_editor(
     database_path: str,
     building: str,
     floor: str,
-    floor_equipment: pd.DataFrame,
+    saved_equipment: pd.DataFrame,
 ) -> None:
-    """층 상세 작업 줄의 `도면·캔버스 편집` 버튼. 누르면 그 층의 팝업이 열린다."""
-    _render_open_button(database_path, _DrawingTarget((building, floor)), floor_equipment)
+    """층 상세 작업 줄의 `도면·캔버스 편집` 버튼. 누르면 그 층의 팝업이 열린다.
+
+    `saved_equipment` 는 **저장된 설비 마스터 전체**다(필터 전, 레이아웃표시 무관). 캔버스를
+    줄이거나 지울 때 그 층 호기가 밖으로 나가는지 저장 검증과 같은 행으로 잰다. 설비 저장본이
+    없으면(샘플 화면) 빈 표를 넘긴다 — 저장을 막을 호기가 없다.
+    """
+    _render_open_button(database_path, _DrawingTarget((building, floor)), saved_equipment)
 
 
 def render_fab_layout_drawing_editor(*, database_path: str, disabled: bool = False) -> None:
@@ -143,7 +148,7 @@ def render_fab_layout_drawing_editor(*, database_path: str, disabled: bool = Fal
 def _render_open_button(
     database_path: str,
     target: _DrawingTarget,
-    floor_equipment: pd.DataFrame,
+    saved_equipment: pd.DataFrame,
     *,
     disabled: bool = False,
 ) -> None:
@@ -158,7 +163,7 @@ def _render_open_button(
     )
     if not disabled and st.session_state.get(FLOOR_LAYOUT_DIALOG_KEY) == target.scope:
         _floor_layout_dialog(
-            database_path=database_path, target=target, floor_equipment=floor_equipment
+            database_path=database_path, target=target, saved_equipment=saved_equipment
         )
 
 
@@ -190,7 +195,7 @@ def _floor_layout_dialog(
     *,
     database_path: str,
     target: _DrawingTarget,
-    floor_equipment: pd.DataFrame,
+    saved_equipment: pd.DataFrame,
 ) -> None:
     """한 범위(층·FAB)의 배경 도면과 캔버스 치수를 편집한다. 설비 리비전과 무관한 단일
     저장값이다."""
@@ -266,25 +271,48 @@ def _floor_layout_dialog(
     target_height = suggested[1] if auto_canvas else float(manual_height)
     st.caption(f"적용될 캔버스: {target_width:g} × {target_height:g}")
 
+    # 호기 이탈은 **저장된 설비 마스터의 그 층 호기 전부**로 잰다 — 저장 검증과 같은 행이다. 층
+    # 화면에 그린 호기(레이아웃표시 Y·조건 카드 필터를 지난 것)만 보면 안 보이는 호기를 놓쳐, 경고
+    # 없이 줄인 뒤 다음 설비 저장이 전부 막힌다. 지우기는 캔버스가 기본 크기로 돌아가므로 그 크기로
+    # 본다. 둘 다 확인 후 진행이다(요소 이탈은 저장소가 거부해 불가).
     shrink_confirmed = True
+    delete_confirmed = True
     if target.floor is not None:
-        outside_rows = invalid_equipment_rows(
-            floor_equipment,
-            canvas_width=target_width,
-            canvas_height=target_height,
+        outside_units = floor_equipment_outside_canvas(
+            saved_equipment, target.floor, (target_width, target_height)
         )
-        if outside_rows:
+        if outside_units:
             st.warning(
-                f"이 캔버스에서는 {target.title} 호기 {len(outside_rows)}행이 범위를 "
+                f"이 캔버스에서는 {target.title} 호기 {_unit_names(outside_units)}가 범위를 "
                 "벗어납니다. 이대로 저장하면 **가용설비 현황**의 설비 마스터 저장이 전부 "
                 "막힙니다 — 저장은 마스터 전체를 한 번에 검증하므로 다른 동·층만 고쳐도 같은 "
-                "오류가 납니다. 가용설비 현황에서 이 층 좌표를 먼저 고치세요.",
+                "오류가 납니다. 레이아웃표시 N 이거나 조건 카드로 걸러 층 도면에 안 보이는 호기도 "
+                "셉니다. 가용설비 현황에서 이 층 좌표를 먼저 고치세요.",
                 icon=":material/warning:",
             )
             shrink_confirmed = st.checkbox(
                 "이탈 호기를 알고도 이 캔버스로 저장",
                 value=False,
                 key=f"{FLOOR_LAYOUT_WIDGET_KEY}_shrink_{key}",
+            )
+        stranded_units = (
+            floor_equipment_outside_canvas(saved_equipment, target.floor, target.default_canvas)
+            if profile is not None
+            else []
+        )
+        if stranded_units:
+            # 지우기는 가끔 하는 일이라 저장 경고보다 한 단 낮춰 캡션으로 둔다(팝업을 열 때마다 노란
+            # 상자가 서지 않게). 단추는 확인 전까지 막는다.
+            st.caption(
+                f":material/warning: 지우면 캔버스가 기본 {default_width:g} × "
+                f"{with_direction_particle(f'{default_height:g}')} 돌아가 {target.title} 호기 "
+                f"{_unit_names(stranded_units)}가 범위를 벗어납니다 — 그대로 지우면 설비 마스터 "
+                "저장이 전부 막힙니다."
+            )
+            delete_confirmed = st.checkbox(
+                "이탈 호기를 알고도 도면·캔버스 삭제",
+                value=False,
+                key=f"{FLOOR_LAYOUT_WIDGET_KEY}_delete_confirm_{key}",
             )
 
     # 도면 요소(반입구·문·영역·층 블록 …)는 호기와 달리 캔버스 밖에 둘 수 없다 — 저장소가 거부한다.
@@ -309,7 +337,7 @@ def _floor_layout_dialog(
         delete_clicked = st.button(
             "도면·캔버스 삭제",
             icon=":material/delete:",
-            disabled=profile is None or delete_blocked,
+            disabled=profile is None or delete_blocked or not delete_confirmed,
             help=(
                 "지우면 캔버스가 기본 "
                 f"{default_width:g} × {with_direction_particle(f'{default_height:g}')} "
@@ -322,7 +350,7 @@ def _floor_layout_dialog(
         )
 
     written: CanvasSize | None = None
-    if save_clicked:
+    if save_clicked and shrink_confirmed:
         if not _save(
             database_path=database_path,
             target=target,
@@ -334,7 +362,7 @@ def _floor_layout_dialog(
             return
         # 저장소가 맞춘 값과 같은 정밀도로(대기분 기준값과 견줄 때 어긋나지 않게).
         written = normalize_canvas_size(target_width, target_height)
-    elif delete_clicked and profile is not None:
+    elif delete_clicked and profile is not None and delete_confirmed:
         try:
             repository = get_equipment_repository(database_path)
             if target.floor is None:
@@ -359,6 +387,13 @@ def _floor_layout_dialog(
     st.session_state[UPLOAD_NONCE_KEY] = int(st.session_state.get(UPLOAD_NONCE_KEY, 0)) + 1
     _close_dialog()
     st.rerun()
+
+
+def _unit_names(names: list[str], limit: int = 5) -> str:
+    """`DEMO-EQ01, DEMO-EQ02 외 3대(5대)` — 경고 한 줄에 실을 이탈 호기."""
+    shown = ", ".join(names[:limit])
+    more = f" 외 {len(names) - limit}대" if len(names) > limit else ""
+    return f"{shown}{more}({len(names)}대)"
 
 
 def _save(

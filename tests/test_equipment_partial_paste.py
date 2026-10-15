@@ -390,6 +390,50 @@ def test_a_full_paste_still_replaces_both_duplicated_rows() -> None:
     assert _row(saved, "EQ-01")["담당자"] == "담당A"
 
 
+def test_a_partial_paste_onto_a_buffer_name_with_outer_spaces_replaces_that_unit() -> None:
+    """편집본(검증 전)의 설비명이 「 EQ-01 」이어도 붙여넣은 「EQ-01」은 그 호기다.
+
+    붙여넣기가 나머지 열을 채울 때는 앞뒤 공백을 떼고 맞췄는데, 병합·미리보기는 글자 그대로
+    견주어 옛 행을 남겼다 — 그 둘이 검증에서 같은 이름이 되어 엉뚱한 「설비명 중복」으로 막혔다.
+    """
+    current = _current().astype({"설비명": "object"})
+    current.loc[current["설비명"].eq("EQ-01"), "설비명"] = " EQ-01 "
+
+    review = _review(_tab(("설비명", "담당자"), ("EQ-01", "담당B")), current)
+
+    saved = review.candidate[1]
+    assert sorted(saved["설비명"]) == ["EQ-01", "EQ-02"]
+    assert _row(saved, "EQ-01")["담당자"] == "담당B"
+    assert review.changes["Import구분"].tolist() == ["대체"]
+    assert review.changes["변경컬럼"].tolist() == ["담당자"]
+
+
+def test_a_new_name_that_differs_from_a_unit_only_in_case_is_flagged() -> None:
+    """대소문자만 다른 설비명은 새 호기로 더하되 미리보기에서 경고한다 — Space 이름 바꾸기는
+    대소문자·앞뒤 공백을 무시하고 겹침을 막으므로 같은 설비일 가능성이 크다."""
+    variant = _current().iloc[[0]].copy()
+    variant["설비명"] = "eq-01"
+
+    review = _review(_exported(variant).to_csv(sep="\t", index=False))
+
+    assert review.changes["Import구분"].tolist() == ["신규"]
+    assert sorted(review.candidate[1]["설비명"]) == ["EQ-01", "EQ-02", "eq-01"]
+    flagged = [caution for caution in review.cautions if "대소문자" in caution]
+    assert len(flagged) == 1, review.cautions
+    assert "eq-01(기존 EQ-01)" in flagged[0]
+
+
+def test_a_partial_paste_of_a_case_variant_names_the_existing_unit() -> None:
+    """일부 열만 붙여넣은 「eq-01」은 새 호기로 세어 막힌다. 그 오류가 대소문자만 다른 기존 호기를
+    짚어야 설비명을 고쳐 다시 붙여넣는다."""
+    with pytest.raises(ValueError) as raised:
+        _review(_tab(("설비명", "담당자"), ("eq-01", "담당B")))
+
+    message = str(raised.value)
+    assert "없는 설비명 1건(eq-01)은 새 호기로 추가되는데" in message
+    assert "대소문자만 다른 기존 호기: eq-01(기존 EQ-01)" in message
+
+
 def test_rows_without_an_equipment_name_are_dropped_like_in_a_full_paste() -> None:
     paste = read_equipment_update(
         _tab(("설비명", "담당자"), ("EQ-01", "담당B"), ("", "안내 행")), _current()

@@ -392,18 +392,24 @@ class DuckDBScenarioRepository:
         rules: pd.DataFrame,
         *,
         source: str,
+        expected_version: int | None = None,
     ) -> GlobalProcessRename:
         """Atomically replace the shared profile without creating scenario revisions.
 
         표시순서와 같은 결로 현재본만 남기고 version 번호를 올린다. 이전 규칙은 보존하지
         않으므로 되돌리기 수단은 교체 전 CSV 다운로드뿐이다. 규칙 0건(전체 해제)도
-        정상 저장이며 version 은 올라간다.
+        정상 저장이며 version 은 올라간다. 화면 편집은 `expected_version`(편집을 시작할 때 본
+        version)을 넘기고, 쓰기 잠금 안에서 저장본과 다르면 `ProfileVersionConflict`(ValueError)로
+        거부한다 — 판정 기준과 같은 버전 대조다.
         """
         prepared_rules = prepare_process_rename_rules(rules)
         source_label = required_text(source, "공정 표시명 변경 출처")
         with self._write_transaction() as connection:
             process_rename_store.replace_global_process_rename(
-                connection, prepared_rules, source=source_label
+                connection,
+                prepared_rules,
+                source=source_label,
+                expected_version=expected_version,
             )
         return self.load_global_process_rename()
 
@@ -421,18 +427,23 @@ class DuckDBScenarioRepository:
         rows: pd.DataFrame,
         *,
         source: str,
+        expected_version: int | None = None,
     ) -> GlobalExecutionCapacity:
         """Atomically replace the shared execution-capacity profile.
 
         다른 공용 프로필과 같은 결로 현재본만 남기고 version 을 올린다. **행 0건(전체
         해제)도 정상 저장이며 version 은 올라간다** — 캐시 키가 version 을 보므로 해제도
-        올라가야 무효화된다.
+        올라가야 무효화된다. 화면 편집은 `expected_version` 을 넘겨 판정 기준과 같은 버전 대조를
+        받는다(다르면 `ProfileVersionConflict`).
         """
         prepared = prepare_execution_capacity(rows)
         source_label = required_text(source, "실행 Capa 반영 출처")
         with self._write_transaction() as connection:
             execution_capacity_store.replace_global_execution_capacity(
-                connection, prepared, source=source_label
+                connection,
+                prepared,
+                source=source_label,
+                expected_version=expected_version,
             )
         return self.load_global_execution_capacity()
 

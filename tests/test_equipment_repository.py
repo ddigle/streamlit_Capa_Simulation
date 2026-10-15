@@ -21,8 +21,12 @@ from capa_simulation.persistence.equipment_migration_runner import (
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentSnapshot,
+    ProcessCutoffConflict,
 )
-from capa_simulation.services.process_cutoff import empty_process_cutoff
+from capa_simulation.services.process_cutoff import (
+    empty_process_cutoff,
+    process_cutoff_fingerprint,
+)
 from capa_simulation.services.weekly_availability_input import (
     build_weekly_availability_template,
     parse_weekly_availability_clipboard,
@@ -354,6 +358,46 @@ def test_process_cutoff_round_trips_and_replaces_the_whole_table(tmp_path: Path)
 
     repository.save_process_cutoff(empty_process_cutoff())
     assert repository.load_process_cutoff().empty
+
+
+def test_a_cutoff_save_from_a_stale_draft_is_refused_and_keeps_the_newer_rows(
+    tmp_path: Path,
+) -> None:
+    """Cut-off 저장은 표 전체 교체다. 편집을 시작한 뒤 다른 사람이 저장했으면 옛 초안으로 덮지
+    않는다 — 그 사람이 넣은 공정이 지워지면 그 공정이 월별 가용대수에서 조용히 빠진다."""
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+    seen = repository.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [10.0], "비고": [None]})
+    )
+    base = process_cutoff_fingerprint(seen)
+    repository.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A", "Process-B"], "Cutoff일수": [10.0, 5.0]})
+    )
+
+    with pytest.raises(ProcessCutoffConflict, match="다른 사용자가 먼저"):
+        repository.save_process_cutoff(
+            pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [12.0]}),
+            expected_fingerprint=base,
+        )
+
+    stored = repository.load_process_cutoff()
+    assert stored["공정"].tolist() == ["Process-A", "Process-B"]
+    assert stored["Cutoff일수"].tolist() == [10.0, 5.0]
+    # 지금 저장본에서 출발한 초안은 그대로 저장한다.
+    saved = repository.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [12.0]}),
+        expected_fingerprint=process_cutoff_fingerprint(stored),
+    )
+    assert saved["Cutoff일수"].tolist() == [12.0]
+    # 한 번도 저장하지 않은 표(빈 계약 프레임)에서 출발한 초안도 같은 길로 대조한다.
+    fresh = DuckDBEquipmentRepository(tmp_path / "fresh.duckdb")
+    fresh.initialize()
+    fresh.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [3.0]}),
+        expected_fingerprint=process_cutoff_fingerprint(empty_process_cutoff()),
+    )
+    assert fresh.load_process_cutoff()["Cutoff일수"].tolist() == [3.0]
 
 
 def test_process_cutoff_refuses_a_negative_value(tmp_path: Path) -> None:

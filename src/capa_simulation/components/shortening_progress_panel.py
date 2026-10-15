@@ -83,6 +83,7 @@ from capa_simulation.services.shortening_progress import (
     PROGRESS_WORSENED,
     ProgressSummary,
     ScopeDifference,
+    rename_suspects,
     scope_difference,
     summarize_progress,
 )
@@ -160,7 +161,8 @@ class ProgressView:
     """비교 화면에 세울 카드. 지금 범위의 공정(화면 차례)과 기준선에만 있던 공정.
 
     `axis_months` 는 모든 카드가 함께 쓰는 달 축이다 — 지금 조회 달을 카드 두 시점의 날짜가 모두
-    들도록 앞뒤로 넓힌 것(`timeline_months_covering`).
+    들도록 앞뒤로 넓힌 것(`timeline_months_covering`). `renamed` 는 지금 범위에서 `해소`·`신규 필요`
+    가 한 공정에 함께 있는 공정이다(이름을 바꾼 호기일 수 있다 — `rename_suspects`).
     """
 
     rows: pd.DataFrame
@@ -168,6 +170,7 @@ class ProgressView:
     outside: tuple[str, ...]
     summary: ProgressSummary
     axis_months: tuple[int, ...]
+    renamed: tuple[str, ...] = ()
 
     @property
     def csv_processes(self) -> tuple[str, ...]:
@@ -503,6 +506,7 @@ def progress_view(
         axis_months=timeline_months_covering(
             months, (_day(value) for value in shown.to_numpy().ravel())
         ),
+        renamed=rename_suspects(rows, scope),
     )
 
 
@@ -540,9 +544,11 @@ def scope_note(
     labels: ProcessLabels,
     *,
     lapsed: int = 0,
+    renamed: Sequence[str] = (),
 ) -> str | None:
-    """기준선과 지금의 조회 달·맞댄 공정이 다르거나 필요 시점이 지난 호기(`lapsed` 대)가 있으면 그
-    알림. 둘 다 없으면 None."""
+    """기준선과 지금의 조회 달·맞댄 공정이 다르거나, 필요 시점이 지난 호기(`lapsed` 대)가 있거나,
+    `해소`·`신규 필요` 가 한 공정에 함께 있으면(`renamed` — 이름을 바꾼 호기일 수 있다) 그 알림.
+    셋 다 없으면 None."""
     difference = scope_difference(
         baseline_months=(baseline.summary.start_month, baseline.summary.end_month),
         baseline_processes=baseline.processes,
@@ -557,6 +563,12 @@ def scope_note(
             f"기준선의 그날 오늘({baseline.summary.plan_today:%Y-%m-%d}) 뒤로 오늘"
             f"({plan.today:%Y-%m-%d})이 지나, 필요 시점이 이미 지난 호기 {lapsed}대는 견주지 "
             "않습니다(지금 계획은 오늘보다 앞으로 당길 수 없어 줄어든 날수가 진척이 아닙니다)."
+        )
+    if renamed:
+        parts.append(
+            f"「해소」와 「신규 필요」 호기가 함께 있는 공정 {_names(list(renamed), labels)} — "
+            "기준선을 저장한 뒤 호기 이름을 바꿨다면 같은 설비가 옛 이름 「해소」·새 이름 「신규 "
+            "필요」 두 줄로 갈려 보입니다(기준선은 저장할 때의 설비명으로 짝짓습니다)."
         )
     if not parts:
         return None

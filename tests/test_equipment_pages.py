@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
+from test_equipment_availability import _baseline, _downtime, _equipment
 from test_floor_layout_profile import _png
 
 from capa_simulation.components import space_layout_editor
@@ -286,6 +287,88 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     assert len(app.get("file_uploader")) == 1
     assert any("적용될 캔버스: 100 × 37.5" == element.value for element in app.caption)
     assert any("c1_1f.png" in element.value for element in app.success)
+    clear_equipment_repository()
+
+
+def _wide_floor_with_hidden_units(database_path: Path) -> None:
+    """C1 1F 캔버스 200 × 100 과, 기본 캔버스(100 × 60) 밖에 서 있지만 층 화면에는 안 그려지는
+    호기 둘 — 레이아웃표시 N(DEMO-EQ01)·공정 필터로 걸러질 Process-B(DEMO-EQ02)."""
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    repository.save_floor_layout_canvas("C1", "1F", 200.0, 100.0)
+    equipment = _equipment()
+    hidden = pd.DataFrame(
+        [
+            {
+                **equipment.iloc[0].to_dict(),
+                "설비명": "DEMO-EQ01",
+                "X좌표": 150,
+                "레이아웃표시": "N",
+            },
+            {
+                **equipment.iloc[0].to_dict(),
+                "설비명": "DEMO-EQ02",
+                "X좌표": 140,
+                "공정소분류": "Process-B",
+            },
+        ]
+    )
+    repository.save_snapshot(
+        _baseline(), pd.concat([equipment, hidden], ignore_index=True), _downtime()
+    )
+    clear_equipment_repository()
+
+
+def _open_wide_floor_dialog(database_path: Path) -> AppTest:
+    """C1 1F 를 열고 공정 필터를 Process-A 로 둔 뒤 도면·캔버스 팝업을 연다."""
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    app.run()
+    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    assert not app.exception
+    return app
+
+
+def test_the_drawing_dialog_checks_hidden_units_before_shrinking_the_canvas(
+    tmp_path: Path,
+) -> None:
+    """캔버스 줄이기 검사는 층 화면에 그린 호기가 아니라 그 층의 저장된 호기 전부를 본다.
+
+    레이아웃표시 N·공정 필터로 화면에 없는 호기도 저장 검증은 본다. 팝업이 그 호기를 빼고 재면
+    경고 없이 줄인 뒤 그 다음 설비 저장(어느 칸을 고치든)이 전부 「캔버스 밖」으로 막힌다.
+    """
+    database_path = tmp_path / "space_hidden.duckdb"
+    _wide_floor_with_hidden_units(database_path)
+    app = _open_wide_floor_dialog(database_path)
+
+    app.checkbox(key="space_floor_layout_auto_C1_1F").uncheck().run()
+    app.number_input(key="space_floor_layout_width_C1_1F_manual_200x100").set_value(100.0)
+    app.number_input(key="space_floor_layout_height_C1_1F_manual_200x100").set_value(60.0).run()
+
+    assert not app.exception
+    warnings = [str(item.value) for item in app.warning]
+    assert any("DEMO-EQ01" in text and "DEMO-EQ02" in text for text in warnings), warnings
+    assert app.button(key="space_floor_layout_save_C1_1F").disabled
+    clear_equipment_repository()
+
+
+def test_the_drawing_dialog_checks_hidden_units_before_deleting_the_canvas(
+    tmp_path: Path,
+) -> None:
+    """지우면 캔버스가 기본 100 × 60 으로 돌아간다 — 그 밖에 남는 호기가 있으면 줄이기와 같은
+    확인을 거쳐야 지운다."""
+    database_path = tmp_path / "space_hidden_delete.duckdb"
+    _wide_floor_with_hidden_units(database_path)
+    app = _open_wide_floor_dialog(database_path)
+
+    texts = [str(item.value) for item in app.caption]
+    assert any("DEMO-EQ01" in text and "100 × 60" in text for text in texts), texts
+    assert app.button(key="space_floor_layout_delete_C1_1F").disabled
+    app.checkbox(key="space_floor_layout_delete_confirm_C1_1F").check().run()
+    assert not app.button(key="space_floor_layout_delete_C1_1F").disabled
     clear_equipment_repository()
 
 

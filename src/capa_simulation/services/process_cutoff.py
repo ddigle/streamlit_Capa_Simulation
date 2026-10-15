@@ -29,6 +29,7 @@ Cut-off 는 「그 공정 이후의 공정~입고(마지막 공정)까지 TAT �
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 
 import pandas as pd
@@ -47,6 +48,7 @@ __all__ = [
     "missing_cutoff_processes",
     "parse_process_cutoff_clipboard",
     "prepare_process_cutoff",
+    "process_cutoff_fingerprint",
 ]
 
 ALL_PRODUCTS = "*"
@@ -197,6 +199,34 @@ def prepare_process_cutoff(
             raise ValueError(f"기준정보에 없는 공정입니다: {unknown[:5]}")
 
     return result.sort_values(["공정", "제품구분"]).reset_index(drop=True)
+
+
+def process_cutoff_fingerprint(cutoff: pd.DataFrame) -> str:
+    """저장된 Cut-off 표 내용의 지문(SHA-256). 편집을 시작할 때 본 표와 저장 직전의 표를 견준다.
+
+    `prepare_process_cutoff` 를 거친 값으로 잰다 — 같은 내용이면 DB 에서 읽었든 저장이 돌려줬든
+    같은 지문이다. 행 차례는 보지 않는다(정렬해 잰다). 시각(`updated_at`)은 싣지 않는다 — 저장은
+    표 전체 교체라 내용이 같으면 덮어도 잃는 것이 없다.
+    """
+    prepared = prepare_process_cutoff(cutoff)
+    lines = sorted(
+        "\x1f".join(
+            (
+                str(process),
+                str(scope),
+                repr(float(days)),
+                "" if pd.isna(note) else str(note),
+            )
+        )
+        for process, scope, days, note in zip(
+            prepared["공정"],
+            prepared["제품구분"],
+            prepared["Cutoff일수"],
+            prepared["비고"],
+            strict=True,
+        )
+    )
+    return hashlib.sha256("\x1e".join(lines).encode("utf-8")).hexdigest()
 
 
 def cutoff_lookup(cutoff: pd.DataFrame) -> dict[str, float]:

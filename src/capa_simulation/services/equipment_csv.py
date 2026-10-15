@@ -45,7 +45,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
-from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.frame_contracts import require_columns, scalar_match_key
 from capa_simulation.services.reference_csv import (
     guard_excel_text,
     strip_excel_text_guard,
@@ -329,11 +329,15 @@ class EquipmentPaste:
     - `columns` — 붙여넣은 계약 컬럼(설비명 포함, 계약 차례).
     - `cleared_cells` — 기존 호기의 값이 있던 칸을 붙여넣은 빈 칸이 지우는 수. 검증을 거친 값으로
       센다 — 빈 환산비는 1 이 되므로 지우는 칸이 아니라 바뀌는 칸이다.
+    - `case_variants` — 새 호기로 더하는 설비명 가운데 대소문자만 다른 기존 호기가 있는 것
+      (붙여넣은 이름, 기존 이름). 막지 않고 미리보기가 경고한다 — Space 이름 바꾸기는 대소문자·
+      앞뒤 공백을 무시하고 겹침을 막으므로 같은 설비를 둘로 적었을 가능성이 크다.
     """
 
     rows: pd.DataFrame
     columns: tuple[str, ...]
     cleared_cells: int = 0
+    case_variants: tuple[tuple[str, str], ...] = ()
 
     @property
     def kept_columns(self) -> tuple[str, ...]:
@@ -394,6 +398,8 @@ def read_equipment_update(
             "중복된 행을 먼저 정리한 뒤 다시 미리보세요."
         )
     matched = pasted[EQUIPMENT_ID_COLUMN].isin(base.index)
+    new_names = pasted.loc[~matched, EQUIPMENT_ID_COLUMN].tolist()
+    variants = _case_variants(new_names, base.index)
     # 새 호기 검사는 검증 **앞**이다. 뒤에 하면 「공정소분류에 누락값」 같은 엉뚱한 문구가
     # 먼저 뜬다.
     needed = [
@@ -401,16 +407,33 @@ def read_equipment_update(
         for column in EQUIPMENT_COLUMNS
         if column not in OPTIONAL_EQUIPMENT_COLUMNS and column not in columns
     ]
-    if needed and not matched.all():
-        raise ValueError(
-            _new_units_message(pasted.loc[~matched, EQUIPMENT_ID_COLUMN].tolist(), needed)
-        )
+    if needed and new_names:
+        raise ValueError(_new_units_message(new_names, needed, variants))
     filled = pasted.reindex(columns=list(EQUIPMENT_COLUMNS))
     for column in kept:
         # 새 호기는 비어 있다(위 검사로 선택 컬럼만 남았다).
         filled[column] = pasted[EQUIPMENT_ID_COLUMN].map(base[column])
     rows = prepare_equipment_master(filled, floor_canvases=floor_canvases)
-    return EquipmentPaste(rows, columns, _cleared_cells(base, rows, columns))
+    return EquipmentPaste(rows, columns, _cleared_cells(base, rows, columns), variants)
+
+
+def describe_case_variants(variants: Sequence[tuple[str, str]], limit: int = 5) -> str:
+    """`eq-01(기존 EQ-01), …` — 대소문자만 다른 (붙여넣은 이름, 기존 이름) 짝을 한 줄로."""
+    shown = ", ".join(f"{new}(기존 {existing})" for new, existing in variants[:limit])
+    more = f" 외 {len(variants) - limit}건" if len(variants) > limit else ""
+    return f"{shown}{more}"
+
+
+def _case_variants(names: Sequence[object], existing: pd.Index) -> tuple[tuple[str, str], ...]:
+    """새 호기 이름 가운데 대소문자만 다른 기존 이름이 있는 것 — (새 이름, 기존 이름)."""
+    by_key: dict[str, str] = {}
+    for name in existing:
+        by_key.setdefault(scalar_match_key(name), str(name))
+    return tuple(
+        (str(name), by_key[scalar_match_key(name)])
+        for name in names
+        if scalar_match_key(name) in by_key
+    )
 
 
 def _rows_by_equipment_id(current: pd.DataFrame) -> tuple[pd.DataFrame, set[str]]:
@@ -432,14 +455,24 @@ def _rows_by_equipment_id(current: pd.DataFrame) -> tuple[pd.DataFrame, set[str]
     return unique.set_index(EQUIPMENT_ID_COLUMN), names
 
 
-def _new_units_message(names: Sequence[object], needed: Sequence[str]) -> str:
+def _new_units_message(
+    names: Sequence[object],
+    needed: Sequence[str],
+    variants: Sequence[tuple[str, str]] = (),
+) -> str:
     shown = ", ".join(str(name) for name in names[:5])
     more = f" 외 {len(names) - 5}건" if len(names) > 5 else ""
+    hint = (
+        f" 대소문자만 다른 기존 호기: {describe_case_variants(variants)} — 설비명은 대소문자를 "
+        "가려 맞대므로 기존 표기 그대로 적으세요."
+        if variants
+        else ""
+    )
     return (
         f"지금 설비 마스터에 없는 설비명 {len(names):,}건({shown}{more})은 새 호기로 추가되는데, "
         f"새 호기에 필요한 열 {len(needed)}개가 붙여넣은 표에 없습니다: {' · '.join(needed)}. "
         "새 호기를 넣으려면 이 열도 함께 붙여넣거나, 새 호기만 양식(전체 열)으로 따로 "
-        "붙여넣으세요. 기존 호기만 고치려던 것이면 설비명이 맞는지 확인하세요."
+        f"붙여넣으세요. 기존 호기만 고치려던 것이면 설비명이 맞는지 확인하세요.{hint}"
     )
 
 
@@ -760,10 +793,26 @@ def _merge_by_keys(
 ) -> pd.DataFrame:
     if incoming.empty:
         return current.copy().reset_index(drop=True)
-    current_index = pd.MultiIndex.from_frame(current.loc[:, keys])
-    incoming_index = pd.MultiIndex.from_frame(incoming.loc[:, keys])
+    current_index = _comparable_keys(current, keys)
+    incoming_index = _comparable_keys(incoming, keys)
     current_without_updates = current.loc[~current_index.isin(incoming_index)]
     return pd.concat([current_without_updates, incoming], ignore_index=True)
+
+
+def _comparable_keys(frame: pd.DataFrame, keys: Sequence[str]) -> pd.MultiIndex:
+    """병합·미리보기가 행을 맞대는 키. 글자 키는 앞뒤 공백을 떼고 견준다.
+
+    편집본은 검증 전일 수 있다(직접 편집에 남은 「 EQ-01 」). 검증이 공백을 떼므로 글자 그대로
+    견주면 붙여넣은 「EQ-01」과 다른 행으로 남았다가 검증에서 같은 이름이 되어 엉뚱한 「설비명
+    중복」으로 막힌다. 대소문자는 가린다 — 설비명 계약이 그렇다(다르면 `case_variants` 가 경고).
+    """
+    return pd.MultiIndex.from_frame(
+        pd.DataFrame({key: frame[key].map(_key_value) for key in keys}, index=frame.index)
+    )
+
+
+def _key_value(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
 
 
 def _build_import_preview(
@@ -827,7 +876,8 @@ def _build_import_preview(
 
 
 def _row_key(row: pd.Series, keys: Sequence[str]) -> tuple[object, ...]:
-    return tuple(row[key] for key in keys)
+    """`_comparable_keys` 와 같은 규칙의 한 행짜리(글자 키는 앞뒤 공백을 뗀다)."""
+    return tuple(_key_value(row[key]) for key in keys)
 
 
 def _is_missing(value: object) -> bool:

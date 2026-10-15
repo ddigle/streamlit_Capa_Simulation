@@ -39,7 +39,9 @@ from capa_simulation.services.floor_layout_profile import (
     CANVAS_DECIMALS,
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
+    CanvasSize,
     FloorCanvasMap,
+    FloorKey,
 )
 from capa_simulation.services.frame_contracts import require_columns
 
@@ -408,14 +410,42 @@ def _validate_locations_and_coordinates(
     if floor_canvases is None:
         return
     limit_width, limit_height = _canvas_limits(result, floor_canvases)
-    # 끝 좌표는 저장 정밀도로 반올림해 견준다. 편집기가 캔버스 끝에 붙여 놓은 호기(88.7 + 11.3)가
-    # 부동소수 합(100.00000000000001)으로 「밖」이 되지 않게 — 푸는 쪽이라 과거 리비전도 열린다.
-    outside = complete & (
-        result["X좌표"].add(result["Xsize"]).round(CANVAS_DECIMALS).gt(limit_width)
-        | result["Y좌표"].add(result["Ysize"]).round(CANVAS_DECIMALS).gt(limit_height)
-    )
+    outside = complete & _beyond_canvas(result, limit_width, limit_height)
     if outside.any():
         raise ValueError(_outside_canvas_message(result, outside, complete, floor_canvases))
+
+
+def floor_equipment_outside_canvas(
+    equipment: pd.DataFrame, floor: FloorKey, canvas: CanvasSize
+) -> list[str]:
+    """그 동·층 호기 가운데 블럭(좌표 + 크기)이 `canvas` 를 벗어나는 설비명(표 차례).
+
+    저장 검증(`_validate_locations_and_coordinates`)과 **같은 행, 같은 판정**이다 — 레이아웃표시·
+    상태·화면 필터와 무관하게 그 층에서 좌표·크기가 다 있는 행을 모두 본다. 층 캔버스를 바꾸는
+    화면(Space `도면·캔버스 편집` 팝업)이 저장된 마스터를 넘겨, 그 캔버스로 바꾸면 다음 설비 저장이
+    「캔버스 밖」으로 막히는지 미리 잰다. 화면에 그린 행만 넘기면 안 보이는 호기를 놓친다.
+    """
+    if equipment.empty or not {"동", "층", *COORDINATE_COLUMNS} <= set(equipment.columns):
+        return []
+    numeric = equipment.loc[:, list(COORDINATE_COLUMNS)].apply(pd.to_numeric, errors="coerce")
+    on_floor = (
+        equipment["동"].astype("string").eq(floor[0]).fillna(False)
+        & equipment["층"].astype("string").eq(floor[1]).fillna(False)
+        & numeric.notna().all(axis=1)
+    )
+    outside = on_floor & _beyond_canvas(numeric, float(canvas[0]), float(canvas[1]))
+    return [str(name) for name in equipment.loc[outside, EQUIPMENT_ID_COLUMN]]
+
+
+def _beyond_canvas(
+    frame: pd.DataFrame, width: pd.Series | float, height: pd.Series | float
+) -> pd.Series:
+    """블럭 끝이 캔버스 폭·높이를 넘는 행. 끝 좌표는 저장 정밀도로 반올림해 견준다 — 편집기가
+    캔버스 끝에 붙여 놓은 호기(88.7 + 11.3)가 부동소수 합(100.00000000000001)으로 「밖」이 되지
+    않게(푸는 쪽이라 과거 리비전도 열린다)."""
+    right = frame["X좌표"].add(frame["Xsize"]).round(CANVAS_DECIMALS)
+    top = frame["Y좌표"].add(frame["Ysize"]).round(CANVAS_DECIMALS)
+    return right.gt(width) | top.gt(height)
 
 
 def _outside_canvas_message(

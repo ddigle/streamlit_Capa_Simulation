@@ -19,7 +19,11 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab, _page_script
 
-from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_process_cutoff_cache,
+)
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.availability_gap import (
     DYNAMIC_SUBTOTAL_ROW,
@@ -165,3 +169,53 @@ def test_filling_from_equipment_processes_keeps_the_values_already_written() -> 
     assert list(filled.columns) == PROCESS_CUTOFF_EDIT_COLUMNS
     # 빠진 공정이 없으면 표를 그대로 돌려준다.
     assert add_missing_cutoff_rows(draft, ["Die Attach"]) is draft
+
+
+def test_a_cutoff_saved_by_someone_else_is_not_erased_by_an_older_draft(tmp_path: Path) -> None:
+    """A 가 탭을 연 뒤 B 가 Process-B 를 저장했다. A 가 옛 초안의 다른 행을 고쳐 저장하면 막고
+    최신 저장본(Process-B 포함)으로 다시 연다 — 저장은 표 전체 교체라 그대로 쓰면 B 의 행이 지워져
+    그 공정이 월별 가용대수에서 빠진다."""
+    database_path = tmp_path / "cutoff.duckdb"
+    outsider = DuckDBEquipmentRepository(database_path)
+    outsider.initialize()
+    outsider.save_process_cutoff(pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [10.0]}))
+    clear_equipment_repository()
+    script = f"""
+from pathlib import Path
+
+from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+render_cutoff_management(
+    DuckDBEquipmentRepository(Path({str(database_path)!r})),
+    equipment_processes=["Process-A", "Process-B"],
+)
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert not app.exception
+
+    outsider.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A", "Process-B"], "Cutoff일수": [10.0, 5.0]})
+    )
+    clear_process_cutoff_cache()
+    draft = app.session_state[CUTOFF_DRAFT_KEY].copy()
+    draft["Cutoff일수"] = 12.0
+    app.session_state[CUTOFF_DRAFT_KEY] = draft
+    next(button for button in app.button if button.label == "Cut-off 저장").click().run()
+
+    assert not app.exception
+    stored = outsider.load_process_cutoff()
+    assert stored["공정"].tolist() == ["Process-A", "Process-B"]
+    assert stored["Cutoff일수"].tolist() == [10.0, 5.0]
+    warnings = [str(item.value) for item in app.warning]
+    assert any("다른 사용자가 먼저" in text for text in warnings), warnings
+    # 최신 저장본으로 다시 열었다 — 그 위에서 고친 다음 저장은 통과한다.
+    reopened = app.session_state[CUTOFF_DRAFT_KEY]
+    assert reopened["공정"].tolist() == ["Process-A", "Process-B"]
+    edited = reopened.copy()
+    edited["Cutoff일수"] = [12.0, 5.0]
+    app.session_state[CUTOFF_DRAFT_KEY] = edited
+    next(button for button in app.button if button.label == "Cut-off 저장").click().run()
+    assert not app.exception
+    assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0, 5.0]
+    clear_equipment_repository()

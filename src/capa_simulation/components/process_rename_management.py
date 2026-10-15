@@ -21,10 +21,12 @@ from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.cache import (
     clear_global_process_rename_cache,
     load_global_process_rename,
 )
+from capa_simulation.persistence.models import GlobalProcessRename
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
@@ -41,6 +43,8 @@ CLIPBOARD_KEY = "admin_area_process_rename_clipboard"
 # 전체 교체 확인 체크박스의 자리. 적용에 성공하면 비워 다음 붙여넣기가 다시 확인을 거친다.
 CLIPBOARD_CONFIRM_KEY = "admin_area_process_rename_clipboard_confirm"
 EDITOR_KEY = "admin_area_process_rename_editor"
+# 직접 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다.
+BASE_VERSION_KEY = "admin_area_process_rename_base_version"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -109,7 +113,7 @@ def render_process_rename_management(
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)
-    _render_direct_editor(repository, profile.rules, available_processes)
+    _render_direct_editor(repository, profile, available_processes)
 
 
 @st.dialog("Excel 붙여넣기 · 공정 표시명", width="large", on_dismiss=close_admin_dialog)
@@ -166,9 +170,14 @@ def _clipboard_dialog(
 
 def _render_direct_editor(
     repository: DuckDBScenarioRepository,
-    current: pd.DataFrame,
+    profile: GlobalProcessRename,
     available_processes: list[str],
 ) -> None:
+    """직접 편집 표. 저장은 **버전 대조**다 — 판정 기준과 같은 결로 편집을 시작한 회차의 version 을
+    세션(`BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가
+    거부한다(그대로 쓰면 그 사람이 넣은 표시명을 모르는 채 덮는다)."""
+    current = profile.rules
+    submitted_base = st.session_state.get(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
     if available_processes:
         with st.expander(f"보유 공정 {len(available_processes):,}개", icon=":material/list:"):
@@ -210,14 +219,28 @@ def _render_direct_editor(
             key=EDITOR_KEY,
         )
     if not submitted:
+        st.session_state[BASE_VERSION_KEY] = profile.version
         return
+    expected_version = submitted_base if isinstance(submitted_base, int) else profile.version
+    # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+    st.session_state[BASE_VERSION_KEY] = profile.version
     try:
         revised = drop_blank_process_rename_rows(
             pd.DataFrame(edited, columns=list(PROCESS_RENAME_COLUMNS))
         )
-        _save_process_rename(repository, revised, source=note.strip() or "웹 직접 편집")
+        _save_process_rename(
+            repository,
+            revised,
+            source=note.strip() or "웹 직접 편집",
+            expected_version=expected_version,
+        )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
+        if isinstance(exc, ProfileVersionConflict):
+            # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
+            # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
+            clear_global_process_rename_cache()
+            st.session_state.pop(BASE_VERSION_KEY, None)
     else:
         queue_flash("process_rename_flash", "공정 표시명을 공용 설정으로 저장했습니다.")
         st.rerun()
@@ -228,12 +251,16 @@ def _save_process_rename(
     rules: pd.DataFrame,
     *,
     source: str,
+    expected_version: int | None = None,
 ) -> None:
     """검증 → 교체 저장 → 캐시 폐기.
 
     1:1 위반은 반드시 파이썬 `ValueError` 로 먼저 낸다. DB 의 UNIQUE 는 마지막 방어선이고
-    그 위반은 `duckdb.ConstraintException` 이라 화면 오류 문구로 바뀌지 않는다.
+    그 위반은 `duckdb.ConstraintException` 이라 화면 오류 문구로 바뀌지 않는다. 붙여넣기는
+    「현재 전체 교체」를 확인받는 일이라 `expected_version` 없이 부른다(버전 대조는 직접 편집).
     """
     prepared = prepare_process_rename_rules(rules)
-    repository.replace_global_process_rename(prepared, source=source)
+    repository.replace_global_process_rename(
+        prepared, source=source, expected_version=expected_version
+    )
     clear_global_process_rename_cache()

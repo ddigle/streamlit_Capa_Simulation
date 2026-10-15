@@ -1546,11 +1546,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     fragment 라 저장·삭제가 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
     도면 없이 캔버스만 저장할 수도 있다. 캔버스를 줄여 이탈 호기가 생기면 확인
     체크박스를 통과해야 저장한다 — 이탈이 있으면 `save_snapshot` 이 마스터 프레임
-    전체를 거부해 무관한 동·층 편집까지 막히기 때문이다.
+    전체를 거부해 무관한 동·층 편집까지 막히기 때문이다. 이탈은 층 화면에 그린 호기가 아니라
+    **저장된 설비 마스터의 그 층 호기 전부**로 잰다(`saved_equipment` →
+    `floor_equipment_outside_canvas` — 저장 검증과 같은 행). 레이아웃표시 N·조건 카드 필터로 안 보이는
+    호기를 빼면 경고 없이 줄인 뒤 다음 설비 저장이 전부 막힌다. 지우기도 기본 캔버스로 같은 검사를 하고
+    (캡션 + `…_delete_confirm_` 확인 칸) 확인 전까지 삭제 단추를 막는다.
   - 저장·삭제가 성공하면 그 층의 Space **미저장 캔버스를 버린다**(`stage_floor_canvas(..., None)`).
     남기면 팝업 값을 가리고 다음 설비 저장이 옛 대기값으로 되돌린다. 저장된 도면 요소 밖으로
     캔버스를 줄이거나(삭제는 기본 100×60 으로 돌아간다) 하면 저장소가 거부한다. 팝업은 누르기
-    전에 그 사실을 경고하고 저장·삭제 단추를 막는다(호기 이탈은 확인 후 저장, 요소 이탈은 불가).
+    전에 그 사실을 경고하고 저장·삭제 단추를 막는다(호기 이탈은 확인 후 저장·삭제, 요소 이탈은 불가).
 - `src/capa_simulation/components/space_layout_editor.py`
   - Space 층 배치 편집기(Components v2). HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이다 —
     파이썬 문자열에 넣으면 줄 길이 검사·이스케이프가 JS 를 망가뜨린다. 모듈을 읽을 때 한 번
@@ -2208,7 +2212,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `parse_clipboard_table`, CSV 는 `_reject_duplicate_csv_headers`(pandas 가 둘째를 「담당자.1」로 바꿔
   읽고, 공백만 다른 머리글은 공백을 뗀 뒤 같은 이름이 된다 — 세 설비 표의 CSV 가 모두 이 검사를
   탄다). 머리글도 값도 빈 열(Excel 범위 끝)은 두 입구가 `clipboard_table.drop_empty_unnamed_columns`
-  로 몇 개든 뺀다. 편집본에 같은 설비명이 둘 이상인데 그 이름을 일부 열로 붙여넣으면 막는다 — 어느
+  로 몇 개든 뺀다. 병합(`_merge_by_keys`)·미리보기(`_row_key`)는 글자 키의 앞뒤 공백을 떼고 맞댄다 —
+  편집본은 검증 전일 수 있어(「 EQ-01 」) 글자 그대로 견주면 옛 행이 남아 검증에서 엉뚱한 「설비명 중복」이
+  된다. 대소문자는 가린다(설비명 계약). 새 호기로 세는 이름 가운데 대소문자만 다른 기존 호기가 있으면
+  (`EquipmentPaste.case_variants`, `match_key` 규칙) 막지 않고 미리보기 경고와 새 호기 막음 문구에 그 짝을
+  적는다 — Space 이름 바꾸기는 대소문자·앞뒤 공백을 무시하고 겹침을 막는다. 편집본에 같은 설비명이 둘 이상인데 그 이름을 일부 열로 붙여넣으면 막는다 — 어느
   행에서 나머지 열을 채울지 모르고, 한쪽을 고르면 병합이 두 행을 다 바꿔 중복이 조용히 사라진다(모든
   열을 붙여넣으면 채울 것이 없어 붙여넣은 행이 두 행을 대신한다). 설비명 말고 열이 없으면 막는다.
   `read_equipment_csv`·`read_equipment_clipboard` 는 표 전체를 읽는 입구로 남는다(빠진 선택 컬럼을 빈
@@ -2481,6 +2489,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 층 캔버스 이탈 오류는 동·층·지금 캔버스 크기·필요한 크기·이탈 호기와 고칠 곳(Space 현황
     「도면·캔버스 편집」 또는 좌표)을 적는다(2026-09-29). 마스터 전체를 검사하므로 누가 캔버스를
     줄여 두면 무관한 칸만 고친 저장도 막힌다 — 검사 범위는 그대로 두고 문구로 원인을 드러낸다.
+    캔버스를 바꾸는 화면이 미리 잴 때는 `floor_equipment_outside_canvas(저장된 마스터, 층, 캔버스)` 를
+    쓴다 — 같은 행(레이아웃표시·화면 필터 무관, 좌표·크기가 다 있는 행)·같은 판정(`_beyond_canvas`)이다.
   - 환산비는 **빈 칸과 못 읽는 값을 가른다.** 둘 다 숫자 변환에서 NaN 이 되는데 빈 칸은
     1.0 으로 채우고 못 읽는 값은 막는다. 한데 묶으면 `1,5` 같은 오타가 조용히 기준 모델로
     내려앉아 아무 말 없이 그 설비의 몫이 줄어든다. 0·음수도 막는다 — 0 은 비가동 일정이
@@ -3334,7 +3344,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/process_rename_management.py`
   - Admin Area 의 `Proc Rename` 탭. 공용 공정 표시명의 CSV 다운로드·Excel 붙여넣기(작업 줄
     팝업)·직접 편집과 저장을 담당한다. 저장 버튼·변경 메모는 편집표 **위**다. 저장은 공용 프로필
-    교체이며 리비전을 만들지 않는다.
+    교체이며 리비전을 만들지 않는다. 직접 편집 저장은 판정 기준과 같은 **버전 대조**다
+    (`BASE_VERSION_KEY` → `expected_version`, 다르면 `ProfileVersionConflict`). 붙여넣기는 「현재 전체
+    교체」를 확인받는 일이라 대조하지 않는다.
 - `src/capa_simulation/components/display_order_management.py`
   - Admin Area 의 `표시순서 관리` 탭. 공용 표시순서 규칙의 검증·CSV 다운로드·Excel 표
     붙여넣기(작업 줄 팝업)·범위별 직접 편집과 원자 교체를 담당한다. 저장 버튼·변경 메모는
@@ -3637,7 +3649,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「조회기간 밖 월별 기준 지우기」 체크를 두고, 그런 달 때문에 막히면 그 달과 고칠 길을 적어 거부한다. 저장은 **버전 대조**다 — 편집을
     시작한 회차의 version 을 세션(`THRESHOLD_BASE_VERSION_KEY`)에 두고 저장 회차에 그 값을 넘겨,
     쓰기 잠금 안에서 저장본과 다르면 `SecurementThresholdConflict` 로 거부한다. 검증 실패(값 ≤ 0,
-    기본값과 합친 어느 달의 경고 > 확보)도 그 달을 적어 거부한다.
+    기본값과 합친 어느 달의 경고 > 확보)도 그 달을 적어 거부한다. **실행 Capa** 저장도 같은 버전
+    대조다(`EXECUTION_BASE_VERSION_KEY`, 다르면 `ProfileVersionConflict` — 캐시와 출발점을 비운다).
   - **주요공정 히트맵은 이름 붙은 프리셋 여럿이다**(2026-09-29 사용자 요청, 마이그레이션 0028).
     Preference 의 `고칠 프리셋`(＋ 새 프리셋)·이름·공정으로 만들고 고치며, 저장·`기본으로`·삭제는
     모두 **묶음 전체의 교체**(`replace_global_key_process_presets`, version+1)다 — 차례와 이름 중복을
@@ -3797,7 +3810,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     견준다(엄격한 `<`). 필요 시점이 지난 과거 추가N 은 홀로 서고 남은 추가N 끼리 차례로 짝짓는다. 화면은
     두 줄을 그대로 그리고 배지·호기 변동 줄에 「필요 시점 지남」, 합계 칸과 `scope_note` 에 뺀 대수를 적는다.
   - `summarize_progress(rows, processes)` 는 고른 공정의 합계(당긴 호기의 단축일수)·상태별 수·가상 호기 수
-    (과거·현재)·`필요 시점 지남` 대수와 그 행의 지금 단축일수 합(`lapsed_current_days`), `scope_difference` 는 기준선과 지금의 조회 달·맞댄 공정 차이, `progress_export_frame` 은
+    (과거·현재)·`필요 시점 지남` 대수와 그 행의 지금 단축일수 합(`lapsed_current_days`), `scope_difference` 는 기준선과 지금의 조회 달·맞댄 공정 차이, `rename_suspects` 는 당긴 호기의
+    `해소`·`신규 필요` 가 한 공정에 함께 있는 공정(기준선 뒤 이름을 바꾼 호기일 수 있다 — 이름으로만
+    짝지으므로 잇지 않고 `scope_note` 가 한 줄로 알린다, 이름 이력 매핑은 사용자 결정), `progress_export_frame` 은
     「진척 비교 CSV」 표(`PROGRESS_EXPORT_COLUMNS` = 목표 확보율(%) + 행, 시점은 `YYYY-MM-DD`)다.
 - `src/capa_simulation/services/monthly_equipment_availability.py`
   - **`span_date_range` 는 첫 구간의 앞 경계(`boundary_start`)부터 돌려준다**(2026-10-07 리뷰). 상태는
@@ -4066,6 +4081,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     내면 화면에 보이는 수와 계산에 쓰인 수가 달라진다 — 가장 나쁜 종류의 어긋남이다. 페이지는
     이 반환값을 Static/Dynamic·필요단축일정에 그대로 넘긴다(한 회차 한 번 읽기 — 탭마다 다시 읽어
     rerun 마다 DB 를 세 번 열었다). 저장은 그 자리에서 `st.rerun()` 하므로 낡은 값이 남지 않는다.
+  - 저장은 **초안 지문 대조**다. 초안이 출발한 저장본의 지문(`process_cutoff_fingerprint` — 내용 해시,
+    `CUTOFF_BASE_KEY`)을 넘기고, 저장소가 쓰기 잠금 안에서 지금 저장본의 지문과 다르면
+    `ProcessCutoffConflict` 로 거부한다 — 표 전체 교체라 옛 초안으로 덮으면 그 사이 남이 저장한 공정이
+    지워져 월별 가용대수에서 빠진다. 충돌이면 최신 저장본으로 초안·지문을 다시 세우고 그 까닭을 알린다.
   - 저장 알림은 flash 다 — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지
     않는다. `설비 공정으로 채우기`·저장은 초안을 갈아 끼우므로 편집표를 `discard_editor` 로
     새 위젯으로 세운다(행 위치 델타가 다른 공정에 붙지 않게 — 세션 칸만 지우면 브라우저가 다시
@@ -4517,8 +4536,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그대로 올라온다),
   register → INSERT BY NAME → unregister 는 `insert_by_name()`, 공용 프로필 헤더 조회·삽입은
   `load_profile_header()`·`insert_profile_header()`, 상세→헤더 삭제와 다음 버전 계산은
-  `reset_profile()`, 표 하나의 감사 해시는 `hash_frame()`(`hash_tables` 와 같은
-  바이트 열, `tests/test_sql_helpers.py` 가 값을 핀한다)이 맡는다
+  `reset_profile()`, 공용 프로필 저장의 버전 대조(편집을 시작할 때 본 version 과 다르면
+  `ProfileVersionConflict`, None 이면 대조하지 않음)는 `require_profile_version()`, 표 하나의 감사
+  해시는 `hash_frame()`(`hash_tables` 와 같은 바이트 열, `tests/test_sql_helpers.py` 가 값을 핀한다)이
+  맡는다
 - `persistence/_migration_core.py`: 두 DuckDB가 공유하는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션)
   - **DB 가 코드보다 새 것이면 막지 않고 알린다**(2026-10-05 사용자 결정). 적용 기록의 최고

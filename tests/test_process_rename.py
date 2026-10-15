@@ -11,6 +11,7 @@ from capa_simulation.components.process_labels import (
     process_labels_from_rules,
 )
 from capa_simulation.persistence import DuckDBScenarioRepository
+from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
     drop_blank_process_rename_rows,
@@ -348,6 +349,29 @@ def test_clearing_every_rule_still_raises_the_version(tmp_path: Path) -> None:
     assert cleared.version == 2
     assert cleared.rules.empty
     assert repository.load_global_process_rename().rules.empty
+
+
+def test_a_save_started_from_an_older_version_is_refused(tmp_path: Path) -> None:
+    """편집을 시작한 뒤 다른 사람이 저장했으면 덮지 않는다 — 판정 기준과 같은 버전 대조다.
+    그대로 쓰면 그 사람이 넣은 표시명이 말없이 사라진다."""
+    repository = _repository(tmp_path / "scenario.duckdb")
+    repository.replace_global_process_rename(_rules([("SAW", "절단")]), source="A 가 본 것")
+    repository.replace_global_process_rename(
+        _rules([("SAW", "절단"), ("MOLD", "성형")]), source="B 의 저장"
+    )
+
+    with pytest.raises(ProfileVersionConflict, match="다른 사용자가 먼저"):
+        repository.replace_global_process_rename(
+            _rules([("SAW", "SAW-1")]), source="A 의 저장", expected_version=1
+        )
+
+    profile = repository.load_global_process_rename()
+    assert (profile.version, profile.source) == (2, "B 의 저장")
+    assert profile.rules["표시명"].tolist() == ["절단", "성형"]
+    saved = repository.replace_global_process_rename(
+        _rules([("SAW", "SAW-1")]), source="A 의 저장", expected_version=2
+    )
+    assert saved.version == 3
 
 
 def test_one_to_one_violation_is_rejected_before_it_reaches_the_database(tmp_path: Path) -> None:
