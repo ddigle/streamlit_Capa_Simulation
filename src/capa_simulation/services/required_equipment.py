@@ -8,6 +8,7 @@ from capa_simulation.services.frame_contracts import (
     assert_complete,
     match_key,
     normalize_area_name,
+    normalize_demand_basis,
     normalize_month_column,
     require_columns,
     scalar_match_key,
@@ -134,7 +135,24 @@ def _prepare_reqb(reqb: pd.DataFrame) -> pd.DataFrame:
     prepared_reqb["소요기준"] = validate_demand_basis(prepared_reqb["소요기준"], "RQ_REQB")
     assert_complete(prepared_reqb, REQB_REQUIRED_KEYS, "RQ_REQB")
     prepared_reqb["Area_Name"] = normalize_area_name(prepared_reqb["Area_Name"], "RQ_REQB")
-    return prepared_reqb
+    return prepared_reqb.loc[~duplicate_route_rows(prepared_reqb)].reset_index(drop=True)
+
+
+def duplicate_route_rows(reqb: pd.DataFrame) -> pd.Series:
+    """앞 행과 **계산이 맞대는 꼴로** 같은 `RQ_REQB` 경로 행. 첫 행만 남기려고 쓴다.
+
+    계산은 13컬럼을 공백 제거·소요기준 대문자와 `WAFER`→`WF`·`Area_Name` 대소문자 무시로 줄여
+    부하량과 대당 Capa 를 붙인다. 원래 글자로만 접으면 `WF`·`Wafer` 처럼 표기만 다른 두 행이 같은
+    경로로 두 번 세어져 그 경로의 소요대수가 두 배가 된다. 등록(`reference_transformer._rq_reqb`)과
+    계산(`_prepare_reqb`)이 이 함수 하나로 접는다 — 13컬럼 전부가 키인 경로 표라 접어도 잃는 값이
+    없다.
+    """
+    keys = reqb[REQB_COLUMNS].copy()
+    keys["생산계획년월"] = pd.to_numeric(keys["생산계획년월"], errors="coerce")
+    strip_text_columns(keys, REQB_TEXT_COLUMNS)
+    keys["소요기준"] = normalize_demand_basis(keys["소요기준"])
+    keys["Area_Name"] = keys["Area_Name"].str.casefold()
+    return keys.duplicated(keep="first")
 
 
 def _empty_required_equipment_result() -> pd.DataFrame:

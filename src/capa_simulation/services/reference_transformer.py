@@ -21,6 +21,7 @@ from capa_simulation.services.reference_conflicts import (
     conflict_report,
     validated_distinct,
 )
+from capa_simulation.services.required_equipment import duplicate_route_rows
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,9 @@ def build_reference_tables_with_conflicts(
         ),
         "RQ_REQB": _rq_reqb(core, selected_contract, conflict_records),
     }
+    tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"] = _blank_lent_as_zero(
+        tables["RQ_EQP_OWN"], tables["RQ_EQP_LENT"], tables["RQ_EQP_AVBL"]
+    )
     business_key_columns = list(
         dict.fromkeys(
             key
@@ -202,6 +206,39 @@ def _monthly_process_table(
     return validated_distinct(result, table_name, contract, conflict_records)
 
 
+def _blank_lent_as_zero(
+    own: pd.DataFrame,
+    lent: pd.DataFrame,
+    available: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """빈 대여평가를 **0 대**로 메우고, 그 때문에 빈 가용대수를 `보유 − 0` 으로 채운다.
+
+    `가용대수 = 설비보유 − 설비대여평가` 가 빈 대여평가를 그대로 옮기면 가용대수가 비어 확보율
+    계산이 멈추고 설비대수 편집기도 열리지 않는다. 설비대수 편집기는 「빈칸은 0 대」로 읽는다
+    (`equipment_count`) — 등록도 같은 규칙을 쓴다.
+
+    **표를 접은 뒤에** 메운다. 원천 행에서 먼저 메우면 같은 (월, 공정) 형제 행 가운데 값이 있는
+    행을 고르는 규칙(`reference_conflicts._informative_first`)이 보유·대여·가용에서 서로 다른 행을
+    골라 세 표가 `보유 − 대여 = 가용` 으로 맞지 않게 된다. 보유대수가 빈 칸은 모르는 값이라 0 으로
+    보지 않는다 — 그 달 가용대수는 그대로 빈다.
+    """
+    keys = ["생산계획년월", "공정"]
+    filled_lent = lent.assign(설비대여평가=lent["설비대여평가"].fillna(0.0))
+    blank = available["가용대수"].isna()
+    if not bool(blank.any()):
+        return filled_lent, available
+    derived = (
+        available.loc[blank, keys]
+        .merge(own[[*keys, "설비보유"]], on=keys, how="left", validate="many_to_one")
+        .merge(filled_lent[[*keys, "설비대여평가"]], on=keys, how="left", validate="many_to_one")
+    )
+    filled_available = available.copy()
+    filled_available.loc[blank, "가용대수"] = (
+        derived["설비보유"] - derived["설비대여평가"]
+    ).to_numpy()
+    return filled_lent, filled_available
+
+
 def _monthly_process_class_table(
     core: pd.DataFrame,
     table_name: str,
@@ -282,6 +319,10 @@ def _rq_reqb(
     않았다. `required_equipment` 가 이 프레임을 왼쪽에 두고 `many_to_one` 으로 붙이므로
     원천에 완전 중복 행이 하나 들어오면 그 경로의 소요대수가 조용히 두 배가 된다.
     13개 컬럼 전부가 키인 경로 표라 값 충돌은 생길 수 없고, 중복은 그대로 접힌다.
+
+    원래 글자로 접은 뒤 **계산과 같은 정규화**로 한 번 더 접는다(`duplicate_route_rows`).
+    `WF`·`Wafer` 처럼 표기만 다른 두 행은 계산에서 같은 경로라 접지 않으면 두 번 세어진다. 남는
+    것은 첫 행이고 그 표기는 원천 그대로다.
     """
     columns = [
         "생산계획년월",
@@ -300,7 +341,8 @@ def _rq_reqb(
     ]
     result = _nonblank_rows(core.loc[:, columns].copy(), "Area_Name")
     # 13컬럼 전부가 업무 키라 `validated_distinct` 가 같은 null·빈값 검사를 같은 메시지로 한다.
-    return validated_distinct(result, "RQ_REQB", contract, conflict_records)
+    result = validated_distinct(result, "RQ_REQB", contract, conflict_records)
+    return result.loc[~duplicate_route_rows(result)].reset_index(drop=True)
 
 
 def _nonblank_rows(frame: pd.DataFrame, column: str) -> pd.DataFrame:
