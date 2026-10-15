@@ -1,7 +1,9 @@
 # Purpose: 시나리오 관리 페이지의 폼·목록 작업·보관함·복제 저장·캐시 무효화를 AppTest 로 고정한다.
 
 from pathlib import Path
+from uuid import uuid4
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, Expander, Status
@@ -361,6 +363,42 @@ def test_a_refused_revision_save_keeps_the_typed_name_and_memo(
     assert any("이번 편집이 깨뜨린" in item.value for item in app.error)
     assert app.text_input(key="scenario_revision_name_g0").value == "막힐 리비전"
     assert app.text_area(key="scenario_revision_note_g0").value == "고친 까닭"
+
+
+def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> None:
+    """감사 D3: 리비전 저장에서 막히는 편집은 「현재 활성 RQ 복제」로도 저장되지 않는다.
+
+    복제도 지금 편집본을 새 시나리오의 초기 리비전으로 적으므로 리비전 저장과 같은 검사를 거친다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    active = dict(app.session_state[ACTIVE_SCENARIO_KEY])
+    upeh = active["tables"]["RQ_UPEH"]
+    # 모듈수(RQ_MODULE)가 없는 공정의 UPEH 한 줄 — 편집 전 리비전은 계산된다.
+    active["tables"] = {
+        **active["tables"],
+        "RQ_UPEH": pd.concat(
+            [upeh, upeh.iloc[:1].assign(공정="DEMO_NO_MODULE")], ignore_index=True
+        ),
+    }
+    active["revision"] = int(active["revision"]) + 1
+    active["content_token"] = uuid4().hex
+    app.session_state[ACTIVE_SCENARIO_KEY] = active
+    repository = DuckDBScenarioRepository(database_path)
+    before = len(repository.list_scenarios())
+
+    app.segmented_control(key=MODE_KEY).set_value("리비전 저장").run()
+    _save_revision(app, "막힐 리비전")
+    assert any("이번 편집이 깨뜨린" in item.value for item in app.error)
+
+    app.segmented_control(key=MODE_KEY).set_value("현재 활성 RQ 복제").run()
+    _fill_clone(app, "깨진 편집 복제", "CLONE-BROKEN")
+
+    assert any("이번 편집이 깨뜨린" in item.value for item in app.error)
+    assert len(repository.list_scenarios()) == before
+    assert _clone_inputs(app)["시나리오명"] == "깨진 편집 복제"
 
 
 def _register_virtual(app: AppTest, product: str) -> VirtualProductRecord:

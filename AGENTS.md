@@ -1330,10 +1330,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     선택할 수 있다. 해당 월의 12표 전체를 선택한 쪽으로 사용하며 행을 섞지 않는다.
     원본 리비전·범위를 바꾸면 차단 기본값으로 돌아간다. 저장 전에 월별 출처·시나리오·
     리비전을 표시하고, 결과 12표의 실제 월 집합을 비교해 중간 누락도 차단한다.
-    월 없는 `RQ_CHIP_EQ`·`RQ_CHIP_QTY`·`RQ_MODULE`·`RQ_DISPLAY_ORDER`는 베이스를 유지하며
-    양쪽 행 수와 값 차이를 저장 전에 표시한다. 원본과 현재 활성 편집본은 바꾸지 않는다.
-    가상제품 이력은 월이 없으므로 양쪽 선택 리비전의 전체 기록을 보존한다. 같은
+    월 없는 표는 `scenario_month_merge.NON_MONTHLY_SUPPLEMENT_KEYS` 한 곳의 규칙으로 합친다 —
+    `RQ_CHIP_QTY`·`RQ_CHIP_EQ`(`제품정보 + Stack`)·`RQ_MODULE`(`공정`)은 겹치는 키를 베이스 값으로
+    두고 베이스에 없는 키의 행만 덧붙일 쪽에서 보충하고, `RQ_DISPLAY_ORDER` 는 베이스 그대로다
+    (사내 리뷰 202610120655 1장의 기본안 — 사용자 확인 대기, 사전을 비우면 네 표 모두 베이스).
+    양쪽 행 수·값 차이·보충 행 수·규칙을 저장 전에 표시한다. 결과 16표는 `merged_table_gaps` 로
+    본다: `RQ_UPEH` 가 쓰는 공정(BOX·PCB 제외)에 `RQ_MODULE` 이 없으면 계산이 멈추므로 공정·달
+    예시와 함께 **저장 폼을 열지 않고**, 계획(생산수량 > 0) 제품에 `RQ_CHIP_*` 가 없으면 부하량·
+    Density 에서 조용히 빠지므로 경고한다. 결과 첫 달과 끝 달 사이의 빈 달(달력 공백)은 막지 않고
+    경고한다. 저장 단추는 결과의 Capa 계산 검사(`capacity_gate.derived_save_verdict`)를 먼저 돈다.
+    원본과 현재 활성 편집본은 바꾸지 않는다.
+    가상제품 이력은 월이 없으므로 양쪽 선택 리비전의 기록을 합친다. 같은
     `제품정보 + Stack`의 복제 원본 제품·Stack이 같으면 한 건으로 합치고 다르면 저장을 막는다.
+    결과 표에 그 제품 키가 남은 이력만 보존하고(뺀 건수를 알린다), 한쪽에선 가상 제품인데 다른
+    쪽 표에는 이력 없이 있는 키는 두 값이 섞인다고 경고한다(`merge_result_virtual_products`).
     구현·검증 근거는 `docs/scenario_merge_shift_implementation.md`에 정리한다.
   - 「연도 Shift」는 저장 리비전의 12개 월표에서 연도만 사용자가 지정한 정수만큼 옮긴다.
     자동 오류 판정·추천은 없고 0년으로 시작한다. 전후 범위를 나란히 보여 주며 월 번호와
@@ -1797,11 +1807,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **계산은 되지만 소요대수에 들지 않은 수요가 있으면**(6장 「소요대수와 확보율」의 넷) 저장·발행 모두
     허락하고 건수를 경고한다(시나리오 전체 기간). 막을 오류는 아니지만 확보율이 그만큼 높게 나온
     리비전이 아무 표시 없이 저장·공식버전이 되면 안 된다. 발행 화면은 성공 문구 밑에 그 경고를 띄운다.
+  - **「현재 활성 RQ 복제」** 는 지금 편집본을 새 시나리오의 초기 리비전으로 적으므로 저장과 같은
+    `revision_save_verdict` 를 거친다. **월 머지·연도 Shift 저장**(`derived_save_verdict`)은 원본
+    리비전이 「편집 전」이다 — 원본이 모두 계산되는데 결과가 안 되면 막고, 원본부터 안 되면 허락하며
+    경고한다. 결과는 아직 리비전이 아니라 캐시에 넣지 않고 한 번 계산하고, 원본은 결과가 실패할
+    때만 발행 검사와 같은 캐시 칸으로 본다.
+  - 오류가 `RQ_MODULE` 에서 나면 발행 거절·저장 경고에 고칠 길을 붙인다(`module_fix_hint`) — 모듈수는
+    데이터셋에만 살아 새 리비전으로 못 고치므로, 월 머지 시나리오는 같은 원본으로 다시 머지하고
+    그 밖은 원천을 다시 등록한다.
   - 계산 페이지와 **같은 캐시 칸**을 쓴다(`reference_version_for_revision` +
     `pristine_content_token`). 발행이 통과하면 그 리비전의 HOME 계산이 이미 데워져 있다.
-  - BigDataQuery 등록·내장 시드 부트스트랩·기간 병합·연도 이동은 검사하지 않는다 — 들어온
-    원천을 앱 안에서 고칠 길을 막지 않기 위해서다. 새 저장·발행 경로를 만들면
-    `tests/test_capacity_gate.py` 의 쓰기 경로 목록에 더한다(검사가 쓰기보다 먼저인지 본다).
+  - BigDataQuery 등록·내장 시드 부트스트랩은 검사하지 않는다 — 들어온 원천을 앱 안에서 고칠
+    길을 막지 않기 위해서다. 새 저장·발행 경로를 만들면 `tests/test_capacity_gate.py` 의 쓰기
+    경로 목록에 더한다(검사가 쓰기보다 먼저인지 본다).
 - `src/capa_simulation/components/capacity_assumption_notice.py`
   - 측정률 행이 없어 **중립값 1.0 으로 이어 간 건수**를 한 줄로 말한다. HOME 과 `산출 결과`
     둘 다 같은 문구를 쓴다.
@@ -4619,8 +4637,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     올려 새 빈 칸으로 세운다(`clone_field_key`·`revision_field_key`). 남기면 한 번 더 눌러 같은
     이름이 또 서고, 세션 칸만 비우면 브라우저가 옛 글을 되보낸다. 거절된 저장은 적은 글이 남는다.
   - 파생 시나리오의 원본 리비전 선택과 신규 저장 폼은 `components/scenario_transform.py`,
-    월 축이 있는 12표·없는 4표의 복사와 검증은 `services/scenario_transform.py`가 맡는다.
-    저장은 새 데이터셋과 초기 리비전을 만들며 현재 활성 편집본을 바꾸지 않는다.
+    월 축이 있는 12표·없는 4표의 복사와 검증(달력 빈 달 포함)은 `services/scenario_transform.py`가 맡는다.
+    저장은 결과의 Capa 계산 검사(`derived_save_verdict`)를 먼저 거쳐 새 데이터셋과 초기 리비전을
+    만들며 현재 활성 편집본을 바꾸지 않는다.
     `services/scenario_virtual_products.py`는 가상제품 복제 이력을 변환하고 같은 제품·Stack의
     복제 원본 충돌을 검사한다(새 리비전·복제가 부모 이력을 물려받는 규칙도 여기 있다). `create_scenario(virtual_products=...)`가 기존 이력 표에
     초기 리비전·16표와 같은 트랜잭션으로 기록하고 저장 폼은 보존할 이력을 미리 보여 준다.
@@ -4633,8 +4652,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지우·보관·되살리거나 이름을 바꾸면, 상자를 비우면 버린다. 키가 `PAGE_DIALOG_SUFFIX` 로 끝나
     `forget_page_dialogs` 가 불리는 회차(페이지를 떠날 때, 사이드바 조회기간·시나리오 팝업과 Guide 를
     열 때)에도 버리고 다음 회차에 한 번 다시 읽는다. 가상제품 이력은 회차마다 다시 읽는다.
-  - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·저장을,
-    `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·결과 축 검증과 표 병합을 맡는다.
+  - `components/scenario_month_merge.py`는 무월 표 비교와 머지 미리보기·결손·빈 달 알림·저장을,
+    `services/scenario_month_merge.py`는 월별 출처 계획·겹침 정책·무월 표 보충 규칙·결과 축 검증과
+    표 병합·결과 결손 검사(`merged_table_gaps`)를 맡는다. 머지 결과의 가상제품 이력 정리는
+    `services/scenario_virtual_products.merge_result_virtual_products` 다.
   - `components/scenario_year_shift.py`는 사용자 지정 연수와 전후 범위·저장을,
     `services/scenario_year_shift.py`는 원본을 보존하는 연도 이동·유효 범위 검증을 맡는다.
   - `bigdataquery_registration.py` 는 2단계다. 목록 위젯은 반드시 `st.form` 밖의
