@@ -2762,8 +2762,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `if TYPE_CHECKING:` 블록이 이름과 타입을 알린다. 실행되지 않아 더미 값이 새지 않고
     mypy 는 타입·오타·재대입을 그대로 잡는다. **`.pyi` 스텁은 쓸 수 없다** — mypy `files`
     에 `src/capa_simulation` 이 있어 무시된다(실측).
-  - 별칭과 계산값(`CHART_CANVAS`·`NAV_*`·`GAP_AREA_*`)은 `_complete()` 가 팔레트에서
-    만든다. 손으로 옮겨 적으면 원 토큰과 갈라진다.
+  - 별칭과 계산값(`CHART_CANVAS`·`NAV_*`·`GAP_AREA_*`·`SHORTAGE_MONTH_BAND`)은 `_complete()` 가
+    팔레트에서 만든다. 손으로 옮겨 적으면 원 토큰과 갈라진다. 부족 달 세로 띠의 옅기만 테마마다
+    다르다(밝게 0.12·어둡게 0.3 — 어두운 부족색은 짙은 자주라 같은 옅기면 묻힌다).
   - 색이 아닌 치수(표 행 높이·월 칸 폭·막대 테두리 굵기·막대 둥근 머리 반경 세 등급
     `BAR_CORNER_RADIUS_{WIDE,MEDIUM,NARROW}_PX`)는 팔레트 밖 모듈 상수다. 테마를 타지 않는다.
     폭이 기간으로 바뀌는 막대는 `bar_corner_radius(막대 폭)` 한 함수로 등급을 고른다.
@@ -4564,6 +4565,33 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     필요 없도록 `st.expander` 를 쓴다. 본문은 `html.escape` + `white-space: pre-wrap`
     이다 — 마크다운으로 넘기면 줄 앞의 `#`·`-` 가 제목이나 목록으로 바뀌어 적은 사람이
     보던 글과 달라지고, 높이를 주거나 `overflow` 를 걸면 긴 공지가 스크롤 안에 숨는다.
+- `src/capa_simulation/components/process_capa_canvas.py`
+  - `공정 Capa 상세` 의 **결합 월 캔버스** 순수 그림 함수(`build_process_capa_canvas`). HOME 틀 그대로
+    라벨 Figure(260px) + 월 Figure(달마다 100px) **한 쌍**에 네 구획을 위에서 아래로 쌓는다 — ① 공식
+    기준 요약 표(총보유·가용 = 공급 묶음 면, 소요대수 ▾·▸ = 수요 묶음 면과 펼친 분류 행의 흰 면·줄무늬·
+    14px 들여쓰기, 확보율 판정 3색, 확보기준 과부족 부호 정수, 기준 확보율 참고 줄, 넘겨받았을 때만
+    확보율(HOME 표시)), ② 설비 일정 기준 가용(판정 대조·가용 환산·전월 대비·목표 과부족, 단축 후는
+    둘째 줄), ③ 신규 설비 호기마다 한 줄(◆ 반입·● 기여 시작·◀ 목표 기여 시작 「−N일」·「반입 전」 배지·
+    축 안 반출·이설 호기 ▼·추가N ◌·「해소 기여 월」 눈금), ④ 호기별 비가동 화살표. 구획 제목도 그림 안의
+    한 줄이다. **한 쌍인 까닭**은 확보기준 미달 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금 보는 달의
+    열 테두리가 구획을 넘어 이어져야 하고 칸 선택이 그림 하나에서 와야 해서다. 세션·캐시·DB 를 보지
+    않는다 — 그림 캐시·칸 선택 콜백·범례·「더 보기」 토글은 페이지 몫이다.
+  - **판정색은 한 길이다.** 확보율 칸과 (확보가 아닐 때의) 과부족 칸은 요약 프레임의 `판정`(같은
+    `SecurementThresholds`) 하나로 칠하고 부족 띠·머리 4px 띠도 그 판정으로 고른다. 잡음 경계에서는
+    경고로 칠한 과부족 칸에 「0」 이 찍힐 수 있다(시험이 고정). 「기준 확보율」 줄은 달마다 확보기준 %
+    를 `TEXT_MUTED` 로만 적는다 — 면색·굵기 없음(2026-10-15 사용자 결정). 글자는 `TEXT`(참고 줄·과거
+    달만 `TEXT_MUTED`)이고 `ACCENT` 는 지금 보는 달(머리 1.5px 밑줄·2px 열 테두리)에만 쓴다.
+  - `go.Table`·`go.Heatmap` 을 쓰지 않는다(점 선택이 없어 `on_select` 가 오지 않는다). 칸 면은 `base`
+    로 띄운 가로막대(칸 경계에서 3px 들어옴), 숫자는 글자색마다 `Scatter(text)` 하나(글자색이 한 값이어야
+    `keep_unselected_opaque` 가 흐림을 막는다), 칸마다 보이지 않는 표적 막대(`HIT_TARGET`)가 hover·클릭을
+    받는다 — `customdata` 는 `(YYYYMM, 행 id, 풍선 글)`(`CUSTOMDATA_*`, 행 id 는 `ROW_*`), 읽기는
+    `canvas_point`. ③·④ 줄도 열의 달을 고른다. 선·표지는 종류마다 trace 하나(선은 None 으로 끊고 촉은
+    고정 기호 `triangle-left`·`triangle-right`·`triangle-down`, 추가N ◌ 는 점선 테두리가 필요해 도형).
+    도형·주석은 `append_layout_items`·`flush_layout_items` 로만 넣고 검증 경로와 JSON 이 같다(시험).
+  - ② 의 「오늘」 점선은 ②~④ 본문에만 긋고 제목 줄은 건너뛴다(무엇인지는 ② 제목 글이 적는다). 오늘이
+    든 생산월보다 앞선 달은 ② 에서 흐리게·칠하지 않는다(단축으로 바꿀 수 없다). ③·④ 는 30줄 상한
+    (`ROW_LIMIT`, 추가N 은 늘 그림)이고 넘으면 「외 n대」 한 줄과 `hidden_units`·`hidden_arrow_units` 를
+    돌려준다. 같은 호기의 겹치는 비가동은 줄을 나눈다(「⋯ 같은 호기」).
 - `src/capa_simulation/components/scenario_management.py`,
   `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 두 탭 UI.
