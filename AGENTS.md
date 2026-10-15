@@ -1731,10 +1731,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     깨뜨렸다). 편집 전부터 계산되지 않았으면 저장은 허락하고 「공식버전으로 지정할 수
     없다」고 경고한다 — 막으면 오류가 여럿일 때 하나씩 고쳐 가며 저장할 길이 없다.
   - **발행:** 계산되지 않는 리비전은 막는다. 공식버전은 모두의 첫 화면이다.
-  - 「계산」은 대당 Capa·소요대수에 **HOME 의 Density 환산**(`calculate_density_load`, 전체 기간)을
+  - 「계산」은 대당 Capa·소요대수에 **HOME 의 Density 환산**(`density_error`, 전체 기간·EDP 포함)을
     더한 것이다 — 계획이 있는 제품의 `구분_EQ` 0 이하는 Capa 계산을 통과하고 HOME 만 멈춘다.
-    저장 경고는 편집 전후 오류를 견줘, 같으면 「편집 전부터 있던 오류」, 다르면 「편집 전과 다른
-    오류」라 적는다(계산은 첫 오류에서 멈춰 다른 오류가 곧 새로 깬 것은 아니라 막지는 않는다).
+    Capa 계산을 검사하는 **모든 판정과 발행 경로**(파생 저장 판정, 세션 없는 자동 발행처럼 캐시 밖에서
+    계산하는 경로도)가 `density_error` 를 이어서 부른다 — `tests/test_gate_density_coverage.py` 가
+    공개 판정(`*_verdict`)과 `publish_official_revision` 을 부르는 함수를 구조로 본다.
+    저장 경고는 편집 전후 오류를 견줘, 같으면 「편집 전부터 있던 오류」, 오류문 머리(첫 `": "` 앞,
+    `_error_kind`)만 같으면 「같은 종류의 오류가 걸린 칸의 건수·예시만 달라진 것」, 그 밖은 「편집
+    전과 다른 오류」라 적는다(계산은 첫 오류에서 멈춰 다른 오류가 곧 새로 깬 것은 아니라 막지는 않는다).
   - 계산 페이지와 **같은 캐시 칸**을 쓴다(`reference_version_for_revision` +
     `pristine_content_token`). 발행이 통과하면 그 리비전의 HOME 계산이 이미 데워져 있다.
   - BigDataQuery 등록·내장 시드 부트스트랩·기간 병합·연도 이동은 검사하지 않는다 — 들어온
@@ -2240,9 +2244,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   첫 행**을 임시 적용해 전체 변환을 계속하며 테이블·업무 키·후보값·선택값·원천행 번호가
   포함된 충돌 보고서를 함께 반환한다.
   `RQ_REQB` 는 원래 글자로 접은 뒤 계산과 같은 정규화로 한 번 더 접는다
-  (`required_equipment.duplicate_route_rows`). 빈 `설비대여평가` 는 표를 접은 **뒤** 0 대로 메우고 그
-  때문에 빈 가용대수는 `보유 − 0` 으로 채운다(`_blank_lent_as_zero` — 원천 행에서 먼저 메우면 형제 행
-  선택이 세 표에서 갈린다). 빈 보유대수는 0 으로 보지 않는다.
+  (`frame_contracts.duplicate_route_rows`). 빈 `설비대여평가` 는 표를 접은 **뒤** 0 대로 메우고 그
+  때문에 빈 가용대수는 `보유 − 0` 으로 채운다(`blank_lent_as_zero` — 원천 행에서 먼저 메우면 형제 행
+  선택이 세 표에서 갈린다). 빈 보유대수는 0 으로 보지 않는다. 이 두 보정 때문에
+  `RQ_REQB`·`RQ_EQP_LENT`·`RQ_EQP_AVBL` 은 XLSB Power Query 결과와 **일부러** 다를 수 있다 —
+  `scripts/validate_duckdb_persistence.py` 는 Power Query 결과에 같은 보정을 건 뒤 견준다
+  (`with_app_corrections`).
   `제품정보`의 원천값은 raw에 보존하고 RQ 파생 전 모든 언더바를 공백으로 바꾼 뒤 연속
   공백을 하나로 축약하여 BigDataQuery와 기존 화면 분류 키를 통일한다.
 - `core_data_pipeline.py`: CSV·BigDataQuery 공급자 결과를 동일한 정규화·RQ 변환
@@ -2303,6 +2310,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   정의한다. 소요기준(`WAFER`→`WF`)·Area_Name(`Main`·`MI`)·월(`YYYYMM`) 규칙이 여기 있다.
   구현한 소요기준(`DEMAND_BASES`)과 아직 계산에서 빼는 소요기준(`UNIMPLEMENTED_BASES`)도
   여기 한 벌뿐이다. 계약이 서로 다른 것은 합치지 않는다.
+  `RQ_REQB` 경로 행을 계산이 맞대는 꼴로 줄여 표기만 다른 중복을 가리는 `duplicate_route_rows` 도
+  여기 있다(등록이 쓰고, 계산은 같은 정규화를 이미 거친 표를 `duplicated` 로 접는다).
   컬럼 계약 **정확 일치** 검사(`"{주어} 계약이 일치하지 않습니다 (누락: …; 추가: …)."`)도
   `require_exact_columns` 하나가 갖는다. 저장 경계(`_sql_helpers.insert_frame`·공용 표시순서),
   Core Data 78컬럼(`limit=10`), 선행·실행 Capa·과거 세 표·공정 표시명 정규화는 이름 집합만
@@ -4776,6 +4785,10 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
   기준정보 값의 빈 값·숫자 아님 검사도 같은 까닭으로 **붙인 뒤 붙은 행에만** 한다
   (`_join_reference`). BOX·PCB 공정이나 UPEH 가 없는 달의 행은 어느 경로에도 붙지 않아 비어 있어도
   계산을 멈추지 않는다. 붙은 행이 걸리면 빈 값과 숫자가 아닌 값을 갈라 건수·키 예시를 싣는다.
+  **범위:** 이 검사는 붙일 때 돌아 계산 대상 행을 확정(UPEH·`CAPA_RUN_RATE` 0 이하, 측정률 음수를
+  제외)하기 **전**이다. 그래서 뒤에서 제외될 경로에만 붙은 행의 빈 값·숫자 아님은 행 없음(「연결값이
+  없는」)과 같이 계산을 멈춘다 — 같은 칸이 0 이면 제외 뒤의 `_assert_positive` 라 통과하는 것과
+  다르다. 제외 마스크 뒤로 옮길지는 정하지 않았다(`docs/TODO.md`).
 - 제외 행은 사유 컬럼과 함께 `CAPACITY_EXCLUSIONS_ATTR`로 전달되고 산출 결과의 대당 Capa·
   확보율 화면이 건수·상세 표·CSV 내려받기로 보여 준다
 - BOX·PCB는 산식 확정 전까지 계산에서 제외한다(제외가 아니라 `추가 예정` 이다 — 11장 참조)
@@ -4841,8 +4854,9 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은
-한 행으로 접는다 — 접지 않으면 같은 부하량·대당 Capa 를 두 번 받아 소요대수가 두 배다. 등록과 계산이
-같은 함수(`required_equipment.duplicate_route_rows`)로 접는다.
+한 행으로 접는다 — 접지 않으면 같은 부하량·대당 Capa 를 두 번 받아 소요대수가 두 배다. 등록은
+`frame_contracts.duplicate_route_rows` 로 접고, 계산(`_prepare_reqb`)은 같은 정규화를 이미 거친 표를
+`duplicated` 로 접는다 — 남는 행이 같다(`tests/test_required_equipment.py` 가 대조).
 
 **소요기준 `PKG` 는 Buffer 로만 센다**(2026-09-28 사용자 설명). PKG 공정은 Buffer 위에
 Core·Top·Dummy 를 쌓고(스택) Mold·MPGA Saw 로 PKG Chip 단위까지 자른 **뒤의** 공정이라
