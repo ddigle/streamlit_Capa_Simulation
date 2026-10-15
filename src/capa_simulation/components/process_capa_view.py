@@ -160,18 +160,21 @@ CAUSE_SHORT_NAMES: Final[Mapping[str, str]] = {
 CAUSE_HELP: Final = (
     "달 수입니다. 보유 = 보유로도 부족(총보유 ÷ 소요도 확보기준 미달 — 단축으로 못 메우는 투자 "
     "검토), 대여 = 대여 영향(총보유로는 확보, 대여를 빼면 미달), 불일치 = 가용 불일치(가용대수가 "
-    "보유 − 대여와 다름), 일정 = 설비 일정 기준 가용이 단축 목표 미달(참고 — 단축 대상)."
+    "보유 − 대여와 다름), 일정 = 오늘이 든 생산월부터 설비 일정 기준 가용이 단축 목표 미달인 달"
+    "(참고 — 단축 대상). 지난 달은 단축으로 바꿀 수 없어 세지 않습니다."
 )
 # 직전에 만든 캔버스 몇 벌(세션 칸). 칸을 오가며 누를 때 같은 달 그림을 다시 만들지 않는다.
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 1
+CANVAS_SCHEMA_VERSION: Final = 2
 
 # 가용설비 현황(설비 일정 원천·필요단축일정 탭이 사는 화면).
 AVAILABLE_EQUIPMENT_PAGE: Final = "app_pages/available_equipment_status.py"
 # 표 도구 줄에 적는 단축 목표의 출처.
 TARGET_SOURCE_TEXT: Final = "HOME Preference 확보기준(월별)"
+# 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 카드 제목(머리 배지와 같은 말).
+DYNAMIC_ERROR_TITLE: Final = "설비 일정 없음: 계산 오류"
 
 _MINUS: Final = "−"
 _EMPTY: Final = "—"
@@ -225,7 +228,9 @@ class ProcessDetailView:
 
     dynamic_error: str = ""
     initial_month: int | None = None
-    """화면을 연 회차의 달 — 스크롤 시작 위치(처음 한 번만 걸린다)."""
+    """스크롤 시작 달(`ProcessDetailEntry.scroll_month`) — 새 방문·밖에서 들어옴·공정을 바꾼
+    회차에만 바뀐다. 스크롤바는 이 값이 바뀔 때만 오프셋을 다시 걸므로, 칸을 눌러 달을 옮긴 뒤의
+    앱 전체 회차가 보던 가로 위치를 되돌리지 않는다."""
 
 
 # ================================================================== 프래그먼트
@@ -322,9 +327,14 @@ def target_text(target: TargetLevel, months: Sequence[int]) -> str:
     """단축 목표 표기 — 「HOME Preference 확보기준(월별)」, 달마다 같으면 그 값(소수 그대로)도."""
     values = {_target_for(target, month) for month in months}
     if len(values) == 1:
-        value = next(iter(values))
-        return f"{TARGET_SOURCE_TEXT} {threshold_percent_label(value)} ({value:g})"
+        return f"{TARGET_SOURCE_TEXT} {target_label(next(iter(values)))}"
     return f"{TARGET_SOURCE_TEXT} — 달마다 다름"
+
+
+def target_label(value: float) -> str:
+    """목표 하나 — 「110% (1.095)」. 필요단축일정 탭의 「110%」 는 1.10 이라 같은 백분율 글자가
+    다른 값을 가리킨다 — 이 화면은 늘 소수를 함께 적는다(설계 logic_final 2)."""
+    return f"{threshold_percent_label(value)} ({value:g})"
 
 
 def _target_for(target: TargetLevel, month: int) -> float:
@@ -585,9 +595,13 @@ def _render_dynamic_absent(view: ProcessDetailView) -> None:
         if view.readiness is None:
             st.markdown(":material/event_busy: **설비 일정 없음: 설비 DB 를 읽지 못했습니다**")
             st.caption(view.dynamic_error or "설비 DB 를 열지 못했습니다.")
+        elif view.dynamic_error:
+            # 판정은 통과했는데 계획·설비 일정 계산이 멈춘 갈래 — 조건은 이미 맞아 안내하지 않는다.
+            st.markdown(f":material/event_busy: **{DYNAMIC_ERROR_TITLE}**")
+            st.caption(f"{view.dynamic_error} 위 공식 기준 표는 그대로입니다.")
         else:
             st.markdown(f":material/event_busy: **{view.readiness.badge}**")
-            detail = view.dynamic_error or view.readiness.detail
+            detail = view.readiness.detail
             st.caption(
                 f"{detail} 설비 일정 기준 가용·신규 설비·비가동(②~④)은 설비 DB 에 저장본이 "
                 "있고 이름이 같으며 Cut-off 가 적힌 공정에만 섭니다. 위 공식 기준 표는 "
@@ -773,9 +787,19 @@ def judgement_card(
     name = _STATUS_NAMES.get(str(status), _EMPTY)
     balance = _whole(record.get(BALANCE_COLUMN))
     raw = available - required * secure
+    # 식의 숫자는 소수 둘째 자리다. 적은 숫자로 다시 셈한 값이 결과와 다르면 「≈」 로 밝힌다 —
+    # 결과는 반올림 전 값으로 낸다(판정·과부족이 그 값을 쓴다).
+    shown_available, shown_required = round(available, 2), round(required, 2)
+    rate_text = f"{rate:.1%}"
+    rate_mark = _equals_mark(
+        rate_text,
+        f"{shown_available / shown_required:.1%}" if shown_required > 0 else "",
+    )
+    raw_text = _signed_two(raw)
+    raw_mark = _equals_mark(raw_text, _signed_two(shown_available - shown_required * secure))
     formula = (
-        f"확보율 = {_one(available)} ÷ {_one(required)} = {rate:.1%} → {name}\n"
-        f"과부족 = {_one(available)} − {_one(required)}×{secure:g} = {_signed_two(raw)}"
+        f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}\n"
+        f"과부족 = {_two(available)} − {_two(required)}×{secure:g} {raw_mark} {raw_text}"
         f" → {_signed_int(balance) if balance is not None else _EMPTY}"
     )
     notes = [bases]
@@ -814,9 +838,19 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
     gap_after = _number(record.get("단축후과부족"))
     window = wd_window(month, canvas.cutoff_days)
     floor = max(window.first_day, canvas.today)
+    target_mark = _equals_mark(
+        _two(target_units),
+        _two(round(required, 2) * target) if required is not None else "",
+    )
+    gap_mark = _equals_mark(
+        _signed_two(gap),
+        _signed_two(round(before, 2) - round(target_units, 2))
+        if before is not None and target_units is not None
+        else "",
+    )
     lines = [
-        f"목표 {_two(target_units)} = 소요 {_one(required)} × {target:g}",
-        f"가용 {_two(before)} − 목표 {_two(target_units)} = {_signed_two(gap)}",
+        f"목표 {_two(target_units)} {target_mark} 소요 {_two(required)} × {target:g}",
+        f"가용 {_two(before)} − 목표 {_two(target_units)} {gap_mark} {_signed_two(gap)}",
         f"구간 {_day(window.first_day, canvas.today)}~{_day(window.boundary_end, canvas.today)}"
         f" · 바닥 {_day(floor, canvas.today)}(구간 시작·오늘 중 늦은 날)",
     ]
@@ -832,7 +866,7 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
     if state in (STATUS_EXPIRED, STATUS_NEW_LIMIT):
         notes.append("단축·신규로도 이 달을 다 채우지 못했습니다")
     return EvidenceCard(
-        f"④ 단축 근거 (설비 일정 · 목표 {threshold_percent_label(target)})",
+        f"④ 단축 근거 (설비 일정 · 목표 {target_label(target)})",
         "\n".join(lines),
         tuple(notes),
         reference=True,
@@ -937,6 +971,8 @@ class Prescription(NamedTuple):
     new: int
     unresolved_months: int
     dynamic_short_months: int
+    """오늘이 든 생산월부터 설비 일정 기준 가용이 단축 목표에 못 미친 달 수(단축 대상). 지난 달은
+    단축으로 바꿀 수 없어 세지 않는다 — 캔버스 ② 가 흐리게 두는 달과 같다."""
 
 
 def prescription(dynamic: DynamicView) -> Prescription:
@@ -949,6 +985,15 @@ def prescription(dynamic: DynamicView) -> Prescription:
         if "과부족" in months.columns
         else pd.Series(dtype="float64")
     )
+    if "과부족" in months.columns and MONTH in months.columns and not months.empty:
+        # 오늘이 기여하는 생산월(축과 무관한 값 — 축은 자리만 정한다)보다 앞선 달은 뺀다.
+        plan_months = pd.to_numeric(months[MONTH], errors="coerce")
+        known = plan_months.dropna()
+        if not known.empty:
+            today_month = production_position(
+                dynamic.canvas.today, dynamic.canvas.cutoff_days, [int(known.iloc[0])]
+            ).month
+            gaps = gaps.where(plan_months.ge(today_month).to_numpy())
     states = (
         months["상태"].astype("string") if "상태" in months.columns else pd.Series(dtype="string")
     )
@@ -1053,10 +1098,10 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
 
 
 def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """처방 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
+    """처방 카드의 목표 — 달마다 같으면 「110% (1.095)」, 다르면 「달마다 확보기준」."""
     values = {_target_for(target, month) for month in months}
     if len(values) == 1:
-        return threshold_percent_label(next(iter(values)))
+        return target_label(next(iter(values)))
     return "달마다 확보기준"
 
 
@@ -1187,6 +1232,11 @@ def _signed_two(value: float | None) -> str:
     if rounded < 0:
         return f"{_MINUS}{abs(rounded):,.2f}"
     return "0.00"
+
+
+def _equals_mark(result: str, recomputed: str) -> str:
+    """식의 등호 — 적은(반올림한) 숫자로 다시 셈한 글이 결과 글과 같으면 「=」, 다르면 「≈」."""
+    return "=" if result == recomputed else "≈"
 
 
 def _signed_int(value: int) -> str:

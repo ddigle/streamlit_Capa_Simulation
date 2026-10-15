@@ -4,8 +4,9 @@
 
 차례(2026-10-15 사용자 결정 4 — 목업 그대로):
 
-0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), HOME 에서 왔으면
-   출처 띠. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품 거르기(펼친 제품 행에만 걸린다).
+0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 오른쪽 끝 「← HOME」
+   링크, HOME 에서 왔으면 출처 띠. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품
+   거르기(펼친 제품 행에만 걸린다).
 1. **KPI 넷** — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 처방(설비 일정 기준).
 2. ~ 7. **본문 프래그먼트**(`components/process_capa_view.render_process_detail_view`, key
    `process_detail_view`) — 표 도구 줄, 결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준
@@ -27,8 +28,9 @@
   공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)은 읽지도 쓰지도 않는다(사용자
   결정 1).
 - **HOME 표시 확보율** — HOME 의 실행 Capa·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
-  토글을 켜 두었으면, HOME 과 같은 함수로 얹은 값을 요약 표 회색 줄로 둔다. 원 확보율과 같으면
-  줄을 두지 않는다.
+  토글을 켜 두었으면, HOME 과 같은 함수로 얹은 값을 요약 표 회색 줄로 둔다. 선행 변동률의
+  계획은 HOME 과 **같은 캐시 키**(`display_month_range` 범위)로 받는다. 원 확보율과 같으면 줄을
+  두지 않는다.
 
 공정·달은 **공정 선택 상자보다 먼저** 정한다(`process_detail_state.resolve_process_and_month`)
 — HOME 전달 칸 → 주소 인자 → 세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보기준 미달
@@ -43,6 +45,7 @@ import streamlit as st
 
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_capa_canvas import DynamicCanvasInput
 from capa_simulation.components.process_capa_view import (
     DynamicView,
@@ -57,7 +60,9 @@ from capa_simulation.home_state import (
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
     HOME_TOGGLE_DEFAULTS,
+    PAST_DATA_TOGGLE_KEY,
 )
+from capa_simulation.navigation import HOME
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -69,6 +74,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.cache import (
     load_global_advance_load,
     load_global_execution_capacity,
+    load_global_past_data,
     load_global_securement_threshold,
 )
 from capa_simulation.persistence.equipment_cache import (
@@ -96,6 +102,8 @@ from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.services.past_data import display_month_range
 from capa_simulation.services.process_capa_detail import (
     PRODUCT_DEMAND_SPLITS,
     build_process_capa_summary,
@@ -383,16 +391,38 @@ def home_view_flags() -> tuple[bool, bool, bool]:
     return toggle(EXECUTION_TOGGLE_KEY), toggle(ADVANCE_TOGGLE_KEY), toggle(EDP_TOGGLE_KEY)
 
 
-def home_advance_ratio(include_edp: bool) -> pd.DataFrame:
+def home_advance_ratio(include_edp: bool) -> pd.DataFrame | None:
     """HOME 「선행 B/O」 변동률 — HOME 이 지금 쓰는 계획(EDP 를 뺀 화면이면 뺀 계획)의 월별 부하량.
 
-    월별 부하량은 달마다 값이 정해지므로 이 화면의 기간으로 꺼내도 축 안 달의 값은 HOME 과 같다.
+    HOME 과 **같은 캐시 키**로 부른다. 키의 달은 HOME 과 같은 함수
+    (`past_data.display_month_range`)로 낸다 — 조회기간 ∩ 계산 원천(`RQ_PKG_PLAN`) 범위를 과거
+    구간(Past Data) 달까지 넓힌 범위이고, 과거 구간을 넣을지는 HOME `Past Data 포함` 토글을
+    따른다(필요단축일정 탭 `_lob_rows` 와 같은 길). 그래서 HOME 을 본 뒤에는 HOME 계산을 한 벌 더
+    돌리지 않는다. 월별 부하량은 달마다 값이 정해지므로 축 안 달의 값은 범위와 상관없이 HOME 과
+    같다. 범위가 비면 None(선행을 얹지 않는다).
     """
+    source = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")
+    include_past = bool(
+        st.session_state.get(PAST_DATA_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[PAST_DATA_TOGGLE_KEY])
+    )
+    past_months = (
+        [
+            int(month)
+            for month in load_global_past_data(str(DUCKDB_PATH.resolve())).monthly["생산계획년월"]
+        ]
+        if include_past
+        else []
+    )
+    display_range = display_month_range(
+        (context.selected_start_month, context.selected_end_month), source, past_months
+    )
+    if display_range.empty:
+        return None
     key = build_home_simulation_cache_key(
         reference_version=context.reference_version,
         scenario_token=active_scenario["content_token"],
-        start_month=effective_start,
-        end_month=effective_end,
+        start_month=display_range.start,
+        end_month=display_range.end,
         display_order=reference_tables["RQ_DISPLAY_ORDER"],
     )
     if include_edp:
@@ -580,7 +610,10 @@ elif dynamic_error:
     dynamic_badge = ":blue-badge[설비 일정 없음: 계산 오류]"
 else:
     dynamic_badge = f":blue-badge[{readiness.badge}]"
-header_marks.markdown(f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}")
+with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
+    st.markdown(f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}", width="content")
+    st.space("stretch")
+    render_page_link(HOME.path, label="HOME", icon=":material/arrow_back:")
 
 render_process_kpis(
     kpis,
@@ -613,7 +646,7 @@ render_process_detail_view(
         dynamic=dynamic,
         readiness=readiness,
         dynamic_error=dynamic_error,
-        initial_month=entry.month,
+        initial_month=entry.scroll_month,
     )
 )
 

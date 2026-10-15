@@ -1677,7 +1677,7 @@ def test_the_process_detail_contract_matches_the_app() -> None:
     }
     assert screens.PROCESS_DETAIL_RATE_ROW_PX == (
         process_capa_canvas.HEADER_HEIGHT_PX
-        + process_capa_canvas.TITLE_HEIGHT_PX
+        + process_capa_canvas.SUMMARY_TITLE_HEIGHT_PX
         + process_capa_canvas.VALUE_ROW_HEIGHT_PX * 3
         + process_capa_canvas.VALUE_ROW_HEIGHT_PX // 2
     )

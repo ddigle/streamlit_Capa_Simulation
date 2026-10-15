@@ -805,8 +805,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`guides/calculation_result.md`)다.
 - `app_pages/process_capa_detail.py` (화면 이름 `공정 Capa 상세`, Static Capa 하위 `산출 결과` 다음)
   - 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15
-    사용자 결정 — 목업 그대로). 차례: 머리(공정 표시명 + 배지 `공식 · Core Data`·설비 일정 상태, HOME 에서
-    왔으면 출처 띠) → KPI 넷(최저 확보율·확보기준 미달 달·부족 원인·처방) → **본문 프래그먼트**(표 도구
+    사용자 결정 — 목업 그대로). 차례: 머리(공정 표시명 + 배지 `공식 · Core Data`·설비 일정 상태, 오른쪽 끝
+    `← HOME` 링크(`render_page_link`), HOME 에서 왔으면 출처 띠) → KPI 넷(최저 확보율·확보기준 미달 달·부족 원인·처방) → **본문 프래그먼트**(표 도구
     줄·결합 월 캔버스·범례·설비 일정 없음 카드·산출 근거 패널 — `components/process_capa_view.py`) →
     정리 줄(알림·`이 공정 단축 일정 CSV`·필요단축일정 탭 링크, 설비 일정이 설 때만). 설명은 Guide
     (`guides/process_capa_detail.md`)다.
@@ -837,11 +837,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `SHORTENING_PROCESS_KEY=[공정]` 세션 값만 심고 `st.switch_page` 한다.
   - **HOME 표시 확보율 줄**: HOME 에서 실행 Capa·선행 B/O 를 켜고 왔거나(출처의 보기 조건) 지금 HOME
     토글이 켜져 있으면 HOME 과 같은 함수(`home_display_rates` — `apply_execution_adjustment` →
-    `apply_advance_to_securement`)로 얹은 값을 회색 줄로 넘긴다. 선행 변동률은 이 화면 기간의 HOME 계산
-    (`get_home_simulation`/`get_home_lob_without_edp` — 월별 부하량은 달마다 값이 정해져 기간이 달라도 축
-    안 달은 같다)으로 낸다. 원 확보율과 같으면(1e-9) 줄을 두지 않는다.
+    `apply_advance_to_securement`)로 얹은 값을 회색 줄로 넘긴다. 선행 변동률은 HOME 계산
+    (`get_home_simulation`/`get_home_lob_without_edp`)을 **HOME 과 같은 캐시 키**로 받아 낸다 — 키의 달은
+    HOME 과 같은 함수(`past_data.display_month_range`: 조회기간 ∩ `RQ_PKG_PLAN` 원천을 Past Data 달까지
+    넓힌 범위, 과거 구간은 HOME `Past Data 포함` 토글)로 내서 HOME 을 본 뒤에는 HOME 계산을 한 벌 더
+    돌리지 않는다(필요단축일정 탭 `_lob_rows` 와 같은 길). 이 화면의 `RQ_REQB` 유효 기간으로 키를 만들면
+    거의 늘 갈린다. 월별 부하량은 달마다 값이 정해져 범위가 달라도 축 안 달은 같다. 원 확보율과
+    같으면(1e-9) 줄을 두지 않는다.
   - CSV 는 `unit_export_frame(plan, [목표], [공정])` 을 `get_export_csv(csv_export_key(...))` 로 감싼다(탭의
     호기별 단축 일정 CSV 와 같은 칸, 원본 공정명).
+  - 결합 캔버스의 가로 스크롤 시작 위치는 지금 보는 달이 아니라 **스크롤 시작 달**(`entry.scroll_month`,
+    `process_detail_state.PROCESS_DETAIL_SCROLL_ANCHOR_KEY`)로 낸다 — 새 방문·밖에서 들어옴·공정을 바꾼
+    회차에만 다시 정한다. 스크롤바는 `initialOffsetPx` 가 바뀌면 오프셋을 다시 걸므로, 지금 달을 넘기면 칸을
+    누른 뒤 제품 거르기 등으로 앱 전체가 돌 때 보던 가로 위치가 그 달로 튄다.
 - `app_pages/capa_chatbot.py`
   - 활성 시나리오의 Capa 데이터 조회와 부족 공정 분석을 위한 대화형 화면이다.
   - **LLM 을 붙이기 전에 정할 것은 모델이 아니라 답변의 모양이다.** 결론 · 근거 표 ·
@@ -2012,7 +2020,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     페이지 계산·위젯·시나리오 전환 초기화가 같은 목록을 공유한다. 기존 키 문자열은 유지한다.
 - `src/capa_simulation/process_detail_state.py`
   - 공정 Capa 상세의 세션 키(공정 상자·지금 보는 달·제품 펼침·분류·제품 거르기·전달 칸·출처·
-    `PROCESS_DETAIL_QUERY_SEEN_KEY`), 본문 프래그먼트 key(`PROCESS_DETAIL_VIEW_FRAGMENT_KEY`)와 칸 선택을
+    `PROCESS_DETAIL_QUERY_SEEN_KEY`·스크롤 시작 달 `PROCESS_DETAIL_SCROLL_ANCHOR_KEY`), 본문 프래그먼트 key(`PROCESS_DETAIL_VIEW_FRAGMENT_KEY`)와 칸 선택을
     켠 월 그림 key(`PROCESS_DETAIL_CANVAS_CHART_KEY` — `app.py` 가 터치 스크롤 막이에 넘긴다), 주소 인자
     이름(`process`·`month`·`from`)을 선언한다.
   - HOME 쪽: 표적 막대 `customdata` 끝 일곱 칸(`HOME_CELL_LINK_FIELDS`)을 만들고
@@ -4543,7 +4551,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     돈다 — 그 회차도 전체 실행 때와 같은 이벤트 칸 자리에 같은 스타일(구분 컬럼 폭·라벨 칸 내림·월
     캔버스 폭)만 다시 쓰므로 페이지의 다른 이벤트 요소(툴바 Guide 규칙 등)를 덮지 않는다(`tests/test_app_navigation.py`
     가 진짜 프래그먼트 회차로 지킨다). 옮길 때는 콜백 안 `st.switch_page` 라 HOME 프래그먼트 본문이
-    다시 돌지 않는다. 선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐리므로 두 월 그림의 모든 trace 에
+    다시 돌지 않는다. 이때 서버 로그에 Streamlit 경고 「A fragment rerun was triggered with a callback that
+    displays one or more elements」가 클릭마다 한 줄 남는다 — Streamlit 1.63 의 `st.switch_page` 가 안에서
+    `st.empty()` 를 만들어서다(`streamlit.commands.execution_control`). **예상된 경고이고 오류가 아니다**(화면 동작 정상,
+    2026-10-15 브라우저 확인). 없애려면 콜백은 전달 칸만 심고 본문 회차에서 옮겨야 하는데 그러면 회차가
+    하나 는다 — 그래서 두었다. 선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐리므로 두 월 그림의 모든 trace 에
     `unselected` 불투명도 1(글자 trace 는 글자색 그대로)을 준다(`home_figure_common.keep_unselected_opaque`).
     **선택을 켠 그림의 `dragmode=False` 는 Streamlit 이 `pan` 으로 덮는다**(거짓값일 때만 덮는다 — 참값은
     무엇이든 같다). 축이 `fixedrange` 라 그림은 움직이지 않지만 Plotly 끌기 층이 `touchstart` 에서
@@ -4612,7 +4624,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확보율(HOME 표시)), ② 설비 일정 기준 가용(판정 대조·가용 환산·전월 대비·목표 과부족, 단축 후는
     둘째 줄), ③ 신규 설비 호기마다 한 줄(◆ 반입·● 기여 시작·◀ 목표 기여 시작 「−N일」·「반입 전」 배지·
     축 안 반출·이설 호기 ▼·추가N ◌·「해소 기여 월」 눈금), ④ 호기별 비가동 화살표. 구획 제목도 그림 안의
-    한 줄이다. **한 쌍인 까닭**은 확보기준 미달 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금 보는 달의
+    한 줄이다 — 제목과 그 출처·단위 글(세부 글)은 **라벨 Figure** 에 쓰고 월 Figure 의 제목 줄은 면만
+    깐다. 월 Figure 는 가로로 스크롤되어 거기 둔 글은 고른 달로 밀어 연 화면에서 잘리거나 사라진다(2026-10-15
+    브라우저 확인 결함). 세부 글은 라벨 칸 폭에 맞춰 「 · 」 마디로 줄을 나누고(`title_detail_lines`),
+    줄 수만큼 제목 줄이 높아진다(`title_row_height` — ① 은 `SUMMARY_TITLE_HEIGHT_PX`, 화면 확인 스크립트가
+    확보율 줄 자리를 이것으로 센다). 표지 설명(◆·●·◀)은 캔버스 아래 범례가 적는다. **한 쌍인 까닭**은 확보기준 미달 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금 보는 달의
     열 테두리가 구획을 넘어 이어져야 하고 칸 선택이 그림 하나에서 와야 해서다. 세션·캐시·DB 를 보지
     않는다 — 그림 캐시·칸 선택 콜백·범례·「더 보기」 토글은 `process_capa_view.py` 몫이다.
   - **판정색은 한 길이다.** 확보율 칸과 (확보가 아닐 때의) 과부족 칸은 요약 프레임의 `판정`(같은
@@ -4620,6 +4636,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     경고로 칠한 과부족 칸에 「0」 이 찍힐 수 있다(시험이 고정). 「기준 확보율」 줄은 달마다 확보기준 %
     를 `TEXT_MUTED` 로만 적는다 — 면색·굵기 없음(2026-10-15 사용자 결정). 글자는 `TEXT`(참고 줄·과거
     달만 `TEXT_MUTED`)이고 `ACCENT` 는 지금 보는 달(머리 1.5px 밑줄·2px 열 테두리)에만 쓴다.
+  - ② 판정 대조의 `S✕·D✓` 칸은 그 달 공식 부족 원인이 「보유로도 부족」이면 풍선에 「투자 검토」를 함께
+    적는다(설계 logic_final 3절 — 「단축할 것 없음」으로 말하지 않는다). 원인은 요약 프레임의 `부족 원인`
+    이다.
   - `go.Table`·`go.Heatmap` 을 쓰지 않는다(점 선택이 없어 `on_select` 가 오지 않는다). 칸 면은 `base`
     로 띄운 가로막대(칸 경계에서 3px 들어옴), 숫자는 글자색마다 `Scatter(text)` 하나(글자색이 한 값이어야
     `keep_unselected_opaque` 가 흐림을 막는다), 칸마다 보이지 않는 표적 막대(`HIT_TARGET`)가 hover·클릭을
@@ -4657,6 +4676,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 프래그먼트 회차는 직전 앱 전체 회차의 인자(오늘·판정 기준·설비 일정·표시명·제품 거르기)를 쓴다.
     제품별 소요대수(`get_process_product_demand`)·고른 달의 경로 추적(`get_process_month_trace`)은
     키 전용 캐시 래퍼로 받는다.
+  - **근거 카드의 식은 검산할 수 있어야 한다**(설계 logic_final 7 — 숫자는 본문). ③ 판정·④ 단축 근거의
+    피연산자(가용·소요·목표대수)는 소수 둘째 자리로 적고, 결과는 반올림 전 값으로 낸다 — 적은 숫자로
+    다시 셈한 글이 결과 글과 다르면 등호 대신 `≈` 다(`_equals_mark`). 피연산자만 첫째 자리로 줄이면
+    「4.0 ÷ 3.7 = 107.0%」 처럼 검산이 어긋난다.
+  - 목표는 늘 백분율과 소수를 함께 적는다(`target_label` — 「110% (1.095)」: 표 도구 줄·④ 카드 제목·처방
+    KPI 캡션). 필요단축일정 탭의 「110%」 는 1.10 이라 같은 글자가 다른 값을 가리킨다(설계 logic_final 2).
+  - KPI 「부족 원인」 의 「일정」(`Prescription.dynamic_short_months`)은 **오늘이 든 생산월부터** 설비 일정
+    기준 과부족 < 0 인 달만 센다 — 지난 달은 단축으로 바꿀 수 없다(캔버스 ② 가 흐리게 두는 달과 같다).
+  - 설비 일정 없음 카드는 세 갈래다 — 설비 DB 를 못 읽음(`readiness is None`), 판정은 통과했는데 계획·설비
+    일정 계산이 멈춤(`dynamic_error` — 제목 `DYNAMIC_ERROR_TITLE` 「설비 일정 없음: 계산 오류」, 머리 배지와
+    같은 말, 이미 맞은 조건 안내를 붙이지 않는다), 판정 실패(`readiness.badge`·`detail` + 조건 안내).
+    `tests/test_process_capa_detail_page.py` 가 앞의 둘을 깨진 설비 DB 파일·계산 오류 주입으로 본다.
 - `src/capa_simulation/components/scenario_management.py`,
   `bigdataquery_registration.py`
   - 시나리오 관리 페이지의 두 탭 UI.

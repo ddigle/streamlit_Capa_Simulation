@@ -21,6 +21,8 @@ import plotly.io as pio
 import pytest
 from test_required_shortening import PROCESS, _baseline, _cutoff, _master, _required, _unit
 
+from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.home_figure_common import _text_width_units
 from capa_simulation.components.plotly_layout import plotly_validation
 from capa_simulation.components.process_capa_canvas import (
     CUSTOMDATA_HOVER,
@@ -37,10 +39,15 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_RATE,
     ROW_REQUIRED,
     ROW_THRESHOLD,
+    SUMMARY_TITLE_DETAIL,
+    SUMMARY_TITLE_HEIGHT_PX,
+    TITLE_HEIGHT_PX,
     DynamicCanvasInput,
     ProcessCapaCanvas,
     build_process_capa_canvas,
     canvas_point,
+    title_detail_lines,
+    title_row_height,
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.process_capa_detail import (
@@ -395,6 +402,51 @@ def test_without_schedule_or_home_rates_the_canvas_ends_at_the_reference_row() -
     )
 
 
+def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> None:
+    """구획 제목의 출처·단위 글은 스크롤되지 않는 라벨 Figure 에 선다 — 월 Figure 에 두면 고른 달로
+    밀어 연 화면에서 잘린다(브라우저 확인 결함). 월 Figure 의 제목 줄에는 글이 없다."""
+    canvas = _canvas(dynamic=_dynamic())
+    label_texts = [item["text"] for item in _annotations(canvas.labels)]
+    month_texts = json.dumps(_annotations(canvas.months), ensure_ascii=False)
+    details = [
+        SUMMARY_TITLE_DETAIL,
+        "참고 · 설비 DB · 환산대수 · 생산월(Cut-off 10일) · 점선은 오늘(11.10)",
+        "단축 목표 110% · 호기마다 한 줄",
+        "진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다",
+    ]
+    for detail in details:
+        lines = title_detail_lines(detail)
+        assert lines and " · ".join(lines) == detail
+        for line in lines:
+            assert line in label_texts
+            assert line not in month_texts
+    for title in (
+        "① 공식 기준",
+        "② 설비 일정 기준 가용",
+        "③ 신규 설비 일정과 단축",
+        "④ 호기별 비가동",
+    ):
+        assert f"<b>{title}</b>" in label_texts
+        assert title not in month_texts
+    # 세부 글 줄은 라벨 칸 폭(좌우 여백 뺀 240px, 11px 글자) 안이다.
+    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 20) / 11
+    assert all(
+        _text_width_units(line) <= budget
+        for detail in details
+        for line in title_detail_lines(detail)
+    )
+
+
+def test_a_title_row_grows_with_its_detail_lines() -> None:
+    assert title_row_height("") == TITLE_HEIGHT_PX
+    one = title_row_height(SUMMARY_TITLE_DETAIL)
+    assert one == SUMMARY_TITLE_HEIGHT_PX > TITLE_HEIGHT_PX
+    assert title_row_height("진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다") > one
+    # 마디 하나가 칸보다 길면 그 줄만 말줄임한다.
+    (line,) = title_detail_lines("가" * 60)
+    assert line.endswith("…") and len(line) < 60
+
+
 def test_an_empty_or_unordered_axis_is_refused() -> None:
     with pytest.raises(ValueError, match="비었습니다"):
         build_process_capa_canvas(
@@ -678,6 +730,32 @@ def test_the_cross_check_row_paints_only_when_both_bases_fall_short() -> None:
             assert index not in texts and index not in fills
 
 
+def test_an_owned_short_month_asks_for_investment_in_the_cross_check() -> None:
+    """S✕·D✓ 인 달의 원인이 「보유로도 부족」이면 풍선이 투자 검토를 함께 적는다(설계 logic_final
+    3절 표, Guide 판정 대조 표)."""
+    summary = _summary()
+    month = 202612
+    assert summary.loc[summary["생산계획년월"].eq(month), "부족 원인"].item() == "대여 영향"
+
+    def compare_hover(frame: pd.DataFrame) -> str:
+        canvas = _canvas(summary=frame, dynamic=_dynamic())
+        return str(
+            next(
+                data[CUSTOMDATA_HOVER]
+                for data, _, _ in _targets(canvas)
+                if data[CUSTOMDATA_ROW] == ROW_DYNAMIC_COMPARE and data[CUSTOMDATA_MONTH] == month
+            )
+        )
+
+    assert "S✕·D✓" not in compare_hover(summary)  # 풍선에 칸 글은 없다
+    assert "투자 검토" not in compare_hover(summary)
+    owned_short = summary.copy()
+    owned_short.loc[owned_short["생산계획년월"].eq(month), "부족 원인"] = "보유로도 부족"
+    hover = compare_hover(owned_short)
+    assert "공식은 부족, 설비 일정으로는 충족" in hover
+    assert "원인: 보유로도 부족 — 투자 검토" in hover
+
+
 def test_the_target_balance_paints_only_short_months_and_shows_the_shortened_value() -> None:
     dynamic = _dynamic()
     canvas = _canvas(dynamic=dynamic)
@@ -725,7 +803,7 @@ def test_the_today_line_runs_through_the_schedule_body_but_not_the_titles() -> N
     # ②·③·④ 본문 셋 — 제목 줄에서 끊긴다.
     assert len(lines) == 3
     assert len({shape["x0"] for shape in lines}) == 1
-    assert "점선은 오늘(11.10)" in json.dumps(_annotations(canvas.months), ensure_ascii=False)
+    assert "점선은 오늘(11.10)" in {item["text"] for item in _annotations(canvas.labels)}
     assert not [
         shape
         for shape in _shapes(_canvas(dynamic=_dynamic(today=date(2028, 1, 1))).months)
@@ -939,7 +1017,7 @@ def test_the_dark_theme_paints_with_dark_tokens() -> None:
 def test_a_monthly_target_names_itself_once_in_the_titles() -> None:
     target = MonthlyTarget(1.095, ((202703, 1.2),))
     canvas = _canvas(dynamic=_dynamic(target=target))
-    texts = json.dumps(_annotations(canvas.months), ensure_ascii=False)
+    texts = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
 
     assert "단축 목표 = 확보기준(달마다)" in texts
     assert "목표 과부족" in {item["text"] for item in _annotations(canvas.labels)}

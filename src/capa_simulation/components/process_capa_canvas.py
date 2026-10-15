@@ -22,7 +22,10 @@
 
 **네 구획이 한 Figure 쌍인 까닭** — 확보기준에 못 미친 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금
 보는 달의 열 테두리가 구획을 넘어 이어져야 하고(구획마다 그림을 나누면 제목 줄에서 끊긴다), 칸
-선택(`on_select`)이 그림 하나에서 와야 한다. 그래서 구획 제목도 Figure 안의 한 줄이다.
+선택(`on_select`)이 그림 하나에서 와야 한다. 그래서 구획 제목도 Figure 안의 한 줄이다. 제목과 그
+출처·단위 글(세부 글)은 **라벨 Figure** 에 쓴다 — 월 Figure 는 가로로 스크롤되므로 거기 둔 글은
+고른 달로 밀어 연 화면에서 잘리거나 사라진다. 세부 글은 라벨 칸 폭에 맞춰 「 · 」 마디로 줄을
+나누고(`title_detail_lines`), 그 줄 수만큼 제목 줄이 높아진다(`title_row_height`).
 
 `go.Table`·`go.Heatmap` 을 쓰지 않는다 — 둘 다 점 선택이 없어 `on_select` 가 오지 않는다. 칸 면은
 `base` 로 띄운 가로막대, 숫자는 `Scatter(text)`, 칸마다 보이지 않는 표적 막대가 hover 와 클릭을
@@ -81,6 +84,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_COLUMN,
+    CAUSE_OWNED_SHORT,
     OWNED_COLUMN,
     STATUS_COLUMN,
 )
@@ -110,10 +114,14 @@ __all__ = [
     "ROW_THRESHOLD",
     "ROW_TITLE_PREFIX",
     "ROW_UNIT_PREFIX",
+    "SUMMARY_TITLE_DETAIL",
+    "SUMMARY_TITLE_HEIGHT_PX",
     "DynamicCanvasInput",
     "ProcessCapaCanvas",
     "build_process_capa_canvas",
     "canvas_point",
+    "title_detail_lines",
+    "title_row_height",
 ]
 
 MONTH: Final = "생산계획년월"
@@ -122,7 +130,15 @@ MONTH: Final = "생산계획년월"
 # 머리는 HOME 주요공정·상세 B/N 과 같은 36px 다. 행 높이는 요약 표 27px(`TABLE_ROW_HEIGHT_PX`),
 # 둘째 줄이 있는 칸(단축 후 값)은 36px, 호기 줄은 라벨 두 줄이 드는 34px 다.
 HEADER_HEIGHT_PX: Final = 36
+# 구획 제목 줄 — 세부 글이 없으면 제목 한 줄(28px), 있으면 제목 칸(26px) 아래에 세부 글 줄(14px)을
+# 쌓고 바닥 여백(4px)을 둔다.
 TITLE_HEIGHT_PX: Final = 28
+TITLE_LINE_PX: Final = 26
+TITLE_DETAIL_LINE_PX: Final = 14
+TITLE_BOTTOM_PX: Final = 4
+# ① 제목 세부 글. 그 줄 높이(`SUMMARY_TITLE_HEIGHT_PX`, 파일 끝)로 화면 확인 스크립트가 확보율 줄의
+# 세로 자리를 센다.
+SUMMARY_TITLE_DETAIL: Final = "Core Data · 대수 · 확보율에 쓰는 숫자"
 VALUE_ROW_HEIGHT_PX: Final = tokens.TABLE_ROW_HEIGHT_PX
 PRODUCT_ROW_HEIGHT_PX: Final = 23
 TWO_LINE_ROW_HEIGHT_PX: Final = 36
@@ -256,6 +272,9 @@ class _Row:
     height: float
     label: str = ""
     detail: str = ""
+    detail_lines: tuple[str, ...] = ()
+    """구획 제목 줄의 세부 글을 라벨 칸 폭으로 나눈 줄(`title_detail_lines`)."""
+
     label_fill: str | None = None
     month_fill: str | None = None
     label_bold: bool = False
@@ -303,6 +322,7 @@ def build_process_capa_canvas(
     index_of = {month: position for position, month in enumerate(axis)}
 
     statuses = _summary_statuses(summary, axis)
+    causes = _summary_causes(summary, axis)
     rows: list[_Row] = [_header_row(process_label, axis, thresholds)]
     rows += _summary_rows(axis, summary, thresholds, product_demand, home_rates)
     hidden_units = 0
@@ -311,7 +331,9 @@ def build_process_capa_canvas(
     dynamic_first: int | None = None
     if dynamic is not None:
         dynamic_first = len(rows)
-        dynamic_rows, hidden_units, hidden_arrow_units = _dynamic_rows(axis, statuses, dynamic)
+        dynamic_rows, hidden_units, hidden_arrow_units = _dynamic_rows(
+            axis, statuses, causes, dynamic
+        )
         rows += dynamic_rows
         today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
         if not today_position.before and not today_position.after:
@@ -385,6 +407,16 @@ def canvas_point(selection_state: object) -> tuple[int, str] | None:
 def _summary_statuses(summary: pd.DataFrame, axis: Sequence[int]) -> dict[int, str | None]:
     records = _by_month(summary, axis)
     return {month: _status(records.get(month, {}).get(STATUS_COLUMN)) for month in axis}
+
+
+def _summary_causes(summary: pd.DataFrame, axis: Sequence[int]) -> dict[int, str]:
+    """달마다 공식 기준 부족 원인(`부족 원인`). 확보인 달·원인이 빈 달은 「」이다."""
+    records = _by_month(summary, axis)
+    causes: dict[int, str] = {}
+    for month in axis:
+        cause = records.get(month, {}).get(CAUSE_COLUMN)
+        causes[month] = "" if _blank(cause) else str(cause)
+    return causes
 
 
 def _header_row(process_label: str, axis: Sequence[int], thresholds: SecurementThresholds) -> _Row:
@@ -537,7 +569,7 @@ def _summary_rows(
                 f"경고기준 {threshold_percent_label(warning)} ({_ratio(warning)})"
             ),
         )
-    rows = [_title_row("summary", "① 공식 기준", "Core Data · 대수 — 확보율에 쓰이는 숫자")]
+    rows = [_title_row("summary", "① 공식 기준", SUMMARY_TITLE_DETAIL)]
     rows += [owned, available, required]
     if product_demand is not None:
         rows += _product_rows(axis, product_demand, records)
@@ -642,6 +674,7 @@ def _balance_hover(
 def _dynamic_rows(
     axis: Sequence[int],
     statuses: Mapping[int, str | None],
+    causes: Mapping[int, str],
     dynamic: DynamicCanvasInput,
 ) -> tuple[list[_Row], int, int]:
     today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
@@ -700,7 +733,9 @@ def _dynamic_rows(
             target_units = _number(record.get("목표대수"))
             state = "" if _blank(record.get("상태")) else str(record.get("상태"))
             dynamic_short = gap is not None and round(gap, 9) < 0
-            compare.cells[index] = _compare_cell(head, static_short, dynamic_short, past=past)
+            compare.cells[index] = _compare_cell(
+                head, static_short, dynamic_short, cause=causes.get(month, ""), past=past
+            )
             available.cells[index] = _Cell(
                 text=_one(before),
                 sub=f"→ {_one(after)}" if _changed(before, after) else "",
@@ -739,13 +774,8 @@ def _dynamic_rows(
         rows.append(_note_row("no_units", "호기 일정 없음 — 기존보유만 있는 공정입니다"))
         return rows, 0, 0
     unit_rows, hidden_units = _unit_rows(axis, dynamic)
-    rows.append(
-        _title_row(
-            "units",
-            "③ 신규 설비 일정과 단축",
-            f"{target_text} · 호기마다 한 줄 · ◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작",
-        )
-    )
+    # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)는 캔버스 아래 범례가 적는다.
+    rows.append(_title_row("units", "③ 신규 설비 일정과 단축", f"{target_text} · 호기마다 한 줄"))
     rows += unit_rows
     arrow_rows, hidden_arrow_units = _arrow_rows(axis, dynamic)
     rows.append(
@@ -759,7 +789,9 @@ def _dynamic_rows(
     return rows, hidden_units, hidden_arrow_units
 
 
-def _compare_cell(head: str, static_short: bool, dynamic_short: bool, *, past: bool) -> _Cell:
+def _compare_cell(
+    head: str, static_short: bool, dynamic_short: bool, *, cause: str = "", past: bool
+) -> _Cell:
     if static_short and dynamic_short:
         return _Cell(
             text="S✕·D✕",
@@ -772,14 +804,14 @@ def _compare_cell(head: str, static_short: bool, dynamic_short: bool, *, past: b
             ),
         )
     if static_short:
-        return _Cell(
-            text="S✕·D✓",
-            muted=True,
-            hover=(
-                f"{head} · 공식은 부족, 설비 일정으로는 충족 — Core Data 보유·대여와 "
-                "설비 DB 일정이 어긋날 수 있습니다"
-            ),
+        hover = (
+            f"{head} · 공식은 부족, 설비 일정으로는 충족 — Core Data 보유·대여와 "
+            "설비 DB 일정이 어긋날 수 있습니다"
         )
+        # 보유로도 부족이면 단축할 것이 없는 달이 아니라 투자를 볼 달이다(설계 logic_final 3).
+        if cause == CAUSE_OWNED_SHORT:
+            hover += f"<br>원인: {CAUSE_OWNED_SHORT} — 투자 검토(단축으로 못 메웁니다)"
+        return _Cell(text="S✕·D✓", muted=True, hover=hover)
     if dynamic_short:
         return _Cell(
             text="S✓·D✕",
@@ -1063,13 +1095,44 @@ def _target_for(target: TargetLevel, month: int) -> float:
 # ================================================================== 공용 행
 
 
+def title_detail_lines(detail: str) -> tuple[str, ...]:
+    """구획 제목 세부 글을 라벨 칸 폭(260px − 좌우 여백)에 맞춰 「 · 」 마디로 나눈 줄들.
+
+    마디는 자르지 않고 다음 줄로 넘긴다. 한 마디가 칸보다 길 때만 그 줄을 말줄임한다. 비면 ().
+    """
+    if not detail:
+        return ()
+    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX) / TITLE_DETAIL_FONT_PX
+    lines: list[str] = []
+    current = ""
+    for part in detail.split(" · "):
+        candidate = f"{current} · {part}" if current else part
+        if current and _text_width_units(candidate) > budget:
+            lines.append(_fit(current, budget))
+            current = part
+        else:
+            current = candidate
+    if current:
+        lines.append(_fit(current, budget))
+    return tuple(lines)
+
+
+def title_row_height(detail: str) -> int:
+    """구획 제목 줄 높이(px) — 세부 글 줄 수만큼 높아진다."""
+    lines = title_detail_lines(detail)
+    if not lines:
+        return TITLE_HEIGHT_PX
+    return TITLE_LINE_PX + len(lines) * TITLE_DETAIL_LINE_PX + TITLE_BOTTOM_PX
+
+
 def _title_row(name: str, title: str, detail: str) -> _Row:
     return _Row(
         f"{ROW_TITLE_PREFIX}{name}",
         _TITLE,
-        TITLE_HEIGHT_PX,
+        title_row_height(detail),
         label=title,
         detail=detail,
+        detail_lines=title_detail_lines(detail),
         label_bold=True,
         label_fill=tokens.CHART_CANVAS,
         month_fill=tokens.CHART_CANVAS,
@@ -1118,10 +1181,11 @@ def _label_figure(rows: Sequence[_Row], height: int) -> go.Figure:
             strong = row.group_start or rows[position - 1].kind == _HEADER
             shapes.append(_paper_rule(y1, strong=strong))
         budget = DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX
+        if row.kind == _TITLE:
+            annotations += _title_annotations(row, budget, height)
+            continue
         indent = PRODUCT_INDENT_PX if row.indent else 0
         font = PRODUCT_FONT_PX if row.indent else LABEL_FONT_PX
-        if row.kind == _TITLE:
-            font = TITLE_FONT_PX
         two_lines = bool(row.detail) and row.kind == _UNIT
         annotations.append(
             _label_annotation(
@@ -1149,6 +1213,39 @@ def _label_figure(rows: Sequence[_Row], height: int) -> go.Figure:
     append_layout_items(figure, shapes=shapes, annotations=annotations)
     add_figure_outer_border(figure, emphasize_bottom=True)
     return figure
+
+
+def _title_annotations(row: _Row, budget: float, height: int) -> list[dict[str, Any]]:
+    """구획 제목(굵게) 한 줄과 그 아래 세부 글 줄들(회색). 라벨 칸은 스크롤되지 않아 늘 보인다."""
+
+    def paper_y(offset: float) -> float:
+        return 1 - (row.top + offset) / height
+
+    title_center = (TITLE_LINE_PX if row.detail_lines else TITLE_HEIGHT_PX) / 2
+    annotations = [
+        _label_annotation(
+            _fit(row.label, budget / TITLE_FONT_PX),
+            y=paper_y(title_center),
+            shift=0,
+            indent=0,
+            size=TITLE_FONT_PX,
+            bold=True,
+            muted=False,
+        )
+    ]
+    for position, line in enumerate(row.detail_lines):
+        annotations.append(
+            _label_annotation(
+                line,
+                y=paper_y(TITLE_LINE_PX + (position + 0.5) * TITLE_DETAIL_LINE_PX),
+                shift=0,
+                indent=0,
+                size=TITLE_DETAIL_FONT_PX,
+                bold=False,
+                muted=True,
+            )
+        )
+    return annotations
 
 
 def _label_annotation(
@@ -1249,7 +1346,7 @@ def _month_figure(
             strong_top = bottom + row.height
             shapes_above.append(_data_hline(strong_top, count))
         if row.kind == _TITLE:
-            annotations.append(_title_detail(row.detail, center, count))
+            # 제목·세부 글은 라벨 Figure 에 있다 — 여기는 면만 깐다(스크롤로 잘리지 않게).
             continue
         for index in range(count):
             cell = row.cells.get(index)
@@ -1466,26 +1563,6 @@ def _body_runs(rows: Sequence[_Row]) -> list[tuple[_Row, _Row]]:
     if start is not None and previous is not None:
         runs.append((start, previous))
     return runs
-
-
-def _title_detail(detail: str, center: float, count: int) -> dict[str, Any]:
-    budget = (count * tokens.MONTH_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX) / TITLE_DETAIL_FONT_PX
-    return {
-        "x": 0,
-        "y": center,
-        "xref": "x",
-        "yref": "y",
-        "xanchor": "left",
-        "yanchor": "middle",
-        "xshift": LABEL_INSET_PX,
-        "text": html.escape(_fit(detail, budget)),
-        "showarrow": False,
-        "font": {
-            "color": tokens.TEXT_MUTED,
-            "size": TITLE_DETAIL_FONT_PX,
-            "family": tokens.FONT_FAMILY,
-        },
-    }
 
 
 def _data_rect(
@@ -2000,3 +2077,7 @@ def _day(day: date | None, today: date) -> str:
 
 def _iso(day: date | None) -> str:
     return "미정" if day is None else f"{day:%Y-%m-%d}"
+
+
+# 줄 나누기(`_fit`)가 위에서 정의된 뒤에 센다.
+SUMMARY_TITLE_HEIGHT_PX: Final = title_row_height(SUMMARY_TITLE_DETAIL)

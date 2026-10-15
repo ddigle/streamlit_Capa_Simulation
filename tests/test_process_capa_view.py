@@ -110,9 +110,9 @@ def test_the_judgement_card_writes_both_formulas_with_the_month_threshold() -> N
     available, required = float(record["가용대수"]), float(record["소요대수"])  # type: ignore[arg-type]
     assert card.title == "③ 판정"
     assert (
-        f"확보율 = {available:,.1f} ÷ {required:,.1f} = {available / required:.1%}" in card.formula
+        f"확보율 = {available:,.2f} ÷ {required:,.2f} = {available / required:.1%}" in card.formula
     )
-    assert f"{required:,.1f}×1.095" in card.formula
+    assert f"{required:,.2f}×1.095" in card.formula
     assert card.formula.endswith(f"{MINUS}{abs(int(record['확보기준 과부족'])):,}")  # type: ignore[call-overload]
     assert "확보기준 110% (1.095) · 경고기준 100% (0.995)" in card.notes
     assert any(note.startswith("원인: ") for note in card.notes)
@@ -152,6 +152,38 @@ def test_a_painted_zero_on_the_noise_boundary_is_explained() -> None:
     assert any("잡음 경계" in note for note in card.notes)
 
 
+@pytest.mark.parametrize(
+    ("available", "required"),
+    [(4.0, 2.9), (4.0, 2.8867), (4.0, 3.6544), (52.0, 52.6), (3.0, 2.8967)],
+)
+def test_the_judgement_formula_can_be_checked_by_hand(available: float, required: float) -> None:
+    """식의 숫자는 둘째 자리다. 적은 숫자로 다시 셈한 값이 결과와 같으면 「=」, 다르면 「≈」 —
+    「4.0 ÷ 3.7 = 107.0%」 처럼 검산이 어긋난 등호를 쓰지 않는다."""
+    record = {
+        "가용대수": available,
+        "소요대수": required,
+        "판정": "warning",
+        "확보기준 과부족": -1,
+    }
+    rate_line, balance_line = judgement_card(record, THRESHOLDS, 202611).formula.split("\n")
+
+    shown_available, shown_required = round(available, 2), round(required, 2)
+    assert rate_line.startswith(f"확보율 = {shown_available:,.2f} ÷ {shown_required:,.2f} ")
+    rate_text = f"{available / required:.1%}"
+    exact = f"{shown_available / shown_required:.1%}" == rate_text
+    assert f" {'=' if exact else '≈'} {rate_text} " in rate_line
+
+    def signed_two(value: float) -> str:
+        rounded = round(value, 2) + 0.0
+        if rounded == 0:
+            return "0.00"
+        return f"{'+' if rounded > 0 else MINUS}{abs(rounded):,.2f}"
+
+    raw_text = signed_two(available - required * 1.095)
+    exact = signed_two(shown_available - shown_required * 1.095) == raw_text
+    assert f" {'=' if exact else '≈'} {raw_text} → " in balance_line
+
+
 def test_a_month_without_demand_is_not_judged() -> None:
     record = {"가용대수": 3.0, "소요대수": 0.0, "판정": None}
     card = judgement_card(record, THRESHOLDS, 202611)
@@ -186,7 +218,11 @@ def test_the_shortening_card_stands_only_when_the_month_is_not_met() -> None:
     assert shortening_card(dynamic, met[0]) is None
     card = shortening_card(dynamic, unmet[0])
     assert card is not None and card.reference
-    assert card.title.startswith("④ 단축 근거 (설비 일정 · 목표 110%)")
+    # 필요단축일정 탭의 110% 는 1.10 이다 — 이 화면은 소수를 함께 적는다.
+    assert card.title == "④ 단축 근거 (설비 일정 · 목표 110% (1.095))"
+    assert card.formula.startswith("목표 ")
+    head = card.formula.split("\n")[0]
+    assert " × 1.095" in head and ("=" in head or "≈" in head)
     assert "구간 " in card.formula and "바닥 " in card.formula
     assert "→ 단축 후 " in card.formula
     assert any(note.startswith("상태: ") for note in card.notes)
@@ -292,10 +328,27 @@ def test_the_prescription_counts_this_process_plan() -> None:
     assert plan.dynamic_short_months == int(gaps.lt(0).sum())
 
 
+def test_the_schedule_cause_skips_months_before_today() -> None:
+    """지난 달(오늘이 든 생산월 앞)은 단축으로 바꿀 수 없다 — KPI 「일정」 은 그 달을 세지
+    않는다."""
+    early = _dynamic_view()
+    canvas = _dynamic(today=date(2027, 2, 10))
+    late = DynamicView(canvas=canvas, units=_plan_units(canvas), memo_key=("plan", "late"))
+    months = canvas.process_months
+    gaps = pd.to_numeric(months["과부족"]).round(9)
+    # Cut-off 10일 — 02.10 은 02월 생산월에 기여한다.
+    current = pd.to_numeric(months["생산계획년월"]).ge(202702)
+    past_short = int((gaps.lt(0) & ~current).sum())
+    assert past_short > 0, "합성 계획에 오늘 앞의 미달 달이 있어야 시험이 뜻이 있다"
+
+    assert prescription(late).dynamic_short_months == int((gaps.lt(0) & current).sum())
+    assert prescription(early).dynamic_short_months > prescription(late).dynamic_short_months
+
+
 def test_the_target_reads_the_preference_threshold_by_month() -> None:
     uniform = MonthlyTarget(1.095)
     assert target_text(uniform, MONTHS) == "HOME Preference 확보기준(월별) 110% (1.095)"
-    assert short_target_text(uniform, MONTHS) == "110%"
+    assert short_target_text(uniform, MONTHS) == "110% (1.095)"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
     assert target_text(varied, MONTHS) == "HOME Preference 확보기준(월별) — 달마다 다름"
     assert short_target_text(varied, MONTHS) == "달마다 확보기준"

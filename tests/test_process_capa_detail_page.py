@@ -29,7 +29,9 @@ from streamlit.testing.v1 import AppTest
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.process_capa_view import (
+    DYNAMIC_ERROR_TITLE,
     NEXT_MONTH_KEY,
     UNITS_CSV_KEY,
 )
@@ -255,6 +257,8 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
     # HOME 에서 오지 않았으므로 출처 띠가 없다.
     assert _origin_bands(app) == []
+    # 머리 오른쪽 「← HOME」 링크(단독 실행은 갈 페이지가 없어 글자로 물러선다).
+    assert any(str(element.value) == "사이드바에서 HOME" for element in app.caption)
 
 
 def test_a_chosen_process_survives_reruns_and_keeps_the_month(
@@ -512,6 +516,54 @@ def test_the_tab_link_plants_only_session_keys(dynamic_databases: tuple[Path, Pa
     repository = DuckDBEquipmentRepository(dynamic_databases[1])
     profile = repository.load_shortening_filter_profile()
     assert profile.processes == ()
+
+
+def _absent_card_titles(app: AppTest) -> list[str]:
+    return [str(element.value) for element in app.markdown if "event_busy" in str(element.value)]
+
+
+def test_a_broken_equipment_database_keeps_the_official_section(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """설비 DB 를 못 읽어도 ① 공식 구획·KPI·근거 패널은 남는다. 머리 배지와 까닭 카드가 같은
+    말이다."""
+    root = tmp_path_factory.mktemp("process_capa_detail_broken_equipment")
+    broken = root / "equipment.duckdb"
+    broken.write_bytes(b"not a duckdb database file" * 100)
+    app = _ok(_app((root / "scenario.duckdb", broken)).run())
+
+    assert "설비 일정 없음: 설비 DB 오류" in _header(app)
+    assert _absent_card_titles(app) == [
+        ":material/event_busy: **설비 일정 없음: 설비 DB 를 읽지 못했습니다**"
+    ]
+    labels = _label_texts(app)
+    assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
+    assert [metric.label for metric in app.metric][0] == "최저 확보율"
+    cards = next(body for body in _html(app) if "pcd-cards" in body)
+    assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
+
+
+def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_section(
+    dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정은 통과했는데 설비 일정 계산이 멈추면 까닭 카드 제목이 머리 배지와 같은 「계산 오류」다 —
+    「설비 일정 참고」로 서지 않고, 이미 맞은 조건(저장본·이름·Cut-off)을 까닭처럼 적지 않는다."""
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise ValueError("시험용 계산 오류")
+
+    monkeypatch.setattr(simulation_cache, "get_process_equipment_timeline", fail)
+    app = _dynamic_app(dynamic_databases)
+
+    assert "설비 일정 없음: 계산 오류" in _header(app)
+    assert _absent_card_titles(app) == [f":material/event_busy: **{DYNAMIC_ERROR_TITLE}**"]
+    caption = next(str(item.value) for item in app.caption if "시험용 계산 오류" in str(item.value))
+    assert caption.startswith("설비 일정을 계산하지 못했습니다")
+    assert "Cut-off 가 적힌 공정에만" not in caption
+    labels = _label_texts(app)
+    assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
+    # 정리 줄(CSV·탭 링크)은 설비 일정이 설 때만이다.
+    assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
 
 
 # ------------------------------------------------------------------ 본문 프래그먼트
