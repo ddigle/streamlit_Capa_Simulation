@@ -469,7 +469,7 @@ def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     prepared["생산계획년월"] = pd.to_numeric(prepared["생산계획년월"], errors="coerce").astype(
         "Int64"
     )
-    prepared = _to_numeric(prepared, ["생산수량"], "RQ_PKG_PLAN")
+    prepared["생산수량"] = plan_quantities(prepared)
 
     missing_keys = prepared[["생산계획년월", *CLASSIFICATION_COLUMNS]].isna().any(axis=1)
     if missing_keys.any():
@@ -480,6 +480,34 @@ def _prepare_plan(plan: pd.DataFrame) -> pd.DataFrame:
     planned = drop_unplanned_rows(prepared)
     planned.attrs[LOAD_EXCLUSIONS_ATTR] = blanks
     return planned
+
+
+def plan_quantities(plan: pd.DataFrame) -> pd.Series:
+    """`RQ_PKG_PLAN.생산수량` 을 숫자로. **빈 값은 그대로 둔다**(계획 없음 — 부르는 쪽이 목록에
+    남기거나 0 으로 본다).
+
+    숫자가 아닌 글자는 계획 없음으로 읽을 근거가 없어 막는다. 어느 행인지 키 예시를 함께 적는다.
+    환산·소요대수·표준 목표 PKG 환산이 이 함수 하나로 숫자화한다 — 같은 원천 값을 두고 화면마다
+    다른 문구로 멈추면 한쪽은 고칠 행을 찾을 수 없다. `생산계획년월`·`제품정보`·`Stack` 컬럼을
+    읽는다.
+    """
+    raw = plan["생산수량"]
+    quantities = pd.to_numeric(raw, errors="coerce")
+    invalid = raw.notna() & quantities.isna()
+    if bool(invalid.any()):
+        examples = [
+            f"{month} · {product} · {stack} → {value!r}"
+            for month, product, stack, value in plan.loc[
+                invalid, ["생산계획년월", "제품정보", "Stack", "생산수량"]
+            ]
+            .head(5)
+            .itertuples(index=False)
+        ]
+        raise ValueError(
+            f"RQ_PKG_PLAN.생산수량에 숫자가 아닌 값이 있습니다: {int(invalid.sum()):,}행, "
+            f"예시(년월 · 제품 · Stack) {'; '.join(examples)}."
+        )
+    return quantities
 
 
 def blank_quantity_exclusions(plan: pd.DataFrame) -> tuple[tuple[object, ...], ...]:

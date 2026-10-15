@@ -623,3 +623,45 @@ def test_pkg_equivalent_reads_a_blank_plan_quantity_as_no_plan() -> None:
 
     # 30 + (빈 값 = 0) + 20 = 50.
     assert result.loc[0, PKG_EQUIVALENT_COLUMN] == pytest.approx(5.0)
+
+
+def test_pkg_equivalent_names_the_row_of_a_non_numeric_plan_quantity() -> None:
+    """R3 — 숫자가 아닌 생산수량은 소요대수와 같은 문구(년월 · 제품 · Stack 예시)로 멈춘다.
+
+    같은 원천 값을 두고 소요대수는 어느 행인지 적는데 PKG 환산만 키 없이 멈추면 고칠 행을 찾을 수
+    없다.
+    """
+    required_equipment = _required_equipment()
+    weekly_target = build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [10.0]}),
+        weekly_availability=pd.DataFrame(
+            {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [2.0]}
+        ),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 9),
+        detail_level="공정",
+    )
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608],
+            "양산구분": ["양산", "양산"],
+            "제품정보": ["Product-A", "Product-A"],
+            "Stack": ["8H", "8H"],
+            "Capa Code": ["C1", "C2"],
+            "Customer": ["Customer-A", "Customer-B"],
+            "CS": ["MP", "ER"],
+            "Pack Code": ["PK-1", "PK-1"],
+            "생산수량": [30.0, "약 20"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="숫자가 아닌 값") as caught:
+        add_pkg_equivalent_standard_target(
+            weekly_target=weekly_target,
+            required_equipment=required_equipment,
+            plan=plan,
+            detail_level="공정",
+        )
+
+    assert "202608 · Product-A · 8H → '약 20'" in str(caught.value)

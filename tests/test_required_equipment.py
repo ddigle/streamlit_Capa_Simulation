@@ -3,12 +3,19 @@
 import pandas as pd
 import pytest
 
+from capa_simulation.components.required_exclusion_notice import (
+    FULL_SCOPE,
+    required_exclusion_message,
+)
 from capa_simulation.services.load_calculator import build_monthly_volume, load_exclusions
 from capa_simulation.services.required_equipment import (
     CAPACITY_KEYS,
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
+    UNROUTED_KEY_MISMATCH_REASON,
     UNROUTED_LOADS_ATTR,
+    UNROUTED_UNKNOWN_PRODUCT_REASON,
+    UNROUTED_UNUSED_REASON,
     RequiredExclusionCounts,
     calculate_required_equipment,
     required_equipment_to_month_table,
@@ -352,10 +359,12 @@ def test_required_equipment_uses_zero_when_load_is_missing() -> None:
     assert result.loc[0, "부하량"] == 0
     assert result.loc[0, "소요대수"] == 0
     # 반대로 Product-A 계획 100 은 닿을 경로가 없다. 사라지지 않고 「경로 없는 계획」에 남는다.
+    # Product-A 는 RQ_REQB 에 경로가 하나도 없는 제품이라 그 수요 전체가 빠진다 — 센다.
     assert isinstance(unrouted, pd.DataFrame)
-    assert unrouted[["제품정보", "소요기준", "부하량"]].values.tolist() == [
-        ["Product-A", "PKG", 100.0]
+    assert unrouted[["제품정보", "소요기준", "부하량", "제외사유"]].values.tolist() == [
+        ["Product-A", "PKG", 100.0, UNROUTED_UNKNOWN_PRODUCT_REASON]
     ]
+    assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=1)
 
 
 def test_required_equipment_excludes_rows_without_unit_capacity() -> None:
@@ -817,7 +826,9 @@ def test_plan_load_that_reaches_no_route_is_listed() -> None:
     assert len(result) == 1
     assert result["부하량"].tolist() == pytest.approx([each])
     assert isinstance(unrouted, pd.DataFrame)
-    assert unrouted[["Capa Code", "소요기준"]].values.tolist() == [["K2", "WF"]]
+    assert unrouted[["Capa Code", "소요기준", "제외사유"]].values.tolist() == [
+        ["K2", "WF", UNROUTED_KEY_MISMATCH_REASON]
+    ]
     assert unrouted["부하량"].tolist() == pytest.approx([each])
     assert result["부하량"].sum() + unrouted["부하량"].sum() == pytest.approx(2 * each)
 
@@ -897,3 +908,116 @@ def test_exclusion_counts_count_only_routes_that_lose_load() -> None:
     assert required_exclusion_counts(result) == RequiredExclusionCounts(
         excluded_plans=1, unrouted_loads=1, excluded_routes=1
     )
+
+
+# ------------------------------------------------------------------ 규칙상 쓰지 않는 조합
+# 사내 리뷰(review/load R1). 그 제품이 그 소요기준·WF 구분의 경로를 아예 갖지 않는 부하는 고칠
+# 키 어긋남이 아니라 구조다 — EDP-TSV 에는 PKG 공정이 없다. 세면 HOME·저장·발행 경고가 모두에게
+# 늘 뜬다.
+
+
+def _pkg_route(product: str, division: str = "BUFFER") -> dict[str, object]:
+    return {**_route(product, basis="PKG"), "공정": "Process-P", "WF 구분": division}
+
+
+def _pkg_route_capacity(product: str, division: str = "BUFFER") -> pd.DataFrame:
+    return _route_capacity(product, basis="PKG").assign(공정="Process-P", **{"WF 구분": division})
+
+
+def test_a_product_without_pkg_routes_does_not_count_its_pkg_load_as_unrouted() -> None:
+    """R1 — PKG 경로는 HBM 에만 있고 모두 BUFFER, EDP-TSV 의 PKG 경로는 없다(사내 실데이터 구조).
+
+    `_build_loads` 는 REQB 어딘가에 PKG 행이 있으면 계획 전 행(EDP 포함)에 PKG 부하를 만든다. EDP 의
+    PKG 부하를 「경로 없는 계획」으로 세면 EDP 계획 키 × 달 수만큼 경고가 영구히 남는다.
+    """
+    reqb = pd.DataFrame([_pkg_route("DEMO-HBM"), _route("DEMO-HBM"), _route("DEMO-EDP")])
+    plan = pd.DataFrame([_plan_row("DEMO-HBM"), _plan_row("DEMO-EDP")])
+    capacity = pd.concat(
+        [_pkg_route_capacity("DEMO-HBM"), _route_capacity("DEMO-HBM", "DEMO-EDP")],
+        ignore_index=True,
+    )
+
+    result = calculate_required_equipment(
+        reqb,
+        plan,
+        _yield_rows("DEMO-HBM", "DEMO-EDP"),
+        _chip_rows("DEMO-HBM", "DEMO-EDP"),
+        capacity,
+    )
+    counts = required_exclusion_counts(result)
+
+    assert counts == RequiredExclusionCounts()
+    # HOME 결론 위 한 줄·저장·발행 경고가 쓰는 문장도 비어 있다.
+    assert required_exclusion_message(counts, scope=FULL_SCOPE) == ""
+    # HBM 의 PKG 부하는 Buffer 경로에 그대로 붙는다.
+    assert result.loc[result["소요기준"].eq("PKG"), "부하량"].tolist() == pytest.approx([100.0])
+    # EDP 의 PKG 부하는 목록에서 사라지지 않는다 — 사유를 달아 남아 「계획 총 부하 = 붙은 부하 + 이
+    # 목록」이 그대로 맞는다. 세지만 않는다.
+    unrouted = result.attrs[UNROUTED_LOADS_ATTR]
+    assert unrouted[["제품정보", "소요기준", "부하량", "제외사유"]].values.tolist() == [
+        ["DEMO-EDP", "PKG", 100.0, UNROUTED_UNUSED_REASON]
+    ]
+
+
+def test_a_product_whose_pkg_routes_are_not_buffer_is_not_counted_as_unrouted() -> None:
+    """R1 — PKG 경로가 Core 행뿐인 제품. 경로 쪽은 「PKG 기준은 Buffer 로만 계수」로 세지 않는데
+    부하 쪽만 경로 없는 계획으로 세면 같은 규칙을 두 쪽이 다르게 읽는다."""
+    reqb = pd.DataFrame([_pkg_route("DEMO-HBM", "CORE"), _route("DEMO-HBM")])
+    capacity = pd.concat(
+        [_pkg_route_capacity("DEMO-HBM", "CORE"), _route_capacity("DEMO-HBM")],
+        ignore_index=True,
+    )
+
+    result = calculate_required_equipment(
+        reqb,
+        pd.DataFrame([_plan_row("DEMO-HBM")]),
+        _yield_rows("DEMO-HBM"),
+        _chip_rows("DEMO-HBM"),
+        capacity,
+    )
+
+    assert required_exclusion_counts(result) == RequiredExclusionCounts()
+
+
+def test_a_division_without_any_route_is_not_counted_as_unrouted() -> None:
+    """R1 — Chip 구성에는 있는데 그 소요기준에 경로가 하나도 없는 WF 구분도 구조다(경로 없는
+    WF 구분).
+
+    Core 경로만 있는 제품의 Top Chip 부하는 어느 공정에도 들지 않는 것이 맞다.
+    """
+    top = {"WF 구분": ["Top"]}
+    yields = pd.concat([_yield_rows("DEMO-A"), _yield_rows("DEMO-A").assign(**top)])
+    chips = pd.concat([_chip_rows("DEMO-A"), _chip_rows("DEMO-A").assign(**top)])
+
+    result = calculate_required_equipment(
+        pd.DataFrame([_route("DEMO-A")]),
+        pd.DataFrame([_plan_row("DEMO-A")]),
+        yields.reset_index(drop=True),
+        chips.reset_index(drop=True),
+        _route_capacity("DEMO-A"),
+    )
+
+    assert required_exclusion_counts(result) == RequiredExclusionCounts()
+
+
+def test_a_key_mismatch_is_counted_even_when_the_product_has_other_routes() -> None:
+    """R1 — 좁힌 셈이 키 어긋남은 그대로 잡는다. 경로가 다른 달에만 있는 계획(연도 이동·월 병합이
+    만드는 꼴)은 같은 제품·소요기준·WF 구분 경로가 있으니 고칠 어긋남이다."""
+    next_month = {"생산계획년월": 202609}
+    reqb = pd.DataFrame([_route("DEMO-A"), _pkg_route("DEMO-A")])
+    plan = pd.DataFrame([_plan_row("DEMO-A"), {**_plan_row("DEMO-A"), **next_month}])
+    yields = pd.concat([_yield_rows("DEMO-A"), _yield_rows("DEMO-A").assign(**next_month)])
+    capacity = pd.concat(
+        [_route_capacity("DEMO-A"), _pkg_route_capacity("DEMO-A")], ignore_index=True
+    )
+
+    result = calculate_required_equipment(
+        reqb, plan, yields.reset_index(drop=True), _chip_rows("DEMO-A"), capacity
+    )
+    unrouted = result.attrs[UNROUTED_LOADS_ATTR]
+
+    assert unrouted[["생산계획년월", "소요기준", "제외사유"]].values.tolist() == [
+        [202609, "PKG", UNROUTED_KEY_MISMATCH_REASON],
+        [202609, "CHIP", UNROUTED_KEY_MISMATCH_REASON],
+    ]
+    assert required_exclusion_counts(result) == RequiredExclusionCounts(unrouted_loads=2)

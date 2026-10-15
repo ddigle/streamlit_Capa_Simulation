@@ -44,7 +44,13 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
 )
 from capa_simulation.services.legacy_comparison import COMPARISONS
-from capa_simulation.services.required_equipment import LOAD_KEYS, REQB_COLUMNS
+from capa_simulation.services.required_equipment import (
+    LOAD_KEYS,
+    REQB_COLUMNS,
+    UNROUTED_KEY_MISMATCH_REASON,
+    UNROUTED_UNKNOWN_PRODUCT_REASON,
+    UNROUTED_UNUSED_REASON,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -263,15 +269,21 @@ def test_an_error_message_carrying_names_is_reported_by_kind_only(
 
 
 def test_unrouted_load_branches_name_only_the_contract_vocabulary() -> None:
-    """경로 없는 부하의 갈래는 계약 어휘만 이름으로 찍는다. 그 밖의 WF 구분은 「그 밖」으로
-    묶는다."""
+    """경로 없는 부하의 갈래는 사유와 계약 어휘만 이름으로 찍는다. 그 밖의 WF 구분은 「그 밖」으로
+    묶고, 규칙상 미사용(EDP-TSV 의 PKG 같은 것)은 갈래에는 찍되 건수에는 넣지 않는다."""
     required = pd.DataFrame()
     required.attrs["unrouted_required_loads"] = pd.DataFrame(
         {
-            **{key: ["X"] * 3 for key in LOAD_KEYS},
-            "소요기준": ["CHIP", "CHIP", "PKG"],
-            "WF 구분": ["BUFFER", SENTINEL, ""],
-            "부하량": [1.0, 2.0, 3.0],
+            **{key: ["X"] * 4 for key in LOAD_KEYS},
+            "소요기준": ["CHIP", "CHIP", "PKG", "PKG"],
+            "WF 구분": ["BUFFER", SENTINEL, "", ""],
+            "부하량": [1.0, 2.0, 3.0, 4.0],
+            "제외사유": [
+                UNROUTED_KEY_MISMATCH_REASON,
+                UNROUTED_UNKNOWN_PRODUCT_REASON,
+                UNROUTED_KEY_MISMATCH_REASON,
+                UNROUTED_UNUSED_REASON,
+            ],
         }
     )
 
@@ -279,9 +291,10 @@ def test_unrouted_load_branches_name_only_the_contract_vocabulary() -> None:
     text = "\n".join(lines)
 
     assert "경로에 닿지 않은 계획 부하 3" in lines[0]
-    assert "CHIP · BUFFER 1" in text
-    assert "CHIP · 그 밖 1" in text
-    assert "PKG · (PKG) 1" in text
+    assert "키 어긋남 · CHIP · BUFFER 1" in text
+    assert "REQB 에 없는 제품 · CHIP · 그 밖 1" in text
+    assert "키 어긋남 · PKG · (PKG) 1" in text
+    assert "규칙상 미사용 · PKG · (PKG) 1" in text
     assert SENTINEL not in text
 
 

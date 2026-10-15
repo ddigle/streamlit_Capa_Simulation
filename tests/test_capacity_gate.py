@@ -165,6 +165,36 @@ def test_a_save_that_leaves_demand_out_of_the_requirement_says_how_much(
     assert "시나리오 전체 기간" in verdict.message
 
 
+def _pkg_route_on_one_product(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """한 제품의 한 공정 경로를 소요기준 PKG·WF 구분 BUFFER 로 바꾼다(경로와 UPEH 를 함께).
+
+    사내 실데이터 구조와 같은 꼴이다 — PKG 경로는 한 제품군(HBM)에만 있고, 다른 제품(EDP-TSV)에는
+    PKG 공정이 없다.
+    """
+    reqb = tables["RQ_REQB"].copy()
+    upeh = tables["RQ_UPEH"].copy()
+    product = reqb["제품정보"].iloc[0]
+    process = reqb["공정"].iloc[-1]
+    for frame in (reqb, upeh):
+        rows = frame["제품정보"].eq(product) & frame["공정"].eq(process)
+        frame.loc[rows, ["소요기준", "WF 구분"]] = ["PKG", "BUFFER"]
+    return {**tables, "RQ_REQB": reqb, "RQ_UPEH": upeh}
+
+
+def test_a_product_without_pkg_routes_does_not_make_every_save_warn(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """R1 — PKG 경로가 없는 제품의 PKG 부하는 「경로 없는 계획」이 아니다. 세면 모든 저장·발행이
+    늘 경고하고, 그 경고(「확보율이 실제보다 높게」)는 이 경우 사실도 아니다."""
+    version = _version()
+
+    edited = _edited(version, _pkg_route_on_one_product(tables))
+
+    verdict = revision_save_verdict(version, edited, tables)
+
+    assert verdict.allowed and verdict.message is None
+
+
 def test_publishing_a_revision_with_demand_outside_the_requirement_warns(tmp_path: Path) -> None:
     """P1·P3 — 발행은 막지 않고 알린다. 공식버전은 모두의 첫 화면이라 지정하는 사람이 알아야
     한다."""

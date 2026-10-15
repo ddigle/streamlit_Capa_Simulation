@@ -161,4 +161,6 @@ def test_the_required_tab_lists_plan_load_that_reaches_no_route() -> None:
         encoding="utf-8-sig",
         dtype="object",
     )
-    assert exported[["Capa Code", "부하량"]].values.tolist() == [["CAPA-NO-ROUTE", "40.0"]]
+    assert exported[["Capa Code", "부하량", "제외사유"]].values.tolist() == [
+        ["CAPA-NO-ROUTE", "40.0", "경로 키 어긋남"]
+    ]
