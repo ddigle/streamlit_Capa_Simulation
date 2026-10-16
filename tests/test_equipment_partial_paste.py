@@ -18,6 +18,7 @@ import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 from test_equipment_availability import _downtime, _equipment
 from test_equipment_data_workspace import _app, _repository
+from test_equipment_master_columns import _old36_layout
 
 from capa_simulation.components.equipment_data_workspace import (
     CLIPBOARD_KEY,
@@ -306,8 +307,34 @@ def test_an_unrelated_extra_column_blocks_when_any_contract_column_is_missing() 
     full = _exported(_current()).drop(columns=["메모3"])
     full["확인"] = "o"
 
-    with pytest.raises(ValueError, match="38개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다"):
+    with pytest.raises(ValueError, match="38개 열이 모두 있거나, 옛 36열 양식처럼"):
         _review(full.to_csv(sep="\t", index=False))
+
+
+def test_an_extra_column_on_the_whole_old_36_column_form_is_skipped_with_a_notice() -> None:
+    """옛 36열 양식을 통째로 붙여넣으면 빠진 열은 38열 개편이 더한 실적·상태 셋뿐이다. 그 표에 붙은
+    보조 열(사내 엑셀의 「No.」)은 막지 않고 알림만 남긴다 — 개편 전에도 그랬다."""
+    old = _old36_layout(_exported(_current()))
+    old.insert(0, "No.", ["1", "2"])
+
+    review = _review(old.to_csv(sep="\t", index=False))
+
+    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert review.changes["Import구분"].tolist() == ["대체", "대체"]
+    assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
+
+
+@pytest.mark.parametrize(("header", "column"), [("반입싫적", "반입실적"), ("Qual실젹", "Qual실적")])
+def test_a_misspelled_new_column_on_the_old_36_column_form_still_blocks(
+    header: str, column: str
+) -> None:
+    """옛 36열 꼴이어도 모르는 열이 빠진 실적·상태 열과 닮았으면 그 열의 오타다 — 넘기면 적은 실적이
+    조용히 사라진다."""
+    old = _old36_layout(_exported(_current()))
+    old[header] = "2026-08-20"
+
+    with pytest.raises(ValueError, match=re.escape(f"「{header}」(「{column}」?)")):
+        _review(old.to_csv(sep="\t", index=False))
 
 
 @pytest.mark.parametrize("partial", [False, True])

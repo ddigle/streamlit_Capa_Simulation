@@ -35,6 +35,7 @@ import pandas as pd
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     EQUIPMENT_ID_COLUMN,
+    LAYOUT_REFLECTED_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     QUAL_DATE_COLUMN,
@@ -240,7 +241,7 @@ def editor_inputs(
     - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출/이설 완료 …)가 차지한 범위.
       저장 검증은 그런 행에도 캔버스 상한을 걸므로 영역을 그보다 줄이지 못하게 한다.
     """
-    target = status["레이아웃반영여부"].fillna(False).astype(bool)
+    target = status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
     on_floor = _floor_mask(status, floor)
     # 층 미정: 동까지 비었으면 모든 층, 동만 정해졌으면 그 동의 층마다 트레이에 뜬다.
     floorless = status["동"].isna() | (
@@ -1038,7 +1039,7 @@ def layout_warnings(
     대상은 편집기와 같다 — 레이아웃반영여부이고 좌표가 다 있는 호기(도면 이탈일이 지난 호기 제외).
     """
     placed = status.loc[
-        status["레이아웃반영여부"].fillna(False).astype(bool)
+        status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
         & status.loc[:, [*POSITION_COLUMNS, *SIZE_COLUMNS]].notna().all(axis=1)
         & status["동"].notna()
         & status["층"].notna()

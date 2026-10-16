@@ -1755,8 +1755,10 @@ def _column_shape_lines(connection: duckdb.DuckDBPyConnection, revision_id: str)
     여섯)만 이름을 적고, 그 밖의 값은 **종류 수와 행 수**로만 접는다(값을 찍지 않는다). 대조는
     앞뒤 공백을 떼고 대소문자를 가리지 않는다. 빠진 `설비가동현황`(`classification_3`)은 DB 에
     남아 있어 그대로 센다. 정지일정(`removal_date`)·반출/이설일정(`relocation_date`)이 둘 다 있는
-    행은 개편 전에는 막혀 있었으므로 0 이어야 한다 — 개편 뒤 처음 재면 그 수가 그대로 기존 데이터의
-    숫자·도면이 바뀌지 않는다는 근거다. 마이그레이션 0023 전에도 돈다(옛 컬럼만 본다).
+    행은 개편 전에는 막혀 있었으므로 **개편 전 마지막 리비전**(설비 마이그레이션 23 을 적용하기 전에
+    저장한 리비전 가운데 가장 늦은 것, 23 이 없으면 최신 리비전)에서 0 이어야 한다 — 그 수가 기존
+    데이터의 숫자·도면이 바뀌지 않는다는 근거다. 개편 뒤에는 두 날짜를 함께 저장할 수 있으므로 최신
+    리비전의 수는 정보 줄로 따로 적는다. 마이그레이션 0023 전에도 돈다(옛 컬럼만 본다).
     """
     master = "equipment_ops.equipment_master_snapshot"
     rows: list[list[str]] = []
@@ -1818,10 +1820,30 @@ def _column_shape_lines(connection: duckdb.DuckDBPyConnection, revision_id: str)
                 f"{count(f'{column} IS NOT NULL')} / {count(f'{column} < current_date')}",
             ]
         )
+    both = "removal_date IS NOT NULL AND relocation_date IS NOT NULL"
+    before = _pre_column_overhaul_revision(connection)
     rows.append(
         [
-            "**정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함",
-            count("removal_date IS NOT NULL AND relocation_date IS NOT NULL"),
+            "개편 전 마지막 리비전(설비 마이그레이션 23 적용 전 저장) 번호",
+            before[1] if before else "없음",
+        ]
+    )
+    rows.append(
+        [
+            "**개편 전 마지막 리비전의 정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함",
+            _safe_scalar(
+                connection,
+                f"SELECT count(*) FROM {master} WHERE revision_id = ? AND ({both})",
+                [before[0]],
+            )
+            if before
+            else "-",
+        ]
+    )
+    rows.append(
+        [
+            "최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보)",
+            count(both),
         ]
     )
     for status in QUAL_CONFIRMATION_STATUSES:
@@ -1845,6 +1867,36 @@ def _column_shape_lines(connection: duckdb.DuckDBPyConnection, revision_id: str)
         *_table(["항목", "수"], rows),
         "",
     ]
+
+
+def _pre_column_overhaul_revision(
+    connection: duckdb.DuckDBPyConnection,
+) -> tuple[str, str] | None:
+    """설비 마이그레이션 23(38열 개편)을 적용하기 전에 저장한 가장 늦은 리비전의 (id, 번호 글자).
+
+    23 이 아직 없으면 모든 리비전이 개편 전이라 최신 리비전이다. 리비전이 없거나 읽지 못하면 `None`.
+    두 시각은 모두 DuckDB 의 `current_timestamp` 기본값이라 같은 시계로 견준다.
+    """
+    try:
+        row = connection.execute(
+            """
+            WITH cut AS (
+                SELECT min(applied_at) AS applied_at
+                FROM equipment_meta.schema_migration
+                WHERE version = 23
+            )
+            SELECT revision_id, revision_no
+            FROM equipment_ops.revision, cut
+            WHERE cut.applied_at IS NULL OR created_at < cut.applied_at
+            ORDER BY revision_no DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    except duckdb.Error:
+        return None
+    if row is None:
+        return None
+    return str(row[0]), f"{int(row[1]):,}"
 
 
 def _module_groups(connection: duckdb.DuckDBPyConnection, revision_id: str) -> str:

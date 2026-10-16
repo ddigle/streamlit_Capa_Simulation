@@ -463,6 +463,26 @@ def test_units_leaving_inside_the_axis_without_a_new_unit_row_are_listed() -> No
     assert list(bridge.loc[[JUNE, JULY], "반출이설"] < 0) == [True, True]
 
 
+def test_a_same_day_stop_and_exit_is_a_stop_across_modules_and_an_exit_within_a_row() -> None:
+    """같은 날이면 정지가 먼저다 — 모듈 A 정지·모듈 B 반출/이설이 같은 날인 묶음의 ▼ 는 개편
+    전(정지 = 옛 반출)처럼 「정지」다(글자 차례면 「반출/이설」이 앞선다). 한 행에 두 날짜가 같은
+    날이면 그 행은 그날 바로 반출/이설 완료라 「반출/이설」이다."""
+    gone, qual, arrival = date(2026, 7, 5), date(2026, 3, 1), date(2026, 2, 1)
+    rows = [
+        _unit("MA", qual, arrival=arrival, ratio=0.5, parent="M", removal=gone),
+        _unit("MB", qual, arrival=arrival, ratio=0.5, parent="M", relocation=gone),
+        _unit("SAME", qual, arrival=arrival, removal=gone, relocation=gone),
+    ]
+
+    exits = _timeline(rows).exits.set_index("호기")
+
+    assert (exits.loc["M", "반출이설일"], exits.loc["M", "반출이설구분"]) == (gone, "정지")
+    assert (exits.loc["SAME", "반출이설일"], exits.loc["SAME", "반출이설구분"]) == (
+        gone,
+        "반출/이설",
+    )
+
+
 # ---------------------------------------------------------------------- 비가동 화살표·손실
 
 

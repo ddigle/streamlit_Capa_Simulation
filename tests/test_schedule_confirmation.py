@@ -158,6 +158,37 @@ def test_counts_are_units_and_a_unit_late_on_both_stages_counts_once() -> None:
     assert schedule_confirmation_notice(issues, processes=["없는 공정"]) is None
 
 
+def test_modules_of_one_unit_count_as_one_unit_but_are_flagged_box_by_box() -> None:
+    """대수 축은 행이 아니라 설비를 센다 — Main 설비로 묶은 모듈 넷이 걸려도 「미확인 1대」다.
+    모듈 하나만 걸려도 그 설비 한 대다(확인할 대상의 수라 몫으로 나누지 않는다). 「!」는
+    상자마다다."""
+    late = {"반입일정": "2026-10-01", "반입상태": "확정", "Main 설비": "APW01"}
+    master = _master(
+        *(_unit(f"APW01{module}", **late) for module in "ABCD"),
+        _unit("APW02A", **{**late, "Main 설비": "APW02"}),
+        _unit("APW02B", **{"반입일정": "2026-10-01", "반입상태": "완료", "Main 설비": "APW02"}),
+        _unit("EQ-1", 반입일정="2026-10-01", 반입상태="계획"),
+    )
+
+    issues = schedule_confirmation_issues(master, today=TODAY)
+
+    assert issues.loc[issues["설비명"].eq("APW01C"), "설비키"].tolist() == ["APW01"]
+    assert issues.loc[issues["설비명"].eq("EQ-1"), "설비키"].tolist() == ["EQ-1"]
+    assert confirmation_counts(issues) == {
+        UNCONFIRMED: 3,
+        MISSING_ACTUAL: 1,
+        STATUS_UPDATE_NEEDED: 0,
+    }
+    notice = schedule_confirmation_notice(issues)
+    assert notice is not None
+    assert notice.startswith("미확인 3대 (반입 3) — ")
+    # 호기 필터가 모듈 하나만 골라도 그 설비 한 대다.
+    assert confirmation_counts(issues, unit_ids=["APW01B", "APW01C"])[UNCONFIRMED] == 1
+    assert flagged_equipment(issues) == frozenset(
+        {"APW01A", "APW01B", "APW01C", "APW01D", "APW02A", "EQ-1"}
+    )
+
+
 def test_an_unknown_kind_is_refused() -> None:
     with pytest.raises(ValueError, match="확인구분"):
         flagged_equipment(schedule_confirmation_issues(_master(), today=TODAY), "지연")
@@ -201,3 +232,12 @@ def test_actual_record_warnings_name_each_kind_once() -> None:
     ]
     assert actual_record_warnings(_master(_unit("EQ-9"))) == []
     assert set(CONFIRMATION_KINDS) == {UNCONFIRMED, MISSING_ACTUAL, STATUS_UPDATE_NEEDED}
+
+
+def test_a_long_warning_writes_both_counts_with_thousands_separators() -> None:
+    many = _master(*(_unit(f"EQ-{index:04d}", 반입상태="완료") for index in range(1_006)))
+
+    (message,) = actual_record_warnings(many)
+
+    assert message.startswith("실적 누락 1,006건 — ")
+    assert message.endswith("EQ-0004(반입) 외 1,001건")

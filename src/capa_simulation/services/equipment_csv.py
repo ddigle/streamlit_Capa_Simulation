@@ -89,7 +89,7 @@ EQUIPMENT_CHOICE_ROWS: tuple[dict[str, str], ...] = (
         AREA_CODE_COLUMN: AREA_CODES[1],
         "투자구분": "2.5D",
         ARRIVAL_STATUS_COLUMN: "확정",
-        QUAL_STATUS_COLUMN: "완료",
+        QUAL_STATUS_COLUMN: "계획",
     },
     {
         AREA_CODE_COLUMN: AREA_CODES[2],
@@ -147,12 +147,14 @@ def equipment_csv_template() -> bytes:
                     "제진대일정": "2026-09-01",
                     "물류일정": "2026-09-03",
                     ARRIVAL_DATE_COLUMN: "2026-09-05",
-                    # 실적은 실제로 끝난 날이다. 오늘보다 늦으면 저장할 때 막힌다.
+                    # 실적은 실제로 끝난 날이다. 오늘보다 늦으면 저장할 때 막힌다. 끝난 단계는
+                    # 실적과 상태 「완료」를 함께 적는다 — 일정이 지났는데 실적이 비고 상태가
+                    # 계획·확정이면 「미확인」으로 알린다(`schedule_confirmation`).
                     ARRIVAL_ACTUAL_COLUMN: "2026-09-05",
                     ARRIVAL_STATUS_COLUMN: "완료",
                     QUAL_DATE_COLUMN: "2026-09-16",
-                    QUAL_ACTUAL_COLUMN: "",
-                    QUAL_STATUS_COLUMN: "계획",
+                    QUAL_ACTUAL_COLUMN: "2026-09-16",
+                    QUAL_STATUS_COLUMN: "완료",
                     STOP_DATE_COLUMN: "",
                     RELOCATION_DATE_COLUMN: "",
                     "반입/Qual 이력": "",
@@ -602,6 +604,12 @@ class _TableHeaders:
     obsolete: tuple[str, ...] = ()
 
 
+# 옛 36열 양식(2026-10-06 개편)에 없던 열 — 38열 개편(설비 DB `0023`)이 더한 실적·상태
+# 셋이다. 일부 열 붙여넣기(`_select_update_columns`)는 이 셋만 빠진 표를 「모든 열이 있는
+# 표」처럼 보고 모르는 열을 알림 한 줄로 넘긴다 — 사내의 옛 양식 엑셀에는 「No.」 같은
+# 보조 열이 붙어 있다.
+_COLUMNS_ADDED_AFTER_OLD36 = (ARRIVAL_ACTUAL_COLUMN, ARRIVAL_STATUS_COLUMN, QUAL_ACTUAL_COLUMN)
+
 _EQUIPMENT_HEADERS = _TableHeaders(
     "설비 마스터",
     EQUIPMENT_COLUMNS,
@@ -746,11 +754,14 @@ def _select_update_columns(
 
     - `설비명` 하나만 꼭 있어야 하고, 나머지는 있는 열만 계약 차례로 고른다(빈 칸을 채우지 않는다).
     - 설비명 말고 고를 열이 없으면 막는다 — 아무것도 바꾸지 않는 붙여넣기다.
-    - **모르는 머리글**: 계약 38열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 한
-      열이라도 빠졌으면(선택 컬럼 포함) 막는다 — 붙여넣지 않은 열은 기존 값을 그대로 두므로, 그
-      모르는 열이 빠진 열의 오타(「Qual일졍」·「메모-1」·「Memo1」)라면 사용자는 바꿨다고 믿는데
-      그 열은 그대로다. 오타와 상관없는 열은 이름만으로 가를 수 없다(「Memo1」은 「메모1」과 글자가
-      닮지 않았다).
+    - **모르는 머리글**: 계약 38열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 옛
+      36열 양식처럼 실적·상태 셋(`_COLUMNS_ADDED_AFTER_OLD36`)**만** 빠진 표도 같다 — 그 표는 옛
+      양식을 통째로 붙여넣은 것이고, 실적 셋과 닮은 이름은 `_reject_lookalike_headers` 가 이미
+      막았으며, 알림이 모르는 열마다 가장 닮은 빠진 열 이름을 붙인다. 그 밖의 열이 하나라도
+      빠졌으면(선택 컬럼 포함) 막는다 — 붙여넣지 않은 열은 기존 값을 그대로 두므로, 그 모르는 열이
+      빠진 열의 오타(「Qual일졍」·「메모-1」·「Memo1」)라면 사용자는 바꿨다고 믿는데 그 열은
+      그대로다. 오타와 상관없는 열은 이름만으로 가를 수 없다(「Memo1」은 「메모1」과 글자가 닮지
+      않았다).
       머리글도 값도 빈 열은 두 입구(`parse_clipboard_table`·`_read_csv_frame`)가 이미 뺐다.
     """
     headers = _EQUIPMENT_HEADERS
@@ -768,12 +779,17 @@ def _select_update_columns(
             f"바꿀지 {EQUIPMENT_ID_COLUMN}으로 찾습니다. 머리글 줄까지 함께 복사했는지 확인하세요."
         )
     unknown = [str(header) for header in frame.columns if header not in contract]
-    if unknown and missing:
+    # 옛 36열 꼴이어도 모르는 열이 빠진 실적·상태 열과 닮았으면(「반입싫적」) 그 열의
+    # 오타다 — 막는다.
+    uncovered = [column for column in missing if column not in _COLUMNS_ADDED_AFTER_OLD36]
+    misspelled = any(_closest_missing(header, missing) for header in unknown)
+    if unknown and (uncovered or misspelled):
         raise ValueError(
             f"{label}에 없는 열이 있습니다: {_describe_unknown_headers(unknown, missing)}. "
             "붙여넣지 않은 열은 기존 값을 그대로 두므로 이름이 틀린 열을 빼고 읽으면 바꾸려던 열이 "
             "그대로 남습니다 — 머리글을 설비 마스터 열 이름으로 고치거나 그 열을 빼고 다시 "
-            f"붙여넣으세요(설비 마스터 {len(contract)}개 열이 모두 있을 때만 모르는 열을 읽지 않고 "
+            f"붙여넣으세요(설비 마스터 {len(contract)}개 열이 모두 있거나, 옛 36열 양식처럼 "
+            f"{' · '.join(_COLUMNS_ADDED_AFTER_OLD36)}만 빠졌을 때만 모르는 열을 읽지 않고 "
             "넘깁니다)."
         )
     if unknown and notices is not None:
@@ -803,23 +819,33 @@ def _describe_unknown_headers(unknown: Sequence[str], missing: Sequence[str]) ->
     똑같이 닮아 엉뚱한 쪽을 가리킨다.
     """
 
-    def folded(header: str) -> str:
-        return compact_header(unicodedata.normalize("NFKC", header))
-
-    candidates = {folded(column): column for column in missing}
-    for old, new in LEGACY_EQUIPMENT_HEADER_ALIASES.items():
-        if new in missing:
-            candidates.setdefault(folded(old), new)
     described = []
     for header in unknown:
         blank = _BLANK_HEADER_POSITION.fullmatch(header)
         if blank:
             described.append(f"「(머리글 없음 · {int(blank.group(1)) + 1}번째 열)」")
             continue
-        close = difflib.get_close_matches(folded(header), list(candidates), n=1, cutoff=0.6)
-        hint = f"(「{candidates[close[0]]}」?)" if close else ""
+        close = _closest_missing(header, missing)
+        hint = f"(「{close}」?)" if close else ""
         described.append(f"「{header}」{hint}")
     return ", ".join(described)
+
+
+def _closest_missing(header: str, missing: Sequence[str]) -> str | None:
+    """모르는 머리글과 가장 닮은 빠진 열(옛 이름도 견준다). 닮은 것이 없거나 머리글이 빈
+    열이면 `None`."""
+    if _BLANK_HEADER_POSITION.fullmatch(header):
+        return None
+
+    def folded(name: str) -> str:
+        return compact_header(unicodedata.normalize("NFKC", name))
+
+    candidates = {folded(column): column for column in missing}
+    for old, new in LEGACY_EQUIPMENT_HEADER_ALIASES.items():
+        if new in missing:
+            candidates.setdefault(folded(old), new)
+    close = difflib.get_close_matches(folded(header), list(candidates), n=1, cutoff=0.6)
+    return candidates[close[0]] if close else None
 
 
 def _merge_by_keys(

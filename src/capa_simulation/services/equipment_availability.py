@@ -661,8 +661,14 @@ def build_milestone_transition_events(
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
     prepared = prepared.assign(**{UNIT_KEY_COLUMN: unit_keys(prepared)})
     # 정지일정은 다른 이름으로 한 번 더 싣는다 — 반출/이설 전환의 이전 단계가 「정지」인지 가른다.
-    # 녹이는(`melt`) 날짜 컬럼과 이름이 같으면 안 된다.
-    prepared = prepared.assign(**{_STOPPED_ON: prepared[STOP_DATE_COLUMN]})
+    # 녹이는(`melt`) 날짜 컬럼과 이름이 같으면 안 된다. 정지일정 = 반출/이설일정인 행은 그날 바로
+    # 「반출/이설 완료」라(전날은 「정지 예정」) 정지 단계를 거치지 않는다 — 정지 전환을 빼고
+    # 「가용/보관 → 반출/이설」 한 건으로 둔다. 두면 한 대가 그날 두 번 세어진다.
+    stop_dates = prepared[STOP_DATE_COLUMN]
+    same_day = stop_dates.notna() & stop_dates.eq(prepared[RELOCATION_DATE_COLUMN])
+    prepared = prepared.assign(
+        **{_STOPPED_ON: stop_dates, STOP_DATE_COLUMN: stop_dates.mask(same_day)}
+    )
     identity_columns = [
         EQUIPMENT_ID_COLUMN,
         "공정대분류",
@@ -696,10 +702,10 @@ def build_milestone_transition_events(
     events["이전단계"] = events["단계컬럼"].map(previous_stage).astype("string")
     events["전환단계"] = events["단계컬럼"].map(stage_by_column).astype("string")
     events["전환일"] = pd.to_datetime(events["전환일"], errors="raise")
-    # 정지한 뒤 자리를 비우는 호기는 반출/이설 전환의 이전 단계가 「정지」다.
+    # 정지한 뒤(전날까지) 자리를 비우는 호기는 반출/이설 전환의 이전 단계가 「정지」다.
     stopped_first = events["단계컬럼"].eq(RELOCATION_DATE_COLUMN) & pd.to_datetime(
         events[_STOPPED_ON]
-    ).le(events["전환일"]).fillna(False).astype("bool")
+    ).lt(events["전환일"]).fillna(False).astype("bool")
     events.loc[stopped_first, "이전단계"] = stage_by_column[STOP_DATE_COLUMN]
     # Qual상태는 Qual 단계에만 뜻이 있다. 다른 단계는 결측으로 두는데, 결측을 그대로
     # 넘기면 표에 "None" 이라는 글자가 찍혀 값이 있는 것처럼 보인다. 빈 칸으로 만든다.

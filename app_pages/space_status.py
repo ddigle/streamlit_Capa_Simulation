@@ -76,6 +76,7 @@ from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     LAYOUT_EXITED_COLUMN,
+    LAYOUT_REFLECTED_COLUMN,
     STATUS_EXITED,
     empty_downtime_schedule,
     empty_equipment_master,
@@ -386,7 +387,7 @@ has_supported_location = pd.Series(
     index=space_equipment.index,
 )
 located_equipment = space_equipment.loc[
-    space_equipment["레이아웃반영여부"].fillna(False)
+    space_equipment[LAYOUT_REFLECTED_COLUMN].fillna(False)
     & space_equipment["동"].notna()
     & space_equipment["층"].notna()
     & space_equipment[["X좌표", "Y좌표", "Xsize", "Ysize"]].notna().all(axis=1)

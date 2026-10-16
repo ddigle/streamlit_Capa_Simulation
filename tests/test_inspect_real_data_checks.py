@@ -283,9 +283,72 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     assert "| 설비가동현황(classification_3, 계약에서 빠짐) 값 있는 행 | 0 |" in output
     assert "| 정지일정(removal_date) 값 있는 행 / 오늘 전 | 1 / 1 |" in output
     assert "| 반출/이설일정(relocation_date) 값 있는 행 / 오늘 전 | 1 / 0 |" in output
-    assert "| **정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함 | 0 |" in output
+    # 픽스처는 마이그레이션 23 까지 올린 뒤 저장했다 — 개편 전 리비전이 없다.
+    assert "| 개편 전 마지막 리비전(설비 마이그레이션 23 적용 전 저장) 번호 | 없음 |" in output
+    assert (
+        "| **개편 전 마지막 리비전의 정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함 | - |"
+        in output
+    )
+    assert (
+        "| 최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 0 |"
+        in output
+    )
     assert "| Qual상태(qual_confirmation_status) = 완료 | 8 |" in output
     assert "| Qual상태 빈 칸 | 1 |" in output
+
+
+def test_the_both_dates_check_looks_at_the_last_revision_saved_before_0023(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """「0 이어야 함」은 개편 전 마지막 리비전만 잰다 — 개편 뒤에는 정지·반출/이설을 함께 저장할
+    수 있어(2026-10-16 결정) 최신 리비전의 수는 정보 줄이다. 시각만 옮겨 r1 을 0023 전, r2 를
+    뒤로 둔다."""
+    path = tmp_path / "equipment_availability.duckdb"
+    repository = DuckDBEquipmentRepository(path)
+    repository.initialize()
+    both = {"stop": "2026-03-01", "relocation": "2026-04-01"}
+    for count in (1, 2):
+        rows = [
+            _equipment_row(f"{SENTINEL}EQ-{index}", None, 1.0, **both) for index in range(count)
+        ]
+        repository.save_snapshot(
+            pd.DataFrame(columns=list(BASELINE_COLUMNS)),
+            pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS)),
+            pd.DataFrame(columns=list(DOWNTIME_COLUMNS)),
+        )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "UPDATE equipment_ops.revision SET created_at = CASE revision_no "
+            "WHEN 1 THEN TIMESTAMP '2026-01-01' ELSE TIMESTAMP '2026-03-01' END"
+        )
+        connection.execute(
+            "UPDATE equipment_meta.schema_migration SET applied_at = TIMESTAMP '2026-02-01' "
+            "WHERE version = 23"
+        )
+
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(path),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "| 개편 전 마지막 리비전(설비 마이그레이션 23 적용 전 저장) 번호 | 1 |" in output
+    assert (
+        "| **개편 전 마지막 리비전의 정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함 | 1 |"
+        in output
+    )
+    assert (
+        "| 최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 2 |"
+        in output
+    )
 
 
 def test_an_error_message_carrying_names_is_reported_by_kind_only(

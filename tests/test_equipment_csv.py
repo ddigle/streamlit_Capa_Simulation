@@ -1,5 +1,6 @@
 # Purpose: equipment csv 관련 정상·예외·회귀 동작을 검증한다.
 
+from datetime import date
 from io import BytesIO
 
 import pandas as pd
@@ -51,6 +52,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 
 BASELINE_HEADER = "\t".join(BASELINE_COLUMNS)
 
@@ -98,8 +100,8 @@ def test_equipment_csv_template_round_trips_with_38_columns() -> None:
     assert result.loc[0, "Area Code"] == "Main"
     assert result.loc[0, "반입실적"] == pd.Timestamp("2026-09-05")
     assert result.loc[0, "반입상태"] == "완료"
-    assert pd.isna(result.loc[0, "Qual실적"])
-    assert result.loc[0, "Qual상태"] == "계획"
+    assert result.loc[0, "Qual실적"] == pd.Timestamp("2026-09-16")
+    assert result.loc[0, "Qual상태"] == "완료"
     assert result.loc[0, "환산비"] == 1.0
 
 
@@ -117,6 +119,14 @@ def test_equipment_csv_template_lists_choice_rows_without_equipment_id() -> None
     # 예시 행과 안내 행을 합치면 두 상태 칸의 허용값이 모두 보인다.
     assert set(raw["Qual상태"]) == set(QUAL_CONFIRMATION_STATUSES)
     assert set(raw["반입상태"]) == set(ARRIVAL_STATUSES)
+
+
+def test_the_template_example_row_is_a_finished_unit_with_no_confirmation_warning() -> None:
+    """양식의 예시 행을 그대로 따라 쓴 호기에 일정 확인 알림이 뜨지 않는다 — 끝난 단계는 실적과
+    「완료」를 함께 적은 꼴이다."""
+    example = read_equipment_csv(equipment_csv_template())
+
+    assert schedule_confirmation_issues(example, today=date(2026, 10, 16)).empty
 
 
 def test_downtime_csv_template_has_no_id_and_round_trips() -> None:

@@ -185,6 +185,8 @@ NEW_UNIT_COLUMNS = (
 - `호기` 는 설비키(Main 설비, 없으면 설비명), `설비명` 은 묶음의 모듈 행을 「, 」로 잇는다.
 - `반입일정`·`Qual일정` 은 가장 늦은 모듈, `반출이설일` 은 가장 이른 정지·반출/이설일정이고
   `반출이설구분` 은 그 날짜가 온 컬럼 — 「정지」(정지일정)·「반출/이설」(반출/이설일정)이다.
+  같은 날이면 정지가 먼저고, 한 행에 두 날짜가 같은 날이면 그 행은 반출/이설이다
+  (`_earliest_exit`).
 - `모듈별 Qual` 은 모듈이 둘 이상일 때 `(설비명, Qual)` 튜플이다(풍선용, 하나면 빈 튜플).
 - `축 안` 은 기여 시작(Qual 다음 날)의 생산월이 축 안인가.
 """
@@ -789,15 +791,28 @@ def exiting_unit_rows(
 
 
 def _earliest_exit(members: Sequence[Mapping[str, object]]) -> tuple[date | None, str | None]:
-    found: list[tuple[date, str]] = []
+    """설비(모듈 묶음)가 처음 나가는 날과 그 날짜가 온 컬럼의 구분(`EXIT_KINDS`).
+
+    같은 날이면 `EXIT_KINDS` 차례(정지 먼저)로 고른다 — 글자 차례로 고르면 「반출/이설」이
+    앞서, 모듈마다 따로 적은 정지·반출/이설이 같은 날인 묶음의 ▼ 가 개편 전(정지 = 옛
+    반출)과 달라진다. 한 행에 두 날짜가 같은 날이면 그 행은 그날 바로 「반출/이설 완료」라
+    (정지를 거치지 않는다) 반출/이설 하나로 본다.
+    """
+    found: list[tuple[date, int, str]] = []
     for member in members:
-        for column, label in EXIT_KINDS.items():
-            day = _as_date(member[column])
-            if day is not None:
-                found.append((day, label))
+        days = {column: _as_date(member[column]) for column in EXIT_KINDS}
+        same_day = days[STOP_DATE_COLUMN] is not None and (
+            days[STOP_DATE_COLUMN] == days[RELOCATION_DATE_COLUMN]
+        )
+        for rank, (column, label) in enumerate(EXIT_KINDS.items()):
+            day = days[column]
+            if day is None or (same_day and column == STOP_DATE_COLUMN):
+                continue
+            found.append((day, rank, label))
     if not found:
         return None, None
-    return min(found)
+    day, _, label = min(found)
+    return day, label
 
 
 def unit_events(timeline: ProcessEquipmentTimeline, plan_units: pd.DataFrame) -> pd.DataFrame:

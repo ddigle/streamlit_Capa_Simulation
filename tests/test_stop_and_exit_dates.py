@@ -8,9 +8,10 @@
 - 두 날짜를 함께 적을 수 있다(정지 ≤ 반출/이설). 개편 전에는 함께 적을 수 없어 기존 행은 둘 중
   하나만 있다 — 그래서 **기존 데이터의 숫자·도면은 바뀌지 않는다.**
 
-아래 `*_BEFORE` 블록은 개편 **전** 코드(HEAD `fafb430`)로 같은 합성 fleet 을 돌려 얻은 결과를
-그대로 박은 것이다. 바뀐 것은 상태 이름 넷(반출 예정 → 정지 예정, 반출 완료 → 정지, 이설 예정 →
-반출/이설 예정, 이설 완료 → 반출/이설 완료)과 분류 대수 컬럼 이름뿐이고, 숫자는 한 칸도 같아야 한다.
+아래 `*_BEFORE` 블록은 개편 **전** 규칙(정지·반출/이설 가운데 하나만 적던 때)으로 같은 합성
+fleet 을 돌려 얻은 결과를 그대로 박은 것이다. 바뀐 것은 상태 이름 넷(반출 예정 → 정지 예정,
+반출 완료 → 정지, 이설 예정 → 반출/이설 예정, 이설 완료 → 반출/이설 완료)과 분류 대수 컬럼
+이름뿐이고, 숫자는 한 칸도 같아야 한다.
 """
 
 from __future__ import annotations
@@ -528,3 +529,31 @@ def test_the_exit_transition_of_a_stopped_unit_comes_from_the_stop_stage() -> No
     ]
     # Qual상태는 Qual 단계에만 뜻이 있다.
     assert events["Qual상태"].tolist() == ["", ""]
+
+
+def test_a_unit_stopping_and_leaving_on_the_same_day_makes_one_transition() -> None:
+    """정지일정 = 반출/이설일정이면 전날 「정지 예정」, 그날 「반출/이설 완료」다 — 정지 단계를
+    거치지 않으므로 전환은 「가용/보관 → 반출/이설」 한 건이다(두 건이면 단계별 건수에서 한 대가
+    두 번 세어진다)."""
+    same = {STOP_DATE_COLUMN: "2026-06-01", RELOCATION_DATE_COLUMN: "2026-06-01"}
+    master = pd.DataFrame(
+        [_unit("G-SAME", 기존설비여부="Y", **same)], columns=list(EQUIPMENT_COLUMNS)
+    )
+    statuses = [
+        build_space_equipment_status(master, _no_downtime(), as_of=date.fromisoformat(day)).loc[
+            0, "상태"
+        ]
+        for day in ("2026-05-31", "2026-06-01")
+    ]
+
+    events = build_milestone_transition_events(
+        master,
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 6, 30),
+        as_of=date(2026, 6, 15),
+    )
+
+    assert statuses == ["정지 예정", "반출/이설 완료"]
+    assert events[["전환단계", "이전단계", "전환일"]].values.tolist() == [
+        ["반출/이설", "가용/보관", pd.Timestamp("2026-06-01")],
+    ]

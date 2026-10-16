@@ -16,6 +16,12 @@
 편집본도 그대로 받는다** — 필요한 칸만 읽고, 못 읽는 날짜는 빈 칸으로, 없는 컬럼은 모두 빈 칸으로
 본다(옛 편집본에는 실적·반입상태 칸이 없다). 설비명이 빈 행은 검증이 버리는 행이라 보지 않는다.
 
+**대수는 행이 아니라 설비를 센다.** 결과 행에 `설비키`(`equipment_units.unit_keys` — Main
+설비로 묶은 모듈 행은 그 Main 설비)를 싣고, 「N대」는 걸린 설비키의 수다. 모듈 넷 가운데
+하나만 걸려도, 넷 다 걸려도 그 설비 한 대다 — 확인할 대상의 수라 지분(몫)으로 나누지
+않는다. 「N건」(저장 전 경고)은 (호기, 단계) 행 수이고, Space 「!」(`flagged_equipment`)는
+상자마다 묻으므로 설비명이다.
+
 지연(상태 「지연」)은 여기서 고르지 않는다 — 실적이 들어올 때까지 이어지는 구간이라 시점마다
 달라지고, Space 도면의 빨강 채우기가 맡는다.
 """
@@ -35,6 +41,7 @@ from capa_simulation.services.equipment_contract import (
     OPEN_STAGE_STATUSES,
     ActualStage,
 )
+from capa_simulation.services.equipment_units import UNIT_KEY_COLUMN, unit_keys
 
 PROCESS_COLUMN: Final = "공정소분류"
 CONFIRMATION_KIND_COLUMN: Final = "확인구분"
@@ -52,6 +59,7 @@ CONFIRMATION_KINDS: Final = (UNCONFIRMED, MISSING_ACTUAL, STATUS_UPDATE_NEEDED)
 CONFIRMATION_COLUMNS: Final = (
     EQUIPMENT_ID_COLUMN,
     PROCESS_COLUMN,
+    UNIT_KEY_COLUMN,
     CONFIRMATION_KIND_COLUMN,
     STAGE_COLUMN,
     SCHEDULE_COLUMN,
@@ -65,9 +73,10 @@ _EXAMPLES: Final = 5
 def schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
     """설비 마스터(검증 전 편집본도 받는다)에서 세 알림에 걸리는 (호기, 단계)를 고른다.
 
-    돌려주는 칸은 `CONFIRMATION_COLUMNS`(설비명·공정소분류·확인구분·단계·일정·실적·상태)다. 한 행이
-    한 (호기, 단계, 확인구분)이다 — 반입과 Qual 이 둘 다 미확인인 호기는 두 행이다. 차례는
-    확인구분(`CONFIRMATION_KINDS`) → 단계(반입 → Qual) → 일정(빈 칸은 뒤) → 설비명이다.
+    돌려주는 칸은 `CONFIRMATION_COLUMNS`(설비명·공정소분류·설비키·확인구분·단계·일정·실적·
+    상태)다. 한 행이 한 (호기, 단계, 확인구분)이다 — 반입과 Qual 이 둘 다 미확인인 호기는 두
+    행이다. 차례는 확인구분(`CONFIRMATION_KINDS`) → 단계(반입 → Qual) → 일정(빈 칸은 뒤) →
+    설비명이다.
     """
     return _issues(equipment, kinds=CONFIRMATION_KINDS, today=pd.Timestamp(today))
 
@@ -84,13 +93,14 @@ def confirmation_counts(
     processes: Collection[str] | None = None,
     unit_ids: Collection[str] | None = None,
 ) -> dict[str, int]:
-    """확인구분별 **호기 수**(설비명 기준, 셋 다 늘 있다). 반입·Qual 이 함께 걸린 호기는 한 대다.
+    """확인구분별 **설비 수**(설비키 기준, 셋 다 늘 있다). 반입·Qual 이 함께 걸린 설비도,
+    모듈 여럿이 걸린 설비도 한 대다.
 
-    `processes` 를 주면 그 공정소분류만, `unit_ids` 를 주면 그 설비명만 센다.
+    `processes` 를 주면 그 공정소분류만, `unit_ids` 를 주면 그 설비명(행)만 센다.
     """
     rows = _scoped(issues, processes, unit_ids)
     return {
-        kind: int(rows.loc[rows[CONFIRMATION_KIND_COLUMN].eq(kind), EQUIPMENT_ID_COLUMN].nunique())
+        kind: int(rows.loc[rows[CONFIRMATION_KIND_COLUMN].eq(kind), UNIT_KEY_COLUMN].nunique())
         for kind in CONFIRMATION_KINDS
     }
 
@@ -111,16 +121,16 @@ def schedule_confirmation_notice(
 ) -> str | None:
     """「미확인 N대 (반입 a · Qual b) — …」 한 줄. 미확인이 없으면 `None`(그리지 않는다).
 
-    괄호 안은 단계별 호기 수이고 0 인 단계는 적지 않는다. 반입·Qual 이 함께 걸린 호기는 양쪽에
-    한 번씩 들어 괄호 안의 합이 앞의 대수보다 클 수 있다.
+    앞의 대수와 괄호 안은 설비 수(설비키 기준)이고 0 인 단계는 적지 않는다. 반입·Qual 이 함께 걸린
+    설비는 양쪽에 한 번씩 들어 괄호 안의 합이 앞의 대수보다 클 수 있다.
     """
     rows = _scoped(issues, processes, unit_ids)
     unconfirmed = rows.loc[rows[CONFIRMATION_KIND_COLUMN].eq(UNCONFIRMED)]
-    total = int(unconfirmed[EQUIPMENT_ID_COLUMN].nunique())
+    total = int(unconfirmed[UNIT_KEY_COLUMN].nunique())
     if total == 0:
         return None
     per_stage = [
-        (stage.label, int(group[EQUIPMENT_ID_COLUMN].nunique()))
+        (stage.label, int(group[UNIT_KEY_COLUMN].nunique()))
         for stage in ACTUAL_STAGES
         for group in (unconfirmed.loc[unconfirmed[STAGE_COLUMN].eq(stage.label)],)
     ]
@@ -152,7 +162,7 @@ def actual_record_warnings(equipment: pd.DataFrame) -> list[str]:
                 strict=True,
             )
         ]
-        more = f" 외 {len(rows) - _EXAMPLES}건" if len(rows) > _EXAMPLES else ""
+        more = f" 외 {len(rows) - _EXAMPLES:,}건" if len(rows) > _EXAMPLES else ""
         messages.append(
             f"{kind} {len(rows):,}건 — {explanation}(저장은 됩니다): {', '.join(examples)}{more}"
         )
@@ -173,6 +183,7 @@ def _issues(
         return _empty()
     frame = equipment.loc[named]
     names = names.loc[named]
+    keys = unit_keys(frame)
     processes = (
         frame[PROCESS_COLUMN].astype("string").str.strip()
         if PROCESS_COLUMN in frame.columns
@@ -192,6 +203,7 @@ def _issues(
                     {
                         EQUIPMENT_ID_COLUMN: names.loc[chosen],
                         PROCESS_COLUMN: processes.loc[chosen],
+                        UNIT_KEY_COLUMN: keys.loc[chosen],
                         CONFIRMATION_KIND_COLUMN: kind,
                         STAGE_COLUMN: stage.label,
                         SCHEDULE_COLUMN: schedule.loc[chosen],
@@ -279,6 +291,7 @@ def _typed(frame: pd.DataFrame) -> pd.DataFrame:
         {
             EQUIPMENT_ID_COLUMN: "string",
             PROCESS_COLUMN: "string",
+            UNIT_KEY_COLUMN: "string",
             CONFIRMATION_KIND_COLUMN: "string",
             STAGE_COLUMN: "string",
             SCHEDULE_COLUMN: "datetime64[ns]",
