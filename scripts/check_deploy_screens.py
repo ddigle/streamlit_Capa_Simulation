@@ -2229,7 +2229,8 @@ def check_sidebar_groups(screen: Screen) -> str:
     """사이드바 계산 그룹 셋 — Static Capa · Execution Management · Dynamic Capa 가 그 차례로
     서고 상자마다 하위 화면 수가 정한 대로인가, 상자 제목이 줄바꿈·말줄임 없이 한 줄로 보이는가
     (「Execution Management」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
-    상자를 펴지 않는다."""
+    상자를 펴지 않는다. 사이드바는 기본 폭 그대로 잰다 — 사용자가 사이드바를 좁게 끌면(약 232px
+    아래) 그 제목은 접히고, 그것은 받아들인 한계라 여기서 재지 않는다."""
     screen.open_home()
     slugs = [slug for slug, _, _ in SIDEBAR_GROUP_BOXES]
     found = screen.wait_for(

@@ -627,8 +627,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭에서 그리면 `go.Table` 머리글이 셀 가운데를 놓치고 `staticPlot` 이라 그대로 굳는다.
     `tests/test_hidden_tab_rendering.py` 가 `render_home_figures(` 까지 그물에 넣어 둔다.
   - 대당 Capa·소요대수는 HOME 전용이 아니다. `HomeSimulationCacheKey` 의 앞 네 칸이
-    `ScenarioCacheKey` 와 같은 자리라 `cache_key[:4]` 로 Static Capa 다섯 페이지와 한 칸을
-    나눠 쓴다. 이 순서를 바꾸면 두 화면이 조용히 따로 계산한다.
+    `ScenarioCacheKey` 와 같은 자리라 `cache_key[:4]` 로 Static Capa 화면들·공정 Capa 상세와
+    한 칸을 나눠 쓴다. 이 순서를 바꾸면 두 화면이 조용히 따로 계산한다.
   - `EDP 포함` 의 기본값은 **끔**이다. 바꿀 때는 `home_state.HOME_TOGGLE_DEFAULTS`를
     고친다. 첫 계산과 위젯이 이 선언 한 곳을 함께 읽는다.
   - `선행 B/O` 를 켜면 공용 선행 B/O 프로필로 변동률을 내 계획·확보율에 건다(2026-10-06 사용자
@@ -5449,8 +5449,9 @@ RQ_MODULE
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 위와 같은 키 방침의
    `simulation_cache` 래퍼(`get_required_shortening_for_target`·`get_process_equipment_timeline`)로만 부르고,
    필요단축일정 탭의 공용 조회 조건(`0019`)·기준선(`0021`)은 읽지도 쓰지도 않는다. 설비 DB 를 여는
-   시뮬레이션 쪽 페이지는 둘이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행관리,
-   읽기만). 실행관리 머리는 첫 판에서 어느 DB 도 열지 않는다.
+   시뮬레이션 쪽 페이지는 셋이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행관리,
+   읽기만), 표준 대비 재공 현황(Dynamic, 표준 목표의 주차별 가용대수를 읽기만). 실행관리 머리는 첫 판에서
+   어느 DB 도 열지 않는다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
