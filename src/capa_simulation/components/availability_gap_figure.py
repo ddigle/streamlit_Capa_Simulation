@@ -11,8 +11,10 @@
 값이다 — 확보율 교차검증·필요단축일정·공정 Capa 상세 ② 와도 같다. 대수(몇 대) 축은 「호기 목록」의
 `대수` 칸이다.
 
-GAP 은 막대 위에 숫자로 적는다. 부호만 보고 색을 고른다 — 좋고 나쁨이 아니라 방향이다.
-맞댈 수 없는 달(「—」)은 GAP 글자를 적지 않는다.
+GAP 은 막대 위에 숫자로 적는다. 글자와 색은 시트의 GAP 가용 칸과 같은 함수로 만든다
+(`sheet_value_text`·`gap_text_color` — 마이너스 U+2212, 2자리로 0 이 되는 0 아닌 값은 3자리, 0 으로
+적히면 흐린 글자). 부호만 보고 색을 고른다 — 좋고 나쁨이 아니라 방향이다. 맞댈 수 없는
+달(「—」)은 GAP 글자를 적지 않는다.
 
 **화면 라벨은 「일할」이다.** 코드와 문서는 계속 「안분」이라 적지만 범례·설명은 사용자가
 고른 말을 쓴다 — 같은 뜻이다(날짜 비율로 나눠 세는 것).
@@ -32,10 +34,13 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
+from capa_simulation.components.availability_sheet_canvas import (
+    gap_text_color,
+    sheet_value_text,
+)
 from capa_simulation.components.plotly_layout import (
     add_figure_outer_border,
     chart_canvas_layout,
-    delta_color,
     flush_layout_items,
 )
 from capa_simulation.design import tokens
@@ -144,13 +149,13 @@ def build_availability_gap_figure(view: SheetView) -> go.Figure:
         {
             "x": index,
             "y": max(dynamic_value, static_value),
-            "text": f"{gap:+.2f}",
+            "text": sheet_value_text(ROW_GAP_AVAILABLE, gap),
             "showarrow": False,
             "xanchor": "center",
             "yanchor": "bottom",
             "yshift": 6,
             "font": {
-                "color": delta_color(f"{gap:+.2f}"),
+                "color": gap_text_color(gap),
                 "size": _BAR_FONT_SIZE,
                 "family": tokens.FONT_FAMILY_NUMERIC,
             },

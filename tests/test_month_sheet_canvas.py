@@ -26,6 +26,7 @@ from capa_simulation.components.month_sheet_canvas import (
     VALUE_ROW_HEIGHT_PX,
     Cell,
     Row,
+    fine_one,
     month_figure,
     one,
     signed_one,
@@ -154,3 +155,24 @@ def test_signed_one_adds_one_digit_only_when_rounding_would_hide_the_value(
     value: float | None, digits: int, expected: str
 ) -> None:
     assert signed_one(value, digits) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "digits", "expected"),
+    [
+        (0.0, 2, "0.00"),
+        (12.733, 2, "12.73"),
+        (1234.5, 2, "1,234.50"),
+        (0.0032, 2, "0.003"),
+        (-0.0032, 2, "-0.003"),
+        (0.0004, 2, "0.00"),
+        (-0.0004, 2, "0.00"),
+        (None, 2, "—"),
+    ],
+)
+def test_fine_one_follows_the_signed_digit_rule_without_a_sign(
+    value: float | None, digits: int, expected: str
+) -> None:
+    """부호 없는 칸도 그 자리로 0 이 되는 0 아닌 값은 한 자리 더 적는다 — 「0.00」 으로 적힌 칸에
+    값이 숨지 않게."""
+    assert fine_one(value, digits) == expected

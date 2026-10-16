@@ -13,7 +13,8 @@
 - 값은 소수 2자리(보유·가용), 대여·GAP 은 부호를 붙인다(마이너스는 U+2212). 2자리로 0 이 되는 0 아닌
   값은 3자리다. 풍선은 3자리와 식이다.
 - 「—」 칸은 흐린 글자에 풍선으로 까닭을 적는다. 머리 칸은 누를 수 없다.
-- 고른 칸(`selected`)은 `ACCENT` 2px 테두리다(지금 보는 달의 열 테두리는 없다).
+- 고른 칸(`selected`)은 `ACCENT` 2px 테두리와 굵은 글자다(지금 보는 달의 열 테두리는 없다).
+- 값 줄 라벨은 구획 제목보다 12px 들인다(글자 크기는 그대로). 구획 제목 세부 글은 한 줄이다.
 
 표적의 `customdata` 는 엔진 그대로 `(YYYYMM, 행 id, 풍선)` 이다. 그림의 `layout.meta` 에 칸 누름
 세대 (`generation`)를 싣는다 — 칸을 누를 때마다 그림 내용이 달라져 브라우저가 새 그림으로
@@ -36,12 +37,13 @@ from capa_simulation.components.month_sheet_canvas import (
     HEADER_HEIGHT_PX,
     KIND_HEADER,
     KIND_VALUE,
+    MINUS,
     VALUE_ROW_HEIGHT_PX,
     Cell,
     Row,
+    fine_one,
     label_figure,
     month_figure,
-    one,
     signed_one,
     stack_rows,
     title_row,
@@ -76,6 +78,7 @@ __all__ = [
     "ROW_HEADER",
     "SHEET_DIGITS",
     "STATIC_TITLE_DETAIL",
+    "VALUE_LABEL_INDENT_PX",
     "AvailabilitySheetCanvas",
     "build_availability_sheet_canvas",
     "gap_text_color",
@@ -84,10 +87,12 @@ __all__ = [
 ]
 
 ROW_HEADER: Final = "header"
-# 칸 글자 자릿수(보유·가용). 공정 Capa 상세는 1자리 — 같은 값이 두 화면에서 자릿수만 다르다.
+# 칸 글자 자릿수. 공정 Capa 상세는 1자리 — 같은 값이 두 화면에서 자릿수만 다르다.
 SHEET_DIGITS: Final = 2
 HOVER_DIGITS: Final = 3
-STATIC_TITLE_DETAIL: Final = "저장 리비전 · RQ_EQP_OWN·LENT·AVBL · 대수"
+# 구획 제목 세부 글은 라벨 칸 한 줄에 든다(`title_detail_lines` 가 한 줄로 낸다). 저장 리비전이라는
+# 출처는 근거 카드가 적는다.
+STATIC_TITLE_DETAIL: Final = "RQ_EQP_OWN·LENT·AVBL · 대수"
 GAP_TITLE_DETAIL: Final = "음수 = 기준정보가 많음"
 GROUP_TITLES: Final[Mapping[str, str]] = {
     "static": "Static · 기준정보",
@@ -105,6 +110,8 @@ REASON_TEXTS: Final[Mapping[str, str]] = {
     REASON_STATIC_UNREADABLE: "Static 을 읽지 못해 맞대지 않습니다",
 }
 _SIGNED_ROWS: Final = frozenset({ROW_STATIC_LENT, ROW_SCHEDULE_LENT, *GAP_ROWS})
+# 값 줄(보유·대여·가용) 라벨을 구획 제목보다 들인다 — 글자 크기는 그대로다.
+VALUE_LABEL_INDENT_PX: Final = 12
 
 
 class AvailabilitySheetCanvas(NamedTuple):
@@ -123,17 +130,24 @@ def reason_text(reason: str | None) -> str:
 
 
 def sheet_value_text(row: str, value: float | None, digits: int = SHEET_DIGITS) -> str:
-    """칸 글자 — 보유·가용은 그대로, 대여·GAP 은 부호를 붙인다. 「—」 면 None."""
+    """칸 글자 — 보유·가용은 그대로, 대여·GAP 은 부호를 붙인다. 값이 없으면 「—」.
+
+    아홉 행 모두 `digits` 자리로 0 이 되는 0 아닌 값은 한 자리 더 적는다(`fine_one`·`signed_one`).
+    """
     if value is None:
         return EMPTY
-    return signed_one(value, digits) if row in _SIGNED_ROWS else one(value, digits)
+    return signed_one(value, digits) if row in _SIGNED_ROWS else fine_one(value, digits)
 
 
-def gap_text_color(value: float | None) -> str:
-    """GAP 글자색 — 증감 방향만 본다. 반올림해 0 이면 흐린 글자다."""
-    if value is None or round(value, 9) == 0:
-        return tokens.TEXT_MUTED
-    return tokens.DELTA_INCREASE if value > 0 else tokens.DELTA_DECREASE
+def gap_text_color(value: float | None, digits: int = SHEET_DIGITS) -> str:
+    """GAP 글자색 — 증감 방향만 본다. **적힌 글자로 고른다** — 칸에 0 으로 적히는 값은 흐린
+    글자다(아주 작은 값이 「0.00」 인데 증감색이면 읽는 사람이 까닭을 찾는다)."""
+    text = signed_one(value, digits)
+    if text.startswith("+"):
+        return tokens.DELTA_INCREASE
+    if text.startswith(MINUS):
+        return tokens.DELTA_DECREASE
+    return tokens.TEXT_MUTED
 
 
 def build_availability_sheet_canvas(
@@ -166,11 +180,11 @@ def build_availability_sheet_canvas(
             month_fill=tokens.SUMMARY_SUPPLY_SURFACE,
         )
     )
-    rows += [_value_row(view, axis, row, supply=True) for row in STATIC_ROWS]
+    rows += [_value_row(view, axis, row, selected, supply=True) for row in STATIC_ROWS]
     rows.append(title_row("sched", GROUP_TITLES["sched"], schedule_detail))
-    rows += [_value_row(view, axis, row, supply=False) for row in SCHEDULE_ROWS]
+    rows += [_value_row(view, axis, row, selected, supply=False) for row in SCHEDULE_ROWS]
     rows.append(title_row("gap", GROUP_TITLES["gap"], GAP_TITLE_DETAIL))
-    rows += [_value_row(view, axis, row, supply=False) for row in GAP_ROWS]
+    rows += [_value_row(view, axis, row, selected, supply=False) for row in GAP_ROWS]
 
     height = stack_rows(rows)
     position = {month: index for index, month in enumerate(axis)}
@@ -210,19 +224,30 @@ def _header_row(process_label: str) -> Row:
     )
 
 
-def _value_row(view: SheetView, axis: list[int], row_id: str, *, supply: bool) -> Row:
+def _value_row(
+    view: SheetView,
+    axis: list[int],
+    row_id: str,
+    selected: tuple[int, str] | None,
+    *,
+    supply: bool,
+) -> Row:
     row = Row(
         row_id,
         KIND_VALUE,
         VALUE_ROW_HEIGHT_PX,
         label=ROW_ITEMS[row_id],
+        label_indent=VALUE_LABEL_INDENT_PX,
         label_fill=tokens.SUMMARY_SUPPLY_CLASSIFICATION
         if supply
         else tokens.SURFACE_CLASSIFICATION,
         month_fill=tokens.SUMMARY_SUPPLY_SURFACE if supply else None,
     )
     for index, month in enumerate(axis):
-        row.cells[index] = _cell(view, row_id, month)
+        cell = _cell(view, row_id, month)
+        # 고른 칸은 테두리에 더해 글자를 굵게 한다.
+        cell.bold = selected == (month, row_id)
+        row.cells[index] = cell
     return row
 
 
@@ -245,7 +270,7 @@ def _cell(view: SheetView, row: str, month: int) -> Cell:
 def _three(value: float | None, *, signed: bool = False) -> str:
     if value is None:
         return EMPTY
-    return signed_one(value, HOVER_DIGITS) if signed else one(value, HOVER_DIGITS)
+    return signed_one(value, HOVER_DIGITS) if signed else fine_one(value, HOVER_DIGITS)
 
 
 def _hover(view: SheetView, row: str, month: int, head: str) -> str:

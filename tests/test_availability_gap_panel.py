@@ -301,7 +301,8 @@ def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
         "가용(일할·환산)": [1.5],
         "Static(기준정보)": [6.0],
     }
-    assert chart["layout"]["annotations"][0]["text"] == "-1.50"
+    # 그림 GAP 글자는 시트 GAP 가용 칸과 같은 꼴이다(마이너스 U+2212).
+    assert chart["layout"]["annotations"][0]["text"] == "−1.50"
 
     _select_view(app, "분류별 내역")
     assert has_sheet(app)
@@ -634,10 +635,21 @@ def test_a_clicked_cell_lists_its_units_and_adds_up_to_the_cell() -> None:
     assert units["가용"].sum() == pytest.approx(4.5)
     assert lines["가용"].iloc[-1] == pytest.approx(4.5)  # 합계 줄
 
+    # 빈 칸(기존보유 줄의 환산비·일수, 합계 줄의 일수)은 「None」 이 아니라 「—」 로 적힌다. 공정
+    # 하나면 `공정` 칸은 없다.
+    assert app.dataframe[0].proto.placeholder == "—"
+    assert "공정" not in lines.columns
+    days = lines["실제 기여일수"].isna()
+    assert bool(days.iloc[0]) and bool(days.iloc[-1])  # 기존보유 줄 · 합계 줄
+
     open_cell(app, MONTH, ROW_SCHEDULE_OWNED)
     app.run()
     (lines,) = _evidence(app)
     assert _units(lines)["보유"].sum() == pytest.approx(4.5)
+    # 보유 칸도 공정 하나면 공정 Capa 상세 ④ 로 가는 길을 적는다(AppTest 에는 페이지가 없어 캡션).
+    links = [item.proto.label for item in app.get("page_link")]
+    captions = " ".join(item.value for item in app.caption)
+    assert any("비가동 화살표" in label for label in links) or "비가동 화살표" in captions
 
     # Static 칸은 기준정보라 호기 표가 없다(공정 하나면 식 한 줄과 출처).
     open_cell(app, MONTH, ROW_STATIC_AVAILABLE)
@@ -869,7 +881,18 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
     open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
     assert not app.exception
-    assert set(_units(_evidence(app)[0])["공정"]) == {"표시-DA"}
+    # 공정 하나면 근거 카드 표에 `공정` 칸이 없고 제목이 표시명을 적는다.
+    assert "공정" not in _evidence(app)[0].columns
+    assert "표시-DA" in " ".join(item.value for item in app.markdown)
+
+    # 전체 합계면 근거 카드 호기 표의 `공정` 칸이 표시명이다.
+    app.selectbox(key=PROCESS_FILTER_KEY).select("전체 합계").run()
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
+    app.run()
+    assert not app.exception
+    assert "표시-DA" in set(_units(_evidence(app)[0])["공정"])
+    assert "Die Attach" not in set(_units(_evidence(app)[0])["공정"])
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception

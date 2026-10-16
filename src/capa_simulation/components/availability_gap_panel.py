@@ -18,11 +18,12 @@ GAP 세 행을 공정 Capa 상세 결합 캔버스 꼴(`availability_sheet_canva
 으로 바꾸면 상태별 기여(입고 예정·셋업 진행중·보관 …)를 긴 표로 본다.
 
 **칸 누름** — 콜백(`pick_gap_sheet_cell`)이 세션 칸에 (범위 지문, 달, 행 id)를 적는다. 같은 칸을
-다시 누르면 닫고(닫기 단추는 없다), 빈 선택(더블클릭 등)도 닫는다. 범위 지문이 지금 범위와 다르면
-지난 칸은 무시한다 — 다른 공정으로 따라가지 않는다. 누를 때마다 세대(`GAP_SHEET_GENERATION_KEY`)를
-올려 그림 `layout.meta` 에 싣는다 — 그림 내용이 늘 새로워 브라우저가 지난 선택 상태를 들고 오지
-않는다(같은 그림으로 되돌아오면 남은 선택 때문에 첫 누름이 선택 해제가 되거나 값이 같아 이벤트가
-오지 않는다).
+다시 누르면 닫는다 — **닫는 길은 이것뿐이다**(닫기 단추는 없다). 빈 선택도 닫지만 방어용 갈래다 —
+누를 때마다 그림이 새 요소라 브라우저에 풀 선택이 남지 않아 더블클릭은 빈 선택을 보내지 않는다.
+범위 지문이 지금 범위와 다르면 지난 칸은 무시한다 — 다른 공정으로 따라가지 않는다. 누를 때마다
+세대(`GAP_SHEET_GENERATION_KEY`)를 올려 그림 `layout.meta` 에 싣는다 — 그림 내용이 늘 새로워
+브라우저가 지난 선택 상태를 들고 오지 않는다(같은 그림으로 되돌아오면 남은 선택 때문에 첫 누름이
+선택 해제가 되거나 값이 같아 이벤트가 오지 않는다).
 
 **분류별 내역은 설비 마스터의 컬럼으로 호기를 좁혀 더할 수 있다**(`호기 필터`, 2026-09-29 사용자
 요청). 필터가 걸리면 설비 일정 기준 세 행은 걸린 호기만(실제·반사실 구간을 같은 호기로 좁힌다,
@@ -42,6 +43,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
+from streamlit.elements.lib.column_types import ColumnConfig
 from streamlit.errors import StreamlitPageNotFoundError
 
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
@@ -70,7 +72,7 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLLBAR_KEY,
 )
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
-from capa_simulation.components.month_sheet_canvas import canvas_point
+from capa_simulation.components.month_sheet_canvas import EMPTY, canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scroll_shell import (
@@ -205,7 +207,7 @@ _CROSS_CHECK_HEADERS = {
     "Dynamic확보율": "일정기준확보율",
 }
 # 그림을 바꾸는 꼴이 바뀌면 올린다 — 세션에 남은 옛 그림을 쓰지 않는다.
-_SHEET_SCHEMA_VERSION = 1
+_SHEET_SCHEMA_VERSION = 2
 _SHEET_MEMO_LIMIT = 4
 _TOTAL_ROW = "합계"
 
@@ -343,14 +345,18 @@ def render_availability_gap_panel(
 
     _render_unmatched(comparison.dynamic_only, comparison.static_only, labels)
 
-    result_view = st.segmented_control(
-        "조회 결과",
-        options=_RESULT_VIEWS,
-        default=_RESULT_VIEWS[0],
-        required=True,
-        key=RESULT_VIEW_KEY,
-        persist_state="session",
-    )
+    # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
+    # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다.
+    switches = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
+    with switches:
+        result_view = st.segmented_control(
+            "조회 결과",
+            options=_RESULT_VIEWS,
+            default=_RESULT_VIEWS[0],
+            required=True,
+            key=RESULT_VIEW_KEY,
+            persist_state="session",
+        )
     # 값은 원본 공정명이고 글자만 표시명이다. 보이는 글자가 다른 공정이나 `전체 합계` 와 겹치면
     # 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이 돌아오고, `전체 합계` 와
     # 겹치면 다음 회차의 기본값이 그 공정으로 바뀌었다(`unique_format_func`). 겹침은 조회 달과
@@ -478,14 +484,15 @@ def render_availability_gap_panel(
         )
         return
 
-    detail_mode = st.segmented_control(
-        "표시",
-        options=_DETAIL_MODES,
-        default=_DETAIL_MODES[0],
-        required=True,
-        key=DETAIL_MODE_KEY,
-        persist_state="session",
-    )
+    with switches:
+        detail_mode = st.segmented_control(
+            "표시",
+            options=_DETAIL_MODES,
+            default=_DETAIL_MODES[0],
+            required=True,
+            key=DETAIL_MODE_KEY,
+            persist_state="session",
+        )
     if one_sided is not None:
         st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.")
     chosen_units: set[str] | None = None
@@ -580,10 +587,11 @@ def _key_digest(key: object) -> str:
 
 
 def _schedule_detail(process: str | None, cutoff: pd.DataFrame) -> str:
-    """설비 일정 기준 제목의 세부 글 — 출처·축·생산월(Cut-off)·누르면 호기."""
+    """설비 일정 기준 제목의 세부 글 — 출처·축·Cut-off(라벨 칸 한 줄). 「칸을 누르면」 안내는
+    시트 위 도구 줄과 풍선이 맡는다."""
     days = cutoff_lookup(cutoff).get(process) if process is not None else None
-    production = f"생산월(Cut-off {days:g}일)" if days is not None else "생산월(Cut-off 공정별)"
-    return f"설비 DB · 환산대수 · {production} · 칸을 누르면 호기"
+    production = f"Cut-off {days:g}일" if days is not None else "Cut-off 공정별"
+    return f"설비 DB · 환산대수 · {production}"
 
 
 # ================================================================== 시트 프래그먼트
@@ -636,9 +644,10 @@ def open_sheet_cell(bundle: GapSheetBundle) -> tuple[int, str] | None:
 def pick_gap_sheet_cell(fingerprint: str, months: Sequence[int]) -> None:
     """월 그림의 칸 선택 콜백 — 누른 칸을 세션에 적는다. 이 프래그먼트 회차로 다시 그린다.
 
-    같은 칸을 다시 누르면 닫는다(세션 칸을 비운다). 빈 선택(더블클릭·선택 해제)도 닫는다. 머리·축
-    밖의 점은 무시한다. 누를 때마다 세대를 올린다 — 다음 그림이 새 그림이라 브라우저에 지난 선택이
-    남지 않는다(모듈 docstring).
+    같은 칸을 다시 누르면 닫는다(세션 칸을 비운다) — 닫는 길은 이것뿐이다. 빈 선택이 오면 그것도
+    닫지만 방어용이다(브라우저는 보통 보내지 않는다 — 모듈 docstring). 머리·축 밖의 점은 무시한다.
+    누를 때마다 세대를 올린다 — 다음 그림이 새 그림이라 브라우저에 지난 선택이 남지 않는다(모듈
+    docstring).
     """
     point = canvas_point(st.session_state.get(GAP_SHEET_CHART_KEY))
     current = st.session_state.get(GAP_SHEET_CELL_KEY)
@@ -838,8 +847,7 @@ def _render_static_evidence(bundle: GapSheetBundle, month: int, row: str) -> Non
         "「기준 정보」 화면의 설비대수 표. 대여는 DB 의 양수 값에 − 를 붙여 보입니다."
     )
     if bundle.process is None:
-        table = _per_process(bundle, month, [*STATIC_ROWS], sort_by=row)
-        st.dataframe(bundle.labels.frame(table), hide_index=True, width="stretch")
+        _card_table(bundle, _per_process(bundle, month, [*STATIC_ROWS], sort_by=row))
 
 
 def _render_gap_evidence(bundle: GapSheetBundle, month: int, row: str) -> None:
@@ -858,8 +866,7 @@ def _render_gap_evidence(bundle: GapSheetBundle, month: int, row: str) -> None:
         )
     )
     if bundle.process is None:
-        table = _per_process(bundle, month, [schedule, static], sort_by=row, gap=row)
-        st.dataframe(bundle.labels.frame(table), hide_index=True, width="stretch")
+        _card_table(bundle, _per_process(bundle, month, [schedule, static], sort_by=row, gap=row))
     st.caption(f"아래는 짝 칸 「{GROUP_TITLES['sched']} {ROW_ITEMS[schedule]}」의 호기입니다.")
     _render_schedule_evidence(bundle, month, schedule, with_formula=False)
 
@@ -889,7 +896,7 @@ def _per_process(
     elif sort_by in rows:
         key = f"{ROW_GROUPS[sort_by]} {ROW_ITEMS[sort_by]}"
     order = shown[key].abs().sort_values(ascending=False, kind="stable").index
-    return shown.loc[order].reset_index(drop=True).round(3)
+    return shown.loc[order].reset_index(drop=True)
 
 
 def _render_schedule_evidence(
@@ -917,19 +924,14 @@ def _render_schedule_evidence(
             f"설비 일정 기준 가용 {available} = 보유 {owned} + 대여(비가동) {lent} · "
             f"호기 {units:,} · 기존보유 {baseline_lines}줄"
         )
-    shown = _schedule_lines(lines, row)
+    shown = _schedule_lines(lines, row, with_process=bundle.process is None)
     if shown.empty:
         st.caption(
             "이 칸에 기여한 호기가 없습니다."
             + (" 이 달에는 가용을 깎은 비가동이 없습니다." if row == ROW_SCHEDULE_LENT else "")
         )
     else:
-        st.dataframe(
-            bundle.labels.frame(shown),
-            hide_index=True,
-            width="stretch",
-            column_config=_UNIT_NUMBER_FORMAT,
-        )
+        _card_table(bundle, shown, column_config=_UNIT_NUMBER_FORMAT)
     notes: list[str] = []
     idle = downtime_without_loss(actual, lines)
     if not idle.empty:
@@ -948,12 +950,41 @@ def _render_schedule_evidence(
         notes.append("호기 필터 중이라 기존보유는 들지 않습니다.")
     for note in notes:
         st.caption(note)
-    if bundle.process is not None and row != ROW_SCHEDULE_OWNED:
+    if bundle.process is not None:
         _render_detail_link(bundle.process, month)
 
 
-def _schedule_lines(lines: pd.DataFrame, row: str) -> pd.DataFrame:
-    """누른 칸에 보일 호기 줄과 맨 아래 합계 줄. 칸 차례는 행마다 다르다."""
+def _card_table(
+    bundle: GapSheetBundle,
+    table: pd.DataFrame,
+    *,
+    column_config: Mapping[str, ColumnConfig] | None = None,
+) -> None:
+    """근거 카드의 표 하나. 값이 없는 칸(기존보유 줄의 환산비·일수, 합계 줄의 일수)은 「—」 다 —
+    Streamlit 은 빈 값을 흐린 「None」 으로 적는다(`placeholder`). 숫자 칸은 표시만 세 자리이고 값은
+    그대로다(1/3 지분 셋이 합에서 0.999 가 되지 않게). 설정이 없으면 `공정` 밖의 칸을 모두 그렇게
+    적는다(공정별 표)."""
+    config: dict[str, ColumnConfig] = (
+        dict(column_config)
+        if column_config is not None
+        else {
+            str(column): st.column_config.NumberColumn(format="%.3f")
+            for column in table.columns
+            if column != "공정"
+        }
+    )
+    st.dataframe(
+        bundle.labels.frame(table),
+        hide_index=True,
+        width="stretch",
+        column_config=config,
+        placeholder=EMPTY,
+    )
+
+
+def _schedule_lines(lines: pd.DataFrame, row: str, *, with_process: bool = True) -> pd.DataFrame:
+    """누른 칸에 보일 호기 줄과 맨 아래 합계 줄. 칸 차례는 행마다 다르다. `공정` 칸은 여러 공정을
+    더한 전체 합계에서만 싣는다(`with_process`)."""
     if row == ROW_SCHEDULE_OWNED:
         chosen = lines.loc[lines["보유"].gt(0)]
         columns = ["공정", "구분", EQUIPMENT_ID_COLUMN, "환산비", "구간일수"]
@@ -972,6 +1003,8 @@ def _schedule_lines(lines: pd.DataFrame, row: str) -> pd.DataFrame:
         columns = ["공정", "구분", EQUIPMENT_ID_COLUMN, "환산비", "비가동 없음 기여일수"]
         columns += ["손실 기여일수", "실제 기여일수", "보유", BREAKDOWN_LENT_COLUMN, "가용"]
         columns += ["비가동 내역"]
+    if not with_process:
+        columns.remove("공정")
     if chosen.empty:
         return pd.DataFrame()
     table = chosen.copy()
@@ -986,9 +1019,9 @@ def _schedule_lines(lines: pd.DataFrame, row: str) -> pd.DataFrame:
         table = table.rename(columns={"설비키": "설비"})
         columns.insert(columns.index(EQUIPMENT_ID_COLUMN) + 1, "설비")
     shown = table.loc[:, columns].reset_index(drop=True)
-    # 합계 줄의 글자 칸은 비워 둔다(빈 값으로 두면 표가 「None」 을 적는다).
-    words = {"공정", "구분", EQUIPMENT_ID_COLUMN, "설비", "비가동 내역"}
-    total: dict[str, object] = {column: "" if column in words else None for column in columns}
+    # 합계 줄은 값 칸 셋만 채운다. 나머지는 빈 값이라 표에 「—」(`_card_table` 의 `placeholder`)로
+    # 적힌다 — 시안의 합계 줄과 같다.
+    total: dict[str, object] = dict.fromkeys(columns)
     total["구분" if "구분" in columns else EQUIPMENT_ID_COLUMN] = _TOTAL_ROW
     for column in ("보유", BREAKDOWN_LENT_COLUMN, "가용"):
         if column in columns:

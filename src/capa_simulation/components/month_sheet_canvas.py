@@ -93,6 +93,7 @@ __all__ = [
     "canvas_point",
     "data_hline",
     "data_rect",
+    "fine_one",
     "fit",
     "label_figure",
     "month_figure",
@@ -181,6 +182,9 @@ class Row:
     label_bold: bool = False
     label_muted: bool = False
     indent: bool = False
+    label_indent: float = 0.0
+    """라벨 글을 이만큼(px) 들인다 — 글자 크기는 그대로다(`indent` 는 제품 줄이라 글자도 줄인다)."""
+
     group_start: bool = False
     clickable: bool = True
     cells: dict[int, Cell] = field(default_factory=dict)
@@ -380,7 +384,7 @@ def label_figure(rows: Sequence[Row], height: int) -> go.Figure:
         if row.kind == KIND_TITLE:
             annotations += _title_annotations(row, budget, height)
             continue
-        indent = PRODUCT_INDENT_PX if row.indent else 0
+        indent = PRODUCT_INDENT_PX if row.indent else row.label_indent
         font = PRODUCT_FONT_PX if row.indent else LABEL_FONT_PX
         two_lines = bool(row.detail) and row.kind == KIND_UNIT
         annotations.append(
@@ -783,14 +787,28 @@ def signed_one(value: float | None, digits: int = 1) -> str:
     「0.0」(자릿수만큼)."""
     if value is None:
         return EMPTY
-    value = round(value, 9)
-    shown = digits if value == 0 or abs(round(value, digits)) > 0 else digits + 1
-    rounded = round(value, shown)
+    rounded, shown = _fine_round(value, digits)
     if rounded > 0:
         return f"+{rounded:,.{shown}f}"
     if rounded < 0:
         return f"{MINUS}{abs(rounded):,.{shown}f}"
     return f"{0:.{digits}f}"
+
+
+def fine_one(value: float | None, digits: int = 1) -> str:
+    """부호 없는 값 — `one` 꼴에 `signed_one` 의 자릿수 규칙(그 자리로 0 이 되는 0 아닌 값은 한
+    자리 더)을 쓴다. 0 은 「0.0」(자릿수만큼)."""
+    if value is None:
+        return EMPTY
+    rounded, shown = _fine_round(value, digits)
+    return f"{rounded:,.{shown}f}" if rounded != 0 else f"{0:.{digits}f}"
+
+
+def _fine_round(value: float, digits: int) -> tuple[float, int]:
+    """(반올림한 값, 적을 자릿수) — `digits` 자리로 0 이 되는 0 아닌 값은 한 자리 더 본다."""
+    value = round(value, 9)
+    shown = digits if value == 0 or abs(round(value, digits)) > 0 else digits + 1
+    return round(value, shown), shown
 
 
 def bold(text: str, strong: bool) -> str:

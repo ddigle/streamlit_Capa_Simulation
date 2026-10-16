@@ -424,6 +424,32 @@ def test_the_unit_lines_carry_day_counts_and_downtime_notes(built: _Built) -> No
     assert _line(lines, 202701, "A1")["손실 기여일수"] == 9
 
 
+def test_downtime_notes_follow_the_loss_boundaries() -> None:
+    """`비가동 내역` 은 손실과 같은 반열린 구간으로 걸침을 잰다 — 경계 끝 날 시작했거나 경계 시작
+    날 끝난 비가동은 그 달 손실이 0 이라 적지 않는다. 하루라도 겹치면 적는다."""
+    from capa_simulation.services.availability_sheet import _downtime_notes
+
+    # Cut-off 0 → 202612 구간은 (11/30, 12/31].
+    units = pd.DataFrame(
+        {"생산계획년월": [202612] * 4, "공정": ["P"] * 4, "설비명": ["S", "E", "IN", "OPEN"]}
+    )
+    downtime = pd.DataFrame(
+        {
+            "설비명": ["S", "E", "IN", "OPEN"],
+            "비가동유형": ["고장", "공사", "고장", "고장"],
+            "시작일": [T("2026-12-31"), T("2026-11-20"), T("2026-11-29"), T("2026-12-31")],
+            "종료일": [T("2027-01-05"), T("2026-11-30"), T("2026-12-01"), pd.NaT],
+        }
+    )
+    cutoff = prepare_process_cutoff(
+        pd.DataFrame({"공정": ["P"], "Cutoff일수": [0.0], "비고": [pd.NA]})
+    )
+
+    notes = _downtime_notes(units, downtime, cutoff)
+
+    assert notes == ["", "", "고장 11.29~12.01", ""]
+
+
 # ------------------------------------------------------------------ 다른 화면과 같은 값
 
 

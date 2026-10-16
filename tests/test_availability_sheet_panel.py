@@ -6,8 +6,8 @@
 
 - 캔버스: 머리 1 + 구획 제목 3 + 값 9 = 13줄, 표적 `customdata = (YYYYMM, 행 id, 풍선)`, GAP 글자색,
   고른 칸 테두리, 「—」 칸, `layout.meta`(세대·범위 지문).
-- 콜백: 같은 칸을 다시 누르면 닫고(닫기 단추 없음), 빈 선택도 닫으며, 닫은 뒤 같은 칸 한 번에 다시
-  열린다. 누를 때마다 세대가 오른다.
+- 콜백: 같은 칸을 다시 누르면 닫고(닫기 단추 없음), 빈 선택(방어용 갈래)도 닫으며, 닫은 뒤 같은
+  칸 한 번에 다시 열린다. 누를 때마다 세대가 오른다.
 - 프래그먼트: 칸을 누른 프래그먼트 회차의 그림·근거 카드가 같은 선택의 앱 전체 회차와 같고, 이벤트
   칸에 쓰는 수가 갈래(안 누름·설비 일정·Static·GAP·「—」·한쪽 공정·호기 필터)마다 같다.
 """
@@ -35,7 +35,11 @@ from capa_simulation.components.availability_gap_panel import (
 )
 from capa_simulation.components.availability_sheet_canvas import (
     GROUP_TITLES,
+    STATIC_TITLE_DETAIL,
+    VALUE_LABEL_INDENT_PX,
     build_availability_sheet_canvas,
+    gap_text_color,
+    sheet_value_text,
 )
 from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_CELL_KEY,
@@ -47,6 +51,7 @@ from capa_simulation.components.month_sheet_canvas import (
     CUSTOMDATA_HOVER,
     CUSTOMDATA_MONTH,
     CUSTOMDATA_ROW,
+    LABEL_FONT_PX,
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.availability_sheet import (
@@ -136,6 +141,19 @@ def test_the_sheet_has_a_header_three_titles_and_nine_value_rows() -> None:
     assert "RQ_EQP_OWN" in first[CUSTOMDATA_HOVER]
 
 
+def test_value_labels_are_indented_without_shrinking_and_titles_fit_one_line() -> None:
+    """값 줄 라벨은 구획 제목보다 들이되 글자 크기는 그대로다. Static 제목 세부 글은 한 줄이다."""
+    labels, _, _ = _canvas_json()
+    notes = labels["layout"]["annotations"]
+    by_text = {item["text"]: item for item in notes}
+    title = by_text["<b>Static · 기준정보</b>"]
+    for label in ("보유", "대여", "가용", "대여 (비가동)"):
+        item = by_text[label]
+        assert item["xshift"] == title["xshift"] + VALUE_LABEL_INDENT_PX
+        assert item["font"]["size"] == LABEL_FONT_PX
+    assert STATIC_TITLE_DETAIL in by_text
+
+
 def test_gap_cells_take_the_delta_colours_and_blank_cells_say_why() -> None:
     _, months, _ = _canvas_json()
     texts: dict[str, str] = {}
@@ -155,6 +173,38 @@ def test_gap_cells_take_the_delta_colours_and_blank_cells_say_why() -> None:
     assert "보유 4.500 + 대여(비가동) −0.250" in hovers[(MONTHS[0], ROW_SCHEDULE_AVAILABLE)]
 
 
+@pytest.mark.parametrize(
+    ("row", "value", "text"),
+    [
+        (ROW_STATIC_OWNED, 0.0032, "0.003"),
+        (ROW_SCHEDULE_AVAILABLE, 0.0032, "0.003"),
+        (ROW_SCHEDULE_LENT, -0.0032, "−0.003"),
+        (ROW_GAP_AVAILABLE, 0.0004, "0.00"),
+        (ROW_STATIC_AVAILABLE, None, "—"),
+    ],
+)
+def test_every_row_shows_a_small_nonzero_value_with_one_more_digit(
+    row: str, value: float | None, text: str
+) -> None:
+    assert sheet_value_text(row, value) == text
+
+
+@pytest.mark.parametrize(
+    ("value", "colour"),
+    [
+        (0.0004, tokens.TEXT_MUTED),
+        (-0.0004, tokens.TEXT_MUTED),
+        (0.0, tokens.TEXT_MUTED),
+        (None, tokens.TEXT_MUTED),
+        (0.004, tokens.DELTA_INCREASE),
+        (-0.004, tokens.DELTA_DECREASE),
+    ],
+)
+def test_a_gap_written_as_zero_is_muted(value: float | None, colour: str) -> None:
+    """GAP 색은 적힌 글자로 고른다 — 「0.00」 으로 적히는 아주 작은 값에 증감색을 칠하지 않는다."""
+    assert gap_text_color(value) == colour
+
+
 def test_the_chosen_cell_gets_a_border_and_meta_carries_generation_and_scope() -> None:
     def borders(figure: dict[str, Any]) -> list[dict[str, Any]]:
         return [
@@ -170,6 +220,23 @@ def test_the_chosen_cell_gets_a_border_and_meta_carries_generation_and_scope() -
     (border,) = borders(chosen)
     assert 1 < border["x0"] < border["x1"] < 2
     assert chosen["layout"]["meta"] == {"generation": 4, "scope": "s"}
+    # 고른 칸은 글자도 굵다 — 그 칸 하나만.
+    bold = [
+        text
+        for trace in chosen["data"][2:]
+        if trace.get("mode") == "text"
+        for text in trace["text"]
+        if str(text).startswith("<b>")
+    ]
+    assert len(bold) == 1
+    _, value_cell, _ = _canvas_json(selected=(MONTHS[0], ROW_SCHEDULE_LENT))
+    assert [
+        text
+        for trace in value_cell["data"][2:]
+        if trace.get("mode") == "text"
+        for text in trace["text"]
+        if str(text).startswith("<b>")
+    ] == ["<b>−0.25</b>"]
     # 축 밖 달은 그리지 않는다.
     _, outside, _ = _canvas_json(selected=(199901, ROW_GAP_LENT))
     assert borders(outside) == []

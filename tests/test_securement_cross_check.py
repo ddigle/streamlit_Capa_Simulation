@@ -267,3 +267,31 @@ def test_a_month_long_downtime_is_compared_as_zero() -> None:
     assert float(down["Dynamic가용대수"]) == 0.0
     assert float(down["Dynamic확보율"]) == 0.0
     assert check.fallback_processes == []
+
+
+def test_static_rows_split_on_the_same_key_are_summed_not_rejected() -> None:
+    """Static 이 같은 (월, 공정) 을 두 줄로 나눠 가져도 0 채움·Static 대체가 그대로 돈다 — 채울
+    자리 목록과 Static 을 붙인 목록의 길이가 달라도 한쪽 마스크를 다른 쪽에 쓰지 않는다."""
+    monthly = _monthly(
+        [(MONTH, "A", "가용", 1.0, True), (MONTH, "SETUP", "셋업 진행중", 1.0, False)]
+    )
+    static = pd.DataFrame(
+        {
+            "생산계획년월": [MONTH] * 5,
+            "공정": ["A", "SETUP", "SETUP", "NONE", "NONE"],
+            "가용대수": [2.0, 1.0, 1.0, 1.5, 2.5],
+        }
+    )
+
+    check = cross_check_from_monthly(
+        static, monthly, frame({"A": 4.0, "SETUP": 4.0, "NONE": 8.0}, "소요대수")
+    )
+
+    setup = check.rows.loc[check.rows["공정"] == "SETUP"].iloc[0]
+    assert float(setup["Static가용대수"]) == 2.0
+    assert float(setup["Dynamic가용대수"]) == 0.0
+    assert not bool(setup["Static대체"])
+    none = check.rows.loc[check.rows["공정"] == "NONE"].iloc[0]
+    assert float(none["Dynamic가용대수"]) == 4.0
+    assert bool(none["Static대체"])
+    assert check.fallback_processes == ["NONE"]

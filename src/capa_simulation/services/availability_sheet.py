@@ -629,7 +629,12 @@ def _available_units(contributions: pd.DataFrame, keys: list[str]) -> pd.DataFra
 def _downtime_notes(
     units: pd.DataFrame, downtime: pd.DataFrame | None, cutoff: pd.DataFrame | None
 ) -> list[str]:
-    """줄마다 그 달 W/D 구간에 걸친 비가동(「유형 MM.DD~MM.DD」, 열린 것은 「~계속」)."""
+    """줄마다 그 달 W/D 구간에 걸친 비가동(「유형 MM.DD~MM.DD」, 열린 것은 「~계속」).
+
+    「걸친」은 손실을 세는 잣대와 같다 — 비가동은 (시작일, 종료일], W/D 구간은 (경계 시작, 경계 끝]
+    이라 둘 다 반열린 구간끼리 겹쳐야 한다. 경계 끝 날 시작한 비가동이나 경계 시작 날 끝난 비가동은
+    그 달 손실이 0 이라 적지 않는다(「내내 비가동인데 손실 0」으로 읽히지 않게).
+    """
     if units.empty or downtime is None or downtime.empty or cutoff is None or cutoff.empty:
         return [""] * len(units)
     days = cutoff_lookup(cutoff)
@@ -660,7 +665,7 @@ def _downtime_notes(
         parts = [
             f"{kind} {begin:%m.%d}~" + (f"{end:%m.%d}" if end is not None else "계속")
             for kind, begin, end in sorted(entries, key=lambda item: item[1])
-            if begin <= window.boundary_end and (end is None or end >= window.boundary_start)
+            if begin < window.boundary_end and (end is None or end > window.boundary_start)
         ]
         notes.append(", ".join(parts))
     return notes

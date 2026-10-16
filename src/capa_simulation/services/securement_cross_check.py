@@ -252,8 +252,12 @@ def _fill_missing_from_static(
         how="left",
     )
     patch["가용대수"] = patch["가용대수"].fillna(0.0)
-    zero = patch["공정"].astype(str).str.strip().isin(list(dynamic_processes))
-    patch.loc[zero, "가용대수"] = 0.0
+    # 0 으로 채울지는 `missing`·`patch` 에서 따로 잰다. Static 에 같은 (월, 공정) 행이 둘 이상이면
+    # `patch` 가 `missing` 보다 길어 한쪽 마스크를 다른 쪽에 쓸 수 없다(두 행은 확보율 계산이
+    # 더한다).
+    names = list(dynamic_processes)
+    patch.loc[patch["공정"].astype(str).str.strip().isin(names), "가용대수"] = 0.0
+    zero_missing = missing["공정"].astype(str).str.strip().isin(names)
     filled = pd.concat([dynamic_available, patch], ignore_index=True)
-    fallback = sorted({str(value) for value in missing.loc[~zero.to_numpy(), "공정"].dropna()})
+    fallback = sorted({str(value) for value in missing.loc[~zero_missing, "공정"].dropna()})
     return filled, fallback
