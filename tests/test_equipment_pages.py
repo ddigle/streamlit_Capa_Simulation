@@ -222,9 +222,10 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
     stats = fab["linkStats"]
     assert isinstance(stats, dict) and set(stats) == labels
     assert not any("가용" in str(value) for floor in stats.values() for value in floor.values())
-    # 사이드바 카드는 기준일·공정소분류·단계뿐이다 — 전환 조회기간·전환단계 폼이 없다.
-    assert len(app.sidebar.date_input) == 1
-    assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류", "단계"]
+    # 사이드바 카드의 고르기는 공정소분류뿐이다 — 전환 조회기간·전환단계 폼이 없고, 기준일 칸과
+    # 「단계」 필터도 없다(기준일은 층 상세 도면 위 페이더, 2026-10-16 사용자 결정).
+    assert not app.sidebar.date_input
+    assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류"]
     assert not any("단계 전환" in element.value for element in app.markdown)
     # FAB 아래는 30개 층 목록 표다(행을 고르면 그 층이 열린다).
     floor_table = app.dataframe[0].value

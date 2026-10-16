@@ -1,5 +1,5 @@
 export default function (component) {
-  const { data, parentElement, setTriggerValue } = component
+  const { data, parentElement, setStateValue, setTriggerValue } = component
   const host = parentElement.querySelector('.sle')
   if (!host || !data) return
   const NS = 'http://www.w3.org/2000/svg'
@@ -8,6 +8,11 @@ export default function (component) {
     selected: null, selection: new Set(), step: 0.5, drag: null, overlapPairs: 0, blocked: 0,
     canvas: null, originalCanvas: null, note: '', view: { z: 1, x: 0, top: 0 }, spaceDown: false, seq: 0,
     passthrough: [], bgImage: null,
+    // 기준일. asOf = 지금 칠한 날, dataAsOf = 파이썬이 쥔 날(상태 이름·범례·요약의 날), sent = 보냈는데 아직 회차로
+    // 돌아오지 않은 날들. 페이더를 끄는 동안(faderBusy)과 키 입력이 멈추기를 기다리는 동안(commitTimer)은 회차가
+    // 와도 브라우저가 쥔 날을 지킨다.
+    asOf: '', dataAsOf: '', sent: new Set(), lastSent: '', faderTarget: '', faderFrame: 0, faderBusy: false,
+    commitTimer: 0, faderKey: '',
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -21,7 +26,12 @@ export default function (component) {
   // 블록 글자(배치·미배치 대수, 점유율). epoch 밖이라 같은 epoch 회차에도 새 값으로 다시 쓴다.
   const LINK_STATS = data.linkStats || {}
   const palette = data.palette || {}
-  for (const [name, value] of Object.entries(palette)) host.style.setProperty('--sle-' + name, String(value))
+  // 팔레트(테마)는 바뀐 회차에만 다시 단다 — 같은 값을 다시 달아도 도면 전체의 스타일 계산이 다시 돌 수 있다.
+  const paletteKey = JSON.stringify(palette)
+  if (S.paletteKey !== paletteKey) {
+    S.paletteKey = paletteKey
+    for (const [name, value] of Object.entries(palette)) host.style.setProperty('--sle-' + name, String(value))
+  }
   const DECIMALS = Number.isInteger(data.decimals) ? data.decimals : 1
   const SCALE = 10 ** DECIMALS
   const MIN_EXTENT = Number(data.canvasLimits?.min) || 10
@@ -35,7 +45,7 @@ export default function (component) {
   const markColors = data.markColors || {}
   // 기준일(T, `YYYY-MM-DD`). 호기마다 받은 경계 날짜와 **글자로** 견주어 실물·반출/이설 예정·정지 중·지연·운영
   // 비가동을 정한다 — 파이썬 `services/space_unit_state.unit_states_at` 과 같은 판정이다(시험이 같은 식으로 대조한다).
-  // 날짜는 epoch 에 넣지 않는다(기준일만 바뀐 회차는 다시 칠하기만 한다).
+  // 날짜는 epoch 에 넣지 않는다 — data 의 `asOf` 는 새 epoch 에서 쓰고, 같은 epoch 회차에는 `adoptAsOf` 가 가른다.
   const AS_OF = typeof data.asOf === 'string' ? data.asOf : ''
   const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
   const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/
@@ -44,6 +54,29 @@ export default function (component) {
   const spansOf = (value) => (Array.isArray(value) ? value : [])
     .filter((span) => Array.isArray(span) && dayOr(span[0]))
     .map((span) => [span[0], dayOr(span[1])])
+  // 기준일 페이더(층 상세 보기, 도면 상자 맨 위 줄)의 오늘·범위(양 끝 포함). 범위는 파이썬
+  // `space_unit_state.as_of_range`(오늘 ±12개월)가 정해 보낸다. 배치 편집(층) 중에는 같은 자리에 「편집 중 고정」 줄이
+  // 선다. FAB 전체에는 페이더가 없고 도구 줄에 기준일·「오늘로」가 선다.
+  const TODAY = dayOr(data.today) || ''
+  const RANGE = { min: dayOr(data.asOfMin) || '', max: dayOr(data.asOfMax) || '' }
+  const FADER = VIEW && !FAB && Boolean(TODAY && RANGE.min && RANGE.max && RANGE.min <= TODAY && TODAY <= RANGE.max)
+  const PINNED = !VIEW && !FAB
+  // 키로 옮긴 기준일은 멈춘 뒤 이만큼 지나 한 번 보낸다(누를 때마다 회차를 돌리지 않게).
+  const KEY_COMMIT_MS = 400
+  // 페이더 손잡이 지름(px, CSS `.sle-fader-input` 의 thumb 와 같다). 눈금 자리를 손잡이 가운데와 맞춘다.
+  const THUMB_PX = 14
+  // 날은 UTC 자정의 날 번호(1970-01-01 = 0)로 센다. 글자 `YYYY-MM-DD` 와 서로 바꾼다.
+  const DAY_MS = 864e5
+  const dayNumber = (iso) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / DAY_MS
+  const isoOf = (n) => new Date(n * DAY_MS).toISOString().slice(0, 10)
+  // 달력 달 더하기 — 그 날이 없는 달이면 그달 말일(파이썬 `pd.DateOffset(months=…)` 과 같다).
+  function addMonths(n, k) {
+    const d = new Date(n * DAY_MS)
+    const year = d.getUTCFullYear()
+    const month = d.getUTCMonth() + k
+    const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+    return Date.UTC(year, month, Math.min(d.getUTCDate(), last)) / DAY_MS
+  }
   const defaultSize = data.defaultSize || { w: 12, h: 7 }
   const NEW_UNIT = data.newUnit || {}
   const EXISTING_IDS = new Set((NEW_UNIT.existingIds || []).map(String))
@@ -66,8 +99,11 @@ export default function (component) {
   const MAX_H_RATIO = 1.5
   // 보기 화면에서 무대 위·아래에 서는 것(앱 머리·제목·경로·머리 줄·도구 줄, 아래 손잡이·여유)의 몫. 무대의 실제
   // 위치로 재지 않는다 — 편집 화면은 위에 도구가 더 서서 같은 식이면 보기보다 낮아지는데, 보기·편집의 도면
-  // 상자 크기는 같아야 한다.
+  // 상자 크기는 같아야 한다. 층 도면(보기·편집)은 맨 위에 기준일 줄(보기 페이더 · 편집 「편집 중 고정」, 같은 높이
+  // DATE_ROW_PX)과 그 아래 틈(8px, `.sle` gap)이 더 서고, FAB 에는 없다.
   const VIEW_CHROME_PX = 320
+  const DATE_ROW_PX = 36
+  const CHROME_PX = VIEW_CHROME_PX + (FAB ? 0 : DATE_ROW_PX + 8)
   const HEIGHT_KEY_STEP = 20
   const HEIGHT_STORE_KEY = `capa.space.viewerHeight.${SCOPE}`
   // 크기 손잡이 여덟 개. 글자는 움직이는 변 — e 오른쪽, w 왼쪽, n 위(데이터의 Y+Ysize), s 아래(데이터의 Y).
@@ -98,6 +134,9 @@ export default function (component) {
     : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
+  // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
+  const setText = (node, text) => { if (node.textContent !== text) node.textContent = text }
+  const setAttr = (node, name, value) => { if (node.getAttribute(name) !== value) node.setAttribute(name, value) }
   const svg = q('.sle-canvas')
   const bg = svg.querySelector('.sle-bg')
   const grid = svg.querySelector('.sle-grid')
@@ -164,13 +203,14 @@ export default function (component) {
   const newQual = q('.sle-new-qual')
   const newConfirm = q('.sle-new-confirm')
   const newConfirmRow = newConfirm.closest('.sle-form-row')
-  q('.sle-title').textContent = data.title || ''
+  setText(q('.sle-title'), data.title || '')
   const pickBox = q('.sle-pick')
-  pickBox.dataset.hint = FAB
+  const pickHint = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
     : '호기를 누르면 정보가 여기 뜹니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
-  q('.sle-summary').textContent = data.summary || ''
-  svg.setAttribute('aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
+  if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
+  setText(q('.sle-summary'), data.summary || '')
+  setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
   const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
   const roundTo = (v) => Math.round(v * SCALE) / SCALE
@@ -214,10 +254,13 @@ export default function (component) {
   // 풍선·선택 줄의 상태 이름과 판정 글자. 상태 이름(`stage`)은 일정 기준이고 판정(보기 화면만)은 기준일의
   // 실물(실적) 기준이라 따로 적되, 이름이 이미 말하는 뜻은 거듭 적지 않는다 — 이름이 「반출/이설 예정」이거나
   // 정지만 적힌 「정지 예정」이면 도면 이탈 날짜를 이름에 붙이고, 「정지」·「보관 설비」·「운영 비가동」이면
-  // 정지 중·보관·운영 비가동 낱말을 뺀다.
+  // 정지 중·보관·운영 비가동 낱말을 뺀다. 상태 이름은 파이썬이 쥔 기준일(S.dataAsOf)의 것이다 — 페이더로 다른 날을
+  // 보는 동안에는 이름 뒤에 「(그날 기준)」을 달고 이름으로 낱말을 빼지 않는다(판정 낱말은 지금 칠한 날의 것).
   function unitWords(item) {
-    const stage = item.stage || ''
-    if (!VIEW) return { stage, words: '' }
+    const named = item.stage || ''
+    if (!VIEW) return { stage: named, words: '' }
+    const current = !S.dataAsOf || S.dataAsOf === S.asOf
+    const stage = current ? named : ''
     const st = unitState(item, S.asOf)
     const exitNamed = st.exitPlan && (stage === '반출/이설 예정' || (stage === '정지 예정' && !item.stopOn))
     const words = []
@@ -228,7 +271,8 @@ export default function (component) {
     if (st.storage && stage !== '보관 설비') words.push('보관')
     if (st.offline && stage !== '운영 비가동') words.push('운영 비가동')
     if (st.flag) words.push('미확인(오늘 기준)')
-    return { stage: exitNamed ? `${stage} ${item.exitOn}` : stage, words: words.join(' · ') }
+    const label = !current && named ? `${named}(${S.dataAsOf} 기준)` : exitNamed ? `${stage} ${item.exitOn}` : stage
+    return { stage: label, words: words.join(' · ') }
   }
   const zoneColor = (m) => (m.keepOut ? 'var(--sle-danger)' : markColors[m.color] || markColors.gray || 'gray')
   const W = () => S.canvas.w
@@ -452,7 +496,7 @@ export default function (component) {
     const width = stage.clientWidth || host.clientWidth || 0
     const pad = margin()
     const fitted = width > 0 ? (width * (H() + pad * 2)) / (W() + pad * 2) : Infinity
-    const room = window.innerHeight - VIEW_CHROME_PX
+    const room = window.innerHeight - CHROME_PX
     return Math.round(clamp(Math.min(room, fitted), MIN_DEFAULT_H, maxHeight()))
   }
   function setStageHeight(value) {
@@ -773,15 +817,22 @@ export default function (component) {
     appendHandles(group)
     paintUnit(group, item)
     position(group, item)
+    group.__tipAt = `${S.asOf}|${S.dataAsOf}`
     S.groups.set(item.id, group)
     return group
   }
 
   // 면·글자 색과 보기 화면의 의미 class 를 기준일로 다시 정한다. 의미 class 는 보기 화면에만 단다 — 편집 화면은
   // 채우기만 같은 규칙이고 테·덧표시를 그리지 않는다. 테는 실물 없음(is-pre)이 반출/이설 예정(is-exitplan)을 이긴다.
+  // 판정·색을 한 글자 부호로 모아 지난 칠과 같으면 DOM 을 건드리지 않는다 — 페이더를 끄는 프레임마다 모든 호기를
+  // 부르지만 실제로 바뀐 상자만 고친다.
   function paintUnit(group, item) {
     const st = unitState(item, S.asOf)
     const look = unitColors(item, st)
+    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}`
+    group.__visible = st.visible
+    if (group.__paint === code) return
+    group.__paint = code
     group.querySelector('.sle-rect').style.fill = look.fill
     group.querySelector('.sle-label').style.fill = look.ink
     if (!VIEW) return
@@ -943,6 +994,10 @@ export default function (component) {
     applyTrayFilter()
     drawerCount.textContent = leavingN ? `${trayN} · 보냄 ${leavingN}` : String(trayN)
     trayBox.scrollTop = trayScroll
+    // 보기 화면은 기준일이 바뀌어도 바뀐 호기만 칠하도록 경계 날짜 목록을, 숨김이 바뀌면 짝만 다시 보도록 겹침 짝을
+    // 새로 만든다(그린 호기·자리가 바뀌는 때는 여기뿐이다).
+    S.adjacency = null
+    if (VIEW && !FAB) buildEvents()
     markSelection()
     markOverlaps()
   }
@@ -968,6 +1023,115 @@ export default function (component) {
       // 서랍 칩의 풍선(호기 이름, 묶음은 모듈 이름 목록)도 이름 바꿈을 따라간다. 보낸 칩은 따로 적는다.
       if (!chip.classList.contains('is-leaving') && chip.__entry && !item.group) chip.title = item.label
     }
+  }
+
+  function redrawMarks() {
+    for (const [id, group] of S.groups) {
+      const item = S.items.get(id)
+      if (item && isMark(item)) position(group, item)
+    }
+  }
+
+  // 판정이 바뀌는 날(경계 날짜)의 목록 — [날, 호기] 를 날 차례로(보기 화면, 새 epoch·받은 값이 바뀐 회차마다). 두 기준일
+  // 사이(앞날 < 날 ≤ 뒷날)에 날이 든 호기만 판정이 바뀐다. 운영 비가동은 끝날까지 포함이라 그 다음 날에 바뀐다.
+  function buildEvents() {
+    const events = []
+    for (const item of S.items.values()) {
+      if (!isUnit(item)) continue
+      const add = (day) => { if (day) events.push([day, item.id]) }
+      add(item.realFrom)
+      add(item.exitOn)
+      add(item.stopOn)
+      for (const [from, until] of item.delays || []) { add(from); add(until) }
+      for (const [from, until] of item.offline || []) { add(from); if (until) add(isoOf(dayNumber(until) + 1)) }
+    }
+    events.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    S.events = events
+  }
+  function changedBetween(a, b) {
+    const lo = a < b ? a : b
+    const hi = a < b ? b : a
+    const events = S.events || []
+    let low = 0
+    let high = events.length
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (events[mid][0] <= lo) low = mid + 1
+      else high = mid
+    }
+    const ids = new Set()
+    for (let k = low; k < events.length && events[k][0] <= hi; k += 1) ids.add(events[k][1])
+    return ids
+  }
+
+  // 판정 부호를 견주어 바뀐 상자만 class·면·글자색을 고친다(`paintUnit`). `ids` 가 없으면 모든 호기다. 기하·이름표
+  // 크기(`position`)는 건드리지 않는다. 숨김이 바뀐 때만 겹침을 다시 센다.
+  function paintUnits(ids) {
+    const flipped = []
+    const paintOne = (id) => {
+      const group = S.groups.get(id)
+      const item = S.items.get(id)
+      if (!group || !item || !isUnit(item)) return
+      const was = group.__visible
+      paintUnit(group, item)
+      if (was !== group.__visible) flipped.push(id)
+    }
+    if (ids) for (const id of ids) paintOne(id)
+    else for (const id of S.groups.keys()) paintOne(id)
+    if (flipped.length) markOverlaps(flipped)
+    if (S.selection.size) updateStatus()
+  }
+  // 칠한 날이 `previous` 에서 S.asOf 로 옮겨 갔다(페이더 프레임·놓은 뒤 파이썬이 따로 바꾼 날) — 그 사이에 경계 날짜가
+  // 든 호기만 다시 칠한다. 1천여 호기를 프레임마다 다 돌지 않는다.
+  function paintAsOf(previous) {
+    paintUnits(previous && S.events ? changedBetween(previous, S.asOf) : null)
+  }
+
+  // 풍선 글은 올려 둘 때 쓴다 — 페이더를 끄는 프레임마다 1천여 호기의 풍선을 다시 쓰지 않는다. 칠한 날·파이썬의 날이
+  // 그대로이고 받은 값이 바뀌지 않았으면 그대로 둔다.
+  function freshenTip(group) {
+    const stamp = `${S.asOf}|${S.dataAsOf}`
+    if (group.__tipAt === stamp) return
+    const item = S.items.get(group.dataset.id)
+    const tip = group.querySelector('title')
+    if (!item || !isUnit(item) || !tip) return
+    group.__tipAt = stamp
+    tip.textContent = unitTip(item)
+  }
+
+  // 같은 epoch 회차에 받은 호기 값이 쥔 값과 같은가 — 단계·공정 글자·이름표·면·글자·경계 날짜를 견준다.
+  const sameSpans = (a, b) => a.length === b.length && a.every((span, k) => span[0] === b[k][0] && span[1] === b[k][1])
+  const sameLook = (o, n) => o.stage === n.stage && o.detail === n.detail && o.label === n.label
+    && o.fill === n.fill && o.ink === n.ink && Boolean(o.storage) === Boolean(n.storage) && Boolean(o.flag) === Boolean(n.flag)
+    && o.realFrom === n.realFrom && o.exitOn === n.exitOn && o.stopOn === n.stopOn
+    && sameSpans(o.delays || [], n.delays || []) && sameSpans(o.offline || [], n.offline || [])
+
+  // 보기 화면의 같은 epoch 회차 — 받은 값이 바뀐 호기만 고친다. 이름표가 바뀐 호기만 자리·글자 크기를 다시 맞추고, 풍선은
+  // 다음에 올려 둘 때 새로 쓴다. 칠한 날이 옮겨 갔으면(`previous` — 파이썬이 따로 바꾼 날) 그 사이 경계 날짜가 든 호기도
+  // 다시 칠한다. 받은 경계 날짜가 바뀌었으면 날 목록을 다시 만든다.
+  function refreshUnits(touched, previous) {
+    for (const item of touched) {
+      const group = S.groups.get(item.id)
+      if (!group) continue
+      group.__tipAt = null
+      const label = group.querySelector('.sle-label')
+      if (label && label.textContent !== item.label) {
+        label.textContent = item.label
+        position(group, item)
+      }
+    }
+    if (touched.length) buildEvents()
+    if (!touched.length && !previous) {
+      if (S.selection.size) updateStatus()
+      return
+    }
+    if (previous === '*') {
+      paintUnits(null)
+      return
+    }
+    const ids = previous ? changedBetween(previous, S.asOf) : new Set()
+    for (const item of touched) ids.add(item.id)
+    paintUnits(ids)
   }
 
   function isChanged(item) {
@@ -1053,21 +1217,30 @@ export default function (component) {
     && p.y < roundTo(q2.y + q2.h) && q2.y < roundTo(p.y + p.h)
 
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.
-  function markOverlaps() {
+  function markOverlaps(flipped) {
     if (VIEW) {
       // 보기 전용: 호기끼리 겹친 것만 오른쪽 위 꼭지 삼각으로 알린다 — 완전히 겹치면 아래 호기가 보이지도
       // 눌리지도 않는데 범례·요약은 그것을 센다. 테는 실물·반출/이설 뜻을 싣으므로 겹침은 테가 아니다. 반입구·문
-      // 가림과 개수 문구는 편집 화면의 몫이다. 기준일에 보이지 않는 호기는 견주지 않는다.
-      const shown = [...S.items.values()].filter((i) => isUnit(i) && onCanvas(i) && unitState(i, S.asOf).visible)
-      const hit = new Set()
-      for (let a = 0; a < shown.length; a += 1) {
-        for (let b = a + 1; b < shown.length; b += 1) {
-          if (overlaps(shown[a], shown[b])) { hit.add(shown[a].id); hit.add(shown[b].id) }
-        }
+      // 가림과 개수 문구는 편집 화면의 몫이다. 기준일에 보이지 않는 호기는 견주지 않는다. 보기에서는 자리가 바뀌지 않으므로
+      // 겹치는 짝은 한 번 구해 두고(`overlapPairs`), 기준일이 바뀌면 보이는 짝이 남았는지만 본다(O(n²)를 되풀이하지 않는다).
+      const pairs = overlapPairs()
+      const shown = (id) => {
+        const group = S.groups.get(id)
+        return Boolean(group) && group.__visible !== false
       }
-      for (const [id, group] of S.groups) {
-        if (group.classList.contains('is-overlap') === hit.has(id)) continue
-        group.classList.toggle('is-overlap', hit.has(id))
+      // 숨김이 바뀐 호기(`flipped`)가 있으면 그 호기와 짝만 다시 본다.
+      let targets = S.groups.keys()
+      if (flipped) {
+        const near = new Set(flipped)
+        for (const id of flipped) for (const other of pairs.get(id) || []) near.add(other)
+        targets = near
+      }
+      for (const id of targets) {
+        const group = S.groups.get(id)
+        if (!group) continue
+        const hit = shown(id) && (pairs.get(id) || []).some(shown)
+        if (group.classList.contains('is-overlap') === hit) continue
+        group.classList.toggle('is-overlap', hit)
         // 「!」는 겹침 삼각 옆으로 비킨다.
         const item = S.items.get(id)
         if (item && isUnit(item)) positionUnitMarks(group, item, svgTop(item))
@@ -1099,6 +1272,39 @@ export default function (component) {
     }
     S.overlapPairs = pairs
     S.blocked = blocked.size
+  }
+
+  // 보기 화면의 호기 겹침 짝(호기 → 겹치는 호기들). 격자 칸에 나눠 담아 같은 칸끼리만 견준다. 그린 호기가 바뀔 때
+  // (`renderItems`)만 다시 만든다.
+  const OVERLAP_CELL = 8
+  function overlapPairs() {
+    if (S.adjacency) return S.adjacency
+    const pairs = new Map()
+    const cells = new Map()
+    for (const unit of S.items.values()) {
+      if (!isUnit(unit) || !onCanvas(unit)) continue
+      pairs.set(unit.id, [])
+      const seen = new Set()
+      const x0 = Math.floor(unit.x / OVERLAP_CELL)
+      const x1 = Math.floor((unit.x + unit.w) / OVERLAP_CELL)
+      const y0 = Math.floor(unit.y / OVERLAP_CELL)
+      const y1 = Math.floor((unit.y + unit.h) / OVERLAP_CELL)
+      for (let gx = x0; gx <= x1; gx += 1) {
+        for (let gy = y0; gy <= y1; gy += 1) {
+          const key = `${gx},${gy}`
+          const bucket = cells.get(key)
+          if (!bucket) { cells.set(key, [unit]); continue }
+          for (const other of bucket) {
+            if (seen.has(other.id)) continue
+            seen.add(other.id)
+            if (overlaps(unit, other)) { pairs.get(unit.id).push(other.id); pairs.get(other.id).push(unit.id) }
+          }
+          bucket.push(unit)
+        }
+      }
+    }
+    S.adjacency = pairs
+    return pairs
   }
 
   // 끄는 동안에는 움직이는 것만 나머지와 견준다(O(n·k)).
@@ -1872,14 +2078,45 @@ export default function (component) {
     }
   }
 
+  // 같은 epoch 회차의 기준일. 파이썬이 쥔 날(`incoming`)이 지난 회차와 같으면 브라우저가 칠한 날을 그대로 둔다 — 끄는
+  // 중이거나, 보낸 날이 아직 돌아오지 않았거나, 다른 위젯이 돌린 회차다. 보낸 날이 돌아온 것이면 맞았다고 보고, 그 밖에
+  // 파이썬이 따로 바꾼 날이면(범위 끝 맞춤 등) 따른다. 페이더가 없는 화면(편집·FAB)은 늘 받은 날이다. 칠한 날이
+  // 바뀌었으면 그 앞의 날(앞의 날이 없었으면 '*'), 아니면 ''.
+  function adoptAsOf(incoming) {
+    const previous = S.asOf
+    if (!FADER) {
+      S.asOf = incoming
+      S.dataAsOf = incoming
+      return previous !== incoming ? previous || '*' : ''
+    }
+    if (incoming === S.dataAsOf) return ''
+    S.dataAsOf = incoming
+    if (S.sent.has(incoming)) {
+      if (incoming === S.lastSent) S.sent.clear()
+      return ''
+    }
+    if (S.faderBusy || S.commitTimer) return ''
+    S.asOf = incoming
+    S.faderTarget = incoming
+    return previous !== incoming ? previous || '*' : ''
+  }
+
   // ------------------------------------------------------------- 회차마다
-  S.asOf = AS_OF
   if (S.epoch !== data.epoch) {
     S.epoch = data.epoch
     S.undo = []
     clearSelection()
     S.drag = null
     S.note = ''
+    // 새 epoch(층 이동·저장본·요소·그리는 호기가 바뀜)에서는 data 의 기준일을 그대로 쓴다.
+    S.asOf = AS_OF
+    S.dataAsOf = AS_OF
+    S.faderTarget = AS_OF
+    S.sent = new Set()
+    S.lastSent = ''
+    S.faderBusy = false
+    if (S.commitTimer) clearTimeout(S.commitTimer)
+    S.commitTimer = 0
     const cw = clamp(roundTo(Number(data.canvas?.width) || 100), MIN_EXTENT, MAX_EXTENT)
     const ch = clamp(roundTo(Number(data.canvas?.height) || 60), MIN_EXTENT, MAX_EXTENT)
     S.canvas = { w: cw, h: ch }
@@ -1892,21 +2129,31 @@ export default function (component) {
     drawStatic()
     renderItems()
   } else {
-    // 같은 epoch: 기하는 브라우저가 쥔 것을 지키고, 단계·라벨처럼 보기만 바뀐 것은 합친다. 적용하지 않은 이름
-    // 바꿈은 브라우저가 쥔 편집이다 — 다른 위젯을 건드린 회차가 그것을 옛 이름으로 되돌리지 않게 둔다.
+    // 같은 epoch: 기하는 브라우저가 쥔 것을 지키고, 단계·라벨·면·경계 날짜처럼 보기만 바뀐 것은 합친다. 받은 값이
+    // 쥔 값과 같은 호기는 건드리지 않는다 — 페이더를 놓은 뒤 돌아온 회차처럼 기준일도 호기 값도 그대로면 아무것도
+    // 다시 칠하지 않는다(1,289대 전체 다시 칠하기 `repaint` 는 70~100ms). 적용하지 않은 이름 바꿈은 브라우저가 쥔
+    // 편집이다 — 다른 위젯을 건드린 회차가 그것을 옛 이름으로 되돌리지 않게 둔다.
+    const previous = adoptAsOf(AS_OF)
+    const touched = []
     for (const raw of data.items || []) {
       const item = S.items.get(String(raw.id))
       if (!item) continue
-      item.stage = String(raw.stage || '')
-      if (!isRenamed(item)) item.label = String(raw.label ?? raw.id)
-      item.detail = String(raw.detail || '')
-      Object.assign(item, unitLook(raw))
+      const next = { stage: String(raw.stage || ''), detail: String(raw.detail || ''), ...unitLook(raw) }
+      next.label = isRenamed(item) ? item.label : String(raw.label ?? raw.id)
+      if (sameLook(item, next)) continue
+      Object.assign(item, next)
+      touched.push(item)
     }
     if ((data.backgroundImage || null) !== S.bgImage) {
       S.bgImage = data.backgroundImage || null
       drawStatic()
     }
-    repaint()
+    // 도면 요소는 적어(층마다 수십 개) 늘 다시 그린다 — 영역 색(테마)·층 블록 대수(`linkStats`)가 data 로 온다.
+    if (VIEW && !FAB) {
+      refreshUnits(touched, previous)
+      redrawMarks()
+    } else if (touched.length || previous) repaint()
+    else redrawMarks()
   }
 
   // ------------------------------------------------------------- 끌기(속성 대입이라 겹쳐 쌓이지 않는다)
@@ -2102,8 +2349,14 @@ export default function (component) {
     if (panBy(dx, dTop)) event.preventDefault()
   }
   svg.onblur = () => { S.spaceDown = false; svg.classList.remove('is-pan-ready') }
-  // 층 블록에 올려 두면 선택 줄에 열 층을 알리고, 블록을 떠나면 되돌린다(보기 전용 FAB 만).
+  // 층 블록에 올려 두면 선택 줄에 열 층을 알리고, 블록을 떠나면 되돌린다(보기 전용 FAB 만). 층 보기에서는 올려 둔
+  // 호기의 풍선 글을 지금 칠한 기준일로 새로 쓴다(`freshenTip`).
   svg.onpointerover = (event) => {
+    if (VIEW && !FAB) {
+      const unit = event.target.closest ? event.target.closest('.sle-unit') : null
+      if (unit) freshenTip(unit)
+      return
+    }
     if (!(VIEW && FAB) || S.drag) return
     const group = event.target.closest ? event.target.closest('.mark-block') : null
     if (group) S.showBlockHint(group)
@@ -2437,6 +2690,186 @@ export default function (component) {
     applyTrayFilter()
   }
   setDrawer(S.drawerOpen)
+
+  // ---------------------------------------------------------------- 기준일 줄(층 도면)·FAB 기준일
+  // 층 상세 보기의 맨 위 줄은 페이더다(오늘 ±12개월, 하루 단위, 가운데 오늘). 끄는 동안 서버 회차는 없다 — 프레임마다
+  // (requestAnimationFrame) 판정 부호가 바뀐 상자만 칠하고(`paintAsOf`), 손을 떼면(키는 멈춘 뒤) `setStateValue` 로
+  // 기준일을 **한 번** 보낸다. 그 회차에 파이썬이 세션 기준일을 바꿔 범례·요약·호기 표를 맞춘다. 배치 편집(층) 중에는
+  // 같은 자리·같은 높이에 「기준일 … · 편집 중 고정」 줄이 선다. FAB 전체에는 페이더 없이 도구 줄에 기준일·「오늘로」·
+  // 미확인 대수가 선다.
+  const faderInput = q('.sle-fader-input')
+  const faderTicks = q('.sle-fader-ticks')
+  const faderDate = q('.sle-fader-date')
+  const faderRel = q('.sle-fader-rel')
+  const faderNote = q('.sle-fader-note')
+  const faderToday = q('.sle-fader-today')
+  const pinnedDate = q('.sle-pinned-date')
+  const fabAsOf = q('.sle-asof')
+  const fabToToday = q('.sle-totoday')
+  const flagNote = q('.sle-flagnote')
+  const flagText = q('.sle-flagnote-text')
+  // 오늘에서 얼마나 떨어졌나 — 「오늘」, 「+3개월 2주」, 「−1개월 3일」.
+  function relText(T) {
+    if (!T || T === TODAY) return '오늘'
+    const t = dayNumber(T)
+    const d = dayNumber(TODAY)
+    const [a, b] = t < d ? [t, d] : [d, t]
+    let months = 0
+    while (addMonths(a, months + 1) <= b) months += 1
+    const rest = b - addMonths(a, months)
+    const parts = []
+    if (months) parts.push(`${months}개월`)
+    if (Math.floor(rest / 7)) parts.push(`${Math.floor(rest / 7)}주`)
+    if (rest % 7) parts.push(`${rest % 7}일`)
+    return `${t > d ? '+' : '−'}${parts.join(' ')}`
+  }
+  const lowDay = () => dayNumber(RANGE.min)
+  const highDay = () => dayNumber(RANGE.max)
+  // 트랙 위 자리(손잡이 가운데와 맞춘다 — 손잡이는 양 끝에서 반지름만큼 들어와 선다).
+  const along = (n) => `calc(${THUMB_PX / 2}px + ${(n - lowDay()) / Math.max(highDay() - lowDay(), 1)} * (100% - ${THUMB_PX}px))`
+
+  // 눈금 — 달마다 짧은 눈금, 분기(1·4·7·10월)는 조금 길게 「YY.MM」 글자, 가운데 오늘은 굵게 「오늘」. 범위·오늘이
+  // 바뀔 때만(날이 지나면) 다시 그린다.
+  function buildFader() {
+    const key = `${RANGE.min}|${TODAY}|${RANGE.max}`
+    if (S.faderKey === key && faderTicks.childElementCount) return
+    S.faderKey = key
+    const lo = lowDay()
+    const hi = highDay()
+    const today = dayNumber(TODAY)
+    faderInput.min = '0'
+    faderInput.max = String(hi - lo)
+    const nodes = []
+    const mark = (className, n, text) => {
+      const node = document.createElement('span')
+      node.className = className
+      node.style.left = along(n)
+      if (text) node.textContent = text
+      nodes.push(node)
+    }
+    const start = new Date(lo * DAY_MS)
+    for (let n = Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1) / DAY_MS; n <= hi; n = addMonths(n, 1)) {
+      const d = new Date(n * DAY_MS)
+      const quarter = d.getUTCMonth() % 3 === 0
+      mark(quarter ? 'sle-tick is-quarter' : 'sle-tick', n)
+      // 오늘 글자·트랙 양 끝과 겹치는 분기 글자는 뺀다.
+      if (quarter && Math.abs(n - today) > 40 && n - lo > 20 && hi - n > 20) {
+        mark('sle-tick-label', n, `${String(d.getUTCFullYear()).slice(2)}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`)
+      }
+    }
+    mark('sle-tick is-today', today)
+    mark('sle-tick-label is-today', today, '오늘')
+    faderTicks.replaceChildren(...nodes)
+  }
+
+  // 페이더 줄을 칠한 날에 맞춘다 — 손잡이 자리·오늘과 사이 구간·날짜 칩, 그리고 범례·요약이 아직 이전 날 값이면 그 날.
+  function showFader() {
+    if (!FADER) return
+    const now = dayNumber(S.asOf || TODAY)
+    const today = dayNumber(TODAY)
+    const value = String(now - lowDay())
+    if (faderInput.value !== value) faderInput.value = value
+    faderInput.style.setProperty('--fd-a', along(Math.min(now, today)))
+    faderInput.style.setProperty('--fd-b', along(Math.max(now, today)))
+    const isToday = !S.asOf || S.asOf === TODAY
+    setText(faderDate, S.asOf || TODAY)
+    setText(faderRel, `· ${relText(S.asOf)}`)
+    faderRel.classList.toggle('is-today', isToday)
+    faderToday.disabled = isToday
+    setAttr(faderInput, 'aria-valuetext', `${S.asOf || TODAY} (${relText(S.asOf)})`)
+    setText(faderNote, !S.dataAsOf || S.asOf === S.dataAsOf
+      ? ''
+      : S.sent.size
+        ? `범례·요약 맞추는 중 · 지금 ${S.dataAsOf}`
+        : `범례·요약 ${S.dataAsOf} 기준 · 놓으면 맞춤`)
+  }
+
+  // 끄는 동안의 날 — 프레임마다 한 번만 칠한다(마지막 날만).
+  function setAsOf(T) {
+    S.faderTarget = T < RANGE.min ? RANGE.min : T > RANGE.max ? RANGE.max : T
+    if (!S.faderFrame) S.faderFrame = requestAnimationFrame(flushAsOf)
+  }
+  function flushAsOf() {
+    S.faderFrame = 0
+    const T = S.faderTarget
+    if (T && T !== S.asOf) {
+      const previous = S.asOf
+      S.asOf = T
+      paintAsOf(previous)
+    }
+    showFader()
+  }
+  // 놓을 때 한 번 보낸다. 파이썬이 이미 쥐었거나 곧 쥘 날(보낸 날)과 같으면 보내지 않는다.
+  function commitAsOf() {
+    if (S.commitTimer) clearTimeout(S.commitTimer)
+    S.commitTimer = 0
+    if (S.faderFrame) {
+      cancelAnimationFrame(S.faderFrame)
+      flushAsOf()
+    }
+    S.faderBusy = false
+    const T = S.asOf
+    const expected = S.sent.size ? S.lastSent : S.dataAsOf
+    if (T && T !== expected) {
+      S.sent.add(T)
+      S.lastSent = T
+      setStateValue('asOf', T)
+    }
+    showFader()
+  }
+  const jumpTo = (T) => {
+    setAsOf(T)
+    commitAsOf()
+  }
+
+  if (FADER) {
+    buildFader()
+    faderInput.oninput = () => {
+      S.faderBusy = true
+      setAsOf(isoOf(lowDay() + Number(faderInput.value)))
+    }
+    faderInput.onchange = () => commitAsOf()
+    // 바꾸지 않고 놓았거나(값 그대로라 change 가 없다) 키를 누른 채 초점을 옮겨도 남은 날을 보낸다.
+    faderInput.onpointerup = faderInput.onpointercancel = faderInput.onblur = () => {
+      if (S.faderBusy || S.commitTimer) commitAsOf()
+    }
+    faderInput.ondblclick = (event) => {
+      event.preventDefault()
+      jumpTo(TODAY)
+    }
+    faderToday.onclick = () => jumpTo(TODAY)
+    // ←/→(↓/↑) 하루, PageDown/PageUp 한 달, Home/End 범위 끝. 도면 단축키(화면 이동·확대)로 새지 않게 여기서 멈춘다.
+    faderInput.onkeydown = (event) => {
+      if (event.key === 'Tab' || event.key === 'Escape') return
+      event.stopPropagation()
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      const now = dayNumber(S.faderTarget || S.asOf || TODAY)
+      const next = {
+        ArrowLeft: now - 1, ArrowDown: now - 1, ArrowRight: now + 1, ArrowUp: now + 1,
+        PageDown: addMonths(now, -1), PageUp: addMonths(now, 1), Home: lowDay(), End: highDay(),
+      }[event.key]
+      if (next === undefined) return
+      event.preventDefault()
+      setAsOf(isoOf(next))
+      if (S.commitTimer) clearTimeout(S.commitTimer)
+      S.commitTimer = setTimeout(commitAsOf, KEY_COMMIT_MS)
+    }
+    showFader()
+  }
+  if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
+  if (VIEW && FAB) {
+    setText(fabAsOf, S.asOf ? `기준일 ${S.asOf}` : '')
+    fabToToday.hidden = !TODAY || !S.asOf || S.asOf === TODAY
+    fabToToday.disabled = false
+    fabToToday.onclick = () => {
+      if (!TODAY || S.asOf === TODAY) return
+      fabToToday.disabled = true
+      setStateValue('asOf', TODAY)
+    }
+    const flagged = Math.max(Number(data.unconfirmed) || 0, 0)
+    flagNote.hidden = flagged === 0
+    setText(flagText, `미확인 ${flagged.toLocaleString('ko-KR')}대`)
+  }
 
   // ---------------------------------------------------------------- 높이 손잡이
   // 끌기·키는 브라우저 안에서만 무대 높이를 바꾼다(재실행 없음). 방향키는 편집기 단축키(화면 옮기기·호기 이동)로

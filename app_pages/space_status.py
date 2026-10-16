@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 from functools import partial
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -116,7 +117,12 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
     FloorLayoutProfile,
 )
-from capa_simulation.services.simulation_cache import get_space_equipment_status
+from capa_simulation.services.schedule_confirmation import UNCONFIRMED, confirmation_counts
+from capa_simulation.services.simulation_cache import (
+    get_schedule_confirmation_issues,
+    get_space_equipment_status,
+    get_space_unit_boundaries,
+)
 from capa_simulation.services.space_color_basis import (
     COLOR_BASES,
     COLOR_BASIS_CAPA,
@@ -142,7 +148,12 @@ from capa_simulation.services.space_layout_edit import (
     unsaved_unit_ids,
     viewer_items,
 )
-from capa_simulation.services.space_unit_state import unit_boundaries
+from capa_simulation.services.space_unit_state import (
+    as_of_range,
+    clamp_as_of,
+    drawn_in_range,
+    unit_boundaries,
+)
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
@@ -182,11 +193,22 @@ SAMPLE_SAVE_BLOCKED = (
 # `space_color_<line|capa>_<그룹>` 이다 — 기준마다 따로라 기준을 바꿔도 다른 쪽 체크가 남는다.
 COLOR_BASIS_KEY = "space_color_basis"
 _COLOR_KEY_PARTS = {COLOR_BASIS_LINE_TYPE: "line", COLOR_BASIS_CAPA: "capa"}
+# 세션 기준일(T). 층 상세 도면 맨 위의 페이더를 놓을 때·FAB 의 「오늘로」가 바꾼다(2026-10-16
+# 사용자 결정 — 사이드바 기준일 칸과 「단계」 필터는 없앴다). 옛 사이드바 위젯과 같은 이름이라 그
+# 위젯이 남긴 날짜도 범위 안으로 맞춰 그대로 쓴다. 손대지 않은 세션은 값이 없어 늘 오늘이다. 옛
+# 「단계」 필터 키(`space_status_stage_filter`)는 읽지 않는다.
+SPACE_AS_OF_KEY = "space_status_as_of"
 
 
 def color_group_key(basis: str, group: str) -> str:
     """색 기준 그룹 체크박스의 위젯 key."""
     return f"space_color_{_COLOR_KEY_PARTS[basis]}_{group}"
+
+
+def _set_space_as_of(chosen: date) -> None:
+    """페이더·「오늘로」의 기준일 콜백(`on_asOf_change`). 본문보다 먼저 돌아 그 회차의 범례·
+    요약·호기 표가 새 기준일이다. 범위 밖이면 가까운 끝으로 맞춘다."""
+    st.session_state[SPACE_AS_OF_KEY] = clamp_as_of(chosen, date.today())
 
 
 def _show_fab_overview() -> None:
@@ -359,37 +381,30 @@ if using_sample_equipment:
         downtime = empty_downtime_schedule()
 fab_editable = not showing_sample
 
+# 세션 기준일(T)은 페이더 범위(오늘 ±12개월) 안이다. 날이 지나 범위를 벗어난 값은 가까운 끝으로
+# 맞춰 둔다. 값이 없으면(페이더를 아직 건드리지 않은 세션) 오늘이고 세션에 적지 않는다 — 날이
+# 바뀌면 새 오늘을 따른다.
+as_of_bounds = as_of_range(today)
+stored_as_of = st.session_state.get(SPACE_AS_OF_KEY)
+as_of = clamp_as_of(stored_as_of, today)
+if stored_as_of is not None and stored_as_of != as_of:
+    st.session_state[SPACE_AS_OF_KEY] = as_of
+all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
 if no_fleet:
     # 고를 호기가 없어 조건 위젯을 세우지 않는다(카드에는 위의 까닭 한 줄).
-    as_of = today
-    all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
     selected_processes: list[str] = []
-    selected_stages: list[str] = []
     color_choice = default_color_choice()
 else:
-    # 기준일·필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일이 먼저다 —
-    # 공정·단계 선택지가 그 날의 상태에서 나온다. 이 화면은 배치·공간만 본다 — 기간별 단계 전환은
-    # 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01 사용자 결정).
+    # 필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일은 사이드바가
+    # 아니라 층 상세 도면 맨 위의 페이더다(2026-10-16 사용자 결정 — 「단계」 필터도 없앴다). 이
+    # 화면은 배치·공간만 본다 — 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다
+    # (2026-10-01 사용자 결정).
     with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
-        as_of = st.date_input(
-            "기준일",
-            value=today,
-            key="space_status_as_of",
-            persist_state="session",
-        )
-        all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
         selected_processes = st.multiselect(
             "공정소분류",
             options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
             placeholder="전체",
             key="space_status_process_filter",
-            persist_state="session",
-        )
-        selected_stages = st.multiselect(
-            "단계",
-            options=all_status["상태"].dropna().drop_duplicates().tolist(),
-            placeholder="전체",
-            key="space_status_stage_filter",
             persist_state="session",
         )
         # 도면 색 기준은 하나만 고른다(2026-10-16 사용자 결정 — 질문 7). 고른 기준의 그룹마다
@@ -438,8 +453,6 @@ else:
 space_equipment = all_status.copy()
 if selected_processes:
     space_equipment = space_equipment.loc[space_equipment["공정소분류"].isin(selected_processes)]
-if selected_stages:
-    space_equipment = space_equipment.loc[space_equipment["상태"].isin(selected_stages)]
 has_supported_location = pd.Series(
     [
         (building, floor) in valid_location_pairs
@@ -454,8 +467,8 @@ located_equipment = space_equipment.loc[
     & space_equipment[["X좌표", "Y좌표", "Xsize", "Ysize"]].notna().all(axis=1)
     & has_supported_location
 ].copy()
-# 그리는 행(located)과 세는 행(counted)을 가른다 — 배치는 설비 단위다. 상태·단계 필터는
-# 일부러 설비를 쪼갠다(모듈 하나가 PM 이면 0.75). 여기서 되돌리지 않는다.
+# 그리는 행(located)과 세는 행(counted)을 가른다 — 배치는 설비 단위다. 공정소분류 필터가 모듈 행
+# 일부만 남기면 그 몫만 센다. 여기서 되돌리지 않는다.
 counted_equipment = placed_unit_rows(space_equipment, located_equipment)
 # 도면에 서지 않은 설비는 둘로 가른다. 레이아웃표시 Y 면 「미배치」(좌표를 넣으면 설 자리가 있다),
 # N 이면 「레이아웃 제외」. 도면 이탈일(반출/이설일정, 없으면 정지일정)이 지난 호기는 공간에 없으니
@@ -487,6 +500,32 @@ def _canvas_of(key: FloorKey) -> tuple[float, float]:
 def _canvas_text(key: FloorKey) -> str:
     width, height = _canvas_of(key)
     return f"{width:g} × {height:g}"
+
+
+def _floor_viewer_inputs(
+    key: FloorKey, floor_status: pd.DataFrame, boundaries: pd.DataFrame
+) -> tuple[tuple[FloorLayoutMark, ...], list[dict[str, Any]], str]:
+    """층 상세 뷰어의 도면 요소·호기 payload·그리는 호기 지문.
+
+    그리는 호기는 기준일 하나의 행이 아니라 **페이더 범위 전체의 합집합**이다(레이아웃표시 Y ·
+    좌표 · 범위 시작 뒤까지 도면에 남음, `drawn_in_range`). 기준일에 안 보이는 호기는 브라우저가
+    숨긴다 — 끄는 동안 도면 이탈일을 넘어도 목록·epoch 가 그대로라 다시 서며 배율을 잃지 않는다."""
+    marks = load_floor_layout_marks(equipment_database_path, *key)
+    roster_rows = floor_status.loc[drawn_in_range(floor_status, boundaries, start=as_of_bounds[0])]
+    items = viewer_items(
+        roster_rows, looks=unit_appearance(roster_rows, boundaries, choice=color_choice)
+    )
+    roster = hashlib.sha256("|".join(str(item["id"]) for item in items).encode()).hexdigest()[:16]
+    return tuple(marks), items, roster
+
+
+def _unconfirmed_count() -> int:
+    """FAB 도구 줄의 「미확인 N대」 — 오늘 기준 미확인 설비 수(설비키, 공정소분류 필터 안). 기준일·
+    도면 이탈과 무관하다(가용설비 현황 RawData 의 미확인과 같은 셈)."""
+    if no_fleet:
+        return 0
+    issues = get_schedule_confirmation_issues(equipment, today=today)
+    return confirmation_counts(issues, processes=selected_processes or None)[UNCONFIRMED]
 
 
 # 「다른 층으로 보내기」 목록 순서 — C1 1F, C1 2F, … (도면의 동·층 배치 순서가 아니라 이름 순).
@@ -757,9 +796,9 @@ def _render_layout_editor(
     options = new_unit_options(frames[1])
     st.caption(
         "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
-        "조건 카드의 공정·단계 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
-        "층이 정해지지 않은 미배치 호기는 트레이에 함께 뜹니다. 기준일을 바꿔 편집 대상 호기가 "
-        "달라지면 적용하지 않은 편집은 버려집니다."
+        "조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
+        "층이 정해지지 않은 미배치 호기는 트레이에 함께 뜹니다. 기준일은 편집하는 동안 "
+        f"{as_of.isoformat()} 로 고정입니다 — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다."
     )
     # epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·**편집 대상 호기 목록**. 하나라도 바뀌면
     # 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다. 호기 목록은
@@ -1028,19 +1067,25 @@ if selected is None:
         else:
             render_fab_layout_viewer(
                 key=FAB_VIEWER_KEY,
-                # 도면(캔버스·요소)이 바뀔 때만 새로 선다. 블록 대수는 epoch 밖이라 기준일·필터가
-                # 바뀌면 블록 글자만 다시 쓰고 보던 배율을 지킨다.
+                # 도면(캔버스·요소)이 바뀔 때만 새로 선다. 블록 대수·기준일·미확인 대수는 epoch
+                # 밖이라 기준일·필터가 바뀌면 글자만 다시 쓰고 보던 배율을 지킨다.
                 epoch="|".join(("fab", fab_layout_fingerprint(fab_canvas, fab_marks))),
                 canvas=fab_canvas,
                 marks=fab_marks,
                 link_stats=block_stats,
                 summary=fab_summary,
                 on_open=_open_floor,
+                as_of=as_of,
+                today=today,
+                as_of_range=as_of_bounds,
+                unconfirmed=_unconfirmed_count(),
+                on_as_of=_set_space_as_of,
                 background_image=fab_background,
             )
     if exited_count > 0:
         st.caption(
-            f"반출/이설(없으면 정지)을 마친 {_units(exited_count)}는 공간에 없어 세지 않습니다."
+            f"기준일 {as_of.isoformat()}에 반출/이설(없으면 정지)을 마친 "
+            f"{_units(exited_count)}는 공간에 없어 세지 않습니다."
         )
 
     # 층 목록 표. 층마다 배치·미배치·점유율을 견주는 자리이고, 층 바로 가기와 함께 키보드로 층을
@@ -1125,11 +1170,23 @@ else:
         # 머리 줄 하나에 제목·도면·캔버스 편집·배치 편집·상태 범례를 세운다. 배치도 Figure 의 제목과
         # 범례가 도면 위 한 띠를 따로 먹던 것을 걷었다 — 도면이 테두리 안을 다 쓴다.
         editing_requested = bool(st.session_state.get(EDIT_MODE_KEY, False))
-        # 보기 회차는 층의 세는 행(그리는 행을 모두 품는다)의 경계 날짜를 한 번 구해 범례 대수와
-        # 도면 payload 가 나눠 쓴다. 편집 중에는 편집본으로 편집기가 따로 구한다.
+        # 보기 회차는 이 층 행 전체(세는 행과 페이더 범위의 그리는 행을 모두 품는다)의 경계 날짜를
+        # 한 번 구해 범례 대수와 도면 payload 가 나눠 쓴다. 편집 중에는 편집본으로 편집기가 따로
+        # 구한다.
         viewing = not (editable and editing_requested)
+        floor_status = space_equipment.loc[
+            space_equipment["동"].eq(selected_building).fillna(False).astype(bool)
+            & space_equipment["층"].eq(selected_floor).fillna(False).astype(bool)
+        ]
         floor_boundaries = (
-            unit_boundaries(floor_counted, downtime, today=today) if viewing else None
+            get_space_unit_boundaries(floor_status, downtime, today=today) if viewing else None
+        )
+        # 뷰어 payload 는 머리 줄 앞에서 구한다 — 범례와 도면이 한 회차 안에서 붙어 나가야 페이더를
+        # 놓은 뒤 브라우저가 둘을 한 번에 맞춘다(그 사이에 payload 를 만들면 범례만 먼저 바뀐다).
+        viewer_inputs = (
+            _floor_viewer_inputs(selected, floor_status, floor_boundaries)
+            if floor_boundaries is not None
+            else None
         )
         with st.container(
             horizontal=True, gap="small", vertical_alignment="center", key="space_floor_head"
@@ -1178,24 +1235,20 @@ else:
         if editing:
             _render_layout_editor(buffer_frames, selected_building, selected_floor, layout_profile)
         else:
-            marks = load_floor_layout_marks(
-                equipment_database_path, selected_building, selected_floor
-            )
-            if floor_boundaries is None:
+            if viewer_inputs is None:
                 # 머리 줄은 편집 요청을 보았는데 편집기가 서지 않은 회차(보통은 오지 않는다).
-                floor_boundaries = unit_boundaries(floor_counted, downtime, today=today)
-            items = viewer_items(
-                floor_equipment,
-                looks=unit_appearance(floor_counted, floor_boundaries, choice=color_choice),
-            )
-            roster = hashlib.sha256(
-                "|".join(str(item["id"]) for item in items).encode()
-            ).hexdigest()[:16]
+                viewer_inputs = _floor_viewer_inputs(
+                    selected,
+                    floor_status,
+                    get_space_unit_boundaries(floor_status, downtime, today=today),
+                )
+            marks, items, roster = viewer_inputs
             render_space_layout_viewer(
                 key=f"space_layout_viewer_{selected_building}_{selected_floor}",
-                # 저장본·캔버스·요소·그리는 호기(조건 카드 필터)가 바뀌면 새로 선다. 기준일·
-                # 색 기준·그룹 체크만 바뀌면 같은 epoch 로 색·테만 다시 칠하고 보던 배율을 지킨다
-                # (기준일은 epoch 밖의 `asOf`, 색은 호기마다의 `fill`·`ink`).
+                # 저장본·캔버스·요소·그리는 호기(조건 카드 필터, 페이더 범위)가 바뀌면 새로 선다.
+                # 기준일·색 기준·그룹 체크만 바뀌면 같은 epoch 다 — 날짜는 epoch 에 넣지 않는다
+                # (기준일은 epoch 밖의 `asOf`, 색은 호기마다의 `fill`·`ink`). 브라우저는 바뀐 것만
+                # 다시 칠하고 보던 배율을 지킨다.
                 epoch="|".join(
                     (
                         "view",
@@ -1213,6 +1266,9 @@ else:
                 marks=marks,
                 summary=summary,
                 as_of=as_of,
+                today=today,
+                as_of_range=as_of_bounds,
+                on_as_of=_set_space_as_of,
                 background_image=(
                     layout_profile.image_data_uri if layout_profile is not None else None
                 ),

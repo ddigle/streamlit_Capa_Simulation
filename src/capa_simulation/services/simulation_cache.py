@@ -32,9 +32,14 @@ from capa_simulation.services.equipment_availability import (
     build_equipment_status_as_of,
     build_inactive_equipment_month_view,
     build_milestone_transition_events,
-    build_space_equipment_status,
+    build_space_equipment_status_from_prepared,
     build_weekly_equipment_availability,
     inactive_equipment_rows,
+)
+from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.equipment_validation import (
+    prepare_downtime_for_prepared_equipment,
+    prepare_equipment_master,
 )
 from capa_simulation.services.load_calculator import (
     DemandBasis,
@@ -92,6 +97,7 @@ from capa_simulation.services.securement_cross_check import (
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.shortening_baseline import ShorteningBaseline
 from capa_simulation.services.shortening_progress import compare_progress, progress_export_frame
+from capa_simulation.services.space_unit_state import unit_boundaries
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
     build_weekly_standard_target_capacity,
@@ -1424,6 +1430,14 @@ def space_status_cache_key(
     return (frame_digest(equipment), frame_digest(downtime), as_of.isoformat())
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _cached_prepared_space_inputs(
+    cache_key: tuple[str, str], _equipment: pd.DataFrame, _downtime: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    prepared = prepare_equipment_master(_equipment)
+    return prepared, prepare_downtime_for_prepared_equipment(_downtime, prepared)
+
+
 @st.cache_data(show_spinner=False, max_entries=8)
 def _cached_space_equipment_status(
     cache_key: SpaceStatusCacheKey,
@@ -1431,7 +1445,10 @@ def _cached_space_equipment_status(
     _downtime: pd.DataFrame,
     _as_of: date,
 ) -> pd.DataFrame:
-    return build_space_equipment_status(_equipment, _downtime, as_of=_as_of)
+    prepared, prepared_downtime = _cached_prepared_space_inputs(
+        cache_key[:2], _equipment, _downtime
+    )
+    return build_space_equipment_status_from_prepared(prepared, prepared_downtime, as_of=_as_of)
 
 
 def get_space_equipment_status(
@@ -1444,9 +1461,45 @@ def get_space_equipment_status(
     같은 판정을 5~6번(3천 행에 한 번 0.13초 남짓) 했다. 판정은 설비 마스터 검증을 거치므로
     검증에 실패한 편집본은 `ValueError` 를 그대로 낸다(예외는 캐시하지 않는다). 받은 프레임은
     부를 때마다 새 사본이라 고쳐 써도 캐시가 바뀌지 않는다.
+
+    검증(설비 마스터·비가동 일정)은 기준일과 상관없어 내용 지문만으로 따로 기억한다 — 기준일
+    페이더를 놓을 때마다 새 기준일이 오지만, 검증(판정의 대부분)은 내용이 같으면 한 번이다.
     """
     return _cached_space_equipment_status(
         space_status_cache_key(equipment, downtime, as_of=as_of), equipment, downtime, as_of
+    )
+
+
+# (경계 날짜가 읽는 설비 마스터 칸의 내용 지문, 비가동 일정 내용 지문, 오늘).
+SpaceBoundaryCacheKey = tuple[str, str, str]
+
+
+def space_boundary_cache_key(
+    rows: pd.DataFrame, downtime: pd.DataFrame, *, today: date
+) -> SpaceBoundaryCacheKey:
+    """Space 경계 날짜(`space_unit_state.unit_boundaries`)의 키. 경계 날짜는 설비 마스터 칸(일정·
+    실적·상태·보관·기존·Main 설비·공정)과 비가동 일정, 오늘로만 정해진다 — 기준일 상태 칸(`상태`·
+    지분 …)은 기준일마다 바뀌어도 경계 날짜와 무관해 지문에서 뺀다. 인덱스는 결과의 인덱스라
+    지문에 든다(`frame_digest`)."""
+    master = rows.loc[:, [column for column in EQUIPMENT_COLUMNS if column in rows.columns]]
+    return (frame_digest(master), frame_digest(downtime), today.isoformat())
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def _cached_space_unit_boundaries(
+    cache_key: SpaceBoundaryCacheKey, _rows: pd.DataFrame, _downtime: pd.DataFrame
+) -> pd.DataFrame:
+    return unit_boundaries(_rows, _downtime, today=date.fromisoformat(cache_key[2]))
+
+
+def get_space_unit_boundaries(
+    rows: pd.DataFrame, downtime: pd.DataFrame, *, today: date
+) -> pd.DataFrame:
+    """층 상세 회차의 경계 날짜를 같은 내용이면 다시 쓴다. 기준일 페이더를 놓을 때마다 층 상세가
+    다시 돌지만 경계 날짜는 기준일과 상관없다(1천여 행에 수십 ms — 미확인 고르기 포함). 받은
+    프레임은 부를 때마다 새 사본이다."""
+    return _cached_space_unit_boundaries(
+        space_boundary_cache_key(rows, downtime, today=today), rows, downtime
     )
 
 

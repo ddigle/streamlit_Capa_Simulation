@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -251,16 +251,23 @@ def test_a_new_as_of_that_changes_the_roster_resets_the_editor(
     tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """기준일로 편집 대상이 바뀌면(반출을 마친 호기가 빠진다) epoch 도 바뀌어야 한다. 그대로면
-    브라우저가 옛 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다."""
+    브라우저가 옛 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다. 편집 중에는
+    기준일이 고정이지만(페이더는 보기에만) 세션 기준일은 편집 사이사이에 바뀔 수 있다 — 세션 값으로
+    바꿔 본다."""
+    today = date.today()
     equipment = _equipment()
-    equipment.loc[equipment["설비명"].eq("EQ-02"), "정지일정"] = "2026-11-15"
+    equipment.loc[equipment["설비명"].eq("EQ-02"), "정지일정"] = (
+        today + timedelta(days=30)
+    ).isoformat()
     monkeypatch.setattr(
         "test_space_layout_editor_page._equipment", lambda: equipment.copy(), raising=True
     )
     app, _ = _open_editor(tmp_path)
-    app.sidebar.date_input(key="space_status_as_of").set_value(date(2026, 10, 1)).run()
+    app.session_state["space_status_as_of"] = today + timedelta(days=10)
+    app.run()
     before = editor_calls[-1]
-    app.sidebar.date_input(key="space_status_as_of").set_value(date(2026, 12, 1)).run()
+    app.session_state["space_status_as_of"] = today + timedelta(days=60)
+    app.run()
     after = editor_calls[-1]
 
     assert not app.exception
@@ -340,21 +347,34 @@ def test_the_floor_detail_keeps_its_place_while_the_unsaved_panel_comes_and_goes
     clear_equipment_repository()
 
 
-def _count_status_builds(monkeypatch: pytest.MonkeyPatch) -> list[date]:
-    """`build_space_equipment_status` 를 실제로 돌린 횟수(기준일)를 센다. 캐시는 비우고 시작한다 —
-    키가 내용 지문이라 앞 테스트가 같은 표로 채운 칸이 남는다."""
+def _count_status_builds(monkeypatch: pytest.MonkeyPatch) -> tuple[list[date], list[int]]:
+    """기준일 판정(`build_space_equipment_status_from_prepared`)을 실제로 돌린 기준일과 설비
+    마스터 검증(`prepare_equipment_master`)을 돌린 행 수를 센다. 캐시는 비우고 시작한다 — 키가 내용
+    지문이라 앞 테스트가 같은 표로 채운 칸이 남는다."""
     from capa_simulation.services import simulation_cache
-    from capa_simulation.services.equipment_availability import build_space_equipment_status
+    from capa_simulation.services.equipment_availability import (
+        build_space_equipment_status_from_prepared,
+    )
+    from capa_simulation.services.equipment_validation import prepare_equipment_master
 
     builds: list[date] = []
+    prepares: list[int] = []
 
-    def counting(equipment: pd.DataFrame, downtime: pd.DataFrame, *, as_of: date) -> pd.DataFrame:
+    def counting(
+        prepared: pd.DataFrame, prepared_downtime: pd.DataFrame, *, as_of: date
+    ) -> pd.DataFrame:
         builds.append(as_of)
-        return build_space_equipment_status(equipment, downtime, as_of=as_of)
+        return build_space_equipment_status_from_prepared(prepared, prepared_downtime, as_of=as_of)
 
-    monkeypatch.setattr(simulation_cache, "build_space_equipment_status", counting)
+    def counting_prepare(equipment: pd.DataFrame) -> pd.DataFrame:
+        prepares.append(len(equipment))
+        return prepare_equipment_master(equipment)
+
+    monkeypatch.setattr(simulation_cache, "build_space_equipment_status_from_prepared", counting)
+    monkeypatch.setattr(simulation_cache, "prepare_equipment_master", counting_prepare)
     simulation_cache._cached_space_equipment_status.clear()
-    return builds
+    simulation_cache._cached_prepared_space_inputs.clear()
+    return builds, prepares
 
 
 def test_the_space_status_wrapper_builds_once_per_content_and_as_of(
@@ -367,7 +387,7 @@ def test_the_space_status_wrapper_builds_once_per_content_and_as_of(
         space_status_cache_key,
     )
 
-    builds = _count_status_builds(monkeypatch)
+    builds, prepares = _count_status_builds(monkeypatch)
     master, downtime = _equipment(), _downtime()
     as_of = date(2026, 10, 1)
     expected = build_space_equipment_status(master, downtime, as_of=as_of)
@@ -399,6 +419,8 @@ def test_the_space_status_wrapper_builds_once_per_content_and_as_of(
         build_space_equipment_status(moved, downtime, as_of=as_of),
     )
     assert builds == [as_of, later, as_of]
+    # 검증은 기준일과 상관없어 내용마다 한 번이다 — 기준일만 바뀐 회차(페이더)는 검증하지 않는다.
+    assert prepares == [len(master), len(moved)]
 
 
 def test_editing_and_applying_judge_each_table_content_once(
@@ -407,7 +429,7 @@ def test_editing_and_applying_judge_each_table_content_once(
     """배치 편집은 한 회차에 저장본(조건 카드·요약)과 편집본(편집기·겹침 경고)을 따로 판정하고,
     적용은 `st.rerun()` 으로 두 회차를 돈다. 같은 내용은 한 번만 판정한다 — 캐시가 없을 때는
     편집을 켜면 2번, 적용 한 번에 5~6번 같은 판정을 했다(2026-10-08 계측)."""
-    builds = _count_status_builds(monkeypatch)
+    builds, _ = _count_status_builds(monkeypatch)
     app, _ = _open_editor(tmp_path)
     # 보기 회차에 저장본을 한 번 판정한다. 편집을 켠 회차의 편집본은 저장본과 내용이 같아 다시 쓴다.
     assert len(builds) == 1
@@ -427,3 +449,48 @@ def test_editing_and_applying_judge_each_table_content_once(
     app.run()
     assert len(builds) == 2
     clear_equipment_repository()
+
+
+def test_the_space_boundary_wrapper_keys_on_master_columns_and_today(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """층 상세의 경계 날짜는 기준일과 상관없다 — 키는 경계 날짜가 읽는 설비 마스터 칸의 내용 지문·
+    비가동 일정·오늘이고, 기준일 상태 칸(`상태`·지분 …)만 다른 표는 같은 키다. 결과는
+    `unit_boundaries` 그대로이고 받은 쪽이 고쳐 써도 캐시는 그대로다."""
+    from capa_simulation.services import simulation_cache
+    from capa_simulation.services.equipment_availability import build_space_equipment_status
+    from capa_simulation.services.simulation_cache import (
+        get_space_unit_boundaries,
+        space_boundary_cache_key,
+    )
+    from capa_simulation.services.space_unit_state import unit_boundaries
+
+    calls: list[str] = []
+
+    def counting(rows: pd.DataFrame, downtime: pd.DataFrame, *, today: date) -> pd.DataFrame:
+        calls.append(today.isoformat())
+        return unit_boundaries(rows, downtime, today=today)
+
+    monkeypatch.setattr(simulation_cache, "unit_boundaries", counting)
+    simulation_cache._cached_space_unit_boundaries.clear()
+    master, downtime = _equipment(), _downtime()
+    today = date(2026, 10, 1)
+    early = build_space_equipment_status(master, downtime, as_of=date(2026, 8, 5))
+    late = build_space_equipment_status(master, downtime, as_of=date(2026, 12, 1))
+    assert not early["상태"].equals(late["상태"])
+    assert space_boundary_cache_key(early, downtime, today=today) == space_boundary_cache_key(
+        late, downtime, today=today
+    )
+
+    first = get_space_unit_boundaries(early, downtime, today=today)
+    pd.testing.assert_frame_equal(first, unit_boundaries(early, downtime, today=today))
+    first.loc[:, "보관"] = True
+    again = get_space_unit_boundaries(late, downtime, today=today)
+    pd.testing.assert_frame_equal(again, unit_boundaries(late, downtime, today=today))
+    assert calls == [today.isoformat()]
+    # 경계 날짜가 읽는 칸·오늘이 바뀌면 다시 구한다.
+    moved = early.copy()
+    moved.loc[moved["설비명"].eq("EQ-02"), "반입일정"] = pd.Timestamp("2026-09-01")
+    get_space_unit_boundaries(moved, downtime, today=today)
+    get_space_unit_boundaries(early, downtime, today=date(2026, 10, 2))
+    assert calls == [today.isoformat(), today.isoformat(), "2026-10-02"]

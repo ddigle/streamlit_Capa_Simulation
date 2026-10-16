@@ -25,6 +25,14 @@ HTML·CSS·JS 는 `space_layout_editor_assets/` 의 파일이다(파이썬 문�
 FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우저가 `navigate` 를 보낸다. 받는 쪽은
 `on_navigate_change` 콜백이다 — 콜백은 본문보다 먼저 돌므로 그 자리에서 층을 바꾸면 재실행 한
 번으로 층 상세가 선다(콜백 안에서 `st.session_state[key].navigate` 로 읽힌다).
+
+**기준일 페이더**(층 상세 보기, 도면 상자 맨 위 줄)도 브라우저 몫이다. 끄는 동안에는 파이썬으로
+아무것도 보내지 않고 브라우저가 호기마다 받은 경계 날짜를 글자로 견주어 class·면색만 바꾼다. 손을
+떼면 상태 값 `asOf`(`YYYY-MM-DD`)를 **한 번** 보내고(`setStateValue`), 받는 쪽 `on_asOf_change`
+콜백이 세션 기준일을 바꿔 그 회차에 범례·요약·호기 표가 맞춰진다. 기준일은 epoch 에 넣지 않는다 —
+data 의 `asOf` 는 새 epoch(층 이동 등)에서 쓰고, 같은 epoch 회차에 받은 값이 브라우저가 쥔 값과
+같으면 아무것도 다시 칠하지 않는다. FAB 전체 뷰어는 페이더 없이 도구 줄에 기준일과 「오늘로」를,
+배치 편집기는 같은 자리에 「편집 중 고정」 줄을 둔다.
 """
 
 from __future__ import annotations
@@ -194,6 +202,33 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _dispatch_as_of(key: str, on_as_of: Callable[[date], None]) -> None:
+    """`on_asOf_change` 콜백. 페이더를 놓거나 「오늘로」를 누를 때 브라우저가 보낸 기준일
+    (`YYYY-MM-DD`)을 `on_as_of(date)` 로 넘긴다. 콜백은 본문보다 먼저 돌아 그 회차의 범례·요약이 새
+    기준일이다. 날짜 글자가 아니면(없는 날 포함) 조용히 버린다."""
+    state = st.session_state.get(key)
+    raw = state.get("asOf") if isinstance(state, Mapping) else getattr(state, "asOf", None)
+    day = _day_or_none(raw)
+    if day is None:
+        return
+    try:
+        chosen = date.fromisoformat(day)
+    except ValueError:
+        return
+    on_as_of(chosen)
+
+
+def _as_of_fields(as_of: date, today: date, as_of_range: tuple[date, date]) -> dict[str, str]:
+    """data 의 기준일 칸 — 기준일·오늘·페이더 범위(양 끝 포함). 범위는 파이썬
+    (`space_unit_state.as_of_range`)이 정해 보낸다 — 날짜 계산을 한 곳에 둔다."""
+    return {
+        "asOf": as_of.isoformat(),
+        "today": today.isoformat(),
+        "asOfMin": as_of_range[0].isoformat(),
+        "asOfMax": as_of_range[1].isoformat(),
+    }
+
+
 def render_space_layout_viewer(
     *,
     key: str,
@@ -204,22 +239,30 @@ def render_space_layout_viewer(
     marks: Sequence[FloorLayoutMark],
     summary: str,
     as_of: date,
+    today: date,
+    as_of_range: tuple[date, date],
+    on_as_of: Callable[[date], None],
     background_image: str | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
     오른쪽의 한 줄 요약(배치·미배치·점유율)이다. 돌려받는 값이 없다.
 
-    `as_of`(기준일 T)는 `asOf` 로 보내고 epoch 에 넣지 않는다 — 브라우저가 호기마다 받은 경계 날짜와
-    글자로 견주어 테(반입 전 주황 점선·반출/이설 예정 노랑)·빗금·「!」·운영 비가동 표식·지연 빨강을
-    정한다. 기준일·체크만 바뀐 회차는 같은 epoch 로 다시 칠하고 보던 배율을 지킨다."""
+    도면 상자 맨 위 줄은 **기준일 페이더**다(오늘 ± 12개월 = `as_of_range`, 하루 단위). 끄는 동안은
+    브라우저가 호기마다 받은 경계 날짜와 글자로 견주어 테(반입 전 주황 점선·반출/이설 예정 노랑)·
+    빗금·「!」·운영 비가동 표식·지연 빨강·숨김을 바꾸고, 놓으면 `asOf` 를 한 번 보내
+    `on_as_of(date)` 가 콜백에서 돈다. `items` 는 범위 어딘가에서 도면에 서는 호기의 합집합이어야
+    한다(`space_unit_state.drawn_in_range`) — 기준일에 따라 목록이 달라지면 epoch 가 바뀌어 다시
+    선다.
+    `as_of`(세션 기준일)는 epoch 에 넣지 않는다 — 기준일·체크만 바뀐 회차는 같은 epoch 로 바뀐 것만
+    다시 칠하고 보던 배율을 지킨다."""
     _EDITOR(
         key=key,
         data={
             "mode": "view",
             "scope": "floor",
             "epoch": epoch,
-            "asOf": as_of.isoformat(),
+            **_as_of_fields(as_of, today, as_of_range),
             "title": floor_label(floor),
             "summary": summary,
             "items": _clean_items(items),
@@ -236,6 +279,7 @@ def render_space_layout_viewer(
             "newUnit": {},
         },
         on_apply_change=lambda: None,
+        on_asOf_change=partial(_dispatch_as_of, key, on_as_of),
         width="stretch",
     )
 
@@ -266,19 +310,30 @@ def render_fab_layout_viewer(
     link_stats: Mapping[str, Mapping[str, str | None]],
     summary: str,
     on_open: Callable[[FloorKey], None],
+    as_of: date,
+    today: date,
+    as_of_range: tuple[date, date],
+    unconfirmed: int,
+    on_as_of: Callable[[date], None],
     background_image: str | None = None,
 ) -> None:
     """FAB 전체 **뷰어**. 층 도면과 같은 편집기의 보기 전용(`scope="fab"`)이다.
 
     누르면 열리는 것은 층 블록뿐이다(영역·글자는 꾸밈). 블록 글자의 대수(`link_stats`, 키는
     「C1 1F」)는 epoch 밖으로 따로 보낸다 — 같은 epoch 의 회차에는 블록 글자만 다시 쓴다. 블록을
-    누르거나 Tab 으로 초점을 두고 Enter 를 누르면 `on_open((동, 층))` 이 콜백에서 돈다."""
+    누르거나 Tab 으로 초점을 두고 Enter 를 누르면 `on_open((동, 층))` 이 콜백에서 돈다.
+
+    FAB 에는 페이더가 없다. 도구 줄 요약 앞에 「기준일 YYYY-MM-DD」(블록 대수의 기준일)와, 오늘이
+    아니면 「오늘로」 단추(누르면 `asOf` = 오늘 → `on_as_of`), 그리고 `unconfirmed`(오늘 기준 미확인
+    설비 수)가 0 보다 크면 「! 미확인 N대」를 단다. 기준일·대수는 epoch 밖이다."""
     _EDITOR(
         key=key,
         data={
             "mode": "view",
             "scope": "fab",
             "epoch": epoch,
+            **_as_of_fields(as_of, today, as_of_range),
+            "unconfirmed": max(int(unconfirmed), 0),
             "title": FAB_VIEW_LABEL,
             "summary": summary,
             "items": [],
@@ -297,6 +352,7 @@ def render_fab_layout_viewer(
         },
         on_apply_change=lambda: None,
         on_navigate_change=partial(_dispatch_navigate, key, epoch, on_open),
+        on_asOf_change=partial(_dispatch_as_of, key, on_as_of),
         width="stretch",
     )
 
@@ -367,7 +423,9 @@ def render_space_layout_editor(
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
     면은 보기와 같은 규칙(지연 → 보관 → 체크한 그룹 → 기본, 기준일 `as_of`)이지만 **의미 테·덧표시는
-    그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다.
+    그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다. 기준일은 편집 중 고정이다 —
+    페이더 자리에 같은 높이의 「기준일 YYYY-MM-DD · 편집 중 고정」 줄이 선다(기준일이 바뀌면 편집
+    대상 호기가 바뀌어 적용하지 않은 편집이 버려진다).
 
     적용값: ``{"epoch", "changes", "renames", "canvas", "marks"}``.
 

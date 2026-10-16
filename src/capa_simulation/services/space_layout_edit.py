@@ -1305,24 +1305,44 @@ def viewer_items(
     """층 상세 뷰어(편집기와 같은 도면, 보기 전용)에 보낼 저장본 호기. 좌표·크기가 다 있는 행만
     받는다. `detail` 은 풍선·선택 줄에 붙는 공정과 운영 비가동이다. `looks` 는 설비명마다 얹을
     면·글자·경계 날짜(`fill`·`ink`·`realFrom` … — `components/space_layout.unit_appearance`)다. 층의
-    세는 행 전체로 범례 대수와 함께 한 번 구한 것을 받으므로 `located` 밖의 설비명이 있어도 된다."""
+    세는 행 전체로 범례 대수와 함께 한 번 구한 것을 받으므로 `located` 밖의 설비명이 있어도 된다.
+
+    층 상세는 페이더를 놓을 때마다 이 목록을 다시 만든다(1천여 행) — 행마다 Series 를 만드는
+    `iterrows` 대신 칸을 목록으로 꺼내 돈다."""
     found = looks or {}
+
+    def column(name: str, *, required: bool = False) -> list[Any]:
+        if name in located.columns or required:
+            return located[name].tolist()
+        return [None] * len(located)
+
     items: list[dict[str, Any]] = []
-    parents = _parents(located)
-    for (_, row), parent in zip(located.iterrows(), parents, strict=True):
-        process = _text(row.get("공정소분류")).strip()
-        downtime = _text(row.get("비가동유형")).strip()
-        unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
+    rows = zip(
+        column(EQUIPMENT_ID_COLUMN, required=True),
+        column("상태"),
+        column("X좌표", required=True),
+        column("Y좌표", required=True),
+        column("Xsize", required=True),
+        column("Ysize", required=True),
+        column("공정소분류"),
+        column("비가동유형"),
+        _parents(located).tolist(),
+        strict=True,
+    )
+    for name, stage, x, y, width, height, process_value, downtime_value, parent in rows:
+        process = _text(process_value).strip()
+        downtime = _text(downtime_value).strip()
+        unit_id = str(name).strip()
         items.append(
             {
                 **found.get(unit_id, {}),
                 "id": unit_id,
                 "label": unit_id,
-                "stage": _text(row.get("상태")),
-                "x": finite_or_none(row["X좌표"]),
-                "y": finite_or_none(row["Y좌표"]),
-                "w": finite_or_none(row["Xsize"]),
-                "h": finite_or_none(row["Ysize"]),
+                "stage": _text(stage),
+                "x": finite_or_none(x),
+                "y": finite_or_none(y),
+                "w": finite_or_none(width),
+                "h": finite_or_none(height),
                 "placed": True,
                 "group": str(parent) if _present(parent) else None,
                 "detail": " · ".join(

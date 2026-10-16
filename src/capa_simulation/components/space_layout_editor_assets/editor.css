@@ -79,7 +79,8 @@
 .sle-halo, .sle-hatch, .sle-ring, .sle-ring-out, .sle-flag, .sle-offline, .sle-corner { display: none; pointer-events: none; }
 .sle-halo { fill: none; stroke: var(--sle-ring-halo); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .sle-ring, .sle-ring-out { fill: none; vector-effect: non-scaling-stroke; }
-.sle.is-view .sle-unit.is-gone { display: none; }
+/* 기준일에 도면에 없는 호기는 visibility 로 숨긴다 — display 를 바꾸면 페이더 프레임마다 SVG 배치가 다시 돈다. */
+.sle.is-view .sle-unit.is-gone { visibility: hidden; }
 .sle.is-view .sle-unit.is-selected .sle-halo { display: inline; }
 .sle.is-view .sle-unit.is-pre .sle-rect, .sle.is-view .sle-unit.is-exitplan .sle-rect { stroke: none; }
 .sle.is-view .sle-unit.is-pre .sle-ring { display: inline; stroke: var(--sle-ring-pre); stroke-width: 2; stroke-dasharray: 5 3; }
@@ -304,3 +305,82 @@
 .sle.is-view .sle-spacer { display: none; }
 .sle-pick:empty::before { content: attr(data-hint); color: var(--sle-muted); }
 .sle-summary { font-size: 0.82rem; color: var(--sle-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---- 기준일 줄(층 도면 맨 위) — 보기는 페이더, 배치 편집은 「편집 중 고정」 줄. 높이가 같아(JS DATE_ROW_PX)
+   보기·편집의 도면 상자 크기가 같다. FAB 에는 없다(.sle-floor-only). ---- */
+.sle-daterow { height: 36px; box-sizing: border-box; display: flex; align-items: center; min-width: 0; }
+.sle-fader {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  width: 100%; height: 100%; min-width: 0;
+}
+/* 칩 폭은 고정이다 — 글자(「+11개월 4주 6일」·범례 줄) 길이를 따라 넓어지면 끄는 동안 트랙이 옆으로 밀려 손잡이가
+   손가락 밑에서 미끄러지고, 프레임마다 줄 배치가 다시 돈다. */
+.sle-fader-chip {
+  display: flex; flex-direction: column; justify-content: center; width: 13.5rem; flex: none; line-height: 1.25;
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
+}
+.sle-fader-main, .sle-fader-note { overflow: hidden; text-overflow: ellipsis; }
+.sle-fader-main { font-size: 0.85rem; }
+.sle-fader-date { font-weight: 700; }
+.sle-fader-rel { color: var(--sle-muted); }
+.sle-fader-rel.is-today { color: var(--sle-accent); font-weight: 700; }
+/* 끄는 동안 범례·요약(파이썬이 쥔 날의 대수)이 아직 이전 날이라는 한 줄. 같아지면 비어 사라진다. */
+.sle-fader-note { font-size: 0.7rem; color: var(--sle-muted); }
+.sle-fader-note:empty { display: none; }
+.sle-fader-track { position: relative; height: 34px; min-width: 0; }
+/* 트랙은 오늘↔기준일 사이를 강조색으로 칠한다(`--fd-a`·`--fd-b`, JS 가 손잡이 가운데와 같은 식으로 정한다). */
+.sle-fader-input {
+  position: absolute; left: 0; right: 0; top: 2px; width: 100%; height: 16px; margin: 0;
+  background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer;
+  --fd-a: 50%; --fd-b: 50%;
+}
+.sle-fader-input::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--sle-border-strong) var(--fd-a), var(--sle-accent) var(--fd-a),
+    var(--sle-accent) var(--fd-b), var(--sle-border-strong) var(--fd-b));
+}
+.sle-fader-input::-moz-range-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--sle-border-strong) var(--fd-a), var(--sle-accent) var(--fd-a),
+    var(--sle-accent) var(--fd-b), var(--sle-border-strong) var(--fd-b));
+}
+.sle-fader-input::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -5px; box-sizing: border-box;
+  border-radius: 50%; background: var(--sle-accent); border: 2px solid var(--sle-surface);
+  box-shadow: 0 0 0 1px var(--sle-accent);
+}
+.sle-fader-input::-moz-range-thumb {
+  width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; background: var(--sle-accent);
+  border: 2px solid var(--sle-surface); box-shadow: 0 0 0 1px var(--sle-accent);
+}
+/* 키보드 초점은 트랙 전체가 아니라 손잡이 둘레 두 겹(면색 틈 + 강조색)이다. */
+.sle input.sle-fader-input:focus-visible { outline: none; }
+.sle-fader-input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--sle-surface), 0 0 0 4px var(--sle-accent); }
+.sle-fader-input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--sle-surface), 0 0 0 4px var(--sle-accent); }
+.sle-fader-ticks { position: absolute; left: 0; right: 0; top: 18px; height: 16px; pointer-events: none; }
+.sle-tick { position: absolute; top: 0; width: 1px; height: 4px; background: var(--sle-muted); opacity: 0.6; }
+.sle-tick.is-quarter { height: 6px; opacity: 0.9; }
+.sle-tick.is-today { top: -1px; width: 2px; height: 7px; margin-left: -0.5px; background: var(--sle-accent); opacity: 1; }
+.sle-tick-label {
+  position: absolute; top: 6px; transform: translateX(-50%); font-size: 10px; line-height: 10px;
+  color: var(--sle-muted); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.sle-tick-label.is-today { color: var(--sle-accent); font-weight: 700; }
+.sle-pinned {
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 100%; box-sizing: border-box; padding: 0 10px;
+  border: 1px dashed var(--sle-border-strong); border-radius: 8px; font-size: 0.85rem; white-space: nowrap;
+  overflow: hidden; font-variant-numeric: tabular-nums;
+}
+.sle-pinned-note { color: var(--sle-muted); overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ---- */
+.sle-asof { font-size: 0.82rem; color: var(--sle-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sle-flagnote {
+  display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 0.82rem; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sle-flagnote-dot {
+  display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--sle-flag); color: var(--sle-flag-ink); font-size: 10px; font-weight: 700;
+}
+.sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }

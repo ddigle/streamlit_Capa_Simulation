@@ -1204,8 +1204,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `components/floor_layout_upload.py` 로 올려 `background_image` 로 깐다. Space Capa
     연결은 미구현이다.
   - 설비 마스터가 비었을 때만 샘플 스위치가 뜬다. 실데이터가 있으면 끌 것이 없다.
-  - 기준일·공정소분류·단계·**색 기준**은 사이드바 조건 카드 `Space 조건` 이다(2026-09-29, 색 기준
-    2026-10-16). 색 기준은 가로 `st.radio`(`공정구분 | 투자Capa`, key `space_color_basis`)이고 그 아래에
+  - 공정소분류·**색 기준**은 사이드바 조건 카드 `Space 조건` 이다(2026-09-29, 색 기준 2026-10-16).
+    **기준일은 사이드바가 아니라 층 상세 도면 맨 위의 페이더**다(2026-10-16 사용자 결정 5 — 사이드바 기준일
+    `st.date_input`·「단계」 필터는 없앴다. 옛 위젯 키 `space_status_stage_filter` 는 읽지 않는다). 세션
+    기준일은 `space_status_as_of`(옛 위젯과 같은 이름이라 그 값도 범위 안으로 맞춰 쓴다)이고 값이 없으면
+    오늘이다(적지 않는다 — 날이 바뀌면 새 오늘). 범위는 오늘 ±12개월(`space_unit_state.as_of_range`, 달력
+    달)이고 벗어난 세션 값은 가까운 끝으로 맞춰 적는다(`clamp_as_of`). 색 기준은 가로
+    `st.radio`(`공정구분 | 투자Capa`, key `space_color_basis`)이고 그 아래에
     고른 기준의 그룹 체크박스(처음엔 모두 켬, key `space_color_<line|capa>_<그룹>` — 기준마다 따로라 기준을
     바꿔도 다른 쪽 체크가 남는다)가 선다. 모두 `persist_state="session"` 이다. 체크박스 글자 앞의 색 견본은
     CSS(`space_layout.color_check_style`, 비공식 `stMarkdownContainer` 경로 — 판올림에서 바뀌면 견본만
@@ -1220,7 +1225,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     N대」와 같은 축), **미확인은 오늘 기준 설비 수**(설비키, 지분으로 나누지 않음 —
     `confirmation_counts` 와 같은 셈)다. 대수가 0 인 칸은 세우지 않고 끝에 「기준 YYYY-MM-DD」를 단다.
     사양 「머리 줄 미확인 N대」는 이 층 머리 줄 범례의 칩 하나다 — 그 층 도면에 선(기준일에 보이는) 「!」
-    상자의 설비 수이고 FAB 전체 화면에는 없다(FAB·페이지 머리에도 둘지는 사용자 확인 대기).
+    상자의 설비 수다. FAB 전체에는 도구 줄 요약 앞에 「! 미확인 N대」(오늘 기준, 공정소분류 필터 안 설비
+    마스터 전체의 설비 수 — `get_schedule_confirmation_issues` → `confirmation_counts`, 도면 이탈과 무관,
+    0 이면 숨김, data `unconfirmed`)를 둔다(기본안 — 페이지 머리에도 둘지는 사용자 확인 대기).
   - 본문 머리에는 상태 배지(「Data확보중」)도 적용 이력 줄도 두지 않는다(2026-10-01 사용자 결정 — 배치도가
     쓸 자리다). 사이드바 메뉴 이름의 「(Data확보중)」은 남긴다 — `render_page_header(..., show_status=False)`
     로 배지만 끄고 제목 인자는 사이드바 라벨과 같게 둔다(`test_app_navigation` 의 두 제목 계약).
@@ -1284,8 +1291,47 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     범례는 보기 때 그 층의 기준일 대수, 편집 때는 채우기 뜻(체크한 그룹·그 밖·보관·지연)만이다 —
     편집본은 저장본과 대수가 다르고, **편집 화면은 의미 테·덧표시를 그리지 않는다**(테는 선택·묶음·다른
     층·겹침 편집 표시 전용, 채우기는 같은 규칙). 뷰어 epoch 는 저장본·캔버스·요소 지문·그리는 호기
-    목록이다. 기준일은 epoch 밖의 `data.asOf`, 색 기준·체크는 호기마다의 `fill`·`ink` 라 셋만 바뀐 회차는
-    같은 epoch 로 색·테만 다시 칠하고 보던 배율을 지킨다(그리는 호기가 바뀌는 기준일은 epoch 도 바뀐다).
+    목록이다. 색 기준·체크는 호기마다의 `fill`·`ink` 라 체크만 바뀐 회차는 같은 epoch 로 색만 다시 칠하고
+    보던 배율을 지킨다.
+  - **기준일 페이더**(층 상세 보기, 2026-10-16 사용자 결정 5 — 실측 판정 「원활」). 도면 상자 맨 위 한 줄
+    (36px — JS `DATE_ROW_PX`, 무대 기본 높이는 `VIEW_CHROME_PX` 에 이 줄과 틈을 더해 뺀다. FAB 는 더하지
+    않는다)이 CCv2 컴포넌트 안의 페이더다: 날짜 칩(「YYYY-MM-DD · 오늘」·「+3개월 2주」, 폭 고정 — 넓어지면
+    끄는 동안 트랙이 밀린다) · 트랙(`input type=range`, 오늘 ±12개월 하루 단위, 달 눈금·분기 글자·가운데
+    오늘 굵은 눈금) · 「오늘」 단추. 끌기·트랙 누르기, ←/→ 하루·PageUp/PageDown 한 달·Home/End 범위 끝,
+    두 번 누르기·「오늘」은 오늘. 키는 도면 단축키로 새지 않게 멈춘다.
+    - **끄는 동안 서버 회차가 없다.** `input` 은 requestAnimationFrame 으로 프레임마다 마지막 날만 칠한다 —
+      호기마다 받은 경계 날짜(`boundary_payload`)를 **글자로** 견주는 `unitState` 이고(파이썬 판정과 같은
+      식, `test_space_unit_state` 가 대조), 앞 날과 새 날 사이에 경계 날짜가 든 호기만(epoch 마다 만든
+      `[날, 호기]` 정렬 목록을 이분 탐색) 판정 부호를 견주어 바뀐 상자의 class·면색만 고친다. 숨김은
+      `visibility`(display 를 바꾸면 SVG 배치가 다시 돈다)이고, 겹침 꼭지는 epoch 마다 격자로 한 번 구한
+      짝 목록으로 숨김이 바뀐 호기와 그 짝만 다시 본다(O(n²) 되풀이 금지). 풍선 글은 올려 둘 때 쓴다.
+    - **손을 뗄 때**(`change`·`pointerup`, 키는 멈춘 뒤 400ms) 상태 값 `asOf`(`YYYY-MM-DD`)를
+      `setStateValue` 로 **한 번** 보낸다. `on_asOf_change` 콜백(`space_layout_editor._dispatch_as_of` →
+      페이지 `_set_space_as_of`)이 본문보다 먼저 돌아 세션 기준일을 바꾸고, 그 회차에 범례 대수·요약·호기
+      표·FAB 블록 대수가 맞춰진다. 끄는 동안 범례·요약은 이전 날 값이다 — 칩 아래 「범례·요약 YYYY-MM-DD
+      기준 · 놓으면 맞춤」 한 줄과 범례 끝 「기준 YYYY-MM-DD」가 그것을 알린다. 상태 이름(`stage`)도
+      파이썬이 쥔 날의 것이라 다른 날을 보는 동안에는 이름 뒤에 「(그 날 기준)」을 단다.
+    - **날짜는 epoch 에 넣지 않는다**(넣으면 회차마다 JS 가 다시 서고 1,289대에 70~100ms). data 의
+      `asOf` 는 새 epoch 에서 그대로 쓰고, 같은 epoch 회차는 `adoptAsOf` 가 가른다 — 파이썬이 쥔 날이 지난
+      회차와 같으면(끄는 중·보낸 날이 아직 안 돌아옴·다른 위젯의 회차) 브라우저가 칠한 날을 지키고, 보낸
+      날이 돌아온 것이면 맞았다고 보며, 파이썬이 따로 바꾼 날(범위 끝 맞춤)만 따른다. 받은 호기 값이 쥔
+      값과 같으면(`sameLook`) 다시 칠하지 않는다 — 놓은 뒤 돌아온 회차는 상태 이름만 바뀐 호기의 풍선만
+      버린다. 팔레트·도구 줄 글자도 바뀐 때만 쓴다.
+    - **그리는 호기 목록(roster)은 페이더 범위 전체의 합집합**이다(`space_unit_state.drawn_in_range` —
+      레이아웃표시 Y · 좌표·크기 · (도면이탈일 없음 또는 범위 시작 뒤)). 기준일에 안 보이는 호기는
+      브라우저가 숨긴다. 그래서 끄는 동안 도면 이탈일을 넘어도 목록·epoch 가 그대로라 다시 서지 않는다.
+      범례·요약·호기 표는 세션 기준일의 행(`located`·`counted`)이고, 경계 날짜는 그 층 행 전체로 한 번
+      구해(`get_space_unit_boundaries` — 설비 마스터 칸 지문·오늘 키라 기준일이 바뀌어도 다시 쓴다) 범례와
+      payload 가 나눠 쓴다. 생애주기 구간은 보내지 않는다(경계 날짜만 — 구간은 1,589행 ±1년에 5.7초).
+    - **배치 편집 중에는 기준일이 고정**이다 — 페이더 자리에 같은 높이의 「기준일 YYYY-MM-DD · 편집 중
+      고정」 줄이 선다(편집기는 `on_asOf_change` 가 없다). 기준일이 바뀌면 편집 대상 호기가 바뀌어 적용
+      전 편집이 버려지기 때문이다. **FAB 전체에는 페이더가 없다** — 도구 줄 요약 앞에 「기준일 …」과 오늘이
+      아니면 「오늘로」(같은 `asOf` 길로 오늘을 보낸다), 미확인 대수를 단다.
+    - 받아들임 기준(합성 1,289대 층, CPU 4배 — `design_fader_verdict`): 끄는 동안 프레임 간격 p95 ≤
+      33ms, 첫 그리기 증가분 ≤ 50ms, 놓은 뒤 범례·요약 맞춤 ≤ 0.6초. 놓은 뒤 맞춤은 Streamlit 회차 한 번(서버
+      ~0.1~0.2초 + 브라우저 React 다시 그리기)이라 4배 감속에서는 기준을 넘을 수 있다 — 사이드바 기준일을 쓰던
+      바탕도 같은 회차였다. 다시 잴 때는 `scripts/check_deploy_screens.py` 의 `space_fader` 와 TODO 의
+      실측을 본다.
   - **점유율** = 도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적(`occupancy_ratio`). 캔버스 단위의
     상대값(실제 m² 아님)이고 겹친 자리는 두 번 센다.
   - 동·층이 빈(또는 FAB 의 층이 아닌) 미배치(레이아웃표시 Y)는 층 집계에 들어갈 자리가 없다. FAB 요약에
@@ -1322,7 +1368,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 기준일 상태는 페이지가 직접 판정하지 않고 `simulation_cache.get_space_equipment_status` 로
     받는다(2026-10-08). 편집 중에는 한 회차에 저장본(조건 카드·요약)과 편집본(편집기·겹침 경고)을
     따로 판정하고 `적용` 은 `st.rerun()` 으로 두 회차를 도는데, 내용 지문 키라 같은 표는 한 번만
-    판정한다 — 편집을 막 켠 편집본은 저장본과 내용이 같아 그 판정을 다시 쓴다.
+    판정한다 — 편집을 막 켠 편집본은 저장본과 내용이 같아 그 판정을 다시 쓴다. 검증(설비 마스터·비가동
+    일정)은 기준일과 상관없어 내용 지문만으로 따로 기억한다 — 페이더를 놓을 때마다 새 기준일이 와도
+    검증은 내용이 같으면 한 번이다.
   - 저장 안 한 배치 상자와 편집기의 미저장 호기 판정은 먼저 `buffer_matches_saved`(편집본 세 표가
     저장본과 `DataFrame.equals` 이고 이름 바꿈 지도가 비었는가)를 본다. 참이면 셀 비교를 건너뛰고 빈
     결과를 쓴다 — 사내 규모(1,566행)에서 회차마다 0.1초 넘게 들던 비교다. 판정은 **내용으로만** 한다:
@@ -1624,8 +1672,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `floor_block_stats`·층 목록 표), 호기 상자의 면·글자와 경계 날짜(`unit_appearance` — 색 기준 `ColorChoice`
     의 체크한 그룹 색, 아니면 기본 회색. 지연·보관은 기준일을 보는 브라우저가 덮는다), 층 상세 머리 줄의
     범례(`space_legend_counts` → `space_legend_markup`, HTML 칩 — 견본은 도면의 테·빗금·표식과 같은 토큰)를
-    만든다. `unit_appearance`·`space_legend_counts` 는 경계 날짜(`space_unit_state.unit_boundaries`)를 인자로
-    받는다 — 화면이 한 회차에 한 번 구해 둘이 나눠 쓴다(같은 층 행에서 두 번 구하지 않는다). Plotly 는 쓰지 않는다 — FAB·층 도면 모두 편집기와 같은 Components v2 뷰어다. 동·층 정의는
+    만든다. `unit_appearance`·`space_legend_counts` 는 경계 날짜(`space_unit_state.unit_boundaries` — 층 상세는
+    `simulation_cache.get_space_unit_boundaries`)를 인자로 받는다 — 화면이 한 회차에 그 층 행 전체로 한 번 구해
+    둘이 나눠 쓴다(같은 층 행에서 두 번 구하지 않는다). Plotly 는 쓰지 않는다 — FAB·층 도면 모두 편집기와 같은 Components v2 뷰어다. 동·층 정의는
     `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이다(상태 대수를 넣지 않는다 —
     `test_floor_blocks_count_placement_not_state`).
   - 층 캔버스는 층마다 다르다. `equipment_ops.floor_layout_profile` 에 저장된 폭·높이를 쓰고,
@@ -1743,9 +1792,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     accent 후광이다(rect 테가 아니다).
   - **호기 판정의 세 경로**(2026-10-16). 호기마다의 면·글자(`fill`·`ink`, `#RRGGBB` 만)와 경계
     날짜(`realFrom`·`exitOn`·`stopOn`·`delays`·`offline`)·`storage`·`flag` 는 파이썬 `_clean_items`
-    화이트리스트, 첫 회차의 `readUnit`(`unitLook`), 같은 epoch 회차의 합치기(`Object.assign(item,
-    unitLook(raw))`) 세 곳을 모두 지난다 — 하나라도 빠지면 체크·기준일을 바꾼 회차에 색이 옛 값으로 남는다.
-    이름 `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 다른 뜻이다. JS 는 `data.asOf` 와 경계
+    화이트리스트, 첫 회차의 `readUnit`(`unitLook`), 같은 epoch 회차의 합치기(`...unitLook(raw)` →
+    `sameLook` 으로 견주어 바뀐 호기만 `Object.assign`) 세 곳을 모두 지난다 — 하나라도 빠지면 체크·기준일을
+    바꾼 회차에 색이 옛 값으로 남는다. 이름 `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 다른
+    뜻이다. JS 는 칠한 기준일(`S.asOf` — 페이더가 옮기고, data 의 `asOf` 는 `adoptAsOf` 가 가른다)과 경계
     날짜를 **글자 비교**해(`unitState`) class(`is-pre`·`is-exitplan`·`is-stopped`·`has-flag`·`is-offline`·
     `is-gone`)와 rect·이름표 fill(`unitColors` — 지연 → 보관 → 받은 면)을 정한다(`paintUnit`). 덧표시 부품은
     보기 화면에서만 만들어 두고 class 로만 보이며(CSS 는 모두 `.sle.is-view` 아래), 편집 화면은 채우기만 같은
@@ -2311,7 +2361,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     캐시한다(프레임은 `_` 인자). 사용기준 규칙(`COUNTED_USAGE_BASIS`)은 결과에 닿지만 코드 상수라
     키에 넣지 않는다(위 키 방침). 표는 저장 안 한 편집본일 수 있어
     리비전 번호나 편집본 세대(세션마다 0 부터 센다)를 키로 쓰지 않는다. 검증에 실패한 편집본의
-    `ValueError` 는 캐시하지 않고 그대로 낸다.
+    `ValueError` 는 캐시하지 않고 그대로 낸다. 검증 결과(`prepare_equipment_master`·
+    `prepare_downtime_for_prepared_equipment`)는 기준일을 뺀 두 지문으로 따로 캐시하고
+    (`_cached_prepared_space_inputs`) 기준일 상태는 그 위에서 만든다
+    (`build_space_equipment_status_from_prepared`) — Space 기준일 페이더를 놓을 때마다 새 기준일이 온다.
+  - `get_space_unit_boundaries` 는 층 상세의 경계 날짜(`space_unit_state.unit_boundaries`)를
+    `space_boundary_cache_key` — 그 행의 **설비 마스터 칸**(`EQUIPMENT_COLUMNS`) 내용 지문·비가동 일정
+    지문·오늘 — 로 캐시한다. 기준일 상태 칸(`상태`·지분 …)은 경계 날짜와 무관해 지문에서 뺀다 — 페이더를
+    놓을 때마다 상태 칸은 바뀌어도 경계 날짜는 다시 쓴다. 인덱스는 결과의 인덱스라 지문에 든다.
   - `shared_home_figure_store(bundle)`(`st.cache_resource`)는 HOME Figure 묶음 하나(LOB·계획
     세부수량·주요공정·상세 B/N)를 세션끼리 나누는 프로세스 공용 LRU 다. **묶음마다 저장소가
     따로다** — 한 LRU 에 섞으면 조합이 가장 많은 LOB 가 다른 묶음을 내쫓는다. 칸은 묶음마다 32
@@ -2859,9 +2916,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   도면이탈일(반출/이설일정 → 정지일정 — `도면이탈여부` 와 같은 규칙)·정지일(두 날짜가 다 있을 때만)·지연
   구간(반입·Qual 마다 상태 「지연」이면 [min(일정, 오늘), 실적), 실적이 없으면 끝 없음, 합집합)·비가동
   구간(비가동 일정 [시작, 종료], 양 끝 포함)·보관·미확인(`schedule_confirmation.unconfirmed_issues` — 오늘
-  고정)을 낸다. 층 상세 보기 회차는 층의 세는 행(`placed_unit_rows` — 그리는 행을 모두 품는다)으로 **한 번**
-  구해 범례 대수(`space_legend_counts`)와 도면 payload(`unit_appearance` → `viewer_items(looks=…)`)가 나눠 쓰고,
-  편집 중에는 편집기가 편집본으로 따로 구한다. `unit_states_at(boundaries, *, as_of)` 가 T 의 보임·실물·반출/이설 예정·정지 중·지연·운영 비가동을
+  고정)을 낸다. 층 상세 보기 회차는 그 층 행 전체(세는 행과 페이더 범위의 그리는 행을 모두 품는다)로 **한 번**
+  구해(`simulation_cache.get_space_unit_boundaries`) 범례 대수(`space_legend_counts`)와 도면 payload
+  (`unit_appearance` → `viewer_items(looks=…)`)가 나눠 쓰고, 편집 중에는 편집기가 편집본으로 따로 구한다.
+  기준일 페이더의 범위(`as_of_range` — 오늘 ±12개월, 달력 달)·세션 기준일 맞춤(`clamp_as_of` — 범위 밖은
+  가까운 끝, 날짜가 아니면 오늘)·그리는 호기 목록(`drawn_in_range` — 레이아웃표시 Y · 좌표·크기 · (도면이탈일
+  없음 또는 범위 시작 뒤), 범위 안 어느 T 에 서는 행의 합집합)도 이 모듈이다. `unit_states_at(boundaries, *, as_of)` 가 T 의 보임·실물·반출/이설 예정·정지 중·지연·운영 비가동을
   bool 로, `boundary_payload` 가 브라우저로 보낼 `YYYY-MM-DD` 글자(`realFrom`·`exitOn`·`stopOn`·`delays`·
   `offline`·`flag`·`storage`, 처음부터는 `REAL_FROM_START` = `0000-01-01`)를 낸다. **실적은 Space 실물
   판정에만** 쓴다 — Dynamic·필요단축일정·공정 Capa 상세의 가용대수는 일정 기준 그대로다(「Space 는 실물,

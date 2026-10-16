@@ -1783,6 +1783,80 @@ def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
     )
 
 
+# Space 층 도면의 호기 상자 class 들(페이더가 바꾸는 판정 class 를 견준다). 상자는 컴포넌트 shadow
+# root 안이라 페이더 요소의 뿌리에서 찾는다.
+_UNIT_CLASSES_JS = """(fader) => [...fader.getRootNode().querySelectorAll(".sle-unit")]
+  .map((unit) => unit.getAttribute("class") || "")"""
+# 페이더 날짜 칩이 「오늘」인가(오늘 글자에 강조 class).
+_FADER_TODAY_JS = """(fader) => {
+  const rel = fader.getRootNode().querySelector(".sle-fader-rel");
+  return !!rel && rel.classList.contains("is-today");
+}"""
+_LEGEND_DATE = re.compile(r"기준 (\d{4}-\d{2}-\d{2})")
+
+
+def summarize_space_fader(
+    placed: float, changed: int, legend_moved: bool | None, back_today: bool
+) -> str:
+    """페이더 확인 결과 — 개수·있음/없음만. 날짜·층·호기 이름은 판정에만 쓴다."""
+    moved = "범례 없음" if legend_moved is None else "바뀜" if legend_moved else "안 바뀜"
+    return (
+        f"배치 최다 층 {placed:g}대 · +1개월에 class 바뀐 상자 {changed}개 · "
+        f"놓은 뒤 범례 기준일 {moved} · 「오늘」 {'돌아옴' if back_today else '안 돌아옴'}"
+    )
+
+
+def check_space_fader(screen: Screen) -> str:
+    """Space 기준일 페이더 — 배치가 가장 많은 층을 열어 페이더에 초점을 두고 PageUp(+1개월) 하면
+    호기 상자 class(반입 전·반출/이설 예정·숨김 …)가 바뀐 수, 키를 멈춘 뒤 머리 줄 범례의 「기준」
+    날짜가 바뀌었는가, 「오늘」 단추로 오늘에 돌아오는가. 쓰지 않는다(기준일은 세션 값이다)."""
+    screen.open_page(SPACE_PAGE)
+    grid, placed_column = screen.grid_with_column("배치대수")
+    building_column = screen.column_index(grid, "동")
+    floor_column = screen.column_index(grid, "층")
+    if building_column is None or floor_column is None:
+        return "층 목록 표의 `동`·`층` 칸 없음"
+    rows = screen.grid_rows(grid, [building_column, floor_column, placed_column])
+    floors = [(row[0], row[1], _number(row[2])) for row in rows if row[0] and row[1]]
+    candidates = [floor for floor in floors if floor[2] > 0]
+    if not candidates:
+        return f"배치 없음(층 {len(floors)}개 모두 0)"
+    building, floor, placed = max(candidates, key=lambda floor: floor[2])
+    screen.choose_by_typing("층 바로 가기", f"{building} {floor}")
+    if screen.selectbox_value("층 바로 가기") != f"{building} {floor}":
+        raise RuntimeError("층을 열지 못했다")
+    fader = screen.page.locator(".sle-fader-input").first
+    try:
+        fader.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+    except Exception:  # noqa: BLE001 — 페이더가 없는 배포다. 있음/없음만 적는다
+        return f"배치 최다 층 {placed:g}대 · 페이더 없음"
+
+    def legend() -> str | None:
+        found = _LEGEND_DATE.search(screen.main_text())
+        return found.group(1) if found else None
+
+    before_legend = legend()
+    before = fader.evaluate(_UNIT_CLASSES_JS)
+    try:
+        fader.focus()
+        fader.press("PageUp")
+        after = screen.poll(
+            lambda: fader.evaluate(_UNIT_CLASSES_JS), timeout=5, accept=lambda v: v != before
+        )
+        changed = sum(1 for old, new in zip(before, after, strict=False) if old != new)
+        moved_legend = screen.poll(legend, timeout=20, accept=lambda v: v != before_legend)
+        screen.wait_idle()
+        legend_moved = None if before_legend is None else moved_legend != before_legend
+    finally:
+        screen.page.locator(".sle-fader-today").first.click()
+        back = bool(screen.poll(lambda: fader.evaluate(_FADER_TODAY_JS), timeout=10, accept=bool))
+        back = back and screen.poll(legend, timeout=20, accept=lambda v: v == before_legend) == (
+            before_legend
+        )
+        screen.wait_idle()
+    return summarize_space_fader(placed, changed, legend_moved, back)
+
+
 def _close_drawer(screen: Screen) -> None:
     """검색 칸·서랍을 비우고 `배치 편집` 을 끈다. 놓은 호기가 없으니 `처음 상태로` 는 필요 없다."""
     try:
@@ -2165,6 +2239,7 @@ ITEMS: tuple[Item, ...] = (
     Item("process_popup", "공정 필터 팝업", check_process_popup),
     Item("process_detail", "공정 Capa 상세", check_process_detail),
     Item("equipment_headers", "RawData 설비 마스터 머리(38열)", check_equipment_headers),
+    Item("space_fader", "Space 기준일 페이더", check_space_fader),
 )
 
 
