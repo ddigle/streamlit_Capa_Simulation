@@ -27,12 +27,17 @@
 **T 의 판정**(`unit_states_at`): 보임 = 도면이탈일 없음 또는 T < 도면이탈일, 실물 = 처음부터이거나
 실물시작일 ≤ T, 반출/이설 예정 = T < 도면이탈일, 정지 중 = 정지일 ≤ T < 도면이탈일, 지연 = T 가
 지연 구간 안, 운영 비가동 = T 가 비가동 구간 안(양 끝 포함).
+
+**기준일 페이더의 범위**(`as_of_range`)는 오늘 앞뒤 12개월(달력 달)이다. 세션 기준일은 늘 그 안이고
+(`clamp_as_of`), 층 도면이 그리는 호기 목록은 범위 **어딘가에서** 도면에 서는 호기의 합집합이다
+(`drawn_in_range`) — 끄는 동안 도면 이탈일을 넘어도 목록이 그대로라 브라우저가 다시 서지 않고
+숨김만 바꾼다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Final
 
 import pandas as pd
@@ -85,6 +90,52 @@ STATE_COLUMNS: Final = (
 )
 
 Span = tuple[pd.Timestamp, pd.Timestamp | None]
+
+# 기준일 페이더의 범위 — 오늘 앞뒤 이만큼의 달력 달(2026-10-16 사용자 결정 — 요청 7).
+AS_OF_RANGE_MONTHS: Final = 12
+LAYOUT_FLAG_COLUMN: Final = "레이아웃표시"
+GEOMETRY_COLUMNS: Final = ("X좌표", "Y좌표", "Xsize", "Ysize")
+
+
+def as_of_range(today: date) -> tuple[date, date]:
+    """기준일 페이더의 범위(양 끝 포함) — 오늘 −12개월 ~ +12개월. 달력 달로 세고, 그 날이 없는
+    달이면 그달 말일이다(2/29 → 이듬해 2/28)."""
+    offset = pd.DateOffset(months=AS_OF_RANGE_MONTHS)
+    return (pd.Timestamp(today) - offset).date(), (pd.Timestamp(today) + offset).date()
+
+
+def clamp_as_of(value: object, today: date) -> date:
+    """세션 기준일을 페이더 범위 안으로 맞춘다. 범위를 벗어나면(날이 지나 범위가 옮겨 갔다) 가까운
+    끝이고, 날짜로 읽히지 않으면(없음·날짜가 아닌 값) 오늘이다. `YYYY-MM-DD` 글자도 받는다."""
+    start, end = as_of_range(today)
+    if isinstance(value, str):
+        try:
+            value = date.fromisoformat(value.strip())
+        except ValueError:
+            return today
+    if not isinstance(value, date) or pd.isna(value):
+        return today
+    day = value.date() if isinstance(value, datetime) else value
+    return min(max(day, start), end)
+
+
+def drawn_in_range(rows: pd.DataFrame, boundaries: pd.DataFrame, *, start: date) -> pd.Series:
+    """페이더 범위 어딘가에서 도면에 서는 행(층 도면이 그리는 호기 목록) — 레이아웃표시 Y ·
+    좌표·크기가 다 있음 · (도면이탈일 없음 또는 범위 시작 **뒤**). 범위 안의 어느 기준일 T 에 보이는
+    행(T < 도면이탈일)은 모두 든다. `boundaries` 는 `rows` 의 인덱스를 모두 품는 경계 날짜
+    (`unit_boundaries`)다."""
+    if rows.empty:
+        return pd.Series(dtype=bool, index=rows.index)
+    flagged = (
+        rows[LAYOUT_FLAG_COLUMN].astype("string").str.strip().eq("Y").fillna(False).astype(bool)
+        if LAYOUT_FLAG_COLUMN in rows.columns
+        else pd.Series(False, index=rows.index, dtype=bool)
+    )
+    placed = rows.reindex(columns=list(GEOMETRY_COLUMNS)).notna().all(axis=1)
+    exit_on: pd.Series = boundaries.loc[rows.index, LAYOUT_EXIT_COLUMN]
+    staying = exit_on.isna() | exit_on.gt(pd.Timestamp(start))
+    drawn: pd.Series = (flagged & placed & staying).astype(bool)
+    return drawn
 
 
 def _dates(frame: pd.DataFrame, column: str) -> pd.Series:

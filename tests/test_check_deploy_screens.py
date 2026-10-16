@@ -1367,6 +1367,7 @@ NEW_ITEM_KEYS = [
     "process_detail",
     "equipment_headers",
     "sidebar_groups",
+    "space_fader",
 ]
 
 
@@ -1815,3 +1816,42 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     assert screens.summarize_sidebar_groups(None) == "그룹 상자 없음"
     # 결과 표 칸을 깨는 글자가 없다.
     assert "|" not in line
+
+
+# ------------------------------------------------------- Space 기준일 페이더(`space_fader`)
+
+
+@pytest.mark.parametrize(
+    "class_name",
+    ["sle-fader-input", "sle-fader-today", "sle-fader-rel"],
+)
+def test_the_space_fader_selectors_exist_in_the_editor(class_name: str) -> None:
+    html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
+    assert f'class="{class_name}"' in html
+
+
+def test_the_space_fader_item_reads_what_the_app_draws() -> None:
+    """항목이 읽는 것 — 호기 상자 class(`sle-unit`), 오늘 칩의 `is-today`, 범례 끝의 「기준 날짜」,
+    층 목록 표의 `배치대수` 칸 — 이 앱에 있다. 페이더는 PageUp 으로 한 달을 옮긴다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    assert "'sle-item sle-unit'" in editor
+    assert "faderRel.classList.toggle('is-today', isToday)" in editor
+    assert "PageUp: addMonths(now, 1)" in editor
+    legend = _text(COMPONENTS / "space_layout.py")
+    assert "기준 {as_of.isoformat()}" in legend
+    found = screens._LEGEND_DATE.search("PKG 3대 기준 2026-10-17")
+    assert found is not None and found.group(1) == "2026-10-17"
+    # 「기준일 …에 반출/이설을 마친」(FAB 안내)은 범례 날짜가 아니다.
+    assert screens._LEGEND_DATE.search("기준일 2026-10-17에 반출/이설") is None
+    assert '"배치대수":' in _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+
+
+def test_the_space_fader_summary_carries_counts_only() -> None:
+    line = screens.summarize_space_fader(1289.0, 37, True, True)
+    assert line == (
+        "배치 최다 층 1289대 · +1개월에 class 바뀐 상자 37개 · 놓은 뒤 범례 기준일 바뀜 · "
+        "「오늘」 돌아옴"
+    )
+    assert "|" not in line
+    assert "범례 없음" in screens.summarize_space_fader(1.5, 0, None, False)
+    assert "안 돌아옴" in screens.summarize_space_fader(1.5, 0, False, False)

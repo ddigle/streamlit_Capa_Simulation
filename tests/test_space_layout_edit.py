@@ -509,3 +509,56 @@ def test_the_viewer_gets_saved_units_with_process_and_downtime_detail() -> None:
     assert items["EQ-01"]["detail"].startswith("Process-A")
     assert (items["EQ-02"]["x"], items["EQ-02"]["w"]) == (30.0, 12.0)
     assert all(item["placed"] for item in items.values())
+
+
+def _viewer_items_by_rows(located: pd.DataFrame) -> list[dict[str, object]]:
+    """`viewer_items` 를 행마다(`iterrows`) 만든 꼴 — 빠른 길이 같은 값을 내는지 견줄 본."""
+    out: list[dict[str, object]] = []
+    parents = located["Main 설비"] if "Main 설비" in located.columns else None
+    for position, (_, row) in enumerate(located.iterrows()):
+        process = row.get("공정소분류")
+        downtime = row.get("비가동유형")
+        process_text = "" if process is None or pd.isna(process) else str(process).strip()
+        downtime_text = "" if downtime is None or pd.isna(downtime) else str(downtime).strip()
+        parent = None if parents is None else parents.iloc[position]
+        parent_text = "" if parent is None or pd.isna(parent) else str(parent).strip()
+        stage = row.get("상태")
+        out.append(
+            {
+                "id": str(row["설비명"]).strip(),
+                "stage": "" if stage is None or pd.isna(stage) else str(stage),
+                "x": float(row["X좌표"]),
+                "y": float(row["Y좌표"]),
+                "w": float(row["Xsize"]),
+                "h": float(row["Ysize"]),
+                "group": parent_text or None,
+                "detail": " · ".join(
+                    part
+                    for part in (process_text, f"비가동 {downtime_text}" if downtime_text else "")
+                    if part
+                ),
+            }
+        )
+    return out
+
+
+def test_the_viewer_items_fast_path_matches_a_row_by_row_build() -> None:
+    """층 상세는 페이더를 놓을 때마다 목록을 다시 만든다 — 칸을 목록으로 꺼내 도는 빠른 길이 행마다
+    만든 값과 같다(빈 상태·Main 설비 앞뒤 공백·비가동 유형·없는 선택 칸)."""
+    master = _master({"설비명": "M-1", "Main 설비": " BIG ", "X좌표": 50.0, "Y좌표": 30.0})
+    status = _status(master)
+    located = status.loc[status["동"].eq("C1") & status["X좌표"].notna()].copy()
+    located["상태"] = located["상태"].astype("object")
+    located.loc[located.index[0], "상태"] = None
+    located["비가동유형"] = located["비가동유형"].astype("object")
+    located.loc[located.index[-1], "비가동유형"] = "PM"
+    keys = ("id", "stage", "x", "y", "w", "h", "group", "detail")
+
+    fast = [{key: item[key] for key in keys} for item in viewer_items(located)]
+    assert fast == _viewer_items_by_rows(located)
+    assert any(item["group"] == "BIG" for item in fast)
+    assert any(item["detail"].endswith("비가동 PM") for item in fast)
+    bare = located.drop(columns=["공정소분류", "비가동유형", "Main 설비"])
+    fast = [{key: item[key] for key in keys} for item in viewer_items(bare)]
+    assert fast == _viewer_items_by_rows(bare)
+    assert viewer_items(located.iloc[0:0]) == []

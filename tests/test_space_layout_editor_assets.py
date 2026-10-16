@@ -60,8 +60,10 @@ def test_the_height_handle_is_a_horizontal_separator_under_the_stage() -> None:
 
 def test_resizing_stays_in_the_browser() -> None:
     """크기는 파이썬으로 보내지 않는다(보내면 페이지 전체가 다시 돈다). 보내는 것은 `적용` 과
-    FAB 층 블록의 `열기` 둘뿐이다."""
-    assert "setStateValue" not in JS
+    FAB 층 블록의 `열기`(트리거), 그리고 기준일 `asOf`(상태 — 페이더를 놓을 때·FAB
+    「오늘로」)뿐이다."""
+    assert sorted(re.findall(r"setStateValue\('([A-Za-z]+)'", JS)) == ["asOf", "asOf"]
+    assert JS.count("setStateValue(") == 2
     assert sorted(re.findall(r"setTriggerValue\('([a-z]+)'", JS)) == ["apply", "navigate"]
     # 관찰자는 한 번만 만들고, 실행마다 새로 정의되는 S.onResize 를 부른다. 내릴 때 끊는다.
     assert JS.count("new ResizeObserver(") == 1
@@ -303,9 +305,16 @@ def test_unit_colours_and_boundary_dates_pass_all_three_paths() -> None:
     read = JS[JS.index("const readUnit = (raw)") : JS.index("const readMark = (raw)")]
     assert "...unitLook(raw)" in read
     merge = JS[JS.index("// 같은 epoch: 기하는") : JS.index("svg.onmousedown")]
-    assert "Object.assign(item, unitLook(raw))" in merge and "repaint()" in merge
-    # 기준일은 epoch 밖의 `asOf` 로 온다 — 회차마다 받아 칠한다.
-    assert "S.asOf = AS_OF" in JS and "data.asOf" in JS
+    assert "...unitLook(raw)" in merge and "Object.assign(item, next)" in merge
+    assert "refreshUnits(touched, previous)" in merge and "repaint()" in merge
+    # 받은 값을 견주는 칸에 면·글자·경계 날짜가 다 든다 — 빠지면 그 값만 바뀐 회차를 「그대로」로
+    # 본다.
+    key = JS[JS.index("const sameLook = (o, n) =>") : JS.index("function refreshUnits(")]
+    for field in fields:
+        assert f"o.{field}" in key, field
+    # 기준일은 epoch 밖의 `asOf` 로 온다 — 새 epoch 는 그대로 쓰고, 같은 epoch 는 `adoptAsOf` 가
+    # 가른다.
+    assert "S.asOf = AS_OF" in JS and "data.asOf" in JS and "adoptAsOf(AS_OF)" in merge
 
 
 def test_the_unit_tip_does_not_repeat_what_the_stage_name_says() -> None:
@@ -432,3 +441,201 @@ def test_the_tray_lists_units_by_name_and_can_be_searched() -> None:
     picked = JS[JS.index("function pickedTrayEntries(") : JS.index("function toggleTrayPick(")]
     assert "trayMatches(entry)" in picked
     assert "traySearch.onkeydown" in JS and "S.trayQuery = ''" in JS
+
+
+# ---------------------------------------------------------------- 기준일 페이더(2026-10-16 결정 5)
+
+
+def _between(start: str, end: str) -> str:
+    return JS[JS.index(start) : JS.index(end)]
+
+
+def test_the_date_row_tops_the_floor_drawing_with_one_height_for_view_and_edit() -> None:
+    """층 도면 상자 맨 위 한 줄(36px)이 기준일 줄이다 — 보기는 페이더(날짜 칩·트랙·「오늘」), 배치
+    편집은 같은 자리·같은 높이의 「기준일 … · 편집 중 고정」 줄. FAB 에는 없다(`sle-floor-only`).
+    무대 기본 높이는 그 줄과 틈만큼 덜어 보기·편집의 도면 상자 크기가 같다."""
+    row = HTML[HTML.index('<div class="sle-daterow') : HTML.index('<div class="sle-toolbar">')]
+    assert HTML.index('class="sle-daterow') < HTML.index('class="sle-toolbar"')
+    assert 'class="sle-daterow sle-floor-only"' in row
+    fader = row[row.index('class="sle-fader ') : row.index('class="sle-pinned ')]
+    assert "sle-view-only" in fader
+    assert 'type="range"' in fader and 'step="1"' in fader
+    for part in ("sle-fader-date", "sle-fader-rel", "sle-fader-note", "sle-fader-ticks"):
+        assert f'class="{part}"' in fader, part
+    assert 'class="sle-fader-today"' in fader and ">오늘</button>" in fader
+    # 날짜는 입력의 `aria-valuetext` 가 말한다 — 끄는 동안 프레임마다 바뀌는 칩은 낭독
+    # 영역으로 두지 않는다.
+    assert "aria-live" not in fader
+    assert "setAttr(faderInput, 'aria-valuetext'" in JS
+    pinned = row[row.index('class="sle-pinned ') :]
+    assert "sle-edit-only" in pinned and "편집 중 고정" in pinned
+    assert "height: 36px" in _rule(".sle-daterow")
+    assert "const DATE_ROW_PX = 36" in JS
+    assert "const CHROME_PX = VIEW_CHROME_PX + (FAB ? 0 : DATE_ROW_PX + 8)" in JS
+    assert "window.innerHeight - CHROME_PX" in JS
+    assert "gap: 8px" in _rule(".sle")
+    assert "if (PINNED) setText(pinnedDate, `기준일 ${S.asOf" in JS
+    assert "const PINNED = !VIEW && !FAB" in JS
+
+
+def test_the_fader_spans_the_range_python_sends_with_today_in_bold() -> None:
+    """범위·오늘은 파이썬이 보낸다(`asOfMin`·`asOfMax`·`today` — `space_unit_state.as_of_range`).
+    눈금은 달마다, 분기는 길게 글자를 달고, 오늘은 굵은 강조색 눈금과 「오늘」 글자다. 칩은
+    「날짜 · 오늘」 또는 「날짜 · +3개월 2주」다."""
+    assert "dayOr(data.today)" in JS and "dayOr(data.asOfMin)" in JS and "dayOr(data.asOfMax)" in JS
+    build = _between("function buildFader() {", "function showFader() {")
+    assert "'sle-tick is-quarter'" in build and "'sle-tick is-today'" in build
+    assert "'sle-tick-label is-today', today, '오늘'" in build
+    assert "faderInput.max = String(hi - lo)" in build
+    assert "background: var(--sle-accent)" in _rule(".sle-tick.is-today")
+    rel = _between("function relText(T) {", "const lowDay = ")
+    assert "'오늘'" in rel and "개월" in rel and "주" in rel and "일" in rel
+    show = _between("function showFader() {", "function setAsOf(T) {")
+    assert "setText(faderRel, `· ${relText(S.asOf)}`)" in show
+    assert "faderRel.classList.toggle('is-today', isToday)" in show
+
+
+def test_the_fader_keys_move_a_day_a_month_or_to_the_ends_and_stay_in_the_fader() -> None:
+    """←/→ 하루, PageUp/PageDown 한 달, Home/End 범위 끝, 두 번 누르기·「오늘」 단추는 오늘. 키는
+    도면 단축키(화면 이동·확대)로 새지 않는다. 「오늘」 단추는 누르면 꺼지므로 초점을 먼저 페이더로
+    옮긴다(키보드로 누른 초점이 문서 맨 앞으로 떨어지지 않게)."""
+    keys = _between("faderInput.onkeydown = (event) => {", "if (PINNED)")
+    for expected in (
+        "ArrowLeft: now - 1",
+        "ArrowRight: now + 1",
+        "PageDown: addMonths(now, -1)",
+        "PageUp: addMonths(now, 1)",
+        "Home: lowDay()",
+        "End: highDay()",
+    ):
+        assert expected in keys, expected
+    assert keys.index("event.stopPropagation()") < keys.index("const next = {")
+    assert "event.preventDefault()" in keys
+    fader = _between("if (FADER) {\n    buildFader()", "if (PINNED)")
+    assert "faderInput.ondblclick" in fader and "jumpTo(TODAY)" in fader
+    today = fader[fader.index("faderToday.onclick = () => {") : fader.index("faderInput.onkeydown")]
+    assert today.index("faderInput.focus({ preventScroll: true })") < today.index("jumpTo(TODAY)")
+
+
+def test_dragging_paints_in_frames_and_releasing_sends_the_date_once() -> None:
+    """끄는 동안 서버 회차는 없다 — `input` 은 requestAnimationFrame 으로 프레임마다 마지막 날만
+    칠하고(`paintAsOf` — 앞 날과 새 날 사이에 경계 날짜가 든 호기만, 그중 판정 부호가 바뀐
+    상자만), 손을 떼면(`change`·`pointerup`) `setStateValue` 를 한 번 보낸다. 키는 누를 때마다
+    보내지 않고 멈춘 뒤 한 번이다. 파이썬이 이미 쥐었거나 곧 쥘 날이면 보내지 않는다. 겹침은 짝을
+    한 번 구해 두고 숨김이 바뀐 프레임에만 다시 본다."""
+    fader = _between("if (FADER) {\n    buildFader()", "if (PINNED)")
+    oninput = fader[fader.index("faderInput.oninput") : fader.index("faderInput.onchange")]
+    assert "setStateValue" not in oninput and "setAsOf(" in oninput
+    assert "faderInput.onchange = () => commitAsOf()" in fader
+    assert "S.commitTimer = setTimeout(commitAsOf, KEY_COMMIT_MS)" in fader
+    frame = _between("function setAsOf(T) {", "function commitAsOf() {")
+    assert "requestAnimationFrame(flushAsOf)" in frame and "if (!S.faderFrame)" in frame
+    assert "paintAsOf(previous)" in frame
+    commit = _between("function commitAsOf() {", "const jumpTo = ")
+    assert commit.count("setStateValue('asOf', T)") == 1
+    assert "const expected = S.sent.size ? S.lastSent : S.dataAsOf" in commit
+    assert "if (T && T !== expected)" in commit
+    paint = _between("function buildEvents() {", "// 풍선 글은 올려 둘 때")
+    # 두 날 사이(앞날 < 날 ≤ 뒷날)의 경계 날짜만 찾는다 — 운영 비가동은 끝날 다음 날에 바뀐다.
+    assert "isoOf(dayNumber(until) + 1)" in paint and "events[mid][0] <= lo" in paint
+    assert "paintUnits(previous && S.events ? changedBetween(previous, S.asOf) : null)" in paint
+    # 숨김이 바뀐 때만 겹침을 다시 본다. 기하(`position`)는 건드리지 않는다.
+    assert "if (flipped.length) markOverlaps(flipped)" in paint and "position(" not in paint
+    overlap = _between("function markOverlaps(flipped) {", "// 끄는 동안에는 움직이는 것만")
+    view = overlap[: overlap.index("const units = [...S.items.values()]")]
+    assert "const pairs = overlapPairs()" in view and "for (let b = a + 1" not in view
+    pairs = _between("function overlapPairs() {", "// 끄는 동안에는 움직이는 것만")
+    assert "if (S.adjacency) return S.adjacency" in pairs and "OVERLAP_CELL" in pairs
+    render = _between("function renderItems()", "function markSelection()")
+    assert "S.adjacency = null" in render and "if (VIEW && !FAB) buildEvents()" in render
+    unit = _between("function paintUnit(group, item) {", "function buildMark(")
+    assert "if (group.__paint === code) return" in unit
+
+
+def test_a_same_epoch_run_keeps_the_browser_date_and_repaints_nothing_unchanged() -> None:
+    """같은 epoch 회차에 받은 기준일이 지난 회차와 같으면(끄는 중·보낸 날이 아직 안 돌아옴·다른
+    위젯의 회차) 브라우저가 칠한 날을 지키고, 보낸 날이 돌아오면 맞았다고 보며, 파이썬이 따로 바꾼
+    날만 따른다. 받은 호기 값이 쥔 값과 같으면 다시 칠하지 않는다(전체 `repaint` 는 1,289대에
+    70~100ms)."""
+    adopt = _between(
+        "function adoptAsOf(incoming) {",
+        "// ------------------------------------------------------------- 회차마다",
+    )
+    assert "if (incoming === S.dataAsOf) return ''" in adopt
+    assert "if (S.sent.has(incoming)) {" in adopt
+    assert "if (S.faderBusy || S.commitTimer) return ''" in adopt
+    merge = JS[JS.index("// 같은 epoch: 기하는") : JS.index("svg.onmousedown")]
+    assert "if (sameLook(item, next)) continue" in merge
+    refresh = _between("function refreshUnits(touched, previous) {", "function isChanged(item) {")
+    assert "if (!touched.length && !previous) {" in refresh and "paintUnits(ids)" in refresh
+    assert "if (touched.length) buildEvents()" in refresh
+    # 상태 이름은 파이썬이 쥔 날의 것이다 — 다른 날을 보는 동안에는 「(그날 기준)」을 단다.
+    words = _between("function unitWords(item) {", "const zoneColor")
+    assert "`${named}(${S.dataAsOf} 기준)`" in words
+
+
+def test_the_fab_toolbar_shows_the_as_of_date_a_back_to_today_button_and_unconfirmed_units() -> (
+    None
+):
+    """FAB 전체에는 페이더가 없다. 도구 줄 요약 앞에 「기준일 …」, 오늘이 아니면 「오늘로」,
+    미확인이 있으면 「! 미확인 N대」(0 이면 숨김). 「오늘로」는 누르면 꺼지고 숨으므로 초점을 먼저
+    도면으로 옮긴다."""
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('class="sle-summary')]
+    for part in ("sle-asof", "sle-totoday", "sle-flagnote"):
+        tag = toolbar[
+            toolbar.rindex("<", 0, toolbar.index(part)) : toolbar.index(">", toolbar.index(part))
+        ]
+        assert "sle-fab-only" in tag and "sle-view-only" in tag, part
+    assert '>오늘<span class="sle-totoday-tail">로</span></button>' in toolbar
+    assert 'aria-label="기준일을 오늘로"' in toolbar
+    fab = JS[
+        JS.index("fabAsOf.hidden = !S.asOf") : JS.index(
+            "// ---------------------------------------------------------------- 높이 손잡이"
+        )
+    ]
+    assert "setText(fabAsOfDate, S.asOf || '')" in fab
+    assert "fabToToday.hidden = !TODAY || !S.asOf || S.asOf === TODAY" in fab
+    assert "setStateValue('asOf', TODAY)" in fab
+    click = fab[fab.index("fabToToday.onclick = () => {") : fab.index("const flagged")]
+    assert click.index("svg.focus({ preventScroll: true })") < click.index(
+        "fabToToday.disabled = true"
+    )
+    assert "flagNote.hidden = flagged === 0" in fab
+    assert "setText(flagCount, `${flagged.toLocaleString('ko-KR')}대`)" in fab
+    assert "display: none" in _rule(
+        ".sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden]"
+    )
+
+
+def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -> None:
+    """사이드바를 연 1024px 창처럼 FAB 도구 줄이 넘치면 `fitFabBar` 가 접는 차례를 하나씩
+    더한다 — ① 선택 안내·「기준일」·「미확인」 말머리(화면에서만 — 낭독기용으로 남김), ② 미확인
+    대수(「!」만), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 요약 말줄임. 요약은 마지막에야
+    줄고, 대수 글자는 반만 잘리지 않는다."""
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-panels')]
+    assert '<span class="sle-asof-label">기준일 </span>' in toolbar
+    assert 'class="sle-flagnote-word">미확인 </span>' in toolbar
+    fit = _between(
+        "function fitFabBar() {",
+        "// ---------------------------------------------------------------- 높이 손잡이",
+    )
+    assert "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5']" in JS
+    assert fit.index("toolbar.classList.remove(...FIT_STEPS)") < fit.index("if (!(VIEW && FAB)")
+    assert "if (toolbar.scrollWidth <= toolbar.clientWidth) return" in fit
+    resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
+    assert "fitFabBar()" in resize
+    hidden = _rule(
+        ".sle-toolbar.is-fit1 .sle-asof-label, .sle-toolbar.is-fit1 .sle-flagnote-word, "
+        ".sle-toolbar.is-fit2 .sle-flagnote-text"
+    )
+    assert "display: none" not in hidden and "clip-path: inset(50%)" in hidden
+    assert "content: none" in _rule(".sle-toolbar.is-fit1 .sle-pick:empty::before")
+    assert "display: none" in _rule(".sle-toolbar.is-fit3 .sle-totoday-tail")
+    # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.
+    last = _rule(".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary")
+    assert "min-width: 0" in last and "text-overflow: ellipsis" in last
+    assert "setAttr(q('.sle-summary'), 'title', data.summary || '')" in JS
+    # 대수 글자(미확인)는 말줄임으로 반만 잘리지 않는다 — 접을 때는 통째로.
+    assert "ellipsis" not in _rule(".sle-flagnote")
+    assert "flex: none" in _rule(".sle-toolbar > *")
+    assert "flex" not in _rule(".sle-summary")

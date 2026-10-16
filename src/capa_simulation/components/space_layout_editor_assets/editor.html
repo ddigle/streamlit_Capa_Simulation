@@ -1,4 +1,22 @@
 <div class="sle" lang="ko">
+  <div class="sle-daterow sle-floor-only">
+    <div class="sle-fader sle-view-only" role="group" aria-label="도면 기준일">
+      <span class="sle-fader-chip">
+        <span class="sle-fader-main"><b class="sle-fader-date"></b> <span class="sle-fader-rel"></span></span>
+        <span class="sle-fader-note"></span>
+      </span>
+      <span class="sle-fader-track">
+        <input class="sle-fader-input" type="range" min="0" max="0" step="1" value="0"
+               aria-label="도면 기준일 — 오늘 앞뒤 12개월. ←/→ 하루, PageUp/PageDown 한 달, Home/End 범위 끝, 두 번 누르면 오늘"
+               title="끌거나 눌러 기준일을 옮깁니다 · ←/→ 하루 · PageUp/PageDown 한 달 · Home/End 범위 끝 · 두 번 누르면 오늘">
+        <span class="sle-fader-ticks" aria-hidden="true"></span>
+      </span>
+      <button type="button" class="sle-fader-today" title="기준일을 오늘로 (페이더를 두 번 눌러도 됩니다)">오늘</button>
+    </div>
+    <div class="sle-pinned sle-edit-only" role="note">
+      <b class="sle-pinned-date"></b><span class="sle-pinned-note">· 편집 중 고정 — 배치 편집을 끄면 페이더로 바꿉니다</span>
+    </div>
+  </div>
   <div class="sle-toolbar">
     <span class="sle-title sle-edit-only"></span>
     <div class="sle-steps sle-edit-only" role="group" aria-label="격자 간격">
@@ -20,6 +38,13 @@
     <button type="button" class="sle-unplace sle-edit-only" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
     <span class="sle-pick sle-view-only" aria-live="polite"></span>
     <span class="sle-spacer"></span>
+    <span class="sle-asof sle-fab-only sle-view-only" hidden><span class="sle-asof-label">기준일 </span><span
+          class="sle-asof-date"></span></span>
+    <button type="button" class="sle-totoday sle-fab-only sle-view-only" hidden aria-label="기준일을 오늘로"
+            title="기준일을 오늘로 되돌립니다">오늘<span class="sle-totoday-tail">로</span></button>
+    <span class="sle-flagnote sle-fab-only sle-view-only" hidden><span
+          class="sle-flagnote-dot" aria-hidden="true">!</span><span class="sle-flagnote-text"><span
+          class="sle-flagnote-word">미확인 </span><span class="sle-flagnote-count"></span></span></span>
     <span class="sle-summary sle-view-only"></span>
     <button type="button" class="sle-apply sle-edit-only">적용</button>
   </div>

@@ -641,7 +641,24 @@ def build_space_equipment_status(
     as_of: date,
 ) -> pd.DataFrame:
     """Build the unit-level source used by the Space dashboard."""
-    result = build_equipment_status_as_of(equipment, downtime, as_of=as_of)
+    prepared = prepare_equipment_master(equipment)
+    return build_space_equipment_status_from_prepared(
+        prepared, prepare_downtime_for_prepared_equipment(downtime, prepared), as_of=as_of
+    )
+
+
+def build_space_equipment_status_from_prepared(
+    prepared: pd.DataFrame,
+    prepared_downtime: pd.DataFrame,
+    *,
+    as_of: date,
+) -> pd.DataFrame:
+    """`build_space_equipment_status` 의 검증 뒤 몫 — 검증을 마친 설비 마스터·비가동 일정으로 기준일
+    상태를 만든다. Space 기준일 페이더처럼 기준일만 바뀌는 회차는 검증을 다시 하지 않는다
+    (`simulation_cache.get_space_equipment_status` 가 검증 결과를 내용 지문으로 다시 쓴다)."""
+    result = _build_equipment_status_from_prepared(
+        prepared, prepared_downtime, as_of=pd.Timestamp(as_of)
+    )
     result["단계"] = result["상태"]
     return result.reset_index(drop=True)
 

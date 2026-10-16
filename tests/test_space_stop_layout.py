@@ -71,6 +71,14 @@ def test_a_stopped_unit_stays_on_the_floor_until_its_exit_date(
     assert any(gone in text for text in captions)
     floor = viewer_calls[-1]
     assert floor["scope"] == "floor" and floor["floor"] == "C1 1F"
-    # 정지했지만 반출/이설 전인 EQ-01 은 남고, 반출/이설일정 없이 정지한 EQ-02 는 빠진다.
-    assert sorted(item["id"] for item in floor["items"]) == ["EQ-01", "EQ-03"]
+    # 도면이 그리는 목록은 페이더 범위(오늘 ±12개월)의 합집합이라 열흘 전에 정지한 EQ-02 도 든다 —
+    # 기준일(오늘)에 보이는가는 브라우저가 도면 이탈일과 글자로 견주어 정한다. 정지했지만
+    # 반출/이설 전인 EQ-01 은 도면 이탈일(반출/이설일정)이 기준일 뒤라 보이고, 반출/이설일정 없이
+    # 정지한 EQ-02 는 도면 이탈일(정지일정)이 지나 숨는다.
+    by_id = {item["id"]: item for item in floor["items"]}
+    assert sorted(by_id) == ["EQ-01", "EQ-02", "EQ-03"]
+    as_of = floor["asOf"]
+    assert by_id["EQ-01"]["exitOn"] > as_of and by_id["EQ-01"]["stopOn"] <= as_of
+    assert by_id["EQ-02"]["exitOn"] <= as_of
+    assert by_id["EQ-03"]["exitOn"] is None
     clear_equipment_repository()
