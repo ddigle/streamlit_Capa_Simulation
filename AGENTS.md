@@ -3146,7 +3146,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     에 `src/capa_simulation` 이 있어 무시된다(실측).
   - 별칭과 계산값(`CHART_CANVAS`·`NAV_*`·`GAP_AREA_*`·`SHORTAGE_MONTH_BAND`)은 `_complete()` 가
     팔레트에서 만든다. 손으로 옮겨 적으면 원 토큰과 갈라진다. 부족 달 세로 띠의 옅기만 테마마다
-    다르다(밝게 0.12·어둡게 0.3 — 어두운 부족색은 짙은 자주라 같은 옅기면 묻힌다).
+    다르다(밝게 0.12·어둡게 0.3 — 어두운 부족색은 짙은 자주라 같은 옅기면 묻힌다). Space 호기 테의
+    `SPACE_RING_EXIT_OUTLINE` 은 팔레트 값이 `None`(어둡게 — 노랑 혼자 넉넉하다)이면 캔버스색으로 채우고,
+    선택 후광 `SPACE_RING_HALO` 는 `ACCENT` 다.
   - 색이 아닌 치수(표 행 높이·월 칸 폭·막대 테두리 굵기·막대 둥근 머리 반경 세 등급
     `BAR_CORNER_RADIUS_{WIDE,MEDIUM,NARROW}_PX`)는 팔레트 밖 모듈 상수다. 테마를 타지 않는다.
     폭이 기간으로 바뀌는 막대는 `bar_corner_radius(막대 폭)` 한 함수로 등급을 고른다.
