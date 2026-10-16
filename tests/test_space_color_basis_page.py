@@ -96,13 +96,13 @@ def test_checks_and_the_colour_basis_repaint_without_a_new_epoch(
     )
     assert _fills(unchecked)["EQ-01"] == _fills(first)["EQ-01"]
 
-    # 투자Capa 기준은 숫자 차례의 청록 단이다(둘이면 첫 단과 끝 단). 체크 key 는 기준마다 따로다.
+    # 투자Capa 기준은 숫자 차례의 청록 단이다(작은 수부터 1단·2단). 체크 key 는 기준마다 따로다.
     app.sidebar.radio(key="space_color_basis").set_value("투자Capa").run()
     capa = _floor_view(viewer_calls)
     assert not app.exception
     assert capa["epoch"] == first["epoch"]
     assert _fills(capa) == {
-        "EQ-01": (tokens.SPACE_CAPA_RAMP[-1], tokens.SPACE_CAPA_RAMP_INKS[-1]),
+        "EQ-01": (tokens.SPACE_CAPA_RAMP[1], tokens.SPACE_CAPA_RAMP_INKS[1]),
         "EQ-02": (tokens.SPACE_CAPA_RAMP[0], tokens.SPACE_CAPA_RAMP_INKS[0]),
     }
     assert [box.label for box in app.sidebar.checkbox] == ["180K", "322K"]
@@ -126,6 +126,39 @@ def test_the_floor_legend_counts_the_as_of_meanings(
     app.sidebar.checkbox(key="space_color_line_PKG").uncheck().run()
     legend = _legend(app)
     assert "PKG" not in legend and "그 밖 1대" in legend
+    clear_equipment_repository()
+
+
+def test_the_layout_editor_gets_the_fills_and_the_as_of_date_and_keeps_its_epoch_on_a_check(
+    tmp_path: Path, viewer_calls: list[dict[str, Any]]
+) -> None:
+    """배치 편집기도 보기와 같은 채우기다 — data 에 기준일(`asOf`, epoch 밖)과 호기마다의
+    `fill`·`ink` 가 가고, 편집 중에 그룹 체크를 바꿔도 편집기 epoch 는 그대로다(보던 배율·적용하지
+    않은 편집을 지킨다). 머리 줄 범례는 채우기 뜻만 보이고 대수를 달지 않는다."""
+    app = _open_floor(tmp_path)
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    assert not app.exception
+    editor = viewer_calls[-1]
+    assert editor.get("mode") is None and editor["scope"] == "floor"
+    assert editor["asOf"] == date.today().isoformat()
+    assert _fills(editor) == {
+        "EQ-01": (tokens.SPACE_LINE_TYPE_FILLS["PKG"], tokens.SPACE_LINE_TYPE_INKS["PKG"]),
+        "EQ-02": (tokens.SPACE_LINE_TYPE_FILLS["MI"], tokens.SPACE_LINE_TYPE_INKS["MI"]),
+    }
+    by_id = {item["id"]: item for item in editor["items"]}
+    assert by_id["EQ-02"]["exitOn"] is not None and by_id["EQ-01"]["flag"] is True
+    assert not any("기준 " in element.value for element in app.markdown)
+
+    app.sidebar.checkbox(key="space_color_line_PKG").uncheck().run()
+    unchecked = viewer_calls[-1]
+    assert not app.exception
+    assert unchecked.get("mode") is None
+    assert unchecked["epoch"] == editor["epoch"]
+    assert _fills(unchecked)["EQ-01"] == (
+        tokens.SPACE_UNIT_DEFAULT_FILL,
+        tokens.SPACE_UNIT_DEFAULT_INK,
+    )
+    assert _fills(unchecked)["EQ-02"] == _fills(editor)["EQ-02"]
     clear_equipment_repository()
 
 

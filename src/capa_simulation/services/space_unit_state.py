@@ -48,10 +48,7 @@ from capa_simulation.services.equipment_contract import (
     STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
 )
-from capa_simulation.services.schedule_confirmation import (
-    flagged_equipment,
-    schedule_confirmation_issues,
-)
+from capa_simulation.services.schedule_confirmation import flagged_equipment, unconfirmed_issues
 
 # 「처음부터 실물」을 글자로 보낼 때의 값. 어느 `YYYY-MM-DD` 글자보다 앞서 글자 비교로 늘 ≤ T 다.
 REAL_FROM_START: Final = "0000-01-01"
@@ -131,11 +128,20 @@ def unit_boundaries(status: pd.DataFrame, downtime: pd.DataFrame, *, today: date
 
     `status` 는 Space 상태(`build_space_equipment_status`) 같은 설비 마스터 행이다 — 검증 전
     편집본도 받는다(없는 칸은 빈 칸). 날짜 칸은 Timestamp(없으면 NaT), 지연·비가동 구간은 `(시작,
-    끝 | None)` 튜플의 튜플이다.
+    끝 | None)` 튜플의 튜플이다. 한 화면 회차에서 범례 대수와 도면 payload 가 같은 결과를 나눠
+    쓴다(`components/space_layout` 의 `space_legend_counts`·`unit_appearance` 는 이 결과를 받는다).
     """
     today_stamp = pd.Timestamp(today)
-    arrival_actual = _dates(status, ARRIVAL_ACTUAL_COLUMN)
-    arrival_plan = _dates(status, ARRIVAL_DATE_COLUMN)
+    parsed: dict[str, pd.Series] = {}
+
+    def day(column: str) -> pd.Series:
+        # 반입일정·반입실적은 실물시작일과 반입 지연 구간이 함께 읽는다 — 한 번만 푼다.
+        if column not in parsed:
+            parsed[column] = _dates(status, column)
+        return parsed[column]
+
+    arrival_actual = day(ARRIVAL_ACTUAL_COLUMN)
+    arrival_plan = day(ARRIVAL_DATE_COLUMN)
     arrival_delayed = _equals(status, ARRIVAL_STATUS_COLUMN, DELAYED_STAGE_STATUS)
     storage = _equals(status, STORAGE_FLAG_COLUMN, "Y")
     existing = _equals(status, EXISTING_FLAG_COLUMN, "Y")
@@ -143,17 +149,17 @@ def unit_boundaries(status: pd.DataFrame, downtime: pd.DataFrame, *, today: date
     real_from = arrival_actual.fillna(planned_from)
     always = arrival_actual.isna() & ~arrival_delayed & arrival_plan.isna() & (existing | storage)
 
-    stop = _dates(status, STOP_DATE_COLUMN)
-    relocation = _dates(status, RELOCATION_DATE_COLUMN)
+    stop = day(STOP_DATE_COLUMN)
+    relocation = day(RELOCATION_DATE_COLUMN)
     layout_exit = relocation.fillna(stop)
     stop_on = stop.where(relocation.notna())
 
     stage_spans: list[list[Span]] = [[] for _ in range(len(status))]
     for stage in ACTUAL_STAGES:
         delayed = _equals(status, stage.status, DELAYED_STAGE_STATUS).to_numpy()
-        planned = _dates(status, stage.schedule).fillna(today_stamp)
+        planned = day(stage.schedule).fillna(today_stamp)
         starts = planned.where(planned.le(today_stamp), today_stamp)
-        ends = _dates(status, stage.actual)
+        ends = day(stage.actual)
         for position, (flag, start, end) in enumerate(zip(delayed, starts, ends, strict=True)):
             if flag:
                 stage_spans[position].append((start, None if pd.isna(end) else end))
@@ -164,7 +170,7 @@ def unit_boundaries(status: pd.DataFrame, downtime: pd.DataFrame, *, today: date
         else pd.Series(pd.NA, index=status.index, dtype="string")
     )
     offline_by_name = _offline_spans(downtime)
-    flagged = flagged_equipment(schedule_confirmation_issues(status, today=today))
+    flagged = flagged_equipment(unconfirmed_issues(status, today=today))
     return pd.DataFrame(
         {
             REAL_FROM_COLUMN: real_from.astype("datetime64[ns]"),

@@ -81,6 +81,12 @@ def schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) -> pd.
     return _issues(equipment, kinds=CONFIRMATION_KINDS, today=pd.Timestamp(today))
 
 
+def unconfirmed_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
+    """미확인만. 칸과 차례는 `schedule_confirmation_issues` 와 같다. 다른 두 확인구분을 구하지 않아
+    회차마다 부르는 Space 「!」(`space_unit_state.unit_boundaries`)가 쓴다."""
+    return _issues(equipment, kinds=(UNCONFIRMED,), today=pd.Timestamp(today))
+
+
 def actual_record_issues(equipment: pd.DataFrame) -> pd.DataFrame:
     """오늘과 무관한 두 알림(실적 누락·상태 갱신 필요)만. 칸과 차례는
     `schedule_confirmation_issues` 와 같다. 저장 미리보기 경고(`actual_record_warnings`)가 쓴다."""

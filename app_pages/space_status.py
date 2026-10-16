@@ -142,6 +142,7 @@ from capa_simulation.services.space_layout_edit import (
     unsaved_unit_ids,
     viewer_items,
 )
+from capa_simulation.services.space_unit_state import unit_boundaries
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
@@ -749,7 +750,9 @@ def _render_layout_editor(
         floor=key,
         new_ids=new_ids,
         arrived_ids=arrived_ids,
-        appearance=lambda rows: unit_appearance(rows, frames[2], choice=color_choice, today=today),
+        appearance=lambda rows: unit_appearance(
+            rows, unit_boundaries(rows, frames[2], today=today), choice=color_choice
+        ),
     )
     options = new_unit_options(frames[1])
     st.caption(
@@ -1122,6 +1125,12 @@ else:
         # 머리 줄 하나에 제목·도면·캔버스 편집·배치 편집·상태 범례를 세운다. 배치도 Figure 의 제목과
         # 범례가 도면 위 한 띠를 따로 먹던 것을 걷었다 — 도면이 테두리 안을 다 쓴다.
         editing_requested = bool(st.session_state.get(EDIT_MODE_KEY, False))
+        # 보기 회차는 층의 세는 행(그리는 행을 모두 품는다)의 경계 날짜를 한 번 구해 범례 대수와
+        # 도면 payload 가 나눠 쓴다. 편집 중에는 편집본으로 편집기가 따로 구한다.
+        viewing = not (editable and editing_requested)
+        floor_boundaries = (
+            unit_boundaries(floor_counted, downtime, today=today) if viewing else None
+        )
         with st.container(
             horizontal=True, gap="small", vertical_alignment="center", key="space_floor_head"
         ):
@@ -1155,10 +1164,10 @@ else:
             # 그리지 않는다).
             st.markdown(
                 space_legend_markup(None, choice=color_choice)
-                if editable and editing_requested
+                if floor_boundaries is None
                 else space_legend_markup(
                     space_legend_counts(
-                        floor_counted, downtime, choice=color_choice, as_of=as_of, today=today
+                        floor_counted, floor_boundaries, choice=color_choice, as_of=as_of
                     ),
                     choice=color_choice,
                     as_of=as_of,
@@ -1172,11 +1181,12 @@ else:
             marks = load_floor_layout_marks(
                 equipment_database_path, selected_building, selected_floor
             )
+            if floor_boundaries is None:
+                # 머리 줄은 편집 요청을 보았는데 편집기가 서지 않은 회차(보통은 오지 않는다).
+                floor_boundaries = unit_boundaries(floor_counted, downtime, today=today)
             items = viewer_items(
                 floor_equipment,
-                appearance=lambda rows: unit_appearance(
-                    rows, downtime, choice=color_choice, today=today
-                ),
+                looks=unit_appearance(floor_counted, floor_boundaries, choice=color_choice),
             )
             roster = hashlib.sha256(
                 "|".join(str(item["id"]) for item in items).encode()

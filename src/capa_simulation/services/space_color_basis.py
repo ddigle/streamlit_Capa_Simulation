@@ -12,8 +12,8 @@
 - 투자Capa 는 자유 글이라 **숫자로 읽히는 값만** 그룹이 된다(`322K`·`322 k`·`322,000`·`1.5M` — K
   는 천, M 은 백만). 숫자로 못 읽는 값과 빈 칸은 기본 회색이다. 같은 수로 읽히는 글자는 한
   그룹이고 이름은 가장 많이 쓴 글자다. 종류가 7을 넘으면 작은 수부터 차례로 7구간에 고르게 나눠
-  묶고(「280K~319K」), 단(청록 7단의 칸)은 그룹 수에 맞춰 첫 단부터 마지막 단까지 고르게 벌린다 —
-  둘뿐이면 가장 옅은 단과 가장 짙은 단이다.
+  묶는다(「280K~319K」). 단(청록 7단의 칸)은 **숫자 차례**다 — 가장 작은 그룹이 가장 옅은 1단이고
+  하나씩 짙어진다(시안 `capaLevel` 과 같다). 그룹이 7보다 적으면 짙은 단 쪽이 남는다.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ _CAPA_UNITS: Final = {"": 1.0, "k": 1_000.0, "m": 1_000_000.0}
 class CapaGroup:
     """투자Capa 그룹 하나.
 
-    `low`~`high` 는 그 그룹에 드는 수(양 끝 포함), `level` 은 청록 단(0~6)이다.
+    `low`~`high` 는 그 그룹에 드는 수(양 끝 포함), `level` 은 청록 단(0~6, 그룹 차례)이다.
     """
 
     label: str
@@ -75,20 +75,12 @@ def capa_numbers(values: pd.Series) -> pd.Series:
     return pd.Series([capa_number(value) for value in values], index=values.index, dtype="float64")
 
 
-def _spread_levels(count: int) -> list[int]:
-    """그룹 `count` 개를 청록 단 0~6 에 고르게 벌린다. 하나면 가운데 단이다."""
-    if count <= 1:
-        return [CAPA_LEVELS // 2] * count
-    last = CAPA_LEVELS - 1
-    return [round(index * last / (count - 1)) for index in range(count)]
-
-
 def capa_groups(values: pd.Series) -> tuple[CapaGroup, ...]:
     """설비 마스터의 투자Capa 값에서 그룹을 만든다(작은 수부터).
 
     같은 수로 읽히는 글자는 한 그룹이고, 이름은 가장 많이 쓴 글자(같으면 글자 차례로 앞)다. 종류가
     `CAPA_LEVELS` 를 넘으면 작은 수부터 차례로 그만큼의 구간에 고르게 나눠 「앞 이름~뒤 이름」으로
-    묶는다.
+    묶는다. 단(`level`)은 그룹 차례 그대로(0 이 가장 옅은 단)다.
     """
     texts = values.astype("string").str.strip()
     numbers = capa_numbers(values)
@@ -111,7 +103,6 @@ def capa_groups(values: pd.Series) -> tuple[CapaGroup, ...]:
             stop = start + size + (1 if index < extra else 0)
             chunks.append(distinct[start:stop])
             start = stop
-    levels = _spread_levels(len(chunks))
     return tuple(
         CapaGroup(
             label=names[chunk[0]] if len(chunk) == 1 else f"{names[chunk[0]]}~{names[chunk[-1]]}",
@@ -119,7 +110,7 @@ def capa_groups(values: pd.Series) -> tuple[CapaGroup, ...]:
             high=chunk[-1],
             level=level,
         )
-        for chunk, level in zip(chunks, levels, strict=True)
+        for level, chunk in enumerate(chunks)
     )
 
 

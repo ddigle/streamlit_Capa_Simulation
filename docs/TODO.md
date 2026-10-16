@@ -782,7 +782,7 @@
     - [x] **C · Space 색·테·기둥**(`cand/space-style/claude`) — 판정 한 곳 `services/space_unit_state.py`(경계 날짜
       `unit_boundaries`·T 판정 `unit_states_at`·브라우저 글자 `boundary_payload`, 실물시작일 = 반입실적 → 지연이면 없음 →
       반입일정 → 기존·보관 처음부터), 색 기준 그룹 `services/space_color_basis.py`(공정구분 `line_type_group`, 투자Capa
-      숫자 읽기·7구간·청록 단 벌림), 토큰(`SPACE_LINE_TYPE_*`·`SPACE_UNIT_*`·`SPACE_CAPA_RAMP*`·`SPACE_RING_*`·
+      숫자 읽기·7구간·청록 단은 숫자 차례 — 시안 `capaLevel`), 토큰(`SPACE_LINE_TYPE_*`·`SPACE_UNIT_*`·`SPACE_CAPA_RAMP*`·`SPACE_RING_*`·
       `SPACE_FLAG_*`·`SPACE_HATCH`, 대비 시험 둘 — 쓰지 않게 된 `EQUIPMENT_STAGE_FALLBACK` 삭제), payload 세
       경로(`_clean_items`·`readUnit`·같은 epoch 합치기), JS 글자 비교 판정(`unitState`·`paintUnit` — 반입 전 주황 점선·
       반출/이설 예정 노랑 두 겹·정지 중 빗금·미확인 「!」·운영 비가동 표식·겹침 꼭지 삼각·선택 후광, 편집 화면은 채우기만),
@@ -790,9 +790,15 @@
       가운데 이름. 편집기 추가 폼 「확정」→「Qual상태」. Guide `space_status.md`(색 뜻·테·덧표시·기둥·「Space 는 실물,
       집계는 계획」)·README·AGENTS·`design_system.md`. 시험: T 를 경계일 앞뒤로 훑는 JS↔파이썬 판정 대조
       (`test_space_unit_state.py`), 자산 글자, AppTest(체크·기준 바꿈이 epoch 그대로, 범례 대수
-      `test_space_color_basis_page.py`), 토큰 대비. **남은 것**: 샘플 fleet 은 반입실적·반입상태·Qual실적이 비어 샘플
-      화면에서는 실물·지연·미확인 견본이 보이지 않는다(실데이터·합성 DB 사본으로는 보인다) — 샘플 수치를 박은 시험이
-      많아 이번에 채우지 않았다.
+      `test_space_color_basis_page.py` — 배치 편집기의 `asOf`·채우기·체크 뒤 epoch 포함), 토큰 대비, 투자Capa 숫자
+      읽기 변형·7구간 묶음. 리뷰 뒤: 투자Capa 단을 시안처럼 숫자 차례로(그룹 수에 맞춰 벌리던 것), 층 상세 회차의 경계
+      날짜를 한 번 구해 범례 대수·도면 payload 가 나눠 쓰고 미확인은 `unconfirmed_issues` 하나만(로컬 합성 DB 사본,
+      5회 중 최솟값 — 4행 층 회차 약 39 → 15ms, 합성 1,300행 약 78 → 29ms. 페이더로 회차가 늘면 D 에서 내용 지문 +
+      오늘 키 캐시를 다시 본다), 풍선·선택 줄이 상태 이름과 같은 말을 거듭 적지 않게(`unitWords`). **남은 것**: 샘플
+      fleet 은 반입실적·반입상태·Qual실적이 비어 샘플 화면에서는 실물·지연·미확인 견본이 보이지 않는다(실데이터·합성
+      DB 사본으로는 보인다) — 샘플 수치를 박은 시험이 많아 이번에 채우지 않았다. **사용자 확인 대기**: 사양 「머리 줄
+      미확인 N대」를 지금은 층 상세 머리 줄 범례 칩(그 층에 선 「!」 상자의 설비 수)으로만 두었다 — FAB 전체·페이지
+      머리에도 둘지 묻는다(둔다면 D 의 도구 줄 요약에).
     - [ ] **D · 페이더**(`cand/space-fader/claude`) — 컴포넌트 안 페이더·`setStateValue('asOf')`·편집 중 고정 줄·사이드바
       기준일·단계 필터 제거, `check_deploy_screens.py` 의 `equipment_headers`·`space_fader` 항목.
   - **사내 확인(다음 배포)**: 런북 7-8 기대값 `equipment_migration 23`, 8-4 개수 줄(Area Code·공정구분 분포, **개편 전 마지막

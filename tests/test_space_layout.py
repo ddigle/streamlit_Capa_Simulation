@@ -40,7 +40,14 @@ from capa_simulation.services.fab_layout import (
     floors_for,
 )
 from capa_simulation.services.floor_layout_profile import MAX_CANVAS_EXTENT, MIN_CANVAS_EXTENT
-from capa_simulation.services.space_color_basis import COLOR_BASIS_CAPA, capa_groups
+from capa_simulation.services.space_color_basis import (
+    CAPA_LEVELS,
+    COLOR_BASIS_CAPA,
+    capa_group_of,
+    capa_groups,
+    capa_number,
+)
+from capa_simulation.services.space_unit_state import unit_boundaries
 
 
 def _space_equipment() -> pd.DataFrame:
@@ -263,6 +270,22 @@ def _legend_floor() -> tuple[pd.DataFrame, pd.DataFrame]:
     return equipment, downtime
 
 
+def _counts(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, choice: ColorChoice, as_of: date = TODAY
+) -> dict[str, float]:
+    """화면처럼 경계 날짜를 한 번 구해(오늘 = `TODAY`) 기준일 `as_of` 의 범례 대수를 센다."""
+    boundaries = unit_boundaries(equipment, downtime, today=TODAY)
+    return space_legend_counts(equipment, boundaries, choice=choice, as_of=as_of)
+
+
+def _looks(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, choice: ColorChoice
+) -> dict[str, dict[str, object]]:
+    return unit_appearance(
+        equipment, unit_boundaries(equipment, downtime, today=TODAY), choice=choice
+    )
+
+
 def test_the_floor_legend_counts_fills_and_marks_at_the_as_of_date() -> None:
     """채우기 칸은 지연 → 보관 → 체크한 그룹 → 그 밖이 이기고 합이 도면에 선 대수다. 테·덧표시
     칸은 따로 센다 — 반입 전, (실물이 있는) 반출/이설 예정, 정지 중, 운영 비가동, 미확인(설비 수).
@@ -270,7 +293,7 @@ def test_the_floor_legend_counts_fills_and_marks_at_the_as_of_date() -> None:
     equipment, downtime = _legend_floor()
     choice = default_color_choice()
 
-    counts = space_legend_counts(equipment, downtime, choice=choice, as_of=TODAY, today=TODAY)
+    counts = _counts(equipment, downtime, choice)
 
     assert counts == {
         "PKG": 2.0,
@@ -287,15 +310,11 @@ def test_the_floor_legend_counts_fills_and_marks_at_the_as_of_date() -> None:
     }
     # 체크를 끈 그룹은 그 밖(기본 회색)이다. 보관·지연은 체크와 무관하다.
     unchecked = ColorChoice(choice.basis, (), frozenset(LINE_TYPE_GROUPS) - {"PKG", "TEST"})
-    partial_counts = space_legend_counts(
-        equipment, downtime, choice=unchecked, as_of=TODAY, today=TODAY
-    )
+    partial_counts = _counts(equipment, downtime, unchecked)
     assert partial_counts[LEGEND_DEFAULT] == 2.0 and "PKG" not in partial_counts
     assert partial_counts[LEGEND_STORAGE] == 1.0
     # 기준일을 옮기면 테·덧표시가 따라간다 — 반입일정이 지나 실물, 반출/이설을 마쳐 도면에서 빠짐.
-    later = space_legend_counts(
-        equipment, downtime, choice=choice, as_of=date(2027, 1, 2), today=TODAY
-    )
+    later = _counts(equipment, downtime, choice, as_of=date(2027, 1, 2))
     assert later.get(LEGEND_PRE_ARRIVAL) == 1.0  # U5 는 실적이 들어올 때까지 반입 전
     assert "MI" not in later and "FDY" not in later and LEGEND_STOPPED not in later
     assert LEGEND_OFFLINE not in later
@@ -306,7 +325,7 @@ def test_the_floor_legend_shows_counts_when_viewing_and_only_fill_meanings_when_
     채우기 뜻(체크한 그룹·그 밖·보관·지연)만 — 편집 화면은 테·덧표시를 그리지 않는다."""
     equipment, downtime = _legend_floor()
     choice = default_color_choice()
-    counts = space_legend_counts(equipment, downtime, choice=choice, as_of=TODAY, today=TODAY)
+    counts = _counts(equipment, downtime, choice)
 
     viewing = space_legend_markup(counts, choice=choice, as_of=TODAY)
     editing = space_legend_markup(None, choice=choice)
@@ -329,7 +348,7 @@ def test_unit_appearance_carries_the_checked_group_colour_and_the_boundary_dates
     equipment, downtime = _legend_floor()
     choice = ColorChoice(default_color_choice().basis, (), frozenset({"MI"}))
 
-    looks = unit_appearance(equipment, downtime, choice=choice, today=TODAY)
+    looks = _looks(equipment, downtime, choice)
 
     assert looks["U3"]["fill"] == tokens.SPACE_LINE_TYPE_FILLS["MI"]
     assert looks["U3"]["ink"] == tokens.SPACE_LINE_TYPE_INKS["MI"]
@@ -343,17 +362,92 @@ def test_unit_appearance_carries_the_checked_group_colour_and_the_boundary_dates
 
 
 def test_capa_groups_take_the_teal_ramp_by_number() -> None:
-    """투자Capa 색 기준은 숫자 차례로 청록 단을 받는다 — 그룹 수에 맞춰 첫 단부터 끝 단까지
-    벌린다. 숫자로 못 읽는 값과 빈 칸은 기본 회색이다."""
+    """투자Capa 색 기준은 숫자 차례로 청록 단을 받는다 — 가장 작은 그룹이 1단(가장 옅은 단)이고
+    하나씩 짙어진다(시안 `capaLevel` 과 같다). 숫자로 못 읽는 값과 빈 칸은 기본 회색이다."""
     equipment, downtime = _legend_floor()
     equipment["투자Capa"] = ["322K", "322K", "180K", "400K", "x", None, "180K", "520K"]
     capa = capa_groups(equipment["투자Capa"])
     choice = ColorChoice(COLOR_BASIS_CAPA, capa, frozenset(group.label for group in capa))
 
-    looks = unit_appearance(equipment, downtime, choice=choice, today=TODAY)
+    looks = _looks(equipment, downtime, choice)
 
-    assert [group.label for group in capa] == ["180K", "322K", "400K", "520K"]
+    assert [(group.label, group.level) for group in capa] == [
+        ("180K", 0),
+        ("322K", 1),
+        ("400K", 2),
+        ("520K", 3),
+    ]
     assert looks["U3"]["fill"] == tokens.SPACE_CAPA_RAMP[0]
-    assert looks["U8"]["fill"] == tokens.SPACE_CAPA_RAMP[-1]
+    assert looks["U1"]["fill"] == tokens.SPACE_CAPA_RAMP[1]
+    assert looks["U8"]["fill"] == tokens.SPACE_CAPA_RAMP[3]
     assert looks["U5"]["fill"] == tokens.SPACE_UNIT_DEFAULT_FILL
     assert looks["U6"]["fill"] == tokens.SPACE_UNIT_DEFAULT_FILL
+
+
+@pytest.mark.parametrize(
+    ("text", "number"),
+    [
+        ("322K", 322_000.0),
+        ("322 k", 322_000.0),
+        (" 322k ", 322_000.0),
+        ("322,000", 322_000.0),
+        ("1.5M", 1_500_000.0),
+        ("280", 280.0),
+        (5, 5.0),
+        (2.5, 2.5),
+        (None, None),
+        ("", None),
+        ("x", None),
+        ("-5K", None),
+        ("1e3", None),
+        ("322KB", None),
+        ("K", None),
+        (True, None),
+        (float("nan"), None),
+    ],
+)
+def test_capa_number_reads_thousands_and_millions_only(text: object, number: float | None) -> None:
+    """투자Capa 는 자유 글이다 — 숫자(쉼표 허용)와 K·M 단위만 읽고 나머지는 못 읽는 값(회색)이다."""
+    assert capa_number(text) == number
+
+
+def test_capa_groups_merge_same_numbers_and_bin_more_than_seven_kinds_into_seven_ranges() -> None:
+    """같은 수로 읽히는 글자는 한 그룹(이름은 가장 많이 쓴 글자)이고, 종류가 7을 넘으면 작은 수부터
+    7구간에 고르게 나눠 「앞~뒤」로 묶는다. 단은 구간 차례(0~6)다."""
+    same = capa_groups(pd.Series(["322K", "322,000", "322K", "180K"]))
+    assert [(group.label, group.low, group.high) for group in same] == [
+        ("180K", 180_000.0, 180_000.0),
+        ("322K", 322_000.0, 322_000.0),
+    ]
+
+    kinds = [f"{value}K" for value in (100, 110, 120, 130, 140, 150, 160, 170, 180, 190)]
+    values = pd.Series([*kinds, "x", None, "150K"])
+    groups = capa_groups(values)
+
+    assert len(groups) == CAPA_LEVELS
+    assert [group.label for group in groups] == [
+        "100K~110K",
+        "120K~130K",
+        "140K~150K",
+        "160K",
+        "170K",
+        "180K",
+        "190K",
+    ]
+    assert [group.level for group in groups] == list(range(CAPA_LEVELS))
+    assert capa_group_of(values, groups).tolist() == [
+        "100K~110K",
+        "100K~110K",
+        "120K~130K",
+        "120K~130K",
+        "140K~150K",
+        "140K~150K",
+        "160K",
+        "170K",
+        "180K",
+        "190K",
+        pd.NA,
+        pd.NA,
+        "140K~150K",
+    ]
+    assert capa_groups(pd.Series(["x", None, ""])) == ()

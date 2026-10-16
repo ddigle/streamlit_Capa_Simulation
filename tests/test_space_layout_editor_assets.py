@@ -11,6 +11,12 @@ import re
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.design import tokens
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_STATUSES,
+    STATUS_EXIT_PLANNED,
+    STATUS_STOP_PLANNED,
+    STATUS_STOPPED,
+)
 
 ASSETS = space_layout_editor._ASSETS
 HTML = (ASSETS / "editor.html").read_text(encoding="utf-8")
@@ -300,6 +306,30 @@ def test_unit_colours_and_boundary_dates_pass_all_three_paths() -> None:
     assert "Object.assign(item, unitLook(raw))" in merge and "repaint()" in merge
     # 기준일은 epoch 밖의 `asOf` 로 온다 — 회차마다 받아 칠한다.
     assert "S.asOf = AS_OF" in JS and "data.asOf" in JS
+
+
+def test_the_unit_tip_does_not_repeat_what_the_stage_name_says() -> None:
+    """풍선·선택 줄은 상태 이름(일정 기준)과 기준일의 판정 글자를 잇는다. 이름이 이미 말하는 뜻은
+    거듭 적지 않는다 — 「반출/이설 예정」과 정지만 적힌 「정지 예정」은 도면 이탈 날짜를 이름에
+    붙이고, 「정지」·「보관 설비」·「운영 비가동」이면 그 판정 낱말을 뺀다. JS 가 견주는 이름은
+    파이썬 상태 이름 목록에 있어야 한다(이름을 바꾸면 여기서 걸린다)."""
+    words = JS[JS.index("function unitWords(item) {") : JS.index("const zoneColor")]
+    compared = set(re.findall(r"stage [!=]== '([^']+)'", words))
+    assert compared == {
+        STATUS_EXIT_PLANNED,
+        STATUS_STOP_PLANNED,
+        STATUS_STOPPED,
+        "보관 설비",
+        "운영 비가동",
+    }
+    assert compared <= set(EQUIPMENT_STATUSES)
+    assert "!item.stopOn" in words and "${stage} ${item.exitOn}" in words
+    tip = JS[JS.index("const unitTip = (item) => {") : JS.index("const sameGeometry")]
+    pick = JS[JS.index("function pickText(item) {") : JS.index("function updateStatus()")]
+    for line in (tip, pick):
+        assert "const { stage, words } = unitWords(item)" in line
+        assert "item.stage" not in line
+    assert "stateWords" not in JS
 
 
 def test_the_editor_draws_no_meaning_rings_only_edit_marks() -> None:

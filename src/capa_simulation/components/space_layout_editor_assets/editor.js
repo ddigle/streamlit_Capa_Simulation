@@ -211,19 +211,24 @@ export default function (component) {
     return { fill: item.fill || 'var(--sle-unit-default-fill)', ink: item.ink || 'var(--sle-unit-default-ink)' }
   }
   const color = (item) => unitColors(item, unitState(item, S.asOf)).fill
-  // 보기 화면의 판정 글자(풍선·선택 줄). 상태 이름(`stage`, 일정 기준)과 따로 실물(실적) 기준이다.
-  function stateWords(item) {
-    if (!VIEW) return ''
+  // 풍선·선택 줄의 상태 이름과 판정 글자. 상태 이름(`stage`)은 일정 기준이고 판정(보기 화면만)은 기준일의
+  // 실물(실적) 기준이라 따로 적되, 이름이 이미 말하는 뜻은 거듭 적지 않는다 — 이름이 「반출/이설 예정」이거나
+  // 정지만 적힌 「정지 예정」이면 도면 이탈 날짜를 이름에 붙이고, 「정지」·「보관 설비」·「운영 비가동」이면
+  // 정지 중·보관·운영 비가동 낱말을 뺀다.
+  function unitWords(item) {
+    const stage = item.stage || ''
+    if (!VIEW) return { stage, words: '' }
     const st = unitState(item, S.asOf)
+    const exitNamed = st.exitPlan && (stage === '반출/이설 예정' || (stage === '정지 예정' && !item.stopOn))
     const words = []
     if (!st.real) words.push('반입 전(실물 없음)')
-    if (st.exitPlan) words.push(`반출/이설 예정 ${item.exitOn}`)
-    if (st.stopped) words.push('정지 중')
+    if (st.exitPlan && !exitNamed) words.push(`반출/이설 예정 ${item.exitOn}`)
+    if (st.stopped && stage !== '정지') words.push('정지 중')
     if (st.delay) words.push('지연')
-    if (st.storage) words.push('보관')
-    if (st.offline) words.push('운영 비가동')
+    if (st.storage && stage !== '보관 설비') words.push('보관')
+    if (st.offline && stage !== '운영 비가동') words.push('운영 비가동')
     if (st.flag) words.push('미확인(오늘 기준)')
-    return words.join(' · ')
+    return { stage: exitNamed ? `${stage} ${item.exitOn}` : stage, words: words.join(' · ') }
   }
   const zoneColor = (m) => (m.keepOut ? 'var(--sle-danger)' : markColors[m.color] || markColors.gray || 'gray')
   const W = () => S.canvas.w
@@ -307,8 +312,8 @@ export default function (component) {
   }
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
   const unitTip = (item) => {
-    const words = stateWords(item)
-    return `${item.label} · ${item.stage || ''}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · Main 설비 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
+    const { stage, words } = unitWords(item)
+    return `${item.label} · ${stage}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · Main 설비 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
   }
   const sameGeometry = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
   const sameNumber = (p, q) => p === q || (Number.isNaN(p) && Number.isNaN(q))
@@ -1263,8 +1268,8 @@ export default function (component) {
 
   function pickText(item) {
     if (isMark(item)) return `선택 ${MARK_KINDS[item.kind]?.name || item.kind}${item.label ? ` · ${item.label}` : ''}`
-    const words = stateWords(item)
-    return `선택 ${item.label} · ${item.stage || '-'}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}`
+    const { stage, words } = unitWords(item)
+    return `선택 ${item.label} · ${stage || '-'}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}`
       + `${item.group ? ` · Main 설비 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
   }
 

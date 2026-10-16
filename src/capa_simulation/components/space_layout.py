@@ -43,7 +43,6 @@ from capa_simulation.services.space_unit_state import (
     STORAGE_STATE,
     VISIBLE_STATE,
     boundary_payload,
-    unit_boundaries,
     unit_states_at,
 )
 
@@ -225,20 +224,28 @@ def default_color_choice(capa: Sequence[CapaGroup] = ()) -> ColorChoice:
     return ColorChoice(COLOR_BASIS_LINE_TYPE, tuple(capa), frozenset(LINE_TYPE_GROUPS))
 
 
+def _aligned(boundaries: pd.DataFrame, rows: pd.DataFrame) -> pd.DataFrame:
+    """`rows` 행 차례의 경계 날짜. `boundaries` 는 `unit_boundaries(rows …)` 처럼 `rows` 의 인덱스를
+    모두 품어야 한다(빠진 행이 있으면 KeyError — 다른 표의 경계를 잘못 넘긴 것이다)."""
+    return boundaries if boundaries.index.equals(rows.index) else boundaries.loc[rows.index]
+
+
 def unit_appearance(
-    status: pd.DataFrame, downtime: pd.DataFrame, *, choice: ColorChoice, today: date
+    status: pd.DataFrame, boundaries: pd.DataFrame, *, choice: ColorChoice
 ) -> dict[str, dict[str, Any]]:
     """호기(설비명)마다 브라우저로 보낼 기본 면·글자(`fill`·`ink`)와 경계 날짜(`boundary_payload`).
 
-    면·글자는 색 기준과 체크만 반영한다 — 체크한 그룹이면 그 그룹 색, 아니면 기본 회색.
-    지연(빨강)과 보관(검정)은 기준일을 보는 브라우저가 이 위에 덮는다(`storage`·`delays`). 체크·색
-    기준을 바꾸면 이 두 칸만 바뀌어 도면은 같은 epoch 로 색만 다시 칠한다(보던 배율을 지킨다).
+    `boundaries` 는 `status` 의 경계 날짜(`space_unit_state.unit_boundaries(status, …)`)다 — 층 상세
+    회차는 범례 대수(`space_legend_counts`)와 한 번 구한 것을 나눠 쓴다. 면·글자는 색 기준과
+    체크만 반영한다 — 체크한 그룹이면 그 그룹 색, 아니면 기본 회색. 지연(빨강)과 보관(검정)은
+    기준일을 보는 브라우저가 이 위에 덮는다(`storage`·`delays`). 체크·색 기준을 바꾸면 이 두 칸만
+    바뀌어 도면은 같은 epoch 로 색만 다시 칠한다(보던 배율을 지킨다).
     """
     if status.empty or EQUIPMENT_ID_COLUMN not in status.columns:
         return {}
     chosen = {style.label: style for style in choice.checked()}
     groups = color_groups(status, choice.basis, choice.capa)
-    payload = boundary_payload(unit_boundaries(status, downtime, today=today))
+    payload = boundary_payload(_aligned(boundaries, status))
     names = status[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     looks: dict[str, dict[str, Any]] = {}
     for name, group, fields in zip(names, groups, payload, strict=True):
@@ -264,25 +271,25 @@ def fill_kinds(states: pd.DataFrame, groups: pd.Series, enabled: Collection[str]
 
 def space_legend_counts(
     rows: pd.DataFrame,
-    downtime: pd.DataFrame,
+    boundaries: pd.DataFrame,
     *,
     choice: ColorChoice,
     as_of: date,
-    today: date,
 ) -> dict[str, float]:
     """층 상세 범례의 기준일 대수. 대수가 있는 칸만 돌려준다.
 
-    `rows` 는 세는 배치 행(`placed_unit_rows` — 모듈 묶음은 상자가 한 행이어도 모든 행)이고 대수는
-    설비지분 합이다(상태 범례 때와 같은 셈, 「배치 N대」와 같은 축). 채우기 칸(그룹·그
-    밖·보관·지연)은 합이 배치 대수다. 테·덧표시 칸은 따로 센다 — 반입 전(실물 없음), 반출/이설
-    예정(실물이 있어 노랑 테인 것), 정지 중, 운영 비가동. **미확인은 설비 수**다(설비키, 지분으로
-    나누지 않음 — 확인할 대상의 수라 `schedule_confirmation.confirmation_counts` 와 같은 셈이고
-    오늘 기준이라 기준일을 따르지 않는다). 도면에 없는(도면 이탈일이 지난) 행은 세지 않는다.
+    `boundaries` 는 `rows` 의 경계 날짜(`space_unit_state.unit_boundaries(rows, …)` — 미확인은 그
+    `today` 로 고정)다. `rows` 는 세는 배치 행(`placed_unit_rows` — 모듈 묶음은 상자가 한 행이어도
+    모든 행)이고 대수는 설비지분 합이다(상태 범례 때와 같은 셈, 「배치 N대」와 같은 축). 채우기
+    칸(그룹·그 밖·보관·지연)은 합이 배치 대수다. 테·덧표시 칸은 따로 센다 — 반입 전(실물 없음),
+    반출/이설 예정(실물이 있어 노랑 테인 것), 정지 중, 운영 비가동. **미확인은 설비 수**다(설비키,
+    지분으로 나누지 않음 — 확인할 대상의 수라 `schedule_confirmation.confirmation_counts` 와 같은
+    셈이고 오늘 기준이라 기준일을 따르지 않는다). 도면에 없는(도면 이탈일이 지난) 행은 세지 않는다.
     칸마다 직접 더한다 — 합계에서 빼면 반올림 끝자리가 -0.0 으로 남아 「-0대」가 찍힌다.
     """
     if rows.empty:
         return {}
-    states = unit_states_at(unit_boundaries(rows, downtime, today=today), as_of=as_of)
+    states = unit_states_at(_aligned(boundaries, rows), as_of=as_of)
     shares = _unit_shares(rows)
     shown = states[VISIBLE_STATE]
     kinds = fill_kinds(states, color_groups(rows, choice.basis, choice.capa), choice.enabled)

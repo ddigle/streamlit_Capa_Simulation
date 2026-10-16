@@ -30,6 +30,7 @@ from capa_simulation.services.schedule_confirmation import (
     flagged_equipment,
     schedule_confirmation_issues,
     schedule_confirmation_notice,
+    unconfirmed_issues,
 )
 
 TODAY = date(2026, 10, 16)
@@ -134,6 +135,10 @@ def test_rows_are_ordered_by_kind_stage_and_schedule() -> None:
         ("C", STATUS_UPDATE_NEEDED, "반입"),
     ]
     assert issues["공정소분류"].tolist() == ["DEMO_P"] * 5
+    # 미확인 하나만 묻는 길(Space 「!」)은 같은 행을 같은 칸·차례로 낸다.
+    only = unconfirmed_issues(master, today=TODAY)
+    expected = issues.loc[issues["확인구분"].eq(UNCONFIRMED)].reset_index(drop=True)
+    pd.testing.assert_frame_equal(only, expected)
 
 
 def test_counts_are_units_and_a_unit_late_on_both_stages_counts_once() -> None:

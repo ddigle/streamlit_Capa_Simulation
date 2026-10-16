@@ -1217,6 +1217,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     테·덧표시 칸(반입 전·실물이 있는 반출/이설 예정·정지 중·운영 비가동)은 기준일의 설비지분 합이고(「배치
     N대」와 같은 축), **미확인은 오늘 기준 설비 수**(설비키, 지분으로 나누지 않음 —
     `confirmation_counts` 와 같은 셈)다. 대수가 0 인 칸은 세우지 않고 끝에 「기준 YYYY-MM-DD」를 단다.
+    사양 「머리 줄 미확인 N대」는 이 층 머리 줄 범례의 칩 하나다 — 그 층 도면에 선(기준일에 보이는) 「!」
+    상자의 설비 수이고 FAB 전체 화면에는 없다(FAB·페이지 머리에도 둘지는 사용자 확인 대기).
   - 본문 머리에는 상태 배지(「Data확보중」)도 적용 이력 줄도 두지 않는다(2026-10-01 사용자 결정 — 배치도가
     쓸 자리다). 사이드바 메뉴 이름의 「(Data확보중)」은 남긴다 — `render_page_header(..., show_status=False)`
     로 배지만 끄고 제목 인자는 사이드바 라벨과 같게 둔다(`test_app_navigation` 의 두 제목 계약).
@@ -1620,7 +1622,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `floor_block_stats`·층 목록 표), 호기 상자의 면·글자와 경계 날짜(`unit_appearance` — 색 기준 `ColorChoice`
     의 체크한 그룹 색, 아니면 기본 회색. 지연·보관은 기준일을 보는 브라우저가 덮는다), 층 상세 머리 줄의
     범례(`space_legend_counts` → `space_legend_markup`, HTML 칩 — 견본은 도면의 테·빗금·표식과 같은 토큰)를
-    만든다. Plotly 는 쓰지 않는다 — FAB·층 도면 모두 편집기와 같은 Components v2 뷰어다. 동·층 정의는
+    만든다. `unit_appearance`·`space_legend_counts` 는 경계 날짜(`space_unit_state.unit_boundaries`)를 인자로
+    받는다 — 화면이 한 회차에 한 번 구해 둘이 나눠 쓴다(같은 층 행에서 두 번 구하지 않는다). Plotly 는 쓰지 않는다 — FAB·층 도면 모두 편집기와 같은 Components v2 뷰어다. 동·층 정의는
     `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이다(상태 대수를 넣지 않는다 —
     `test_floor_blocks_count_placement_not_state`).
   - 층 캔버스는 층마다 다르다. `equipment_ops.floor_layout_profile` 에 저장된 폭·높이를 쓰고,
@@ -1730,7 +1733,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 `on_navigate_change` 콜백). 새 층 블록은 아직 블록이 없는 첫 층을 가리킨다(연결 필수).
   - **보기 전용 뷰어**(`render_space_layout_viewer`, `data.mode="view"`)도 같은 컴포넌트다. 편집
     도구(`.sle-edit-only`)를 숨기고, 끌기는 화면 이동, 누르기는 그 호기 정보 한 줄(공정·운영 비가동은
-    `viewer_items` 의 `detail`), 더블클릭은 확대/전체 보기, Ctrl+휠·+/−·0 은 확대, 방향키는 화면
+    `viewer_items` 의 `detail` — 상태 이름 뒤에 기준일 판정 글자를 잇되 이름이 이미 말하는 뜻은 거듭 적지
+    않는다: `unitWords`), 더블클릭은 확대/전체 보기, Ctrl+휠·+/−·0 은 확대, 방향키는 화면
     이동이다. 고치는 키(Delete·Ctrl+Z)는 듣지 않는다. 호기끼리 겹침은 상자 오른쪽 위 꼭지 삼각으로
     알리되(완전히 겹친 아래 호기의 단서 — 테는 실물·반출/이설 뜻을 실어 겹침에 쓰지 않는다. 기준일에
     보이지 않는 호기는 견주지 않는다) 반입구·문 가림과 개수 문구는 편집 화면의 몫이다. 고른 호기는 상자 밖
@@ -2835,7 +2839,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   한 대이고(확인할 대상의 수라 일정 미정 알림처럼 지분으로 나누지 않는다), 반입·Qual 이 함께 걸려도 한 대다.
   Space 「!」(`flagged_equipment`)는 상자마다 묻으므로 설비명이고, 저장 전 경고의 「N건」은 (호기, 단계) 행
   수다. `actual_record_issues`·`actual_record_warnings` 는 오늘과 무관한 둘(실적 누락·상태 갱신 필요)만이고
-  저장 미리보기 경고(`equipment_validation.equipment_save_warnings`)가 쓴다. **검증(`prepare_*`) 안에 두지
+  저장 미리보기 경고(`equipment_validation.equipment_save_warnings`)가 쓴다. `unconfirmed_issues` 는 미확인
+  하나만이고(다른 둘을 구하지 않는다) 회차마다 도는 Space 「!」(`space_unit_state.unit_boundaries`)가 쓴다.
+  **검증(`prepare_*`) 안에 두지
   않는다** — 미확인은 날이 지나면 답이 바뀌어, 넣으면 저장 때 통과한 리비전이 나중에 열리지 않는다. 그래서
   검증을 부르지 않고 검증 전 편집본·실적 칸이 없는 옛 표도 그대로 받는다(못 읽는 날짜는 빈 칸). 지연
   (상태 「지연」)은 고르지 않는다 — Space 도면의 몫이다. 저장은 막지 않는다.
@@ -2844,8 +2850,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   반입상태 「지연」이면 없음 → 반입일정 → 날짜가 없으면 기존설비·보관 Y 는 처음부터, 신규는 없음)·
   도면이탈일(반출/이설일정 → 정지일정 — `도면이탈여부` 와 같은 규칙)·정지일(두 날짜가 다 있을 때만)·지연
   구간(반입·Qual 마다 상태 「지연」이면 [min(일정, 오늘), 실적), 실적이 없으면 끝 없음, 합집합)·비가동
-  구간(비가동 일정 [시작, 종료], 양 끝 포함)·보관·미확인(`schedule_confirmation` 의 미확인 — 오늘 고정)을
-  낸다. `unit_states_at(boundaries, *, as_of)` 가 T 의 보임·실물·반출/이설 예정·정지 중·지연·운영 비가동을
+  구간(비가동 일정 [시작, 종료], 양 끝 포함)·보관·미확인(`schedule_confirmation.unconfirmed_issues` — 오늘
+  고정)을 낸다. 층 상세 보기 회차는 층의 세는 행(`placed_unit_rows` — 그리는 행을 모두 품는다)으로 **한 번**
+  구해 범례 대수(`space_legend_counts`)와 도면 payload(`unit_appearance` → `viewer_items(looks=…)`)가 나눠 쓰고,
+  편집 중에는 편집기가 편집본으로 따로 구한다. `unit_states_at(boundaries, *, as_of)` 가 T 의 보임·실물·반출/이설 예정·정지 중·지연·운영 비가동을
   bool 로, `boundary_payload` 가 브라우저로 보낼 `YYYY-MM-DD` 글자(`realFrom`·`exitOn`·`stopOn`·`delays`·
   `offline`·`flag`·`storage`, 처음부터는 `REAL_FROM_START` = `0000-01-01`)를 낸다. **실적은 Space 실물
   판정에만** 쓴다 — Dynamic·필요단축일정·공정 Capa 상세의 가용대수는 일정 기준 그대로다(「Space 는 실물,
@@ -2856,8 +2864,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `equipment_contract.line_type_group`(앞뒤 공백·대소문자 무시 완전 일치, 목록 밖·빈칸은 그룹 없음 — 「MI」는
   공정구분만 본다), 투자Capa 는 **숫자로 읽히는 값만** 그룹이다(`capa_number` — `322K`·`322 k`·`322,000`·
   `1.5M`). 같은 수의 글자는 한 그룹이고(이름은 가장 많이 쓴 글자), 종류가 `CAPA_LEVELS`(7)를 넘으면 작은
-  수부터 7구간으로 묶는다(「280K~319K」). 단은 그룹 수에 맞춰 청록 첫 단~끝 단에 고르게 벌린다(둘이면
-  가장 옅은 단과 가장 짙은 단). 색 값은 모르고 어느 호기가 어느 그룹인지만 정한다(`color_groups`).
+  수부터 7구간으로 묶는다(「280K~319K」). 단은 **숫자 차례**다 — 가장 작은 그룹이 1단(가장 옅은 청록)이고
+  하나씩 짙어진다(시안 `capaLevel` 과 같다 — 그룹이 7보다 적으면 짙은 단 쪽이 남는다). 색 값은 모르고 어느
+  호기가 어느 그룹인지만 정한다(`color_groups`).
 - `usage_basis.py`: 사용기준 제외 설비 — 사용기준이 HBM·EDP 가 아니어서(빈 칸 포함,
   `counts_for_capacity`) Dynamic 가용대수에 세지 않는 행. `usage_excluded_equipment` 가 행을 고르고
   `usage_excluded_count`·`usage_exclusion_notice` 가 공정·설비명 범위로 세어 「사용기준이 HBM·EDP 가 아닌

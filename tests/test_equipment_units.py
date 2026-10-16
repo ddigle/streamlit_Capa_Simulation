@@ -64,6 +64,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     available_subtotal,
     build_monthly_equipment_availability,
 )
+from capa_simulation.services.space_unit_state import unit_boundaries
 
 PROCESS = "DEMO_Bonder"
 
@@ -444,12 +445,9 @@ def _pm_mid_march() -> pd.DataFrame:
 def _space_counts(rows: pd.DataFrame, downtime: pd.DataFrame) -> dict[str, float]:
     """층 상세 범례 대수(공정구분 기준·모두 켬). 이 표의 공정구분(L1)은 그룹 밖이라
     「그 밖」이다."""
+    boundaries = unit_boundaries(rows, downtime, today=date(2026, 3, 15))
     return space_legend_counts(
-        rows,
-        downtime,
-        choice=default_color_choice(),
-        as_of=date(2026, 3, 15),
-        today=date(2026, 3, 15),
+        rows, boundaries, choice=default_color_choice(), as_of=date(2026, 3, 15)
     )
 
 

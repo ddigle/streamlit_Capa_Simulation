@@ -225,8 +225,8 @@ def _floor_mask(frame: pd.DataFrame, key: FloorKey) -> pd.Series:
     ).astype(bool)
 
 
-# 그리는 행에서 호기(설비명)마다 브라우저로 보낼 색·경계 날짜를 만드는
-# 함수(`components/space_layout. unit_appearance` 를 묶어 넘긴다). 색 토큰은 화면 몫이라 이 모듈은
+# 편집기에 보내는 행에서 호기(설비명)마다 브라우저로 보낼 색·경계 날짜를 만드는
+# 함수(`components/space_layout.unit_appearance` 를 묶어 넘긴다). 색 토큰은 화면 몫이라 이 모듈은
 # 받기만 한다.
 Appearance = Callable[[pd.DataFrame], Mapping[str, Mapping[str, Any]]]
 
@@ -1300,12 +1300,13 @@ def unsaved_unit_ids(
 
 
 def viewer_items(
-    located: pd.DataFrame, *, appearance: Appearance | None = None
+    located: pd.DataFrame, *, looks: Mapping[str, Mapping[str, Any]] | None = None
 ) -> list[dict[str, Any]]:
     """층 상세 뷰어(편집기와 같은 도면, 보기 전용)에 보낼 저장본 호기. 좌표·크기가 다 있는 행만
-    받는다. `detail` 은 풍선·선택 줄에 붙는 공정과 운영 비가동이다. `appearance` 를 주면 그 면·글자·
-    경계 날짜(`fill`·`ink`·`realFrom` …)를 항목에 얹는다."""
-    looks = appearance(located) if appearance is not None else {}
+    받는다. `detail` 은 풍선·선택 줄에 붙는 공정과 운영 비가동이다. `looks` 는 설비명마다 얹을
+    면·글자·경계 날짜(`fill`·`ink`·`realFrom` … — `components/space_layout.unit_appearance`)다. 층의
+    세는 행 전체로 범례 대수와 함께 한 번 구한 것을 받으므로 `located` 밖의 설비명이 있어도 된다."""
+    found = looks or {}
     items: list[dict[str, Any]] = []
     parents = _parents(located)
     for (_, row), parent in zip(located.iterrows(), parents, strict=True):
@@ -1314,7 +1315,7 @@ def viewer_items(
         unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
         items.append(
             {
-                **looks.get(unit_id, {}),
+                **found.get(unit_id, {}),
                 "id": unit_id,
                 "label": unit_id,
                 "stage": _text(row.get("상태")),
