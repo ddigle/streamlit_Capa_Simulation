@@ -772,13 +772,20 @@
       `도면이탈여부`·`레이아웃반영여부`), Space 「공간에 없음」을 `도면이탈여부` 로, 순수 서비스 `schedule_confirmation.py`
       (화면 연결 없음), `inspect_real_data_checks.py` 8-4 개수 줄, 개편 전 결과를 박은 불변 시험
       (`tests/test_stop_and_exit_dates.py`).
-    - [ ] **B · 알림 화면**(`cand/confirm-alerts/claude`) — `schedule_confirmation` 을 RawData 편집표 위 경고 한 줄·펼침
-      목록(편집본 기준)과 Main 호기 현황 한 줄에 잇는다. RawData 의 저장 전 경고(`equipment_save_warnings` — 실적
-      누락·상태 갱신 필요 줄)와 겹치지 않게 정리한다. **첫날 규모를 정한다**: 실적 칸이 0023 에서 새로 생겨 옛 리비전은
-      모두 비어 있다 — 배포 직후 Qual상태 「완료」인 기존 호기가 모두 「실적 누락」(샘플 관측 41건 —
-      `sample_equipment_master(anchor_date=2026-10-16)`)이고, Qual상태 계획·확정 + Qual일정 지남인 기존 호기는 모두 「미확인」이다. 그 줄을
-      펼침 목록으로 접을지·개수 한 줄만 둘지·이번 편집에서 바뀐 행만 경고할지 정하고, 필요하면 사용자에게 「과거
-      완료 호기 전부가 경고 대상이 되는데 괜찮은가」를 한 번 묻는다. 「N대」는 설비키 기준(`confirmation_counts`)이다.
+    - [x] **B · 알림 화면**(`cand/equip-alerts/claude`) — RawData 폼 위 알림 칸(Main 설비 묶음·Area Code 경고 아래)에
+      「미확인 N대 · 실적 누락 N대 · 상태 갱신 필요 N대」 한 줄(`schedule_confirmation_summary`, 설비키 기준·0 인 구분
+      빠짐)과 접힌 `일정 확인 목록 · N건`((호기, 단계) 행 — 확인구분·설비명·공정소분류·단계·일정·실적·상태). 편집본
+      (미리보기 중이면 저장될 후보) 기준이고 저장은 막지 않는다. Main `호기 현황`(상태 분포·호기 목록)에 미확인 한 줄
+      (`schedule_confirmation_notice`, 저장본·오늘 기준·Main 조건 범위). 둘 다 `simulation_cache.
+      get_schedule_confirmation_issues`(키 = 마스터 `frame_digest` + 오늘, 프레임은 `_` 인자). RawData 의 옛 저장 전
+      경고(`equipment_save_warnings` — 실적 누락·상태 갱신 필요 글 줄)는 Area Code 경고(`area_code_warnings`)만 남기고
+      일정 확인 줄로 바꿨다 — `equipment_save_warnings`·`actual_record_warnings`·`actual_record_issues` 는 이제 화면이
+      부르지 않는다(지울지는 통합 때). `check_deploy_screens.py` 에 `equipment_headers`(RawData 직접 편집 머리에 새 이름
+      일곱 · 설비가동현황 없음). Guide(Main 미확인·RawData 일정 확인 — 뜻과 고치는 법). **첫날 규모**는 개수 한 줄 +
+      접힌 목록으로 정했다 — 배포 직후 Qual상태 「완료」인 기존 호기가 모두 「실적 누락」(샘플 관측 41대 —
+      `sample_equipment_master(anchor_date=2026-10-16)`)이고 Qual상태 계획·확정 + Qual일정 지남인 기존 호기는 모두
+      「미확인」이다. 줄은 늘 한 줄이고 목록은 접혀 있어 화면을 밀지 않는다. **사용자 확인**: 「과거 완료 호기 전부가
+      실적 누락으로 뜨는데 그대로 둘까, 이번 편집에서 바뀐 행만 알릴까」 — 지금은 전부 알린다(실적을 채우면 사라진다).
     - [ ] **C · Space 색·테·기둥**(`cand/space-style/claude`) — 토큰·경계 날짜 함수·payload·사이드바 색 기준·범례·기둥.
       편집기 추가 폼 글자 「확정」→「Qual상태」(editor.html·editor.js 오류 문구)도 이 갈래가 고친다. Guide
       `available_equipment_status.md` 의 「Space 는 실물(실적), 집계는 계획(일정)」 문장은 A 만으로는 동작보다 앞선다 —
@@ -786,11 +793,12 @@
       문장(상태 9색 채우기)도 C 가 색을 걷어 낼 때 다시 쓴다. 샘플 fleet 은 반입실적·반입상태·Qual실적이 모두 비어
       Space 실물·지연·미확인 견본을 보이지 못한다 — 견본이 필요하면 C 가 샘플에 채운다.
     - [ ] **D · 페이더**(`cand/space-fader/claude`) — 컴포넌트 안 페이더·`setStateValue('asOf')`·편집 중 고정 줄·사이드바
-      기준일·단계 필터 제거, `check_deploy_screens.py` 의 `equipment_headers`·`space_fader` 항목.
+      기준일·단계 필터 제거, `check_deploy_screens.py` 의 `space_fader` 항목(`equipment_headers` 는 B 가 더했다).
   - **사내 확인(다음 배포)**: 런북 7-8 기대값 `equipment_migration 23`, 8-4 개수 줄(Area Code·공정구분 분포, **개편 전 마지막
     리비전**의 정지·반출/이설 두 날짜를 함께 가진 행 = 0 이어야 함 — 최신 리비전 수는 정보 줄), 옛 양식 붙여넣기의 설비가동현황
-    폐기 알림(옛 36열 양식에 붙은 「No.」 같은 보조 열은 알림만). **배포 직후 RawData 「실적 누락 N건」 경고의 N ≈ 8-4 의
-    「Qual상태 = 완료」 행 수**(+ 반입상태 완료 행 — 옛 리비전에는 반입상태가 없어 0)가 기대값이다 — 결함이 아니라 실적 칸이
+    폐기 알림(옛 36열 양식에 붙은 「No.」 같은 보조 열은 알림만). **배포 직후 RawData 「일정 확인」 줄의 「실적 누락
+    N대」 ≤ 8-4 의 「Qual상태 = 완료」 행 수**(줄은 설비키로 세어 Main 설비 묶음은 1대 — 모듈이 없으면 같다. 접힌 목록의
+    실적 누락 행 수는 그 행 수와 같다. 옛 리비전에는 반입상태가 없어 반입 쪽은 0)가 기대값이다 — 결함이 아니라 실적 칸이
     새로 생긴 탓이고, 실적을 채우면 줄어든다.
 - [ ] **공식버전 자동 갱신(2026-10-15 사용자 결정 — 시나리오 관리 셋째 탭 「자동 갱신」)** — 사용자 답: ① 시뮬레이션명에
   `W##` 주차와 `PSM` 이 함께 있는 코드가 대상(키워드는 화면 칸) ② 같은 주차 안의 업데이트는 새 코드로 온다 — 더 큰 주차, 또는

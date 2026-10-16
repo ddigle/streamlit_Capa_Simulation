@@ -82,6 +82,28 @@ def _render_fixture() -> None:
             "Y",
             "N",
         ]
+    if st.session_state.get("unconfirmed_unit", False):
+        # 반입·Qual 일정이 다 지났는데(오늘 2026-10-06) 실적이 비고 상태가 확정인 신규
+        # 호기 — 미확인.
+        row = len(equipment)
+        equipment.loc[row] = {column: None for column in equipment.columns}
+        equipment.loc[row, ["설비명", "공정소분류", "공정구분", "투자구분", "공정대분류"]] = [
+            "EQ-LATE",
+            "Die Attach",
+            "Line-A",
+            "양산",
+            "조립",
+        ]
+        equipment.loc[row, ["사용기준", "보관유무", "기존설비여부", "레이아웃표시"]] = [
+            "HBM",
+            "N",
+            "N",
+            "N",
+        ]
+        equipment.loc[row, "반입일정"] = date(2026, 9, 1)
+        equipment.loc[row, "반입상태"] = "확정"
+        equipment.loc[row, "Qual일정"] = date(2026, 9, 20)
+        equipment.loc[row, "Qual상태"] = "확정"
     if st.session_state.get("extra_unit_process"):
         # 데이터 쪽에서 공정 하나가 새로 생긴다(선택지가 바뀐다 — 위젯은 건드리지 않는다).
         row = len(equipment)
@@ -371,6 +393,44 @@ def test_no_undated_line_when_every_new_unit_has_dates() -> None:
     app = _app()
 
     assert _undated(app) == []
+
+
+def _unconfirmed(app: AppTest) -> list[str]:
+    return [caption.value for caption in app.caption if "미확인" in caption.value]
+
+
+def test_an_unconfirmed_unit_is_named_under_the_unit_status() -> None:
+    """일정이 지났는데 실적이 비고 상태가 계획·확정인 설비는 호기 현황 머리 아래 한 줄로
+    알린다(2026-10-16 사용자 결정 — 오늘 기준 고정, 저장본 기준). 대수와 상관없는 확인할 거리라
+    가용대수에는 서지 않는다."""
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["unconfirmed_unit"] = True
+    app.run()
+    assert not app.exception
+    assert _unconfirmed(app) == []
+
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+    assert not app.exception
+    assert [text.split(" — ")[0] for text in _unconfirmed(app)] == [
+        ":material/assignment_late: 미확인 1대 (반입 1 · Qual 1)"
+    ]
+    # 호기 목록도 같은 줄이다.
+    app.selectbox(key="equipment_explorer_unit_view").set_value("호기 목록").run()
+    assert len(_unconfirmed(app)) == 1
+    # 기준일을 옮겨도 오늘 기준이다 — 미확인은 Main 기준일과 상관없다.
+    app.date_input(key=AS_OF_KEY).set_value(date(2026, 9, 2)).run()
+    assert len(_unconfirmed(app)) == 1
+    # 공정 조건 밖이면 세지 않는다.
+    app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
+    assert _unconfirmed(app) == []
+
+
+def test_no_unconfirmed_line_when_every_open_stage_is_still_ahead() -> None:
+    app = _app()
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+
+    assert not app.exception
+    assert _unconfirmed(app) == []
 
 
 # ------------------------------------------------------- 공정 표시명(Proc Rename)

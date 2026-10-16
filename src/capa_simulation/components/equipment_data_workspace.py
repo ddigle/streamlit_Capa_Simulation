@@ -93,7 +93,7 @@ from capa_simulation.services.equipment_samples import untouched_sample_baseline
 from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
-    equipment_save_warnings,
+    area_code_warnings,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
@@ -103,6 +103,19 @@ from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.schedule_confirmation import (
+    ACTUAL_COLUMN,
+    CONFIRMATION_KIND_COLUMN,
+    MISSING_ACTUAL,
+    PROCESS_COLUMN,
+    SCHEDULE_COLUMN,
+    STAGE_COLUMN,
+    STATUS_COLUMN,
+    STATUS_UPDATE_NEEDED,
+    UNCONFIRMED,
+    schedule_confirmation_summary,
+)
+from capa_simulation.services.simulation_cache import get_schedule_confirmation_issues
 from capa_simulation.services.space_layout_edit import PendingRenames
 
 FLASH_KEY = "equipment_status_flash"
@@ -178,6 +191,19 @@ WORKSPACE_TABS_KEY = "equipment_workspace_tabs_v1"
 EDITOR_TABS_KEY = "equipment_workspace_editor_tabs_v1"
 DOWNLOADS_EXPANDER_KEY = "equipment_workspace_downloads_v1"
 HISTORY_FILTER_EXPANDER_KEY = "equipment_history_filters_v1"
+# 일정 확인(미확인·실적 누락·상태 갱신 필요) 목록. 건수가 바뀌어 제목 글자가 달라져도 key 가 펼침을
+# 지킨다 — key 가 있으면 블록 id 가 제목과 상관없이 정해진다.
+CONFIRMATION_EXPANDER_KEY = "equipment_schedule_confirmation_list_v1"
+# 목록에 보이는 칸과 차례. `설비키` 는 대수를 세는 데만 쓴다(Main 설비는 편집표에 있다).
+_CONFIRMATION_LIST_COLUMNS = (
+    CONFIRMATION_KIND_COLUMN,
+    EQUIPMENT_ID_COLUMN,
+    PROCESS_COLUMN,
+    STAGE_COLUMN,
+    SCHEDULE_COLUMN,
+    ACTUAL_COLUMN,
+    STATUS_COLUMN,
+)
 _EDITOR_KEYS = (BASELINE_EDITOR_KEY, EQUIPMENT_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
 _TARGETS = ("설비 마스터", "기존 보유대수", "비가동 일정")
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
@@ -1509,6 +1535,44 @@ def _render_history(repository: DuckDBEquipmentRepository, latest_revision_id: s
             st.dataframe(frame, hide_index=True, width="stretch")
 
 
+def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
+    """반입·Qual 의 일정·실적·상태가 맞지 않는 호기 — 경고 한 줄과 접힌 목록. 셋 다 없으면 그리지
+    않는다. 저장은 막지 않는다.
+
+    `master` 는 편집본(미리보기 중이면 저장될 후보)이다. 편집표가 폼 안이라 칸만 고쳐서는 바뀌지
+    않고, 저장하지 않은 편집도 제출(보기 적용·저장·변경 미리보기 등) 뒤 회차에 보인다.
+    판정은 내용 지문 + 오늘 캐시(`get_schedule_confirmation_issues`)로 받는다 — 이 작업 공간은
+    숨은 탭에서도 회차마다 그려지므로, 고친 것이 없는 회차는 지문만 잰다. 미확인은
+    오늘(`today`) 기준이고, 일정 당일은 아직 미확인이 아니다.
+    """
+    issues = get_schedule_confirmation_issues(master, today=today)
+    summary = schedule_confirmation_summary(issues)
+    if summary is None:
+        return
+    st.warning(summary, icon=":material/fact_check:")
+    with st.expander(
+        f"일정 확인 목록 · {len(issues):,}건", expanded=False, key=CONFIRMATION_EXPANDER_KEY
+    ):
+        st.caption(
+            f"**{UNCONFIRMED}** — 일정이 지났는데({today:%Y-%m-%d} 기준, 당일은 빼고) 실적이 "
+            f"비고 상태가 계획·확정 · **{MISSING_ACTUAL}** — 상태가 완료인데 실적이 빔 · "
+            f"**{STATUS_UPDATE_NEEDED}** — 실적이 있는데 상태가 계획·확정. 한 행이 한 (호기, "
+            "단계)입니다. 직접 편집에서 그 단계의 실적·상태를 고친 뒤 보기 적용(붙여넣기는 "
+            "변경 미리보기)을 누르면 이 목록에서 빠지고, 저장해야 Main 화면에도 반영됩니다."
+        )
+        st.dataframe(
+            issues.loc[:, list(_CONFIRMATION_LIST_COLUMNS)],
+            hide_index=True,
+            width="stretch",
+            # 빈 일정·실적은 빈칸이다 — 기본값이면 회색 "None" 글자가 값처럼 읽힌다.
+            placeholder="",
+            column_config={
+                column: st.column_config.DateColumn(format="YYYY-MM-DD")
+                for column in (SCHEDULE_COLUMN, ACTUAL_COLUMN)
+            },
+        )
+
+
 def render_equipment_data_workspace(
     *,
     repository: DuckDBEquipmentRepository,
@@ -1519,13 +1583,17 @@ def render_equipment_data_workspace(
     floor_canvases: FloorCanvasMap,
     max_extent: CanvasSize,
     drafts_replaced: bool = False,
+    today: date | None = None,
 ) -> None:
     """입력·직접 편집·조회 중 한 작업을 표시하고 세 표를 한 리비전으로 저장한다.
 
     `drafts_replaced` 는 이번 회차 맨 위에서 다른 사람의 저장으로 편집본을 새로 세웠다는 뜻이다
     (`pop_drafts_replaced`). 그 회차의 제출은 반영하지 않는다 — 옛 편집본 위의 제출을 새 저장본에
     얹어 저장하면 남의 리비전과 같은 리비전이 「저장했습니다」로 생기고, 다시 그리면서 버림 알림도
-    사라진다."""
+    사라진다.
+
+    `today` 는 일정 확인 경고의 「오늘」이다. 페이지는 Main 과 같은 날을 넘긴다(주지 않으면
+    오늘)."""
     frames = ensure_equipment_drafts(latest_snapshot)
     if latest_snapshot is None:
         st.info(
@@ -1568,9 +1636,12 @@ def render_equipment_data_workspace(
         master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
         for message in module_group_warnings(master):
             st.warning(message, icon=":material/view_module:")
-        # Area Code 목록 밖·실적 누락·상태 갱신 필요도 같은 자리에서 알리고 막지 않는다.
-        for message in equipment_save_warnings(master):
+        # Area Code 목록 밖과 일정 확인(미확인·실적 누락·상태 갱신 필요)도 같은 자리에서
+        # 알리고 막지 않는다. 일정 확인은 한 줄 + 접힌 목록이라 이 칸 안에 둔다 — 칸 밖이면 그
+        # 목록이 생기고 사라질 때마다 아래 key 있는 펼침·탭이 밀린다.
+        for message in area_code_warnings(master):
             st.warning(message, icon=":material/rule:")
+        _render_schedule_confirmation(master, today=today or date.today())
     # 표마다 무엇을 키로 대체하는지·Main 설비·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
     # 내려받기만 남긴다.
     with st.expander(

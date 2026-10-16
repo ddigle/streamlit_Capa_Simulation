@@ -141,6 +141,24 @@ def schedule_confirmation_notice(
     )
 
 
+def schedule_confirmation_summary(issues: pd.DataFrame) -> str | None:
+    """세 알림을 한 줄로 — 「미확인 N대 · 실적 누락 N대 · 상태 갱신 필요 N대 — …」. 셋 다 없으면
+    `None`(그리지 않는다).
+
+    대수는 `confirmation_counts`(설비키 기준)이고 0 인 구분은 적지 않는다. 한 설비가 두 구분에
+    걸리면 양쪽에 한 번씩 든다. 고칠 (호기, 단계) 행은 받은 쪽이 목록으로 보인다(RawData 펼침
+    목록).
+    """
+    counts = confirmation_counts(issues)
+    parts = [f"{kind} {count:,}대" for kind, count in counts.items() if count > 0]
+    if not parts:
+        return None
+    return (
+        f"{' · '.join(parts)} — 반입·Qual 의 일정·실적·상태가 서로 맞지 않습니다"
+        "(저장은 됩니다). 고칠 호기는 아래 목록에 있습니다."
+    )
+
+
 def actual_record_warnings(equipment: pd.DataFrame) -> list[str]:
     """저장 미리보기에 띄울 경고 — 실적 누락·상태 갱신 필요 한 줄씩(없는 쪽은 빠진다). 저장은
     막지 않는다. 검증 전 편집본도 받는다."""

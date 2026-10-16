@@ -382,6 +382,7 @@ with rawdata_tab:
         floor_canvases=floor_canvases,
         max_extent=max_extent,
         drafts_replaced=drafts_replaced,
+        today=today,
     )
 
 
