@@ -27,7 +27,7 @@
   사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요단축일정 탭의
   공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)은 읽지도 쓰지도 않는다(사용자
   결정 1).
-- **HOME 표시 확보율** — HOME 의 실행 Capa·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
+- **HOME 표시 확보율** — HOME 의 확보율 보정·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
   토글을 켜 두었으면, HOME 과 같은 함수로 얹은 값을 요약 표 회색 줄로 둔다. 선행 변동률의
   계획은 HOME 과 **같은 캐시 키**(`display_month_range` 범위)로 받는다. 원 확보율과 같으면 줄을
   두지 않는다.
@@ -380,7 +380,7 @@ kpis = process_capa_kpis(summary)
 
 
 def home_view_flags() -> tuple[bool, bool, bool]:
-    """(실행 Capa, 선행 B/O, EDP 포함) — HOME 에서 왔으면 누른 그때의 조건, 아니면 지금 HOME
+    """(확보율 보정, 선행 B/O, EDP 포함) — HOME 에서 왔으면 누른 그때의 조건, 아니면 지금 HOME
     토글."""
     if entry.origin is not None:
         return entry.origin.show_execution, entry.origin.show_advance, entry.origin.include_edp

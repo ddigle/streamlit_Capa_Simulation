@@ -9,7 +9,7 @@
   판정·부호 있는 과부족·부족 원인. 판정·과부족은 판정 기준에 닿으므로 캐시하지 않고 회차마다 만든다.
 - **제품별 소요대수**(`build_process_product_demand`): 소요대수 상세를 분류(제품정보 등)로 합한
   월 표. 자식 행을 다 더하면 요약의 소요대수와 같다.
-- **HOME 표시 확보율**(`home_display_rates`): HOME 이 원 확보율에 얹는 실행 Capa·선행 B/O 를 같은
+- **HOME 표시 확보율**(`home_display_rates`): HOME 이 원 확보율에 얹는 확보율 보정·선행 B/O 를 같은
   함수로 얹은 값. 요약 표의 회색 참고 줄이다.
 - **고른 달의 경로 추적**(`build_process_month_trace`): 경로마다 부하량·UPEH/ST·환산 UPEH·측정률·
   대당 Capa·소요대수와 그 달 공정 공통 인자. 인자는 공정으로 거른 기준정보 표를 대당 Capa 계산과
@@ -278,7 +278,7 @@ def home_display_rates(
 ) -> dict[int, float | None]:
     """HOME 이 그 공정의 달마다 보이는 확보율 — 요약 표 「확보율 (HOME 표시)」 줄.
 
-    HOME 과 같은 함수·같은 차례다: 원 확보율에 실행 Capa 증감(%p)을 얹고
+    HOME 과 같은 함수·같은 차례다: 원 확보율에 확보율 보정 증감(%p)을 얹고
     (`apply_execution_adjustment`, `execution_rows` 가 None 이면 얹지 않는다) 선행 B/O 변동률을
     곱한다 (`apply_advance_to_securement`, `advance_ratio` 가 None 이면 곱하지 않는다). 달은
     `months` 차례이고 확보율이 없는 달(소요 0)은 None 이다. 공정은 계산과 같은 정규화로 고른다.

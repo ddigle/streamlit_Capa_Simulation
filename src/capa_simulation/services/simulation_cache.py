@@ -311,7 +311,7 @@ def check_scenario_capacity(
     던진다(그쪽의 전체 기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은
     `page_bootstrap.stop_calculation_on_error` 로 감싸 사이드바의 「✓ 적용」을 거둔다.
 
-    가용설비 현황(Static/Dynamic·필요단축일정)은 이것을 **오류 확인**으로 쓴다 — 소요대수 프레임이
+    가용설비 현황(Static 대비 일정·필요단축일정)은 이것을 **오류 확인**으로 쓴다 — 소요대수 프레임이
     필요 없는 보기에서도 기준정보 오류를 같은 문구로 알리되 프레임은 풀지 않는다. 그 화면은
     「✓ 적용」을 쓰지 않으므로 감싸지 않고, 같은 키·같은 표 묶음의 로더
     (`scenario_required_equipment`)를 `_required_equipment` 로 준다. 빗나간 회차에는 그 로더로
@@ -1367,7 +1367,7 @@ def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
 
     가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고, 이 계산은 설비 마스터 검증
     (`prepare_equipment_master`)을 거쳐 3천 행에 90ms 남짓 든다. 결과는 설비 마스터 내용만으로
-    정해지므로(기준일이 없다) 내용 해시가 곧 키다. Main 과 Static/Dynamic 이 같은(거르기 전) 표를
+    정해지므로(기준일이 없다) 내용 해시가 곧 키다. Main 과 Static 대비 일정이 같은(거르기 전) 표를
     넘겨 한 벌을 함께 쓰고, 범위는 받은 쪽이 좁힌다.
     """
     return undated_equipment(equipment)
@@ -1378,8 +1378,8 @@ def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     """사용기준이 HBM·EDP 가 아니어서 가용대수에 세지 않는 행(`services/usage_basis`)을 다시 쓴다.
 
     일정 미정(`get_undated_equipment`)과 같은 까닭이다 — 설비 마스터 검증을 거치고 결과가 호기
-    마스터 내용만으로 정해진다. Main·Static/Dynamic·필요단축일정이 거르기 전 표를 넘겨 한 벌을 함께
-    쓰고 범위는 받은 쪽이 좁힌다.
+    마스터 내용만으로 정해진다. Main·Static 대비 일정·필요단축일정이 거르기 전 표를 넘겨 한 벌을
+    함께 쓰고 범위는 받은 쪽이 좁힌다.
     """
     return usage_excluded_equipment(equipment)
 
@@ -1764,7 +1764,7 @@ def get_required_shortening(
     풀지 않는다. 로더는 키의 시나리오 키로 소요대수를 꺼내는 것(`scenario_required_equipment`)이어야
     한다. 설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
 
-    호기 구간은 Static/Dynamic 과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
+    호기 구간은 Static 대비 일정과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
     키의 마스터·비가동 지문을 그대로 쓰므로 다시 해시하지 않는다. 시나리오·기존보유·오늘만 바뀌어
     이 결과가 새로 돌 때도 구간(3천 행·32개월에 2초 남짓, 샘플 관측)은 다시 만들지 않고, 두 탭의
     구간 범위가 같으면 한 벌을 나눈다.
@@ -1867,10 +1867,10 @@ def get_shortening_progress_csv(
     return frame.to_csv(index=False).encode("utf-8-sig")
 
 
-# Static/Dynamic 의 구간 → 월별 → 비교. 필요단축일정과 같은 방식이다 — 프레임은 `_` 인자로 해시하지
-# 않고, 키가 **함수의 실제 입력 전부**를 내용 지문으로 싣는다. 세 서비스 함수는 오늘 날짜·설정을
-# 읽지 않는다(오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 들어오고, 그 둘은 날짜·마스터
-# 지문이 덮는다). 코드 상수는 키에 넣지 않는다(`frame_digest` 의 키 방침).
+# Static 대비 일정의 구간 → 월별 → 비교. 필요단축일정과 같은 방식이다 — 프레임은 `_` 인자로
+# 해시하지 않고, 키가 **함수의 실제 입력 전부**를 내용 지문으로 싣는다. 세 서비스 함수는 오늘
+# 날짜·설정을 읽지 않는다(오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 들어오고, 그 둘은
+# 날짜·마스터 지문이 덮는다). 코드 상수는 키에 넣지 않는다(`frame_digest` 의 키 방침).
 
 # (설비 마스터 내용 지문, 비가동 내용 지문, 구간 시작, 구간 끝)
 EquipmentSpanCacheKey = tuple[str, str, str, str]
@@ -1902,7 +1902,7 @@ def get_equipment_lifecycle_spans(
 ) -> pd.DataFrame:
     """세는 데 쓰는 호기 생애주기 구간(`build_equipment_lifecycle_spans(with_unit_share=True)`).
 
-    Static/Dynamic 은 보기(가용대수 비교 · 분류별 내역 · 확보율 교차검증)나 같은 탭의 위젯 하나만
+    Static 대비 일정은 보기(가용대수 비교 · 분류별 내역 · 확보율 교차검증)나 같은 탭의 위젯 하나만
     바꿔도 페이지 전체가 다시 돌아, 상태 판정을 바뀌는 날마다 다시 하는 이 계산이 매번 들었다
     (2026-10-08 점검 A2 — 데모 19행 0.34초, 3천 행 복제 6개월 1.45초·32개월 2.35초). 필요단축일정도
     이 캐시를 쓴다(`get_required_shortening`).
@@ -1968,7 +1968,7 @@ def get_availability_comparison(
     _static: pd.DataFrame,
     _conversion_ratios: Mapping[str, float] | None,
 ) -> tuple[pd.DataFrame, GapComparison]:
-    """Static/Dynamic 의 월별 Dynamic 분해와 Static 대비 비교(`build_availability_gap`).
+    """Static 대비 일정의 월별 Dynamic 분해와 Static 대비 비교(`build_availability_gap`).
 
     보기 전환마다 다시 돌던 둘을 묶어 둔다(점검 A2). 프레임·매핑은 키를 만든 바로 그 값이어야
     한다(`dynamic_monthly_cache_key` + `availability_comparison_cache_key`).
@@ -2138,7 +2138,7 @@ def get_lifecycle_gantt_spans(
     return _cached_lifecycle_gantt_spans(cache_key, equipment, downtime)
 
 
-# (Static/Dynamic 비교 키, 소요대수를 낸 시나리오 키)
+# (Static 대비 일정 비교 키, 소요대수를 낸 시나리오 키)
 SecurementCrossCheckCacheKey = tuple[AvailabilityComparisonCacheKey, ScenarioCacheKey]
 
 
@@ -2177,7 +2177,7 @@ def get_securement_cross_check(
     _static: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> SecurementCrossCheckResult:
-    """Static/Dynamic 「확보율 교차검증」(`securement_cross_check_result`).
+    """Static 대비 일정 「확보율 교차검증」(`securement_cross_check_result`).
 
     그 보기를 열어 둔 rerun(공정 바꾸기·다른 위젯·사이드바)마다 다시 맞대지 않게 캐시한다. 입력 셋은
     키가 모두 정한다 — 월별 Dynamic 은 비교 키 안의 월별 키(구간·기존보유·Cut-off·달·환산비 지문),

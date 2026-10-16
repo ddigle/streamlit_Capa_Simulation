@@ -210,7 +210,8 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     # 위한 핀이다.
     uses_equipment_db=True,
 )
-# 설비 DB 와 자기 기준일만 본다. 기준일·필터는 자기 조건 카드(`Space 조건`)다.
+# 설비 DB 만 본다. 공정소분류·색 기준은 자기 조건 카드(`Space 조건`), 기준일은 층 상세 도면 위
+# 페이더다.
 SPACE_STATUS = PageSpec(
     "app_pages/space_status.py",
     _data_pending("Space 현황"),
