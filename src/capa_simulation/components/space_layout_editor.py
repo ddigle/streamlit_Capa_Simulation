@@ -29,8 +29,10 @@ FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우�
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -104,7 +106,22 @@ def _palette() -> dict[str, str]:
         "accent": tokens.ACCENT,
         "on-accent": tokens.SURFACE,
         "danger": keep_out_color(),
-        "fallback": tokens.EQUIPMENT_STAGE_FALLBACK,
+        # 호기 상자의 기본 면·글자와 보관·지연 면·글자. 색 기준 그룹 면은 호기마다
+        # data(`fill`·`ink`)로 온다.
+        "unit-default-fill": tokens.SPACE_UNIT_DEFAULT_FILL,
+        "unit-default-ink": tokens.SPACE_UNIT_DEFAULT_INK,
+        "unit-storage-fill": tokens.SPACE_UNIT_STORAGE_FILL,
+        "unit-storage-ink": tokens.SPACE_UNIT_STORAGE_INK,
+        "unit-delay-fill": tokens.SPACE_UNIT_DELAY_FILL,
+        "unit-delay-ink": tokens.SPACE_UNIT_DELAY_INK,
+        # 보기 화면의 테(반입 전·반출/이설 예정)·선택 후광·미확인 「!」·정지 중 빗금.
+        "ring-pre": tokens.SPACE_RING_PRE_ARRIVAL,
+        "ring-exit": tokens.SPACE_RING_EXIT,
+        "ring-exit-outline": tokens.SPACE_RING_EXIT_OUTLINE,
+        "ring-halo": tokens.SPACE_RING_HALO,
+        "flag": tokens.SPACE_FLAG_FILL,
+        "flag-ink": tokens.SPACE_FLAG_INK,
+        "hatch": tokens.SPACE_HATCH,
         "mark-ink": tokens.SPACE_TEXT,
         "mark-muted": tokens.SPACE_LABEL_TEXT,
         # 도면 요소 이름표의 「글자 색」(`fontColor`). 편집기가 `var(--sle-mark-text-<키>)` 로 쓴다.
@@ -114,8 +131,34 @@ def _palette() -> dict[str, str]:
     }
 
 
+_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _day_or_none(value: object) -> str | None:
+    """`YYYY-MM-DD` 글자만, 아니면 None. 브라우저가 기준일과 글자로 견준다."""
+    return value if isinstance(value, str) and _DAY.match(value) else None
+
+
+def _spans(value: object) -> list[list[str | None]]:
+    """``[[시작, 끝 | None], …]`` — 시작이 날짜 글자인 구간만 남긴다."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [
+        [str(span[0]), _day_or_none(span[1])]
+        for span in value
+        if isinstance(span, (list, tuple)) and len(span) == 2 and _day_or_none(span[0])
+    ]
+
+
 def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """브라우저로 보낼 호기. 숫자 아님은 None 으로, Main 설비는 글자일 때만 묶음으로."""
+    """브라우저로 보낼 호기. 숫자 아님은 None 으로, Main 설비는 글자일 때만 묶음으로.
+
+    색 기준의 면·글자(`fill`·`ink`, `#RRGGBB` 만 — 아니면 빈 글자라 브라우저가 기본 회색)와 경계
+    날짜(`realFrom`·`exitOn`·`stopOn`·`delays`·`offline`,
+    `services/space_unit_state.boundary_payload`)· `storage`·`flag` 도 여기를 지난다. 이름에
+    `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다.
+    """
     return [
         {
             "id": str(item["id"]),
@@ -133,6 +176,19 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             "group": item["group"]
             if isinstance(item.get("group"), str) and item["group"]
             else None,
+            "fill": item["fill"]
+            if isinstance(item.get("fill"), str) and _HEX.match(item["fill"])
+            else "",
+            "ink": item["ink"]
+            if isinstance(item.get("ink"), str) and _HEX.match(item["ink"])
+            else "",
+            "storage": bool(item.get("storage")),
+            "realFrom": _day_or_none(item.get("realFrom")),
+            "exitOn": _day_or_none(item.get("exitOn")),
+            "stopOn": _day_or_none(item.get("stopOn")),
+            "delays": _spans(item.get("delays")),
+            "offline": _spans(item.get("offline")),
+            "flag": bool(item.get("flag")),
         }
         for item in items
     ]
@@ -147,17 +203,23 @@ def render_space_layout_viewer(
     floor: FloorKey,
     marks: Sequence[FloorLayoutMark],
     summary: str,
+    as_of: date,
     background_image: str | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
-    오른쪽의 한 줄 요약(배치·미배치·점유율)이다. 돌려받는 값이 없다."""
+    오른쪽의 한 줄 요약(배치·미배치·점유율)이다. 돌려받는 값이 없다.
+
+    `as_of`(기준일 T)는 `asOf` 로 보내고 epoch 에 넣지 않는다 — 브라우저가 호기마다 받은 경계 날짜와
+    글자로 견주어 테(반입 전 주황 점선·반출/이설 예정 노랑)·빗금·「!」·운영 비가동 표식·지연 빨강을
+    정한다. 기준일·체크만 바뀐 회차는 같은 epoch 로 다시 칠하고 보던 배율을 지킨다."""
     _EDITOR(
         key=key,
         data={
             "mode": "view",
             "scope": "floor",
             "epoch": epoch,
+            "asOf": as_of.isoformat(),
             "title": floor_label(floor),
             "summary": summary,
             "items": _clean_items(items),
@@ -166,7 +228,6 @@ def render_space_layout_viewer(
             "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
             "decimals": CANVAS_DECIMALS,
             "palette": _palette(),
-            "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
             "backgroundImage": background_image,
@@ -227,7 +288,6 @@ def render_fab_layout_viewer(
             "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
             "decimals": CANVAS_DECIMALS,
             "palette": _palette(),
-            "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
             "backgroundImage": background_image,
@@ -273,7 +333,6 @@ def render_fab_layout_editor(
             "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
             "decimals": CANVAS_DECIMALS,
             "palette": _palette(),
-            "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
             "backgroundImage": background_image,
@@ -302,9 +361,13 @@ def render_space_layout_editor(
     floors: Sequence[FloorKey],
     marks: Sequence[FloorLayoutMark],
     new_unit: Mapping[str, Any],
+    as_of: date,
     background_image: str | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
+
+    면은 보기와 같은 규칙(지연 → 보관 → 체크한 그룹 → 기본, 기준일 `as_of`)이지만 **의미 테·덧표시는
+    그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다.
 
     적용값: ``{"epoch", "changes", "renames", "canvas", "marks"}``.
 
@@ -329,6 +392,7 @@ def render_space_layout_editor(
         data={
             "scope": "floor",
             "epoch": epoch,
+            "asOf": as_of.isoformat(),
             "title": title,
             "items": items,
             "marks": [mark.editor_payload() for mark in marks],
@@ -341,7 +405,6 @@ def render_space_layout_editor(
             },
             "decimals": CANVAS_DECIMALS,
             "palette": _palette(),
-            "stageColors": dict(tokens.EQUIPMENT_STAGE_COLORS),
             "markColors": mark_colors(),
             "fontSizes": list(MARK_FONT_SIZES),
             "defaultSize": {"w": inputs.default_size[0], "h": inputs.default_size[1]},

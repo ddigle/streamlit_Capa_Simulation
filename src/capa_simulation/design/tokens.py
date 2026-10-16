@@ -203,7 +203,6 @@ _LIGHT: Final[dict[str, Any]] = {
         "정지": "#909090",
         "반출/이설 완료": "#717171",
     },
-    "EQUIPMENT_STAGE_FALLBACK": "#E5E7EB",
     # ---------------------------------------------------------- 제품별 비중 도넛
     # HOME `제품별 비중` 행의 제품색. **색은 제품을 따라간다** — 칸 번호는 화면 전체에서 한 번
     # 정하므로(`services/product_share.assign_product_slots`) 같은 제품은 모든 도넛에서 같은
@@ -255,6 +254,65 @@ _LIGHT: Final[dict[str, Any]] = {
         "sky": "#0A6C93",
         "gray": "#5C5C5C",
     },
+    # Space 호기 상자의 면·글자(2026-10-16 사용자 결정). 상태 9색(`EQUIPMENT_STAGE_COLORS`)은 도면
+    # 채우기에서 빠지고, 고른 「색 기준」 그룹의 색 → 보관 검정 → 지연 빨강이 면을 칠한다(위가
+    # 진다, 지연이 이긴다). 글자는 「검정」 `#111111`·「흰색」 `#FFFFFF` 이고 모든 면·글자 짝이
+    # 4.5:1 이상이다 (`tests/test_design_tokens.py`). 키는 공정구분
+    # 그룹(`equipment_contract.LINE_TYPE_GROUPS`)이다.
+    "SPACE_LINE_TYPE_FILLS": {
+        "물류": "#DCCFF7",
+        "FRONT": "#F1E4C6",
+        "PKG": "#CBE7F7",
+        "MI": "#7B4F2C",
+        "TEST": "#1E3A6E",
+        "FDY": "#D5F0B5",
+    },
+    "SPACE_LINE_TYPE_INKS": {
+        "물류": "#111111",
+        "FRONT": "#111111",
+        "PKG": "#111111",
+        "MI": "#FFFFFF",
+        "TEST": "#FFFFFF",
+        "FDY": "#111111",
+    },
+    # 그룹이 없거나 체크를 끈 호기의 기본 면(회색에 검정 글자).
+    "SPACE_UNIT_DEFAULT_FILL": "#D1D5DB",
+    "SPACE_UNIT_DEFAULT_INK": "#111111",
+    # 보관유무 Y — 검정 면에 회색 글자. 체크와 무관하다.
+    "SPACE_UNIT_STORAGE_FILL": "#161616",
+    "SPACE_UNIT_STORAGE_INK": "#A3A3A3",
+    # 반입·Qual 지연 구간 — 빨강 면에 흰 글자. 다른 화면의 지연색(STATUS_WARNING)과 따로다.
+    "SPACE_UNIT_DELAY_FILL": "#C81E1E",
+    "SPACE_UNIT_DELAY_INK": "#FFFFFF",
+    # 투자Capa 그룹 — 숫자 차례로 청록 7단(작은 값 → 큰 값). 두 테마가 같은 값이다.
+    "SPACE_CAPA_RAMP": (
+        "#D7F2EE",
+        "#A9E1D9",
+        "#74C9BE",
+        "#3EA99D",
+        "#187A70",
+        "#11665E",
+        "#0A4742",
+    ),
+    "SPACE_CAPA_RAMP_INKS": (
+        "#111111",
+        "#111111",
+        "#111111",
+        "#111111",
+        "#FFFFFF",
+        "#FFFFFF",
+        "#FFFFFF",
+    ),
+    # 상자 테. 반입 전(실물 없음)은 주황 점선, 반출/이설 예정은 노랑 실선이다. 노랑은 밝은 캔버스
+    # 위에서 혼자 1.8:1 이라 짙은 테(`SPACE_RING_EXIT_OUTLINE`)를 한 겹 두른다 — 테 색은 캔버스와
+    # 3:1 이상이다.
+    "SPACE_RING_PRE_ARRIVAL": "#C2410C",
+    "SPACE_RING_EXIT": "#EAB308",
+    "SPACE_RING_EXIT_OUTLINE": "#713F12",
+    # 미확인 「!」 표식(면·글자)과 정지 중 빗금.
+    "SPACE_FLAG_FILL": "#B45309",
+    "SPACE_FLAG_INK": "#FFFFFF",
+    "SPACE_HATCH": "#4B5563",
     # ------------------------------------------------------------------ 스크롤바 색
     "SCROLLBAR_TRACK": "#ECEEF1",
     "SCROLLBAR_THUMB": "#8F9399",
@@ -353,7 +411,6 @@ _DARK: Final[dict[str, Any]] = {
         "정지": "#747474",
         "반출/이설 완료": "#959595",
     },
-    "EQUIPMENT_STAGE_FALLBACK": "#3A3A42",
     # 제품색. 라이트와 같은 여섯 계열을 어두운 바탕의 밝기 띠로 옮긴 것이다 — 같은 제품이 같은
     # 계열로 남는다. 전 쌍 색각이상 ΔE ≥ 9.0·정상 ≥ 15.9, 판정·증감색과 ≥ 14.
     "PRODUCT_SHARE_COLORS": (
@@ -387,6 +444,56 @@ _DARK: Final[dict[str, Any]] = {
         "sky": "#58C4EC",
         "gray": "#B0B0B0",
     },
+    # 호기 상자의 면·글자. 밝은 면은 명도를 한 단 내려 어두운 캔버스 위 눈부심을 줄였다(검정 글자
+    # 대비 7 이상). 보관 검정은 캔버스와 1.2:1 이라 상자 테(`SPACE_BORDER`)가 모양을 그린다.
+    "SPACE_LINE_TYPE_FILLS": {
+        "물류": "#B9A5EC",
+        "FRONT": "#D9C79F",
+        "PKG": "#9CCBE8",
+        "MI": "#8E5C35",
+        "TEST": "#2F5296",
+        "FDY": "#ADDB85",
+    },
+    "SPACE_LINE_TYPE_INKS": {
+        "물류": "#111111",
+        "FRONT": "#111111",
+        "PKG": "#111111",
+        "MI": "#FFFFFF",
+        "TEST": "#FFFFFF",
+        "FDY": "#111111",
+    },
+    "SPACE_UNIT_DEFAULT_FILL": "#9AA1AB",
+    "SPACE_UNIT_DEFAULT_INK": "#111111",
+    "SPACE_UNIT_STORAGE_FILL": "#000000",
+    "SPACE_UNIT_STORAGE_INK": "#A3A3A3",
+    "SPACE_UNIT_DELAY_FILL": "#C93434",
+    "SPACE_UNIT_DELAY_INK": "#FFFFFF",
+    "SPACE_CAPA_RAMP": (
+        "#D7F2EE",
+        "#A9E1D9",
+        "#74C9BE",
+        "#3EA99D",
+        "#187A70",
+        "#11665E",
+        "#0A4742",
+    ),
+    "SPACE_CAPA_RAMP_INKS": (
+        "#111111",
+        "#111111",
+        "#111111",
+        "#111111",
+        "#FFFFFF",
+        "#FFFFFF",
+        "#FFFFFF",
+    ),
+    "SPACE_RING_PRE_ARRIVAL": "#FB923C",
+    "SPACE_RING_EXIT": "#FACC15",
+    # 어두운 캔버스 위 노랑은 혼자 11.4:1 이라 짙은 테가 필요 없다 — 없음(None)이면 캔버스색이다
+    # (`_complete`).
+    "SPACE_RING_EXIT_OUTLINE": None,
+    "SPACE_FLAG_FILL": "#F59E0B",
+    "SPACE_FLAG_INK": "#111111",
+    "SPACE_HATCH": "#E5E7EB",
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
     "SCROLLBAR_TRACK": "#22222A",
     "SCROLLBAR_THUMB": "#55555F",
@@ -441,6 +548,12 @@ def _complete(palette: dict[str, Any], *, shortage_band_alpha: float) -> dict[st
     filled["SHORTAGE_MONTH_BAND"] = _with_alpha(palette["STATUS_SHORTAGE"], shortage_band_alpha)
     # 배경 도면 위에 캔버스를 덮을 때. SPACE_CANVAS 를 바꾸면 함께 바뀐다.
     filled["SPACE_CANVAS_OVERLAY"] = _with_alpha(palette["SPACE_CANVAS"], 0.18)
+    # 반출/이설 예정 노랑의 짙은 테. 없는 테마(어둡게)는 캔버스색이라 바깥으로는 보이지 않는다.
+    filled["SPACE_RING_EXIT_OUTLINE"] = (
+        palette["SPACE_RING_EXIT_OUTLINE"] or palette["SPACE_CANVAS"]
+    )
+    # Space 보기 화면의 선택 후광(상자 밖 2px). 상호작용 표시라 강조색이다.
+    filled["SPACE_RING_HALO"] = palette["ACCENT"]
     return filled
 
 
@@ -479,7 +592,6 @@ if TYPE_CHECKING:
     DELTA_DECREASE: Final[str] = ""
     DELTA_INCREASE: Final[str] = ""
     EQUIPMENT_STAGE_COLORS: Final[dict[str, str]] = {}
-    EQUIPMENT_STAGE_FALLBACK: Final[str] = ""
     GAP_AREA_SHORTFALL: Final[str] = ""
     GAP_AREA_SURPLUS: Final[str] = ""
     HEADER_BACKGROUND: Final[str] = ""
@@ -509,10 +621,27 @@ if TYPE_CHECKING:
     SPACE_BORDER: Final[str] = ""
     SPACE_CANVAS: Final[str] = ""
     SPACE_CANVAS_OVERLAY: Final[str] = ""
+    SPACE_CAPA_RAMP: Final[tuple[str, ...]] = ()
+    SPACE_CAPA_RAMP_INKS: Final[tuple[str, ...]] = ()
+    SPACE_FLAG_FILL: Final[str] = ""
+    SPACE_FLAG_INK: Final[str] = ""
     SPACE_GRID: Final[str] = ""
+    SPACE_HATCH: Final[str] = ""
     SPACE_LABEL_TEXT: Final[str] = ""
+    SPACE_LINE_TYPE_FILLS: Final[dict[str, str]] = {}
+    SPACE_LINE_TYPE_INKS: Final[dict[str, str]] = {}
     SPACE_MARK_TEXT_COLORS: Final[dict[str, str]] = {}
+    SPACE_RING_EXIT: Final[str] = ""
+    SPACE_RING_EXIT_OUTLINE: Final[str] = ""
+    SPACE_RING_HALO: Final[str] = ""
+    SPACE_RING_PRE_ARRIVAL: Final[str] = ""
     SPACE_TEXT: Final[str] = ""
+    SPACE_UNIT_DEFAULT_FILL: Final[str] = ""
+    SPACE_UNIT_DEFAULT_INK: Final[str] = ""
+    SPACE_UNIT_DELAY_FILL: Final[str] = ""
+    SPACE_UNIT_DELAY_INK: Final[str] = ""
+    SPACE_UNIT_STORAGE_FILL: Final[str] = ""
+    SPACE_UNIT_STORAGE_INK: Final[str] = ""
     STATUS_SECURE: Final[str] = ""
     STATUS_SHORTAGE: Final[str] = ""
     STATUS_WARNING: Final[str] = ""

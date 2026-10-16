@@ -555,3 +555,61 @@ def test_the_shortage_month_band_is_the_shortage_colour_thinned() -> None:
         assert palette["SHORTAGE_MONTH_BAND"] == tokens._with_alpha(
             palette["STATUS_SHORTAGE"], alpha
         )
+
+
+def test_space_unit_faces_carry_readable_names_in_both_themes() -> None:
+    """Space 호기 상자의 면·글자 짝(색 기준 그룹·투자Capa 단·기본·보관·지연·미확인 「!」)은 두 테마
+    모두 4.5:1 이상이다(2026-10-16 사용자 결정 — 상자 이름표가 그 면 위에 선다). 공정구분 키는
+    `LINE_TYPE_GROUPS` 여섯이고, 투자Capa 단은 `CAPA_LEVELS` 개다."""
+    from capa_simulation.services.equipment_contract import LINE_TYPE_GROUPS
+    from capa_simulation.services.space_color_basis import CAPA_LEVELS
+
+    weak: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        fills, inks = palette["SPACE_LINE_TYPE_FILLS"], palette["SPACE_LINE_TYPE_INKS"]
+        assert list(fills) == list(inks) == list(LINE_TYPE_GROUPS), mode
+        ramp, ramp_inks = palette["SPACE_CAPA_RAMP"], palette["SPACE_CAPA_RAMP_INKS"]
+        assert len(ramp) == len(ramp_inks) == CAPA_LEVELS, mode
+        pairs = [(f"{key}", fills[key], inks[key]) for key in fills]
+        pairs += [(f"capa{level + 1}", ramp[level], ramp_inks[level]) for level in range(len(ramp))]
+        pairs += [
+            (name, palette[f"SPACE_UNIT_{name}_FILL"], palette[f"SPACE_UNIT_{name}_INK"])
+            for name in ("DEFAULT", "STORAGE", "DELAY")
+        ]
+        pairs.append(("FLAG", palette["SPACE_FLAG_FILL"], palette["SPACE_FLAG_INK"]))
+        for name, fill, ink in pairs:
+            ratio = contrast_ratio(ink, fill)
+            if ratio < 4.5:
+                weak.append(f"{mode}.{name} {ink} on {fill}: {ratio:.2f}")
+
+    assert not weak, "\n".join(weak)
+
+
+def test_space_unit_rings_stand_out_from_the_canvas() -> None:
+    """보기 화면 호기 테(반입 전 주황 점선·반출/이설 예정 노랑·선택 후광)는 캔버스와 3:1
+    이상이다(비텍스트 대비). 밝은 캔버스 위 노랑은 혼자 3:1 에 못 미쳐 짙은 바깥 테를 두르고,
+    그 짙은 테가 캔버스와 3:1·노랑과 3:1 이상이어야 한다. 어두운 테마는 노랑 혼자 넉넉해 짙은
+    테가 캔버스색이다."""
+    weak: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        canvas = palette["SPACE_CANVAS"]
+        for name in ("SPACE_RING_PRE_ARRIVAL", "SPACE_RING_HALO"):
+            ratio = contrast_ratio(palette[name], canvas)
+            if ratio < 3:
+                weak.append(f"{mode}.{name} on canvas: {ratio:.2f}")
+        exit_ring, outline = palette["SPACE_RING_EXIT"], palette["SPACE_RING_EXIT_OUTLINE"]
+        if contrast_ratio(exit_ring, canvas) >= 3:
+            continue
+        for label, ratio in (
+            ("outline on canvas", contrast_ratio(outline, canvas)),
+            ("yellow on outline", contrast_ratio(exit_ring, outline)),
+        ):
+            if ratio < 3:
+                weak.append(f"{mode}.SPACE_RING_EXIT {label}: {ratio:.2f}")
+
+    assert not weak, "\n".join(weak)
+    # 밝은 테마는 짙은 테가 실제로 필요하고(노랑 혼자 3:1 미만), 어두운 테마는
+    # 캔버스색(보이지 않음)이다.
+    light, dark = tokens._PALETTES["light"], tokens._PALETTES["dark"]
+    assert contrast_ratio(light["SPACE_RING_EXIT"], light["SPACE_CANVAS"]) < 3
+    assert dark["SPACE_RING_EXIT_OUTLINE"] == dark["SPACE_CANVAS"]

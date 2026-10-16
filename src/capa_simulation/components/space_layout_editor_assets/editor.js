@@ -32,8 +32,18 @@ export default function (component) {
   const OTHER_FLOORS = (Array.isArray(data.floors) ? data.floors : []).map(String).filter((f) => f !== FLOOR)
   // FAB 편집에서 층 블록이 가리킬 수 있는 층(「C1 1F」, 30개). 층 범위에는 없다.
   const LINK_TARGETS = (Array.isArray(data.linkTargets) ? data.linkTargets : []).map(String)
-  const stageColors = data.stageColors || {}
   const markColors = data.markColors || {}
+  // 기준일(T, `YYYY-MM-DD`). 호기마다 받은 경계 날짜와 **글자로** 견주어 실물·반출/이설 예정·정지 중·지연·운영
+  // 비가동을 정한다 — 파이썬 `services/space_unit_state.unit_states_at` 과 같은 판정이다(시험이 같은 식으로 대조한다).
+  // 날짜는 epoch 에 넣지 않는다(기준일만 바뀐 회차는 다시 칠하기만 한다).
+  const AS_OF = typeof data.asOf === 'string' ? data.asOf : ''
+  const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+  const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/
+  const dayOr = (value) => (typeof value === 'string' && ISO_DAY.test(value) ? value : null)
+  const hexOr = (value) => (typeof value === 'string' && HEX_COLOR.test(value) ? value : '')
+  const spansOf = (value) => (Array.isArray(value) ? value : [])
+    .filter((span) => Array.isArray(span) && dayOr(span[0]))
+    .map((span) => [span[0], dayOr(span[1])])
   const defaultSize = data.defaultSize || { w: 12, h: 7 }
   const NEW_UNIT = data.newUnit || {}
   const EXISTING_IDS = new Set((NEW_UNIT.existingIds || []).map(String))
@@ -41,6 +51,10 @@ export default function (component) {
   const ZOOM_STEP = 1.25
   const DRAG_THRESHOLD_PX = 3
   const HANDLE_PX = 9
+  // 보기 화면 덧표시(화면 px) — 선택 후광의 띄움, 「!」·운영 비가동 표식의 반지름, 겹침 꼭지 삼각의 변.
+  const HALO_GAP_PX = 3
+  const BADGE_PX = 7
+  const CORNER_PX = 11
   const GROUP_PAD = 0.6
   // 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle-drawer` 의 8px). 놓은 호기를 서랍 왼쪽으로 이만큼 더 꺼낸다.
   const DRAWER_INSET_PX = 8
@@ -170,7 +184,52 @@ export default function (component) {
   const isUnit = (m) => m.kind === 'unit'
   const isMark = (m) => m.kind !== 'unit'
   const blocks = (m) => (m.kind === 'zone' && m.keepOut) || m.kind === 'shutter' || m.kind === 'door' || m.kind === 'column'
-  const color = (item) => stageColors[item.stage] || palette.fallback || 'gray'
+  // 호기의 기준일 판정. 날짜는 모두 `YYYY-MM-DD` 글자라 글자 비교가 곧 날짜 비교다. 실물시작일 「처음부터」는
+  // `0000-01-01` 로 온다(어느 날짜보다 앞선다). 기준일이 없으면(받지 못한 회차) 아무 표시도 하지 않는다.
+  function unitState(item, T) {
+    const exitOn = item.exitOn ?? null
+    const storage = Boolean(item.storage)
+    const flag = Boolean(item.flag)
+    if (!T) return { visible: true, real: true, exitPlan: false, stopped: false, delay: false, offline: false, storage, flag }
+    const realFrom = item.realFrom ?? null
+    const stopOn = item.stopOn ?? null
+    return {
+      visible: exitOn === null || T < exitOn,
+      real: realFrom !== null && realFrom <= T,
+      exitPlan: exitOn !== null && T < exitOn,
+      stopped: stopOn !== null && exitOn !== null && stopOn <= T && T < exitOn,
+      delay: (item.delays || []).some(([from, until]) => from <= T && (until === null || T < until)),
+      offline: (item.offline || []).some(([from, until]) => from <= T && (until === null || T <= until)),
+      storage,
+      flag,
+    }
+  }
+  // 채우기·글자: 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한 그룹색, 아니면 기본 회색).
+  function unitColors(item, st) {
+    if (st.delay) return { fill: 'var(--sle-unit-delay-fill)', ink: 'var(--sle-unit-delay-ink)' }
+    if (st.storage) return { fill: 'var(--sle-unit-storage-fill)', ink: 'var(--sle-unit-storage-ink)' }
+    return { fill: item.fill || 'var(--sle-unit-default-fill)', ink: item.ink || 'var(--sle-unit-default-ink)' }
+  }
+  const color = (item) => unitColors(item, unitState(item, S.asOf)).fill
+  // 풍선·선택 줄의 상태 이름과 판정 글자. 상태 이름(`stage`)은 일정 기준이고 판정(보기 화면만)은 기준일의
+  // 실물(실적) 기준이라 따로 적되, 이름이 이미 말하는 뜻은 거듭 적지 않는다 — 이름이 「반출/이설 예정」이거나
+  // 정지만 적힌 「정지 예정」이면 도면 이탈 날짜를 이름에 붙이고, 「정지」·「보관 설비」·「운영 비가동」이면
+  // 정지 중·보관·운영 비가동 낱말을 뺀다.
+  function unitWords(item) {
+    const stage = item.stage || ''
+    if (!VIEW) return { stage, words: '' }
+    const st = unitState(item, S.asOf)
+    const exitNamed = st.exitPlan && (stage === '반출/이설 예정' || (stage === '정지 예정' && !item.stopOn))
+    const words = []
+    if (!st.real) words.push('반입 전(실물 없음)')
+    if (st.exitPlan && !exitNamed) words.push(`반출/이설 예정 ${item.exitOn}`)
+    if (st.stopped && stage !== '정지') words.push('정지 중')
+    if (st.delay) words.push('지연')
+    if (st.storage && stage !== '보관 설비') words.push('보관')
+    if (st.offline && stage !== '운영 비가동') words.push('운영 비가동')
+    if (st.flag) words.push('미확인(오늘 기준)')
+    return { stage: exitNamed ? `${stage} ${item.exitOn}` : stage, words: words.join(' · ') }
+  }
   const zoneColor = (m) => (m.keepOut ? 'var(--sle-danger)' : markColors[m.color] || markColors.gray || 'gray')
   const W = () => S.canvas.w
   const H = () => S.canvas.h
@@ -252,7 +311,10 @@ export default function (component) {
     return parts.join(' · ') + (opensFloor(item) ? ' · 누르면 열기' : '')
   }
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
-  const unitTip = (item) => `${item.label} · ${item.stage || ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · Main 설비 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
+  const unitTip = (item) => {
+    const { stage, words } = unitWords(item)
+    return `${item.label} · ${stage}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}${item.group ? ` · Main 설비 ${item.group}` : ''}${item.arrived ? ' · 다른 층에서 옴' : ''}`
+  }
   const sameGeometry = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
   const sameNumber = (p, q) => p === q || (Number.isNaN(p) && Number.isNaN(q))
   const sameSize = (a, b) => sameNumber(a.w, b.w) && sameNumber(a.h, b.h)
@@ -495,11 +557,51 @@ export default function (component) {
       const fontSize = Math.min(item.h * 0.32, fitFont, 14 * upp)
       label.setAttribute('font-size', fontSize)
       label.style.display = fontSize / upp < 7 ? 'none' : ''
+      positionUnitMarks(group, item, top)
     } else {
       drawMark(group, item, top)
     }
     positionHandles(group, item, top)
     group.classList.toggle('is-changed', isChanged(item) || isRenamed(item))
+  }
+
+  const setBox = (node, x, y, w, h) => {
+    node.setAttribute('x', x)
+    node.setAttribute('y', y)
+    node.setAttribute('width', Math.max(w, 0))
+    node.setAttribute('height', Math.max(h, 0))
+  }
+  // 보기 화면 호기의 덧표시 자리(2026-10-16 사용자 결정). 선택 후광은 상자 밖으로 띄우고, 테·빗금은 상자와 같은
+  // 자리, 미확인 「!」는 오른쪽 위·운영 비가동 표식은 왼쪽 위·겹침 꼭지 삼각은 오른쪽 위 꼭지다. 표식은 화면 px 로
+  // 정해(확대해도 같은 크기) 상자가 작으면 줄이고, 너무 작으면 숨긴다. 겹침 삼각이 서면 「!」를 그 옆으로 비킨다.
+  function positionUnitMarks(group, item, top) {
+    const parts = group.__parts
+    if (!parts) return
+    const upp = unitsPerPx()
+    const gap = HALO_GAP_PX * upp
+    setBox(parts.halo, item.x - gap, top - gap, item.w + gap * 2, item.h + gap * 2)
+    for (const node of [parts.hatch, parts.ringOut, parts.ring]) setBox(node, item.x, top, item.w, item.h)
+    const right = item.x + item.w
+    const leg = Math.min(CORNER_PX * upp, item.w * 0.4, item.h * 0.4)
+    parts.corner.setAttribute('points', `${right - leg},${top} ${right},${top} ${right},${top + leg}`)
+    const r = Math.min(BADGE_PX * upp, item.w * 0.3, item.h * 0.3)
+    const hidden = r / upp < 3 ? 'none' : ''
+    const inset = 1.5 * upp
+    const cy = top + inset + r
+    const fx = right - inset - r - (group.classList.contains('is-overlap') ? leg : 0)
+    parts.flagDot.setAttribute('cx', fx)
+    parts.flagDot.setAttribute('cy', cy)
+    parts.flagDot.setAttribute('r', r)
+    parts.flagText.setAttribute('x', fx)
+    parts.flagText.setAttribute('y', cy)
+    parts.flagText.setAttribute('font-size', r * 1.5)
+    parts.flag.style.display = hidden
+    const ox = item.x + inset + r
+    parts.offlineDot.setAttribute('cx', ox)
+    parts.offlineDot.setAttribute('cy', cy)
+    parts.offlineDot.setAttribute('r', r)
+    parts.offlineBars.forEach((bar, k) => setBox(bar, ox + (k ? 0.18 : -0.46) * r, cy - 0.45 * r, 0.28 * r, 0.9 * r))
+    parts.offline.style.display = hidden
   }
 
   // 요소는 돌리기 전 크기(lw×lh)의 제자리 좌표로 그린 뒤 가운데를 축으로 돌린다. 0° 일 때 아래 변이 벽이다.
@@ -551,9 +653,13 @@ export default function (component) {
       inner.append(el('line', { class: 'sle-mark-line is-thick', x1: 0, y1: lh, x2: 0, y2: 0 }))
       inner.append(el('path', { class: 'sle-mark-line is-dashed', d: `M 0 0 A ${lw} ${lh} 0 0 1 ${lw} ${lh}` }))
     } else if (item.kind === 'column') {
+      // 기둥: 이름이 없으면 X 두 줄, 있으면 X 없이 이름을 기둥 가운데에 쓴다(2026-10-16 사용자 결정 — 돌리지
+      // 않는다). 글자는 자동이면 11px, 고르면 그 크기이고 기둥보다 길면 넘쳐 그린다(면색 테가 둘러 읽힌다).
       inner.append(el('rect', { class: 'sle-column', x: 0, y: 0, width: lw, height: lh }))
-      inner.append(el('line', { class: 'sle-column-cross', x1: 0, y1: 0, x2: lw, y2: lh }))
-      inner.append(el('line', { class: 'sle-column-cross', x1: lw, y1: 0, x2: 0, y2: lh }))
+      if (!item.label) {
+        inner.append(el('line', { class: 'sle-column-cross', x1: 0, y1: 0, x2: lw, y2: lh }))
+        inner.append(el('line', { class: 'sle-column-cross', x1: lw, y1: 0, x2: 0, y2: lh }))
+      }
     } else if (item.kind === 'text') {
       // 자동이면 상자에 맞추고(작아지면 숨김), 크기를 골랐으면 그 화면 px 로 쓴다(상자를 넘어도 그린다).
       const value = item.label || '글자'
@@ -594,15 +700,14 @@ export default function (component) {
       })
     }
     shape.append(inner)
-    // 반입구·문·동선·기둥의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
-    // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽). 기둥은 돌리지 않으니 늘 위 가운데다.
-    if (item.label && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow' || item.kind === 'column')) {
+    if (item.kind === 'column' && item.label) shape.append(text(item.label, cx, cy, fs))
+    // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
+    // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
+    if (item.label && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
       const gap = fs * 0.4
-      const sides = item.kind === 'column'
-        ? 'up'
-        : item.kind === 'arrow'
-          ? (rot % 180 ? 'right' : 'up')
-          : ({ 0: 'up', 90: 'right', 180: 'down', 270: 'left' })[rot] || 'up'
+      const sides = item.kind === 'arrow'
+        ? (rot % 180 ? 'right' : 'up')
+        : ({ 0: 'up', 90: 'right', 180: 'down', 270: 'left' })[rot] || 'up'
       const left = item.x
       const right = item.x + item.w
       const placement = {
@@ -636,16 +741,56 @@ export default function (component) {
     const group = el('g', { class: item.arrived ? 'sle-item sle-unit is-arrived' : 'sle-item sle-unit' })
     group.dataset.id = item.id
     const rect = el('rect', { class: 'sle-rect', rx: 0.4 })
-    rect.style.fill = color(item)
     const label = el('text', { class: 'sle-label' })
     label.textContent = item.label
     const tip = el('title')
     tip.textContent = unitTip(item)
-    group.append(rect, label, tip)
+    if (VIEW) {
+      // 보기 화면의 의미 표시 — 테(반입 전 주황 점선·반출/이설 예정 노랑 두 겹)·정지 중 빗금·미확인 「!」·운영 비가동
+      // 표식·겹침 꼭지·선택 후광. 무엇이 보일지는 class(`paintUnit`)와 CSS 가 정한다. 편집 화면에는 만들지 않는다
+      // (편집의 테는 선택·묶음·다른 층·겹침 전용).
+      const parts = {
+        halo: el('rect', { class: 'sle-halo', rx: 0.8 }),
+        hatch: el('rect', { class: 'sle-hatch', rx: 0.4, fill: 'url(#sle-unit-hatch)' }),
+        ringOut: el('rect', { class: 'sle-ring-out', rx: 0.4 }),
+        ring: el('rect', { class: 'sle-ring', rx: 0.4 }),
+        offline: el('g', { class: 'sle-offline' }),
+        offlineDot: el('circle', { class: 'sle-offline-dot' }),
+        offlineBars: [el('rect', { class: 'sle-offline-bar' }), el('rect', { class: 'sle-offline-bar' })],
+        flag: el('g', { class: 'sle-flag' }),
+        flagDot: el('circle', { class: 'sle-flag-dot' }),
+        flagText: el('text', { class: 'sle-flag-text' }),
+        corner: el('polygon', { class: 'sle-corner' }),
+      }
+      parts.flagText.textContent = '!'
+      parts.offline.append(parts.offlineDot, ...parts.offlineBars)
+      parts.flag.append(parts.flagDot, parts.flagText)
+      group.__parts = parts
+      group.append(parts.halo, rect, parts.hatch, parts.ringOut, parts.ring, label, parts.offline, parts.flag, parts.corner, tip)
+    } else {
+      group.append(rect, label, tip)
+    }
     appendHandles(group)
+    paintUnit(group, item)
     position(group, item)
     S.groups.set(item.id, group)
     return group
+  }
+
+  // 면·글자 색과 보기 화면의 의미 class 를 기준일로 다시 정한다. 의미 class 는 보기 화면에만 단다 — 편집 화면은
+  // 채우기만 같은 규칙이고 테·덧표시를 그리지 않는다. 테는 실물 없음(is-pre)이 반출/이설 예정(is-exitplan)을 이긴다.
+  function paintUnit(group, item) {
+    const st = unitState(item, S.asOf)
+    const look = unitColors(item, st)
+    group.querySelector('.sle-rect').style.fill = look.fill
+    group.querySelector('.sle-label').style.fill = look.ink
+    if (!VIEW) return
+    group.classList.toggle('is-gone', !st.visible)
+    group.classList.toggle('is-pre', !st.real)
+    group.classList.toggle('is-exitplan', st.real && st.exitPlan)
+    group.classList.toggle('is-stopped', st.stopped)
+    group.classList.toggle('has-flag', st.flag)
+    group.classList.toggle('is-offline', st.offline)
   }
 
   function buildMark(item) {
@@ -808,12 +953,13 @@ export default function (component) {
       const item = S.items.get(id)
       if (!item) continue
       if (isUnit(item)) {
-        group.querySelector('.sle-rect').style.fill = color(item)
+        paintUnit(group, item)
         group.querySelector('.sle-label').textContent = item.label
         group.querySelector('title').textContent = unitTip(item)
       }
       position(group, item)
     }
+    if (VIEW) markOverlaps()
     for (const chip of host.querySelectorAll('.sle-chip')) {
       const item = S.items.get(chip.dataset.id)
       if (!item) continue
@@ -909,16 +1055,23 @@ export default function (component) {
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.
   function markOverlaps() {
     if (VIEW) {
-      // 보기 전용: 호기끼리 겹친 것만 점선으로 알린다 — 완전히 겹치면 아래 호기가 보이지도 눌리지도
-      // 않는데 범례·요약은 그것을 센다. 반입구·문 가림과 개수 문구는 편집 화면의 몫이다.
-      const shown = [...S.items.values()].filter((i) => isUnit(i) && onCanvas(i))
+      // 보기 전용: 호기끼리 겹친 것만 오른쪽 위 꼭지 삼각으로 알린다 — 완전히 겹치면 아래 호기가 보이지도
+      // 눌리지도 않는데 범례·요약은 그것을 센다. 테는 실물·반출/이설 뜻을 싣으므로 겹침은 테가 아니다. 반입구·문
+      // 가림과 개수 문구는 편집 화면의 몫이다. 기준일에 보이지 않는 호기는 견주지 않는다.
+      const shown = [...S.items.values()].filter((i) => isUnit(i) && onCanvas(i) && unitState(i, S.asOf).visible)
       const hit = new Set()
       for (let a = 0; a < shown.length; a += 1) {
         for (let b = a + 1; b < shown.length; b += 1) {
           if (overlaps(shown[a], shown[b])) { hit.add(shown[a].id); hit.add(shown[b].id) }
         }
       }
-      for (const [id, group] of S.groups) group.classList.toggle('is-overlap', hit.has(id))
+      for (const [id, group] of S.groups) {
+        if (group.classList.contains('is-overlap') === hit.has(id)) continue
+        group.classList.toggle('is-overlap', hit.has(id))
+        // 「!」는 겹침 삼각 옆으로 비킨다.
+        const item = S.items.get(id)
+        if (item && isUnit(item)) positionUnitMarks(group, item, svgTop(item))
+      }
       S.overlapPairs = 0
       S.blocked = 0
       return
@@ -1115,7 +1268,8 @@ export default function (component) {
 
   function pickText(item) {
     if (isMark(item)) return `선택 ${MARK_KINDS[item.kind]?.name || item.kind}${item.label ? ` · ${item.label}` : ''}`
-    return `선택 ${item.label} · ${item.stage || '-'}${item.detail ? ` · ${item.detail}` : ''}`
+    const { stage, words } = unitWords(item)
+    return `선택 ${item.label} · ${stage || '-'}${words ? ` · ${words}` : ''}${item.detail ? ` · ${item.detail}` : ''}`
       + `${item.group ? ` · Main 설비 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
   }
 
@@ -1673,11 +1827,19 @@ export default function (component) {
     item.sizeGuessed = false
   }
 
+  // 호기의 색 기준 면·글자와 경계 날짜(파이썬 `boundary_payload`). 같은 epoch 회차에도 이것만은 새로 받아 칠한다 —
+  // 체크·색 기준·기준일만 바뀐 회차는 epoch 가 그대로라 배율·편집을 지킨 채 색·테만 바뀐다. 이름에 `group`(Main 설비
+  // 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다.
+  const unitLook = (raw) => ({
+    fill: hexOr(raw.fill), ink: hexOr(raw.ink), storage: Boolean(raw.storage), flag: Boolean(raw.flag),
+    realFrom: dayOr(raw.realFrom), exitOn: dayOr(raw.exitOn), stopOn: dayOr(raw.stopOn),
+    delays: spansOf(raw.delays), offline: spansOf(raw.offline),
+  })
   const readUnit = (raw) => ({
     id: String(raw.id), kind: 'unit', label: String(raw.label ?? raw.id), stage: String(raw.stage || ''),
     group: raw.group ? String(raw.group) : null, x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h),
     isNew: Boolean(raw.isNew), arrived: Boolean(raw.arrived), floorless: Boolean(raw.floorless), moveTo: null, created: null,
-    sizeGuessed: false, detail: String(raw.detail || ''),
+    sizeGuessed: false, detail: String(raw.detail || ''), ...unitLook(raw),
   })
   const readMark = (raw) => ({
     id: String(raw.id), kind: String(raw.kind), label: String(raw.label || ''), stage: '', group: null,
@@ -1711,6 +1873,7 @@ export default function (component) {
   }
 
   // ------------------------------------------------------------- 회차마다
+  S.asOf = AS_OF
   if (S.epoch !== data.epoch) {
     S.epoch = data.epoch
     S.undo = []
@@ -1737,6 +1900,7 @@ export default function (component) {
       item.stage = String(raw.stage || '')
       if (!isRenamed(item)) item.label = String(raw.label ?? raw.id)
       item.detail = String(raw.detail || '')
+      Object.assign(item, unitLook(raw))
     }
     if ((data.backgroundImage || null) !== S.bgImage) {
       S.bgImage = data.backgroundImage || null
@@ -2108,7 +2272,7 @@ export default function (component) {
   // ---------------------------------------------------------------- 편집기에서 호기 추가
   // 적용 전까지는 이 편집기 안에만 있다(층 미정·미배치). 설비 마스터가 꼭 요구하는 값만 받는다 — 공정·공정구분·
   // 투자구분·크기. 신규 설비의 반입·Qual 일정은 비워도 되고(반입이 비면 입고 예정, Qual 이 비면 셋업 진행중으로
-  // 남는다), 확정상태는 Qual 일정을 넣었을 때만 필요하다. 다른 호기의 일정·확정상태를 베끼지 않는다. 마스터의
+  // 남는다), Qual상태는 Qual 일정을 넣었을 때만 필요하다. 다른 호기의 일정·Qual상태를 베끼지 않는다. 마스터의
   // 나머지 칸은 가용설비에서 채운다.
   const fillSelect = (node, values, blank) => {
     const wanted = [blank === undefined ? null : blank, ...values].filter((v) => v !== null)
@@ -2121,7 +2285,7 @@ export default function (component) {
   fillSelect(newConfirm, (NEW_UNIT.confirmations || ['계획']).map(String), '')
   newKind.onchange = () => { newDates.hidden = newKind.value === 'existing' }
   newDates.hidden = newKind.value === 'existing'
-  // 확정상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 필수로 표시한다(검사는 추가 단추에서).
+  // Qual상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 필수로 표시한다(검사는 추가 단추에서).
   const markConfirmRequired = () => {
     const needed = Boolean(newQual.value)
     newConfirm.setAttribute('aria-required', String(needed))
@@ -2158,7 +2322,7 @@ export default function (component) {
     else if (!(w > 0 && h > 0 && w <= MAX_EXTENT && h <= MAX_EXTENT)) error = `크기는 0 보다 크고 ${MAX_EXTENT} 이하여야 합니다.`
     const existing = newKind.value === 'existing'
     if (!error && !existing && newArrival.value && newQual.value && newQual.value < newArrival.value) error = 'Qual일정은 반입일정보다 빠를 수 없습니다.'
-    else if (!error && !existing && newQual.value && !newConfirm.value) error = 'Qual일정을 넣으면 확정상태를 골라 주세요.'
+    else if (!error && !existing && newQual.value && !newConfirm.value) error = 'Qual일정을 넣으면 Qual상태를 골라 주세요.'
     newError.textContent = error
     if (error) return
     // 열쇠는 편집기 안에서만 쓴다(적용값의 새 호기 이름은 `label`). 이름을 바꾼 새 호기가 이 이름을 열쇠로 쥐고
@@ -2167,7 +2331,7 @@ export default function (component) {
     while (S.items.has(key)) { S.seq += 1; key = `${id}~${S.seq}` }
     const item = {
       id: key, kind: 'unit', label: id, stage: existing ? '가용' : '입고 예정', group: null, x: NaN, y: NaN, w, h,
-      placed: false, moveTo: null, isNew: true, arrived: false, floorless: true, sizeGuessed: false,
+      placed: false, moveTo: null, isNew: true, arrived: false, floorless: true, sizeGuessed: false, ...unitLook({}),
       created: {
         process: newProcess.value, line: newLine.value, use: newUse.value, existing,
         arrival: existing ? '' : newArrival.value, qual: existing ? '' : newQual.value, confirm: existing ? '' : newConfirm.value,

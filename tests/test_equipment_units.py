@@ -18,7 +18,13 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.equipment_explorer import _rows_label
-from capa_simulation.components.space_layout import equipment_unit_total, stage_counts
+from capa_simulation.components.space_layout import (
+    LEGEND_DEFAULT,
+    LEGEND_OFFLINE,
+    default_color_choice,
+    equipment_unit_total,
+    space_legend_counts,
+)
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_availability import (
     build_equipment_lifecycle_spans,
@@ -58,6 +64,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     available_subtotal,
     build_monthly_equipment_availability,
 )
+from capa_simulation.services.space_unit_state import unit_boundaries
 
 PROCESS = "DEMO_Bonder"
 
@@ -428,17 +435,28 @@ def test_a_zero_never_prints_with_a_minus_sign() -> None:
 def _one_removed_one_down() -> pd.DataFrame:
     """D 를 반출해 남은 셋이 1/3 씩, 그중 B 가 PM. 1/3 짜리 합끼리 빼면 -0.0 이 남는다."""
     frame = _modules(APW01D={"정지일정": "2026-02-01"})
-    return build_equipment_status_as_of(
-        frame, _pm("APW01B").assign(시작일="2026-03-01"), as_of=date(2026, 3, 15)
+    return build_equipment_status_as_of(frame, _pm_mid_march(), as_of=date(2026, 3, 15))
+
+
+def _pm_mid_march() -> pd.DataFrame:
+    return _pm("APW01B").assign(시작일="2026-03-01")
+
+
+def _space_counts(rows: pd.DataFrame, downtime: pd.DataFrame) -> dict[str, float]:
+    """층 상세 범례 대수(공정구분 기준·모두 켬). 이 표의 공정구분(L1)은 그룹 밖이라
+    「그 밖」이다."""
+    boundaries = unit_boundaries(rows, downtime, today=date(2026, 3, 15))
+    return space_legend_counts(
+        rows, boundaries, choice=default_color_choice(), as_of=date(2026, 3, 15)
     )
 
 
 def test_space_counts_add_up_without_a_negative_zero() -> None:
-    counts = stage_counts(_one_removed_one_down())
+    counts = _space_counts(_one_removed_one_down(), _pm_mid_march())
 
-    assert counts == pytest.approx({"가용": 1 + 2 / 3, "운영 비가동": 1 / 3}, abs=1e-6)
-    # 반출해 지분이 0 인 모듈은 범례에 「정지 0대」로 서지 않는다. 음수 0 도 남지 않는다.
-    assert "정지" not in counts
+    assert counts == pytest.approx({LEGEND_DEFAULT: 1 + 1, LEGEND_OFFLINE: 1 / 3}, abs=1e-6)
+    # 정지해 도면에서 빠진(반출/이설일정이 없어 정지일이 도면 이탈일) 모듈은 어느 칸에도
+    # 들지 않는다. 음수 0 도 남지 않는다.
     assert all(math.copysign(1.0, value) == 1.0 for value in counts.values())
 
 
@@ -449,7 +467,7 @@ def test_one_placed_module_places_the_whole_unit() -> None:
 
     counted = placed_unit_rows(status, placed)
 
-    assert stage_counts(counted) == {"가용": 2.0}
+    assert _space_counts(counted, _no_downtime()) == {LEGEND_DEFAULT: 2.0}
     assert equipment_unit_total(counted) == 2.0
     assert len(counted) == 5
 

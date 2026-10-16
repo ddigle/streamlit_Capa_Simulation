@@ -10,6 +10,13 @@ from __future__ import annotations
 import re
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.design import tokens
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_STATUSES,
+    STATUS_EXIT_PLANNED,
+    STATUS_STOP_PLANNED,
+    STATUS_STOPPED,
+)
 
 ASSETS = space_layout_editor._ASSETS
 HTML = (ASSETS / "editor.html").read_text(encoding="utf-8")
@@ -229,13 +236,136 @@ def test_a_tinted_floor_block_is_painted_opaque_from_the_palette() -> None:
     assert "paint-order: stroke" in label and "stroke: var(--sle-surface)" in label
 
 
-def test_a_column_draws_its_name_above_it() -> None:
-    """기둥 이름표는 기둥 위 가운데에 가로로 선다(돌리지 않는다)."""
-    outside = JS[
-        JS.index("// 반입구·문·동선·기둥의 이름표는") : JS.index("const tip = group.querySelector")
+def test_a_named_column_writes_its_name_in_the_middle_without_the_cross() -> None:
+    """기둥(2026-10-16 사용자 결정): 이름이 있으면 X 두 줄 없이 이름을 기둥 가운데에 돌리지 않고
+    쓴다(자동 11px·고른 크기, 넘치면 넘쳐 그린다). 이름이 없으면 지금처럼 X 다."""
+    draw = JS[JS.index("function drawMark(") : JS.index("function appendHandles(")]
+    column = draw[
+        draw.index("} else if (item.kind === 'column') {") : draw.index(
+            "} else if (item.kind === 'text') {"
+        )
     ]
-    assert "item.kind === 'column'" in outside
-    assert "item.kind === 'column'\n        ? 'up'" in outside
+    assert "if (!item.label) {" in column and column.count("sle-column-cross") == 2
+    # 이름은 돌리는 `inner` 밖, 상자 가운데(cx, cy)에 이름표 크기(fs)로 쓴다.
+    assert (
+        "if (item.kind === 'column' && item.label) shape.append(text(item.label, cx, cy, fs))"
+        in draw
+    )
+    assert "const fs = (item.fontSize || LABEL_PX) * upp" in draw and "const LABEL_PX = 11" in JS
+    outside = draw[
+        draw.index("// 반입구·문·동선의 이름표는") : draw.index("const tip = group.querySelector")
+    ]
+    assert "'column'" not in outside
+
+
+def test_unit_colours_and_boundary_dates_pass_all_three_paths() -> None:
+    """호기의 면·글자(`fill`·`ink`)와 경계 날짜는 세 곳을 모두 지나야 도면에 닿는다 — 파이썬
+    `_clean_items` 화이트리스트, 첫 회차의 `readUnit`, 같은 epoch 회차의 합치기. 하나라도 빠지면
+    체크·기준일을 바꾼 회차에 색이 옛 값으로 남는다. 이름 `group`·`arrived` 는 이미 다른 뜻이다."""
+    fields = ("fill", "ink", "storage", "realFrom", "exitOn", "stopOn", "delays", "offline", "flag")
+    cleaned = space_layout_editor._clean_items(
+        [
+            {
+                "id": "U1",
+                "x": 1,
+                "y": 1,
+                "w": 2,
+                "h": 2,
+                "fill": tokens.SPACE_LINE_TYPE_FILLS["PKG"],
+                "ink": "red",
+                "storage": 1,
+                "realFrom": "0000-01-01",
+                "exitOn": "2027-01-01",
+                "stopOn": "2026/12/01",
+                "delays": [["2026-09-01", None], ["bad", "2026-10-01"], "x"],
+                "offline": (("2026-10-10", "2026-10-20"),),
+                "flag": True,
+            }
+        ]
+    )[0]
+    assert set(fields) <= set(cleaned)
+    assert cleaned["fill"] == tokens.SPACE_LINE_TYPE_FILLS["PKG"] and cleaned["ink"] == ""
+    assert cleaned["storage"] is True and cleaned["flag"] is True
+    assert (cleaned["realFrom"], cleaned["exitOn"], cleaned["stopOn"]) == (
+        "0000-01-01",
+        "2027-01-01",
+        None,
+    )
+    assert cleaned["delays"] == [["2026-09-01", None]]
+    assert cleaned["offline"] == [["2026-10-10", "2026-10-20"]]
+    blank = space_layout_editor._clean_items([{"id": "U2", "x": 1, "y": 1, "w": 2, "h": 2}])[0]
+    assert blank["fill"] == "" and blank["realFrom"] is None and blank["delays"] == []
+
+    look = JS[JS.index("const unitLook = (raw) => ({") : JS.index("const readUnit = (raw)")]
+    for field in fields:
+        assert f"{field}: " in look, field
+    assert "group" not in look and "arrived" not in look
+    read = JS[JS.index("const readUnit = (raw)") : JS.index("const readMark = (raw)")]
+    assert "...unitLook(raw)" in read
+    merge = JS[JS.index("// 같은 epoch: 기하는") : JS.index("svg.onmousedown")]
+    assert "Object.assign(item, unitLook(raw))" in merge and "repaint()" in merge
+    # 기준일은 epoch 밖의 `asOf` 로 온다 — 회차마다 받아 칠한다.
+    assert "S.asOf = AS_OF" in JS and "data.asOf" in JS
+
+
+def test_the_unit_tip_does_not_repeat_what_the_stage_name_says() -> None:
+    """풍선·선택 줄은 상태 이름(일정 기준)과 기준일의 판정 글자를 잇는다. 이름이 이미 말하는 뜻은
+    거듭 적지 않는다 — 「반출/이설 예정」과 정지만 적힌 「정지 예정」은 도면 이탈 날짜를 이름에
+    붙이고, 「정지」·「보관 설비」·「운영 비가동」이면 그 판정 낱말을 뺀다. JS 가 견주는 이름은
+    파이썬 상태 이름 목록에 있어야 한다(이름을 바꾸면 여기서 걸린다)."""
+    words = JS[JS.index("function unitWords(item) {") : JS.index("const zoneColor")]
+    compared = set(re.findall(r"stage [!=]== '([^']+)'", words))
+    assert compared == {
+        STATUS_EXIT_PLANNED,
+        STATUS_STOP_PLANNED,
+        STATUS_STOPPED,
+        "보관 설비",
+        "운영 비가동",
+    }
+    assert compared <= set(EQUIPMENT_STATUSES)
+    assert "!item.stopOn" in words and "${stage} ${item.exitOn}" in words
+    tip = JS[JS.index("const unitTip = (item) => {") : JS.index("const sameGeometry")]
+    pick = JS[JS.index("function pickText(item) {") : JS.index("function updateStatus()")]
+    for line in (tip, pick):
+        assert "const { stage, words } = unitWords(item)" in line
+        assert "item.stage" not in line
+    assert "stateWords" not in JS
+
+
+def test_the_editor_draws_no_meaning_rings_only_edit_marks() -> None:
+    """배치 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다(2026-10-16 — 표 #15). 의미
+    표시(반입 전·반출/이설 예정 테, 빗금, 「!」, 비가동 표식, 겹침 꼭지, 선택 후광)는 보기 화면만
+    그린다 — CSS 규칙은 `.sle.is-view` 아래에만, JS 는 보기에서만 부품을 만들고 class 를 단다."""
+    for meaning in ("is-pre", "is-exitplan", "is-stopped", "has-flag", "is-offline", "is-gone"):
+        rules = [line for line in CSS.splitlines() if f".{meaning}" in line]
+        assert rules, meaning
+        assert all(".sle.is-view" in line for line in rules), (meaning, rules)
+    shown = [
+        selector.strip()
+        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", CSS)
+        if "display: inline" in body
+        for selector in selectors.split(",")
+    ]
+    for part in (
+        ".sle-halo",
+        ".sle-ring",
+        ".sle-ring-out",
+        ".sle-hatch",
+        ".sle-flag",
+        ".sle-corner",
+    ):
+        found = [selector for selector in shown if selector.endswith(part)]
+        assert found and all(selector.startswith(".sle.is-view") for selector in found), part
+    edit_rings = [line for line in CSS.splitlines() if "is-selected .sle-rect" in line]
+    assert edit_rings and all(line.startswith(".sle:not(.is-view)") for line in edit_rings)
+    paint = JS[JS.index("function paintUnit(group, item) {") : JS.index("function buildMark(")]
+    first_class = paint.index("group.classList.toggle(")
+    assert paint.index("if (!VIEW) return") < first_class
+    build = JS[JS.index("function buildGroup(item) {") : JS.index("function paintUnit(")]
+    assert "if (VIEW) {" in build and "group.append(rect, label, tip)" in build
+    # 보기 화면의 호기 겹침은 테가 아니라 오른쪽 위 꼭지 삼각이다.
+    assert ".sle.is-view .sle-unit.is-overlap .sle-corner" in CSS
+    assert "polygon" in build and "sle-corner" in build
 
 
 def test_a_unit_label_is_fitted_by_its_measured_width() -> None:

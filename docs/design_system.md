@@ -364,6 +364,16 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 
 - **Space 배치도 팔레트**(`SPACE_*`)는 zinc가 아니라 blue-grey다. FAB 도면 관례에 맞춘
   하위 팔레트이며 표·차트와 섞어 쓰지 않는다.
+  - 호기 상자 면은 **상태 9색(`EQUIPMENT_STAGE_COLORS`)이 아니다**(2026-10-16 사용자 결정). 사이드바 색
+    기준의 그룹 색(`SPACE_LINE_TYPE_FILLS`·`INKS` — 공정구분 여섯, `SPACE_CAPA_RAMP`·`INKS` — 투자Capa 청록
+    7단, 두 테마 같은 값)·기본 회색(`SPACE_UNIT_DEFAULT_*`)·보관 검정(`SPACE_UNIT_STORAGE_*`)·지연 빨강
+    (`SPACE_UNIT_DELAY_*` — 다른 화면의 지연색 `STATUS_WARNING` 과 따로)이다. 글자는 검정 `#111111`·흰
+    `#FFFFFF` 둘이고 모든 면·글자 짝이 두 테마에서 4.5:1 이상이다. 어둡게 테마의 밝은 면은 명도를 한 단
+    내려 눈부심을 줄였다.
+  - 테(`SPACE_RING_*`)는 캔버스와 3:1 이상이다(비텍스트). 밝은 캔버스 위 노랑(반출/이설 예정)은 혼자
+    1.8:1 이라 짙은 테(`SPACE_RING_EXIT_OUTLINE`)를 한 겹 두르고, 어둡게는 노랑 혼자 넉넉해 짙은 테 값이
+    캔버스색이다. 선택 후광(`SPACE_RING_HALO`)은 `ACCENT` 다. `tests/test_design_tokens.py` 가 두 대비를
+    고정한다.
 - **첫 접속 입장 화면과 Summary 요약 화면**(`components/intro_overlay.py`)은 앱 테마와 무관한
   어두운 한 벌(`tokens.INTRO_PALETTE`)이고, 워드마크·타이틀·`Detail`·`Summary`·시트의 달만 Archivo
   800·폭 75%, 요약 차트의 숫자만 Archivo 700 을 쓴다. 사내망에 외부 글꼴이 없어 이 화면이 쓰는 글자만

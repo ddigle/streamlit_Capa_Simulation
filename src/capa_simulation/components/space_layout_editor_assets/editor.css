@@ -59,15 +59,42 @@
 .sle-item:active { cursor: grabbing; }
 
 /* ---- 호기 ---- */
+/* 면·글자 색은 JS 가 호기마다 칠한다(색 기준 그룹 면 · 보관 검정 · 지연 빨강, 아니면 기본 회색). 테두리는 기본 1px. */
 .sle-unit .sle-rect { stroke: var(--sle-frame); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.sle-unit.is-selected .sle-rect { stroke: var(--sle-accent); stroke-width: 3; }
-.sle-unit.is-grouped .sle-rect { stroke: var(--sle-accent); stroke-width: 1.5; }
+/* 편집 화면의 테는 편집 표시 전용이다 — 선택·묶음·다른 층에서 옴·겹침. 실물·반출/이설 같은 뜻은 싣지 않는다. */
+.sle:not(.is-view) .sle-unit.is-selected .sle-rect { stroke: var(--sle-accent); stroke-width: 3; }
+.sle:not(.is-view) .sle-unit.is-grouped .sle-rect { stroke: var(--sle-accent); stroke-width: 1.5; }
 /* 다른 층에서 옮겨 온 호기 — 같은 좌표로 와서 겹칠 수 있어 맨 위에 그리고 테를 두른다. */
-.sle-unit.is-arrived .sle-rect { stroke: var(--sle-accent); stroke-width: 2; stroke-dasharray: 2 2; }
-.sle-unit.is-overlap .sle-rect, .sle-unit.is-overlap-live .sle-rect, .sle-unit.is-blocked .sle-rect {
+.sle:not(.is-view) .sle-unit.is-arrived .sle-rect { stroke: var(--sle-accent); stroke-width: 2; stroke-dasharray: 2 2; }
+.sle:not(.is-view) .sle-unit.is-overlap .sle-rect, .sle:not(.is-view) .sle-unit.is-overlap-live .sle-rect,
+.sle:not(.is-view) .sle-unit.is-blocked .sle-rect {
   stroke: var(--sle-danger); stroke-width: 3; stroke-dasharray: 6 3;
 }
 .sle-label { fill: var(--sle-text); text-anchor: middle; dominant-baseline: central; pointer-events: none; font-weight: 600; }
+
+/* ---- 보기 화면의 의미 표시(2026-10-16 사용자 결정) — 편집 화면에는 그리지 않는다 ---- */
+/* 테는 뜻 하나씩이다: 실물 없음(반입 전) 주황 점선이 반출/이설 예정 노랑 두 겹(짙은 테 + 노랑)을 이긴다. 정지 중은
+   빗금, 미확인은 오른쪽 위 「!」, 운영 비가동은 왼쪽 위 표식, 호기 겹침은 오른쪽 위 꼭지 삼각, 선택은 상자 밖 후광이다.
+   부품은 늘 만들어 두고 class 로만 보인다(JS `paintUnit`) — 기준일이 바뀌어도 칠하기만 한다. */
+.sle-halo, .sle-hatch, .sle-ring, .sle-ring-out, .sle-flag, .sle-offline, .sle-corner { display: none; pointer-events: none; }
+.sle-halo { fill: none; stroke: var(--sle-ring-halo); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.sle-ring, .sle-ring-out { fill: none; vector-effect: non-scaling-stroke; }
+.sle.is-view .sle-unit.is-gone { display: none; }
+.sle.is-view .sle-unit.is-selected .sle-halo { display: inline; }
+.sle.is-view .sle-unit.is-pre .sle-rect, .sle.is-view .sle-unit.is-exitplan .sle-rect { stroke: none; }
+.sle.is-view .sle-unit.is-pre .sle-ring { display: inline; stroke: var(--sle-ring-pre); stroke-width: 2; stroke-dasharray: 5 3; }
+.sle.is-view .sle-unit.is-exitplan .sle-ring-out { display: inline; stroke: var(--sle-ring-exit-outline); stroke-width: 5; }
+.sle.is-view .sle-unit.is-exitplan .sle-ring { display: inline; stroke: var(--sle-ring-exit); stroke-width: 3; }
+.sle.is-view .sle-unit.is-stopped .sle-hatch { display: inline; }
+.sle-unit-hatch-line { stroke: var(--sle-hatch); stroke-opacity: 0.75; stroke-width: 0.16; }
+.sle.is-view .sle-unit.has-flag .sle-flag, .sle.is-view .sle-unit.is-offline .sle-offline,
+.sle.is-view .sle-unit.is-overlap .sle-corner { display: inline; }
+.sle-flag-dot { fill: var(--sle-flag); }
+.sle-flag-text { fill: var(--sle-flag-ink); font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.sle-offline-dot { fill: var(--sle-surface); stroke: var(--sle-text); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sle-offline-bar { fill: var(--sle-text); }
+/* 겹침 꼭지는 면색 테를 둘러 어느 상자 면 위에서도 떨어져 보인다(어둡게의 밝은 위험색 × 밝은 면). */
+.sle-corner { fill: var(--sle-danger); stroke: var(--sle-surface); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 
 /* ---- 도면 요소 ---- */
 .sle-mark-shape { pointer-events: none; }
@@ -196,7 +223,7 @@
 .sle-new-dates { display: flex; flex-direction: column; gap: 5px; }
 .sle-new-dates[hidden] { display: none; }
 .sle-new-hint { margin: 0; font-size: 0.72rem; color: var(--sle-muted); }
-/* 확정상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 이름 뒤에 별표가 붙는다. */
+/* Qual상태는 Qual 일정을 넣었을 때만 필요하다 — 그때만 이름 뒤에 별표가 붙는다. */
 .sle-form-row.is-required > span:first-child::after { content: ' *'; color: var(--sle-danger); }
 .sle-form-row input[type="number"] { width: 4.2em; }
 .sle-times { color: var(--sle-muted); }
