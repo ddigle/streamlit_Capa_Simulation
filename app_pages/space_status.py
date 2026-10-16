@@ -194,9 +194,8 @@ SAMPLE_SAVE_BLOCKED = (
 COLOR_BASIS_KEY = "space_color_basis"
 _COLOR_KEY_PARTS = {COLOR_BASIS_LINE_TYPE: "line", COLOR_BASIS_CAPA: "capa"}
 # 세션 기준일(T). 층 상세 도면 맨 위의 페이더를 놓을 때·FAB 의 「오늘로」가 바꾼다(2026-10-16
-# 사용자 결정 — 사이드바 기준일 칸과 「단계」 필터는 없앴다). 옛 사이드바 위젯과 같은 이름이라 그
-# 위젯이 남긴 날짜도 범위 안으로 맞춰 그대로 쓴다. 손대지 않은 세션은 값이 없어 늘 오늘이다. 옛
-# 「단계」 필터 키(`space_status_stage_filter`)는 읽지 않는다.
+# 사용자 결정). 세션에 든 날짜는 범위 안으로 맞춰 쓰고, 값이 없는 세션은 늘 오늘이다.
+# `space_status_stage_filter` 키는 읽지 않는다.
 SPACE_AS_OF_KEY = "space_status_as_of"
 
 
@@ -395,10 +394,9 @@ if no_fleet:
     selected_processes: list[str] = []
     color_choice = default_color_choice()
 else:
-    # 필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일은 사이드바가
-    # 아니라 층 상세 도면 맨 위의 페이더다(2026-10-16 사용자 결정 — 「단계」 필터도 없앴다). 이
-    # 화면은 배치·공간만 본다 — 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다
-    # (2026-10-01 사용자 결정).
+    # 필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일은 층 상세 도면
+    # 맨 위의 페이더이고, 단계 필터는 두지 않는다(2026-10-16 사용자 결정). 이 화면은 배치·공간만
+    # 본다 — 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01 사용자 결정).
     with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
         selected_processes = st.multiselect(
             "공정소분류",

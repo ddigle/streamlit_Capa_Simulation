@@ -123,8 +123,8 @@ def _legend(app: AppTest) -> str:
 def test_the_sidebar_has_no_as_of_date_and_no_stage_filter(
     tmp_path: Path, calls: list[dict[str, Any]]
 ) -> None:
-    """기준일 칸과 「단계」 필터는 사이드바에서 없어졌다 — 기준일은 도면 위 페이더다. 옛 세션에 남은
-    「단계」 필터 값은 읽지 않는다(그리는 호기가 그대로다)."""
+    """사이드바에는 기준일 칸도 「단계」 필터도 없다 — 기준일은 도면 위 페이더다. 세션에 든
+    `space_status_stage_filter` 값은 읽지 않는다(그리는 호기가 그대로다)."""
     app, _ = _open(tmp_path)
     before = [item["id"] for item in _last(calls, "floor")["items"]]
 

@@ -463,6 +463,10 @@ def test_the_date_row_tops_the_floor_drawing_with_one_height_for_view_and_edit()
     for part in ("sle-fader-date", "sle-fader-rel", "sle-fader-note", "sle-fader-ticks"):
         assert f'class="{part}"' in fader, part
     assert 'class="sle-fader-today"' in fader and ">오늘</button>" in fader
+    # 날짜는 입력의 `aria-valuetext` 가 말한다 — 끄는 동안 프레임마다 바뀌는 칩은 낭독
+    # 영역으로 두지 않는다.
+    assert "aria-live" not in fader
+    assert "setAttr(faderInput, 'aria-valuetext'" in JS
     pinned = row[row.index('class="sle-pinned ') :]
     assert "sle-edit-only" in pinned and "편집 중 고정" in pinned
     assert "height: 36px" in _rule(".sle-daterow")
@@ -493,7 +497,8 @@ def test_the_fader_spans_the_range_python_sends_with_today_in_bold() -> None:
 
 def test_the_fader_keys_move_a_day_a_month_or_to_the_ends_and_stay_in_the_fader() -> None:
     """←/→ 하루, PageUp/PageDown 한 달, Home/End 범위 끝, 두 번 누르기·「오늘」 단추는 오늘. 키는
-    도면 단축키(화면 이동·확대)로 새지 않는다."""
+    도면 단축키(화면 이동·확대)로 새지 않는다. 「오늘」 단추는 누르면 꺼지므로 초점을 먼저 페이더로
+    옮긴다(키보드로 누른 초점이 문서 맨 앞으로 떨어지지 않게)."""
     keys = _between("faderInput.onkeydown = (event) => {", "if (PINNED)")
     for expected in (
         "ArrowLeft: now - 1",
@@ -508,7 +513,8 @@ def test_the_fader_keys_move_a_day_a_month_or_to_the_ends_and_stay_in_the_fader(
     assert "event.preventDefault()" in keys
     fader = _between("if (FADER) {\n    buildFader()", "if (PINNED)")
     assert "faderInput.ondblclick" in fader and "jumpTo(TODAY)" in fader
-    assert "faderToday.onclick = () => jumpTo(TODAY)" in fader
+    today = fader[fader.index("faderToday.onclick = () => {") : fader.index("faderInput.onkeydown")]
+    assert today.index("faderInput.focus({ preventScroll: true })") < today.index("jumpTo(TODAY)")
 
 
 def test_dragging_paints_in_frames_and_releasing_sends_the_date_once() -> None:
@@ -572,20 +578,64 @@ def test_the_fab_toolbar_shows_the_as_of_date_a_back_to_today_button_and_unconfi
     None
 ):
     """FAB 전체에는 페이더가 없다. 도구 줄 요약 앞에 「기준일 …」, 오늘이 아니면 「오늘로」,
-    미확인이 있으면 「! 미확인 N대」(0 이면 숨김)."""
+    미확인이 있으면 「! 미확인 N대」(0 이면 숨김). 「오늘로」는 누르면 꺼지고 숨으므로 초점을 먼저
+    도면으로 옮긴다."""
     toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('class="sle-summary')]
     for part in ("sle-asof", "sle-totoday", "sle-flagnote"):
         tag = toolbar[
             toolbar.rindex("<", 0, toolbar.index(part)) : toolbar.index(">", toolbar.index(part))
         ]
         assert "sle-fab-only" in tag and "sle-view-only" in tag, part
-    assert ">오늘로</button>" in toolbar
+    assert '>오늘<span class="sle-totoday-tail">로</span></button>' in toolbar
+    assert 'aria-label="기준일을 오늘로"' in toolbar
     fab = JS[
-        JS.index("if (VIEW && FAB) {\n    setText(fabAsOf") : JS.index(
+        JS.index("fabAsOf.hidden = !S.asOf") : JS.index(
             "// ---------------------------------------------------------------- 높이 손잡이"
         )
     ]
+    assert "setText(fabAsOfDate, S.asOf || '')" in fab
     assert "fabToToday.hidden = !TODAY || !S.asOf || S.asOf === TODAY" in fab
     assert "setStateValue('asOf', TODAY)" in fab
+    click = fab[fab.index("fabToToday.onclick = () => {") : fab.index("const flagged")]
+    assert click.index("svg.focus({ preventScroll: true })") < click.index(
+        "fabToToday.disabled = true"
+    )
     assert "flagNote.hidden = flagged === 0" in fab
-    assert "display: none" in _rule(".sle button.sle-totoday[hidden], .sle-flagnote[hidden]")
+    assert "setText(flagCount, `${flagged.toLocaleString('ko-KR')}대`)" in fab
+    assert "display: none" in _rule(
+        ".sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden]"
+    )
+
+
+def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -> None:
+    """사이드바를 연 1024px 창처럼 FAB 도구 줄이 넘치면 `fitFabBar` 가 접는 차례를 하나씩
+    더한다 — ① 선택 안내·「기준일」·「미확인」 말머리(화면에서만 — 낭독기용으로 남김), ② 미확인
+    대수(「!」만), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 요약 말줄임. 요약은 마지막에야
+    줄고, 대수 글자는 반만 잘리지 않는다."""
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-panels')]
+    assert '<span class="sle-asof-label">기준일 </span>' in toolbar
+    assert 'class="sle-flagnote-word">미확인 </span>' in toolbar
+    fit = _between(
+        "function fitFabBar() {",
+        "// ---------------------------------------------------------------- 높이 손잡이",
+    )
+    assert "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5']" in JS
+    assert fit.index("toolbar.classList.remove(...FIT_STEPS)") < fit.index("if (!(VIEW && FAB)")
+    assert "if (toolbar.scrollWidth <= toolbar.clientWidth) return" in fit
+    resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
+    assert "fitFabBar()" in resize
+    hidden = _rule(
+        ".sle-toolbar.is-fit1 .sle-asof-label, .sle-toolbar.is-fit1 .sle-flagnote-word, "
+        ".sle-toolbar.is-fit2 .sle-flagnote-text"
+    )
+    assert "display: none" not in hidden and "clip-path: inset(50%)" in hidden
+    assert "content: none" in _rule(".sle-toolbar.is-fit1 .sle-pick:empty::before")
+    assert "display: none" in _rule(".sle-toolbar.is-fit3 .sle-totoday-tail")
+    # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.
+    last = _rule(".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary")
+    assert "min-width: 0" in last and "text-overflow: ellipsis" in last
+    assert "setAttr(q('.sle-summary'), 'title', data.summary || '')" in JS
+    # 대수 글자(미확인)는 말줄임으로 반만 잘리지 않는다 — 접을 때는 통째로.
+    assert "ellipsis" not in _rule(".sle-flagnote")
+    assert "flex: none" in _rule(".sle-toolbar > *")
+    assert "flex" not in _rule(".sle-summary")

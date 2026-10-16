@@ -210,6 +210,8 @@ export default function (component) {
     : '호기를 누르면 정보가 여기 뜹니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
   if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
   setText(q('.sle-summary'), data.summary || '')
+  // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitFabBar`) — 풍선에 온 글.
+  setAttr(q('.sle-summary'), 'title', data.summary || '')
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
   const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
@@ -2705,9 +2707,10 @@ export default function (component) {
   const faderToday = q('.sle-fader-today')
   const pinnedDate = q('.sle-pinned-date')
   const fabAsOf = q('.sle-asof')
+  const fabAsOfDate = q('.sle-asof-date')
   const fabToToday = q('.sle-totoday')
   const flagNote = q('.sle-flagnote')
-  const flagText = q('.sle-flagnote-text')
+  const flagCount = q('.sle-flagnote-count')
   // 오늘에서 얼마나 떨어졌나 — 「오늘」, 「+3개월 2주」, 「−1개월 3일」.
   function relText(T) {
     if (!T || T === TODAY) return '오늘'
@@ -2837,7 +2840,12 @@ export default function (component) {
       event.preventDefault()
       jumpTo(TODAY)
     }
-    faderToday.onclick = () => jumpTo(TODAY)
+    // 오늘이 되면 이 단추가 꺼진다(disabled) — 키보드로 누른 초점이 문서 맨 앞으로 떨어지지 않게 먼저 페이더로
+    // 옮긴다.
+    faderToday.onclick = () => {
+      if (faderToday.matches(':focus')) faderInput.focus({ preventScroll: true })
+      jumpTo(TODAY)
+    }
     // ←/→(↓/↑) 하루, PageDown/PageUp 한 달, Home/End 범위 끝. 도면 단축키(화면 이동·확대)로 새지 않게 여기서 멈춘다.
     faderInput.onkeydown = (event) => {
       if (event.key === 'Tab' || event.key === 'Escape') return
@@ -2858,17 +2866,36 @@ export default function (component) {
   }
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
   if (VIEW && FAB) {
-    setText(fabAsOf, S.asOf ? `기준일 ${S.asOf}` : '')
+    // 좁은 도구 줄에서는 「기준일」 말머리를 접고 날짜도 말줄임으로 줄 수 있어(CSS) 풍선에 온 글을 둔다.
+    fabAsOf.hidden = !S.asOf
+    setText(fabAsOfDate, S.asOf || '')
+    setAttr(fabAsOf, 'title', S.asOf ? `블록 대수의 기준일 ${S.asOf} — 층 상세 도면 위 페이더로 바꿉니다` : '')
     fabToToday.hidden = !TODAY || !S.asOf || S.asOf === TODAY
     fabToToday.disabled = false
     fabToToday.onclick = () => {
       if (!TODAY || S.asOf === TODAY) return
+      // 단추는 곧 꺼지고 다음 회차에 숨는다 — 초점을 먼저 도면으로 옮겨 키보드 초점을 잃지 않게 한다.
+      if (fabToToday.matches(':focus')) svg.focus({ preventScroll: true })
       fabToToday.disabled = true
       setStateValue('asOf', TODAY)
     }
     const flagged = Math.max(Number(data.unconfirmed) || 0, 0)
     flagNote.hidden = flagged === 0
-    setText(flagText, `미확인 ${flagged.toLocaleString('ko-KR')}대`)
+    setText(flagCount, `${flagged.toLocaleString('ko-KR')}대`)
+    setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
+      + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 RawData 에서 고칩니다.')
+  }
+  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit5`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
+  // 준다. 회차의 글자를 쓴 뒤와 크기가 바뀔 때(`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
+  const toolbar = q('.sle-toolbar')
+  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5']
+  function fitFabBar() {
+    toolbar.classList.remove(...FIT_STEPS)
+    if (!(VIEW && FAB) || !toolbar.clientWidth) return
+    for (const step of FIT_STEPS) {
+      if (toolbar.scrollWidth <= toolbar.clientWidth) return
+      toolbar.classList.add(step)
+    }
   }
 
   // ---------------------------------------------------------------- 높이 손잡이
@@ -2918,6 +2945,7 @@ export default function (component) {
   S.onResize = () => {
     const changed = S.heightDrag ? measurePort() : fitStage()
     if (changed) applyView()
+    fitFabBar()
   }
   if (!S.ro && typeof ResizeObserver === 'function') {
     const schedule = () => {

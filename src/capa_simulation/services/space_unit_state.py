@@ -106,7 +106,7 @@ def as_of_range(today: date) -> tuple[date, date]:
 
 def clamp_as_of(value: object, today: date) -> date:
     """세션 기준일을 페이더 범위 안으로 맞춘다. 범위를 벗어나면(날이 지나 범위가 옮겨 갔다) 가까운
-    끝이고, 날짜로 읽히지 않으면(없음·옛 위젯 값의 다른 꼴) 오늘이다. `YYYY-MM-DD` 글자도 받는다."""
+    끝이고, 날짜로 읽히지 않으면(없음·날짜가 아닌 값) 오늘이다. `YYYY-MM-DD` 글자도 받는다."""
     start, end = as_of_range(today)
     if isinstance(value, str):
         try:

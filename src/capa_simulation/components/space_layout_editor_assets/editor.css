@@ -373,7 +373,12 @@
 }
 .sle-pinned-note { color: var(--sle-muted); overflow: hidden; text-overflow: ellipsis; }
 
-/* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ---- */
+/* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ----
+   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitFabBar` 가 접는
+   차례를 하나씩 더한다 — ① 선택 안내와 「기준일」·「미확인」 말머리(화면에서만 — 낭독기는 읽는다), ② 미확인 대수
+   (「!」만 — 대수는 풍선), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 그래도 넘치면(더 좁은 창) 요약도
+   말줄임(풍선에 온 글) — 화면 밖으로 밀려 안 보이는 것보다 낫다. 대수 글자는 반만 잘리지 않는다 — 잘린 「4」가
+   411대를 4대로 읽히게 한다. */
 .sle-asof { font-size: 0.82rem; color: var(--sle-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sle-flagnote {
   display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 0.82rem; white-space: nowrap;
@@ -383,4 +388,14 @@
   display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%;
   background: var(--sle-flag); color: var(--sle-flag-ink); font-size: 10px; font-weight: 700;
 }
-.sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }
+.sle-toolbar.is-fit1 .sle-pick:empty { margin-left: 0; }
+.sle-toolbar.is-fit1 .sle-pick:empty::before { content: none; }
+.sle-toolbar.is-fit2 .sle-flagnote { margin-right: 0; }
+.sle-toolbar.is-fit1 .sle-asof-label, .sle-toolbar.is-fit1 .sle-flagnote-word, .sle-toolbar.is-fit2 .sle-flagnote-text {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.sle-toolbar.is-fit3 .sle-totoday-tail { display: none; }
+.sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }

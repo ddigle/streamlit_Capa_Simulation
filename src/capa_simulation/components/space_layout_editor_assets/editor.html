@@ -1,7 +1,7 @@
 <div class="sle" lang="ko">
   <div class="sle-daterow sle-floor-only">
     <div class="sle-fader sle-view-only" role="group" aria-label="도면 기준일">
-      <span class="sle-fader-chip" aria-live="polite">
+      <span class="sle-fader-chip">
         <span class="sle-fader-main"><b class="sle-fader-date"></b> <span class="sle-fader-rel"></span></span>
         <span class="sle-fader-note"></span>
       </span>
@@ -38,11 +38,13 @@
     <button type="button" class="sle-unplace sle-edit-only" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
     <span class="sle-pick sle-view-only" aria-live="polite"></span>
     <span class="sle-spacer"></span>
-    <span class="sle-asof sle-fab-only sle-view-only" title="블록 대수의 기준일 — 층 상세 도면 위 페이더로 바꿉니다"></span>
-    <button type="button" class="sle-totoday sle-fab-only sle-view-only" hidden>오늘로</button>
-    <span class="sle-flagnote sle-fab-only sle-view-only" hidden
-          title="오늘 기준 — 반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인 설비입니다. 가용설비 현황 RawData 에서 고칩니다."><span
-          class="sle-flagnote-dot" aria-hidden="true">!</span><span class="sle-flagnote-text"></span></span>
+    <span class="sle-asof sle-fab-only sle-view-only" hidden><span class="sle-asof-label">기준일 </span><span
+          class="sle-asof-date"></span></span>
+    <button type="button" class="sle-totoday sle-fab-only sle-view-only" hidden aria-label="기준일을 오늘로"
+            title="기준일을 오늘로 되돌립니다">오늘<span class="sle-totoday-tail">로</span></button>
+    <span class="sle-flagnote sle-fab-only sle-view-only" hidden><span
+          class="sle-flagnote-dot" aria-hidden="true">!</span><span class="sle-flagnote-text"><span
+          class="sle-flagnote-word">미확인 </span><span class="sle-flagnote-count"></span></span></span>
     <span class="sle-summary sle-view-only"></span>
     <button type="button" class="sle-apply sle-edit-only">적용</button>
   </div>
