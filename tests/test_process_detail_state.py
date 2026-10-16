@@ -171,7 +171,7 @@ def test_the_origin_band_explains_how_home_differs_from_the_raw_rate() -> None:
 
     assert origin_band_text(base, month_text="26.03") == (
         "HOME 주요공정 확보율 · 26.03 칸에서 열었습니다 · 표시 103% = 원 확보율 98% "
-        "+ 실행 Capa +5.0%p · 아래는 원 확보율"
+        "+ 확보율 보정 +5.0%p · 아래는 원 확보율"
     )
     advanced = ProcessDetailRequest(
         process="DEMO-A",

@@ -1,6 +1,6 @@
 # Purpose: 호기 생애주기 구간을 공정별 W/D 구간에 일수로 안분해 월별 가용대수를 만든다.
 
-"""월별 Dynamic 가용대수.
+"""월별 설비 일정 기준 가용대수(코드 이름은 `dynamic`).
 
 호기 하나가 한 달에 기여하는 대수는 **그 달의 W/D 구간과 겹친 일수의 비율**이다
 (`services/wd_window.py`). 9월 30일에 Qual 이 끝난 설비는 Cut-off 15일 공정의 2026-10
@@ -156,7 +156,7 @@ class AvailabilityCategory:
     """화면 표시용. `+1` 은 늘리는 쪽, `-1` 은 줄이는 쪽으로 보인다."""
 
     counts_as_available: bool
-    """참이면 Dynamic 가용 소계에 들어간다."""
+    """참이면 일정 기준 가용 소계에 들어간다."""
 
     prorated: bool
     """참이면 W/D 구간에 일수로 안분한다. 거짓이면 달마다 만액이다."""
@@ -504,7 +504,7 @@ def _as_date(value: object) -> date:
 
 
 def available_subtotal(monthly: pd.DataFrame) -> pd.DataFrame:
-    """월·공정별 Dynamic 가용 소계. `가용반영` 이 참인 분류만 더한다.
+    """월·공정별 일정 기준 가용 소계. `가용반영` 이 참인 분류만 더한다.
 
     **두 축을 같이 낸다.** `Dynamic가용대수` 는 대수를 센 것이고
     `Dynamic가용환산대수` 는 호기별 환산비를 곱한 것이다. 「몇 대인가」와 「얼마나

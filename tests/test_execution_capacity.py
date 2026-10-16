@@ -1,4 +1,4 @@
-# Purpose: 실행 Capa 반영의 값 정규화·퍼센트포인트 차감과 공용 프로필 저장의 버전 대조를 검증한다.
+# Purpose: 확보율 보정의 값 정규화·퍼센트포인트 차감과 공용 프로필 저장의 버전 대조를 검증한다.
 
 from __future__ import annotations
 
@@ -202,7 +202,7 @@ _render_execution_editor(
         _rows([(202607, "DEMO_A", -10.0, ""), (202608, "DEMO_B", -5.0, "B")]), source="B 의 저장"
     )
     clear_global_execution_capacity_cache()
-    next(button for button in app.button if button.label == "실행 Capa 저장").click().run()
+    next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
 
     assert not app.exception
     errors = [str(item.value) for item in app.error]
@@ -210,7 +210,7 @@ _render_execution_editor(
     profile = repository.load_global_execution_capacity()
     assert (profile.version, profile.source) == (2, "B 의 저장")
 
-    next(button for button in app.button if button.label == "실행 Capa 저장").click().run()
+    next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
     assert not app.exception
     assert not app.error, [str(item.value) for item in app.error]
     assert repository.load_global_execution_capacity().version == 3

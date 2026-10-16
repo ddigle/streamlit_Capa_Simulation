@@ -1,6 +1,10 @@
-# Purpose: 공용 실행 Capa 반영 프로필의 값 정규화와 확보율 증감 적용을 담당한다.
+# Purpose: 공용 확보율 보정 프로필의 값 정규화와 확보율 증감 적용을 담당한다.
 
-"""실행 Capa 반영 — 기준정보 밖에서 생긴 변수를 확보율에 즉시 얹는다.
+"""확보율 보정 — 기준정보 밖에서 생긴 변수를 확보율에 즉시 얹는다.
+
+화면 이름은 「확보율 보정」이고 코드·저장 이름은 `execution`(공용 프로필
+`global_execution_capacity`, HOME 토글 `EXECUTION_TOGGLE_KEY`)이다. 실행관리(Execution
+Management) 그룹과는 상관없는 손입력 보정이다.
 
 시나리오·리비전에 담긴 Capa 기준정보는 그대로 두고, 그 뒤에 생긴 변수(비가동대수 증가로
 인한 가용대수 축소, UPEH 실적 부진, 재공 부진)를 **확보율에만** 즉시 반영한다. 리비전을
@@ -15,7 +19,7 @@
 
 **이 계산은 `확보율 = 가용대수 ÷ 소요대수` 항등식을 깬다.** 조정 사유가 비가동·UPEH·재공
 으로 제각각이라 어느 항으로 되돌릴지 코드가 정할 수 없기 때문이다. 그래서 가용대수·소요
-대수는 기준정보 값 그대로 두고, 차이의 출처는 화면 hover 가 「실행 반영 ±n%p · 비고」로
+대수는 기준정보 값 그대로 두고, 차이의 출처는 화면 hover 가 「확보율 보정 ±n%p · 비고」로
 밝힌다.
 """
 
@@ -59,8 +63,8 @@ def prepare_execution_capacity(frame: pd.DataFrame) -> pd.DataFrame:
     같으므로 구분해 둘 이유가 없다.
     """
     if not isinstance(frame, pd.DataFrame):
-        raise TypeError("실행 Capa 반영은 pandas DataFrame이어야 합니다.")
-    require_exact_columns(frame.columns, EXECUTION_CAPACITY_COLUMNS, "실행 Capa 반영 컬럼")
+        raise TypeError("확보율 보정은 pandas DataFrame이어야 합니다.")
+    require_exact_columns(frame.columns, EXECUTION_CAPACITY_COLUMNS, "확보율 보정 컬럼")
     if frame.empty:
         return empty_execution_capacity()
     prepared = frame.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()

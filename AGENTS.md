@@ -68,6 +68,34 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 기준정보가 아니다. 실제 표시순서는 시나리오와 분리된 공용 DB 프로필이며, 선택적 로컬
 `data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 Excel 표 붙여넣기로 초기화할 수 있다.
 
+### 세 영역 — Static · 실행관리 · Dynamic (2026-10-17 사용자 결정)
+
+사이드바 계산 그룹은 셋이고 차례도 이렇다(`navigation.SIDEBAR_GROUPS`).
+
+| 그룹(상자 이름) | 뜻 | 화면 |
+|---|---|---|
+| **Static Capa** | **약속.** 기술팀이 공정별 설비 셋업 시점·성능(UPEH·효율·수율)을 기준정보에 정하고, 그 기준정보와 생산계획으로 미래 Capa 를 낸다. 자원운영팀(옛 Guide 의 「GO팀」과 같은 팀)이 그 부족대수로 투자한다. | 현황 요약 · 생산 계획 · 기준 정보 · 산출 결과 · 표준 목표 |
+| **Execution Management**(실행관리) | **이행.** 제조팀이 약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 이행 요청하고, 지킬 수 없으면 Static 반영까지 추적한다. | 현황 요약(머리, `execution_management.py`) · 공정 Capa 상세 · 가용설비 현황 · Space 현황 · 효율·UPEH·수율 실적 |
+| **Dynamic Capa** | **실적.** 실행관리가 모은 실적으로 Capa 를 다시 내고 그 Capa 로 단기 운영(재공·Rundown·병목)을 한다. | 현황 요약(머리, `reference_integrity.py`, 주소 `dynamic_capa`) · 표준 대비 재공 현황 |
+
+- **경계 규칙**: 약속 이행을 **재고·비교·요청·추적**하는 일은 실행관리, 그 실적으로 **Capa 를 다시
+  내거나 단기 운영에 쓰는** 일은 Dynamic 이다. 표준 목표는 약속(대당 Capa)을 일·주로 푼 표준이라
+  Static 이고, 재공 현황이 그것을 기준선으로 링크해 쓴다.
+- **「Dynamic」 은 실적 Capa 에만 쓴다.** 화면 글자·Guide·문서에서 설비 마스터 일정으로 낸 가용대수는
+  **설비 일정 기준 가용대수**(짧게 「일정 기준 가용」, B/N 은 「일정 기준 B/N」)이고, 가용설비 현황의 그
+  탭 이름은 `Static 대비 일정` 이다. 기준정보 `RQ_EQP_AVBL` 의 값은 「기준정보 가용대수」(Static)다.
+  **코드 식별자·내부 파생 컬럼·세션/위젯 키·DB 이름은 그대로다** — `dynamic_*`·`DYNAMIC_*`·
+  `Dynamic가용대수`·`Dynamic확보율`·`process_detail_dynamic_absent` 같은 이름과 그것을 설명하는 주석의
+  「Dynamic」은 설비 일정 기준 가용을 뜻한다. 내부 컬럼이 화면 표 머리로 나갈 때만 표시용 이름으로 바꾼다.
+- **「확보율 보정」**: HOME 의 토글·Preference 편집기·풍선 글자다(옛 화면 이름 「실행 Loss」·「실행 Capa
+  반영」·「실행 반영 ±n%p」). 뜻은 「기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 %p 로 더하고 빼는
+  손입력 보정」이고 실행관리 그룹과 상관없다. 코드·저장 이름은 `execution` 그대로다(공용 프로필
+  `app_meta.global_execution_capacity`, 마이그레이션 0021, 토글 키 `EXECUTION_TOGGLE_KEY`, 내부 컬럼
+  `실행 비고`).
+- 파일 이름·페이지 제목·주소는 그룹을 옮겨도 바꾸지 않는다 — 주소는 파일 이름에서 나오고, Static 하위
+  네 제목은 표시순서 DB 의 페이지 키다(`services/display_order_scopes.py`). 그룹을 옮긴 화면의 북마크는
+  그대로 산다.
+
 ## 2. 실행환경과 검증 기준
 
 - 운영 호환 Python: **3.10.11 64-bit**
@@ -258,7 +286,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **공통 줄(시나리오, 조회기간)도 그 화면이 읽을 때만 선다**(2026-09-29 사용자
     결정). 무엇을 읽는지는 `navigation.PageSpec` 의 `reads_scenario`·`reads_period` 가 선언하고
     `app.py` 가 그대로 따른다 — 선언은 화면 코드가 실제로 읽는 것(전수 조사)이다. 일부 탭만 읽는
-    화면(가용설비 현황의 `Static/Dynamic`·`필요단축일정`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
+    화면(가용설비 현황의 `Static 대비 일정`·`필요단축일정`)은 `condition_tabs` 로 그 탭을 적고, `app.py` 가 열린
     탭(세션의 탭 값, 없으면 `stateful_tabs` 의 기억 칸)을 보고 가른다. 공통 조건을 하나도 읽지
     않아도 조건 카드가 있으면 `has_condition_cards` 로 구역 제목을 세운다. 제목은 **늘 페이지보다
     먼저, 같은 자리에** 선다. 페이지가 카드를 그리기 전에 멈추는 드문 오류 경로(VOC 게시판·설비 DB
@@ -276,7 +304,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`components/tab_marks.py`, 개선안 C). 점은 **라벨이 아니라 CSS** 다 — 라벨은 `st.tabs` 의
     위젯 id 에 들어가 붙였다 떼면 열린 탭 기억이 흔들린다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
-    순서도 `SIDEBAR_GROUPS` 가 정한다).
+    순서도 `SIDEBAR_GROUPS` 가 정한다). 그 아래 계산 그룹 셋은 Static Capa → Execution Management →
+    Dynamic Capa 차례다(1장 「세 영역」). 상자 라벨은 머리 페이지 제목이라 영어로 두고, 「실행관리」는 머리
+    화면 설명과 Guide 첫 문장에 적는다.
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
     상자(`ADMIN_BOX_KEY`)에 같은 층위로 세우는 `Admin Area`·VOC(`pages.admin_box_pages`)다.
     그 상자의 라벨은 `Support`, 아이콘은 `:material/support:` 다. `Preference` 는 HOME·가용설비
@@ -347,7 +377,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Plotly Figure 묶음을 사용자 세션에 캐시하고 렌더링은 fragment로 분리한다.
   - 본문은 `Main`·`Preference`·`Past Data` 세 탭이다. `Main` 이 계획·LOB·주요공정·B/N
     Figure 여덟 개를 그리고, `Preference`는 공용 프로필 편집기(비교 시나리오·판정 기준·선행 B/O·
-    선행 입고 실적·Summary·Top5·주요공정·실행 Capa)를 두며 `Past Data`는 과거 구간 세 표를 받는다
+    선행 입고 실적·Summary·Top5·주요공정·확보율 보정)를 두며 `Past Data`는 과거 구간 세 표를 받는다
     (`components/past_data_management.py`). 요약만 그리는 경로는 없다.
   - `Main` 은 결론보다 먼저 가정을 말한다 — 측정률 중립값 한 줄(`capacity_assumption_notice`)과
     소요대수에 들지 않은 수요 한 줄(`required_exclusion_notice`, 조회기간 기준).
@@ -466,11 +496,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세부수량 값 **아래**에 적는다(선행 증감은 값 **위**). 비교 대상은 시나리오와 리비전을
     함께 골라 정하고, 그 리비전에서 **계획만** 가져오고 환산에 쓰는 표는 현재 것을 쓴다 — 수율·Chip 기준정보가
     바뀐 것은 계획 변동이 아니다. 비교 시나리오에만 있는 분류 조합도 행으로 남긴다.
-  - `실행 Loss` 를 켜면 **실행 Capa 반영**이 확보율에 얹힌다. 기준정보 밖에서 생긴 변수
+  - `확보율 보정` 을 켜면 Preference 의 **확보율 보정**이 확보율에 얹힌다(코드·저장 이름은
+    `execution` — 1장 「세 영역」). 기준정보 밖에서 생긴 변수
     (비가동대수 증가로 인한 가용대수 축소·UPEH 실적 부진·재공 부진)를 년월·공정별
     **퍼센트포인트**로 넣는다 — 확보율 105% 에 `-10` 이면 95% 이지 94.5% 가 아니다.
     비율 곱셈으로 바꾸면 화면 눈금과 입력 숫자가 어긋난다.
-  - **적용 순서는 실행 → 선행이다.** 실행 조정은 **원데이터** 확보율에 얹고, 선행은 그렇게
+  - **적용 순서는 확보율 보정 → 선행이다.** 보정은 **원데이터** 확보율에 얹고, 선행은 그렇게
     조정된 값 위에 변동률을 곱한다. 그래서 선행 baseline 은 `확보율 ÷ 변동률` 로 되돌릴 수
     있다(곱셈 한 겹). 순서를 뒤집으면 곱셈과 덧셈이 섞여 되돌릴 수 없다.
     `apply_advance_to_securement` 는 `기준 확보율` 도 **같은 변동률로 함께** 곱한다 —
@@ -493,7 +524,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조정한 달 반경 0, 둘째 trace 는 같은 `legendgroup`·`showlegend=False`).
   - `확보율 = 가용대수 ÷ 소요대수` **항등식은 깨진다.** 조정 사유가 비가동·UPEH·재공으로
     제각각이라 어느 항으로 되돌릴지 코드가 정할 수 없다. 가용·소요대수는 기준정보 값
-    그대로 두고, 차이의 출처는 hover 의 「실행 반영 ±n%p · 비고」 줄이 밝힌다.
+    그대로 두고, 차이의 출처는 hover 의 「확보율 보정 ±n%p · 비고」 줄이 밝힌다.
   - 입력의 `공정` 은 **원본 공정명**이다. 표시명(Proc Rename)으로 저장하면 표시명을 바꾸는
     순간 매칭이 끊긴다. 입력 표는 값은 원본을 저장하고 보이는 글자만 표시명으로 바꾼다. 목록의 글자가
     겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func` — 편집표 칸은 값을 옵션 `value` 로 주고받아
@@ -566,10 +597,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_centered_cell_text`). 계획 세부수량의 분류 칸은 늘 그렇게 서고, 월 칸은 GAP 이
     꺼져 있을 때(`comparison_detail is None`)만 그렇게 선다. 빈 칸에는 붙이지 않는다 —
     값이 없는 자리에 줄만 생긴다.
-  - 시나리오를 바꾸면 **HOME 토글을 전부 끈다**(`_STALE_UI_KEYS`). 선행 B/O·선행 입고·실행·GAP·
+  - 시나리오를 바꾸면 **HOME 토글을 전부 끈다**(`_STALE_UI_KEYS`). 선행 B/O·선행 입고·확보율 보정·GAP·
     상세·EDP 포함·Past Data 포함 일곱 개다. 모두 기준정보 위에 무언가를 얹거나 빼는 스위치이고
     켠 사람은 **그 시나리오**를 보며 켰다 — 켠 채로 바꾸면 얹힌 것이 새 계획 위에 남는데,
-    실행 Capa 증감은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지 바꾼다. 화면에는 토글이
+    확보율 보정은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지 바꾼다. 화면에는 토글이
     켜져 있으니 사용자는 그것을 새 시나리오의 원래 값으로 읽는다. `Past Data 포함` 만
     기본값이 켬이라 「풀린다」가 켜진 상태로 돌아간다는 뜻이다.
   - **끈다는 것은 칸을 지우는 것이 아니라 기본값을 적는 것이다**(`_release_stale_ui_state`).
@@ -588,8 +619,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     부트스트랩·활성화 해제·새 시나리오(현재 RQ 복제·BigDataQuery 등록). 경로 표는
     `tests/test_scenario_activation.py` 가 AST 로 고정한다(`save_revision` 을 부르는 함수만
     `activate_saved_revision`).
-  - **목록을 손으로 세지 않는다.** 「실행 Loss」는 목록이 만들어진 뒤에 추가됐고 그 커밋이
-    `scenario_activation.py` 를 건드리지 않아, 선행·GAP·상세만 꺼지고 실행은 켜진 채 남는
+  - **목록을 손으로 세지 않는다.** 「확보율 보정」 토글은 목록이 만들어진 뒤에 추가됐고 그 커밋이
+    `scenario_activation.py` 를 건드리지 않아, 선행·GAP·상세만 꺼지고 보정은 켜진 채 남는
     비대칭이 한동안 있었다. `tests/test_scenario_activation.py` 가 `home_preference` 의
     `st.toggle` 을 AST 로 훑어 빠진 키를 잡는다 — 새 토글은 그 검사가 알려 준다.
   - **탭은 `stateful_tabs` 로 만들고 `render_home_figures` 에 `owner_tab` 을 넘긴다.** 숨은
@@ -813,7 +844,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     본문 표 위다(아래 「하위 보기 전환은 본문」). 한 회차에 카드 key 가 둘 서지 않도록 **열린 탭 하나**(`open_tab`)의 것만
     그리고, 탭 본문의 표·CSV 도 그 탭에서만 만든다. 설명(산식·워터폴 읽는 법·히트맵)은 Guide
     (`guides/calculation_result.md`)다.
-- `app_pages/process_capa_detail.py` (화면 이름 `공정 Capa 상세`, Static Capa 하위 `산출 결과` 다음)
+- `app_pages/process_capa_detail.py` (화면 이름 `공정 Capa 상세`, Execution Management 하위 첫 화면 —
+  2026-10-17 사용자 결정. 공식 부족을 호기·기간의 처방으로 내리는 화면이라 실행관리다)
   - 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15
     사용자 결정 — 목업 그대로). 차례: 머리(공정 표시명 + 배지 `공식 · Core Data`·설비 일정 상태, 오른쪽 끝
     `← HOME` 링크(`render_page_link`), HOME 에서 왔으면 출처 띠) → KPI 넷(최저 확보율·확보기준 미달 달·부족 원인·처방) → **본문 프래그먼트**(표 도구
@@ -845,7 +877,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     적고 ① 은 그대로 둔다. 필요단축일정 탭의 공용 조회 조건(`0019`)·진척 비교 기준선(`0021`)은 읽지도
     쓰지도 않는다(결정 1) — 탭 링크(`open_shortening_tab`)는 `EQUIPMENT_TAB_KEY`·그 기억 칸·
     `SHORTENING_PROCESS_KEY=[공정]` 세션 값만 심고 `st.switch_page` 한다.
-  - **HOME 표시 확보율 줄**: HOME 에서 실행 Capa·선행 B/O 를 켜고 왔거나(출처의 보기 조건) 지금 HOME
+  - **HOME 표시 확보율 줄**: HOME 에서 확보율 보정·선행 B/O 를 켜고 왔거나(출처의 보기 조건) 지금 HOME
     토글이 켜져 있으면 HOME 과 같은 함수(`home_display_rates` — `apply_execution_adjustment` →
     `apply_advance_to_securement`)로 얹은 값을 회색 줄로 넘긴다. 선행 변동률은 HOME 계산
     (`get_home_simulation`/`get_home_lob_without_edp`)을 **HOME 과 같은 캐시 키**로 받아 낸다 — 키의 달은
@@ -873,29 +905,43 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - LLM API·권한·대화 이력은 연결하지 않는다.
 - `app_pages/static_capa.py`
   - `Static Capa` 상위 페이지이며 경고·확보 기준별 월간 설비 부족대수 현황을 제공하고
-    생산 계획·기준 정보·산출 결과·공정 Capa 상세·표준 목표 하위 기능은 사이드바 탐색으로만
-    제공한다.
+    생산 계획·기준 정보·산출 결과·표준 목표 하위 기능은 사이드바 탐색으로만 제공한다.
   - 경고 기준 미달 행은 경고 기준까지 필요한 대수와 확보 기준까지의 추가 대수를 함께
     표시하고, 경고 이상·확보 기준 미달 행은 확보 기준 추가대수로 별도 관리한다.
   - 판정 기준(확보·경고)은 HOME → Preference 의 공용 프로필이다(2026-10-06 사용자 결정). 사이드바
-    조건 카드 `판정 기준` 은 지금 기준을 읽기 전용으로 적고 정하는 곳을 가리킬 뿐이다. 업무 로드맵(GO팀 투자 판단·기술팀 실행 개선)과 추가 필요대수 계산식은
+    조건 카드 `판정 기준` 은 지금 기준을 읽기 전용으로 적고 정하는 곳을 가리킬 뿐이다. 부서별 활용(자원운영팀 투자 판단·기술팀 약속 — 가용 일정이 늦은 공정의 A/Item 은 실행관리가
+    이행을 추적)과 추가 필요대수 계산식은
     Guide(`guides/static_capa.md`)로 옮겼고 본문에는 두 결과 상자만 남는다.
   - 확보율은 `simulation_cache.get_scenario_securement_rate`(키 전용)로 꺼내 소요대수 프레임을 풀지
     않는다(빗나가면 그 안에서 한 번만 받는다). 그 호출이 오류를 내면 `check_scenario_capacity`
     (`stop_calculation_on_error` 로 감싼다)로 갈라, 대당 Capa·소요대수 계산이 멈춘 것이면 그 오류를
     「계산 멈춤」과 함께, 가용대수·확보율 검증 오류면 그 오류를 「✓ 적용」 그대로 낸다. 판정 기준 적용(`build_securement_shortfall_tables`)은 공용 프로필이 다른
     화면에서 바뀌므로 캐시하지 않고 매 회차 한다.
+- `app_pages/execution_management.py`
+  - `Execution Management`(실행관리) 상위 페이지(사이드바 그룹 머리, 표기 없음, 2026-10-17 사용자 결정).
+    **첫 판은 데이터를 읽지 않는다** — `PageSpec` 이 `reads_scenario=False`·`reads_period=False` 이고
+    조건 카드·설비 DB 핀이 없다. 머리말(설명 첫머리 「실행관리: …」 정의) → 접힌 `업무 활용 목적 및
+    로드맵`(`roadmap_panel` — 부서별 Gap·A/Item: 기술팀 설비 일정·성능, 자원운영팀 투자, 흐름 「약속 대비
+    Gap → A/Item·이행 요청 → 진척 → Static 반영」) → 세 영역 한 줄 비교(Static·Dynamic 머리 링크) →
+    하위 화면 목차(`EXECUTION_MANAGEMENT_SUBPAGES` 차례의 링크와 「보는 것」 한 줄 — 표
+    `SUBPAGE_SUMMARIES`, 선언에 화면이 늘면 함께 고친다) → 「다음 판에서 이행 현황판 숫자가 들어온다」
+    한 줄. 설명은 Guide(`guides/execution_management.md`)다.
+  - 이행 현황판 숫자(미이행 공정·달, 일정 미확인, 단축 필요 호기 …)는 다음 판이다. 약속 기준선을 어느
+    공식버전으로 볼지(매주 자동 발행), 지난 달 이행을 실적 가용으로 볼지(10-16 「집계는 일정」)는 그
+    기능 설계 때 사용자에게 묻는다. 숫자가 들어오면 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와
+    `tests/test_app_navigation.py` 의 설비 DB 집합 단언부터 다시 본다.
 - `app_pages/reference_integrity.py`
-  - `Dynamic Capa` 상위 페이지(사이드바 그룹 머리, 표기 없음 — 성숙도는 본문 배지)이며 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·
+  - `Dynamic Capa` 상위 페이지(사이드바 그룹 머리, 표기 없음 — 성숙도는 본문 배지)이며 실행관리가 모은
+    실적(효율·UPEH·생산실적)으로 표준 Capa 의 **실현 Capa** 를 다시 내는 화면이다. 전체 공정 실현률·관리 우선순위를 요약하고 공정·제품·
     Stack·WF 속성 필터로 표준/실효/실적 Capa와 손실 원인을 비교하는 프로토타입을 제공한다.
   - 상단 용어 가이드는 표준·효율 반영·실효·모델 실적 Capa 단계, 실현률·활용률과
     효율·UPEH·기타 정합성 Gap의 산식과 부호 해석을 제공한다.
-  - 상단 업무 안내는 Rundown 감소·재공운영(제조팀)과 UPEH·효율 실적 개선(기술팀)으로
-    이어지는 Dynamic Capa 활용 로드맵을 설명한다.
+  - 머리 설명은 손실을 설비 성능(효율·UPEH)과 가용 Capa 활용(Rundown·재공부족)으로 나눈다고 적는다.
+    부서별 Gap·A/Item 로드맵은 실행관리 머리에 있고, 여기서는 그쪽을 가리키는 한 줄(링크)만 둔다.
   - 요약·공정 상세·산식 가이드 세 탭이다. 보고 자리에서 볼 것과 분석하며 뒤질 것이 다르다.
-  - **하위 화면 목차를 갖는다.** 요약 탭 아래 「손실을 파고드는 화면」이 손실 차감 순서
-    그대로 효율 실적 → UPEH 실적 → 수율 실적 → 재공 현황 → 가용설비 현황을 잇는다. 하위
-    화면은 각각 손실 한 조각을 보는데 그 조각이 무엇의 조각인지가 어디에도 없었다.
+  - **손실 목차를 갖는다.** 요약 탭 아래 「손실을 파고드는 화면」이 손실 차감 순서
+    그대로 효율 실적 → UPEH 실적 → 수율 실적 → 재공 현황 → 가용설비 현황을 잇는다. 넷은 실행관리
+    그룹, 재공 현황은 Dynamic 하위다 — 링크는 그룹을 건너도 그대로 동작한다.
     링크는 공용 `components/page_link.py` 를 쓴다.
   - 현재 수치는 결정론적 데모이고 샘플 스위치로 끌 수 있다. 데모 행과 공정 요약은 입력이 없는
     상수라(시작일 고정) 세션에 한 번만 만들고 사본을 쓴다(`_demo_frames`). 필터를 건 상세 집계·그림은
@@ -904,16 +950,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세션에 심고 매 회차 다시 적는다 — 겹친 표시명은 「표시명 (원본)」 으로 가른다(8장 ②). 제품·Stack·
     WF 속성 상자는 공정 상자가 아니라 예전 그대로다.
 - `app_pages/available_equipment_status.py`
-  - `Main`·`Static/Dynamic`·`Preference`·`RawData`·`필요단축일정` 다섯 탭이다
+  - `Main`·`Static 대비 일정`·`Preference`·`RawData`·`필요단축일정` 다섯 탭이다
     (`stateful_tabs`, key·라벨은 `navigation.EQUIPMENT_*` 한 곳).
   - **조회 조건은 사이드바 조건 카드 `설비 조회 조건`**(이름 `equipment`)이다(2026-09-29 사용자
-    결정). `Main`·`Static/Dynamic`·`필요단축일정` 세 탭이 한 카드를 쓰고 내용만 열린 탭 것이다 —
+    결정). `Main`·`Static 대비 일정`·`필요단축일정` 세 탭이 한 카드를 쓰고 내용만 열린 탭 것이다 —
     페이지가 카드를 만들어 `conditions=` 로 넘기고 컴포넌트가 제 위젯을 그 안에 그린다(안 넘기면
     예전처럼 본문 제자리 — 컴포넌트를 홀로 띄우는 테스트가 쓴다). 카드를 세우는 탭은 `navigation` 의
     `ConditionTabs.card_labels` 와 같아야 한다. Preference(Cut-off)·RawData 의 표 보기 설정은 그
     표의 입력 폼과 한 몸이라 본문에 둔다. 설명은 Guide(`guides/available_equipment_status.md`)다.
   - **하위 보기 전환은 본문이다**(2026-09-29 사용자 결정). 탭 안에서 무엇을 볼지 고르는 전환 —
-    Main 의 볼 내용·보기·표현, Static/Dynamic 의 조회 결과·표시 — 은 탭 안의 하위 탭과 같은 것이라
+    Main 의 볼 내용·보기·표현, Static 대비 일정의 조회 결과·표시 — 은 탭 안의 하위 탭과 같은 것이라
     카드에 넣으면 지금 무엇을 보는지 본문에서 사라진다. 카드에는 **거르는 조건**(공정·기간·기준일·
     추가 조건·분류·호기 필터)만 둔다. 산출 결과의 표시 방식, 표준 목표의 표시 항목도 같은 규칙이다.
     「상세」 펼침(행을 펼치는 토글)은 원래 카드 자리지만 **공정 Capa 상세의 「제품별 소요대수」·「분류」는
@@ -921,7 +967,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **공정 이름은 공용 공정 표시명이다 — 보이는 글자만**(2026-10-10 사용자 결정 「화면에 보이는 글자만
     표시명으로 맞추고 입력 칸의 값은 원본 그대로」). 페이지가 회차마다 한 번
     `process_labels_module.get_process_labels()` 로 읽어(모듈 속성 — 테스트가 갈아 끼운다)
-    `process_labels=` 로 Main·Static/Dynamic·Preference 에 넘긴다(필요단축일정 패널은 스스로 읽는다).
+    `process_labels=` 로 Main·Static 대비 일정·Preference 에 넘긴다(필요단축일정 패널은 스스로 읽는다).
     표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 열지만(앱에서는 부트스트랩이 연 캐시), 못 읽으면
     원본 그대로 그린다 — 설비 화면을 막지 않는다. 표시명은 계산 캐시 결과의 **복사본**에만
     입히고(`ProcessLabels.frame`) 그림 캐시가 없어 캐시 키에 넣지 않는다 — Admin 저장이 표시명 프로필
@@ -948,22 +994,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     결과의 마지막 주 요약 한 줄로 남기고 별도 metric 카드를 쌓지 않는다. 그 아래와
     `호기 현황` 머리 줄 아래에는 일정이 비어 가용대수에 들지 못하는 신규 설비를 「일정 미정 N대
     (반입 미정 a · Qual 미정 b)」 한 줄로 알린다(0대면 없음, Main 조건으로 거른 표 기준,
-    `services/undated_equipment.py`). Static/Dynamic 도 같은 줄을 둘러싼 대수의 범위(공정 선택 —
-    전체 합계면 한쪽에만 있는 공정 제외, 확보율 교차검증이면 Dynamic 공정 전체, `분류별 내역` 의
+    `services/undated_equipment.py`). Static 대비 일정도 같은 줄을 둘러싼 대수의 범위(공정 선택 —
+    전체 합계면 한쪽에만 있는 공정 제외, 확보율 교차검증이면 일정 기준 가용 공정 전체, `분류별 내역` 의
     호기 필터)로 센다. `호기 현황` 은 그 아래에 반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인
     설비를 「미확인 N대 (반입 a · Qual b)」 한 줄로 더 알린다(0대면 없음, 오늘 기준, 같은 범위,
     `services/schedule_confirmation.py` — 고치는 자리는 RawData 의 일정 확인 줄·목록이다).
-  - **Dynamic 가용대수는 사용기준이 HBM·EDP 인 호기만 센다**(2026-10-07 HBM 결정, 2026-10-08 사용자
+  - **설비 일정 기준 가용대수는 사용기준이 HBM·EDP 인 호기만 센다**(2026-10-07 HBM 결정, 2026-10-08 사용자
     결정 「HBM이랑 EDP만 센다」, 규칙은 `equipment_contract.counts_for_capacity` 한 곳 — 두 값은 한
     가용대수로 함께 센다). Main `가용대수`(주차별 추이·공정별 내역의 총대수·
-    가용대수·비가동대수·분류 칸 모두), Static/Dynamic(분류별 내역·소계·GAP·교차검증), 필요단축일정
+    가용대수·비가동대수·분류 칸 모두), Static 대비 일정(분류별 내역·소계·GAP·교차검증), 필요단축일정
     (가용과 후보), 일정 미정 알림이 이 규칙을 본다. **배치(Space)·호기 현황(상태 분포·호기 목록·
     생애주기 일정)·비가동 호기·Qual 일정·단계 전환·RawData 편집과 검증은 보지 않는다** — 세지 않을
-    뿐 호기는 그대로 있다. 뺀 대수는 가용대수를 보이는 세 자리(Main `가용대수`, Static/Dynamic 세
+    뿐 호기는 그대로 있다. 뺀 대수는 가용대수를 보이는 세 자리(Main `가용대수`, Static 대비 일정 세
     결과, 필요단축일정)에 「사용기준이 HBM·EDP 가 아닌 N대(설비 마스터 기준)는 가용대수에서 뺐습니다 —
     배치·호기 목록에는 그대로 있습니다」 한 줄로 알린다(0대면 없음, 일정 미정 줄과 같은 범위,
     `services/usage_basis.py`). **기존 보유대수 표는 사용기준이 없어 지금처럼 `기존보유` 로 센다.**
-    사용기준을 비워 둔 옛 리비전의 호기는 이 결정으로 Dynamic 에서 빠진다(사용자 결정 — 배포마다
+    사용기준을 비워 둔 옛 리비전의 호기는 이 결정으로 일정 기준 가용대수에서 빠진다(사용자 결정 — 배포마다
     사내 런북 8-4 가 HBM·EDP 행 수를 따로 센다, `docs/TODO.md`).
   - **정지·반출/이설 예정 호기는 실행일 전날까지 가용 판정대로 센다**(2026-10-07 사용자 결정). 상태
     이름은 정지·반출/이설일정이 적힌 날부터 「정지 예정」·「반출/이설 예정」이 가용을 덮지만, 세는
@@ -971,11 +1017,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `equipment_contract.COUNT_CATEGORY_COLUMN`)를 본다. 그래서 Main 공정별 내역의 `가용호기대수` 는
     `가용대수 − 기존보유대수` 와 같고, 그 표와 월별 분류 행의 `정지 예정`·`반출/이설 예정` 은 **가용이
     아닌**(셋업 중·보관·입고 전) 예정 호기만 센다. 셋업 중이거나 비가동인 예정 호기는 세지 않는다.
-    이름을 보이는 자리(상태 분포·호기 목록·Gantt·Space)는 이름 그대로다. **실행일 당일은 월별 Dynamic
+    이름을 보이는 자리(상태 분포·호기 목록·Gantt·Space)는 이름 그대로다. **실행일 당일은 월별 일정 기준 가용
     에도 들지 않는다**(2026-10-08 사용자 결정 — Guide 「전날까지 가용」에 코드를 맞췄다). 월별 기여는
     상태가 바뀐 다음 날부터지만 정지·반출/이설로 가용을 잃는 경계만은 그날부터라, 주차 집계·상태
-    판정과 같은 날 빠진다. 집계 이탈일은 min(정지일정, 반출/이설일정)이다(2026-10-16 사용자 결정). Static/
-    Dynamic·확보율 교차검증·필요단축일정(가용)·호기별 기여·CSV 가 모두 이 한 길
+    판정과 같은 날 빠진다. 집계 이탈일은 min(정지일정, 반출/이설일정)이다(2026-10-16 사용자 결정). Static
+    대비 일정·확보율 교차검증·필요단축일정(가용)·호기별 기여·CSV 가 모두 이 한 길
     (`monthly_equipment_availability._prorated_rows`)을 지난다. Qual 은 그대로 다음 날부터다(B-7).
   - **비가동 호기의 기본 보기는 사용자가 고른 기준일의 스냅샷**이다. 그 날짜에 보유 중이면서
     가용이 아닌 호기를 기존 서비스로 구한다. 조회 마지막 주의 일요일로 바꾸지 않는다.
@@ -986,7 +1032,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     호기를 통째로 잃는다. 호기 상태와 Qual 조회도 같은 기준일을 쓰며, 주차별 집계는 기존
     일요일 판정을 유지한다. `10월 Die Attach 비가동 호기`는 볼 내용·`그 달 전체` 보기·
     공정소분류와 10월의 아무 기준일로 찾는다.
-  - Main의 가용대수·생애주기 일정과 `Static/Dynamic`은 `render_equipment_period`의 같은
+  - Main의 가용대수·생애주기 일정과 `Static 대비 일정`은 `render_equipment_period`의 같은
     시작일·종료일 세션 키를 쓴다. 기준일은 이 조회기간과 별개다. 선택 위젯은
     `persist_state="session"`으로 질문·탭 왕복 시 유지하고 숨은 조회 탭은 계산·그림을 건너뛴다.
   - `Preference` 안의 `Cut-off`는 공정별 표준 납기(일)를 적는 원장이다. **TAT 와 공정 선후관계가 저장소에
@@ -994,11 +1040,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`0009`, `equipment_ops.process_cutoff`) — 행을 지우는 것이 곧 「그 공정을 산출에서
     빼라」는 편집이라 부분 upsert 로는 뜻을 표현할 수 없다. 키에 `product_scope` 를 미리
     열어 두었고 지금은 모두 `'*'` 다.
-  - `Static/Dynamic` 은 기준정보 `RQ_EQP_AVBL`(Static)과 호기 일정 안분(Dynamic)을 맞대어
+  - `Static 대비 일정` 은 기준정보 `RQ_EQP_AVBL`(Static)과 호기 일정 안분(설비 일정 기준 가용)을 맞대어
     GAP 을 낸다. **이 페이지에서 시뮬레이션 DB 를 여는 탭은 이것과 `필요단축일정` 둘**이고, 못
     읽어도 그 탭 안에서만 알린다 — 이 페이지는 활성 시나리오 없이도 열리는 유일한 계산 계열
     화면이라 통째로 막으면 Cut-off 를 적으러 들어올 수도 없다.
-  - Static/Dynamic 의 생애주기 구간은 `simulation_cache.get_equipment_lifecycle_spans`(키 =
+  - Static 대비 일정의 생애주기 구간은 `simulation_cache.get_equipment_lifecycle_spans`(키 =
     마스터·비가동 내용 지문 + 구간 범위)로 받는다. 조회 결과·공정·표시는 앱 전체 회차라(아래
     「본문 프래그먼트」) 하나만 바꿔도 페이지 전체가 다시 돌고, 상태 판정을 바뀌는 날마다 다시 하는
     구간이 그때마다 들었다(2026-10-08 점검 A2 — 데모 0.34초, 3천 행 복제 32개월 2.35초). 필요단축일정과
@@ -1006,8 +1052,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **본문 프래그먼트.** 조건 카드에 설 위젯을 바꾸지 않는 본문 조작만 프래그먼트로 좁힌다 — 그
     조작은 앱 전체 회차의 고정비(설비 DB 핀·저장본 사본·Cut-off·시나리오와 소요대수 확인·다른 탭)를
     지나지 않는다. 필요단축일정의 머리(`목표 확보율`·`진척 비교`)·본문(`required_shortening_panel`
-    항목), Static/Dynamic `분류별 내역` 대수 표의 칸 누름과 그 아래 칸의 호기(`availability_gap_panel`
-    항목), Main `표현`(차트·표)과 결과 상자(`equipment_explorer` 항목). Main `볼 내용`·`보기` 와 Static/Dynamic `조회 결과`·`표시` 는 조건 카드에 무엇이 설지(기간·
+    항목), Static 대비 일정 `분류별 내역` 대수 표의 칸 누름과 그 아래 칸의 호기(`availability_gap_panel`
+    항목), Main `표현`(차트·표)과 결과 상자(`equipment_explorer` 항목). Main `볼 내용`·`보기` 와 Static 대비 일정 `조회 결과`·`표시` 는 조건 카드에 무엇이 설지(기간·
     기준일·단계 전환 칸, 호기 필터·분류 칸)를 정하므로 앱 전체 회차 그대로다 — 프래그먼트로 넣으려면
     카드 위젯을 늘 세워야 하는데 2026-09-29 사용자 결정(카드에는 그 보기의 조건만)과 어긋난다.
     **프래그먼트 회차는 직전 앱 전체 회차의 인자를 그대로 쓴다** — 오늘 날짜·공정 표시명·Cut-off·
@@ -1050,7 +1096,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     자리라 뜨지 않는다(고치기 전 한 자리 판도 같다). ③ 잇단 알림 직후 앱 전체 회차가 이 페이지 머리
     뒤에서 끊기면(설비 DB 부트스트랩 오류의 `st.stop()`·잡히지 않은 예외) 알림 자리를 채우지 못해 남은
     토스트가 오류 화면과 함께 다시 뜰 수 있다(코드로만 추론, 재현하지 않음).
-  - **`필요단축일정`**(2026-10-07 사용자 결정, 시안 B 「공정 카드형」)은 Dynamic 가용(환산 소계)이
+  - **`필요단축일정`**(2026-10-07 사용자 결정, 시안 B 「공정 카드형」)은 일정 기준 가용(환산 소계)이
     시나리오 소요대수 x 목표 확보율에 모자란 공정·월을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지
     보인다. 페이지는 GAP 탭과 같은 입력(활성 시나리오, 저장된 Cut-off(Preference 가 한 번 읽어 돌려준
     값), `dashboard_*` 세 표)을 모아 `components/required_shortening_panel.py` 에 넘기고, 시나리오를 못
@@ -1060,7 +1106,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `get_required_month_span`(같은 시나리오 키의 첫·끝 달)으로 정하며, 프레임은 그 캐시나
     `get_required_shortening` 이 빗나갈 때만 로더로 꺼낸다. 오류 확인도 같은 로더를 받아, 셋이 한 회차에
     함께 빗나가도(첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은 한 번이다. 달 범위를 꺼내다 멈추면(오류
-    확인이 적중한 뒤 밀려난 소요대수를 다시 계산하는 자리) 같은 경고로 멈춘다. Static/Dynamic 도 오류
+    확인이 적중한 뒤 밀려난 소요대수를 다시 계산하는 자리) 같은 경고로 멈춘다. Static 대비 일정도 오류
     확인은 같은 함수·같은 로더로 모든 보기에서 하고, 소요대수는 그 로더로 확보율 교차검증 캐시가 빗나갈
     때만 푼다(로더가 멈추면 「확보율을 맞대지 못했습니다」 경고). 계산
     오류도 `static_error` 로 알려 「Static 가용대수를 읽지 못해 Dynamic 만 표시합니다」 경고가 뜨지만 이미
@@ -1076,9 +1122,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     None)과 저장을 막을 까닭(`baseline_refusal` — 샘플 fleet)도 페이지가 넘긴다(`_baseline_refusal`).
     미저장 설비 편집은 막지 않는다 — 그 편집은 편집본(buffer)에만 있고 계산은 저장본 사본(draft)만 읽는다.
     목표 확보율은 세션 값이다. 화면의 공정 이름은 공용 **공정 표시명**이다(2026-10-10 부터 같은 페이지의
-    Main·Static/Dynamic·Preference 도 보이는 글자는 표시명 — 위 항목). 이 탭의 표시명 조회는 패널이
+    Main·Static 대비 일정·Preference 도 보이는 글자는 표시명 — 위 항목). 이 탭의 표시명 조회는 패널이
     스스로 한다(페이지가 읽은 값을 넘기지 않는다).
-  - 월별 Dynamic 가용대수는 `(전월 말일 - cutoff, 당월 말일 - cutoff]` 반열린 구간과 겹친
+  - 월별 설비 일정 기준 가용대수는 `(전월 말일 - cutoff, 당월 말일 - cutoff]` 반열린 구간과 겹친
     일수로 안분한다(`services/wd_window.py`). 구간 길이는 늘 그 달의 달력일수이고 열두
     구간의 합이 365일이어야 한다. **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이고**
     나머지 여덟은 왜 못 쓰는지를 보여 주는 참고 행이다 — 호기 상태는 서로 배타적이라 모두
@@ -1109,7 +1155,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장하고 공정소분류별 주차 단위 총대수·가용대수·비가동대수와 상태를 집계한다.
   - Main은 공정소분류를 기본 조건으로 바로 보여 주고 공정구분·투자구분·공정대분류는
     접힌 추가 조건에 둔다. 집계형 기존 보유대수에는 공정소분류 조건만 적용하며 나머지는
-    설비 마스터와 연결된 비가동 일정에 적용한다. `Static/Dynamic`의 공정 선택은 별도이고
+    설비 마스터와 연결된 비가동 일정에 적용한다. `Static 대비 일정`의 공정 선택은 별도이고
     Main의 세부 조건을 월별 비교에 몰래 적용하지 않는다.
   - 세 표 모두 CSV 양식 내려받기와 Excel 붙여넣기 Import를 지원한다. 기존 보유대수는
     공정·분류, 설비 마스터는 설비명, 비가동 일정은 설비명·유형·시작일 자연키로 Import하며
@@ -1167,11 +1213,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 마스터가 비었을 때만 샘플 스위치가 뜬다. 실데이터가 있으면 끌 것이 없다.
     **빈 DB의 세 편집본은 모두 비운다.** 기존 보유대수 샘플도 호기 샘플과 함께 조회에만
     보충하고 편집본이나 첫 저장 후보에 넣지 않는다. 샘플 스위치를 끄면 조회용 합성값도 뺀다.
-  - Main·Preference·RawData는 설비 운영 DB만 사용한다. `Static/Dynamic`이 열렸을 때만
+  - Main·Preference·RawData는 설비 운영 DB만 사용한다. `Static 대비 일정`이 열렸을 때만
     시뮬레이션 DB·활성 시나리오·`RQ_EQP_AVBL`과 공통 기간의 소요대수를 읽어 교차검증한다.
     운영 이력을 시나리오에 저장하거나 HOME·B/N의 Static 정본을 바꾸지 않는다.
 - `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`, `app_pages/yield_actual.py`
-  - Dynamic Capa의 실적 비교·개선관리 하위 페이지 셋이다. **화면은 한 벌뿐**이고
+  - Execution Management(실행관리)의 실적 비교·개선관리 하위 페이지 셋이다. **화면은 한 벌뿐**이고
     (`components/performance_actual_screen.py`) 이 파일들은 `MetricSpec` 과 머리말 문구만
     갖는다. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문이다.
   - 요약(보고용)·상세 분석·개선과제 세 탭이다. 샘플 스위치를 끄면 원천 미연결 상태와
@@ -1189,7 +1235,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (reference_version·content_token·조회 월)와 `display_order_digest(RQ_DISPLAY_ORDER)` 다. 가용대수는
     다른 세션이 바꾸는 현행값이라 매 회차 읽는다.
 - `app_pages/space_status.py`
-  - Dynamic Capa의 Space 현황 페이지다.
+  - Execution Management(실행관리)의 Space 현황 페이지다 — 셋업 이행을 공간·호기로 본다.
   - `S.PKG FAB 전체(C5 독립, C1~C4 연결) → 층 상세 배치`의 **2단** 탐색이다(2026-10-03 사용자 결정 — 동
     단계는 없다). 두 단계 모두 배치 편집기와 **같은 도면**(Components v2, 보기 전용)이고 Space 페이지에는
     Plotly 가 없다. FAB 는 `scope="fab"`(`render_fab_layout_viewer`), 층은 `scope="floor"` 다.
@@ -2354,8 +2400,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     과 오류 확인(`check_scenario_capacity` 의 `_required_equipment=`)도 같은 로더를 받는다 — 로더 하나는
     프레임을 한 번만 풀고(실패는 기억하지 않는다) 그 회차에서만 쓴다. 「소요대수만」 돌려주는 캐시
     래퍼는 두지 않는다(같은 프레임이 캐시에 한 벌 더 쌓인다).
-  - Static/Dynamic 은 `get_equipment_lifecycle_spans`(구간, 키 `equipment_span_cache_key` = 마스터·
-    비가동 지문 + 범위) → `get_availability_comparison`(월별 Dynamic + Static 비교, 키
+  - Static 대비 일정은 `get_equipment_lifecycle_spans`(구간, 키 `equipment_span_cache_key` = 마스터·
+    비가동 지문 + 범위) → `get_availability_comparison`(월별 일정 기준 가용 + Static 비교, 키
     `dynamic_monthly_cache_key` = 구간·기존보유·Cut-off 지문 + 달 + **환산비 지문** — 구간 표에
     환산비 칸이 없어 따로 싣는다 — 에 Static 지문을 더한 `availability_comparison_cache_key`) →
     `get_monthly_equipment_contributions`(호기별 기여, 월별 키)로 부른다(2026-10-08 점검 A2). 세
@@ -2426,7 +2472,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   거르고 대당 Capa 와 **같은 키**로 붙일 뿐이라 `unit_capacity.py` 를 고치지 않는다. 그래서 대당 Capa 식을
   바꾸면 `route_factor_product` 도 같이 고친다(`tests/test_process_capa_detail.py` 의 「경로 인자의 곱 =
   대당 Capa」가 어긋남을 잡는다). 측정률 1.0 은 「행 없음 → 1.0 가정」과 「빈칸·0 → 1.0」을 가른다.
-  HOME 표시 확보율(`home_display_rates`)은 HOME 과 같은 함수·차례(실행 Capa → 선행 B/O)로 얹은 공정 하나의
+  HOME 표시 확보율(`home_display_rates`)은 HOME 과 같은 함수·차례(확보율 보정 → 선행 B/O)로 얹은 공정 하나의
   달별 값이다(요약 표의 회색 참고 줄).
 - `securement_threshold.py`: 공용 확보율 판정 기준(2026-10-06 사용자 결정). 기본 확보·경고 한 짝과
   월별 예외(빈칸 = 기본값)를 정규화·검증하고, 해시 가능한 `SecurementThresholds`(`for_month`·
@@ -2695,7 +2741,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   여기 있다(등록이 쓰고, 계산은 같은 정규화를 이미 거친 표를 `duplicated` 로 접는다).
   컬럼 계약 **정확 일치** 검사(`"{주어} 계약이 일치하지 않습니다 (누락: …; 추가: …)."`)도
   `require_exact_columns` 하나가 갖는다. 저장 경계(`_sql_helpers.insert_frame`·공용 표시순서),
-  Core Data 78컬럼(`limit=10`), 선행·실행 Capa·과거 세 표·공정 표시명 정규화는 이름 집합만
+  Core Data 78컬럼(`limit=10`), 선행·확보율 보정·과거 세 표·공정 표시명 정규화는 이름 집합만
   보고, 붙여넣기·CSV 입력(표시순서·공정 표시명)은 `check_order=True, strip=True` 로 차례와
   머리글 공백까지 본다(누락·추가가 없으면 `컬럼 순서가 양식과 다름`). 문구는
   `tests/test_exact_column_contracts.py` 가 바이트 단위로 고정한다. 새 정확 일치 검사를 손으로
@@ -2797,7 +2843,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     모듈 행끼리 같아야 하는 컬럼이다. 화면 필터가 이 값으로 행을 거르므로, 다르면 필터가
     설비를 쪼개 지분 합이 1 이 아니게 된다.
   - **사용기준 규칙의 단일 선언**(2026-10-08 사용자 결정 「HBM이랑 EDP만 센다」):
-    `COUNTED_USAGE_BASIS = ("HBM", "EDP")` 와 `counts_for_capacity(frame)`(행마다 참/거짓). Dynamic
+    `COUNTED_USAGE_BASIS = ("HBM", "EDP")` 와 `counts_for_capacity(frame)`(행마다 참/거짓). 일정 기준
     가용대수는 이 값이 참인 행만 센다 — 두 값을 한 가용대수로 함께 센다. 대조는 **앞뒤 공백을 떼고
     대소문자를 가리지 않는 완전 일치**라 「 hbm 」·「edp」는 세고 「HBM3E」·「HBM 양산」·「EDP-TSV」·빈
     칸은 세지 않는다(`usage_basis_key` 가 대조용 글자를 만든다). 제외 알림(`usage_basis`)은 값을 「·」로
@@ -2822,14 +2868,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   범위로 세어 「일정 미정 N대 (반입 미정 a · Qual 미정 b) — …」 한 줄을 만든다(0대면 `None`).
   `undated_candidate_note` 는 그 가운데 Qual 일정이 없는 몫(`Qual일정있음` 칸 — `반입 미정` 에는 Qual 이 있는
   행도 든다)만 「단축 후보에도 들지 않습니다」로 덧붙이는 필요단축일정용 말이다. 행이 아니라
-  설비를, **Dynamic(보유 지분 `held_unit_shares`)이 날짜 때문에 실제로 빼는 몫만** 센다 — 기준일 없이
+  설비를, **일정 기준 가용(보유 지분 `held_unit_shares`)이 날짜 때문에 실제로 빼는 몫만** 센다 — 기준일 없이
   「보유할 수 있는 행」(반입일정이 있거나 기존설비·보관인 행)으로 옮긴다. `반입 미정` 은 같은 설비에 보유할
   수 있는 행이 하나도 없을 때만(설비 전체를 1대), `Qual 미정` 은 반입은 있고 Qual 이 빈 행을 그 설비의
   보유할 수 있는 행 수로 나눈 몫이다(A·B 가용, C Qual 없음, D 반입 없음 → C 의 0.33대, D 는 형제가 설비를
   채워 0). 정지·반출/이설 날짜가 있는 행은 뺀다 — 기준일 없는 알림이라 이미 나간 호기와 나갈 호기를 가를 수
   없다(반입만 있고 Qual 이 빈 채 나갈 호기는 그래서 세지 않는다, 드문 경우). **사용기준이 HBM·EDP 가 아닌
   행도 뺀다** — 날짜를 채워도 가용대수에 들지 않는다. 몫은 사용기준과 상관없이 거르기 전 설비 마스터로
-  매긴 뒤 HBM·EDP 행만 남기고(Dynamic 의 지분과 같은 셈), 범위는 `processes`·`unit_ids` 로 좁힌다. 화면은
+  매긴 뒤 HBM·EDP 행만 남기고(일정 기준 가용의 지분과 같은 셈), 범위는 `processes`·`unit_ids` 로 좁힌다. 화면은
   `simulation_cache.get_undated_equipment`(내용 해시 캐시 — 설비 마스터 검증을 rerun 마다 다시 돌리지
   않는다)로 읽는다.
 - `schedule_confirmation.py`: 일정 확인 알림(2026-10-16 사용자 결정) — 반입·Qual 단계마다 일정·실적·
@@ -2876,7 +2922,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   하나씩 짙어진다(시안 `capaLevel` 과 같다 — 그룹이 7보다 적으면 짙은 단 쪽이 남는다). 색 값은 모르고 어느
   호기가 어느 그룹인지만 정한다(`color_groups`).
 - `usage_basis.py`: 사용기준 제외 설비 — 사용기준이 HBM·EDP 가 아니어서(빈 칸 포함,
-  `counts_for_capacity`) Dynamic 가용대수에 세지 않는 행. `usage_excluded_equipment` 가 행을 고르고
+  `counts_for_capacity`) 설비 일정 기준 가용대수에 세지 않는 행. `usage_excluded_equipment` 가 행을 고르고
   `usage_excluded_count`·`usage_exclusion_notice` 가 공정·설비명 범위로 세어 「사용기준이 HBM·EDP 가 아닌
   N대(설비 마스터 기준)는
   가용대수에서 뺐습니다 — 배치·호기 목록에는 그대로 있습니다」 한 줄을 만든다(0대면 `None`). 날짜를 보지
@@ -2959,7 +3005,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 의 공정·`owned` 를 옮겨 적은 것이고,
   `tests/test_equipment_availability.py` 가 기대값을 생성기에서 읽어 대조하므로 생성기를
   고치면 이 리터럴도 같이 고친다. 샘플 호기의 사용기준은 HBM(세는 값의 첫째)이고 두 대
-  (`_FLEET_NON_HBM_SLOTS`)만 세지 않는 「범용」이다(EDP 샘플 호기는 두지 않았다) — 비우면 Dynamic 가용대수가 통째로 비고, 몇 대는 빼야 제외 알림이 샘플에서도 보인다.
+  (`_FLEET_NON_HBM_SLOTS`)만 세지 않는 「범용」이다(EDP 샘플 호기는 두지 않았다) — 비우면 설비 일정 기준 가용대수가 통째로 비고, 몇 대는 빼야 제외 알림이 샘플에서도 보인다.
 - `chatbot_samples.py`: Capa Chatbot 답변 대본. LLM 을 붙이기 전에 정할 것은 모델이 아니라
   **답변의 모양**이다 — 결론 · 근거 표 · 사용한 조건과 산식 · 한계 네 칸. 연결할 때는 대본을
   만드는 자리만 바꾸고 화면은 그대로 둔다. 숫자는 `performance_actuals` 데모에서 나와 옆
@@ -3273,7 +3319,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     요소라 다른 페이지로 옮기면 Streamlit 이 걷어 간다. 비공식 경로(툴바 슬롯·숨은 버튼
     선택자)라 판올림 뒤 버튼이 뜨고 눌리는지 본다.
   - 가이드가 있는 화면(2026-09-29): HOME·Static Capa·생산 계획·기준 정보·산출 결과·공정 Capa 상세·
-    표준 목표·시나리오 관리·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
+    표준 목표·시나리오 관리·Execution Management·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
     화면 테스트가 옮긴 핵심 문구가 Guide 에 있는지 대조한다(`test_*_guide_carries_*`).
 - `src/capa_simulation/components/print_button.py`
   - 헤더 툴바의 **Guide 와 테마 버튼 사이** `Print` 버튼(2026-10-05 사용자 결정 — ⋮ 메뉴를 통째로
@@ -3565,7 +3611,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쪽**부터 여섯 달(계획 끝을 넘지 않음, 연간 Total 없음). 생산계획 = HOME `Density (억Gb)`(`부하량`),
     B/N = 프리셋 `B/N 집계 공정`(HOME 의 공정 필터) 안에서 달마다 확보율이 가장 낮은 공정(HOME 과 같은 순위 함수), 부족
     대수 = `소요대수 − 가용대수` 올림, 제품 비중 = Wafer 기준(색 칸은 EDP 포함 수량으로). HOME 토글
-    기본값(EDP 제외·선행·실행 반영 없음)과 같은 화면이다(2026-10-02 사용자 결정).
+    기본값(EDP 제외·선행·확보율 보정 없음)과 같은 화면이다(2026-10-02 사용자 결정).
   - Summary 머리 줄 토글 셋이 켜졌을 때의 값도 낸다. `build_advance_summary` — HOME 「선행 B/O」와 같은
     차례(`build_advance_load_ratio` → `apply_advance_to_density/wafer/securement` → 같은 B/N 순위)로
     Density·Wafer·B/N 을 다시 내고, 증감 글자(값 위 `{:+,.2f}`·`{:+,.1f}K`, 막대 안 `{:+.0f}%`)와 반영한
@@ -3791,11 +3837,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     된다) 이 함수를 쓰는 상자는 위젯 앞에서 매 회차 잡은 값을 세션에 다시 적는다(`page_bootstrap.
     prune_choice`·`prune_list_selection`) — 적지 않으면 브라우저가 옛 글자 `X` 를 되보내 다음 조작에
     원본 X 로 바뀌었다(2026-10-10 재검증, 실제 브라우저). `options` 에는 그 상자에 들어올 수 있는 값
-    전체를 넘겨도 된다 — Static/Dynamic 은 조회 달과 상관없는 탭의 공정 전체로, 표준 목표 로직 분석은
+    전체를 넘겨도 된다 — Static 대비 일정은 조회 달과 상관없는 탭의 공정 전체로, 표준 목표 로직 분석은
     주차와 상관없는 공정 전체로 갈라 글자 흔들림을 줄인다.
     공정 표시명을 쓰는 화면의 공정 선택 상자는 모두 이것을 쓴다(자리 목록은 8장 ②, 2026-10-10 다른 화면
     후속 — Space 현황·가용설비 RawData 는 원본 이름이라 해당 없음). 표지값이 있는 상자는
-    Static/Dynamic(`전체 합계`) 하나다 — 다른 상자는 선택지가 공정뿐이다(빈 선택은 자리 글자다). 공정
+    Static 대비 일정(`전체 합계`) 하나다 — 다른 상자는 선택지가 공정뿐이다(빈 선택은 자리 글자다). 공정
     하나가 글자의 일부인 상자(기준 정보 STEP 복제·삭제 대상)도 공정 부분은 이것으로 가르고, 나머지 키를
     글자에 다 실어 줄마다 글자가 다르게 한다.
     `ProcessLabelFormatter`(`format_func()`)는 이제 선택 상자에 쓰지 않는다 — 버튼 글자(HOME B/N 바둑판)·
@@ -3839,8 +3885,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `reference_data_source_token`).
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 **접어 둔 상자**(기본 닫힘)에
-    그린다. Static Capa 와 Dynamic Capa 가 공유한다. 두 화면 모두 제목 바로 아래 첫
-    블록이라, 펼쳐 두면 답을 보러 온 사람이 바뀌지 않는 설명을 매번 지나야 했다.
+    그린다. 지금은 Execution Management 머리가 부서별 Gap·A/Item 을 싣는다. 제목 바로 아래 첫
+    블록이라, 펼쳐 두면 답을 보러 온 사람이 바뀌지 않는 설명을 매번 지나야 한다.
 - `src/capa_simulation/components/page_link.py`
   - 다른 화면으로 건너가는 링크. `st.page_link` 는 `st.navigation` 에 등록된 페이지만
     받으므로 단독 실행(테스트)에서는 문구로 물러선다 — 링크가 없다고 화면이 멎을 이유는
@@ -4117,7 +4163,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     토글을 잡는다.
   - 편집기의 저장 버튼(과 변경 메모)은 편집 칸 **위**이고, 저장 결과 알림은 그 바로 아래다.
   - 탭 안의 편집기는 여덟이다 — 비교 시나리오 선택, 확보율 판정 기준, 선행 B/O, 선행 입고 실적,
-    `Summary 공지`, Top5 대역, 주요공정 히트맵 프리셋, 실행 Capa. 모두 공용 프로필에 저장하고,
+    `Summary 공지`, Top5 대역, 주요공정 히트맵 프리셋, 확보율 보정. 모두 공용 프로필에 저장하고,
     저장 상태를 적는 버전 캡션은 `profile_caption.py` 를 쓴다.
   - **확보율 판정 기준**(`render_threshold_editor`, 2026-10-06 사용자 결정, 마이그레이션 0029)은
     기본 확보·경고 두 칸(키 없는 `number_input` — Top5 와 같은 이유)과 월별 표(달이 열, 행은
@@ -4128,7 +4174,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「조회기간 밖 월별 기준 지우기」 체크를 두고, 그런 달 때문에 막히면 그 달과 고칠 길을 적어 거부한다. 저장은 **버전 대조**다 — 편집을
     시작한 회차의 version 을 세션(`THRESHOLD_BASE_VERSION_KEY`)에 두고 저장 회차에 그 값을 넘겨,
     쓰기 잠금 안에서 저장본과 다르면 `SecurementThresholdConflict` 로 거부한다. 검증 실패(값 ≤ 0,
-    기본값과 합친 어느 달의 경고 > 확보)도 그 달을 적어 거부한다. **실행 Capa** 저장도 같은 버전
+    기본값과 합친 어느 달의 경고 > 확보)도 그 달을 적어 거부한다. **확보율 보정** 저장도 같은 버전
     대조다(`EXECUTION_BASE_VERSION_KEY`, 다르면 `ProfileVersionConflict` — 캐시와 출발점을 비운다).
   - **주요공정 히트맵은 이름 붙은 프리셋 여럿이다**(2026-09-29 사용자 요청, 마이그레이션 0028).
     Preference 의 `고칠 프리셋`(＋ 새 프리셋)·이름·공정으로 만들고 고치며, 저장·`기본으로`·삭제는
@@ -4212,7 +4258,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     YYYYMM·중복 검사), 보인 달만 갈아 끼우는 병합, `{YYYYMM: 값}` 사전. 두 모듈은 컬럼 이름과
     문구 주어만 넘긴다 — 규칙을 두 곳에 적으면 한쪽만 고쳐져 두 편집기가 같은 입력을 다르게 저장한다.
 - `src/capa_simulation/services/execution_capacity.py`
-  - 실행 Capa 반영의 값 정규화와 확보율 증감 적용. `조정 확보율 = 기준 확보율 + 증감/100`
+  - 확보율 보정(화면 이름, 코드 이름 `execution`)의 값 정규화와 확보율 증감 적용.
+    `조정 확보율 = 기준 확보율 + 증감/100`
     (**퍼센트포인트 차감**)이고, 조정이 한 건도 없어도 `기준 확보율`·`확보율 증감`·
     `실행 비고` 세 컬럼을 **항상** 만든다 — 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않게
     하려는 것이다.
@@ -4297,7 +4344,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **`span_date_range` 는 첫 구간의 앞 경계(`boundary_start`)부터 돌려준다**(2026-10-07 리뷰). 상태는
     바뀐 다음 날부터 기여하므로 첫 기여일을 정하는 것은 그 전날 상태다. 예전처럼 첫날(`first_day`)부터
     만들면 조회 전부터 가용이던 호기가 첫 달에 `환산비/구간일수` 씩 모자랐다(늘 가용인 30대가 29.03대).
-    고친 뒤로 **Static/Dynamic 의 첫 달 Dynamic 값이 조금 오른다** — 결함을 고친 것이다.
+    고친 뒤로 **Static 대비 일정의 첫 달 일정 기준 가용이 조금 오른다** — 결함을 고친 것이다.
   - 호기 생애주기 구간을 W/D 구간에 일수로 안분해 월별·공정별·분류별 기여 대수를 만든다.
     **어느 DB 도 열지 않는다** — 두 DB 를 읽는 것은 페이지의 몫이다.
   - **상태가 바뀐 날은 그 상태의 첫날이 아니다.** 일정이 `D` 에 완료되면 다음 날부터
@@ -4310,13 +4357,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`반출/이설일정` 은 그 호기를 내보낼 뿐 다른 공정에 행을 만들지 않는다) — 옮겨 간 자리는
     따로 적은 행의 반입·Qual 이고 그것은 다음 날 규칙을 따른다. 숫자 예: Cut-off 34 의 2027-05 구간
     `(3/27, 4/27]` 에서 3/31 반출 호기의 가용이 4/31 → 3/31 대(샘플 관측 — r5 SMP-DA-01, Die Attach
-    Dynamic 4.629 → 4.597 환산대수). 아홉 상태 호기-일수 합은 그대로이고 가용 하루가 완료로 옮겨 간다.
+    일정 기준 가용 4.629 → 4.597 환산대수). 아홉 상태 호기-일수 합은 그대로이고 가용 하루가 완료로 옮겨 간다.
   - **가용 소계에 드는 분류는 `기존보유`·`가용` 둘뿐이다.** 호기 상태 아홉은 서로
     배타적이라 모두 더하면 가용대수가 아니라 보유 호기-일수가 된다. 나머지 여덟은 왜 못
     쓰는지를 보여 주는 참고 행이라 `가용반영` 플래그로 가른다.
   - **분류는 구간의 `집계분류` 로 고른다**(없으면 `상태` — 손으로 만든 구간). 실행일 전의 정지·반출/이설
     예정 호기가 가용이면 `가용` 이다. 상태 이름으로 고르던 때는 날짜를 적은 첫날부터 가용대수에서
-    빠졌다(2026-10-07 사용자 결정으로 고침 — **그런 호기가 있는 공정의 Dynamic 이 오른다**). 그래서
+    빠졌다(2026-10-07 사용자 결정으로 고침 — **그런 호기가 있는 공정의 일정 기준 가용이 오른다**). 그래서
     `정지 예정`·`반출/이설 예정` 행에는 가용이 아닌 예정 호기만 남는다.
   - **구간의 `가용대수반영` 이 거짓인 호기(사용기준이 HBM·EDP 가 아닌 호기)는 기여 줄을 만들지 않는다.**
     참고 행에도 들지 않는다. 지분만 0 으로 두면 환산비를 곱하는 `환산대수`(교차검증·필요단축일정이 쓰는
@@ -4351,13 +4398,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `(reference_version, content_token, 조회기간)` 뿐이라 설비 DB·Cut-off 가 바뀌어도
     안 깨지고, Cut-off 미기재 공정에서 계산이 멈춘다. 둘을 풀기 전에는 비교만 한다.
 - `src/capa_simulation/services/required_shortening.py`
-  - 가용설비 현황 `필요단축일정` 의 순수 계산. Dynamic 가용(환산 소계)이 소요대수 x 목표 확보율
+  - 가용설비 현황 `필요단축일정` 의 순수 계산. 일정 기준 가용(환산 소계)이 소요대수 x 목표 확보율
     (90·100·110·120·130%)에 모자란 공정·월마다 신규 호기 Qual 을 며칠 당겨야 하는지, 당길 호기가
     바닥나면 가상 호기 「추가N」이 언제까지 Qual 을 마쳐야 하는지 낸다. **어느 DB 도 열지 않는다.**
-  - 가용은 Static/Dynamic 탭과 같은 길(`span_date_range` 로 넓힌 생애주기 구간 →
+  - 가용은 Static 대비 일정 탭과 같은 길(`span_date_range` 로 넓힌 생애주기 구간 →
     `build_monthly_equipment_availability` → `dynamic_available_equipment`)이다. 구간은 `spans` 로
     이미 만든 것을 받을 수 있다(같은 마스터·비가동, 그 범위, `with_unit_share=True` — 캐시 경계가
-    Static/Dynamic 과 나눠 쓰는 구간을 넘긴다). 소요는
+    Static 대비 일정과 나눠 쓰는 구간을 넘긴다). 소요는
     `calculate_securement_rate` 로 `(월, 공정)` 에 모은다 — 교차검증과 같은 함수다. 공정은 같은
     이름일 때만 맞대고 한쪽에만 있는 공정은 목록(`required_only`·`availability_only`·
     `missing_cutoff`)으로 돌려준다.
@@ -4595,7 +4642,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장본으로 바뀔 때와 `reset_equipment_drafts` 에서 함께 비운다. 새 버튼은 폼 끝의
     `any(...)` 제출 판정에 들어가야 한다 — 빠지면 누른 제출이 아무 일도 하지 않는다.
   - 내부 작업·표 탭은 form 안의 브라우저 전환이라 모두 생성한다. 숨은 조회 결과를
-    건너뛰는 Main·Static/Dynamic과 달리 미제출 입력이 없어지지 않도록 유지하는 경계다.
+    건너뛰는 Main·Static 대비 일정과 달리 미제출 입력이 없어지지 않도록 유지하는 경계다.
   - 「입력 양식 · 현재 데이터 내려받기」에는 빈 양식 셋 아래에 **현재 데이터** 내려받기 셋이
     같은 차례로 선다. 내보내는 것은 저장된 리비전이 아니라 **편집 버퍼**(「직접 편집」 표가 보여 주는
     편집본)이고 캡션이 「저장본 rN · 저장하지 않은 변경 포함/저장본과 같음」으로 그것을
@@ -4614,7 +4661,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 가용설비 현황 `Preference`의 Cut-off 설정. 편집표·저장·CSV 왕복과 **빠진 공정 안내**.
   - 저장된 값을 돌려준다(편집 중인 초안이 아니다). 옆 탭의 GAP 이 저장 안 된 값으로 숫자를
     내면 화면에 보이는 수와 계산에 쓰인 수가 달라진다 — 가장 나쁜 종류의 어긋남이다. 페이지는
-    이 반환값을 Static/Dynamic·필요단축일정에 그대로 넘긴다(한 회차 한 번 읽기 — 탭마다 다시 읽어
+    이 반환값을 Static 대비 일정·필요단축일정에 그대로 넘긴다(한 회차 한 번 읽기 — 탭마다 다시 읽어
     rerun 마다 DB 를 세 번 열었다). 저장은 그 자리에서 `st.rerun()` 하므로 낡은 값이 남지 않는다.
   - 저장은 **초안 지문 대조**다. 초안이 출발한 저장본의 지문(`process_cutoff_fingerprint` — 내용 해시,
     `CUTOFF_BASE_KEY`)을 넘기고, 저장소가 쓰기 잠금 안에서 지금 저장본의 지문과 다르면
@@ -4709,7 +4756,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기본 조회 조건이 됩니다」 캡션. 목표 확보율은 세션 값이다.
   - **공정 이름은 공용 공정 표시명이다**(2026-10-08 사용자 요청) — 공정 선택지의 `format_func`(겹치는 글자는
     `unique_format_func` 로 가른다), 카드
-    제목·`aria-label`(원본과 다르면 제목 풍선에 「원본 공정명 …」), LOB 요약의 Dynamic B/N 공정. 값(세션·
+    제목·`aria-label`(원본과 다르면 제목 풍선에 「원본 공정명 …」), LOB 요약의 일정 기준 B/N 공정. 값(세션·
     프로필·계산 캐시 키·CSV 세 벌의 `공정`)은 원본이다. 표시명은 `st.html` 을 만들 때만 입히고 계산
     (`get_required_shortening`)·CSV(`get_required_shortening_csvs`) 캐시에 닿지 않으므로 Admin 에서 고치면
     다음 회차에 그대로 보인다. 「맞대지 못한 공정」은 마스터·Cut-off 이름을 맞추라는 안내라 **원본**이다(8장
@@ -4717,7 +4764,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     모듈 속성으로 불러 테스트가 갈아 끼운다(진짜 조회는 시뮬레이션 DB 를 연다 — 5장 9 의 두 탭 예외 안).
   - 「맞대지 못한 공정」 아래에 일정 미정 줄과 사용기준 제외 줄을 차례로 둔다(둘 다 공정을 고르면 그 공정,
     비우면 설비 마스터 전체 — 호기가 모두 일정 미정이거나 HBM·EDP 가 아닌 공정은 맞댄 공정에 없으므로 좁히면
-    까닭이 사라진다). 일정 미정 줄은 Main·Static/Dynamic 과 같은 `undated_equipment_notice` 문구 뒤에
+    까닭이 사라진다). 일정 미정 줄은 Main·Static 대비 일정과 같은 `undated_equipment_notice` 문구 뒤에
     `undated_candidate_note` 를 붙인다 — **Qual 일정이 없는 몫만** 단축 후보가 아니다(전부면 「단축 후보에도
     들지 않습니다」, 일부면 「그 가운데 Qual 일정이 없는 N대는 …」). 후보 조건(`shortening_candidates`)은
     Qual 일정만 보고 반입은 보지 않아(「반입 무시」 결정), 반입만 빈 호기는 `반입 미정` 으로 세어지면서도
@@ -4729,7 +4776,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `계획 · LOB 요약` 의 Density·Wafer 는 HOME 과 **같은 키**(`build_home_simulation_cache_key`)로
     `get_home_simulation` 을 불러 HOME 캐시를 나눈다(EDP 포함). 키의 달은 HOME 과 같은 함수
     `past_data.display_month_range`(조회기간 ∩ 과거 구간 달까지 넓힌 계획 범위, 과거 구간은 HOME 의
-    `Past Data 포함` 토글을 따른다)가 낸다 — 계획 범위만 보면 과거 구간이 있을 때 키가 갈린다. `Dynamic B/N 확보율 현재 /
+    `Past Data 포함` 토글을 따른다)가 낸다 — 계획 범위만 보면 과거 구간이 있을 때 키가 갈린다. `일정 기준 B/N 확보율 현재 /
     단축 후` 는 범위 공정 가운데 가용 ÷ 소요가 가장 낮은 값이고, 칩 색은 HOME 공용 판정 기준이다.
     달마다 표를 거르지 않고 고른 달 전체에서 한 번에 고른다(`_bottlenecks` — 동점은 앞 행, NaN 이 있으면
     첫 NaN 행, 소요 0 이하는 보지 않는다). 공정 차례는 `load_page_context` 가 준비해 둔
@@ -4875,7 +4922,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Figure 생성 코드는 **가족별로 한 모듈씩**이다 — `home_lob_figures.py`(요약 LOB·Wafer·
     B/N Top5), `home_plan_detail_figures.py`(계획 세부수량 표), `home_key_process_figures.py`
     (주요공정 확보율 히트맵), `home_bottleneck_figures.py`(상세 B/N 공정). 넷을 넘나드는
-    조각 — 확보율 3색 판정색 `_capacity_color`, 실행 반영 hover 문구, 과거·연간 Total 면색,
+    조각 — 확보율 3색 판정색 `_capacity_color`, 확보율 보정 hover 문구, 과거·연간 Total 면색,
     paper 좌표 격자 크롬(`_grid_*`·`_paper_*`) — 은 `home_figure_common.py` 한 곳에 있다.
     부등호 `capacity_status` 는 순수 함수라 `services/securement_threshold.py` 에 있고 여기서 다시
     내보낸다. 판정하는 모든 곳(Figure 색·`securement_heatmap`·`decision_summary`·`home_decision`·
@@ -4923,7 +4970,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고친다 — 어느 묶음에도 넣지 않은 칸은 그 시험이 잡는다. `tests/test_home_figure_cache_
     equivalence.py` 는 실제 HOME 을 토글 무작위 차례로 돌리며 걸음마다 「캐시를 거친 그림」과
     「캐시 없이 새로 만든 그림」(덤벨 포함)이 같은지, 얽히는 조건 다섯(선행 B/O·EDP·조회기간·
-    실행 Loss·Past Data)의 서른두 조합을 그레이 코드로 모두 지나며, 테마 두 벌·새 세션의 공용 칸
+    확보율 보정·Past Data)의 서른두 조합을 그레이 코드로 모두 지나며, 테마 두 벌·새 세션의 공용 칸
     복원·편집 세션도 본다. 무작위 걸음만으로는 드문 모서리(선행 켬·축이 그대로인 범위에서 EDP
     뒤집기)를 놓쳤다 — 그 키를 일부러 뺀 변이를 그레이 코드 시험이 잡는다. 세션 토글이 아닌
     조건(공정 필터 — B/N 집계 공정, 공용 프로필 저장 — 판정 기준·표시명·Top5 구간·선행 B/O·실행·선행 입고·
@@ -5175,7 +5222,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `AutoOfficialUpdateSettingsConflict`, 저장마다 같은 version 의 변경 기록 한 행)·실행 기록(`run_key`
   유일 = 회차 선점, 회차를 잡은 뒤에는 진행 칸 `RUN_UPDATABLE_COLUMNS` 만 고쳐 쓴다)·자동 off 기록의
   SQL. 네 표 모두 소유 컬럼이 없어 시나리오를 지워도 기록이 남는다.
-- `persistence/execution_capacity_store.py`: 공용 실행 Capa 반영 프로필의 조회·교체 SQL
+- `persistence/execution_capacity_store.py`: 공용 확보율 보정 프로필(`global_execution_capacity`)의 조회·교체 SQL
 - `persistence/key_process_store.py`: 공용 주요공정 프리셋 프로필의 조회·교체 SQL(헤더는 0024, 프리셋은 0028 의 두 표. 프리셋 차례의 맨 앞이 기본, 공정 차례가 곧 히트맵 행 순서)
 - `persistence/home_profile_store.py`: HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체와
   시나리오 삭제·보관 시 비교 대상 해제 SQL
@@ -5216,7 +5263,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그 엔진에 묶는 진입점
 - `persistence/cache.py`, `equipment_cache.py`: 불변 리비전 스냅샷과 공용 프로필 열한 종
   (표시순서·공정 표시명·비교 시나리오·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·
-  실행 Capa·과거 구간·확보율 판정 기준)의 Streamlit 캐시 경계. 판정 기준 캐시는 공식버전을 새로 지정할 때도
+  확보율 보정·과거 구간·확보율 판정 기준)의 Streamlit 캐시 경계. 판정 기준 캐시는 공식버전을 새로 지정할 때도
   비운다(`clear_global_securement_threshold_cache`) — 미저장이면 기본값이 최신 공식버전에서 온다. 설비 쪽은 설비 스냅샷과 층 도면 프로필·도면 요소, FAB 전체 도면
   (`load_fab_layout` — 캔버스·배경 도면 행과 요소를 한 항목에)이다(`clear_floor_layout_cache` 가 층 셋과
   FAB 를 함께 비운다 — 팝업·저장의 기존 호출처가 그대로 FAB 까지 덮는다), RawData 의 저장 이력 목록
@@ -5385,13 +5432,13 @@ RQ_MODULE
    리비전에서 저장하면 해당 리비전을 부모로 갖는 새 분기를 만든다.
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
-   스냅샷을 만든다. `Static/Dynamic`·`필요단축일정` 탭만 시뮬레이션 기준정보·소요대수를 읽어
+   스냅샷을 만든다. `Static 대비 일정`·`필요단축일정` 탭만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
    공용 공정 표시명 하나다(2026-10-10 사용자 결정 — RawData 를 뺀 네 탭의 보이는 글자). 페이지가 회차마다
    시뮬레이션 DB 의 그 프로필을 읽고(앱에서는 부트스트랩이 연 캐시), 못 읽으면 원본 공정명으로 그려
    설비 화면을 막지 않는다. 두 탭의
-   비싼 계산(생애주기 구간 → 월별 Dynamic → Static 비교, 필요단축일정 계획·CSV)은
+   비싼 계산(생애주기 구간 → 월별 일정 기준 가용 → Static 비교, 필요단축일정 계획·CSV)은
    `simulation_cache` 의 내용 지문 키 래퍼로만 부른다 — 키는 그 함수의 **실제 입력 전부**(마스터·
    비가동·기존보유·Cut-off·Static·구간의 `frame_digest`, 구간 범위, 달, 환산비 지문, 필요단축일정은
    시나리오 키와 오늘, 진척 비교는 그 계획 키 + 기준선 id + 목표)다. 코드 상수는 넣지 않는다(배포로 프로세스가 새로 뜨면 캐시가 빈다,
@@ -5401,8 +5448,9 @@ RQ_MODULE
    저장본·Cut-off 를 **읽기만** 해(쓰지 않는다, `PageSpec.uses_equipment_db`) 공정 하나의 소요대수와
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 위와 같은 키 방침의
    `simulation_cache` 래퍼(`get_required_shortening_for_target`·`get_process_equipment_timeline`)로만 부르고,
-   필요단축일정 탭의 공용 조회 조건(`0019`)·기준선(`0021`)은 읽지도 쓰지도 않는다. Static Capa 쪽 페이지가
-   설비 DB 를 여는 선례는 표준 목표(주차별 가용대수 입력)가 먼저다.
+   필요단축일정 탭의 공용 조회 조건(`0019`)·기준선(`0021`)은 읽지도 쓰지도 않는다. 설비 DB 를 여는
+   시뮬레이션 쪽 페이지는 둘이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행관리,
+   읽기만). 실행관리 머리는 첫 판에서 어느 DB 도 열지 않는다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
@@ -5690,7 +5738,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 데모 상태 판정은 Capa 실현률 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요이며
   실제 운영 임계값은 데이터 분포와 관리 정책을 확인한 뒤 확정한다.
 
-효율·UPEH·수율 세 하위 화면은 같은 계산을 지표만 바꿔 쓴다
+효율·UPEH·수율 세 실적 화면(실행관리 하위)은 같은 계산을 지표만 바꿔 쓴다
 (`services/performance_actuals.py`).
 
 - **Gap 의 뜻이 지표마다 다르다.** 효율·수율은 비율 그 자체라 `실적 − 기준` 을 `%p` 로,
@@ -5737,13 +5785,13 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 신규 호기의 반입·Qual 일정은 **비워도 저장된다**(2026-10-06 사용자 결정). 반입이 비면
   「입고 예정」, 반입만 있고 Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 총대수·
   가용대수에 들지 않는다(반입이 빈 호기는 총대수에도 없다). 일정 순서는 있는 날짜끼리 보고, 반입이
-  없는 신규 호기에는 정지·반출/이설일정을 넣을 수 없다. 그런 호기의 대수는 Dynamic 을 읽는 자리(Main `가용대수`·`호기 현황`, Static/Dynamic,
+  없는 신규 호기에는 정지·반출/이설일정을 넣을 수 없다. 그런 호기의 대수는 일정 기준 가용을 읽는 자리(Main `가용대수`·`호기 현황`, Static 대비 일정,
   필요단축일정 — 여기서는 Qual 일정이 없는 몫이 단축 후보도 아님을 덧붙인다)가 「일정 미정 N대」 한 줄로 알린다(`services/undated_equipment.py`).
 - 단일 Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연 실행관리 용도이며 가용대수 산식에는
   사용하지 않는다. **Qual일정이 있는 신규 호기에만 필수**다 — Qual일정이 없으면(보관·기존설비
   포함) 비워 둘 수 있다. 반입상태는 같은 네 값이고 비워도 된다.
 - 반입실적·Qual실적은 **Space 실물 판정과 알림에만** 쓴다(2026-10-16 사용자 결정). 주차·월별
-  Dynamic·필요단축일정·공정 Capa 상세는 일정 기준 그대로다 — Space 는 실물, 집계는 계획이다. 실적은
+  설비 일정 기준 가용·필요단축일정·공정 Capa 상세는 일정 기준 그대로다 — Space 는 실물, 집계는 계획이다. 실적은
   저장할 때 오늘보다 늦을 수 없고 반입실적 ≤ Qual실적이어야 한다. 미확인(상태 계획·확정 + 실적 공백 +
   일정 < 오늘)·실적 누락·상태 갱신 필요는 저장을 막지 않는 알림이다(`services/schedule_confirmation.py`) —
   RawData 편집표 위 한 줄·접힌 목록(편집본 기준)과 Main `호기 현황` 머리 줄 아래 미확인 한 줄(저장본 기준).
@@ -5761,21 +5809,22 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   비우기 전까지 도면에 남는다). 두 날짜는 함께 적을 수 있고 정지 ≤ 반출/이설이다. 개편 전에는 함께 적을
   수 없어 기존 행의 숫자·도면은 그대로다. **대수는 이름이 아니라 가용 판정(`집계분류`)으로
   센다** — 실행일 전날까지 가용인 예정 호기는 주차·월별 가용대수에 들고, 셋업 중·비가동·보관인 예정
-  호기는 들지 않는다(2026-10-07 사용자 결정, 이름으로 세던 결함을 고쳤다). 월별 일할(Dynamic)도
+  호기는 들지 않는다(2026-10-07 사용자 결정, 이름으로 세던 결함을 고쳤다). 월별 일할(일정 기준 가용)도
   **실행일 당일은 기여하지 않는다** — 다른 변화는 다음 날부터지만 정지·반출/이설만 그날부터다(2026-10-08
   사용자 결정).
 - **가용대수는 사용기준이 HBM·EDP 인 호기만 센다**(2026-10-08 사용자 결정, `equipment_contract.
   counts_for_capacity` — 앞뒤 공백·대소문자를 무시한 완전 일치, 두 값을 한 가용대수로 함께 센다). 주차 집계의 총대수·가용대수·비가동대수·
-  분류 칸, 월별 Dynamic(분류 행·소계·환산 소계), 교차검증, 필요단축일정(가용·후보), 일정 미정 알림이 이
+  분류 칸, 월별 일정 기준 가용(분류 행·소계·환산 소계), 교차검증, 필요단축일정(가용·후보), 일정 미정 알림이 이
   규칙을 본다. Space 배치·호기 현황·비가동 호기·RawData 는 보지 않는다. 기존 보유대수는 사용기준이 없어
   모두 센다. 뺀 대수는 가용대수를 보이는 자리마다 한 줄로 알린다(`services/usage_basis.py`).
 - 주차는 월요일 시작·일요일 종료의 ISO Weeknum(`YY-W##`) 기준이며, 조회기간은
-  Main의 기간 조회와 Static/Dynamic이 공유하는 시작일·종료일로 시뮬레이션과 독립적으로
+  Main의 기간 조회와 Static 대비 일정이 공유하는 시작일·종료일로 시뮬레이션과 독립적으로
   설정한다. 비가동 호기·호기 상태·Qual 조회는 별도로 고른 기준일의 스냅샷이다.
 - Space는 입고 예정·셋업 진행중·가용·정지 예정·반출/이설 예정·보관 설비·운영 비가동·정지
   상태를 색으로 구분하며 레이아웃표시 Y이고 도면 이탈일(반출/이설일정, 없으면 정지일정) 전인 호기만
   X좌표·Y좌표·Xsize·Ysize로 배치한다.
-- 운영 가용대수는 별도 확정 전까지 `RQ_EQP_AVBL` 기반 Capa·확보율 계산을 대체하지 않는다.
+- 설비 일정 기준 가용대수는 별도 확정 전까지 `RQ_EQP_AVBL` 기반 Capa·확보율 계산을 대체하지 않는다
+  (실행관리의 비교·이행 측정에만 쓴다).
   설비 마스터 정리가 끝날 때까지 이 분리를 유지한다(2026-10-06 사용자 결정).
 - 설비 DB가 비어 있으면 기존 보유대수·설비 마스터·비가동 일정의 편집본을 모두 비운다.
   개발용 Core Data 샘플의 공정별 보유대수는 샘플 조회에만 사용하며 `분류=전체`로 둔다.
@@ -5840,7 +5889,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   선택 상자는 모두(Space 현황·가용설비 RawData 는 원본 이름이라 해당 없음) `ProcessLabels.
   unique_format_func` 로 보이는 글자가 겹치지 않게 하고 위젯 앞에서 매 회차 잡은 값을 다시 적는다 — 같은
   글자면 다른 값이 돌아오고, 글자가 바뀌면 브라우저가 옛 글자로 다른 값을 되살린다(9장).
-  자리: 가용설비 현황 Main `공정소분류`·Static/Dynamic `공정`·필요단축일정 `공정`·Preference `표 보기 설정`
+  자리: 가용설비 현황 Main `공정소분류`·Static 대비 일정 `공정`·필요단축일정 `공정`·Preference `표 보기 설정`
   공정 필터, 산출 결과 대당 Capa 공정 필터, `column_filter` 의 공정 칸(산출 결과 소요대수·확보율, 기준
   정보 설비대수, 월별 편집기 필터), 표준 목표 공정 필터·로직 분석 `공정`, 표준 대비 재공 `공정`, Dynamic
   Capa 상위 `공정`, 실적 세 화면(효율·UPEH·수율) `공정`, HOME Preference 주요공정 프리셋 `공정`(key 없는
@@ -5850,21 +5899,21 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   Dynamic Capa 공정 비교 막대의 y축, 가용설비 현황 Main 생애주기 Gantt 의 hover),
   ④ `st.dataframe` 조회 표(제외·누락 안내 목록, STEP 구성 요약, 설비대수 표시 표,
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위, 가용설비 현황 Main 의 `공정소분류` 칸 — 공정별
-  내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static/Dynamic 의 칸 호기·호기 목록·
+  내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static 대비 일정의 칸 호기·호기 목록·
   확보율 교차검증 표)와 화면용 안내 문구(Main 의 걸린 조건 줄),
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
   월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다. 편집표는 ② 의 「같은
   글자면 다른 값」 결함이 없다 — 칸은 옵션 `value` 로 찾아 `label` 을 그리고, 고르기·붙여넣기·복사가 모두
   `value` 로 오가며, 브라우저가 보내는 편집은 「행 위치·컬럼·새 값」이다(2026-10-10 Streamlit 1.63 프런트
   번들·AppTest·실제 브라우저로 잼). 그래서 월별 편집기의 읽기 전용 분류 칸은 그대로 두고(표와 같은 갈래 —
-  겹친 두 공정이 같은 글자로 보인다), 사용자가 목록에서 고르는 칸(HOME 실행 Capa 반영의 `공정`)만 목록에서
+  겹친 두 공정이 같은 글자로 보인다), 사용자가 목록에서 고르는 칸(HOME 확보율 보정의 `공정`)만 목록에서
   가려 고르도록 `unique_format_func` 로 글자를 가른다.
   ⑥ 버튼 라벨·`help`(HOME 의 B/N 공정 선택 바둑판). 글자와 도움말만 표시명이고 콜백
   인자(`args=`)·위젯 키·적용 때 되쓰는 값은 원본 `공정` 이다. 버튼은 값을 글자로 주고받지 않아 ② 의
   결함이 없고 글자를 가르지 않는다(겹친 두 공정은 같은 글자의 바둑판 두 칸으로 보인다).
 - ④ 에서 CSV 출구가 있는 표는 **화면 프레임과 CSV 프레임을 나눈다.** 화면 복사본에만
   표시명을 입히고 내보내는 프레임은 원본 그대로다(`components/exclusion_table.py`,
-  `app_pages/static_capa.py`, 가용설비 현황 Static/Dynamic 의 호기 목록이 그 모양이다 —
+  `app_pages/static_capa.py`, 가용설비 현황 Static 대비 일정의 호기 목록이 그 모양이다 —
   복사본은 `ProcessLabels.frame`). 계산 결과의 `attrs` 유래 프레임은
   `@st.cache_data` 가 들고 있으므로 반드시 복사본에 입힌다.
 - ⑤ 에서 **분류 컬럼의 값은 언제나 원본이다.** `SelectboxColumn` 은 옵션의 `value` 와
@@ -5874,9 +5923,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   된다. 옵션에는 그 표의 값 전체를 넣는다 — 옵션에 없는 값은 셀이 빈칸으로 그려진다.
 - 표시명이 닿으면 안 되는 곳은 다섯 갈래다. ① 왕복 CSV·클립보드 양식(기준정보 월별
   편집기, 설비대수, 주차별 가용대수, 표시순서, Proc Rename 규칙 자체), ② 보고용 CSV
-  전부(월별 표 CSV, 제외 목록 CSV, Static Capa 부족 현황 CSV, 필요단축일정 CSV 세 벌, Static/Dynamic
+  전부(월별 표 CSV, 제외 목록 CSV, Static Capa 부족 현황 CSV, 필요단축일정 CSV 세 벌, Static 대비 일정
   호기 목록 CSV, Cut-off CSV) — 그대로 옮겨 쓰는 파일이다, ③ 원본 키를 편집·확인하는 화면(표시순서
-  관리의 `분류값`, Proc Rename 탭의 `보유 공정` 목록, 필요단축일정 「맞대지 못한 공정」, Static/Dynamic 의
+  관리의 `분류값`, Proc Rename 탭의 `보유 공정` 목록, 필요단축일정 「맞대지 못한 공정」, Static 대비 일정 의
   「두 쪽의 공정명이 맞지 않는 자리」 경고와 한쪽에만 있는 공정의 까닭 문구, Preference Cut-off 편집표의
   `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고, RawData 입력 전부), ④ `services/` 의 예외 메시지(원본을
   고치라는 안내다)와 프리셋·세션 저장값, ⑤ 설비 DB 의 `공정대분류`·`공정소분류`(필요단축일정 공용 조회
@@ -6157,7 +6206,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   확장할 때는 별도 쓰기 서비스 또는 서버형 DB로 전환한다.
 - 증감 표기색은 **글자색**(`DELTA_INCREASE`·`DELTA_DECREASE`)과 **면색**
   (`DELTA_AREA_INCREASE`·`DELTA_AREA_DECREASE`)이 다르다. 앞은 값 위에 작게 적는 선행 B/O
-  증감이고 뒤는 실행 Capa 증감 **구간 자체**를 칠한다. Density 칸 오른쪽 끝, 값과 같은 높이(값이 길면
+  증감이고 뒤는 확보율 보정 **구간 자체**를 칠한다. Density 칸 오른쪽 끝, 값과 같은 높이(값이 길면
   겹칠 수 있음 — 2026-10-07 사용자 결정)의 선행 입고 실적 글자는 따로 `ADVANCE_SHIPMENT_TEXT`(밝게 검정·
   어둡게 본문 글자색)이다 — 값과는 크기·자리로만 갈리고 증감 띠에 서지 않는다. 면색으로 글자색을 쓰면 막대 안에서
   글자보다 무거워진다. 휘도 단조 검사는 `STATUS_*` 셋만 보므로 이 둘은 그 검사 대상이

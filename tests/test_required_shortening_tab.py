@@ -251,7 +251,7 @@ def test_the_tab_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) -
     labels = [tab.label for tab in app.tabs]
     assert labels[:4] == [
         ":material/dashboard: Main",
-        ":material/compare_arrows: Static/Dynamic",
+        ":material/compare_arrows: Static 대비 일정",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]
@@ -259,7 +259,8 @@ def test_the_tab_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) -
     body = _html(app)
     assert "부족 공정" in body and "신규 필요" in body
     assert "계획 · LOB 요약" in body
-    assert "Dynamic B/N 확보율 현재" in body and "Dynamic B/N 확보율 단축 후" in body
+    assert "일정 기준 B/N 확보율 현재" in body and "일정 기준 B/N 확보율 단축 후" in body
+    assert "Dynamic" not in body
     # Density·Wafer 는 HOME 계산 결과를 그대로 쓴다(여기서는 흉내 낸 값).
     assert "12.50" in body and "198K" in body
     # 소요 6.0 x 110% 는 샘플 가용으로 모자라는 공정이 있다 — 공정을 안 고르면 그 공정만 카드다.

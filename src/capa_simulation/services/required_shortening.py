@@ -2,7 +2,7 @@
 
 """필요단축일정.
 
-Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대수)가 시나리오 소요대수 x 목표
+설비 일정 기준 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대수)가 시나리오 소요대수 x 목표
 확보율에 모자라는 달이 있으면, **아직 Qual 이 끝나지 않은 신규 호기의 Qual 을 얼마나 앞당기면
 그 달을 채우는가**를 낸다. 당길 호기가 바닥나면 「추가1」「추가2」… 가상 호기가 언제까지 Qual 을
 마쳐야 하는지를 낸다(2026-10-07 사용자 결정).
@@ -10,8 +10,9 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 ## 가용과 소요
 
 - 가용은 `build_monthly_equipment_availability` 의 **환산 소계**(`기존보유` + `가용`)다 —
-  Static/Dynamic 탭의 Dynamic 과 같은 줄에서 나온다. 비가동도 그대로 반영되고, 사용기준이 HBM·EDP 인
-  호기만 들며, 실행일 전의 정지·반출/이설 예정 호기도 가용이면 든다(실행일 당일부터는 빠진다).
+  Static 대비 일정 탭의 일정 기준 가용과 같은 줄에서 나온다. 비가동도 그대로 반영되고,
+  사용기준이 HBM·EDP 인 호기만 들며, 실행일 전의 정지·반출/이설 예정 호기도 가용이면 든다(실행일
+  당일부터는 빠진다).
 - 소요는 시나리오의 소요대수를 `calculate_securement_rate` 로 `(월, 공정)` 에 모은 값이다 —
   확보율 교차검증(`securement_cross_check`)과 같은 함수, 같은 집계다.
 - 공정은 설비 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만
@@ -401,7 +402,7 @@ class ShorteningPlan:
     """시나리오 소요대수에만 있는 공정. Cut-off 가 없거나 설비 마스터에 없는 이름이다."""
 
     availability_only: tuple[str, ...] = ()
-    """Dynamic 가용에만 있고 시나리오에 없는 공정."""
+    """설비 일정 기준 가용에만 있고 시나리오에 없는 공정."""
 
     missing_cutoff: tuple[str, ...] = ()
     """설비도 소요도 있는데 Cut-off 를 안 적어 맞대지 못한 공정(`required_only` 의 일부)."""
@@ -537,11 +538,11 @@ def plan_required_shortening(
 ) -> ShorteningPlan:
     """설비 마스터·비가동·기존보유·Cut-off·소요대수로 목표마다(기본 다섯 값) 단축 일정을 낸다.
 
-    **어느 DB 도 열지 않는다.** 가용은 Static/Dynamic 탭과 같은 길로 만든다 — W/D 구간이 Cut-off
+    **어느 DB 도 열지 않는다.** 가용은 Static 대비 일정 탭과 같은 길로 만든다 — W/D 구간이 Cut-off
     만큼 앞으로 밀리므로 호기 구간은 `span_date_range` 가 알려 주는 범위로 만들고, 지분이 바뀌는
     날에도 끊는다(`with_unit_share=True`).
 
-    `spans` 는 그 구간을 이미 만들어 둔 것이다(`simulation_cache` 가 Static/Dynamic 과 나눠 쓰는
+    `spans` 는 그 구간을 이미 만들어 둔 것이다(`simulation_cache` 가 Static 대비 일정과 나눠 쓰는
     캐시). **같은 마스터·비가동으로 `span_date_range(months, cutoff)` 범위를 `with_unit_share=True`
     로 만든 표여야 한다** — 주지 않으면 여기서 만든다.
     """

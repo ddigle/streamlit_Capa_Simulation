@@ -246,6 +246,16 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
     (SPACE_PAGE, "Space 현황", None),
 )
+# 사이드바 계산 그룹 셋(2026-10-17 사용자 결정 — 약속 · 이행 · 실적) — (상자 slug, 상자 제목,
+# 하위 화면 수), 사이드바 차례 그대로. 상자는 `st-key-<slug>_box`, 안의 링크는 머리(「현황 요약」)
+# 하나와 하위다.
+# 앱 선언(`navigation.SIDEBAR_GROUPS`)을 부르지 않고 값만 옮긴다 — 화면이 선언과 같은지 따로 보는
+# 확인이라 선언에서 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 선언과 같은지 본다.
+SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
+    ("static_capa", "Static Capa", 4),
+    ("execution_management", "Execution Management", 6),
+    ("dynamic_capa", "Dynamic Capa", 1),
+)
 
 
 # ---------------------------------------------------------------------------------- 경로
@@ -1860,6 +1870,35 @@ _PROCESS_DIALOG_JS = """(box, pointer) => {
 }"""
 
 
+# 사이드바 그룹 상자 — 화면 차례대로 상자마다 slug·제목 글(판정에만 쓴다)·링크 수, 그리고 제목이 한
+# 줄인지(줄 상자 수)와 말줄임으로 잘렸는지. 접힌 상자도 링크는 DOM 에 있다(`Screen.open_page` 가
+# 그것을 찾아 편다).
+_SIDEBAR_GROUPS_JS = """(slugs) => {
+  const side = document.querySelector('[data-testid="stSidebar"]');
+  if (!side) return null;
+  const boxes = [...side.querySelectorAll(slugs.map((slug) => `.st-key-${slug}_box`).join(", "))];
+  return boxes.map((box) => {
+    const slug = slugs.find((name) => box.classList.contains(`st-key-${name}_box`));
+    const label = box.querySelector('summary [data-testid="stMarkdownContainer"] p');
+    let lines = 0;
+    let clipped = false;
+    if (label) {
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      clipped = label.scrollWidth > label.clientWidth + 1;
+    }
+    return {
+      slug,
+      title: label ? label.innerText.trim() : null,
+      links: box.querySelectorAll('a[data-testid="stPageLink-NavLink"]').length,
+      lines,
+      clipped,
+    };
+  });
+}"""
+
+
 def _sidebar_button(widget_key: str) -> str:
     """사이드바 위젯 key 의 단추 선택자(Streamlit 은 key 를 `st-key-<key>` 클래스로 단다)."""
     return f'[data-testid="stSidebar"] .st-key-{widget_key} button'
@@ -2151,6 +2190,56 @@ def check_process_detail(screen: Screen) -> str:
     return summarize_process_detail(before, after)
 
 
+def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
+    """사이드바 그룹 상자 한 줄 — 상자마다 「제목 머리 + 하위 수」, 정한 차례·수와 같은지, 상자
+    제목이 한 줄로 다 보이는지. 제목은 고정 어휘(`SIDEBAR_GROUP_BOXES`)에서 적고 화면 글자는
+    같은지만 본다."""
+    if not found:
+        return "그룹 상자 없음"
+    titles = {slug: title for slug, title, _ in SIDEBAR_GROUP_BOXES}
+    parts: list[str] = []
+    for box in found:
+        slug = str(box.get("slug"))
+        title = titles.get(slug, "그 밖")
+        mark = "" if box.get("title") == title else "(제목 다름)"
+        parts.append(f"{title}{mark} 머리 + {max(int(box.get('links') or 0) - 1, 0)}")
+    seen = [(str(box.get("slug")), int(box.get("links") or 0) - 1) for box in found]
+    expected = [(slug, count) for slug, _, count in SIDEBAR_GROUP_BOXES]
+    same = seen == expected and all(
+        box.get("title") == titles.get(str(box.get("slug"))) for box in found
+    )
+    missing = [title for slug, title, _ in SIDEBAR_GROUP_BOXES if slug not in dict(seen)]
+    verdict = "정한 차례·수와 같음" if same else "정한 차례·수와 다름"
+    if missing:
+        verdict += f"(없음: {', '.join(missing)})"
+    wrapped = [titles.get(str(box.get("slug")), "그 밖") for box in found if box.get("lines") != 1]
+    clipped = [titles.get(str(box.get("slug")), "그 밖") for box in found if box.get("clipped")]
+    label = "상자 제목 한 줄 · 잘림 없음"
+    if wrapped or clipped:
+        notes = []
+        if wrapped:
+            notes.append(f"줄바꿈: {', '.join(wrapped)}")
+        if clipped:
+            notes.append(f"잘림: {', '.join(clipped)}")
+        label = " · ".join(notes)
+    return f"{' · '.join(parts)} — {verdict} · {label}"
+
+
+def check_sidebar_groups(screen: Screen) -> str:
+    """사이드바 계산 그룹 셋 — Static Capa · Execution Management · Dynamic Capa 가 그 차례로
+    서고 상자마다 하위 화면 수가 정한 대로인가, 상자 제목이 줄바꿈·말줄임 없이 한 줄로 보이는가
+    (「Execution Management」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
+    상자를 펴지 않는다."""
+    screen.open_home()
+    slugs = [slug for slug, _, _ in SIDEBAR_GROUP_BOXES]
+    found = screen.wait_for(
+        lambda: screen.js(_SIDEBAR_GROUPS_JS, slugs),
+        timeout=30,
+        accept=lambda value: bool(value) and all(box["title"] for box in value),
+    )
+    return summarize_sidebar_groups(found)
+
+
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
@@ -2165,6 +2254,7 @@ ITEMS: tuple[Item, ...] = (
     Item("process_popup", "공정 필터 팝업", check_process_popup),
     Item("process_detail", "공정 Capa 상세", check_process_detail),
     Item("equipment_headers", "RawData 설비 마스터 머리(38열)", check_equipment_headers),
+    Item("sidebar_groups", "사이드바 그룹 셋", check_sidebar_groups),
 )
 
 

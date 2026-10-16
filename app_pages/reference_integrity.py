@@ -1,12 +1,14 @@
 # Purpose: 표준 대비 실적 Capa 손실을 분해하고 그 손실을 파고드는 하위 화면으로 잇는다.
 
-"""Dynamic Capa 상위 화면.
+"""Dynamic Capa 상위 화면 — 실행관리 실적으로 다시 낸 **실현 Capa**.
 
-이 그룹의 하위 여섯 화면은 각각 **손실 한 조각**을 본다. 그런데 그 조각들이 무엇의
-조각인지는 어디에도 없었다. 그래서 하위 화면을 따로 보면 「이걸 왜 보나」가 남는다.
+Dynamic 은 실행관리(Execution Management)가 모은 실적(효율·UPEH·생산실적)으로 Capa 를 다시
+내는 영역이다(2026-10-17 사용자 결정 — 세 영역 Static · 실행관리 · Dynamic). 이 화면은 표준 Capa 가
+실적에서 얼마나 실현됐는지를 **손실 한 칸씩** 분해한다 — 표준 Capa 를 왜 다 못 냈나.
 
-상위 화면을 손실 분해로 세우고, 분해된 칸마다 그 칸을 파고드는 화면으로 링크를 건다.
-그러면 그룹 전체가 **하나의 질문**을 갖는다 — 표준 Capa 를 왜 다 못 냈나.
+분해된 칸마다 그 칸을 파고드는 화면으로 링크를 건다. 효율·UPEH·수율·설비 가용은 실행관리 그룹의
+화면이고 재공부족은 Dynamic 의 재공 현황이다 — 링크는 그룹과 상관없이 동작한다. 손실을 부서별
+Gap·A/Item 으로 넘기는 일은 실행관리 머리가 말하고, 여기서는 그쪽을 가리키는 한 줄만 둔다.
 
 요약과 상세를 탭으로 가른다. 보고 자리에서 볼 것(결론 한 문장·순위·다음 화면)과
 분석하며 뒤질 것(조회 조건·워터폴·일별 추이)이 다르다.
@@ -33,7 +35,6 @@ from capa_simulation.components.page_header import (
 )
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
-from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
@@ -44,6 +45,7 @@ from capa_simulation.components.status_metric import (
     shortage_tone,
 )
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
+from capa_simulation.navigation import EXECUTION_MANAGEMENT
 from capa_simulation.page_bootstrap import prune_choice
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
@@ -218,7 +220,8 @@ def _render_summary(
 
 
 def _render_loss_routes() -> None:
-    """손실 칸마다 그 칸을 파고드는 화면으로 잇는다. 이 그룹의 목차다."""
+    """손실 칸마다 그 칸을 파고드는 화면으로 잇는다. 효율·UPEH·수율·설비 가용은 실행관리 그룹,
+    재공부족은 Dynamic 하위(재공 현황)다 — 링크는 그룹을 건너도 그대로 동작한다."""
     with st.container(border=True):
         st.markdown("#### :material/alt_route: 손실을 파고드는 화면")
         st.caption(
@@ -567,27 +570,22 @@ process_labels = get_process_labels()
 render_page_header(
     "Dynamic Capa",
     description=(
-        "표준 Capa와 실적 효율·UPEH·생산실적을 연결해 Capa 손실 원인과 개선 우선순위를 분석합니다."
+        "실행관리가 모은 실적(효율·UPEH·생산실적)으로 표준 Capa 가 실제로 얼마나 실현됐는지 다시 "
+        "계산합니다. 손실을 설비 성능(효율·UPEH)과 가용 Capa 활용(Rundown·재공부족)으로 나눕니다."
     ),
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(_SOURCE)),
 )
-render_roadmap_panel(
-    purpose=(
-        "실적 DB를 표준 Capa와 연결해 가용 Capa 활용 손실과 설비 성능 손실을 분리하고 "
-        "담당 부서별 Action Item으로 전환합니다."
-    ),
-    owners=(
-        (
-            "제조팀 · Capa 활용 극대화",
-            "Rundown을 줄이기 위한 재공운영 A/Item으로 가용 Capa 활용률 개선",
-        ),
-        (
-            "기술팀 · 설비성능 극대화",
-            "UPEH·효율 실적 Gap을 근거로 설비 성능 실현률 개선 항목을 우선 관리",
-        ),
-    ),
-    roadmap="실적 DB 연결 → 손실 원인 분해 → 부서별 A/Item → 개선 효과 이력 관리",
-)
+# 부서별 Gap·A/Item 로드맵은 실행관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그쪽을
+# 가리키는 한 줄만 둔다.
+with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    st.caption(
+        ":material/assignment_ind: 손실을 부서별 Gap · A/Item 으로 넘기는 일은 실행관리에서 합니다."
+    )
+    render_page_link(
+        EXECUTION_MANAGEMENT.path,
+        label=EXECUTION_MANAGEMENT.title,
+        icon=EXECUTION_MANAGEMENT.icon,
+    )
 
 if not render_sample_switch(key="dynamic_capa_sample_switch", source=_SOURCE):
     _render_pending_screen()

@@ -34,7 +34,7 @@ def _open_tab(app: AppTest, name: str) -> AppTest:
 def _page_script(page_path: Path, database_path: Path) -> str:
     """두 DB 경로를 테스트 전용 폴더로 묶고 실제 페이지를 실행한다.
 
-    Static/Dynamic 비교가 시뮬레이션 경계를 사용하므로 설비 DB만 바꾸면 충분하지 않다.
+    Static 대비 일정 비교가 시뮬레이션 경계를 사용하므로 설비 DB만 바꾸면 충분하지 않다.
     설정은 tests/conftest.py의 autouse fixture가 테스트 종료 후 복원한다.
     """
     simulation_database_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
@@ -63,7 +63,7 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다.
     assert [tab.label for tab in app.tabs[:4]] == [
         ":material/dashboard: Main",
-        ":material/compare_arrows: Static/Dynamic",
+        ":material/compare_arrows: Static 대비 일정",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]

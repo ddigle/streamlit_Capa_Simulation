@@ -8,7 +8,7 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
 - **전달 칸**(`PROCESS_DETAIL_REQUEST_KEY`) — 같은 세션 안의 1차 길. 위젯이 아닌 세션 칸이다. HOME
   이 상세 화면의 **위젯 키**에 바로 적으면 페이지를 옮긴 첫 회차에 `persist_state` 경로와 엇갈린다
   (`shared_widget_state`). 상세 화면이 위젯을 만들기 전에 이 칸을 꺼내 위젯 키에 적는다. 누른 칸의
-  HOME 표시값·원 확보율·실행 증감과 그때의 HOME 보기 조건(선행 B/O·실행 Capa·EDP)을 함께 싣는다
+  HOME 표시값·원 확보율·보정 증감과 그때의 HOME 보기 조건(선행 B/O·확보율 보정·EDP)을 함께 싣는다
   — 상세 화면의 출처 띠가 「HOME 표시값 = 원 확보율 + …」를 이것으로 적는다. 칸은 상세 화면이
   **맨 앞에서**(부트스트랩보다 먼저) 꺼낸다(`take_process_detail_request`) — 그 회차가 오류로 멈춰도
   칸이 남아 나중에 사이드바로 들어온 방문을 「HOME 에서 온 것」으로 읽지 않는다. 옮기지 못한
@@ -102,12 +102,12 @@ HOME_CELL_LINK_FIELDS = (
 
 @dataclass(frozen=True)
 class HomeCellLink:
-    """HOME 칸 하나가 싣는 이동 정보. 확보율은 비율(1.05 = 105%), 실행 증감은 퍼센트포인트다."""
+    """HOME 칸 하나가 싣는 이동 정보. 확보율은 비율(1.05 = 105%), 보정 증감은 퍼센트포인트다."""
 
     process: str
     month: int
     displayed_rate: float | None
-    # 가용대수 ÷ 소요대수 — 실행 Capa·선행 B/O 를 얹기 전의 값.
+    # 가용대수 ÷ 소요대수 — 확보율 보정·선행 B/O 를 얹기 전의 값.
     raw_rate: float | None
     available: float | None
     required: float | None
@@ -520,9 +520,9 @@ def _percent(rate: float) -> str:
 def origin_band_text(origin: ProcessDetailRequest, *, month_text: str) -> str:
     """출처 띠 한 줄. HOME 표시값이 원 확보율과 어떻게 갈리는지 적는다.
 
-    HOME 확보율 = (원 확보율 + 실행 증감 %p) × 선행 B/O 변동률이다(`execution_capacity`·
+    HOME 확보율 = (원 확보율 + 확보율 보정 %p) × 선행 B/O 변동률이다(`execution_capacity`·
     `advance_load`). 이 화면의 표는 원 확보율이므로 차이를 먼저 밝힌다. 예: 「HOME 주요공정 확보율 ·
-    26.03 칸에서 열었습니다 · 표시 103% = 원 확보율 98% + 실행 Capa +5.0%p · 아래는 원 확보율」.
+    26.03 칸에서 열었습니다 · 표시 103% = 원 확보율 98% + 확보율 보정 +5.0%p · 아래는 원 확보율」.
     """
     place = f"{origin.section} · {month_text}" if origin.section else month_text
     head = f"HOME {place} 칸에서 열었습니다"
@@ -534,7 +534,7 @@ def origin_band_text(origin: ProcessDetailRequest, *, month_text: str) -> str:
         return f"{head} · 표시 {_percent(displayed)} = 원 확보율(아래 표와 같은 값)"
     formula = f"표시 {_percent(displayed)} = 원 확보율 {_percent(raw)}"
     if origin.execution_delta:
-        formula += f" + 실행 Capa {origin.execution_delta:+.1f}%p"
+        formula += f" + 확보율 보정 {origin.execution_delta:+.1f}%p"
     if origin.show_advance:
         formula += " (선행 B/O 반영)"
     return f"{head} · {formula} · 아래는 원 확보율"

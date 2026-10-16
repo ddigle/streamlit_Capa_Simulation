@@ -195,7 +195,7 @@ def build_bottleneck_detail_figures(
     bar_lengths: list[float] = []
     bar_colors: list[str] = []
     bar_outline_widths: list[float] = []
-    # 실행 Capa 반영으로 줄거나 늘어난 구간. 조정이 한 건도 없으면 비어 있고, 그때는
+    # 확보율 보정으로 줄거나 늘어난 구간. 조정이 한 건도 없으면 비어 있고, 그때는
     # 아래에서 trace 자체를 만들지 않아 그림이 조정 전과 픽셀 단위로 같다.
     delta_bases: list[float] = []
     delta_centers: list[float] = []

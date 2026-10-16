@@ -70,7 +70,7 @@ def _no_contract_error(call: Callable[[], object]) -> None:
 _UNORDERED_SITES: list[tuple[str, tuple[str, ...], Callable[[pd.DataFrame], object]]] = [
     ("선행 물량", ADVANCE_LOAD_COLUMNS, prepare_advance_load),
     ("선행 입고", ADVANCE_SHIPMENT_COLUMNS, prepare_advance_shipment),
-    ("실행 Capa 반영", EXECUTION_CAPACITY_COLUMNS, prepare_execution_capacity),
+    ("확보율 보정", EXECUTION_CAPACITY_COLUMNS, prepare_execution_capacity),
     ("공정 표시명", PROCESS_RENAME_COLUMNS, validate_process_rename_frame),
     ("공용 표시순서", GLOBAL_DISPLAY_ORDER_COLUMNS, validate_global_display_order_frame),
     (

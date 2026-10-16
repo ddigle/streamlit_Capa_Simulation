@@ -136,7 +136,7 @@ class HomeFigureCacheKey(NamedTuple):
 #   상세 계획(Customer)            -    O             -         -
 #   GAP(실제로 붙은 비교 리비전)    O    O             -         -     (5)
 #   선행 B/O                       O    -             O         O     (6)
-#   실행 Loss                      O    -             O         O
+#   확보율 보정                    O    -             O         O
 #   Top 5 구간                     O    -             -         -
 #   제품별 비중 단위               O    -             -         -
 #   선행 입고                      O    -             -         -     (7)

@@ -205,7 +205,7 @@ def _engine(
     *,
     baseline: float = 10.0,
 ) -> dict[int, float]:
-    """Static/Dynamic 탭과 같은 길(넓힌 구간 → 월별 안분 → 환산 소계)로 잰 Dynamic 가용."""
+    """Static 대비 일정 탭과 같은 길(넓힌 구간 → 월별 안분 → 환산 소계)로 잰 일정 기준 가용."""
     master = _master(rows)
     span = span_date_range(months, _cutoff())
     assert span is not None
@@ -228,7 +228,8 @@ def _engine(
 
 
 def test_the_unit_already_counted_matches_the_dynamic_availability() -> None:
-    """가용은 Static/Dynamic 탭의 환산 소계와 같은 길이다. A 의 5/2 부터의 20일이 이미 들어 있다."""
+    """가용은 Static 대비 일정 탭의 환산 소계와 같은 길이다. A 의 5/2 부터의 20일이 이미 들어
+    있다."""
     plan = _plan([_unit("A1", date(2026, 5, 1))], {MAY: 11.0})
 
     engine = _engine([_unit("A1", date(2026, 5, 1))], _downtime(), [MAY])
@@ -242,7 +243,7 @@ def test_an_always_available_unit_fills_the_first_month_exactly() -> None:
 
     호기 구간을 첫 구간의 첫날(`first_day`)부터 만들면 그 첫날의 기여를 정하는 전날 상태가 빠져
     호기마다 1/31 씩 모자랐다. 늘 가용인 30대가 29.03대로 세어지고 가짜 「추가1」이 붙었다
-    (2026-10-07 리뷰). `span_date_range` 가 앞 경계부터 돌려주어 Static/Dynamic 도 함께 고쳐진다.
+    (2026-10-07 리뷰). `span_date_range` 가 앞 경계부터 돌려주어 Static 대비 일정도 함께 고쳐진다.
     """
     old = [
         _unit(f"OLD{i}", date(2026, 1, 10), arrival=date(2026, 1, 1), confirmation="완료")

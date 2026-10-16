@@ -394,7 +394,7 @@ def test_the_home_transfer_slot_opens_the_cell_and_shows_the_origin_band(
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
     assert _origin_bands(app) == [
         f"{ORIGIN_BAND_ICON} HOME 상세 B/N 공정 · {month_label(month)} 칸에서 열었습니다 · "
-        "표시 103% = 원 확보율 98% + 실행 Capa +5.0%p · 아래는 원 확보율"
+        "표시 103% = 원 확보율 98% + 확보율 보정 +5.0%p · 아래는 원 확보율"
     ]
     # 알림 상자 세 색은 뜻으로 가른다 — 출처는 「조건에 맞는 것이 없다」(`st.info`)가 아니다.
     assert not any("칸에서 열었습니다" in str(element.value) for element in app.info)
@@ -433,7 +433,7 @@ def test_a_month_outside_the_page_axis_opens_the_default_month_with_a_notice(
 def test_the_home_display_row_appears_only_when_home_adds_an_execution_delta(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """HOME 「실행 Capa」 토글이 켜져 있고 이 공정·달에 증감이 있으면 「확보율 (HOME 표시)」
+    """HOME 「확보율 보정」 토글이 켜져 있고 이 공정·달에 증감이 있으면 「확보율 (HOME 표시)」
     회색 줄이 선다(HOME 과 같은 계산). 토글이 꺼져 있거나 얹을 것이 없으면 줄이 없다 — 원
     확보율과 같은 줄을 두지 않는다."""
     root = tmp_path_factory.mktemp("process_capa_detail_home_rate")

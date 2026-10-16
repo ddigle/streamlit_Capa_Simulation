@@ -37,6 +37,7 @@ from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
     ALL_SPECS,
+    AVAILABLE_EQUIPMENT_STATUS,
     CAPA_CHATBOT,
     CONDITIONS_SECTION,
     DATA_PENDING_SUFFIX,
@@ -44,13 +45,19 @@ from capa_simulation.navigation import (
     DYNAMIC_CAPA_SUBPAGES,
     EQUIPMENT_GAP_TAB,
     EQUIPMENT_TAB_KEY,
+    EXECUTION_MANAGEMENT,
+    EXECUTION_MANAGEMENT_SUBPAGES,
     HOME,
     IMPLEMENTING_SUFFIX,
+    LOAD_CONVERSION,
     PROCESS_CAPA_DETAIL,
     SCENARIO_MANAGEMENT,
     SIDEBAR_GROUPS,
+    SPACE_STATUS,
+    STANDARD_TARGET_CAPA,
     STATIC_CAPA,
     STATIC_CAPA_SUBPAGES,
+    WIP_STATUS,
 )
 from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_CANVAS_CHART_KEY,
@@ -84,9 +91,14 @@ EXPECTED_PAGES = [
     ("app_pages/load_conversion.py", "생산 계획", ":material/scale:", False),
     ("app_pages/reference_data.py", "기준 정보", ":material/settings:", False),
     ("app_pages/calculation_result.py", "산출 결과", ":material/monitoring:", False),
-    ("app_pages/process_capa_detail.py", "공정 Capa 상세", ":material/troubleshoot:", False),
     ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
-    ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
+    (
+        "app_pages/execution_management.py",
+        "Execution Management",
+        ":material/task_alt:",
+        False,
+    ),
+    ("app_pages/process_capa_detail.py", "공정 Capa 상세", ":material/troubleshoot:", False),
     (
         "app_pages/available_equipment_status.py",
         "가용설비 현황 (Data확보중)",
@@ -97,6 +109,7 @@ EXPECTED_PAGES = [
     ("app_pages/actual_efficiency.py", "효율 실적 (구현중)", ":material/speed:", False),
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
     ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
+    ("app_pages/reference_integrity.py", "Dynamic Capa", ":material/sync_alt:", False),
     ("app_pages/wip_status.py", "표준 대비 재공 현황 (구현중)", ":material/inventory_2:", False),
     (
         "app_pages/admin_area.py",
@@ -127,16 +140,39 @@ def test_exactly_one_page_is_the_default_entry_point() -> None:
 
 
 def test_group_membership_matches_the_sidebar_sections() -> None:
+    """계산 그룹은 셋이다 — 약속(Static) → 이행(Execution Management) → 실적(Dynamic)
+    (2026-10-17 사용자 결정). 화면 파일·제목·주소는 그룹을 옮겨도 그대로다."""
+    assert [group.slug for group in SIDEBAR_GROUPS] == [
+        "capa_chatbot",
+        "scenario_management",
+        "static_capa",
+        "execution_management",
+        "dynamic_capa",
+    ]
     assert STATIC_CAPA.path == "app_pages/static_capa.py"
-    assert len(STATIC_CAPA_SUBPAGES) == 5
-    # 공정 Capa 상세는 산출 결과 바로 다음이다(2026-10-15 사용자 결정).
-    static_paths = [spec.path for spec in STATIC_CAPA_SUBPAGES]
-    assert static_paths.index(PROCESS_CAPA_DETAIL.path) == (
-        static_paths.index("app_pages/calculation_result.py") + 1
-    )
+    # Static 하위 넷 — 표준 목표는 약속(대당 Capa)을 일·주로 푼 표준이라 Static 에 남는다.
+    assert [spec.path for spec in STATIC_CAPA_SUBPAGES] == [
+        LOAD_CONVERSION.path,
+        "app_pages/reference_data.py",
+        "app_pages/calculation_result.py",
+        STANDARD_TARGET_CAPA.path,
+    ]
+    # 실행관리 하위 여섯 — 공정 하나의 처방 → 설비 일정 → 현장 → 성능 실적 셋.
+    assert EXECUTION_MANAGEMENT.path == "app_pages/execution_management.py"
+    assert list(EXECUTION_MANAGEMENT_SUBPAGES[:3]) == [
+        PROCESS_CAPA_DETAIL,
+        AVAILABLE_EQUIPMENT_STATUS,
+        SPACE_STATUS,
+    ]
+    assert [spec.path for spec in EXECUTION_MANAGEMENT_SUBPAGES[3:]] == [
+        "app_pages/actual_efficiency.py",
+        "app_pages/actual_upeh.py",
+        "app_pages/yield_actual.py",
+    ]
+    # Dynamic 은 실현 Capa 머리와 재공 하나다. 머리 주소는 `dynamic_capa` 그대로다.
     assert DYNAMIC_CAPA.path == "app_pages/reference_integrity.py"
-    # 자원 현황(설비·공간) → 실적(효율·UPEH·수율) → 그 결과가 쌓인 재공 순서다.
-    assert len(DYNAMIC_CAPA_SUBPAGES) == 6
+    assert DYNAMIC_CAPA.url_path == "dynamic_capa"
+    assert DYNAMIC_CAPA_SUBPAGES == (WIP_STATUS,)
     # 관리 기능이라 하위 페이지가 아니라 자기 박스로 사이드바 맨 아래에 있다. 그 박스에
     # VOC 가 **같은 층위로** 함께 선다 — 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹
     # 어디에도 안 맞고, 관리 화면과 게시판은 서로를 포함하지도 않는다.
@@ -156,14 +192,21 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     표기는 둘이다. `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고
     연결할 데이터만 기다리는 화면이다. 사용자에게 뜻이 다르므로 갈라 둔다.
     """
-    for spec in (CAPA_CHATBOT, *DYNAMIC_CAPA_SUBPAGES):
+    # 공정 Capa 상세는 운영 화면이라 표기가 없고, 본문 머리가 공정 이름이라 제목 대조에서도 뺀다.
+    unfinished = [
+        spec
+        for spec in (*EXECUTION_MANAGEMENT_SUBPAGES, *DYNAMIC_CAPA_SUBPAGES)
+        if spec is not PROCESS_CAPA_DETAIL
+    ]
+    for spec in (CAPA_CHATBOT, *unfinished):
         assert spec.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX)), spec.path
-    # `Dynamic Capa` 그룹 머리는 표기를 달지 않는다(2026-09-29 사용자 결정) — 하위 화면이 각자
-    # 표기를 달고 있어 머리에도 달면 그룹 전체가 안 된 것처럼 읽힌다. 성숙도는 본문 배지가 말한다.
-    assert not DYNAMIC_CAPA.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX))
+    # 그룹 머리는 표기를 달지 않는다(2026-09-29 사용자 결정) — 하위 화면이 각자 표기를 달고 있어
+    # 머리에도 달면 그룹 전체가 안 된 것처럼 읽힌다. 성숙도는 본문 배지가 말한다.
+    for head in (EXECUTION_MANAGEMENT, DYNAMIC_CAPA):
+        assert not head.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX)), head.path
     # 사이드바 라벨과 본문 제목이 같아야 한다는 계약은 표기 유무와 무관하다. `Admin Area`
     # 는 이미 쓰는 관리 화면이라 표기를 달지 않지만 두 제목은 여전히 같아야 한다.
-    for spec in (CAPA_CHATBOT, DYNAMIC_CAPA, *DYNAMIC_CAPA_SUBPAGES, ADMIN_AREA):
+    for spec in (CAPA_CHATBOT, EXECUTION_MANAGEMENT, DYNAMIC_CAPA, *unfinished, ADMIN_AREA):
         # 본문은 공통 헤더가 그린다. 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를
         # 읽는다.
         assert _page_header_title(PROJECT_ROOT / spec.path) == spec.title, spec.path
@@ -289,8 +332,8 @@ def _app_constant(name: str) -> str:
 def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> None:
     """그룹 상자는 **지금 보고 있는 페이지가 든 것 하나만** 펴진다.
 
-    사이드바 링크는 열일곱 개고 대부분의 화면에서 그중 열 개는 지금 쓰지 않는 그룹의
-    하위다. 접히지 않으면 조회기간·Support 가 스크롤 밖으로 밀린다.
+    사이드바 링크는 열아홉 개고 그 가운데 열넷이 세 계산 그룹(머리 + 하위) 안이다. 접히지
+    않으면 조회기간·Support 가 스크롤 밖으로 밀린다.
 
     **`expanded` 는 `st.navigation()` 이 돌아야 정해진다.** `page.url_path` 가 그 전에는
     아예 없어서(`AttributeError`) 두 줄의 순서를 바꾸면 사이드바가 통째로 죽는다 —
@@ -299,25 +342,57 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    static, dynamic = STATIC_CAPA.title, DYNAMIC_CAPA.title
-    # HOME 은 어느 그룹에도 속하지 않는다. 둘 다 접힌 채로 연다.
-    assert _expanded(app) == {static: False, dynamic: False}
+    static, execution, dynamic = (
+        STATIC_CAPA.title,
+        EXECUTION_MANAGEMENT.title,
+        DYNAMIC_CAPA.title,
+    )
+    # HOME 은 어느 그룹에도 속하지 않는다. 셋 다 접힌 채로 연다.
+    assert _expanded(app) == {static: False, execution: False, dynamic: False}
 
     for page_path, opened in (
         (STATIC_CAPA.path, static),
         # 하위 페이지도 그 그룹을 편다 — 대표 페이지만 보는 것이 아니다.
-        (STATIC_CAPA_SUBPAGES[0].path, static),
-        (DYNAMIC_CAPA_SUBPAGES[1].path, dynamic),
+        (LOAD_CONVERSION.path, static),
+        (STANDARD_TARGET_CAPA.path, static),
+        (EXECUTION_MANAGEMENT.path, execution),
+        (PROCESS_CAPA_DETAIL.path, execution),
+        (SPACE_STATUS.path, execution),
+        (WIP_STATUS.path, dynamic),
         (DYNAMIC_CAPA.path, dynamic),
-        # 어느 그룹에도 없는 페이지에서는 다시 둘 다 접힌다.
+        # 어느 그룹에도 없는 페이지에서는 다시 셋 다 접힌다.
         (CAPA_CHATBOT.path, None),
     ):
         app.switch_page(page_path).run()
         assert not list(app.exception), [element.message for element in app.exception]
         assert _expanded(app) == {
             static: opened == static,
+            execution: opened == execution,
             dynamic: opened == dynamic,
         }, page_path
+
+
+def test_the_execution_head_links_every_screen_of_its_group(_app: AppTest) -> None:
+    """실행관리 머리(데이터를 읽지 않는 목차)는 앱 안에서 하위 여섯과 Static·Dynamic 머리로 가는
+    링크를 단다. 공통 조건도 조건 카드도 없어 「조회 조건」 구역이 서지 않고, 사이드바는 그 그룹만
+    편다."""
+    app = _app.run()
+    app.switch_page(EXECUTION_MANAGEMENT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    links = [link.proto for link in app.main.get("page_link")]
+    labels = [link.label for link in links]
+    assert labels == [
+        "열기",
+        "열기",
+        *(spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES),
+    ]
+    assert _expanded(app) == {
+        STATIC_CAPA.title: False,
+        EXECUTION_MANAGEMENT.title: True,
+        DYNAMIC_CAPA.title: False,
+    }
+    assert _common_boxes(app) == set()
 
 
 def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> None:
@@ -330,7 +405,7 @@ def test_groups_without_subpages_are_boxed_but_not_expandable(_app: AppTest) -> 
     app = _app.run()
 
     expandable = set(_expanded(app))
-    assert expandable == {STATIC_CAPA.title, DYNAMIC_CAPA.title}
+    assert expandable == {STATIC_CAPA.title, EXECUTION_MANAGEMENT.title, DYNAMIC_CAPA.title}
     assert CAPA_CHATBOT.title not in expandable
     assert SCENARIO_MANAGEMENT.title not in expandable
 
@@ -1147,7 +1222,11 @@ def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -
     바뀔 때만 「지금 보는 페이지가 든 그룹」으로 쓴다 — 매 회차 덮어쓰면 방금 누른 클릭을
     지우고, 한 번도 안 쓰면 옮겨도 따라오지 않는다.
     """
-    static, dynamic = STATIC_CAPA.title, DYNAMIC_CAPA.title
+    static, execution, dynamic = (
+        STATIC_CAPA.title,
+        EXECUTION_MANAGEMENT.title,
+        DYNAMIC_CAPA.title,
+    )
     static_key = next(f"{group.slug}_box" for group in SIDEBAR_GROUPS if group.main is STATIC_CAPA)
 
     app = _app.run()
@@ -1162,12 +1241,16 @@ def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -
 
     # 다른 그룹의 페이지로 옮기면 규칙이 다시 선다 — Static 은 접히고 Dynamic 이 펴진다.
     app.switch_page(DYNAMIC_CAPA.path).run()
-    assert _expanded(app) == {static: False, dynamic: True}
+    assert _expanded(app) == {static: False, execution: False, dynamic: True}
 
     # 거기서 사용자가 Static 을 펴 두면, 같은 페이지의 rerun 은 그것도 존중한다.
     app.session_state[static_key] = True
     app.run()
-    assert _expanded(app) == {static: True, dynamic: True}
+    assert _expanded(app) == {static: True, execution: False, dynamic: True}
+
+    # 실행관리 화면으로 옮기면 그 그룹만 편다 — 사용자가 편 Static 도 페이지가 바뀌면 접힌다.
+    app.switch_page(PROCESS_CAPA_DETAIL.path).run()
+    assert _expanded(app) == {static: False, execution: True, dynamic: False}
 
 
 # ------------------------------------------------------------ 사이드바 칸의 차례
@@ -1586,8 +1669,8 @@ def test_hidden_boxes_keep_their_choice_for_the_screens_that_read_them(_app: App
 
 
 def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTest) -> None:
-    """가용설비 현황은 `Static/Dynamic` 탭만 활성 시나리오·조회기간을 읽는다."""
-    equipment = DYNAMIC_CAPA_SUBPAGES[0]
+    """가용설비 현황은 `Static 대비 일정` 탭만 활성 시나리오·조회기간을 읽는다."""
+    equipment = AVAILABLE_EQUIPMENT_STATUS
     assert equipment.condition_tabs is not None
     app = _app.run()
     app.switch_page(equipment.path).run()
@@ -1609,7 +1692,7 @@ def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTe
 
 def test_every_declared_condition_tab_is_a_real_label() -> None:
     """선언한 탭 라벨이 페이지의 실제 탭과 어긋나면 그 탭에서도 상자가 영영 서지 않는다."""
-    source = (PROJECT_ROOT / DYNAMIC_CAPA_SUBPAGES[0].path).read_text(encoding="utf-8")
+    source = (PROJECT_ROOT / AVAILABLE_EQUIPMENT_STATUS.path).read_text(encoding="utf-8")
     assert "EQUIPMENT_GAP_TAB," in source and "key=EQUIPMENT_TAB_KEY" in source
 
 
@@ -1622,7 +1705,7 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
     """가용설비 현황과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러 번 연다)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
-    assert declared == {DYNAMIC_CAPA_SUBPAGES[0].path, PROCESS_CAPA_DETAIL.path}
+    assert declared == {AVAILABLE_EQUIPMENT_STATUS.path, PROCESS_CAPA_DETAIL.path}
 
 
 def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: AppTest) -> None:
@@ -1699,12 +1782,12 @@ def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
     assert pinned == [(settings.DUCKDB_PATH,)]
 
     pinned.clear()
-    app.switch_page(DYNAMIC_CAPA_SUBPAGES[0].path).run()
+    app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert pinned == [(settings.DUCKDB_PATH,), (equipment_db,)]
 
     # 설비 DB 를 한 번만 여는 화면(Space 현황)과 HOME 으로 가면 다시 걸지 않는다.
-    for path in (DYNAMIC_CAPA_SUBPAGES[1].path, HOME.path):
+    for path in (SPACE_STATUS.path, HOME.path):
         pinned.clear()
         app.switch_page(path).run()
         assert not list(app.exception), [element.message for element in app.exception]
@@ -1772,19 +1855,23 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
     assert not list(app.exception), [element.message for element in app.exception]
 
     scenario_reads: dict[str, int] = {}
-    for path in (CAPA_CHATBOT.path, HOME.path, SCENARIO_MANAGEMENT.path):
+    for path in (CAPA_CHATBOT.path, EXECUTION_MANAGEMENT.path, HOME.path, SCENARIO_MANAGEMENT.path):
         opens, read_counts = warm_rerun(path)
         scenario_reads[path] = read_counts[scenario_db]
         expected = read_counts[scenario_db] + (1 if read_counts[scenario_db] else 0)
         assert opens[scenario_db] == expected, (path, opens, read_counts)
-    # Chatbot 은 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다 목록을 읽으므로
-    # 핀이 실제로 잡히는 길도 지난다.
+        if path == EXECUTION_MANAGEMENT.path:
+            # 실행관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다.
+            assert opens[equipment_db] == read_counts[equipment_db] == 0, (opens, read_counts)
+    # Chatbot·실행관리 머리는 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다
+    # 목록을 읽으므로 핀이 실제로 잡히는 길도 지난다.
     assert scenario_reads[CAPA_CHATBOT.path] == 0
+    assert scenario_reads[EXECUTION_MANAGEMENT.path] == 0
     assert scenario_reads[SCENARIO_MANAGEMENT.path] >= 2
 
     # 설비 DB 핀을 선언한 화면도 같은 꼴이다. 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를
     # 캐시에서 받아 설비 DB 를 읽지 않으므로 열지도 않는다.
-    opens, read_counts = warm_rerun(DYNAMIC_CAPA_SUBPAGES[0].path)
+    opens, read_counts = warm_rerun(AVAILABLE_EQUIPMENT_STATUS.path)
     assert read_counts[equipment_db] == 0, (opens, read_counts)
     assert opens[equipment_db] == 0, (opens, read_counts)
 
@@ -1793,7 +1880,7 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
         equipment_cache.clear_equipment_snapshot_cache()
         equipment_cache.clear_process_cutoff_cache()
 
-    opens, read_counts = warm_rerun(DYNAMIC_CAPA_SUBPAGES[0].path, forget_equipment_reads)
+    opens, read_counts = warm_rerun(AVAILABLE_EQUIPMENT_STATUS.path, forget_equipment_reads)
     assert read_counts[equipment_db] >= 2, (opens, read_counts)
     assert opens[equipment_db] == read_counts[equipment_db] + 1, (opens, read_counts)
 
@@ -1843,10 +1930,10 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     # 설비 DB 를 여는 네 화면 모두를 돈다. 페이지 소스에서 경고 호출을 찾아 대조해 두어,
     # 호출을 지우거나 새 화면에 더하면 이 목록도 같이 고치게 한다.
     equipment_pages = (
-        DYNAMIC_CAPA_SUBPAGES[0].path,
-        DYNAMIC_CAPA_SUBPAGES[1].path,
-        "app_pages/standard_target_capa.py",
-        DYNAMIC_CAPA_SUBPAGES[-1].path,
+        AVAILABLE_EQUIPMENT_STATUS.path,
+        SPACE_STATUS.path,
+        STANDARD_TARGET_CAPA.path,
+        WIP_STATUS.path,
     )
     callers = {
         spec.path

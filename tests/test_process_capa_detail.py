@@ -11,7 +11,7 @@
   공정·월당 STEP 이 하나라 STEP 을 하나 더 붙인 픽스처로 본다).
 - **캐시** — 래퍼는 순수 함수와 같은 값을 내고, 적중이면 시나리오 전체 프레임을 풀지 않는다.
 
-HOME 표시 확보율(`home_display_rates`)은 HOME 과 같은 함수·차례로 얹는다(실행 Capa → 선행 B/O).
+HOME 표시 확보율(`home_display_rates`)은 HOME 과 같은 함수·차례로 얹는다(확보율 보정 → 선행 B/O).
 """
 
 from __future__ import annotations
@@ -823,7 +823,7 @@ def test_the_period_slice_bounds_the_product_months(
 
 
 def test_home_display_rates_follow_the_home_chain() -> None:
-    """실행 Capa(%p)를 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
+    """확보율 보정(%p)을 얹은 뒤 선행 B/O 변동률을 곱한다 — HOME 과 같은 함수·같은 차례다."""
     securement = pd.DataFrame(
         {
             "생산계획년월": [202611, 202612, 202611],

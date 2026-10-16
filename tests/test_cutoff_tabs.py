@@ -1,4 +1,4 @@
-# Purpose: Preference의 Cut-off 입력과 Static/Dynamic 비교가 독립적으로 동작하는지 검사한다.
+# Purpose: Preference의 Cut-off 입력과 Static 대비 일정 비교가 독립적으로 동작하는지 검사한다.
 
 """탭을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
 
@@ -59,7 +59,7 @@ def test_preference_offers_cutoff_input_on_an_empty_database(tmp_path: Path) -> 
 
 def test_the_gap_tab_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> None:
     """Cut-off 가 없으면 Dynamic 을 낼 수 없다. 조용히 0 을 보이지 않고 이유를 말한다."""
-    app = _run(tmp_path / "availability.duckdb", tab="Static/Dynamic")
+    app = _run(tmp_path / "availability.duckdb", tab="Static 대비 일정")
 
     notices = " ".join(str(item.value) for item in app.info)
     assert "Cut-off" in notices, notices
@@ -75,7 +75,7 @@ def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
         pd.DataFrame({"공정": ["Die Attach"], "Cutoff일수": [15.0], "비고": [None]})
     )
 
-    app = _run(database_path, tab="Static/Dynamic")
+    app = _run(database_path, tab="Static 대비 일정")
 
     assert not app.exception
     selectbox_labels = [widget.label for widget in app.selectbox]

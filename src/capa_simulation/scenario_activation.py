@@ -53,7 +53,7 @@ ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 #    수치가 그려진다. 위젯이 아니라서 지우면 그만이다.
 # 2. **HOME 의 토글 전부**(`HOME_TOGGLE_DEFAULTS`). 토글은 모두 기준정보 위에 무언가를 얹거나
 #    빼는 스위치이고, 켠 사람은 **그 시나리오**를 보며 켰다. 켠 채로 시나리오를 바꾸면 얹힌 것이
-#    새 계획 위에 그대로 남는데 — 실행 Capa 증감은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지
+#    새 계획 위에 그대로 남는데 — 확보율 보정은 확보율을 통해 B/N 순위·Top5 막대·히트맵까지
 #    바꾼다 — 화면에는 토글이 켜져 있으니 사용자는 그것을 새 시나리오의 원래 값으로 읽는다.
 #    새 시나리오는 있는 그대로 먼저 보이고, 얹을 것은 사용자가 다시 켠다. **토글은 지우지 않고
 #    기본값을 적는다** — 까닭은 `_release_stale_ui_state` 에 있다.
@@ -68,7 +68,7 @@ ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 # 닿지 않으므로, 지우면 시나리오를 바꿀 때마다 보던 자리를 다시 찾아야 한다.
 #
 # 「HOME 의 토글 전부」를 손으로 세지 않는다. `tests/test_scenario_activation.py` 가
-# `home_preference` 의 토글 키를 훑어 빠진 것을 잡는다 — 「실행 Loss」가 나중에 추가되면서
+# `home_preference` 의 토글 키를 훑어 빠진 것을 잡는다 — 「확보율 보정」 토글이 나중에 추가되면서
 # 목록에 들어오지 않아 이 규칙이 한동안 반쪽이었던 적이 있다.
 _STALE_VALUE_KEYS = (
     "load_conversion_source_token",
@@ -196,7 +196,7 @@ def activate_saved_revision(snapshot: ScenarioSnapshot) -> ActiveScenario:
     """방금 저장한 **활성 시나리오의 새 리비전**을 올린다. HOME 토글은 건드리지 않는다.
 
     저장한 리비전은 세션이 보던 내용을 그대로 적은 것이라 토글을 켠 전제(그 시나리오, 그 내용)가
-    바뀌지 않는다. 풀면 저장할 때마다 켜 둔 선행 B/O·실행 Loss 를 다시 켜야 한다. 스냅샷이 지금
+    바뀌지 않는다. 풀면 저장할 때마다 켜 둔 선행 B/O·확보율 보정을 다시 켜야 한다. 스냅샷이 지금
     활성인 시나리오의 것이 아니면 내용이 바뀐 것이므로 `activate_persisted_snapshot` 처럼 푼다.
     """
     same_scenario = snapshot.scenario.scenario_id == active_persisted_scenario_id()

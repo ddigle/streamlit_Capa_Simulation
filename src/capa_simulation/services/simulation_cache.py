@@ -1171,7 +1171,7 @@ def get_home_simulation(
         _display_order,
     )
     # 대당 Capa 와 소요대수는 HOME 전용이 아니다. 이 키의 앞 네 칸이 `ScenarioCacheKey` 와
-    # 같은 자리라, 같은 시나리오·월 범위면 Static Capa 다섯 페이지와 한 번만 계산한다.
+    # 같은 자리라, 같은 시나리오·월 범위면 Static Capa 화면들·공정 Capa 상세와 한 번만 계산한다.
     # 표시순서가 바뀌어도(이 키의 다섯째 칸) 소요대수는 그대로 살아남는다.
     scenario_key: ScenarioCacheKey = cache_key[:4]
     unit_capacity, required_equipment = get_scenario_capacity_and_demand(

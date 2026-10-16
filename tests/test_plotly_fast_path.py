@@ -384,7 +384,7 @@ def _drawn(app: AppTest, *, validate: bool) -> dict[str, Any]:
 
 
 # 대표 토글 조합. 레이아웃 항목이 달라지는 조건을 고루 지난다 — GAP(증감 글자)·선행 B/O·선행 입고
-# (칸 오른쪽 끝 글자·hover)·실행 Loss·과거 구간·고객 상세·EDP·제품별 비중 단위·빈 주요공정 안내·
+# (칸 오른쪽 끝 글자·hover)·확보율 보정·과거 구간·고객 상세·EDP·제품별 비중 단위·빈 주요공정 안내·
 # 어두운 테마.
 COMBINATIONS: dict[str, dict[str, Any]] = {
     "기본": {},
