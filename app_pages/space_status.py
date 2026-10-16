@@ -75,6 +75,8 @@ from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWN
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    LAYOUT_EXITED_COLUMN,
+    STATUS_EXITED,
     empty_downtime_schedule,
     empty_equipment_master,
 )
@@ -163,8 +165,9 @@ SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
     "저장할 수 있습니다."
 )
-# 반출·이설을 마친 호기는 더 이상 공간에 없다. 배치·미배치·제외 어디에도 세지 않는다.
-EXITED_STATUSES = ("반출 완료", "이설 완료")
+# 편집기에 나오지 않는 상태 — 도면 이탈일(반출/이설일정)이 지나 공간에 없다. 「정지」는 반출/이설
+# 전이면 도면에 남아 편집기에도 나온다.
+EXITED_STATUSES = (STATUS_EXITED,)
 
 
 def _show_fab_overview() -> None:
@@ -393,8 +396,10 @@ located_equipment = space_equipment.loc[
 # 일부러 설비를 쪼갠다(모듈 하나가 PM 이면 0.75). 여기서 되돌리지 않는다.
 counted_equipment = placed_unit_rows(space_equipment, located_equipment)
 # 도면에 서지 않은 설비는 둘로 가른다. 레이아웃표시 Y 면 「미배치」(좌표를 넣으면 설 자리가 있다),
-# N 이면 「레이아웃 제외」. 반출·이설을 마친 호기는 공간에 없으니 어디에도 세지 않는다.
-exited = space_equipment["상태"].isin(EXITED_STATUSES)
+# N 이면 「레이아웃 제외」. 도면 이탈일(반출/이설일정, 없으면 정지일정)이 지난 호기는 공간에 없으니
+# 어디에도 세지 않는다 — 상태 이름이 아니라 판정의 `도면이탈여부` 를 본다(정지한 뒤 반출/이설 전인
+# 호기는 「정지」이지만 아직 공간에 있다).
+exited = space_equipment[LAYOUT_EXITED_COLUMN].fillna(False).astype(bool)
 not_placed = space_equipment.loc[~space_equipment.index.isin(counted_equipment.index) & ~exited]
 wants_layout = not_placed["레이아웃표시"].eq("Y").fillna(False)
 unplaced_equipment = not_placed.loc[wants_layout]
@@ -686,7 +691,7 @@ def _render_layout_editor(
     )
     # epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·**편집 대상 호기 목록**. 하나라도 바뀌면
     # 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다. 호기 목록은
-    # 기준일로도 바뀐다(반출·이설을 마친 호기가 빠진다) — 빠뜨리면 브라우저가 옛 목록을 쥔 채
+    # 기준일로도 바뀐다(도면 이탈일이 지난 호기가 빠진다) — 빠뜨리면 브라우저가 옛 목록을 쥔 채
     # 「이 편집기에 없는 호기」로 적용 전체가 거부된다.
     roster = hashlib.sha256(
         "|".join(f"{item['id']}:{int(bool(item['placed']))}" for item in inputs.items).encode()
@@ -961,7 +966,9 @@ if selected is None:
                 background_image=fab_background,
             )
     if exited_count > 0:
-        st.caption(f"반출·이설을 마친 {_units(exited_count)}는 공간에 없어 세지 않습니다.")
+        st.caption(
+            f"반출/이설(없으면 정지)을 마친 {_units(exited_count)}는 공간에 없어 세지 않습니다."
+        )
 
     # 층 목록 표. 층마다 배치·미배치·점유율을 견주는 자리이고, 층 바로 가기와 함께 키보드로 층을
     # 여는 길이다(행에 초점을 두고 Shift+Space). 행을 고르면 그 층이 열린다.
@@ -1073,7 +1080,7 @@ else:
                 ),
             )
             st.space("stretch")
-            # 편집 중에는 편집본을 그리므로 저장본의 대수를 달지 않고 색 뜻만 보인다. 반출·이설을
+            # 편집 중에는 편집본을 그리므로 저장본의 대수를 달지 않고 색 뜻만 보인다. 반출/이설을
             # 마친 호기는 편집기에 나오지 않으니 그 색도 뺀다.
             st.markdown(
                 stage_legend_markup(None, exclude=EXITED_STATUSES)

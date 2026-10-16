@@ -9,7 +9,7 @@ import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from types import MappingProxyType
 from uuid import uuid4
@@ -38,14 +38,21 @@ from capa_simulation.persistence.shortening_baseline_store import (
     load_baseline,
 )
 from capa_simulation.services.equipment_contract import (
+    AREA_CODE_COLUMN,
+    ARRIVAL_ACTUAL_COLUMN,
     ARRIVAL_DATE_COLUMN,
+    ARRIVAL_STATUS_COLUMN,
     BASELINE_COLUMNS,
     DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    QUAL_ACTUAL_COLUMN,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
+    STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
@@ -172,13 +179,16 @@ _REVISION_SUMMARY_PROJECTION = """
 
 # 설비 마스터 계약(한글) ↔ `equipment_master_snapshot` 컬럼(영문). 읽기 별칭과 쓰기 이름이 모두
 # 이 표 하나에서 나온다 — 화면 이름을 바꿔도 이 표의 왼쪽만 바꾸면 기존 리비전이 그대로 이어진다.
-# DB 컬럼 이름은 옛 화면 이름에서 온 것이 많다(`line_type` = 공정구분, `classification_1` = 구분).
+# DB 컬럼 이름은 옛 화면 이름에서 온 것이 많다(`line_type` = 공정구분, `classification_1` = Area
+# Code, `removal_date` = 정지일정, `relocation_date` = 반출/이설일정, `qual_confirmation_status` =
+# Qual상태).
 # `investment_basis`(옛 `투자기준`)는 계약에서 빠졌다. **값은 지우지 않고 읽지도 쓰지도 않는다**
 # — 과거 리비전의 이력이라서다. 되살리지 않기로 확정했다(2026-10-07).
-# `business_unit` 도 같은 처지다.
+# `business_unit` 과 `classification_3`(옛 `설비가동현황`, 2026-10-16 사용자 결정으로 빠짐)도 같은
+# 처지다 — 다음 실제 저장부터 새 리비전에는 NULL 이 들어간다.
 EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
     {
-        "구분": "classification_1",
+        AREA_CODE_COLUMN: "classification_1",
         "공정대분류": "process_large",
         "공정소분류": "process_small",
         "Maker": "maker",
@@ -191,17 +201,19 @@ EQUIPMENT_MASTER_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
         "동": "building",
         "층": "floor_name",
         "담당자": "manager_name",
-        "설비가동현황": "classification_3",
         "X좌표": "x_coordinate",
         "Y좌표": "y_coordinate",
         "Xsize": "x_size",
         "Ysize": "y_size",
         "제진대일정": "vibration_table_date",
         "물류일정": "logistics_date",
-        "반입일정": "arrival_date",
-        "Qual일정": "qual_date",
-        "확정상태": "qual_confirmation_status",
-        "반출일정": "removal_date",
+        ARRIVAL_DATE_COLUMN: "arrival_date",
+        ARRIVAL_ACTUAL_COLUMN: "arrival_actual_date",
+        ARRIVAL_STATUS_COLUMN: "arrival_status",
+        QUAL_DATE_COLUMN: "qual_date",
+        QUAL_ACTUAL_COLUMN: "qual_actual_date",
+        QUAL_STATUS_COLUMN: "qual_confirmation_status",
+        STOP_DATE_COLUMN: "removal_date",
         RELOCATION_DATE_COLUMN: "relocation_date",
         "반입/Qual 이력": "arrival_qual_history",
         "호기이력": "equipment_history",
@@ -388,10 +400,13 @@ class DuckDBEquipmentRepository:
                 floor_layout_bases or {},
                 changed={*canvases, *(floor_marks or {})},
             )
-            # 저장 시점에만 층 캔버스 상한을 강제한다. 과거 리비전을 다시 읽을 때는 캔버스를
-            # 넘기지 않아, 도면 비율을 줄여도 이미 저장된 리비전이 계속 열린다.
+            # 저장 시점에만 층 캔버스 상한과 실적 날짜(오늘보다 늦음·반입실적 > Qual실적)를
+            # 강제한다. 과거 리비전을 다시 읽을 때는 둘 다 넘기지 않아, 도면 비율을 줄이거나 날이
+            # 지나도 이미 저장된 리비전이 계속 열린다.
             merged = {**stored_canvases, **canvases}
-            prepared_equipment = prepare_equipment_master(equipment, floor_canvases=merged)
+            prepared_equipment = prepare_equipment_master(
+                equipment, floor_canvases=merged, today=date.today()
+            )
             prepared_downtime = prepare_downtime_for_prepared_equipment(
                 downtime, prepared_equipment
             )
@@ -1668,7 +1683,7 @@ def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
     result[EQUIPMENT_ID_COLUMN] = legacy[EQUIPMENT_ID_COLUMN]
     result["공정대분류"] = legacy["공정"]
     result["공정소분류"] = legacy["공정"]
-    result["구분"] = legacy["분류"]
+    result[AREA_CODE_COLUMN] = legacy["분류"]
     result["동"] = legacy.get("동")
     result["층"] = legacy.get("층")
     result["X좌표"] = legacy.get("X")
@@ -1683,13 +1698,13 @@ def _convert_legacy_equipment(legacy: pd.DataFrame) -> pd.DataFrame:
     else:
         result[ARRIVAL_DATE_COLUMN] = legacy_arrival
     # 옛 양산전환일이 없으면 Qual일정도 비운다 — 신규 호기의 빈 Qual 은 「셋업 진행중」에 머문다.
-    result["Qual일정"] = legacy_qual if isinstance(legacy_qual, pd.Series) else None
+    result[QUAL_DATE_COLUMN] = legacy_qual if isinstance(legacy_qual, pd.Series) else None
     result[STORAGE_FLAG_COLUMN] = "N"
     has_legacy_schedule = result[ARRIVAL_DATE_COLUMN].notna()
     result["기존설비여부"] = has_legacy_schedule.map({True: "N", False: "Y"})
-    # 확정상태는 Qual 일정의 값이라 Qual일정이 있는 신규 호기에만 「계획」을 둔다.
-    has_legacy_qual = has_legacy_schedule & result["Qual일정"].notna()
-    result["확정상태"] = has_legacy_qual.map({True: "계획", False: None})
+    # Qual상태는 Qual 일정의 값이라 Qual일정이 있는 신규 호기에만 「계획」을 둔다.
+    has_legacy_qual = has_legacy_schedule & result[QUAL_DATE_COLUMN].notna()
+    result[QUAL_STATUS_COLUMN] = has_legacy_qual.map({True: "계획", False: None})
     result["설비이력"] = legacy.get("비고")
     result["레이아웃표시"] = has_coordinates.map({True: "Y", False: "N"})
     # 옛 리비전에는 모델별 생산성 구분이 없었다. 전부 기준 모델로 본다.

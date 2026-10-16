@@ -49,9 +49,12 @@ from capa_simulation.services.availability_gap import (
     gap_matrix,
 )
 from capa_simulation.services.equipment_contract import (
+    AREA_CODE_COLUMN,
+    ARRIVAL_STATUS_COLUMN,
     EQUIPMENT_ID_COLUMN,
     INVESTMENT_CAPA_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
+    QUAL_STATUS_COLUMN,
     STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_units import format_unit_count
@@ -108,12 +111,12 @@ UNIT_FILTER_COLUMNS = (
     "담당자",
     "Maker",
     "Model",
-    "구분",
+    AREA_CODE_COLUMN,
     "사용기준",
-    "설비가동현황",
     "동",
     "층",
-    "확정상태",
+    ARRIVAL_STATUS_COLUMN,
+    QUAL_STATUS_COLUMN,
     STORAGE_FLAG_COLUMN,
     "기존설비여부",
     PARENT_EQUIPMENT_COLUMN,

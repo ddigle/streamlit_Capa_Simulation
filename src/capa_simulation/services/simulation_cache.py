@@ -2104,7 +2104,7 @@ def get_milestone_transition_events(
     """Main 「단계 전환」 의 전환 일정(`build_milestone_transition_events`).
 
     비가동을 보지 않는 판정이라 키는 거른 마스터 지문 + 기간 + 기준일(완료·예정을 가른다)이다.
-    전환단계·일정상태·확정상태 거르기와 집계·표시명은 캐시 밖이다.
+    전환단계·일정상태·Qual상태 거르기와 집계·표시명은 캐시 밖이다.
     """
     cache_key = (
         frame_digest(equipment),

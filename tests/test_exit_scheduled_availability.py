@@ -1,12 +1,12 @@
-# Purpose: 반출·이설 예정 호기를 실행일 전날까지 가용 판정대로 세고 실행일 당일부터 빼는지 검증한다.
+# Purpose: 정지·반출/이설 예정 호기를 실행일 전날까지 가용 판정대로 세고 그날부터 빼는지 검증한다.
 
-"""반출·이설 예정 호기의 대수(2026-10-07·10-08 사용자 결정).
+"""정지·반출/이설 예정 호기의 대수(2026-10-07·10-08 사용자 결정).
 
-상태 이름은 반출·이설일정이 적히는 순간부터 실행일 전날까지 「반출 예정」·「이설 예정」이다. 그
-이름으로 세면 멀쩡히 쓰는 호기가 날짜를 적은 첫날부터 Dynamic 가용대수에서 빠졌다. 세는 자리는
-가용 판정(`집계분류`)을 보고, 이름을 보이는 자리는 그대로 이름을 본다.
+상태 이름은 정지·반출/이설일정이 적히는 순간부터 실행일 전날까지 「정지 예정」·「반출/이설
+예정」이다. 그 이름으로 세면 멀쩡히 쓰는 호기가 날짜를 적은 첫날부터 Dynamic 가용대수에서
+빠졌다. 세는 자리는 가용 판정(`집계분류`)을 보고, 이름을 보이는 자리는 그대로 이름을 본다.
 
-월별 기여는 상태가 바뀐 다음 날부터지만 **반출·이설일정 당일은 이미 기여하지 않는다**
+월별 기여는 상태가 바뀐 다음 날부터지만 **정지·반출/이설일정 당일은 이미 기여하지 않는다**
 (2026-10-08 — Guide 「전날까지 가용」에 코드를 맞췄다). Qual 은 그대로 다음 날부터다.
 """
 
@@ -41,9 +41,9 @@ from capa_simulation.services.monthly_equipment_availability import (
 PROCESS = "DEMO_EXIT"
 EXIT_DAY = date(2026, 3, 16)
 # 반출 컬럼과 이설 컬럼은 같은 규칙이다. 두 번 돌린다.
-EXIT_COLUMNS = ("반출일정", RELOCATION_DATE_COLUMN)
-PLANNED_NAME = {"반출일정": "반출 예정", RELOCATION_DATE_COLUMN: "이설 예정"}
-DONE_NAME = {"반출일정": "반출 완료", RELOCATION_DATE_COLUMN: "이설 완료"}
+EXIT_COLUMNS = ("정지일정", RELOCATION_DATE_COLUMN)
+PLANNED_NAME = {"정지일정": "정지 예정", RELOCATION_DATE_COLUMN: "반출/이설 예정"}
+DONE_NAME = {"정지일정": "정지", RELOCATION_DATE_COLUMN: "반출/이설 완료"}
 
 
 def _unit(name: str, **overrides: Any) -> dict[str, Any]:
@@ -56,7 +56,7 @@ def _unit(name: str, **overrides: Any) -> dict[str, Any]:
             "사용기준": "HBM",
             "반입일정": "2025-10-01",
             "Qual일정": "2025-10-20",
-            "확정상태": "완료",
+            "Qual상태": "완료",
             "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
@@ -107,7 +107,7 @@ def _cell(monthly: pd.DataFrame, month: int, category: str) -> float:
 
 @pytest.mark.parametrize("column", EXIT_COLUMNS)
 def test_an_available_unit_keeps_its_name_but_counts_as_available(column: str) -> None:
-    """이름은 「반출 예정」 그대로이고(상태 분포·Space 가 보는 값), 세는 분류는 가용이다."""
+    """이름은 「정지 예정」 그대로이고(상태 분포·Space 가 보는 값), 세는 분류는 가용이다."""
     status = build_equipment_status_as_of(
         _master(_unit("EQ-1", **{column: EXIT_DAY})), _no_downtime(), as_of=date(2026, 3, 1)
     )
@@ -175,11 +175,11 @@ def test_the_counting_spans_break_where_the_unit_becomes_available(column: str) 
 
 @pytest.mark.parametrize("column", EXIT_COLUMNS)
 def test_a_unit_still_in_setup_does_not_count_before_the_exit(column: str) -> None:
-    """Qual 이 없는(셋업 중) 호기는 반출·이설 예정이어도 가용이 아니다 — 예정 행에 남는다."""
+    """Qual 이 없는(셋업 중) 호기는 정지·반출/이설 예정이어도 가용이 아니다 — 예정 행에 남는다."""
     equipment = _master(
         _unit(
             "EQ-1",
-            **{"반입일정": "2026-01-05", "Qual일정": None, "확정상태": None, column: EXIT_DAY},
+            **{"반입일정": "2026-01-05", "Qual일정": None, "Qual상태": None, column: EXIT_DAY},
         )
     )
 
@@ -194,7 +194,7 @@ def test_a_unit_still_in_setup_does_not_count_before_the_exit(column: str) -> No
 
 @pytest.mark.parametrize("column", EXIT_COLUMNS)
 def test_a_unit_down_before_the_exit_does_not_count_while_down(column: str) -> None:
-    """반출 예정 호기라도 비가동인 날은 운영 비가동이다(가용 판정이 거짓이다)."""
+    """정지 예정 호기라도 비가동인 날은 운영 비가동이다(가용 판정이 거짓이다)."""
     equipment = _master(_unit("EQ-1", **{column: EXIT_DAY}))
 
     monthly = _monthly(equipment, _downtime("EQ-1", "2026-02-01", "2026-02-14"), [202602])
@@ -211,7 +211,7 @@ def test_the_weekly_count_follows_availability_not_the_name(column: str) -> None
         _unit("EQ-1", **{column: EXIT_DAY}),
         _unit(
             "EQ-2",
-            **{"반입일정": "2026-01-05", "Qual일정": None, "확정상태": None, column: EXIT_DAY},
+            **{"반입일정": "2026-01-05", "Qual일정": None, "Qual상태": None, column: EXIT_DAY},
         ),
     )
 
@@ -223,8 +223,8 @@ def test_the_weekly_count_follows_availability_not_the_name(column: str) -> None
         end_date=date(2026, 3, 22),
     ).set_index("Weeknum")
 
-    planned_column = "반출예정대수" if column == "반출일정" else "이설예정대수"
-    done_column = "반출완료대수" if column == "반출일정" else "이설완료대수"
+    planned_column = "정지예정대수" if column == "정지일정" else "반출이설예정대수"
+    done_column = "정지대수" if column == "정지일정" else "반출이설완료대수"
     # 3/8(일)·3/15(일): EQ-1 가용, EQ-2 셋업 중이라 예정 칸.
     for week in ("26-W10", "26-W11"):
         assert weekly.at[week, "가용대수"] == 1.0
@@ -275,7 +275,7 @@ def test_the_exit_day_itself_no_longer_counts(column: str) -> None:
         "기존설비여부": "Y",
         "반입일정": None,
         "Qual일정": None,
-        "확정상태": None,
+        "Qual상태": None,
         column: "2027-03-31",
     }
     monthly = _counted(
@@ -365,7 +365,7 @@ def test_a_leaving_module_hands_its_share_to_its_siblings_on_the_same_day() -> N
     환산대수에는 D 의 9일(5/1~5/9)만 남는다(예전엔 반출일까지 10일).
     """
     rows = [_unit(f"APW01{suffix}", **{PARENT_EQUIPMENT_COLUMN: "APW01"}) for suffix in "ABCD"]
-    rows[3]["반출일정"] = "2026-05-10"
+    rows[3]["정지일정"] = "2026-05-10"
     equipment = _master(*rows)
     ratios = {str(row["설비명"]): 0.25 for row in rows}
 

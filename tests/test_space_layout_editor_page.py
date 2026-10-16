@@ -253,7 +253,7 @@ def test_a_new_as_of_that_changes_the_roster_resets_the_editor(
     """기준일로 편집 대상이 바뀌면(반출을 마친 호기가 빠진다) epoch 도 바뀌어야 한다. 그대로면
     브라우저가 옛 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다."""
     equipment = _equipment()
-    equipment.loc[equipment["설비명"].eq("EQ-02"), "반출일정"] = "2026-11-15"
+    equipment.loc[equipment["설비명"].eq("EQ-02"), "정지일정"] = "2026-11-15"
     monkeypatch.setattr(
         "test_space_layout_editor_page._equipment", lambda: equipment.copy(), raising=True
     )

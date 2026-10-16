@@ -420,7 +420,7 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     last = master.index[-1]
     process = str(master.at[last, "공정소분류"])
     master.loc[last, "설비명"] = "UNDATED-NEW-01"
-    blank = ["반입일정", "Qual일정", "확정상태", "반출일정", "이설일정", "X좌표", "Y좌표"]
+    blank = ["반입일정", "Qual일정", "Qual상태", "정지일정", "반출/이설일정", "X좌표", "Y좌표"]
     master.loc[last, [*blank, "Xsize", "Ysize"]] = None
     master.loc[last, ["기존설비여부", "보관유무", "레이아웃표시"]] = "N"
     master.loc[last, "사용기준"] = "HBM"

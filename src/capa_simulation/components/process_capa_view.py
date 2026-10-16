@@ -564,8 +564,8 @@ def canvas_legend_html(dynamic: DynamicCanvasInput | None, months: Sequence[int]
             "━▶</span>가용을 깎은 비가동",
             f'<span style="color:{tokens.TEXT_MUTED}">┄┄</span>영향 없는 비가동(셋업·보관 등)',
             html.escape(production_month_example(dynamic.cutoff_days, months)),
-            "Qual·비가동 끝은 다음 날부터, 반출·이설은 당일부터 셉니다 · "
-            "비가동유형 「이설」 ≠ 이설일정",
+            "Qual·비가동 끝은 다음 날부터, 정지·반출/이설은 당일부터 셉니다 · "
+            "비가동유형 「이설」 ≠ 반출/이설일정",
         ]
     spans = "".join(f'<span class="pcd-legend-item">{item}</span>' for item in items)
     return (

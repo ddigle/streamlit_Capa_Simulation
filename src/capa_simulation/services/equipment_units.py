@@ -30,6 +30,7 @@ from capa_simulation.services.equipment_contract import (
     CONVERSION_RATIO_COLUMN,
     EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
+    QUAL_STATUS_COLUMN,
 )
 
 # 설비 한 대로 묶는 키와 그 시점의 몫. 상태 판정·생애주기 구간이 이 이름으로 붙인다.
@@ -103,13 +104,13 @@ def unit_transitions(events: pd.DataFrame) -> pd.DataFrame:
     """전환 일정을 **설비 전환 한 건씩**으로 접는다.
 
     모듈 행 넷이 같은 날 같은 단계로 넘어가면 설비 한 대의 전환 한 건이다. 날짜가 다르면
-    따로 센다. 확정상태는 모듈 행마다 다를 수 있어, 남긴 첫 행 값을 쓰면 정렬 순서가 답을
-    정한다. 그래서 `Qual확정` 은 그 전환의 모듈 하나라도 확정·완료면 참이다 — 확정상태
+    따로 센다. Qual상태는 모듈 행마다 다를 수 있어, 남긴 첫 행 값을 쓰면 정렬 순서가 답을
+    정한다. 그래서 `Qual확정` 은 그 전환의 모듈 하나라도 확정·완료면 참이다 — Qual상태
     필터로 거른 결과와 같은 답이다.
     """
     keys = [UNIT_KEY_COLUMN, "전환단계", "전환일"]
     confirmed = (
-        events.assign(_ok=events["확정상태"].isin(["확정", "완료"]))
+        events.assign(_ok=events[QUAL_STATUS_COLUMN].isin(["확정", "완료"]))
         .groupby(keys, observed=True, dropna=False)["_ok"]
         .transform("any")
     )

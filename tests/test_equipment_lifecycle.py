@@ -35,7 +35,7 @@ def _equipment(**overrides: object) -> pd.DataFrame:
             "공정소분류": "SAW",
             "반입일정": date(2026, 2, 1),
             "Qual일정": date(2026, 3, 1),
-            "확정상태": "계획",
+            "Qual상태": "계획",
             "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
@@ -93,7 +93,7 @@ def test_downtime_turns_off_the_day_after_it_ends() -> None:
 
 def test_spans_agree_with_the_as_of_status_on_every_day_it_covers() -> None:
     """구간은 상태 판정을 접은 것이다. 하루라도 어긋나면 두 화면이 다른 말을 한다."""
-    equipment = _equipment(반출일정=date(2026, 5, 15))
+    equipment = _equipment(정지일정=date(2026, 5, 15))
     spans = build_equipment_lifecycle_spans(equipment, _no_downtime(), **WINDOW)
 
     for day in pd.date_range(WINDOW["start_date"], WINDOW["end_date"], freq="11D"):

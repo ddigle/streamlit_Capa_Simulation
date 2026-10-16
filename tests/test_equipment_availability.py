@@ -56,22 +56,21 @@ def _equipment() -> pd.DataFrame:
         "담당자": "담당A",
         "Maker": None,
         "Model": None,
-        "구분": None,
+        "Area Code": None,
         # Dynamic 가용대수는 사용기준이 HBM·EDP 인 호기만 센다(2026-10-08 사용자 결정).
         "사용기준": "HBM",
-        "설비가동현황": None,
         "동": "C1",
         "층": "1F",
         "Xsize": 12,
         "Ysize": 7,
-        "반출일정": None,
-        "이설일정": None,
+        "정지일정": None,
+        "반출/이설일정": None,
         "보관유무": "N",
         "기존설비여부": "N",
         "호기이력": None,
         "설비이력": None,
         "레이아웃표시": "Y",
-        "확정상태": "확정",
+        "Qual상태": "확정",
     }
     rows = [
         {
@@ -148,15 +147,15 @@ def test_sample_units_cover_every_active_status() -> None:
         "입고 예정",
         "셋업 진행중",
         "가용",
-        "반출 예정",
-        "이설 예정",
+        "정지 예정",
+        "반출/이설 예정",
         "보관 설비",
         "운영 비가동",
     }
-    assert equipment["구분"].unique().tolist() == ["임시 샘플"]
+    assert equipment["Area Code"].unique().tolist() == ["Main"]
     # 비가동 호기는 모두 마스터에 있어야 한다. 없으면 검증이 프레임 전체를 거부한다.
     assert set(downtime["설비명"]) <= set(equipment["설비명"])
-    assert set(equipment["확정상태"].dropna()) == {"계획", "확정", "완료", "지연"}
+    assert set(equipment["Qual상태"].dropna()) == {"계획", "확정", "완료", "지연"}
 
 
 def test_sample_fleet_spreads_across_floors_so_the_layout_is_readable() -> None:
@@ -227,7 +226,7 @@ def test_status_shows_setup_and_downtime_override() -> None:
 
 def test_removal_excludes_owned_available_and_layout_from_effective_date() -> None:
     equipment = _equipment().iloc[[0]].copy()
-    equipment.loc[:, "반출일정"] = "2026-08-18"
+    equipment.loc[:, "정지일정"] = "2026-08-18"
 
     planned = build_equipment_status_as_of(
         equipment, _downtime().iloc[0:0], as_of=date(2026, 8, 17)
@@ -236,9 +235,9 @@ def test_removal_excludes_owned_available_and_layout_from_effective_date() -> No
         equipment, _downtime().iloc[0:0], as_of=date(2026, 8, 18)
     )
 
-    assert planned.loc[0, "상태"] == "반출 예정"
+    assert planned.loc[0, "상태"] == "정지 예정"
     assert planned.loc[0, "가용여부"]
-    assert completed.loc[0, "상태"] == "반출 완료"
+    assert completed.loc[0, "상태"] == "정지"
     assert not completed.loc[0, "보유여부"]
     assert not completed.loc[0, "레이아웃반영여부"]
 
@@ -247,10 +246,10 @@ def test_storage_and_existing_equipment_do_not_require_arrival_or_qual() -> None
     equipment = _equipment()
     equipment.loc[0, ["반입일정", "Qual일정"]] = None
     equipment.loc[0, "기존설비여부"] = "Y"
-    equipment.loc[0, "확정상태"] = None
+    equipment.loc[0, "Qual상태"] = None
     equipment.loc[1, ["반입일정", "Qual일정"]] = None
     equipment.loc[1, "보관유무"] = "Y"
-    equipment.loc[1, "확정상태"] = None
+    equipment.loc[1, "Qual상태"] = None
 
     prepared = prepare_equipment_master(equipment)
     status = build_equipment_status_as_of(prepared, _downtime().iloc[0:0], as_of=date(2026, 8, 16))
@@ -271,7 +270,7 @@ def test_transition_events_include_completed_and_planned_stages() -> None:
     assert result["일정상태"].value_counts().to_dict() == {"완료": 3, "예정": 3}
     qual = result.loc[result["설비명"].eq("EQ-01") & result["전환단계"].eq("Qual")].iloc[0]
     assert qual["이전단계"] == "입고"
-    assert qual["확정상태"] == "확정"
+    assert qual["Qual상태"] == "확정"
     assert qual["기준일대비"] == "D-1"
 
 
@@ -290,9 +289,9 @@ def test_new_equipment_may_leave_arrival_and_qual_blank() -> None:
     """반입·Qual 일정은 비워도 저장된다(2026-10-06 사용자 결정). 상태 뜻은 그대로다 — 반입이 비면
     입고 예정, 반입만 있고 Qual 이 비면 셋업 진행중에 머물러 가용대수에 들지 않는다."""
     equipment = _equipment()
-    equipment.loc[0, ["반입일정", "Qual일정", "확정상태"]] = None
+    equipment.loc[0, ["반입일정", "Qual일정", "Qual상태"]] = None
     equipment.loc[0, ["제진대일정", "물류일정"]] = None
-    equipment.loc[1, ["Qual일정", "확정상태"]] = None
+    equipment.loc[1, ["Qual일정", "Qual상태"]] = None
 
     prepared = prepare_equipment_master(equipment)
     status = build_equipment_status_as_of(prepared, _downtime().iloc[0:0], as_of=date(2030, 1, 1))
@@ -304,16 +303,16 @@ def test_new_equipment_may_leave_arrival_and_qual_blank() -> None:
 
 def test_confirmation_is_required_only_when_a_qual_date_is_present() -> None:
     equipment = _equipment()
-    equipment.loc[0, "확정상태"] = None
+    equipment.loc[0, "Qual상태"] = None
 
-    with pytest.raises(ValueError, match="Qual일정이 있는 호기.*확정상태가 필수.*EQ-01"):
+    with pytest.raises(ValueError, match="Qual일정이 있는 호기.*Qual상태가 필수.*EQ-01"):
         prepare_equipment_master(equipment)
 
     equipment.loc[0, "Qual일정"] = None
-    assert pd.isna(prepare_equipment_master(equipment).loc[0, "확정상태"])
-    # Qual 없이 고른 확정상태도 받는다.
+    assert pd.isna(prepare_equipment_master(equipment).loc[0, "Qual상태"])
+    # Qual 없이 고른 Qual상태도 받는다.
     equipment.loc[1, "Qual일정"] = None
-    assert prepare_equipment_master(equipment).loc[1, "확정상태"] == "확정"
+    assert prepare_equipment_master(equipment).loc[1, "Qual상태"] == "확정"
 
 
 def test_order_checks_still_apply_when_both_dates_exist() -> None:
@@ -333,7 +332,7 @@ def test_order_checks_still_apply_when_both_dates_exist() -> None:
 
 def test_qual_confirmation_status_does_not_change_availability() -> None:
     equipment = _equipment().iloc[[0]].copy()
-    equipment.loc[:, "확정상태"] = "지연"
+    equipment.loc[:, "Qual상태"] = "지연"
 
     result = build_equipment_status_as_of(
         equipment,
@@ -342,23 +341,36 @@ def test_qual_confirmation_status_does_not_change_availability() -> None:
     )
 
     assert result.loc[0, "가용여부"]
-    assert result.loc[0, "확정상태"] == "지연"
+    assert result.loc[0, "Qual상태"] == "지연"
 
 
 def test_equipment_rejects_unknown_qual_confirmation_status() -> None:
     equipment = _equipment()
-    equipment.loc[0, "확정상태"] = "검토중"
+    equipment.loc[0, "Qual상태"] = "검토중"
 
     with pytest.raises(ValueError, match="계획·확정·완료·지연"):
         prepare_equipment_master(equipment)
 
 
-def test_equipment_rejects_both_removal_and_relocation() -> None:
+@pytest.mark.parametrize("relocation", ["2026-09-01", "2026-09-02"])
+def test_equipment_accepts_stop_on_or_before_relocation(relocation: str) -> None:
+    """정지한 뒤 자리를 비운다 — 두 날짜를 함께 적을 수 있다(같은 날도 된다)."""
     equipment = _equipment()
-    equipment.loc[0, "반출일정"] = "2026-09-01"
-    equipment.loc[0, "이설일정"] = "2026-09-02"
+    equipment.loc[0, "정지일정"] = "2026-09-01"
+    equipment.loc[0, "반출/이설일정"] = relocation
 
-    with pytest.raises(ValueError, match="동시에"):
+    prepared = prepare_equipment_master(equipment)
+
+    assert prepared.loc[0, "정지일정"] == pd.Timestamp("2026-09-01")
+    assert prepared.loc[0, "반출/이설일정"] == pd.Timestamp(relocation)
+
+
+def test_equipment_rejects_stop_after_relocation() -> None:
+    equipment = _equipment()
+    equipment.loc[0, "정지일정"] = "2026-09-02"
+    equipment.loc[0, "반출/이설일정"] = "2026-09-01"
+
+    with pytest.raises(ValueError, match=r"정지일정은 반출/이설일정보다 늦을 수 없습니다.*EQ-01"):
         prepare_equipment_master(equipment)
 
 
@@ -404,7 +416,7 @@ def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
     """2026년 10월 fleet. 1일이 목요일이라 그 달의 일요일은 4·11·18·25일뿐이다.
 
     - `EQ-WEEKDAY` 는 월요일에 시작해 토요일에 끝나는 비가동이다. 일요일 표본 사이에 숨는다.
-    - `EQ-REMOVAL` 은 셋업 중인데 반출일정이 적혀 있어 상태가 내내 「반출 예정」이다.
+    - `EQ-REMOVAL` 은 셋업 중인데 정지일정이 적혀 있어 상태가 내내 「정지 예정」이다.
       이름으로 고르는 집계도, 상태 이름으로 묶은 생애주기 구간도 이 호기를 잃는다.
     - `EQ-CARRY` 는 9월에 시작해 10월 초에 끝난다. 월초 시점이 잡아야 한다.
     - `EQ-NEIGHBOR` 는 11월에만 비가동이다. 10월에는 빠져야 한다.
@@ -416,7 +428,7 @@ def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
         "물류일정": None,
         "반입일정": None,
         "Qual일정": None,
-        "확정상태": None,
+        "Qual상태": None,
     }
     rows = [
         {**template, "설비명": "EQ-WEEKDAY"},
@@ -428,8 +440,8 @@ def _october_fleet() -> tuple[pd.DataFrame, pd.DataFrame]:
             "기존설비여부": "N",
             "반입일정": "2026-10-05",
             "Qual일정": "2026-10-09",
-            "반출일정": "2026-11-30",
-            "확정상태": "계획",
+            "정지일정": "2026-11-30",
+            "Qual상태": "계획",
         },
     ]
     equipment = pd.DataFrame(rows, columns=EQUIPMENT_COLUMNS)
@@ -466,7 +478,7 @@ def test_month_view_catches_a_weekday_downtime_the_sunday_samples_miss() -> None
 
 
 def test_month_view_catches_a_setup_unit_whose_status_name_is_masked_by_removal() -> None:
-    """반출일정이 적히면 입고 전·셋업 중·Qual 후가 모두 「반출 예정」 한 이름이다.
+    """정지일정이 적히면 입고 전·셋업 중·Qual 후가 모두 「정지 예정」 한 이름이다.
 
     그래서 상태 이름 화이트리스트도, 상태 이름으로 묶은 생애주기 구간의 시작일도 이 호기의
     셋업 구간(10-05~10-08)을 알려 주지 못한다. 시점은 판정이 보는 날짜 컬럼에서 나와야 한다.
@@ -478,7 +490,7 @@ def test_month_view_catches_a_setup_unit_whose_status_name_is_masked_by_removal(
     result = build_inactive_equipment_in_month(equipment, downtime, month=month).set_index("설비명")
 
     assert "EQ-REMOVAL" in result.index
-    assert result.at["EQ-REMOVAL", "상태"] == "반출 예정"
+    assert result.at["EQ-REMOVAL", "상태"] == "정지 예정"
     # 이름이 그대로인 채 판정만 바뀌는 날(입고일·Qual일)이 시점에 들어 있다.
     assert {date(2026, 10, 5), date(2026, 10, 9)} <= set(moments)
 
@@ -560,15 +572,18 @@ def test_blank_arrival_does_not_hide_an_out_of_order_chain() -> None:
 
 
 def test_a_new_unit_without_arrival_cannot_have_an_exit_date() -> None:
-    """들어온 적 없는 신규 설비를 내보내면 반입 없이 「반출 완료」가 되어 대수에서 사라진다."""
-    for exit_column in ("반출일정", "이설일정"):
+    """들어온 적 없는 신규 설비를 내보내면 반입 없이 「정지」가 되어 대수에서 사라진다."""
+    for exit_column in ("정지일정", "반출/이설일정"):
         equipment = _equipment()
-        equipment.loc[0, ["제진대일정", "물류일정", "반입일정", "Qual일정", "확정상태"]] = None
+        equipment.loc[0, ["제진대일정", "물류일정", "반입일정", "Qual일정", "Qual상태"]] = None
         equipment.loc[0, exit_column] = "2026-09-01"
 
         with pytest.raises(
             ValueError,
-            match=r"반입일정이 없는 신규 설비에는 반출·이설일정을 넣을 수 없습니다: \['EQ-01'\]",
+            match=(
+                r"반입일정이 없는 신규 설비에는 정지일정·반출/이설일정을 넣을 수 없습니다: "
+                r"\['EQ-01'\]"
+            ),
         ):
             prepare_equipment_master(equipment)
 
@@ -576,18 +591,18 @@ def test_a_new_unit_without_arrival_cannot_have_an_exit_date() -> None:
 def test_existing_and_stored_units_keep_the_old_date_rules() -> None:
     """기존설비·보관 설비는 반입 없이 반출하고 이웃한 둘만 차례를 본다 — 그런 저장본이 열린다."""
     equipment = _equipment()
-    equipment.loc[0, ["제진대일정", "반입일정", "확정상태"]] = None
-    equipment.loc[0, ["물류일정", "Qual일정", "반출일정"]] = [
+    equipment.loc[0, ["제진대일정", "반입일정", "Qual상태"]] = None
+    equipment.loc[0, ["물류일정", "Qual일정", "정지일정"]] = [
         "2026-12-01",
         "2026-10-01",
         "2026-09-01",
     ]
     equipment.loc[0, "기존설비여부"] = "Y"
-    equipment.loc[1, ["반입일정", "Qual일정", "확정상태"]] = None
-    equipment.loc[1, "이설일정"] = "2026-09-01"
+    equipment.loc[1, ["반입일정", "Qual일정", "Qual상태"]] = None
+    equipment.loc[1, "반출/이설일정"] = "2026-09-01"
     equipment.loc[1, "보관유무"] = "Y"
 
     prepared = prepare_equipment_master(equipment)
 
-    assert prepared.loc[0, "반출일정"] == pd.Timestamp("2026-09-01")
-    assert prepared.loc[1, "이설일정"] == pd.Timestamp("2026-09-01")
+    assert prepared.loc[0, "정지일정"] == pd.Timestamp("2026-09-01")
+    assert prepared.loc[1, "반출/이설일정"] == pd.Timestamp("2026-09-01")

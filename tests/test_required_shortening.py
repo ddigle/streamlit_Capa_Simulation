@@ -80,14 +80,14 @@ def _unit(
             "사용기준": "HBM",
             "반입일정": arrival,
             "Qual일정": qual,
-            "확정상태": confirmation if qual is not None else None,
+            "Qual상태": confirmation if qual is not None else None,
             "기존설비여부": existing,
             "보관유무": storage,
             "레이아웃표시": "N",
             "환산비": ratio,
             "Main 설비": parent,
-            "반출일정": removal,
-            "이설일정": relocation,
+            "정지일정": removal,
+            "반출/이설일정": relocation,
             **(attributes or {}),
         }
     )
@@ -632,7 +632,7 @@ def test_the_unit_export_has_the_user_facing_columns_in_order() -> None:
         "모듈 수",
         "환산비",
         "반입일정",
-        "확정상태",
+        "Qual상태",
         "기존 Qual 완료일",
         "기존 기여 시작일",
         "목표 Qual 완료일",
@@ -704,7 +704,7 @@ def test_the_shortage_after_stays_when_the_new_unit_cap_rolls_back() -> None:
 def test_a_module_group_exports_the_groups_shared_attributes() -> None:
     """모듈 묶음은 한 줄이다 — 설비명은 모듈 행을 잇고, 환산비는 모듈 합, 반입일정은 가장 늦은 모듈.
 
-    묶음 안에서 같게 막힌 값(공정대분류·동·층·투자구분)은 그대로, 갈리는 글자(Model·확정상태)는
+    묶음 안에서 같게 막힌 값(공정대분류·동·층·투자구분)은 그대로, 갈리는 글자(Model·Qual상태)는
     서로 다른 값을 모듈 차례로 잇는다.
     """
     shared = {"동": "C2", "층": "3F", "투자구분": "신규투자"}
@@ -742,7 +742,7 @@ def test_a_module_group_exports_the_groups_shared_attributes() -> None:
     assert unit["공정소분류"] == PROCESS
     assert (unit["동"], unit["층"], unit["투자구분"]) == ("C2", "3F", "신규투자")
     assert unit["Model"] == "BOND-X, BOND-Y"
-    assert unit["확정상태"] == "계획, 확정"
+    assert unit["Qual상태"] == "계획, 확정"
     assert unit["반입일정"] == "2026-04-03"
     # 묶음 Qual 은 가장 늦은 모듈(5/12)이다.
     assert unit["기존 Qual 완료일"] == "2026-05-12"
@@ -772,7 +772,7 @@ def test_a_single_unit_exports_its_own_master_row() -> None:
     assert (unit["Model"], unit["동"], unit["층"]) == ("DA-9", "C1", "2F")
     assert unit["투자구분"] == "증설"
     assert unit["반입일정"] == "2026-04-02"
-    assert unit["확정상태"] == "계획"
+    assert unit["Qual상태"] == "계획"
 
 
 def test_virtual_units_export_blank_master_attributes_and_original_dates() -> None:
@@ -796,7 +796,7 @@ def test_virtual_units_export_blank_master_attributes_and_original_dates() -> No
         "모듈 수",
         "환산비",
         "반입일정",
-        "확정상태",
+        "Qual상태",
         "기존 Qual 완료일",
         "기존 기여 시작일",
         "단축일수",

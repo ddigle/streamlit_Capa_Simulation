@@ -5,12 +5,18 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
+from datetime import date
 from typing import Any
 
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    AREA_CODE_COLUMN,
+    AREA_CODES,
+    ARRIVAL_ACTUAL_COLUMN,
     ARRIVAL_DATE_COLUMN,
+    ARRIVAL_STATUS_COLUMN,
+    ARRIVAL_STATUSES,
     BASELINE_COLUMNS,
     BASELINE_KEY_COLUMNS,
     CONVERSION_RATIO_COLUMN,
@@ -21,11 +27,16 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    EXIT_SCHEDULE_COLUMNS,
     FLAG_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
+    QUAL_ACTUAL_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     REFERENCE_TEXT_COLUMNS,
     RELOCATION_DATE_COLUMN,
+    STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     UNIT_CONSISTENT_COLUMNS,
     VALID_BUILDINGS,
@@ -33,6 +44,8 @@ from capa_simulation.services.equipment_contract import (
     empty_downtime_schedule,
     empty_equipment_baseline,
     empty_equipment_master,
+    normalize_area_code,
+    unknown_area_codes,
     with_optional_equipment_columns,
 )
 from capa_simulation.services.floor_layout_profile import (
@@ -44,6 +57,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
 )
 from capa_simulation.services.frame_contracts import require_columns
+from capa_simulation.services.schedule_confirmation import actual_record_warnings
 
 
 def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
@@ -72,12 +86,17 @@ def prepare_equipment_master(
     data: pd.DataFrame,
     *,
     floor_canvases: FloorCanvasMap | None = None,
+    today: date | None = None,
 ) -> pd.DataFrame:
-    """설비 마스터 36컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
+    """설비 마스터 38컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
     (`OPTIONAL_EQUIPMENT_COLUMNS`).
 
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
     않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
+
+    `today` 를 넘기면 **저장할 때만 도는** 실적 검사를 한다(`_validate_actual_dates` — 실적이
+    오늘보다 늦음·반입실적이 Qual실적보다 늦음). 결과가 날짜에 따라 달라지는 검사라 리비전을 다시
+    읽을 때는 넘기지 않는다 — 저장 때 통과한 리비전이 시간이 지나 열리지 않으면 안 된다.
     """
     data = with_optional_equipment_columns(data)
     require_columns(data, EQUIPMENT_COLUMNS, "설비 마스터")
@@ -89,7 +108,9 @@ def prepare_equipment_master(
     _normalize_required_text(result, (EQUIPMENT_ID_COLUMN, "공정소분류"), "설비 마스터")
     for column in REFERENCE_TEXT_COLUMNS + ("동", "층"):
         result[column] = _optional_text(result[column])
-    result["확정상태"] = _optional_text(result["확정상태"])
+    result[AREA_CODE_COLUMN] = normalize_area_code(result[AREA_CODE_COLUMN])
+    result[QUAL_STATUS_COLUMN] = _optional_text(result[QUAL_STATUS_COLUMN])
+    result[ARRIVAL_STATUS_COLUMN] = _optional_text(result[ARRIVAL_STATUS_COLUMN])
     result[PARENT_EQUIPMENT_COLUMN] = _optional_text(result[PARENT_EQUIPMENT_COLUMN])
     duplicated = result[EQUIPMENT_ID_COLUMN].duplicated(keep=False)
     if duplicated.any():
@@ -112,25 +133,34 @@ def prepare_equipment_master(
     for column in DATE_COLUMNS:
         result[column] = _normalize_date(result[column], column)
     # 반입·Qual 일정은 비워도 된다(2026-10-06 사용자 결정) — 반입이 비면 「입고 예정」, 반입만 있고
-    # Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 가용대수에 들지 않는다. 확정상태는
+    # Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 가용대수에 들지 않는다. Qual상태는
     # Qual 일정의 실행관리 값이라 Qual일정이 있는 신규 호기에만 필수다.
     ordinary = result[STORAGE_FLAG_COLUMN].eq("N") & result["기존설비여부"].eq("N")
-    missing_confirmation = ordinary & result["Qual일정"].notna() & result["확정상태"].isna()
+    missing_confirmation = (
+        ordinary & result[QUAL_DATE_COLUMN].notna() & result[QUAL_STATUS_COLUMN].isna()
+    )
     if missing_confirmation.any():
         examples = result.loc[missing_confirmation, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(
-            f"Qual일정이 있는 호기(보관·기존설비 제외)는 Qual 확정상태가 필수입니다: {examples}"
+            f"Qual일정이 있는 호기(보관·기존설비 제외)는 {QUAL_STATUS_COLUMN}가 필수입니다: "
+            f"{examples}"
         )
-    invalid_confirmation = result["확정상태"].notna() & ~result["확정상태"].isin(
-        QUAL_CONFIRMATION_STATUSES
-    )
-    if invalid_confirmation.any():
-        examples = result.loc[invalid_confirmation, EQUIPMENT_ID_COLUMN].head(5).tolist()
-        raise ValueError(f"확정상태는 계획·확정·완료·지연 중 하나여야 합니다: {examples}")
+    # 반입상태는 새 선택 컬럼이라 옛 리비전에 값이 없다 — 리비전을 다시 읽을 때 돌아도 막히지
+    # 않는다.
+    for status_column, allowed in (
+        (QUAL_STATUS_COLUMN, QUAL_CONFIRMATION_STATUSES),
+        (ARRIVAL_STATUS_COLUMN, ARRIVAL_STATUSES),
+    ):
+        invalid_status = result[status_column].notna() & ~result[status_column].isin(allowed)
+        if invalid_status.any():
+            examples = result.loc[invalid_status, EQUIPMENT_ID_COLUMN].head(5).tolist()
+            raise ValueError(
+                f"{status_column}는 {'·'.join(allowed)} 중 하나여야 합니다: {examples}"
+            )
     invalid_setup_order = (
         result[ARRIVAL_DATE_COLUMN].notna()
-        & result["Qual일정"].notna()
-        & result["Qual일정"].lt(result[ARRIVAL_DATE_COLUMN])
+        & result[QUAL_DATE_COLUMN].notna()
+        & result[QUAL_DATE_COLUMN].lt(result[ARRIVAL_DATE_COLUMN])
     )
     invalid_pre_arrival = _invalid_optional_order(
         result, ("제진대일정", "물류일정", ARRIVAL_DATE_COLUMN)
@@ -139,31 +169,38 @@ def prepare_equipment_master(
     # 이다. 보관·기존설비는 예전처럼 이웃한 둘만 본다(그런 저장본이 다시 열려야 한다). 신규 호기는
     # 이 규칙이 생기기 전에 반입·Qual 이 필수였으므로 이미 저장된 리비전이 새로 막히지 않는다.
     invalid_chain = ordinary & _invalid_present_order(
-        result, ("제진대일정", "물류일정", ARRIVAL_DATE_COLUMN, "Qual일정")
+        result, ("제진대일정", "물류일정", ARRIVAL_DATE_COLUMN, QUAL_DATE_COLUMN)
     )
     invalid_order = invalid_setup_order | invalid_pre_arrival | invalid_chain
     if invalid_order.any():
         examples = result.loc[invalid_order, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(f"제진대·물류·반입·Qual 일정 순서가 올바르지 않습니다: {examples}")
-    # 들어온 적 없는 신규 호기를 내보낼 수는 없다. 받아 두면 반입 없이 「반출 완료」가 되어 어느
-    # 대수에도 들지 않고 일정 미정 알림에서도 빠진다.
+    # 들어온 적 없는 신규 호기를 내보낼 수는 없다. 받아 두면 반입 없이 「반출/이설 완료」가 되어
+    # 어느 대수에도 들지 않고 일정 미정 알림에서도 빠진다.
     exit_without_arrival = (
         ordinary
         & result[ARRIVAL_DATE_COLUMN].isna()
-        & (result["반출일정"].notna() | result[RELOCATION_DATE_COLUMN].notna())
+        & result.loc[:, list(EXIT_SCHEDULE_COLUMNS)].notna().any(axis=1)
     )
     if exit_without_arrival.any():
         examples = result.loc[exit_without_arrival, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(
-            f"반입일정이 없는 신규 설비에는 반출·이설일정을 넣을 수 없습니다: {examples}"
+            f"반입일정이 없는 신규 설비에는 {STOP_DATE_COLUMN}·{RELOCATION_DATE_COLUMN}을 넣을 수 "
+            f"없습니다: {examples}"
         )
-    both_exit_dates = result["반출일정"].notna() & result[RELOCATION_DATE_COLUMN].notna()
-    if both_exit_dates.any():
-        examples = result.loc[both_exit_dates, EQUIPMENT_ID_COLUMN].head(5).tolist()
+    # 두 날짜를 함께 적을 수 있다(2026-10-16 사용자 결정) — 정지한 뒤 자리를 비운다. 거꾸로면 집계
+    # 이탈일(둘 중 이른 날)과 도면 이탈일(반출/이설일정)의 뜻이 어긋난다.
+    stop_after_exit = (
+        result[STOP_DATE_COLUMN].notna()
+        & result[RELOCATION_DATE_COLUMN].notna()
+        & result[STOP_DATE_COLUMN].gt(result[RELOCATION_DATE_COLUMN])
+    )
+    if stop_after_exit.any():
+        examples = result.loc[stop_after_exit, EQUIPMENT_ID_COLUMN].head(5).tolist()
         raise ValueError(
-            f"반출일정과 {RELOCATION_DATE_COLUMN}은 동시에 입력할 수 없습니다: {examples}"
+            f"{STOP_DATE_COLUMN}은 {RELOCATION_DATE_COLUMN}보다 늦을 수 없습니다: {examples}"
         )
-    for exit_column in ("반출일정", RELOCATION_DATE_COLUMN):
+    for exit_column in EXIT_SCHEDULE_COLUMNS:
         before_arrival = (
             result[exit_column].notna()
             & result[ARRIVAL_DATE_COLUMN].notna()
@@ -172,7 +209,64 @@ def prepare_equipment_master(
         if before_arrival.any():
             examples = result.loc[before_arrival, EQUIPMENT_ID_COLUMN].head(5).tolist()
             raise ValueError(f"{exit_column}은 반입일정보다 빠를 수 없습니다: {examples}")
+    if today is not None:
+        _validate_actual_dates(result, today)
     return result.reset_index(drop=True)
+
+
+def _validate_actual_dates(result: pd.DataFrame, today: date) -> None:
+    """저장할 때만 도는 실적 검사. 실적은 이미 일어난 날이라 오늘보다 늦을 수 없고, Qual 은
+    반입한 뒤에 끝난다."""
+    limit = pd.Timestamp(today)
+    for column in (ARRIVAL_ACTUAL_COLUMN, QUAL_ACTUAL_COLUMN):
+        future = result[column].notna() & result[column].gt(limit)
+        if future.any():
+            examples = result.loc[future, EQUIPMENT_ID_COLUMN].head(5).tolist()
+            raise ValueError(
+                f"{column}은 오늘({limit:%Y-%m-%d})보다 늦을 수 없습니다 — 실적은 이미 끝난 날을 "
+                f"적습니다: {examples}"
+            )
+    reversed_actuals = (
+        result[ARRIVAL_ACTUAL_COLUMN].notna()
+        & result[QUAL_ACTUAL_COLUMN].notna()
+        & result[ARRIVAL_ACTUAL_COLUMN].gt(result[QUAL_ACTUAL_COLUMN])
+    )
+    if reversed_actuals.any():
+        examples = result.loc[reversed_actuals, EQUIPMENT_ID_COLUMN].head(5).tolist()
+        raise ValueError(
+            f"{ARRIVAL_ACTUAL_COLUMN}은 {QUAL_ACTUAL_COLUMN}보다 늦을 수 없습니다: {examples}"
+        )
+
+
+def area_code_warnings(equipment: pd.DataFrame) -> list[str]:
+    """Area Code 가 Main·MI·부대 밖인 호기를 알리는 경고(저장은 막지 않는다). 검증 전 편집본도
+    받는다 — 컬럼이 없거나 표가 비면 빈 목록이다."""
+    if equipment.empty or AREA_CODE_COLUMN not in equipment.columns:
+        return []
+    unknown = unknown_area_codes(equipment[AREA_CODE_COLUMN]).to_numpy()
+    if not unknown.any():
+        return []
+    rows = equipment.loc[unknown]
+    names = (
+        rows[EQUIPMENT_ID_COLUMN].astype("string").fillna("").str.strip().tolist()
+        if EQUIPMENT_ID_COLUMN in rows.columns
+        else []
+    )
+    values = sorted({str(value).strip() for value in rows[AREA_CODE_COLUMN].tolist()})
+    return [
+        f"{AREA_CODE_COLUMN} 가 {'·'.join(AREA_CODES)} 밖인 호기 {len(rows):,}건 — 저장은 되지만 "
+        f"값을 확인하세요({', '.join(values[:5])}): {names[:5]}"
+    ]
+
+
+def equipment_save_warnings(equipment: pd.DataFrame) -> list[str]:
+    """설비 마스터를 저장하기 전에 알릴 것(막지 않는다). 검증 전 편집본도 받는다.
+
+    - Area Code 가 Main·MI·부대 밖(`area_code_warnings`)
+    - 실적 누락·상태 갱신 필요(`schedule_confirmation.actual_record_warnings`) — 오늘과 무관한
+      두 경고다. 오늘에 따라 달라지는 「미확인」은 여기에 넣지 않는다.
+    """
+    return [*area_code_warnings(equipment), *actual_record_warnings(equipment)]
 
 
 _COLLISION_EXAMPLES = 5

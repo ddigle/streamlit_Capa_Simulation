@@ -85,8 +85,8 @@ def _row(
             "층": "1F",
             "반입일정": arrival,
             "Qual일정": qual,
-            "확정상태": "완료",
-            "반출일정": removal,
+            "Qual상태": "완료",
+            "정지일정": removal,
             "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
@@ -304,7 +304,7 @@ def test_one_module_down_is_a_quarter_of_a_unit_in_the_weekly_count() -> None:
 
 
 def test_removing_one_module_leaves_the_unit_whole() -> None:
-    frame = _modules(APW01D={"반출일정": "2026-05-10"})
+    frame = _modules(APW01D={"정지일정": "2026-05-10"})
 
     status = build_equipment_status_as_of(frame, _no_downtime(), as_of=date(2026, 6, 15))
     shares = status.set_index("설비명")[UNIT_SHARE_COLUMN]
@@ -326,7 +326,7 @@ def test_a_unit_not_yet_arrived_is_one_planned_unit() -> None:
 
 
 def test_spans_split_where_a_sibling_changes_the_share_only_when_asked() -> None:
-    frame = _modules(APW01D={"반출일정": "2026-05-10"})
+    frame = _modules(APW01D={"정지일정": "2026-05-10"})
     start, end = date(2026, 4, 1), date(2026, 6, 30)
 
     plain = build_equipment_lifecycle_spans(frame, _no_downtime(), start_date=start, end_date=end)
@@ -427,7 +427,7 @@ def test_a_zero_never_prints_with_a_minus_sign() -> None:
 
 def _one_removed_one_down() -> pd.DataFrame:
     """D 를 반출해 남은 셋이 1/3 씩, 그중 B 가 PM. 1/3 짜리 합끼리 빼면 -0.0 이 남는다."""
-    frame = _modules(APW01D={"반출일정": "2026-02-01"})
+    frame = _modules(APW01D={"정지일정": "2026-02-01"})
     return build_equipment_status_as_of(
         frame, _pm("APW01B").assign(시작일="2026-03-01"), as_of=date(2026, 3, 15)
     )
@@ -437,8 +437,8 @@ def test_space_counts_add_up_without_a_negative_zero() -> None:
     counts = stage_counts(_one_removed_one_down())
 
     assert counts == pytest.approx({"가용": 1 + 2 / 3, "운영 비가동": 1 / 3}, abs=1e-6)
-    # 반출해 지분이 0 인 모듈은 범례에 「반출 완료 0대」로 서지 않는다. 음수 0 도 남지 않는다.
-    assert "반출 완료" not in counts
+    # 반출해 지분이 0 인 모듈은 범례에 「정지 0대」로 서지 않는다. 음수 0 도 남지 않는다.
+    assert "정지" not in counts
     assert all(math.copysign(1.0, value) == 1.0 for value in counts.values())
 
 
@@ -477,9 +477,9 @@ def test_one_down_module_per_unit_is_not_read_as_whole_units() -> None:
 
 
 def test_a_unit_transition_is_confirmed_when_any_module_is() -> None:
-    """확정상태가 모듈마다 다르면 정렬 순서가 답을 정하면 안 된다."""
-    frame = _modules(APW01A={"확정상태": "계획"}, APW01C={"확정상태": "계획"})
-    frame.loc[frame["설비명"].eq("APW01D"), "확정상태"] = "계획"
+    """Qual상태가 모듈마다 다르면 정렬 순서가 답을 정하면 안 된다."""
+    frame = _modules(APW01A={"Qual상태": "계획"}, APW01C={"Qual상태": "계획"})
+    frame.loc[frame["설비명"].eq("APW01D"), "Qual상태"] = "계획"
     events = build_milestone_transition_events(
         frame,
         start_date=date(2026, 1, 1),

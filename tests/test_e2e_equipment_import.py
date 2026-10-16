@@ -262,7 +262,7 @@ def test_a_paste_that_only_repeats_the_template_process_name_is_still_the_user_s
 def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) -> None:
     """설비 마스터 양식의 예시 한 줄도 기존 보유대수와 같은 자리에서 막혀야 한다.
 
-    `SAM01` 은 담당자 「홍길동」까지 붙은 표본 값인데 네 일정과 확정상태가 다 차 있어
+    `SAM01` 은 담당자 「홍길동」까지 붙은 표본 값인데 네 일정과 Qual상태가 다 차 있어
     `prepare_equipment_master` 를 그냥 통과한다. 저장되면 설비 마스터에만 있고 현장에는 없는
     호기 하나가 그 리비전의 총대수·가용대수에 남는다. 기존 보유대수 쪽이 오늘 막힌 것과
     출처도 결과도 같다.
@@ -478,8 +478,8 @@ def test_the_full_width_master_reads_the_same_on_both_paths() -> None:
     template = pd.read_csv(BytesIO(equipment_csv_template()), **TEXT_TABLE_READ_OPTIONS)
     edited = template.iloc[[0]].fillna("").astype(str).copy()
     # 업무 값으로서의 `NA` 하나와, 비워 둔 날짜·설비이력 하나씩.
-    edited.loc[:, "구분"] = "NA"
-    edited.loc[:, "반출일정"] = ""
+    edited.loc[:, "Area Code"] = "NA"
+    edited.loc[:, "정지일정"] = ""
     edited.loc[:, "설비이력"] = ""
     rows = [list(edited.columns), *edited.values.tolist()]
 
@@ -487,8 +487,8 @@ def test_the_full_width_master_reads_the_same_on_both_paths() -> None:
     from_clipboard = read_equipment_clipboard(_tab_text(rows))
 
     assert_frame_equal(from_csv, from_clipboard)
-    assert from_csv.loc[0, "구분"] == "NA"
-    assert pd.isna(from_csv.loc[0, "반출일정"])
+    assert from_csv.loc[0, "Area Code"] == "NA"
+    assert pd.isna(from_csv.loc[0, "정지일정"])
     assert pd.isna(from_csv.loc[0, "설비이력"])
 
 
@@ -496,17 +496,17 @@ def test_the_full_width_master_reads_the_same_on_both_paths() -> None:
 def test_the_master_update_reads_the_same_on_both_paths(partial: bool) -> None:
     """화면이 실제로 타는 입구(`read_equipment_update`)에서도 CSV 와 붙여넣기가 같아야 한다.
 
-    전체 열과 일부 열(설비명 · 구분 · 반출일정 · 설비이력) 둘 다 본다. 일부 열은 나머지 열을
+    전체 열과 일부 열(설비명 · Area Code · 정지일정 · 설비이력) 둘 다 본다. 일부 열은 나머지 열을
     편집본에서 채우므로, 붙여넣은 칸의 결측 판정과 지우는 칸 수까지 두 경로가 같아야 한다.
     """
     template = pd.read_csv(BytesIO(equipment_csv_template()), **TEXT_TABLE_READ_OPTIONS)
     current = prepare_equipment_master(template)
     edited = template.iloc[[0]].fillna("").astype(str).copy()
-    edited.loc[:, "구분"] = "NA"
-    edited.loc[:, "반출일정"] = ""
+    edited.loc[:, "Area Code"] = "NA"
+    edited.loc[:, "정지일정"] = ""
     edited.loc[:, "설비이력"] = ""
     if partial:
-        edited = edited.loc[:, ["설비명", "구분", "반출일정", "설비이력"]]
+        edited = edited.loc[:, ["설비명", "Area Code", "정지일정", "설비이력"]]
     rows = [list(edited.columns), *edited.values.tolist()]
 
     from_csv = read_equipment_update(_csv_bytes(rows), current)
@@ -514,9 +514,9 @@ def test_the_master_update_reads_the_same_on_both_paths(partial: bool) -> None:
 
     assert from_csv.columns == from_clipboard.columns
     assert_frame_equal(from_csv.rows, from_clipboard.rows)
-    # 양식 예시의 설비이력(「이력 기록」)을 빈 칸으로 지운다. 비어 있던 반출일정은 지움이 아니다.
+    # 양식 예시의 설비이력(「이력 기록」)을 빈 칸으로 지운다. 비어 있던 정지일정은 지움이 아니다.
     assert from_csv.cleared_cells == from_clipboard.cleared_cells == 1
-    assert from_csv.rows.loc[0, "구분"] == "NA"
-    assert pd.isna(from_csv.rows.loc[0, "반출일정"])
+    assert from_csv.rows.loc[0, "Area Code"] == "NA"
+    assert pd.isna(from_csv.rows.loc[0, "정지일정"])
     assert pd.isna(from_csv.rows.loc[0, "설비이력"])
     assert from_csv.rows.loc[0, "담당자"] == current.loc[0, "담당자"]

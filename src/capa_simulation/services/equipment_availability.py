@@ -20,10 +20,20 @@ from capa_simulation.services.equipment_contract import (
     COUNTED_COLUMN,
     EQUIPMENT_ID_COLUMN,
     EXIT_FOLLOWS_COLUMN,
+    EXIT_SCHEDULE_COLUMNS,
     EXIT_STARTS_COLUMN,
+    LAYOUT_EXITED_COLUMN,
+    LAYOUT_REFLECTED_COLUMN,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
     SCHEDULE_STAGES,
     STATUS_COUNT_COLUMNS,
+    STATUS_EXIT_PLANNED,
+    STATUS_EXITED,
+    STATUS_STOP_PLANNED,
+    STATUS_STOPPED,
+    STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     TRANSITION_EVENT_COLUMNS,
     WEEKLY_COLUMNS,
@@ -75,7 +85,8 @@ def _build_equipment_status_from_prepared(
             ("가용여부", "boolean"),
             (COUNT_CATEGORY_COLUMN, "string"),
             (COUNTED_COLUMN, "bool"),
-            ("레이아웃반영여부", "boolean"),
+            (LAYOUT_EXITED_COLUMN, "boolean"),
+            (LAYOUT_REFLECTED_COLUMN, "boolean"),
             ("비가동유형", "string"),
             (UNIT_KEY_COLUMN, "string"),
             (UNIT_SHARE_COLUMN, "float64"),
@@ -91,13 +102,19 @@ def _build_equipment_status_from_prepared(
         | storage
         | (result[ARRIVAL_DATE_COLUMN].notna() & result[ARRIVAL_DATE_COLUMN].le(timestamp))
     )
-    removal_complete = result["반출일정"].notna() & result["반출일정"].le(timestamp)
-    relocation_complete = result[RELOCATION_DATE_COLUMN].notna() & result[
-        RELOCATION_DATE_COLUMN
-    ].le(timestamp)
-    exited = removal_complete | relocation_complete
+    stop_date = result[STOP_DATE_COLUMN]
+    relocation_date = result[RELOCATION_DATE_COLUMN]
+    stop_complete = stop_date.notna() & stop_date.le(timestamp)
+    relocation_complete = relocation_date.notna() & relocation_date.le(timestamp)
+    # 집계 이탈일 = min(정지일정, 반출/이설일정). 그날부터 보유·가용·지분에서 빠진다.
+    exited = stop_complete | relocation_complete
+    # 도면 이탈일 = 반출/이설일정, 없으면 정지일정. 정지한 뒤 자리를 비우기 전까지는 도면에 남는다.
+    # 두 날짜 가운데 하나만 적힌 행은 두 이탈일이 같은 날이다.
+    left_layout = relocation_complete | (relocation_date.isna() & stop_complete)
     owned = arrived & ~exited
-    qualified = existing | (result["Qual일정"].notna() & result["Qual일정"].le(timestamp))
+    qualified = existing | (
+        result[QUAL_DATE_COLUMN].notna() & result[QUAL_DATE_COLUMN].le(timestamp)
+    )
 
     active_downtime = _active_downtime(prepared_downtime, timestamp)
     reason_by_equipment = active_downtime.groupby(EQUIPMENT_ID_COLUMN)["비가동유형"].agg(
@@ -107,23 +124,29 @@ def _build_equipment_status_from_prepared(
     offline = result["비가동유형"].notna() & owned
     available = owned & qualified & ~storage & ~offline
 
+    # 뒤에 쓴 줄이 앞을 덮는다: 입고 예정 < 셋업 진행중 < 가용 < 보관 설비 < 반출/이설 예정 <
+    # 정지 예정 < 운영 비가동 < 정지 < 반출/이설 완료.
     status = pd.Series("입고 예정", index=result.index, dtype="string")
     status.loc[owned & ~qualified & ~storage] = "셋업 진행중"
     status.loc[available] = "가용"
     status.loc[storage & owned] = "보관 설비"
-    status.loc[result["반출일정"].notna() & ~removal_complete] = "반출 예정"
-    status.loc[result[RELOCATION_DATE_COLUMN].notna() & ~relocation_complete] = "이설 예정"
+    status.loc[relocation_date.notna() & ~relocation_complete] = STATUS_EXIT_PLANNED
+    status.loc[stop_date.notna() & ~stop_complete] = STATUS_STOP_PLANNED
     status.loc[offline] = "운영 비가동"
-    status.loc[removal_complete] = "반출 완료"
-    status.loc[relocation_complete] = "이설 완료"
+    status.loc[stop_complete] = STATUS_STOPPED
+    status.loc[relocation_complete] = STATUS_EXITED
     result["상태"] = status
     result["보유여부"] = owned.astype("boolean")
     result["가용여부"] = available.astype("boolean")
-    # 세는 자리는 이름이 아니라 가용 판정을 본다. 반출·이설일정이 적힌 호기는 실행일 전까지 이름이
-    # 「반출 예정」·「이설 예정」이지만 가용이면 가용으로 센다(`equipment_contract` 의 집계분류).
+    # 세는 자리는 이름이 아니라 가용 판정을 본다. 정지·반출/이설일정이 적힌 호기는 실행일 전까지
+    # 이름이 「정지 예정」·「반출/이설 예정」이지만 가용이면 가용으로 센다(`equipment_contract` 의
+    # 집계분류).
     result[COUNT_CATEGORY_COLUMN] = status.mask(available.fillna(False).astype("bool"), "가용")
     result[COUNTED_COLUMN] = counts_for_capacity(result)
-    result["레이아웃반영여부"] = (result["레이아웃표시"].eq("Y") & ~exited).astype("boolean")
+    result[LAYOUT_EXITED_COLUMN] = left_layout.astype("boolean")
+    result[LAYOUT_REFLECTED_COLUMN] = (result["레이아웃표시"].eq("Y") & ~left_layout).astype(
+        "boolean"
+    )
     # 지분은 **이 시점의 보유**로 매긴다. 모듈을 떼어 반출해도 남은 모듈이 한 대를 채우고,
     # 입고 전 모듈은 형제가 보유 중인 동안 0 이다.
     keys = unit_keys(result)
@@ -133,11 +156,21 @@ def _build_equipment_status_from_prepared(
 
 
 # 상태가 바뀔 수 있는 날은 정해져 있다. 판정이 보는 컬럼이 그것뿐이기 때문이다 —
-# `반입일정`·`Qual일정`·`반출일정`·`이설일정` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
-# 켜져 `종료일` 다음 날 꺼진다. 다른 날에는 같은 판정이 나오므로 샘플링할 이유가 없다.
-_TIMELINE_EVENT_COLUMNS = (ARRIVAL_DATE_COLUMN, "Qual일정", "반출일정", RELOCATION_DATE_COLUMN)
-# 그 가운데 설비가 나가는 날(판정의 `exited`). 세는 구간이 이 날에 닿는 경계를 따로 적는다.
-_EXIT_DATE_COLUMNS = ("반출일정", RELOCATION_DATE_COLUMN)
+# `반입일정`·`Qual일정`·`정지일정`·`반출/이설일정` 은 그날 `le` 로 넘어가고, 비가동은 `시작일` 에
+# 켜져 `종료일` 다음 날 꺼진다. 다른 날에는 같은 판정이 나오므로 샘플링할 이유가 없다. 실적은
+# 판정이 보지 않는다(집계는 일정 기준) — 넣지 않는다.
+_TIMELINE_EVENT_COLUMNS = (
+    ARRIVAL_DATE_COLUMN,
+    QUAL_DATE_COLUMN,
+    STOP_DATE_COLUMN,
+    RELOCATION_DATE_COLUMN,
+)
+# 그 가운데 설비가 나가는 날(판정의 `exited` 와 「정지」→「반출/이설 완료」). 세는 구간이 이 날에
+# 닿는 경계를 따로 적는다.
+_EXIT_DATE_COLUMNS = EXIT_SCHEDULE_COLUMNS
+
+# 단계 전환 표가 반출/이설 전환의 이전 단계를 가를 때 잠깐 쓰는 칸.
+_STOPPED_ON = "_정지일"
 
 LIFECYCLE_SPAN_COLUMNS = (
     EQUIPMENT_ID_COLUMN,
@@ -162,17 +195,17 @@ def build_equipment_lifecycle_spans(
 
     `with_unit_share` 를 켜면 세는 데 쓰는 구간이 된다. `설비지분`·`설비키`·`집계분류`·
     `가용대수반영` 컬럼을 붙이고, **지분이나 집계분류가 바뀌는 날에도** 구간을 끊는다. 모듈
-    형제의 입고·반출로 지분이 바뀌면 상태는 그대로여도 대수 축 몫이 달라지고, 반출일정이 적힌
-    호기는 셋업 중·Qual 후가 모두 「반출 예정」 한 이름이라 이름으로만 끊으면 가용이 된 날을
+    형제의 입고·정지로 지분이 바뀌면 상태는 그대로여도 대수 축 몫이 달라지고, 정지일정이 적힌
+    호기는 셋업 중·Qual 후가 모두 「정지 예정」 한 이름이라 이름으로만 끊으면 가용이 된 날을
     잃는다. 월별 대수(`monthly_equipment_availability`)가 켜서 쓴다. 끄면(기본) 상태 이름이
     바뀔 때만 끊어 생애주기 Gantt 가 지금처럼 그린다.
 
     켜면 `반출이설시작`·`반출이설직전` 도 붙인다 — 구간 시작일, 또는 종료일 다음 날이 그 설비키의
-    반출·이설일정인가. **구간의 날짜는 그대로 상태가 바뀐 날이다**(Gantt 와 같다). 월별 기여는
-    바뀐 다음 날부터지만 반출·이설로 가용을 잃는 것은 그날부터라(2026-10-08 사용자 결정) 월별이 이
-    표시를 보고 그 경계만 밀지 않는다. 설비키 단위로 보는 것은 모듈 하나가 나가는 날 형제의 지분도
-    같이 바뀌기 때문이다 — 나간 모듈만 당일로 두고 형제의 지분 경계를 다음 날로 밀면 그날 하루
-    설비가 한 대보다 적게 세어진다.
+    정지일정·반출/이설일정인가. **구간의 날짜는 그대로 상태가 바뀐 날이다**(Gantt 와 같다). 월별
+    기여는 바뀐 다음 날부터지만 정지·반출/이설로 가용을 잃는 것은 그날부터라(2026-10-08 사용자
+    결정) 월별이 이 표시를 보고 그 경계만 밀지 않는다. 설비키 단위로 보는 것은 모듈 하나가 나가는
+    날 형제의 지분도 같이 바뀌기 때문이다 — 나간 모듈만 당일로 두고 형제의 지분 경계를 다음 날로
+    밀면 그날 하루 설비가 한 대보다 적게 세어진다.
 
     **판정 규칙을 다시 적지 않는다.** 상태가 바뀔 수 있는 날마다
     `_build_equipment_status_from_prepared` 를 그대로 부르고, 이어지는 같은 상태를 한 구간
@@ -315,7 +348,8 @@ def _lifecycle_breakpoints(
 
 
 def _exit_days_by_key(prepared: pd.DataFrame, keys: pd.Series) -> dict[str, frozenset[date]]:
-    """설비키마다 반출·이설일정. 모듈 하나가 나가는 날 형제의 지분도 바뀌어 묶음 단위로 모은다."""
+    """설비키마다 정지·반출/이설일정. 모듈 하나가 나가는 날 형제의 지분도 바뀌어 묶음 단위로
+    모은다."""
     days: dict[str, set[date]] = {}
     for column in _EXIT_DATE_COLUMNS:
         present = prepared[column].notna().to_numpy()
@@ -382,7 +416,7 @@ def build_weekly_equipment_availability(
             보유호기=("_보유", "sum"),
             가용호기=("_가용", "sum"),
         )
-        # 분류 대수는 상태 이름이 아니라 집계분류로 센다 — 실행일 전의 반출·이설 예정 호기가
+        # 분류 대수는 상태 이름이 아니라 집계분류로 센다 — 실행일 전의 정지·반출/이설 예정 호기가
         # 가용이면 가용호기대수에 든다(`equipment_contract.STATUS_COUNT_COLUMNS`).
         status_counts = (
             weighted.groupby(["공정소분류", COUNT_CATEGORY_COLUMN], observed=True)["_지분"]
@@ -466,7 +500,7 @@ def inactive_equipment_moments(
 
     **생애주기 구간(`build_equipment_lifecycle_spans`)의 시작일을 쓰지 않는다.** 그 구간은
     **상태 이름으로 묶은** 것이라 이름이 그대로인 채 판정만 바뀌는 날을 잃는다 —
-    반출일정이 적힌 호기는 입고 전·셋업 중·Qual 후가 모두 「반출 예정」 한 구간이라 입고일
+    정지일정이 적힌 호기는 입고 전·셋업 중·Qual 후가 모두 「정지 예정」 한 구간이라 입고일
     ·Qual일에 경계가 생기지 않는다. 그 호기의 비가동 구간이 한 주보다 짧고 일요일을 비껴
     가면 이름 화이트리스트와 똑같이 통째로 빠진다.
 
@@ -517,7 +551,7 @@ def build_inactive_equipment_in_month(
     """그 달 안에서 **한 번이라도** 비가동이었던 호기.
 
     **상태 이름 화이트리스트로 고르지 않는다.** 상태는 호기당 하나뿐이고 사다리 아래쪽이
-    위쪽을 덮는다 — 셋업 중인 호기에 반출일정이 적혀 있으면 상태는 「반출 예정」이 되므로
+    위쪽을 덮는다 — 셋업 중인 호기에 정지일정이 적혀 있으면 상태는 「정지 예정」이 되므로
     「운영 비가동」·「셋업 진행중」을 이름으로 골라 세는 집계는 그 호기를 통째로 잃는다.
     이름 목록은 사다리가 한 칸 늘 때마다 조용히 틀려지기도 한다. 그래서 시점 표와 **같은
     술어**(`build_inactive_equipment` = 보유 & ~가용)를 `inactive_equipment_moments` 의
@@ -626,13 +660,17 @@ def build_milestone_transition_events(
     if prepared.empty:
         return pd.DataFrame(columns=TRANSITION_EVENT_COLUMNS)
     prepared = prepared.assign(**{UNIT_KEY_COLUMN: unit_keys(prepared)})
+    # 정지일정은 다른 이름으로 한 번 더 싣는다 — 반출/이설 전환의 이전 단계가 「정지」인지 가른다.
+    # 녹이는(`melt`) 날짜 컬럼과 이름이 같으면 안 된다.
+    prepared = prepared.assign(**{_STOPPED_ON: prepared[STOP_DATE_COLUMN]})
     identity_columns = [
         EQUIPMENT_ID_COLUMN,
         "공정대분류",
         "공정소분류",
         "동",
         "층",
-        "확정상태",
+        QUAL_STATUS_COLUMN,
+        _STOPPED_ON,
         UNIT_KEY_COLUMN,
     ]
     date_columns = [column for column, _ in SCHEDULE_STAGES]
@@ -649,8 +687,8 @@ def build_milestone_transition_events(
         "제진대일정": "착수 전",
         "물류일정": "제진대",
         ARRIVAL_DATE_COLUMN: "물류",
-        "Qual일정": "입고",
-        "반출일정": "가용/보관",
+        QUAL_DATE_COLUMN: "입고",
+        STOP_DATE_COLUMN: "가용/보관",
         RELOCATION_DATE_COLUMN: "가용/보관",
     }
     order = {column: index for index, column in enumerate(date_columns)}
@@ -658,10 +696,18 @@ def build_milestone_transition_events(
     events["이전단계"] = events["단계컬럼"].map(previous_stage).astype("string")
     events["전환단계"] = events["단계컬럼"].map(stage_by_column).astype("string")
     events["전환일"] = pd.to_datetime(events["전환일"], errors="raise")
-    # 확정상태는 Qual 단계에만 뜻이 있다. 다른 단계는 결측으로 두는데, 결측을 그대로
+    # 정지한 뒤 자리를 비우는 호기는 반출/이설 전환의 이전 단계가 「정지」다.
+    stopped_first = events["단계컬럼"].eq(RELOCATION_DATE_COLUMN) & pd.to_datetime(
+        events[_STOPPED_ON]
+    ).le(events["전환일"]).fillna(False).astype("bool")
+    events.loc[stopped_first, "이전단계"] = stage_by_column[STOP_DATE_COLUMN]
+    # Qual상태는 Qual 단계에만 뜻이 있다. 다른 단계는 결측으로 두는데, 결측을 그대로
     # 넘기면 표에 "None" 이라는 글자가 찍혀 값이 있는 것처럼 보인다. 빈 칸으로 만든다.
-    events["확정상태"] = (
-        events["확정상태"].astype("string").where(events["단계컬럼"].eq("Qual일정")).fillna("")
+    events[QUAL_STATUS_COLUMN] = (
+        events[QUAL_STATUS_COLUMN]
+        .astype("string")
+        .where(events["단계컬럼"].eq(QUAL_DATE_COLUMN))
+        .fillna("")
     )
     events = events.loc[
         events["전환일"].between(pd.Timestamp(start_date), pd.Timestamp(end_date), inclusive="both")

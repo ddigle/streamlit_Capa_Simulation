@@ -9,6 +9,7 @@ import re
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from io import BytesIO
 from typing import Any
 
@@ -22,6 +23,11 @@ from capa_simulation.services.clipboard_table import (
     parse_clipboard_table,
 )
 from capa_simulation.services.equipment_contract import (
+    AREA_CODE_COLUMN,
+    AREA_CODES,
+    ARRIVAL_ACTUAL_COLUMN,
+    ARRIVAL_DATE_COLUMN,
+    ARRIVAL_STATUS_COLUMN,
     BASELINE_COLUMNS,
     BASELINE_KEY_COLUMNS,
     DOWNTIME_COLUMNS,
@@ -34,7 +40,11 @@ from capa_simulation.services.equipment_contract import (
     OBSOLETE_EQUIPMENT_COLUMNS,
     OPTIONAL_EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
+    QUAL_ACTUAL_COLUMN,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
+    STOP_DATE_COLUMN,
     compact_header,
     rename_legacy_headers,
     with_optional_equipment_columns,
@@ -64,10 +74,29 @@ SAMPLE_BASELINE_COUNT = 12
 SAMPLE_BASELINE_TEMPLATE_NOTE = "집계 근거 기록"
 
 # 설비명을 비워 둔 안내 행. 열별 허용값만 나열하며 `prepare_equipment_master` 가 버린다.
+# Area Code 는 Main·MI·부대 셋을 적는다(목록 밖 값은 막지 않고 저장 미리보기에서 경고만 한다).
+# 반입상태·Qual상태는 예시 행이 「완료」·「계획」이라 나머지 값을 적는다.
 EQUIPMENT_CHOICE_ROWS: tuple[dict[str, str], ...] = (
-    {"공정구분": "PKG", "투자Capa": "322K", "투자구분": "WLP", "확정상태": "확정"},
-    {"투자구분": "2.5D", "확정상태": "완료"},
-    {"투자구분": "HCB", "확정상태": "지연"},
+    {
+        AREA_CODE_COLUMN: AREA_CODES[0],
+        "공정구분": "PKG",
+        "투자Capa": "322K",
+        "투자구분": "WLP",
+        ARRIVAL_STATUS_COLUMN: "계획",
+        QUAL_STATUS_COLUMN: "확정",
+    },
+    {
+        AREA_CODE_COLUMN: AREA_CODES[1],
+        "투자구분": "2.5D",
+        ARRIVAL_STATUS_COLUMN: "확정",
+        QUAL_STATUS_COLUMN: "완료",
+    },
+    {
+        AREA_CODE_COLUMN: AREA_CODES[2],
+        "투자구분": "HCB",
+        ARRIVAL_STATUS_COLUMN: "지연",
+        QUAL_STATUS_COLUMN: "지연",
+    },
 )
 
 
@@ -97,7 +126,7 @@ def equipment_csv_template() -> bytes:
         pd.DataFrame(
             [
                 {
-                    "구분": "",
+                    AREA_CODE_COLUMN: "Main",
                     "공정대분류": "Wafer_Sorter",
                     "공정소분류": "Wafer_Sorter_P878",
                     "Maker": "KOREATECHNO",
@@ -111,17 +140,20 @@ def equipment_csv_template() -> bytes:
                     "동": "C1",
                     "층": "4F",
                     "담당자": SAMPLE_EQUIPMENT_MANAGER,
-                    "설비가동현황": "",
                     "X좌표": "",
                     "Y좌표": "",
                     "Xsize": "",
                     "Ysize": "",
                     "제진대일정": "2026-09-01",
                     "물류일정": "2026-09-03",
-                    "반입일정": "2026-09-05",
-                    "Qual일정": "2026-09-16",
-                    "확정상태": "계획",
-                    "반출일정": "",
+                    ARRIVAL_DATE_COLUMN: "2026-09-05",
+                    # 실적은 실제로 끝난 날이다. 오늘보다 늦으면 저장할 때 막힌다.
+                    ARRIVAL_ACTUAL_COLUMN: "2026-09-05",
+                    ARRIVAL_STATUS_COLUMN: "완료",
+                    QUAL_DATE_COLUMN: "2026-09-16",
+                    QUAL_ACTUAL_COLUMN: "",
+                    QUAL_STATUS_COLUMN: "계획",
+                    STOP_DATE_COLUMN: "",
                     RELOCATION_DATE_COLUMN: "",
                     "반입/Qual 이력": "",
                     "호기이력": "호기 변동 이력 기록",
@@ -251,8 +283,8 @@ def read_equipment_csv(
 ) -> pd.DataFrame:
     """`floor_canvases` 를 넘기면 읽는 즉시 층별 캔버스 좌표 상한까지 검사한다.
 
-    옛 머리 이름은 새 이름으로 바꿔 읽는다. 빠진 옛 컬럼(`투자기준`)을 떼어 냈으면 그 알림
-    문구를 `notices` 에 덧붙인다.
+    옛 머리 이름은 새 이름으로 바꿔 읽는다. 빠진 옛 컬럼(`투자기준`·`설비가동현황` …)을 떼어 냈으면
+    그 알림 문구를 `notices` 에 덧붙인다.
     """
     return prepare_equipment_master(
         _read_csv(payload, _EQUIPMENT_HEADERS, notices=notices),
@@ -324,7 +356,7 @@ def read_equipment_clipboard(
 class EquipmentPaste:
     """편집본에 맞춰 채운 설비 마스터 붙여넣기(또는 CSV) 한 건.
 
-    - `rows` — 검증을 마친 36컬럼 표. 붙여넣지 않은 열은 편집본의 그 호기 값이고, 새 호기는
+    - `rows` — 검증을 마친 38컬럼 표. 붙여넣지 않은 열은 편집본의 그 호기 값이고, 새 호기는
       빈 칸이다. `merge_equipment_rows` 에 그대로 넘긴다.
     - `columns` — 붙여넣은 계약 컬럼(설비명 포함, 계약 차례).
     - `cleared_cells` — 기존 호기의 값이 있던 칸을 붙여넣은 빈 칸이 지우는 수. 검증을 거친 값으로
@@ -359,7 +391,7 @@ def read_equipment_update(
     - 머리에 `설비명`(옛 이름 `호기`)이 꼭 있어야 한다. 나머지 열은 아무것이나 골라 넣는다.
     - `current`(붙여넣기 전 편집본)에 있는 설비명은 붙여넣은 열만 바꾸고 나머지 열은 그 호기의 값을
       채운다. 붙여넣은 열의 빈 칸은 「그 값을 지운다」이다 — 전체 열 붙여넣기와 같다.
-    - 편집본에 없는 설비명(새 호기)은 지금 새 호기에 필요한 열(선택 컬럼 밖 30개)이 다 있어야 한다.
+    - 편집본에 없는 설비명(새 호기)은 지금 새 호기에 필요한 열(선택 컬럼 밖 29개)이 다 있어야 한다.
       하나라도 없으면 막는다 — 반만 채운 호기를 받지 않는다.
     - 채운 표를 `prepare_equipment_master` 로 검증한다. 호출부가 이 표를 편집본에 합친 뒤 병합된
       전체 표를 한 번 더 검증한다(`merge_equipment_rows`) — 날짜·환산비·Main 설비·중복 규칙이
@@ -510,11 +542,14 @@ def merge_equipment_rows(
     incoming: pd.DataFrame,
     *,
     floor_canvases: FloorCanvasMap | None = None,
+    today: date | None = None,
 ) -> pd.DataFrame:
-    """`floor_canvases` 를 넘기면 편집본에 적용하기 전에 층별 좌표 상한까지 검사한다."""
+    """`floor_canvases` 를 넘기면 편집본에 적용하기 전에 층별 좌표 상한까지 검사한다. `today` 를
+    넘기면 저장할 때만 도는 실적 검사도 미리 한다(`prepare_equipment_master`)."""
     return prepare_equipment_master(
         _merge_by_keys(current, incoming, EQUIPMENT_KEY_COLUMNS),
         floor_canvases=floor_canvases,
+        today=today,
     )
 
 
@@ -644,8 +679,8 @@ def _select_columns(
     """옛 머리 이름을 새 이름으로 바꾼 뒤 계약 컬럼만 계약 차례로 고른다(표 전체를 읽는 입구).
 
     옛 이름 변환이 **먼저**다. 뒤에 하면 옛 이름(「모체호기」)이 아래의 닮은 이름 검사를
-    빠져나가 선택 컬럼이 조용히 빈 칸이 된다. 빠진 옛 컬럼(`투자기준`)은 떼어 내고 알림 한
-    줄을 `notices` 에 덧붙인다.
+    빠져나가 선택 컬럼이 조용히 빈 칸이 된다. 빠진 옛 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 떼어 내고
+    알림 한 줄을 `notices` 에 덧붙인다.
 
     `headers.optional` 은 없어도 되는 컬럼이다. 없으면 빈 칸으로 채운다 — 그 컬럼이 생기기
     전의 양식도 그대로 읽힌다. 이 표로 `merge_equipment_rows` 를 바로 부르면 **대체 행의 그 칸은
@@ -711,7 +746,7 @@ def _select_update_columns(
 
     - `설비명` 하나만 꼭 있어야 하고, 나머지는 있는 열만 계약 차례로 고른다(빈 칸을 채우지 않는다).
     - 설비명 말고 고를 열이 없으면 막는다 — 아무것도 바꾸지 않는 붙여넣기다.
-    - **모르는 머리글**: 계약 36열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 한
+    - **모르는 머리글**: 계약 38열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 한
       열이라도 빠졌으면(선택 컬럼 포함) 막는다 — 붙여넣지 않은 열은 기존 값을 그대로 두므로, 그
       모르는 열이 빠진 열의 오타(「Qual일졍」·「메모-1」·「Memo1」)라면 사용자는 바꿨다고 믿는데
       그 열은 그대로다. 오타와 상관없는 열은 이름만으로 가를 수 없다(「Memo1」은 「메모1」과 글자가
@@ -738,7 +773,8 @@ def _select_update_columns(
             f"{label}에 없는 열이 있습니다: {_describe_unknown_headers(unknown, missing)}. "
             "붙여넣지 않은 열은 기존 값을 그대로 두므로 이름이 틀린 열을 빼고 읽으면 바꾸려던 열이 "
             "그대로 남습니다 — 머리글을 설비 마스터 열 이름으로 고치거나 그 열을 빼고 다시 "
-            "붙여넣으세요(설비 마스터 36개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다)."
+            f"붙여넣으세요(설비 마스터 {len(contract)}개 열이 모두 있을 때만 모르는 열을 읽지 않고 "
+            "넘깁니다)."
         )
     if unknown and notices is not None:
         notices.append(

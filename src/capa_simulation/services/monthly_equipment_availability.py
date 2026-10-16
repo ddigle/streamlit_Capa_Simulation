@@ -16,17 +16,17 @@
 바뀐 날을 구간 시작으로 주므로 여기서 하루씩 민다. 입고·Qual·셋업·비가동의 시작과 끝·지분
 변화가 모두 그렇다 — Qual 이 `D` 에 끝나면 `D + 1` 부터 가용이다(2026-10-07 사용자 결정).
 
-**예외는 반출·이설로 가용을 잃는 날이다 — 그날부터 기여하지 않는다**(2026-10-08 사용자 결정,
-Guide 「반출·이설일정 **전날까지** 가용」에 코드를 맞췄다). 상태 판정·주차 집계·Space 도 그날을
-이미 「반출 완료」·「이설 완료」로 본다. 그래서 구간이 반출·이설일정에 닿는 경계(구간의
+**예외는 정지·반출/이설로 가용을 잃는 날이다 — 그날부터 기여하지 않는다**(2026-10-08 사용자
+결정, Guide 「정지·반출/이설일정 **전날까지** 가용」에 코드를 맞췄다). 상태 판정·주차 집계도 그날을
+이미 「정지」·「반출/이설 완료」로 본다. 그래서 구간이 정지·반출/이설일정에 닿는 경계(구간의
 `반출이설시작`·`반출이설직전`, 설비키 단위)는 밀지 않는다. 예 — Cut-off 34, 2027-05 구간
-`(3/27, 4/27]` 에서 3/31 반출 호기의 가용은 3/28~3/30 의 3일이고(예전엔 반출일까지 4일),
-3/31 은 「반출 완료」다. 모듈 하나가 나가는 날 남은 형제의 지분이 커지는 경계도 같은 날이다 —
+`(3/27, 4/27]` 에서 3/31 정지 호기의 가용은 3/28~3/30 의 3일이고(예전엔 정지일까지 4일),
+3/31 은 「정지」다. 모듈 하나가 나가는 날 남은 형제의 지분이 커지는 경계도 같은 날이다 —
 그쪽만 다음 날로 밀면 그날 하루 설비가 한 대보다 적게 세어진다.
 
 한 경계의 두 끝(앞 구간의 끝·뒤 구간의 시작)은 늘 같은 규칙으로 민다. 그래야 구간이 서로
 맞물린 채로 남는다 — 한쪽만 밀면 하루가 어느 상태에도 안 잡히거나 두 번 잡힌다. 아홉 상태의
-호기-일수 합은 그대로이고, 반출·이설 호기는 가용 하루가 「반출 완료」·「이설 완료」 하루로
+호기-일수 합은 그대로이고, 정지·반출/이설 호기는 가용 하루가 「정지」·「반출/이설 완료」 하루로
 옮겨 간다.
 
 ## 무엇이 가용 합계에 들어가나
@@ -38,14 +38,14 @@ Guide 「반출·이설일정 **전날까지** 가용」에 코드를 맞췄다)
 - `기존보유` — 설비 마스터에 아직 못 올린 설비의 단순 대수 합. **안분하지 않는다**
   (`baseline_snapshot` 에 날짜 컬럼이 없어 언제부터 있었는지 알 수 없다). 설비 마스터가
   채워질수록 이 항목이 줄고 안분되는 항목이 는다.
-- `가용` — 입고·Qual 을 지나고 반출·이설 전이며 비가동·보관이 아닌 호기. **가용 판정으로
-  고른다**(구간의 `집계분류`). 반출·이설일정이 적힌 호기는 실행일 전까지 상태 이름이 「반출
-  예정」·「이설 예정」이지만, 그날 가용이면 여기에 든다 — 이름으로 고르면 날짜를 적는 순간
+- `가용` — 입고·Qual 을 지나고 정지·반출/이설 전이며 비가동·보관이 아닌 호기. **가용 판정으로
+  고른다**(구간의 `집계분류`). 정지·반출/이설일정이 적힌 호기는 실행일 전까지 상태 이름이 「정지
+  예정」·「반출/이설 예정」이지만, 그날 가용이면 여기에 든다 — 이름으로 고르면 날짜를 적는 순간
   멀쩡히 쓰는 호기가 첫날부터 빠졌다(2026-10-07 사용자 결정으로 고침).
 
 나머지 여덟은 **왜 못 쓰는지**를 보여 주는 참고 행이다. 화면은 `부호` 로 늘고 주는 것을
 표시하되 `가용반영` 이 참인 행만 소계에 넣는다. 여덟을 합계에 넣으면 아직 들어오지도
-않은 설비가 가용대수로 세어진다. 그래서 `반출 예정`·`이설 예정` 행에는 **가용이 아닌**
+않은 설비가 가용대수로 세어진다. 그래서 `정지 예정`·`반출/이설 예정` 행에는 **가용이 아닌**
 예정 호기(셋업 중·보관·입고 전)만 남는다.
 
 ## 사용기준 HBM·EDP 만 센다
@@ -95,6 +95,10 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_ID_COLUMN,
     EXIT_FOLLOWS_COLUMN,
     EXIT_STARTS_COLUMN,
+    STATUS_EXIT_PLANNED,
+    STATUS_EXITED,
+    STATUS_STOP_PLANNED,
+    STATUS_STOPPED,
 )
 from capa_simulation.services.equipment_units import UNIT_KEY_COLUMN, UNIT_SHARE_COLUMN
 from capa_simulation.services.process_cutoff import cutoff_lookup
@@ -173,10 +177,10 @@ CATEGORIES: tuple[AvailabilityCategory, ...] = (
     AvailabilityCategory("입고 예정", 1, False, True),
     AvailabilityCategory("셋업 진행중", 1, False, True),
     AvailabilityCategory("보관 설비", -1, False, True),
-    AvailabilityCategory("반출 예정", -1, False, True),
-    AvailabilityCategory("반출 완료", -1, False, True),
-    AvailabilityCategory("이설 예정", -1, False, True),
-    AvailabilityCategory("이설 완료", -1, False, True),
+    AvailabilityCategory(STATUS_STOP_PLANNED, -1, False, True),
+    AvailabilityCategory(STATUS_STOPPED, -1, False, True),
+    AvailabilityCategory(STATUS_EXIT_PLANNED, -1, False, True),
+    AvailabilityCategory(STATUS_EXITED, -1, False, True),
 )
 
 _BY_NAME = {category.name: category for category in CATEGORIES}
@@ -210,9 +214,9 @@ def span_date_range(months: Sequence[int], cutoff: pd.DataFrame) -> tuple[date, 
     기여하지 못해 첫 달이 호기마다 `1/구간일수` 씩 모자랐다(2026-10-07 리뷰 — 늘 가용인 30대가
     29.03대로 세어졌다).
 
-    반출·이설에 닿는 경계는 밀지 않지만 이 범위와 부딪치지 않는다. 첫날이 반출일이면 앞 경계에서
-    시작한 구간이 `반출이설직전` 으로 앞 경계에서 끝나 첫날에 기여하지 않고, 앞 경계 자체가
-    반출일이면 「반출 완료」가 그날부터 잡히지만 그날은 어느 달 구간에도 들지 않는다.
+    정지·반출/이설에 닿는 경계는 밀지 않지만 이 범위와 부딪치지 않는다. 첫날이 정지일이면 앞
+    경계에서 시작한 구간이 `반출이설직전` 으로 앞 경계에서 끝나 첫날에 기여하지 않고, 앞 경계
+    자체가 정지일이면 「정지」가 그날부터 잡히지만 그날은 어느 달 구간에도 들지 않는다.
     """
     windows = _windows_for(months, cutoff)
     if not windows:
@@ -419,7 +423,7 @@ def _prorated_rows(
         if COUNTED_COLUMN in spans.columns
         else pd.Series(True, index=spans.index)
     )
-    # 반출·이설에 닿는 경계는 밀지 않는다(모듈 docstring). 표시가 없는 구간(손으로 만든 표)은
+    # 정지·반출/이설에 닿는 경계는 밀지 않는다(모듈 docstring). 표시가 없는 구간(손으로 만든 표)은
     # 모든 경계를 다음 날로 민다.
     exit_starts, exit_follows = (
         (
@@ -466,9 +470,9 @@ def _prorated_rows(
         if category is None or not category.prorated:
             continue
         ratio = float(conversion_ratios.get(str(raw_unit or "").strip(), 1.0))
-        # 상태는 바뀐 날 **다음 날**부터다 — 반출·이설일정에 닿는 경계만 그날부터다. 한 경계의 두
-        # 표시(앞 구간의 `반출이설직전`·뒤 구간의 `반출이설시작`)는 언제나 같은 값이라, 양 끝을
-        # 같은 규칙으로 밀면 구간이 서로 맞물린 채 남는다.
+        # 상태는 바뀐 날 **다음 날**부터다 — 정지·반출/이설일정에 닿는 경계만 그날부터다. 한
+        # 경계의 두 표시(앞 구간의 `반출이설직전`·뒤 구간의 `반출이설시작`)는 언제나 같은 값이라,
+        # 양 끝을 같은 규칙으로 밀면 구간이 서로 맞물린 채 남는다.
         began = _as_date(raw_start) + (_NO_DAY if starts_on_exit else _ONE_DAY)
         finished = _as_date(raw_end) + (_NO_DAY if ends_before_exit else _ONE_DAY)
         unit = str(raw_unit or "").strip()

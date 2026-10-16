@@ -46,7 +46,7 @@ def _render_fixture() -> None:
     equipment.loc[2, "기존설비여부"] = "N"
     equipment.loc[2, "반입일정"] = date(2026, 10, 1)
     equipment.loc[2, "Qual일정"] = date(2026, 10, 10)
-    equipment.loc[2, "확정상태"] = "계획"
+    equipment.loc[2, "Qual상태"] = "계획"
     import streamlit as st
 
     if st.session_state.get("undated_unit", False):
@@ -191,11 +191,11 @@ def test_each_question_and_representation_replaces_the_previous_result() -> None
     app.segmented_control(QUESTION_KEY).set_value("Qual 일정").run()
     _assert_one_result(app)
     assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
-    app.selectbox("equipment_explorer_qual_view").set_value("확정상태 분포").run()
+    app.selectbox("equipment_explorer_qual_view").set_value("Qual상태 분포").run()
     _assert_one_result(app)
-    app.segmented_control("equipment_explorer_expression_확정상태 분포").set_value("표").run()
+    app.segmented_control("equipment_explorer_expression_Qual상태 분포").set_value("표").run()
     _assert_one_result(app)
-    counts = app.dataframe[0].value.set_index("확정상태")["설비대수"]
+    counts = app.dataframe[0].value.set_index("Qual상태")["설비대수"]
     assert counts["계획"] == 1
     assert counts.sum() == 1
 

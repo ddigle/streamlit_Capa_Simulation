@@ -81,7 +81,7 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     assert any(button.label == "설비 데이터 입력" for button in app.button)
     assert app.session_state["equipment_baseline_draft_v3"].empty
     assert app.session_state["equipment_master_draft_v3"].empty
-    assert not any("Qual 확정상태 실행관리" in item.value for item in app.markdown)
+    assert not any("Qual상태 실행관리" in item.value for item in app.markdown)
 
     def _filter(label: str) -> Multiselect[Any]:
         return next(widget for widget in app.multiselect if widget.label == label)

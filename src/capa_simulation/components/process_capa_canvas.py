@@ -13,9 +13,9 @@
 2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(S✕·D✕ 만 칠한다), 가용
    (환산, 단축 후는 둘째 줄), 전월 대비, 목표 과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄).
    목표는 달마다 다른 확보기준이다(`MonthlyTarget`).
-3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(확정상태 색), 단축 대상이면 같은 줄에
+3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에
    ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축 안에서
-   반출·이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면
+   정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면
    「n대 더」 한 줄이다.
 4. **④ 호기별 비가동** — 비가동 한 행이 화살표 하나. 가용을 깎은 것만 진한 실선과 촉, 나머지는 흐린
    점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」.
@@ -62,6 +62,11 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.shortening_timeline import month_day
 from capa_simulation.design import tokens
+from capa_simulation.services.equipment_contract import (
+    QUAL_STATUS_COLUMN,
+    STATUS_EXITED,
+    STATUS_STOPPED,
+)
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import (
     LENT_COLUMN,
@@ -71,6 +76,7 @@ from capa_simulation.services.process_capa_detail import (
     month_column,
 )
 from capa_simulation.services.process_equipment_timeline import (
+    EXIT_KIND_RELOCATION,
     ROW_SHORTENED,
     ROW_VIRTUAL,
     production_position,
@@ -763,7 +769,7 @@ def _dynamic_rows(
             hover=(
                 f"{head} · 전월 대비 {_signed_one(change)} = 신규 "
                 f"{_signed_one(_number(bridge_record.get('신규')) or 0.0)} · 비가동 "
-                f"{_signed_one(_number(bridge_record.get('비가동')) or 0.0)} · 반출·이설 "
+                f"{_signed_one(_number(bridge_record.get('비가동')) or 0.0)} · 정지·반출/이설 "
                 f"{_signed_one(_number(bridge_record.get('반출이설')) or 0.0)}"
                 if change is not None
                 else f"{head} · 축 첫 달이라 전월 대비가 없습니다"
@@ -902,7 +908,7 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
     arrival = _as_date(event.get("반입일정"))
     qual = _as_date(event.get("Qual일정"))
     target = _as_date(event.get("목표 Qual"))
-    confirmation = "" if _blank(event.get("확정상태")) else str(event.get("확정상태"))
+    confirmation = _qual_status(event)
     if kind == ROW_VIRTUAL:
         detail = f"필요 {_day(target, today)} · 신규"
     elif kind == ROW_SHORTENED:
@@ -942,7 +948,7 @@ def _exit_row(record: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row
         hover=(
             f"{html.escape(unit)} · {html.escape(kind)} {_iso(day)}"
             + (f" · {html.escape(model)}" if model else "")
-            + "<br>반출·이설은 그날부터 가용에서 빠집니다"
+            + "<br>정지·반출/이설은 그날부터 가용에서 빠집니다"
         ),
     )
 
@@ -962,7 +968,7 @@ def _unit_hover(event: Mapping[str, object]) -> str:
             f"{_iso(_as_date(event.get('Qual일정')))} (기여 시작 "
             f"{_iso(_as_date(event.get('기여 시작')))})"
         )
-        confirmation = "" if _blank(event.get("확정상태")) else str(event.get("확정상태"))
+        confirmation = _qual_status(event)
         if confirmation:
             lines[-1] += f" · {html.escape(confirmation)}"
     if kind == ROW_SHORTENED:
@@ -1834,7 +1840,9 @@ def _draw_unit(
                 )
         _resolved_ticks(record, axis, bottom, shapes)
     if start_x is not None and not clipped:
-        track.start.add(x=start_x, y=center, color=_confirmation_color(record.get("확정상태")))
+        track.start.add(
+            x=start_x, y=center, color=_confirmation_color(record.get(QUAL_STATUS_COLUMN))
+        )
     exit_x = inside(_as_date(record.get("반출이설일")))
     if exit_x is not None:
         track.exit.add(x=exit_x, y=center, color=_exit_color(record.get("반출이설구분")))
@@ -1871,8 +1879,14 @@ def _confirmation_color(value: object) -> str:
 
 
 def _exit_color(value: object) -> str:
-    stage = "이설 완료" if str(value).strip() == "이설" else "반출 완료"
+    stage = STATUS_EXITED if str(value).strip() == EXIT_KIND_RELOCATION else STATUS_STOPPED
     return tokens.EQUIPMENT_STAGE_COLORS[stage]
+
+
+def _qual_status(event: Mapping[str, object]) -> str:
+    """그 줄의 Qual상태 글자. 비었으면 빈 글자다."""
+    value = event.get(QUAL_STATUS_COLUMN)
+    return "" if _blank(value) else str(value)
 
 
 # ------------------------------------------------------------------ ④ 화살표

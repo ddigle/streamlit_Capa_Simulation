@@ -35,7 +35,7 @@ from capa_simulation.components.equipment_explorer import (
 _VIEWS = {
     "주차별 추이": ("가용대수", None),
     "상태 분포": ("호기 현황", "equipment_explorer_unit_view"),
-    "확정상태 분포": ("Qual 일정", "equipment_explorer_qual_view"),
+    "Qual상태 분포": ("Qual 일정", "equipment_explorer_qual_view"),
     "단계별 건수": ("단계 전환", TRANSITION_VIEW_KEY),
 }
 
