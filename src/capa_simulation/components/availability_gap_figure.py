@@ -1,13 +1,18 @@
-# Purpose: Static 가용대수와 Dynamic 가용대수의 월별 비교 그림과 분해 표를 그린다.
+# Purpose: Static 가용대수와 설비 일정 기준 가용대수(환산)의 월별 비교 그림을 그린다.
 
-"""Static 대 Dynamic 가용대수 비교.
+"""Static 대 설비 일정 기준 가용대수 비교.
 
-**그림은 비교를, 표가 분해를 맡는다.** 분류가 열이라 열 가지 색을 쓰면 서로 구분되지
-않는다 — 색으로 정체를 가르는 것은 여덟 계열이 한계이고, 그 위는 색이 아니라 자리로
-갈라야 한다. 그래서 그림에는 가용 소계를 이루는 둘(`기존보유`·`가용`)만 쌓고 Static 을
-옆에 세워 차이를 보이며, 열 가지 분해는 아래 표가 월을 열로 펼친다.
+**그림은 비교를, 시트가 분해를 맡는다.** 그림에는 설비 일정 기준 가용을 이루는 둘
+(`기존보유`·`가용`)만 쌓고 Static 가용을 옆에 세워 차이를 보이며, 보유·대여(비가동)·가용 분해는
+`분류별 내역` 의 9행 시트가 월을 열로 펼친다.
+
+**축은 환산이다**(2026-10-17 사용자 결정). 설비 일정 기준 가용 = 기존보유 + 「가용」 호기의
+환산대수(`SheetView` 의 `sched:available`)이고, Static 가용과 GAP 가용은 시트의 그 칸과 같은
+값이다 — 확보율 교차검증·필요단축일정·공정 Capa 상세 ② 와도 같다. 대수(몇 대) 축은 「호기 목록」의
+`대수` 칸이다.
 
 GAP 은 막대 위에 숫자로 적는다. 부호만 보고 색을 고른다 — 좋고 나쁨이 아니라 방향이다.
+맞댈 수 없는 달(「—」)은 GAP 글자를 적지 않는다.
 
 **화면 라벨은 「일할」이다.** 코드와 문서는 계속 「안분」이라 적지만 범례·설명은 사용자가
 고른 말을 쓴다 — 같은 뜻이다(날짜 비율로 나눠 세는 것).
@@ -25,9 +30,6 @@ Static 막대는 자리가 달라 색으로 가를 필요가 없고, 바탕과�
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-import pandas as pd
 import plotly.graph_objects as go
 
 from capa_simulation.components.plotly_layout import (
@@ -37,17 +39,16 @@ from capa_simulation.components.plotly_layout import (
     flush_layout_items,
 )
 from capa_simulation.design import tokens
-from capa_simulation.services.availability_gap import (
-    DYNAMIC_SUBTOTAL_ROW,
-    GAP_ROW,
-    STATIC_ROW,
+from capa_simulation.services.availability_sheet import (
+    ROW_GAP_AVAILABLE,
+    ROW_SCHEDULE_AVAILABLE,
+    ROW_STATIC_AVAILABLE,
+    SheetView,
 )
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.monthly_equipment_availability import BASELINE_CATEGORY
 
 __all__ = ["build_availability_gap_figure"]
 
-_AVAILABLE_CATEGORY = "가용"
 _BAR_FONT_SIZE = 12
 _CHART_HEIGHT_PX = 360
 
@@ -70,14 +71,14 @@ def _stack_outline(values: list[float]) -> list[float]:
     return [0.0 if value == 0 else _STACK_OUTLINE_WIDTH_PX for value in values]
 
 
-def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
+def build_availability_gap_figure(view: SheetView) -> go.Figure:
     """월을 가로축에 둔 비교 그림.
 
-    `matrix` 는 `services/availability_gap.gap_matrix` 의 결과(행이 분류, 열이 월)다.
-    없는 행은 0 으로 본다 — 어느 달에 그 분류가 아예 없을 수 있다.
+    `view` 는 비교 시트의 9행(`services/availability_sheet.sheet_view`)이다 — 반사실 없이 만든
+    시트여도 된다(가용만 읽는다). 「—」 칸(NaN)은 막대 높이 0 이고 GAP 글자를 적지 않는다.
     """
     figure = go.Figure()
-    months = list(matrix.columns) if not matrix.empty else []
+    months = list(view.months)
     if not months:
         figure.update_layout(**chart_canvas_layout(font_size=_BAR_FONT_SIZE))
         flush_layout_items(figure)
@@ -85,11 +86,11 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
 
     labels = [month_label(int(month)) for month in months]
     corner_radius = _corner_radius(len(months))
-    baseline = _row(matrix, BASELINE_CATEGORY.name, months)
-    available = _row(matrix, _AVAILABLE_CATEGORY, months)
-    static = _row(matrix, STATIC_ROW, months)
-    dynamic = _row(matrix, DYNAMIC_SUBTOTAL_ROW, months)
-    gaps = _row(matrix, GAP_ROW, months)
+    dynamic = [view.value(ROW_SCHEDULE_AVAILABLE, month) or 0.0 for month in months]
+    baseline = [_number(view.baseline.get(month)) for month in months]
+    available = [total - base for total, base in zip(dynamic, baseline, strict=True)]
+    static = [view.value(ROW_STATIC_AVAILABLE, month) or 0.0 for month in months]
+    gaps = [view.value(ROW_GAP_AVAILABLE, month) for month in months]
 
     # Dynamic 은 두 조각을 쌓고, Static 은 그 옆에 따로 세운다. `offsetgroup` 이 달라야
     # 쌓기와 나란히 놓기가 한 그림에서 같이 산다.
@@ -109,12 +110,12 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         },
         offsetgroup="dynamic",
         legendgroup="dynamic",
-        hovertemplate="기존보유 %{y:.2f}대<extra></extra>",
+        hovertemplate="기존보유 %{y:.2f}<extra></extra>",
     )
     figure.add_bar(
         x=labels,
         y=available,
-        name="가용(일할)",
+        name="가용(일할·환산)",
         marker={
             "color": tokens.ACCENT,
             "line": {"color": tokens.SURFACE, "width": _stack_outline(available)},
@@ -122,7 +123,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         },
         offsetgroup="dynamic",
         legendgroup="dynamic",
-        hovertemplate="가용 %{y:.2f}대<extra></extra>",
+        hovertemplate="가용 %{y:.2f} (환산대수)<extra></extra>",
     )
     figure.add_bar(
         x=labels,
@@ -157,6 +158,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
         for index, (gap, dynamic_value, static_value) in enumerate(
             zip(gaps, dynamic, static, strict=True)
         )
+        if gap is not None
     ]
 
     figure.update_layout(
@@ -184,7 +186,7 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
     )
     figure.update_yaxes(
         fixedrange=True,
-        title_text="대수",
+        title_text="가용대수 (설비 일정은 환산)",
         gridcolor=tokens.BORDER,
         zerolinecolor=tokens.BORDER_STRONG,
         rangemode="tozero",
@@ -195,9 +197,9 @@ def build_availability_gap_figure(matrix: pd.DataFrame) -> go.Figure:
     return figure
 
 
-def _row(matrix: pd.DataFrame, name: str, months: Sequence[object]) -> list[float]:
-    """행 하나를 월 차례대로. 그 행이 없으면 전부 0 이다."""
-    if name not in list(matrix.index):
-        return [0.0] * len(months)
-    series = matrix.loc[name]
-    return [float(series.get(month, 0.0)) for month in months]
+def _number(value: object) -> float:
+    """기존보유 한 칸. 「—」(NaN·없음)이면 0 이다."""
+    if value is None:
+        return 0.0
+    number = float(value)  # type: ignore[arg-type]
+    return 0.0 if number != number else number

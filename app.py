@@ -9,6 +9,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import render_app_header, render_shell_style
+from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
 from capa_simulation.components.home_rendering import HOME_CELL_CHART_KEYS
 from capa_simulation.components.intro_overlay import render_intro_overlay
@@ -135,7 +136,11 @@ def render_condition_dialogs(
 
 # 칸 선택(`on_select`)을 켠 그림 전부. 선택을 켜면 그림 위 터치 스크롤이 막히므로 막이에 넘긴다 —
 # 선택을 켠 그림을 더하면 여기에도 더한다.
-CELL_SELECT_CHART_KEYS = (*HOME_CELL_CHART_KEYS, PROCESS_DETAIL_CANVAS_CHART_KEY)
+CELL_SELECT_CHART_KEYS = (
+    *HOME_CELL_CHART_KEYS,
+    PROCESS_DETAIL_CANVAS_CHART_KEY,
+    GAP_SHEET_CHART_KEY,
+)
 
 # 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
 # Streamlit 호출보다 앞이다** — 그런 호출은 다른 요청이 이 실행을 끊는 자리라, 그 앞에서 끊긴
@@ -169,7 +174,8 @@ render_intro_overlay()
 # 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
 # 머리칸의 `S.PKG CAPA` 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
 # 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 그림(HOME 두
-# 월 그림과 공정 Capa 상세 결합 캔버스 — `CELL_SELECT_CHART_KEYS`) 위에서 시작한 터치가 화면을
+# 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트 — `CELL_SELECT_CHART_KEYS`) 위에서 시작한
+# 터치가 화면을
 # 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의

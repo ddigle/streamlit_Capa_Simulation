@@ -16,6 +16,7 @@ from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
+from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
@@ -939,14 +940,17 @@ def test_an_ignored_home_cell_click_reruns_the_figures_in_their_own_event_slots(
 def test_the_toolbar_iframe_carries_the_touch_scroll_guard_for_home_cell_charts(
     _app: AppTest,
 ) -> None:
-    """칸 선택을 켠 그림(HOME 두 월 그림과 공정 Capa 상세 결합 캔버스) 위에서 시작한 터치가 화면을
-    스크롤하게 하는 막이는 테마 버튼 iframe 에 한 번 실린다(`components/plotly_touch_scroll.py`).
-    빠지면 그 그림 위 터치 스크롤이 다시 막힌다."""
+    """칸 선택을 켠 그림(HOME 두 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트) 위에서
+    시작한 터치가 화면을 스크롤하게 하는 막이는 테마 버튼 iframe 에 한 번 실린다
+    (`components/plotly_touch_scroll.py`). 빠지면 그 그림 위 터치 스크롤이 다시 막힌다."""
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    guard = plotly_touch_scroll_script((*HOME_CELL_CHART_KEYS, PROCESS_DETAIL_CANVAS_CHART_KEY))
+    guard = plotly_touch_scroll_script(
+        (*HOME_CELL_CHART_KEYS, PROCESS_DETAIL_CANVAS_CHART_KEY, GAP_SHEET_CHART_KEY)
+    )
     assert f".st-key-{PROCESS_DETAIL_CANVAS_CHART_KEY} .js-plotly-plot" in guard
+    assert f".st-key-{GAP_SHEET_CHART_KEY} .js-plotly-plot" in guard
     frames = [str(element.proto.srcdoc) for element in app.get("iframe")]
     assert sum(frame.count(guard) for frame in frames) == 1
 

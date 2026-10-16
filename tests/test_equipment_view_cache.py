@@ -19,6 +19,11 @@ from test_required_shortening import MAY, PROCESS, _worked_example
 
 from capa_simulation.services import simulation_cache
 from capa_simulation.services.availability_gap import GapComparison, build_availability_gap
+from capa_simulation.services.availability_sheet import (
+    ROW_SCHEDULE_LENT,
+    AvailabilitySheet,
+    build_availability_sheet,
+)
 from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
@@ -40,8 +45,7 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.securement_cross_check import (
     CrossCheck,
-    build_securement_cross_check,
-    dynamic_available_equipment,
+    cross_check_from_monthly,
 )
 
 
@@ -168,6 +172,7 @@ def _clear_equipment_caches() -> None:
     simulation_cache.get_equipment_lifecycle_spans.clear()
     simulation_cache.get_availability_comparison.clear()
     simulation_cache.get_monthly_equipment_contributions.clear()
+    simulation_cache.get_availability_sheet.clear()
     simulation_cache.get_required_shortening.clear()
 
 
@@ -723,9 +728,7 @@ def test_cached_cross_check_follows_every_input(
         fresh_monthly = build_monthly_equipment_availability(
             spans, baseline, cutoff, months, conversion_ratios=ratios
         )
-        fresh = build_securement_cross_check(
-            static, dynamic_available_equipment(fresh_monthly), required
-        )
+        fresh = cross_check_from_monthly(static, fresh_monthly, required)
         assert cached.has_demand and cached.check is not None
         return key, cached.check, fresh
 
@@ -750,9 +753,9 @@ def test_cached_cross_check_follows_every_input(
 
     def counting(*args: object, **kwargs: object) -> CrossCheck:
         built.append(args)
-        return build_securement_cross_check(*args, **kwargs)  # type: ignore[arg-type]
+        return cross_check_from_monthly(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(simulation_cache, "build_securement_cross_check", counting)
+    monkeypatch.setattr(simulation_cache, "cross_check_from_monthly", counting)
     key, cached, fresh = checked(spans, cutoff, static, months, required, scenario_key)
 
     assert key != base_key
@@ -767,3 +770,155 @@ def test_cached_cross_check_follows_every_input(
     assert len(built) == 1
     assert len(loaded) == 2
     _same_check(again, fresh)
+
+
+# ------------------------------------------------------------------ 비교 시트(9행)
+
+
+def _static_tables(
+    processes: Sequence[str], months: Sequence[int], owned: float = 5.0, lent: float = 1.0
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def table(column: str, value: float) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {"생산계획년월": month, "공정": process, column: value}
+                for month in months
+                for process in processes
+            ]
+        )
+
+    return table("설비보유", owned), table("설비대여평가", lent), table("가용대수", owned - lent)
+
+
+def _sheet(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    tables: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame],
+) -> tuple[simulation_cache.AvailabilitySheetCacheKey, AvailabilitySheet, AvailabilitySheet]:
+    """페이지와 같은 길 — 구간 둘(실제·빈 비가동)을 구간 캐시로, 시트를 시트 캐시로. 새로 만든
+    것도."""
+    start, end = _span_range(cutoff, MONTHS)
+    ratios = _ratios(equipment)
+    _, spans = _cached_spans(equipment, downtime, start, end)
+    free_key, free_spans = _cached_spans(equipment, downtime.iloc[0:0], start, end)
+    owned, lent, available = tables
+    comparison_key, monthly, _ = _comparison(spans, baseline, cutoff, available, MONTHS, ratios)
+    free_monthly_key = simulation_cache.dynamic_monthly_cache_key(
+        spans=free_spans, baseline=baseline, cutoff=cutoff, months=MONTHS, conversion_ratios=ratios
+    )
+    key = simulation_cache.availability_sheet_cache_key(
+        comparison_key[0],
+        free_monthly_key,
+        static_owned=owned,
+        static_lent=lent,
+        static_available=available,
+    )
+    cached = simulation_cache.get_availability_sheet(
+        key,
+        _actual_monthly=monthly,
+        _free_spans=free_spans,
+        _baseline=baseline,
+        _cutoff=cutoff,
+        _conversion_ratios=ratios,
+        _static_owned=owned,
+        _static_lent=lent,
+        _static_available=available,
+    )
+    fresh = build_availability_sheet(
+        build_monthly_equipment_availability(
+            _fresh_spans(equipment, downtime, start, end),
+            baseline,
+            cutoff,
+            MONTHS,
+            conversion_ratios=ratios,
+        ),
+        build_monthly_equipment_availability(
+            _fresh_spans(equipment, downtime.iloc[0:0], start, end),
+            baseline,
+            cutoff,
+            MONTHS,
+            conversion_ratios=ratios,
+        ),
+        owned,
+        lent,
+        available,
+        MONTHS,
+    )
+    return key, cached, fresh
+
+
+@pytest.mark.parametrize("change", ["owned", "lent", "available", "downtime", "master"])
+def test_cached_sheet_follows_every_input(change: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """시트 캐시는 Static 세 표(보유·대여·가용)와 실제·반사실 월별을 모두 키로 갈라낸다.
+
+    비가동 한 줄을 지우면 실제 구간만 바뀌고 반사실(빈 비가동) 구간은 그대로다 — 키의 실제 월별
+    키가 바뀌어 대여가 달라진다. 캐시를 거친 시트는 새로 만든 시트와 같다.
+    """
+    _clear_equipment_caches()
+    equipment, downtime, baseline, cutoff = _fleet()
+    processes = sorted(set(equipment["공정소분류"].astype(str)))
+    tables = _static_tables(processes, MONTHS)
+    base_key, base, _ = _sheet(equipment, downtime, baseline, cutoff, tables)
+
+    owned, lent, available = tables
+    if change == "owned":
+        tables = (owned.assign(설비보유=7.0), lent, available)
+    elif change == "lent":
+        tables = (owned, lent.assign(설비대여평가=2.0), available)
+    elif change == "available":
+        tables = (owned, lent, available.assign(가용대수=9.0))
+    elif change == "downtime":
+        downtime = downtime.iloc[1:].reset_index(drop=True)
+    else:
+        equipment = _later_qual(equipment)
+    key, cached, fresh = _sheet(equipment, downtime, baseline, cutoff, tables)
+
+    assert key != base_key
+    assert_frame_equal(cached.rows, fresh.rows)
+    assert not fresh.rows.equals(base.rows)
+    if change == "downtime":
+        assert key[1] == base_key[1]  # 반사실 월별 키는 비가동을 보지 않는다
+        assert not fresh.rows[ROW_SCHEDULE_LENT].equals(base.rows[ROW_SCHEDULE_LENT])
+
+    # 같은 키로 다시 부르면 만들지 않는다.
+    built: list[object] = []
+
+    def counting(*args: object, **kwargs: object) -> AvailabilitySheet:
+        built.append(args)
+        return fresh
+
+    monkeypatch.setattr(simulation_cache, "build_availability_sheet", counting)
+    _, again, _ = _sheet(equipment, downtime, baseline, cutoff, tables)
+    assert built == []
+    assert_frame_equal(again.rows, fresh.rows)
+
+
+def test_a_sheet_without_a_counterfactual_is_its_own_entry() -> None:
+    """반사실 키가 None 인 시트(「가용대수 비교」 그림)는 반사실이 있는 시트와 다른 항목이다."""
+    _clear_equipment_caches()
+    equipment, downtime, baseline, cutoff = _fleet()
+    processes = sorted(set(equipment["공정소분류"].astype(str)))
+    owned, lent, available = _static_tables(processes, MONTHS)
+    key, full, _ = _sheet(equipment, downtime, baseline, cutoff, (owned, lent, available))
+    start, end = _span_range(cutoff, MONTHS)
+    _, spans = _cached_spans(equipment, downtime, start, end)
+    ratios = _ratios(equipment)
+    _, monthly, _ = _comparison(spans, baseline, cutoff, available, MONTHS, ratios)
+    bare_key = (key[0], None, key[2], key[3], key[4])
+    bare = simulation_cache.get_availability_sheet(
+        bare_key,
+        _actual_monthly=monthly,
+        _free_spans=None,
+        _baseline=baseline,
+        _cutoff=cutoff,
+        _conversion_ratios=ratios,
+        _static_owned=owned,
+        _static_lent=lent,
+        _static_available=available,
+    )
+
+    assert full.has_counterfactual and not bare.has_counterfactual
+    assert bare.rows[ROW_SCHEDULE_LENT].isna().all()
+    assert not full.rows[ROW_SCHEDULE_LENT].isna().any()

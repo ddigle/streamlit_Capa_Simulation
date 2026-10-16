@@ -719,20 +719,20 @@ def test_the_cross_check_row_paints_only_when_both_bases_fall_short() -> None:
         static_short = summary["판정"].iloc[index] != "secure"
         dynamic_short = round(gaps[month], 9) < 0
         if static_short and dynamic_short:
-            assert texts[index] == ("<b>S✕·D✕</b>", tokens.TEXT)
+            assert texts[index] == ("<b>기준✕·일정✕</b>", tokens.TEXT)
             assert fills[index] == tokens.STATUS_SHORTAGE
         elif static_short:
-            assert texts[index] == ("S✕·D✓", tokens.TEXT_MUTED)
+            assert texts[index] == ("기준✕·일정✓", tokens.TEXT_MUTED)
             assert index not in fills
         elif dynamic_short:
-            assert texts[index] == ("S✓·D✕", tokens.TEXT_MUTED)
+            assert texts[index] == ("기준✓·일정✕", tokens.TEXT_MUTED)
         else:
             assert index not in texts and index not in fills
 
 
 def test_an_owned_short_month_asks_for_investment_in_the_cross_check() -> None:
-    """S✕·D✓ 인 달의 원인이 「보유로도 부족」이면 풍선이 투자 검토를 함께 적는다(설계 logic_final
-    3절 표, Guide 판정 대조 표)."""
+    """기준✕·일정✓ 인 달의 원인이 「보유로도 부족」이면 풍선이 투자 검토를 함께 적는다(설계
+    logic_final 3절 표, Guide 판정 대조 표)."""
     summary = _summary()
     month = 202612
     assert summary.loc[summary["생산계획년월"].eq(month), "부족 원인"].item() == "대여 영향"
@@ -747,7 +747,7 @@ def test_an_owned_short_month_asks_for_investment_in_the_cross_check() -> None:
             )
         )
 
-    assert "S✕·D✓" not in compare_hover(summary)  # 풍선에 칸 글은 없다
+    assert "기준✕·일정✓" not in compare_hover(summary)  # 풍선에 칸 글은 없다
     assert "투자 검토" not in compare_hover(summary)
     owned_short = summary.copy()
     owned_short.loc[owned_short["생산계획년월"].eq(month), "부족 원인"] = "보유로도 부족"
