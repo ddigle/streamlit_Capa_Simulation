@@ -986,7 +986,9 @@ def _schedule_lines(lines: pd.DataFrame, row: str) -> pd.DataFrame:
         table = table.rename(columns={"설비키": "설비"})
         columns.insert(columns.index(EQUIPMENT_ID_COLUMN) + 1, "설비")
     shown = table.loc[:, columns].reset_index(drop=True)
-    total: dict[str, object] = {column: None for column in columns}
+    # 합계 줄의 글자 칸은 비워 둔다(빈 값으로 두면 표가 「None」 을 적는다).
+    words = {"공정", "구분", EQUIPMENT_ID_COLUMN, "설비", "비가동 내역"}
+    total: dict[str, object] = {column: "" if column in words else None for column in columns}
     total["구분" if "구분" in columns else EQUIPMENT_ID_COLUMN] = _TOTAL_ROW
     for column in ("보유", BREAKDOWN_LENT_COLUMN, "가용"):
         if column in columns:
