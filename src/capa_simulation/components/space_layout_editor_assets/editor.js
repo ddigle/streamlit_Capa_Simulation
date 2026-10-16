@@ -54,7 +54,7 @@ export default function (component) {
   // 보기 화면 덧표시(화면 px) — 선택 후광의 띄움, 「!」·운영 비가동 표식의 반지름, 겹침 꼭지 삼각의 변.
   const HALO_GAP_PX = 3
   const BADGE_PX = 7
-  const CORNER_PX = 9
+  const CORNER_PX = 11
   const GROUP_PAD = 0.6
   // 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle-drawer` 의 8px). 놓은 호기를 서랍 왼쪽으로 이만큼 더 꺼낸다.
   const DRAWER_INSET_PX = 8

@@ -93,7 +93,8 @@
 .sle-flag-text { fill: var(--sle-flag-ink); font-weight: 700; text-anchor: middle; dominant-baseline: central; }
 .sle-offline-dot { fill: var(--sle-surface); stroke: var(--sle-text); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 .sle-offline-bar { fill: var(--sle-text); }
-.sle-corner { fill: var(--sle-danger); }
+/* 겹침 꼭지는 면색 테를 둘러 어느 상자 면 위에서도 떨어져 보인다(어둡게의 밝은 위험색 × 밝은 면). */
+.sle-corner { fill: var(--sle-danger); stroke: var(--sle-surface); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 
 /* ---- 도면 요소 ---- */
 .sle-mark-shape { pointer-events: none; }
