@@ -169,6 +169,24 @@ INTRO_HOST_ID: Final = "capa-intro-host"
 SUMMARY_LABEL_ID: Final = "capa-brand-label"
 EQUIPMENT_PAGE: Final = "available_equipment_status"
 SPACE_PAGE: Final = "space_status"
+# 설비 마스터 38열 개편(설비 마이그레이션 0023)의 RawData `직접 편집` 머리 칸 — 새 이름 일곱과
+# 지운 컬럼 하나. 앱 모듈(`equipment_contract`)을 부르지 않고 값만 옮긴다 — 화면이 계약과 같은지
+# 따로 보는 확인이라 계약에서 이름을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 계약과 같은지
+# 본다.
+EQUIPMENT_NEW_HEADERS: Final = (
+    "Area Code",
+    "반입실적",
+    "반입상태",
+    "Qual실적",
+    "Qual상태",
+    "정지일정",
+    "반출/이설일정",
+)
+EQUIPMENT_DROPPED_HEADER: Final = "설비가동현황"
+# 설비 마스터 편집표에만 있는 머리 칸 — 그 표를 고르는 데만 쓴다(일정 확인 목록 표에도 `설비명`이
+# 있다). 개편과 상관없이 늘 있는 칸이라 새 이름이 빠져도 표는 찾는다.
+EQUIPMENT_EDITOR_ANCHOR: Final = "X좌표"
+EQUIPMENT_EDIT_TAB: Final = "직접 편집"
 TOOLBAR_LABELS: Final[dict[str, str]] = {
     GUIDE_BUTTON_ID: "Guide",
     PRINT_BUTTON_ID: "Print",
@@ -1645,6 +1663,29 @@ def check_rawdata_target(screen: Screen) -> str:
     return f"「등록할 표: 설비 마스터」 {shown} · 옛 이름 「호기 마스터」 {old_names}곳"
 
 
+def summarize_equipment_headers(found: Mapping[str, bool], dropped: bool) -> str:
+    """머리 칸 확인 결과. 이름은 계약의 고정 글자(`EQUIPMENT_NEW_HEADERS`)만 적는다."""
+    present = [name for name in EQUIPMENT_NEW_HEADERS if found.get(name, False)]
+    missing = [name for name in EQUIPMENT_NEW_HEADERS if not found.get(name, False)]
+    head = f"새 이름 {len(present)}/{len(EQUIPMENT_NEW_HEADERS)} 있음"
+    if missing:
+        head += f"(없음: {', '.join(missing)})"
+    return f"{head} · 「{EQUIPMENT_DROPPED_HEADER}」 {'있음' if dropped else '없음'}"
+
+
+def check_equipment_headers(screen: Screen) -> str:
+    """`가용설비 현황` RawData `직접 편집` 의 설비 마스터 표 머리 — 38열 개편의 새 이름 일곱이 있고
+    지운 「설비가동현황」이 없는가. 표 보기 설정은 바꾸지 않는다(기본은 모든 칸이 보인다). 편집표는
+    가로로 그린 칸만 DOM 에 있어 칸마다 가로로 굴려 찾는다(`Screen.column_index`)."""
+    screen.open_page(EQUIPMENT_PAGE)
+    screen.open_tab("RawData")
+    screen.open_tab(EQUIPMENT_EDIT_TAB)
+    grid, _ = screen.grid_with_column(EQUIPMENT_EDITOR_ANCHOR, timeout=60)
+    found = {name: screen.column_index(grid, name) is not None for name in EQUIPMENT_NEW_HEADERS}
+    dropped = screen.column_index(grid, EQUIPMENT_DROPPED_HEADER) is not None
+    return summarize_equipment_headers(found, dropped)
+
+
 def check_progress_box(screen: Screen) -> str:
     """`필요단축일정` 의 `진척 비교` 상자 — 있음·값·선택지 수·자리. 고르지 않는다."""
     screen.open_page(EQUIPMENT_PAGE)
@@ -2123,6 +2164,7 @@ ITEMS: tuple[Item, ...] = (
     Item("period_popup", "조회기간 팝업", check_period_popup),
     Item("process_popup", "공정 필터 팝업", check_process_popup),
     Item("process_detail", "공정 Capa 상세", check_process_detail),
+    Item("equipment_headers", "RawData 설비 마스터 머리(38열)", check_equipment_headers),
 )
 
 

@@ -950,7 +950,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (반입 미정 a · Qual 미정 b)」 한 줄로 알린다(0대면 없음, Main 조건으로 거른 표 기준,
     `services/undated_equipment.py`). Static/Dynamic 도 같은 줄을 둘러싼 대수의 범위(공정 선택 —
     전체 합계면 한쪽에만 있는 공정 제외, 확보율 교차검증이면 Dynamic 공정 전체, `분류별 내역` 의
-    호기 필터)로 센다.
+    호기 필터)로 센다. `호기 현황` 은 그 아래에 반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인
+    설비를 「미확인 N대 (반입 a · Qual b)」 한 줄로 더 알린다(0대면 없음, 오늘 기준, 같은 범위,
+    `services/schedule_confirmation.py` — 고치는 자리는 RawData 의 일정 확인 줄·목록이다).
   - **Dynamic 가용대수는 사용기준이 HBM·EDP 인 호기만 센다**(2026-10-07 HBM 결정, 2026-10-08 사용자
     결정 「HBM이랑 EDP만 센다」, 규칙은 `equipment_contract.counts_for_capacity` 한 곳 — 두 값은 한
     가용대수로 함께 센다). Main `가용대수`(주차별 추이·공정별 내역의 총대수·
@@ -2803,12 +2805,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   일정·실적·상태) 행을 내고 `confirmation_counts`·`schedule_confirmation_notice` 가 센다 — 「N대」는 행이 아니라
   **설비키**(`equipment_units.unit_keys`)의 수다. Main 설비로 묶은 모듈은 하나만 걸려도 넷 다 걸려도 그 설비
   한 대이고(확인할 대상의 수라 일정 미정 알림처럼 지분으로 나누지 않는다), 반입·Qual 이 함께 걸려도 한 대다.
-  Space 「!」(`flagged_equipment`)는 상자마다 묻으므로 설비명이고, 저장 전 경고의 「N건」은 (호기, 단계) 행
-  수다. `actual_record_issues`·`actual_record_warnings` 는 오늘과 무관한 둘(실적 누락·상태 갱신 필요)만이고
-  저장 미리보기 경고(`equipment_validation.equipment_save_warnings`)가 쓴다. **검증(`prepare_*`) 안에 두지
-  않는다** — 미확인은 날이 지나면 답이 바뀌어, 넣으면 저장 때 통과한 리비전이 나중에 열리지 않는다. 그래서
-  검증을 부르지 않고 검증 전 편집본·실적 칸이 없는 옛 표도 그대로 받는다(못 읽는 날짜는 빈 칸). 지연
-  (상태 「지연」)은 고르지 않는다 — Space 도면의 몫이다. 저장은 막지 않는다.
+  Space 「!」(`flagged_equipment`)는 상자마다 묻으므로 설비명이고, 글 경고(`actual_record_warnings`)의 「N건」은
+  (호기, 단계) 행 수다. `schedule_confirmation_summary` 는 세 구분을 한 줄로(「미확인 N대 · 실적 누락 N대 · 상태
+  갱신 필요 N대 — …」, 설비키 기준·0 인 구분은 빠짐·셋 다 0 이면 `None`) 만든다. **화면 연결**: RawData 편집표 위
+  알림 칸이 편집본(미리보기 중이면 저장될 후보) 기준으로 그 한 줄과 접힌 목록(`equipment_data_workspace`
+  항목)을, Main `호기 현황`(상태 분포·호기 목록)이 저장본 기준으로 `schedule_confirmation_notice`(미확인만) 한
+  줄을 그린다(`equipment_explorer` 항목). 둘 다 `simulation_cache.get_schedule_confirmation_issues`(키 = 설비
+  마스터 `frame_digest` + 오늘, 프레임은 `_` 인자 — 편집본·저장본이 한 길을 쓴다)로 받는다.
+  `actual_record_issues`·`actual_record_warnings`(오늘과 무관한 둘만)와 그것을 묶은
+  `equipment_validation.equipment_save_warnings` 는 이제 화면이 부르지 않는다 — RawData 는 Area Code 경고
+  (`area_code_warnings`)와 일정 확인 줄을 따로 그린다. **검증(`prepare_*`) 안에 두지 않는다** — 미확인은 날이
+  지나면 답이 바뀌어, 넣으면 저장 때 통과한 리비전이 나중에 열리지 않는다. 그래서 검증을 부르지 않고 검증 전
+  편집본·실적 칸이 없는 옛 표도 그대로 받는다(못 읽는 날짜는 빈 칸). 지연(상태 「지연」)은 고르지 않는다 —
+  Space 도면의 몫이다. 저장은 막지 않는다.
 - `usage_basis.py`: 사용기준 제외 설비 — 사용기준이 HBM·EDP 가 아니어서(빈 칸 포함,
   `counts_for_capacity`) Dynamic 가용대수에 세지 않는 행. `usage_excluded_equipment` 가 행을 고르고
   `usage_excluded_count`·`usage_exclusion_notice` 가 공정·설비명 범위로 세어 「사용기준이 HBM·EDP 가 아닌
@@ -2846,10 +2855,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`equipment_repository._save`, `date.today()`)과 붙여넣기 미리보기(`merge_equipment_rows(today=)`)가
     넘긴다. 리비전을 다시 읽을 때는 넘기지 않는다 — 날짜에 따라 답이 바뀌어 저장 때 통과한 리비전이
     나중에 열리지 않으면 안 된다.
-  - **저장 전 경고**(`equipment_save_warnings` — 막지 않는다): Area Code 가 Main·MI·부대 밖
-    (`area_code_warnings`), 실적 누락·상태 갱신 필요(`schedule_confirmation.actual_record_warnings`). 검증 전
-    편집본도 받는다. RawData 작업 공간이 Main 설비 묶음 경고(`module_group_warnings`)와 같은 자리에
-    그린다(미리보기 중이면 저장될 후보 기준).
+  - **저장 전 경고**(막지 않는다): Area Code 가 Main·MI·부대 밖(`area_code_warnings`). 검증 전 편집본도
+    받는다. RawData 작업 공간이 Main 설비 묶음 경고(`module_group_warnings`)와 같은 자리에 그리고(미리보기
+    중이면 저장될 후보 기준), 그 아래에 일정 확인 한 줄·목록(`schedule_confirmation` 항목)이 선다.
+    `equipment_save_warnings`(Area Code + `actual_record_warnings` 글 경고)는 남아 있지만 화면은 부르지 않는다.
   - 숫자 검증 오류는 **어느 행인지** 적는다 — 기존보유대수는 공정·분류(`_key_examples`, 최대
     다섯), 설비 마스터의 좌표·크기·환산비는 설비명이다. 비가동 일정에는 숫자 칸이 없다.
   - **Space 위치 계약**(2026-10-01 사용자 결정). 레이아웃표시는 「도면 대상인가」만 가르고
@@ -4420,6 +4429,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `가용대수` 결과 아래에 일정 미정 줄과 사용기준 제외 줄(`usage_basis`)을 둔다 — 같은 범위(Main 조건으로
     거른 호기)다. 사용기준 제외 줄은 `가용대수` 에만 선다. 호기 현황은 이름을 보이는 자리라 HBM·EDP 가
     아닌 호기도 그대로 센다.
+  - `호기 현황`(상태 분포·호기 목록)에는 일정 미정 줄 아래에 **미확인** 한 줄(`schedule_confirmation_notice`)을
+    둔다 — 같은 범위(Main 조건으로 거른 호기)이고 **오늘 기준**이다(카드의 기준일과 상관없다, 2026-10-16
+    사용자 결정). 고르기는 거르기 전 설비 마스터로 `get_schedule_confirmation_issues`(내용 지문 + 오늘)에서
+    받는다 — 필터를 바꿔도 다시 고르지 않는다. 대수와 상관없는 확인할 거리라 `가용대수` 에는 서지 않는다.
   - `비가동 호기`는 `기준일 시점`·`그 달 전체` 두 `보기`를 갖고 기본은 기준일 시점이다.
     달 전체도 계산은 서비스가 하고 화면은 몇 개 시점을 쟀는지만 캡션에 적는다 — 시점과 결과를
     한 벌로 `simulation_cache.get_inactive_equipment_month`(키 = 거른 마스터·비가동 내용 지문 + 그 달
@@ -4487,6 +4500,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     채운 표(붙여넣은 행끼리)에서 한 번, 병합된 표에서 한 번 잡고, **두 번 모두** 붙여넣기 전 편집본의
     설비명을 `existing` 으로 넘긴다 — 채운 표의 붙여넣지 않은 열(Main 설비)은 편집본 값이라, 편집본에도
     있는 이름을 (붙여넣기)로만 적으면 「붙여넣을 표에서 빼라」가 되어 다시 막힌다.
+  - **일정 확인**(2026-10-16 사용자 결정 — 막지 않는다). 폼 위 알림 칸 안, Main 설비 묶음·Area Code 경고
+    아래에 「미확인 N대 · 실적 누락 N대 · 상태 갱신 필요 N대」 한 줄(`schedule_confirmation_summary`, 0 이면
+    없음)과 접힌 `일정 확인 목록 · N건`(key `CONFIRMATION_EXPANDER_KEY` — 건수가 바뀌어 제목이 달라도 펼침을
+    지킨다)을 그린다. 목록은 (호기, 단계) 행이고 칸은 확인구분·설비명·공정소분류·단계·일정·실적·상태다(설비키는
+    대수에만 쓴다). 기준은 다른 경고와 같은 `master`(편집본, 미리보기 중이면 저장될 후보)라 저장하지 않은
+    편집이 바로 보이고, 「오늘」은 페이지가 넘기는 `today`(Main 과 같은 날)다. 판정은
+    `get_schedule_confirmation_issues`(내용 지문 + 오늘 캐시)로 받는다 — 이 작업 공간은 숨은 탭에서도 회차마다
+    그려지므로 고친 것이 없는 회차는 지문만 잰다(합성 3천 행에 고르기 40ms 남짓 · 지문 3ms 남짓, 샘플 관측).
+    알림 칸 **안**에 두어야 목록이 생기고 사라질 때 아래 key 있는 펼침·탭이 밀리지 않는다.
   - 손대지 않은 예시 행은 저장이 막기 전에 폼 위에서 알리고 `예시 행 N건 지우기`로 편집
     버퍼와 검토 후보에서 함께 뺀다. 지우기가 켠 세션 플래그를 재검토가 보고 merge **전에**
     원문에서 같은 행을 거르므로 지운 행이 되살아나지 않는다. 건수는 저장 가드와 같은 두
@@ -5663,7 +5685,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - 반입실적·Qual실적은 **Space 실물 판정과 알림에만** 쓴다(2026-10-16 사용자 결정). 주차·월별
   Dynamic·필요단축일정·공정 Capa 상세는 일정 기준 그대로다 — Space 는 실물, 집계는 계획이다. 실적은
   저장할 때 오늘보다 늦을 수 없고 반입실적 ≤ Qual실적이어야 한다. 미확인(상태 계획·확정 + 실적 공백 +
-  일정 < 오늘)·실적 누락·상태 갱신 필요는 저장을 막지 않는 알림이다(`services/schedule_confirmation.py`).
+  일정 < 오늘)·실적 누락·상태 갱신 필요는 저장을 막지 않는 알림이다(`services/schedule_confirmation.py`) —
+  RawData 편집표 위 한 줄·접힌 목록(편집본 기준)과 Main `호기 현황` 머리 줄 아래 미확인 한 줄(저장본 기준).
 - 입고 후 Qual 전인 호기는 셋업중대수와 비가동 호기 목록에 포함한다.
 - Qual 완료 또는 기존설비에 활성화된 개발대여·공사·고장·이설 등의 운영 비가동 일정이 있으면
   가용대수에서 제외한다. 같은 호기의 중복 비가동 일정은 한 대로 집계한다.

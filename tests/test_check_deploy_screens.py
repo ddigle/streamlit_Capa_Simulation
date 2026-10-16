@@ -1321,6 +1321,10 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
     [
         ("src/capa_simulation/components/equipment_data_workspace.py", 'st.selectbox("등록할 표"'),
         ("src/capa_simulation/components/equipment_data_workspace.py", '_TARGETS = ("설비 마스터"'),
+        (
+            "src/capa_simulation/components/equipment_data_workspace.py",
+            '["입력", "직접 편집", "저장 이력"]',
+        ),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"진척 비교",'),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"비교 안 함"'),
         ("src/capa_simulation/components/required_shortening_panel.py", '"목표 확보율",'),
@@ -1352,7 +1356,7 @@ def test_the_pages_the_items_open_exist(page: str) -> None:
     assert (PROJECT_ROOT / "app_pages" / f"{page}.py").is_file()
 
 
-# ------------------------------------------------------------------ 이번 배포 항목(통합 조건 패널)
+# ------------------------------------------------------- 이번 배포 항목(통합 조건 패널 뒤)
 
 NEW_ITEM_KEYS = [
     "sidebar_panel",
@@ -1361,6 +1365,7 @@ NEW_ITEM_KEYS = [
     "period_popup",
     "process_popup",
     "process_detail",
+    "equipment_headers",
 ]
 
 
@@ -1712,3 +1717,49 @@ def test_the_process_detail_summary_counts_without_screen_text(
     )
     # 달·공정 글자는 찍지 않는다.
     assert "26." not in line
+
+
+# ------------------------------------------------------------------ RawData 설비 마스터 머리(38열)
+
+
+def test_the_equipment_header_names_match_the_contract() -> None:
+    """스크립트는 계약을 부르지 않고 값만 옮긴다 — 계약과 같은지 여기서 본다."""
+    from capa_simulation.services.equipment_contract import (
+        AREA_CODE_COLUMN,
+        ARRIVAL_ACTUAL_COLUMN,
+        ARRIVAL_STATUS_COLUMN,
+        EQUIPMENT_COLUMNS,
+        OBSOLETE_EQUIPMENT_COLUMNS,
+        QUAL_ACTUAL_COLUMN,
+        QUAL_STATUS_COLUMN,
+        RELOCATION_DATE_COLUMN,
+        STOP_DATE_COLUMN,
+    )
+
+    assert screens.EQUIPMENT_NEW_HEADERS == (
+        AREA_CODE_COLUMN,
+        ARRIVAL_ACTUAL_COLUMN,
+        ARRIVAL_STATUS_COLUMN,
+        QUAL_ACTUAL_COLUMN,
+        QUAL_STATUS_COLUMN,
+        STOP_DATE_COLUMN,
+        RELOCATION_DATE_COLUMN,
+    )
+    assert set(screens.EQUIPMENT_NEW_HEADERS) <= set(EQUIPMENT_COLUMNS)
+    assert screens.EQUIPMENT_DROPPED_HEADER in OBSOLETE_EQUIPMENT_COLUMNS
+    assert screens.EQUIPMENT_DROPPED_HEADER not in EQUIPMENT_COLUMNS
+    assert screens.EQUIPMENT_EDITOR_ANCHOR in EQUIPMENT_COLUMNS
+
+
+def test_the_equipment_header_summary_counts_and_names_only_missing_contract_names() -> None:
+    every = dict.fromkeys(screens.EQUIPMENT_NEW_HEADERS, True)
+
+    assert screens.summarize_equipment_headers(every, False) == (
+        "새 이름 7/7 있음 · 「설비가동현황」 없음"
+    )
+    partial = {**every, "반입실적": False, "Qual실적": False}
+    line = screens.summarize_equipment_headers(partial, True)
+    assert line == "새 이름 5/7 있음(없음: 반입실적, Qual실적) · 「설비가동현황」 있음"
+    # 결과 표 칸을 깨는 글자가 없다.
+    assert "|" not in line
+    assert screens.summarize_equipment_headers({}, False).startswith("새 이름 0/7 있음(없음: ")

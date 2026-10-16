@@ -41,12 +41,14 @@ from capa_simulation.services.equipment_units import (
     static_unit_shares,
     unit_transitions,
 )
+from capa_simulation.services.schedule_confirmation import schedule_confirmation_notice
 from capa_simulation.services.simulation_cache import (
     get_equipment_status_as_of,
     get_inactive_equipment,
     get_inactive_equipment_month,
     get_lifecycle_gantt_spans,
     get_milestone_transition_events,
+    get_schedule_confirmation_issues,
     get_undated_equipment,
     get_usage_excluded_equipment,
     get_weekly_equipment_availability,
@@ -230,6 +232,25 @@ def _undated_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | No
 def _undated_caption(notice: str | None) -> None:
     if notice is not None:
         st.caption(f":material/event_busy: {notice}")
+
+
+def _confirmation_notice(
+    equipment: pd.DataFrame, filtered: pd.DataFrame, *, today: date
+) -> str | None:
+    """반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인 설비(미확인) 한 줄. 없으면 `None`.
+
+    오늘 기준으로 고정이다(Main 의 기준일과 상관없다 — 2026-10-16 사용자 결정). 고르기는 거르기
+    전 설비 마스터로 하고(캐시 — 같은 저장본이면 다시 고르지 않는다) 이 화면의 조건으로 거른
+    호기만 센다.
+    """
+    issues = get_schedule_confirmation_issues(equipment, today=today)
+    unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
+    return schedule_confirmation_notice(issues, unit_ids=unit_ids)
+
+
+def _confirmation_caption(notice: str | None) -> None:
+    if notice is not None:
+        st.caption(f":material/assignment_late: {notice}")
 
 
 def _usage_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
@@ -649,6 +670,10 @@ def render_equipment_explorer(
     undated_notice = (
         _undated_notice(equipment, filtered) if question == "가용대수" or shows_status else None
     )
+    # 일정 확인(미확인)은 호기 이름을 보이는 호기 현황에서만 알린다 — 대수와 상관없는 확인할 거리다.
+    confirmation_notice = (
+        _confirmation_notice(equipment, filtered, today=today) if shows_status else None
+    )
     # 사용기준 제외는 대수를 세는 `가용대수` 에서만 알린다. 호기 현황(상태 분포·호기 목록)은 이름을
     # 보이는 자리라 HBM·EDP 가 아닌 호기도 그대로 센다.
     usage_notice = _usage_notice(equipment, filtered) if question == "가용대수" else None
@@ -667,6 +692,7 @@ def render_equipment_explorer(
         transition_confirmations=tuple(transition_confirmations),
         undated_notice=undated_notice,
         usage_notice=usage_notice,
+        confirmation_notice=confirmation_notice,
         labels=labels,
         today=today,
         owner_tab=owner_tab,
@@ -698,6 +724,7 @@ class _Shown:
     transition_confirmations: tuple[str, ...]
     undated_notice: str | None
     usage_notice: str | None
+    confirmation_notice: str | None
     labels: ProcessLabels
     today: date
     owner_tab: OpenTab | None
@@ -854,6 +881,7 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                         f"설비 마스터 {_rows_label(status)} · 집계형 기존 보유대수는 제외됩니다."
                     )
                     _undated_caption(undated_notice)
+                    _confirmation_caption(shown.confirmation_notice)
                     column, states, colors = (
                         "상태",
                         EQUIPMENT_STATUSES,
