@@ -33,13 +33,13 @@ _NO_DATES = {"제진대일정": None, "물류일정": None, "반입일정": None
 
 def test_only_new_staying_units_with_a_blank_date_are_counted() -> None:
     master = _master(
-        {"설비명": "NO-ARRIVAL", **_NO_DATES, "확정상태": None},
-        {"설비명": "NO-QUAL", "Qual일정": None, "확정상태": None},
+        {"설비명": "NO-ARRIVAL", **_NO_DATES, "Qual상태": None},
+        {"설비명": "NO-QUAL", "Qual일정": None, "Qual상태": None},
         {"설비명": "QUAL-ONLY", "반입일정": None},
         {"설비명": "EXISTING", **_NO_DATES, "기존설비여부": "Y"},
         {"설비명": "STORED", **_NO_DATES, "보관유무": "Y"},
-        {"설비명": "LEAVING", "Qual일정": None, "확정상태": None, "반출일정": "2026-12-01"},
-        {"설비명": "MOVING", "Qual일정": None, "확정상태": None, "이설일정": "2026-12-01"},
+        {"설비명": "LEAVING", "Qual일정": None, "Qual상태": None, "정지일정": "2026-12-01"},
+        {"설비명": "MOVING", "Qual일정": None, "Qual상태": None, "반출/이설일정": "2026-12-01"},
     )
 
     rows = undated_equipment(master)
@@ -63,13 +63,13 @@ def test_modules_count_as_shares_of_one_unit() -> None:
     modules = [
         {"설비명": f"M1-{tag}", "Main 설비": "M1", "X좌표": None, "Y좌표": None} for tag in "ABCD"
     ]
-    modules[0].update({"Qual일정": None, "확정상태": None})
+    modules[0].update({"Qual일정": None, "Qual상태": None})
     whole = [
         {"설비명": f"M2-{tag}", "Main 설비": "M2", "X좌표": None, "Y좌표": None, **_NO_DATES}
         for tag in "ABCD"
     ]
     for row in whole:
-        row["확정상태"] = None
+        row["Qual상태"] = None
 
     rows = undated_equipment(_master(*modules, *whole))
 
@@ -90,8 +90,8 @@ def test_nothing_to_say_when_every_new_unit_has_its_dates() -> None:
 
 def test_the_notice_follows_the_surrounding_process_and_unit_filters() -> None:
     master = _master(
-        {"설비명": "A-1", "Qual일정": None, "확정상태": None},
-        {"설비명": "B-1", "공정소분류": "Process-B", **_NO_DATES, "확정상태": None},
+        {"설비명": "A-1", "Qual일정": None, "Qual상태": None},
+        {"설비명": "B-1", "공정소분류": "Process-B", **_NO_DATES, "Qual상태": None},
     )
     rows = undated_equipment(master)
 
@@ -120,8 +120,8 @@ def test_a_module_counts_only_what_dynamic_leaves_out() -> None:
         _master(
             *_modules(
                 "MOD01",
-                C={"Qual일정": None, "확정상태": None},
-                D={**_NO_DATES, "확정상태": None},
+                C={"Qual일정": None, "Qual상태": None},
+                D={**_NO_DATES, "Qual상태": None},
             )
         )
     )
@@ -139,7 +139,7 @@ def test_a_module_counts_only_what_dynamic_leaves_out() -> None:
 
 
 def test_a_unit_none_of_whose_modules_arrived_counts_in_full() -> None:
-    no_dates = {**_NO_DATES, "확정상태": None}
+    no_dates = {**_NO_DATES, "Qual상태": None}
     rows = undated_equipment(_master(*_modules("MOD02", **dict.fromkeys("ABCD", no_dates))))
 
     assert undated_counts(rows) == {UNDATED_ARRIVAL: 1.0, UNDATED_QUAL: 0.0}
@@ -154,10 +154,10 @@ def test_an_existing_or_stored_sibling_holds_the_unit() -> None:
         _master(
             *_modules(
                 "MOD03",
-                A={**_NO_DATES, "기존설비여부": "Y", "확정상태": None},
-                B={**_NO_DATES, "보관유무": "Y", "확정상태": None},
-                C={"Qual일정": None, "확정상태": None},
-                D={**_NO_DATES, "확정상태": None},
+                A={**_NO_DATES, "기존설비여부": "Y", "Qual상태": None},
+                B={**_NO_DATES, "보관유무": "Y", "Qual상태": None},
+                C={"Qual일정": None, "Qual상태": None},
+                D={**_NO_DATES, "Qual상태": None},
             )
         )
     )
@@ -169,15 +169,15 @@ def test_an_existing_or_stored_sibling_holds_the_unit() -> None:
 def test_the_cached_wrapper_returns_the_same_rows() -> None:
     from capa_simulation.services.simulation_cache import get_undated_equipment
 
-    master = _master({"설비명": "A-1", "Qual일정": None, "확정상태": None})
+    master = _master({"설비명": "A-1", "Qual일정": None, "Qual상태": None})
 
     pd.testing.assert_frame_equal(get_undated_equipment(master), undated_equipment(master))
 
 
 # 필요단축일정의 덧붙임 — 후보 조건(`shortening_candidates`)과 맞는지 함께 본다.
-_ARRIVAL_ONLY = {"설비명": "ARRIVAL-ONLY", "반입일정": None, "확정상태": "계획"}
-_QUAL_BLANK = {"설비명": "QUAL-BLANK", "Qual일정": None, "확정상태": None}
-_BOTH_BLANK = {"설비명": "BOTH-BLANK", **_NO_DATES, "확정상태": None}
+_ARRIVAL_ONLY = {"설비명": "ARRIVAL-ONLY", "반입일정": None, "Qual상태": "계획"}
+_QUAL_BLANK = {"설비명": "QUAL-BLANK", "Qual일정": None, "Qual상태": None}
+_BOTH_BLANK = {"설비명": "BOTH-BLANK", **_NO_DATES, "Qual상태": None}
 
 
 def _candidate_names(master: pd.DataFrame) -> set[str]:

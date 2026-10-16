@@ -35,7 +35,7 @@ from capa_simulation.services.weekly_availability_input import (
 
 def _repository(path: Path) -> DuckDBEquipmentRepository:
     repository = DuckDBEquipmentRepository(path)
-    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 21)
+    assert repository.initialize() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 21, 23)
     assert repository.initialize() == ()
     return repository
 
@@ -58,7 +58,7 @@ def test_equipment_snapshots_are_immutable_revisions(tmp_path: Path) -> None:
     pd.testing.assert_frame_equal(latest.downtime, second.downtime)
     loaded_first = repository.load_snapshot(first.revision.revision_id)
     assert loaded_first.equipment.loc[1, "Qual일정"] == pd.Timestamp("2026-08-21")
-    assert loaded_first.equipment.loc[1, "확정상태"] == "확정"
+    assert loaded_first.equipment.loc[1, "Qual상태"] == "확정"
     assert loaded_first.equipment.loc[1, "담당자"] == "담당A"
     assert [revision.revision_no for revision in repository.list_revisions()] == [2, 1]
 
@@ -242,13 +242,13 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 21)
+    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 21, 23)
     snapshot = repository.load_snapshot("legacy-r1")
 
     assert snapshot.equipment.loc[0, "설비명"] == "EQ-LEGACY"
     assert snapshot.equipment.loc[0, "공정소분류"] == "Process-A"
     assert snapshot.equipment.loc[0, "Qual일정"] == pd.Timestamp("2026-08-10")
-    assert snapshot.equipment.loc[0, "확정상태"] == "계획"
+    assert snapshot.equipment.loc[0, "Qual상태"] == "계획"
     assert snapshot.downtime.columns.tolist() == [
         "설비명",
         "비가동유형",
@@ -260,7 +260,7 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
 
 
 def test_legacy_revision_without_production_date_keeps_qual_blank(tmp_path: Path) -> None:
-    """옛 양산전환일이 없으면 Qual일정도 비운다(먼 미래 날짜로 채우지 않는다). 확정상태는 Qual 이
+    """옛 양산전환일이 없으면 Qual일정도 비운다(먼 미래 날짜로 채우지 않는다). Qual상태는 Qual 이
     있는 행에만 「계획」이다."""
     database_path = tmp_path / "legacy-no-qual.duckdb"
     migrations = load_equipment_migrations()
@@ -300,9 +300,9 @@ def test_legacy_revision_without_production_date_keeps_qual_blank(tmp_path: Path
     equipment = repository.load_snapshot("legacy-r1").equipment.set_index("설비명")
 
     assert pd.isna(equipment.loc["EQ-NOQUAL", "Qual일정"])
-    assert pd.isna(equipment.loc["EQ-NOQUAL", "확정상태"])
+    assert pd.isna(equipment.loc["EQ-NOQUAL", "Qual상태"])
     assert equipment.loc["EQ-NOQUAL", "기존설비여부"] == "N"
-    assert equipment.loc["EQ-QUAL", "확정상태"] == "계획"
+    assert equipment.loc["EQ-QUAL", "Qual상태"] == "계획"
     assert pd.isna(equipment.loc["EQ-OLD", "Qual일정"])
     assert equipment.loc["EQ-OLD", "기존설비여부"] == "Y"
 

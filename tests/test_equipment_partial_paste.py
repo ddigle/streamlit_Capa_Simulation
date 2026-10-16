@@ -18,6 +18,7 @@ import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 from test_equipment_availability import _downtime, _equipment
 from test_equipment_data_workspace import _app, _repository
+from test_equipment_master_columns import _old36_layout
 
 from capa_simulation.components.equipment_data_workspace import (
     CLIPBOARD_KEY,
@@ -78,7 +79,7 @@ def _tab(*rows: tuple[str, ...]) -> str:
 
 
 def _exported(equipment: pd.DataFrame) -> pd.DataFrame:
-    """현재 데이터 내려받기를 Excel 에서 연 것과 같은 글자 표(전체 36열)."""
+    """현재 데이터 내려받기를 Excel 에서 연 것과 같은 글자 표(전체 38열)."""
     return pd.read_csv(
         BytesIO(equipment_csv_bytes(equipment)), dtype="object", keep_default_na=False
     )
@@ -95,7 +96,7 @@ def test_pasting_one_column_changes_only_that_column_of_existing_units() -> None
     saved = review.candidate[1]
     assert saved["설비명"].tolist() == ["EQ-02", "EQ-01"]
     assert _row(saved, "EQ-01")["담당자"] == "담당B"
-    # 붙여넣지 않은 열 34개는 한 칸도 바뀌지 않는다(값과 dtype 모두).
+    # 붙여넣지 않은 열 36개는 한 칸도 바뀌지 않는다(값과 dtype 모두).
     others = [column for column in EQUIPMENT_COLUMNS if column not in ("설비명", "담당자")]
     assert_frame_equal(
         saved.set_index("설비명").loc[["EQ-01", "EQ-02"], others],
@@ -107,7 +108,7 @@ def test_pasting_one_column_changes_only_that_column_of_existing_units() -> None
     assert review.changes["변경컬럼"].tolist() == ["담당자"]
     assert review.changes["변경내용"].tolist() == ["담당자: 담당A → 담당B"]
     assert review.notices == (
-        "붙여넣은 열 1개(담당자)만 바꿉니다 — 나머지 34개 열은 기존 호기의 값을 그대로 둡니다.",
+        "붙여넣은 열 1개(담당자)만 바꿉니다 — 나머지 36개 열은 기존 호기의 값을 그대로 둡니다.",
     )
     assert review.cautions == ()
 
@@ -175,8 +176,8 @@ def test_a_new_unit_without_the_columns_a_new_unit_needs_blocks_the_whole_paste(
 
     message = str(raised.value)
     assert "없는 설비명 1건(EQ-NEW)은 새 호기로 추가되는데" in message
-    # 선택 컬럼 밖 30개 중 붙여넣은 설비명·담당자를 뺀 28개.
-    assert "필요한 열 28개" in message and "공정소분류" in message
+    # 선택 컬럼 밖 29개 중 붙여넣은 설비명·담당자를 뺀 27개.
+    assert "필요한 열 27개" in message and "공정소분류" in message
     assert "양식(전체 열)으로 따로 붙여넣으세요" in message
     assert "설비명이 맞는지 확인하세요" in message
 
@@ -200,9 +201,9 @@ def test_a_new_unit_with_every_required_column_is_added_and_optional_columns_sta
 
 
 def test_validation_uses_the_kept_values_of_the_existing_unit() -> None:
-    """반입일정은 붙여넣지 않았다 — 기존 값(2026-08-04)으로 반출일정 순서를 본다."""
-    with pytest.raises(ValueError, match=r"반출일정은 반입일정보다 빠를 수 없습니다: \['EQ-01'\]"):
-        _review(_tab(("설비명", "반출일정"), ("EQ-01", "2026-08-01")))
+    """반입일정은 붙여넣지 않았다 — 기존 값(2026-08-04)으로 정지일정 순서를 본다."""
+    with pytest.raises(ValueError, match=r"정지일정은 반입일정보다 빠를 수 없습니다: \['EQ-01'\]"):
+        _review(_tab(("설비명", "정지일정"), ("EQ-01", "2026-08-01")))
 
 
 def test_a_collision_with_a_kept_value_names_the_edit_buffer_as_a_source() -> None:
@@ -269,7 +270,7 @@ def test_a_misspelled_header_in_a_partial_paste_is_rejected_with_a_hint() -> Non
 
 
 def test_an_unknown_header_in_a_full_paste_is_skipped_with_a_notice() -> None:
-    """36열이 모두 있으면 모르는 열은 어느 열의 오타일 수 없다 — 읽지 않고 넘기되 알린다."""
+    """38열이 모두 있으면 모르는 열은 어느 열의 오타일 수 없다 — 읽지 않고 넘기되 알린다."""
     full = _exported(_current())
     full["확인"] = "o"
 
@@ -306,8 +307,34 @@ def test_an_unrelated_extra_column_blocks_when_any_contract_column_is_missing() 
     full = _exported(_current()).drop(columns=["메모3"])
     full["확인"] = "o"
 
-    with pytest.raises(ValueError, match="36개 열이 모두 있을 때만 모르는 열을 읽지 않고 넘깁니다"):
+    with pytest.raises(ValueError, match="38개 열이 모두 있거나, 옛 36열 양식처럼"):
         _review(full.to_csv(sep="\t", index=False))
+
+
+def test_an_extra_column_on_the_whole_old_36_column_form_is_skipped_with_a_notice() -> None:
+    """옛 36열 양식을 통째로 붙여넣으면 빠진 열은 38열 개편이 더한 실적·상태 셋뿐이다. 그 표에 붙은
+    보조 열(사내 엑셀의 「No.」)은 막지 않고 알림만 남긴다 — 개편 전에도 그랬다."""
+    old = _old36_layout(_exported(_current()))
+    old.insert(0, "No.", ["1", "2"])
+
+    review = _review(old.to_csv(sep="\t", index=False))
+
+    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert review.changes["Import구분"].tolist() == ["대체", "대체"]
+    assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
+
+
+@pytest.mark.parametrize(("header", "column"), [("반입싫적", "반입실적"), ("Qual실젹", "Qual실적")])
+def test_a_misspelled_new_column_on_the_old_36_column_form_still_blocks(
+    header: str, column: str
+) -> None:
+    """옛 36열 꼴이어도 모르는 열이 빠진 실적·상태 열과 닮았으면 그 열의 오타다 — 넘기면 적은 실적이
+    조용히 사라진다."""
+    old = _old36_layout(_exported(_current()))
+    old[header] = "2026-08-20"
+
+    with pytest.raises(ValueError, match=re.escape(f"「{header}」(「{column}」?)")):
+        _review(old.to_csv(sep="\t", index=False))
 
 
 @pytest.mark.parametrize("partial", [False, True])

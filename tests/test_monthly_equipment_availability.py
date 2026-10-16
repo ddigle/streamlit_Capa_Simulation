@@ -275,7 +275,7 @@ def test_the_unit_list_adds_up_to_the_count_table_cell_by_cell() -> None:
         build_monthly_equipment_contributions,
     )
 
-    frame = _modules(APW01D={"반출일정": "2026-05-10"})
+    frame = _modules(APW01D={"정지일정": "2026-05-10"})
     unit_spans = build_equipment_lifecycle_spans(
         frame,
         _pm(),

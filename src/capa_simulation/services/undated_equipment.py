@@ -11,10 +11,10 @@
 에는 없어도 단축 후보다.
 
 - **대상** — 사용기준이 HBM·EDP 이고(`equipment_contract.counts_for_capacity` — 다른 행은 날짜를
-  채워도 가용대수에 들지 않는다) 기존설비여부 N · 보관유무 N 이며 반출일정·이설일정이 모두 빈 행
-  가운데 반입일정 또는 Qual일정이 빈 행. 반출·이설 날짜가 있는 행은 뺀다 — 이 알림은 기준일이
-  없어 이미 나간 호기와 나갈 호기를 가를 수 없고, 나갈 호기는 날짜를 채워도 실행일에 빠지는 호기다.
-  반입은 있고 Qual 만 빈 채 나갈 호기는 그래서 세지 않는다(드문 경우).
+  채워도 가용대수에 들지 않는다) 기존설비여부 N · 보관유무 N 이며 정지일정·반출/이설일정이 모두 빈
+  행 가운데 반입일정 또는 Qual일정이 빈 행. 정지·반출/이설 날짜가 있는 행은 뺀다 — 이 알림은
+  기준일이 없어 이미 나간 호기와 나갈 호기를 가를 수 없고, 나갈 호기는 날짜를 채워도 실행일에
+  빠지는 호기다. 반입은 있고 Qual 만 빈 채 나갈 호기는 그래서 세지 않는다(드문 경우).
 - **나눔** — 반입이 빈 행은 `반입 미정`, 반입은 있고 Qual 만 빈 행은 `Qual 미정` 이다. 겹치지 않아
   둘을 더하면 전체다. `반입 미정` 에는 Qual 이 있는 행과 없는 행이 함께 들므로, 단축 후보가
   아닌 몫은 미정구분이 아니라 `Qual일정있음` 칸으로 가른다.
@@ -43,7 +43,8 @@ import pandas as pd
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     EQUIPMENT_ID_COLUMN,
-    RELOCATION_DATE_COLUMN,
+    EXIT_SCHEDULE_COLUMNS,
+    QUAL_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     counts_for_capacity,
 )
@@ -83,12 +84,12 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
         return _empty()
     keys = unit_keys(prepared)
     fresh = prepared["기존설비여부"].eq("N") & prepared[STORAGE_FLAG_COLUMN].eq("N")
-    staying = prepared["반출일정"].isna() & prepared[RELOCATION_DATE_COLUMN].isna()
+    staying = prepared.loc[:, list(EXIT_SCHEDULE_COLUMNS)].isna().all(axis=1)
     has_arrival = prepared[ARRIVAL_DATE_COLUMN].notna()
     holdable = (has_arrival | ~fresh).astype("int64")
     holdable_in_unit = holdable.groupby(keys).transform("sum")
     no_arrival = fresh & staying & ~has_arrival & holdable_in_unit.eq(0)
-    no_qual = fresh & staying & has_arrival & prepared["Qual일정"].isna()
+    no_qual = fresh & staying & has_arrival & prepared[QUAL_DATE_COLUMN].isna()
     # 몫은 사용기준과 상관없이 매기고 HBM·EDP 행만 남긴다(모듈 docstring).
     chosen = (no_arrival | no_qual) & counts_for_capacity(prepared)
     if not chosen.any():
@@ -105,7 +106,7 @@ def undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
             UNIT_KEY_COLUMN: keys,
             UNIT_SHARE_COLUMN: shares.astype("float64"),
             UNDATED_KIND_COLUMN: kinds,
-            QUAL_SCHEDULED_COLUMN: prepared["Qual일정"].notna().astype("bool"),
+            QUAL_SCHEDULED_COLUMN: prepared[QUAL_DATE_COLUMN].notna().astype("bool"),
         }
     )
     return result.loc[chosen].reset_index(drop=True)

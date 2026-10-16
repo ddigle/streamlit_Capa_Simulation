@@ -28,8 +28,10 @@ from capa_simulation.services.equipment_contract import (
     MILESTONES,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
     STATUS_COUNT_COLUMNS,
+    STOP_DATE_COLUMN,
 )
 from capa_simulation.services.equipment_units import (
     UNIT_COUNT_DECIMALS,
@@ -68,7 +70,8 @@ TRANSITION_CONFIRMATION_KEY = "equipment_transition_confirmation_filter"
 QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정", "단계 전환")
 # 차트와 표 중 하나를 고르는(`표현`) 보기. 이 보기의 결과는 프래그먼트다
 # (`_render_expressed_result`).
-EXPRESSION_VIEWS = ("주차별 추이", "상태 분포", "확정상태 분포", "단계별 건수")
+QUAL_STATUS_VIEW = f"{QUAL_STATUS_COLUMN} 분포"
+EXPRESSION_VIEWS = ("주차별 추이", "상태 분포", QUAL_STATUS_VIEW, "단계별 건수")
 TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
 # 공정 표시명(Proc Rename)을 입히는 칸. 설비 마스터의 `공정소분류` 는 시나리오 `공정` 과 같은
 # 이름으로 맞대는 원본 공정명이다(`공정대분류` 는 다른 축이라 입히지 않는다).
@@ -79,7 +82,7 @@ _INACTIVE_COLUMNS = (
     "상태",
     ARRIVAL_DATE_COLUMN,
     "Qual일정",
-    "반출일정",
+    STOP_DATE_COLUMN,
     RELOCATION_DATE_COLUMN,
 )
 _INACTIVE_MONTH_COLUMNS = (
@@ -357,7 +360,7 @@ def _transitions(
     confirmations: Sequence[str],
     labels: ProcessLabels | None = None,
 ) -> None:
-    """조회기간에 제진대·물류·입고·Qual·반출·이설 일정이 든 호기를 전환 한 건씩 편다.
+    """조회기간에 제진대·물류·입고·Qual·정지·반출/이설 일정이 든 호기를 전환 한 건씩 편다.
 
     기준일 이전 일정은 **완료**, 이후는 **예정**이다(설비 마스터에 적힌 날과 기준일을 견준 결과).
     건수는 설비 단위다 — 모듈 행이 같은 날 같은 단계로 넘어가면 1건(`unit_transitions`).
@@ -370,7 +373,9 @@ def _transitions(
     if schedule != "전체" and not events.empty:
         events = events.loc[events["일정상태"].eq(schedule)]
     if confirmations and not events.empty:
-        events = events.loc[events["전환단계"].eq("Qual") & events["확정상태"].isin(confirmations)]
+        events = events.loc[
+            events["전환단계"].eq("Qual") & events[QUAL_STATUS_COLUMN].isin(confirmations)
+        ]
     st.markdown(f"#### 단계 전환 · {start:%Y-%m-%d} ~ {end:%Y-%m-%d} · 기준일 {as_of:%Y-%m-%d}")
     if events.empty:
         st.info("조건에 맞는 설비 단계 전환 일정이 없습니다. 기간이나 조건을 바꿔 보세요.")
@@ -501,7 +506,7 @@ def render_equipment_explorer(
         elif question == "Qual 일정":
             view = st.selectbox(
                 "보기",
-                ["호기 목록", "확정상태 분포"],
+                ["호기 목록", QUAL_STATUS_VIEW],
                 key="equipment_explorer_qual_view",
                 persist_state="session",
                 width=200,
@@ -579,7 +584,7 @@ def render_equipment_explorer(
                     )
                 )
                 transition_confirmations = st.multiselect(
-                    "Qual 확정상태",
+                    QUAL_STATUS_COLUMN,
                     list(QUAL_CONFIRMATION_STATUSES),
                     placeholder="전체",
                     key=TRANSITION_CONFIRMATION_KEY,
@@ -621,7 +626,7 @@ def render_equipment_explorer(
             f"{name}: {', '.join(values)}"
             for name, values in (
                 ("전환단계", transition_stages),
-                ("Qual 확정상태", transition_confirmations),
+                (QUAL_STATUS_COLUMN, transition_confirmations),
             )
             if values
         ]
@@ -821,9 +826,9 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                     shares = static_unit_shares(status[UNIT_KEY_COLUMN])
                     status = status.loc[status["Qual일정"].notna()].copy()
                     shares = shares.loc[status.index]
-                    st.markdown(f"#### Qual 확정상태 실행관리 · {as_of:%Y-%m-%d}")
+                    st.markdown(f"#### {QUAL_STATUS_COLUMN} 실행관리 · {as_of:%Y-%m-%d}")
                     column, states, colors = (
-                        "확정상태",
+                        QUAL_STATUS_COLUMN,
                         QUAL_CONFIRMATION_STATUSES,
                         tokens.QUAL_CONFIRMATION_COLORS,
                     )
@@ -835,7 +840,7 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                                     EQUIPMENT_ID_COLUMN,
                                     PROCESS_COLUMN,
                                     "Qual일정",
-                                    "확정상태",
+                                    QUAL_STATUS_COLUMN,
                                     "상태",
                                 ],
                                 status,

@@ -362,7 +362,13 @@ def test_the_legend_adds_the_schedule_marks_only_with_the_schedule() -> None:
     assert "공식 확보기준 미달 달" in static and "지금 보는 달" in static
     assert "가용을 깎은 비가동" not in static
     dynamic = canvas_legend_html(_dynamic(), MONTHS)
-    for item in ("반입", "추가N(신규 필요)", "가용을 깎은 비가동", "칸 = 생산월", "≠ 이설일정"):
+    for item in (
+        "반입",
+        "추가N(신규 필요)",
+        "가용을 깎은 비가동",
+        "칸 = 생산월",
+        "≠ 반출/이설일정",
+    ):
         assert item in dynamic
     # 서식과 표시 글이 한 덩어리 — 본문 칸으로 간다.
     assert dynamic.startswith("<style>") and '<div class="pcd-legend">' in dynamic

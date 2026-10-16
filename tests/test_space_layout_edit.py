@@ -75,16 +75,16 @@ def test_inputs_split_the_floor_into_drawing_and_tray() -> None:
             "Ysize": 5,
         },
         {"설비명": "EQ-ELSEWHERE", "동": "C2", "층": "2F", "X좌표": None, "Y좌표": None},
-        {"설비명": "EQ-GONE", "반출일정": "2026-08-20", "X좌표": 70.0},
+        {"설비명": "EQ-GONE", "정지일정": "2026-08-20", "X좌표": 70.0},
     )
 
     inputs = editor_inputs(_status(master), floor=FLOOR)
 
     assert _ids(inputs.items, placed=True) == ["EQ-01", "EQ-02"]
-    # 층 미정 호기는 어느 층 편집기에도 트레이로 뜬다. 다른 층 호기·N·반출 완료는 빠진다.
+    # 층 미정 호기는 어느 층 편집기에도 트레이로 뜬다. 다른 층 호기·N·정지는 빠진다.
     assert sorted(_ids(inputs.items, placed=False)) == ["EQ-FLOORLESS", "EQ-TRAY"]
     assert inputs.unplaced_floorless == 1
-    # 편집기에 없는 N·반출 완료 호기가 차지한 범위 밑으로는 영역을 줄이지 못한다.
+    # 편집기에 없는 N·정지 호기가 차지한 범위 밑으로는 영역을 줄이지 못한다.
     assert inputs.reserved_extent == (95.0, 55.0)
     assert inputs.default_size == (12.0, 7.0)
 
@@ -230,7 +230,7 @@ def test_a_created_unit_fills_only_what_the_form_asked() -> None:
     result = apply_layout_edits(master, apply, floor=FLOOR, canvases={}, default_canvas=CANVAS)
     row = result.set_index("설비명").loc["NEW-1"]
 
-    assert (row["공정대분류"], row["투자구분"], row["확정상태"]) == ("B/N", "양산", "계획")
+    assert (row["공정대분류"], row["투자구분"], row["Qual상태"]) == ("B/N", "양산", "계획")
     assert row["호기이력"] == NEW_UNIT_HISTORY and pd.isna(row["담당자"])
     assert (row["동"], row["X좌표"], row["Xsize"]) == ("C1", 60.0, 8.0)
     prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
@@ -246,7 +246,7 @@ def test_a_created_unit_fills_only_what_the_form_asked() -> None:
     ],
 )
 def test_a_new_unit_may_come_without_dates(created: dict[str, Any], status: str) -> None:
-    """신규 설비의 반입·Qual 일정은 비워도 된다. 확정상태는 Qual일정이 있을 때만 필요하다."""
+    """신규 설비의 반입·Qual 일정은 비워도 된다. Qual상태는 Qual일정이 있을 때만 필요하다."""
     master = _master()
     apply = _parse(
         {
@@ -297,7 +297,7 @@ def test_a_new_unit_may_come_without_dates(created: dict[str, Any], status: str)
                 "h": 1,
                 "created": {"process": "Process-A", "qual": "2026-10-10"},
             },
-            "Qual일정이 있어 확정상태가 필요합니다",
+            "Qual일정이 있어 Qual상태가 필요합니다",
         ),
         (
             {
@@ -307,7 +307,7 @@ def test_a_new_unit_may_come_without_dates(created: dict[str, Any], status: str)
                 "h": 1,
                 "created": {"process": "Process-A", "confirm": "검토중"},
             },
-            "확정상태를 고를 수 없는 값",
+            "Qual상태를 고를 수 없는 값",
         ),
         (
             {
@@ -361,7 +361,7 @@ def test_an_unknown_mark_rejects_instead_of_vanishing() -> None:
 def test_warnings_name_overlaps_and_covered_marks_but_skip_exited_units() -> None:
     master = _master(
         {"설비명": "EQ-OVER", "X좌표": 15.0, "Y좌표": 12.0},
-        {"설비명": "EQ-GONE", "반출일정": "2026-08-20", "X좌표": 12.0},
+        {"설비명": "EQ-GONE", "정지일정": "2026-08-20", "X좌표": 12.0},
     )
     marks = prepare_floor_layout_marks(
         [{"id": "D1", "kind": "door", "x": 33, "y": 12, "w": 3, "h": 2}], CANVAS
@@ -426,7 +426,7 @@ def test_a_created_unit_does_not_make_every_other_row_look_edited() -> None:
 
 
 def test_hidden_siblings_leave_their_old_coordinates_behind_when_the_group_moves() -> None:
-    """편집기에 없던 형제(반출 완료)가 옛 층 좌표를 지닌 채 따라가면 새 층에서 거부된다."""
+    """편집기에 없던 형제(정지)가 옛 층 좌표를 지닌 채 따라가면 새 층에서 거부된다."""
     master = _master(
         {"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
         {
@@ -434,7 +434,7 @@ def test_hidden_siblings_leave_their_old_coordinates_behind_when_the_group_moves
             "Main 설비": "BIG",
             "X좌표": 80.0,
             "Y좌표": 50.0,
-            "반출일정": "2026-08-20",
+            "정지일정": "2026-08-20",
         },
     )
     apply = _parse(

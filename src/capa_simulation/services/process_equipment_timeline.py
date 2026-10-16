@@ -12,16 +12,17 @@
 (`services/wd_window.py`)가 그날을 담는 달에 선다 — 곧 `d + c` 의 달력 월이다(`c` 는 Cut-off 의
 내림 일수). 칸 안 위치는
 `(d + c).day - 1` 을 그 달 일수로 나눈 비율이라 구간 첫날이 칸의 왼쪽 끝이다
-(`production_position`). 날짜의 뜻은 엔진과 같다 — Qual·반입·비가동 경계는 **다음 날부터**, 반출·
-이설은 **당일부터**다. 그래서 표지가 앉은 칸이 곧 가용이 바뀐 칸이다.
+(`production_position`). 날짜의 뜻은 엔진과 같다 — Qual·반입·비가동 경계는 **다음 날부터**, 정지·
+반출/이설은 **당일부터**다. 그래서 표지가 앉은 칸이 곧 가용이 바뀐 칸이다.
 
 ## 신규 호기 줄
 
 설비키(Main 설비 묶음) 하나가 한 줄이다. 대상은 기존설비 N·보관 N·사용기준 HBM·EDP·Qual 있음인
-행이고(세지 않는 모듈은 묶음에 넣지 않는다 — 단축 후보와 같다), 확정 「완료」와 반출·이설일정이
-적힌 호기도 든다. 묶음의 반입·Qual 은 가장 늦은 모듈의 날, 반출·이설은 가장 이른 날이다. 줄에
-서는 것은 기여 시작(Qual 다음 날)이 축 안인 호기와 단축 계획에 든 호기다(`unit_events`).
-신규 줄이 없는 호기(기존설비 Y, 축 앞에 Qual 을 마친 호기)가 축 안에서 반출·이설되면 따로
+행이고(세지 않는 모듈은 묶음에 넣지 않는다 — 단축 후보와 같다), Qual상태 「완료」와 정지·반출/이설
+일정이 적힌 호기도 든다. 묶음의 반입·Qual 은 가장 늦은 모듈의 날, 정지·반출/이설은 가장 이른
+날이다. 줄에 서는 것은 기여 시작(Qual 다음 날)이 축 안인 호기와 단축 계획에 든 호기다
+(`unit_events`).
+신규 줄이 없는 호기(기존설비 Y, 축 앞에 Qual 을 마친 호기)가 축 안에서 정지·반출/이설되면 따로
 모은다(`exiting_unit_rows`) — 전월 대비의 `반출이설` 이 어느 호기에서 왔는지 보이는 재료다.
 
 ## 비가동 손실 — 반사실로 잰다
@@ -37,9 +38,9 @@
 
 ## 전월 대비
 
-비가동 없는 쪽의 호기별 증감을 늘어난 몫(신규 +)과 줄어든 몫(반출·이설 −)으로 가르고, 손실의
+비가동 없는 쪽의 호기별 증감을 늘어난 몫(신규 +)과 줄어든 몫(정지·반출/이설 −)으로 가르고, 손실의
 증감을 비가동으로 둔다 — `전월대비 = 신규 + 비가동 + 반출이설`(`availability_bridge`). 비가동이
-없으면 호기의 가용은 반입·Qual 로 한 번 늘고 반출·이설로 한 번 줄 뿐이라 갈림이 깨끗하다. 한
+없으면 호기의 가용은 반입·Qual 로 한 번 늘고 정지·반출/이설로 한 번 줄 뿐이라 갈림이 깨끗하다. 한
 호기가 앞 달에 늘고 이번 달에 나가면 그 호기의 몫은 순증감 한쪽에 든다.
 
 ## Dynamic 판정
@@ -72,8 +73,11 @@ from capa_simulation.services.equipment_contract import (
     COUNTED_COLUMN,
     EQUIPMENT_ID_COLUMN,
     EXIT_FOLLOWS_COLUMN,
+    EXIT_SCHEDULE_COLUMNS,
     EXIT_STARTS_COLUMN,
+    QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
+    STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     counts_for_capacity,
 )
@@ -157,6 +161,11 @@ _READINESS_DETAILS = {
     ),
 }
 
+# ▼ 의 구분 글자. 그 날짜가 온 컬럼이다.
+EXIT_KIND_STOP = "정지"
+EXIT_KIND_RELOCATION = "반출/이설"
+EXIT_KINDS = {STOP_DATE_COLUMN: EXIT_KIND_STOP, RELOCATION_DATE_COLUMN: EXIT_KIND_RELOCATION}
+
 NEW_UNIT_COLUMNS = (
     "호기",
     EQUIPMENT_ID_COLUMN,
@@ -165,7 +174,7 @@ NEW_UNIT_COLUMNS = (
     ARRIVAL_DATE_COLUMN,
     "Qual일정",
     "기여 시작",
-    "확정상태",
+    QUAL_STATUS_COLUMN,
     "반출이설일",
     "반출이설구분",
     "모듈별 Qual",
@@ -174,8 +183,10 @@ NEW_UNIT_COLUMNS = (
 """신규 호기(설비키) 한 줄 — 단축 계획을 겹치기 전. 날짜는 `date`(없으면 None)다.
 
 - `호기` 는 설비키(Main 설비, 없으면 설비명), `설비명` 은 묶음의 모듈 행을 「, 」로 잇는다.
-- `반입일정`·`Qual일정` 은 가장 늦은 모듈, `반출이설일` 은 가장 이른 반출·이설일정이고
-  `반출이설구분` 은 「반출」·「이설」이다.
+- `반입일정`·`Qual일정` 은 가장 늦은 모듈, `반출이설일` 은 가장 이른 정지·반출/이설일정이고
+  `반출이설구분` 은 그 날짜가 온 컬럼 — 「정지」(정지일정)·「반출/이설」(반출/이설일정)이다.
+  같은 날이면 정지가 먼저고, 한 행에 두 날짜가 같은 날이면 그 행은 반출/이설이다
+  (`_earliest_exit`).
 - `모듈별 Qual` 은 모듈이 둘 이상일 때 `(설비명, Qual)` 튜플이다(풍선용, 하나면 빈 튜플).
 - `축 안` 은 기여 시작(Qual 다음 날)의 생산월이 축 안인가.
 """
@@ -189,7 +200,7 @@ UNIT_EVENT_COLUMNS = (
     ARRIVAL_DATE_COLUMN,
     "Qual일정",
     "기여 시작",
-    "확정상태",
+    QUAL_STATUS_COLUMN,
     "반출이설일",
     "반출이설구분",
     "모듈별 Qual",
@@ -212,13 +223,13 @@ UNIT_EVENT_COLUMNS = (
 - 단축 칸(`목표 Qual`~`해소 기여 월`)은 계획(`LevelPlan.units`)의 값이다. `반입 전` 은 목표 Qual 이
   반입일정보다 이른가, `해소 기여 월` 은 `YYYYMM` 정수 튜플이다.
 - 단축 줄의 `Qual일정`(곧 `기여 시작` = 그 다음 날)과 `모듈 수` 는 계획의 `기존 Qual`·`모듈 수` 다 —
-  ●→◀ 길이가 `단축일수` 와 맞게 하려는 것이다. 계획은 반출·이설 예정이나 확정 「완료」 모듈을
-  묶음에서 빼므로(단축 후보) 묶음의 가장 늦은 Qual 과 다를 수 있다. 그때 갈린 모듈은 `모듈별 Qual`
-  (묶음 전체)이 보인다. 반입·확정상태·반출이설·설비명·Model 은 묶음의 값이다.
+  ●→◀ 길이가 `단축일수` 와 맞게 하려는 것이다. 계획은 정지·반출/이설 예정이나 Qual상태 「완료」
+  모듈을 묶음에서 빼므로(단축 후보) 묶음의 가장 늦은 Qual 과 다를 수 있다. 그때 갈린 모듈은
+  `모듈별 Qual`(묶음 전체)이 보인다. 반입·Qual상태·반출이설·설비명·Model 은 묶음의 값이다.
 - `… 위치` 는 생산월 좌표(`production_position.x`, 축 밖은 0 또는 달 수로 자른다)이고 날짜가 없으면
   NaN 이다. 날짜의 뜻은 엔진과 같다 — 반입은 다음 날(x(반입일 + 1)), 기여 시작·목표 기여는 그날(이미
-  Qual 다음 날이다), 반출·이설은 실행일 당일의 좌표다. `기여 시작 축 밖` 은 기여 시작이 축 밖이라
-  잘렸는가(축 뒤의 호기를 축 안으로 당긴 단축 줄).
+  Qual 다음 날이다), 정지·반출/이설은 실행일 당일의 좌표다. `기여 시작 축 밖` 은 기여 시작이 축
+  밖이라 잘렸는가(축 뒤의 호기를 축 안으로 당긴 단축 줄).
 """
 
 EXIT_UNIT_COLUMNS = (
@@ -231,11 +242,11 @@ EXIT_UNIT_COLUMNS = (
     "반출이설구분",
     "반출이설 위치",
 )
-"""축 안에서 반출·이설되는 호기(설비키) 한 줄 — ③ 신규 줄에 서지 않는 것(`exiting_unit_rows`).
+"""축 안에서 정지·반출/이설되는 호기(설비키) 한 줄 — ③ 신규 줄에 서지 않는 것(`exiting_unit_rows`).
 
 ② 전월 대비의 `반출이설` 이 어느 호기에서 왔는지 보이려는 재료다. 기존설비 Y 호기나 축 앞에 Qual 을
 마친 호기는 ③ 에 줄이 없어 그림 어디에도 ▼ 가 서지 않기 때문이다. `반출이설일` 은 묶음에서 가장
-이른 반출·이설일정, `반출이설 위치` 는 그 당일의 생산월 좌표다. `기존설비여부` 는 모듈의 값을
+이른 정지·반출/이설일정, `반출이설 위치` 는 그 당일의 생산월 좌표다. `기존설비여부` 는 모듈의 값을
 「, 」로 잇는다.
 """
 
@@ -483,9 +494,9 @@ class ProcessEquipmentTimeline:
     """축 내내 모든 날 가용이고 신규 줄에도 없는 호기(설비키) 수 — ④ 의 「k대」 한 줄."""
 
     exits: pd.DataFrame = field(default_factory=lambda: _empty(EXIT_UNIT_COLUMNS))
-    """`EXIT_UNIT_COLUMNS` — 축 안에서 반출·이설되고 `new_units` 의 `축 안` 줄이 아닌 호기.
+    """`EXIT_UNIT_COLUMNS` — 축 안에서 정지·반출/이설되고 `new_units` 의 `축 안` 줄이 아닌 호기.
 
-    어디에 그릴지(④ 의 ▼ 줄, 「반출·이설 k대」 한 줄)는 화면이 정한다. 단축 계획이 축 밖에서
+    어디에 그릴지(④ 의 ▼ 줄, 「정지·반출/이설 k대」 한 줄)는 화면이 정한다. 단축 계획이 축 밖에서
     당겨 ③ 에 세운 호기(`unit_events` 의 단축 줄)와 겹칠 수 있으므로 화면은 ③ 에 선 `호기` 를 뺀다.
     """
 
@@ -638,8 +649,8 @@ def new_unit_rows(
 ) -> pd.DataFrame:
     """그 공정의 신규 호기를 설비키마다 한 줄로(`NEW_UNIT_COLUMNS`). 축 밖 호기도 든다(`축 안`).
 
-    대상은 기존설비 N·보관 N·사용기준 HBM·EDP·Qual 있음인 행이다. 확정 「완료」·반출·이설 예정도
-    든다 — 단축 후보보다 넓다. `equipment` 는 거르기 전 마스터여도 된다(공정으로 고른다).
+    대상은 기존설비 N·보관 N·사용기준 HBM·EDP·Qual 있음인 행이다. Qual상태 「완료」·정지·반출/이설
+    예정도 든다 — 단축 후보보다 넓다. `equipment` 는 거르기 전 마스터여도 된다(공정으로 고른다).
     """
     prepared = prepare_equipment_master(equipment)
     name = str(process).strip()
@@ -684,7 +695,9 @@ def new_unit_rows(
                 ARRIVAL_DATE_COLUMN: arrival,
                 "Qual일정": qual,
                 "기여 시작": start,
-                "확정상태": _distinct_text(member["확정상태"] for member in members),
+                QUAL_STATUS_COLUMN: _distinct_text(
+                    member[QUAL_STATUS_COLUMN] for member in members
+                ),
                 "반출이설일": exit_day,
                 "반출이설구분": exit_kind,
                 "모듈별 Qual": (
@@ -713,11 +726,11 @@ def exiting_unit_rows(
     months: Sequence[int],
     excluded: Iterable[str] = (),
 ) -> pd.DataFrame:
-    """축 안에서 반출·이설되는 호기를 설비키마다 한 줄로(`EXIT_UNIT_COLUMNS`).
+    """축 안에서 정지·반출/이설되는 호기를 설비키마다 한 줄로(`EXIT_UNIT_COLUMNS`).
 
     대상은 그 공정의 보관 N·사용기준 HBM·EDP 행이다(기존설비 Y·N 모두). 묶음의 가장 이른
-    반출·이설일정(③ 의 ▼ 와 같은 규칙)이 축 안의 생산월에 들어야 한다. `excluded` 의 설비키(③ 에
-    줄이 서는 신규 호기)는 뺀다. 차례는 반출이설일 → 호기 번호다.
+    정지·반출/이설일정(③ 의 ▼ 와 같은 규칙)이 축 안의 생산월에 들어야 한다. `excluded` 의
+    설비키(③ 에 줄이 서는 신규 호기)는 뺀다. 차례는 반출이설일 → 호기 번호다.
     """
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
@@ -728,7 +741,7 @@ def exiting_unit_rows(
             _process_mask(prepared["공정소분류"], name)
             & prepared[STORAGE_FLAG_COLUMN].eq("N")
             & counts_for_capacity(prepared)
-            & (prepared["반출일정"].notna() | prepared[RELOCATION_DATE_COLUMN].notna())
+            & prepared.loc[:, list(EXIT_SCHEDULE_COLUMNS)].notna().any(axis=1)
         )
         .fillna(False)
         .astype("bool")
@@ -778,15 +791,28 @@ def exiting_unit_rows(
 
 
 def _earliest_exit(members: Sequence[Mapping[str, object]]) -> tuple[date | None, str | None]:
-    found: list[tuple[date, str]] = []
+    """설비(모듈 묶음)가 처음 나가는 날과 그 날짜가 온 컬럼의 구분(`EXIT_KINDS`).
+
+    같은 날이면 `EXIT_KINDS` 차례(정지 먼저)로 고른다 — 글자 차례로 고르면 「반출/이설」이
+    앞서, 모듈마다 따로 적은 정지·반출/이설이 같은 날인 묶음의 ▼ 가 개편 전(정지 = 옛
+    반출)과 달라진다. 한 행에 두 날짜가 같은 날이면 그 행은 그날 바로 「반출/이설 완료」라
+    (정지를 거치지 않는다) 반출/이설 하나로 본다.
+    """
+    found: list[tuple[date, int, str]] = []
     for member in members:
-        for column, label in (("반출일정", "반출"), (RELOCATION_DATE_COLUMN, "이설")):
-            day = _as_date(member[column])
-            if day is not None:
-                found.append((day, label))
+        days = {column: _as_date(member[column]) for column in EXIT_KINDS}
+        same_day = days[STOP_DATE_COLUMN] is not None and (
+            days[STOP_DATE_COLUMN] == days[RELOCATION_DATE_COLUMN]
+        )
+        for rank, (column, label) in enumerate(EXIT_KINDS.items()):
+            day = days[column]
+            if day is None or (same_day and column == STOP_DATE_COLUMN):
+                continue
+            found.append((day, rank, label))
     if not found:
         return None, None
-    return min(found)
+    day, _, label = min(found)
+    return day, label
 
 
 def unit_events(timeline: ProcessEquipmentTimeline, plan_units: pd.DataFrame) -> pd.DataFrame:
@@ -855,8 +881,9 @@ def _event(
     def x(day: date | None) -> float:
         return math.nan if day is None else production_position(day, days, months).x
 
-    # 계획이 있는 줄은 계획의 기존 Qual·모듈 수를 쓴다 — 계획이 묶음에서 뺀 모듈(반출·이설 예정,
-    # 확정 「완료」)이 있으면 묶음의 가장 늦은 Qual 과 갈려 ●→◀ 길이가 단축일수와 어긋난다.
+    # 계획이 있는 줄은 계획의 기존 Qual·모듈 수를 쓴다 — 계획이 묶음에서 뺀 모듈(정지·반출/이설
+    # 예정, Qual상태 「완료」)이 있으면 묶음의 가장 늦은 Qual 과 갈려 ●→◀ 길이가 단축일수와
+    # 어긋난다.
     qual = _as_date(plan.get("기존 Qual")) if plan is not None else None
     if qual is None and base is not None:
         qual = _as_date(base["Qual일정"])
@@ -878,7 +905,7 @@ def _event(
         ARRIVAL_DATE_COLUMN: arrival,
         "Qual일정": qual,
         "기여 시작": start,
-        "확정상태": base["확정상태"] if base is not None else None,
+        QUAL_STATUS_COLUMN: base[QUAL_STATUS_COLUMN] if base is not None else None,
         "반출이설일": exit_day,
         "반출이설구분": base["반출이설구분"] if base is not None else None,
         "모듈별 Qual": base["모듈별 Qual"] if base is not None else (),
@@ -1067,7 +1094,7 @@ def downtime_arrows(
 
     `downtime`·`equipment` 는 그 공정으로 거른(검증된) 비가동·마스터, `counterfactual_spans` 는 같은
     마스터로 **비가동을 비우고** 만든 세는 구간(`with_unit_share=True`)이다. 한 행의 손실은 반사실의
-    가용 구간을 그 행의 `[시작일, 종료일]` 로 잘라 월별 기여에 넣은 값이다 — 경계 규칙(다음 날·반출
+    가용 구간을 그 행의 `[시작일, 종료일]` 로 잘라 월별 기여에 넣은 값이다 — 경계 규칙(다음 날·정지
     당일)이 엔진 그대로 걸린다. 같은 설비명의 행이 겹치면 겹친 날은 시작일이 이른 행(같은 날이면 표
     차례)에 한 번만 매긴다 — 그래서 행들의 손실 합이 늘 그 호기의 손실(`downtime_loss`)과 같다.
     """

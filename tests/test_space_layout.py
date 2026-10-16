@@ -211,14 +211,15 @@ def test_the_floor_legend_names_only_the_states_on_the_floor_with_counts() -> No
     """층 상세 범례는 머리 줄 오른쪽의 HTML 칩이다. 그 층에 있는 상태만 대수와 함께, 편집 중
     (`None`)에는 모든 상태의 색 뜻만 보인다."""
     counted = stage_legend_markup({"가용": 5.0, "운영 비가동": 0.75})
-    plain = stage_legend_markup(None, exclude=("반출 완료", "이설 완료"))
+    plain = stage_legend_markup(None, exclude=("정지", "반출/이설 완료"))
 
     assert "가용 5대" in counted and "운영 비가동 0.75대" in counted
     assert "셋업 진행중" not in counted
     assert EQUIPMENT_STAGE_COLORS["가용"] in counted
-    # 편집 중 범례는 편집기에 나오지 않는 퇴장 상태를 뺀다.
+    # 편집 중 범례는 편집기에 나오지 않는 퇴장 상태를 뺀다. 칩 글자로 맞댄다 — 「정지」는 「정지
+    # 예정」의 앞글자라 글자 포함으로는 가를 수 없다.
     assert all(
-        (status in plain) != (status in ("반출 완료", "이설 완료"))
+        (f"</span>{status}</span>" in plain) != (status in ("정지", "반출/이설 완료"))
         for status in EQUIPMENT_STAGE_COLORS
     )
     assert "대<" not in plain

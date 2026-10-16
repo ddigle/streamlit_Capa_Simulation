@@ -58,7 +58,7 @@ def _unit(name: str, basis: object, **overrides: Any) -> dict[str, Any]:
             "사용기준": basis,
             "반입일정": "2025-10-01",
             "Qual일정": "2025-10-20",
-            "확정상태": "완료",
+            "Qual상태": "완료",
             "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
@@ -174,7 +174,7 @@ def test_the_weekly_count_leaves_out_non_hbm_units_entirely() -> None:
         _unit("HBM-2", " hbm "),
         _unit("OTH-1", "HBM3E"),
         _unit("BLK-1", None),
-        _unit("SET-1", "범용", **{"Qual일정": None, "확정상태": None}),
+        _unit("SET-1", "범용", **{"Qual일정": None, "Qual상태": None}),
     )
 
     row = _weekly(equipment, _baseline(3.0))
@@ -194,7 +194,7 @@ def test_the_monthly_table_counts_only_hbm_on_both_axes() -> None:
         _unit("HBM-1", "HBM", 환산비=1.5),
         _unit("OTH-1", "범용", 환산비=2.0),
         _unit("BLK-1", None),
-        _unit("SET-1", "범용", **{"Qual일정": None, "확정상태": None}),
+        _unit("SET-1", "범용", **{"Qual일정": None, "Qual상태": None}),
     )
     spans = _spans(equipment)
     ratios = {"HBM-1": 1.5, "OTH-1": 2.0}
@@ -218,13 +218,13 @@ def test_the_monthly_table_counts_only_hbm_on_both_axes() -> None:
 def test_edp_units_count_alongside_hbm_on_every_axis() -> None:
     """EDP 호기는 HBM 호기와 한 가용대수로 센다 — 주차·월별(대수·환산)·후보·일정 미정, 제외 알림에는
     들지 않는다."""
-    future = {"Qual일정": "2026-08-01", "확정상태": "계획"}
+    future = {"Qual일정": "2026-08-01", "Qual상태": "계획"}
     equipment = _master(
         _unit("HBM-1", "HBM", 환산비=1.5),
         _unit("EDP-1", " edp ", 환산비=2.0),
         _unit("OTH-1", "범용"),
         _unit("EDP-F", "EDP", **future),
-        _unit("EDP-U", "EDP", **{"Qual일정": None, "확정상태": None}),
+        _unit("EDP-U", "EDP", **{"Qual일정": None, "Qual상태": None}),
     )
     ratios = {"HBM-1": 1.5, "EDP-1": 2.0}
 
@@ -292,7 +292,7 @@ def test_a_module_group_counts_the_share_of_its_hbm_rows() -> None:
 def test_shortening_never_pulls_a_non_hbm_unit() -> None:
     """HBM·EDP 가 아닌 호기는 당겨도 가용대수가 늘지 않는다 — 후보가 아니다. 섞인 묶음은 세는
     모듈만."""
-    future = {"Qual일정": "2026-08-01", "확정상태": "계획"}
+    future = {"Qual일정": "2026-08-01", "Qual상태": "계획"}
     equipment = _master(
         _unit("HBM-1", "HBM", **future),
         _unit("OTH-1", "범용", **future),
@@ -310,7 +310,7 @@ def test_shortening_never_pulls_a_non_hbm_unit() -> None:
 
 def test_undated_notice_counts_only_hbm_units() -> None:
     """날짜를 채워도 가용대수에 들지 않는 호기는 일정 미정으로 알리지 않는다."""
-    no_qual = {"Qual일정": None, "확정상태": None}
+    no_qual = {"Qual일정": None, "Qual상태": None}
     equipment = _master(
         _unit("HBM-1", "HBM", **no_qual),
         _unit("OTH-1", "범용", **no_qual),
@@ -322,7 +322,7 @@ def test_undated_notice_counts_only_hbm_units() -> None:
 
 def test_undated_module_shares_are_set_before_the_usage_filter() -> None:
     """반입 안 된 모듈 넷 중 둘만 HBM 이면 Dynamic 의 입고 예정이 0.5대이고, 일정 미정도 0.5대다."""
-    unarrived = {"반입일정": None, "Qual일정": None, "확정상태": None, "Main 설비": "MOD"}
+    unarrived = {"반입일정": None, "Qual일정": None, "Qual상태": None, "Main 설비": "MOD"}
     equipment = _master(
         _unit("MOD-A", "HBM", **unarrived),
         _unit("MOD-B", "HBM", **unarrived),

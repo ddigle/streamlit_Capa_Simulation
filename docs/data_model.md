@@ -287,22 +287,28 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 - `equipment_meta.schema_migration`: 설비 DB에만 적용하는 SQL 버전과 체크섬
 - `revision`: 설비 운영 입력의 증가 리비전 번호, 변경 메모, 입력 해시와 저장 시각
 - `baseline_snapshot`: 공정·분류별 기존 보유대수와 비고의 전체 스냅샷
-- `equipment_master_snapshot`: 설비명(`equipment_id`)을 키로 구분·공정대/소분류, Maker·Model,
-  공정구분·투자Capa·투자구분·사용기준·담당자·설비가동현황 등 참고 속성, 동·층,
-  Space X/Y 좌표와 X/Y 크기, 제진대·물류·반입·Qual·반출·이설 일정, Qual 실행관리용
-  확정상태, 반입/Qual 이력·호기이력·설비이력, 보관유무·기존설비여부·레이아웃표시, 환산비·
-  Main 설비, 메모1~3 을 저장하는 전체 스냅샷. **`사용기준`(`classification_2`)은 참고 속성이
+- `equipment_master_snapshot`: 설비명(`equipment_id`)을 키로 Area Code·공정대/소분류, Maker·Model,
+  공정구분·투자Capa·투자구분·사용기준·담당자 등 참고 속성, 동·층, Space X/Y 좌표와 X/Y 크기,
+  제진대·물류·반입 일정, 반입실적·반입상태, Qual 일정·Qual실적·Qual상태, 정지·반출/이설 일정,
+  반입/Qual 이력·호기이력·설비이력, 보관유무·기존설비여부·레이아웃표시, 환산비·Main 설비, 메모1~3 을
+  저장하는 전체 스냅샷(38열, 2026-10-16 사용자 결정). **`사용기준`(`classification_2`)은 참고 속성이
   아니라 가용대수 대상을 가른다** — Dynamic 가용대수·필요단축일정은 이 값이 `HBM` 또는 `EDP`(앞뒤
   공백·대소문자 무시, 완전 일치)인 행만 한 가용대수로 센다(2026-10-08 사용자 결정,
   `equipment_contract.counts_for_capacity`).
   저장 형식은 바뀌지 않았고 빈 값으로 저장된 옛 리비전의 호기는 그 결정으로 가용대수에서 빠진다.
   `baseline_snapshot` 에는 사용기준이 없어 기존 보유대수는 늘 센다. DB 컬럼은 영문이고 한글 계약 이름과의 매핑은
-  `persistence/equipment_repository.py` 의 `EQUIPMENT_MASTER_DB_COLUMNS` 한 곳이다 — 2026-10-06
-  이름 바꿈은 매핑만 바꿔 기존 리비전이 그대로 이어진다. 투자Capa·반입/Qual 이력·메모1~3 은
-  `0015` 의 nullable 컬럼(`investment_capa`·`arrival_qual_history`·`memo_1~3`)이다.
-  `business_unit` 과 `investment_basis`(옛 `투자기준`)는 입력 계약에 없지만 그 값을 담은 과거
-  리비전이 남아 있어 컬럼을 유지한다. 신규 리비전에서는 NULL 이다. `투자기준` 은 되살리지 않기로
-  확정했다(2026-10-07 사용자 결정).
+  `persistence/equipment_repository.py` 의 `EQUIPMENT_MASTER_DB_COLUMNS` 한 곳이다 — 2026-10-06·
+  2026-10-16 이름 바꿈은 매핑만 바꿔 기존 리비전이 그대로 이어진다(`classification_1` = Area Code(옛
+  구분), `removal_date` = 정지일정(옛 반출일정), `relocation_date` = 반출/이설일정(옛 이설일정),
+  `qual_confirmation_status` = Qual상태(옛 확정상태)). 투자Capa·반입/Qual 이력·메모1~3 은 `0015` 의
+  nullable 컬럼(`investment_capa`·`arrival_qual_history`·`memo_1~3`), 반입실적·반입상태·Qual실적은
+  `0023` 의 nullable 컬럼(`arrival_actual_date` DATE·`arrival_status`·`qual_actual_date` DATE)이다.
+  집계 이탈일은 min(`removal_date`, `relocation_date`), 도면 이탈일은 `relocation_date`(없으면
+  `removal_date`)다 — 두 칸을 함께 적은 행은 2026-10-16 결정 뒤에만 생긴다.
+  `business_unit`·`investment_basis`(옛 `투자기준`)·`classification_3`(옛 `설비가동현황`)은 입력
+  계약에 없지만 그 값을 담은 과거 리비전이 남아 있어 컬럼을 유지한다. 신규 리비전에서는 NULL 이다.
+  `투자기준` 은 되살리지 않기로 확정했다(2026-10-07 사용자 결정). `설비가동현황` 은 2026-10-16 사용자
+  결정으로 빠졌다.
 - `downtime_schedule_snapshot`: 설비명·유형·시작일 자연키와 종료일·상세사유·비고의
   전체 스냅샷
 - `standard_target_weekly_availability`: 표준 목표 Capa 수동 입력용 공정·Weeknum별
@@ -356,11 +362,13 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 사용한다. 일정 수정, 신규 호기·비가동 추가 또는 행 삭제 후 저장하면 기존 리비전을 갱신하지
 않고 세 입력의 새 전체 스냅샷을 추가한다. 기존 보유대수는 즉시 가용, 신규 호기는 반입일부터
 총대수, Qual일부터 가용대수로 계산한다. 보관유무 Y 와 활성 운영 비가동은 가용에서 제외하고,
-반출·이설 실행일부터 보유·가용·레이아웃에서 제외한다. 신규 호기의 반입·Qual 일정은 비워도
+정지일정·반출/이설일정 가운데 이른 날부터 보유·가용에서, 반출/이설일정(없으면 정지일정)부터
+레이아웃에서 제외한다. 신규 호기의 반입·Qual 일정은 비워도
 저장되며(`arrival_date`·`qual_date` NULL) 반입이 비면 입고 예정, Qual 이 비면 셋업 진행중으로
 남아 가용대수에 들지 않는다.
-확정상태는 Qual 일정의 계획·확정·완료·지연 모니터링 용도이며 가용 산식에는 사용하지 않는다.
-Qual일정이 있는 신규 호기에만 필수다.
+Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연 모니터링 용도이며 가용 산식에는 사용하지
+않는다. Qual일정이 있는 신규 호기에만 필수다. 반입상태도 같은 네 값의 모니터링 값이고 비워도
+저장된다. 반입실적·Qual실적은 Space 실물 판정과 일정 확인 알림에만 쓰고 가용 산식에는 쓰지 않는다.
 집계형 기존 보유대수는 호기·좌표가 없어 Space 배치에는 포함하지 않는다. 시뮬레이션 DB의
 공정·설비 테이블은 읽지 않으며, 공정명은 향후 Dynamic Capa 연결 계층의 호환 키로만 보존한다.
 

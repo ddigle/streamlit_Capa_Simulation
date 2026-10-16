@@ -42,7 +42,7 @@ def test_the_column_keeps_its_place_in_the_contract() -> None:
     ratio = EQUIPMENT_COLUMNS.index(CONVERSION_RATIO_COLUMN)
     assert EQUIPMENT_COLUMNS[ratio + 1] == PARENT_EQUIPMENT_COLUMN
     assert EQUIPMENT_COLUMNS[-3:] == ("메모1", "메모2", "메모3")
-    assert len(EQUIPMENT_COLUMNS) == 36
+    assert len(EQUIPMENT_COLUMNS) == 38
 
 
 def test_the_empty_frame_types_it_as_a_number() -> None:

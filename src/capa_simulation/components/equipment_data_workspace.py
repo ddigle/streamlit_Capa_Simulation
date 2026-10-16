@@ -50,11 +50,16 @@ from capa_simulation.services.equipment_bulk_delete import (
     row_keys,
 )
 from capa_simulation.services.equipment_contract import (
+    AREA_CODE_COLUMN,
+    AREA_CODES,
+    ARRIVAL_STATUS_COLUMN,
+    ARRIVAL_STATUSES,
     DATE_COLUMNS,
     DOWNTIME_TYPES,
     EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    QUAL_STATUS_COLUMN,
     STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
@@ -88,6 +93,7 @@ from capa_simulation.services.equipment_samples import untouched_sample_baseline
 from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
+    equipment_save_warnings,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
@@ -186,8 +192,8 @@ class ImportReview:
     source: Frames
     candidate: Frames
     changes: pd.DataFrame
-    # 원문을 읽으며 남긴 알림(빠진 옛 컬럼 `투자기준` 을 떼어 냄, 붙여넣은 열만 바꾼다 등).
-    # 미리보기와 함께 남는다.
+    # 원문을 읽으며 남긴 알림(빠진 옛 컬럼 `투자기준`·`설비가동현황` 을 떼어 냄, 붙여넣은 열만
+    # 바꾼다 등). 미리보기와 함께 남는다.
     notices: tuple[str, ...] = ()
     # 저장하면 값이 지워지는 칸처럼 저장 전에 눈에 띄어야 하는 것. 경고로 그린다.
     cautions: tuple[str, ...] = ()
@@ -877,7 +883,7 @@ def build_import_review(
     cautions: list[str] = []
     if target == "설비 마스터":
         # 붙여넣은 열만 바꾼다(2026-10-08 사용자 요청). 붙여넣지 않은 열은 편집본 값으로 채운
-        # 36컬럼 표가 오므로 아래 미리보기·병합·병합 뒤 전체 검증은 전체 열 붙여넣기와 같은 길이다.
+        # 38컬럼 표가 오므로 아래 미리보기·병합·병합 뒤 전체 검증은 전체 열 붙여넣기와 같은 길이다.
         try:
             paste = read_equipment_update(
                 payload, equipment, floor_canvases=floor_canvases, notices=notices
@@ -896,7 +902,10 @@ def build_import_review(
         incoming = paste.rows
         changes = build_equipment_import_preview(equipment, incoming, columns=paste.columns)
         try:
-            merged = merge_equipment_rows(equipment, incoming, floor_canvases=floor_canvases)
+            # 저장 때만 도는 실적 검사도 미리 한다 — 저장을 눌러야 알던 것을 미리보기에서 말한다.
+            merged = merge_equipment_rows(
+                equipment, incoming, floor_canvases=floor_canvases, today=date.today()
+            )
         except UnitGroupCollisionError as exc:
             # 검증은 병합된 표만 본다. 이름마다 붙여넣기·편집본 어디에 있었는지 붙여 다시 알린다
             # — 붙여넣기는 설비명 기준 upsert 라 편집본 쪽 행을 지우지 못한다.
@@ -1251,7 +1260,9 @@ def _render_editors(
                 "공정대분류",
                 "동",
                 "층",
-                "확정상태",
+                AREA_CODE_COLUMN,
+                ARRIVAL_STATUS_COLUMN,
+                QUAL_STATUS_COLUMN,
                 STORAGE_FLAG_COLUMN,
                 "기존설비여부",
                 "레이아웃표시",
@@ -1284,7 +1295,16 @@ def _render_editors(
             "Ysize": st.column_config.NumberColumn(
                 min_value=0.1, max_value=max_extent[1], step=1.0
             ),
-            "확정상태": st.column_config.SelectboxColumn(options=list(QUAL_CONFIRMATION_STATUSES)),
+            # 목록 밖 값도 받는다(저장 미리보기에서 경고만) — 고르는 칸으로 묶지 않는다.
+            AREA_CODE_COLUMN: st.column_config.TextColumn(
+                help=(
+                    f"{'·'.join(AREA_CODES)} 가운데 하나를 적습니다(대소문자는 저장할 때 맞춥니다)."
+                )
+            ),
+            ARRIVAL_STATUS_COLUMN: st.column_config.SelectboxColumn(options=list(ARRIVAL_STATUSES)),
+            QUAL_STATUS_COLUMN: st.column_config.SelectboxColumn(
+                options=list(QUAL_CONFIRMATION_STATUSES)
+            ),
             STORAGE_FLAG_COLUMN: st.column_config.SelectboxColumn(
                 options=["N", "Y"], required=True
             ),
@@ -1548,6 +1568,9 @@ def render_equipment_data_workspace(
         master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
         for message in module_group_warnings(master):
             st.warning(message, icon=":material/view_module:")
+        # Area Code 목록 밖·실적 누락·상태 갱신 필요도 같은 자리에서 알리고 막지 않는다.
+        for message in equipment_save_warnings(master):
+            st.warning(message, icon=":material/rule:")
     # 표마다 무엇을 키로 대체하는지·Main 설비·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
     # 내려받기만 남긴다.
     with st.expander(

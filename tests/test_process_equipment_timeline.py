@@ -292,7 +292,7 @@ def _new_unit_fixture() -> tuple[list[dict[str, Any]], dict[int, float]]:
 
 
 def test_new_unit_rows_take_one_line_per_unit_key_with_the_latest_module_qual() -> None:
-    """대상은 기존 N·보관 N·HBM·EDP·Qual 있음이다 — 확정 「완료」와 반출 예정도 든다.
+    """대상은 기존 N·보관 N·HBM·EDP·Qual 있음이다 — 확정 「완료」와 정지 예정도 든다.
 
     모듈 묶음은 한 줄이고 Qual 은 가장 늦은 모듈(6/20), 모듈별 Qual 은 풍선용 튜플이다.
     """
@@ -310,7 +310,7 @@ def test_new_unit_rows_take_one_line_per_unit_key_with_the_latest_module_qual() 
     assert group["Model"] == "BOND-X, BOND-Y"
     assert group["모듈별 Qual"] == (("M1", date(2026, 6, 10)), ("M2", date(2026, 6, 20)))
     leaving = new_units.set_index("호기").loc["EQ2"]
-    assert (leaving["반출이설일"], leaving["반출이설구분"]) == (date(2026, 7, 1), "반출")
+    assert (leaving["반출이설일"], leaving["반출이설구분"]) == (date(2026, 7, 1), "정지")
 
 
 def test_unit_events_put_shortened_then_new_then_virtual_rows() -> None:
@@ -346,7 +346,7 @@ def test_unit_events_put_shortened_then_new_then_virtual_rows() -> None:
     assert leaving["반출이설 위치"] == pytest.approx(2 + 10 / 31)
     assert pd.isna(leaving["목표 기여 위치"])
     assert bool(leaving["반입 전"]) is False
-    assert by_unit.loc["EQ1", "확정상태"] == "완료"
+    assert by_unit.loc["EQ1", "Qual상태"] == "완료"
     assert by_unit.loc["EQ1", "기여 시작 위치"] == pytest.approx(1 + 15 / 30)
     # 반입도 다음 날 좌표다 — 5/1 반입은 x(5/2) = 5월 칸 12째 날.
     assert by_unit.loc["EQ1", "반입 위치"] == pytest.approx(11 / 31)
@@ -374,11 +374,11 @@ def test_the_arrival_marker_stands_on_the_day_after_like_the_engine() -> None:
 
 
 def test_a_shortened_row_takes_qual_and_modules_from_the_plan_when_the_group_splits() -> None:
-    """묶음 G 의 M1 은 반출 예정(9/1)이라 단축 후보에서 빠지고 M2(6/20)만 당긴다.
+    """묶음 G 의 M1 은 정지 예정(9/1)이라 단축 후보에서 빠지고 M2(6/20)만 당긴다.
 
     단축 줄의 기존 Qual·기여 시작·모듈 수는 계획의 것(6/20·6/21·1모듈)이라 ●→◀ 길이가 단축일수와
     같다. 묶음의 가장 늦은 Qual(M1 7/15)로 그리면 81일 선에 「−55일」이 붙는다. 갈린 모듈은 모듈별
-    Qual 이 보이고, 반출일정은 묶음의 것이다.
+    Qual 이 보이고, 정지일정은 묶음의 것이다.
     """
     rows = [
         _unit("M1", date(2026, 7, 15), ratio=0.5, parent="G", removal=date(2026, 9, 1)),
@@ -403,7 +403,7 @@ def test_a_shortened_row_takes_qual_and_modules_from_the_plan_when_the_group_spl
     )
     assert (row["기여 시작"] - row["목표 기여 시작"]).days == row["단축일수"] == planned["단축일수"]
     assert row["모듈별 Qual"] == (("M1", date(2026, 7, 15)), ("M2", date(2026, 6, 20)))
-    assert (row["반출이설일"], row["반출이설구분"]) == (date(2026, 9, 1), "반출")
+    assert (row["반출이설일"], row["반출이설구분"]) == (date(2026, 9, 1), "정지")
 
 
 def test_unit_events_ignore_other_processes_in_the_plan() -> None:
@@ -449,18 +449,38 @@ def test_units_leaving_inside_the_axis_without_a_new_unit_row_are_listed() -> No
     gone = by_unit.loc["GONE"]
     assert (gone["반출이설일"], gone["반출이설구분"], gone["기존설비여부"]) == (
         date(2026, 6, 10),
-        "반출",
+        "정지",
         "Y",
     )
     # 반출은 당일 좌표 — 6/10 은 6/20 의 6월 칸 20째 날.
     assert gone["반출이설 위치"] == pytest.approx(1 + 19 / 30)
     assert (by_unit.loc["EARLY1", "반출이설구분"], by_unit.loc["EARLY1", "기존설비여부"]) == (
-        "이설",
+        "반출/이설",
         "N",
     )
     assert "EQ2" in set(timeline.new_units.loc[timeline.new_units["축 안"], "호기"])
     bridge = timeline.bridge.set_index("생산계획년월")
     assert list(bridge.loc[[JUNE, JULY], "반출이설"] < 0) == [True, True]
+
+
+def test_a_same_day_stop_and_exit_is_a_stop_across_modules_and_an_exit_within_a_row() -> None:
+    """같은 날이면 정지가 먼저다 — 모듈 A 정지·모듈 B 반출/이설이 같은 날인 묶음의 ▼ 는 개편
+    전(정지 = 옛 반출)처럼 「정지」다(글자 차례면 「반출/이설」이 앞선다). 한 행에 두 날짜가 같은
+    날이면 그 행은 그날 바로 반출/이설 완료라 「반출/이설」이다."""
+    gone, qual, arrival = date(2026, 7, 5), date(2026, 3, 1), date(2026, 2, 1)
+    rows = [
+        _unit("MA", qual, arrival=arrival, ratio=0.5, parent="M", removal=gone),
+        _unit("MB", qual, arrival=arrival, ratio=0.5, parent="M", relocation=gone),
+        _unit("SAME", qual, arrival=arrival, removal=gone, relocation=gone),
+    ]
+
+    exits = _timeline(rows).exits.set_index("호기")
+
+    assert (exits.loc["M", "반출이설일"], exits.loc["M", "반출이설구분"]) == (gone, "정지")
+    assert (exits.loc["SAME", "반출이설일"], exits.loc["SAME", "반출이설구분"]) == (
+        gone,
+        "반출/이설",
+    )
 
 
 # ---------------------------------------------------------------------- 비가동 화살표·손실

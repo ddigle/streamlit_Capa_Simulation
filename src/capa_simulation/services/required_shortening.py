@@ -11,7 +11,7 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 
 - 가용은 `build_monthly_equipment_availability` 의 **환산 소계**(`기존보유` + `가용`)다 —
   Static/Dynamic 탭의 Dynamic 과 같은 줄에서 나온다. 비가동도 그대로 반영되고, 사용기준이 HBM·EDP 인
-  호기만 들며, 실행일 전의 반출·이설 예정 호기도 가용이면 든다(실행일 당일부터는 빠진다).
+  호기만 들며, 실행일 전의 정지·반출/이설 예정 호기도 가용이면 든다(실행일 당일부터는 빠진다).
 - 소요는 시나리오의 소요대수를 `calculate_securement_rate` 로 `(월, 공정)` 에 모은 값이다 —
   확보율 교차검증(`securement_cross_check`)과 같은 함수, 같은 집계다.
 - 공정은 설비 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만
@@ -54,8 +54,8 @@ Dynamic 가용대수(호기 일정을 Cut-off W/D 구간에 일할한 환산대�
 ## 후보
 
 신규 호기(`기존설비여부` N, `보관유무` N) 가운데 사용기준이 HBM·EDP 이고(`counts_for_capacity` —
-다른 호기는 가용대수에 들지 않으니 당겨도 늘지 않는다) Qual일정이 있고 확정상태가 「완료」가 아니며
-반출·이설 일정이 없는 것. 모듈 행은 설비키(`Main 설비`, 없으면 `설비명`)로 묶어 **한 대로 함께
+다른 호기는 가용대수에 들지 않으니 당겨도 늘지 않는다) Qual일정이 있고 Qual상태가 「완료」가 아니며
+정지·반출/이설 일정이 없는 것. 모듈 행은 설비키(`Main 설비`, 없으면 `설비명`)로 묶어 **한 대로 함께
 당긴다** — 묶음의 Qual 은 가장 늦은 모듈의 Qual 이고, 목표 날짜보다 늦은 모듈만 그 날짜로 온다.
 묶음의 환산비는 모듈 행 환산비의 합이다. 묶음에 세지 않는 모듈이 섞이면 세는 모듈만 묶는다.
 
@@ -98,9 +98,12 @@ from capa_simulation.services.equipment_availability import build_equipment_life
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     CONVERSION_RATIO_COLUMN,
+    DONE_STAGE_STATUS,
     EQUIPMENT_ID_COLUMN,
+    EXIT_SCHEDULE_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
-    RELOCATION_DATE_COLUMN,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     STORAGE_FLAG_COLUMN,
     counts_for_capacity,
 )
@@ -161,7 +164,7 @@ TARGET_LEVELS: tuple[float, ...] = (0.9, 1.0, 1.1, 1.2, 1.3)
 DEFAULT_TARGET_LEVEL = 1.1
 """처음 여는 화면의 목표. 업무 확보 기준 110% 다(시안과 같다)."""
 
-COMPLETED_CONFIRMATION = "완료"
+COMPLETED_CONFIRMATION = DONE_STAGE_STATUS
 VIRTUAL_UNIT_PREFIX = "추가"
 KIND_SHORTENED = "단축"
 KIND_NEW = "신규"
@@ -224,7 +227,7 @@ UNIT_MASTER_COLUMNS = (
     "모듈 수",
     CONVERSION_RATIO_COLUMN,
     ARRIVAL_DATE_COLUMN,
-    "확정상태",
+    QUAL_STATUS_COLUMN,
 )
 """후보 호기(모듈 묶음은 한 대)마다 마스터 속성 한 줄. `설비명` 은 묶음의 모듈 행을 잇는다."""
 
@@ -456,15 +459,14 @@ def shortening_candidates(
     prepared = prepare_equipment_master(equipment)
     if prepared.empty:
         return ()
-    confirmation = prepared["확정상태"].astype("string").str.strip()
+    confirmation = prepared[QUAL_STATUS_COLUMN].astype("string").str.strip()
     eligible = (
         (
             prepared["기존설비여부"].eq("N")
             & prepared[STORAGE_FLAG_COLUMN].eq("N")
-            & prepared["Qual일정"].notna()
+            & prepared[QUAL_DATE_COLUMN].notna()
             & ~confirmation.eq(COMPLETED_CONFIRMATION).fillna(False)
-            & prepared["반출일정"].isna()
-            & prepared[RELOCATION_DATE_COLUMN].isna()
+            & prepared.loc[:, list(EXIT_SCHEDULE_COLUMNS)].isna().all(axis=1)
             # 사용기준이 HBM·EDP 가 아닌 호기는 당겨도 가용대수가 늘지 않는다 — 후보로 끌어오지
             # 않는다.
             & counts_for_capacity(prepared)
@@ -616,7 +618,7 @@ def _unit_master(prepared: pd.DataFrame, candidates: Sequence[CandidateUnit]) ->
 
     모듈 묶음은 **옮기는 모듈 행**(`CandidateUnit.modules`)만 본다 — 모듈 수·환산비가 계산이 쓴 그
     묶음의 것이어야 `늘어난 환산대수` 와 맞는다. 공정대분류·공정소분류·투자구분·동·층은 검증이 묶음
-    안에서 같게 막아 두고, 그 밖의 글자(Model·확정상태)가 갈리면 서로 다른 값을 모듈 차례로 잇는다.
+    안에서 같게 막아 두고, 그 밖의 글자(Model·Qual상태)가 갈리면 서로 다른 값을 모듈 차례로 잇는다.
     반입일정은 가장 늦은 모듈의 날이다 — 묶음 Qual 이 가장 늦은 모듈의 Qual 인 것과 같다.
     """
     if prepared.empty or not candidates:
@@ -637,7 +639,7 @@ def _unit_master(prepared: pd.DataFrame, candidates: Sequence[CandidateUnit]) ->
             day for member in members if (day := _as_date(member[ARRIVAL_DATE_COLUMN])) is not None
         ]
         row: dict[str, object] = {"호기": unit.unit}
-        for column in (*_MASTER_TEXT_COLUMNS, "확정상태"):
+        for column in (*_MASTER_TEXT_COLUMNS, QUAL_STATUS_COLUMN):
             row[column] = _distinct_text(member[column] for member in members)
         row[EQUIPMENT_ID_COLUMN] = ", ".join(module.equipment_id for module in unit.modules)
         row["모듈 수"] = len(unit.modules)

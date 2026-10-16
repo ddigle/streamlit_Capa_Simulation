@@ -66,7 +66,7 @@ def _fleet(anchor: date = ANCHOR) -> tuple[pd.DataFrame, pd.DataFrame]:
     - `MOD-01A~D` 는 `MOD-01` 의 모듈이다. B 는 기준일 10일 뒤 반출되어 형제의 지분이 바뀐다.
       C 는 기준일 앞뒤로 비가동이다.
     - 샘플의 첫 비가동 호기에 겹치는 비가동을 하나 더 둔다(같은 호기, 다른 유형).
-    - 반출 예정 호기 하나에 비가동을 둔다(상태 이름이 「반출 예정」으로 가려지는 호기).
+    - 정지 예정 호기 하나에 비가동을 둔다(상태 이름이 「정지 예정」으로 가려지는 호기).
     """
     equipment = sample_equipment_master(anchor_date=anchor)
     downtime = sample_downtime_schedule(anchor_date=anchor)
@@ -89,16 +89,16 @@ def _fleet(anchor: date = ANCHOR) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "물류일정": pd.NaT,
                 "반입일정": arrival,
                 "Qual일정": arrival + pd.Timedelta(days=20),
-                "확정상태": "완료",
-                "반출일정": (
+                "Qual상태": "완료",
+                "정지일정": (
                     pd.Timestamp(anchor + timedelta(days=10)) if suffix == "B" else pd.NaT
                 ),
-                "이설일정": pd.NaT,
+                "반출/이설일정": pd.NaT,
             }
         )
     module_rows = pd.DataFrame(modules, columns=equipment.columns).astype(equipment.dtypes)
     equipment = pd.concat([equipment, module_rows], ignore_index=True)
-    exit_scheduled = equipment.loc[equipment["반출일정"].notna(), EQUIPMENT_ID_COLUMN].iloc[0]
+    exit_scheduled = equipment.loc[equipment["정지일정"].notna(), EQUIPMENT_ID_COLUMN].iloc[0]
     first_down = str(downtime[EQUIPMENT_ID_COLUMN].iloc[0])
     first_start = pd.Timestamp(downtime["시작일"].iloc[0])
     extra = pd.DataFrame(
@@ -227,13 +227,13 @@ def test_month_view_matches_the_per_moment_path(month: date, processes: tuple[st
 
 
 def test_the_month_fixture_exercises_modules_overlaps_and_exits() -> None:
-    """전제: 고른 달의 결과에 모듈 행·겹친 비가동 호기·반출 예정 호기가 실제로 든다."""
+    """전제: 고른 달의 결과에 모듈 행·겹친 비가동 호기·정지 예정 호기가 실제로 든다."""
     equipment, downtime = _fleet()
     _, result = build_inactive_equipment_month_view(equipment, downtime, month=ANCHOR)
     units = set(result[EQUIPMENT_ID_COLUMN].astype(str))
 
     assert "MOD-01C" in units
-    # 반출 예정 호기의 비가동(맨 끝 줄)과 겹친 비가동 호기(그 앞 줄)
+    # 정지 예정 호기의 비가동(맨 끝 줄)과 겹친 비가동 호기(그 앞 줄)
     assert {str(unit) for unit in downtime[EQUIPMENT_ID_COLUMN].iloc[-2:]} <= units
     # 달마다 다른 표가 나온다 — 달을 키에서 빼면 틀린다는 것을 아래 무효화 테스트가 보려면 필요하다.
     tables = {
@@ -302,7 +302,7 @@ def test_cached_month_view_follows_every_input(
         # 나온다.
         equipment = equipment.copy()
         moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01C")
-        equipment.loc[moved, "반출일정"] = pd.Timestamp(month.replace(day=1) - timedelta(days=1))
+        equipment.loc[moved, "정지일정"] = pd.Timestamp(month.replace(day=1) - timedelta(days=1))
     built = _counting(
         monkeypatch,
         "build_inactive_equipment_month_view",
@@ -396,7 +396,7 @@ def test_cached_gantt_spans_follow_every_input(
     elif change == "master_cell":
         equipment = equipment.copy()
         moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01B")
-        equipment.loc[moved, "반출일정"] = equipment.loc[moved, "반출일정"] + pd.Timedelta(days=40)
+        equipment.loc[moved, "정지일정"] = equipment.loc[moved, "정지일정"] + pd.Timedelta(days=40)
     elif change == "start":
         start = start + timedelta(days=20)
     else:
@@ -543,7 +543,7 @@ def test_cached_status_follows_every_input(change: str, monkeypatch: pytest.Monk
     else:
         equipment = equipment.copy()
         moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01C")
-        equipment.loc[moved, "반출일정"] = pd.Timestamp(ANCHOR - timedelta(days=1))
+        equipment.loc[moved, "정지일정"] = pd.Timestamp(ANCHOR - timedelta(days=1))
     built = _counting(monkeypatch, "build_equipment_status_as_of", build_equipment_status_as_of)
     status = simulation_cache.get_equipment_status_as_of(equipment, downtime, as_of=as_of)
     inactive = simulation_cache.get_inactive_equipment(equipment, downtime, as_of=as_of)
@@ -578,7 +578,7 @@ def test_cached_transitions_follow_every_input(
     else:
         equipment = equipment.copy()
         moved = equipment[EQUIPMENT_ID_COLUMN].eq("MOD-01B")
-        equipment.loc[moved, "반출일정"] = equipment.loc[moved, "반출일정"] + pd.Timedelta(days=3)
+        equipment.loc[moved, "정지일정"] = equipment.loc[moved, "정지일정"] + pd.Timedelta(days=3)
     built = _counting(
         monkeypatch, "build_milestone_transition_events", build_milestone_transition_events
     )
@@ -611,7 +611,7 @@ def _shown(app: AppTest) -> list[str]:
         ("비가동 호기", "equipment_explorer_inactive_view", "기준일 시점"),
         ("비가동 호기", "equipment_explorer_inactive_view", "그 달 전체"),
         ("Qual 일정", "equipment_explorer_qual_view", "호기 목록"),
-        ("Qual 일정", "equipment_explorer_qual_view", "확정상태 분포"),
+        ("Qual 일정", "equipment_explorer_qual_view", "Qual상태 분포"),
         ("단계 전환", "equipment_explorer_transition_view", "단계별 건수"),
         ("단계 전환", "equipment_explorer_transition_view", "전환 일정 목록"),
     ],

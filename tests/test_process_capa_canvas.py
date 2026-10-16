@@ -855,7 +855,7 @@ def test_unit_rows_draw_one_line_per_unit_with_the_pull_and_its_badges() -> None
     assert len(circles) == len(virtual)
     assert {shape["fillcolor"] for shape in circles} == {tokens.STATUS_SHORTAGE}
     assert {shape["line"]["dash"] for shape in circles} == {"dot"}
-    # 단축 줄의 둘째 줄은 「기존 → 단축」, 신규 줄은 「반입 · Qual · 확정상태」, 추가N 은
+    # 단축 줄의 둘째 줄은 「기존 → 단축」, 신규 줄은 「반입 · Qual · Qual상태」, 추가N 은
     # 「필요 · 신규」 다.
     details = [item["text"] for item in _annotations(canvas.labels)]
     assert any(text.startswith("기존 ") and "→ 단축 " in text for text in details)
@@ -887,7 +887,7 @@ def _many_new_units(count: int) -> pd.DataFrame:
                 "반입일정": date(2026, 12, 1),
                 "Qual일정": date(2027, 1, 5),
                 "기여 시작": date(2027, 1, 6),
-                "확정상태": "계획",
+                "Qual상태": "계획",
                 "모듈별 Qual": (),
                 "해소 기여 월": (),
                 "반입 전": False,

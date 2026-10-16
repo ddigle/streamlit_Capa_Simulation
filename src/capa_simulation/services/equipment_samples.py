@@ -10,13 +10,17 @@ from datetime import date
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
+    AREA_CODE_COLUMN,
     ARRIVAL_DATE_COLUMN,
     COUNTED_USAGE_BASIS,
     DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
+    STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     USAGE_BASIS_COLUMN,
 )
@@ -155,12 +159,12 @@ _FLEET_KIND_CYCLE = (
     "가용",
     "비가동",
     "가용",
-    "반출예정",
+    "정지예정",
     "가용",
     "가용",
     "셋업",
     "가용",
-    "이설예정",
+    "반출이설예정",
     "가용",
     "가용",
     "보관",
@@ -200,7 +204,7 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
     """
     anchor = pd.Timestamp(anchor_date or date.today()).normalize()
     common = {
-        "구분": "임시 샘플",
+        AREA_CODE_COLUMN: "Main",
         "공정대분류": "B/N",
         "Maker": "Sample Maker",
         "Model": "Sample Model",
@@ -208,7 +212,6 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
         "투자Capa": None,
         "투자구분": "양산",
         "담당자": "샘플 담당자",
-        "설비가동현황": None,
         "호기이력": "화면 검토용 샘플",
         "설비이력": "화면 검토용 샘플 · DB 미저장",
         "레이아웃표시": "Y",
@@ -231,9 +234,9 @@ def sample_equipment_master(*, anchor_date: date | None = None) -> pd.DataFrame:
                 "제진대일정": _offset_date(anchor, schedule.vibration),
                 "물류일정": _offset_date(anchor, schedule.logistics),
                 ARRIVAL_DATE_COLUMN: _offset_date(anchor, schedule.arrival),
-                "Qual일정": _offset_date(anchor, schedule.qual),
-                "확정상태": schedule.confirmation,
-                "반출일정": _offset_date(anchor, schedule.removal),
+                QUAL_DATE_COLUMN: _offset_date(anchor, schedule.qual),
+                QUAL_STATUS_COLUMN: schedule.confirmation,
+                STOP_DATE_COLUMN: _offset_date(anchor, schedule.removal),
                 RELOCATION_DATE_COLUMN: _offset_date(anchor, schedule.relocation),
                 STORAGE_FLAG_COLUMN: schedule.storage,
                 "기존설비여부": schedule.existing,
@@ -294,9 +297,9 @@ def _fleet_slots() -> list[tuple[str, str, str, float, float]]:
 def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
     """상태 하나를 일정 여섯 개로 푼다. 검증 규칙이 요구하는 순서를 여기서 지킨다.
 
-    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, Qual 이 있는 신규 호기는 확정상태가 있어야 한다.
-    반출일정과 이설일정은 함께 둘 수 없다. 샘플은 상태를 보이려고 신규 호기마다 입고·Qual 을 둔다
-    (일정은 비워도 저장되지만 그러면 입고 예정·셋업 진행중에 머문다).
+    제진대 ≤ 물류 ≤ 입고 ≤ Qual 이어야 하고, Qual 이 있는 신규 호기는 Qual상태가 있어야 한다.
+    샘플은 정지일정·반출/이설일정 가운데 하나만 둔다. 상태를 보이려고 신규 호기마다 입고·Qual 을
+    둔다(일정은 비워도 저장되지만 그러면 입고 예정·셋업 진행중에 머문다).
     """
     if kind == "보관":
         return _FleetSchedule(storage="Y")
@@ -322,7 +325,7 @@ def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
             confirmation="지연" if index % 3 == 0 else "확정",
         )
 
-    # 나머지는 이미 Qual 을 마친 설비다. 반출·이설만 그 위에 얹는다.
+    # 나머지는 이미 Qual 을 마친 설비다. 정지·반출/이설만 그 위에 얹는다.
     arrival = -(120 + index * 4)
     settled = _FleetSchedule(
         vibration=arrival - 20,
@@ -331,9 +334,9 @@ def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
         qual=arrival + 25,
         confirmation="완료",
     )
-    if kind == "반출예정":
+    if kind == "정지예정":
         return replace(settled, removal=20 + index % 70)
-    if kind == "이설예정":
+    if kind == "반출이설예정":
         return replace(settled, relocation=30 + index % 60)
     return settled
 

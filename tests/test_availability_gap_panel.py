@@ -131,7 +131,7 @@ def _panel_app() -> None:
                     "사용기준": basis,
                     "반입일정": arrival,
                     "Qual일정": qual,
-                    "확정상태": confirm,
+                    "Qual상태": confirm,
                     "보관유무": "N",
                     "기존설비여부": "N",
                     "레이아웃표시": "N",

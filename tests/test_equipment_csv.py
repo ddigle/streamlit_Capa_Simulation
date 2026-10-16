@@ -1,5 +1,6 @@
 # Purpose: equipment csv 관련 정상·예외·회귀 동작을 검증한다.
 
+from datetime import date
 from io import BytesIO
 
 import pandas as pd
@@ -7,6 +8,8 @@ import pytest
 from test_equipment_availability import _downtime, _equipment
 
 from capa_simulation.services.equipment_contract import (
+    AREA_CODES,
+    ARRIVAL_STATUSES,
     BASELINE_COLUMNS,
     DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
@@ -49,6 +52,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 
 BASELINE_HEADER = "\t".join(BASELINE_COLUMNS)
 
@@ -80,19 +84,24 @@ def _incoming_baseline(process: str, category: str, count: float, note: str) -> 
     )
 
 
-def test_equipment_csv_template_round_trips_with_36_columns() -> None:
+def test_equipment_csv_template_round_trips_with_38_columns() -> None:
     result = read_equipment_csv(equipment_csv_template())
 
-    assert len(result.columns) == 36
+    assert len(result.columns) == 38
     assert "사업부" not in result.columns
     assert "투자기준" not in result.columns
+    assert "설비가동현황" not in result.columns
     assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
     assert len(result) == 1
     assert result.loc[0, "설비명"] == SAMPLE_EQUIPMENT_ID
     assert result.loc[0, "담당자"] == SAMPLE_EQUIPMENT_MANAGER
     assert result.loc[0, "설비이력"] == SAMPLE_EQUIPMENT_NOTE
     assert result.loc[0, "투자Capa"] == "299K"
-    assert result.loc[0, "확정상태"] == "계획"
+    assert result.loc[0, "Area Code"] == "Main"
+    assert result.loc[0, "반입실적"] == pd.Timestamp("2026-09-05")
+    assert result.loc[0, "반입상태"] == "완료"
+    assert result.loc[0, "Qual실적"] == pd.Timestamp("2026-09-16")
+    assert result.loc[0, "Qual상태"] == "완료"
     assert result.loc[0, "환산비"] == 1.0
 
 
@@ -105,7 +114,19 @@ def test_equipment_csv_template_lists_choice_rows_without_equipment_id() -> None
     assert choices["투자구분"].tolist() == ["WLP", "2.5D", "HCB"]
     # 안내 행의 예시 값이 계약에 없는 이름으로 적혀 조용히 사라지지 않았다.
     assert choices["투자Capa"].dropna().tolist() == ["322K"]
-    assert set(raw["확정상태"]) == set(QUAL_CONFIRMATION_STATUSES)
+    # Area Code 는 Main·MI·부대 셋을 안내한다.
+    assert choices["Area Code"].tolist() == list(AREA_CODES)
+    # 예시 행과 안내 행을 합치면 두 상태 칸의 허용값이 모두 보인다.
+    assert set(raw["Qual상태"]) == set(QUAL_CONFIRMATION_STATUSES)
+    assert set(raw["반입상태"]) == set(ARRIVAL_STATUSES)
+
+
+def test_the_template_example_row_is_a_finished_unit_with_no_confirmation_warning() -> None:
+    """양식의 예시 행을 그대로 따라 쓴 호기에 일정 확인 알림이 뜨지 않는다 — 끝난 단계는 실적과
+    「완료」를 함께 적은 꼴이다."""
+    example = read_equipment_csv(equipment_csv_template())
+
+    assert schedule_confirmation_issues(example, today=date(2026, 10, 16)).empty
 
 
 def test_downtime_csv_template_has_no_id_and_round_trips() -> None:
@@ -159,10 +180,10 @@ def test_preview_reads_blank_cells_the_same_after_the_scalar_fast_path() -> None
     빠르게 만드는 것보다 **판정이 한 칸도 달라지지 않는 것**이 중요하므로 세 경우를 못박는다.
     """
     current = _equipment()
-    # EQ-02 는 설비이력이 차 있고 구분은 비어 있다. 두 칸을 한 행에서 함께 본다.
+    # EQ-02 는 설비이력이 차 있고 Area Code 는 비어 있다. 두 칸을 한 행에서 함께 본다.
     incoming = current.loc[current["설비명"].eq("EQ-02")].copy()
     incoming.loc[incoming.index[0], "설비이력"] = pd.NA
-    incoming.loc[incoming.index[0], "구분"] = pd.NA
+    incoming.loc[incoming.index[0], "Area Code"] = pd.NA
 
     preview = build_equipment_import_preview(current, incoming)
 
@@ -171,7 +192,7 @@ def test_preview_reads_blank_cells_the_same_after_the_scalar_fast_path() -> None
     assert "설비이력" in preview.loc[0, "변경컬럼"]
     assert "(빈 값)" in preview.loc[0, "변경내용"]
     # 원래도 비어 있던 칸은 변경이 아니다 — 양쪽 결측은 같은 값으로 본다.
-    assert "구분" not in str(preview.loc[0, "변경컬럼"]).split(", ")
+    assert "Area Code" not in str(preview.loc[0, "변경컬럼"]).split(", ")
 
 
 def test_preview_does_not_depend_on_the_incoming_index() -> None:

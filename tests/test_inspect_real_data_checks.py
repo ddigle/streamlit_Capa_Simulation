@@ -126,14 +126,19 @@ def _equipment_row(
     qual: str | None = "2026-01-20",
     status: str | None = "완료",
     usage: str | None = "HBM",
+    area: str | None = "main",
+    line: str = "L1",
+    stop: str | None = None,
+    relocation: str | None = None,
 ) -> dict[str, object]:
     row: dict[str, object] = {column: None for column in EQUIPMENT_COLUMNS}
     row.update(
         {
             "설비명": unit,
+            "Area Code": area,
             "공정소분류": f"{SENTINEL}PROC",
             "공정대분류": "B/N",
-            "공정구분": "L1",
+            "공정구분": line,
             "투자구분": "양산",
             # 일정 미정 알림은 Dynamic 이 세는 호기(사용기준 HBM·EDP)만 센다(2026-10-08 결정).
             "사용기준": usage,
@@ -141,7 +146,9 @@ def _equipment_row(
             "층": "1F",
             "반입일정": arrival,
             "Qual일정": qual,
-            "확정상태": status,
+            "Qual상태": status,
+            "정지일정": stop,
+            "반출/이설일정": relocation,
             "보관유무": "N",
             "기존설비여부": "N",
             "레이아웃표시": "N",
@@ -161,15 +168,44 @@ def equipment_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     repository = DuckDBEquipmentRepository(path)
     repository.initialize()
     rows = [_equipment_row(f"{SENTINEL}EQ-M{index}", f"{SENTINEL}MAIN", 0.2) for index in range(4)]
+    # 38열 개편 분포(Area Code·공정구분·정지/반출이설) — 목록 밖 값은 표지값이라 찍히면 누출이다.
     rows.append(
-        _equipment_row(f"{SENTINEL}EQ-Q", None, 1.0, arrival="2026-02-01", qual="2262-04-11")
+        _equipment_row(
+            f"{SENTINEL}EQ-Q",
+            None,
+            1.0,
+            arrival="2026-02-01",
+            qual="2262-04-11",
+            area="MI",
+        )
     )
-    rows.append(_equipment_row(f"{SENTINEL}EQ-A", None, 1.0, arrival=None, qual=None, status=None))
+    rows.append(
+        _equipment_row(
+            f"{SENTINEL}EQ-A", None, 1.0, arrival=None, qual=None, status=None, area="부대"
+        )
+    )
     # 사용기준이 EDP 인 호기는 HBM 과 함께 센다(2026-10-08 사용자 결정) — 줄에 따로 센다.
-    rows.append(_equipment_row(f"{SENTINEL}EQ-E", None, 1.0, usage="EDP"))
+    rows.append(
+        _equipment_row(
+            f"{SENTINEL}EQ-E",
+            None,
+            1.0,
+            usage="EDP",
+            area=f"{SENTINEL}AREA",
+            line=" pkg ",
+            relocation="2099-01-01",
+        )
+    )
     # 사용기준이 HBM·EDP 가 아닌 호기 — 값은 표지값이라 찍히면 누출이다.
-    rows.append(_equipment_row(f"{SENTINEL}EQ-U", None, 1.0, usage=f"{SENTINEL}USAGE"))
-    rows.append(_equipment_row(f"{SENTINEL}EQ-B", None, 1.0, usage=None))
+    rows.append(
+        _equipment_row(
+            f"{SENTINEL}EQ-U", None, 1.0, usage=f"{SENTINEL}USAGE", area=None, line=f"{SENTINEL}LT"
+        )
+    )
+    # 일정 미정 셈에 들지 않는(사용기준 빈 칸) 호기에 정지일정을 둔다 — 그 셈을 흔들지 않는다.
+    rows.append(
+        _equipment_row(f"{SENTINEL}EQ-B", None, 1.0, usage=None, area=None, stop="2026-03-01")
+    )
     repository.save_snapshot(
         pd.DataFrame(columns=list(BASELINE_COLUMNS)),
         pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS)),
@@ -234,6 +270,83 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     assert "옛 자리표 2262-04-11 에서 온 것 1행" in output
     assert (
         "HBM 6행 · EDP 1행 · 다른 값 1행 · 빈 칸 1행 / 가용대수에서 빠지는 설비 2대(설비 6대 중)"
+        in output
+    )
+    # 38열 개편 분포 — 계약 이름만 적고 목록 밖 값은 종류 수로 접는다(대소문자·공백은 무시).
+    assert "| Area Code(classification_1) = Main | 4 |" in output
+    assert "| Area Code(classification_1) = MI | 1 |" in output
+    assert "| Area Code(classification_1) = 부대 | 1 |" in output
+    assert "| Area Code(classification_1) 빈 칸 | 2 |" in output
+    assert "| Area Code(classification_1) 그 밖 — 행 / 종류 | 1 / 1 |" in output
+    assert "| 공정구분(line_type) = PKG | 1 |" in output
+    assert "| 공정구분(line_type) 그 밖 — 행 / 종류 | 8 / 2 |" in output
+    assert "| 설비가동현황(classification_3, 계약에서 빠짐) 값 있는 행 | 0 |" in output
+    assert "| 정지일정(removal_date) 값 있는 행 / 오늘 전 | 1 / 1 |" in output
+    assert "| 반출/이설일정(relocation_date) 값 있는 행 / 오늘 전 | 1 / 0 |" in output
+    # 픽스처는 마이그레이션 23 까지 올린 뒤 저장했다 — 개편 전 리비전이 없다.
+    assert "| 개편 전 마지막 리비전(설비 마이그레이션 23 적용 전 저장) 번호 | 없음 |" in output
+    assert (
+        "| **개편 전 마지막 리비전의 정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함 | - |"
+        in output
+    )
+    assert (
+        "| 최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 0 |"
+        in output
+    )
+    assert "| Qual상태(qual_confirmation_status) = 완료 | 8 |" in output
+    assert "| Qual상태 빈 칸 | 1 |" in output
+
+
+def test_the_both_dates_check_looks_at_the_last_revision_saved_before_0023(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """「0 이어야 함」은 개편 전 마지막 리비전만 잰다 — 개편 뒤에는 정지·반출/이설을 함께 저장할
+    수 있어(2026-10-16 결정) 최신 리비전의 수는 정보 줄이다. 시각만 옮겨 r1 을 0023 전, r2 를
+    뒤로 둔다."""
+    path = tmp_path / "equipment_availability.duckdb"
+    repository = DuckDBEquipmentRepository(path)
+    repository.initialize()
+    both = {"stop": "2026-03-01", "relocation": "2026-04-01"}
+    for count in (1, 2):
+        rows = [
+            _equipment_row(f"{SENTINEL}EQ-{index}", None, 1.0, **both) for index in range(count)
+        ]
+        repository.save_snapshot(
+            pd.DataFrame(columns=list(BASELINE_COLUMNS)),
+            pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS)),
+            pd.DataFrame(columns=list(DOWNTIME_COLUMNS)),
+        )
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "UPDATE equipment_ops.revision SET created_at = CASE revision_no "
+            "WHEN 1 THEN TIMESTAMP '2026-01-01' ELSE TIMESTAMP '2026-03-01' END"
+        )
+        connection.execute(
+            "UPDATE equipment_meta.schema_migration SET applied_at = TIMESTAMP '2026-02-01' "
+            "WHERE version = 23"
+        )
+
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(path),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "| 개편 전 마지막 리비전(설비 마이그레이션 23 적용 전 저장) 번호 | 1 |" in output
+    assert (
+        "| **개편 전 마지막 리비전의 정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함 | 1 |"
+        in output
+    )
+    assert (
+        "| 최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 2 |"
         in output
     )
 

@@ -5,8 +5,9 @@
 편집 상태는 브라우저가 쥐고 `적용` 때 한 번에 보낸다. 여기서 하는 일은 셋이다.
 
 1. **입력** — 설비 편집본(호기 상태 포함)에서 이 층 편집기에 보낼 호기를 고른다. 대상은
-   Space 현황이 그리는 호기와 같다(레이아웃표시 Y 이고 반출·이설 실행 전). 좌표가 있으면 도면에,
-   없으면 미배치 트레이에 놓는다. 동·층이 빈 호기는 모든 층 트레이에 뜬다.
+   Space 현황이 그리는 호기와 같다(레이아웃표시 Y 이고 도면 이탈일 — 반출/이설일정, 없으면
+   정지일정 — 전). 좌표가 있으면 도면에, 없으면 미배치 트레이에 놓는다. 동·층이 빈 호기는 모든
+   층 트레이에 뜬다.
 2. **검증** — 브라우저가 보낸 적용값을 다시 검사한다. 하나라도 어긋나면 `ValueError` 로 적용
    전체를 거부한다. 조용히 버리면 그 편집이 사라진 채 화면은 적용된 것처럼 보인다.
 3. **반영** — 검증한 변경을 편집본 설비 마스터에 얹는다. 트레이로 빼도 크기는 남기고, 다른
@@ -34,8 +35,11 @@ import pandas as pd
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     EQUIPMENT_ID_COLUMN,
+    LAYOUT_REFLECTED_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
+    QUAL_DATE_COLUMN,
+    QUAL_STATUS_COLUMN,
     STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_units import unit_keys
@@ -231,13 +235,13 @@ def editor_inputs(
 ) -> EditorInputs:
     """설비 편집본의 호기 상태(`build_space_equipment_status` 결과)에서 이 층 편집기 입력을 만든다.
 
-    - 도면: 레이아웃반영여부(레이아웃표시 Y · 반출·이설 전) 이고 이 층에 X·Y·크기가 다 있는 호기
+    - 도면: 레이아웃반영여부(레이아웃표시 Y · 도면 이탈일 전) 이고 이 층에 X·Y·크기가 다 있는 호기
     - 트레이: 같은 대상 중 X·Y 가 없고 이 층이거나 층 미정인 호기. Main 설비 묶음의 다른 모듈이
       이 층 도면에 서 있으면 그 형제는 트레이에 따로 내놓지 않는다(상자를 한 모듈에만 그린 설비).
-    - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출 완료 …)가 차지한 범위.
+    - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출/이설 완료 …)가 차지한 범위.
       저장 검증은 그런 행에도 캔버스 상한을 걸므로 영역을 그보다 줄이지 못하게 한다.
     """
-    target = status["레이아웃반영여부"].fillna(False).astype(bool)
+    target = status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
     on_floor = _floor_mask(status, floor)
     # 층 미정: 동까지 비었으면 모든 층, 동만 정해졌으면 그 동의 층마다 트레이에 뜬다.
     floorless = status["동"].isna() | (
@@ -409,18 +413,21 @@ def _parse_created(
         raise ValueError(f"새 호기 {unit_id} 의 투자구분을 고를 수 없는 값입니다: {use!r}")
     existing = raw.get("existing") is True
     arrival = _iso_date(raw.get("arrival"), ARRIVAL_DATE_COLUMN, unit_id)
-    qual = _iso_date(raw.get("qual"), "Qual일정", unit_id)
+    qual = _iso_date(raw.get("qual"), QUAL_DATE_COLUMN, unit_id)
     confirm = _text(raw.get("confirm")).strip()
     if not existing:
-        # 설비 마스터 계약: 반입·Qual 일정은 비워도 되고(둘 다 있으면 반입 ≤ Qual), 확정상태는
-        # Qual일정이 있을 때만 필수다. Qual일정 없이 고른 확정상태도 받는다.
+        # 설비 마스터 계약: 반입·Qual 일정은 비워도 되고(둘 다 있으면 반입 ≤ Qual), Qual상태는
+        # Qual일정이 있을 때만 필수다. Qual일정 없이 고른 Qual상태도 받는다.
         if arrival is not None and qual is not None and qual < arrival:
             raise ValueError(f"새 호기 {unit_id} 의 Qual일정이 반입일정보다 빠릅니다.")
         if confirm and confirm not in QUAL_CONFIRMATION_STATUSES:
-            raise ValueError(f"새 호기 {unit_id} 의 확정상태를 고를 수 없는 값입니다: {confirm!r}")
+            raise ValueError(
+                f"새 호기 {unit_id} 의 {QUAL_STATUS_COLUMN}를 고를 수 없는 값입니다: {confirm!r}"
+            )
         if qual is not None and not confirm:
             raise ValueError(
-                f"신규 설비 {with_topic_particle(unit_id)} Qual일정이 있어 확정상태가 필요합니다."
+                f"신규 설비 {with_topic_particle(unit_id)} Qual일정이 있어 {QUAL_STATUS_COLUMN}가 "
+                "필요합니다."
             )
     return CreatedUnit(
         unit_id=unit_id,
@@ -689,8 +696,8 @@ def created_unit_row(unit: CreatedUnit, master: pd.DataFrame, size: CanvasSize) 
             STORAGE_FLAG_COLUMN: "N",
             "기존설비여부": "Y" if unit.existing else "N",
             ARRIVAL_DATE_COLUMN: pd.Timestamp(unit.arrival) if unit.arrival else None,
-            "Qual일정": pd.Timestamp(unit.qual) if unit.qual else None,
-            "확정상태": unit.confirm or None,
+            QUAL_DATE_COLUMN: pd.Timestamp(unit.qual) if unit.qual else None,
+            QUAL_STATUS_COLUMN: unit.confirm or None,
             "레이아웃표시": "Y",
             "Xsize": size[0],
             "Ysize": size[1],
@@ -766,8 +773,8 @@ def _fit_moved_into_canvases(
 def _harmonize_groups(master: pd.DataFrame, changed_ids: Sequence[str]) -> None:
     """바뀐 모듈 행의 동·층을 같은 Main 설비의 모든 행에 맞춘다(편집기에 없던 형제 포함).
 
-    편집기에 없던 형제(반출 완료·레이아웃표시 N …)가 이 맞춤으로 **층이 바뀌면** 그 X·Y 를 비운다.
-    옛 층 좌표를 지닌 채 따라가면 새 층 캔버스 밖이라 거부되거나 새 층에 유령 영역을 남긴다.
+    편집기에 없던 형제(반출/이설 완료·레이아웃표시 N …)가 이 맞춤으로 **층이 바뀌면** 그 X·Y 를
+    비운다. 옛 층 좌표를 지닌 채 따라가면 새 층 캔버스 밖이라 거부되거나 새 층에 유령 영역을 남긴다.
     크기는 남긴다(크기만 있는 행은 받는다)."""
     parents = _parents(master)
     ids = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
@@ -1029,10 +1036,10 @@ def layout_warnings(
 ) -> list[str]:
     """겹친 호기와 반입구·문·기둥·설비 금지 영역을 덮은 호기. **저장은 막지 않고 알리기만 한다**.
 
-    대상은 편집기와 같다 — 레이아웃반영여부이고 좌표가 다 있는 호기(반출·이설 완료 제외).
+    대상은 편집기와 같다 — 레이아웃반영여부이고 좌표가 다 있는 호기(도면 이탈일이 지난 호기 제외).
     """
     placed = status.loc[
-        status["레이아웃반영여부"].fillna(False).astype(bool)
+        status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
         & status.loc[:, [*POSITION_COLUMNS, *SIZE_COLUMNS]].notna().all(axis=1)
         & status["동"].notna()
         & status["층"].notna()

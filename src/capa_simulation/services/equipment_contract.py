@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 
 import pandas as pd
@@ -16,7 +17,7 @@ BASELINE_COLUMNS = ("공정", "분류", "기존보유대수", "비고")
 BASELINE_KEY_COLUMNS = ("공정", "분류")
 
 EQUIPMENT_COLUMNS = (
-    "구분",
+    "Area Code",
     "공정대분류",
     "공정소분류",
     "Maker",
@@ -29,7 +30,6 @@ EQUIPMENT_COLUMNS = (
     "동",
     "층",
     "담당자",
-    "설비가동현황",
     "X좌표",
     "Y좌표",
     "Xsize",
@@ -37,10 +37,13 @@ EQUIPMENT_COLUMNS = (
     "제진대일정",
     "물류일정",
     "반입일정",
+    "반입실적",
+    "반입상태",
     "Qual일정",
-    "확정상태",
-    "반출일정",
-    "이설일정",
+    "Qual실적",
+    "Qual상태",
+    "정지일정",
+    "반출/이설일정",
     "반입/Qual 이력",
     "호기이력",
     "설비이력",
@@ -68,79 +71,151 @@ DOWNTIME_KEY_COLUMNS = (EQUIPMENT_ID_COLUMN, "비가동유형", "시작일")
 # 컬럼 이름과 따로 움직이며 바꾸지 않는다.
 ARRIVAL_DATE_COLUMN = "반입일정"
 
-# 다른 자리로 옮기는 날이다. 단계 이름(「이설」)과 상태(「이설 예정」·「이설 완료」)는
-# 컬럼 이름과 따로 움직이며 바꾸지 않는다.
-RELOCATION_DATE_COLUMN = "이설일정"
+QUAL_DATE_COLUMN = "Qual일정"
+
+# Main·MI·부대 가운데 하나를 적는 글자 칸(옛 이름 「구분」·「분류1」). 계산에 쓰지 않는다 —
+# 시뮬레이션의 `Area_Name`(Main·MI)과 같은 어휘이지만 「부대」가 더 있어 `normalize_area_name`
+# 에 넣지 않는다. 세 값은 대소문자·앞뒤 공백을 맞춰 저장하고(`normalize_area_code`), 그 밖의
+# 값은 막지 않고 저장 미리보기에서 경고만 한다(`equipment_validation.area_code_warnings`).
+AREA_CODE_COLUMN = "Area Code"
+
+AREA_CODES = ("Main", "MI", "부대")
+
+# 설비가 멈추는 날(옛 이름 「반출일정」). 이날부터 보유·가용에서 빠진다 — 집계 이탈일은
+# min(정지일정, 반출/이설일정)이다. 반출/이설일정이 없으면 이날 도면에서도 빠지고, 있으면 도면에는
+# 반출/이설일정 전날까지 남는다(`equipment_availability` 의 `레이아웃반영여부`).
+STOP_DATE_COLUMN = "정지일정"
+
+# 자리를 비우는 날(옛 이름 「이설일정」). 도면 이탈일이다. 반출과 이설을 한 컬럼으로 묶어 상태
+# 이름도 「반출/이설 예정」·「반출/이설 완료」다(2026-10-16 사용자 결정).
+RELOCATION_DATE_COLUMN = "반출/이설일정"
+
+# 설비가 나가는 날 둘. 하나라도 있으면 나갈 호기다(필요단축일정 후보 제외·일정 미정 알림 제외 …).
+EXIT_SCHEDULE_COLUMNS = (STOP_DATE_COLUMN, RELOCATION_DATE_COLUMN)
+
+# 단계마다 실제로 끝난 날과 그 단계의 상태. 실적은 **Space 실물 판정과 알림에만** 쓴다 —
+# Dynamic·필요단축일정·공정 Capa 상세 집계는 일정 기준 그대로다(2026-10-16 사용자 결정).
+ARRIVAL_ACTUAL_COLUMN = "반입실적"
+ARRIVAL_STATUS_COLUMN = "반입상태"
+QUAL_ACTUAL_COLUMN = "Qual실적"
+# Qual 단계의 상태(옛 이름 「확정상태」). 값·필수 규칙은 그대로다.
+QUAL_STATUS_COLUMN = "Qual상태"
 
 DATE_COLUMNS = (
     "제진대일정",
     "물류일정",
     ARRIVAL_DATE_COLUMN,
-    "Qual일정",
-    "반출일정",
+    ARRIVAL_ACTUAL_COLUMN,
+    QUAL_DATE_COLUMN,
+    QUAL_ACTUAL_COLUMN,
+    STOP_DATE_COLUMN,
     RELOCATION_DATE_COLUMN,
 )
 
+# 단계 전환의 단계 이름. 정지·반출/이설은 컬럼 이름을 따른다(그날 그 이름의 상태가 된다). 실적은
+# 넣지 않는다 — 넣으면 단계 전환 이벤트가 늘어난다.
 SCHEDULE_STAGES = (
     ("제진대일정", "제진대"),
     ("물류일정", "물류"),
     (ARRIVAL_DATE_COLUMN, "입고"),
-    ("Qual일정", "Qual"),
-    ("반출일정", "반출"),
-    (RELOCATION_DATE_COLUMN, "이설"),
+    (QUAL_DATE_COLUMN, "Qual"),
+    (STOP_DATE_COLUMN, "정지"),
+    (RELOCATION_DATE_COLUMN, "반출/이설"),
 )
 
 QUAL_CONFIRMATION_STATUSES = ("계획", "확정", "완료", "지연")
 
+# 반입상태도 Qual상태와 같은 어휘다. 비워도 저장된다(선택 컬럼).
+ARRIVAL_STATUSES = QUAL_CONFIRMATION_STATUSES
+
+# 아직 끝나지 않은 단계의 상태와 끝난 단계의 상태. 실적과 맞대는 알림(`schedule_confirmation`)이
+# 쓴다.
+OPEN_STAGE_STATUSES = ("계획", "확정")
+DONE_STAGE_STATUS = "완료"
+DELAYED_STAGE_STATUS = "지연"
+
+
+@dataclass(frozen=True)
+class ActualStage:
+    """일정·실적·상태 세 칸이 짝을 이루는 단계 하나(반입·Qual)."""
+
+    label: str
+    schedule: str
+    actual: str
+    status: str
+
+
+ACTUAL_STAGES = (
+    ActualStage("반입", ARRIVAL_DATE_COLUMN, ARRIVAL_ACTUAL_COLUMN, ARRIVAL_STATUS_COLUMN),
+    ActualStage("Qual", QUAL_DATE_COLUMN, QUAL_ACTUAL_COLUMN, QUAL_STATUS_COLUMN),
+)
+
 MILESTONES = SCHEDULE_STAGES
+
+# 정지·반출/이설 상태 이름 넷. 다른 다섯(입고 예정·셋업 진행중·가용·보관 설비·운영 비가동)은
+# 이름을 따로 두지 않는다.
+STATUS_STOP_PLANNED = "정지 예정"
+STATUS_EXIT_PLANNED = "반출/이설 예정"
+STATUS_STOPPED = "정지"
+STATUS_EXITED = "반출/이설 완료"
 
 EQUIPMENT_STATUSES = (
     "입고 예정",
     "셋업 진행중",
     "가용",
-    "반출 예정",
-    "이설 예정",
+    STATUS_STOP_PLANNED,
+    STATUS_EXIT_PLANNED,
     "보관 설비",
     "운영 비가동",
-    "반출 완료",
-    "이설 완료",
+    STATUS_STOPPED,
+    STATUS_EXITED,
 )
 
 # 상태 판정(`equipment_availability`)이 상태 이름 옆에 붙이는 집계 컬럼 둘.
 #
 # - `집계분류` — 대수를 셀 때 쓰는 분류. **가용 판정이 먼저다**: 가용이면 「가용」, 아니면 상태 이름
-#   그대로다. 상태 이름은 사다리 아래쪽이 위쪽을 덮어, 반출·이설일정이 적힌 호기는 가용인 날에도
-#   「반출 예정」·「이설 예정」이다. 그 이름으로 세면 실행일 전까지 멀쩡히 쓰는 호기가 가용대수에서
-#   통째로 빠진다. 그래서 세는 자리(주차·월별 대수)는 이 컬럼을 보고, 이름을 보여 주는 자리
-#   (상태 분포·호기 목록·생애주기 Gantt·Space)는 `상태` 를 본다. 이 컬럼의 「반출 예정」·
-#   「이설 예정」은 가용이 아닌(셋업 중·보관·입고 전) 예정 호기만 남는다.
+#   그대로다. 상태 이름은 사다리 아래쪽이 위쪽을 덮어, 정지·반출/이설일정이 적힌 호기는 가용인
+#   날에도 「정지 예정」·「반출/이설 예정」이다. 그 이름으로 세면 실행일 전까지 멀쩡히 쓰는 호기가
+#   가용대수에서 통째로 빠진다. 그래서 세는 자리(주차·월별 대수)는 이 컬럼을 보고, 이름을 보여 주는
+#   자리(상태 분포·호기 목록·생애주기 Gantt·Space)는 `상태` 를 본다. 이 컬럼의 「정지 예정」·
+#   「반출/이설 예정」은 가용이 아닌(셋업 중·보관·입고 전) 예정 호기만 남는다.
 # - `가용대수반영` — 그 행을 대수에 세는가(`counts_for_capacity`, 사용기준 HBM·EDP).
 COUNT_CATEGORY_COLUMN = "집계분류"
 COUNTED_COLUMN = "가용대수반영"
 
-# 세는 생애주기 구간(`build_equipment_lifecycle_spans(with_unit_share=True)`)이 붙이는 경계 표시 둘.
-# 월별 기여는 상태가 바뀐 **다음 날**부터지만, 반출·이설로 가용을 잃는 것은 **그날부터**다
-# (`monthly_equipment_availability`, 2026-10-08 사용자 결정). 그래서 구간마다 양 끝이 그 설비키
-# (모듈이면 형제 행 전체)의 반출·이설일정에 닿는지를 적어 둔다.
+# 상태 판정이 붙이는 도면 칸 둘. 도면 이탈일은 반출/이설일정, 없으면 정지일정이다(집계 이탈일
+# min(정지, 반출/이설)과 다르다 — 정지한 호기는 자리를 비우기 전까지 도면에 남는다).
 #
-# - `반출이설시작` — 구간 시작일이 반출·이설일정이다.
-# - `반출이설직전` — 구간 종료일 다음 날이 반출·이설일정이다(뒤 구간의 `반출이설시작` 과 짝이다).
+# - `도면이탈여부` — 그 시점이 도면 이탈일 이후인가. 참이면 공간에 없다 — Space 가 배치·미배치·
+#   제외 어디에도 세지 않는다.
+# - `레이아웃반영여부` — 레이아웃표시 Y 이고 도면 이탈 전인가. Space 가 그리는 호기다.
+LAYOUT_EXITED_COLUMN = "도면이탈여부"
+LAYOUT_REFLECTED_COLUMN = "레이아웃반영여부"
+
+# 세는 생애주기 구간(`build_equipment_lifecycle_spans(with_unit_share=True)`)이 붙이는 경계 표시 둘.
+# 월별 기여는 상태가 바뀐 **다음 날**부터지만, 정지·반출/이설로 가용을 잃는 것은 **그날부터**다
+# (`monthly_equipment_availability`, 2026-10-08 사용자 결정). 그래서 구간마다 양 끝이 그 설비키
+# (모듈이면 형제 행 전체)의 정지일정·반출/이설일정에 닿는지를 적어 둔다.
+#
+# - `반출이설시작` — 구간 시작일이 정지일정·반출/이설일정이다.
+# - `반출이설직전` — 구간 종료일 다음 날이 정지일정·반출/이설일정이다(뒤 구간의 `반출이설시작` 과
+#   짝이다).
 EXIT_STARTS_COLUMN = "반출이설시작"
 EXIT_FOLLOWS_COLUMN = "반출이설직전"
 
 # 주차별 집계의 분류 대수 컬럼. **키는 `집계분류` 값이다** — 「가용호기대수」는 가용 판정을 받은
-# 호기 전체(반출·이설 예정이어도 실행일 전이면 든다)라 `가용대수 = 기존보유대수 + 가용호기대수`
-# 이고, 「반출예정대수」·「이설예정대수」는 가용이 아닌 예정 호기다.
+# 호기 전체(정지·반출/이설 예정이어도 실행일 전이면 든다)라 `가용대수 = 기존보유대수 + 가용호기대수`
+# 이고, 「정지예정대수」·「반출이설예정대수」는 가용이 아닌 예정 호기다.
 STATUS_COUNT_COLUMNS = {
     "입고 예정": "입고예정대수",
     "셋업 진행중": "셋업중대수",
     "가용": "가용호기대수",
-    "반출 예정": "반출예정대수",
-    "이설 예정": "이설예정대수",
+    STATUS_STOP_PLANNED: "정지예정대수",
+    STATUS_EXIT_PLANNED: "반출이설예정대수",
     "보관 설비": "보관설비대수",
     "운영 비가동": "운영비가동대수",
-    "반출 완료": "반출완료대수",
-    "이설 완료": "이설완료대수",
+    STATUS_STOPPED: "정지대수",
+    STATUS_EXITED: "반출이설완료대수",
 }
 
 TRANSITION_EVENT_COLUMNS = (
@@ -152,7 +227,7 @@ TRANSITION_EVENT_COLUMNS = (
     "이전단계",
     "전환단계",
     "전환일",
-    "확정상태",
+    QUAL_STATUS_COLUMN,
     "일정상태",
     "기준일대비",
     # 모듈 행 넷이 같은 날 같은 단계로 넘어가면 설비 한 대의 전환 한 건이다. 건수·대상 대수는
@@ -177,7 +252,7 @@ WEEKLY_COLUMNS = (
 
 # 빈 칸을 허용하는 글자 컬럼. 앞뒤 공백을 떼고 빈 글자는 빈 칸으로 맞춘다.
 REFERENCE_TEXT_COLUMNS = (
-    "구분",
+    AREA_CODE_COLUMN,
     "공정대분류",
     "Maker",
     "Model",
@@ -186,7 +261,6 @@ REFERENCE_TEXT_COLUMNS = (
     "투자구분",
     "사용기준",
     "담당자",
-    "설비가동현황",
     "반입/Qual 이력",
     "호기이력",
     "설비이력",
@@ -238,6 +312,9 @@ MEMO_COLUMNS = ("메모1", "메모2", "메모3")
 # 열이 밀리지 않는다.
 OPTIONAL_EQUIPMENT_COLUMNS = (
     INVESTMENT_CAPA_COLUMN,
+    ARRIVAL_ACTUAL_COLUMN,
+    ARRIVAL_STATUS_COLUMN,
+    QUAL_ACTUAL_COLUMN,
     "반입/Qual 이력",
     PARENT_EQUIPMENT_COLUMN,
     *MEMO_COLUMNS,
@@ -263,17 +340,24 @@ def with_optional_equipment_columns(frame: pd.DataFrame) -> pd.DataFrame:
 # 사내에는 옛 이름으로 적은 엑셀·CSV 가 이미 있다. 설비 표를 받는 모든 입구(CSV 올리기·붙여넣기)가
 # 이 표 하나로 옛 이름을 새 이름으로 바꿔 읽는다. **표마다 따로다** — `비고` 는 설비 마스터에서만
 # `설비이력` 이 되고, 비가동 일정·기존 보유대수의 `비고` 는 그대로다.
+#
+# 두 세대가 있다 — 개편 전 32열(분류1·이설일·확정상태 …)과 2026-10-06 개편 36열(구분·반출일정·
+# 이설일정·확정상태). 같은 목적지를 가리키는 옛 이름이 둘인 컬럼(Area Code ← 분류1·구분,
+# 반출/이설일정 ← 이설일·이설일정)이 있지만 한 파일에는 한 세대만 있다.
 LEGACY_EQUIPMENT_HEADER_ALIASES: Mapping[str, str] = MappingProxyType(
     {
         "호기": EQUIPMENT_ID_COLUMN,
         "라인구분": "공정구분",
         "활용구분": "투자구분",
-        "분류1": "구분",
+        "분류1": AREA_CODE_COLUMN,
+        "구분": AREA_CODE_COLUMN,
         "분류2": "사용기준",
-        "분류3": "설비가동현황",
         "모델": "Model",
         "입고일정": ARRIVAL_DATE_COLUMN,
+        "반출일정": STOP_DATE_COLUMN,
         "이설일": RELOCATION_DATE_COLUMN,
+        "이설일정": RELOCATION_DATE_COLUMN,
+        "확정상태": QUAL_STATUS_COLUMN,
         "비고": "설비이력",
         "장기보관여부": "보관유무",
         "모체호기": PARENT_EQUIPMENT_COLUMN,
@@ -283,8 +367,9 @@ LEGACY_EQUIPMENT_HEADER_ALIASES: Mapping[str, str] = MappingProxyType(
 LEGACY_DOWNTIME_HEADER_ALIASES: Mapping[str, str] = MappingProxyType({"호기": EQUIPMENT_ID_COLUMN})
 
 # 계약에서 빠진 옛 컬럼. 이 열이 오면 읽지 않고 알림 한 줄을 남긴다. 저장소의 옛 값
-# (`investment_basis`)은 지우지 않고 읽지만 않는다 — 되살릴 수 있게.
-OBSOLETE_EQUIPMENT_COLUMNS = ("투자기준",)
+# (`investment_basis`·`classification_3`)은 지우지 않고 읽지만 않는다 — 되살릴 수 있게.
+# `분류3` 은 `설비가동현황` 의 개편 전 이름이다(2026-10-16 사용자 결정으로 함께 빠졌다).
+OBSOLETE_EQUIPMENT_COLUMNS = ("투자기준", "설비가동현황", "분류3")
 
 
 def compact_header(header: object) -> str:
@@ -340,14 +425,39 @@ def rename_legacy_headers(
             f"{label}에 같은 컬럼을 가리키는 옛 이름과 새 이름이 함께 있습니다({detail}). "
             "하나만 남기세요."
         )
-    notices = tuple(
-        f"{label}의 「{dropped[compact_header(header)]}」 열은 빠진 컬럼이라 읽지 않았습니다"
-        f"(새 컬럼 「{INVESTMENT_CAPA_COLUMN}」 는 별개의 컬럼입니다)."
-        if dropped[compact_header(header)] == "투자기준"
-        else f"{label}의 「{dropped[compact_header(header)]}」 열은 빠진 컬럼이라 읽지 않았습니다."
-        for header in removed
-    )
+    notices = tuple(_obsolete_notice(label, dropped[compact_header(header)]) for header in removed)
     return result, notices
+
+
+def _obsolete_notice(label: str, column: str) -> str:
+    """빠진 옛 컬럼 하나를 떼어 냈다는 알림 한 줄."""
+    head = f"{label}의 「{column}」 열은 빠진 컬럼이라 읽지 않았습니다"
+    if column == "투자기준":
+        return f"{head}(새 컬럼 「{INVESTMENT_CAPA_COLUMN}」 는 별개의 컬럼입니다)."
+    if column in ("설비가동현황", "분류3"):
+        return f"{head}(남길 내용은 {'·'.join(MEMO_COLUMNS)} 열로 옮기세요)."
+    return f"{head}."
+
+
+def normalize_area_code(values: pd.Series) -> pd.Series:
+    """Area Code 를 저장할 글자로 맞춘다. 결측·빈 글자는 결측이다.
+
+    `AREA_CODES`(Main·MI·부대)와 대소문자·앞뒤 공백만 다른 값은 그 표기로 바꾼다(「 main 」 →
+    「Main」). 그 밖의 값은 앞뒤 공백만 떼고 그대로 둔다 — 막지 않는다.
+    """
+    text = values.astype("string").str.strip()
+    text = text.mask(text.eq(""))
+    canonical = {code.casefold(): code for code in AREA_CODES}
+    folded = text.str.casefold()
+    return text.mask(folded.isin(canonical), folded.map(canonical)).astype("string")
+
+
+def unknown_area_codes(values: pd.Series) -> pd.Series:
+    """행마다 Area Code 가 Main·MI·부대 밖의 값인가(빈 칸은 거짓). 검증 전 편집본도 받는다."""
+    known = {code.casefold() for code in AREA_CODES}
+    text = values.astype("string").str.strip()
+    filled = text.notna() & text.ne("")
+    return (filled & ~text.str.casefold().isin(known)).fillna(False).astype("bool")
 
 
 STORAGE_FLAG_COLUMN = "보관유무"
@@ -388,6 +498,23 @@ def counts_for_capacity(frame: pd.DataFrame) -> pd.Series:
     wanted = {value.strip().casefold() for value in COUNTED_USAGE_BASIS}
     keys = usage_basis_key(frame[USAGE_BASIS_COLUMN])
     return keys.isin(wanted).fillna(False).astype("bool")
+
+
+# ------------------------------------------------------------------- 공정구분 그룹
+# Space 도면 색을 나누는 공정구분 여섯(2026-10-16 사용자 결정). 공정구분 값 자체에는 허용값 목록이
+# 없다 — 이 여섯과 **앞뒤 공백을 떼고 대소문자를 가리지 않는 완전 일치**인 값만 그 그룹이고
+# (`counts_for_capacity` 와 같은 대조), 목록 밖·빈 칸은 그룹이 없다. 「MI」는 Area Code 에도 있지만
+# 이 그룹은 공정구분만 본다.
+LINE_TYPE_COLUMN = "공정구분"
+
+LINE_TYPE_GROUPS: tuple[str, ...] = ("물류", "FRONT", "PKG", "MI", "TEST", "FDY")
+
+
+def line_type_group(values: pd.Series) -> pd.Series:
+    """행마다 공정구분 그룹(`LINE_TYPE_GROUPS` 의 표기). 목록 밖·빈 칸은 결측이다."""
+    canonical = {group.casefold(): group for group in LINE_TYPE_GROUPS}
+    folded = values.astype("string").str.strip().str.casefold()
+    return folded.map(canonical).astype("string")
 
 
 VALID_BUILDINGS = tuple(f"C{index}" for index in range(1, 6))
