@@ -161,7 +161,7 @@ def test_month_figure_draws_hover_target_track_bars_and_names_in_four_traces() -
     assert len(hover_target.x) == 2
     assert hover_target.width == BOTTLENECK_DETAIL_ROW_HEIGHT_PX
     assert hover_target.marker.color == tokens.HIT_TARGET
-    # 여섯 값 + 실행 Capa 조정 줄. 조정이 없으면 마지막 칸이 빈 문자열이라 아무 줄도
+    # 여섯 값 + 확보율 보정 줄. 조정이 없으면 마지막 칸이 빈 문자열이라 아무 줄도
     # 붙지 않는다.
     assert hover_target.hovertemplate.count("customdata") == 7
     # 보이는 트랙 막대는 눈금만 담당한다.
@@ -249,7 +249,7 @@ def test_hover_carries_the_adjustment_and_the_note() -> None:
 
     note = month_figure.data[0].customdata[0][6]
 
-    assert "실행 반영 -20.0%p" in note
+    assert "확보율 보정 -20.0%p" in note
     assert "비고 비가동 3대" in note
 
 
@@ -277,10 +277,10 @@ def test_hover_shows_the_real_rate_above_the_bar_cap() -> None:
         "10.0대",
         "20.0대",
         "1K",
-        # 실행 Capa 조정이 없으면 빈 문자열이라 hover 에 아무 줄도 붙지 않는다.
+        # 확보율 보정이 없으면 빈 문자열이라 hover 에 아무 줄도 붙지 않는다.
         "",
         # 여기부터는 hover 가 읽지 않는 이동 꼬리다(`HOME_CELL_LINK_FIELDS`) — 원본 공정·정수 월·
-        # 표시 확보율·원 확보율(가용 ÷ 소요)·가용·소요·실행 증감.
+        # 표시 확보율·원 확보율(가용 ÷ 소요)·가용·소요·보정 증감.
         "DEMO_공정",
         202601,
         2.0,
@@ -403,7 +403,7 @@ def test_each_cell_carries_its_own_process_and_month_for_the_detail_page() -> No
     ]
     first = links[0]
     assert first is not None
-    # 표시값은 실행 반영 뒤, 원 확보율은 가용 ÷ 소요 그대로다.
+    # 표시값은 확보율 보정 뒤, 원 확보율은 가용 ÷ 소요 그대로다.
     assert first.displayed_rate == pytest.approx(0.9)
     assert first.raw_rate == pytest.approx(0.5)
     assert first.execution_delta == pytest.approx(-10.0)

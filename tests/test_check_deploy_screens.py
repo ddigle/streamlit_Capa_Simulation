@@ -1366,6 +1366,7 @@ NEW_ITEM_KEYS = [
     "process_popup",
     "process_detail",
     "equipment_headers",
+    "sidebar_groups",
 ]
 
 
@@ -1763,3 +1764,54 @@ def test_the_equipment_header_summary_counts_and_names_only_missing_contract_nam
     # 결과 표 칸을 깨는 글자가 없다.
     assert "|" not in line
     assert screens.summarize_equipment_headers({}, False).startswith("새 이름 0/7 있음(없음: ")
+
+
+# ------------------------------------------------------------------ 사이드바 그룹 셋
+
+
+def test_the_sidebar_group_boxes_match_the_navigation_declaration() -> None:
+    """스크립트는 선언을 부르지 않고 값만 옮긴다 — 하위가 있는 그룹의 slug·제목·하위 수가 선언과
+    같은지 여기서 본다. 상자 key 는 `app.py` 가 `<slug>_box` 로 단다."""
+    from capa_simulation.navigation import SIDEBAR_GROUPS
+
+    declared = tuple(
+        (group.slug, group.main.title, len(group.subpages))
+        for group in SIDEBAR_GROUPS
+        if group.subpages
+    )
+    assert screens.SIDEBAR_GROUP_BOXES == declared
+    assert 'key=f"{group.slug}_box"' in (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+
+
+def _box(
+    slug: str, title: str, subpages: int, *, lines: int = 1, clipped: bool = False
+) -> dict[str, Any]:
+    return {"slug": slug, "title": title, "links": subpages + 1, "lines": lines, "clipped": clipped}
+
+
+def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None:
+    every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
+
+    assert screens.summarize_sidebar_groups(every) == (
+        "Static Capa 머리 + 4 · Execution Management 머리 + 6 · Dynamic Capa 머리 + 1 — "
+        "정한 차례·수와 같음 · 상자 제목 한 줄 · 잘림 없음"
+    )
+    # 차례가 바뀌거나 하나가 빠지거나 하위 수가 다르면 「다름」, 줄바꿈·말줄임은 그 상자 이름만
+    # 적는다.
+    swapped = [every[1], every[0], _box("dynamic_capa", "Dynamic Capa", 2)]
+    swapped[0] = {**swapped[0], "lines": 2}
+    line = screens.summarize_sidebar_groups(swapped)
+    assert line == (
+        "Execution Management 머리 + 6 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
+        "정한 차례·수와 다름 · 줄바꿈: Execution Management"
+    )
+    missing = screens.summarize_sidebar_groups([every[0], {**every[2], "clipped": True}])
+    assert missing.endswith("정한 차례·수와 다름(없음: Execution Management) · 잘림: Dynamic Capa")
+    # 화면 제목이 다르면 화면 글자를 옮기지 않고 「제목 다름」만 적는다.
+    renamed = screens.summarize_sidebar_groups([{**every[0], "title": SENTINEL}, *every[1:]])
+    assert SENTINEL not in renamed
+    assert renamed.startswith("Static Capa(제목 다름) 머리 + 4")
+    assert "정한 차례·수와 다름" in renamed
+    assert screens.summarize_sidebar_groups(None) == "그룹 상자 없음"
+    # 결과 표 칸을 깨는 글자가 없다.
+    assert "|" not in line

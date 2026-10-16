@@ -467,7 +467,7 @@ class DuckDBScenarioRepository:
         받는다(다르면 `ProfileVersionConflict`).
         """
         prepared = prepare_execution_capacity(rows)
-        source_label = required_text(source, "실행 Capa 반영 출처")
+        source_label = required_text(source, "확보율 보정 출처")
         with self._write_transaction() as connection:
             execution_capacity_store.replace_global_execution_capacity(
                 connection,

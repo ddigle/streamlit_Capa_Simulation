@@ -94,7 +94,7 @@ RELOCATION_DATE_COLUMN = "반출/이설일정"
 EXIT_SCHEDULE_COLUMNS = (STOP_DATE_COLUMN, RELOCATION_DATE_COLUMN)
 
 # 단계마다 실제로 끝난 날과 그 단계의 상태. 실적은 **Space 실물 판정과 알림에만** 쓴다 —
-# Dynamic·필요단축일정·공정 Capa 상세 집계는 일정 기준 그대로다(2026-10-16 사용자 결정).
+# 설비 일정 기준 가용·필요단축일정·공정 Capa 상세 집계는 일정 기준 그대로다(2026-10-16 사용자 결정).
 ARRIVAL_ACTUAL_COLUMN = "반입실적"
 ARRIVAL_STATUS_COLUMN = "반입상태"
 QUAL_ACTUAL_COLUMN = "Qual실적"
@@ -465,10 +465,10 @@ STORAGE_FLAG_COLUMN = "보관유무"
 FLAG_COLUMNS = (STORAGE_FLAG_COLUMN, "기존설비여부", "레이아웃표시")
 
 # ------------------------------------------------------------------- 사용기준
-# **Dynamic 가용대수에 세는 호기는 사용기준이 이 값들 가운데 하나인 행뿐이다**(2026-10-08 사용자
-# 결정 「HBM이랑 EDP만 센다」). 두 값은 한 가용대수로 함께 센다 — 사용기준별로 나눠 집계하는 것은
-# 아니다. 배치(Space)·호기 목록·상태 분포·RawData 편집과 검증은 이 규칙을 보지 않는다 — 세지 않을 뿐
-# 호기는 그대로 있다.
+# **설비 일정 기준 가용대수에 세는 호기는 사용기준이 이 값들 가운데 하나인 행뿐이다**
+# (2026-10-08 사용자 결정 「HBM이랑 EDP만 센다」). 두 값은 한 가용대수로 함께 센다 — 사용기준별로
+# 나눠 집계하는 것은 아니다. 배치(Space)·호기 목록·상태 분포·RawData 편집과 검증은 이 규칙을 보지
+# 않는다 — 세지 않을 뿐 호기는 그대로 있다.
 #
 # 대조는 **앞뒤 공백을 떼고 대소문자를 가리지 않는 완전 일치**다. 「 hbm 」·「edp」는 세고
 # 「HBM3E」·「HBM 양산」·「EDP-TSV」처럼 다른 글자가 붙은 값과 빈 칸은 세지 않는다. 기존 보유대수
@@ -488,7 +488,8 @@ def usage_basis_key(values: pd.Series) -> pd.Series:
 
 
 def counts_for_capacity(frame: pd.DataFrame) -> pd.Series:
-    """행마다 Dynamic 가용대수(Capa)에 세는가. 사용기준이 `COUNTED_USAGE_BASIS` 와 같으면 참이다.
+    """행마다 설비 일정 기준 가용대수(Capa)에 세는가. 사용기준이 `COUNTED_USAGE_BASIS` 와 같으면
+    참이다.
 
     검증 전 편집본도 받는다(대조가 공백·대소문자를 스스로 정리한다). 사용기준 컬럼이 없는 표는
     모든 행이 빈 칸과 같다 — 세지 않는다.

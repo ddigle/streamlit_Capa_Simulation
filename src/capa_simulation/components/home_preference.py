@@ -2,11 +2,11 @@
 
 """HOME 사이드바 `LOB 표시 조건` 카드, `Capa LOB 현황` 제목 줄, `Preference` 탭.
 
-**화면을 보는 조건(선행 B/O·선행 입고·실행·GAP·상세·EDP·Past Data·제품별 비중 단위)은 사이드바
-조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에 흩어져
-있었다). 탭에는 비교 시나리오·확보율 판정 기준·선행 B/O·선행 입고 실적·`Summary 공지`·Top5 대역·
-주요공정·실행 Capa 편집기가 있고, 저장은 모두 공용 프로필 교체다. 저장 버튼은 편집 칸
-**위**다. 설명은 Guide(`guides/home.md`)다.
+**화면을 보는 조건(선행 B/O·선행 입고·확보율 보정·GAP·상세·EDP·Past Data·제품별 비중 단위)은
+사이드바 조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에
+흩어져 있었다). 탭에는 비교 시나리오·확보율 판정 기준·선행 B/O·선행 입고 실적·`Summary 공지`·
+Top5 대역·주요공정·확보율 보정 편집기가 있고, 저장은 모두 공용 프로필 교체다. 저장 버튼은 편집
+칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
 토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
@@ -128,7 +128,7 @@ from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
-# 실행 Capa 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다(판정 기준과 같다).
+# 확보율 보정 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다(판정 기준과 같다).
 EXECUTION_BASE_VERSION_KEY = "home_preference_execution_base_version"
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
@@ -298,8 +298,11 @@ def render_home_view_card(*, comparison_ready: bool) -> None:
             key=ADVANCE_SHIPMENT_TOGGLE_KEY,
             persist_state="session",
         )
+        # 기준정보 밖 변수(비가동·UPEH·재공)를 확보율에 %p 로 더하고 빼는 손입력 보정. 화면 이름만
+        # 「확보율 보정」이고 세션 키·공용 프로필(`global_execution_capacity`)은 `execution`
+        # 그대로다.
         st.toggle(
-            "실행 Loss",
+            "확보율 보정",
             key=EXECUTION_TOGGLE_KEY,
             persist_state="session",
         )
@@ -1677,16 +1680,16 @@ def _render_execution_editor(
     clamped: pd.DataFrame,
     database_path: str,
 ) -> None:
-    """기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표.
+    """확보율 보정 — 기준정보 밖에서 생긴 변수를 확보율에 퍼센트포인트로 얹는 입력 표.
 
     저장은 **버전 대조**다 — 편집을 시작한 회차의 version 을 세션(`EXECUTION_BASE_VERSION_KEY`)에
     두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가 거부한다.
     """
     submitted_base = st.session_state.get(EXECUTION_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/bolt: 실행 Capa 반영")
+        st.markdown("#### :material/exposure: 확보율 보정")
         st.caption(
-            profile_version_caption(execution_profile, empty="아직 넣은 실행 Capa 반영이 없습니다")
+            profile_version_caption(execution_profile, empty="아직 넣은 확보율 보정이 없습니다")
         )
         if not months or not process_options:
             st.info("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
@@ -1696,7 +1699,7 @@ def _render_execution_editor(
             # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
             with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
                 submitted = st.form_submit_button(
-                    "실행 Capa 저장",
+                    "확보율 보정 저장",
                     icon=":material/save:",
                     type="primary",
                 )
@@ -1774,7 +1777,7 @@ def _render_execution_editor(
         except ValueError as exc:
             notice.error(str(exc))
             return
-        queue_flash("home_execution_flash", "실행 Capa 반영을 저장했습니다.")
+        queue_flash("home_execution_flash", "확보율 보정을 저장했습니다.")
         st.rerun(scope="app")
 
 

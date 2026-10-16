@@ -7,17 +7,17 @@ Figure 캐시는 묶음(LOB·계획 세부수량·주요공정·상세 B/N)마�
 결함이고, 단위 테스트(키 정의만 보는)로는 「그 조건이 정말 그 묶음에 닿지 않는가」를 확인할 수
 없다. 여기서는 실제 HOME 페이지를 돌려 확인한다.
 
-- 토글 일곱(선행 B/O·선행 입고·실행 Loss·GAP·상세 계획·EDP 포함·Past Data 포함)·제품별 비중
+- 토글 일곱(선행 B/O·선행 입고·확보율 보정·GAP·상세 계획·EDP 포함·Past Data 포함)·제품별 비중
   단위·주요공정 프리셋·B/N 집계 공정·조회기간·테마를 **무작위 차례로** 바꾸고, 자주 되돌린다
   (되돌릴 때 캐시가 맞는다). 켜고 끄는 차례가 달라도 낡은 묶음이 섞여 나오지 않아야 한다.
-- 서로 얽히는 조건 다섯(선행 B/O·EDP·조회기간·실행 Loss·Past Data)은 서른두 조합을 그레이 코드
+- 서로 얽히는 조건 다섯(선행 B/O·EDP·조회기간·확보율 보정·Past Data)은 서른두 조합을 그레이 코드
   차례로 모두 지난다 — 무작위 걸음이 놓치는 드문 모서리를 막는다.
 - 걸음마다 같은 세션 상태로 한 번 더 돌리되 캐시를 꺼서(꺼내지도 넣지도 않는다) 새로 만든
   그림과 Plotly JSON 이 한 글자도 다르지 않은지 본다. 덤벨(접힌 비교 상자)도 같다.
 - 데이터는 토글이 실제로 그림을 바꾸도록 준비한다: EDP 제품 행(EDP 만 있는 달 하나 — 끄면 월
-  축에서 그 달이 빠진다), 비교 시나리오, 선행 B/O·실행 Loss·선행 입고 실적, 과거 구간 두 달,
+  축에서 그 달이 빠진다), 비교 시나리오, 선행 B/O·확보율 보정·선행 입고 실적, 과거 구간 두 달,
   주요공정 프리셋 셋(하나는 이 화면에 없는 공정).
-- 공용 프로필을 저장하는 조건(판정 기준·공정 표시명·Top5 구간·선행 B/O·실행 Loss·선행 입고·
+- 공용 프로필을 저장하는 조건(판정 기준·공정 표시명·Top5 구간·선행 B/O·확보율 보정·선행 입고·
   주요공정 프리셋 내용·과거 구간)과 비교 리비전 교체는 세션 토글이 아니라 저장이라 따로 본다 —
   저장마다 프로필 캐시를 비우고 「캐시 경유 == 새로 만든 그림」·「새로 만든 묶음 = 의존 표」.
 - 새 세션이 공용 칸에서 복원한 그림, 편집 중인 세션(공용 칸에 넣지 않는다)도 본다.
@@ -436,7 +436,7 @@ def test_random_toggle_orders_never_serve_a_stale_bundle(database: Path, seed: i
 
 
 # 서로 얽히는 조건 다섯. 선행 B/O 는 EDP 를 히트맵까지 끌고 가고(변동률), 조회기간은 EDP 가 월 축을
-# 움직이는지를 정하며, 실행 Loss·Past Data 는 확보율과 축을 바꾼다. 무작위 걸음은 이 조합의 드문
+# 움직이는지를 정하며, 확보율 보정·Past Data 는 확보율과 축을 바꾼다. 무작위 걸음은 이 조합의 드문
 # 모서리(선행 켬·짧은 범위에서 EDP 를 뒤집는 것)를 놓칠 수 있다 — 실제로 히트맵 키에서 EDP 를 뺀
 # 변이를 무작위 세 시드는 놓치고 아래 두 시험은 잡았다. 상세 B/N 키에서 집계 공정을 뺀 변이는 아래
 # 「한 조건씩」·「저장」 시험과 시드 37 이 잡는다.
@@ -622,8 +622,8 @@ def test_saved_profiles_and_a_new_comparison_revision_rebuild_what_they_reach(
     saving_database: tuple[Path, str, str],
 ) -> None:
     """세션 토글이 아니라 **저장**으로 바뀌는 조건. 저장마다 캐시 경유 == 새로 만든 그림이고, 새로
-    만든 묶음이 의존 표와 같다. 선행 B/O·실행·선행 입고는 켠 채로 저장한다 — 꺼져 있으면 version 이
-    0 으로 접혀 아무것도 다시 그리지 않아야 한다(마지막 단락).
+    만든 묶음이 의존 표와 같다. 선행 B/O·확보율 보정·선행 입고는 켠 채로 저장한다 — 꺼져 있으면
+    version 이 0 으로 접혀 아무것도 다시 그리지 않아야 한다(마지막 단락).
     """
     from capa_simulation.components.home_preference import (
         COMPARISON_REVISION_KEY,
@@ -692,7 +692,7 @@ def test_saved_profiles_and_a_new_comparison_revision_rebuild_what_they_reach(
         ),
         source="시험",
     )
-    assert _saved(app, "실행 Loss 저장") == {LOB, HEATMAP, BOTTLENECK}
+    assert _saved(app, "확보율 보정 저장") == {LOB, HEATMAP, BOTTLENECK}
 
     repository.replace_global_advance_shipment(
         pd.DataFrame({"생산계획년월": [202603], "선행 입고": [2.2]}), source="시험"

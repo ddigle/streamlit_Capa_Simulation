@@ -166,7 +166,8 @@ def test_round_trip_paste_templates_keep_the_original_process_name() -> None:
 
 def test_display_order_and_equipment_paths_never_see_display_names() -> None:
     """가용설비 현황 **페이지 파일**은 지켜보지 않는다 — 2026-10-10 사용자 결정으로 그 페이지의 조회
-    탭(Main·Static/Dynamic·Preference)도 보이는 글자에 표시명을 쓰고, 페이지가 표시명을 읽어 넘긴다.
+    탭(Main·Static 대비 일정·Preference)도 보이는 글자에 표시명을 쓰고, 페이지가 표시명을 읽어
+    넘긴다.
     그 대신 설비 DB 로 들어가는 입력 길(RawData 작업 공간)·설비 CSV·Repository 를 지켜본다.
     """
     watched = [

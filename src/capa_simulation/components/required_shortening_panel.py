@@ -302,7 +302,7 @@ def _prepare(
     if cutoff.empty:
         return _Stop(
             "info",
-            "공정별 Cut-off 를 먼저 적어야 Dynamic 가용대수와 필요단축일정을 낼 수 있습니다 "
+            "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요단축일정을 낼 수 있습니다 "
             "(Preference › Cut-off).",
         )
     try:
@@ -437,7 +437,8 @@ def _render_body(
     _render_usage_notice(equipment, selected=scope if selected else None)
     if not plan.processes:
         st.info(
-            "시나리오 소요대수와 Dynamic 가용대수에 같은 이름으로 함께 있는 공정이 없습니다. "
+            "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
+            "없습니다. "
             "Cut-off·설비 마스터의 공정소분류가 시나리오 공정명과 같은지 확인하세요."
         )
         return
@@ -490,8 +491,8 @@ def _render_body(
     )
     st.caption(
         ":material/info: Density·Wafer 는 HOME 과 같은 계산(EDP 포함)입니다. B/N 확보율은 보이는 "
-        "범위 공정 가운데 **Dynamic 가용(환산) ÷ 소요** 가 가장 낮은 값이라 HOME 의 Static B/N 과 "
-        "다릅니다."
+        "범위 공정 가운데 **일정 기준 가용(환산) ÷ 소요** 가 가장 낮은 값이라 HOME 의 "
+        "Static B/N 과 다릅니다."
     )
     if not shown:
         st.success(
@@ -544,7 +545,7 @@ def _render_header(
         st.markdown("#### :material/event_upcoming: 필요단축일정")
         st.caption(
             "목표 확보율에 모자란 달을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지 — "
-            f"Dynamic 가용(환산) 기준 · 오늘 {today:%Y-%m-%d}"
+            f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
         )
     with picker:
         level = st.selectbox(
@@ -706,11 +707,11 @@ def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
 def _render_undated_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | None) -> None:
     """반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비 한 줄. 0대면 그리지 않는다.
 
-    Main·Static/Dynamic 과 같은 함수·같은 문구 뒤에, **Qual 일정이 없는 몫**이 있으면 그 몫은 단축
+    Main·Static 대비 일정과 같은 함수·같은 문구 뒤에, **Qual 일정이 없는 몫**이 있으면 그 몫은 단축
     후보도 아니라고 덧붙인다(`undated_candidate_note`) — 이 탭은 Qual 일정이 있는 호기만 당기므로,
     알리지 않으면 「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다. 반입만 빈 호기는 Qual
     일정이 있어 후보이므로 그 말을 하지 않는다. 범위는 옆 줄(사용기준 제외)과 같다: 공정을 고르면
-    그 공정, 고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 Dynamic 이 없어
+    그 공정, 고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 일정 기준 가용이 없어
     「맞대지 못한 공정」에만 남기 때문이다.
     """
     try:
@@ -728,7 +729,7 @@ def _render_usage_notice(equipment: pd.DataFrame, *, selected: Sequence[str] | N
     """사용기준이 HBM·EDP 가 아니어서 가용·후보에서 뺀 설비 한 줄. 0대면 그리지 않는다.
 
     공정을 고르면 그 공정만, 고르지 않으면 설비 마스터 전체를 센다 — 호기가 모두 HBM·EDP 가 아닌
-    공정은 Dynamic 이 없어 「맞대지 못한 공정」에만 남으므로 맞댄 공정으로 좁히면 그 까닭이
+    공정은 일정 기준 가용이 없어 「맞대지 못한 공정」에만 남으므로 맞댄 공정으로 좁히면 그 까닭이
     사라진다. 설비 마스터가 검증을 못 넘으면 알리지 않는다(계산 자리가 이미 알린다).
     """
     try:
@@ -749,7 +750,7 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
     """
     groups = [
         ("시나리오에만 있는 공정", plan.required_only),
-        ("설비(Dynamic)에만 있는 공정", plan.availability_only),
+        ("설비 일정에만 있는 공정", plan.availability_only),
     ]
     if not any(names for _, names in groups):
         return
@@ -759,7 +760,7 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
     with st.expander(":material/link_off: 맞대지 못한 공정 — " + " · ".join(parts)):
         st.caption(
             "설비 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. "
-            "Cut-off 를 적지 않은 공정은 Dynamic 가용을 낼 수 없어 시나리오 쪽에만 남습니다. "
+            "Cut-off 를 적지 않은 공정은 일정 기준 가용을 낼 수 없어 시나리오 쪽에만 남습니다. "
             "아래 이름은 공정 표시명이 아니라 원본 공정명입니다."
         )
         for label, names in (*groups, ("Cut-off 미기재", plan.missing_cutoff)):
@@ -1242,7 +1243,7 @@ def _lob_markup(
     thresholds: SecurementThresholds,
     labels: ProcessLabels,
 ) -> str:
-    """계획 두 줄과 Dynamic B/N 두 줄. B/N 아래 공정 이름은 공정 표시명이다."""
+    """계획 두 줄과 일정 기준 B/N 두 줄. B/N 아래 공정 이름은 공정 표시명이다."""
     frame = level_plan.process_months.loc[level_plan.process_months["공정"].isin(list(scope))]
     rows = [_month_header(months)]
     rows.append('<div class="shk-row-muted">Density (억Gb)</div>')
@@ -1260,8 +1261,8 @@ def _lob_markup(
         for month in months
     )
     for label, column in (
-        ("Dynamic B/N 확보율 현재", "가용대수"),
-        ("Dynamic B/N 확보율 단축 후", "단축후가용대수"),
+        ("일정 기준 B/N 확보율 현재", "가용대수"),
+        ("일정 기준 B/N 확보율 단축 후", "단축후가용대수"),
     ):
         rows.append(f'<div class="shk-row-muted">{label}</div>')
         bottlenecks = _bottlenecks(frame, months, column)

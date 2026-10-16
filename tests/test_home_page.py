@@ -507,12 +507,12 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
 
     # 보는 조건 토글은 모두 사이드바 `LOB 표시 조건` 카드다(2026-09-29 사용자 결정 — 전에는
     # 제목 줄과 Preference 의 표시 기준에 흩어져 있었다). 순서는 계산이 얹히는 순서와 같다 —
-    # 선행 B/O(계획 밖 재공)·선행 입고(표시만) → 실행 Loss(기준정보 밖 변수) → GAP(비교 표기) →
+    # 선행 B/O(계획 밖 재공)·선행 입고(표시만) → 확보율 보정(기준정보 밖 변수) → GAP(비교 표기) →
     # 보는 폭(상세 계획·EDP·Past). 라벨은 2026-09-29·2026-10-06 사용자 결정이다.
     assert [widget.label for widget in app.sidebar.toggle] == [
         "선행 B/O",
         "선행 입고",
-        "실행 Loss",
+        "확보율 보정",
         "GAP",
         "상세 계획",
         "EDP 포함",
@@ -533,7 +533,7 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
             "과거 구간 저장",
             "선행 B/O 저장",
             "선행 입고 저장",
-            "실행 Capa 저장",
+            "확보율 보정 저장",
             "프리셋 저장",
             "판정 기준 저장",
             "확보율 구간 저장",
@@ -1744,7 +1744,7 @@ def test_a_colliding_display_name_saves_the_chosen_process_in_a_preset(tmp_path:
 
     프리셋 편집 상자는 key 없는 multiselect 라 값을 보이는 글자로 주고받는다 — 같은 글자면 고른
     것과 다른 공정이 공용 프리셋에 저장됐다. 「표시명 (원본)」 으로 갈라 보이고 저장값은 원본이다.
-    실행 Capa 편집표의 `공정` 칸은 값을 옵션 `value` 로 주고받아 값은 섞이지 않지만, 목록에서 둘을
+    확보율 보정 편집표의 `공정` 칸은 값을 옵션 `value` 로 주고받아 값은 섞이지 않지만, 목록에서 둘을
     가려 고를 수 있게 같은 글자로 가른다.
     """
     from capa_simulation.components.home_preference import EXECUTION_EDITOR_KEY

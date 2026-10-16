@@ -172,7 +172,7 @@ def _load_process_cutoff(
 def load_process_cutoff(database_path: str) -> pd.DataFrame:
     """저장된 공정별 Cut-off(`0009`, 리비전 없는 현행값).
 
-    Preference 탭이 숨어 있어도 회차마다 읽어 Static/Dynamic·필요단축일정에 넘긴다. 최신 리비전 id
+    Preference 탭이 숨어 있어도 회차마다 읽어 Static 대비 일정·필요단축일정에 넘긴다. 최신 리비전 id
     와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한 직후 `clear_process_cutoff_cache`
     로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다.
     """

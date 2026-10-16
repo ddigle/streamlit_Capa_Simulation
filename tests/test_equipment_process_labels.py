@@ -4,7 +4,7 @@
 
 화면에 보이는 글자만 표시명이고 입력 칸의 값은 원본이다. 탭마다 자세한 자리는 컴포넌트 테스트
 (`test_equipment_explorer`·`test_availability_gap_panel`)가 보고, 여기서는 페이지가 **실제 공용
-프로필**(시뮬레이션 DB)을 읽어 Main·Static/Dynamic·Preference 에 넘기는지, Admin 저장처럼 프로필을
+프로필**(시뮬레이션 DB)을 읽어 Main·Static 대비 일정·Preference 에 넘기는지, Admin 저장처럼 프로필을
 갈고 캐시를 비우면 다음 회차에 따라 바뀌는지, 표시명이 없으면 화면이 그대로인지를 본다.
 """
 
@@ -115,8 +115,8 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     assert second in set(editors[0]["공정"])
     assert not any(str(value).startswith("표시-") for value in editors[0]["공정"])
 
-    # Static/Dynamic — `공정` 선택지는 표시명, 값은 원본이다.
-    app = _open_tab(app, "Static/Dynamic")
+    # Static 대비 일정 — `공정` 선택지는 표시명, 값은 원본이다.
+    app = _open_tab(app, "Static 대비 일정")
     assert not app.exception, [item.message for item in app.exception]
     # 이 상자는 브라우저처럼 다룬다 — 브라우저는 고른 **글자**를 들고 있다가 다음 조작마다 되보낸다
     # (일반 AppTest 는 회차마다 세션 값으로 글자를 다시 만들어 이 차이를 못 본다).

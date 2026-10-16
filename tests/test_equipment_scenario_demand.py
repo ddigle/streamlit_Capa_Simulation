@@ -26,7 +26,7 @@ from capa_simulation.services.month_columns import month_label
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
-GAP = "Static/Dynamic"
+GAP = "Static 대비 일정"
 SHORTENING = "필요단축일정"
 VALUE_ERROR = "[시험] RQ_UPEH 의 UPEH 가 0 입니다 — 기준 정보에서 고치세요."
 PASSING_ERROR = "[시험] 잠깐 못 읽었습니다."
@@ -273,7 +273,7 @@ def test_a_rerun_where_every_cache_misses_reads_the_demand_once(tmp_path: Path) 
     assert _calls(app) == before + 2
     assert _demand_calls(app)[-1][2:] == (months[1], months[-1])
 
-    # Static/Dynamic 교차검증을 처음 여는 회차 — 오류 확인과 교차검증이 함께 빗나간다.
+    # Static 대비 일정 교차검증을 처음 여는 회차 — 오류 확인과 교차검증이 함께 빗나간다.
     app.session_state["test_token"] = f"{tmp_path.name}-gap"
     _open_tab(app, GAP)
     _view(app, "확보율 교차검증")

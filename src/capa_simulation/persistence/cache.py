@@ -4,7 +4,7 @@
 
 저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열한 종
 (표시순서·공정 표시명·비교 시나리오·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·
-실행 Capa·과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
+확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
 """
 
 from dataclasses import fields
@@ -428,9 +428,9 @@ def clear_global_advance_load_cache() -> None:
 
 
 def clear_global_execution_capacity_cache() -> None:
-    """실행 Capa 반영 프로필만 비운다.
+    """확보율 보정 프로필만 비운다.
 
-    선행 물량과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 실행 조정은 어떤 `RQ_*`
+    선행 물량과 같은 이유로 리비전 스냅샷 캐시는 건드리지 않는다. 확보율 보정은 어떤 `RQ_*`
     표에도 오버레이되지 않고 확보율이 나온 뒤 화면 산출 직전에만 더해진다.
     """
     _load_global_execution_capacity_payload.clear()

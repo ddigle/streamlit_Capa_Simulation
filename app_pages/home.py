@@ -488,9 +488,9 @@ try:
         exclude_months=calculated_months,
     )
     product_volume = combine_product_volume(product_volume, past_products)
-    # 실행 Capa 반영은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·
+    # 확보율 보정은 **원데이터 기준**이다. 기준정보 밖에서 생긴 변수(비가동·UPEH·
     # 재공)를 원 확보율에 퍼센트포인트로 얹은 뒤, 선행은 그렇게 조정된 값 위에 변동률을
-    # 곱한다. 조정이 없어도 부른다 — `기준 확보율`·`확보율 증감`·`실행 비고` 세 컬럼이
+    # 곱한다. 조정이 없어도 부른다 — `기준 확보율`·`확보율 증감`·`실행 비고`(내부 이름) 세 컬럼이
     # 항상 있어야 뒤의 순위·Figure 가 컬럼 유무로 갈라지지 않는다.
     execution_profile = load_global_execution_capacity(str(DUCKDB_PATH.resolve()))
     top5_band_profile = load_global_top5_band(str(DUCKDB_PATH.resolve()))
@@ -1114,7 +1114,7 @@ with preference_tab:
         execution_profile=execution_profile,
         top5_band_profile=top5_band_profile,
         summary_profile=summary_profile,
-        # 실행 Capa 는 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
+        # 확보율 보정은 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
         process_options=process_options,
         process_labels=process_labels,
         unmatched_execution=unmatched_execution,

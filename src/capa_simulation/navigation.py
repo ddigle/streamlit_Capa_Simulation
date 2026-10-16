@@ -33,7 +33,7 @@ def _data_pending(title: str) -> str:
 class ConditionTabs:
     """공통 조건(시나리오·조회기간)을 **탭 몇 개에서만** 읽는 화면의 선언.
 
-    예: 가용설비 현황은 설비 DB 만 보는데, `Static/Dynamic` 탭만 활성 시나리오와 조회기간으로
+    예: 가용설비 현황은 설비 DB 만 보는데, `Static 대비 일정` 탭만 활성 시나리오와 조회기간으로
     확보율을 맞대어 본다. 그 탭이 열렸을 때만 조건 패널의 공통 줄을 세운다.
     """
 
@@ -116,30 +116,34 @@ SCENARIO_MANAGEMENT = PageSpec(
     "app_pages/scenario_management.py", "시나리오 관리", ":material/database:"
 )
 
+# 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정): **Static Capa** 는 약속(기술팀이 정한 Capa
+# 기준정보와 생산계획으로 낸 미래 Capa), **Execution Management**(실행관리)는 그 약속의 이행(약속된
+# Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 요청하고, 지킬 수 없으면
+# Static 반영까지 추적), **Dynamic Capa** 는 실행관리가 모은 실적으로 다시 낸 Capa 와 그것으로 하는
+# 단기 운영이다. 화면 파일 이름·제목·주소는 그룹을 옮겨도 그대로다 — 주소는 파일 이름에서 나오고
+# Static 하위 네 제목은 표시순서 DB 의 페이지 키다(`services/display_order_scopes.py`).
 STATIC_CAPA = PageSpec(
     "app_pages/static_capa.py",
     "Static Capa",
     ":material/factory:",
     has_condition_cards=True,
 )
-# 공정 하나의 산출 근거·부족한 달·그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15 사용자
-# 결정). HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 열린다 — 여는 쪽이 이
-# 경로를 쓰므로 상수로 둔다(`process_detail_state.open_process_detail`). 설비 운영 스냅샷(설비 DB)을
-# 읽기만 하는데 한 회차에 여러 번 열므로 설비 DB 핀을 선언한다.
-PROCESS_CAPA_DETAIL = PageSpec(
-    "app_pages/process_capa_detail.py",
-    "공정 Capa 상세",
-    ":material/troubleshoot:",
+LOAD_CONVERSION = PageSpec(
+    "app_pages/load_conversion.py",
+    "생산 계획",
+    ":material/scale:",
     has_condition_cards=True,
-    uses_equipment_db=True,
+)
+# 재공 현황(Dynamic)이 이 화면의 일 표준을 기준선으로 쓰지만, 표준 자체는 약속(대당 Capa)을 일·주로
+# 푼 값이라 Static 에 둔다(2026-10-17 사용자 결정).
+STANDARD_TARGET_CAPA = PageSpec(
+    "app_pages/standard_target_capa.py",
+    "표준 목표",
+    ":material/track_changes:",
+    has_condition_cards=True,
 )
 STATIC_CAPA_SUBPAGES = (
-    PageSpec(
-        "app_pages/load_conversion.py",
-        "생산 계획",
-        ":material/scale:",
-        has_condition_cards=True,
-    ),
+    LOAD_CONVERSION,
     PageSpec(
         "app_pages/reference_data.py",
         "기준 정보",
@@ -152,66 +156,75 @@ STATIC_CAPA_SUBPAGES = (
         ":material/monitoring:",
         has_condition_cards=True,
     ),
-    PROCESS_CAPA_DETAIL,
-    PageSpec(
-        "app_pages/standard_target_capa.py",
-        "표준 목표",
-        ":material/track_changes:",
-        has_condition_cards=True,
-    ),
+    STANDARD_TARGET_CAPA,
 )
 
 # 그룹 머리 라벨에는 `(구현중)` 을 달지 않는다(2026-09-29 사용자 결정). 하위 화면이 저마다
-# `(Data확보중)`·`(구현중)` 을 달고 있어 머리에 또 달면 그룹 전체가 안 된 것처럼 읽힌다. 이
-# 화면 자신의 성숙도는 본문 헤더의 배지(프로토타입·연결 대기)가 말한다.
-DYNAMIC_CAPA = PageSpec(
-    "app_pages/reference_integrity.py",
-    "Dynamic Capa",
-    ":material/sync_alt:",
-    url_path="dynamic_capa",
+# `(Data확보중)`·`(구현중)` 을 달고 있어 머리에 또 달면 그룹 전체가 안 된 것처럼 읽힌다.
+#
+# 실행관리 머리는 **데이터를 읽지 않는다** — 정의와 하위 화면 목차(링크·한 줄 설명)만 그린다. 그래서
+# 공통 조건 줄도 조건 카드도 설비 DB 핀도 없다. 이행 현황판 숫자가 들어오면 이 선언부터 다시 본다.
+EXECUTION_MANAGEMENT = PageSpec(
+    "app_pages/execution_management.py",
+    "Execution Management",
+    ":material/task_alt:",
     reads_scenario=False,
     reads_period=False,
+)
+# 공정 하나의 산출 근거·부족한 달·그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15 사용자
+# 결정). 공식 부족을 호기·기간 수준의 처방으로 내리는 화면이라 실행관리 그룹이다(2026-10-17 사용자
+# 결정). HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 열린다 — 여는 쪽이 이
+# 경로를 쓰므로 상수로 둔다(`process_detail_state.open_process_detail`). 설비 운영 스냅샷(설비 DB)을
+# 읽기만 하는데 한 회차에 여러 번 열므로 설비 DB 핀을 선언한다.
+PROCESS_CAPA_DETAIL = PageSpec(
+    "app_pages/process_capa_detail.py",
+    "공정 Capa 상세",
+    ":material/troubleshoot:",
+    has_condition_cards=True,
+    uses_equipment_db=True,
 )
 # 가용설비 현황의 탭. 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
 # 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
 EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
-EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static/Dynamic"
+# 기준정보(Static) 가용대수와 설비 마스터 일정으로 낸 **설비 일정 기준** 가용대수를 맞대는 탭이다.
+EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static 대비 일정"
 EQUIPMENT_SHORTENING_TAB = ":material/event_upcoming: 필요단축일정"
-# 순서는 사용자가 정한 조회 흐름이다 — 설비·공간 같은 **자원 현황**을 먼저 보고, 효율·
-# UPEH·수율 **실적**을 지나, 마지막에 그 결과가 쌓인 재공을 본다.
-DYNAMIC_CAPA_SUBPAGES = (
-    # 설비 DB 만 본다. `Static/Dynamic`·`필요단축일정` 탭만 활성 시나리오·조회기간으로 소요대수를
-    # 맞대어 본다.
-    PageSpec(
-        "app_pages/available_equipment_status.py",
-        _data_pending("가용설비 현황"),
-        ":material/precision_manufacturing:",
-        condition_tabs=ConditionTabs(
-            EQUIPMENT_TAB_KEY,
-            first=EQUIPMENT_MAIN_TAB,
-            labels=frozenset({EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}),
-            # `설비 조회 조건` 카드는 Main·Static/Dynamic·필요단축일정에만 선다.
-            card_labels=frozenset(
-                {EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}
-            ),
-        ),
-        has_condition_cards=True,
-        # 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를 캐시(키 = DB·WAL stat)에서 받아 설비 DB 를
-        # 읽지 않는다. 캐시가 빈 회차(첫 진입·저장 직후·DB 파일이 바뀐 뒤)는 최신 id·Cut-off·스냅샷·
-        # 리비전 목록·도면·조회 조건 프로필·기준선을 따로 읽어 한 회차에 여러 번 연다 — 그 회차를
-        # 위한 핀이다.
-        uses_equipment_db=True,
+# 설비 DB 만 본다. `Static 대비 일정`·`필요단축일정` 탭만 활성 시나리오·조회기간으로 소요대수를
+# 맞대어 본다.
+AVAILABLE_EQUIPMENT_STATUS = PageSpec(
+    "app_pages/available_equipment_status.py",
+    _data_pending("가용설비 현황"),
+    ":material/precision_manufacturing:",
+    condition_tabs=ConditionTabs(
+        EQUIPMENT_TAB_KEY,
+        first=EQUIPMENT_MAIN_TAB,
+        labels=frozenset({EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}),
+        # `설비 조회 조건` 카드는 Main·Static 대비 일정·필요단축일정에만 선다.
+        card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}),
     ),
-    # 설비 DB 와 자기 기준일만 본다. 기준일·필터는 자기 조건 카드(`Space 조건`)다.
-    PageSpec(
-        "app_pages/space_status.py",
-        _data_pending("Space 현황"),
-        ":material/grid_view:",
-        reads_scenario=False,
-        reads_period=False,
-        has_condition_cards=True,
-    ),
+    has_condition_cards=True,
+    # 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를 캐시(키 = DB·WAL stat)에서 받아 설비 DB 를
+    # 읽지 않는다. 캐시가 빈 회차(첫 진입·저장 직후·DB 파일이 바뀐 뒤)는 최신 id·Cut-off·스냅샷·
+    # 리비전 목록·도면·조회 조건 프로필·기준선을 따로 읽어 한 회차에 여러 번 연다 — 그 회차를
+    # 위한 핀이다.
+    uses_equipment_db=True,
+)
+# 설비 DB 와 자기 기준일만 본다. 기준일·필터는 자기 조건 카드(`Space 조건`)다.
+SPACE_STATUS = PageSpec(
+    "app_pages/space_status.py",
+    _data_pending("Space 현황"),
+    ":material/grid_view:",
+    reads_scenario=False,
+    reads_period=False,
+    has_condition_cards=True,
+)
+# 순서는 공정 하나의 처방(공정 Capa 상세) → 설비 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 —
+# 약속에 가장 가까운 설비 이행부터 보고, 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
+EXECUTION_MANAGEMENT_SUBPAGES = (
+    PROCESS_CAPA_DETAIL,
+    AVAILABLE_EQUIPMENT_STATUS,
+    SPACE_STATUS,
     *(
         PageSpec(path, _implementing(title), icon, reads_scenario=False, reads_period=False)
         for path, title, icon in (
@@ -220,14 +233,27 @@ DYNAMIC_CAPA_SUBPAGES = (
             ("app_pages/yield_actual.py", "수율 실적", ":material/percent:"),
         )
     ),
-    # 활성 시나리오는 읽지만 기간은 오늘 기준 앞뒤 몇 달로 스스로 정한다.
-    PageSpec(
-        "app_pages/wip_status.py",
-        _implementing("표준 대비 재공 현황"),
-        ":material/inventory_2:",
-        reads_period=False,
-    ),
 )
+
+# 실현 Capa 손실 분해(표준 → 실적)다. 실행관리가 모은 실적으로 Capa 를 다시 내는 자리라 Dynamic
+# 머리로 둔다. 주소는 `dynamic_capa` 그대로다(북마크·사이드바 CSS 가 기댄다). 라벨에 `(구현중)` 을
+# 달지 않는 대신 이 화면 자신의 성숙도는 본문 헤더의 배지(프로토타입·연결 대기)가 말한다.
+DYNAMIC_CAPA = PageSpec(
+    "app_pages/reference_integrity.py",
+    "Dynamic Capa",
+    ":material/sync_alt:",
+    url_path="dynamic_capa",
+    reads_scenario=False,
+    reads_period=False,
+)
+# 활성 시나리오는 읽지만 기간은 오늘 기준 앞뒤 몇 달로 스스로 정한다.
+WIP_STATUS = PageSpec(
+    "app_pages/wip_status.py",
+    _implementing("표준 대비 재공 현황"),
+    ":material/inventory_2:",
+    reads_period=False,
+)
+DYNAMIC_CAPA_SUBPAGES = (WIP_STATUS,)
 
 # 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다.
 # 공정 목록과 원천 품질이 활성 시나리오를 읽는다. 조회기간은 읽지 않는다.
@@ -263,11 +289,13 @@ class SidebarGroupSpec:
 
 
 # HOME(가운데·큰 글씨)과 Admin Area(조회 컨트롤 아래)는 배치가 달라 `app.py` 가 손수 그린다.
-# 나머지 박스는 여기 선언에서 나온다 — 새 그룹을 더할 때 `app.py` 를 함께 고칠 필요가 없다.
+# 나머지 박스는 여기 선언에서 나온다 — 새 그룹을 더할 때 `app.py` 를 함께 고칠 필요가 없다. 계산
+# 그룹의 차례는 약속(Static) → 이행(Execution Management) → 실적(Dynamic)이다.
 SIDEBAR_GROUPS: tuple[SidebarGroupSpec, ...] = (
     SidebarGroupSpec("capa_chatbot", CAPA_CHATBOT),
     SidebarGroupSpec("scenario_management", SCENARIO_MANAGEMENT),
     SidebarGroupSpec("static_capa", STATIC_CAPA, STATIC_CAPA_SUBPAGES),
+    SidebarGroupSpec("execution_management", EXECUTION_MANAGEMENT, EXECUTION_MANAGEMENT_SUBPAGES),
     SidebarGroupSpec("dynamic_capa", DYNAMIC_CAPA, DYNAMIC_CAPA_SUBPAGES),
 )
 

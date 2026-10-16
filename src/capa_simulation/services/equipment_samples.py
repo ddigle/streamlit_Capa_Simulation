@@ -341,7 +341,7 @@ def _fleet_schedule(kind: str, index: int) -> _FleetSchedule:
     return settled
 
 
-# 사용기준이 HBM·EDP 가 아닌 샘플 호기 자리. Dynamic 가용대수는 HBM·EDP 만 세므로
+# 사용기준이 HBM·EDP 가 아닌 샘플 호기 자리. 일정 기준 가용대수는 HBM·EDP 만 세므로
 # (`counts_for_capacity`) 이 호기들은 배치도·호기 목록에는 서고 가용대수에서는 빠진다 — 그 알림 줄이
 # 샘플에서도 보이게 둔다. 나머지 호기는 세는 값의 첫째(HBM)다.
 _FLEET_NON_HBM_SLOTS = (8, 25)

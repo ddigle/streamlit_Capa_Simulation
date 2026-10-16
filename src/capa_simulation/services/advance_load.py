@@ -180,7 +180,7 @@ def apply_advance_to_securement(
     months = pd.to_numeric(result["생산계획년월"], errors="coerce").astype("int64")
     scale = months.map(factor).astype("float64").fillna(1.0)
     result["확보율"] = pd.to_numeric(result["확보율"], errors="coerce") * scale
-    # 실행 Capa 반영이 남긴 **조정 전** 확보율도 같은 변동률로 옮긴다. 한쪽만 곱하면
+    # 확보율 보정이 남긴 **조정 전** 확보율도 같은 변동률로 옮긴다. 한쪽만 곱하면
     # 증감 영역이 선행 배율만큼 부풀거나 줄어 화면에서 조정량이 거짓으로 보인다.
     if "기준 확보율" in result.columns:
         result["기준 확보율"] = pd.to_numeric(result["기준 확보율"], errors="coerce") * scale
@@ -196,7 +196,7 @@ def revert_advance_from_securement(
     선행 전후를 한 그림에 함께 그리려면 기존값이 있어야 한다. 순위는 선행에 따라 바뀌지
     않으므로(월마다 같은 수를 곱한다) B/N 공정은 그대로 두고 확보율만 되돌린다.
 
-    나누는 것은 `확보율` 이 맞다. 실행 Capa 반영은 선행보다 **앞**에서 끝나므로 여기서
+    나누는 것은 `확보율` 이 맞다. 확보율 보정은 선행보다 **앞**에서 끝나므로 여기서
     되돌리는 것은 곱셈 한 겹뿐이다 — 선행 전 값은 「실행까지 반영된 원데이터」다.
 
     **변동률 표에 없는 달은 1 로 둔다** — 정방향(`apply_advance_to_securement`)과 같다(2026-10-06

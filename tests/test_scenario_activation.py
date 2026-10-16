@@ -24,9 +24,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def _home_toggle_keys() -> set[str]:
     """`home_preference` 가 만드는 **모든** `st.toggle` 의 세션 키.
 
-    손으로 나열하지 않는 이유가 이 함수의 존재 이유다. 「실행 Loss」 토글은 목록이 만들어진 뒤에
+    손으로 나열하지 않는 이유가 이 함수의 존재 이유다. 「확보율 보정」 토글은 목록이 만들어진 뒤에
     추가됐고, 추가한 커밋은 `scenario_activation.py` 를 한 줄도 건드리지 않았다. 그래서
-    선행·GAP·상세는 꺼지는데 실행만 켜진 채 남는 비대칭이 한동안 있었다. 사람이 목록을
+    선행·GAP·상세는 꺼지는데 확보율 보정만 켜진 채 남는 비대칭이 한동안 있었다. 사람이 목록을
     늘려야 하는 그물은 같은 방식으로 또 흘러내린다.
     """
     source = Path(inspect.getfile(home_preference)).read_text(encoding="utf-8")
@@ -49,7 +49,7 @@ def test_every_home_toggle_is_cleared_when_another_scenario_is_activated() -> No
     """HOME 토글은 시나리오를 바꾸면 **전부** 풀린다.
 
     토글은 모두 기준정보 위에 무언가를 얹거나 빼는 스위치이고, 켠 사람은 그 시나리오를
-    보며 켰다. 켠 채로 바꾸면 얹힌 것이 새 계획 위에 그대로 남는다 — 실행 Capa 증감은
+    보며 켰다. 켠 채로 바꾸면 얹힌 것이 새 계획 위에 그대로 남는다 — 확보율 보정은
     확보율을 통해 B/N 순위·Top5 막대·히트맵까지 바꾼다. 그런데 화면에는 토글이 켜져 있으니
     사용자는 그것을 새 시나리오의 원래 값으로 읽는다.
 

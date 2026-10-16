@@ -3,7 +3,7 @@
 """HOME Figure 공용 조각.
 
 가족(요약 LOB·계획 세부수량·주요공정 히트맵·상세 B/N)을 **넘나드는 것만** 여기 둔다 —
-확보율 3색 판정, 실행 반영 hover 문구, 과거·연간 Total 면색, paper 좌표 격자 크롬이다.
+확보율 3색 판정, 확보율 보정 hover 문구, 과거·연간 Total 면색, paper 좌표 격자 크롬이다.
 한 가족만 쓰는 조각은 그 가족 모듈에 남는다.
 
 `tokens` 는 **부를 때** 읽는다. 모듈 수준 dict 나 기본 인자에 색을 담으면 모듈을 처음
@@ -44,7 +44,7 @@ BOTTLENECK_NAME_ELLIPSIS = "…"
 
 
 def _execution_note_parts(delta: object, note: object) -> tuple[float, str] | None:
-    """실행 반영 문구의 재료. 조정이 없으면 `None` 이라 두 포맷터가 빈 문자열을 낸다.
+    """확보율 보정 문구의 재료. 조정이 없으면 `None` 이라 두 포맷터가 빈 문자열을 낸다.
 
     마크업은 자리마다 다르지만 「무엇을 조정으로 볼 것인가」는 하나여야 한다 — 한쪽만
     판정을 바꾸면 같은 프레임을 두고 hover 마다 다른 말을 한다.
@@ -56,12 +56,12 @@ def _execution_note_parts(delta: object, note: object) -> tuple[float, str] | No
 
 
 def _execution_hover_note(delta: object, note: object) -> str:
-    """hover 끝에 붙일 「실행 반영 ±n%p · 비고」 줄. 조정이 없으면 빈 문자열."""
+    """hover 끝에 붙일 「확보율 보정 ±n%p · 비고」 줄. 조정이 없으면 빈 문자열."""
     parts = _execution_note_parts(delta, note)
     if parts is None:
         return ""
     amount, label = parts
-    text = f"<br>실행 반영 {amount:+.1f}%p"
+    text = f"<br>확보율 보정 {amount:+.1f}%p"
     if label:
         # 비고는 사용자가 적는 자유 텍스트다. 꺾쇠가 들어오면 hover 마크업이 깨진다.
         text += f"<br>비고 {html.escape(label)}"
@@ -69,12 +69,12 @@ def _execution_hover_note(delta: object, note: object) -> str:
 
 
 def _execution_delta_note(delta: object, note: object) -> str:
-    """증감 영역 hover 에 띄울 「실행 반영 ±n%p · 비고」."""
+    """증감 영역 hover 에 띄울 「확보율 보정 ±n%p · 비고」."""
     parts = _execution_note_parts(delta, note)
     if parts is None:
         return ""
     amount, label = parts
-    text = f"<b>실행 반영 {amount:+.1f}%p</b>"
+    text = f"<b>확보율 보정 {amount:+.1f}%p</b>"
     if label:
         text += f"<br>{html.escape(label)}"
     return text

@@ -1,6 +1,6 @@
-# Purpose: 시나리오와 분리된 공용 실행 Capa 반영 프로필의 조회·교체 SQL을 담당한다.
+# Purpose: 시나리오와 분리된 공용 확보율 보정 프로필의 조회·교체 SQL을 담당한다.
 
-"""시나리오와 분리된 공용 실행 Capa 반영 프로필의 조회·교체 SQL."""
+"""시나리오와 분리된 공용 확보율 보정 프로필(`global_execution_capacity`)의 조회·교체 SQL."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def replace_global_execution_capacity(
     `ProfileVersionConflict` 를 올린다. None 이면 대조하지 않는다.
     """
     require_profile_version(
-        connection, "global_execution_capacity", expected_version, label="실행 Capa 반영"
+        connection, "global_execution_capacity", expected_version, label="확보율 보정"
     )
     version = reset_profile(
         connection, "global_execution_capacity", "global_execution_capacity_row"

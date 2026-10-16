@@ -171,7 +171,7 @@ equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 using_dashboard_sample = equipment.empty
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
-# Static/Dynamic·Preference·필요단축일정). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
+# Static 대비 일정·Preference·필요단축일정). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
 # 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔 캐시다). 못
 # 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을 표시명 때문에 막지
 # 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서 고치면 프로필
@@ -226,7 +226,7 @@ dashboard_baseline = (
 )
 
 # 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Main·
-# Static/Dynamic·필요단축일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
+# Static 대비 일정·필요단축일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
 # 탭을 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
 # Preference(Cut-off)·RawData 의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
 conditions_card = condition_card("설비 조회 조건", name="equipment") if viewing_tab_open else None
@@ -261,7 +261,8 @@ with main_tab:
 
 with preference_tab:
     # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다. 돌려받는 **저장된** Cut-off 를
-    # Static/Dynamic·필요단축일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 세 번 열었다.
+    # Static 대비 일정·필요단축일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 세 번
+    # 열었다.
     # 저장은 그 자리에서 `st.rerun()` 하므로 이 회차에 낡은 값이 남지 않는다.
     stored_cutoff = render_cutoff_management(
         repository,
@@ -399,7 +400,7 @@ with shortening_tab:
             )
             reserve_baseline_notice_slots()
         else:
-            # Static/Dynamic 과 같은 입력을 같은 길로 모은다. 소요대수는 활성 시나리오에 있으므로
+            # Static 대비 일정과 같은 입력을 같은 길로 모은다. 소요대수는 활성 시나리오에 있으므로
             # **이 탭 안에서만** 예외를 잡아 알린다 — 다른 탭과 Cut-off 입력은 막지 않는다.
             # 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다). 패널은 같은 시나리오
             # 키와 로더로 달 범위·계획을 꺼낸다 — 소요대수는 그 캐시가 빗나갈 때만, 한 회차에 한

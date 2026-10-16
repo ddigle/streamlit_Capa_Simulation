@@ -1971,9 +1971,10 @@ def _undated_lines(
 def _usage_basis_line(equipment: pd.DataFrame) -> str:
     """세는 사용기준(HBM·EDP)마다의 행 수와 가용대수에서 빠지는 설비 대수.
 
-    Dynamic 가용대수는 사용기준이 HBM·EDP 인 호기만 센다(2026-10-08 사용자 결정). 사용기준을 비워 둔
-    옛 리비전은 그 결정으로 Dynamic 에서 빠지므로 배포마다 이 수를 받아 본다. 세는 값은 계약 상수라
-    이름을 적고, 그 밖의 값(사용기준 글자)은 찍지 않고 `다른 값` 으로 접는다.
+    설비 일정 기준 가용대수는 사용기준이 HBM·EDP 인 호기만 센다(2026-10-08 사용자 결정).
+    사용기준을 비워 둔 옛 리비전은 그 결정으로 가용대수에서 빠지므로 배포마다 이 수를 받아 본다.
+    세는 값은 계약 상수라 이름을 적고, 그 밖의 값(사용기준 글자)은 찍지 않고 `다른 값` 으로
+    접는다.
     """
     try:
         keys = usage_basis_key(equipment[USAGE_BASIS_COLUMN])
@@ -1990,7 +1991,7 @@ def _usage_basis_line(equipment: pd.DataFrame) -> str:
     other_rows = len(equipment) - counted_rows - blank_rows
     counted_parts = " · ".join(f"{basis} {rows:,}행" for basis, rows in by_basis.items())
     return (
-        "- 사용기준(`equipment_contract.counts_for_capacity`, Dynamic 가용대수는 "
+        "- 사용기준(`equipment_contract.counts_for_capacity`, 설비 일정 기준 가용대수는 "
         f"{'·'.join(COUNTED_USAGE_BASIS)} 만 센다) — {counted_parts} · 다른 값 {other_rows:,}행 · "
         f"빈 칸 {blank_rows:,}행 / 가용대수에서 빠지는 설비 {format_unit_count(excluded_units)}대"
         f"(설비 {total_units:,}대 중)"

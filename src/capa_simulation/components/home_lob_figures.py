@@ -334,7 +334,7 @@ def _product_share_label_annotations(
 
 
 class ExecutionDeltaBars(NamedTuple):
-    """세로 막대에 실행 Capa 증감을 그리기 위한 조각.
+    """세로 막대에 확보율 보정 증감을 그리기 위한 조각.
 
     `drawn` 은 값 막대가 실제로 그릴 높이다 — 두 값 중 **짧은 쪽**이다. 줄었으면 결과값
     까지(적분홍 제외), 늘었으면 기준값까지이고 그 위를 연두가 잇는다.
