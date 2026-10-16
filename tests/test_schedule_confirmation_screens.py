@@ -237,6 +237,8 @@ def test_rawdata_warns_in_one_line_and_lists_each_unit_and_stage(tmp_path: Path)
     )
     listing = _confirmation_list(app)
     assert listing.label == "일정 확인 목록 · 3건"
+    # 편집표는 폼 안이다 — 목록에서 빠지는 때는 저장이 아니라 보기 적용·변경 미리보기다.
+    assert "보기 적용" in listing.caption[0].value
     # 빈 일정·실적은 빈칸이다 — 자리표시 글자를 비워 두지 않으면 브라우저가 "None" 을 그린다.
     proto = listing.dataframe[0].proto
     assert proto.HasField("placeholder") and proto.placeholder == ""
@@ -272,8 +274,8 @@ def test_rawdata_shows_nothing_when_every_stage_is_consistent(tmp_path: Path) ->
 
 
 def test_rawdata_follows_unsaved_edits_and_the_preview_candidate(tmp_path: Path) -> None:
-    """편집본 기준이다 — 저장하지 않은 고침이 바로 줄에서 빠지고, 미리보기 중이면 저장될
-    후보를 본다."""
+    """편집본 기준이다 — 제출(보기 적용 등)로 편집본에 들어간 저장 전 고침이 줄에서 빠지고,
+    미리보기 중이면 저장될 후보를 본다."""
     path = tmp_path / "equipment.duckdb"
     _saved(path, _late(), _done_without_actual())
     app = _app(path)

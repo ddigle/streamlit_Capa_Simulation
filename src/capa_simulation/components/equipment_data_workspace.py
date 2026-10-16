@@ -1539,7 +1539,8 @@ def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
     """반입·Qual 의 일정·실적·상태가 맞지 않는 호기 — 경고 한 줄과 접힌 목록. 셋 다 없으면 그리지
     않는다. 저장은 막지 않는다.
 
-    `master` 는 편집본(미리보기 중이면 저장될 후보)이라 저장하지 않은 편집이 바로 보인다.
+    `master` 는 편집본(미리보기 중이면 저장될 후보)이다. 편집표가 폼 안이라 칸만 고쳐서는 바뀌지
+    않고, 저장하지 않은 편집도 제출(보기 적용·저장·변경 미리보기 등) 뒤 회차에 보인다.
     판정은 내용 지문 + 오늘 캐시(`get_schedule_confirmation_issues`)로 받는다 — 이 작업 공간은
     숨은 탭에서도 회차마다 그려지므로, 고친 것이 없는 회차는 지문만 잰다. 미확인은
     오늘(`today`) 기준이고, 일정 당일은 아직 미확인이 아니다.
@@ -1556,8 +1557,8 @@ def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
             f"**{UNCONFIRMED}** — 일정이 지났는데({today:%Y-%m-%d} 기준, 당일은 빼고) 실적이 "
             f"비고 상태가 계획·확정 · **{MISSING_ACTUAL}** — 상태가 완료인데 실적이 빔 · "
             f"**{STATUS_UPDATE_NEEDED}** — 실적이 있는데 상태가 계획·확정. 한 행이 한 (호기, "
-            "단계)입니다. 직접 편집(또는 붙여넣기)에서 그 단계의 실적·상태를 고쳐 저장하면 "
-            "사라집니다."
+            "단계)입니다. 직접 편집에서 그 단계의 실적·상태를 고친 뒤 보기 적용(붙여넣기는 "
+            "변경 미리보기)을 누르면 이 목록에서 빠지고, 저장해야 Main 화면에도 반영됩니다."
         )
         st.dataframe(
             issues.loc[:, list(_CONFIRMATION_LIST_COLUMNS)],
