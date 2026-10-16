@@ -1563,6 +1563,8 @@ def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
             issues.loc[:, list(_CONFIRMATION_LIST_COLUMNS)],
             hide_index=True,
             width="stretch",
+            # 빈 일정·실적은 빈칸이다 — 기본값이면 회색 "None" 글자가 값처럼 읽힌다.
+            placeholder="",
             column_config={
                 column: st.column_config.DateColumn(format="YYYY-MM-DD")
                 for column in (SCHEDULE_COLUMN, ACTUAL_COLUMN)

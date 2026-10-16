@@ -237,6 +237,9 @@ def test_rawdata_warns_in_one_line_and_lists_each_unit_and_stage(tmp_path: Path)
     )
     listing = _confirmation_list(app)
     assert listing.label == "일정 확인 목록 · 3건"
+    # 빈 일정·실적은 빈칸이다 — 자리표시 글자를 비워 두지 않으면 브라우저가 "None" 을 그린다.
+    proto = listing.dataframe[0].proto
+    assert proto.HasField("placeholder") and proto.placeholder == ""
     table = listing.dataframe[0].value
     assert list(table.columns) == [
         "확인구분",
