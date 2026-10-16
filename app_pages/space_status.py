@@ -42,13 +42,17 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.space_layout import (
+    ColorChoice,
+    color_check_style,
+    default_color_choice,
     equipment_unit_total,
     floor_block_stats,
     floor_placements,
     invalid_equipment_rows,
     occupancy_ratio,
-    stage_counts,
-    stage_legend_markup,
+    space_legend_counts,
+    space_legend_markup,
+    unit_appearance,
 )
 from capa_simulation.components.space_layout_editor import (
     render_fab_layout_editor,
@@ -75,9 +79,9 @@ from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWN
 from capa_simulation.services.equipment_contract import (
     DATE_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    INVESTMENT_CAPA_COLUMN,
     LAYOUT_EXITED_COLUMN,
     LAYOUT_REFLECTED_COLUMN,
-    STATUS_EXITED,
     empty_downtime_schedule,
     empty_equipment_master,
 )
@@ -113,6 +117,13 @@ from capa_simulation.services.floor_layout_profile import (
     FloorLayoutProfile,
 )
 from capa_simulation.services.simulation_cache import get_space_equipment_status
+from capa_simulation.services.space_color_basis import (
+    COLOR_BASES,
+    COLOR_BASIS_CAPA,
+    COLOR_BASIS_LINE_TYPE,
+    capa_groups,
+    color_basis_groups,
+)
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
     apply_name_changes,
@@ -166,9 +177,15 @@ SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
     "저장할 수 있습니다."
 )
-# 편집기에 나오지 않는 상태 — 도면 이탈일(반출/이설일정)이 지나 공간에 없다. 「정지」는 반출/이설
-# 전이면 도면에 남아 편집기에도 나온다.
-EXITED_STATUSES = (STATUS_EXITED,)
+# 도면 「색 기준」(공정구분 | 투자Capa)과 그 기준의 그룹 체크(2026-10-16 사용자 결정). 체크 key 는
+# `space_color_<line|capa>_<그룹>` 이다 — 기준마다 따로라 기준을 바꿔도 다른 쪽 체크가 남는다.
+COLOR_BASIS_KEY = "space_color_basis"
+_COLOR_KEY_PARTS = {COLOR_BASIS_LINE_TYPE: "line", COLOR_BASIS_CAPA: "capa"}
+
+
+def color_group_key(basis: str, group: str) -> str:
+    """색 기준 그룹 체크박스의 위젯 key."""
+    return f"space_color_{_COLOR_KEY_PARTS[basis]}_{group}"
 
 
 def _show_fab_overview() -> None:
@@ -347,6 +364,7 @@ if no_fleet:
     all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
     selected_processes: list[str] = []
     selected_stages: list[str] = []
+    color_choice = default_color_choice()
 else:
     # 기준일·필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일이 먼저다 —
     # 공정·단계 선택지가 그 날의 상태에서 나온다. 이 화면은 배치·공간만 본다 — 기간별 단계 전환은
@@ -372,6 +390,48 @@ else:
             placeholder="전체",
             key="space_status_stage_filter",
             persist_state="session",
+        )
+        # 도면 색 기준은 하나만 고른다(2026-10-16 사용자 결정 — 질문 7). 고른 기준의 그룹마다
+        # 체크(처음엔 모두 켬)이고, 체크한 그룹만 그 색이다. 바꾸면 도면은 같은 epoch 로 색만 다시
+        # 칠한다(배율 유지).
+        basis = st.radio(
+            "색 기준",
+            options=COLOR_BASES,
+            horizontal=True,
+            key=COLOR_BASIS_KEY,
+            persist_state="session",
+            help=(
+                "도면 상자를 무엇으로 칠할지 고릅니다. 체크한 그룹만 그 색이고 나머지는 "
+                "회색입니다. 보관(검정)·지연(빨강)은 체크와 상관없이 칠합니다."
+            ),
+        )
+        capa = (
+            capa_groups(all_status[INVESTMENT_CAPA_COLUMN])
+            if INVESTMENT_CAPA_COLUMN in all_status.columns
+            else ()
+        )
+        basis_groups = color_basis_groups(basis, capa)
+        enabled: set[str] = set()
+        if not basis_groups:
+            st.caption("숫자로 읽히는 투자Capa 값이 없어 모든 상자가 회색입니다.")
+        with st.container(horizontal=True, gap="small", key="space_color_groups"):
+            for group in basis_groups:
+                if st.checkbox(
+                    group.replace("~", "\\~"),
+                    value=True,
+                    key=color_group_key(basis, group),
+                    persist_state="session",
+                ):
+                    enabled.add(group)
+        color_choice = ColorChoice(basis, capa, frozenset(enabled))
+        # 체크박스 글자 앞의 그룹 색 견본(CSS — 라벨에는 색 칸을 넣을 수 없다).
+        st.html(
+            color_check_style(
+                [
+                    (color_group_key(basis, style.label), style.fill)
+                    for style in color_choice.styles()
+                ]
+            )
         )
 
 space_equipment = all_status.copy()
@@ -682,7 +742,15 @@ def _render_layout_editor(
         if buffer_matches_saved(_saved_frames(), frames, renames)
         else unsaved_unit_ids(latest_snapshot.equipment, frames[1], key, renames)
     )
-    inputs = editor_inputs(status, floor=key, new_ids=new_ids, arrived_ids=arrived_ids)
+    # 편집기도 보기와 같은 채우기(색 기준·보관·지연, 기준일 = 사이드바 기준일)다. 테·덧표시는
+    # 그리지 않는다.
+    inputs = editor_inputs(
+        status,
+        floor=key,
+        new_ids=new_ids,
+        arrived_ids=arrived_ids,
+        appearance=lambda rows: unit_appearance(rows, frames[2], choice=color_choice, today=today),
+    )
     options = new_unit_options(frames[1])
     st.caption(
         "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
@@ -718,6 +786,7 @@ def _render_layout_editor(
         floors=ALL_FLOORS,
         marks=marks,
         new_unit=options,
+        as_of=as_of,
         background_image=profile.image_data_uri if profile is not None else None,
     )
     if submission is None:
@@ -1081,12 +1150,19 @@ else:
                 ),
             )
             st.space("stretch")
-            # 편집 중에는 편집본을 그리므로 저장본의 대수를 달지 않고 색 뜻만 보인다. 반출/이설을
-            # 마친 호기는 편집기에 나오지 않으니 그 색도 뺀다.
+            # 보기는 기준일의 색·테·덧표시별 대수(미확인은 오늘 기준 설비 수)다. 편집 중에는
+            # 편집본을 그리므로 저장본의 대수를 달지 않고 채우기 뜻만 보인다(편집 화면은 테·덧표시를
+            # 그리지 않는다).
             st.markdown(
-                stage_legend_markup(None, exclude=EXITED_STATUSES)
+                space_legend_markup(None, choice=color_choice)
                 if editable and editing_requested
-                else stage_legend_markup(stage_counts(floor_counted)),
+                else space_legend_markup(
+                    space_legend_counts(
+                        floor_counted, downtime, choice=color_choice, as_of=as_of, today=today
+                    ),
+                    choice=color_choice,
+                    as_of=as_of,
+                ),
                 unsafe_allow_html=True,
                 width="content",
             )
@@ -1096,14 +1172,20 @@ else:
             marks = load_floor_layout_marks(
                 equipment_database_path, selected_building, selected_floor
             )
-            items = viewer_items(floor_equipment)
+            items = viewer_items(
+                floor_equipment,
+                appearance=lambda rows: unit_appearance(
+                    rows, downtime, choice=color_choice, today=today
+                ),
+            )
             roster = hashlib.sha256(
                 "|".join(str(item["id"]) for item in items).encode()
             ).hexdigest()[:16]
             render_space_layout_viewer(
                 key=f"space_layout_viewer_{selected_building}_{selected_floor}",
-                # 저장본·캔버스·요소·그리는 호기(조건 카드 필터)가 바뀌면 새로 선다. 기준일로 단계만
-                # 바뀌면 같은 epoch 로 색만 다시 칠하고 보던 배율을 지킨다.
+                # 저장본·캔버스·요소·그리는 호기(조건 카드 필터)가 바뀌면 새로 선다. 기준일·
+                # 색 기준·그룹 체크만 바뀌면 같은 epoch 로 색·테만 다시 칠하고 보던 배율을 지킨다
+                # (기준일은 epoch 밖의 `asOf`, 색은 호기마다의 `fill`·`ink`).
                 epoch="|".join(
                     (
                         "view",
@@ -1120,6 +1202,7 @@ else:
                 floor=(selected_building, selected_floor),
                 marks=marks,
                 summary=summary,
+                as_of=as_of,
                 background_image=(
                     layout_profile.image_data_uri if layout_profile is not None else None
                 ),

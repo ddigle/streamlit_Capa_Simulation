@@ -25,7 +25,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Final, Literal, cast
@@ -225,6 +225,12 @@ def _floor_mask(frame: pd.DataFrame, key: FloorKey) -> pd.Series:
     ).astype(bool)
 
 
+# 그리는 행에서 호기(설비명)마다 브라우저로 보낼 색·경계 날짜를 만드는
+# 함수(`components/space_layout. unit_appearance` 를 묶어 넘긴다). 색 토큰은 화면 몫이라 이 모듈은
+# 받기만 한다.
+Appearance = Callable[[pd.DataFrame], Mapping[str, Mapping[str, Any]]]
+
+
 def editor_inputs(
     status: pd.DataFrame,
     *,
@@ -232,6 +238,7 @@ def editor_inputs(
     stage_of: Mapping[str, str] | None = None,
     new_ids: set[str] | None = None,
     arrived_ids: set[str] | None = None,
+    appearance: Appearance | None = None,
 ) -> EditorInputs:
     """설비 편집본의 호기 상태(`build_space_equipment_status` 결과)에서 이 층 편집기 입력을 만든다.
 
@@ -240,6 +247,7 @@ def editor_inputs(
       이 층 도면에 서 있으면 그 형제는 트레이에 따로 내놓지 않는다(상자를 한 모듈에만 그린 설비).
     - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출/이설 완료 …)가 차지한 범위.
       저장 검증은 그런 행에도 캔버스 상한을 걸므로 영역을 그보다 줄이지 못하게 한다.
+    - `appearance` 를 주면 보내는 호기(도면·트레이)에만 불러 그 면·글자·경계 날짜를 항목에 얹는다.
     """
     target = status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
     on_floor = _floor_mask(status, floor)
@@ -281,12 +289,14 @@ def editor_inputs(
     order = (
         rows[EQUIPMENT_ID_COLUMN].astype("string").isin(arrivals).astype(int).argsort(kind="stable")
     )
+    looks = appearance(rows) if appearance is not None else {}
     items: list[dict[str, Any]] = []
     for row in rows.iloc[order].to_dict(orient="records"):
         unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
         parent = row["_parent"]
         items.append(
             {
+                **looks.get(unit_id, {}),
                 "id": unit_id,
                 "label": unit_id,
                 "stage": stages.get(unit_id, str(row.get("상태", "") or "")),
@@ -1289,18 +1299,24 @@ def unsaved_unit_ids(
     return new_ids, arrived
 
 
-def viewer_items(located: pd.DataFrame) -> list[dict[str, Any]]:
+def viewer_items(
+    located: pd.DataFrame, *, appearance: Appearance | None = None
+) -> list[dict[str, Any]]:
     """층 상세 뷰어(편집기와 같은 도면, 보기 전용)에 보낼 저장본 호기. 좌표·크기가 다 있는 행만
-    받는다. `detail` 은 풍선·선택 줄에 붙는 공정과 운영 비가동이다."""
+    받는다. `detail` 은 풍선·선택 줄에 붙는 공정과 운영 비가동이다. `appearance` 를 주면 그 면·글자·
+    경계 날짜(`fill`·`ink`·`realFrom` …)를 항목에 얹는다."""
+    looks = appearance(located) if appearance is not None else {}
     items: list[dict[str, Any]] = []
     parents = _parents(located)
     for (_, row), parent in zip(located.iterrows(), parents, strict=True):
         process = _text(row.get("공정소분류")).strip()
         downtime = _text(row.get("비가동유형")).strip()
+        unit_id = str(row[EQUIPMENT_ID_COLUMN]).strip()
         items.append(
             {
-                "id": str(row[EQUIPMENT_ID_COLUMN]).strip(),
-                "label": str(row[EQUIPMENT_ID_COLUMN]).strip(),
+                **looks.get(unit_id, {}),
+                "id": unit_id,
+                "label": unit_id,
                 "stage": _text(row.get("상태")),
                 "x": finite_or_none(row["X좌표"]),
                 "y": finite_or_none(row["Y좌표"]),

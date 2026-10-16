@@ -1,15 +1,20 @@
-# Purpose: Space 배치 집계(설비·상태별 대수·점유율·층별 배치)와 층 상세 범례·도면 요소 색을 만든다.
+# Purpose: Space 배치 집계(대수·점유율·층별 배치)와 호기 상자 색·층 상세 범례·요소 색을 만든다.
 
 from __future__ import annotations
 
 import html
-from collections.abc import Callable, Collection, Mapping
+import re
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
+from typing import Any, Final
 
 import pandas as pd
 
 from capa_simulation.design import theme, tokens
+from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN, LINE_TYPE_GROUPS
 from capa_simulation.services.equipment_units import (
+    UNIT_KEY_COLUMN,
     UNIT_SHARE_COLUMN,
     format_unit_count,
     unit_total,
@@ -21,6 +26,25 @@ from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_WIDTH,
     CanvasSize,
     FloorKey,
+)
+from capa_simulation.services.space_color_basis import (
+    COLOR_BASIS_CAPA,
+    COLOR_BASIS_LINE_TYPE,
+    CapaGroup,
+    color_groups,
+)
+from capa_simulation.services.space_unit_state import (
+    DELAYED_STATE,
+    EXIT_PLANNED_STATE,
+    FLAG_STATE,
+    OFFLINE_STATE,
+    REAL_STATE,
+    STOPPED_STATE,
+    STORAGE_STATE,
+    VISIBLE_STATE,
+    boundary_payload,
+    unit_boundaries,
+    unit_states_at,
 )
 
 
@@ -34,22 +58,6 @@ def _unit_shares(equipment: pd.DataFrame) -> pd.Series:
 def equipment_unit_total(equipment: pd.DataFrame) -> float:
     """행이 아니라 설비 대수. Main 설비로 묶은 모듈 행 넷이 한 대다."""
     return unit_total(_unit_shares(equipment))
-
-
-def stage_counts(equipment: pd.DataFrame) -> dict[str, float]:
-    """상태별 설비 대수(층 배치도 범례). 행을 세지 않고 설비지분을 더하고, 0 대인 상태는 뺀다.
-
-    모듈 하나가 비가동이면 그 설비는 가용 0.75 · 운영 비가동 0.25 로 갈린다. 상태마다
-    **직접 더한다** — 합계에서 빼면 반올림 끝자리가 -0.0 으로 남아 「-0대」가 찍힌다.
-    """
-    if equipment.empty or "상태" not in equipment.columns:
-        return {}
-    shares = _unit_shares(equipment)
-    counts = {
-        status: unit_total(shares.where(equipment["상태"].eq(status), 0.0))
-        for status in tokens.EQUIPMENT_STAGE_COLORS
-    }
-    return {status: count for status, count in counts.items() if count > 0}
 
 
 def occupancy_ratio(placed: pd.DataFrame, canvas_width: float, canvas_height: float) -> float:
@@ -155,25 +163,254 @@ def keep_out_color() -> str:
     return tokens.DELTA_AREA_DECREASE if theme.current_mode() == "dark" else tokens.STATUS_SHORTAGE
 
 
-def stage_legend_markup(
-    counts: Mapping[str, float] | None, *, exclude: Collection[str] = ()
-) -> str:
-    """층 상세 머리 줄 오른쪽의 상태 범례. `counts` 가 있으면 그 층에 있는 상태만 대수와 함께
-    (「가용 5대」), 없으면 모든 상태의 색 뜻만 보인다(배치 편집 중 — 편집본은 저장본과 대수가
-    다르다). 도면 안이 아니라 머리 줄에 두어 도면이 테두리 안을 다 쓴다."""
-    chips = []
-    for status, color in tokens.EQUIPMENT_STAGE_COLORS.items():
-        if status in exclude or (counts is not None and status not in counts):
+# ------------------------------------------------------------------ 호기 상자 색·범례
+# 색 기준 그룹 밖의 범례 칸. 그룹 이름(공정구분 여섯·숫자로 읽히는 투자Capa 글자)과 겹치지 않는다.
+LEGEND_DEFAULT: Final = "그 밖"
+LEGEND_STORAGE: Final = "보관"
+LEGEND_DELAY: Final = "지연"
+LEGEND_PRE_ARRIVAL: Final = "반입 전"
+LEGEND_EXIT_PLANNED: Final = "반출/이설 예정"
+LEGEND_STOPPED: Final = "정지 중"
+LEGEND_OFFLINE: Final = "운영 비가동"
+LEGEND_UNCONFIRMED: Final = "미확인"
+
+
+@dataclass(frozen=True)
+class ColorGroupStyle:
+    """색 기준 그룹 하나의 면·글자 색(지금 테마)."""
+
+    label: str
+    fill: str
+    ink: str
+
+
+@dataclass(frozen=True)
+class ColorChoice:
+    """사이드바 「색 기준」과 그룹 체크(2026-10-16 사용자 결정 — 질문 7 권장안).
+
+    `basis` 는 `space_color_basis.COLOR_BASES` 가운데 하나, `capa` 는 설비 마스터 전체에서 만든
+    투자Capa 그룹(공정구분 기준이어도 들고 다닌다 — 기준을 바꿔도 같은 그룹이다), `enabled` 는
+    체크한 그룹 이름이다.
+    """
+
+    basis: str
+    capa: tuple[CapaGroup, ...]
+    enabled: frozenset[str]
+
+    def styles(self) -> tuple[ColorGroupStyle, ...]:
+        """그 기준의 모든 그룹(체크박스 차례)과 색."""
+        if self.basis == COLOR_BASIS_CAPA:
+            return tuple(
+                ColorGroupStyle(
+                    group.label,
+                    tokens.SPACE_CAPA_RAMP[group.level],
+                    tokens.SPACE_CAPA_RAMP_INKS[group.level],
+                )
+                for group in self.capa
+            )
+        return tuple(
+            ColorGroupStyle(
+                group, tokens.SPACE_LINE_TYPE_FILLS[group], tokens.SPACE_LINE_TYPE_INKS[group]
+            )
+            for group in LINE_TYPE_GROUPS
+        )
+
+    def checked(self) -> tuple[ColorGroupStyle, ...]:
+        """체크한 그룹만(차례 그대로)."""
+        return tuple(style for style in self.styles() if style.label in self.enabled)
+
+
+def default_color_choice(capa: Sequence[CapaGroup] = ()) -> ColorChoice:
+    """고를 위젯이 없을 때(호기가 없는 화면)의 기본 — 공정구분, 여섯 그룹 모두 켬."""
+    return ColorChoice(COLOR_BASIS_LINE_TYPE, tuple(capa), frozenset(LINE_TYPE_GROUPS))
+
+
+def unit_appearance(
+    status: pd.DataFrame, downtime: pd.DataFrame, *, choice: ColorChoice, today: date
+) -> dict[str, dict[str, Any]]:
+    """호기(설비명)마다 브라우저로 보낼 기본 면·글자(`fill`·`ink`)와 경계 날짜(`boundary_payload`).
+
+    면·글자는 색 기준과 체크만 반영한다 — 체크한 그룹이면 그 그룹 색, 아니면 기본 회색.
+    지연(빨강)과 보관(검정)은 기준일을 보는 브라우저가 이 위에 덮는다(`storage`·`delays`). 체크·색
+    기준을 바꾸면 이 두 칸만 바뀌어 도면은 같은 epoch 로 색만 다시 칠한다(보던 배율을 지킨다).
+    """
+    if status.empty or EQUIPMENT_ID_COLUMN not in status.columns:
+        return {}
+    chosen = {style.label: style for style in choice.checked()}
+    groups = color_groups(status, choice.basis, choice.capa)
+    payload = boundary_payload(unit_boundaries(status, downtime, today=today))
+    names = status[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    looks: dict[str, dict[str, Any]] = {}
+    for name, group, fields in zip(names, groups, payload, strict=True):
+        if pd.isna(name):
             continue
-        text = status if counts is None else f"{status} {format_unit_count(counts[status])}대"
+        style = None if pd.isna(group) else chosen.get(str(group))
+        looks[str(name)] = {
+            **fields,
+            "fill": style.fill if style is not None else tokens.SPACE_UNIT_DEFAULT_FILL,
+            "ink": style.ink if style is not None else tokens.SPACE_UNIT_DEFAULT_INK,
+        }
+    return looks
+
+
+def fill_kinds(states: pd.DataFrame, groups: pd.Series, enabled: Collection[str]) -> pd.Series:
+    """행마다 채우기의 뜻(범례 칸). 지연 → 보관 → 체크한 그룹 → 그 밖, 위가 이긴다."""
+    checked = groups.isin(set(enabled)).fillna(False).astype(bool)
+    kinds = pd.Series(LEGEND_DEFAULT, index=states.index, dtype="string")
+    kinds = kinds.mask(checked, groups.astype("string"))
+    kinds = kinds.mask(states[STORAGE_STATE], LEGEND_STORAGE)
+    return kinds.mask(states[DELAYED_STATE], LEGEND_DELAY)
+
+
+def space_legend_counts(
+    rows: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    choice: ColorChoice,
+    as_of: date,
+    today: date,
+) -> dict[str, float]:
+    """층 상세 범례의 기준일 대수. 대수가 있는 칸만 돌려준다.
+
+    `rows` 는 세는 배치 행(`placed_unit_rows` — 모듈 묶음은 상자가 한 행이어도 모든 행)이고 대수는
+    설비지분 합이다(상태 범례 때와 같은 셈, 「배치 N대」와 같은 축). 채우기 칸(그룹·그
+    밖·보관·지연)은 합이 배치 대수다. 테·덧표시 칸은 따로 센다 — 반입 전(실물 없음), 반출/이설
+    예정(실물이 있어 노랑 테인 것), 정지 중, 운영 비가동. **미확인은 설비 수**다(설비키, 지분으로
+    나누지 않음 — 확인할 대상의 수라 `schedule_confirmation.confirmation_counts` 와 같은 셈이고
+    오늘 기준이라 기준일을 따르지 않는다). 도면에 없는(도면 이탈일이 지난) 행은 세지 않는다.
+    칸마다 직접 더한다 — 합계에서 빼면 반올림 끝자리가 -0.0 으로 남아 「-0대」가 찍힌다.
+    """
+    if rows.empty:
+        return {}
+    states = unit_states_at(unit_boundaries(rows, downtime, today=today), as_of=as_of)
+    shares = _unit_shares(rows)
+    shown = states[VISIBLE_STATE]
+    kinds = fill_kinds(states, color_groups(rows, choice.basis, choice.capa), choice.enabled)
+    counts: dict[str, float] = {
+        str(kind): unit_total(shares.where(shown & kinds.eq(kind).fillna(False).astype(bool), 0.0))
+        for kind in kinds.loc[shown].dropna().unique()
+    }
+    real = states[REAL_STATE]
+    marks = {
+        LEGEND_PRE_ARRIVAL: ~real,
+        LEGEND_EXIT_PLANNED: real & states[EXIT_PLANNED_STATE],
+        LEGEND_STOPPED: states[STOPPED_STATE],
+        LEGEND_OFFLINE: states[OFFLINE_STATE],
+    }
+    for label, mask in marks.items():
+        counts[label] = unit_total(shares.where(shown & mask, 0.0))
+    keys = rows[UNIT_KEY_COLUMN] if UNIT_KEY_COLUMN in rows.columns else rows[EQUIPMENT_ID_COLUMN]
+    counts[LEGEND_UNCONFIRMED] = float(keys.loc[shown & states[FLAG_STATE]].nunique())
+    return {label: count for label, count in counts.items() if count > 0}
+
+
+_SWATCH = "display:inline-block;flex:none;box-sizing:border-box;"
+
+
+def _fill_swatch(fill: str) -> str:
+    return (
+        f"{_SWATCH}width:11px;height:11px;border-radius:2px;background:{fill};"
+        f"border:1px solid {tokens.SPACE_BORDER}"
+    )
+
+
+def _mark_swatches() -> dict[str, tuple[str, str]]:
+    """테·덧표시 칸의 견본(꼴, 안 글자). 도면의 테·빗금·표식과 같은 색이다."""
+    box = f"{_SWATCH}width:14px;height:10px;border-radius:2px;"
+    return {
+        LEGEND_PRE_ARRIVAL: (f"{box}border:2px dashed {tokens.SPACE_RING_PRE_ARRIVAL}", ""),
+        LEGEND_EXIT_PLANNED: (
+            f"{box}border:2px solid {tokens.SPACE_RING_EXIT};"
+            f"box-shadow:0 0 0 1px {tokens.SPACE_RING_EXIT_OUTLINE}",
+            "",
+        ),
+        LEGEND_STOPPED: (
+            f"{box}border:1px solid {tokens.SPACE_BORDER};background:repeating-linear-gradient("
+            f"45deg,{tokens.SPACE_HATCH} 0 1.5px,{tokens.SPACE_UNIT_DEFAULT_FILL} 1.5px 4px)",
+            "",
+        ),
+        LEGEND_OFFLINE: (
+            f"{_SWATCH}width:12px;height:12px;border-radius:50%;"
+            f"border:1.5px solid {tokens.SPACE_TEXT};background:linear-gradient(90deg,"
+            f"{tokens.SURFACE} 28%,{tokens.SPACE_TEXT} 28% 43%,{tokens.SURFACE} 43% 57%,"
+            f"{tokens.SPACE_TEXT} 57% 72%,{tokens.SURFACE} 72%)",
+            "",
+        ),
+        LEGEND_UNCONFIRMED: (
+            f"{_SWATCH}width:13px;height:13px;border-radius:50%;background:{tokens.SPACE_FLAG_FILL};"
+            f"color:{tokens.SPACE_FLAG_INK};font-size:10px;font-weight:700;line-height:13px;"
+            "text-align:center",
+            "!",
+        ),
+    }
+
+
+def space_legend_markup(
+    counts: Mapping[str, float] | None, *, choice: ColorChoice, as_of: date | None = None
+) -> str:
+    """층 상세 머리 줄 오른쪽의 범례. 도면 안이 아니라 머리 줄에 두어 도면이 테두리 안을 다 쓴다.
+
+    `counts` 가 있으면(보기) 대수가 있는 칸만 「PKG 5대」로 — 체크한 그룹 색·그 밖·보관·지연,
+    그리고 반입 전(주황 점선)·반출/이설 예정(노랑 두 겹)·정지 중(빗금)·운영 비가동·미확인(「!」) —
+    끝에 기준일을 단다. `None`(배치 편집 중)이면 채우기 뜻만(체크한 그룹·그 밖·보관·지연) 보인다 —
+    편집 화면은 테·덧표시를 그리지 않고, 편집본은 저장본과 대수가 다르다.
+    """
+    fills = [(style.label, _fill_swatch(style.fill), "") for style in choice.checked()]
+    fills += [
+        (LEGEND_DEFAULT, _fill_swatch(tokens.SPACE_UNIT_DEFAULT_FILL), ""),
+        (LEGEND_STORAGE, _fill_swatch(tokens.SPACE_UNIT_STORAGE_FILL), ""),
+        (LEGEND_DELAY, _fill_swatch(tokens.SPACE_UNIT_DELAY_FILL), ""),
+    ]
+    entries = fills
+    if counts is not None:
+        marks = [(label, swatch, inner) for label, (swatch, inner) in _mark_swatches().items()]
+        entries = [entry for entry in fills + marks if counts.get(entry[0], 0) > 0]
+    chips = []
+    for label, swatch, inner in entries:
+        text = label if counts is None else f"{label} {format_unit_count(counts[label])}대"
         chips.append(
             '<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap">'
-            f'<span aria-hidden="true" style="width:11px;height:11px;border-radius:2px;'
-            f'background:{color};flex:none"></span>{html.escape(text)}</span>'
+            f'<span aria-hidden="true" style="{swatch}">{html.escape(inner)}</span>'
+            f"{html.escape(text)}</span>"
         )
+    if counts is not None and as_of is not None:
+        chips.append(f'<span style="white-space:nowrap">기준 {as_of.isoformat()}</span>')
     return (
-        '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 14px;'
-        f'font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'
+        '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;'
+        f'gap:4px 14px;font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'
+    )
+
+
+def widget_key_class(key: str) -> str:
+    """Streamlit 이 key 있는 요소에 다는 클래스(`st-key-<key>`, 영문·숫자·_·- 밖의 글자는 `-`)."""
+    return "st-key-" + re.sub(r"[^a-zA-Z0-9_-]", "-", key.strip())
+
+
+def color_check_style(swatches: Sequence[tuple[str, str]]) -> str:
+    """사이드바 그룹 체크박스 글자 앞에 그 그룹 색 견본을 단다(`(위젯 key, 면색)`).
+
+    라벨이 아니라 CSS 로 단다 — 체크박스 라벨은 마크다운이라 색 칸을 넣을 수 없다. **비공식 경로다**
+    (`stMarkdownContainer`) — 판올림에서 바뀌면 견본이 안 보일 뿐 체크는 그대로다.
+    """
+    if not swatches:
+        return "<style></style>"
+    selectors = [
+        f'.{widget_key_class(key)} [data-testid="stMarkdownContainer"] p::before'
+        for key, _ in swatches
+    ]
+    rules = [
+        f"{selector} {{ background: {fill}; }}"
+        for selector, (_, fill) in zip(selectors, swatches, strict=True)
+    ]
+    return (
+        "<style>\n"
+        + ",\n".join(selectors)
+        + ' {\n  content: "";\n  display: inline-block;\n  width: 0.8em;\n  height: 0.8em;\n'
+        "  margin-right: 0.4em;\n  border-radius: 2px;\n"
+        f"  border: 1px solid {tokens.SPACE_BORDER};\n"
+        "  box-sizing: border-box;\n  vertical-align: -0.08em;\n}\n"
+        + "\n".join(rules)
+        + "\n</style>"
     )
 
 
