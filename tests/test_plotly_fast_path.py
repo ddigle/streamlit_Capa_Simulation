@@ -22,6 +22,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import pytest
 from plotly.validator_cache import ValidatorCache
+from sheet_reader import gap_view
 from streamlit.testing.v1 import AppTest
 from test_home_figure_cache_equivalence import PRESETS, _prepare_database
 
@@ -61,8 +62,6 @@ from capa_simulation.home_state import (
     PLAN_DETAIL_CUSTOMER_KEY,
     PRODUCT_SHARE_BASIS_KEY,
 )
-from capa_simulation.services.availability_gap import DYNAMIC_SUBTOTAL_ROW, GAP_ROW, STATIC_ROW
-from capa_simulation.services.monthly_equipment_availability import BASELINE_CATEGORY
 
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
 PRESET_KEY = "home_key_process_preset"
@@ -282,28 +281,12 @@ def test_shared_helpers_match_the_validated_path() -> None:
     assert draw() == checked
 
 
-def _gap_matrix(month_count: int) -> pd.DataFrame:
-    months = [str(202601 + index) for index in range(month_count)]
-    available = [0.0 if index == 1 else 1.0 for index in range(month_count)]
-    return pd.DataFrame(
-        [
-            [3.0] * month_count,
-            available,
-            [3.0 + value for value in available],
-            [4.0] * month_count,
-            [value - 1.0 for value in available],
-        ],
-        index=[BASELINE_CATEGORY.name, "가용", DYNAMIC_SUBTOTAL_ROW, STATIC_ROW, GAP_ROW],
-        columns=months,
-    )
-
-
 @pytest.mark.parametrize("month_count", [1, 4, 12])
 def test_the_availability_gap_figure_matches_the_validated_path(month_count: int) -> None:
-    matrix = _gap_matrix(month_count)
+    view = gap_view(month_count, empty_available_month=1)
     with plotly_validation():
-        checked = _as_json(build_availability_gap_figure(matrix))
-    assert _as_json(build_availability_gap_figure(matrix)) == checked
+        checked = _as_json(build_availability_gap_figure(view))
+    assert _as_json(build_availability_gap_figure(view)) == checked
 
 
 # ---------------------------------------------------------------- HOME 네 묶음 + 덤벨

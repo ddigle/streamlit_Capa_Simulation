@@ -18,14 +18,13 @@ from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
+from sheet_reader import gap_view
 
 from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.dynamic_capacity_dashboard import build_process_comparison_figure
 from capa_simulation.components.home_dimensions import LOB_BAR_WIDTH
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.design import tokens
-from capa_simulation.services.availability_gap import DYNAMIC_SUBTOTAL_ROW, GAP_ROW, STATIC_ROW
-from capa_simulation.services.monthly_equipment_availability import BASELINE_CATEGORY
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202601, 202602, 202603]
@@ -193,24 +192,13 @@ def test_dynamic_capacity_bars_round_their_ends() -> None:
 
 
 def _gap_figure(month_count: int, *, empty_available_month: int | None = None) -> go.Figure:
-    months = [str(202601 + index) for index in range(month_count)]
-    available = [0.0 if index == empty_available_month else 1.0 for index in range(month_count)]
-    matrix = pd.DataFrame(
-        [
-            [3.0] * month_count,
-            available,
-            [3.0 + value for value in available],
-            [4.0] * month_count,
-            [value - 1.0 for value in available],
-        ],
-        index=[BASELINE_CATEGORY.name, "가용", DYNAMIC_SUBTOTAL_ROW, STATIC_ROW, GAP_ROW],
-        columns=months,
+    return build_availability_gap_figure(
+        gap_view(month_count, empty_available_month=empty_available_month)
     )
-    return build_availability_gap_figure(matrix)
 
 
 def test_the_availability_gap_bars_grade_their_heads_by_month_count() -> None:
-    """가용설비 Static/Dynamic 비교는 막대 폭이 조회 월 수로 바뀐다(실측 넉 달 118px).
+    """가용설비 Static · 설비 일정 기준 비교는 막대 폭이 조회 월 수로 바뀐다(실측 넉 달 118px).
 
     반경 등급을 월 수로 고른다 — 넉 달이면 넓음, 열두 달이면 중간, 서른 달이면 좁음. 범례
     아이콘이 맞도록 세 계열 모두 같은 반경이다. 폭의 비율 반경은 넓은 막대에서 18px 까지

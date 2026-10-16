@@ -279,6 +279,10 @@ with gap_tab:
         # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
         # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
         static_availability: pd.DataFrame | None = None
+        # 비교 시트의 Static 보유·대여. 가용과 같은 저장 리비전에서, 계산 확인보다 **먼저** 읽는다 —
+        # 계산이 멈춘 회차에도 이미 읽은 Static 세 표를 시트에 그대로 쓴다(아래 고정 동작과 같다).
+        static_owned: pd.DataFrame | None = None
+        static_lent: pd.DataFrame | None = None
         # 소요대수는 확보율 교차검증만 쓴다 — 프레임 대신 로더를 넘겨 그 보기의 캐시가 빗나갈 때만
         # 푼다. 로더와 시나리오 키는 계산이 서는 회차에만 선다(키는 교차검증 캐시 키에 실린다).
         gap_required_equipment: Callable[[], pd.DataFrame] | None = None
@@ -287,6 +291,8 @@ with gap_tab:
         try:
             gap_context = load_page_context()
             static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
+            static_owned = gap_context.reference_tables["RQ_EQP_OWN"]
+            static_lent = gap_context.reference_tables["RQ_EQP_LENT"]
             gap_scenario_key = scenario_cache_key(
                 gap_context.reference_version,
                 gap_context.active_scenario,
@@ -342,6 +348,22 @@ with gap_tab:
         except ValueError as exc:
             st.error(str(exc))
         else:
+            # 비교 시트의 반사실 — 같은 마스터·같은 범위에서 비가동만 비운 구간. 같은 구간 캐시에
+            # 빈 비가동으로 받는다(새 캐시 경계 없음). 시트를 그리는 회차에만 패널이 부른다.
+            free_downtime = dashboard_downtime.iloc[0:0]
+
+            def gap_counterfactual_spans() -> pd.DataFrame:
+                return get_equipment_lifecycle_spans(
+                    equipment_span_cache_key(
+                        equipment=dashboard_equipment,
+                        downtime=free_downtime,
+                        start_date=span_start,
+                        end_date=span_end,
+                    ),
+                    _equipment=dashboard_equipment,
+                    _downtime=free_downtime,
+                )
+
             # 호기별 환산비. 월 Total Capa 축(`환산대수`)만 이 값을 곱한다 — 대수를 세는
             # 축은 그대로다. 값이 없는 호기는 기준 모델과 같다고 보고 1.0 이다.
             gap_ratios = {
@@ -359,6 +381,8 @@ with gap_tab:
                 cutoff=stored_cutoff,
                 months=gap_months,
                 static_availability=static_availability,
+                static_owned=static_owned,
+                static_lent=static_lent,
                 static_error=static_error,
                 span_bounds=(span_start, span_end),
                 conversion_ratios=gap_ratios,
@@ -369,6 +393,8 @@ with gap_tab:
                 # 분류별 내역의 `호기 필터` 가 이 표의 컬럼으로 호기를 좁힌다. 구간과 같은 표다.
                 units=dashboard_equipment,
                 process_labels=process_labels,
+                downtime=dashboard_downtime,
+                counterfactual_spans=gap_counterfactual_spans,
             )
 
 

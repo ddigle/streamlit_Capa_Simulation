@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from sheet_reader import has_sheet, sheet_cells, sheet_value
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab
 from test_required_shortening_tab import _database, _months
@@ -21,7 +22,7 @@ from test_required_shortening_tab import _database, _months
 from capa_simulation.components.availability_gap_panel import RESULT_VIEW_KEY
 from capa_simulation.components.required_shortening_panel import SHORTENING_START_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
-from capa_simulation.services.availability_gap import STATIC_ROW
+from capa_simulation.services.availability_sheet import ROW_STATIC_AVAILABLE
 from capa_simulation.services.month_columns import month_label
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +54,7 @@ from types import SimpleNamespace
 import pandas as pd
 import streamlit as st
 
+import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.cache as persistence_cache
@@ -93,6 +95,8 @@ reference_tables = {{
     "RQ_DISPLAY_ORDER": display_order,
     "RQ_PKG_PLAN": pd.DataFrame({{"생산계획년월": months}}),
     "RQ_EQP_AVBL": static,
+    "RQ_EQP_OWN": static.rename(columns={{"가용대수": "설비보유"}}),
+    "RQ_EQP_LENT": static.rename(columns={{"가용대수": "설비대여평가"}}).assign(설비대여평가=0.0),
 }}
 active = {{"content_token": state["test_token"], "tables": {{}}}}
 density = pd.DataFrame({{"생산계획년월": months, "부하량": [12.5] * len(months)}})
@@ -128,6 +132,9 @@ originals = (
     persistence_cache.load_global_past_data,
 )
 original_get_process_labels = process_labels_module.get_process_labels
+# 시트 위 가로 스크롤바(Components v2)는 AppTest 에서 등록되지 않는다 — 이 회차 동안만 뺀다.
+original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
+horizontal_scrollbar.render_horizontal_scrollbar = lambda **_kwargs: None
 reference_cache.get_effective_reference_version = lambda: state.get("test_reference_version", 1)
 reference_cache.get_effective_reference_tables = lambda: reference_tables
 scenario_state.ensure_active_scenario = lambda _tables, _version: active
@@ -158,6 +165,7 @@ finally:
         persistence_cache.load_global_past_data,
     ) = originals
     process_labels_module.get_process_labels = original_get_process_labels
+    horizontal_scrollbar.render_horizontal_scrollbar = original_scrollbar
 """
 
 
@@ -212,13 +220,10 @@ def _cross_check(app: AppTest) -> pd.DataFrame | None:
     return None
 
 
-def _matrix(app: AppTest) -> pd.DataFrame | None:
-    """분류별 내역의 대수 표(행 이름에 Static 이 있으면 그것)."""
-    for element in app.dataframe:
-        value = element.value
-        if isinstance(value, pd.DataFrame) and STATIC_ROW in list(value.index):
-            return value
-    return None
+def _sheet_static(app: AppTest) -> float | None:
+    """분류별 내역 시트의 첫 달 Static 가용(「—」 면 None). 시트가 없으면 실패한다."""
+    month = min(month for month, _ in sheet_cells(app))
+    return sheet_value(app, month, ROW_STATIC_AVAILABLE)
 
 
 def test_views_that_need_no_demand_do_not_read_it(tmp_path: Path) -> None:
@@ -292,16 +297,18 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
     """기준정보 오류는 프레임이 필요 없는 보기에서도 같은 문구로 알린다.
 
     **지금 동작을 고정한다** — 계산이 멈춰도 Static 은 이미 읽었으므로 비교에 그대로 쓰면서
-    「Static 가용대수를 읽지 못해 Dynamic 만 표시합니다」 경고를 낸다(분류별 내역에 Static 행이
-    남는다). 문구와 맞지 않지만 출력을 조용히 바꾸지 않으려고 그대로 둔다.
+    「Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다」 경고를 낸다(분류별 내역에 Static
+    행이 남는다). 문구와 맞지 않지만 출력을 조용히 바꾸지 않으려고 그대로 둔다.
     """
     app = _open_tab(_app(tmp_path, test_failure="value").run(), GAP)
-    stopped = f"Static 가용대수를 읽지 못해 Dynamic 만 표시합니다 — {VALUE_ERROR}"
+    stopped = f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {VALUE_ERROR}"
 
     assert stopped in _warnings(app)
     _view(app, "분류별 내역")
     assert stopped in _warnings(app)
-    assert _matrix(app) is not None, "Static 을 쓴 분류별 표가 서야 한다(지금 동작)"
+    assert has_sheet(app), "분류별 내역 시트가 서야 한다"
+    static = _sheet_static(app)
+    assert static is not None and static > 0, "이미 읽은 Static 을 시트에 쓴다(지금 동작)"
     _view(app, "확보율 교차검증")
     assert stopped in _warnings(app)
     assert "소요대수를 읽지 못해 확보율을 맞댈 수 없습니다." in _infos(app)
@@ -320,7 +327,7 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
 def test_a_passing_error_is_not_kept(tmp_path: Path) -> None:
     """일시 오류는 캐시에 굳지 않는다 — 같은 시나리오 키라도 다음 회차에 풀린다(두 탭 모두)."""
     app = _open_tab(_app(tmp_path, test_failure="once").run(), GAP)
-    passing = f"Static 가용대수를 읽지 못해 Dynamic 만 표시합니다 — {PASSING_ERROR}"
+    passing = f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {PASSING_ERROR}"
     assert passing in _warnings(app)
     app.run()
     assert not any(PASSING_ERROR in text for text in _warnings(app))

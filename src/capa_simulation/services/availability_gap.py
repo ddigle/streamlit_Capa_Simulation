@@ -1,13 +1,18 @@
-# Purpose: 월별 Dynamic 가용대수와 기준정보 Static 가용대수를 한 표로 맞대어 GAP 을 낸다.
+# Purpose: 월별 설비 일정 기준 분해와 Static 가용대수를 한 표로 맞대고 한쪽에만 있는 공정을 가른다.
 
-"""Static 대 Dynamic 가용대수.
+"""Static 대 설비 일정 기준(Dynamic) 가용대수 — 분류 행 표와 공정 맞대기.
 
 **Static** 은 시뮬레이션 DB 의 기준정보 `RQ_EQP_AVBL`(`생산계획년월`·`공정`·`가용대수`)
 이다. Core_Data 에서 `설비보유 - 설비대여평가` 로 한 번에 파생되어 저장된 월별 한 줄
 값이고, 확보율이 보는 것이 이 값이다.
 
-**Dynamic** 은 설비 마스터의 일정과 비가동을 공정별 Cut-off 로 안분해 만든 값이다
-(`services/monthly_equipment_availability.py`). 둘의 차이가 GAP 이다.
+**설비 일정 기준(Dynamic)** 은 설비 마스터의 일정과 비가동을 공정별 Cut-off 로 안분해 만든
+값이다(`services/monthly_equipment_availability.py`).
+
+**화면의 비교는 9행 시트다**(`services/availability_sheet.py` — Static 보유·대여·가용 / 설비 일정
+기준 보유·대여(비가동)·가용 / GAP, 환산 축). 이 모듈은 공정 목록·한쪽에만 있는 공정
+(`dynamic_only`·`static_only`)·확보율 교차검증 캐시 키의 비교와, 분류 10행 + 대수 축 소계·GAP 의
+옛 표(`gap_matrix`)를 낸다 — 시트와 같은 공정 집합 규칙(Static 쪽은 `RQ_EQP_AVBL`)을 쓴다.
 
 ## 두 DB 를 잇는 가정
 
@@ -26,17 +31,15 @@ Static 의 `공정` 은 원본 공정명이고 Dynamic 의 `공정소분류` 는
 
 한 `(월, 공정)` 마다 이렇게 쌓인다.
 
-    분류 행 열 개          기존보유 / 가용 / 운영 비가동 / ... (부호와 가용반영 플래그)
-    Dynamic 가용 소계      `가용반영` 이 참인 분류만 더한 값
-    Static 가용대수        기준정보에서 그대로
-    GAP                    Dynamic 소계 - Static (양쪽에 다 있는 공정만)
-    Dynamic 가용 소계(환산) 같은 소계에 호기별 환산비를 곱한 값
+    분류 행 열 개              기존보유 / 가용 / 운영 비가동 / ... (부호와 가용반영 플래그)
+    일정 기준 가용 소계        `가용반영` 이 참인 분류만 더한 값(대수 축)
+    Static 가용대수            기준정보에서 그대로
+    GAP                        대수 축 소계 - Static (양쪽에 다 있는 공정만)
+    일정 기준 가용 소계(환산)  같은 소계에 호기별 환산비를 곱한 값
 
-`GAP` 이 음수면 기준정보가 실제 확보보다 낙관적이라는 뜻이다.
-
-**환산 소계는 GAP 에 들어가지 않는다.** Static 은 `설비보유 - 설비대여평가` 로 나온
-**대수**라, 생산성을 곱한 환산대수와 맞대면 단위가 어긋난다. 그 행은 월 Total Capa 를
-낼 때 쓰는 축이고, GAP 은 대수끼리 비교한다.
+`GAP` 이 음수면 기준정보가 실제 확보보다 낙관적이라는 뜻이다. 이 표의 GAP 은 대수 축이다 —
+화면의 시트·「가용대수 비교」 그림의 GAP 은 환산 축(설비 일정 기준 가용 환산 − Static,
+2026-10-17 사용자 결정 — 확보율 교차검증과 같은 잣대)이고 `availability_sheet` 가 낸다.
 """
 
 from __future__ import annotations
@@ -67,10 +70,10 @@ __all__ = [
     "gap_matrix",
 ]
 
-DYNAMIC_SUBTOTAL_ROW = "Dynamic 가용 소계"
-DYNAMIC_WEIGHTED_ROW = "Dynamic 가용 소계 (환산비 반영)"
+DYNAMIC_SUBTOTAL_ROW = "일정 기준 가용 소계"
+DYNAMIC_WEIGHTED_ROW = "일정 기준 가용 소계 (환산비 반영)"
 STATIC_ROW = "Static 가용대수"
-GAP_ROW = "GAP (Dynamic - Static)"
+GAP_ROW = "GAP (설비 일정 - Static)"
 
 ROW_KIND_CATEGORY = "분류"
 ROW_KIND_SUBTOTAL = "소계"
@@ -86,8 +89,7 @@ _ROW_ORDER = {
     ROW_KIND_SUBTOTAL: 1,
     ROW_KIND_STATIC: 2,
     ROW_KIND_GAP: 3,
-    # 환산 소계는 GAP 아래에 둔다. **GAP 계산에 들어가지 않는다** — Static 은 대수를
-    # 센 값(`설비보유 - 설비대여평가`)이라 환산대수와 맞대면 단위가 어긋난다.
+    # 환산 소계는 GAP 아래에 둔다. 이 표의 GAP 은 대수 축 소계로 낸다(환산 축 GAP 은 시트).
     ROW_KIND_WEIGHTED: 4,
 }
 

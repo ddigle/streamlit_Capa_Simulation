@@ -10,9 +10,9 @@
    펼치면 분류 행이 줄무늬·들여쓰기로 붙는다), 확보율(판정 3색 칸), 확보기준 과부족(부호 있는 정수,
    부족이면 확보율과 **같은** 판정색), 기준 확보율(달마다 확보기준 % — 회색 글자만, 참고 줄), 그리고
    넘겨받았을 때만 확보율(HOME 표시).
-2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(S✕·D✕ 만 칠한다), 가용
-   (환산, 단축 후는 둘째 줄), 전월 대비, 목표 과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄).
-   목표는 달마다 다른 확보기준이다(`MonthlyTarget`).
+2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(기준✕·일정✕ 만
+   칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 목표 과부족(음수만 칠한다, 단축 후·기한
+   지남은 둘째 줄). 목표는 달마다 다른 확보기준이다(`MonthlyTarget`).
 3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에
    ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축 안에서
    정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면
@@ -48,18 +48,68 @@ from typing import Any, Final, NamedTuple, cast
 import pandas as pd
 import plotly.graph_objects as go
 
-from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.home_figure_common import (
-    _HIDDEN_AXIS,
-    _fit_to_units,
     _text_width_units,
     keep_unselected_opaque,
 )
-from capa_simulation.components.plotly_layout import (
-    add_figure_outer_border,
-    append_layout_items,
-    flush_layout_items,
+from capa_simulation.components.month_sheet_canvas import CELL_INSET_PX as CELL_INSET_PX
+from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_HOVER as CUSTOMDATA_HOVER
+from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_MONTH as CUSTOMDATA_MONTH
+from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_ROW as CUSTOMDATA_ROW
+from capa_simulation.components.month_sheet_canvas import DETAIL_FONT_PX as DETAIL_FONT_PX
+from capa_simulation.components.month_sheet_canvas import EMPTY as _EMPTY
+from capa_simulation.components.month_sheet_canvas import HEADER_FONT_PX as HEADER_FONT_PX
+from capa_simulation.components.month_sheet_canvas import HEADER_HEIGHT_PX as HEADER_HEIGHT_PX
+from capa_simulation.components.month_sheet_canvas import KIND_ARROW as _ARROW
+from capa_simulation.components.month_sheet_canvas import KIND_HEADER as _HEADER
+from capa_simulation.components.month_sheet_canvas import KIND_TITLE as _TITLE
+from capa_simulation.components.month_sheet_canvas import KIND_UNIT as _UNIT
+from capa_simulation.components.month_sheet_canvas import KIND_VALUE as _VALUE
+from capa_simulation.components.month_sheet_canvas import LABEL_FONT_PX as LABEL_FONT_PX
+from capa_simulation.components.month_sheet_canvas import LABEL_INSET_PX as LABEL_INSET_PX
+from capa_simulation.components.month_sheet_canvas import MINUS as _MINUS
+from capa_simulation.components.month_sheet_canvas import NOTE_ROW_HEIGHT_PX as NOTE_ROW_HEIGHT_PX
+from capa_simulation.components.month_sheet_canvas import PRODUCT_FONT_PX as PRODUCT_FONT_PX
+from capa_simulation.components.month_sheet_canvas import PRODUCT_INDENT_PX as PRODUCT_INDENT_PX
+from capa_simulation.components.month_sheet_canvas import ROW_NOTE_PREFIX as ROW_NOTE_PREFIX
+from capa_simulation.components.month_sheet_canvas import ROW_TITLE_PREFIX as ROW_TITLE_PREFIX
+from capa_simulation.components.month_sheet_canvas import SELECTED_BORDER_PX as SELECTED_BORDER_PX
+from capa_simulation.components.month_sheet_canvas import SUB_VALUE_FONT_PX as SUB_VALUE_FONT_PX
+from capa_simulation.components.month_sheet_canvas import TITLE_BOTTOM_PX as TITLE_BOTTOM_PX
+from capa_simulation.components.month_sheet_canvas import (
+    TITLE_DETAIL_FONT_PX as TITLE_DETAIL_FONT_PX,
 )
+from capa_simulation.components.month_sheet_canvas import (
+    TITLE_DETAIL_LINE_PX as TITLE_DETAIL_LINE_PX,
+)
+from capa_simulation.components.month_sheet_canvas import TITLE_FONT_PX as TITLE_FONT_PX
+from capa_simulation.components.month_sheet_canvas import TITLE_HEIGHT_PX as TITLE_HEIGHT_PX
+from capa_simulation.components.month_sheet_canvas import TITLE_LINE_PX as TITLE_LINE_PX
+from capa_simulation.components.month_sheet_canvas import VALUE_FONT_PX as VALUE_FONT_PX
+from capa_simulation.components.month_sheet_canvas import (
+    VALUE_ROW_HEIGHT_PX as VALUE_ROW_HEIGHT_PX,
+)
+from capa_simulation.components.month_sheet_canvas import Cell as _Cell
+from capa_simulation.components.month_sheet_canvas import MonthLayers, stack_rows
+from capa_simulation.components.month_sheet_canvas import Points as _Points
+from capa_simulation.components.month_sheet_canvas import Row as _Row
+from capa_simulation.components.month_sheet_canvas import canvas_point as canvas_point
+from capa_simulation.components.month_sheet_canvas import data_rect as _data_rect
+from capa_simulation.components.month_sheet_canvas import label_figure as _label_figure
+from capa_simulation.components.month_sheet_canvas import month_figure as _engine_month_figure
+from capa_simulation.components.month_sheet_canvas import note_row as _note_row
+from capa_simulation.components.month_sheet_canvas import one as _one
+from capa_simulation.components.month_sheet_canvas import percent as _percent
+from capa_simulation.components.month_sheet_canvas import signed_int as _signed_int
+from capa_simulation.components.month_sheet_canvas import signed_one as _signed_one
+from capa_simulation.components.month_sheet_canvas import (
+    title_detail_lines as title_detail_lines,
+)
+from capa_simulation.components.month_sheet_canvas import title_row as _title_row
+from capa_simulation.components.month_sheet_canvas import (
+    title_row_height as title_row_height,
+)
+from capa_simulation.components.plotly_layout import flush_layout_items
 from capa_simulation.components.shortening_timeline import month_day
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_contract import (
@@ -133,40 +183,19 @@ __all__ = [
 MONTH: Final = "생산계획년월"
 
 # ------------------------------------------------------------------ 치수
-# 머리는 HOME 주요공정·상세 B/N 과 같은 36px 다. 행 높이는 요약 표 27px(`TABLE_ROW_HEIGHT_PX`),
-# 둘째 줄이 있는 칸(단축 후 값)은 36px, 호기 줄은 라벨 두 줄이 드는 34px 다.
-HEADER_HEIGHT_PX: Final = 36
-# 구획 제목 줄 — 세부 글이 없으면 제목 한 줄(28px), 있으면 제목 칸(26px) 아래에 세부 글 줄(14px)을
-# 쌓고 바닥 여백(4px)을 둔다.
-TITLE_HEIGHT_PX: Final = 28
-TITLE_LINE_PX: Final = 26
-TITLE_DETAIL_LINE_PX: Final = 14
-TITLE_BOTTOM_PX: Final = 4
+# 머리 36px·값 행 27px·제목 줄·글자 크기는 엔진(`month_sheet_canvas`)의 값이다(위에서 다시
+# 내보낸다). 여기는 이 캔버스만의 행 — 둘째 줄이 있는 칸(단축 후 값)은 36px, 호기 줄은 라벨 두
+# 줄이 드는 34px 다.
 # ① 제목 세부 글. 그 줄 높이(`SUMMARY_TITLE_HEIGHT_PX`, 파일 끝)로 화면 확인 스크립트가 확보율 줄의
 # 세로 자리를 센다.
 SUMMARY_TITLE_DETAIL: Final = "Core Data · 대수 · 확보율에 쓰는 숫자"
-VALUE_ROW_HEIGHT_PX: Final = tokens.TABLE_ROW_HEIGHT_PX
 PRODUCT_ROW_HEIGHT_PX: Final = 23
 TWO_LINE_ROW_HEIGHT_PX: Final = 36
 UNIT_ROW_HEIGHT_PX: Final = 34
 ARROW_ROW_HEIGHT_PX: Final = 26
-NOTE_ROW_HEIGHT_PX: Final = 24
-# 칠한 칸은 행·열 경계에서 이만큼 들어온다 — 월 경계선이 칸 사이 틈에 남아 한 칸씩 읽힌다.
-CELL_INSET_PX: Final = 3
 # 부족 달 머리 아래 띠와 지금 보는 달 밑줄.
 SHORTAGE_STRIP_PX: Final = 4
 SELECTED_UNDERLINE_PX: Final = 1.5
-SELECTED_BORDER_PX: Final = 2
-LABEL_INSET_PX: Final = 10
-PRODUCT_INDENT_PX: Final = 14
-HEADER_FONT_PX: Final = 14
-TITLE_FONT_PX: Final = 13
-TITLE_DETAIL_FONT_PX: Final = 11
-LABEL_FONT_PX: Final = 13
-PRODUCT_FONT_PX: Final = 12
-DETAIL_FONT_PX: Final = 11
-VALUE_FONT_PX: Final = 13
-SUB_VALUE_FONT_PX: Final = 11
 TRACK_TEXT_FONT_PX: Final = 11
 ARROW_TEXT_FONT_PX: Final = 10
 # ③·④ 의 줄 상한. 넘으면 「n대 더」 한 줄을 두고, 페이지의 「더 보기」가 모두 그린다.
@@ -193,24 +222,9 @@ ROW_DYNAMIC_BALANCE: Final = "dynamic_balance"
 ROW_UNIT_PREFIX: Final = "unit:"
 ROW_EXIT_PREFIX: Final = "exit:"
 ROW_ARROW_PREFIX: Final = "arrow:"
-ROW_TITLE_PREFIX: Final = "title:"
-ROW_NOTE_PREFIX: Final = "note:"
-CUSTOMDATA_MONTH: Final = 0
-CUSTOMDATA_ROW: Final = 1
-CUSTOMDATA_HOVER: Final = 2
 
-_MINUS: Final = "−"
-_EMPTY: Final = "—"
 _SHORT_STATUSES: Final = frozenset({"warning", "shortage"})
 _STATUS_NAMES: Final[Mapping[str, str]] = {"secure": "확보", "warning": "경고", "shortage": "부족"}
-
-# 행 종류. 그리는 길이 종류마다 다르다.
-_HEADER: Final = "header"
-_TITLE: Final = "title"
-_VALUE: Final = "value"
-_NOTE: Final = "note"
-_UNIT: Final = "unit"
-_ARROW: Final = "arrow"
 
 
 @dataclass(frozen=True, eq=False)
@@ -261,39 +275,6 @@ class ProcessCapaCanvas(NamedTuple):
     """위에서 아래로 그린 행 id."""
 
 
-@dataclass
-class _Cell:
-    text: str = ""
-    sub: str = ""
-    fill: str | None = None
-    muted: bool = False
-    bold: bool = False
-    hover: str = ""
-
-
-@dataclass
-class _Row:
-    row_id: str
-    kind: str
-    height: float
-    label: str = ""
-    detail: str = ""
-    detail_lines: tuple[str, ...] = ()
-    """구획 제목 줄의 세부 글을 라벨 칸 폭으로 나눈 줄(`title_detail_lines`)."""
-
-    label_fill: str | None = None
-    month_fill: str | None = None
-    label_bold: bool = False
-    label_muted: bool = False
-    indent: bool = False
-    group_start: bool = False
-    clickable: bool = True
-    cells: dict[int, _Cell] = field(default_factory=dict)
-    hover: str = ""
-    payload: Any = None
-    top: float = 0.0
-
-
 # ================================================================== 공개 함수
 
 
@@ -315,7 +296,7 @@ def build_process_capa_canvas(
       과부족 칸·부족 띠의 색을 **한 길**로 정한다.
     - `product_demand` 는 「제품별 소요대수」를 펼쳤을 때의 `build_process_product_demand` 결과다.
       None 이면 접힌 것이다(소요대수 ▸).
-    - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(실행 Capa·선행 반영 값,
+    - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(확보율 보정·선행 반영 값,
       회색).
     - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 페이지가 까닭 카드를 둔다).
     - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
@@ -345,11 +326,7 @@ def build_process_capa_canvas(
         if not today_position.before and not today_position.after:
             today_x = today_position.x
 
-    top = 0.0
-    for row in rows:
-        row.top = top
-        top += row.height
-    height = int(math.ceil(top))
+    height = stack_rows(rows)
     shortage_indices = [
         index_of[month] for month, status in statuses.items() if status in _SHORT_STATUSES
     ]
@@ -376,35 +353,6 @@ def build_process_capa_canvas(
         hidden_arrow_units=hidden_arrow_units,
         row_ids=tuple(row.row_id for row in rows),
     )
-
-
-def canvas_point(selection_state: object) -> tuple[int, str] | None:
-    """`st.plotly_chart` 선택 상태(`{"selection": {"points": [...]}}`)에서 누른 칸의 (달, 행 id).
-
-    빈 선택(같은 칸을 다시 누르거나 더블클릭)이나 표적이 아닌 점이면 None 이다 — 그때 페이지는
-    보던 달을 그대로 둔다.
-    """
-    if not isinstance(selection_state, Mapping):
-        return None
-    selection = selection_state.get("selection")
-    if not isinstance(selection, Mapping):
-        return None
-    points = selection.get("points")
-    if not isinstance(points, Sequence) or isinstance(points, str):
-        return None
-    for point in points:
-        if not isinstance(point, Mapping):
-            continue
-        data = point.get("customdata")
-        if not isinstance(data, Sequence) or isinstance(data, str) or len(data) <= CUSTOMDATA_ROW:
-            continue
-        month, row_id = data[CUSTOMDATA_MONTH], data[CUSTOMDATA_ROW]
-        if isinstance(month, bool) or not isinstance(month, (int, float)):
-            continue
-        if not isinstance(row_id, str):
-            continue
-        return int(month), row_id
-    return None
 
 
 # ================================================================== ① 공식 기준
@@ -596,7 +544,7 @@ def _summary_rows(
                 muted=True,
                 hover=(
                     f"<b>{month_label(month)}</b> · HOME 표시 확보율 {_percent(value)}"
-                    "<br>실행 Capa·선행 B/O 를 얹은 값 — 위 확보율은 원 확보율"
+                    "<br>확보율 보정·선행 B/O 를 얹은 값 — 위 확보율은 원 확보율"
                 ),
             )
         rows.append(home)
@@ -800,7 +748,7 @@ def _compare_cell(
 ) -> _Cell:
     if static_short and dynamic_short:
         return _Cell(
-            text="S✕·D✕",
+            text="기준✕·일정✕",
             fill=None if past else tokens.STATUS_SHORTAGE,
             bold=not past,
             muted=past,
@@ -817,10 +765,10 @@ def _compare_cell(
         # 보유로도 부족이면 단축할 것이 없는 달이 아니라 투자를 볼 달이다(설계 logic_final 3).
         if cause == CAUSE_OWNED_SHORT:
             hover += f"<br>원인: {CAUSE_OWNED_SHORT} — 투자 검토(단축으로 못 메웁니다)"
-        return _Cell(text="S✕·D✓", muted=True, hover=hover)
+        return _Cell(text="기준✕·일정✓", muted=True, hover=hover)
     if dynamic_short:
         return _Cell(
-            text="S✓·D✕",
+            text="기준✓·일정✕",
             muted=True,
             hover=f"{head} · 공식은 충족 — 설비 일정 기준으로만 부족(참고)",
         )
@@ -1098,224 +1046,6 @@ def _target_for(target: TargetLevel, month: int) -> float:
     return target.for_month(month) if isinstance(target, MonthlyTarget) else float(target)
 
 
-# ================================================================== 공용 행
-
-
-def title_detail_lines(detail: str) -> tuple[str, ...]:
-    """구획 제목 세부 글을 라벨 칸 폭(260px − 좌우 여백)에 맞춰 「 · 」 마디로 나눈 줄들.
-
-    마디는 자르지 않고 다음 줄로 넘긴다. 한 마디가 칸보다 길 때만 그 줄을 말줄임한다. 비면 ().
-    """
-    if not detail:
-        return ()
-    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX) / TITLE_DETAIL_FONT_PX
-    lines: list[str] = []
-    current = ""
-    for part in detail.split(" · "):
-        candidate = f"{current} · {part}" if current else part
-        if current and _text_width_units(candidate) > budget:
-            lines.append(_fit(current, budget))
-            current = part
-        else:
-            current = candidate
-    if current:
-        lines.append(_fit(current, budget))
-    return tuple(lines)
-
-
-def title_row_height(detail: str) -> int:
-    """구획 제목 줄 높이(px) — 세부 글 줄 수만큼 높아진다."""
-    lines = title_detail_lines(detail)
-    if not lines:
-        return TITLE_HEIGHT_PX
-    return TITLE_LINE_PX + len(lines) * TITLE_DETAIL_LINE_PX + TITLE_BOTTOM_PX
-
-
-def _title_row(name: str, title: str, detail: str) -> _Row:
-    return _Row(
-        f"{ROW_TITLE_PREFIX}{name}",
-        _TITLE,
-        title_row_height(detail),
-        label=title,
-        detail=detail,
-        detail_lines=title_detail_lines(detail),
-        label_bold=True,
-        label_fill=tokens.CHART_CANVAS,
-        month_fill=tokens.CHART_CANVAS,
-        group_start=True,
-        clickable=False,
-    )
-
-
-def _note_row(name: str, text: str) -> _Row:
-    return _Row(
-        f"{ROW_NOTE_PREFIX}{name}",
-        _NOTE,
-        NOTE_ROW_HEIGHT_PX,
-        label=text,
-        label_muted=True,
-        label_fill=tokens.SURFACE_CLASSIFICATION,
-        clickable=False,
-    )
-
-
-# ================================================================== 라벨 Figure
-
-
-def _label_figure(rows: Sequence[_Row], height: int) -> go.Figure:
-    figure = go.Figure()
-    figure.update_layout(
-        height=height,
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.SURFACE,
-        showlegend=False,
-        dragmode=False,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
-        xaxis={**_HIDDEN_AXIS, "range": [0, 1]},
-        yaxis={**_HIDDEN_AXIS, "range": [0, height]},
-    )
-    shapes: list[dict[str, Any]] = []
-    annotations: list[dict[str, Any]] = []
-    for position, row in enumerate(rows):
-        y0 = 1 - (row.top + row.height) / height
-        y1 = 1 - row.top / height
-        middle = (y0 + y1) / 2
-        if row.label_fill is not None:
-            shapes.append(_paper_rect(0, 1, y0, y1, row.label_fill))
-        if position > 0:
-            strong = row.group_start or rows[position - 1].kind == _HEADER
-            shapes.append(_paper_rule(y1, strong=strong))
-        budget = DASHBOARD_LABEL_COLUMN_WIDTH_PX - 2 * LABEL_INSET_PX
-        if row.kind == _TITLE:
-            annotations += _title_annotations(row, budget, height)
-            continue
-        indent = PRODUCT_INDENT_PX if row.indent else 0
-        font = PRODUCT_FONT_PX if row.indent else LABEL_FONT_PX
-        two_lines = bool(row.detail) and row.kind == _UNIT
-        annotations.append(
-            _label_annotation(
-                _fit(row.label, (budget - indent) / font),
-                y=middle,
-                shift=7 if two_lines else 0,
-                indent=indent,
-                size=font,
-                bold=row.label_bold,
-                muted=row.label_muted,
-            )
-        )
-        if two_lines:
-            annotations.append(
-                _label_annotation(
-                    _fit(row.detail, budget / DETAIL_FONT_PX),
-                    y=middle,
-                    shift=-8,
-                    indent=0,
-                    size=DETAIL_FONT_PX,
-                    bold=False,
-                    muted=True,
-                )
-            )
-    append_layout_items(figure, shapes=shapes, annotations=annotations)
-    add_figure_outer_border(figure, emphasize_bottom=True)
-    return figure
-
-
-def _title_annotations(row: _Row, budget: float, height: int) -> list[dict[str, Any]]:
-    """구획 제목(굵게) 한 줄과 그 아래 세부 글 줄들(회색). 라벨 칸은 스크롤되지 않아 늘 보인다."""
-
-    def paper_y(offset: float) -> float:
-        return 1 - (row.top + offset) / height
-
-    title_center = (TITLE_LINE_PX if row.detail_lines else TITLE_HEIGHT_PX) / 2
-    annotations = [
-        _label_annotation(
-            _fit(row.label, budget / TITLE_FONT_PX),
-            y=paper_y(title_center),
-            shift=0,
-            indent=0,
-            size=TITLE_FONT_PX,
-            bold=True,
-            muted=False,
-        )
-    ]
-    for position, line in enumerate(row.detail_lines):
-        annotations.append(
-            _label_annotation(
-                line,
-                y=paper_y(TITLE_LINE_PX + (position + 0.5) * TITLE_DETAIL_LINE_PX),
-                shift=0,
-                indent=0,
-                size=TITLE_DETAIL_FONT_PX,
-                bold=False,
-                muted=True,
-            )
-        )
-    return annotations
-
-
-def _label_annotation(
-    text: str,
-    *,
-    y: float,
-    shift: float,
-    indent: float,
-    size: int,
-    bold: bool,
-    muted: bool,
-) -> dict[str, Any]:
-    escaped = html.escape(text)
-    return {
-        "x": 0,
-        "y": y,
-        "xref": "paper",
-        "yref": "paper",
-        "xanchor": "left",
-        "yanchor": "middle",
-        "xshift": LABEL_INSET_PX + indent,
-        "yshift": shift,
-        "text": f"<b>{escaped}</b>" if bold else escaped,
-        "showarrow": False,
-        "font": {
-            "color": tokens.TEXT_MUTED if muted else tokens.TEXT,
-            "size": size,
-            "family": tokens.FONT_FAMILY,
-        },
-    }
-
-
-def _paper_rect(x0: float, x1: float, y0: float, y1: float, color: str) -> dict[str, Any]:
-    return {
-        "type": "rect",
-        "x0": x0,
-        "x1": x1,
-        "y0": y0,
-        "y1": y1,
-        "xref": "paper",
-        "yref": "paper",
-        "fillcolor": color,
-        "line": {"width": 0},
-        "layer": "below",
-    }
-
-
-def _paper_rule(y: float, *, strong: bool) -> dict[str, Any]:
-    return {
-        "type": "line",
-        "x0": 0,
-        "x1": 1,
-        "y0": y,
-        "y1": y,
-        "xref": "paper",
-        "yref": "paper",
-        "line": {
-            "color": tokens.BORDER_STRONG if strong else tokens.BORDER,
-            "width": 1.5 if strong else tokens.GRID_LINE_WIDTH_PX,
-        },
-        "layer": "above",
-    }
-
-
 # ================================================================== 월 Figure
 
 
@@ -1330,227 +1060,93 @@ def _month_figure(
     dynamic_rows: Sequence[_Row],
     dynamic: DynamicCanvasInput | None,
 ) -> go.Figure:
+    """엔진 월 Figure(`month_sheet_canvas.month_figure`)에 이 캔버스만의 그림을 훅으로 얹는다 —
+    ③ 호기 줄의 선·표지와 ④ 화살표(행마다), 부족 달 띠(머리 뒤), 지금 보는 달 열과 오늘 점선(끝)."""
     count = len(axis)
-    inset = CELL_INSET_PX / tokens.MONTH_COLUMN_WIDTH_PX
-    header = rows[0]
-    header_bottom = height - header.height
-
-    targets = _Points()
-    fills = _Points()
-    texts: dict[tuple[str, int], _Points] = {}
+    header_bottom = height - rows[0].height
     track = _Track()
-    shapes_below: list[dict[str, Any]] = []
-    shapes_above: list[dict[str, Any]] = []
-    annotations: list[dict[str, Any]] = []
 
-    for position, row in enumerate(rows):
-        bottom = height - row.top - row.height
-        center = bottom + row.height / 2
-        if row.month_fill is not None and row.month_fill != tokens.SURFACE:
-            shapes_below.append(_data_rect(0, count, bottom, bottom + row.height, row.month_fill))
-        if position > 0 and (row.group_start or rows[position - 1].kind == _HEADER):
-            strong_top = bottom + row.height
-            shapes_above.append(_data_hline(strong_top, count))
-        if row.kind == _TITLE:
-            # 제목·세부 글은 라벨 Figure 에 있다 — 여기는 면만 깐다(스크롤로 잘리지 않게).
-            continue
-        for index in range(count):
-            cell = row.cells.get(index)
-            if cell is None:
-                continue
-            if row.clickable:
-                targets.add(
-                    x=index,
-                    y=center,
-                    width=row.height,
-                    data=[int(axis[index]), row.row_id, cell.hover or row.hover],
-                )
-            if cell.fill is not None:
-                fills.add(
-                    x=index + inset,
-                    y=center,
-                    width=row.height - 2 * CELL_INSET_PX,
-                    color=cell.fill,
-                )
-            if row.kind == _HEADER:
-                continue
-            size = PRODUCT_FONT_PX if row.indent else VALUE_FONT_PX
-            if cell.sub:
-                _text_points(texts, cell.muted, size).add(
-                    x=index + 0.5, y=center + 6, text=_bold(cell.text, cell.bold)
-                )
-                _text_points(texts, cell.muted, SUB_VALUE_FONT_PX).add(
-                    x=index + 0.5, y=center - 8, text=_bold(cell.sub, cell.bold)
-                )
-            elif cell.text:
-                _text_points(texts, cell.muted, size).add(
-                    x=index + 0.5, y=center, text=_bold(cell.text, cell.bold)
-                )
+    def draw_row(layers: MonthLayers, row: _Row, center: float, bottom: float) -> None:
         if row.kind == _UNIT and dynamic is not None:
-            _draw_unit(track, row, axis, center, bottom, dynamic, shapes_above, annotations)
+            _draw_unit(track, row, axis, center, bottom, dynamic, layers.above, layers.annotations)
         elif row.kind == _ARROW:
             _draw_arrows(track, row, center, count)
 
-    # 머리: 월 글자, 부족 달 4px 띠, 지금 보는 달 밑줄.
-    header_center = height - header.height / 2
-    for index, month in enumerate(axis):
-        annotations.append(
-            {
-                "x": index + 0.5,
-                "y": header_center,
-                "xref": "x",
-                "yref": "y",
-                "text": f"<b>{html.escape(month_label(month))}</b>",
-                "showarrow": False,
-                "xanchor": "center",
-                "yanchor": "middle",
-                "font": {
-                    "color": tokens.TEXT,
-                    "size": HEADER_FONT_PX,
-                    "family": tokens.FONT_FAMILY,
-                },
-            }
-        )
-    for index in shortage_indices:
-        shapes_above.append(
-            _data_rect(
-                index + 1 / tokens.MONTH_COLUMN_WIDTH_PX,
-                index + 1 - 1 / tokens.MONTH_COLUMN_WIDTH_PX,
-                header_bottom,
-                header_bottom + SHORTAGE_STRIP_PX,
-                tokens.STATUS_SHORTAGE,
-                layer="above",
+    def draw_shortage(layers: MonthLayers) -> None:
+        for index in shortage_indices:
+            layers.above.append(
+                _data_rect(
+                    index + 1 / tokens.MONTH_COLUMN_WIDTH_PX,
+                    index + 1 - 1 / tokens.MONTH_COLUMN_WIDTH_PX,
+                    header_bottom,
+                    header_bottom + SHORTAGE_STRIP_PX,
+                    tokens.STATUS_SHORTAGE,
+                    layer="above",
+                )
             )
-        )
-        # 부족 달 세로 띠 — 행 면 위·칸 색 아래, 머리 아래부터 캔버스 끝까지 같은 달에 이어진다.
-        shapes_below.append(
-            _data_rect(index, index + 1, 0, header_bottom, tokens.SHORTAGE_MONTH_BAND)
-        )
-    # 월 경계 세로선(첫 달 앞은 테두리가 맡는다). 칠한 칸이 경계에서 들어와 선이 그 틈에 남는다.
-    shapes_below += [
-        {
-            "type": "line",
-            "x0": index,
-            "x1": index,
-            "y0": 0,
-            "y1": height,
-            "xref": "x",
-            "yref": "y",
-            "line": {"color": tokens.BORDER, "width": tokens.GRID_LINE_WIDTH_PX},
-            "layer": "below",
-        }
-        for index in range(1, count)
-    ]
-    if selected_index is not None:
-        underline_y = header_bottom + 8
-        shapes_above.append(
-            {
-                "type": "line",
-                "x0": selected_index + 0.24,
-                "x1": selected_index + 0.76,
-                "y0": underline_y,
-                "y1": underline_y,
-                "xref": "x",
-                "yref": "y",
-                "line": {"color": tokens.ACCENT, "width": SELECTED_UNDERLINE_PX},
-                "layer": "above",
-            }
-        )
-        edge = 1 / tokens.MONTH_COLUMN_WIDTH_PX
-        shapes_above.append(
-            {
-                "type": "rect",
-                "x0": selected_index + edge,
-                "x1": selected_index + 1 - edge,
-                "y0": 1,
-                "y1": height - 1,
-                "xref": "x",
-                "yref": "y",
-                "fillcolor": tokens.TRANSPARENT,
-                "line": {"color": tokens.ACCENT, "width": SELECTED_BORDER_PX},
-                "layer": "above",
-            }
-        )
-    if today_x is not None:
-        # 오늘 점선 — ②~④ 본문에만 긋고 구획 제목 줄은 건너뛴다(제목 글을 가르지 않는다). 무엇인지는
-        # ② 제목 줄 글이 적는다.
-        shapes_above += [
-            {
-                "type": "line",
-                "x0": today_x,
-                "x1": today_x,
-                "y0": height - (end.top + end.height),
-                "y1": height - start.top,
-                "xref": "x",
-                "yref": "y",
-                "line": {"color": tokens.TEXT_MUTED, "width": 1, "dash": "dash"},
-                "layer": "above",
-            }
-            for start, end in _body_runs(dynamic_rows)
-        ]
+            # 부족 달 세로 띠 — 행 면 위·칸 색 아래, 머리 아래부터 캔버스 끝까지 같은 달에 이어진다.
+            layers.below.append(
+                _data_rect(index, index + 1, 0, header_bottom, tokens.SHORTAGE_MONTH_BAND)
+            )
 
-    traces: list[Any] = [
-        go.Bar(
-            x=[1.0] * len(targets.x),
-            y=targets.y,
-            base=targets.x,
-            width=targets.width,
-            orientation="h",
-            marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
-            customdata=targets.data,
-            hovertemplate="%{customdata[2]}<extra></extra>",
-            showlegend=False,
-        ),
-        go.Bar(
-            x=[1.0 - 2 * inset] * len(fills.x),
-            y=fills.y,
-            base=fills.x,
-            width=fills.width,
-            orientation="h",
-            marker={"color": fills.color, "line": {"width": 0}},
-            hoverinfo="skip",
-            showlegend=False,
-        ),
-        *track.traces(),
-    ]
-    for (color, size), points in sorted(texts.items()):
-        traces.append(
-            go.Scatter(
-                x=points.x,
-                y=points.y,
-                mode="text",
-                text=points.text,
-                textposition="middle center",
-                textfont={"color": color, "size": size, "family": tokens.FONT_FAMILY_NUMERIC},
-                hoverinfo="skip",
-                showlegend=False,
+    def finish(layers: MonthLayers) -> None:
+        if selected_index is not None:
+            underline_y = header_bottom + 8
+            layers.above.append(
+                {
+                    "type": "line",
+                    "x0": selected_index + 0.24,
+                    "x1": selected_index + 0.76,
+                    "y0": underline_y,
+                    "y1": underline_y,
+                    "xref": "x",
+                    "yref": "y",
+                    "line": {"color": tokens.ACCENT, "width": SELECTED_UNDERLINE_PX},
+                    "layer": "above",
+                }
             )
-        )
-    figure = go.Figure(traces)
-    figure.update_layout(
-        height=height,
-        width=count * tokens.MONTH_COLUMN_WIDTH_PX,
-        autosize=False,
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        paper_bgcolor=tokens.CHART_CANVAS,
-        plot_bgcolor=tokens.SURFACE,
-        font={"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
-        barmode="overlay",
-        bargap=0,
-        showlegend=False,
-        dragmode=False,
-        hovermode="closest",
-        hoverlabel={
-            "bgcolor": tokens.SURFACE,
-            "bordercolor": tokens.BORDER_STRONG,
-            "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
-        },
-        xaxis={**_HIDDEN_AXIS, "range": [0, count]},
-        yaxis={**_HIDDEN_AXIS, "range": [0, height]},
+            edge = 1 / tokens.MONTH_COLUMN_WIDTH_PX
+            layers.above.append(
+                {
+                    "type": "rect",
+                    "x0": selected_index + edge,
+                    "x1": selected_index + 1 - edge,
+                    "y0": 1,
+                    "y1": height - 1,
+                    "xref": "x",
+                    "yref": "y",
+                    "fillcolor": tokens.TRANSPARENT,
+                    "line": {"color": tokens.ACCENT, "width": SELECTED_BORDER_PX},
+                    "layer": "above",
+                }
+            )
+        if today_x is not None:
+            # 오늘 점선 — ②~④ 본문에만 긋고 구획 제목 줄은 건너뛴다(제목 글을 가르지 않는다).
+            # 무엇인지는 ② 제목 줄 글이 적는다.
+            layers.above += [
+                {
+                    "type": "line",
+                    "x0": today_x,
+                    "x1": today_x,
+                    "y0": height - (end.top + end.height),
+                    "y1": height - start.top,
+                    "xref": "x",
+                    "yref": "y",
+                    "line": {"color": tokens.TEXT_MUTED, "width": 1, "dash": "dash"},
+                    "layer": "above",
+                }
+                for start, end in _body_runs(dynamic_rows)
+            ]
+        layers.traces += track.traces()
+
+    return _engine_month_figure(
+        rows,
+        axis,
+        height,
+        row_hook=draw_row,
+        header_hook=draw_shortage,
+        finish_hook=finish,
     )
-    append_layout_items(figure, shapes=shapes_below + shapes_above, annotations=annotations)
-    add_figure_outer_border(figure, emphasize_left=False, emphasize_bottom=True)
-    return figure
 
 
 def _body_runs(rows: Sequence[_Row]) -> list[tuple[_Row, _Row]]:
@@ -1569,74 +1165,6 @@ def _body_runs(rows: Sequence[_Row]) -> list[tuple[_Row, _Row]]:
     if start is not None and previous is not None:
         runs.append((start, previous))
     return runs
-
-
-def _data_rect(
-    x0: float, x1: float, y0: float, y1: float, color: str, *, layer: str = "below"
-) -> dict[str, Any]:
-    return {
-        "type": "rect",
-        "x0": x0,
-        "x1": x1,
-        "y0": y0,
-        "y1": y1,
-        "xref": "x",
-        "yref": "y",
-        "fillcolor": color,
-        "line": {"width": 0},
-        "layer": layer,
-    }
-
-
-def _data_hline(y: float, count: int) -> dict[str, Any]:
-    """묶음 경계 — 1.5px `BORDER_STRONG`. 행 경계는 라벨 칸에만 긋는다."""
-    return {
-        "type": "line",
-        "x0": 0,
-        "x1": count,
-        "y0": y,
-        "y1": y,
-        "xref": "x",
-        "yref": "y",
-        "line": {"color": tokens.BORDER_STRONG, "width": 1.5},
-        "layer": "above",
-    }
-
-
-class _Points:
-    """trace 하나에 모을 점들."""
-
-    def __init__(self) -> None:
-        self.x: list[float] = []
-        self.y: list[float] = []
-        self.width: list[float] = []
-        self.color: list[str] = []
-        self.text: list[str] = []
-        self.data: list[list[object]] = []
-
-    def add(
-        self,
-        *,
-        x: float,
-        y: float,
-        width: float = 0.0,
-        color: str = "",
-        text: str = "",
-        data: list[object] | None = None,
-    ) -> None:
-        self.x.append(x)
-        self.y.append(y)
-        self.width.append(width)
-        self.color.append(color)
-        self.text.append(text)
-        self.data.append(data or [])
-
-
-def _text_points(texts: dict[tuple[str, int], _Points], muted: bool, size: int) -> _Points:
-    """글자색마다 trace 하나 — 글자색이 한 값이어야 칸을 눌러도 흐려지지 않는다
-    (`keep_unselected_opaque` 는 한 값인 글자색만 못박는다)."""
-    color = tokens.TEXT_MUTED if muted else tokens.TEXT
-    return texts.setdefault((color, size), _Points())
 
 
 # ------------------------------------------------------------------ ③ 호기 줄
@@ -2039,50 +1567,9 @@ def _changed(before: float | None, after: float | None) -> bool:
     return before is not None and after is not None and abs(after - before) > 1e-9
 
 
-def _one(value: float | None) -> str:
-    return _EMPTY if value is None else f"{value:,.1f}"
-
-
-def _percent(value: float | None) -> str:
-    return _EMPTY if value is None else f"{value:.0%}"
-
-
 def _ratio(value: float) -> str:
     """판정 기준 비율을 사람이 적은 꼴로(1.095 → 「1.095」)."""
     return f"{value:g}"
-
-
-def _signed_int(value: int) -> str:
-    """부호 있는 정수 — 여유 「+n」, 부족 「−n」, 0 은 「0」."""
-    if value > 0:
-        return f"+{value:,}"
-    if value < 0:
-        return f"{_MINUS}{abs(value):,}"
-    return "0"
-
-
-def _signed_one(value: float | None) -> str:
-    """부호 있는 환산대수 — 소수 한 자리. 한 자리로 0 이 되는 0 아닌 값은 두 자리로 적는다 — 목표에
-    0.04 대 모자란 칸을 칠해 두고 「0.0」 으로 적으면 왜 칠했는지 읽히지 않는다."""
-    if value is None:
-        return _EMPTY
-    value = round(value, 9)
-    digits = 1 if value == 0 or abs(round(value, 1)) > 0 else 2
-    rounded = round(value, digits)
-    if rounded > 0:
-        return f"+{rounded:,.{digits}f}"
-    if rounded < 0:
-        return f"{_MINUS}{abs(rounded):,.{digits}f}"
-    return "0.0"
-
-
-def _bold(text: str, bold: bool) -> str:
-    escaped = html.escape(text)
-    return f"<b>{escaped}</b>" if bold else escaped
-
-
-def _fit(text: str, budget_units: float) -> str:
-    return _fit_to_units(text, budget_units, _text_width_units)
 
 
 def _day(day: date | None, today: date) -> str:

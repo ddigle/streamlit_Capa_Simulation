@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.services.availability_gap import GapComparison, build_availability_gap
+from capa_simulation.services.availability_sheet import AvailabilitySheet, build_availability_sheet
 from capa_simulation.services.capacity_reference_editor import build_reference_edit_table
 from capa_simulation.services.dashboard import (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS,
@@ -86,8 +87,7 @@ from capa_simulation.services.route_step_editor import route_step_tables
 from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 from capa_simulation.services.securement_cross_check import (
     CrossCheck,
-    build_securement_cross_check,
-    dynamic_available_equipment,
+    cross_check_from_monthly,
 )
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.shortening_baseline import ShorteningBaseline
@@ -1946,6 +1946,70 @@ def get_monthly_equipment_contributions(
     )
 
 
+# (실제 월별 키, 비가동 비운 반사실 월별 키 — 없으면 None, RQ_EQP_OWN·LENT·AVBL 내용 지문)
+AvailabilitySheetCacheKey = tuple[
+    DynamicMonthlyCacheKey, DynamicMonthlyCacheKey | None, str, str, str
+]
+
+
+def availability_sheet_cache_key(
+    actual_key: DynamicMonthlyCacheKey,
+    free_key: DynamicMonthlyCacheKey | None,
+    *,
+    static_owned: pd.DataFrame,
+    static_lent: pd.DataFrame,
+    static_available: pd.DataFrame,
+) -> AvailabilitySheetCacheKey:
+    """`get_availability_sheet` 의 키. 월별 키 둘은 구간·기존보유·Cut-off·달·환산비 지문을 담고,
+    Static 세 표는 공정 × 월이라 작아 내용을 해시한다."""
+    return (
+        actual_key,
+        free_key,
+        frame_digest(static_owned),
+        frame_digest(static_lent),
+        frame_digest(static_available),
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def get_availability_sheet(
+    cache_key: AvailabilitySheetCacheKey,
+    _actual_monthly: pd.DataFrame,
+    _free_spans: pd.DataFrame | None,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _conversion_ratios: Mapping[str, float] | None,
+    _static_owned: pd.DataFrame,
+    _static_lent: pd.DataFrame,
+    _static_available: pd.DataFrame,
+) -> AvailabilitySheet:
+    """「Static 대비 일정」 비교 시트(`build_availability_sheet`, 9행의 월 × 공정 재료).
+
+    `_actual_monthly` 는 키의 실제 월별 키로 받은 월별 분해(`get_availability_comparison`)이고,
+    `_free_spans` 는 같은 마스터·같은 범위에서 비가동만 비운 생애주기 구간이다(키의 반사실 월별
+    키를 만든 그 구간 — 페이지는 `get_equipment_lifecycle_spans` 에 빈 비가동으로 받는다). 반사실
+    키가 None 이면 보유·대여를 비운 시트다(「가용대수 비교」 그림 — 반사실 구간을 만들지 않는다).
+    프레임은 해시하지 않는다(`_` 인자 — 5만 행 표본 해시 함정).
+    """
+    actual_key, free_key, _, _, _ = cache_key
+    months = actual_key[3]
+    free_monthly = (
+        None
+        if free_key is None or _free_spans is None
+        else build_monthly_equipment_availability(
+            _free_spans, _baseline, _cutoff, months, conversion_ratios=_conversion_ratios
+        )
+    )
+    return build_availability_sheet(
+        _actual_monthly,
+        free_monthly,
+        _static_owned,
+        _static_lent,
+        _static_available,
+        months,
+    )
+
+
 # Main(호기 현황·비가동 호기·Qual 일정)의 판정. 페이지에 fragment 가 없어 같은 보기를 열어 둔 채
 # 다른 위젯·사이드바를 만져도 페이지 전체가 다시 돌므로 판정을 캐시한다. 키는 **거른 뒤의**
 # 마스터·비가동 내용 지문과 그 판정의 날짜 인자다 — 공정·추가 조건 필터와 저장본·샘플 전환이 지문을
@@ -2039,7 +2103,7 @@ class SecurementCrossCheckResult(NamedTuple):
 def securement_cross_check_result(
     static: pd.DataFrame, monthly: pd.DataFrame, required_equipment: pd.DataFrame
 ) -> SecurementCrossCheckResult:
-    """`build_securement_cross_check` 를 맞댈 것이 있을 때만 부른다(캐시 없음).
+    """`cross_check_from_monthly` 를 맞댈 것이 있을 때만 부른다(캐시 없음).
 
     소요대수나 Static 이 비면 맞대지 않는다. 맞대지 못하면(`KeyError`·`ValueError`) 그대로 올라간다.
     """
@@ -2049,9 +2113,7 @@ def securement_cross_check_result(
         return SecurementCrossCheckResult(has_demand=True, check=None)
     return SecurementCrossCheckResult(
         has_demand=True,
-        check=build_securement_cross_check(
-            static, dynamic_available_equipment(monthly), required_equipment
-        ),
+        check=cross_check_from_monthly(static, monthly, required_equipment),
     )
 
 

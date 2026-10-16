@@ -31,6 +31,11 @@ from capa_simulation.services.availability_gap import (
     build_availability_gap,
     gap_matrix,
 )
+from capa_simulation.services.availability_sheet import (
+    ROW_GAP_AVAILABLE,
+    build_availability_sheet,
+    sheet_view,
+)
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
 )
@@ -139,8 +144,12 @@ def test_the_panel_accepts_a_real_static_frame(tmp_path: Path) -> None:
     # 소계 = 기존보유 3 + 가용 1 = 4, Static 6 → GAP -2
     assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "202610"] == 4.0
     assert matrix.loc[GAP_ROW, "202610"] == -2.0
-    # Figure 가 실제로 만들어지는지도 본다 — 빈 행이 섞여도 죽지 않아야 한다.
-    figure = build_availability_gap_figure(matrix)
+    # 화면 그림은 비교 시트(환산 축)를 그린다 — 환산비가 없으면 같은 값이다. Figure 가 실제로
+    # 만들어지는지도 본다.
+    sheet = build_availability_sheet(monthly, None, None, None, static, [202610])
+    view = sheet_view(sheet, processes=["Die Attach"])
+    assert view.value(ROW_GAP_AVAILABLE, 202610) == -2.0
+    figure = build_availability_gap_figure(view)
     assert len(figure.data) == 3
 
 

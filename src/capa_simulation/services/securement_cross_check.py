@@ -28,6 +28,13 @@ Dynamic 은 Cut-off 원장에 적힌 공정만 덮는다. 나머지 공정은 `�
 이유는 **채운 자리는 비교가 아니라 같은 값을 두 번 본 것**이기 때문이다. 화면이 그
 구분을 반드시 드러내야 한다 — 안 그러면 「차이 없음」으로 읽힌다.
 
+**Static 으로 채우는 것은 Dynamic 에 공정 자체가 없을 때뿐이다.** Cut-off 가 있어 월별 Dynamic
+에 (어떤 분류로든) 행이 있는 공정이 어느 달 가용 소계만 없으면 — 셋업 진행중 호기뿐인 공정, 한 달
+내내 비가동인 공정 — 그 달 Dynamic 가용은 **0** 이다(`cross_check_from_monthly`). 필요단축일정의
+「가용 행이 없는 달은 0 대」, 비교 시트(`availability_sheet`)의 설비 일정 기준 가용과 같은 값이다.
+그 칸을 Static 으로 채우면 차이가 0 으로 숨고, 어느 공정에도 가용 소계가 없는 달은 맞댈 달에서
+통째로 빠진다.
+
 ## 기준정보에 없는 공정
 
 거꾸로 Dynamic 에만 있는 공정(설비 마스터의 `공정소분류` 가 기준정보 `공정` 과 다른 이름)은
@@ -38,6 +45,7 @@ Dynamic 은 Cut-off 원장에 적힌 공정만 덮는다. 나머지 공정은 `�
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -49,7 +57,9 @@ __all__ = [
     "CROSS_CHECK_COLUMNS",
     "CrossCheck",
     "build_securement_cross_check",
+    "cross_check_from_monthly",
     "dynamic_available_equipment",
+    "dynamic_coverage",
 ]
 
 CROSS_CHECK_COLUMNS = (
@@ -104,10 +114,42 @@ def dynamic_available_equipment(monthly: pd.DataFrame, *, weighted: bool = True)
     return result.rename(columns={column: "가용대수"})
 
 
+def dynamic_coverage(monthly: pd.DataFrame) -> tuple[frozenset[int], frozenset[str]]:
+    """월별 Dynamic 이 덮는 (달, 공정) — 어떤 분류로든 행이 있는 자리. 가용 소계가 없어도 든다."""
+    if monthly.empty:
+        return frozenset(), frozenset()
+    months = pd.to_numeric(monthly["생산계획년월"], errors="coerce").dropna()
+    processes = {str(value).strip() for value in monthly["공정"].dropna() if str(value).strip()}
+    return frozenset(int(month) for month in months), frozenset(processes)
+
+
+def cross_check_from_monthly(
+    static_available: pd.DataFrame,
+    monthly: pd.DataFrame,
+    required_equipment: pd.DataFrame,
+) -> CrossCheck:
+    """월별 Dynamic 분해(`build_monthly_equipment_availability`)로 맞댄다 — 화면이 부르는 길.
+
+    분자는 환산 축 가용 소계(`dynamic_available_equipment`)이고, 덮는 달·공정은 분류와 상관없이 월별
+    프레임의 행으로 정한다(`dynamic_coverage`). 그래서 Dynamic 공정의 가용 소계가 없는 달은 0 이다.
+    """
+    months, processes = dynamic_coverage(monthly)
+    return build_securement_cross_check(
+        static_available,
+        dynamic_available_equipment(monthly),
+        required_equipment,
+        dynamic_months=months,
+        dynamic_processes=processes,
+    )
+
+
 def build_securement_cross_check(
     static_available: pd.DataFrame,
     dynamic_available: pd.DataFrame,
     required_equipment: pd.DataFrame,
+    *,
+    dynamic_months: Collection[int] | None = None,
+    dynamic_processes: Collection[str] | None = None,
 ) -> CrossCheck:
     """같은 소요대수에 두 가용대수를 각각 나눈 결과.
 
@@ -117,14 +159,25 @@ def build_securement_cross_check(
     조회기간(월)은 서로 다른 위젯이라 범위가 어긋난다. 좁히지 않으면 시나리오 쪽에만
     있는 달에서 모든 공정이 Static 으로 채워지고, 그 공정들이 「Cut-off 가 없다」로
     잘못 보고된다 — 실제로는 그 달에 설비 상태를 안 만들었을 뿐이다.
+
+    `dynamic_months`·`dynamic_processes` 는 Dynamic 이 덮는 달·공정(`dynamic_coverage`)이다. 주면
+    맞댈 달을 그 달로 정하고, 그 공정의 빈 칸은 Static 이 아니라 0 으로 채운다. 주지 않으면 가용
+    프레임에 행이 있는 달·공정이다.
     """
-    months = _dynamic_months(dynamic_available)
+    months = (
+        {int(month) for month in dynamic_months}
+        if dynamic_months is not None
+        else _dynamic_months(dynamic_available)
+    )
+    covered = {str(name).strip() for name in dynamic_processes or ()}
     if months:
         static_available = _only_months(static_available, months)
         required_equipment = _only_months(required_equipment, months)
 
     static_rate = calculate_securement_rate(static_available, required_equipment)
-    filled, fallback = _fill_missing_from_static(dynamic_available, static_available, static_rate)
+    filled, fallback = _fill_missing_from_static(
+        dynamic_available, static_available, static_rate, covered
+    )
     dynamic_rate = calculate_securement_rate(filled, required_equipment)
 
     merged = static_rate.loc[:, ["생산계획년월", "공정", "소요대수", "가용대수", "확보율"]].rename(
@@ -141,7 +194,7 @@ def build_securement_cross_check(
     result = result.sort_values(["생산계획년월", "공정"]).reset_index(drop=True)
     static_processes = {str(value) for value in static_rate["공정"].dropna()}
     # 확보율 계산이 공정명 앞뒤 공백을 떼므로(`calculate_securement_rate`) 여기서도 뗀다.
-    dynamic_processes = (
+    dynamic_names = covered | (
         {str(value).strip() for value in dynamic_available["공정"].dropna()}
         if not dynamic_available.empty
         else set()
@@ -156,7 +209,7 @@ def build_securement_cross_check(
         rows=result.loc[:, list(CROSS_CHECK_COLUMNS)],
         fallback_processes=fallback,
         months=sorted(compared_months if months else months),
-        dynamic_only_processes=sorted(dynamic_processes - static_processes),
+        dynamic_only_processes=sorted(dynamic_names - static_processes),
     )
 
 
@@ -178,8 +231,10 @@ def _fill_missing_from_static(
     dynamic_available: pd.DataFrame,
     static_available: pd.DataFrame,
     static_rate: pd.DataFrame,
+    dynamic_processes: Collection[str] = (),
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Dynamic 이 못 덮는 월·공정을 Static 으로 채운다. 채운 공정 이름을 함께 돌려준다."""
+    """Dynamic 이 못 덮는 월·공정을 채운다 — Dynamic 이 덮는 공정(`dynamic_processes`)의 빈 칸은 0,
+    나머지는 Static 이다. Static 으로 채운 공정 이름을 함께 돌려준다."""
     needed = static_rate.loc[:, ["생산계획년월", "공정"]].drop_duplicates()
     if dynamic_available.empty:
         covered = pd.DataFrame({"생산계획년월": [], "공정": []})
@@ -197,6 +252,12 @@ def _fill_missing_from_static(
         how="left",
     )
     patch["가용대수"] = patch["가용대수"].fillna(0.0)
+    # 0 으로 채울지는 `missing`·`patch` 에서 따로 잰다. Static 에 같은 (월, 공정) 행이 둘 이상이면
+    # `patch` 가 `missing` 보다 길어 한쪽 마스크를 다른 쪽에 쓸 수 없다(두 행은 확보율 계산이
+    # 더한다).
+    names = list(dynamic_processes)
+    patch.loc[patch["공정"].astype(str).str.strip().isin(names), "가용대수"] = 0.0
+    zero_missing = missing["공정"].astype(str).str.strip().isin(names)
     filled = pd.concat([dynamic_available, patch], ignore_index=True)
-    fallback = sorted({str(value) for value in missing["공정"].dropna()})
+    fallback = sorted({str(value) for value in missing.loc[~zero_missing, "공정"].dropna()})
     return filled, fallback

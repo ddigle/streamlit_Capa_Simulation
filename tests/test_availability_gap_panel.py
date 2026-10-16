@@ -1,4 +1,4 @@
-# Purpose: 비교 패널의 결과 선택·공정 필터·숨은 탭 복귀·공정 표시명과 수치·누락 안내를 검사한다.
+# Purpose: 비교 패널의 결과 선택·공정 필터·탭 복귀·9행 시트·근거 카드·표시명·안내를 검사한다.
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+import pandas as pd
 import pytest
+from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.availability_gap_panel import (
@@ -14,15 +16,32 @@ from capa_simulation.components.availability_gap_panel import (
     DETAIL_MODE_KEY,
     PROCESS_FILTER_KEY,
     RESULT_VIEW_KEY,
-    matrix_table_key,
 )
 from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, render_csv_download
-from capa_simulation.services.availability_gap import (
-    DYNAMIC_SUBTOTAL_ROW,
-    DYNAMIC_WEIGHTED_ROW,
-    GAP_ROW,
-    STATIC_ROW,
+from capa_simulation.services.availability_sheet import (
+    BREAKDOWN_LENT_COLUMN,
+    GAP_ROWS,
+    ROW_GAP_AVAILABLE,
+    ROW_SCHEDULE_AVAILABLE,
+    ROW_SCHEDULE_LENT,
+    ROW_SCHEDULE_OWNED,
+    ROW_STATIC_AVAILABLE,
+    ROW_STATIC_LENT,
+    ROW_STATIC_OWNED,
+    SCHEDULE_ROWS,
+    STATIC_ROWS,
 )
+
+MONTH = 202610
+
+
+@pytest.fixture(autouse=True)
+def _no_scrollbar_component(monkeypatch: pytest.MonkeyPatch) -> None:
+    """시트 위 가로 스크롤바는 Components v2 컴포넌트라 AppTest 에서 등록되지 않는다 — 시험 동안만
+    빈 함수로 바꾼다(공정 Capa 상세 화면 시험과 같다)."""
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda **_: None)
 
 
 def _panel_app() -> None:
@@ -63,6 +82,57 @@ def _panel_app() -> None:
             "가용대수": [6.0, 8.0, 20.0],
         }
     )
+    # 보유 − 대여 = 가용(어긋남 없음). Static 세 표는 같은 저장 리비전에서 함께 온다.
+    static_owned = static.rename(columns={"가용대수": "설비보유"}).assign(설비보유=[7.0, 8.0, 22.0])
+    static_lent = static.rename(columns={"가용대수": "설비대여평가"}).assign(
+        설비대여평가=[1.0, 0.0, 2.0]
+    )
+    # `downtime` 을 켜면 EQ-1(가용, 환산비 1.5)에 닷새 비가동, 셋업 호기 EQ-S 에 나흘 비가동을
+    # 넣는다 — 반사실(비가동 비움) 구간을 따로 넘긴다. 셋업 호기의 비가동은 대여에 들지 않아야 한다.
+    counterfactual = None
+    if st.session_state.get("downtime", False):
+        counterfactual = pd.concat(
+            [
+                spans,
+                pd.DataFrame(
+                    {
+                        "설비명": ["EQ-S"],
+                        "공정소분류": ["Die Attach"],
+                        "상태": ["셋업 진행중"],
+                        "시작일": [date(2020, 1, 1)],
+                        "종료일": [date(2030, 1, 1)],
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+        spans = pd.DataFrame(
+            {
+                "설비명": ["EQ-1", "EQ-1", "EQ-1", "EQ-2", "EQ-S", "EQ-S", "EQ-S"],
+                "공정소분류": ["Die Attach"] * 3 + ["Etch"] + ["Die Attach"] * 3,
+                "상태": ["가용", "운영 비가동", "가용", "가용"]
+                + ["셋업 진행중", "운영 비가동", "셋업 진행중"],
+                "시작일": [
+                    date(2020, 1, 1),
+                    date(2026, 10, 4),
+                    date(2026, 10, 9),
+                    date(2020, 1, 1),
+                    date(2020, 1, 1),
+                    date(2026, 10, 1),
+                    date(2026, 10, 5),
+                ],
+                # 구간은 끝을 포함하고 다음 구간은 그다음 날 시작한다(생애주기 구간과 같은 꼴).
+                "종료일": [
+                    date(2026, 10, 3),
+                    date(2026, 10, 8),
+                    date(2030, 1, 1),
+                    date(2030, 1, 1),
+                    date(2026, 9, 30),
+                    date(2026, 10, 4),
+                    date(2030, 1, 1),
+                ],
+            }
+        )
     scale = float(st.session_state.get("demand_scale", 1.0))
     required = pd.DataFrame(
         {
@@ -165,6 +235,8 @@ def _panel_app() -> None:
         cutoff=cutoff.iloc[:0] if st.session_state.get("empty_cutoff", False) else cutoff,
         months=[] if st.session_state.get("empty_months", False) else [202610],
         static_availability=None if st.session_state.get("missing_static", False) else static,
+        static_owned=None if st.session_state.get("missing_static", False) else static_owned,
+        static_lent=None if st.session_state.get("missing_static", False) else static_lent,
         static_error="테스트 조회 실패" if st.session_state.get("missing_static", False) else None,
         span_bounds=(date(2026, 10, 1), date(2026, 10, 31))
         if st.session_state.get("short_span", False)
@@ -181,6 +253,7 @@ def _panel_app() -> None:
         owner_tab=SimpleNamespace(open=is_open),
         units=units,
         process_labels=labels,
+        counterfactual_spans=counterfactual,
     )
 
 
@@ -198,7 +271,24 @@ def _select_view(app: AppTest, value: str) -> None:
     assert not app.exception
 
 
+def _value(app: AppTest, row: str, month: int = MONTH) -> float | None:
+    return sheet_value(app, month, row)
+
+
+def _evidence(app: AppTest) -> list[pd.DataFrame]:
+    """근거 카드의 표(시트 뒤에 선 `st.dataframe`)."""
+    return [element.value for element in app.dataframe]
+
+
+def _units(frame: pd.DataFrame) -> pd.DataFrame:
+    """근거 카드 호기 표에서 맨 아래 합계 줄을 뺀 것."""
+    marker = "구분" if "구분" in frame.columns else "설비명"
+    return frame.loc[frame[marker].astype(str).ne("합계")]
+
+
 def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
+    """세 결과 가운데 고른 것만 그린다. 그림·시트·교차검증의 설비 일정 기준 가용은 같은 환산 값이다
+    (EQ-1 환산비 1.5 — 기존보유 3 + 1.5 = 4.5)."""
     app = _run()
     assert app.segmented_control(key=RESULT_VIEW_KEY).value == "가용대수 비교"
     assert len(app.get("plotly_chart")) == 1
@@ -208,19 +298,22 @@ def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
     chart = json.loads(app.get("plotly_chart")[0].proto.spec)
     assert {trace["name"]: trace["y"] for trace in chart["data"]} == {
         "기존보유": [3.0],
-        "가용(일할)": [1.0],
+        "가용(일할·환산)": [1.5],
         "Static(기준정보)": [6.0],
     }
-    assert chart["layout"]["annotations"][0]["text"] == "-2.00"
+    # 그림 GAP 글자는 시트 GAP 가용 칸과 같은 꼴이다(마이너스 U+2212).
+    assert chart["layout"]["annotations"][0]["text"] == "−1.50"
 
     _select_view(app, "분류별 내역")
-    assert not app.get("plotly_chart")
-    assert len(app.dataframe) == 1
-    matrix = app.dataframe[0].value
-    assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 4.0
-    assert matrix.loc[STATIC_ROW, "26.10"] == 6.0
-    assert matrix.loc[GAP_ROW, "26.10"] == -2.0
-    assert matrix.loc[DYNAMIC_WEIGHTED_ROW, "26.10"] == 4.5
+    assert has_sheet(app)
+    assert not app.dataframe
+    assert _value(app, ROW_STATIC_OWNED) == 7.0
+    assert _value(app, ROW_STATIC_LENT) == -1.0
+    assert _value(app, ROW_STATIC_AVAILABLE) == 6.0
+    assert _value(app, ROW_SCHEDULE_OWNED) == 4.5
+    assert _value(app, ROW_SCHEDULE_LENT) == 0.0
+    assert _value(app, ROW_SCHEDULE_AVAILABLE) == 4.5
+    assert _value(app, ROW_GAP_AVAILABLE) == -1.5
 
     _select_view(app, "확보율 교차검증")
     assert not app.get("plotly_chart")
@@ -229,9 +322,9 @@ def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
     assert row["공정"] == "Die Attach"
     assert row["소요대수"] == 10.0
     assert row["Static가용대수"] == 6.0
-    assert row["Dynamic가용대수"] == 4.5
+    assert row["일정기준가용대수"] == 4.5
     assert row["Static확보율"] == 0.6
-    assert row["Dynamic확보율"] == 0.45
+    assert row["일정기준확보율"] == 0.45
     assert row["확보율차이"] == -0.15
 
     _select_view(app, "가용대수 비교")
@@ -313,18 +406,18 @@ def test_the_panel_key_carries_both_the_comparison_and_the_scenario(
 def test_a_keyed_rerun_does_not_cross_check_again(monkeypatch: pytest.MonkeyPatch) -> None:
     """보기를 열어 둔 rerun(같은 조건)은 다시 맞대지 않는다 — 패널이 키를 받으면 캐시를 쓴다."""
     from capa_simulation.services import simulation_cache
-    from capa_simulation.services.securement_cross_check import build_securement_cross_check
+    from capa_simulation.services.securement_cross_check import cross_check_from_monthly
 
     simulation_cache.get_securement_cross_check.clear()
     calls: list[int] = []
-    original = build_securement_cross_check
+    original = cross_check_from_monthly
 
     def counting(*args: Any, **kwargs: Any) -> Any:
         calls.append(1)
         return original(*args, **kwargs)
 
     # 캐시 안과 캐시를 건너뛰는 길이 같은 함수(`securement_cross_check_result`)를 지난다.
-    monkeypatch.setattr(simulation_cache, "build_securement_cross_check", counting)
+    monkeypatch.setattr(simulation_cache, "cross_check_from_monthly", counting)
     app = _run(keyed_required=True)
     _select_view(app, "확보율 교차검증")
     app.run()
@@ -392,10 +485,9 @@ def test_the_cross_check_explains_what_is_missing_in_the_same_order(
 def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
     app = _run()
     _select_view(app, "분류별 내역")
-    matrix = app.dataframe[0].value
-    assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 10.0
-    assert matrix.loc[STATIC_ROW, "26.10"] == 14.0
-    assert matrix.loc[GAP_ROW, "26.10"] == -4.0
+    assert _value(app, ROW_SCHEDULE_AVAILABLE) == 10.5
+    assert _value(app, ROW_STATIC_AVAILABLE) == 14.0
+    assert _value(app, ROW_GAP_AVAILABLE) == -3.5
     assert "Probe" in " ".join(item.value for item in app.warning)
     assert "한쪽에만 있는 공정 1개" in " ".join(item.value for item in app.caption)
 
@@ -428,15 +520,25 @@ def test_hidden_tab_skips_output_and_preserves_both_selections() -> None:
     assert not app.exception
     assert app.selectbox(key=PROCESS_FILTER_KEY).value == "Etch"
     assert app.segmented_control(key=RESULT_VIEW_KEY).value == "분류별 내역"
-    assert app.dataframe[0].value.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 6.0
+    assert _value(app, ROW_SCHEDULE_AVAILABLE) == 6.0
 
 
 def test_missing_static_keeps_dynamic_detail_and_explains_cross_check_limit() -> None:
+    """Static 을 아예 못 읽으면 시트의 Static·GAP 은 「—」 이고 까닭은 「기준정보에 없는 공정」이
+    아니라 「Static 을 읽지 못함」이다."""
     app = _run(missing_static=True)
     assert "테스트 조회 실패" in " ".join(item.value for item in app.warning)
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     _select_view(app, "분류별 내역")
-    assert app.dataframe[0].value.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 4.0
+    assert _value(app, ROW_SCHEDULE_AVAILABLE) == 4.5
+    hovers = sheet_hovers(app)
+    for row in (*STATIC_ROWS, *GAP_ROWS):
+        assert _value(app, row) is None
+        assert "Static 을 읽지 못해" in hovers[(MONTH, row)]
+        assert "기준정보(Static)에 없는" not in hovers[(MONTH, row)]
+    assert "Static 을 읽지 못해 「Die Attach」 공정의 GAP" in " ".join(
+        item.value for item in app.caption
+    )
 
     _select_view(app, "확보율 교차검증")
     assert not app.dataframe
@@ -484,96 +586,102 @@ def test_removed_process_returns_to_total_without_losing_the_result_choice() -> 
     assert not app.exception
     assert app.selectbox(key=PROCESS_FILTER_KEY).value == "전체 합계"
     assert app.segmented_control(key=RESULT_VIEW_KEY).value == "분류별 내역"
-    assert app.dataframe[0].value.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 4.0
+    assert _value(app, ROW_SCHEDULE_AVAILABLE) == 4.5
 
 
 # ------------------------------------------------------------------ 호기 목록
 
 
 def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
-    """「호기 목록」은 대수 표의 칸을 이루는 호기별 기여다. 같은 칸을 더하면 표의 값이다."""
+    """「호기 목록」은 상태 분류별 호기 기여다. 기존보유·가용의 환산대수를 더하면 시트의 설비 일정
+    기준 가용이다."""
     app = _run()
     _select_view(app, "분류별 내역")
-    matrix = app.dataframe[0].value
-    assert app.segmented_control(key=DETAIL_MODE_KEY).value == "대수"
+    assert app.segmented_control(key=DETAIL_MODE_KEY).value == "시트"
+    available = _value(app, ROW_SCHEDULE_AVAILABLE)
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
+    assert not has_sheet(app)
     units = app.dataframe[0].value
-    # Probe 는 한쪽에만 있어 표에서 빠진다 — 목록도 같은 범위다.
+    # Probe 는 한쪽에만 있어 시트에서 빠진다 — 목록도 같은 범위다.
     assert set(units["공정"]) == {"Die Attach", "Etch"}
     assert {"월", "분류", "설비명", "기여일수", "대수", "환산대수"} <= set(units.columns)
     assert set(units.loc[units["분류"].eq("기존보유"), "설비명"]) == {"기존보유 · 전체"}
-    for category in ("기존보유", "가용"):
-        listed = units.loc[units["분류"].eq(category), "대수"].sum()
-        assert listed == pytest.approx(matrix.loc[category, "26.10"])
+    listed = units.loc[units["분류"].isin(["기존보유", "가용"]), "환산대수"].sum()
+    assert listed == pytest.approx(available)
     assert any(button.label == "CSV 다운로드" for button in app.download_button)
+    assert "`운영 비가동` 은 시트의 대여(비가동)와 다를 수" in " ".join(
+        item.value for item in app.caption
+    )
 
     app.multiselect(key=DETAIL_CATEGORY_KEY).set_value(["가용"]).run()
     assert set(app.dataframe[0].value["분류"]) == {"가용"}
 
 
 def test_a_clicked_cell_lists_its_units_and_adds_up_to_the_cell() -> None:
+    """설비 일정 기준 칸은 호기 줄(기존보유 줄 포함) — 줄을 더하면 칸. Static 칸은 출처, GAP 칸은
+    식과 짝 호기다."""
     app = _run()
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     _select_view(app, "분류별 내역")
-    rows = list(app.dataframe[0].value.index)
-    key = matrix_table_key("Die Attach", [202610], rows)
 
-    app.session_state[key] = {
-        "selection": {"rows": [], "columns": [], "cells": [[rows.index("가용"), "26.10"]]}
-    }
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
     assert not app.exception
-    assert len(app.dataframe) == 2
-    cell = app.dataframe[1].value
-    assert cell["설비명"].tolist() == ["EQ-1"]
-    assert cell["대수"].sum() == pytest.approx(app.dataframe[0].value.loc["가용", "26.10"])
+    (lines,) = _evidence(app)
+    units = _units(lines)
+    assert units["설비명"].tolist() == ["기존보유 · 전체", "EQ-1"]
+    assert units["가용"].sum() == pytest.approx(4.5)
+    assert lines["가용"].iloc[-1] == pytest.approx(4.5)  # 합계 줄
 
-    # 소계 칸은 소계에 드는 분류(기존보유·가용)를 모아 보인다.
-    app.session_state[key] = {
-        "selection": {
-            "rows": [],
-            "columns": [],
-            "cells": [[rows.index(DYNAMIC_SUBTOTAL_ROW), "26.10"]],
-        }
-    }
-    app.run()
-    subtotal = app.dataframe[1].value
-    assert set(subtotal["분류"]) == {"기존보유", "가용"}
-    assert subtotal["대수"].sum() == pytest.approx(4.0)
+    # 빈 칸(기존보유 줄의 환산비·일수, 합계 줄의 일수)은 「None」 이 아니라 「—」 로 적힌다. 공정
+    # 하나면 `공정` 칸은 없다.
+    assert app.dataframe[0].proto.placeholder == "—"
+    assert "공정" not in lines.columns
+    days = lines["실제 기여일수"].isna()
+    assert bool(days.iloc[0]) and bool(days.iloc[-1])  # 기존보유 줄 · 합계 줄
 
-    # Static·GAP 은 기준정보라 목록 대신 안내가 뜬다.
-    app.session_state[key] = {
-        "selection": {"rows": [], "columns": [], "cells": [[rows.index(STATIC_ROW), "26.10"]]}
-    }
+    open_cell(app, MONTH, ROW_SCHEDULE_OWNED)
     app.run()
-    assert len(app.dataframe) == 1
-    assert "호기 목록이 없습니다" in " ".join(item.value for item in app.info)
+    (lines,) = _evidence(app)
+    assert _units(lines)["보유"].sum() == pytest.approx(4.5)
+    # 보유 칸도 공정 하나면 공정 Capa 상세 ④ 로 가는 길을 적는다(AppTest 에는 페이지가 없어 캡션).
+    links = [item.proto.label for item in app.get("page_link")]
+    captions = " ".join(item.value for item in app.caption)
+    assert any("비가동 화살표" in label for label in links) or "비가동 화살표" in captions
+
+    # Static 칸은 기준정보라 호기 표가 없다(공정 하나면 식 한 줄과 출처).
+    open_cell(app, MONTH, ROW_STATIC_AVAILABLE)
+    app.run()
+    assert not _evidence(app)
+    markdown = " ".join(item.value for item in app.markdown)
+    assert "보유 7.00 + 대여 −1.00 = 6.00 · 기준정보 가용 6.00" in markdown
+    assert "RQ_EQP_OWN" in " ".join(item.value for item in app.caption)
+
+    # GAP 칸은 식과 짝 칸(설비 일정 기준 가용)의 호기다.
+    open_cell(app, MONTH, ROW_GAP_AVAILABLE)
+    app.run()
+    markdown = " ".join(item.value for item in app.markdown)
+    assert "GAP 가용 = 설비 일정 4.50 − Static 6.00 = −1.50" in markdown
+    (lines,) = _evidence(app)
+    assert _units(lines)["가용"].sum() == pytest.approx(4.5)
 
 
 def test_a_click_does_not_follow_the_table_into_another_scope() -> None:
-    """선택은 (행 위치, 열 이름)으로 남는다. 공정을 바꾸면 같은 위치가 다른 분류다.
-
-    범위마다 표의 키가 달라 전에 누른 칸이 새 표로 따라오지 않는다(브라우저 실측: 따라오면
-    누르지 않은 분류의 호기가 떴다).
-    """
+    """고른 칸은 범위 지문과 함께 남는다. 공정을 바꾸면 지난 칸은 무시한다 — 다른 공정의 같은 자리
+    칸을 열지 않는다."""
     app = _run()
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     _select_view(app, "분류별 내역")
-    rows = list(app.dataframe[0].value.index)
-    die_attach = matrix_table_key("Die Attach", [202610], rows)
-    app.session_state[die_attach] = {
-        "selection": {"rows": [], "columns": [], "cells": [[rows.index("가용"), "26.10"]]}
-    }
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
-    assert len(app.dataframe) == 2
+    assert len(_evidence(app)) == 1
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Etch").run()
     assert not app.exception
-    etch_rows = list(app.dataframe[0].value.index)
-    assert matrix_table_key("Etch", [202610], etch_rows) != die_attach
-    assert len(app.dataframe) == 1
+    assert not _evidence(app)
+    assert "칸을 누르면 근거가 여기에 뜹니다" in " ".join(item.value for item in app.markdown)
 
 
 def test_the_unit_list_keeps_full_precision_so_thirds_add_up_to_one() -> None:
@@ -611,38 +719,47 @@ def test_the_unit_list_keeps_full_precision_so_thirds_add_up_to_one() -> None:
 
 
 def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> None:
-    """기준정보에 없는 공정을 골라도 GAP 을 「+Dynamic」으로 내지 않는다(2026-10-01 결정).
+    """기준정보에 없는 공정을 골라도 GAP 을 「+설비 일정」으로 내지 않는다(2026-10-01 결정).
 
-    전체 합계·호기 필터가 이미 그렇게 한다. 없는 쪽을 0 으로 보면 공정명 불일치가 「그만큼
-    넘친다」로 읽혔다(브라우저 재현: Die Attach 의 GAP 이 Dynamic 소계와 같았다).
+    시트는 9행 그대로이고 Static·GAP 칸이 「—」 다(풍선이 까닭).
     """
     app = _run(wire_bond_units=True)
     assert "Wire Bond" in " ".join(item.value for item in app.warning)
     app.selectbox(key=PROCESS_FILTER_KEY).select("Wire Bond").run()
     assert not app.exception
-    # 그림은 Static 과 Dynamic 을 맞대는 자리라 그리지 않고 까닭을 말한다.
+    # 그림은 Static 과 설비 일정 기준을 맞대는 자리라 그리지 않고 까닭을 말한다.
     assert not app.get("plotly_chart")
     infos = " ".join(item.value for item in app.info)
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다" in infos
 
     _select_view(app, "분류별 내역")
-    matrix = app.dataframe[0].value
-    assert matrix.loc[DYNAMIC_SUBTOTAL_ROW, "26.10"] == 1.0
-    assert GAP_ROW not in matrix.index
-    assert STATIC_ROW not in matrix.index
+    assert _value(app, ROW_SCHEDULE_AVAILABLE) == 1.0
+    hovers = sheet_hovers(app)
+    for row in (*STATIC_ROWS, *GAP_ROWS):
+        assert _value(app, row) is None
+        assert "기준정보(Static)에 없는 공정" in hovers[(MONTH, row)]
     assert "GAP 을 내지 않습니다" in " ".join(item.value for item in app.caption)
+
+    open_cell(app, MONTH, ROW_GAP_AVAILABLE)
+    app.run()
+    assert "기준정보(Static)에 없는 공정이라 맞대지 않습니다" in " ".join(
+        item.value for item in app.info
+    )
 
 
 def test_a_process_only_in_the_reference_side_shows_its_static_without_gap() -> None:
     app = _run()
     app.selectbox(key=PROCESS_FILTER_KEY).select("Probe").run()
     assert not app.get("plotly_chart")
-    assert "「Probe」 공정은 Dynamic 이 나오지 않아" in " ".join(item.value for item in app.info)
+    assert "「Probe」 공정은 설비 일정 기준이 나오지 않아" in " ".join(
+        item.value for item in app.info
+    )
 
     _select_view(app, "분류별 내역")
-    matrix = app.dataframe[0].value
-    assert matrix.loc[STATIC_ROW, "26.10"] == 20.0
-    assert GAP_ROW not in matrix.index
+    assert _value(app, ROW_STATIC_AVAILABLE) == 20.0
+    assert _value(app, ROW_STATIC_LENT) == -2.0
+    for row in (*SCHEDULE_ROWS, *GAP_ROWS):
+        assert _value(app, row) is None
 
 
 def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> None:
@@ -724,8 +841,8 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
 ) -> None:
     """2026-10-10 사용자 결정 — 보이는 글자만 표시명이다.
 
-    `공정` 선택지·칸의 호기·호기 목록·확보율 교차검증 표는 표시명이고, 선택값(세션)·표 키·호기 목록
-    CSV 는 원본이다.
+    `공정` 선택지·시트 머리·근거 카드·호기 목록·확보율 교차검증 표는 표시명이고, 선택값(세션)·범위
+    지문·CSV(시트·호기 목록)는 원본이다.
     """
     # 내려받는 바이트는 위젯 proto 에 실리지 않는다. 패널이 부르는 이름을 갈아 끼워 적어 둔다
     # (AppTest 는 같은 프로세스에서 돈다).
@@ -759,15 +876,23 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
     assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
 
     _select_view(app, "분류별 내역")
-    rows = list(app.dataframe[0].value.index)
-    # 칸 선택이 남는 표 키는 원본 공정명으로 만든다 — 표시명을 고쳐도 누른 칸을 잃지 않는다.
-    key = matrix_table_key("Die Attach", [202610], rows)
-    app.session_state[key] = {
-        "selection": {"rows": [], "columns": [], "cells": [[rows.index("가용"), "26.10"]]}
-    }
+    sheet_csv = exported["download_equipment_gap_sheet_csv"].decode("utf-8-sig")
+    assert "Die Attach" in sheet_csv and "표시-" not in sheet_csv
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
     assert not app.exception
-    assert set(app.dataframe[1].value["공정"]) == {"표시-DA"}
+    # 공정 하나면 근거 카드 표에 `공정` 칸이 없고 제목이 표시명을 적는다.
+    assert "공정" not in _evidence(app)[0].columns
+    assert "표시-DA" in " ".join(item.value for item in app.markdown)
+
+    # 전체 합계면 근거 카드 호기 표의 `공정` 칸이 표시명이다.
+    app.selectbox(key=PROCESS_FILTER_KEY).select("전체 합계").run()
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
+    app.run()
+    assert not app.exception
+    assert "표시-DA" in set(_units(_evidence(app)[0])["공정"])
+    assert "Die Attach" not in set(_units(_evidence(app)[0])["공정"])
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
@@ -902,3 +1027,32 @@ def test_a_held_process_survives_a_colliding_display_name() -> None:
         app.run()
         assert not app.exception
         assert app.session_state[PROCESS_FILTER_KEY] == "Probe"
+
+
+# ------------------------------------------------------------------ 비가동(반사실)
+
+
+def test_downtime_is_lent_only_where_it_cut_availability() -> None:
+    """EQ-1(가용) 비가동은 대여로 깎이고, 셋업 호기 EQ-S 의 비가동은 대여에 들지 않는다 — 근거
+    카드가 그 호기를 「가용을 깎지 않은 비가동」으로 따로 적는다. 칸마다 보유 + 대여 = 가용."""
+    app = _run(downtime=True)
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    _select_view(app, "분류별 내역")
+    owned = _value(app, ROW_SCHEDULE_OWNED)
+    lent = _value(app, ROW_SCHEDULE_LENT)
+    available = _value(app, ROW_SCHEDULE_AVAILABLE)
+    assert owned == 4.5
+    assert lent is not None and lent < 0
+    assert available is not None
+    assert owned + lent == pytest.approx(available, abs=0.011)
+
+    open_cell(app, MONTH, ROW_SCHEDULE_LENT)
+    app.run()
+    assert not app.exception
+    (lines,) = _evidence(app)
+    units = _units(lines)
+    assert units["설비명"].tolist() == ["EQ-1"]
+    assert units[BREAKDOWN_LENT_COLUMN].sum() == pytest.approx(lent, abs=0.005)
+    assert units["손실 기여일수"].tolist() == [5]
+    captions = " ".join(item.value for item in app.caption)
+    assert "가용을 깎지 않은 비가동 1호기(EQ-S" in captions
