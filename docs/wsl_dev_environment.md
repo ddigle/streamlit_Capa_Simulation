@@ -143,8 +143,9 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
       샌드박스에서 막힌다). 시험 빌드는 커밋·푸시 전이라 빌더가 「시험 빌드(--no-tag)라 멈추지 않습니다」 와 수정·앞선 커밋을 찍는다 —
       정상이다. 시험 ZIP 을 만든 뒤 표식은 `{APPLY_FACTS}` 로 되돌린다 — 빌더는 이 둘만 보므로 다른 표식이 남으면 막지 못한다.
    4. 런북 수치는 적용기 출력 그대로 옮긴다 — `변경` 줄·`지움`·대조 블록의 개수·`대조 N/N 해시 일치`. mypy 파일 수는 4관문 끝줄에서.
+      런북 7장이 `deploy:` 커밋 파일 수를 물으면(줄끝 확인) 흉내 저장소에서 `git show --stat --format= HEAD` 끝줄로 잰다.
       흉내 저장소를 `git diff` 로 세면 송장과 기준이 달라진다(적용 기록이 없으면 `A .deploy/applied.json` 이 하나 더 나온다).
-   5. 런북을 채우고 4관문 → `.venv/bin/python scripts/check_deploy_screens.py --list` 가 7-14 A 표와 같은 줄인지 → 커밋 →
+   5. 런북을 채우고 4관문 → `.venv/bin/python scripts/check_deploy_screens.py --list` 가 런북 7장 A 표와 같은 줄인지 → 커밋 →
       확인을 받아 `git push origin main`(샌드박스 밖 — 4장).
 2. **깨끗한 트리에서 빌드 → 확인 → 태그 푸시** (WSL Claude)
 
