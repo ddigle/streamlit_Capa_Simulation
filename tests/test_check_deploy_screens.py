@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import re
 import subprocess
 import sys
 import time
@@ -1301,12 +1302,33 @@ def test_the_symbol_line_check_allows_only_a_layout_unit_of_overflow() -> None:
     assert "flex-wrap: wrap;" in _text(COMPONENTS / "intro_summary.py")
 
 
-class _SymbolScreen(_FakeScreen):
-    """`symbol` 항목이 읽는 두 값(사이드바 라벨·Summary 머리 줄)을 정해 돌려준다."""
+def _narrow_rows(**changes: dict[str, str]) -> list[dict[str, Any]]:
+    """좁은 폭 라벨 측정값 — 기본은 폭마다 두 줄 다 보이고 안내 글자는 빠짐. `w236={"word": "cut"}`
+    처럼 그 폭의 칸만 바꾼다."""
+    rows = []
+    for width in screens.LABEL_NARROW_WIDTHS_PX:
+        row: dict[str, Any] = {"width": width, "word": "whole", "sub": "whole", "hint": "gone"}
+        row.update(changes.get(f"w{width}", {}))
+        rows.append(row)
+    return rows
 
-    def __init__(self, side: dict[str, Any], summary: dict[str, Any]) -> None:
+
+class _SymbolScreen(_FakeScreen):
+    """`symbol` 항목이 읽는 세 값(사이드바 라벨·좁은 폭 라벨·Summary 머리 줄)을 정해 돌려준다."""
+
+    def __init__(
+        self,
+        side: dict[str, Any],
+        summary: dict[str, Any],
+        narrow: list[dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__()
-        self.values = {screens._LABEL_MARK_JS: side, screens._SUMMARY_MARK_JS: summary}
+        self.values = {
+            screens._LABEL_MARK_JS: side,
+            screens._LABEL_NARROW_JS: _narrow_rows() if narrow is None else narrow,
+            screens._SUMMARY_MARK_JS: summary,
+        }
+        self.narrow_args: list[object] = []
         self.clicked: list[str] = []
         self.closed = 0
         self.page = SimpleNamespace(
@@ -1314,6 +1336,8 @@ class _SymbolScreen(_FakeScreen):
         )
 
     def js(self, script: str, arg: object = None) -> Any:
+        if script == screens._LABEL_NARROW_JS:
+            self.narrow_args.append(arg)
         return self.values[script]
 
     def close_overlay(self) -> None:
@@ -1339,6 +1363,74 @@ def test_the_symbol_item_says_cut_when_either_label_loses_a_line(
 
     assert result == f"사이드바 30×30px · Summary 30×30px — 같음 · 라벨 글자 {verdict}"
     assert screen.clicked == [f"#{screens.SUMMARY_LABEL_ID}"] and screen.closed == 1
+
+
+@pytest.mark.parametrize(
+    ("narrow", "verdict"),
+    [
+        # 좁은 폭마다 다 보인다 — 기본 폭만 재던 때와 같은 글(런북 7장의 기대 글).
+        (_narrow_rows(), "다 보임"),
+        # 기본 폭 바로 아래에서 안내 글자가 반쯤(`Summ…`) — 통째로 서거나 빠져야 한다.
+        (_narrow_rows(w296={"hint": "cut"}), "잘림(좁은 폭 296px)"),
+        # 줄이는 문턱 바로 아래의 말줄임은 결함이다(문턱이 늦게 서면 `S.PKG CA…`).
+        (_narrow_rows(w236={"word": "ellipsis"}), "잘림(좁은 폭 236px)"),
+        # 가장 좁은 폭의 말줄임은 정한 모양 — 세기만 한다.
+        (
+            _narrow_rows(w200={"word": "ellipsis", "sub": "ellipsis"}),
+            "다 보임(좁은 폭 200px 말줄임 2)",
+        ),
+        # 말줄임 없이 잘림은 가장 좁은 폭에서도 결함이다(배포 202610171956 의 `S.PKG C`).
+        (_narrow_rows(w200={"word": "cut"}), "잘림(좁은 폭 200px)"),
+        (_narrow_rows(w236={"sub": "cut"}, w200={"word": "cut"}), "잘림(좁은 폭 236·200px)"),
+        ([], "다 보임 · 좁은 폭 못 잼"),
+    ],
+)
+def test_the_symbol_item_also_reads_the_label_at_narrow_sidebar_widths(
+    monkeypatch: pytest.MonkeyPatch, narrow: list[dict[str, Any]], verdict: str
+) -> None:
+    """기본 폭만 재던 `symbol` 은 200px 에서 앱 이름이 말줄임 없이 잘려도(배포 202610171956)
+    「라벨 글자 다 보임」 이었다. 좁게 끈 폭(`LABEL_NARROW_WIDTHS_PX`)마다 다시 재고, 잘린 폭을
+    적는다. 잰 뒤에 라벨을 눌러 Summary 를 연다."""
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    screen = _SymbolScreen(
+        {"w": 30, "h": 30, "fits": True, "ready": True}, {"size": [30, 30], "fits": True}, narrow
+    )
+
+    result = screens.check_sidebar_symbol(screen)
+
+    assert result == f"사이드바 30×30px · Summary 30×30px — 같음 · 라벨 글자 {verdict}"
+    assert screen.narrow_args == [
+        {"id": screens.SUMMARY_LABEL_ID, "widths": list(screens.LABEL_NARROW_WIDTHS_PX)}
+    ]
+
+
+def test_a_cut_at_the_default_and_a_narrow_width_names_both() -> None:
+    assert screens._label_verdict(False, ((236,), 0)) == "잘림(기본 폭 · 좁은 폭 236px)"
+    assert screens._label_verdict(False, ((), 0)) == "잘림"
+
+
+def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
+    """좁은 폭 셋은 라벨 CSS 의 문턱을 겨눈다 — 머리칸(사이드바 − 55px)이 296 에서는 안내 글자를
+    감추는 문턱(240px) 위라 안내 글자가 줄바꿈으로만 빠지고, 236 에서는 글꼴을 줄이는
+    문턱(190px) 바로 아래다. 마지막은 끌어 줄 수 있는 가장 좁은 폭이다. 잰 뒤 사이드바 원래 폭을
+    되돌린다."""
+    from capa_simulation.components import intro_summary
+
+    css = intro_summary._label_css("light")
+    hide, shrink = (
+        int(width) for width in re.findall(r"@container capa-sidebar-head \(width < (\d+)px\)", css)
+    )
+    head = 55
+    first, second, last = screens.LABEL_NARROW_WIDTHS_PX
+    assert hide <= first - head < 300 - head
+    assert shrink - 10 <= second - head < shrink
+    assert last == screens.SIDEBAR_NARROW_WIDTH_PX
+    script = screens._LABEL_NARROW_JS
+    assert screens._WHOLE_LINE_JS in script
+    for name in ("capa-brand-word", "capa-brand-sub", "capa-brand-hint"):
+        assert f'".{name}"' in script, name
+    assert 'side.style.transition = "none";' in script
+    assert 'else side.setAttribute("style", saved);' in script
 
 
 def test_the_toolbar_labels_cover_the_declared_order() -> None:

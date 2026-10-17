@@ -261,6 +261,12 @@ SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
 # 그룹 상자 제목은 한 줄이고 넘치면 말줄임이다(2026-10-17 사용자 결정). 선 폭을 함께 적어 두어
 # 이 값과 다르면 측정이 틀어진 것을 안다.
 SIDEBAR_NARROW_WIDTH_PX: Final = 200
+# 사이드바 앱 이름 라벨을 기본 폭 다음에 다시 재는 좁은 폭(px). 머리칸은 사이드바 − 55px 다
+# (`intro_summary._LABEL_CSS`). 296 은 기본 300 바로 아래 — 안내 글자가 통째로 서거나 둘째 줄로
+# 빠져야 한다. 236 은 머리칸이 글꼴을 줄이는 문턱(190px) 바로 아래 — 줄인 두 줄이 다 보여야 한다.
+# 마지막 가장 좁은 폭은 넓은 본문 글꼴이면 줄마다 말줄임으로 끝나는 것까지 정한 모양이라 말줄임은
+# 세기만 하고, 말줄임 없이 잘리거나 안내 글자가 반쯤 보이면 잘림이다.
+LABEL_NARROW_WIDTHS_PX: Final = (296, 236, SIDEBAR_NARROW_WIDTH_PX)
 # 가용설비 현황 「Static 대비 일정」 탭의 분류별 내역 9행 비교 시트(`availability_sheet_keys`·
 # `availability_gap_panel`·`availability_sheet_canvas`). 앱 모듈을 부르지 않고 값만 옮긴다 — 화면이
 # 정한 9행과 같은지 따로 보는 확인이라 앱에서 라벨을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가
@@ -1650,6 +1656,51 @@ _LABEL_MARK_JS = f"""(id) => {{
     ready: label.getAttribute("aria-disabled") !== "true",
   }};
 }}"""
+# 사이드바를 `widths` 의 폭마다 좁혀 같은 라벨을 다시 잰다. 두 줄은 줄마다 `whole`(다 보임) ·
+# `ellipsis`(칸이 라벨 안에 있고 말줄임으로 끝남) · `cut`, 안내 글자는 `gone`(빠짐) · `whole` ·
+# `cut` 이다. 폭 전환(0.3초)을 끄고 두 프레임 기다려 컨테이너 질의가 선 뒤 재며, 끝나면 원래 폭으로
+# 되돌린다(`_SIDEBAR_GROUPS_NARROW_JS` 와 같은 꼴).
+_LABEL_NARROW_JS = f"""async ({{id, widths}}) => {{
+  const side = document.querySelector('[data-testid="stSidebar"]');
+  const label = document.getElementById(id);
+  const part = (name) => label && label.querySelector(name);
+  const word = part(".capa-brand-word");
+  const sub = part(".capa-brand-sub");
+  const hint = part(".capa-brand-hint");
+  if (!side || !word || !sub || !hint) return null;
+  {_WHOLE_LINE_JS}
+  const line = (el, box) => {{
+    if (whole(el, box)) return "whole";
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    const inside = r.width > 0 && r.left >= box.left - 0.5 && r.right <= box.right + 0.5
+      && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+    return inside && style.overflowX !== "visible" && style.textOverflow === "ellipsis"
+      ? "ellipsis" : "cut";
+  }};
+  const saved = side.getAttribute("style");
+  const rows = [];
+  try {{
+    for (const width of widths) {{
+      side.style.transition = "none";
+      side.style.width = side.style.minWidth = side.style.maxWidth = `${{width}}px`;
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const l = label.getBoundingClientRect();
+      const hintGone = getComputedStyle(hint).display === "none"
+        || hint.getBoundingClientRect().top >= l.bottom - 1;
+      rows.push({{
+        width: Math.round(side.getBoundingClientRect().width),
+        word: line(word, l),
+        sub: line(sub, l),
+        hint: hintGone ? "gone" : whole(hint, l) ? "whole" : "cut",
+      }});
+    }}
+  }} finally {{
+    if (saved === null) side.removeAttribute("style");
+    else side.setAttribute("style", saved);
+  }}
+  return rows;
+}}"""
 # Summary 머리 줄: 심볼 크기와 라벨 두 줄. 두 줄은 머리 줄 높이 안이고 오른쪽 Detail 을 덮지 않는다.
 _SUMMARY_MARK_JS = f"""(id) => {{
   const host = document.getElementById(id);
@@ -1720,16 +1771,61 @@ def check_toolbar_order(screen: Screen) -> str:
     return f"{' · '.join(TOOLBAR_LABELS[b] for b in order)} — 정한 차례와 {verdict}"
 
 
+def label_narrow_findings(
+    rows: Sequence[Mapping[str, Any]] | None,
+) -> tuple[tuple[int, ...], int] | None:
+    """좁은 폭 라벨 측정(`_LABEL_NARROW_JS`)에서 잘린 사이드바 폭들과, 가장 좁은 폭의 말줄임 줄 수.
+
+    `LABEL_NARROW_WIDTHS_PX` 의 마지막(가장 좁은 폭)만 말줄임을 정한 모양으로 본다. 못 쟀으면 None.
+    """
+    if not rows or len(rows) != len(LABEL_NARROW_WIDTHS_PX):
+        return None
+    cut: list[int] = []
+    ellipses = 0
+    for asked, row in zip(LABEL_NARROW_WIDTHS_PX, rows, strict=True):
+        lines = [str(row.get("word")), str(row.get("sub"))]
+        last_resort = asked == SIDEBAR_NARROW_WIDTH_PX
+        allowed = {"whole", "ellipsis"} if last_resort else {"whole"}
+        if any(line not in allowed for line in lines) or row.get("hint") not in ("gone", "whole"):
+            cut.append(int(row.get("width") or asked))
+        elif last_resort:
+            ellipses += lines.count("ellipsis")
+    return tuple(cut), ellipses
+
+
+def _label_verdict(fits: bool, narrow: tuple[tuple[int, ...], int] | None) -> str:
+    """「라벨 글자」 판정 글. 기본 폭과 좁은 폭이 다 보이면 기본 폭만 재던 때와 같은 「다 보임」."""
+    if narrow is None:
+        return f"{'다 보임' if fits else '잘림'} · 좁은 폭 못 잼"
+    cut, ellipses = narrow
+    if cut:
+        widths = "·".join(str(width) for width in cut)
+        return f"잘림({'' if fits else '기본 폭 · '}좁은 폭 {widths}px)"
+    if not fits:
+        return "잘림"
+    return "다 보임" + (
+        f"(좁은 폭 {SIDEBAR_NARROW_WIDTH_PX}px 말줄임 {ellipses})" if ellipses else ""
+    )
+
+
 def check_sidebar_symbol(screen: Screen) -> str:
     """사이드바 라벨 심볼과 Summary 머리 줄 심볼(px), 라벨 글자가 다 보이는가.
 
     「라벨 글자」는 두 자리 라벨의 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)과 사이드바의
-    `Summary` 안내 글자다. 한 곳이라도 말줄임·잘림이면 「잘림」이다.
+    `Summary` 안내 글자다. 한 곳이라도 말줄임·잘림이면 「잘림」이다. 사이드바 라벨은 기본 폭 뒤에
+    좁게 끈 폭(`LABEL_NARROW_WIDTHS_PX`)에서도 잰다 — 기본 폭만 재면 좁은 폭에서 앱 이름이 말줄임
+    없이 잘려도 「다 보임」이다. 잘린 좁은 폭은 괄호에 적고, 가장 좁은 폭의 말줄임은 정한 모양이라
+    「다 보임」 뒤에 그 수만 적는다.
     """
     side = screen.wait_for(
         lambda: screen.js(_LABEL_MARK_JS, SUMMARY_LABEL_ID),
         timeout=30,
         accept=lambda value: bool(value) and bool(value["ready"]),
+    )
+    narrow = label_narrow_findings(
+        screen.js(
+            _LABEL_NARROW_JS, {"id": SUMMARY_LABEL_ID, "widths": list(LABEL_NARROW_WIDTHS_PX)}
+        )
     )
     screen.page.locator(f"#{SUMMARY_LABEL_ID}").click()
     try:
@@ -1742,7 +1838,7 @@ def check_sidebar_symbol(screen: Screen) -> str:
     fits = bool(side["fits"]) and bool(summary["fits"])
     return (
         f"사이드바 {_px(side_size)} · Summary {_px(summary_size)} — {'같음' if same else '다름'} · "
-        f"라벨 글자 {'다 보임' if fits else '잘림'}"
+        f"라벨 글자 {_label_verdict(fits, narrow)}"
     )
 
 
