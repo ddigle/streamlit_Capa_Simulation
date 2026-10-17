@@ -20,7 +20,8 @@
   않는다** — 이미 받은 코드는 다시 받지 않으므로 같은 코드가 두 번 발행되지 않는다. 같은
   프로세스에서 다른 회차가 도는 중이면 돌지 않고 알린다. 현재 공식버전에 주차가 없으면 아무것도
   하지 않고 오류로 알린다(기록도 남기지 않는다). 회차 전에 세션에 표를 적어 두므로, 도는 사이
-  다른 칸을 눌러 결과 알림이 끊겨도 다음 회차에 실행 기록에서 찾아 보인다. 발행한 회차에 소요대수에
+  다른 칸을 눌러 결과 알림이 끊겨도 새 실행이 실행 기록에서 찾는다 — 아직 돌면 끝날 때까지 기록을
+  다시 보다가 결과를 보인다. 발행한 회차에 소요대수에
   들지 않은 수요가 있었으면 화면 발행과 같이 성공 알림 밑에 그 건수를 경고로 따로 띄운다(실행 기록의
   사유에는 이어 적힌 그대로다).
 - **실행 기록·off 공정·설정 변경 기록** 표.
@@ -106,9 +107,15 @@ SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
 # 「지금 실행」 결과(상태, 글, 발행한 회차의 소요대수에 들지 않은 수요 경고). rerun 을 건너 그
 # 자리에 한 번 그린다.
 RUN_RESULT_KEY = "auto_official_update_run_result"
-# 「지금 실행」 회차의 표(회차 키 끝). 회차 전에 적고 결과를 보이면 지운다 — 도는 사이 rerun 이
-# 결과 알림을 끊어도 다음 회차가 이 표로 실행 기록을 찾는다.
+# 「지금 실행」 회차의 표(회차 키 끝). 회차 전에 적고 결과를 보이면 지운다 — 도는 사이 다른 칸을
+# 눌러 새 실행이 서면 결과 알림을 그릴 실행이 끊기므로, 새 실행이 이 표로 실행 기록을 찾는다.
 PENDING_RUN_TOKEN_KEY = "auto_official_update_pending_run_token"
+# 끊긴 「지금 실행」 회차가 아직 도는 동안 기록을 다시 보는 프래그먼트와 그 간격.
+RUN_POLL_FRAGMENT_KEY = "auto_official_update_run_poll"
+RUN_POLL_INTERVAL: Final = timedelta(seconds=3)
+RUNNING_MESSAGE: Final = (
+    "「지금 실행」 회차가 아직 도는 중입니다 — 끝나면 결과가 여기에 저절로 뜹니다."
+)
 RUN_NOW_BUTTON_KEY = "auto_official_update_run_now"
 OFF_LIST_EXPANDER_KEY = "auto_official_update_off_list_expander"
 RUN_HISTORY_LIMIT: Final = 30
@@ -440,8 +447,10 @@ def _render_run_now(
         notice.error(bootstrap_error_message(exc))
         return
     token = uuid4().hex[:12]
-    # 회차 **전에** 적는다. 도는 사이 다른 칸을 누르면 회차가 끝난 뒤 첫 세션 접근에서 rerun 이
-    # 끼어들어 아래 결과 알림이 사라진다 — 다음 회차가 이 표로 기록을 찾아 대신 보인다.
+    # 회차 **전에** 적는다. 도는 사이 다른 칸을 누르면 Streamlit 은(`runner.fastReruns`, 기본값) 이
+    # 실행에 멈춤만 걸고 새 실행을 곧바로 띄운다. 회차는 이 스레드에서 끝까지 돌지만 그 뒤 첫
+    # Streamlit 호출에서 멈춰 아래 결과 알림을 그리지 못한다 — 새 실행이 이 표로 기록을 찾아, 아직
+    # 도는 중이면 끝날 때까지 기록을 다시 보고(`_poll_running_round`) 끝나면 결과를 대신 보인다.
     st.session_state[PENDING_RUN_TOKEN_KEY] = token
     try:
         with notice, st.spinner("자동 갱신 회차를 돌리는 중입니다..."):
@@ -494,7 +503,7 @@ def _recover_run_result(repository: DuckDBScenarioRepository) -> dict[str, str] 
     except BOOTSTRAP_ERRORS:
         return None
     if run is not None and run.status == STATUS_RUNNING:
-        return {"status": STATUS_RUNNING, "message": "「지금 실행」 회차가 아직 도는 중입니다."}
+        return {"status": STATUS_RUNNING, "message": RUNNING_MESSAGE}
     st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
     if run is None:
         return None
@@ -516,6 +525,9 @@ def _render_run_result(repository: DuckDBScenarioRepository) -> None:
         return
     status = held.get("status")
     message = str(held.get("message") or "")
+    if status == STATUS_RUNNING:
+        _poll_running_round(repository)
+        return
     if status == STATUS_PUBLISHED:
         st.success(message, icon=":material/publish:")
         # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
@@ -530,6 +542,29 @@ def _render_run_result(repository: DuckDBScenarioRepository) -> None:
         st.error(message, icon=":material/error:")
     else:
         st.info(message)
+
+
+@st.fragment(run_every=RUN_POLL_INTERVAL, key=RUN_POLL_FRAGMENT_KEY)
+def _poll_running_round(repository: DuckDBScenarioRepository) -> None:
+    """끊긴 「지금 실행」 회차가 도는 동안 안내를 두고 기록을 다시 본다. 끝나면 앱 전체를 돌린다.
+
+    회차를 돌던 실행은 끊겨 끝난 뒤에도 다시 돌지 않으므로, 가만히 두면 「도는 중」 이 다음
+    클릭까지 남았다. 앱 전체 실행의 `_recover_run_result` 가 표를 지우고 결과 알림 + 따로 띄운
+    경고를 그리며, 그 실행은 이 프래그먼트를 그리지 않아 다시 보기도 멈춘다. 기록을 못 읽은 회는
+    다음 간격에 다시 본다.
+    """
+    token = st.session_state.get(PENDING_RUN_TOKEN_KEY)
+    still_running = False
+    if isinstance(token, str):
+        try:
+            run = repository.find_manual_auto_official_update_run(token)
+            still_running = run is not None and run.status == STATUS_RUNNING
+        except BOOTSTRAP_ERRORS:
+            still_running = True
+    if still_running:
+        st.info(RUNNING_MESSAGE, icon=":material/hourglass_top:")
+        return
+    st.rerun()
 
 
 # ---------------------------------------------------------------------------

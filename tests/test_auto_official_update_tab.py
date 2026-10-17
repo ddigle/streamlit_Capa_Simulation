@@ -24,6 +24,7 @@ from auto_update_fakes import (
     official_w40,
     source_frame,
 )
+from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest, element_tree
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
@@ -41,6 +42,7 @@ from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenar
 from capa_simulation.services.auto_official_update import (
     MISSING_WEEK_MESSAGE,
     STATUS_PUBLISHED,
+    STATUS_RUNNING,
     TRIGGER_MANUAL,
     AutoUpdateConfig,
     auto_off_mark,
@@ -534,3 +536,96 @@ def test_a_cut_off_published_round_still_shows_its_warning_apart(database: Path)
     (success, warning) = _published_alerts(app)
     assert UNCOUNTED_DEMAND_LEAD not in success[2]
     assert warning[0] == "warning" and warning[2].startswith(UNCOUNTED_DEMAND_LEAD)
+
+
+def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]:
+    """표 `cut0ff` 로 발행까지 끝낸 「지금 실행」 회차(소요대수에 들지 않은 수요 경고가 붙는다)와 그
+    실행 id. 시험은 상태 칸만 「실행 중」으로 되돌려 아직 도는 회차를 흉내 낸다."""
+    repository = _with_w40(path)
+    run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=FakeBigDataQuery(
+            W41_CATALOG, frames={"SIM-W41": source_frame(blank_first_plan=True)}
+        ).sources,
+        clock=fixed_clock,
+        manual_token="cut0ff",
+    )
+    run = repository.find_manual_auto_official_update_run("cut0ff")
+    assert run is not None and run.status == STATUS_PUBLISHED
+    return repository, run.run_id
+
+
+def _running_notices(app: AppTest) -> list[str]:
+    return [
+        str(element.proto.body)
+        for element in app.info
+        if "아직 도는 중" in str(element.value) and element.proto.icon == ":material/hourglass_top:"
+    ]
+
+
+def test_a_cut_off_round_still_running_keeps_its_token_and_shows_the_result_once_done(
+    database: Path,
+) -> None:
+    """회차를 돌던 실행이 다른 칸 클릭으로 끊기면(`runner.fastReruns`) 새 실행이 먼저 보는 것은 아직
+    「실행 중」인 기록이다. 그때 표를 지우지 않고 「도는 중」 안내를 두어야, 회차가 끝난 뒤의 실행이
+    결과 알림과 따로 띄운 경고를 보인다."""
+    from capa_simulation.components.auto_official_update_tab import PENDING_RUN_TOKEN_KEY
+
+    repository, run_id = _cut_off_published_round(database)
+    repository.update_auto_official_update_run(run_id, {"status": STATUS_RUNNING})
+    app = AppTest.from_string(TAB_SCRIPT.format(path=str(database)), default_timeout=180)
+    app.session_state[PENDING_RUN_TOKEN_KEY] = "cut0ff"
+
+    app = app.run()
+
+    assert not app.exception
+    assert len(_running_notices(app)) == 1
+    assert app.session_state[PENDING_RUN_TOKEN_KEY] == "cut0ff"
+    assert not [alert for alert in _alerts(app) if alert[0] == "success"]
+
+    repository.update_auto_official_update_run(run_id, {"status": STATUS_PUBLISHED})
+    app = app.run()
+
+    assert not app.exception
+    assert not _running_notices(app)
+    (success, warning) = _published_alerts(app)
+    assert warning[0] == "warning" and warning[2].startswith(UNCOUNTED_DEMAND_LEAD)
+    assert PENDING_RUN_TOKEN_KEY not in app.session_state
+
+
+def test_the_running_notice_polls_and_hands_a_finished_round_to_the_whole_app(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「도는 중」 안내는 `run_every` 프래그먼트다 — 가만히 두어도 그 프래그먼트만 다시 돌며 기록을
+    본다. 아직 돌면 프래그먼트만 돌고 끝이고, 끝났으면 앱 전체를 다시 돌려 결과 알림이 뜬다(끊긴
+    실행은 다시 돌지 않아, 이것이 없으면 「도는 중」 이 다음 클릭까지 남았다)."""
+    from capa_simulation.components.auto_official_update_tab import (
+        PENDING_RUN_TOKEN_KEY,
+        RUN_POLL_FRAGMENT_KEY,
+    )
+
+    browser = install_fragment_browser(monkeypatch)
+    repository, run_id = _cut_off_published_round(database)
+    repository.update_auto_official_update_run(run_id, {"status": STATUS_RUNNING})
+    app = AppTest.from_string(TAB_SCRIPT.format(path=str(database)), default_timeout=180)
+    app.session_state[PENDING_RUN_TOKEN_KEY] = "cut0ff"
+    app = app.run()
+    assert not app.exception
+    poll = browser.fragment_keyed(RUN_POLL_FRAGMENT_KEY)
+
+    browser.fragment_queue = [poll]
+    app = app.run()
+    assert not app.exception
+    assert browser.started == [[poll]]
+    assert len(_running_notices(app)) == 1
+    assert app.session_state[PENDING_RUN_TOKEN_KEY] == "cut0ff"
+
+    repository.update_auto_official_update_run(run_id, {"status": STATUS_PUBLISHED})
+    app = app.run()
+
+    assert not app.exception
+    assert browser.started == [[poll], []]
+    (success, warning) = _published_alerts(app)
+    assert warning[0] == "warning" and warning[2].startswith(UNCOUNTED_DEMAND_LEAD)
+    assert PENDING_RUN_TOKEN_KEY not in app.session_state
