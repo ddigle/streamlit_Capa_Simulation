@@ -7,14 +7,18 @@
 합성 DB 에 갈래마다 리비전을 하나씩 둔다 — 계산되는 것(내장 시드·보관한 복제), 부하량에서
 빠지는 계획 줄이 있는 것, `RQ_MODULE` 이 모자라 대당 Capa 에서 멈추는 머지(정적 감사
 D1·D2 의 꼴), 가용대수가 모자라 확보율에서 멈추는 연도 이동, 경로 키가 없어 앱이 불러오지
-않는 옛 등록. 그리고 공정·제품·시나리오·리비전 이름에 표지값(`ZZSENTINEL…`)을 심어, 멈춘
-리비전의 오류 문구(공정 이름이 실린다)까지 출력에 없는지 본다.
+않는 옛 등록, 계산은 서는데 저장·발행 검사의 Density 환산에서 멈추는 공식 v2(`구분_EQ` 0).
+그리고 공정·제품·시나리오·리비전 이름에 표지값(`ZZSENTINEL…`)을 심어, 멈춘 리비전의 오류
+문구(공정 이름이 실린다)까지 출력에 없는지 본다.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
 import runpy
+import subprocess
 import sys
 from pathlib import Path
 
@@ -23,7 +27,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
-from capa_simulation.persistence.models import ScenarioCreate
+from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import (
     REVISION_TABLES,
     DuckDBScenarioRepository,
@@ -68,14 +72,25 @@ def _plant_sentinels(path: Path) -> None:
         )
 
 
+def _density_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """계획이 있는 제품 하나의 `구분_EQ` 를 0 으로 — `tests/test_capacity_gate.py` 와 같은 꼴."""
+    plan = tables["RQ_PKG_PLAN"]
+    planned = plan.loc[pd.to_numeric(plan["생산수량"]).gt(0)].iloc[0]
+    chip_eq = tables["RQ_CHIP_EQ"].copy()
+    target = chip_eq["제품정보"].eq(planned["제품정보"]) & chip_eq["Stack"].eq(planned["Stack"])
+    assert target.any()
+    chip_eq.loc[target, "구분_EQ"] = 0.0
+    return {**tables, "RQ_CHIP_EQ": chip_eq}
+
+
 def _create(
     repository: DuckDBScenarioRepository,
     name: str,
     source_type: str,
     tables: dict[str, pd.DataFrame],
     preset: object,
-) -> str:
-    snapshot = repository.create_scenario(
+) -> ScenarioSnapshot:
+    return repository.create_scenario(
         ScenarioCreate(
             scenario_name=name,
             source_simulation_code=f"CODE-{name}",
@@ -86,7 +101,6 @@ def _create(
         tables,
         preset,  # type: ignore[arg-type]
     )
-    return snapshot.scenario.scenario_id
 
 
 @pytest.fixture(scope="module")
@@ -111,7 +125,7 @@ def simulation_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     # S2 — 보관한 복제. 원천 그대로라 계산된다.
     clone = _create(repository, "clone", "DUCKDB_SCENARIO_CLONE", tables, snapshot.preset)
-    repository.archive_scenario(clone)
+    repository.archive_scenario(clone.scenario.scenario_id)
 
     # S3 — 덧붙인 쪽 공정의 `RQ_MODULE` 이 빠진 머지. 대당 Capa 에서 멈춘다.
     merged = dict(tables)
@@ -128,6 +142,15 @@ def simulation_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     old = dict(tables)
     old["RQ_UPEH"] = tables["RQ_UPEH"].assign(STEP_SEQ=None)
     _create(repository, "old", "BIGDATAQUERY", old, snapshot.preset)
+
+    # S6 — 계획이 있는 제품의 `구분_EQ` 가 0 인 원천 등록을 공식 v2 로 지정했다(저장소는 검사하지
+    # 않는다). 대당 Capa·소요대수·확보율은 서고 저장·발행 검사의 Density 환산만 멈춘다.
+    density = _create(
+        repository, "density", "CSV_CORE_DATA", _density_broken(tables), snapshot.preset
+    )
+    repository.publish_official_revision(
+        density.scenario.scenario_id, density.revision.revision_id, release_name="v2"
+    )
 
     _plant_sentinels(path)
     return path
@@ -152,31 +175,44 @@ def test_every_revision_is_counted_by_source_and_status_without_names(
     # 이름·코드·오류 문구(머지가 멈춘 문구에는 공정 이름이 실린다)가 나가지 않는다. 경로도 이름만.
     assert SENTINEL not in output
     assert str(simulation_db.parent) not in output
-    assert "DB `capa_simulation.duckdb` · 시나리오 5(보관 1) · 리비전 7" in output
+    assert "DB `capa_simulation.duckdb` · 시나리오 6(보관 1) · 리비전 8" in output
 
     rows = [line for line in output.splitlines() if line.startswith("| S")]
     by_revision = {tuple(line.split(" | ")[:2]): line for line in rows}
-    assert len(rows) == len(by_revision) == 7
+    assert len(rows) == len(by_revision) == 8
     assert by_revision[("| S1", "r1")].startswith(
-        "| S1 | r1 | 내장 시드 | - | v1 | 됨 | 0 / 24 | 0 | "
+        "| S1 | r1 | 내장 시드 | - | v1 | 됨 | 됨 | 0 / 24 | 0 | "
     )
-    assert " | 됨 | 1 / 25 | 0 | " in by_revision[("| S1", "r3")]
-    assert " | 복제 | 보관 | - | 됨 | 0 / 24 | " in by_revision[("| S2", "r1")]
+    assert " | 됨 | 됨 | 1 / 25 | 0 | " in by_revision[("| S1", "r3")]
+    assert " | 복제 | 보관 | - | 됨 | 됨 | 0 / 24 | " in by_revision[("| S2", "r1")]
+    # Capa 계산이 서지 않으면 Density 는 재지 않는다(`-`) — 저장·발행 검사와 같은 차례다.
     assert (
-        " | 월 병합 | - | - | 멈춤 — 대당 Capa(ValueError · RQ_MODULE) | - | - | - | "
+        " | 월 병합 | - | - | 멈춤 — 대당 Capa(ValueError · RQ_MODULE) | - | - | - | - | "
         in (by_revision[("| S3", "r1")])
     )
+    # 확보율에서 멈춰도 Density 는 잰다 — 둘은 서로 기대지 않는다.
     assert (
-        " | 연도 이동 | - | - | 확보율 멈춤 — 확보율(ValueError) | 0 / 24 | "
+        " | 연도 이동 | - | - | 확보율 멈춤 — 확보율(ValueError) | 됨 | 0 / 24 | "
         in (by_revision[("| S4", "r1")])
     )
-    assert " | 불러오기 막힘 — 경로 키 없음(RQ_UPEH) | - | " in by_revision[("| S5", "r1")]
+    assert " | 불러오기 막힘 — 경로 키 없음(RQ_UPEH) | - | - | " in by_revision[("| S5", "r1")]
+    # `계산` 은 서는데 Density 만 멈춘다 — 대당 Capa·소요대수는 `구분_EQ` 를 쓰지 않는다.
+    assert (
+        " | 원천 등록(CSV) | - | v2 | 됨 | 멈춤(ValueError · RQ_CHIP_EQ) | 0 / 24 | 0 | "
+        in (by_revision[("| S6", "r1")])
+    )
 
-    assert "| **합계** | 5 | 7 | 4 | 1 | 1 | 1 | 0 | 2 | 0 |" in output
-    assert "| 내장 시드 | 1 | 3 | 3 | 0 | 0 | 0 | 0 | 2 | 0 |" in output
-    assert "- 공식버전 — 이력이 가리키는 리비전 1개: 됨 1 · 최신 공식 v1(S1 r1) 됨" in output
+    assert "| **합계** | 6 | 8 | 5 | 1 | 1 | 1 | 0 | 1 | 2 | 0 |" in output
+    assert "| 내장 시드 | 1 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 2 | 0 |" in output
+    assert "| 원천 등록(CSV) | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |" in output
+    assert (
+        "- 공식버전 — 이력이 가리키는 리비전 2개: 됨 2 · Density 멈춤 1 · 최신 공식 v2(S6 r1) 됨 "
+        "· Density 멈춤(ValueError · RQ_CHIP_EQ)"
+    ) in output
+    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in output
     assert "| 멈춤 | 대당 Capa | ValueError | RQ_MODULE | 1 |" in output
     assert "| 확보율 멈춤 | 확보율 | ValueError | - | 1 |" in output
+    assert "**공식버전 줄의 `Density 멈춤` 은 0 이어야 한다.**" in output
 
 
 def test_active_only_keeps_the_active_and_the_official_revisions(
@@ -196,8 +232,57 @@ def test_active_only_keeps_the_active_and_the_official_revisions(
         ("| S3", "r1"),
         ("| S4", "r1"),
         ("| S5", "r1"),
+        ("| S6", "r1"),
     ]
     assert "`--active-only`" in output
+
+
+def test_density_and_securement_are_judged_apart(simulation_db: Path) -> None:
+    """확보율에서 멈춘 리비전도 Density 를 잰다.
+
+    한쪽 멈춤이 다른 쪽을 가리지 않고, 갈래 표에는 두 줄로 든다.
+    """
+    with duckdb.connect(str(simulation_db), read_only=True) as connection:
+        shift = next(
+            revision
+            for revision in script.list_revisions(connection, active_only=False)
+            if revision.source_group == "연도 이동"
+        )
+        tables = script.load_tables(connection, shift)
+
+    outcome = script.calculate(_density_broken(tables))
+
+    assert (outcome.status, outcome.density) == (script.SECUREMENT_STOPPED, script.STOPPED)
+    assert script.describe_density(outcome) == "멈춤(ValueError · RQ_CHIP_EQ)"
+    lines = script.summary_lines([shift], [outcome], active_only=False)
+    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in lines
+    assert "| 확보율 멈춤 | 확보율 | ValueError | - | 1 |" in lines
+
+
+def test_the_official_line_states_a_zero_density_stop() -> None:
+    """공식버전 줄의 `Density 멈춤` 은 0 이어야 하는 값이라 0 이어도 적는다.
+
+    사내 런북 6-3 이 그 0 을 본다.
+    """
+    official = script.RevisionRow(
+        scenario_no=1,
+        revision_no=1,
+        revision_id="r",
+        dataset_id="d",
+        source_group="내장 시드",
+        archived=False,
+        official=(1,),
+    )
+    outcome = script.Outcome(script.CALCULATED, density=script.CALCULATED)
+
+    lines = script.summary_lines([official], [outcome], active_only=False)
+
+    assert (
+        "- 공식버전 — 이력이 가리키는 리비전 1개: 됨 1 · Density 멈춤 0 · 최신 공식 v1(S1 r1) 됨 "
+        "· Density 됨"
+    ) in lines
+    # 멈춘 리비전이 없으면 갈래 표를 찍지 않는다.
+    assert not [line for line in lines if line.startswith("- 멈춘 리비전의 갈래")]
 
 
 def test_plan_lines_match_the_calculation_keys_not_the_raw_text() -> None:
@@ -311,3 +396,48 @@ def test_the_script_runs_as_a_program(
         runpy.run_path(str(path), run_name="__main__")
     assert stopped.value.code == 0
     assert "--active-only" in capsys.readouterr().out
+
+
+# 새 파이썬에서 로그 끄기 단계를 정해 두고 이 스크립트를 불러온 뒤 그 단계를 찍는다.
+_IMPORT_UNDER_DISABLED_LOGGING = """
+import logging
+import sys
+
+logging.disable(int(sys.argv[2]))
+sys.path.insert(0, sys.argv[1])
+import inspect_revision_calculations
+
+print(logging.root.manager.disable)
+"""
+
+
+@pytest.mark.parametrize("level", [logging.NOTSET, logging.CRITICAL])
+def test_importing_keeps_stderr_quiet_and_the_logging_level(level: int) -> None:
+    """`capacity_gate` 가 딸려 오는 Streamlit 캐시 래퍼의 「No runtime found」 경고를 찍지 않고,
+    불러오기 전 로그 끄기 단계를 그대로 돌려놓는다 — `benchmark_home.py` 는 로그를 끈 채 이 모듈을
+    불러온다(되살리면 HOME 이 멈춘 문구를 Streamlit 로그가 찍는다). 이 pytest 프로세스는 이미
+    불러왔으므로 새 프로세스에서 본다."""
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(PROJECT_ROOT / "src"), *filter(None, [environment.get("PYTHONPATH")])]
+    )
+    finished = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _IMPORT_UNDER_DISABLED_LOGGING,
+            str(PROJECT_ROOT / "scripts"),
+            str(level),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=PROJECT_ROOT,
+        env=environment,
+        timeout=120,
+        check=False,
+    )
+
+    assert finished.returncode == 0, finished.stderr[-2000:]
+    assert finished.stdout.strip() == str(level)
+    assert finished.stderr == ""

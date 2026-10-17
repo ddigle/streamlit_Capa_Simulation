@@ -22,7 +22,9 @@
    (확보율이 있는) 포함 공정이 0 개면 발행하지 않는다.
 7. **공식버전 발행** — 발행 검사(`full_capacity_outcome`)를 지나야 발행한다. 회차를 시작할 때 본
    공식버전이 그 사이 바뀌었으면(사람이 다른 공식버전을 지정) 발행하지 않는다 — 옛 기준으로 고른
-   코드가 더 새 공식버전을 덮지 않게 한다.
+   코드가 더 새 공식버전을 덮지 않게 한다. 계산은 되지만 소요대수에 들지 않은 수요가 있으면 막지
+   않고 그 건수 경고를 발행 기록의 사유 끝에 붙인다 — 화면 발행이 성공 문구 밑에 띄우는 것과 같은
+   셈·문장이다.
 
 어느 단계에서 멈춰도 이미 만든 시나리오·리비전은 남기고 그 단계와 사유를 기록한다.
 
@@ -47,6 +49,10 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.components.capacity_gate import density_error
+from capa_simulation.components.required_exclusion_notice import (
+    FULL_SCOPE,
+    required_exclusion_message,
+)
 from capa_simulation.io.bigdataquery_catalog import fetch_simulation_catalog
 from capa_simulation.io.company_bigdataquery_adapter import (
     BigDataQueryCoreDataProvider,
@@ -102,8 +108,9 @@ from capa_simulation.services.auto_official_update import (
 )
 from capa_simulation.services.bigdataquery_catalog_view import registration_prefill
 from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
+from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.securement_rate import calculate_securement_rate
-from capa_simulation.services.simulation_cache import full_capacity_outcome
+from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,6 +167,14 @@ class AutoUpdateRunResult:
 
     run: AutoOfficialUpdateRun | None
     not_run_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _PublishedRelease:
+    """발행 검사를 지나 쓴 공식버전과, 막지 않고 실행 기록에 남길 경고(없으면 빈 문자열)."""
+
+    release: OfficialReleaseSummary
+    warning: str = ""
 
 
 def current_official_baseline(repository: DuckDBScenarioRepository) -> OfficialBaseline:
@@ -512,12 +527,18 @@ def _execute(
             after_publish()
         except Exception:
             _LOGGER.exception("자동 갱신 발행 뒤 캐시 정리가 실패했습니다.")
+    release = published.release
+    reason = (
+        f"공식 v{release.release_no} 발행 · {week_label(candidate.week)} "
+        f"{candidate.simulation_code} · {memo}"
+    )
+    if published.warning:
+        reason = f"{reason}. {published.warning}"
     log.finish(
         STATUS_PUBLISHED,
-        f"공식 v{published.release_no} 발행 · {week_label(candidate.week)} "
-        f"{candidate.simulation_code} · {memo}",
-        official_release_id=published.official_release_id,
-        official_release_no=published.release_no,
+        reason,
+        official_release_id=release.official_release_id,
+        official_release_no=release.release_no,
     )
 
 
@@ -528,7 +549,7 @@ def _publish_filtered_revision(
     release_name: str,
     note: str,
     expected_latest_release_no: int,
-) -> OfficialReleaseSummary | str:
+) -> _PublishedRelease | str:
     """발행 검사(공식 발행 화면과 같은 전체 기간 Capa 계산·Density 환산)를 지나면 발행한다. 실패하면
     그 오류 글.
 
@@ -536,20 +557,39 @@ def _publish_filtered_revision(
     표를 한 번 더 계산한다 — 발행 검사를 판정 결과에 기대지 않고 수동 발행과 같은 문으로 지나게
     하려는 것이고, 배경 회차라 그 몇 초를 받아들인다. 최신 공식버전이 `expected_latest_release_no`
     에서 바뀌었으면 `OfficialReleaseMoved` 다(아무것도 쓰지 않는다).
+
+    지나면 공식버전과 함께 소요대수에 들지 않은 수요 경고를 돌려준다. 화면 발행 검사
+    (`capacity_gate._calculated_verdict`)와 같이 막지 않는다 — 부르는 쪽이 실행 기록 사유에 붙인다.
+    공식버전 메모(`note`)에는 싣지 않는다 — 화면 발행도 메모는 지정한 사람의 글 그대로다.
     """
     # 화면 발행 검사(`official_publish_verdict`)와 같이 Capa 계산이 통과하면 Density 환산도 본다.
-    error = full_capacity_outcome(snapshot.tables, snapshot.tables).error or density_error(
-        snapshot.tables
-    )
+    outcome = full_capacity_outcome(snapshot.tables, snapshot.tables)
+    error = outcome.error or density_error(snapshot.tables)
     if error is not None:
         return error
-    return repository.publish_official_revision(
+    warning = _uncounted_demand_warning(outcome)
+    release = repository.publish_official_revision(
         snapshot.scenario.scenario_id,
         snapshot.revision.revision_id,
         release_name=release_name,
         note=note,
         expected_latest_release_no=expected_latest_release_no,
     )
+    return _PublishedRelease(release, warning)
+
+
+def _uncounted_demand_warning(outcome: CapacityOutcome) -> str:
+    """발행 검사 결과의 소요대수에 들지 않은 수요 경고(시나리오 전체 기간). 없으면 빈 문자열.
+
+    화면 발행 검사와 같은 셈(`required_exclusion_counts`)·문장(`required_exclusion_message`)이다.
+    실행 기록 사유는 기록 표의 칸에도 그대로 실려 Markdown 굵게 표시(`**`)만 뗀다.
+    """
+    if outcome.required_equipment is None:
+        return ""
+    message = required_exclusion_message(
+        required_exclusion_counts(outcome.required_equipment), scope=FULL_SCOPE
+    )
+    return message.replace("**", "")
 
 
 def _inherited_manual_off(
