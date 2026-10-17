@@ -187,6 +187,12 @@ def test_a_new_week_is_registered_judged_and_published(
     )
     assert run.source_registered_at == datetime(2026, 10, 12, 9, 0)
     assert (run.auto_off_count, run.inherited_off_count) == (1, 0)
+    # 소요대수에 들지 않은 수요가 없으면 사유에 경고가 붙지 않는다.
+    assert run.reason == (
+        "공식 v2 발행 · W41 SIM-W41 · "
+        "자동 갱신 · 기준 확보율 80% · off 1공정 · 이어받은 수동 off 0공정"
+    )
+    assert runner.split_published_reason(run.reason) == (run.reason, "")
     assert published == ["cleared"]
     # 상세 조회는 화면 등록의 기본 창과 같다 — 등록일 7일 전 ~ 3일 뒤(오늘을 넘지 않는다).
     request = fake.requests[0]
@@ -415,6 +421,40 @@ def test_a_failed_publish_check_keeps_the_filtered_revision(
     assert run.reason is not None and "RQ_RUN_RATE 시험 오류" in run.reason
     assert run.filtered_revision_id is not None and run.official_release_no is None
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
+
+
+def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """소요대수에 들지 않은 수요는 발행을 막지 않고 실행 기록 사유 끝에 건수로 남는다(리뷰 load R7).
+
+    화면 발행이 성공 문구 밑에 띄우는 경고와 같은 문장(시나리오 전체 기간)이다. 공식버전 메모는
+    자동 갱신 메모 그대로 둔다 — 화면 발행도 메모는 지정한 사람의 글 그대로다.
+    """
+    _official_w40(repository)
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": _source(blank_first_plan=True)},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage, run.official_release_no) == (STATUS_PUBLISHED, "done", 2)
+    assert run.reason is not None
+    memo, warning = run.reason.split(". ", 1)
+    assert memo == (
+        "공식 v2 발행 · W41 SIM-W41 · "
+        "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
+    )
+    assert warning.startswith("소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — ")
+    assert "생산수량이 비어 계획 없음으로 본 계획 1건" in warning
+    # 실행 기록 표의 칸에도 실린다 — Markdown 굵게 표시를 떼고 남긴다.
+    assert "확보율이 실제보다 높게" in warning and "**" not in warning
+    # 「지금 실행」 결과가 성공 알림 밑의 경고로 따로 띄우도록 사유를 그대로 다시 가른다.
+    assert runner.split_published_reason(run.reason) == (memo, warning)
+    release = repository.latest_official_release()
+    assert release is not None
+    assert release.note == "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
 
 
 def test_a_scheduled_day_runs_once_and_manual_runs_always_run(

@@ -684,9 +684,9 @@ $env:PYTHONPATH = "$e2e\src"
 차례를 지킨다 — a 는 사본 DB 를 읽기만 하고, b·c 는 사본 앱이 마이그레이션을 걸 수 있어 사본을 바꾼다. 같은 사본 DB 를 동시에 열면
 `duckdb.IOException` 이니 하나씩 돌린다.
 
-**a. 전 리비전 계산** — `scripts/inspect_revision_calculations.py`. 모든 리비전을 앱과 같은 길로 읽어 대당 Capa → 소요대수 → 확보율을
-돌리고 상태·개수만 찍는다(이름 대신 `S3 r2` 차례 번호). 리비전이 많으면 수 분이라 백그라운드로 돌리고 `--output` 을 읽는다. 오래
-걸리면 `--active-only`(시나리오마다 활성 리비전과 공식버전 대상만).
+**a. 전 리비전 계산** — `scripts/inspect_revision_calculations.py`. 모든 리비전을 앱과 같은 길로 읽어 대당 Capa → 소요대수 → 확보율과
+저장·발행 검사의 Density 환산을 돌리고 상태·개수만 찍는다(이름 대신 `S3 r2` 차례 번호). 리비전이 많으면 수 분이라 백그라운드로
+돌리고 `--output` 을 읽는다. 오래 걸리면 `--active-only`(시나리오마다 활성 리비전과 공식버전 대상만).
 
 ```powershell
 & $py "$e2e\scripts\inspect_revision_calculations.py" --database "$e2e\data\capa_simulation.duckdb" --output $HOME\revisions.md
@@ -696,6 +696,11 @@ $env:PYTHONPATH = "$e2e\src"
 스크립트가 쥐는 수 분 동안 사용자 앱의 연결이 막힌다.
 
 출력 블록을 고치지 않고 붙인다. 읽는 법은 블록 끝에 있다 — `멈춤` 이 0 이 아니면 그 줄의 원천 묶음·단계·표 이름을 「발견」에 옮긴다.
+그리고 공식버전 줄을 본다 — **최신 공식의 `Density` 칸이 `됨` 이어야 한다.** 지난 공식버전의 Density 멈춤은 그 시나리오를 다시
+열어 저장할 때만 경고가 붙는다(「발견」에 `지난 공식버전 포함 Density 멈춤` 수만 옮긴다 — 최신 공식도 든 이력 전체의 수다).
+저장·발행 검사가 Density 환산을 시나리오 전체 기간·EDP 계획까지 보므로, 최신 공식이 `됨` 이 아니면 거기서 이어 저장하는 리비전마다
+경고가 붙고 공식 발행이 거절된다. 그때는 그 줄과 최신 공식의 `Density` 칸(예외 종류·표 이름), 갈래 표의 `Density 멈춤` 줄을
+「발견」에 옮기고 사용자에게 알린다.
 
 **b. HOME 시간** — `scripts/benchmark_home.py --data-dir`. **저장소에서** 돌린다(출력 머리의 커밋을 git 으로 읽는다). 저장소의
 `data\` 는 받지 않는다 — 사본 폴더만.

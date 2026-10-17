@@ -24,7 +24,7 @@ from auto_update_fakes import (
     official_w40,
     source_frame,
 )
-from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1 import AppTest, element_tree
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.auto_official_update_runner import (
@@ -35,6 +35,7 @@ from capa_simulation.auto_official_update_runner import (
 from capa_simulation.auto_update_scheduler import ENV_VAR
 from capa_simulation.components.auto_official_update_tab import RUN_NOW_BUTTON_KEY
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
+from capa_simulation.components.required_exclusion_notice import UNCOUNTED_DEMAND_LEAD
 from capa_simulation.persistence.models import ScenarioPreset
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.auto_official_update import (
@@ -113,6 +114,26 @@ def _field(widgets: object, label: str) -> object:
 
 def _submit_settings(app: AppTest) -> AppTest:
     return next(button for button in app.button if button.label == "설정 저장").click().run()
+
+
+def _alerts(app: AppTest) -> list[tuple[str, str, str]]:
+    """본문의 성공·경고 알림을 그린 차례대로 (종류, 아이콘, 글)."""
+    return [
+        (node.type, node.proto.icon, node.proto.body)
+        for node in app.main
+        if isinstance(node, (element_tree.Success, element_tree.Warning))
+    ]
+
+
+def _published_alerts(app: AppTest) -> tuple[tuple[str, str, str], ...]:
+    """「지금 실행」 발행 회차의 성공 알림과 그 바로 밑 알림."""
+    alerts = _alerts(app)
+    index = next(
+        index
+        for index, (kind, _, text) in enumerate(alerts)
+        if kind == "success" and "지금 실행 회차 — 등록·발행" in text
+    )
+    return tuple(alerts[index : index + 2])
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +260,8 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
 
     assert not app.exception and not app.error
     assert any("지금 실행 회차 — 등록·발행" in str(element.value) for element in app.success)
+    # 소요대수에 들지 않은 수요가 없으면 성공 알림만 뜬다 — 밑에 빈 경고를 그리지 않는다.
+    assert not [text for _, _, text in _alerts(app) if UNCOUNTED_DEMAND_LEAD in text]
     release = repository.latest_official_release()
     assert release is not None and release.release_no == 2
     runs = repository.list_auto_official_update_runs()
@@ -256,6 +279,34 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
     assert list(offs["표지"]) == ["자동 off(확보율 0%, 26.03)"]
     # 현재 공식버전이 새 주차로 바뀌었다.
     assert "공식 v2 W41" in _markdown(app)
+
+
+def test_run_now_shows_uncounted_demand_as_a_warning_under_the_success(database: Path) -> None:
+    """발행한 회차의 소요대수에 들지 않은 수요 경고는 화면 발행처럼 성공 알림 밑에 따로 뜬다.
+
+    실행 기록의 사유(기록 표의 칸)에는 발행 줄 뒤에 이어 적힌 그대로 남는다.
+    """
+    repository = _with_w40(database)
+    fake = FakeBigDataQuery(W41_CATALOG, frames={"SIM-W41": source_frame(blank_first_plan=True)})
+    SOURCES.append(fake.sources)
+    app = _tab(database)
+
+    app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
+
+    assert not app.exception and not app.error
+    head = (
+        "공식 v2 발행 · W41 SIM-W41 · "
+        "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
+    )
+    (success, warning) = _published_alerts(app)
+    assert success == ("success", ":material/publish:", f"지금 실행 회차 — 등록·발행. {head}")
+    kind, icon, text = warning
+    assert (kind, icon) == ("warning", ":material/warning:")
+    assert text.startswith(f"{UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — ")
+    assert "생산수량이 비어 계획 없음으로 본 계획 1건" in text
+    run = repository.list_auto_official_update_runs()[0]
+    assert run.reason == f"{head}. {text}"
+    assert app.dataframe[0].value.iloc[0]["사유"] == run.reason
 
 
 def test_run_now_without_an_official_week_does_nothing(database: Path) -> None:
@@ -458,3 +509,28 @@ def test_a_run_result_cut_off_by_a_rerun_is_found_by_its_token(database: Path) -
     assert not app.exception
     assert any("지금 실행 회차 — 건너뜀" in str(element.value) for element in app.info)
     assert PENDING_RUN_TOKEN_KEY not in app.session_state
+
+
+def test_a_cut_off_published_round_still_shows_its_warning_apart(database: Path) -> None:
+    """기록에서 찾은 발행 회차도 기록 한 칸의 사유를 갈라 경고를 성공 알림 밑에 따로 띄운다."""
+    from capa_simulation.components.auto_official_update_tab import PENDING_RUN_TOKEN_KEY
+
+    repository = _with_w40(database)
+    run_auto_official_update(
+        repository,
+        trigger=TRIGGER_MANUAL,
+        sources=FakeBigDataQuery(
+            W41_CATALOG, frames={"SIM-W41": source_frame(blank_first_plan=True)}
+        ).sources,
+        clock=fixed_clock,
+        manual_token="cut0ff",
+    )
+    app = AppTest.from_string(TAB_SCRIPT.format(path=str(database)), default_timeout=180)
+    app.session_state[PENDING_RUN_TOKEN_KEY] = "cut0ff"
+
+    app = app.run()
+
+    assert not app.exception
+    (success, warning) = _published_alerts(app)
+    assert UNCOUNTED_DEMAND_LEAD not in success[2]
+    assert warning[0] == "warning" and warning[2].startswith(UNCOUNTED_DEMAND_LEAD)

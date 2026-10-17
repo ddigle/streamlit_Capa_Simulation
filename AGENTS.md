@@ -2022,7 +2022,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     경로 목록에 더한다(검사가 쓰기보다 먼저인지 본다).
   - 공식버전 자동 갱신의 발행(`auto_official_update_runner._publish_filtered_revision`)은 세션 없는
     배경 회차라 캐시 래퍼 대신 같은 계산의 순수 코어(`simulation_cache.full_capacity_outcome`)로
-    검사하고, 통과하면 `density_error` 도 부른다. 그 경로도 쓰기 경로 목록에 있다.
+    검사하고, 통과하면 `density_error` 도 부른다. 그 경로도 쓰기 경로 목록에 있다. 소요대수에 들지
+    않은 수요 건수 경고도 같은 셈·문장(`required_exclusion_message(…, scope=FULL_SCOPE)`)으로 만들어
+    막지 않고 실행 기록 사유 끝에 붙인다 — 공식버전 메모에는 싣지 않는다(화면 발행도 메모는 사람의 글).
 - `src/capa_simulation/components/capacity_assumption_notice.py`
   - 측정률 행이 없어 **중립값 1.0 으로 이어 간 건수**를 한 줄로 말한다. HOME 과 `산출 결과`
     둘 다 같은 문구를 쓴다.
@@ -2038,7 +2040,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **소요대수에 들지 않은 수요의 건수**(부하량에서 빠진 계획·생산수량이 빈 계획·경로 없는 계획·대당
     Capa 없는 부하 경로)를 한 문장으로 만든다. HOME 은 결론 위 한 줄(조회기간 기준,
     `simulation_cache.get_scenario_exclusion_counts` 의 정수 넷 — 적중 회차에 큰 프레임을 풀지
-    않는다), 저장·발행 검사(`capacity_gate`)는 같은 문장을 시나리오 전체 기간으로 쓴다.
+    않는다), 저장·발행 검사(`capacity_gate`)는 같은 문장을 시나리오 전체 기간으로 쓴다. 공식버전 자동
+    갱신의 발행(`auto_official_update_runner`)도 같은 문장(전체 기간)을 막지 않고 실행 기록 사유에 붙인다.
   - 산출 결과 소요대수 탭의 **계획 쪽 목록 둘**(`render_plan_exclusion_lists` — 부하량에서 빠진
     계획, 경로에 닿지 않은 계획 부하)도 여기다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다 — 고칠
     곳이 다르다(계획·수율·Chip 구성·경로 대 대당 Capa 기준정보).
@@ -2118,7 +2121,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확보율 판정 → 리비전 2(`자동 갱신 공정 필터`) 저장 → 발행 검사 → 발행(`{시나리오명} 공식안`,
     메모 `자동 갱신 · 기준 확보율 n% · off n공정 · 이어받은 수동 off m공정`). 단계 이름이 실행
     기록 `stage` 에 남고 실패하면 그 단계 이름이 사유 앞에 붙는다. 이미 만든 시나리오·리비전은
-    남긴다.
+    남긴다. 발행한 회차의 사유는 `공식 vN 발행 · W## <코드> · <메모>` 이고, 발행 검사에서 소요대수에
+    들지 않은 수요가 있으면 그 건수 경고(시나리오 전체 기간, 화면 발행과 같은 문장에서 `**` 만 뗌)를
+    `. ` 뒤에 붙인다 — 막지 않는다. 경고는 늘 그 문장의 머리(`UNCOUNTED_DEMAND_LEAD`)로 시작해
+    `split_published_reason` 이 사유를 (발행 줄, 경고)로 다시 가른다(「지금 실행」 결과 알림).
   - **배경 스레드에서 돈다.** `st.cache_data` 래퍼와 `st.session_state` 를 쓰지 않는다 — 계산은
     `simulation_cache.full_capacity_outcome`·`calculate_securement_rate`, 등록은
     `scenario_registration` 이다. 목록·상세 조회(`AutoUpdateSources`)·시계(`clock`)·발행 뒤
@@ -5331,7 +5337,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     막히지도 않고(이미 받은 코드는 다시 받지 않는다), 공식버전에 주차가 없으면 회차를 잡지 않고(기록도
     없이) 오류. 회차 **전에** 세션에 표(`PENDING_RUN_TOKEN_KEY`)를 적고 회차 키 끝에 싣는다 — 도는 사이
     다른 칸을 눌러 회차 뒤 첫 세션 접근에서 rerun 이 끼어들어도 다음 회차가 그 표로 기록을 찾아 결과
-    알림을 보인다 ④ 실행 기록(최근 30회차 — 결과·받은 코드·주차·자동 off 와 표지·이어받은 수동 off·발행·
+    알림을 보인다. 발행한 회차는 사유 끝에 이어 적힌 소요대수에 들지 않은 수요 경고를
+    `auto_official_update_runner.split_published_reason` 으로 갈라 화면 발행처럼 성공 알림 밑의
+    `st.warning` 으로 따로 띄운다(기록에서 찾은 회차도 같다 — 실행 기록의 사유는 그대로) ④ 실행 기록(최근 30회차 — 결과·받은 코드·주차·자동 off 와 표지·이어받은 수동 off·발행·
     기준·사유)·off 공정 목록·설정 변경 기록 표. `sources`·`clock` 인자는 시험이 가짜 BigDataQuery·시계를
     넣는 자리다.
   - 「현재 활성 RQ 복제」·「새 리비전 저장」 폼의 입력 칸은 **저장에 성공한 회차에만** key 세대를
@@ -5831,8 +5839,8 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
   부하 0 인 경로와 PKG 의 Buffer 외 행은 소요대수를 줄이지 않으므로 세지 않는다.
 
 건수는 `required_equipment.required_exclusion_counts` 하나가 세고, HOME(조회기간 기준 한 줄)·산출
-결과 소요대수 탭(목록·CSV)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)가 같은
-셈을 쓴다(`components/required_exclusion_notice.py`).
+결과 소요대수 탭(목록·CSV)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
+자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)이 같은 셈을 쓴다(`components/required_exclusion_notice.py`).
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은
@@ -6357,7 +6365,13 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 - **사용자 앱을 끄지 않는 실데이터 확인은 실 DB 사본으로 한다**(사내 런북 6-3 — `.wal` 이 없을 때 복사, `git archive`
   사본 트리, `127.0.0.1` 별도 포트). 전 리비전 계산은 `scripts/inspect_revision_calculations.py` 가 맡는다 — 모든 리비전을
   앱과 같은 길(`repository._load_reference_frame`)로 읽어 대당 Capa → 소요대수 → 확보율을 돌리고, 상태(됨·멈춤·확보율
-  멈춤·불러오기 막힘·읽지 못함)와 개수(소요대수에 닿지 않은 계획 줄·겹친 경로 키·제외 행)만 찍는다. 시나리오·리비전은
+  멈춤·불러오기 막힘·읽지 못함)와 개수(소요대수에 닿지 않은 계획 줄·겹친 경로 키·제외 행)만 찍는다. 소요대수까지 서면
+  저장·발행 검사의 Density 환산(`capacity_gate.density_error` 그대로 — 시나리오 전체 기간·EDP 계획)도 돌려 `계산` 칸과 따로
+  `Density` 칸·「Density 멈춤」 수로 적는다(확보율과 서로 가리지 않는다). 공식버전 줄은 판정값인 최신 공식의 상태·`Density`
+  칸을 앞에 두고, 이력이 가리키는 모든 리비전의 수는 `지난 공식버전 포함 Density 멈춤` 으로 따로(0 이어도) 적는다. 최신 공식의
+  Density 칸이 됨이어야 한다 — 아니면 거기서 이어 저장하는 리비전마다 경고가 붙고 발행이 거절되므로 런북 6-3 이 본다. 지난
+  공식버전의 Density 멈춤은 그 시나리오를 다시 열어 저장할 때만 경고가 붙는다(발견에 수만 옮긴다). `capacity_gate` 는
+  Streamlit 캐시 래퍼를 함께 불러와 실행 문맥 밖 경고가 수십 줄 찍히므로 불러오는 동안만 로그를 끈다. 시나리오·리비전은
   이름 대신 차례 번호, 예외는 종류와 문구 속 계약 표 이름(`RQ_*`)만이다. `--database` 는 기본값이 없다 — 앱은 연산마다
   연결을 열고 닫아 쉬는 동안 운영 DB 도 열리지만, 스크립트가 쥐는 동안 사용자 앱의 연결이 막힌다. HOME 시간은
   `scripts/benchmark_home.py --data-dir <사본 폴더> --output <파일>`(저장소 `data/` 는 거절, 입력 없는 토글은 `skipped`)로

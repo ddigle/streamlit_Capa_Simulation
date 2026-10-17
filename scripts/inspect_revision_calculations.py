@@ -15,8 +15,16 @@ Markdown 블록**을 찍는다.
 기간 계산과 같은 차례로 돌린다 — 대당 Capa(`calculate_unit_capacity`) → 소요대수
 (`calculate_required_equipment`) → 확보율(`calculate_securement_rate`, `RQ_EQP_AVBL`
 ÷ 소요대수). 경로 키가 없는 옛 리비전은 앱이 불러오기를 막으므로
-(`revision_compatibility`) 계산하지 않고 「불러오기 막힘」으로 센다. 계산이 끝나면
-세 가지를 센다.
+(`revision_compatibility`) 계산하지 않고 「불러오기 막힘」으로 센다.
+
+소요대수까지 서면 **저장·발행 검사가 그다음에 보는 Density 환산**도 돌린다
+(`capacity_gate.density_error` — HOME 의 `RQ_PKG_PLAN` × `RQ_CHIP_EQ` 를 조회기간이 아닌
+시나리오 전체 기간으로, EDP 계획까지). 대당 Capa·소요대수는 `구분_EQ` 를 쓰지 않아 `계산` 이
+`됨` 인 리비전도 여기서 멈출 수 있고, 멈추면 그 리비전은 저장할 때 경고가 붙고 공식버전으로
+지정할 수 없다. 확보율과는 서로 기대지 않아 둘 다 재고, `계산` 칸과 따로 `Density` 칸에
+적는다(「Density 멈춤」).
+
+계산이 끝나면 세 가지를 센다.
 
 - **소요대수에 닿지 않은 계획 줄** — 생산수량이 0 보다 큰 `RQ_PKG_PLAN` 행 가운데,
   그 계획 줄(월·양산구분·제품정보·Stack·Capa Code·Customer·CS)이 부하량이 0 보다 큰
@@ -44,10 +52,11 @@ Markdown 블록**을 찍는다.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -77,6 +86,16 @@ from capa_simulation.services.unit_capacity import (  # noqa: E402
     calculate_unit_capacity,
 )
 
+# `capacity_gate` 는 Streamlit 캐시 래퍼 모듈을 함께 불러온다. 실행 문맥 밖이라 래퍼마다 「No
+# runtime found」 경고가 표준 오류에 한 줄씩(수십 줄) 찍혀 사내 창을 덮으므로 불러오는 동안만 끈다.
+# 끝나면 불러오기 전 단계로 되돌린다 — `benchmark_home.py` 는 로그를 끈 채 이 모듈을 불러온다.
+_LOGGING_DISABLED: Final = logging.root.manager.disable
+logging.disable(max(_LOGGING_DISABLED, logging.WARNING))
+try:
+    from capa_simulation.components.capacity_gate import density_error  # noqa: E402
+finally:
+    logging.disable(_LOGGING_DISABLED)
+
 # 원천 종류(`app_meta.dataset.source_type`, 앱이 적는 값)를 묶어 부르는 이름. 표 차례다.
 SOURCE_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("BIGDATAQUERY", "원천 등록(BigDataQuery)"),
@@ -102,6 +121,12 @@ SECUREMENT_STOPPED: Final = "확보율 멈춤"
 BLOCKED: Final = "불러오기 막힘"
 UNREADABLE: Final = "읽지 못함"
 STATUSES: Final[tuple[str, ...]] = (CALCULATED, STOPPED, SECUREMENT_STOPPED, BLOCKED, UNREADABLE)
+# `계산` 칸과 따로 세는 저장·발행 검사의 Density 환산 멈춤. 집계 표의 칸 이름이기도 하다.
+DENSITY_STOPPED: Final = "Density 멈춤"
+DENSITY_STAGE: Final = "Density"
+# 공식버전 줄에서 이력이 가리키는 모든 리비전(최신 공식도 든다)의 Density 멈춤 수. 판정값인 최신
+# 공식의 `Density` 칸과 섞이지 않게 이름을 따로 단다.
+HISTORY_DENSITY_STOPPED: Final = "지난 공식버전 포함 Density 멈춤"
 
 _HEADER: Final = "<!-- inspect_revision_calculations.py — 아래 블록을 리뷰 문서에 붙인다 -->\n"
 _LOCK_MESSAGE: Final = (
@@ -136,6 +161,11 @@ class Outcome:
     duplicate_route_keys: int | None = None
     capacity_exclusions: int | None = None
     required_exclusions: int | None = None
+    # 저장·발행 검사의 Density 환산 — `CALCULATED` 나 `STOPPED`. Capa 계산이 서지 않아 재지
+    # 않았으면 None 이다. 멈추면 예외 종류와 문구 속 계약 표 이름만 든다.
+    density: str | None = None
+    density_kind: str | None = None
+    density_tables: tuple[str, ...] = ()
     seconds: float = 0.0
 
 
@@ -146,6 +176,7 @@ class Totals:
     scenarios: set[int] = field(default_factory=set)
     revisions: int = 0
     statuses: Counter[str] = field(default_factory=Counter)
+    density_stopped: int = 0
     unreached_revisions: int = 0
     duplicate_revisions: int = 0
 
@@ -204,6 +235,22 @@ def _failed(stage: str, exc: BaseException) -> tuple[str, str, tuple[str, ...]]:
     return stage, type(exc).__name__, contract_tables_in(str(exc))
 
 
+def density_check(tables: Mapping[str, pd.DataFrame]) -> tuple[str, str | None, tuple[str, ...]]:
+    """(상태, 예외 종류, 문구 속 계약 표 이름) — 저장·발행 검사의 Density 환산.
+
+    검사 함수(`capacity_gate.density_error`)를 그대로 부른다 — 검사가 바뀌면 이 집계도 따라간다.
+    그 함수는 `ValueError` 를 잡아 문구로 돌려준다. 그 밖의 예외도 다음 리비전을 재도록 종류로만
+    남긴다(그 예외는 앱의 검사도 멈춘다).
+    """
+    try:
+        error = density_error(tables)
+    except Exception as exc:  # 문구는 찍지 않는다
+        return STOPPED, type(exc).__name__, contract_tables_in(str(exc))
+    if error is None:
+        return CALCULATED, None, ()
+    return STOPPED, ValueError.__name__, contract_tables_in(error)
+
+
 def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
     """앱의 전체 기간 계산과 같은 차례로 돌린다. 예외는 단계와 종류로만 남긴다."""
     blocked = route_key_incompatible_tables(tables)
@@ -242,6 +289,9 @@ def calculate(tables: dict[str, pd.DataFrame]) -> Outcome:
         capacity_exclusions=_exclusion_rows(unit_capacity, CAPACITY_EXCLUSIONS_ATTR),
         required_exclusions=_exclusion_rows(required, REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR),
     )
+    # 저장·발행 검사(`capacity_gate._gate_check`)와 같이 Capa 계산이 서면 Density 환산을 본다.
+    # 확보율과는 서로 기대지 않아 둘 다 잰다 — 한쪽이 멈춰도 다른 쪽을 가리지 않는다.
+    outcome.density, outcome.density_kind, outcome.density_tables = density_check(tables)
     try:
         calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
     except Exception as exc:  # 위와 같다
@@ -341,6 +391,17 @@ def describe(outcome: Outcome) -> str:
     return f"{outcome.status} — {stage}" + (f"({detail})" if detail else "")
 
 
+def describe_density(outcome: Outcome) -> str:
+    """리비전 한 줄의 Density 칸. Capa 계산이 서지 않아 재지 않았으면 `-` 다."""
+    if outcome.density is None:
+        return "-"
+    if outcome.density == CALCULATED:
+        return CALCULATED
+    named = ", ".join(outcome.density_tables) or None
+    detail = " · ".join(part for part in (outcome.density_kind, named) if part is not None)
+    return f"{outcome.density}" + (f"({detail})" if detail else "")
+
+
 def _totals(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]) -> dict[str, Totals]:
     order = [label for _, label in SOURCE_GROUPS]
     groups: dict[str, Totals] = {}
@@ -349,6 +410,7 @@ def _totals(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]) -> di
         totals.scenarios.add(revision.scenario_no)
         totals.revisions += 1
         totals.statuses[outcome.status] += 1
+        totals.density_stopped += int(outcome.density == STOPPED)
         totals.unreached_revisions += int(bool(outcome.unreached_lines))
         totals.duplicate_revisions += int(bool(outcome.duplicate_route_keys))
     known = [label for label in order if label in groups]
@@ -362,12 +424,19 @@ def _totals_row(label: str, totals: Totals) -> list[str]:
         _count(len(totals.scenarios)),
         _count(totals.revisions),
         *(_count(totals.statuses[status]) for status in STATUSES),
+        _count(totals.density_stopped),
         _count(totals.unreached_revisions),
         _count(totals.duplicate_revisions),
     ]
 
 
 def _official_line(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]) -> str:
+    """공식버전 한 줄 — 최신 공식의 상태가 판정값이고, 이력 전체의 수는 그 뒤에 따로 적는다.
+
+    최신 공식은 모두의 첫 화면이고 거기서 저장·발행이 이어지므로 그 `Density` 칸이 `됨` 이어야
+    한다. 지난 공식버전의 Density 멈춤은 그 시나리오를 다시 열어 저장할 때만 경고가 붙어 수만
+    적는다 — 한데 세어 판정값으로 읽으면 지난 공식 하나가 멀쩡한 최신 공식을 막은 것처럼 보인다.
+    """
     official = [
         (revision, outcome)
         for revision, outcome in zip(revisions, outcomes, strict=True)
@@ -380,10 +449,14 @@ def _official_line(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]
     counted = " · ".join(
         f"{status} {statuses[status]:,}" for status in STATUSES if statuses[status]
     )
+    # 최신 공식도 든 이력 전체의 수. 없다는 것도 확인한 값이라 0 이어도 적는다(읽는 법).
+    density_stopped = sum(outcome.density == STOPPED for _, outcome in official)
     return (
-        f"- 공식버전 — 이력이 가리키는 리비전 {len(official):,}개: {counted} · 최신 공식 "
+        f"- 공식버전 — 최신 공식 "
         f"v{max(latest.official)}(S{latest.scenario_no} r{latest.revision_no}) "
-        f"{describe(latest_outcome)}"
+        f"{describe(latest_outcome)} · {DENSITY_STAGE} {describe_density(latest_outcome)} · "
+        f"이력이 가리키는 리비전 {len(official):,}개: {counted} · "
+        f"{HISTORY_DENSITY_STOPPED} {density_stopped:,}"
     )
 
 
@@ -396,6 +469,7 @@ def summary_lines(
         overall.scenarios |= totals.scenarios
         overall.revisions += totals.revisions
         overall.statuses.update(totals.statuses)
+        overall.density_stopped += totals.density_stopped
         overall.unreached_revisions += totals.unreached_revisions
         overall.duplicate_revisions += totals.duplicate_revisions
     scope = (
@@ -408,6 +482,7 @@ def summary_lines(
         "시나리오",
         "리비전",
         *STATUSES,
+        DENSITY_STOPPED,
         "닿지 않은 계획 줄이 있는 리비전",
         "겹친 경로 키가 있는 리비전",
     )
@@ -432,11 +507,22 @@ def summary_lines(
         for outcome in outcomes
         if outcome.status != CALCULATED
     )
+    stops.update(
+        (
+            DENSITY_STOPPED,
+            DENSITY_STAGE,
+            outcome.density_kind or "-",
+            ", ".join(outcome.density_tables) or "-",
+        )
+        for outcome in outcomes
+        if outcome.density == STOPPED
+    )
     if stops:
         lines.extend(
             [
-                "- 계산되지 않은 리비전의 갈래 — 단계 · 예외 종류 · 문구에 든 계약 표 이름"
-                "(문구는 찍지 않는다)",
+                "- 멈춘 리비전의 갈래 — 단계 · 예외 종류 · 문구에 든 계약 표 이름(문구는 찍지 "
+                "않는다). `Density 멈춤` 은 `계산` 칸과 따로 세어, 확보율에서도 멈춘 리비전은 "
+                "두 줄에 든다",
                 "",
                 *_table(
                     ("상태", "단계", "예외 종류", "문구가 가리키는 표", "리비전"),
@@ -457,6 +543,7 @@ REVISION_HEADERS: Final[tuple[str, ...]] = (
     "보관",
     "공식",
     "계산",
+    "Density(저장·발행 검사)",
     "계획 줄(닿지 않음 / 생산수량 > 0)",
     "겹친 경로 키",
     "제외 행(대당 Capa · 소요대수)",
@@ -483,6 +570,7 @@ def revision_row(revision: RevisionRow, outcome: Outcome) -> list[str]:
         "보관" if revision.archived else "-",
         ", ".join(f"v{number}" for number in revision.official) or "-",
         describe(outcome),
+        describe_density(outcome),
         lines,
         _count(outcome.duplicate_route_keys),
         exclusions,
@@ -496,6 +584,16 @@ READING_GUIDE: Final[tuple[str, ...]] = (
     "(대당 Capa 나 소요대수에서 기준정보 계약을 어겼다). `확보율 멈춤` 은 소요대수까지 "
     "섰는데 가용대수(`RQ_EQP_AVBL`)가 없는 공정·달이 있는 리비전이다. `불러오기 막힘` 은 "
     "경로 키 계약보다 앞서 저장돼 앱이 불러오지 않는 리비전이다.",
+    "- `Density` 칸은 저장·발행 검사가 Capa 계산 다음에 보는 HOME 의 Density 환산"
+    "(`RQ_PKG_PLAN` × `RQ_CHIP_EQ`)이다 — 조회기간이 아니라 시나리오 전체 기간이고 EDP 계획도 "
+    "넣는다. `계산` 이 `됨` 이어도 여기서 멈추면(대개 계획이 있는 제품의 `구분_EQ`·`구분_Chip` "
+    "이 0 이하) 그 리비전은 저장할 때 경고가 붙고 공식버전으로 지정할 수 없다. `-` 는 Capa "
+    "계산이 서지 않아 재지 않은 것이다.",
+    "- **최신 공식의 `Density` 칸이 `됨` 이어야 한다** — 지난 공식버전의 Density 멈춤은 그 "
+    "시나리오를 다시 열어 저장할 때만 경고가 붙는다(「발견」에 수만 옮긴다). 최신 공식이 "
+    "멈추면 거기서 이어 저장하는 리비전마다 경고가 붙고 공식 발행이 거절된다(고칠 때까지) — "
+    "그 칸과 갈래 표의 `Density 멈춤` 줄을 그대로 옮긴다. `지난 공식버전 포함 Density 멈춤` "
+    "은 최신 공식도 든 이력 전체의 수이고 0 이어도 적는다.",
     "- `닿지 않음` 은 생산수량이 있는데 소요대수 결과에 그 계획 줄이 하나도 없는 계획 "
     "행 수다 — 부하량 환산에서 빠졌거나 이어질 경로가 없다. `겹친 경로 키` 는 같은 "
     "`RQ_REQB` 업무 키가 두 번 이상 계산된 행 수다. 둘 다 0 이 아니어도 계산은 선다 — "

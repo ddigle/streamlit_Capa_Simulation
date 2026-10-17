@@ -47,9 +47,24 @@ def source_frame(
     zero_available: Sequence[tuple[str, int]] = (),
     missing_available: Sequence[tuple[str, int]] = (),
     broken_run_rate_month: int | None = None,
+    blank_first_plan: bool = False,
 ) -> pd.DataFrame:
-    """내장 시드 원천의 사본. 고른 (공정, 달)의 가용을 0 으로 만들거나 비우고, 가동률을 깨뜨린다."""
+    """내장 시드 원천의 사본. 고른 (공정, 달)의 가용을 0 으로 만들거나 비우고, 가동률을 깨뜨린다.
+
+    `blank_first_plan` 은 첫 계획 행(계획기초정보여부 Y)의 생산수량을 비운다 — 계산은 서고, 그
+    계획은 「생산수량이 비어 계획 없음으로 본 계획」으로 소요대수에 들지 않는다(발행은 막지 않고
+    건수를 경고한다).
+    """
     frame = SEED_SOURCE.copy()
+    if blank_first_plan:
+        plan = frame["계획기초정보여부"].eq("Y")
+        first = frame.loc[plan].iloc[0]
+        target = (
+            plan
+            & frame["제품정보"].eq(first["제품정보"])
+            & frame["생산계획년월"].eq(first["생산계획년월"])
+        )
+        frame.loc[target, "생산수량"] = pd.NA
     for process, month in zero_available:
         mask = frame["공정"].eq(process) & frame["생산계획년월"].eq(month)
         frame.loc[mask, "설비보유"] = frame.loc[mask, "설비대여평가"]
