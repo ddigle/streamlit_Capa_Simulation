@@ -51,7 +51,7 @@ DELTA_LINE_HEIGHT = 1.5
 
 @contextmanager
 def metric_row(*, key: str) -> Iterator[None]:
-    """지표 카드를 **같은 폭·같은 높이로** 늘어놓는 가로 줄.
+    """지표 카드를 **같은 폭·같은 높이로** 늘어놓고, 모자라면 자르지 않고 줄을 접는 가로 줄.
 
     `render_status_metric` 은 CSS 를 걸 자리를 만들려고 카드를 컨테이너로 한 번 감싼다.
     그런데 Streamlit 은 맨 카드와 감싼 컨테이너에 서로 다른 flex-basis 를 준다. 실측하면
@@ -59,6 +59,13 @@ def metric_row(*, key: str) -> Iterator[None]:
     `1 1 120px` 이다. 같은 줄에 섞이면 카드 하나만 90px 좁아진다.
 
     줄 전체에 같은 flex 를 걸어 폭을 맞춘다. 감쌌든 아니든 결과가 같아진다.
+
+    폭이 모자라면 카드를 **자르지 않고 줄을 접는다**. Streamlit 은 라벨·값·회색 줄을 한 줄
+    말줄임으로 그려서, 카드가 글자보다 좁아지면 「71.8% / 82.0%」 가 「71.8% / 82…」, 「99.21%」
+    가 「99.2…」 로 읽혔다(1024~1366px 창). 카드 최소 폭을 그 내용 폭(`min-content`)으로 두면
+    가로 줄이 이미 `flex-wrap: wrap` 이라 들어가지 않는 카드가 다음 줄로 내려간다. 라벨은 칸 최소
+    폭이 0 인 grid 라 내용 폭에 잡히지 않아 따로 `max-content` 로 둔다. 다 들어가는 폭에서는 여전히
+    같은 폭이다.
 
     높이도 맞춘다. 가로 줄은 칸을 위에 붙여(`align-items: start`) 카드가 제 내용 높이로 서서,
     값이 숫자뿐인 카드만 9px 낮았다(공정 Capa 상세 「최저 확보율」). 줄 높이를 고정해 안의 글
@@ -74,7 +81,7 @@ def metric_row(*, key: str) -> Iterator[None]:
                 "}",
                 f'.st-key-{key} [data-testid="stHorizontalBlock"] > * {{',
                 "    flex: 1 1 0 !important;",
-                "    min-width: 0 !important;",
+                "    min-width: min-content !important;",
                 "}",
                 f'.st-key-{key} [data-testid="stVerticalBlock"]'
                 ' > [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {',
@@ -82,6 +89,9 @@ def metric_row(*, key: str) -> Iterator[None]:
                 "}",
                 f'.st-key-{key} [data-testid="stMetric"] {{',
                 "    height: 100%;",
+                "}",
+                f'.st-key-{key} [data-testid="stMetricLabel"] {{',
+                "    min-width: max-content;",
                 "}",
                 f'.st-key-{key} [data-testid="stMetricValue"],',
                 f'.st-key-{key} [data-testid="stMetricValue"] * {{',

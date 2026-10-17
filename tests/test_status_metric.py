@@ -1,4 +1,4 @@
-# Purpose: 지표 카드 줄이 카드를 같은 폭·같은 높이로 세우는 서식을 보내는지 지킨다.
+# Purpose: 지표 카드 줄이 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는 서식을 보내는지 지킨다.
 
 """지표 카드 줄(`metric_row`)의 서식.
 
@@ -44,6 +44,25 @@ def test_the_metric_row_stretches_cards_to_one_height() -> None:
     assert '.st-key-sample_row [data-testid="stMetric"] {\n    height: 100%;' in style
     # 폭 맞춤은 그대로다.
     assert "flex: 1 1 0 !important;" in style
+
+
+def test_the_metric_row_wraps_cards_instead_of_cutting_their_text() -> None:
+    """카드 최소 폭이 0 이면 좁은 창(1024~1366px)에서 카드가 글자보다 좁아져 값·라벨이 한 줄
+    말줄임으로 잘렸다(「71.8% / 82…」 · 「99.2…」 · 「중앙 설비 성능 실현…」). 최소 폭을 내용
+    폭으로 두어 들어가지 않는 카드는 다음 줄로 내린다 — 라벨은 grid 칸 최소 폭이 0 이라 따로
+    내용 폭으로 둔다."""
+    style = _row_style()
+
+    assert (
+        '.st-key-sample_row [data-testid="stHorizontalBlock"] > * {\n'
+        "    flex: 1 1 0 !important;\n"
+        "    min-width: min-content !important;\n"
+        "}"
+    ) in style
+    assert "min-width: 0" not in style
+    assert (
+        '.st-key-sample_row [data-testid="stMetricLabel"] {\n    min-width: max-content;' in style
+    )
 
 
 def test_the_metric_row_fixes_value_and_caption_line_heights() -> None:

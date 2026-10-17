@@ -4118,6 +4118,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     한 서체라 줄 상자가 낮고 한글이 섞이면 높아 카드가 갈렸다 — 값·회색 줄의 줄 높이를 고정하고
     (`VALUE_LINE_HEIGHT`·`DELTA_LINE_HEIGHT`) 칸을 줄 높이로 늘린다. 감싼 카드의 늘림은 1.63 DOM(감싼
     컨테이너 → 요소 칸 → 카드)에 기대므로 판올림 때 브라우저로 다시 본다.
+  - 폭이 모자라면 카드를 **자르지 않고 줄을 접는다** — 카드 최소 폭은 내용 폭(`min-width: min-content`,
+    라벨은 grid 칸 최소 폭이 0 이라 따로 `max-content`)이다. 최소 폭이 0 이던 때는 1024~1366px 창에서
+    값·라벨이 한 줄 말줄임으로 잘렸다(「71.8% / 82…」 · 「99.2…」). 접힌 둘째 줄의 카드는 그 줄 안에서만
+    높이가 맞고 남는 폭을 혼자 채운다.
 - `src/capa_simulation/components/table_toolbar.py`
   - 표 제목·부가 설명·CSV 내보내기 한 줄. `st.download_button` 은 여기서만 부른다.
     라벨에 아이콘을 섞지 않고 `label` 인자를 쓴다. 어기면 테스트가 잡는다.
