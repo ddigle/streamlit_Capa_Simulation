@@ -1869,6 +1869,10 @@ def test_the_narrow_sidebar_summary_accepts_ellipsis_and_flags_wrapping() -> Non
     assert screens._SIDEBAR_GROUPS_JS in screens._SIDEBAR_GROUPS_NARROW_JS
     assert 'removeAttribute("style")' in screens._SIDEBAR_GROUPS_NARROW_JS
     assert 'side.style.transition = "none"' in screens._SIDEBAR_GROUPS_NARROW_JS
+    # 잘림 판정 하나를 그룹 제목과 링크가 함께 쓴다 — 말줄임은 문단이 실제로 잘라 낼 때만 그려진다.
+    assert screens._TEXT_CLIP_JS in screens._SIDEBAR_GROUPS_JS
+    assert screens._SIDEBAR_GROUPS_NARROW_JS.count(screens._TEXT_CLIP_JS) == 2
+    assert 'style.textOverflow === "ellipsis" && ownClip' in screens._TEXT_CLIP_JS
 
 
 # ------------------------------------------------------- Space 기준일 페이더(`space_fader`)
