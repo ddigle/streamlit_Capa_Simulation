@@ -853,7 +853,7 @@ uv run --no-sync python -c "import json; print(json.load(open('.deploy/applied.j
 git show --stat --format= HEAD
 ```
 
-끝줄 「N files changed, …」 의 N 을 기대 수 E = **`{APPLY_FACTS}`** 와 견준다. N = E 면 그대로다. 앞의 수 a 가 0 이 아니면 N 은
+끝줄 「N files changed, …」 의 N 을 기대 수 E = **`309`** 와 견준다. N = E 면 그대로다. 앞의 수 a 가 0 이 아니면 N 은
 최대 E + a 까지 클 수 있다(줄끝만 바뀐 파일 — 결함 아님). N 이 E 보다 작거나 E + a 보다 크면(a 가 0 이면 E 와 다르면) 고치지 않고
 두 수(a · N)를 「발견」 에 적는다. 이 절을 적용 뒤에 읽어 적용 전에 세지 못했으면 a 는 「미기록 — 적용 뒤 읽음」 으로 적고 N 만
 적는다 — N 이 E 보다 큰 만큼이 줄끝만 바뀐 파일 수다.
@@ -936,21 +936,21 @@ E2E 는 6-3 으로 정본이 됐고, 사내 확인을 바란 것은 7-15 B · C 
 - **`변경` 줄은 이 꼴이다.**
 
   ```
-  변경    추가 {APPLY_FACTS} · 수정 {APPLY_FACTS}  (직전 202610120655 대비)
+  변경    추가 96 · 수정 212  (직전 202610120655 대비)
   ```
 
   추가는 새 화면 둘(`app_pages/process_capa_detail.py`·`app_pages/execution_management.py`)·자동 갱신 모듈과 시뮬레이션 `0035`·
   설비 `0023`·새 서비스와 화면 조각·Guide 둘·`scripts/inspect_revision_calculations.py`·`docs/wsl_dev_environment.md` 와 테스트다.
   수정은 화면·서비스·스크립트(`check_deploy_screens.py`·`inspect_real_data_checks.py`·`benchmark_home.py`·`build_deploy_package.py`
   등)·테스트와 문서(`AGENTS.md`·`README.md`·`docs/TODO.md`·이 문서 등), 그리고 `index.html` 이다.
-- **`지움    {APPLY_FACTS}`** — 이 밖의 지워질 파일이 어느 칸에든 뜨면 2-1 대로 멈추고 묻는다.
+- **`지움    없음`** — 이 밖의 지워질 파일이 어느 칸에든 뜨면 2-1 대로 멈추고 묻는다.
 - **`주의` 블록의 `.gitkeep` 세 줄은 결함이 아니다.** `data/input/.gitkeep`·`data/output/.gitkeep`·`data/temp/.gitkeep` 은 배포가
   싣는 빈 폴더 자리표라 배포마다 이렇게 나온다 — `git rm` 하지 않는다(1-4). 그 셋 말고 다른 경로가 이 블록에 있으면 1-4 대로
   멈춘다.
 - 맨 위 「건너뛴 배포」 알림 줄이 **없다.** 서면 사내가 `202610120655` 이 아닌 것이다 — 멈추고 `.deploy/applied.json` 을 다시 본다.
-- 대조 블록은 「목록에 있는데 사내에 없는 파일 {APPLY_FACTS}개 — ZIP 이 채웁니다 — 정상입니다.」 하나다 — 위 추가 수 그대로다.
+- 대조 블록은 「목록에 있는데 사내에 없는 파일 96개 — ZIP 이 채웁니다 — 정상입니다.」 하나다 — 위 추가 수 그대로다.
   적용 **뒤**(3-1)에는 재대조가 「어긋나는 파일이 없습니다.」로 끝나야 한다.
-- **해시 대조는 `{APPLY_FACTS}` 다**(「대조    N/N 해시 일치」 꼴). `deploy:` 커밋의 파일 수는 위 줄끝 확인에서 본다.
+- **해시 대조는 `698/698` 다**(「대조    N/N 해시 일치」 꼴). `deploy:` 커밋의 파일 수는 위 줄끝 확인에서 본다.
 - **의존성 변경 없음 — 4-1 은 건너뛴다.** `pyproject.toml`·`uv.lock`·`requirements*.txt`·`docker/`·`.streamlit/config.toml` 이
   `202610120655` 그대로다. **Playwright 는 의존성이 아니다** — 6-2 대로 저장소 밖에만 깐다(직전 배포 때 깔았으면 그대로 쓴다).
 - **최상위 선언은 그대로다 — 3-2 를 깨지 않는다.** 새 파일은 모두 이미 선언된 `app_pages/`·`src/`·`tests/`·`scripts/`·`docs/`
@@ -970,7 +970,7 @@ E2E 는 6-3 으로 정본이 됐고, 사내 확인을 바란 것은 7-15 B · C 
 
 - **4-2 에서 앱을 띄우면** HOME 사이드바 맨 아래 앱 정보 카드 첫 줄 끝이 「배포 202610171956」 인지 본다(적용 기록을 읽은 것이다 —
   배포 번호는 적어도 된다).
-- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in {APPLY_FACTS} source files」 꼴이다(직전 리뷰는 491). 그 수를 리뷰
+- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in 582 source files」 꼴이다(직전 리뷰는 491). 그 수를 리뷰
   문서에 적는다. pytest 는 4,4xx 개라 사내 PC 에서 20분을 넘을 수 있다 — 4-3 대로 백그라운드로 돌리고 끝줄을 읽는다. 30분 제한에
   죽으면 4-3 의 두 줄로 나눠 돌리고 두 끝줄을 모두 적는다.
 
