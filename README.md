@@ -241,9 +241,16 @@ scripts/inspect_real_data_checks.py
                                사내 실데이터로만 답이 나오는 확인을 읽기 전용으로 재어 집계만 찍는 도구(사내 런북 8장
                                — 8-2 기존 결과 대조의 소요대수 ≈60배 가르기·Plan_Chip·Wafer `WF수(매)` 경로 값,
                                8-5 BigDataQuery 적재일 분포와 여러 날 적재의 사본 표는 판정 없이 수만 찍는다)
+scripts/inspect_revision_calculations.py
+                               저장된 모든 리비전의 대당 Capa → 소요대수 → 확보율을 앱과 같은 길로 읽기 전용으로 다시
+                               돌려 상태·개수만 찍는 도구(사내 런북 6-3 a 사본 E2E — `--database` 는 기본값이 없어 늘
+                               DB 사본을 주고, 리뷰에 그대로 붙이는 Markdown 블록을 찍는다)
 scripts/check_deploy_screens.py
                                사내 런북 7장 화면 확인을 별도 포트의 앱과 저장소 밖 Playwright 로 돌려 개수·있음/없음만
                                찍는 도구(종료 코드 0 끝까지 돎 · 2 준비 안 됨·멈춤 · 3 사용자 앱이 떠 있어 미룸)
+scripts/benchmark_home.py      HOME 의 콜드·웜·토글별 Python rerun 시간을 단계별로 재는 도구. 기본은 임시 DB 의 합성
+                               표본이고, `--data-dir <사본 폴더>` 를 주면 실 DB 사본으로 잰다(사내 런북 6-3 b — 저장소
+                               `data/` 는 받지 않고, 입력이 없는 토글은 skipped 로 적는다)
 tests/                         계산·캐시·시나리오·화면 테스트
 docs/TODO.md                   결정 이력과 작업 목록
 docs/data_model.md             DuckDB 데이터 모델
