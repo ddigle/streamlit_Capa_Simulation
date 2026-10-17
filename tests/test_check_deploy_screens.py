@@ -1368,6 +1368,7 @@ NEW_ITEM_KEYS = [
     "equipment_headers",
     "sidebar_groups",
     "space_fader",
+    "gap_sheet",
 ]
 
 
@@ -1912,3 +1913,177 @@ def test_the_space_fader_summary_carries_counts_only() -> None:
     assert "|" not in line
     assert "범례 없음" in screens.summarize_space_fader(1.5, 0, None, False)
     assert "안 돌아옴" in screens.summarize_space_fader(1.5, 0, False, False)
+
+
+# ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)
+
+
+def test_the_gap_sheet_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — key·탭·전환·닫힘 안내·9행 라벨·누를 칸이 앱과
+    같은지 여기서 본다."""
+    from capa_simulation.components import availability_gap_panel as panel
+    from capa_simulation.components import availability_sheet_keys as keys
+    from capa_simulation.components.availability_sheet_canvas import GROUP_TITLES
+    from capa_simulation.navigation import EQUIPMENT_GAP_TAB
+    from capa_simulation.services.availability_sheet import (
+        ROW_ITEMS,
+        ROW_SCHEDULE_AVAILABLE,
+        ROW_SCHEDULE_LENT,
+        SHEET_ROWS,
+    )
+
+    assert screens.GAP_SHEET_KEYS == {
+        "chart": keys.GAP_SHEET_CHART_KEY,
+        "labels": keys.GAP_SHEET_LABEL_CHART_KEY,
+        "scroll": f"{keys.GAP_SHEET_SCROLL_KEY}_scroll",
+        "evidence": keys.GAP_SHEET_EVIDENCE_KEY,
+    }
+    assert EQUIPMENT_GAP_TAB.endswith(f" {screens.GAP_TAB}")
+    assert screens.GAP_RESULT_VIEW_KEY == panel.RESULT_VIEW_KEY
+    assert screens.GAP_SHEET_VIEW in panel._RESULT_VIEWS
+    assert screens.GAP_DETAIL_MODE_KEY == panel.DETAIL_MODE_KEY
+    assert screens.GAP_SHEET_MODE == panel._DETAIL_MODES[0]
+    source = _text(COMPONENTS / "availability_gap_panel.py")
+    assert f'st.markdown("**{screens.GAP_SHEET_CLOSED_TEXT}**")' in source
+    # 월 칸 스크롤 상자는 `horizontal_scroll_canvas(key=…)` 의 `<key>_scroll` 이다.
+    assert 'target_selector=f".st-key-{GAP_SHEET_SCROLL_KEY}_scroll"' in source
+    assert screens.GAP_SHEET_ROWS == tuple(
+        (GROUP_TITLES[row.split(":")[0]], ROW_ITEMS[row]) for row in SHEET_ROWS
+    )
+    assert screens.GAP_SHEET_SCHEDULE_CELLS == (
+        (ROW_SCHEDULE_LENT, ROW_ITEMS[ROW_SCHEDULE_LENT]),
+        (ROW_SCHEDULE_AVAILABLE, ROW_ITEMS[ROW_SCHEDULE_AVAILABLE]),
+    )
+    # 칸 선택을 켠 그림이라 앱의 터치 스크롤 막이 묶음(`CELL_SELECT_CHART_KEYS`)에 든다.
+    assert "    GAP_SHEET_CHART_KEY,\n)" in _text(PROJECT_ROOT / "app.py")
+
+
+_GAP_MONTHS = (202610, 202611, 202612)
+
+
+def _gap_canvas(lent: tuple[float, ...]) -> Any:
+    """앱이 그리는 시트 그림 한 쌍. 머리 글에 공정 이름 대신 `SENTINEL` 을 넣는다."""
+    import pandas as pd
+
+    from capa_simulation.components.availability_sheet_canvas import (
+        build_availability_sheet_canvas,
+    )
+    from capa_simulation.services.availability_sheet import SHEET_ROWS, SheetView
+
+    values = pd.DataFrame(1.0, index=list(SHEET_ROWS), columns=list(_GAP_MONTHS))
+    values.loc["sched:lent"] = list(lent)
+    values.loc["sched:available", 202610] = 0.0
+    values.loc["static:lent", 202610] = float("nan")
+    view = SheetView(months=_GAP_MONTHS, values=values)
+    return build_availability_sheet_canvas(
+        view=view, process_label=SENTINEL, schedule_detail="설비 DB · 환산대수 · Cut-off 공정별"
+    )
+
+
+def _gap_notes(canvas: Any) -> list[dict[str, Any]]:
+    """`_GAP_SHEET_JS` 가 라벨 그림에서 읽는 꼴."""
+    return [
+        {
+            "text": note["text"],
+            "shift": note.get("xshift", 0),
+            "size": note.get("font", {}).get("size", 0),
+            "y": note["y"],
+        }
+        for note in canvas.labels.to_plotly_json()["layout"]["annotations"]
+    ]
+
+
+def _gap_cells(canvas: Any) -> list[dict[str, Any]]:
+    """`_GAP_SHEET_JS` 가 월 그림에서 읽는 꼴 — 표적 막대마다 칸 가운데 글자(굵게 뗌)."""
+    data = canvas.months.to_plotly_json()["data"]
+    written: dict[tuple[int, int], str] = {}
+    for trace in data[1:]:
+        if trace.get("mode") != "text":
+            continue
+        for x, y, text in zip(trace["x"], trace["y"], trace["text"], strict=True):
+            written[(round((x - 0.5) * 1000), round(y * 1000))] = screens._HTML_TAG.sub("", text)
+    target = data[0]
+    return [
+        {
+            "month": point[0],
+            "row": point[1],
+            "text": written.get((round(x * 1000), round(y * 1000))),
+        }
+        for point, x, y in zip(target["customdata"], target["base"], target["y"], strict=True)
+    ]
+
+
+def test_the_gap_sheet_rows_are_read_from_what_the_app_draws() -> None:
+    canvas = _gap_canvas((0.0, -0.66, 0.0))
+    notes = _gap_notes(canvas)
+
+    rows = screens.gap_sheet_row_labels(notes)
+    assert rows == screens.GAP_SHEET_ROWS
+    # 머리 글(공정 이름 자리)은 행에 실리지 않는다. 주석 차례가 섞여도 세로 자리로 읽는다.
+    assert SENTINEL not in repr(rows)
+    assert screens.gap_sheet_row_labels(list(reversed(notes))) == rows
+    assert screens.gap_sheet_row_labels([]) == ()
+
+
+def test_the_gap_sheet_cell_to_click_prefers_a_non_zero_lent_month() -> None:
+    cells = _gap_cells(_gap_canvas((0.0, -0.66, 0.0)))
+    assert {cell["text"] for cell in cells if cell["row"] == "sched:lent"} == {"0.00", "−0.66"}
+
+    assert screens.pick_gap_sheet_cell(cells) == ((202611, "sched:lent"), 1)
+    # 대여(비가동)가 모두 0 이면 0 아닌 가용 칸의 첫 달이다(202610 가용은 0).
+    quiet = _gap_cells(_gap_canvas((0.0, 0.0, 0.0)))
+    assert screens.pick_gap_sheet_cell(quiet) == ((202611, "sched:available"), 0)
+    # 값이 없는(「—」) 칸은 누르지 않는다. 가용이 모두 0 이면 0 칸이라도 누른다.
+    empty = [{**cell, "text": "—"} for cell in quiet]
+    assert screens.pick_gap_sheet_cell(empty) == (None, 0)
+    zero = [{**cell, "text": "0.00"} for cell in quiet]
+    assert screens.pick_gap_sheet_cell(zero) == ((202610, "sched:available"), 0)
+
+
+def test_the_gap_sheet_summary_carries_counts_and_fixed_words_only() -> None:
+    rows = screens.GAP_SHEET_ROWS
+    line = screens.summarize_gap_sheet(rows, 4, 2, "sched:lent", True, 3, True, 0)
+
+    assert line == (
+        "행 9 — 정한 차례와 같음 · 달 4칸 · 대여(비가동) 0 아닌 달 2 · "
+        "「설비 일정 기준 대여 (비가동)」 칸 누름 → 근거 카드 열림 · 근거 표 3줄(합계 뺌) · "
+        "같은 칸 다시 누름 → 닫힘 · 예외 0"
+    )
+    assert "|" not in line
+    swapped = (rows[1], rows[0], *rows[2:])
+    assert "행 9 — 정한 차례와 다름" in screens.summarize_gap_sheet(
+        swapped, 4, 0, "sched:available", True, 5, False, 0
+    )
+    # 화면 글자가 다르면 같음·다름만 적는다 — 화면 글자를 옮기지 않는다.
+    renamed = ((SENTINEL, "보유"), *rows[1:])
+    other = screens.summarize_gap_sheet(renamed, 4, 0, "sched:available", True, 5, False, 1)
+    assert SENTINEL not in other
+    assert other.endswith(
+        "「설비 일정 기준 가용」 칸 누름 → 근거 카드 열림 · 근거 표 5줄(합계 뺌) · "
+        "같은 칸 다시 누름 → 안 닫힘 · 예외 1"
+    )
+    assert screens.summarize_gap_sheet(rows[:8], 4, 0, None, False, None, None, 0) == (
+        "행 8 — 정한 차례와 다름 · 달 4칸 · 대여(비가동) 0 아닌 달 0 · "
+        "값 있는 설비 일정 기준 칸 없음(안 누름) · 예외 0"
+    )
+    not_opened = screens.summarize_gap_sheet(rows, 4, 0, "sched:available", False, None, None, 0)
+    assert not_opened.endswith("칸 누름 → 근거 카드 안 열림 · 예외 0")
+    assert "근거 카드 열림 · 근거 표 없음 · 같은 칸" in screens.summarize_gap_sheet(
+        rows, 4, 0, "sched:available", True, None, True, 0
+    )
+    assert screens.summarize_gap_sheet(None, 0, 0, None, False, None, None, 2) == (
+        "비교 시트 없음 · 예외 2"
+    )
+
+
+def test_the_gap_sheet_item_reads_the_click_generation_and_restores_the_switches() -> None:
+    """칸 누름은 그림 `layout.meta.generation` 이 올라야 들어간 것이고(같은 칸 다시 누름도), 바꾼
+    전환은 끝에 되돌린다."""
+    import inspect
+
+    assert "plot.layout.meta.generation" in screens._GAP_SHEET_JS
+    assert 'meta={"generation": generation, "scope": scope}' in _text(
+        COMPONENTS / "availability_sheet_canvas.py"
+    )
+    source = inspect.getsource(screens.check_gap_sheet)
+    assert "finally:" in source and "_choose_segment(screen, key, option)" in source

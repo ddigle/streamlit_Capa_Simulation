@@ -78,6 +78,7 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 from __future__ import annotations
 
 import argparse
+import html
 import importlib
 import json
 import os
@@ -260,6 +261,46 @@ SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
 # 그룹 상자 제목은 한 줄이고 넘치면 말줄임이다(2026-10-17 사용자 결정). 선 폭을 함께 적어 두어
 # 이 값과 다르면 측정이 틀어진 것을 안다.
 SIDEBAR_NARROW_WIDTH_PX: Final = 200
+# 가용설비 현황 「Static 대비 일정」 탭의 분류별 내역 9행 비교 시트(`availability_sheet_keys`·
+# `availability_gap_panel`·`availability_sheet_canvas`). 앱 모듈을 부르지 않고 값만 옮긴다 — 화면이
+# 정한 9행과 같은지 따로 보는 확인이라 앱에서 라벨을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가
+# 앱과 같은지 본다.
+GAP_TAB: Final = "Static 대비 일정"
+# 탭 안 두 전환(`st.segmented_control`)의 위젯 key 와 시트를 여는 선택지.
+GAP_RESULT_VIEW_KEY: Final = "equipment_gap_result_view_v1"
+GAP_SHEET_VIEW: Final = "분류별 내역"
+GAP_DETAIL_MODE_KEY: Final = "equipment_gap_detail_mode_v2"
+GAP_SHEET_MODE: Final = "시트"
+# 월 그림(칸 선택)·라벨 그림·월 칸 스크롤 상자·근거 카드의 컨테이너 key.
+GAP_SHEET_KEYS: Final[dict[str, str]] = {
+    "chart": "equipment_gap_sheet_chart",
+    "labels": "equipment_gap_sheet_labels",
+    "scroll": "equipment_gap_sheet_canvas_scroll",
+    "evidence": "equipment_gap_sheet_evidence",
+}
+# 닫힌 근거 카드의 안내 글(같은 칸을 다시 누르면 이 글로 돌아온다).
+GAP_SHEET_CLOSED_TEXT: Final = "칸을 누르면 근거가 여기에 뜹니다"
+# 위에서 아래로 그린 값 행 아홉 — (구획 제목, 행 라벨).
+_GAP_STATIC_TITLE: Final = "Static · 기준정보"
+_GAP_SCHEDULE_TITLE: Final = "설비 일정 기준"
+_GAP_GAP_TITLE: Final = "GAP (설비 일정 − Static)"
+GAP_SHEET_ROWS: Final[tuple[tuple[str, str], ...]] = (
+    (_GAP_STATIC_TITLE, "보유"),
+    (_GAP_STATIC_TITLE, "대여"),
+    (_GAP_STATIC_TITLE, "가용"),
+    (_GAP_SCHEDULE_TITLE, "보유"),
+    (_GAP_SCHEDULE_TITLE, "대여 (비가동)"),
+    (_GAP_SCHEDULE_TITLE, "가용"),
+    (_GAP_GAP_TITLE, "보유"),
+    (_GAP_GAP_TITLE, "대여"),
+    (_GAP_GAP_TITLE, "가용"),
+)
+# 누를 설비 일정 기준 칸의 행 id(표적 `customdata[1]`)와 라벨 — 먼저 대여(비가동)가 0 아닌 칸(근거
+# 표가 비가동이 깎은 호기 줄이다), 없으면 값이 있는 가용 칸.
+GAP_SHEET_SCHEDULE_CELLS: Final[tuple[tuple[str, str], ...]] = (
+    ("sched:lent", "대여 (비가동)"),
+    ("sched:available", "가용"),
+)
 
 
 # ---------------------------------------------------------------------------------- 경로
@@ -2425,6 +2466,293 @@ def check_sidebar_groups(screen: Screen) -> str:
     return f"{summarize_sidebar_groups(found)} · {summarize_sidebar_narrow(narrow)}"
 
 
+# 본문 전환(`st.segmented_control`) 하나의 고른 선택지 글. 전환이 아직 없으면 null.
+_SEGMENT_JS = """(key) => {
+  const box = document.querySelector(`[data-testid="stMain"] .st-key-${key}`);
+  if (!box) return null;
+  const chosen = box.querySelector('[role="radio"][aria-checked="true"]');
+  return chosen ? chosen.innerText.trim() : "";
+}"""
+# 비교 시트 — 라벨 그림의 주석(글·들임·글자 크기·세로 자리 — 판정에만 쓴다), 월 그림의 달 수, 표적
+# 막대(trace 0, `customdata` = 달·행 id·풍선)마다 칸 가운데(`x = 열 + 0.5`, 같은 `y`)에 선 글자, 칸
+# 누름 세대(`layout.meta.generation`). 풍선(`customdata[2]`)은 옮기지 않는다.
+_GAP_SHEET_JS = """(keys) => {
+  const plot = document.querySelector(`.st-key-${keys.chart} .js-plotly-plot`);
+  const labels = document.querySelector(`.st-key-${keys.labels} .js-plotly-plot`);
+  if (!plot || !plot.data || !plot.data.length || !labels || !labels.layout) return null;
+  const strip = (text) => String(text ?? "").replace(/<[^>]+>/g, "").trim();
+  const spot = (x, y) => `${Math.round(x * 1000)}|${Math.round(y * 1000)}`;
+  const written = new Map();
+  plot.data.slice(1).filter((trace) => trace.mode === "text").forEach((trace) => {
+    [...trace.x].forEach((x, i) => written.set(spot(x - 0.5, trace.y[i]), strip(trace.text[i])));
+  });
+  const target = plot.data[0];
+  const data = [...(target.customdata || [])];
+  return {
+    notes: (labels.layout.annotations || []).map((note) => ({
+      text: note.text, shift: note.xshift || 0, size: (note.font || {}).size || 0, y: note.y,
+    })),
+    months: new Set(data.map((point) => point[0])).size,
+    cells: data.map((point, i) => ({
+      month: point[0],
+      row: point[1],
+      text: written.get(spot(target.base[i], target.y[i])) ?? null,
+    })),
+    generation: plot.layout.meta ? plot.layout.meta.generation : null,
+  };
+}"""
+# 누를 칸의 화면 자리(px). 그림이 화면 밖이면 가운데로 굴리고, 칸이 월 칸 스크롤 상자 밖이면 상자를
+# 가로로 굴린 뒤 다시 잰다. 그림 여백이 0 이라 축 범위(달 수 × 높이)가 곧 그림 상자다.
+_GAP_SHEET_POINT_JS = """({keys, month, row}) => {
+  const plot = document.querySelector(`.st-key-${keys.chart} .js-plotly-plot`);
+  if (!plot || !plot.data || !plot.data.length) return null;
+  const target = plot.data[0];
+  const data = [...(target.customdata || [])];
+  const i = data.findIndex((point) => point[0] === month && point[1] === row);
+  if (i < 0) return null;
+  const count = new Set(data.map((point) => point[0])).size;
+  const height = plot.layout.height;
+  const place = () => {
+    const box = plot.getBoundingClientRect();
+    return {
+      x: box.left + ((target.base[i] + 0.5) * box.width) / count,
+      y: box.top + ((height - target.y[i]) * box.height) / height,
+    };
+  };
+  let point = place();
+  if (point.y < 0 || point.y > innerHeight) {
+    plot.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+    point = place();
+  }
+  const scroll = document.querySelector(`.st-key-${keys.scroll}`);
+  if (scroll) {
+    const view = scroll.getBoundingClientRect();
+    if (point.x < view.left + 10 || point.x > view.right - 10) {
+      const left = scroll.scrollLeft + point.x - (view.left + view.width / 2);
+      scroll.scrollTo({ left, behavior: "instant" });
+      point = place();
+    }
+  }
+  return { x: Math.round(point.x), y: Math.round(point.y) };
+}"""
+# 근거 카드 — 닫힘 안내 글이 있는가, 카드 안 표(Glide)의 데이터 줄 수(`aria-rowcount` 는 머리 줄을
+# 넣어 센다), 본문의 예외 상자 수.
+_GAP_EVIDENCE_JS = """({keys, closed}) => {
+  const card = document.querySelector(`.st-key-${keys.evidence}`);
+  const grid = card && card.querySelector('[data-testid="stDataFrame"] [aria-rowcount]');
+  return {
+    card: !!card,
+    closed: !!card && card.innerText.includes(closed),
+    rows: grid ? Number(grid.getAttribute("aria-rowcount")) - 1 : null,
+    exceptions: document.querySelectorAll('[data-testid="stMain"] [data-testid="stException"]')
+      .length,
+  };
+}"""
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def gap_sheet_row_labels(notes: Sequence[Mapping[str, Any]]) -> tuple[tuple[str, str], ...]:
+    """라벨 그림 주석을 위에서 아래로 (구획 제목, 행 라벨)로 읽는다.
+
+    행 라벨은 가장 덜 들인 글(머리·구획 제목)보다 들였고, 구획 제목의 세부 글은 글자가 작아 뺀다.
+    머리 글(공정 이름이 든다)은 바로 뒤의 첫 구획 제목이 덮어 밖으로 나가지 않는다 — 읽은 글은
+    판정에만 쓴다.
+    """
+    if not notes:
+        return ()
+    size = max(float(note.get("size") or 0) for note in notes)
+    least = min(float(note.get("shift") or 0) for note in notes)
+    rows: list[tuple[str, str]] = []
+    title = ""
+    for note in sorted(notes, key=lambda note: -float(note.get("y") or 0)):
+        if float(note.get("size") or 0) < size:
+            continue
+        text = html.unescape(_HTML_TAG.sub("", str(note.get("text") or ""))).strip()
+        if float(note.get("shift") or 0) > least:
+            rows.append((title, text))
+        else:
+            title = text
+    return tuple(rows)
+
+
+def _cell_number(text: object) -> float | None:
+    """칸 글자를 수로(「—」·빈 글자는 None). 부호 문자(U+2212)·`+`·⚠·쉼표를 정리한다."""
+    cleaned = str(text or "").replace("⚠", "").replace(",", "").replace("−", "-").strip()
+    try:
+        return float(cleaned.replace("+", ""))
+    except ValueError:
+        return None
+
+
+def pick_gap_sheet_cell(
+    cells: Sequence[Mapping[str, Any]],
+) -> tuple[tuple[int, str] | None, int]:
+    """누를 설비 일정 기준 칸 (달, 행 id)과 대여(비가동)가 0 아닌 달 수.
+
+    대여(비가동)가 0 아닌 첫 달의 그 칸을 누른다 — 근거 표가 비가동이 깎은 호기 줄이다. 그런 달이
+    없으면 값이 있는 가용 칸(0 아닌 칸 먼저)의 첫 달이다. 칸 글자는 판정에만 쓴다.
+    """
+    (lent_row, _), (available_row, _) = GAP_SHEET_SCHEDULE_CELLS
+    lent = sorted(
+        int(cell["month"])
+        for cell in cells
+        if cell.get("row") == lent_row and _cell_number(cell.get("text")) not in (None, 0.0)
+    )
+    if lent:
+        return (lent[0], lent_row), len(lent)
+    available = sorted(
+        (_cell_number(cell.get("text")) == 0.0, int(cell["month"]))
+        for cell in cells
+        if cell.get("row") == available_row and _cell_number(cell.get("text")) is not None
+    )
+    return ((available[0][1], available_row) if available else None), 0
+
+
+def summarize_gap_sheet(
+    rows: Sequence[tuple[str, str]] | None,
+    months: int,
+    lent_months: int,
+    clicked: str | None,
+    opened: bool,
+    lines: int | None,
+    closed_again: bool | None,
+    exceptions: int,
+) -> str:
+    """비교 시트 한 줄 — 9행이 정한 차례인가, 달 수, 대여(비가동)가 0 아닌 달 수, 설비 일정 기준
+    칸을 누르면 근거 카드가 열리고 표 줄이 몇인가(합계 줄 뺌), 같은 칸을 다시 누르면 닫히는가, 예외
+    상자 수. 행 라벨은 고정 어휘(`GAP_SHEET_ROWS`)에서 적고 화면 글자는 같은지만 본다."""
+    if rows is None:
+        return f"비교 시트 없음 · 예외 {exceptions}"
+    order = "같음" if tuple(rows) == GAP_SHEET_ROWS else "다름"
+    head = (
+        f"행 {len(rows)} — 정한 차례와 {order} · 달 {months}칸 · "
+        f"대여(비가동) 0 아닌 달 {lent_months}"
+    )
+    if clicked is None:
+        return f"{head} · 값 있는 {_GAP_SCHEDULE_TITLE} 칸 없음(안 누름) · 예외 {exceptions}"
+    label = dict(GAP_SHEET_SCHEDULE_CELLS).get(clicked, "그 밖")
+    body = f"「{_GAP_SCHEDULE_TITLE} {label}」 칸 누름 → "
+    if not opened:
+        body += "근거 카드 안 열림"
+    else:
+        table = f"근거 표 {lines}줄(합계 뺌)" if lines else "근거 표 없음"
+        body += f"근거 카드 열림 · {table}"
+        if closed_again is not None:
+            body += f" · 같은 칸 다시 누름 → {'닫힘' if closed_again else '안 닫힘'}"
+    return f"{head} · {body} · 예외 {exceptions}"
+
+
+def _choose_segment(screen: Screen, key: str, option: str) -> str | None:
+    """본문 전환 `key` 에서 `option` 을 고르고, 고르기 전의 선택지 글을 돌려준다(전환이 서지 않으면
+    None — 고르지 않는다). 이미 그것이면 누르지 않는다. 고른 것은 세션 값이라 DB 에 쓰지 않는다."""
+    current = screen.poll(
+        lambda: screen.js(_SEGMENT_JS, key), timeout=60, accept=lambda value: value is not None
+    )
+    if current is None:
+        return None
+    if current != option:
+        options = screen.page.locator(f'[data-testid="stMain"] .st-key-{key} [role="radio"]')
+        options.filter(has_text=option).first.click()
+        screen.wait_idle()
+    return str(current)
+
+
+def _gap_sheet(screen: Screen, *, timeout: float = 30.0) -> Any:
+    return screen.poll(
+        lambda: screen.js(_GAP_SHEET_JS, GAP_SHEET_KEYS),
+        timeout=timeout,
+        accept=lambda value: bool(value) and bool(value["cells"]),
+    )
+
+
+def _gap_evidence(screen: Screen) -> Any:
+    return screen.js(_GAP_EVIDENCE_JS, {"keys": GAP_SHEET_KEYS, "closed": GAP_SHEET_CLOSED_TEXT})
+
+
+def _click_gap_cell(screen: Screen, cell: tuple[int, str]) -> bool:
+    """시트 칸 하나를 누르고 칸 누름 세대가 오를 때까지 기다린다. 올랐으면 True.
+
+    세대는 누를 때마다 오르는 그림 `layout.meta.generation` 이다 — 같은 칸을 다시 눌러 닫는 것도
+    새 그림이라 브라우저가 지난 선택을 들고 오지 않는다(`availability_gap_panel`).
+    """
+    before = (_gap_sheet(screen) or {}).get("generation")
+    arg = {"keys": GAP_SHEET_KEYS, "month": cell[0], "row": cell[1]}
+    if screen.js(_GAP_SHEET_POINT_JS, arg) is None:
+        return False
+    # 굴린 뒤 자리가 멈출 때까지 다시 잰다.
+    point = screen.wait_stable(lambda: screen.js(_GAP_SHEET_POINT_JS, arg), timeout=10)
+    screen.page.mouse.move(float(point["x"]), float(point["y"]))
+    time.sleep(0.3)
+    screen.page.mouse.click(float(point["x"]), float(point["y"]))
+    moved = screen.poll(
+        lambda: (screen.js(_GAP_SHEET_JS, GAP_SHEET_KEYS) or {}).get("generation"),
+        timeout=30,
+        accept=lambda generation: generation is not None and generation != before,
+    )
+    screen.wait_idle()
+    return moved is not None and moved != before
+
+
+def check_gap_sheet(screen: Screen) -> str:
+    """가용설비 현황 → `Static 대비 일정` → `분류별 내역` 9행 비교 시트 — 행 라벨이 정한 9행 차례와
+    같은가와 달 수, 설비 일정 기준 칸(대여(비가동)가 0 아닌 칸 먼저, 없으면 가용 칸) 하나를 누르면
+    아래 근거 카드가 열리고 표 줄이 몇인가, 같은 칸을 다시 누르면 닫히는가, 예외 상자 수. 기본
+    범위(전체 합계)로 본다 — 공정을 고르지 않는다. 칸 누름·전환은 세션 값이라 DB 에 쓰지 않고,
+    바꾼 전환은 끝에 되돌린다. 공정·호기 이름과 칸 값은 판정에만 쓰고 찍지 않는다."""
+    screen.open_page(EQUIPMENT_PAGE)
+    screen.open_tab(GAP_TAB)
+    changed: list[tuple[str, str]] = []
+    try:
+        for key, option in (
+            (GAP_RESULT_VIEW_KEY, GAP_SHEET_VIEW),
+            (GAP_DETAIL_MODE_KEY, GAP_SHEET_MODE),
+        ):
+            before = _choose_segment(screen, key, option)
+            if before is not None and before != option:
+                changed.append((key, before))
+        sheet = _gap_sheet(screen, timeout=120)
+        exceptions = int(_gap_evidence(screen)["exceptions"])
+        if not sheet or not sheet["cells"]:
+            return summarize_gap_sheet(None, 0, 0, None, False, None, None, exceptions)
+        rows = gap_sheet_row_labels(sheet["notes"])
+        cell, lent_months = pick_gap_sheet_cell(sheet["cells"])
+        opened = False
+        lines: int | None = None
+        closed_again: bool | None = None
+        if cell is not None and _click_gap_cell(screen, cell):
+            evidence = screen.poll(
+                lambda: _gap_evidence(screen), timeout=30, accept=lambda value: not value["closed"]
+            )
+            opened = bool(evidence["card"]) and not evidence["closed"]
+            if opened:
+                evidence = screen.poll(
+                    lambda: _gap_evidence(screen),
+                    timeout=10,
+                    accept=lambda value: value["rows"] is not None,
+                )
+                lines = None if evidence["rows"] is None else max(int(evidence["rows"]) - 1, 0)
+                exceptions = max(exceptions, int(evidence["exceptions"]))
+                clicked_again = _click_gap_cell(screen, cell)
+                after = screen.poll(
+                    lambda: _gap_evidence(screen), timeout=30, accept=lambda value: value["closed"]
+                )
+                closed_again = clicked_again and bool(after["closed"])
+                exceptions = max(exceptions, int(after["exceptions"]))
+        return summarize_gap_sheet(
+            rows,
+            int(sheet["months"]),
+            lent_months,
+            None if cell is None else cell[1],
+            opened,
+            lines,
+            closed_again,
+            exceptions,
+        )
+    finally:
+        for key, option in reversed(changed):
+            _choose_segment(screen, key, option)
+
+
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
@@ -2441,6 +2769,7 @@ ITEMS: tuple[Item, ...] = (
     Item("equipment_headers", "RawData 설비 마스터 머리(38열)", check_equipment_headers),
     Item("sidebar_groups", "사이드바 그룹 셋", check_sidebar_groups),
     Item("space_fader", "Space 기준일 페이더", check_space_fader),
+    Item("gap_sheet", "Static 대비 일정 비교 시트", check_gap_sheet),
 )
 
 
