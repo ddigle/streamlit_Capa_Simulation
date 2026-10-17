@@ -1,6 +1,6 @@
-# Purpose: 실행관리(Execution Management) 그룹의 정의와 하위 화면 목차를 데이터를 읽지 않고 그린다.
+# Purpose: 실행관리(실행 Management) 그룹의 정의와 하위 화면 목차를 데이터를 읽지 않고 그린다.
 
-"""Execution Management(실행관리) 머리 화면.
+"""실행 Management(실행관리) 머리 화면.
 
 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정) — Static Capa 는 약속, 실행관리는 그 약속의
 이행, Dynamic Capa 는 실적으로 다시 낸 Capa 다. 이 화면은 실행관리 그룹의 입구다.
@@ -96,14 +96,14 @@ def _render_subpages() -> None:
 # 사이드바 상자 라벨(`EXECUTION_MANAGEMENT.title`)과 같은 글자다 — 두 제목이 같다는 계약은
 # `tests/test_app_navigation.py` 가 AST 로 첫 인자를 읽어 본다.
 render_page_header(
-    "Execution Management",
+    "실행 Management",
     description=(
         "실행관리: 약속된 Capa(Static)가 실제로 확보되고 있는지 공정·기간·호기 단위로 확인합니다. "
         "어긋난 곳은 유관부서에 이행을 요청하고, 지킬 수 없는 약속은 Static 기준정보에 반영되도록 "
         "진척을 관리합니다."
     ),
 )
-render_page_guide("execution_management", title="Execution Management")
+render_page_guide("execution_management", title="실행 Management")
 render_roadmap_panel(
     purpose=(
         "부서별 Gap · A/Item — 약속(Static) 대비 Gap 을 그 Gap 을 메울 부서의 Action Item 으로 "

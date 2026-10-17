@@ -965,7 +965,7 @@ def _render_route_factors(trace: ProcessMonthTrace | None) -> None:
 
 
 class Prescription(NamedTuple):
-    """처방 — 이 공정의 단축 호기 수·추가N 수와 설비 일정 기준으로 남은 미달 달 수."""
+    """대책 — 이 공정의 단축 호기 수·추가N 수와 설비 일정 기준으로 남은 미달 달 수."""
 
     shortened: int
     new: int
@@ -1012,7 +1012,7 @@ def render_process_kpis(
     dynamic: DynamicView | None,
     absent_reason: str,
 ) -> None:
-    """KPI 넷 — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 처방(설비 일정 기준).
+    """KPI 넷 — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
 
     값 글자를 짧게 둔다(카드 폭에 한 줄). 뜻풀이는 값 아래 회색 한 줄과 `?` 풍선이다.
     """
@@ -1062,7 +1062,7 @@ def render_process_kpis(
             help=CAUSE_HELP,
         )
         render_status_metric(
-            "처방",
+            "대책",
             prescription_text(plan),
             key="process_detail_kpi_prescription",
             caption=(
@@ -1098,7 +1098,7 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
 
 
 def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """처방 카드의 목표 — 달마다 같으면 「110% (1.095)」, 다르면 「달마다 확보기준」."""
+    """대책 카드의 목표 — 달마다 같으면 「110% (1.095)」, 다르면 「달마다 확보기준」."""
     values = {_target_for(target, month) for month in months}
     if len(values) == 1:
         return target_label(next(iter(values)))
@@ -1106,7 +1106,7 @@ def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
 
 
 def prescription_text(plan: Prescription | None) -> str:
-    """처방 글 — 「단축 n대 · 신규 m대」, 할 것이 없으면 「목표 충족」, 설비 일정이 없으면
+    """대책 글 — 「단축 n대 · 신규 m대」, 할 것이 없으면 「목표 충족」, 설비 일정이 없으면
     「일정 없음」(까닭은 회색 줄)."""
     if plan is None:
         return "일정 없음"

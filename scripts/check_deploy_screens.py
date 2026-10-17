@@ -254,7 +254,7 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
 # 확인이라 선언에서 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 선언과 같은지 본다.
 SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("static_capa", "Static Capa", 4),
-    ("execution_management", "Execution Management", 6),
+    ("execution_management", "실행 Management", 6),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
 # 좁게 끈 사이드바 폭(px). Streamlit 1.63 이 끌어 주는 가장 좁은 폭이다(200~600px) — 이 폭에서도
@@ -2447,9 +2447,9 @@ def summarize_sidebar_narrow(narrow: Mapping[str, Any] | None) -> str:
 
 
 def check_sidebar_groups(screen: Screen) -> str:
-    """사이드바 계산 그룹 셋 — Static Capa · Execution Management · Dynamic Capa 가 그 차례로
+    """사이드바 계산 그룹 셋 — Static Capa · 실행 Management · Dynamic Capa 가 그 차례로
     서고 상자마다 하위 화면 수가 정한 대로인가, 상자 제목이 줄바꿈·말줄임 없이 한 줄로 보이는가
-    (「Execution Management」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
+    (「실행 Management」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
     상자를 펴지 않는다. 기본 폭에서 잰 뒤 사이드바를 가장 좁게 끈 폭(`SIDEBAR_NARROW_WIDTH_PX`)에서
     한 번 더 잰다 — 그 폭에서는 말줄임이 정한 모양이고 줄바꿈·말줄임 없이 잘림이 결함이다(페이지
     링크도 본다 — 접힌 그룹 안 것도). 잰 뒤 폭은 되돌린다."""

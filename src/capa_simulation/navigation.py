@@ -117,7 +117,7 @@ SCENARIO_MANAGEMENT = PageSpec(
 )
 
 # 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정): **Static Capa** 는 약속(기술팀이 정한 Capa
-# 기준정보와 생산계획으로 낸 미래 Capa), **Execution Management**(실행관리)는 그 약속의 이행(약속된
+# 기준정보와 생산계획으로 낸 미래 Capa), **실행 Management**(실행관리)는 그 약속의 이행(약속된
 # Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 요청하고, 지킬 수 없으면
 # Static 반영까지 추적), **Dynamic Capa** 는 실행관리가 모은 실적으로 다시 낸 Capa 와 그것으로 하는
 # 단기 운영이다. 화면 파일 이름·제목·주소는 그룹을 옮겨도 그대로다 — 주소는 파일 이름에서 나오고
@@ -166,13 +166,13 @@ STATIC_CAPA_SUBPAGES = (
 # 공통 조건 줄도 조건 카드도 설비 DB 핀도 없다. 이행 현황판 숫자가 들어오면 이 선언부터 다시 본다.
 EXECUTION_MANAGEMENT = PageSpec(
     "app_pages/execution_management.py",
-    "Execution Management",
+    "실행 Management",
     ":material/task_alt:",
     reads_scenario=False,
     reads_period=False,
 )
 # 공정 하나의 산출 근거·부족한 달·그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15 사용자
-# 결정). 공식 부족을 호기·기간 수준의 처방으로 내리는 화면이라 실행관리 그룹이다(2026-10-17 사용자
+# 결정). 공식 부족을 호기·기간 수준의 대책으로 내리는 화면이라 실행관리 그룹이다(2026-10-17 사용자
 # 결정). HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 열린다 — 여는 쪽이 이
 # 경로를 쓰므로 상수로 둔다(`process_detail_state.open_process_detail`). 설비 운영 스냅샷(설비 DB)을
 # 읽기만 하는데 한 회차에 여러 번 열므로 설비 DB 핀을 선언한다.
@@ -220,7 +220,7 @@ SPACE_STATUS = PageSpec(
     reads_period=False,
     has_condition_cards=True,
 )
-# 순서는 공정 하나의 처방(공정 Capa 상세) → 설비 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 —
+# 순서는 공정 하나의 대책(공정 Capa 상세) → 설비 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 —
 # 약속에 가장 가까운 설비 이행부터 보고, 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
 EXECUTION_MANAGEMENT_SUBPAGES = (
     PROCESS_CAPA_DETAIL,
@@ -291,7 +291,7 @@ class SidebarGroupSpec:
 
 # HOME(가운데·큰 글씨)과 Admin Area(조회 컨트롤 아래)는 배치가 달라 `app.py` 가 손수 그린다.
 # 나머지 박스는 여기 선언에서 나온다 — 새 그룹을 더할 때 `app.py` 를 함께 고칠 필요가 없다. 계산
-# 그룹의 차례는 약속(Static) → 이행(Execution Management) → 실적(Dynamic)이다.
+# 그룹의 차례는 약속(Static) → 이행(실행 Management) → 실적(Dynamic)이다.
 SIDEBAR_GROUPS: tuple[SidebarGroupSpec, ...] = (
     SidebarGroupSpec("capa_chatbot", CAPA_CHATBOT),
     SidebarGroupSpec("scenario_management", SCENARIO_MANAGEMENT),

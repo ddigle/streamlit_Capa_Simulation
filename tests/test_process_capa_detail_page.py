@@ -238,7 +238,7 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
         "최저 확보율",
         "확보기준 미달",
         "부족 원인",
-        "처방",
+        "대책",
     ]
     assert app.metric[3].value == "일정 없음"
     # 결합 캔버스 — 라벨 Figure(정적)와 월 Figure(칸 선택).

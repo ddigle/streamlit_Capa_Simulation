@@ -89,7 +89,9 @@ BRAND = "S.PKG CAPA"
 # (`static/icons/capa_mark.svg`)이 같은 모양이다 — `tests/test_intro_overlay.py` 가 셋을 맞춰 본다.
 MARK_RING_PATH = "M83.59 26.48 A41 41 0 1 0 83.59 73.52"
 MARK_DIE_ORIGINS = (28, 44, 60)
-TITLE_LINES = ("S.PKG Capa", "Simulation")
+# 타이틀 두 줄 — 앱 이름(`settings.APP_NAME`)의 메인 라벨과 부제다. 화면에는 CSS 가 대문자로 바꿔
+# 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자 결정).
+TITLE_LINES = ("S.PKG CAPA", "AX Management")
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
 # 원래 화면에서 Summary 를 다시 여는 사이드바 머리칸의 `S.PKG CAPA` 라벨(`intro_summary`).
@@ -103,8 +105,12 @@ SUMMARY_LABEL_OFF = "공식버전 요약을 열 수 없습니다"
 # `archivo-capa.woff2` 를 만든 글자 목록. Google Fonts 의 `css2?family=Archivo:wdth,wght@75,800`
 # 에 `text=` 로 이 글자를 넘겨 받은 부분 글꼴이다. 위 넷과 시트의 달(`26.10`)에 새 글자를 쓰면 이
 # 목록으로 다시 받고 여기를 고친다(`tests/test_intro_overlay.py` 가 빠진 글자를 잡는다). 타이틀은
-# CSS 가 대문자로 바꾸므로 대문자도 들어 있어야 한다.
-FONT_SUBSET_TEXT = "S.PKG CAPA SIMULATION Capa Simulation Detail Summary 0123456789."
+# CSS 가 대문자로 바꾸므로 대문자도 들어 있어야 한다. Google Fonts 에 나가지 못하는 자리(사외 WSL
+# 샌드박스)에서는 같은 원본인 google/fonts 저장소의 `ofl/archivo/Archivo[wdth,wght].ttf` 를
+# fontTools 로 `wdth=75`·`wght=800` 인스턴스로 고정하고(`varLib.instancer`) 이 목록으로 줄여
+# (`subset` — 레이아웃 기능 `dnom frac locl numr pnum tnum kern`, 힌팅 없음) woff2 로 쓴다. 이 길로
+# 옛 목록을 다시 만들면 Google Fonts 응답과 글리프 수·윤곽·폭·커닝이 같다.
+FONT_SUBSET_TEXT = "S.PKG CAPA AX MANAGEMENT AX Management Detail Summary 0123456789."
 # `archivo-capa-number.woff2`(`wdth,wght@100,700`) — Summary 차트의 숫자·단위. 한글(`억`)은 이
 # 글꼴에 없어 본문 글꼴로 그린다.
 NUMBER_FONT_SUBSET_TEXT = "0123456789.,%+-–KGb"

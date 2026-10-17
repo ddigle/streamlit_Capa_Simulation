@@ -75,7 +75,7 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 | 그룹(상자 이름) | 뜻 | 화면 |
 |---|---|---|
 | **Static Capa** | **약속.** 기술팀이 공정별 설비 셋업 시점·성능(UPEH·효율·수율)을 기준정보에 정하고, 그 기준정보와 생산계획으로 미래 Capa 를 낸다. 자원운영팀(옛 Guide 의 「GO팀」과 같은 팀)이 그 부족대수로 투자한다. | 현황 요약 · 생산 계획 · 기준 정보 · 산출 결과 · 표준 목표 |
-| **Execution Management**(실행관리) | **이행.** 제조팀이 약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 이행 요청하고, 지킬 수 없으면 Static 반영까지 추적한다. | 현황 요약(머리, `execution_management.py`) · 공정 Capa 상세 · 가용설비 현황 · Space 현황 · 효율·UPEH·수율 실적 |
+| **실행 Management**(실행관리) | **이행.** 제조팀이 약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 이행 요청하고, 지킬 수 없으면 Static 반영까지 추적한다. | 현황 요약(머리, `execution_management.py`) · 공정 Capa 상세 · 가용설비 현황 · Space 현황 · 효율·UPEH·수율 실적 |
 | **Dynamic Capa** | **실적.** 실행관리가 모은 실적으로 Capa 를 다시 내고 그 Capa 로 단기 운영(재공·Rundown·병목)을 한다. | 현황 요약(머리, `reference_integrity.py`, 주소 `dynamic_capa`) · 표준 대비 재공 현황 |
 
 - **경계 규칙**: 약속 이행을 **재고·비교·요청·추적**하는 일은 실행관리, 그 실적으로 **Capa 를 다시
@@ -304,7 +304,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`components/tab_marks.py`, 개선안 C). 점은 **라벨이 아니라 CSS** 다 — 라벨은 `st.tabs` 의
     위젯 id 에 들어가 붙였다 떼면 열린 탭 기억이 흔들린다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
-    순서도 `SIDEBAR_GROUPS` 가 정한다). 그 아래 계산 그룹 셋은 Static Capa → Execution Management →
+    순서도 `SIDEBAR_GROUPS` 가 정한다). 그 아래 계산 그룹 셋은 Static Capa → 실행 Management →
     Dynamic Capa 차례다(1장 「세 영역」). 상자 라벨은 머리 페이지 제목이라 영어로 두고, 「실행관리」는 머리
     화면 설명과 Guide 첫 문장에 적는다.
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
@@ -844,11 +844,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     본문 표 위다(아래 「하위 보기 전환은 본문」). 한 회차에 카드 key 가 둘 서지 않도록 **열린 탭 하나**(`open_tab`)의 것만
     그리고, 탭 본문의 표·CSV 도 그 탭에서만 만든다. 설명(산식·워터폴 읽는 법·히트맵)은 Guide
     (`guides/calculation_result.md`)다.
-- `app_pages/process_capa_detail.py` (화면 이름 `공정 Capa 상세`, Execution Management 하위 첫 화면 —
-  2026-10-17 사용자 결정. 공식 부족을 호기·기간의 처방으로 내리는 화면이라 실행관리다)
+- `app_pages/process_capa_detail.py` (화면 이름 `공정 Capa 상세`, 실행 Management 하위 첫 화면 —
+  2026-10-17 사용자 결정. 공식 부족을 호기·기간의 대책으로 내리는 화면이라 실행관리다)
   - 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 한 화면에서 잇는다(2026-10-15
     사용자 결정 — 목업 그대로). 차례: 머리(공정 표시명 + 배지 `공식 · Core Data`·설비 일정 상태, 오른쪽 끝
-    `← HOME` 링크(`render_page_link`), HOME 에서 왔으면 출처 띠) → KPI 넷(최저 확보율·확보기준 미달 달·부족 원인·처방) → **본문 프래그먼트**(표 도구
+    `← HOME` 링크(`render_page_link`), HOME 에서 왔으면 출처 띠) → KPI 넷(최저 확보율·확보기준 미달 달·부족 원인·대책) → **본문 프래그먼트**(표 도구
     줄·결합 월 캔버스·범례·설비 일정 없음 카드·산출 근거 패널 — `components/process_capa_view.py`) →
     정리 줄(알림·`이 공정 단축 일정 CSV`·필요단축일정 탭 링크, 설비 일정이 설 때만). 설명은 Guide
     (`guides/process_capa_detail.md`)다.
@@ -918,7 +918,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「계산 멈춤」과 함께, 가용대수·확보율 검증 오류면 그 오류를 「✓ 적용」 그대로 낸다. 판정 기준 적용(`build_securement_shortfall_tables`)은 공용 프로필이 다른
     화면에서 바뀌므로 캐시하지 않고 매 회차 한다.
 - `app_pages/execution_management.py`
-  - `Execution Management`(실행관리) 상위 페이지(사이드바 그룹 머리, 표기 없음, 2026-10-17 사용자 결정).
+  - `실행 Management`(실행관리) 상위 페이지(사이드바 그룹 머리, 표기 없음, 2026-10-17 사용자 결정).
     **첫 판은 데이터를 읽지 않는다** — `PageSpec` 이 `reads_scenario=False`·`reads_period=False` 이고
     조건 카드·설비 DB 핀이 없다. 머리말(설명 첫머리 「실행관리: …」 정의) → 접힌 `업무 활용 목적 및
     로드맵`(`roadmap_panel` — 부서별 Gap·A/Item: 기술팀 설비 일정·성능, 자원운영팀 투자, 흐름 「약속 대비
@@ -1228,7 +1228,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시뮬레이션 DB·활성 시나리오·`RQ_EQP_AVBL`과 공통 기간의 소요대수를 읽어 교차검증한다.
     운영 이력을 시나리오에 저장하거나 HOME·B/N의 Static 정본을 바꾸지 않는다.
 - `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`, `app_pages/yield_actual.py`
-  - Execution Management(실행관리)의 실적 비교·개선관리 하위 페이지 셋이다. **화면은 한 벌뿐**이고
+  - 실행 Management(실행관리)의 실적 비교·개선관리 하위 페이지 셋이다. **화면은 한 벌뿐**이고
     (`components/performance_actual_screen.py`) 이 파일들은 `MetricSpec` 과 머리말 문구만
     갖는다. 세 화면이 같은 질문을 지표만 바꿔 묻기 때문이다.
   - 요약(보고용)·상세 분석·개선과제 세 탭이다. 샘플 스위치를 끄면 원천 미연결 상태와
@@ -1246,7 +1246,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (reference_version·content_token·조회 월)와 `display_order_digest(RQ_DISPLAY_ORDER)` 다. 가용대수는
     다른 세션이 바꾸는 현행값이라 매 회차 읽는다.
 - `app_pages/space_status.py`
-  - Execution Management(실행관리)의 Space 현황 페이지다 — 셋업 이행을 공간·호기로 본다.
+  - 실행 Management(실행관리)의 Space 현황 페이지다 — 셋업 이행을 공간·호기로 본다.
   - `S.PKG FAB 전체(C5 독립, C1~C4 연결) → 층 상세 배치`의 **2단** 탐색이다(2026-10-03 사용자 결정 — 동
     단계는 없다). 두 단계 모두 배치 편집기와 **같은 도면**(Components v2, 보기 전용)이고 Space 페이지에는
     Plotly 가 없다. FAB 는 `scope="fab"`(`render_fab_layout_viewer`), 층은 `scope="floor"` 다.
@@ -3406,7 +3406,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     요소라 다른 페이지로 옮기면 Streamlit 이 걷어 간다. 비공식 경로(툴바 슬롯·숨은 버튼
     선택자)라 판올림 뒤 버튼이 뜨고 눌리는지 본다.
   - 가이드가 있는 화면(2026-09-29): HOME·Static Capa·생산 계획·기준 정보·산출 결과·공정 Capa 상세·
-    표준 목표·시나리오 관리·Execution Management·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
+    표준 목표·시나리오 관리·실행 Management·가용설비 현황·Space 현황·Admin Area·VOC. 본문에서 뺀 설명을 옮긴 것이라 각
     화면 테스트가 옮긴 핵심 문구가 Guide 에 있는지 대조한다(`test_*_guide_carries_*`).
 - `src/capa_simulation/components/print_button.py`
   - 헤더 툴바의 **Guide 와 테마 버튼 사이** `Print` 버튼(2026-10-05 사용자 결정 — ⋮ 메뉴를 통째로
@@ -3605,7 +3605,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. Google Fonts `css2?family=Archivo:wdth,wght@…` 에
     `text=` 로 글자 목록을 넘겨 받은 것이다. `BRAND`·`TITLE_LINES`·`DETAIL_LABEL`·`SUMMARY_LABEL` 에
     새 글자를 쓰면 `FONT_SUBSET_TEXT`(숫자는 `NUMBER_FONT_SUBSET_TEXT`)로 다시 받는다(`test_intro_overlay`
-    가 빠진 글자를 잡는다). 한글은 시스템 본문 글꼴이고 워커 캔버스도 같은 글꼴 이름으로 그린다.
+    가 빠진 글자를 잡는다). Google Fonts 에 나가지 못하는 사외 샌드박스에서는 같은 원본(google/fonts 저장소의
+    `Archivo[wdth,wght].ttf`)을 fontTools 로 같은 인스턴스·같은 레이아웃 기능으로 줄인다 — 순서는
+    `FONT_SUBSET_TEXT` 위 설명이고, 옛 목록으로 돌리면 글리프 수·윤곽·폭·커닝이 Google Fonts 응답과 같다.
+    타이틀 두 줄은 앱 이름(`settings.APP_NAME` — 메인 라벨 `S.PKG CAPA` + 부제 `AX Management`)이고 CSS 가
+    대문자로 바꿔 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자 결정). 글자 크기 상한(94px)은
+    긴 둘째 줄이 `.main` 최대 폭 700px 안에 한 줄로 서는 값이다. 한글은 시스템 본문 글꼴이고 워커 캔버스도
+    같은 글꼴 이름으로 그린다.
     `.gitattributes` 가 `*.woff2` 를 binary 로 둔다 — 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
 - `src/capa_simulation/components/intro_summary.py`
   - 입장 화면 Summary 의 **값**과 그것을 여는 사이드바 `S.PKG CAPA` 라벨. 최신 공식버전(`latest_official_release`)
@@ -3861,12 +3867,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     정렬·`ACCENT` 아이콘·`::after` 의 `unfold_more`·hover 테두리 `ACCENT`·focus-visible 2px
     `ACCENT` 윤곽(2px 띄움)·미저장 `PENDING_MARK` 3px 띠)을 건다. 값 칸의 왼쪽 정렬은 1.63 `st.button`
     DOM(버튼 → 제목 풍선 칸 → 아이콘·글 묶음)에 기댄다 — 판올림 때 브라우저로 다시 본다.
-  - **좁은 사이드바에서도 글자를 반쯤 자르거나 낱말 가운데서 접지 않는다**(2026-10-17 사용자 결정 — 사이드바를
-    약 262px 보다 좁게 끌면 「Execution Management」 가 두 줄로, 최소 폭 200px 에서는 「Managemen / t」 로
-    접혔다). 페이지 그룹 상자 제목은 한 줄이고 넘치면 말줄임이다 — 문단의 `nowrap`·`overflow: hidden`·
-    `ellipsis` 가 걸고, 1.63 은 마크다운 칸에 `max-width: 100%` 를 걸어 칸이 이미 줄어든다(칸의 `min-width: 0`
-    은 그 값이 빠지는 판올림 보험 — 둘 다 없으면 말줄임 없이 잘린다). 페이지 링크(단독 상자·하위 화면)도 문단에
-    말줄임을 직접 건다 — 1.63 은 바깥 `span` 에만 걸어 안쪽 문단이 말줄임 없이 잘렸다. 조건 카드·`Support` 제목은
+  - **좁은 사이드바에서도 글자를 반쯤 자르거나 낱말 가운데서 접지 않는다**(2026-10-17 사용자 결정 — 말줄임이
+    없으면 좁게 끈 사이드바에서 긴 그룹 이름이 두 줄로 접히고 칸보다 긴 낱말은 가운데서 끊긴다. 가장 긴
+    「실행 Management」 는 기본 폭 300px 에서 한 줄이고 약 230px 아래에서 말줄임으로 준다). 페이지 그룹 상자
+    제목은 한 줄이고 넘치면 말줄임이다 — 문단의 `nowrap`·`overflow: hidden`·`ellipsis` 가 걸고, 1.63 은
+    마크다운 칸에 `max-width: 100%` 를 걸어 칸이 이미 줄어든다(칸의 `min-width: 0` 은 그 값이 빠지는 판올림
+    보험 — 둘 다 없으면 말줄임 없이 잘린다). 페이지 링크(단독 상자·하위 화면)도 문단에 말줄임을 직접 건다 —
+    1.63 은 바깥 `span` 에만 걸어 안쪽 문단이 말줄임 없이 잘렸다. 조건 카드·`Support` 제목은
     접되 띄어쓰기에서 접는다(`word-break: keep-all` + `overflow-wrap: anywhere` — 조건 이름은 잘리면 못 읽는다).
     화면 확인 `sidebar_groups` 가 기본 폭과 가장 좁게 끈 폭(200px)에서 재고, 넘쳤는데 말줄임이 그려지지 않거나
     조상 칸이 자르는 글(그룹 제목·페이지 링크 — 접힌 그룹 안 링크도)을 결함으로 적는다. 1.63 DOM 에 기대므로
@@ -3983,7 +3990,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `reference_data_source_token`).
 - `src/capa_simulation/components/roadmap_panel.py`
   - 업무 활용 목적·담당 부서별 Action Item·로드맵 한 줄을 **접어 둔 상자**(기본 닫힘)에
-    그린다. 지금은 Execution Management 머리가 부서별 Gap·A/Item 을 싣는다. 제목 바로 아래 첫
+    그린다. 지금은 실행 Management 머리가 부서별 Gap·A/Item 을 싣는다. 제목 바로 아래 첫
     블록이라, 펼쳐 두면 답을 보러 온 사람이 바뀌지 않는 설명을 매번 지나야 한다.
 - `src/capa_simulation/components/page_link.py`
   - 다른 화면으로 건너가는 링크. `st.page_link` 는 `st.navigation` 에 등록된 페이지만
@@ -5318,7 +5325,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     피연산자(가용·소요·목표대수)는 소수 둘째 자리로 적고, 결과는 반올림 전 값으로 낸다 — 적은 숫자로
     다시 셈한 글이 결과 글과 다르면 등호 대신 `≈` 다(`_equals_mark`). 피연산자만 첫째 자리로 줄이면
     「4.0 ÷ 3.7 = 107.0%」 처럼 검산이 어긋난다.
-  - 목표는 늘 백분율과 소수를 함께 적는다(`target_label` — 「110% (1.095)」: 표 도구 줄·④ 카드 제목·처방
+  - 목표는 늘 백분율과 소수를 함께 적는다(`target_label` — 「110% (1.095)」: 표 도구 줄·④ 카드 제목·대책
     KPI 캡션). 필요단축일정 탭의 「110%」 는 1.10 이라 같은 글자가 다른 값을 가리킨다(설계 logic_final 2).
   - KPI 「부족 원인」 의 「일정」(`Prescription.dynamic_short_months`)은 **오늘이 든 생산월부터** 설비 일정
     기준 과부족 < 0 인 달만 센다 — 지난 달은 단축으로 바꿀 수 없다(캔버스 ② 가 흐리게 두는 달과 같다).
@@ -5904,7 +5911,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 원인을 판정과 같은 비율로 가르므로 총보유 = 가용(대여 0)인 달은 칠한 판정이 곧 「보유로도 부족」이다.
 `securement_balance` 는 대여대수를 모르므로 「대여 영향」은 가용 = 총보유 − 대여를 전제한다. 대여를 아는
 공정 Capa 상세 요약(`build_process_capa_summary`)은 `가용 불일치` 인 달에서 총보유 − 대여로도 확보면
-「가용 불일치」로 다시 가른다(대여 0 인데 가용만 낮춘 달 — 처방이 대여로 향하지 않게).
+「가용 불일치」로 다시 가른다(대여 0 인데 가용만 낮춘 달 — 대책이 대여로 향하지 않게).
 
 칠하기는 판정 한 길(확보율 칸과 과부족 칸이 같은 판정)이고 숫자는 Static Capa 와 같은 올림이다.
 판정은 반올림하지 않은 확보율을 보므로 부동소수 잡음 경계(차이 1e-9 안)에서는 경고·부족으로 칠한

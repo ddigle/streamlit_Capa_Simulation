@@ -358,12 +358,13 @@ def build_sidebar_stylesheet(
             overflow-wrap: anywhere;
         }}
         /* 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴
-           「Execution Management」 도 한 줄인데, 사이드바를 약 262px 보다 좁게 끌면 두 줄로,
-           최소 폭(200px)에서는 낱말 가운데서(「Managemen / t」) 접혔다. 말줄임을 거는 것은
-           문단의 세 줄이다. 1.63 은 마크다운 칸(flex 항목)에 `max-width: 100%` 를 걸어 칸이 이미
-           부모 폭 아래로 준다 — `min-width: 0` 은 판올림에서 그 값이 빠져도 칸이 글 폭에 묶이지
-           않게 하는 보험이다(둘 다 없으면 말줄임 없이 잘린다. 1.63 DOM: 요약 줄 → span → div
-           (overflow hidden) → 마크다운 칸 → 문단). */
+           「실행 Management」 도 한 줄이고, 사이드바를 약 230px 보다 좁게 끌면 말줄임으로 준다.
+           이 규칙이 없으면 좁은 사이드바에서 긴 제목이 두 줄로 접히고 칸보다 긴 낱말은 가운데서
+           끊긴다(위 `overflow-wrap: anywhere`). 말줄임을 거는 것은 문단의 세 줄이다. 1.63 은
+           마크다운 칸(flex 항목)에 `max-width: 100%` 를 걸어 칸이 이미 부모 폭 아래로 준다 —
+           `min-width: 0` 은 판올림에서 그 값이 빠져도 칸이 글 폭에 묶이지 않게 하는 보험이다(둘 다
+           없으면 말줄임 없이 잘린다. 1.63 DOM: 요약 줄 → span → div (overflow hidden) → 마크다운
+           칸 → 문단). */
         {group_title_shell_selectors} {{
             min-width: 0;
         }}

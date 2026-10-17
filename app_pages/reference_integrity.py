@@ -2,7 +2,7 @@
 
 """Dynamic Capa 상위 화면 — 실행관리 실적으로 다시 낸 **실현 Capa**.
 
-Dynamic 은 실행관리(Execution Management)가 모은 실적(효율·UPEH·생산실적)으로 Capa 를 다시
+Dynamic 은 실행관리(실행 Management)가 모은 실적(효율·UPEH·생산실적)으로 Capa 를 다시
 내는 영역이다(2026-10-17 사용자 결정 — 세 영역 Static · 실행관리 · Dynamic). 이 화면은 표준 Capa 가
 실적에서 얼마나 실현됐는지를 **손실 한 칸씩** 분해한다 — 표준 Capa 를 왜 다 못 냈나.
 

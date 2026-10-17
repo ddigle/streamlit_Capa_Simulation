@@ -70,7 +70,7 @@ def test_the_table_of_contents_follows_the_sidebar_declaration(
 def test_the_guide_defines_the_three_areas() -> None:
     guide = load_guide("execution_management")
 
-    assert guide.startswith("**실행관리**(Execution Management)")
+    assert guide.startswith("**실행관리**(실행 Management)")
     for text in (
         "Static Capa",
         "Dynamic Capa",

@@ -181,9 +181,10 @@ def test_the_support_box_sits_last_and_apart() -> None:
 def test_page_group_titles_stay_on_one_line_and_ellipsize() -> None:
     """페이지 그룹 상자 제목은 좁게 끈 사이드바에서도 한 줄 + 말줄임이다(2026-10-17 사용자 결정).
 
-    「Execution Management」 가 약 262px 아래에서 두 줄로, 최소 폭(200px)에서는 낱말 가운데서
-    접혔다. 말줄임은 문단의 세 줄이 걸고, 마크다운 칸의 `min-width: 0` 은 판올림 보험이다. 그룹을
-    더하면 선언에서 따라오고, 조건 카드·`Support` 에는 걸리지 않는다(조건 이름은 접어서 다 보인다).
+    말줄임이 없으면 긴 제목(「실행 Management」)이 좁은 사이드바에서 두 줄로 접히고 칸보다 긴
+    낱말은 가운데서 끊긴다. 말줄임은 문단의 세 줄이 걸고, 마크다운 칸의 `min-width: 0` 은 판올림
+    보험이다. 그룹을 더하면 선언에서 따라오고, 조건 카드·`Support` 에는 걸리지 않는다(조건 이름은
+    접어서 다 보인다).
     """
     block = _style_block()
     shells = [

@@ -95,7 +95,7 @@ EXPECTED_PAGES = [
     ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
     (
         "app_pages/execution_management.py",
-        "Execution Management",
+        "실행 Management",
         ":material/task_alt:",
         False,
     ),
@@ -141,7 +141,7 @@ def test_exactly_one_page_is_the_default_entry_point() -> None:
 
 
 def test_group_membership_matches_the_sidebar_sections() -> None:
-    """계산 그룹은 셋이다 — 약속(Static) → 이행(Execution Management) → 실적(Dynamic)
+    """계산 그룹은 셋이다 — 약속(Static) → 이행(실행 Management) → 실적(Dynamic)
     (2026-10-17 사용자 결정). 화면 파일·제목·주소는 그룹을 옮겨도 그대로다."""
     assert [group.slug for group in SIDEBAR_GROUPS] == [
         "capa_chatbot",
@@ -158,7 +158,7 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "app_pages/calculation_result.py",
         STANDARD_TARGET_CAPA.path,
     ]
-    # 실행관리 하위 여섯 — 공정 하나의 처방 → 설비 일정 → 현장 → 성능 실적 셋.
+    # 실행관리 하위 여섯 — 공정 하나의 대책 → 설비 일정 → 현장 → 성능 실적 셋.
     assert EXECUTION_MANAGEMENT.path == "app_pages/execution_management.py"
     assert list(EXECUTION_MANAGEMENT_SUBPAGES[:3]) == [
         PROCESS_CAPA_DETAIL,

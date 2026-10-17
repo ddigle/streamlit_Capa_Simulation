@@ -334,12 +334,14 @@
   max-width: min(700px, 100%);
 }
 
+/* 상한 94px 는 긴 둘째 줄 「AX MANAGEMENT」(7.39em)가 `.main` 최대 폭 700px 안에 한 줄로 서는 크기다
+   (94px → 약 694px). 바닥 44px 에서는 약 325px 라 폭 360px 창까지 한 줄이다. */
 .title {
   margin: 0;
   font-family: var(--display);
   font-weight: 800;
   font-stretch: 75%;
-  font-size: clamp(44px, 6.6vw, 100px);
+  font-size: clamp(44px, 6.6vw, 94px);
   line-height: 0.86;
   letter-spacing: 0;
   text-transform: uppercase;

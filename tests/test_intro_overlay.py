@@ -14,6 +14,7 @@ import streamlit as st
 import capa_simulation.components.intro_overlay as intro_overlay
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
 from capa_simulation.design import tokens
+from capa_simulation.settings import APP_NAME
 
 ASSETS = intro_overlay._ASSETS
 
@@ -71,6 +72,16 @@ def test_every_display_string_is_covered_by_the_font_subset() -> None:
 
     assert set(shown) <= covered, sorted(set(shown) - covered)
     assert set("0123456789.%K") <= set(intro_overlay.NUMBER_FONT_SUBSET_TEXT)
+
+
+def test_title_lines_are_the_app_name_label_and_subtitle() -> None:
+    """타이틀 두 줄은 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 첫 줄은 머리 줄·
+    사이드바의 라벨(`BRAND`)과 같은 글자이고, 화면에는 CSS 가 대문자로 바꿔 보인다."""
+    assert intro_overlay.TITLE_LINES == ("S.PKG CAPA", "AX Management")
+    assert " ".join(intro_overlay.TITLE_LINES) == APP_NAME
+    assert intro_overlay.TITLE_LINES[0] == intro_overlay.BRAND
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\.title \{[^}]*text-transform: uppercase;", css)
 
 
 def test_steps_follow_the_order_they_actually_finish() -> None:
