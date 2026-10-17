@@ -29,9 +29,10 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 내용이 같아야 해서(`theme_toggle`) 회차마다 바뀌는 값을 실을 길이 따로 필요하다 — 글자로 충분해
 가벼운 쪽을 골랐다. 시나리오명 등 사용자 글은 CSS 문자열로 이스케이프한다(`css_string`).
 
-사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다. 그 자리는 `S.PKG CAPA` 라벨(누르면
-Summary — `intro_summary.summary_label_script`)이다. 앱 이름·버전·빌드와 개발 팀·문의처는 모든
-화면 사이드바 맨 아래에 고정한 앱 정보 카드(`components/app_credits.py`)에 있다.
+사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다. 그 자리는 앱 이름 라벨(심볼 옆
+`S.PKG CAPA` / `AX Management` 두 줄, 누르면 Summary — `intro_summary.summary_label_script`)이다.
+앱 이름·버전·빌드와 개발 팀·문의처는 모든 화면 사이드바 맨 아래에 고정한 앱 정보 카드
+(`components/app_credits.py`)에 있다.
 
 Streamlit 의 ⋮ 메뉴(`stMainMenu`)도 여기서 통째로 감춘다(2026-10-05 사용자 결정). 사용자에게
 남길 메뉴 항목은 인쇄와 테마뿐이고, 둘 다 툴바 단추(`print_button`·`theme_toggle`)가 맡는다. 최소
@@ -257,7 +258,7 @@ _HEADER_TEMPLATE = """
   font-size: 0.9em;
 }
 
-/* 사이드바 머리칸. `S.PKG CAPA` 라벨(`intro_summary.summary_label_script`)이 맨 앞에 선다.
+/* 사이드바 머리칸. 앱 이름 라벨(`intro_summary.summary_label_script`)이 맨 앞에 선다.
    `relative` 로 두면 사이드바 내용과 함께 스크롤돼 라벨이 위로 사라진다(앱 이름 글일 때 실제로
    그랬다). `sticky` 는 스크롤 영역 맨 위에 붙어 있는다 — 본문 헤더와 같이 고정으로 읽힌다.
    접기 버튼은 흐름 배치라 이 지정에 움직이지 않는다. */

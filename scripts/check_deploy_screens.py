@@ -1614,27 +1614,57 @@ _TOOLBAR_POSITIONS_JS = """(ids) => ids.map((id) => {
   const r = e.getBoundingClientRect();
   return r.width > 0 ? r.x : null;
 })"""
-_LABEL_MARK_JS = """(id) => {
+# 라벨 글자 한 줄이 다 보이는가 — 글자 본래 폭(Range 는 말줄임 전 폭을 준다)이 제 칸에 들고, 칸이
+# 둘레 상자 안에 있다. `scrollWidth` 는 정수로 반올림돼 1px 안쪽 넘침(말줄임이 이미 선 것)을 놓친다.
+_WHOLE_LINE_JS = """const whole = (el, box) => {
+    const r = el.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return r.width > 0 && range.getBoundingClientRect().width <= r.width + 0.5
+      && r.left >= box.left - 0.5 && r.right <= box.right + 0.5
+      && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+  };"""
+# 사이드바 라벨: 심볼 크기와 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)·안내 글자. 안내 글자는
+# 좁은 사이드바에서 통째로 빠질 수 있다 — 빠진 것은 잘린 것이 아니다.
+_LABEL_MARK_JS = f"""(id) => {{
   const label = document.getElementById(id);
-  const mark = label && label.querySelector("svg");
-  const hint = label && label.querySelector(".capa-brand-hint");
-  if (!mark || !hint) return null;
-  const m = mark.getBoundingClientRect();
-  const h = hint.getBoundingClientRect();
+  const part = (name) => label && label.querySelector(name);
+  const mark = part("svg");
+  const word = part(".capa-brand-word");
+  const sub = part(".capa-brand-sub");
+  const hint = part(".capa-brand-hint");
+  if (!mark || !word || !sub || !hint) return null;
+  {_WHOLE_LINE_JS}
   const l = label.getBoundingClientRect();
-  return {
+  const m = mark.getBoundingClientRect();
+  const hintGone = getComputedStyle(hint).display === "none";
+  return {{
     w: Math.round(m.width * 10) / 10, h: Math.round(m.height * 10) / 10,
-    fits: hint.scrollWidth <= hint.clientWidth + 0.5 && h.right <= l.right + 0.5,
+    fits: whole(word, l) && whole(sub, l) && (hintGone || whole(hint, l)),
     ready: label.getAttribute("aria-disabled") !== "true",
-  };
-}"""
-_SUMMARY_MARK_JS = """(id) => {
+  }};
+}}"""
+# Summary 머리 줄: 심볼 크기와 라벨 두 줄. 두 줄은 머리 줄 높이 안이고 오른쪽 Detail 을 덮지 않는다.
+_SUMMARY_MARK_JS = f"""(id) => {{
   const host = document.getElementById(id);
   if (!host || getComputedStyle(host).display === "none" || !host.shadowRoot) return null;
-  const mark = [...host.shadowRoot.querySelectorAll(".head > .logo svg")]
+  const root = host.shadowRoot;
+  const mark = [...root.querySelectorAll(".head > .logo svg")]
     .map((s) => s.getBoundingClientRect()).find((r) => r.width > 0);
-  return mark ? [Math.round(mark.width * 10) / 10, Math.round(mark.height * 10) / 10] : null;
-}"""
+  const head = root.querySelector(".head");
+  const brand = root.querySelector(".head > .brand");
+  const lines = brand ? [".brand-word", ".brand-sub"].map((name) => brand.querySelector(name)) : [];
+  if (!mark || !head || lines.length < 2 || !lines.every(Boolean)) return null;
+  {_WHOLE_LINE_JS}
+  const h = head.getBoundingClientRect();
+  const detail = root.querySelector(".dock .btn");
+  const right = brand.getBoundingClientRect().right;
+  const clear = !detail || right <= detail.getBoundingClientRect().left + 0.5;
+  return {{
+    size: [Math.round(mark.width * 10) / 10, Math.round(mark.height * 10) / 10],
+    fits: lines.every((line) => whole(line, h)) && clear,
+  }};
+}}"""
 _BOX_LEFT_JS = """(el) => el.getBoundingClientRect().x"""
 # 서랍은 컴포넌트의 shadow root 안이라 `document.querySelector` 로는 닿지 않는다. Playwright
 # 로케이터(`.sle-tray`, shadow 를 뚫는다)로 잡은 서랍 요소를 받아 그 root 에서 찾는다.
@@ -1685,7 +1715,11 @@ def check_toolbar_order(screen: Screen) -> str:
 
 
 def check_sidebar_symbol(screen: Screen) -> str:
-    """사이드바 `S.PKG CAPA` 라벨 심볼과 Summary 머리 줄 심볼(px), 라벨 글자가 다 보이는가."""
+    """사이드바 라벨 심볼과 Summary 머리 줄 심볼(px), 라벨 글자가 다 보이는가.
+
+    「라벨 글자」는 두 자리 라벨의 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)과 사이드바의
+    `Summary` 안내 글자다. 한 곳이라도 말줄임·잘림이면 「잘림」이다.
+    """
     side = screen.wait_for(
         lambda: screen.js(_LABEL_MARK_JS, SUMMARY_LABEL_ID),
         timeout=30,
@@ -1697,10 +1731,12 @@ def check_sidebar_symbol(screen: Screen) -> str:
     finally:
         screen.close_overlay()
     side_size = (float(side["w"]), float(side["h"]))
-    same = all(abs(a - b) < 0.5 for a, b in zip(side_size, summary, strict=True))
+    summary_size = (float(summary["size"][0]), float(summary["size"][1]))
+    same = all(abs(a - b) < 0.5 for a, b in zip(side_size, summary_size, strict=True))
+    fits = bool(side["fits"]) and bool(summary["fits"])
     return (
-        f"사이드바 {_px(side_size)} · Summary {_px(summary)} — {'같음' if same else '다름'} · "
-        f"라벨 글자 {'다 보임' if side['fits'] else '잘림'}"
+        f"사이드바 {_px(side_size)} · Summary {_px(summary_size)} — {'같음' if same else '다름'} · "
+        f"라벨 글자 {'다 보임' if fits else '잘림'}"
     )
 
 

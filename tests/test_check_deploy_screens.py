@@ -1278,7 +1278,54 @@ def test_the_intro_and_sidebar_ids_match_the_app() -> None:
     assert '$(".btn.detail")' in _text(assets / "intro.js")
     html = _text(assets / "intro.html")
     assert '<header class="head">' in html and 'class="logo"' in html
-    assert 'class="capa-brand-hint"' in _text(COMPONENTS / "intro_summary.py")
+    # `symbol` 항목이 재는 라벨 두 줄 — 사이드바(`capa-brand-*`)와 Summary 머리 줄(`brand-*`).
+    for name in ("brand-word", "brand-sub"):
+        assert f'class="{name}"' in html, name
+        assert f'".{name}"' in screens._SUMMARY_MARK_JS, name
+    label = _text(COMPONENTS / "intro_summary.py")
+    for name in ("capa-brand-word", "capa-brand-sub", "capa-brand-hint"):
+        assert f'class="{name}"' in label, name
+        assert f'".{name}"' in screens._LABEL_MARK_JS, name
+
+
+class _SymbolScreen(_FakeScreen):
+    """`symbol` 항목이 읽는 두 값(사이드바 라벨·Summary 머리 줄)을 정해 돌려준다."""
+
+    def __init__(self, side: dict[str, Any], summary: dict[str, Any]) -> None:
+        super().__init__()
+        self.values = {screens._LABEL_MARK_JS: side, screens._SUMMARY_MARK_JS: summary}
+        self.clicked: list[str] = []
+        self.closed = 0
+        self.page = SimpleNamespace(
+            locator=lambda selector: SimpleNamespace(click=lambda: self.clicked.append(selector))
+        )
+
+    def js(self, script: str, arg: object = None) -> Any:
+        return self.values[script]
+
+    def close_overlay(self) -> None:
+        self.closed += 1
+
+
+@pytest.mark.parametrize(
+    ("side_fits", "summary_fits", "verdict"),
+    [(True, True, "다 보임"), (False, True, "잘림"), (True, False, "잘림")],
+)
+def test_the_symbol_item_says_cut_when_either_label_loses_a_line(
+    monkeypatch: pytest.MonkeyPatch, side_fits: bool, summary_fits: bool, verdict: str
+) -> None:
+    """「라벨 글자」는 사이드바 라벨(두 줄 + 안내 글자)과 Summary 머리 줄 라벨(두 줄)을 함께 본다 —
+    한 곳이라도 잘리면 「잘림」. 결과는 고정 낱말과 px 뿐이다(런북 7장의 기대 글과 같은 꼴)."""
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    screen = _SymbolScreen(
+        {"w": 30, "h": 30, "fits": side_fits, "ready": True},
+        {"size": [30, 30], "fits": summary_fits},
+    )
+
+    result = screens.check_sidebar_symbol(screen)
+
+    assert result == f"사이드바 30×30px · Summary 30×30px — 같음 · 라벨 글자 {verdict}"
+    assert screen.clicked == [f"#{screens.SUMMARY_LABEL_ID}"] and screen.closed == 1
 
 
 def test_the_toolbar_labels_cover_the_declared_order() -> None:

@@ -10,15 +10,14 @@ HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려�
 - **Detail** — 원래 화면(HOME 등)으로 들어간다. 누른 단추에서 원이 퍼지며 앱이 드러난다.
 - **Summary** — 같은 오버레이 안에서 **최신 공식버전의 여섯 달 요약**을 모션으로 그린다(역할
   분리: 앱 안은 상세, 이 화면은 요약 — 2026-10-02 사용자 결정). 타이틀·로딩 막대가 위로 빠지고,
-  Summary 는 Detail 밑으로 접히고, Detail 은 심볼·라벨 옆으로 옮겨 라벨과 같은 글자가 되며, 웨이퍼는
-  제자리·같은 속도로 돌면서 20% 무채색으로 흐려진다. 그 위에 생산계획 선·B/N 확보율 막대(부족
-  대수)·월별 시트(Density·Wafer 계획·제품 비중 도넛)가 차례로 조립된다. 값은
+  Summary 는 Detail 밑으로 접히고, Detail 은 심볼·라벨(앱 이름 두 줄) 옆으로 옮겨 라벨 위 줄과 같은
+  글자가 되며, 웨이퍼는 제자리·같은 속도로 돌면서 20% 무채색으로 흐려진다. 그 위에 생산계획 선·B/N
+  확보율 막대(부족 대수)·월별 시트(Density·Wafer 계획·제품 비중 도넛)가 차례로 조립된다. 값은
   `components/intro_summary.py` 가 따로 보낸다.
 
-원래 화면으로 들어간 뒤에는 사이드바 머리칸의 `S.PKG CAPA` 라벨
-(`intro_summary.summary_label_script`)이 같은 요약을 다시 연다 — 화면이 그 라벨 속으로 접히며
-요약이 드러난다. 오버레이는 걷지 않고 감춰 둔다
-(워커는 멈추고 캔버스는 1px 로 줄인다).
+원래 화면으로 들어간 뒤에는 사이드바 머리칸의 앱 이름 라벨(`S.PKG CAPA` / `AX Management` 두 줄 —
+`intro_summary.summary_label_script`)이 같은 요약을 다시 연다 — 화면이 그 라벨 속으로 접히며
+요약이 드러난다. 오버레이는 걷지 않고 감춰 둔다(워커는 멈추고 캔버스는 1px 로 줄인다).
 
 **어떻게 덮는가.** Components v2 하나를 `app.py` 맨 앞(부트스트랩 전)에 그린다. 그 JS 가
 `document.body` 에 자기 호스트를 붙여 거기에 그린다 — 컴포넌트 칸 안에 그리면 Streamlit 머리말·
@@ -76,29 +75,34 @@ from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
 from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, THEME_RULE_SCRIPT
 from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
+from capa_simulation.settings import APP_LABEL, APP_NAME, APP_SUBTITLE
 
 _ASSETS = Path(__file__).with_name("intro_overlay_assets")
 
 # 컴포넌트 칸의 key 이자 숨김 규칙의 훅(`st-key-…`).
 INTRO_OVERLAY_KEY = "capa_intro_overlay"
 
-BRAND = "S.PKG CAPA"
+# 앱 이름의 두 덩이 — 메인 라벨과 부제(`settings.APP_LABEL`·`APP_SUBTITLE`, 2026-10-17 사용자 결정).
+# 머리 줄과 사이드바 라벨은 심볼 옆에 두 줄로 쌓는다 — 위 줄 워드마크(Archivo 800 · 폭 75% · 18px),
+# 아래 줄 작은 부제(본문 글꼴 500 · 11px · 옅은 글자색). 가운데 장면의 워드마크는 메인 라벨뿐이다.
+BRAND = APP_LABEL
+BRAND_SUBTITLE = APP_SUBTITLE
 # 메인 심볼 — C 링 + 3×3 다이(2026-10-07 사용자 결정, 뷰박스 100). 반지름 41 링의 오른쪽 ±35° 를
 # 열어 「C」로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이 아홉을 아래 세 자리의 곱에 둔다.
 # 입장 화면(`intro.js` 의 `MARK_RING` · `MARK_DIES`)·사이드바 라벨(`intro_summary`)·탭 아이콘
 # (`static/icons/capa_mark.svg`)이 같은 모양이다 — `tests/test_intro_overlay.py` 가 셋을 맞춰 본다.
 MARK_RING_PATH = "M83.59 26.48 A41 41 0 1 0 83.59 73.52"
 MARK_DIE_ORIGINS = (28, 44, 60)
-# 타이틀 두 줄 — 앱 이름의 메인 라벨과 부제(`settings.APP_LABEL`·`APP_SUBTITLE`)다. 화면에는 CSS 가
-# 대문자로 바꿔 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자 결정).
-TITLE_LINES = ("S.PKG CAPA", "AX Management")
+# 타이틀 두 줄 — 앱 이름의 메인 라벨과 부제다. 화면에는 CSS 가 대문자로 바꿔
+# 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자 결정).
+TITLE_LINES = (BRAND, BRAND_SUBTITLE)
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
-# 원래 화면에서 Summary 를 다시 여는 사이드바 머리칸의 `S.PKG CAPA` 라벨(`intro_summary`).
-# id 는 `intro.js` 의 `SUMMARY_LABEL_ID` 와 같아야 한다(테스트가 잡는다). 풍선 글은 라벨
-# 스크립트(입장 화면 JS 가 뜨기 전)와 입장 화면 JS 가 같이 쓴다.
+# 원래 화면에서 Summary 를 다시 여는 사이드바 머리칸의 앱 이름 라벨(`intro_summary`). id 는
+# `intro.js` 의 `SUMMARY_LABEL_ID` 와 같아야 한다(테스트가 잡는다). 읽는 이름은 앱 이름 전체다.
+# 풍선 글은 라벨 스크립트(입장 화면 JS 가 뜨기 전)와 입장 화면 JS 가 같이 쓴다.
 SUMMARY_LABEL_ID = "capa-brand-label"
-SUMMARY_LABEL_ARIA = f"{BRAND} — Summary 열기"
+SUMMARY_LABEL_ARIA = f"{APP_NAME} — Summary 열기"
 SUMMARY_LABEL_OPEN = "공식버전 요약 보기"
 SUMMARY_LABEL_WAITING = "공식버전 요약을 준비하는 중입니다"
 SUMMARY_LABEL_OFF = "공식버전 요약을 열 수 없습니다"
@@ -180,6 +184,7 @@ def _data() -> dict[str, Any]:
         "palette": dict(tokens.INTRO_PALETTE),
         "font_body": tokens.FONT_FAMILY,
         "brand": BRAND,
+        "subtitle": BRAND_SUBTITLE,
         "title": list(TITLE_LINES),
         # theme_toggle 이 새로고침할지를 같은 규칙으로 미리 보려고 넘긴다(그 모듈의 상수 그대로).
         # 저장 키는 등록 JS 앞에 붙인 `capaTheme` 규칙이 안다.

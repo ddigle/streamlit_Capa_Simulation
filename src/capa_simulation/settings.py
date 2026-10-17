@@ -5,7 +5,8 @@ from pathlib import Path
 # 탭 아이콘은 `st.set_page_config(page_icon=...)` 가 맡는다. 이름에 이모지를 붙이면
 # 브라우저 탭에 아이콘이 두 번 나오고, 붙임표 없이 글자와 붙어 제목 줄이 지저분해진다.
 # 메인 라벨 `S.PKG CAPA` + 부제 `AX Management` 다(2026-10-17 사용자 결정). 두 덩이를 따로 그리는
-# 곳은 입장 화면 타이틀 두 줄(`intro_overlay.TITLE_LINES` — `tests/test_intro_overlay.py` 가 맞대
+# 곳은 입장 화면 타이틀 두 줄(`intro_overlay.TITLE_LINES`), 사이드바·입장 화면 머리 줄의 심볼 옆
+# 라벨 두 줄(`intro_overlay.BRAND`·`BRAND_SUBTITLE` — 둘 다 `tests/test_intro_overlay.py` 가 맞대
 # 본다)과 시나리오가 없을 때의 머리 띠 두 줄(`app_header.header_lines`)이다.
 APP_LABEL = "S.PKG CAPA"
 APP_SUBTITLE = "AX Management"

@@ -61,7 +61,8 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 | 본문 한글·캡션·알림 | Streamlit 본문 서체 | 14px(`baseFontSize`) | `config.toml` |
 | 표·차트 숫자 | `FONT_FAMILY_NUMERIC`(Calibri) | 표마다 | Plotly·`tokens` |
 | 사이드바 메뉴·상자 머리글 | 그대로 | 그대로 | `sidebar_style.py` |
-| 사이드바 `S.PKG CAPA` 워드마크 | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | — | `intro_summary.py` |
+| 앱 이름 라벨 위 줄 `S.PKG CAPA`(사이드바·입장 화면/Summary 머리 줄) | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | 18px(사이드바 머리칸 180px 미만이면 15px) | `intro_summary.py`·`intro.css` |
+| 앱 이름 라벨 아래 줄 부제 `AX Management`(같은 두 자리) | 본문 글꼴(`FONT_FAMILY`) 500 · 자간 0.01em · `TEXT_MUTED`(머리 줄은 `muted`) | 11px · 줄높이 13px(좁으면 10px) | `intro_summary.py`·`intro.css` |
 | 입장 화면 워드마크·타이틀·단추·시트의 달 | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | — | `intro_overlay` |
 | Summary 차트 숫자 | Archivo 700 · 폭 100%(`CapaIntroNumber`) | — | `intro_overlay` |
 
@@ -164,8 +165,12 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 사이드바 `S.PKG CAPA`
 라벨과 시나리오 글이 서로 다른 면 위에 앉는다. 칠하는 곳은 `components/app_header.py` 한 곳이다.
 본문 쪽 띠에는 적용 중인 시나리오 두 줄(위 `TEXT` 600, 아래 `TEXT_MUTED`)과 왼쪽 `ACCENT` 3px 막대,
-사이드바 쪽에는 메인 심볼(C 링 `TEXT` · 다이 3×3 `ACCENT` · 가운데 다이 `BRAND_DIE_WARM`) +
-`S.PKG CAPA`(Archivo 800 · 폭 75%, 입장 화면 워드마크와 같은 글꼴)를 둔다. 라벨은 앱 테마를
+사이드바 쪽에는 메인 심볼(C 링 `TEXT` · 다이 3×3 `ACCENT` · 가운데 다이 `BRAND_DIE_WARM`, 30px) 옆에
+앱 이름 두 줄 — 위 `S.PKG CAPA`(Archivo 800 · 폭 75% · 18px, 입장 화면 워드마크와 같은 글꼴 · `TEXT`), 아래
+부제 `AX Management`(본문 글꼴 500 · 11px · `TEXT_MUTED`) — 을 쌓고 그 오른쪽에 안내 글자 `Summary`(600 ·
+11px · `TEXT_MUTED`)를 둔다(2026-10-17 사용자 요청). 두 줄 묶음(18 + 1 + 13 = 32px)·심볼·안내 글자·접기
+버튼은 머리칸 한가운데 같은 줄이고 머리칸 높이는 그대로다. 사이드바를 좁게 끌면 안내 글자가 먼저 빠지고,
+더 좁으면 심볼 24px · 워드마크 15px · 부제 10px 로 줄어 200px 에서도 두 줄이 다 보인다. 라벨은 앱 테마를
 따르고(입장 화면·Summary 의 고정 팔레트와 다르다), 올리면 `SURFACE` 면·`BORDER` 윤곽이 서고 안내 글자
 `Summary` 가 `ACCENT` 가 된다. 초점은 `ACCENT` 2px 윤곽이다.
 본문 쪽 띠의 툴바 단추(`Guide · Print · 테마`) 바로 왼쪽에는 계산이 오래 걸리는 화면(HOME)의 진행 막대가
@@ -385,10 +390,11 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
   부족)이다. 요약 차트의 글자 크기는 한 단계로 맞춘다 — 생산계획 점 위 값(700 14px)과 그 달 이름,
   B/N 막대 밑의 공정 이름·상태(부족 대수)가 모두 14px 이고, 행 이름은 20px 다. 행 이름 아래 설명은
   생산계획의 단위(`Density · 억Gb`) 하나만 둔다(2026-10-03 사용자 결정). 판정 기준 숫자는 사사오입한
-  정수 퍼센트로 적는다(AGENTS.md 8장 「판정 기준 표시」). 본문 화면에는 쓰지 않는다. **Summary 를 여는 사이드바 머리칸의 `S.PKG CAPA` 라벨도 이 한 벌을
+  정수 퍼센트로 적는다(AGENTS.md 8장 「판정 기준 표시」). 본문 화면에는 쓰지 않는다. **Summary 를 여는 사이드바 머리칸의 앱 이름 라벨도 이 한 벌을
   쓰지 않는다**(2-1 절) — 메인 심볼(C 링 `TEXT` · 다이 3×3 `ACCENT` · 가운데 다이 `BRAND_DIE_WARM`)과
-  워드마크를 앱 테마 색으로 그리고, 입장 화면에서 빌려 오는 것은 워드마크 글꼴(Archivo 800 · 폭 75%)
-  하나다. 입장 화면의 어두운 색·떠오르는 움직임은 쓰지 않는다(2026-10-06 사용자 결정 — 툴바의 Summary
+  앱 이름 두 줄을 앱 테마 색으로 그리고, 입장 화면에서 빌려 오는 것은 위 줄 워드마크 글꼴(Archivo 800 ·
+  폭 75%) 하나다. 입장 화면·Summary 머리 줄의 심볼 옆 라벨도 같은 두 줄(아래 줄 부제는 본문 글꼴 500 ·
+  11px · `muted`)이다. 입장 화면의 어두운 색·떠오르는 움직임은 쓰지 않는다(2026-10-06 사용자 결정 — 툴바의 Summary
   단추를 걷고 이 라벨로 옮겼다). 심볼 자체의 움직임(12초마다 스핀 · 올리면 감기)은 라벨 것이다. 툴바 차례는 `Guide · Print · 테마`이고(2026-10-08 사용자 결정) Guide 와 테마 버튼 사이의 `Print` 단추(`components/print_button.py`)는 Guide 와 같은
   윤곽 단추(본문 글꼴 13px/600 · 모서리 8px · 높이 27px · 테두리 `BORDER` · 글자 `TEXT`)이고 글자만
   둔다(2026-10-05 사용자 결정 — ⋮ 메뉴를 감추며 그 안의 인쇄를 옮겼다).

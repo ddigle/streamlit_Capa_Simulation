@@ -3520,8 +3520,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (2026-10-08 사용자 결정 — 강조색 청록이면 「확보」 막대와 헷갈렸다).
     글자는 본문 글꼴(부분 글꼴에 한글·`B`·`/` 가 없다). 820px 이하는 줄인 이름(`B/O`·`입고`·`GAP`), 760px
     이하(휴대폰)는 머리 줄 밑 둘째 줄(요약 첫 줄 이름 띠 위의 빈 자리)로 내려 온전한 이름으로 선다. 머리 줄이
-    빠듯하면 `S.PKG CAPA` 라벨은 한 줄을 지키고 오른쪽 공식버전 칩·기간 글자가 말줄임으로 먼저 준다(토글이 선
-    뒤 768px 창에서 라벨이 두 줄로 접혔다).
+    빠듯하면 심볼 옆 라벨(앱 이름 두 줄)은 줄마다 한 줄을 지키고 오른쪽 공식버전 칩·기간 글자가 말줄임으로 먼저
+    준다(토글이 선 뒤 768px 창에서 `S.PKG CAPA` 가 두 줄로 접혔다).
     - **브라우저 안에서만 바뀐다 — rerun 이 없다.** 파이썬으로 아무것도 보내지 않고, 세 갈래의 값은
       요약과 함께 미리 온 `toggles`(`intro_summary`)다. 메인 스레드는 장면에 `view` 메시지(켜려는 모습)만
       보내고 움직임은 장면(워커)이 그린다. 워커가 죽으면 마지막 `view` 를 되살린다(`replay`).
@@ -3616,10 +3616,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     결정). 글자 크기 상한(94px)은 긴 둘째 줄(7.39em)이 `.main` 최대 폭 700px 안에 한 줄로 서는 값이고,
     바닥(44px)은 창 폭에서 좌우 여백(`--side`)을 뺀 자리에 7.45em 이 드는 크기를 넘지 않아 360px 보다
     좁은 휴대폰에서도 둘째 줄이 한 줄이다. 한글은 시스템 본문 글꼴이고 워커 캔버스도 같은 글꼴 이름으로
-    그린다.
+    그린다. 입장 화면·Summary 머리 줄의 심볼 옆 라벨(`.brand`)은 사이드바 라벨과 같은 앱 이름 두 줄이다
+    (2026-10-17 사용자 요청) — 위 줄 `.brand-word`(`BRAND`, 18px — 도킹한 Detail 과 같은 글자), 아래 줄
+    `.brand-sub`(`BRAND_SUBTITLE`, 본문 글꼴 500 · 11px · `muted`, 데이터 `subtitle`). 줄높이 18 + 틈 1 + 13 =
+    32px 라 머리 줄(34px) 높이가 그대로이고, 부제가 위 줄보다 좁아 묶음 폭도 그대로다(8653 실측 — 1400·1100·
+    820·768·390px 에서 Detail·토글·칩·기간 글자 자리가 고치기 전과 같고, 390px 의 토글 둘째 줄과 7px 떨어진다).
+    좁은 창(760px 이하)의 입장 화면에서는 머리 줄이 웨이퍼 맵 위에 얹혀 옅은 부제가 청록 다이와 같은 밝기가
+    되므로 라벨에 장면 바탕색(`--surface`) 그늘(`text-shadow`)을 두른다 — 바탕 위에서는 보이지 않는다.
+    가운데 장면의 워드마크(`drawWord`)는 메인 라벨 한 줄 그대로다 — 곧이어 타이틀이 두 줄 이름을 크게 보인다.
     `.gitattributes` 가 `*.woff2` 를 binary 로 둔다 — 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
 - `src/capa_simulation/components/intro_summary.py`
-  - 입장 화면 Summary 의 **값**과 그것을 여는 사이드바 `S.PKG CAPA` 라벨. 최신 공식버전(`latest_official_release`)
+  - 입장 화면 Summary 의 **값**과 그것을 여는 사이드바 앱 이름 라벨. 최신 공식버전(`latest_official_release`)
     하나를 `services/official_summary.py` 로 요약해 Components v2 `capa_intro_summary` 의 `data` 로
     보낸다. 계산은 공식 리비전의 결정적 키(`reference_version_for_revision`·`pristine_content_token`)로
     `get_home_simulation`·`get_home_lob_without_edp` 를 부른다 — **무거운 시나리오 전체 Capa 계산
@@ -3682,16 +3689,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 공식버전을 확인할 때 본 최신 공식버전의 리비전 id·번호를 세션에 같이 둔다(`latest_official_revision`).
     머리 띠(`app_header`)는 「공식 vN」을 그것만 읽어 정한다 — 회차마다 DB 를 보지 않는다. 확인 주기·
     무효화(`RECHECK_SECONDS`·`forget_intro_summary_check`)는 요약과 같다.
-  - **사이드바 `S.PKG CAPA` 라벨**(2026-10-06 사용자 결정 — 툴바 `Summary` 단추를 대신한다. 툴바는
+  - **사이드바 앱 이름 라벨**(2026-10-06 사용자 결정 — 툴바 `Summary` 단추를 대신한다. 툴바는
     Guide·Print·테마). 테마 버튼 iframe 의 스크립트(`summary_label_script` — 상태 없는 고정 문자열)가
     사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞에 실제 `<button>` 을 끼운다. 입장 화면과
     같은 메인 심볼(C 링 + 3×3 다이, 다이는 `ACCENT` · 가운데 다이는 `BRAND_DIE_WARM` 주황 — 2026-10-07
-    사용자 결정, 심볼의 고정 강조색이지 「경고」가 아니다)과 `S.PKG CAPA`
-    워드마크(Archivo 800 · 폭 75% — 입장 화면 JS 가 등록한 `CapaIntroDisplay` 를 다시 쓴다, 글자는
-    `FONT_SUBSET_TEXT` 에 들어 있다), 옅은 `Summary` 안내 글자다. 색은 **앱 테마를 따른다** — 두 테마의
+    사용자 결정, 심볼의 고정 강조색이지 「경고」가 아니다) 옆에 **앱 이름 두 줄**(2026-10-17 사용자 요청)
+    — 위 줄 `S.PKG CAPA` 워드마크(Archivo 800 · 폭 75% · 18px — 입장 화면 JS 가 등록한 `CapaIntroDisplay`
+    를 다시 쓴다, 글자는 `FONT_SUBSET_TEXT` 에 들어 있다), 아래 줄 부제 `AX Management`(본문 글꼴 500 ·
+    11px · `TEXT_MUTED` — 좁은 굵은 표시 글꼴은 그 크기에서 소문자가 막히고 굵기가 800 하나뿐이다)를
+    쌓고, 그 오른쪽에 옅은 `Summary` 안내 글자(600 · 11px)를 둔다. 두 줄의 줄높이 18px + 틈 1px + 13px
+    (「g」 꼬리 몫) = 32px 가 라벨(34px, 윤곽 1px)의 안쪽 높이와 같아 묶음·심볼·안내 글자·접기 버튼이
+    머리칸(52.5px) 한가운데 같은 줄에 서고 머리칸은 높아지지 않는다(8653 실측 — 가운데 26.3px 넷이
+    같다). 사이드바 폭은 사용자가 끌어 바꾸므로 **머리칸을 컨테이너**(`capa-sidebar-head`)로 두고 그
+    폭으로 줄인다 — 240px 미만(사이드바 약 295px 미만)이면 안내 글자가 통째로 빠지고, 180px 미만(약
+    235px 미만)이면 심볼 24px · 워드마크 15px · 부제 10px 로 줄어 200px 사이드바에서도 두 줄이 다
+    보인다(전에는 약 232px 아래에서 워드마크가 말줄임 없이 잘렸다). 그래도 넘치면(운영체제 글꼴 차이)
+    안내 글자가 먼저 줄고(줄임 몫 100배) 줄마다 말줄임으로 끝난다. 색은 **앱 테마를 따른다** — 두 테마의
     스타일을 다 싣고 `capaTheme.resolve` 로 고른다. 누르면 입장 화면 JS 의 `openSummary(label)` 을 부르고,
     Summary 를 닫으면(Esc·Detail) 초점이 라벨로 돌아온다. Tab 초점·Enter 는 실제 단추라 그대로 되고,
-    `aria-label` 은 「S.PKG CAPA — Summary 열기」다. 누를 수 있는지는 입장 화면 JS 가 `aria-disabled` 와
+    `aria-label` 은 앱 이름 전체 「S.PKG CAPA AX Management — Summary 열기」다. 누를 수 있는지는 입장 화면 JS 가 `aria-disabled` 와
     풍선(`title` — 요약이 보낸 까닭·준비 중)으로만 정한다 — 라벨은 앱 이름이기도 해서 감추지 않는다.
     머리칸은 React 가 다시 그릴 수 있어 관찰자를 끊지 않고 빠지면 다시 끼운다. 사이드바를 접으면 라벨도
     함께 가려진다. 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나를 두 쪽이 본다(`test_intro_overlay`).
@@ -3752,8 +3768,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       걸리므로 가르지 않는다. 툴바 단추를 더하거나 바꾸면 이 값을 다시 잰다(`tests/test_app_header.py`). 끝내 넘치는 이름에 전체 글
       풍선은 없다 — 가상요소에는 `title` 을 달 수 없고 실제 요소를 넣는 스크립트는 이 모듈이 HOME
       무게 때문에 피한 길이다. 전체 이름은 사이드바 시나리오 팝업 머리 줄에 있다.
-    - 사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다 — 그 자리는 `S.PKG CAPA` 라벨
-      (`intro_summary`)이다. 이 파일은 머리칸을 띠 위에 고정(`sticky`·`z-index`)하는 규칙만 둔다.
+    - 사이드바 머리칸(`stSidebarHeader`)에는 글을 얹지 않는다 — 그 자리는 앱 이름 라벨(`S.PKG CAPA` /
+      `AX Management` 두 줄, `intro_summary`)이다. 이 파일은 머리칸을 띠 위에 고정(`sticky`·`z-index`)하는
+      규칙만 둔다. 머리칸을 컨테이너로 두는 규칙은 라벨 스타일에 있다.
   - **진행 막대 자리를 띠 안, 툴바 단추 바로 왼쪽에 고정한다**(2026-10-08 사용자 결정 — HOME
     `Capa LOB Summary` 의 로딩 막대를 머리 띠로, `_status_slot_css`). 띠는 가상요소뿐이라 실제 요소를 넣을 수
     없어, `page_header.render_page_header_with_status` 가 본문에 둔 키 컨테이너를 `position: fixed` 로 띠

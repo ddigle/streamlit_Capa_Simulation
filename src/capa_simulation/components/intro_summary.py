@@ -1,4 +1,4 @@
-# Purpose: 최신 공식버전의 6개월 요약을 입장 화면에 미리 보내고 사이드바 S.PKG CAPA 라벨을 세운다.
+# Purpose: 최신 공식버전의 6개월 요약을 입장 화면에 미리 보내고 사이드바 앱 이름 라벨을 세운다.
 
 """입장 화면 `Summary` 의 데이터와 그것을 여는 사이드바 라벨.
 
@@ -42,10 +42,10 @@ Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐�
 둔다(`latest_official_revision`). 머리 띠(`app_header`)가 「공식 vN」을 적을 때 그것만 읽어
 회차마다 DB 를 다시 보지 않는다.
 
-**사이드바 라벨.** 원래 화면에서 요약으로 돌아오는 길은 사이드바 머리칸의 `S.PKG CAPA` 라벨이다
-(2026-10-06 사용자 결정 — 툴바의 `Summary` 단추를 걷었다). 테마 버튼 iframe 의 스크립트
-(`summary_label_script`)가 머리칸에 끼워 넣고 칠한다. 누를 수 있는지와 눌렀을 때의 동작은 입장 화면
-JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을 가진 쪽이다.
+**사이드바 라벨.** 원래 화면에서 요약으로 돌아오는 길은 사이드바 머리칸의 앱 이름 라벨(심볼 옆
+`S.PKG CAPA` / `AX Management` 두 줄)이다(2026-10-06 사용자 결정 — 툴바의 `Summary` 단추를 걷었다).
+테마 버튼 iframe 의 스크립트(`summary_label_script`)가 머리칸에 끼워 넣고 칠한다. 누를 수 있는지와
+눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을 가진 쪽이다.
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ import streamlit as st
 
 from capa_simulation.components.intro_overlay import (
     BRAND,
+    BRAND_SUBTITLE,
     MARK_DIE_ORIGINS,
     MARK_RING_PATH,
     SUMMARY_LABEL,
@@ -863,8 +864,8 @@ def render_intro_summary(database_path: str) -> None:
     )
 
 
-# 사이드바 머리칸의 `S.PKG CAPA` 라벨. 누르면 Summary 가 열린다. 테마 버튼 iframe 에 실려 한
-# 번만 돈다.
+# 사이드바 머리칸의 앱 이름 라벨 — 심볼 옆에 `S.PKG CAPA`(위)와 `AX Management`(아래) 두 줄,
+# 오른쪽에 `Summary` 안내 글자. 누르면 Summary 가 열린다. 테마 버튼 iframe 에 실려 한 번만 돈다.
 #
 # - **자리**: 사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞. 오른쪽 끝은 접기
 #   버튼이다. 머리칸은 React 가 다시 그릴 수 있어 라벨이 빠지면 다시 끼운다(관찰자를 끊지
@@ -875,9 +876,11 @@ def render_intro_summary(database_path: str) -> None:
 # - **누를 수 있는가**: 입장 화면 JS(`window.__capaIntro.decorate`)가 정한다 — 요약 데이터를
 #   가진 쪽이다. 누를 수 없을 때는 `aria-disabled` 와 풍선(`title`)에 까닭을 단다. 초점은
 #   받는다(Tab 으로 까닭을 읽을 수 있게). 입장 화면 JS 가 아직 없으면 준비 중으로 선다.
-# - **글꼴**: 입장 화면 워드마크와 같은 Archivo 800 · 폭 75% 부분 글꼴. 입장 화면 JS 가 본
+# - **글꼴**: 위 줄은 입장 화면 워드마크와 같은 Archivo 800 · 폭 75% 부분 글꼴. 입장 화면 JS 가 본
 #   문서에 등록한 `CapaIntroDisplay` 를 그대로 쓴다(파일을 두 번 싣지 않는다). `S.PKG CAPA` 는
-#   그 부분 글꼴의 글자 목록(`intro_overlay.FONT_SUBSET_TEXT`)에 들어 있다.
+#   그 부분 글꼴의 글자 목록(`intro_overlay.FONT_SUBSET_TEXT`)에 들어 있다. 아래 줄 부제는 본문
+#   글꼴이다 — 좁은 굵은 표시 글꼴은 11px 에서 소문자 속공간이 막혀 부제로 읽히지 않고, 그 글꼴에는
+#   800 한 굵기뿐이라 옅게 둘 수도 없다.
 # - **움직임**: 심볼의 C 링이 12초마다 「반동 스핀」을 한 번 하고(첫 바퀴는 2초 뒤), 올리거나
 #   Tab 초점이 닿으면 「살짝 감기」를 한다(2026-10-07 사용자 결정). 둘 다 CSS @keyframes 뿐이다 —
 #   타이머도 rerun 도 없다. 라벨은 한 번 만든 단추를 계속 쓰고, 머리칸이 다시 그려져 다시 끼울
@@ -910,7 +913,8 @@ _LABEL_SCRIPT = """
       label.id = "%(id)s";
       label.type = "button";
       label.innerHTML = %(icon)s
-        + '<span class="capa-brand-word">%(brand)s</span>'
+        + '<span class="capa-brand-text"><span class="capa-brand-word">%(brand)s</span>'
+        + '<span class="capa-brand-sub">%(subtitle)s</span></span>'
         + '<span class="capa-brand-hint">%(hint)s</span>';
       label.setAttribute("aria-label", "%(aria)s");
       label.setAttribute("aria-disabled", "true");
@@ -938,17 +942,28 @@ _LABEL_SCRIPT = """
 })();
 """
 
-# 사이드바 머리칸 띠(`app_header`)는 높이 3.75rem 이다. 라벨은 그 안에 한 줄로 선다. 심볼은
-# 입장 화면·Summary 머리 심볼(`intro.css` 의 `.logo`)과 같은 30px, 글자와의 틈 10px, 글자 18px
-# 다(2026-10-08 사용자 요청 — 같은 크기로). 오른쪽 끝
-# 접기 버튼 자리(28px + 틈 — 2.25rem)는 비우고, 사이드바를 좁게 끌면 안내 글자부터 줄어든다.
+# 사이드바 머리칸 띠(`app_header`)는 높이 3.75rem 이고 라벨(34px)은 그 세로 가운데 — 접기 버튼과
+# 같은 가운데 줄 — 에 선다. 심볼은 입장 화면·Summary 머리 심볼(`intro.css` 의 `.logo`)과 같은 30px,
+# 글자 묶음과의 틈 10px 다(2026-10-08 사용자 요청 — 같은 크기로).
+# - **두 줄**(2026-10-17 사용자 요청): 위 줄 워드마크 18px(줄높이 18px), 1px 틈, 아래 줄 부제 11px
+#   (줄높이 13px — 「g」 꼬리가 잘리지 않는 높이)를 세로로 쌓아 합 32px 가 라벨 안쪽 높이와 같다.
+#   그래서 묶음의 가운데가 심볼·접기 버튼의 가운데와 같고 머리칸은 높아지지 않는다. 부제는 본문 글꼴
+#   500 · `TEXT_MUTED`(머리 띠의 옅은 아랫줄과 같은 색)다.
+# - **안내 글자** `Summary` 는 두 줄 묶음 오른쪽에 따로, 그 가운데 높이에 선다(틈 10px — 심볼과 묶음
+#   사이와 같다). 부제보다 굵어(600) 이름의 일부가 아니라 누르면 열리는 곳으로 읽힌다.
+# - **좁은 사이드바**: 오른쪽 끝 접기 버튼 자리(28px + 틈 — 2.25rem)는 비운다. 사이드바 폭은
+#   사용자가 끌어 바꾸므로 창 폭이 아니라 머리칸 폭을 컨테이너 질의로 본다. 머리칸이 240px 보다
+#   좁으면(사이드바 약 295px 미만) 안내 글자가 통째로 빠지고, 180px 보다 좁으면(약 235px 미만) 심볼
+#   24px · 워드마크 15px · 부제 10px 로 줄여 200px 로 끈 사이드바에서도 두 줄이 다 보인다. 운영체제
+#   글꼴이 넓어 넘치면 안내 글자가 먼저 줄고(줄임 몫 100배) 다 빠진 뒤에야 줄마다 말줄임으로 끝난다.
 _LABEL_CSS = """
+__SLOT__ { container: capa-sidebar-head / inline-size; }
 #__ID__ {
   display: inline-flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0;
   max-width: calc(100% - 2.25rem); height: 34px; margin: 0 auto 0 0; padding: 0 8px 0 6px;
   box-sizing: border-box; border: 1px solid transparent; border-radius: 8px;
   background: transparent; color: __TEXT__; cursor: pointer; white-space: nowrap; overflow: hidden;
-  font-family: __FONT_FAMILY__;
+  font-family: __FONT_FAMILY__; text-align: left;
 }
 #__ID__ svg { width: 30px; height: 30px; flex: none; display: block; margin-right: 3px; }
 #__ID__ svg .capa-mark-turn, #__ID__ svg .capa-mark-spin {
@@ -957,13 +972,33 @@ _LABEL_CSS = """
 #__ID__ svg .capa-mark-breathe, #__ID__ svg .capa-mark-pop {
   transform-box: fill-box; transform-origin: center;
 }
+#__ID__ .capa-brand-text {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+  flex: 0 1 auto; min-width: 0;
+}
+#__ID__ .capa-brand-word, #__ID__ .capa-brand-sub {
+  display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
 #__ID__ .capa-brand-word {
   font-family: "CapaIntroDisplay", __FONT_FAMILY__; font-weight: 800; font-stretch: 75%;
-  font-size: 18px; line-height: 1; letter-spacing: 0.01em; flex: none;
+  font-size: 18px; line-height: 18px; letter-spacing: 0.01em;
+}
+#__ID__ .capa-brand-sub {
+  font-size: 11px; font-weight: 500; line-height: 13px; letter-spacing: 0.01em;
+  color: __TEXT_MUTED__;
 }
 #__ID__ .capa-brand-hint {
-  font-size: 11px; font-weight: 600; color: __TEXT_MUTED__; overflow: hidden;
-  text-overflow: ellipsis; min-width: 0;
+  flex: 0 100 auto; min-width: 0; margin-left: 3px; font-size: 11px; font-weight: 600;
+  color: __TEXT_MUTED__; overflow: hidden; text-overflow: ellipsis;
+}
+@container capa-sidebar-head (width < 240px) {
+  #__ID__ .capa-brand-hint { display: none; }
+}
+@container capa-sidebar-head (width < 180px) {
+  #__ID__ { gap: 4px; padding: 0 1px; }
+  #__ID__ svg { width: 24px; height: 24px; margin-right: 0; }
+  #__ID__ .capa-brand-word { font-size: 15px; line-height: 15px; }
+  #__ID__ .capa-brand-sub { font-size: 10px; line-height: 12px; letter-spacing: 0; }
 }
 #__ID__:hover:not([aria-disabled="true"]) { background: __SURFACE__; border-color: __BORDER__; }
 #__ID__:hover:not([aria-disabled="true"]) .capa-brand-hint { color: __ACCENT__; }
@@ -1044,6 +1079,7 @@ def _label_css(mode: str) -> str:
 
     css = (
         _LABEL_CSS.replace("__ID__", SUMMARY_LABEL_ID)
+        .replace("__SLOT__", SIDEBAR_HEADER_SLOT)
         .replace("__FONT_FAMILY__", tokens.FONT_FAMILY)
         .replace("__TEXT_MUTED__", value("TEXT_MUTED"))
         .replace("__TEXT__", value("TEXT"))
@@ -1058,8 +1094,8 @@ def _label_css(mode: str) -> str:
 
 
 def summary_label_script() -> str:
-    """사이드바 머리칸에 `S.PKG CAPA` 라벨을 세우는 스크립트. 테마 버튼 iframe 에 Guide·Print
-    와 함께 싣는다.
+    """사이드바 머리칸에 앱 이름 라벨(`S.PKG CAPA` / `AX Management`)을 세우는 스크립트. 테마 버튼
+    iframe 에 Guide·Print 와 함께 싣는다.
 
     툴바의 `Summary` 단추를 대신한다(2026-10-06 사용자 결정 — 툴바는 Guide·Print·테마). 누르면 그
     단추가 하던 일 그대로 입장 화면 JS 의 `openSummary` 를 부르고, Summary 를 닫으면 초점이 라벨로
@@ -1071,6 +1107,7 @@ def summary_label_script() -> str:
         "slot": SIDEBAR_HEADER_SLOT,
         "icon": json.dumps(_label_icon()),
         "brand": BRAND,
+        "subtitle": BRAND_SUBTITLE,
         "hint": SUMMARY_LABEL,
         "aria": SUMMARY_LABEL_ARIA,
         "waiting": SUMMARY_LABEL_WAITING,

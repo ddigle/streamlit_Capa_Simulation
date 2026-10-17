@@ -75,11 +75,12 @@ def test_every_display_string_is_covered_by_the_font_subset() -> None:
 
 
 def test_title_lines_are_the_app_name_label_and_subtitle() -> None:
-    """타이틀 두 줄은 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 첫 줄은 머리 줄·
-    사이드바의 라벨(`BRAND`)과 같은 글자이고, 화면에는 CSS 가 대문자로 바꿔 보인다."""
+    """타이틀 두 줄은 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 머리 줄·사이드바
+    라벨의 두 줄(`BRAND` · `BRAND_SUBTITLE`)과 같은 글자이고, 화면에는 CSS 가 대문자로
+    바꿔 보인다."""
+    assert (intro_overlay.BRAND, intro_overlay.BRAND_SUBTITLE) == (APP_LABEL, APP_SUBTITLE)
     assert intro_overlay.TITLE_LINES == (APP_LABEL, APP_SUBTITLE)
     assert " ".join(intro_overlay.TITLE_LINES) == APP_NAME
-    assert intro_overlay.TITLE_LINES[0] == intro_overlay.BRAND
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
     assert re.search(r"\.title \{[^}]*text-transform: uppercase;", css)
 
@@ -139,6 +140,7 @@ def test_render_sends_the_hide_rule_first_and_an_unchanging_payload(
     assert json.dumps(first["data"], sort_keys=True) == json.dumps(second["data"], sort_keys=True)
     assert first["data"]["palette"] == dict(tokens.INTRO_PALETTE)
     assert first["data"]["brand"] == intro_overlay.BRAND
+    assert first["data"]["subtitle"] == intro_overlay.BRAND_SUBTITLE
 
 
 def test_theme_reload_is_predicted_with_the_toggle_scripts_own_rule() -> None:
@@ -319,10 +321,111 @@ def test_the_sidebar_label_is_the_wordmark_in_the_app_theme() -> None:
     # 입장 화면 심볼과 같은 C 링 + 3×3 다이(모양 대조는 아래 메인 심볼 테스트).
     assert script.count("<rect ") == 9
     assert intro_overlay.MARK_RING_PATH in script
-    # 키보드로 닿고(실제 단추) 읽는 이름이 있다.
+    # 키보드로 닿고(실제 단추) 읽는 이름은 앱 이름 전체다.
     assert 'label = doc.createElement("button");' in script
     assert intro_overlay.SUMMARY_LABEL_ARIA in script
-    assert intro_overlay.SUMMARY_LABEL_ARIA == "S.PKG CAPA — Summary 열기"
+    assert intro_overlay.SUMMARY_LABEL_ARIA == f"{APP_NAME} — Summary 열기"
+
+
+def _px_value(rule: str, name: str) -> float:
+    found = re.search(rf"(?:^|[;{{\s]){re.escape(name)}: ([\d.]+)px", rule)
+    assert found, name
+    return float(found.group(1))
+
+
+def _label_rule(css: str, part: str = "") -> str:
+    """사이드바 라벨 CSS 에서 `#capa-brand-label{part} {` 로 시작하는 줄의 규칙 하나."""
+    begin = css.index(f"\n#{intro_overlay.SUMMARY_LABEL_ID}{part} {{") + 1
+    return css[begin : css.index("}", begin)]
+
+
+def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() -> None:
+    """사이드바 라벨은 심볼 옆에 앱 이름 두 줄(위 워드마크 · 아래 작은 부제)을 쌓는다(2026-10-17
+    사용자 요청). 두 줄 줄높이와 틈의 합이 라벨 안쪽 높이(34px − 윤곽 2px)와 같아 묶음이 심볼·접기
+    버튼과 같은 가운데에 서고 머리칸이 높아지지 않는다. 부제는 본문 글꼴의 옅은 글자다. 안내 글자
+    `Summary` 는 묶음 밖 오른쪽이다."""
+    from capa_simulation.components import intro_summary
+
+    script = intro_summary.summary_label_script()
+    text = re.escape('<span class="capa-brand-text"><span class="capa-brand-word">')
+    sub = re.escape('<span class="capa-brand-sub">')
+    hint = re.escape('<span class="capa-brand-hint">')
+    assert re.search(
+        rf"{text}{re.escape(APP_LABEL)}</span>'\s*\+ '{sub}{re.escape(APP_SUBTITLE)}</span></span>'"
+        rf"\s*\+ '{hint}",
+        script,
+    )
+    for mode in ("light", "dark"):
+        css = intro_summary._label_css(mode)
+        label = _label_rule(css)
+        block = _label_rule(css, " .capa-brand-text")
+        word = _label_rule(css, " .capa-brand-word")
+        subtitle = _label_rule(css, " .capa-brand-sub")
+        assert "flex-direction: column; align-items: flex-start; justify-content: center;" in block
+        inner = _px_value(label, "height") - 2
+        total = _px_value(word, "line-height") + _px_value(block, "gap")
+        assert total + _px_value(subtitle, "line-height") == inner
+        # 위 줄은 워드마크 글꼴 그대로, 아래 줄은 더 작은 본문 글꼴 500 · 옅은 글자색.
+        assert _px_value(word, "font-size") == 18
+        assert _px_value(subtitle, "font-size") == 11
+        assert "font-weight: 500;" in subtitle and "CapaIntroDisplay" not in subtitle
+        assert f"color: {tokens.palette_value(mode, 'TEXT_MUTED')};" in subtitle
+        # 「g」 꼬리가 잘리지 않게 부제 줄높이는 글자보다 크다.
+        assert _px_value(subtitle, "line-height") > _px_value(subtitle, "font-size")
+
+
+def test_a_narrow_sidebar_drops_the_hint_first_then_shrinks_the_two_lines() -> None:
+    """사이드바 폭은 사용자가 끌어 바꾸므로 머리칸 폭을 컨테이너 질의로 본다. 좁아지면 안내 글자가
+    먼저 통째로 빠지고, 더 좁으면 심볼과 두 줄을 줄여 200px 사이드바에서도 두 줄이 다 보인다. 질의가
+    안 서는 브라우저·글꼴 차이로 넘치면 안내 글자가 먼저 줄고(줄임 몫) 줄마다 말줄임으로 끝난다."""
+    from capa_simulation.components import intro_summary, theme_toggle
+
+    css = intro_summary._label_css("light")
+    container = (
+        f"{theme_toggle.SIDEBAR_HEADER_SLOT} {{ container: capa-sidebar-head / inline-size; }}"
+    )
+    assert container in css
+    queries = re.findall(r"@container capa-sidebar-head \(width < (\d+)px\) \{", css)
+    assert [int(width) for width in queries] == [240, 180]
+    first = css[css.index("@container capa-sidebar-head (width < 240px)") :]
+    assert re.match(r"[^{]*\{\s*#capa-brand-label \.capa-brand-hint \{ display: none; \}", first)
+    compact = css[css.index("@container capa-sidebar-head (width < 180px)") :]
+    compact = compact[: compact.index("\n}\n")]
+    assert "svg { width: 24px; height: 24px;" in compact
+    assert ".capa-brand-word { font-size: 15px;" in compact
+    assert ".capa-brand-sub { font-size: 10px;" in compact
+    hint = _label_rule(css, " .capa-brand-hint")
+    assert "flex: 0 100 auto; min-width: 0;" in hint
+    lines = _label_rule(css, " .capa-brand-word, #capa-brand-label .capa-brand-sub")
+    assert "overflow: hidden; text-overflow: ellipsis;" in lines
+
+
+def test_the_summary_head_label_is_the_same_two_lines() -> None:
+    """입장 화면·Summary 머리 줄의 라벨도 사이드바와 같은 두 줄이다 — 위 줄 워드마크(Detail 이
+    도킹하면 같은 글자가 된다), 아래 줄 본문 글꼴 500 · 11px 옅은 부제. 두 줄 합(32px)이 머리 줄
+    높이(34px) 안이라 머리 줄과 그 밑 토글 둘째 줄(휴대폰)의 자리가 그대로다."""
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    assert (
+        '<span class="brand" data-slot="brand"><span class="brand-word"></span>'
+        '<span class="brand-sub"></span></span>'
+    ) in html
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert """$('[data-slot="brand"] .brand-word').textContent = data.brand || "";""" in js
+    assert """$('[data-slot="brand"] .brand-sub').textContent = data.subtitle || "";""" in js
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\n\.brand-word,\n\.btn\.docked \{\s*font: 800 18px/1 var\(--display\);", css)
+    brand = re.search(r"\n\.brand \{([^}]*)\}", css)
+    sub = re.search(r"\n\.brand-sub \{([^}]*)\}", css)
+    head = re.search(r"\n\.head \{([^}]*)\}", css)
+    assert brand and sub and head
+    assert "flex-direction: column;" in brand.group(1) and "gap: 1px;" in brand.group(1)
+    # 좁은 창의 입장 화면에서 웨이퍼 맵 위에 얹혀도 옅은 부제가 읽히게 장면 바탕색 그늘을 두른다.
+    assert "text-shadow: 0 0 2px var(--surface), 0 0 6px var(--surface);" in brand.group(1)
+    assert '"--surface": palette.surface,' in js
+    assert "font: 500 11px/13px var(--body);" in sub.group(1)
+    assert "color: var(--muted);" in sub.group(1)
+    height = re.search(r"height: (\d+)px;", head.group(1))
+    assert height and 18 + 1 + 13 <= int(height.group(1))
 
 
 _RECT = re.compile(r'<rect [^>]*?x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="(\d+)"')

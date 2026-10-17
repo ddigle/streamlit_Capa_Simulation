@@ -24,7 +24,7 @@
 const HOST_ID = "capa-intro-host";
 const FONT_FAMILY = "CapaIntroDisplay";
 const NUMBER_FAMILY = "CapaIntroNumber";
-// 사이드바 머리칸의 S.PKG CAPA 라벨 id. `intro_overlay.SUMMARY_LABEL_ID` 와 같아야 한다.
+// 사이드바 머리칸의 앱 이름 라벨 id. `intro_overlay.SUMMARY_LABEL_ID` 와 같아야 한다.
 const SUMMARY_LABEL_ID = "capa-brand-label";
 // 이 탭에서 이미 들어갔다는 표시. 테마 버튼·새로고침은 새 세션을 만들지만 같은 탭이라 다시 띄우지 않는다.
 const ENTERED_KEY = "capa-intro-entered";
@@ -144,7 +144,7 @@ function setInert(on) {
   }
 }
 
-// HTML 글자(타이틀·라벨·단추·사이드바 S.PKG CAPA 라벨)가 쓰는 글꼴. 워커는 따로 받는다(`fontBuffers`).
+// HTML 글자(타이틀·단추·머리 줄과 사이드바 라벨의 위 줄 `S.PKG CAPA`)가 쓰는 글꼴. 워커는 따로 받는다(`fontBuffers`).
 function registerFont() {
   if (!document.fonts || typeof FontFace === "undefined") return;
   const have = new Set([...document.fonts].map((face) => face.family.replace(/"/g, "")));
@@ -2128,7 +2128,7 @@ function boot(api, data) {
     return overlay;
   };
 
-  // 사이드바 S.PKG CAPA 라벨. 테마 버튼 iframe 의 스크립트가 세우고 칠한다
+  // 사이드바 앱 이름 라벨. 테마 버튼 iframe 의 스크립트가 세우고 칠한다
   // (intro_summary.summary_label_script). 여기서는 누를 수 있는지와 풍선만 정한다 — 라벨은 앱 이름이기도
   // 해서 늘 보인다. 요약이 있으면 누를 수 있고, 없으면 그 까닭을 풍선에 단다.
   const text = data.text || {};
@@ -2189,6 +2189,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   const stage = $(".stage");
   const vars = {
     "--frame0": frame0,
+    "--surface": palette.surface,
     "--text": palette.text,
     "--muted": palette.muted,
     "--accent": palette.accent,
@@ -2212,7 +2213,8 @@ function createOverlay(api, data, initial, syncToolbar) {
   };
   for (const [name, value] of Object.entries(vars)) if (value) stage.style.setProperty(name, value);
 
-  $('[data-slot="brand"]').textContent = data.brand || "";
+  $('[data-slot="brand"] .brand-word').textContent = data.brand || "";
+  $('[data-slot="brand"] .brand-sub').textContent = data.subtitle || "";
   $('[data-slot="logo"]').innerHTML = brandMark(palette);
   const mark = markMotion($('[data-slot="logo"]'), palette);
   const title = $('[data-slot="title"]');
