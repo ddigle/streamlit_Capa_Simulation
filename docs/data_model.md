@@ -84,6 +84,8 @@ app_meta.global_key_process          1 ── N global_key_process_preset       
                                        └── N global_key_process_item         (0024 옛 목록 — 0028 뒤 읽지 않음)
 app_meta.global_securement_threshold 1 ── N global_securement_threshold_month 확보율 판정 기준(0029)
 app_meta.global_advance_shipment     1 ── N global_advance_shipment_month    선행 입고 실적(0031, 계산 밖)
+app_meta.global_auto_official_update 1 ── N auto_official_update_setting_log 공식버전 자동 갱신 설정(0035, 변경 기록은 version 마다)
+app_meta.auto_official_update_run    1 ── N auto_official_update_exclusion (run_id) 자동 갱신 실행·자동 off 공정(0035, 머리 없음 — 아래)
 app_meta.voc_post                    1 ── N voc_reply (post_id)              VOC 게시판(0025, 머리 없음)
 
 app_meta.schema_migration · (옛 개발 DB 에만) 빈 equipment_ops 스키마(결번 2·3 의 흔적 — migration_catalog.md)
@@ -112,6 +114,9 @@ equipment_meta.schema_migration
 대상을 **가리키는** 참조다. 그대로 두면 소유 자동 발견(`repository._owned_tables`)이 시나리오 소유로 보고
 삭제 때 프로필 행을 통째로 지우므로 자동 발견에서 빼고(`_GLOBAL_PROFILE_TABLES`), 보관·삭제가 그 대상을
 명시적으로 비운다(version+1). 공용 프로필을 새로 만들 때는 소유 컬럼을 두지 않는다.
+`0035` 공식버전 자동 갱신의 네 표가 그 꼴이다 — 실행이 만든 시나리오·리비전·공식버전을
+`created_scenario_id`·`base_revision_id`·`filtered_revision_id`·`official_release_id` 로 가리키기만 하고,
+이름이 소유 컬럼과 달라 자동 발견에 걸리지 않으므로 시나리오를 지워도 그날의 기록이 남는다.
 
 DuckDB 1.5.5는 서로 다른 스키마 사이의 외래 키를 만들 수 없으므로 스키마 간 FK는
 DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에서 소유 관계, 상위 리비전,
