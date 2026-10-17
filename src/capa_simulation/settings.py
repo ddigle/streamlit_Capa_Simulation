@@ -4,9 +4,12 @@ from pathlib import Path
 
 # 탭 아이콘은 `st.set_page_config(page_icon=...)` 가 맡는다. 이름에 이모지를 붙이면
 # 브라우저 탭에 아이콘이 두 번 나오고, 붙임표 없이 글자와 붙어 제목 줄이 지저분해진다.
-# 메인 라벨 `S.PKG CAPA` + 부제 `AX Management` 다(2026-10-17 사용자 결정). 입장 화면 타이틀
-# 두 줄(`intro_overlay.TITLE_LINES`)이 같은 두 덩이다 — `tests/test_intro_overlay.py` 가 맞대 본다.
-APP_NAME = "S.PKG CAPA AX Management"
+# 메인 라벨 `S.PKG CAPA` + 부제 `AX Management` 다(2026-10-17 사용자 결정). 두 덩이를 따로 그리는
+# 곳은 입장 화면 타이틀 두 줄(`intro_overlay.TITLE_LINES` — `tests/test_intro_overlay.py` 가 맞대
+# 본다)과 시나리오가 없을 때의 머리 띠 두 줄(`app_header.header_lines`)이다.
+APP_LABEL = "S.PKG CAPA"
+APP_SUBTITLE = "AX Management"
+APP_NAME = f"{APP_LABEL} {APP_SUBTITLE}"
 # 사이드바 조회기간 선택기의 기본 범위다. 활성 시나리오의 실제 월이 이 범위 밖에
 # 있으면 선택기의 허용 범위를 넓혀, 머지·연도 이동으로 만든 기간도 조회하게 한다.
 MONTH_SELECTION_START = 202501

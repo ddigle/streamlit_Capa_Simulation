@@ -216,7 +216,8 @@ with pinned_connections(DUCKDB_PATH):
         # 화면이 한 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본
         # 메시지의 한글이 깨져 나온다. 사용자가 원인을 알 방법이 없어 안내로 바꾼다.
         # 머리 띠도 이 화면에 세운다 — 아래 `st.stop()` 뒤의 자리에는 닿지 않는다. 세션만 읽으므로
-        # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 한 줄이다.
+        # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 두 줄(메인 라벨·
+        # 부제)이다.
         render_app_header()
         st.error(bootstrap_error_message(exc), icon=":material/database_off:")
         with st.expander("원본 오류"):

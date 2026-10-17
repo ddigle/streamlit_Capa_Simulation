@@ -121,7 +121,9 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 20px;
-  padding: clamp(18px, 3vw, 36px) clamp(16px, 4.5vw, 64px) clamp(28px, 6vh, 72px);
+  /* 좌우 여백. 타이틀 글자 크기의 바닥이 창 폭에서 이 여백을 뺀 자리로 잰다(.title). */
+  --side: clamp(16px, 4.5vw, 64px);
+  padding: clamp(18px, 3vw, 36px) var(--side) clamp(28px, 6vh, 72px);
   color: var(--text);
 }
 
@@ -334,14 +336,15 @@
   max-width: min(700px, 100%);
 }
 
-/* 상한 94px 는 긴 둘째 줄 「AX MANAGEMENT」(7.39em)가 `.main` 최대 폭 700px 안에 한 줄로 서는 크기다
-   (94px → 약 694px). 바닥 44px 에서는 약 325px 라 폭 360px 창까지 한 줄이다. */
+/* 긴 둘째 줄 「AX MANAGEMENT」 는 7.39em 이다. 상한 94px 는 그 줄이 `.main` 최대 폭 700px 안에 한 줄로
+   서는 크기(약 694px)다. 바닥은 44px(약 325px)이되 창 폭에서 좌우 여백을 뺀 자리에 7.45em 이 드는 크기를
+   넘지 않는다 — 여백이 16px 에 멈추는 360px 보다 좁은 창(320px 에서 약 39px)에서도 둘째 줄이 한 줄이다. */
 .title {
   margin: 0;
   font-family: var(--display);
   font-weight: 800;
   font-stretch: 75%;
-  font-size: clamp(44px, 6.6vw, 94px);
+  font-size: clamp(min(44px, (100vw - 2 * var(--side)) / 7.45), 6.6vw, 94px);
   line-height: 0.86;
   letter-spacing: 0;
   text-transform: uppercase;

@@ -14,7 +14,9 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 - 아래 줄(옅게): `{시뮬레이션 코드} · 적용 {YY.MM}–{YY.MM} · {원천} {YY.MM.DD} 등록`. 시나리오
   기간은 생산계획에 있는 첫 달·끝 달이고 조회기간이 아니다(조회기간은 사이드바 조건 카드에 이미
   있다). 공식버전이 아니면 등록일 대신 리비전 저장일(`{YY.MM.DD} 저장`)이다.
-- 값이 없으면(활성 시나리오가 없는 저장소 등) 앱 이름 한 줄로 물러난다.
+- 값이 없으면(활성 시나리오가 없는 저장소 등) 앱 이름 두 줄 — 위 줄 메인 라벨 `S.PKG CAPA`, 아래 줄
+  부제 `AX Management` — 로 물러난다. 한 줄로 이으면 휴대폰 폭(390px, 글자 칸 110px)에서 부제가
+  말줄임에 통째로 먹힌다.
 
 **HOME 을 무겁게 하지 않는다**(2026-10-03 사용자 원칙). 이 글은 회차마다 DB 를 보지 않는다 —
 시나리오 이름표는 활성화할 때 세션에 떠 둔 값(`scenario_activation.active_scenario_label`),
@@ -79,7 +81,7 @@ from capa_simulation.scenario_activation import (
     has_unsaved_scenario_changes,
 )
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.settings import APP_NAME
+from capa_simulation.settings import APP_LABEL, APP_SUBTITLE
 
 # 원천 유형(`app_meta.dataset.source_type`)을 머리 띠에 적는 이름. 목록에 없는 유형은 값
 # 그대로 적는다.
@@ -480,13 +482,13 @@ def header_lines(
     official: tuple[str, int] | None,
     unsaved: bool,
 ) -> tuple[str, str]:
-    """머리 띠 두 줄(위·아래). 이름표가 없으면 앱 이름 한 줄이다(아래 줄은 빈 문자열).
+    """머리 띠 두 줄(위·아래). 이름표가 없으면 앱 이름의 메인 라벨(위)과 부제(아래)다.
 
     `official` 은 최신 공식버전의 (리비전 id, 번호)다. 올라와 있는 리비전이 그것이면 공식버전이다.
     미저장 변경이 있으면 상태는 그것이 먼저다 — 사이드바 시나리오 줄의 배지와 같은 차례다.
     """
     if label is None:
-        return APP_NAME, ""
+        return APP_LABEL, APP_SUBTITLE
     is_official = official is not None and official[0] == label.revision_id
     if unsaved:
         status = STATUS_UNSAVED
@@ -525,7 +527,7 @@ def css_string(text: str) -> str:
     return "".join(out)
 
 
-def _header_css(top: str = APP_NAME, bottom: str = "") -> str:
+def _header_css(top: str = APP_LABEL, bottom: str = APP_SUBTITLE) -> str:
     """이 실행의 팔레트와 두 줄로 헤더 CSS 를 만든다. 아래 줄이 비면 위 줄이 띠 가운데에 선다.
 
     사용자 글이 든 두 줄은 **맨 마지막에** 넣는다 — 시나리오명에 센티넬 글자(`__TEXT__` 등)가 들어

@@ -14,7 +14,7 @@ import streamlit as st
 import capa_simulation.components.intro_overlay as intro_overlay
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
 from capa_simulation.design import tokens
-from capa_simulation.settings import APP_NAME
+from capa_simulation.settings import APP_LABEL, APP_NAME, APP_SUBTITLE
 
 ASSETS = intro_overlay._ASSETS
 
@@ -77,11 +77,25 @@ def test_every_display_string_is_covered_by_the_font_subset() -> None:
 def test_title_lines_are_the_app_name_label_and_subtitle() -> None:
     """타이틀 두 줄은 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 첫 줄은 머리 줄·
     사이드바의 라벨(`BRAND`)과 같은 글자이고, 화면에는 CSS 가 대문자로 바꿔 보인다."""
-    assert intro_overlay.TITLE_LINES == ("S.PKG CAPA", "AX Management")
+    assert intro_overlay.TITLE_LINES == (APP_LABEL, APP_SUBTITLE)
     assert " ".join(intro_overlay.TITLE_LINES) == APP_NAME
     assert intro_overlay.TITLE_LINES[0] == intro_overlay.BRAND
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
     assert re.search(r"\.title \{[^}]*text-transform: uppercase;", css)
+
+
+def test_title_floor_follows_the_room_left_by_the_side_padding() -> None:
+    """둘째 줄 「AX MANAGEMENT」(7.39em)는 바닥 44px 에서 약 325px 다. 좌우 여백이 16px 에 멈추는
+    360px 보다 좁은 창에서는 그 자리에 7.45em 이 드는 크기로 바닥이 내려가야 한 줄을 지킨다(320px
+    창이면 약 39px). 바닥과 여백이 같은 변수(`--side`)를 봐야 한쪽만 바뀌지 않는다."""
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    entry = re.search(r"\n\.entry \{([^}]*)\}", css)
+    title = re.search(r"\n\.title \{([^}]*)\}", css)
+    assert entry is not None and title is not None
+    assert "--side: clamp(16px, 4.5vw, 64px);" in entry.group(1)
+    assert re.search(r"padding: [^;]* var\(--side\) [^;]*;", entry.group(1))
+    floor = "min(44px, (100vw - 2 * var(--side)) / 7.45)"
+    assert f"font-size: clamp({floor}, 6.6vw, 94px);" in title.group(1)
 
 
 def test_steps_follow_the_order_they_actually_finish() -> None:

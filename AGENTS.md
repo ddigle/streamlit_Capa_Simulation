@@ -305,8 +305,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     위젯 id 에 들어가 붙였다 떼면 열린 탭 기억이 흔들린다.
   - `시나리오 관리`는 Capa Chatbot과 Static Capa 사이의 독립 사이드바 그룹에 배치한다(그
     순서도 `SIDEBAR_GROUPS` 가 정한다). 그 아래 계산 그룹 셋은 Static Capa → 실행 Management →
-    Dynamic Capa 차례다(1장 「세 영역」). 상자 라벨은 머리 페이지 제목이라 영어로 두고, 「실행관리」는 머리
-    화면 설명과 Guide 첫 문장에 적는다.
+    Dynamic Capa 차례다(1장 「세 영역」). 상자 라벨은 머리 페이지 제목과 같은 글자다(「실행 Management」 —
+    2026-10-17 사용자 결정). 「실행관리」는 머리 화면 설명과 Guide 첫 문장에 적는다.
   - 배치가 다른 둘만 손수 그린다 — 가운데·큰 글씨의 HOME 과, 조회 컨트롤 아래 맨 밑
     상자(`ADMIN_BOX_KEY`)에 같은 층위로 세우는 `Admin Area`·VOC(`pages.admin_box_pages`)다.
     그 상자의 라벨은 `Support`, 아이콘은 `:material/support:` 다. `Preference` 는 HOME·가용설비
@@ -3602,16 +3602,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로 남았다). 앱이 다 그려진 뒤에만 열 수 있어 첫 실행을 끊지 않는다.
   - **글꼴은 저장소에 든 부분 글꼴 둘이다**(`archivo-capa.woff2` Archivo 800·폭 75% — 워드마크·타이틀·
     단추·시트의 달, `archivo-capa-number.woff2` Archivo 700·폭 100% — 차트 숫자·단위, SIL OFL 1.1 —
-    같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. Google Fonts `css2?family=Archivo:wdth,wght@…` 에
-    `text=` 로 글자 목록을 넘겨 받은 것이다. `BRAND`·`TITLE_LINES`·`DETAIL_LABEL`·`SUMMARY_LABEL` 에
-    새 글자를 쓰면 `FONT_SUBSET_TEXT`(숫자는 `NUMBER_FONT_SUBSET_TEXT`)로 다시 받는다(`test_intro_overlay`
-    가 빠진 글자를 잡는다). Google Fonts 에 나가지 못하는 사외 샌드박스에서는 같은 원본(google/fonts 저장소의
-    `Archivo[wdth,wght].ttf`)을 fontTools 로 같은 인스턴스·같은 레이아웃 기능으로 줄인다 — 순서는
-    `FONT_SUBSET_TEXT` 위 설명이고, 옛 목록으로 돌리면 글리프 수·윤곽·폭·커닝이 Google Fonts 응답과 같다.
-    타이틀 두 줄은 앱 이름(`settings.APP_NAME` — 메인 라벨 `S.PKG CAPA` + 부제 `AX Management`)이고 CSS 가
-    대문자로 바꿔 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자 결정). 글자 크기 상한(94px)은
-    긴 둘째 줄이 `.main` 최대 폭 700px 안에 한 줄로 서는 값이다. 한글은 시스템 본문 글꼴이고 워커 캔버스도
-    같은 글꼴 이름으로 그린다.
+    같은 폴더 `OFL.txt`). 사내망에는 외부 글꼴이 없다. `BRAND`·`TITLE_LINES`·`DETAIL_LABEL`·`SUMMARY_LABEL`
+    에 새 글자를 쓰면 `FONT_SUBSET_TEXT`(숫자는 `NUMBER_FONT_SUBSET_TEXT`)를 고치고 글꼴을 다시 만든다 —
+    `test_intro_overlay` 는 목록에 빠진 글자만 잡고 woff2 안은 보지 않는다. 만드는 길은 둘이고 어느 쪽이든
+    된다. Google Fonts `css2?family=Archivo:wdth,wght@…` 에 `text=` 로 글자 목록을 넘겨 받거나, Google
+    Fonts 에 나가지 못하는 사외 샌드박스에서는 같은 원본(google/fonts 저장소의 `Archivo[wdth,wght].ttf`)을
+    fontTools 로 같은 인스턴스·같은 레이아웃 기능으로 줄인다(이름 레코드는 0~6 과 OFL 라이선스 글·주소
+    13·14 를 남긴다). 순서는 `FONT_SUBSET_TEXT` 위 설명이고, 옛 목록으로 돌리면 글리프 수·윤곽·폭·커닝이
+    Google Fonts 응답과 같다. 지금 `archivo-capa.woff2` 는 fontTools 길, `archivo-capa-number.woff2` 는
+    Google Fonts 길로 만든 것이다.
+    타이틀 두 줄은 앱 이름의 메인 라벨 `S.PKG CAPA` 와 부제 `AX Management`(`settings.APP_LABEL`·
+    `APP_SUBTITLE`)이고 CSS 가 대문자로 바꿔 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자
+    결정). 글자 크기 상한(94px)은 긴 둘째 줄(7.39em)이 `.main` 최대 폭 700px 안에 한 줄로 서는 값이고,
+    바닥(44px)은 창 폭에서 좌우 여백(`--side`)을 뺀 자리에 7.45em 이 드는 크기를 넘지 않아 360px 보다
+    좁은 휴대폰에서도 둘째 줄이 한 줄이다. 한글은 시스템 본문 글꼴이고 워커 캔버스도 같은 글꼴 이름으로
+    그린다.
     `.gitattributes` 가 `*.woff2` 를 binary 로 둔다 — 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
 - `src/capa_simulation/components/intro_summary.py`
   - 입장 화면 Summary 의 **값**과 그것을 여는 사이드바 `S.PKG CAPA` 라벨. 최신 공식버전(`latest_official_release`)
@@ -3736,8 +3741,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       저장소·연결 호출이 0 인지 지킨다.
     - 사용자 글(시나리오명 등)은 `css_string` 으로 이스케이프한다(따옴표·역슬래시·제어 문자·`<>&`). 두
       줄은 템플릿 치환의 **맨 마지막**에 넣어 센티넬 글자가 든 이름도 망가지지 않는다. 값이 없으면
-      앱 이름 한 줄로 물러나 띠 가운데에 선다. 좁은 창에서는 두 줄이 따로 말줄임으로 줄어 짧은 위 줄이
-      먼저 다 보인다.
+      앱 이름 두 줄 — 위 줄 메인 라벨 `S.PKG CAPA`, 아래 줄 부제 `AX Management`(`settings.APP_LABEL`·
+      `APP_SUBTITLE`) — 로 물러난다. 한 줄로 이으면 휴대폰 폭(글자 칸 110px)에서 부제가 말줄임에 통째로
+      먹힌다. 좁은 창에서는 두 줄이 따로 말줄임으로 줄어 짧은 위 줄이 먼저 다 보인다.
     - 오른쪽 툴바 몫으로 비우는 폭은 1400px 이상에서 28rem(접으면 30.5rem)이고, **그보다 좁은 창은
       지금 툴바의 실측**으로 잡는다(`_NARROW_HEADER_RULES`, 2026-10-07). 1100px 창 실측 단추 묶음
       (Guide·Print·테마 — 2026-10-08 차례를 바꿔도 같은 폭) 197px 에 글자 시작·띠 안쪽 여백·틈·`Light` 글자 몫을 더해 17.5rem(접으면

@@ -703,9 +703,9 @@ def test_the_bootstrap_error_screen_still_shows_the_app_name_in_the_header(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """부트스트랩이 실패해 `st.stop()` 으로 끝나는 화면에도 머리 띠가 선다. 올라온 시나리오가
-    없으므로 앱 이름 한 줄이다(아래 줄은 비어 위 줄이 띠 가운데에 선다)."""
+    없으므로 앱 이름 두 줄이다(위 줄 메인 라벨 · 아래 줄 부제)."""
     import capa_simulation.scenario_activation as scenario_activation
-    from capa_simulation.settings import APP_NAME
+    from capa_simulation.settings import APP_LABEL, APP_SUBTITLE
 
     def _failing_bootstrap(*args: object, **kwargs: object) -> bool:
         raise RuntimeError("부트스트랩 실패")
@@ -719,8 +719,8 @@ def test_the_bootstrap_error_screen_still_shows_the_app_name_in_the_header(
     assert len(app.error) == 1
 
     style = _header_style(app)
-    assert f'content: "{APP_NAME}";' in style
-    assert 'content: "";' in style
+    assert f'content: "{APP_LABEL}";' in style
+    assert f'content: "{APP_SUBTITLE}";' in style
 
 
 def test_the_header_marks_unsaved_edits(_app: AppTest) -> None:

@@ -20,8 +20,10 @@ from capa_simulation.components.page_header import STATUS_SLOT_KEY
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
     APP_CONTACT_EMAIL,
+    APP_LABEL,
     APP_NAME,
     APP_OWNER_TEAM,
+    APP_SUBTITLE,
     APP_VERSION,
 )
 
@@ -402,16 +404,20 @@ def test_source_types_read_as_short_names() -> None:
 
 
 def test_without_an_active_scenario_the_header_falls_back_to_the_app_name() -> None:
-    """활성 시나리오가 없으면 앱 이름 한 줄로 물러나고, 그 한 줄은 띠 가운데에 선다."""
+    """활성 시나리오가 없으면 앱 이름 두 줄 — 위 줄 메인 라벨, 아래 줄 부제 — 로 물러난다. 한 줄로
+    이으면 휴대폰 폭(글자 칸 110px)에서 부제가 말줄임에 통째로 먹힌다. 아래 줄이 비면 위 줄이 띠
+    가운데에 선다."""
     top, bottom = header_lines(None, official=("revision-4", 4), unsaved=False)
-    assert (top, bottom) == (APP_NAME, "")
+    assert (top, bottom) == (APP_LABEL, APP_SUBTITLE)
+    assert f"{top} {bottom}" == APP_NAME
     css = _header_css(top, bottom)
     before = css[css.index('[data-testid="stHeader"]::before {') :]
     before = before[: before.index("}")]
-    assert f'content: "{APP_NAME}";' in before
-    assert "top: calc(50% - 0.55rem);" in before
-    two_lines = _header_css("위", "아래")
-    assert "top: calc(50% - 1.1rem);" in two_lines
+    assert f'content: "{APP_LABEL}";' in before
+    assert "top: calc(50% - 1.1rem);" in before
+    assert f'[data-testid="stHeader"]::after {{\n  content: "{APP_SUBTITLE}";' in css
+    one_line = _header_css("위", "")
+    assert "top: calc(50% - 0.55rem);" in one_line
 
 
 def test_user_text_is_escaped_inside_the_css_string() -> None:
