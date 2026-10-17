@@ -1044,14 +1044,16 @@ def render_process_kpis(
             f"{kpis.shortage_months}개월" if kpis.shortage_months else "없음",
             key="process_detail_kpi_shortage",
             tone="attention" if kpis.shortage_months else "neutral",
+            # 회색 줄은 좁은 창에서 끝이 말줄임으로 잘린다 — 끝에 부정(「기간 합 아님」)을 두면
+            # 「기간 합…」 만 남아 거꾸로 읽히므로 그 말은 풍선으로 옮긴다.
             caption=(
-                f"월 최대 {_MINUS}{kpis.max_shortage}대 · 기간 합 아님"
+                f"월 최대 {_MINUS}{kpis.max_shortage}대"
                 if kpis.shortage_months
                 else "월별 확보기준"
             ),
             help=(
                 "판정이 확보가 아닌 달 수와, 그 달들 가운데 확보기준까지 모자란 대수의 "
-                "최댓값입니다."
+                "최댓값입니다. 기간 합이 아닙니다 — 같은 설비가 여러 달에 다시 쓰입니다."
             ),
         )
         render_status_metric(

@@ -311,6 +311,27 @@ def test_the_cause_summary_names_only_the_causes_that_occurred() -> None:
     )
 
 
+def _kpi_row_app() -> None:
+    from test_process_capa_canvas import THRESHOLDS
+    from test_process_capa_view import _kpis
+
+    from capa_simulation.components.process_capa_view import render_process_kpis
+
+    render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None, absent_reason="일정 없음")
+
+
+def test_the_shortage_caption_keeps_its_negation_in_the_help() -> None:
+    """KPI 회색 줄은 좁은 창에서 끝이 말줄임으로 잘린다. 「확보기준 미달」 이 「월 최대 −6대 ·
+    기간 합 아님」 이던 때 1024px 창에서 「… 기간 합…」 만 남아 기간 합으로 읽혔다 — 회색 줄은
+    월 최대 대수만 두고 「기간 합이 아닙니다」 는 `?` 풍선에 둔다."""
+    app = AppTest.from_function(_kpi_row_app).run()
+
+    assert not app.exception
+    shortage = next(metric for metric in app.metric if metric.label == "확보기준 미달")
+    assert shortage.proto.delta == f"월 최대 {MINUS}6대"
+    assert "기간 합이 아닙니다" in shortage.proto.help
+
+
 def test_the_prescription_text_reads_the_plan() -> None:
     assert prescription_text(None) == "일정 없음"
     assert prescription_text(Prescription(3, 1, 0, 2)) == "단축 3대 · 신규 1대"
