@@ -42,11 +42,16 @@ def tone_color(tone: str) -> str:
 
 
 STRIPE_WIDTH_PX = 4
+# 값·회색 줄의 줄 높이(글자 크기의 배수). 숫자만 든 값(「62.9%」·「26.11」)은 Archivo 한 서체라
+# 줄 상자가 낮고, 한글이 섞이면 한글 서체의 높이를 따라 높아진다 — 1.63 실측 값 줄 27.5 대
+# 34.5px, 회색 줄 19.5 대 21.5px. 한글 서체의 기본 줄 높이에 맞춰 고정해 둘을 같게 둔다.
+VALUE_LINE_HEIGHT = 1.45
+DELTA_LINE_HEIGHT = 1.5
 
 
 @contextmanager
 def metric_row(*, key: str) -> Iterator[None]:
-    """지표 카드를 **같은 폭으로** 늘어놓는 가로 줄.
+    """지표 카드를 **같은 폭·같은 높이로** 늘어놓는 가로 줄.
 
     `render_status_metric` 은 CSS 를 걸 자리를 만들려고 카드를 컨테이너로 한 번 감싼다.
     그런데 Streamlit 은 맨 카드와 감싼 컨테이너에 서로 다른 flex-basis 를 준다. 실측하면
@@ -54,14 +59,37 @@ def metric_row(*, key: str) -> Iterator[None]:
     `1 1 120px` 이다. 같은 줄에 섞이면 카드 하나만 90px 좁아진다.
 
     줄 전체에 같은 flex 를 걸어 폭을 맞춘다. 감쌌든 아니든 결과가 같아진다.
+
+    높이도 맞춘다. 가로 줄은 칸을 위에 붙여(`align-items: start`) 카드가 제 내용 높이로 서서,
+    값이 숫자뿐인 카드만 9px 낮았다(공정 Capa 상세 「최저 확보율」). 줄 높이를 고정해 안의 글
+    자리를 맞추고, 칸을 줄 높이로 늘려 카드 상자가 가장 높은 카드에 맞게 한다 — 감싼 카드는
+    감싼 컨테이너 안에서 한 번 더 늘린다.
     """
     st.html(
         "\n".join(
             [
                 "<style>",
+                f'.st-key-{key} [data-testid="stHorizontalBlock"] {{',
+                "    align-items: stretch !important;",
+                "}",
                 f'.st-key-{key} [data-testid="stHorizontalBlock"] > * {{',
                 "    flex: 1 1 0 !important;",
                 "    min-width: 0 !important;",
+                "}",
+                f'.st-key-{key} [data-testid="stVerticalBlock"]'
+                ' > [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {',
+                "    flex: 1 1 auto;",
+                "}",
+                f'.st-key-{key} [data-testid="stMetric"] {{',
+                "    height: 100%;",
+                "}",
+                f'.st-key-{key} [data-testid="stMetricValue"],',
+                f'.st-key-{key} [data-testid="stMetricValue"] * {{',
+                f"    line-height: {VALUE_LINE_HEIGHT};",
+                "}",
+                f'.st-key-{key} [data-testid="stMetricDelta"],',
+                f'.st-key-{key} [data-testid="stMetricDelta"] * {{',
+                f"    line-height: {DELTA_LINE_HEIGHT};",
                 "}",
                 "</style>",
             ]

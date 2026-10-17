@@ -4075,6 +4075,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로 쓴다. 색을 붙일 근거가 없으면 `tone="neutral"` 로 두어 기존 카드와 같게 둔다.
     `caption` 은 값 아래 회색 한 줄(그 값의 달·출처)이다 — 증감이 아니라 `delta` 자리에 색·화살표 없이
     적는다(공정 Capa 상세 KPI).
+  - `metric_row` 는 카드를 같은 폭·**같은 높이**로 세운다(2026-10-17 사용자 요청). 숫자뿐인 값은 Archivo
+    한 서체라 줄 상자가 낮고 한글이 섞이면 높아 카드가 갈렸다 — 값·회색 줄의 줄 높이를 고정하고
+    (`VALUE_LINE_HEIGHT`·`DELTA_LINE_HEIGHT`) 칸을 줄 높이로 늘린다. 감싼 카드의 늘림은 1.63 DOM(감싼
+    컨테이너 → 요소 칸 → 카드)에 기대므로 판올림 때 브라우저로 다시 본다.
 - `src/capa_simulation/components/table_toolbar.py`
   - 표 제목·부가 설명·CSV 내보내기 한 줄. `st.download_button` 은 여기서만 부른다.
     라벨에 아이콘을 섞지 않고 `label` 인자를 쓴다. 어기면 테스트가 잡는다.
