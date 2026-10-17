@@ -178,6 +178,39 @@ def test_the_support_box_sits_last_and_apart() -> None:
     assert _rules_with(block, "margin-top: 0.9rem;") == [rule]
 
 
+def test_page_group_titles_stay_on_one_line_and_ellipsize() -> None:
+    """페이지 그룹 상자 제목은 좁게 끈 사이드바에서도 한 줄 + 말줄임이다(2026-10-17 사용자 결정).
+
+    「Execution Management」 가 약 232px 아래에서 낱말 가운데서 접혔다. 말줄임은 문단에만 걸면
+    듣지 않는다 — 마크다운 칸(flex 항목)의 `min-width` 를 0 으로 풀어야 한다. 그룹을 더하면
+    선언에서 따라오고, 조건 카드·`Support` 에는 걸리지 않는다(조건 이름은 접어서 다 보인다).
+    """
+    block = _style_block()
+    shells = [
+        f'.st-key-{group.slug}_box summary [data-testid="stMarkdownContainer"]'
+        for group in SIDEBAR_GROUPS
+        if group.subpages
+    ]
+
+    title_rules = [
+        rule
+        for rule in _rules_with(block, "text-overflow: ellipsis;")
+        if any("summary" in selector for selector in rule)
+    ]
+    assert title_rules == [[f"{shell} p" for shell in shells]]
+    (ellipsis_rule,) = title_rules
+    assert _declarations(block, ellipsis_rule) == [
+        "white-space: nowrap",
+        "overflow: hidden",
+        "text-overflow: ellipsis",
+    ]
+    assert _declarations(block, shells) == ["min-width: 0"]
+    assert not any(
+        "test_admin" in selector or CONDITION_CARD_PREFIX in selector
+        for selector in [*ellipsis_rule, *shells]
+    )
+
+
 def _declarations(block: str, selectors: list[str]) -> list[str]:
     """선택자 목록이 정확히 `selectors` 인 규칙 하나의 선언들. 주석은 걷어 내고 읽는다."""
     without_comments = re.sub(r"/\*.*?\*/", "", block, flags=re.S)

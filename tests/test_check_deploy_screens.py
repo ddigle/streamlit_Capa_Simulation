@@ -1818,6 +1818,29 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     assert "|" not in line
 
 
+def test_the_narrow_sidebar_summary_accepts_ellipsis_and_flags_wrapping() -> None:
+    """좁게 끈 폭에서는 말줄임이 정한 모양(개수만)이고 줄바꿈이 결함이다(2026-10-17 사용자 결정)."""
+    every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
+    clipped = [every[0], {**every[1], "clipped": True}, every[2]]
+
+    assert screens.summarize_sidebar_narrow({"width": 213, "boxes": every}) == "좁은 폭 213px 한 줄"
+    assert (
+        screens.summarize_sidebar_narrow({"width": 213, "boxes": clipped})
+        == "좁은 폭 213px 한 줄(말줄임 1)"
+    )
+    wrapped = [every[0], {**every[1], "lines": 2, "clipped": True}, every[2]]
+    assert (
+        screens.summarize_sidebar_narrow({"width": 200, "boxes": wrapped})
+        == "좁은 폭 200px 줄바꿈: Execution Management"
+    )
+    assert screens.summarize_sidebar_narrow(None) == "좁은 폭 못 잼"
+    assert screens.summarize_sidebar_narrow({"width": 200, "boxes": []}) == "좁은 폭 못 잼"
+    assert screens.SIDEBAR_NARROW_WIDTH_PX == 200
+    # 좁히는 스크립트는 기본 폭을 재는 스크립트를 그대로 품고, 잰 뒤 원래 폭으로 되돌린다.
+    assert screens._SIDEBAR_GROUPS_JS in screens._SIDEBAR_GROUPS_NARROW_JS
+    assert 'removeAttribute("style")' in screens._SIDEBAR_GROUPS_NARROW_JS
+
+
 # ------------------------------------------------------- Space 기준일 페이더(`space_fader`)
 
 

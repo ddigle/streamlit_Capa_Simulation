@@ -256,6 +256,10 @@ SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("execution_management", "Execution Management", 6),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
+# 좁게 끈 사이드바 폭(px). Streamlit 이 끌어 주는 가장 좁은 쪽이다 — 이 폭에서도 그룹 상자
+# 제목은 한 줄이고 넘치면 말줄임이다(2026-10-17 사용자 결정). 사이드바 안 내용 때문에 이보다
+# 넓게 설 수 있어 선 폭을 함께 적는다.
+SIDEBAR_NARROW_WIDTH_PX: Final = 200
 
 
 # ---------------------------------------------------------------------------------- 경로
@@ -1973,6 +1977,27 @@ _SIDEBAR_GROUPS_JS = """(slugs) => {
 }"""
 
 
+# 사이드바를 `width` 로 좁혀 위와 같은 꼴로 재고 원래 폭으로 되돌린다. 실제로 선 폭(px)을
+# 함께 돌려준다.
+_SIDEBAR_GROUPS_NARROW_JS = (
+    """async ({slugs, width}) => {
+  const side = document.querySelector('[data-testid="stSidebar"]');
+  if (!side) return null;
+  const saved = side.getAttribute("style");
+  side.style.width = side.style.minWidth = side.style.maxWidth = `${width}px`;
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  const measure = """
+    + _SIDEBAR_GROUPS_JS
+    + """;
+  const boxes = measure(slugs);
+  const shown = Math.round(side.getBoundingClientRect().width);
+  if (saved === null) side.removeAttribute("style");
+  else side.setAttribute("style", saved);
+  return { width: shown, boxes };
+}"""
+)
+
+
 def _sidebar_button(widget_key: str) -> str:
     """사이드바 위젯 key 의 단추 선택자(Streamlit 은 key 를 `st-key-<key>` 클래스로 단다)."""
     return f'[data-testid="stSidebar"] .st-key-{widget_key} button'
@@ -2299,12 +2324,27 @@ def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
     return f"{' · '.join(parts)} — {verdict} · {label}"
 
 
+def summarize_sidebar_narrow(narrow: Mapping[str, Any] | None) -> str:
+    """좁게 끈 사이드바 한 조각 — 그 폭에서 그룹 상자 제목이 모두 한 줄인가. 말줄임은 정한 모양이라
+    결함이 아니고 그 수만 적는다. 줄바꿈이 결함이다(낱말 가운데서 접힌다)."""
+    boxes = narrow.get("boxes") if narrow else None
+    if not narrow or not boxes:
+        return "좁은 폭 못 잼"
+    titles = {slug: title for slug, title, _ in SIDEBAR_GROUP_BOXES}
+    width = int(narrow.get("width") or 0)
+    wrapped = [titles.get(str(box.get("slug")), "그 밖") for box in boxes if box.get("lines") != 1]
+    if wrapped:
+        return f"좁은 폭 {width}px 줄바꿈: {', '.join(wrapped)}"
+    clipped = sum(1 for box in boxes if box.get("clipped"))
+    return f"좁은 폭 {width}px 한 줄" + (f"(말줄임 {clipped})" if clipped else "")
+
+
 def check_sidebar_groups(screen: Screen) -> str:
     """사이드바 계산 그룹 셋 — Static Capa · Execution Management · Dynamic Capa 가 그 차례로
     서고 상자마다 하위 화면 수가 정한 대로인가, 상자 제목이 줄바꿈·말줄임 없이 한 줄로 보이는가
     (「Execution Management」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
-    상자를 펴지 않는다. 사이드바는 기본 폭 그대로 잰다 — 사용자가 사이드바를 좁게 끌면(약 232px
-    아래) 그 제목은 접히고, 그것은 받아들인 한계라 여기서 재지 않는다."""
+    상자를 펴지 않는다. 기본 폭에서 잰 뒤 사이드바를 가장 좁게 끈 폭(`SIDEBAR_NARROW_WIDTH_PX`)에서
+    한 번 더 잰다 — 그 폭에서는 말줄임이 정한 모양이고 줄바꿈이 결함이다. 잰 뒤 폭은 되돌린다."""
     screen.open_home()
     slugs = [slug for slug, _, _ in SIDEBAR_GROUP_BOXES]
     found = screen.wait_for(
@@ -2312,7 +2352,10 @@ def check_sidebar_groups(screen: Screen) -> str:
         timeout=30,
         accept=lambda value: bool(value) and all(box["title"] for box in value),
     )
-    return summarize_sidebar_groups(found)
+    narrow = screen.js(
+        _SIDEBAR_GROUPS_NARROW_JS, {"slugs": slugs, "width": SIDEBAR_NARROW_WIDTH_PX}
+    )
+    return f"{summarize_sidebar_groups(found)} · {summarize_sidebar_narrow(narrow)}"
 
 
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.

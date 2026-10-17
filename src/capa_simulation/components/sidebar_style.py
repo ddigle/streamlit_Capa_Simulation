@@ -121,6 +121,14 @@ def build_sidebar_stylesheet(
     group_title_selectors = _SELECTOR_JOINER.join(
         f'{root} summary [data-testid="stMarkdownContainer"] p' for root in summary_roots
     )
+    # 페이지 그룹 상자의 제목만 한 줄로 두고 넘치면 말줄임한다. 조건 카드·`Support` 는 그대로
+    # 접는다 — 조건 이름은 잘리면 어느 조건인지 못 읽는다.
+    group_title_shells = [
+        f'.st-key-{group.slug}_box summary [data-testid="stMarkdownContainer"]'
+        for group in boxed_groups
+    ]
+    group_title_shell_selectors = _SELECTOR_JOINER.join(group_title_shells)
+    group_title_line_selectors = _SELECTOR_JOINER.join(f"{shell} p" for shell in group_title_shells)
     # 구역 제목 줄. 선택자는 `navigation.SIDEBAR_SECTIONS` 선언에서 나온다 — 인자로 받지
     # 않는다. 제목을 그리는 쪽(`sidebar_status.render_sidebar_section`)도 같은 선언을 본다.
     section_selectors = _SELECTOR_JOINER.join(
@@ -344,6 +352,19 @@ def build_sidebar_stylesheet(
         {group_title_selectors} {{
             font-size: 1rem;
             font-weight: 700;
+        }}
+        /* 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴
+           「Execution Management」 도 한 줄인데, 사이드바를 약 232px 보다 좁게 끌면 두 줄로,
+           최소 폭에서는 낱말 가운데서(「Managemen / t」) 접혔다. 마크다운 칸은 flex 항목이라
+           `min-width: auto` 면 글 폭 아래로 줄지 않아 문단의 말줄임이 걸리지 않는다 — 0 으로
+           푼다(1.63 DOM 실측: 요약 줄 → span → div(overflow hidden) → 마크다운 칸 → 문단). */
+        {group_title_shell_selectors} {{
+            min-width: 0;
+        }}
+        {group_title_line_selectors} {{
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }}
         /* 구역 제목은 상자가 아니라 **경계 표시**다. 위 목록과는 한 뼘 떼고 아래 상자에는
            붙여, 제목이 어느 무리의 것인지 자리로 읽히게 한다. 글자는 상자 제목(1rem)보다
