@@ -550,6 +550,12 @@
     바뀌고 주소는 그대로」·「확보율 보정」 새 이름·RawData 실적 칸(반입실적·반입상태·Qual실적)을 채우면 알림이 준다.
     **배포 뒤 떠 있는 앱은 다시 띄운다**(행 머리 상수·모듈 import 가 바뀌어 옛 캐시 프레임이 남는다). 8-4 사용기준 보고 줄은
     글자만 바뀐다(리뷰 대조에 「글자만 바뀜」).
+  - **배포 직전(2026-10-17) 더한 것**: 화면 확인 `gap_sheet`(Static 대비 일정 비교 시트 — 9행 차례·달 수·설비 일정 기준 칸 누름 근거
+    카드가 **그 칸 것인지**(카드 제목 앞머리·굵은 칸)·다시 누르면 닫힘, 바꾼 전환은 끝에 되돌림 — 15항목째), 전 리비전 집계 Density 단계·
+    자동 발행 경고(위 리뷰 항목 「남은 것(사외)」), 지표 카드 줄 같은 높이(사용자 요청 — 공정 Capa 상세 「최저 확보율」 처럼 값이 숫자뿐인
+    카드만 9px 낮던 것. `metric_row` 가 값·회색 줄 높이를 고정하고 칸을 줄 높이로 늘린다 — 여섯 화면 카드 줄마다 높이 하나, 브라우저 실측).
+    런북은 다음 배포용으로 다시 썼다(7-15 A 열다섯·B 일곱·C 선택, 첫 WSL ZIP 줄끝, 4-4 다듬음, 0-1·5·6-1 B 손 확인 기록 — 작성 뒤 두 관점
+    검토 20건 반영: 월 머지·자동 갱신 설정 칸의 Enter 저장과 도면 삭제 확인 칸을 금지 목록에).
   - **런북 7장은 배포 때 그 배포용으로 다시 쓴다.** 재료: 4-4 「공식버전 자동 갱신 켜는 법(초안)」 다듬기(실행 줄 환경변수
     `CAPA_AUTO_OFFICIAL_UPDATE=1`·탭 켜기·탭 하나 열어 두기), 7-14 A 의 `process_detail` 항목과 손 확인(칸 누름·탭 링크 —
     공용 조회 조건에 쓰지 않음), 아래 리뷰 항목의 「다음 배포 사내 확인 요청」과 「B 손 확인 기록」 문구. 빌드 전에는 같은 항목
@@ -636,16 +642,15 @@
     12. 사내 권한 템플릿(`docs/internal_claude_settings.json`)에 `inspect_revision_calculations.py` allow 를 둘지 — 없으면 런북 6장대로
         사용자가 친다.
   - [ ] **남은 것(사외)**
-    - 배포 전(capa F6): 저장·발행 검사가 Density 를 시나리오 전체 기간·EDP 계획까지 본다. 사내 공식버전이 조회기간 밖이나 EDP 계획에
-      구분_EQ 0 이하 제품 계획을 가지면 배포 뒤 모든 리비전 저장에 경고가 붙고 발행이 막힌다 — `inspect_revision_calculations.py` 의
-      `calculate` 에 `capacity_gate.density_error` 단계를 더해 리비전별 「Density 멈춤」을 세고, 런북 6-3 이 공식버전의 그 값이 0
-      인지 보게 한다.
-    - load R7: 자동 발행(`auto_official_update_runner._publish_filtered_revision`)의 로그 메모에 `required_exclusion_message(…,
-      scope=FULL_SCOPE)` 를 덧붙인다(막지 않음 — 사람 발행과 같은 규칙).
-    - README 「scripts/」 목록과 CLAUDE.md 「보조 스크립트」 줄에 `inspect_revision_calculations.py` 와 `benchmark_home.py --data-dir`.
-    - docs F6: `docs/data_model.md` 관계도 그림의 「공용 프로필」 블록에 `0035` 네 표(`global_auto_official_update` ·
-      `auto_official_update_setting_log` · `auto_official_update_run` · `auto_official_update_exclusion` — 소유 컬럼 없이 가리키기만)를
-      더한다. 설명 목록에는 이미 있다.
+    - ~~배포 전(capa F6): 전 리비전 집계에 `capacity_gate.density_error` 단계~~(2026-10-17 — `inspect_revision_calculations.py` 리비전
+      줄 `Density(저장·발행 검사)` 칸·집계 `Density 멈춤`·갈래 줄. 판정은 **최신 공식의 `Density` 칸이 `됨`** 이고, 지난 공식버전까지 센
+      수는 `지난 공식버전 포함 Density 멈춤 N` 으로 따로 적는다 — 지난 공식의 멈춤은 그 시나리오를 다시 열어 저장할 때만 경고. 런북 6-3 a·
+      AGENTS 같은 꼴. 적대 검토 뒤 고침).
+    - ~~load R7: 자동 발행 로그 메모에 `required_exclusion_message(…, scope=FULL_SCOPE)`~~(2026-10-17 — 발행은 막지 않고 실행 기록 사유
+      끝에 그 건수 문장을 붙이며, 「지금 실행」 결과는 화면 발행처럼 성공 알림 밑에 `st.warning` 으로 따로 띄운다(`split_published_reason`
+      — 끊긴 회차 복구도 같은 길). 공식버전 메모(사람 글)에는 싣지 않는다. README·Guide 한 문장).
+    - ~~README 「scripts/」 목록과 CLAUDE.md 「보조 스크립트」 줄~~(2026-10-17).
+    - ~~docs F6: `docs/data_model.md` 관계도 「공용 프로필」 블록에 `0035` 네 표~~(2026-10-17).
     - ~~10-15 확정 반영: `scenario_month_merge.py` 의 월 없는 표 규칙 주석과 `AGENTS.md` 월 머지 절이 아직 「사용자 확인 대기
       기본안」이라 적는다~~(2026-10-16 「2026-10-15 사용자 결정」으로 고침).
     - (선택, load R4) HOME `get_scenario_exclusion_counts` 는 새 키마다 소요대수를 한 번 더 푼다 — 합성 47.7ms, 사내 cold 10.8초의
@@ -663,7 +668,7 @@
       「보충 행 수」 표가 실데이터에서 읽히는지. 개수만.
     - Space 실데이터 층 가운데 레이아웃표시 N 호기가 있는 층에서 도면·캔버스 팝업 경고와 삭제 확인 칸이 서는지, 실행 Capa·Proc
       Rename 을 두 창에서 동시에 저장하면 뒤 저장이 「다른 사용자가 먼저」로 막히는지. 개수만.
-    - 6-3 사본 E2E 로 a 전 리비전 계산(머지 리비전 제외 0 · 공식버전 Density 멈춤 0)과 b HOME 시간.
+    - 6-3 사본 E2E 로 a 전 리비전 계산(머지 리비전 제외 0 · 최신 공식 Density 됨)과 b HOME 시간.
     - 8-4 사용기준 줄(HBM·`EDP`·다른 값·빈 칸 행 수) — 이번 요약본에는 제외 229 → 199대만 있었다(「사용기준 HBM 대수 확인」 항목).
     - 수율 실적 DB 질문 넷(DB·표 이름, EDS·BE 를 가르는 칸, 제품명이 `RQ_YLD` 와 같은지, 갱신 주기 — 2장 「수율 실적 DB 계약」).
     - 8-2 「Wafer `WF수(매)` 경로 값」 블록을 고치지 않고 리뷰에 붙인다(이번 요약본에 없었다 — 2장 「부하량 계산」의 Wafer 대조 항목).
