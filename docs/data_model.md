@@ -84,8 +84,8 @@ app_meta.global_key_process          1 ── N global_key_process_preset       
                                        └── N global_key_process_item         (0024 옛 목록 — 0028 뒤 읽지 않음)
 app_meta.global_securement_threshold 1 ── N global_securement_threshold_month 확보율 판정 기준(0029)
 app_meta.global_advance_shipment     1 ── N global_advance_shipment_month    선행 입고 실적(0031, 계산 밖)
-app_meta.global_auto_official_update 1 ── N auto_official_update_setting_log 공식버전 자동 갱신 설정(0035, 변경 기록은 version 마다)
-app_meta.auto_official_update_run    1 ── N auto_official_update_exclusion (run_id) 자동 갱신 실행·자동 off 공정(0035, 머리 없음 — 아래)
+app_meta.global_auto_official_update 1 ── N auto_official_update_setting_log 공식버전 자동 갱신 설정·변경 기록(0035)
+app_meta.auto_official_update_run    1 ── N auto_official_update_exclusion   실행·자동 off 공정(0035, run_id·머리 없음)
 app_meta.voc_post                    1 ── N voc_reply (post_id)              VOC 게시판(0025, 머리 없음)
 
 app_meta.schema_migration · (옛 개발 DB 에만) 빈 equipment_ops 스키마(결번 2·3 의 흔적 — migration_catalog.md)
