@@ -256,9 +256,9 @@ SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("execution_management", "Execution Management", 6),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
-# 좁게 끈 사이드바 폭(px). Streamlit 이 끌어 주는 가장 좁은 쪽이다 — 이 폭에서도 그룹 상자
-# 제목은 한 줄이고 넘치면 말줄임이다(2026-10-17 사용자 결정). 사이드바 안 내용 때문에 이보다
-# 넓게 설 수 있어 선 폭을 함께 적는다.
+# 좁게 끈 사이드바 폭(px). Streamlit 1.63 이 끌어 주는 가장 좁은 폭이다(200~600px) — 이 폭에서도
+# 그룹 상자 제목은 한 줄이고 넘치면 말줄임이다(2026-10-17 사용자 결정). 선 폭을 함께 적어 두어
+# 이 값과 다르면 측정이 틀어진 것을 안다.
 SIDEBAR_NARROW_WIDTH_PX: Final = 200
 
 
@@ -1949,8 +1949,9 @@ _PROCESS_DIALOG_JS = """(box, pointer) => {
 
 
 # 사이드바 그룹 상자 — 화면 차례대로 상자마다 slug·제목 글(판정에만 쓴다)·링크 수, 그리고 제목이 한
-# 줄인지(줄 상자 수)와 말줄임으로 잘렸는지. 접힌 상자도 링크는 DOM 에 있다(`Screen.open_page` 가
-# 그것을 찾아 편다).
+# 줄인지(줄 상자 수), 넘쳤는지(`clipped`), 말줄임이 그려지는지(`ellipsis`), 문단이 조상의 잘라 내는
+# 칸 밖으로 나갔는지(`cut` — 문단 안에서는 넘치지 않아도 조상이 글자를 반쯤 자른다). 접힌 상자도
+# 링크는 DOM 에 있다(`Screen.open_page` 가 그것을 찾아 편다).
 _SIDEBAR_GROUPS_JS = """(slugs) => {
   const side = document.querySelector('[data-testid="stSidebar"]');
   if (!side) return null;
@@ -1960,11 +1961,22 @@ _SIDEBAR_GROUPS_JS = """(slugs) => {
     const label = box.querySelector('summary [data-testid="stMarkdownContainer"] p');
     let lines = 0;
     let clipped = false;
+    let ellipsis = false;
+    let cut = false;
     if (label) {
       const range = document.createRange();
       range.selectNodeContents(label);
       lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
       clipped = label.scrollWidth > label.clientWidth + 1;
+      ellipsis = getComputedStyle(label).textOverflow === "ellipsis";
+      const right = label.getBoundingClientRect().right;
+      for (let el = label.parentElement; el && el !== box; el = el.parentElement) {
+        const clips = getComputedStyle(el).overflowX !== "visible";
+        if (clips && right > el.getBoundingClientRect().right + 1) {
+          cut = true;
+          break;
+        }
+      }
     }
     return {
       slug,
@@ -1972,28 +1984,41 @@ _SIDEBAR_GROUPS_JS = """(slugs) => {
       links: box.querySelectorAll('a[data-testid="stPageLink-NavLink"]').length,
       lines,
       clipped,
+      ellipsis,
+      cut,
     };
   });
 }"""
 
 
-# 사이드바를 `width` 로 좁혀 위와 같은 꼴로 재고 원래 폭으로 되돌린다. 실제로 선 폭(px)을
-# 함께 돌려준다.
+# 사이드바를 `width` 로 좁혀 위와 같은 꼴로 재고 원래 폭으로 되돌린다. 실제로 선 폭(px)과, 보이는
+# 페이지 링크(HOME·단독 상자 — 접힌 그룹 안 링크는 보이지 않는다) 중 넘쳤는데 말줄임이 없는 글 수
+# (`links_cut`)를 함께 돌려준다. 사이드바의 폭 전환(0.3초)을 끄고 재야 중간 폭을 읽지 않는다.
 _SIDEBAR_GROUPS_NARROW_JS = (
     """async ({slugs, width}) => {
   const side = document.querySelector('[data-testid="stSidebar"]');
   if (!side) return null;
   const saved = side.getAttribute("style");
+  side.style.transition = "none";
   side.style.width = side.style.minWidth = side.style.maxWidth = `${width}px`;
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
   const measure = """
     + _SIDEBAR_GROUPS_JS
     + """;
   const boxes = measure(slugs);
+  const links = side.querySelectorAll(
+    'a[data-testid="stPageLink-NavLink"] [data-testid="stMarkdownContainer"] p'
+  );
+  const linksCut = [...links].filter(
+    (p) =>
+      p.getClientRects().length > 0 &&
+      p.scrollWidth > p.clientWidth + 1 &&
+      getComputedStyle(p).textOverflow !== "ellipsis"
+  ).length;
   const shown = Math.round(side.getBoundingClientRect().width);
   if (saved === null) side.removeAttribute("style");
   else side.setAttribute("style", saved);
-  return { width: shown, boxes };
+  return { width: shown, boxes, links_cut: linksCut };
 }"""
 )
 
@@ -2312,7 +2337,11 @@ def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
     if missing:
         verdict += f"(없음: {', '.join(missing)})"
     wrapped = [titles.get(str(box.get("slug")), "그 밖") for box in found if box.get("lines") != 1]
-    clipped = [titles.get(str(box.get("slug")), "그 밖") for box in found if box.get("clipped")]
+    clipped = [
+        titles.get(str(box.get("slug")), "그 밖")
+        for box in found
+        if box.get("clipped") or box.get("cut")
+    ]
     label = "상자 제목 한 줄 · 잘림 없음"
     if wrapped or clipped:
         notes = []
@@ -2325,16 +2354,31 @@ def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
 
 
 def summarize_sidebar_narrow(narrow: Mapping[str, Any] | None) -> str:
-    """좁게 끈 사이드바 한 조각 — 그 폭에서 그룹 상자 제목이 모두 한 줄인가. 말줄임은 정한 모양이라
-    결함이 아니고 그 수만 적는다. 줄바꿈이 결함이다(낱말 가운데서 접힌다)."""
+    """좁게 끈 사이드바 한 조각 — 그 폭에서 그룹 상자 제목이 모두 한 줄이고 넘친 끝이 말줄임인가.
+    말줄임은 정한 모양이라 결함이 아니고 그 수만 적는다. 결함은 줄바꿈(낱말 가운데서 접힌다)과
+    말줄임 없이 잘림(넘쳤는데 말줄임이 없거나 조상 칸이 글자를 반쯤 자른다 — 그룹 제목과 보이는
+    페이지 링크)이다."""
     boxes = narrow.get("boxes") if narrow else None
     if not narrow or not boxes:
         return "좁은 폭 못 잼"
     titles = {slug: title for slug, title, _ in SIDEBAR_GROUP_BOXES}
     width = int(narrow.get("width") or 0)
     wrapped = [titles.get(str(box.get("slug")), "그 밖") for box in boxes if box.get("lines") != 1]
+    hard = [
+        titles.get(str(box.get("slug")), "그 밖")
+        for box in boxes
+        if box.get("cut") or (box.get("clipped") and not box.get("ellipsis"))
+    ]
+    links_cut = int(narrow.get("links_cut") or 0)
+    problems: list[str] = []
     if wrapped:
-        return f"좁은 폭 {width}px 줄바꿈: {', '.join(wrapped)}"
+        problems.append(f"줄바꿈: {', '.join(wrapped)}")
+    if hard:
+        problems.append(f"말줄임 없이 잘림: {', '.join(hard)}")
+    if links_cut:
+        problems.append(f"링크 말줄임 없이 잘림 {links_cut}")
+    if problems:
+        return f"좁은 폭 {width}px " + " · ".join(problems)
     clipped = sum(1 for box in boxes if box.get("clipped"))
     return f"좁은 폭 {width}px 한 줄" + (f"(말줄임 {clipped})" if clipped else "")
 
@@ -2344,7 +2388,8 @@ def check_sidebar_groups(screen: Screen) -> str:
     서고 상자마다 하위 화면 수가 정한 대로인가, 상자 제목이 줄바꿈·말줄임 없이 한 줄로 보이는가
     (「Execution Management」 가 가장 길다). 어느 화면에서나 같은 사이드바라 HOME 에서 본다.
     상자를 펴지 않는다. 기본 폭에서 잰 뒤 사이드바를 가장 좁게 끈 폭(`SIDEBAR_NARROW_WIDTH_PX`)에서
-    한 번 더 잰다 — 그 폭에서는 말줄임이 정한 모양이고 줄바꿈이 결함이다. 잰 뒤 폭은 되돌린다."""
+    한 번 더 잰다 — 그 폭에서는 말줄임이 정한 모양이고 줄바꿈·말줄임 없이 잘림이 결함이다(보이는
+    페이지 링크도 본다). 잰 뒤 폭은 되돌린다."""
     screen.open_home()
     slugs = [slug for slug, _, _ in SIDEBAR_GROUP_BOXES]
     found = screen.wait_for(

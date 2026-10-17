@@ -1785,9 +1785,24 @@ def test_the_sidebar_group_boxes_match_the_navigation_declaration() -> None:
 
 
 def _box(
-    slug: str, title: str, subpages: int, *, lines: int = 1, clipped: bool = False
+    slug: str,
+    title: str,
+    subpages: int,
+    *,
+    lines: int = 1,
+    clipped: bool = False,
+    ellipsis: bool = False,
+    cut: bool = False,
 ) -> dict[str, Any]:
-    return {"slug": slug, "title": title, "links": subpages + 1, "lines": lines, "clipped": clipped}
+    return {
+        "slug": slug,
+        "title": title,
+        "links": subpages + 1,
+        "lines": lines,
+        "clipped": clipped,
+        "ellipsis": ellipsis,
+        "cut": cut,
+    }
 
 
 def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None:
@@ -1808,6 +1823,9 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     )
     missing = screens.summarize_sidebar_groups([every[0], {**every[2], "clipped": True}])
     assert missing.endswith("정한 차례·수와 다름(없음: Execution Management) · 잘림: Dynamic Capa")
+    # 문단 안에서는 넘치지 않아도 조상 칸이 글자를 자르면 잘림이다.
+    cut = screens.summarize_sidebar_groups([every[0], {**every[1], "cut": True}, every[2]])
+    assert cut.endswith("정한 차례·수와 같음 · 잘림: Execution Management")
     # 화면 제목이 다르면 화면 글자를 옮기지 않고 「제목 다름」만 적는다.
     renamed = screens.summarize_sidebar_groups([{**every[0], "title": SENTINEL}, *every[1:]])
     assert SENTINEL not in renamed
@@ -1821,17 +1839,28 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
 def test_the_narrow_sidebar_summary_accepts_ellipsis_and_flags_wrapping() -> None:
     """좁게 끈 폭에서는 말줄임이 정한 모양(개수만)이고 줄바꿈이 결함이다(2026-10-17 사용자 결정)."""
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
-    clipped = [every[0], {**every[1], "clipped": True}, every[2]]
+    clipped = [every[0], {**every[1], "clipped": True, "ellipsis": True}, every[2]]
 
     assert screens.summarize_sidebar_narrow({"width": 213, "boxes": every}) == "좁은 폭 213px 한 줄"
     assert (
         screens.summarize_sidebar_narrow({"width": 213, "boxes": clipped})
         == "좁은 폭 213px 한 줄(말줄임 1)"
     )
-    wrapped = [every[0], {**every[1], "lines": 2, "clipped": True}, every[2]]
+    wrapped = [every[0], {**every[1], "lines": 2, "clipped": True, "ellipsis": True}, every[2]]
     assert (
         screens.summarize_sidebar_narrow({"width": 200, "boxes": wrapped})
         == "좁은 폭 200px 줄바꿈: Execution Management"
+    )
+    # 넘쳤는데 말줄임이 없거나(규칙이 빠짐) 조상 칸이 자르면 결함이다. 보이는 링크도 센다.
+    bare = [every[0], {**every[1], "clipped": True}, {**every[2], "cut": True}]
+    assert (
+        screens.summarize_sidebar_narrow({"width": 200, "boxes": bare, "links_cut": 2})
+        == "좁은 폭 200px 말줄임 없이 잘림: Execution Management, Dynamic Capa"
+        " · 링크 말줄임 없이 잘림 2"
+    )
+    assert (
+        screens.summarize_sidebar_narrow({"width": 200, "boxes": clipped, "links_cut": 1})
+        == "좁은 폭 200px 링크 말줄임 없이 잘림 1"
     )
     assert screens.summarize_sidebar_narrow(None) == "좁은 폭 못 잼"
     assert screens.summarize_sidebar_narrow({"width": 200, "boxes": []}) == "좁은 폭 못 잼"
@@ -1839,6 +1868,7 @@ def test_the_narrow_sidebar_summary_accepts_ellipsis_and_flags_wrapping() -> Non
     # 좁히는 스크립트는 기본 폭을 재는 스크립트를 그대로 품고, 잰 뒤 원래 폭으로 되돌린다.
     assert screens._SIDEBAR_GROUPS_JS in screens._SIDEBAR_GROUPS_NARROW_JS
     assert 'removeAttribute("style")' in screens._SIDEBAR_GROUPS_NARROW_JS
+    assert 'side.style.transition = "none"' in screens._SIDEBAR_GROUPS_NARROW_JS
 
 
 # ------------------------------------------------------- Space 기준일 페이더(`space_fader`)

@@ -3855,11 +3855,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     정렬·`ACCENT` 아이콘·`::after` 의 `unfold_more`·hover 테두리 `ACCENT`·focus-visible 2px
     `ACCENT` 윤곽(2px 띄움)·미저장 `PENDING_MARK` 3px 띠)을 건다. 값 칸의 왼쪽 정렬은 1.63 `st.button`
     DOM(버튼 → 제목 풍선 칸 → 아이콘·글 묶음)에 기댄다 — 판올림 때 브라우저로 다시 본다.
-  - **페이지 그룹 상자 제목은 한 줄이고 넘치면 말줄임**이다(2026-10-17 사용자 결정 — 사이드바를 약 232px
-    보다 좁게 끌면 「Execution Management」 가 낱말 가운데서 접혔다). 마크다운 칸은 flex 항목이라
-    `min-width: 0` 으로 풀어야 문단의 `nowrap`·`ellipsis` 가 듣는다(1.63 DOM — 판올림 때 확인). 조건 카드·
-    `Support` 제목은 접는다(조건 이름은 잘리면 못 읽는다). 화면 확인 `sidebar_groups` 가 기본 폭과 가장
-    좁게 끈 폭에서 잰다.
+  - **좁은 사이드바에서도 글자를 반쯤 자르거나 낱말 가운데서 접지 않는다**(2026-10-17 사용자 결정 — 사이드바를
+    약 262px 보다 좁게 끌면 「Execution Management」 가 두 줄로, 최소 폭 200px 에서는 「Managemen / t」 로
+    접혔다). 페이지 그룹 상자 제목은 한 줄이고 넘치면 말줄임이다 — 문단의 `nowrap`·`overflow: hidden`·
+    `ellipsis` 가 걸고, 1.63 은 마크다운 칸에 `max-width: 100%` 를 걸어 칸이 이미 줄어든다(칸의 `min-width: 0`
+    은 그 값이 빠지는 판올림 보험 — 둘 다 없으면 말줄임 없이 잘린다). 페이지 링크(단독 상자·하위 화면)도 문단에
+    말줄임을 직접 건다 — 1.63 은 바깥 `span` 에만 걸어 안쪽 문단이 말줄임 없이 잘렸다. 조건 카드·`Support` 제목은
+    접되 띄어쓰기에서 접는다(`word-break: keep-all` + `overflow-wrap: anywhere` — 조건 이름은 잘리면 못 읽는다).
+    화면 확인 `sidebar_groups` 가 기본 폭과 가장 좁게 끈 폭(200px)에서 재고, 넘쳤는데 말줄임이 없거나 조상 칸이
+    자르는 글(그룹 제목·보이는 링크)을 결함으로 적는다. 1.63 DOM 에 기대므로 판올림 때 다시 본다.
   - 오른쪽 끝 표식은 Material Symbols 합자를 `::after` 로 그린다. `→` 규칙과 「지금 보는
     상자에서는 뺀다」 규칙은 **그 상자 key 로 좁힌다** — HOME 링크가 `::after` 로 광택 띠를
     그리고 `href` 가 빈 문자열이라, 넓게 쓰면 HOME 의 띠를 덮거나 지운다. `content` 는 합자

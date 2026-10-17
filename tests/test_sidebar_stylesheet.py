@@ -181,9 +181,9 @@ def test_the_support_box_sits_last_and_apart() -> None:
 def test_page_group_titles_stay_on_one_line_and_ellipsize() -> None:
     """페이지 그룹 상자 제목은 좁게 끈 사이드바에서도 한 줄 + 말줄임이다(2026-10-17 사용자 결정).
 
-    「Execution Management」 가 약 232px 아래에서 낱말 가운데서 접혔다. 말줄임은 문단에만 걸면
-    듣지 않는다 — 마크다운 칸(flex 항목)의 `min-width` 를 0 으로 풀어야 한다. 그룹을 더하면
-    선언에서 따라오고, 조건 카드·`Support` 에는 걸리지 않는다(조건 이름은 접어서 다 보인다).
+    「Execution Management」 가 약 262px 아래에서 두 줄로, 최소 폭(200px)에서는 낱말 가운데서
+    접혔다. 말줄임은 문단의 세 줄이 걸고, 마크다운 칸의 `min-width: 0` 은 판올림 보험이다. 그룹을
+    더하면 선언에서 따라오고, 조건 카드·`Support` 에는 걸리지 않는다(조건 이름은 접어서 다 보인다).
     """
     block = _style_block()
     shells = [
@@ -209,6 +209,39 @@ def test_page_group_titles_stay_on_one_line_and_ellipsize() -> None:
         "test_admin" in selector or CONDITION_CARD_PREFIX in selector
         for selector in [*ellipsis_rule, *shells]
     )
+
+
+def test_sidebar_link_labels_ellipsize_and_folding_titles_break_at_spaces() -> None:
+    """좁은 사이드바에서 글자가 반쯤 잘리거나 음절 사이에서 접히지 않는다(2026-10-17 사용자 결정).
+
+    페이지 링크(단독 상자·하위 화면)는 1.63 이 바깥 `span` 에만 말줄임을 걸어 안쪽 문단이 말줄임
+    없이 잘렸다(「Capa Chatbc」) — 문단에 직접 건다. 접히는 상자 제목(조건 카드·`Support`)은
+    띄어쓰기에서 접는다(「LOB 표시 조 / 건」 이었다). 같은 규칙이 그룹·조건 카드·`Support` 제목을
+    함께 건다.
+    """
+    block = _style_block()
+    link_p = (
+        '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
+        ' [data-testid="stMarkdownContainer"] p'
+    )
+    assert _declarations(block, [link_p]) == [
+        "white-space: nowrap",
+        "overflow: hidden",
+        "text-overflow: ellipsis",
+    ]
+
+    (title_rule,) = _rules_with(block, "word-break: keep-all;")
+    assert '.st-key-test_admin summary [data-testid="stMarkdownContainer"] p' in title_rule
+    assert (
+        f'[class*="st-key-{CONDITION_CARD_PREFIX}"] summary [data-testid="stMarkdownContainer"] p'
+        in (title_rule)
+    )
+    assert _declarations(block, title_rule) == [
+        "font-size: 1rem",
+        "font-weight: 700",
+        "word-break: keep-all",
+        "overflow-wrap: anywhere",
+    ]
 
 
 def _declarations(block: str, selectors: list[str]) -> list[str]:

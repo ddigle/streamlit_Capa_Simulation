@@ -348,20 +348,34 @@ def build_sidebar_stylesheet(
         }}
 {active_nav_style}
 
-        /* 그룹 이름을 옆 상자의 제목(h4·1rem·700)과 같은 선에 세운다. */
+        /* 그룹 이름을 옆 상자의 제목(h4·1rem·700)과 같은 선에 세운다. 접히는 제목(조건 카드·
+           `Support`)은 한글 낱말의 음절 사이가 아니라 띄어쓰기에서 접는다 — 좁은 사이드바에서
+           「LOB 표시 조 / 건」 으로 끊겼다. 띄어쓰기 없이 칸보다 긴 낱말만 아무 데서나 끊는다. */
         {group_title_selectors} {{
             font-size: 1rem;
             font-weight: 700;
+            word-break: keep-all;
+            overflow-wrap: anywhere;
         }}
         /* 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴
-           「Execution Management」 도 한 줄인데, 사이드바를 약 232px 보다 좁게 끌면 두 줄로,
-           최소 폭에서는 낱말 가운데서(「Managemen / t」) 접혔다. 마크다운 칸은 flex 항목이라
-           `min-width: auto` 면 글 폭 아래로 줄지 않아 문단의 말줄임이 걸리지 않는다 — 0 으로
-           푼다(1.63 DOM 실측: 요약 줄 → span → div(overflow hidden) → 마크다운 칸 → 문단). */
+           「Execution Management」 도 한 줄인데, 사이드바를 약 262px 보다 좁게 끌면 두 줄로,
+           최소 폭(200px)에서는 낱말 가운데서(「Managemen / t」) 접혔다. 말줄임을 거는 것은
+           문단의 세 줄이다. 1.63 은 마크다운 칸(flex 항목)에 `max-width: 100%` 를 걸어 칸이 이미
+           부모 폭 아래로 준다 — `min-width: 0` 은 판올림에서 그 값이 빠져도 칸이 글 폭에 묶이지
+           않게 하는 보험이다(둘 다 없으면 말줄임 없이 잘린다. 1.63 DOM: 요약 줄 → span → div
+           (overflow hidden) → 마크다운 칸 → 문단). */
         {group_title_shell_selectors} {{
             min-width: 0;
         }}
         {group_title_line_selectors} {{
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        /* 사이드바 페이지 링크 글자(단독 상자·하위 화면)도 넘치면 말줄임이다. 1.63 은 바깥 라벨
+           `span` 에 한 줄·말줄임을 걸지만 넘치는 것은 그 안 마크다운 칸의 문단이라(`text-overflow`
+           는 물려받지 않는다) 좁은 사이드바에서 글자가 반쯤 잘려 보였다(「Capa Chatbc」). */
+        {NAV_LINK} [data-testid="stMarkdownContainer"] p {{
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
