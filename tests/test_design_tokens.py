@@ -213,7 +213,7 @@ def test_the_advance_shipment_note_reads_on_every_month_cell() -> None:
     assert tokens._PALETTES["dark"]["ADVANCE_SHIPMENT_TEXT"] == tokens._PALETTES["dark"]["TEXT"]
 
 
-# 사이드바 `S.PKG CAPA` 라벨이 서는 면 — 머리 띠와 올렸을 때의 면.
+# 사이드바 앱 이름 라벨이 서는 면 — 머리 띠와 올렸을 때의 면.
 
 
 def test_the_brand_centre_die_is_one_orange_everywhere() -> None:

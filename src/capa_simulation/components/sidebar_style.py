@@ -565,7 +565,7 @@ def build_sidebar_stylesheet(
            늘리면 상자가 부푼다.
            모두 **줄어들지 않게** 둔다. Streamlit 이 머리칸·사용자 칸에 `min-height: 0` 을 걸어
            두어, 줄어들 수 있으면 목록이 길 때 스크롤 대신 눌린다 — 머리칸이 넘친 만큼 눌려
-           (실측 52.5 → 34px) `S.PKG CAPA` 라벨이 HOME 위에 겹쳤다.
+           (실측 52.5 → 34px) 앱 이름 라벨이 HOME 위에 겹쳤다.
            사용자 칸의 아래 여백(Streamlit 84px)은 걷는다. 남겨 두면 끝까지 내렸을 때 카드가
            바닥에서 그만큼 떠 있다. */
         [data-testid="stSidebarContent"] {{

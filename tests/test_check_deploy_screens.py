@@ -1288,6 +1288,19 @@ def test_the_intro_and_sidebar_ids_match_the_app() -> None:
         assert f'".{name}"' in screens._LABEL_MARK_JS, name
 
 
+def test_the_symbol_line_check_allows_only_a_layout_unit_of_overflow() -> None:
+    """「라벨 글자」의 줄마다 판정은 글자 본래 폭(Range)이 칸 폭을 배치 단위(1/64px) 남짓까지만
+    넘어도 된다고 본다. 잘리지 않은 줄은 두 폭이 같고, 브라우저는 1px 보다 작은 넘침에도 말줄임을
+    그린다 — 몫이 0.5px 이면 `S.PKG CA…` · `Summ…` 를 「다 보임」으로 읽는다. 둘째 줄로 내려가 라벨
+    높이 밖에 있는 안내 글자는 빠진 것이다(잘림이 아니다 — `intro_summary._LABEL_CSS` 의 줄바꿈)."""
+    assert 1 / 64 <= screens._RANGE_SLACK_PX < 0.05
+    width = f"range.getBoundingClientRect().width <= r.width + {screens._RANGE_SLACK_PX}"
+    for script in (screens._LABEL_MARK_JS, screens._SUMMARY_MARK_JS):
+        assert width in script
+    assert "hint.getBoundingClientRect().top >= l.bottom - 1" in screens._LABEL_MARK_JS
+    assert "flex-wrap: wrap;" in _text(COMPONENTS / "intro_summary.py")
+
+
 class _SymbolScreen(_FakeScreen):
     """`symbol` 항목이 읽는 두 값(사이드바 라벨·Summary 머리 줄)을 정해 돌려준다."""
 

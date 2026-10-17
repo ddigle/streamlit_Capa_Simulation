@@ -172,7 +172,7 @@ render_intro_overlay()
 # 감춘다). `Guide` · `Print` 버튼도 같은 iframe 에 싣고, 툴바 차례는 `Guide · Print · 테마`다
 # (`theme_toggle.TOOLBAR_BUTTON_ORDER`). Guide 는 기본은 감춰 두고 가이드를 단 페이지만 보이게
 # 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
-# 머리칸의 `S.PKG CAPA` 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
+# 머리칸의 앱 이름 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
 # 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 그림(HOME 두
 # 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트 — `CELL_SELECT_CHART_KEYS`) 위에서 시작한
 # 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.

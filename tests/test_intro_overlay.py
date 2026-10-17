@@ -298,7 +298,7 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
 
 
 def test_the_sidebar_label_is_the_wordmark_in_the_app_theme() -> None:
-    """사이드바 머리칸의 `S.PKG CAPA` 라벨은 입장 화면 심볼·워드마크와 같은 모양이고 색은 앱
+    """사이드바 머리칸의 앱 이름 라벨은 입장 화면 심볼·워드마크와 같은 모양이고 색은 앱
     테마를 따른다(2026-10-06 사용자 결정). 두 테마 값을 다 싣고 고르므로 iframe 내용은 테마와
     상관없이 같은 문자열이다. 글꼴은 입장 화면 JS 가 본 문서에 등록한 부분 글꼴을 다시 쓴다(파일을
     두 번 싣지 않는다).
@@ -347,12 +347,14 @@ def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() ->
     from capa_simulation.components import intro_summary
 
     script = intro_summary.summary_label_script()
+    # 심볼과 두 줄 묶음은 한 덩이(`capa-brand-name`)이고 안내 글자는 그 밖이다.
+    name = re.escape("""'<span class="capa-brand-name">' + "<svg """)
     text = re.escape('<span class="capa-brand-text"><span class="capa-brand-word">')
     sub = re.escape('<span class="capa-brand-sub">')
     hint = re.escape('<span class="capa-brand-hint">')
     assert re.search(
-        rf"{text}{re.escape(APP_LABEL)}</span>'\s*\+ '{sub}{re.escape(APP_SUBTITLE)}</span></span>'"
-        rf"\s*\+ '{hint}",
+        rf"{name}[^\n]*</svg>\"\s*\+ '{text}{re.escape(APP_LABEL)}</span>'"
+        rf"\s*\+ '{sub}{re.escape(APP_SUBTITLE)}</span></span></span>'\s*\+ '{hint}",
         script,
     )
     for mode in ("light", "dark"):
@@ -374,10 +376,13 @@ def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() ->
         assert _px_value(subtitle, "line-height") > _px_value(subtitle, "font-size")
 
 
-def test_a_narrow_sidebar_drops_the_hint_first_then_shrinks_the_two_lines() -> None:
-    """사이드바 폭은 사용자가 끌어 바꾸므로 머리칸 폭을 컨테이너 질의로 본다. 좁아지면 안내 글자가
-    먼저 통째로 빠지고, 더 좁으면 심볼과 두 줄을 줄여 200px 사이드바에서도 두 줄이 다 보인다. 질의가
-    안 서는 브라우저·글꼴 차이로 넘치면 안내 글자가 먼저 줄고(줄임 몫) 줄마다 말줄임으로 끝난다."""
+def test_the_sidebar_hint_stands_whole_or_drops_and_never_cuts_the_name() -> None:
+    """안내 글자 `Summary` 는 통째로 서거나 통째로 빠진다 — 라벨이 줄바꿈 flex 라 심볼·두 줄 묶음
+    (한 덩이) 옆에 다 들어가지 않으면 둘째 줄로 내려가 라벨 높이 밖에서 가려지고, 그동안 묶음은 줄지
+    않는다. 그래서 글꼴이 넓어도 `Summ…` 이나 `S.PKG CA…` 가 서지 않는다. 사이드바 폭은 사용자가
+    끌어 바꾸므로 머리칸 폭도 컨테이너 질의로 본다 — 좁으면 안내 글자를 아예 빼고, 더 좁으면 심볼과
+    두 줄을 줄인다. 줄이는 문턱은 18px 두 줄이 들어가는 머리칸 폭(약 182px)보다 넉넉히 위다. 줄마다
+    말줄임은 그래도 모자랄 때의 마지막 길이다."""
     from capa_simulation.components import intro_summary, theme_toggle
 
     css = intro_summary._label_css("light")
@@ -385,17 +390,25 @@ def test_a_narrow_sidebar_drops_the_hint_first_then_shrinks_the_two_lines() -> N
         f"{theme_toggle.SIDEBAR_HEADER_SLOT} {{ container: capa-sidebar-head / inline-size; }}"
     )
     assert container in css
+    label = _label_rule(css)
+    assert "display: inline-flex; flex-wrap: wrap; align-items: center;" in label
+    assert "height: 34px;" in label and "overflow: hidden;" in label
+    name = _label_rule(css, " .capa-brand-name")
+    assert "flex: 0 1 auto; min-width: 0;" in name
+    # 안내 글자는 줄지 않는다 — 들어가지 않으면 줄을 바꿔 빠진다.
+    hint = _label_rule(css, " .capa-brand-hint")
+    assert "flex: none;" in hint
+    assert "ellipsis" not in hint and "min-width" not in hint and "margin" not in hint
     queries = re.findall(r"@container capa-sidebar-head \(width < (\d+)px\) \{", css)
-    assert [int(width) for width in queries] == [240, 180]
+    assert [int(width) for width in queries] == [240, 190]
     first = css[css.index("@container capa-sidebar-head (width < 240px)") :]
     assert re.match(r"[^{]*\{\s*#capa-brand-label \.capa-brand-hint \{ display: none; \}", first)
-    compact = css[css.index("@container capa-sidebar-head (width < 180px)") :]
+    compact = css[css.index("@container capa-sidebar-head (width < 190px)") :]
     compact = compact[: compact.index("\n}\n")]
+    assert ".capa-brand-name { gap: 4px; }" in compact
     assert "svg { width: 24px; height: 24px;" in compact
     assert ".capa-brand-word { font-size: 15px;" in compact
     assert ".capa-brand-sub { font-size: 10px;" in compact
-    hint = _label_rule(css, " .capa-brand-hint")
-    assert "flex: 0 100 auto; min-width: 0;" in hint
     lines = _label_rule(css, " .capa-brand-word, #capa-brand-label .capa-brand-sub")
     assert "overflow: hidden; text-overflow: ellipsis;" in lines
 

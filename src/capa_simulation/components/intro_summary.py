@@ -912,9 +912,9 @@ _LABEL_SCRIPT = """
       label = doc.createElement("button");
       label.id = "%(id)s";
       label.type = "button";
-      label.innerHTML = %(icon)s
+      label.innerHTML = '<span class="capa-brand-name">' + %(icon)s
         + '<span class="capa-brand-text"><span class="capa-brand-word">%(brand)s</span>'
-        + '<span class="capa-brand-sub">%(subtitle)s</span></span>'
+        + '<span class="capa-brand-sub">%(subtitle)s</span></span></span>'
         + '<span class="capa-brand-hint">%(hint)s</span>';
       label.setAttribute("aria-label", "%(aria)s");
       label.setAttribute("aria-disabled", "true");
@@ -949,21 +949,35 @@ _LABEL_SCRIPT = """
 #   (줄높이 13px — 「g」 꼬리가 잘리지 않는 높이)를 세로로 쌓아 합 32px 가 라벨 안쪽 높이와 같다.
 #   그래서 묶음의 가운데가 심볼·접기 버튼의 가운데와 같고 머리칸은 높아지지 않는다. 부제는 본문 글꼴
 #   500 · `TEXT_MUTED`(머리 띠의 옅은 아랫줄과 같은 색)다.
-# - **안내 글자** `Summary` 는 두 줄 묶음 오른쪽에 따로, 그 가운데 높이에 선다(틈 10px — 심볼과 묶음
-#   사이와 같다). 부제보다 굵어(600) 이름의 일부가 아니라 누르면 열리는 곳으로 읽힌다.
-# - **좁은 사이드바**: 오른쪽 끝 접기 버튼 자리(28px + 틈 — 2.25rem)는 비운다. 사이드바 폭은
-#   사용자가 끌어 바꾸므로 창 폭이 아니라 머리칸 폭을 컨테이너 질의로 본다. 머리칸이 240px 보다
-#   좁으면(사이드바 약 295px 미만) 안내 글자가 통째로 빠지고, 180px 보다 좁으면(약 235px 미만) 심볼
-#   24px · 워드마크 15px · 부제 10px 로 줄여 200px 로 끈 사이드바에서도 두 줄이 다 보인다. 운영체제
-#   글꼴이 넓어 넘치면 안내 글자가 먼저 줄고(줄임 몫 100배) 다 빠진 뒤에야 줄마다 말줄임으로 끝난다.
+# - **안내 글자** `Summary` 는 두 줄 묶음 오른쪽에 따로, 그 가운데 높이에 선다(틈 7px). 부제보다
+#   굵어(600) 이름의 일부가 아니라 누르면 열리는 곳으로 읽힌다. 기본 300px 사이드바에서 라벨은 약
+#   204px(본문 글꼴이 Noto Sans KR 이면 약 206px)이고 자리는 약 210px 다 — 틈을 더 벌리면 운영체제
+#   글꼴이 조금만 넓어도 기본 폭에서 안내 글자가 빠진다.
+# - **좁은 사이드바**: 오른쪽 끝 접기 버튼 자리(28px + 틈 — 2.25rem)는 비운다. 안내 글자는 **통째로
+#   서거나 통째로 빠진다** — 라벨이 줄바꿈 flex 라, 심볼과 두 줄 묶음(`capa-brand-name`, 한 덩이)
+#   옆에 안내 글자가 다 들어가지 않으면 안내 글자가 둘째 줄로 내려가 라벨 높이(34px) 밖에서
+#   가려지고, 그동안 묶음은 줄지 않는다. 글자 폭을 재지 않으므로 운영체제 글꼴이 넓어도 `Summ…`
+#   이나 `S.PKG CA…` 로 반쯤 잘리지 않는다. 사이드바 폭은 사용자가 끌어 바꾸므로 머리칸 폭(사이드바
+#   − 55px)을 컨테이너 질의로도 본다. 240px 보다 좁으면(사이드바 295px 미만) 안내 글자를 아예 빼
+#   라벨 상자(올렸을 때의 면)가 글자에 맞게 준다 — 둘째 줄로 내려간 동안은 상자가 빈 자리까지
+#   덮는다. 190px 보다 좁으면(사이드바 245px 미만) 심볼 24px · 워드마크 15px · 부제 10px 로
+#   줄인다. 190px 은 18px 두 줄이 들어가는 머리칸 폭(약 182px, 부제가 워드마크보다 넓은 DejaVu Sans
+#   에서 약 184px)보다 넉넉히 위라 그 사이에 말줄임이 서지 않는다. 그래도 모자라면(200px
+#   사이드바에 넓은 본문 글꼴) 줄마다 말줄임으로 끝난다.
+# - **누를 수 없을 때**(준비 중·열 수 없음): 안내 글자만 옅어진다(0.6). 안내 글자가 빠진 좁은
+#   사이드바에서는 겉모습이 같고, 커서(`not-allowed`)·풍선(`title`)·올려도 면이 서지 않는 것으로만
+#   갈린다 — 라벨은 앱 이름이기도 해서 심볼·이름은 흐리게 두지 않는다.
 _LABEL_CSS = """
 __SLOT__ { container: capa-sidebar-head / inline-size; }
 #__ID__ {
-  display: inline-flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0;
-  max-width: calc(100% - 2.25rem); height: 34px; margin: 0 auto 0 0; padding: 0 8px 0 6px;
-  box-sizing: border-box; border: 1px solid transparent; border-radius: 8px;
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 7px; flex: 0 1 auto;
+  min-width: 0; max-width: calc(100% - 2.25rem); height: 34px; margin: 0 auto 0 0;
+  padding: 0 8px 0 6px; box-sizing: border-box; border: 1px solid transparent; border-radius: 8px;
   background: transparent; color: __TEXT__; cursor: pointer; white-space: nowrap; overflow: hidden;
   font-family: __FONT_FAMILY__; text-align: left;
+}
+#__ID__ .capa-brand-name {
+  display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0;
 }
 #__ID__ svg { width: 30px; height: 30px; flex: none; display: block; margin-right: 3px; }
 #__ID__ svg .capa-mark-turn, #__ID__ svg .capa-mark-spin {
@@ -988,14 +1002,14 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
   color: __TEXT_MUTED__;
 }
 #__ID__ .capa-brand-hint {
-  flex: 0 100 auto; min-width: 0; margin-left: 3px; font-size: 11px; font-weight: 600;
-  color: __TEXT_MUTED__; overflow: hidden; text-overflow: ellipsis;
+  flex: none; font-size: 11px; font-weight: 600; color: __TEXT_MUTED__;
 }
 @container capa-sidebar-head (width < 240px) {
   #__ID__ .capa-brand-hint { display: none; }
 }
-@container capa-sidebar-head (width < 180px) {
-  #__ID__ { gap: 4px; padding: 0 1px; }
+@container capa-sidebar-head (width < 190px) {
+  #__ID__ { padding: 0 1px; }
+  #__ID__ .capa-brand-name { gap: 4px; }
   #__ID__ svg { width: 24px; height: 24px; margin-right: 0; }
   #__ID__ .capa-brand-word { font-size: 15px; line-height: 15px; }
   #__ID__ .capa-brand-sub { font-size: 10px; line-height: 12px; letter-spacing: 0; }

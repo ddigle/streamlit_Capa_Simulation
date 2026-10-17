@@ -543,7 +543,7 @@ def test_data_errors_are_kept_but_transient_errors_are_retried(
 def test_a_transient_failure_keeps_the_summary_already_held(summary_env: SimpleNamespace) -> None:
     """30초마다 하는 확인이 DB 잠금으로 실패해도 멀쩡한 요약을 지우지 않는다.
 
-    지우면 사이드바 `S.PKG CAPA` 라벨이 Summary 를 열지 못한다.
+    지우면 사이드바 앱 이름 라벨이 Summary 를 열지 못한다.
     """
     import duckdb
 

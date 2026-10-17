@@ -61,7 +61,7 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 | 본문 한글·캡션·알림 | Streamlit 본문 서체 | 14px(`baseFontSize`) | `config.toml` |
 | 표·차트 숫자 | `FONT_FAMILY_NUMERIC`(Calibri) | 표마다 | Plotly·`tokens` |
 | 사이드바 메뉴·상자 머리글 | 그대로 | 그대로 | `sidebar_style.py` |
-| 앱 이름 라벨 위 줄 `S.PKG CAPA`(사이드바·입장 화면/Summary 머리 줄) | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | 18px(사이드바 머리칸 180px 미만이면 15px) | `intro_summary.py`·`intro.css` |
+| 앱 이름 라벨 위 줄 `S.PKG CAPA`(사이드바·입장 화면/Summary 머리 줄) | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | 18px(사이드바 머리칸 190px 미만이면 15px) | `intro_summary.py`·`intro.css` |
 | 앱 이름 라벨 아래 줄 부제 `AX Management`(같은 두 자리) | 본문 글꼴(`FONT_FAMILY`) 500 · 자간 0.01em · `TEXT_MUTED`(머리 줄은 `muted`) | 11px · 줄높이 13px(좁으면 10px) | `intro_summary.py`·`intro.css` |
 | 입장 화면 워드마크·타이틀·단추·시트의 달 | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | — | `intro_overlay` |
 | Summary 차트 숫자 | Archivo 700 · 폭 100%(`CapaIntroNumber`) | — | `intro_overlay` |
@@ -162,15 +162,17 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 `STATUS_SHORTAGE` 다 — 행 면 위·칸 색 아래 층이다.
 
 상단 띠(화면 맨 위 `3.75rem`)는 본문 너비만 덮는 `stHeader` 와 사이드바 위쪽을 같은 색으로
-이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 사이드바 `S.PKG CAPA`
+이어 붙여 만든다. 한쪽만 칠하면 색이 화면 중간에서 끊겨, 같은 줄에 놓인 사이드바 앱 이름
 라벨과 시나리오 글이 서로 다른 면 위에 앉는다. 칠하는 곳은 `components/app_header.py` 한 곳이다.
 본문 쪽 띠에는 적용 중인 시나리오 두 줄(위 `TEXT` 600, 아래 `TEXT_MUTED`)과 왼쪽 `ACCENT` 3px 막대,
 사이드바 쪽에는 메인 심볼(C 링 `TEXT` · 다이 3×3 `ACCENT` · 가운데 다이 `BRAND_DIE_WARM`, 30px) 옆에
 앱 이름 두 줄 — 위 `S.PKG CAPA`(Archivo 800 · 폭 75% · 18px, 입장 화면 워드마크와 같은 글꼴 · `TEXT`), 아래
 부제 `AX Management`(본문 글꼴 500 · 11px · `TEXT_MUTED`) — 을 쌓고 그 오른쪽에 안내 글자 `Summary`(600 ·
 11px · `TEXT_MUTED`)를 둔다(2026-10-17 사용자 요청). 두 줄 묶음(18 + 1 + 13 = 32px)·심볼·안내 글자·접기
-버튼은 머리칸 한가운데 같은 줄이고 머리칸 높이는 그대로다. 사이드바를 좁게 끌면 안내 글자가 먼저 빠지고,
-더 좁으면 심볼 24px · 워드마크 15px · 부제 10px 로 줄어 200px 에서도 두 줄이 다 보인다. 라벨은 앱 테마를
+버튼은 머리칸 한가운데 같은 줄이고 머리칸 높이는 그대로다. 안내 글자와 묶음 사이는 7px 다. 사이드바를
+좁게 끌면 안내 글자가 통째로 빠지고(반쯤 잘린 `Summ…` 은 없다 — 들어가지 않으면 줄을 바꿔 라벨 높이 밖으로
+내려간다), 더 좁으면(사이드바 245px 미만) 심볼 24px · 워드마크 15px · 부제 10px 로 줄어 200px 에서도 두 줄이
+다 보인다(본문 글꼴이 아주 넓으면 그 폭에서만 부제가 말줄임된다). 라벨은 앱 테마를
 따르고(입장 화면·Summary 의 고정 팔레트와 다르다), 올리면 `SURFACE` 면·`BORDER` 윤곽이 서고 안내 글자
 `Summary` 가 `ACCENT` 가 된다. 초점은 `ACCENT` 2px 윤곽이다.
 본문 쪽 띠의 툴바 단추(`Guide · Print · 테마`) 바로 왼쪽에는 계산이 오래 걸리는 화면(HOME)의 진행 막대가

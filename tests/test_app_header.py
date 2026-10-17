@@ -440,7 +440,7 @@ def test_scenario_text_cannot_be_rewritten_by_the_template_sentinels() -> None:
 
 
 def test_the_sidebar_header_carries_no_pseudo_element_text() -> None:
-    """사이드바 머리칸의 앱 이름·버전 글은 걷었다 — 그 자리는 `S.PKG CAPA` 라벨이다(iframe
+    """사이드바 머리칸의 앱 이름·버전 글은 걷었다 — 그 자리는 앱 이름 라벨이다(iframe
     스크립트).
     머리칸을 띠 위에 고정하는 규칙은 남는다."""
     css = _header_css()

@@ -165,7 +165,7 @@ ACTION_TIMEOUT_MS: Final = 30_000
 # 화면 계약. 바뀌면 `tests/test_check_deploy_screens.py` 가 자산·코드와 대조해 알린다.
 # 입장 화면 호스트(`intro_overlay_assets/intro.js` 의 `HOST_ID`). 열린 shadow root 라 CSS 로 뚫린다.
 INTRO_HOST_ID: Final = "capa-intro-host"
-# 사이드바 머리칸의 `S.PKG CAPA` 라벨(`intro_overlay.SUMMARY_LABEL_ID`). 그 모듈을 부르면 Streamlit
+# 사이드바 머리칸의 앱 이름 라벨(`intro_overlay.SUMMARY_LABEL_ID`). 그 모듈을 부르면 Streamlit
 # 캐시 경고가 수십 줄 찍혀 출력이 지저분해진다 — 값만 옮기고 테스트가 같은지 본다.
 SUMMARY_LABEL_ID: Final = "capa-brand-label"
 EQUIPMENT_PAGE: Final = "available_equipment_status"
@@ -1614,18 +1614,23 @@ _TOOLBAR_POSITIONS_JS = """(ids) => ids.map((id) => {
   const r = e.getBoundingClientRect();
   return r.width > 0 ? r.x : null;
 })"""
+# 글자 본래 폭(Range)이 제 칸 폭을 넘어도 되는 몫(px). 잘리지 않은 줄은 두 폭이 같고(배치 단위
+# 1/64px 까지), 브라우저는 그보다 작은 넘침에도 말줄임을 그린다 — 0.5px 를 두면 그 안쪽 말줄임을
+# 「다 보임」으로 읽는다. 칸이 둘레 상자 안에 있는가(위치)는 0.5px 를 그대로 둔다.
+_RANGE_SLACK_PX: Final = 0.02
 # 라벨 글자 한 줄이 다 보이는가 — 글자 본래 폭(Range 는 말줄임 전 폭을 준다)이 제 칸에 들고, 칸이
 # 둘레 상자 안에 있다. `scrollWidth` 는 정수로 반올림돼 1px 안쪽 넘침(말줄임이 이미 선 것)을 놓친다.
-_WHOLE_LINE_JS = """const whole = (el, box) => {
+_WHOLE_LINE_JS = f"""const whole = (el, box) => {{
     const r = el.getBoundingClientRect();
     const range = document.createRange();
     range.selectNodeContents(el);
-    return r.width > 0 && range.getBoundingClientRect().width <= r.width + 0.5
+    return r.width > 0 && range.getBoundingClientRect().width <= r.width + {_RANGE_SLACK_PX}
       && r.left >= box.left - 0.5 && r.right <= box.right + 0.5
       && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
-  };"""
+  }};"""
 # 사이드바 라벨: 심볼 크기와 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)·안내 글자. 안내 글자는
-# 좁은 사이드바에서 통째로 빠질 수 있다 — 빠진 것은 잘린 것이 아니다.
+# 좁은 사이드바에서 통째로 빠진다 — 컨테이너 질의로 감추거나(`display: none`), 들어가지 않아 라벨
+# 높이 밖 둘째 줄로 내려간다(위 끝이 라벨 아래 끝 밑). 빠진 것은 잘린 것이 아니다.
 _LABEL_MARK_JS = f"""(id) => {{
   const label = document.getElementById(id);
   const part = (name) => label && label.querySelector(name);
@@ -1637,7 +1642,8 @@ _LABEL_MARK_JS = f"""(id) => {{
   {_WHOLE_LINE_JS}
   const l = label.getBoundingClientRect();
   const m = mark.getBoundingClientRect();
-  const hintGone = getComputedStyle(hint).display === "none";
+  const hintGone = getComputedStyle(hint).display === "none"
+    || hint.getBoundingClientRect().top >= l.bottom - 1;
   return {{
     w: Math.round(m.width * 10) / 10, h: Math.round(m.height * 10) / 10,
     fits: whole(word, l) && whole(sub, l) && (hintGone || whole(hint, l)),

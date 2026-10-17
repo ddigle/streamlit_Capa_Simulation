@@ -92,7 +92,7 @@ from capa_simulation.design.theme import THEME_QUERY_PARAM
 # Streamlit 과 맞춰야 하는 계약은 저장 키 모양(접두·접미)과 단추를 얹는 자리(툴바 슬롯·사이드바
 # 머리칸)다. 한 곳에 모아 두어야 판올림에서 무엇을 확인해야 하는지가 분명하다. 툴바 슬롯과 단추 id·
 # 차례는 같은 툴바에 단추를 얹는 Guide·Print 스크립트(`page_guide`·`print_button`)가, 사이드바
-# 머리칸은 같은 iframe 에 실리는 S.PKG CAPA 라벨 스크립트(`intro_summary`)가 여기서 받아 쓴다.
+# 머리칸은 같은 iframe 에 실리는 앱 이름 라벨 스크립트(`intro_summary`)가 여기서 받아 쓴다.
 THEME_STORAGE_PREFIX = "stActiveTheme-"
 THEME_STORAGE_SUFFIX = "-v2"
 TOOLBAR_SLOT = '[data-testid="stToolbarActions"]'
@@ -392,7 +392,7 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
     """헤더에 전환 버튼을 얹는다. `app.py` 가 한 번만 부른다.
 
     `extra_scripts` 는 툴바·사이드바 머리칸에 단추를 얹는 **다른 스크립트**다(Guide·Print 버튼과
-    사이드바 S.PKG CAPA 라벨). 부모 문서에 듣개를 다는 스크립트(칸 선택 그림의 터치 스크롤 막이
+    사이드바 앱 이름 라벨). 부모 문서에 듣개를 다는 스크립트(칸 선택 그림의 터치 스크롤 막이
     `plotly_touch_scroll`)도 같은 iframe 에 싣는다.
     iframe 을 따로 두지 않고 여기에 함께 싣는다 — 높이 0 iframe 도 본문 맨 위에 요소 간격 한
     칸을 먹어서, 하나 더 두면 모든 화면이 그만큼 내려간다. 맨 앞에는 키 규칙(`capaTheme`)과 툴바
