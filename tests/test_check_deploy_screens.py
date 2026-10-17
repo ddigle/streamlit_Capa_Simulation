@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import subprocess
 import sys
@@ -1954,14 +1955,75 @@ def test_the_gap_sheet_contract_matches_the_app() -> None:
         (ROW_SCHEDULE_LENT, ROW_ITEMS[ROW_SCHEDULE_LENT]),
         (ROW_SCHEDULE_AVAILABLE, ROW_ITEMS[ROW_SCHEDULE_AVAILABLE]),
     )
+    # 칸 누름 세대는 월 그림 `layout.meta.generation` 이다 — 항목은 그것이 오르는 것을 기다린다.
+    assert "plot.layout.meta.generation" in screens._GAP_SHEET_JS
+    canvas = _gap_canvas((0.0, 0.0, 0.0), generation=7)
+    assert canvas.months.to_plotly_json()["layout"]["meta"]["generation"] == 7
     # 칸 선택을 켠 그림이라 앱의 터치 스크롤 막이 묶음(`CELL_SELECT_CHART_KEYS`)에 든다.
-    assert "    GAP_SHEET_CHART_KEY,\n)" in _text(PROJECT_ROOT / "app.py")
+    tree = ast.parse(_text(PROJECT_ROOT / "app.py"))
+    members = [
+        element.id
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and [getattr(target, "id", None) for target in node.targets] == ["CELL_SELECT_CHART_KEYS"]
+        and isinstance(node.value, ast.Tuple)
+        for element in node.value.elts
+        if isinstance(element, ast.Name)
+    ]
+    assert "GAP_SHEET_CHART_KEY" in members
+    assert any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == keys.__name__
+        and any(
+            alias.name == "GAP_SHEET_CHART_KEY" and alias.asname is None for alias in node.names
+        )
+        for node in tree.body
+    )
+
+
+def test_the_evidence_heading_the_item_looks_for_is_what_the_app_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """근거 카드 제목(h5)은 `<달> · <구획> <행 라벨> · <공정 표시명>` 이다 — 항목은 공정 이름
+    앞까지의 고정 앞머리로 시작하는가만 본다."""
+    from contextlib import nullcontext
+
+    from capa_simulation.components import availability_gap_panel as panel
+    from capa_simulation.services.month_columns import month_label
+
+    written: list[str] = []
+    fake = SimpleNamespace(
+        container=lambda **kwargs: nullcontext(),
+        markdown=lambda body, **kwargs: written.append(str(body)),
+        caption=lambda *args, **kwargs: None,
+        info=lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(panel, "st", fake)
+    # 값이 없는 칸이면 제목 뒤에 까닭 안내만 선다 — 제목 꼴만 본다.
+    bundle: Any = SimpleNamespace(
+        view=SimpleNamespace(value=lambda row, month: None, reason=lambda row, month: None),
+        process_label=SENTINEL,
+    )
+    for month in (202512, 202601, 202611):
+        for row, label in screens.GAP_SHEET_SCHEDULE_CELLS:
+            written.clear()
+            panel._render_evidence(bundle, (month, row))
+            heading = screens.gap_evidence_heading((month, row))
+            assert heading == f"{month_label(month)} · 설비 일정 기준 {label} · "
+            assert written[0] == f"##### {heading}{SENTINEL}"
+    # 대여 (비가동) 칸의 앞머리가 다른 행 라벨의 앞머리가 되지 않는다(뒤 「 · 」 까지 본다).
+    lent, available = (
+        screens.gap_evidence_heading((202611, row)) for row, _ in screens.GAP_SHEET_SCHEDULE_CELLS
+    )
+    assert not lent.startswith(available) and not available.startswith(lent)
 
 
 _GAP_MONTHS = (202610, 202611, 202612)
 
 
-def _gap_canvas(lent: tuple[float, ...]) -> Any:
+def _gap_canvas(
+    lent: tuple[float, ...], *, selected: tuple[int, str] | None = None, generation: int = 0
+) -> Any:
     """앱이 그리는 시트 그림 한 쌍. 머리 글에 공정 이름 대신 `SENTINEL` 을 넣는다."""
     import pandas as pd
 
@@ -1976,7 +2038,11 @@ def _gap_canvas(lent: tuple[float, ...]) -> Any:
     values.loc["static:lent", 202610] = float("nan")
     view = SheetView(months=_GAP_MONTHS, values=values)
     return build_availability_sheet_canvas(
-        view=view, process_label=SENTINEL, schedule_detail="설비 DB · 환산대수 · Cut-off 공정별"
+        view=view,
+        process_label=SENTINEL,
+        schedule_detail="설비 DB · 환산대수 · Cut-off 공정별",
+        selected=selected,
+        generation=generation,
     )
 
 
@@ -1994,23 +2060,27 @@ def _gap_notes(canvas: Any) -> list[dict[str, Any]]:
 
 
 def _gap_cells(canvas: Any) -> list[dict[str, Any]]:
-    """`_GAP_SHEET_JS` 가 월 그림에서 읽는 꼴 — 표적 막대마다 칸 가운데 글자(굵게 뗌)."""
+    """`_GAP_SHEET_JS` 가 월 그림에서 읽는 꼴 — 표적 막대마다 칸 가운데 글자(굵게 뗌)와 굵은가."""
     data = canvas.months.to_plotly_json()["data"]
     written: dict[tuple[int, int], str] = {}
     for trace in data[1:]:
         if trace.get("mode") != "text":
             continue
         for x, y, text in zip(trace["x"], trace["y"], trace["text"], strict=True):
-            written[(round((x - 0.5) * 1000), round(y * 1000))] = screens._HTML_TAG.sub("", text)
+            written[(round((x - 0.5) * 1000), round(y * 1000))] = str(text)
     target = data[0]
-    return [
-        {
-            "month": point[0],
-            "row": point[1],
-            "text": written.get((round(x * 1000), round(y * 1000))),
-        }
-        for point, x, y in zip(target["customdata"], target["base"], target["y"], strict=True)
-    ]
+    cells = []
+    for point, x, y in zip(target["customdata"], target["base"], target["y"], strict=True):
+        text = written.get((round(x * 1000), round(y * 1000)))
+        cells.append(
+            {
+                "month": point[0],
+                "row": point[1],
+                "text": None if text is None else screens._HTML_TAG.sub("", text).strip(),
+                "bold": text is not None and text.lstrip().lower().startswith("<b>"),
+            }
+        )
+    return cells
 
 
 def test_the_gap_sheet_rows_are_read_from_what_the_app_draws() -> None:
@@ -2029,20 +2099,30 @@ def test_the_gap_sheet_cell_to_click_prefers_a_non_zero_lent_month() -> None:
     cells = _gap_cells(_gap_canvas((0.0, -0.66, 0.0)))
     assert {cell["text"] for cell in cells if cell["row"] == "sched:lent"} == {"0.00", "−0.66"}
 
-    assert screens.pick_gap_sheet_cell(cells) == ((202611, "sched:lent"), 1)
+    assert screens.gap_sheet_click_target(cells) == ((202611, "sched:lent"), 1)
     # 대여(비가동)가 모두 0 이면 0 아닌 가용 칸의 첫 달이다(202610 가용은 0).
     quiet = _gap_cells(_gap_canvas((0.0, 0.0, 0.0)))
-    assert screens.pick_gap_sheet_cell(quiet) == ((202611, "sched:available"), 0)
+    assert screens.gap_sheet_click_target(quiet) == ((202611, "sched:available"), 0)
     # 값이 없는(「—」) 칸은 누르지 않는다. 가용이 모두 0 이면 0 칸이라도 누른다.
     empty = [{**cell, "text": "—"} for cell in quiet]
-    assert screens.pick_gap_sheet_cell(empty) == (None, 0)
+    assert screens.gap_sheet_click_target(empty) == (None, 0)
     zero = [{**cell, "text": "0.00"} for cell in quiet]
-    assert screens.pick_gap_sheet_cell(zero) == ((202610, "sched:available"), 0)
+    assert screens.gap_sheet_click_target(zero) == ((202610, "sched:available"), 0)
+
+
+def test_the_bold_cell_is_the_one_the_sheet_selected() -> None:
+    aimed = (202611, "sched:lent")
+    cells = _gap_cells(_gap_canvas((0.0, -0.66, 0.0), selected=aimed))
+
+    assert screens.gap_sheet_bold_cells(cells) == [aimed]
+    assert screens.gap_sheet_bold_cells(_gap_cells(_gap_canvas((0.0, -0.66, 0.0)))) == []
+    # 굵은 칸도 글자는 굵게 뗀 값이다 — 누를 칸 고르기가 그대로다.
+    assert screens.gap_sheet_click_target(cells) == (aimed, 1)
 
 
 def test_the_gap_sheet_summary_carries_counts_and_fixed_words_only() -> None:
     rows = screens.GAP_SHEET_ROWS
-    line = screens.summarize_gap_sheet(rows, 4, 2, "sched:lent", True, 3, True, 0)
+    line = screens.summarize_gap_sheet(rows, 4, 2, "sched:lent", True, True, 3, True, 0)
 
     assert line == (
         "행 9 — 정한 차례와 같음 · 달 4칸 · 대여(비가동) 0 아닌 달 2 · "
@@ -2052,38 +2132,106 @@ def test_the_gap_sheet_summary_carries_counts_and_fixed_words_only() -> None:
     assert "|" not in line
     swapped = (rows[1], rows[0], *rows[2:])
     assert "행 9 — 정한 차례와 다름" in screens.summarize_gap_sheet(
-        swapped, 4, 0, "sched:available", True, 5, False, 0
+        swapped, 4, 0, "sched:available", True, True, 5, False, 0
     )
     # 화면 글자가 다르면 같음·다름만 적는다 — 화면 글자를 옮기지 않는다.
     renamed = ((SENTINEL, "보유"), *rows[1:])
-    other = screens.summarize_gap_sheet(renamed, 4, 0, "sched:available", True, 5, False, 1)
+    other = screens.summarize_gap_sheet(renamed, 4, 0, "sched:available", True, True, 5, False, 1)
     assert SENTINEL not in other
     assert other.endswith(
         "「설비 일정 기준 가용」 칸 누름 → 근거 카드 열림 · 근거 표 5줄(합계 뺌) · "
         "같은 칸 다시 누름 → 안 닫힘 · 예외 1"
     )
-    assert screens.summarize_gap_sheet(rows[:8], 4, 0, None, False, None, None, 0) == (
+    assert screens.summarize_gap_sheet(rows[:8], 4, 0, None, False, False, None, None, 0) == (
         "행 8 — 정한 차례와 다름 · 달 4칸 · 대여(비가동) 0 아닌 달 0 · "
         "값 있는 설비 일정 기준 칸 없음(안 누름) · 예외 0"
     )
-    not_opened = screens.summarize_gap_sheet(rows, 4, 0, "sched:available", False, None, None, 0)
+    not_opened = screens.summarize_gap_sheet(
+        rows, 4, 0, "sched:available", False, False, None, None, 0
+    )
     assert not_opened.endswith("칸 누름 → 근거 카드 안 열림 · 예외 0")
     assert "근거 카드 열림 · 근거 표 없음 · 같은 칸" in screens.summarize_gap_sheet(
-        rows, 4, 0, "sched:available", True, None, True, 0
+        rows, 4, 0, "sched:available", True, True, None, True, 0
     )
-    assert screens.summarize_gap_sheet(None, 0, 0, None, False, None, None, 2) == (
+    # 카드가 열렸어도 제목 앞머리·굵은 칸이 누른 칸이 아니면 「다른 칸 열림」 이고 표 줄을 세지
+    # 않는다.
+    elsewhere = screens.summarize_gap_sheet(rows, 4, 2, "sched:lent", True, False, 3, True, 0)
+    assert elsewhere.endswith(
+        "「설비 일정 기준 대여 (비가동)」 칸 누름 → 다른 칸 열림 · "
+        "같은 칸 다시 누름 → 닫힘 · 예외 0"
+    )
+    assert "근거 카드 열림" not in elsewhere and "근거 표" not in elsewhere
+    assert screens.summarize_gap_sheet(None, 0, 0, None, False, False, None, None, 2) == (
         "비교 시트 없음 · 예외 2"
     )
 
 
-def test_the_gap_sheet_item_reads_the_click_generation_and_restores_the_switches() -> None:
-    """칸 누름은 그림 `layout.meta.generation` 이 올라야 들어간 것이고(같은 칸 다시 누름도), 바꾼
-    전환은 끝에 되돌린다."""
-    import inspect
+class _GapSheetScreen(_FakeScreen):
+    """페이지·탭을 여는 대신 아무것도 하지 않는 화면 — 전환과 시트 읽기는 테스트가 바꿔 끼운다."""
 
-    assert "plot.layout.meta.generation" in screens._GAP_SHEET_JS
-    assert 'meta={"generation": generation, "scope": scope}' in _text(
-        COMPONENTS / "availability_sheet_canvas.py"
+    def open_page(self, href_suffix: str) -> None:
+        pass
+
+    def open_tab(self, name: str) -> None:
+        pass
+
+
+@pytest.mark.parametrize(
+    ("shown", "restored"),
+    [
+        (
+            {
+                screens.GAP_RESULT_VIEW_KEY: "가용대수 비교",
+                screens.GAP_DETAIL_MODE_KEY: "호기 목록",
+            },
+            [
+                (screens.GAP_DETAIL_MODE_KEY, "호기 목록"),
+                (screens.GAP_RESULT_VIEW_KEY, "가용대수 비교"),
+            ],
+        ),
+        # 이미 그 선택지였던 전환은 바꾸지 않았으니 되돌리지도 않는다.
+        (
+            {
+                screens.GAP_RESULT_VIEW_KEY: screens.GAP_SHEET_VIEW,
+                screens.GAP_DETAIL_MODE_KEY: "호기 목록",
+            },
+            [(screens.GAP_DETAIL_MODE_KEY, "호기 목록")],
+        ),
+    ],
+)
+def test_the_gap_sheet_item_restores_the_switches_it_changed_even_when_reading_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    shown: dict[str, str],
+    restored: list[tuple[str, str]],
+) -> None:
+    from capa_simulation.components import availability_gap_panel as panel
+
+    assert set(shown.values()) <= {*panel._RESULT_VIEWS, *panel._DETAIL_MODES}
+    first = dict(shown)
+    chosen: list[tuple[str, str]] = []
+
+    def choose(screen: Screen, key: str, option: str) -> str | None:
+        chosen.append((key, option))
+        before = shown[key]
+        shown[key] = option
+        return before
+
+    def broken(screen: Screen, *, timeout: float = 30.0) -> Any:
+        raise RuntimeError(SENTINEL)
+
+    monkeypatch.setattr(screens, "_choose_segment", choose)
+    monkeypatch.setattr(screens, "_gap_sheet", broken)
+    item = next(item for item in ITEMS if item.key == "gap_sheet")
+
+    outcomes = screens.run_items(
+        _GapSheetScreen(), [item], allow_writes=False, deadline=NO_DEADLINE
     )
-    source = inspect.getsource(screens.check_gap_sheet)
-    assert "finally:" in source and "_choose_segment(screen, key, option)" in source
+
+    assert outcomes[0].result == "미기록 — RuntimeError"
+    assert chosen[:2] == [
+        (screens.GAP_RESULT_VIEW_KEY, screens.GAP_SHEET_VIEW),
+        (screens.GAP_DETAIL_MODE_KEY, screens.GAP_SHEET_MODE),
+    ]
+    # 바꾼 것만, 바꾼 차례의 거꾸로 되돌린다 — 화면은 처음 선택지로 돌아온다.
+    assert chosen[2:] == restored
+    assert shown == first

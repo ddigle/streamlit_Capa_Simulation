@@ -2474,8 +2474,9 @@ _SEGMENT_JS = """(key) => {
   return chosen ? chosen.innerText.trim() : "";
 }"""
 # 비교 시트 — 라벨 그림의 주석(글·들임·글자 크기·세로 자리 — 판정에만 쓴다), 월 그림의 달 수, 표적
-# 막대(trace 0, `customdata` = 달·행 id·풍선)마다 칸 가운데(`x = 열 + 0.5`, 같은 `y`)에 선 글자, 칸
-# 누름 세대(`layout.meta.generation`). 풍선(`customdata[2]`)은 옮기지 않는다.
+# 막대(trace 0, `customdata` = 달·행 id·풍선)마다 칸 가운데(`x = 열 + 0.5`, 같은 `y`)에 선 글자와
+# 굵은가(고른 칸만 `<b>` 로 굵다), 칸 누름 세대(`layout.meta.generation`). 풍선(`customdata[2]`)은
+# 옮기지 않는다.
 _GAP_SHEET_JS = """(keys) => {
   const plot = document.querySelector(`.st-key-${keys.chart} .js-plotly-plot`);
   const labels = document.querySelector(`.st-key-${keys.labels} .js-plotly-plot`);
@@ -2484,7 +2485,9 @@ _GAP_SHEET_JS = """(keys) => {
   const spot = (x, y) => `${Math.round(x * 1000)}|${Math.round(y * 1000)}`;
   const written = new Map();
   plot.data.slice(1).filter((trace) => trace.mode === "text").forEach((trace) => {
-    [...trace.x].forEach((x, i) => written.set(spot(x - 0.5, trace.y[i]), strip(trace.text[i])));
+    [...trace.x].forEach((x, i) => {
+      written.set(spot(x - 0.5, trace.y[i]), String(trace.text[i] ?? ""));
+    });
   });
   const target = plot.data[0];
   const data = [...(target.customdata || [])];
@@ -2493,11 +2496,15 @@ _GAP_SHEET_JS = """(keys) => {
       text: note.text, shift: note.xshift || 0, size: (note.font || {}).size || 0, y: note.y,
     })),
     months: new Set(data.map((point) => point[0])).size,
-    cells: data.map((point, i) => ({
-      month: point[0],
-      row: point[1],
-      text: written.get(spot(target.base[i], target.y[i])) ?? null,
-    })),
+    cells: data.map((point, i) => {
+      const text = written.get(spot(target.base[i], target.y[i]));
+      return {
+        month: point[0],
+        row: point[1],
+        text: text === undefined ? null : strip(text),
+        bold: text !== undefined && /^\\s*<b>/i.test(text),
+      };
+    }),
     generation: plot.layout.meta ? plot.layout.meta.generation : null,
   };
 }"""
@@ -2535,14 +2542,18 @@ _GAP_SHEET_POINT_JS = """({keys, month, row}) => {
   }
   return { x: Math.round(point.x), y: Math.round(point.y) };
 }"""
-# 근거 카드 — 닫힘 안내 글이 있는가, 카드 안 표(Glide)의 데이터 줄 수(`aria-rowcount` 는 머리 줄을
-# 넣어 센다), 본문의 예외 상자 수.
-_GAP_EVIDENCE_JS = """({keys, closed}) => {
+# 근거 카드 — 닫힘 안내 글이 있는가, 카드 제목(h5)이 누른 칸의 고정 앞머리(`heading`)로 시작하는가
+# (제목 글은 돌려주지 않는다 — 뒤에 공정 이름이 든다), 카드 안 표(Glide)의 데이터 줄 수
+# (`aria-rowcount` 는 머리 줄을 넣어 센다), 본문의 예외 상자 수.
+_GAP_EVIDENCE_JS = """({keys, closed, heading}) => {
   const card = document.querySelector(`.st-key-${keys.evidence}`);
   const grid = card && card.querySelector('[data-testid="stDataFrame"] [aria-rowcount]');
+  const title = card && card.querySelector("h5");
+  const words = (text) => String(text ?? "").replace(/\\s+/g, " ").trim();
   return {
     card: !!card,
     closed: !!card && card.innerText.includes(closed),
+    matches: !!title && !!heading && words(title.textContent).startsWith(words(heading)),
     rows: grid ? Number(grid.getAttribute("aria-rowcount")) - 1 : null,
     exceptions: document.querySelectorAll('[data-testid="stMain"] [data-testid="stException"]')
       .length,
@@ -2584,7 +2595,7 @@ def _cell_number(text: object) -> float | None:
         return None
 
 
-def pick_gap_sheet_cell(
+def gap_sheet_click_target(
     cells: Sequence[Mapping[str, Any]],
 ) -> tuple[tuple[int, str] | None, int]:
     """누를 설비 일정 기준 칸 (달, 행 id)과 대여(비가동)가 0 아닌 달 수.
@@ -2608,19 +2619,37 @@ def pick_gap_sheet_cell(
     return ((available[0][1], available_row) if available else None), 0
 
 
+def gap_evidence_heading(cell: tuple[int, str]) -> str:
+    """누른 설비 일정 기준 칸의 근거 카드 제목(h5) 앞머리 — `YY.MM · 설비 일정 기준 <행 라벨> · `.
+
+    카드 제목은 `<달> · <구획> <행 라벨> · <공정 표시명>` 이다. 뒤의 공정 이름은 보지 않고 고정
+    어휘의 앞머리로 시작하는가만 본다. 달 표기는 앱의 `month_label` 을 옮겼다(테스트가 같은지 본다).
+    """
+    month, row = cell
+    label = dict(GAP_SHEET_SCHEDULE_CELLS).get(row, row)
+    return f"{month // 100 % 100:02d}.{month % 100:02d} · {_GAP_SCHEDULE_TITLE} {label} · "
+
+
+def gap_sheet_bold_cells(cells: Sequence[Mapping[str, Any]]) -> list[tuple[int, str]]:
+    """월 그림에서 글자가 굵은 칸(고른 칸) (달, 행 id) — 그림 차례대로."""
+    return [(int(cell["month"]), str(cell["row"])) for cell in cells if cell.get("bold")]
+
+
 def summarize_gap_sheet(
     rows: Sequence[tuple[str, str]] | None,
     months: int,
     lent_months: int,
     clicked: str | None,
     opened: bool,
+    aimed: bool,
     lines: int | None,
     closed_again: bool | None,
     exceptions: int,
 ) -> str:
     """비교 시트 한 줄 — 9행이 정한 차례인가, 달 수, 대여(비가동)가 0 아닌 달 수, 설비 일정 기준
-    칸을 누르면 근거 카드가 열리고 표 줄이 몇인가(합계 줄 뺌), 같은 칸을 다시 누르면 닫히는가, 예외
-    상자 수. 행 라벨은 고정 어휘(`GAP_SHEET_ROWS`)에서 적고 화면 글자는 같은지만 본다."""
+    칸을 누르면 그 칸의 근거 카드가 열리고(`aimed` — 카드 제목 앞머리와 굵은 칸이 누른 칸인가.
+    아니면 「다른 칸 열림」) 표 줄이 몇인가(합계 줄 뺌), 같은 칸을 다시 누르면 닫히는가, 예외 상자
+    수. 행 라벨은 고정 어휘(`GAP_SHEET_ROWS`)에서 적고 화면 글자는 같은지만 본다."""
     if rows is None:
         return f"비교 시트 없음 · 예외 {exceptions}"
     order = "같음" if tuple(rows) == GAP_SHEET_ROWS else "다름"
@@ -2635,8 +2664,11 @@ def summarize_gap_sheet(
     if not opened:
         body += "근거 카드 안 열림"
     else:
-        table = f"근거 표 {lines}줄(합계 뺌)" if lines else "근거 표 없음"
-        body += f"근거 카드 열림 · {table}"
+        if aimed:
+            table = f"근거 표 {lines}줄(합계 뺌)" if lines else "근거 표 없음"
+            body += f"근거 카드 열림 · {table}"
+        else:
+            body += "다른 칸 열림"
         if closed_again is not None:
             body += f" · 같은 칸 다시 누름 → {'닫힘' if closed_again else '안 닫힘'}"
     return f"{head} · {body} · 예외 {exceptions}"
@@ -2665,8 +2697,11 @@ def _gap_sheet(screen: Screen, *, timeout: float = 30.0) -> Any:
     )
 
 
-def _gap_evidence(screen: Screen) -> Any:
-    return screen.js(_GAP_EVIDENCE_JS, {"keys": GAP_SHEET_KEYS, "closed": GAP_SHEET_CLOSED_TEXT})
+def _gap_evidence(screen: Screen, heading: str = "") -> Any:
+    return screen.js(
+        _GAP_EVIDENCE_JS,
+        {"keys": GAP_SHEET_KEYS, "closed": GAP_SHEET_CLOSED_TEXT, "heading": heading},
+    )
 
 
 def _click_gap_cell(screen: Screen, cell: tuple[int, str]) -> bool:
@@ -2696,9 +2731,10 @@ def _click_gap_cell(screen: Screen, cell: tuple[int, str]) -> bool:
 def check_gap_sheet(screen: Screen) -> str:
     """가용설비 현황 → `Static 대비 일정` → `분류별 내역` 9행 비교 시트 — 행 라벨이 정한 9행 차례와
     같은가와 달 수, 설비 일정 기준 칸(대여(비가동)가 0 아닌 칸 먼저, 없으면 가용 칸) 하나를 누르면
-    아래 근거 카드가 열리고 표 줄이 몇인가, 같은 칸을 다시 누르면 닫히는가, 예외 상자 수. 기본
-    범위(전체 합계)로 본다 — 공정을 고르지 않는다. 칸 누름·전환은 세션 값이라 DB 에 쓰지 않고,
-    바꾼 전환은 끝에 되돌린다. 공정·호기 이름과 칸 값은 판정에만 쓰고 찍지 않는다."""
+    아래 근거 카드가 그 칸의 것으로 열리고(카드 제목 앞머리·굵은 칸) 표 줄이 몇인가, 같은 칸을 다시
+    누르면 닫히는가, 예외 상자 수. 기본 범위(전체 합계)로 본다 — 공정을 고르지 않는다. 칸 누름·
+    전환은 세션 값이라 DB 에 쓰지 않고, 바꾼 전환은 끝에(읽다 깨져도) 되돌린다. 공정·호기 이름과
+    칸 값·카드 제목은 판정에만 쓰고 찍지 않는다."""
     screen.open_page(EQUIPMENT_PAGE)
     screen.open_tab(GAP_TAB)
     changed: list[tuple[str, str]] = []
@@ -2713,23 +2749,31 @@ def check_gap_sheet(screen: Screen) -> str:
         sheet = _gap_sheet(screen, timeout=120)
         exceptions = int(_gap_evidence(screen)["exceptions"])
         if not sheet or not sheet["cells"]:
-            return summarize_gap_sheet(None, 0, 0, None, False, None, None, exceptions)
+            return summarize_gap_sheet(None, 0, 0, None, False, False, None, None, exceptions)
         rows = gap_sheet_row_labels(sheet["notes"])
-        cell, lent_months = pick_gap_sheet_cell(sheet["cells"])
+        cell, lent_months = gap_sheet_click_target(sheet["cells"])
         opened = False
+        aimed = False
         lines: int | None = None
         closed_again: bool | None = None
         if cell is not None and _click_gap_cell(screen, cell):
+            heading = gap_evidence_heading(cell)
             evidence = screen.poll(
-                lambda: _gap_evidence(screen), timeout=30, accept=lambda value: not value["closed"]
+                lambda: _gap_evidence(screen, heading),
+                timeout=30,
+                accept=lambda value: not value["closed"],
             )
             opened = bool(evidence["card"]) and not evidence["closed"]
             if opened:
                 evidence = screen.poll(
-                    lambda: _gap_evidence(screen),
+                    lambda: _gap_evidence(screen, heading),
                     timeout=10,
                     accept=lambda value: value["rows"] is not None,
                 )
+                drawn = _gap_sheet(screen) or {}
+                aimed = bool(evidence["matches"]) and gap_sheet_bold_cells(
+                    drawn.get("cells") or []
+                ) == [cell]
                 lines = None if evidence["rows"] is None else max(int(evidence["rows"]) - 1, 0)
                 exceptions = max(exceptions, int(evidence["exceptions"]))
                 clicked_again = _click_gap_cell(screen, cell)
@@ -2744,6 +2788,7 @@ def check_gap_sheet(screen: Screen) -> str:
             lent_months,
             None if cell is None else cell[1],
             opened,
+            aimed,
             lines,
             closed_again,
             exceptions,
