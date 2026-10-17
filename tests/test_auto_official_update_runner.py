@@ -192,6 +192,7 @@ def test_a_new_week_is_registered_judged_and_published(
         "공식 v2 발행 · W41 SIM-W41 · "
         "자동 갱신 · 기준 확보율 80% · off 1공정 · 이어받은 수동 off 0공정"
     )
+    assert runner.split_published_reason(run.reason) == (run.reason, "")
     assert published == ["cleared"]
     # 상세 조회는 화면 등록의 기본 창과 같다 — 등록일 7일 전 ~ 3일 뒤(오늘을 넘지 않는다).
     request = fake.requests[0]
@@ -422,23 +423,6 @@ def test_a_failed_publish_check_keeps_the_filtered_revision(
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 
-def _blank_first_plan_quantity(frame: pd.DataFrame) -> pd.DataFrame:
-    """첫 계획 행(계획기초정보여부 Y)의 생산수량을 비운다.
-
-    계산은 서고, 그 계획은 「생산수량이 비어 계획 없음으로 본 계획」으로 소요대수에 들지 않는다.
-    """
-    blanked = frame.copy()
-    plan = blanked["계획기초정보여부"].eq("Y")
-    first = blanked.loc[plan].iloc[0]
-    target = (
-        plan
-        & blanked["제품정보"].eq(first["제품정보"])
-        & blanked["생산계획년월"].eq(first["생산계획년월"])
-    )
-    blanked.loc[target, "생산수량"] = pd.NA
-    return blanked
-
-
 def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
     repository: DuckDBScenarioRepository,
 ) -> None:
@@ -450,7 +434,7 @@ def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
     _official_w40(repository)
     fake = FakeBigDataQuery(
         _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
-        frames={"SIM-W41": _blank_first_plan_quantity(_source())},
+        frames={"SIM-W41": _source(blank_first_plan=True)},
     )
 
     run = _run(repository, fake)
@@ -466,6 +450,8 @@ def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in warning
     # 실행 기록 표의 칸에도 실린다 — Markdown 굵게 표시를 떼고 남긴다.
     assert "확보율이 실제보다 높게" in warning and "**" not in warning
+    # 「지금 실행」 결과가 성공 알림 밑의 경고로 따로 띄우도록 사유를 그대로 다시 가른다.
+    assert runner.split_published_reason(run.reason) == (memo, warning)
     release = repository.latest_official_release()
     assert release is not None
     assert release.note == "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"

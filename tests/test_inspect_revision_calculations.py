@@ -206,13 +206,13 @@ def test_every_revision_is_counted_by_source_and_status_without_names(
     assert "| 내장 시드 | 1 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 2 | 0 |" in output
     assert "| 원천 등록(CSV) | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |" in output
     assert (
-        "- 공식버전 — 이력이 가리키는 리비전 2개: 됨 2 · Density 멈춤 1 · 최신 공식 v2(S6 r1) 됨 "
-        "· Density 멈춤(ValueError · RQ_CHIP_EQ)"
+        "- 공식버전 — 최신 공식 v2(S6 r1) 됨 · Density 멈춤(ValueError · RQ_CHIP_EQ) · "
+        "이력이 가리키는 리비전 2개: 됨 2 · 지난 공식버전 포함 Density 멈춤 1"
     ) in output
     assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in output
     assert "| 멈춤 | 대당 Capa | ValueError | RQ_MODULE | 1 |" in output
     assert "| 확보율 멈춤 | 확보율 | ValueError | - | 1 |" in output
-    assert "**공식버전 줄의 `Density 멈춤` 은 0 이어야 한다.**" in output
+    assert "**최신 공식의 `Density` 칸이 `됨` 이어야 한다**" in output
 
 
 def test_active_only_keeps_the_active_and_the_official_revisions(
@@ -259,30 +259,65 @@ def test_density_and_securement_are_judged_apart(simulation_db: Path) -> None:
     assert "| 확보율 멈춤 | 확보율 | ValueError | - | 1 |" in lines
 
 
-def test_the_official_line_states_a_zero_density_stop() -> None:
-    """공식버전 줄의 `Density 멈춤` 은 0 이어야 하는 값이라 0 이어도 적는다.
-
-    사내 런북 6-3 이 그 0 을 본다.
-    """
-    official = script.RevisionRow(
-        scenario_no=1,
+def _official_revision(scenario_no: int, *official: int) -> script.RevisionRow:
+    return script.RevisionRow(
+        scenario_no=scenario_no,
         revision_no=1,
-        revision_id="r",
-        dataset_id="d",
+        revision_id=f"r{scenario_no}",
+        dataset_id=f"d{scenario_no}",
         source_group="내장 시드",
         archived=False,
-        official=(1,),
+        official=official,
     )
+
+
+def test_the_official_line_states_a_zero_density_stop() -> None:
+    """이력 전체의 `지난 공식버전 포함 Density 멈춤` 은 없다는 것도 확인한 값이라 0 이어도 적는다.
+
+    판정값인 최신 공식의 `Density` 칸이 앞에 온다(사내 런북 6-3 a).
+    """
     outcome = script.Outcome(script.CALCULATED, density=script.CALCULATED)
 
-    lines = script.summary_lines([official], [outcome], active_only=False)
+    lines = script.summary_lines([_official_revision(1, 1)], [outcome], active_only=False)
 
     assert (
-        "- 공식버전 — 이력이 가리키는 리비전 1개: 됨 1 · Density 멈춤 0 · 최신 공식 v1(S1 r1) 됨 "
-        "· Density 됨"
+        "- 공식버전 — 최신 공식 v1(S1 r1) 됨 · Density 됨 · "
+        "이력이 가리키는 리비전 1개: 됨 1 · 지난 공식버전 포함 Density 멈춤 0"
     ) in lines
     # 멈춘 리비전이 없으면 갈래 표를 찍지 않는다.
     assert not [line for line in lines if line.startswith("- 멈춘 리비전의 갈래")]
+
+
+def test_only_the_latest_official_decides_and_an_older_stop_is_counted_apart() -> None:
+    """지난 공식버전(v1)만 Density 에서 멈추고 최신 공식(v2)은 선다.
+
+    판정값은 최신 공식의 `Density` 칸(됨)이고, 이력 전체의 멈춤은 이름을 따로 단 수로만 남는다
+    — 지난 공식버전의 멈춤은 그 시나리오를 다시 열어 저장할 때만 경고가 붙는다(사내 런북 6-3 a).
+    """
+    older = script.Outcome(
+        script.CALCULATED,
+        density=script.STOPPED,
+        density_kind="ValueError",
+        density_tables=("RQ_CHIP_EQ",),
+    )
+    latest = script.Outcome(script.CALCULATED, density=script.CALCULATED)
+
+    lines = script.summary_lines(
+        [_official_revision(1, 1), _official_revision(2, 2)], [older, latest], active_only=False
+    )
+
+    assert (
+        "- 공식버전 — 최신 공식 v2(S2 r1) 됨 · Density 됨 · "
+        "이력이 가리키는 리비전 2개: 됨 2 · 지난 공식버전 포함 Density 멈춤 1"
+    ) in lines
+    # 갈래 표에는 그대로 든다 — 지난 공식의 멈춤도 「발견」에 수로 옮길 거리다.
+    assert "| Density 멈춤 | Density | ValueError | RQ_CHIP_EQ | 1 |" in lines
+    guide = "\n".join(script.READING_GUIDE)
+    assert (
+        "**최신 공식의 `Density` 칸이 `됨` 이어야 한다** — 지난 공식버전의 Density 멈춤은 그 "
+        "시나리오를 다시 열어 저장할 때만 경고가 붙는다(「발견」에 수만 옮긴다)."
+    ) in guide
+    assert "공식버전 줄의 `Density 멈춤` 은 0 이어야 한다" not in guide
 
 
 def test_plan_lines_match_the_calculation_keys_not_the_raw_text() -> None:

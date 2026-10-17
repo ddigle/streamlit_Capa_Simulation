@@ -124,6 +124,9 @@ STATUSES: Final[tuple[str, ...]] = (CALCULATED, STOPPED, SECUREMENT_STOPPED, BLO
 # `계산` 칸과 따로 세는 저장·발행 검사의 Density 환산 멈춤. 집계 표의 칸 이름이기도 하다.
 DENSITY_STOPPED: Final = "Density 멈춤"
 DENSITY_STAGE: Final = "Density"
+# 공식버전 줄에서 이력이 가리키는 모든 리비전(최신 공식도 든다)의 Density 멈춤 수. 판정값인 최신
+# 공식의 `Density` 칸과 섞이지 않게 이름을 따로 단다.
+HISTORY_DENSITY_STOPPED: Final = "지난 공식버전 포함 Density 멈춤"
 
 _HEADER: Final = "<!-- inspect_revision_calculations.py — 아래 블록을 리뷰 문서에 붙인다 -->\n"
 _LOCK_MESSAGE: Final = (
@@ -428,6 +431,12 @@ def _totals_row(label: str, totals: Totals) -> list[str]:
 
 
 def _official_line(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]) -> str:
+    """공식버전 한 줄 — 최신 공식의 상태가 판정값이고, 이력 전체의 수는 그 뒤에 따로 적는다.
+
+    최신 공식은 모두의 첫 화면이고 거기서 저장·발행이 이어지므로 그 `Density` 칸이 `됨` 이어야
+    한다. 지난 공식버전의 Density 멈춤은 그 시나리오를 다시 열어 저장할 때만 경고가 붙어 수만
+    적는다 — 한데 세어 판정값으로 읽으면 지난 공식 하나가 멀쩡한 최신 공식을 막은 것처럼 보인다.
+    """
     official = [
         (revision, outcome)
         for revision, outcome in zip(revisions, outcomes, strict=True)
@@ -440,13 +449,14 @@ def _official_line(revisions: Sequence[RevisionRow], outcomes: Sequence[Outcome]
     counted = " · ".join(
         f"{status} {statuses[status]:,}" for status in STATUSES if statuses[status]
     )
-    # 0 이어야 하는 값이라 0 이어도 적는다(읽는 법).
+    # 최신 공식도 든 이력 전체의 수. 없다는 것도 확인한 값이라 0 이어도 적는다(읽는 법).
     density_stopped = sum(outcome.density == STOPPED for _, outcome in official)
     return (
-        f"- 공식버전 — 이력이 가리키는 리비전 {len(official):,}개: {counted} · "
-        f"{DENSITY_STOPPED} {density_stopped:,} · 최신 공식 "
+        f"- 공식버전 — 최신 공식 "
         f"v{max(latest.official)}(S{latest.scenario_no} r{latest.revision_no}) "
-        f"{describe(latest_outcome)} · {DENSITY_STAGE} {describe_density(latest_outcome)}"
+        f"{describe(latest_outcome)} · {DENSITY_STAGE} {describe_density(latest_outcome)} · "
+        f"이력이 가리키는 리비전 {len(official):,}개: {counted} · "
+        f"{HISTORY_DENSITY_STOPPED} {density_stopped:,}"
     )
 
 
@@ -579,9 +589,11 @@ READING_GUIDE: Final[tuple[str, ...]] = (
     "넣는다. `계산` 이 `됨` 이어도 여기서 멈추면(대개 계획이 있는 제품의 `구분_EQ`·`구분_Chip` "
     "이 0 이하) 그 리비전은 저장할 때 경고가 붙고 공식버전으로 지정할 수 없다. `-` 는 Capa "
     "계산이 서지 않아 재지 않은 것이다.",
-    "- **공식버전 줄의 `Density 멈춤` 은 0 이어야 한다.** 0 이 아니면 그 공식버전에서 이어 "
-    "저장하는 리비전마다 경고가 붙고 공식 발행이 거절된다(고칠 때까지) — 최신 공식의 "
-    "`Density` 칸과 갈래 표의 `Density 멈춤` 줄을 그대로 옮긴다.",
+    "- **최신 공식의 `Density` 칸이 `됨` 이어야 한다** — 지난 공식버전의 Density 멈춤은 그 "
+    "시나리오를 다시 열어 저장할 때만 경고가 붙는다(「발견」에 수만 옮긴다). 최신 공식이 "
+    "멈추면 거기서 이어 저장하는 리비전마다 경고가 붙고 공식 발행이 거절된다(고칠 때까지) — "
+    "그 칸과 갈래 표의 `Density 멈춤` 줄을 그대로 옮긴다. `지난 공식버전 포함 Density 멈춤` "
+    "은 최신 공식도 든 이력 전체의 수이고 0 이어도 적는다.",
     "- `닿지 않음` 은 생산수량이 있는데 소요대수 결과에 그 계획 줄이 하나도 없는 계획 "
     "행 수다 — 부하량 환산에서 빠졌거나 이어질 경로가 없다. `겹친 경로 키` 는 같은 "
     "`RQ_REQB` 업무 키가 두 번 이상 계산된 행 수다. 둘 다 0 이 아니어도 계산은 선다 — "

@@ -11,8 +11,8 @@
 
 그래서 같은 문장을 여러 자리에서 쓴다. HOME 은 결론 위에 한 줄(조회기간 기준), 리비전 저장·공식
 발행 검사는 허락하면서 경고(시나리오 전체 기간), 공식버전 자동 갱신의 발행은 막지 않고 실행 기록
-사유 끝에 붙인다(`auto_official_update_runner`, 시나리오 전체 기간). 목록은 산출 결과 → 소요대수
-탭에 있다.
+사유 끝에 붙인다(`auto_official_update_runner`, 시나리오 전체 기간 — 「지금 실행」 결과는 화면
+발행과 같이 성공 알림 밑의 경고로 따로 띄운다). 목록은 산출 결과 → 소요대수 탭에 있다.
 """
 
 from __future__ import annotations
@@ -34,6 +34,9 @@ from capa_simulation.services.required_equipment import (
 # 문장의 범위 말. 같은 결과를 HOME 은 조회기간으로 자르고 저장·발행 검사는 전체 기간으로 본다.
 PERIOD_SCOPE = "조회기간 기준"
 FULL_SCOPE = "시나리오 전체 기간"
+# 문장의 머리. 자동 갱신의 발행 줄 뒤에 이어 적힌 이 경고를 실행 기록 사유에서 다시 가를 때도 쓴다
+# (`auto_official_update_runner.split_published_reason`).
+UNCOUNTED_DEMAND_LEAD = "소요대수에 들지 않은 수요가 있습니다"
 # 목록 표의 분류 컬럼(표시순서가 거는 차례). 월은 표 앞에 그대로 둔다.
 _LOAD_EXCLUSION_DIMENSIONS = ("제품정보", "Stack", "WF 구분")
 _UNROUTED_DIMENSIONS = (
@@ -62,7 +65,7 @@ def required_exclusion_message(counts: RequiredExclusionCounts, *, scope: str) -
     if not parts:
         return ""
     return (
-        f"소요대수에 들지 않은 수요가 있습니다({scope}) — {' · '.join(parts)}. "
+        f"{UNCOUNTED_DEMAND_LEAD}({scope}) — {' · '.join(parts)}. "
         "그만큼 소요대수가 작게, **확보율이 실제보다 높게** 나올 수 있습니다. "
         "목록은 산출 결과 → 소요대수 탭에 있습니다."
     )

@@ -24,7 +24,8 @@
    공식버전이 그 사이 바뀌었으면(사람이 다른 공식버전을 지정) 발행하지 않는다 — 옛 기준으로 고른
    코드가 더 새 공식버전을 덮지 않게 한다. 계산은 되지만 소요대수에 들지 않은 수요가 있으면 막지
    않고 그 건수 경고를 발행 기록의 사유 끝에 붙인다 — 화면 발행이 성공 문구 밑에 띄우는 것과 같은
-   셈·문장이다.
+   셈·문장이다. 「지금 실행」 결과는 그 경고를 사유에서 다시 갈라(`split_published_reason`) 화면
+   발행과 같이 성공 알림 밑에 따로 띄운다.
 
 어느 단계에서 멈춰도 이미 만든 시나리오·리비전은 남기고 그 단계와 사유를 기록한다.
 
@@ -51,6 +52,7 @@ import pandas as pd
 from capa_simulation.components.capacity_gate import density_error
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
+    UNCOUNTED_DEMAND_LEAD,
     required_exclusion_message,
 )
 from capa_simulation.io.bigdataquery_catalog import fetch_simulation_catalog
@@ -124,6 +126,8 @@ REGISTERED_NOT_PUBLISHED_NOTE: Final = (
 )
 # 「현재 활성 편집본 복제」가 만든 시나리오의 출처 종류. 부모 리비전이 없다.
 CLONE_SOURCE_TYPE: Final = "DUCKDB_SCENARIO_CLONE"
+# 발행한 회차의 사유 한 칸에 발행 줄과 소요대수에 들지 않은 수요 경고를 잇는 자리.
+_WARNING_SEPARATOR: Final = ". "
 
 # 같은 프로세스 안에서 회차가 겹치지 않게 한다. 기다리지 않는다 — 겹친 쪽은 선점하지 않고 돌아간다.
 _RUN_LOCK = threading.Lock()
@@ -533,7 +537,7 @@ def _execute(
         f"{candidate.simulation_code} · {memo}"
     )
     if published.warning:
-        reason = f"{reason}. {published.warning}"
+        reason = f"{reason}{_WARNING_SEPARATOR}{published.warning}"
     log.finish(
         STATUS_PUBLISHED,
         reason,
@@ -590,6 +594,20 @@ def _uncounted_demand_warning(outcome: CapacityOutcome) -> str:
         required_exclusion_counts(outcome.required_equipment), scope=FULL_SCOPE
     )
     return message.replace("**", "")
+
+
+def split_published_reason(reason: str) -> tuple[str, str]:
+    """발행한 회차의 사유를 (발행 줄, 소요대수에 들지 않은 수요 경고)로 가른다. 경고가 없으면 빈 글.
+
+    실행 기록에는 사유 한 칸뿐이라 회차가 둘을 이어 적는다(`_execute`). 「지금 실행」 결과는 화면
+    발행과 같이 성공 알림 밑에 경고를 따로 띄우므로 다시 가른다 — 알림이 rerun 에 끊겨 기록에서
+    찾은 회차도 기록 한 칸뿐이라 같은 길이다. 경고는 늘 그 문장의 머리(`UNCOUNTED_DEMAND_LEAD`)로
+    시작하고, 발행 줄(공식 번호·주차·코드·자동 갱신 메모)에는 그 머리가 없다.
+    """
+    head, joint, rest = reason.partition(f"{_WARNING_SEPARATOR}{UNCOUNTED_DEMAND_LEAD}")
+    if not joint:
+        return reason, ""
+    return head, f"{UNCOUNTED_DEMAND_LEAD}{rest}"
 
 
 def _inherited_manual_off(

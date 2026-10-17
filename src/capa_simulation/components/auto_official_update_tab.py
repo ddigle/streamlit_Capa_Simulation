@@ -20,7 +20,9 @@
   않는다** — 이미 받은 코드는 다시 받지 않으므로 같은 코드가 두 번 발행되지 않는다. 같은
   프로세스에서 다른 회차가 도는 중이면 돌지 않고 알린다. 현재 공식버전에 주차가 없으면 아무것도
   하지 않고 오류로 알린다(기록도 남기지 않는다). 회차 전에 세션에 표를 적어 두므로, 도는 사이
-  다른 칸을 눌러 결과 알림이 끊겨도 다음 회차에 실행 기록에서 찾아 보인다.
+  다른 칸을 눌러 결과 알림이 끊겨도 다음 회차에 실행 기록에서 찾아 보인다. 발행한 회차에 소요대수에
+  들지 않은 수요가 있었으면 화면 발행과 같이 성공 알림 밑에 그 건수를 경고로 따로 띄운다(실행 기록의
+  사유에는 이어 적힌 그대로다).
 - **실행 기록·off 공정·설정 변경 기록** 표.
 
 설정 칸에는 `key` 를 두지 않는다(HOME 판정 기준 편집기와 같은 까닭) — 키가 붙은 칸은 한 번 그려진
@@ -44,6 +46,7 @@ from capa_simulation.auto_official_update_runner import (
     auto_off_marks,
     current_official_baseline,
     run_auto_official_update,
+    split_published_reason,
 )
 from capa_simulation.auto_update_scheduler import (
     ENV_VAR,
@@ -100,7 +103,8 @@ from capa_simulation.services.auto_official_update import (
 SETTINGS_FLASH_KEY = "auto_official_update_settings_flash"
 # 설정 폼을 그린 회차에 본 저장본 version. 제출 회차에는 이것이 「편집을 시작할 때 본 version」이다.
 SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
-# 「지금 실행」 결과(상태, 글). rerun 을 건너 그 자리에 한 번 그린다.
+# 「지금 실행」 결과(상태, 글, 발행한 회차의 소요대수에 들지 않은 수요 경고). rerun 을 건너 그
+# 자리에 한 번 그린다.
 RUN_RESULT_KEY = "auto_official_update_run_result"
 # 「지금 실행」 회차의 표(회차 키 끝). 회차 전에 적고 결과를 보이면 지운다 — 도는 사이 rerun 이
 # 결과 알림을 끊어도 다음 회차가 이 표로 실행 기록을 찾는다.
@@ -463,11 +467,21 @@ def _render_run_now(
 
 
 def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
-    """끝난 「지금 실행」 회차의 결과를 다음 회차 알림 자리에 맡긴다."""
+    """끝난 「지금 실행」 회차의 결과를 다음 회차 알림 자리에 맡긴다.
+
+    발행한 회차는 사유 끝에 이어 적힌 소요대수에 들지 않은 수요 경고를 갈라 `warning` 에 따로 둔다
+    — 화면 발행처럼 성공 알림 밑의 경고로 띄운다(`_render_run_result`).
+    """
+    reason, warning = run.reason or "", ""
     if run.status == STATUS_PUBLISHED:
         # 이 세션의 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣는다.
         forget_intro_summary_check()
-    st.session_state[RUN_RESULT_KEY] = {"status": run.status, "message": _run_result_text(run)}
+        reason, warning = split_published_reason(reason)
+    st.session_state[RUN_RESULT_KEY] = {
+        "status": run.status,
+        "message": _run_result_text(run, reason),
+        "warning": warning,
+    }
 
 
 def _recover_run_result(repository: DuckDBScenarioRepository) -> dict[str, str] | None:
@@ -489,9 +503,8 @@ def _recover_run_result(repository: DuckDBScenarioRepository) -> dict[str, str] 
     return held if isinstance(held, dict) else None
 
 
-def _run_result_text(run: AutoOfficialUpdateRun) -> str:
+def _run_result_text(run: AutoOfficialUpdateRun, reason: str) -> str:
     label = STATUS_LABELS.get(run.status, run.status)
-    reason = run.reason or ""
     return f"{TRIGGER_LABELS.get(run.trigger_kind, run.trigger_kind)} 회차 — {label}. {reason}"
 
 
@@ -505,6 +518,10 @@ def _render_run_result(repository: DuckDBScenarioRepository) -> None:
     message = str(held.get("message") or "")
     if status == STATUS_PUBLISHED:
         st.success(message, icon=":material/publish:")
+        # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
+        warning = str(held.get("warning") or "")
+        if warning:
+            st.warning(warning, icon=":material/warning:")
     elif status == STATUS_SKIPPED:
         st.info(message, icon=":material/skip_next:")
     elif status == STATUS_PUBLISH_SKIPPED:
