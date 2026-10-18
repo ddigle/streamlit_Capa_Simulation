@@ -361,19 +361,20 @@
   max-width: min(700px, 100%);
 }
 
-/* 타이틀은 앱 이름 표기 그대로다(「AX Management」 — 대문자로 바꾸지 않는다, 2026-10-18 사용자 결정). 긴 둘째
-   줄은 약 6.51em 이라 상한 94px 에서 약 612px 로 `.main` 최대 폭 700px 안이다 — 상한은 대문자(7.39em)이던 때
-   그대로 둔다(더 키우면 웨이퍼와 더 겹친다). 바닥은 44px(약 286px)이되 창 폭에서 좌우 여백을 뺀 자리에 6.6em 이
-   드는 크기를 넘지 않는다 — 여백이 16px 에 멈추는 360px 보다 좁은 창(320px 에서 약 43.6px)에서도 둘째 줄이
-   한 줄이다. */
+/* 타이틀은 대문자로 보인다(「S.PKG CAPA / AX MANAGEMENT」 — 2026-10-18 사용자 결정, 앱 이름 표기 그대로의
+   소문자는 첫 로딩 화면에 어울리지 않았다). 긴 둘째 줄 「AX MANAGEMENT」 는 7.39em 이다. 상한 94px 는 그 줄이
+   `.main` 최대 폭 700px 안에 한 줄로 서는 크기(약 694px)다. 바닥은 44px(약 325px)이되 창 폭에서 좌우 여백을
+   뺀 자리에 7.45em 이 드는 크기를 넘지 않는다 — 여백이 16px 에 멈추는 360px 보다 좁은 창(320px 에서 약
+   39px)에서도 둘째 줄이 한 줄이다. 웨이퍼와 겹치는 둘째 줄 끝은 장면 그늘이 덮는다(intro.js `drawVeil`). */
 .title {
   margin: 0;
   font-family: var(--display);
   font-weight: 800;
   font-stretch: 75%;
-  font-size: clamp(min(44px, (100vw - 2 * var(--side)) / 6.6), 6.6vw, 94px);
+  font-size: clamp(min(44px, (100vw - 2 * var(--side)) / 7.45), 6.6vw, 94px);
   line-height: 0.86;
   letter-spacing: 0;
+  text-transform: uppercase;
   text-wrap: balance;
 }
 

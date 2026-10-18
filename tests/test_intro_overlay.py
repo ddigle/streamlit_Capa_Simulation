@@ -61,13 +61,13 @@ def test_registered_js_carries_the_assets_verbatim() -> None:
 
 
 def test_every_display_string_is_covered_by_the_font_subset() -> None:
-    """부분 글꼴에 없는 글자는 조용히 본문 글꼴로 떨어진다. 타이틀은 앱 이름 표기 그대로다.
+    """부분 글꼴에 없는 글자는 조용히 본문 글꼴로 떨어진다. 타이틀은 CSS 가 대문자로 바꾼다.
 
     시트의 달(`26.10`)은 표시 글꼴, 차트 숫자·단위는 숫자 글꼴이다.
     """
     covered = set(intro_overlay.FONT_SUBSET_TEXT)
     shown = intro_overlay.BRAND + intro_overlay.DETAIL_LABEL + intro_overlay.SUMMARY_LABEL
-    shown += "".join(intro_overlay.TITLE_LINES)
+    shown += "".join(line + line.upper() for line in intro_overlay.TITLE_LINES)
     shown += "0123456789."
 
     assert set(shown) <= covered, sorted(set(shown) - covered)
@@ -76,27 +76,28 @@ def test_every_display_string_is_covered_by_the_font_subset() -> None:
 
 def test_title_lines_are_the_app_name_label_and_subtitle() -> None:
     """타이틀 두 줄은 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 머리 줄·사이드바
-    라벨의 두 줄(`BRAND` · `BRAND_SUBTITLE`)과 같은 글자이고, 화면에도 표기 그대로 「AX Management」
-    다 — 10-17 밤 CSS 로 대문자로 바꿨다가 10-18 되돌렸다(사용자 결정)."""
+    라벨의 두 줄(`BRAND` · `BRAND_SUBTITLE`)과 같은 글자이고, 화면에는 CSS 가 대문자로 바꿔
+    「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-18 사용자 결정 — 표기 그대로의 소문자는 첫 로딩
+    화면에 어울리지 않았다)."""
     assert (intro_overlay.BRAND, intro_overlay.BRAND_SUBTITLE) == (APP_LABEL, APP_SUBTITLE)
     assert intro_overlay.TITLE_LINES == (APP_LABEL, APP_SUBTITLE)
     assert " ".join(intro_overlay.TITLE_LINES) == APP_NAME
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
     title = re.search(r"\n\.title \{([^}]*)\}", css)
-    assert title and "text-transform" not in title.group(1)
+    assert title and "text-transform: uppercase;" in title.group(1)
 
 
 def test_title_floor_follows_the_room_left_by_the_side_padding() -> None:
-    """둘째 줄 「AX Management」(약 6.51em)는 바닥 44px 에서 약 286px 다. 좌우 여백이 16px 에 멈추는
-    360px 보다 좁은 창에서는 그 자리에 6.6em 이 드는 크기로 바닥이 내려가야 한 줄을 지킨다(320px
-    창이면 약 43.6px). 바닥과 여백이 같은 변수(`--side`)를 봐야 한쪽만 바뀌지 않는다."""
+    """둘째 줄 「AX MANAGEMENT」(7.39em)는 바닥 44px 에서 약 325px 다. 좌우 여백이 16px 에 멈추는
+    360px 보다 좁은 창에서는 그 자리에 7.45em 이 드는 크기로 바닥이 내려가야 한 줄을 지킨다(320px
+    창이면 약 39px). 바닥과 여백이 같은 변수(`--side`)를 봐야 한쪽만 바뀌지 않는다."""
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
     entry = re.search(r"\n\.entry \{([^}]*)\}", css)
     title = re.search(r"\n\.title \{([^}]*)\}", css)
     assert entry is not None and title is not None
     assert "--side: clamp(16px, 4.5vw, 64px);" in entry.group(1)
     assert re.search(r"padding: [^;]* var\(--side\) [^;]*;", entry.group(1))
-    floor = "min(44px, (100vw - 2 * var(--side)) / 6.6)"
+    floor = "min(44px, (100vw - 2 * var(--side)) / 7.45)"
     assert f"font-size: clamp({floor}, 6.6vw, 94px);" in title.group(1)
 
 
@@ -1017,7 +1018,7 @@ def test_opening_the_summary_asks_once_for_pending_parts() -> None:
 
 def test_the_entry_veil_covers_the_title_to_its_right_end() -> None:
     """넓은 화면의 그늘은 80% 구간을 타이틀 글자의 오른쪽 끝(+24px)까지 늘리고 그 뒤 화면 폭의
-    20% 에 걸쳐 걷는다 — 둘째 줄 「AX Management」 가 웨이퍼에 겹쳐도 글자 밑이 바탕색 80% 다
+    20% 에 걸쳐 걷는다 — 둘째 줄 「AX MANAGEMENT」 가 웨이퍼에 겹쳐도 글자 밑이 바탕색 80% 다
     (2026-10-18 사용자 결정 D안, 자리·크기는 그대로). 끝을 모르면 원래 모양(36% → 68%)이고 62% 를
     넘지 않는다. 메인 스레드가 글꼴이 올라온 뒤와 창 크기가 바뀔 때 타이틀 끝을 재어 장면에
     보낸다."""
