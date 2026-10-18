@@ -64,7 +64,6 @@ from capa_simulation.components.intro_overlay import (
     BRAND_SUBTITLE,
     MARK_DIE_ORIGINS,
     MARK_RING_PATH,
-    SUMMARY_LABEL,
     SUMMARY_LABEL_ARIA,
     SUMMARY_LABEL_ID,
     SUMMARY_LABEL_WAITING,
@@ -865,7 +864,8 @@ def render_intro_summary(database_path: str) -> None:
 
 
 # 사이드바 머리칸의 앱 이름 라벨 — 심볼 옆에 `S.PKG CAPA`(위)와 `AX Management`(아래) 두 줄,
-# 오른쪽에 `Summary` 안내 글자. 누르면 Summary 가 열린다. 테마 버튼 iframe 에 실려 한 번만 돈다.
+# 오른쪽에 Summary 단추(요약 막대 그림). 누르면 Summary 가 열린다. 테마 버튼 iframe 에 실려 한
+# 번만 돈다.
 #
 # - **자리**: 사이드바 머리칸(`theme_toggle.SIDEBAR_HEADER_SLOT`) 맨 앞. 오른쪽 끝은 접기
 #   버튼이다. 머리칸은 React 가 다시 그릴 수 있어 라벨이 빠지면 다시 끼운다(관찰자를 끊지
@@ -915,7 +915,7 @@ _LABEL_SCRIPT = """
       label.innerHTML = '<span class="capa-brand-name">' + %(icon)s
         + '<span class="capa-brand-text"><span class="capa-brand-word">%(brand)s</span>'
         + '<span class="capa-brand-sub">%(subtitle)s</span></span></span>'
-        + '<span class="capa-brand-hint">%(hint)s</span>';
+        + '<span class="capa-brand-hint" aria-hidden="true">%(hint)s</span>';
       label.setAttribute("aria-label", "%(aria)s");
       label.setAttribute("aria-disabled", "true");
       label.title = "%(waiting)s";
@@ -946,32 +946,36 @@ _LABEL_SCRIPT = """
 # 같은 가운데 줄 — 에 선다. 심볼은 입장 화면·Summary 머리 심볼(`intro.css` 의 `.logo`)과 같은 30px,
 # 글자 묶음과의 틈 10px 다(2026-10-08 사용자 요청 — 같은 크기로).
 # - **두 줄**(2026-10-17 사용자 요청): 위 줄 워드마크 18px(줄높이 16px — 대문자뿐이라 아래 꼬리가
-#   없다)와 아래 줄 부제 11px(줄높이 14px)를 틈 없이 쌓아 합 30px 가 라벨 안쪽 높이(32px) 가운데에
-#   선다. 그래서 묶음의 가운데가 심볼·접기 버튼의 가운데와 같고 머리칸은 높아지지 않는다. 부제는
-#   본문 글꼴 500 · `TEXT_MUTED`(머리 띠의 옅은 아랫줄과 같은 색)다. 두 줄 사이(위 줄 기준선 → 부제
+#   없다)와 아래 줄 부제 11px(줄높이 14px)를 틈 없이 쌓고 위 2px 를 띄워, 합 32px 가 라벨 안쪽
+#   높이와 같다. 위 2px 는 글자 묶음(위 줄 대문자 윗선 ~ 부제 기준선)의 가운데를 심볼·접기 버튼의
+#   가운데에 맞춘다 — 줄 상자만 가운데에 두면 부제 아래 꼬리 몫만큼 글자가 위로 떠 보였다(10-18
+#   사용자 지적, 실측 −1.4px · 글꼴 상자가 큰 글꼴 −0.9px). 머리칸은 높아지지 않는다. 부제는 본문
+#   글꼴 500 · `TEXT_MUTED`(머리 띠의 옅은 아랫줄과 같은 색)다. 두 줄 사이(위 줄 기준선 → 부제
 #   대문자 위)는 약 3.5px 다 — 줄높이 18px · 틈 1px · 13px 이던 때는 5px 라 두 줄이 떨어져
 #   보였다(10-18 사용자 요청).
 # - **「g」 꼬리**: 부제 칸은 말줄임 때문에 넘친 글자를 자르는데, 자르는 가장자리가 줄 상자 아래
 #   끝이라 Windows 의 맑은 고딕처럼 글꼴 상자가 줄높이보다 큰 글꼴에서는 「g」 꼬리가 잘렸다(10-18
-#   사용자 지적 — WSL 의 글꼴로는 1px 남아 안 보였다). 아래 안쪽 여백 2px 를 같은 크기의 음수 바깥
-#   여백으로 되돌려 배치는 그대로 두고 자르는 가장자리만 2px 내린다. 2px 를 넘기면 칸 아래 끝이 라벨
-#   아래 끝(34px)을 넘어 화면 확인(`check_deploy_screens` 의 symbol)이 잘림으로 센다.
-# - **안내 글자** `Summary` 는 두 줄 묶음 오른쪽에 따로, 그 가운데 높이에 선다(틈 7px). 부제보다
-#   굵어(600) 이름의 일부가 아니라 누르면 열리는 곳으로 읽힌다. 기본 300px 사이드바에서 라벨은 약
-#   204px(본문 글꼴이 Noto Sans KR 이면 약 206px)이고 자리는 약 210px 다 — 틈을 더 벌리면 운영체제
-#   글꼴이 조금만 넓어도 기본 폭에서 안내 글자가 빠진다.
-# - **좁은 사이드바**: 오른쪽 끝 접기 버튼 자리(28px + 틈 — 2.25rem)는 비운다. 안내 글자는 **통째로
+#   사용자 지적 — WSL 의 글꼴로는 1px 남아 안 보였다). 아래 안쪽 여백 1px 를 같은 크기의 음수 바깥
+#   여백으로 되돌려 배치는 그대로 두고 자르는 가장자리만 1px 내린다 — 위 2px 와 합쳐 칸 아래 끝이
+#   라벨 아래 끝(34px)과 같다. 더 내리면 화면 확인(`check_deploy_screens` 의 symbol)이 잘림으로
+#   센다.
+# - **Summary 단추**: 두 줄 묶음 오른쪽(틈 7px)에 26px 윤곽 네모 안 요약 막대 그림(16px)을 둔다 —
+#   글자 `Summary`(11px)는 두 줄 이름에 비해 작아 비율이 어긋났다(10-18 사용자 결정, 시안 셋 가운데
+#   B). 글자가 아니라 폭이 운영체제 글꼴과 상관없고, 라벨이 약 180px 라 기본 300px 사이드바의 자리
+#   (약 209px)에 여유가 있다. 뜻은 라벨의 풍선(「공식버전 요약 보기」)과 읽는 이름(「… Summary
+#   열기」)이 말한다. 올리면 테두리·그림이 강조색이다.
+# - **좁은 사이드바**: 오른쪽 끝 접기 버튼 자리(28px + 틈 — 2.25rem)는 비운다. 단추는 **통째로
 #   서거나 통째로 빠진다** — 라벨이 줄바꿈 flex 라, 심볼과 두 줄 묶음(`capa-brand-name`, 한 덩이)
-#   옆에 안내 글자가 다 들어가지 않으면 안내 글자가 둘째 줄로 내려가 라벨 높이(34px) 밖에서
-#   가려지고, 그동안 묶음은 줄지 않는다. 글자 폭을 재지 않으므로 운영체제 글꼴이 넓어도 `Summ…`
-#   이나 `S.PKG CA…` 로 반쯤 잘리지 않는다. 사이드바 폭은 사용자가 끌어 바꾸므로 머리칸 폭(사이드바
-#   − 55px)을 컨테이너 질의로도 본다. 240px 보다 좁으면(사이드바 295px 미만) 안내 글자를 아예 빼
-#   라벨 상자(올렸을 때의 면)가 글자에 맞게 준다 — 둘째 줄로 내려간 동안은 상자가 빈 자리까지
-#   덮는다. 190px 보다 좁으면(사이드바 245px 미만) 심볼 24px · 워드마크 15px · 부제 10px 로
+#   옆에 단추가 다 들어가지 않으면 단추가 둘째 줄로 내려가 라벨 높이(34px) 밖에서 가려지고, 그동안
+#   묶음은 줄지 않는다. 그래서 `S.PKG CA…` 로 반쯤 잘리지 않는다. 사이드바 폭은 사용자가 끌어
+#   바꾸므로 머리칸 폭(사이드바 − 55px)을 컨테이너 질의로도 본다. 222px 보다 좁으면(사이드바 277px
+#   미만) 단추를 아예 빼 라벨 상자(올렸을 때의 면)가 글자에 맞게 준다 — 둘째 줄로 내려간 동안은
+#   상자가 빈 자리까지 덮는다. 222px 는 라벨(약 180px)과 접기 버튼 자리가 드는 폭(약 216px)보다
+#   조금 위다. 190px 보다 좁으면(사이드바 245px 미만) 심볼 24px · 워드마크 15px · 부제 10px 로
 #   줄인다. 190px 은 18px 두 줄이 들어가는 머리칸 폭(약 182px, 부제가 워드마크보다 넓은 DejaVu Sans
 #   에서 약 184px)보다 넉넉히 위라 그 사이에 말줄임이 서지 않는다. 그래도 모자라면(200px
 #   사이드바에 넓은 본문 글꼴) 줄마다 말줄임으로 끝난다.
-# - **누를 수 없을 때**(준비 중·열 수 없음): 안내 글자만 옅어진다(0.6). 안내 글자가 빠진 좁은
+# - **누를 수 없을 때**(준비 중·열 수 없음): 단추만 옅어진다(0.6). 단추가 빠진 좁은
 #   사이드바에서는 겉모습이 같고, 커서(`not-allowed`)·풍선(`title`)·올려도 면이 서지 않는 것으로만
 #   갈린다 — 라벨은 앱 이름이기도 해서 심볼·이름은 흐리게 두지 않는다.
 _LABEL_CSS = """
@@ -986,7 +990,9 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
 #__ID__ .capa-brand-name {
   display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0;
 }
-#__ID__ svg { width: 30px; height: 30px; flex: none; display: block; margin-right: 3px; }
+#__ID__ .capa-brand-name > svg {
+  width: 30px; height: 30px; flex: none; display: block; margin-right: 3px;
+}
 #__ID__ svg .capa-mark-turn, #__ID__ svg .capa-mark-spin {
   transform-box: view-box; transform-origin: 50px 50px;
 }
@@ -995,7 +1001,7 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
 }
 #__ID__ .capa-brand-text {
   display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0;
-  flex: 0 1 auto; min-width: 0;
+  padding-top: 2px; flex: 0 1 auto; min-width: 0;
 }
 #__ID__ .capa-brand-word, #__ID__ .capa-brand-sub {
   display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
@@ -1006,23 +1012,27 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
 }
 #__ID__ .capa-brand-sub {
   font-size: 11px; font-weight: 500; line-height: 14px; letter-spacing: 0.01em;
-  padding-bottom: 2px; margin-bottom: -2px; color: __TEXT_MUTED__;
+  padding-bottom: 1px; margin-bottom: -1px; color: __TEXT_MUTED__;
 }
 #__ID__ .capa-brand-hint {
-  flex: none; font-size: 11px; font-weight: 600; color: __TEXT_MUTED__;
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; box-sizing: border-box;
+  border: 1px solid __BORDER__; border-radius: 7px; color: __TEXT_MUTED__;
 }
-@container capa-sidebar-head (width < 240px) {
+#__ID__ .capa-brand-hint svg { width: 16px; height: 16px; display: block; }
+@container capa-sidebar-head (width < 222px) {
   #__ID__ .capa-brand-hint { display: none; }
 }
 @container capa-sidebar-head (width < 190px) {
   #__ID__ { padding: 0 1px; }
   #__ID__ .capa-brand-name { gap: 4px; }
-  #__ID__ svg { width: 24px; height: 24px; margin-right: 0; }
+  #__ID__ .capa-brand-name > svg { width: 24px; height: 24px; margin-right: 0; }
   #__ID__ .capa-brand-word { font-size: 15px; line-height: 14px; }
   #__ID__ .capa-brand-sub { font-size: 10px; line-height: 12px; letter-spacing: 0; }
 }
 #__ID__:hover:not([aria-disabled="true"]) { background: __SURFACE__; border-color: __BORDER__; }
-#__ID__:hover:not([aria-disabled="true"]) .capa-brand-hint { color: __ACCENT__; }
+#__ID__:hover:not([aria-disabled="true"]) .capa-brand-hint {
+  color: __ACCENT__; border-color: __ACCENT__;
+}
 #__ID__:focus-visible { outline: 2px solid __ACCENT__; outline-offset: 2px; }
 #__ID__[aria-disabled="true"] { cursor: not-allowed; }
 #__ID__[aria-disabled="true"] .capa-brand-hint { opacity: 0.6; }
@@ -1094,6 +1104,16 @@ def _label_icon() -> str:
     )
 
 
+# 라벨 오른쪽 Summary 단추의 그림 — 윤곽 네모 안 막대 셋(요약 차트). 글자 `Summary` 를 대신한다
+# (2026-10-18 사용자 결정 B안). 라벨 스크립트의 작은따옴표 JS 글 안에 들어가므로 큰따옴표만 쓴다.
+_HINT_ICON = (
+    '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" '
+    'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M4.4 1.8h7.2a2.6 2.6 0 0 1 2.6 2.6v7.2a2.6 2.6 0 0 1-2.6 2.6H4.4a2.6 2.6 0 0 1'
+    '-2.6-2.6V4.4a2.6 2.6 0 0 1 2.6-2.6zM5 11V8.6M8 11V5M11 11V7"/></svg>'
+)
+
+
 def _label_css(mode: str) -> str:
     def value(name: str) -> str:
         return str(tokens.palette_value(mode, name))
@@ -1129,7 +1149,7 @@ def summary_label_script() -> str:
         "icon": json.dumps(_label_icon()),
         "brand": BRAND,
         "subtitle": BRAND_SUBTITLE,
-        "hint": SUMMARY_LABEL,
+        "hint": _HINT_ICON,
         "aria": SUMMARY_LABEL_ARIA,
         "waiting": SUMMARY_LABEL_WAITING,
         "light": json.dumps(_label_css("light")),

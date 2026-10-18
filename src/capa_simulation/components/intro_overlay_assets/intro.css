@@ -180,8 +180,11 @@
 
 /* 라벨은 앱 이름 두 줄이다 — 위 줄 워드마크(`S.PKG CAPA`), 아래 줄 작은 부제(`AX Management` — 본문 글꼴
    500 · 11px · 옅은 글자색, 사이드바 라벨과 같다). 위 줄 줄높이 16px(대문자뿐이라 아래 꼬리가 없다) + 틈 없이
-   14px = 30px 라 머리 줄(34px)이 높아지지 않고 두 줄 묶음의 가운데가 심볼·Detail 의 가운데와 같다. 두 줄 사이는
-   사이드바 라벨과 같은 약 3.5px 다(intro_summary 의 `_LABEL_CSS`). 부제가 위 줄보다
+   14px 에 위 2px 를 띄워 32px 라 머리 줄(34px)이 높아지지 않는다. 위 2px 는 글자 묶음(위 줄 대문자 윗선 ~ 부제
+   기준선)의 가운데를 심볼·Detail 의 가운데에 맞춘다 — 줄 상자 가운데로 맞추면 부제 아래 꼬리 몫만큼 글자가 1px
+   남짓 위로 떠 보였다(2026-10-18 사용자 지적). 두 줄 사이는 사이드바 라벨과 같은 약 3.5px 다(intro_summary 의
+   `_LABEL_CSS`). 입장 단계에서는 이 라벨을 띄우지 않는다 — 타이틀이 같은 이름을 맡고, 떠날 때 타이틀이 이
+   자리로 들어가며 라벨이 톡 선다(intro.js `handOffTitle`). 부제가 위 줄보다
    좁아 묶음 폭은 한 줄이던 때와 같다. 줄마다 한 줄을 지킨다 — 머리 줄이 빠듯하면 오른쪽 공식버전 칩·기간 글자가
    먼저 줄어든다(토글 셋이 선 뒤 768px 창에서 `S.PKG CAPA` 가 두 줄로 접혔다). 좁은 창의 입장 화면에서는 머리 줄이
    웨이퍼 맵 위에 얹혀 옅은 부제가 청록 다이와 같은 밝기가 되므로 장면 바탕색 그늘을 두른다 — 바탕 위에서는 보이지
@@ -193,6 +196,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 0;
+  padding-top: 2px;
   text-shadow: 0 0 2px var(--surface), 0 0 6px var(--surface);
 }
 
@@ -357,18 +361,19 @@
   max-width: min(700px, 100%);
 }
 
-/* 긴 둘째 줄 「AX MANAGEMENT」 는 7.39em 이다. 상한 94px 는 그 줄이 `.main` 최대 폭 700px 안에 한 줄로
-   서는 크기(약 694px)다. 바닥은 44px(약 325px)이되 창 폭에서 좌우 여백을 뺀 자리에 7.45em 이 드는 크기를
-   넘지 않는다 — 여백이 16px 에 멈추는 360px 보다 좁은 창(320px 에서 약 39px)에서도 둘째 줄이 한 줄이다. */
+/* 타이틀은 앱 이름 표기 그대로다(「AX Management」 — 대문자로 바꾸지 않는다, 2026-10-18 사용자 결정). 긴 둘째
+   줄은 약 6.51em 이라 상한 94px 에서 약 612px 로 `.main` 최대 폭 700px 안이다 — 상한은 대문자(7.39em)이던 때
+   그대로 둔다(더 키우면 웨이퍼와 더 겹친다). 바닥은 44px(약 286px)이되 창 폭에서 좌우 여백을 뺀 자리에 6.6em 이
+   드는 크기를 넘지 않는다 — 여백이 16px 에 멈추는 360px 보다 좁은 창(320px 에서 약 43.6px)에서도 둘째 줄이
+   한 줄이다. */
 .title {
   margin: 0;
   font-family: var(--display);
   font-weight: 800;
   font-stretch: 75%;
-  font-size: clamp(min(44px, (100vw - 2 * var(--side)) / 7.45), 6.6vw, 94px);
+  font-size: clamp(min(44px, (100vw - 2 * var(--side)) / 6.6), 6.6vw, 94px);
   line-height: 0.86;
   letter-spacing: 0;
-  text-transform: uppercase;
   text-wrap: balance;
 }
 

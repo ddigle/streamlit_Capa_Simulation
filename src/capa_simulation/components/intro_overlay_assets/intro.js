@@ -30,6 +30,8 @@ const SUMMARY_LABEL_ID = "capa-brand-label";
 const ENTERED_KEY = "capa-intro-entered";
 const EASE = "cubic-bezier(.6,0,0,1)";
 const OUT = "cubic-bezier(.16,1,.3,1)";
+// 점점 빨라지는 곡선 — 타이틀이 라벨 자리로 빨려 들어갈 때(`handOffTitle`).
+const IN = "cubic-bezier(.55,0,.85,.35)";
 const READY_STATES = new Set(["notRunning", "compilationError"]);
 // theme_toggle 이 곧 한 번 새로고침할 차례면(주소의 테마 인자가 저장된 테마와 다르거나 없으면)
 // 그동안은 앱 바탕색 한 장만 보여 주고 인트로를 아낀다. 헤더에 테마 버튼이 서면 새로고침이 없다는
@@ -63,6 +65,9 @@ const SUMMARY_TIMING = Object.freeze({
   openChartsAt: 420,
   rows: [0, 380, 800],
 });
+// 입장 화면을 떠날 때(Detail · Summary) 타이틀이 라벨 자리로 날아가 사라지고(`flyMs`), 잠깐 쉰 뒤(`pauseMs`)
+// 라벨이 톡 튀어나온다(`popMs`). 합쳐 1초 안이고 본래 전환은 그 뒤에 잇는다(2026-10-18 사용자 요청).
+const TITLE_HANDOFF = Object.freeze({ flyMs: 480, pauseMs: 80, popMs: 300 });
 // 요약 화면의 웨이퍼: 제자리·같은 크기·같은 속도로 돌며 20% 만 남기고 무채색이 된다(사용자 결정).
 const SUMMARY_LOOK = Object.freeze({ fade: 0.2, mono: 1 });
 const EXIT_MS = 950;
@@ -2724,6 +2729,44 @@ function createOverlay(api, data, initial, syncToolbar) {
     elements.forEach((el) => el && el.getAnimations().forEach((a) => a.cancel()));
   }
 
+  // 입장 화면을 떠날 때(Detail · Summary) 타이틀이 작아지고 옅어지며 심볼 옆 라벨 자리로 점점 빨라지며
+  // 빨려 들어가고, 다 투명해진 뒤 잠깐 쉬었다가 라벨(앱 이름 두 줄)이 톡 튀어나온다(2026-10-18 사용자 요청).
+  // 입장 단계에서는 타이틀이 같은 이름을 맡아 라벨 글자를 띄우지 않았다(`revealEntry`). 타이틀 상자의 왼쪽
+  // 위를 라벨 상자의 왼쪽 위로 옮기며 높이 비율로 줄인다 — 두 줄 대 두 줄이라 폭도 거의 맞는다. 본래
+  // 전환(Detail 의 구멍 · Summary 조립)은 이것이 끝난 뒤 잇는다.
+  let handedOff = false;
+  async function handOffTitle() {
+    if (handedOff) return;
+    handedOff = true;
+    const brand = $(".head > .brand");
+    const H = TITLE_HANDOFF;
+    if (reduce) {
+      // 떠오르기 애니메이션(채움 both)이 투명도를 쥐고 있어 먼저 걷는다.
+      cancelAll([title]);
+      title.style.opacity = "0";
+      await anim(brand, [{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "linear" });
+      return;
+    }
+    const from = title.getBoundingClientRect();
+    const to = brand.getBoundingClientRect();
+    const scale = from.height ? to.height / from.height : 1;
+    const move = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${scale})`;
+    title.style.transformOrigin = "0 0";
+    // 투명도도 같은 곡선이라 처음에는 진하게 남아 줄어드는 것이 보이고, 라벨 자리에 닿을 때 사라진다.
+    await anim(title, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: move }], { duration: H.flyMs, easing: IN });
+    await new Promise((resolve) => timers.push(window.setTimeout(resolve, H.pauseMs)));
+    brand.style.transformOrigin = "0 50%";
+    await anim(
+      brand,
+      [
+        { opacity: 0, transform: "scale(.5)" },
+        { opacity: 1, transform: "scale(1.12)", offset: 0.55 },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: H.popMs, easing: OUT },
+    );
+  }
+
   // Detail 이 심볼·라벨 옆으로 옮겨 가며 라벨과 같은 글자가 된다. 바탕은 148×52 → 86×30(같은 비율),
   // 글자는 20px → 18px 한 비율로 — 둘 다 transform 만 움직여 찌그러짐·글자 재배치가 없다.
   function dockDetail(animate) {
@@ -2744,6 +2787,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   async function summaryFromEntry() {
     if (busy || mode !== "intro" || !canSummary()) return;
     busy = true;
+    await handOffTitle();
     mode = "summary";
     window.clearInterval(poller);
     stage.classList.add("summary");
@@ -2768,8 +2812,7 @@ function createOverlay(api, data, initial, syncToolbar) {
       instant: reduce,
     });
     scheduleLabels(T.chartsAt);
-    // 1) 메인 타이틀과 로딩 막대가 위로 밀려나며 사라진다.
-    anim(title, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-48px)" }], { duration: reduce ? 1 : T.outMs });
+    // 1) 로딩 막대가 위로 밀려나며 사라진다(타이틀은 이미 라벨 자리로 들어갔다 — `handOffTitle`).
     anim($(".load"), [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-36px)" }], { duration: reduce ? 1 : T.outMs, delay: reduce ? 0 : 60 });
     // 2) 누른 Summary 는 Detail 아래로 겹쳐 들어가며 사라진다.
     const dx = detail.getBoundingClientRect().left - summaryButton.getBoundingClientRect().left;
@@ -2862,6 +2905,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   async function toDetail() {
     if (busy || mode === "hidden" || detail.disabled) return;
     busy = true;
+    if (mode === "intro") await handOffTitle();
     rememberEntered();
     setInert(false);
     tip.style.opacity = "0";
@@ -2972,9 +3016,11 @@ function createOverlay(api, data, initial, syncToolbar) {
   }
 
   // 입장 화면 글자는 시작할 때 **지연을 실어 미리** 걸어 둔다. 투명도·이동 애니메이션은 합성기가 돌리므로,
-  // 그 순간 메인 스레드가 막혀 있어도 제때 나타난다.
+  // 그 순간 메인 스레드가 막혀 있어도 제때 나타난다. 머리 줄 라벨(앱 이름 두 줄)은 띄우지 않는다 — 입장
+  // 단계에서는 타이틀이 같은 이름을 맡고, 떠날 때 타이틀이 그 자리로 들어가며 라벨이 선다(`handOffTitle`,
+  // 2026-10-18 사용자 결정).
   function revealEntry(delay) {
-    $$(".head > .logo, .head > .brand, .main > *").forEach((part, index) => {
+    $$(".head > .logo, .main > *").forEach((part, index) => {
       const animation = part.animate(
         reduce
           ? [{ opacity: 0 }, { opacity: 1 }]

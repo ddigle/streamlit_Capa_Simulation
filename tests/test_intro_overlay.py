@@ -61,13 +61,13 @@ def test_registered_js_carries_the_assets_verbatim() -> None:
 
 
 def test_every_display_string_is_covered_by_the_font_subset() -> None:
-    """부분 글꼴에 없는 글자는 조용히 본문 글꼴로 떨어진다. 타이틀은 CSS 가 대문자로 바꾼다.
+    """부분 글꼴에 없는 글자는 조용히 본문 글꼴로 떨어진다. 타이틀은 앱 이름 표기 그대로다.
 
     시트의 달(`26.10`)은 표시 글꼴, 차트 숫자·단위는 숫자 글꼴이다.
     """
     covered = set(intro_overlay.FONT_SUBSET_TEXT)
     shown = intro_overlay.BRAND + intro_overlay.DETAIL_LABEL + intro_overlay.SUMMARY_LABEL
-    shown += "".join(line + line.upper() for line in intro_overlay.TITLE_LINES)
+    shown += "".join(intro_overlay.TITLE_LINES)
     shown += "0123456789."
 
     assert set(shown) <= covered, sorted(set(shown) - covered)
@@ -76,26 +76,27 @@ def test_every_display_string_is_covered_by_the_font_subset() -> None:
 
 def test_title_lines_are_the_app_name_label_and_subtitle() -> None:
     """타이틀 두 줄은 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 머리 줄·사이드바
-    라벨의 두 줄(`BRAND` · `BRAND_SUBTITLE`)과 같은 글자이고, 화면에는 CSS 가 대문자로
-    바꿔 보인다."""
+    라벨의 두 줄(`BRAND` · `BRAND_SUBTITLE`)과 같은 글자이고, 화면에도 표기 그대로 「AX Management」
+    다 — 10-17 밤 CSS 로 대문자로 바꿨다가 10-18 되돌렸다(사용자 결정)."""
     assert (intro_overlay.BRAND, intro_overlay.BRAND_SUBTITLE) == (APP_LABEL, APP_SUBTITLE)
     assert intro_overlay.TITLE_LINES == (APP_LABEL, APP_SUBTITLE)
     assert " ".join(intro_overlay.TITLE_LINES) == APP_NAME
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
-    assert re.search(r"\.title \{[^}]*text-transform: uppercase;", css)
+    title = re.search(r"\n\.title \{([^}]*)\}", css)
+    assert title and "text-transform" not in title.group(1)
 
 
 def test_title_floor_follows_the_room_left_by_the_side_padding() -> None:
-    """둘째 줄 「AX MANAGEMENT」(7.39em)는 바닥 44px 에서 약 325px 다. 좌우 여백이 16px 에 멈추는
-    360px 보다 좁은 창에서는 그 자리에 7.45em 이 드는 크기로 바닥이 내려가야 한 줄을 지킨다(320px
-    창이면 약 39px). 바닥과 여백이 같은 변수(`--side`)를 봐야 한쪽만 바뀌지 않는다."""
+    """둘째 줄 「AX Management」(약 6.51em)는 바닥 44px 에서 약 286px 다. 좌우 여백이 16px 에 멈추는
+    360px 보다 좁은 창에서는 그 자리에 6.6em 이 드는 크기로 바닥이 내려가야 한 줄을 지킨다(320px
+    창이면 약 43.6px). 바닥과 여백이 같은 변수(`--side`)를 봐야 한쪽만 바뀌지 않는다."""
     css = (ASSETS / "intro.css").read_text(encoding="utf-8")
     entry = re.search(r"\n\.entry \{([^}]*)\}", css)
     title = re.search(r"\n\.title \{([^}]*)\}", css)
     assert entry is not None and title is not None
     assert "--side: clamp(16px, 4.5vw, 64px);" in entry.group(1)
     assert re.search(r"padding: [^;]* var\(--side\) [^;]*;", entry.group(1))
-    floor = "min(44px, (100vw - 2 * var(--side)) / 7.45)"
+    floor = "min(44px, (100vw - 2 * var(--side)) / 6.6)"
     assert f"font-size: clamp({floor}, 6.6vw, 94px);" in title.group(1)
 
 
@@ -341,19 +342,21 @@ def _label_rule(css: str, part: str = "") -> str:
 
 def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() -> None:
     """사이드바 라벨은 심볼 옆에 앱 이름 두 줄(위 워드마크 · 아래 작은 부제)을 쌓는다(2026-10-17
-    사용자 요청). 두 줄 묶음이 라벨 안쪽 높이(34px − 윤곽 2px) 안 가운데에 서서 심볼·접기 버튼과
-    같은 가운데이고 머리칸이 높아지지 않는다. 두 줄은 틈 없이 붙인다 — 위 줄은 대문자뿐이라 줄높이를
-    글자보다 낮춘다(10-18 사용자 요청 「간격을 좁혀」). 부제 칸은 자르는 가장자리를 줄 상자 아래로
-    내려 맑은 고딕처럼 글꼴 상자가 큰 글꼴에서도 「g」 꼬리가 잘리지 않는다. 부제는 본문 글꼴의 옅은
-    글자다. 안내 글자 `Summary` 는 묶음 밖 오른쪽이다."""
+    사용자 요청). 두 줄 묶음이 라벨 안쪽 높이(34px − 윤곽 2px) 안에 서서 머리칸이 높아지지
+    않는다. 두 줄은 틈 없이 붙인다 — 위 줄은 대문자뿐이라 줄높이를 글자보다 낮춘다(10-18 사용자
+    요청 「간격을 좁혀」). 묶음 위를 2px 띄워 글자(위 줄 대문자 윗선 ~ 부제 기준선)의 가운데를
+    심볼·접기 버튼의 가운데에 맞춘다 — 줄 상자만 가운데에 두면 글자가 위로 떠 보였다(같은 날 사용자
+    지적). 부제 칸은 자르는 가장자리를 줄 상자 아래로 내려 맑은 고딕처럼 글꼴 상자가 큰 글꼴에서도
+    「g」 꼬리가 잘리지 않는다. 부제는 본문 글꼴의 옅은 글자다. Summary 단추는 묶음 밖
+    오른쪽이다."""
     from capa_simulation.components import intro_summary
 
     script = intro_summary.summary_label_script()
-    # 심볼과 두 줄 묶음은 한 덩이(`capa-brand-name`)이고 안내 글자는 그 밖이다.
+    # 심볼과 두 줄 묶음은 한 덩이(`capa-brand-name`)이고 Summary 단추는 그 밖이다.
     name = re.escape("""'<span class="capa-brand-name">' + "<svg """)
     text = re.escape('<span class="capa-brand-text"><span class="capa-brand-word">')
     sub = re.escape('<span class="capa-brand-sub">')
-    hint = re.escape('<span class="capa-brand-hint">')
+    hint = re.escape('<span class="capa-brand-hint" aria-hidden="true"><svg ')
     assert re.search(
         rf"{name}[^\n]*</svg>\"\s*\+ '{text}{re.escape(APP_LABEL)}</span>'"
         rf"\s*\+ '{sub}{re.escape(APP_SUBTITLE)}</span></span></span>'\s*\+ '{hint}",
@@ -370,8 +373,9 @@ def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() ->
         inner = height - 2
         assert "gap: 0;" in block
         assert _px_value(word, "line-height") < _px_value(word, "font-size")
-        stack = _px_value(word, "line-height") + _px_value(subtitle, "line-height")
-        assert stack <= inner
+        lift = _px_value(block, "padding-top")
+        stack = lift + _px_value(word, "line-height") + _px_value(subtitle, "line-height")
+        assert 0 < lift <= 2 and stack <= inner
         # 자르는 가장자리는 안쪽 여백만큼 내리고 같은 바깥 여백으로 되돌려 배치는 그대로다. 내린
         # 가장자리도 라벨 아래 끝 안이다(밖이면 화면 확인이 부제를 잘림으로 센다).
         room = _px_value(subtitle, "padding-bottom")
@@ -387,10 +391,11 @@ def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() ->
 
 
 def test_the_sidebar_hint_stands_whole_or_drops_and_never_cuts_the_name() -> None:
-    """안내 글자 `Summary` 는 통째로 서거나 통째로 빠진다 — 라벨이 줄바꿈 flex 라 심볼·두 줄 묶음
-    (한 덩이) 옆에 다 들어가지 않으면 둘째 줄로 내려가 라벨 높이 밖에서 가려지고, 그동안 묶음은 줄지
-    않는다. 그래서 글꼴이 넓어도 `Summ…` 이나 `S.PKG CA…` 가 서지 않는다. 사이드바 폭은 사용자가
-    끌어 바꾸므로 머리칸 폭도 컨테이너 질의로 본다 — 좁으면 안내 글자를 아예 빼고, 더 좁으면 심볼과
+    """Summary 단추(26px 윤곽 네모 안 요약 막대 그림 — 2026-10-18 사용자 결정 B안)는 통째로 서거나
+    통째로 빠진다 — 라벨이 줄바꿈 flex 라 심볼·두 줄 묶음(한 덩이) 옆에 다 들어가지 않으면 둘째 줄로
+    내려가 라벨 높이 밖에서 가려지고, 그동안 묶음은 줄지 않는다. 그래서 `S.PKG CA…` 가 서지 않는다.
+    사이드바 폭은 사용자가 끌어 바꾸므로 머리칸 폭도 컨테이너 질의로 본다 — 좁으면 단추를 아예
+    빼고(글자 「Summary」 이던 때 240px → 단추라 222px), 더 좁으면 심볼과
     두 줄을 줄인다. 줄이는 문턱은 18px 두 줄이 들어가는 머리칸 폭(약 182px)보다 넉넉히 위다. 줄마다
     말줄임은 그래도 모자랄 때의 마지막 길이다."""
     from capa_simulation.components import intro_summary, theme_toggle
@@ -405,13 +410,23 @@ def test_the_sidebar_hint_stands_whole_or_drops_and_never_cuts_the_name() -> Non
     assert "height: 34px;" in label and "overflow: hidden;" in label
     name = _label_rule(css, " .capa-brand-name")
     assert "flex: 0 1 auto; min-width: 0;" in name
-    # 안내 글자는 줄지 않는다 — 들어가지 않으면 줄을 바꿔 빠진다.
+    # 단추는 줄지 않는다 — 들어가지 않으면 줄을 바꿔 빠진다. 글자가 아니라 폭이 글꼴과 상관없다.
     hint = _label_rule(css, " .capa-brand-hint")
     assert "flex: none;" in hint
     assert "ellipsis" not in hint and "min-width" not in hint and "margin" not in hint
+    assert "width: 26px; height: 26px;" in hint and "border: 1px solid" in hint
+    assert "font-size" not in hint
+    assert "width: 16px; height: 16px;" in _label_rule(css, " .capa-brand-hint svg")
+    hover = css[
+        css.index('#capa-brand-label:hover:not([aria-disabled="true"]) .capa-brand-hint {') :
+    ]
+    assert "border-color: " in hover[: hover.index("}")]
+    # 라벨 심볼 크기 규칙은 단추 그림에 걸리지 않는다.
+    assert "\n#capa-brand-label svg {" not in css
+    assert "width: 30px; height: 30px;" in _label_rule(css, " .capa-brand-name > svg")
     queries = re.findall(r"@container capa-sidebar-head \(width < (\d+)px\) \{", css)
-    assert [int(width) for width in queries] == [240, 190]
-    first = css[css.index("@container capa-sidebar-head (width < 240px)") :]
+    assert [int(width) for width in queries] == [222, 190]
+    first = css[css.index("@container capa-sidebar-head (width < 222px)") :]
     assert re.match(r"[^{]*\{\s*#capa-brand-label \.capa-brand-hint \{ display: none; \}", first)
     compact = css[css.index("@container capa-sidebar-head (width < 190px)") :]
     compact = compact[: compact.index("\n}\n")]
@@ -443,6 +458,8 @@ def test_the_summary_head_label_is_the_same_two_lines() -> None:
     head = re.search(r"\n\.head \{([^}]*)\}", css)
     assert brand and sub and head
     assert "flex-direction: column;" in brand.group(1) and "gap: 0;" in brand.group(1)
+    # 위 2px 로 글자 묶음의 가운데를 심볼 가운데에 맞춘다 — 사이드바 라벨과 같다.
+    assert "padding-top: 2px;" in brand.group(1)
     word = re.search(r"\n\.brand-word \{([^}]*)\}", css)
     assert word and "line-height: 16px;" in word.group(1)
     # 좁은 창의 입장 화면에서 웨이퍼 맵 위에 얹혀도 옅은 부제가 읽히게 장면 바탕색 그늘을 두른다.
@@ -451,13 +468,53 @@ def test_the_summary_head_label_is_the_same_two_lines() -> None:
     assert "font: 500 11px/14px var(--body);" in sub.group(1)
     assert "color: var(--muted);" in sub.group(1)
     height = re.search(r"height: (\d+)px;", head.group(1))
-    assert height and 16 + 14 <= int(height.group(1))
+    assert height and 2 + 16 + 14 <= int(height.group(1))
     # 사이드바 라벨과 같은 줄높이다.
     from capa_simulation.components import intro_summary
 
     label_css = intro_summary._label_css("light")
     assert "line-height: 16px;" in _label_rule(label_css, " .capa-brand-word")
     assert "line-height: 14px;" in _label_rule(label_css, " .capa-brand-sub")
+    assert "padding-top: 2px;" in _label_rule(label_css, " .capa-brand-text")
+
+
+def test_the_entry_title_hands_its_name_to_the_head_label_on_leaving() -> None:
+    """입장 단계에서는 타이틀이 앱 이름을 맡아 머리 줄 라벨 글자를 띄우지 않는다(같은 말이 두 번
+    보였다). Detail · Summary 를 누르면 타이틀이 작아지고 옅어지며 라벨 자리로 점점 빨라지며 날아가
+    사라지고, 잠깐 쉰 뒤 라벨이 톡 튀어나온 다음에야 본래 전환이 잇는다 — 합쳐 1초 안이다(2026-10-18
+    사용자 요청). 한 번만 돌고, 움직임을 줄인 사용자에게는 날지 않고 라벨만 나타난다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    timing = re.search(
+        r"const TITLE_HANDOFF = Object\.freeze\(\{ "
+        r"flyMs: (\d+), pauseMs: (\d+), popMs: (\d+) \}\);",
+        js,
+    )
+    assert timing
+    fly, pause, pop = (int(value) for value in timing.groups())
+    assert pause > 0 and fly + pause + pop <= 1000
+    # 입장 화면이 띄우는 글자에 머리 줄 라벨은 없다.
+    reveal = _between(js, "function revealEntry(delay) {", "function begin() {")
+    assert '$$(".head > .logo, .main > *")' in reveal and ".brand" not in reveal
+    hand = _between(js, "async function handOffTitle() {", "function dockDetail(animate) {")
+    assert hand.index("if (handedOff) return;") < hand.index("handedOff = true;")
+    reduced = hand[hand.index("if (reduce) {") : hand.index("const from = ")]
+    assert 'title.style.opacity = "0";' in reduced and "translate(" not in reduced
+    # 타이틀 상자 → 라벨 상자, 높이 비율로 줄이며 점점 빨라진다(IN). 투명해진 뒤 쉬고, 라벨이 튄다.
+    assert "const scale = from.height ? to.height / from.height : 1;" in hand
+    assert '[{ opacity: 1, transform: "none" }, { opacity: 0, transform: move }]' in hand
+    assert "{ duration: H.flyMs, easing: IN }" in hand
+    assert hand.index("H.flyMs, easing: IN") < hand.index("H.pauseMs") < hand.index("H.popMs")
+    assert '{ opacity: 1, transform: "scale(1.12)", offset: 0.55 }' in hand
+    # 두 길 모두 본래 전환 앞에서 기다린다. Summary 길은 타이틀을 다시 움직이지 않는다.
+    detail = _between(js, "async function toDetail() {", "function hide() {")
+    assert 'if (mode === "intro") await handOffTitle();' in detail
+    assert detail.index("await handOffTitle();") < detail.index("holeAt(detail)")
+    entry = _between(js, "async function summaryFromEntry(", "function snapToSummary(")
+    assert entry.index("await handOffTitle();") < entry.index('mode = "summary";')
+    assert "anim(title," not in entry
+    # Summary 를 원래 화면에서 열 때는 라벨이 처음부터 서 있다.
+    snap = _between(js, "function snapToSummary(", "function holeAt(")
+    assert '$$(".head > .logo, .head > .brand").forEach' in snap
 
 
 _RECT = re.compile(r'<rect [^>]*?x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="(\d+)"')

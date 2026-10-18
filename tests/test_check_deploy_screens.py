@@ -1292,8 +1292,9 @@ def test_the_intro_and_sidebar_ids_match_the_app() -> None:
 def test_the_symbol_line_check_allows_only_a_layout_unit_of_overflow() -> None:
     """「라벨 글자」의 줄마다 판정은 글자 본래 폭(Range)이 칸 폭을 배치 단위(1/64px) 남짓까지만
     넘어도 된다고 본다. 잘리지 않은 줄은 두 폭이 같고, 브라우저는 1px 보다 작은 넘침에도 말줄임을
-    그린다 — 몫이 0.5px 이면 `S.PKG CA…` · `Summ…` 를 「다 보임」으로 읽는다. 둘째 줄로 내려가 라벨
-    높이 밖에 있는 안내 글자는 빠진 것이다(잘림이 아니다 — `intro_summary._LABEL_CSS` 의 줄바꿈)."""
+    그린다 — 몫이 0.5px 이면 `S.PKG CA…` 를 「다 보임」으로 읽는다. 둘째 줄로 내려가 라벨
+    높이 밖에 있는 Summary 단추는 빠진 것이다(잘림이 아니다 — `intro_summary._LABEL_CSS` 의
+    줄바꿈)."""
     assert 1 / 64 <= screens._RANGE_SLACK_PX < 0.05
     width = f"range.getBoundingClientRect().width <= r.width + {screens._RANGE_SLACK_PX}"
     for script in (screens._LABEL_MARK_JS, screens._SUMMARY_MARK_JS):
@@ -1303,8 +1304,8 @@ def test_the_symbol_line_check_allows_only_a_layout_unit_of_overflow() -> None:
 
 
 def _narrow_rows(**changes: dict[str, str]) -> list[dict[str, Any]]:
-    """좁은 폭 라벨 측정값 — 기본은 폭마다 두 줄 다 보이고 안내 글자는 빠짐. `w236={"word": "cut"}`
-    처럼 그 폭의 칸만 바꾼다."""
+    """좁은 폭 라벨 측정값 — 기본은 폭마다 두 줄 다 보이고 Summary 단추는 빠짐.
+    `w236={"word": "cut"}` 처럼 그 폭의 칸만 바꾼다."""
     rows = []
     for width in screens.LABEL_NARROW_WIDTHS_PX:
         row: dict[str, Any] = {"width": width, "word": "whole", "sub": "whole", "hint": "gone"}
@@ -1351,8 +1352,9 @@ class _SymbolScreen(_FakeScreen):
 def test_the_symbol_item_says_cut_when_either_label_loses_a_line(
     monkeypatch: pytest.MonkeyPatch, side_fits: bool, summary_fits: bool, verdict: str
 ) -> None:
-    """「라벨 글자」는 사이드바 라벨(두 줄 + 안내 글자)과 Summary 머리 줄 라벨(두 줄)을 함께 본다 —
-    한 곳이라도 잘리면 「잘림」. 결과는 고정 낱말과 px 뿐이다(런북 7장의 기대 글과 같은 꼴)."""
+    """「라벨 글자」는 사이드바 라벨(두 줄 + Summary 단추)과 Summary 머리 줄 라벨(두 줄)을 함께
+    본다 — 한 곳이라도 잘리면 「잘림」. 결과는 고정 낱말과 px 뿐이다(런북 7장의 기대 글과 같은
+    꼴)."""
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     screen = _SymbolScreen(
         {"w": 30, "h": 30, "fits": side_fits, "ready": True},
@@ -1370,8 +1372,8 @@ def test_the_symbol_item_says_cut_when_either_label_loses_a_line(
     [
         # 좁은 폭마다 다 보인다 — 기본 폭만 재던 때와 같은 글(런북 7장의 기대 글).
         (_narrow_rows(), "다 보임"),
-        # 기본 폭 바로 아래에서 안내 글자가 반쯤(`Summ…`) — 통째로 서거나 빠져야 한다.
-        (_narrow_rows(w296={"hint": "cut"}), "잘림(좁은 폭 296px)"),
+        # 단추를 빼는 문턱 바로 위에서 단추가 반쯤 — 통째로 서거나 빠져야 한다.
+        (_narrow_rows(w280={"hint": "cut"}), "잘림(좁은 폭 280px)"),
         # 줄이는 문턱 바로 아래의 말줄임은 결함이다(문턱이 늦게 서면 `S.PKG CA…`).
         (_narrow_rows(w236={"word": "ellipsis"}), "잘림(좁은 폭 236px)"),
         # 가장 좁은 폭의 말줄임은 정한 모양 — 세기만 한다.
@@ -1410,8 +1412,8 @@ def test_a_cut_at_the_default_and_a_narrow_width_names_both() -> None:
 
 
 def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
-    """좁은 폭 셋은 라벨 CSS 의 문턱을 겨눈다 — 머리칸(사이드바 − 55px)이 296 에서는 안내 글자를
-    감추는 문턱(240px) 위라 안내 글자가 줄바꿈으로만 빠지고, 236 에서는 글꼴을 줄이는
+    """좁은 폭 셋은 라벨 CSS 의 문턱을 겨눈다 — 머리칸(사이드바 − 55px)이 280 에서는 Summary 단추를
+    감추는 문턱(222px) 바로 위라 단추가 다 서거나 줄바꿈으로만 빠지고, 236 에서는 글꼴을 줄이는
     문턱(190px) 바로 아래다. 마지막은 끌어 줄 수 있는 가장 좁은 폭이다. 잰 뒤 사이드바 원래 폭을
     되돌린다."""
     from capa_simulation.components import intro_summary
@@ -1422,7 +1424,7 @@ def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
     )
     head = 55
     first, second, last = screens.LABEL_NARROW_WIDTHS_PX
-    assert hide <= first - head < 300 - head
+    assert hide <= first - head < hide + 10
     assert shrink - 10 <= second - head < shrink
     assert last == screens.SIDEBAR_NARROW_WIDTH_PX
     script = screens._LABEL_NARROW_JS

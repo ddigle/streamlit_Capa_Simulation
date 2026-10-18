@@ -93,8 +93,9 @@ BRAND_SUBTITLE = APP_SUBTITLE
 # (`static/icons/capa_mark.svg`)이 같은 모양이다 — `tests/test_intro_overlay.py` 가 셋을 맞춰 본다.
 MARK_RING_PATH = "M83.59 26.48 A41 41 0 1 0 83.59 73.52"
 MARK_DIE_ORIGINS = (28, 44, 60)
-# 타이틀 두 줄 — 앱 이름의 메인 라벨과 부제다. 화면에는 CSS 가 대문자로 바꿔
-# 「S.PKG CAPA / AX MANAGEMENT」 로 보인다(2026-10-17 사용자 결정).
+# 타이틀 두 줄 — 앱 이름의 메인 라벨과 부제다(2026-10-17 사용자 결정). 표기 그대로
+# 「S.PKG CAPA / AX Management」 로 보인다 — 10-17 밤 대문자로 바꿨다가 10-18 되돌렸다. 입장
+# 단계에서는 머리 줄 라벨 글자를 띄우지 않고 타이틀이 이름을 맡는다(`intro.js` 의 `handOffTitle`).
 TITLE_LINES = (BRAND, BRAND_SUBTITLE)
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
@@ -108,7 +109,8 @@ SUMMARY_LABEL_WAITING = "공식버전 요약을 준비하는 중입니다"
 SUMMARY_LABEL_OFF = "공식버전 요약을 열 수 없습니다"
 # `archivo-capa.woff2` 를 만든 글자 목록. 위 넷과 시트의 달(`26.10`)에 새 글자를 쓰면 이 목록을
 # 고치고 글꼴을 다시 만든다 — `tests/test_intro_overlay.py` 는 목록에 빠진 글자만 잡고 woff2 안은
-# 보지 않는다. 타이틀은 CSS 가 대문자로 바꾸므로 대문자도 들어 있어야 한다. 만드는 길은 둘이고
+# 보지 않는다. 대문자 줄(`AX MANAGEMENT`)은 타이틀을 대문자로 보이던 때 넣은 것이라 지금은 쓰지
+# 않는다 — 글꼴을 다시 만들 일이 생기면 그때 뺀다. 만드는 길은 둘이고
 # 어느 쪽이든 된다. 지금 파일은 둘째 길로 만들었다.
 # - Google Fonts `css2?family=Archivo:wdth,wght@75,800` 에 `text=` 로 이 목록을 넘겨 받는다.
 # - Google Fonts 에 나가지 못하는 자리(사외 WSL 샌드박스)에서는 같은 원본인 google/fonts 저장소의

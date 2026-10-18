@@ -62,7 +62,7 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 | 표·차트 숫자 | `FONT_FAMILY_NUMERIC`(Calibri) | 표마다 | Plotly·`tokens` |
 | 사이드바 메뉴·상자 머리글 | 그대로 | 그대로 | `sidebar_style.py` |
 | 앱 이름 라벨 위 줄 `S.PKG CAPA`(사이드바·입장 화면/Summary 머리 줄) | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | 18px · 줄높이 16px(사이드바 머리칸 190px 미만이면 15px · 14px) | `intro_summary.py`·`intro.css` |
-| 앱 이름 라벨 아래 줄 부제 `AX Management`(같은 두 자리) | 본문 글꼴(`FONT_FAMILY`) 500 · 자간 0.01em · `TEXT_MUTED`(머리 줄은 `muted`) | 11px · 줄높이 14px(좁으면 10px · 12px) · 위 줄과 틈 없음 · 자르는 가장자리 2px 아래(「g」 꼬리) | `intro_summary.py`·`intro.css` |
+| 앱 이름 라벨 아래 줄 부제 `AX Management`(같은 두 자리) | 본문 글꼴(`FONT_FAMILY`) 500 · 자간 0.01em · `TEXT_MUTED`(머리 줄은 `muted`) | 11px · 줄높이 14px(좁으면 10px · 12px) · 위 줄과 틈 없음 · 묶음 위 2px(글자 가운데 맞춤) · 자르는 가장자리 1px 아래(「g」 꼬리) | `intro_summary.py`·`intro.css` |
 | 입장 화면 워드마크·타이틀·단추·시트의 달 | Archivo 800 · 폭 75%(`CapaIntroDisplay`) | — | `intro_overlay` |
 | Summary 차트 숫자 | Archivo 700 · 폭 100%(`CapaIntroNumber`) | — | `intro_overlay` |
 
@@ -167,14 +167,15 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 본문 쪽 띠에는 적용 중인 시나리오 두 줄(위 `TEXT` 600, 아래 `TEXT_MUTED`)과 왼쪽 `ACCENT` 3px 막대,
 사이드바 쪽에는 메인 심볼(C 링 `TEXT` · 다이 3×3 `ACCENT` · 가운데 다이 `BRAND_DIE_WARM`, 30px) 옆에
 앱 이름 두 줄 — 위 `S.PKG CAPA`(Archivo 800 · 폭 75% · 18px, 입장 화면 워드마크와 같은 글꼴 · `TEXT`), 아래
-부제 `AX Management`(본문 글꼴 500 · 11px · `TEXT_MUTED`) — 을 쌓고 그 오른쪽에 안내 글자 `Summary`(600 ·
-11px · `TEXT_MUTED`)를 둔다(2026-10-17 사용자 요청). 두 줄 묶음(16 + 14 = 30px, 틈 없이 — 두 줄 사이 약 3.5px)·심볼·안내 글자·접기
-버튼은 머리칸 한가운데 같은 줄이고 머리칸 높이는 그대로다. 안내 글자와 묶음 사이는 7px 다. 사이드바를
-좁게 끌면 안내 글자가 통째로 빠지고(반쯤 잘린 `Summ…` 은 없다 — 들어가지 않으면 줄을 바꿔 라벨 높이 밖으로
-내려간다), 더 좁으면(사이드바 245px 미만) 심볼 24px · 워드마크 15px · 부제 10px 로 줄어 200px 에서도 두 줄이
+부제 `AX Management`(본문 글꼴 500 · 11px · `TEXT_MUTED`) — 을 쌓고(2026-10-17 사용자 요청) 그 오른쪽에
+**Summary 단추**(26px 윤곽 네모 · 테두리 `BORDER` · 모서리 7px, 안에 요약 막대 그림 16px `TEXT_MUTED`)를 둔다
+(2026-10-18 사용자 결정 — 글자 `Summary` 11px 는 두 줄 이름에 비해 작았다). 두 줄 묶음(위 2px + 16 + 14 = 32px, 틈
+없이 — 두 줄 사이 약 3.5px, 위 2px 는 글자의 가운데를 심볼 가운데에 맞춘다)·심볼·단추·접기 버튼은 머리칸 한가운데
+같은 줄이고 머리칸 높이는 그대로다. 단추와 묶음 사이는 7px 다. 사이드바를 좁게 끌면(277px 미만) 단추가 통째로
+빠지고(들어가지 않으면 줄을 바꿔 라벨 높이 밖으로 내려간다), 더 좁으면(사이드바 245px 미만) 심볼 24px · 워드마크 15px · 부제 10px 로 줄어 200px 에서도 두 줄이
 다 보인다(본문 글꼴이 아주 넓으면 그 폭에서만 부제가 말줄임된다). 라벨은 앱 테마를
-따르고(입장 화면·Summary 의 고정 팔레트와 다르다), 올리면 `SURFACE` 면·`BORDER` 윤곽이 서고 안내 글자
-`Summary` 가 `ACCENT` 가 된다. 초점은 `ACCENT` 2px 윤곽이다.
+따르고(입장 화면·Summary 의 고정 팔레트와 다르다), 올리면 `SURFACE` 면·`BORDER` 윤곽이 서고 단추의
+테두리·그림이 `ACCENT` 가 된다. 초점은 `ACCENT` 2px 윤곽이다.
 본문 쪽 띠의 툴바 단추(`Guide · Print · 테마`) 바로 왼쪽에는 계산이 오래 걸리는 화면(HOME)의 진행 막대가
 계산하는 동안만 선다(2026-10-08 사용자 결정): 단계 글자 0.72rem `TEXT_MUTED`(띠 아래 줄과 같다) 아래에
 4px 막대(바탕 `BORDER` · 채움 `ACCENT`). 막대가 떠 있는 동안만 시나리오 두 줄이 그 몫을 비켜 말줄임으로

@@ -262,11 +262,12 @@ SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
 # 이 값과 다르면 측정이 틀어진 것을 안다.
 SIDEBAR_NARROW_WIDTH_PX: Final = 200
 # 사이드바 앱 이름 라벨을 기본 폭 다음에 다시 재는 좁은 폭(px). 머리칸은 사이드바 − 55px 다
-# (`intro_summary._LABEL_CSS`). 296 은 기본 300 바로 아래 — 안내 글자가 통째로 서거나 둘째 줄로
-# 빠져야 한다. 236 은 머리칸이 글꼴을 줄이는 문턱(190px) 바로 아래 — 줄인 두 줄이 다 보여야 한다.
-# 마지막 가장 좁은 폭은 넓은 본문 글꼴이면 줄마다 말줄임으로 끝나는 것까지 정한 모양이라 말줄임은
-# 세기만 하고, 말줄임 없이 잘리거나 안내 글자가 반쯤 보이면 잘림이다.
-LABEL_NARROW_WIDTHS_PX: Final = (296, 236, SIDEBAR_NARROW_WIDTH_PX)
+# (`intro_summary._LABEL_CSS`). 280 은 Summary 단추를 빼는 문턱(머리칸 222px — 사이드바 277px)
+# 바로 위 — 단추가 다 서거나 둘째 줄로 통째로 빠져야 한다. 236 은 머리칸이 글꼴을 줄이는
+# 문턱(190px) 바로 아래 — 줄인 두 줄이 다 보여야 한다. 마지막 가장 좁은 폭은 넓은 본문 글꼴이면
+# 줄마다 말줄임으로 끝나는 것까지 정한 모양이라 말줄임은 세기만 하고, 말줄임 없이 잘리거나 단추가
+# 반쯤 보이면 잘림이다.
+LABEL_NARROW_WIDTHS_PX: Final = (280, 236, SIDEBAR_NARROW_WIDTH_PX)
 # 가용설비 현황 「Static 대비 일정」 탭의 분류별 내역 9행 비교 시트(`availability_sheet_keys`·
 # `availability_gap_panel`·`availability_sheet_canvas`). 앱 모듈을 부르지 않고 값만 옮긴다 — 화면이
 # 정한 9행과 같은지 따로 보는 확인이라 앱에서 라벨을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가
@@ -1634,7 +1635,7 @@ _WHOLE_LINE_JS = f"""const whole = (el, box) => {{
       && r.left >= box.left - 0.5 && r.right <= box.right + 0.5
       && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
   }};"""
-# 사이드바 라벨: 심볼 크기와 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)·안내 글자. 안내 글자는
+# 사이드바 라벨: 심볼 크기와 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)·Summary 단추. 단추는
 # 좁은 사이드바에서 통째로 빠진다 — 컨테이너 질의로 감추거나(`display: none`), 들어가지 않아 라벨
 # 높이 밖 둘째 줄로 내려간다(위 끝이 라벨 아래 끝 밑). 빠진 것은 잘린 것이 아니다.
 _LABEL_MARK_JS = f"""(id) => {{
@@ -1657,7 +1658,7 @@ _LABEL_MARK_JS = f"""(id) => {{
   }};
 }}"""
 # 사이드바를 `widths` 의 폭마다 좁혀 같은 라벨을 다시 잰다. 두 줄은 줄마다 `whole`(다 보임) ·
-# `ellipsis`(칸이 라벨 안에 있고 말줄임으로 끝남) · `cut`, 안내 글자는 `gone`(빠짐) · `whole` ·
+# `ellipsis`(칸이 라벨 안에 있고 말줄임으로 끝남) · `cut`, Summary 단추는 `gone`(빠짐) · `whole` ·
 # `cut` 이다. 폭 전환(0.3초)을 끄고 두 프레임 기다려 컨테이너 질의가 선 뒤 재며, 끝나면 원래 폭으로
 # 되돌린다(`_SIDEBAR_GROUPS_NARROW_JS` 와 같은 꼴).
 _LABEL_NARROW_JS = f"""async ({{id, widths}}) => {{
@@ -1812,7 +1813,7 @@ def check_sidebar_symbol(screen: Screen) -> str:
     """사이드바 라벨 심볼과 Summary 머리 줄 심볼(px), 라벨 글자가 다 보이는가.
 
     「라벨 글자」는 두 자리 라벨의 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)과 사이드바의
-    `Summary` 안내 글자다. 한 곳이라도 말줄임·잘림이면 「잘림」이다. 사이드바 라벨은 기본 폭 뒤에
+    Summary 단추다. 한 곳이라도 말줄임·잘림이면 「잘림」이다. 사이드바 라벨은 기본 폭 뒤에
     좁게 끈 폭(`LABEL_NARROW_WIDTHS_PX`)에서도 잰다 — 기본 폭만 재면 좁은 폭에서 앱 이름이 말줄임
     없이 잘려도 「다 보임」이다. 잘린 좁은 폭은 괄호에 적고, 가장 좁은 폭의 말줄임은 정한 모양이라
     「다 보임」 뒤에 그 수만 적는다.
