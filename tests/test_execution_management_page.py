@@ -1,10 +1,10 @@
-# Purpose: 실행관리 머리 화면이 데이터를 읽지 않고 정의와 하위 목차만 그리는지 본다.
+# Purpose: 실행 관리 머리 화면이 데이터를 읽지 않고 정의와 하위 목차만 그리는지 본다.
 
-"""실행관리 머리 — 첫 판은 데이터를 읽지 않는다(2026-10-17 사용자 결정).
+"""실행 관리 머리 — 첫 판은 데이터를 읽지 않는다(2026-10-17 사용자 결정).
 
 화면을 단독으로 띄워 DB 연결을 막아 둔 채 그려지는지, 하위 화면 여섯이 사이드바 선언 차례 그대로
-목차에 서는지, Guide 가 정의(「실행관리」)를 싣는지 본다. 앱 안에서 링크 수·사이드바 상자·DB 를 열지
-않는 회차는 `tests/test_app_navigation.py` 가 본다.
+목차에 서는지, Guide 가 정의(「실행 관리」)를 싣는지 본다. 앱 안에서 링크 수·사이드바 상자·DB 를
+열지 않는 회차는 `tests/test_app_navigation.py` 가 본다.
 """
 
 from pathlib import Path
@@ -28,7 +28,7 @@ def _run_without_databases(monkeypatch: pytest.MonkeyPatch) -> tuple[AppTest, li
 
     def refuse(*args: Any, **kwargs: Any) -> Any:
         opened.append(args)
-        raise AssertionError("실행관리 머리는 DB 를 열지 않는다")
+        raise AssertionError("실행 관리 머리는 DB 를 열지 않는다")
 
     monkeypatch.setattr(duckdb, "connect", refuse)
     return AppTest.from_file(str(PAGE), default_timeout=60).run(), opened
@@ -39,10 +39,10 @@ def test_the_head_draws_without_opening_any_database(monkeypatch: pytest.MonkeyP
 
     assert not app.exception, [element.message for element in app.exception]
     assert opened == []
-    # 사이드바 상자 제목과 본문 머리가 같다. 설명 첫머리가 「실행관리」 정의다.
+    # 사이드바 상자 제목과 본문 머리가 같다. 설명 첫머리가 「실행 관리」 정의다.
     assert [title.value for title in app.title] == [EXECUTION_MANAGEMENT.title]
     captions = [str(caption.value) for caption in app.caption]
-    assert captions[0].startswith("실행관리: 약속된 Capa(Static)")
+    assert captions[0].startswith("실행 관리: 약속된 Capa(Static)")
     # 공통 조건을 읽지 않는 화면이다 — 조건 카드도 위젯도 없고, Guide 숨은 단추만 있다.
     assert [button.key for button in app.button] == [GUIDE_TRIGGER_KEY]
     assert not app.selectbox and not app.toggle
@@ -70,7 +70,7 @@ def test_the_table_of_contents_follows_the_sidebar_declaration(
 def test_the_guide_defines_the_three_areas() -> None:
     guide = load_guide("execution_management")
 
-    assert guide.startswith("**실행관리**(실행 Management)")
+    assert guide.startswith("**실행 관리**")
     for text in (
         "Static Capa",
         "Dynamic Capa",

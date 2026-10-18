@@ -3,8 +3,8 @@
 """확보율 보정 — 기준정보 밖에서 생긴 변수를 확보율에 즉시 얹는다.
 
 화면 이름은 「확보율 보정」이고 코드·저장 이름은 `execution`(공용 프로필
-`global_execution_capacity`, HOME 토글 `EXECUTION_TOGGLE_KEY`)이다. 실행관리(실행
-Management) 그룹과는 상관없는 손입력 보정이다.
+`global_execution_capacity`, HOME 토글 `EXECUTION_TOGGLE_KEY`)이다. 실행 관리
+그룹과는 상관없는 손입력 보정이다.
 
 시나리오·리비전에 담긴 Capa 기준정보는 그대로 두고, 그 뒤에 생긴 변수(비가동대수 증가로
 인한 가용대수 축소, UPEH 실적 부진, 재공 부진)를 **확보율에만** 즉시 반영한다. 리비전을

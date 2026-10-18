@@ -1,14 +1,14 @@
 # Purpose: 표준 대비 실적 Capa 손실을 분해하고 그 손실을 파고드는 하위 화면으로 잇는다.
 
-"""Dynamic Capa 상위 화면 — 실행관리 실적으로 다시 낸 **실현 Capa**.
+"""Dynamic Capa 상위 화면 — 실행 관리 실적으로 다시 낸 **실현 Capa**.
 
-Dynamic 은 실행관리(실행 Management)가 모은 실적(효율·UPEH·생산실적)으로 Capa 를 다시
-내는 영역이다(2026-10-17 사용자 결정 — 세 영역 Static · 실행관리 · Dynamic). 이 화면은 표준 Capa 가
+Dynamic 은 실행 관리가 모은 실적(효율·UPEH·생산실적)으로 Capa 를 다시
+내는 영역이다(2026-10-17 사용자 결정 — 세 영역 Static · 실행 관리 · Dynamic). 이 화면은 표준 Capa 가
 실적에서 얼마나 실현됐는지를 **손실 한 칸씩** 분해한다 — 표준 Capa 를 왜 다 못 냈나.
 
-분해된 칸마다 그 칸을 파고드는 화면으로 링크를 건다. 효율·UPEH·수율·설비 가용은 실행관리 그룹의
+분해된 칸마다 그 칸을 파고드는 화면으로 링크를 건다. 효율·UPEH·수율·설비 가용은 실행 관리 그룹의
 화면이고 재공부족은 Dynamic 의 재공 현황이다 — 링크는 그룹과 상관없이 동작한다. 손실을 부서별
-Gap·A/Item 으로 넘기는 일은 실행관리 머리가 말하고, 여기서는 그쪽을 가리키는 한 줄만 둔다.
+Gap·A/Item 으로 넘기는 일은 실행 관리 머리가 말하고, 여기서는 그쪽을 가리키는 한 줄만 둔다.
 
 요약과 상세를 탭으로 가른다. 보고 자리에서 볼 것(결론 한 문장·순위·다음 화면)과
 분석하며 뒤질 것(조회 조건·워터폴·일별 추이)이 다르다.
@@ -220,7 +220,7 @@ def _render_summary(
 
 
 def _render_loss_routes() -> None:
-    """손실 칸마다 그 칸을 파고드는 화면으로 잇는다. 효율·UPEH·수율·설비 가용은 실행관리 그룹,
+    """손실 칸마다 그 칸을 파고드는 화면으로 잇는다. 효율·UPEH·수율·설비 가용은 실행 관리 그룹,
     재공부족은 Dynamic 하위(재공 현황)다 — 링크는 그룹을 건너도 그대로 동작한다."""
     with st.container(border=True):
         st.markdown("#### :material/alt_route: 손실을 파고드는 화면")
@@ -570,16 +570,17 @@ process_labels = get_process_labels()
 render_page_header(
     "Dynamic Capa",
     description=(
-        "실행관리가 모은 실적(효율·UPEH·생산실적)으로 표준 Capa 가 실제로 얼마나 실현됐는지 다시 "
+        "실행 관리가 모은 실적(효율·UPEH·생산실적)으로 표준 Capa 가 실제로 얼마나 실현됐는지 다시 "
         "계산합니다. 손실을 설비 성능(효율·UPEH)과 가용 Capa 활용(Rundown·재공부족)으로 나눕니다."
     ),
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(_SOURCE)),
 )
-# 부서별 Gap·A/Item 로드맵은 실행관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그쪽을
+# 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그쪽을
 # 가리키는 한 줄만 둔다.
 with st.container(horizontal=True, vertical_alignment="center", gap="small"):
     st.caption(
-        ":material/assignment_ind: 손실을 부서별 Gap · A/Item 으로 넘기는 일은 실행관리에서 합니다."
+        ":material/assignment_ind: 손실을 부서별 Gap · A/Item 으로 넘기는 일은 "
+        "실행 관리에서 합니다."
     )
     render_page_link(
         EXECUTION_MANAGEMENT.path,

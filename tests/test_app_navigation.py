@@ -95,7 +95,7 @@ EXPECTED_PAGES = [
     ("app_pages/standard_target_capa.py", "표준 목표", ":material/track_changes:", False),
     (
         "app_pages/execution_management.py",
-        "실행 Management",
+        "실행 관리",
         ":material/task_alt:",
         False,
     ),
@@ -141,7 +141,7 @@ def test_exactly_one_page_is_the_default_entry_point() -> None:
 
 
 def test_group_membership_matches_the_sidebar_sections() -> None:
-    """계산 그룹은 셋이다 — 약속(Static) → 이행(실행 Management) → 실적(Dynamic)
+    """계산 그룹은 셋이다 — 약속(Static) → 이행(실행 관리) → 실적(Dynamic)
     (2026-10-17 사용자 결정). 화면 파일·제목·주소는 그룹을 옮겨도 그대로다."""
     assert [group.slug for group in SIDEBAR_GROUPS] == [
         "capa_chatbot",
@@ -158,7 +158,7 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "app_pages/calculation_result.py",
         STANDARD_TARGET_CAPA.path,
     ]
-    # 실행관리 하위 여섯 — 공정 하나의 대책 → 설비 일정 → 현장 → 성능 실적 셋.
+    # 실행 관리 하위 여섯 — 공정 하나의 대책 → 설비 일정 → 현장 → 성능 실적 셋.
     assert EXECUTION_MANAGEMENT.path == "app_pages/execution_management.py"
     assert list(EXECUTION_MANAGEMENT_SUBPAGES[:3]) == [
         PROCESS_CAPA_DETAIL,
@@ -374,7 +374,7 @@ def test_only_the_group_holding_the_current_page_is_expanded(_app: AppTest) -> N
 
 
 def test_the_execution_head_links_every_screen_of_its_group(_app: AppTest) -> None:
-    """실행관리 머리(데이터를 읽지 않는 목차)는 앱 안에서 하위 여섯과 Static·Dynamic 머리로 가는
+    """실행 관리 머리(데이터를 읽지 않는 목차)는 앱 안에서 하위 여섯과 Static·Dynamic 머리로 가는
     링크를 단다. 공통 조건도 조건 카드도 없어 「조회 조건」 구역이 서지 않고, 사이드바는 그 그룹만
     편다."""
     app = _app.run()
@@ -1252,7 +1252,7 @@ def test_group_boxes_follow_the_page_only_when_the_page_changes(_app: AppTest) -
     app.run()
     assert _expanded(app) == {static: True, execution: False, dynamic: True}
 
-    # 실행관리 화면으로 옮기면 그 그룹만 편다 — 사용자가 편 Static 도 페이지가 바뀌면 접힌다.
+    # 실행 관리 화면으로 옮기면 그 그룹만 편다 — 사용자가 편 Static 도 페이지가 바뀌면 접힌다.
     app.switch_page(PROCESS_CAPA_DETAIL.path).run()
     assert _expanded(app) == {static: False, execution: True, dynamic: False}
 
@@ -1865,9 +1865,9 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
         expected = read_counts[scenario_db] + (1 if read_counts[scenario_db] else 0)
         assert opens[scenario_db] == expected, (path, opens, read_counts)
         if path == EXECUTION_MANAGEMENT.path:
-            # 실행관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다.
+            # 실행 관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다.
             assert opens[equipment_db] == read_counts[equipment_db] == 0, (opens, read_counts)
-    # Chatbot·실행관리 머리는 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다
+    # Chatbot·실행 관리 머리는 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다
     # 목록을 읽으므로 핀이 실제로 잡히는 길도 지난다.
     assert scenario_reads[CAPA_CHATBOT.path] == 0
     assert scenario_reads[EXECUTION_MANAGEMENT.path] == 0

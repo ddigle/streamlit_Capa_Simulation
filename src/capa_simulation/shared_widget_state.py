@@ -2,7 +2,7 @@
 
 """페이지를 건너 공유하는 위젯 값.
 
-HOME 과 Static Capa 의 판정 기준 두 칸, 실행관리·Dynamic Capa·Chatbot 의 「샘플 데이터」 스위치처럼
+HOME 과 Static Capa 의 판정 기준 두 칸, 실행 관리·Dynamic Capa·Chatbot 의 「샘플 데이터」 스위치처럼
 **같은 세션 키를 여러 페이지의 위젯이 나눠 쓰는** 자리가 있다. `persist_state="session"` 만으로는
 페이지를 옮긴 **첫 회차**를 지키지 못한다(Streamlit 1.63 실측·소스 확인).
 

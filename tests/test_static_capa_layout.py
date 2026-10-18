@@ -72,6 +72,6 @@ def test_the_guide_carries_what_left_the_body() -> None:
         "경고까지 필요 + 확보까지 추가 = 총 추가 필요",
         "자원운영팀",
         "기술팀",
-        "실행관리",
+        "실행 관리",
     ):
         assert text in guide, text

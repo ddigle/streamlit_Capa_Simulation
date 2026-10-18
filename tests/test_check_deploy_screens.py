@@ -1963,7 +1963,7 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
 
     assert screens.summarize_sidebar_groups(every) == (
-        "Static Capa 머리 + 4 · 실행 Management 머리 + 6 · Dynamic Capa 머리 + 1 — "
+        "Static Capa 머리 + 4 · 실행 관리 머리 + 6 · Dynamic Capa 머리 + 1 — "
         "정한 차례·수와 같음 · 상자 제목 한 줄 · 잘림 없음"
     )
     # 차례가 바뀌거나 하나가 빠지거나 하위 수가 다르면 「다름」, 줄바꿈·말줄임은 그 상자 이름만
@@ -1972,14 +1972,14 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     swapped[0] = {**swapped[0], "lines": 2}
     line = screens.summarize_sidebar_groups(swapped)
     assert line == (
-        "실행 Management 머리 + 6 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
-        "정한 차례·수와 다름 · 줄바꿈: 실행 Management"
+        "실행 관리 머리 + 6 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
+        "정한 차례·수와 다름 · 줄바꿈: 실행 관리"
     )
     missing = screens.summarize_sidebar_groups([every[0], {**every[2], "clipped": True}])
-    assert missing.endswith("정한 차례·수와 다름(없음: 실행 Management) · 잘림: Dynamic Capa")
+    assert missing.endswith("정한 차례·수와 다름(없음: 실행 관리) · 잘림: Dynamic Capa")
     # 문단 안에서는 넘치지 않아도 조상 칸이 글자를 자르면 잘림이다.
     cut = screens.summarize_sidebar_groups([every[0], {**every[1], "cut": True}, every[2]])
-    assert cut.endswith("정한 차례·수와 같음 · 잘림: 실행 Management")
+    assert cut.endswith("정한 차례·수와 같음 · 잘림: 실행 관리")
     # 화면 제목이 다르면 화면 글자를 옮기지 않고 「제목 다름」만 적는다.
     renamed = screens.summarize_sidebar_groups([{**every[0], "title": SENTINEL}, *every[1:]])
     assert SENTINEL not in renamed
@@ -2003,13 +2003,13 @@ def test_the_narrow_sidebar_summary_accepts_ellipsis_and_flags_wrapping() -> Non
     wrapped = [every[0], {**every[1], "lines": 2, "clipped": True, "ellipsis": True}, every[2]]
     assert (
         screens.summarize_sidebar_narrow({"width": 200, "boxes": wrapped})
-        == "좁은 폭 200px 줄바꿈: 실행 Management"
+        == "좁은 폭 200px 줄바꿈: 실행 관리"
     )
     # 넘쳤는데 말줄임이 없거나(규칙이 빠짐) 조상 칸이 자르면 결함이다. 보이는 링크도 센다.
     bare = [every[0], {**every[1], "clipped": True}, {**every[2], "cut": True}]
     assert (
         screens.summarize_sidebar_narrow({"width": 200, "boxes": bare, "links_cut": 2})
-        == "좁은 폭 200px 말줄임 없이 잘림: 실행 Management, Dynamic Capa"
+        == "좁은 폭 200px 말줄임 없이 잘림: 실행 관리, Dynamic Capa"
         " · 링크 말줄임 없이 잘림 2"
     )
     assert (

@@ -358,7 +358,7 @@ def build_sidebar_stylesheet(
             overflow-wrap: anywhere;
         }}
         /* 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴
-           「실행 Management」 도 한 줄이고, 사이드바를 약 230px 보다 좁게 끌면 말줄임으로 준다.
+           「Dynamic Capa」 도 한 줄이고, 사이드바를 약 205px 보다 좁게 끌면 말줄임으로 준다.
            이 규칙이 없으면 좁은 사이드바에서 긴 제목이 두 줄로 접히고 칸보다 긴 낱말은 가운데서
            끊긴다(위 `overflow-wrap: anywhere`). 말줄임을 거는 것은 문단의 세 줄이다. 1.63 은
            마크다운 칸(flex 항목)에 `max-width: 100%` 를 걸어 칸이 이미 부모 폭 아래로 준다 —
