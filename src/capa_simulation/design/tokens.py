@@ -226,7 +226,7 @@ _LIGHT: Final[dict[str, Any]] = {
     # 여섯을 넘어 접힌 제품의 `기타` 조각. 계열이 없는 회색이다. 밝은 `확보` 막대색
     # (STATUS_SECURE)과는 ΔE 36 으로 떨어져 판정색으로 읽히지 않는다.
     "PRODUCT_SHARE_OTHER": "#656565",
-    # Qual 실행관리 상태. 계획 → 확정 → 완료로 갈수록 짙어지고 지연만 경고색이다.
+    # Qual 일정의 진행 상태. 계획 → 확정 → 완료로 갈수록 짙어지고 지연만 경고색이다.
     "QUAL_CONFIRMATION_COLORS": {
         "계획": "#CBD5E1",
         "확정": "#93C5FD",
@@ -513,7 +513,7 @@ def _complete(palette: dict[str, Any], *, shortage_band_alpha: float) -> dict[st
     # 모든 Figure 는 배경이 투명한 `st.container(border=True)` 안에 놓여 페이지 바탕 위에
     # 그려진다. 흰 면(SURFACE)을 쓰면 Figure 만 흰 사각형으로 뜬다.
     filled["CHART_CANVAS"] = palette["SURFACE_PAGE"]
-    # 실행관리 일정 상태. 재공 격자의 충족·유입색과 같은 값을 써서 시각 언어를 맞춘다.
+    # 설비 일정의 진행 상태. 재공 격자의 충족·유입색과 같은 값을 써서 시각 언어를 맞춘다.
     filled["SCHEDULE_DONE"] = palette["WIP_FLOW_MET"]
     filled["SCHEDULE_PLANNED"] = palette["WIP_INFLOW"]
     # 지연만 경고색이다. 상태색을 바꾸면 여기도 함께 움직여야 한다.

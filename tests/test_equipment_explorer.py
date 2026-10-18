@@ -1,6 +1,7 @@
 # Purpose: 설비 탐색기의 질문별 단일 결과와 선택일·필터·탭 왕복·공정 표시명 동작을 검증한다.
 
 import json
+import re
 from datetime import date
 
 from streamlit.testing.v1 import AppTest
@@ -213,6 +214,11 @@ def test_each_question_and_representation_replaces_the_previous_result() -> None
     app.segmented_control(QUESTION_KEY).set_value("Qual 일정").run()
     _assert_one_result(app)
     assert app.dataframe[0].value["설비명"].tolist() == ["EQ-QUAL"]
+    # 소제목은 다른 질문과 같은 「질문 · 날짜」 꼴 — 영역 이름 「실행 관리」 와 겹치는 말을
+    # 쓰지 않는다.
+    headings = [item.value for item in app.markdown if item.value.startswith("#### ")]
+    assert any(re.fullmatch(r"#### Qual 일정 · \d{4}-\d{2}-\d{2}", value) for value in headings)
+    assert not any("실행관리" in value or "실행 관리" in value for value in headings)
     app.selectbox("equipment_explorer_qual_view").set_value("Qual상태 분포").run()
     _assert_one_result(app)
     app.segmented_control("equipment_explorer_expression_Qual상태 분포").set_value("표").run()

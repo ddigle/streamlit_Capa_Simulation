@@ -134,7 +134,7 @@ def prepare_equipment_master(
         result[column] = _normalize_date(result[column], column)
     # 반입·Qual 일정은 비워도 된다(2026-10-06 사용자 결정) — 반입이 비면 「입고 예정」, 반입만 있고
     # Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 가용대수에 들지 않는다. Qual상태는
-    # Qual 일정의 실행관리 값이라 Qual일정이 있는 신규 호기에만 필수다.
+    # Qual 일정의 진행 상태 값이라 Qual일정이 있는 신규 호기에만 필수다.
     ordinary = result[STORAGE_FLAG_COLUMN].eq("N") & result["기존설비여부"].eq("N")
     missing_confirmation = (
         ordinary & result[QUAL_DATE_COLUMN].notna() & result[QUAL_STATUS_COLUMN].isna()

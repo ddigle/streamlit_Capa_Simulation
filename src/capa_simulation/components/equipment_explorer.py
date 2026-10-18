@@ -853,7 +853,9 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                     shares = static_unit_shares(status[UNIT_KEY_COLUMN])
                     status = status.loc[status["Qual일정"].notna()].copy()
                     shares = shares.loc[status.index]
-                    st.markdown(f"#### {QUAL_STATUS_COLUMN} 실행관리 · {as_of:%Y-%m-%d}")
+                    # 다른 질문과 같은 「질문 · 날짜」 꼴이다 — 영역 이름 「실행 관리」 와
+                    # 겹치는 말을 쓰지 않는다(2026-10-18 사용자 결정).
+                    st.markdown(f"#### Qual 일정 · {as_of:%Y-%m-%d}")
                     column, states, colors = (
                         QUAL_STATUS_COLUMN,
                         QUAL_CONFIRMATION_STATUSES,
