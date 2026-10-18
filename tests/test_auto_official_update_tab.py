@@ -34,7 +34,11 @@ from capa_simulation.auto_official_update_runner import (
     run_auto_official_update,
 )
 from capa_simulation.auto_update_scheduler import ENV_VAR
-from capa_simulation.components.auto_official_update_tab import RUN_NOW_BUTTON_KEY
+from capa_simulation.components.auto_official_update_tab import (
+    EMPTY,
+    RUN_NOW_BUTTON_KEY,
+    UNCOUNTED_DEMAND_MARK,
+)
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
 from capa_simulation.components.required_exclusion_notice import UNCOUNTED_DEMAND_LEAD
 from capa_simulation.persistence.models import ScenarioPreset
@@ -270,9 +274,24 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
     assert [(run.trigger_kind, run.status) for run in runs] == [(TRIGGER_MANUAL, STATUS_PUBLISHED)]
 
     history = app.dataframe[0].value
+    # 「경고」 는 「결과」 바로 뒤다 — 맨 끝 「사유」 가 잘려도 보인다.
+    assert list(history.columns) == [
+        "시작",
+        "방식",
+        "결과",
+        "경고",
+        "받은 코드",
+        "등록 시나리오",
+        "자동 off",
+        "이어받은 수동 off",
+        "발행",
+        "기준",
+        "사유",
+    ]
     row = history.iloc[0]
     assert row["시작"] == format(NOW, "%Y-%m-%d %H:%M")
     assert (row["방식"], row["결과"], row["받은 코드"]) == ("지금 실행", "등록·발행", "W41 SIM-W41")
+    assert row["경고"] == EMPTY
     assert row["발행"] == "공식 v2"
     assert row["자동 off"] == f"1공정 · {WAFER} 자동 off(확보율 0%, 26.03)"
     assert row["이어받은 수동 off"] == "0공정"
@@ -286,7 +305,8 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
 def test_run_now_shows_uncounted_demand_as_a_warning_under_the_success(database: Path) -> None:
     """발행한 회차의 소요대수에 들지 않은 수요 경고는 화면 발행처럼 성공 알림 밑에 따로 뜬다.
 
-    실행 기록의 사유(기록 표의 칸)에는 발행 줄 뒤에 이어 적힌 그대로 남는다.
+    실행 기록의 사유(기록 표의 칸)에는 발행 줄 뒤에 이어 적힌 그대로 남고, 「경고」 칸에 표지가
+    선다.
     """
     repository = _with_w40(database)
     fake = FakeBigDataQuery(W41_CATALOG, frames={"SIM-W41": source_frame(blank_first_plan=True)})
@@ -308,7 +328,9 @@ def test_run_now_shows_uncounted_demand_as_a_warning_under_the_success(database:
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in text
     run = repository.list_auto_official_update_runs()[0]
     assert run.reason == f"{head}. {text}"
-    assert app.dataframe[0].value.iloc[0]["사유"] == run.reason
+    row = app.dataframe[0].value.iloc[0]
+    assert row["사유"] == run.reason
+    assert row["경고"] == UNCOUNTED_DEMAND_MARK
 
 
 def test_run_now_without_an_official_week_does_nothing(database: Path) -> None:
@@ -332,7 +354,8 @@ def test_run_now_with_nothing_new_lists_a_skip(database: Path) -> None:
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
     assert any("건너뜀" in str(element.value) for element in app.info)
-    assert app.dataframe[0].value.iloc[0]["결과"] == "건너뜀"
+    row = app.dataframe[0].value.iloc[0]
+    assert (row["결과"], row["경고"]) == ("건너뜀", EMPTY)
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 
@@ -447,6 +470,47 @@ def test_the_tab_frames_have_the_documented_columns() -> None:
         "리비전 2 저장",
     ]
     assert list(setting_history_frame([]).columns) == ["시각", "바꾼 사람", "바꾼 내용", "판"]
+
+
+def test_only_a_published_round_with_the_trailing_warning_gets_the_mark() -> None:
+    """표지는 발행한 회차의 사유 끝에 이어 적힌 경고에만 선다 — 발행 못 한 회차의 사유에 그 문장
+    머리가 들어 있어도(오류 글이 경고를 인용해도) 표지를 세우지 않는다."""
+    from capa_simulation.components.auto_official_update_tab import run_history_frame
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.persistence.models import AutoOfficialUpdateRun
+    from capa_simulation.services.auto_official_update import STATUS_ERROR, RunStatus
+
+    plain = "공식 v2 발행 · W41 SIM-W41 · 자동 갱신"
+    warned = f"{plain}. {UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — 1건."
+
+    def run(run_id: str, status: RunStatus, reason: str) -> AutoOfficialUpdateRun:
+        return AutoOfficialUpdateRun(
+            run_id=run_id,
+            run_key=run_id,
+            trigger_kind=TRIGGER_MANUAL,
+            run_date=NOW.date(),
+            status=status,
+            stage="DONE",
+            started_at=NOW,
+            finished_at=NOW,
+            keyword="PSM",
+            threshold=0.8,
+            settings_version=1,
+            reason=reason,
+        )
+
+    frame = run_history_frame(
+        [
+            run("warned", STATUS_PUBLISHED, warned),
+            run("plain", STATUS_PUBLISHED, plain),
+            run("error", STATUS_ERROR, warned),
+        ],
+        [],
+        ProcessLabels(),
+    )
+
+    assert list(frame["경고"]) == [UNCOUNTED_DEMAND_MARK, EMPTY, EMPTY]
+    assert list(frame["사유"]) == [warned, plain, warned]
 
 
 # ---------------------------------------------------------------------------

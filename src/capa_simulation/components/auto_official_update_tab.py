@@ -24,7 +24,8 @@
   다시 보다가 결과를 보인다. 발행한 회차에 소요대수에
   들지 않은 수요가 있었으면 화면 발행과 같이 성공 알림 밑에 그 건수를 경고로 따로 띄운다(실행 기록의
   사유에는 이어 적힌 그대로다).
-- **실행 기록·off 공정·설정 변경 기록** 표.
+- **실행 기록·off 공정·설정 변경 기록** 표. 실행 기록은 그 경고가 사유 끝에 이어 적혀 칸이 좁으면
+  잘려 안 보이므로 「결과」 바로 뒤 「경고」 칸에 짧은 표지를 따로 둔다.
 
 설정 칸에는 `key` 를 두지 않는다(HOME 판정 기준 편집기와 같은 까닭) — 키가 붙은 칸은 한 번 그려진
 뒤 세션 값을 써서, 다른 사람이 바꾼 설정을 이 화면이 못 본 채 저장 한 번으로 되돌린다. 키 없는
@@ -127,6 +128,9 @@ LONG_RUN_WARNING: Final = timedelta(minutes=30)
 # 배경 확인이 이 횟수만큼 건너뛰었으면 스레드가 멈춘 것으로 보고 경고한다.
 STALE_TICK_FACTOR: Final = 4
 EMPTY: Final = "—"
+# 실행 기록 「경고」 칸의 표지 — 발행한 회차의 사유 끝에 소요대수에 들지 않은 수요 경고가 이어
+# 적혔다. 문장 전체는 「사유」 칸에 그대로 남는다.
+UNCOUNTED_DEMAND_MARK: Final = "⚠ 소요대수 밖 수요"
 SETTINGS_SOURCE: Final = "시나리오 관리 · 자동 갱신"
 
 
@@ -601,7 +605,11 @@ def run_history_frame(
     exclusions: Sequence[AutoOfficialUpdateExclusion],
     labels: ProcessLabels,
 ) -> pd.DataFrame:
-    """실행 기록 표. 한 회차 한 줄 — off 공정은 최저 확보율·그 달과 함께 한 칸에 적는다."""
+    """실행 기록 표. 한 회차 한 줄 — off 공정은 최저 확보율·그 달과 함께 한 칸에 적는다.
+
+    발행한 회차의 사유 끝에 소요대수에 들지 않은 수요 경고가 이어 적혔으면 「결과」 바로 뒤 「경고」
+    칸에 표지를 둔다 — 사유는 맨 끝 칸이라 넓은 표에서 그 경고가 잘린다. 사유는 전체 글 그대로다.
+    """
     by_run: dict[str, list[AutoOfficialUpdateExclusion]] = {}
     for exclusion in exclusions:
         by_run.setdefault(exclusion.run_id, []).append(exclusion)
@@ -615,6 +623,7 @@ def run_history_frame(
                 "시작": format(run.started_at, DATETIME_FORMAT),
                 "방식": TRIGGER_LABELS.get(run.trigger_kind, run.trigger_kind),
                 "결과": _status_text(run),
+                "경고": _warning_text(run),
                 "받은 코드": _received_text(run),
                 "등록 시나리오": run.created_scenario_name or EMPTY,
                 "자동 off": _off_text(
@@ -677,6 +686,13 @@ def _status_text(run: AutoOfficialUpdateRun) -> str:
     if run.status == STATUS_RUNNING:
         return f"{label} · {STAGE_LABELS.get(run.stage, run.stage)}"
     return label
+
+
+def _warning_text(run: AutoOfficialUpdateRun) -> str:
+    if run.status != STATUS_PUBLISHED:
+        return EMPTY
+    _, warning = split_published_reason(run.reason or "")
+    return UNCOUNTED_DEMAND_MARK if warning else EMPTY
 
 
 def _received_text(run: AutoOfficialUpdateRun) -> str:

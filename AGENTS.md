@@ -2025,6 +2025,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     검사하고, 통과하면 `density_error` 도 부른다. 그 경로도 쓰기 경로 목록에 있다. 소요대수에 들지
     않은 수요 건수 경고도 같은 셈·문장(`required_exclusion_message(…, scope=FULL_SCOPE)`)으로 만들어
     막지 않고 실행 기록 사유 끝에 붙인다 — 공식버전 메모에는 싣지 않는다(화면 발행도 메모는 사람의 글).
+    사유는 표의 맨 끝 칸이라 넓은 표에서 그 경고가 잘리므로, 실행 기록 표는 「결과」 바로 뒤 「경고」 칸에
+    짧은 표지(`UNCOUNTED_DEMAND_MARK` 「⚠ 소요대수 밖 수요」)를 따로 둔다 — 발행한 회차의 사유를
+    `split_published_reason` 으로 갈라 경고가 있을 때만이다(2026-10-18 사용자 결정).
 - `src/capa_simulation/components/capacity_assumption_notice.py`
   - 측정률 행이 없어 **중립값 1.0 으로 이어 간 건수**를 한 줄로 말한다. HOME 과 `산출 결과`
     둘 다 같은 문구를 쓴다.
