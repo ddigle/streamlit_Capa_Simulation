@@ -179,8 +179,9 @@
 }
 
 /* 라벨은 앱 이름 두 줄이다 — 위 줄 워드마크(`S.PKG CAPA`), 아래 줄 작은 부제(`AX Management` — 본문 글꼴
-   500 · 11px · 옅은 글자색, 사이드바 라벨과 같다). 18px + 틈 1px + 13px(「g」 꼬리가 잘리지 않는 줄높이) =
-   32px 라 머리 줄(34px)이 높아지지 않고 두 줄 묶음의 가운데가 심볼·Detail 의 가운데와 같다. 부제가 위 줄보다
+   500 · 11px · 옅은 글자색, 사이드바 라벨과 같다). 위 줄 줄높이 16px(대문자뿐이라 아래 꼬리가 없다) + 틈 없이
+   14px = 30px 라 머리 줄(34px)이 높아지지 않고 두 줄 묶음의 가운데가 심볼·Detail 의 가운데와 같다. 두 줄 사이는
+   사이드바 라벨과 같은 약 3.5px 다(intro_summary 의 `_LABEL_CSS`). 부제가 위 줄보다
    좁아 묶음 폭은 한 줄이던 때와 같다. 줄마다 한 줄을 지킨다 — 머리 줄이 빠듯하면 오른쪽 공식버전 칩·기간 글자가
    먼저 줄어든다(토글 셋이 선 뒤 768px 창에서 `S.PKG CAPA` 가 두 줄로 접혔다). 좁은 창의 입장 화면에서는 머리 줄이
    웨이퍼 맵 위에 얹혀 옅은 부제가 청록 다이와 같은 밝기가 되므로 장면 바탕색 그늘을 두른다 — 바탕 위에서는 보이지
@@ -191,12 +192,16 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: 0;
   text-shadow: 0 0 2px var(--surface), 0 0 6px var(--surface);
 }
 
+.brand-word {
+  line-height: 16px;
+}
+
 .brand-sub {
-  font: 500 11px/13px var(--body);
+  font: 500 11px/14px var(--body);
   letter-spacing: 0.01em;
   color: var(--muted);
 }

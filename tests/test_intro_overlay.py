@@ -341,9 +341,11 @@ def _label_rule(css: str, part: str = "") -> str:
 
 def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() -> None:
     """사이드바 라벨은 심볼 옆에 앱 이름 두 줄(위 워드마크 · 아래 작은 부제)을 쌓는다(2026-10-17
-    사용자 요청). 두 줄 줄높이와 틈의 합이 라벨 안쪽 높이(34px − 윤곽 2px)와 같아 묶음이 심볼·접기
-    버튼과 같은 가운데에 서고 머리칸이 높아지지 않는다. 부제는 본문 글꼴의 옅은 글자다. 안내 글자
-    `Summary` 는 묶음 밖 오른쪽이다."""
+    사용자 요청). 두 줄 묶음이 라벨 안쪽 높이(34px − 윤곽 2px) 안 가운데에 서서 심볼·접기 버튼과
+    같은 가운데이고 머리칸이 높아지지 않는다. 두 줄은 틈 없이 붙인다 — 위 줄은 대문자뿐이라 줄높이를
+    글자보다 낮춘다(10-18 사용자 요청 「간격을 좁혀」). 부제 칸은 자르는 가장자리를 줄 상자 아래로
+    내려 맑은 고딕처럼 글꼴 상자가 큰 글꼴에서도 「g」 꼬리가 잘리지 않는다. 부제는 본문 글꼴의 옅은
+    글자다. 안내 글자 `Summary` 는 묶음 밖 오른쪽이다."""
     from capa_simulation.components import intro_summary
 
     script = intro_summary.summary_label_script()
@@ -364,9 +366,17 @@ def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() ->
         word = _label_rule(css, " .capa-brand-word")
         subtitle = _label_rule(css, " .capa-brand-sub")
         assert "flex-direction: column; align-items: flex-start; justify-content: center;" in block
-        inner = _px_value(label, "height") - 2
-        total = _px_value(word, "line-height") + _px_value(block, "gap")
-        assert total + _px_value(subtitle, "line-height") == inner
+        height = _px_value(label, "height")
+        inner = height - 2
+        assert "gap: 0;" in block
+        assert _px_value(word, "line-height") < _px_value(word, "font-size")
+        stack = _px_value(word, "line-height") + _px_value(subtitle, "line-height")
+        assert stack <= inner
+        # 자르는 가장자리는 안쪽 여백만큼 내리고 같은 바깥 여백으로 되돌려 배치는 그대로다. 내린
+        # 가장자리도 라벨 아래 끝 안이다(밖이면 화면 확인이 부제를 잘림으로 센다).
+        room = _px_value(subtitle, "padding-bottom")
+        assert room > 0 and f"margin-bottom: -{room:g}px;" in subtitle
+        assert 1 + (inner - stack) / 2 + stack + room <= height
         # 위 줄은 워드마크 글꼴 그대로, 아래 줄은 더 작은 본문 글꼴 500 · 옅은 글자색.
         assert _px_value(word, "font-size") == 18
         assert _px_value(subtitle, "font-size") == 11
@@ -415,8 +425,9 @@ def test_the_sidebar_hint_stands_whole_or_drops_and_never_cuts_the_name() -> Non
 
 def test_the_summary_head_label_is_the_same_two_lines() -> None:
     """입장 화면·Summary 머리 줄의 라벨도 사이드바와 같은 두 줄이다 — 위 줄 워드마크(Detail 이
-    도킹하면 같은 글자가 된다), 아래 줄 본문 글꼴 500 · 11px 옅은 부제. 두 줄 합(32px)이 머리 줄
-    높이(34px) 안이라 머리 줄과 그 밑 토글 둘째 줄(휴대폰)의 자리가 그대로다."""
+    도킹하면 같은 글자가 된다), 아래 줄 본문 글꼴 500 · 11px 옅은 부제. 줄높이·틈도 사이드바와 같아
+    (16px + 틈 없이 14px) 두 줄 사이가 같고, 합(30px)이 머리 줄 높이(34px) 안이라 머리 줄과 그 밑
+    토글 둘째 줄(휴대폰)의 자리가 그대로다."""
     html = (ASSETS / "intro.html").read_text(encoding="utf-8")
     assert (
         '<span class="brand" data-slot="brand"><span class="brand-word"></span>'
@@ -431,14 +442,22 @@ def test_the_summary_head_label_is_the_same_two_lines() -> None:
     sub = re.search(r"\n\.brand-sub \{([^}]*)\}", css)
     head = re.search(r"\n\.head \{([^}]*)\}", css)
     assert brand and sub and head
-    assert "flex-direction: column;" in brand.group(1) and "gap: 1px;" in brand.group(1)
+    assert "flex-direction: column;" in brand.group(1) and "gap: 0;" in brand.group(1)
+    word = re.search(r"\n\.brand-word \{([^}]*)\}", css)
+    assert word and "line-height: 16px;" in word.group(1)
     # 좁은 창의 입장 화면에서 웨이퍼 맵 위에 얹혀도 옅은 부제가 읽히게 장면 바탕색 그늘을 두른다.
     assert "text-shadow: 0 0 2px var(--surface), 0 0 6px var(--surface);" in brand.group(1)
     assert '"--surface": palette.surface,' in js
-    assert "font: 500 11px/13px var(--body);" in sub.group(1)
+    assert "font: 500 11px/14px var(--body);" in sub.group(1)
     assert "color: var(--muted);" in sub.group(1)
     height = re.search(r"height: (\d+)px;", head.group(1))
-    assert height and 18 + 1 + 13 <= int(height.group(1))
+    assert height and 16 + 14 <= int(height.group(1))
+    # 사이드바 라벨과 같은 줄높이다.
+    from capa_simulation.components import intro_summary
+
+    label_css = intro_summary._label_css("light")
+    assert "line-height: 16px;" in _label_rule(label_css, " .capa-brand-word")
+    assert "line-height: 14px;" in _label_rule(label_css, " .capa-brand-sub")
 
 
 _RECT = re.compile(r'<rect [^>]*?x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="(\d+)"')
