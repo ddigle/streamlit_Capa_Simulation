@@ -48,6 +48,7 @@ from capa_simulation.performance import PerformanceTrace
 from capa_simulation.process_detail_state import (
     HOME_BOTTLENECK_SECTION,
     HOME_KEY_PROCESS_SECTION,
+    HOME_LOB_SECTION,
     open_home_cell,
 )
 from capa_simulation.scenario_state import is_pristine_content_token
@@ -318,8 +319,9 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 크기·색, 48 은 묶음별 칸(네 묶음 + 계획 세부수량 묶음의 비교 덤벨), 49 는 덤벨이 과거 구간
 # 달을 빼고 견줌, 50 은 레이아웃 항목을 검증 없이 넣는 길(JSON 은 같다 — 옛 객체를 버릴 뿐), 51 은
 # 주요공정·상세 B/N 표적 막대 `customdata` 끝의 공정 Capa 상세 이동 정보와 선택 흐림 막기
-# (`unselected`).
-HOME_FIGURE_SCHEMA_VERSION = 51
+# (`unselected`), 52 는 `Capa LOB 현황` 의 B/N·Top 5 막대(와 증감 조각) `customdata` 끝 이동 정보와
+# 그 그림의 선택 흐림 막기(막대 안 글자 포함).
+HOME_FIGURE_SCHEMA_VERSION = 52
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -694,12 +696,19 @@ def home_dashboard_panel() -> Iterator[None]:
         yield
 
 
-# 칸을 누르면 공정 Capa 상세로 가는 두 월 그림의 key. 선택 상태가 이 key 의 세션 칸에 들어온다.
+# 칸·막대를 누르면 공정 Capa 상세로 가는 세 월 그림의 key. 선택 상태가 이 key 의 세션 칸에
+# 들어온다. `Capa LOB 현황` 은 생산계획 LOB 의 B/N 막대·B/N Top 5 막대를 누른다(2026-10-18 사용자
+# 요청).
+LOB_MONTHS_CHART_KEY = "production_lob_months"
 KEY_PROCESS_MONTHS_CHART_KEY = "key_process_heatmap_months"
 BOTTLENECK_MONTHS_CHART_KEY = "bottleneck_detail_months"
 # 칸 선택을 켠 HOME 그림 전부. 선택을 켜면 그림 위 터치 스크롤이 막히므로 `app.py` 가 이 묶음을
 # 터치 스크롤 막이(`plotly_touch_scroll`)에 넘긴다 — 선택을 켠 그림을 더하면 여기에도 더한다.
-HOME_CELL_CHART_KEYS = (KEY_PROCESS_MONTHS_CHART_KEY, BOTTLENECK_MONTHS_CHART_KEY)
+HOME_CELL_CHART_KEYS = (
+    LOB_MONTHS_CHART_KEY,
+    KEY_PROCESS_MONTHS_CHART_KEY,
+    BOTTLENECK_MONTHS_CHART_KEY,
+)
 
 
 def open_clicked_home_cell(chart_key: str, section: str) -> None:
@@ -731,8 +740,10 @@ def render_home_figures(
     않는다(`app_pages/home.py`). 그래도 이 함수는 부른다. 프래그먼트가 감싸는 빈 칸이 늘 같은
     자리에 서야 탭을 오갈 때 본문 배치가 흔들리지 않는다.
 
-    이 안의 위젯은 `주요공정 확보율`·`상세 B/N 공정` 월 그림의 **칸 선택** 둘뿐이다 — 누르면 그
-    공정·그 달로 공정 Capa 상세가 열린다(`open_clicked_home_cell`, 과거 실적·연간 Total 칸은 제외).
+    이 안의 위젯은 `Capa LOB 현황`·`주요공정 확보율`·`상세 B/N 공정` 월 그림의 **칸 선택**
+    셋뿐이다 — 누르면 그 공정·그 달로 공정 Capa 상세가 열린다(`open_clicked_home_cell`, 과거
+    실적·연간 Total 칸은 제외). `Capa LOB 현황` 은 생산계획 LOB 의 B/N 막대와 B/N Top 5 막대가
+    표적이다.
     보는 조건은 사이드바 `LOB 표시 조건` 카드다. 숨은 탭에서는 그리지 않으므로 그 회차에는 선택
     위젯도 없다. 테두리 상자는 `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께
     감싼다.
@@ -823,10 +834,13 @@ def render_home_figures(
                 padding_bottom="0.25rem",
                 gap=DASHBOARD_SECTION_GAP_PX,
             ):
+                # 생산계획 LOB 의 B/N 막대·B/N Top 5 막대를 누르면 그 공정·그 달로 공정 Capa 상세가
+                # 열린다 — 히트맵·상세 B/N 칸과 같은 콜백이다. 꺾은선·도넛·표 칸은 이동 정보가 없어
+                # 눌러도 무시된다.
                 st.plotly_chart(
                     figures.lob_months,
                     width="stretch",
-                    key="production_lob_months",
+                    key=LOB_MONTHS_CHART_KEY,
                     # 드래그 확대는 Figure 축의 `fixedrange` 와 `dragmode=False` 가 막는다.
                     # 여기서는 더블클릭 복귀와 축 손잡이를 함께 끈다 — 확대가 없는데 그
                     # 둘만 살아 있으면 누를 때마다 아무 일도 안 일어나는 조작이 된다.
@@ -838,6 +852,12 @@ def render_home_figures(
                         "showAxisDragHandles": False,
                         "scrollZoom": False,
                     },
+                    on_select=partial(
+                        open_clicked_home_cell,
+                        LOB_MONTHS_CHART_KEY,
+                        HOME_LOB_SECTION,
+                    ),
+                    selection_mode="points",
                 )
                 # 라벨 칸의 제목 줄과 같은 높이로 비워 둔다. 두 칸의 자식 수와 높이가
                 # 같아야 아래 표의 행이 맞는다. 높이를 주지 않으면 빈 컨테이너를

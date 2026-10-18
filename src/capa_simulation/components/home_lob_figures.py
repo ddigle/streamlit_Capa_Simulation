@@ -58,6 +58,7 @@ from capa_simulation.components.home_figure_common import (
     _paper_hrule,
     _paper_month_lines,
     _text_width_units,
+    keep_unselected_opaque,
 )
 from capa_simulation.components.plotly_layout import (
     add_figure_outer_border,
@@ -70,6 +71,7 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
+from capa_simulation.process_detail_state import HOME_CELL_LINK_FIELDS, home_cell_link_values
 from capa_simulation.services.plan_gap import (
     DENSITY_GAP_FORMAT,
     GAP_EPSILON,
@@ -355,11 +357,15 @@ def build_execution_delta_bars(
     hover_notes: Sequence[str] | None,
     width: float | None,
     outline_width: float,
+    links: Sequence[Sequence[object]] | None = None,
 ) -> ExecutionDeltaBars:
     """증감 영역과 「늘어난 결과값 전체」 테두리를 만든다.
 
     조정이 한 건도 없으면 `traces` 가 비고 `outline_widths` 도 전부 같은 값이다. 그때
     호출자는 스칼라 테두리를 그대로 써서 Figure 규격이 조정 전과 다르지 않게 유지한다.
+
+    `links` 는 막대마다 공정 Capa 상세 이동 정보(`HOME_CELL_LINK_FIELDS`)다. 주면 증감 조각의
+    `customdata` 끝에도 싣는다 — 값 막대 위에 선 조각을 눌러도 그 막대를 누른 것과 같다.
     """
     numeric_values = [0.0 if pd.isna(cast(Any, value)) else float(value) for value in values]
     if baselines is None:
@@ -378,6 +384,7 @@ def build_execution_delta_bars(
     delta_heights: list[float] = []
     delta_colors: list[str] = []
     delta_notes: list[str] = []
+    delta_links: list[list[object]] = []
     grew_positions: list[float] = []
     grew_heights: list[float] = []
     adjusted: list[bool] = []
@@ -393,6 +400,7 @@ def build_execution_delta_bars(
             delta_heights.append(abs(value - baseline))
             delta_colors.append(tokens.DELTA_AREA_INCREASE if grew else tokens.DELTA_AREA_DECREASE)
             delta_notes.append(notes[index] if index < len(notes) else "")
+            delta_links.append(list(links[index]) if links is not None else [])
         if grew:
             grew_positions.append(positions[index])
             grew_heights.append(value)
@@ -406,7 +414,9 @@ def build_execution_delta_bars(
                 base=delta_bases,
                 width=width,
                 marker={"color": delta_colors, "line": {"width": 0}},
-                customdata=[[note] for note in delta_notes],
+                customdata=[
+                    [note, *link] for note, link in zip(delta_notes, delta_links, strict=True)
+                ],
                 hovertemplate="%{customdata[0]}<extra></extra>",
                 showlegend=False,
             )
@@ -652,6 +662,30 @@ def _bar_rate_text(rate: float) -> str:
     return f'<span style="font-size:{LOB_BAR_LABEL_FONT_SIZE_PX}px"><b>{rate:.0%}</b></span>'
 
 
+def _link_columns(frame: pd.DataFrame, past_month_labels: Collection[str] | None) -> pd.DataFrame:
+    """막대마다 공정 Capa 상세 이동 정보(`HOME_CELL_LINK_FIELDS` 차례, 행 색인은 `frame` 그대로).
+
+    값 막대의 `customdata` **끝**에 붙여 히트맵·상세 B/N 칸과 같은 콜백이 읽는다(2026-10-18 사용자
+    요청 — 생산계획 LOB 의 B/N 막대·B/N Top 5 막대도 누르면 그 공정·그 달로 상세가 열린다). 과거
+    실적 달은 그 화면의 달 축에 없고, B/N 공정이 없는 달(빈 막대)은 갈 곳이 없어 비운다 — 콜백이
+    무시한다.
+    """
+    past = set(past_month_labels or ())
+    rows = [
+        home_cell_link_values(
+            process=row["공정"],
+            month=row["생산계획년월"],
+            displayed_rate=row["확보율"],
+            available=row.get("가용대수"),
+            required=row.get("소요대수"),
+            execution_delta=row.get("확보율 증감"),
+            linked=bool(pd.notna(row["공정"])) and str(row["년월"]) not in past,
+        )
+        for _, row in frame.iterrows()
+    ]
+    return pd.DataFrame(rows, columns=list(HOME_CELL_LINK_FIELDS), index=frame.index)
+
+
 def build_lob_summary_figures(
     *,
     monthly_density: pd.DataFrame,
@@ -843,6 +877,19 @@ def build_lob_summary_figures(
             lower_gaps=lower_gaps,
             corner_notes=corner_notes,
         )
+    bottleneck_links = _link_columns(bottleneck_capacity, past_month_labels)
+    # Density 꺾은선 점은 그 달 B/N 막대와 같은 이동 정보를 싣는다. 점이 막대보다 먼저 잡혀
+    # (Plotly 는 막대 같은 면보다 점을 앞세운다) 막대 윗부분을 눌러도 꺾은선 점이 골라지기
+    # 때문이다 — 어디를 눌러도 그 달 B/N 공정이 열린다. 연간 Total·과거 실적·B/N 없는 달은 비운다.
+    blank_link = [None] * len(HOME_CELL_LINK_FIELDS)
+    link_by_label = dict(
+        zip(
+            bottleneck_capacity["년월"].astype(str),
+            bottleneck_links.to_numpy(dtype=object).tolist(),
+            strict=True,
+        )
+    )
+    month_links = [[label, *link_by_label.get(label, blank_link)] for label in month_labels]
     if bottleneck_capacity["B/N Capa"].notna().any():
         bottleneck_positions = [
             month_position_by_value[month] for month in bottleneck_capacity["생산계획년월"]
@@ -871,6 +918,7 @@ def build_lob_summary_figures(
             ],
             width=LOB_BAR_WIDTH,
             outline_width=LOB_BAR_OUTLINE_WIDTH_PX,
+            links=bottleneck_links.to_numpy(dtype=object).tolist(),
         )
         # 값 막대의 머리를 둥글린다(굵기 70px — 넓음 등급). 실행 조정한 달은 네모로 남는다.
         for value_trace in value_bar_traces(
@@ -879,8 +927,14 @@ def build_lob_summary_figures(
             corner_radius=tokens.BAR_CORNER_RADIUS_WIDE_PX,
             x=bottleneck_positions,
             y=bottleneck_delta.drawn,
-            customdata=bottleneck_capacity[["년월", "확보율"]].assign(
-                공정=labels.series(bottleneck_capacity["공정"])
+            customdata=pd.concat(
+                [
+                    bottleneck_capacity[["년월", "확보율"]].assign(
+                        공정=labels.series(bottleneck_capacity["공정"])
+                    ),
+                    bottleneck_links,
+                ],
+                axis=1,
             ),
             colors=[
                 _capacity_color(rate, thresholds=thresholds, month=int(month))
@@ -924,11 +978,11 @@ def build_lob_summary_figures(
                 name="Density (선행 B/O 전)",
                 x=month_positions,
                 y=_axis_series(aligned_baseline, "부하량"),
-                customdata=month_labels,
+                customdata=month_links,
                 mode="lines",
                 line={"color": tokens.TEXT_MUTED, "width": 2, "dash": "dot"},
                 cliponaxis=False,
-                hovertemplate="%{customdata} · 선행 B/O 전<br>%{y:,.2f} 억Gb<extra></extra>",
+                hovertemplate="%{customdata[0]} · 선행 B/O 전<br>%{y:,.2f} 억Gb<extra></extra>",
             ),
             row=2,
             col=1,
@@ -940,7 +994,7 @@ def build_lob_summary_figures(
             # 연간 Total 칸에서는 선을 끊는다. 합계 칸을 가로지르면 그 값이 그 달의 계획인
             # 것처럼 읽힌다.
             y=_axis_series(aligned_summary, "부하량"),
-            customdata=month_labels,
+            customdata=month_links,
             mode="lines+markers+text",
             text=_axis_series(aligned_summary, "부하량"),
             texttemplate="<b>%{text:,.2f}</b>",
@@ -953,7 +1007,7 @@ def build_lob_summary_figures(
                 "line": {"color": tokens.LINE, "width": 2.0},
             },
             cliponaxis=False,
-            hovertemplate="%{customdata}<br>%{y:,.2f} 억Gb<extra></extra>",
+            hovertemplate="%{customdata[0]}<br>%{y:,.2f} 억Gb<extra></extra>",
         ),
         row=2,
         col=1,
@@ -987,6 +1041,7 @@ def build_lob_summary_figures(
             month_position_by_value[month] + slot_offsets[int(rank)]
             for month, rank in zip(monthly_top5["생산계획년월"], monthly_top5["순위"], strict=True)
         ]
+        top5_links = _link_columns(monthly_top5, past_month_labels)
         # 증감은 **슬롯이 아니라 공정 기준**이다. 순위가 재배치돼 슬롯 3 이 다른 공정이
         # 되어도, 그 자리에 선 공정의 조정 전·후를 그린다.
         top5_delta = build_execution_delta_bars(
@@ -1003,6 +1058,7 @@ def build_lob_summary_figures(
             ],
             width=TOP5_BAR_WIDTH,
             outline_width=TOP5_BAR_OUTLINE_WIDTH_PX,
+            links=top5_links.to_numpy(dtype=object).tolist(),
         )
         # 머리를 둥글린다. 막대가 15px 로 가늘어 좁음 등급(3px)이다 — 넓음 반경이면 머리 전체가
         # 반원이 된다. 밴드 상한에서 잘린 막대도 같은 머리다(3px 라 「잘렸다」는 모양은 거의
@@ -1015,8 +1071,14 @@ def build_lob_summary_figures(
             y=top5_delta.drawn,
             # 막대 길이는 잘렸어도 hover 숫자는 실제 Capa 다. `%{y}` 를 쓰면 잘린
             # 값이 그대로 뜬다.
-            customdata=monthly_top5[["년월", "공정", "확보율", "Wafer Capa", "B/N Capa"]].assign(
-                공정=labels.series(monthly_top5["공정"])
+            customdata=pd.concat(
+                [
+                    monthly_top5[["년월", "공정", "확보율", "Wafer Capa", "B/N Capa"]].assign(
+                        공정=labels.series(monthly_top5["공정"])
+                    ),
+                    top5_links,
+                ],
+                axis=1,
             ),
             colors=[
                 _capacity_color(rate, thresholds=thresholds, month=int(month))
@@ -1435,4 +1497,6 @@ def build_lob_summary_figures(
     append_layout_items(month_figure, shapes=[*column_surface_shapes, *lob_row_shapes])
     add_quarter_boundaries(month_figure, month_labels, y0=panel_bottom)
     flush_layout_items(label_figure, month_figure)
+    # 막대를 눌러 상세로 가는 그림이라 고르지 않은 막대·꺾은선·글자가 흐려지지 않게 한다.
+    keep_unselected_opaque(month_figure)
     return label_figure, month_figure

@@ -424,7 +424,16 @@ def keep_unselected_opaque(figure: go.Figure) -> None:
     """
     for trace in figure.data:
         if trace.type == "bar":
-            trace.unselected = {"marker": {"opacity": 1}}
+            # 막대 안 글자(생산계획 LOB 의 B/N 확보율 등)도 흐려진다 — 색이 하나면 그 색으로
+            # 못박는다. 고른 쪽(`selected`) 글자색도 함께 준다: 글자가 있는 막대에 `unselected`
+            # 글자색만 있으면 Plotly 가 클릭 선택에서 「Cannot read properties of undefined (reading
+            # 'textfont')」 로 멈춰 클릭 사건이 나지 않았다(2026-10-18 브라우저 확인).
+            bar_unselected: dict[str, Any] = {"marker": {"opacity": 1}}
+            bar_text_color = trace.textfont.color
+            if isinstance(bar_text_color, str):
+                bar_unselected["textfont"] = {"color": bar_text_color}
+                trace.selected = {"textfont": {"color": bar_text_color}}
+            trace.unselected = bar_unselected
         elif trace.type == "scatter":
             unselected: dict[str, Any] = {"marker": {"opacity": 1}}
             text_color = trace.textfont.color

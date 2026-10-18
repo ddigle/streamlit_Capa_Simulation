@@ -17,6 +17,7 @@ from capa_simulation.components.process_labels import (
     ProcessLabels,
     process_labels_from_rules,
 )
+from capa_simulation.process_detail_state import HOME_CELL_LINK_FIELDS
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import build_home_simulation_cache_key
@@ -308,11 +309,23 @@ def test_lob_top5_process_annotation_stays_original_without_labels() -> None:
     assert "절단" not in texts
 
 
+def _hover_cells(row: object) -> list[str]:
+    """hover 가 읽는 칸. 끝의 공정 Capa 상세 이동 꼬리(`HOME_CELL_LINK_FIELDS`)는 원본 공정을
+    싣는다.
+
+    이동 꼬리는 화면에 나오지 않고 상세 화면을 그 공정으로 여는 값이라 원본 이름이어야 한다.
+    """
+    cells = list(row)  # type: ignore[call-overload]
+    return [str(value) for value in cells[: -len(HOME_CELL_LINK_FIELDS)]]
+
+
 def test_lob_bottleneck_hover_customdata_carries_the_display_name() -> None:
     figure = _lob_month_figure(LABELS)
     bottleneck = next(trace for trace in figure.data if trace.name == "B/N 공정")
 
-    assert [str(value) for value in bottleneck.customdata[0]] == ["26.08", "0.82", "절단"]
+    assert _hover_cells(bottleneck.customdata[0]) == ["26.08", "0.82", "절단"]
+    # 이동 꼬리는 원본 공정이다.
+    assert bottleneck.customdata[0][-len(HOME_CELL_LINK_FIELDS)] == "SAW"
 
 
 def test_lob_top5_hover_customdata_carries_the_display_name() -> None:
@@ -320,8 +333,9 @@ def test_lob_top5_hover_customdata_carries_the_display_name() -> None:
     figure = _lob_month_figure(LABELS)
     top5 = next(trace for trace in figure.data if trace.name == "B/N Capa Top 5")
 
-    assert "절단" in [str(value) for value in top5.customdata[0]]
-    assert "SAW" not in [str(value) for value in top5.customdata[0]]
+    assert "절단" in _hover_cells(top5.customdata[0])
+    assert "SAW" not in _hover_cells(top5.customdata[0])
+    assert top5.customdata[0][-len(HOME_CELL_LINK_FIELDS)] == "SAW"
 
 
 def test_bottleneck_detail_bar_name_and_hover_show_the_display_name() -> None:

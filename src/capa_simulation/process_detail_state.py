@@ -3,7 +3,8 @@
 """공정 Capa 상세로 들어오는 길과 그 화면의 보는 상태.
 
 HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 이 화면이 열린다(2026-10-15
-사용자 결정). 넘기는 길은 둘이다.
+사용자 결정). `Capa LOB 현황` 그림의 생산계획 LOB B/N 막대·B/N Top 5 막대도 같다(2026-10-18 사용자
+요청). 넘기는 길은 둘이다.
 
 - **전달 칸**(`PROCESS_DETAIL_REQUEST_KEY`) — 같은 세션 안의 1차 길. 위젯이 아닌 세션 칸이다. HOME
   이 상세 화면의 **위젯 키**에 바로 적으면 페이지를 옮긴 첫 회차에 `persist_state` 경로와 엇갈린다
@@ -21,8 +22,9 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
   걷힌 회차에 그 칸을 비우므로 같은 링크로 다시 들어오면 다시 적용한다.
 
 HOME 그림은 표적 막대(trace 0)의 `customdata` **끝**에 이동 정보 일곱 칸(`HOME_CELL_LINK_FIELDS`)을
-싣는다. hover 칸 차례는 그대로이고, 과거 실적 칸은 공정 자리를 비워(`None`) 콜백이 무시한다 — 과거
-구간·연간 Total 달은 이 화면의 달 축(조회기간 ∩ 소요 달)에 없다.
+싣는다 — `Capa LOB 현황` 은 값 막대와 그 위 증감 조각이 표적이다. hover 칸 차례는 그대로이고, 과거
+실적 칸은 공정 자리를 비워(`None`) 콜백이 무시한다 — 과거 구간·연간 Total 달은 이 화면의 달 축
+(조회기간 ∩ 소요 달)에 없다.
 """
 
 from __future__ import annotations
@@ -86,6 +88,9 @@ FROM_HOME = "home"
 # 출처 띠가 부르는 HOME 구획 이름. HOME 의 구획 제목과 같은 글자다.
 HOME_KEY_PROCESS_SECTION = "주요공정 확보율"
 HOME_BOTTLENECK_SECTION = "상세 B/N 공정"
+# `Capa LOB 현황` 그림(생산계획 LOB 의 B/N 막대 · B/N Top 5 막대)은 한 그림이라 구획 제목 대신 그림
+# 제목을 쓴다.
+HOME_LOB_SECTION = "Capa LOB 현황"
 
 # 표적 막대 `customdata` 끝의 이동 정보 차례. 그림(`home_cell_link_values`)과 콜백
 # (`parse_home_cell_link`)이 이 한 벌을 본다 — 앞의 hover 칸 수와 무관하게 끝에서 센다.

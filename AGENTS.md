@@ -5217,9 +5217,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     순위 상한 `BOTTLENECK_DETAIL_RANK_LIMIT` 은 여기서 정하고 서비스에 인자로 넘긴다.
     자르는 곳은 서비스 한 곳이고 Figure 는 받은 프레임을 다시 자르지 않는다.
   - **`주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·그 달로 `공정 Capa 상세`가 열린다**
-    (2026-10-15 사용자 결정). 두 월 그림의 `st.plotly_chart` 에 `on_select=콜백`·`selection_mode=
-    "points"` 를 주고(`home_rendering.open_clicked_home_cell`), 누를 수 있는 것은 hover 표적 막대
-    (trace 0)뿐이다 — 나머지는 `hoverinfo="skip"` 이다. 표적 막대 `customdata` **끝**에 원본 공정·
+    (2026-10-15 사용자 결정). **`Capa LOB 현황` 의 생산계획 LOB B/N 막대·B/N Top 5 막대도 같다**
+    (2026-10-18 사용자 요청 — 출처 띠 구획 이름은 그림 제목 `HOME_LOB_SECTION`). 세 월 그림의
+    `st.plotly_chart` 에 `on_select=콜백`·`selection_mode="points"` 를 주고(`home_rendering.
+    open_clicked_home_cell`), 히트맵·상세 B/N 에서 누를 수 있는 것은 hover 표적 막대(trace 0)뿐이다 —
+    나머지는 `hoverinfo="skip"` 이다. `Capa LOB 현황` 은 값 막대(`B/N 공정`·`B/N Capa Top 5`)와 그 위
+    확보율 보정 증감 조각이 표적이고(`home_lob_figures._link_columns` · `build_execution_delta_bars(links=)`),
+    Density 꺾은선·도넛·표 칸은 이동 정보가 없어 눌러도 무시된다. 표적 막대 `customdata` **끝**에 원본 공정·
     정수 월·숫자 표시 확보율·원 확보율·가용·소요·실행 증감 일곱 칸을 싣는다(`process_detail_state.
     HOME_CELL_LINK_FIELDS`, hover 칸 차례는 그대로). 과거 실적 칸은 그 일곱 칸이 `None` 이라 콜백이
     무시하고, 연간 Total 칸에는 칸이 없다 — 둘 다 상세 화면의 달 축(조회기간 ∩ 소요 달)에 없다.
@@ -5231,18 +5235,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     displays one or more elements」가 클릭마다 한 줄 남는다 — Streamlit 1.63 의 `st.switch_page` 가 안에서
     `st.empty()` 를 만들어서다(`streamlit.commands.execution_control`). **예상된 경고이고 오류가 아니다**(화면 동작 정상,
     2026-10-15 브라우저 확인). 없애려면 콜백은 전달 칸만 심고 본문 회차에서 옮겨야 하는데 그러면 회차가
-    하나 는다 — 그래서 두었다. 선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐리므로 두 월 그림의 모든 trace 에
-    `unselected` 불투명도 1(글자 trace 는 글자색 그대로)을 준다(`home_figure_common.keep_unselected_opaque`).
+    하나 는다 — 그래서 두었다. 선택을 켜면 Plotly 가 고르지 않은 점을 0.2 배로 흐리므로 세 월 그림의 모든 trace 에
+    `unselected` 불투명도 1(글자 trace 와 막대 안 글자는 글자색 그대로)을 준다(`home_figure_common.keep_unselected_opaque`).
     **선택을 켠 그림의 `dragmode=False` 는 Streamlit 이 `pan` 으로 덮는다**(거짓값일 때만 덮는다 — 참값은
     무엇이든 같다). 축이 `fixedrange` 라 그림은 움직이지 않지만 Plotly 끌기 층이 `touchstart` 에서
     `preventDefault` 를 불러, 그 그림 위에서 시작한 터치 스크롤(본문 세로·월 캔버스 가로)이 막힌다
-    (2026-10-15 검토, 터치 Chrome 실측). 그래서 `app.py` 가 두 그림 key(`home_rendering.HOME_CELL_CHART_KEYS`)
+    (2026-10-15 검토, 터치 Chrome 실측). 그래서 `app.py` 가 세 그림 key(`home_rendering.HOME_CELL_CHART_KEYS`)
     를 공정 Capa 상세 결합 캔버스 key 와 함께(`CELL_SELECT_CHART_KEYS`) 터치 스크롤 막이
     (`components/plotly_touch_scroll.py`)에 넘긴다 — 스와이프는 브라우저가 스크롤하고
     탭은 호환 마우스 사건으로 칸 클릭이 된다. **칸 선택을 켠 그림을 더하면 그 key 도 막이에 더한다**
-    (`test_home_page` 가 선택을 켠 그림과 그 묶음을 대조한다). 이 위젯 둘이 `render_home_figures`
+    (`test_home_page` 가 선택을 켠 그림과 그 묶음을 대조한다). 이 위젯 셋이 `render_home_figures`
     안의 유일한 위젯이고, 숨은 Main 회차에는 그리지 않으므로 위젯도 없다. 이 꼬리를 바꾸면
-    `HOME_FIGURE_SCHEMA_VERSION` 을 올린다(51).
+    `HOME_FIGURE_SCHEMA_VERSION` 을 올린다(52).
   - **화면에 그리는 Figure 는 정확히 여덟 개다**(요약 2 + 계획 세부수량 2 + 주요공정 히트맵 2 +
     상세 B/N 2). 네 묶음에서 `HomeFigureSet`의 이름 있는 여덟 필드로 모아 렌더링해 위치 혼동을
     막는다. 비교 덤벨은 계획 세부수량 묶음에 들지만 접힌 상자에 따로 그린다. 판정 기준은

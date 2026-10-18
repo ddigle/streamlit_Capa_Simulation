@@ -21,11 +21,16 @@ from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
     KEY_PROCESS_MONTHS_CHART_KEY,
+    LOB_MONTHS_CHART_KEY,
     open_clicked_home_cell,
 )
 from capa_simulation.design import tokens
 from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
-from capa_simulation.process_detail_state import HOME_BOTTLENECK_SECTION, HOME_KEY_PROCESS_SECTION
+from capa_simulation.process_detail_state import (
+    HOME_BOTTLENECK_SECTION,
+    HOME_KEY_PROCESS_SECTION,
+    HOME_LOB_SECTION,
+)
 from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
@@ -612,11 +617,11 @@ def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> No
     assert configs["bottleneck_detail_labels"]["staticPlot"] is True
 
 
-def test_only_the_two_month_figures_open_the_process_detail_on_a_cell_click(
+def test_only_the_three_month_figures_open_the_process_detail_on_a_cell_click(
     seeded_database: Path,
 ) -> None:
-    """칸을 누르면 공정 Capa 상세가 열리는 그림은 `주요공정 확보율`·`상세 B/N 공정` 월 그림
-    둘뿐이다.
+    """칸·막대를 누르면 공정 Capa 상세가 열리는 그림은 `Capa LOB 현황`(생산계획 LOB 의 B/N 막대 ·
+    B/N Top 5 막대 — 2026-10-18 사용자 요청)·`주요공정 확보율`·`상세 B/N 공정` 월 그림 셋뿐이다.
 
     `on_select` 를 지우면 클릭이 조용히 죽고, 다른 그림에 켜면 그 그림 위 터치 스크롤이 막힌다 —
     선택을 켠 그림은 정확히 터치 스크롤 막이에 넘기는 묶음(`HOME_CELL_CHART_KEYS`)이어야 한다.
@@ -628,6 +633,7 @@ def test_only_the_two_month_figures_open_the_process_detail_on_a_cell_click(
     linked = {key for key, (on_select, _) in selections.items() if on_select != "ignore"}
     assert linked == set(HOME_CELL_CHART_KEYS)
     for key, section in (
+        (LOB_MONTHS_CHART_KEY, HOME_LOB_SECTION),
         (KEY_PROCESS_MONTHS_CHART_KEY, HOME_KEY_PROCESS_SECTION),
         (BOTTLENECK_MONTHS_CHART_KEY, HOME_BOTTLENECK_SECTION),
     ):
@@ -807,7 +813,8 @@ def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
     first_month_capacity = before["B/N 공정"].y[0]
     first_month_density = before["Density"].y[0]
     # 첫 달은 시드 프리셋이 정한다. 숫자를 적어 두면 시드가 바뀔 때 엉뚱한 달에 넣는다.
-    first_month = 200000 + int(str(before["Density"].customdata[0]).replace(".", ""))
+    # 점마다 [월 라벨, 공정 Capa 상세 이동 정보…] 다 — 첫 칸이 라벨이다.
+    first_month = 200000 + int(str(before["Density"].customdata[0][0]).replace(".", ""))
 
     repository = DuckDBScenarioRepository(settings.DUCKDB_PATH)
     repository.replace_global_advance_load(
