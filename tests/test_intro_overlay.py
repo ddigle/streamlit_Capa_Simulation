@@ -1013,3 +1013,27 @@ def test_opening_the_summary_asks_once_for_pending_parts() -> None:
         body = body[: body.index("\n  }\n")]
         assert body.index("refreshAsked = false;") < body.index("askRefreshIfPending();"), opening
     assert js.count("window.__capaSummaryRefresh();") == 1
+
+
+def test_the_entry_veil_covers_the_title_to_its_right_end() -> None:
+    """넓은 화면의 그늘은 80% 구간을 타이틀 글자의 오른쪽 끝(+24px)까지 늘리고 그 뒤 화면 폭의
+    20% 에 걸쳐 걷는다 — 둘째 줄 「AX Management」 가 웨이퍼에 겹쳐도 글자 밑이 바탕색 80% 다
+    (2026-10-18 사용자 결정 D안, 자리·크기는 그대로). 끝을 모르면 원래 모양(36% → 68%)이고 62% 를
+    넘지 않는다. 메인 스레드가 글꼴이 올라온 뒤와 창 크기가 바뀔 때 타이틀 끝을 재어 장면에
+    보낸다."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    veil = _between(
+        js, "function drawVeil() {", "/* ------------------------------------------------"
+    )
+    assert "const hold = Math.min(0.62, Math.max(0.36, (titleRight + 24) / W));" in veil
+    assert "grad.addColorStop(hold, rgba(surface, 0.8));" in veil
+    assert "grad.addColorStop(Math.max(0.68, hold + 0.2), rgba(surface, 0));" in veil
+    handler = _between(js, '} else if (m.type === "clear") {', '} else if (m.type === "summary") {')
+    assert "titleRight = Math.max(0, Number(m.x) || 0);" in handler
+    measure = _between(js, "function postTitleClear() {", "const onResize = () => {")
+    assert 'if (mode !== "intro" || handedOff) return;' in measure
+    assert "range.getBoundingClientRect().right" in measure
+    assert 'sceneHandle.post({ type: "clear", x: right });' in measure
+    resize = _between(js, "const onResize = () => {", "window.addEventListener")
+    assert "postTitleClear();" in resize
+    assert "document.fonts.ready.then(postTitleClear);" in js

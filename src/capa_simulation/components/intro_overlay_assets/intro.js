@@ -430,7 +430,7 @@ function summaryGrid(W, H) {
  * — 필요한 것은 모두 `init` 메시지와 인자(`gridOf` = summaryGrid)로 받고 도우미는 전부 안에 둔다.
  * 워커를 못 쓰면 같은 함수를 메인 스레드에서 `port` 흉내로 돌린다. 시각은 절대값(timeOrigin + now)이다.
  *
- * 메시지: init · begin(at) · progress(reached·total·ready) · resize · summary(값) ·
+ * 메시지: init · begin(at) · progress(reached·total·ready) · resize · clear(타이틀 오른쪽 끝 x) · summary(값) ·
  *         summary-on(at·charts·rows·look·veil·instant) · view(토글 셋·instant) · pause · resume(크기) ·
  *         stats · stop
  * 회신: stats · summary-ready · hits(말풍선 자리)
@@ -549,6 +549,8 @@ function scene(port, gridOf) {
   let lookTween = null;
   let veil = 1;
   let veilTween = null;
+  // 입장 화면 타이틀 글자의 오른쪽 끝(CSS px, 0 이면 모른다). 그늘이 그 끝까지 짙게 덮는다(`drawVeil`).
+  let titleRight = 0;
   let advanceColor = [0, 0, 0, 1];
 
   // ---- 머리 줄 토글 셋(선행 B/O·선행 입고·GAP). `viewWant` 는 켜려는 모습(0·1)이다. 움직임은 달마다 하나씩의
@@ -798,7 +800,10 @@ function scene(port, gridOf) {
     g.restore();
   }
 
-  // 글자 쪽(넓은 화면은 왼쪽, 좁은 화면은 아래)을 바탕색으로 덮어 웨이퍼 맵 위 글자가 읽히게 한다.
+  // 글자 쪽(넓은 화면은 왼쪽, 좁은 화면은 아래)을 바탕색으로 덮어 웨이퍼 맵 위 글자가 읽히게 한다. 넓은
+  // 화면에서는 80% 구간을 타이틀 오른쪽 끝(+24px)까지 늘리고 그 뒤 화면 폭의 20% 에 걸쳐 걷는다 — 둘째 줄
+  // 「AX Management」 가 웨이퍼에 겹쳐도 글자 밑이 바탕색 80% 다(2026-10-18 사용자 결정 D안 — 자리·크기는
+  // 그대로). 타이틀 끝을 모르거나 짧으면 원래 모양(36% 에서 80%, 68% 에서 0)이고, 늘려도 62% 를 넘지 않는다.
   function drawVeil() {
     if (veil <= 0.003) return;
     let grad;
@@ -808,10 +813,11 @@ function scene(port, gridOf) {
       grad.addColorStop(0.38, rgba(surface, 1));
       grad.addColorStop(0.82, rgba(surface, 0));
     } else {
+      const hold = Math.min(0.62, Math.max(0.36, (titleRight + 24) / W));
       grad = g.createLinearGradient(0, 0, W, 0);
       grad.addColorStop(0, rgba(surface, 1));
-      grad.addColorStop(0.36, rgba(surface, 0.8));
-      grad.addColorStop(0.68, rgba(surface, 0));
+      grad.addColorStop(hold, rgba(surface, 0.8));
+      grad.addColorStop(Math.max(0.68, hold + 0.2), rgba(surface, 0));
     }
     g.globalAlpha = veil;
     g.fillStyle = grad;
@@ -1974,6 +1980,9 @@ function scene(port, gridOf) {
     } else if (m.type === "resize") {
       resize(m.width, m.height, m.dpr);
       loop();
+    } else if (m.type === "clear") {
+      titleRight = Math.max(0, Number(m.x) || 0);
+      loop();
     } else if (m.type === "summary") {
       sum = m.summary || null;
       fontsReady.then(() => {
@@ -2291,8 +2300,23 @@ function createOverlay(api, data, initial, syncToolbar) {
   api.mode = sceneHandle.mode;
   api.stats = () => sceneHandle.stats();
   const size = () => ({ width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio || 1 });
+  // 그늘이 타이틀 끝까지 짙게 덮도록 타이틀 글자의 오른쪽 끝을 장면에 알린다. 타이틀 크기는 창 폭을
+  // 따르므로 글꼴이 올라온 뒤와 창 크기가 바뀔 때 잰다. 입장 단계에서만 — 떠날 때는 타이틀이 날아가고
+  // Summary 에서는 그늘이 걷힌다.
+  function postTitleClear() {
+    if (mode !== "intro" || handedOff) return;
+    let right = 0;
+    for (const node of title.childNodes) {
+      if (node.nodeType !== 3) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      right = Math.max(right, range.getBoundingClientRect().right);
+    }
+    sceneHandle.post({ type: "clear", x: right });
+  }
   const onResize = () => {
     sceneHandle.post({ type: "resize", ...size() });
+    postTitleClear();
     placeLabels();
   };
   window.addEventListener("resize", onResize);
@@ -3052,6 +3076,8 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   if (intro) {
     render();
+    if (document.fonts) document.fonts.ready.then(postTitleClear);
+    else postTitleClear();
     poller = window.setInterval(poll, POLL_MS);
     if (signalMissing) setReady();
     if (themeReloadPending(theme)) {
