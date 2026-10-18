@@ -346,8 +346,8 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   `(process_name, product_scope)` PK 이고 `product_scope` 는 지금 모두 `'*'`(공정 전체 — 나중
   제품 축 자리)다. TAT·공정 선후관계가 저장소에 없어 파생값이 아니라 사람이 적는 원장이고,
   리비전 없는 현행값이다. `cutoff_days` 는 DOUBLE 로 받되 `services/wd_window.py` 가 내림해 쓴다.
-  가용설비 현황 `필요단축일정`·월별 가용대수가 읽는다.
-- `shortening_filter_profile`·`shortening_filter_process`(마이그레이션 19): `필요단축일정` 탭의
+  `필요단축일정` 화면·가용설비 현황 월별 가용대수가 읽는다.
+- `shortening_filter_profile`·`shortening_filter_process`(마이그레이션 19): `필요단축일정` 화면의
   공용 조회 조건 — 머리 한 행(`start_month`·`end_month` `YYYYMM`, 둘 다 있거나 둘 다 NULL,
   version)과 고른 공정(`sort_order` 차례). 기간 NULL 은 「저장 안 함 → 조회기간 전체」, 공정 0행은
   「목표 미달 공정 전체」다. 기간과 공정은 따로 쓰고 쓸 때마다 version+1. 규칙은
