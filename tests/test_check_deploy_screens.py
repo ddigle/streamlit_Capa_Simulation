@@ -1487,7 +1487,8 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
             "app_pages/available_equipment_status.py",
             'TAB_RAWDATA = ":material/table_rows: RawData"',
         ),
-        ("src/capa_simulation/navigation.py", '":material/event_upcoming: 필요단축일정"'),
+        # 필요단축일정은 별도 화면이다(2026-10-18) — 사이드바 링크 주소로 간다(`SHORTENING_PAGE`).
+        ("src/capa_simulation/navigation.py", '"app_pages/required_shortening.py",'),
         ("app_pages/space_status.py", '"층 바로 가기",'),
         ("app_pages/space_status.py", '"배치 편집",'),
         ("app_pages/space_status.py", '"미배치대수":'),
@@ -1965,7 +1966,7 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
 
     assert screens.summarize_sidebar_groups(every) == (
-        "Static Capa 머리 + 4 · 실행 관리 머리 + 6 · Dynamic Capa 머리 + 1 — "
+        "Static Capa 머리 + 4 · 실행 관리 머리 + 7 · Dynamic Capa 머리 + 1 — "
         "정한 차례·수와 같음 · 상자 제목 한 줄 · 잘림 없음"
     )
     # 차례가 바뀌거나 하나가 빠지거나 하위 수가 다르면 「다름」, 줄바꿈·말줄임은 그 상자 이름만
@@ -1974,7 +1975,7 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     swapped[0] = {**swapped[0], "lines": 2}
     line = screens.summarize_sidebar_groups(swapped)
     assert line == (
-        "실행 관리 머리 + 6 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
+        "실행 관리 머리 + 7 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
         "정한 차례·수와 다름 · 줄바꿈: 실행 관리"
     )
     missing = screens.summarize_sidebar_groups([every[0], {**every[2], "clipped": True}])

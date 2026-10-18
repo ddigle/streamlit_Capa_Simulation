@@ -1,6 +1,6 @@
 # Purpose: 필요단축일정 공용 조회 조건(기간·공정) 프로필의 모델·값 검증·심기·합치기 규칙을 둔다.
 
-"""필요단축일정 탭의 공용 조회 조건 프로필(2026-10-08 사용자 요청).
+"""필요단축일정 화면의 공용 조회 조건 프로필(2026-10-08 사용자 요청).
 
 저장은 설비 DB 의 `equipment_ops.shortening_filter_profile`·`shortening_filter_process`(0019)이고
 SQL 은 `persistence/equipment_repository.py` 가 갖는다. 이 모듈은 Streamlit·DB 를 모르는 규칙만

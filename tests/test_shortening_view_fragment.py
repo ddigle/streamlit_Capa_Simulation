@@ -50,7 +50,6 @@ from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
 )
-from capa_simulation.navigation import EQUIPMENT_SHORTENING_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_shortening_baseline_cache,
@@ -60,7 +59,7 @@ from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
 FULL_RUNS_KEY = "test_full_app_runs"
 CSV_KEYS = (
     "equipment_shortening_units_csv",
@@ -174,7 +173,6 @@ exec(compile(page_source, {str(PAGE)!r}, "exec"), {{"__name__": "__main__"}})
 
 def _open(runner: FragmentBrowser) -> AppTest:
     app = AppTest.from_string(_script(), default_timeout=180)
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SHORTENING_TAB
     app.run()
     _assert_clean(app)
     assert runner.started == [[]]
@@ -277,7 +275,6 @@ def test_a_dark_session_draws_the_view_run_in_dark_colors_like_the_full_run(
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = AppTest.from_string(_script(begins_theme=True), default_timeout=180)
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SHORTENING_TAB
     app.query_params["theme"] = "dark"
     app.run()
     _assert_clean(app)

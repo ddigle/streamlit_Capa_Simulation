@@ -52,6 +52,7 @@ from capa_simulation.navigation import (
     IMPLEMENTING_SUFFIX,
     LOAD_CONVERSION,
     PROCESS_CAPA_DETAIL,
+    REQUIRED_SHORTENING,
     SCENARIO_MANAGEMENT,
     SIDEBAR_GROUPS,
     SPACE_STATUS,
@@ -100,6 +101,12 @@ EXPECTED_PAGES = [
         False,
     ),
     ("app_pages/process_capa_detail.py", "공정 Capa 상세", ":material/troubleshoot:", False),
+    (
+        "app_pages/required_shortening.py",
+        "필요단축일정 (Data확보중)",
+        ":material/event_upcoming:",
+        False,
+    ),
     (
         "app_pages/available_equipment_status.py",
         "가용설비 현황 (Data확보중)",
@@ -158,14 +165,16 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "app_pages/calculation_result.py",
         STANDARD_TARGET_CAPA.path,
     ]
-    # 실행 관리 하위 여섯 — 공정 하나의 대책 → 설비 일정 → 현장 → 성능 실적 셋.
+    # 실행 관리 하위 일곱 — 공정 하나의 대책 → 전체 공정의 단축 계획(필요단축일정, 2026-10-18
+    # 가용설비 현황 탭에서 뗐다) → 설비 일정 → 현장 → 성능 실적 셋.
     assert EXECUTION_MANAGEMENT.path == "app_pages/execution_management.py"
-    assert list(EXECUTION_MANAGEMENT_SUBPAGES[:3]) == [
+    assert list(EXECUTION_MANAGEMENT_SUBPAGES[:4]) == [
         PROCESS_CAPA_DETAIL,
+        REQUIRED_SHORTENING,
         AVAILABLE_EQUIPMENT_STATUS,
         SPACE_STATUS,
     ]
-    assert [spec.path for spec in EXECUTION_MANAGEMENT_SUBPAGES[3:]] == [
+    assert [spec.path for spec in EXECUTION_MANAGEMENT_SUBPAGES[4:]] == [
         "app_pages/actual_efficiency.py",
         "app_pages/actual_upeh.py",
         "app_pages/yield_actual.py",
@@ -1707,9 +1716,14 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 
 
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
-    """가용설비 현황과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러 번 연다)다."""
+    """가용설비 현황·필요단축일정과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러 번
+    연다)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
-    assert declared == {AVAILABLE_EQUIPMENT_STATUS.path, PROCESS_CAPA_DETAIL.path}
+    assert declared == {
+        AVAILABLE_EQUIPMENT_STATUS.path,
+        REQUIRED_SHORTENING.path,
+        PROCESS_CAPA_DETAIL.path,
+    }
 
 
 def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: AppTest) -> None:
@@ -1931,10 +1945,11 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
         f"시뮬레이션 DB 가 이 코드보다 새 버전입니다(DB {newer} · 코드"
     )
 
-    # 설비 DB 를 여는 네 화면 모두를 돈다. 페이지 소스에서 경고 호출을 찾아 대조해 두어,
+    # 설비 DB 를 여는 다섯 화면 모두를 돈다. 페이지 소스에서 경고 호출을 찾아 대조해 두어,
     # 호출을 지우거나 새 화면에 더하면 이 목록도 같이 고치게 한다.
     equipment_pages = (
         AVAILABLE_EQUIPMENT_STATUS.path,
+        REQUIRED_SHORTENING.path,
         SPACE_STATUS.path,
         STANDARD_TARGET_CAPA.path,
         WIP_STATUS.path,

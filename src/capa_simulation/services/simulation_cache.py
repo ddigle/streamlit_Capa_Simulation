@@ -2361,7 +2361,7 @@ def get_process_month_trace(
     return build_process_month_trace(rows, capacity_tables, process=process, month=month)
 
 
-# 공정 Capa 상세의 설비 일정(참고). 필요단축일정 탭과 같은 계산을 공용 판정 기준(달마다 다른
+# 공정 Capa 상세의 설비 일정(참고). 필요단축일정 화면과 같은 계산을 공용 판정 기준(달마다 다른
 # 목표)으로 한 벌 더 두고, 공정 하나의 설비 일정(신규 호기·비가동 손실·전월 대비)을 따로 둔다.
 # 탭의 칸(`get_required_shortening`)은 그대로다.
 

@@ -2,7 +2,7 @@
 
 """실행 관리 머리 — 첫 판은 데이터를 읽지 않는다(2026-10-17 사용자 결정).
 
-화면을 단독으로 띄워 DB 연결을 막아 둔 채 그려지는지, 하위 화면 여섯이 사이드바 선언 차례 그대로
+화면을 단독으로 띄워 DB 연결을 막아 둔 채 그려지는지, 하위 화면 일곱이 사이드바 선언 차례 그대로
 목차에 서는지, Guide 가 정의(「실행 관리」)를 싣는지 본다. 앱 안에서 링크 수·사이드바 상자·DB 를
 열지 않는 회차는 `tests/test_app_navigation.py` 가 본다.
 """
@@ -51,13 +51,13 @@ def test_the_head_draws_without_opening_any_database(monkeypatch: pytest.MonkeyP
 def test_the_table_of_contents_follows_the_sidebar_declaration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """하위 화면 목차는 사이드바 선언 차례 그대로 여섯이고, 화면마다 「보는 것」 한 줄이 붙는다.
+    """하위 화면 목차는 사이드바 선언 차례 그대로 일곱이고, 화면마다 「보는 것」 한 줄이 붙는다.
     선언에 화면이 늘었는데 한 줄을 적지 않으면 화면이 `KeyError` 로 멈춰 여기서 걸린다."""
     app, _ = _run_without_databases(monkeypatch)
     captions = [str(caption.value) for caption in app.caption]
 
     links = [caption[len(FALLBACK) :] for caption in captions if caption.startswith(FALLBACK)]
-    # 세 영역 비교의 Static·Dynamic 「열기」 둘 + 하위 여섯.
+    # 세 영역 비교의 Static·Dynamic 「열기」 둘 + 하위 일곱.
     assert links == ["열기", "열기", *(spec.title for spec in EXECUTION_MANAGEMENT_SUBPAGES)]
     for spec in EXECUTION_MANAGEMENT_SUBPAGES:
         index = captions.index(f"{FALLBACK}{spec.title}")

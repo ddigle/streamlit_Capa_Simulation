@@ -1,6 +1,6 @@
-# Purpose: 필요단축일정 탭의 조건·목표 선택과 공정 카드형 화면(KPI·LOB 요약·호기 타임라인)을 그린다.
+# Purpose: 필요단축일정의 조건·목표 선택과 공정 카드형 화면(KPI·LOB 요약·호기 타임라인)을 그린다.
 
-"""필요단축일정 탭 — 시안 B 「공정 카드형」(2026-10-07 사용자 승인).
+"""필요단축일정 화면 — 시안 B 「공정 카드형」(2026-10-07 사용자 승인).
 
 계산은 `services/required_shortening.py` 가 하고 결과는 `simulation_cache.get_required_shortening`
 이 다섯 목표를 한 번에 캐시한다. 이 화면은 **고르기만** 한다 — 목표 확보율(본문 머리 줄)·공정
@@ -215,7 +215,7 @@ def render_required_shortening_tab(
     equipment_revision_no: int | None = None,
     baseline_refusal: str | None = None,
 ) -> None:
-    """필요단축일정 탭 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
+    """필요단축일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
 
     조건 위젯 값은 숨은 동안 `persist_state` 가 지킨다.
 
@@ -531,9 +531,10 @@ def _render_scenario_error(reason: str | None) -> None:
 def _render_header(
     today: date, baselines: Sequence[ShorteningBaselineSummary] | None
 ) -> tuple[float, str]:
-    """제목과 오른쪽 `진척 비교`·`목표 확보율`. 제목 옆에 두므로 가로 컨테이너가 아니라 컬럼이다
-    (AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는 조건(기간·공정)만 조건 카드에 둔다.
-    `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를 세우지 않는다."""
+    """설명 한 줄과 오른쪽 `진척 비교`·`목표 확보율`. 설명 옆에 두므로 가로 컨테이너가 아니라
+    컬럼이다(AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는 조건(기간·공정)만 조건 카드에
+    둔다. `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를 세우지 않는다. 제목은 따로 달지
+    않는다 — 별도 화면이 되어(2026-10-18) 페이지 제목 「필요단축일정」 과 겹쳤다."""
     if SHORTENING_LEVEL_KEY not in st.session_state:
         st.session_state[SHORTENING_LEVEL_KEY] = DEFAULT_TARGET_LEVEL
     compare_column: DeltaGenerator | None = None
@@ -542,7 +543,6 @@ def _render_header(
     else:
         title, compare_column, picker = st.columns([3, 1.5, 1], vertical_alignment="bottom")
     with title:
-        st.markdown("#### :material/event_upcoming: 필요단축일정")
         st.caption(
             "목표 확보율에 모자란 달을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지 — "
             f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"

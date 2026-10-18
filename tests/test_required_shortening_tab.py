@@ -1,6 +1,7 @@
-# Purpose: 필요단축일정 탭의 그림·목표·공정 필터·CSV·공용 조회 조건·표시명·시나리오 없음을 검사한다.
+# Purpose: 필요단축일정 화면의 그림·목표·공정 필터·CSV·공용 조건·표시명·시나리오 없음을 검사한다.
 
-"""필요단축일정 탭(AppTest).
+"""필요단축일정 화면(AppTest) — 가용설비 현황의 탭이던 것을 실행 관리 아래 별도 화면으로
+뗐다(2026-10-18).
 
 빈 설비 DB 는 오늘 날짜에 맞춘 샘플 fleet 을 보이므로(`equipment_samples.py`) 그 호기로 계산이
 돈다. 시나리오 쪽(기준정보·활성 시나리오·소요대수·HOME 계획)은 모듈 속성을 갈아 끼워 흉내 낸다 —
@@ -19,7 +20,6 @@ import pandas as pd
 import pytest
 import streamlit.elements.lib.policies as policies
 from streamlit.testing.v1 import AppTest
-from test_equipment_pages import _open_tab
 
 from capa_simulation.components.required_shortening_panel import (
     SHORTENING_END_KEY,
@@ -29,7 +29,6 @@ from capa_simulation.components.required_shortening_panel import (
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.navigation import EQUIPMENT_SHORTENING_TAB
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
@@ -47,8 +46,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
-TAB = "필요단축일정"
+PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
 
 
 def _months(count: int = 6) -> list[int]:
@@ -228,8 +226,7 @@ def _run(
         sidebar_first=sidebar_first,
         labels=labels,
     )
-    app = AppTest.from_string(script, default_timeout=120).run()
-    return _open_tab(app, TAB)
+    return AppTest.from_string(script, default_timeout=120).run()
 
 
 def _html(app: AppTest) -> str:
@@ -243,19 +240,12 @@ def _cards(app: AppTest) -> list[str]:
     ]
 
 
-def test_the_tab_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) -> None:
+def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
 
     assert not app.exception, [element.message for element in app.exception]
-    # 탭은 RawData 뒤 다섯째다. `app.tabs` 는 깊이 우선이라 RawData 안쪽 탭이 그 사이에 낀다.
-    labels = [tab.label for tab in app.tabs]
-    assert labels[:4] == [
-        ":material/dashboard: Main",
-        ":material/compare_arrows: Static 대비 일정",
-        ":material/tune: Preference",
-        ":material/table_rows: RawData",
-    ]
-    assert labels.index(EQUIPMENT_SHORTENING_TAB) > labels.index(":material/table_rows: RawData")
+    # 별도 화면이라 가용설비 현황의 탭 묶음(Main·Static 대비 일정·Preference·RawData)이 없다.
+    assert not [tab for tab in app.tabs if tab.label.endswith((" Main", " RawData"))]
     body = _html(app)
     assert "부족 공정" in body and "신규 필요" in body
     assert "계획 · LOB 요약" in body
@@ -292,7 +282,7 @@ def _csv(app: AppTest, key: str) -> tuple[dict[str, object], pd.DataFrame]:
     return captured, frame
 
 
-def test_the_tab_offers_three_csvs_with_the_unit_schedule(tmp_path: Path) -> None:
+def test_the_page_offers_three_csvs_with_the_unit_schedule(tmp_path: Path) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 공정·월(목표 칸 추가)."""
     app = _run(_database(tmp_path))
     assert not app.exception, [element.message for element in app.exception]
@@ -378,7 +368,7 @@ def test_the_process_filter_narrows_the_cards(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
-def test_a_missing_scenario_stops_only_this_tab(tmp_path: Path) -> None:
+def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     database_path = _database(tmp_path)
     app = _run(database_path, fail_scenario=True)
 
@@ -387,10 +377,6 @@ def test_a_missing_scenario_stops_only_this_tab(tmp_path: Path) -> None:
     assert "소요대수를 읽지 못해" in warnings, warnings
     assert "활성 시나리오가 없습니다" in warnings
     assert not _cards(app)
-    # 다른 탭(Cut-off 입력)은 그대로 쓴다.
-    _open_tab(app, "Preference")
-    assert not app.exception
-    assert any(button.label == "Cut-off 저장" for button in app.button)
     clear_equipment_repository()
 
 

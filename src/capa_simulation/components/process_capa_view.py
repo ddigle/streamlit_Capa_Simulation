@@ -30,7 +30,7 @@
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
-정리 줄(알림·「이 공정 단축 일정 CSV」·필요단축일정 탭 링크)과 KPI 넷은 달에 닿지 않아
+정리 줄(알림·「이 공정 단축 일정 CSV」·필요단축일정 화면 링크)과 KPI 넷은 달에 닿지 않아
 프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 """
 
@@ -71,10 +71,9 @@ from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
 )
-from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import theme, tokens
-from capa_simulation.navigation import EQUIPMENT_SHORTENING_TAB, EQUIPMENT_TAB_KEY
+from capa_simulation.navigation import REQUIRED_SHORTENING
 from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_CANVAS_CHART_KEY,
     PROCESS_DETAIL_EXPAND_KEY,
@@ -169,7 +168,7 @@ CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
 CANVAS_SCHEMA_VERSION: Final = 2
 
-# 가용설비 현황(설비 일정 원천·필요단축일정 탭이 사는 화면).
+# 가용설비 현황(설비 일정 원천이 사는 화면).
 AVAILABLE_EQUIPMENT_PAGE: Final = "app_pages/available_equipment_status.py"
 # 표 도구 줄에 적는 단축 목표의 출처.
 TARGET_SOURCE_TEXT: Final = "HOME Preference 확보기준(월별)"
@@ -332,7 +331,7 @@ def target_text(target: TargetLevel, months: Sequence[int]) -> str:
 
 
 def target_label(value: float) -> str:
-    """목표 하나 — 「110% (1.095)」. 필요단축일정 탭의 「110%」 는 1.10 이라 같은 백분율 글자가
+    """목표 하나 — 「110% (1.095)」. 필요단축일정 화면의 「110%」 는 1.10 이라 같은 백분율 글자가
     다른 값을 가리킨다 — 이 화면은 늘 소수를 함께 적는다(설계 logic_final 2)."""
     return f"{threshold_percent_label(value)} ({value:g})"
 
@@ -1124,7 +1123,7 @@ def render_closing_row(
     csv_bytes: bytes | None,
     csv_file_name: str,
 ) -> None:
-    """정리 줄 — 알림(0 이면 생략), 「이 공정 단축 일정 CSV」, 필요단축일정 탭 링크."""
+    """정리 줄 — 알림(0 이면 생략), 「이 공정 단축 일정 CSV」, 필요단축일정 화면 링크."""
     for notice in notices:
         st.caption(notice)
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
@@ -1140,24 +1139,22 @@ def render_closing_row(
             key=SHORTENING_TAB_LINK_KEY,
             icon=":material/arrow_forward:",
             type="tertiary",
-            on_click=open_shortening_tab,
+            on_click=open_shortening_page,
             args=(process,),
         )
 
 
-def open_shortening_tab(process: str) -> None:
-    """필요단축일정 탭을 이 공정으로 연다 — **세션 키만 심는다**(콜백).
+def open_shortening_page(process: str) -> None:
+    """필요단축일정 화면을 이 공정으로 연다 — **세션 키만 심는다**(콜백).
 
-    탭(`EQUIPMENT_TAB_KEY` 와 그 기억 칸)과 공정 상자(`SHORTENING_PROCESS_KEY=[공정]`)만 적는다. 그
-    탭의 공용 조회 조건(설비 DB `0019`)·기준선(`0021`)은 읽지도 쓰지도 않는다 — 공용 쓰기는 그 탭
-    위젯의 `on_change` 에서만 일어나므로 세션 값을 심는 것만으로는 쓰이지 않는다. 갈 곳이
-    없으면(내비게이션이 없는 단독 실행) 옮기지 않는다.
+    공정 상자(`SHORTENING_PROCESS_KEY=[공정]`)만 적고 그 화면(실행 관리 아래, 2026-10-18 가용설비
+    현황 탭에서 뗐다)으로 옮긴다. 그 화면의 공용 조회 조건(설비 DB `0019`)·기준선(`0021`)은 읽지도
+    쓰지도 않는다 — 공용 쓰기는 그 화면 위젯의 `on_change` 에서만 일어나므로 세션 값을 심는
+    것만으로는 쓰이지 않는다. 갈 곳이 없으면(내비게이션이 없는 단독 실행) 옮기지 않는다.
     """
-    st.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SHORTENING_TAB
-    st.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] = EQUIPMENT_SHORTENING_TAB
     st.session_state[SHORTENING_PROCESS_KEY] = [str(process)]
     try:
-        st.switch_page(AVAILABLE_EQUIPMENT_PAGE)
+        st.switch_page(REQUIRED_SHORTENING.path)
     except StreamlitPageNotFoundError:
         return
 

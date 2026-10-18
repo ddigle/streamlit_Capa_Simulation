@@ -36,13 +36,8 @@ from capa_simulation.components.process_capa_view import (
     UNITS_CSV_KEY,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
-from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
-from capa_simulation.navigation import (
-    EQUIPMENT_SHORTENING_TAB,
-    EQUIPMENT_TAB_KEY,
-    PROCESS_CAPA_DETAIL,
-)
+from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.persistence.cache import clear_global_execution_capacity_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -501,8 +496,9 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
     assert captured["data"].startswith("﻿".encode())
 
 
-def test_the_tab_link_plants_only_session_keys(dynamic_databases: tuple[Path, Path]) -> None:
-    """필요단축일정 탭 링크는 세션 키만 심는다 — 공용 조회 조건(0019)에는 쓰지 않는다.
+def test_the_shortening_link_plants_only_session_keys(dynamic_databases: tuple[Path, Path]) -> None:
+    """필요단축일정 화면 링크는 공정 상자 세션 키만 심는다 — 공용 조회 조건(0019)에는 쓰지 않는다.
+    필요단축일정은 가용설비 현황의 탭이 아니라 별도 화면이라(2026-10-18) 그 탭 칸도 건드리지 않는다.
 
     단독 실행이라 갈 페이지가 없어 옮기지는 않는다(`StreamlitPageNotFoundError` 를 삼킨다).
     """
@@ -510,8 +506,7 @@ def test_the_tab_link_plants_only_session_keys(dynamic_databases: tuple[Path, Pa
     app.button(key="process_detail_open_shortening_tab").click()
     _ok(app.run())
 
-    assert app.session_state[EQUIPMENT_TAB_KEY] == EQUIPMENT_SHORTENING_TAB
-    assert app.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] == EQUIPMENT_SHORTENING_TAB
+    assert "equipment_active_tab" not in app.session_state
     assert app.session_state[SHORTENING_PROCESS_KEY] == [DYNAMIC_PROCESS]
     repository = DuckDBEquipmentRepository(dynamic_databases[1])
     profile = repository.load_shortening_filter_profile()

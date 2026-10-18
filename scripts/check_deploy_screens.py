@@ -199,6 +199,8 @@ ADMIN_AREA_PAGE: Final = "admin_area"
 # `process_detail_state`). 앱 모듈을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
 # 본다.
 PROCESS_DETAIL_PAGE: Final = "process_capa_detail"
+# 필요단축일정 — 가용설비 현황의 탭이던 것을 실행 관리 아래 별도 화면으로 뗐다(2026-10-18).
+SHORTENING_PAGE: Final = "required_shortening"
 PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
     "kpi": "process_detail_kpis",
     "canvas": "process_detail_summary_months",
@@ -254,7 +256,7 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
 # 확인이라 선언에서 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 선언과 같은지 본다.
 SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("static_capa", "Static Capa", 4),
-    ("execution_management", "실행 관리", 6),
+    ("execution_management", "실행 관리", 7),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
 # 좁게 끈 사이드바 폭(px). Streamlit 1.63 이 끌어 주는 가장 좁은 폭이다(200~600px) — 이 폭에서도
@@ -1881,9 +1883,8 @@ def check_equipment_headers(screen: Screen) -> str:
 
 
 def check_progress_box(screen: Screen) -> str:
-    """`필요단축일정` 의 `진척 비교` 상자 — 있음·값·선택지 수·자리. 고르지 않는다."""
-    screen.open_page(EQUIPMENT_PAGE)
-    screen.open_tab("필요단축일정")
+    """`필요단축일정` 화면의 `진척 비교` 상자 — 있음·값·선택지 수·자리. 고르지 않는다."""
+    screen.open_page(SHORTENING_PAGE)
     box = screen.selectbox("진척 비교")
     if screen.poll(box.count, timeout=60, accept=lambda count: count > 0) == 0:
         return "상자 없음"

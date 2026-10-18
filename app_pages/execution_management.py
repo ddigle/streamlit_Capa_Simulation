@@ -31,8 +31,11 @@ from capa_simulation.navigation import (
 # 선언에 화면이 늘면 이 표도 함께 고친다(`tests/test_execution_management_page.py` 가 맞댄다).
 SUBPAGE_SUMMARIES: dict[str, str] = {
     "app_pages/process_capa_detail.py": "공정 하나의 공식 부족 → 그 달을 메울 호기·기간(단축·신규)",
+    "app_pages/required_shortening.py": (
+        "목표 확보율에 모자란 공정 전체 → 당길 Qual 일수 · 신규 필요 · 진척 비교"
+    ),
     "app_pages/available_equipment_status.py": (
-        "설비 일정 기준 가용대수 · Static 대비 일정 · 필요단축일정"
+        "설비 일정 기준 가용대수 · Static 대비 일정 · Cut-off"
     ),
     "app_pages/space_status.py": "셋업 이행을 공간·호기로 — 반입 전·지연·미확인 표식",
     "app_pages/actual_efficiency.py": "효율 기준 대비 실적 Gap 과 개선 우선순위",
@@ -61,7 +64,7 @@ AREAS: tuple[tuple[PageSpec, str, str], ...] = (
         "단기 병목을 운영합니다.",
     ),
 )
-# 목차 한 줄에 놓는 카드 수. 여섯 화면이 두 줄로 선다.
+# 목차 한 줄에 놓는 카드 수. 일곱 화면이 세 줄로 선다.
 COLUMNS_PER_ROW = 3
 
 

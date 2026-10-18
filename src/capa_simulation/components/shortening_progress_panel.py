@@ -1,6 +1,6 @@
 # Purpose: 필요단축일정 진척 비교의 기준선 고르기·저장·지우기와 요약·호기 두 줄 카드를 그린다.
 
-"""필요단축일정 탭의 진척 비교(2026-10-08 사용자 요청, 시안 B 「호기마다 과거·현재 두 줄」).
+"""필요단축일정 화면의 진척 비교(2026-10-08 사용자 요청, 시안 B 「호기마다 과거·현재 두 줄」).
 
 `required_shortening_panel` 이 부른다. 이 모듈은 고르고 그리기만 한다 — 짝짓기·요약은
 `services/shortening_progress.py`, 기준선 모델은 `services/shortening_baseline.py`, 저장은 설비 DB

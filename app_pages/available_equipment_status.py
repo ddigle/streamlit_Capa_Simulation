@@ -1,4 +1,4 @@
-# Purpose: 설비 조회·월별 비교·필요단축일정·Cut-off·입력을 연결하고 저장본과 데모의 경계를 관리한다.
+# Purpose: 설비 조회·월별 비교·Cut-off·입력을 연결하고 저장본과 데모의 경계를 관리한다.
 
 from __future__ import annotations
 
@@ -29,19 +29,15 @@ from capa_simulation.components.equipment_explorer import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
-from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.navigation import (
     EQUIPMENT_GAP_TAB,
     EQUIPMENT_MAIN_TAB,
-    EQUIPMENT_SHORTENING_TAB,
     EQUIPMENT_TAB_KEY,
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
-    PageContext,
     bootstrap_error_message,
     load_page_context,
     render_schema_ahead_warning,
@@ -86,21 +82,6 @@ def _months_between(start: date, end: date) -> list[int]:
         months.append(year * 100 + month)
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     return months
-
-
-def _baseline_refusal(*, sample: bool) -> str | None:
-    """필요단축일정 「기준선 저장」 을 막을 까닭. 기준선은 모든 사용자가 보는 고칠 수 없는 기록이라
-    합성 샘플에서 만들지 않는다.
-
-    미저장 설비 편집(RawData 제출·Space 배치)은 막지 않는다 — 그 편집은 편집본(buffer)에만 있고
-    계산은 저장본 사본(draft)만 읽으므로, 화면의 계획은 늘 저장 리비전 그대로다.
-    """
-    if sample:
-        return (
-            "샘플 데이터를 보는 중이라 기준선을 저장하지 않습니다 — 공용 기록은 저장된 호기 "
-            "마스터에서만 만듭니다."
-        )
-    return None
 
 
 def _open_tab(label: str) -> None:
@@ -171,27 +152,28 @@ equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 using_dashboard_sample = equipment.empty
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
-# Static 대비 일정·Preference·필요단축일정). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
+# Static 대비 일정·Preference). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
 # 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔 캐시다). 못
 # 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을 표시명 때문에 막지
 # 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서 고치면 프로필
-# 캐시가 비워져 다음 회차에 그대로 보인다. 필요단축일정 패널은 스스로 읽는다.
+# 캐시가 비워져 다음 회차에 그대로 보인다.
 process_labels = process_labels_module.get_process_labels()
 
 first_action = st.empty()
 sample_notice = st.empty()
-main_tab, gap_tab, preference_tab, rawdata_tab, shortening_tab = stateful_tabs(
+# 필요단축일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
+# `app_pages/required_shortening.py`). Cut-off 는 여기 Preference 에서 고친다.
+main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
         EQUIPMENT_MAIN_TAB,
         EQUIPMENT_GAP_TAB,
         TAB_PREFERENCE,
         TAB_RAWDATA,
-        EQUIPMENT_SHORTENING_TAB,
     ],
     key=EQUIPMENT_TAB_KEY,
 )
 # 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭). Preference·RawData 는 입력 폼이다.
-viewing_tab_open = any(not tab_is_hidden(tab) for tab in (main_tab, gap_tab, shortening_tab))
+viewing_tab_open = any(not tab_is_hidden(tab) for tab in (main_tab, gap_tab))
 if latest_snapshot is None and not tab_is_hidden(main_tab):
     with first_action.container():
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -226,15 +208,15 @@ dashboard_baseline = (
 )
 
 # 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Main·
-# Static 대비 일정·필요단축일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
+# Static 대비 일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
 # 탭을 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
 # Preference(Cut-off)·RawData 의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
 conditions_card = condition_card("설비 조회 조건", name="equipment") if viewing_tab_open else None
-# 호기가 없고 샘플도 끈 Main·필요단축일정에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다
-# — 카드를 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
+# 호기가 없고 샘플도 끈 Main 에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다 — 카드를
+# 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
 if (
     conditions_card is not None
-    and (not tab_is_hidden(main_tab) or not tab_is_hidden(shortening_tab))
+    and not tab_is_hidden(main_tab)
     and using_dashboard_sample
     and not show_sample_fleet
 ):
@@ -261,8 +243,7 @@ with main_tab:
 
 with preference_tab:
     # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다. 돌려받는 **저장된** Cut-off 를
-    # Static 대비 일정·필요단축일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 세 번
-    # 열었다.
+    # Static 대비 일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 여러 번 열었다.
     # 저장은 그 자리에서 `st.rerun()` 하므로 이 회차에 낡은 값이 남지 않는다.
     stored_cutoff = render_cutoff_management(
         repository,
@@ -334,7 +315,7 @@ with gap_tab:
         try:
             # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다. 보기·위젯을
             # 바꾸는 rerun 마다 다시 만들지 않도록 마스터·비가동 내용 지문과 범위로 캐시한다 —
-            # 필요단축일정과 같은 캐시라 범위가 같으면 한 벌을 나눈다.
+            # 필요단축일정 화면과 같은 캐시라 범위가 같으면 한 벌을 나눈다.
             gap_spans = get_equipment_lifecycle_spans(
                 equipment_span_cache_key(
                     equipment=dashboard_equipment,
@@ -411,80 +392,3 @@ with rawdata_tab:
         drafts_replaced=drafts_replaced,
         today=today,
     )
-
-
-with shortening_tab:
-    if tab_is_hidden(shortening_tab):
-        # 이 탭의 기준선 알림 자리는 탭이 숨은 회차에도 채운다 — 비워 두면 거기 남은 토스트가 앞으로
-        # 당겨져 다른 탭에서 다시 뜬다(`reserve_baseline_notice_slots`).
-        reserve_baseline_notice_slots()
-    else:
-        if using_dashboard_sample and not show_sample_fleet:
-            st.info(
-                "등록된 호기가 없습니다. RawData에서 설비 마스터를 입력하거나 "
-                "샘플 데이터를 켜서 화면을 살펴보세요."
-            )
-            reserve_baseline_notice_slots()
-        else:
-            # Static 대비 일정과 같은 입력을 같은 길로 모은다. 소요대수는 활성 시나리오에 있으므로
-            # **이 탭 안에서만** 예외를 잡아 알린다 — 다른 탭과 Cut-off 입력은 막지 않는다.
-            # 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다). 패널은 같은 시나리오
-            # 키와 로더로 달 범위·계획을 꺼낸다 — 소요대수는 그 캐시가 빗나갈 때만, 한 회차에 한
-            # 번만 푼다.
-            # 호기 구간(`span_date_range` 로 넓힌 `build_equipment_lifecycle_spans`)과 환산비는
-            # 고른 달이 정해진 뒤 `get_required_shortening` 이 같은 함수로 만든다.
-            shortening_context: PageContext | None = None
-            shortening_key: ScenarioCacheKey | None = None
-            shortening_demand: Callable[[], pd.DataFrame] | None = None
-            shortening_error: str | None = None
-            try:
-                shortening_context = load_page_context()
-                candidate_key = scenario_cache_key(
-                    shortening_context.reference_version,
-                    shortening_context.active_scenario,
-                    shortening_context.selected_start_month,
-                    shortening_context.selected_end_month,
-                )
-                candidate_demand = scenario_required_equipment(
-                    candidate_key,
-                    scenario_tables=shortening_context.active_scenario["tables"],
-                    reference_tables=shortening_context.reference_tables,
-                )
-                check_scenario_capacity(
-                    candidate_key,
-                    _scenario_tables=shortening_context.active_scenario["tables"],
-                    _reference_tables=shortening_context.reference_tables,
-                    _required_equipment=candidate_demand,
-                )
-                shortening_key, shortening_demand = candidate_key, candidate_demand
-            except BOOTSTRAP_ERRORS as exc:
-                shortening_error = bootstrap_error_message(
-                    exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
-                )
-            render_required_shortening_tab(
-                equipment=dashboard_equipment,
-                downtime=dashboard_downtime,
-                baseline=dashboard_baseline,
-                cutoff=stored_cutoff,
-                today=today,
-                context=shortening_context,
-                required_equipment=shortening_demand,
-                required_equipment_key=shortening_key,
-                scenario_error=shortening_error,
-                owner_tab=shortening_tab,
-                conditions=conditions_card,
-                # 거르는 조건(기간·공정)은 이 DB 의 공용 프로필이고(0019) 진척 비교 기준선도 이 DB
-                # 다(0021). 기준선 머리에 화면의 호기가 나온 저장 리비전을 남긴다.
-                equipment_database_path=equipment_database_path,
-                equipment_revision_id=(
-                    None
-                    if using_dashboard_sample or latest_snapshot is None
-                    else latest_snapshot.revision.revision_id
-                ),
-                equipment_revision_no=(
-                    None
-                    if using_dashboard_sample or latest_snapshot is None
-                    else latest_snapshot.revision.revision_no
-                ),
-                baseline_refusal=_baseline_refusal(sample=using_dashboard_sample),
-            )

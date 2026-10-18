@@ -184,15 +184,25 @@ PROCESS_CAPA_DETAIL = PageSpec(
     has_condition_cards=True,
     uses_equipment_db=True,
 )
+# 설비 일정 기준 가용대수가 시나리오 소요대수 × 목표 확보율에 모자라는 달을 채울 Qual 단축
+# (2026-10-07 사용자 결정). 가용설비 현황의 탭이던 것을 공정 Capa 상세 바로 아래 별도 페이지로
+# 뗐다(2026-10-18 사용자 결정). 활성 시나리오·조회기간으로 소요대수를 맞대고, 설비 DB 에서
+# 저장본·Cut-off·공용 조회 조건(0019)·진척 비교 기준선(0021)을 한 회차에 여러 번 읽으므로 설비 DB
+# 핀을 선언한다. 공정 Capa 상세의 「필요단축일정에서 … 보기」 가 이 경로로 옮긴다.
+REQUIRED_SHORTENING = PageSpec(
+    "app_pages/required_shortening.py",
+    _data_pending("필요단축일정"),
+    ":material/event_upcoming:",
+    has_condition_cards=True,
+    uses_equipment_db=True,
+)
 # 가용설비 현황의 탭. 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
 # 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
 EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 # 기준정보(Static) 가용대수와 설비 마스터 일정으로 낸 **설비 일정 기준** 가용대수를 맞대는 탭이다.
 EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static 대비 일정"
-EQUIPMENT_SHORTENING_TAB = ":material/event_upcoming: 필요단축일정"
-# 설비 DB 만 본다. `Static 대비 일정`·`필요단축일정` 탭만 활성 시나리오·조회기간으로 소요대수를
-# 맞대어 본다.
+# 설비 DB 만 본다. `Static 대비 일정` 탭만 활성 시나리오·조회기간으로 소요대수를 맞대어 본다.
 AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     "app_pages/available_equipment_status.py",
     _data_pending("가용설비 현황"),
@@ -200,9 +210,9 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     condition_tabs=ConditionTabs(
         EQUIPMENT_TAB_KEY,
         first=EQUIPMENT_MAIN_TAB,
-        labels=frozenset({EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}),
-        # `설비 조회 조건` 카드는 Main·Static 대비 일정·필요단축일정에만 선다.
-        card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB, EQUIPMENT_SHORTENING_TAB}),
+        labels=frozenset({EQUIPMENT_GAP_TAB}),
+        # `설비 조회 조건` 카드는 Main·Static 대비 일정에만 선다.
+        card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB}),
     ),
     has_condition_cards=True,
     # 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를 캐시(키 = DB·WAL stat)에서 받아 설비 DB 를
@@ -221,10 +231,12 @@ SPACE_STATUS = PageSpec(
     reads_period=False,
     has_condition_cards=True,
 )
-# 순서는 공정 하나의 대책(공정 Capa 상세) → 설비 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 —
-# 약속에 가장 가까운 설비 이행부터 보고, 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
+# 순서는 공정 하나의 대책(공정 Capa 상세) → 전체 공정의 단축 계획(필요단축일정) → 설비
+# 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 — 약속에 가장 가까운 설비 이행부터 보고,
+# 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
 EXECUTION_MANAGEMENT_SUBPAGES = (
     PROCESS_CAPA_DETAIL,
+    REQUIRED_SHORTENING,
     AVAILABLE_EQUIPMENT_STATUS,
     SPACE_STATUS,
     *(
