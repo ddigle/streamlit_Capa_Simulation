@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Block, Node
 
 from capa_simulation.scenario_preset_state import (
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
@@ -580,6 +581,34 @@ def test_missing_availability_table_shows_the_display_name_with_a_source_notice(
     missing = _frame_with_value(app, "공정", "가공")
     assert missing["Weeknum"].tolist() == ["26-W33"]
     assert any("CSV 양식 다운로드" in caption.value for caption in app.caption)
+
+
+def _subheader_path(node: Block | Node, text: str) -> tuple[int, ...] | None:
+    if not isinstance(node, Block):
+        return () if node.type == "subheader" and node.value == text else None
+    for index, child in node.children.items():
+        found = _subheader_path(child, text)
+        if found is not None:
+            return (index, *found)
+    return None
+
+
+def test_the_missing_availability_notice_does_not_move_the_weekly_table() -> None:
+    """누락 경고와 「누락 공정·주차 확인」은 가용대수를 곱하는 지표에서만 생긴다. 생겼다 사라져도
+    결과 상자의 주차 표 머리(바로 뒤가 표)는 같은 자리다 — 밀리면 표의 가로 스크롤 컴포넌트가 다시
+    마운트되어 스크롤 위치를 잃는다."""
+    app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
+    with_notice = _subheader_path(app.main, "주차별 일 표준 가능량")
+
+    app = app.segmented_control(key="standard_target_output_metric").set_value("대당 일 Capa").run()
+    assert not app.exception
+    assert "누락 공정·주차 확인" not in {expander.label for expander in app.expander}
+    without_notice = _subheader_path(app.main, "주차별 대당 일 Capa")
+
+    assert with_notice is not None
+    assert with_notice == without_notice
 
 
 def test_clearing_the_availability_asks_first() -> None:

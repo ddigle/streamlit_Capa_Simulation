@@ -52,12 +52,22 @@ def build_weekly_standard_target_capacity(
     start_date: date,
     end_date: date,
     detail_level: str,
+    *,
+    already_split: bool = False,
 ) -> pd.DataFrame:
-    """Calculate weekly standard daily input for each process/product classification."""
+    """Calculate weekly standard daily input for each process/product classification.
+
+    `already_split` 은 `required_equipment` 가 이미 `split_standard_target_required_equipment`
+    를 거친 프레임(또는 그 행을 거른 것)일 때만 켠다 — 표준 목표 캐시 래퍼가 분리 결과 캐시에서
+    받은 프레임을 넘길 때다. 분리는 멱등이라 결과는 같고, 소요대수 전체에 ER·예외 마스크를 한 번
+    더 거는 비용만 빠진다. 분리하지 않은 프레임에 켜면 ER·`Pre B/D` DUMMY 가 계산에 섞인다.
+    """
     if detail_level not in WEIGHTED_CAPACITY_HIERARCHY:
         raise ValueError(f"지원하지 않는 표준 목표 Capa 집계 수준입니다: {detail_level}")
 
-    production_required_equipment = prepare_standard_target_required_equipment(required_equipment)
+    production_required_equipment = _standard_target_rows(
+        required_equipment, already_split=already_split
+    )
     monthly_capacity = effective_process_capacity_long(
         production_required_equipment,
         detail_level,
@@ -109,8 +119,13 @@ def add_pkg_equivalent_standard_target(
     required_equipment: pd.DataFrame,
     plan: pd.DataFrame,
     detail_level: str,
+    *,
+    already_split: bool = False,
 ) -> pd.DataFrame:
-    """Add daily PKG Kea equivalent while preserving the calculated demand mix."""
+    """Add daily PKG Kea equivalent while preserving the calculated demand mix.
+
+    `already_split` 의 뜻과 계약은 `build_weekly_standard_target_capacity` 와 같다.
+    """
     if detail_level not in WEIGHTED_CAPACITY_HIERARCHY:
         raise ValueError(f"지원하지 않는 표준 목표 Capa 집계 수준입니다: {detail_level}")
 
@@ -126,7 +141,7 @@ def add_pkg_equivalent_standard_target(
         result[PKG_EQUIVALENT_COLUMN] = pd.Series(dtype="float64")
         return result
 
-    source = prepare_standard_target_required_equipment(required_equipment)
+    source = _standard_target_rows(required_equipment, already_split=already_split)
     source_required = [*DEMAND_ID_COLUMNS, "부하량"]
     require_columns(source, source_required, "소요대수 상세")
     source = source[source_required].copy()
@@ -230,6 +245,13 @@ def prepare_standard_target_required_equipment(data: pd.DataFrame) -> pd.DataFra
 def standard_target_exception_row_count(data: pd.DataFrame) -> int:
     """Count detailed rows omitted by process-specific standard target rules."""
     return split_standard_target_required_equipment(data)[1]
+
+
+def _standard_target_rows(data: pd.DataFrame, *, already_split: bool) -> pd.DataFrame:
+    """표준 목표 제외를 거친 소요대수. 이미 거친 프레임이면 그대로 쓴다(다시 훑지 않는다)."""
+    if already_split:
+        return data
+    return prepare_standard_target_required_equipment(data)
 
 
 def _standard_target_exception_mask(data: pd.DataFrame) -> pd.Series:

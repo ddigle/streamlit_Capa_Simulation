@@ -19,6 +19,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.services.simulation_cache as simulation_cache
+import capa_simulation.services.standard_target_capacity as standard_target_capacity
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
 from capa_simulation.services.display_order_scopes import (
     PAGE_STANDARD_TARGET,
@@ -830,6 +831,41 @@ def test_new_process_combinations_do_not_recompute(
         _result("combos", processes=processes, pkg=pkg)
 
     assert calls == (["weekly", "pkg"] if pkg else ["weekly"])
+
+
+@pytest.mark.parametrize("path", ["result", "filtered"])
+@pytest.mark.parametrize("pkg", [False, True])
+def test_the_wrappers_do_not_split_the_prepared_demand_again(
+    fake_scenario: dict[str, pd.DataFrame],
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    pkg: bool,
+) -> None:
+    """네 래퍼(전체 공정 결과·고른 공정만 계산, 각각 PKG)는 분리 결과 캐시에서 받은 프레임을
+    `already_split=True` 로 넘긴다 — 계산 함수 안에서 소요대수 전체를 다시 분리하지 않는다. 숫자는
+    분리를 다시 하는 기준 경로와 같다."""
+    token = f"no-resplit-{path}-{pkg}"
+    fake_scenario[token] = _small_required()
+    resplits: list[int] = []
+
+    def counting_split(frame: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        resplits.append(len(frame))
+        return split_standard_target_required_equipment(frame)
+
+    monkeypatch.setattr(
+        standard_target_capacity, "split_standard_target_required_equipment", counting_split
+    )
+
+    products: tuple[str, ...] = () if path == "result" else ("Prod-1",)
+    if path == "result":
+        result = _result(token, processes=("P-A",), pkg=pkg)
+    else:
+        result = _weekly(token, processes=("P-A",), products=products, pkg=pkg)
+
+    assert resplits == []
+    # 기준 경로는 공개 함수의 기본 길(분리 포함)이다.
+    expected = _old_path(_small_required(), processes=("P-A",), products=products, pkg=pkg)
+    pd.testing.assert_frame_equal(result, expected)
 
 
 def test_an_error_in_an_unselected_process_does_not_stop_the_selected_one(

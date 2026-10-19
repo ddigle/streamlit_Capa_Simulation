@@ -55,14 +55,14 @@ def build_standard_target_logic_analysis(
     required = ["생산계획년월", "공정", "소요기준", "양산구분"]
     require_columns(required_equipment, required, "소요대수 상세")
 
-    source = required_equipment.copy()
-    month = pd.to_numeric(source["생산계획년월"], errors="coerce")
+    # 숫자 월로 먼저 줄인 뒤에 공정명 다듬기·소요기준 정규화를 건다 — 글자 처리가 소요대수 전체가
+    # 아니라 그 달 행에만 걸린다. 월은 원래 숫자로만 견주므로 먼저 걸러도 남는 행과 차례가 같다.
+    month = pd.to_numeric(required_equipment["생산계획년월"], errors="coerce")
+    source = required_equipment.loc[month.eq(production_month)]
     process_values = source["공정"].astype("string").str.strip()
     basis_values = normalize_demand_basis(source["소요기준"])
     source = source.loc[
-        month.eq(production_month)
-        & process_values.eq(normalized_process)
-        & basis_values.eq(normalized_basis)
+        process_values.eq(normalized_process) & basis_values.eq(normalized_basis)
     ].reset_index(drop=True)
     source = prepare_standard_target_required_equipment(source)
     if source.empty:

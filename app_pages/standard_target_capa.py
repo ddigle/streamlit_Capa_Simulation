@@ -685,6 +685,10 @@ with weekly_output_container:
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
     st.session_state[OUTPUT_METRIC_SHOWN_KEY] = output_metric
+    # 가용대수 누락 경고·「누락 공정·주차 확인」은 표시 항목·조건에 따라 생겼다 사라진다. 늘 서 있는
+    # 이 한 칸 안에 그려 아래 주차 표의 자리를 고정한다 — 밀리면 표 앞의 가로 스크롤 컴포넌트가 다시
+    # 마운트되어 스크롤 위치를 잃는다. 비어 있으면 화면에 아무것도 남지 않는다(테두리·높이 없음).
+    availability_notice_slot = st.container()
 
 with card:
     selected_processes = st.multiselect(
@@ -948,9 +952,10 @@ else:
     )
     # 가용대수를 곱해 구하는 지표에서만 뜻이 있다. 대당 일 Capa 는 가용대수 이전 단계라
     # 입력이 없어도 값이 다 나오는데, 여기서 함께 경고하면 없는 문제를 알리는 셈이 된다.
-    # 표에서 멀리 떨어져 있으면 빈칸을 보고도 이 안내를 못 찾으므로 결과 상자 안에 넣는다.
+    # 표에서 멀리 떨어져 있으면 빈칸을 보고도 이 안내를 못 찾으므로 결과 상자 안 늘 서 있는 칸에
+    # 넣는다.
     if not missing_availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
-        with weekly_output_container:
+        with availability_notice_slot:
             st.warning(
                 f"선택 범위의 공정·주차 중 {len(missing_availability):,}건에 가용대수가 없어 "
                 "결과를 빈칸으로 표시합니다."

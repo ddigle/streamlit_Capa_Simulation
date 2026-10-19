@@ -749,7 +749,11 @@ def _standard_target_demand(
     scenario_tables: Mapping[str, pd.DataFrame],
     reference_tables: Mapping[str, pd.DataFrame],
 ) -> pd.DataFrame:
-    """표준 목표 제외(ER·Pre B/D Dummy)를 적용하고 키의 공정·제품 선택으로 거른 소요대수."""
+    """표준 목표 제외(ER·Pre B/D Dummy)를 적용하고 키의 공정·제품 선택으로 거른 소요대수.
+
+    이 프레임과 `get_standard_target_split` 의 분리 결과는 이미 제외를 거쳤으므로, 아래 래퍼들은
+    계산 함수에 `already_split=True` 로 넘겨 소요대수 전체를 다시 분리하지 않는다.
+    """
     scenario_key, _, _, _, _, processes, products = cache_key
     prepared, _ = get_standard_target_split(
         scenario_key,
@@ -788,6 +792,7 @@ def get_weekly_standard_target_capacity(
         start_date=date.fromisoformat(start_text),
         end_date=date.fromisoformat(end_text),
         detail_level=detail_level,
+        already_split=True,
     )
 
 
@@ -816,6 +821,7 @@ def get_pkg_equivalent_standard_target(
         required_equipment=_standard_target_demand(cache_key, _scenario_tables, _reference_tables),
         plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
         detail_level=detail_level,
+        already_split=True,
     )
 
 
@@ -864,6 +870,7 @@ def get_all_process_standard_target(
             start_date=date.fromisoformat(start_text),
             end_date=date.fromisoformat(end_text),
             detail_level=detail_level,
+            already_split=True,
         )
     except ValueError as exc:
         return StandardTargetOutcome(None, str(exc), exact)
@@ -905,6 +912,7 @@ def get_all_process_pkg_standard_target(
             required_equipment=prepared,
             plan=_scenario_month_slice(_scenario_tables, "RQ_PKG_PLAN", scenario_key),
             detail_level=detail_level,
+            already_split=True,
         )
     except ValueError as exc:
         return StandardTargetOutcome(None, str(exc), base.exact_process_filter)

@@ -23,6 +23,7 @@ from capa_simulation.services.weekly_availability_input import (
     parse_weekly_availability_clipboard,
     prepare_weekly_availability,
 )
+from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 
 
 def _required_equipment() -> pd.DataFrame:
@@ -497,6 +498,199 @@ def test_split_standard_target_demand_matches_the_two_single_purpose_helpers() -
         ("Process-A", "DUMMY"),
     ]
     assert prepared.index.tolist() == [0, 1]
+
+
+def _mixed_required_equipment() -> pd.DataFrame:
+    """두 달·두 공정. 달마다 ER 한 줄과 `Pre B/D` DUMMY 한 줄이 섞여 표준 목표 제외가 행을 뺀다."""
+    base = {"Capa Code": "C1", "Customer": "Customer-A", "CS": "MP"}
+    rows: list[dict[str, object]] = []
+    for month in (202608, 202609):
+        for process, basis in (("Process-A", "WF"), ("Pre B/D", "CHIP")):
+            for product, stack, division, load, need in (
+                ("Product-A", "8H", "Core", 100.0, 1.0),
+                ("Product-B", "12H", "Top", 300.0, 6.0),
+            ):
+                rows.append(
+                    {
+                        **base,
+                        "생산계획년월": month,
+                        "공정": process,
+                        "소요기준": basis,
+                        "양산구분": "양산",
+                        "제품정보": product,
+                        "Stack": stack,
+                        "WF 구분": division,
+                        "부하량": load,
+                        "소요대수": need,
+                    }
+                )
+        rows.append(
+            {
+                **base,
+                "생산계획년월": month,
+                "공정": "Process-A",
+                "소요기준": "WF",
+                "양산구분": " er ",
+                "제품정보": "Product-ER",
+                "Stack": "4H",
+                "WF 구분": "Buffer",
+                "부하량": 9_000.0,
+                "소요대수": 1.0,
+            }
+        )
+        rows.append(
+            {
+                **base,
+                "생산계획년월": month,
+                "공정": "Pre B/D",
+                "소요기준": "CHIP",
+                "양산구분": "양산",
+                "제품정보": "Product-A",
+                "Stack": "8H",
+                "WF 구분": " dummy ",
+                "부하량": 900.0,
+                "소요대수": 1.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _mixed_weekly_target(
+    required_equipment: pd.DataFrame, detail_level: str, *, already_split: bool
+) -> pd.DataFrame:
+    processes = ["Process-A", "Pre B/D"]
+    weeks = ["26-W32", "26-W33", "26-W36", "26-W37"]
+    return build_weekly_standard_target_capacity(
+        required_equipment=required_equipment,
+        run_day=pd.DataFrame(
+            {
+                "생산계획년월": [202608, 202608, 202609, 202609],
+                "공정": processes * 2,
+                "RUN_DAY": [31.0, 30.0, 30.0, 29.0],
+            }
+        ),
+        weekly_availability=pd.DataFrame(
+            {
+                "공정": [process for process in processes for _ in weeks],
+                "Weeknum": weeks * len(processes),
+                "가용대수": [2.0, 3.0, 4.0, 5.0, 1.0, 2.0, 3.0, 4.0],
+            }
+        ),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 9, 13),
+        detail_level=detail_level,
+        already_split=already_split,
+    )
+
+
+@pytest.mark.parametrize("detail_level", WEIGHTED_CAPACITY_HIERARCHY)
+def test_an_already_split_frame_gives_the_same_weekly_target_and_pkg_equivalent(
+    detail_level: str,
+) -> None:
+    """캐시 래퍼가 쓰는 길(이미 분리한 프레임 + `already_split=True`)이 분리를 함께 하는 기본 길과
+    같은 표를 낸다 — 주간 결과와 PKG 환산 둘 다. 분리는 실제로 행을 뺀다(시험이 헛돌지 않게)."""
+    required_equipment = _mixed_required_equipment()
+    prepared, exception_rows = split_standard_target_required_equipment(required_equipment)
+    assert exception_rows == 2
+    assert len(prepared) == len(required_equipment) - 4
+
+    expected = _mixed_weekly_target(required_equipment, detail_level, already_split=False)
+    result = _mixed_weekly_target(prepared, detail_level, already_split=True)
+
+    assert not expected.empty
+    pd.testing.assert_frame_equal(result, expected)
+
+    plan = pd.DataFrame(
+        {
+            "생산계획년월": [202608, 202608, 202609, 202609],
+            "양산구분": ["양산"] * 4,
+            "제품정보": ["Product-A", "Product-B"] * 2,
+            "Stack": ["8H", "12H"] * 2,
+            "Capa Code": ["C1"] * 4,
+            "Customer": ["Customer-A"] * 4,
+            "CS": ["MP"] * 4,
+            "생산수량": [30.0, 20.0, 40.0, 10.0],
+        }
+    )
+    expected_pkg = add_pkg_equivalent_standard_target(
+        weekly_target=expected,
+        required_equipment=required_equipment,
+        plan=plan,
+        detail_level=detail_level,
+    )
+    result_pkg = add_pkg_equivalent_standard_target(
+        weekly_target=result,
+        required_equipment=prepared,
+        plan=plan,
+        detail_level=detail_level,
+        already_split=True,
+    )
+
+    assert expected_pkg[PKG_EQUIVALENT_COLUMN].notna().any()
+    pd.testing.assert_frame_equal(result_pkg, expected_pkg)
+
+
+def test_logic_analysis_ignores_other_months_and_spelling_differences() -> None:
+    """로직 분석은 숫자 월로 먼저 거른 뒤 공정명·소요기준을 다듬는다. 다듬은 뒤 거르던 때와 같은
+    행을 고르는지 본다 — 다른 달의 행(공정 빈 값·다른 표기 포함)은 결과를 바꾸지 않고, 그 달 행의
+    공정명 공백·`Wafer` 표기는 그대로 묶이며, 그 달의 공정 빈 행은 빠진다."""
+    clean = pd.DataFrame(
+        [
+            {
+                "생산계획년월": 202608,
+                "공정": "Process-A",
+                "소요기준": "WF",
+                "양산구분": "양산",
+                "제품정보": product,
+                "Stack": stack,
+                "Capa Code": "C1",
+                "Customer": "Customer-A",
+                "CS": "MP",
+                "WF 구분": division,
+                "부하량": load,
+                "소요대수": need,
+            }
+            for product, stack, division, load, need in (
+                ("Product-A", "8H", "Core", 100.0, 1.0),
+                ("Product-B", "12H", "Top", 300.0, 6.0),
+            )
+        ]
+    )
+    messy = clean.copy()
+    messy["공정"] = [" Process-A ", "Process-A"]
+    messy["소요기준"] = ["Wafer", " wf "]
+    noise = pd.concat(
+        [
+            clean.assign(생산계획년월=202607, 소요대수=50.0),
+            clean.assign(생산계획년월=202609, 공정=None),
+            clean.assign(생산계획년월=202609, 소요기준="wafer", 부하량=7.0),
+            clean.assign(공정=None),
+            clean.assign(공정="Process-B"),
+        ],
+        ignore_index=True,
+    )
+    messy = pd.concat([noise.iloc[:4], messy, noise.iloc[4:]], ignore_index=True)
+
+    def analyse(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        return build_standard_target_logic_analysis(
+            required_equipment=frame,
+            run_day=pd.DataFrame(
+                {"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [20.0]}
+            ),
+            weekly_availability=pd.DataFrame(
+                {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [4.0]}
+            ),
+            weeknum="26-W32",
+            process="Process-A",
+            demand_basis="WF",
+        )
+
+    target, contributions = analyse(messy)
+    expected_target, expected_contributions = analyse(clean)
+
+    assert target.loc[0, "원수요_부하량"] == pytest.approx(400.0)
+    pd.testing.assert_frame_equal(target, expected_target)
+    pd.testing.assert_frame_equal(contributions, expected_contributions)
 
 
 def test_availability_rejects_duplicate_process_week() -> None:

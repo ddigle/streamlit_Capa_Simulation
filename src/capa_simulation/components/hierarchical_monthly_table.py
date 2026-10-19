@@ -239,22 +239,27 @@ def render_hierarchical_monthly_table(
         st.info("표시할 월별 데이터가 없습니다.")
         return
 
+    # 행 페이지 줄은 행 수가 `page_size` 를 넘을 때만 생긴다. 늘 서 있는 이 한 칸 안에 그려 아래
+    # 표의 자리를 고정한다 — 밀리면 가로 스크롤 컴포넌트가 다시 마운트되어 스크롤 위치를 잃는다.
+    # 비어 있으면 화면에 아무것도 남지 않는다(테두리·높이 없음).
+    page_slot = st.container()
     if page_size is not None and page_size > 0 and len(data) > page_size:
         total_rows = len(data)
         page_count = (total_rows + page_size - 1) // page_size
-        page_index = st.selectbox(
-            "표시 범위",
-            list(range(page_count)),
-            format_func=lambda index: (
-                f"{index * page_size + 1:,}–{min((index + 1) * page_size, total_rows):,}행"
-            ),
-            key=f"{key}_page",
-            persist_state="session",
-            width=180,
-        )
-        start_row = page_index * page_size
-        data = data.iloc[start_row : start_row + page_size].copy()
-        st.caption(f"전체 {total_rows:,}행 · {page_index + 1:,}/{page_count:,} 페이지")
+        with page_slot:
+            page_index = st.selectbox(
+                "표시 범위",
+                list(range(page_count)),
+                format_func=lambda index: (
+                    f"{index * page_size + 1:,}–{min((index + 1) * page_size, total_rows):,}행"
+                ),
+                key=f"{key}_page",
+                persist_state="session",
+                width=180,
+            )
+            start_row = page_index * page_size
+            data = data.iloc[start_row : start_row + page_size].copy()
+            st.caption(f"전체 {total_rows:,}행 · {page_index + 1:,}/{page_count:,} 페이지")
 
     # 위젯(표시 범위)은 그렸으니 상태가 유지된다. 닫힌 탭이면 그림 준비는 여기서 접는다 —
     # 아래 `render_split_scroll_table` 도 막지만 그 전에 격자 1~2초를 만들고 버리고 있었다.

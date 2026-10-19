@@ -3,7 +3,9 @@
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
+from streamlit.testing.v1.element_tree import Block, Node
 
+import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.hierarchical_monthly_table import (
     _add_table_grid,
     _build_hierarchical_display,
@@ -133,3 +135,61 @@ def test_hierarchical_export_matches_grouping_labels_and_percent_display() -> No
     assert result["공정"].tolist() == ["Process A", "", "Process B"]
     assert result["속성"].tolist() == ["Core", "Top", "Core"]
     assert result["26.08"].tolist() == ["109.50%", "", ""]
+
+
+def _paged_table_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.hierarchical_monthly_table import (
+        render_hierarchical_monthly_table,
+    )
+
+    rows = int(st.session_state.get("paged_table_rows", 2))
+    data = pd.DataFrame(
+        {
+            "공정": [f"Process-{index}" for index in range(rows)],
+            "202608": [float(index) for index in range(rows)],
+            "202609": [float(index + 1) for index in range(rows)],
+        }
+    )
+    render_hierarchical_monthly_table(
+        data,
+        classification_columns=["공정"],
+        column_labels={},
+        decimal_places=0,
+        key="paged_table",
+        page_size=2,
+    )
+
+
+def _first_path(node: Block | Node, element_type: str) -> tuple[int, ...] | None:
+    if not isinstance(node, Block):
+        return () if node.type == element_type else None
+    for index, child in node.children.items():
+        found = _first_path(child, element_type)
+        if found is not None:
+            return (index, *found)
+    return None
+
+
+def test_the_row_pager_does_not_move_the_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    """행 페이지 줄(「표시 범위」·쪽수)은 행이 `page_size` 를 넘을 때만 생긴다. 생겨도 표의 자리는
+    같아야 한다 — 밀리면 가로 스크롤 컴포넌트가 다시 마운트되어 스크롤 위치를 잃는다."""
+    from streamlit.testing.v1 import AppTest
+
+    # AppTest 에는 Components v2 등록이 없다. 스크롤바는 빼고 표의 자리만 본다.
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda **_: None)
+    app = AppTest.from_function(_paged_table_app).run()
+    assert not app.exception
+    assert not app.selectbox
+    without_pager = _first_path(app.main, "plotly_chart")
+
+    app.session_state["paged_table_rows"] = 3
+    app.run()
+    assert not app.exception
+    assert [widget.label for widget in app.selectbox] == ["표시 범위"]
+    with_pager = _first_path(app.main, "plotly_chart")
+
+    assert without_pager is not None
+    assert with_pager == without_pager
