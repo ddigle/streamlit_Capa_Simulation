@@ -1128,7 +1128,8 @@ def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the
     사용자 결정 — 권장대로: 원형 펼침, 준비가 끝나면 Summary 와 함께 선다, 티저 머리 ← + Detail,
     Admin 탭 없음). 처음 누를 때만 티저를 받아 blob 주소로 띄우고, 티저가 덮은 동안 장면은 쉰다. ← ·
     Esc(티저 안에서 누른 것도)는 원이 그 단추로 접히며 커버로, 티저 머리 Detail 은 그 단추에서 곧장
-    앱으로 간다."""
+    앱으로 간다. 셋 모두 티저 재생을 멈춘다 — 티저는 재생 때 남은 소리를 미리 잡아 두므로 층만
+    숨기면 40초 끝까지 커버와 앱 위에서 소리가 났다."""
     html = (ASSETS / "intro.html").read_text(encoding="utf-8")
     actions = html[html.index('<div class="actions">') : html.index('<p class="hint"')]
     assert actions.index("btn summary") < actions.index("btn introduce")
@@ -1150,7 +1151,11 @@ def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the
     assert 'mode = "teaser";' in opener
     assert "clipPath: `circle(0px at ${x}px ${y}px)`" in opener
     assert 'sceneHandle.post({ type: "pause" })' in opener
+    pauser = _between(js, "function pauseTeaser() {", "async function openTeaser() {")
+    assert "deckFrame.contentWindow.TEASER" in pauser
+    assert "deck.pause();" in pauser
     closer = _between(js, "async function closeTeaser(instant = false) {", "/* ----")
+    assert closer.index("pauseTeaser();") < closer.index("teaserLayer.hidden = true;")
     assert 'sceneHandle.post({ type: "resume", ...size() });' in closer
     assert 'mode = "intro";' in closer
     assert "introduceButton.focus({ preventScroll: true });" in closer
@@ -1158,6 +1163,8 @@ def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the
     assert 'event.key === "Escape" && mode === "teaser"' in keys
     assert 'else if (mode === "teaser" && event.key === "Escape") closeTeaser();' in js
     assert "toDetail(teaserDetail)" in js
+    leaving = _between(js, "async function toDetail(origin = detail) {", "function hide() {")
+    assert 'if (mode === "teaser") pauseTeaser();' in leaving
     assert "const radius = holeAt(origin);" in js
     hide = _between(js, "function hide() {", "mark.cancel();")
     assert "teaserLayer.hidden = true;" in hide

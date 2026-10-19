@@ -1283,6 +1283,13 @@ def test_the_intro_and_sidebar_ids_match_the_app() -> None:
     for name in ("brand-word", "brand-sub"):
         assert f'class="{name}"' in html, name
         assert f'".{name}"' in screens._SUMMARY_MARK_JS, name
+    # 라벨의 오른쪽 이웃은 dock 의 첫 보이는 단추다 — Summary 의 ← 단추가 dock 맨 앞에 있고,
+    # Detail 은 Summary 에서 그 뒤로 붙는다(`dock.appendChild(detail)`). 둘 다 `button` 이라 한
+    # 선택자로 잡는다.
+    assert '<span class="dock" data-slot="dock"><button type="button" class="back">' in html
+    assert '<button type="button" class="btn detail"' in html
+    assert "dock.appendChild(detail);" in _text(assets / "intro.js")
+    assert '".dock > button"' in screens._SUMMARY_MARK_JS
     label = _text(COMPONENTS / "intro_summary.py")
     for name in ("capa-brand-word", "capa-brand-sub", "capa-brand-hint"):
         assert f'class="{name}"' in label, name

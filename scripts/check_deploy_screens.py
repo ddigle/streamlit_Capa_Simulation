@@ -1704,7 +1704,9 @@ _LABEL_NARROW_JS = f"""async ({{id, widths}}) => {{
   }}
   return rows;
 }}"""
-# Summary 머리 줄: 심볼 크기와 라벨 두 줄. 두 줄은 머리 줄 높이 안이고 오른쪽 Detail 을 덮지 않는다.
+# Summary 머리 줄: 심볼 크기와 라벨 두 줄. 두 줄은 머리 줄 높이 안이고 오른쪽 이웃 단추를
+# 덮지 않는다. 이웃은 dock 의 첫 보이는 단추다 — Summary 에서는 Detail 왼쪽의 ← 단추(입장 화면으로
+# 돌아가기), 그것이 없는 판이면 Detail 이다. Detail 만 보면 라벨이 ← 를 덮어도 「다 보임」이다.
 _SUMMARY_MARK_JS = f"""(id) => {{
   const host = document.getElementById(id);
   if (!host || getComputedStyle(host).display === "none" || !host.shadowRoot) return null;
@@ -1717,9 +1719,10 @@ _SUMMARY_MARK_JS = f"""(id) => {{
   if (!mark || !head || lines.length < 2 || !lines.every(Boolean)) return null;
   {_WHOLE_LINE_JS}
   const h = head.getBoundingClientRect();
-  const detail = root.querySelector(".dock .btn");
+  const neighbor = [...root.querySelectorAll(".dock > button")]
+    .map((el) => el.getBoundingClientRect()).find((r) => r.width > 0);
   const right = brand.getBoundingClientRect().right;
-  const clear = !detail || right <= detail.getBoundingClientRect().left + 0.5;
+  const clear = !neighbor || right <= neighbor.left + 0.5;
   return {{
     size: [Math.round(mark.width * 10) / 10, Math.round(mark.height * 10) / 10],
     fits: lines.every((line) => whole(line, h)) && clear,

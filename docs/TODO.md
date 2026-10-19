@@ -109,7 +109,8 @@
   입장 화면 커버의 `Introduce`(2026-10-19 사용자 결정 — 40초 티저 `intro_overlay_assets/capa-teaser.html` 을 오버레이 안에
   내장, 원형 펼침, 준비가 끝나면 Summary 와 함께, 티저 머리 ← + Detail, Admin 탭 없음)와 「Introduce」 글자를 담은 입장 부분
   글꼴, 루트 `index.html` 을 쇼케이스 최신 빌드(앱 이름 AX MANAGEMENT)로 다시 복사. 손 확인 재료: Introduce → 티저 재생 →
-  Esc/← 로 커버 → 다시 열기(바로 뜸) → 티저 머리 Detail 로 앱, 사내 오프라인에서 티저가 서고 소리가 나는지.
+  Esc/← 로 커버 → 다시 열기(바로 뜸) → 티저 머리 Detail 로 앱, 사내 오프라인에서 티저가 서고 소리가 나는지. 셋 모두 티저
+  재생을 멈춘다(2026-10-20 배포 검증 — 층만 숨겨 소리가 40초 끝까지 이어졌다). 다시 열면 멈춘 자리, `Space` 로 이어 본다.
   2026-10-20 밤샘 성능 리팩토링(아래 「성능」): 결과표·HOME 계획 세부수량 칸 글자를 go.Table 밖 글자 trace 로, 표준 목표
   재분리 걷기·표 자리 고정, 기준 정보 STEP 요약·편집표 전송량, Admin 원천 품질·산식 가이드 닫힌 탭 건너뛰기, 소켓 CSS 주석
   걷기, **`.streamlit/config.toml` 에 `[global]` 두 줄**(`maxCachedMessageAge = 20`·`minCachedMessageSize = 1000`). 런북 그

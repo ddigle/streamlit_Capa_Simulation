@@ -2653,6 +2653,17 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
   }
 
+  // 티저를 걷을 때 재생도 멈춘다. 티저는 「재생」 때 남은 소리를 미리 잡아 두므로 층만 숨기면 40초 끝까지 커버와 앱
+  // 위에서 소리가 난다. 다시 열면 멈춘 자리에 서 있고 티저 안 `Space` 로 이어 본다.
+  function pauseTeaser() {
+    try {
+      const deck = deckFrame.contentWindow && deckFrame.contentWindow.TEASER;
+      if (deck && typeof deck.pause === "function") deck.pause();
+    } catch (error) {
+      // 다른 출처가 되면 멈출 수 없다 — 티저 안 `Space` 로 멈춘다.
+    }
+  }
+
   async function openTeaser() {
     if (busy || mode !== "intro" || !teaser.available) return;
     busy = true;
@@ -2701,6 +2712,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   async function closeTeaser(instant = false) {
     if (mode !== "teaser" || (busy && !instant)) return;
     busy = true;
+    pauseTeaser();
     sceneHandle.post({ type: "resume", ...size() });
     const o = teaserOrigin || { x: window.innerWidth / 2, y: window.innerHeight / 2, r: window.innerWidth };
     if (!instant) {
@@ -3135,6 +3147,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   async function toDetail(origin = detail) {
     if (busy || mode === "hidden" || detail.disabled) return;
     busy = true;
+    if (mode === "teaser") pauseTeaser();
     if (mode === "intro") await handOffTitle();
     rememberEntered();
     setInert(false);
