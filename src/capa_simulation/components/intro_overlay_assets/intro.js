@@ -74,9 +74,9 @@ const EXIT_MS = 950;
 const FOLD_MS = 850;
 // Summary → 입장 화면(← 단추): 웨이퍼 색·그늘이 입장 모습으로 돌아가는 시간과 글자가 다시 떠오르는 시간.
 const BACK_MS = 600;
-// Introduce: 덱이 누른 단추에서 원으로 퍼지고(열기) 그 단추로 접히는(닫기) 시간. Detail 의 구멍과 같은 결이다.
+// Introduce: 티저가 누른 단추에서 원으로 퍼지고(열기) 그 단추로 접히는(닫기) 시간. Detail 의 구멍과 같은 결이다.
 const TEASER_MS = 850;
-// 처음 누를 때 덱을 받아 오기를 기다리는 한도. 넘기면 단추 풍선에 까닭을 달고 다시 누르게 둔다.
+// 처음 누를 때 티저를 받아 오기를 기다리는 한도. 넘기면 단추 풍선에 까닭을 달고 다시 누르게 둔다.
 const TEASER_WAIT_MS = 20000;
 // 메인 심볼 — C 링 + 3×3 다이(2026-10-07 사용자 결정, 뷰박스 100). 반지름 41 링의 오른쪽 ±35° 를 열어
 // 「C」로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이 아홉을 28 · 44 · 60 에 둔다. 사이드바 라벨
@@ -2161,7 +2161,7 @@ function boot(api, data) {
   registerHole();
   let overlay = null;
   let summary = null;
-  // Introduce 덱 칸(`intro_summary` 의 받은 값 JS 가 `teaser` 를 떼어 넘긴다). 오버레이를 새로 만들 때도 넘긴다.
+  // Introduce 티저 칸(`intro_summary` 의 받은 값 JS 가 `teaser` 를 떼어 넘긴다). 오버레이를 새로 만들 때도 넘긴다.
   let teaserState = window.__capaTeaser || null;
   const ensure = (initial) => {
     if (!overlay) {
@@ -2550,7 +2550,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     summaryButton.disabled = !canSummary();
     summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
-    // Introduce 도 들어갈 수 있을 때 선다 — 덱 받기는 rerun 이라 첫 실행 도중에 누르면 그 실행을 끊는다.
+    // Introduce 도 들어갈 수 있을 때 선다 — 티저 받기는 rerun 이라 첫 실행 도중에 누르면 그 실행을 끊는다.
     const showIntroduce = can && teaser.available;
     const introduceAppearing = showIntroduce && introduceButton.hidden;
     introduceButton.hidden = !showIntroduce;
@@ -2627,8 +2627,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     arm();
   }
 
-  /* ------------------------------------------------------------ Introduce 덱 */
-  // 덱이 있는지(`available`)와 본문(`html` — 처음 누를 때 한 번 받는다). 본문은 한 번 받으면 탭이 들고 있다.
+  /* ------------------------------------------------------------ Introduce 티저 */
+  // 티저가 있는지(`available`)와 본문(`html` — 처음 누를 때 한 번 받는다). 본문은 한 번 받으면 탭이 들고 있다.
   let teaser = { available: false, html: null };
   let teaserWaiters = [];
   let deckUrl = "";
@@ -2639,7 +2639,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     render();
   }
 
-  // 덱 안에서 누른 Esc 는 이 문서로 올라오지 않는다 — 같은 출처(blob)라 덱 창에 직접 건다.
+  // 티저 안에서 누른 Esc 는 이 문서로 올라오지 않는다 — 같은 출처(blob)라 티저 창에 직접 건다.
   function watchDeckKeys() {
     try {
       deckFrame.contentWindow.addEventListener("keydown", (event) => {
@@ -2691,13 +2691,13 @@ function createOverlay(api, data, initial, syncToolbar) {
       );
     }
     cancelAll([teaserLayer]);
-    // 덱이 화면을 다 덮은 동안 커버 장면(워커)은 쉰다.
+    // 티저가 화면을 다 덮은 동안 커버 장면(워커)은 쉰다.
     if (mode === "teaser") sceneHandle.post({ type: "pause" });
     deckFrame.focus({ preventScroll: true });
     busy = false;
   }
 
-  // 덱 → 커버. `instant` 는 움직임 없이(Detail 로 곧장 나갈 때) 걷는다.
+  // 티저 → 커버. `instant` 는 움직임 없이(Detail 로 곧장 나갈 때) 걷는다.
   async function closeTeaser(instant = false) {
     if (mode !== "teaser" || (busy && !instant)) return;
     busy = true;
@@ -3130,8 +3130,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     busy = false;
   }
 
-  // Detail: 누른 단추에서 구멍이 퍼지며 원래 화면이 드러난다. 오버레이는 걷지 않고 감춘다. 덱 머리의 Detail 은
-  // 그 단추에서 퍼진다(`origin`) — 덱 화면에서는 타이틀 넘겨주기를 하지 않는다.
+  // Detail: 누른 단추에서 구멍이 퍼지며 원래 화면이 드러난다. 오버레이는 걷지 않고 감춘다. 티저 머리의 Detail 은
+  // 그 단추에서 퍼진다(`origin`) — 티저 화면에서는 타이틀 넘겨주기를 하지 않는다.
   async function toDetail(origin = detail) {
     if (busy || mode === "hidden" || detail.disabled) return;
     busy = true;

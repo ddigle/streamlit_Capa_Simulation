@@ -47,12 +47,12 @@ Detail 만 남긴다. 데이터 오류로 만들지 못한 결과는 서버 캐�
 테마 버튼 iframe 의 스크립트(`summary_label_script`)가 머리칸에 끼워 넣고 칠한다. 누를 수 있는지와
 눌렀을 때의 동작은 입장 화면 JS(`window.__capaIntro`)가 맡는다 — 요약 데이터와 장면을 가진 쪽이다.
 
-**Introduce 의 덱도 이 길로 보낸다.** 입장 화면 커버의 `Introduce` 는 저장소 루트 `index.html`(발표
-덱 — 쇼케이스 폴더가 원본)을 입장 화면 안에 띄운다(2026-10-19 사용자 결정 — 외부 주소가 아니라
-내장). 값에 `teaser` 칸(덱이 있는지)을 늘 싣고, 덱 본문(약 1.4MB)은 입장 화면이 `teaser` trigger 로
-달라고 한 회차에만 한 번 읽어 싣는다(`_teaser_requested`) — 모든 접속이 첫 로딩에 덱을 받지 않게.
-받은 덱은 탭이 들고 있고 다음 회차의 값에는 다시 싣지 않는다. 받은 값 JS 는 `teaser` 를 떼어 요약과
-따로 넘긴다 — 요약은 워커로 가므로 덱을 싣지 않는다.
+**Introduce 의 티저도 이 길로 보낸다.** 입장 화면 커버의 `Introduce` 는 40초 티저
+(`intro_overlay.INTRODUCE_TEASER_PATH`)를 입장 화면 안에 띄운다(2026-10-19 사용자 결정 — 외부 주소가
+아니라 내장). 값에 `teaser` 칸(티저가 있는지)을 늘 싣고, 티저 본문(약 1MB)은 입장 화면이 `teaser`
+trigger 로 달라고 한 회차에만 한 번 읽어 싣는다(`_teaser_requested`) — 모든 접속이 첫 로딩에 티저를
+받지 않게. 받은 티저는 탭이 들고 있고 다음 회차의 값에는 다시 싣지 않는다. 받은 값 JS 는 `teaser` 를
+떼어 요약과 따로 넘긴다 — 요약은 워커로 가므로 티저를 싣지 않는다.
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ import streamlit as st
 from capa_simulation.components.intro_overlay import (
     BRAND,
     BRAND_SUBTITLE,
+    INTRODUCE_TEASER_PATH,
     MARK_DIE_ORIGINS,
     MARK_RING_PATH,
     SUMMARY_LABEL_ARIA,
@@ -122,7 +123,6 @@ from capa_simulation.services.simulation_cache import (
     shared_intro_toggle_store,
 )
 from capa_simulation.services.threshold_label import threshold_percent_label
-from capa_simulation.settings import PROJECT_ROOT
 
 # 컴포넌트 칸의 key 이자 숨김 규칙의 훅.
 INTRO_SUMMARY_KEY = "capa_intro_summary"
@@ -141,9 +141,8 @@ _SEEN_KEY = "intro_official_summary_seen"
 # trigger 의 rerun 에 끊겼을 수 있다(그리는 도중에 열면 Streamlit 이 그 회차를 끊고 새로 돈다).
 _REFRESH_KEY = "intro_official_summary_refresh"
 RECHECK_SECONDS = 30.0
-# Introduce 가 띄우는 발표 덱 — 저장소 루트의 대표 발표 자료 한 파일(AGENTS 3장 「저장소 루트의 발표
-# 자료」). 입장 화면이 덱을 달라고 한 회차라는 표지(`_teaser_requested`)가 있을 때만 읽는다.
-INTRODUCE_DECK_PATH = PROJECT_ROOT / "index.html"
+# 입장 화면이 Introduce 의 티저(`INTRODUCE_TEASER_PATH`)를 달라고 한 회차라는
+# 표지(`_teaser_requested`).
 _TEASER_KEY = "intro_teaser_requested"
 # 일시적일 수 있는 실패. 이것만 서버 캐시에 남기지 않고 다음 확인 때(`RECHECK_SECONDS` 뒤)
 # 다시 해 본다. 그 밖의 실패는 다시 해도 같은 결과(데이터 오류)라 「만들지 못함」을 서버
@@ -193,9 +192,9 @@ def load_toggle_profiles(database_path: str) -> ToggleProfiles:
 # 실행을 끊는다.
 _REFRESH = "refresh"
 _TEASER = "teaser"
-# 값의 `teaser` 칸은 떼어 따로 넘긴다 — 요약은 워커 장면으로 가므로 덱 본문을 싣지 않는다. 덱은 한
-# 번 받으면 창에 남겨 둔다(그 뒤 회차의 값에는 다시 싣지 않는다). 요약이 그대로이면 다시 넘기지
-# 않는다 — 덱이 닿은 회차에 요약 준비(`prepared`)를 다시 하지 않게.
+# 값의 `teaser` 칸은 떼어 따로 넘긴다 — 요약은 워커 장면으로 가므로 티저 본문을 싣지 않는다. 티저는
+# 한 번 받으면 창에 남겨 둔다(그 뒤 회차의 값에는 다시 싣지 않는다). 요약이 그대로이면 다시 넘기지
+# 않는다 — 티저가 닿은 회차에 요약 준비(`prepared`)를 다시 하지 않게.
 _JS = (
     """
 export default function (component) {
@@ -887,28 +886,29 @@ def _refresh_requested() -> None:
 
 
 def _teaser_requested() -> None:
-    """입장 화면이 Introduce 의 덱을 달라고 했다 — 다음(이) 회차에 덱 본문을 한 번 싣는다."""
+    """입장 화면이 Introduce 의 티저를 달라고 했다 — 다음(이) 회차에 티저 본문을 한 번 싣는다."""
     st.session_state[_TEASER_KEY] = True
 
 
 def teaser_payload() -> dict[str, Any]:
-    """`teaser` 칸. 덱이 있는지는 늘, 본문은 달라고 한 회차에만 싣는다(표지는 그 회차에 걷는다).
+    """`teaser` 칸. 티저가 있는지는 늘, 본문은 달라고 한 회차에만 싣는다(표지는 그 회차에 걷는다).
 
-    덱을 못 읽으면(파일이 없거나 깨짐) 없는 것으로 보낸다 — Introduce 가 서지 않을 뿐 앱은 그대로다.
+    티저를 못 읽으면(파일이 없거나 깨짐) 없는 것으로 보낸다 — Introduce 가 서지 않을 뿐 앱은
+    그대로다.
     """
     requested = bool(st.session_state.pop(_TEASER_KEY, False))
-    if not INTRODUCE_DECK_PATH.is_file():
+    if not INTRODUCE_TEASER_PATH.is_file():
         return {"available": False}
     if not requested:
         return {"available": True}
     try:
-        return {"available": True, "html": INTRODUCE_DECK_PATH.read_text(encoding="utf-8")}
+        return {"available": True, "html": INTRODUCE_TEASER_PATH.read_text(encoding="utf-8")}
     except (OSError, UnicodeDecodeError):
         return {"available": False}
 
 
 def render_intro_summary(database_path: str) -> None:
-    """공식버전 요약과 Introduce 덱 칸을 보낸다.
+    """공식버전 요약과 Introduce 티저 칸을 보낸다.
 
     `app.py` 가 부트스트랩 뒤·페이지 앞에서 **매 회차** 한 번 부른다.
 

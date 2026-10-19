@@ -271,8 +271,8 @@ def test_the_summary_payload_reaches_the_overlay_without_talking_back() -> None:
 
     assert "window.__capaSummary = summary;" in intro_summary._JS
     assert "api.setSummary(summary)" in intro_summary._JS
-    # 파이썬으로 가는 길은 trigger 둘뿐이다 — 「준비 중」 몫을 다시 받아 오기와 Introduce 덱 받기(각
-    # rerun 한 번).
+    # 파이썬으로 가는 길은 trigger 둘뿐이다 — 「준비 중」 몫을 다시 받아 오기와 Introduce 티저
+    # 받기(각 rerun 한 번).
     assert re.findall(r"set(State|Trigger)Value\s*\(", intro_summary._JS) == ["Trigger", "Trigger"]
     assert 'window.__capaSummaryRefresh = () => component.setTriggerValue("refresh"' in (
         intro_summary._JS
@@ -299,7 +299,7 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
     assert f".st-key-{intro_summary.INTRO_SUMMARY_KEY}" in calls[0][1]
     assert calls[1][1]["key"] == intro_summary.INTRO_SUMMARY_KEY
     assert calls[1][1]["on_refresh_change"] is intro_summary._refresh_requested
-    # Introduce 덱 칸은 늘 싣고(덱이 있는지), 본문은 달라고 한 회차에만 싣는다.
+    # Introduce 티저 칸은 늘 싣고(티저가 있는지), 본문은 달라고 한 회차에만 싣는다.
     assert calls[1][1]["on_teaser_change"] is intro_summary._teaser_requested
     assert calls[1][1]["data"]["teaser"] == {"available": True}
 
@@ -1089,31 +1089,30 @@ def test_the_summary_back_arrow_returns_to_the_entry_cover() -> None:
 def test_the_introduce_deck_is_sent_only_on_the_run_that_asked_for_it(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """덱 본문(약 1.4MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 싣는다(2026-10-19
-    사용자 결정 — Introduce 는 내장). 그 밖의 회차는 덱이 있는지만 싣고, 덱을 못 읽으면 없는 것으로
-    보낸다 — Introduce 가 서지 않을 뿐 앱은 그대로다."""
+    """티저 본문(약 1MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 싣는다(2026-10-19
+    사용자 결정 — Introduce 는 내장). 그 밖의 회차는 티저가 있는지만 싣고, 티저를 못 읽으면 없는
+    것으로 보낸다 — Introduce 가 서지 않을 뿐 앱은 그대로다."""
     from capa_simulation.components import intro_summary
 
     deck = tmp_path / "index.html"
     deck.write_text("<title>DEMO deck</title>", encoding="utf-8")
     monkeypatch.setattr(st, "session_state", {})
-    monkeypatch.setattr(intro_summary, "INTRODUCE_DECK_PATH", deck)
+    monkeypatch.setattr(intro_summary, "INTRODUCE_TEASER_PATH", deck)
 
     assert intro_summary.teaser_payload() == {"available": True}
     intro_summary._teaser_requested()
     assert intro_summary.teaser_payload() == {"available": True, "html": "<title>DEMO deck</title>"}
     assert intro_summary.teaser_payload() == {"available": True}
 
-    monkeypatch.setattr(intro_summary, "INTRODUCE_DECK_PATH", tmp_path / "missing.html")
+    monkeypatch.setattr(intro_summary, "INTRODUCE_TEASER_PATH", tmp_path / "missing.html")
     intro_summary._teaser_requested()
     assert intro_summary.teaser_payload() == {"available": False}
-    assert intro_summary.INTRODUCE_DECK_PATH.name == "missing.html"
 
 
 def test_the_summary_payload_hands_the_deck_aside_from_the_worker_summary() -> None:
-    """받은 값 JS 는 `teaser` 를 떼어 따로 넘긴다 — 요약은 워커 장면으로 가므로 덱 본문을 싣지
-    않는다. 덱은 한 번 받으면 창에 남겨 두고, 요약이 그대로이면 다시 넘기지 않는다(덱이 닿은 회차에
-    요약 준비를 다시 하지 않게)."""
+    """받은 값 JS 는 `teaser` 를 떼어 따로 넘긴다 — 요약은 워커 장면으로 가므로 티저 본문을 싣지
+    않는다. 티저는 한 번 받으면 창에 남겨 두고, 요약이 그대로이면 다시 넘기지 않는다(티저가 닿은
+    회차에 요약 준비를 다시 하지 않게)."""
     from capa_simulation.components import intro_summary
 
     js = intro_summary._JS
@@ -1125,11 +1124,11 @@ def test_the_summary_payload_hands_the_deck_aside_from_the_worker_summary() -> N
 
 
 def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the_cover() -> None:
-    """커버의 셋째 단추 Introduce 는 저장소 루트 발표 덱을 오버레이 안 전체 화면 틀에
-    띄운다(2026-10-19 사용자 결정 — 권장대로: 원형 펼침, 준비가 끝나면 Summary 와 함께 선다, 덱 머리
-    ← + Detail, Admin 탭 없음). 처음 누를 때만 덱을 받아 blob 주소로 띄우고(장면 주소 `#` 가 산다),
-    덱이 덮은 동안 장면은 쉰다. ← · Esc(덱 안에서 누른 것도)는 원이 그 단추로 접히며 커버로, 덱 머리
-    Detail 은 그 단추에서 곧장 앱으로 간다."""
+    """커버의 셋째 단추 Introduce 는 40초 티저를 오버레이 안 전체 화면 틀에 띄운다(2026-10-19
+    사용자 결정 — 권장대로: 원형 펼침, 준비가 끝나면 Summary 와 함께 선다, 티저 머리 ← + Detail,
+    Admin 탭 없음). 처음 누를 때만 티저를 받아 blob 주소로 띄우고, 티저가 덮은 동안 장면은 쉰다. ← ·
+    Esc(티저 안에서 누른 것도)는 원이 그 단추로 접히며 커버로, 티저 머리 Detail 은 그 단추에서 곧장
+    앱으로 간다."""
     html = (ASSETS / "intro.html").read_text(encoding="utf-8")
     actions = html[html.index('<div class="actions">') : html.index('<p class="hint"')]
     assert actions.index("btn summary") < actions.index("btn introduce")
@@ -1144,7 +1143,7 @@ def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     shown = _between(js, "// Introduce 도 들어갈 수 있을 때 선다", "let reasonText")
     assert "const showIntroduce = can && teaser.available;" in shown
-    opener = _between(js, "async function openTeaser() {", "// 덱 → 커버.")
+    opener = _between(js, "async function openTeaser() {", "// 티저 → 커버.")
     assert 'if (busy || mode !== "intro" || !teaser.available) return;' in opener
     assert "window.__capaTeaserRequest()" in opener
     assert 'new Blob([teaser.html], { type: "text/html" })' in opener
@@ -1163,3 +1162,23 @@ def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the
     hide = _between(js, "function hide() {", "mark.cancel();")
     assert "teaserLayer.hidden = true;" in hide
     assert '"button, [href], input, select, textarea, iframe, [tabindex]"' in js
+
+
+def test_introduce_plays_the_bundled_teaser_not_the_pages_deck() -> None:
+    """Introduce 는 40초 티저를 띄운다 — 루트 `index.html`(혁신대회 발표 덱)은 GitHub Pages 용이라
+    앱이 쓰지 않는다(2026-10-19 사용자 지적 — 처음에 덱을 띄워 의도와 달랐다). 티저는 쇼케이스
+    `contest/dist/capa-teaser.html` 의 복사본 한 파일이고 외부 요청 없이 사내 오프라인에서 서야
+    한다."""
+    from capa_simulation.components import intro_summary
+
+    teaser = intro_overlay.INTRODUCE_TEASER_PATH
+    assert teaser == ASSETS / "capa-teaser.html"
+    text = teaser.read_text(encoding="utf-8")
+    assert "\r" not in text
+    assert not re.findall(r'(?:src|href)="https?://', text)
+    root_deck = ASSETS.parents[3] / "index.html"
+    assert text != root_deck.read_text(encoding="utf-8")
+    assert (
+        "index.html"
+        not in intro_summary.__dict__.get("__doc__", "").split("Introduce", 1)[-1][:400]
+    )

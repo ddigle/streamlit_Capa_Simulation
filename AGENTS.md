@@ -634,20 +634,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
-  색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 루트
-  `index.html`(발표 덱)을 오버레이 안 전체 화면 틀(blob 주소)에 띄운다 — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며,
-  덱 머리 `Detail` 은 곧장 앱이다. 덱이 덮은 동안 장면 워커는 쉬고, Summary 처럼 들어갈 준비가 끝나면 선다.
+  색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 40초
+  티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
+  — 단추에서 원이 퍼지고 ←·Esc 는 그 단추로 접히며, 티저 머리 `Detail` 은 곧장 앱이다. 티저가 덮은 동안 장면 워커는
+  쉬고, Summary 처럼 들어갈 준비가 끝나면 선다. 루트 `index.html`(GitHub Pages 발표 덱)은 앱이 쓰지 않는다.
   - Components v2 하나이고 자산은 `intro_overlay_assets/`(`intro.html`·`intro.css`·`intro.js`)다. 움직임은 워커
     OffscreenCanvas 에서 돈다 — 워커로 가는 `scene()`·`summaryGrid()` 는 그 파일의 다른 이름을 쓰지 않는다.
   - 등록 JS·`data` 는 회차마다 같고 색은 테마와 무관한 `tokens.INTRO_PALETTE` 다. 파이썬으로 가는 길은
-    `intro_summary` 의 trigger 둘뿐이다 — 「준비 중」 GAP 다시 받기(`refresh`)와 Introduce 덱 받기(`teaser`).
+    `intro_summary` 의 trigger 둘뿐이다 — 「준비 중」 GAP 다시 받기(`refresh`)와 Introduce 티저 받기(`teaser`).
   - 부분 글꼴 둘(`archivo-capa.woff2`·`archivo-capa-number.woff2`, `OFL.txt`)에 없는 글자를 쓰면
     `FONT_SUBSET_TEXT` 를 고치고 다시 만든다. 심볼 넷(`static/icons/capa_mark.svg` 포함)은 `test_intro_overlay` 가 맞춘다.
 - `src/capa_simulation/components/intro_summary.py` — 입장 화면 Summary 의 값(최신 공식버전 요약 + 토글 셋
-  `toggles`)과 Introduce 덱 칸(`teaser`)을 `capa_intro_summary` 로 보내고 사이드바 앱 이름 라벨을 세운다. 계산은
+  `toggles`)과 Introduce 티저 칸(`teaser`)을 `capa_intro_summary` 로 보내고 사이드바 앱 이름 라벨을 세운다. 계산은
   `services/official_summary.py`.
-  - 덱 본문(루트 `index.html`, 약 1.4MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 읽어 싣는다
-    (`teaser_payload`) — 받은 값 JS 가 `teaser` 를 떼어 따로 넘기므로 워커로 가는 요약에는 덱이 없다.
+  - 티저 본문(약 1MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 읽어 싣는다(`teaser_payload`) — 받은 값
+    JS 가 `teaser` 를 떼어 따로 넘기므로 워커로 가는 요약에는 티저가 없다. Streamlit 정적 경로는 HTML 을 글자로 보내
+    쓸 수 없어 이 길이다.
   - 모든 페이지 앞에서 돌므로 어떤 예외도 내보내지 않는다(`available: false` 와 까닭). 공식 리비전의 결정적
     키로 HOME 과 같은 캐시를 쓰고, 판정 기준은 공용 프로필(`load_global_securement_threshold`)이다.
   - 서버 캐시는 요약(`get_intro_summary_payload`)과 토글 몫(`simulation_cache.shared_intro_toggle_store`) 둘이다.
@@ -972,9 +974,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 ### 저장소 루트의 발표 자료
 
 - `index.html` — 이 저장소의 **유일한** 발표 자료(대표 발표 자료 한 파일, 지금은 혁신대회 덱). 외부 요청 없는 단일
-  파일이라 사내 GitHub Pages·배포 ZIP 에 실리고 숫자는 합성 샘플이다. 앱 입장 화면의 `Introduce` 가 이 파일을 그대로
-  띄운다(`intro_summary.INTRODUCE_DECK_PATH`) — 바꾸면 앱 안 소개도 함께 바뀌고, 외부 파일(CDN·웹 글꼴)을 부르면
-  사내 오프라인에서 깨진다.
+  파일이라 사내 GitHub Pages·배포 ZIP 에 실리고 숫자는 합성 샘플이다. 앱은 이 파일을 쓰지 않는다.
+- `src/capa_simulation/components/intro_overlay_assets/capa-teaser.html` — 입장 화면 `Introduce` 가 띄우는 40초 티저
+  (2026-10-19 사용자 결정). 원본은 쇼케이스 `contest/dist/capa-teaser.html` 이고 `index.html` 과 같은 규칙으로 CR 을
+  빼 복사한다. 외부 요청 없는 한 파일이어야 사내 오프라인에서 선다.
   - 원본·빌드·자료는 저장소 밖 `~/projects/capa-simulation-showcase`(덱 `contest`·바이블 `bible`·중간 보고
     `build`·Learning Champion 초안)가 그 폴더의 `CLAUDE.md`·메모리·세션으로 맡는다. 다른 발표 파일은 여기 넣지 않는다.
   - 원본은 쇼케이스의 `contest/dist/capa-contest.html` 이고 `capa-contest.artifact.html`(아티팩트용 변형)은 쓰지 않는다.

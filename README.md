@@ -59,7 +59,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 
 | 화면 | 하는 일 |
 |---|---|
-| 입장 화면 · Summary · Introduce | 탭을 처음 열면 첫 로딩을 덮는 입장 화면. `Detail` 은 앱으로, `Summary` 는 최신 공식버전 여섯 달 요약으로, `Introduce` 는 발표 덱(루트 `index.html`)을 화면 안에 띄움(← · Esc 로 돌아옴). 앱 안에서는 사이드바 맨 위 앱 이름 라벨이 Summary 를 다시 열고, Summary 머리 줄 ← 가 입장 화면으로 돌아감 |
+| 입장 화면 · Summary · Introduce | 탭을 처음 열면 첫 로딩을 덮는 입장 화면. `Detail` 은 앱으로, `Summary` 는 최신 공식버전 여섯 달 요약으로, `Introduce` 는 40초 티저를 화면 안에 띄움(← · Esc 로 돌아옴 — 루트 `index.html` 발표 덱은 GitHub Pages 용). 앱 안에서는 사이드바 맨 위 앱 이름 라벨이 Summary 를 다시 열고, Summary 머리 줄 ← 가 입장 화면으로 돌아감 |
 | **HOME** | 대시보드. `Main`(Capa 요약·LOB·B/N)·`Preference`(공용 설정)·`Past Data`(과거 구간) 세 탭 |
 | Capa Chatbot (구현중) | 대화형 분석 화면의 틀. LLM·Capa 데이터·대화 이력은 아직 잇지 않음 |
 | 시나리오 관리 | 리비전 불러오기·저장, 공식버전 지정, 사내 `BigDataQuery 등록`, 공식버전 `자동 갱신`, 보관·삭제 |
