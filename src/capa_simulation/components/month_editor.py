@@ -170,6 +170,10 @@ def render_month_editor(
         applied_flash = st.session_state.pop(f"{editor_key}_apply_flash", None)
         if isinstance(applied_flash, str):
             notice.success(applied_flash)
+        # 큰 표는 분류 컬럼을 화면 사본에서만 category 로 보낸다(`_compact_dimensions`). 편집표가
+        # 돌려준 표에는 원본 분류 컬럼을 다시 끼워 되머지·적용이 예전과 같은 표로 돈다.
+        plain_visible_table = visible_table
+        visible_table = _compact_dimensions(plain_visible_table, dimensions)
         edited = st.data_editor(
             classification_styled(visible_table, dimensions),
             # 편집을 버릴 때마다 바뀌는 위젯 키다 — 세션만 지우면 브라우저가 옛 편집을 다시 보낸다.
@@ -200,6 +204,7 @@ def render_month_editor(
                 },
             },
         )
+        edited = _restore_dimensions(edited, plain_visible_table, visible_table)
         merged = merge_edited_months(default_table, edited, dimensions, month_columns)
         # 편집이 없던 회차(`pending` 은 표를 만들기 전 세션의 위젯 값이다 — 이 회차에 편집이 새로
         # 생길 수는 없고 필터가 버릴 수만 있다)에는 표가 원본 그대로라 셀 수가 늘 0 이다. 셀 수
@@ -263,6 +268,48 @@ def classification_styled(
     if uuid is not None:
         styler.set_uuid(uuid)
     return styler
+
+
+def _compact_dimensions(table: pd.DataFrame, dimensions: Sequence[str]) -> pd.DataFrame:
+    """편집표에 넘기는 화면 사본 — 큰 표의 글자 분류 컬럼만 `category` 로 바꾼다.
+
+    분류 컬럼은 몇 안 되는 글자가 행마다 되풀이되어 Arrow 글자로 실린다. category 는 고유 글자를
+    한 번만 싣는다. 보이는 글자·차례·잠금은 같다(분류 컬럼은 `disabled` 라 형식 검사도 없다).
+    배경색을 입히는 작은 표(`CLASSIFICATION_STYLE_MAX_CELLS` 이하)는 그대로 둔다 — 그 표의
+    바이트는 Styler 가 대부분이라 줄지 않고 바꾸는 비용만 회차마다 든다. 값이 모두 글자인
+    컬럼만 바꾼다(섞인 값의 category 는 Arrow 로 옮길 수 없다). 행마다 거의 다른 글자인 컬럼은
+    되풀이가 없어 사전과 번호만 더 실리므로 그대로 둔다(고유값이 행 수의 절반을 넘으면).
+    """
+    if table.size <= CLASSIFICATION_STYLE_MAX_CELLS:
+        return table
+    text_columns = [
+        column
+        for column in dimensions
+        if column in table.columns
+        and pd.api.types.infer_dtype(table[column], skipna=True) == "string"
+        and table[column].nunique(dropna=True) * 2 <= len(table)
+    ]
+    if not text_columns:
+        return table
+    return table.astype(dict.fromkeys(text_columns, "category"))
+
+
+def _restore_dimensions(
+    edited: pd.DataFrame, plain_table: pd.DataFrame, shown_table: pd.DataFrame
+) -> pd.DataFrame:
+    """편집표가 돌려준 표에 `_compact_dimensions` 전의 분류 컬럼을 다시 끼운다.
+
+    분류 컬럼은 잠겨 있어 편집표가 바꿀 수 없으므로 값은 같고 dtype 만 원본으로 돌아온다. 행 번호도
+    같다(`num_rows="fixed"`). 그래서 되머지 키(`astype(str)`)와 필터 없는 반환이 예전과 같은 표다.
+    """
+    if shown_table is plain_table:
+        return edited
+    changed = [
+        column
+        for column in plain_table.columns
+        if column in edited.columns and shown_table[column].dtype != plain_table[column].dtype
+    ]
+    return edited.assign(**{column: plain_table[column] for column in changed})
 
 
 def _open_paste(dialog_key: str, editor_key: str) -> None:

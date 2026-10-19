@@ -495,6 +495,38 @@ def _step_route_choices(catalog: pd.DataFrame) -> dict[str, str]:
     return choices
 
 
+# STEP 구성 요약을 dtype 을 줄여 한꺼번에 보내는 행 수의 끝. Streamlit 1.63 은 이보다 긴 pandas
+# 표를 `lazy=None` 에서 스스로 lazy 로 보낸다(`lazy_df_source.AUTO_LAZY_ROW_THRESHOLD` — 첫
+# 덩어리만 보내고 정렬은 서버가 한다). 그 서버 정렬은 category 열에서 실패해 표 전체가 「Failed to
+# load data」 가 되므로 그 길에는 줄인 사본을 넘기지 않는다. 거꾸로 긴 표를 `lazy=False` 로 못
+# 박으면 화면이 정렬을 끈다(한꺼번에 받은 표가 이 행 수를 넘으면 정렬 단추가 없다). 그래서 긴 표는
+# 예전 그대로 Streamlit 에 맡긴다.
+STEP_SUMMARY_EAGER_MAX_ROWS = 150_000
+# 요약에서 수인 열(화면 이름). 나머지는 경로 글자 열이다.
+STEP_SUMMARY_NUMBER_COLUMNS = ("월", "STEP 수", "수요 변형 수")
+
+
+def _compact_step_summary(summary: pd.DataFrame) -> pd.DataFrame:
+    """STEP 구성 요약의 화면 사본에서 dtype 만 줄인다 — 값·차례·보이는 글자는 그대로다.
+
+    요약은 월 × 경로 그룹의 긴 표라 경로 글자 열(Area·공정·양산·제품·Stack·속성·소요기준)이
+    행마다 되풀이되어 Arrow 글자로 실린다. 그 열은 `category`(고유 글자를 한 번만 싣는다)로, 월과
+    두 개수는 값이 들어가는 가장 좁은 정수(`downcast` 는 넘치지 않는 폭을 고른다)로 보낸다.
+    부르는 쪽이 표시명을 입힌 **뒤**에 부른다 — category 의 값이 곧 보이는 글자다.
+    """
+    compact = summary.astype(
+        {
+            column: "category"
+            for column in summary.columns
+            if column not in STEP_SUMMARY_NUMBER_COLUMNS
+        }
+    )
+    for column in STEP_SUMMARY_NUMBER_COLUMNS:
+        if column in compact.columns:
+            compact[column] = pd.to_numeric(compact[column], downcast="integer")
+    return compact
+
+
 @st.dialog("STEP 추가·삭제", width="large", on_dismiss=_close_dialog)
 def _step_dialog(step_catalog: pd.DataFrame) -> None:
     """고른 경로 STEP 을 복제하거나 지운다. 조회기간의 모든 연결 수요에 함께 반영한다.
@@ -671,16 +703,30 @@ if step_tables is not None:
                 }
             ).copy()
             displayed_step_summary["공정"] = process_labels.series(displayed_step_summary["공정"])
+            # 한꺼번에 보내는 표만 바이트를 줄이고 `lazy=False` 로 못 박는다. 그보다 긴 표는
+            # 예전처럼 Streamlit 이 고르게 둔다(`STEP_SUMMARY_EAGER_MAX_ROWS`).
+            summary_is_eager = len(displayed_step_summary) <= STEP_SUMMARY_EAGER_MAX_ROWS
             st.dataframe(
-                displayed_step_summary,
+                _compact_step_summary(displayed_step_summary)
+                if summary_is_eager
+                else displayed_step_summary,
                 hide_index=True,
                 width="stretch",
                 height=260,
                 column_config={
+                    # 글자 열은 글자 칸으로 못 박는다 — category 열을 그대로 두면 화면이 선택 칸
+                    # 꼴로 그려 글자 자리가 화소 단위로 어긋난다. 글자 칸이면 정렬·검색·CSV 까지
+                    # 예전 글자 열과 같다.
+                    **{
+                        column: st.column_config.TextColumn()
+                        for column in displayed_step_summary.columns
+                        if column not in STEP_SUMMARY_NUMBER_COLUMNS
+                    },
                     "STEP 수": st.column_config.NumberColumn(format="%d"),
                     "수요 변형 수": st.column_config.NumberColumn(format="%d"),
                 },
                 key="capacity_step_summary",
+                lazy=False if summary_is_eager else None,
             )
 
     if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:

@@ -124,6 +124,26 @@ def editor_widget_key_in(app: AppTest, key: str) -> str:
 
 
 RATIO_SCRIPT = EDITOR_SCRIPT.replace('TABLE_NAME = "RUN_DAY"', 'TABLE_NAME = "RATIO"')
+# 배경색 상한(`CLASSIFICATION_STYLE_MAX_CELLS`)을 넘는 큰 표. 공정 하나로 걸러도 상한을 넘는다 —
+# 화면 사본의 분류 컬럼이 category 로 가는 길을 걸러진 표와 전체 표 모두에서 본다.
+LARGE_SCRIPT = EDITOR_SCRIPT.replace('TABLE_NAME = "RUN_DAY"', 'TABLE_NAME = "LARGE"').replace(
+    'if TABLE_NAME == "RUN_DAY":',
+    """if TABLE_NAME == "LARGE":
+    rows = range(1_200)
+    table = pd.DataFrame(
+        {
+            "공정": pd.array([f"Process-{'ABC'[row % 3]}" for row in rows], dtype="string"),
+            "STEP_SEQ": pd.array([f"S{row:04d}" for row in rows], dtype="string"),
+            **{
+                f"{2026 + offset // 12}{offset % 12 + 1:02d}": [float(row + offset) for row in rows]
+                for offset in range(30)
+            },
+        }
+    )
+    dimensions = ["공정", "STEP_SEQ"]
+    st.session_state["default_table"] = table.copy()
+elif TABLE_NAME == "RUN_DAY":""",
+)
 # 탭이 둘인 화면. 닫힌 탭의 편집표가 편집을 지키는지 본다.
 TWO_TAB_SCRIPT = EDITOR_SCRIPT.replace(
     'tabs = stateful_tabs(["편집"], key="editor_test_tab")',
@@ -248,6 +268,65 @@ def test_changing_the_filter_drops_the_edit_that_was_not_applied() -> None:
     assert not app.exception
     returned = app.session_state["returned_table"]
     assert returned["202608"].tolist() == [31.0, 30.0, 29.0]
+
+
+def test_choosing_every_process_keeps_the_same_editor_widget() -> None:
+    """필터에 모든 공정을 담으면(「Select all」 뒤 몇 개를 빼기 전의 중간 상태) 보이는 표는 원본과
+    같다 — 편집표도 같은 위젯으로 남는다. 걸러낸 표가 일반 `Index` 를 달고 오면 인덱스 꼴이
+    위젯 신원이라 새 위젯이 서고 브라우저는 같은 표를 통째로 다시 받았다."""
+    app = AppTest.from_string(EDITOR_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    widget_id = app.dataframe[0].proto.id
+
+    app.session_state[f"{EDITOR_KEY}_filter_공정"] = ["Process-A", "Process-B", "Process-C"]
+    app.run()
+
+    assert not app.exception
+    assert app.dataframe[0].proto.id == widget_id
+    assert editor_widget_key_in(app, EDITOR_KEY) == EDITOR_KEY
+    pd.testing.assert_frame_equal(app.session_state["returned_table"], RUN_DAY_TABLE)
+
+
+def test_a_large_editor_shows_category_dimensions_and_returns_the_original_table() -> None:
+    """큰 표는 되풀이되는 분류 컬럼을 화면 사본에서만 category 로 보낸다(전송량). 행마다 다른
+    컬럼(STEP_SEQ)은 되풀이가 없어 그대로 둔다. 돌려주는 표는 예전과 같다 — 분류 컬럼은 원본
+    dtype 이고, 고친 칸만 원본 위에 덮인다."""
+    app = AppTest.from_string(LARGE_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    shown = app.dataframe[0].value
+    assert isinstance(shown["공정"].dtype, pd.CategoricalDtype)
+    assert not isinstance(shown["STEP_SEQ"].dtype, pd.CategoricalDtype)
+    default = app.session_state["default_table"]
+    pd.testing.assert_frame_equal(app.session_state["returned_table"], default)
+
+    _edit(app, 4, "202603", 99.0)
+    app.run()
+
+    assert not app.exception
+    expected = default.copy()
+    expected.loc[4, "202603"] = 99.0
+    pd.testing.assert_frame_equal(app.session_state["returned_table"], expected)
+
+
+def test_a_filtered_large_editor_lands_the_edit_on_its_row() -> None:
+    """걸러진 큰 표도 같다. 편집은 보이는 표의 위치로 오고, 되머지는 원본 분류 컬럼 키로 찾는다."""
+    app = AppTest.from_string(LARGE_SCRIPT, default_timeout=60).run()
+    app.session_state[f"{EDITOR_KEY}_filter_공정"] = ["Process-B"]
+    app.run()
+    assert not app.exception
+    shown = app.dataframe[0].value
+    assert isinstance(shown["공정"].dtype, pd.CategoricalDtype)
+    assert set(shown["공정"]) == {"Process-B"}
+
+    # 걸러진 표의 둘째 줄 = 원본 4 번 행(Process-B 는 1, 4, 7, …).
+    _edit(app, 1, "202603", 99.0)
+    app.run()
+
+    assert not app.exception
+    default = app.session_state["default_table"]
+    expected = default.copy()
+    expected.loc[4, "202603"] = 99.0
+    pd.testing.assert_frame_equal(app.session_state["returned_table"], expected)
 
 
 TEMPLATE_DOWNLOAD_KEY = f"{EDITOR_KEY}_csv_download"

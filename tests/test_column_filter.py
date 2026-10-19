@@ -11,6 +11,7 @@ multiselect 는 브라우저와 값을 **보이는 글자**로 주고받는다. 
 
 from __future__ import annotations
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 from widget_browser import BrowserChoice
 
@@ -40,6 +41,7 @@ def _filter_app() -> None:
         value_labels={"공정": labels} if labels else None,
     )
     st.session_state["visible_processes"] = list(filtered["공정"])
+    st.session_state["visible_index"] = filtered.index
 
 
 def test_without_display_names_the_filter_keeps_its_texts_and_order() -> None:
@@ -108,3 +110,37 @@ def test_a_held_filter_survives_when_every_display_name_is_removed() -> None:
         assert app.session_state[FILTER_KEY] == ["DA2"]
         assert app.session_state["visible_processes"] == ["DA2"]
     assert browser.wire == ["DA2"]
+
+
+def _apply_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.column_filter import apply_column_filters
+
+    data = pd.DataFrame({"공정": ["DA", "DA2", "WB"], "202608": [1.0, 2.0, 3.0]})
+    filtered = apply_column_filters(data, ["공정"], key_prefix="labelled_filter")
+    st.session_state["visible_processes"] = list(filtered["공정"])
+    st.session_state["visible_index"] = filtered.index
+
+
+def test_a_filter_that_keeps_every_row_returns_the_table_with_its_range_index() -> None:
+    """모든 값을 고르면(「Select all」 로 다 담은 중간 상태) 원본 표 그대로다. `.loc` 로 거르면
+    `RangeIndex` 가 일반 `Index` 로 바뀌어 숨은 인덱스 열이 더 실리고, 편집표는 인덱스 꼴이 위젯
+    신원이라 새 위젯으로 서서 표 전체를 다시 보냈다. 하나라도 빼면 예전처럼 걸러진 행 번호다."""
+    for app_function in (_filter_app, _apply_app):
+        app = AppTest.from_function(app_function)
+        app.session_state["labels"] = {}
+        app.session_state[FILTER_KEY] = ["DA", "DA2", "WB"]
+        app.run()
+
+        assert not app.exception
+        assert app.session_state["visible_processes"] == ["DA", "DA2", "WB"]
+        assert isinstance(app.session_state["visible_index"], pd.RangeIndex)
+
+        app.session_state[FILTER_KEY] = ["DA", "WB"]
+        app.run()
+
+        assert not app.exception
+        assert app.session_state["visible_processes"] == ["DA", "WB"]
+        assert app.session_state["visible_index"].tolist() == [0, 2]

@@ -33,11 +33,28 @@ def apply_column_filters(
     key_prefix: str,
 ) -> pd.DataFrame:
     """세션에 남은 선택으로만 거른다. 위젯을 그리지 않는 회차(카드가 없는 탭)에 쓴다."""
-    filtered = data
+    selections: dict[str, list[str]] = {}
     for column in columns:
         selected = st.session_state.get(column_filter_key(key_prefix, column))
-        if isinstance(selected, list) and selected and column in filtered.columns:
+        if isinstance(selected, list) and column in data.columns:
+            selections[column] = selected
+    return _filtered_rows(data, selections)
+
+
+def _filtered_rows(data: pd.DataFrame, selections: Mapping[str, list[str]]) -> pd.DataFrame:
+    """고른 값이 있는 컬럼마다 행을 거른 사본. 빈 선택은 「전체」 다.
+
+    **거르고도 모든 행이 남으면 원본 사본을 돌려준다**(「Select all」 로 다 담은 중간 상태 등).
+    `.loc` 는 모두 참인 마스크에도 `RangeIndex` 를 일반 `Index` 로 바꾼다. 그러면 표가 숨은
+    인덱스 열을 더 싣고, `st.data_editor` 는 인덱스 꼴이 위젯 신원에 들어 있어 새 위젯으로 서서
+    같은 표를 통째로 다시 보낸다. 행·차례·인덱스 값은 어느 쪽이든 같다.
+    """
+    filtered = data
+    for column, selected in selections.items():
+        if selected:
             filtered = filtered.loc[filtered[column].isin(selected)]
+    if len(filtered) == len(data):
+        return data.copy()
     return filtered.copy()
 
 
@@ -101,8 +118,4 @@ def render_column_filter_controls(
             select_all=True,
             disabled=disabled,
         )
-    filtered = data
-    for column, selected in selections.items():
-        if selected:
-            filtered = filtered.loc[filtered[column].isin(selected)]
-    return filtered.copy()
+    return _filtered_rows(data, selections)

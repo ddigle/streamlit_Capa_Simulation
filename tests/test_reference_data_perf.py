@@ -9,8 +9,14 @@
 
 from __future__ import annotations
 
+import ast
+import json
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
 import pytest
+from streamlit.dataframe import lazy_df_source
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     EQP_TAB,
@@ -38,6 +44,7 @@ from capa_simulation.services.equipment_count import (
 from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.route_step_editor import route_step_tables
 
+REFERENCE_DATA_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "reference_data.py"
 DIALOG_KEY = "reference_data_open_dialog"
 STEP_SUMMARY_COLUMNS = {
     "생산계획년월": "월",
@@ -178,8 +185,16 @@ def _open_tab(app: AppTest, name: str) -> AppTest:
     return app
 
 
-def _displayed_summary(app: AppTest) -> pd.DataFrame:
+def _sent_summary(app: AppTest) -> pd.DataFrame:
+    """화면에 보낸 STEP 요약 그대로(dtype 포함)."""
     return _frame_with_column(app, "STEP 수").reset_index(drop=True)
+
+
+def _displayed_summary(app: AppTest) -> pd.DataFrame:
+    """화면 STEP 요약의 **값**. 화면 사본은 보내는 바이트를 줄이려 글자 열을 category 로 싣는다 —
+    값과 차례만 견주도록 원래 글자 열로 되돌린다(정수 폭은 `check_dtype=False` 가 덮는다)."""
+    summary = _sent_summary(app)
+    return summary.astype({column: object for column in summary.select_dtypes("category").columns})
 
 
 def _route_key(app: AppTest) -> tuple[int, str, int, int]:
@@ -287,6 +302,52 @@ def test_the_step_summary_is_the_route_table_of_this_runs_slices() -> None:
     for name, table in (("reqb", "RQ_REQB"), ("upeh", "RQ_UPEH")):
         pd.testing.assert_frame_equal(inputs[name], _month_slice(app, table))
     assert _route_key(app)[1] == "test-ref-perf-step-same"
+
+
+def test_the_step_summary_is_sent_with_compact_dtypes() -> None:
+    """STEP 요약은 월 × 경로 그룹의 긴 표다. 화면 사본은 경로 글자 열을 category 로, 월·개수를
+    좁은 정수로 보낸다 — 행마다 되풀이되는 글자와 8바이트 정수가 전송량 대부분이었다. 값은 위
+    검사가 본다."""
+    app = AppTest.from_string(
+        _probed(TEST_SCRIPT, "test-ref-perf-step-compact"), default_timeout=60
+    )
+    app = _open_tab(app, "STEP 구성")
+
+    sent = _sent_summary(app)
+    number_columns = ["월", "STEP 수", "수요 변형 수"]
+    text_columns = [column for column in sent.columns if column not in number_columns]
+    assert text_columns == ["Area", "공정", "양산", "제품", "Stack", "속성", "소요기준"]
+    assert all(isinstance(sent[column].dtype, pd.CategoricalDtype) for column in text_columns)
+    for column in number_columns:
+        dtype = sent[column].dtype
+        assert isinstance(dtype, np.dtype)
+        assert dtype.kind == "i"
+        assert dtype.itemsize < 8
+    # category 글자 열은 글자 칸으로 못 박는다 — 두지 않으면 화면이 선택 칸 꼴로 그린다.
+    element = next(frame for frame in app.dataframe if "STEP 수" in frame.value.columns)
+    column_config = json.loads(element.proto.columns)
+    assert all(column_config[column]["type_config"]["type"] == "text" for column in text_columns)
+
+
+def test_the_eager_step_summary_limit_follows_streamlit_auto_lazy_threshold() -> None:
+    """줄인 사본을 보내는 행 수의 끝은 Streamlit 이 스스로 lazy 로 바꾸는 행 수와 같아야 한다.
+
+    둘이 어긋나면 그 사이 길이의 표가 category 열로 lazy 정렬에 들어가 「Failed to load data」 가
+    되거나(끝이 더 크면), `lazy=False` 로 못 박혀 정렬 단추를 잃는다(끝이 더 작으면). 페이지
+    모듈은 import 하면 화면이 통째로 돌므로 AST 로 읽는다.
+    """
+    tree = ast.parse(REFERENCE_DATA_PAGE.read_text(encoding="utf-8"))
+    limits = [
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "STEP_SUMMARY_EAGER_MAX_ROWS"
+            for target in node.targets
+        )
+    ]
+
+    assert limits == [lazy_df_source.AUTO_LAZY_ROW_THRESHOLD]
 
 
 def test_a_step_change_rebuilds_the_route_tables_with_the_new_token() -> None:
