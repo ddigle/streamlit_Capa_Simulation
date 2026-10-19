@@ -101,7 +101,7 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
 - `app.py` — 진입점. `navigation.run()` 전에 공식 시나리오 부트스트랩, 공통 사이드바
   (시나리오 컨트롤·조회기간)를 만든다. 페이지 간 공유 위젯은 여기서만 만든다. 부트스트랩보다
   먼저 첫 접속 입장 화면(`components/intro_overlay.py`)을 매 회차 걸고, 부트스트랩 바로 뒤·페이지
-  앞에서 그 화면 Summary 가 그릴 공식버전 요약(`components/intro_summary.py`)을 보낸다.
+  앞에서 그 화면 Summary 가 그릴 공식버전 요약과 `Introduce` 덱 칸(`components/intro_summary.py`)을 보낸다.
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
@@ -199,4 +199,5 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 결정). 이 저장소에는 대표 발표 자료 한 파일, 루트 `index.html` 만 두고 그 밖의 발표 파일은 넣지 않는다. 원본은 쇼케이스의
 `contest/dist/capa-contest.html` 이다(`capa-contest.artifact.html` 은 아티팩트용 변형이라 쓰지 않는다). 두 폴더는 서로 읽되
 쓰지 않는다 — `index.html` 을 바꿀 때만 이 저장소 세션이 그 파일을 읽어 CR 을 뺀 뒤(`tr -d '\r'`) 루트로 복사·커밋하고, 견줄
-때도 CR 을 뺀 뒤 견준다. 발표자 실명은 그대로 둔다(같은 날 사용자 결정 — 다시 묻지 않는다). 자세한 것은 `AGENTS.md` 3장 끝.
+때도 CR 을 뺀 뒤 견준다. 발표자 실명은 그대로 둔다(같은 날 사용자 결정 — 다시 묻지 않는다). 이 `index.html` 은 앱 입장
+화면의 `Introduce` 가 그대로 띄운다(2026-10-19) — 외부 파일 없이 한 파일로 서야 한다. 자세한 것은 `AGENTS.md` 3장 끝.

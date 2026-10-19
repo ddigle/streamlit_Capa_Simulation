@@ -67,6 +67,7 @@ def test_every_display_string_is_covered_by_the_font_subset() -> None:
     """
     covered = set(intro_overlay.FONT_SUBSET_TEXT)
     shown = intro_overlay.BRAND + intro_overlay.DETAIL_LABEL + intro_overlay.SUMMARY_LABEL
+    shown += intro_overlay.INTRODUCE_LABEL
     shown += "".join(line + line.upper() for line in intro_overlay.TITLE_LINES)
     shown += "0123456789."
 
@@ -268,10 +269,11 @@ def test_the_summary_payload_reaches_the_overlay_without_talking_back() -> None:
     """요약 값은 따로 오는 컴포넌트가 창에 두고 오버레이에 넘긴다 — 파이썬으로는 되보내지 않는다."""
     from capa_simulation.components import intro_summary
 
-    assert "window.__capaSummary = data;" in intro_summary._JS
-    assert "api.setSummary(data)" in intro_summary._JS
-    # 파이썬으로 가는 길은 「준비 중」 몫을 다시 받아 오는 trigger 하나뿐이다(rerun 한 번).
-    assert re.findall(r"set(State|Trigger)Value\s*\(", intro_summary._JS) == ["Trigger"]
+    assert "window.__capaSummary = summary;" in intro_summary._JS
+    assert "api.setSummary(summary)" in intro_summary._JS
+    # 파이썬으로 가는 길은 trigger 둘뿐이다 — 「준비 중」 몫을 다시 받아 오기와 Introduce 덱 받기(각
+    # rerun 한 번).
+    assert re.findall(r"set(State|Trigger)Value\s*\(", intro_summary._JS) == ["Trigger", "Trigger"]
     assert 'window.__capaSummaryRefresh = () => component.setTriggerValue("refresh"' in (
         intro_summary._JS
     )
@@ -297,6 +299,9 @@ def test_the_summary_hides_its_slot_before_it_is_drawn(monkeypatch: pytest.Monke
     assert f".st-key-{intro_summary.INTRO_SUMMARY_KEY}" in calls[0][1]
     assert calls[1][1]["key"] == intro_summary.INTRO_SUMMARY_KEY
     assert calls[1][1]["on_refresh_change"] is intro_summary._refresh_requested
+    # Introduce 덱 칸은 늘 싣고(덱이 있는지), 본문은 달라고 한 회차에만 싣는다.
+    assert calls[1][1]["on_teaser_change"] is intro_summary._teaser_requested
+    assert calls[1][1]["data"]["teaser"] == {"available": True}
 
 
 def test_the_sidebar_label_is_the_wordmark_in_the_app_theme() -> None:
@@ -507,9 +512,9 @@ def test_the_entry_title_hands_its_name_to_the_head_label_on_leaving() -> None:
     assert hand.index("H.flyMs, easing: IN") < hand.index("H.pauseMs") < hand.index("H.popMs")
     assert '{ opacity: 1, transform: "scale(1.12)", offset: 0.55 }' in hand
     # 두 길 모두 본래 전환 앞에서 기다린다. Summary 길은 타이틀을 다시 움직이지 않는다.
-    detail = _between(js, "async function toDetail() {", "function hide() {")
+    detail = _between(js, "async function toDetail(origin = detail) {", "function hide() {")
     assert 'if (mode === "intro") await handOffTitle();' in detail
-    assert detail.index("await handOffTitle();") < detail.index("holeAt(detail)")
+    assert detail.index("await handOffTitle();") < detail.index("holeAt(origin)")
     entry = _between(js, "async function summaryFromEntry(", "function snapToSummary(")
     assert entry.index("await handOffTitle();") < entry.index('mode = "summary";')
     assert "anim(title," not in entry
@@ -619,7 +624,9 @@ def test_the_head_mark_draws_scans_while_loading_then_spins_once() -> None:
     assert "mark.draw(REVEAL_AT_MS + TEXT_AFTER_REVEAL_MS)" in moving
     assert "mark.settle(() => ready)" in moving
     opening = js[
-        js.index("async function openFromApp(button)") : js.index("async function toDetail()")
+        js.index("async function openFromApp(button)") : js.index(
+            "async function toDetail(origin = detail)"
+        )
     ]
     assert "if (!reduce) mark.draw(MARK_REDRAW_AFTER_MS);" in opening
     summary_from_entry = js[js.index("async function summaryFromEntry()") :]
@@ -858,7 +865,7 @@ def test_closing_the_summary_returns_focus_to_the_sidebar_label() -> None:
     js = (ASSETS / "intro.js").read_text(encoding="utf-8")
     opening = js[js.index("async function openFromApp(button)") :]
     assert "opener = button || null;" in opening[: opening.index("snapToSummary()")]
-    closing = js[js.index("async function toDetail()") : js.index("function hide()")]
+    closing = js[js.index("async function toDetail(origin = detail)") : js.index("function hide()")]
     assert closing.index("hide();") < closing.index("opener.focus(")
     assert "opener = null;" in closing
 
@@ -1077,3 +1084,82 @@ def test_the_summary_back_arrow_returns_to_the_entry_cover() -> None:
     assert "veil = 1;" in handler
     assert "to: { veil: 1 }" in handler
     assert 'm.type === "summary-off" ? "summary-on" : m.type' in js
+
+
+def test_the_introduce_deck_is_sent_only_on_the_run_that_asked_for_it(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """덱 본문(약 1.4MB)은 입장 화면이 `teaser` trigger 로 달라고 한 회차에만 싣는다(2026-10-19
+    사용자 결정 — Introduce 는 내장). 그 밖의 회차는 덱이 있는지만 싣고, 덱을 못 읽으면 없는 것으로
+    보낸다 — Introduce 가 서지 않을 뿐 앱은 그대로다."""
+    from capa_simulation.components import intro_summary
+
+    deck = tmp_path / "index.html"
+    deck.write_text("<title>DEMO deck</title>", encoding="utf-8")
+    monkeypatch.setattr(st, "session_state", {})
+    monkeypatch.setattr(intro_summary, "INTRODUCE_DECK_PATH", deck)
+
+    assert intro_summary.teaser_payload() == {"available": True}
+    intro_summary._teaser_requested()
+    assert intro_summary.teaser_payload() == {"available": True, "html": "<title>DEMO deck</title>"}
+    assert intro_summary.teaser_payload() == {"available": True}
+
+    monkeypatch.setattr(intro_summary, "INTRODUCE_DECK_PATH", tmp_path / "missing.html")
+    intro_summary._teaser_requested()
+    assert intro_summary.teaser_payload() == {"available": False}
+    assert intro_summary.INTRODUCE_DECK_PATH.name == "missing.html"
+
+
+def test_the_summary_payload_hands_the_deck_aside_from_the_worker_summary() -> None:
+    """받은 값 JS 는 `teaser` 를 떼어 따로 넘긴다 — 요약은 워커 장면으로 가므로 덱 본문을 싣지
+    않는다. 덱은 한 번 받으면 창에 남겨 두고, 요약이 그대로이면 다시 넘기지 않는다(덱이 닿은 회차에
+    요약 준비를 다시 하지 않게)."""
+    from capa_simulation.components import intro_summary
+
+    js = intro_summary._JS
+    assert "delete summary.teaser;" in js
+    assert 'component.setTriggerValue("teaser", Date.now())' in js
+    assert "html: teaser.html || held.html || null" in js
+    assert "if (json === window.__capaSummaryJson) return;" in js
+    assert js.index("api.setTeaser(window.__capaTeaser)") < js.index("api.setSummary(summary)")
+
+
+def test_introduce_opens_the_root_deck_inside_the_overlay_and_closes_back_to_the_cover() -> None:
+    """커버의 셋째 단추 Introduce 는 저장소 루트 발표 덱을 오버레이 안 전체 화면 틀에
+    띄운다(2026-10-19 사용자 결정 — 권장대로: 원형 펼침, 준비가 끝나면 Summary 와 함께 선다, 덱 머리
+    ← + Detail, Admin 탭 없음). 처음 누를 때만 덱을 받아 blob 주소로 띄우고(장면 주소 `#` 가 산다),
+    덱이 덮은 동안 장면은 쉰다. ← · Esc(덱 안에서 누른 것도)는 원이 그 단추로 접히며 커버로, 덱 머리
+    Detail 은 그 단추에서 곧장 앱으로 간다."""
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    actions = html[html.index('<div class="actions">') : html.index('<p class="hint"')]
+    assert actions.index("btn summary") < actions.index("btn introduce")
+    assert '<div class="teaser" hidden>' in html
+    assert '<iframe class="deck" allow="fullscreen"></iframe>' in html
+    head = html[html.index('<div class="teaser-head">') :]
+    assert head.index("teaser-back") < head.index("teaser-detail")
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\.teaser\[hidden\] \{\s*display: none;", css)
+    assert re.search(r"\.btn\.introduce:disabled \.play \{\s*display: none;", css)
+
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    shown = _between(js, "// Introduce 도 들어갈 수 있을 때 선다", "let reasonText")
+    assert "const showIntroduce = can && teaser.available;" in shown
+    opener = _between(js, "async function openTeaser() {", "// 덱 → 커버.")
+    assert 'if (busy || mode !== "intro" || !teaser.available) return;' in opener
+    assert "window.__capaTeaserRequest()" in opener
+    assert 'new Blob([teaser.html], { type: "text/html" })' in opener
+    assert 'mode = "teaser";' in opener
+    assert "clipPath: `circle(0px at ${x}px ${y}px)`" in opener
+    assert 'sceneHandle.post({ type: "pause" })' in opener
+    closer = _between(js, "async function closeTeaser(instant = false) {", "/* ----")
+    assert 'sceneHandle.post({ type: "resume", ...size() });' in closer
+    assert 'mode = "intro";' in closer
+    assert "introduceButton.focus({ preventScroll: true });" in closer
+    keys = _between(js, "function watchDeckKeys() {", "async function openTeaser() {")
+    assert 'event.key === "Escape" && mode === "teaser"' in keys
+    assert 'else if (mode === "teaser" && event.key === "Escape") closeTeaser();' in js
+    assert "toDetail(teaserDetail)" in js
+    assert "const radius = holeAt(origin);" in js
+    hide = _between(js, "function hide() {", "mark.cancel();")
+    assert "teaserLayer.hidden = true;" in hide
+    assert '"button, [href], input, select, textarea, iframe, [tabindex]"' in js

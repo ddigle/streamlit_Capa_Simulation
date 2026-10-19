@@ -600,6 +600,120 @@
   opacity: 0.45;
 }
 
+/* Introduce — 커버 셋째 단추. Summary 와 같은 윤곽 단추에 재생 표시를 붙인다. 저장소 루트 발표 덱을 띄운다
+   (intro.js `openTeaser`). 처음 누를 때 덱을 받아 오는 동안은 꺼 두어 도는 표시가 재생 표시 자리에 선다. */
+.btn.introduce {
+  z-index: 1;
+}
+
+.btn.introduce .bg {
+  border-color: var(--ghost-line);
+}
+
+.btn.introduce .tx {
+  gap: 8px;
+  color: var(--text);
+}
+
+.btn.introduce:not(:disabled):hover .bg {
+  background: var(--ghost-hover);
+}
+
+.btn.introduce .play {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.btn.introduce:disabled {
+  cursor: progress;
+}
+
+.btn.introduce:disabled .play {
+  display: none;
+}
+
+/* Introduce 의 덱 — 오버레이 맨 위 전체 화면 틀. 누른 단추에서 원이 퍼지며 드러나고 원이 그 단추로 접히며
+   닫힌다(clip-path). 머리 줄은 ←(커버로)·Detail(앱으로) 둘이고 덱 위에 떠 있다. */
+.teaser {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: #000;
+}
+
+.teaser[hidden] {
+  display: none;
+}
+
+.teaser .deck {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.teaser-head {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.teaser-head > button {
+  pointer-events: auto;
+}
+
+.teaser-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--ghost-line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.35s, translate 0.2s;
+}
+
+.teaser-back:hover {
+  background: var(--ghost-hover);
+  translate: 0 -1px;
+}
+
+.teaser-back svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.teaser-detail {
+  min-width: 86px;
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--button);
+  color: var(--button-text);
+  font: 800 18px/1 var(--display);
+  font-stretch: 75%;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.teaser-back:focus-visible,
+.teaser-detail:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .btn.docked {
   min-width: 86px;
   height: 30px;
@@ -722,6 +836,7 @@
   .actions .btn:not(.docked) {
     flex: 1;
     min-width: 0;
+    padding: 0 12px;
   }
 
   .asof .period {

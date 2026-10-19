@@ -74,6 +74,10 @@ const EXIT_MS = 950;
 const FOLD_MS = 850;
 // Summary → 입장 화면(← 단추): 웨이퍼 색·그늘이 입장 모습으로 돌아가는 시간과 글자가 다시 떠오르는 시간.
 const BACK_MS = 600;
+// Introduce: 덱이 누른 단추에서 원으로 퍼지고(열기) 그 단추로 접히는(닫기) 시간. Detail 의 구멍과 같은 결이다.
+const TEASER_MS = 850;
+// 처음 누를 때 덱을 받아 오기를 기다리는 한도. 넘기면 단추 풍선에 까닭을 달고 다시 누르게 둔다.
+const TEASER_WAIT_MS = 20000;
 // 메인 심볼 — C 링 + 3×3 다이(2026-10-07 사용자 결정, 뷰박스 100). 반지름 41 링의 오른쪽 ±35° 를 열어
 // 「C」로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이 아홉을 28 · 44 · 60 에 둔다. 사이드바 라벨
 // (`intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS`)과 탭 아이콘(`static/icons/capa_mark.svg`)이 같은
@@ -2157,9 +2161,18 @@ function boot(api, data) {
   registerHole();
   let overlay = null;
   let summary = null;
+  // Introduce 덱 칸(`intro_summary` 의 받은 값 JS 가 `teaser` 를 떼어 넘긴다). 오버레이를 새로 만들 때도 넘긴다.
+  let teaserState = window.__capaTeaser || null;
   const ensure = (initial) => {
-    if (!overlay) overlay = createOverlay(api, data, initial, syncToolbar);
+    if (!overlay) {
+      overlay = createOverlay(api, data, initial, syncToolbar);
+      if (teaserState) overlay.setTeaser(teaserState);
+    }
     return overlay;
+  };
+  api.setTeaser = (state) => {
+    teaserState = state;
+    if (overlay) overlay.setTeaser(state);
   };
 
   // 사이드바 앱 이름 라벨. 테마 버튼 iframe 의 스크립트가 세우고 칠한다
@@ -2266,6 +2279,18 @@ function createOverlay(api, data, initial, syncToolbar) {
   $(".btn.summary .txt").textContent = text.summary || "Summary";
   summaryButton.title = text.summary_title || "";
   detail.title = text.detail_title || "";
+  const introduceButton = $(".btn.introduce");
+  $(".btn.introduce .txt").textContent = text.introduce || "Introduce";
+  introduceButton.title = text.introduce_title || "";
+  const teaserLayer = $(".teaser");
+  const deckFrame = $(".teaser .deck");
+  deckFrame.title = text.introduce || "Introduce";
+  const teaserBack = $(".teaser-back");
+  teaserBack.title = text.teaser_back_title || "";
+  teaserBack.setAttribute("aria-label", text.teaser_back_title || "");
+  const teaserDetail = $(".teaser-detail");
+  teaserDetail.textContent = text.detail || "Detail";
+  teaserDetail.title = text.teaser_detail_title || "";
   const dock = $('[data-slot="dock"]');
   const back = $(".back");
   back.title = text.back_title || "";
@@ -2525,6 +2550,17 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     summaryButton.disabled = !canSummary();
     summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
+    // Introduce 도 들어갈 수 있을 때 선다 — 덱 받기는 rerun 이라 첫 실행 도중에 누르면 그 실행을 끊는다.
+    const showIntroduce = can && teaser.available;
+    const introduceAppearing = showIntroduce && introduceButton.hidden;
+    introduceButton.hidden = !showIntroduce;
+    if (introduceAppearing && mode === "intro" && !reduce) {
+      introduceButton.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], {
+        duration: 420,
+        delay: 80,
+        easing: OUT,
+      });
+    }
   }
   let reasonText = "";
 
@@ -2589,6 +2625,99 @@ function createOverlay(api, data, initial, syncToolbar) {
       }, FALLBACK_ENTER_MS));
     }
     arm();
+  }
+
+  /* ------------------------------------------------------------ Introduce 덱 */
+  // 덱이 있는지(`available`)와 본문(`html` — 처음 누를 때 한 번 받는다). 본문은 한 번 받으면 탭이 들고 있다.
+  let teaser = { available: false, html: null };
+  let teaserWaiters = [];
+  let deckUrl = "";
+  let teaserOrigin = null;
+  function setTeaser(state) {
+    teaser = { available: !!(state && state.available), html: (state && state.html) || teaser.html };
+    if (teaser.html) teaserWaiters.splice(0).forEach((resolve) => resolve());
+    render();
+  }
+
+  // 덱 안에서 누른 Esc 는 이 문서로 올라오지 않는다 — 같은 출처(blob)라 덱 창에 직접 건다.
+  function watchDeckKeys() {
+    try {
+      deckFrame.contentWindow.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && mode === "teaser") {
+          event.preventDefault();
+          closeTeaser();
+        }
+      });
+    } catch (error) {
+      // 다른 출처가 되면 Esc 는 머리 줄 ← 로만 닫는다.
+    }
+  }
+
+  async function openTeaser() {
+    if (busy || mode !== "intro" || !teaser.available) return;
+    busy = true;
+    if (!teaser.html) {
+      introduceButton.disabled = true;
+      if (typeof window.__capaTeaserRequest === "function") window.__capaTeaserRequest();
+      await Promise.race([
+        new Promise((resolve) => teaserWaiters.push(resolve)),
+        new Promise((resolve) => timers.push(window.setTimeout(resolve, TEASER_WAIT_MS))),
+      ]);
+      introduceButton.disabled = false;
+      introduceButton.title = teaser.html ? text.introduce_title || "" : text.introduce_failed || "";
+      if (!teaser.html || mode !== "intro") {
+        busy = false;
+        return;
+      }
+    }
+    if (!deckUrl) {
+      deckUrl = URL.createObjectURL(new Blob([teaser.html], { type: "text/html" }));
+      deckFrame.addEventListener("load", watchDeckKeys);
+      deckFrame.src = deckUrl;
+    }
+    mode = "teaser";
+    tip.style.opacity = "0";
+    const box = introduceButton.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    teaserOrigin = { x, y, r: Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y)) };
+    teaserLayer.hidden = false;
+    if (reduce) await anim(teaserLayer, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: "linear" });
+    else {
+      await anim(
+        teaserLayer,
+        [{ clipPath: `circle(0px at ${x}px ${y}px)` }, { clipPath: `circle(${teaserOrigin.r}px at ${x}px ${y}px)` }],
+        { duration: TEASER_MS },
+      );
+    }
+    cancelAll([teaserLayer]);
+    // 덱이 화면을 다 덮은 동안 커버 장면(워커)은 쉰다.
+    if (mode === "teaser") sceneHandle.post({ type: "pause" });
+    deckFrame.focus({ preventScroll: true });
+    busy = false;
+  }
+
+  // 덱 → 커버. `instant` 는 움직임 없이(Detail 로 곧장 나갈 때) 걷는다.
+  async function closeTeaser(instant = false) {
+    if (mode !== "teaser" || (busy && !instant)) return;
+    busy = true;
+    sceneHandle.post({ type: "resume", ...size() });
+    const o = teaserOrigin || { x: window.innerWidth / 2, y: window.innerHeight / 2, r: window.innerWidth };
+    if (!instant) {
+      if (reduce) await anim(teaserLayer, [{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: "linear" });
+      else {
+        await anim(
+          teaserLayer,
+          [{ clipPath: `circle(${o.r}px at ${o.x}px ${o.y}px)` }, { clipPath: `circle(0px at ${o.x}px ${o.y}px)` }],
+          { duration: TEASER_MS },
+        );
+      }
+    }
+    teaserLayer.hidden = true;
+    cancelAll([teaserLayer]);
+    mode = "intro";
+    busy = false;
+    if (!instant) introduceButton.focus({ preventScroll: true });
   }
 
   /* ------------------------------------------------------------ 요약 값·행 이름·낭독용 표 */
@@ -2861,7 +2990,8 @@ function createOverlay(api, data, initial, syncToolbar) {
     scheduleLabels(T.chartsAt);
     // 1) 로딩 막대가 위로 밀려나며 사라진다(타이틀은 이미 라벨 자리로 들어갔다 — `handOffTitle`).
     anim($(".load"), [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-36px)" }], { duration: reduce ? 1 : T.outMs, delay: reduce ? 0 : 60 });
-    // 2) 누른 Summary 는 Detail 아래로 겹쳐 들어가며 사라진다.
+    // 2) 누른 Summary 는 Detail 아래로 겹쳐 들어가며 사라진다. Introduce 는 같은 때 옅어진다.
+    anim(introduceButton, [{ opacity: 1 }, { opacity: 0 }], { duration: reduce ? 1 : T.tuckMs, delay: reduce ? 0 : T.tuckDelay });
     const dx = detail.getBoundingClientRect().left - summaryButton.getBoundingClientRect().left;
     await anim(summaryButton, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${dx}px) scale(.94)` }], {
       duration: reduce ? 1 : T.tuckMs,
@@ -2888,7 +3018,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   /* ------------------------------------------------------------ 원래 화면 ↔ 요약 */
   // 입장 화면을 거치지 않고(또는 Detail 로 나갔다가) 요약을 열 때 쓰는 끝 모습.
   function snapToSummary() {
-    cancelAll([title, $(".load"), summaryButton, asof, $(".btn.detail .bg"), $(".btn.detail .tx"), ...$$(".head > *")]);
+    cancelAll([title, $(".load"), summaryButton, introduceButton, asof, $(".btn.detail .bg"), $(".btn.detail .tx"), ...$$(".head > *")]);
     $$(".head > .logo, .head > .brand").forEach((el) => {
       el.style.opacity = "1";
     });
@@ -2922,7 +3052,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     sceneHandle.post({ type: "summary-off", at: absoluteNow(), ms: reduce ? 0 : BACK_MS });
     const brand = $(".head > .brand");
     const parts = $$(".main > *");
-    cancelAll([title, brand, back, summaryButton, asof, ...parts, ...$$(".sum-label")]);
+    cancelAll([title, brand, back, summaryButton, introduceButton, asof, ...parts, ...$$(".sum-label")]);
     stage.classList.remove("summary");
     undockDetail();
     // 요약에서 붙인 인라인 값을 걷어 입장 화면의 처음 값(CSS)으로 돌린다.
@@ -3000,15 +3130,16 @@ function createOverlay(api, data, initial, syncToolbar) {
     busy = false;
   }
 
-  // Detail: 누른 단추에서 구멍이 퍼지며 원래 화면이 드러난다. 오버레이는 걷지 않고 감춘다.
-  async function toDetail() {
+  // Detail: 누른 단추에서 구멍이 퍼지며 원래 화면이 드러난다. 오버레이는 걷지 않고 감춘다. 덱 머리의 Detail 은
+  // 그 단추에서 퍼진다(`origin`) — 덱 화면에서는 타이틀 넘겨주기를 하지 않는다.
+  async function toDetail(origin = detail) {
     if (busy || mode === "hidden" || detail.disabled) return;
     busy = true;
     if (mode === "intro") await handOffTitle();
     rememberEntered();
     setInert(false);
     tip.style.opacity = "0";
-    const radius = holeAt(detail);
+    const radius = holeAt(origin);
     if (reduce) await anim(stage, [{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: "linear" });
     else {
       stage.classList.add("masked");
@@ -3022,6 +3153,8 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   function hide() {
     mode = "hidden";
+    teaserLayer.hidden = true;
+    cancelAll([teaserLayer]);
     mark.cancel();
     host.style.display = "none";
     stage.classList.remove("masked");
@@ -3043,7 +3176,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   // 건너뛰지만 덮개 호스트가 body 의 마지막이라, Detail 다음 Tab 은 페이지를 떠나 브라우저
   // 주소창으로 나갔다(2026-10-06 E2E). 보이지 않는 단추(접혀 들어간 Summary)는 돌지 않는다.
   function focusables() {
-    return $$("button, [href], input, select, textarea, [tabindex]").filter(
+    return $$("button, [href], input, select, textarea, iframe, [tabindex]").filter(
       (el) =>
         !el.disabled &&
         !el.hidden &&
@@ -3073,6 +3206,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     if (mode !== "hidden" && event.key === "Tab") cycleFocus(event);
     else if (mode === "intro" && event.key === "Enter" && !detail.disabled && event.target === document.body) toDetail();
     else if (mode === "summary" && event.key === "Escape") toDetail();
+    else if (mode === "teaser" && event.key === "Escape") closeTeaser();
   }
   document.addEventListener("keydown", onKey);
   document.addEventListener("focusin", onFocusIn);
@@ -3081,6 +3215,11 @@ function createOverlay(api, data, initial, syncToolbar) {
   });
   summaryButton.addEventListener("click", () => summaryFromEntry());
   back.addEventListener("click", () => entryFromSummary());
+  introduceButton.addEventListener("click", () => openTeaser());
+  teaserBack.addEventListener("click", () => closeTeaser());
+  teaserDetail.addEventListener("click", () => {
+    if (mode === "teaser") toDetail(teaserDetail);
+  });
 
   /* --------------------------------------------------------- 진행 신호(앱 실행 상태·HOME 막대) */
   // HOME 은 본문 맨 위에 `LoadingProgress` 막대를 「단계 이름 · N%」로 띄운다. 그 퍼센트가 각
@@ -3164,6 +3303,7 @@ function createOverlay(api, data, initial, syncToolbar) {
 
   return {
     setSummary,
+    setTeaser,
     openFromApp,
     get visible() {
       return mode !== "hidden";

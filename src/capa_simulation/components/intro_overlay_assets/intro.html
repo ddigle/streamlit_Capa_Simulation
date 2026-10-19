@@ -19,9 +19,17 @@
       <div class="actions">
         <button type="button" class="btn detail" disabled><span class="bg"></span><span class="tx"><span class="spin" aria-hidden="true"></span><span class="txt"></span></span></button>
         <button type="button" class="btn summary" hidden><span class="bg"></span><span class="tx"><span class="txt"></span></span></button>
+        <button type="button" class="btn introduce" hidden><span class="bg"></span><span class="tx"><span class="spin" aria-hidden="true"></span><svg class="play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg><span class="txt"></span></span></button>
       </div>
       <p class="hint" hidden></p>
     </section>
+  </div>
+  <div class="teaser" hidden>
+    <iframe class="deck" allow="fullscreen"></iframe>
+    <div class="teaser-head">
+      <button type="button" class="teaser-back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" class="teaser-detail"></button>
+    </div>
   </div>
   <table class="sr" data-slot="table"></table>
   <div class="tip" role="tooltip"></div>

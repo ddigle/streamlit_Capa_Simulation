@@ -14,6 +14,12 @@ HOME 첫 로딩은 몇 초가 걸린다. 그동안 빈 화면이 반쯤 그려�
   글자가 되며, 웨이퍼는 제자리·같은 속도로 돌면서 20% 무채색으로 흐려진다. 그 위에 생산계획 선·B/N
   확보율 막대(부족 대수)·월별 시트(Density·Wafer 계획·제품 비중 도넛)가 차례로 조립된다. 값은
   `components/intro_summary.py` 가 따로 보낸다.
+- **Introduce** — 저장소 루트 발표 덱(`index.html`)을 같은 오버레이 안 전체 화면 틀에 띄운다
+  (2026-10-19 사용자 결정 — 외부 주소가 아니라 내장). 누른 단추에서 원이 퍼지며 덱이 드러나고, 머리
+  `←`·`Esc` 는 원이 그 단추로 접히며 커버로, `Detail` 은 곧장 앱으로 간다. 덱 본문은 처음 누를 때
+  `intro_summary` 의 `teaser` trigger 로 한 번 받아 blob 주소로 띄운다(덱의 장면 주소 `#` 가 살아
+  있다). 덱이 열린 동안 장면 워커는 쉰다. Summary 처럼 들어갈 준비가 끝나면 선다 — 로딩 중 받기
+  rerun 은 첫 실행을 끊는다.
 
 원래 화면으로 들어간 뒤에는 사이드바 머리칸의 앱 이름 라벨(`S.PKG CAPA` / `AX Management` 두 줄 —
 `intro_summary.summary_label_script`)이 같은 요약을 다시 연다 — 화면이 그 라벨 속으로 접히며
@@ -100,6 +106,9 @@ MARK_DIE_ORIGINS = (28, 44, 60)
 TITLE_LINES = (BRAND, BRAND_SUBTITLE)
 DETAIL_LABEL = "Detail"
 SUMMARY_LABEL = "Summary"
+# 커버의 셋째 단추 — 저장소 루트 발표 덱(`index.html`)을 입장 화면 안에 띄운다(2026-10-19 사용자
+# 결정, 덱은 `intro_summary` 가 달라고 한 회차에만 보낸다).
+INTRODUCE_LABEL = "Introduce"
 # 원래 화면에서 Summary 를 다시 여는 사이드바 머리칸의 앱 이름 라벨(`intro_summary`). id 는
 # `intro.js` 의 `SUMMARY_LABEL_ID` 와 같아야 한다(테스트가 잡는다). 읽는 이름은 앱 이름 전체다.
 # 풍선 글은 라벨 스크립트(입장 화면 JS 가 뜨기 전)와 입장 화면 JS 가 같이 쓴다.
@@ -118,7 +127,7 @@ SUMMARY_LABEL_OFF = "공식버전 요약을 열 수 없습니다"
 #   (`varLib.instancer`) 이 목록으로 줄여 woff2 로 쓴다(`subset` — 레이아웃 기능 `dnom frac locl
 #   numr pnum tnum kern`, 이름 레코드 0~6 과 라이선스 글·주소 13·14, `.notdef` 윤곽 남김, 힌팅
 #   없음). 이 길로 옛 목록을 다시 만들면 Google Fonts 응답과 글리프 수·윤곽·폭·커닝이 같다.
-FONT_SUBSET_TEXT = "S.PKG CAPA AX MANAGEMENT AX Management Detail Summary 0123456789."
+FONT_SUBSET_TEXT = "S.PKG CAPA AX MANAGEMENT AX Management Detail Summary Introduce 0123456789."
 # `archivo-capa-number.woff2`(`wdth,wght@100,700`) — Summary 차트의 숫자·단위. 한글(`억`)은 이
 # 글꼴에 없어 본문 글꼴로 그린다.
 NUMBER_FONT_SUBSET_TEXT = "0123456789.,%+-–KGb"
@@ -204,6 +213,11 @@ def _data() -> dict[str, Any]:
             "summary": SUMMARY_LABEL,
             "detail_title": "원래 화면으로 들어갑니다",
             "summary_title": "공식버전 요약을 봅니다",
+            "introduce": INTRODUCE_LABEL,
+            "introduce_title": "발표 덱으로 이 앱을 소개합니다",
+            "introduce_failed": "소개 자료를 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.",
+            "teaser_back_title": "입장 화면으로 돌아갑니다",
+            "teaser_detail_title": "원래 화면으로 들어갑니다",
             # Summary 머리 줄 Detail 왼쪽 ← 단추의 풍선·읽는 이름 — 입장 화면으로 돌아간다.
             "back_title": "입장 화면으로 돌아갑니다",
             # 사이드바 라벨의 풍선. 누를 수 없으면 요약이 보낸 까닭을 먼저 쓴다.
