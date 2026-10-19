@@ -603,4 +603,6 @@ with summary_tab:
 with detail_tab:
     _render_detail(demo, process_summary, process_labels, owner_tab=detail_tab)
 with guide_tab:
-    _render_guide()
+    # 위젯이 없는 정적 설명이라 닫혀 있으면 건너뛴다 — 잃을 상태가 없다.
+    if not tab_is_hidden(guide_tab):
+        _render_guide()

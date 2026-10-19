@@ -1,4 +1,4 @@
-# Purpose: Dynamic Capa 상위 화면이 공정 표시명을 쓰고 선택값은 원본으로 두는지 검증한다.
+# Purpose: Dynamic Capa 상위 화면의 공정 표시명·원본 선택값·닫힌 탭 건너뛰기를 검증한다.
 
 import pandas as pd
 import pytest
@@ -99,3 +99,18 @@ def test_priority_table_stays_original_without_a_rename_profile(
 
     assert not app.exception
     assert app.session_state["renamed_source"] in set(_priority_frame(app)["공정"])
+
+
+def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
+    """산식 가이드는 위젯 없는 정적 설명이라 닫혀 있으면 그리지 않는다. 열면 그 회차에 선다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert not any("Capa 단계" in markdown.value for markdown in app.markdown)
+
+    app.session_state["dynamic_capa_active_tab"] = "산식 가이드"
+    app.run()
+
+    assert not app.exception
+    assert any("Capa 단계" in markdown.value for markdown in app.markdown)
+    assert any("Gap 해석" in markdown.value for markdown in app.markdown)

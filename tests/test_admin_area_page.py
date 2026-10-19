@@ -45,8 +45,8 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
         ":material/fact_check: 원천 품질",
         ":material/notifications: 알림 모음",
     ]
-    # 활성 시나리오가 없으면 원천 품질 탭은 안내만 남긴다 — 화면을 멈추지 않는다.
-    assert any("활성 시나리오가 없습니다" in info.value for info in app.info)
+    # 원천 품질 탭은 닫혀 있으면 그리지 않는다(위젯이 없는 읽기 전용 탭).
+    assert not any("활성 시나리오가 없습니다" in info.value for info in app.info)
     # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
     assert len(app.get("download_button")) == 2
     assert len(app.get("file_uploader")) == 0
@@ -62,6 +62,100 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
         APP_CONTACT_EMAIL in caption.value or APP_VERSION in caption.value
         for caption in app.caption
     )
+
+    # 활성 시나리오가 없으면 원천 품질 탭은 열어도 안내만 남긴다 — 화면을 멈추지 않는다.
+    app.session_state["admin_area_active_tab"] = ":material/fact_check: 원천 품질"
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert any("활성 시나리오가 없습니다" in info.value for info in app.info)
+
+
+def _source_quality_script(database_path: Path) -> str:
+    """Admin Area 를 활성 시나리오가 있는 채로 그리되, 원천 읽기를 세는 가짜로 바꿔 둔 스크립트.
+
+    원천 읽기 두 함수는 캐시가 없어 부를 때마다 DB 를 연다. 부른 횟수를 세션 칸에 적고, 끝나면
+    클래스를 되돌린다 — AppTest 는 같은 프로세스에서 돌아 그대로 두면 다른 테스트에 샌다.
+    """
+    return f"""
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+import capa_simulation.settings as settings
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.scenario_activation import ACTIVE_PERSISTED_SCENARIO_ID_KEY
+
+settings.DUCKDB_PATH = Path({str(database_path)!r})
+st.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY] = "scenario-under-test"
+st.session_state.setdefault("source_quality_reads", 0)
+
+
+def load_source_profile(self, scenario_id):
+    st.session_state["source_quality_reads"] += 1
+    return pd.DataFrame(
+        {{
+            "column_name": ["컬럼A", "컬럼B"],
+            "source_dtype": ["VARCHAR", "DOUBLE"],
+            "null_count": [0, 10],
+            "unique_count": [3, 0],
+        }}
+    )
+
+
+def load_source_row_count(self, scenario_id):
+    st.session_state["source_quality_reads"] += 1
+    return 10
+
+
+original = (
+    DuckDBScenarioRepository.load_source_profile,
+    DuckDBScenarioRepository.load_source_row_count,
+)
+DuckDBScenarioRepository.load_source_profile = load_source_profile
+DuckDBScenarioRepository.load_source_row_count = load_source_row_count
+try:
+    source = Path({str(PAGE)!r})
+    exec(
+        compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+        {{"__name__": "__main__"}},
+    )
+finally:
+    (
+        DuckDBScenarioRepository.load_source_profile,
+        DuckDBScenarioRepository.load_source_row_count,
+    ) = original
+"""
+
+
+def _source_quality_tables(app: AppTest) -> list[object]:
+    return [frame for frame in app.dataframe if "결측률" in getattr(frame.value, "columns", [])]
+
+
+def test_closed_source_quality_tab_reads_nothing_and_opens_with_its_table(
+    tmp_path: Path,
+) -> None:
+    """닫힌 원천 품질 탭은 원천을 읽지 않는다. 이 탭이 Admin 회차의 유일한 DB 읽기라, 읽으면 닫힌
+    탭이 회차마다 DuckDB 인스턴스를 열고 닫는다. 탭을 열면 그 회차에 읽고 표를 그리며, 다시
+    닫으면 읽지 않는다."""
+    app = AppTest.from_string(_source_quality_script(tmp_path / "scenario.duckdb"))
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run(timeout=60)
+    assert app.session_state["source_quality_reads"] == 0
+    assert not _source_quality_tables(app)
+
+    app.session_state["admin_area_active_tab"] = ":material/fact_check: 원천 품질"
+    app.run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state["source_quality_reads"] == 2
+    assert len(_source_quality_tables(app)) == 1
+    assert any("2개 컬럼 중 1개" in warning.value for warning in app.warning)
+
+    app.session_state["admin_area_active_tab"] = ":material/label: Proc Rename"
+    app.run(timeout=60)
+    assert app.session_state["source_quality_reads"] == 2
+    assert not _source_quality_tables(app)
 
 
 def _rename_component_script(database_path: Path) -> str:
