@@ -418,6 +418,8 @@ def _prorated_rows(
     )
     # 사용기준이 HBM·EDP 가 아닌 호기는 기여 줄을 만들지 않는다. 지분만 0 으로 두면 환산대수
     # (환산비를 곱하는 축)에 남는다. 컬럼이 없는 구간은 걸러 오지 않은 것으로 보고 모두 센다.
+    # 구간 자체는 남긴다 — 구간째 빼면 `processes_in` 이 그 공정을 잃어 공정 선택지와 「설비 없음」
+    # 안내가 어긋난다.
     counted = (
         spans[COUNTED_COLUMN].fillna(False).astype("bool")
         if COUNTED_COLUMN in spans.columns

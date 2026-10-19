@@ -98,6 +98,8 @@ def _format_wafer_capa(value: object) -> str:
 # 나눌 이유가 없는 면까지 눌리면 월 라벨 줄이 구간마다 다른 회색으로 끊긴다.
 # **색이 아니라 토큰 이름으로 들고 있는다.** 색으로 굳히면 모듈을 처음 읽은 순간의
 # 팔레트가 키가 되어, 테마를 바꾼 뒤에는 어떤 면색도 이 짝에 걸리지 않는다.
+# 월 축을 함께 쓰는 HOME 구획(LOB 표·차트, 계획 세부수량, 주요공정, 상세 B/N) 모두가 이 짝으로
+# 칠한다 — 하나라도 빠지면 과거 구간 띠가 중간에 끊긴다.
 _PAST_SURFACE_TOKENS: Final[Mapping[str, str]] = {
     "SURFACE": "SURFACE_PAST",
     "SURFACE_SUBTLE": "SURFACE_PAST_SUBTLE",

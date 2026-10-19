@@ -398,8 +398,8 @@ def consume_baseline_write() -> bool:
     """저장·지우기 콜백이 남긴 「기준선을 썼다」 표지를 거둔다. 있었으면 True.
 
     단추는 필요단축일정 머리·본문 프래그먼트 안에 있어 누르면 그 프래그먼트만 다시 돈다. 쓰기 뒤에는
-    앱 전체를 다시 돌린다 — 프래그먼트가 표지를 보면 `st.rerun(scope="app")` 을 부르고(콜백 안의
-    `st.rerun` 은 아무 일도 하지 않는다), 앱 전체 회차는 탭 함수가 먼저 거둬 다시 돌지 않는다.
+    앱 전체를 다시 돌린다 — 콜백은 표지만 남기고, 프래그먼트가 표지를 보면
+    `st.rerun(scope="app")` 을 부른다. 앱 전체 회차는 탭 함수가 먼저 거둬 다시 돌지 않는다.
     """
     return bool(st.session_state.pop(_BASELINE_WRITTEN_KEY, False))
 

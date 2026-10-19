@@ -1,5 +1,12 @@
 # Purpose: 사용자가 고른 설비 질문·기준일·공정에 맞는 결과 하나를 표시한다.
 
+"""가용설비 현황 `Main` 탭의 탐색기.
+
+옛 여섯 질문(주차별 가용대수, 생애주기 상태, 호기별 일정, Qual 일정·상태, 공정별 대수, 비가동
+목록)은 `볼 내용`·`보기` 조합으로 모두 답한다. 대수 요약(총대수·가용대수·비가동대수·가용률)은
+`가용대수` 결과의 마지막 주 한 줄이고 metric 카드를 따로 쌓지 않는다.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence

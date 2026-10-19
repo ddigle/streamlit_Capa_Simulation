@@ -1604,8 +1604,8 @@ def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path
 def test_picking_a_preset_in_the_dialog_applies_it_once() -> None:
     """팝업에서 고르면 곧바로 적용하고 앱을 다시 돌린다 — 다시 도는 회차에는 되풀이하지 않는다.
 
-    라디오 조작은 팝업만 다시 돌리고 위젯 콜백 안의 `st.rerun()` 은 아무 일도 하지 않는다. 그래서
-    본문이 돌려받은 값을 **세션의 지금 값**과 견준다 — 적은 뒤에는 같아져 멈춘다.
+    라디오 조작은 팝업만 다시 돌린다. 그래서 본문이 돌려받은 값을 **세션의 지금 값**과 견준다 —
+    적은 뒤에는 같아져 멈춘다.
     """
 
     def script() -> None:

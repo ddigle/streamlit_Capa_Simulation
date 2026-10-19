@@ -78,8 +78,8 @@ def parse_args() -> argparse.Namespace:
         "--replace-existing",
         action="store_true",
         help=(
-            "현재 변환 계약으로 대체 시나리오를 생성·공식 발행한 뒤 "
-            "같은 원천 코드의 기존 활성 시나리오를 보관"
+            "현재 변환 계약으로 대체 시나리오를 생성·공식 발행한다 "
+            "(같은 원천 코드의 기존 시나리오는 지우지 않고 목록에 남긴다)"
         ),
     )
     parser.add_argument(

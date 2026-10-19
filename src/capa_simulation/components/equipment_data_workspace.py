@@ -763,7 +763,7 @@ def _render_current_data_downloads(
     꺼낸다. 이 작업 공간은 숨은 탭에서도 rerun 마다 그려지므로, 고친 것이 없을 때 여섯 번의
     직렬화(내보낼 셋 + 견줄 셋)를 매번 치르고 있었다. 같은지는 `DataFrame.equals`(값·dtype·차례)로
     가르고, 다르면 지금처럼 직렬화해 바이트로 견준다 — dtype 만 달라 같은 파일이 되는 경우도
-    「편집본」으로 잘못 적지 않는다. 지연 생성(콜러블)은 쓰지 않는다(TODO [결정]).
+    「편집본」으로 잘못 적지 않는다. 지연 생성(콜러블)은 쓰지 않는다(TODO 결정 기록).
 
     내보내기는 읽기만 한다. 버퍼·미리보기·저장 상태를 건드리지 않고, 파일은 브라우저
     다운로드로만 나간다(저장소 안에 쓰지 않는다).
@@ -1760,6 +1760,8 @@ def render_equipment_data_workspace(
                     + bootstrap_error_message(exc, database_paths=(repository.database_path,))
                 )
             history_clicked = st.form_submit_button("이력 조회", key="equipment_history_apply_v1")
+    # 폼 안의 새 제출 단추는 반드시 이 목록에 더한다 — 빠지면 그 단추를 눌러도 아무 일도 하지
+    # 않는다.
     if not any(
         (
             preview_clicked,

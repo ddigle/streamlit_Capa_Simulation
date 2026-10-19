@@ -132,7 +132,9 @@ def _registered_js() -> str:
     """intro.js 앞에 화면 틀·스타일·글꼴과 테마 키 규칙을 붙인다. 등록 때 한 번만 만든다.
 
     테마 키 규칙(`theme_toggle.THEME_RULE_SCRIPT`)은 테마 버튼이 쓰는 것과 **같은 문자열**이다 —
-    새로고침할지를 같은 규칙으로 미리 보려는 것이고, 입장 화면의 색과는 상관이 없다.
+    새로고침할지를 같은 규칙으로 미리 보려는 것이고, 입장 화면의 색과는 상관이 없다. 서식은
+    컴포넌트 `css=` 로 주지 않는다 — 칸의 shadow root 에만 들어가 `document.body` 에 붙인 호스트에
+    닿지 않는다.
     """
     font = base64.b64encode((_ASSETS / "archivo-capa.woff2").read_bytes()).decode("ascii")
     number = base64.b64encode((_ASSETS / "archivo-capa-number.woff2").read_bytes()).decode("ascii")

@@ -209,6 +209,9 @@ def apply_display_order(
     for position, rule in enumerate(rule_summary.itertuples(index=False)):
         column = str(rule.분류컬럼)
         mode = str(rule.정렬방식)
+        # 데이터에 없는 분류컬럼 규칙은 건너뛴다 — 같은 범위 규칙(예: `Customer`)이 그 칸을
+        # 펼치지 않은 화면(HOME 상세 계획을 끈 때)에서도 오류 없이 쓰이게. 거래선 정렬은 이 규칙
+        # 하나뿐이다.
         if column not in result.columns:
             continue
 
