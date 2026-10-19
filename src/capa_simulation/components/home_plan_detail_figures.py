@@ -2,19 +2,25 @@
 
 """계획 세부수량 Figure.
 
-왼쪽 분류 칸과 오른쪽 월 칸을 두 `go.Table` 로 나눠 돌려준다. 비교 시나리오를 주면 값
-아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면 행 높이가 부푼다.
+왼쪽 분류 칸과 오른쪽 월 칸을 두 Figure 로 나눠 돌려준다. 표 꼴이지만 `go.Table` 이 아니라
+숨긴 축 위에 칸 면색 도형과 글자 trace 를 얹어 그린다 — `go.Table` 은 칸을 세로 가운데에
+세울 방법이 마크업(`<br>`)뿐이고, 마크업 칸은 칸마다 그린 뒤 재서 옮겨 칸 수만큼 느리다.
+글자 자리는 `go.Table` 칸이 놓던 자리를 따르고(`plotly_layout.table_text_y`), 칸 폭을 넘칠 수
+있는 긴 제품명·거래선은 `go.Table` 처럼 제 칸 경계에서 잘린다(`plotly_layout.table_text_layer`).
+비교 시나리오를 주면 값 아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면 행 높이가 부푼다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Sequence
+from itertools import groupby
 from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 
 from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     lower_delta_row_height,
     lower_delta_yshift_px,
     table_row_height,
@@ -25,12 +31,16 @@ from capa_simulation.components.home_figure_common import (
     _past_surface,
 )
 from capa_simulation.components.plotly_layout import (
-    TRANSPARENT_COLOR,
+    TableText,
     add_figure_outer_border,
     add_quarter_boundaries,
     append_layout_items,
     delta_color,
+    figure_from_spec,
     flush_layout_items,
+    table_header_band,
+    table_text_layer,
+    table_text_y,
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.dashboard import (
@@ -141,19 +151,43 @@ def _gap_months_of_year(
     return [str(label) for label in source if isinstance(label, str) and label.startswith(prefix)]
 
 
-def _centered_cell_text(value: str) -> str:
-    """표 칸 한가운데에 서는 한 줄.
+def _cell_surface_rects(
+    column_fills: Sequence[Sequence[str]],
+    *,
+    header_height: float,
+    row_height: float,
+    figure_height: float,
+) -> list[dict[str, Any]]:
+    """칸 면색을 글자 아래(`layer: below`)에 까는 사각형. `column_fills` 는 열마다 행별 색이다.
 
-    `go.Table` 은 **한 줄짜리 칸의 글자를 칸 위에 붙여** 그리고, 여러 줄일 때만 가운데에
-    세운다. 칸의 세로 정렬을 직접 지정할 방법은 없다 — `table.Cells` 에 `valign` 이 없다.
-
-    빈 줄 하나를 뒤에 붙이면 Plotly 가 여러 줄로 보아 가운데에 세우는데, 그 빈 줄은 높이를
-    더하지 않아 행이 두꺼워지지 않는다. 증감이 오지 않는 칸에 이것을 쓴다 — 분류 칸은 늘,
-    월 칸은 GAP 이 꺼져 있을 때다.
-
-    빈 칸은 그대로 둔다 — 붙이면 없는 값 자리에 빈 줄만 생긴다.
+    같은 색이 이어지는 칸은 한 사각형으로 묶는다 — 옆으로는 행별 색이 같은 열끼리, 아래로는
+    같은 색 행끼리. 도형 수가 그대로 비용이다. 열 폭은 모두 같다고 본다.
     """
-    return f"{value}<br>" if value else ""
+    column_count = max(len(column_fills), 1)
+    rects: list[dict[str, Any]] = []
+    column_start = 0
+    for colors, columns in groupby(column_fills, key=tuple):
+        column_end = column_start + sum(1 for _ in columns)
+        row_start = 0
+        for color, rows in groupby(colors):
+            row_end = row_start + sum(1 for _ in rows)
+            rects.append(
+                {
+                    "type": "rect",
+                    "x0": column_start / column_count,
+                    "x1": column_end / column_count,
+                    "y0": 1 - (header_height + row_end * row_height) / figure_height,
+                    "y1": 1 - (header_height + row_start * row_height) / figure_height,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "fillcolor": color,
+                    "line": {"width": 0},
+                    "layer": "below",
+                }
+            )
+            row_start = row_end
+        column_start = column_end
+    return rects
 
 
 def build_plan_detail_figures(
@@ -220,10 +254,6 @@ def build_plan_detail_figures(
         previous_product = product
         previous_stack = stack
 
-    grouped_dimension_values = [
-        [_centered_cell_text(value) for value in values] for values in grouped_dimension_values
-    ]
-
     detail_label_row_colors = [
         tokens.SURFACE_CLASSIFICATION
         if group_number % 2 == 0
@@ -241,37 +271,56 @@ def build_plan_detail_figures(
     # 이 그려서 그 옆에 「상세 계획」 토글을 둔다. 두 칸 모두 같은 높이의 줄을 끼우므로 여백을
     # 남겨 두면 표 위에 빈 띠만 생긴다.
     detail_figure_height = detail_header_height + max(len(displayed_detail), 1) * detail_row_height
-    detail_label_figure = go.Figure(
-        go.Table(
-            columnwidth=detail_dimension_widths,
-            header={
-                "values": [
-                    f"<b>{DETAIL_DIMENSION_HEADERS.get(column, column)}</b>"
-                    for column in dimensions
-                ],
-                "align": "center",
-                "fill_color": tokens.HEADER_BACKGROUND,
-                "line_color": TRANSPARENT_COLOR,
-                "font": {
-                    "color": tokens.TEXT,
-                    "size": DETAIL_HEADER_FONT_SIZE_PX,
-                    "family": tokens.FONT_FAMILY,
-                },
-                "height": detail_header_height,
-            },
-            cells={
-                "values": grouped_dimension_values,
-                "align": "center",
-                "fill_color": [detail_label_row_colors for _ in dimensions],
-                "line_color": TRANSPARENT_COLOR,
-                "font": {
-                    "color": tokens.TEXT,
-                    "size": DETAIL_VALUE_FONT_SIZE_PX,
-                    "family": tokens.FONT_FAMILY,
-                },
-                "height": detail_row_height,
-            },
-        )
+    row_tops = [
+        detail_header_height + row_index * detail_row_height
+        for row_index in range(len(displayed_detail))
+    ]
+    header_font = {
+        "color": tokens.TEXT,
+        "size": DETAIL_HEADER_FONT_SIZE_PX,
+        "family": tokens.FONT_FAMILY,
+    }
+    value_font = {
+        "color": tokens.TEXT,
+        "size": DETAIL_VALUE_FONT_SIZE_PX,
+        "family": tokens.FONT_FAMILY,
+    }
+    header_y = table_text_y(0, DETAIL_HEADER_FONT_SIZE_PX, markup=True)
+    # 증감이 오지 않는 칸의 값은 행 한가운데에 선다. 분류 칸은 늘, 월 칸은 GAP 이 꺼져 있을 때다.
+    centered_value_y = [
+        table_text_y(top, DETAIL_VALUE_FONT_SIZE_PX, markup=True) for top in row_tops
+    ]
+    detail_layout: dict[str, Any] = {
+        "height": detail_figure_height,
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
+        "paper_bgcolor": tokens.CHART_CANVAS,
+        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
+    }
+
+    header_texts = TableText(
+        cells=[
+            (column_index, header_y, f"<b>{DETAIL_DIMENSION_HEADERS.get(column, column)}</b>")
+            for column_index, column in enumerate(dimensions)
+        ],
+        font=header_font,
+    )
+    label_value_texts = TableText(
+        cells=[
+            (column_index, centered_value_y[row_index], value)
+            for column_index, values in enumerate(grouped_dimension_values)
+            for row_index, value in enumerate(values)
+        ],
+        font=value_font,
+    )
+    # 분류 칸은 `DASHBOARD_LABEL_COLUMN_WIDTH_PX` 폭으로 그려진다(`home_rendering` 이 못박는다).
+    label_texts, label_text_layout = table_text_layer(
+        [header_texts, label_value_texts],
+        column_widths=detail_dimension_widths,
+        width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+        height_px=detail_figure_height,
+    )
+    detail_label_figure = figure_from_spec(
+        {"data": label_texts, "layout": {**detail_layout, **label_text_layout}}
     )
     detail_month_cells = [
         _detail_month_cell_values(
@@ -293,10 +342,33 @@ def build_plan_detail_figures(
     # 켜면 값이 위로 붙고 그 아래가 증감 주석 자리다. 행 높이는 어느 쪽이든 같아서 토글에
     # 표 높이가 출렁이지는 않는다 — 움직이는 것은 칸 안의 글자뿐이다.
     reserves_gap_line = comparison_detail is not None
-    detail_month_values = [
-        values if reserves_gap_line else [_centered_cell_text(value) for value in values]
-        for values, _ in detail_month_cells
-    ]
+    month_value_y = (
+        [table_text_y(top, DETAIL_VALUE_FONT_SIZE_PX, markup=False) for top in row_tops]
+        if reserves_gap_line
+        else centered_value_y
+    )
+    month_texts, month_text_layout = table_text_layer(
+        [
+            TableText(
+                cells=[
+                    (month_index, header_y, f"<b>{month}</b>")
+                    for month_index, month in enumerate(detail_month_columns)
+                ],
+                font=header_font,
+            ),
+            TableText(
+                cells=[
+                    (month_index, month_value_y[row_index], value)
+                    for month_index, (values, _) in enumerate(detail_month_cells)
+                    for row_index, value in enumerate(values)
+                ],
+                font=value_font,
+            ),
+        ],
+        column_widths=[1] * len(detail_month_columns),
+        width_px=len(detail_month_columns) * tokens.MONTH_COLUMN_WIDTH_PX,
+        height_px=detail_figure_height,
+    )
 
     def _detail_month_column_fills(month: str) -> list[str]:
         """한 월 열의 행별 바탕색. 제품 그룹 줄무늬를 과거 구간에서도 유지한다."""
@@ -309,50 +381,44 @@ def build_plan_detail_figures(
             return [_past_surface(surface) for surface in base]
         return base
 
-    detail_month_figure = go.Figure(
-        go.Table(
-            columnwidth=[1.0] * len(detail_month_columns),
-            header={
-                "values": [f"<b>{month}</b>" for month in detail_month_columns],
-                "align": "center",
-                "fill_color": tokens.HEADER_BACKGROUND,
-                "line_color": TRANSPARENT_COLOR,
-                "font": {
-                    "color": tokens.TEXT,
-                    "size": DETAIL_HEADER_FONT_SIZE_PX,
-                    "family": tokens.FONT_FAMILY,
-                },
-                "height": detail_header_height,
+    detail_month_figure = figure_from_spec(
+        {
+            "data": month_texts,
+            "layout": {
+                **detail_layout,
+                **month_text_layout,
+                "width": len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
+                "autosize": False,
             },
-            cells={
-                "values": detail_month_values,
-                "align": "center",
-                "fill_color": [_detail_month_column_fills(month) for month in detail_month_columns],
-                "line_color": TRANSPARENT_COLOR,
-                "font": {
-                    "color": tokens.TEXT,
-                    "size": DETAIL_VALUE_FONT_SIZE_PX,
-                    "family": tokens.FONT_FAMILY,
-                },
-                "height": detail_row_height,
-            },
-        )
+        }
     )
-    detail_layout = {
-        "height": detail_figure_height,
-        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-        "paper_bgcolor": tokens.CHART_CANVAS,
-        "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
+    # 면색은 칸 글자 아래에 까는 도형이다. 표(`go.Table`)로 칠하면 Plotly 가 표를 글자 trace
+    # 위에 그려 글자를 덮는다.
+    surface_geometry = {
+        "header_height": detail_header_height,
+        "row_height": detail_row_height,
+        "figure_height": detail_figure_height,
     }
-    detail_label_figure.update_layout(**detail_layout)
-    detail_month_figure.update_layout(
-        **detail_layout,
-        width=len(month_labels) * tokens.MONTH_COLUMN_WIDTH_PX,
-        autosize=False,
-    )
     # 경계선 비율의 분모는 Figure 높이와 **같은 수**여야만 맞는다. 이름을 둘로 두면 한쪽
     # 행 높이만 고쳤을 때 머리글 밑줄과 그룹 경계가 조용히 어긋난다.
     detail_header_boundary_y = 1 - detail_header_height / detail_figure_height
+    append_layout_items(
+        detail_label_figure,
+        shapes=[
+            table_header_band(header_bottom_y=detail_header_boundary_y),
+            *_cell_surface_rects([detail_label_row_colors], **surface_geometry),
+        ],
+    )
+    append_layout_items(
+        detail_month_figure,
+        shapes=[
+            table_header_band(header_bottom_y=detail_header_boundary_y),
+            *_cell_surface_rects(
+                [_detail_month_column_fills(month) for month in detail_month_columns],
+                **surface_geometry,
+            ),
+        ],
+    )
     add_figure_outer_border(detail_label_figure, emphasize_bottom=True)
     add_figure_outer_border(
         detail_month_figure,
@@ -391,7 +457,7 @@ def build_plan_detail_figures(
     add_quarter_boundaries(detail_month_figure, detail_month_columns)
     # 증감은 칸 안의 둘째 줄이 아니라 값 아래에 얹는 주석이다. 칸이 값 한 줄만 담으므로
     # 행 높이가 한 줄짜리 칸의 최소 높이로 줄고, 증감이 붙든 말든 값은 같은 자리에 선다.
-    # 기준점은 행의 **위 모서리**다 — Plotly 가 한 줄짜리 칸의 글자를 위에 붙여 그린다.
+    # 기준점은 행의 **위 모서리**다 — 증감이 오는 칸의 값은 칸 위에 붙는 자리에 선다.
     detail_delta_yshift = lower_delta_yshift_px(DETAIL_VALUE_FONT_SIZE_PX)
     append_layout_items(
         detail_month_figure,

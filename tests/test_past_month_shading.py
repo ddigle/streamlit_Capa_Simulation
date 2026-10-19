@@ -6,7 +6,7 @@ Past Data 로 채운 달의 값은 DB 계산 결과가 아니라 입력해 둔 �
 둘이 구분되지 않으므로 열 바탕을 한 단계 눌러 알린다. 같은 경계가 GAP 을 적을지도 정한다 —
 `gap_month_labels` 와 여기의 과거 판정은 하나의 근거(`calculated_months`)에서 나온다.
 
-칠하는 곳은 세 군데다. Capa LOB 요약(표 칸 + 차트 두 칸), 계획 세부수량(표 칸), 상세 B/N
+칠하는 곳은 세 군데다. Capa LOB 요약(표 칸 + 차트 두 칸), 계획 세부수량(칸 면 사각형), 상세 B/N
 (차트 열). 세 Figure 가 같은 월 축을 세로로 공유하므로 한 곳만 빠져도 띠가 중간에 끊긴다.
 """
 
@@ -15,10 +15,15 @@ from typing import Any, TypedDict
 
 import pandas as pd
 
+from capa_simulation.components.home_dimensions import lower_delta_row_height, table_row_height
 from capa_simulation.components.home_figures import (
     build_bottleneck_detail_figures,
     build_lob_summary_figures,
     build_plan_detail_figures,
+)
+from capa_simulation.components.home_plan_detail_figures import (
+    DETAIL_HEADER_FONT_SIZE_PX,
+    DETAIL_VALUE_FONT_SIZE_PX,
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.month_columns import build_past_month_labels
@@ -168,13 +173,32 @@ def _detail() -> pd.DataFrame:
 
 
 def _detail_column_fills(past: Collection[str] | None) -> list[list[str]]:
+    """월 열마다 행별 면색. 칸 면색은 글자 아래에 까는 사각형이라 칸 가운데를 덮는 것을 찾는다."""
     _, month_figure = build_plan_detail_figures(
         production_detail=_detail(),
         month_labels=MONTH_LABELS,
         year_total_labels=YEAR_TOTALS,
         past_month_labels=past,
     )
-    return [list(column) for column in month_figure.data[0].cells.fill.color]
+    height = month_figure.layout.height
+    header = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
+    row = lower_delta_row_height(DETAIL_VALUE_FONT_SIZE_PX)
+    surfaces = [
+        shape
+        for shape in month_figure.layout.shapes
+        if shape.type == "rect" and shape.layer == "below"
+    ]
+
+    def fill_at(x: float, y_px: float) -> str:
+        y = 1 - y_px / height
+        (hit,) = [s.fillcolor for s in surfaces if s.x0 <= x <= s.x1 and s.y0 <= y <= s.y1]
+        return str(hit)
+
+    count = len(MONTH_LABELS)
+    return [
+        [fill_at((column + 0.5) / count, header + (index + 0.5) * row) for index in range(2)]
+        for column in range(count)
+    ]
 
 
 def test_the_detail_table_keeps_the_product_stripe_inside_the_past_column() -> None:

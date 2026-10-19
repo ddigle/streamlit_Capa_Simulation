@@ -96,6 +96,10 @@ def lower_delta_yshift_px(value_font_size: int) -> float:
     Plotly 표는 한 줄짜리 칸의 글자를 가운데가 아니라 **위에 붙여** 놓는다(`valign` 은
     두 줄 이상일 때만 듣는다). 그래서 기준을 칸 한가운데로 잡으면 행 높이를 바꿀 때마다
     증감이 값에서 멀어진다. 위 모서리에서 재면 행 높이와 무관하게 같은 거리를 지킨다.
+
+    계획 세부수량은 표가 아니라 글자 trace 로 값을 그리지만 증감이 오는 칸의 값은 이 자리,
+    곧 표의 마크업 없는 한 줄 칸 자리(`plotly_layout.table_text_y(..., markup=False)`)를 따른다.
+    그래서 이 거리를 그대로 쓴다.
     """
     value_box_center = TABLE_TEXT_TOP_PAD_PX + value_font_size * LINE_BOX_RATIO / 2
     return -(

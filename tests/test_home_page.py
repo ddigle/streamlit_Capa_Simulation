@@ -15,6 +15,12 @@ from capa_simulation.components.home_dimensions import (
     LOB_TOP_MARGIN_PX,
     LOB_VALUE_FONT_SIZE_PX,
     delta_ink_yshift_px,
+    lower_delta_row_height,
+    table_row_height,
+)
+from capa_simulation.components.home_plan_detail_figures import (
+    DETAIL_HEADER_FONT_SIZE_PX,
+    DETAIL_VALUE_FONT_SIZE_PX,
 )
 from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.home_rendering import (
@@ -24,6 +30,7 @@ from capa_simulation.components.home_rendering import (
     LOB_MONTHS_CHART_KEY,
     open_clicked_home_cell,
 )
+from capa_simulation.components.plotly_layout import table_text_y
 from capa_simulation.design import tokens
 from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
 from capa_simulation.process_detail_state import (
@@ -503,11 +510,12 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     ] == [("기본 확보 기준(%)", 109.5), ("기본 경고 기준(%)", 99.5)]
 
     # 그리는 차례다 — 라벨 칸 넷을 먼저, 그 다음 월 칸 넷. 요약 라벨은 trace 0(격자와
-    # 글자가 전부 layout 항목이다), 나머지 라벨 셋은 `go.Table` 하나씩이다. 월 칸은
-    # 요약 16(표·꺾은선·막대 3 + 제품별 비중 도넛 13 — 12개월과 26년 Total 칸마다 하나),
-    # 계획 세부수량 1, 주요공정 히트맵 3(hover 표적 막대·칸 막대·확보율 글자),
-    # B/N 상세 4(hover 표적·트랙·확보율 막대·공정명)다. 값이 커지면 trace 를 늘린 것이다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
+    # 글자가 전부 layout 항목이다), 계획 세부수량 라벨은 글자 trace 둘(머리글·값), 나머지 라벨
+    # 둘은 `go.Table` 하나씩이다. 월 칸은 요약 16(표·꺾은선·막대 3 + 제품별 비중 도넛 13 —
+    # 12개월과 26년 Total 칸마다 하나), 계획 세부수량 2(머리글·값 글자), 주요공정 히트맵 3(hover
+    # 표적 막대·칸 막대·확보율 글자), B/N 상세 4(hover 표적·트랙·확보율 막대·공정명)다. 값이
+    # 커지면 trace 를 늘린 것이다.
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
     assert app.session_state["spy_scrollbars"] == 1
 
     # 보는 조건 토글은 모두 사이드바 `LOB 표시 조건` 카드다(2026-09-29 사용자 결정 — 전에는
@@ -560,7 +568,7 @@ def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: 
         ":material/history: Past Data",
     ]
     # 차트는 Main 탭 안에서만 그린다.
-    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
 
 REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"
@@ -1193,7 +1201,7 @@ def test_every_gap_uses_one_font_size(tmp_path: Path) -> None:
 
 
 def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Path) -> None:
-    """숨은 탭에서 그리면 `go.Table` 머리글이 셀 가운데를 놓치고 그대로 굳는다.
+    """숨은 탭에서 그리면 재서 자리를 잡는 글자(주석 머리글 등)가 가운데를 놓치고 그대로 굳는다.
 
     숨겨진 요소 안에서는 SVG 글자 폭 측정이 0 이라 Plotly 가 가운데 정렬 보정을 못 하고,
     상세 세 Figure 는 `staticPlot` 이라 탭을 열어도 다시 그리지 않는다. Preference 에서
@@ -1201,7 +1209,7 @@ def test_the_dashboard_is_not_drawn_while_its_tab_is_hidden(seeded_database: Pat
     있으면 정확히 그 상황이 된다.
     """
     app = _run(seeded_database)
-    assert app.session_state["spy_traces"] == [0, 1, 1, 1, 16, 1, 3, 4]
+    assert app.session_state["spy_traces"] == [0, 2, 1, 1, 16, 2, 3, 4]
 
     app.session_state["home_active_tab"] = ":material/tune: Preference"
     app.run()
@@ -1368,28 +1376,26 @@ def test_the_product_share_row_follows_the_unit_picked_in_the_sidebar(
 
 
 def test_both_detail_columns_center_when_the_gap_toggle_is_off(seeded_database: Path) -> None:
-    """GAP 이 꺼져 있으면 분류 칸과 월 칸의 글자가 같은 눈높이에 선다.
+    """GAP 이 꺼져 있으면 분류 칸과 월 칸의 글자가 같은 눈높이(행 한가운데)에 선다.
 
-    `go.Table` 은 한 줄짜리 칸의 글자를 칸 위에 붙여 그린다. 증감이 오지 않는데 그 자리에
-    세우면 위로 쏠려 보이고, 한쪽만 그러면 같은 행의 두 칸이 어긋나 보인다. 빈 줄 하나를
-    붙여 가운데에 세우되 행 높이는 그대로여야 한다.
+    칸 글자는 표 칸이 아니라 숨긴 축 위 글자 trace(`data[1]`, y 는 그림 위에서 잰 px)가 그린다.
+    한쪽만 다른 자리에 서면 같은 행의 두 칸이 어긋나 보이고, 두 그림의 행이 다르면 표 전체가
+    틀어진다.
     """
     app = _run(seeded_database)
     assert not app.session_state["home_show_comparison"], "이 테스트는 GAP 이 꺼진 상태다"
-    label_cells = app.session_state["spy_figures"]["production_detail_labels"].data[0].cells
-    month_cells = app.session_state["spy_figures"]["production_detail_months"].data[0].cells
-
-    for name, cells in (("분류", label_cells), ("월", month_cells)):
-        filled = [value for column in cells.values for value in column if value]
-        assert filled, f"{name} 칸이 비어 있다"
-        assert all(value.endswith("<br>") for value in filled), name
-        # 빈 칸에 빈 줄을 붙이면 없는 값 자리에 줄만 생긴다.
-        assert all(value == "" for column in cells.values for value in column if not value), name
-
-    # 빈 줄은 높이를 더하지 않는다. 두 칸의 행이 어긋나면 표 전체가 틀어진다.
-    assert label_cells.height == month_cells.height
     label_figure = app.session_state["spy_figures"]["production_detail_labels"]
     month_figure = app.session_state["spy_figures"]["production_detail_months"]
+    header = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
+    row = lower_delta_row_height(DETAIL_VALUE_FONT_SIZE_PX)
+
+    for name, figure in (("분류", label_figure), ("월", month_figure)):
+        values = figure.data[1]
+        assert list(values.text), f"{name} 칸이 비어 있다"
+        assert all(text and "<" not in text for text in values.text), name
+        offsets = {round((y - header) % row, 6) for y in values.y}
+        assert offsets == {round(table_text_y(0, DETAIL_VALUE_FONT_SIZE_PX, markup=True), 6)}, name
+
     assert label_figure.layout.height == month_figure.layout.height
 
 

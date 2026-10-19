@@ -455,54 +455,105 @@ def _legacy_split_table_figures(
     month_row_colors: list[str],
     row_count: int,
 ) -> tuple[go.Figure, go.Figure]:
-    """고치기 전 `build_split_table_figures` 그대로(줄임 키 + 검증 생성자 + `update_layout`)."""
+    """같은 표 한 쌍을 검증 경로로 세운다(줄임 키 + 검증 생성자 + `update_layout`).
+
+    머리글은 표 칸을 비우고, 글자는 숨긴 축 위 scatter 글자 trace 가, 띠는 아래층 사각형이
+    그린다. 글자 y 는 그림 위에서 잰 px 로 `go.Table` 의 `cellPad`(8) + 0.83em(맑은 고딕 기준선
+    `cellPad + 1.08em` 에서 0.25em 위)이다. 넘칠 수 있는 머리글이 없는 입력만 받는다 — 자르는
+    축(과 그때 투명해지는 축 바탕)은 `test_table_text_layer.py` 가 본다.
+    """
+    height = table_height_px(row_count)
     common_layout: dict[str, Any] = {
-        "height": table_height_px(row_count),
+        "height": height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
         "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
     header_style: dict[str, Any] = {
-        "align": "center",
-        "fill_color": tokens.HEADER_BACKGROUND,
+        "fill_color": tokens.TRANSPARENT,
         "line_color": tokens.TRANSPARENT,
-        "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
         "height": HEADER_HEIGHT_PX,
     }
     cell_font: dict[str, Any] = {"color": tokens.TEXT, "size": 13, "family": tokens.FONT_FAMILY}
-    label_figure = go.Figure(
-        go.Table(
-            columnwidth=column_widths,
-            header={"values": classification_headers, **header_style},
-            cells={
-                "values": classification_values,
-                "align": "center",
-                "fill_color": classification_fill_colors,
-                "line_color": tokens.TRANSPARENT,
-                "font": cell_font,
-                "height": ROW_HEIGHT_PX,
-            },
+    header_font: dict[str, Any] = {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY}
+    header_y = round(8 + 14 * 0.83, 3)
+
+    def header_text(x: list[float], headers: list[str]) -> go.Scatter:
+        return go.Scatter(
+            x=x,
+            y=[header_y] * len(headers),
+            text=headers,
+            mode="text",
+            textposition="middle center",
+            textfont=header_font,
+            hoverinfo="skip",
+            showlegend=False,
+            cliponaxis=False,
         )
+
+    def axes(width_units: float) -> dict[str, Any]:
+        return {
+            "xaxis": {"visible": False, "fixedrange": True, "range": [0, width_units]},
+            "yaxis": {"visible": False, "fixedrange": True, "range": [height, 0]},
+            "plot_bgcolor": tokens.CHART_CANVAS,
+        }
+
+    band = {
+        "type": "rect",
+        "x0": 0,
+        "x1": 1,
+        "y0": 1 - HEADER_HEIGHT_PX / height,
+        "y1": 1,
+        "xref": "paper",
+        "yref": "paper",
+        "fillcolor": tokens.HEADER_BACKGROUND,
+        "line_width": 0,
+        "layer": "below",
+    }
+    label_figure = go.Figure(
+        [
+            go.Table(
+                columnwidth=column_widths,
+                header={"values": [""] * len(classification_headers), **header_style},
+                cells={
+                    "values": classification_values,
+                    "align": "center",
+                    "fill_color": classification_fill_colors,
+                    "line_color": tokens.TRANSPARENT,
+                    "font": cell_font,
+                    "height": ROW_HEIGHT_PX,
+                },
+            ),
+            header_text(
+                [sum(column_widths[:i]) + width / 2 for i, width in enumerate(column_widths)],
+                classification_headers,
+            ),
+        ]
     )
     month_figure = go.Figure(
-        go.Table(
-            columnwidth=[1.0] * len(month_headers),
-            header={"values": month_headers, **header_style},
-            cells={
-                "values": month_values,
-                "align": "center",
-                "fill_color": [month_row_colors for _ in month_headers],
-                "line_color": tokens.TRANSPARENT,
-                "font": cell_font,
-                "height": ROW_HEIGHT_PX,
-            },
-        )
+        [
+            go.Table(
+                columnwidth=[1.0] * len(month_headers),
+                header={"values": [""] * len(month_headers), **header_style},
+                cells={
+                    "values": month_values,
+                    "align": "center",
+                    "fill_color": [month_row_colors],
+                    "line_color": tokens.TRANSPARENT,
+                    "font": cell_font,
+                    "height": ROW_HEIGHT_PX,
+                },
+            ),
+            header_text([i + 0.5 for i in range(len(month_headers))], month_headers),
+        ]
     )
-    label_figure.update_layout(**common_layout)
+    label_figure.update_layout(**common_layout, **axes(sum(column_widths)), shapes=[band])
     month_figure.update_layout(
         **common_layout,
+        **axes(len(month_headers)),
         width=len(month_headers) * MONTH_COLUMN_WIDTH_PX,
         autosize=False,
+        shapes=[band],
     )
     return label_figure, month_figure
 
@@ -559,6 +610,23 @@ def test_split_table_figures_match_the_old_validated_builder(label: str, theme_m
     assert checked == legacy
     header_fill = legacy[0]["data"][0]["header"]["fill"]
     assert fast[0]["data"][0]["header"]["fill"] == header_fill == {"color": header_fill["color"]}
+    # 머리글 띠·글자가 실제로 실려 있어야 비교가 무엇을 본다.
+    for figure in fast:
+        assert figure["layout"]["shapes"][0]["layer"] == "below"
+        assert all(text.startswith("<b>") for text in figure["data"][1]["text"])
+
+
+def test_table_cells_carry_no_markup() -> None:
+    """결과표 `go.Table` 칸에 마크업(`<`·`&`·`>`)이 없어야 한다.
+
+    마크업 칸은 Plotly 가 칸마다 그린 뒤 재서 옮기고, 그 사이마다 브라우저가 스타일을 다시
+    계산해 비용이 칸 수에 비례한다. 굵은 머리글은 표 밖 글자 trace 가 맡는다.
+    """
+    for render, kwargs in TABLE_CASES.values():
+        for figure in _drawn_tables(render, **kwargs):
+            table = figure["data"][0]
+            texts = [*table["header"]["values"], *(v for c in table["cells"]["values"] for v in c)]
+            assert not [text for text in texts if any(mark in str(text) for mark in "<&>")]
 
 
 def _hierarchical_frame(rows: int, months: list[str], *, percent: bool = False) -> pd.DataFrame:

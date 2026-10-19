@@ -20,6 +20,7 @@ from typing import Any, Final, cast
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.plotly_layout import table_header_band
 from capa_simulation.design import tokens
 from capa_simulation.services.securement_threshold import (
     SecurementThresholds,
@@ -279,18 +280,7 @@ def _grid_month_chrome_shapes(
     밑줄과 행 경계는 자리마다 달라 **호출자가 뒤에 붙인다**.
     """
     return [
-        {
-            "type": "rect",
-            "x0": 0,
-            "x1": 1,
-            "y0": header_boundary_y,
-            "y1": 1,
-            "xref": "paper",
-            "yref": "paper",
-            "fillcolor": tokens.HEADER_BACKGROUND,
-            "line": {"width": 0},
-            "layer": "below",
-        },
+        table_header_band(header_bottom_y=header_boundary_y),
         *_column_surface_rects(
             month_labels,
             y0=0,

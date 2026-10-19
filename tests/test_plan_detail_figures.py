@@ -2,20 +2,32 @@
 
 """계획 세부수량 칸의 세로 정렬 계약.
 
-`go.Table` 은 한 줄짜리 칸의 글자를 칸 **위에 붙여** 그리고 여러 줄일 때만 가운데에 세운다.
-칸의 세로 정렬을 지정할 방법은 없다 — `table.Cells` 에 `valign` 이 없다. 그래서 값 뒤에
-빈 줄 하나를 붙이느냐로 자리가 갈린다.
+칸 글자는 표 칸이 아니라 숨긴 축 위 글자 trace 가 그린다 — `data[0]` 이 머리글, `data[1]` 이
+값이고 y 는 그림 위에서 잰 px 다. 칸이 `<br>` 같은 마크업을 품으면 Plotly 가 칸마다 그린 뒤
+재서 옮겨 칸 수만큼 느려진다.
 
-증감이 오는 칸만 위에 붙어야 한다. 그 아래가 GAP 주석 자리이기 때문이다. 나머지는 가운데다.
+증감이 오는 칸만 칸 위에 붙는 자리에 선다. 그 아래가 GAP 주석 자리이기 때문이다. 나머지는
+행 한가운데다.
 """
+
+from typing import Any
 
 import pandas as pd
 import pytest
 
+from capa_simulation.components.home_dimensions import lower_delta_row_height, table_row_height
 from capa_simulation.components.home_figures import build_plan_detail_figures
+from capa_simulation.components.home_plan_detail_figures import (
+    DETAIL_HEADER_FONT_SIZE_PX,
+    DETAIL_VALUE_FONT_SIZE_PX,
+)
+from capa_simulation.components.plotly_layout import table_text_y
 
 MONTHS = ["202608", "202609"]
-BLANK_LINE = "<br>"
+HEADER_HEIGHT = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
+ROW_HEIGHT = lower_delta_row_height(DETAIL_VALUE_FONT_SIZE_PX)
+CENTERED = round(table_text_y(0, DETAIL_VALUE_FONT_SIZE_PX, markup=True), 6)
+RAISED = round(table_text_y(0, DETAIL_VALUE_FONT_SIZE_PX, markup=False), 6)
 
 
 def _detail() -> pd.DataFrame:
@@ -36,9 +48,13 @@ def _comparison() -> pd.DataFrame:
     return compared
 
 
-def _filled(figure: object) -> list[str]:
-    cells = figure.data[0].cells  # type: ignore[attr-defined]
-    return [value for column in cells.values for value in column if value]
+def _values(figure: Any) -> list[str]:
+    return list(figure.data[1].text)
+
+
+def _offsets(figure: Any) -> set[float]:
+    """값 글자가 제 행 위 모서리에서 내려온 거리. 나머지 셈의 부동소수 찌꺼기는 반올림한다."""
+    return {round((y - HEADER_HEIGHT) % ROW_HEIGHT, 6) for y in figure.data[1].y}
 
 
 PAST_MONTHS = ["26.01", "26.07", "26.08", "26년"]
@@ -135,15 +151,20 @@ def test_without_a_month_whitelist_every_month_keeps_its_gap() -> None:
 
 
 def test_both_columns_center_without_a_comparison() -> None:
-    """GAP 이 없으면 두 칸 모두 가운데다. 한쪽만 가운데면 같은 행의 글자가 어긋나 보인다."""
+    """GAP 이 없으면 두 칸 모두 행 한가운데다. 한쪽만 가운데면 같은 행의 글자가 어긋나 보인다."""
     label_figure, month_figure = build_plan_detail_figures(
         production_detail=_detail(), month_labels=MONTHS
     )
 
-    assert _filled(label_figure), "분류 칸이 비어 있다"
-    assert _filled(month_figure), "월 칸이 비어 있다"
-    assert all(value.endswith(BLANK_LINE) for value in _filled(label_figure))
-    assert all(value.endswith(BLANK_LINE) for value in _filled(month_figure))
+    assert _values(label_figure), "분류 칸이 비어 있다"
+    assert _values(month_figure), "월 칸이 비어 있다"
+    assert _offsets(label_figure) == _offsets(month_figure) == {CENTERED}
+    # 점은 표의 마크업 칸 자리(맑은 고딕 기준선보다 0.25em 위)라 행 가운데보다 1px 남짓 아래다.
+    # 기준선 위로 서는 글리프의 가운데는 그보다 위라 눈으로는 가운데다.
+    assert abs(CENTERED - ROW_HEIGHT / 2) <= 1.5
+    assert not any(
+        "<" in text for figure in (label_figure, month_figure) for text in _values(figure)
+    )
 
 
 def test_the_month_column_yields_the_lower_line_to_the_gap() -> None:
@@ -154,8 +175,9 @@ def test_the_month_column_yields_the_lower_line_to_the_gap() -> None:
         comparison_detail=_comparison(),
     )
 
-    assert all(value.endswith(BLANK_LINE) for value in _filled(label_figure))
-    assert not any(value.endswith(BLANK_LINE) for value in _filled(month_figure))
+    assert _offsets(label_figure) == {CENTERED}
+    assert _offsets(month_figure) == {RAISED}
+    assert RAISED < CENTERED
     gaps = [annotation.text for annotation in month_figure.layout.annotations if annotation.text]
     assert sorted(gaps) == ["+100K", "+200K", "-500K"]
 
@@ -170,21 +192,21 @@ def test_the_row_height_does_not_move_with_the_toggle() -> None:
     )
 
     for without, with_gap in zip(plain, compared, strict=True):
-        assert without.data[0].cells.height == with_gap.data[0].cells.height
         assert without.layout.height == with_gap.layout.height
+        assert without.layout.yaxis.range == with_gap.layout.yaxis.range
+        assert list(without.data[0].y) == list(with_gap.data[0].y)
     # 두 칸의 행이 어긋나면 표 전체가 틀어진다.
-    assert plain[0].data[0].cells.height == plain[1].data[0].cells.height
+    assert plain[0].layout.height == plain[1].layout.height
+    assert list(plain[0].data[1].y) == list(compared[0].data[1].y)
 
 
 @pytest.mark.parametrize("with_comparison", [False, True])
-def test_an_empty_cell_never_gets_a_blank_line(with_comparison: bool) -> None:
-    """빈 칸에 빈 줄을 붙이면 값이 없는 자리에 줄만 생긴다."""
+def test_an_empty_cell_gets_no_text(with_comparison: bool) -> None:
+    """빈 칸(0·결측)에는 글자를 두지 않는다 — 없는 값 자리에 빈 글자만 생긴다."""
     _, month_figure = build_plan_detail_figures(
         production_detail=_detail(),
         month_labels=MONTHS,
         comparison_detail=_comparison() if with_comparison else None,
     )
 
-    cells = month_figure.data[0].cells
-    assert any(value == "" for column in cells.values for value in column), "빈 칸이 없다"
-    assert all(value == "" for column in cells.values for value in column if not value.strip())
+    assert _values(month_figure) == ["1,000K", "500K", "2,000K", "300K"]

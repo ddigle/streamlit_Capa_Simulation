@@ -1,6 +1,6 @@
 # Purpose: 월 컬럼 Figure 의 컬럼 수와 폭이 항상 같은 근거에서 나오는지 고정한다.
 
-import re
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -26,22 +26,23 @@ def _detail(months: list[str]) -> pd.DataFrame:
     )
 
 
-def _month_table(figure: go.Figure) -> go.Table:
-    tables = [trace for trace in figure.data if trace.type == "table"]
-    assert tables, "표 trace 가 없습니다."
-    return tables[0]
+def _month_headers(figure: go.Figure) -> Any:
+    """월 머리글 글자 trace. 칸 글자는 표가 아니라 숨긴 축 위 글자 trace 가 그린다."""
+    trace = figure.data[0]
+    assert trace.type == "scatter" and trace.mode == "text", "머리글 글자 trace 가 없습니다."
+    return trace
 
 
 def _assert_grid_is_consistent(figure: go.Figure) -> None:
     """컬럼 수 × 월 컬럼 폭 == Figure 폭 이어야 헤더가 셀 가운데에 온다."""
-    table = _month_table(figure)
-    column_count = len(table.columnwidth)
+    headers = _month_headers(figure)
+    column_count = len(headers.text)
     assert figure.layout.width == column_count * tokens.MONTH_COLUMN_WIDTH_PX, (
         f"컬럼 {column_count}개인데 폭이 {figure.layout.width}px 입니다. "
         f"{column_count * tokens.MONTH_COLUMN_WIDTH_PX}px 여야 헤더가 어긋나지 않습니다."
     )
-    assert len(table.header.values) == column_count
-    assert len(table.cells.values) == column_count
+    assert tuple(figure.layout.xaxis.range) == (0, column_count)
+    assert list(headers.x) == [index + 0.5 for index in range(column_count)]
 
 
 def test_detail_grid_is_consistent_when_every_month_has_data() -> None:
@@ -67,32 +68,23 @@ def test_missing_months_stay_as_empty_columns() -> None:
         production_detail=_detail(["26.01", "26.03"]), month_labels=MONTH_LABELS
     )
 
-    table = _month_table(month_figure)
-    assert [str(value) for value in table.header.values] == [
-        f"<b>{month}</b>" for month in MONTH_LABELS
-    ]
+    assert list(_month_headers(month_figure).text) == [f"<b>{month}</b>" for month in MONTH_LABELS]
+    values = month_figure.data[1]
+    by_column: dict[float, list[str]] = {}
+    for x, text in zip(values.x, values.text, strict=True):
+        by_column.setdefault(x, []).append(text)
     # 데이터가 없는 26.02 는 두 번째 컬럼이고 전부 빈 칸이어야 한다.
-    assert list(table.cells.values[1]) == ["", ""]
-    # 값 아래에는 증감 줄 자리가 늘 비워져 있다. 그래야 비교를 켜도 값이 움직이지 않는다.
-    assert [_value_line(cell) for cell in table.cells.values[0]] == ["100K", "200K"]
+    assert 1.5 not in by_column
+    assert by_column[0.5] == ["100K", "200K"]
+    assert by_column[2.5] == ["100K", "200K"]
 
 
 def test_headers_are_centered() -> None:
-    """정렬 설정 자체도 함께 고정한다."""
+    """머리글·값 글자는 칸 가운데 점에 가운데로 선다."""
     _, month_figure = build_plan_detail_figures(
         production_detail=_detail(MONTH_LABELS), month_labels=MONTH_LABELS
     )
 
-    table = _month_table(month_figure)
-    assert table.header.align == ("center",) or table.header.align == "center"
-    assert table.cells.align == ("center",) or table.cells.align == "center"
-
-
-def _value_line(cell: str) -> str:
-    """칸의 첫 줄에서 값만 떼어 낸다.
-
-    칸은 늘 두 줄이다. 둘째 줄은 증감 자리를 비워 두는 빈 줄이고, 첫 줄의 값은 칸 글자
-    크기를 거스르는 span 안에 들어 있다 — 줄 간격을 증감 크기로 잡기 위한 것이다.
-    """
-    head = cell.split("<br>", 1)[0]
-    return re.sub(r"<[^>]+>", "", head)
+    for trace in month_figure.data:
+        assert trace.textposition == "middle center"
+        assert {x % 1 for x in trace.x} == {0.5}

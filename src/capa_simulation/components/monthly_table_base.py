@@ -30,9 +30,14 @@ import streamlit as st
 # import 하면 여기서 잡은 바인딩이 교체를 무시한다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.plotly_layout import (
+    TableText,
     append_layout_items,
     figure_from_spec,
+    flush_layout_items,
     static_chart_config,
+    table_header_band,
+    table_text_layer,
+    table_text_y,
 )
 from capa_simulation.components.process_labels import apply_process_label
 from capa_simulation.components.scroll_shell import (
@@ -76,20 +81,16 @@ COLUMN_LABELS = {
 
 
 def header_label(value: str) -> str:
-    """표 머리글에 넣을 문자열을 만든다.
+    """표 머리글에 넣을 문자열을 만든다. 굵게는 `<b>` 로 준다.
 
-    `<b>` 를 붙이면 plotly 의 table trace 가 "일단 그린 다음 DOM 을 재서 가운데로 옮기는"
-    경로(`needsConvertToTspans`)로 내려간다. 그 경로는 잰 폭으로만 가로 위치를 잡으므로
-    잴 수 없는 상황에서 폭이 0 이면 글자가 셀 중앙에서 글자 폭의 절반만큼 밀린다. 그런데
-    이 경로는 **세로로는 셀 높이에 맞춰 가운데** 놓는다. `<b>` 를 빼면 측정이 필요 없는
-    경로로 내려가 가로는 언제나 정확하지만, 세로가 셀 위쪽에 고정되어 36px 머리글 밴드에서
-    글자가 4.5px 위로 붙는다(실측). 밴드를 낮추지 않는 한 둘을 같이 얻을 수 없어, 보기에
-    나은 쪽인 `<b>` 를 유지하고 가로 어긋남은 **숨겨진 채로 그리지 않는 것**으로 막는다.
-    `components/tab_state.py` 가 그 규칙을 갖고 있다.
+    이 글자는 `go.Table` 머리글 칸이 아니라 같은 Figure 의 scatter 글자 trace 가 그린다
+    (`build_split_table_figures`). 표 칸에 `<b>` 를 두면 plotly 가 칸마다 "그린 다음 DOM 을 재서
+    옮기는" 경로(`needsConvertToTspans`)로 내려가, 열마다 브라우저 스타일 계산을 다시 부르고
+    잴 수 없는 숨은 상태에서는 글자가 글자 폭의 절반만큼 밀린다. scatter 글자는 재지 않고
+    셈으로 자리를 잡는다. 세로 자리는 표의 `<b>` 칸 자리다(`plotly_layout.table_text_y`) —
+    마크업 없이 굵기 속성만 주면 표 머리글은 36px 띠에서 글자가 4.5px 위로 붙는다(실측).
 
-    공백은 줄바꿈 없는 공백으로 바꾼다. 공백이 있으면 plotly 가 한 겹 더 나쁜 줄바꿈
-    경로로 내려가 숨겨진 상태에서 글자가 통째로 비기도 한다. 분류 셀 값은 이미 같은
-    치환을 하고 있어 머리글만 규칙이 달랐다. 화면에 보이는 모양은 같다.
+    공백은 줄바꿈 없는 공백으로 바꾼다. 분류 셀 값과 같은 치환이고 화면에 보이는 모양은 같다.
     """
     return f"<b>{value.replace(' ', chr(0xA0))}</b>"
 
@@ -354,35 +355,73 @@ def build_split_table_figures(
     Figure 는 평범한 dict spec 으로 조립해 `figure_from_spec` 이 Plotly 검증 없이 세운다 — 검증은
     셀마다 값·면색을 다시 검사해 비용이 표 크기에 비례한다(합성 표본 2,660행에서 약 1초, 샘플 관측).
     그래서 spec 은 **Plotly 정규형**으로 적는다: 면색·선색은 밑줄 줄임 키(`fill_color`)가 아니라
-    `{"fill": {"color": ...}}` 중첩 dict 다. 줄임 키는 검증 없이는 펼쳐지지 않아 헤더 배경이 말없이
+    `{"fill": {"color": ...}}` 중첩 dict 다. 줄임 키는 검증 없이는 펼쳐지지 않아 면색이 말없이
     사라진다. `tests/test_plotly_fast_path.py` 가 검증하는 `go.Table(...)`+`update_layout` 경로와
     JSON 이 같은지 본다.
+
+    **머리글 글자는 표 칸에 두지 않는다.** 두 Figure 모두 표 머리글은 면·글자를 비우고, 글자는
+    숨긴 축 위 scatter 글자 trace(`data[1]`, 칸 폭을 넘칠 수 있는 머리글은 그 열에서 자르는 trace
+    가 뒤에 더 붙는다 — `plotly_layout.table_text_layer`)가, 띠는 `layer: below` 도형이 그린다.
+    이유는 `header_label` 을 보라. 띠 도형은 여기서 반영까지 마치므로 호출부는 격자만 더하면 된다.
+    분류 Figure 는 `column_widths` 합(px)의 폭으로 그려진다고 본다 — `render_split_scroll_table` 이
+    그 폭으로 못박는다.
     """
+    height = table_height_px(row_count)
     common_layout: dict[str, Any] = {
-        "height": table_height_px(row_count),
+        "height": height,
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
         "paper_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY},
     }
+    # 머리글 칸은 면도 글자도 비운다. 글자는 아래 글자 trace 가, 면은 `table_header_band` 가 맡는다.
     header_style: dict[str, Any] = {
-        "align": "center",
-        "fill": {"color": tokens.HEADER_BACKGROUND},
+        "fill": {"color": TRANSPARENT_COLOR},
         "line": {"color": TRANSPARENT_COLOR},
-        "font": {"color": tokens.TEXT, "size": 14, "family": tokens.FONT_FAMILY},
         "height": HEADER_HEIGHT_PX,
     }
+    header_font_size = 14
+    header_font: dict[str, Any] = {
+        "color": tokens.TEXT,
+        "size": header_font_size,
+        "family": tokens.FONT_FAMILY,
+    }
+    header_y = table_text_y(0, header_font_size, markup=True)
     cell_font: dict[str, Any] = {
         "color": tokens.TEXT,
         "size": 13,
         "family": tokens.FONT_FAMILY,
     }
+    label_texts, label_text_layout = table_text_layer(
+        [
+            TableText(
+                cells=[
+                    (index, header_y, text) for index, text in enumerate(classification_headers)
+                ],
+                font=header_font,
+            )
+        ],
+        column_widths=column_widths,
+        width_px=sum(column_widths),
+        height_px=height,
+    )
+    month_texts, month_text_layout = table_text_layer(
+        [
+            TableText(
+                cells=[(index, header_y, text) for index, text in enumerate(month_headers)],
+                font=header_font,
+            )
+        ],
+        column_widths=[1] * len(month_headers),
+        width_px=len(month_headers) * MONTH_COLUMN_WIDTH_PX,
+        height_px=height,
+    )
     label_figure = figure_from_spec(
         {
             "data": [
                 {
                     "type": "table",
                     "columnwidth": column_widths,
-                    "header": {"values": classification_headers, **header_style},
+                    "header": {"values": [""] * len(classification_headers), **header_style},
                     "cells": {
                         "values": classification_values,
                         "align": "center",
@@ -391,9 +430,10 @@ def build_split_table_figures(
                         "font": cell_font,
                         "height": ROW_HEIGHT_PX,
                     },
-                }
+                },
+                *label_texts,
             ],
-            "layout": common_layout,
+            "layout": {**common_layout, **label_text_layout},
         }
     )
     month_figure = figure_from_spec(
@@ -402,24 +442,34 @@ def build_split_table_figures(
                 {
                     "type": "table",
                     "columnwidth": [1.0] * len(month_headers),
-                    "header": {"values": month_headers, **header_style},
+                    "header": {"values": [""] * len(month_headers), **header_style},
                     "cells": {
                         "values": month_values,
                         "align": "center",
-                        "fill": {"color": [month_row_colors for _ in month_headers]},
+                        # 모든 열이 같은 행 색이다. Plotly 는 열 목록이 모자라면 마지막 열을
+                        # 되풀이하므로 한 열만 보낸다 — 열마다 복사하면 그 목록이 열 수만큼 실린다.
+                        "fill": {"color": [month_row_colors]},
                         "line": {"color": TRANSPARENT_COLOR},
                         "font": cell_font,
                         "height": ROW_HEIGHT_PX,
                     },
-                }
+                },
+                *month_texts,
             ],
             "layout": {
                 **common_layout,
+                **month_text_layout,
                 "width": len(month_headers) * MONTH_COLUMN_WIDTH_PX,
                 "autosize": False,
             },
         }
     )
+    for figure in (label_figure, month_figure):
+        append_layout_items(
+            figure,
+            shapes=[table_header_band(header_bottom_y=header_boundary_ratio(row_count))],
+        )
+    flush_layout_items(label_figure, month_figure)
     return label_figure, month_figure
 
 
@@ -437,10 +487,8 @@ def render_split_scroll_table(
     월 영역의 네이티브 스크롤바는 숨기고 `horizontal_scrollbar` 컴포넌트로 대체한다.
     두 Figure 의 행 높이가 같아야 좌우가 어긋나지 않는다.
 
-    `owner_tab` 이 닫혀 있으면 아무것도 그리지 않는다. 숨겨진 요소 안에서는 SVG 글자 폭
-    측정이 0 이라 `go.Table` 이 헤더를 셀 가운데에 놓지 못하고, `staticPlot` 이라 나중에
-    보이게 되어도 다시 그리지 않아 어긋난 채로 남는다. 탭이 열리면 rerun 이 돌아 그때
-    보이는 상태로 그린다.
+    `owner_tab` 이 닫혀 있으면 아무것도 그리지 않는다 — 보이지 않는 표를 만들어 보내고 그리는
+    일을 아낀다. 탭이 열리면 rerun 이 돌아 그때 보이는 상태로 그린다(`components/tab_state.py`).
     """
     if tab_is_hidden(owner_tab):
         return

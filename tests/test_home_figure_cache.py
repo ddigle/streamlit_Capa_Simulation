@@ -262,6 +262,23 @@ def test_the_schema_moved_past_figures_without_the_detail_link() -> None:
     assert HOME_FIGURE_SCHEMA_VERSION >= 51
 
 
+def test_the_schema_moved_past_the_table_plan_detail() -> None:
+    """53 부터 계획 세부수량은 `go.Table` 이 아니라 면색 도형과 글자 trace 다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(칸마다 재는 `go.Table`)이 새 세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 53
+
+
+def test_the_schema_moved_past_unclipped_plan_detail_text() -> None:
+    """54 부터 계획 세부수량 글자는 맑은 고딕 기준선에 서고 넘칠 수 있는 글자는 제 칸에서 잘린다.
+
+    번호를 올리지 않으면 공용 칸에 남은 옛 그림(긴 제품명·거래선이 옆 칸으로 번지는 그림)이 새
+    세션에도 나간다.
+    """
+    assert HOME_FIGURE_SCHEMA_VERSION >= 54
+
+
 def test_each_bundle_evicts_its_own_least_recently_read_entry(
     conditions: HomeFigureCacheKey,
 ) -> None:

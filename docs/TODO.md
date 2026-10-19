@@ -597,7 +597,9 @@
   관련: `docs/design_system.md` (옛 3-4)
 - (2026-09-05) 탭은 `stateful_tabs`(`key`+`on_change="rerun"`)로 열림을 확정하고, 숨은 탭에서도 입력 위젯은 항상 그리되
   계산·표·Figure 는 건너뛴다(숨은 채 그린 머리글은 가운데를 벗어나고, 위젯을 건너뛰면 선택값이 버려진다). 월별 표
-  머리글은 `<b>` 와 NBSP 공백을 유지한다 — 관련: `components/tab_state.py`·B4·B5 (옛 3-4·3-6)
+  머리글은 `<b>` 와 NBSP 공백을 유지한다 — 관련: `components/tab_state.py`·B4·B5 (옛 3-4·3-6). 2026-10-20 부터 그
+  머리글 글자는 `go.Table` 밖 글자 trace 로 그리고 기준선을 맑은 고딕에 맞췄다(셈으로 14px 0.1px 아래, Noto Sans KR 이
+  깔린 PC 는 약 0.9px 위). 사내 PC 에 Noto Sans KR 이 깔렸다고 확인되면 `TABLE_MARKUP_TEXT_EM` 을 0.91 로 옮길지 다시 본다.
 - (2026-10-06) 대당 Capa 제외 건수는 산출 결과에서만 보인다(사용자 결정 2-1 — 다른 계산 화면에 넓히지 않는다) — 관련:
   `app_pages/calculation_result.py` (옛 3-5)
 - (2026-09-06) 재공 현황은 설비 DB 가 비면 계산 전에 표준 목표 입력 경로를 `st.warning` 으로 안내하고 멈춘다(B8 A안 —

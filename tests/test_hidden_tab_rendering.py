@@ -133,18 +133,19 @@ def test_stateful_tabs_asks_for_a_rerun() -> None:
 
 
 def test_header_labels_never_contain_a_plain_space() -> None:
-    """머리글에 공백이 있으면 plotly 가 줄바꿈 경로로 내려간다.
+    """머리글 공백은 줄바꿈 없는 공백이다. 분류 셀 값과 같은 치환이다.
 
-    그 경로는 `getComputedTextLength()` 로 재는데, 숨겨진 채로 그리면 글자가 통째로 비기도
-    한다. `COLUMN_LABELS["Capa Code"] = "PKG Code"` 가 유일하게 공백을 갖고 있었다.
+    `go.Table` 칸에 공백이 있으면 plotly 가 줄바꿈 경로로 내려가 `getComputedTextLength()` 로
+    재고, 숨겨진 채로 그리면 글자가 통째로 비기도 한다. `COLUMN_LABELS["Capa Code"] = "PKG Code"`
+    가 유일하게 공백을 갖고 있다.
     """
     assert header_label("PKG Code") == "<b>PKG Code</b>"
     assert " " not in header_label("PKG Code")
 
 
 def test_header_label_stays_bold() -> None:
-    """`<b>` 를 빼면 가로는 항상 정확해지지만 글자가 밴드 위쪽에 붙는다(실측 4.5px).
+    """머리글은 `<b>` 로 굵다. 표 칸이 아니라 표 밖 글자 trace 가 그려 재는 길을 타지 않는다.
 
-    가로 어긋남은 숨겨진 채로 그리지 않는 것으로 막고, 세로 정렬은 그대로 지킨다.
+    `<b>` 대신 굵기 속성만 주는 표 머리글은 글자가 띠 위쪽에 붙는다(실측 4.5px).
     """
     assert header_label("26.07").startswith("<b>")

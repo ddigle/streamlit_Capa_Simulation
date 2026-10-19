@@ -5,11 +5,15 @@
 from __future__ import annotations
 
 import html
+import math
 import numbers
+import re
+import unicodedata
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any, Final, cast
 
 import plotly.graph_objects as go
 from plotly.validator_cache import ValidatorCache
@@ -52,7 +56,7 @@ def plotly_validation_enabled() -> bool:
 
 
 # spec 으로 세울 수 있는 trace 종류. 여기 없는 종류는 검증 생성자로 세운다.
-_SPEC_TRACE_CLASSES: dict[str, Any] = {"table": go.Table}
+_SPEC_TRACE_CLASSES: dict[str, Any] = {"table": go.Table, "scatter": go.Scatter}
 
 
 def figure_from_spec(spec: Mapping[str, Any]) -> go.Figure:
@@ -64,8 +68,9 @@ def figure_from_spec(spec: Mapping[str, Any]) -> go.Figure:
     그대로 남아 Plotly.js 가 무시한다. `{"fill": {"color": ...}}` 처럼 중첩 dict 로 쓴다.
 
     세우기 전에 spec 의 **키 이름**을 Plotly 속성 목록에 대 본다(하위 dict 로는 내려가고, 값
-    배열은 보지 않는다). 모르는 이름·밑줄 줄임 키가 하나라도 있으면 검증 생성자로 세운다 —
-    오타는 지금처럼 예외가 되고 줄임 키는 펼쳐진다. **dict 의 목록을 받는 속성**
+    배열은 보지 않는다. 번호 붙은 축 `xaxis2` 는 `xaxis` 로 본다). 모르는 이름·밑줄 줄임 키가
+    하나라도 있으면 검증 생성자로 세운다 — 오타는 지금처럼 예외가 되고 줄임 키는 펼쳐진다.
+    **dict 의 목록을 받는 속성**
     (`layout.shapes`·`annotations` 등)은 원소를 보지 않으므로 있기만 해도 검증 생성자로 세운다.
     도형·주석은 spec 에 넣지 말고 `append_layout_items`·`flush_layout_items` 로 넣는다.
     값(색 글자·숫자 범위)은 보지 않는다. 같은지는 스위치를 켠 경로와 JSON 을 견주는 테스트가 본다.
@@ -105,15 +110,34 @@ def _keys_known(owner: Any, item: Mapping[str, Any]) -> bool:
     속성에 dict 가 와도 False 다. 모두 검증 생성자로 세운다.
     """
     for prop, value in item.items():
-        if prop not in owner._valid_props:
+        name = _validator_prop_name(owner, prop)
+        if name is None:
             return False
-        child = getattr(ValidatorCache.get_validator(owner._path_str, prop), "data_class", None)
+        child = getattr(ValidatorCache.get_validator(owner._path_str, name), "data_class", None)
         if child is None:
             if isinstance(value, Mapping):
                 return False
         elif not isinstance(value, Mapping) or not _keys_known(child, value):
             return False
     return True
+
+
+def _validator_prop_name(owner: Any, prop: str) -> str | None:
+    """검증기를 찾을 속성 이름. 모르는 이름은 None 이다.
+
+    번호 붙은 축(`xaxis2`)은 레이아웃만 받고 `xaxis` 의 검증기를 쓴다. Plotly 가 이름을 바꿔
+    담는 꼴(`xaxis1`·`xaxis02`)은 모르는 이름으로 보아 검증 생성자에 맡긴다.
+    """
+    if prop in owner._valid_props:
+        return prop
+    pattern = getattr(owner, "_subplotid_prop_re", None)
+    match = pattern.match(prop) if pattern is not None else None
+    if match is None:
+        return None
+    number = match.group(2)
+    if number != str(int(number)) or int(number) < 2:
+        return None
+    return str(match.group(1))
 
 
 def static_chart_config() -> dict[str, Any]:
@@ -145,6 +169,244 @@ def chart_canvas_layout(*, font_size: int) -> dict[str, Any]:
         "paper_bgcolor": tokens.CHART_CANVAS,
         "plot_bgcolor": tokens.CHART_CANVAS,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": font_size},
+    }
+
+
+# ---------------------------------------------------------------- 표 칸 글자를 표 밖에서 그리기
+#
+# `go.Table` 은 칸 글자에 마크업(`<b>`·`<br>`)이 있으면 칸마다 "그린 다음 재서 옮기는" 길로
+# 간다. 칸 하나를 옮기고 다음 칸을 재는 사이마다 브라우저가 스타일을 새로 계산하므로 비용이
+# 칸 수에 비례한다(합성 표본 표준 목표 131주 표에서 화면 하나에 1초 남짓, 샘플 관측). 그래서
+# 마크업 글자는 같은 Figure 의 숨긴 축 위 scatter 글자 trace 로 옮겨 그린다 — scatter 글자는
+# 재지 않고 자리를 셈으로 잡는다.
+#
+# Plotly 는 표를 카테시안 trace **위에** 그린다. 그래서 글자를 옮긴 칸의 표 면은 투명이어야
+# 하고, 그 자리 면색은 `layer: below` 도형으로 깐다(머리글 띠는 `table_header_band`).
+
+# plotly.js `table` 의 `cellPad`. `go.Table` 은 칸 글자의 줄 상자를 칸 위 모서리에서 이만큼
+# 띄워 놓는다 — 마크업이 있든 없든 같다.
+TABLE_CELL_PAD_PX = 8
+
+# `go.Table` 은 열마다 그 열 폭에 선 굵기 반(올림 1px)씩을 양옆으로 더한 사각형으로 칸 글자를
+# 자른다(plotly.js `columnBoundaryClippath`). 글자를 자르는 축도 열 경계 밖으로 이만큼 나간다.
+TABLE_COLUMN_CLIP_OVERHANG_PX = 1
+
+# 마크업 칸 글자의 점을 칸 위 모서리에서 `cellPad + 이 값 em` 에 둔다. 기준선은 그보다 0.25em
+# 아래인 `cellPad + 1.08em` — 맑은 고딕의 어센트다. `table_text_y` 를 보라.
+TABLE_MARKUP_TEXT_EM = 0.83
+
+
+def table_text_y(top_px: float, font_size: float, *, markup: bool) -> float:
+    """`go.Table` 이 칸 글자를 놓던 자리에 scatter 글자를 세우는 y(그림 위에서 잰 px).
+
+    scatter 글자(`middle center`)는 기준선을 점보다 글자 크기의 0.25 배 아래에 놓는다.
+    `go.Table` 은 두 갈래다.
+
+    - 마크업이 없는 칸은 기준선이 칸 위 모서리에서 `cellPad + 0.75em` 이다. 서체와 무관하므로
+      점을 `cellPad + 0.5em` 에 두면 화소까지 같다.
+    - 마크업이 있는 칸은 그린 뒤 재서 줄 상자 윗변을 `cellPad` 에 맞추므로 기준선이
+      `cellPad + 어센트` 다(Chrome 은 어센트를 정수 px 로 반올림한다). 어센트는 서체마다 달라 한
+      값으로 모두를 맞출 수 없으니 사용자가 실제로 보는 서체에 맞춘다. 앱 서체 스택
+      (`tokens.FONT_FAMILY`)은 `Noto Sans KR` 이 먼저지만 앱이 그 글꼴 파일을 보내지 않으므로
+      (`@font-face` 는 Archivo 부분 글꼴뿐, `components/typography.py`) PC 에 깔린 글꼴이 정한다.
+      서피스는 맑은 고딕으로 그리고(사내 런북 7-16 B), 사내 Windows 도 Noto Sans KR 을 따로 깔지
+      않았다면 같다. 맑은 고딕 어센트는 약 1.08em 이다 — `monthly_table_base.header_label` 설명의
+      실측(굵기 속성만 준 머리글이 `<b>` 머리글보다 4.5px 위, 14px)이
+      `round(1.08 × 14) − 0.75 × 14 = 4.5` 와 맞고, DejaVu Sans(0.93em)면 2.5px, Noto Sans
+      KR(1.16em)이면 5.5px 라 맑은 고딕으로만 맞는다.
+      그래서 기준선을 `cellPad + 1.08em`(점 `cellPad + 0.83em`)에 둔다 — 맑은 고딕에서 14px 0.1px,
+      15px 0.2px 아래로 셈된다. Noto Sans KR 이 깔린 PC 에서는 약 0.9px 위, 사용자가 보지 않는
+      헤드리스 리눅스의 DejaVu Sans 에서는 약 2.1px 아래다(Chrome 실측이 이 셈과 같다).
+
+    소수 셋째 자리로 반올림한다 — 부동소수 찌꺼기(`19.619999999999997`)가 글자마다 그림 JSON 에
+    실린다(131주 표 머리글에서 1.8KB).
+    """
+    offset_em = TABLE_MARKUP_TEXT_EM if markup else 0.5
+    return round(top_px + TABLE_CELL_PAD_PX + font_size * offset_em, 3)
+
+
+# 칸 글자가 제 칸 폭을 넘을 수 있는지 가르는 글자 너비의 위 한계(글자 크기 배수). 넓게 잡으면
+# 넘치지 않는 글자에도 자르는 축이 하나 붙을 뿐이고, 좁게 잡으면 넘친 글자가 옆 칸으로 번진다.
+#
+# 인쇄 가능한 ASCII 는 글자마다 Chrome 캔버스로 DejaVu Sans·Noto Sans CJK KR·Liberation Sans·
+# Ubuntu Sans 의 보통·굵은 꼴을 재어 가장 넓은 값에 10% 를 얹고 0.1 단위로 올렸다(2026-10-20).
+# 맑은 고딕은 이 환경에 없어 재지 못했고 그 넉넉함에 기댄다. 한글·전각은 같은 실측 최대 1.00 에
+# 10% 를 얹는다. 그 밖의 글자는 대체 글꼴(기호·이모지)로 그려질 수 있어 더 넓게 본다.
+_ASCII_WIDTH_EM_CLASSES: Final = (
+    (0.4, "'ijl "),
+    (0.5, "|I,.:;-/\\f"),
+    (0.6, "!()[]tr*"),
+    (0.7, '_J"zcs?`'),
+    (0.8, "LxvykaeTEFo$0123456789hnu{}bdgpqSYZ"),
+    (0.9, "PCBRXAVKU"),
+    (1.0, "GDHN#+<=>^~OQ&"),
+    (1.1, "wM"),
+    (1.2, "%@m"),
+    (1.3, "W"),
+)
+_CHARACTER_WIDTH_EM: Final = {
+    character: width for width, characters in _ASCII_WIDTH_EM_CLASSES for character in characters
+} | {"\u00a0": 0.4}
+_WIDE_CHARACTER_WIDTH_EM = 1.1
+_OTHER_CHARACTER_WIDTH_EM = 1.3
+_MARKUP_TAG = re.compile(r"<[^>]*>")
+_LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def table_text_max_width_px(text: str, font_size: float) -> float:
+    """칸 글자가 그려질 때 차지할 수 있는 가장 넓은 폭(px). 실제 폭은 이보다 크지 않다.
+
+    Plotly 글자 마크업(`<b>`·`<br>`·`&amp;`)을 풀어 줄마다 재고 가장 긴 줄을 돌려준다.
+    """
+    widest = 0.0
+    for line in _LINE_BREAK.split(text):
+        units = sum(
+            _character_width_em(character) for character in html.unescape(_MARKUP_TAG.sub("", line))
+        )
+        widest = max(widest, units)
+    return widest * font_size
+
+
+def _character_width_em(character: str) -> float:
+    known = _CHARACTER_WIDTH_EM.get(character)
+    if known is not None:
+        return known
+    if unicodedata.east_asian_width(character) in {"F", "W"}:
+        return _WIDE_CHARACTER_WIDTH_EM
+    return _OTHER_CHARACTER_WIDTH_EM
+
+
+@dataclass(frozen=True)
+class TableText:
+    """같은 글꼴로 그리는 칸 글자 한 벌. `cells` 는 글자마다 (열 번호, y, 글자)다.
+
+    y 는 그림 위에서 잰 px 다(`table_text_y`).
+    """
+
+    cells: Sequence[tuple[int, float, str]]
+    font: Mapping[str, Any]
+
+
+def table_text_layer(
+    texts: Sequence[TableText],
+    *,
+    column_widths: Sequence[float],
+    width_px: float,
+    height_px: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """`go.Table` 밖으로 옮긴 칸 글자의 scatter spec 들과 그 축(레이아웃 칸)을 돌려준다.
+
+    spec 은 `figure_from_spec` 정규형이다. x 축은 칸 폭 단위(0 ~ 폭 합), y 축은 **그림 위에서 잰
+    px** 다(뒤집힌 축). 여백이 0 이라 그림 전체가 그대로 축 영역이다. 글자는 칸 가운데 점에 가운데로
+    선다(`text-anchor: middle`) — 칸 가운데 정렬과 같다. `<b>` 같은 마크업은 표 칸과 같은 규칙으로
+    풀린다. 빈 글자는 그리지 않는다.
+
+    **넘친 글자는 제 칸 경계에서 자른다** — `go.Table` 이 열마다 하던 것이다. 자르는 단위는 축
+    영역이라, 넘칠 수 있는 글자(`table_text_max_width_px` 가 칸 폭을 넘는 것)만 그 열 하나를
+    덮는 축(`xaxis2`…, 영역 = 열 구간 ± `TABLE_COLUMN_CLIP_OVERHANG_PX`)에 따로 얹고
+    `cliponaxis` 를 켠다. 그 축의 범위는 영역에 맞춰 잡아 같은 x 가 같은 자리에 선다. 나머지
+    글자는 자를 일이 없어 벌마다 한 trace(`cliponaxis` 끔)에 남는다 — 넘칠 수 없는 글자뿐인
+    그림(월 칸·짧은 머리글)은 축도 trace 도 늘지 않는다. 축 하나·trace 하나가 그대로 노드와
+    전송 바이트라 모든 열에 축을 두지 않는다 — 131주·300행 합성 표 실험에서 열마다 축을 두면 그림
+    JSON 이 20%, 그리기가 9% 늘었다.
+
+    돌려준 목록의 i 번째는 늘 `texts[i]` 의 자르지 않는 trace 다(글자가 다 빠져도 있다). 자르는
+    trace 는 그 뒤에 열 차례로, 한 열 안에서는 `texts` 차례로 온다.
+
+    `width_px` 는 그림이 실제로 그려지는 폭(px)이다 — 칸 폭을 px 로 바꿔 넘칠 수 있는지를 가른다.
+
+    축 영역 바탕(`plot_bgcolor`)은 종이 바탕과 같은 색(`tokens.CHART_CANVAS`)이라 Plotly 가 바탕을
+    따로 그리지 않는다. 자르는 축이 있으면 투명으로 바꾼다 — 그 축의 영역은 앞 축의 영역과 겹쳐
+    Plotly 가 그 바탕을 자기 층 맨 아래, 곧 `layer: below` 도형(머리글 띠·칸 면색) **위**에 깐다.
+    그때 바탕은 종이 색과 아래층 도형이 맡는다.
+    """
+    width_units = sum(column_widths) or 1
+    starts = [sum(column_widths[:index]) for index in range(len(column_widths))]
+    centers = [start + width / 2 for start, width in zip(starts, column_widths, strict=True)]
+    px_per_unit = width_px / width_units
+    # 폭을 모르는(0) 그림은 자를 자리도 없다. 모두 자르지 않는 trace 에 둔다.
+    limit_px = [width * px_per_unit if px_per_unit > 0 else math.inf for width in column_widths]
+    kept: list[list[tuple[float, float, str]]] = []
+    clipped: dict[int, list[list[tuple[float, float, str]]]] = {}
+    for set_index, text_set in enumerate(texts):
+        font_size = float(text_set.font.get("size", 12))
+        own: list[tuple[float, float, str]] = []
+        for column, y, text in text_set.cells:
+            if not text:
+                continue
+            cell = (centers[column], y, text)
+            if table_text_max_width_px(text, font_size) <= limit_px[column]:
+                own.append(cell)
+            else:
+                clipped.setdefault(column, [[] for _ in texts])[set_index].append(cell)
+        kept.append(own)
+
+    hidden: dict[str, Any] = {"visible": False, "fixedrange": True}
+    layout: dict[str, Any] = {
+        "xaxis": {**hidden, "range": [0, width_units]},
+        "yaxis": {**hidden, "range": [height_px, 0]},
+        "plot_bgcolor": TRANSPARENT_COLOR if clipped else tokens.CHART_CANVAS,
+    }
+    traces = [
+        _table_text_trace(cells, text_set.font) for cells, text_set in zip(kept, texts, strict=True)
+    ]
+    for axis_number, column in enumerate(sorted(clipped), start=2):
+        overhang = TABLE_COLUMN_CLIP_OVERHANG_PX / px_per_unit
+        low = max(0.0, starts[column] - overhang)
+        high = min(float(width_units), starts[column] + column_widths[column] + overhang)
+        layout[f"xaxis{axis_number}"] = {
+            **hidden,
+            "range": [low, high],
+            "domain": [low / width_units, high / width_units],
+            "anchor": "y",
+        }
+        for cells, text_set in zip(clipped[column], texts, strict=True):
+            if cells:
+                traces.append(_table_text_trace(cells, text_set.font, xaxis=f"x{axis_number}"))
+    return traces, layout
+
+
+def _table_text_trace(
+    cells: Sequence[tuple[float, float, str]],
+    font: Mapping[str, Any],
+    *,
+    xaxis: str | None = None,
+) -> dict[str, Any]:
+    """칸 글자 한 벌의 scatter spec. `xaxis` 를 주면 그 축 영역에서 자른다."""
+    trace: dict[str, Any] = {
+        "type": "scatter",
+        "mode": "text",
+        "x": [x for x, _, _ in cells],
+        "y": [y for _, y, _ in cells],
+        "text": [text for _, _, text in cells],
+        "textposition": "middle center",
+        "textfont": dict(font),
+        "hoverinfo": "skip",
+        "showlegend": False,
+        "cliponaxis": xaxis is not None,
+    }
+    if xaxis is not None:
+        trace["xaxis"] = xaxis
+    return trace
+
+
+def table_header_band(*, header_bottom_y: float) -> dict[str, Any]:
+    """머리글 띠 도형. `header_bottom_y` 는 머리글 아랫변(paper y)이다.
+
+    표 머리글 면을 투명하게 둔 자리나 표 없이 그리는 격자에 같은 색을 글자 아래(`layer: below`)로
+    깐다.
+    """
+    return {
+        "type": "rect",
+        "x0": 0,
+        "x1": 1,
+        "y0": header_bottom_y,
+        "y1": 1,
+        "xref": "paper",
+        "yref": "paper",
+        "fillcolor": tokens.HEADER_BACKGROUND,
+        "line": {"width": 0},
+        "layer": "below",
     }
 
 

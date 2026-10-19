@@ -40,7 +40,9 @@ Streamlit 위젯은 `config.toml`을 직접 읽지만 Plotly Figure와 주입 CS
 스택은 `Noto Sans KR` 을 앞에 두고 `Malgun Gothic` 을 폴백으로 받친다. Malgun 은 Windows 에
 항상 있어 안전하지만 자간과 획 굵기가 고르지 않다. **사내 PC 에 Noto Sans KR 이 설치돼 있는지는
 확인되지 않았다** — 없으면 사내는 Malgun 으로 폴백되어 개발 PC 와 다르게 보인다. 어느 쪽이든
-한 화면 안에서는 제목·본문·차트가 모두 같은 face 라 간격은 일정하다.
+한 화면 안에서는 제목·본문·차트가 모두 같은 face 라 간격은 일정하다. Plotly 표 머리글·HOME 계획 세부수량 분류
+값처럼 `go.Table` 밖 글자 trace 로 옮긴 글자의 세로 자리는 맑은 고딕 어센트에 맞춰 셈으로 둔다
+(`plotly_layout.table_text_y`) — Noto Sans KR 이 깔린 PC 에서는 약 0.9px 위에 선다.
 
 Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트 이름으로 넘긴다
 (`runtime/theme_util.py`의 `_parse_font_config`). 스택에 콜론을 넣으면 `<이름>:<URL>` 형식으로

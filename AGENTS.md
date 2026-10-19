@@ -747,6 +747,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `st.download_button` 은 여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)이다. 행 모델·면색만 표마다 다르다.
+  - 머리글 글자는 `go.Table` 밖 글자 trace(data[1], `plotly_layout.table_text_layer`)이고 띠는 `table_header_band`
+    도형이다 — `go.Table` 머리글은 값 `""`·면 투명이다. 표 칸에 마크업(`<`·`&`·`>`)을 두지 않는다: 마크업 칸은 Plotly 가
+    칸마다 그린 뒤 재서 옮겨 열 수만큼 브라우저 스타일 계산이 돈다(합성 표본 표준 목표 131주 표 long task 1.6s 의 대부분,
+    `tests/test_plotly_fast_path.py::test_table_cells_carry_no_markup`). 월 면색은 한 열 `[month_row_colors]` 다(Plotly
+    가 마지막 열을 되풀이한다). 분류 Figure 폭은 `column_widths` 합(px)으로 본다.
   - spec 은 `plotly_layout.figure_from_spec` 이 검증 없이 세우므로 Plotly 정규형 dict 다
     (`tests/test_plotly_fast_path.py`). 격자 도우미는 `append_layout_items` 에 모으기만 하고 표 모듈이
     `flush_layout_items` 한 번으로 반영한다(`tests/test_monthly_table_grid.py`).
@@ -900,6 +905,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 도형·주석은 `append_layout_items` 로 모아 Figure 를 돌려주는 쪽이 `flush_layout_items` 를 한 번 부른다(빠뜨리면
     테두리·라벨이 사라진다, `tests/test_plotly_layout.py`). flush·`figure_from_spec` 의 빠른 경로는 비공개 `_validate`
     라 `plotly>=5.24,<7` 에 기댄다(`tests/test_plotly_fast_path.py`).
+  - 표 칸 글자를 표 밖에서 그리는 도우미 — `table_text_layer`(`TableText` 벌마다 글자 trace 와 숨긴 축. 넘칠 수 있는
+    글자(`table_text_max_width_px`)만 그 열을 덮는 축 `xaxis2`… 에 얹어 `go.Table` 처럼 열 경계 ±1px 에서 자른다.
+    자르는 축이 있으면 `plot_bgcolor` 는 투명이다 — 겹치는 축 바탕이 `layer: below` 도형을 덮는다), `table_text_y`
+    (마크업 칸 기준선 = cellPad + 1.08em, 맑은 고딕 어센트), `table_header_band`. `figure_from_spec` 빠른 경로는
+    table·scatter trace 와 번호 붙은 축을 받는다(`tests/test_table_text_layer.py`).
 - `src/capa_simulation/components/home_figures.py`, `home_figure_common.py`, `home_lob_figures.py`,
   `home_plan_detail_figures.py`, `home_key_process_figures.py`, `home_bottleneck_figures.py`, `home_rendering.py`,
   `home_dimensions.py` — HOME Figure 가족 넷·공통 조각·캐시와 렌더링·픽셀 치수.
@@ -908,6 +918,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 캐시는 세션 칸 → 공용 저장소, 묶음 넷이다. 묶음 키는 `home_rendering` 의존 표가 정본이라 조건을 더하면
     `tests/test_home_figure_cache.py` 의 `EXPECTED_DEPENDENTS` 도 고친다(`tests/test_home_figure_cache_equivalence.py`·
     `tests/test_home_hidden_main_figures.py`). 그림 모양을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다.
+  - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace)다. 긴
+    제품명·거래선은 제 칸 경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
 - `src/capa_simulation/components/month_sheet_canvas.py` — 월 시트 캔버스 엔진(라벨·월 Figure 한 쌍의 `Row`·
   `Cell`·글자·표적·서식·`canvas_point`). 공정 Capa 상세와 비교 시트가 훅(`row_hook` 등)으로 쓰는 순수 함수다.
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
