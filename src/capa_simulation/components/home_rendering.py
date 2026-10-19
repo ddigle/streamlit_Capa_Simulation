@@ -517,7 +517,8 @@ def dashboard_title_row_style() -> str:
     못박히는데 라벨 칸 제목 줄은 CSS 가 없으면 Streamlit 기본 높이다 — 증상은 그
     구획이 아니라 **그 아래 구획**에서 먼저 보인다.
     """
-    return f"""
+    return (
+        f"""
     <style>
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
@@ -533,36 +534,42 @@ def dashboard_title_row_style() -> str:
     .st-key-lob_title_row,
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
-    .st-key-bottleneck_title_row {{ align-items: center; }}
-    /* 구분 칸의 세 제목 줄은 **넘쳐도 한 줄**이다(`section_title_markup` 이 말줄임한다). 그러려면
-       줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들 수 있어야 한다 — flex 항목의 기본
-       `min-width:auto` 가 한 겹이라도 남으면 제목이 칸 밖(월 칸 위)으로 삐져나간다. */
+    .st-key-bottleneck_title_row {{ align-items: center; }}"""
+        # 구분 칸의 세 제목 줄은 **넘쳐도 한 줄**이다(`section_title_markup` 이 말줄임한다).
+        # 그러려면 줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들 수 있어야 한다 — flex 항목의
+        # 기본 `min-width:auto` 가 한 겹이라도 남으면 제목이 칸 밖(월 칸 위)으로 삐져나간다.
+        """
     .st-key-plan_detail_title_row,
     .st-key-key_process_title_row,
-    .st-key-bottleneck_title_row {{ overflow: hidden; }}
+    .st-key-bottleneck_title_row { overflow: hidden; }
     .st-key-plan_detail_title_row *,
     .st-key-key_process_title_row *,
-    .st-key-bottleneck_title_row * {{ min-width: 0; max-width: 100%; }}
-    /* 범례는 제목과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
-       스크롤바와 겹치지 않게 별도 블록으로 두지 않는다. */
-    /* 범례는 제목 줄의 오른쪽 끝이다. `margin-left:auto` 를 받아야 하는 것은 **flex
-       항목**이라 `.st-key-*` 한 겹 바깥의 래퍼를 겨냥한다 — 안쪽에 주면 형제가 자기
-       자신뿐이라 아무 일도 일어나지 않는다(Admin 의 `order` 와 같은 함정). */
+    .st-key-bottleneck_title_row * { min-width: 0; max-width: 100%; }"""
+        # 범례는 제목과 같은 줄의 오른쪽 끝이다. 아래 월 영역 위에 얹힌 가로
+        # 스크롤바와 겹치지 않게 별도 블록으로 두지 않는다.
+        #
+        # 범례는 제목 줄의 오른쪽 끝이다. `margin-left:auto` 를 받아야 하는 것은 **flex
+        # 항목**이라 `.st-key-*` 한 겹 바깥의 래퍼를 겨냥한다 — 안쪽에 주면 형제가 자기
+        # 자신뿐이라 아무 일도 일어나지 않는다(Admin 의 `order` 와 같은 함정).
+        f"""
     [data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_LEGEND_ROW_KEY}) {{
         margin-left: auto;
         width: auto;
         flex: 0 0 auto;
         align-self: stretch;
-    }}
-    /* 색칩을 토글 글자와 **같은 눈높이**에 세운다. Streamlit 의 마크다운 칸은 높이를
-       글줄에서 잡아 7.5px 로 주저앉고 그 위로 11px 칩이 삐져나가, 줄 가운데보다 7.5px
-       아래에 앉아 있었다. 래퍼부터 마크다운 칸까지 높이를 물려 주고 각 단계에서 가운데로
-       모은다. */
+    }}"""
+        # 색칩을 토글 글자와 **같은 눈높이**에 세운다. Streamlit 의 마크다운 칸은 높이를
+        # 글줄에서 잡아 7.5px 로 주저앉고 그 위로 11px 칩이 삐져나가, 줄 가운데보다 7.5px
+        # 아래에 앉아 있었다. 래퍼부터 마크다운 칸까지 높이를 물려 주고 각 단계에서 가운데로
+        # 모은다.
+        # - `[data-testid="stMarkdown"] > div`: 이름 없는 emotion 한 겹. testid 가 없어 자식
+        #   선택자로 집는다 — 이 한 겹이 높이를 4px 로 떨어뜨려 아래 문단이 그만큼 처져 있었다.
+        # - `margin: 0`: 마크다운 칸은 문단 아래 여백을 음수 margin 으로 걷어낸다. 줄 안에 세울
+        #   때는 그 음수가 그대로 아래로 미는 힘이 된다.
+        f"""
     .st-key-{STATUS_LEGEND_ROW_KEY},
     .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stElementContainer"],
     .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stMarkdown"],
-    /* 이름 없는 emotion 한 겹. testid 가 없어 자식 선택자로 집는다 — 이 한 겹이 높이를
-       4px 로 떨어뜨려 아래 문단이 그만큼 처져 있었다. */
     .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stMarkdown"] > div,
     .st-key-{STATUS_LEGEND_ROW_KEY} [data-testid="stMarkdownContainer"],
     .st-key-{STATUS_LEGEND_ROW_KEY} .{STATUS_LEGEND_CLASS} {{
@@ -570,12 +577,11 @@ def dashboard_title_row_style() -> str:
         align-items: center;
         height: 100%;
         min-height: 0;
-        /* 마크다운 칸은 문단 아래 여백을 음수 margin 으로 걷어낸다. 줄 안에 세울 때는
-           그 음수가 그대로 아래로 미는 힘이 된다. */
         margin: 0;
     }}
     </style>
     """
+    )
 
 
 SUMMARY_NOTICE_KEY = "home_summary_notice"
@@ -601,7 +607,8 @@ def summary_notice_style() -> str:
     이 상자가 따라오지 않는다. 제목(20px)은 건드리지 않는다. 바로 아래 `Capa LOB 현황`
     과 같은 값이라 흔들면 두 상자가 다시 어긋난다.
     """
-    return f"""
+    return (
+        f"""
     <style>
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p {{
         display: inline-flex;
@@ -615,27 +622,30 @@ def summary_notice_style() -> str:
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary p::before {{
         content: "";
         {section_accent_bar_css()};
-    }}
-    /* 접힘 표시 꺾쇠를 감춘다. **여닫는 기능은 그대로다** — 아이콘만 숨기고 `summary`
-       자체는 건드리지 않으므로 줄 어디를 눌러도 펴진다. 다른 세 구획 제목에는 없는
-       글리프라 이 상자만 제목 옆에 군더더기가 하나 붙어 보였다. */
+    }}"""
+        # 접힘 표시 꺾쇠를 감춘다. **여닫는 기능은 그대로다** — 아이콘만 숨기고 `summary`
+        # 자체는 건드리지 않으므로 줄 어디를 눌러도 펴진다. 다른 세 구획 제목에는 없는
+        # 글리프라 이 상자만 제목 옆에 군더더기가 하나 붙어 보였다.
+        f"""
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary
         [data-testid="stIconMaterial"] {{
         display: none;
-    }}
-    /* **아이콘을 감싼 칸과 그 옆 간격까지 없앤다.** 아이콘만 숨기면 빈 칸과 flex 간격이
-       그대로 남아 제목이 20px 오른쪽으로 밀린다 — 바로 아래 `Capa LOB 현황` 과 첫 글자가
-       어긋나 두 상자가 계단처럼 보인다. */
+    }}"""
+        # **아이콘을 감싼 칸과 그 옆 간격까지 없앤다.** 아이콘만 숨기면 빈 칸과 flex 간격이
+        # 그대로 남아 제목이 20px 오른쪽으로 밀린다 — 바로 아래 `Capa LOB 현황` 과 첫 글자가
+        # 어긋나 두 상자가 계단처럼 보인다.
+        f"""
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary
         span:has(> [data-testid="stIconMaterial"]) {{
         display: none;
     }}
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary > span {{
         gap: 0;
-    }}
-    /* 제목 첫 글자를 아래 대시보드 상자의 제목과 **같은 세로선**에 세운다. 두 상자는
-       테두리 위치가 같으므로 안쪽 여백만 맞추면 된다(테두리 1px + 안쪽 14px). 줄 전체를
-       눌러 여닫는다는 것은 손 모양 커서가 말한다. */
+    }}"""
+        # 제목 첫 글자를 아래 대시보드 상자의 제목과 **같은 세로선**에 세운다. 두 상자는
+        # 테두리 위치가 같으므로 안쪽 여백만 맞추면 된다(테두리 1px + 안쪽 14px). 줄 전체를
+        # 눌러 여닫는다는 것은 손 모양 커서가 말한다.
+        f"""
     .st-key-{SUMMARY_NOTICE_KEY} [data-testid="stExpander"] summary {{
         justify-content: flex-start;
         cursor: pointer;
@@ -653,6 +663,7 @@ def summary_notice_style() -> str:
     }}
     </style>
     """
+    )
 
 
 def render_summary_notice(note: str) -> None:

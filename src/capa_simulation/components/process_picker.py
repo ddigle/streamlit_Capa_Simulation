@@ -71,13 +71,15 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
         f".st-key-{TILE_WRAPPER_PREFIX}{index}:hover::after {{ content: {_css_string(text)}; }}"
         for index, text in enumerate(tooltips)
     )
-    return f"""
+    return (
+        f"""
 <style>
 {root} {{
     position: relative;
-}}
-/* 버튼 위로 띄운다. 아래로 띄우면 맨 아래 줄에서 팝업에 스크롤이 생겨 화면이 흔들린다. 폭은
-   버튼과 같게 두어 팝업 가장자리 버튼에서도 옆으로 넘치지 않는다. */
+}}"""
+        # 버튼 위로 띄운다. 아래로 띄우면 맨 아래 줄에서 팝업에 스크롤이 생겨 화면이 흔들린다. 폭은
+        # 버튼과 같게 두어 팝업 가장자리 버튼에서도 옆으로 넘치지 않는다.
+        f"""
 {root}:hover::after {{
     position: absolute;
     left: 0;
@@ -104,6 +106,7 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
 {contents}
 </style>
 """
+    )
 
 
 def auto_off_mark_line(

@@ -5,6 +5,9 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+from streamlit.string_util import clean_text
+
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
     SHELL_STYLE,
@@ -17,6 +20,7 @@ from capa_simulation.components.app_header import (
 )
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import STATUS_SLOT_KEY
+from capa_simulation.design import theme
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
     APP_CONTACT_EMAIL,
@@ -430,6 +434,72 @@ def test_user_text_is_escaped_inside_the_css_string() -> None:
     assert css_string("한글 · r4") == "한글 · r4"
     css = _header_css('x"</style><b>', "y")
     assert "</style>" not in css and "<b>" not in css
+
+
+def test_the_styles_sent_every_run_carry_no_css_comments() -> None:
+    """머리 띠 CSS 와 껍데기 스타일은 회차마다 소켓으로 다시 간다. CSS 주석은 그때마다 함께 가는
+    바이트일 뿐이라 싣지 않는다 — 규칙의 설명은 `app_header` 의 파이썬 주석에 둔다.
+
+    주석은 템플릿에서 뺀다. 시나리오명을 넣은 뒤의 CSS 에 정규식을 걸어 걷으면 안 된다 —
+    `css_string` 은 `/*`·`*/` 를 이스케이프하지 않는다. 그 글자는 CSS 문자열 안이라 브라우저에는
+    주석이 아니지만, 정규식은 그것을 주석으로 읽고 사이의 규칙까지 지운다.
+    """
+    for css in (
+        SHELL_STYLE,
+        _header_css(),
+        _header_css(*header_lines(LABEL, official=("revision-4", 4), unsaved=False)),
+    ):
+        assert "/*" not in css and "*/" not in css
+    css = _header_css("이름 /* 위", "아래 */ 끝")
+    assert 'content: "이름 /* 위";' in css
+    assert 'content: "아래 */ 끝";' in css
+
+
+def _min_cached_message_size() -> int:
+    """`.streamlit/config.toml` 의 `[global] minCachedMessageSize` 를 읽는다.
+
+    3.10 이라 `tomllib` 이 없다 — `test_typography` 가 `[server]` 를 읽듯 정규식으로 한 줄만 본다.
+    """
+    text = (Path(__file__).resolve().parents[1] / ".streamlit" / "config.toml").read_text(
+        encoding="utf-8"
+    )
+    block = re.search(r"^\[global\]\n(.*?)(?=^\[)", text, flags=re.MULTILINE | re.DOTALL)
+    assert block, "config.toml 에 [global] 블록이 없습니다."
+    value = re.search(r"^minCachedMessageSize = (\d+)$", block.group(1), flags=re.MULTILINE)
+    assert value, "config.toml [global] 에 minCachedMessageSize 가 없습니다."
+    return int(value.group(1))
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_the_styles_sent_every_run_stay_above_the_browser_cache_threshold(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """회차마다 다시 가는 머리 띠·HOME 제목 줄·공지 상자 스타일은 캐시 문턱 이상이어야 한다.
+
+    Streamlit 은 메타데이터를 뺀 직렬화가 `global.minCachedMessageSize` 이상인 요소만 브라우저
+    캐시에 올리고, 같은 내용이 다시 오면 해시 참조로 보낸다. 문턱 아래면 내용이 그대로여도 회차마다
+    통째로 간다. 머리 띠(수 KB)와 HOME 두 블록(1KB 남짓)은 기본 문턱(10,000B)보다 작아 문턱을
+    `config.toml` 에서 낮춰 두었다 — 세 블록이 그 아래로 내려가지 않는지 여기서 본다. 본문의
+    UTF-8 길이는 직렬화 크기의 하한이라 이 비교를 통과하면 실제 메시지도 문턱 이상이다. 실패하면
+    문턱을 더 낮출지, 그 블록이 회차마다 통째로 가도 되는지 따져 본다.
+    """
+    from capa_simulation.components.home_rendering import (
+        dashboard_title_row_style,
+        summary_notice_style,
+    )
+
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    threshold = _min_cached_message_size()
+    blocks = {
+        # 두 줄을 비운 머리 띠 — 실제 머리 띠는 시나리오 이름만큼 이보다 길다.
+        "머리 띠": f"<style>{_header_css('', '')}</style>",
+        "HOME 제목 줄": dashboard_title_row_style(),
+        "HOME 공지 상자": summary_notice_style(),
+    }
+    for name, body in blocks.items():
+        # `st.html` 은 본문을 `clean_text`(들여쓰기 걷기·앞뒤 공백 자르기)로 다듬어 싣는다.
+        size = len(clean_text(body).encode("utf-8"))
+        assert size >= threshold, f"{name} {size}B < minCachedMessageSize {threshold}B"
 
 
 def test_scenario_text_cannot_be_rewritten_by_the_template_sentinels() -> None:

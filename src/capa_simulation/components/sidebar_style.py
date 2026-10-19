@@ -207,7 +207,8 @@ def build_sidebar_stylesheet(
     #
     # 떠 있는 상태를 hover 에서도 그대로 **유지**한다. 활성 링크가 마우스에 반응해 더
     # 움직이면 "지금 여기" 가 아니라 "누를 수 있는 것" 으로 읽힌다.
-    active_nav_style = f"""
+    active_nav_style = (
+        f"""
         {active_link},
         {active_link}:hover,
         {active_link}:focus-visible {{
@@ -220,10 +221,11 @@ def build_sidebar_stylesheet(
         }}
         {active_link} p {{
             color: {tokens.ACCENT};
-        }}
-        /* 헤더 두 글줄이 이미 3px ACCENT 막대를 쓴다. 같은 막대를 지금 있는 자리에도
-           세우면 헤더와 사이드바가 한 언어를 쓴다. 여백은 **모든 링크**에 주고 막대만
-           활성에 켠다 — 활성에만 주면 라벨 시작 위치가 들쭉날쭉해진다. */
+        }}"""
+        # 헤더 두 글줄이 이미 3px ACCENT 막대를 쓴다. 같은 막대를 지금 있는 자리에도 세우면 헤더와
+        # 사이드바가 한 언어를 쓴다. 여백은 **모든 링크**에 주고 막대만 활성에 켠다 — 활성에만 주면
+        # 라벨 시작 위치가 들쭉날쭉해진다.
+        f"""
         {active_link}::before {{
             content: "";
             position: absolute;
@@ -237,45 +239,52 @@ def build_sidebar_stylesheet(
         {HOME_LINK}::before {{
             content: none;
         }}"""
+    )
     conditions_panel_style = _conditions_panel_style()
-    return f"""
+    # 규칙마다 설명은 바로 위 파이썬 주석에 둔다 — 이 시트는 화면을 옮길 때마다 소켓으로 다시 가므로
+    # CSS 주석을 실으면 그만큼이 매번 함께 간다.
+    return (
+        # **위쪽 여백은 줄이지 않는다.** 장식이 아니라 겹쳐 있는 헤더 띠(실측 56px)를 피하는
+        # 자리다 — 브라우저에서 재니 2.25rem 에서 제목 줄상자가 띠 안으로 8.8px 들어가고 2.75rem
+        # 에서도 1.3px 겹친다. 3rem 이 글자 윗선과 띠 사이에 12px 을 남기는 최소값이다. 좌우만
+        # 줄인다 — 표와 차트가 가로로 길어 0.25rem 을 덜어도 읽는 데 지장이 없고, 사이드바를 좁힌
+        # 만큼 본문이 그 폭을 가져간다.
+        """
         <style>
-        /* **위쪽 여백은 줄이지 않는다.** 장식이 아니라 겹쳐 있는 헤더 띠(실측 56px)를
-           피하는 자리다 — 브라우저에서 재니 2.25rem 에서 제목 줄상자가 띠 안으로 8.8px
-           들어가고 2.75rem 에서도 1.3px 겹친다. 3rem 이 글자 윗선과 띠 사이에 12px 을
-           남기는 최소값이다. 좌우만 줄인다 — 표와 차트가 가로로 길어 0.25rem 을 덜어도
-           읽는 데 지장이 없고, 사이드바를 좁힌 만큼 본문이 그 폭을 가져간다. */
-        [data-testid="stMainBlockContainer"] {{
+        [data-testid="stMainBlockContainer"] {
             padding-left: 1.25rem !important;
             padding-right: 1.25rem !important;
             padding-top: 3rem !important;
-        }}
-
+        }
+"""
+        # 「돌아오는 자리」는 그라데이션 테두리가 말하고 글자는 그 위에 한 단계만 올라선다. 상자
+        # 머리글(1rem)의 1.38배다. **`a` 와 `a p` 를 함께 적는다** — 요약 줄과 같은 이유로, 안쪽
+        # 마크다운 문단이 제 값으로 덮는다.
+        """
         .st-key-home_navigation a,
-        .st-key-home_navigation a p {{
-            /* 「돌아오는 자리」는 그라데이션 테두리가 말하고 글자는 그 위에 한 단계만
-               올라선다. 상자 머리글(1rem)의 1.38배다. **`a` 와 `a p` 를 함께 적는다** —
-               요약 줄과 같은 이유로, 안쪽 마크다운 문단이 제 값으로 덮는다. */
+        .st-key-home_navigation a p {
             font-size: 1.38rem;
             font-weight: 700;
             line-height: 1.3;
-        }}
-        /* 위아래 여백은 `rem` 이라 글자 크기를 따라가지 않는다 — 글자만 키워도 이 값은
-           그대로다. 접힌 상자보다 한 뼘 높은 칸을 만드는 자리다. */
+        }"""
+        # 위아래 여백은 `rem` 이라 글자 크기를 따라가지 않는다 — 글자만 키워도 이 값은 그대로다.
+        # 접힌 상자보다 한 뼘 높은 칸을 만드는 자리다.
+        f"""
         {HOME_LINK} {{
             padding-top: 0.5rem;
             padding-bottom: 0.5rem;
-        }}
-        /* HOME 은 누르지 않았을 때도 보여야 한다. 다른 항목처럼 납작하게 두면 글자만
-           클 뿐 "여기로 돌아온다" 가 읽히지 않는다.
-
-           테두리에만 그라데이션을 남긴다. 한 요소에 배경 두 겹을 깔고 하나는 `padding-box`
-           로 면을, 하나는 `border-box` 로 테두리를 맡기는 방식이다 — `border-color` 로는
-           그라데이션을 줄 수 없어서 테두리를 투명하게 두고 그 자리에 두 번째 배경이
-           비치게 한다. 두 배경의 차례를 바꾸면 면이 테두리를 덮는다.
-
-           `:hover` 를 같이 적는 이유는 아래 활성 규칙과 같다. Streamlit 의 emotion
-           `:hover` (0,2,0) 가 클래스 하나뿐인 선택자를 이긴다. */
+        }}"""
+        # HOME 은 누르지 않았을 때도 보여야 한다. 다른 항목처럼 납작하게 두면 글자만 클 뿐 "여기로
+        # 돌아온다" 가 읽히지 않는다.
+        #
+        # 테두리에만 그라데이션을 남긴다. 한 요소에 배경 두 겹을 깔고 하나는 `padding-box` 로 면을,
+        # 하나는 `border-box` 로 테두리를 맡기는 방식이다 — `border-color` 로는 그라데이션을 줄 수
+        # 없어서 테두리를 투명하게 두고 그 자리에 두 번째 배경이 비치게 한다. 두 배경의 차례를
+        # 바꾸면 면이 테두리를 덮는다.
+        #
+        # `:hover` 를 같이 적는 이유는 아래 활성 규칙과 같다. Streamlit 의 emotion `:hover` (0,2,0)
+        # 가 클래스 하나뿐인 선택자를 이긴다.
+        f"""
         {HOME_LINK},
         {HOME_LINK}:hover,
         {HOME_LINK}:focus-visible {{
@@ -295,9 +304,10 @@ def build_sidebar_stylesheet(
         {HOME_LINK} p {{
             text-align: center;
             color: {tokens.ACCENT};
-        }}
-        /* 마우스가 스칠 때 광택 띠가 한 번 지나간다. 평소에는 왼쪽 밖에 세워 두므로
-           가만히 있는 화면에서는 아무것도 움직이지 않는다. */
+        }}"""
+        # 마우스가 스칠 때 광택 띠가 한 번 지나간다. 평소에는 왼쪽 밖에 세워 두므로 가만히 있는
+        # 화면에서는 아무것도 움직이지 않는다.
+        f"""
         {HOME_LINK}::after {{
             content: "";
             position: absolute;
@@ -317,24 +327,27 @@ def build_sidebar_stylesheet(
             to {{
                 transform: translateX(120%);
             }}
-        }}
-        /* 움직임을 줄여 달라고 한 사용자에게는 띠를 보내지 않는다. */
+        }}"""
+        # 움직임을 줄여 달라고 한 사용자에게는 띠를 보내지 않는다.
+        f"""
         @media (prefers-reduced-motion: reduce) {{
             {HOME_LINK}:hover::after {{
                 animation: none;
             }}
         }}
-
-        /* 지금 보고 있는 페이지를 **융기**로 알린다. Streamlit 이 주는 활성 표시는 알파
-           0.15 의 흐린 회색 하나뿐이라 사실상 보이지 않는다.
-
-           이 앱에는 그림자가 이 규칙 말고 한 군데도 없다. 그래서 사이드바에서만 쓰면
-           장식이 아니라 신호가 된다 — 떠 있는 것이 지금 있는 곳이다. */
+"""
+        # 지금 보고 있는 페이지를 **융기**로 알린다. Streamlit 이 주는 활성 표시는 알파 0.15 의 흐린
+        # 회색 하나뿐이라 사실상 보이지 않는다.
+        #
+        # 이 앱에는 그림자가 이 규칙 말고 한 군데도 없다. 그래서 사이드바에서만 쓰면 장식이 아니라
+        # 신호가 된다 — 떠 있는 것이 지금 있는 곳이다.
+        #
+        # 링크의 `position`·`padding` 은 활성 막대가 설 자리다. 막대가 없는 링크도 같은 여백을
+        # 가져야 라벨이 한 줄로 선다. 네 변을 모두 적는다 — 세 변만 적으면 나머지 한 변이 Streamlit
+        # 기본값으로 남아 좌우가 어긋난다.
+        f"""
         {NAV_LINK} {{
             border: 1px solid transparent;
-            /* 활성 막대가 설 자리. 막대가 없는 링크도 같은 여백을 가져야 라벨이 한 줄로
-               선다. 네 변을 모두 적는다 — 세 변만 적으면 나머지 한 변이 Streamlit 기본값
-               으로 남아 좌우가 어긋난다. */
             position: relative;
             padding: 0.2rem 0.5rem 0.2rem 0.75rem;
             transition:
@@ -347,24 +360,25 @@ def build_sidebar_stylesheet(
             box-shadow: 0 2px 6px {tokens.NAV_SHADOW};
         }}
 {active_nav_style}
-
-        /* 그룹 이름을 옆 상자의 제목(h4·1rem·700)과 같은 선에 세운다. 접히는 제목(조건 카드·
-           `Support`)은 한글 낱말의 음절 사이가 아니라 띄어쓰기에서 접는다 — 좁은 사이드바에서
-           「LOB 표시 조 / 건」 으로 끊겼다. 띄어쓰기 없이 칸보다 긴 낱말만 아무 데서나 끊는다. */
+"""
+        # 그룹 이름을 옆 상자의 제목(h4·1rem·700)과 같은 선에 세운다. 접히는 제목(조건
+        # 카드·`Support`)은 한글 낱말의 음절 사이가 아니라 띄어쓰기에서 접는다 — 좁은 사이드바에서
+        # 「LOB 표시 조 / 건」 으로 끊겼다. 띄어쓰기 없이 칸보다 긴 낱말만 아무 데서나 끊는다.
+        f"""
         {group_title_selectors} {{
             font-size: 1rem;
             font-weight: 700;
             word-break: keep-all;
             overflow-wrap: anywhere;
-        }}
-        /* 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴
-           「Dynamic Capa」 도 한 줄이고, 사이드바를 약 205px 보다 좁게 끌면 말줄임으로 준다.
-           이 규칙이 없으면 좁은 사이드바에서 긴 제목이 두 줄로 접히고 칸보다 긴 낱말은 가운데서
-           끊긴다(위 `overflow-wrap: anywhere`). 말줄임을 거는 것은 문단의 세 줄이다. 1.63 은
-           마크다운 칸(flex 항목)에 `max-width: 100%` 를 걸어 칸이 이미 부모 폭 아래로 준다 —
-           `min-width: 0` 은 판올림에서 그 값이 빠져도 칸이 글 폭에 묶이지 않게 하는 보험이다(둘 다
-           없으면 말줄임 없이 잘린다. 1.63 DOM: 요약 줄 → span → div (overflow hidden) → 마크다운
-           칸 → 문단). */
+        }}"""
+        # 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴 「Dynamic
+        # Capa」 도 한 줄이고, 사이드바를 약 205px 보다 좁게 끌면 말줄임으로 준다. 이 규칙이 없으면
+        # 좁은 사이드바에서 긴 제목이 두 줄로 접히고 칸보다 긴 낱말은 가운데서 끊긴다(위
+        # `overflow-wrap: anywhere`). 말줄임을 거는 것은 문단의 세 줄이다. 1.63 은 마크다운 칸(flex
+        # 항목)에 `max-width: 100%` 를 걸어 칸이 이미 부모 폭 아래로 준다 — `min-width: 0` 은
+        # 판올림에서 그 값이 빠져도 칸이 글 폭에 묶이지 않게 하는 보험이다(둘 다 없으면 말줄임 없이
+        # 잘린다. 1.63 DOM: 요약 줄 → span → div (overflow hidden) → 마크다운 칸 → 문단).
+        f"""
         {group_title_shell_selectors} {{
             min-width: 0;
         }}
@@ -372,19 +386,21 @@ def build_sidebar_stylesheet(
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-        }}
-        /* 사이드바 페이지 링크 글자(단독 상자·하위 화면)도 넘치면 말줄임이다. 1.63 은 바깥 라벨
-           `span` 에 한 줄·말줄임을 걸지만 넘치는 것은 그 안 마크다운 칸의 문단이라(`text-overflow`
-           는 물려받지 않는다) 좁은 사이드바에서 글자가 반쯤 잘려 보였다(「Capa Chatbc」). */
+        }}"""
+        # 사이드바 페이지 링크 글자(단독 상자·하위 화면)도 넘치면 말줄임이다. 1.63 은 바깥 라벨
+        # `span` 에 한 줄·말줄임을 걸지만 넘치는 것은 그 안 마크다운 칸의 문단이라(`text-overflow`
+        # 는 물려받지 않는다) 좁은 사이드바에서 글자가 반쯤 잘려 보였다(「Capa Chatbc」).
+        f"""
         {NAV_LINK} [data-testid="stMarkdownContainer"] p {{
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-        }}
-        /* 구역 제목은 상자가 아니라 **경계 표시**다. 위 목록과는 한 뼘 떼고 아래 상자에는
-           붙여, 제목이 어느 무리의 것인지 자리로 읽히게 한다. 글자는 상자 제목(1rem)보다
-           한참 작은 보조색이라 상자와 무게를 다투지 않는다. 좌우 0.3rem 은 상자 테두리
-           안쪽에 글자를 세우는 값이다. */
+        }}"""
+        # 구역 제목은 상자가 아니라 **경계 표시**다. 위 목록과는 한 뼘 떼고 아래 상자에는 붙여,
+        # 제목이 어느 무리의 것인지 자리로 읽히게 한다. 글자는 상자 제목(1rem)보다 한참 작은
+        # 보조색이라 상자와 무게를 다투지 않는다. 좌우 0.3rem 은 상자 테두리 안쪽에 글자를 세우는
+        # 값이다.
+        f"""
         {section_selectors} {{
             margin-top: 0.55rem;
             margin-bottom: -0.12rem;
@@ -399,60 +415,64 @@ def build_sidebar_stylesheet(
             font-size: 0.8rem;
             font-weight: 700;
             letter-spacing: 0.02em;
-        }}
-        /* 홀로 남은 「조회 조건」 제목. 제목은 페이지보다 먼저 늘 같은 자리에 서고, 그 아래에 설
-           상자가 사이드바에 하나도 없을 때만 감춘다(`lone_conditions_heading_selector`). */
+        }}"""
+        # 홀로 남은 「조회 조건」 제목. 제목은 페이지보다 먼저 늘 같은 자리에 서고, 그 아래에 설
+        # 상자가 사이드바에 하나도 없을 때만 감춘다(`lone_conditions_heading_selector`).
+        f"""
         {lone_conditions_heading_selectors} {{
             display: none;
-        }}
-        /* **펼친 요약 줄의 면색은 덮을 수 있다.** Streamlit 이 펼침 상태에만 붙이는 클래스로
-           요약 줄에 면을 아주 살짝 눌러 칠한다(실측 RGB 밝게 251·252·253, 어둡게
-           24·24·28). `.st-key-* details[open] > summary` 하나로 `!important` 없이도
-           바뀐다(Streamlit 1.63, 두 테마 실측).
-
-           전에 이 자리에 「덮지 못한다」고 적었던 것은 **잰 방법이 틀려서**였다. 요약 줄에
-           `background-color 0.15s` 전환이 걸려 있어, 규칙을 넣자마자 계산값을 읽으면 전환의
-           시작값인 옛 색이 나온다. 면색을 재는 검증은 전환이 끝난 뒤(0.4초 뒤) 읽는다. */
-
-        /* 하위를 가르던 세로선은 없앴다. 그 일을 이제 **확장 패널 자신이** 한다 —
-           펼친 것과 접힌 것이 경계를 대신 말하므로, 선을 더 그으면 안쪽이 두 번
-           들여써진다. */
-
-        /* 그룹 상자에는 배경을 칠하지 않는다. 상자였을 때는 제목 자리를 「머리칸」으로
-           읽히게 하려고 위쪽만 한 단계 눌러 칠했는데, 지금은 그 자리가 **확장 패널의
-           `summary`** 이고 Streamlit 이 이미 한 단계 눌러 칠한다. 덧칠하면 테두리를 가진
-           확장 패널 **바깥** 래퍼에 얹혀, 모서리가 각진 띠가 한 겹 더 둘러진다. */
-
-        /* 사이드바를 촘촘하게. 기본 세로 간격은 본문 기준이라 박스가 예닐곱 개 쌓이는
-           사이드바에서는 스크롤만 길어진다. */
+        }}"""
+        # **펼친 요약 줄의 면색은 덮을 수 있다.** Streamlit 이 펼침 상태에만 붙이는 클래스로 요약
+        # 줄에 면을 아주 살짝 눌러 칠한다(실측 RGB 밝게 251·252·253, 어둡게 24·24·28).
+        # `.st-key-* details[open] > summary` 하나로 `!important` 없이도 바뀐다(Streamlit 1.63, 두
+        # 테마 실측).
+        #
+        # 전에 이 자리에 「덮지 못한다」고 적었던 것은 **잰 방법이 틀려서**였다. 요약 줄에
+        # `background-color 0.15s` 전환이 걸려 있어, 규칙을 넣자마자 계산값을 읽으면 전환의 시작값인
+        # 옛 색이 나온다. 면색을 재는 검증은 전환이 끝난 뒤(0.4초 뒤) 읽는다.
+        #
+        # 하위를 가르던 세로선은 없앴다. 그 일을 이제 **확장 패널 자신이** 한다 — 펼친 것과 접힌
+        # 것이 경계를 대신 말하므로, 선을 더 그으면 안쪽이 두 번 들여써진다.
+        #
+        # 그룹 상자에는 배경을 칠하지 않는다. 상자였을 때는 제목 자리를 「머리칸」으로 읽히게 하려고
+        # 위쪽만 한 단계 눌러 칠했는데, 지금은 그 자리가 **확장 패널의 `summary`** 이고 Streamlit 이
+        # 이미 한 단계 눌러 칠한다. 덧칠하면 테두리를 가진 확장 패널 **바깥** 래퍼에 얹혀, 모서리가
+        # 각진 띠가 한 겹 더 둘러진다.
+        #
+        # 사이드바를 촘촘하게. 기본 세로 간격은 본문 기준이라 박스가 예닐곱 개 쌓이는 사이드바에서는
+        # 스크롤만 길어진다.
+        f"""
         [data-testid="stSidebarContent"] [data-testid="stVerticalBlock"] {{
             gap: {_SIDEBAR_BLOCK_GAP};
-        }}
-        /* 조회 컨트롤 넷에 주던 `padding: 0.55rem 0.7rem` 은 없앴다. 상자였을 때는 안쪽
-           위젯을 들여놓는 여백이었는데, 확장 패널은 제 여백을 갖는다 — 남겨 두면 그 여백이
-           **요약 줄과 테두리까지** 밀어 접힌 줄이 그룹 상자보다 안쪽으로 들어간다. */
-        /* 링크 하나뿐인 상자는 **좌우 여백을 주지 않는다.** 그룹 상자는 확장 패널이 제
-           들여쓰기를 갖는데 이쪽은 링크가 바로 들어가서, 상자에까지 여백을 주면 글자가
-           그룹 제목보다 10px 오른쪽으로 밀린다(실측 아이콘 42 대 32). 세로는 줄여 접힌
-           그룹과 같은 높이로 맞춘다. */
+        }}"""
+        # 조회 컨트롤 넷에 주던 `padding: 0.55rem 0.7rem` 은 없앴다. 상자였을 때는 안쪽 위젯을
+        # 들여놓는 여백이었는데, 확장 패널은 제 여백을 갖는다 — 남겨 두면 그 여백이 **요약 줄과
+        # 테두리까지** 밀어 접힌 줄이 그룹 상자보다 안쪽으로 들어간다.
+        #
+        # 링크 하나뿐인 상자는 **좌우 여백을 주지 않는다.** 그룹 상자는 확장 패널이 제 들여쓰기를
+        # 갖는데 이쪽은 링크가 바로 들어가서, 상자에까지 여백을 주면 글자가 그룹 제목보다 10px
+        # 오른쪽으로 밀린다(실측 아이콘 42 대 32). 세로는 줄여 접힌 그룹과 같은 높이로 맞춘다 — 세로
+        # 0.15rem 이 접힌 그룹 상자와 같은 35px 을 만든다(실측).
+        f"""
         {solo_box_selectors} {{
-            /* 세로 0.15rem 이 접힌 그룹 상자와 같은 35px 을 만든다(실측). */
             padding: 0.15rem 0;
-        }}
-        /* 그 링크는 그룹 제목과 **같은 층위**다. 하위 페이지가 아니라 최상위 항목이므로
-           옆 상자의 제목과 같은 무게로 읽혀야 한다. */
+        }}"""
+        # 그 링크는 그룹 제목과 **같은 층위**다. 하위 페이지가 아니라 최상위 항목이므로 옆 상자의
+        # 제목과 같은 무게로 읽혀야 한다.
+        f"""
         {solo_title_selectors} {{
             font-size: 1rem;
             font-weight: 700;
         }}
-
-        /* **누르면 무슨 일이 일어나는지를 오른쪽 끝 표식이 늘 말한다.** 상자는 모두 한
-           모양이라 모양으로는 가를 수 없다. `→` 는 곧바로 다른 화면으로 간다, `⌄` 는 이
-           자리에서 펼쳐진다(펴면 뒤집힌다). 마우스를 올려야 보이는 신호는 신호가 아니다.
-
-           `content` 는 두 번 적는다. 뒤의 것은 대체 텍스트를 비운 판이라 스크린리더가
-           합자 이름(「expand_more」)을 링크 이름에 섞어 읽지 않는다. 그 문법을 모르는
-           브라우저는 뒤의 선언을 버리고 앞의 것을 쓴다. */
+"""
+        # **누르면 무슨 일이 일어나는지를 오른쪽 끝 표식이 늘 말한다.** 상자는 모두 한 모양이라
+        # 모양으로는 가를 수 없다. `→` 는 곧바로 다른 화면으로 간다, `⌄` 는 이 자리에서
+        # 펼쳐진다(펴면 뒤집힌다). 마우스를 올려야 보이는 신호는 신호가 아니다.
+        #
+        # `content` 는 두 번 적는다. 뒤의 것은 대체 텍스트를 비운 판이라 스크린리더가 합자
+        # 이름(「expand_more」)을 링크 이름에 섞어 읽지 않는다. 그 문법을 모르는 브라우저는 뒤의
+        # 선언을 버리고 앞의 것을 쓴다.
+        f"""
         {solo_link_marker_selectors} {{
             content: "arrow_forward";
             content: "arrow_forward" / "";
@@ -486,116 +506,125 @@ def build_sidebar_stylesheet(
             {summary_marker_selectors} {{
                 transition: none;
             }}
-        }}
-        /* 계산에 걸리는 조건 카드는 왼쪽 아이콘이 `ACCENT` 다. 위 목록 상자와 같은 모양으로
-           서되, 눌러서 바꾸는 것이 화면이 아니라 **지금 화면의 계산 조건**이라는 표시다. 통합 조건
-           패널의 면·아이콘은 따로 건다(`_conditions_panel_style`). */
+        }}"""
+        # 계산에 걸리는 조건 카드는 왼쪽 아이콘이 `ACCENT` 다. 위 목록 상자와 같은 모양으로 서되,
+        # 눌러서 바꾸는 것이 화면이 아니라 **지금 화면의 계산 조건**이라는 표시다. 통합 조건 패널의
+        # 면·아이콘은 따로 건다(`_conditions_panel_style`).
+        f"""
         {condition_icon_selectors} {{
             color: {tokens.ACCENT};
-        }}
-        /* 조건 카드에 옅은 `ACCENT` 면을 깐다. 요약 줄과 펼친 몸이 **한 장의 면**으로
-           읽히도록, Streamlit 이 펼친 요약 줄에 까는 제 면은 걷는다(덮이는 것을 실측했다 —
-           위 「펼친 요약 줄의 면색은 덮을 수 있다」). 마우스를 올리거나 키보드로 닿았을 때는
-           걷지 않는다 — 그 순간 면이 바뀌는 것이 「누를 수 있다」는 신호다. */
+        }}"""
+        # 조건 카드에 옅은 `ACCENT` 면을 깐다. 요약 줄과 펼친 몸이 **한 장의 면**으로 읽히도록,
+        # Streamlit 이 펼친 요약 줄에 까는 제 면은 걷는다(덮이는 것을 실측했다 — 위 「펼친 요약 줄의
+        # 면색은 덮을 수 있다」). 마우스를 올리거나 키보드로 닿았을 때는 걷지 않는다 — 그 순간 면이
+        # 바뀌는 것이 「누를 수 있다」는 신호다.
+        f"""
         {condition_face_selectors} {{
             background-color: {tokens.NAV_CONTROL_TINT};
         }}
         {condition_summary_selectors} {{
             background-color: transparent;
-        }}
-        /* 상자 안 알림(저장 검사 오류·경고 등)은 제 면이 반투명이라 청록과 섞인다. 오류
-           글자 대비가 밝게 4.57 → 3.89, 어둡게 4.51 → 3.71 로 떨어졌다(실측). 알림 밑에
-           `SURFACE` 를 한 장 깔아 면 밖과 같은 색으로 읽히게 한다. 모서리는 알림 면의
-           모서리(실측 10px)와 같게 둔다. */
+        }}"""
+        # 상자 안 알림(저장 검사 오류·경고 등)은 제 면이 반투명이라 청록과 섞인다. 오류 글자 대비가
+        # 밝게 4.57 → 3.89, 어둡게 4.51 → 3.71 로 떨어졌다(실측). 알림 밑에 `SURFACE` 를 한 장 깔아
+        # 면 밖과 같은 색으로 읽히게 한다. 모서리는 알림 면의 모서리(실측 10px)와 같게 둔다.
+        f"""
         {condition_alert_selectors} {{
             background-color: {tokens.SURFACE};
             border-radius: 10px;
-        }}
-        /* 꺼진 스위치의 트랙은 Streamlit 기본 면(밝은 회색)이라 청록 면 위에서 1.03:1 로
-           사라지고 흰 손잡이만 남았다(2026-10-05 E2E). 1px 윤곽을 `TEXT_MUTED` 로 둘러 면에서
-           떼어 낸다(밝게 4.6:1). 켜진 스위치는 강조색이라 건드리지 않는다. */
+        }}"""
+        # 꺼진 스위치의 트랙은 Streamlit 기본 면(밝은 회색)이라 청록 면 위에서 1.03:1 로 사라지고 흰
+        # 손잡이만 남았다(2026-10-05 E2E). 1px 윤곽을 `TEXT_MUTED` 로 둘러 면에서 떼어 낸다(밝게
+        # 4.6:1). 켜진 스위치는 강조색이라 건드리지 않는다.
+        f"""
         {condition_switch_off_selectors} {{
             box-shadow: inset 0 0 0 1px {tokens.TEXT_MUTED};
-        }}
-        /* HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는
-           자리」라 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다. */
-        [data-testid="stLayoutWrapper"]:has(> .st-key-home_navigation) {{
+        }}"""
+        # HOME 과 첫 그룹 박스 사이만 한 칸 더 띄운다. HOME 은 상자가 아니라 「돌아오는 자리」라
+        # 아래 목록과 같은 간격으로 붙어 있으면 목록의 첫 항목처럼 읽힌다.
+        """
+        [data-testid="stLayoutWrapper"]:has(> .st-key-home_navigation) {
             margin-bottom: 0.45rem;
-        }}
-        /* HOME 만 상자가 없어 테두리가 바깥 끝에 붙었다. 다른 링크의 테두리는 상자 안쪽
-           여백만큼 들어와 있어, 같은 링크인데 HOME 만 혼자 넓어 보였다. 같은 만큼 들여
-           모든 링크 테두리를 한 선에 세운다. */
-        /* HOME 은 상자 안에 든 링크가 아니라 **상자 자리에 선 링크**다. 그래서 폭을
-           맞출 상대는 상자 안쪽 링크가 아니라 아래 그룹 상자들의 테두리다 — 들여쓰면
-           맨 위 칸만 혼자 짧아 보인다. 여백을 주지 않아 상자와 같은 20~300 을 쓴다. */
+        }"""
+        # HOME 만 상자가 없어 테두리가 바깥 끝에 붙었다. 다른 링크의 테두리는 상자 안쪽 여백만큼
+        # 들어와 있어, 같은 링크인데 HOME 만 혼자 넓어 보였다. 같은 만큼 들여 모든 링크 테두리를 한
+        # 선에 세운다.
+        #
+        # HOME 은 상자 안에 든 링크가 아니라 **상자 자리에 선 링크**다. 그래서 폭을 맞출 상대는 상자
+        # 안쪽 링크가 아니라 아래 그룹 상자들의 테두리다 — 들여쓰면 맨 위 칸만 혼자 짧아 보인다.
+        # 여백을 주지 않아 상자와 같은 20~300 을 쓴다.
+        f"""
         .st-key-home_navigation {{
             padding-left: 0;
             padding-right: 0;
         }}
 
 {conditions_panel_style}
-
-        /* `Support` 상자에 서식 예외를 두지 않는다. 테두리도 요약 줄 글자도 다른
-           상자와 같다 — 계산 흐름 밖이라는 것은 서식이 아니라 **맨 아래라는 자리와 앞
-           간격**이 말한다(바로 아래 규칙). 면이나 글자를 달리하면 그 자리가 뜻을 잃는다. */
-
-        /* `Support` 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
-           `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「LOB 표시
-           조건」 카드가 그래서 이 상자 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다.
-           `order` 는 **flex 항목**이 받아야 한다. 상자(`st.container`)였을 때는 `.st-key-*`
-           가 그 한 겹 안쪽이라 바깥 래퍼에 줘야 했는데, **확장 패널은 `.st-key-*` 요소
-           자신이 flex 항목**이다(프런트엔드가 확장 패널일 때만 래퍼에 그 클래스를 붙인다).
-           둘 다 적어 둔다 — 맞는 쪽이 걸리고 나머지는 헛돌 뿐이다.
-
-           **앞에 한 뼘을 띄운다.** 위의 「조회 조건」 구역은 계산 조건이고 `Support` 는 다시
-           다른 화면으로 가는 목록이다. 제목을 하나 더 세우는 대신 간격으로 구역을 닫는다 —
-           간격이 없으면 `Support` 가 조건 구역의 네 번째 상자로 읽힌다(제안서 시안에서 확인). */
+"""
+        # `Support` 상자에 서식 예외를 두지 않는다. 테두리도 요약 줄 글자도 다른 상자와 같다 — 계산
+        # 흐름 밖이라는 것은 서식이 아니라 **맨 아래라는 자리와 앞 간격**이 말한다(바로 아래 규칙).
+        # 면이나 글자를 달리하면 그 자리가 뜻을 잃는다.
+        #
+        # `Support` 는 **언제나 맨 아래**다. 페이지가 자기 사이드바 요소를 그리는 것은
+        # `navigation.run()` 안이라 파이썬 차례로는 뒤에 둘 수 없다 — HOME 의 「LOB 표시 조건」
+        # 카드가 그래서 이 상자 아래에 붙었다. 세로 흐름에서 자리만 마지막으로 민다. `order` 는
+        # **flex 항목**이 받아야 한다. 상자(`st.container`)였을 때는 `.st-key-*` 가 그 한 겹
+        # 안쪽이라 바깥 래퍼에 줘야 했는데, **확장 패널은 `.st-key-*` 요소 자신이 flex
+        # 항목**이다(프런트엔드가 확장 패널일 때만 래퍼에 그 클래스를 붙인다). 둘 다 적어 둔다 —
+        # 맞는 쪽이 걸리고 나머지는 헛돌 뿐이다.
+        #
+        # **앞에 한 뼘을 띄운다.** 위의 「조회 조건」 구역은 계산 조건이고 `Support` 는 다시 다른
+        # 화면으로 가는 목록이다. 제목을 하나 더 세우는 대신 간격으로 구역을 닫는다 — 간격이 없으면
+        # `Support` 가 조건 구역의 네 번째 상자로 읽힌다(제안서 시안에서 확인).
+        f"""
         [data-testid="stLayoutWrapper"]:has(> .st-key-{admin_box_key}),
         .st-key-{admin_box_key} {{
             order: 99;
             margin-top: 0.9rem;
-        }}
-        /* **앱 정보 카드는 사이드바 바닥에 고정한다**(2026-10-07 사용자 결정). 목록·조건 카드가
-           길어지면 그 밑으로 지나가 가려진다 — 카드가 밀려 내려가지도, 목록이 카드를 덮지도 않는다.
-           짧으면 마지막 상자 바로 아래가 아니라 사이드바 바닥에 선다.
-
-           짧을 때 바닥에 세우려면 맨 위 세로 블록이 스크롤 칸 높이를 다 채워야 카드의
-           `margin-top: auto` 가 남는 높이를 가져간다. 스크롤 칸(`stSidebarContent`)부터 그
-           세로 블록까지 세로 flex 로 잇고 늘린다. `>` 로만 잇는다 — 상자 안의 세로 블록까지
-           늘리면 상자가 부푼다.
-           모두 **줄어들지 않게** 둔다. Streamlit 이 머리칸·사용자 칸에 `min-height: 0` 을 걸어
-           두어, 줄어들 수 있으면 목록이 길 때 스크롤 대신 눌린다 — 머리칸이 넘친 만큼 눌려
-           (실측 52.5 → 34px) 앱 이름 라벨이 HOME 위에 겹쳤다.
-           사용자 칸의 아래 여백(Streamlit 84px)은 걷는다. 남겨 두면 끝까지 내렸을 때 카드가
-           바닥에서 그만큼 떠 있다. */
-        [data-testid="stSidebarContent"] {{
+        }}"""
+        # **앱 정보 카드는 사이드바 바닥에 고정한다**(2026-10-07 사용자 결정). 목록·조건 카드가
+        # 길어지면 그 밑으로 지나가 가려진다 — 카드가 밀려 내려가지도, 목록이 카드를 덮지도 않는다.
+        # 짧으면 마지막 상자 바로 아래가 아니라 사이드바 바닥에 선다.
+        #
+        # 짧을 때 바닥에 세우려면 맨 위 세로 블록이 스크롤 칸 높이를 다 채워야 카드의
+        # `margin-top: auto` 가 남는 높이를 가져간다. 스크롤 칸(`stSidebarContent`)부터 그 세로
+        # 블록까지 세로 flex 로 잇고 늘린다. `>` 로만 잇는다 — 상자 안의 세로 블록까지 늘리면 상자가
+        # 부푼다.
+        # 모두 **줄어들지 않게** 둔다. Streamlit 이 머리칸·사용자 칸에 `min-height: 0` 을 걸어 두어,
+        # 줄어들 수 있으면 목록이 길 때 스크롤 대신 눌린다 — 머리칸이 넘친 만큼 눌려(실측 52.5 →
+        # 34px) 앱 이름 라벨이 HOME 위에 겹쳤다.
+        # 사용자 칸의 아래 여백(Streamlit 84px)은 걷는다. 남겨 두면 끝까지 내렸을 때 카드가 바닥에서
+        # 그만큼 떠 있다.
+        """
+        [data-testid="stSidebarContent"] {
             display: flex;
             flex-direction: column;
-        }}
-        [data-testid="stSidebarHeader"] {{
+        }
+        [data-testid="stSidebarHeader"] {
             flex-shrink: 0;
-        }}
-        [data-testid="stSidebarUserContent"] {{
+        }
+        [data-testid="stSidebarUserContent"] {
             flex: 1 0 auto;
             display: flex;
             flex-direction: column;
             padding-bottom: 0;
-        }}
-        [data-testid="stSidebarUserContent"] > div {{
+        }
+        [data-testid="stSidebarUserContent"] > div {
             flex: 1 0 auto;
             display: flex;
             flex-direction: column;
-        }}
-        [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {{
+        }
+        [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
             flex: 1 0 auto;
-        }}
-        /* 카드(`st.container`)는 바깥 래퍼가 flex 항목이다. `order` 가 페이지가 더하는 조건 카드와
-           `Support` 뒤로 밀고, `sticky` 가 스크롤 칸 바닥에 붙인다. `fixed` 는 쓰지 않는다 — 접고
-           펴는 동안의 `transform` 과 끌어서 바꾸는 폭을 따라가지 못한다.
-           면은 사이드바 면(`SURFACE`)이라 밑으로 지나가는 목록을 가리고, 윗선이 경계를 말한다.
-           `z-index` 는 사이드바 머리칸(Streamlit 11)보다 아래다.
-           면을 좌우 여백까지 펴는 것은 **그림자**다. 폭을 늘리면 스크롤 칸에 가로 스크롤이 생기지만
-           그림자는 스크롤 넓이에 들지 않는다. 위아래로 번지지 않게 `clip-path` 로 잘라 낸다. */
+        }"""
+        # 카드(`st.container`)는 바깥 래퍼가 flex 항목이다. `order` 가 페이지가 더하는 조건 카드와
+        # `Support` 뒤로 밀고, `sticky` 가 스크롤 칸 바닥에 붙인다. `fixed` 는 쓰지 않는다 — 접고
+        # 펴는 동안의 `transform` 과 끌어서 바꾸는 폭을 따라가지 못한다.
+        # 면은 사이드바 면(`SURFACE`)이라 밑으로 지나가는 목록을 가리고, 윗선이 경계를 말한다.
+        # `z-index` 는 사이드바 머리칸(Streamlit 11)보다 아래다.
+        # 면을 좌우 여백까지 펴는 것은 **그림자**다. 폭을 늘리면 스크롤 칸에 가로 스크롤이 생기지만
+        # 그림자는 스크롤 넓이에 들지 않는다. 위아래로 번지지 않게 `clip-path` 로 잘라 낸다.
+        f"""
         [data-testid="stLayoutWrapper"]:has(> .st-key-{APP_CREDITS_KEY}) {{
             order: {APP_CREDITS_ORDER};
             margin-top: auto;
@@ -607,11 +636,12 @@ def build_sidebar_stylesheet(
             border-top: 1px solid {tokens.BORDER};
             box-shadow: 0 0 0 {_APP_CREDITS_BLEED} {tokens.SURFACE};
             clip-path: inset(0 -{_APP_CREDITS_BLEED});
-        }}
-        /* 작은 글 두 줄 — 크기는 구역 제목의 설명 글(0.75rem)과 같다. 좁은 사이드바에서는 줄이
-           접히고, 띄어 쓸 곳이 없는 메일 주소도 칸 안에서 끊는다. Streamlit 은 캡션 칸에 아래
-           음수 여백(-1rem)을 걸어 다음 요소에 붙이는데, 여기서는 그만큼 글이 카드 밖으로 흘러
-           바닥 아래로 잘린다(실측 14px) — 걷는다. */
+        }}"""
+        # 작은 글 두 줄 — 크기는 구역 제목의 설명 글(0.75rem)과 같다. 좁은 사이드바에서는 줄이
+        # 접히고, 띄어 쓸 곳이 없는 메일 주소도 칸 안에서 끊는다. Streamlit 은 캡션 칸에 아래 음수
+        # 여백(-1rem)을 걸어 다음 요소에 붙이는데, 여기서는 그만큼 글이 카드 밖으로 흘러 바닥 아래로
+        # 잘린다(실측 14px) — 걷는다.
+        f"""
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] {{
             margin-bottom: 0;
         }}
@@ -621,32 +651,36 @@ def build_sidebar_stylesheet(
             line-height: 1.45;
             color: {tokens.TEXT_MUTED};
             overflow-wrap: anywhere;
-        }}
-        /* 문의처는 마크다운이 메일 링크로 만든다. 누를 수 있는 곳이라 `ACCENT` 다 — 그대로 두면
-           어두운 테마에서 Streamlit 기본 링크색(거의 흰색)으로 떠 작은 글 가운데 혼자 튄다. */
+        }}"""
+        # 문의처는 마크다운이 메일 링크로 만든다. 누를 수 있는 곳이라 `ACCENT` 다 — 그대로 두면
+        # 어두운 테마에서 Streamlit 기본 링크색(거의 흰색)으로 떠 작은 글 가운데 혼자 튄다.
+        f"""
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] a {{
             color: {tokens.ACCENT};
-        }}
-        /* 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트와 조건 패널 팝업 호스트 프래그먼트의
-           본문 칸. 아무것도 그리지 않지만(팝업은 본문 밖에 선다) 칸이 서면 본문에 간격이 하나
-           생긴다(`sidebar_status.SIDEBAR_TOGGLE_SINK_KEY`·`CONDITION_DIALOG_SINK_KEY`). */
+        }}"""
+        # 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트와 조건 패널 팝업 호스트 프래그먼트의 본문 칸.
+        # 아무것도 그리지 않지만(팝업은 본문 밖에 선다) 칸이 서면 본문에 간격이 하나
+        # 생긴다(`sidebar_status.SIDEBAR_TOGGLE_SINK_KEY`·`CONDITION_DIALOG_SINK_KEY`).
+        f"""
         [data-testid="stLayoutWrapper"]:has(> .st-key-{SIDEBAR_TOGGLE_SINK_KEY}),
         .st-key-{SIDEBAR_TOGGLE_SINK_KEY},
         [data-testid="stLayoutWrapper"]:has(> .st-key-{CONDITION_DIALOG_SINK_KEY}),
         .st-key-{CONDITION_DIALOG_SINK_KEY} {{
             display: none !important;
-        }}
-        /* **짧은 실행은 본문을 흐리지 않는다.** Streamlit 은 실행이 시작되면 본문 요소에
-           `data-stale` 를 달아 즉시 불투명도 0.33 으로 흐린다(전환 없음, 실측). 상자 여닫기는
-           본문을 다시 돌리지 않는데도, 콜백이 프래그먼트로 바꾸기 전에 앱 실행이 잠깐 시작돼
-           본문이 40~120ms 깜빡였다(실측). 흐림을 {STALE_DIM_DELAY} 늦춰 그 안에 끝나는 실행은
-           흐리지 않고, 정말 계산하는 재실행은 그 뒤부터 전처럼 흐린다. 흐림이 풀릴 때는 이
-           규칙이 떨어져 곧바로 돌아온다. */
+        }}"""
+        # **짧은 실행은 본문을 흐리지 않는다.** Streamlit 은 실행이 시작되면 본문 요소에
+        # `data-stale` 를 달아 즉시 불투명도 0.33 으로 흐린다(전환 없음, 실측). 상자 여닫기는 본문을
+        # 다시 돌리지 않는데도, 콜백이 프래그먼트로 바꾸기 전에 앱 실행이 잠깐 시작돼 본문이
+        # 40~120ms 깜빡였다(실측). 흐림을 `STALE_DIM_DELAY` 늦춰 그 안에 끝나는 실행은 흐리지 않고,
+        # 정말 계산하는 재실행은 그 뒤부터 전처럼 흐린다. 흐림이 풀릴 때는 이 규칙이 떨어져 곧바로
+        # 돌아온다.
+        f"""
         [data-stale="true"] {{
             transition: opacity 0s linear {STALE_DIM_DELAY} !important;
         }}
         </style>
         """
+    )
 
 
 def _conditions_panel_style() -> str:
@@ -671,9 +705,10 @@ def _conditions_panel_style() -> str:
         f'{panel} > [data-testid="stLayoutWrapper"]:first-child'
         ' [data-testid="stCaptionContainer"] p'
     )
-    return f"""
-        /* 패널 면과 줄 사이. 사이드바 세로 블록의 촘촘한 간격(위 규칙)보다 뒤라야 이긴다 —
-           같은 특정도라 차례가 정한다. */
+    return (
+        # 패널 면과 줄 사이. 사이드바 세로 블록의 촘촘한 간격(위 규칙)보다 뒤라야 이긴다 — 같은
+        # 특정도라 차례가 정한다.
+        f"""
         {sidebar} {panel} {{
             background-color: {tokens.NAV_CONTROL_TINT};
             border-radius: 10px;
@@ -682,15 +717,17 @@ def _conditions_panel_style() -> str:
         }}
         {sidebar} {panel} {_CONDITION_FIELDS} {{
             gap: {_FIELD_INNER_GAP};
-        }}
-        /* 패널 맨 위 「적용 전 편집」 한 줄은 이름 줄과 같은 작은 글이다. */
+        }}"""
+        # 패널 맨 위 「적용 전 편집」 한 줄은 이름 줄과 같은 작은 글이다.
+        f"""
         {notice} {{
             font-size: 0.75rem;
             line-height: 1.35;
-        }}
-        /* 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
-           않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄
-           위로 올라붙는다. */
+        }}"""
+        # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
+        # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로
+        # 올라붙는다.
+        f"""
         {name_row} {{
             min-height: 1.15rem;
             flex-wrap: nowrap;
@@ -717,13 +754,15 @@ def _conditions_panel_style() -> str:
             flex: 0 1 auto;
             min-width: 0;
             overflow: hidden;
-        }}
-        /* 면 위에서는 배지의 경계가 흐려진다. 1px 윤곽으로 배지를 세운다. */
+        }}"""
+        # 면 위에서는 배지의 경계가 흐려진다. 1px 윤곽으로 배지를 세운다.
+        f"""
         {name_row} .stMarkdownBadge {{
             outline: 1px solid {tokens.BORDER};
             outline-offset: -1px;
-        }}
-        /* 값 칸. 흰 필드, 글은 왼쪽 정렬, 오른쪽 끝에 고르는 칸 표식. */
+        }}"""
+        # 값 칸. 흰 필드, 글은 왼쪽 정렬, 오른쪽 끝에 고르는 칸 표식.
+        f"""
         {field_button} {{
             justify-content: flex-start;
             gap: 0.45rem;
@@ -740,10 +779,11 @@ def _conditions_panel_style() -> str:
             background-color: {tokens.SURFACE};
             border-color: {tokens.ACCENT};
             color: {tokens.TEXT};
-        }}
-        /* 키보드 포커스는 hover(테두리만 `ACCENT`)와 달라 보여야 한다. 옅은 `NAV_ACTIVE_RING`
-           윤곽은 같은 강조색 면 위에서 거의 보이지 않았다(2026-10-11 병합 전 리뷰) — 입장 화면
-           단추와 같은 2px `ACCENT` 윤곽을 2px 띄워 두른다. */
+        }}"""
+        # 키보드 포커스는 hover(테두리만 `ACCENT`)와 달라 보여야 한다. 옅은 `NAV_ACTIVE_RING` 윤곽은
+        # 같은 강조색 면 위에서 거의 보이지 않았다(2026-10-11 병합 전 리뷰) — 입장 화면 단추와 같은
+        # 2px `ACCENT` 윤곽을 2px 띄워 두른다.
+        f"""
         {field_button}:focus-visible {{
             border-color: {tokens.ACCENT};
             outline: 2px solid {tokens.ACCENT};
@@ -752,9 +792,10 @@ def _conditions_panel_style() -> str:
         }}
         {field_button} [data-testid="stIconMaterial"] {{
             color: {tokens.ACCENT};
-        }}
-        /* 버튼 안 두 겹(제목 풍선을 단 칸 → 아이콘·글 묶음)이 가운데 정렬이다. 둘 다 왼쪽으로
-           붙이고 남는 폭을 채워 오른쪽 표식을 끝으로 민다(1.63 DOM 실측). */
+        }}"""
+        # 버튼 안 두 겹(제목 풍선을 단 칸 → 아이콘·글 묶음)이 가운데 정렬이다. 둘 다 왼쪽으로 붙이고
+        # 남는 폭을 채워 오른쪽 표식을 끝으로 민다(1.63 DOM 실측).
+        f"""
         {field_button} > div,
         {field_button} > div > span {{
             flex: 1 1 auto;
@@ -786,8 +827,10 @@ def _conditions_panel_style() -> str:
         }}
         {field_button}:disabled::after {{
             content: none;
-        }}
-        /* 저장하지 않은 편집이 있는 칸 — 왼쪽 3px 주황 띠(`PENDING_MARK`, 미저장 전용 색). */
+        }}"""
+        # 저장하지 않은 편집이 있는 칸 — 왼쪽 3px 주황 띠(`PENDING_MARK`, 미저장 전용 색).
+        f"""
         {pending_button} {{
             box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};
         }}"""
+    )

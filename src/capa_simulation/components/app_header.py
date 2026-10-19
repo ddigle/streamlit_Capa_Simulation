@@ -178,13 +178,17 @@ SHELL_STYLE = """<style>
 # **모듈 로드 시점에 치환하면 안 된다.** 토큰은 실행마다 그때의 팔레트를 보는데, 여기서
 # 받아 두면 프로세스가 처음 이 모듈을 읽은 순간의 테마로 굳는다. Streamlit 은 프로세스를
 # 유지하므로 사용자가 테마를 바꿔도 헤더만 옛 색으로 남는다.
-_HEADER_TEMPLATE = """
-/* 헤더 글자는 가상요소뿐이라 한 줄 안에서 굵기·색을 섞을 수 없다. 그래서 「머리」를
-   만드는 길은 글자 구성이 아니라 **면**이다. 위가 밝고 아래로 내려앉는 2단 면에 머리
-   2px ACCENT 실선 하나. 아래 사이드바 띠와 **같은 값**을 쓴다 — 부모가 다른 두 요소를
-   같은 색으로 이어 붙여 하나의 띠처럼 보이게 한 것이라, 한쪽만 고치면 화면 중간에
-   이음매가 생긴다. 그라디언트 높이도 `background-size` 로 못박아 두 요소의 높이가 달라도
-   같은 자리에서 같은 색이 되게 한다. */
+#
+# 규칙마다 설명은 CSS 주석이 아니라 바로 위 파이썬 주석에 둔다 — 이 스타일은 회차마다 소켓으로
+# 다시 가므로 CSS 주석을 실으면 그만큼이 매번 함께 간다.
+_HEADER_TEMPLATE = (
+    # 헤더 글자는 가상요소뿐이라 한 줄 안에서 굵기·색을 섞을 수 없다. 그래서 「머리」를
+    # 만드는 길은 글자 구성이 아니라 **면**이다. 위가 밝고 아래로 내려앉는 2단 면에 머리
+    # 2px ACCENT 실선 하나. 아래 사이드바 띠와 **같은 값**을 쓴다 — 부모가 다른 두 요소를
+    # 같은 색으로 이어 붙여 하나의 띠처럼 보이게 한 것이라, 한쪽만 고치면 화면 중간에
+    # 이음매가 생긴다. 그라디언트 높이도 `background-size` 로 못박아 두 요소의 높이가 달라도
+    # 같은 자리에서 같은 색이 되게 한다.
+    """
 [data-testid="stHeader"] {
   background:
     linear-gradient(180deg, __SURFACE__ 0, __BAR__ 100%) top left / 100% 3.75rem no-repeat,
@@ -192,10 +196,11 @@ _HEADER_TEMPLATE = """
   border-bottom: 1px solid __BAR_BORDER__;
   box-shadow: inset 0 2px 0 __ACCENT__;
 }
-
-/* `stHeader` 는 본문 너비만 덮는다. 사이드바 위쪽에도 같은 띠를 이어 붙이지 않으면 색이
-   화면 중간에서 끊겨, 같은 줄에 놓인 두 글이 서로 다른 면 위에 앉는다. 띠는 스크롤하지
-   않는 사이드바 겉면에 붙여 사이드바를 내려도 제자리에 남기고, 내용은 그 아래로 지나간다. */
+"""
+    # `stHeader` 는 본문 너비만 덮는다. 사이드바 위쪽에도 같은 띠를 이어 붙이지 않으면 색이
+    # 화면 중간에서 끊겨, 같은 줄에 놓인 두 글이 서로 다른 면 위에 앉는다. 띠는 스크롤하지
+    # 않는 사이드바 겉면에 붙여 사이드바를 내려도 제자리에 남기고, 내용은 그 아래로 지나간다.
+    """
 [data-testid="stSidebar"]::before {
   content: "";
   position: absolute;
@@ -210,17 +215,20 @@ _HEADER_TEMPLATE = """
   box-shadow: inset 0 2px 0 __ACCENT__;
   z-index: 10;
 }
-
+"""
+    # 두 줄 공통.
+    # - `max-width`: 오른쪽 툴바(Guide·Print·테마)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를
+    #   밀어내지 않고 말줄임으로 끊는다 — 두 줄이 따로 줄어 짧은 위 줄이 먼저 다 보인다. 28rem 은
+    #   툴바에 Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다.
+    #   1400px 보다 좁은 창은 지금 툴바 실측으로 다시 잡는다(`_NARROW_HEADER_RULES`). 16rem 일 때는
+    #   글자가 툴바 밑으로 들어갔다(2026-10-05 E2E).
+    # - `pointer-events`: 헤더 위에 얹히므로 툴바 클릭을 가로채지 않게 한다.
+    """
 [data-testid="stHeader"]::before,
 [data-testid="stHeader"]::after {
   position: absolute;
   line-height: 1.1rem;
   left: 1.5rem;
-  /* 오른쪽 툴바(Guide·Print·테마)가 쓰는 폭은 비워 둔다. 창이 좁아지면 글자를 밀어내지
-     않고 말줄임으로 끊는다 — 두 줄이 따로 줄어 짧은 위 줄이 먼저 다 보인다. 28rem 은 툴바에
-     Summary 가 있던 때 1100px 창 실측 355px 에 글자 시작 21px 과 틈 12px 를 더한 값이다. 1400px
-     보다 좁은 창은 지금 툴바 실측으로 다시 잡는다(`_NARROW_HEADER_RULES`). 16rem 일 때는 글자가
-     툴바 밑으로 들어갔다(2026-10-05 E2E). */
   max-width: calc(100% - 28rem);
   overflow: hidden;
   white-space: nowrap;
@@ -228,13 +236,13 @@ _HEADER_TEMPLATE = """
   padding-left: 0.55rem;
   border-left: 3px solid __ACCENT__;
   font-family: __FONT_FAMILY__;
-  /* 헤더 위에 얹히므로 툴바 클릭을 가로채지 않게 한다. */
   pointer-events: none;
 }
-
-/* 두 줄의 줄높이를 같게 두면 묶음 높이가 정확히 2.2rem 이고, 윗줄을 가운데에서 한 줄
-   위로 올리고 아랫줄을 가운데에 두는 것만으로 띠 한가운데에 정렬된다. 띠 높이가 바뀌어도
-   따라간다 — 위에서부터 잰 고정값은 띠 높이를 바꾸는 순간 어긋난다. */
+"""
+    # 두 줄의 줄높이를 같게 두면 묶음 높이가 정확히 2.2rem 이고, 윗줄을 가운데에서 한 줄
+    # 위로 올리고 아랫줄을 가운데에 두는 것만으로 띠 한가운데에 정렬된다. 띠 높이가 바뀌어도
+    # 따라간다 — 위에서부터 잰 고정값은 띠 높이를 바꾸는 순간 어긋난다.
+    """
 [data-testid="stHeader"]::before {
   content: "__TOP_LINE__";
   top: __TOP_OFFSET__;
@@ -249,40 +257,44 @@ _HEADER_TEMPLATE = """
   font-size: 0.72rem;
   color: __TEXT_MUTED__;
 }
-
-/* 본문 글 속 인라인 코드. Streamlit 기본(0.75em)은 고정폭 글꼴에 없는 한글이 대체 글꼴로 그려져
-   알림 안에서 10.5px·캡션 안에서 9.2px 로 작아 읽히지 않았다(2026-10-05 E2E). 본문 크기에
-   가깝게 올린다. 코드 블록(`pre`)은 건드리지 않는다. */
+"""
+    # 본문 글 속 인라인 코드. Streamlit 기본(0.75em)은 고정폭 글꼴에 없는 한글이 대체 글꼴로 그려져
+    # 알림 안에서 10.5px·캡션 안에서 9.2px 로 작아 읽히지 않았다(2026-10-05 E2E). 본문 크기에
+    # 가깝게 올린다. 코드 블록(`pre`)은 건드리지 않는다.
+    """
 [data-testid="stMarkdownContainer"] :not(pre) > code,
 [data-testid="stCaptionContainer"] :not(pre) > code {
   font-size: 0.9em;
 }
-
-/* 사이드바 머리칸. 앱 이름 라벨(`intro_summary.summary_label_script`)이 맨 앞에 선다.
-   `relative` 로 두면 사이드바 내용과 함께 스크롤돼 라벨이 위로 사라진다(앱 이름 글일 때 실제로
-   그랬다). `sticky` 는 스크롤 영역 맨 위에 붙어 있는다 — 본문 헤더와 같이 고정으로 읽힌다.
-   접기 버튼은 흐름 배치라 이 지정에 움직이지 않는다. */
+"""
+    # 사이드바 머리칸. 앱 이름 라벨(`intro_summary.summary_label_script`)이 맨 앞에 선다.
+    # `relative` 로 두면 사이드바 내용과 함께 스크롤돼 라벨이 위로 사라진다(앱 이름 글일 때 실제로
+    # 그랬다). `sticky` 는 스크롤 영역 맨 위에 붙어 있는다 — 본문 헤더와 같이 고정으로 읽힌다.
+    # 접기 버튼은 흐름 배치라 이 지정에 움직이지 않는다. `z-index` 로 띠 위로 올린다. 띠에 가리면
+    # 라벨도 접기 버튼도 묻힌다.
+    """
 [data-testid="stSidebarHeader"] {
   position: sticky;
   top: 0;
-  /* 띠 위로 올린다. 띠에 가리면 라벨도 접기 버튼도 묻힌다. */
   z-index: 11;
   align-items: center;
 }
-
-/* 접기 버튼(<<)은 Streamlit 이 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다.
-   있는 줄 모르고 지나치지 않게 늘 보이게 둔다. 인쇄에서 숨기는 Streamlit 규칙은 남기려고
-   화면 매체에만 건다. */
+"""
+    # 접기 버튼(<<)은 Streamlit 이 사이드바에 마우스를 올렸을 때만 `visibility: visible` 로 띄운다.
+    # 있는 줄 모르고 지나치지 않게 늘 보이게 둔다. 인쇄에서 숨기는 Streamlit 규칙은 남기려고
+    # 화면 매체에만 건다.
+    """
 @media screen {
   [data-testid="stSidebarCollapseButton"] {
     visibility: visible !important;
   }
 }
-
-/* 사이드바를 접으면 헤더 왼쪽 끝에 펼침 버튼이 나타나 첫 글자와 겹친다. 그 자리만큼 민다.
-   민 만큼(2.5rem) 최대 폭도 줄여야 오른쪽 끝이 툴바 쪽으로 밀려 들어가지 않는다.
-   사이드바와 헤더는 부모가 달라 형제 선택자가 닿지 않으므로 접힘 상태를 `:has()` 로 본다.
-   `:has()` 를 모르는 브라우저는 이 규칙만 버리고 접었을 때만 겹친다. */
+"""
+    # 사이드바를 접으면 헤더 왼쪽 끝에 펼침 버튼이 나타나 첫 글자와 겹친다. 그 자리만큼 민다.
+    # 민 만큼(2.5rem) 최대 폭도 줄여야 오른쪽 끝이 툴바 쪽으로 밀려 들어가지 않는다.
+    # 사이드바와 헤더는 부모가 달라 형제 선택자가 닿지 않으므로 접힘 상태를 `:has()` 로 본다.
+    # `:has()` 를 모르는 브라우저는 이 규칙만 버리고 접었을 때만 겹친다.
+    """
 [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
   [data-testid="stHeader"]::before,
 [data-testid="stAppViewContainer"]:has([data-testid="stSidebar"][aria-expanded="false"])
@@ -291,6 +303,7 @@ _HEADER_TEMPLATE = """
   max-width: calc(100% - 30.5rem);
 }
 """
+)
 
 # 1400px 보다 좁은 창에서만 오른쪽 비움 폭을 지금 툴바의 실측에 맞춘다(2026-10-07). 위의 28rem 은
 # 툴바에 Summary 가 있던 때 값이라, 1100px 창(사이드바 300px)에서 글자 폭이 408px 뿐이어서 긴

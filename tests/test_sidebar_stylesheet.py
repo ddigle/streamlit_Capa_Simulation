@@ -60,6 +60,23 @@ def test_the_style_block_is_actually_found() -> None:
     assert len(block) > 2000, len(block)
 
 
+@pytest.mark.parametrize("mode", ["light", "dark"])
+@pytest.mark.parametrize("active_href", ["", "capa_chatbot", "dynamic_capa"])
+def test_the_stylesheet_carries_no_css_comments(
+    mode: str, active_href: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시트는 활성 페이지 선택자가 들어 있어 화면을 옮길 때마다 통째로 다시 소켓으로 간다.
+
+    CSS 주석은 그때마다 함께 가는 바이트일 뿐 화면에는 아무 일도 하지 않는다. 규칙의 설명은
+    `sidebar_style` 의 파이썬 주석에 둔다 — 주석이 시트 밖에 있으니 위 태그 꼴 글자 사고도 주석
+    쪽에서는 다시 날 수 없다.
+    """
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    block = _style_block(active_href)
+
+    assert "/*" not in block and "*/" not in block
+
+
 def test_stylesheet_reads_the_active_page_and_theme_on_each_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

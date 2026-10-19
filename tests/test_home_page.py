@@ -1841,3 +1841,21 @@ def test_a_long_section_title_stays_on_one_line_and_is_escaped() -> None:
     # 줄부터 제목 글까지 모든 겹이 칸 폭 아래로 줄어들어야 말줄임이 칸 안에서 일어난다.
     assert ".st-key-key_process_title_row *," in style
     assert "_title_row * { min-width: 0; max-width: 100%; }" in style
+
+
+def test_home_styles_sent_every_run_carry_no_css_comments() -> None:
+    """HOME 의 제목 줄·공지 상자 스타일과 공정 필터 타일 풍선은 회차마다 소켓으로 다시 간다. CSS
+    주석은 그때마다 함께 가는 바이트일 뿐이라 싣지 않는다 — 설명은 파이썬 주석에 둔다."""
+    from capa_simulation.components.home_rendering import (
+        dashboard_title_row_style,
+        summary_notice_style,
+    )
+    from capa_simulation.components.process_picker import tile_tooltip_style
+
+    for css in (
+        dashboard_title_row_style(),
+        summary_notice_style(),
+        tile_tooltip_style(["공정 A", "공정 B"]),
+    ):
+        assert "<style>" in css
+        assert "/*" not in css and "*/" not in css

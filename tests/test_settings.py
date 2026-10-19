@@ -1,6 +1,7 @@
 # Purpose: 앱 공통 설정 상수를 검증한다.
 
 import base64
+import importlib
 
 from capa_simulation.design import tokens
 from capa_simulation.settings import APP_NAME
@@ -55,3 +56,34 @@ def test_favicon_is_the_main_mark_in_both_tab_colour_schemes() -> None:
     assert f".core{{fill:{tokens.palette_value('light', 'BRAND_DIE_WARM')}}}" in base
     assert svg.count('class="core"') == 1 and svg.count('class="die"') == 8
     assert not (FAVICON_PATH.parent / "factory.svg").exists()
+
+
+def test_streamlit_config_file_parses_and_names_only_known_options() -> None:
+    """`.streamlit/config.toml` 은 Streamlit 과 같은 파서(`toml`)로 읽혀야 하고, 적은 이름은 모두
+    지금 Streamlit 이 아는 옵션이어야 한다.
+
+    Streamlit 은 이 파일의 파싱 오류(같은 `[global]` 블록 둘 등)를 로그에만 남기고 파일 **전체**를
+    버린다 — 테마·정적 서빙 글꼴·업로드 한도가 한꺼번에 빠지는데 화면은 그대로 선다. 다른 테스트는
+    정규식으로 줄만 읽어 이를 놓친다. `[global]` 의 캐시 옵션은 문서에 없는 숨은 옵션이라 판올림 때
+    이름이 사라져도 조용히 무시되므로 이름도 함께 본다.
+    """
+    from streamlit import config
+
+    from capa_simulation.settings import PROJECT_ROOT
+
+    # Streamlit 이 쓰는 파서다(`streamlit/config.py`). 타입 스텁이 없어 모듈로 불러 쓴다.
+    toml = importlib.import_module("toml")
+    parsed: dict[str, dict[str, object]] = toml.loads(
+        (PROJECT_ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    )
+    known = set(config.get_config_options())
+    unknown = [
+        f"{section}.{name}"
+        for section, values in parsed.items()
+        if not section.startswith("theme")
+        for name in values
+        if f"{section}.{name}" not in known
+    ]
+
+    assert {"server", "global", "browser", "theme"} <= set(parsed)
+    assert unknown == []
