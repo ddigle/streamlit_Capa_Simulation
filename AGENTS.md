@@ -237,6 +237,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
   - 데모는 샘플 스위치로 끄고 세션에 한 번만 만든다(실DB 를 붙이면 그 칸 키에 원천 적재 시각을 넣는다).
   - 부서별 Gap·A/Item 로드맵은 실행 관리 머리에 있고 여기는 그쪽 링크 한 줄이다.
+  - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않고, 공정 상세의 조건 위젯은 숨어도 그린다.
 - `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 설비 저장본·Cut-off·
   소요대수를 모아 `required_shortening_panel.py` 에 넘긴다. 계산 규칙은 `services/required_shortening.py` 다.
   - 저장본·미저장 편집은 `equipment_data_workspace.py` 세션 칸(가용설비·Space 와 같은 토큰)에서, Cut-off 는 저장된
@@ -275,8 +276,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질`·`알림 모음` 네 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py`, 넷째는
   `components/alert_board.py` 를 그린다.
-  - 앞 세 탭은 계산이 없어 저장소만 확보한다. `알림 모음` 만 `load_page_context()` 와 전체 기간 계산을 쓰므로 닫혀
-    있으면 건너뛴다(`tab_is_hidden`). 조건 패널은 시나리오 줄만 선다.
+  - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
+    읽기다)과 `알림 모음`(`load_page_context()` 와 전체 기간 계산)은 닫혀 있으면 건너뛴다(`tab_is_hidden`,
+    `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
@@ -468,7 +470,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/weighted_unit_capacity.py` — 원수요 부하량 ÷ STEP별 소요대수 합으로 공정별 대당 Capa 를
   만든다. 소요기준이 둘인 공정은 멈춘다.
 - `src/capa_simulation/services/standard_target_capacity.py` — 주차별 일 표준 가능량과 PKG 기준 역산을 낸다. 표준 목표
-  전용 제외(ER·`Pre B/D` DUMMY)는 `split_standard_target_required_equipment` 한 번으로 낸다.
+  전용 제외(ER·`Pre B/D` DUMMY)는 `split_standard_target_required_equipment` 한 번으로 낸다. 두 계산 함수는 기본으로
+  분리를 함께 하고, 이미 분리한 프레임(분리 결과 캐시 `get_standard_target_split` 와 그 행을 거른 것)은 `already_split=True`
+  로 받아 다시 훑지 않는다 — `simulation_cache` 의 네 표준 목표 래퍼만 쓴다. 분리 안 한 프레임에 켜면 ER·DUMMY 가 섞인다.
 - `src/capa_simulation/services/route_step_editor.py` — 네 경로 표의 MCP·STEP 일괄 복제·삭제와 고유 조합 수를 맡는다.
   요약·선택지를 함께 낼 때는 `route_step_tables` 로 `RQ_REQB` 를 한 번만 전처리한다.
 - `src/capa_simulation/services/process_rename.py` — 공용 공정 표시명의 정규화·검증·직렬화다(치환은
@@ -537,6 +541,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/weekly_availability_input.py` — 표준 목표 수동 가용대수 입력 표 계약이다(설비 Repository 도
   쓴다). 붙여넣기에서만 빈칸을 「그대로 둠」으로 떨어뜨리고, 보유 공정 밖 이름은 `known_processes` 로 거절한다.
 - `src/capa_simulation/services/standard_target_logic.py` — 공정·주차 하나의 표준 목표를 제품·WF Mix 로 분해한다.
+  소요대수는 숫자 월로 먼저 거른 뒤 공정명·소요기준을 다듬는다(고르는 행은 같고 글자 처리가 그 달 행에만 걸린다).
 - `src/capa_simulation/services/equipment_contract.py` — 설비 세 입력의 컬럼 계약·허용값·상태 이름 상수를 정의한다(7장).
   - 기존 보유대수 자연키는 `BASELINE_KEY_COLUMNS`(공정, 분류)다. 옛 머리 이름은 입구에서 바꿔 읽고(`rename_legacy_headers`)
     빠진 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 알림만 남긴다. 선택 컬럼은 없으면 빈 칸이다.
@@ -671,6 +676,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
+  - 회차마다 소켓으로 다시 가는 스타일이라 CSS 안에 주석을 두지 않는다 — 규칙 설명은 그 조각 바로 위 파이썬 주석이다
+    (9장 「스크립트와 컴포넌트」).
 - `src/capa_simulation/components/typography.py` — 본문의 페이지 제목·상자 제목·큰 숫자에만
   `tokens.FONT_FAMILY_DISPLAY`(`CapaDisplay`)를 거는 앱 전체 서체 스타일이다(자리 표 `docs/design_system.md` 1-1).
   - 글꼴(`static/fonts/archivo-700.woff2`·`archivo-800.woff2`)은 정적 서빙(`config.toml`)의 상대 경로로 받는다 —
@@ -682,10 +689,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사이드바 스타일 문자열을 만든다. 위젯 생성·HTML 주입은 하지 않는다.
   - 접두어·구역 제목 선택자는 선언 모듈(`sidebar_status`·`navigation.SIDEBAR_SECTIONS`)에서 읽는다 — 빌더에 필수
     인자를 더하지 않는다(`tests/test_sidebar_stylesheet.py`). 선택자가 1.63 DOM 에 기댄다.
+  - 화면을 옮길 때마다 소켓으로 가는 시트라 CSS 주석을 싣지 않는다(설명은 파이썬 주석, 9장 「스크립트와 컴포넌트」).
 - `src/capa_simulation/components/column_filter.py` — 분류 컬럼별 다중선택 필터와 초기화 버튼이다. 거른
   프레임을 돌려준다.
   - `value_labels` 는 표시만 바꾸고 값·세션 저장값은 원본이다. 표시명 칸은 `ProcessLabels.unique_format_func` 로
     가르고 `prune_list_selection` 으로 되쓴다. 카드가 없는 회차에는 `apply_column_filters` 가 세션 선택만 읽는다.
+  - 걸러도 모든 행이 남으면(「Select all」 로 다 고른 중간 상태) 원본 사본을 돌려준다. `.loc` 는 모두 참인 마스크에도
+    `RangeIndex` 를 일반 `Index` 로 바꾸는데, `st.data_editor` 신원이 인덱스 꼴을 품어 새 위젯으로 서고 표 전체를 다시
+    보낸다(`tests/test_column_filter.py`).
 - `src/capa_simulation/components/process_labels.py` — 원본 공정명을 화면 표시명으로 바꾸는 유일한 지점이다
   (규칙은 8장 「화면은 표시명, 파일은 원본」).
   - `ProcessLabels.frame` 은 화면용 복사본, `series` 는 행마다 바꾼 것과 같은 값·dtype 이다
@@ -747,6 +758,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     되머지하고 붙여넣기 팝업(`render_reference_clipboard_form`)·왕복 CSV 에도 필터 이전 전체 표를 넘긴다.
   - 적용 안 한 편집이 있는 표는 탭이 닫혀도 그리고 필터를 잠근다. 그릴지와 양식을 만들지는 `editor_will_render`
     하나가 정한다. 결과·오류는 버튼 아래 `editor_notice` 자리에 쓴다(페이지 `reference_data.py` 가 받아 쓴다).
+  - 큰 표(`CLASSIFICATION_STYLE_MAX_CELLS` 초과)는 되풀이되는 글자 분류 컬럼만 화면 사본에서 category 로 보내고
+    (`_compact_dimensions`), 편집표가 돌려준 표에는 원본 분류 컬럼을 다시 끼운 뒤(`_restore_dimensions`) 되머지한다.
+    되머지 키(`astype(str)`)는 원본 dtype 으로 만든다 — category 결측은 `'nan'`, StringDtype 결측은 `'<NA>'` 라 섞으면
+    편집이 버려진다.
   - `process_labels` 를 import 하지 않는다(표시명은 `value_labels=`). 분류 칸 회색 배경은 `classification_styled`
     하나가 칸 수 상한까지만 입히고 `load_conversion.py`·`reference_data.py` 도 쓴다(`tests/test_classification_style.py`).
 - `src/capa_simulation/services/revision_compatibility.py` — 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지
@@ -1923,7 +1938,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     첫 답변을 남기면 맨 위 알림과 첫 답글이 함께 생겨, 적은 답변이 든 옛 글 상자가 회색 사본으로
     남았다. 맨 위 알림과 상자 안 답글 목록을 각각 늘 서 있는 한 칸에 둔다. Components v2 컴포넌트 앞에서는 특히
     그렇다 — 순번이 밀리면 컴포넌트가 다시 마운트되어 브라우저에 둔 상태(배율·서랍)를 잃고 스크롤이 튀므로, 그 앞의
-    생겼다 사라지는 상자·경고는 늘 서 있는 `st.container()` 칸 안에 그린다.
+    생겼다 사라지는 상자·경고는 늘 서 있는 `st.container()` 칸 안에 그린다. 표준 목표 결과 상자의 가용대수 누락 경고·
+    「누락 공정·주차 확인」(`availability_notice_slot`)과 공용 계층 월 표의 행 페이지 줄(`page_slot`)이 그 예다 — 없을
+    때는 표시 항목을 바꾸거나 상세를 켜면 주차·월 표의 가로 스크롤이 처음으로 돌아갔다.
   - 헤더 툴바처럼 React 밖에서 숨은 Streamlit 버튼을 JS 로 눌러 연 대화상자는 포커스가 body 에
     남아 Esc 가 닿지 않는다 — 열리면 포커스를 대화상자 안으로 옮긴다(`page_guide.py`).
   - 월 입력 컴포넌트(`components/month_range_picker.py`)는 칸 값을 초안으로 두고 「적용」·Enter 때만 칸의 지금 값과
@@ -1934,6 +1951,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   숨은 탭에서도 그리고 계산·표·차트만 건너뛴다. **조건 카드로 옮긴 위젯**은 열린 탭에서만
   그리므로(사이드바 = 지금 화면의 조건) 반드시 `persist_state` 를 준다 — 그것이 닫힌 동안의
   값을 지킨다(`산출 결과`·`기준 정보`·`생산 계획`).
+- 위젯 없는 읽기 전용 표·정적 설명만 든 탭은 닫혀 있으면 통째로 건너뛴다(Admin `원천 품질`·Dynamic `산식 가이드`).
+  대가는 다시 열 때 표가 새로 마운트되어 정렬·열 너비·스크롤이 처음으로 돌아가고, 여는 회차에 잠깐 빈 패널이 서는
+  것이다(합성 표본 130~230ms). 건너뛸 표가 폼·입력 위젯 **위**에 있고 기본 상태에서 보이면 건너뛰지 않는다 — 여는
+  회차에 늦게 붙어 입력을 밀어 내린다(가용설비 RawData 의 일정 확인 상자를 펴 둔 채 다녀오면 폼이 207px 밀렸다).
 - **옵션을 계산 결과에서 얻는 위젯**은 닫힌 탭에서 옵션을 만들 수 없다. 이때 옵션을 빈
   리스트로 두면 위젯을 그려도 선택값이 버려지므로, 계산을 건너뛴 렌더에서는 **현재 선택값을
   그대로 옵션으로 둔다**(공정 필터 `unit_capacity_process_filter` 가 그 방식이다).
@@ -2090,6 +2111,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - pandas Styler 표의 분류 칸 회색 배경은 Styler 를 직접 만들지 말고 `month_editor.classification_styled` 를 거친다 —
   Streamlit 이 rerun 마다 모든 칸을 번역하므로 칸 수 상한을 넘으면 칠하지 않는다. `st.dataframe` 으로 그리는 Styler
   표에는 표마다 다른 고정 `uuid=` 를 준다(무작위 uuid 면 회차마다 표를 다시 보낸다).
+- **큰 조회 표의 화면 사본은 되풀이 글자 열을 category 로, 수를 좁은 정수로 보낼 수 있다**(STEP 구성 요약
+  `reference_data._compact_step_summary`, 편집표는 `month_editor._compact_dimensions`). 조건 셋: ① category 글자 열은
+  `st.column_config.TextColumn()` 으로 못 박는다 — 두지 않으면 1.63 프런트가 선택 칸 꼴로 그려 글자 자리가 어긋난다.
+  ② `lazy=False` 를 준다 — 자동 lazy(15만 행 초과, `lazy_df_source.AUTO_LAZY_ROW_THRESHOLD`)의 서버 정렬은 category
+  열에서 「Failed to load data」 가 된다. ③ 그보다 긴 표는 줄이지 않고 `lazy=None` 으로 맡긴다 — 한꺼번에 받은 표가
+  15만 행을 넘으면 프런트가 정렬을 끈다(끝 값은 `tests/test_reference_data_perf.py` 가 Streamlit 상수와 견준다).
+  표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다).
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
   쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다.
@@ -2112,6 +2140,17 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
   다시 그리는 시간이라 프래그먼트로 감싸도 크게 줄지 않는다.
+- **회차마다 소켓으로 다시 가는 스타일 문자열에는 CSS 주석(`/* */`)을 싣지 않는다** — 사이드바 시트·머리 띠·껍데기
+  스타일·HOME 제목 줄·공지 상자·공정 필터 풍선이 그렇다. 설명은 그 조각 바로 위 파이썬 `#` 주석에 두고 문자열을 규칙
+  단위 조각으로 나눠 괄호 안에서 잇는다. 사용자 글을 넣은 뒤의 CSS 에 정규식으로 주석을 걷지 않는다(`css_string` 이
+  `/*` 를 이스케이프하지 않는다). `..._carry_no_css_comments` 테스트가 지킨다.
+- **브라우저 ForwardMsg 캐시는 `.streamlit/config.toml` `[global]` 의 나이 20·문턱 1,000B 다**(기본 2·10,000B). 문턱
+  이상인 요소는 같은 내용이면 해시 참조(약 75B)로 간다 — 머리 띠·HOME 제목 줄·공지 상자가 문턱 이상인지는
+  `tests/test_app_header.py` 가 config 를 읽어 지킨다. 나이 2 에서는 사이드바 상자를 두세 번 여닫거나(빈 프래그먼트
+  회차도 나이를 먹는다) 화면 둘을 거쳐 HOME 에 오면 그림을 통째로 다시 받았다(합성 표본 약 1MB). 「Cached ForwardMsg
+  MISS」 연결 오류 창은 Streamlit 프런트 경합(빈 프래그먼트 회차의 script_finished 를 앱 전체 회차로 읽음)이라 줄일
+  뿐 막지 못한다 — F5 로 풀린다. 회차 끝 강제 GC(`runner.postScriptGC`)는 끄지 않고(세션 순환 soak 에서 RSS 가 높은
+  채 머묾) `gc.freeze()` 도 쓰지 않는다(얼린 순간 살아 있던 세션이 닫혀도 걷히지 않는다).
 
 ## 10. 로컬 파일과 보안
 
@@ -2267,7 +2306,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   1.63 DOM 구조·프런트엔드 `localStorage` 테마 키·`data-test-script-state`: 헤더 툴바·머리 띠·입장 화면·사이드바 서식·탭
   점·metric 줄·인쇄 규칙), 프래그먼트 러너 대역(`tests/fragment_browser.py`·AppTest `fragment_id_queue`), 프래그먼트의
   바깥 컨테이너 쓰기, 선택을 켠 그림의 `dragmode` 덮기, 지나간 위젯의 콜백, 콜백 안 `st.switch_page` 의 fragment
-  경고(예상된 경고, 오류 아님), Plotly 비공개 `_validate` 빠른 경로(`plotly>=5.24,<7`). 선택자 문자열은 한 모듈에 상수로
+  경고(예상된 경고, 오류 아님), Plotly 비공개 `_validate` 빠른 경로(`plotly>=5.24,<7`), `.streamlit/config.toml` 의 숨은
+  옵션 `global.maxCachedMessageAge`·`global.minCachedMessageSize`(이름이 사라지면 조용히 무시된다 — `tests/test_settings.py`
+  가 이름을 본다)와 그 MISS 경합이 고쳐졌는지(고쳐졌으면 나이를 기본값으로 되돌릴지 다시 본다). 선택자 문자열은 한 모듈에 상수로
   두고 다른 스크립트는 자리 인자로 받아(`theme_toggle.TOOLBAR_SLOT`) 고칠 곳을 하나로 둔다.
 
 ## 12. 변경 작업 체크리스트
