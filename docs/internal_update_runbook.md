@@ -1726,7 +1726,7 @@ uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq --output 
 
 리비전 1 의 `RQ_REQB` 를 소요기준(`PKG`·`CHIP`·`WF`·`BOX`·`PCB`)마다 센다 — 행 수, 공정 수, `Main`·`MI`
 공정 수, WF 구분이 하나뿐인 공정과 그 하나가 `BUFFER` 인 공정. 사외가 표본 생성기의 공정 목록을 업무
-사실로 잘못 읽은 적이 있어(`docs/TODO.md` 3-5 「Stack 이후 Wafer 공정」) **실데이터로 다시 센다.**
+사실로 잘못 읽은 적이 있어(`docs/TODO.md` 결정 기록 「Stack 이후 Wafer 공정」, 옛 3-5) **실데이터로 다시 센다.**
 
 - `그 밖의 소요기준 N종` — 계약 밖 이름이다. 이름은 찍지 않는다. 0 이 아니면 그대로 적는다.
 - `소요기준이 둘 이상인 공정` — 업무 규칙상 **0** 이어야 한다(한 공정은 한 소요기준).

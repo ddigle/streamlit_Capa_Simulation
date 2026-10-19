@@ -155,7 +155,7 @@ def test_provider_rejects_unsafe_simulation_code(code: str) -> None:
 def test_mpga_test_module_count_exception_normalizes_to_one() -> None:
     """MPGA TEST 의 0.95~0.96 모듈수는 1로 본다.
 
-    원천 산정 규칙이 확정될 때까지 두는 예외이므로(`docs/TODO.md` 3-7) 동작을 고정해
+    원천 산정 규칙이 확정될 때까지 두는 예외이므로(`docs/TODO.md` 결정 기록, 옛 3-7) 동작을 고정해
     조용히 사라지지 않게 한다. 같은 값이라도 공정이 다르면 손대지 않는다.
     """
     frame = pd.DataFrame(
@@ -253,7 +253,7 @@ def test_column_mapping_only_targets_contract_columns() -> None:
 
 
 def test_query_window_upper_bound_includes_the_end_date() -> None:
-    """종료일 당일 적재분이 빠지던 결함의 회귀선(docs/TODO.md 3-7).
+    """종료일 당일 적재분이 빠지던 결함의 회귀선(docs/TODO.md 결정 기록, 옛 3-7).
 
     화면 라벨이 '포함' 이므로 배타 상한(`<`)을 다음 날로 민다.
     """

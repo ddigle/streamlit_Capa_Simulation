@@ -186,12 +186,15 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
    `ls -l` 의 크기가 위 2단계 1) 의 `stat` 값과 같은지 본다. 서피스 OpenSSH 가 양자 내성 키 교환을 몰라 접속마다
    `** WARNING: connection is not using a post-quantum key exchange algorithm.` 석 줄이 찍힌다 — 실패가 아니다. 그다음 보고 끝에 ZIP 이름·크기·sha256 과 메일 규격(보낸 사람·받는 사람·제목
    `<STAMP>.zip`·본문 한 줄)을 적어 넘긴다.
-4. **사용자** — 서피스 Outlook 에서 `C:\Dev\update_publishing\<STAMP>.zip` 을 붙여 보낸다.
-5. **WSL Claude** — 사용자가 「보냈다」고 하면 HANDOFF·TODO 에 발송(시각·stamp·커밋·크기)을 적어 커밋한다. 이 기록 커밋은 다음
-   푸시 때 함께 올린다(확인 뒤).
+4. **사용자** — 서피스 Chrome 의 Outlook 웹 작성창(`outlook.live.com/mail/0/deeplink/compose`)에서 보낸 사람을
+   outlook.com 별칭으로 고르고 `C:\Dev\update_publishing\<STAMP>.zip` 을 붙여 보낸다. 서피스 Outlook 앱에는 보낼 별칭이
+   뜨지 않는다.
+5. **WSL Claude** — 사용자가 「보냈다」고 하면 HANDOFF 에 발송(시각·stamp·커밋·크기)을 적고 `docs/TODO.md` 의 「다음 배포」
+   항목을 닫아(지워) 커밋한다 — 실은 것의 기록은 그 커밋 메시지와 런북 7장이다. 이 기록 커밋은 다음 푸시 때 함께
+   올린다(확인 뒤).
 
-**첫 WSL 빌드의 줄끝.** 서피스에서 만든 ZIP 은 디스크의 CRLF 를 그대로 실었다(`202610081500` 은 63개 — `docs/TODO.md` 그 배포
-기록, `202610120655` 는 57개 — 10-13 서피스 받는 자리에서 받아 와 태그 블롭과 견준 수). 블롭은 LF 이고 서피스 작업 트리만 CRLF 였다. WSL 작업 트리는 `.gitattributes` 의
+**첫 WSL 빌드의 줄끝.** 서피스에서 만든 ZIP 은 디스크의 CRLF 를 그대로 실었다(`202610081500` 은 63개 — git 이력의 `docs/TODO.md` 그 배포
+기록(커밋 `367ca01`), `202610120655` 는 57개 — 10-13 서피스 받는 자리에서 받아 와 태그 블롭과 견준 수). 블롭은 LF 이고 서피스 작업 트리만 CRLF 였다. WSL 작업 트리는 `.gitattributes` 의
 `* text=auto eol=lf` 대로 LF 라(`*.ps1` 만 CRLF) 첫 WSL ZIP 은 그 파일들을 내용은 같고 줄끝만 LF 로 싣는다. 10-13 에 흉내 저장소로
 쟀다 — `bfe9a10` 의 WSL 빌드를 `202610081500` 상태 흉내 저장소에 적용하되, 사내 작업 트리를 흉내 내 텍스트 파일 584개(상한)를
 CRLF 로 바꾸고 `git add` 로 인덱스를 새로 고쳐(사내 적용기가 서피스 ZIP 을 풀고 커밋한 뒤와 같은 상태) 두어도 적용기의 `변경`·`지움`·「사내에 없는 파일」·`대조 N/N` 이 LF 대조군과 같았고(추가 13 · 수정 143 · 지움 없음 ·

@@ -192,7 +192,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 사이드바 심볼은 12초마다 링이 「반동 스핀」을 한 번 하고(첫 바퀴는 2초 뒤), 올리거나 초점이 닿으면
 「살짝 감기」를 한다 — CSS 키프레임뿐이고 다이는 돌지 않으며, 움직임 줄이기면 걸지 않는다. 입장 화면
 머리 심볼은 떠오를 때 「그리며 모이기」, 읽는 동안 「검사 스캔」, 준비되면 「반동 스핀」 한 번이다
-(AGENTS.md `intro_overlay` · `intro_summary` 절).
+(`intro.js` 의 `markMotion` 주석과 `intro_summary` 의 라벨 스크립트 「움직임」 주석).
 
 ## 2-2. 강조색은 상호작용에만 쓴다
 
@@ -220,7 +220,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 정보다 — 조건을 넓히면 나오는지 여부는 그다음이다.
 
 주황은 확보 상태색에서 `경고` 다. 단순 조회 결과 없음에 주황을 쓰면 같은 화면의 표·차트에
-있는 주황과 뜻이 어긋난다 — 배지에서 같은 이유로 이미 한 번 정리했다(`docs/TODO.md` 3-4절).
+있는 주황과 뜻이 어긋난다 — 배지에서 같은 이유로 이미 한 번 정리했다(`docs/TODO.md` 결정 기록, 옛 3-4).
 색을 정하는 자리는 `config.toml` 이고 **알림 상자와 배지가 서로 다른 슬롯을 본다** —
 `st.success`→`greenColor`, `st.info`→`blueColor`, `st.warning`→`yellowColor` 다. 경고를
 주황으로 만드는 것은 `orangeColor` 가 아니라 `yellowColor` 이므로 둘을 같은 값으로 둔다.
@@ -421,7 +421,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
   `borderColor`·`grayColor`·`dataframeBorderColor`·`dataframeHeaderBackgroundColor`)뿐이고,
   나머지는 손으로 맞춰야 한다.
 - **위젯 고정 px 폭은 그대로 둔다.** 더 손대지 않기로 닫혔다
-  (`docs/TODO.md` 3-1 [결정]). Streamlit 가로 컨테이너는 `flex-wrap: wrap`이라 폭이
+  (`docs/TODO.md` 결정 기록, 옛 3-1). Streamlit 가로 컨테이너는 `flex-wrap: wrap`이라 폭이
   모자라면 다음 줄로 접힐 뿐이고, 앱을 띄워 `scrollWidth == clientWidth`까지 재 보니
   잘리지도 가로 스크롤이 생기지도 않았다.
 - **HOME 만 제목 아래 설명이 없다.** 탭(`Main`·`Preference`·`Past Data`)이 그 자리를 쓰면서
@@ -432,7 +432,7 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
 
 - **표가 `staticPlot` Plotly SVG다.** 정렬·검색(Ctrl+F)·텍스트 선택·복사·키보드 이동·
   스크린리더가 모두 없고 긴 분류값은 말줄임 없이 잘린다. 실제 `<table>`로 바꾸는
-  중기안은 진행하지 않기로 닫혔고(`docs/TODO.md` 3-2 [결정]), 표가 그림이라 못 하는
+  중기안은 진행하지 않기로 닫혔고(`docs/TODO.md` 결정 기록, 옛 3-2), 표가 그림이라 못 하는
   것은 모든 결과표에 붙어 있는 `CSV 다운로드`가 대신한다. 화면 안에서 그대로 다루는
   방법은 여전히 없다.
 - ~~다크 테마가 없다.~~ **넣었다**(2026-09-19). `config.toml` 의 `[theme]`·`[theme.dark]`
