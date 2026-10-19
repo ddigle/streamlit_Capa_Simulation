@@ -172,9 +172,10 @@ def _load_process_cutoff(
 def load_process_cutoff(database_path: str) -> pd.DataFrame:
     """저장된 공정별 Cut-off(`0009`, 리비전 없는 현행값).
 
-    Preference 탭이 숨어 있어도 회차마다 읽어 Static 대비 일정·필요단축일정에 넘긴다. 최신 리비전 id
-    와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한 직후 `clear_process_cutoff_cache`
-    로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다.
+    Preference 탭이 숨어 있어도 회차마다 읽어 Static 대비 일정·필요 단축 일정에 넘긴다. 최신 리비전
+    id 와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한 직후
+    `clear_process_cutoff_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의
+    쓰기를 맡는다.
     """
     return _load_process_cutoff(
         database_path, database_stamp(database_path), _write_generation("cutoff")
@@ -340,7 +341,7 @@ def _load_shortening_filter_payload(database_path: str) -> dict[str, Any]:
 
 
 def load_shortening_filter_profile(database_path: str) -> ShorteningFilterProfile:
-    """필요단축일정 공용 조회 조건. 탭이 열린 회차마다 부르므로 캐시한다 — 저장하는 쪽(그 탭의
+    """필요 단축 일정 공용 조회 조건. 탭이 열린 회차마다 부르므로 캐시한다 — 저장하는 쪽(그 탭의
     `on_change` 콜백)이 쓴 뒤 `clear_shortening_filter_cache` 로 비운다. 설비 리비전과 무관하다."""
     return ShorteningFilterProfile(**_load_shortening_filter_payload(database_path))
 
@@ -358,7 +359,7 @@ def _load_shortening_baselines_payload(database_path: str) -> list[dict[str, Any
 
 
 def load_shortening_baselines(database_path: str) -> tuple[ShorteningBaselineSummary, ...]:
-    """필요단축일정 기준선 목록(0021, 최근 저장이 위). 탭이 열린 회차마다 「진척 비교」 선택지로
+    """필요 단축 일정 기준선 목록(0021, 최근 저장이 위). 탭이 열린 회차마다 「진척 비교」 선택지로
     부르므로 캐시한다 — 저장·지우기 쪽이 `clear_shortening_baseline_cache` 로 비운다."""
     return tuple(
         ShorteningBaselineSummary(**payload)

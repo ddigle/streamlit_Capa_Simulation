@@ -30,7 +30,7 @@ Dynamic 은 Cut-off 원장에 적힌 공정만 덮는다. 나머지 공정은 `�
 
 **Static 으로 채우는 것은 Dynamic 에 공정 자체가 없을 때뿐이다.** Cut-off 가 있어 월별 Dynamic
 에 (어떤 분류로든) 행이 있는 공정이 어느 달 가용 소계만 없으면 — 셋업 진행중 호기뿐인 공정, 한 달
-내내 비가동인 공정 — 그 달 Dynamic 가용은 **0** 이다(`cross_check_from_monthly`). 필요단축일정의
+내내 비가동인 공정 — 그 달 Dynamic 가용은 **0** 이다(`cross_check_from_monthly`). 필요 단축 일정의
 「가용 행이 없는 달은 0 대」, 비교 시트(`availability_sheet`)의 설비 일정 기준 가용과 같은 값이다.
 그 칸을 Static 으로 채우면 차이가 0 으로 숨고, 어느 공정에도 가용 소계가 없는 달은 맞댈 달에서
 통째로 빠진다.

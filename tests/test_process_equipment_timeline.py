@@ -218,7 +218,7 @@ def test_a_baseline_only_process_is_ready_without_unit_rows() -> None:
 
 
 def test_the_readiness_reason_matches_the_plans_split_of_unmatched_processes() -> None:
-    """같은 입력이면 판정의 까닭이 필요단축일정 계획의 갈래와 맞는다.
+    """같은 입력이면 판정의 까닭이 필요 단축 일정 계획의 갈래와 맞는다.
 
     「Cut-off 미기재」 = `missing_cutoff`(설비나 기존보유는 있고 Cut-off 가 없는 공정),
     「설비 없음」 = 그 밖의 `required_only`(Cut-off 가 있든 없든), 통과 = 맞댄 공정. 탭과 새
@@ -766,7 +766,8 @@ def test_the_process_slice_of_an_all_process_plan_is_the_single_process_plan() -
 def test_the_timeline_cache_keys_by_inputs_not_today_and_matches_a_fresh_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """키는 네 표의 내용 지문 + 달 + 공정이다. 오늘은 들지 않는다 — 필요단축일정 키로 낸 키와 같다.
+    """키는 네 표의 내용 지문 + 달 + 공정이다. 오늘은 들지 않는다 — 필요 단축 일정 키로 낸 키와
+    같다.
 
     적중하면 다시 만들지 않고, 비가동 한 줄이 바뀌면 새로 만든다. 공용 구간 캐시는 쓰지 않는다.
     """

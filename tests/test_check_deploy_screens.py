@@ -1487,7 +1487,7 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
             "app_pages/available_equipment_status.py",
             'TAB_RAWDATA = ":material/table_rows: RawData"',
         ),
-        # 필요단축일정은 별도 화면이다(2026-10-18) — 사이드바 링크 주소로 간다(`SHORTENING_PAGE`).
+        # 필요 단축 일정은 별도 화면이다(2026-10-18) — 사이드바 링크 주소로 간다(`SHORTENING_PAGE`).
         ("src/capa_simulation/navigation.py", '"app_pages/required_shortening.py",'),
         ("app_pages/space_status.py", '"층 바로 가기",'),
         ("app_pages/space_status.py", '"배치 편집",'),

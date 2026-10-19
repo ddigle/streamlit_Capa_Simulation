@@ -9,10 +9,11 @@
 아예 없어 닿지 않은 부하(EDP-TSV 의 PKG 처럼 규칙상 쓰지 않는 조합)는 세지도 그리지도 않는다 — 세면
 모두에게 늘 뜨는 경고가 되고, 확보율이 높게 나온다는 말도 그 경우 사실이 아니다.
 
-그래서 같은 문장을 여러 자리에서 쓴다. HOME 은 결론 위에 한 줄(조회기간 기준), 리비전 저장·공식
-발행 검사는 허락하면서 경고(시나리오 전체 기간), 공식버전 자동 갱신의 발행은 막지 않고 실행 기록
-사유 끝에 붙인다(`auto_official_update_runner`, 시나리오 전체 기간 — 「지금 실행」 결과는 화면
-발행과 같이 성공 알림 밑의 경고로 따로 띄운다). 목록은 산출 결과 → 소요대수 탭에 있다.
+그래서 같은 문장을 여러 자리에서 쓴다. Admin Area 「알림 모음」 탭이 한 줄로 모으고(HOME 에는
+띄우지 않는다 — 2026-10-19 사용자 요청), 리비전 저장·공식 발행 검사는 허락하면서 경고, 공식버전 자동
+갱신의 발행은 막지 않고 실행 기록 사유 끝에 붙인다(`auto_official_update_runner` — 「지금 실행」
+결과는 화면 발행과 같이 성공 알림 밑의 경고로 따로 띄운다). 모두 시나리오 전체 기간이다. 목록은
+산출 결과 → 소요대수 탭에 있다.
 """
 
 from __future__ import annotations
@@ -31,8 +32,7 @@ from capa_simulation.services.required_equipment import (
     counted_unrouted_loads,
 )
 
-# 문장의 범위 말. 같은 결과를 HOME 은 조회기간으로 자르고 저장·발행 검사는 전체 기간으로 본다.
-PERIOD_SCOPE = "조회기간 기준"
+# 문장의 범위 말. 저장·발행 검사와 Admin Area 「알림 모음」 은 시나리오 전체 기간으로 본다.
 FULL_SCOPE = "시나리오 전체 기간"
 # 문장의 머리. 자동 갱신의 발행 줄 뒤에 이어 적힌 이 경고를 실행 기록 사유에서 다시 가를 때도 쓴다
 # (`auto_official_update_runner.split_published_reason`).
@@ -69,13 +69,6 @@ def required_exclusion_message(counts: RequiredExclusionCounts, *, scope: str) -
         "그만큼 소요대수가 작게, **확보율이 실제보다 높게** 나올 수 있습니다. "
         "목록은 산출 결과 → 소요대수 탭에 있습니다."
     )
-
-
-def render_required_exclusion_notice(counts: RequiredExclusionCounts) -> None:
-    """건수가 있을 때만 그린다. 없는 날에 자리를 차지하면 다음에는 아무도 안 읽는다."""
-    message = required_exclusion_message(counts, scope=PERIOD_SCOPE)
-    if message:
-        st.warning(message, icon=":material/link_off:")
 
 
 def render_plan_exclusion_lists(

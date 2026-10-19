@@ -1,6 +1,6 @@
-# Purpose: 필요단축일정의 기여일 산식·단축 차례·최소 단축·가상 호기·후보 조건과 CSV 표를 고정한다.
+# Purpose: 필요 단축 일정의 기여일 산식·단축 차례·최소 단축·가상 호기·후보 조건과 CSV 표를 고정한다.
 
-"""필요단축일정(`services/required_shortening.py`).
+"""필요 단축 일정(`services/required_shortening.py`).
 
 숫자는 모두 손으로 셀 수 있게 잡았다. 기준 예 — Cut-off 10, 2026-05 W/D 구간 `(4/20, 5/21]`
 31일, 첫 기여일 4/21.

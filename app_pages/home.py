@@ -12,7 +12,6 @@ from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
 from capa_simulation.components.condition_field import condition_field
-from capa_simulation.components.decision_summary import render_home_capacity_decision
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
     KEY_PROCESS_ABSENT_NOTICE,
@@ -67,9 +66,6 @@ from capa_simulation.components.plan_comparison_dumbbell import (
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.process_picker import render_process_picker
-from capa_simulation.components.required_exclusion_notice import (
-    render_required_exclusion_notice,
-)
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.home_state import (
@@ -141,7 +137,6 @@ from capa_simulation.services.execution_capacity import (
     empty_execution_capacity,
     unmatched_execution_adjustments,
 )
-from capa_simulation.services.home_decision import build_capacity_decision
 from capa_simulation.services.key_process import resolve_preset_name
 from capa_simulation.services.month_columns import (
     build_month_axis,
@@ -182,7 +177,6 @@ from capa_simulation.services.simulation_cache import (
     get_home_lob_without_edp,
     get_home_plan_detail,
     get_home_simulation,
-    get_scenario_exclusion_counts,
 )
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import (
@@ -317,7 +311,7 @@ try:
             securement=past_profile.securement.iloc[:0],
         )
     past_months = [int(value) for value in past_profile.monthly["생산계획년월"]]
-    # 이 범위가 HOME 계산 캐시 키의 달이다. 같은 계획을 보이는 화면(필요단축일정)이 같은 함수로
+    # 이 범위가 HOME 계산 캐시 키의 달이다. 같은 계획을 보이는 화면(필요 단축 일정)이 같은 함수로
     # 범위를 내야 캐시를 나눈다.
     display_range = display_month_range(
         (selected_start, selected_end), (source_start, source_end), past_months
@@ -369,13 +363,6 @@ try:
         # 「계산을 멈췄습니다」와 어긋나지 않는다. 본문 안내는 아래 `except` 가 그대로 한다.
         show_calculation_stopped()
         raise
-    # 소요대수에 들지 않은 수요 건수. 위 계산과 같은 시나리오 키(앞 네 칸)라 그 소요대수에서 센다 —
-    # 정수 넷짜리 캐시라 적중 회차에 큰 프레임을 풀지 않는다.
-    required_exclusions = get_scenario_exclusion_counts(
-        home_simulation_cache_key[:4],
-        _scenario_tables=active_scenario["tables"],
-        _reference_tables=reference_tables,
-    )
     # 제품별 비중이 그리는 수량. 색 칸은 EDP 를 **포함한** 쪽(`product_volume_with_edp`)에서
     # 정한다 — EDP 를 꺼도 남은 제품의 색이 바뀌지 않는다.
     product_volume = product_volume_with_edp
@@ -823,15 +810,6 @@ figure_conditions = HomeFigureCacheKey(
     past_month_labels=tuple(sorted(past_month_labels)),
     gap_month_labels=tuple(sorted(gap_month_labels)),
 )
-# 결론 요약은 **캐시 밖**에서 낸다. 아래 순위 집계는 캐시가 맞으면 건너뛰지만 이 집계는
-# 같은 프레임 위의 마스크 한 번이라 건너뛸 값이 없다 — 대신 캐시 적중·미적중에서 늘 같은
-# 값이 나온다.
-capacity_decision = build_capacity_decision(
-    securement_rate,
-    included_processes=included_processes,
-    thresholds=thresholds,
-)
-
 # 차트가 든 탭은 `stateful_tabs` 로 만든다. `key` 와 `on_change="rerun"` 이 있어야 서버가
 # 어느 탭이 열렸는지 알고, 숨은 채로 그려 머리글이 밀리는 것을 막을 수 있다.
 # **Figure 단계보다 먼저 만든다.** Main 이 숨은 회차인지 알아야 그 회차의 그림 조회·생성을 건너뛸
@@ -1053,20 +1031,9 @@ with main_tab:
     # 가정을 결론보다 **먼저** 말한다. 측정률을 1.0 으로 메운 경로가 있으면 확보율이
     # 실제와 다르게 나오므로(측정률이 1 보다 작으면 낮게), 아래 결론을 읽기 전에 알아야 한다.
     render_capacity_assumption_notice(assumed_capacity_defaults)
-    # 소요대수에 들지 않은 수요도 결론보다 먼저다. 그만큼 확보율이 높게 나오므로 아래 결론을 읽기
-    # 전에 알아야 한다.
-    render_required_exclusion_notice(required_exclusions)
-    # 결론이 표보다 **먼저** 온다. 아래 Figure 와 같은 `securement_rate`·`included_processes`
-    # 를 읽으므로 공정 필터를 바꾸면 요약도 같이 따라온다.
-    render_home_capacity_decision(
-        capacity_decision,
-        thresholds=thresholds,
-        # 화면 이름만 바꾼다. 저장 키는 원본 공정명 그대로다.
-        process_label=(
-            process_labels.label(capacity_decision.process) if capacity_decision.process else None
-        ),
-        filtered=len(included_processes) < len(process_options),
-    )
+    # 소요대수에 들지 않은 수요와 결론 두 줄(최저 확보율 공정·기준 미달 수)은 HOME 에 두지 않는다 —
+    # 경고가 HOME 에 줄줄이 달려 읽히지 않았다(2026-10-19 사용자 요청). 그런 알림은 Admin Area
+    # 「알림 모음」 탭이 시나리오 전체 기간으로 한곳에 모은다.
     # 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 줄(제목·범례)은 fragment 인
     # `render_home_figures` 밖에서 그리므로 상자만 여기서 연다.
     with home_dashboard_panel():

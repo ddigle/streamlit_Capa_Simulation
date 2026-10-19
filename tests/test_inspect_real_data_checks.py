@@ -252,7 +252,7 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     assert "`capa_simulation.duckdb`" in output
     # 소요대수는 원천에 값이 차면 대조까지 간다.
     assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
-    # HOME·발행 검사가 알리는 「소요대수에 들지 않은 수요」를 같은 셈으로 센다.
+    # 알림 모음·발행 검사가 알리는 「소요대수에 들지 않은 수요」를 같은 셈으로 센다.
     assert "- 소요대수에 들지 않은 수요(리비전 1 전체 기간) — " in output
     assert "| 경로 키 13 · 같은 경로 반복을 접음 | 72 |" in output
     # 기존 값이 표지값 하나라 60 배 무리가 없다 — 가르기는 한 줄로 끝난다.

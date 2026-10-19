@@ -218,7 +218,7 @@ def test_the_shortening_card_stands_only_when_the_month_is_not_met() -> None:
     assert shortening_card(dynamic, met[0]) is None
     card = shortening_card(dynamic, unmet[0])
     assert card is not None and card.reference
-    # 필요단축일정 탭의 110% 는 1.10 이다 — 이 화면은 소수를 함께 적는다.
+    # 필요 단축 일정 탭의 110% 는 1.10 이다 — 이 화면은 소수를 함께 적는다.
     assert card.title == "④ 단축 근거 (설비 일정 · 목표 110% (1.095))"
     assert card.formula.startswith("목표 ")
     head = card.formula.split("\n")[0]

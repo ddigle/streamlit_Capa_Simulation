@@ -57,9 +57,9 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     ).run()
 
     assert not app.exception
-    # 공통 헤더가 상태 접미를 제목에서 떼어 배지로 보여준다.
+    # 운영 화면이라 상태 접미도 본문 배지도 없다(2026-10-19 사용자 요청).
     assert app.title[0].value == "가용설비 현황"
-    assert any("Data확보중" in element.value for element in app.markdown)
+    assert not any("Data확보중" in element.value for element in app.markdown)
     # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다.
     assert [tab.label for tab in app.tabs[:4]] == [
         ":material/dashboard: Main",

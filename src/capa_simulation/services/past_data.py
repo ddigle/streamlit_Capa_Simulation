@@ -84,7 +84,7 @@ def display_month_range(
 
     과거 구간은 계산 원천의 월 범위 밖에 있으므로, 원천 범위로만 자르면 넣어 둔 과거가 조회 범위에
     들어오지 못한다. **HOME 계산 캐시 키의 달이 이 값이다** — HOME 과 같은 계획을 보이는 화면이
-    이 함수로 범위를 내야 키가 맞아 캐시를 나눈다(가용설비 현황 `필요단축일정`).
+    이 함수로 범위를 내야 키가 맞아 캐시를 나눈다(가용설비 현황 `필요 단축 일정`).
     """
     months = [int(month) for month in past_months]
     available_start = min([int(source[0]), *months])

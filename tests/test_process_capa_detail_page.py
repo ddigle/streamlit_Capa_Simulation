@@ -497,8 +497,9 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
 
 
 def test_the_shortening_link_plants_only_session_keys(dynamic_databases: tuple[Path, Path]) -> None:
-    """필요단축일정 화면 링크는 공정 상자 세션 키만 심는다 — 공용 조회 조건(0019)에는 쓰지 않는다.
-    필요단축일정은 가용설비 현황의 탭이 아니라 별도 화면이라(2026-10-18) 그 탭 칸도 건드리지 않는다.
+    """필요 단축 일정 화면 링크는 공정 상자 세션 키만 심는다 — 공용 조회 조건(0019)에는 쓰지 않는다.
+    필요 단축 일정은 가용설비 현황의 탭이 아니라 별도 화면이라(2026-10-18) 그 탭 칸도 건드리지
+    않는다.
 
     단독 실행이라 갈 페이지가 없어 옮기지는 않는다(`StreamlitPageNotFoundError` 를 삼킨다).
     """

@@ -103,7 +103,7 @@ equipment_ops.process_cutoff                              공정별 Cut-off 일�
 equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017)
                        (building, floor_name)
 equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017, layout_key 'FAB')
-equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요단축일정 공용 조회 조건(0019)
+equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요 단축 일정 공용 조회 조건(0019)
 equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      진척 비교 기준선(0021 — 고칠 수 없는
                                      └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다)
 
@@ -297,7 +297,7 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   제진대·물류·반입 일정, 반입실적·반입상태, Qual 일정·Qual실적·Qual상태, 정지·반출/이설 일정,
   반입/Qual 이력·호기이력·설비이력, 보관유무·기존설비여부·레이아웃표시, 환산비·Main 설비, 메모1~3 을
   저장하는 전체 스냅샷(38열, 2026-10-16 사용자 결정). **`사용기준`(`classification_2`)은 참고 속성이
-  아니라 가용대수 대상을 가른다** — 설비 일정 기준 가용대수·필요단축일정은 이 값이 `HBM` 또는 `EDP`(앞뒤
+  아니라 가용대수 대상을 가른다** — 설비 일정 기준 가용대수·필요 단축 일정은 이 값이 `HBM` 또는 `EDP`(앞뒤
   공백·대소문자 무시, 완전 일치)인 행만 한 가용대수로 센다(2026-10-08 사용자 결정,
   `equipment_contract.counts_for_capacity`).
   저장 형식은 바뀌지 않았고 빈 값으로 저장된 옛 리비전의 호기는 그 결정으로 가용대수에서 빠진다.
@@ -346,8 +346,8 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   `(process_name, product_scope)` PK 이고 `product_scope` 는 지금 모두 `'*'`(공정 전체 — 나중
   제품 축 자리)다. TAT·공정 선후관계가 저장소에 없어 파생값이 아니라 사람이 적는 원장이고,
   리비전 없는 현행값이다. `cutoff_days` 는 DOUBLE 로 받되 `services/wd_window.py` 가 내림해 쓴다.
-  `필요단축일정` 화면·가용설비 현황 월별 가용대수가 읽는다.
-- `shortening_filter_profile`·`shortening_filter_process`(마이그레이션 19): `필요단축일정` 화면의
+  `필요 단축 일정` 화면·가용설비 현황 월별 가용대수가 읽는다.
+- `shortening_filter_profile`·`shortening_filter_process`(마이그레이션 19): `필요 단축 일정` 화면의
   공용 조회 조건 — 머리 한 행(`start_month`·`end_month` `YYYYMM`, 둘 다 있거나 둘 다 NULL,
   version)과 고른 공정(`sort_order` 차례). 기간 NULL 은 「저장 안 함 → 조회기간 전체」, 공정 0행은
   「목표 미달 공정 전체」다. 기간과 공정은 따로 쓰고 쓸 때마다 version+1. 규칙은

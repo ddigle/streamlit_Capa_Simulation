@@ -4,7 +4,7 @@
 
 「사용기준이 HBM·EDP 인 호기만 Dynamic 가용대수로 센다. 배치는 그대로 둔다.」 규칙은
 `equipment_contract.counts_for_capacity` 한 곳이고, 세는 자리(주차·월별 대수, 교차검증이 쓰는 환산
-소계, 필요단축일정 후보, 일정 미정 알림)는 모두 그것을 본다. 기존 보유대수 표는 사용기준이 없어
+소계, 필요 단축 일정 후보, 일정 미정 알림)는 모두 그것을 본다. 기존 보유대수 표는 사용기준이 없어
 지금처럼 센다.
 """
 
@@ -189,7 +189,7 @@ def test_the_weekly_count_leaves_out_non_hbm_units_entirely() -> None:
 
 
 def test_the_monthly_table_counts_only_hbm_on_both_axes() -> None:
-    """대수와 환산대수 둘 다 세는 값만 센다 — 교차검증·필요단축일정이 쓰는 환산 소계도 같다."""
+    """대수와 환산대수 둘 다 세는 값만 센다 — 교차검증·필요 단축 일정이 쓰는 환산 소계도 같다."""
     equipment = _master(
         _unit("HBM-1", "HBM", 환산비=1.5),
         _unit("OTH-1", "범용", 환산비=2.0),

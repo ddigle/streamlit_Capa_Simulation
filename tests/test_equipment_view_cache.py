@@ -53,7 +53,7 @@ def _csv(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False).encode("utf-8-sig")
 
 
-# ------------------------------------------------------------------ 필요단축일정 CSV(A10)
+# ------------------------------------------------------------------ 필요 단축 일정 CSV(A10)
 
 
 def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
@@ -382,7 +382,7 @@ def _loader(scenario_key: simulation_cache.ScenarioCacheKey) -> Callable[[], pd.
 def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
     today: date, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """필요단축일정은 Static/Dynamic 과 같은 구간 캐시를 쓰고, 결과는 캐시 없이 낸 계획과 같다.
+    """필요 단축 일정은 Static/Dynamic 과 같은 구간 캐시를 쓰고, 결과는 캐시 없이 낸 계획과 같다.
 
     오늘은 계획 키에 들고(바닥 `max(구간 앞, 오늘)`), 구간 키에는 들지 않는다 — 구간은 오늘을 보지
     않는다. 그래서 오늘만 바뀐 두 번째 계획은 구간을 다시 만들지 않는다.
@@ -512,11 +512,11 @@ def test_shortening_reads_the_demand_only_on_a_miss_and_follows_the_scenario_key
     assert not _plan_frames(after)[1].equals(_plan_frames(before)[1])
 
 
-# ------------------------------------------------------------------ 필요단축일정 달 범위(EQ-2)
+# ------------------------------------------------------------------ 필요 단축 일정 달 범위(EQ-2)
 
 
 def _frame_month_bounds(required: pd.DataFrame) -> tuple[int, int] | None:
-    """소요대수 프레임에서 바로 잰 달 범위 — 필요단축일정이 고를 달을 정하는 식."""
+    """소요대수 프레임에서 바로 잰 달 범위 — 필요 단축 일정이 고를 달을 정하는 식."""
     if not required.empty and "생산계획년월" in required.columns:
         present = pd.to_numeric(required["생산계획년월"], errors="coerce").dropna()
         if not present.empty:

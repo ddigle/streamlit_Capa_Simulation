@@ -75,10 +75,8 @@ from capa_simulation.services.required_equipment import (
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
     RESULT_DIMENSIONS,
     UNROUTED_LOADS_ATTR,
-    RequiredExclusionCounts,
     calculate_required_equipment,
     required_equipment_to_month_table,
-    required_exclusion_counts,
 )
 from capa_simulation.services.required_shortening import (
     TARGET_LEVELS,
@@ -263,7 +261,7 @@ def required_shortening_cache_key(
     months: tuple[int, ...],
     today: date,
 ) -> RequiredShorteningCacheKey:
-    """필요단축일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
+    """필요 단축 일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
 
     소요대수(약 3MB)는 `(reference_version, content_token, 조회기간)` 이 정하므로 그 키를 그대로
     싣는다 — 내용을 해시하면 적중에도 수십 ms 를 쓴다. 설비 쪽 네 표는 저장 안 한 편집본일 수
@@ -311,8 +309,8 @@ def check_scenario_capacity(
     던진다(그쪽의 전체 기간 결과가 실패를 담아 두어 싸다). 부르는 쪽은
     `page_bootstrap.stop_calculation_on_error` 로 감싸 사이드바의 「✓ 적용」을 거둔다.
 
-    가용설비 현황(Static 대비 일정·필요단축일정)은 이것을 **오류 확인**으로 쓴다 — 소요대수 프레임이
-    필요 없는 보기에서도 기준정보 오류를 같은 문구로 알리되 프레임은 풀지 않는다. 그 화면은
+    가용설비 현황(Static 대비 일정·필요 단축 일정)은 이것을 **오류 확인**으로 쓴다 — 소요대수
+    프레임이 필요 없는 보기에서도 기준정보 오류를 같은 문구로 알리되 프레임은 풀지 않는다. 그 화면은
     「✓ 적용」을 쓰지 않으므로 감싸지 않고, 같은 키·같은 표 묶음의 로더
     (`scenario_required_equipment`)를 `_required_equipment` 로 준다. 빗나간 회차에는 그 로더로
     계산을 확인한다 — 같은 회차에 소요대수를 쓰는 곳(달 범위·계획·교차검증)이 그 로더를 나눠
@@ -337,7 +335,7 @@ def scenario_required_equipment(
 ) -> Callable[[], pd.DataFrame]:
     """이 키의 소요대수를 **부를 때만** 꺼내는 로더(`get_scenario_capacity_and_demand` 의 둘째 값).
 
-    키 전용 캐시(오류 확인·달 범위·필요단축일정·확보율 교차검증)가 빗나갈 때만 프레임이 필요하므로
+    키 전용 캐시(오류 확인·달 범위·필요 단축 일정·확보율 교차검증)가 빗나갈 때만 프레임이 필요하므로
     프레임 대신 이것을 넘긴다 — 적중 회차에는 소요대수(합성 표본 30개월에 pickle 약 12MB, 샘플
     관측)를 풀지 않는다. 한 로더는 프레임을 **한 번만** 푼다 — 한 회차에 여러 캐시가 함께 빗나가도
     (첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은 한 번이다. 실패는 기억하지 않아 다음에 부르면 다시
@@ -367,7 +365,7 @@ def get_required_month_span(
 ) -> tuple[int, int] | None:
     """이 키의 소요대수가 있는 첫 달·끝 달(`생산계획년월` 의 숫자 최소·최대). 없으면 `None`.
 
-    필요단축일정이 고를 달(조회기간 ∩ 이 범위)을 정하는 데는 이 두 수만 든다. 적중이면 소요대수를
+    필요 단축 일정이 고를 달(조회기간 ∩ 이 범위)을 정하는 데는 이 두 수만 든다. 적중이면 소요대수를
     풀지 않고, 빗나가면 로더를 부른다. 로더는 이 키로 소요대수를 꺼내는 것
     (`scenario_required_equipment`)이어야 한다. 계산 오류는 캐시되지 않고 그대로 올라간다.
     """
@@ -446,26 +444,6 @@ def get_scenario_result_summary(
         load_exclusions=required_equipment.attrs.get(REQUIRED_LOAD_EXCLUSIONS_ATTR, pd.DataFrame()),
         unrouted_loads=required_equipment.attrs.get(UNROUTED_LOADS_ATTR, pd.DataFrame()),
     )
-
-
-@st.cache_data(show_spinner=False, max_entries=16)
-def get_scenario_exclusion_counts(
-    cache_key: ScenarioCacheKey,
-    _scenario_tables: Mapping[str, pd.DataFrame],
-    _reference_tables: Mapping[str, pd.DataFrame],
-) -> RequiredExclusionCounts:
-    """소요대수에 들지 않은 수요 건수(조회기간 기준). HOME 이 결론 위 한 줄에 쓴다.
-
-    정수 넷이라 적중 회차의 값이 작다 — 결과 요약(`get_scenario_result_summary`)은 제외 목록
-    프레임째 담아 HOME 의 매 회차에 풀기에는 크다. 키·`_` 인자 계약은
-    `get_scenario_capacity_and_demand` 와 같다.
-    """
-    _, required_equipment = get_scenario_capacity_and_demand(
-        cache_key,
-        _scenario_tables=_scenario_tables,
-        _reference_tables=_reference_tables,
-    )
-    return required_exclusion_counts(required_equipment)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -1378,7 +1356,7 @@ def get_usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     """사용기준이 HBM·EDP 가 아니어서 가용대수에 세지 않는 행(`services/usage_basis`)을 다시 쓴다.
 
     일정 미정(`get_undated_equipment`)과 같은 까닭이다 — 설비 마스터 검증을 거치고 결과가 호기
-    마스터 내용만으로 정해진다. Main·Static 대비 일정·필요단축일정이 거르기 전 표를 넘겨 한 벌을
+    마스터 내용만으로 정해진다. Main·Static 대비 일정·필요 단축 일정이 거르기 전 표를 넘겨 한 벌을
     함께 쓰고 범위는 받은 쪽이 좁힌다.
     """
     return usage_excluded_equipment(equipment)
@@ -1754,7 +1732,7 @@ def get_required_shortening(
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
-    """다섯 목표의 필요단축일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
+    """다섯 목표의 필요 단축 일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
 
     결과에는 CSV 가 호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 호기
     마스터에서만 나오므로 키의 마스터 내용 지문이 그것까지 덮는다.
@@ -1801,7 +1779,7 @@ def get_required_shortening_csvs(
     months: tuple[int, ...],
     _plan: ShorteningPlan,
 ) -> tuple[bytes, bytes, bytes]:
-    """필요단축일정 CSV 세 벌의 바이트 — 고른 목표의 호기별, 다섯 목표의 호기별, 고른 목표의
+    """필요 단축 일정 CSV 세 벌의 바이트 — 고른 목표의 호기별, 다섯 목표의 호기별, 고른 목표의
     공정·월.
 
     탭이 열린 rerun 마다(목표만 바꿔도) 세 표를 다시 만들고 직렬화했다(2026-10-08 점검 A10).
@@ -1833,7 +1811,7 @@ def get_shortening_progress(
     _plan: ShorteningPlan,
     _baseline: ShorteningBaseline,
 ) -> pd.DataFrame:
-    """필요단축일정 진척 비교 — 고른 목표에서 기준선(과거)과 지금 계획(현재)을 짝지은 행.
+    """필요 단축 일정 진척 비교 — 고른 목표에서 기준선(과거)과 지금 계획(현재)을 짝지은 행.
 
     계획은 `get_required_shortening` 이 이미 캐시하므로, 그 키에 기준선 id·목표만 더한다. **기준선은
     고칠 수 없어** id 가 내용을 정한다(지우고 같은 id 로 다시 생기는 일이 없다 — uuid). `_plan` 은
@@ -1859,15 +1837,15 @@ def get_shortening_progress_csv(
 ) -> bytes:
     """「진척 비교 CSV」 의 바이트(BOM 이 붙은 UTF-8). `processes` 는 화면의 카드 차례다.
 
-    필요단축일정 CSV 세 벌과 같은 규칙이다 — 키 캐시이고 지연 생성(콜러블)은 쓰지 않는다. `_rows` 는
-    같은 계획 키·기준선·목표로 받은 `get_shortening_progress` 의 결과여야 한다.
+    필요 단축 일정 CSV 세 벌과 같은 규칙이다 — 키 캐시이고 지연 생성(콜러블)은 쓰지 않는다. `_rows`
+    는 같은 계획 키·기준선·목표로 받은 `get_shortening_progress` 의 결과여야 한다.
     """
     del cache_key, baseline_id
     frame = progress_export_frame(_rows, level=level, processes=processes)
     return frame.to_csv(index=False).encode("utf-8-sig")
 
 
-# Static 대비 일정의 구간 → 월별 → 비교. 필요단축일정과 같은 방식이다 — 프레임은 `_` 인자로
+# Static 대비 일정의 구간 → 월별 → 비교. 필요 단축 일정과 같은 방식이다 — 프레임은 `_` 인자로
 # 해시하지 않고, 키가 **함수의 실제 입력 전부**를 내용 지문으로 싣는다. 세 서비스 함수는 오늘
 # 날짜·설정을 읽지 않는다(오늘은 페이지의 기본 조회기간과 샘플 fleet 을 거쳐 들어오고, 그 둘은
 # 날짜·마스터 지문이 덮는다). 코드 상수는 키에 넣지 않는다(`frame_digest` 의 키 방침).
@@ -1884,7 +1862,7 @@ def equipment_span_cache_key(
     end_date: date,
 ) -> EquipmentSpanCacheKey:
     """`get_equipment_lifecycle_spans` 의 키. 마스터·비가동은 저장 안 한 편집본·샘플일 수 있어 내용
-    지문이다. `required_shortening_cache_key` 의 두 지문과 같은 함수라 필요단축일정과 키가 겹친다.
+    지문이다. `required_shortening_cache_key` 의 두 지문과 같은 함수라 필요 단축 일정과 키가 겹친다.
     """
     return (
         frame_digest(equipment),
@@ -1904,8 +1882,8 @@ def get_equipment_lifecycle_spans(
 
     Static 대비 일정은 보기(가용대수 비교 · 분류별 내역 · 확보율 교차검증)나 같은 탭의 위젯 하나만
     바꿔도 페이지 전체가 다시 돌아, 상태 판정을 바뀌는 날마다 다시 하는 이 계산이 매번 들었다
-    (2026-10-08 점검 A2 — 데모 19행 0.34초, 3천 행 복제 6개월 1.45초·32개월 2.35초). 필요단축일정도
-    이 캐시를 쓴다(`get_required_shortening`).
+    (2026-10-08 점검 A2 — 데모 19행 0.34초, 3천 행 복제 6개월 1.45초·32개월 2.35초). 필요 단축
+    일정도 이 캐시를 쓴다(`get_required_shortening`).
 
     `_equipment`·`_downtime` 은 키의 두 지문을 만든 바로 그 프레임이어야 한다. 마스터가 계약을
     어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
@@ -2361,11 +2339,11 @@ def get_process_month_trace(
     return build_process_month_trace(rows, capacity_tables, process=process, month=month)
 
 
-# 공정 Capa 상세의 설비 일정(참고). 필요단축일정 화면과 같은 계산을 공용 판정 기준(달마다 다른
+# 공정 Capa 상세의 설비 일정(참고). 필요 단축 일정 화면과 같은 계산을 공용 판정 기준(달마다 다른
 # 목표)으로 한 벌 더 두고, 공정 하나의 설비 일정(신규 호기·비가동 손실·전월 대비)을 따로 둔다.
 # 탭의 칸(`get_required_shortening`)은 그대로다.
 
-# (필요단축일정 키, 목표 기본값, 기본값과 다른 달의 (월, 목표))
+# (필요 단축 일정 키, 목표 기본값, 기본값과 다른 달의 (월, 목표))
 RequiredShorteningTargetCacheKey = tuple[
     RequiredShorteningCacheKey, float, tuple[tuple[int, float], ...]
 ]
@@ -2391,7 +2369,7 @@ def get_required_shortening_for_target(
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
-    """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요단축일정. `plan.at(목표)` 로 꺼낸다.
+    """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요 단축 일정. `plan.at(목표)` 로 꺼낸다.
 
     탭(`get_required_shortening`)과 같은 규칙이다 — 프레임은 해시하지 않고 키가 내용 지문·시나리오
     키·달·오늘·목표를 모두 싣는다. 소요대수는 빗나갈 때만 로더로 꺼내고, 호기 구간은 같은 구간
@@ -2438,7 +2416,7 @@ def process_equipment_timeline_cache_key(
 ) -> ProcessEquipmentTimelineCacheKey:
     """`get_process_equipment_timeline` 의 키. 네 표는 거르기 전 그대로의 내용 지문이다.
 
-    **오늘은 넣지 않는다** — 구간·호기별 기여는 오늘을 보지 않는다. 필요단축일정 키를 이미
+    **오늘은 넣지 않는다** — 구간·호기별 기여는 오늘을 보지 않는다. 필요 단축 일정 키를 이미
     만들었으면 `process_timeline_key_from_shortening` 이 지문을 다시 계산하지 않고 같은 키를 낸다.
     """
     return (
@@ -2454,7 +2432,7 @@ def process_equipment_timeline_cache_key(
 def process_timeline_key_from_shortening(
     shortening_key: RequiredShorteningCacheKey, process: str
 ) -> ProcessEquipmentTimelineCacheKey:
-    """필요단축일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
+    """필요 단축 일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
     _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _ = shortening_key
     return (
         equipment_digest,

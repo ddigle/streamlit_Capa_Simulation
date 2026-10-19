@@ -908,7 +908,7 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
 def test_name_mismatch_notices_keep_the_original_process_names() -> None:
     """공정명이 어긋난 자리를 알리는 문구는 설비 마스터·기준정보에서 고칠 **원본** 이름이다.
 
-    필요단축일정의 「맞대지 못한 공정」 과 같은 갈래다(AGENTS 8장 ③).
+    필요 단축 일정의 「맞대지 못한 공정」 과 같은 갈래다(AGENTS 8장 ③).
     """
     app = _run(wire_bond_units=True, labels=True)
     warnings = " ".join(item.value for item in app.warning)

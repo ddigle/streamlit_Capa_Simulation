@@ -12,7 +12,7 @@
    `process_detail_view`) — 표 도구 줄, 결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준
    가용 · ③ 신규 설비와 단축 · ④ 호기별 비가동), 범례, 산출 근거 패널. 칸을 누르면 그 구획만
    다시 돈다.
-8. **정리 줄** — 알림, 「이 공정 단축 일정 CSV」, 필요단축일정 화면 링크(설비 일정이 설 때만).
+8. **정리 줄** — 알림, 「이 공정 단축 일정 CSV」, 필요 단축 일정 화면 링크(설비 일정이 설 때만).
 9. **Guide**(`guides/process_capa_detail.md`) — 헤더의 Guide 단추.
 
 입력은 이 화면이 직접 모은다.
@@ -24,7 +24,7 @@
   (`PageSpec.uses_equipment_db`). 샘플 fleet 은 쓰지 않는다 — 저장본이 없으면 「설비 일정
   없음」이다. 판정(`dynamic_readiness`)을 통과한 공정만 계획
   (`get_required_shortening_for_target` — 단축 목표는 HOME Preference 확보기준을 달마다,
-  사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요단축일정 화면의
+  사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요 단축 일정 화면의
   공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)은 읽지도 쓰지도 않는다(사용자
   결정 1).
 - **HOME 표시 확보율** — HOME 의 확보율 보정·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
@@ -397,8 +397,8 @@ def home_advance_ratio(include_edp: bool) -> pd.DataFrame | None:
     HOME 과 **같은 캐시 키**로 부른다. 키의 달은 HOME 과 같은 함수
     (`past_data.display_month_range`)로 낸다 — 조회기간 ∩ 계산 원천(`RQ_PKG_PLAN`) 범위를 과거
     구간(Past Data) 달까지 넓힌 범위이고, 과거 구간을 넣을지는 HOME `Past Data 포함` 토글을
-    따른다(필요단축일정 화면 `_lob_rows` 와 같은 길). 그래서 HOME 을 본 뒤에는 HOME 계산을 한 벌 더
-    돌리지 않는다. 월별 부하량은 달마다 값이 정해지므로 축 안 달의 값은 범위와 상관없이 HOME 과
+    따른다(필요 단축 일정 화면 `_lob_rows` 와 같은 길). 그래서 HOME 을 본 뒤에는 HOME 계산을 한 벌
+    더 돌리지 않는다. 월별 부하량은 달마다 값이 정해지므로 축 안 달의 값은 범위와 상관없이 HOME 과
     같다. 범위가 비면 None(선행을 얹지 않는다).
     """
     source = available_month_range(reference_tables["RQ_PKG_PLAN"], "RQ_PKG_PLAN")

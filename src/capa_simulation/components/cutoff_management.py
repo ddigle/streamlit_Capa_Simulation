@@ -184,7 +184,7 @@ def render_cutoff_management(
         except ValueError as exc:
             st.error(str(exc))
         else:
-            # 다음 회차가 저장된 값을 읽는다 — Static 대비 일정·필요단축일정이 이 값으로 센다.
+            # 다음 회차가 저장된 값을 읽는다 — Static 대비 일정·필요 단축 일정이 이 값으로 센다.
             clear_process_cutoff_cache()
             _reset_draft(saved)
             queue_flash(_FLASH_KEY, f"공정별 Cut-off {len(saved)}건을 저장했습니다.")

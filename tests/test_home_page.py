@@ -566,11 +566,12 @@ def test_home_puts_the_charts_in_a_main_tab_next_to_preference(seeded_database: 
 REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"
 
 
-def test_home_says_how_much_demand_is_left_out_of_the_requirement(tmp_path: Path) -> None:
-    """P1·P3 — 부하량에서 빠진 계획이 있으면 HOME 이 결론 위에 한 줄로 말한다.
+def test_home_keeps_left_out_demand_warnings_for_the_admin_alert_board(tmp_path: Path) -> None:
+    """부하량에서 빠진 계획이 있어도 HOME 에는 경고 줄을 띄우지 않는다(2026-10-19 사용자 요청).
 
-    한 제품의 Chip 구성을 빼면 그 제품 계획은 부하량에서 빠지고 소요대수가 그만큼 작아져 확보율이
-    높게 나온다. HOME 이 말하지 않으면 보는 사람은 그 숫자를 그대로 믿는다.
+    한 제품의 Chip 구성을 빼면 그 제품 계획은 부하량에서 빠진다. 그런 알림은 HOME 에 줄줄이 달려
+    읽히지 않았다 — Admin Area 「알림 모음」 이 시나리오 전체 기간으로 모은다
+    (`tests/test_alert_board.py`). 결론 두 줄(최저 확보율 공정·기준 미달 수)도 HOME 에 없다.
     """
     app = AppTest.from_string(_home_script(tmp_path / "scenario.duckdb"), default_timeout=300)
     app.run()
@@ -591,10 +592,9 @@ def test_home_says_how_much_demand_is_left_out_of_the_requirement(tmp_path: Path
     app.run()
 
     assert not list(app.exception)
-    warnings = [item.value for item in app.warning if REQUIRED_EXCLUSION_PHRASE in item.value]
-    assert len(warnings) == 1, warnings
-    assert "조회기간 기준" in warnings[0]
-    assert "기준정보가 없어 부하량에서 빠진 계획" in warnings[0]
+    assert not [item.value for item in app.warning if REQUIRED_EXCLUSION_PHRASE in item.value]
+    assert not [item.value for item in app.markdown if "가장 낮은 확보율은" in item.value]
+    assert not [item.value for item in app.caption if "판정 가능한" in item.value]
 
 
 def test_the_bottleneck_detail_chart_keeps_hover_on(seeded_database: Path) -> None:
@@ -688,7 +688,6 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
     app.session_state["dashboard_show_performance"] = True
     app.run()
     assert _cache_state(app) == "적중"
-    before = _decision_caption(app)
 
     # 판정 기준은 Figure 캐시 키에 포함되어야 한다(AGENTS.md 5장 불변조건 7). 기준은 사이드바가
     # 아니라 Preference 의 공용 프로필에서 바꾼다.
@@ -708,11 +707,6 @@ def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -
         # 모듈 공용 DB 다. 뒤 테스트가 같은 기준(99.5%)에서 출발하게 되돌린다.
         app = _save_default_warning(app, 99.5)
     assert not list(app.error), [element.value for element in app.error]
-    assert _decision_caption(app) == before
-
-
-def _decision_caption(app: AppTest) -> str:
-    return next(element.value for element in app.caption if "기준 미달" in element.value)
 
 
 def test_home_reports_a_missing_active_revision_instead_of_a_traceback(tmp_path: Path) -> None:

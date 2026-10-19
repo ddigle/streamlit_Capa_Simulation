@@ -1088,7 +1088,7 @@ def test_a_product_without_pkg_routes_does_not_count_its_pkg_load_as_unrouted() 
     counts = required_exclusion_counts(result)
 
     assert counts == RequiredExclusionCounts()
-    # HOME 결론 위 한 줄·저장·발행 경고가 쓰는 문장도 비어 있다.
+    # 알림 모음·저장·발행 경고가 쓰는 문장도 비어 있다.
     assert required_exclusion_message(counts, scope=FULL_SCOPE) == ""
     # HBM 의 PKG 부하는 Buffer 경로에 그대로 붙는다.
     assert result.loc[result["소요기준"].eq("PKG"), "부하량"].tolist() == pytest.approx([100.0])

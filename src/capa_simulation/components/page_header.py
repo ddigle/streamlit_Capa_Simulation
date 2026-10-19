@@ -15,14 +15,14 @@ from __future__ import annotations
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.navigation import DATA_PENDING_SUFFIX, IMPLEMENTING_SUFFIX
+from capa_simulation.navigation import IMPLEMENTING_SUFFIX
 
 # 진행 표시 자리(`render_page_header_with_status`)의 컨테이너 키. Streamlit 은 이것을 `st-key-<키>`
 # 클래스로 달고, 머리 띠 CSS(`app_header`)가 그 자리를 화면 맨 위 띠 안에 고정한다.
 STATUS_SLOT_KEY = "page_header_status"
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
-# 사이드바 접미는 둘(`(구현중)`·`(Data확보중)`)이고 본문 성숙도는 여기서 더 잘게 나눈다
+# 사이드바 접미는 `(구현중)` 하나이고 본문 성숙도는 여기서 더 잘게 나눈다
 # (docs/TODO.md 결정 기록, 옛 3-1).
 MATURITY_BADGES = {
     "draft": ":gray-badge[화면 초안]",
@@ -99,16 +99,12 @@ def _render_marks(status_badge: str | None, badges: str | None, description: str
 
 
 def _split_status_suffix(title: str) -> tuple[str, str | None]:
-    """사이드바 라벨의 상태 접미를 제목에서 떼어 배지 글자로 돌려준다.
+    """사이드바 라벨의 상태 접미 `(구현중)` 을 제목에서 떼어 배지 글자로 돌려준다.
 
-    접미는 둘이다 — `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고
-    연결할 데이터만 기다리는 화면이다. 사용자에게 뜻이 다르므로 배지 색도 가른다.
+    접미는 아직 못 만든 화면에만 단다. 데이터만 기다리던 화면의 `(Data확보중)` 은 걷었다 —
+    운영 화면이라 딱지가 오히려 덜 된 화면처럼 읽혔다(2026-10-19 사용자 요청).
     """
-    for suffix, badge in (
-        (IMPLEMENTING_SUFFIX, ":orange-badge[구현중]"),
-        (DATA_PENDING_SUFFIX, ":blue-badge[Data확보중]"),
-    ):
-        spaced = f" {suffix}"
-        if title.endswith(spaced):
-            return title[: -len(spaced)], badge
+    spaced = f" {IMPLEMENTING_SUFFIX}"
+    if title.endswith(spaced):
+        return title[: -len(spaced)], ":orange-badge[구현중]"
     return title, None

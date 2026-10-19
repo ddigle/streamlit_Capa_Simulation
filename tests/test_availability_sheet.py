@@ -8,7 +8,7 @@
 - 칸마다 `보유 + 대여 = 가용 = 지금의 환산 소계`.
 - 셋업 중·보관 호기의 비가동은 대여에 들지 않는다(그 칸의 `운영 비가동` 과 다르다).
 - 세 칸 모두 호기 줄의 합 = 칸(기존보유 줄 포함).
-- 공정 Capa 상세 ②(`bridge.가용대수`)·④(손실)·필요단축일정 가용과 같은 값.
+- 공정 Capa 상세 ②(`bridge.가용대수`)·④(손실)·필요 단축 일정 가용과 같은 값.
 - Static 대여 부호·불일치, GAP 의 「—」 규칙.
 """
 
@@ -455,7 +455,7 @@ def test_downtime_notes_follow_the_loss_boundaries() -> None:
 
 def test_the_sheet_matches_process_capa_detail_and_required_shortening(built: _Built) -> None:
     """공정마다 설비 일정 기준 가용 = 공정 Capa 상세 `bridge.가용대수`(5e-10 — 그쪽이 9자리로
-    턴다), 대여 = −Σ 손실 환산대수(손실 호기 수 × 5e-10 — 호기마다 9자리로 반올림), 필요단축일정
+    턴다), 대여 = −Σ 손실 환산대수(손실 호기 수 × 5e-10 — 호기마다 9자리로 반올림), 필요 단축 일정
     가용과 같다."""
     rows = built.sheet.rows.set_index(KEYS)
     for process in ("P_A", "P_B", "P_C"):

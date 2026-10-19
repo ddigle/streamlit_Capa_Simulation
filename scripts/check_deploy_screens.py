@@ -199,7 +199,7 @@ ADMIN_AREA_PAGE: Final = "admin_area"
 # `process_detail_state`). 앱 모듈을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
 # 본다.
 PROCESS_DETAIL_PAGE: Final = "process_capa_detail"
-# 필요단축일정 — 가용설비 현황의 탭이던 것을 실행 관리 아래 별도 화면으로 뗐다(2026-10-18).
+# 필요 단축 일정 — 가용설비 현황의 탭이던 것을 실행 관리 아래 별도 화면으로 뗐다(2026-10-18).
 SHORTENING_PAGE: Final = "required_shortening"
 PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
     "kpi": "process_detail_kpis",
@@ -1883,7 +1883,7 @@ def check_equipment_headers(screen: Screen) -> str:
 
 
 def check_progress_box(screen: Screen) -> str:
-    """`필요단축일정` 화면의 `진척 비교` 상자 — 있음·값·선택지 수·자리. 고르지 않는다."""
+    """`필요 단축 일정` 화면의 `진척 비교` 상자 — 있음·값·선택지 수·자리. 고르지 않는다."""
     screen.open_page(SHORTENING_PAGE)
     box = screen.selectbox("진척 비교")
     if screen.poll(box.count, timeout=60, accept=lambda count: count > 0) == 0:
@@ -2943,7 +2943,7 @@ ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
     Item("rawdata_target", "RawData 등록할 표", check_rawdata_target),
-    Item("progress_box", "필요단축일정 진척 비교 상자", check_progress_box),
+    Item("progress_box", "필요 단축 일정 진척 비교 상자", check_progress_box),
     Item("space_drawer", "Space 미배치 서랍", check_space_drawer),
     Item("sidebar_panel", "HOME 조회 조건 패널", check_sidebar_panel),
     Item("panel_rows_other_pages", "다른 화면 패널 줄", check_panel_rows_other_pages),

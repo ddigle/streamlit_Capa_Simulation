@@ -589,7 +589,7 @@ class DuckDBEquipmentRepository:
             return _stored_process_cutoff(connection)
 
     def load_shortening_filter_profile(self) -> ShorteningFilterProfile:
-        """필요단축일정 공용 조회 조건(0019). 한 번도 저장하지 않았으면 `version` 0 의 빈 값."""
+        """필요 단축 일정 공용 조회 조건(0019). 한 번도 저장하지 않았으면 `version` 0 의 빈 값."""
         with self._connect() as connection:
             return _read_shortening_filter(connection)
 
@@ -652,7 +652,7 @@ class DuckDBEquipmentRepository:
     def save_shortening_baseline(
         self, draft: ShorteningBaselineDraft, *, saved_at: datetime | None = None
     ) -> ShorteningBaselineSummary:
-        """필요단축일정 기준선을 새로 저장한다(0021). 고칠 수 없는 공용 기록이다.
+        """필요 단축 일정 기준선을 새로 저장한다(0021). 고칠 수 없는 공용 기록이다.
 
         같은 이름이 있으면 `ValueError` 로 거절한다 — 견주기와 넣기를 한 쓰기 잠금·트랜잭션에서
         해서 두 사람이 같은 이름을 동시에 저장해도 하나만 들어간다. 저장 시각은 이 PC 의 벽시계다
@@ -684,7 +684,7 @@ class DuckDBEquipmentRepository:
         )
 
     def list_shortening_baselines(self) -> tuple[ShorteningBaselineSummary, ...]:
-        """모든 필요단축일정 기준선 머리. 최근에 저장한 것이 위다."""
+        """모든 필요 단축 일정 기준선 머리. 최근에 저장한 것이 위다."""
         with self._connect() as connection:
             return tuple(list_baselines(connection))
 
@@ -1053,7 +1053,7 @@ def _require_floor_key(building: str, floor: str) -> None:
 
 
 def _read_shortening_filter(connection: duckdb.DuckDBPyConnection) -> ShorteningFilterProfile:
-    """열린 연결에서 필요단축일정 공용 조회 조건을 읽는다. 헤더가 없으면 빈 값(`version` 0)."""
+    """열린 연결에서 필요 단축 일정 공용 조회 조건을 읽는다. 헤더가 없으면 빈 값(`version` 0)."""
     header = connection.execute(
         """
         SELECT start_month, end_month, version, source, updated_at

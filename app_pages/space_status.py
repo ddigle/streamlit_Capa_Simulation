@@ -322,9 +322,9 @@ else:
         else:
             st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = selected
 
-# 본문 머리에는 상태 배지(「Data확보중」)도 적용 이력 줄도 두지 않는다 — 배치도가 쓸 자리다
+# 본문 머리에는 적용 이력 줄을 두지 않는다 — 배치도가 쓸 자리다
 # (2026-10-01 사용자 결정). 사이드바 메뉴 이름은 그대로다.
-render_page_header("Space 현황 (Data확보중)", show_status=False)
+render_page_header("Space 현황", show_status=False)
 render_page_guide("space_status", title="Space 현황")
 # 저장 알림·버림 알림은 늘 서 있는 한 칸 안에 그린다 — 알림이 생기고 사라질 때 아래 key 있는
 # 묶음의 자리가 밀리면 `st.rerun()` 으로 끊긴 회차의 사본이 남는다(가용설비 현황과 같은 까닭).
@@ -622,7 +622,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             with st.expander(f"바꾼 이름 {len(names)}건"):
                 st.dataframe(names, hide_index=True, width="stretch")
                 st.caption(
-                    "저장하면 새 리비전부터 새 이름입니다. 지난 리비전과 필요단축일정 진척 비교 "
+                    "저장하면 새 리비전부터 새 이름입니다. 지난 리비전과 필요 단축 일정 진척 비교 "
                     "기준선은 옛 이름 그대로이고, 설비 마스터를 바깥 Excel 에서 붙여넣어 관리하면 "
                     "그 Excel 의 이름도 바꿔야 합니다."
                 )

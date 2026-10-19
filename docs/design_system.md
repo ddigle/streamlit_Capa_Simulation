@@ -57,7 +57,7 @@ Streamlit은 `headingFont` 값에 콜론이 없으면 문자열 전체를 폰트
 | 페이지 제목(`st.title` h1) | `FONT_FAMILY_DISPLAY` 800 · 폭 100% · 자간 -0.01em | 30px(`headingFontSizes[0]`) | `typography.py` |
 | 상자·구획 제목(`####` h4, `st.subheader` h3, h2, HOME 구획 제목 `section_title_markup`) | `FONT_FAMILY_DISPLAY` 700 · 폭 100% | 그대로(h4 16px · h3 19px · 구획 20px) | `typography.py` |
 | HOME `Summary` 접힘 제목 | `FONT_FAMILY_DISPLAY` 700 | 20px | `home_rendering.summary_notice_style` |
-| 큰 숫자(`st.metric` 값, HOME 결론 줄의 확보율 칸 `typography.FIGURE_CLASS`) | `FONT_FAMILY_DISPLAY` 700 · 숫자 폭 고정(`tabular-nums`) | 그대로(metric 2.25rem · 결론 줄 본문 크기) | `typography.py`·`decision_summary.py` |
+| 큰 숫자(`st.metric` 값, 필요 단축 일정 KPI 칩 `typography.FIGURE_CLASS`) | `FONT_FAMILY_DISPLAY` 700 · 숫자 폭 고정(`tabular-nums`) | 그대로(metric 2.25rem · 결론 줄 본문 크기) | `typography.py`·`decision_summary.py` |
 | 본문 한글·캡션·알림 | Streamlit 본문 서체 | 14px(`baseFontSize`) | `config.toml` |
 | 표·차트 숫자 | `FONT_FAMILY_NUMERIC`(Calibri) | 표마다 | Plotly·`tokens` |
 | 사이드바 메뉴·상자 머리글 | 그대로 | 그대로 | `sidebar_style.py` |

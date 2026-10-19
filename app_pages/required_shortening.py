@@ -1,6 +1,6 @@
 # Purpose: 설비 일정과 시나리오 소요대수를 모아 목표 확보율을 채울 Qual 단축 화면을 그린다.
 
-"""필요단축일정(실행 관리 아래, 공정 Capa 상세 다음 — 2026-10-18 사용자 결정).
+"""필요 단축 일정(실행 관리 아래, 공정 Capa 상세 다음 — 2026-10-18 사용자 결정).
 
 가용설비 현황의 한 탭이던 것을 별도 페이지로 뗐다. 그 탭이 페이지에서 받던 것을 이 페이지가 스스로
 모은다 — 설비 운영 DB 의 저장본 사본·미저장 편집본(`equipment_data_workspace`, 가용설비 현황·Space
@@ -71,8 +71,8 @@ def _baseline_refusal(*, sample: bool) -> str | None:
     return None
 
 
-render_page_header("필요단축일정 (Data확보중)")
-render_page_guide("required_shortening", title="필요단축일정")
+render_page_header("필요 단축 일정")
+render_page_guide("required_shortening", title="필요 단축 일정")
 notices = st.container()
 
 today = date.today()
@@ -123,7 +123,7 @@ dashboard_baseline = (
 )
 
 # 거르는 조건(기간·공정)은 사이드바 조건 카드다. 목표 확보율·진척 비교는 본문 맨 위다.
-conditions_card = condition_card("필요단축일정 조건", name="shortening")
+conditions_card = condition_card("필요 단축 일정 조건", name="shortening")
 if using_dashboard_sample and not show_sample_fleet:
     with conditions_card:
         st.caption(

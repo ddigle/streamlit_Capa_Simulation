@@ -41,7 +41,6 @@ from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     CAPA_CHATBOT,
     CONDITIONS_SECTION,
-    DATA_PENDING_SUFFIX,
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
     EQUIPMENT_GAP_TAB,
@@ -103,17 +102,17 @@ EXPECTED_PAGES = [
     ("app_pages/process_capa_detail.py", "공정 Capa 상세", ":material/troubleshoot:", False),
     (
         "app_pages/required_shortening.py",
-        "필요단축일정 (Data확보중)",
+        "필요 단축 일정",
         ":material/event_upcoming:",
         False,
     ),
     (
         "app_pages/available_equipment_status.py",
-        "가용설비 현황 (Data확보중)",
+        "가용설비 현황",
         ":material/precision_manufacturing:",
         False,
     ),
-    ("app_pages/space_status.py", "Space 현황 (Data확보중)", ":material/grid_view:", False),
+    ("app_pages/space_status.py", "Space 현황", ":material/grid_view:", False),
     ("app_pages/actual_efficiency.py", "효율 실적 (구현중)", ":material/speed:", False),
     ("app_pages/actual_upeh.py", "UPEH 실적 (구현중)", ":material/timer:", False),
     ("app_pages/yield_actual.py", "수율 실적 (구현중)", ":material/percent:", False),
@@ -165,7 +164,7 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "app_pages/calculation_result.py",
         STANDARD_TARGET_CAPA.path,
     ]
-    # 실행 관리 하위 일곱 — 공정 하나의 대책 → 전체 공정의 단축 계획(필요단축일정, 2026-10-18
+    # 실행 관리 하위 일곱 — 공정 하나의 대책 → 전체 공정의 단축 계획(필요 단축 일정, 2026-10-18
     # 가용설비 현황 탭에서 뗐다) → 설비 일정 → 현장 → 성능 실적 셋.
     assert EXECUTION_MANAGEMENT.path == "app_pages/execution_management.py"
     assert list(EXECUTION_MANAGEMENT_SUBPAGES[:4]) == [
@@ -199,28 +198,38 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     `Capa Chatbot` 은 본문이 "인터랙티브 프로토타입" 이라고 밝히는데도 사이드바에만 표기가 없어
     가장 덜 된 화면이 완성된 것처럼 보였다.
 
-    표기는 둘이다. `(구현중)` 은 아직 못 만든 화면, `(Data확보중)` 은 화면은 다 만들었고
-    연결할 데이터만 기다리는 화면이다. 사용자에게 뜻이 다르므로 갈라 둔다.
+    표기는 `(구현중)` 하나다 — 아직 못 만든 화면에만 단다. 데이터만 기다리던 운영 화면의
+    `(Data확보중)` 은 걷었다(2026-10-19 사용자 요청).
     """
-    # 공정 Capa 상세는 운영 화면이라 표기가 없고, 본문 머리가 공정 이름이라 제목 대조에서도 뺀다.
+    # 운영 화면은 표기가 없다. 공정 Capa 상세는 본문 머리가 공정 이름이라 제목 대조에서도 뺀다.
+    operating = (REQUIRED_SHORTENING, AVAILABLE_EQUIPMENT_STATUS, SPACE_STATUS)
+    for spec in (PROCESS_CAPA_DETAIL, *operating):
+        assert "(" not in spec.title, spec.path
     unfinished = [
         spec
         for spec in (*EXECUTION_MANAGEMENT_SUBPAGES, *DYNAMIC_CAPA_SUBPAGES)
-        if spec is not PROCESS_CAPA_DETAIL
+        if spec is not PROCESS_CAPA_DETAIL and spec not in operating
     ]
     for spec in (CAPA_CHATBOT, *unfinished):
-        assert spec.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX)), spec.path
+        assert spec.title.endswith(IMPLEMENTING_SUFFIX), spec.path
     # 그룹 머리는 표기를 달지 않는다(2026-09-29 사용자 결정) — 하위 화면이 각자 표기를 달고 있어
     # 머리에도 달면 그룹 전체가 안 된 것처럼 읽힌다. 성숙도는 본문 배지가 말한다.
     for head in (EXECUTION_MANAGEMENT, DYNAMIC_CAPA):
-        assert not head.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX)), head.path
+        assert not head.title.endswith(IMPLEMENTING_SUFFIX), head.path
     # 사이드바 라벨과 본문 제목이 같아야 한다는 계약은 표기 유무와 무관하다. `Admin Area`
     # 는 이미 쓰는 관리 화면이라 표기를 달지 않지만 두 제목은 여전히 같아야 한다.
-    for spec in (CAPA_CHATBOT, EXECUTION_MANAGEMENT, DYNAMIC_CAPA, *unfinished, ADMIN_AREA):
+    for spec in (
+        CAPA_CHATBOT,
+        EXECUTION_MANAGEMENT,
+        DYNAMIC_CAPA,
+        *unfinished,
+        *operating,
+        ADMIN_AREA,
+    ):
         # 본문은 공통 헤더가 그린다. 서식(한 줄/여러 줄)에 흔들리지 않도록 AST 로 첫 인자를
         # 읽는다.
         assert _page_header_title(PROJECT_ROOT / spec.path) == spec.title, spec.path
-    assert not ADMIN_AREA.title.endswith((IMPLEMENTING_SUFFIX, DATA_PENDING_SUFFIX))
+    assert not ADMIN_AREA.title.endswith(IMPLEMENTING_SUFFIX)
 
 
 def _page_header_title(page_path: Path) -> str | None:
@@ -1716,8 +1725,8 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 
 
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
-    """가용설비 현황·필요단축일정과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러 번
-    연다)다."""
+    """가용설비 현황·필요 단축 일정과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러
+    번 연다)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
     assert declared == {
         AVAILABLE_EQUIPMENT_STATUS.path,

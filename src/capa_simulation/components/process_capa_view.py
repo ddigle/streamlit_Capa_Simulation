@@ -30,7 +30,7 @@
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
-정리 줄(알림·「이 공정 단축 일정 CSV」·필요단축일정 화면 링크)과 KPI 넷은 달에 닿지 않아
+정리 줄(알림·「이 공정 단축 일정 CSV」·필요 단축 일정 화면 링크)과 KPI 넷은 달에 닿지 않아
 프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 """
 
@@ -331,7 +331,7 @@ def target_text(target: TargetLevel, months: Sequence[int]) -> str:
 
 
 def target_label(value: float) -> str:
-    """목표 하나 — 「110% (1.095)」. 필요단축일정 화면의 「110%」 는 1.10 이라 같은 백분율 글자가
+    """목표 하나 — 「110% (1.095)」. 필요 단축 일정 화면의 「110%」 는 1.10 이라 같은 백분율 글자가
     다른 값을 가리킨다 — 이 화면은 늘 소수를 함께 적는다(설계 logic_final 2)."""
     return f"{threshold_percent_label(value)} ({value:g})"
 
@@ -1073,8 +1073,8 @@ def render_process_kpis(
                 else absent_reason
             ),
             help=(
-                "필요단축일정과 같은 계산을 이 공정 하나로 본 것입니다 — 단축은 Qual 을 당길 호기, "
-                "신규는 당겨도 모자라 더 들여야 하는 추가N 입니다."
+                "필요 단축 일정과 같은 계산을 이 공정 하나로 본 것입니다 — "
+                "단축은 Qual 을 당길 호기, 신규는 당겨도 모자라 더 들여야 하는 추가N 입니다."
             ),
         )
 
@@ -1123,7 +1123,7 @@ def render_closing_row(
     csv_bytes: bytes | None,
     csv_file_name: str,
 ) -> None:
-    """정리 줄 — 알림(0 이면 생략), 「이 공정 단축 일정 CSV」, 필요단축일정 화면 링크."""
+    """정리 줄 — 알림(0 이면 생략), 「이 공정 단축 일정 CSV」, 필요 단축 일정 화면 링크."""
     for notice in notices:
         st.caption(notice)
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
@@ -1135,7 +1135,7 @@ def render_closing_row(
                 label="이 공정 단축 일정 CSV",
             )
         st.button(
-            "필요단축일정에서 전체 공정·진척 비교 보기",
+            "필요 단축 일정에서 전체 공정·진척 비교 보기",
             key=SHORTENING_TAB_LINK_KEY,
             icon=":material/arrow_forward:",
             type="tertiary",
@@ -1145,7 +1145,7 @@ def render_closing_row(
 
 
 def open_shortening_page(process: str) -> None:
-    """필요단축일정 화면을 이 공정으로 연다 — **세션 키만 심는다**(콜백).
+    """필요 단축 일정 화면을 이 공정으로 연다 — **세션 키만 심는다**(콜백).
 
     공정 상자(`SHORTENING_PROCESS_KEY=[공정]`)만 적고 그 화면(실행 관리 아래, 2026-10-18 가용설비
     현황 탭에서 뗐다)으로 옮긴다. 그 화면의 공용 조회 조건(설비 DB `0019`)·기준선(`0021`)은 읽지도

@@ -9,7 +9,7 @@
 - 페이지 제목(`st.title` 의 `h1`) — Archivo 800 · 폭 100%, 자간 -0.01em.
 - 상자·구획 제목(`####` 꼴 `h4` 와 `h2`·`h3`, HOME 구획 제목 `section_title_markup`, HOME `Summary`
   접힘 제목) — 같은 짝 700. 크기는 지금 그대로다.
-- 큰 숫자(`st.metric` 값, HOME 결론 줄의 확보율) — Archivo 700 · 숫자 폭 고정(`tabular-nums`).
+- 큰 숫자(`st.metric` 값, 필요 단축 일정 KPI 칩) — Archivo 700 · 숫자 폭 고정(`tabular-nums`).
 
 한글은 Archivo 에 없어 `tokens.FONT_FAMILY_DISPLAY` 스택의 다음 글꼴(Noto Sans KR → 맑은 고딕)로
 떨어진다. 선택자는 모두 본문(`stMain`) 안으로 묶어 사이드바·입장 화면 덮개(`body` 직속)에 닿지
@@ -56,7 +56,8 @@ FONT_FILES: Final = {700: "archivo-700.woff2", 800: "archivo-800.woff2"}
 # 부분 글꼴에 든 글자 — 인쇄 가능한 ASCII 전부(U+0020–U+007E). `unicode-range` 와 같은 범위다.
 FONT_SUBSET_TEXT: Final = "".join(chr(code) for code in range(0x20, 0x7F))
 UNICODE_RANGE: Final = "U+20-7E"
-# 큰 숫자 자리에 붙이는 클래스. `st.metric` 밖에서 큰 값을 그리는 마크업(HOME 결론 줄)이 단다.
+# 큰 숫자 자리에 붙이는 클래스. `st.metric` 밖에서 큰 값을 그리는 마크업(필요 단축 일정 KPI 칩)이
+# 단다.
 FIGURE_CLASS: Final = "capa-figure"
 
 

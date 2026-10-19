@@ -110,7 +110,7 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
             )
 
 
-render_page_header("가용설비 현황 (Data확보중)")
+render_page_header("가용설비 현황")
 render_page_guide("available_equipment_status", title="가용설비 현황")
 # 저장 알림·버림 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 탭
 # 묶음의 자리가 한 칸 밀리면, `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 가
@@ -161,7 +161,7 @@ process_labels = process_labels_module.get_process_labels()
 
 first_action = st.empty()
 sample_notice = st.empty()
-# 필요단축일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
+# 필요 단축 일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
 # `app_pages/required_shortening.py`). Cut-off 는 여기 Preference 에서 고친다.
 main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
@@ -315,7 +315,7 @@ with gap_tab:
         try:
             # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다. 보기·위젯을
             # 바꾸는 rerun 마다 다시 만들지 않도록 마스터·비가동 내용 지문과 범위로 캐시한다 —
-            # 필요단축일정 화면과 같은 캐시라 범위가 같으면 한 벌을 나눈다.
+            # 필요 단축 일정 화면과 같은 캐시라 범위가 같으면 한 벌을 나눈다.
             gap_spans = get_equipment_lifecycle_spans(
                 equipment_span_cache_key(
                     equipment=dashboard_equipment,

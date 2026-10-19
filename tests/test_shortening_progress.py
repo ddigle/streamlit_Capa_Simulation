@@ -1,6 +1,6 @@
-# Purpose: 필요단축일정 진척 비교의 짝짓기·상태·요약·범위 차이·CSV 표를 고정한다.
+# Purpose: 필요 단축 일정 진척 비교의 짝짓기·상태·요약·범위 차이·CSV 표를 고정한다.
 
-"""필요단축일정 진척 비교(`services/shortening_progress.py`).
+"""필요 단축 일정 진척 비교(`services/shortening_progress.py`).
 
 과거·현재는 같은 목표의 호기 표 두 벌이다. 날짜는 손으로 셀 수 있게 잡았다 — 단축일수 = 확보 시점
 (기존 Qual) − 필요 시점(목표 Qual).

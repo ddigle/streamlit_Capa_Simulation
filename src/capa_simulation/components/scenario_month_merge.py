@@ -143,7 +143,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         st.warning(
             f"결과 월 사이에 빈 달이 {len(empty_months)}개월 있습니다: "
             f"{format_month_runs(empty_months)}. 빈 달은 어느 표에도 없어 계획·설비가 없는 달로 "
-            "남고, 필요단축일정 같은 화면에서 부족이 없는 달처럼 보일 수 있습니다. 이어진 기간이 "
+            "남고, 필요 단축 일정 같은 화면에서 부족이 없는 달처럼 보일 수 있습니다. 이어진 기간이 "
             "필요하면 원본이나 덧붙일 월 범위를 바꾸세요."
         )
     preview = month_table_summary(base_tables, label="베이스").merge(

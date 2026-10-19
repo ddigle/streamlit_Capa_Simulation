@@ -1,9 +1,10 @@
-# Purpose: 공정 표시명과 공용 표시순서 같은 운영 관리 기능을 탭으로 모아 제공한다.
+# Purpose: 공정 표시명·공용 표시순서·원천 품질·알림 모음 같은 운영 관리 기능을 탭으로 모아 제공한다.
 
 from __future__ import annotations
 
 import streamlit as st
 
+from capa_simulation.components.alert_board import render_alert_board
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
@@ -13,19 +14,21 @@ from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
 from capa_simulation.components.source_quality import render_source_quality
+from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.settings import DUCKDB_PATH
 
-# 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 차트·월별 표가
-# 들어오면 그때 `tab_state.stateful_tabs` 로 바꿔 **그림만** 건너뛴다. 입력 위젯은 닫힌
-# 탭에서도 항상 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다.
+# 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 탭은 `stateful_tabs`
+# 라 열린 탭을 서버가 안다 — 계산이 드는 「알림 모음」 만 닫혀 있으면 건너뛴다. 입력 위젯이 든 탭은
+# 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다.
 TAB_NAMES = (
     ":material/label: Proc Rename",
     ":material/sort: 표시순서 관리",
     ":material/fact_check: 원천 품질",
+    ":material/notifications: 알림 모음",
 )
 
 render_page_header("Admin Area")
@@ -54,7 +57,9 @@ try:
 except BOOTSTRAP_ERRORS:
     available_processes = []
 
-process_rename_tab, display_order_tab, source_quality_tab = st.tabs(list(TAB_NAMES))
+process_rename_tab, display_order_tab, source_quality_tab, alert_tab = stateful_tabs(
+    TAB_NAMES, key="admin_area_active_tab"
+)
 
 with process_rename_tab:
     render_process_rename_management(repository, available_processes)
@@ -73,3 +78,8 @@ with source_quality_tab:
             st.info(bootstrap_error_message(exc))
         else:
             render_source_quality(source_profile, source_rows)
+with alert_tab:
+    # HOME 에서 걷은 계산 알림(소요대수에 들지 않은 수요 등)을 시나리오 전체 기간으로 모은다
+    # (2026-10-19 사용자 요청). 처음 여는 회차에 전체 기간 계산이 들어 닫혀 있으면 건너뛴다.
+    if not tab_is_hidden(alert_tab):
+        render_alert_board()

@@ -1,6 +1,6 @@
-# Purpose: 필요단축일정 기준선의 얼리기·이름 규칙과 설비 DB 0021 저장·목록·읽기·지우기를 검사한다.
+# Purpose: 필요 단축 일정 기준선의 얼리기·이름 규칙과 설비 DB 0021 저장·목록·읽기·지우기를 검사한다.
 
-"""필요단축일정 기준선(`services/shortening_baseline.py`, 설비 DB 0021).
+"""필요 단축 일정 기준선(`services/shortening_baseline.py`, 설비 DB 0021).
 
 기준선은 그때 계획을 얼린 고칠 수 없는 공용 기록이다. 계획은 `test_required_shortening` 의 손으로
 셀 수 있는 예(Cut-off 10, 2026-05 W/D 구간 31일)를 그대로 쓴다.

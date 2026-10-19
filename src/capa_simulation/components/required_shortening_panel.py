@@ -1,6 +1,6 @@
-# Purpose: 필요단축일정의 조건·목표 선택과 공정 카드형 화면(KPI·LOB 요약·호기 타임라인)을 그린다.
+# Purpose: 필요 단축 일정의 조건·목표 선택과 공정 카드형 화면(KPI·LOB 요약·호기 타임라인)을 그린다.
 
-"""필요단축일정 화면 — 시안 B 「공정 카드형」(2026-10-07 사용자 승인).
+"""필요 단축 일정 화면 — 시안 B 「공정 카드형」(2026-10-07 사용자 승인).
 
 계산은 `services/required_shortening.py` 가 하고 결과는 `simulation_cache.get_required_shortening`
 이 다섯 목표를 한 번에 캐시한다. 이 화면은 **고르기만** 한다 — 목표 확보율(본문 머리 줄)·공정
@@ -141,8 +141,8 @@ _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
 _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
 # 공용 조회 조건 프로필에 남기는 출처 글.
-_MONTHS_SOURCE = "필요단축일정 조회 기간"
-_PROCESSES_SOURCE = "필요단축일정 공정 선택"
+_MONTHS_SOURCE = "필요 단축 일정 조회 기간"
+_PROCESSES_SOURCE = "필요 단축 일정 공정 선택"
 
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
 _LABEL_COLUMN_PX = 170
@@ -215,7 +215,7 @@ def render_required_shortening_tab(
     equipment_revision_no: int | None = None,
     baseline_refusal: str | None = None,
 ) -> None:
-    """필요단축일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
+    """필요 단축 일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
 
     조건 위젯 값은 숨은 동안 `persist_state` 가 지킨다.
 
@@ -302,8 +302,8 @@ def _prepare(
     if cutoff.empty:
         return _Stop(
             "info",
-            "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요단축일정을 낼 수 있습니다 "
-            "(Preference › Cut-off).",
+            "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 "
+            "있습니다 (Preference › Cut-off).",
         )
     try:
         demand_months = simulation_cache.get_required_month_span(
@@ -344,7 +344,7 @@ def _prepare(
             _required_equipment=required_equipment,
         )
     except ValueError as exc:
-        return _Stop("error", f"필요단축일정을 계산하지 못했습니다 — {exc}")
+        return _Stop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
 
     ordered = _ordered_processes(plan, context)
     # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
@@ -519,7 +519,7 @@ def _render_body(
 def _render_scenario_error(reason: str | None) -> None:
     """활성 시나리오의 소요대수를 못 읽어 계산하지 않았다는 경고. 까닭이 있으면 아래에 붙인다."""
     st.warning(
-        "활성 시나리오의 소요대수를 읽지 못해 필요단축일정을 계산하지 않았습니다. "
+        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
         "다른 탭은 그대로 쓸 수 있습니다." + (f"\n\n{reason}" if reason else ""),
         icon=":material/sync_problem:",
     )
@@ -534,7 +534,7 @@ def _render_header(
     """설명 한 줄과 오른쪽 `진척 비교`·`목표 확보율`. 설명 옆에 두므로 가로 컨테이너가 아니라
     컬럼이다(AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는 조건(기간·공정)만 조건 카드에
     둔다. `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를 세우지 않는다. 제목은 따로 달지
-    않는다 — 별도 화면이 되어(2026-10-18) 페이지 제목 「필요단축일정」 과 겹쳤다."""
+    않는다 — 별도 화면이 되어(2026-10-18) 페이지 제목 「필요 단축 일정」 과 겹쳤다."""
     if SHORTENING_LEVEL_KEY not in st.session_state:
         st.session_state[SHORTENING_LEVEL_KEY] = DEFAULT_TARGET_LEVEL
     compare_column: DeltaGenerator | None = None
@@ -1184,7 +1184,7 @@ def _kpi_markup(
         f'<span class="shk-kpi-note">{_escape(note)}</span></div>'
         for label, value, note in tiles
     )
-    return f'<div class="shk-kpis" role="group" aria-label="필요단축일정 요약">{cells}</div>'
+    return f'<div class="shk-kpis" role="group" aria-label="필요 단축 일정 요약">{cells}</div>'
 
 
 # ------------------------------------------------------------------ LOB 요약

@@ -174,7 +174,7 @@ def test_the_cached_wrapper_returns_the_same_rows() -> None:
     pd.testing.assert_frame_equal(get_undated_equipment(master), undated_equipment(master))
 
 
-# 필요단축일정의 덧붙임 — 후보 조건(`shortening_candidates`)과 맞는지 함께 본다.
+# 필요 단축 일정의 덧붙임 — 후보 조건(`shortening_candidates`)과 맞는지 함께 본다.
 _ARRIVAL_ONLY = {"설비명": "ARRIVAL-ONLY", "반입일정": None, "Qual상태": "계획"}
 _QUAL_BLANK = {"설비명": "QUAL-BLANK", "Qual일정": None, "Qual상태": None}
 _BOTH_BLANK = {"설비명": "BOTH-BLANK", **_NO_DATES, "Qual상태": None}

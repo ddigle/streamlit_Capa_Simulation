@@ -16,17 +16,10 @@ import streamlit as st
 # `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 표기가 섞여 있었고 페이지 본문 제목과도
 # 달랐다. 본문이 이미 쓰고 있던 표기로 통일했다.
 IMPLEMENTING_SUFFIX = "(구현중)"
-# 화면은 이미 다 만들었고 **데이터만 기다리는** 페이지에 붙인다. `(구현중)` 과 갈라 둔 것은
-# 둘이 사용자에게 다른 뜻이기 때문이다 — 하나는 "아직 못 만들었다", 하나는 "연결만 남았다".
-DATA_PENDING_SUFFIX = "(Data확보중)"
 
 
 def _implementing(title: str) -> str:
     return f"{title} {IMPLEMENTING_SUFFIX}"
-
-
-def _data_pending(title: str) -> str:
-    return f"{title} {DATA_PENDING_SUFFIX}"
 
 
 @dataclass(frozen=True)
@@ -160,7 +153,7 @@ STATIC_CAPA_SUBPAGES = (
 )
 
 # 그룹 머리 라벨에는 `(구현중)` 을 달지 않는다(2026-09-29 사용자 결정). 하위 화면이 저마다
-# `(Data확보중)`·`(구현중)` 을 달고 있어 머리에 또 달면 그룹 전체가 안 된 것처럼 읽힌다.
+# `(구현중)` 을 달고 있어 머리에 또 달면 그룹 전체가 안 된 것처럼 읽힌다.
 #
 # 실행 관리 머리는 **데이터를 읽지 않는다** — 정의와 하위 화면 목차(링크·한 줄 설명)만 그린다.
 # 그래서 공통 조건 줄도 조건 카드도 설비 DB 핀도 없다. 이행 현황판 숫자가 들어오면 이 선언부터 다시
@@ -188,10 +181,10 @@ PROCESS_CAPA_DETAIL = PageSpec(
 # (2026-10-07 사용자 결정). 가용설비 현황의 탭이던 것을 공정 Capa 상세 바로 아래 별도 페이지로
 # 뗐다(2026-10-18 사용자 결정). 활성 시나리오·조회기간으로 소요대수를 맞대고, 설비 DB 에서
 # 저장본·Cut-off·공용 조회 조건(0019)·진척 비교 기준선(0021)을 한 회차에 여러 번 읽으므로 설비 DB
-# 핀을 선언한다. 공정 Capa 상세의 「필요단축일정에서 … 보기」 가 이 경로로 옮긴다.
+# 핀을 선언한다. 공정 Capa 상세의 「필요 단축 일정에서 … 보기」 가 이 경로로 옮긴다.
 REQUIRED_SHORTENING = PageSpec(
     "app_pages/required_shortening.py",
-    _data_pending("필요단축일정"),
+    "필요 단축 일정",
     ":material/event_upcoming:",
     has_condition_cards=True,
     uses_equipment_db=True,
@@ -205,7 +198,7 @@ EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static 대비 일정"
 # 설비 DB 만 본다. `Static 대비 일정` 탭만 활성 시나리오·조회기간으로 소요대수를 맞대어 본다.
 AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     "app_pages/available_equipment_status.py",
-    _data_pending("가용설비 현황"),
+    "가용설비 현황",
     ":material/precision_manufacturing:",
     condition_tabs=ConditionTabs(
         EQUIPMENT_TAB_KEY,
@@ -225,13 +218,13 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
 # 페이더다.
 SPACE_STATUS = PageSpec(
     "app_pages/space_status.py",
-    _data_pending("Space 현황"),
+    "Space 현황",
     ":material/grid_view:",
     reads_scenario=False,
     reads_period=False,
     has_condition_cards=True,
 )
-# 순서는 공정 하나의 대책(공정 Capa 상세) → 전체 공정의 단축 계획(필요단축일정) → 설비
+# 순서는 공정 하나의 대책(공정 Capa 상세) → 전체 공정의 단축 계획(필요 단축 일정) → 설비
 # 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 — 약속에 가장 가까운 설비 이행부터 보고,
 # 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
 EXECUTION_MANAGEMENT_SUBPAGES = (

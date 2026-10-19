@@ -1,12 +1,12 @@
-# Purpose: Static 대비 일정·필요단축일정이 소요대수를 쓸 때만 풀고 오류·편집을 따르는지 검사한다.
+# Purpose: Static 대비 일정·필요 단축 일정이 소요대수를 쓸 때만 풀고 오류·편집을 따르는지 검사한다.
 
-"""가용설비 현황 `Static 대비 일정` 탭과 `필요단축일정` 화면의 시나리오 소요대수 읽기(AppTest).
+"""가용설비 현황 `Static 대비 일정` 탭과 `필요 단축 일정` 화면의 시나리오 소요대수 읽기(AppTest).
 
-필요단축일정은 가용설비 현황의 탭이던 것을 별도 화면으로 뗐다(2026-10-18) — 한 세션이 두 화면을
+필요 단축 일정은 가용설비 현황의 탭이던 것을 별도 화면으로 뗐다(2026-10-18) — 한 세션이 두 화면을
 오가며 캐시를 나누는지 보려고 스크립트가 세션 값(`test_page`)으로 띄울 화면을 고른다(`_show`). 두
 보기는 기준정보 오류를 **모든 보기에서** 알리지만, 소요대수 프레임은 쓰는 곳(확보율 교차검증,
-필요단축일정의 계획)이 캐시를 빗나갈 때만 푼다. 오류 확인은 `check_scenario_capacity`(성공만 캐시)라
-일시 오류가 굳지 않는다. 시나리오 쪽은 모듈 속성을 갈아 끼워 흉내 낸다 — 소요대수를 내는
+필요 단축 일정의 계획)이 캐시를 빗나갈 때만 푼다. 오류 확인은 `check_scenario_capacity`(성공만
+캐시)라 일시 오류가 굳지 않는다. 시나리오 쪽은 모듈 속성을 갈아 끼워 흉내 낸다 — 소요대수를 내는
 `simulation_cache.get_scenario_capacity_and_demand` 가 부른 키를 세션에 적어, 어느 회차에 프레임을
 풀었는지 센다."""
 
@@ -30,18 +30,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 SHORTENING_PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
 GAP = "Static 대비 일정"
-SHORTENING = "필요단축일정"
+SHORTENING = "필요 단축 일정"
 VALUE_ERROR = "[시험] RQ_UPEH 의 UPEH 가 0 입니다 — 기준 정보에서 고치세요."
 PASSING_ERROR = "[시험] 잠깐 못 읽었습니다."
 
 
 def _show(app: AppTest, name: str) -> AppTest:
-    """그 보기로 간다 — 필요단축일정은 별도 화면, 그 밖은 가용설비 현황의 탭이다."""
+    """그 보기로 간다 — 필요 단축 일정은 별도 화면, 그 밖은 가용설비 현황의 탭이다."""
     if name == SHORTENING:
         app.session_state["test_page"] = "shortening"
         return app.run()
     if "test_page" in app.session_state and app.session_state["test_page"] == "shortening":
-        # 필요단축일정 화면에서 돌아오면 탭 묶음이 없으니 가용설비 현황을 먼저 한 번 띄운다.
+        # 필요 단축 일정 화면에서 돌아오면 탭 묶음이 없으니 가용설비 현황을 먼저 한 번 띄운다.
         app.session_state["test_page"] = "equipment"
         app.run()
     app.session_state["test_page"] = "equipment"
@@ -246,7 +246,7 @@ def _sheet_static(app: AppTest) -> float | None:
 
 def test_views_that_need_no_demand_do_not_read_it(tmp_path: Path) -> None:
     """가용대수 비교·분류별 내역의 rerun 은 소요대수를 풀지 않는다. 교차검증은 빗나간 회차에 한 번,
-    필요단축일정은 달 범위·계획이 빗나간 회차에만 푼다 — 같은 조건의 rerun 은 0번이다."""
+    필요 단축 일정은 달 범위·계획이 빗나간 회차에만 푼다 — 같은 조건의 rerun 은 0번이다."""
     app = _show(_app(tmp_path).run(), GAP)
     assert not app.exception, [element.message for element in app.exception]
     opened = _calls(app)
@@ -335,7 +335,7 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
     _show(app, SHORTENING)
     assert not app.exception, [element.message for element in app.exception]
     assert (
-        "활성 시나리오의 소요대수를 읽지 못해 필요단축일정을 계산하지 않았습니다. "
+        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
         f"다른 탭은 그대로 쓸 수 있습니다.\n\n{VALUE_ERROR}"
     ) in _warnings(app)
     assert _table_mismatches(app) == 0
@@ -352,7 +352,7 @@ def test_a_passing_error_is_not_kept(tmp_path: Path) -> None:
     _view(app, "확보율 교차검증")
     assert _cross_check(app) is not None, "풀린 뒤에는 교차검증 표가 서야 한다"
 
-    # 필요단축일정도 같다 — 다른 시나리오(새 토큰)에서 처음 한 번만 실패시킨다.
+    # 필요 단축 일정도 같다 — 다른 시나리오(새 토큰)에서 처음 한 번만 실패시킨다.
     app.session_state["test_token"] = f"{tmp_path.name}-b"
     app.session_state["test_failure"] = "once"
     _show(app, SHORTENING)
@@ -367,7 +367,7 @@ def test_a_passing_error_is_not_kept(tmp_path: Path) -> None:
 def test_an_edit_or_another_revision_reads_the_new_demand(tmp_path: Path) -> None:
     """content_token·기준정보 버전·조회기간 어느 것이 바뀌어도 두 탭이 새 소요대수를 쓴다.
 
-    필요단축일정의 고를 달은 새 소요대수의 달 범위로, 교차검증의 소요대수 칸은 새 값으로 바뀐다.
+    필요 단축 일정의 고를 달은 새 소요대수의 달 범위로, 교차검증의 소요대수 칸은 새 값으로 바뀐다.
     소요대수를 꺼내는 길은 캐시 키(시나리오 키 = 버전·토큰·조회기간)뿐이라 셋을 하나씩 바꿔 본다.
     """
     months = _months()
@@ -451,7 +451,7 @@ def test_a_demand_that_stops_after_a_cached_check_is_told_not_raised(tmp_path: P
     """오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춰도 예외가 아니라 그 보기의 경고다.
 
     대역에는 캐시가 없어 「오류 확인은 적중, 소요대수는 다시 계산」을 그대로 흉내 낸다. 교차검증은
-    「확보율을 맞대지 못했습니다」, 필요단축일정은 페이지가 잡은 것과 같은 경고로 멈춘다. 오류는
+    「확보율을 맞대지 못했습니다」, 필요 단축 일정은 페이지가 잡은 것과 같은 경고로 멈춘다. 오류는
     캐시에 남지 않아 다음 회차에 풀린다.
     """
     app = _show(_app(tmp_path).run(), GAP)
@@ -469,7 +469,7 @@ def test_a_demand_that_stops_after_a_cached_check_is_told_not_raised(tmp_path: P
     _show(app, SHORTENING)
     assert not app.exception, [element.message for element in app.exception]
     assert (
-        "활성 시나리오의 소요대수를 읽지 못해 필요단축일정을 계산하지 않았습니다. "
+        "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
         f"다른 탭은 그대로 쓸 수 있습니다.\n\n{VALUE_ERROR}"
     ) in _warnings(app)
     app.session_state["test_failure"] = None

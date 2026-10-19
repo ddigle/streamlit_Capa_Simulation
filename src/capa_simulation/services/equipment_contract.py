@@ -90,11 +90,12 @@ STOP_DATE_COLUMN = "정지일정"
 # 이름도 「반출/이설 예정」·「반출/이설 완료」다(2026-10-16 사용자 결정).
 RELOCATION_DATE_COLUMN = "반출/이설일정"
 
-# 설비가 나가는 날 둘. 하나라도 있으면 나갈 호기다(필요단축일정 후보 제외·일정 미정 알림 제외 …).
+# 설비가 나가는 날 둘. 하나라도 있으면 나갈 호기다(필요 단축 일정 후보 제외·일정 미정 알림 제외 …).
 EXIT_SCHEDULE_COLUMNS = (STOP_DATE_COLUMN, RELOCATION_DATE_COLUMN)
 
 # 단계마다 실제로 끝난 날과 그 단계의 상태. 실적은 **Space 실물 판정과 알림에만** 쓴다 —
-# 설비 일정 기준 가용·필요단축일정·공정 Capa 상세 집계는 일정 기준 그대로다(2026-10-16 사용자 결정).
+# 설비 일정 기준 가용·필요 단축 일정·공정 Capa 상세 집계는 일정 기준 그대로다(2026-10-16 사용자
+# 결정).
 ARRIVAL_ACTUAL_COLUMN = "반입실적"
 ARRIVAL_STATUS_COLUMN = "반입상태"
 QUAL_ACTUAL_COLUMN = "Qual실적"

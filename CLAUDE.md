@@ -106,7 +106,7 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
   Area만 배치가 달라 `app.py`가 손수 그린다. 계산 그룹은 셋이다(2026-10-17) — Static Capa(약속) →
-  실행 관리(이행: 공정 Capa 상세·필요단축일정·가용설비·Space·실적 셋) → Dynamic Capa(실적:
+  실행 관리(이행: 공정 Capa 상세·필요 단축 일정·가용설비·Space·실적 셋) → Dynamic Capa(실적:
   실현 Capa·재공). 「Dynamic」 은 실적 Capa 에만 쓰고, 설비 일정으로 낸 가용대수는 화면에서 「설비 일정
   기준 가용대수」, HOME 의 %p 손입력은 「확보율 보정」이다 — 코드·키·DB 이름(`dynamic_*`·`execution`)은
   그대로다(AGENTS 1장 「세 영역」).
@@ -140,7 +140,7 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 운영(`data/equipment_availability.duckdb`). 설비 쪽은 전용 마이그레이션·Repository·캐시를 쓰고
 시뮬레이션 DB나 `RQ_*`를 읽지 않는다. 거꾸로 설비 DB 를 여는 시뮬레이션 쪽 화면은 `표준 목표`(Static,
 주차별 가용대수)와 `공정 Capa 상세`(실행 관리, 설비 운영 스냅샷·Cut-off 를 **읽기만**,
-필요단축일정의 공용 조회 조건·기준선은 안 읽음), `표준 대비 재공 현황`(Dynamic, 표준 목표의 주차별
+필요 단축 일정의 공용 조회 조건·기준선은 안 읽음), `표준 대비 재공 현황`(Dynamic, 표준 목표의 주차별
 가용대수를 **읽기만**)이다 — AGENTS 5장 9.
 
 ### 상태·캐시 불변조건 (AGENTS.md 5장이 전문)
