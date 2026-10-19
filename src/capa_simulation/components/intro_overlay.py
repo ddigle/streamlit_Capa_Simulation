@@ -202,6 +202,8 @@ def _data() -> dict[str, Any]:
             "summary": SUMMARY_LABEL,
             "detail_title": "원래 화면으로 들어갑니다",
             "summary_title": "공식버전 요약을 봅니다",
+            # Summary 머리 줄 Detail 왼쪽 ← 단추의 풍선·읽는 이름 — 입장 화면으로 돌아간다.
+            "back_title": "입장 화면으로 돌아갑니다",
             # 사이드바 라벨의 풍선. 누를 수 없으면 요약이 보낸 까닭을 먼저 쓴다.
             "label_open": SUMMARY_LABEL_OPEN,
             "label_waiting": SUMMARY_LABEL_WAITING,

@@ -72,6 +72,8 @@ const TITLE_HANDOFF = Object.freeze({ flyMs: 480, pauseMs: 80, popMs: 300 });
 const SUMMARY_LOOK = Object.freeze({ fade: 0.2, mono: 1 });
 const EXIT_MS = 950;
 const FOLD_MS = 850;
+// Summary → 입장 화면(← 단추): 웨이퍼 색·그늘이 입장 모습으로 돌아가는 시간과 글자가 다시 떠오르는 시간.
+const BACK_MS = 600;
 // 메인 심볼 — C 링 + 3×3 다이(2026-10-07 사용자 결정, 뷰박스 100). 반지름 41 링의 오른쪽 ±35° 를 열어
 // 「C」로 두고(굵기 9 · 둥근 끝), 크기 12 · 모서리 2 다이 아홉을 28 · 44 · 60 에 둔다. 사이드바 라벨
 // (`intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS`)과 탭 아이콘(`static/icons/capa_mark.svg`)이 같은
@@ -431,7 +433,8 @@ function summaryGrid(W, H) {
  * 워커를 못 쓰면 같은 함수를 메인 스레드에서 `port` 흉내로 돌린다. 시각은 절대값(timeOrigin + now)이다.
  *
  * 메시지: init · begin(at) · progress(reached·total·ready) · resize · clear(타이틀 오른쪽 끝 x) · summary(값) ·
- *         summary-on(at·charts·rows·look·veil·instant) · view(토글 셋·instant) · pause · resume(크기) ·
+ *         summary-on(at·charts·rows·look·veil·instant) · summary-off(at·ms) · view(토글 셋·instant) · pause ·
+ *         resume(크기) ·
  *         stats · stop
  * 회신: stats · summary-ready · hits(말풍선 자리)
  * ============================================================================================ */
@@ -2012,6 +2015,22 @@ function scene(port, gridOf) {
         veilTween = { from: { veil }, to: { veil: 0 }, at: m.veilAt, ms: m.veilMs, ease: (x) => x };
       }
       loop();
+    } else if (m.type === "summary-off") {
+      // Summary → 입장 화면(← 단추). 차트를 걷고 웨이퍼 색·그늘을 입장 모습으로 되돌린다. 다음 summary-on 은
+      // 이 모습에서 다시 조립한다.
+      sumAt = 0;
+      const to = { fade: 1, mono: 0 };
+      if (reduce || !(m.ms > 0)) {
+        lookTween = null;
+        veilTween = null;
+        look.fade = to.fade;
+        look.mono = to.mono;
+        veil = 1;
+      } else {
+        lookTween = { from: { ...look }, to, at: m.at, ms: m.ms, ease: EASE };
+        veilTween = { from: { veil }, to: { veil: 1 }, at: m.at, ms: m.ms, ease: (x) => x };
+      }
+      loop();
     } else if (m.type === "view") {
       // 머리 줄 토글. 켜려는 모습만 바꾸고 진행은 프레임이 옮긴다(지금 값에서 이어 간다).
       const v = m.view || {};
@@ -2101,7 +2120,8 @@ function startScene(canvas, init, onReply) {
   }
   return {
     post(m) {
-      const key = m.type === "pause" || m.type === "resume" ? "run" : m.type;
+      // summary-off 는 summary-on 의 자리를 대신한다 — 되살린 장면이 걷은 요약을 다시 조립하지 않게.
+      const key = m.type === "pause" || m.type === "resume" ? "run" : m.type === "summary-off" ? "summary-on" : m.type;
       // 지웠다 다시 넣어 마지막으로 받은 차례를 지킨다(Map 은 있는 키의 자리를 그대로 둔다) — 그래야
       // 되살린 장면이 resume 뒤의 resize 처럼 나중 값을 나중에 받는다.
       if (["begin", "progress", "summary", "summary-on", "view", "run", "resize"].includes(key)) {
@@ -2247,6 +2267,9 @@ function createOverlay(api, data, initial, syncToolbar) {
   summaryButton.title = text.summary_title || "";
   detail.title = text.detail_title || "";
   const dock = $('[data-slot="dock"]');
+  const back = $(".back");
+  back.title = text.back_title || "";
+  back.setAttribute("aria-label", text.back_title || "");
   const actions = $(".actions");
   const asof = $('[data-slot="asof"]');
   const main = $(".main");
@@ -2844,8 +2867,16 @@ function createOverlay(api, data, initial, syncToolbar) {
       duration: reduce ? 1 : T.tuckMs,
       delay: reduce ? 0 : T.tuckDelay,
     });
-    // 3) Detail 이 심볼·라벨 옆으로.
+    // 3) Detail 이 심볼·라벨 옆으로. ← 단추는 그 왼쪽에 토글과 같은 때 떠오른다.
     dockDetail(true);
+    if (!reduce) {
+      back.animate([{ opacity: 0, transform: "translateX(8px)" }, { opacity: 1, transform: "none" }], {
+        duration: 560,
+        delay: T.asofDelay,
+        easing: OUT,
+        fill: "backwards",
+      });
+    }
     revealToggles(true);
     anim(asof, [{ opacity: 0, transform: "translateX(12px)" }, { opacity: 1, transform: "none" }], { duration: reduce ? 1 : 700, delay: reduce ? 0 : T.asofDelay, easing: OUT });
     main.style.visibility = "hidden";
@@ -2870,6 +2901,50 @@ function createOverlay(api, data, initial, syncToolbar) {
     revealToggles(false);
     main.style.visibility = "hidden";
     asof.style.opacity = "1";
+  }
+
+  /* ------------------------------------------------------------ 요약 → 입장 화면 */
+  // 머리 줄 Detail 왼쪽의 ← 단추(2026-10-19 사용자 요청 — 입장 화면으로 돌아갈 길이 없었다). 사이드바 라벨로 연
+  // 요약에서도 같다. 장면은 차트를 걷고 웨이퍼 색·그늘을 입장 모습으로 되돌린다(`summary-off`). 글자와 단추는
+  // 입장 끝 모습으로 다시 떠오르고 머리 줄 라벨은 다시 걷힌다 — 타이틀이 이름을 맡고, 다음 Detail · Summary 가
+  // 넘겨주기 모션을 다시 한다(`handOffTitle`).
+  function undockDetail() {
+    if (!detail.classList.contains("docked")) return;
+    cancelAll([$(".btn.detail .bg"), $(".btn.detail .tx")]);
+    detail.classList.remove("docked");
+    actions.insertBefore(detail, actions.firstChild);
+  }
+
+  function entryFromSummary() {
+    if (busy || mode !== "summary") return;
+    mode = "intro";
+    tip.style.opacity = "0";
+    sceneHandle.post({ type: "summary-off", at: absoluteNow(), ms: reduce ? 0 : BACK_MS });
+    const brand = $(".head > .brand");
+    const parts = $$(".main > *");
+    cancelAll([title, brand, back, summaryButton, asof, ...parts, ...$$(".sum-label")]);
+    stage.classList.remove("summary");
+    undockDetail();
+    // 요약에서 붙인 인라인 값을 걷어 입장 화면의 처음 값(CSS)으로 돌린다.
+    brand.style.opacity = "";
+    asof.style.opacity = "";
+    title.style.opacity = "";
+    title.style.transformOrigin = "";
+    main.style.visibility = "";
+    hint.hidden = true;
+    handedOff = false;
+    render();
+    parts.forEach((part, index) => {
+      const animation = part.animate(
+        reduce
+          ? [{ opacity: 0 }, { opacity: 1 }]
+          : [{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "translateY(0)" }],
+        { duration: reduce ? 1 : BACK_MS, delay: reduce ? 0 : 120 + index * 55, easing: OUT, fill: "both" },
+      );
+      revealAnimations.set(part, animation);
+    });
+    postTitleClear();
+    detail.focus({ preventScroll: true });
   }
 
   function holeAt(el) {
@@ -3005,6 +3080,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     if (!detail.disabled) toDetail();
   });
   summaryButton.addEventListener("click", () => summaryFromEntry());
+  back.addEventListener("click", () => entryFromSummary());
 
   /* --------------------------------------------------------- 진행 신호(앱 실행 상태·HOME 막대) */
   // HOME 은 본문 맨 위에 `LoadingProgress` 막대를 「단계 이름 · N%」로 띄운다. 그 퍼센트가 각

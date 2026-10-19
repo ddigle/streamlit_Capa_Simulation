@@ -216,6 +216,46 @@
   margin-left: 4px;
 }
 
+/* Summary 머리 줄의 ← 단추 — Detail 왼쪽. 누르면 입장 화면(커버)으로 돌아간다(intro.js `entryFromSummary`,
+   2026-10-19 사용자 요청 — 커버로 돌아갈 길이 없었다). Summary 에서만 서고 입장 화면에서는 Tab 차례도 없다.
+   모양은 Summary 단추와 같은 계열의 윤곽 원이고 높이는 머리 줄 Detail(30px)과 같다. */
+.back {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
+  padding: 0;
+  border: 1px solid var(--ghost-line);
+  border-radius: 50%;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.35s, translate 0.2s;
+}
+
+.stage.summary .back {
+  display: inline-flex;
+}
+
+.back:hover {
+  background: var(--ghost-hover);
+  translate: 0 -1px;
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.back svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
 /* ---------------------------------------------------------------- 보는 조건 토글(Summary 머리 줄) */
 /* Detail 오른쪽에 조금 띄워 선다. 입장 화면에서는 보이지 않고(Tab 차례도 없다) Summary 가 조립될 때 하나씩
    떠오른다(intro.js revealToggles). 모양은 Detail 과 같은 계열의 작은 알약이고 크기는 켜고 꺼도 같다 — 머리

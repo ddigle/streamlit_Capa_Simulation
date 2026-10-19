@@ -1038,3 +1038,42 @@ def test_the_entry_veil_covers_the_title_to_its_right_end() -> None:
     resize = _between(js, "const onResize = () => {", "window.addEventListener")
     assert "postTitleClear();" in resize
     assert "document.fonts.ready.then(postTitleClear);" in js
+
+
+def test_the_summary_back_arrow_returns_to_the_entry_cover() -> None:
+    """Summary 머리 줄의 ← 단추는 Detail 바로 왼쪽에 서고 입장 화면(커버)으로 돌아간다(2026-10-19
+    사용자 요청 — 커버로 돌아갈 길이 없었다). 입장 화면에서는 보이지 않아 Tab 차례도 없다. 돌아가면
+    장면은 차트를 걷고 웨이퍼 색·그늘을 입장 모습으로 되돌리며(`summary-off`), 되살린 장면이 걷은
+    요약을 다시 조립하지 않게 그 메시지가 `summary-on` 의 다시 보낼 자리를 대신한다. 타이틀이 다시
+    이름을 맡아 다음 Detail · Summary 가 넘겨주기 모션을 다시 한다."""
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    dock = html[html.index('data-slot="dock"') : html.index('data-slot="toggles"')]
+    assert '<button type="button" class="back">' in dock
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert re.search(r"\.back \{\s*display: none;", css)
+    assert re.search(r"\.stage\.summary \.back \{\s*display: inline-flex;", css)
+    assert intro_overlay._data()["text"]["back_title"]
+
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    assert 'back.addEventListener("click", () => entryFromSummary());' in js
+    back = _between(js, "function entryFromSummary() {", "function holeAt(")
+    assert 'if (busy || mode !== "summary") return;' in back
+    assert 'mode = "intro";' in back
+    assert (
+        'sceneHandle.post({ type: "summary-off", at: absoluteNow(), ms: reduce ? 0 : BACK_MS });'
+        in back
+    )
+    assert 'stage.classList.remove("summary");' in back
+    assert "undockDetail();" in back
+    assert "handedOff = false;" in back
+    assert back.index("handedOff = false;") < back.index("postTitleClear();")
+    undock = _between(js, "function undockDetail() {", "function entryFromSummary() {")
+    assert "actions.insertBefore(detail, actions.firstChild);" in undock
+
+    handler = _between(
+        js, '} else if (m.type === "summary-off") {', '} else if (m.type === "view") {'
+    )
+    assert "sumAt = 0;" in handler
+    assert "veil = 1;" in handler
+    assert "to: { veil: 1 }" in handler
+    assert 'm.type === "summary-off" ? "summary-on" : m.type' in js
