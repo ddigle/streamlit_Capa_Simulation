@@ -28,12 +28,15 @@ import capa_simulation.settings as settings
 
 # 페이지가 판정 기준 같은 공용 프로필을 `settings.DUCKDB_PATH` 에서 읽는다. 그대로 두면 저장소의
 # 실제 DB 를 열고 마이그레이션까지 건다. 프로세스마다 하나인 임시 폴더로 돌린다 — 테스트가 끝나면
-# conftest 가 원래 경로로 되돌린다.
+# conftest 가 원래 경로로 되돌리고, 폴더는 프로세스가 끝날 때 지운다(남기면 실행마다 쌓인다).
+import atexit as _atexit
 import os as _os
+import shutil as _shutil
 import tempfile as _tempfile
 
 _isolated_data = Path(_tempfile.gettempdir()) / f"capa_reference_page_test_{_os.getpid()}"
 _isolated_data.mkdir(exist_ok=True)
+_atexit.register(_shutil.rmtree, _isolated_data, ignore_errors=True)
 settings.DUCKDB_PATH = _isolated_data / "capa_simulation.duckdb"
 settings.EQUIPMENT_DUCKDB_PATH = _isolated_data / "equipment_availability.duckdb"
 
