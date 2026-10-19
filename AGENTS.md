@@ -2124,12 +2124,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   Streamlit 이 rerun 마다 모든 칸을 번역하므로 칸 수 상한을 넘으면 칠하지 않는다. `st.dataframe` 으로 그리는 Styler
   표에는 표마다 다른 고정 `uuid=` 를 준다(무작위 uuid 면 회차마다 표를 다시 보낸다).
 - **큰 조회 표의 화면 사본은 되풀이 글자 열을 category 로, 수를 좁은 정수로 보낼 수 있다**(STEP 구성 요약
-  `reference_data._compact_step_summary`, 편집표는 `month_editor._compact_dimensions`). 조건 셋: ① category 글자 열은
+  `reference_data._compact_step_summary`). `st.dataframe` 조회 표의 조건 셋: ① category 글자 열은
   `st.column_config.TextColumn()` 으로 못 박는다 — 두지 않으면 1.63 프런트가 선택 칸 꼴로 그려 글자 자리가 어긋난다.
   ② `lazy=False` 를 준다 — 자동 lazy(15만 행 초과, `lazy_df_source.AUTO_LAZY_ROW_THRESHOLD`)의 서버 정렬은 category
   열에서 「Failed to load data」 가 된다. ③ 그보다 긴 표는 줄이지 않고 `lazy=None` 으로 맡긴다 — 한꺼번에 받은 표가
   15만 행을 넘으면 프런트가 정렬을 끈다(끝 값은 `tests/test_reference_data_perf.py` 가 Streamlit 상수와 견준다).
-  표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다).
+  표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다). 편집표(`month_editor._compact_dimensions`)는 ①·②
+  가 걸리지 않는다 — `st.data_editor` 에는 lazy 가 없고, 분류 열 설정은 `_dimension_column_config`(표시명 열은
+  `SelectboxColumn`, 나머지 `TextColumn`)를 그대로 쓴다. category 와 함께여도 화면이 같다(표시명 열에 `TextColumn` 을
+  못 박으면 표시명이 원본 값으로 돌아간다).
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
   쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다.
@@ -2318,7 +2321,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   1.63 DOM 구조·프런트엔드 `localStorage` 테마 키·`data-test-script-state`: 헤더 툴바·머리 띠·입장 화면·사이드바 서식·탭
   점·metric 줄·인쇄 규칙), 프래그먼트 러너 대역(`tests/fragment_browser.py`·AppTest `fragment_id_queue`), 프래그먼트의
   바깥 컨테이너 쓰기, 선택을 켠 그림의 `dragmode` 덮기, 지나간 위젯의 콜백, 콜백 안 `st.switch_page` 의 fragment
-  경고(예상된 경고, 오류 아님), Plotly 비공개 `_validate` 빠른 경로(`plotly>=5.24,<7`), `.streamlit/config.toml` 의 숨은
+  경고(예상된 경고, 오류 아님), Plotly 비공개 `_validate` 빠른 경로(`plotly>=5.24,<7`)와 번호 축을 알아보는
+  `Layout._subplotid_prop_re`, 표 칸 글자 층이 기대는 plotly.js 동작(겹친 축 영역의 바탕을 그 축 층 맨 아래 — `layer: below`
+  도형 위 — 에 깔기, `go.Table` 열 자르기 ±1px — `tests/test_table_text_layer.py` 가 먼저 깨진다), `.streamlit/config.toml` 의 숨은
   옵션 `global.maxCachedMessageAge`·`global.minCachedMessageSize`(이름이 사라지면 조용히 무시된다 — `tests/test_settings.py`
   가 이름을 본다)와 그 MISS 경합이 고쳐졌는지(고쳐졌으면 나이를 기본값으로 되돌릴지 다시 본다). 선택자 문자열은 한 모듈에 상수로
   두고 다른 스크립트는 자리 인자로 받아(`theme_toggle.TOOLBAR_SLOT`) 고칠 곳을 하나로 둔다.

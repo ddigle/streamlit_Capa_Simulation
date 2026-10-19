@@ -1,6 +1,7 @@
-# Purpose: Plotly Figure 의 제목·테두리·분기 경계·고정 행을 그리는 공통 헬퍼를 제공한다.
+# Purpose: Plotly 테두리·고정 행·표 밖 칸 글자 층 헬퍼와 검증 없는 spec 빠른 길을 제공한다.
 
-"""Plotly Figure 의 제목·테두리·분기 경계·고정 행을 그리는 공통 헬퍼를 제공한다."""
+"""Plotly Figure 의 제목·테두리·분기 경계·고정 행과 `go.Table` 밖 칸 글자 층을 그리는 공통
+헬퍼와 검증 없는 spec 빠른 길을 제공한다."""
 
 from __future__ import annotations
 
