@@ -693,21 +693,26 @@ def _dummy_mask(calculation: pd.DataFrame) -> pd.Series:
     적용된다. 지금은 Dummy 가 HBM 에만 있어 결과가 같지만, 규칙을 이름 하나에 걸어 두면
     나중에 EDP 쪽 규칙을 넣을 때 HBM 이 조용히 따라 움직인다.
 
-    `제품타입` 이 없는 프레임(제품타입 도입 이전 경로)은 예전처럼 이름만 보고 고른다.
+    `제품타입` 컬럼이 없는 프레임(제품타입 도입 이전 경로)과 그 값이 빈 행(0013 이 NULL 로
+    남긴 제품·원천 `prod_knd` NULL)은 두 목록을 합쳐 이름만 보고 고른다. 제품군끼리
+    `WF 구분` 집합이 겹치지 않아 이름이 곧 제품군을 가리키므로 답이 그 제품군 규칙과 같다.
+    빈 행을 어느 제품군에도 맞지 않는다고 일반 산식으로 떨어뜨리면 Dummy 부하가
+    1/(1 - EDS_수율) 배 안팎으로 아무 흔적 없이 커진다.
     """
     division = match_key(calculation["WF 구분"])
+    declared = {
+        scalar_match_key(name)
+        for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values()
+        for name in names
+    }
+    by_name = division.isin(declared).fillna(False)
     if PRODUCT_TYPE_COLUMN not in calculation.columns:
-        declared = {
-            scalar_match_key(name)
-            for names in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.values()
-            for name in names
-        }
-        return division.isin(declared).fillna(False)
+        return by_name
 
     # 제품타입도 대소문자를 가리지 않는다. `WF 구분` 만 흡수하고 제품타입은 글자 그대로
     # 맞추면, 원천 표기가 한 글자만 달라도 Dummy 규칙이 통째로 빗나간다.
     product_type = match_key(product_type_of(calculation))
-    mask = pd.Series(False, index=calculation.index)
+    mask = product_type.eq("") & by_name
     for declared_type, dummy_divisions in DUMMY_DIVISIONS_BY_PRODUCT_TYPE.items():
         if not dummy_divisions:
             continue

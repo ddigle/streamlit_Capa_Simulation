@@ -21,7 +21,10 @@
 import pandas as pd
 import pytest
 
-from capa_simulation.services.load_calculator import calculate_chip_load
+from capa_simulation.services.load_calculator import (
+    calculate_chip_and_wafer_loads,
+    calculate_chip_load,
+)
 from capa_simulation.services.product_type import (
     DUMMY_DIVISIONS_BY_PRODUCT_TYPE,
     EDP_PRODUCT_TYPE,
@@ -128,6 +131,40 @@ def test_a_frame_without_a_product_type_keeps_the_older_behaviour() -> None:
 
     expected = 100.0 * 4.0 / 0.9 / 0.95 * (1 - 0.9)
     assert by_product == {"HBM-A": expected, "EDP-A": expected}
+
+
+def _loads_by_product(plan: pd.DataFrame, division: str) -> dict[str, tuple[float, float]]:
+    chip, wafer = calculate_chip_and_wafer_loads(plan, *_reference(division))
+    chips = dict(zip(chip["제품정보"], chip["물량"].astype(float), strict=True))
+    wafers = dict(zip(wafer["제품정보"], wafer["물량"].astype(float), strict=True))
+    return {product: (chips[product], wafers[product]) for product in chips}
+
+
+@pytest.mark.parametrize("blank", [None, pd.NA, "", "  "])
+def test_a_blank_product_type_still_picks_the_dummy_rule_by_name(blank: object) -> None:
+    """제품타입이 빈 행은 컬럼이 없는 프레임처럼 `WF 구분` 이름으로 고른다.
+
+    빈 값은 0013 이 일부러 NULL 로 남긴 제품이나 원천 `prod_knd` NULL 에서 온다. `Dummy` 는
+    HBM 에만 있는 이름이라 이름 규칙의 답이 곧 HBM 규칙의 답이다. 일반 산식으로 떨어지면
+    Dummy Chip 은 EDS/(1 - EDS) 배, Wafer 는 1/(1 - EDS) 배로 아무 흔적 없이 커진다.
+    """
+    plan = PLAN.copy()
+    plan["제품타입"] = pd.Series([blank, EDP_PRODUCT_TYPE], index=PLAN.index, dtype=object)
+
+    blank_dummy = _loads_by_product(plan, "Dummy")
+    typed_dummy = _loads_by_product(PLAN, "Dummy")
+
+    assert blank_dummy["HBM-A"] == pytest.approx(typed_dummy["HBM-A"])
+    assert blank_dummy["HBM-A"][0] == pytest.approx(100.0 * 4.0 / 0.9 / 0.95 * (1 - 0.9))
+    # 제품타입이 적힌 EDP 행은 이름에 끌려가지 않고 일반 산식 그대로다.
+    assert blank_dummy["EDP-A"] == pytest.approx(
+        (100.0 * 4.0 / 0.95, 100.0 * 1_000 * 4.0 / 0.9 / 0.95 / 100.0)
+    )
+    # Dummy 가 아닌 이름은 제품타입이 비어도 일반 산식이다.
+    blank_core = _loads_by_product(plan, "Core")
+    assert blank_core["HBM-A"] == pytest.approx(
+        (100.0 * 4.0 / 0.95, 100.0 * 1_000 * 4.0 / 0.9 / 0.95 / 100.0)
+    )
 
 
 # 원천은 `WF 구분` 을 **대문자 `TOP`** 으로 싣는다(2026-09-18 사용자 확인). 이 파일과

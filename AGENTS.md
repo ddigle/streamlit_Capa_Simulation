@@ -1269,9 +1269,10 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 `product_type.py`의 `DUMMY_DIVISIONS_BY_PRODUCT_TYPE`이 선언하고 적용은
 `load_calculator.py`의 `_dummy_mask`가 한다. HBM은 `Dummy` 하나이고 EDP-TSV는 목록이 비어
 있어 `WF 구분`이 `Dummy`여도 Dummy 산식을 받지 않는다. `제품타입` 컬럼이 없는 레거시
-프레임에서만 두 목록을 합쳐 이름으로 판정한다. 이름 비교는 기존 리비전과 BigDataQuery의
-표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지 않는다. 정확한 현재 구현은 두
-모듈과 `docs/TODO.md`를 기준으로 한다.
+프레임과 그 값이 빈 행(0013 이 NULL 로 남긴 제품·원천 `prod_knd` NULL)에서만 두 목록을 합쳐
+이름으로 판정한다 — 두 제품군의 `WF 구분` 집합이 겹치지 않아 결과가 HBM 규칙과 같다. 이름
+비교는 기존 리비전과 BigDataQuery의 표기 차이를 흡수하도록 대소문자와 앞뒤 공백에 의존하지
+않는다. 정확한 현재 구현은 두 모듈과 `docs/TODO.md`를 기준으로 한다.
 
 ### 대당 Capa
 
