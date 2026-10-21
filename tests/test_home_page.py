@@ -39,6 +39,7 @@ from capa_simulation.process_detail_state import (
     HOME_LOB_SECTION,
 )
 from capa_simulation.scenario_preset_state import PROCESS_SELECTION_KEY
+from capa_simulation.services.simulation_cache import shared_home_figure_store
 
 # cwd 가 아니라 이 파일 위치를 기준으로 잡는다. tests/ 안에서 pytest 를 돌려도 같은 페이지를 연다.
 HOME_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "home.py"
@@ -692,6 +693,9 @@ def _save_default_warning(app: AppTest, percent: float) -> AppTest:
 
 
 def test_home_rebuilds_figures_when_a_threshold_changes(seeded_database: Path) -> None:
+    # 같은 모듈 DB 를 쓰는 앞 시험이 같은 pristine 키의 그림을 공용 칸에 남겼을 수 있다. 남아
+    # 있으면 처음 보는 조합도 복원되어 「생성」을 볼 수 없다.
+    shared_home_figure_store.clear()
     app = _run(seeded_database)
     app.session_state["dashboard_show_performance"] = True
     app.run()
@@ -772,6 +776,9 @@ def test_the_two_display_toggles_are_part_of_the_figure_cache_key(
     seeded_database: Path,
 ) -> None:
     """EDP 포함 여부와 선행 반영 여부는 그림을 바꾼다. 캐시 키에 없으면 옛 그림이 남는다."""
+    # 같은 모듈 DB 를 쓰는 앞 시험이 같은 pristine 키의 그림을 공용 칸에 남겼을 수 있다. 남아
+    # 있으면 처음 보는 조합도 복원되어 「생성」을 볼 수 없다.
+    shared_home_figure_store.clear()
     app = _run(seeded_database)
     app.session_state["dashboard_show_performance"] = True
     app.run()
@@ -824,18 +831,31 @@ def test_advance_scales_the_plan_and_rate_but_leaves_capacity_alone(
         source="테스트",
     )
     clear_global_advance_load_cache()
-    app.session_state["home_show_advance"] = True
-    app.run()
+    try:
+        app.session_state["home_show_advance"] = True
+        app.run()
 
-    assert not list(app.exception)
-    after = _lob_traces(app)
-    # 계획은 넣은 만큼 정확히 늘고, 그 달의 Capa 는 그대로다.
-    assert after["Density"].y[0] == pytest.approx(first_month_density + 2.5)
-    assert after["B/N 공정"].y[0] == pytest.approx(first_month_capacity)
-    # 기존 계획은 표식·라벨 없는 점선으로 함께 남는다.
-    assert after["Density (선행 B/O 전)"].y[0] == pytest.approx(first_month_density)
-    assert after["Density (선행 B/O 전)"].mode == "lines"
-    assert after["Density (선행 B/O 전)"].line.dash == "dot"
+        assert not list(app.exception)
+        after = _lob_traces(app)
+        # 계획은 넣은 만큼 정확히 늘고, 그 달의 Capa 는 그대로다.
+        assert after["Density"].y[0] == pytest.approx(first_month_density + 2.5)
+        assert after["B/N 공정"].y[0] == pytest.approx(first_month_capacity)
+        # 기존 계획은 표식·라벨 없는 점선으로 함께 남는다.
+        assert after["Density (선행 B/O 전)"].y[0] == pytest.approx(first_month_density)
+        assert after["Density (선행 B/O 전)"].mode == "lines"
+        assert after["Density (선행 B/O 전)"].line.dash == "dot"
+    finally:
+        # 모듈 공용 DB 다. 뒤 시험이 선행 물량 없는 상태에서 출발하게 되돌린다.
+        repository.replace_global_advance_load(
+            pd.DataFrame(
+                {
+                    "생산계획년월": pd.Series(dtype="int64"),
+                    "선행 물량": pd.Series(dtype="float64"),
+                }
+            ),
+            source="테스트",
+        )
+        clear_global_advance_load_cache()
 
 
 def _corner_notes(app: AppTest) -> dict[str, tuple[str, str, float]]:
