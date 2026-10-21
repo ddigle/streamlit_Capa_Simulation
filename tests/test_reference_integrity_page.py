@@ -1,10 +1,14 @@
-# Purpose: Dynamic Capa 상위 화면의 공정 표시명·원본 선택값·닫힌 탭 건너뛰기를 검증한다.
+# Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·상세 상자 되돌림·닫힌 탭 건너뛰기를 검증한다.
+
+from typing import NamedTuple
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from widget_browser import BrowserChoice
 
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation.services.dynamic_capacity import build_dynamic_capacity_demo
 
 TEST_SCRIPT = r"""
 from pathlib import Path
@@ -114,3 +118,113 @@ def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
     assert not app.exception
     assert any("Capa 단계" in markdown.value for markdown in app.markdown)
     assert any("Gap 해석" in markdown.value for markdown in app.markdown)
+
+
+# ------------------------------------------------------------------ 공정 상세 · 제품·Stack·WF 속성
+PROCESS_KEY = "dynamic_capacity_process_filter"
+PRODUCT_KEY = "dynamic_capacity_product_filter"
+STACK_KEY = "dynamic_capacity_stack_filter"
+WAFER_TYPE_KEY = "dynamic_capacity_wafer_type_filter"
+ALL = "전체"
+
+
+class _StaleChoice(NamedTuple):
+    """첫 공정에서 고른 제품·Stack·WF 속성이 둘째 공정에는 없는 짝과, 두 공정에 다 있는 제품."""
+
+    first_process: str
+    second_process: str
+    product: str
+    stack: str
+    wafer_type: str
+    shared_product: str
+
+
+def _stale_choice() -> _StaleChoice:
+    """표본 공정·제품은 리터럴로 고정하지 않는다 — 합성 데모에서 조건에 맞는 짝을 찾는다."""
+    demo = build_dynamic_capacity_demo().astype(
+        {"공정": str, "제품정보": str, "Stack": str, "WF 구분": str}
+    )
+    processes = sorted(demo["공정"].unique())
+    for first in processes:
+        first_rows = demo.loc[demo["공정"].eq(first)]
+        for second in processes:
+            second_rows = demo.loc[demo["공정"].eq(second)]
+            shared = sorted(set(first_rows["제품정보"]) & set(second_rows["제품정보"]))
+            if first == second or not shared:
+                continue
+            for product in sorted(set(first_rows["제품정보"]) - set(second_rows["제품정보"])):
+                product_rows = first_rows.loc[first_rows["제품정보"].eq(product)]
+                for stack in sorted(set(product_rows["Stack"]) - set(second_rows["Stack"])):
+                    stack_rows = product_rows.loc[product_rows["Stack"].eq(stack)]
+                    wafer_types = set(stack_rows["WF 구분"]) - set(second_rows["WF 구분"])
+                    if wafer_types:
+                        return _StaleChoice(
+                            first, second, product, stack, min(wafer_types), shared[0]
+                        )
+    raise AssertionError("합성 데모에 첫 공정에만 있는 제품·Stack·WF 속성 짝이 없습니다.")
+
+
+def _choose(app: AppTest, browser: BrowserChoice, key: str, value: str) -> None:
+    """상자 하나를 골라 회차를 돌린다. 들고 다니는 상자면 보이는 글자를 고른다."""
+    if browser.key == key:
+        browser.pick(value)
+    else:
+        app.selectbox(key=key).set_value(value)
+    browser.run()
+    assert not app.exception
+
+
+@pytest.mark.parametrize("tracked_key", [PRODUCT_KEY, STACK_KEY, WAFER_TYPE_KEY])
+def test_detail_choice_missing_from_the_new_process_shows_all_in_the_browser(
+    tracked_key: str,
+) -> None:
+    """공정을 바꿔 고른 값이 선택지 밖이 되면 「전체」 로 돌아오고 **브라우저 글자도** 「전체」 다.
+
+    세션 칸을 지우기만 하면 서버는 「전체」 로 계산하지만 새 값을 보내지 않아(`set_value` 없음)
+    브라우저가 옛 글자를 계속 보이고 되보낸다 — 화면은 「공정 · 옛 제품」 인데 숫자는 공정 전체다.
+    """
+    choice = _stale_choice()
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    browser = BrowserChoice(app, "selectbox", tracked_key)
+    browser.start()
+    assert not app.exception
+
+    _choose(app, browser, PROCESS_KEY, choice.first_process)
+    _choose(app, browser, PRODUCT_KEY, choice.product)
+    _choose(app, browser, STACK_KEY, choice.stack)
+    _choose(app, browser, WAFER_TYPE_KEY, choice.wafer_type)
+    assert app.session_state[tracked_key] in {choice.product, choice.stack, choice.wafer_type}
+
+    _choose(app, browser, PROCESS_KEY, choice.second_process)
+
+    for key in (PRODUCT_KEY, STACK_KEY, WAFER_TYPE_KEY):
+        assert app.session_state[key] == ALL
+    assert browser.last_set_value
+    assert browser.wire == ALL
+
+    # 다음 조작들에도 브라우저가 옛 글자를 되보내지 않는다.
+    for _ in range(2):
+        browser.run()
+        assert not app.exception
+        assert app.session_state[tracked_key] == ALL
+        assert browser.wire == ALL
+
+
+def test_detail_product_kept_by_the_new_process_stays_selected() -> None:
+    """새 공정에도 있는 제품은 그대로 남는다 — 선택지 밖일 때만 「전체」 로 돌린다."""
+    choice = _stale_choice()
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    browser = BrowserChoice(app, "selectbox", PRODUCT_KEY)
+    browser.start()
+
+    _choose(app, browser, PROCESS_KEY, choice.first_process)
+    _choose(app, browser, PRODUCT_KEY, choice.shared_product)
+    _choose(app, browser, PROCESS_KEY, choice.second_process)
+
+    assert app.session_state[PRODUCT_KEY] == choice.shared_product
+    assert browser.wire == choice.shared_product
+    browser.run()
+    assert not app.exception
+    assert app.session_state[PRODUCT_KEY] == choice.shared_product

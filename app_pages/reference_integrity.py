@@ -96,11 +96,6 @@ _LOSS_ROUTES = (
 )
 
 
-def _clear_invalid_widget_value(key: str, options: list[str]) -> None:
-    if key in st.session_state and st.session_state[key] not in options:
-        del st.session_state[key]
-
-
 def _render_pending_screen() -> None:
     """스위치를 껐을 때. 이 화면이 무엇을 기다리는지만 적는다."""
     render_pending_source(
@@ -295,7 +290,9 @@ def _render_detail(
                 _ALL,
                 *sorted(process_rows["제품정보"].astype(str).unique().tolist()),
             ]
-            _clear_invalid_widget_value("dynamic_capacity_product_filter", product_options)
+            # 아래 셋도 공정 상자처럼 잡은 값을 매 회차 다시 적는다(선택지 밖이면 「전체」).
+            # 지우기만 하면 서버는 「전체」 로 계산하지만 브라우저는 옛 글자를 계속 보이고 되보낸다.
+            prune_choice("dynamic_capacity_product_filter", product_options, default=_ALL)
             product = cast(
                 str,
                 st.selectbox(
@@ -311,7 +308,7 @@ def _render_detail(
                 product_rows = product_rows.loc[product_rows["제품정보"].eq(product)]
 
             stack_options = [_ALL, *sorted(product_rows["Stack"].astype(str).unique().tolist())]
-            _clear_invalid_widget_value("dynamic_capacity_stack_filter", stack_options)
+            prune_choice("dynamic_capacity_stack_filter", stack_options, default=_ALL)
             stack = cast(
                 str,
                 st.selectbox(
@@ -330,7 +327,7 @@ def _render_detail(
                 _ALL,
                 *sorted(stack_rows["WF 구분"].astype(str).unique().tolist()),
             ]
-            _clear_invalid_widget_value("dynamic_capacity_wafer_type_filter", wafer_type_options)
+            prune_choice("dynamic_capacity_wafer_type_filter", wafer_type_options, default=_ALL)
             wafer_type = cast(
                 str,
                 st.selectbox(
