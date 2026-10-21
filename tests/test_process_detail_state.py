@@ -8,9 +8,10 @@ AppTest 에는 Plotly 요소가 없어 차트 클릭을 재현하지 못한다. 
 - 세션 부분 — 콜백(`open_clicked_home_cell`)은 선택 상태를 세션에 **주입**해 단추로 부르고,
   `st.switch_page` 는 기록용 대역으로 바꾼다. 콜백은 이동 대기 칸만 적고 옮기는 것은 본문 첫 줄
   (`switch_to_queued_process_detail`)이다 — 진짜 프래그먼트 회차(`tests/fragment_browser.py`)에서
-  이동이 콜백 밖인지도 본다. AppTest 에는 등록된 페이지가 없어 대역 없이 옮기면 갈 곳이 없다 —
-  실제 서버는 세션의 페이지 목록이 회차를 넘어 남는다. 받는 쪽(`resolve_process_and_month`)은 주소
-  인자·전달 칸을 넣고 돌린다.
+  이동이 콜백 밖인지도 본다. 클릭 시험의 앱은 그 함수를 스스로 부르는 대역이라, 실제
+  `render_home_figures` 가 조기 반환보다 앞에서 부르는지는 따로 돌려 본다. AppTest 에는
+  등록된 페이지가 없어 대역 없이 옮기면 갈 곳이 없다 — 실제 서버는 세션의 페이지 목록이
+  회차를 넘어 남는다. 받는 쪽(`resolve_process_and_month`)은 주소 인자·전달 칸을 넣고 돌린다.
 """
 
 from __future__ import annotations
@@ -368,6 +369,35 @@ def test_a_cell_click_in_the_home_fragment_switches_outside_the_callback(
     assert in_callback == [False]
     assert PROCESS_DETAIL_QUEUED_KEY not in app.session_state
     assert app.session_state[PROCESS_DETAIL_REQUEST_KEY].process == "DEMO-A"
+
+
+def _real_home_figures_app() -> None:
+    from capa_simulation.components.home_rendering import render_home_figures
+
+    # 그림 없음(None)은 Main 이 숨은 회차의 조기 반환 갈래다.
+    render_home_figures(None, [])
+
+
+def test_the_real_home_figures_fragment_switches_a_queued_cell_before_its_early_return(
+    switched: list[tuple[str, dict[str, str]]],
+) -> None:
+    """위 대역 앱들은 이동 함수를 스스로 부른다. 실제 HOME 프래그먼트(`render_home_figures`)가
+    본문 첫 줄에서, 숨은 탭·그림 없음 조기 반환보다 **앞에서** 대기 칸을 꺼내 옮기는지는 여기서
+    지킨다 — 빠지거나 반환 뒤로 밀리면 칸 클릭이 아무 일도 하지 않고 대기 칸이 남는다."""
+    request = ProcessDetailRequest(process="DEMO-A", month=202603)
+    app = AppTest.from_function(_real_home_figures_app)
+    app.query_params["theme"] = "dark"
+    app.session_state[PROCESS_DETAIL_QUEUED_KEY] = request
+    app.run(timeout=30)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert switched == [(PROCESS_CAPA_DETAIL.path, request_query_params(request, theme="dark"))]
+    assert PROCESS_DETAIL_QUEUED_KEY not in app.session_state
+    assert app.session_state[PROCESS_DETAIL_REQUEST_KEY] == request
+
+    # 대기 칸은 한 번만 꺼낸다 — 다음 회차는 다시 옮기지 않는다.
+    app.run()
+    assert switched == [(PROCESS_CAPA_DETAIL.path, request_query_params(request, theme="dark"))]
 
 
 def _take_app() -> None:
