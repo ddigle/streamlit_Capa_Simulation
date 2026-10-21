@@ -113,8 +113,9 @@ Copy-Item data\input\* $backup -Recurse -ErrorAction SilentlyContinue
 
 `data/input/` 을 함께 챙기는 것은 보수적으로 두는 것이다. **배포 세트는 `data/input/` 아래를
 보내지 않으므로**(`build_deploy_package.py` 의 `FORBIDDEN_PREFIXES`) 적용이 덮을 일은 없다.
-다만 적용기의 `is_protected` 는 **삭제만** 막고 덮어쓰기는 막지 않는 구조라, 규칙이 바뀌면
-조용히 덮인다 — 무시 파일이라 `git checkout -- .` 로도 돌아오지 않는다.
+지금 적용기는 운영 데이터 자리를 덮으려는 항목이 든 ZIP 을 풀기 전에 멈추지만, 실제로 도는
+것은 **사내가 적용 전에 가진 판**이라 그 거절이 없는 옛 판일 수 있다. 덮이면 무시 파일이라
+`git checkout -- .` 로도 돌아오지 않으므로 백업은 그대로 한다.
 
 ### 1-4. 저장소에 있으면 안 되는 것이 커밋돼 있는지 먼저 본다
 

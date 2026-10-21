@@ -14,6 +14,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import apply_deploy_package  # noqa: E402
 from apply_deploy_package import (  # noqa: E402
+    PLACEHOLDER_NAMES,
     PRESERVED_PREFIXES,
     ApplyError,
     describe_plan,
@@ -75,6 +76,56 @@ def test_ignored_data_is_out_of_reach_because_only_tracked_files_are_removed() -
 def test_dangerous_archive_members_are_refused(name: str) -> None:
     """저장소 밖을 가리키거나 사내 전용 자리를 덮는 항목은 풀기 전에 걸러진다."""
     assert member_problems([name]), f"걸러지지 않았습니다: {name}"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "data/capa_simulation.duckdb",
+        "data/equipment_availability.duckdb.wal",
+        "data/capa_simulation.duckdb.sync.json",
+        ".env",
+        ".streamlit/Secrets.toml",
+        "data/input/Core_Data.csv",
+        "DATA/Input/RQ_DISPLAY_ORDER.csv",
+        "data/output/result.csv",
+        "templates/structure_template.xlsb",
+    ],
+)
+def test_archive_members_that_would_overwrite_operational_data_are_refused(name: str) -> None:
+    """운영 데이터 자리를 덮는 항목은 풀기 전에 멈춘다.
+
+    그 파일들은 무시 파일이라 덮인 뒤에는 `git checkout -- .` 로도 돌아오지 않는다. 삭제를
+    `is_protected` 가 막는 것과 같은 이유로, 덮어쓰기도 빌더의 `forbidden_entries` 한 겹에만
+    맡기지 않는다 — 옛 빌더나 손으로 만든 ZIP 은 송장 해시까지 맞은 채 들어온다.
+    """
+    problems = member_problems([name])
+
+    assert any("운영 데이터" in problem for problem in problems), name
+
+
+def test_directory_placeholders_in_the_archive_are_not_refused() -> None:
+    """`data/input/.gitkeep` 등은 배포가 싣는 빈 폴더 자리표다 — 거절하면 모든 배포가 멈춘다."""
+    names = ["data/input/.gitkeep", "data/output/.gitkeep", "data/temp/.gitkeep", "app.py"]
+
+    assert member_problems(names) == []
+
+
+def test_the_current_deploy_set_passes_the_member_checks() -> None:
+    """규칙이 아니라 지금 빌더가 보낼 실제 목록으로 확인한다 — 정상 배포가 멈추면 안 된다.
+
+    사내 전용 자리는 뺀다. 사내 저장소는 `review/` 를 추적하고, 빌더는 그 자리를 따로
+    (`internal_only_entries`) 막아 ZIP 에 싣지 않는다.
+    """
+    from build_deploy_package import deploy_set, tracked_files
+
+    shipped = [
+        path
+        for path in deploy_set(tracked_files(PROJECT_ROOT))
+        if not path.startswith(PRESERVED_PREFIXES)
+    ]
+
+    assert member_problems(shipped) == []
 
 
 def test_case_only_duplicates_are_refused() -> None:
@@ -299,9 +350,11 @@ def test_the_two_deploy_scripts_agree_on_what_is_untouchable() -> None:
     import sys
 
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    import build_deploy_package as build
     from build_deploy_package import INTERNAL_ONLY_PREFIXES, forbidden_entries
 
     assert set(INTERNAL_ONLY_PREFIXES) == set(PRESERVED_PREFIXES)
+    assert set(build.PLACEHOLDER_NAMES) == set(PLACEHOLDER_NAMES)
 
     for path in (
         ".env",
@@ -309,11 +362,17 @@ def test_the_two_deploy_scripts_agree_on_what_is_untouchable() -> None:
         ".streamlit/secrets.toml",
         ".streamlit/Secrets.toml",
         "data/capa_simulation.duckdb",
+        "data/capa_simulation.duckdb.sync.json",
         "data/output/result.csv",
         "data/temp/scratch.csv",
     ):
         assert forbidden_entries([path]) == [path], path
         assert is_protected(path), path
+        assert member_problems([path]), path
+
+    for placeholder in ("data/input/.gitkeep", "data/output/.gitkeep", "data/temp/.gitkeep"):
+        assert forbidden_entries([placeholder]) == [], placeholder
+        assert member_problems([placeholder]) == [], placeholder
 
 
 def test_reconcile_does_not_call_protected_files_deleted() -> None:

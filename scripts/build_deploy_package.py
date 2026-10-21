@@ -65,8 +65,9 @@ INTERNAL_ONLY_PREFIXES: tuple[str, ...] = ("review/", ".deploy/", ".claude/")
 # ① 그 파일에는 실제 고객명·제품명·공정명이 들어 있고 배포는 메일로 나간다 — `.gitignore`
 #    가 일부러 뺀 값을 첨부로 내보내는 길이 된다.
 # ② **데이터 정본은 사내다.** 보내면 사내가 실데이터로 만든 표시순서를 사외 개발 PC 의
-#    사본이 매 적용마다 덮는다. 적용기의 `is_protected` 는 삭제만 막고 덮어쓰기는 막지
-#    않아, 무시 파일이라 `git checkout -- .` 로도 돌아오지 않는다.
+#    사본이 매 적용마다 덮는다. 무시 파일이라 덮이면 `git checkout -- .` 로도 돌아오지
+#    않는다. 지금 적용기는 그런 항목이 든 ZIP 을 풀기 전에 멈추지만(`member_problems`),
+#    사내에서 도는 것은 사내가 적용 전에 가진 판이라 그 거절이 없는 옛 판일 수 있다.
 # 표시순서 부트스트랩은 `config/bootstrap_display_order.json` 이 맡고, 사내는 이미 자기
 # 사본을 갖고 있다.
 EXTRA_FILES: tuple[str, ...] = ()
@@ -77,7 +78,15 @@ EXCLUDED_FILES: frozenset[str] = frozenset()
 
 # 들어가면 안 되는 것. `git ls-files` 로 시작하므로 보통은 걸릴 일이 없지만, 한 번 새면
 # 되돌릴 수 없는 종류라(실데이터·비밀값) 보내기 전에 다시 본다.
-FORBIDDEN_SUFFIXES: tuple[str, ...] = (".xlsb", ".xlsx", ".xlsm", ".duckdb", ".db", ".wal")
+FORBIDDEN_SUFFIXES: tuple[str, ...] = (
+    ".xlsb",
+    ".xlsx",
+    ".xlsm",
+    ".duckdb",
+    ".db",
+    ".wal",
+    ".sync.json",
+)
 FORBIDDEN_NAMES: tuple[str, ...] = (".env", "secrets.toml")
 # `data/input/` 이 여기 있는 것은 위 `EXTRA_FILES` 의 결정을 규칙으로 못 박은 것이다 —
 # 그 아래는 실데이터 자리이므로 무엇이 들어오든 보내지 않는다(`.gitkeep` 만 예외).

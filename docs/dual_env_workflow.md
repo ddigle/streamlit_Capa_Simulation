@@ -123,7 +123,8 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 이 스크립트가 하는 일:
 
 1. ZIP 과 송장을 검사한다 — 형식, 저장소 밖을 가리키는 경로, 대소문자만 다른 중복,
-   사내 전용 자리를 덮으려는 항목.
+   사내 전용 자리를 덮으려는 항목, 운영 데이터 자리(DuckDB·비밀값·`data/input|output|temp/`,
+   자리표 `.gitkeep` 은 예외)를 덮으려는 항목.
 2. `.deploy/applied.json` 의 적용 이력과 대조해 **순서를 본다.** 이미 적용한 ZIP 이거나
    과거 ZIP 이면 멈추고, 건너뛴 배포가 있으면 알리고 계속한다.
 

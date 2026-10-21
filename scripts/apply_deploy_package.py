@@ -68,6 +68,9 @@ NEVER_REMOVE_SUFFIXES: tuple[str, ...] = (
 # 조용히 아무것도 막지 않는다.
 NEVER_REMOVE_NAMES: tuple[str, ...] = (".env", "secrets.toml")
 NEVER_REMOVE_PREFIXES: tuple[str, ...] = ("data/input/", "data/output/", "data/temp/")
+# 위 폴더 아래여도 배포가 싣는 파일. 빈 폴더를 만들어 두는 자리표이지 데이터가 아니다.
+# `build_deploy_package.PLACEHOLDER_NAMES` 와 같아야 한다 — 다르면 정상 배포가 멈춘다.
+PLACEHOLDER_NAMES: tuple[str, ...] = (".gitkeep",)
 
 
 class ApplyError(RuntimeError):
@@ -177,7 +180,7 @@ def order_problems(state: Mapping[str, object], manifest: Mapping[str, object]) 
 
 
 def member_problems(names: Sequence[str]) -> list[str]:
-    """푸는 순간 저장소 밖을 건드리거나 사내 기록을 덮는 항목."""
+    """푸는 순간 저장소 밖을 건드리거나 사내 기록·운영 데이터를 덮는 항목."""
     problems: list[str] = []
     seen: dict[str, str] = {}
     for name in names:
@@ -190,6 +193,11 @@ def member_problems(names: Sequence[str]) -> list[str]:
             continue
         if name.startswith(PRESERVED_PREFIXES):
             problems.append(f"사내 전용 자리를 덮으려 합니다: {name}")
+            continue
+        # 운영 데이터는 무시 파일이라 덮이면 `git checkout -- .` 로도 돌아오지 않는다. 빌더의
+        # `forbidden_entries` 가 싣지 않는다는 전제에 기대지 않고, 삭제처럼 여기서 한 번 더 막는다.
+        if is_protected(name) and name.lower().rsplit("/", 1)[-1] not in PLACEHOLDER_NAMES:
+            problems.append(f"운영 데이터 자리를 덮으려 합니다: {name}")
             continue
         # Windows 는 대소문자를 가리지 않는다. 두 항목이 같은 파일로 겹쳐 하나가 사라진다.
         lowered = name.lower()
