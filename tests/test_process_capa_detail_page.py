@@ -30,6 +30,7 @@ from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_capa_view import (
     DYNAMIC_ERROR_TITLE,
     NEXT_MONTH_KEY,
@@ -368,6 +369,41 @@ def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) 
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == first_month
     # 읽은 키만 지운다 — 테마 인자는 남는다.
     assert dict(app.query_params) == {"theme": ["dark"]}
+
+
+@pytest.mark.parametrize(
+    ("wanted", "shown"),
+    [
+        (
+            "![x](http://h/p.png) [링크](http://h/q) A~B~C",
+            f"「{literal_markdown('![x](http://h/p.png) [링크](http://h/q) A~B~C')}」은(는) ",
+        ),
+        # 조사는 escape 하기 전의 이름으로 고른다 — `\)` 의 `\` 로 고르면 「은(는)」이 된다.
+        ("WB(2)", "「WB\\(2\\)」는 "),
+    ],
+    ids=["markdown", "particle"],
+)
+def test_an_address_process_outside_the_list_is_shown_as_literal_text(
+    databases: tuple[Path, Path], wanted: str, shown: str
+) -> None:
+    """주소 인자 `?process=` 는 누구나 적어 보낼 수 있다 — 경고 상자에 마크다운으로 그리면
+    링크 하나로 남의 화면에 외부 이미지·임의 링크를 띄운다."""
+    app = _ok(_app(databases).run())
+    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    assert wanted not in options
+
+    app.query_params["process"] = wanted
+    _ok(app.run())
+
+    bodies = [
+        str(element.value) for element in app.warning if "넘겨받은 공정" in str(element.value)
+    ]
+    assert len(bodies) == 1, bodies
+    assert shown in bodies[0]
+    assert "![x](" not in bodies[0]
+    assert "](http://h/q)" not in bodies[0]
+    # 목록에 없는 공정이므로 기본 공정으로 열린다.
+    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value in options
 
 
 def test_the_home_transfer_slot_opens_the_cell_and_shows_the_origin_band(

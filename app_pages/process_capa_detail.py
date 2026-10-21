@@ -43,6 +43,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
@@ -100,7 +101,11 @@ from capa_simulation.services.display_order_scopes import (
 )
 from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.frame_contracts import normalize_demand_basis
-from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
+from capa_simulation.services.korean_particle import (
+    topic_particle,
+    with_object_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
@@ -338,7 +343,9 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
     )
 
 if entry.missing_process is not None:
-    missing = with_topic_particle(f"「{process_labels.label(entry.missing_process)}」")
+    # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
+    missing_label = process_labels.label(entry.missing_process)
+    missing = f"「{literal_markdown(missing_label)}」{topic_particle(f'「{missing_label}」')}"
     st.warning(f"넘겨받은 공정 {missing} 이 시나리오·조회기간에 없어 기본 공정을 엽니다.")
 if entry.month_outside is not None and entry.month is not None:
     outside = with_topic_particle(month_label(entry.month_outside))
