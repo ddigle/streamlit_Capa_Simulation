@@ -1117,7 +1117,8 @@ RQ_MODULE
    `process_rename_management.py` 다. 뒤의 둘은 탭 국소 예외로, 공용 프로필 `version` 만
    키로 쓰고 DB 를 읽지 않는 CSV 직렬화다(항상 그리는 탭이라 그 비용이 모든 rerun 에
    실린다). 그 밖의 모듈에 `@st.cache_data`·`@st.cache_resource` 를 새로 두지 않으며,
-   이 예외를 늘리려면 여기 목록을 같이 고친다. `persistence/` 는 이 경계 밖에서 Streamlit 을 부르지 않는다 —
+   이 예외를 늘리려면 여기 목록을 같이 고친다(`tests/test_cache_boundaries.py` 가 경계 밖 캐시와 3 의 새 DataFrame
+   해시 인자를 막으므로 그 시험의 목록도 함께). `persistence/` 는 이 경계 밖에서 Streamlit 을 부르지 않는다 —
    화면에 알릴 DB 상태(`schema_ahead` 등)는 저장소 속성으로 두고 화면 쪽(`page_bootstrap`)이 그린다. 직전 회차
    결과를 세션 칸에 기억해 다시 쓰는 장치(`components/wip_status_dashboard.py`)는 Streamlit 캐시가 아니라 경계 밖이고,
    입력이 같은지는 `DataFrame.equals` 로 본다 — 해시 지문은 object 칸의 `1`·`'1'` 을 같게 본다.
