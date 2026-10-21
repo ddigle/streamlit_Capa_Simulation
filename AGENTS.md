@@ -608,6 +608,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
   - `date_range_value`·`prune_list_selection`·`prune_choice` 가 위젯 값 정리다. 뒤의 둘은 위젯 앞에서 매 회차
     세션에 되쓴다(`pop` 하지 않는다). `render_schema_ahead_warning` 은 DB 가 코드보다 새 버전일 때 경고한다.
+  - `forget_page_dialogs`·`count_page_visit` 은 `app.py` 가 페이지가 바뀐 회차에 부른다(팝업 열림 칸 버림·방문
+    차례 올림). 앞의 것은 팝업 여는 콜백도 부르지만 뒤의 것은 그 회차에만 부른다 — `page_visit` 으로 「다시
+    들어왔다」를 아는 화면이 같은 페이지의 rerun 에서 위젯 아닌 칸을 거두지 않게.
 - `src/capa_simulation/settings.py`, `sidebar_status.py` — 앱 이름·경로·조회기간 상수(`settings`)와, 사이드바의
   구역 제목·조건 패널 칸·조회기간 상태 표시·접힘을 기억하는 상자·조건 카드(`sidebar_status`)다.
   - 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 조건 패널의 페이지 칸(`page_condition_slot`)은
@@ -1927,7 +1930,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   토글에는 `persist_state="session"` 을 **반드시** 준다. 선택지가 달라져도 안전하다 — 없어진 값은
   multiselect 가 걷어 내고 selectbox 는 첫 항목으로 돌아간다.
 - **확인용 체크박스와 입력 초안에는 `persist_state` 를 주지 않는다.** 「정말 지울까요」가
-  살아남으면 다음 화면이 이미 체크된 채로 뜬다.
+  살아남으면 다음 화면이 이미 체크된 채로 뜬다. 초안이 사라지는 회차에는 그 초안에서 나온 위젯 아닌
+  칸(미리보기)도 함께 거둔다 — 설비 RawData 입력은 페이지에 새로 들어온 회차(`page_bootstrap.page_visit`,
+  `app.py` 가 페이지가 바뀐 회차에 올린다)에 미리보기를 버린다. 「입력 칸이 세션에 없으면 거둔다」로
+  가르지 않는다 — 같은 페이지의 `st.rerun()` 도 서버에서는 칸이 비지만 브라우저가 입력을 다시 보낸다.
 - 탭은 `components/tab_state.py` 의 `stateful_tabs` 가 열린 탭을 위젯 아닌 칸에 적어 두고
   위젯 값이 사라졌을 때만 되돌린다. **`st.tabs` 의 `default` 인자는 쓰지 않는다** — 그 값이
   위젯 id 계산에 들어가 탭을 옮길 때마다 위젯이 새로 만들어지고 선택이 또 사라진다.

@@ -21,6 +21,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     date_range_value,
+    page_visit,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
@@ -138,6 +139,8 @@ IMPORT_SAVE_BUTTON_KEY = "equipment_import_save_v1"
 EDIT_SAVE_BUTTON_KEY = "equipment_edit_save_v1"
 VIEW_APPLY_BUTTON_KEY = "equipment_view_apply_v1"
 PREVIEW_KEY = "equipment_workspace_preview_v1"
+# 미리보기를 마지막으로 그린 페이지 방문 차례(`page_bootstrap.page_visit`).
+_PREVIEW_VISIT_KEY = "equipment_workspace_preview_visit_v1"
 BUFFER_KEY = "equipment_workspace_buffers_v1"
 DROP_EXAMPLE_ROWS_KEY = "equipment_workspace_drop_examples_v1"
 EXAMPLE_DROP_BUTTON_KEY = "equipment_workspace_drop_examples_button_v1"
@@ -1605,6 +1608,14 @@ def render_equipment_data_workspace(
             f"최근 저장본 r{latest_snapshot.revision.revision_no} · "
             "저장할 때 세 표 전체가 새 리비전으로 보관됩니다."
         )
+    # 미리보기는 등록할 표·붙여넣기·업로드에서 나온 위젯 아닌 칸이라 그 입력보다 오래 산다.
+    # 다른 화면을 다녀오면 입력 칸은 비어 돌아오는데 「저장할 변경」과 저장 단추만 남아, 누르면
+    # 입력이 없다는 오류로 막힌다. 페이지에 새로 들어온 회차에는 미리보기도 거둔다. 같은 페이지
+    # 안의 `st.rerun()`(앞 탭의 Cut-off 저장 등)은 브라우저가 입력을 다시 보내므로 남긴다.
+    visit = page_visit()
+    if st.session_state.get(_PREVIEW_VISIT_KEY) != visit:
+        st.session_state.pop(PREVIEW_KEY, None)
+    st.session_state[_PREVIEW_VISIT_KEY] = visit
     pending = st.session_state.get(PREVIEW_KEY)
     # 알림(오류·안내·예시 행·Main 설비 묶음)은 수가 회차마다 다르다. **늘 서 있는 한 칸** 안에
     # 그려 아래 key 있는 펼침·탭의 자리를 고정한다 — 자리가 밀리면 `st.rerun()` 으로 끊긴

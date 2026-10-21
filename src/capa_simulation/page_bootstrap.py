@@ -68,6 +68,25 @@ def forget_page_dialogs() -> None:
         st.session_state.pop(key, None)
 
 
+# 페이지가 바뀐 회차마다 하나씩 오르는 수(`count_page_visit`). Streamlit 은 그 회차에 그리지 않은
+# 위젯의 값을 버리는데, 서버만 보면 「다른 화면을 다녀와 입력 칸이 비었다」와 「같은 화면의
+# `st.rerun()` 이 본문을 건너뛰었다(브라우저가 입력을 다시 보낸다)」가 똑같다. 위젯 값에서 나온
+# 위젯 아닌 칸(미리보기 등)을 두는 화면은 이 수가 바뀐 회차에만 그 칸을 거둔다.
+PAGE_VISIT_KEY = "page_visit_count"
+
+
+def page_visit() -> int:
+    """지금 페이지에 들어온 차례. 같은 페이지에 머무는 동안은 그대로다."""
+    value = st.session_state.get(PAGE_VISIT_KEY, 0)
+    return value if isinstance(value, int) else 0
+
+
+def count_page_visit() -> None:
+    """페이지가 바뀐 회차에 `app.py` 가 부른다. 팝업 콜백의 `forget_page_dialogs` 와 달리 같은
+    페이지 안에서는 부르지 않는다."""
+    st.session_state[PAGE_VISIT_KEY] = page_visit() + 1
+
+
 def bootstrap_error_message(
     exc: BaseException, *, database_paths: Sequence[Path] = (DUCKDB_PATH,)
 ) -> str:

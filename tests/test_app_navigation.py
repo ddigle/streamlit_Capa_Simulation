@@ -60,6 +60,7 @@ from capa_simulation.navigation import (
     STATIC_CAPA_SUBPAGES,
     WIP_STATUS,
 )
+from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_CANVAS_CHART_KEY,
     PROCESS_DETAIL_MONTH_KEY,
@@ -877,6 +878,21 @@ def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
     assert not list(app.exception), [element.message for element in app.exception]
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert "sidebar_load_revision" not in {button.key for button in app.button}
+
+
+def test_the_page_visit_count_rises_only_when_the_page_changes(_app: AppTest) -> None:
+    """방문 차례는 페이지가 바뀐 회차에만 오른다. 같은 페이지의 rerun 에서도 오르면 그 차례를 보는
+    화면(설비 RawData 의 미리보기)이 브라우저에 입력이 그대로인데도 미리보기를 거둔다."""
+    app = _app.run()
+    first = app.session_state[PAGE_VISIT_KEY]
+    app.run()
+    assert app.session_state[PAGE_VISIT_KEY] == first
+
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[PAGE_VISIT_KEY] == first + 1
+    app.switch_page(HOME.path).run()
+    assert app.session_state[PAGE_VISIT_KEY] == first + 2
 
 
 def test_the_dialog_host_runs_on_every_full_run_even_where_no_field_stands(

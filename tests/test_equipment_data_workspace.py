@@ -799,3 +799,99 @@ render_equipment_data_workspace(
     assert not app.exception
     assert any("반영하지 않았습니다" in item.value for item in app.warning)
     assert len(repository.list_revisions()) == 2
+
+
+# 페이지 왕복과 같은 페이지 안의 `st.rerun()`. `app.py` 처럼 페이지가 바뀐 회차에만 방문 차례를
+# 올리고(`count_page_visit`), 「다른 화면」 회차에는 작업 공간을 그리지 않는다. 작업 공간 앞의
+# 단추는 앞 탭(Preference 의 Cut-off 저장 등)의 `st.rerun()` 을 흉내 낸다.
+_OTHER_PAGE_FLAG = "test_other_page"
+_RERUN_BUTTON_KEY = "test_rerun_before_workspace"
+
+
+def _app_between_pages(path: Path) -> AppTest:
+    return AppTest.from_string(
+        f"""
+from pathlib import Path
+import streamlit as st
+from capa_simulation.components.equipment_data_workspace import render_equipment_data_workspace
+from capa_simulation.page_bootstrap import count_page_visit
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.equipment_contract import (
+    empty_equipment_baseline, empty_equipment_master, empty_downtime_schedule,
+)
+page = "other" if st.session_state.get({_OTHER_PAGE_FLAG!r}) else "equipment"
+if st.session_state.get("test_last_page") != page:
+    count_page_visit()
+st.session_state["test_last_page"] = page
+if page == "other":
+    st.write("다른 화면")
+    st.stop()
+if st.button("앞 탭 저장", key={_RERUN_BUTTON_KEY!r}):
+    st.rerun()
+repository = DuckDBEquipmentRepository(Path({str(path)!r}))
+repository.initialize()
+revision_id = repository.latest_revision_id()
+snapshot = repository.load_snapshot(revision_id) if revision_id else None
+render_equipment_data_workspace(
+    repository=repository, latest_snapshot=snapshot,
+    baseline=snapshot.baseline if snapshot else empty_equipment_baseline(),
+    equipment=snapshot.equipment if snapshot else empty_equipment_master(),
+    downtime=snapshot.downtime if snapshot else empty_downtime_schedule(),
+    floor_canvases={{}}, max_extent=(100.0, 60.0),
+)
+""",
+        default_timeout=20,
+    ).run()
+
+
+_BASELINE_PASTE = "공정\t분류\t기존보유대수\t비고\nP\t전체\t7\t사용자 값"
+
+
+def _review_headings(app: AppTest) -> list[str]:
+    return [item.value for item in app.markdown if "저장할 변경" in item.value]
+
+
+def test_a_review_is_dropped_with_its_inputs_after_visiting_another_page(tmp_path: Path) -> None:
+    """다른 화면을 다녀오면 등록할 표·붙여넣기는 첫 값으로 돌아온다(그리지 않은 위젯의 값을
+    Streamlit 이 버린다). 미리보기만 남으면 「저장할 변경」과 켜진 저장 단추가 보이는데 눌러도
+    입력이 없다며 막힌다 — 입력과 함께 거둔다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app_between_pages(path)
+    _preview(app, _BASELINE_PASTE, target="기존 보유대수")
+    assert _review_headings(app) == ["**기존 보유대수 · 저장할 변경 1행**"]
+    assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is False
+
+    app.session_state[_OTHER_PAGE_FLAG] = True
+    app.run()
+    app.session_state[_OTHER_PAGE_FLAG] = False
+    app.run()
+
+    assert not app.exception
+    assert not app.error
+    assert app.text_area(CLIPBOARD_KEY).value == ""
+    assert PREVIEW_KEY not in app.session_state
+    assert _review_headings(app) == []
+    assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is True
+
+    _preview(app, _BASELINE_PASTE, target="기존 보유대수")
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+    assert not app.error
+    revisions = _repository(path).list_revisions()
+    assert len(revisions) == 1
+
+
+def test_a_rerun_on_the_same_page_keeps_the_review(tmp_path: Path) -> None:
+    """같은 페이지 안의 `st.rerun()` 은 작업 공간을 건너뛰어 서버의 입력 칸이 비지만, 브라우저는
+    입력을 그대로 들고 있다가 다음 제출에 다시 보낸다. 그 회차에 미리보기를 거두면 보이는 입력을
+    두고 미리보기만 다시 하게 된다 — 페이지가 바뀐 회차에만 거둔다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app_between_pages(path)
+    _preview(app, _BASELINE_PASTE, target="기존 보유대수")
+
+    app.button(_RERUN_BUTTON_KEY).click().run()
+
+    assert not app.exception
+    assert PREVIEW_KEY in app.session_state
+    assert _review_headings(app) == ["**기존 보유대수 · 저장할 변경 1행**"]
+    assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is False

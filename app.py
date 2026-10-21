@@ -42,6 +42,7 @@ from capa_simulation.design import theme
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
+    count_page_visit,
     forget_page_dialogs,
     render_schema_ahead_warning,
 )
@@ -273,6 +274,8 @@ with pinned_connections(DUCKDB_PATH):
     if page_changed:
         # 떠난 페이지의 팝업 열림 상태를 버린다. 닫지 않고 떠나면 돌아왔을 때 팝업이 저절로 뜬다.
         forget_page_dialogs()
+        # 입력 위젯에서 나온 미리보기를 두는 화면이 「다시 들어왔다」를 알아보는 수다.
+        count_page_visit()
     for group in pages.groups:
         # 하위가 없어도 **상자에 넣는다.** 묶을 것이 없으니 테두리가 필요 없다고 봤는데,
         # 사이드바에 상자가 다섯이고 이 둘만 맨몸으로 서니 목록이 두 층으로 읽혔다.
