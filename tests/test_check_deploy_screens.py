@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -2206,6 +2206,153 @@ def test_the_space_fader_item_clicks_today_only_when_the_button_is_on() -> None:
     source = inspect.getsource(screens.check_space_fader)
     assert "if today.is_enabled():" in source
     assert source.count("screen.step(") >= 6
+
+
+def _unit_classes(month: int) -> list[str]:
+    """한 달 옮기면 앞의 두 상자만 판정 class 가 붙는다(합성 — 셈만 본다)."""
+    units = ["sle-item sle-unit"] * 3
+    if month:
+        units[:2] = ["sle-item sle-unit is-pending"] * 2
+    return units
+
+
+class _FaderScreen(_FakeScreen):
+    """`space_fader` 항목이 만지는 것(층 목록 표·층 고르기·페이더·「오늘」 단추·범례)만 가진 화면.
+    PageUp 한 번에 페이더가 한 달 옮겨 가되, 앞의 `lost` 번은 늦은 그림이 오늘로 되돌린다(층을
+    옮긴 회차의 새 epoch). 「오늘」 단추는 페이더가 오늘이면 꺼져 있고, 꺼진 단추를 누르면
+    Playwright 처럼 켜지기를 기다리다 `TimeoutError` 로 끝난다. `fail_at` 단계에서 범례를 읽으면
+    예외가 난다."""
+
+    def __init__(self, *, lost: int = 0, fail_at: str | None = None) -> None:
+        super().__init__()
+        self.lost = lost
+        self.fail_at = fail_at
+        self.month = 0
+        self.presses = 0
+        self.clicks = 0
+        self.chosen: list[str] = []
+        fader = SimpleNamespace(
+            wait_for=lambda **kwargs: None,
+            evaluate=self._fader_evaluate,
+            focus=lambda: None,
+            press=self._press,
+        )
+        today = SimpleNamespace(is_enabled=lambda: self.month != 0, click=self._click)
+        found = {".sle-fader-input": fader, ".sle-fader-today": today}
+        self.page = SimpleNamespace(locator=lambda selector: SimpleNamespace(first=found[selector]))
+
+    def _fader_evaluate(self, script: str) -> Any:
+        if script == screens._FADER_TODAY_JS:
+            return self.month == 0
+        assert script == screens._UNIT_CLASSES_JS
+        return _unit_classes(self.month)
+
+    def _press(self, key: str) -> None:
+        assert key == "PageUp"
+        self.presses += 1
+        if self.presses > self.lost:
+            self.month += 1
+
+    def _click(self) -> None:
+        if self.month == 0:
+            raise TimeoutError("꺼진 단추가 켜지기를 기다렸다")
+        self.clicks += 1
+        self.month = 0
+
+    def open_page(self, href_suffix: str) -> None:
+        assert href_suffix == screens.SPACE_PAGE
+
+    def grid_with_column(self, header: str, *, timeout: float = 30.0) -> tuple[Any, int]:
+        assert header == "배치대수"
+        return "층 목록", 2
+
+    def column_index(self, grid: Any, header: str) -> int | None:
+        return {"동": 0, "층": 1}.get(header)
+
+    def grid_rows(self, grid: Any, columns: Sequence[int]) -> list[list[str | None]]:
+        assert list(columns) == [0, 1, 2]
+        return [["A동", "1F", "3"], ["A동", "2F", "1,289"], ["B동", "1F", "0"]]
+
+    def choose_by_typing(self, label: str, text: str) -> None:
+        self.chosen.append(text)
+
+    def selectbox_value(self, label: str) -> str | None:
+        return self.chosen[-1] if self.chosen else None
+
+    def main_text(self) -> str:
+        if self.fail_at is not None and self.current_step == self.fail_at:
+            raise RuntimeError(SENTINEL)
+        return f"PKG 3대 기준 2026-{10 + self.month}-21"
+
+    def wait_idle(self, timeout: float = 90.0) -> None:
+        pass
+
+    def poll(
+        self,
+        read: Callable[[], Any],
+        *,
+        timeout: float,
+        accept: Callable[[Any], bool] = bool,
+        every: float = 0.25,
+    ) -> Any:
+        # 가짜 화면은 누른 즉시 선다 — 기다리지 않고 한 번 읽는다.
+        return read()
+
+
+FADER_SUMMARY_HEAD = "배치 최다 층 1289대 · +1개월에 class 바뀐 상자 "
+
+
+@pytest.mark.parametrize(
+    ("lost", "presses", "tail"),
+    [
+        # 첫 키가 먹으면 한 번만 누르고 PageUp 꼬리는 없다.
+        (0, 1, ""),
+        # 층을 옮긴 회차의 늦은 그림이 첫 키를 오늘로 되돌리면 한 번 더 누르고 그 사실을 적는다.
+        (1, 2, " · PageUp 2번(첫 키가 오늘로 돌아감)"),
+    ],
+)
+def test_the_space_fader_item_presses_page_up_again_only_when_the_first_key_is_lost(
+    lost: int, presses: int, tail: str
+) -> None:
+    """두 배포 이어 페이더 첫 판이 `TimeoutError` 였다(사내 리뷰 202610200720) — 첫 PageUp 이
+    오늘로 되돌려진 탓이다. 항목은 페이더가 오늘에 남았을 때만 다시 누르고, 옮겨 간 페이더는
+    「오늘」 단추(켜져 있다)로 되돌린다."""
+    screen = _FaderScreen(lost=lost)
+
+    result = screens.check_space_fader(screen)
+
+    assert result == f"{FADER_SUMMARY_HEAD}2개 · 놓은 뒤 범례 기준일 바뀜 · 「오늘」 돌아옴{tail}"
+    assert (screen.presses, screen.clicks, screen.month) == (presses, 1, 0)
+    assert screen.chosen == ["A동 2F"]
+
+
+def test_the_space_fader_item_does_not_click_the_disabled_today_button() -> None:
+    """두 키 모두 오늘로 되돌려지면 페이더는 오늘에 남아 「오늘」 단추가 꺼져 있다 — 누르면 켜지기를
+    30초 기다린 `TimeoutError` 가 위 결과를 가린다. 세 번째 키는 누르지 않고, 단추도 누르지 않고
+    결과를 낸다."""
+    screen = _FaderScreen(lost=2)
+
+    result = screens.check_space_fader(screen)
+
+    assert result == (
+        f"{FADER_SUMMARY_HEAD}0개 · 놓은 뒤 범례 기준일 안 바뀜 · 「오늘」 돌아옴"
+        " · PageUp 2번(첫 키가 오늘로 돌아감)"
+    )
+    assert (screen.presses, screen.clicks, screen.month) == (2, 0, 0)
+
+
+def test_the_space_fader_item_names_the_failed_step_after_returning_to_today() -> None:
+    """범례를 기다리다 예외가 나도 `finally` 가 「오늘」로 되돌린다. 되돌리기가 단계 이름을
+    「「오늘」」로 바꾸므로, 미기록 줄이 멈춘 단계(범례)를 말하게 되돌려 둔다. `TimeoutError` 가
+    아니라 다시 돌지 않고, 예외 문구는 옮기지 않는다."""
+    screen = _FaderScreen(fail_at="범례")
+    item = next(item for item in ITEMS if item.key == "space_fader")
+
+    [outcome] = screens.run_items(screen, [item], allow_writes=False, deadline=NO_DEADLINE)
+
+    assert outcome.result == "미기록 — RuntimeError(범례)"
+    assert SENTINEL not in outcome.result
+    assert (screen.presses, screen.clicks, screen.month) == (1, 1, 0)
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)
