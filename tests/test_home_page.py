@@ -1072,8 +1072,7 @@ def test_a_comparison_revision_deleted_after_the_check_draws_without_gap(
     def delete_then_load(path: str, revision_id: str) -> pd.DataFrame:
         if revision_id == comparison_revision_id and not deleted:
             DuckDBScenarioRepository(database_path).delete_scenario(comparison_id)
-            # 삭제 경로가 부르는 비우기와 같다(모듈 속성을 이 대역으로 바꿔 두어 직접 비운다).
-            original_load_plan.clear()
+            scenario_cache.clear_scenario_snapshot_cache()  # 삭제 경로가 부르는 비우기
             deleted.append(revision_id)
         return original_load_plan(path, revision_id)
 

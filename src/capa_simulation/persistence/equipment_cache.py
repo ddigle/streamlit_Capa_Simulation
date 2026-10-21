@@ -88,11 +88,20 @@ def load_equipment_snapshot(database_path: str, revision_id: str) -> EquipmentSn
 DatabaseStamp = tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
 # 「지금 무엇이 저장돼 있나」 읽기(최신 리비전 id·Cut-off)를 stat 이 그대로여도 다시 읽는 간격(초).
 CURRENT_READ_TTL_SECONDS = 15
-# 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 비운 횟수). 비울 때마다 오른다.
+# 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 비운 횟수). 비울 때마다 오른다. 덮어쓰거나 지울 수
+# 있는 값을 담는 캐시(최신 리비전 id·Cut-off·층/FAB 도면·필요 단축 일정 조건·기준선)는 모두 이
+# 세대를 키에 둔다. 고칠 수도 지울 수도 없는 설비 리비전 id 키의 캐시(스냅샷·이력·CSV)는 겹쳐도
+# 같은 값이라 두지 않는다.
 WriteGeneration = tuple[str, int]
 _MODULE_EPOCH = uuid4().hex
 _GENERATION_LOCK = threading.Lock()
-_write_generations = {"revision": 0, "cutoff": 0}
+_write_generations = {
+    "revision": 0,
+    "cutoff": 0,
+    "floor_layout": 0,
+    "shortening_filter": 0,
+    "shortening_baseline": 0,
+}
 
 
 def _write_generation(kind: str) -> WriteGeneration:
@@ -235,7 +244,10 @@ def load_equipment_csv_payloads(database_path: str, revision_id: str) -> tuple[b
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def _load_floor_layout_summaries_payload(database_path: str) -> list[dict[str, Any]]:
+def _load_floor_layout_summaries_payload(
+    database_path: str, generation: WriteGeneration
+) -> list[dict[str, Any]]:
+    del generation
     return [
         _payload(summary, FloorLayoutCanvas)
         for summary in get_equipment_repository(database_path).load_floor_layout_summaries()
@@ -247,7 +259,9 @@ def _load_floor_layout_profile_payload(
     database_path: str,
     building: str,
     floor: str,
+    generation: WriteGeneration,
 ) -> dict[str, Any] | None:
+    del generation
     profile = get_equipment_repository(database_path).load_floor_layout_profile(building, floor)
     if profile is None:
         return None
@@ -259,7 +273,9 @@ def _load_floor_layout_marks_payload(
     database_path: str,
     building: str,
     floor: str,
+    generation: WriteGeneration,
 ) -> list[dict[str, Any]]:
+    del generation
     return [
         _payload(mark, FloorLayoutMark)
         for mark in get_equipment_repository(database_path).load_floor_layout_marks(building, floor)
@@ -274,7 +290,9 @@ def load_floor_layout_marks(
     """Load one floor's non-equipment drawing marks in drawing order."""
     return tuple(
         FloorLayoutMark(**payload)
-        for payload in _load_floor_layout_marks_payload(database_path, building, floor)
+        for payload in _load_floor_layout_marks_payload(
+            database_path, building, floor, _write_generation("floor_layout")
+        )
     )
 
 
@@ -282,7 +300,9 @@ def load_floor_layout_summaries(database_path: str) -> tuple[FloorLayoutCanvas, 
     """Load every stored floor canvas without the drawing bytes."""
     return tuple(
         FloorLayoutCanvas(**payload)
-        for payload in _load_floor_layout_summaries_payload(database_path)
+        for payload in _load_floor_layout_summaries_payload(
+            database_path, _write_generation("floor_layout")
+        )
     )
 
 
@@ -300,7 +320,9 @@ def load_floor_layout_profile(
     floor: str,
 ) -> FloorLayoutProfile | None:
     """Load one floor's canvas and drawing data URI through the payload cache."""
-    payload = _load_floor_layout_profile_payload(database_path, building, floor)
+    payload = _load_floor_layout_profile_payload(
+        database_path, building, floor, _write_generation("floor_layout")
+    )
     if payload is None:
         return None
     return FloorLayoutProfile(**payload)
@@ -312,7 +334,8 @@ class _FabLayoutPayload(TypedDict):
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_fab_layout_payload(database_path: str) -> _FabLayoutPayload:
+def _load_fab_layout_payload(database_path: str, generation: WriteGeneration) -> _FabLayoutPayload:
+    del generation
     repository = get_equipment_repository(database_path)
     profile = repository.load_fab_layout_profile()
     return {
@@ -326,7 +349,7 @@ def load_fab_layout(
 ) -> tuple[FabLayoutProfile | None, tuple[FabLayoutMark, ...]]:
     """저장된 FAB 전체 도면 — (캔버스·배경 도면 행 | None, 요소). 요소가 없으면 빈 튜플이고 화면이
     기본 배치를 그린다(`services/fab_layout.effective_fab_layout`). 층 도면 캐시와 함께 비운다."""
-    payload = _load_fab_layout_payload(database_path)
+    payload = _load_fab_layout_payload(database_path, _write_generation("floor_layout"))
     profile = payload["profile"]
     return (
         FabLayoutProfile(**profile) if profile is not None else None,
@@ -335,7 +358,10 @@ def load_fab_layout(
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_shortening_filter_payload(database_path: str) -> dict[str, Any]:
+def _load_shortening_filter_payload(
+    database_path: str, generation: WriteGeneration
+) -> dict[str, Any]:
+    del generation
     profile = get_equipment_repository(database_path).load_shortening_filter_profile()
     return _payload(profile, ShorteningFilterProfile)
 
@@ -343,15 +369,21 @@ def _load_shortening_filter_payload(database_path: str) -> dict[str, Any]:
 def load_shortening_filter_profile(database_path: str) -> ShorteningFilterProfile:
     """필요 단축 일정 공용 조회 조건. 탭이 열린 회차마다 부르므로 캐시한다 — 저장하는 쪽(그 탭의
     `on_change` 콜백)이 쓴 뒤 `clear_shortening_filter_cache` 로 비운다. 설비 리비전과 무관하다."""
-    return ShorteningFilterProfile(**_load_shortening_filter_payload(database_path))
+    return ShorteningFilterProfile(
+        **_load_shortening_filter_payload(database_path, _write_generation("shortening_filter"))
+    )
 
 
 def clear_shortening_filter_cache() -> None:
+    _bump_write_generation("shortening_filter")
     _load_shortening_filter_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _load_shortening_baselines_payload(database_path: str) -> list[dict[str, Any]]:
+def _load_shortening_baselines_payload(
+    database_path: str, generation: WriteGeneration
+) -> list[dict[str, Any]]:
+    del generation
     return [
         _payload(summary, ShorteningBaselineSummary)
         for summary in get_equipment_repository(database_path).list_shortening_baselines()
@@ -363,7 +395,9 @@ def load_shortening_baselines(database_path: str) -> tuple[ShorteningBaselineSum
     부르므로 캐시한다 — 저장·지우기 쪽이 `clear_shortening_baseline_cache` 로 비운다."""
     return tuple(
         ShorteningBaselineSummary(**payload)
-        for payload in _load_shortening_baselines_payload(database_path)
+        for payload in _load_shortening_baselines_payload(
+            database_path, _write_generation("shortening_baseline")
+        )
     )
 
 
@@ -376,8 +410,9 @@ class _ShorteningBaselinePayload(TypedDict):
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def _load_shortening_baseline_payload(
-    database_path: str, baseline_id: str
+    database_path: str, baseline_id: str, generation: WriteGeneration
 ) -> _ShorteningBaselinePayload:
+    del generation
     baseline = get_equipment_repository(database_path).load_shortening_baseline(baseline_id)
     return {
         "summary": _payload(baseline.summary, ShorteningBaselineSummary),
@@ -388,9 +423,11 @@ def _load_shortening_baseline_payload(
 
 
 def load_shortening_baseline(database_path: str, baseline_id: str) -> ShorteningBaseline:
-    """기준선 한 벌. **기준선은 고칠 수 없어** id 만으로 내용이 정해진다 — 키는 id 다. 없으면
-    `ValueError`(캐시에 남지 않는다)."""
-    payload = _load_shortening_baseline_payload(database_path, baseline_id)
+    """기준선 한 벌. **기준선은 고칠 수 없어** id 만으로 내용이 정해진다 — 키는 id 와, 지우기와 겹친
+    읽기가 지운 한 벌을 되살리지 않게 쓰기 세대다. 없으면 `ValueError`(캐시에 남지 않는다)."""
+    payload = _load_shortening_baseline_payload(
+        database_path, baseline_id, _write_generation("shortening_baseline")
+    )
     return ShorteningBaseline(
         summary=ShorteningBaselineSummary(**payload["summary"]),
         processes=payload["processes"],
@@ -402,6 +439,7 @@ def load_shortening_baseline(database_path: str, baseline_id: str) -> Shortening
 def clear_shortening_baseline_cache() -> None:
     """기준선 목록과 본문 캐시를 비운다. 저장은 목록만 바꾸지만 지우기와 한 함수로 둔다 — 본문은
     id 로만 닿아 비워도 다음에 고른 한 벌만 다시 읽는다."""
+    _bump_write_generation("shortening_baseline")
     _load_shortening_baselines_payload.clear()
     _load_shortening_baseline_payload.clear()
 
@@ -409,6 +447,7 @@ def clear_shortening_baseline_cache() -> None:
 def clear_floor_layout_cache() -> None:
     """층·FAB 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
     스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른 쪽이 둘 다 비운다."""
+    _bump_write_generation("floor_layout")
     _load_floor_layout_summaries_payload.clear()
     _load_floor_layout_profile_payload.clear()
     _load_floor_layout_marks_payload.clear()

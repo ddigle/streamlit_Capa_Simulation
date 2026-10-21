@@ -1,4 +1,4 @@
-# Purpose: 설비 DB 최신 리비전 id·Cut-off 읽기 캐시가 앱 저장·파일 변경을 놓치지 않는지 검사한다.
+# Purpose: 설비 DB 현행값 읽기 캐시(최신 id·Cut-off·조건·기준선·도면)가 저장을 놓치지 않는지 본다.
 
 """「지금 무엇이 저장돼 있나」 읽기 캐시(`persistence/equipment_cache.py`).
 
@@ -8,7 +8,7 @@ DB·WAL stat 으로 둔 캐시에서 받는다. 놓치면 옛 리비전·옛 Cut
 
 1. **비우기(1차)** — 이 앱의 저장은 저장 직후 캐시를 비우고 쓰기 세대를 올린다. stat 을 일부러
    고정해도 저장한 값이 다음 읽기에 나와야 한다 — 화면의 저장 경로(RawData·Space·Cut-off)와, 저장
-   직전에 시작된 다른 세션의 읽기가 겹친 경우까지.
+   직전에 시작된 다른 세션의 읽기가 겹친 경우까지(stat 이 없는 조회 조건·기준선·도면 캐시도).
 2. **stat(2차)** — 이 앱을 지나지 않은 쓰기(다른 Repository 객체 = 다른 프로세스 흉내)는 파일
    stat(본 파일, 연결을 열어 둔 쓰기면 WAL)이 바뀌어 다시 읽는다.
 """
@@ -35,6 +35,7 @@ from test_equipment_bulk_delete_page import (
 from test_equipment_bulk_delete_page import _page_script as _bulk_page_script
 from test_equipment_bulk_delete_page import _seeded as _bulk_seeded
 from test_equipment_pages import _open_tab, _page_script
+from test_shortening_baseline import _bundle_plan
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
@@ -49,10 +50,16 @@ from capa_simulation.persistence._sql_helpers import DUCKDB_CONNECT_CONFIG
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_snapshot_cache,
+    clear_floor_layout_cache,
     clear_process_cutoff_cache,
+    clear_shortening_baseline_cache,
+    clear_shortening_filter_cache,
     latest_equipment_revision_id,
+    load_floor_layout_canvases,
     load_latest_equipment_snapshot,
     load_process_cutoff,
+    load_shortening_baselines,
+    load_shortening_filter_profile,
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_samples import (
@@ -60,6 +67,8 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_master,
 )
 from capa_simulation.services.monthly_equipment_availability import processes_in
+from capa_simulation.services.shortening_baseline import freeze_plan
+from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
@@ -252,6 +261,48 @@ def test_a_read_in_flight_during_a_save_does_not_bring_the_old_value_back(
     reader.join(30)
     assert cast(pd.DataFrame, result["value"])["Cutoff일수"].tolist() == [10.0]
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [20.0]
+    clear_equipment_repository()
+
+
+def test_a_read_in_flight_does_not_bring_back_an_old_filter_baseline_list_or_floor_canvas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """필요 단축 일정 조회 조건·기준선 목록·층 캔버스도 같다 — 키가 DB 경로뿐이고 TTL 이 없어, 비운
+    뒤에 심긴 옛 값이 다음 저장·재시작까지 모든 세션에 남았다(쓰기 세대가 막는다)."""
+    database, outsider = _seeded(tmp_path)
+    equipment_cache.get_equipment_repository(database)  # 앱 저장소는 미리 선다
+
+    reader, release, result = _in_flight_read(
+        monkeypatch,
+        "load_shortening_filter_profile",
+        lambda: load_shortening_filter_profile(database),
+    )
+    assert outsider.save_shortening_filter_months(202605, 202607, source="테스트")
+    clear_shortening_filter_cache()
+    release.set()
+    reader.join(30)
+    assert cast(ShorteningFilterProfile, result["value"]).start_month != 202605
+    assert load_shortening_filter_profile(database).start_month == 202605
+
+    reader, release, result = _in_flight_read(
+        monkeypatch, "list_shortening_baselines", lambda: load_shortening_baselines(database)
+    )
+    outsider.save_shortening_baseline(freeze_plan(_bundle_plan(), name="겹친 저장"))
+    clear_shortening_baseline_cache()
+    release.set()
+    reader.join(30)
+    assert result["value"] == ()
+    assert [summary.name for summary in load_shortening_baselines(database)] == ["겹친 저장"]
+
+    reader, release, result = _in_flight_read(
+        monkeypatch, "load_floor_layout_summaries", lambda: load_floor_layout_canvases(database)
+    )
+    outsider.save_floor_layout_canvas("C1", "1F", 120.0, 80.0)
+    clear_floor_layout_cache()
+    release.set()
+    reader.join(30)
+    assert result["value"] == {}
+    assert load_floor_layout_canvases(database) == {("C1", "1F"): (120.0, 80.0)}
     clear_equipment_repository()
 
 

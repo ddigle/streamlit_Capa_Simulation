@@ -7,9 +7,11 @@
 지운 리비전에서는 빈 계획을 조용히 돌려주지 않고 전체 스냅샷과 같은 `KeyError` 를 내야 한다.
 """
 
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import numpy as np
@@ -17,7 +19,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.persistence import cache as scenario_cache
-from capa_simulation.persistence.models import ScenarioCreate
+from capa_simulation.persistence.models import GlobalDisplayOrder, ScenarioCreate, ScenarioSnapshot
 from capa_simulation.persistence.repository import (
     REFERENCE_TABLES,
     DuckDBScenarioRepository,
@@ -321,7 +323,9 @@ def test_every_snapshot_call_hands_out_tables_of_its_own(seeded: _Seeded) -> Non
     pristine = DuckDBScenarioRepository(seeded.database_path).load_revision(revision_id)
     first = scenario_cache.load_scenario_snapshot(database_path, revision_id)
     second = scenario_cache.load_scenario_snapshot(database_path, revision_id)
-    shared = scenario_cache._load_scenario_snapshot_resource(database_path, revision_id)
+    shared = scenario_cache._load_scenario_snapshot_resource(
+        database_path, revision_id, scenario_cache._write_generation("snapshot")
+    )
 
     for name, frame in first.tables.items():
         assert frame is not second.tables[name]
@@ -373,7 +377,9 @@ def test_the_copies_share_the_immutable_strings_of_the_shared_snapshot(seeded: _
 def test_the_shared_snapshot_rejects_in_place_writes(seeded: _Seeded) -> None:
     """공유 프레임의 배열은 읽기 전용이다 — 사본 대신 그것을 고치면 조용히 퍼지지 않고 터진다."""
     shared = scenario_cache._load_scenario_snapshot_resource(
-        str(seeded.database_path), seeded.official_revision_id
+        str(seeded.database_path),
+        seeded.official_revision_id,
+        scenario_cache._write_generation("snapshot"),
     )
     upeh = shared["tables"]["RQ_UPEH"]
     numeric = _numeric_column(upeh)
@@ -478,3 +484,171 @@ def test_clearing_the_snapshot_cache_reloads_the_scenario_name(
     repository.rename_scenario(release.scenario_id, "세 번째 이름")
     scenario_cache.clear_global_display_order_cache()
     assert scenario_name() == "세 번째 이름"
+
+
+# --------------------------------------------------------------- 비우기와 겹친 다른 세션의 읽기
+
+
+def _in_flight_read(
+    monkeypatch: pytest.MonkeyPatch,
+    database_path: str,
+    method: str,
+    read: Callable[[], object],
+) -> tuple[threading.Thread, threading.Event, dict[str, object]]:
+    """다른 세션의 캐시 미스 — DB 에서 값을 읽은 뒤, 캐시에 심기 전에 멈춘다.
+
+    앱의 저장소 객체는 미리 세운다 — 세울 때 공용 표시순서를 한 번 읽으므로, 처음 세우는 읽기에서
+    멈추면 멈춘 자리가 캐시 미스의 읽기가 아니다.
+    """
+    scenario_cache.get_scenario_repository(database_path)
+    original = getattr(DuckDBScenarioRepository, method)
+    read_done = threading.Event()
+    release = threading.Event()
+
+    def paused(self: DuckDBScenarioRepository, *args: object, **kwargs: object) -> object:
+        value = original(self, *args, **kwargs)
+        read_done.set()
+        release.wait(30)
+        return value
+
+    monkeypatch.setattr(DuckDBScenarioRepository, method, paused)
+    result: dict[str, object] = {}
+
+    def remember() -> None:
+        try:
+            result["value"] = read()
+        except Exception as exc:  # 시험 본문이 결과로 본다
+            result["error"] = exc
+
+    reader = threading.Thread(target=remember)
+    reader.start()
+    assert read_done.wait(30)
+    monkeypatch.setattr(DuckDBScenarioRepository, method, original)
+    return reader, release, result
+
+
+def _finish(reader: threading.Thread, release: threading.Event, result: dict[str, object]) -> None:
+    release.set()
+    reader.join(30)
+    assert not reader.is_alive()
+    assert "error" not in result, result.get("error")
+
+
+def test_a_profile_read_in_flight_during_a_save_does_not_bring_the_old_profile_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 직전에 시작된 다른 세션의 읽기가 비운 뒤 옛 프로필을 심어도, 비운 뒤의 읽기는 새 값이다.
+
+    Streamlit 의 `.clear()` 는 이미 진행 중인 캐시 미스를 막지 못한다 — 그 계산이 끝나면 비운 칸에
+    옛 값을 다시 쓴다. 공용 프로필 캐시는 TTL 이 없어 다음 저장·재시작까지 모든 세션이 옛 값을 본다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    path = str(database_path)
+    before = repository.load_global_display_order()
+
+    reader, release, result = _in_flight_read(
+        monkeypatch,
+        path,
+        "load_global_display_order",
+        lambda: scenario_cache.load_global_display_order(path),
+    )
+    saved = repository.replace_global_display_order(
+        _flipped_first_direction(repository), source="테스트"
+    )
+    scenario_cache.clear_global_display_order_cache()  # 앱의 저장 경로가 부르는 비우기
+    _finish(reader, release, result)
+
+    # 진행 중이던 읽기는 옛 값을 돌려준다(그 회차는 그렇다).
+    assert cast(GlobalDisplayOrder, result["value"]).version == before.version
+    assert saved.version != before.version
+    assert scenario_cache.load_global_display_order(path).version == saved.version
+
+
+def test_a_snapshot_read_in_flight_during_a_display_order_save_does_not_bring_the_old_order_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공유 스냅샷도 같다 — 읽는 동안 표시순서가 바뀌고 비워져도 다음 스냅샷은 새 표시순서를 얹는다.
+
+    `load_revision` 은 16표와 공용 표시순서를 한 읽기 트랜잭션에서 읽으므로 경쟁 창이 스냅샷을 읽는
+    시간 전체다. 옛 칸이 심기면 TTL 동안 모든 세션이 옛 표시순서로 그린다.
+    """
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    release_record = ensure_initial_scenario(repository).release
+    assert release_record is not None
+    path = str(database_path)
+    revision_id = release_record.revision_id
+    before = repository.load_revision(revision_id).tables["RQ_DISPLAY_ORDER"]
+
+    reader, release, result = _in_flight_read(
+        monkeypatch,
+        path,
+        "load_revision",
+        lambda: scenario_cache.load_scenario_snapshot(path, revision_id),
+    )
+    repository.replace_global_display_order(_flipped_first_direction(repository), source="테스트")
+    scenario_cache.clear_global_display_order_cache()
+    _finish(reader, release, result)
+
+    in_flight = cast(ScenarioSnapshot, result["value"])
+    _assert_same_frame(in_flight.tables["RQ_DISPLAY_ORDER"], before)
+    expected = repository.load_revision(revision_id).tables["RQ_DISPLAY_ORDER"]
+    assert not expected["정렬방식"].equals(before["정렬방식"])
+    after = scenario_cache.load_scenario_snapshot(path, revision_id)
+    _assert_same_frame(after.tables["RQ_DISPLAY_ORDER"], expected)
+
+
+@pytest.mark.parametrize("apply_global_display_order", [True, False])
+def test_a_snapshot_read_in_flight_during_a_rename_does_not_bring_the_old_name_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, apply_global_display_order: bool
+) -> None:
+    """이름 바꾸기(보관·복원·삭제도 같은 비우기)와 겹친 읽기 — 저장 원본 칸까지 새 이름을 낸다."""
+    from capa_simulation.application_bootstrap import ensure_initial_scenario
+
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _repository(database_path)
+    release_record = ensure_initial_scenario(repository).release
+    assert release_record is not None
+    path = str(database_path)
+    revision_id = release_record.revision_id
+
+    def scenario_name() -> str:
+        return scenario_cache.load_scenario_snapshot(
+            path, revision_id, apply_global_display_order=apply_global_display_order
+        ).scenario.scenario_name
+
+    reader, release, result = _in_flight_read(monkeypatch, path, "load_revision", scenario_name)
+    repository.rename_scenario(release_record.scenario_id, "새 이름")
+    scenario_cache.clear_scenario_snapshot_cache()
+    _finish(reader, release, result)
+
+    assert result["value"] != "새 이름"
+    assert scenario_name() == "새 이름"
+
+
+def test_a_plan_read_in_flight_during_a_delete_does_not_bring_the_deleted_plan_back(
+    seeded: _Seeded, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지우기와 겹친 비교 계획 읽기 — 지운 리비전의 계획이 캐시에 되살아나지 않고 `KeyError` 다."""
+    repository = DuckDBScenarioRepository(seeded.database_path)
+    database_path = str(seeded.database_path)
+    scenario_id, revision_id = _create_clone(
+        repository, seeded.official_revision_id, "읽는 중 지울 계획", 0.25
+    )
+
+    reader, release, result = _in_flight_read(
+        monkeypatch,
+        database_path,
+        "load_revision_table",
+        lambda: scenario_cache.load_scenario_plan(database_path, revision_id),
+    )
+    repository.delete_scenario(scenario_id)
+    scenario_cache.clear_scenario_snapshot_cache()
+    _finish(reader, release, result)
+
+    assert not cast(pd.DataFrame, result["value"]).empty
+    with pytest.raises(KeyError, match="리비전을 찾을 수 없습니다"):
+        scenario_cache.load_scenario_plan(database_path, revision_id)
