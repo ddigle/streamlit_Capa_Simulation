@@ -505,6 +505,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Space 단계·전환 이벤트를 낸다(검증은 `equipment_validation.py`, 샘플은 `equipment_samples.py`).
   - 상태 판정(`_build_equipment_status_from_prepared`)이 `집계분류`·`가용대수반영`·도면 칸을 붙인다 — 세는 자리는 그
     칸을, 이름을 보는 자리는 `상태` 를 본다(6장). 이탈일 규칙은 `tests/test_stop_and_exit_dates.py` 가 박아 둔다.
+  - 판정은 시점 하나 또는 행마다의 시점(`as_of` Series)을 받는다. 생애주기 구간은 조회 시작일의 전 호기와, 그 뒤
+    바뀔 수 있는 날마다 그날 일정·비가동 경계가 걸린 설비키 묶음만 쌓아 한 번 부른다(날마다 전 호기를 다시 판정하지
+    않는다). 판정 줄을 고치면 두 길이 같은지 `tests/test_equipment_lifecycle_stacked.py` 가 본다.
 - `src/capa_simulation/services/equipment_csv.py` — 설비 세 표의 CSV 양식·내보내기·붙여넣기 검증과 자연키 병합을 맡는다.
   - 내보낸 파일을 그대로 되붙여도 통과해야 한다(읽는 쪽 `*_COLUMNS` 와 같은 이름·차례, `reference_csv.guard_excel_text`).
   - 일부 열 붙여넣기(`read_equipment_update`)는 붙여넣은 열만 바꾸고(빈 칸 = 지움) 겹친 머리글을 막는다. 모르는

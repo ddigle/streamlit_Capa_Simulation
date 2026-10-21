@@ -1752,8 +1752,8 @@ def get_required_shortening(
 
     호기 구간은 Static 대비 일정과 **같은 구간 캐시**(`get_equipment_lifecycle_spans`)에서 받는다.
     키의 마스터·비가동 지문을 그대로 쓰므로 다시 해시하지 않는다. 시나리오·기존보유·오늘만 바뀌어
-    이 결과가 새로 돌 때도 구간(3천 행·32개월에 2초 남짓, 샘플 관측)은 다시 만들지 않고, 두 탭의
-    구간 범위가 같으면 한 벌을 나눈다.
+    이 결과가 새로 돌 때도 구간(일정을 흩은 2,700행·32개월에 1초 안쪽, 샘플 관측)은 다시 만들지
+    않고, 두 탭의 구간 범위가 같으면 한 벌을 나눈다.
     """
     _, equipment_digest, downtime_digest, _, _, months, today = cache_key
     required_equipment = _required_equipment()
@@ -1889,9 +1889,10 @@ def get_equipment_lifecycle_spans(
     """세는 데 쓰는 호기 생애주기 구간(`build_equipment_lifecycle_spans(with_unit_share=True)`).
 
     Static 대비 일정은 보기(가용대수 비교 · 분류별 내역 · 확보율 교차검증)나 같은 탭의 위젯 하나만
-    바꿔도 페이지 전체가 다시 돌아, 상태 판정을 바뀌는 날마다 다시 하는 이 계산이 매번 들었다
-    (2026-10-08 점검 A2 — 데모 19행 0.34초, 3천 행 복제 6개월 1.45초·32개월 2.35초). 필요 단축
-    일정도 이 캐시를 쓴다(`get_required_shortening`).
+    바꿔도 페이지 전체가 다시 돌아, 캐시가 없으면 이 계산이 회차마다 든다. 비용은 (호기, 바뀔 수
+    있는 날)을 쌓은 행 수를 따른다 — 합성 표본을 복제해 일정을 ±200일 흩은 2,700행에서 4개월
+    0.1~0.3초·32개월 0.2~0.7초(샘플 관측, 머신 부하에 따라). 필요 단축 일정도 이 캐시를 쓴다
+    (`get_required_shortening`).
 
     `_equipment`·`_downtime` 은 키의 두 지문을 만든 바로 그 프레임이어야 한다. 마스터가 계약을
     어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).

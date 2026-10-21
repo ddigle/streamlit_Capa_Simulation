@@ -74,9 +74,15 @@ def _build_equipment_status_from_prepared(
     prepared: pd.DataFrame,
     prepared_downtime: pd.DataFrame,
     *,
-    as_of: pd.Timestamp,
+    as_of: pd.Timestamp | pd.Series,
 ) -> pd.DataFrame:
-    """Build one as-of snapshot from already validated equipment inputs."""
+    """Build one as-of snapshot from already validated equipment inputs.
+
+    `as_of` 가 Series 면 행마다 그 행의 시점으로 판정한다(index 는 `prepared` 와 같아야 한다).
+    생애주기 구간이 (호기, 바뀔 수 있는 날)을 쌓은 표 한 장을 한 번에 판정할 때 쓴다. 판정 줄은
+    한 벌이다 — 시점이 섞이므로 비가동만 행마다 거르고(`_active_downtime_by_row`), 지분은
+    (설비키, 시점) 묶음마다 매긴다.
+    """
     result = prepared.copy()
     if result.empty:
         for column, dtype in (
@@ -116,11 +122,14 @@ def _build_equipment_status_from_prepared(
         result[QUAL_DATE_COLUMN].notna() & result[QUAL_DATE_COLUMN].le(timestamp)
     )
 
-    active_downtime = _active_downtime(prepared_downtime, timestamp)
-    reason_by_equipment = active_downtime.groupby(EQUIPMENT_ID_COLUMN)["비가동유형"].agg(
-        _joined_unique
-    )
-    result["비가동유형"] = result[EQUIPMENT_ID_COLUMN].map(reason_by_equipment).astype("string")
+    if isinstance(timestamp, pd.Series):
+        result["비가동유형"] = _active_downtime_by_row(result, prepared_downtime, timestamp)
+    else:
+        active_downtime = _active_downtime(prepared_downtime, timestamp)
+        reason_by_equipment = active_downtime.groupby(EQUIPMENT_ID_COLUMN)["비가동유형"].agg(
+            _joined_unique
+        )
+        result["비가동유형"] = result[EQUIPMENT_ID_COLUMN].map(reason_by_equipment).astype("string")
     offline = result["비가동유형"].notna() & owned
     available = owned & qualified & ~storage & ~offline
 
@@ -151,7 +160,13 @@ def _build_equipment_status_from_prepared(
     # 입고 전 모듈은 형제가 보유 중인 동안 0 이다.
     keys = unit_keys(result)
     result[UNIT_KEY_COLUMN] = keys
-    result[UNIT_SHARE_COLUMN] = held_unit_shares(keys, owned)
+    # 행마다 시점이 다르면 같은 시점의 형제끼리만 나눈다 — 한 시점에 한 설비키의 행은 모두 쌓인다.
+    share_groups = (
+        result.groupby([keys, timestamp], sort=False).ngroup()
+        if isinstance(timestamp, pd.Series)
+        else keys
+    )
+    result[UNIT_SHARE_COLUMN] = held_unit_shares(share_groups, owned)
     return result.reset_index(drop=True)
 
 
@@ -207,10 +222,10 @@ def build_equipment_lifecycle_spans(
     날 형제의 지분도 같이 바뀌기 때문이다 — 나간 모듈만 당일로 두고 형제의 지분 경계를 다음 날로
     밀면 그날 하루 설비가 한 대보다 적게 세어진다.
 
-    **판정 규칙을 다시 적지 않는다.** 상태가 바뀔 수 있는 날마다
-    `_build_equipment_status_from_prepared` 를 그대로 부르고, 이어지는 같은 상태를 한 구간
-    으로 묶는다. 규칙을 옮겨 적으면 이 화면만 조용히 다른 이야기를 하게 된다 — 주차별
-    집계·상태 막대·Space 배치도가 모두 그 함수 하나를 본다.
+    **판정 규칙을 다시 적지 않는다.** 판정할 (호기, 시점) 행을 쌓아
+    `_build_equipment_status_from_prepared` 를 한 번 그대로 부르고, 이어지는 같은 상태를 한
+    구간으로 묶는다(`_stacked_lifecycle_moments`). 규칙을 옮겨 적으면 이 화면만 조용히 다른
+    이야기를 하게 된다 — 주차별 집계·상태 막대·Space 배치도가 모두 그 함수 하나를 본다.
 
     끝을 여는 구간은 `end_date` 에서 자른다. 조회 범위 밖의 일은 이 화면이 답할 것이
     아니다.
@@ -239,7 +254,6 @@ def build_equipment_lifecycle_spans(
 
     start = pd.Timestamp(start_date)
     end = pd.Timestamp(end_date)
-    breakpoints = _lifecycle_breakpoints(prepared, prepared_downtime, start=start, end=end)
     process_by_unit = prepared.set_index(EQUIPMENT_ID_COLUMN)[["공정소분류", "공정대분류"]]
 
     # 열린 구간 하나는 (상태, 집계분류, 지분, 시작일)이다. 앞 셋 중 하나라도 바뀌면 끊는다.
@@ -267,34 +281,32 @@ def build_equipment_lifecycle_spans(
             row[COUNT_CATEGORY_COLUMN] = category
         rows.append(row)
 
-    for moment in breakpoints:
-        status_frame = _build_equipment_status_from_prepared(
-            prepared, prepared_downtime, as_of=moment
-        )
-        shares = (
-            status_frame[UNIT_SHARE_COLUMN].round(UNIT_COUNT_DECIMALS + 3)
-            if with_unit_share
-            else pd.Series(1.0, index=status_frame.index)
-        )
-        # Gantt(끈 쪽)는 이름만 본다 — 집계분류를 이름으로 채우면 끊는 자리가 지금과 같다.
-        categories = (
-            status_frame[COUNT_CATEGORY_COLUMN] if with_unit_share else status_frame["상태"]
-        )
-        for unit, status, category, share in zip(
-            status_frame[EQUIPMENT_ID_COLUMN],
-            status_frame["상태"],
-            categories,
-            shares,
-            strict=True,
-        ):
-            state = (str(status), str(category), float(share))
-            previous = open_spans.get(str(unit))
-            if previous is not None and previous[:3] == state:
-                continue
-            if previous is not None:
-                # 앞 구간은 이 날 **전날**까지다. 같은 날 두 상태가 겹쳐 보이면 안 된다.
-                close(str(unit), *previous[:3], previous[3], moment - pd.Timedelta(days=1))
-            open_spans[str(unit)] = (*state, moment)
+    stacked, moments = _stacked_lifecycle_moments(prepared, prepared_downtime, start=start, end=end)
+    status_frame = _build_equipment_status_from_prepared(stacked, prepared_downtime, as_of=moments)
+    shares = (
+        status_frame[UNIT_SHARE_COLUMN].round(UNIT_COUNT_DECIMALS + 3)
+        if with_unit_share
+        else pd.Series(1.0, index=status_frame.index)
+    )
+    # Gantt(끈 쪽)는 이름만 본다 — 집계분류를 이름으로 채우면 끊는 자리가 지금과 같다.
+    categories = status_frame[COUNT_CATEGORY_COLUMN] if with_unit_share else status_frame["상태"]
+    # 쌓은 행은 시점 차례, 같은 시점 안에서는 마스터 차례다.
+    for unit, moment, status, category, share in zip(
+        status_frame[EQUIPMENT_ID_COLUMN],
+        moments,
+        status_frame["상태"],
+        categories,
+        shares,
+        strict=True,
+    ):
+        state = (str(status), str(category), float(share))
+        previous = open_spans.get(str(unit))
+        if previous is not None and previous[:3] == state:
+            continue
+        if previous is not None:
+            # 앞 구간은 이 날 **전날**까지다. 같은 날 두 상태가 겹쳐 보이면 안 된다.
+            close(str(unit), *previous[:3], previous[3], moment - pd.Timedelta(days=1))
+        open_spans[str(unit)] = (*state, moment)
     for unit, (status, category, share, began) in open_spans.items():
         close(unit, status, category, share, began, end)
     result = pd.DataFrame(rows, columns=columns)
@@ -338,13 +350,79 @@ def _lifecycle_breakpoints(
 ) -> list[pd.Timestamp]:
     """판정이 달라질 수 있는 날만 모은다. 조회 시작일은 항상 첫 표본이다."""
     moments: set[pd.Timestamp] = {start}
-    for column in _TIMELINE_EVENT_COLUMNS:
-        moments.update(pd.to_datetime(prepared[column].dropna()).tolist())
-    if not prepared_downtime.empty:
-        moments.update(pd.to_datetime(prepared_downtime["시작일"].dropna()).tolist())
-        finished = pd.to_datetime(prepared_downtime["종료일"].dropna())
-        moments.update((finished + pd.Timedelta(days=1)).tolist())
+    moments.update(_lifecycle_change_days(prepared, prepared_downtime)[_MOMENT_COLUMN].tolist())
     return sorted(moment for moment in moments if start <= moment <= end)
+
+
+def _lifecycle_change_days(prepared: pd.DataFrame, prepared_downtime: pd.DataFrame) -> pd.DataFrame:
+    """설비키마다 판정이 달라질 수 있는 날(`설비키`·`_시점`, 같은 쌍은 한 번).
+
+    일정 컬럼 넷의 날짜와 비가동 시작일·종료일 다음 날이다(`_TIMELINE_EVENT_COLUMNS` 의 주석).
+    호기가 아니라 설비키로 모으는 것은 모듈 하나의 입고·정지·반출이 형제의 지분도 바꾸기
+    때문이다 — 비가동은 설비명을 그 설비키로 옮긴다(비가동 설비명은 마스터에 있다고 검증됐다).
+    """
+    keys = unit_keys(prepared)
+    parts = [
+        pd.DataFrame({UNIT_KEY_COLUMN: keys, _MOMENT_COLUMN: prepared[column]})
+        for column in _TIMELINE_EVENT_COLUMNS
+    ]
+    if not prepared_downtime.empty:
+        key_by_unit = pd.Series(keys.to_numpy(), index=prepared[EQUIPMENT_ID_COLUMN].to_numpy())
+        downtime_keys = prepared_downtime[EQUIPMENT_ID_COLUMN].map(key_by_unit)
+        parts.append(
+            pd.DataFrame(
+                {UNIT_KEY_COLUMN: downtime_keys, _MOMENT_COLUMN: prepared_downtime["시작일"]}
+            )
+        )
+        parts.append(
+            pd.DataFrame(
+                {
+                    UNIT_KEY_COLUMN: downtime_keys,
+                    _MOMENT_COLUMN: prepared_downtime["종료일"] + pd.Timedelta(days=1),
+                }
+            )
+        )
+    days = pd.concat(parts, ignore_index=True).dropna(subset=[_MOMENT_COLUMN])
+    return pd.DataFrame(
+        {
+            UNIT_KEY_COLUMN: days[UNIT_KEY_COLUMN].astype("string"),
+            _MOMENT_COLUMN: pd.to_datetime(days[_MOMENT_COLUMN]),
+        }
+    ).drop_duplicates(ignore_index=True)
+
+
+def _stacked_lifecycle_moments(
+    prepared: pd.DataFrame,
+    prepared_downtime: pd.DataFrame,
+    *,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """생애주기 구간이 판정할 (호기, 시점) 행과 행마다의 시점.
+
+    조회 시작일에는 모든 호기를, 그 뒤 바뀔 수 있는 날(`_lifecycle_breakpoints` 와 같은 날)마다
+    **그날 일정·비가동 경계가 걸린 설비키 묶음의 호기만** 쌓는다. 판정이 보는 것은 자기 행의
+    날짜·자기 비가동·같은 설비키 형제의 보유뿐이라, 그날 아무것도 걸리지 않은 묶음은 앞 판정과
+    같은 답이 나와 구간을 끊지 않는다 — 날마다 모든 호기를 다시 판정하면 비용이 (바뀌는 날 수 ×
+    호기 수)로 커진다. 한 날에 걸린 설비키는 형제 행을 모두 쌓아 그날의 지분 묶음이 온전하다.
+
+    행은 시점 차례, 같은 시점 안에서는 마스터 차례다. 시점 Series 의 index 는 쌓은 표와 같다.
+    """
+    days = _lifecycle_change_days(prepared, prepared_downtime)
+    later = days.loc[days[_MOMENT_COLUMN].gt(start) & days[_MOMENT_COLUMN].le(end)]
+    positions = pd.DataFrame(
+        {UNIT_KEY_COLUMN: unit_keys(prepared).array, "_위치": range(len(prepared))}
+    )
+    later_rows = later.merge(positions, on=UNIT_KEY_COLUMN).sort_values(
+        [_MOMENT_COLUMN, "_위치"], kind="stable"
+    )
+    stacked = prepared.iloc[[*range(len(prepared)), *later_rows["_위치"].tolist()]].reset_index(
+        drop=True
+    )
+    moments = pd.Series(start, index=range(len(prepared)), dtype="datetime64[ns]")
+    if not later_rows.empty:
+        moments = pd.concat([moments, later_rows[_MOMENT_COLUMN]], ignore_index=True)
+    return stacked, moments
 
 
 def _exit_days_by_key(prepared: pd.DataFrame, keys: pd.Series) -> dict[str, frozenset[date]]:
@@ -755,6 +833,46 @@ def _active_downtime(downtime: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFram
         downtime["종료일"].isna() | downtime["종료일"].ge(as_of)
     )
     return downtime.loc[active].copy()
+
+
+def _active_downtime_by_row(
+    equipment: pd.DataFrame, downtime: pd.DataFrame, moments: pd.Series
+) -> pd.Series:
+    """행마다 그 행의 시점에 걸린 비가동유형(없으면 NA).
+
+    `_active_downtime` 과 같은 창(시작일 ≤ 시점, 종료일이 없거나 ≥ 시점)이고, 유형은 비가동 표
+    차례로 잇는다 — 시점 하나로 판정할 때 설비명마다 묶어 잇는 차례와 같다.
+    """
+    if downtime.empty:
+        return pd.Series(pd.NA, index=equipment.index, dtype="string")
+    rows = pd.DataFrame(
+        {
+            "_행": range(len(equipment)),
+            EQUIPMENT_ID_COLUMN: equipment[EQUIPMENT_ID_COLUMN].astype("string").to_numpy(),
+            _MOMENT_COLUMN: moments.to_numpy(),
+        }
+    )
+    windows = pd.DataFrame(
+        {
+            EQUIPMENT_ID_COLUMN: downtime[EQUIPMENT_ID_COLUMN].astype("string").to_numpy(),
+            "비가동유형": downtime["비가동유형"].to_numpy(),
+            "시작일": downtime["시작일"].to_numpy(),
+            "종료일": downtime["종료일"].to_numpy(),
+            "_차례": range(len(downtime)),
+        }
+    )
+    joined = rows.merge(windows, on=EQUIPMENT_ID_COLUMN)
+    moment = joined[_MOMENT_COLUMN]
+    active = joined["시작일"].le(moment) & (joined["종료일"].isna() | joined["종료일"].ge(moment))
+    reasons = (
+        joined.loc[active]
+        .sort_values(["_행", "_차례"], kind="stable")
+        .groupby("_행")["비가동유형"]
+        .agg(_joined_unique)
+    )
+    return pd.Series(
+        reasons.reindex(range(len(equipment))).to_numpy(), index=equipment.index
+    ).astype("string")
 
 
 def _joined_unique(values: pd.Series) -> str:
