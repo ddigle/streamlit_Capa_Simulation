@@ -1190,7 +1190,8 @@ def test_introduce_plays_the_bundled_teaser_not_the_pages_deck() -> None:
     """Introduce 는 40초 티저를 띄운다 — 루트 `index.html`(혁신대회 발표 덱)은 GitHub Pages 용이라
     앱이 쓰지 않는다(2026-10-19 사용자 지적 — 처음에 덱을 띄워 의도와 달랐다). 티저는 쇼케이스
     `contest/dist/capa-teaser.html` 의 복사본 한 파일이고 외부 요청 없이 사내 오프라인에서 서야
-    한다."""
+    한다. 티저는 intro.js 가 걷을 때 부르는 `window.TEASER.pause` 를 내놓아야 한다 — 다시 복사할
+    때 빠지거나 이름이 바뀌면 intro.js 가 말없이 넘어가 닫은 뒤에도 40초 끝까지 소리가 난다."""
     from capa_simulation.components import intro_summary
 
     teaser = intro_overlay.INTRODUCE_TEASER_PATH
@@ -1203,4 +1204,15 @@ def test_introduce_plays_the_bundled_teaser_not_the_pages_deck() -> None:
     assert (
         "index.html"
         not in intro_summary.__dict__.get("__doc__", "").split("Introduce", 1)[-1][:400]
+    )
+
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    pauser = _between(js, "function pauseTeaser() {", "async function openTeaser() {")
+    called = re.search(r'typeof deck\.(\w+) === "function"\) deck\.\1\(\);', pauser)
+    assert called is not None, "intro.js pauseTeaser 가 티저의 멈춤 함수를 부르지 않습니다."
+    head = re.search(r"^( +)window\.TEASER = \{\n", text, flags=re.MULTILINE)
+    assert head is not None, "티저에 window.TEASER 대입이 없습니다."
+    api = text[head.end() : text.index(f"\n{head.group(1)}}};", head.end())]
+    assert re.search(rf"^\s*{called.group(1)}\b\s*[,:(]", api, flags=re.MULTILINE), (
+        f"티저 window.TEASER 에 intro.js 가 부르는 {called.group(1)} 멤버가 없습니다."
     )
