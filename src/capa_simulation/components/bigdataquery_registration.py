@@ -157,6 +157,8 @@ def render_bigdataquery_registration(
 ) -> None:
     # 리셋 소비는 반드시 첫 줄이다. 위젯을 만든 뒤에는 그 key 를 지울 수 없다.
     _consume_reset_request()
+    # 같은 까닭으로 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은 되살리지 않는다.
+    _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     st.subheader("BigDataQuery 시나리오 등록")
     flash = st.session_state.pop(REGISTRATION_FLASH_KEY, None)
@@ -445,12 +447,35 @@ def _apply_pick(pick: CatalogPick) -> None:
     )
     st.session_state[FORM_DETAIL_START_KEY] = None if window is None else window.start_date
     st.session_state[FORM_DETAIL_END_KEY] = None if window is None else window.end_date
+    _write_form_prefill(pick)
+
+
+def _write_form_prefill(pick: CatalogPick) -> None:
+    """고른 행의 값으로 등록 폼 글자 칸 여섯(`FORM_DEFAULTS`)을 채운다. 날짜 두 칸은 맡지 않는다."""
+    prefill = registration_prefill(pick.row, catalog_window_label=pick.window.label())
     st.session_state[FORM_CODE_KEY] = prefill.simulation_code
     st.session_state[FORM_SOURCE_NAME_KEY] = prefill.source_name
     st.session_state[FORM_SCENARIO_NAME_KEY] = prefill.scenario_name
     st.session_state[FORM_REVISION_NAME_KEY] = prefill.revision_name
     st.session_state[FORM_REGISTERED_AT_KEY] = prefill.registered_at
     st.session_state[FORM_NOTE_KEY] = prefill.note
+
+
+def _restore_dropped_prefill() -> None:
+    """선택은 남았는데 폼 글자 칸만 버려졌으면 그 선택의 값으로 다시 채운다.
+
+    선택·적용 서명은 위젯이 아닌 칸이라 남지만, 글자 칸은 입력 초안이라 `persist_state` 가 없어
+    등록 폼을 그리지 않은 회차(다른 화면을 다녀옴, 다른 탭의 `st.rerun()`)에 Streamlit 이 버린다.
+    목록 표는 같은 행을 다시 고를 뿐이라 `_apply_pick` 이 같은 서명을 보고 채우지 않으므로, 행은
+    선택된 채 코드·이름이 비어 저장이 막힌다. 날짜 두 칸은 세션에 남아 사용자가 넓힌 값이므로
+    건드리지 않는다. 위젯을 만들기 전에 불러야 한다.
+    """
+    pick = _stored_pick()
+    if pick is None or FORM_CODE_KEY in st.session_state:
+        return
+    if st.session_state.get(CATALOG_APPLIED_KEY) != pick.row.signature:
+        return
+    _write_form_prefill(pick)
 
 
 def _clear_pick() -> None:

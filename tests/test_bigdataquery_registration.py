@@ -92,9 +92,15 @@ if st.session_state.get("__pick_row__") is not None:
 if st.session_state.get("__request_reset__"):
     st.session_state.pop("__request_reset__")
     registration._request_reset()
+if st.session_state.get("__rerun__"):
+    # 페이지의 다른 탭(시나리오 관리)이 등록 폼보다 먼저 `st.rerun()` 으로 끊은 회차.
+    st.session_state["__rerun__"] = False
+    st.rerun()
 
 repository = SimpleNamespace(list_scenarios=lambda: [])
-registration.render_bigdataquery_registration(repository, "demo.duckdb")
+if not st.session_state.get("__skip__"):
+    # 건너뛴 회차는 다른 화면을 다녀온 것이다 — 그 회차에 등록 폼이 그려지지 않는다.
+    registration.render_bigdataquery_registration(repository, "demo.duckdb")
 """
 
 
@@ -257,6 +263,52 @@ def test_reset_clears_the_pick_and_the_form_on_the_next_run() -> None:
     assert registration.CATALOG_PICK_KEY not in app.session_state
     assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value is None
     assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value is None
+
+
+@pytest.mark.parametrize("interruption", ["__skip__", "__rerun__"])
+def test_a_picked_form_survives_a_run_that_did_not_draw_it(interruption: str) -> None:
+    """목록 선택은 위젯이 아닌 칸이라 남는데, 폼 글자 칸은 그리지 않은 회차에 Streamlit 이 버린다.
+
+    다른 화면을 다녀오거나 시나리오 관리 탭의 `st.rerun()` 이 등록 폼보다 먼저 끊으면 행은 선택된
+    채 코드·이름만 비어 저장이 막혔고, 같은 행이 다시 선택될 뿐이라 다시 채워지지도 않았다.
+    사용자가 넓힌 상세 조회 기간(세션에 남는 칸)은 기본값으로 되돌리지 않는다.
+    """
+    app = _run(__pick_row__=0)
+    # 이제부터 폼을 다시 채울 길은 목록 표가 같은 행을 다시 고르는 `selection_default` 하나다.
+    app.session_state["__pick_row__"] = None
+    app.date_input(key=registration.FORM_DETAIL_END_KEY).set_value(date(2026, 9, 20)).run()
+    app.session_state[interruption] = True
+    app.run()
+    app.session_state[interruption] = False
+    app.run()
+
+    assert not app.exception
+    values = {widget.label: widget.value for widget in app.text_input}
+    assert values["조회할 시뮬레이션 코드"] == "DEMO-A-001"
+    assert values["원천 시뮬레이션명"] == "알파 시뮬"
+    assert values["저장할 시나리오명"] == "알파 시뮬 (DEMO-A-001)"
+    assert values["원천 DB 등록시점 (선택)"] == "2026-09-02 03:04:05"
+    memo = app.text_area[0].value
+    assert memo is not None and "PLAN 알파(DEMO-PLAN-1)" in memo
+    assert app.date_input(key=registration.FORM_DETAIL_START_KEY).value == date(2026, 8, 26)
+    assert app.date_input(key=registration.FORM_DETAIL_END_KEY).value == date(2026, 9, 20)
+
+
+def test_a_reset_form_stays_empty_after_a_run_that_did_not_draw_it() -> None:
+    """초기화한 폼은 다른 화면을 다녀와도 앞 선택의 값으로 되살아나지 않는다."""
+    app = _run(__pick_row__=0)
+    app.session_state["__pick_row__"] = None
+    app.session_state["__request_reset__"] = True
+    app.run()
+    app.session_state["__skip__"] = True
+    app.run()
+    app.session_state["__skip__"] = False
+    app.run()
+
+    assert not app.exception
+    assert app.text_input(key=registration.FORM_CODE_KEY).value == ""
+    assert app.text_input(key=registration.FORM_SCENARIO_NAME_KEY).value == ""
+    assert registration.CATALOG_PICK_KEY not in app.session_state
 
 
 def test_picking_a_code_fills_the_detail_window_around_its_registration_date() -> None:

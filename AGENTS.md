@@ -955,7 +955,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `components/scenario_year_shift.py`)과 규칙(`services/scenario_transform.py`·`services/scenario_month_merge.py`·
     `services/scenario_year_shift.py`·`services/scenario_virtual_products.py`)으로 나뉜다.
   - `auto_official_update_tab.py` 설정은 버전 대조(칸에 key 없음), `bigdataquery_registration.py` 목록은 `st.form`
-    밖·등록 폼 위의 `st.dataframe(on_select="rerun")` 이다.
+    밖·등록 폼 위의 `st.dataframe(on_select="rerun")` 이다. 등록 폼 글자 칸은 입력 초안이라 `persist_state` 가 없어
+    그리지 않은 회차에 버려진다 — 목록 선택(위젯 아닌 칸)만 남았으면 위젯 앞 `_restore_dropped_prefill` 이 그 선택의
+    값으로 다시 채운다(날짜 두 칸은 세션에 남으므로 건드리지 않는다).
 
 ### 영속성 모듈
 

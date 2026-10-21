@@ -849,3 +849,56 @@ def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(tmp_path: Pat
     app.run()
     assert not app.exception
     assert app.selectbox(key=REVISION_SELECT_KEY).value == second.revision.revision_id
+
+
+def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
+    tmp_path: Path,
+) -> None:
+    """첫 탭의 「순서 저장」은 `st.rerun()` 으로 등록 폼보다 먼저 끊는다.
+
+    그 회차에 그려지지 않은 폼 글자 칸을 Streamlit 이 버려, 목록 행은 선택된 채 코드·시나리오명이
+    비어 저장이 막혔다. 같은 행이 다시 선택될 뿐이라 다시 채워지지도 않았다.
+    """
+    from datetime import date, datetime
+
+    from capa_simulation.components.bigdataquery_registration import (
+        CATALOG_RESULT_KEY,
+        FORM_CODE_KEY,
+        FORM_SCENARIO_NAME_KEY,
+        CatalogResult,
+        catalog_list_key,
+    )
+    from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+    from capa_simulation.services.bigdataquery_catalog_view import SCOPE_ALL, normalize_catalog
+
+    script = _page_script(PAGE_PATH, tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[CATALOG_RESULT_KEY] = CatalogResult(
+        frame=normalize_catalog(
+            pd.DataFrame(
+                {
+                    "simulation_name": ["알파 시뮬"],
+                    "simulation_code": ["DEMO-A-001"],
+                    "plan_name": ["PLAN 알파"],
+                    "plan_code": ["DEMO-PLAN-1"],
+                    "regist_data": ["2026-09-02 03:04:05"],
+                }
+            )
+        ),
+        window=QueryWindow(start_date=date(2026, 9, 1), end_date=date(2026, 9, 8)),
+        queried_at=datetime(2026, 9, 8, 10, 0, 0),
+        token="demo-token",
+    )
+    # 목록 표에서 첫 행을 누른 것과 같다 — 선택 이벤트를 위젯 상태 모양 그대로 넣는다.
+    app.session_state[catalog_list_key("demo-token", 0, "", SCOPE_ALL)] = {
+        "selection": {"rows": [0], "columns": []}
+    }
+    app.run()
+    assert not app.exception
+    assert app.text_input(key=FORM_CODE_KEY).value == "DEMO-A-001"
+
+    next(button for button in app.button if button.label == "순서 저장").click().run()
+
+    assert not app.exception
+    assert app.text_input(key=FORM_CODE_KEY).value == "DEMO-A-001"
+    assert app.text_input(key=FORM_SCENARIO_NAME_KEY).value == "알파 시뮬 (DEMO-A-001)"
