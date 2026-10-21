@@ -1,11 +1,12 @@
 # Purpose: 원천에 보존된 기존 결과와 신규 계산값을 대조해 요약과 상세 CSV 를 만든다.
 
-"""기존 앱 결과와 이 앱의 계산을 맞춰 본다.
+r"""기존 앱 결과와 이 앱의 계산을 맞춰 본다.
 
     .venv\Scripts\python.exe scripts\compare_legacy_results.py
     .venv\Scripts\python.exe scripts\compare_legacy_results.py --output data/output/legacy.csv
 
-기본은 가장 최근 데이터셋을 쓴다. `--dataset-id` 로 다른 데이터셋을 고를 수 있다.
+기본은 원천 행이 있는 데이터셋 가운데 가장 최근 것을 쓴다 — 복제·월 병합·연도 이동은 원천 행을
+남기지 않아 건너뛴다. `--dataset-id` 로 다른 데이터셋을 고를 수 있다.
 DuckDB 는 같은 파일에 모드가 다른 연결을 허용하지 않으므로 **앱을 끄고 실행한다.**
 
 계산에 넣는 RQ 표는 그 데이터셋 시나리오의 **리비전 1**(`rev_data`, 원천에서 처음 만든 리비전)이다.
@@ -71,11 +72,17 @@ _NEEDED_TABLES = {
 
 
 def _latest_dataset_id(connection: duckdb.DuckDBPyConnection) -> str:
+    """원천 행이 있는 데이터셋 가운데 가장 최근 것. 원천 행이 없으면 대조할 것이 없다."""
     row = connection.execute(
-        "SELECT dataset_id FROM app_meta.dataset ORDER BY imported_at DESC LIMIT 1"
+        "SELECT dataset_id FROM app_meta.dataset AS d "
+        "WHERE EXISTS (SELECT 1 FROM raw_data.core_data AS c WHERE c.dataset_id = d.dataset_id) "
+        "ORDER BY imported_at DESC LIMIT 1"
     ).fetchone()
     if row is None:
-        raise SystemExit("데이터셋이 없습니다. 먼저 시나리오를 등록하세요.")
+        raise SystemExit(
+            "원천에서 온 데이터셋이 없습니다(복제·월 병합·연도 이동은 원천 행이 없다). "
+            "먼저 원천으로 시나리오를 등록하세요."
+        )
     return str(row[0])
 
 
@@ -135,7 +142,9 @@ def main() -> int:
         reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", default=str(DUCKDB_PATH), help="시뮬레이션 DuckDB 경로")
-    parser.add_argument("--dataset-id", default=None, help="비우면 가장 최근 데이터셋")
+    parser.add_argument(
+        "--dataset-id", default=None, help="비우면 원천 행이 있는 가장 최근 데이터셋"
+    )
     parser.add_argument("--output", default=None, help="상세 대조 결과를 저장할 CSV 경로")
     parser.add_argument("--tolerance", type=float, default=0.005, help="허용 차이율")
     args = parser.parse_args()
