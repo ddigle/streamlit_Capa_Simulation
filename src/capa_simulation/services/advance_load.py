@@ -99,6 +99,10 @@ def build_advance_load_ratio(
     선행 반영 계획이 0 이하가 되는 달은 변동률을 낼 수 없다(0 으로 나누거나 부호가
     뒤집힌다). 그 달만 `적용가능=False` 로 두고 변동률 1 을 준다. 계산을 멈추지 않는 것은
     한 달의 과한 입력 때문에 대시보드 전체가 사라지면 어디가 잘못됐는지 볼 수 없기 때문이다.
+
+    `선행 입력` 은 그 달에 선행을 넣었는지다. 적용하지 못한 달은 `선행 물량` 을 0 으로 지우므로
+    지우기 전에 따로 남긴다 — 부하량 0 인 달은 입력이 없어도 `적용가능=False` 라, 이것 없이는
+    넣지 않은 달까지 「적용하지 못한 달」로 알리게 된다.
     """
     required = ["생산계획년월", "부하량"]
     require_columns(monthly_density, required, "월별 부하량")
@@ -108,6 +112,7 @@ def build_advance_load_ratio(
     result["부하량"] = pd.to_numeric(result["부하량"], errors="coerce").fillna(0.0)
     result = result.merge(prepared, on="생산계획년월", how="left", validate="one_to_one")
     result["선행 물량"] = result["선행 물량"].fillna(0.0)
+    result["선행 입력"] = result["선행 물량"].ne(0.0)
     result["선행 반영 부하량"] = result["부하량"] + result["선행 물량"]
     result["적용가능"] = result["선행 반영 부하량"].gt(0) & result["부하량"].gt(0)
     result["변동률"] = 1.0
@@ -122,9 +127,11 @@ def build_advance_load_ratio(
 
 def unapplicable_advance_months(ratio: pd.DataFrame) -> list[int]:
     """선행을 넣었지만 계획이 0 이하가 되어 반영하지 못한 달. 화면 경고가 쓴다."""
-    if "적용가능" not in ratio.columns:
-        raise ValueError("선행 변동률 프레임에 `적용가능` 컬럼이 없습니다.")
-    return sorted(int(value) for value in ratio.loc[~ratio["적용가능"], "생산계획년월"])
+    for column in ("적용가능", "선행 입력"):
+        if column not in ratio.columns:
+            raise ValueError(f"선행 변동률 프레임에 `{column}` 컬럼이 없습니다.")
+    unapplied = ~ratio["적용가능"] & ratio["선행 입력"]
+    return sorted(int(value) for value in ratio.loc[unapplied, "생산계획년월"])
 
 
 def apply_advance_to_density(

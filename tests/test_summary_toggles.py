@@ -17,6 +17,7 @@ from capa_simulation.services.advance_load import (
     apply_advance_to_wafer,
     build_advance_load_ratio,
     revert_advance_from_securement,
+    unapplicable_advance_months,
 )
 from capa_simulation.services.advance_shipment import advance_shipment_notes
 from capa_simulation.services.dashboard import (
@@ -190,6 +191,26 @@ def test_the_advance_payload_judges_each_month_and_keeps_the_summary_shape() -> 
     assert payload["density"][2] == pytest.approx(round(14.8 + 3.0, 2))
     assert payload["bn"][2]["status"] == THRESHOLDS.status(advance.bottlenecks[2].rate, 202612)  # type: ignore[union-attr]
     assert payload["unapplied"] == ["27.02"]
+
+
+def test_unapplied_advance_months_match_the_home_warning_when_a_month_has_no_load() -> None:
+    """부하량 0 인 달에 선행을 넣지 않았으면 HOME 경고와 Summary 어느 쪽도 그 달을 적지 않는다."""
+    density = _density()
+    density.loc[density["생산계획년월"].eq(202610), "부하량"] = 0.0
+    rows = pd.DataFrame({"생산계획년월": [202612, 202702], "선행 물량": [3.0, -2.0]})
+
+    advance = build_advance_summary(
+        months=MONTHS,
+        monthly_density=density,
+        monthly_wafer=_wafer(),
+        securement_rate=_securement(),
+        included_processes=INCLUDED,
+        advance_rows=rows,
+    )
+    home_warning = unapplicable_advance_months(build_advance_load_ratio(density, rows))
+
+    assert home_warning == [202702]
+    assert list(advance.unapplied) == home_warning
 
 
 def test_advance_without_an_applied_month_is_off_with_a_reason() -> None:

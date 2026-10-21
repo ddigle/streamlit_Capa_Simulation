@@ -139,6 +139,41 @@ def test_an_empty_profile_changes_nothing() -> None:
     assert unapplicable_advance_months(ratio) == []
 
 
+def _density_with_a_zero_month() -> pd.DataFrame:
+    # Past Data 월별 실적은 Density 0 을 받는다(빈칸만 막는다) — 생산 시작 전 달 같은 꼴.
+    return pd.DataFrame({"생산계획년월": [202606, 202607, 202608], "부하량": [0.0, 3.0, 4.0]})
+
+
+def test_a_zero_load_month_without_an_entry_is_not_reported_as_unapplied() -> None:
+    """선행을 넣지 않은 달은 부하량이 0 이어도 「적용하지 못한 달」이 아니다.
+
+    그 달은 변동률을 낼 수 없지만 적용할 것도 없었다. 경고에 올리면 사용자가 넣지도 않은
+    선행 입력을 찾게 된다. 입장 화면 Summary 는 입력이 있는 달만 세므로 두 화면 말도 갈린다.
+    """
+    density = _density_with_a_zero_month()
+
+    ratio = build_advance_load_ratio(
+        density, pd.DataFrame({"생산계획년월": [202608], "선행 물량": [1.0]})
+    )
+
+    assert unapplicable_advance_months(ratio) == []
+    assert ratio["변동률"].tolist() == pytest.approx([1.0, 1.0, 0.8])
+    empty_ratio = build_advance_load_ratio(density, empty_advance_load())
+    assert unapplicable_advance_months(empty_ratio) == []
+
+
+def test_an_entry_on_a_zero_load_month_is_still_reported() -> None:
+    """부하량 0 인 달에 실제로 넣은 선행은 걸 수 없으니 여전히 알린다."""
+    ratio = build_advance_load_ratio(
+        _density_with_a_zero_month(),
+        pd.DataFrame({"생산계획년월": [202606, 202607], "선행 물량": [1.0, -5.0]}),
+    )
+
+    assert unapplicable_advance_months(ratio) == [202606, 202607]
+    assert ratio["변동률"].tolist() == [1.0, 1.0, 1.0]
+    assert ratio["선행 물량"].tolist() == [0.0, 0.0, 0.0]
+
+
 def test_the_shared_profile_round_trips_and_bumps_its_version(tmp_path: Path) -> None:
     """표시명 프로필과 같은 결이다 — 현재본만 남기고 교체마다 version 이 오른다."""
     repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")

@@ -820,7 +820,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
   만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다.
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
-  - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행 반영 계획이 0 이하인 달만 미적용으로 알린다.
+  - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
+    달만 미적용으로 알린다.
 - `src/capa_simulation/services/advance_shipment.py` — 선행 입고 실적 정규화·편집 병합과 LOB 칸 글자
   (`advance_shipment_notes`). 계산에 들지 않는 표시값이다.
 - `src/capa_simulation/services/monthly_amount.py` — 월별 억Gb 한 칸 공용 프로필(선행 B/O·선행 입고 실적)의 정규화·보인
@@ -1656,8 +1657,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **선행 B/O 는 월 총량(Density·Wafer·확보율)에만 걸고 Capa 를 바꾸지 않는다.** `변동률 = 기존 계획 ÷ 선행 반영 계획`
   을 확보율에 곱하고 Wafer 는 나눠 `계획 × 확보율` 인 Capa 가 그대로이고, 한 달의 모든 공정에 같은 수라 B/N 순위도
   그대로다. 계획 세부수량에는 걸지 않아 둘의 합이 어긋나는 것이 맞는 상태다. 변동률은 화면이 지금 쓰는 계획(EDP 를 뺀
-  화면이면 뺀 계획) 기준이고, 선행 반영 계획이 0 이하인 달만 미적용으로 두고 알린다. `선행 입고` 는 계산을 바꾸지 않고
-  값 옆에 적기만 한다.
+  화면이면 뺀 계획) 기준이고, 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인 달만 미적용으로 두고 알린다(부하량 0 인
+  달이라도 넣지 않았으면 알리지 않는다). `선행 입고` 는 계산을 바꾸지 않고 값 옆에 적기만 한다.
 - 과거 구간(Past Data) 달에는 EDP 제외와 비교 GAP 이 걸리지 않는다 — 입력값 하나뿐이라 EDP 를 뗄 수도, 비교할 계획도
   없다. 확보율 보정과 선행 B/O 는 계산 구간 달처럼 걸린다 — 보정은 과거 확보율 행을 합친(`merge_past_frame`) 뒤에 얹고,
   Preference 의 입력 표 년월에도 과거 달이 든다(`tests/test_home_page.py` 가 화면 칸 값과 짝 없는 행 안내로 묶는다).
