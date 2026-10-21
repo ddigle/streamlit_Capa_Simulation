@@ -94,6 +94,7 @@ def _summary() -> OfficialSummary:
         slot_volume=_volume(),
         display_order=None,
         included_processes=INCLUDED,
+        thresholds=THRESHOLDS,
     )
 
 
@@ -129,6 +130,7 @@ def test_advance_values_come_from_the_same_functions_as_home() -> None:
         securement_rate=_securement(),
         included_processes=INCLUDED,
         advance_rows=ADVANCE_ROWS,
+        thresholds=THRESHOLDS,
     )
     lob_summary, baseline, bottlenecks = _home_advance_frames()
 
@@ -171,6 +173,7 @@ def test_the_advance_payload_judges_each_month_and_keeps_the_summary_shape() -> 
         securement_rate=_securement(),
         included_processes=INCLUDED,
         advance_rows=ADVANCE_ROWS,
+        thresholds=THRESHOLDS,
     )
     payload = intro_summary.advance_payload(
         MONTHS, advance, thresholds=THRESHOLDS, process_label=lambda process: process
@@ -206,6 +209,7 @@ def test_unapplied_advance_months_match_the_home_warning_when_a_month_has_no_loa
         securement_rate=_securement(),
         included_processes=INCLUDED,
         advance_rows=rows,
+        thresholds=THRESHOLDS,
     )
     home_warning = unapplicable_advance_months(build_advance_load_ratio(density, rows))
 
@@ -231,6 +235,7 @@ def test_advance_without_an_applied_month_is_off_with_a_reason() -> None:
             securement_rate=_securement(),
             included_processes=INCLUDED,
             advance_rows=rows,
+            thresholds=THRESHOLDS,
         )
         payload = intro_summary.advance_payload(
             MONTHS, advance, thresholds=THRESHOLDS, process_label=str

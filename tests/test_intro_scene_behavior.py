@@ -86,6 +86,7 @@ def _payload() -> dict[str, Any]:
         slot_volume=volume,
         display_order=None,
         included_processes=INCLUDED,
+        thresholds=THRESHOLDS,
     )
     payload = intro_summary.summary_payload(
         summary,
@@ -103,6 +104,7 @@ def _payload() -> dict[str, Any]:
         advance_rows=pd.DataFrame(
             {"생산계획년월": [202612, 202701, 202702], "선행 물량": [3.0, 3.0, -6.0]}
         ),
+        thresholds=THRESHOLDS,
     )
     comparison_density = density.assign(부하량=[10.48, 11.13, 14.06, 15.34, 19.71, 16.86])
     comparison_wafer = wafer.assign(

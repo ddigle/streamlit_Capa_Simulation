@@ -2892,8 +2892,11 @@ function createOverlay(api, data, initial, syncToolbar) {
     const base = summary.bn[h.i];
     const b = (adv && adv.bn[h.i]) || base;
     const st = (text.status || {})[b.status] || "";
-    const short = b.status === "shortage" && b.short ? `${(text.status || {}).shortage || ""} <b>${b.short}대</b>` : st;
-    const units = b.need != null && b.have != null ? `<br><span class="dim">소요 ${b.need}대 / 보유 ${b.have}대</span>` : "";
+    const counted = b.status === "shortage" && b.short;
+    const short = counted ? `${(text.status || {}).shortage || ""} <b>${b.short}대</b>` : st;
+    // 부족 대수는 그 달 경고 기준까지 센다(막대 색과 같은 기준) — 소요·보유만으로는 셈이 맞지 않아 기준을 함께 적는다.
+    const basis = counted ? ` · 경고 기준 ${escapeHtml((summary.warning_label || [])[h.i] || "")} 까지` : "";
+    const units = b.need != null && b.have != null ? `<br><span class="dim">소요 ${b.need}대 / 보유 ${b.have}대${basis}</span>` : "";
     const before = adv && adv.rate_delta[h.i] ? dim(`${escapeHtml(text.advance_before || "")} ${base.rate}% · ${escapeHtml(adv.rate_delta[h.i])}`) : "";
     return `<b>${escapeHtml(month)}</b> B/N ${escapeHtml(b.process)}<br>확보율 <b>${b.rate}%</b> · ${short}${units}${before}`;
   }

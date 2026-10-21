@@ -11,7 +11,9 @@ HOME 은 고른 시나리오·조회기간·토글로 **상세**를 보여 준�
   있는 달까지만 그린다. 연간 Total 은 넣지 않는다.
 - **생산계획**: HOME `Density (억Gb)` 행과 같은 값(`부하량`)이다.
 - **B/N 확보율**: 리비전 프리셋의 `B/N 집계 공정`(필터)만 놓고 달마다 확보율이 가장 낮은 공정 —
-  HOME 의 B/N 과 같은 순위 함수다. 부족 대수는 그 공정의 `소요대수 − 가용대수` 를 올림한 값이다.
+  HOME 의 B/N 과 같은 순위 함수다. 부족 대수는 그 공정이 **그 달 실효 경고 기준**까지 모자란 정수
+  대수다 — 막대 색(판정)과 같은 기준이고, Static Capa 「경고기준 필요대수」와 같은 식·같은 올림
+  (`securement_rate.warning_need_units`)이다.
 - **월별 시트**: 그 달의 Density · Wafer 계획 · 제품별 비중(Wafer 기준). 색 칸 배정은 HOME 과 같은
   함수로 이 여섯 달에서 정한다.
 
@@ -69,6 +71,8 @@ from capa_simulation.services.product_share import (
     assign_product_slots,
     build_product_share_cells,
 )
+from capa_simulation.services.securement_rate import warning_need_units
+from capa_simulation.services.securement_threshold import SecurementThresholds
 
 SUMMARY_MONTH_COUNT = 6
 
@@ -92,7 +96,10 @@ def summary_months(
 
 @dataclass(frozen=True)
 class BottleneckMonth:
-    """한 달의 B/N. 대수가 없으면 `required`·`available`·`short_units` 가 None 이다."""
+    """한 달의 B/N. 대수가 없으면 `required`·`available`·`short_units` 가 None 이다.
+
+    `short_units` 는 그 달 실효 경고 기준까지 모자라는 정수 대수다(`short_units` 함수).
+    """
 
     process: str
     rate: float
@@ -137,18 +144,23 @@ def _monthly_values(frame: pd.DataFrame, column: str, months: Sequence[int]) -> 
     return [_finite(by_month.get(month)) for month in months]
 
 
-def short_units(required: float | None, available: float | None) -> int | None:
-    """모자라는 대수. 소수 소요대수는 올림한다 — 0.2대 모자라도 한 대를 더 들여야 한다."""
+def short_units(required: float | None, available: float | None, warning: float) -> int | None:
+    """경고 기준(`warning`, 비율)까지 모자라는 정수 대수. 대수가 없으면 None 이다.
+
+    Static Capa 「경고기준 필요대수」 한 칸과 같은 식이다 — `소요 × 경고기준 − 가용` 을 9자리에서
+    반올림한 뒤 올린다(0.2대 모자라도 한 대를 더 들여야 하고, 부동소수 꼬리는 한 대를 만들지
+    않는다).
+    """
     if required is None or available is None:
         return None
-    # 소요대수 계산의 부동소수 꼬리(예: 33.000000001)가 한 대를 더 만들지 않게 한다.
-    return max(0, math.ceil(required - available - 1e-9))
+    return warning_need_units(required, available, warning)
 
 
 def _bottlenecks(
     securement_rate: pd.DataFrame,
     included_processes: Sequence[str],
     months: Sequence[int],
+    thresholds: SecurementThresholds,
 ) -> list[BottleneckMonth | None]:
     ranking = build_monthly_bottleneck_ranking(securement_rate, list(included_processes))
     top = build_monthly_bottlenecks_from_ranking(ranking)
@@ -168,7 +180,7 @@ def _bottlenecks(
                 rate=rate,
                 required=required,
                 available=available,
-                short_units=short_units(required, available),
+                short_units=short_units(required, available, thresholds.warning_for(month)),
             )
         )
     return result
@@ -184,11 +196,13 @@ def build_official_summary(
     slot_volume: pd.DataFrame,
     display_order: DisplayOrderInput,
     included_processes: Sequence[str],
+    thresholds: SecurementThresholds,
 ) -> OfficialSummary:
     """캐시된 HOME 계산 결과로 요약 한 벌을 만든다.
 
     `product_volume` 은 그리는 수량(EDP 제외), `slot_volume` 은 색 칸을 정하는 수량(EDP 포함)이다 —
-    HOME 과 같은 짝이라 EDP 가 빠져도 남은 제품의 색이 바뀌지 않는다.
+    HOME 과 같은 짝이라 EDP 가 빠져도 남은 제품의 색이 바뀌지 않는다. `thresholds` 는 공용 판정
+    기준이고 B/N 부족 대수를 그 달 실효 경고 기준까지 센다.
     """
     month_list = list(months)
     labels = [month_label(month) for month in month_list]
@@ -217,7 +231,9 @@ def build_official_summary(
         months=tuple(month_list),
         density=tuple(_monthly_values(monthly_density, "부하량", month_list)),
         wafer=tuple(_monthly_values(monthly_wafer, "Wafer 부하량", month_list)),
-        bottlenecks=tuple(_bottlenecks(securement_rate, included_processes, month_list)),
+        bottlenecks=tuple(
+            _bottlenecks(securement_rate, included_processes, month_list, thresholds)
+        ),
         products=tuple(products),
         product_slots=tuple(product_slots),
         mix=mix,
@@ -261,24 +277,26 @@ def build_advance_summary(
     securement_rate: pd.DataFrame,
     included_processes: Sequence[str],
     advance_rows: pd.DataFrame,
+    thresholds: SecurementThresholds,
 ) -> AdvanceSummary:
     """HOME 「선행 B/O」 토글과 같은 계산으로 요약의 Density·Wafer·B/N 을 다시 낸다.
 
     `monthly_density`·`monthly_wafer`·`securement_rate` 는 요약이 그리는 계획(EDP 제외)과 확보율
     이다 — `build_official_summary` 에 넘긴 것과 같은 프레임. 증감 글자는 같은 프레임으로 낸 원래
-    값(요약과 같은 함수)과의 차이라, 요약 한 벌을 다시 만들지 않는다.
+    값(요약과 같은 함수)과의 차이라, 요약 한 벌을 다시 만들지 않는다. `thresholds` 도 요약과 같은
+    공용 판정 기준이다 — 소요·가용대수가 그대로라 부족 대수도 요약과 같다.
     """
     month_list = list(months)
     base_density = _monthly_values(monthly_density, "부하량", month_list)
     base_wafer = _monthly_values(monthly_wafer, "Wafer 부하량", month_list)
-    base_bottlenecks = _bottlenecks(securement_rate, included_processes, month_list)
+    base_bottlenecks = _bottlenecks(securement_rate, included_processes, month_list, thresholds)
     ratio = build_advance_load_ratio(monthly_density, advance_rows)
     density = apply_advance_to_density(monthly_density, ratio)
     wafer = apply_advance_to_wafer(monthly_wafer, ratio)
     securement = apply_advance_to_securement(securement_rate, ratio)
     density_values = _monthly_values(density, "부하량", month_list)
     wafer_values = _monthly_values(wafer, "Wafer 부하량", month_list)
-    bottlenecks = _bottlenecks(securement, included_processes, month_list)
+    bottlenecks = _bottlenecks(securement, included_processes, month_list, thresholds)
     entered = prepare_advance_load(advance_rows)
     inputs = {
         int(month)

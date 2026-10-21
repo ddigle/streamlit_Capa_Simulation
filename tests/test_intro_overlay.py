@@ -768,6 +768,18 @@ def test_summary_threshold_text_is_the_rounded_label_and_the_line_stays_exact() 
     assert "run.label" in scene
 
 
+def test_summary_bar_tooltip_names_the_warning_threshold_of_the_short_count() -> None:
+    """B/N 막대 말풍선의 「부족 N대」는 그 달 경고 기준까지 센 대수라
+    (`official_summary.short_units`) 소요·보유 옆에 그 달 경고 기준 이름표를 함께 적는다 — 대수를
+    적는 달에만."""
+    js = (ASSETS / "intro.js").read_text(encoding="utf-8")
+    tip = js[js.index("function tipHtml(") : js.index('stage.addEventListener("pointermove"')]
+
+    assert 'const counted = b.status === "shortage" && b.short;' in tip
+    assert "const basis = counted ? ` · 경고 기준 ${escapeHtml((summary.warning_label" in tip
+    assert "보유 ${b.have}대${basis}</span>" in tip
+
+
 def test_summary_legend_names_three_states_without_numbers() -> None:
     """범례는 「확보 · 경고 · 부족」 세 이름만이고 기준 숫자를 적지 않는다.
 

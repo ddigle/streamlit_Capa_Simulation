@@ -294,6 +294,16 @@ def _prepare_shortfall_input(data: pd.DataFrame) -> None:
             raise ValueError(f"확보율.{column} 값은 0 이상이어야 합니다.")
 
 
+def warning_need_units(required: float, available: float, warning: float) -> int:
+    """경고 기준(`warning`, 비율)까지 모자라는 정수 대수 — 「경고기준 필요대수」 한 칸의 식.
+
+    `build_securement_shortfall_tables`·`securement_balance` 가 열 단위로 내는 값과 같은 식·같은
+    올림(`_ceil_positive(소요 × 경고기준 − 가용)`)이다. 한 행만 세는 쪽(입장 화면 Summary 의 B/N
+    부족 대수)이 이것을 쓴다.
+    """
+    return _ceil_positive(float(required) * float(warning) - float(available))
+
+
 def _ceil_positive(value: float) -> int:
     """올림 전에 부동소수 먼지를 턴다.
 

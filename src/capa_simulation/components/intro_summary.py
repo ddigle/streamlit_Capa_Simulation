@@ -264,7 +264,8 @@ def _bottleneck_payload(
     thresholds: SecurementThresholds,
     process_label: Callable[[str], str],
 ) -> list[dict[str, Any] | None]:
-    """달마다 B/N 하나. 판정은 그 달의 실효 기준이다."""
+    """달마다 B/N 하나. 판정은 그 달의 실효 기준이고, `short` 는 같은 달 실효 경고 기준까지
+    모자라는 대수다(`official_summary.short_units` — 막대 색과 같은 기준)."""
     result: list[dict[str, Any] | None] = []
     for calendar_month, month in zip(months, bottlenecks, strict=True):
         if month is None:
@@ -505,6 +506,7 @@ def _build(
         slot_volume=slot_volume,
         display_order=display_order,
         included_processes=preset.included_processes,
+        thresholds=thresholds,
     )
     payload = summary_payload(
         summary,
@@ -556,6 +558,7 @@ def _advance_part(
         securement_rate=context["securement"],
         included_processes=context["included"],
         advance_rows=profile.rows,
+        thresholds=thresholds,
     )
     return advance_payload(months, outcome, thresholds=thresholds, process_label=process_label)
 

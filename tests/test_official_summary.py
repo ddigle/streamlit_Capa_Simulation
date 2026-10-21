@@ -19,9 +19,15 @@ from capa_simulation.services.official_summary import (
     short_units,
     summary_months,
 )
+from capa_simulation.services.securement_rate import (
+    OWNED_COLUMN,
+    WARNING_NEED_COLUMN,
+    securement_balance,
+)
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MONTHS = [202610, 202611, 202612, 202701, 202702, 202703]
+THRESHOLDS = SecurementThresholds(1.095, 0.995)
 
 
 def test_months_shift_across_year_ends_in_both_directions() -> None:
@@ -42,20 +48,26 @@ def test_the_window_starts_at_the_later_of_the_saved_start_and_the_first_plan_mo
 
 
 @pytest.mark.parametrize(
-    ("required", "available", "expected"),
+    ("required", "available", "warning", "expected"),
     [
-        (34.0, 32.0, 2),
-        (32.2, 32.0, 1),  # 0.2대 모자라도 한 대를 더 들여야 한다
-        (31.0, 32.0, 0),
-        (33.0 + 1e-12, 33.0, 0),  # 계산의 부동소수 꼬리는 한 대를 만들지 않는다
-        (None, 32.0, None),
-        (34.0, None, None),
+        (34.0, 32.0, 1.0, 2),
+        (32.2, 32.0, 1.0, 1),  # 0.2대 모자라도 한 대를 더 들여야 한다
+        (31.0, 32.0, 1.0, 0),
+        (33.0 + 1e-12, 33.0, 1.0, 0),  # 계산의 부동소수 꼬리는 한 대를 만들지 않는다
+        # 확보율 100% 가 아니라 그 달 경고 기준까지 센다 — 200 × 99.5% = 199 라 9대다(100% 면 10대).
+        (200.0, 190.0, 0.995, 9),
+        # 경고 기준을 100% 넘게 둔 달은 가용이 소요보다 많아도 모자란다(101/100 < 105%).
+        (100.0, 101.0, 1.05, 4),
+        # 50 × 1.1 = 55.00000000000001 — 기준을 정확히 채운 달은 0 이다(Static 과 같은 반올림).
+        (50.0, 55.0, 1.1, 0),
+        (None, 32.0, 0.995, None),
+        (34.0, None, 0.995, None),
     ],
 )
-def test_short_units_round_up_the_missing_equipment(
-    required: float | None, available: float | None, expected: int | None
+def test_short_units_count_up_to_the_month_warning_threshold(
+    required: float | None, available: float | None, warning: float, expected: int | None
 ) -> None:
-    assert short_units(required, available) == expected
+    assert short_units(required, available, warning) == expected
 
 
 def _securement() -> pd.DataFrame:
@@ -96,6 +108,7 @@ def _summary() -> OfficialSummary:
         slot_volume=_volume(edp=True),
         display_order=None,
         included_processes=["P-A", "P-B"],
+        thresholds=THRESHOLDS,
     )
 
 
@@ -111,9 +124,97 @@ def test_the_bottleneck_is_the_lowest_process_inside_the_saved_filter() -> None:
     assert processes[0] == "P-A" and processes[-1] == "P-B"
     first = bottlenecks[0]
     assert first.rate == pytest.approx(0.94)
+    # 경고 기준 99.5% 까지: ceil(34 × 0.995 − 32) = ceil(1.83) = 2.
     assert (first.required, first.available, first.short_units) == (34.0, 32.0, 2)
-    # 소요보다 가용이 많으면 부족 대수는 0 이다.
+    # 경고 기준을 이미 채웠으면 부족 대수는 0 이다.
     assert bottlenecks[-1].short_units == 0
+
+
+def _fitted_securement(rows: list[tuple[int, str, float, float]]) -> pd.DataFrame:
+    """확보율이 가용 ÷ 소요 그대로인 확보율 표(앱의 `calculate_securement_rate` 와 같은 관계)."""
+    frame = pd.DataFrame(rows, columns=["생산계획년월", "공정", "가용대수", "소요대수"])
+    frame["확보율"] = frame["가용대수"] / frame["소요대수"]
+    return frame
+
+
+# 달마다 (P-A 가용, 소요), (P-B 가용, 소요). 202701 은 B/N 이 101% 라 기본 경고 99.5% 는 넘지만
+# 그 달 예외 경고 105% 에는 못 미친다.
+FITTED_ROWS = [
+    (202610, "P-A", 190.0, 200.0),
+    (202610, "P-B", 60.0, 50.0),
+    (202611, "P-A", 32.0, 34.0),
+    (202611, "P-B", 45.0, 41.0),
+    (202612, "P-A", 55.0, 50.0),
+    (202612, "P-B", 70.0, 60.0),
+    (202701, "P-A", 101.0, 100.0),
+    (202701, "P-B", 130.0, 100.0),
+    (202702, "P-A", 40.0, 30.0),
+    (202702, "P-B", 33.0, 31.0),
+    (202703, "P-A", 20.5, 20.0),
+    (202703, "P-B", 44.0, 40.0),
+]
+EXCEPTION_THRESHOLDS = SecurementThresholds(1.095, 0.995, monthly=((202701, 1.195, 1.05),))
+
+
+def _fitted_summary(thresholds: SecurementThresholds) -> OfficialSummary:
+    plan = pd.DataFrame({"생산계획년월": MONTHS, "부하량": [1.0] * 6})
+    return build_official_summary(
+        months=MONTHS,
+        monthly_density=plan,
+        monthly_wafer=pd.DataFrame({"생산계획년월": MONTHS, "Wafer 부하량": [1000.0] * 6}),
+        securement_rate=_fitted_securement(FITTED_ROWS),
+        product_volume=_volume(edp=False),
+        slot_volume=_volume(edp=False),
+        display_order=None,
+        included_processes=["P-A", "P-B"],
+        thresholds=thresholds,
+    )
+
+
+def test_short_units_equal_the_static_warning_need_of_the_bottleneck_process() -> None:
+    """Summary 「부족 N대」는 그 달 B/N 공정의 Static 「경고기준 필요대수」와 같은 정수다 — 월별
+    예외 경고 기준이 있는 달도 그 달 기준으로 센다."""
+    summary = _fitted_summary(EXCEPTION_THRESHOLDS)
+    securement = _fitted_securement(FITTED_ROWS)
+    balance = securement_balance(
+        securement.assign(**{OWNED_COLUMN: securement["가용대수"]}),
+        thresholds=EXCEPTION_THRESHOLDS,
+    )
+    static_need = {
+        (int(month), str(process)): int(need)
+        for month, process, need in zip(
+            balance["생산계획년월"], balance["공정"], balance[WARNING_NEED_COLUMN], strict=True
+        )
+    }
+
+    shorts = []
+    for month, bottleneck in zip(MONTHS, summary.bottlenecks, strict=True):
+        assert bottleneck is not None
+        assert bottleneck.short_units == static_need[(month, bottleneck.process)]
+        shorts.append(bottleneck.short_units)
+    # 200·190 은 경고 99.5% 까지 9대(100% 면 10대), 202701 은 경고 105% 까지 4대(100% 면 0대).
+    assert shorts == [9, 2, 0, 4, 0, 0]
+
+
+def test_a_month_warned_above_100_percent_shows_its_shortage_count() -> None:
+    """경고 기준을 100% 넘게 둔 달은 확보율이 100% 를 넘어도 「부족」이고, 대수도 그 기준까지 센다
+    — 막대 색과 대수가 같은 기준을 본다."""
+    payload = summary_payload(
+        _fitted_summary(EXCEPTION_THRESHOLDS),
+        release_name="공식 v4",
+        scenario_name="DEMO",
+        thresholds=EXCEPTION_THRESHOLDS,
+        process_label=lambda process: process,
+    )
+
+    january = payload["bn"][3]
+    assert january["rate"] == 101.0 and january["status"] == "shortage"
+    assert january["short"] == 4
+    assert payload["warning"][3] == 105.0
+    # 판정이 부족인 달은 모두 대수가 있다(JS 가 「부족 N대」로 세운다).
+    assert all(
+        month["short"] > 0 for month in payload["bn"] if month and month["status"] == "shortage"
+    )
 
 
 def test_monthly_values_and_product_mix_follow_the_six_months() -> None:
@@ -142,6 +243,7 @@ def test_a_month_without_any_value_stays_empty_instead_of_zero() -> None:
         slot_volume=_volume(edp=False),
         display_order=None,
         included_processes=["P-A", "P-B"],
+        thresholds=THRESHOLDS,
     )
 
     assert summary.density[-1] is None

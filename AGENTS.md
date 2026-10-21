@@ -699,6 +699,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확인 때 본 `latest_official_revision` 을 머리 띠가 읽는다. 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나다.
 - `src/capa_simulation/services/official_summary.py` — Summary 가 그리는 공식버전 6개월 요약(생산계획·B/N·부족
   대수·제품 비중)의 순수 계산이다. HOME 토글 기본값과 같은 화면이고 B/N 은 HOME 과 같은 순위 함수다.
+  부족 대수는 B/N 공정이 그 달 실효 경고 기준까지 모자란 정수 대수다(6장 「경고 기준 필요대수」와 같은 식).
   - 토글 값은 `build_advance_summary`(HOME 「선행 B/O」와 같은 차례)·`build_comparison_summary`(선행 전 − 비교)다.
 - `src/capa_simulation/services/plan_gap.py` — 계획 증감 글자(선행 B/O 전후·비교 GAP)의 형식과 0 근처를 적지
   않는 규칙(`GAP_EPSILON`·`visible_gap`·`format_gap`)이다. HOME `home_lob_figures` 와 Summary 가 함께 쓴다.
@@ -1492,6 +1493,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 경고 기준 미달 행의 두 단계 추가대수 합은 확보 기준을 충족하기 위한 최소 대수와 같아야
 한다. 월별 부족대수는 동일 설비의 기간 중복을 피하기 위해 전체 기간을 단순 합산하지 않고
 월별 상세와 월 최대치로 표시한다.
+
+**입장 화면 Summary 의 「부족 N대」도 이 경고 기준 필요대수다**(2026-10-22 사용자 결정). 그 달 B/N 공정의
+`소요대수 × 그 달 실효 경고 기준 − 가용대수` 를 같은 올림(`securement_rate.warning_need_units` → `_ceil_positive`)으로
+센다 — 막대 색(판정)과 같은 기준이라 경고 기준을 100% 넘게 둔 달도 「부족」이면 대수가 선다. 확보율 100% 기준
+(`ceil(소요 − 가용)`)으로 세지 않는다. 막대 말풍선은 소요·보유 옆에 그 달 경고 기준 이름표를 함께 적는다.
 
 **확보기준 과부족은 부호 있는 정수다**(2026-10-15 사용자 결정, `securement_rate.securement_balance`).
 
