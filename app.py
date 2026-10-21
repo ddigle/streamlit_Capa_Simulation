@@ -246,6 +246,12 @@ with pinned_connections(DUCKDB_PATH):
     # `href` 가 곧 `url_path` 다. HOME 은 기본 페이지라 늘 빈 문자열이고, 그것도 이 한
     # 페이지만 가리키므로 선택자로 쓸 수 있다.
     active_href = navigation.url_path
+    current_spec = pages.spec_for(navigation.url_path)
+    page_file = None if current_spec is None else Path(current_spec.path).name
+    # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —
+    # 적용하지 않은 편집은 시나리오에 들어 있지 않다(`scenario_edit_bar.register_pending_edits`).
+    # 세션만 읽는다. 아래 테마 표지와 조건 패널 맨 위 줄이 같은 값을 쓴다.
+    pending_edits = pending_edit_labels(page_file)
 
     st.html(
         build_sidebar_stylesheet(
@@ -255,11 +261,13 @@ with pinned_connections(DUCKDB_PATH):
         )
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오·설비 편집이
         # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다. Space FAB 전체
-        # 배치 대기분은 설비 편집본 세대를 올리지 않으므로 따로 본다.
+        # 배치 대기분은 설비 편집본 세대를 올리지 않으므로 따로 본다. 적용 전 편집(편집표·붙여넣기
+        # 대기)도 시나리오에 들어 있지 않아 미저장 판정에 잡히지 않고, 새 세션에는 남지 않는다.
         + unsaved_edits_marker(
             has_unsaved_scenario_changes()
             or has_unsaved_equipment_edits()
             or pending_fab_layout() is not None
+            or bool(pending_edits)
         )
     )
     # 머리 띠의 「공식 vN」은 위 요약이 이 회차에 확인한 값을 읽는다 — 요약보다 뒤여야 한다.
@@ -359,16 +367,11 @@ with pinned_connections(DUCKDB_PATH):
     # `navigation.PageSpec` 의 선언이 말한다. 세우지 않은 줄의 값은 사라지지 않는다 — 시나리오는
     # 세션의 활성 리비전, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 라 그 조건을 읽는 화면으로
     # 돌아오면 그대로 선다.
-    current_spec = pages.spec_for(navigation.url_path)
     active_tab = None if current_spec is None else active_condition_tab(current_spec)
     reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
     has_cards = current_spec is not None and current_spec.has_cards_on(active_tab)
-    page_file = None if current_spec is None else Path(current_spec.path).name
-    # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —
-    # 적용하지 않은 편집은 시나리오에 들어 있지 않다(`scenario_edit_bar.register_pending_edits`).
-    pending_edits = pending_edit_labels(page_file)
     # 제목은 **늘 페이지보다 먼저, 같은 자리에** 세운다 — 회차마다 지웠다 다시 세우면 rerun 동안
     # 제목이 사라지고 아래 상자가 한 줄 올라갔다 내려온다. 카드만 세우는 화면이 카드 전에 멈추는
     # 드문 오류 경로(VOC·설비 DB 를 못 읽음)에서 제목만 남는 것은 사이드바 CSS 가 감춘다 — 제목

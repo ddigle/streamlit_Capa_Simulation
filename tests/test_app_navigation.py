@@ -781,6 +781,24 @@ def test_the_theme_marker_counts_a_pending_fab_layout(_app: AppTest) -> None:
     assert _has_theme_unsaved_marker(app)
 
 
+def test_the_theme_marker_counts_pending_unapplied_edits(_app: AppTest) -> None:
+    """적용하지 않은 편집(편집표·붙여넣기 대기)은 시나리오에 들어 있지 않아 미저장 판정에 잡히지
+    않는다. 사이드바 패널 맨 위 「적용 전 편집」 줄이 서는 회차면 테마 단추도 묻게 표지를 단다 —
+    새로고침한 새 세션에는 그 편집이 없다."""
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not _has_theme_unsaved_marker(app)
+
+    app.session_state["test_staged_paste"] = "붙여넣은 표"
+    app.session_state["scenario_pending_edit_registry"] = {
+        "load_conversion.py": ("생산 계획", {}, {"test_staged_paste": "PKG PLAN 붙여넣기"}, None)
+    }
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert any("생산 계획 · PKG PLAN 붙여넣기" in caption.value for caption in app.sidebar.caption)
+    assert _has_theme_unsaved_marker(app)
+
+
 def _panel_fields(app: AppTest) -> list[str]:
     """조건 패널 안 값 칸(버튼)의 key 를 화면 차례대로."""
     keys = _sidebar_keys(app)
