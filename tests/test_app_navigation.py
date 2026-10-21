@@ -17,6 +17,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
+from capa_simulation.components.equipment_data_workspace import PENDING_FAB_KEY
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
@@ -34,6 +35,7 @@ from capa_simulation.components.scenario_status import (
     SCENARIO_FIELD_KEY,
     save_field_key,
 )
+from capa_simulation.components.theme_toggle import UNSAVED_EDITS_CSS_VARIABLE
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
@@ -758,6 +760,25 @@ def test_the_header_marks_unsaved_edits(_app: AppTest) -> None:
     style = _header_style(app)
     assert ' · 미저장 변경";' in style
     assert "공식 v1" not in style
+
+
+def _has_theme_unsaved_marker(app: AppTest) -> bool:
+    """이 회차에 테마 단추가 읽는 「저장하지 않은 편집」 표지(CSS 변수)가 섰는가."""
+    marker = f"{UNSAVED_EDITS_CSS_VARIABLE}:1"
+    return any(marker in element.proto.body for element in app.get("html"))
+
+
+def test_the_theme_marker_counts_a_pending_fab_layout(_app: AppTest) -> None:
+    """Space FAB 전체 배치는 설비 편집본 세대를 올리지 않고 따로 대기한다. 그 대기분만 있어도
+    테마 단추가 묻게 표지를 단다 — 묻지 않고 새로고침하면 새 세션이 대기분을 잃는다."""
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not _has_theme_unsaved_marker(app)
+
+    app.session_state[PENDING_FAB_KEY] = {"canvas": None, "marks": (), "base": (None, "")}
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _has_theme_unsaved_marker(app)
 
 
 def _panel_fields(app: AppTest) -> list[str]:

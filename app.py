@@ -10,7 +10,10 @@ from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import render_app_header, render_shell_style
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
-from capa_simulation.components.equipment_data_workspace import has_unsaved_equipment_edits
+from capa_simulation.components.equipment_data_workspace import (
+    has_unsaved_equipment_edits,
+    pending_fab_layout,
+)
 from capa_simulation.components.home_rendering import HOME_CELL_CHART_KEYS
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import (
@@ -251,8 +254,13 @@ with pinned_connections(DUCKDB_PATH):
             admin_box_key=ADMIN_BOX_KEY,
         )
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오·설비 편집이
-        # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다.
-        + unsaved_edits_marker(has_unsaved_scenario_changes() or has_unsaved_equipment_edits())
+        # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다. Space FAB 전체
+        # 배치 대기분은 설비 편집본 세대를 올리지 않으므로 따로 본다.
+        + unsaved_edits_marker(
+            has_unsaved_scenario_changes()
+            or has_unsaved_equipment_edits()
+            or pending_fab_layout() is not None
+        )
     )
     # 머리 띠의 「공식 vN」은 위 요약이 이 회차에 확인한 값을 읽는다 — 요약보다 뒤여야 한다.
     render_app_header()

@@ -310,7 +310,9 @@ def revision_token(latest_snapshot: EquipmentSnapshot | None) -> str:
 
 
 def has_unsaved_equipment_edits() -> bool:
-    """편집본을 저장본에서 세운 뒤 바뀐 것이 있는가(RawData 제출·Space 적용·미저장 층 배치)."""
+    """편집본을 저장본에서 세운 뒤 바뀐 것이 있는가(RawData 제출·Space 호기 적용·미저장 층 배치).
+
+    Space FAB 전체 배치 대기분은 세대를 올리지 않아 여기 들지 않는다(`pending_fab_layout`)."""
     seeded = st.session_state.get(_SEEDED_GENERATION_KEY)
     return isinstance(seeded, int) and equipment_buffer_generation() > seeded
 
