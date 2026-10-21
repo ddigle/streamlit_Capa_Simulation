@@ -263,17 +263,19 @@ def _source_exists() -> str:
 
 
 def main() -> int:
+    # 경로는 찍지 않는다 — 이름과 예외 종류만. 출력은 리뷰 문서로 그대로 나가는데 DB 경로와
+    # DuckDB 잠금 문구에는 사용자 폴더 이름이 든다.
     if not DUCKDB_PATH.exists():
-        print(f"DB 파일이 없습니다: {DUCKDB_PATH}")
+        print(f"DB 파일이 없습니다: {DUCKDB_PATH.name}")
         return 1
     try:
         connection = duckdb.connect(str(DUCKDB_PATH), read_only=True)
     except duckdb.Error as exc:
         print("DB 를 열지 못했습니다. 앱이 떠 있으면 먼저 끄세요 — DuckDB 는 배타 잠금입니다.")
-        print(f"  {str(exc).splitlines()[0]}")
+        print(f"  {type(exc).__name__}")
         return 1
 
-    print(f"파일 {DUCKDB_PATH}")
+    print(f"파일 {DUCKDB_PATH.name}")
     print("재이관 전제 점검 — 읽기만 하고 제품명·고객명은 찍지 않는다\n")
     try:
         _ref_data_coverage(connection)
