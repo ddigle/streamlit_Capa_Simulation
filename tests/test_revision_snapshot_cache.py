@@ -652,3 +652,77 @@ def test_a_plan_read_in_flight_during_a_delete_does_not_bring_the_deleted_plan_b
     assert not cast(pd.DataFrame, result["value"]).empty
     with pytest.raises(KeyError, match="리비전을 찾을 수 없습니다"):
         scenario_cache.load_scenario_plan(database_path, revision_id)
+
+
+# 쓰기 세대를 두는 공용 프로필 종류. 저장소 `load_global_<종류>`·캐시 `load_global_<종류>`·
+# `clear_global_<종류>_cache` 가 모두 이 이름을 따른다.
+_PROFILE_KINDS = (
+    "display_order",
+    "process_rename",
+    "comparison_scenario",
+    "advance_load",
+    "advance_shipment",
+    "securement_threshold",
+    "summary_note",
+    "top5_band",
+    "key_process",
+    "execution_capacity",
+    "past_data",
+)
+
+
+def test_every_profile_write_generation_kind_is_in_the_in_flight_read_test() -> None:
+    """쓰기 세대를 둔 공용 프로필은 모두 아래 진행 중 읽기 시험에 든다.
+
+    새 종류를 더하고 `_PROFILE_KINDS` 에 넣지 않으면 여기서 걸린다.
+    """
+    assert set(scenario_cache._write_generations) - {"snapshot", "plan"} == set(_PROFILE_KINDS)
+
+
+@pytest.mark.parametrize("kind", _PROFILE_KINDS)
+def test_a_profile_read_in_flight_during_a_clear_is_read_again_after_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """공용 프로필마다 — 비우기와 겹친 읽기가 비운 뒤에 값을 심어도, 비운 뒤의 읽기는 DB 를 다시
+    읽는다.
+
+    그 종류의 쓰기 세대 올리기가 빠지면 다음 읽기가 진행 중이던 읽기가 심은 옛 칸을 받아 저장소
+    읽기가 한 번에 그친다. 차례로 저장→비우기→읽기 하는 시험은 `.clear()` 만으로도 지나므로 겹침을
+    따로 본다. 값 대신 저장소 읽기 횟수를 세므로 프로필마다 저장 함수가 없어도 된다.
+    """
+    path = str(tmp_path / "scenario.duckdb")
+    # 앱 저장소는 미리 선다 — 세울 때 표시순서를 읽으므로 그 읽기에서 멈추지 않게 한다.
+    scenario_cache.get_scenario_repository(path)
+    method = f"load_global_{kind}"
+    original = getattr(DuckDBScenarioRepository, method)
+    load = cast(Callable[[str], object], getattr(scenario_cache, method))
+    clear = cast(Callable[[], None], getattr(scenario_cache, f"clear_global_{kind}_cache"))
+    read_done = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def counted(self: DuckDBScenarioRepository) -> object:
+        value = original(self)
+        calls.append(kind)
+        if len(calls) == 1:  # 첫 읽기만 캐시에 심기 전에 멈춘다
+            read_done.set()
+            release.wait(30)
+        return value
+
+    monkeypatch.setattr(DuckDBScenarioRepository, method, counted)
+    result: dict[str, object] = {}
+
+    def remember() -> None:
+        try:
+            result["value"] = load(path)
+        except Exception as exc:  # 시험 본문이 결과로 본다
+            result["error"] = exc
+
+    reader = threading.Thread(target=remember)
+    reader.start()
+    assert read_done.wait(30)
+    clear()  # 앱의 저장 경로가 부르는 비우기
+    _finish(reader, release, result)
+
+    load(path)
+    assert len(calls) == 2
