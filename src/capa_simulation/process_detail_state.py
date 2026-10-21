@@ -17,9 +17,11 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
 - **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `st.switch_page` 는 주소를
   **통째로** 바꾸므로 테마 인자(`theme`)는 지금 값을 함께 싣는다. 받는 쪽은 읽은 키만 지운다 —
   `st.query_params.clear()` 는 테마 인자까지 지워 테마 스크립트가 첫 방문으로 보고 다시 새로고침한다
-  (Space `?floor=` 와 같은 규칙). 한 번 적용한 인자 묶음은 `PROCESS_DETAIL_QUERY_SEEN_KEY` 에 남겨,
-  지운 것이 브라우저에 닿기 전에 옛 주소가 되돌아와도 사용자가 그 뒤 고른 공정을 덮지 않는다. 인자가
-  걷힌 회차에 그 칸을 비우므로 같은 링크로 다시 들어오면 다시 적용한다.
+  (Space `?floor=` 와 같은 규칙). 지우는 것은 한 번의 갱신이다(`from_dict` 에 남길 인자를 다시
+  싣는다) — 키마다 지우면 브라우저 기록이 키마다 쌓여 뒤로가 헛돈다. 한 번 적용한 인자 묶음은
+  `PROCESS_DETAIL_QUERY_SEEN_KEY` 에 남겨, 지운 것이 브라우저에 닿기 전에 옛 주소가 되돌아와도
+  사용자가 그 뒤 고른 공정을 덮지 않는다. 인자가 걷힌 회차에 그 칸을 비우므로 같은 링크로 다시
+  들어오면 다시 적용한다.
 
 HOME 그림은 표적 막대(trace 0)의 `customdata` **끝**에 이동 정보 일곱 칸(`HOME_CELL_LINK_FIELDS`)을
 싣는다 — `Capa LOB 현황` 은 값 막대와 그 위 증감 조각이 표적이다. hover 칸 차례는 그대로이고, 과거
@@ -453,8 +455,12 @@ def resolve_process_and_month(
         entered = wanted_process is not None or wanted_month is not None
     if query:
         st.session_state[PROCESS_DETAIL_QUERY_SEEN_KEY] = query
-        for name, _ in query:
-            del st.query_params[name]
+        # 키마다 지우면 주소 메시지가 키 수만큼 가고, 브라우저가 메시지마다 기록을 하나씩 쌓아
+        # 뒤로를 눌러도 같은 화면이 그만큼 이어진다 — 남길 인자를 다시 실어 한 번에 바꾼다.
+        read = {name for name, _ in query}
+        st.query_params.from_dict(
+            {name: st.query_params.get_all(name) for name in st.query_params if name not in read}
+        )
     else:
         # 주소에서 인자가 걷힌 뒤의 회차다. 같은 링크로 다시 들어오면 그때는 다시 적용한다.
         st.session_state.pop(PROCESS_DETAIL_QUERY_SEEN_KEY, None)

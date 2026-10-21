@@ -2128,7 +2128,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   (`components/scenario_management.py` 의 `REVISION_SEED_KEY`) — 칸이 없을 때만 넣으면 사이드바 팝업에서 불러온 뒤에도
   옛 리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다.
 - `st.query_params` 는 자기 키만 넣고 `del` 한다. `st.query_params.clear()` 는 쓰지 않는다 — 테마 인자
-  (`design/theme.THEME_QUERY_PARAM`)까지 지워 첫 방문으로 보고 다시 새로고침한다. `st.switch_page(…, query_params=…)` 는
+  (`design/theme.THEME_QUERY_PARAM`)까지 지워 첫 방문으로 보고 다시 새로고침한다. 키 둘 이상을 지울 때는 `del` 을 되풀이하지
+  않고 남길 인자를 `get_all` 로 다시 실어 `st.query_params.from_dict` 한 번으로 바꾼다 — 1.63 은 바꿀 때마다 주소 메시지를
+  보내고 브라우저는 메시지마다 기록을 하나씩 쌓아, 뒤로를 눌러도 같은 화면이 키 수만큼 이어진다
+  (`process_detail_state.resolve_process_and_month`). `st.switch_page(…, query_params=…)` 는
   주소를 통째로 바꾸므로 지금 테마 인자를 함께 싣는다. `st.switch_page` 는 위젯 콜백이 아니라 회차 본문에서 부른다 — 1.63 은
   끝에 `st.empty()` 를 그려, 프래그먼트 안 위젯의 콜백에서 부르면 「A fragment rerun was triggered with a callback that
   displays one or more elements」 경고를 남긴다. 콜백은 대기 칸만 적고 프래그먼트 본문 첫 줄이 옮긴다
@@ -2357,7 +2360,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 시나리오 보관은 파일 크기를 줄이지 않는다 — DuckDB 용량 회수는 영구 삭제 뒤 `scripts/compact_duckdb.py` 재구축뿐이다.
 - 브라우저 뒤로/앞으로는 페이지 안 상태 이동이 아니다 — Streamlit 1.63 은 그 재실행에 브라우저 주소가 아니라 파이썬이
   마지막으로 쓴 조회 문자열을 보내 주소 표시줄만 바뀐다. 주소 인자는 새로고침 복원용으로만 쓰고 이동은 화면 안 길(경로
-  줄·목록)로 한다.
+  줄·목록)로 한다. 파이썬이 주소를 바꿀 때마다 기록이 하나 쌓이므로 여러 키는 한 번에 바꾼다(9장 `st.query_params`).
 - **Streamlit·Plotly 판을 올리기 전에 내부 동작에 기대는 자리를 다시 본다** — 비공식 DOM·저장 키(`data-testid` 선택자·
   1.63 DOM 구조·프런트엔드 `localStorage` 테마 키·`data-test-script-state`: 헤더 툴바·머리 띠·입장 화면·사이드바 서식·탭
   점·metric 줄·인쇄 규칙), 프래그먼트 러너 대역(`tests/fragment_browser.py`·AppTest `fragment_id_queue`), 프래그먼트의

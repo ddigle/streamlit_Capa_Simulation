@@ -17,11 +17,13 @@ AppTest 에는 Plotly 요소가 없어 차트 클릭을 재현하지 못한다. 
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 import streamlit
 from fragment_browser import install_fragment_browser
 from streamlit.runtime.scriptrunner_utils.script_run_context import ThreadState
+from streamlit.runtime.state.query_params import QueryParams
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.home_state import ADVANCE_TOGGLE_KEY, EXECUTION_TOGGLE_KEY
@@ -521,6 +523,28 @@ def test_the_address_opens_its_process_and_month_once_and_only_its_keys_are_remo
     app.run()
     assert _entry(app).process == "DEMO-A"
     assert "process" not in _query(app)
+
+
+def test_the_read_keys_leave_the_address_in_one_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """주소 메시지 하나가 브라우저 기록 하나다(프런트엔드가 받을 때마다 `history.pushState`).
+    키마다 지우면 기록이 키 수만큼 쌓여 뒤로를 눌러도 같은 화면이 그만큼 이어진다."""
+    sent: list[str] = []
+    original = QueryParams._send_query_param_msg
+
+    def counting(self: QueryParams) -> None:
+        sent.append(urlencode(self._query_params, doseq=True))
+        original(self)
+
+    monkeypatch.setattr(QueryParams, "_send_query_param_msg", counting)
+    app = AppTest.from_function(_detail_entry_app)
+    app.query_params.update({"process": "DEMO-C", "month": "202602", "from": "home"})
+    app.query_params["theme"] = "dark"
+    app.run()
+
+    assert not app.exception
+    assert sent == ["theme=dark"]
+    assert _query(app) == {"theme": ["dark"]}
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-C", 202602)
 
 
 def test_the_same_link_applies_again_after_the_address_was_cleared() -> None:
