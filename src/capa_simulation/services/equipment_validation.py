@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Collection, Mapping, Sequence
 from datetime import date
@@ -62,8 +63,18 @@ from capa_simulation.services.frame_contracts import require_columns
 from capa_simulation.services.schedule_confirmation import actual_record_warnings
 
 
-def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize aggregate counts for unidentified legacy equipment."""
+def prepare_equipment_baseline(
+    data: pd.DataFrame,
+    *,
+    reject_infinite: bool = False,
+) -> pd.DataFrame:
+    """Normalize aggregate counts for unidentified legacy equipment.
+
+    `reject_infinite` 는 붙여넣기·CSV 입구(`equipment_csv.read_baseline_*`)만 켠다. `to_numeric`
+    은 `inf`·`Infinity` 를 무한으로 읽고 `ge(0)` 은 그것을 통과시켜, 켜지 않으면 스냅샷에
+    무한대가 저장되고 총대수·가용대수가 무한이 된다. 되읽기·병합 경로는 끈 채 둔다 — 이미
+    저장된 무한까지 막으면 그 스냅샷이 영영 열리지 않아 그 칸을 고칠 길도 사라진다.
+    """
     require_columns(data, BASELINE_COLUMNS, "기존 보유대수")
     result = data.loc[:, BASELINE_COLUMNS].copy()
     result = _drop_blank_rows(result, ("공정", "분류", "기존보유대수"))
@@ -71,7 +82,10 @@ def prepare_equipment_baseline(data: pd.DataFrame) -> pd.DataFrame:
         return empty_equipment_baseline()
     _normalize_required_text(result, BASELINE_KEY_COLUMNS, "기존 보유대수")
     counts = pd.to_numeric(result["기존보유대수"], errors="coerce")
-    invalid_counts = ~(counts.notna() & counts.ge(0))
+    valid_counts = counts.notna() & counts.ge(0)
+    if reject_infinite:
+        valid_counts &= counts.ne(math.inf)
+    invalid_counts = ~valid_counts
     if invalid_counts.any():
         examples = _key_examples(result.loc[invalid_counts], BASELINE_KEY_COLUMNS)
         raise ValueError(f"기존보유대수는 0 이상의 숫자여야 합니다: {examples}")

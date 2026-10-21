@@ -274,7 +274,10 @@ def _export_csv_bytes(
 
 
 def read_baseline_csv(payload: bytes) -> pd.DataFrame:
-    return prepare_equipment_baseline(_read_csv(payload, _BASELINE_HEADERS))
+    return prepare_equipment_baseline(
+        _read_csv(payload, _BASELINE_HEADERS),
+        reject_infinite=True,
+    )
 
 
 def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFrame:
@@ -286,7 +289,8 @@ def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFram
 
 def read_baseline_clipboard(content: str) -> pd.DataFrame:
     return prepare_equipment_baseline(
-        _select_columns(parse_clipboard_table(content, _BASELINE_HEADERS.label), _BASELINE_HEADERS)
+        _select_columns(parse_clipboard_table(content, _BASELINE_HEADERS.label), _BASELINE_HEADERS),
+        reject_infinite=True,
     )
 
 

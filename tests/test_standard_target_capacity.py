@@ -203,6 +203,45 @@ def test_availability_outside_the_paste_path_still_rejects_blank_counts() -> Non
         prepare_weekly_availability(source)
 
 
+@pytest.mark.parametrize("count", ["inf", "Infinity", "INF", "+inf"])
+def test_availability_clipboard_rejects_infinite_counts(count: str) -> None:
+    """`to_numeric` 은 `inf` 를 결측이 아니라 무한으로 읽고 음수 검사는 그것을 거르지 못한다.
+    붙여넣기에서 막지 않으면 공용 설비 DB 에 무한대가 저장되고 가능량·확보율이 무한이 된다."""
+    with pytest.raises(ValueError, match=r"숫자가 아닙니다: \['Process-A 26-W33'\]"):
+        parse_weekly_availability_clipboard(
+            f"공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t2\nProcess-A\t26-W33\t{count}\n"
+        )
+
+
+def test_availability_clipboard_keeps_the_negative_message_for_minus_infinity() -> None:
+    with pytest.raises(ValueError, match="0 이상이어야 합니다"):
+        parse_weekly_availability_clipboard("공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t-inf\n")
+
+
+def test_availability_clipboard_still_takes_finite_counts_and_blanks() -> None:
+    result = parse_weekly_availability_clipboard(
+        "공정\tWeeknum\t가용대수\n"
+        "Process-A\t26-W32\t3\n"
+        "Process-A\t26-W33\t0\n"
+        "Process-A\t26-W34\t2.5\n"
+        "Process-A\t26-W35\t\n"
+    )
+
+    assert result["가용대수"].tolist() == [3.0, 0.0, 2.5]
+
+
+def test_availability_read_back_keeps_an_already_stored_infinity() -> None:
+    """무한은 붙여넣기 입구만 막는다. 되읽기·계산 경로까지 막으면 이미 무한이 저장된 DB 에서
+    화면이 영영 열리지 않아 그 칸을 고칠 길도 사라진다."""
+    stored = pd.DataFrame(
+        {"공정": ["Process-A"], "Weeknum": ["26-W32"], "가용대수": [float("inf")]}
+    )
+
+    result = prepare_weekly_availability(stored)
+
+    assert result["가용대수"].tolist() == [float("inf")]
+
+
 def test_weekly_target_uses_daily_effective_capacity_and_availability() -> None:
     availability = pd.DataFrame(
         {

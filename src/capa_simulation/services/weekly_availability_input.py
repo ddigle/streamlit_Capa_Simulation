@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from datetime import date
 
@@ -79,7 +80,9 @@ def parse_weekly_availability_clipboard(
     **가용대수 빈칸 행은 「그대로 둠」이다**(2026-09-29 버그 보고). 저장이 (공정, Weeknum)
     upsert 라, 떨어뜨린 키는 저장된 값 또는 미설정이 그대로 남는다. 양식이 저장값을 채워
     내려오므로 사용자는 고칠 칸만 고치고 통째로 되붙이면 된다. 못 읽는 글자(`abc`)는
-    빈칸과 달리 막는다 — 적었다고 믿는 값이 조용히 버려지면 안 된다.
+    빈칸과 달리 막는다 — 적었다고 믿는 값이 조용히 버려지면 안 된다. 무한(`inf`·`Infinity`)도
+    같은 문구로 막는다 — `to_numeric` 이 숫자로 읽고 음수 검사를 지나 공용 설비 DB 에 무한대로
+    저장되면, 리비전 없는 upsert 라 되돌릴 이전 판도 없다.
     """
     return prepare_weekly_availability(
         parse_clipboard_table(content, "가용설비"),
@@ -100,6 +103,8 @@ def prepare_weekly_availability(
     가용대수가 빈 행을 떨어뜨리고, 남는 행이 없으면 「적용할 값이 없습니다」로 멈춘다.
     끄면(기본) 빈칸은 예전처럼 오류다 — 되읽기·계산 경로의 표는 DB 가 `NOT NULL` 로 지킨
     값이라 빈칸이 들어올 일이 없고, 들어온다면 조용히 떨어뜨릴 것이 아니라 드러내야 한다.
+    가용대수 무한(`inf`)도 켰을 때만 막는다 — 되읽기에서 막으면 이미 저장된 무한 때문에
+    화면이 영영 열리지 않아 그 칸을 고칠 길도 사라진다.
 
     `known_processes` 를 주면 그 목록 밖의 공정명을 오류로 막는다. 화면은 공정명을 화면용
     라벨로 갈아 그리므로 사용자가 그 라벨을 그대로 양식에 적을 수 있는데, 검증이 없으면
@@ -150,7 +155,11 @@ def prepare_weekly_availability(
     raw = result["가용대수"]
     blank = raw.isna() | raw.astype("string").str.strip().eq("")
     available = pd.to_numeric(raw, errors="coerce")
-    garbled = available.isna() & ~blank
+    unreadable = available.isna()
+    if drop_blank_counts:
+        # `-inf` 는 아래 「0 이상」 검사가 막으므로 양의 무한만 더한다.
+        unreadable |= available.eq(math.inf)
+    garbled = unreadable & ~blank
     if garbled.any():
         examples = (
             result.loc[garbled, ["공정", "Weeknum"]].head(5).astype(str).agg(" ".join, axis=1)

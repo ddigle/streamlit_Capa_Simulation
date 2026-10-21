@@ -191,6 +191,46 @@ def test_pasting_a_template_edited_for_one_process_keeps_the_other_saved_process
     assert "Process-C" not in set(stored["공정"])
 
 
+def test_an_already_stored_infinity_still_opens_and_a_finite_paste_replaces_it(
+    tmp_path: Path,
+) -> None:
+    """무한은 붙여넣기·CSV 입구만 막는다. 이미 무한이 든 설비 DB 도 되읽기는 열려야 하고,
+    그 칸은 유한한 값을 붙여넣어 고칠 수 있어야 한다. 무한이 남은 양식을 통째로 되붙이면 그
+    칸을 짚어 막는다."""
+    database_path = tmp_path / "equipment.duckdb"
+    repository = _repository(database_path)
+    snapshot = repository.save_snapshot(_baseline(), _equipment(), _downtime())
+    with duckdb.connect(str(database_path)) as connection:
+        connection.execute(
+            "INSERT INTO equipment_ops.standard_target_weekly_availability "
+            "(process_name, weeknum, available_count) VALUES ('Process-A', '26-W02', 'inf')"
+        )
+        connection.execute(
+            "UPDATE equipment_ops.baseline_snapshot SET base_count = 'inf' WHERE revision_id = ?",
+            [snapshot.revision.revision_id],
+        )
+
+    stored = repository.load_standard_target_availability()
+    assert stored["가용대수"].tolist() == [float("inf")]
+    loaded = repository.load_snapshot(snapshot.revision.revision_id)
+    assert set(loaded.baseline["기존보유대수"]) == {float("inf")}
+
+    template = build_weekly_availability_template(
+        ["Process-A"], date(2026, 1, 5), date(2026, 1, 11), saved=stored
+    )
+    with pytest.raises(ValueError, match="숫자가 아닙니다"):
+        parse_weekly_availability_clipboard(
+            template.to_csv(sep="\t", index=False), known_processes=["Process-A"]
+        )
+    template["가용대수"] = 2.0
+    repository.save_standard_target_availability(
+        parse_weekly_availability_clipboard(
+            template.to_csv(sep="\t", index=False), known_processes=["Process-A"]
+        )
+    )
+    assert repository.load_standard_target_availability()["가용대수"].tolist() == [2.0]
+
+
 def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
     database_path = tmp_path / "legacy.duckdb"
     migrations = load_equipment_migrations()

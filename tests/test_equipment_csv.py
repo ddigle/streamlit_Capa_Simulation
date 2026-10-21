@@ -321,6 +321,44 @@ def test_baseline_clipboard_takes_the_same_number_rule_as_the_editor() -> None:
         read_baseline_clipboard(f"{BASELINE_HEADER}\nProcess-A\t전체\t-1\t\n")
 
 
+@pytest.mark.parametrize("count", ["inf", "Infinity", "INF", "+inf", "-inf"])
+def test_baseline_paste_and_csv_reject_infinite_counts(count: str) -> None:
+    """`to_numeric` 은 `inf` 를 무한으로 읽고 `ge(0)` 은 그것을 통과시킨다. 입구에서 막지 않으면
+    스냅샷에 무한대가 저장되어 총대수·가용대수가 무한이 된다."""
+    message = r"기존보유대수는 0 이상의 숫자여야 합니다: \['Process-B / 전체'\]"
+    with pytest.raises(ValueError, match=message):
+        read_baseline_clipboard(
+            f"{BASELINE_HEADER}\nProcess-A\t전체\t2\t\nProcess-B\t전체\t{count}\t\n"
+        )
+    header = ",".join(BASELINE_COLUMNS)
+    payload = f"{header}\nProcess-A,전체,2,\nProcess-B,전체,{count},\n".encode("utf-8-sig")
+    with pytest.raises(ValueError, match=message):
+        read_baseline_csv(payload)
+
+
+def test_baseline_paste_and_csv_still_take_finite_counts() -> None:
+    header = ",".join(BASELINE_COLUMNS)
+    payload = f"{header}\nProcess-A,전체,3,\nProcess-B,전체,0.25,\n".encode("utf-8-sig")
+
+    pasted = read_baseline_clipboard(
+        f"{BASELINE_HEADER}\nProcess-A\t전체\t3\t\nProcess-B\t전체\t0.25\t\n"
+    )
+
+    assert pasted["기존보유대수"].tolist() == [3.0, 0.25]
+    assert read_baseline_csv(payload)["기존보유대수"].tolist() == [3.0, 0.25]
+
+
+def test_baseline_read_back_keeps_an_already_stored_infinity() -> None:
+    """무한은 붙여넣기·CSV 입구만 막는다. 스냅샷 되읽기·병합까지 막으면 이미 무한이 저장된 DB 에서
+    화면과 다른 표 가져오기가 열리지 않는다."""
+    stored = _incoming_baseline("Process-A", "전체", float("inf"), "저장본")
+
+    merged = merge_baseline_rows(stored, _incoming_baseline("Process-B", "전체", 1.0, "추가"))
+
+    assert stored["기존보유대수"].tolist() == [float("inf")]
+    assert merged["기존보유대수"].tolist() == [float("inf"), 1.0]
+
+
 def test_baseline_count_error_names_the_failing_rows_by_process_and_category() -> None:
     """어느 행이 틀렸는지 공정·분류로 알린다(최대 다섯). 맞는 행은 적지 않는다."""
     bad = "".join(f"Process-{index}\t분류{index}\t-{index}\t\n" for index in range(1, 8))
