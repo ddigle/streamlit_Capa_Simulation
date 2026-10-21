@@ -1593,6 +1593,14 @@ def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
         )
 
 
+# CSV 업로드 칸 하나만의 상한(MB). 빼면 서버 전체 상한(`.streamlit/config.toml` 의
+# `maxUploadSize`, 1GB)을 물려받는데, CSV 파싱은 파일 크기의 몇 배 메모리를 써 잘못 고른 큰 파일
+# 하나가 공용 앱 프로세스를 몰 수 있다. 칸 안내(「50MB per file」)와 브라우저가 올리기 전에 막는
+# 크기(「File must be 50.0MB or smaller.」)가 이 값이다 — 서버 전체 상한은 그대로라 다른 올리기
+# 칸은 묶지 않는다.
+CSV_UPLOAD_LIMIT_MB = 50
+
+
 def render_equipment_data_workspace(
     *,
     repository: DuckDBEquipmentRepository,
@@ -1734,7 +1742,10 @@ def render_equipment_data_workspace(
                 )
             with upload_column:
                 uploaded = st.file_uploader(
-                    "또는 CSV 파일 업로드", type=["csv"], key=_upload_widget_key()
+                    "또는 CSV 파일 업로드",
+                    type=["csv"],
+                    key=_upload_widget_key(),
+                    max_upload_size=CSV_UPLOAD_LIMIT_MB,
                 )
             # 작업 줄은 미리보기 표 **위**다 — 저장 버튼이 긴 변경 표 아래로 밀리지 않게 한다.
             with st.container(horizontal=True, gap="small"):
