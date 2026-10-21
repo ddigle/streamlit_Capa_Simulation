@@ -8,8 +8,8 @@
 
 1. **① 공식 기준**(Core Data · 대수) — 총보유대수·가용대수(공급 묶음 면), 소요대수(수요 묶음 면,
    펼치면 분류 행이 줄무늬·들여쓰기로 붙는다), 확보율(판정 3색 칸), 확보기준 과부족(부호 있는 정수,
-   부족이면 확보율과 **같은** 판정색), 기준 확보율(달마다 확보기준 % — 회색 글자만, 참고 줄), 그리고
-   넘겨받았을 때만 확보율(HOME 표시).
+   부족이면 확보율과 **같은** 판정색, 풍선은 정수 옆에 올림·내림 전 값을 소수 둘째 자리로), 기준
+   확보율(달마다 확보기준 % — 회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
 2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(기준✕·일정✕ 만
    칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 목표 과부족(음수만 칠한다, 단축 후·기한
    지남은 둘째 줄). 목표는 달마다 다른 확보기준이다(`MonthlyTarget`).
@@ -611,8 +611,14 @@ def _balance_hover(
 ) -> str:
     if balance is None:
         return f"{head} · 확보기준 과부족 {_EMPTY}"
+    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수 둘째 자리로 단다.
+    unrounded = (
+        f" ({_signed_two(available - demand * secure)})"
+        if available is not None and demand is not None
+        else ""
+    )
     text = (
-        f"{head} · 확보기준 과부족 {_signed_int(balance)}대"
+        f"{head} · 확보기준 과부족 {_signed_int(balance)}대{unrounded}"
         f"<br>가용 {_one(available)} {_MINUS} 소요 {_one(demand)} × {_ratio(secure)}"
         f" (부족은 올림, 여유는 내림)"
     )
@@ -1570,6 +1576,17 @@ def _changed(before: float | None, after: float | None) -> bool:
 def _ratio(value: float) -> str:
     """판정 기준 비율을 사람이 적은 꼴로(1.095 → 「1.095」)."""
     return f"{value:g}"
+
+
+def _signed_two(value: float) -> str:
+    """부호 있는 소수 둘째 자리. 과부족처럼 9자리 반올림으로 부동소수 먼지를 턴 뒤 찍어 「−0.00」 이
+    나오지 않는다 — 0 은 「0.00」."""
+    rounded = round(round(value, 9), 2)
+    if rounded > 0:
+        return f"+{rounded:,.2f}"
+    if rounded < 0:
+        return f"{_MINUS}{abs(rounded):,.2f}"
+    return "0.00"
 
 
 def _day(day: date | None, today: date) -> str:

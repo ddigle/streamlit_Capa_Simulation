@@ -560,6 +560,36 @@ def test_a_painted_balance_can_read_zero_on_the_noise_boundary() -> None:
     assert _row_texts(canvas, ROW_BALANCE)[0][0] == "<b>0</b>"
     assert _row_fills(canvas, ROW_BALANCE)[0] == tokens.STATUS_WARNING
     assert _row_fills(canvas, ROW_RATE)[0] == tokens.STATUS_WARNING
+    # 풍선의 계산 값도 9자리 반올림 뒤라 「−0.00」 이 아니라 「0.00」 이다
+    # (가용 − 소요 × 기준 ≈ −1.8e-15).
+    assert "확보기준 과부족 0대 (0.00)<br>" in _balance_hovers(canvas)[202611]
+
+
+def _balance_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:
+    return {
+        int(data[CUSTOMDATA_MONTH]): str(data[CUSTOMDATA_HOVER])
+        for data, _, _ in _targets(canvas)
+        if data[CUSTOMDATA_ROW] == ROW_BALANCE
+    }
+
+
+def test_the_balance_hover_adds_the_unrounded_value_to_two_decimals() -> None:
+    """칸 글자는 정수 그대로이고, 풍선은 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수
+    둘째 자리 부호 있는 값으로 단다 — ③ 판정 식의 결과와 같은 숫자다."""
+    canvas = _canvas()
+    hovers = _balance_hovers(canvas)
+
+    expected = {
+        202611: "+2대 (+2.89)",  # 48 − 41.2 × 1.095 = 2.886
+        202612: f"{MINUS}1대 ({MINUS}0.18)",  # 48 − 44.0 × 1.095 = −0.18
+        202701: f"{MINUS}3대 ({MINUS}2.01)",  # 50 − 47.5 × 1.095 = −2.0125
+        202703: f"{MINUS}6대 ({MINUS}5.60)",  # 52 − 52.6 × 1.095 = −5.597
+        202706: "+4대 (+4.83)",
+    }
+    for month, text in expected.items():
+        assert f"확보기준 과부족 {text}<br>" in hovers[month]
+    assert f"가용 48.0 {MINUS} 소요 44.0 × 1.095 (부족은 올림, 여유는 내림)" in hovers[202612]
+    assert _row_texts(canvas, ROW_BALANCE)[2][0] == f"<b>{MINUS}3</b>"
 
 
 def test_the_reference_threshold_row_is_muted_and_never_emphasised() -> None:
