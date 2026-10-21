@@ -26,6 +26,8 @@ from apply_deploy_package import (  # noqa: E402
     plan_removals,
     read_manifest,
     reconcile,
+    tracked_files,
+    untracked_files,
 )
 
 
@@ -575,3 +577,83 @@ def test_the_runbook_tells_a_finished_deploy_from_one_left_at_the_commit_step(
     assert "이미 적용했습니다" in capsys.readouterr().err
     assert _repo_git(done, "log", "-1", "--format=%s") == "review: r"
     assert _repo_git(done, *judge) == f"deploy: {_DEPLOY_STAMP} ({_DEPLOY_COMMIT[:7]})"
+
+
+@pytest.fixture
+def korean_review_repo(tmp_path: Path) -> Path:
+    """한글 이름 리뷰 문서를 커밋하고 추적 안 된 한글 이름 파일을 둔 사내 흉내 저장소.
+
+    git 기본값 `core.quotePath=true` 는 비ASCII 경로를 `"review/\\354…"` 처럼 따옴표·8진수로
+    감싸 낸다. 개인·사내 전역 설정에 기대지 않도록 그 기본값을 저장소에 적어 둔다 — 적용기가
+    스스로 풀어 읽어야만 통과한다.
+    """
+    root = tmp_path / "internal"
+    root.mkdir()
+    _repo_git(root, "init", "-q")
+    _repo_git(root, "symbolic-ref", "HEAD", "refs/heads/main")
+    for key, value in (
+        ("user.name", "test"),
+        ("user.email", "test@example.com"),
+        ("commit.gpgsign", "false"),
+        ("core.hooksPath", str(tmp_path / "no-hooks")),
+        ("core.autocrlf", "false"),
+        ("core.quotePath", "true"),
+    ):
+        _repo_git(root, "config", key, value)
+    (root / "app.py").write_bytes(b"x = 1\n")
+    (root / "review").mkdir()
+    (root / "review" / "사내 회의록.md").write_bytes("# 회의록\n".encode())
+    _repo_git(root, "add", "app.py", "review")
+    _repo_git(root, "commit", "-q", "-m", "review: 회의록")
+    (root / "정체불명.txt").write_bytes(b"?\n")
+    return root
+
+
+def test_non_ascii_paths_are_read_as_written_not_as_git_quotes(korean_review_repo: Path) -> None:
+    """따옴표째 읽으면 `review/` 접두사가 안 맞아 보존 자리 파일이 「사외에서 지워짐」이 된다."""
+    tracked = tracked_files(korean_review_repo)
+
+    assert "review/사내 회의록.md" in tracked
+    assert plan_removals(tracked, ["app.py"]) == []
+    report = reconcile(tracked, untracked_files(korean_review_repo), ["app.py"])
+    assert report["사외에서_지워짐"] == []
+    assert report["정체불명"] == ["정체불명.txt"]
+
+
+def test_a_deploy_commits_past_a_non_ascii_review_file(
+    korean_review_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """스테이징에 따옴표 경로를 넘기면 git 이 pathspec 을 못 찾아 커밋 단계에서 멈춘다."""
+    payload = b"x = 2\n"
+    manifest = {
+        "manifest_version": 1,
+        "stamp": "202610211200",
+        "zip_name": "202610211200.zip",
+        "commit": "0" * 40,
+        "commit_subject": "사외 커밋",
+        "kept_on_target": [],
+        "file_count": 1,
+        "files": {"app.py": "sha256:" + hashlib.sha256(payload).hexdigest()},
+    }
+    package = tmp_path / "202610211200.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("app.py", payload)
+        archive.writestr("DEPLOY_MANIFEST.json", json.dumps(manifest, ensure_ascii=False))
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", korean_review_repo)
+
+    assert apply_deploy_package.main([str(package), "--dry-run"]) == 0
+    preview = capsys.readouterr().out
+    assert "지움    없음" in preview
+    assert "? 정체불명.txt" in preview
+
+    assert apply_deploy_package.main([str(package)]) == 0
+    assert (korean_review_repo / "review" / "사내 회의록.md").is_file()
+    assert (korean_review_repo / "app.py").read_bytes() == payload
+    assert _repo_git(korean_review_repo, "log", "-1", "--format=%s") == (
+        "deploy: 202610211200 (0000000)"
+    )
+    committed = _repo_git(korean_review_repo, "show", "--name-only", "--format=", "HEAD")
+    assert sorted(committed.splitlines()) == [".deploy/applied.json", "app.py"]

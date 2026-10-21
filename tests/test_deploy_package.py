@@ -397,3 +397,35 @@ def test_the_previous_deploy_is_the_last_tag_before_this_stamp(
     assert manifest["previous_deploy"] == "202610121200"
     assert manifest["previous_commit"] == first_commit
     assert manifest["changes"] == {"M": ["app.py"]}
+
+
+def test_a_non_ascii_tracked_name_ships_under_its_own_name(
+    pushed_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """git 기본값 `core.quotePath=true` 는 비ASCII 경로를 `"docs/\\354…"` 처럼 감싸 낸다.
+
+    그 꼴을 경로로 읽으면 해시를 낼 파일을 찾지 못해 빌드가 멈추고, 변경 목록·추적 안 된
+    파일 알림도 사람이 읽지 못한다. 전역 설정에 기대지 않도록 기본값을 저장소에 적어 둔다.
+    """
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    _git(pushed_repo, "config", "core.quotePath", "true")
+    out = tmp_path / "out"
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 0
+
+    (pushed_repo / "docs").mkdir()
+    (pushed_repo / "docs" / "안내.md").write_bytes("# 안내\n".encode())
+    _git(pushed_repo, "add", "docs")
+    _git(pushed_repo, "commit", "-q", "-m", "안내 문서")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    (pushed_repo / "메모.txt").write_bytes(b"memo\n")
+
+    assert "docs/안내.md" in build_deploy_package.tracked_files(pushed_repo)
+    assert build_deploy_package.untracked_entries(pushed_repo) == ["메모.txt"]
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131300"]) == 0
+    with zipfile.ZipFile(out / "202610131300.zip") as archive:
+        assert "docs/안내.md" in archive.namelist()
+        manifest = json.loads(archive.read("DEPLOY_MANIFEST.json"))
+    assert "docs/안내.md" in manifest["files"]
+    assert manifest["changes"] == {"A": ["docs/안내.md"]}

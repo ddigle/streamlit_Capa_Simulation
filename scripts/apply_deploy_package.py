@@ -82,7 +82,9 @@ class ApplyError(RuntimeError):
 
 def git(root: Path, *args: str, check: bool = True) -> str:
     completed = subprocess.run(
-        ["git", *args],
+        # 기본 quotePath 는 한글 경로를 `"review/\354…"` 처럼 따옴표·8진수로 내어, 보존 자리
+        # 접두사 대조가 어긋나고 그 이름을 다시 넘긴 `git add` 가 pathspec 을 찾지 못한다.
+        ["git", "-c", "core.quotePath=false", *args],
         cwd=root,
         capture_output=True,
         text=True,

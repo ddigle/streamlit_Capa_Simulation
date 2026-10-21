@@ -100,7 +100,8 @@ PLACEHOLDER_NAMES: tuple[str, ...] = (".gitkeep",)
 def tracked_files(root: Path) -> list[str]:
     """`git ls-files` 결과. 경로 구분자는 git 이 쓰는 `/` 그대로 둔다."""
     completed = subprocess.run(
-        ["git", "ls-files"],
+        # 기본 quotePath 는 한글 경로를 `"docs/\354…"` 처럼 따옴표·8진수로 내어 그 파일을 못 읽는다.
+        ["git", "-c", "core.quotePath=false", "ls-files"],
         cwd=root,
         check=True,
         capture_output=True,
@@ -139,7 +140,8 @@ def forbidden_entries(paths: Iterable[str]) -> list[str]:
 def git_output(root: Path, *args: str) -> str:
     """git 한 줄 실행. 실패하면 빈 문자열 — 태그가 하나도 없는 첫 배포가 정상이다."""
     completed = subprocess.run(
-        ["git", *args],
+        # 경로를 내는 호출(변경 목록·추적 안 된 파일)이 한글 이름을 원래 철자로 받도록 인용을 끈다.
+        ["git", "-c", "core.quotePath=false", *args],
         cwd=root,
         capture_output=True,
         text=True,
