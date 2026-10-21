@@ -502,8 +502,20 @@ def undo_commit_step(root: Path, previous_state: bytes | None, cause: Exception)
     )
 
 
+def _use_utf8_output() -> None:
+    # Windows(한국어 로캘)의 콘솔·파이프 기본 인코딩(cp949)은 이 출력의 「—」 같은 기호를 못 쓴다.
+    # 멈춤 사유는 표준 오류로 나가므로 두 흐름을 함께 바꾼다.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    _use_utf8_output()
     parser = argparse.ArgumentParser(description="사내에서 배포 ZIP 을 적용한다.")
     parser.add_argument("zip_path", type=Path, help="내려받은 배포 ZIP")
     parser.add_argument(

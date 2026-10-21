@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -657,3 +658,31 @@ def test_a_deploy_commits_past_a_non_ascii_review_file(
     )
     committed = _repo_git(korean_review_repo, "show", "--name-only", "--format=", "HEAD")
     assert sorted(committed.splitlines()) == [".deploy/applied.json", "app.py"]
+
+
+def test_the_stop_reason_on_stderr_is_utf8_like_stdout_in_a_cp949_pipe(tmp_path: Path) -> None:
+    """사내 Windows 파이프는 cp949 다. 표준 출력만 UTF-8 로 바꾸면 멈춤 사유(표준 오류)만
+    cp949 로 나와 한 실행 안에서 인코딩이 갈리고, UTF-8 로 읽는 쪽에서는 가장 중요한 그 줄이 깨진다.
+    """
+    environment = dict(os.environ)
+    environment["PYTHONIOENCODING"] = "cp949"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "apply_deploy_package.py"),
+            str(tmp_path / "missing.zip"),
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=tmp_path,
+        env=environment,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "멈췄습니다 — ZIP 을 찾지 못했습니다" in completed.stderr

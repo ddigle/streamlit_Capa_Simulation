@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -195,3 +196,35 @@ def test_main_exit_status_fails_when_a_requested_database_is_missing(
     output = capsys.readouterr().out
     assert "[건너뜀]" in output
     assert "[실패]" in output
+
+
+def test_dry_run_output_survives_a_cp949_pipe(tmp_path: Path) -> None:
+    """사내 Windows(한국어 로캘)의 파이프는 cp949 라 「—」를 못 쓴다 — 첫 확인 줄에서 멈추면
+    안 된다. 자식의 `PYTHONIOENCODING` 을 cp949 로 두어 사내 에이전트 셸이 부르는 꼴을 흉내 낸다.
+    """
+    database = tmp_path / "sim.duckdb"
+    _make_database(database)
+    before = _digest(database)
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(PROJECT_ROOT / "src"), *filter(None, [environment.get("PYTHONPATH")])]
+    )
+    environment["PYTHONIOENCODING"] = "cp949"
+
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--database", str(database), "--dry-run"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=PROJECT_ROOT,
+        env=environment,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "[확인]" in completed.stdout
+    assert "—" in completed.stdout
+    assert "검증 통과" in completed.stdout
+    assert _digest(database) == before

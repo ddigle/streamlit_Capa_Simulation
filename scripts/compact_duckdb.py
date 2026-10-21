@@ -187,6 +187,17 @@ def compact(database_path: Path, args: argparse.Namespace) -> bool:
     return True
 
 
+def _use_utf8_output() -> None:
+    # Windows(한국어 로캘)의 콘솔·파이프 기본 인코딩(cp949)은 이 출력의 「—」 같은 기호를 못 쓴다.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """종료 코드를 돌려준다. `--database` 로 지정한 파일이 없으면 1 이다.
 
@@ -194,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     그러나 직접 지정한 파일이 없는 것은 대개 경로 오타라, 건너뛰고 0 으로 끝내면 아무것도
     하지 않았는데 성공으로 보인다.
     """
+    _use_utf8_output()
     args = parse_args(argv)
     if args.block_size < 16384 or args.block_size > 262144:
         raise SystemExit("[중단] --block-size 는 16384 이상 262144 이하여야 합니다.")
