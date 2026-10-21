@@ -99,6 +99,18 @@ from typing import Any, Final, Protocol
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+
+def _use_utf8_stdout() -> None:
+    # Windows 콘솔 기본 코드페이지(cp949)는 이 출력의 기호를 못 쓴다.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):
+                pass
+
+
 # 앱 모듈을 못 부르면(가상환경·배포 어긋남) 종류만 찍고 2 로 끝낸다. 그냥 두면 traceback 과 함께
 # 1 로 끝난다.
 try:
@@ -121,6 +133,7 @@ try:
         EQUIPMENT_DUCKDB_PATH,
     )
 except Exception as _import_error:  # noqa: BLE001 — 종류만 찍는다
+    _use_utf8_stdout()
     print(f"앱 모듈을 불러오지 못했습니다 — {type(_import_error).__name__}")
     raise SystemExit(2) from None
 
@@ -3144,17 +3157,6 @@ def select_items(spec: str | None, items: Sequence[Item]) -> list[Item] | None:
     if not keys or any(key not in known for key in keys):
         return None
     return [item for item in items if item.key in keys]
-
-
-def _use_utf8_stdout() -> None:
-    # Windows 콘솔 기본 코드페이지(cp949)는 이 출력의 기호를 못 쓴다.
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if callable(reconfigure):
-            try:
-                reconfigure(encoding="utf-8")
-            except (ValueError, OSError):
-                pass
 
 
 def _progress(message: str) -> None:

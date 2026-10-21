@@ -1029,7 +1029,11 @@ def test_deferral_is_3_so_it_cannot_be_mistaken_for_a_kill_or_a_crash() -> None:
     assert {screens.EXIT_OK, screens.EXIT_NOT_READY, screens.EXIT_DEFERRED} == {0, 2, 3}
 
 
-def test_a_broken_app_import_exits_2_with_only_its_type() -> None:
+@pytest.mark.parametrize("io_encoding", ["utf-8", "cp949"])
+def test_a_broken_app_import_exits_2_with_only_its_type(io_encoding: str) -> None:
+    """사내 Windows(한국어 로캘)의 파이프는 cp949 라 「—」를 못 쓴다 — 자식의 `PYTHONIOENCODING` 을
+    cp949 로 두어 사내 에이전트 셸이 부르는 꼴을 흉내 낸다. 이 갈래는 `main()` 의 UTF-8 전환보다
+    먼저 찍으므로 거기서 바꾸지 않으면 트레이스백과 종료 1 로 끝나고 원래 예외 문구까지 실린다."""
     code = (
         "import runpy, sys; sys.modules['capa_simulation.settings'] = None; "
         f"runpy.run_path({str(PROJECT_ROOT / 'scripts' / 'check_deploy_screens.py')!r}, "
@@ -1042,12 +1046,14 @@ def test_a_broken_app_import_exits_2_with_only_its_type() -> None:
         encoding="utf-8",
         errors="replace",
         timeout=120,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        env={**os.environ, "PYTHONIOENCODING": io_encoding},
     )
 
     assert completed.returncode == 2
-    assert "앱 모듈을 불러오지 못했습니다 — " in completed.stdout
+    assert "앱 모듈을 불러오지 못했습니다 — ModuleNotFoundError" in completed.stdout
     assert "Traceback" not in completed.stderr
+    assert "UnicodeEncodeError" not in completed.stderr
+    assert "halted" not in completed.stdout + completed.stderr
 
 
 def test_a_tilde_is_expanded_once_for_both_the_check_and_the_write(
