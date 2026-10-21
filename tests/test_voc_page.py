@@ -126,6 +126,36 @@ def test_an_opened_post_stays_open_after_a_trip_to_another_screen(tmp_path: Path
     assert _post_box(app, box_key)[1] is True
 
 
+def test_the_title_and_authors_show_as_typed_not_as_markdown(tmp_path: Path) -> None:
+    """제목·작성자는 마크다운으로 그려지는 글 상자 라벨·답글 caption 에서도 적은 글자 그대로다.
+
+    escape 하지 않으면 「A~B~C」의 물결표는 취소선이 되어 사라지고 「$…$」는 수식, `![x](주소)` 는
+    VOC 를 연 사람마다 그 주소를 부르는 이미지, `*익명*` 은 기울임이 되었다
+    (2026-10-22 브라우저 확인).
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    post_id = repository.create_voc_post(
+        category=VOC_CATEGORIES[0],
+        title="A~B~C 단가 $1.2 ![x](http://127.0.0.1:9/a.png)",
+        body="내용",
+        author="*익명*",
+    )
+    repository.create_voc_reply(post_id=post_id, body="확인했습니다.", author="_답변_")
+
+    app = _app(database_path)
+
+    label = _post_box(app, f"voc_post_expander_{post_id}")[0]
+    assert (
+        r"A\~B\~C 단가 \$1\.2 \!\[x\]\(http\:\/\/127\.0\.0\.1\:9\/a\.png\) · \*익명\* · " in label
+    ), label
+    assert "![x](" not in label
+    assert label.endswith("답변 1")
+    captions = [str(caption.value) for caption in app.caption]
+    assert any(caption.startswith(r"\_답변\_ · ") for caption in captions), captions
+
+
 def _click(app: AppTest, label: str) -> AppTest:
     return next(button for button in app.button if button.label == label).click().run()
 

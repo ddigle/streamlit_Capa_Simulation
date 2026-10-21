@@ -20,6 +20,7 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -193,8 +194,11 @@ def _render_post(row: Any) -> None:
     post_replies = replies_by_post.get(post_id, replies.iloc[0:0])
     answered = bool(row["resolved"])
     state = ":green-badge[답변 완료]" if answered else ":orange-badge[미답변]"
+    # 라벨은 마크다운으로 그려지므로 사람이 적은 제목·작성자만 글자 그대로 escape 한다. 분류는 고정
+    # 목록이고 시각·답변 수는 코드가 만든다.
     summary = (
-        f"[{row['category']}] {row['title']} · {row['author']} · "
+        f"[{row['category']}] {literal_markdown(row['title'])} · "
+        f"{literal_markdown(row['author'])} · "
         f"{_timestamp(row['created_at'])} · 답변 {len(post_replies)}"
     )
     # 편 글은 답변을 남긴 뒤에도 편 채로 둔다. 라벨의 답변 수가 바뀌면 `key` 없는 상자는 새로
@@ -211,7 +215,10 @@ def _render_post(row: Any) -> None:
                 st.divider()
                 for _, reply in post_replies.iterrows():
                     with st.chat_message("assistant", avatar=":material/reply:"):
-                        st.caption(f"{reply['author']} · {_timestamp(reply['created_at'])}")
+                        st.caption(
+                            f"{literal_markdown(reply['author'])} · "
+                            f"{_timestamp(reply['created_at'])}"
+                        )
                         st.text(str(reply["body"]))
         # 새 글 폼과 같이 성공한 뒤에만 비운다 — 거절된 답변이 지워지면 다시 적어야 한다.
         reply_key = f"{REPLY_BODY_KEY}_{post_id}"
