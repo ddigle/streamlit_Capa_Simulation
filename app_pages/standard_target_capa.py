@@ -49,7 +49,11 @@ from capa_simulation.page_bootstrap import (
     resolve_effective_months,
     stop_calculation_on_error,
 )
-from capa_simulation.persistence.equipment_cache import get_equipment_repository
+from capa_simulation.persistence.equipment_cache import (
+    clear_standard_target_availability_cache,
+    get_equipment_repository,
+    load_standard_target_availability,
+)
 from capa_simulation.persistence.models import (
     DEFAULT_STANDARD_TARGET_DETAIL_LEVEL,
     DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
@@ -542,8 +546,9 @@ try:
         "RQ_UPEH",
         empty_message="선택 범위에 표준 목표 기준정보가 없습니다.",
     )
-    equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
-    availability = equipment_repository.load_standard_target_availability()
+    equipment_database = str(EQUIPMENT_DUCKDB_PATH.resolve())
+    equipment_repository = get_equipment_repository(equipment_database)
+    availability = load_standard_target_availability(equipment_database)
 except BOOTSTRAP_ERRORS as exc:
     # 이 `try` 는 시뮬레이션 DB 와 설비 DB 를 다 연다. 어느 쪽이 잠겼는지 예외로는 가릴 수
     # 없으므로 두 경로를 다 적는다.
@@ -814,6 +819,8 @@ def _paste_dialog() -> None:
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
         return
+    # 다음 회차(와 같은 프로세스의 다른 세션)가 저장한 값을 읽는다.
+    clear_standard_target_availability_cache()
     queue_flash(
         AVAILABILITY_FLASH_KEY,
         "주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.",
@@ -848,6 +855,7 @@ def _clear_dialog() -> None:
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
         return
+    clear_standard_target_availability_cache()
     queue_flash(AVAILABILITY_FLASH_KEY, "주차별 가용설비 입력을 비웠습니다.")
     _close_dialog()
     st.rerun()

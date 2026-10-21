@@ -1008,11 +1008,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).
   - 덮어쓰거나 지울 수 있는 값을 담는 캐시(시뮬레이션 공용 프로필·리비전 스냅샷·비교 계획, 설비 최신 id·Cut-off·
-    층/FAB 도면·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가 `.clear()` 앞에서
-    그 종류의 세대를 올린다. `.clear()` 는 진행 중인 캐시 미스를 막지 못해, 저장 직전에 시작된 다른 세션의 읽기가
-    비운 뒤 옛 값을 다시 심는다(TTL 없는 프로필은 다음 저장·재시작까지 남는다). 새 캐시도 같은 세대를 쓴다.
-  - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`)는 (DB 경로, DB·WAL stat, 쓰기 세대)
-    키에 TTL 15초다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
+    주차별 가용대수·층/FAB 도면·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가
+    `.clear()` 앞에서 그 종류의 세대를 올린다. `.clear()` 는 진행 중인 캐시 미스를 막지 못해, 저장 직전에 시작된 다른
+    세션의 읽기가 비운 뒤 옛 값을 다시 심는다(TTL 없는 프로필은 다음 저장·재시작까지 남는다). 새 캐시도 같은 세대를 쓴다.
+  - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`·`load_standard_target_availability`)는
+    (DB 경로, DB·WAL stat, 쓰기 세대) 키에 TTL 15초다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
 - `src/capa_simulation/persistence/equipment_repository.py` — 설비 운영 세 표의 불변 전체 스냅샷과 Space 층·FAB 도면,
   필요 단축 일정 조건·기준선 저장소.
   - 최신 리비전·캔버스·요소는 쓰기 잠금 안에서 읽고 `base_revision_id`·`floor_layout_bases`·FAB `base` 가 다르면

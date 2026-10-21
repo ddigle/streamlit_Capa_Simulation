@@ -8,6 +8,7 @@ from streamlit.testing.v1 import AppTest
 from test_wip_status_page import TEST_SCRIPT
 
 from capa_simulation.components import process_labels as process_labels_module
+from capa_simulation.persistence import equipment_cache
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_STANDARD_TARGET, TAB_TARGET_CAPACITY
 from capa_simulation.services.standard_target_capacity import (
@@ -85,7 +86,8 @@ def test_a_copy_does_not_share_tables() -> None:
 # - 조회 월: 페이지의 주차 달력을 `test_day_shift` 일만큼 민다(오늘이 다음 달로 넘어간 회차).
 #   소요대수 대역은 키의 첫 달이 기본과 다르면 Product-A 수요가 없는 표를 준다(월로 자른 소요대수).
 # - 가용대수: `test_missing_availability` 의 공정 행을 뺀다. 주 표준 대역은 받은 가용대수로 일 표준
-#   가능량을 다시 셈해, 가용대수가 빠진 공정은 「표준 미설정」이 된다.
+#   가능량을 다시 셈해, 가용대수가 빠진 공정은 「표준 미설정」이 된다. 가용대수 읽기는 설비 DB 쪽
+#   캐시라 바꾼 뒤 그 캐시를 비운다(저장이 하는 일).
 COUNTING_SCRIPT = (
     TEST_SCRIPT.replace(
         '"content_token": "test-wip-status-page",',
@@ -268,12 +270,14 @@ def test_a_new_query_month_uses_the_demand_cut_to_that_month(app: AppTest) -> No
 
 
 def test_an_availability_change_reaches_the_baseline_on_a_memo_hit(app: AppTest) -> None:
-    """가용대수는 메모 밖에서 매 회차 읽는다. 경로 메모가 적중한 회차에도(소요대수를 다시 꺼내지
-    않음) 바뀐 가용대수가 표준 기준선과 「표준 미설정」 지표에 그 회차에 들어간다."""
+    """가용대수는 경로 메모 밖에서 읽는다. 경로 메모가 적중한 회차에도(소요대수를 다시 꺼내지
+    않음) 저장으로 바뀐 가용대수가 표준 기준선과 「표준 미설정」 지표에 그 회차에 들어간다."""
     assert _metric(app, "표준 미설정") == "0개"
     assert set(app.session_state["captured_availability"]["공정"]) == {"P-Process", "T-Process"}
 
     app.session_state["test_missing_availability"] = ["T-Process"]
+    # 표준 목표의 붙여넣기 저장·입력 초기화가 성공한 직후 부르는 비우기
+    equipment_cache.clear_standard_target_availability_cache()
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]

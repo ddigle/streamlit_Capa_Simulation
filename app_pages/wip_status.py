@@ -39,7 +39,10 @@ from capa_simulation.page_bootstrap import (
     prune_list_selection,
     render_schema_ahead_warning,
 )
-from capa_simulation.persistence.equipment_cache import get_equipment_repository
+from capa_simulation.persistence.equipment_cache import (
+    get_equipment_repository,
+    load_standard_target_availability,
+)
 from capa_simulation.scenario_state import (
     ensure_active_scenario,
     scenario_month_table,
@@ -146,8 +149,9 @@ try:
     )
     required_equipment = choices.required_equipment
     route_scope = choices.routes
-    equipment_repository = get_equipment_repository(str(EQUIPMENT_DUCKDB_PATH.resolve()))
-    availability = equipment_repository.load_standard_target_availability()
+    equipment_database = str(EQUIPMENT_DUCKDB_PATH.resolve())
+    equipment_repository = get_equipment_repository(equipment_database)
+    availability = load_standard_target_availability(equipment_database)
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
     st.stop()

@@ -98,6 +98,21 @@ def _restore_settings_paths() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _fresh_standard_target_availability() -> None:
+    """주차별 가용대수 읽기 캐시(`equipment_cache.load_standard_target_availability`)를 테스트마다
+    비운다.
+
+    표준 목표·재공 현황 화면 대본 여럿이 설비 저장소를 가짜로 갈아끼우되 DB 경로는 저장소의 실제
+    자리 그대로다. 캐시 키(경로·stat·쓰기 세대)가 테스트 사이에 같아, 비우지 않으면 앞 테스트의 가짜
+    가용대수가 뒤 테스트에 적중한다(빈 표 안내를 보는 시험이 채운 표를 받는다). 모듈은 여기서 읽어
+    수집 단계에 저장소까지 불러오지 않는다.
+    """
+    from capa_simulation.persistence import equipment_cache
+
+    equipment_cache.clear_standard_target_availability_cache()
+
+
+@pytest.fixture(autouse=True)
 def _stub_space_layout_editor(monkeypatch: pytest.MonkeyPatch) -> None:
     """Space 편집기 컴포넌트(`_EDITOR`)를 아무것도 보내지 않는 대역으로 바꾼다.
 

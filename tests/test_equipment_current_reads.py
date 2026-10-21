@@ -1,14 +1,15 @@
-# Purpose: 설비 DB 현행값 읽기 캐시(최신 id·Cut-off·조건·기준선·도면)가 저장을 놓치지 않는지 본다.
+# Purpose: 설비 DB 현행값 읽기 캐시(최신 id·Cut-off·가용대수·조건·기준선·도면)의 저장 반영을 본다.
 
 """「지금 무엇이 저장돼 있나」 읽기 캐시(`persistence/equipment_cache.py`).
 
-가용설비 현황·Space 는 회차마다 최신 리비전 id 와 Cut-off 를 읽느라 설비 DB 를 열었다. 이제 키를
-DB·WAL stat 으로 둔 캐시에서 받는다. 놓치면 옛 리비전·옛 Cut-off 로 센 숫자가 나오므로 두 장치를
-따로 본다.
+가용설비 현황·Space 는 회차마다 최신 리비전 id 와 Cut-off 를, 표준 목표·표준 대비 재공 현황은 주차별
+가용대수를 읽느라 설비 DB 를 열었다. 이제 키를 DB·WAL stat 으로 둔 캐시에서 받는다. 놓치면 옛
+리비전·옛 Cut-off·옛 가용대수로 센 숫자가 나오므로 두 장치를 따로 본다.
 
 1. **비우기(1차)** — 이 앱의 저장은 저장 직후 캐시를 비우고 쓰기 세대를 올린다. stat 을 일부러
-   고정해도 저장한 값이 다음 읽기에 나와야 한다 — 화면의 저장 경로(RawData·Space·Cut-off)와, 저장
-   직전에 시작된 다른 세션의 읽기가 겹친 경우까지(stat 이 없는 조회 조건·기준선·도면 캐시도).
+   고정해도 저장한 값이 다음 읽기에 나와야 한다 — 화면의 저장 경로(RawData·Space·Cut-off·주차별
+   가용대수 붙여넣기·입력 초기화)와, 저장 직전에 시작된 다른 세션의 읽기가 겹친 경우까지(stat 이
+   없는 조회 조건·기준선·도면 캐시도).
 2. **stat(2차)** — 이 앱을 지나지 않은 쓰기(다른 Repository 객체 = 다른 프로세스 흉내)는 파일
    stat(본 파일, 연결을 열어 둔 쓰기면 WAL)이 바뀌어 다시 읽는다.
 """
@@ -36,6 +37,8 @@ from test_equipment_bulk_delete_page import _page_script as _bulk_page_script
 from test_equipment_bulk_delete_page import _seeded as _bulk_seeded
 from test_equipment_pages import _open_tab, _page_script
 from test_shortening_baseline import _bundle_plan
+from test_standard_target_capa_page import TEST_SCRIPT as STANDARD_TARGET_SCRIPT
+from test_wip_status_page import TEST_SCRIPT as WIP_STATUS_SCRIPT
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
@@ -54,12 +57,14 @@ from capa_simulation.persistence.equipment_cache import (
     clear_process_cutoff_cache,
     clear_shortening_baseline_cache,
     clear_shortening_filter_cache,
+    clear_standard_target_availability_cache,
     latest_equipment_revision_id,
     load_floor_layout_canvases,
     load_latest_equipment_snapshot,
     load_process_cutoff,
     load_shortening_baselines,
     load_shortening_filter_profile,
+    load_standard_target_availability,
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_samples import (
@@ -81,23 +86,34 @@ def _cutoff(days: float, processes: list[str] | None = None) -> pd.DataFrame:
     )
 
 
+def _weekly_availability(count: float) -> pd.DataFrame:
+    """표준 목표 화면 대본(`STANDARD_TARGET_SCRIPT`)의 공정·주차와 같은 주차별 가용대수."""
+    weeks = ["26-W32", "26-W33", "26-W34", "26-W35", "26-W36"]
+    return pd.DataFrame(
+        {"공정": ["Process-A"] * len(weeks), "Weeknum": weeks, "가용대수": [count] * len(weeks)}
+    )
+
+
 def _seeded(tmp_path: Path) -> tuple[str, DuckDBEquipmentRepository]:
-    """r1 과 Cut-off 하나를 저장한 DB. 돌려주는 Repository 는 **이 앱 밖의 쓰기**를 흉내 낸다."""
+    """r1·Cut-off·주차별 가용대수를 저장한 DB. 돌려주는 Repository 는 **이 앱 밖의 쓰기**를 흉내
+    낸다."""
     database = tmp_path / "equipment.duckdb"
     outsider = DuckDBEquipmentRepository(database)
     outsider.initialize()
     outsider.save_snapshot(_baseline(), _equipment(), _downtime(), note="r1")
     outsider.save_process_cutoff(_cutoff(10.0))
+    outsider.save_standard_target_availability(_weekly_availability(2.0))
     clear_equipment_repository()
     return str(database.resolve()), outsider
 
 
 @pytest.fixture
 def counted(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
-    """두 읽기가 실제로 DB 를 몇 번 열었나."""
-    counts = {"latest": 0, "cutoff": 0}
+    """세 읽기가 실제로 DB 를 몇 번 열었나."""
+    counts = {"latest": 0, "cutoff": 0, "standard_target": 0}
     latest = DuckDBEquipmentRepository.latest_revision_id
     cutoff = DuckDBEquipmentRepository.load_process_cutoff
+    availability = DuckDBEquipmentRepository.load_standard_target_availability
 
     def counting_latest(self: DuckDBEquipmentRepository) -> str | None:
         counts["latest"] += 1
@@ -107,23 +123,36 @@ def counted(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
         counts["cutoff"] += 1
         return cutoff(self)
 
+    def counting_availability(self: DuckDBEquipmentRepository) -> pd.DataFrame:
+        counts["standard_target"] += 1
+        return availability(self)
+
     monkeypatch.setattr(DuckDBEquipmentRepository, "latest_revision_id", counting_latest)
     monkeypatch.setattr(DuckDBEquipmentRepository, "load_process_cutoff", counting_cutoff)
+    monkeypatch.setattr(
+        DuckDBEquipmentRepository, "load_standard_target_availability", counting_availability
+    )
     return counts
 
 
 def test_unchanged_reads_do_not_open_the_database(tmp_path: Path, counted: dict[str, int]) -> None:
     database, outsider = _seeded(tmp_path)
     expected = outsider.latest_revision_id()
-    counted.update(latest=0, cutoff=0)  # 심을 때의 읽기(저장이 돌려주는 값)는 세지 않는다
+    expected_availability = outsider.load_standard_target_availability()
+    # 심을 때의 읽기(저장이 돌려주는 값)는 세지 않는다
+    counted.update(latest=0, cutoff=0, standard_target=0)
 
     for _ in range(3):
         assert latest_equipment_revision_id(database) == expected
         pd.testing.assert_frame_equal(load_process_cutoff(database), outsider.load_process_cutoff())
+        pd.testing.assert_frame_equal(
+            load_standard_target_availability(database), expected_availability
+        )
 
     assert counted["latest"] == 1
     # 위 루프의 `outsider.load_process_cutoff()` 셋 + 캐시 한 번
     assert counted["cutoff"] == 4
+    assert counted["standard_target"] == 1
     clear_equipment_repository()
 
 
@@ -135,14 +164,18 @@ def test_a_write_outside_the_app_is_seen_through_the_file_stat(
     first = latest_equipment_revision_id(database)
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [10.0]
 
+    assert load_standard_target_availability(database)["가용대수"].eq(2.0).all()
+
     saved = outsider.save_snapshot(_baseline(), _equipment().assign(담당자="담당B"), _downtime())
     outsider.save_process_cutoff(_cutoff(20.0))
+    outsider.save_standard_target_availability(_weekly_availability(5.0))
 
     assert saved is not None
     assert latest_equipment_revision_id(database) == saved.revision.revision_id != first
     snapshot = load_latest_equipment_snapshot(database)
     assert snapshot is not None and snapshot.revision.revision_no == 2
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [20.0]
+    assert load_standard_target_availability(database)["가용대수"].eq(5.0).all()
     clear_equipment_repository()
 
 
@@ -154,19 +187,29 @@ def test_clearing_is_enough_even_when_the_stat_looks_the_same(
     monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
     first = latest_equipment_revision_id(database)
     load_process_cutoff(database)
+    load_standard_target_availability(database)
 
     saved = outsider.save_snapshot(_baseline(), _equipment().assign(담당자="담당B"), _downtime())
     outsider.save_process_cutoff(_cutoff(20.0))
+    outsider.save_standard_target_availability(_weekly_availability(5.0))
     assert saved is not None
     # stat 이 못 잡으면 비우기 전까지는 옛 값이다 — 그래서 앱의 저장은 반드시 비운다.
     assert latest_equipment_revision_id(database) == first
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [10.0]
+    assert load_standard_target_availability(database)["가용대수"].eq(2.0).all()
 
     clear_equipment_snapshot_cache()
     clear_process_cutoff_cache()
+    clear_standard_target_availability_cache()
 
     assert latest_equipment_revision_id(database) == saved.revision.revision_id
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [20.0]
+    assert load_standard_target_availability(database)["가용대수"].eq(5.0).all()
+
+    # 입력 초기화도 같은 비우기를 지난다 — 빈 표가 다음 읽기에 나온다.
+    outsider.clear_standard_target_availability()
+    clear_standard_target_availability_cache()
+    assert load_standard_target_availability(database).empty
     clear_equipment_repository()
 
 
@@ -261,6 +304,18 @@ def test_a_read_in_flight_during_a_save_does_not_bring_the_old_value_back(
     reader.join(30)
     assert cast(pd.DataFrame, result["value"])["Cutoff일수"].tolist() == [10.0]
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [20.0]
+
+    reader, release, result = _in_flight_read(
+        monkeypatch,
+        "load_standard_target_availability",
+        lambda: load_standard_target_availability(database),
+    )
+    outsider.save_standard_target_availability(_weekly_availability(5.0))
+    clear_standard_target_availability_cache()
+    release.set()
+    reader.join(30)
+    assert cast(pd.DataFrame, result["value"])["가용대수"].eq(2.0).all()
+    assert load_standard_target_availability(database)["가용대수"].eq(5.0).all()
     clear_equipment_repository()
 
 
@@ -332,6 +387,82 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     assert any("모두 채워졌습니다" in str(item.value) for item in app.caption)
     saved = DuckDBEquipmentRepository(database).load_process_cutoff()
     assert sorted(saved["공정"]) == sorted(processes)
+    clear_equipment_repository()
+
+
+_FAKE_EQUIPMENT_REPOSITORY = (
+    "equipment_cache.get_equipment_repository = lambda _path: FakeEquipmentRepository()"
+)
+
+
+def _on_equipment_database(script: str, database: Path) -> str:
+    """화면 대본의 가짜 설비 저장소를 걷고 tmp 설비 DB 를 보게 한다(나머지 대역은 그대로)."""
+    assert _FAKE_EQUIPMENT_REPOSITORY in script
+    return script.replace(
+        _FAKE_EQUIPMENT_REPOSITORY,
+        "import capa_simulation.settings as settings\n"
+        f"settings.EQUIPMENT_DUCKDB_PATH = Path({str(database)!r})",
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    "script", [STANDARD_TARGET_SCRIPT, WIP_STATUS_SCRIPT], ids=["표준 목표", "표준 대비 재공 현황"]
+)
+def test_a_warm_run_of_the_page_does_not_reopen_the_equipment_database(
+    tmp_path: Path, counted: dict[str, int], script: str
+) -> None:
+    """두 화면이 그 회차에 설비 DB 를 여는 곳은 주차별 가용대수 읽기 하나다. 위젯 하나에 다시 도는
+    회차가 그 읽기를 캐시에서 받아야 회차마다 DB 인스턴스를 새로 만들지 않는다."""
+    database, _outsider = _seeded(tmp_path)
+    counted.update(latest=0, cutoff=0, standard_target=0)
+    app = AppTest.from_string(_on_equipment_database(script, Path(database)), default_timeout=120)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    assert counted["standard_target"] == 1
+
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert counted["standard_target"] == 1
+    clear_equipment_repository()
+
+
+def test_availability_pasted_or_cleared_on_the_screen_is_what_the_next_run_counts_with(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """화면: 표준 목표에서 가용설비를 붙여넣거나 입력을 초기화하면 다음 회차가 그 값으로 센다 —
+    stat 을 고정해도(비우기가 빠지면 옛 가용대수로 그린다)."""
+    database, _outsider = _seeded(tmp_path)
+    monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
+    app = AppTest.from_string(
+        _on_equipment_database(STANDARD_TARGET_SCRIPT, Path(database)), default_timeout=120
+    ).run()
+    assert not app.exception, [item.message for item in app.exception]
+    before = app.session_state["captured_first_week_value"]
+
+    app.button(key="open_standard_target_availability_paste").click().run()
+    app.text_area(key="standard_target_availability_clipboard_text").set_value(
+        "공정\tWeeknum\t가용대수\nProcess-A\t26-W32\t5\n"
+    )
+    next(button for button in app.button if button.label == "붙여넣기 적용").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    # 첫 열이 26-W32 다 — 일 표준 가능량은 가용대수에 비례한다(2 → 5).
+    assert app.session_state["captured_first_week_value"] == pytest.approx(before * 2.5)
+    assert not app.button(key="open_standard_target_availability_clear").disabled
+
+    app.button(key="open_standard_target_availability_clear").click().run()
+    app.checkbox(key="standard_target_clear_confirm").check().run()
+    app.button(key="clear_standard_target_availability").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    assert DuckDBEquipmentRepository(Path(database)).load_standard_target_availability().empty
+    # 저장된 가용대수가 없으면 초기화 버튼이 잠긴다 — 다음 회차가 빈 표를 읽었다는 뜻이다.
+    assert app.button(key="open_standard_target_availability_clear").disabled
     clear_equipment_repository()
 
 

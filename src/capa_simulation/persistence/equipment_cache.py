@@ -86,18 +86,20 @@ def load_equipment_snapshot(database_path: str, revision_id: str) -> EquipmentSn
 
 # 설비 DB 파일과 WAL 의 (inode, mtime_ns, 크기). 파일이 없으면 None.
 DatabaseStamp = tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
-# 「지금 무엇이 저장돼 있나」 읽기(최신 리비전 id·Cut-off)를 stat 이 그대로여도 다시 읽는 간격(초).
+# 「지금 무엇이 저장돼 있나」 읽기(최신 리비전 id·Cut-off·주차별 가용대수)를 stat 이 그대로여도 다시
+# 읽는 간격(초).
 CURRENT_READ_TTL_SECONDS = 15
 # 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 비운 횟수). 비울 때마다 오른다. 덮어쓰거나 지울 수
-# 있는 값을 담는 캐시(최신 리비전 id·Cut-off·층/FAB 도면·필요 단축 일정 조건·기준선)는 모두 이
-# 세대를 키에 둔다. 고칠 수도 지울 수도 없는 설비 리비전 id 키의 캐시(스냅샷·이력·CSV)는 겹쳐도
-# 같은 값이라 두지 않는다.
+# 있는 값을 담는 캐시(최신 리비전 id·Cut-off·주차별 가용대수·층/FAB 도면·필요 단축 일정 조건·
+# 기준선)는 모두 이 세대를 키에 둔다. 고칠 수도 지울 수도 없는 설비 리비전 id 키의 캐시(스냅샷·
+# 이력·CSV)는 겹쳐도 같은 값이라 두지 않는다.
 WriteGeneration = tuple[str, int]
 _MODULE_EPOCH = uuid4().hex
 _GENERATION_LOCK = threading.Lock()
 _write_generations = {
     "revision": 0,
     "cutoff": 0,
+    "standard_target": 0,
     "floor_layout": 0,
     "shortening_filter": 0,
     "shortening_baseline": 0,
@@ -194,6 +196,33 @@ def load_process_cutoff(database_path: str) -> pd.DataFrame:
 def clear_process_cutoff_cache() -> None:
     _bump_write_generation("cutoff")
     _load_process_cutoff.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_standard_target_availability(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> pd.DataFrame:
+    del stamp, generation
+    return get_equipment_repository(database_path).load_standard_target_availability()
+
+
+def load_standard_target_availability(database_path: str) -> pd.DataFrame:
+    """저장된 주차별 가용대수(`0005`, 리비전 없는 현행값).
+
+    표준 목표·표준 대비 재공 현황은 위젯 하나에도 다시 돌고, 그 회차에 설비 DB 를 여는 곳이 이 읽기
+    하나다 — 캐시가 없으면 회차마다 설비 DB 인스턴스를 새로 만든다. Cut-off 와 같은 방식이다 — 이
+    앱의 쓰기(표준 목표의 가용설비 붙여넣기·입력 초기화)가 성공한 직후
+    `clear_standard_target_availability_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이
+    프로세스 밖의 쓰기를 맡는다.
+    """
+    return _load_standard_target_availability(
+        database_path, database_stamp(database_path), _write_generation("standard_target")
+    )
+
+
+def clear_standard_target_availability_cache() -> None:
+    _bump_write_generation("standard_target")
+    _load_standard_target_availability.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -467,6 +496,7 @@ def clear_equipment_snapshot_cache() -> None:
 def clear_equipment_repository() -> None:
     clear_equipment_snapshot_cache()
     clear_process_cutoff_cache()
+    clear_standard_target_availability_cache()
     clear_floor_layout_cache()
     clear_shortening_filter_cache()
     clear_shortening_baseline_cache()
