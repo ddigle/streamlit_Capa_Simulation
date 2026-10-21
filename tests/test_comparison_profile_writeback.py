@@ -1,4 +1,4 @@
-# Purpose: HOME 비교 대상 선택의 공용 프로필 되쓰기 조건과 활성 상태를 따르지 않는 라벨을 고정한다.
+# Purpose: HOME 비교 대상 선택의 공용 프로필 되쓰기 조건과 활성·이름 변경에 버티는 라벨을 고정한다.
 
 """비교 대상 프로필은 **시나리오에 딸리지 않은 공용 값**이라 두 사용자가 같은 행을 쓴다.
 
@@ -469,3 +469,58 @@ def test_choosing_a_scenario_is_saved_even_when_the_profile_already_points_there
     assert _saved_profile(database) == (s2, shown), (
         "화면은 S2 의 첫 리비전과 견주는데 공용 프로필에는 남이 고른 리비전이 남았습니다."
     )
+
+
+TRACED_PICKER_SCRIPT = """
+import streamlit as st
+
+from capa_simulation.components.home_preference import (
+    COMPARISON_SCENARIO_KEY,
+    _render_comparison_picker,
+)
+
+# 피커 **앞**에서 읽은 값 — HOME 본문이 GAP 비교 리비전을 고를 때 읽는 자리와 같다.
+st.session_state.setdefault("test_before_picker", []).append(
+    st.session_state.get(COMPARISON_SCENARIO_KEY)
+)
+_render_comparison_picker(st.session_state["database_path"])
+"""
+
+
+def test_a_rename_in_another_session_keeps_the_comparison_choice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 세션이 비교 시나리오의 이름을 바꿔도 이 세션의 선택(GAP 비교)은 그대로 남는다.
+
+    선택지 글자는 시나리오 이름이라 이름 바꾸기로 바뀐다. 피커가 고른 값을 위젯 앞에서 다시 적지
+    않으면 브라우저가 옛 이름을 계속 되보내고, 다음 회차 피커 앞에서 읽는 값이 id 가 아니라 그
+    **옛 이름 글자**가 된다 — HOME 의 GAP 비교가 알림 없이 꺼지고, 피커는 그 값을 무효로 보아
+    두 칸을 지워 리비전 상자가 사라진다. 상자에는 옛 이름이 남는다. 일반 `AppTest.run()` 은
+    글자를 회차마다 새로 만들어 이 결함을 보지 못하므로 `BrowserChoice` 로 잰다.
+    """
+    from widget_browser import BrowserChoice
+
+    database = tmp_path / "scenario.duckdb"
+    _s1, _s1_revision, s2, _s2_older, s2_newer = _two_scenarios(database)
+    repository = DuckDBScenarioRepository(database)
+    repository.replace_global_comparison_scenario(s2, s2_newer, source="테스트")
+    monkeypatch.setattr(home_preference, "active_persisted_revision_id", lambda: None)
+    app = AppTest.from_string(TRACED_PICKER_SCRIPT, default_timeout=120)
+    app.session_state["database_path"] = str(database)
+    browser = BrowserChoice(app, "selectbox", COMPARISON_SCENARIO_KEY)
+    browser.start()
+    assert not app.exception, [element.message for element in app.exception]
+    assert browser.wire == "비교용 시나리오"
+
+    repository.rename_scenario(s2, "비교용 새 이름")
+    version = _profile_version(database)
+    for _ in range(3):
+        browser.run()
+        assert not app.exception, [element.message for element in app.exception]
+        assert app.session_state["test_before_picker"][-1] == s2
+        assert app.session_state[COMPARISON_SCENARIO_KEY] == s2
+        assert app.selectbox(key=COMPARISON_REVISION_KEY).value == s2_newer
+
+    assert browser.wire == "비교용 새 이름", "상자가 옛 이름을 그대로 보입니다."
+    assert _saved_profile(database) == (s2, s2_newer)
+    assert _profile_version(database) == version, "고르지 않았는데 공용 프로필을 다시 썼습니다."

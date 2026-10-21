@@ -12,6 +12,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
+    prune_choice,
 )
 from capa_simulation.persistence.cache import load_scenario_snapshot
 from capa_simulation.persistence.models import (
@@ -106,6 +107,9 @@ def render_source_selector(
     돌려준 스냅샷의 표는 읽기만 한다.
     """
     scenarios = {item.scenario_id: item for item in repository.list_scenarios()}
+    # 선택지 글자는 시나리오 이름이라 다른 세션의 이름 바꾸기로 바뀐다. 고른 값을 매 회차 다시
+    # 적어야 브라우저가 새 글자를 받는다(AGENTS 9장 「글자가 바뀌는 것을 피할 수 없는 상자」).
+    prune_choice(f"{key}_scenario", list(scenarios), default=None)
     selected = st.selectbox(
         f"{label} 시나리오",
         options=list(scenarios),

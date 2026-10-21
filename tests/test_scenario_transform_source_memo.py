@@ -322,6 +322,37 @@ def test_the_provenance_names_this_runs_summary_even_with_a_stale_process_cache(
     assert _loads(app) == [first.revision.revision_id] * 2
 
 
+def test_a_rename_in_another_session_keeps_the_chosen_source(stores: Stores) -> None:
+    """다른 세션이 원본 시나리오의 이름을 바꿔도 고른 원본·리비전 상자가 그대로 남는다.
+
+    원본 상자의 글자는 시나리오 이름이다. 위젯 앞에서 고른 값을 다시 적지 않으면 브라우저가 옛
+    이름을 되보내고, 서버는 선택지 밖 글자로 읽어 상자를 빈 선택으로 되돌린다 — 리비전 상자가
+    사라지고 준비하던 월 머지 원본이 알림 없이 풀린다. 일반 `AppTest.run()` 은 글자를 새로
+    만들어 보지 못해 `BrowserChoice` 로 잰다.
+    """
+    from widget_browser import BrowserChoice
+
+    repository, database, first, _second = stores
+    scenario_id = first.scenario.scenario_id
+    app = AppTest.from_string(_script(database, MERGE_BODY), default_timeout=60)
+    browser = BrowserChoice(app, "selectbox", "merge_base_scenario")
+    browser.start()
+    browser.pick("원본 2027")
+    browser.run()
+    assert not app.exception
+    assert app.selectbox(key="merge_base_scenario").value == scenario_id
+
+    repository.rename_scenario(scenario_id, "새 이름 2027")
+    clear_scenario_snapshot_cache()
+    for _ in range(3):
+        browser.run()
+        assert not app.exception
+        assert app.selectbox(key="merge_base_scenario").value == scenario_id
+        revision = app.selectbox(key=f"merge_base_revision_{scenario_id}")
+        assert revision.value == first.revision.revision_id
+    assert browser.wire == "새 이름 2027", "상자가 옛 이름을 그대로 보입니다."
+
+
 # ---------------------------------------------------------------- 앱 전체에서 페이지 옮기기
 
 

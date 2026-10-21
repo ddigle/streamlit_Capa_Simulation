@@ -513,6 +513,12 @@ def _render_comparison_picker(database_path: str) -> None:
         if st.session_state.get(COMPARISON_SCENARIO_KEY) not in scenario_by_id:
             st.session_state.pop(COMPARISON_SCENARIO_KEY, None)
             st.session_state.pop(COMPARISON_REVISION_KEY, None)
+        elif COMPARISON_SCENARIO_KEY in st.session_state:
+            # 선택지 글자는 시나리오 이름이라 다른 세션의 이름 바꾸기로 바뀐다. 고른 값을 매 회차
+            # 다시 적어야 브라우저가 새 글자를 받는다 — 적지 않으면 옛 이름을 되보내 다음 회차에
+            # 그 글자가 id 자리에 들어간다(AGENTS 9장 「글자가 바뀌는 것을 피할 수 없는 상자」).
+            # 무효일 때 리비전 칸도 함께 지워야 해서 `prune_choice` 는 쓰지 않는다.
+            st.session_state[COMPARISON_SCENARIO_KEY] = st.session_state[COMPARISON_SCENARIO_KEY]
         scenario_id = st.selectbox(
             "비교 시나리오",
             options=[None, *scenario_by_id],
@@ -723,7 +729,8 @@ def _revision_choice(
 
 
 def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) -> str:
-    """비교 시나리오 선택지의 글. 활성 상태와 무관하게 늘 같다 — `_render_comparison_picker`."""
+    """비교 시나리오 선택지의 글. 활성 상태와는 무관하지만 시나리오 이름 바꾸기로 바뀔 수 있어
+    `_render_comparison_picker` 가 고른 값을 매 회차 되쓴다."""
     if value is None:
         return "선택 안 함"
     return scenarios[value].scenario_name

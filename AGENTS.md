@@ -1933,9 +1933,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   브라우저가 옛 라벨을 되보내고, 서버는 그것을 바뀐 값으로 읽어 `on_change` 를 부르고 앱 전체를
   다시 돌린다(HOME 비교 리비전, 2026-10-08). 바뀌는 상태는 상자 밖 캡션에 적는다(HOME 비교
   선택의 `_comparison_active_note`, 주요공정 「고칠 프리셋」의 기본 프리셋 캡션). 글자가 바뀌는 것을
-  피할 수 없는 상자(공정 표시명의 「표시명 (원본)」 가르기 — `ProcessLabels.unique_format_func`)는
+  피할 수 없는 상자(공정 표시명의 「표시명 (원본)」 가르기 — `ProcessLabels.unique_format_func`, 다른
+  세션의 이름 바꾸기로 바뀌는 시나리오 이름 — HOME 비교 시나리오·파생 시나리오 원본 상자)는
   위젯 앞에서 매 회차 잡은 값을 세션에 다시 적어(`prune_choice`·`prune_list_selection`) 브라우저에
-  새 글자를 보낸다. 일반 `AppTest.run()` 은 회차마다 세션 값으로 글자를 다시 만들어 이 결함을 보지
+  새 글자를 보낸다. 적지 않으면 브라우저가 옛 글자를 되보내 다음 회차에 그 글자가 id 자리에 들어가거나
+  선택이 빈 값으로 풀린다. 일반 `AppTest.run()` 은 회차마다 세션 값으로 글자를 다시 만들어 이 결함을 보지
   못한다 — 브라우저처럼 글자를 들고 다니는 `tests/widget_browser.py` 의 `BrowserChoice` 로 잰다.
   AppTest 의 `select`·`set_value` 는 **값**을 받아 `format_func` 로 글자를 만든다 — 보이는 글자(「가공」)를
   넘기면 선택지 밖 값으로 걷힌다. 사용자가 보이는 글자를 고르는 것을 재려면 `BrowserChoice.pick` 을 쓴다.
