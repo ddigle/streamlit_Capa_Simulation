@@ -430,6 +430,85 @@ def test_exported_dates_are_plain_days_not_timestamps() -> None:
     assert "2026-" in text
 
 
+# 날짜 칸의 꼴이 섞여도 연도가 앞인 값은 뜻이 하나다. pandas 는 칸의 첫 값으로 꼴을 정해 칸 전체에
+# 쓰므로, 막히느냐가 행 차례에 달리지 않는지를 첫 행·끝 행 양쪽에서 본다.
+
+
+@pytest.mark.parametrize(("row", "separator"), [(0, "/"), (-1, "/"), (-1, ".")])
+def test_equipment_csv_reads_a_date_written_in_another_form_in_the_same_column(
+    row: int, separator: str
+) -> None:
+    equipment = prepare_equipment_master(_equipment())
+    frame = pd.read_csv(BytesIO(equipment_csv_bytes(equipment)), dtype=str)
+    target = frame.index[row]
+    frame.loc[target, "반입일정"] = frame.loc[target, "반입일정"].replace("-", separator)
+
+    result = read_equipment_csv(frame.to_csv(index=False).encode("utf-8-sig"))
+
+    _assert_same_table(result, equipment)
+
+
+def _downtime_paste(start_dates: list[str]) -> str:
+    rows = [
+        f"EQ-01\t고장\t{start}\t\t부품 교체\t메모 {number}"
+        for number, start in enumerate(start_dates)
+    ]
+    return "\n".join(["\t".join(DOWNTIME_COLUMNS), *rows])
+
+
+def test_downtime_paste_reads_year_first_dates_written_in_mixed_forms() -> None:
+    equipment = prepare_equipment_master(_equipment())
+    starts = [
+        "2026-10-01",
+        "2026/10/05",
+        "2026.10.07",
+        "2026-10-09 00:00:00",
+        "2026-10-11 8:30",
+        "2026-10-13T08:00:00",
+        "2026. 10. 15.",
+    ]
+
+    result = read_downtime_clipboard(_downtime_paste(starts), equipment=equipment)
+
+    assert result["시작일"].tolist() == [
+        pd.Timestamp(2026, 10, day) for day in (1, 5, 7, 9, 11, 13, 15)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("first", "value"),
+    [
+        ("2026-10-01", "05/10/2026"),
+        ("2026-10-01", "다음 주"),
+        ("2026-10-01", "2026/02/30"),
+        ("2026-10-01", "2026-10/05"),
+        ("2026-10-01", "1000/01/01"),
+        ("2026-10-01", "2026-10-11 25:00"),
+        ("2026-10-01", "2026/10/11 23:75"),
+        ("2026-10-01", "2026-10-11 24:00:00"),
+        ("2026-10-01T00:00:00+09:00", "2026/10/05"),
+    ],
+)
+def test_downtime_paste_still_rejects_ambiguous_or_impossible_dates(first: str, value: str) -> None:
+    """연도가 앞이 아닌 꼴(일·월 차례가 갈린다)·날짜가 아닌 글자·없는 날·구분자가 섞인 값·
+    없는 시각은 첫 값이 멀쩡해도 지금처럼 막는다. `24:00` 은 다음 날 0시라 같은 날로 읽으면
+    안 된다. 시간대가 붙은 칸도 다른 오류로 새지 않고 같은 문구로 막힌다."""
+    equipment = prepare_equipment_master(_equipment())
+
+    with pytest.raises(ValueError, match="시작일은 날짜 형식이어야 합니다"):
+        read_downtime_clipboard(_downtime_paste([first, value]), equipment=equipment)
+
+
+@pytest.mark.parametrize("value", ["2026-10-11 99:99", "2026/10/11 23:75", "2026-10-11 24:00"])
+def test_downtime_paste_rejects_an_impossible_time_written_alone(value: str) -> None:
+    """꼴이 섞이지 않은 값 하나여도 첫 읽기에서 못 읽은 값은 다시 읽는 길로 간다. 그 길이
+    없는 시각을 떼어 내고 날짜만 받지 않는지 본다."""
+    equipment = prepare_equipment_master(_equipment())
+
+    with pytest.raises(ValueError, match="시작일은 날짜 형식이어야 합니다"):
+        read_downtime_clipboard(_downtime_paste([value]), equipment=equipment)
+
+
 def test_export_guards_identifier_values_excel_would_rewrite_and_reading_strips_them() -> None:
     """`0123` 같은 설비명은 Excel 이 `123` 으로 바꾼다. 식별 컬럼만 `="…"` 로 묶어 내보내고,
     고치지 않고 그대로 되돌린 파일은 읽는 쪽이 껍데기를 벗겨 같은 값으로 읽는다."""

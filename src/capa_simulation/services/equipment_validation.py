@@ -4,11 +4,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Mapping, Sequence
 from datetime import date
 from typing import Any
 
 import pandas as pd
+from pandas.api.types import is_datetime64_dtype
 
 from capa_simulation.services.equipment_contract import (
     AREA_CODE_COLUMN,
@@ -696,9 +698,36 @@ def _optional_text(series: pd.Series) -> pd.Series:
     return result.mask(result.eq(""))
 
 
+# 연도가 앞인 날짜 글자. 구분자는 한 값 안에서 같아야 하고(`\2`), 붙은 시각은 떼어 낸다.
+# 떼어 낼 시각도 있을 수 있는 값(0~23시·0~59분·0~59초)만 받는다 — `24:00`·`23:75` 같은
+# 시각이 날짜만 남아 통과하지 않고 지금처럼 막히게 한다.
+_YEAR_FIRST_DATE = re.compile(
+    r"\s*(\d{4})\s*([-./])\s*(\d{1,2})\s*\2\s*(\d{1,2})\.?"
+    r"(?:(?:\s+|T)(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?)?\s*",
+    re.ASCII,
+)
+
+
+def _year_first_text(value: object) -> str | None:
+    """연도가 앞인 날짜 글자를 `YYYY-MM-DD` 로 고쳐 쓴다. 그 꼴이 아니면 None."""
+    if not isinstance(value, str):
+        return None
+    match = _YEAR_FIRST_DATE.fullmatch(value)
+    if match is None:
+        return None
+    return f"{match[1]}-{int(match[3]):02d}-{int(match[4]):02d}"
+
+
 def _normalize_date(series: pd.Series, label: str) -> pd.Series:
+    """pandas 는 글자 칸의 첫 값으로 날짜 꼴을 정해 칸 전체에 쓰므로, 꼴이 다른 값은 날짜여도
+    NaT 가 된다. 그렇게 못 읽은 값 가운데 연도가 앞인 꼴(뜻이 하나다)만 따로 다시 읽는다.
+    시간대가 붙은 칸은 다시 읽은 값과 섞을 수 없어 그대로 둔다."""
     missing = series.isna() | series.astype("string").str.strip().eq("")
     converted = pd.to_datetime(series.mask(missing), errors="coerce")
+    retry = ~missing & converted.isna()
+    if retry.any() and is_datetime64_dtype(converted):
+        rewritten = series.loc[retry].map(_year_first_text)
+        converted.loc[retry] = pd.to_datetime(rewritten, format="%Y-%m-%d", errors="coerce")
     invalid = ~missing & converted.isna()
     if invalid.any():
         examples = series.loc[invalid].head(5).tolist()
