@@ -422,23 +422,50 @@ def test_the_unit_lines_carry_day_counts_and_downtime_notes(built: _Built) -> No
     assert a9["비가동 내역"] == "고장 01.10~계속"
     # 겹친 비가동은 하루 한 번만 손실로 센다(A1 202701 — 공사·이설이 겹친다).
     assert _line(lines, 202701, "A1")["손실 기여일수"] == 9
+    # 손실이 있는 호기 줄은 늘 그 이유(비가동 내역)를 단다.
+    units = lines.loc[lines["설비명"].notna()]
+    lossy = units.loc[units["손실 기여일수"].fillna(0).gt(0)]
+    assert not lossy.empty
+    assert lossy["비가동 내역"].ne("").all(), lossy[["생산계획년월", "설비명"]]
 
 
 def test_downtime_notes_follow_the_loss_boundaries() -> None:
-    """`비가동 내역` 은 손실과 같은 반열린 구간으로 걸침을 잰다 — 경계 끝 날 시작했거나 경계 시작
-    날 끝난 비가동은 그 달 손실이 0 이라 적지 않는다. 하루라도 겹치면 적는다."""
+    """`비가동 내역` 은 손실과 같은 잣대로 걸침을 잰다 — 비가동은 기여일로 (시작일, 종료일+1] 을
+    깎으므로 경계 끝 날 시작했거나 경계 시작 날보다 먼저 끝난 비가동은 그 달 손실이 0 이라 적지
+    않는다. 경계 시작 날 끝난 비가동은 그 달 첫날을 깎아 적되, 그 줄에 손실이 없으면(종료일 다음
+    날이 형제 반출/이설일) 적지 않는다."""
     from capa_simulation.services.availability_sheet import _downtime_notes
 
     # Cut-off 0 → 202612 구간은 (11/30, 12/31].
+    names = ["S", "E", "IN", "OPEN", "BEFORE", "EXIT"]
     units = pd.DataFrame(
-        {"생산계획년월": [202612] * 4, "공정": ["P"] * 4, "설비명": ["S", "E", "IN", "OPEN"]}
+        {
+            "생산계획년월": [202612] * len(names),
+            "공정": ["P"] * len(names),
+            "설비명": names,
+            "손실 기여일수": pd.array([0, 1, 2, 0, 0, 0], dtype="Int64"),
+        }
     )
     downtime = pd.DataFrame(
         {
-            "설비명": ["S", "E", "IN", "OPEN"],
-            "비가동유형": ["고장", "공사", "고장", "고장"],
-            "시작일": [T("2026-12-31"), T("2026-11-20"), T("2026-11-29"), T("2026-12-31")],
-            "종료일": [T("2027-01-05"), T("2026-11-30"), T("2026-12-01"), pd.NaT],
+            "설비명": names,
+            "비가동유형": ["고장", "공사", "고장", "고장", "공사", "공사"],
+            "시작일": [
+                T("2026-12-31"),
+                T("2026-11-20"),
+                T("2026-11-29"),
+                T("2026-12-31"),
+                T("2026-11-20"),
+                T("2026-11-20"),
+            ],
+            "종료일": [
+                T("2027-01-05"),
+                T("2026-11-30"),
+                T("2026-12-01"),
+                pd.NaT,
+                T("2026-11-29"),
+                T("2026-11-30"),
+            ],
         }
     )
     cutoff = prepare_process_cutoff(
@@ -447,7 +474,82 @@ def test_downtime_notes_follow_the_loss_boundaries() -> None:
 
     notes = _downtime_notes(units, downtime, cutoff)
 
-    assert notes == ["", "", "고장 11.29~12.01", ""]
+    assert notes == ["", "공사 11.20~11.30", "고장 11.29~12.01", "", "", ""]
+
+
+def test_a_downtime_ending_on_the_window_start_is_noted_where_the_engine_costs_a_day() -> None:
+    """경계 시작 날(Cut-off 0 이면 앞 달 말일) 끝난 비가동은 다음 달 첫날 하루를 깎는다 — 호기
+    분해의 손실 1일·음수 대여 줄에 그 비가동이 적히고, 공정 Capa 상세 ④ 화살표의 달별 손실에도 그
+    달이 있다. 종료일 다음 날이 형제 모듈의 반출/이설일이면 엔진이 종료일까지만 깎아 그 줄은 손실
+    0 · 빈칸이다."""
+    rows = [
+        _unit("E", "P"),
+        *[
+            _unit(
+                f"M{suffix}",
+                "P",
+                ratio=0.5,
+                parent="M",
+                relocation="2026-12-01" if suffix == "B" else None,
+            )
+            for suffix in "AB"
+        ],
+    ]
+    master = prepare_equipment_master(pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS)))
+    down = prepare_downtime_schedule(
+        pd.DataFrame(
+            [
+                _down("E", "2026-11-20", "2026-11-30", kind="공사"),
+                _down("MA", "2026-11-20", "2026-11-30"),
+            ],
+            columns=list(DOWNTIME_COLUMNS),
+        ),
+        equipment=master,
+    )
+    cutoff = prepare_process_cutoff(
+        pd.DataFrame({"공정": ["P"], "Cutoff일수": [0.0], "비고": [pd.NA]})
+    )
+    months = [202611, 202612]
+    bounds = span_date_range(months, cutoff)
+    assert bounds is not None
+    ratios = {"E": 1.0, "MA": 0.5, "MB": 0.5}
+    empty = pd.DataFrame(columns=["공정", "기존보유대수"])
+    actual, free = (
+        build_monthly_equipment_contributions(
+            build_equipment_lifecycle_spans(
+                master, table, start_date=bounds[0], end_date=bounds[1], with_unit_share=True
+            ),
+            empty,
+            cutoff,
+            months,
+            conversion_ratios=ratios,
+        )
+        for table in (down, down.iloc[0:0])
+    )
+
+    lines = unit_availability_breakdown(
+        actual, free, conversion_ratios=ratios, downtime=down, cutoff=cutoff
+    )
+
+    e_november, e_december = _line(lines, 202611, "E"), _line(lines, 202612, "E")
+    assert (e_november["손실 기여일수"], e_november["비가동 내역"]) == (10, "공사 11.20~11.30")
+    assert e_december["손실 기여일수"] == 1
+    assert e_december[BREAKDOWN_LENT_COLUMN] == pytest.approx(-1 / 31, abs=LINES)
+    assert e_december["비가동 내역"] == "공사 11.20~11.30"
+    module_december = _line(lines, 202612, "MA")
+    assert (module_december["손실 기여일수"], module_december["비가동 내역"]) == (0, "")
+
+    timeline = build_process_equipment_timeline(
+        master,
+        down,
+        pd.DataFrame(columns=["공정", "분류", "기존보유대수", "비고"]),
+        cutoff,
+        process="P",
+        months=months,
+    )
+    arrow = timeline.arrows.loc[timeline.arrows["설비명"].eq("E")].iloc[0]
+    by_month = dict(cast(tuple[tuple[int, float], ...], arrow["달별 손실"]))
+    assert by_month[202612] == pytest.approx(1 / 31, abs=LINES)
 
 
 # ------------------------------------------------------------------ 다른 화면과 같은 값

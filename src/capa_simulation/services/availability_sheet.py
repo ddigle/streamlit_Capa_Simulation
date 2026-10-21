@@ -631,9 +631,12 @@ def _downtime_notes(
 ) -> list[str]:
     """줄마다 그 달 W/D 구간에 걸친 비가동(「유형 MM.DD~MM.DD」, 열린 것은 「~계속」).
 
-    「걸친」은 손실을 세는 잣대와 같다 — 비가동은 (시작일, 종료일], W/D 구간은 (경계 시작, 경계 끝]
-    이라 둘 다 반열린 구간끼리 겹쳐야 한다. 경계 끝 날 시작한 비가동이나 경계 시작 날 끝난 비가동은
-    그 달 손실이 0 이라 적지 않는다(「내내 비가동인데 손실 0」으로 읽히지 않게).
+    「걸친」은 손실을 세는 잣대와 같다 — 상태는 바뀐 다음 날부터라 비가동은 기여일로 (시작일,
+    종료일+1] 을 깎고, W/D 구간 (경계 시작, 경계 끝] 과 겹치면 적는다. 경계 끝 날 시작했거나 경계
+    시작 날보다 먼저 끝난 비가동은 그 달 손실이 0 이라 적지 않는다(「내내 비가동인데 손실 0」으로
+    읽히지 않게). 경계 시작 날 끝난 비가동은 그 달 첫날 하루를 깎아 적는다 — 다만 종료일 다음 날이
+    그 설비키의 정지·반출/이설일이면 엔진이 종료일까지만 깎으므로, 그 줄에 `손실 기여일수` 가 있을
+    때만 적는다.
     """
     if units.empty or downtime is None or downtime.empty or cutoff is None or cutoff.empty:
         return [""] * len(units)
@@ -653,8 +656,12 @@ def _downtime_notes(
             (str(kind or "비가동").strip(), begin, _day(end))
         )
     notes: list[str] = []
-    for month, process, unit in zip(
-        units[MONTH], units["공정"], units[EQUIPMENT_ID_COLUMN], strict=True
+    for month, process, unit, lost_days in zip(
+        units[MONTH],
+        units["공정"],
+        units[EQUIPMENT_ID_COLUMN],
+        units["손실 기여일수"],
+        strict=True,
     ):
         cut = days.get(str(process))
         entries = by_unit.get(str(unit).strip(), [])
@@ -662,10 +669,16 @@ def _downtime_notes(
             notes.append("")
             continue
         window = wd_window(int(month), cut)
+        lost = bool(pd.notna(lost_days) and int(lost_days) > 0)
         parts = [
             f"{kind} {begin:%m.%d}~" + (f"{end:%m.%d}" if end is not None else "계속")
             for kind, begin, end in sorted(entries, key=lambda item: item[1])
-            if begin < window.boundary_end and (end is None or end > window.boundary_start)
+            if begin < window.boundary_end
+            and (
+                end is None
+                or end > window.boundary_start
+                or (lost and end == window.boundary_start)
+            )
         ]
         notes.append(", ".join(parts))
     return notes
