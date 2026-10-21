@@ -441,7 +441,8 @@
 - [ ] **회차 끝 GC 비용** — 작은 조작 서버 시간의 대부분이 Streamlit 의 `gc.collect(2)` 이고 여러 세션이면 서로를 약 2배
   늦춘다. `postScriptGC=false`(RSS 높게 머묾)·`gc.freeze`(세션 누수)는 기각했다. 세션 상태 크기 줄이기(리비전 스냅샷 사본
   `persistence/cache.py` `_private_copy` 세션당 약 19MB) 쪽으로 본다. (사내 실데이터 몇 시간 soak 뒤)
-- [ ] **큰 계산 캐시의 피클 비용** — 화면 진입마다 15.8MB 칸(`get_scenario_capacity_and_demand`)을 다시 풀어 61~175ms. 불변
+- [ ] **큰 계산 캐시의 피클 비용** — 화면 진입마다 약 11MB 칸(`get_scenario_capacity_and_demand`)을 다시 풀어 약 30ms(텍스트
+  키 칸이 같은 글자 객체를 함께 쓰게 한 뒤의 샘플 관측 — 전에는 15.8MB·61~175ms). 불변
   결과를 `st.cache_resource` 로 옮기면 없어지지만 호출부가 결과를 고치면 캐시가 오염된다. (읽기 전용 계약을 테스트로 먼저)
 - [ ] 입장 화면 등록 JS 의 줄 주석 걷기(세션당 −53KB, 「그대로 싣는다」 테스트 계약 변경), 머리 띠 `:has()` 앵커 재작성(표
   마크업을 고친 뒤에는 long task 이득이 잡음 수준), LOB 주석 578개를 글자 trace 로(이득 77ms 이하·정렬 위험), 숨은 RawData

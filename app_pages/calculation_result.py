@@ -151,7 +151,7 @@ try:
     capacity_cache_key = scenario_cache_key(
         reference_version, active_scenario, effective_start, effective_end
     )
-    # 대당 Capa·소요대수 프레임(pickle 약 16MB, 합성 표본의 샘플 관측)은 풀지 않는다. 탭과 무관하게
+    # 대당 Capa·소요대수 프레임(pickle 약 11MB, 합성 표본의 샘플 관측)은 풀지 않는다. 탭과 무관하게
     # 쓰는 작은 값은 요약 캐시에서, 표는 키 전용 캐시에서 꺼낸다 — 빗나갈 때만 그 캐시가 안에서
     # 프레임을 받는다. 계산 오류는 요약 캐시가 이 자리에서 「계산 멈춤」과 함께 먼저 드러낸다.
     display_order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])

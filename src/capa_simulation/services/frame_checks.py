@@ -35,6 +35,11 @@ def strip_text_columns(data: pd.DataFrame, columns: Sequence[str]) -> None:
     """텍스트 키 컬럼을 `string` 으로 올리고 앞뒤 공백을 떼어 **제자리에서** 바꾼다.
 
     호출부가 원본 프레임을 건드리면 안 되는 자리에서는 `.copy()` 로 뜬 프레임을 넘긴다.
+
+    키 칸은 행이 많아도 고유값이 적다 — 고유값만 떼어 strip 하고 코드로 펼치면 같은 글자가 한
+    객체를 함께 써, 뒤의 연결·중복 검사 해시와 계산 캐시 pickle 이 칸마다 글자를 다시 다루지 않는다.
     """
     for column in columns:
-        data[column] = data[column].astype("string").str.strip()
+        codes, uniques = pd.factorize(data[column].astype("string"))
+        stripped = pd.Series(uniques, dtype="string").str.strip().array
+        data[column] = stripped.take(codes, allow_fill=True)

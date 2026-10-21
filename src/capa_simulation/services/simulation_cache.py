@@ -336,7 +336,7 @@ def scenario_required_equipment(
     """이 키의 소요대수를 **부를 때만** 꺼내는 로더(`get_scenario_capacity_and_demand` 의 둘째 값).
 
     키 전용 캐시(오류 확인·달 범위·필요 단축 일정·확보율 교차검증)가 빗나갈 때만 프레임이 필요하므로
-    프레임 대신 이것을 넘긴다 — 적중 회차에는 소요대수(합성 표본 30개월에 pickle 약 12MB, 샘플
+    프레임 대신 이것을 넘긴다 — 적중 회차에는 소요대수(합성 표본 30개월에 pickle 약 7MB, 샘플
     관측)를 풀지 않는다. 한 로더는 프레임을 **한 번만** 푼다 — 한 회차에 여러 캐시가 함께 빗나가도
     (첫 진입, 조회기간·토큰이 바뀐 회차) 언피클은 한 번이다. 실패는 기억하지 않아 다음에 부르면 다시
     꺼낸다. 로더는 그 회차에서만 쓰고 세션·캐시에 두지 않는다 — 키가 바뀐 회차는 새 로더다.
@@ -388,7 +388,7 @@ def get_scenario_securement_rate(
     """확보율을 시나리오 키만으로 꺼낸다. **적중이면 소요대수를 풀지 않는다.**
 
     `get_securement_rate` 도 키만 해시하지만 부르는 쪽이 소요대수를 넘겨야 해, 그것만 쓰면 적중해도
-    `get_scenario_capacity_and_demand` 의 결과(대당 Capa 와 함께 pickle 약 16MB, 합성 표본의 샘플
+    `get_scenario_capacity_and_demand` 의 결과(대당 Capa 와 함께 pickle 약 11MB, 합성 표본의 샘플
     관측)를 매 회차 언피클한다. 빗나가면 그 둘을 이 안에서 부르고, 확보율은 HOME 과 같은
     `get_securement_rate` 칸을 쓴다. `_available_equipment` 는 키의 시나리오·월 범위로 자른
     `RQ_EQP_AVBL` 이어야 한다(`get_securement_rate` 와 같은 계약).
@@ -641,7 +641,7 @@ class StandardTargetSummary(NamedTuple):
     processes: pd.DataFrame
 
 
-# 표준 목표 제외를 거친 소요대수의 칸 수. 한 칸이 pickle 로 약 9.5MB 다(69,081행 합성 표본의 샘플
+# 표준 목표 제외를 거친 소요대수의 칸 수. 한 칸이 pickle 로 약 5MB 다(69,081행 합성 표본의 샘플
 # 관측). 키가 시나리오 하나라 몇 칸이면 된다.
 STANDARD_TARGET_SPLIT_MAX_ENTRIES = 4
 
@@ -656,7 +656,7 @@ def get_standard_target_split(
 
     분리 결과는 소요대수 하나만의 함수라 시나리오 키가 정한다 — 날짜·분류 수준·가용대수는 이
     프레임을 바꾸지 않으므로 키에 넣지 않는다(넣으면 같은 프레임이 조건마다 따로 쌓인다). 로직
-    분석은 칸을 하나 고를 때마다 소요대수가 필요한데, 대당 Capa 와 함께 풀면 약 16MB(합성 표본의
+    분석은 칸을 하나 고를 때마다 소요대수가 필요한데, 대당 Capa 와 함께 풀면 약 11MB(합성 표본의
     샘플 관측)이고 이 프레임만 풀면 그 절반 아래다. 주간 결과·요약 캐시가
     빗나갈 때도 여기서 받는다.
     """
@@ -1541,7 +1541,7 @@ def get_capacity_and_demand(
 
 
 # 시나리오 전체 기간 계산 결과의 칸 수. 70공정·30개월 합성 표본에서 한 칸이 pickle 로 약
-# 16MB 다(샘플 관측) — 4칸이면 64MB 안쪽이다. 칸은 (리비전, 내용) 하나에 하나라 넉넉하다.
+# 11MB 다(샘플 관측) — 4칸이면 44MB 안쪽이다. 칸은 (리비전, 내용) 하나에 하나라 넉넉하다.
 FULL_CAPACITY_MAX_ENTRIES = 4
 
 # 시나리오 내용만 대표하는 키. 월 범위가 없다 — 조회기간은 이 결과를 잘라 쓴다.
@@ -2266,10 +2266,10 @@ def get_process_calculation_rows(
     """이 키의 대당 Capa·소요대수 결과와 두 제외 목록을 공정 하나로 거른 조각.
 
     아래 두 래퍼가 빗나갈 때 이것을 받는다 — 분류·거르기·달을 바꿔도 시나리오 전체 프레임
-    (`get_scenario_capacity_and_demand`, pickle 수십 MB)을 다시 풀지 않고 이 작은 조각만 푼다.
-    이것이 빗나갈 때만 전체 프레임을 푼다. 두 표 묶음은 키의 content_token 을 발급한 활성
-    시나리오·기준정보여야 한다(`get_scenario_capacity_and_demand` 와 같은 계약). 계산 오류는
-    캐시되지 않고 그대로 난다.
+    (`get_scenario_capacity_and_demand`, pickle 약 11MB — 샘플 관측)을 다시 풀지 않고 이 작은
+    조각만 푼다. 이것이 빗나갈 때만 전체 프레임을 푼다. 두 표 묶음은 키의 content_token 을
+    발급한 활성 시나리오·기준정보여야 한다(`get_scenario_capacity_and_demand` 와 같은 계약).
+    계산 오류는 캐시되지 않고 그대로 난다.
     """
     unit_capacity, required_equipment = get_scenario_capacity_and_demand(
         cache_key,
