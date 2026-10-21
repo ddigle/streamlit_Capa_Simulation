@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
+from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.design import tokens
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
@@ -210,6 +211,26 @@ def test_hover_keeps_the_real_capa_not_the_cut_bar() -> None:
     assert "customdata[4]" in template, template
     assert "%{y" not in template, "잘린 막대 값이 hover 에 뜬다"
     assert list(trace.customdata[2])[4] == pytest.approx(286.0)  # type: ignore[attr-defined]
+
+
+def test_the_home_guide_explains_the_bar_as_the_rate_itself() -> None:
+    """Preference 의 구간 설명이 막대 높이 규칙과 같아야 한다.
+
+    Guide 가 높이를 `부하량 × 확보율` 로 설명하면 사용자는 막대가 부하량에 비례한다고 읽고
+    구간을 정하는 까닭을 틀리게 안다. 막대는 위 시험들이 고정한 대로 확보율 그 자체다.
+    """
+    lines = load_guide("home").splitlines()
+    start = next(
+        index for index, line in enumerate(lines) if line.startswith("- **B/N Top5 확보율 구간**")
+    )
+    end = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].startswith("- **")),
+        len(lines),
+    )
+    item = " ".join(lines[start:end])
+
+    assert "부하량" not in item, item
+    assert "확보율 그 자체" in item, item
 
 
 def test_the_threshold_lines_skip_the_year_total_column() -> None:
