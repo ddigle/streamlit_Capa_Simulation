@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -437,7 +438,8 @@ def _internal_repo(tmp_path: Path, previous_stamp: str | None) -> Path:
     return root
 
 
-def _deploy_zip(tmp_path: Path) -> Path:
+def _deploy_zip(tmp_path: Path, *, digests: Mapping[str, str] | None = None) -> Path:
+    """`digests` 는 송장에 적을 해시를 경로별로 바꿔 쓴다 — 전송 중 깨진 ZIP 의 흉내."""
     files = {"app.py": b"x = 2\n", "src/new.py": b"y = 1\n"}
     manifest = {
         "manifest_version": 1,
@@ -447,7 +449,8 @@ def _deploy_zip(tmp_path: Path) -> Path:
         "file_count": len(files),
         "files": {
             path: "sha256:" + hashlib.sha256(data).hexdigest() for path, data in files.items()
-        },
+        }
+        | dict(digests or {}),
     }
     path = tmp_path / f"{_DEPLOY_STAMP}.zip"
     with zipfile.ZipFile(path, "w") as archive:
@@ -578,6 +581,80 @@ def test_the_runbook_tells_a_finished_deploy_from_one_left_at_the_commit_step(
     assert "이미 적용했습니다" in capsys.readouterr().err
     assert _repo_git(done, "log", "-1", "--format=%s") == "review: r"
     assert _repo_git(done, *judge) == f"deploy: {_DEPLOY_STAMP} ({_DEPLOY_COMMIT[:7]})"
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_uncommitted_edits_stop_the_apply_and_survive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    staged: bool,
+) -> None:
+    """사용자가 지시한 사내 임시 수정(런북 0장·1-5)이 남은 채 적용하면 아무것도 안 건드리고 멈춘다.
+
+    런북은 적용 전에 그 diff 를 저장소 밖에 남기고 되돌리라고 한다. 그 단계를 빠뜨렸을 때 남는
+    방어선이 이 멈춤 하나다 — 없으면 지우고 푸는 과정이 임시 수정을 `deploy:` 커밋 밑에 말없이
+    덮고 되살릴 근거도 남지 않는다. 스테이징만 해 둔 수정도 같은 미저장 변경이다. 보기만 하는
+    `--dry-run` 은 깨끗한 트리를 요구하지 않는다 — 작업 중에 대조해 보는 것이 그 쓸모다.
+    """
+    root = _internal_repo(tmp_path, "202610010000")
+    state_file = root / ".deploy" / "applied.json"
+    state_before = state_file.read_bytes()
+    temp_fix = b"x = 99  # temp fix\n"
+    (root / "app.py").write_bytes(temp_fix)
+    if staged:
+        _repo_git(root, "add", "app.py")
+    archive = _deploy_zip(tmp_path)
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+
+    assert apply_deploy_package.main([str(archive), "--dry-run"]) == 0
+    assert "보기만 했습니다" in capsys.readouterr().out
+
+    assert apply_deploy_package.main([str(archive)]) == 1
+    stderr = capsys.readouterr().err
+    assert "미저장 변경" in stderr
+    assert "app.py" in stderr
+    assert (root / "app.py").read_bytes() == temp_fix
+    assert (root / "gone.py").read_bytes() == b"old\n"
+    assert not (root / "src" / "new.py").exists()
+    assert _repo_git(root, "diff", "--cached", "--name-only") == ("app.py" if staged else "")
+    assert state_file.read_bytes() == state_before
+    assert _repo_git(root, "log", "-1", "--format=%s") == "첫 커밋"
+
+
+def test_a_digest_mismatch_after_unpacking_stops_before_the_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """푼 파일의 해시가 송장과 어긋나면 `deploy:` 커밋도 적용 기록도 만들지 않고 멈춘다.
+
+    ZIP 의 CRC 가 맞아도 내용이 송장과 다를 수 있다. 적용 기록이 먼저 새 stamp 로 바뀌면 다시 받은
+    ZIP 이 「이미 적용했습니다」로 거절되므로, 런북 6장대로 `git checkout -- .` 한 줄 뒤 다시 받은
+    ZIP 이 그대로 적용돼야 한다.
+    """
+    root = _internal_repo(tmp_path, "202610010000")
+    state_file = root / ".deploy" / "applied.json"
+    state_before = state_file.read_bytes()
+    archive = _deploy_zip(tmp_path, digests={"app.py": "sha256:" + "0" * 64})
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+
+    assert apply_deploy_package.main([str(archive)]) == 1
+    stderr = capsys.readouterr().err
+    assert "해시 대조에서 1건" in stderr
+    assert "app.py — 해시가 다릅니다" in stderr
+    assert "git checkout -- ." in stderr
+    assert _repo_git(root, "log", "-1", "--format=%s") == "첫 커밋"
+    assert _repo_git(root, "diff", "--cached", "--name-only") == ""
+    assert state_file.read_bytes() == state_before
+
+    _repo_git(root, "checkout", "--", ".")
+    assert _repo_git(root, "status", "--porcelain", "--untracked-files=no") == ""
+    assert (root / "app.py").read_bytes() == b"x = 1\n"
+
+    assert apply_deploy_package.main([str(_deploy_zip(tmp_path))]) == 0
+    assert _repo_git(root, "log", "-1", "--format=%s") == (
+        f"deploy: {_DEPLOY_STAMP} ({_DEPLOY_COMMIT[:7]})"
+    )
+    assert (root / "app.py").read_bytes() == b"x = 2\n"
 
 
 @pytest.fixture
