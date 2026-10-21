@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -17,7 +19,9 @@ from capa_simulation.components.space_layout import (
     LEGEND_STORAGE,
     LEGEND_UNCONFIRMED,
     ColorChoice,
+    FloorPlacement,
     default_color_choice,
+    equipment_unit_total,
     floor_block_stats,
     floor_placements,
     invalid_equipment_rows,
@@ -28,6 +32,7 @@ from capa_simulation.components.space_layout import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_contract import LINE_TYPE_GROUPS
+from capa_simulation.services.equipment_units import UNIT_SHARE_COLUMN
 from capa_simulation.services.fab_layout import (
     BUILDINGS,
     FAB_BLOCK_KIND,
@@ -39,7 +44,12 @@ from capa_simulation.services.fab_layout import (
     floor_param,
     floors_for,
 )
-from capa_simulation.services.floor_layout_profile import MAX_CANVAS_EXTENT, MIN_CANVAS_EXTENT
+from capa_simulation.services.floor_layout_profile import (
+    MAX_CANVAS_EXTENT,
+    MIN_CANVAS_EXTENT,
+    CanvasSize,
+    FloorKey,
+)
 from capa_simulation.services.space_color_basis import (
     CAPA_LEVELS,
     COLOR_BASIS_CAPA,
@@ -175,6 +185,108 @@ def test_floor_blocks_count_placement_not_state() -> None:
         for floor in stats.values()
         for value in floor.values()
     )
+
+
+def _floor_placements_one_floor_at_a_time(
+    counted: pd.DataFrame,
+    unplaced: pd.DataFrame,
+    located: pd.DataFrame,
+    canvas_of: Callable[[FloorKey], CanvasSize],
+) -> tuple[FloorPlacement, ...]:
+    """맞대기 기준 — 층마다 그 층 행을 잘라 `equipment_unit_total`·`occupancy_ratio` 로 센다."""
+
+    def by_floor(frame: pd.DataFrame) -> dict[FloorKey, pd.DataFrame]:
+        rows = frame.dropna(subset=["동", "층"])
+        return {
+            (str(building), str(floor)): group
+            for (building, floor), group in rows.groupby(["동", "층"], sort=False)
+        }
+
+    counted_by, unplaced_by, located_by = by_floor(counted), by_floor(unplaced), by_floor(located)
+    return tuple(
+        FloorPlacement(
+            key=key,
+            placed=equipment_unit_total(counted_by.get(key, counted.iloc[0:0])),
+            unplaced=equipment_unit_total(unplaced_by.get(key, unplaced.iloc[0:0])),
+            occupancy=occupancy_ratio(located_by.get(key, located.iloc[0:0]), *canvas_of(key)),
+        )
+        for key in FLOOR_KEYS
+    )
+
+
+# FAB 의 층, FAB 밖의 층, 동·층이 빈 자리. 앞쪽 몇 층에 몰아 넣는 판도 둔다(한 층 수백 행).
+_RANDOM_PLACES: list[tuple[str | None, str | None]] = [
+    *FLOOR_KEYS,
+    ("C9", "1F"),
+    ("C1", "9F"),
+    (None, "1F"),
+    ("C1", None),
+    (None, None),
+]
+_RANDOM_SHARES: list[float | None] = [None, 1 / 3, 0.25, 1.0, 0.0, 0.1]
+_RANDOM_SIZES: list[object] = [None, "12", "x", 7, 0.1, 15.5, 1 / 3, "2.5"]
+
+
+def _random_floor_rows(
+    rng: np.random.Generator, count: int, *, crowded: bool, shares: bool, sizes: bool
+) -> pd.DataFrame:
+    places = _RANDOM_PLACES[:3] if crowded else _RANDOM_PLACES
+    picks = rng.integers(0, len(places), size=count)
+    buildings = [places[pick][0] for pick in picks]
+    floors = [places[pick][1] for pick in picks]
+    columns: dict[str, object] = (
+        {"동": pd.array(buildings, dtype="string"), "층": pd.array(floors, dtype="string")}
+        if rng.random() < 0.5
+        else {"동": buildings, "층": floors}
+    )
+    if shares:
+        columns[UNIT_SHARE_COLUMN] = [
+            _RANDOM_SHARES[pick] for pick in rng.integers(0, len(_RANDOM_SHARES), size=count)
+        ]
+    if sizes:
+        for column in ("Xsize", "Ysize"):
+            columns[column] = [
+                _RANDOM_SIZES[pick] for pick in rng.integers(0, len(_RANDOM_SIZES), size=count)
+            ]
+    # 겹치는 인덱스 — 앞선 표에서 행을 골라 온 표처럼.
+    return pd.DataFrame(columns, index=rng.integers(0, max(count // 2, 1), size=count))
+
+
+def test_floor_placements_match_counting_each_floor_separately() -> None:
+    """표마다 (동, 층) 묶음을 한 번만 내도 층마다 잘라 세던 값과 비트까지 같다 — 설비지분 결측·
+    1/3, 지분 칸 없는 표, 숫자 아닌 크기, 겹치는 인덱스, FAB 밖 층, 면적 0 캔버스를 섞는다."""
+    rng = np.random.default_rng(20261021)
+    for trial in range(24):
+        crowded = trial % 4 == 0
+        count = int(rng.integers(0, 600 if crowded else 300))
+        counted = _random_floor_rows(rng, count, crowded=crowded, shares=True, sizes=True)
+        unplaced = _random_floor_rows(
+            rng, count // 3, crowded=crowded, shares=bool(trial % 2), sizes=False
+        )
+        located = (
+            counted
+            if trial % 3
+            else _random_floor_rows(rng, count, crowded=crowded, shares=False, sizes=True)
+        )
+        canvases = {
+            key: (0.0, 60.0) if pick == 0 else (float(rng.integers(50, 400)), 123.4)
+            for key, pick in zip(FLOOR_KEYS, rng.integers(0, 5, size=len(FLOOR_KEYS)), strict=True)
+        }
+        placements = floor_placements(counted, unplaced, located, canvases.__getitem__)
+        assert placements == _floor_placements_one_floor_at_a_time(
+            counted, unplaced, located, canvases.__getitem__
+        ), trial
+
+
+def test_floor_placements_do_not_read_sizes_of_an_empty_located_frame() -> None:
+    """도면에 그린 행이 없으면 Xsize·Ysize 칸이 없는 표여도 점유율은 0 이다."""
+    counted = pd.DataFrame({"동": ["C1"], "층": ["1F"]})
+    located = pd.DataFrame({"동": pd.Series(dtype="string"), "층": pd.Series(dtype="string")})
+
+    placements = floor_placements(counted, counted.iloc[0:0], located, lambda key: (100.0, 60.0))
+
+    assert placements[FLOOR_KEYS.index(("C1", "1F"))] == FloorPlacement(("C1", "1F"), 1.0, 0.0, 0.0)
+    assert all(placement.occupancy == 0.0 for placement in placements)
 
 
 def test_floor_names_round_trip_through_the_address_and_the_block_link() -> None:

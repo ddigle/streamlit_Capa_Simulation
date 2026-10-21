@@ -7,13 +7,14 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Final
+from typing import Any, Final, cast
 
 import pandas as pd
 
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN, LINE_TYPE_GROUPS
 from capa_simulation.services.equipment_units import (
+    UNIT_COUNT_DECIMALS,
     UNIT_KEY_COLUMN,
     UNIT_SHARE_COLUMN,
     format_unit_count,
@@ -80,12 +81,20 @@ class FloorPlacement:
     occupancy: float
 
 
-def _by_floor(frame: pd.DataFrame) -> dict[FloorKey, pd.DataFrame]:
-    rows = frame.dropna(subset=["동", "층"])
-    return {
-        (str(building), str(floor)): group
-        for (building, floor), group in rows.groupby(["동", "층"], sort=False)
-    }
+def _floor_sums(frame: pd.DataFrame, values: pd.Series) -> dict[FloorKey, float]:
+    """`values`(`frame` 과 같은 행 차례)의 (동, 층)별 합. 동·층이 빈 행은 어느 층에도 들지 않는다.
+
+    층마다 그 층 행만 원래 차례로 모은 배열을 numpy 로 더한다 — `Series.sum` 과 같은 쌍별 합이라
+    층 프레임을 잘라 `equipment_unit_total`·`occupancy_ratio` 로 더하던 값과 비트까지 같다."""
+    known = (frame["동"].notna() & frame["층"].notna()).to_numpy(dtype=bool)
+    if not known.any():
+        return {}
+    array = values.to_numpy(dtype="float64")[known]
+    sums: dict[FloorKey, float] = {}
+    for key, positions in frame.loc[known].groupby(["동", "층"], sort=False).indices.items():
+        building, floor = cast(tuple[object, object], key)
+        sums[(str(building), str(floor))] = float(array[positions].sum())
+    return sums
 
 
 def floor_placements(
@@ -99,18 +108,27 @@ def floor_placements(
     `counted` 는 세는 배치 행, `unplaced` 는 레이아웃표시 Y 인데 좌표가 없는 행, `located` 는
     도면에 그리는 행(점유율의 면적)이다. 동·층이 정해지지 않은 미배치는 어느 층에도 들지 않는다 —
     호출하는 쪽이 따로 말한다."""
-    counted_by = _by_floor(counted)
-    unplaced_by = _by_floor(unplaced)
-    located_by = _by_floor(located)
-    return tuple(
-        FloorPlacement(
-            key=key,
-            placed=equipment_unit_total(counted_by.get(key, counted.iloc[0:0])),
-            unplaced=equipment_unit_total(unplaced_by.get(key, unplaced.iloc[0:0])),
-            occupancy=occupancy_ratio(located_by.get(key, located.iloc[0:0]), *canvas_of(key)),
+    # 층마다 프레임을 잘라 pandas 연산을 돌리면 빈 층까지 30번의 고정비가 회차마다 든다 — 표마다
+    # (동, 층) 묶음을 한 번만 낸다. 빈 `located` 는 Xsize·Ysize 칸이 없어도 된다.
+    placed_by = _floor_sums(counted, _unit_shares(counted))
+    unplaced_by = _floor_sums(unplaced, _unit_shares(unplaced))
+    area_by: dict[FloorKey, float] = {}
+    if not located.empty:
+        sizes = located.loc[:, ["Xsize", "Ysize"]].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+        area_by = _floor_sums(located, sizes["Xsize"] * sizes["Ysize"])
+    placements = []
+    for key in FLOOR_KEYS:
+        canvas_width, canvas_height = canvas_of(key)
+        area = canvas_width * canvas_height
+        placements.append(
+            FloorPlacement(
+                key=key,
+                placed=round(placed_by.get(key, 0.0), UNIT_COUNT_DECIMALS),
+                unplaced=round(unplaced_by.get(key, 0.0), UNIT_COUNT_DECIMALS),
+                occupancy=area_by[key] / area if key in area_by and area > 0 else 0.0,
+            )
         )
-        for key in FLOOR_KEYS
-    )
+    return tuple(placements)
 
 
 def floor_block_stats(
