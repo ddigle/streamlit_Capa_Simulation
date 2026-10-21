@@ -347,6 +347,34 @@
   줄로 보이고, 바깥 Excel 을 다시 붙여넣으면 옛 이름이 새 호기로 돌아온다(Guide 에 적음). 기준선의 이름 잇기와 붙여넣기
   미리보기의 「바꾼 이름」 경고는 하지 않았다 — 할지 정한다.
 
+### 밤샘 개선 루프(2026-10-21~22) — 사용자 결정 대기
+
+- [ ] **입장 화면 Summary 「부족 N대」의 기준** — `services/official_summary.short_units` 는 `ceil(소요 − 가용)`, 곧 확보율
+  100% 기준인데 Summary 는 판정이 경고 기준 미달인 달에만 대수를 적는다. 그래서 경고 기준·확보목표로 세는 Static 「경고기준
+  필요대수」·공정 Capa 상세 「확보기준 과부족」과 숫자가 다르고, 경고 기준을 100% 넘게 둔 달은 「부족」인데 대수가 빠진다.
+  선택지 (가) 그 달 실효 경고 기준까지 모자란 대수(막대 색과 같은 기준), (나) 확보목표 기준까지(소요 200·가용 190 이면
+  10 → 29), (다) 100% 기준을 두고 말풍선·Guide 에 「100% 까지 모자란 대수」라고 적는다(권장 (가) — 위 「화면 다듬기」의
+  선행 B/O 토글 대수 항목과 함께 정한다).
+- [ ] **HOME 월 축이 양산 Density 에 묶임** — `services/dashboard.py` 의 `build_production_lob_summary`·
+  `build_bottleneck_capacity` 는 양산만 담은 `monthly_density` 를 왼쪽에 둔 left join 이고 B/N Top5 는 inner join 이라,
+  양산 Density 가 없는 달(양산 없이 ER 만 있는 달)은 Wafer 계획·Wafer Capa·B/N·Top5 에서 빠지고 그 해 연간 Total 열이
+  생기지 않는다(Wafer 는 양산+ER). 선택지 A 그대로 두고 다음 배포 런북 8장 `inspect_real_data_checks.py` 에 「계획 기간
+  안 양산 Density 없는 달 수」를 개수로만 찍어 0 이면 닫는다, B 월 축을 계획 달 전체로 넓힌다(dashboard 넷·`home.py`
+  축·`home_lob_figures` 위치 조회를 함께 — dashboard 만 outer 로 바꾸면 B/N 그림이 KeyError), C Summary 도 그 달을 빼
+  두 화면을 맞춘다(권장 A).
+- [ ] **`sync_boot` 가 동기화 설정 오류를 잡지 못함** — `enable_sync_state_if_managed()` 는 `(OSError, ValueError)` 만
+  잡는데 `io/object_storage.load_settings()` 의 실패(틀린 `CAPA_S3_SYNC_MODE`, 설정·능력 JSON 읽기 실패·깨짐)는
+  `ObjectStorageError(RuntimeError)` 라 앱이 모든 페이지에서 트레이스백으로 멈춘다. 선택지 (가) S3 를 다시 이을 때 (다)로
+  정하고 지금은 둔다(보류 중이라 닿지 않는 길이고 「조용히 local 로 강등하지 않는다」 원칙에 맞다), (나) 잡고 서버 로그
+  경고만(동기화가 꺼진 줄 모른다), (다) 잡고 화면에 「동기화 꺼짐」 경고(문구가 늘어 승인 필요), (라) 멈춤 그대로 두고
+  docstring·가짜 ValueError 시험만 실제에 맞춘다(권장 (가)).
+- [ ] **화면에서 떨어진 저장 전 경고 묶음** — `services/equipment_validation.equipment_save_warnings` →
+  `schedule_confirmation.actual_record_warnings` → `actual_record_issues` 는 e82e7b7(2026-10-16) 뒤로 RawData 가
+  `area_code_warnings`·`schedule_confirmation_summary` 를 따로 그려 시험(`tests/test_equipment_actual_dates.py`)만
+  부르고, 두 docstring 이 없는 저장 미리보기 경고를 실제처럼 적는다. 선택지 걷는다(`CONFIRMATION_KINDS` 집합 단언은
+  남는 시험으로 옮기고 모듈 docstring 의 「N건」 설명을 RawData 「일정 확인 목록 · N건」에 맞춘다 — 되살릴 때는
+  92422d2 에서 꺼낸다) / 둔다(권장 걷는다 — 동작·화면·계산이 바뀌지 않는다).
+
 ### 성능(2026-10-20 E2E 점검 후속)
 
 느림의 정체는 서버가 아니라 브라우저 그리기였다(합성 표본 샘플 관측 — 서버 웜 회차 85~300ms, 표준 목표·HOME 브라우저 회차
