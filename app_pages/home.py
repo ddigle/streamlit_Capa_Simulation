@@ -1,4 +1,4 @@
-# Purpose: 생산계획·Wafer Capa·Bottleneck 요약과 상세표를 결합한 HOME 대시보드를 렌더링한다.
+# Purpose: HOME 의 Main(계획·LOB·주요공정·B/N)·Preference(공용 프로필)·Past Data 세 탭을 그린다.
 
 
 from collections.abc import Mapping

@@ -1988,8 +1988,6 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   표가 되고, 그 부분 표는 `services/reference_csv.py` 의 행 집합 검증을 통과해 조회기간의
   나머지 공정을 지운다. `tests/test_month_editor_filter.py` 가 다운로드 바이트를 실제로
   디코드해 이 계약을 고정한다.
-- HOME 상세표 토글은 켜진 상태로 시작한다. 토글을 끄면 상세 Figure 를 만들지 않으며, 상세
-  Figure 는 요약과 별도 캐시다.
 - **가로 컨테이너 안의 제목은 `h1` 의 위아래 여백을 잃는다.** `st.container(horizontal=True)`
   에 `st.title` 을 넣으면 Streamlit 이 `padding: 0` 을 걸어 그 페이지만 제목이 위로
   올라붙고 앱 헤더에 닿는다. 제목 옆에 무언가를 두려면 `st.columns(...)` 를 쓴다 — 컬럼은
