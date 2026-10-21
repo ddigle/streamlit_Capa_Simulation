@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.io import company_bigdataquery_adapter as adapter
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
 
 CONTRACT_PATH = Path(__file__).resolve().parents[1] / "config" / "data_contract.json"
 
@@ -141,6 +143,83 @@ def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(
     assert raised.value.type_names == ("Error", "TimeoutError")
     assert "시간 초과" in str(raised.value) and "다시" in str(raised.value)
     assert len(str(raised.value)) < 500
+
+
+_PACKAGE_MISSING_TEXT = (
+    "현재 환경에 bigdataquery 패키지가 없습니다. "
+    "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
+    "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
+)
+
+
+def _installed_package(monkeypatch: pytest.MonkeyPatch, root: Path, init_body: str) -> None:
+    """`root` 에 깔린 가짜 `bigdataquery` — 패키지는 있고 `__init__` 이 `init_body` 를 돈다."""
+    package = root / "bigdataquery"
+    package.mkdir()
+    (package / "__init__.py").write_text(init_body, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(root))
+    monkeypatch.delitem(sys.modules, "bigdataquery", raising=False)
+
+
+def test_a_missing_package_keeps_the_install_advice(monkeypatch: pytest.MonkeyPatch) -> None:
+    """맨 `uv sync` 가 패키지를 지운 경우다. 점검 스크립트가 이 문구의 「패키지가 없습니다」로
+    가른다."""
+    monkeypatch.setitem(sys.modules, "bigdataquery", None)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.load_bigdataquery_module()
+
+    assert str(raised.value) == _PACKAGE_MISSING_TEXT
+    assert isinstance(raised.value.__cause__, ModuleNotFoundError)
+
+
+@pytest.mark.parametrize(
+    ("init_body", "original"),
+    [
+        (
+            'raise ImportError("DLL load failed while importing _jpype: 모듈이 없습니다.")\n',
+            "DLL load failed while importing _jpype",
+        ),
+        ("from importlib import capa_bdq_no_such_name\n", "cannot import name"),
+        (
+            "raise AttributeError(\"module 'numpy' has no attribute 'float'\")\n",
+            "has no attribute 'float'",
+        ),
+    ],
+    ids=["dll-load", "cannot-import-name", "numpy-attribute"],
+)
+def test_a_package_that_fails_to_import_is_reported_where_the_screens_catch_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, init_body: str, original: str
+) -> None:
+    """패키지는 깔렸는데 불러오다 깨지면(DLL·numpy 판·이름 없음) 화면이 잡는 `RuntimeError` 로 온다.
+    `ImportError`·`AttributeError` 는 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록 조회·저장이
+    traceback 으로 멈춘다. 「패키지가 없습니다」라고 하면 틀린 조치다."""
+    _installed_package(monkeypatch, tmp_path, init_body)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.load_bigdataquery_module()
+
+    text = str(raised.value)
+    assert isinstance(raised.value, BOOTSTRAP_ERRORS)
+    assert "불러오지 못했습니다" in text and original in text
+    assert "패키지가 없습니다" not in text
+    assert isinstance(raised.value.__cause__, ImportError | AttributeError)
+
+
+def test_a_missing_dependency_names_that_module_not_the_package(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """빠진 것이 패키지가 쓰는 모듈이면 그 이름을 알린다. 같은 화면 배너는 패키지를 확인했다고
+    띄운다."""
+    _installed_package(monkeypatch, tmp_path, "import capa_bdq_missing_dependency\n")
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.load_bigdataquery_module()
+
+    text = str(raised.value)
+    assert "capa_bdq_missing_dependency" in text and "불러오지 못했습니다" in text
+    assert "패키지가 없습니다" not in text
+    assert adapter.failure_type_names(raised.value) == ("RuntimeError", "ModuleNotFoundError")
 
 
 def test_unconfigured_query_is_rejected_before_package_import(

@@ -170,6 +170,52 @@ def test_a_package_failure_in_the_catalog_query_says_what_to_do_and_keeps_the_li
     assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
 
 
+IMPORT_FAILURE_SCRIPT = """
+import sys
+from datetime import date
+
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+
+st.session_state.setdefault(registration.CATALOG_RESULT_KEY, "직전 목록")
+saved = sys.modules.pop("bigdataquery", None)
+sys.path.insert(0, PACKAGE_ROOT)
+try:
+    registration._run_catalog_query(
+        QueryWindow(start_date=date(2026, 9, 21), end_date=date(2026, 10, 21))
+    )
+finally:
+    sys.path.remove(PACKAGE_ROOT)
+    sys.modules.pop("bigdataquery", None)
+    if saved is not None:
+        sys.modules["bigdataquery"] = saved
+st.write("목록 조회 뒤")
+"""
+
+
+def test_a_package_that_fails_to_import_does_not_stop_the_catalog_query(
+    tmp_path: Path,
+) -> None:
+    """패키지는 깔렸는데 불러오다 깨지면(DLL 등) `ImportError` 가 화면 예외 튜플 밖으로 새어
+    목록 조회가 traceback 으로 멈췄다. 원인을 오류 칸에 적고 직전 목록과 뒤 화면은 둔다."""
+    package = tmp_path / "bigdataquery"
+    package.mkdir()
+    (package / "__init__.py").write_text(
+        'raise ImportError("DLL load failed while importing _jpype")\n', encoding="utf-8"
+    )
+    script = IMPORT_FAILURE_SCRIPT.replace("PACKAGE_ROOT", repr(str(tmp_path)))
+    app = AppTest.from_string(script)
+    app.run()
+
+    assert not app.exception
+    [error] = app.error
+    assert "불러오지 못했습니다" in error.value and "DLL load failed" in error.value
+    assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
+    assert any(block.value == "목록 조회 뒤" for block in app.markdown)
+
+
 def test_catalog_list_is_drawn_with_a_fixed_height_for_scrolling() -> None:
     app = _run()
 

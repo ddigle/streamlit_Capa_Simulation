@@ -501,6 +501,14 @@ _FAILURE_ADVICE: Final[Mapping[str, str]] = {
 _ORIGINAL_TEXT_LIMIT: Final = 300
 
 
+def _original_text(error: BaseException) -> str:
+    """화면에 옮길 원문 한 줄 — 종류 이름과 `_ORIGINAL_TEXT_LIMIT` 로 자른 문구."""
+    text = str(error).strip()
+    if len(text) > _ORIGINAL_TEXT_LIMIT:
+        text = text[:_ORIGINAL_TEXT_LIMIT] + " …"
+    return f"{type(error).__name__}: {text or '(문구 없음)'}"
+
+
 def _failure_chain(error: BaseException) -> list[BaseException]:
     """`error` 와 그 원인들(`__cause__`·`__context__`). 돌아오는 사슬은 끊는다."""
     chain: list[BaseException] = []
@@ -539,21 +547,37 @@ class BigDataQueryCallError(RuntimeError):
     def __init__(self, error: BaseException) -> None:
         self.kind = classify_query_failure(error)
         self.type_names = failure_type_names(error)
-        text = str(error).strip()
-        if len(text) > _ORIGINAL_TEXT_LIMIT:
-            text = text[:_ORIGINAL_TEXT_LIMIT] + " …"
         super().__init__(
             f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"
-            f"원문 — {type(error).__name__}: {text or '(문구 없음)'}"
+            f"원문 — {_original_text(error)}"
         )
 
 
 def load_bigdataquery_module() -> ModuleType:
+    """사내 패키지를 불러온다. 실패는 모두 화면들이 잡는 `RuntimeError` 로 올린다.
+
+    패키지가 깔렸어도 불러오다 깨질 수 있다(DLL·numpy 판·패키지가 쓰는 모듈 없음). 그 예외
+    (`ImportError`·`AttributeError` 등)는 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록 조회·저장이
+    traceback 으로 멈춘다. 「패키지가 없다」는 안내는 패키지 자체가 없을 때만 낸다 — 점검
+    스크립트가 그 문구로 가른다. `KeyboardInterrupt` 같은 `BaseException` 은 잡지 않는다.
+    """
     try:
         return importlib.import_module("bigdataquery")
     except ModuleNotFoundError as exc:
+        if exc.name in (None, "bigdataquery"):
+            raise RuntimeError(
+                "현재 환경에 bigdataquery 패키지가 없습니다. "
+                "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
+                "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
+            ) from exc
         raise RuntimeError(
-            "현재 환경에 bigdataquery 패키지가 없습니다. "
-            "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
-            "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
+            f"bigdataquery 패키지를 불러오지 못했습니다 — 패키지가 쓰는 모듈 `{exc.name}` 이 "
+            "없습니다. 사내 환경에서 패키지를 다시 설치한 뒤 실행하세요(README 「초기 설정」 "
+            "4단계)."
+        ) from exc
+    except Exception as exc:  # 패키지 초기화가 낼 예외 종류를 모른다
+        raise RuntimeError(
+            "bigdataquery 패키지를 불러오지 못했습니다. 사내 환경에서 패키지를 다시 설치한 뒤 "
+            "실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 아래 원문을 관리자에게 "
+            f"알려 주세요.\n\n원문 — {_original_text(exc)}"
         ) from exc
