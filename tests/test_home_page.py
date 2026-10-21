@@ -32,7 +32,11 @@ from capa_simulation.components.home_rendering import (
 )
 from capa_simulation.components.plotly_layout import table_text_y
 from capa_simulation.design import tokens
-from capa_simulation.home_state import PRODUCT_SHARE_BASIS_KEY
+from capa_simulation.home_state import (
+    COMPARISON_TOGGLE_KEY,
+    EDP_TOGGLE_KEY,
+    PRODUCT_SHARE_BASIS_KEY,
+)
 from capa_simulation.process_detail_state import (
     HOME_BOTTLENECK_SECTION,
     HOME_KEY_PROCESS_SECTION,
@@ -770,6 +774,119 @@ def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_datab
     assert not list(app.exception)
     assert len(app.error) == 1
     assert "데이터 범위" in app.error[0].value
+
+
+HOME_TABS = [
+    ":material/dashboard: Main",
+    ":material/tune: Preference",
+    ":material/history: Past Data",
+]
+HOME_VIEW_TOGGLES = [
+    "선행 B/O",
+    "선행 입고",
+    "확보율 보정",
+    "GAP",
+    "상세 계획",
+    "EDP 포함",
+    "Past Data 포함",
+]
+
+
+def _save_plan_with_blank_product_type(database_path: Path, *, publish: bool) -> tuple[str, str]:
+    """공식 리비전 계획에서 `DEMO PRODUCT B` 행의 제품타입만 비운 리비전을 새 시나리오로 저장한다.
+
+    `publish` 면 그 리비전을 새 공식버전으로 발행해 새 세션의 활성 시나리오가 되게 하고, 아니면
+    비교 대상으로만 쓴다. 돌려주는 것은 (시나리오 id, 리비전 id) 다.
+    """
+    from capa_simulation.persistence.cache import load_scenario_snapshot
+    from capa_simulation.persistence.models import ScenarioCreate
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database_path)
+    official = repository.latest_official_release()
+    assert official is not None
+    snapshot = load_scenario_snapshot(str(database_path), official.revision_id)
+    tables = dict(snapshot.tables)
+    plan = tables["RQ_PKG_PLAN"].copy()
+    blank_rows = plan["제품정보"].eq("DEMO PRODUCT B")
+    assert blank_rows.any()
+    plan.loc[blank_rows, "제품타입"] = None
+    tables["RQ_PKG_PLAN"] = plan
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="제품타입 빈 계획",
+            source_simulation_code="BLANK-TYPE-1",
+            source_simulation_name="제품타입 빈 계획",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        tables,
+        snapshot.preset,
+    )
+    scenario_id = str(created.scenario.scenario_id)
+    revision_id = str(created.revision.revision_id)
+    if publish:
+        repository.publish_official_revision(
+            scenario_id, revision_id, release_name="제품타입 빈 계획"
+        )
+    return scenario_id, revision_id
+
+
+def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path: Path) -> None:
+    """계산이 멈춘 회차에도 사이드바 `LOB 표시 조건` 카드가 선다(2026-10-22 사용자 결정).
+
+    EDP 를 뺀 조회(기본)는 계획에 제품타입이 빈 행이 있으면 「… EDP 를 포함해 조회하세요」로
+    멈춘다. 카드가 Main 탭에서만 서면 멈춘 회차에는 탭이 없어 그 토글을 켤 곳이 없다. 토글 key 가
+    정상 회차와 같아야 켠 값으로 다음 회차가 정상 계산으로 돌아온다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    _save_plan_with_blank_product_type(database_path, publish=True)
+
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert len(app.error) == 1
+    assert "제품타입이 비어" in app.error[0].value
+    assert "EDP 를 포함해" in app.error[0].value
+    assert [tab.label for tab in app.main.tabs] == []
+    assert [widget.label for widget in app.sidebar.toggle] == HOME_VIEW_TOGGLES
+    assert app.sidebar.toggle(key=EDP_TOGGLE_KEY).value is False
+
+    app.sidebar.toggle(key=EDP_TOGGLE_KEY).set_value(True)
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.error] == []
+    assert [tab.label for tab in app.main.tabs] == HOME_TABS
+    assert app.session_state["spy_traces"]
+
+
+def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it(
+    tmp_path: Path,
+) -> None:
+    """비교 시나리오 계획에 빈 제품타입이 있어 멈춘 회차에도 카드의 `GAP` 을 끌 수 있다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception)
+    scenario_id, revision_id = _save_plan_with_blank_product_type(database_path, publish=False)
+    _pick_comparison(app, scenario_id, revision_id)
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert len(app.error) == 1
+    assert "제품타입이 비어" in app.error[0].value
+    assert [tab.label for tab in app.main.tabs] == []
+    gap = app.sidebar.toggle(key=COMPARISON_TOGGLE_KEY)
+    assert gap.value is True
+    assert not gap.disabled
+
+    gap.set_value(False)
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in app.error] == []
+    assert [tab.label for tab in app.main.tabs] == HOME_TABS
 
 
 def test_the_two_display_toggles_are_part_of_the_figure_cache_key(

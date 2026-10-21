@@ -189,6 +189,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `Past Data`(`past_data_management.py`) 세 탭으로 전체 계산 결과를 조합한다. 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
     바꾸면 토글을 기본값으로 적어 푼다(`scenario_activation.py`·`test_scenario_activation.py`). 공정 필터는 패널 칸이다.
+  - 카드는 `Main` 탭에서만 서되(2026-09-29) 계산이 `BOOTSTRAP_ERRORS` 로 멈춘 회차에도 그린 뒤 멈춘다 — 오류문이 시키는
+    `EDP 포함` 켜기·`GAP` 끄기를 그 자리에서 하게 하는 유일한 예외다(2026-10-22, `test_home_page.py` 의 `stopped_home`).
   - 얹기 규칙(EDP 제외 범위·확보율 보정 → 선행 `advance_load.py`·GAP 기준)은 6장, 판정 기준은 `securement_threshold.py`.
     비교 대상 프로필은 바뀔 때만 쓴다(`test_comparison_profile_writeback.py`·`test_summary_recheck_paths.py`).
   - Figure: 옵션과 무관한 행 높이·글자 크기, 조정 0건이면 조정 전과 같은 JSON(`test_bar_corner_radius.py`), 숨은 탭
@@ -2103,8 +2105,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 
 - **사이드바 = 보는 조건.** 사이드바 「조회 조건」은 지금 화면이 실제로 읽는 조건만 모으는 한 곳이다. 화면 고유의 거르는
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
-  카드 하나) 기본 접힘으로 선다. 쓰기 작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는
-  결과·그에 대한 행동·상태 알림만 남기고 설명은 Guide 로 옮긴다(8장).
+  카드 하나) 기본 접힘으로 선다(예외 하나 — HOME `LOB 표시 조건` 은 계산이 멈춘 회차에도 선다, 3장 `home.py`). 쓰기
+  작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는 결과·그에 대한 행동·상태 알림만
+  남기고 설명은 Guide 로 옮긴다(8장).
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라
   본문에 두고, 카드에는 거르는 조건(공정·기간·기준일·분류·호기 필터)만 둔다. 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」만 사용자 요청에 따른 예외로 본문 표 도구 줄이다.

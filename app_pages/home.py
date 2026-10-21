@@ -273,9 +273,11 @@ plan_detail_customer = bool(
 seed_comparison_selection(str(DUCKDB_PATH.resolve()))
 comparison_scenario_id = st.session_state.get(COMPARISON_SCENARIO_KEY)
 comparison_revision_id = st.session_state.get(COMPARISON_REVISION_KEY)
-show_comparison = bool(
-    st.session_state.get(COMPARISON_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY])
-) and bool(comparison_scenario_id and comparison_revision_id)
+comparison_ready = bool(comparison_scenario_id and comparison_revision_id)
+show_comparison = (
+    bool(st.session_state.get(COMPARISON_TOGGLE_KEY, HOME_TOGGLE_DEFAULTS[COMPARISON_TOGGLE_KEY]))
+    and comparison_ready
+)
 plan_detail_dimensions = (
     PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS if plan_detail_customer else PRODUCTION_DETAIL_DIMENSIONS
 )
@@ -553,6 +555,11 @@ except BOOTSTRAP_ERRORS as exc:
             disabled=True,
         )
     st.error(bootstrap_error_message(exc))
+    # 보는 조건 카드는 Main 탭에서만 서지만 멈춘 회차에는 탭이 없다. 오류가 시키는 조치(EDP 포함을
+    # 켜기·GAP 끄기)가 이 카드의 토글이라, 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자
+    # 결정 — Main 탭 규칙의 유일한 예외). key 가 정상 회차와 같아 바꾼 값으로 다음 회차가 다시
+    # 계산한다.
+    render_home_view_card(comparison_ready=comparison_ready)
     st.stop()
 
 # 히트맵이 **실제로 그릴** 목록. 고른 공정이 이 시나리오·조회기간에 없으면 건너뛰되
@@ -1017,13 +1024,14 @@ else:
     )
 
 # 보는 조건은 사이드바다(2026-09-29 사용자 결정). 그 조건이 걸리는 Main 탭에서만 선다 — 주요공정
-# 히트맵은 조건 패널의 둘째 칸, LOB 표시 조건은 패널 밑 카드다.
+# 히트맵은 조건 패널의 둘째 칸, LOB 표시 조건은 패널 밑 카드다. 계산이 멈춘 회차의 카드는 위
+# `except` 가 그린다.
 if not main_tab_hidden:
     with page_condition_slot(1).container():
         render_key_process_field(
             key_process_profile, process_labels=process_labels, process_options=process_options
         )
-    render_home_view_card(comparison_ready=bool(comparison_scenario_id and comparison_revision_id))
+    render_home_view_card(comparison_ready=comparison_ready)
 with main_tab:
     # 공지는 대시보드 상자 **밖**, 화면 맨 위다. 상자 안에 두면 스크롤되는 월 영역과 폭을
     # 나눠 가져 문구가 월 칸 너비에 갇힌다.
