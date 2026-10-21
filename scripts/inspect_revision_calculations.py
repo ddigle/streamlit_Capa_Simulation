@@ -32,7 +32,12 @@ Markdown 블록**을 찍는다.
   `RQ_REQB` 경로가 없는 계획이다 — 소요대수에서 흔적 없이 빠지면 확보율이 낙관된다
   (정적 감사 P1·P2·E3). 제외 목록에 남았는지와 상관없이 결과 표만 보고 센다.
 - **겹친 경로 키** — 소요대수 결과에서 `RQ_REQB` 업무 키 13 이 같은 행 가운데
-  둘째부터의 수. 표기만 다른 두 행이 같은 부하를 두 번 받는 자리다(P4).
+  둘째부터의 수. `WF 구분` 은 대소문자를 무시하고 견준다. 표기만 다른 두 행이 같은 부하를
+  두 번 받는 자리다(P4). 계산은 다른 표기 차이를 접지만 `WF 구분` 의 대소문자는 두므로, 한
+  경로가 `Buffer`·`BUFFER` 두 행으로 저장된 옛 리비전은 두 행 모두 계산된다 — PKG Buffer 는
+  `WF 구분` 없이 부하량이 붙어 그 경로의 소요대수가 두 배이고, CHIP·WF 는 부하량도 두 표기로 날
+  때(Chip 구성·수율도 두 표기) 두 배다. 새 등록은 `core_data_derivation.unify_case_variants`
+  가 표기를 맞춰 겹치지 않는다.
 - **제외 행** — 대당 Capa·소요대수 결과가 `attrs` 로 들고 있는 제외 목록의 행 수.
 
 **지키는 것** — `inspect_real_data_checks.py` 와 같다.
@@ -72,6 +77,7 @@ from capa_simulation.persistence.repository import (  # noqa: E402
     REFERENCE_TABLES,
     _load_reference_frame,
 )
+from capa_simulation.services.frame_contracts import match_key  # noqa: E402
 from capa_simulation.services.required_equipment import (  # noqa: E402
     REQB_COLUMNS,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -220,10 +226,16 @@ def unreached_plan_lines(plan: pd.DataFrame, required: pd.DataFrame) -> tuple[in
 
 
 def duplicate_route_keys(required: pd.DataFrame) -> int:
-    """`RQ_REQB` 업무 키 13 이 같은 소요대수 행 가운데 둘째부터의 수."""
+    """`RQ_REQB` 업무 키 13 이 같은 소요대수 행 가운데 둘째부터의 수(`WF 구분` 대소문자 무시).
+
+    계산(`required_equipment._prepare_reqb`)은 다른 표기 차이(`WF`·`Wafer`, `Main`·`MAIN`,
+    앞뒤 공백)를 이미 접어 결과에는 글자 그대로 같은 행이 남지 않는다. 접지 않는 것은
+    `WF 구분` 의 대소문자 하나라 그것만 무시하고 견준다(`match_key` — Buffer 판정과 같은 규칙).
+    """
     if required.empty:
         return 0
-    return int(required.duplicated(subset=REQB_COLUMNS).sum())
+    keys = required.loc[:, REQB_COLUMNS].assign(**{"WF 구분": match_key(required["WF 구분"])})
+    return int(keys.duplicated().sum())
 
 
 def _exclusion_rows(frame: pd.DataFrame, attr: str) -> int:
@@ -596,8 +608,9 @@ READING_GUIDE: Final[tuple[str, ...]] = (
     "은 최신 공식도 든 이력 전체의 수이고 0 이어도 적는다.",
     "- `닿지 않음` 은 생산수량이 있는데 소요대수 결과에 그 계획 줄이 하나도 없는 계획 "
     "행 수다 — 부하량 환산에서 빠졌거나 이어질 경로가 없다. `겹친 경로 키` 는 같은 "
-    "`RQ_REQB` 업무 키가 두 번 이상 계산된 행 수다. 둘 다 0 이 아니어도 계산은 선다 — "
-    "수를 그대로 옮긴다.",
+    "`RQ_REQB` 업무 키(`WF 구분` 은 대소문자 무시)가 두 번 이상 계산된 행 수다 — 한 경로가 "
+    "`WF 구분` 표기만 달리 두 행으로 저장된 옛 리비전이고, 두 행이 모두 부하량을 받으면 그 "
+    "경로의 소요대수가 두 배다. 둘 다 0 이 아니어도 계산은 선다 — 수를 그대로 옮긴다.",
     "- 시나리오·리비전은 만든 차례 번호다(이름이 아니다). 같은 DB 를 다시 돌리면 같은 "
     "번호가 나온다.",
 )

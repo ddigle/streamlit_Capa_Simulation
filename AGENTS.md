@@ -1456,7 +1456,12 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 `CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은
 한 행으로 접는다 — 접지 않으면 같은 부하량·대당 Capa 를 두 번 받아 소요대수가 두 배다. 등록은
 `frame_contracts.duplicate_route_rows` 로 접고, 계산(`_prepare_reqb`)은 같은 정규화를 이미 거친 표를
-`duplicated` 로 접는다 — 남는 행이 같다(`tests/test_required_equipment.py` 가 대조).
+`duplicated` 로 접는다 — 남는 행이 같다(`tests/test_required_equipment.py` 가 대조). `WF 구분` 의 대소문자는
+두 접기 모두 두고, 등록이 원천 한 벌 안에서 표기를 맞춘다(`unify_case_variants`). 그래서 이미 `Buffer`·`BUFFER` 처럼
+두 표기로 저장된 옛 리비전은 두 행이 다 계산된다 — PKG Buffer 는 `WF 구분` 없이 부하량이 붙어 그 경로의 소요대수가
+두 배이고, CHIP·WF 는 부하량도 두 표기로 날 때(Chip 구성·수율도 두 표기) 두 배다. 경고·목록에 남지 않으므로 `scripts/inspect_revision_calculations.py`
+의 「겹친 경로 키」(`WF 구분` 대소문자 무시)가 그 수를 세고 사내 런북 6-3 a 가 잰다. 계산은 이 행을 접지 않는다 — 접으면
+옛 리비전 결과가 바뀌므로 사내가 잰 수를 보고 정한다.
 
 **소요기준 `PKG` 는 Buffer 로만 센다**(2026-09-28 사용자 설명). PKG 공정은 Buffer 위에
 Core·Top·Dummy 를 쌓고(스택) Mold·MPGA Saw 로 PKG Chip 단위까지 자른 **뒤의** 공정이라
@@ -2330,8 +2335,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **사용자 앱을 끄지 않는 실데이터 확인은 실 DB 사본으로 한다**(사내 런북 6-3 — `.wal` 이 없을 때 복사, `git archive`
   사본 트리, `127.0.0.1` 별도 포트). 전 리비전 계산은 `scripts/inspect_revision_calculations.py` 가 맡는다 — 모든 리비전을
   앱과 같은 길(`repository._load_reference_frame`)로 읽어 대당 Capa → 소요대수 → 확보율을 돌리고, 상태(됨·멈춤·확보율
-  멈춤·불러오기 막힘·읽지 못함)와 개수(소요대수에 닿지 않은 계획 줄·겹친 경로 키·제외 행)만 찍는다. 소요대수까지 서면
-  저장·발행 검사의 Density 환산(`capacity_gate.density_error` 그대로 — 시나리오 전체 기간·EDP 계획)도 돌려 `계산` 칸과 따로
+  멈춤·불러오기 막힘·읽지 못함)와 개수(소요대수에 닿지 않은 계획 줄·겹친 경로 키(`WF 구분` 대소문자 무시)·제외 행)만 찍는다.
+  소요대수까지 서면 저장·발행 검사의 Density 환산(`capacity_gate.density_error` 그대로 — 시나리오 전체 기간·EDP 계획)도 돌려 `계산` 칸과 따로
   `Density` 칸·「Density 멈춤」 수로 적는다(확보율과 서로 가리지 않는다). 공식버전 줄은 판정값인 최신 공식의 상태·`Density`
   칸을 앞에 두고, 이력이 가리키는 모든 리비전의 수는 `지난 공식버전 포함 Density 멈춤` 으로 따로(0 이어도) 적는다. 최신 공식의
   Density 칸이 됨이어야 한다 — 아니면 거기서 이어 저장하는 리비전마다 경고가 붙고 발행이 거절되므로 런북 6-3 이 본다. 지난

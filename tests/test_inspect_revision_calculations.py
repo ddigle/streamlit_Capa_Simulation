@@ -32,7 +32,10 @@ from capa_simulation.persistence.repository import (
     REVISION_TABLES,
     DuckDBScenarioRepository,
 )
-from capa_simulation.services.required_equipment import REQB_COLUMNS
+from capa_simulation.services.required_equipment import (
+    REQB_COLUMNS,
+    calculate_required_equipment,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -355,6 +358,85 @@ def test_duplicate_route_keys_count_the_second_and_later_rows() -> None:
 
     assert script.duplicate_route_keys(required) == 2
     assert script.duplicate_route_keys(required.iloc[0:0]) == 0
+
+
+def test_duplicate_route_keys_ignore_only_the_case_of_wf_division() -> None:
+    """`WF 구분` 의 대소문자만 다른 행은 같은 경로다. 다른 컬럼의 대소문자는 그대로 견준다.
+
+    계산(`_prepare_reqb`)이 다른 표기 차이를 이미 접어 결과에는 글자 그대로 같은 행이 없다 — 남는
+    겹침은 `WF 구분` 의 대소문자뿐이라 그것만 무시한다.
+    """
+    row = {column: f"v-{column}" for column in REQB_COLUMNS}
+    required = pd.DataFrame(
+        [
+            {**row, "WF 구분": "Buffer"},
+            {**row, "WF 구분": "BUFFER"},
+            {**row, "WF 구분": "buffer"},
+            {**row, "WF 구분": "Core"},
+            {**row, "WF 구분": "Buffer", "공정": "V-공정"},
+        ]
+    ).assign(소요대수=1.0)
+
+    assert script.duplicate_route_keys(required) == 2
+
+
+def _pkg_inputs(*divisions: str) -> dict[str, pd.DataFrame]:
+    """PKG 경로 하나를 `WF 구분` 표기마다 한 행씩 둔 소요대수 입력(생산수량 100, 대당 Capa 50)."""
+    route = {
+        "생산계획년월": 202608,
+        "Area_Name": "Main",
+        "공정": "Process-A",
+        "양산구분": "양산",
+        "제품정보": "Product-A",
+        "Stack": "12H",
+        "Capa Code": "CAPA-A",
+        "Customer": "Customer-A",
+        "CS": "MP",
+        "STEP_SEQ": "10",
+        "MCP_SEQ": "1",
+        "소요기준": "PKG",
+    }
+    plan_keys = ("생산계획년월", "양산구분", "제품정보", "Stack", "Capa Code", "Customer", "CS")
+    capacity_keys = (
+        "생산계획년월",
+        "Area_Name",
+        "공정",
+        "STEP_SEQ",
+        "MCP_SEQ",
+        "소요기준",
+        "양산구분",
+        "제품정보",
+        "Stack",
+    )
+    return {
+        "reqb": pd.DataFrame([{**route, "WF 구분": division} for division in divisions]),
+        "plan": pd.DataFrame([{**{key: route[key] for key in plan_keys}, "생산수량": 100.0}]),
+        "yield_data": pd.DataFrame(),
+        "chip_qty": pd.DataFrame(),
+        "unit_capacity": pd.DataFrame(
+            [
+                {**{key: route[key] for key in capacity_keys}, "WF 구분": division}
+                for division in divisions
+            ]
+        ).assign(**{"대당 Capa": 50.0}),
+    }
+
+
+def test_a_pkg_buffer_route_saved_in_two_spellings_is_counted_after_the_calculation() -> None:
+    """한 경로에 `Buffer`·`BUFFER` 두 행이 저장된 옛 리비전 — 계산은 둘을 다 세고 집계가 센다.
+
+    PKG 부하량은 `WF 구분` 없이 붙고 Buffer 판정은 대소문자를 무시하므로 두 행이 같은 부하를 받아
+    그 경로의 소요대수가 두 배다(계산은 이 행을 접지 않는다 — 런북 6-3 a 가 옛 리비전의 수를
+    잰다). 글자 그대로 세면 0 이라 이 자리를 놓친다. 계산이 접게 되면 앞 두 단언도 같이 고친다.
+    """
+    doubled = calculate_required_equipment(**_pkg_inputs("Buffer", "BUFFER"))
+    single = calculate_required_equipment(**_pkg_inputs("BUFFER"))
+
+    assert doubled["소요대수"].tolist() == pytest.approx([2.0, 2.0])
+    assert int(doubled.duplicated(subset=REQB_COLUMNS).sum()) == 0
+    assert script.duplicate_route_keys(doubled) == 1
+    assert single["소요대수"].tolist() == pytest.approx([2.0])
+    assert script.duplicate_route_keys(single) == 0
 
 
 def test_only_contract_table_names_are_taken_from_a_message() -> None:
