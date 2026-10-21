@@ -736,6 +736,45 @@ def test_the_change_memo_is_cleared_after_a_save_and_not_reused(tmp_path: Path) 
     assert repository.list_revisions()[0].note is None
 
 
+def _upload_widget_id(app: AppTest) -> str:
+    uploaders = app.get("file_uploader")
+    assert len(uploaders) == 1
+    return str(uploaders[0].proto.id)
+
+
+def test_a_save_clears_the_paste_and_the_upload_in_the_browser_too(tmp_path: Path) -> None:
+    """저장한 붙여넣기·업로드는 다음 회차에 칸에서 비워진다. 칸을 지우기만 하면 브라우저가 옛
+    입력을 그대로 보여 주다 다음 「변경 미리보기」에 다시 보내, 이미 저장한 입력을 새 저장본
+    위에서 또 검토하게 된다. 붙여넣기는 칸 앞에서 빈 값을 적어 브라우저에도 알리고, 세션으로
+    값을 적을 수 없는 업로드는 key 세대를 올려 새 칸으로 세운다. 미리보기만 한 회차는 둔다.
+    """
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    paste = _master(["PASTED-01"]).to_csv(index=False, sep="\t")
+    _preview(app, paste)
+    clip = app.text_area(CLIPBOARD_KEY)
+    assert (clip.value, clip.proto.set_value) == (paste, False)
+    upload_before = _upload_widget_id(app)
+
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+    assert not app.error
+    assert len(_repository(path).list_revisions()) == 1
+    clip = app.text_area(CLIPBOARD_KEY)
+    assert (clip.value, clip.proto.set_value) == ("", True)
+    upload_after = _upload_widget_id(app)
+    assert upload_after != upload_before
+
+    # 직접 편집 저장도 같은 길로 입력 탭에 남은 붙여넣기를 비운다.
+    app.text_area(CLIPBOARD_KEY).set_value(_master(["NOT-PREVIEWED"]).to_csv(index=False))
+    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception
+    assert len(_repository(path).list_revisions()) == 2
+    clip = app.text_area(CLIPBOARD_KEY)
+    assert (clip.value, clip.proto.set_value) == ("", True)
+    assert _upload_widget_id(app) not in {upload_before, upload_after}
+
+
 def test_blank_cells_in_the_direct_editors_render_empty_not_none(tmp_path: Path) -> None:
     """결측 칸은 빈칸이다. 기본값(`placeholder=None`)이면 Streamlit 이 "None" 글자를 그린다."""
     repository = _repository(tmp_path / "equipment.duckdb")
