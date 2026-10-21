@@ -139,6 +139,58 @@ def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: S
     assert not _save_button(app).disabled
 
 
+def test_default_name_follows_changed_years_and_keeps_a_typed_name(source: Source) -> None:
+    repository, database, original = source
+    app = _app(database, original)
+
+    app.number_input(key="scenario_shift_years").set_value(1).run()
+    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +1년 Shift"
+
+    # 이름 칸은 key 가 있어 value= 가 바뀌어도 처음 값을 든다 — 바뀐 연수를 따라와야 한다.
+    app.number_input(key="scenario_shift_years").set_value(2).run()
+    assert _ranges(app)["이동 후 월 범위"] == "2029-01 ~ 2029-12"
+    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +2년 Shift"
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    app.number_input(key="scenario_shift_years").set_value(3).run()
+    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +3년 Shift"
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    created = {
+        item.scenario_name: item.active_revision_id
+        for item in repository.list_scenarios()
+        if item.scenario_id != original.scenario.scenario_id
+    }
+    assert set(created) == {"이동할 2027 · +2년 Shift", "이동할 2027 · +3년 Shift"}
+    for name, years in (("이동할 2027 · +2년 Shift", 2), ("이동할 2027 · +3년 Shift", 3)):
+        shifted = repository.load_revision(created[name], apply_global_display_order=False)
+        start = 202701 + years * 100
+        assert (shifted.preset.start_month, shifted.preset.end_month) == (start, start + 11)
+
+    # 저장을 눌러 제출한 이름은 연수를 바꿔도 남는다. AppTest 는 폼 제출과 상관없이 모든 위젯
+    # 값을 보내므로 폼에서 치기만 한(제출 안 한) 상태는 흉내 내지 못한다 — 그래서 제출을 거친다.
+    # +3 저장 직후에는 같은 요청이라 단추가 꺼져 있어 먼저 아직 저장하지 않은 연수로 바꾼다.
+    app.number_input(key="scenario_shift_years").set_value(5).run()
+    app.text_input(key="scenario_shift_name").set_value("내가 고친 이름")
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert any(item.scenario_name == "내가 고친 이름" for item in repository.list_scenarios())
+    app.number_input(key="scenario_shift_years").set_value(7).run()
+    assert app.text_input(key="scenario_shift_name").value == "내가 고친 이름"
+
+    # 0 을 거쳐 이름 칸이 걷힌 뒤에는 새 연수의 기본 이름이 선다.
+    app.number_input(key="scenario_shift_years").set_value(0).run()
+    assert not any(item.key == "scenario_shift_name" for item in app.text_input)
+    app.number_input(key="scenario_shift_years").set_value(6).run()
+    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +6년 Shift"
+    app.number_input(key="scenario_shift_years").set_value(0).run()
+    app.number_input(key="scenario_shift_years").set_value(6).run()
+    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +6년 Shift"
+    assert not app.exception, [item.message for item in app.exception]
+
+
 def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(source: Source) -> None:
     repository, database, original = source
     app = _app(database, original)

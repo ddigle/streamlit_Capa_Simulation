@@ -189,6 +189,27 @@ def test_preview_reports_monthless_differences_and_does_not_save(sources: Source
     assert not _save_button(app).disabled
 
 
+def test_default_name_follows_the_changed_base(sources: Sources) -> None:
+    repository, database, base, donor = sources
+    other = repository.create_scenario(
+        _metadata("다른 베이스 2026"),
+        _monthly_tables([202601]),
+        ScenarioPreset(202601, 202601, ("Process-A",)),
+    )
+    app = _app(database, base, donor)
+    assert app.text_input(key="scenario_merge_name").value == "베이스 2027 · 월 머지"
+
+    app.selectbox(key="merge_base_scenario").set_value(other.scenario.scenario_id).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.text_input(key="scenario_merge_name").value == "다른 베이스 2026 · 월 머지"
+    _save_button(app).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert any(
+        item.scenario_name == "다른 베이스 2026 · 월 머지" for item in repository.list_scenarios()
+    )
+
+
 def test_overlapping_months_block_save_until_the_source_changes(sources: Sources) -> None:
     repository, database, base, donor = sources
     app = _app(database, base, donor)

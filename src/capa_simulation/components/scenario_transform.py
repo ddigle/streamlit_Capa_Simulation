@@ -213,8 +213,20 @@ def render_derived_save(
             st.dataframe(records_to_frame(virtual_products), hide_index=True, width="stretch")
     with st.expander("저장될 출처 메모"):
         st.text(provenance)
+    # key 가 있는 이름 칸은 `value=` 가 바뀌어도 처음 값을 든다. 그래서 기본 이름을 씨앗 칸에
+    # 적어 두고, 칸이 없거나 서버가 아는 칸 값이 옛 씨앗 그대로이면 바뀐 기본 이름(이동 연수·
+    # 원본, 머지는 베이스)으로 다시 적는다. 이름 칸은 폼 안이라 제출 전에 친 글자는 서버가 모른다
+    # — 저장을 눌러 제출된 이름만 남고, 치기만 한 이름은 연수·원본을 바꾸면 새 기본 이름으로
+    # 바뀐다.
+    name_key, seed_key = f"{key}_name", f"{key}_name_seed"
+    seed = st.session_state.get(seed_key)
+    if name_key not in st.session_state or (
+        seed != default_name and st.session_state[name_key] == seed
+    ):
+        st.session_state[name_key] = default_name
+    st.session_state[seed_key] = default_name
     with st.form(f"{key}_save_form"):
-        name = st.text_input("새 시나리오 이름", value=default_name, key=f"{key}_name")
+        name = st.text_input("새 시나리오 이름", key=name_key)
         note = st.text_area("추가 메모", key=f"{key}_note", height=80)
         submitted = st.form_submit_button(
             "새 시나리오로 저장", type="primary", disabled=already_saved
