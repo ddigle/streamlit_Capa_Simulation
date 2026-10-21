@@ -16,8 +16,10 @@
 
 되돌리기
 --------
-이 스크립트는 인덱스를 건드리지 않는다. 중간에 실패하면 `git checkout -- .` 한 번으로
-지운 파일이 전부 돌아온다. 실패할 때 그 문장을 출력한다.
+인덱스는 마지막 커밋 단계에서만 건드린다. 지우고 풀고 해시를 대조하다 실패하면
+`git checkout -- .` 한 번으로 지운 파일이 전부 돌아온다. 커밋 단계(스테이징·커밋)가 실패하면
+인덱스와 적용 기록을 적용 전으로 스스로 되돌리므로 그때도 같은 한 줄이다. 실패할 때 그 문장을
+출력한다.
 
 사용:
 
@@ -445,6 +447,51 @@ def write_state(root: Path, manifest: Mapping[str, object]) -> None:
     )
 
 
+def undo_commit_step(root: Path, previous_state: bytes | None, cause: Exception) -> ApplyError:
+    """커밋 단계(스테이징·커밋)가 멈추면 인덱스와 적용 기록을 적용 전으로 되돌린다.
+
+    그대로 두면 적용 기록은 이미 새 stamp 라 같은 명령이 「이미 적용했습니다」로 거절되고,
+    인덱스에 (200개씩 나눠 올리다 멈췄으면 반쯤) 올라간 배포는 `git checkout -- .` 로도 돌아오지
+    않는다. 적용 전에 `dirty_entries` 가 추적 파일의 변경(스테이징 포함)이 없음을 확인했으므로 적용
+    전 인덱스는 HEAD 와 같다 — `git reset -q` 가 곧 원상복구다. 작업트리와 아직 추적되지 않은
+    `review/*.md` 는 건드리지 않는다. 사람에게 보일 오류를 돌려준다.
+    """
+    state_file = root / STATE_PATH
+    failures: list[str] = []
+    try:
+        if previous_state is None:
+            state_file.unlink(missing_ok=True)
+        else:
+            state_file.write_bytes(previous_state)
+    except OSError as exc:
+        failures.append(f"적용 기록 {STATE_PATH} 되돌리기 실패: {exc}")
+    try:
+        git(root, "reset", "-q")
+    except (ApplyError, OSError) as exc:
+        failures.append(f"인덱스 되돌리기 실패: {exc}")
+
+    head = (
+        f"커밋 단계에서 멈췄습니다: {cause}\n"
+        "파일 적용·해시 대조는 끝났지만 커밋하지 못했습니다. 원인(다른 프로그램이 쥔 "
+        "`.git/index.lock`·커밋 훅·비어 있는 git user.name/user.email 등)을 없앤 뒤 "
+    )
+    if not failures:
+        return ApplyError(
+            head + "`git checkout -- .` 로 되돌리고 같은 명령을 다시 치세요.\n"
+            f"인덱스와 적용 기록({STATE_PATH})은 적용 전으로 되돌렸습니다."
+        )
+    manual = ["git reset -q", "git checkout -- ."]
+    if previous_state is None and state_file.exists():
+        manual.append(f"{STATE_PATH} 를 지운다 — 이번이 첫 적용이었다")
+    return ApplyError(
+        head
+        + "아래를 차례로 하고 같은 명령을 다시 치세요:\n  "
+        + "\n  ".join(manual)
+        + "\n적용 전으로 되돌리는 것도 끝내지 못했습니다:\n  - "
+        + "\n  - ".join(failures)
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     parser = argparse.ArgumentParser(description="사내에서 배포 ZIP 을 적용한다.")
@@ -554,23 +601,28 @@ def _run(args: argparse.Namespace) -> int:
         )
     )
 
+    state_file = root / STATE_PATH
+    previous_state = state_file.read_bytes() if state_file.is_file() else None
     write_state(root, manifest)
     if args.no_commit:
         print("커밋    건너뜀 (--no-commit)")
         return 0
 
-    # **`git add -A` 를 쓰지 않는다.** 그것은 바로 위에서 "손대지 않았습니다" 라고 적은
-    # 정체불명 파일까지 스테이징해 `deploy:` 커밋에 넣는다. 그러면 다음 배포에서 그 파일은
-    # "추적되는데 목록에 없는 것" 이 되어 삭제 대상으로 잡힌다 — 약속이 한 사이클만 유효해진다.
-    # 아직 커밋하지 않은 `review/*.md` 가 딸려 들어가 `deploy:` 와 `review:` 커밋이 섞이는
-    # 것도 같은 한 줄이 만든다. 이번 배포가 실제로 건드린 것만 올린다.
-    stage_paths(root, [STATE_PATH, *members, *removals])
-    staged = git(root, "diff", "--cached", "--name-only")
-    if not staged:
-        print("커밋    바뀐 것이 없어 커밋하지 않았습니다.")
-        return 0
     subject = f"deploy: {manifest.get('stamp')} ({str(manifest.get('commit'))[:7]})"
-    git(root, "commit", "-m", subject, "-m", str(manifest.get("commit_subject") or ""))
+    try:
+        # **`git add -A` 를 쓰지 않는다.** 그것은 바로 위에서 "손대지 않았습니다" 라고 적은
+        # 정체불명 파일까지 스테이징해 `deploy:` 커밋에 넣는다. 그러면 다음 배포에서 그 파일은
+        # "추적되는데 목록에 없는 것" 이 되어 삭제 대상으로 잡힌다 — 약속이 한 사이클만 유효해진다.
+        # 아직 커밋하지 않은 `review/*.md` 가 딸려 들어가 `deploy:` 와 `review:` 커밋이 섞이는
+        # 것도 같은 한 줄이 만든다. 이번 배포가 실제로 건드린 것만 올린다.
+        stage_paths(root, [STATE_PATH, *members, *removals])
+        staged = git(root, "diff", "--cached", "--name-only")
+        if not staged:
+            print("커밋    바뀐 것이 없어 커밋하지 않았습니다.")
+            return 0
+        git(root, "commit", "-m", subject, "-m", str(manifest.get("commit_subject") or ""))
+    except (ApplyError, OSError) as exc:
+        raise undo_commit_step(root, previous_state, exc) from exc
     print(f"커밋    {subject}")
     print("\n다음 — 실데이터로 확인한 뒤 `review/` 에 리뷰 문서를 쓰고 사내 GitHub 에 푸시하세요.")
     return 0

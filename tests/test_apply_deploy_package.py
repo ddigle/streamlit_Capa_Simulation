@@ -1,6 +1,10 @@
 # Purpose: 사내 배포 적용기의 안전 장치 — 무엇을 지우고 무엇을 남기며 언제 멈추는지 고정한다.
 
+import hashlib
+import json
+import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -8,6 +12,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+import apply_deploy_package  # noqa: E402
 from apply_deploy_package import (  # noqa: E402
     PRESERVED_PREFIXES,
     ApplyError,
@@ -320,3 +325,194 @@ def test_reconcile_does_not_call_protected_files_deleted() -> None:
     )
 
     assert report["사외에서_지워짐"] == ["gone.py"]
+
+
+# 커밋 단계 실패 — 파일 적용·해시 대조가 끝난 뒤 스테이징이나 커밋이 멈추면 인덱스에 이번 배포가
+# 반쯤 올라가고 적용 기록은 새 stamp 가 된다. 그 상태로 두면 같은 명령은 「이미 적용했습니다」로
+# 거절되고, 런북 6장의 `git checkout -- .` 한 줄로도 돌아오지 않는다(인덱스가 이미 바뀌었다).
+
+_DEPLOY_STAMP = "202610220000"
+_DEPLOY_COMMIT = "f65de0f" + "0" * 33
+
+
+def _repo_git(root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip()
+
+
+def _internal_repo(tmp_path: Path, previous_stamp: str | None) -> Path:
+    """사내 흉내 저장소. 적용기는 `-c user.*` 없이 커밋하므로 사용자 이름은 저장소 설정에 둔다."""
+    root = tmp_path / "internal"
+    root.mkdir()
+    _repo_git(root, "init", "-q")
+    # 사내 Windows 4관문에서도 돈다 — 전역 서명·훅·줄끝 변환에 기대지 않는다.
+    for key, value in (
+        ("user.name", "test"),
+        ("user.email", "test@example.com"),
+        ("commit.gpgsign", "false"),
+        ("core.hooksPath", str(tmp_path / "no-hooks")),
+        ("core.autocrlf", "false"),
+    ):
+        _repo_git(root, "config", key, value)
+    (root / "app.py").write_bytes(b"x = 1\n")
+    (root / "gone.py").write_bytes(b"old\n")
+    paths = ["app.py", "gone.py"]
+    if previous_stamp is not None:
+        (root / ".deploy").mkdir()
+        (root / ".deploy" / "applied.json").write_bytes(
+            json.dumps({"stamp": previous_stamp, "commit": "a" * 40}).encode("utf-8") + b"\n"
+        )
+        paths.append(".deploy/applied.json")
+    _repo_git(root, "add", *paths)
+    _repo_git(root, "commit", "-q", "-m", "첫 커밋")
+    return root
+
+
+def _deploy_zip(tmp_path: Path) -> Path:
+    files = {"app.py": b"x = 2\n", "src/new.py": b"y = 1\n"}
+    manifest = {
+        "manifest_version": 1,
+        "stamp": _DEPLOY_STAMP,
+        "commit": _DEPLOY_COMMIT,
+        "commit_subject": "사외 커밋 제목",
+        "file_count": len(files),
+        "files": {
+            path: "sha256:" + hashlib.sha256(data).hexdigest() for path, data in files.items()
+        },
+    }
+    path = tmp_path / f"{_DEPLOY_STAMP}.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("DEPLOY_MANIFEST.json", json.dumps(manifest, ensure_ascii=False))
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return path
+
+
+@pytest.mark.parametrize("failing_step", ["add", "commit"])
+@pytest.mark.parametrize("previous_stamp", [None, "202610010000"])
+def test_a_failed_commit_step_rolls_back_so_the_same_command_can_run_again(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failing_step: str,
+    previous_stamp: str | None,
+) -> None:
+    """커밋 훅·다른 프로그램이 쥔 `.git/index.lock`·빈 git 사용자 이름이 커밋 단계를 막는 경우.
+
+    스테이징은 200개씩 나눠 하므로 중간에 멈추면 일부만 올라가 있다 — 여기서는 `add` 가 실제로
+    올린 뒤 실패를 내어 그 꼴을 만든다. 적용기는 인덱스와 적용 기록을 적용 전으로 되돌리고, 사람은
+    런북대로 `git checkout -- .` 한 줄 뒤 같은 명령을 다시 쳐서 `deploy:` 커밋까지 간다.
+    """
+    root = _internal_repo(tmp_path, previous_stamp)
+    state_file = root / ".deploy" / "applied.json"
+    state_before = state_file.read_bytes() if state_file.is_file() else None
+    archive = _deploy_zip(tmp_path)
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+
+    real_git = apply_deploy_package.git
+
+    def blocked_git(repo: Path, *args: str, check: bool = True) -> str:
+        if args and args[0] == failing_step:
+            if failing_step == "add":
+                real_git(repo, *args, check=check)
+            raise ApplyError(f"git {' '.join(args)} 실패: blocked")
+        return real_git(repo, *args, check=check)
+
+    monkeypatch.setattr(apply_deploy_package, "git", blocked_git)
+
+    assert apply_deploy_package.main([str(archive)]) == 1
+    stderr = capsys.readouterr().err
+    assert "커밋 단계" in stderr
+    assert "git checkout -- ." in stderr
+    # 인덱스는 적용 전(HEAD)과 같고, 적용 기록도 적용 전 그대로다.
+    assert _repo_git(root, "diff", "--cached", "--name-only") == ""
+    assert (state_file.read_bytes() if state_file.is_file() else None) == state_before
+    assert _repo_git(root, "log", "-1", "--format=%s") == "첫 커밋"
+
+    monkeypatch.setattr(apply_deploy_package, "git", real_git)
+    _repo_git(root, "checkout", "--", ".")
+
+    assert apply_deploy_package.main([str(archive)]) == 0
+    assert _repo_git(root, "log", "-1", "--format=%s") == (
+        f"deploy: {_DEPLOY_STAMP} ({_DEPLOY_COMMIT[:7]})"
+    )
+    assert _repo_git(root, "status", "--porcelain", "--untracked-files=no") == ""
+    assert _repo_git(root, "ls-files", "gone.py") == ""
+    assert (root / "app.py").read_bytes() == b"x = 2\n"
+    assert _DEPLOY_STAMP in state_file.read_text(encoding="utf-8")
+
+
+def test_a_held_index_lock_names_the_manual_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """다른 프로그램(IDE 등)이 `.git/index.lock` 을 쥐고 있으면 스테이징도 `git reset` 도 막힌다.
+
+    적용기가 인덱스를 되돌리지 못한 것을 감추지 않고, 손으로 칠 줄을 차례로 적는다.
+    """
+    root = _internal_repo(tmp_path, None)
+    archive = _deploy_zip(tmp_path)
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", root)
+    lock = root / ".git" / "index.lock"
+    lock.write_bytes(b"")
+
+    assert apply_deploy_package.main([str(archive)]) == 1
+    stderr = capsys.readouterr().err
+    assert "커밋 단계" in stderr
+    assert "인덱스 되돌리기 실패" in stderr
+    assert "git reset -q" in stderr
+    assert "git checkout -- ." in stderr
+    assert not (root / ".deploy" / "applied.json").exists()
+
+    lock.unlink()
+    _repo_git(root, "reset", "-q")
+    _repo_git(root, "checkout", "--", ".")
+
+    assert apply_deploy_package.main([str(archive)]) == 0
+    assert _repo_git(root, "log", "-1", "--format=%s").startswith(f"deploy: {_DEPLOY_STAMP} ")
+
+
+@pytest.mark.parametrize("previous_stamp", [None, "202610010000"])
+def test_the_runbook_tells_a_finished_deploy_from_one_left_at_the_commit_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    previous_stamp: str | None,
+) -> None:
+    """런북 6장 `이미 적용했습니다` 줄의 판별 — 적용 기록을 마지막으로 바꾼 커밋의 제목.
+
+    정상 흐름은 `deploy:` 커밋 뒤에 5장의 `review:` 커밋이 오므로 맨 `git log -1` 로는 가를 수 없다.
+    판별은 `deploy:` 커밋이 적용 기록을 함께 싣는다는 데 기댄다. 커밋 단계에서 멈춘 꼴(적용 기록은
+    새 stamp, `deploy:` 커밋은 없음)은 `--no-commit` 으로 만든다.
+    """
+    judge = ("log", "-1", "--format=%s", "--", ".deploy/applied.json")
+    archive = _deploy_zip(tmp_path)
+
+    stuck_home = tmp_path / "stuck"
+    stuck_home.mkdir()
+    stuck = _internal_repo(stuck_home, previous_stamp)
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", stuck)
+    assert apply_deploy_package.main([str(archive), "--no-commit"]) == 0
+    assert apply_deploy_package.main([str(archive)]) == 1
+    assert "이미 적용했습니다" in capsys.readouterr().err
+    assert _repo_git(stuck, *judge) == ("" if previous_stamp is None else "첫 커밋")
+
+    done_home = tmp_path / "done"
+    done_home.mkdir()
+    done = _internal_repo(done_home, previous_stamp)
+    monkeypatch.setattr(apply_deploy_package, "PROJECT_ROOT", done)
+    assert apply_deploy_package.main([str(archive)]) == 0
+    (done / "review").mkdir()
+    (done / "review" / "r.md").write_bytes(b"review\n")
+    _repo_git(done, "add", "review/r.md")
+    _repo_git(done, "commit", "-q", "-m", "review: r")
+    assert apply_deploy_package.main([str(archive)]) == 1
+    assert "이미 적용했습니다" in capsys.readouterr().err
+    assert _repo_git(done, "log", "-1", "--format=%s") == "review: r"
+    assert _repo_git(done, *judge) == f"deploy: {_DEPLOY_STAMP} ({_DEPLOY_COMMIT[:7]})"

@@ -135,7 +135,8 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
    `--dry-run` · `--reconcile-only` 는 아무것도 바꾸지 않으므로 이 검사를 받지 않는다.
 5. 추적 파일을 지우고 ZIP 을 푼다. `review/` · `.deploy/` · `.claude/` 는 남긴다.
 6. 매니페스트의 해시로 **전 파일을 대조**한다.
-7. `deploy: <stamp>` 로 커밋하고 `.deploy/applied.json` 을 갱신한다.
+7. `deploy: <stamp>` 로 커밋하고 `.deploy/applied.json` 을 갱신한다. 스테이징·커밋이 실패하면
+   인덱스와 적용 기록을 적용 전으로 되돌리고 멈춘다 — `git checkout -- .` 뒤 같은 명령을 다시 친다.
 
 **처음에는 `--dry-run` 을 먼저 돌린다.** 「지움」 목록에 뜻밖의 것이 있으면 거기서 멈춘다.
 
