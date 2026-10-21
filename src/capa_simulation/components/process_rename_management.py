@@ -17,6 +17,7 @@ from capa_simulation.components.admin_dialog import (
     open_admin_dialog,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -253,7 +254,7 @@ def _save_process_rename(
     source: str,
     expected_version: int | None = None,
 ) -> None:
-    """검증 → 교체 저장 → 캐시 폐기.
+    """검증 → 교체 저장 → 캐시 폐기 → 입장 화면 Summary 확인 비우기(그 표시명으로 그린다).
 
     1:1 위반은 반드시 파이썬 `ValueError` 로 먼저 낸다. DB 의 UNIQUE 는 마지막 방어선이고
     그 위반은 `duckdb.ConstraintException` 이라 화면 오류 문구로 바뀌지 않는다. 붙여넣기는
@@ -264,3 +265,4 @@ def _save_process_rename(
         prepared, source=source, expected_version=expected_version
     )
     clear_global_process_rename_cache()
+    forget_intro_summary_check()

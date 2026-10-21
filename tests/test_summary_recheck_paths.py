@@ -3,14 +3,14 @@
 """저장 뒤 곧바로 다시 확인해야 Summary 가 새 값을 싣는다.
 
 요약은 세션에 `RECHECK_SECONDS` 동안 들고 있는 값을 보낸다. 판정 기준·선행 B/O·선행 입고 실적·비교
-대상을 저장하거나 비교 대상이 걸린 시나리오를 보관·삭제·이름 변경하면 그 세션의 확인을 비워
-(`forget_intro_summary_check`) 다음 회차가 새 값을 보게 한다. 저장 콜백을 직접 불러 세션 칸
-(`intro_summary._SESSION_KEY`)이 비었는지 본다.
+대상·표시순서·공정 표시명을 저장하거나 비교 대상이 걸린 시나리오를 보관·삭제·이름 변경하면 그 세션의
+확인을 비워(`forget_intro_summary_check`) 다음 회차가 새 값을 보게 한다. 저장 콜백을 직접 불러
+세션 칸(`intro_summary._SESSION_KEY`)이 비었는지 본다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any
@@ -19,7 +19,13 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from capa_simulation.components import home_preference, intro_summary, scenario_management
+from capa_simulation.components import (
+    display_order_management,
+    home_preference,
+    intro_summary,
+    process_rename_management,
+    scenario_management,
+)
 from capa_simulation.services.advance_load import empty_advance_load
 from capa_simulation.services.advance_shipment import empty_advance_shipment
 
@@ -180,6 +186,71 @@ def test_saving_a_monthly_amount_profile_rechecks_the_summary(
     )
     captured["save"]([1.5], "시험")
     assert repo.calls == [store] and _forgotten(session)
+
+
+class _DisplayOrderRepo(_Repo):
+    """표시순서 교체는 저장한 프로필을 돌려주고 화면은 그 `rules` 를 곧바로 적용한다."""
+
+    def replace_global_display_order(self, *args: object, **kwargs: object) -> SimpleNamespace:
+        self.calls.append("replace_global_display_order")
+        return SimpleNamespace(rules=pd.DataFrame())
+
+
+class _FailingRepo:
+    """저장 메서드가 모두 실패한다."""
+
+    def __getattr__(self, name: str) -> Any:
+        def fail(*args: object, **kwargs: object) -> None:
+            raise ValueError("저장 실패")
+
+        return fail
+
+
+@pytest.fixture
+def admin_profile_savers(monkeypatch: pytest.MonkeyPatch) -> dict[str, Callable[[Any], None]]:
+    """Admin Area 의 표시순서·공정 표시명 저장 함수. 검증·캐시·적용은 비워 저장 사슬만 남긴다."""
+    monkeypatch.setattr(
+        display_order_management, "validate_display_order", lambda frame, **kwargs: frame
+    )
+    monkeypatch.setattr(display_order_management, "clear_global_display_order_cache", lambda: None)
+    monkeypatch.setattr(display_order_management, "apply_global_display_order", lambda rules: None)
+    monkeypatch.setattr(
+        process_rename_management, "prepare_process_rename_rules", lambda frame: frame
+    )
+    monkeypatch.setattr(
+        process_rename_management, "clear_global_process_rename_cache", lambda: None
+    )
+    return {
+        "replace_global_display_order": lambda repo: (
+            display_order_management._save_global_display_order(repo, pd.DataFrame(), source="시험")
+        ),
+        "replace_global_process_rename": lambda repo: (
+            process_rename_management._save_process_rename(repo, pd.DataFrame(), source="시험")
+        ),
+    }
+
+
+ADMIN_PROFILE_STORES = ["replace_global_display_order", "replace_global_process_rename"]
+
+
+@pytest.mark.parametrize("store", ADMIN_PROFILE_STORES)
+def test_saving_display_order_or_process_names_rechecks_the_summary(
+    session: dict[str, Any], admin_profile_savers: dict[str, Callable[[Any], None]], store: str
+) -> None:
+    """Summary 는 표시순서·공정 표시명 version 을 요약 키에 넣고 그 차례·표시명으로 그린다."""
+    repo = _DisplayOrderRepo()
+    admin_profile_savers[store](repo)
+    assert repo.calls == [store] and _forgotten(session)
+
+
+@pytest.mark.parametrize("store", ADMIN_PROFILE_STORES)
+def test_a_failed_display_order_or_process_name_save_keeps_the_summary_check(
+    session: dict[str, Any], admin_profile_savers: dict[str, Callable[[Any], None]], store: str
+) -> None:
+    """저장이 실패하면 바뀐 것이 없으니 들고 있는 요약을 그대로 둔다."""
+    with pytest.raises(ValueError, match="저장 실패"):
+        admin_profile_savers[store](_FailingRepo())
+    assert not _forgotten(session)
 
 
 class _Rerun(Exception):

@@ -15,6 +15,7 @@ from capa_simulation.components.admin_dialog import (
     open_admin_dialog,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -309,12 +310,16 @@ def _save_global_display_order(
     source: str,
     tolerated_clashes: Collection[ClashKey] = (),
 ) -> None:
-    """저장한다. 붙여넣기는 프로필 전체를 바꾸므로 `tolerated_clashes` 없이 부른다."""
+    """저장한다. 붙여넣기는 프로필 전체를 바꾸므로 `tolerated_clashes` 없이 부른다.
+
+    입장 화면 Summary 도 이 차례로 그리므로 그 세션의 확인을 비운다.
+    """
     validated = validate_display_order(display_order, tolerated_clashes=tolerated_clashes)
     profile = repository.replace_global_display_order(
         validated, source=source, tolerated_clashes=tolerated_clashes
     )
     clear_global_display_order_cache()
+    forget_intro_summary_check()
     try:
         apply_global_display_order(profile.rules)
     except RuntimeError:
