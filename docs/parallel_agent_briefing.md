@@ -90,6 +90,7 @@ git switch -c cand/<새 과제>/<에이전트> origin/main
 | 포트를 빠뜨리는 것 | `run.ps1` 이 포트를 박고 있다 |
 | 세션 키 겹침 | `tests/test_session_key_collisions.py` |
 | 마이그레이션 홀짝·결번·중복 | `tests/test_migration_parity.py`, `tests/test_migration_numbering.py` |
+| 적용된 마이그레이션 SQL 을 고치는 것 | `tests/test_migration_checksums.py` |
 | 문서와 코드가 어긋나는 것 | `tests/test_repository_hygiene.py`, `tests/test_source_metadata.py` |
 
 `.venv` 는 특히 조심할 값어치가 있다. 남의 것을 쓰면 **화면은 내 코드인데 `import` 는 남의

@@ -160,7 +160,8 @@ DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_sim
 적용된 마이그레이션은 **버전 번호로 체크섬을 대조**하므로 주석 추가를 포함해 절대 수정하지
 않는다. 후속 번호를 새로 추가한다. **시뮬레이션 DB의 2·3번은 영구 결번**이고 재사용하면
 기존 DB에서 앱이 시작조차 못 한다(`tests/test_migration_numbering.py`가 막는다). 신규 SQL은
-`--` 형식의 `Purpose` 한 줄과 `docs/migration_catalog.md` 항목을 함께 작성한다.
+`--` 형식의 `Purpose` 한 줄과 `docs/migration_catalog.md` 항목을 함께 작성하고,
+`tests/test_migration_checksums.py` 의 체크섬 표에 한 줄을 더한다(적용된 파일의 수정을 그 시험이 잡는다).
 
 ## 코드 규칙
 
