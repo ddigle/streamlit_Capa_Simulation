@@ -196,6 +196,117 @@ def test_precondition_failure_is_reported_not_raised(tmp_path: Path) -> None:
     assert outcome.precondition_failed is True
 
 
+CONDITIONAL_SETTINGS = StorageSettings(
+    mode="managed",
+    endpoint_url=SETTINGS.endpoint_url,
+    bucket=SETTINGS.bucket,
+    profile=SETTINGS.profile,
+    region=SETTINGS.region,
+    capabilities={"conditional_put_if_none_match_star": True},
+)
+
+
+def _endpoint_error(
+    key: str, *, wording: str = "Could not connect to the endpoint URL"
+) -> CommandResult:
+    """botocore 의 연결 오류 꼴. 경로 스타일 URL 을 버킷·키까지 통째로 찍는다."""
+    url = f"{SETTINGS.endpoint_url}/{SETTINGS.bucket}/{key}"
+    return CommandResult((), 255, "", f'\n{wording}: "{url}"\n', 0.0)
+
+
+def test_a_snapshot_put_whose_key_holds_412_is_retried_then_raised(tmp_path: Path) -> None:
+    """2026-04-12 의 키에는 "412" 가 든다. 연결 오류를 선점 실패로 읽으면 실패한 업로드가 성공처럼
+    지나가고 포인터가 없는 스냅샷을 가리키게 된다."""
+    key = "simulation/snapshots/000000000012__20260412T101500Z__ab12cd34.duckdb"
+    source = tmp_path / "snapshot.duckdb"
+    source.write_bytes(b"x")
+    runner = FakeRunner(responses=[_endpoint_error(key) for _ in range(3)])
+
+    with pytest.raises(ObjectStorageError, match="Could not connect"):
+        _client(runner).put_file(key, source, content_md5_base64="bWQ1")
+
+    assert len(runner.calls) == 3
+
+
+def test_a_conditional_put_does_not_read_a_connection_error_as_a_lost_race(
+    tmp_path: Path,
+) -> None:
+    """seq 587 의 포인터 키는 `999999999412__…` 다. 조건부 쓰기라도 연결 오류는 오류다."""
+    key = "simulation/heads/999999999412__ab12cd34.json"
+    source = tmp_path / "pointer.json"
+    source.write_text("{}", encoding="utf-8")
+    runner = FakeRunner(responses=[_endpoint_error(key) for _ in range(3)])
+
+    with pytest.raises(ObjectStorageError, match="Could not connect"):
+        _client(runner, settings=CONDITIONAL_SETTINGS).put_file(key, source, if_none_match=True)
+
+    assert len(runner.calls) == 3
+
+
+def test_head_does_not_read_a_timeout_as_a_missing_key() -> None:
+    """키에 "404" 가 든 시간 초과를 「없음」으로 읽으면 있는 스냅샷을 못 찾았다고 멈춘다."""
+    key = "simulation/snapshots/000000000007__20260404T081500Z__ab12cd34.duckdb"
+    runner = FakeRunner(
+        responses=[_endpoint_error(key, wording="Read timeout on endpoint URL") for _ in range(3)]
+    )
+
+    with pytest.raises(ObjectStorageError, match="Read timeout"):
+        _client(runner).head(key)
+
+    assert len(runner.calls) == 3
+
+
+def test_an_unconditional_put_raises_on_a_precondition_failure(tmp_path: Path) -> None:
+    """조건 없이 올린 쓰기는 선점에 질 수 없다. 그 응답을 넘기면 빠진 업로드가 성공으로 남는다."""
+    source = tmp_path / "snapshot.duckdb"
+    source.write_bytes(b"x")
+    failure = "An error occurred (PreconditionFailed) when calling the PutObject operation"
+    runner = FakeRunner(responses=[CommandResult((), 254, "", failure, 0.0) for _ in range(3)])
+
+    with pytest.raises(ObjectStorageError):
+        _client(runner).put_file(
+            "simulation/snapshots/000000000001__20260908T091500Z__abcd1234.duckdb", source
+        )
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "An error occurred (412) when calling the PutObject operation: Precondition Failed",
+        "An error occurred (PreconditionFailed) when calling the PutObject operation: "
+        "At least one of the pre-conditions you specified did not hold",
+    ],
+)
+def test_aws_precondition_errors_are_still_reported(tmp_path: Path, stderr: str) -> None:
+    source = tmp_path / "pointer.json"
+    source.write_text("{}", encoding="utf-8")
+    runner = FakeRunner(responses=[CommandResult((), 254, "", stderr, 0.0)])
+
+    outcome = _client(runner, settings=CONDITIONAL_SETTINGS).put_file(
+        "simulation/heads/x.json", source, if_none_match=True
+    )
+
+    assert outcome.precondition_failed is True
+    assert len(runner.calls) == 1
+
+
+def test_aws_head_404_is_still_a_missing_key() -> None:
+    runner = FakeRunner(
+        responses=[
+            CommandResult(
+                (),
+                254,
+                "",
+                "An error occurred (404) when calling the HeadObject operation: Not Found",
+                0.0,
+            )
+        ]
+    )
+
+    assert _client(runner).head("simulation/heads/none.json") is None
+    assert len(runner.calls) == 1
+
+
 def test_configuration_errors_are_not_retried() -> None:
     """자격증명·문법 오류는 몇 번을 걸어도 같다. 재시도는 시간만 태운다."""
     runner = FakeRunner(

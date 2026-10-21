@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import time
@@ -361,7 +362,8 @@ class ObjectStorageClient:
         result = self._run(
             self._argv(*args),
             timeout_seconds=transfer_timeout_seconds(_size_or_none(source)),
-            allow_precondition_failed=True,
+            # 조건 없이 올린 쓰기는 선점에 질 수 없다 — 그런 응답은 실패로 올린다.
+            allow_precondition_failed=if_none_match,
         )
         if result is None:
             return PutOutcome(key=key, etag="", precondition_failed=True)
@@ -502,14 +504,22 @@ def _parse_timestamp(value: object) -> datetime | None:
         return None
 
 
+# 서비스가 돌려준 오류 코드만 본다. 연결·시간 초과 오류는 URL 을 키까지 찍으므로, 키의 날짜·seq·
+# sha8 에 든 404·409·412 를 글자로 찾으면 실패를 「없음」·「선점 실패」로 읽고 재시도도 건너뛴다.
+_NOT_FOUND_ERROR: Final = re.compile(r"An error occurred \((?:404|NoSuchKey|NotFound)\)")
+_PRECONDITION_FAILED_ERROR: Final = re.compile(
+    r"An error occurred \((?:412|409|PreconditionFailed)\)"
+)
+
+
 def _is_not_found(result: CommandResult) -> bool:
     text = (result.stderr or "") + (result.stdout or "")
-    return "404" in text or "Not Found" in text or "NoSuchKey" in text
+    return _NOT_FOUND_ERROR.search(text) is not None
 
 
 def _is_precondition_failed(result: CommandResult) -> bool:
     text = (result.stderr or "") + (result.stdout or "")
-    return "PreconditionFailed" in text or "412" in text or "409" in text
+    return _PRECONDITION_FAILED_ERROR.search(text) is not None
 
 
 def _is_retryable(result: CommandResult) -> bool:

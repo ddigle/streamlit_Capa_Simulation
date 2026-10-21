@@ -407,6 +407,43 @@ def test_a_lost_race_records_the_orphan_snapshot_key(harness: SimpleNamespace) -
     assert state.unpublished_snapshot_key in harness.store.objects
 
 
+def test_a_failed_snapshot_upload_publishes_no_pointer(
+    harness: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-04-12 에 만든 스냅샷 키에는 "412" 가 든다. 연결 오류 URL 의 그 숫자를 선점 실패로 읽으면
+    업로드가 빠진 채 포인터가 게시되고, 다른 PC 의 pull 이 없는 스냅샷을 찾다 멈춘다."""
+    monkeypatch.setattr(snapshot_export, "utc_timestamp", lambda: "2026-04-12T10:15:00Z")
+    store_run = harness.store.run
+
+    def unreachable_for_snapshots(
+        argv: Sequence[str], env: Mapping[str, str], *, timeout_seconds: float
+    ) -> CommandResult:
+        args = list(argv)
+        key = args[args.index("--key") + 1] if "--key" in args else ""
+        if args[2:3] == ["put-object"] and "/snapshots/" in key:
+            harness.store.calls.append(tuple(argv))
+            url = f"http://fake:9020/Capa_simulation_project/{key}"
+            return CommandResult(
+                tuple(argv), 255, "", f'\nCould not connect to the endpoint URL: "{url}"\n', 0.0
+            )
+        result: CommandResult = store_run(argv, env, timeout_seconds=timeout_seconds)
+        return result
+
+    monkeypatch.setattr(harness.store, "run", unreachable_for_snapshots)
+
+    assert _run(harness, "init") == 1
+
+    snapshot_puts = [
+        call
+        for call in harness.store.calls
+        if call[2] == "put-object" and "20260412T" in " ".join(call)
+    ]
+    assert len(snapshot_puts) == 3
+    assert not any(key.startswith("simulation/heads/") for key in harness.store.objects)
+    state = sync_state.read_state(harness.database)
+    assert state is None or state.base_seq is None
+
+
 def test_a_locked_database_is_explained_in_korean(
     harness: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
