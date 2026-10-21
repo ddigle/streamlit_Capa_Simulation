@@ -172,7 +172,7 @@ def validate_reference_edit_table(
         .reindex(columns=expected_columns)
         .reset_index(drop=True)
     )
-    assert_numeric_edit_values(result, key_columns, table_name)
+    assert_numeric_edit_values(result, key_columns, table_name, template=template)
     assert_edit_value_range(
         result,
         template,
@@ -191,10 +191,21 @@ def _is_blank(value: object) -> bool:
     return isinstance(value, str) and not value.strip()
 
 
+def _reads_as_float(value: object) -> bool:
+    """`float(str(value).strip())` 이 읽는가. `True`·`False` 는 글자라 읽지 않는다."""
+    try:
+        float(str(value).strip())
+    except ValueError:
+        return False
+    return True
+
+
 def assert_numeric_edit_values(
     table: pd.DataFrame,
     key_columns: list[str],
     table_name: str,
+    *,
+    template: pd.DataFrame | None = None,
 ) -> None:
     """값 칸이 숫자이거나 비어 있어야 한다. **숫자로 못 읽는 값은 행을 지운다.**
 
@@ -209,22 +220,39 @@ def assert_numeric_edit_values(
 
     `1,200` 처럼 읽을 수 있어 보이는 것도 받지 않는다. 쉼표를 천 단위로 볼지 소수점으로
     볼지는 지역 설정이 정하고, 앱이 골라 주면 그 선택이 화면 어디에도 남지 않는다.
+
+    판정은 **적용과 같은 `to_numeric`** 으로 하고, 그 값이 유한해야 받는다. `float()` 은
+    `inf`·`1e400`·줄바꿈 없는 공백이 붙은 수·`1_000` 도 숫자로 읽지만, 적용에서 `inf` 는
+    무한 그대로 저장되고(대당 Capa·가용대수가 무한) 나머지는 결측이 되어 행이 사라진다.
+    하한 0 범위 검사는 `inf` 를 거르지 못하고 범위가 없는 표는 아무것도 거르지 않는다.
+    뒤의 범위 검사가 `float()` 으로 다시 읽으므로 `float()` 으로도 읽혀야 한다.
+
+    `template` 을 주면 범위 검사처럼 **양식과 같은 무한은 보지 않는다** — 원천에 이미 있던
+    `inf` 까지 막으면 다른 칸을 고치려던 사람이 자기가 만들지 않은 값에 걸린다.
     """
     value_columns = [column for column in table.columns if column not in key_columns]
     offenders: list[str] = []
     for column in value_columns:
-        for position, value in table[column].items():
+        numbers = pd.to_numeric(table[column], errors="coerce")
+        before = (
+            template[column].to_numpy()
+            if template is not None and column in template.columns
+            else None
+        )
+        for index, ((position, value), number) in enumerate(
+            zip(table[column].items(), numbers, strict=True)
+        ):
             if _is_blank(value):
                 continue
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if _reads_as_float(value) and (
+                math.isfinite(number)
+                or (before is not None and _same_number(before[index], number))
+            ):
                 continue
-            try:
-                float(str(value).strip())
-            except ValueError:
-                keys = " / ".join(f"{key}={table.at[position, key]}" for key in key_columns)
-                offenders.append(f"{column} 칸 '{value}' ({keys})")
-                if len(offenders) >= 5:
-                    break
+            keys = " / ".join(f"{key}={table.at[position, key]}" for key in key_columns)
+            offenders.append(f"{column} 칸 '{value}' ({keys})")
+            if len(offenders) >= 5:
+                break
         if len(offenders) >= 5:
             break
     if not offenders:

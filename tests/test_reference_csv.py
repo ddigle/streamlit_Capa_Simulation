@@ -1,10 +1,12 @@
 # Purpose: reference csv 관련 정상·예외·회귀 동작을 검증한다.
 
 import io
+import math
 
 import pandas as pd
 import pytest
 
+from capa_simulation.services.capacity_reference_editor import reference_from_edit_table
 from capa_simulation.services.equipment_count import (
     equipment_count_from_edit_table,
     equipment_count_to_edit_table,
@@ -287,6 +289,98 @@ def test_excel_thousand_separators_are_refused_rather_than_guessed() -> None:
 
     with pytest.raises(ValueError, match="1,200"):
         _paste(template, modified)
+
+
+def _unbounded_paste(modified: pd.DataFrame, *, min_value: float | None) -> pd.DataFrame:
+    """하한만 있는 표(UPEH·보유대수 꼴)와 범위가 없는 표(PKG PLAN 꼴)의 붙여넣기."""
+    return parse_reference_edit_clipboard(
+        modified.to_csv(index=False, sep="\t"),
+        _template(),
+        ["공정", "양산구분"],
+        "RQ_UPEH",
+        min_value=min_value,
+        max_value=None,
+    )
+
+
+@pytest.mark.parametrize("value", ["inf", "Infinity", "1e400", " inf ", "3\xa0", "1_000"])
+@pytest.mark.parametrize("min_value", [0.0, None])
+def test_a_value_that_reads_as_a_number_but_not_as_a_usable_one_is_refused(
+    value: str, min_value: float | None
+) -> None:
+    """글자로는 숫자여도 적용에서 무한이 되거나 사라지는 값은 막는다.
+
+    `float()` 는 `inf`·`1e400`(→ inf)·줄바꿈 없는 공백·`1_000` 을 받지만, 적용의
+    `to_numeric(coerce)` 는 `inf` 를 무한 그대로 두고 나머지는 결측으로 만들어 그 행을 지운다.
+    하한 0 은 `inf` 를 거르지 못하고, 범위가 없는 표는 아무것도 거르지 않는다.
+    """
+    modified = _template().astype({"202608": "object"})
+    modified.loc[0, "202608"] = value
+
+    with pytest.raises(ValueError) as error:
+        _unbounded_paste(modified, min_value=min_value)
+
+    message = str(error.value)
+    assert "숫자로 읽을 수 없는 값" in message
+    assert f"202608 칸 '{value}'" in message
+    assert "공정=Process-B" in message
+
+
+@pytest.mark.parametrize("value", ["-inf", "nan"])
+def test_a_table_without_a_range_still_refuses_infinite_and_nan_text(value: str) -> None:
+    """범위가 없는 표는 하한 검사가 없어 `-inf`·`nan` 도 이 관문만 막을 수 있다."""
+    modified = _template().astype({"202609": "object"})
+    modified.loc[1, "202609"] = value
+
+    with pytest.raises(ValueError, match="숫자로 읽을 수 없는 값"):
+        _unbounded_paste(modified, min_value=None)
+
+
+def test_an_infinite_value_already_in_the_template_passes_unchanged() -> None:
+    """원천에 이미 있던 `inf` 는 이번 붙여넣기가 만든 것이 아니다 — 범위 검사의 양식 값과 같다.
+
+    같은 표의 다른 칸에 새로 넣은 `inf` 는 그대로 막는다.
+    """
+    template = _template()
+    template.loc[0, "202609"] = math.inf
+    unchanged = template.copy()
+    unchanged.loc[1, "202608"] = 0.7
+
+    result = parse_reference_edit_clipboard(
+        unchanged.to_csv(index=False, sep="\t"),
+        template,
+        ["공정", "양산구분"],
+        "RQ_UPEH",
+        min_value=0.0,
+    )
+
+    assert result["202609"].astype(float).tolist() == [math.inf, pytest.approx(0.81)]
+
+    added = template.copy().astype({"202608": "object"})
+    added.loc[1, "202608"] = "inf"
+    with pytest.raises(ValueError, match="202608 칸 'inf'"):
+        parse_reference_edit_clipboard(
+            added.to_csv(index=False, sep="\t"),
+            template,
+            ["공정", "양산구분"],
+            "RQ_UPEH",
+            min_value=0.0,
+        )
+
+
+def test_every_value_the_check_accepts_survives_the_apply() -> None:
+    """검사가 받은 칸은 적용(Wide→Long)에서 하나도 빠지지 않고 유한한 수로 남는다."""
+    modified = _template().astype({"202608": "object", "202609": "object"})
+    modified.loc[0, "202608"] = "1e308"
+    modified.loc[1, "202608"] = " 3 "
+    modified.loc[0, "202609"] = "1E-06"
+    modified.loc[1, "202609"] = "1e-400"
+
+    pasted = _unbounded_paste(modified, min_value=0.0)
+    restored = reference_from_edit_table(pasted, ["공정", "양산구분"], "UPEH", "RQ_UPEH")
+
+    assert len(restored) == 4
+    assert restored["UPEH"].map(math.isfinite).all()
 
 
 def test_a_blank_value_cell_stays_allowed() -> None:
