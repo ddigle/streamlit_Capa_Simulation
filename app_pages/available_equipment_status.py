@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -40,6 +41,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     load_page_context,
+    no_demand_message,
     render_schema_ahead_warning,
 )
 from capa_simulation.persistence.equipment_cache import (
@@ -268,6 +270,9 @@ with gap_tab:
         # 푼다. 로더와 시나리오 키는 계산이 서는 회차에만 선다(키는 교차검증 캐시 키에 실린다).
         gap_required_equipment: Callable[[], pd.DataFrame] | None = None
         gap_required_key: ScenarioCacheKey | None = None
+        # 조회기간에 소요대수가 없을 때의 안내(데이터 범위). 그 갈래에서만 원천 범위를 재도록
+        # 함수로 넘긴다.
+        gap_no_demand_message: Callable[[], str] | None = None
         static_error: str | None = None
         try:
             gap_context = load_page_context()
@@ -298,6 +303,7 @@ with gap_tab:
             )
             gap_required_equipment = gap_demand
             gap_required_key = gap_scenario_key
+            gap_no_demand_message = partial(no_demand_message, gap_context)
         except BOOTSTRAP_ERRORS as exc:
             # 계산이 멈춘 오류도 이 문구로 알린다. 그때도 이미 읽은 Static 은 비교에 그대로 쓴다 —
             # 「Static 을 읽지 못해」 문구와 맞지 않는 이 동작은 테스트가 고정한다
@@ -369,6 +375,7 @@ with gap_tab:
                 conversion_ratios=gap_ratios,
                 required_equipment=gap_required_equipment,
                 required_equipment_key=gap_required_key,
+                no_demand_message=gap_no_demand_message,
                 owner_tab=gap_tab,
                 conditions=conditions_card,
                 # 분류별 내역의 `호기 필터` 가 이 표의 컬럼으로 호기를 좁힌다. 구간과 같은 표다.

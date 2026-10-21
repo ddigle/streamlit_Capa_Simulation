@@ -15,10 +15,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from sheet_reader import has_sheet, sheet_cells, sheet_value
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_tab
-from test_required_shortening_tab import _database, _months
+from test_required_shortening_tab import _database, _months, _shift
 
 from capa_simulation.components.availability_gap_panel import RESULT_VIEW_KEY
 from capa_simulation.components.required_shortening_panel import SHORTENING_START_KEY
@@ -55,6 +56,8 @@ def _script(database_path: Path) -> str:
     - `test_reference_version`: 활성 기준정보 버전(없으면 1).
     - `test_demand_months`·`test_demand_scale`: 그 시나리오의 소요대수가 있는 달과 값.
     - `test_failure`: `"value"` 면 기준정보 오류(ValueError), `"once"` 면 한 번만 일시 오류.
+    - `test_scenario_source`: 참이면 활성 시나리오 표에 소요대수 산출 기준(`RQ_REQB`, 소요대수가
+      있는 달만)을 둔다 — 조회기간이 그 밖일 때 알리는 데이터 범위의 원천이다.
 
     소요대수 대역은 부른 키를 `demand_calls` 에, 키를 낸 표 묶음(그 회차의 활성 시나리오 표·
     기준정보)이 아닌 것을 받은 횟수를 `table_mismatches` 에 적는다.
@@ -113,7 +116,12 @@ reference_tables = {{
     "RQ_EQP_OWN": static.rename(columns={{"가용대수": "설비보유"}}),
     "RQ_EQP_LENT": static.rename(columns={{"가용대수": "설비대여평가"}}).assign(설비대여평가=0.0),
 }}
-active = {{"content_token": state["test_token"], "tables": {{}}}}
+scenario_tables = (
+    {{"RQ_REQB": pd.DataFrame({{"생산계획년월": demand_months}})}}
+    if state.get("test_scenario_source", False)
+    else {{}}
+)
+active = {{"content_token": state["test_token"], "tables": scenario_tables}}
 density = pd.DataFrame({{"생산계획년월": months, "부하량": [12.5] * len(months)}})
 wafer = pd.DataFrame({{"생산계획년월": months, "Wafer 부하량": [198000.0] * len(months)}})
 
@@ -338,6 +346,36 @@ def test_a_calculation_error_is_told_in_every_view_with_the_same_words(tmp_path:
         "활성 시나리오의 소요대수를 읽지 못해 필요 단축 일정을 계산하지 않았습니다. "
         f"다른 탭은 그대로 쓸 수 있습니다.\n\n{VALUE_ERROR}"
     ) in _warnings(app)
+    assert _table_mismatches(app) == 0
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("with_source", [False, True])
+def test_a_period_outside_the_demand_tells_the_data_range_not_a_read_failure(
+    tmp_path: Path, with_source: bool
+) -> None:
+    """조회기간이 소요대수 밖이면 교차검증은 다른 계산 화면과 같은 문구로 데이터 범위를 알린다.
+
+    소요대수를 읽지 못한 것이 아니라 그 기간에 없는 것이다 — 읽기 실패 문구(「소요대수를 읽지
+    못해」)는 DB·시나리오가 깨진 것처럼 읽히고 옮겨 갈 범위도 주지 않는다. 범위는 필요 단축 일정과
+    같은 원천(활성 시나리오 `RQ_REQB`)에서 재고, 원천이 없으면 범위를 붙이지 않는다.
+    """
+    months = _months()
+    first, last = _shift(months[-1], 12), _shift(months[-1], 13)
+    app = _app(
+        tmp_path,
+        test_period=(f"{first // 100}-{first % 100:02d}", f"{last // 100}-{last % 100:02d}"),
+        test_scenario_source=with_source,
+    ).run()
+    _view(_show(app, GAP), "확보율 교차검증")
+
+    infos = _infos(app)
+    message = "선택 범위에 소요대수 산출 기준이 없습니다."
+    if with_source:
+        message += f" (데이터 범위 {month_label(months[0])}–{month_label(months[-1])})"
+    assert message in infos, infos
+    assert not any("소요대수를 읽지 못해" in text for text in infos), infos
+    assert _cross_check(app) is None
     assert _table_mismatches(app) == 0
     clear_equipment_repository()
 

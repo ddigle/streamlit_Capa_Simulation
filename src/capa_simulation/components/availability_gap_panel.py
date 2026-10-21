@@ -84,7 +84,12 @@ from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import theme, tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message, prune_choice
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    NO_DEMAND_MESSAGE,
+    bootstrap_error_message,
+    prune_choice,
+)
 from capa_simulation.process_detail_state import MONTH_PARAM, PROCESS_PARAM
 from capa_simulation.services.availability_gap import GapComparison
 from capa_simulation.services.availability_sheet import (
@@ -251,6 +256,7 @@ def render_availability_gap_panel(
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     required_equipment_key: ScenarioCacheKey | None = None,
+    no_demand_message: Callable[[], str] | None = None,
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
     units: pd.DataFrame | None = None,
@@ -292,6 +298,9 @@ def render_availability_gap_panel(
     로더(`simulation_cache.scenario_required_equipment`)를 넘긴다 — 소요대수는 확보율 교차검증에만
     들고, 그 보기에서도 캐시가 빗나갈 때만 푼다. `required_equipment_key` 는 그 소요대수를 낸
     시나리오 키다. 주면 확보율 교차검증을 (비교 키, 이 키)로 캐시한다(`get_securement_cross_check`).
+    `no_demand_message` 는 조회기간에 소요대수가 없을 때의 안내를 만드는 함수다 — 페이지는
+    `page_bootstrap.no_demand_message` 에 활성 상태를 묶어 넘겨 데이터 범위를 붙인다. 그 갈래에서만
+    부른다. 주지 않으면 범위 없는 첫 문장(`NO_DEMAND_MESSAGE`)이다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -404,6 +413,7 @@ def render_availability_gap_panel(
             ),
             process=process,
             labels=labels,
+            no_demand_message=no_demand_message,
         )
         return
 
@@ -1351,6 +1361,7 @@ def _render_securement_cross_check(
     cache_key: SecurementCrossCheckCacheKey | None,
     process: str | None,
     labels: ProcessLabels,
+    no_demand_message: Callable[[], str] | None = None,
 ) -> None:
     """같은 소요대수에 두 가용대수를 각각 나눈 확보율.
 
@@ -1359,8 +1370,11 @@ def _render_securement_cross_check(
     키에 설비 DB·Cut-off 지문을 넣고, Cut-off 를 적지 않은 공정에서 멈추지 않게 해야 한다.
 
     소요대수가 로더면 캐시가 빗나갈 때만 부른다. 소요대수가 비었는지·Static 이 비었는지도 그
-    결과(`SecurementCrossCheckResult`)가 말한다 — 프레임을 풀지 않고 같은 차례로 안내한다. 맞대지
-    못했거나 로더가 멈추면(`BOOTSTRAP_ERRORS`) 이 보기 안에서 경고로 알린다. 표 머리의
+    결과(`SecurementCrossCheckResult`)가 말한다 — 프레임을 풀지 않고 같은 차례로 안내한다.
+    소요대수가 없음(`None`, 읽지 못함)과 비었음(조회기간에 없음)은 문구가 갈린다 — 빈 쪽은 다른
+    계산 화면과 같은 「선택 범위에 소요대수 산출 기준이 없습니다.」 이고 `no_demand_message` 가
+    있으면 데이터 범위를 붙인다. 맞대지 못했거나 로더가 멈추면(`BOOTSTRAP_ERRORS`) 이 보기 안에서
+    경고로 알린다. 표 머리의
     `Dynamic가용대수`·`Dynamic확보율` 은 보일 때만 「일정기준…」 으로 바꾼다(내부 컬럼 그대로).
     """
     st.markdown("##### :material/fact_check: 확보율 교차검증")
@@ -1386,7 +1400,9 @@ def _render_securement_cross_check(
         st.warning(f"확보율을 맞대지 못했습니다 — {bootstrap_error_message(exc)}")
         return
     if not result.has_demand:
-        st.info("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.")
+        # 읽었지만 조회기간에 소요대수가 없다 — 읽기 실패(위 `None` 갈래)처럼 알리면 DB·시나리오가
+        # 깨진 것으로 읽힌다. 다른 계산 화면처럼 옮겨 갈 데이터 범위를 알린다.
+        st.info(NO_DEMAND_MESSAGE if no_demand_message is None else no_demand_message())
         return
     check = result.check
     if check is None:

@@ -283,6 +283,28 @@ def resolve_effective_months(
     return effective_start_month, effective_end_month
 
 
+# 조회기간에 소요대수가 없을 때의 첫 문장 — 계산 화면들이 `resolve_effective_months` 에 넘기는
+# 글자와 같다.
+NO_DEMAND_MESSAGE = "선택 범위에 소요대수 산출 기준이 없습니다."
+
+
+def no_demand_message(context: PageContext) -> str:
+    """조회기간에 소요대수가 없을 때의 안내 — 다른 계산 화면(`resolve_effective_months`)의 문구.
+
+    `resolve_effective_months` 를 거치지 않고 소요대수가 빈 것으로 그 사실을 아는 화면(필요 단축
+    일정, Static 대비 일정의 확보율 교차검증)이 쓴다. 데이터 범위는 그 화면들과 같은 원천(활성
+    시나리오 `RQ_REQB`)에서 잰다. 그 범위가 조회기간과 겹치거나 원천을 못 읽으면 범위를 붙이지
+    않는다 — 옮겨 갈 곳을 틀리게 알리지 않도록.
+    """
+    try:
+        first, last = available_month_range(context.active_scenario["tables"]["RQ_REQB"], "RQ_REQB")
+    except (KeyError, ValueError):
+        return NO_DEMAND_MESSAGE
+    if first <= context.selected_end_month and context.selected_start_month <= last:
+        return NO_DEMAND_MESSAGE
+    return f"{NO_DEMAND_MESSAGE} (데이터 범위 {month_label(first)}–{month_label(last)})"
+
+
 def scenario_capacity_and_demand(
     cache_key: simulation_cache.ScenarioCacheKey,
     *,

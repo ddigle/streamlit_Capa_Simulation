@@ -622,6 +622,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `scenario_capacity_and_demand`·`stop_calculation_on_error` 는 계산이 멈추면(ValueError) 사이드바를 「계산
     멈춤」으로 바꾸고 다시 던진다(뒤의 것은 시나리오 수준 오류만 나는 호출에만). 계산 함수는 부를 때
     `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
+  - `no_demand_message` 는 `resolve_effective_months` 를 거치지 않고 소요대수가 빈 것으로 「조회기간에 소요대수가
+    없다」를 아는 자리(필요 단축 일정, Static 대비 일정의 확보율 교차검증)의 안내다 — 다른 계산 화면과 같은 문구에
+    활성 시나리오 `RQ_REQB` 의 데이터 범위를 붙인다. 소요대수를 읽지 못한 갈래의 문구와 섞지 않는다.
   - `date_range_value`·`prune_list_selection`·`prune_choice` 가 위젯 값 정리다. 뒤의 둘은 위젯 앞에서 매 회차
     세션에 되쓴다(`pop` 하지 않는다). `render_schema_ahead_warning` 은 DB 가 코드보다 새 버전일 때 경고한다.
   - `forget_page_dialogs`·`count_page_visit` 은 `app.py` 가 페이지가 바뀐 회차에 부른다(팝업 열림 칸 버림·방문

@@ -459,9 +459,13 @@ def test_a_lazy_demand_is_read_only_when_the_cross_check_misses() -> None:
 @pytest.mark.parametrize(
     ("state", "notice"),
     [
-        # 소요대수가 비면 Static 이 비었어도 소요대수 문구가 먼저다.
-        ({"empty_required": True, "missing_static": True}, "소요대수를 읽지 못해"),
-        ({"empty_required": True}, "소요대수를 읽지 못해"),
+        # 소요대수가 비면 Static 이 비었어도 소요대수 문구가 먼저다. 비었다는 것은 조회기간에
+        # 없다는 것이라 읽지 못한 것(로더가 없음)과 문구가 갈린다.
+        (
+            {"empty_required": True, "missing_static": True},
+            "선택 범위에 소요대수 산출 기준이 없습니다",
+        ),
+        ({"empty_required": True}, "선택 범위에 소요대수 산출 기준이 없습니다"),
         ({"missing_static": True}, "Static 가용대수가 없어"),
         ({"missing_required": True}, "소요대수를 읽지 못해"),
     ],
