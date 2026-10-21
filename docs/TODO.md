@@ -810,7 +810,9 @@
   메모리(`max_entries=32`) 역산은 성능이 실제로 문제될 때 한다 (옛 3-17)
 - (2026-09-06) `server.port` 부재를 결함으로 본 기준선 항목은 철회했다 — Windows + Streamlit 1.60 에서는 두 번째
   인스턴스가 오류 없이 같은 8501 에 붙어 모든 접속이 첫 프로세스로 간다(그래서 포트는 늘 적는다). Linux 에서는 원래
-  지적이 성립하므로 WebIDE 이관 때 다시 본다 — 관련: AGENTS 「포트는 에이전트마다 고정」 (옛 3-6)
+  지적이 성립하므로 WebIDE 이관 때 다시 본다. 1.63 부터는 Windows 도 bind 가 충돌을 거절해 두 OS 가 같다 — 포트를
+  적으면 「Port N is not available」 로 멈추고, 빠뜨리면 다음 번호로 말없이 옮긴다(런북 4-2). 포트를 늘 적는 규칙은
+  그대로다 — 관련: AGENTS 「포트는 에이전트마다 고정」 (옛 3-6)
 - (2026-10-07) mypy strict 는 `tests`·`scripts` 까지 본다(사용자 결정 3-5 (b)) — 완화는 `operator` 하나를 모듈 셋에만
   걸고, `tests/__init__.py` 는 두지 않는다(pytest pkg_root 가 루트로 올라가 맨이름 import 가 깨진다) — 관련:
   `pyproject.toml` (옛 3-5)

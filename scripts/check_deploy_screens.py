@@ -631,8 +631,9 @@ def running_app_count(
 
 
 def port_in_use(port: int, host: str = APP_ADDRESS) -> bool:
-    """그 포트에 누가 듣고 있는가. Windows 에서는 두 번째 Streamlit 이 오류 없이 먼저 뜬 쪽에 얹혀
-    엉뚱한 앱을 재게 되므로 띄우기 전에 막는다."""
+    """그 포트에 누가 듣고 있는가. 앱은 포트를 적어 띄우므로 그 포트를 이미 누가 쥐고 있으면
+    「not available」 로 멈추고, 그 포트의 health 는 먼저 떠 있던 남의 앱이 답해 엉뚱한 앱을
+    재게 되므로 띄우기 전에 막는다."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(1.0)
         return probe.connect_ex((host, port)) == 0
