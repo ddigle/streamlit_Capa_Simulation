@@ -112,7 +112,8 @@ def get_scenario_repository(database_path: str) -> DuckDBScenarioRepository:
     repository.initialize()
     from capa_simulation.services.builtin_seed import load_builtin_display_order
 
-    repository.initialize_global_display_order(load_builtin_display_order())
+    # 결과가 아니라 읽는 함수를 넘긴다 — 시드는 공용 프로필이 없을 때만 읽는다.
+    repository.initialize_global_display_order(load_builtin_display_order)
     return repository
 
 

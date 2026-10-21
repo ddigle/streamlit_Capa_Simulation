@@ -19,7 +19,7 @@ from capa_simulation.persistence import (
     display_order_store,
     sync_state,
 )
-from capa_simulation.persistence._sql_helpers import connect, transaction
+from capa_simulation.persistence._sql_helpers import connect, load_profile_header, transaction
 from capa_simulation.persistence.cache import (
     clear_scenario_repository,
     load_scenario_snapshot,
@@ -500,7 +500,7 @@ def test_a_scope_fix_saves_while_another_scope_still_clashes(tmp_path: Path) -> 
 def test_a_seed_with_a_case_clash_does_not_stop_startup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """기동마다 읽는 로컬 시드(`data/input/RQ_DISPLAY_ORDER.csv`)에 겹친 값이 있어도 기동한다.
+    """로컬 시드(`data/input/RQ_DISPLAY_ORDER.csv`)에 겹친 값이 있어도 기동한다.
 
     시드는 저장된 프로필이 있으면 쓰이지도 않는데, 저장 검사로 읽으면 그 파일 한 줄 때문에
     앱 전체가 열리지 않는다. 프로필이 없으면 시드가 그대로 첫 프로필이 되고 화면이 알린다.
@@ -523,6 +523,79 @@ def test_a_seed_with_a_case_clash_does_not_stop_startup(
     again = existing.initialize_global_display_order(fallback)
     assert again.version == created.version
     assert again.rules["분류값"].tolist() == created.rules["분류값"].tolist()
+
+
+_BLANK_SORT_SEED_ERROR = "빈 값, 잘못된 정렬방식 또는 정수가 아닌 순서"
+
+
+def _place_blank_sort_seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """정렬방식 한 칸이 빈 로컬 시드를 `LOCAL_DISPLAY_ORDER_CSV_PATH` 자리에 둔다."""
+    from capa_simulation.services import builtin_seed
+
+    broken = _reference_tables()["RQ_DISPLAY_ORDER"].assign(정렬방식="")
+    seed_csv = tmp_path / "RQ_DISPLAY_ORDER.csv"
+    seed_csv.write_bytes(broken.to_csv(index=False).encode("utf-8-sig"))
+    monkeypatch.setattr(builtin_seed, "LOCAL_DISPLAY_ORDER_CSV_PATH", seed_csv)
+    with pytest.raises(ValueError, match=_BLANK_SORT_SEED_ERROR):
+        builtin_seed.load_builtin_display_order()
+
+
+def test_a_broken_seed_is_not_read_when_the_profile_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필이 있으면 시드 읽는 함수를 부르지도 않는다 — 쓰지 않는 파일이 기동을 막지 않는다."""
+    from capa_simulation.services import builtin_seed
+
+    _place_blank_sort_seed(tmp_path, monkeypatch)
+    repository = _repository(tmp_path / "existing.duckdb")
+    created = repository.initialize_global_display_order(_reference_tables()["RQ_DISPLAY_ORDER"])
+    calls: list[int] = []
+
+    def counting_loader() -> pd.DataFrame:
+        calls.append(1)
+        return builtin_seed.load_builtin_display_order()
+
+    again = repository.initialize_global_display_order(counting_loader)
+
+    assert calls == []
+    assert again.version == created.version
+    pd.testing.assert_frame_equal(again.rules, created.rules)
+
+
+def test_a_broken_seed_still_stops_the_first_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필이 없으면 시드가 첫 프로필이 되므로, 깨진 시드는 지금처럼 그 자리에서 막힌다."""
+    from capa_simulation.services import builtin_seed
+
+    _place_blank_sort_seed(tmp_path, monkeypatch)
+    repository = _repository(tmp_path / "fresh.duckdb")
+
+    with pytest.raises(ValueError, match=_BLANK_SORT_SEED_ERROR):
+        repository.initialize_global_display_order(builtin_seed.load_builtin_display_order)
+    with connect(repository.database_path) as connection:
+        assert load_profile_header(connection, "global_display_order") is None
+
+
+def test_cached_repository_starts_with_a_broken_seed_when_the_profile_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기동 길(`get_scenario_repository`)도 프로필이 있으면 깨진 로컬 시드로 멈추지 않는다."""
+    database_path = tmp_path / "scenario.duckdb"
+    created = _repository(database_path).initialize_global_display_order(
+        _reference_tables()["RQ_DISPLAY_ORDER"]
+    )
+    _place_blank_sort_seed(tmp_path, monkeypatch)
+
+    scenario_cache.get_scenario_repository.clear()
+    try:
+        repository = scenario_cache.get_scenario_repository(str(database_path))
+        profile = repository.load_global_display_order()
+    finally:
+        scenario_cache.get_scenario_repository.clear()
+
+    assert profile.version == created.version
+    pd.testing.assert_frame_equal(profile.rules, created.rules)
 
 
 def test_transaction_surfaces_the_commit_failure_cause(tmp_path: Path) -> None:

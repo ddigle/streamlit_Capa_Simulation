@@ -113,7 +113,7 @@ def prepare_sample(database_path: Path) -> dict[str, object]:
 
     repository = DuckDBScenarioRepository(database_path)
     repository.initialize()
-    repository.initialize_global_display_order(load_builtin_display_order())
+    repository.initialize_global_display_order(load_builtin_display_order)
     release = ensure_initial_scenario(repository).release
     if release is None:
         raise RuntimeError("벤치마크 합성 공식 시나리오가 만들어지지 않았습니다.")

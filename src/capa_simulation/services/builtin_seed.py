@@ -152,8 +152,9 @@ _PROCESSES = (
 def load_builtin_display_order() -> pd.DataFrame:
     """Load and strictly validate the Git-tracked display-order seed."""
     if LOCAL_DISPLAY_ORDER_CSV_PATH.is_file():
-        # 기동마다 읽는 로컬 시드 파일이다(저장된 프로필이 있으면 쓰이지도 않는다). 대소문자만 다른
-        # 분류값이 섞여 있어도 기동은 막지 않는다 — 저장·붙여넣기만 그것을 막는다.
+        # 공용 표시순서 프로필이 없을 때(첫 이관)와 빈 저장소에 내장 시드를 만들 때만 읽는 로컬
+        # 시드 파일이다. 대소문자만 다른 분류값이 섞여 있어도 기동은 막지 않는다 — 저장·붙여넣기만
+        # 그것을 막는다.
         return display_order_from_csv(
             LOCAL_DISPLAY_ORDER_CSV_PATH.read_bytes(), allow_value_clashes=True
         )

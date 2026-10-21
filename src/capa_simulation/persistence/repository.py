@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Collection, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, datetime
@@ -348,7 +348,7 @@ class DuckDBScenarioRepository:
 
     def initialize_global_display_order(
         self,
-        fallback: pd.DataFrame,
+        fallback: pd.DataFrame | Callable[[], pd.DataFrame],
     ) -> GlobalDisplayOrder:
         """Create the shared profile once, preferring an existing revision's rules.
 
@@ -356,13 +356,18 @@ class DuckDBScenarioRepository:
         뒤 동기화 dirty 가 서서, 기동만 한 사본이 다음 pull 에서 막히고 같은 세대를 다시
         올린다. 없다고 읽은 뒤의 경합은 store 가 트랜잭션 안에서 헤더를 다시 확인해 막는다.
         아래 보강 단계는 프로필이 있어도 매번 돈다.
+
+        `fallback` 은 시드 프레임이나 시드를 읽는 함수다. 기동 길은 함수를 넘긴다 — 시드는 프로필이
+        없을 때만 쓰이므로 그때만 읽고 검사한다. 프로필이 있는데 쓰지 않는 로컬 시드 파일이 검사에
+        걸려 앱 전체가 기동하지 못하는 일을 막는다.
         """
-        # 시드는 기동마다 준비하지만 프로필이 이미 있으면 쓰이지 않는다. 로컬 시드 CSV 에 대소문자만
-        # 다른 분류값이 있어도 여기서 기동을 막지 않는다(아래 저장된 프로필과 같은 까닭).
-        prepared_fallback = prepare_global_display_order_rules(fallback, allow_value_clashes=True)
         with self._connect() as connection:
             exists = load_profile_header(connection, "global_display_order") is not None
         if not exists:
+            seed = fallback if isinstance(fallback, pd.DataFrame) else fallback()
+            # 로컬 시드 CSV 에 대소문자만 다른 분류값이 있어도 막지 않는다(아래 저장된 프로필과
+            # 같은 까닭).
+            prepared_fallback = prepare_global_display_order_rules(seed, allow_value_clashes=True)
             with self._write_transaction() as connection:
                 display_order_store.initialize_global_display_order(connection, prepared_fallback)
         profile = self.load_global_display_order()
