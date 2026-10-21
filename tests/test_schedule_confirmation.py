@@ -24,8 +24,6 @@ from capa_simulation.services.schedule_confirmation import (
     MISSING_ACTUAL,
     STATUS_UPDATE_NEEDED,
     UNCONFIRMED,
-    actual_record_issues,
-    actual_record_warnings,
     confirmation_counts,
     flagged_equipment,
     schedule_confirmation_issues,
@@ -98,11 +96,15 @@ def test_a_recorded_actual_clears_unconfirmed_but_asks_for_a_status_update() -> 
     master = _master(
         _unit("EQ-1", 반입일정="2026-09-01", 반입실적="2026-09-03", 반입상태="확정"),
         _unit("EQ-2", Qual일정="2026-09-10", Qual실적="2026-09-12", Qual상태="완료"),
+        _unit("EQ-3", Qual일정="2026-09-10", Qual실적="2026-09-12", Qual상태="계획"),
     )
 
     issues = schedule_confirmation_issues(master, today=TODAY)
 
-    assert _kinds(issues) == [("EQ-1", STATUS_UPDATE_NEEDED, "반입")]
+    assert _kinds(issues) == [
+        ("EQ-1", STATUS_UPDATE_NEEDED, "반입"),
+        ("EQ-3", STATUS_UPDATE_NEEDED, "Qual"),
+    ]
 
 
 def test_a_done_stage_without_an_actual_is_a_missing_actual() -> None:
@@ -195,6 +197,7 @@ def test_modules_of_one_unit_count_as_one_unit_but_are_flagged_box_by_box() -> N
 
 
 def test_an_unknown_kind_is_refused() -> None:
+    assert set(CONFIRMATION_KINDS) == {UNCONFIRMED, MISSING_ACTUAL, STATUS_UPDATE_NEEDED}
     with pytest.raises(ValueError, match="확인구분"):
         flagged_equipment(schedule_confirmation_issues(_master(), today=TODAY), "지연")
 
@@ -218,31 +221,3 @@ def test_an_unvalidated_buffer_and_an_old_frame_are_read_without_errors() -> Non
     assert _kinds(issues) == [("EQ-1", UNCONFIRMED, "반입")]
     assert schedule_confirmation_issues(old, today=TODAY).empty
     assert schedule_confirmation_issues(pd.DataFrame(), today=TODAY).empty
-    assert actual_record_issues(old).empty
-
-
-def test_actual_record_warnings_name_each_kind_once() -> None:
-    master = _master(
-        _unit("EQ-1", 반입상태="완료"),
-        _unit("EQ-2", Qual실적="2026-09-01", Qual상태="계획"),
-        _unit("EQ-3", Qual실적="2026-09-01", Qual상태="확정"),
-    )
-
-    messages = actual_record_warnings(master)
-
-    assert messages == [
-        "실적 누락 1건 — 상태가 「완료」인데 실적이 비었습니다(저장은 됩니다): EQ-1(반입)",
-        "상태 갱신 필요 2건 — 실적이 있는데 상태가 계획·확정입니다(저장은 됩니다): "
-        "EQ-2(Qual), EQ-3(Qual)",
-    ]
-    assert actual_record_warnings(_master(_unit("EQ-9"))) == []
-    assert set(CONFIRMATION_KINDS) == {UNCONFIRMED, MISSING_ACTUAL, STATUS_UPDATE_NEEDED}
-
-
-def test_a_long_warning_writes_both_counts_with_thousands_separators() -> None:
-    many = _master(*(_unit(f"EQ-{index:04d}", 반입상태="완료") for index in range(1_006)))
-
-    (message,) = actual_record_warnings(many)
-
-    assert message.startswith("실적 누락 1,006건 — ")
-    assert message.endswith("EQ-0004(반입) 외 1,001건")

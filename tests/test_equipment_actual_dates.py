@@ -9,7 +9,8 @@
 - **저장할 때만 도는 검사**(`today` 를 넘길 때) — 실적이 오늘보다 늦음, 반입실적 > Qual실적. 날짜에
   따라 결과가 바뀌어 읽을 때 돌면 저장 때 통과한 리비전이 시간이 지나 열리지 않는다.
 
-Area Code 목록 밖·실적 누락·상태 갱신 필요는 막지 않고 저장 미리보기에서 경고만 한다.
+Area Code 목록 밖은 막지 않고 RawData 편집표 위에서 경고만 한다(`area_code_warnings`). 실적 누락·
+상태 갱신 필요도 막지 않는 알림이며 `test_schedule_confirmation.py` 가 맡는다.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from capa_simulation.services.equipment_contract import (
 from capa_simulation.services.equipment_csv import merge_equipment_rows
 from capa_simulation.services.equipment_validation import (
     area_code_warnings,
-    equipment_save_warnings,
     prepare_equipment_master,
 )
 
@@ -154,20 +154,6 @@ def test_an_area_code_outside_the_list_is_saved_with_a_warning() -> None:
     # 빈 칸은 경고하지 않는다. 컬럼이 없는 옛 편집본도 받는다.
     assert area_code_warnings(_equipment()) == []
     assert area_code_warnings(pd.DataFrame({"설비명": ["A"]})) == []
-
-
-def test_save_warnings_gather_area_codes_and_actual_records() -> None:
-    equipment = _with_text(_equipment()).astype({"Area Code": "object"})
-    equipment.loc[0, "Area Code"] = "임시"
-    equipment.loc[1, "반입상태"] = "완료"
-    equipment.loc[0, "Qual실적"] = "2026-08-09"
-
-    messages = equipment_save_warnings(equipment)
-
-    assert [message.split(" ")[0] for message in messages] == ["Area", "실적", "상태"]
-    assert "EQ-02(반입)" in messages[1]
-    assert "EQ-01(Qual)" in messages[2]
-    assert equipment_save_warnings(_equipment()) == []
 
 
 def test_line_type_groups_match_without_case_or_spaces() -> None:

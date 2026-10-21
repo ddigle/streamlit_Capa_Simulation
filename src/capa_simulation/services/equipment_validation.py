@@ -60,7 +60,6 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
 )
 from capa_simulation.services.frame_contracts import require_columns
-from capa_simulation.services.schedule_confirmation import actual_record_warnings
 
 
 def prepare_equipment_baseline(
@@ -273,16 +272,6 @@ def area_code_warnings(equipment: pd.DataFrame) -> list[str]:
         f"{AREA_CODE_COLUMN} 가 {'·'.join(AREA_CODES)} 밖인 호기 {len(rows):,}건 — 저장은 되지만 "
         f"값을 확인하세요({', '.join(values[:5])}): {names[:5]}"
     ]
-
-
-def equipment_save_warnings(equipment: pd.DataFrame) -> list[str]:
-    """설비 마스터를 저장하기 전에 알릴 것(막지 않는다). 검증 전 편집본도 받는다.
-
-    - Area Code 가 Main·MI·부대 밖(`area_code_warnings`)
-    - 실적 누락·상태 갱신 필요(`schedule_confirmation.actual_record_warnings`) — 오늘과 무관한
-      두 경고다. 오늘에 따라 달라지는 「미확인」은 여기에 넣지 않는다.
-    """
-    return [*area_code_warnings(equipment), *actual_record_warnings(equipment)]
 
 
 _COLLISION_EXAMPLES = 5

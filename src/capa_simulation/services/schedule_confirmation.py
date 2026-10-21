@@ -19,8 +19,8 @@
 **대수는 행이 아니라 설비를 센다.** 결과 행에 `설비키`(`equipment_units.unit_keys` — Main
 설비로 묶은 모듈 행은 그 Main 설비)를 싣고, 「N대」는 걸린 설비키의 수다. 모듈 넷 가운데
 하나만 걸려도, 넷 다 걸려도 그 설비 한 대다 — 확인할 대상의 수라 지분(몫)으로 나누지
-않는다. 「N건」(저장 전 경고)은 (호기, 단계) 행 수이고, Space 「!」(`flagged_equipment`)는
-상자마다 묻으므로 설비명이다.
+않는다. RawData 「일정 확인 목록 · N건」의 N 은 결과 행 수, 곧 (호기, 단계) 수이고, Space
+「!」(`flagged_equipment`)는 상자마다 묻으므로 설비명이다.
 
 지연(상태 「지연」)은 여기서 고르지 않는다 — 실적이 들어올 때까지 이어지는 구간이라 시점마다
 달라지고, Space 도면의 빨강 채우기가 맡는다.
@@ -67,8 +67,6 @@ CONFIRMATION_COLUMNS: Final = (
     STATUS_COLUMN,
 )
 
-_EXAMPLES: Final = 5
-
 
 def schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
     """설비 마스터(검증 전 편집본도 받는다)에서 세 알림에 걸리는 (호기, 단계)를 고른다.
@@ -85,12 +83,6 @@ def unconfirmed_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
     """미확인만. 칸과 차례는 `schedule_confirmation_issues` 와 같다. 다른 두 확인구분을 구하지 않아
     회차마다 부르는 Space 「!」(`space_unit_state.unit_boundaries`)가 쓴다."""
     return _issues(equipment, kinds=(UNCONFIRMED,), today=pd.Timestamp(today))
-
-
-def actual_record_issues(equipment: pd.DataFrame) -> pd.DataFrame:
-    """오늘과 무관한 두 알림(실적 누락·상태 갱신 필요)만. 칸과 차례는
-    `schedule_confirmation_issues` 와 같다. 저장 미리보기 경고(`actual_record_warnings`)가 쓴다."""
-    return _issues(equipment, kinds=(MISSING_ACTUAL, STATUS_UPDATE_NEEDED), today=None)
 
 
 def confirmation_counts(
@@ -165,39 +157,11 @@ def schedule_confirmation_summary(issues: pd.DataFrame) -> str | None:
     )
 
 
-def actual_record_warnings(equipment: pd.DataFrame) -> list[str]:
-    """저장 미리보기에 띄울 경고 — 실적 누락·상태 갱신 필요 한 줄씩(없는 쪽은 빠진다). 저장은
-    막지 않는다. 검증 전 편집본도 받는다."""
-    issues = actual_record_issues(equipment)
-    explanations = {
-        MISSING_ACTUAL: f"상태가 「{DONE_STAGE_STATUS}」인데 실적이 비었습니다",
-        STATUS_UPDATE_NEEDED: f"실적이 있는데 상태가 {'·'.join(OPEN_STAGE_STATUSES)}입니다",
-    }
-    messages: list[str] = []
-    for kind, explanation in explanations.items():
-        rows = issues.loc[issues[CONFIRMATION_KIND_COLUMN].eq(kind)]
-        if rows.empty:
-            continue
-        examples = [
-            f"{name}({stage})"
-            for name, stage in zip(
-                rows[EQUIPMENT_ID_COLUMN].head(_EXAMPLES),
-                rows[STAGE_COLUMN].head(_EXAMPLES),
-                strict=True,
-            )
-        ]
-        more = f" 외 {len(rows) - _EXAMPLES:,}건" if len(rows) > _EXAMPLES else ""
-        messages.append(
-            f"{kind} {len(rows):,}건 — {explanation}(저장은 됩니다): {', '.join(examples)}{more}"
-        )
-    return messages
-
-
 def _issues(
     equipment: pd.DataFrame,
     *,
     kinds: tuple[str, ...],
-    today: pd.Timestamp | None,
+    today: pd.Timestamp,
 ) -> pd.DataFrame:
     if equipment.empty or EQUIPMENT_ID_COLUMN not in equipment.columns:
         return _empty()
@@ -254,14 +218,12 @@ def _kind_mask(
     schedule: pd.Series,
     actual: pd.Series,
     status: pd.Series,
-    today: pd.Timestamp | None,
+    today: pd.Timestamp,
 ) -> pd.Series:
     """한 단계에서 그 확인구분에 걸리는 행(bool)."""
     open_status = status.isin(OPEN_STAGE_STATUSES).fillna(False).astype("bool")
     no_actual = actual.isna()
     if kind == UNCONFIRMED:
-        if today is None:
-            raise ValueError("미확인은 오늘 날짜가 있어야 고를 수 있습니다.")
         overdue = schedule.notna() & schedule.lt(today)
         return (open_status & no_actual & overdue).fillna(False).astype("bool")
     if kind == MISSING_ACTUAL:
