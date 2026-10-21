@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from test_equipment_csv import _read_whole_master
 
 from capa_simulation.components.equipment_explorer import _rows_label
 from capa_simulation.components.space_layout import (
@@ -39,11 +40,7 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
 )
-from capa_simulation.services.equipment_csv import (
-    equipment_csv_bytes,
-    read_equipment_clipboard,
-    read_equipment_csv,
-)
+from capa_simulation.services.equipment_csv import equipment_csv_bytes
 from capa_simulation.services.equipment_units import (
     UNIT_KEY_COLUMN,
     UNIT_SHARE_COLUMN,
@@ -396,7 +393,7 @@ def test_a_paste_without_the_parent_column_is_still_accepted() -> None:
     frame = _modules().drop(columns=[PARENT_EQUIPMENT_COLUMN])
     content = frame.to_csv(sep="\t", index=False)
 
-    result = read_equipment_clipboard(content)
+    result = _read_whole_master(content)
 
     assert result[PARENT_EQUIPMENT_COLUMN].isna().all()
     assert len(result) == 5
@@ -405,7 +402,7 @@ def test_a_paste_without_the_parent_column_is_still_accepted() -> None:
 def test_the_parent_survives_a_csv_round_trip() -> None:
     prepared = prepare_equipment_master(_modules())
 
-    result = read_equipment_csv(equipment_csv_bytes(prepared))
+    result = _read_whole_master(equipment_csv_bytes(prepared))
 
     assert result[PARENT_EQUIPMENT_COLUMN].tolist()[:4] == ["APW01"] * 4
     assert result["환산비"].tolist()[:4] == [0.25] * 4
@@ -518,7 +515,7 @@ def test_a_misspelled_parent_header_is_rejected_not_blanked(header: str) -> None
     )
 
     with pytest.raises(ValueError, match="Main 설비 열 이름이 다릅니다"):
-        read_equipment_clipboard(content)
+        _read_whole_master(content)
 
 
 def test_a_csv_header_with_a_trailing_space_is_still_the_parent() -> None:
@@ -527,6 +524,6 @@ def test_a_csv_header_with_a_trailing_space_is_still_the_parent() -> None:
         equipment_csv_bytes(prepared).decode("utf-8-sig").replace("Main 설비", "Main 설비 ", 1)
     )
 
-    result = read_equipment_csv(payload.encode("utf-8-sig"))
+    result = _read_whole_master(payload.encode("utf-8-sig"))
 
     assert result[PARENT_EQUIPMENT_COLUMN].tolist()[:4] == ["APW01"] * 4

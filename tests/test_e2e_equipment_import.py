@@ -12,8 +12,9 @@
 
 세 가지를 화면 대신 서비스 계층에서 보는 이유는 각각 다르다. 성능은 페이지 렌더 비용이
 측정에 섞이면 상한이 뜻을 잃고, 0 이 아닌 인덱스는 `prepare_*` 가 전부 `reset_index` 를 하는
-탓에 지금 화면 경로로는 만들 수 없으며(공개 함수의 계약으로만 고정된다), CSV 읽기 경로는
-아직 어느 화면도 호출하지 않는 대기 중 API 다. 셋 다 화면이 아니라 함수가 계약의 주인이다.
+탓에 지금 화면 경로로는 만들 수 없으며(공개 함수의 계약으로만 고정된다), 빈 칸 판정은 같은 표를
+화면이 부르는 두 읽기 입구(CSV 업로드·붙여넣기)에 그대로 넣어 견주어야 차이가 입구에서 났는지
+가를 수 있다. 셋 다 화면이 아니라 함수가 계약의 주인이다.
 """
 
 from __future__ import annotations
@@ -45,8 +46,6 @@ from capa_simulation.services.equipment_csv import (
     equipment_csv_template,
     read_baseline_clipboard,
     read_baseline_csv,
-    read_equipment_clipboard,
-    read_equipment_csv,
     read_equipment_update,
 )
 from capa_simulation.services.equipment_validation import (
@@ -301,7 +300,7 @@ def _wide_preview_pair(rows: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     바꾼다. 편집한 마스터를 통째로 다시 붙여넣는 것이 실제로 이 모양이라, 상한은 이 경로에서
     재야 뜻이 있다.
     """
-    template = read_equipment_csv(equipment_csv_template())
+    template = read_equipment_update(equipment_csv_template(), empty_equipment_master()).rows
     repeated = pd.concat([template] * rows, ignore_index=True)
     repeated["설비명"] = [f"EQ{index:05d}" for index in range(len(repeated))]
     incoming = prepare_equipment_master(repeated)
@@ -469,35 +468,15 @@ def test_the_preview_marks_the_same_cells_blank_on_both_paths() -> None:
     assert csv_preview.loc[1, "변경내용"] == "비고: (빈 값) → NA"
 
 
-def test_the_full_width_master_reads_the_same_on_both_paths() -> None:
-    """네 컬럼짜리 표뿐 아니라 날짜·숫자가 섞인 설비 마스터 전체 열에서도 두 경로가 같아야 한다.
-
-    빈 칸이 날짜면 `NaT`, 좌표면 `NaN` 이 되고 글자면 `<NA>` 가 된다. 결측 판정이 경로마다
-    다르면 이 셋이 전부 갈라지므로, 폭이 넓은 표에서 한 번 더 묶어 둔다.
-    """
-    template = pd.read_csv(BytesIO(equipment_csv_template()), **TEXT_TABLE_READ_OPTIONS)
-    edited = template.iloc[[0]].fillna("").astype(str).copy()
-    # 업무 값으로서의 `NA` 하나와, 비워 둔 날짜·설비이력 하나씩.
-    edited.loc[:, "Area Code"] = "NA"
-    edited.loc[:, "정지일정"] = ""
-    edited.loc[:, "설비이력"] = ""
-    rows = [list(edited.columns), *edited.values.tolist()]
-
-    from_csv = read_equipment_csv(_csv_bytes(rows))
-    from_clipboard = read_equipment_clipboard(_tab_text(rows))
-
-    assert_frame_equal(from_csv, from_clipboard)
-    assert from_csv.loc[0, "Area Code"] == "NA"
-    assert pd.isna(from_csv.loc[0, "정지일정"])
-    assert pd.isna(from_csv.loc[0, "설비이력"])
-
-
 @pytest.mark.parametrize("partial", [False, True], ids=["full", "partial"])
 def test_the_master_update_reads_the_same_on_both_paths(partial: bool) -> None:
-    """화면이 실제로 타는 입구(`read_equipment_update`)에서도 CSV 와 붙여넣기가 같아야 한다.
+    """네 컬럼짜리 표뿐 아니라 날짜·숫자가 섞인 설비 마스터에서도, 화면이 타는 입구
+    (`read_equipment_update`)로 읽은 CSV 와 붙여넣기가 같아야 한다.
 
-    전체 열과 일부 열(설비명 · Area Code · 정지일정 · 설비이력) 둘 다 본다. 일부 열은 나머지 열을
-    편집본에서 채우므로, 붙여넣은 칸의 결측 판정과 지우는 칸 수까지 두 경로가 같아야 한다.
+    빈 칸이 날짜면 `NaT`, 좌표면 `NaN` 이 되고 글자면 `<NA>` 가 된다. 결측 판정이 경로마다
+    다르면 이 셋이 전부 갈라진다. 전체 열과 일부 열(설비명 · Area Code · 정지일정 · 설비이력) 둘 다
+    본다. 일부 열은 나머지 열을 편집본에서 채우므로, 붙여넣은 칸의 결측 판정과 지우는 칸 수까지 두
+    경로가 같아야 한다.
     """
     template = pd.read_csv(BytesIO(equipment_csv_template()), **TEXT_TABLE_READ_OPTIONS)
     current = prepare_equipment_master(template)

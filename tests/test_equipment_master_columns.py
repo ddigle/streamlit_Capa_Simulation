@@ -5,7 +5,9 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+from pandas.testing import assert_frame_equal
 from test_equipment_availability import _baseline, _downtime, _equipment
+from test_equipment_csv import _read_whole_master
 
 from capa_simulation.persistence.equipment_migration_runner import load_equipment_migrations
 from capa_simulation.persistence.equipment_repository import (
@@ -44,8 +46,7 @@ from capa_simulation.services.equipment_csv import (
     equipment_csv_bytes,
     read_downtime_clipboard,
     read_downtime_csv,
-    read_equipment_clipboard,
-    read_equipment_csv,
+    read_equipment_update,
 )
 from capa_simulation.services.equipment_validation import prepare_equipment_master
 
@@ -303,7 +304,7 @@ def test_old_csv_reads_into_the_new_columns_and_drops_obsolete_ones() -> None:
     payload = _old_layout(current).to_csv(index=False).encode("utf-8-sig")
     notices: list[str] = []
 
-    result = read_equipment_csv(payload, notices=notices)
+    result = _read_whole_master(payload, notices=notices)
 
     assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
     assert result["설비명"].tolist() == ["EQ-01", "EQ-02"]
@@ -315,12 +316,11 @@ def test_old_csv_reads_into_the_new_columns_and_drops_obsolete_ones() -> None:
     # 옛 투자기준 값은 새 컬럼 투자Capa 로 넘어가지 않는다 — 별개의 컬럼이다.
     for column in (*NEW_COLUMNS, *ACTUAL_COLUMNS):
         assert result[column].isna().all(), column
-    # 알림은 셋: 빠진 투자기준·분류3 한 줄씩, 새 컬럼이 없어 대체 행의 그 칸이 비워진다는 한 줄.
-    assert len(notices) == 3
+    # 알림은 둘: 빠진 투자기준·분류3 한 줄씩. 옛 양식에 없는 새 열·실적 열은 붙여넣지 않은 열이라
+    # 알림 없이 새 호기는 빈 칸이다(기존 호기는 그 값을 지킨다 — 아래 시험).
+    assert len(notices) == 2
     assert "투자기준" in notices[0]
     assert "「분류3」" in notices[1] and "메모1" in notices[1]
-    assert "열이 없어 빈칸으로 읽었습니다" in notices[2]
-    assert "메모1" in notices[2] and "반입실적" in notices[2]
 
 
 def test_old_36_column_csv_reads_into_the_new_names_and_drops_the_status_column() -> None:
@@ -335,7 +335,7 @@ def test_old_36_column_csv_reads_into_the_new_names_and_drops_the_status_column(
     assert "설비가동현황" in old.columns and "Area Code" not in old.columns
     notices: list[str] = []
 
-    result = read_equipment_csv(old.to_csv(index=False).encode("utf-8-sig"), notices=notices)
+    result = _read_whole_master(old.to_csv(index=False).encode("utf-8-sig"), notices=notices)
 
     assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
     assert result[AREA_CODE_COLUMN].tolist() == ["MI", "MI"]
@@ -344,35 +344,59 @@ def test_old_36_column_csv_reads_into_the_new_names_and_drops_the_status_column(
     assert result[QUAL_STATUS_COLUMN].tolist() == ["확정", "확정"]
     assert result.loc[1, "메모1"] == "남길 메모"
     assert result.loc[:, list(ACTUAL_COLUMNS)].isna().all().all()
-    # 알림은 둘: 빠진 설비가동현황(메모 열로 옮기라는 말과 함께), 실적 세 열이 없어 빈칸으로 읽음.
-    assert len(notices) == 2
+    # 알림은 하나: 빠진 설비가동현황(메모 열로 옮기라는 말과 함께). 실적 세 열은 알림 없이 빈 칸.
+    assert len(notices) == 1
     assert "「설비가동현황」" in notices[0] and "메모1·메모2·메모3" in notices[0]
-    assert "반입실적 · 반입상태 · Qual실적 열이 없어 빈칸으로 읽었습니다" in notices[1]
 
 
 def test_old_clipboard_paste_converts_the_same_way() -> None:
     current = prepare_equipment_master(_equipment())
     for old in (_old_layout(current), _old36_layout(current)):
+        csv_notices: list[str] = []
         notices: list[str] = []
 
-        result = read_equipment_clipboard(old.to_csv(index=False, sep="\t"), notices=notices)
+        from_csv = _read_whole_master(
+            old.to_csv(index=False).encode("utf-8-sig"), notices=csv_notices
+        )
+        result = _read_whole_master(old.to_csv(index=False, sep="\t"), notices=notices)
 
         assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
         assert result["설비명"].tolist() == ["EQ-01", "EQ-02"]
-        assert any("빈칸으로 읽었습니다" in notice for notice in notices)
+        assert_frame_equal(result, from_csv)
+        assert notices and notices == csv_notices
 
 
-def test_old_file_without_obsolete_columns_only_warns_about_the_missing_new_columns() -> None:
+def test_old_file_without_obsolete_columns_reads_without_notices_and_keeps_stored_values() -> None:
+    """빠진 옛 컬럼만 지운 옛 양식은 알림 없이 읽힌다. 옛 양식에 없는 새 열·실적 열은 붙여넣지
+    않은 열이라 새 호기는 빈 칸이고, 편집본에 있는 호기는 저장된 값을 그대로 지킨다."""
     current = prepare_equipment_master(_equipment())
-    old = _old_layout(current).drop(columns=["투자기준", "분류3"])
+    payload = (
+        _old_layout(current)
+        .drop(columns=["투자기준", "분류3"])
+        .to_csv(index=False)
+        .encode("utf-8-sig")
+    )
     notices: list[str] = []
 
-    result = read_equipment_csv(old.to_csv(index=False).encode("utf-8-sig"), notices=notices)
+    result = _read_whole_master(payload, notices=notices)
 
-    assert len(notices) == 1
-    assert "투자기준" not in notices[0] and "빈칸으로 읽었습니다" in notices[0]
+    assert notices == []
     assert result["설비명"].tolist() == ["EQ-01", "EQ-02"]
     assert result.loc[:, list(NEW_COLUMNS)].isna().all().all()
+
+    stored = _text_columns(current)
+    stored.loc[0, "투자Capa"] = "322K"
+    stored.loc[1, "메모1"] = "남길 메모"
+    stored.loc[0, ARRIVAL_ACTUAL_COLUMN] = pd.Timestamp("2026-08-04")
+    stored.loc[0, ARRIVAL_STATUS_COLUMN] = "완료"
+
+    kept = read_equipment_update(payload, stored)
+
+    assert kept.cleared_cells == 0
+    assert kept.rows.loc[0, "투자Capa"] == "322K"
+    assert kept.rows.loc[1, "메모1"] == "남길 메모"
+    assert kept.rows.loc[0, ARRIVAL_ACTUAL_COLUMN] == pd.Timestamp("2026-08-04")
+    assert kept.rows.loc[0, ARRIVAL_STATUS_COLUMN] == "완료"
 
 
 def test_old_module_parent_column_keeps_grouping_modules() -> None:
@@ -381,7 +405,7 @@ def test_old_module_parent_column_keeps_grouping_modules() -> None:
     current["Main 설비"] = "EQ-UNIT"
     old = _old_layout(current)
 
-    result = read_equipment_csv(old.to_csv(index=False).encode("utf-8-sig"))
+    result = _read_whole_master(old.to_csv(index=False).encode("utf-8-sig"))
 
     assert result["Main 설비"].tolist() == ["EQ-UNIT", "EQ-UNIT"]
 
@@ -395,7 +419,7 @@ def test_relocation_date_from_an_old_header_keeps_its_value(old_header: str) -> 
     header, _, body = text.partition("\n")
     notices: list[str] = []
 
-    result = read_equipment_csv(
+    result = _read_whole_master(
         f"{header.replace(RELOCATION_DATE_COLUMN, old_header)}\n{body}".encode("utf-8-sig"),
         notices=notices,
     )
@@ -413,7 +437,7 @@ def test_relocation_old_header_also_converts_on_paste_and_in_the_old_layout() ->
     old = _old_layout(current)
     assert "이설일" in old.columns and RELOCATION_DATE_COLUMN not in old.columns
 
-    pasted = read_equipment_clipboard(old.to_csv(index=False, sep="\t"))
+    pasted = _read_whole_master(old.to_csv(index=False, sep="\t"))
 
     assert pasted.loc[1, RELOCATION_DATE_COLUMN] == pd.Timestamp("2027-01-04")
 
@@ -425,7 +449,7 @@ def test_old_and_new_relocation_headers_together_are_rejected() -> None:
     with pytest.raises(
         ValueError, match=r"옛 이름과 새 이름이 함께.*반출/이설일정 ← 반출/이설일정 · 이설일"
     ):
-        read_equipment_csv(both.to_csv(index=False).encode("utf-8-sig"))
+        _read_whole_master(both.to_csv(index=False).encode("utf-8-sig"))
 
 
 @pytest.mark.parametrize(
@@ -437,7 +461,7 @@ def test_a_36_column_name_next_to_its_new_name_is_rejected(old: str, new: str) -
     both = current.assign(**{old: current[new]})
 
     with pytest.raises(ValueError, match=rf"옛 이름과 새 이름이 함께.*{new} ← {new} · {old}"):
-        read_equipment_csv(both.to_csv(index=False).encode("utf-8-sig"))
+        _read_whole_master(both.to_csv(index=False).encode("utf-8-sig"))
 
 
 def test_spacing_variants_of_new_and_old_names_are_accepted() -> None:
@@ -447,7 +471,7 @@ def test_spacing_variants_of_new_and_old_names_are_accepted() -> None:
     header = header.replace("Main 설비", "Main설비").replace("반입/Qual 이력", "반입/Qual이력")
     header = header.replace("Area Code", "AreaCode")
 
-    result = read_equipment_csv(f"{header}\n{body}".encode("utf-8-sig"))
+    result = _read_whole_master(f"{header}\n{body}".encode("utf-8-sig"))
 
     assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
 
@@ -477,7 +501,7 @@ def test_case_variants_of_latin_headers_keep_their_values(contract: str, variant
     header, _, body = text.partition("\n")
     header = header.replace(contract, variant)
 
-    result = read_equipment_csv(f"{header}\n{body}".encode("utf-8-sig"))
+    result = _read_whole_master(f"{header}\n{body}".encode("utf-8-sig"))
 
     assert result.columns.tolist() == list(EQUIPMENT_COLUMNS)
     assert result[contract].notna().all()
@@ -489,7 +513,7 @@ def test_case_variant_lookalike_of_parent_column_is_named_instead_of_blanked() -
     renamed = current.rename(columns={"Main 설비": "MAIN 설비(선택)"})
 
     with pytest.raises(ValueError, match="Main 설비 열 이름이 다릅니다"):
-        read_equipment_csv(renamed.to_csv(index=False).encode("utf-8-sig"))
+        _read_whole_master(renamed.to_csv(index=False).encode("utf-8-sig"))
 
 
 def test_misspelled_old_parent_column_is_named_instead_of_blanked() -> None:
@@ -497,7 +521,7 @@ def test_misspelled_old_parent_column_is_named_instead_of_blanked() -> None:
     old = _old_layout(current).rename(columns={"모체호기": "모체호기(선택)"})
 
     with pytest.raises(ValueError, match="Main 설비 열 이름이 다릅니다"):
-        read_equipment_csv(old.to_csv(index=False).encode("utf-8-sig"))
+        _read_whole_master(old.to_csv(index=False).encode("utf-8-sig"))
 
 
 def test_old_and_new_name_for_the_same_column_together_are_rejected() -> None:
@@ -534,7 +558,7 @@ def test_export_uses_the_new_header_and_round_trips_new_values() -> None:
 
     payload = equipment_csv_bytes(current)
     header = payload.decode("utf-8-sig").splitlines()[0]
-    result = read_equipment_csv(payload)
+    result = _read_whole_master(payload)
 
     assert header.split(",") == list(EQUIPMENT_COLUMNS)
     assert result.loc[0, "투자Capa"] == "322K"

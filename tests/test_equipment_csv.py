@@ -44,17 +44,30 @@ from capa_simulation.services.equipment_csv import (
     read_baseline_csv,
     read_downtime_clipboard,
     read_downtime_csv,
-    read_equipment_clipboard,
-    read_equipment_csv,
+    read_equipment_update,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_schedule,
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 
 BASELINE_HEADER = "\t".join(BASELINE_COLUMNS)
+
+
+def _read_whole_master(
+    payload: str | bytes,
+    *,
+    floor_canvases: FloorCanvasMap | None = None,
+    notices: list[str] | None = None,
+) -> pd.DataFrame:
+    """설비 마스터 표 전체를 화면 입구(`read_equipment_update`)로 읽는다 — 붙여넣기는 글, CSV 는
+    바이트다. 편집본이 비어 모든 행이 새 호기이므로 새 호기에 필요한 열 검사까지 함께 돈다."""
+    return read_equipment_update(
+        payload, empty_equipment_master(), floor_canvases=floor_canvases, notices=notices
+    ).rows
 
 
 def _baseline_rows() -> pd.DataFrame:
@@ -85,7 +98,7 @@ def _incoming_baseline(process: str, category: str, count: float, note: str) -> 
 
 
 def test_equipment_csv_template_round_trips_with_38_columns() -> None:
-    result = read_equipment_csv(equipment_csv_template())
+    result = _read_whole_master(equipment_csv_template())
 
     assert len(result.columns) == 38
     assert "사업부" not in result.columns
@@ -124,13 +137,13 @@ def test_equipment_csv_template_lists_choice_rows_without_equipment_id() -> None
 def test_the_template_example_row_is_a_finished_unit_with_no_confirmation_warning() -> None:
     """양식의 예시 행을 그대로 따라 쓴 호기에 일정 확인 알림이 뜨지 않는다 — 끝난 단계는 실적과
     「완료」를 함께 적은 꼴이다."""
-    example = read_equipment_csv(equipment_csv_template())
+    example = _read_whole_master(equipment_csv_template())
 
     assert schedule_confirmation_issues(example, today=date(2026, 10, 16)).empty
 
 
 def test_downtime_csv_template_has_no_id_and_round_trips() -> None:
-    equipment = read_equipment_csv(equipment_csv_template())
+    equipment = _read_whole_master(equipment_csv_template())
     result = read_downtime_csv(downtime_csv_template(), equipment=equipment)
 
     assert len(downtime_csv_template().decode("utf-8-sig").splitlines()) == 2
@@ -144,7 +157,7 @@ def test_equipment_templates_round_trip_through_excel_clipboard() -> None:
         index=False,
         sep="\t",
     )
-    equipment = read_equipment_clipboard(equipment_text)
+    equipment = _read_whole_master(equipment_text)
     downtime_text = pd.read_csv(BytesIO(downtime_csv_template())).to_csv(
         index=False,
         sep="\t",
@@ -348,12 +361,12 @@ def test_out_of_canvas_coordinates_are_rejected_at_paste_and_import_time() -> No
     payload = _equipment().to_csv(index=False).encode("utf-8-sig")
 
     # 상한을 넘기지 않으면 예전처럼 통과한다. 과거 리비전이 계속 열려야 하기 때문이다.
-    assert len(read_equipment_clipboard(clipboard)) == 2
+    assert len(_read_whole_master(clipboard)) == 2
 
     with pytest.raises(ValueError, match="층 캔버스"):
-        read_equipment_clipboard(clipboard, floor_canvases=canvases)
+        _read_whole_master(clipboard, floor_canvases=canvases)
     with pytest.raises(ValueError, match="층 캔버스"):
-        read_equipment_csv(payload, floor_canvases=canvases)
+        _read_whole_master(payload, floor_canvases=canvases)
     with pytest.raises(ValueError, match="층 캔버스"):
         merge_equipment_rows(
             _equipment().iloc[:1],
@@ -383,7 +396,7 @@ def test_exported_equipment_csv_round_trips_unchanged() -> None:
     header = payload.decode("utf-8-sig").splitlines()[0]
 
     assert header.split(",") == list(EQUIPMENT_COLUMNS)
-    _assert_same_table(read_equipment_csv(payload), equipment)
+    _assert_same_table(_read_whole_master(payload), equipment)
 
 
 def test_exported_downtime_csv_round_trips_unchanged() -> None:
@@ -431,8 +444,8 @@ def test_export_guards_identifier_values_excel_would_rewrite_and_reading_strips_
     assert '"=""0123"""' in text
     # 숫자·날짜 컬럼은 묶지 않는다 — 숫자로 읽히는 것이 맞고 날짜는 Excel 이 그대로 돌려준다.
     assert text.count('=""') == 1
-    assert read_equipment_csv(payload)["설비명"].iloc[0] == "0123"
-    _assert_same_table(read_equipment_csv(payload), equipment)
+    assert _read_whole_master(payload)["설비명"].iloc[0] == "0123"
+    _assert_same_table(_read_whole_master(payload), equipment)
 
 
 def test_exporting_an_empty_table_gives_a_header_only_file_that_reads_back_empty() -> None:
@@ -440,7 +453,7 @@ def test_exporting_an_empty_table_gives_a_header_only_file_that_reads_back_empty
     equipment = prepare_equipment_master(empty_equipment_master())
 
     for payload, columns, back in (
-        (equipment_csv_bytes(equipment), EQUIPMENT_COLUMNS, read_equipment_csv),
+        (equipment_csv_bytes(equipment), EQUIPMENT_COLUMNS, _read_whole_master),
         (baseline_csv_bytes(empty_equipment_baseline()), BASELINE_COLUMNS, read_baseline_csv),
         (
             downtime_csv_bytes(empty_downtime_schedule()),

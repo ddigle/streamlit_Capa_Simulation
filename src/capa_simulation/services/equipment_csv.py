@@ -264,8 +264,8 @@ def _export_csv_bytes(
     - 날짜는 `YYYY-MM-DD` 다. 준비된 프레임의 날짜 컬럼은 `datetime64` 라 그냥 두면
       `2026-09-01 00:00:00` 처럼 시각까지 붙어 나갈 수 있다.
     - 빈 프레임은 헤더 한 줄만 나간다. 그 파일을 그대로 붙여넣으면 0행으로 읽힌다.
-    - 식별 컬럼의 값 중 Excel 이 바꿔 놓을 것만 `="…"` 로 묶는다. 읽는 쪽(`_select_columns`)이
-      그 껍데기를 벗기므로 고치지 않고 그대로 되돌려도 통과한다.
+    - 식별 컬럼의 값 중 Excel 이 바꿔 놓을 것만 `="…"` 로 묶는다. 읽는 쪽(`_select_columns`·
+      `_select_update_columns`)이 그 껍데기를 벗기므로 고치지 않고 그대로 되돌려도 통과한다.
     """
     exported = frame.reindex(columns=list(columns)).copy()
     for column in guarded_columns:
@@ -275,23 +275,6 @@ def _export_csv_bytes(
 
 def read_baseline_csv(payload: bytes) -> pd.DataFrame:
     return prepare_equipment_baseline(_read_csv(payload, _BASELINE_HEADERS))
-
-
-def read_equipment_csv(
-    payload: bytes,
-    *,
-    floor_canvases: FloorCanvasMap | None = None,
-    notices: list[str] | None = None,
-) -> pd.DataFrame:
-    """`floor_canvases` 를 넘기면 읽는 즉시 층별 캔버스 좌표 상한까지 검사한다.
-
-    옛 머리 이름은 새 이름으로 바꿔 읽는다. 빠진 옛 컬럼(`투자기준`·`설비가동현황` …)을 떼어 냈으면
-    그 알림 문구를 `notices` 에 덧붙인다.
-    """
-    return prepare_equipment_master(
-        _read_csv(payload, _EQUIPMENT_HEADERS, notices=notices),
-        floor_canvases=floor_canvases,
-    )
 
 
 def read_downtime_csv(payload: bytes, *, equipment: pd.DataFrame) -> pd.DataFrame:
@@ -332,26 +315,6 @@ def untouched_template_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
         & normalized["비고"].eq(SAMPLE_BASELINE_TEMPLATE_NOTE)
     )
     return baseline.loc[example.fillna(False).to_numpy()]
-
-
-def read_equipment_clipboard(
-    content: str,
-    *,
-    floor_canvases: FloorCanvasMap | None = None,
-    notices: list[str] | None = None,
-) -> pd.DataFrame:
-    """`floor_canvases` 를 넘기면 붙여넣기 시점에 층별 캔버스 좌표 상한까지 검사한다.
-
-    머리 이름 변환과 `notices` 는 `read_equipment_csv` 와 같다.
-    """
-    return prepare_equipment_master(
-        _select_columns(
-            parse_clipboard_table(content, _EQUIPMENT_HEADERS.label),
-            _EQUIPMENT_HEADERS,
-            notices=notices,
-        ),
-        floor_canvases=floor_canvases,
-    )
 
 
 @dataclass(frozen=True)
@@ -399,8 +362,9 @@ def read_equipment_update(
       전체 표를 한 번 더 검증한다(`merge_equipment_rows`) — 날짜·환산비·Main 설비·중복 규칙이
       전체 열 붙여넣기와 똑같이 돈다.
 
-    모르는 머리글은 `_select_update_columns` 가 다룬다. 옛 머리 이름 변환과 `notices` 는
-    `read_equipment_csv` 와 같다.
+    옛 머리 이름 변환·모르는 머리글·`notices`(떼어 낸 옛 컬럼, 읽지 않은 열)는
+    `_select_update_columns` 가 다룬다. 편집본이 비었으면 모든 행이 새 호기라 양식 전체 열을 읽는
+    것과 같은 길이다. `floor_canvases` 를 넘기면 층별 캔버스 좌표 상한까지 검사한다.
     """
     label = _EQUIPMENT_HEADERS.label
     frame = (
@@ -623,13 +587,8 @@ _DOWNTIME_HEADERS = _TableHeaders(
 _BASELINE_HEADERS = _TableHeaders("기존 보유대수", BASELINE_COLUMNS)
 
 
-def _read_csv(
-    payload: bytes,
-    headers: _TableHeaders,
-    *,
-    notices: list[str] | None = None,
-) -> pd.DataFrame:
-    return _select_columns(_read_csv_frame(payload, headers.label), headers, notices=notices)
+def _read_csv(payload: bytes, headers: _TableHeaders) -> pd.DataFrame:
+    return _select_columns(_read_csv_frame(payload, headers.label), headers)
 
 
 def _read_csv_frame(payload: bytes, label: str) -> pd.DataFrame:
@@ -678,38 +637,14 @@ def _reject_duplicate_csv_headers(frame: pd.DataFrame, label: str) -> None:
         raise ValueError(f"{label} CSV 컬럼명이 중복되었습니다: {sorted(duplicated)[:5]}")
 
 
-def _select_columns(
-    frame: pd.DataFrame,
-    headers: _TableHeaders,
-    *,
-    notices: list[str] | None = None,
-) -> pd.DataFrame:
+def _select_columns(frame: pd.DataFrame, headers: _TableHeaders) -> pd.DataFrame:
     """옛 머리 이름을 새 이름으로 바꾼 뒤 계약 컬럼만 계약 차례로 고른다(표 전체를 읽는 입구).
 
-    옛 이름 변환이 **먼저**다. 뒤에 하면 옛 이름(「모체호기」)이 아래의 닮은 이름 검사를
-    빠져나가 선택 컬럼이 조용히 빈 칸이 된다. 빠진 옛 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 떼어 내고
-    알림 한 줄을 `notices` 에 덧붙인다.
-
-    `headers.optional` 은 없어도 되는 컬럼이다. 없으면 빈 칸으로 채운다 — 그 컬럼이 생기기
-    전의 양식도 그대로 읽힌다. 이 표로 `merge_equipment_rows` 를 바로 부르면 **대체 행의 그 칸은
-    빈 값으로 바뀐다.** RawData 붙여넣기는 이 입구가 아니라 `read_equipment_update` 를 타서
-    붙여넣지 않은 열의 값을 지킨다.
+    기존 보유대수·비가동 일정의 입구다. 두 표에는 선택 컬럼·빠진 옛 컬럼이 없어 계약 컬럼이 모두
+    있어야 한다. 설비 마스터는 붙여넣은 열만 고르는 `_select_update_columns` 가 읽는다.
     """
     label, columns = headers.label, headers.columns
-    frame, dropped = rename_legacy_headers(
-        frame, columns, headers.aliases, label, obsolete=headers.obsolete
-    )
-    if notices is not None:
-        notices.extend(dropped)
-    missing = [column for column in headers.optional if column not in frame.columns]
-    _reject_lookalike_headers(frame, headers, missing)
-    if missing:
-        frame = frame.reindex(columns=[*frame.columns, *missing])
-        if notices is not None:
-            notices.append(
-                f"{label}에 {' · '.join(missing)} 열이 없어 빈칸으로 읽었습니다. 이 파일로 바꾸는 "
-                "행은 그 칸의 저장된 값이 지워집니다 — 「변경컬럼」을 확인하세요."
-            )
+    frame, _ = rename_legacy_headers(frame, columns, headers.aliases, label)
     require_columns(frame, columns, label)
     selected = frame.loc[:, columns].copy()
     # 내보내기가 식별 컬럼에 씌운 `="…"` 껍데기를 벗긴다. Excel 을 거친 값은 이미 벗겨져
@@ -750,7 +685,9 @@ def _select_update_columns(
 ) -> pd.DataFrame:
     """일부 열 붙여넣기(`read_equipment_update`)의 머리글을 읽고 붙여넣은 계약 컬럼만 고른다.
 
-    옛 이름 변환·빠진 옛 컬럼 알림·닮은 선택 컬럼 검사는 `_select_columns` 와 같다. 다른 점:
+    옛 머리 이름을 새 이름으로 바꾼 **뒤** 빠진 열을 센다. 빠진 옛 컬럼
+    (`OBSOLETE_EQUIPMENT_COLUMNS`)은 떼어 내고 알림 한 줄을 `notices` 에 덧붙이며, 빠진 선택 컬럼과
+    이름이 닮은 머리글은 `_reject_lookalike_headers` 가 막는다. 그 밖에:
 
     - `설비명` 하나만 꼭 있어야 하고, 나머지는 있는 열만 계약 차례로 고른다(빈 칸을 채우지 않는다).
     - 설비명 말고 고를 열이 없으면 막는다 — 아무것도 바꾸지 않는 붙여넣기다.

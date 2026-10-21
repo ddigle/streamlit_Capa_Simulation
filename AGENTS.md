@@ -550,7 +550,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   소요대수는 숫자 월로 먼저 거른 뒤 공정명·소요기준을 다듬는다(고르는 행은 같고 글자 처리가 그 달 행에만 걸린다).
 - `src/capa_simulation/services/equipment_contract.py` — 설비 세 입력의 컬럼 계약·허용값·상태 이름 상수를 정의한다(7장).
   - 기존 보유대수 자연키는 `BASELINE_KEY_COLUMNS`(공정, 분류)다. 옛 머리 이름은 입구에서 바꿔 읽고(`rename_legacy_headers`)
-    빠진 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 알림만 남긴다. 선택 컬럼은 없으면 빈 칸이다.
+    빠진 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 알림만 남긴다. 선택 컬럼은 없어도 된다 — 설비 마스터 입구
+    (`read_equipment_update`)에서 새 호기는 빈 칸, 기존 호기는 저장값을 지킨다.
   - 사용기준 규칙(`COUNTED_USAGE_BASIS`·`counts_for_capacity`)과 모듈 일치 컬럼(`UNIT_CONSISTENT_COLUMNS`)의 단일
     선언이다. 한글↔DB 칸 매핑은 `equipment_repository.EQUIPMENT_MASTER_DB_COLUMNS` 한 곳이다.
   - `환산비` 는 기준 모델 한 대 대비 몫(능력 축)이고 월별 환산대수·확보율 교차검증만 곱한다.
