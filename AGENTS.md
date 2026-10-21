@@ -2131,8 +2131,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   위젯의 `on_change` 에서, 값이 실제로 바뀐 때만 한다. 심기·가지치기·조회기간 변경으로 옮긴 값을 쓰면 공용 행이라 남이
   고른 값을 되쓰고(핑퐁), 선택지 밖 글자(브라우저가 되보낸 옛 라벨)가 섞인 콜백 값은 쓰지 않는다.
 - 활성 리비전을 씨앗으로 쓰는 위젯은 「무엇으로 씨앗을 넣었나」를 함께 적어 두고 활성 리비전이 바뀌면 다시 적는다
-  (`components/scenario_management.py` 의 `REVISION_SEED_KEY`) — 칸이 없을 때만 넣으면 사이드바 팝업에서 불러온 뒤에도
-  옛 리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다.
+  (`components/scenario_management.py` 의 `REVISION_SEED_KEY`, `components/scenario_transform.py` 의 원본 리비전 상자)
+  — 칸이 없을 때만 넣으면 사이드바 팝업에서 불러온 뒤에도 옛 리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다.
 - `st.query_params` 는 자기 키만 넣고 `del` 한다. `st.query_params.clear()` 는 쓰지 않는다 — 테마 인자
   (`design/theme.THEME_QUERY_PARAM`)까지 지워 첫 방문으로 보고 다시 새로고침한다. 키 둘 이상을 지울 때는 `del` 을 되풀이하지
   않고 남길 인자를 `get_all` 로 다시 실어 `st.query_params.from_dict` 한 번으로 바꾼다 — 1.63 은 바꿀 때마다 주소 메시지를

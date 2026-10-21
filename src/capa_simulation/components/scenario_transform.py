@@ -120,13 +120,22 @@ def render_source_selector(
         return None
     revisions = {item.revision_id: item for item in repository.list_revisions(selected)}
     revision_key = f"{key}_revision_{selected}"
+    # 리비전 상자에 씨앗으로 넣은 활성 리비전 id 를 역할·시나리오마다 적어 두고, 활성 리비전이
+    # 이것과 달라지면(사이드바 시나리오 팝업의 불러오기·저장, 같은 페이지 「리비전 저장」 모드)
+    # 상자를 새 활성 리비전으로 다시 적는다 — 상자는 `persist_state` 라 칸이 없을 때만 넣으면 옛
+    # 리비전에 남는다. 사용자가 일부러 고른 리비전은 활성이 그대로인 동안 남고, 활성이 다른
+    # 시나리오로 가면 씨앗만 버린다(AGENTS 9장, `scenario_management.REVISION_SEED_KEY`).
+    seed_key = f"{key}_revision_seed_{selected}"
     active_revision = active_persisted_revision_id()
-    if (
-        revision_key not in st.session_state
-        and selected == active_persisted_scenario_id()
-        and active_revision in revisions
-    ):
-        st.session_state[revision_key] = active_revision
+    if selected == active_persisted_scenario_id() and active_revision in revisions:
+        if (
+            revision_key not in st.session_state
+            or st.session_state.get(seed_key) != active_revision
+        ):
+            st.session_state[revision_key] = active_revision
+            st.session_state[seed_key] = active_revision
+    else:
+        st.session_state.pop(seed_key, None)
     revision_id = st.selectbox(
         f"{label} 리비전",
         options=list(revisions),

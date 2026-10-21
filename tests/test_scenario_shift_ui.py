@@ -20,6 +20,8 @@ from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONT
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
 
 Source = tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot]
+# 이 칸이 참인 회차는 화면을 그리지 않는다 — 모드 전환·페이지 이동으로 상자가 사라진 회차와 같다.
+HIDE_KEY = "test_shift_hidden"
 
 
 @pytest.fixture
@@ -47,11 +49,14 @@ def _app(
     database: Path, source: ScenarioSnapshot, *, active_revision: ScenarioSnapshot | None = None
 ) -> AppTest:
     script = f"""
+import streamlit as st
+
 from capa_simulation.components.scenario_year_shift import render_scenario_year_shift
 from capa_simulation.persistence.cache import get_scenario_repository
 
 database_path = {str(database)!r}
-render_scenario_year_shift(get_scenario_repository(database_path), database_path)
+if not st.session_state.get({HIDE_KEY!r}):
+    render_scenario_year_shift(get_scenario_repository(database_path), database_path)
 """
     app = AppTest.from_string(script, default_timeout=30).run()
     if active_revision is not None:
@@ -313,3 +318,59 @@ def test_source_defaults_to_active_revision_and_preserves_explicit_selection(
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == original.revision.revision_id
     assert len(repository.list_scenarios()) == 1
     assert len(repository.list_revisions(original.scenario.scenario_id)) == 2
+
+
+def _activate(app: AppTest, snapshot: ScenarioSnapshot) -> None:
+    app.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY] = snapshot.scenario.scenario_id
+    app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id
+
+
+def test_source_revision_follows_a_changed_active_revision(source: Source) -> None:
+    """사이드바 팝업 불러오기·「리비전 저장」 모드 뒤처럼 활성 리비전이 바뀌면 상자가 따라온다.
+
+    일부러 고른 리비전은 활성이 그대로인 동안 남고, 상자가 사라졌던 회차를 지나도 따라온다.
+    """
+    repository, database, r1 = source
+    revision_key = f"shift_source_revision_{r1.scenario.scenario_id}"
+
+    def save(name: str, parent: ScenarioSnapshot) -> ScenarioSnapshot:
+        return repository.save_revision(
+            r1.scenario.scenario_id,
+            r1.tables,
+            r1.preset,
+            revision_name=name,
+            parent_revision_id=parent.revision.revision_id,
+        )
+
+    app = _app(database, r1, active_revision=r1)
+    assert app.selectbox(key=revision_key).value == r1.revision.revision_id
+
+    r2 = save("저장 r2", r1)
+    _activate(app, r2)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=revision_key).value == r2.revision.revision_id
+
+    app.selectbox(key=revision_key).set_value(r1.revision.revision_id).run()
+    app.run()
+    assert app.selectbox(key=revision_key).value == r1.revision.revision_id
+
+    app.session_state[HIDE_KEY] = True
+    app.run()
+    r3 = save("저장 r3", r2)
+    _activate(app, r3)
+    app.session_state[HIDE_KEY] = False
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=revision_key).value == r3.revision.revision_id
+
+    # 활성이 다른 시나리오로 갔다가 같은 리비전으로 돌아오면 상자가 그 리비전으로 다시 선다.
+    app.selectbox(key=revision_key).set_value(r1.revision.revision_id).run()
+    other = repository.create_scenario(_metadata("다른 활성"), r1.tables, r1.preset)
+    _activate(app, other)
+    app.run()
+    assert app.selectbox(key=revision_key).value == r1.revision.revision_id
+    _activate(app, r3)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=revision_key).value == r3.revision.revision_id

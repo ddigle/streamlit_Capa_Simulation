@@ -12,7 +12,10 @@ from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
-from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
+from capa_simulation.scenario_activation import (
+    ACTIVE_PERSISTED_REVISION_ID_KEY,
+    ACTIVE_PERSISTED_SCENARIO_ID_KEY,
+)
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
@@ -28,6 +31,8 @@ def _monthly_tables(months: list[int]) -> dict[str, pd.DataFrame]:
 
 
 Sources = tuple[DuckDBScenarioRepository, Path, ScenarioSnapshot, ScenarioSnapshot]
+# 이 칸이 참인 회차는 화면을 그리지 않는다 — 모드 전환·페이지 이동으로 상자가 사라진 회차와 같다.
+HIDE_KEY = "test_merge_hidden"
 
 
 @pytest.fixture
@@ -57,11 +62,14 @@ def sources(tmp_path: Path) -> Sources:
 
 def _app(database: Path, base: ScenarioSnapshot, donor: ScenarioSnapshot) -> AppTest:
     script = f"""
+import streamlit as st
+
 from capa_simulation.components.scenario_month_merge import render_scenario_month_merge
 from capa_simulation.persistence.cache import get_scenario_repository
 
 database_path = {str(database)!r}
-render_scenario_month_merge(get_scenario_repository(database_path), database_path)
+if not st.session_state.get({HIDE_KEY!r}):
+    render_scenario_month_merge(get_scenario_repository(database_path), database_path)
 """
     app = AppTest.from_string(script, default_timeout=30).run()
     app.selectbox(key="merge_base_scenario").set_value(base.scenario.scenario_id).run()
@@ -530,3 +538,66 @@ def test_a_refused_derived_save_writes_nothing(
     assert not app.exception, [item.message for item in app.exception]
     assert len(repository.list_scenarios()) == 3
     assert any("원본부터 있던 오류" in item.value for item in app.warning)
+
+
+def _activate(app: AppTest, snapshot: ScenarioSnapshot) -> None:
+    app.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY] = snapshot.scenario.scenario_id
+    app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id
+
+
+def test_source_revisions_follow_a_changed_active_revision_in_both_roles(
+    sources: Sources,
+) -> None:
+    """활성 리비전이 바뀌면 그 시나리오를 고른 상자(베이스·덧붙일)가 새 활성 리비전으로 다시 선다.
+
+    일부러 고른 리비전은 활성이 그대로인 동안 남고, 상자가 사라졌던 회차를 지나도 따라온다.
+    """
+    repository, database, base, donor = sources
+    base_key = f"merge_base_revision_{base.scenario.scenario_id}"
+    donor_key = f"merge_donor_revision_{donor.scenario.scenario_id}"
+
+    def save(parent: ScenarioSnapshot, name: str) -> ScenarioSnapshot:
+        return repository.save_revision(
+            parent.scenario.scenario_id,
+            parent.tables,
+            parent.preset,
+            revision_name=name,
+            parent_revision_id=parent.revision.revision_id,
+        )
+
+    app = _app(database, base, donor)
+    _activate(app, base)
+    app.run()
+    assert app.selectbox(key=base_key).value == base.revision.revision_id
+
+    base_r2 = save(base, "베이스 r2")
+    _activate(app, base_r2)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=base_key).value == base_r2.revision.revision_id
+
+    app.selectbox(key=base_key).set_value(base.revision.revision_id).run()
+    app.run()
+    assert app.selectbox(key=base_key).value == base.revision.revision_id
+
+    donor_r2 = save(donor, "덧붙일 r2")
+    _activate(app, donor_r2)
+    app.run()
+    assert app.selectbox(key=donor_key).value == donor_r2.revision.revision_id
+    assert app.selectbox(key=base_key).value == base.revision.revision_id
+
+    app.session_state[HIDE_KEY] = True
+    app.run()
+    donor_r3 = save(donor_r2, "덧붙일 r3")
+    _activate(app, donor_r3)
+    app.session_state[HIDE_KEY] = False
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=donor_key).value == donor_r3.revision.revision_id
+
+    # 활성이 다른 시나리오로 갔다가 같은 리비전으로 돌아오면 상자가 그 리비전으로 다시 선다.
+    _activate(app, base_r2)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=base_key).value == base_r2.revision.revision_id
+    assert app.selectbox(key=donor_key).value == donor_r3.revision.revision_id
