@@ -129,7 +129,7 @@ git clone <저장소 주소> C:\dev\streamlit_project
 cd C:\dev\streamlit_project
 uv sync
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m streamlit run app.py
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.port 8501
 ```
 
 - 배포 ZIP 으로 받았다면 `git clone` 대신 그 폴더에서 시작합니다. 첫 ZIP 은 손으로 풀고, 다음부터는
@@ -182,6 +182,7 @@ New-Item -ItemType Directory review -Force
 | `uv lock` 이 `dns error` 로 죽는다 | `bigdataquery` 를 `pyproject.toml` 에서 빼 `requirements-company.txt` 에 둡니다. |
 | `bigdataquery` 가 사라졌다 | 맨 `uv sync` 를 돌렸습니다. 4단계를 다시 하고 이후 `--inexact` 를 씁니다. |
 | `duckdb.IOException` | 앱이 DB 를 쥔 채 스크립트·테스트를 돌렸습니다(배타 잠금). 앱을 끄고 다시 — 고장이 아닙니다. |
+| 앱이 「Port 8501 is not available」 로 멈춘다 | 다른 것이 8501 을 쥐고 있습니다. 포트를 적었으므로 다음 번호로 말없이 옮겨 서지 않고 멈춘 것입니다. 누가 쥐었는지 보는 법은 [`docs/internal_update_runbook.md`](docs/internal_update_runbook.md) 4-2 「접속이 안 되면」. |
 | 활성화 스크립트가 차단된다 | 활성화하지 않고 `.venv\Scripts\` 의 실행 파일을 직접 씁니다. |
 | 에디터가 `import streamlit` 을 못 찾는다 | 인터프리터를 `.venv` 로 지정합니다. 실행·테스트에는 영향이 없습니다. |
 | 계산 화면이 「조회기간(…) 밖의 달에 기준정보 오류」로 멈춘다 | 계산은 시나리오 전체 기간을 돌려 어느 달이든 기준정보 오류가 있으면 멈춥니다(의도된 동작). `기준 정보` 화면은 열리므로 그 달을 고쳐 새 리비전으로 저장합니다. |
@@ -191,7 +192,7 @@ New-Item -ItemType Directory review -Force
 Windows(PowerShell):
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.port 8501
 ```
 
 사외 WSL(bash)은 사용자가 Claude 밖 tmux 창에서 [`docs/wsl_dev_environment.md`](docs/wsl_dev_environment.md) 3장의

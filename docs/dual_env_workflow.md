@@ -317,7 +317,7 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 
 | 층 | 무엇이 | 어디서 |
 |---|---|---|
-| **막는다** | 없는 파일을 가리키는 문서 · 아무도 안 쓰는 모듈 · 선언 밖 최상위 항목 · 미링크 문서 | `tests/test_repository_hygiene.py` — 검증 4종에 실려 매번 돈다 |
+| **막는다** | 없는 파일을 가리키는 문서 · 아무도 안 쓰는 모듈 · 선언 밖 최상위 항목 · 미링크 문서 · 포트 없는 문서 실행 줄 | `tests/test_repository_hygiene.py` — 검증 4종에 실려 매번 돈다 |
 | **알린다** | 파일 수 · 문서 수와 줄 수 · 가장 큰 문서 다섯 | 배포 송장의 `hygiene` — 배포를 막지 않는다 |
 
 가르는 기준은 **판정이 명확한가**다. 「이 문서가 아직 유효한가」는 사람이 봐야 하므로 검사로

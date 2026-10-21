@@ -1,4 +1,4 @@
-# Purpose: 저장소에 이유 없이 떠도는 파일과 실재하지 않는 문서 참조가 생기지 않게 막는다.
+# Purpose: 이유 없이 떠도는 파일·실재하지 않는 문서 참조·포트 없는 문서 실행 줄을 막는다.
 
 """파일 구조 위생.
 
@@ -212,4 +212,36 @@ def test_every_docs_file_is_reachable_from_somewhere() -> None:
     assert not unlinked, (
         "어디서도 가리켜지지 않는 문서입니다. 진입점(`CLAUDE.md`·`README.md`·`AGENTS.md`)"
         " 에서 링크하거나 지웁니다:\n" + "\n".join(unlinked)
+    )
+
+
+# 앱 실행 줄을 찾는 꼴. `streamlit run … app.py` 를 말로만 적은 산문(말줄임)은 걸리지 않는다.
+_APP_LAUNCH_LINE = re.compile(r"-m streamlit run \S*app\.py")
+
+# 포트 검사에서 빼는 문서. `CLAUDE.md` 의 Windows 꼴 줄은 에이전트용 명령 요약이고(사용자 앱은
+# 사용자가 띄운다) 프로젝트 지시 파일이라 고칠지는 사용자가 정한다. 고치면 여기서 지운다.
+_LAUNCH_PORT_EXEMPT = {"CLAUDE.md"}
+
+
+def test_documented_app_launch_lines_name_the_port() -> None:
+    """문서가 따라 치게 하는 앱 실행 줄은 `--server.port` 를 적는다.
+
+    포트를 빼면 Streamlit 은 그 포트가 막혔을 때 **알리지 않고** 다음 번호로 옮겨 서고, 늘 쓰는
+    주소는 그 포트를 쥔 다른 것에 닿는다. 적으면 「Port … is not available」 로 멈춘다(런북 4-2).
+    한 문서만 고치면 나머지 문서로 그 길이 다시 열리므로 추적 문서 전부를 본다.
+    """
+    missing = [
+        f"{path}:{number}: {line.strip()}"
+        for path in _tracked("*.md")
+        # 사내 리뷰는 옛 명령을 옮겨 적는 기록이라 보지 않는다(사내만 깨지고 고칠 수도 없다).
+        if path not in _LAUNCH_PORT_EXEMPT and not path.startswith(tuple(INTERNAL_ONLY_TOP_LEVEL))
+        for number, line in enumerate(
+            (PROJECT_ROOT / path).read_text(encoding="utf-8").splitlines(), start=1
+        )
+        if _APP_LAUNCH_LINE.search(line) and "--server.port" not in line
+    ]
+
+    assert not missing, (
+        "포트를 적지 않은 앱 실행 줄입니다. `--server.port <번호>` 를 붙입니다"
+        "(까닭은 `docs/internal_update_runbook.md` 4-2):\n" + "\n".join(missing)
     )

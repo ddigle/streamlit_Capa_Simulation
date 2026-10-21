@@ -79,8 +79,11 @@ export CAPA_BDQ_USER_NAME="<AD 계정>"
 ## 3. 앱 실행
 
 ```bash
-uv run --no-sync python -m streamlit run app.py
+uv run --no-sync python -m streamlit run app.py --server.port 8501
 ```
+
+포트를 적는 까닭 — 빼면 8501 이 막혔을 때 **알리지 않고** 다음 번호로 옮겨 서고, 적으면 「Port 8501 is not available」
+을 찍고 멈춘다([`internal_update_runbook.md`](internal_update_runbook.md) 4-2).
 
 ## 참고
 
