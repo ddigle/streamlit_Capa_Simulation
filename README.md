@@ -344,7 +344,7 @@ typed raw 로 그대로 보존합니다.
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
 | `compare_legacy_results.py` | 원천에 보존된 기존 결과와 신규 계산값을 대조해 요약·상세 CSV 를 만든다 |
 | **사내 실데이터 확인(읽기 전용 — 값은 찍지 않고 개수만)** | |
-| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 잰다(런북 8장) |
+| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수를 잰다(런북 8장) |
 | `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 필수) |
 | `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다 |
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |

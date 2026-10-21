@@ -520,6 +520,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 일부 열 붙여넣기(`read_equipment_update`)는 붙여넣은 열만 바꾸고(빈 칸 = 지움) 겹친 머리글을 막는다. 모르는
     머리글은 38열이 다 있거나 옛 36열 꼴일 때만 알림과 함께 넘기고 그 밖에는 막는다.
 - `src/capa_simulation/services/dashboard.py` — HOME 월별 집계와 B/N 월별 순위(Top 1·Top 5·상세)·Wafer Capa 를 낸다.
+  - 월 축은 양산 Density 가 있는 달이다 — 양산 없이 ER 만 있는 달은 Wafer 계획·Wafer Capa·B/N·Top5·연간 Total 에서
+    빠진다. 그대로 두고 사내 런북 8-9 가 그런 달 수를 잰다(2026-10-22 결정 A). 넓힐 때는 이 파일의 조인 넷과
+    `home.py` 축·`home_lob_figures` 위치 조회를 함께 바꾼다 — 조인만 바꾸면 B/N 그림이 `KeyError` 로 멈춘다.
 - `src/capa_simulation/services/dynamic_capacity.py` — 실적을 차례로 얹는 Dynamic Capa 손실 분석과 데모(`DemoProfile`)다.
 - `src/capa_simulation/services/wip_status.py` — 재공 DB 연결 계약·STEP 코드 정렬·제품별 표준 가능량 일 전개와 샘플을 낸다.
 - `src/capa_simulation/services/display_order_scopes.py` — 표시순서 규칙이 걸리는 페이지·탭 구분자를 한 곳에 선언한다.
@@ -2289,7 +2292,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `MPGA TEST` 의 소수 `모듈수` 는 사내 BigDataQuery 관측이라 근거가 있다.
 - **실데이터로만 답이 나오는 질문은 사내에서 잰다.** `scripts/inspect_real_data_checks.py` 가 두 DB 를
   `read_only` 로 열어(저장소 `initialize()` 는 마이그레이션을 걸어 쓰므로 부르지 않는다) 기존 결과 대조
-  분포(소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 재고,
+  분포(소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축(양산 Density
+  가 있는 달)에서 빠지는 계획 달 수(8-9 — 2026-10-22 결정 A: 월 축은 그대로 두고 0 이면 그 결정 대기를 닫는다)를 재고,
   **개수·비율·dtype·초만** Markdown 블록으로 찍는다 — 이름·코드·키별 값·합계 물량·파일 경로·예외 문구를
   찍지 않는다(이 앱의 오류 문구에는 식별값이 실린다). 값 이름은 계약 어휘(소요기준·Main/MI·`WF 구분` 선언
   목록)만 찍고 그 밖은 종류 수로 센다. 자동 판정(통과·실패·결론)은 넣지 않는다 — 넣으면 재검증이 갈래마다
