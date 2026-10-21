@@ -33,7 +33,7 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message, prune_choice
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
     clear_global_securement_threshold_cache,
@@ -90,6 +90,10 @@ LIST_EDITOR_KEY = "scenario_list_editor"
 ACTION_KEY = "scenario_list_action"
 ACTION_OWNER_KEY = "scenario_list_action_owner"
 DELETE_CONFIRM_KEY = "scenario_list_delete_confirm"
+# 영구 삭제 확인 칸을 다음 회차에 비우라는 표지. 삭제는 칸을 그린 **뒤**에 일어나 그 회차에는 칸을
+# 바꿀 수 없고, 칸을 지우기(`pop`)만 하면 브라우저가 지운 이름을 계속 보인다. 다음 회차 칸 앞에서
+# 빈 값을 적는다(AGENTS 9장 「pop 하지 말고 새 값을 적는다」).
+DELETE_CLEAR_KEY = "scenario_list_delete_confirm_clear"
 ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
 # 가상 제품이 든 리비전을 공식버전으로 지정할 때의 확인 체크. 리비전마다 따로 받는다
 # (`official_confirm_key`).
@@ -647,6 +651,10 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
         key=ARCHIVED_EXPANDER_KEY,
     ):
         by_id = {scenario.scenario_id: scenario for scenario in archived}
+        # 되돌리거나 지운 보관본은 선택지에서 빠진다. 그 선택을 지우기만 하면 서버는 첫 보관본을
+        # 쓰는데 브라우저는 처리한 이름을 계속 보여, 다음 「되돌리기」 가 보이지 않는 시나리오에
+        # 걸린다. 매 회차 지금 선택지로 다시 적어 브라우저도 새 글자를 받게 한다.
+        prune_choice(ARCHIVED_SELECT_KEY, list(by_id), default=next(iter(by_id)))
         selected_id = st.selectbox(
             "보관본",
             options=list(by_id),
@@ -683,7 +691,6 @@ def _restore_scenario(
         f"{summary.scenario_name}{object_particle(summary.scenario_name)} 목록으로 되돌렸습니다."
     )
     discard_editor(LIST_EDITOR_KEY)
-    st.session_state.pop(ARCHIVED_SELECT_KEY, None)
     st.rerun()
 
 
@@ -692,6 +699,8 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     release_count = repository.count_official_releases(summary.scenario_id)
     if release_count:
         st.warning(f"이 시나리오의 공식 발행 이력 {release_count}건도 함께 사라집니다.")
+    if st.session_state.pop(DELETE_CLEAR_KEY, False):
+        st.session_state[DELETE_CONFIRM_KEY] = ""
     typed = st.text_input(
         "영구 삭제하려면 시나리오명을 그대로 입력하세요",
         key=DELETE_CONFIRM_KEY,
@@ -722,13 +731,9 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         f"{summary.scenario_name}{object_particle(summary.scenario_name)} 영구 삭제했습니다."
     )
     discard_editor(LIST_EDITOR_KEY)
-    for key in (
-        ACTION_KEY,
-        ACTION_OWNER_KEY,
-        DELETE_CONFIRM_KEY,
-        ARCHIVED_SELECT_KEY,
-    ):
+    for key in (ACTION_KEY, ACTION_OWNER_KEY):
         st.session_state.pop(key, None)
+    st.session_state[DELETE_CLEAR_KEY] = True
     st.rerun()
 
 

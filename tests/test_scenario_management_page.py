@@ -659,6 +659,79 @@ def test_archive_and_delete_drop_the_cached_comparison_target(tmp_path: Path) ->
     assert load_global_comparison_scenario(database).scenario_id is None
 
 
+def test_the_archived_box_shows_what_the_next_restore_and_delete_act_on(tmp_path: Path) -> None:
+    """되돌리기·영구 삭제 뒤 보관본 상자의 **브라우저 글자**가 서버의 선택과 같다.
+
+    처리한 시나리오의 선택을 지우기(`pop`)만 하면 서버는 첫 보관본을 쓰는데 브라우저는 처리한
+    이름을 계속 보였고, 다음 「되돌리기」가 보이지 않는 다른 시나리오를 되돌렸다. 영구 삭제의 확인
+    칸에도 지운 이름이 남았다. 브라우저가 글자를 들고 다니므로 `BrowserChoice` 로 잰다.
+    """
+    from widget_browser import BrowserChoice
+
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    for index, name in enumerate(("보관 가", "보관 나", "보관 다"), start=1):
+        archived = _clone_official(database_path, name, f"ARCHIVE-{index}")
+        repository.archive_scenario(archived.scenario.scenario_id)
+
+    def name_of(scenario_id: object) -> str:
+        return next(
+            scenario.scenario_name
+            for scenario in repository.list_scenarios(include_archived=True)
+            if scenario.scenario_id == scenario_id
+        )
+
+    def status_of(name: str) -> str:
+        return next(
+            scenario.status
+            for scenario in repository.list_scenarios(include_archived=True)
+            if scenario.scenario_name == name
+        )
+
+    def click(key_or_label: str) -> None:
+        next(button for button in app.button if key_or_label in {button.key, button.label}).click()
+        browser.run()
+        assert not app.exception
+
+    app = AppTest.from_string(script, default_timeout=120)
+    browser = BrowserChoice(app, "selectbox", ARCHIVED_SELECT_KEY)
+    browser.start()
+    assert not app.exception
+    shown = browser.options()
+    assert sorted(shown) == ["보관 가", "보관 나", "보관 다"]
+
+    # 가운데 것을 골라 되돌린다 — 상자는 남은 것 가운데 서버가 고른 것을 보인다.
+    middle = shown[1]
+    browser.pick(middle)
+    browser.run()
+    assert name_of(app.session_state[ARCHIVED_SELECT_KEY]) == middle
+    click("scenario_archived_restore")
+    assert status_of(middle) == "ACTIVE"
+    assert middle not in browser.options()
+    assert browser.last_set_value
+    assert browser.wire == name_of(app.session_state[ARCHIVED_SELECT_KEY])
+
+    # 보이는 것을 영구 삭제한다 — 상자는 남은 하나를 보이고 확인 칸은 빈 칸으로 돌아간다.
+    doomed = str(browser.wire)
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value(doomed)
+    browser.run()
+    click("영구 삭제 실행")
+    remaining = browser.options()
+    assert doomed not in remaining
+    assert len(remaining) == 1
+    assert browser.last_set_value
+    assert browser.wire == remaining[0] == name_of(app.session_state[ARCHIVED_SELECT_KEY])
+    confirm = app.text_input(key=DELETE_CONFIRM_KEY)
+    assert confirm.proto.set_value
+    assert confirm.value == ""
+
+    # 다음 「되돌리기」 는 보이던 것을 되돌린다.
+    click("scenario_archived_restore")
+    assert status_of(remaining[0]) == "ACTIVE"
+
+
 OFFICIAL_BUTTON = "선택 리비전을 공식버전으로 지정"
 VIRTUAL_CONFIRM_LABEL = "가상 제품이 포함된 것을 확인했습니다"
 
