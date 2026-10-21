@@ -347,77 +347,32 @@
   줄로 보이고, 바깥 Excel 을 다시 붙여넣으면 옛 이름이 새 호기로 돌아온다(Guide 에 적음). 기준선의 이름 잇기와 붙여넣기
   미리보기의 「바꾼 이름」 경고는 하지 않았다 — 할지 정한다.
 
-### 밤샘 개선 루프(2026-10-21~22) — 사용자 결정 대기
+### 밤샘 개선 루프(2026-10-21~22) — 결정 뒤 남은 것
 
-- [ ] **입장 화면 Summary 「부족 N대」의 기준** — `services/official_summary.short_units` 는 `ceil(소요 − 가용)`, 곧 확보율
-  100% 기준인데 Summary 는 판정이 경고 기준 미달인 달에만 대수를 적는다. 그래서 경고 기준·확보목표로 세는 Static 「경고기준
-  필요대수」·공정 Capa 상세 「확보기준 과부족」과 숫자가 다르고, 경고 기준을 100% 넘게 둔 달은 「부족」인데 대수가 빠진다.
-  선택지 (가) 그 달 실효 경고 기준까지 모자란 대수(막대 색과 같은 기준), (나) 확보목표 기준까지(소요 200·가용 190 이면
-  10 → 29), (다) 100% 기준을 두고 말풍선·Guide 에 「100% 까지 모자란 대수」라고 적는다(권장 (가) — 위 「화면 다듬기」의
-  선행 B/O 토글 대수 항목과 함께 정한다).
-- [ ] **HOME 월 축이 양산 Density 에 묶임** — `services/dashboard.py` 의 `build_production_lob_summary`·
-  `build_bottleneck_capacity` 는 양산만 담은 `monthly_density` 를 왼쪽에 둔 left join 이고 B/N Top5 는 inner join 이라,
-  양산 Density 가 없는 달(양산 없이 ER 만 있는 달)은 Wafer 계획·Wafer Capa·B/N·Top5 에서 빠지고 그 해 연간 Total 열이
-  생기지 않는다(Wafer 는 양산+ER). 선택지 A 그대로 두고 다음 배포 런북 8장 `inspect_real_data_checks.py` 에 「계획 기간
-  안 양산 Density 없는 달 수」를 개수로만 찍어 0 이면 닫는다, B 월 축을 계획 달 전체로 넓힌다(dashboard 넷·`home.py`
-  축·`home_lob_figures` 위치 조회를 함께 — dashboard 만 outer 로 바꾸면 B/N 그림이 KeyError), C Summary 도 그 달을 빼
-  두 화면을 맞춘다(권장 A).
+2026-10-22 사용자 결정 「전부 권장대로」 — 코드로 끝난 결정은 3장으로 옮겼고, 아래는 사내 측정이나 뒤 결정을 기다리는 것만이다.
+
+- [ ] **HOME 월 축이 양산 Density 에 묶임** — 결정 A(2026-10-22): 월 축(양산 Density 가 있는 달만)은 그대로 두고, 다음
+  배포 런북 8-9(`inspect_real_data_checks.py` `home`)의 굵은 줄이 EDP 포함·뺌 두 칸 모두 0 이면 닫는다(그 블록도 뺀다).
+  0 이 아니면 B(월 축을 계획 달 전체로 — dashboard 넷·`home.py` 축·`home_lob_figures` 위치 조회를 함께)·C(Summary 도 그
+  달을 뺀다) 가운데 고른다.
 - [ ] **`sync_boot` 가 동기화 설정 오류를 잡지 못함** — `enable_sync_state_if_managed()` 는 `(OSError, ValueError)` 만
   잡는데 `io/object_storage.load_settings()` 의 실패(틀린 `CAPA_S3_SYNC_MODE`, 설정·능력 JSON 읽기 실패·깨짐)는
-  `ObjectStorageError(RuntimeError)` 라 앱이 모든 페이지에서 트레이스백으로 멈춘다. 선택지 (가) S3 를 다시 이을 때 (다)로
-  정하고 지금은 둔다(보류 중이라 닿지 않는 길이고 「조용히 local 로 강등하지 않는다」 원칙에 맞다), (나) 잡고 서버 로그
-  경고만(동기화가 꺼진 줄 모른다), (다) 잡고 화면에 「동기화 꺼짐」 경고(문구가 늘어 승인 필요), (라) 멈춤 그대로 두고
-  docstring·가짜 ValueError 시험만 실제에 맞춘다(권장 (가)).
-- [ ] **화면에서 떨어진 저장 전 경고 묶음** — `services/equipment_validation.equipment_save_warnings` →
-  `schedule_confirmation.actual_record_warnings` → `actual_record_issues` 는 e82e7b7(2026-10-16) 뒤로 RawData 가
-  `area_code_warnings`·`schedule_confirmation_summary` 를 따로 그려 시험(`tests/test_equipment_actual_dates.py`)만
-  부르고, 두 docstring 이 없는 저장 미리보기 경고를 실제처럼 적는다. 선택지 걷는다(`CONFIRMATION_KINDS` 집합 단언은
-  남는 시험으로 옮기고 모듈 docstring 의 「N건」 설명을 RawData 「일정 확인 목록 · N건」에 맞춘다 — 되살릴 때는
-  92422d2 에서 꺼낸다) / 둔다(권장 걷는다 — 동작·화면·계산이 바뀌지 않는다).
-- [ ] **표기만 다른 PKG Buffer 경로가 소요대수를 두 배로 셈** — `services/required_equipment._prepare_reqb` 는 표기만
-  다른 `RQ_REQB` 경로를 `duplicated` 로 접지만 `WF 구분` 은 strip 만 하고 대소문자를 둔다. 그래서 한 경로에 `Buffer`·
-  `BUFFER` 두 행이 저장된 리비전에서는 Buffer 판정(대소문자 무시)과 `WF 구분` 없이 붙는 부하량 탓에 PKG 소요대수가
-  말없이 두 배가 된다(같은 전제면 CHIP·WF 도 같다 — 새 등록은 `unify_case_variants` 가 원천 한 벌 안에서 표기를
-  맞춘다). 선택지 (A) 계산은 두고 `unify_case_variants` docstring 의 「경로 없는 계획 목록에 드러난다」를 사실대로
-  고치고, `inspect_revision_calculations.py` 의 「겹친 경로 키」를 `WF 구분` 대소문자 무시로 세게 해 다음 배포 런북
-  6-3 a 에서 옛 리비전의 개수를 잰다(0 이면 닫고, 있으면 (B)·(C) 중 고른다), (B) PKG Buffer 행만 `_prepare_reqb` 에서
-  대소문자 무시로 접는다(옛 리비전 PKG 소요대수가 바뀌고 CHIP·WF 는 남는다), (C) 위 「사내 리뷰 `202610120655` 후속」
-  6(WF 구분 표기 통일·저장 리비전 호환)과 묶어 계산이 경로를 대소문자 무시로 접는다(옛 리비전 결과가 넓게 바뀌어 사내
-  확인이 필요), (D) 옛 리비전은 원천 재등록으로만 바로잡는다고 안내하고 코드는 둔다(권장 (A)).
-- [ ] **DuckDB 쓰기 실패가 「다른 프로그램을 닫으라」 문구로 보임** — `page_bootstrap.bootstrap_error_message` 는 PID 가
-  적힌 잠금 오류가 아닌 `duckdb.Error` 를 모두 「데이터베이스를 열지 못했습니다 … 다른 프로그램을 닫고 새로고침 … 파일
-  권한과 경로」 한 문구로 바꾼다. 그래서 저장 중 디스크 가득·파일 크기 한도 같은 쓰기 실패도 원인 없이 틀린 조치를
-  안내한다(transaction 이 되돌려 DB 는 다치지 않는다). 선택지 A 열기·잠금 갈래는 두고, 쓰기 실패(영문 고정 문구
-  "Could not write"·"Failed to commit" 으로 가름)는 「데이터베이스에 쓰지 못했습니다 — 저장되지 않았습니다. 디스크
-  공간과 쓰기 권한을 확인」, 그 밖은 「데이터베이스 작업이 실패했습니다」로 바꾸고 둘 다 원문(종류 이름 + 300자)을
-  붙인다(`tests/test_page_bootstrap.py` 의 「파일 권한과 경로」 단정도 고친다), B 문구는 두고 원문 한 줄만 덧붙인다(틀린
-  조치는 남는다), C 원문을 서버 로그에만 남긴다, D 그대로 둔다(권장 A).
+  `ObjectStorageError(RuntimeError)` 라 앱이 모든 페이지에서 트레이스백으로 멈춘다. (가) 결정 — S3 를 다시 이을 때 (다)
+  잡고 화면에 「동기화 꺼짐」 경고로 한다(2026-10-22 사용자 결정). 지금은 보류 중이라 닿지 않는 길이고 「조용히 local 로
+  강등하지 않는다」 원칙에 맞아 둔다.
+- [ ] **표기만 다른 PKG Buffer 경로가 소요대수를 두 배로 셈** — 결정 (A)(2026-10-22): 계산(`_prepare_reqb`)은 두고
+  `inspect_revision_calculations.py` 의 「겹친 경로 키」를 `WF 구분` 대소문자 무시로 세게 했다. 다음 배포 런북 6-3 a 의
+  `겹친 경로 키가 있는 리비전` 이 0 이면 닫는다. 0 이 아니면 (B) PKG Buffer 행만 `_prepare_reqb` 에서 대소문자 무시로
+  접기, (C) 위 「사내 리뷰 `202610120655` 후속」 6 과 묶어 계산이 경로를 대소문자 무시로 접기(옛 리비전 결과가 넓게 바뀌어
+  사내 확인 필요) 가운데 고른다.
 - [ ] **시나리오 관리 파생 모드에서 다른 탭 조작마다 이동·머지 미리보기가 다시 돎** — `app_pages/scenario_management.py`
   는 세 탭 본문을 늘 그리므로, 「시나리오 관리」 탭이 연도 Shift·월 머지 모드이고 원본이 골라져 있으면 BigDataQuery·
   자동 갱신 탭을 조작하는 회차마다 이동·머지 미리보기 계산이 다시 돈다(샘플 관측 약 0.2~0.36초 — 「숨은 탭을 다시
-  그리는 비용은 … 직렬화뿐」 주석과 어긋난다). 선택지 (가) 지금은 두고 위 「화면 조작마다 도는 계산·로딩 줄이기 후속」
-  ⑧ 의 원본 리비전 세션 메모 결정과 함께 정한다, (나) 결과를 원본 메모와 같은 수명의 세션 메모로 둔다(세션당 리비전 한
-  벌 메모리), (다) `st.cache_data`(연도 Shift 는 피클 풀기가 다시 계산보다 느리다 — 샘플 관측 104~192ms 대 80~100ms,
-  비권장), (라) `stateful_tabs` 로 숨은 탭을 건너뛴다(저장 폼 위 표를 건너뛰어 AGENTS 9장에 어긋나고 탭 전환 rerun 이
-  생긴다, 비권장)(권장 (가)).
-- [ ] **설비 CSV 업로드 칸이 서버 상한 1GB 를 물려받음** — 도면 칸(`floor_layout_upload.py`, 2MB)과 달리 설비 CSV 칸
-  (`components/equipment_data_workspace.py`)은 `max_upload_size` 가 없어 `.streamlit/config.toml` 의
-  `maxUploadSize = 1024` 를 그대로 받고, 파싱만으로 파일의 약 12배 메모리를 써(샘플 관측) 잘못 고른 큰 CSV 하나가 공용
-  앱 프로세스를 OOM 으로 몰 수 있다. 선택지 (A) 그 칸에만 `max_upload_size` 를 준다(예 50MB — 파싱 peak 약 600MB, 칸
-  안내가 「Limit 50MB per file」로 바뀌어 다음 배포에 싣는다. 값은 런북 8장 실데이터 점검 때 설비 CSV 최대 크기를 보고
-  정해도 된다), (B) `server.maxUploadSize` 를 낮춘다(앞으로 생길 업로더까지 묶인다), (C) 그대로 둔다(사내는 DRM 탓에
-  붙여넣기가 주 경로)(권장 (A)).
-- [ ] **HOME 기본 화면이 빈 제품타입 행 하나로 멈추고 따를 수 없는 조치를 안내함** — EDP 를 뺀 조회(HOME 기본값)에서
-  `services/load_calculator.filter_edp_plan` 은 계획에 `제품타입` 이 빈 행이 하나라도 있으면 「… 기준정보를 다시 등록하거나
-  EDP 를 포함해 조회하세요」로 멈추는데, `app_pages/home.py` 는 그 회차에 `st.stop()` 해 사이드바 `LOB 표시 조건` 카드(EDP
-  포함 토글)를 그리지 않아 화면에서 따를 수 없다(내장 시드에서 `DEMO PRODUCT B` 의 제품타입만 비운 AppTest 재현 — 오류
-  하나, 토글·탭 없음). 선택지 (A) 멈춘 회차에도 사이드바 `LOB 표시 조건` 카드를 그린다(계산·문구 그대로, 「Main 탭이
-  열렸을 때만 선다」(2026-09-29) 결정의 예외 하나), (B) A 에 더해 `filter_edp_plan` 이 빈 제품타입을 생산수량 0 초과
-  행에서만 막는다(LOB 값 불변, 생산수량 0 인 옛 제품 행 하나로 HOME·입장 화면 Summary 가 멈추지 않는다 — 남는 0 행을 계획에
-  둘지 뺄지도 정한다), (C) EDP 를 뺀 계산에서 빈 제품타입을 「EDP 아님」으로 보고 경고만 낸다(계산 규칙이 바뀌고 실제 EDP
-  제품이면 LOB 가 틀린 채 보인다, 비권장), (D) 코드는 두고 `scripts/inspect_real_data_checks.py` 에 「조회 원천 계획의 빈
-  제품타입 행 수(생산수량 0 초과·이하로 나눠)」를 더해 다음 배포 런북 8장에서 실데이터 빈도부터 잰다. GAP(비교 시나리오)이
-  원인일 때 오류문에 비교 시나리오를 밝히는 문구 변경은 A 와 함께 정한다(권장 A — D 의 집계는 A 와 따로 더해도 된다).
+  그리는 비용은 … 직렬화뿐」 주석과 어긋난다). (가) 결정 — 위 「화면 조작마다 도는 계산·로딩 줄이기 후속」 ⑧ 의 원본
+  리비전 세션 메모 결정과 함께 정한다(2026-10-22 사용자 결정). 그때 볼 것: (나) 결과를 원본 메모와 같은 수명의 세션
+  메모로 둔다(세션당 리비전 한 벌 메모리), (다) `st.cache_data`(연도 Shift 는 피클 풀기가 다시 계산보다 느리다 — 샘플
+  관측 104~192ms 대 80~100ms, 비권장), (라) `stateful_tabs` 로 숨은 탭을 건너뛴다(AGENTS 9장에 어긋나고 탭 전환 rerun
+  이 생긴다, 비권장).
 
 ### 성능(2026-10-20 E2E 점검 후속)
 
@@ -591,6 +546,8 @@
 - (2026-10-06) 라인 전체가 서는 날(라인 점검·공사)은 `RQ_RUN_DAY` 를 줄여서만, 호기 단위의 일(개발대여·공사·고장·
   이설)은 설비 비가동 일정에만 적는다 — 둘 다 적으면 이중 계상이다. 일할 분모(달력일 대 가동일)는 달력이 생길 때 다시
   본다 — 관련: AGENTS 6장·기준 정보 Guide `일수` (옛 4장 「Workday」)
+- (2026-10-22) 입장 화면 Summary 「부족 N대」는 그 달 실효 경고 기준까지 모자란 정수 대수다 — 막대 색·Static 「경고기준
+  필요대수」와 같은 기준·올림(`securement_rate.warning_need_units`) — 관련: `services/official_summary.py`·AGENTS 6장
 
 ### 화면
 
@@ -711,6 +668,10 @@
   유지」 — 견주려면 기준선에 공정×월 결과를 얼리는 새 설비 마이그레이션) — 관련: `shortening_progress_panel.py`
 - HOME `상세 B/N 공정` 시트는 확보율 하위 **순위 1~20**(`BOTTLENECK_DETAIL_RANK_LIMIT`)이고 행 높이도 그
   수에 맞춘다 — 관련: `tests/test_bottleneck_detail_figures.py`
+- (2026-10-22) HOME 계산이 멈춘 회차에도 사이드바 `LOB 표시 조건` 카드를 그린다 — 「Main 탭에서만 선다」(2026-09-29)의
+  유일한 예외, 계산·오류 문구는 그대로(GAP 원인을 오류문에 밝히는 문구는 바꾸지 않았다) — 관련: `app_pages/home.py`·AGENTS 9장
+- (2026-10-22) DB 오류 안내는 잠금·열기 / 쓰기 실패(「저장되지 않았습니다」) / 그 밖(「작업이 실패했습니다」)으로 가르고 뒤의
+  둘에는 원문 한 줄(종류 이름 + 앞 300자)을 붙인다 — 관련: `page_bootstrap.bootstrap_error_message`
 
 ### 데이터·DB
 
@@ -775,6 +736,10 @@
 - (2026-09-15) `apply_display_order`·`render_exclusion_table` 의 스코프 문자열(`"공정별 Capa"`·`"공정별 확보율"`)은 공용
   프로필의 행 키라 화면 이름이 바뀌어도 그대로 둔다 — 옮기려면 `display_order_editor` 스코프 목록·
   `config/bootstrap_display_order.json`·운영 DB 행을 함께 옮긴다 (옛 3-15)
+- (2026-10-22) 설비 CSV 업로드 칸에만 50MB 상한(`CSV_UPLOAD_LIMIT_MB`)을 두고 서버 전체 상한(`maxUploadSize = 1024`)은
+  그대로 둔다 — 관련: `components/equipment_data_workspace.py`
+- (2026-10-22) 화면에서 떨어진 저장 전 경고 묶음(`equipment_save_warnings` → `actual_record_warnings` →
+  `actual_record_issues`)은 걷었다 — 되살릴 때는 92422d2 에서 꺼낸다 — 관련: `services/schedule_confirmation.py`
 
 ### 운영·배포
 
