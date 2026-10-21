@@ -178,6 +178,13 @@ def main() -> int:
     if not DUCKDB_PATH.exists():
         print(f"DB 파일이 없습니다: {DUCKDB_PATH.name}")
         return 1
+    # 앱은 rerun 동안만 DB 를 쥐므로 쉬는 앱은 아래 잠금 갈래에 안 잡힌다 — 프로세스를 먼저 본다.
+    # 살피지 못하면(None) 잠금만 본다. 판정은 화면 확인 스크립트와 같은 것을 쓴다.
+    from check_deploy_screens import running_app_count
+
+    if running_app_count():
+        print("사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1).")
+        return 1
     try:
         connection = duckdb.connect(str(DUCKDB_PATH), read_only=True)
     except duckdb.Error as exc:

@@ -19,8 +19,11 @@
 
 **지키는 것 셋.**
 
-- **앱을 끄고 돌린다.** DuckDB 는 프로세스 배타 잠금이다. 앱이 떠 있으면 DB 를 열지 못하고
-  그렇게 알린 뒤 멈춘다(코드 1).
+- **앱을 끄고 돌린다.** DuckDB 는 프로세스 배타 잠금인데 앱은 rerun 동안만 DB 를 쥐므로,
+  쉬는 앱은 잠금에 안 잡힌다. 그래서 운영 DB 를 열 때는 이 저장소의 앱 프로세스
+  (`streamlit run … app.py`)를 먼저 보고, 보이거나 DB 가 잠겨 있으면 그렇게 알린 뒤 멈춘다
+  (코드 1). 프로세스를 살피지 못하면 잠금만 보고 그 사실을 한 줄 찍는다 — 런북 1-1 로 앱이
+  꺼진 것을 먼저 본다. 사본만 열면 앱을 보지 않는다.
 - **읽기만 한다.** 두 DB 를 `read_only=True` 로 열고 저장소(Repository)를 만들지 않는다 —
   저장소의 `initialize()` 는 마이그레이션을 건다(쓰기다).
 - **값을 찍지 않는다.** 개수·비율·dtype·초만 찍는다. 제품·고객·공정·설비·시뮬레이션 이름과
@@ -326,6 +329,13 @@ _DEFAULT_WINDOW: Final = f"−{DETAIL_WINDOW_DAYS_BEFORE}~+{DETAIL_WINDOW_DAYS_A
 _LOCK_MESSAGE: Final = (
     "DB 를 열지 못했습니다. 앱이 떠 있으면 먼저 끄세요 — DuckDB 는 프로세스 배타 잠금입니다. "
     "앱이 꺼져 있는데도 이 줄이 나오면 파일 손상일 수 있다 — 그대로 리뷰 문서에 적는다."
+)
+_APP_RUNNING_MESSAGE: Final = (
+    "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
+)
+_SCAN_FAILED_NOTE: Final = (
+    "- 앱 프로세스를 살피지 못해 DB 잠금만 봤다 — 쉬는 앱은 잠금에 안 잡힌다"
+    "(런북 1-1 로 앱이 꺼진 것을 먼저 본다).\n"
 )
 
 
@@ -3358,6 +3368,16 @@ def main(argv: Sequence[str] | None = None, *, probe: BigDataQueryProbe | None =
         sink.close()
 
 
+def _opens_app_database(session: Session, *, simulation: bool, equipment: bool) -> bool:
+    """고른 블록이 앱이 여는 운영 DB 를 여는가. 사본만 열면 사용자 앱과 겹치지 않는다."""
+    targets = []
+    if simulation:
+        targets.append((session.simulation_path, DUCKDB_PATH))
+    if equipment:
+        targets.append((session.equipment_path, EQUIPMENT_DUCKDB_PATH))
+    return any(given.resolve() == app.resolve() for given, app in targets)
+
+
 def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | None) -> int:
     selected = [name.strip() for name in str(args.only).split(",") if name.strip()]
     unknown = [name for name in selected if name not in CHECKS]
@@ -3373,6 +3393,17 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
     )
     needs_simulation = any(name in selected for name in ("env", "legacy", "reqb"))
     needs_equipment = any(name in selected for name in ("env", "equipment"))
+    if _opens_app_database(session, simulation=needs_simulation, equipment=needs_equipment):
+        # 앱은 rerun 동안만 DB 를 쥔다(`pinned_connections`) — 쉬는 앱은 아래 잠금 확인을 지나치고,
+        # 그동안 이 연결이 사용자 앱의 rerun 을 막는다. 판정은 화면 확인 스크립트와 같은 것을 쓴다.
+        from check_deploy_screens import running_app_count
+
+        running = running_app_count()
+        if running:
+            sink.emit(_APP_RUNNING_MESSAGE)
+            return 1
+        if running is None:
+            sink.emit(_SCAN_FAILED_NOTE)
     if needs_simulation:
         session.simulation, session.simulation_failure, locked = _open_read_only(
             session.simulation_path

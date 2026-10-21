@@ -55,6 +55,7 @@ from capa_simulation.services.required_equipment import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+import check_deploy_screens  # noqa: E402
 import inspect_real_data_checks as checks  # noqa: E402
 
 SENTINEL = "ZZSENTINEL"
@@ -72,6 +73,14 @@ RENAMED_COLUMNS = {
     "Pack Code": f"{SENTINEL}PK-",
 }
 TODAY = date(2026, 10, 7)
+
+
+@pytest.fixture(autouse=True)
+def _no_user_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """사용자 앱 프로세스 훑기는 이 기계에 무엇이 떠 있는지에 달렸다 — 기본은 「없음」으로
+    막고, 그 갈래를 보는 시험만 바꾼다. `--only env` 처럼 설비 DB 를 기본 경로로 두는 시험도
+    훑기를 탄다."""
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 0)
 
 
 def _md5(path: Path) -> str:
@@ -732,6 +741,104 @@ def test_a_locked_database_stops_with_the_app_running_message(
     assert code == 1
     assert "앱이 떠 있으면 먼저 끄세요" in output
     assert SENTINEL not in output
+
+
+def _record_opens(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`duckdb.connect` 가 연 파일 이름. 여는 것은 그대로 연다."""
+    opened: list[str] = []
+    connect = duckdb.connect
+
+    def recording(database: str, *args: object, **kwargs: object) -> duckdb.DuckDBPyConnection:
+        opened.append(Path(database).name)
+        return connect(database, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(duckdb, "connect", recording)
+    return opened
+
+
+def _point_defaults_at(monkeypatch: pytest.MonkeyPatch, simulation: Path, equipment: Path) -> None:
+    """앱의 운영 DB 경로(인자 기본값)를 바꿔 끼운다 — 그 경로를 열 때만 앱 프로세스를 훑는다."""
+    monkeypatch.setattr(checks, "DUCKDB_PATH", simulation)
+    monkeypatch.setattr(checks, "EQUIPMENT_DUCKDB_PATH", equipment)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [(), ("--only", "equipment"), ("--only", "env", "--database", "copy.duckdb")],
+    ids=["both-defaults", "equipment-default", "simulation-copy-equipment-default"],
+)
+def test_a_resting_user_app_stops_the_run_before_any_database_opens(
+    argv: tuple[str, ...],
+    simulation_db: Path,
+    equipment_db: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """앱은 rerun 동안만 DB 를 쥔다 — 쉬는 앱은 잠금 확인을 지나쳐, 그대로 돌면 그동안
+    사용자 화면이 「데이터베이스를 열지 못했습니다」가 된다. 운영 DB 를 열 때는 프로세스를 먼저
+    보고 멈춘다."""
+    _point_defaults_at(monkeypatch, simulation_db, equipment_db)
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 1)
+    opened = _record_opens(monkeypatch)
+
+    code, output = _run(capsys, *argv)
+
+    assert code == 1
+    assert "사용자 앱이 떠 있습니다" in output
+    assert "### 8-" not in output
+    assert opened == []
+
+
+@pytest.mark.parametrize("scan", [0, None], ids=["no-app", "scan-failed"])
+def test_with_no_app_seen_the_run_goes_on_and_says_when_it_could_not_look(
+    scan: int | None,
+    simulation_db: Path,
+    equipment_db: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """프로세스를 살피지 못하면 지금처럼 잠금 확인으로 넘어가되, 잠금만 봤다는 것을 한 줄 남긴다."""
+    _point_defaults_at(monkeypatch, simulation_db, equipment_db)
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: scan)
+
+    code, output = _run(capsys, "--only", "env")
+
+    assert code == 0
+    assert "### 8-1." in output
+    assert ("DB 잠금만 봤다" in output) is (scan is None)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--only", "env", "--database", "{sim}", "--equipment-database", "{eq}"),
+        ("--only", "legacy", "--database", "{sim}"),
+        ("--only", "bdq"),
+    ],
+    ids=["both-copies", "simulation-copy-only", "bigdataquery-only"],
+)
+def test_copies_and_the_bigdataquery_block_do_not_look_for_the_app(
+    argv: tuple[str, ...],
+    simulation_db: Path,
+    equipment_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """사본만 열거나 DB 를 열지 않는 블록은 사용자 앱과 겹치지 않는다 — 앱이 떠 있어도 돈다."""
+    _point_defaults_at(monkeypatch, tmp_path / "app.duckdb", tmp_path / "app_equipment.duckdb")
+    monkeypatch.setitem(sys.modules, "bigdataquery", None)
+
+    def must_not_look(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("사본·BigDataQuery 만 볼 때는 앱 프로세스를 훑지 않는다")
+
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", must_not_look)
+    filled = [part.format(sim=simulation_db, eq=equipment_db) for part in argv]
+
+    code, output = _run(capsys, *filled)
+
+    assert code == 0
+    assert "사용자 앱이 떠 있습니다" not in output
 
 
 def test_the_ref_data_copy_line_says_whether_0033_has_run(

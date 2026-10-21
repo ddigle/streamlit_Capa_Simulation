@@ -2278,7 +2278,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   목록)만 찍고 그 밖은 종류 수로 센다. 자동 판정(통과·실패·결론)은 넣지 않는다 — 넣으면 재검증이 갈래마다
   반례를 낸다. 사실만 찍고 결론은 사외가 사용자와 낸다. 사내 런북(`docs/internal_update_runbook.md`) 8장이 배포마다 부르고
   결과는 리뷰 문서로 돌아온다. 블록을 더할 때는 `tests/test_inspect_real_data_checks.py` 의
-  표지값(`ZZSENTINEL…`) 검사를 함께 늘린다.
+  표지값(`ZZSENTINEL…`) 검사를 함께 늘린다. 앱은 rerun 동안만 DB 를 쥐어 쉬는 앱은 잠금에 안 잡히므로,
+  운영 DB 를 열 때는 화면 확인 스크립트의 `running_app_count` 로 앱 프로세스를 먼저 보고 보이면 DB 를 열지
+  않고 종료 1 로 멈춘다. 살피지 못하면 잠금만 보고 그 사실을 한 줄 찍는다. 사본만 열거나 BigDataQuery
+  블록뿐이면 보지 않는다. 같은 8장 뒤에 도는 `inspect_wf_division.py` 도 같은 판정으로 멈춘다.
 - **배포마다 바뀌는 사내 화면 확인(런북 7장)은 `scripts/check_deploy_screens.py` 가 맡는다.** 별도 포트에 띄운
   앱을 저장소 밖에 깐 Playwright(깔린 Chrome, headless)로 보고, 결과 칸에는 개수·있음/없음·같음/다름·px 만
   둔다 — 화면에서 읽은 이름은 판정에만 쓰고 옮기지 않는다. 항목은 공통 뼈대(`Screen`)만 쓰는 함수 하나와
