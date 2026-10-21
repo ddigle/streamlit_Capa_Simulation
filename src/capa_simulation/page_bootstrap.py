@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -87,14 +88,47 @@ def count_page_visit() -> None:
     st.session_state[PAGE_VISIT_KEY] = page_visit() + 1
 
 
+# DuckDB 가 파일에 쓰다 실패할 때 내는 영문 고정 문구 — 파일 쓰기(「Could not write
+# file」·「Could not write to file」)와 커밋(「Failed to commit」)이다. 디스크 가득·파일
+# 크기 한도·쓰기 권한이 여기로 온다. 뒤에 붙는 OS 문구는 로캘을 타지만(Windows 에서는
+# 한글) 이 낱말은 DuckDB 가 영문으로 박아 둔 것이다.
+_WRITE_FAILURE_MARKERS = ("Could not write", "Failed to commit")
+# 파일을 열거나 잠그다 실패한 `IOException` 의 영문 고정 문구 — 없는 폴더·권한·쥔
+# 프로세스를 적지 않은 공유 위반이다. 쥔 프로세스가 적힌 잠금은 그 앞에서 따로 가른다.
+_OPEN_FAILURE_MARKERS = ("Cannot open", "Could not set lock")
+# 화면에 옮기는 원문 길이. DuckDB 문구에는 SQL 줄과 위치 표시가 붙어 길어진다.
+_ORIGINAL_TEXT_LIMIT = 300
+_BACKTICK_RUN = re.compile(r"`+")
+
+
+def _original_line(exc: BaseException) -> str:
+    """오류 문구 끝에 붙이는 원문 한 줄 — 종류 이름과 문구 앞 `_ORIGINAL_TEXT_LIMIT` 자.
+
+    마크다운으로 그려도 글자 그대로 보이게 코드 표기로 싼다(`$`·`*` 가 수식·강조가 되지 않는다).
+    줄바꿈은 빈칸으로 접는다 — 코드 표기 안이라도 줄 머리의 `#`·`-` 는 제목·목록으로 먼저 읽힌다.
+    울타리는 원문의 가장 긴 역따옴표 줄보다 하나 길게 한다 — 같은 길이면 코드 표기가 중간에 닫힌다.
+    """
+    text = " ".join(str(exc).split())
+    if len(text) > _ORIGINAL_TEXT_LIMIT:
+        text = text[:_ORIGINAL_TEXT_LIMIT] + " …"
+    body = f"{type(exc).__name__}: {text or '(문구 없음)'}"
+    fence = "`" * (max((len(run) for run in _BACKTICK_RUN.findall(body)), default=0) + 1)
+    return f"- 원문: {fence} {body} {fence}"
+
+
 def bootstrap_error_message(
     exc: BaseException, *, database_paths: Sequence[Path] = (DUCKDB_PATH,)
 ) -> str:
     """화면에 보여 줄 오류 문구.
 
-    DuckDB 예외는 원문이 사용자에게 아무 도움이 안 된다(잠금 경로와 영어 문장, Windows
-    로캘에서는 한글이 깨진다). 그래서 **잠금을 쥔 쪽**에 맞춘 조치로 바꾼다. 나머지 예외는
-    서비스 계층이 이미 한국어로 만든 문장이라 그대로 쓴다.
+    DuckDB 예외는 원문만으로는 사용자에게 도움이 안 된다(잠금 경로와 영어 문장, Windows
+    로캘에서는 한글이 깨진다). 그래서 갈래마다 맞는 조치로 바꾼다 — 잠금은 **잠금을 쥔
+    쪽**에, 쓰기 실패(`_WRITE_FAILURE_MARKERS`)는 「저장되지 않았다·디스크 공간과 쓰기
+    권한」에, 그 밖의 열기 실패(`_OPEN_FAILURE_MARKERS`)는 「다른 프로그램·파일 권한과
+    경로」에 맞춘다. 어느 갈래도 아니면 「작업이 실패했다」만 말한다. 쓰기 실패와 그 밖은
+    조치가 원인을 다 짚지 못하므로 원문(`_original_line`)을 붙인다. 나머지 예외는 서비스
+    계층이 이미 한국어로 만든 문장이라 그대로 쓴다. 서명은 그대로 둔다 — 화면 수십 곳과
+    동기화 스크립트가 같은 꼴로 부른다.
 
     잠금을 쥔 것이 **이 앱 자신**이면 닫을 것이 없다(2026-10-01, E2E G1-D0). 한 서버가
     모든 브라우저 창·탭을 받으므로 창을 닫는 것은 조치가 아니다 — 예전 문구가 「다른 창을
@@ -125,6 +159,24 @@ def bootstrap_error_message(
             "엽니다. 이 앱을 한 번 더 띄운 서버나 DB 도구·동기화 스크립트라면 그것을 닫고 "
             "새로고침하세요.\n"
             "- 같은 서버를 브라우저 창·탭 여러 개로 여는 것은 원인이 아닙니다."
+        )
+    text = str(exc)
+    if any(marker in text for marker in _WRITE_FAILURE_MARKERS):
+        return (
+            "데이터베이스에 쓰지 못했습니다 — 저장되지 않았습니다. 디스크 공간과 쓰기 권한을 "
+            "확인하세요.\n\n"
+            f"{files}\n"
+            f"{_original_line(exc)}"
+        )
+    if not (
+        isinstance(exc, duckdb.IOException)
+        and any(marker in text for marker in _OPEN_FAILURE_MARKERS)
+    ):
+        return (
+            "데이터베이스 작업이 실패했습니다.\n\n"
+            f"{files}\n"
+            "- 같은 실패가 이어지면 아래 원문을 관리자에게 알려 주세요.\n"
+            f"{_original_line(exc)}"
         )
     return (
         "데이터베이스를 열지 못했습니다.\n\n"

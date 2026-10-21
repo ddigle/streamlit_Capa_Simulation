@@ -622,6 +622,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     설비 DB 핀(`uses_equipment_db`)을 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다.
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
   조회기간과 원천 유효 구간 확정)다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
+  - 잡은 예외의 화면 문구는 `bootstrap_error_message` 한 곳이다. `duckdb.Error` 는 갈래마다 조치를 바꾼다 — 쥔 PID 가
+    적힌 잠금(이 앱 자신이면 새로고침, 다른 프로그램이면 그것을 닫기), 쓰기 실패(DuckDB 영문 고정 문구 `Could not
+    write`·`Failed to commit` — 「저장되지 않았습니다. 디스크 공간과 쓰기 권한」), 그 밖의 열기 실패(`IOException` 의
+    `Cannot open`·`Could not set lock` — 다른 프로그램·파일 권한과 경로), 어느 것도 아니면 「데이터베이스 작업이
+    실패했습니다」다. 쓰기 실패와 그 밖에는 원문(종류 이름 + 앞 300자, 줄바꿈을 접은 코드 표기)을 붙인다. 그 밖의
+    예외는 서비스가 만든 한국어 문장 그대로다. 서명(`database_paths` — 어느 DB 인지는 부르는 쪽이 안다)은 화면 수십
+    곳과 `scripts/sync_object_storage.py` 가 같은 꼴로 부르므로 바꾸지 않는다.
   - `scenario_capacity_and_demand`·`stop_calculation_on_error` 는 계산이 멈추면(ValueError) 사이드바를 「계산
     멈춤」으로 바꾸고 다시 던진다(뒤의 것은 시나리오 수준 오류만 나는 호출에만). 계산 함수는 부를 때
     `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.

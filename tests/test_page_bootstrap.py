@@ -108,9 +108,13 @@ def test_database_error_message_follows_who_holds_the_lock() -> None:
     assert f"PID {other_pid}" in other
     assert "브라우저 창·탭 여러 개로 여는 것은 원인이 아닙니다" in other
 
-    generic = page_bootstrap.bootstrap_error_message(duckdb.CatalogException("no table"))
-    assert "파일 권한과 경로" in generic
-    assert "다른 창에서 실행 중" not in generic
+    # 쥔 프로세스를 적지 않은 열기 실패(권한·없는 폴더·공유 위반)는 열기 안내 그대로다.
+    opening = page_bootstrap.bootstrap_error_message(
+        duckdb.IOException('IO Error: Cannot open file "x.duckdb": Permission denied')
+    )
+    assert opening.startswith("데이터베이스를 열지 못했습니다.")
+    assert "파일 권한과 경로" in opening
+    assert "원문" not in opening
 
     # 어느 파일인지는 부르는 쪽이 정한다.
     equipment = Path("equipment_availability.duckdb")
@@ -118,6 +122,98 @@ def test_database_error_message_follows_who_holds_the_lock() -> None:
         lock_error(other_pid), database_paths=(equipment,)
     )
     assert page_bootstrap.bootstrap_error_message(ValueError("한국어 문장")) == "한국어 문장"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            'IO Error: Could not write file "x.duckdb.wal": No space left on device',
+            id="disk-full",
+        ),
+        pytest.param(
+            'IO Error: Could not write to file "x.duckdb" - attempted to write 0 bytes: '
+            "File too large",
+            id="file-size-limit",
+        ),
+    ],
+)
+def test_a_write_failure_says_nothing_was_saved_instead_of_closing_other_programs(
+    error: str,
+) -> None:
+    """저장 중 디스크 가득·파일 크기 한도는 잠금이 아니다 — 닫을 프로그램이 없다.
+
+    DuckDB 가 영문으로 박아 둔 「Could not write」로 가른다. 원문(종류 이름 + 문구)을 붙여
+    원인을 보인다.
+    """
+    import duckdb
+
+    message = page_bootstrap.bootstrap_error_message(duckdb.IOException(error))
+
+    assert message.startswith(
+        "데이터베이스에 쓰지 못했습니다 — 저장되지 않았습니다. "
+        "디스크 공간과 쓰기 권한을 확인하세요."
+    )
+    assert "다른 프로그램" not in message
+    assert "열지 못했습니다" not in message
+    assert f"- 원문: ` IOException: {error} `" in message
+
+
+def test_a_failed_commit_is_a_write_failure_whatever_its_exception_kind() -> None:
+    """커밋 실패는 `TransactionException` 등으로도 온다 — 종류가 아니라 「Failed to commit」
+    으로 가른다."""
+    import duckdb
+
+    message = page_bootstrap.bootstrap_error_message(
+        duckdb.TransactionException("TransactionContext Error: Failed to commit: disk I/O error")
+    )
+
+    assert message.startswith("데이터베이스에 쓰지 못했습니다 — 저장되지 않았습니다.")
+    assert "TransactionException: TransactionContext Error: Failed to commit" in message
+
+
+def test_any_other_database_error_says_the_operation_failed_and_shows_the_original() -> None:
+    """열기·잠금·쓰기가 아닌 실패(없는 표·깨진 파일 등)에 열기 조치를 권하지 않는다."""
+    from pathlib import Path
+
+    import duckdb
+
+    error = duckdb.CatalogException(
+        "Catalog Error: Table with name x does not exist!\n\nLINE 1: select * from x"
+    )
+    equipment = Path("equipment_availability.duckdb")
+    message = page_bootstrap.bootstrap_error_message(error, database_paths=(equipment,))
+
+    assert message.startswith("데이터베이스 작업이 실패했습니다.")
+    assert f"- 파일: `{equipment}`" in message
+    assert "파일 권한과 경로" not in message
+    assert "다른 프로그램" not in message
+    # 원문의 줄바꿈은 한 줄로 접는다 — 줄 머리의 글자가 마크다운 블록으로 읽히지 않게.
+    assert (
+        "- 원문: ` CatalogException: Catalog Error: Table with name x does not exist! "
+        "LINE 1: select * from x `"
+    ) in message
+
+
+def test_the_original_text_is_cut_and_stays_literal_under_markdown() -> None:
+    """원문은 종류 이름 + 앞 300자이고, 코드 표기라 `$`·`*`·`#` 가 수식·강조·제목이 되지 않는다.
+
+    원문에 역따옴표가 있으면 그보다 긴 울타리로 싼다 — 같은 길이면 코드 표기가 중간에 닫힌다.
+    """
+    import duckdb
+
+    long_message = page_bootstrap.bootstrap_error_message(duckdb.InternalException("가" * 1000))
+    original = next(line for line in long_message.splitlines() if line.startswith("- 원문: "))
+    assert original == f"- 원문: ` InternalException: {'가' * 300} … `"
+
+    tricky = "Binder Error: `a` $x$ *b*\n# 제목\n- 목록 ``c``"
+    message = page_bootstrap.bootstrap_error_message(duckdb.BinderException(tricky))
+    lines = message.splitlines()
+    original_lines = [line for line in lines if line.startswith("- 원문: ")]
+    assert original_lines == [
+        "- 원문: ``` BinderException: Binder Error: `a` $x$ *b* # 제목 - 목록 ``c`` ```"
+    ]
+    assert not any(line.startswith("#") for line in lines)
 
 
 def test_month_range_falls_back_when_the_widget_state_is_missing_or_broken(
