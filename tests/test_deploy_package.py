@@ -13,6 +13,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from build_deploy_package import (  # noqa: E402
     EXCLUDED_FILES,
+    RUNBOOK,
+    RUNBOOK_STAMP_PATTERN,
     build_archive,
     deploy_set,
     forbidden_entries,
@@ -191,6 +193,84 @@ def test_runbook_placeholders_are_counted_until_filled() -> None:
     assert leftover_placeholders("커밋 `deploy: <stamp>` 꼴") == {}
 
 
+def _write_runbook(root: Path, head: str, *, body: str = "추가 13") -> None:
+    """7장 머리 줄이 `head` 인 작은 런북. 빌더처럼 바이트로 써 줄끝을 OS 에 맡기지 않는다."""
+    path = root / RUNBOOK
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = (
+        "# 사내 적용 런북\n\n## 7. 이번 배포에서 사내가 따로 확인해야 하는 것\n\n"
+        f"{head} 적용한 ZIP 의 stamp 가 이것과 다르면 이 절은\n네 것이 아니다.\n\n{body}\n"
+    )
+    path.write_bytes(text.encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("head", "blocked", "message"),
+    [
+        (None, False, ""),
+        ("**이 절은 stamp `202610131200` 배포용이다.**", False, ""),
+        (
+            "**이 절은 stamp `202610121200` 배포용이다.**",
+            True,
+            "7장 선언 202610121200 · 지금 만드는 것 202610131200",
+        ),
+        ("**이번 배포 안내다.**", True, "stamp 선언을 찾지 못했습니다"),
+        ("**이 절은 stamp `<STAMP>` 배포용이다.**", True, "stamp 선언을 찾지 못했습니다"),
+    ],
+    ids=["런북 없음", "같은 stamp", "다른 stamp", "선언 없음", "자리표 선언"],
+)
+def test_the_runbook_stamp_must_name_this_deploy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    head: str | None,
+    blocked: bool,
+    message: str,
+) -> None:
+    """7장 stamp 를 옛 값으로 둔 채 나간 2026-09-23 배포의 장치 — 경고가 아니라 막는다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", tmp_path)
+    if head is not None:
+        _write_runbook(tmp_path, head)
+
+    assert build_deploy_package.runbook_stamp_mismatch("202610131200") is blocked
+    err = capsys.readouterr().err
+    if blocked:
+        assert message in err
+    else:
+        assert err == ""
+
+
+def test_a_runbook_with_placeholders_left_is_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", tmp_path)
+    head = "**이 절은 stamp `202610131200` 배포용이다.**"
+    _write_runbook(tmp_path, head, body="추가 {APPLY_FACTS}")
+
+    assert build_deploy_package.runbook_placeholders_left() is True
+    assert "{APPLY_FACTS} 1곳" in capsys.readouterr().err
+
+    _write_runbook(tmp_path, head)
+
+    assert build_deploy_package.runbook_placeholders_left() is False
+    assert capsys.readouterr().err == ""
+
+
+def test_the_real_runbook_declares_its_stamp_in_the_builder_pattern() -> None:
+    """선언 문구가 바뀌어 빌더 정규식이 놓치면 배포 당일 빌드에서야 멈춘다.
+
+    배포 사이에는 `<STAMP>` 자리표가 든 7장 초안이 커밋돼 있을 수 있다(`docs/wsl_dev_environment.md`
+    5장 1-1). 그래서 값은 보지 않고, 자리표를 12자리 수로 바꾼 글에서 선언의 꼴만 본다.
+    """
+    text = (PROJECT_ROOT / RUNBOOK).read_text(encoding="utf-8")
+
+    assert RUNBOOK_STAMP_PATTERN.search(text.replace("<STAMP>", "0" * 12)) is not None
+
+
 def _git(root: Path, *args: str) -> str:
     completed = subprocess.run(
         ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", *args],
@@ -340,6 +420,56 @@ def test_a_clean_pushed_build_ships_head_and_tags_it(
         manifest = json.loads(archive.read("DEPLOY_MANIFEST.json"))
         assert archive.read("app.py") == b"x = 1\n"
     assert manifest["commit"] == _git(pushed_repo, "rev-parse", "HEAD")
+    assert _git(pushed_repo, "tag", "--list") == "deploy/202610131200"
+
+
+@pytest.mark.parametrize(
+    ("head", "body", "message"),
+    [
+        ("**이 절은 stamp `202610121200` 배포용이다.**", "추가 13", "다른 배포를 가리킵니다"),
+        (
+            "**이 절은 stamp `202610131200` 배포용이다.**",
+            "추가 {APPLY_FACTS}",
+            "채우지 않은 자리표가 남았습니다",
+        ),
+    ],
+    ids=["다른 stamp", "자리표 남음"],
+)
+def test_a_runbook_not_filled_for_this_deploy_stops_the_build(
+    pushed_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    head: str,
+    body: str,
+    message: str,
+) -> None:
+    """7장이 이번 배포 것이 아니면 ZIP 도 태그도 남기지 않고 멈춘다 — 사내는 7장을 그대로 따른다.
+
+    런북을 커밋·푸시해 두어 트리 검사는 깨끗하다. 7장만 이번 배포 기준으로 고친 대조군이 성공해야
+    멈춘 까닭이 런북 대조 하나로 좁혀진다.
+    """
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    _write_runbook(pushed_repo, head, body=body)
+    _git(pushed_repo, "add", "docs")
+    _git(pushed_repo, "commit", "-q", "-m", "옛 7장")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    out = tmp_path / "out"
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 1
+    assert message in capsys.readouterr().err
+    assert not (out / "202610131200.zip").exists()
+    assert _git(pushed_repo, "tag", "--list") == ""
+
+    _write_runbook(pushed_repo, "**이 절은 stamp `202610131200` 배포용이다.**")
+    _git(pushed_repo, "commit", "-q", "-am", "이번 배포 7장")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 0
+    with zipfile.ZipFile(out / "202610131200.zip") as archive:
+        assert RUNBOOK.as_posix() in archive.namelist()
     assert _git(pushed_repo, "tag", "--list") == "deploy/202610131200"
 
 
