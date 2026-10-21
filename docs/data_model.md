@@ -434,7 +434,7 @@ Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연 �
   값을 맞춘다. `ref_data`·`rev_data`의 RQ 7개씩을 갱신하고, 판별은 `RQ_PKG_PLAN`의 `제품타입`과
   원천의 제품→타입 매핑을 쓰며 매핑이 갈리는 제품은 건드리지 않는다.
 - 두 DuckDB 파일은 서로 독립적으로 백업·복원한다. 백업은 라이브 파일 복사가 아니라
-  `persistence/snapshot_export.py`의 `ATTACH` + `COPY FROM DATABASE` 스냅샷이며, 설치할 때
+  `persistence/snapshot_export.py`의 `ATTACH` + `_sql_helpers.copy_database()` 스냅샷이며, 설치할 때
   기존 파일과 `.wal`은 지우지 않고 `data/temp/objectstore/superseded/`로 물러난다. 사내 S3 호환
   스토리지와의 왕복은 앱을 끈 채 `scripts/sync_object_storage.py`의 `init`·`pull`·`push`를 사람이
   실행하고, 앱은 `sync_boot.py`가 켠 `persistence/sync_state.py` 사이드카에 변경 표시만 남긴다.
@@ -446,7 +446,10 @@ Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연 �
   연결이 하나라도 섞이면 DuckDB가 연결을 거부하므로 모든 연결은 `_sql_helpers.connect()`를 쓴다.
 - DuckDB는 삭제·재작성으로 생긴 free 블록을 파일 안쪽에 남기고 `CHECKPOINT`·`VACUUM`으로 파일을
   줄이지 않는다. 공간 회수와 기존 파일의 블록 크기 전환은 `scripts/compact_duckdb.py`가 하는
-  `ATTACH` + `COPY FROM DATABASE` 재구축뿐이며, 교체 전에 표 목록과 행 수 일치를 검증한다.
+  `ATTACH` + `_sql_helpers.copy_database()` 재구축뿐이며, 교체 전에 표 목록과 행 수 일치를 검증한다.
+  `COPY FROM DATABASE` 는 외래 키 자식 행을 부모보다 먼저 넣어 제약 위반으로 멈출 수 있으므로(설비
+  DB 의 `equipment_ops.revision` 자식 표들) `copy_database()` 는 구조만 `COPY FROM DATABASE … (SCHEMA)`
+  로 옮기고 데이터는 부모 표부터 한 트랜잭션 안에서 `INSERT … SELECT` 한다. 스냅샷 내보내기도 같은 길이다.
   WAL이 남아 있으면 실행을 중단하지만 유휴 상태의 앱은 잠금도 WAL도 남기지 않으므로 반드시
   앱을 정상 종료한 뒤 실행한다. 원본은 행 수를 세는 순간부터 검증이 끝날 때까지 한 연결에서
   READ_ONLY 로 붙들어 그동안 앱의 쓰기 연결을 막고, managed 모드에서는 살아 있는 심장박동을 보면

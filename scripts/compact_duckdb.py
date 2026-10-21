@@ -4,7 +4,8 @@
 
 DuckDB 는 삭제·재작성으로 생긴 free 블록을 파일 안쪽에 남겨 두고 CHECKPOINT 나 VACUUM 으로
 파일을 줄이지 않는다. 공간을 실제로 회수하는 유일한 방법은 ATTACH 로 새 파일을 열어
-COPY FROM DATABASE 로 전체를 옮겨 담는 것이다. 이 스크립트는 그 재구축을 하고,
+전체를 옮겨 담는 것이다 — 구조는 COPY FROM DATABASE (SCHEMA) 로, 데이터는 외래 키 부모 표부터
+`_sql_helpers.copy_database()` 로 옮긴다. 이 스크립트는 그 재구축을 하고,
 바꿔치기 전에 테이블 목록과 행 수가 정확히 같은지 확인한다.
 
 **앱 서버를 내린 뒤에 실행한다.** 앱은 rerun 이 끝나면 DB 연결을 닫으므로 유휴 상태의 앱은
@@ -30,7 +31,7 @@ from pathlib import Path
 import duckdb
 
 from capa_simulation.persistence import sync_state
-from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE
+from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE, copy_database
 from capa_simulation.services.korean_particle import with_direction_particle
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
@@ -100,7 +101,7 @@ def rebuild(
         connection.execute(f"ATTACH '{source}' AS compact_source (READ_ONLY)")
         before_counts = table_row_counts(connection, "compact_source")
         connection.execute(f"ATTACH '{target}' AS compact_target ({', '.join(options)})")
-        connection.execute("COPY FROM DATABASE compact_source TO compact_target")
+        copy_database(connection, "compact_source", "compact_target")
         connection.execute("DETACH compact_target")
         connection.execute(f"ATTACH '{target}' AS compact_target (READ_ONLY)")
         after_counts = table_row_counts(connection, "compact_target")

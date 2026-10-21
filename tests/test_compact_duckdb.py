@@ -54,6 +54,32 @@ def _make_database(path: Path) -> dict[str, int]:
     return {"app_meta.scenario": 1000, "main.rq": 300}
 
 
+def _make_foreign_key_database(path: Path) -> dict[str, int]:
+    """부모 하나에 외래 키 자식 셋이 달린 DB 를 만들고 표별 행 수를 돌려준다.
+
+    설비 DB 의 `equipment_ops.revision` 과 그 자식 표들의 꼴이다. 자식 둘은 이름이 부모보다
+    앞서므로 이름 차례로 옮기면 부모보다 먼저 들어간다.
+    """
+    connection = duckdb.connect(str(path))
+    try:
+        connection.execute("CREATE SCHEMA ops")
+        connection.execute("CREATE TABLE ops.revision (revision_id VARCHAR PRIMARY KEY, n INTEGER)")
+        for child in ("a_master", "baseline", "schedule"):
+            connection.execute(
+                f"CREATE TABLE ops.{child} (revision_id VARCHAR NOT NULL, v INTEGER, "
+                "FOREIGN KEY (revision_id) REFERENCES ops.revision (revision_id))"
+            )
+        connection.execute("INSERT INTO ops.revision SELECT 'r' || range, range FROM range(20)")
+        for child in ("a_master", "baseline", "schedule"):
+            connection.execute(
+                f"INSERT INTO ops.{child} SELECT 'r' || (range % 20), range FROM range(2000)"
+            )
+            connection.execute(f"DELETE FROM ops.{child} WHERE v >= 500")
+    finally:
+        connection.close()
+    return {"ops.a_master": 500, "ops.baseline": 500, "ops.revision": 20, "ops.schedule": 500}
+
+
 def _row_counts(path: Path) -> dict[str, int]:
     connection = duckdb.connect(str(path), read_only=True)
     try:
@@ -106,6 +132,43 @@ def test_dry_run_leaves_the_original_untouched(script: ModuleType, tmp_path: Pat
 
     assert _digest(database) == before
     assert sorted(path.name for path in tmp_path.iterdir()) == ["sim.duckdb"]
+
+
+def test_compact_copies_foreign_key_children_after_their_parent(
+    script: ModuleType, tmp_path: Path
+) -> None:
+    """외래 키 자식 행이 부모보다 먼저 들어가면 재구축이 제약 위반으로 멈춘다(설비 DB 의 꼴)."""
+    database = tmp_path / "equipment.duckdb"
+    expected = _make_foreign_key_database(database)
+
+    assert script.compact(database, _args()) is True
+
+    assert _row_counts(database) == expected
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["equipment.duckdb"]
+    rebuilt = duckdb.connect(str(database))
+    try:
+        foreign_keys = rebuilt.execute(
+            "SELECT table_name FROM duckdb_constraints() "
+            "WHERE constraint_type = 'FOREIGN KEY' ORDER BY 1"
+        ).fetchall()
+        assert foreign_keys == [("a_master",), ("baseline",), ("schedule",)]
+        with pytest.raises(duckdb.ConstraintException):
+            rebuilt.execute("INSERT INTO ops.baseline VALUES ('r-orphan', 1)")
+    finally:
+        rebuilt.close()
+
+
+def test_dry_run_measures_a_foreign_key_database_without_touching_it(
+    script: ModuleType, tmp_path: Path
+) -> None:
+    database = tmp_path / "equipment.duckdb"
+    _make_foreign_key_database(database)
+    before = _digest(database)
+
+    assert script.compact(database, _args(dry_run=True)) is False
+
+    assert _digest(database) == before
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["equipment.duckdb"]
 
 
 def test_source_stays_locked_until_the_copy_is_verified(

@@ -971,7 +971,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 ### 영속성 모듈
 
 - `src/capa_simulation/persistence/snapshot_export.py` — DuckDB 스냅샷 내보내기와 받은 스냅샷 검증·설치. 라이브
-  `.duckdb` 를 바이트로 읽지 않고(COMMIT 이 `.wal` 에만 있을 수 있다) `ATTACH` + `COPY FROM DATABASE` 를 쓴다.
+  `.duckdb` 를 바이트로 읽지 않고(COMMIT 이 `.wal` 에만 있을 수 있다) `ATTACH` + `_sql_helpers.copy_database()` 를 쓴다
+  (구조는 `COPY FROM DATABASE … (SCHEMA)`, 데이터는 외래 키 부모 표부터 — `scripts/compact_duckdb.py` 와 같은 길).
 - `src/capa_simulation/persistence/sync_state.py` — DB 옆 `.sync.json` 사이드카에 원격 세대·미반영 변경을 기록한다(DB
   안은 순환, 메모리는 죽으면 사라진다). `enable()` 전에는 파일을 만들지 않고 못 읽는 사이드카는 「변경 있음」 이다.
 - `src/capa_simulation/persistence/repository.py` — `DuckDBScenarioRepository` 의 입력 검증·연결·쓰기 잠금·트랜잭션
@@ -1001,7 +1002,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`SCENARIO_SUMMARY_SELECT` 등)을 매퍼 옆에 두어 열 순서와 row 인덱스가 짝을 이룬다.
 - `src/capa_simulation/persistence/_sql_helpers.py` — 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두 Repository
   와 `_migration_core` 가 `transaction()` 한 벌을 쓰고, 공용 프로필 버전 대조 `require_profile_version()`
-  (`ProfileVersionConflict`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다.
+  (`ProfileVersionConflict`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
+  `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
   - DB 가 코드보다 새 것이면(옛 배포 ZIP 으로 되돌림) 막지 않고 `MigrationOutcome.schema_ahead`(`SchemaAheadOfCode`)로

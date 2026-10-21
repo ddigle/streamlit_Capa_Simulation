@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from capa_simulation import settings as app_settings
@@ -27,6 +28,60 @@ def _seed_database(path: Path, rows: int = 100) -> None:
         )
         connection.execute("INSERT INTO app_meta.schema_migration VALUES (1, '0001_initial', 'x')")
         connection.execute("CREATE TABLE demo AS SELECT range AS id FROM range(?)", [rows])
+
+
+def _seed_foreign_key_database(path: Path) -> dict[str, int]:
+    """설비 DB 처럼 부모 표에 외래 키 자식 표들이 달린 DB. 자식 둘은 이름이 부모보다 앞선다."""
+    with connect(path) as connection:
+        connection.execute("CREATE SCHEMA ops")
+        connection.execute("CREATE TABLE ops.revision (revision_id VARCHAR PRIMARY KEY)")
+        for child in ("a_master", "baseline", "schedule"):
+            connection.execute(
+                f"CREATE TABLE ops.{child} (revision_id VARCHAR NOT NULL, v INTEGER, "
+                "FOREIGN KEY (revision_id) REFERENCES ops.revision (revision_id))"
+            )
+        connection.execute("INSERT INTO ops.revision SELECT 'r' || range FROM range(20)")
+        for child in ("a_master", "baseline", "schedule"):
+            connection.execute(
+                f"INSERT INTO ops.{child} SELECT 'r' || (range % 20), range FROM range(300)"
+            )
+    return {"a_master": 300, "baseline": 300, "revision": 20, "schedule": 300}
+
+
+def test_export_copies_foreign_key_children_after_their_parent(workspace: Path) -> None:
+    """외래 키 자식 행을 부모보다 먼저 넣으면 내보내기가 제약 위반으로 멈춘다(설비 DB 의 꼴)."""
+    database = workspace / "equipment_availability.duckdb"
+    expected = _seed_foreign_key_database(database)
+    destination = workspace / "snapshot.duckdb"
+
+    result = snapshot_export.export_snapshot(database, destination)
+
+    with connect(result.path) as reader:
+        counts = {
+            table: int(reader.execute(f"SELECT COUNT(*) FROM ops.{table}").fetchone()[0])  # type: ignore[index]
+            for table in expected
+        }
+    assert counts == expected
+
+
+def test_export_failure_surfaces_the_original_error(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """복사가 트랜잭션을 깨뜨린 채 실패해도 뒤의 DETACH 오류가 원래 원인을 가리면 안 된다."""
+    database = workspace / "capa_simulation.duckdb"
+    _seed_database(database)
+
+    def broken_copy(
+        connection: duckdb.DuckDBPyConnection, source_catalog: str, target_catalog: str
+    ) -> None:
+        connection.execute("BEGIN")
+        connection.execute(f"CREATE TABLE {target_catalog}.main.t (id INTEGER PRIMARY KEY)")
+        connection.execute(f"INSERT INTO {target_catalog}.main.t VALUES (1), (1)")
+
+    monkeypatch.setattr(snapshot_export, "copy_database", broken_copy)
+
+    with pytest.raises(duckdb.ConstraintException):
+        snapshot_export.export_snapshot(database, workspace / "snapshot.duckdb")
 
 
 def test_export_succeeds_while_a_connection_is_still_open(workspace: Path) -> None:

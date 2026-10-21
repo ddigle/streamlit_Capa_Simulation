@@ -1,6 +1,6 @@
-# Purpose: DuckDB 프레임 저장·조회·값 변환과 트랜잭션 경계에 쓰는 공용 헬퍼를 제공한다.
+# Purpose: DuckDB 프레임 저장·조회·값 변환·DB 통째 복사와 트랜잭션 경계에 쓰는 공용 헬퍼를 제공한다.
 
-"""DuckDB 프레임 저장·조회·값 변환과 트랜잭션 경계에 쓰는 공용 헬퍼를 제공한다."""
+"""DuckDB 프레임 저장·조회·값 변환·DB 통째 복사와 트랜잭션 경계에 쓰는 공용 헬퍼를 제공한다."""
 
 from __future__ import annotations
 
@@ -224,6 +224,70 @@ def transaction(connection: duckdb.DuckDBPyConnection) -> Iterator[None]:
         with suppress(duckdb.TransactionException):
             connection.execute("ROLLBACK")
         raise
+
+
+def copy_database(
+    connection: duckdb.DuckDBPyConnection, source_catalog: str, target_catalog: str
+) -> None:
+    """붙인 카탈로그 하나를 빈 카탈로그로 통째로 옮긴다 — 외래 키 부모 표를 먼저 채운다.
+
+    `COPY FROM DATABASE` 는 표를 외래 키 차례로 채우지 않아 자식 행이 부모보다 먼저 들어가면
+    제약 위반으로 멈춘다(DuckDB 1.5.5, 설비 DB 의 `equipment_ops.revision` 자식 표들). 그래서
+    구조(스키마·표·제약·인덱스·뷰·시퀀스)만 `COPY FROM DATABASE … (SCHEMA)` 로 옮기고, 데이터는
+    부모부터 표마다 `INSERT … SELECT` 한다. 한 트랜잭션이라 원본을 한 시점으로 읽고, 실패하면
+    대상에 아무것도 남기지 않고 원래 예외를 올린다.
+    """
+    with transaction(connection):
+        connection.execute(
+            f"COPY FROM DATABASE {quote(source_catalog)} TO {quote(target_catalog)} (SCHEMA)"
+        )
+        for schema_name, table_name in _tables_parents_first(connection, source_catalog):
+            table = f"{quote(schema_name)}.{quote(table_name)}"
+            connection.execute(
+                f"INSERT INTO {quote(target_catalog)}.{table} "
+                f"SELECT * FROM {quote(source_catalog)}.{table}"
+            )
+
+
+def _tables_parents_first(
+    connection: duckdb.DuckDBPyConnection, catalog: str
+) -> list[tuple[str, str]]:
+    """카탈로그의 표를 외래 키가 가리키는 부모가 늘 앞서도록 늘어놓는다.
+
+    DuckDB 는 스키마를 건너는 외래 키를 만들지 못하므로 `referenced_table` 은 자식과 같은
+    스키마의 표다. 자기 자신을 가리키는 외래 키는 차례와 무관하므로 뺀다. 같은 단계 안에서는
+    스키마·표 이름순이다. 더 놓을 표가 없는데 남은 표가 있으면(순환) 멈춘다.
+    """
+    tables: list[tuple[str, str]] = [
+        (str(schema_name), str(table_name))
+        for schema_name, table_name in connection.execute(
+            "SELECT schema_name, table_name FROM duckdb_tables() "
+            "WHERE database_name = ? ORDER BY 1, 2",
+            [catalog],
+        ).fetchall()
+    ]
+    parents: dict[tuple[str, str], set[tuple[str, str]]] = {table: set() for table in tables}
+    for schema_name, table_name, referenced_table in connection.execute(
+        "SELECT schema_name, table_name, referenced_table FROM duckdb_constraints() "
+        "WHERE database_name = ? AND constraint_type = 'FOREIGN KEY'",
+        [catalog],
+    ).fetchall():
+        child = (str(schema_name), str(table_name))
+        parent = (str(schema_name), str(referenced_table))
+        if child in parents and parent in parents and parent != child:
+            parents[child].add(parent)
+    ordered: list[tuple[str, str]] = []
+    placed: set[tuple[str, str]] = set()
+    remaining = tables
+    while remaining:
+        ready = [table for table in remaining if parents[table] <= placed]
+        if not ready:
+            cycle = ", ".join(f"{schema}.{table}" for schema, table in remaining)
+            raise RuntimeError(f"외래 키가 순환해 옮길 차례를 정하지 못했습니다: {cycle}")
+        ordered.extend(ready)
+        placed.update(ready)
+        remaining = [table for table in remaining if table not in placed]
+    return ordered
 
 
 def insert_by_name(

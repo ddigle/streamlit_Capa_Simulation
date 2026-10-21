@@ -10,9 +10,11 @@
    바이트가 변하지 않는다. 그 상태로 파일을 올리면 **방금 저장한 리비전이 통째로 빠진
    파일**이 올라간다.
 
-그래서 DuckDB 자신에게 스냅샷을 만들게 한다 — `ATTACH` + `COPY FROM DATABASE`. 이 경로는
-트랜잭션 상태를 읽으므로 방금의 COMMIT 이 포함되고, 핀이 열린 채로도 성공하며, 산출물에는
-`.wal` 이 없다. 실측: 67,383,296 B → 21,524,480 B, 3.21초.
+그래서 DuckDB 자신에게 스냅샷을 만들게 한다 — `ATTACH` 한 새 파일로
+`_sql_helpers.copy_database()`(구조는 `COPY FROM DATABASE … (SCHEMA)`, 데이터는 외래 키 부모
+표부터 한 트랜잭션 안에서 `INSERT … SELECT`). 이 경로는 트랜잭션 상태를 읽으므로 방금의
+COMMIT 이 포함되고, 핀이 열린 채로도 성공하며, 산출물에는 `.wal` 이 없다.
+실측: 67,383,296 B → 21,524,480 B, 3.21초.
 
 DuckDB 를 열 때는 반드시 `_sql_helpers.connect()` 를 쓴다. `duckdb.connect(path,
 read_only=True)` 는 같은 프로세스의 다른 연결과 configuration 이 달라 연결 자체가 거부된다.
@@ -25,13 +27,16 @@ import hashlib
 import os
 import shutil
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final
 
+import duckdb
+
 from capa_simulation import settings
-from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE, connect
+from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE, connect, copy_database
 from capa_simulation.persistence.equipment_migration_runner import load_equipment_migrations
 from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.services.object_storage_manifest import (
@@ -95,9 +100,13 @@ def export_snapshot(
         name = str(row[0])
         connection.execute(f"ATTACH '{_quote(destination)}' AS snap (BLOCK_SIZE {int(block_size)})")
         try:
-            connection.execute(f'COPY FROM DATABASE "{name}" TO snap')
-        finally:
-            connection.execute("DETACH snap")
+            copy_database(connection, name, "snap")
+        except BaseException:
+            # 깨진 트랜잭션에서는 DETACH 도 실패한다. 그 오류가 원래 원인을 가리지 않게 한다.
+            with suppress(duckdb.Error):
+                connection.execute("DETACH snap")
+            raise
+        connection.execute("DETACH snap")
     elapsed = time.perf_counter() - started
     sha256_hex, md5_hex, md5_base64, size_bytes = digest_file(destination)
     return ExportResult(
