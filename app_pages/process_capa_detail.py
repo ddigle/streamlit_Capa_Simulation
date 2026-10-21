@@ -163,7 +163,9 @@ home_request = take_process_detail_request()
 
 render_page_header("공정 Capa 상세")
 # 공정 표시명·배지 자리. 공정과 설비 일정 판정이 정해진 뒤 채운다 — 제목 바로 아래에 선다.
-header_marks = st.empty()
+# 블록이라 계산 동안 앞 회차 줄이 남는다(AGENTS 9장). 빈 블록은 그려지지 않으므로 border·height 를
+# 주지 않는다.
+header_marks = st.container()
 render_page_guide("process_capa_detail", title="공정 Capa 상세")
 # 공정 표시명은 화면 라벨이다. 선택값·세션값·주소 인자는 원본 공정명이다.
 process_labels = get_process_labels()

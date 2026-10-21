@@ -159,7 +159,7 @@ secure_threshold = thresholds.default_secure
 # 카드는 지금 쓰는 기준을 읽기 전용으로 보인다. 월별 예외 수는 조회기간을 알아야 세므로 아래
 # 계산 뒤에 채운다 — 자리만 먼저 잡아 사이드바 차례를 그대로 둔다.
 with condition_card("판정 기준", name="static_capa", icon=":material/rule:"):
-    threshold_caption_slot = st.empty()
+    threshold_caption_slot = st.container()
     st.caption(THRESHOLD_POINTER)
 
 try:
