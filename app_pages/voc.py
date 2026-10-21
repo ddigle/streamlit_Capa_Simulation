@@ -38,24 +38,32 @@ REPLY_BODY_KEY = "voc_reply_body"
 RESOLVE_KEY = "voc_resolve"
 DELETE_CONFIRM_KEY = "voc_delete_confirm"
 DELETE_KEY = "voc_delete"
+# 글 하나의 처리(답변·답변 완료 표시·지우기)가 실패한 문구. 다음 회차에 그 글 상자 안에 그린다.
+POST_ERROR_KEY = "voc_post_error"
 CATEGORY_FILTER_KEY = "voc_category_filter"
 OPEN_ONLY_KEY = "voc_open_only"
 SEARCH_KEY = "voc_search"
 FLASH_KEY = "voc_flash"
+POST_FORM_KEY = "voc_post_form"
+POST_CATEGORY_KEY = "voc_post_category"
 POST_TITLE_KEY = "voc_post_title"
 POST_BODY_KEY = "voc_post_body"
-# 올리기에 **성공한 뒤에만** 폼을 비운다는 표지. 위젯을 그린 회차에는 그 값을 바꿀 수 없으므로
-# 다음 회차 위젯 앞에서 빈 값을 적는다. 답변 폼은 글 번호를 붙인 칸이다.
-POST_CLEAR_KEY = "voc_post_clear"
-REPLY_CLEAR_KEY = "voc_reply_clear"
+POST_FORM_ERROR_KEY = "voc_post_form_error"
+# 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
+# 답변 폼과 답변 완료 단추는 글마다 하나다. 지운 글은 다시 그리지 않으므로 세대 대신 지운 글 id 를
+# 적는다.
+POST_FORM_GENERATION_KEY = "voc_post_form_generation"
+REPLY_GENERATION_KEY = "voc_reply_generation"
+RESOLVE_GENERATION_KEY = "voc_resolve_generation"
+DELETE_HANDLED_KEY = "voc_delete_handled"
 
 render_page_header("VOC")
 render_page_guide("voc", title="VOC")
 
 # 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 형제가 한 칸 밀리면,
-# `st.rerun()` 으로 끊긴 답변 회차(알림 없음)와 그다음 회차(알림 있음) 사이에서 key 있는 글 상자가
-# 옛 자리에 회색 사본으로 남아 — 적은 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도
-# 따라왔다(2026-10-05 E2E, 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다.
+# 알림 없는 회차와 알림 있는 회차 사이에서 key 있는 글 상자가 옛 자리에 회색 사본으로 남아 — 적은
+# 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도 따라왔다(2026-10-05 E2E, 답변 0 인 글에 첫
+# 답변을 남길 때). 가용설비 현황과 같은 까닭이다.
 notices = st.container()
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
@@ -89,6 +97,111 @@ def _author_value() -> str:
     return str(st.session_state.get(AUTHOR_KEY, "")).strip()
 
 
+def _text(key: str) -> str:
+    """콜백이 읽는 입력 칸 값. 아직 한 번도 그리지 않은 칸은 빈 글로 본다."""
+    value = st.session_state.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def _generation(counter_key: str) -> int:
+    value = st.session_state.get(counter_key, 0)
+    return value if isinstance(value, int) else 0
+
+
+def _with_generation(key: str, generation: int) -> str:
+    """세대 0 은 원래 key 그대로다 — 처음 그린 화면의 key 는 바뀌지 않는다."""
+    return key if generation == 0 else f"{key}__g{generation}"
+
+
+# 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 **콜백**이다. 본문에서 쓰고 `st.rerun()` 하면
+# 끊긴 회차가 아직 그리지 않은 아래 글의 위젯 값을 버린다 — 체크해 둔 「삭제 확인」은 체크된 채
+# 보이는데 「글 삭제」 단추가 사라졌다(AGENTS 9장). 콜백은 본문보다 먼저 돌아 새 글·답글·알림이
+# 그 회차에 바로 선다.
+#
+# 단추를 그린 회차의 세대를 인자로 받아 지금 세대와 다르면 쓰지도 알리지도 않는다. 옛 화면의 누름도
+# 콜백에 닿고(Streamlit 은 지나간 위젯의 콜백 정보를 지우지 않는다), key 가 같으면 새로 그린 단추의
+# 인자로 불려 방금 남긴 글을 또 남기거나 방금 바꾼 답변 완료를 되돌린다.
+
+
+def _submit_post(database_path: str, generation: int) -> None:
+    """「글 올리기」 콜백. 거절(작성자 빈칸 등)되면 문구만 남기고 적은 제목·내용은 둔다.
+
+    세대가 다르면 이미 올린 폼의 제출이 한 번 더 들어온 것(빠른 두 번 누름)이다. 옛 화면이 함께
+    보낸 제목·내용은 이미 올린 글이라 다시 비우기만 한다.
+    """
+    if generation != _generation(POST_FORM_GENERATION_KEY):
+        st.session_state[POST_TITLE_KEY] = ""
+        st.session_state[POST_BODY_KEY] = ""
+        return
+    try:
+        get_scenario_repository(database_path).create_voc_post(
+            category=_text(POST_CATEGORY_KEY),
+            title=_text(POST_TITLE_KEY),
+            body=_text(POST_BODY_KEY),
+            author=_author_value(),
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.session_state[POST_FORM_ERROR_KEY] = bootstrap_error_message(exc)
+        return
+    st.session_state[FLASH_KEY] = "글을 올렸습니다."
+    st.session_state[POST_TITLE_KEY] = ""
+    st.session_state[POST_BODY_KEY] = ""
+    st.session_state[POST_FORM_GENERATION_KEY] = generation + 1
+
+
+def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
+    """「답변 남기기」 콜백. 새 글 폼과 같이 거절되면 적은 답변을 두고, 남기면 비운다."""
+    reply_key = f"{REPLY_BODY_KEY}_{post_id}"
+    generation_key = f"{REPLY_GENERATION_KEY}_{post_id}"
+    if generation != _generation(generation_key):
+        st.session_state[reply_key] = ""
+        return
+    try:
+        get_scenario_repository(database_path).create_voc_reply(
+            post_id=post_id, body=_text(reply_key), author=_author_value()
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        return
+    st.session_state[FLASH_KEY] = "답변을 남겼습니다."
+    st.session_state[reply_key] = ""
+    st.session_state[generation_key] = generation + 1
+
+
+def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: int) -> None:
+    """「답변 완료로 표시」·「미답변으로 되돌리기」 콜백."""
+    generation_key = f"{RESOLVE_GENERATION_KEY}_{post_id}"
+    if generation != _generation(generation_key):
+        return
+    try:
+        get_scenario_repository(database_path).set_voc_post_resolved(post_id, resolved=resolved)
+    except BOOTSTRAP_ERRORS as exc:
+        st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        return
+    st.session_state[generation_key] = generation + 1
+
+
+def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
+    """「글 삭제」 콜백. `reply_count` 는 단추를 그린 회차에 센 답글 수다 — 지운 뒤에는 셀 수 없다.
+
+    이 세션이 이미 지운 글의 누름이 한 번 더 들어오면 쓰지도 알리지도 않는다. 지운 글 id 는 위젯이
+    아닌 세션 칸에 적는다 — 옛 화면은 체크한 확인 칸 값을 함께 보낸다.
+    """
+    if st.session_state.get(DELETE_HANDLED_KEY) == post_id:
+        return
+    if not st.session_state.get(f"{DELETE_CONFIRM_KEY}_{post_id}"):
+        return
+    try:
+        get_scenario_repository(database_path).remove_voc_post(post_id)
+    except BOOTSTRAP_ERRORS as exc:
+        st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        return
+    st.session_state[DELETE_HANDLED_KEY] = post_id
+    st.session_state[FLASH_KEY] = (
+        "글을 지웠습니다." if not reply_count else f"글과 답글 {reply_count}건을 지웠습니다."
+    )
+
+
 with st.container(border=True):
     st.markdown("#### :material/edit_note: 새 글 쓰기")
     # 이름은 폼 **밖**이다. 폼 안에 두면 글을 올릴 때마다 함께 지워져 매번 다시 적어야 한다.
@@ -103,44 +216,35 @@ with st.container(border=True):
         help="이 앱에는 로그인이 없습니다. 답을 돌려줄 수 있을 만큼만 적어 주세요.",
     )
     # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 제출**(작성자 빈칸 등)에도 제목·내용을
-    # 지워, 4000자까지 적은 글이 되돌릴 길 없이 사라졌다(2026-10-05 E2E). 성공한 뒤에만 비운다.
-    if st.session_state.pop(POST_CLEAR_KEY, False):
-        st.session_state[POST_TITLE_KEY] = ""
-        st.session_state[POST_BODY_KEY] = ""
-    with st.form("voc_post_form"):
+    # 지워, 4000자까지 적은 글이 되돌릴 길 없이 사라졌다(2026-10-05 E2E). 콜백이 올리기에 성공한
+    # 때만 비운다.
+    post_generation = _generation(POST_FORM_GENERATION_KEY)
+    with st.form(_with_generation(POST_FORM_KEY, post_generation)):
         category_column, title_column = st.columns([1, 3])
         with category_column:
-            category = st.selectbox("분류", options=VOC_CATEGORIES)
+            st.selectbox("분류", options=VOC_CATEGORIES, key=POST_CATEGORY_KEY)
         with title_column:
-            title = st.text_input(
+            st.text_input(
                 "제목", placeholder="한 줄로 요약해 주세요", max_chars=120, key=POST_TITLE_KEY
             )
-        body = st.text_area(
+        st.text_area(
             "내용",
             height=140,
             placeholder="어떤 화면에서 무엇을 하려다 무엇이 막혔는지 적어 주시면 답이 빨라집니다.",
             max_chars=4000,
             key=POST_BODY_KEY,
         )
-        submitted = st.form_submit_button(
-            "글 올리기", icon=":material/send:", type="primary", width="stretch"
+        st.form_submit_button(
+            "글 올리기",
+            icon=":material/send:",
+            type="primary",
+            width="stretch",
+            on_click=_submit_post,
+            args=(database_path, post_generation),
         )
-    if submitted:
-        try:
-            repository.create_voc_post(
-                category=str(category),
-                title=title,
-                body=body,
-                author=_author_value(),
-            )
-        except BOOTSTRAP_ERRORS as exc:
-            st.error(bootstrap_error_message(exc))
-        except ValueError as exc:
-            st.error(str(exc))
-        else:
-            st.session_state[FLASH_KEY] = "글을 올렸습니다."
-            st.session_state[POST_CLEAR_KEY] = True
-            st.rerun()
+    post_failure = st.session_state.pop(POST_FORM_ERROR_KEY, None)
+    if isinstance(post_failure, str):
+        st.error(post_failure)
 
 st.divider()
 
@@ -220,44 +324,36 @@ def _render_post(row: Any) -> None:
                             f"{_timestamp(reply['created_at'])}"
                         )
                         st.text(str(reply["body"]))
-        # 새 글 폼과 같이 성공한 뒤에만 비운다 — 거절된 답변이 지워지면 다시 적어야 한다.
-        reply_key = f"{REPLY_BODY_KEY}_{post_id}"
-        if st.session_state.pop(f"{REPLY_CLEAR_KEY}_{post_id}", False):
-            st.session_state[reply_key] = ""
-        with st.form(f"{REPLY_FORM_KEY}_{post_id}"):
-            reply_body = st.text_area(
+        # 새 글 폼과 같이 콜백이 남기기에 성공한 때만 비운다 — 거절된 답변이 지워지면 다시 적어야
+        # 한다.
+        reply_generation = _generation(f"{REPLY_GENERATION_KEY}_{post_id}")
+        with st.form(_with_generation(f"{REPLY_FORM_KEY}_{post_id}", reply_generation)):
+            st.text_area(
                 "답변",
                 height=100,
                 placeholder="답변을 적어 주세요.",
                 max_chars=4000,
-                key=reply_key,
+                key=f"{REPLY_BODY_KEY}_{post_id}",
             )
-            reply_submitted = st.form_submit_button(
-                "답변 남기기", icon=":material/reply:", type="primary"
+            st.form_submit_button(
+                "답변 남기기",
+                icon=":material/reply:",
+                type="primary",
+                on_click=_submit_reply,
+                args=(database_path, post_id, reply_generation),
             )
-        if reply_submitted:
-            try:
-                repository.create_voc_reply(
-                    post_id=post_id,
-                    body=reply_body,
-                    author=_author_value(),
-                )
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(bootstrap_error_message(exc))
-            except ValueError as exc:
-                st.error(str(exc))
-            else:
-                st.session_state[FLASH_KEY] = "답변을 남겼습니다."
-                st.session_state[f"{REPLY_CLEAR_KEY}_{post_id}"] = True
-                st.rerun()
+        failure = st.session_state.pop(f"{POST_ERROR_KEY}_{post_id}", None)
+        if isinstance(failure, str):
+            st.error(failure)
+        resolve_generation = _generation(f"{RESOLVE_GENERATION_KEY}_{post_id}")
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
-            if st.button(
+            st.button(
                 "답변 완료로 표시" if not answered else "미답변으로 되돌리기",
-                key=f"{RESOLVE_KEY}_{post_id}",
+                key=_with_generation(f"{RESOLVE_KEY}_{post_id}", resolve_generation),
                 icon=":material/task_alt:",
-            ):
-                repository.set_voc_post_resolved(post_id, resolved=not answered)
-                st.rerun()
+                on_click=_set_resolved,
+                args=(database_path, post_id, not answered, resolve_generation),
+            )
             # 지우기는 확인을 한 단계 둔다. 글 하나가 사라지면 답글도 함께 사라진다.
             # 가로 줄 안의 checkbox 는 기본이 `wrap=False` 라 긴 라벨이 말줄임으로 잘린다.
             # 잘리는 뒷부분이 바로 경고라 여기서는 접어서라도 보여야 한다.
@@ -265,20 +361,14 @@ def _render_post(row: Any) -> None:
                 "삭제 확인 · 답글까지 함께 사라지며 되돌릴 수 없습니다",
                 key=f"{DELETE_CONFIRM_KEY}_{post_id}",
                 wrap=True,
-            ) and st.button(
-                "글 삭제",
-                key=f"{DELETE_KEY}_{post_id}",
-                icon=":material/delete:",
             ):
-                # 지워진 뒤에는 셀 수 없다. 화면용 프레임으로 먼저 센다.
-                deleted_replies = len(post_replies)
-                repository.remove_voc_post(post_id)
-                st.session_state[FLASH_KEY] = (
-                    "글을 지웠습니다."
-                    if not deleted_replies
-                    else f"글과 답글 {deleted_replies}건을 지웠습니다."
+                st.button(
+                    "글 삭제",
+                    key=f"{DELETE_KEY}_{post_id}",
+                    icon=":material/delete:",
+                    on_click=_delete_post,
+                    args=(database_path, post_id, len(post_replies)),
                 )
-                st.rerun()
 
 
 for _, post_row in visible.iterrows():

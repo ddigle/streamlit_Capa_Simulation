@@ -1,4 +1,4 @@
-# Purpose: VOC 화면이 작성자 이름과 편 글을 화면 이동·답변 뒤에도 지키는지 검증한다.
+# Purpose: VOC 화면이 해 둔 입력·펼침·삭제 확인을 지키고 같은 쓰기를 두 번 하지 않는지 검증한다.
 
 """VOC 화면에서 사용자가 해 둔 것이 사라지지 않는다(2026-10-01 브라우저 점검).
 
@@ -8,8 +8,11 @@
   만들어져 접혔다.
 - 첫 답변 앞뒤로 글 상자와 답변 칸의 자리가 그대로다. 밀리면 브라우저에 옛 상자의 회색 사본이
   남았다(2026-10-05 E2E).
+- 다른 글을 처리해도 체크해 둔 「삭제 확인」 옆 「글 삭제」 단추가 남고, 빠른 두 번 누름은 같은
+  쓰기를 되풀이하지 않는다(쓰기는 모두 콜백 — AGENTS 9장).
 """
 
+import ast
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -220,7 +223,7 @@ def _path_of(app: AppTest, matches: Callable[[Any], bool]) -> tuple[int, ...]:
 def test_a_first_reply_keeps_the_post_box_and_reply_form_in_place(tmp_path: Path) -> None:
     """첫 답변 앞뒤로 key 있는 글 상자와 답변 칸의 자리가 그대로다(2026-10-05 E2E).
 
-    답변 회차는 알림 없이 `st.rerun()` 으로 끊기고, 다음 회차는 맨 위 알림과 첫 답글을 더 그린다.
+    답변 앞 회차에는 알림·답글이 없고, 답변 회차는 맨 위 알림과 첫 답글을 더 그린다.
     그 사이 글 상자·답변 칸이 한 칸이라도 밀리면 브라우저에 옛 상자가 적은 답변을 든 회색 사본으로
     남아 새로고침 전까지 다른 페이지까지 따라왔다. 브라우저의 회색 사본은 여기서 볼 수 없으므로
     그 원인인 **자리 밀림**을 잰다.
@@ -255,3 +258,166 @@ def test_a_first_reply_keeps_the_post_box_and_reply_form_in_place(tmp_path: Path
     app.run()  # 알림이 사라지는 다음 회차
     assert not app.success
     assert (box_path(), reply_path()) == before
+
+
+def _two_posts(database_path: Path) -> tuple[str, str]:
+    """글 둘을 남기고 `(위 글, 아래 글)` 을 돌려준다. 화면은 목록 차례대로 그린다."""
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    for title in ("아래 글", "위 글"):
+        repository.create_voc_post(
+            category=VOC_CATEGORIES[0], title=title, body="내용", author="홍길동"
+        )
+    upper, lower = (str(post_id) for post_id in repository.list_voc_posts()["post_id"])
+    return upper, lower
+
+
+def _posts(database_path: Path) -> list[tuple[str, bool]]:
+    posts = DuckDBScenarioRepository(database_path).list_voc_posts()
+    return [(str(row["title"]), bool(row["resolved"])) for _, row in posts.iterrows()]
+
+
+def _delete_ready(app: AppTest, post_id: str) -> tuple[bool, int]:
+    """그 글의 `(삭제 확인 체크, 「글 삭제」 단추 수)`."""
+    checked = bool(app.checkbox(key=f"voc_delete_confirm_{post_id}").value)
+    return checked, sum(1 for button in app.button if button.key == f"voc_delete_{post_id}")
+
+
+def _reply_button(app: AppTest, post_id: str) -> Any:
+    """그 글 답변 폼의 「답변 남기기」. 글마다 같은 라벨이라 폼으로 가른다."""
+    return next(
+        button
+        for button in app.button
+        if button.label == "답변 남기기"
+        and str(button.proto.form_id).startswith(f"voc_reply_form_{post_id}")
+    )
+
+
+def test_a_checked_delete_confirm_keeps_its_button_after_acting_on_another_post(
+    tmp_path: Path,
+) -> None:
+    """위 글에서 무엇을 해도 아래 글에 체크해 둔 「삭제 확인」 옆 「글 삭제」 단추가 남는다.
+
+    처리를 본문에서 하고 `st.rerun()` 하면 끊긴 회차가 아직 그리지 않은 아래 글의 체크 칸 값을
+    버린다 — 브라우저는 체크된 칸을 그대로 보이는데 단추가 사라졌다(AGENTS 9장 「세션 상태를 바꾸는
+    조작은 콜백으로 한다」). 「답변 완료로 표시」·「답변 남기기」·「글 올리기」 셋 다 그랬다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    upper, lower = _two_posts(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자")
+    app.checkbox(key=f"voc_delete_confirm_{lower}").check().run()
+    assert _delete_ready(app, lower) == (True, 1)
+
+    app.button(key=f"voc_resolve_{upper}").click().run()
+
+    assert not app.exception
+    assert _posts(database_path) == [("위 글", True), ("아래 글", False)]
+    assert _delete_ready(app, lower) == (True, 1)
+
+    app.text_area(key=f"voc_reply_body_{upper}").input("확인했습니다.")
+    _reply_button(app, upper).click().run()
+
+    assert not app.exception
+    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert app.text_area(key=f"voc_reply_body_{upper}").value == ""
+    assert _delete_ready(app, lower) == (True, 1)
+
+    app.text_input(key="voc_post_title").input("새 글")
+    app.text_area(key="voc_post_body").input("새 내용")
+    _click(app, "글 올리기")
+
+    assert not app.exception
+    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert app.text_input(key="voc_post_title").value == ""
+    assert app.text_area(key="voc_post_body").value == ""
+    assert [title for title, _ in _posts(database_path)] == ["새 글", "위 글", "아래 글"]
+    assert _delete_ready(app, lower) == (True, 1)
+
+
+def test_the_page_never_reruns_from_its_body() -> None:
+    """VOC 의 쓰기는 모두 콜백이다 — 본문 `st.rerun()` 은 위 결함을 되살린다."""
+    tree = ast.parse(VOC_PAGE.read_text(encoding="utf-8"))
+    reruns = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr == "rerun"
+    ]
+    assert reruns == []
+
+
+def test_a_second_submit_of_a_posted_form_neither_posts_nor_refills(tmp_path: Path) -> None:
+    """빠른 두 번 누름 — 올린 폼의 제출이 한 번 더 들어와도 같은 글을 또 올리지 않는다.
+
+    AppTest 는 같은 순간의 두 요청을 합칠 수 없어, 누른 화면의 위젯 값을 붙잡아 두었다가 올린 뒤에
+    한 번 더 보낸다(브라우저에 남은 옛 화면의 누름과 같다). 옛 화면은 올린 제목·내용을 함께 보내지만
+    폼은 빈 채로 둔다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("검증자A")
+    app.text_input(key="voc_post_title").input("제목 A")
+    app.text_area(key="voc_post_body").input("내용 A")
+    next(button for button in app.button if button.label == "글 올리기").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert "글을 올렸습니다." in [message.value for message in app.success]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert _posts(database_path) == [("제목 A", False)]
+    assert not app.error
+    assert app.text_input(key="voc_post_title").value == ""
+    assert app.text_area(key="voc_post_body").value == ""
+
+
+def test_a_second_press_of_resolve_or_reply_does_not_repeat_it(tmp_path: Path) -> None:
+    """「답변 완료로 표시」를 빠르게 두 번 눌러도 되돌아가지 않고, 답변도 한 번만 남는다."""
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.button(key=f"voc_resolve_{post_id}").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert _posts(database_path) == [("펼침 확인", True)]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert _posts(database_path) == [("펼침 확인", True)]
+
+    app.text_area(key=f"voc_reply_body_{post_id}").input("확인했습니다.")
+    _reply_button(app, post_id).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert "답변을 남겼습니다." in [message.value for message in app.success]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert len(DuckDBScenarioRepository(database_path).list_voc_replies()) == 1
+    assert app.text_area(key=f"voc_reply_body_{post_id}").value == ""
+
+
+def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(
+    tmp_path: Path,
+) -> None:
+    """지우기를 끝낸 글의 누름이 한 번 더 들어와도 「글을 지웠습니다.」를 다시 알리지 않는다."""
+    database_path = tmp_path / "scenario.duckdb"
+    upper, lower = _two_posts(database_path)
+    app = _app(database_path)
+    app.checkbox(key=f"voc_delete_confirm_{upper}").check().run()
+    app.button(key=f"voc_delete_{upper}").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert "글을 지웠습니다." in [message.value for message in app.success]
+    assert _posts(database_path) == [("아래 글", False)]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert not app.success
+    assert _posts(database_path) == [("아래 글", False)]
+    assert _delete_ready(app, lower) == (False, 0)
