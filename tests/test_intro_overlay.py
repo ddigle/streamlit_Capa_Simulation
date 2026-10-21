@@ -346,14 +346,21 @@ def _label_rule(css: str, part: str = "") -> str:
     return css[begin : css.index("}", begin)]
 
 
+def _clip_margin(rule: str) -> float:
+    """`overflow: clip` 으로 자르는 규칙의 `overflow-clip-margin`(px) — 자르는 선이 칸 밖으로 나간
+    몫."""
+    assert "overflow: clip;" in rule and "overflow: hidden" not in rule, rule
+    return _px_value(rule, "overflow-clip-margin")
+
+
 def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() -> None:
     """사이드바 라벨은 심볼 옆에 앱 이름 두 줄(위 워드마크 · 아래 작은 부제)을 쌓는다(2026-10-17
-    사용자 요청). 두 줄 묶음이 라벨 안쪽 높이(34px − 윤곽 2px) 안에 서서 머리칸이 높아지지
-    않는다. 두 줄은 틈 없이 붙인다 — 위 줄은 대문자뿐이라 줄높이를 글자보다 낮춘다(10-18 사용자
-    요청 「간격을 좁혀」). 묶음 위를 2px 띄워 글자(위 줄 대문자 윗선 ~ 부제 기준선)의 가운데를
-    심볼·접기 버튼의 가운데에 맞춘다 — 줄 상자만 가운데에 두면 글자가 위로 떠 보였다(같은 날 사용자
-    지적). 부제 칸은 자르는 가장자리를 줄 상자 아래로 내려 맑은 고딕처럼 글꼴 상자가 큰 글꼴에서도
-    「g」 꼬리가 잘리지 않는다. 부제는 본문 글꼴의 옅은 글자다. Summary 단추는 묶음 밖
+    사용자 요청). 두 줄 묶음이 라벨 높이(34px) 안에 서서 머리칸이 높아지지 않는다. 두 줄은 틈 없이
+    붙인다 — 위 줄은 대문자뿐이라 줄높이를 글자보다 낮춘다(10-18 사용자 요청 「간격을 좁혀」). 묶음
+    위를 2px 띄워 글자(위 줄 대문자 윗선 ~ 부제 기준선)의 가운데를 심볼·접기 버튼의 가운데에 맞춘다
+    — 줄 상자만 가운데에 두면 글자가 위로 떠 보였다(같은 날 사용자 지적). 두 줄 칸과 라벨은 `clip`
+    으로 자르고 자르는 선을 줄 상자 아래로 내려, 글꼴 상자가 줄높이보다 큰 글꼴(맑은 고딕·Noto Sans
+    KR)에서도 「g」 꼬리가 잘리지 않는다. 부제는 본문 글꼴의 옅은 글자다. Summary 단추는 묶음 밖
     오른쪽이다."""
     from capa_simulation.components import intro_summary
 
@@ -376,17 +383,25 @@ def test_the_sidebar_label_stacks_the_name_and_subtitle_in_the_label_height() ->
         subtitle = _label_rule(css, " .capa-brand-sub")
         assert "flex-direction: column; align-items: flex-start; justify-content: center;" in block
         height = _px_value(label, "height")
-        inner = height - 2
+        # 라벨에 테두리를 두지 않는다 — 테두리가 있으면 라벨이 그 안쪽에서 잘라 부제 아래 몫을
+        # 먹는다(사내 리뷰 202610182227, 투명 테두리 1px 로 g 꼬리 0.3~1px 잘림). 올렸을 때 윤곽은
+        # 안쪽 그림자다.
+        assert "border: 0;" in label and "box-sizing: border-box;" in label
+        inner = height
         assert "gap: 0;" in block
         assert _px_value(word, "line-height") < _px_value(word, "font-size")
         lift = _px_value(block, "padding-top")
         stack = lift + _px_value(word, "line-height") + _px_value(subtitle, "line-height")
         assert 0 < lift <= 2 and stack <= inner
-        # 자르는 가장자리는 안쪽 여백만큼 내리고 같은 바깥 여백으로 되돌려 배치는 그대로다. 내린
-        # 가장자리도 라벨 아래 끝 안이다(밖이면 화면 확인이 부제를 잘림으로 센다).
-        room = _px_value(subtitle, "padding-bottom")
-        assert room > 0 and f"margin-bottom: -{room:g}px;" in subtitle
-        assert 1 + (inner - stack) / 2 + stack + room <= height
+        # 부제 줄 상자는 라벨 안이고(칸 상자가 밖이면 화면 확인이 잘림으로 센다), 넘친 잉크를 자르는
+        # 선은 두 줄 칸과 라벨 모두 `overflow-clip-margin` 만큼 밖이다. 줄 상자 아래로 2px — Noto
+        # Sans CJK KR 의 「g」 잉크(줄 상자 아래 1px) + 배율 화소 맞춤 1px — 가 두 선 안이다.
+        lines = _label_rule(css, " .capa-brand-word, #capa-brand-label .capa-brand-sub")
+        assert "padding" not in subtitle and "margin" not in subtitle
+        line_bottom = (inner - stack) / 2 + stack
+        assert line_bottom <= height
+        clip = min(line_bottom + _clip_margin(lines), height + _clip_margin(label))
+        assert clip - line_bottom >= 2
         # 위 줄은 워드마크 글꼴 그대로, 아래 줄은 더 작은 본문 글꼴 500 · 옅은 글자색.
         assert _px_value(word, "font-size") == 18
         assert _px_value(subtitle, "font-size") == 11
@@ -413,7 +428,7 @@ def test_the_sidebar_hint_stands_whole_or_drops_and_never_cuts_the_name() -> Non
     assert container in css
     label = _label_rule(css)
     assert "display: inline-flex; flex-wrap: wrap; align-items: center;" in label
-    assert "height: 34px;" in label and "overflow: hidden;" in label
+    assert "height: 34px;" in label and _clip_margin(label) > 0
     name = _label_rule(css, " .capa-brand-name")
     assert "flex: 0 1 auto; min-width: 0;" in name
     # 단추는 줄지 않는다 — 들어가지 않으면 줄을 바꿔 빠진다. 글자가 아니라 폭이 글꼴과 상관없다.
@@ -441,7 +456,7 @@ def test_the_sidebar_hint_stands_whole_or_drops_and_never_cuts_the_name() -> Non
     assert ".capa-brand-word { font-size: 15px;" in compact
     assert ".capa-brand-sub { font-size: 10px;" in compact
     lines = _label_rule(css, " .capa-brand-word, #capa-brand-label .capa-brand-sub")
-    assert "overflow: hidden; text-overflow: ellipsis;" in lines
+    assert "text-overflow: ellipsis;" in lines and _clip_margin(lines) > 0
 
 
 def test_the_summary_head_label_is_the_same_two_lines() -> None:

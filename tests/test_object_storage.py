@@ -302,3 +302,26 @@ def test_transfer_timeout_grows_with_size_but_never_shrinks() -> None:
     assert object_storage.transfer_timeout_seconds(
         600 * mib
     ) > object_storage.transfer_timeout_seconds(300 * mib)
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# 자식에게 핸들을 물려주는 부름. Streamlit 1.63 은 듣는 소켓을 상속 가능으로 열어 그런 자식은
+# 앱을 끈 뒤에도 8501 을 쥔다(사내 리뷰 202610200720 발견 3 · 런북 4-2 「접속이 안 되면」).
+_INHERITING_CALLS = ("close_fds=False", "os.system(", "os.spawn", "os.popen(", "os.startfile(")
+
+
+def test_the_app_starts_no_child_that_inherits_the_listening_socket() -> None:
+    sources = [_PROJECT_ROOT / "app.py"]
+    sources += sorted((_PROJECT_ROOT / "app_pages").rglob("*.py"))
+    sources += sorted((_PROJECT_ROOT / "src").rglob("*.py"))
+    found = [
+        f"{path.relative_to(_PROJECT_ROOT)}: {call}"
+        for path in sources
+        for call in _INHERITING_CALLS
+        if call in path.read_text(encoding="utf-8")
+    ]
+    assert found == []
+    runner = (_PROJECT_ROOT / "src/capa_simulation/io/object_storage.py").read_text(
+        encoding="utf-8"
+    )
+    assert "subprocess.run(" in runner and "close_fds" not in runner

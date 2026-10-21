@@ -1008,19 +1008,24 @@ _LABEL_SCRIPT = """
 # 같은 가운데 줄 — 에 선다. 심볼은 입장 화면·Summary 머리 심볼(`intro.css` 의 `.logo`)과 같은 30px,
 # 글자 묶음과의 틈 10px 다(2026-10-08 사용자 요청 — 같은 크기로).
 # - **두 줄**(2026-10-17 사용자 요청): 위 줄 워드마크 18px(줄높이 16px — 대문자뿐이라 아래 꼬리가
-#   없다)와 아래 줄 부제 11px(줄높이 14px)를 틈 없이 쌓고 위 2px 를 띄워, 합 32px 가 라벨 안쪽
-#   높이와 같다. 위 2px 는 글자 묶음(위 줄 대문자 윗선 ~ 부제 기준선)의 가운데를 심볼·접기 버튼의
-#   가운데에 맞춘다 — 줄 상자만 가운데에 두면 부제 아래 꼬리 몫만큼 글자가 위로 떠 보였다(10-18
-#   사용자 지적, 실측 −1.4px · 글꼴 상자가 큰 글꼴 −0.9px). 머리칸은 높아지지 않는다. 부제는 본문
-#   글꼴 500 · `TEXT_MUTED`(머리 띠의 옅은 아랫줄과 같은 색)다. 두 줄 사이(위 줄 기준선 → 부제
-#   대문자 위)는 약 3.5px 다 — 줄높이 18px · 틈 1px · 13px 이던 때는 5px 라 두 줄이 떨어져
-#   보였다(10-18 사용자 요청).
+#   없다)와 아래 줄 부제 11px(줄높이 14px)를 틈 없이 쌓고 위 2px 를 띄워, 합 32px 를 라벨(34px)
+#   세로 가운데(위아래 1px)에 둔다. 위 2px 는 글자 묶음(위 줄 대문자 윗선 ~ 부제 기준선)의
+#   가운데를 심볼·접기 버튼의 가운데에 맞춘다 — 줄 상자만 가운데에 두면 부제 아래 꼬리 몫만큼
+#   글자가 위로 떠 보였다(10-18 사용자 지적, 실측 −1.4px · 글꼴 상자가 큰 글꼴 −0.9px). 머리칸은
+#   높아지지 않는다. 부제는 본문 글꼴 500 · `TEXT_MUTED`(머리 띠의 옅은 아랫줄과 같은 색)다. 두
+#   줄 사이(위 줄 기준선 → 부제 대문자 위)는 약 3.5px 다 — 줄높이 18px · 틈 1px · 13px 이던 때는
+#   5px 라 두 줄이 떨어져 보였다(10-18 사용자 요청).
 # - **「g」 꼬리**: 부제 칸은 말줄임 때문에 넘친 글자를 자르는데, 자르는 가장자리가 줄 상자 아래
 #   끝이라 Windows 의 맑은 고딕처럼 글꼴 상자가 줄높이보다 큰 글꼴에서는 「g」 꼬리가 잘렸다(10-18
-#   사용자 지적 — WSL 의 글꼴로는 1px 남아 안 보였다). 아래 안쪽 여백 1px 를 같은 크기의 음수 바깥
-#   여백으로 되돌려 배치는 그대로 두고 자르는 가장자리만 1px 내린다 — 위 2px 와 합쳐 칸 아래 끝이
-#   라벨 아래 끝(34px)과 같다. 더 내리면 화면 확인(`check_deploy_screens` 의 symbol)이 잘림으로
-#   센다.
+#   사용자 지적 — WSL 의 글꼴로는 1px 남아 안 보였다). 두 줄 칸은 `hidden` 이 아니라 `clip` 으로
+#   잘라 자르는 선을 `overflow-clip-margin` 만큼 칸 밖으로 낸다 — 칸 상자·배치는 그대로다. 라벨도
+#   넘친 것을 자르는데(좁을 때 둘째 줄로 내려간 단추를 감춘다) 같은 꼴로 1px 내리고, 테두리를 두지
+#   않고 올렸을 때의 윤곽을 안쪽 그림자로 그린다 — 투명 테두리 1px 가 있던 때는 라벨이 테두리 안쪽
+#   33px 에서 잘라 부제 칸을 1px 내린 것이 소용없었다(사내 리뷰 202610182227, Noto Sans KR 에서
+#   0.3~1px 잘림). Noto Sans CJK KR 의 「g」 잉크는 34px 까지 내려와 자르는 선(35px)까지 1px 가
+#   남는다(배율 125%·150% 의 화소 맞춤 몫). 좌우 안쪽 여백은 테두리 1px 를 더해 글자·심볼 자리가
+#   그때와 같다. 화면 확인(`check_deploy_screens` 의 symbol)은 글자 잉크가 조상들의 자르는 선 안에
+#   드는지 본다.
 # - **Summary 단추**: 두 줄 묶음 오른쪽(틈 7px)에 26px 윤곽 네모 안 요약 막대 그림(16px)을 둔다 —
 #   글자 `Summary`(11px)는 두 줄 이름에 비해 작아 비율이 어긋났다(10-18 사용자 결정, 시안 셋 가운데
 #   B). 글자가 아니라 폭이 운영체제 글꼴과 상관없고, 라벨이 약 180px 라 기본 300px 사이드바의 자리
@@ -1045,8 +1050,9 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
 #__ID__ {
   display: inline-flex; flex-wrap: wrap; align-items: center; gap: 7px; flex: 0 1 auto;
   min-width: 0; max-width: calc(100% - 2.25rem); height: 34px; margin: 0 auto 0 0;
-  padding: 0 8px 0 6px; box-sizing: border-box; border: 1px solid transparent; border-radius: 8px;
-  background: transparent; color: __TEXT__; cursor: pointer; white-space: nowrap; overflow: hidden;
+  padding: 0 9px 0 7px; box-sizing: border-box; border: 0; border-radius: 8px;
+  background: transparent; color: __TEXT__; cursor: pointer; white-space: nowrap;
+  overflow: clip; overflow-clip-margin: 1px;
   font-family: __FONT_FAMILY__; text-align: left;
 }
 #__ID__ .capa-brand-name {
@@ -1066,7 +1072,8 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
   padding-top: 2px; flex: 0 1 auto; min-width: 0;
 }
 #__ID__ .capa-brand-word, #__ID__ .capa-brand-sub {
-  display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  display: block; max-width: 100%; overflow: clip; overflow-clip-margin: 2px;
+  text-overflow: ellipsis;
 }
 #__ID__ .capa-brand-word {
   font-family: "CapaIntroDisplay", __FONT_FAMILY__; font-weight: 800; font-stretch: 75%;
@@ -1074,7 +1081,7 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
 }
 #__ID__ .capa-brand-sub {
   font-size: 11px; font-weight: 500; line-height: 14px; letter-spacing: 0.01em;
-  padding-bottom: 1px; margin-bottom: -1px; color: __TEXT_MUTED__;
+  color: __TEXT_MUTED__;
 }
 #__ID__ .capa-brand-hint {
   flex: none; display: grid; place-items: center; width: 26px; height: 26px; box-sizing: border-box;
@@ -1085,13 +1092,15 @@ __SLOT__ { container: capa-sidebar-head / inline-size; }
   #__ID__ .capa-brand-hint { display: none; }
 }
 @container capa-sidebar-head (width < 190px) {
-  #__ID__ { padding: 0 1px; }
+  #__ID__ { padding: 0 2px; }
   #__ID__ .capa-brand-name { gap: 4px; }
   #__ID__ .capa-brand-name > svg { width: 24px; height: 24px; margin-right: 0; }
   #__ID__ .capa-brand-word { font-size: 15px; line-height: 14px; }
   #__ID__ .capa-brand-sub { font-size: 10px; line-height: 12px; letter-spacing: 0; }
 }
-#__ID__:hover:not([aria-disabled="true"]) { background: __SURFACE__; border-color: __BORDER__; }
+#__ID__:hover:not([aria-disabled="true"]) {
+  background: __SURFACE__; box-shadow: inset 0 0 0 1px __BORDER__;
+}
 #__ID__:hover:not([aria-disabled="true"]) .capa-brand-hint {
   color: __ACCENT__; border-color: __ACCENT__;
 }

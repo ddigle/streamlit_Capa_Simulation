@@ -432,7 +432,7 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
     """
     try:
         return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
-    except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 되던진다
+    except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
         if resolve_user_name() is None and "user_name" in str(error):
             raise RuntimeError(
                 f"BigDataQuery 조회에 요청자의 사내 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
@@ -440,7 +440,112 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
                 f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
                 f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.'
             ) from error
-        raise
+        raise BigDataQueryCallError(error) from error
+
+
+# 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
+QUERY_FAILURE_TIMEOUT: Final = "시간 초과"
+QUERY_FAILURE_CONNECTION: Final = "연결"
+QUERY_FAILURE_SQL: Final = "SQL"
+QUERY_FAILURE_OTHER: Final = "그 밖"
+# 차례대로 본다 — 「connect timeout」 은 시간 초과, 「host not found」 는 연결이다.
+_FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    (QUERY_FAILURE_TIMEOUT, ("timeout", "timed out", "time out", "deadline", "시간 초과")),
+    (
+        QUERY_FAILURE_CONNECTION,
+        (
+            "connect",
+            "refused",
+            "reset by peer",
+            "unreachable",
+            "network",
+            "socket",
+            "transport",
+            "broken pipe",
+            "host",
+            "name resolution",
+            "getaddrinfo",
+            "ssl",
+            "handshake",
+            "연결",
+        ),
+    ),
+    (
+        QUERY_FAILURE_SQL,
+        (
+            "syntax",
+            "parse",
+            "analysis",
+            "semantic",
+            "sql",
+            "programmingerror",
+            "could not resolve",
+            "not found",
+            "does not exist",
+            "unknown column",
+            "invalid column",
+        ),
+    ),
+)
+_FAILURE_ADVICE: Final[Mapping[str, str]] = {
+    QUERY_FAILURE_TIMEOUT: "사내 DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
+    "기간을 줄여 다시 하세요.",
+    QUERY_FAILURE_CONNECTION: "사내 DB 에 닿지 못했습니다 — 사내망 연결을 확인하고 잠시 뒤 같은 "
+    "조회를 다시 하세요.",
+    QUERY_FAILURE_SQL: "사내 DB 가 조회문을 받지 않았습니다 — 다시 해도 같으니 아래 원문을 "
+    "관리자에게 알려 주세요.",
+    QUERY_FAILURE_OTHER: "잠시 뒤 같은 조회를 다시 하세요. 같은 실패가 이어지면 아래 원문을 "
+    "관리자에게 알려 주세요.",
+}
+# 화면에 옮기는 원문 길이. 패키지 문구에 조회문 전체가 실려 오기도 한다.
+_ORIGINAL_TEXT_LIMIT: Final = 300
+
+
+def _failure_chain(error: BaseException) -> list[BaseException]:
+    """`error` 와 그 원인들(`__cause__`·`__context__`). 돌아오는 사슬은 끊는다."""
+    chain: list[BaseException] = []
+    current: BaseException | None = error
+    while current is not None and current not in chain and len(chain) < 5:
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def failure_type_names(error: BaseException) -> tuple[str, ...]:
+    """예외 사슬의 종류 이름. 문구는 식별값을 실을 수 있어 사외로 가는 기록에는 이것만 적는다."""
+    return tuple(type(link).__name__ for link in _failure_chain(error))
+
+
+def classify_query_failure(error: BaseException) -> str:
+    """조회 실패의 갈래(`QUERY_FAILURE_*`). 문구는 가르는 데만 쓴다."""
+    chain = _failure_chain(error)
+    if any(isinstance(link, TimeoutError) for link in chain):
+        return QUERY_FAILURE_TIMEOUT
+    if any(isinstance(link, ConnectionError) for link in chain):
+        return QUERY_FAILURE_CONNECTION
+    haystack = " ".join(f"{type(link).__name__} {link}" for link in chain).casefold()
+    for kind, words in _FAILURE_WORDS:
+        if any(word in haystack for word in words):
+            return kind
+    return QUERY_FAILURE_OTHER
+
+
+class BigDataQueryCallError(RuntimeError):
+    """`getData` 가 낸 패키지 예외. 화면들이 잡는 `RuntimeError` 로 올려 갈래와 다시 할 길을
+    알린다 — 패키지의 `Error` 같은 종류는 화면이 잡는 예외 튜플(`BOOTSTRAP_ERRORS`) 밖이라 그대로
+    두면 화면이 traceback 으로 멈춘다(사내 리뷰 202610200720, 목록 조회 첫 판 실패). 원래 예외는
+    `__cause__` 에 있다."""
+
+    def __init__(self, error: BaseException) -> None:
+        self.kind = classify_query_failure(error)
+        self.type_names = failure_type_names(error)
+        text = str(error).strip()
+        if len(text) > _ORIGINAL_TEXT_LIMIT:
+            text = text[:_ORIGINAL_TEXT_LIMIT] + " …"
+        super().__init__(
+            f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"
+            f"원문 — {type(error).__name__}: {text or '(문구 없음)'}"
+        )
 
 
 def load_bigdataquery_module() -> ModuleType:

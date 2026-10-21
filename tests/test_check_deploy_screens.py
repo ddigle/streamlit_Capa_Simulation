@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import inspect
 import os
 import re
 import subprocess
@@ -758,6 +759,67 @@ def test_items_past_the_deadline_are_not_run() -> None:
     assert "after" not in called
 
 
+def _flaky(runs: list[str], *, failures: int, error: type[Exception] = TimeoutError) -> Item:
+    def run(screen: Screen) -> str:
+        runs.append("run")
+        screen.step("층 고르기")
+        if len(runs) <= failures:
+            raise error(SENTINEL)
+        return "있음"
+
+    return Item("flaky", "가끔 늦는 항목", run)
+
+
+def test_a_first_timeout_is_named_by_its_step_and_run_once_more() -> None:
+    """사내 리뷰 202610200720 — 페이더가 두 배포 이어 첫 판에만 `TimeoutError` 였고 어느 기다림인지
+    남지 않았다. 단계 이름을 남기고, 쓰지 않는 항목은 한 번 더 돈다."""
+    runs: list[str] = []
+    screen = _FakeScreen()
+
+    [outcome] = screens.run_items(
+        screen, [_flaky(runs, failures=1)], allow_writes=False, deadline=NO_DEADLINE
+    )
+
+    assert runs == ["run", "run"]
+    assert screen.settled == 2
+    assert outcome.result == "있음 · 첫 판 TimeoutError(층 고르기) 뒤 다시 돎"
+    assert outcome.recorded
+
+
+def test_a_second_timeout_stays_unrecorded_and_other_failures_are_not_retried() -> None:
+    runs: list[str] = []
+    [twice] = screens.run_items(
+        _FakeScreen(), [_flaky(runs, failures=2)], allow_writes=False, deadline=NO_DEADLINE
+    )
+    assert runs == ["run", "run"]
+    assert twice.result == (
+        "미기록 — TimeoutError(층 고르기) · 첫 판 TimeoutError(층 고르기) 뒤 다시 돎"
+    )
+    assert not twice.recorded
+
+    runs.clear()
+    [other] = screens.run_items(
+        _FakeScreen(),
+        [_flaky(runs, failures=1, error=ValueError)],
+        allow_writes=False,
+        deadline=NO_DEADLINE,
+    )
+    assert runs == ["run"]
+    assert other.result == "미기록 — ValueError(층 고르기)"
+    assert SENTINEL not in twice.result + other.result
+
+
+def test_a_writing_item_is_not_run_twice() -> None:
+    runs: list[str] = []
+    item = _flaky(runs, failures=1)
+    writing = Item(item.key, item.title, item.run, writes=True)
+
+    [outcome] = screens.run_items(_FakeScreen(), [writing], allow_writes=True, deadline=NO_DEADLINE)
+
+    assert runs == ["run"]
+    assert outcome.result == "미기록 — TimeoutError(층 고르기)"
+
+
 def _facts(**overrides: Any) -> RunFacts:
     facts = RunFacts(
         channel="chrome",
@@ -1413,6 +1475,56 @@ def test_the_symbol_item_also_reads_the_label_at_narrow_sidebar_widths(
     ]
 
 
+class _StaleUrlPage:
+    """Playwright 의 `page.url` 은 이동 사건으로 고쳐 두는 값이라 `time.sleep` 동안에는 옛 주소에
+    머문다. 페이지에 물으면(`evaluate`) 지금 경로가 온다."""
+
+    def __init__(self, start: str, target: str) -> None:
+        self.url = f"http://127.0.0.1:8559{start}"
+        self.location = start
+        self.clicks = 0
+        self._target = target
+        link = SimpleNamespace(is_visible=lambda: True, click=self._click)
+        self._locator = SimpleNamespace(first=link)
+
+    def _click(self) -> None:
+        self.clicks += 1
+        self.location = self._target
+
+    def locator(self, selector: str) -> Any:
+        return self._locator
+
+    def evaluate(self, script: str, arg: object = None) -> Any:
+        if script == screens._PATH_JS:
+            return self.location
+        if script == screens._RUNNING_JS:
+            return False
+        raise AssertionError(script)
+
+
+@pytest.mark.parametrize(
+    ("start", "target", "go"),
+    [
+        ("/", "/equipment_availability", lambda s: s.open_page("equipment_availability")),
+        ("/equipment_availability", "/", lambda s: s.open_home()),
+    ],
+)
+def test_moving_between_pages_reads_the_path_from_the_page_not_the_stale_url(
+    monkeypatch: pytest.MonkeyPatch, start: str, target: str, go: Any
+) -> None:
+    """옛 `page.url` 로 도착을 보면 링크마다 10초씩 기다려 다시 눌렀다(사내 리뷰 202610182227 —
+    링크마다 약 72초). 한 번 누르고, 기다림은 회차가 끝났는지 보는 몫뿐이다."""
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", slept.append)
+    page = _StaleUrlPage(start, target)
+
+    go(Screen(page, "http://127.0.0.1:8559/"))
+
+    assert page.clicks == 1
+    assert page.url.endswith(start)
+    assert sum(slept) < 2
+
+
 def test_a_cut_at_the_default_and_a_narrow_width_names_both() -> None:
     assert screens._label_verdict(False, ((236,), 0)) == "잘림(기본 폭 · 좁은 폭 236px)"
     assert screens._label_verdict(False, ((), 0)) == "잘림"
@@ -1436,6 +1548,10 @@ def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
     assert last == screens.SIDEBAR_NARROW_WIDTH_PX
     script = screens._LABEL_NARROW_JS
     assert screens._WHOLE_LINE_JS in script
+    # 칸 상자끼리만 견주면 라벨 테두리 안쪽에서 잘린 「g」 꼬리를 못 본다(사내 리뷰 202610182227) —
+    # 「다 보임」 과 좁은 폭의 「말줄임」 모두 글자 잉크가 자르는 선 안에 들어야 한다.
+    assert "&& inked(el);" in screens._WHOLE_LINE_JS
+    assert "inside && inked(el)" in script
     for name in ("capa-brand-word", "capa-brand-sub", "capa-brand-hint"):
         assert f'".{name}"' in script, name
     assert 'side.style.transition = "none";' in script
@@ -2076,6 +2192,20 @@ def test_the_space_fader_summary_carries_counts_only() -> None:
     assert "|" not in line
     assert "범례 없음" in screens.summarize_space_fader(1.5, 0, None, False)
     assert "안 돌아옴" in screens.summarize_space_fader(1.5, 0, False, False)
+    assert screens.summarize_space_fader(3.0, 0, True, True, pressed=2).endswith(
+        "「오늘」 돌아옴 · PageUp 2번(첫 키가 오늘로 돌아감)"
+    )
+
+
+def test_the_space_fader_item_clicks_today_only_when_the_button_is_on() -> None:
+    """페이더가 오늘이면 「오늘」 단추가 꺼진다 — 꺼진 단추를 누르면 30초 기다린 `TimeoutError`
+    가 결과를 가렸다(사내 리뷰 202610200720 페이더 첫 판). 항목은 켜졌을 때만 누르고 단계마다
+    이름을 둔다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    assert "faderToday.disabled = isToday" in editor
+    source = inspect.getsource(screens.check_space_fader)
+    assert "if today.is_enabled():" in source
+    assert source.count("screen.step(") >= 6
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)

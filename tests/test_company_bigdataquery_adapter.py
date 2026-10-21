@@ -76,16 +76,71 @@ def test_a_rejected_blank_account_names_the_variable_to_set(
 
 
 def test_an_unrelated_failure_is_not_disguised(monkeypatch: pytest.MonkeyPatch) -> None:
-    """계정과 상관없는 실패까지 계정 안내로 바꾸면 진짜 원인이 가려진다."""
+    """계정과 상관없는 실패까지 계정 안내로 바꾸면 진짜 원인이 가려진다. 감싸도 원문과 원래 예외는
+    남는다."""
+    original = ValueError("table not found")
 
     def refuse(**_kwargs: object) -> pd.DataFrame:
-        raise ValueError("table not found")
+        raise original
 
     monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
     monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
 
-    with pytest.raises(ValueError, match="table not found"):
+    with pytest.raises(adapter.BigDataQueryCallError, match="table not found") as raised:
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert adapter.BDQ_USER_NAME_ENV not in str(raised.value)
+    assert raised.value.__cause__ is original
+    assert (raised.value.kind, raised.value.type_names) == (
+        adapter.QUERY_FAILURE_SQL,
+        ("ValueError",),
+    )
+
+
+class Error(Exception):
+    """사내 패키지가 내는 꼴 — 이름이 `Error` 하나뿐이고 화면이 잡는 예외 튜플 밖이다."""
+
+
+def _chained(outer: BaseException, cause: BaseException) -> BaseException:
+    outer.__cause__ = cause
+    return outer
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (TimeoutError(), adapter.QUERY_FAILURE_TIMEOUT),
+        (ConnectionResetError(), adapter.QUERY_FAILURE_CONNECTION),
+        (Error("Read timed out"), adapter.QUERY_FAILURE_TIMEOUT),
+        (Error("connect timeout"), adapter.QUERY_FAILURE_TIMEOUT),
+        (Error("Connection refused"), adapter.QUERY_FAILURE_CONNECTION),
+        (Error("AnalysisException: Could not resolve table reference"), adapter.QUERY_FAILURE_SQL),
+        (Error(""), adapter.QUERY_FAILURE_OTHER),
+        (_chained(Error(""), TimeoutError()), adapter.QUERY_FAILURE_TIMEOUT),
+        (_chained(Error(""), Error("TTransportException")), adapter.QUERY_FAILURE_CONNECTION),
+    ],
+)
+def test_a_failure_is_sorted_by_its_chain_names_and_words(error: BaseException, kind: str) -> None:
+    """사내 리뷰 202610200720 — 「조회 실패(Error)」 만으로는 시간 초과인지 가를 수 없었다."""
+    assert adapter.classify_query_failure(error) == kind
+
+
+def test_a_wrapped_failure_keeps_the_chain_names_and_cuts_a_long_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise Error("x" * 1000) from TimeoutError()
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert isinstance(raised.value, adapter.BigDataQueryCallError)
+    assert raised.value.type_names == ("Error", "TimeoutError")
+    assert "시간 초과" in str(raised.value) and "다시" in str(raised.value)
+    assert len(str(raised.value)) < 500
 
 
 def test_unconfigured_query_is_rejected_before_package_import(

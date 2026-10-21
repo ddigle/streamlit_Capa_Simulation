@@ -95,7 +95,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Protocol
-from urllib.parse import urlsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -1011,6 +1010,7 @@ class StreamlitApp:
 # ---------------------------------------------------------------------------------- 공통 뼈대
 
 _RUNNING_JS = """() => !!document.querySelector('[data-testid="stStatusWidget"]')"""
+_PATH_JS = "() => location.pathname"
 _INTRO_STATE_JS = """(id) => {
   const host = document.getElementById(id);
   if (!host) return "none";
@@ -1136,6 +1136,13 @@ class Screen:
         self.page = page
         self.base_url = base_url
         self.shots = shots
+        # 항목이 지금 하는 일(고정 글자). 항목이 예외로 끝나면 미기록 줄에 붙는다 — `step`.
+        self.current_step: str | None = None
+
+    def step(self, name: str) -> None:
+        """항목 안의 단계 이름을 둔다. 예외로 끝나면 미기록 줄이 어느 기다림에서 멈췄는지 말한다
+        (사내 리뷰 202610200720 — 페이더의 `TimeoutError` 가 어느 기다림인지 남지 않았다)."""
+        self.current_step = name
 
     # -- 기다림
 
@@ -1268,12 +1275,18 @@ class Screen:
 
     # -- 이동
 
+    def path(self) -> str:
+        """브라우저의 지금 주소 경로. `page.url` 은 Playwright 가 이동 사건으로 고쳐 두는 값이라
+        `time.sleep` 으로 기다리는 동안에는 사건을 받지 못해 옛 주소에 머문다 — 링크마다 다시 누를
+        때까지 10초씩 기다렸다(사내 리뷰 202610182227, 링크마다 약 72초). 페이지에 물어 읽는다."""
+        return str(self.js(_PATH_JS))
+
     def open_page(self, href_suffix: str) -> None:
         """사이드바 링크로 간다. 접힌 묶음(`details`) 안이면 묶음 머리부터 편다."""
         link = self.page.locator(f'[data-testid="stSidebar"] a[href$="{href_suffix}"]').first
 
         def arrived() -> bool:
-            return bool(self.page.url.split("?")[0].rstrip("/").endswith(href_suffix))
+            return self.path().rstrip("/").endswith(href_suffix)
 
         if not link.is_visible():
             link.locator("xpath=ancestor::details[1]/summary").click()
@@ -1291,7 +1304,7 @@ class Screen:
         링크 칸(`HOME_LINK_KEY`)을 누른다. 이미 HOME 이면 누르지 않는다."""
 
         def arrived() -> bool:
-            return urlsplit(str(self.page.url)).path in ("", "/")
+            return self.path() in ("", "/")
 
         if not arrived():
             link = self.page.locator(f'[data-testid="stSidebar"] .st-key-{HOME_LINK_KEY} a').first
@@ -1454,9 +1467,25 @@ class Outcome:
         return not (self.result.startswith(UNRECORDED) or self.result == SKIPPED_NO_PERMISSION)
 
 
-def unrecorded(exc: BaseException) -> str:
-    """예외 종류만. 문구는 식별값을 실을 수 있어 옮기지 않는다."""
-    return f"{UNRECORDED} — {type(exc).__name__}"
+def unrecorded(exc: BaseException, step: str | None = None) -> str:
+    """예외 종류와 항목이 둔 단계 이름(고정 글자)만. 문구는 식별값을 실을 수 있어 옮기지 않는다."""
+    where = f"({step})" if step else ""
+    return f"{UNRECORDED} — {type(exc).__name__}{where}"
+
+
+def _timed_out(exc: BaseException) -> bool:
+    """기다림이 다 된 예외 — 이 파일의 `TimeoutError` 와 Playwright 의 같은 이름 예외(내장 것을 잇지
+    않는다)."""
+    return type(exc).__name__ == "TimeoutError"
+
+
+def _run_once(screen: Screen, item: Item) -> tuple[str, BaseException | None]:
+    screen.current_step = None
+    try:
+        screen.settle()
+        return item.run(screen), None
+    except Exception as exc:  # noqa: BLE001 — 항목 하나의 실패가 나머지를 막지 않는다
+        return unrecorded(exc, screen.current_step), exc
 
 
 def run_items(
@@ -1478,11 +1507,13 @@ def run_items(
         elif started >= deadline:
             outcome = Outcome(item, OVER_BUDGET)
         else:
-            try:
-                screen.settle()
-                result = item.run(screen)
-            except Exception as exc:  # noqa: BLE001 — 항목 하나의 실패가 나머지를 막지 않는다
-                result = unrecorded(exc)
+            result, error = _run_once(screen, item)
+            # 첫 판의 기다림이 다 됐으면 쓰지 않는 항목만 한 번 더 돈다 — 페이더가 두 배포
+            # 이어 첫 판에만 `TimeoutError` 였다(사내 리뷰 202610200720). 첫 판 줄은 남긴다.
+            if error is not None and _timed_out(error) and not item.writes and clock() < deadline:
+                first = result
+                result, error = _run_once(screen, item)
+                result = f"{result} · 첫 판 {first.removeprefix(f'{UNRECORDED} — ')} 뒤 다시 돎"
             try:
                 screen.shot(f"{number:02d}_{item.key}")
             except Exception:  # noqa: BLE001 — 스크린샷은 덤이다
@@ -1627,15 +1658,69 @@ _TOOLBAR_POSITIONS_JS = """(ids) => ids.map((id) => {
 # 1/64px 까지), 브라우저는 그보다 작은 넘침에도 말줄임을 그린다 — 0.5px 를 두면 그 안쪽 말줄임을
 # 「다 보임」으로 읽는다. 칸이 둘레 상자 안에 있는가(위치)는 0.5px 를 그대로 둔다.
 _RANGE_SLACK_PX: Final = 0.02
+# 글자 잉크가 자르는 선을 넘어도 되는 몫(px). 그보다 작은 넘침은 화면에 서지 않는다.
+_INK_SLACK_PX: Final = 0.1
 # 라벨 글자 한 줄이 다 보이는가 — 글자 본래 폭(Range 는 말줄임 전 폭을 준다)이 제 칸에 들고, 칸이
-# 둘레 상자 안에 있다. `scrollWidth` 는 정수로 반올림돼 1px 안쪽 넘침(말줄임이 이미 선 것)을 놓친다.
-_WHOLE_LINE_JS = f"""const whole = (el, box) => {{
+# 둘레 상자 안에 있고, 글자 잉크(`inked`)가 잘리지 않는다. `scrollWidth` 는 정수로 반올림돼 1px
+# 안쪽 넘침(말줄임이 이미 선 것)을 놓친다.
+# `inked` 는 넘친 것을 자르는 조상(자기 포함 — shadow root 는 호스트로 건너간다)마다 테두리 안쪽
+# 위·아래 끝(`overflow: clip` 이면 `overflow-clip-margin` 만큼 바깥)을 모아, 글자 잉크의 위·아래
+# 끝이 그 안에 드는가를 본다. 칸 상자끼리만 견주면 라벨
+# 테두리 안쪽에서 자르는 선과 줄 상자 밑으로 내려간 「g」 꼬리를 못 본다(사내 리뷰 202610182227 —
+# 부제 칸 아래 끝과 라벨 아래 끝이 같아도 라벨이 테두리 1px 안쪽에서 잘랐다). 기준선은 글자 끝에
+# 잠깐 붙인 0×0 인라인 블록의 아래 끝(인라인 블록은 내용이 없으면 아래 끝이 기준선)이고, 잉크
+# 높이는 같은 글꼴의 캔버스 `measureText` 다. 글자가 없는 칸(Summary 단추)은 칸 상자를 본다.
+_WHOLE_LINE_JS = f"""const parentOf = (node) => node.parentElement
+    || (node.getRootNode && node.getRootNode().host) || null;
+  const clipOf = (el, self) => {{
+    let top = -Infinity;
+    let bottom = Infinity;
+    for (let node = self ? el : parentOf(el); node && node !== document.documentElement;
+      node = parentOf(node)) {{
+      const s = getComputedStyle(node);
+      if (s.overflowY === "visible") continue;
+      const b = node.getBoundingClientRect();
+      const margin = s.overflowY === "clip"
+        ? parseFloat((/-?[\\d.]+px/.exec(s.overflowClipMargin || "") || ["0"])[0]) : 0;
+      top = Math.max(top, b.top + parseFloat(s.borderTopWidth) - margin);
+      bottom = Math.min(bottom, b.bottom - parseFloat(s.borderBottomWidth) + margin);
+    }}
+    return {{ top, bottom }};
+  }};
+  const STRETCH = {{
+    "50%": "ultra-condensed", "62.5%": "extra-condensed", "75%": "condensed",
+    "87.5%": "semi-condensed", "112.5%": "semi-expanded", "125%": "expanded",
+    "150%": "extra-expanded", "200%": "ultra-expanded",
+  }};
+  const inked = (el) => {{
+    const text = (el.textContent || "").trim();
+    if (!text) {{
+      const r = el.getBoundingClientRect();
+      const clip = clipOf(el, false);
+      return r.top >= clip.top - 0.5 && r.bottom <= clip.bottom + 0.5;
+    }}
+    const probe = document.createElement("span");
+    probe.style.cssText = "display:inline-block;width:0;height:0;margin:0;padding:0;border:0;"
+      + "vertical-align:baseline";
+    el.appendChild(probe);
+    const baseline = probe.getBoundingClientRect().bottom;
+    probe.remove();
+    const s = getComputedStyle(el);
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = `${{s.fontStyle}} ${{s.fontWeight}} ${{s.fontSize}} ${{s.fontFamily}}`;
+    if ("fontStretch" in ctx) ctx.fontStretch = STRETCH[s.fontStretch] || "normal";
+    const m = ctx.measureText(text);
+    const clip = clipOf(el, true);
+    return baseline - m.actualBoundingBoxAscent >= clip.top - {_INK_SLACK_PX}
+      && baseline + m.actualBoundingBoxDescent <= clip.bottom + {_INK_SLACK_PX};
+  }};
+  const whole = (el, box) => {{
     const r = el.getBoundingClientRect();
     const range = document.createRange();
     range.selectNodeContents(el);
     return r.width > 0 && range.getBoundingClientRect().width <= r.width + {_RANGE_SLACK_PX}
       && r.left >= box.left - 0.5 && r.right <= box.right + 0.5
-      && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+      && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5 && inked(el);
   }};"""
 # 사이드바 라벨: 심볼 크기와 앱 이름 두 줄(`S.PKG CAPA` · `AX Management`)·Summary 단추. 단추는
 # 좁은 사이드바에서 통째로 빠진다 — 컨테이너 질의로 감추거나(`display: none`), 들어가지 않아 라벨
@@ -1678,7 +1763,7 @@ _LABEL_NARROW_JS = f"""async ({{id, widths}}) => {{
     const style = getComputedStyle(el);
     const inside = r.width > 0 && r.left >= box.left - 0.5 && r.right <= box.right + 0.5
       && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
-    return inside && style.overflowX !== "visible" && style.textOverflow === "ellipsis"
+    return inside && inked(el) && style.overflowX !== "visible" && style.textOverflow === "ellipsis"
       ? "ellipsis" : "cut";
   }};
   const saved = side.getAttribute("style");
@@ -1994,13 +2079,20 @@ _LEGEND_DATE = re.compile(r"기준 (\d{4}-\d{2}-\d{2})")
 
 
 def summarize_space_fader(
-    placed: float, changed: int, legend_moved: bool | None, back_today: bool
+    placed: float,
+    changed: int,
+    legend_moved: bool | None,
+    back_today: bool,
+    *,
+    pressed: int = 1,
 ) -> str:
-    """페이더 확인 결과 — 개수·있음/없음만. 날짜·층·호기 이름은 판정에만 쓴다."""
+    """페이더 확인 결과 — 개수·있음/없음만. 날짜·층·호기 이름은 판정에만 쓴다. PageUp 을 다시
+    눌렀으면(첫 키가 사라졌으면) 끝에 적는다."""
     moved = "범례 없음" if legend_moved is None else "바뀜" if legend_moved else "안 바뀜"
+    again = f" · PageUp {pressed}번(첫 키가 오늘로 돌아감)" if pressed > 1 else ""
     return (
         f"배치 최다 층 {placed:g}대 · +1개월에 class 바뀐 상자 {changed}개 · "
-        f"놓은 뒤 범례 기준일 {moved} · 「오늘」 {'돌아옴' if back_today else '안 돌아옴'}"
+        f"놓은 뒤 범례 기준일 {moved} · 「오늘」 {'돌아옴' if back_today else '안 돌아옴'}{again}"
     )
 
 
@@ -2008,7 +2100,9 @@ def check_space_fader(screen: Screen) -> str:
     """Space 기준일 페이더 — 배치가 가장 많은 층을 열어 페이더에 초점을 두고 PageUp(+1개월) 하면
     호기 상자 class(반입 전·반출/이설 예정·숨김 …)가 바뀐 수, 키를 멈춘 뒤 머리 줄 범례의 「기준」
     날짜가 바뀌었는가, 「오늘」 단추로 오늘에 돌아오는가. 쓰지 않는다(기준일은 세션 값이다)."""
+    screen.step("페이지 열기")
     screen.open_page(SPACE_PAGE)
+    screen.step("층 목록")
     grid, placed_column = screen.grid_with_column("배치대수")
     building_column = screen.column_index(grid, "동")
     floor_column = screen.column_index(grid, "층")
@@ -2020,39 +2114,62 @@ def check_space_fader(screen: Screen) -> str:
     if not candidates:
         return f"배치 없음(층 {len(floors)}개 모두 0)"
     building, floor, placed = max(candidates, key=lambda floor: floor[2])
+    screen.step("층 고르기")
     screen.choose_by_typing("층 바로 가기", f"{building} {floor}")
     if screen.selectbox_value("층 바로 가기") != f"{building} {floor}":
         raise RuntimeError("층을 열지 못했다")
+    screen.step("페이더")
     fader = screen.page.locator(".sle-fader-input").first
     try:
         fader.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
     except Exception:  # noqa: BLE001 — 페이더가 없는 배포다. 있음/없음만 적는다
         return f"배치 최다 층 {placed:g}대 · 페이더 없음"
+    today = screen.page.locator(".sle-fader-today").first
 
     def legend() -> str | None:
         found = _LEGEND_DATE.search(screen.main_text())
         return found.group(1) if found else None
 
+    def at_today() -> bool:
+        return bool(fader.evaluate(_FADER_TODAY_JS))
+
     before_legend = legend()
     before = fader.evaluate(_UNIT_CLASSES_JS)
+    pressed = 0
     try:
-        fader.focus()
-        fader.press("PageUp")
+        # 페이더가 오늘을 떠났는지 보고, 그대로면 한 번 더 누른다 — 층을 옮긴 회차의 늦은
+        # 그림(새 epoch)이 누른 날을 오늘로 되돌리면 키가 사라진다.
+        screen.step("PageUp")
+        while pressed < 2 and (pressed == 0 or at_today()):
+            if pressed:
+                screen.wait_idle()
+            fader.focus()
+            fader.press("PageUp")
+            pressed += 1
+            screen.poll(at_today, timeout=3, accept=lambda value: not value)
         after = screen.poll(
             lambda: fader.evaluate(_UNIT_CLASSES_JS), timeout=5, accept=lambda v: v != before
         )
         changed = sum(1 for old, new in zip(before, after, strict=False) if old != new)
+        screen.step("범례")
         moved_legend = screen.poll(legend, timeout=20, accept=lambda v: v != before_legend)
         screen.wait_idle()
         legend_moved = None if before_legend is None else moved_legend != before_legend
     finally:
-        screen.page.locator(".sle-fader-today").first.click()
-        back = bool(screen.poll(lambda: fader.evaluate(_FADER_TODAY_JS), timeout=10, accept=bool))
+        # 페이더가 오늘이면 「오늘」 단추는 꺼져 있다(`disabled`) — 누르면 켜지기를 30초 기다리다
+        # `TimeoutError` 로 끝나 위 결과를 가린다. 켜져 있을 때만 누른다.
+        failed_at = screen.current_step
+        screen.step("「오늘」")
+        if today.is_enabled():
+            today.click()
+        back = bool(screen.poll(at_today, timeout=10, accept=bool))
         back = back and screen.poll(legend, timeout=20, accept=lambda v: v == before_legend) == (
             before_legend
         )
         screen.wait_idle()
-    return summarize_space_fader(placed, changed, legend_moved, back)
+        # 위에서 예외가 났으면 미기록 칸은 그 단계를 말해야 한다.
+        screen.current_step = failed_at
+    return summarize_space_fader(placed, changed, legend_moved, back, pressed=pressed)
 
 
 def _close_drawer(screen: Screen) -> None:

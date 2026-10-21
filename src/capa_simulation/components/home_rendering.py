@@ -49,7 +49,8 @@ from capa_simulation.process_detail_state import (
     HOME_BOTTLENECK_SECTION,
     HOME_KEY_PROCESS_SECTION,
     HOME_LOB_SECTION,
-    open_home_cell,
+    queue_home_cell,
+    switch_to_queued_process_detail,
 )
 from capa_simulation.scenario_state import is_pristine_content_token
 from capa_simulation.services.simulation_cache import shared_home_figure_store
@@ -725,13 +726,15 @@ HOME_CELL_CHART_KEYS = (
 
 
 def open_clicked_home_cell(chart_key: str, section: str) -> None:
-    """월 그림의 칸 선택 콜백. 누른 칸의 공정·달로 공정 Capa 상세를 연다.
+    """월 그림의 칸 선택 콜백. 누른 칸의 공정·달을 이동 대기 칸에 적는다.
 
     빈 선택(같은 칸을 다시 누르거나 더블클릭)과 공정 없는 점(과거 실적 칸)은 무시한다 — 그때는
-    콜백 위젯의 기본 동작대로 이 프래그먼트만 다시 돈다. 옮길 때는 콜백 안의 `st.switch_page` 라
-    HOME 프래그먼트 본문을 다시 돌리지 않고 상세 화면이 앱 전체 회차로 돈다.
+    콜백 위젯의 기본 동작대로 이 프래그먼트만 다시 돈다. 옮기는 것은 이어 도는 프래그먼트 본문
+    첫 줄(`switch_to_queued_process_detail`)이다 — 콜백 안의 `st.switch_page` 는 프래그먼트 콜백
+    경고를 남긴다(`process_detail_state.open_process_detail`). 본문은 그리기 전에 옮겨 상세 화면이
+    앱 전체 회차로 돈다.
     """
-    open_home_cell(st.session_state.get(chart_key), section=section)
+    queue_home_cell(st.session_state.get(chart_key), section=section)
 
 
 @st.fragment
@@ -762,6 +765,8 @@ def render_home_figures(
     위젯도 없다. 테두리 상자는 `home_dashboard_panel()` 이 한 단계 위에서 열어 제목 줄까지 함께
     감싼다.
     """
+    # 칸 클릭 콜백이 적은 이동은 무엇을 그리기 전에 한다 — 숨은 탭 판정보다도 앞이다.
+    switch_to_queued_process_detail()
     if tab_is_hidden(owner_tab) or figures is None:
         return
     visible_month_count = min(max(len(month_labels), 1), tokens.DASHBOARD_MONTH_SCROLL_THRESHOLD)

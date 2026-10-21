@@ -1037,9 +1037,9 @@ def test_bigdataquery_failures_are_named_by_kind_only(
     assert "상한 366일" not in output
     assert (
         "| 조회(목록 창 31일 전체를 GROUP BY 한 번, 사외에서 돌려 보지 못한 SQL) | "
-        "조회 실패(RuntimeError) |"
+        "조회 실패(RuntimeError · SQL) |"
     ) in output
-    assert "0 / 1 성공 · 조회 실패(RuntimeError)" in output
+    assert "0 / 1 성공 · 조회 실패(RuntimeError · SQL)" in output
     assert "| 상세 조회(앱과 같은 SQL) | 1 / 1 성공 |" in output
     assert "- 적재일 조회가 실패해 건너뛴다." in output
 
@@ -1226,9 +1226,10 @@ def test_a_stop_inside_the_catalog_keeps_the_heading_and_closes_the_table(
     monkeypatch.setattr(checks, "describe_registered_at", broken)
     assert checks.main(argv, probe=_StopAtSecondCatalog(RuntimeError())) == 0
     written = target.read_text(encoding="utf-8")
-    assert "| 상한 366일 | 366일 | 조회 실패(RuntimeError) |" in written
+    assert "| 상한 366일 | 366일 | 조회 실패(RuntimeError · 그 밖) | 0.0 |" in written
     assert (
-        "조회 실패(RuntimeError) | - | - | - | - | - |\n\n- `8-5` 블록이 멈췄다 — 실패(ValueError)"
+        "조회 실패(RuntimeError · 그 밖) | 0.0 | - | - | - | - |\n\n- `8-5` 블록이 멈췄다 — "
+        "실패(ValueError)"
     ) in written
     assert SENTINEL not in written
 

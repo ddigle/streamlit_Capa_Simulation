@@ -120,6 +120,56 @@ def test_both_steps_render_in_one_run() -> None:
     }
 
 
+CATALOG_FAILURE_SCRIPT = """
+import sys
+from datetime import date
+from types import SimpleNamespace
+
+import streamlit as st
+
+from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+
+
+class Error(Exception):
+    pass
+
+
+def get_data(**_kwargs):
+    raise Error("Read timed out")
+
+
+st.session_state.setdefault(registration.CATALOG_RESULT_KEY, "직전 목록")
+saved = sys.modules.get("bigdataquery")
+sys.modules["bigdataquery"] = SimpleNamespace(getData=get_data)
+try:
+    registration._run_catalog_query(
+        QueryWindow(start_date=date(2026, 9, 21), end_date=date(2026, 10, 21))
+    )
+finally:
+    if saved is None:
+        sys.modules.pop("bigdataquery", None)
+    else:
+        sys.modules["bigdataquery"] = saved
+"""
+
+
+def test_a_package_failure_in_the_catalog_query_says_what_to_do_and_keeps_the_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """사내 패키지의 `Error` 는 화면이 잡는 예외 튜플 밖이다 — 감싸지 않으면 목록 조회가
+    traceback 으로 멈췄다(사내 리뷰 202610200720 요청 2). 안내와 다시 할 길을 내고 직전 목록은
+    둔다."""
+    monkeypatch.delenv("CAPA_BDQ_USER_NAME", raising=False)
+    app = AppTest.from_string(CATALOG_FAILURE_SCRIPT)
+    app.run()
+
+    assert not app.exception
+    [error] = app.error
+    assert "시간 초과" in error.value and "다시" in error.value
+    assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
+
+
 def test_catalog_list_is_drawn_with_a_fixed_height_for_scrolling() -> None:
     app = _run()
 

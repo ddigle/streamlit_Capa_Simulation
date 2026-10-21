@@ -431,6 +431,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   공통 파이프라인에 넘긴다(`bigdataquery` 지연 import, 0행·`공정`·`모듈수` 누락은 보정 전에 막는다).
   - 조회 창은 호출자의 `QueryWindow` 이고 포함/배타 변환은 `sql_bounds()` 한 곳이다. 상세 창은 사용자가 정하며(목록에서
     고르면 등록일 −7~+3일) 넓은 기본 창으로 조용히 떨어지지 않는다. 같은 코드 재수신은 원천 코드 불변 검사가 막는다.
+  - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
+    같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
+    (`classify_query_failure` — 시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
+    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 사외로 가는 스크립트(`inspect_real_data_checks.py` 8-5)는 갈래와
+    종류 이름(`type_names`)만 찍는다.
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지에 `aws` CLI 로 붙는 유일한 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`).
   - 설정은 `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
@@ -444,7 +449,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
 - `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값을 UI·저장소 import 없이 선언한다.
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
-  - 전달 칸은 위젯 콜백 안에서 적고(`open_process_detail`) 받는 페이지 맨 앞에서 꺼낸다(`take_process_detail_request`).
+  - 칸 클릭 콜백은 이동 대기 칸만 적고(`queue_home_cell`), HOME 프래그먼트 본문 첫 줄이 전달 칸을 적어 옮기며
+    (`switch_to_queued_process_detail` → `open_process_detail`), 받는 페이지 맨 앞에서 꺼낸다(`take_process_detail_request`).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
@@ -2103,8 +2109,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   옛 리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다.
 - `st.query_params` 는 자기 키만 넣고 `del` 한다. `st.query_params.clear()` 는 쓰지 않는다 — 테마 인자
   (`design/theme.THEME_QUERY_PARAM`)까지 지워 첫 방문으로 보고 다시 새로고침한다. `st.switch_page(…, query_params=…)` 는
-  주소를 통째로 바꾸므로 지금 테마 인자를 함께 싣는다. 콜백 안 페이지 이동은 AppTest 가 재현하지 못해 `st.switch_page`
-  대역으로 시험한다.
+  주소를 통째로 바꾸므로 지금 테마 인자를 함께 싣는다. `st.switch_page` 는 위젯 콜백이 아니라 회차 본문에서 부른다 — 1.63 은
+  끝에 `st.empty()` 를 그려, 프래그먼트 안 위젯의 콜백에서 부르면 「A fragment rerun was triggered with a callback that
+  displays one or more elements」 경고를 남긴다. 콜백은 대기 칸만 적고 프래그먼트 본문 첫 줄이 옮긴다
+  (`process_detail_state.switch_to_queued_process_detail`). AppTest 에는 등록된 페이지가 없어 `st.switch_page` 대역으로
+  시험한다(이동이 콜백 밖인지는 `tests/fragment_browser.py` 로 본다).
 
 ### 편집표와 내려받기
 
@@ -2188,7 +2197,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 `data/input/RQ_DISPLAY_ORDER.csv`에 두고 Git에 커밋하지 않는다.
 
 앱 코드의 `subprocess` 는 `io/object_storage.py` 한 곳에만 둔다(명령 실행기를 주입받아 시험한다). 커밋되는
-`config/object_storage.json` 의 `mode` 는 반드시 `local` 이다.
+`config/object_storage.json` 의 `mode` 는 반드시 `local` 이다. 그 자리도 `subprocess.run` 기본(`close_fds=True` — Windows 에서
+핸들을 물려주지 않는다)으로 부르고 `close_fds=False`·`os.system`·`os.spawn*` 은 쓰지 않는다 — Streamlit 1.63 은 듣는 소켓을
+상속 가능으로 열어(`starlette_server._bind_socket` 의 `set_inheritable(True)`), 핸들을 물려받은 자식은 앱을 끈 뒤에도 8501 을
+쥔다(런북 4-2 「접속이 안 되면」).
 
 ## 10-1. 로컬 데이터는 합성 표본이다 — 관측을 업무 사실로 적지 않는다
 
@@ -2232,7 +2244,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   종료·처리 안 된 예외와 겹쳐 쓰지 않는다). `--output` 은 경로 검사를 지나면 「확인 시작」으로 덮어쓰고 일찍
   끝나면 「미룸 — …」·「멈춤 — …」 한 줄만 남긴다 — 사전 확인 전의 전체 머리(「DB 잠금 없음」)는 거짓이다.
   경로 옵션은 parse 직후 한 번 `expanduser().resolve()` 해 검사와 쓰기가 같은 값을 쓴다(장치·UNC·스트림·
-  하드 링크 꼴은 거절). 확인용 앱은 `127.0.0.1` 에서만 듣고, 자식의
+  하드 링크 꼴은 거절). 기다리는 동안 `page.url` 을 읽지 않는다 — Playwright 가 이동 사건으로 고쳐 두는 값이라
+  `time.sleep` 사이에는 옛 주소에 머문다. 도착은 페이지에 물어(`Screen.path`) 본다. 글자가 「다 보임」 인지는 칸 상자끼리
+  견주고 끝내지 않고 글자 잉크가 자르는 조상들의 안쪽 선 안에 드는지까지 본다(`_WHOLE_LINE_JS` 의 `inked`). 항목은 기다림
+  앞에 `screen.step("<고정 글자>")` 를 두어 미기록 칸이 어느 단계에서 멈췄는지 말하게 하고, 쓰지 않는 항목이 첫 판에
+  `TimeoutError`(이 파일의 것이든 Playwright 의 같은 이름이든)면 `run_items` 가 한 번 더 돌려 칸 끝에 첫 판 줄을 남긴다.
+  꺼질 수 있는 단추(페이더가 오늘일 때의 「오늘」 처럼 `disabled`)는 켜졌을 때만 누른다 — 꺼진 단추를 누르면 Playwright 가
+  켜지기를 30초 기다리다 `TimeoutError` 로 끝나 앞의 결과를 가린다. 확인용 앱은
+  `127.0.0.1` 에서만 듣고, 자식의
   `PYTHONPATH` 맨 앞에 이 저장소의 `src` 를 두며, 스크립트가 강제로 끝나도 남지 않게 Windows Job Object
   (Linux `PR_SET_PDEATHSIG`)로 묶는다. `tests/test_check_deploy_screens.py` 는 Playwright 없이 뼈대(경로
   거절·사전 확인·앱 수명·항목 실행·결과 꼴·main 흐름)를 보고, 항목이 찾는 선택자·화면 글자 가운데 일부
@@ -2322,8 +2341,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **Streamlit·Plotly 판을 올리기 전에 내부 동작에 기대는 자리를 다시 본다** — 비공식 DOM·저장 키(`data-testid` 선택자·
   1.63 DOM 구조·프런트엔드 `localStorage` 테마 키·`data-test-script-state`: 헤더 툴바·머리 띠·입장 화면·사이드바 서식·탭
   점·metric 줄·인쇄 규칙), 프래그먼트 러너 대역(`tests/fragment_browser.py`·AppTest `fragment_id_queue`), 프래그먼트의
-  바깥 컨테이너 쓰기, 선택을 켠 그림의 `dragmode` 덮기, 지나간 위젯의 콜백, 콜백 안 `st.switch_page` 의 fragment
-  경고(예상된 경고, 오류 아님), Plotly 비공개 `_validate` 빠른 경로(`plotly>=5.24,<7`)와 번호 축을 알아보는
+  바깥 컨테이너 쓰기, 선택을 켠 그림의 `dragmode` 덮기, 지나간 위젯의 콜백, `st.switch_page` 끝의 `st.empty()`(콜백
+  밖에서 옮기는 까닭 — 9장), Plotly 비공개 `_validate` 빠른 경로(`plotly>=5.24,<7`)와 번호 축을 알아보는
   `Layout._subplotid_prop_re`, 표 칸 글자 층이 기대는 plotly.js 동작(겹친 축 영역의 바탕을 그 축 층 맨 아래 — `layer: below`
   도형 위 — 에 깔기, `go.Table` 열 자르기 ±1px — `tests/test_table_text_layer.py` 가 먼저 깨진다), `.streamlit/config.toml` 의 숨은
   옵션 `global.maxCachedMessageAge`·`global.minCachedMessageSize`(이름이 사라지면 조용히 무시된다 — `tests/test_settings.py`

@@ -63,10 +63,13 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     DETAIL_WINDOW_DAYS_BEFORE,
     QUERY_TEMPLATE,
     SOURCE_COLUMN_MAPPING,
+    BigDataQueryCallError,
     BigDataQueryModule,
     QueryWindow,
     build_query,
     call_get_data,
+    classify_query_failure,
+    failure_type_names,
     is_bigdataquery_adapter_configured,
     is_bigdataquery_package_available,
     is_valid_simulation_code,
@@ -2060,7 +2063,14 @@ def _bdq_failure(exc: BaseException) -> str:
         return "SQL 미설정"
     if isinstance(exc, ValueError) and "계약 별칭" in text:
         return "목록 결과에 계약 별칭 5개가 없다"
-    return f"조회 실패({type(exc).__name__})"
+    # 패키지 예외는 어댑터가 감싸 올린다 — 감싸기 전 사슬의 종류 이름과 갈래(시간 초과·연결·
+    # SQL, 문구 낱말로 가른 추정)를 적는다. 「Error」 하나로는 시간 초과인지 가를 수 없었다
+    # (사내 리뷰 202610200720).
+    if isinstance(exc, BigDataQueryCallError):
+        names, kind = exc.type_names, exc.kind
+    else:
+        names, kind = failure_type_names(exc), classify_query_failure(exc)
+    return f"조회 실패({' ← '.join(names)} · {kind})"
 
 
 @dataclass
@@ -2077,7 +2087,13 @@ def _run_catalog(probe: BigDataQueryProbe, label: str, window: QueryWindow) -> C
     try:
         frame = probe.catalog(window)
     except Exception as exc:  # 사내 패키지 예외 종류를 모른다
-        return CatalogRun(label=label, window=window, failure=_bdq_failure(exc))
+        # 실패까지 걸린 초도 적는다 — 패키지의 시간 제한에 닿았는지 가르는 실마리다.
+        return CatalogRun(
+            label=label,
+            window=window,
+            failure=_bdq_failure(exc),
+            seconds=time.perf_counter() - started,
+        )
     return CatalogRun(
         label=label, window=window, frame=frame, seconds=time.perf_counter() - started
     )
@@ -2085,7 +2101,16 @@ def _run_catalog(probe: BigDataQueryProbe, label: str, window: QueryWindow) -> C
 
 def _catalog_row(run: CatalogRun) -> list[str]:
     if run.frame is None:
-        return [run.label, f"{run.window.days}일", run.failure or "-", "-", "-", "-", "-", "-"]
+        return [
+            run.label,
+            f"{run.window.days}일",
+            run.failure or "-",
+            _seconds(run.seconds),
+            "-",
+            "-",
+            "-",
+            "-",
+        ]
     frame = run.frame
     try:
         normalized = normalize_catalog(frame)

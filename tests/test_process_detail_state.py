@@ -6,9 +6,11 @@ AppTest 에는 Plotly 요소가 없어 차트 클릭을 재현하지 못한다. 
 
 - 순수 부분 — 그림의 `customdata` 꼬리를 만들고 읽는 함수, 출처 띠 문구, 기본 공정·달.
 - 세션 부분 — 콜백(`open_clicked_home_cell`)은 선택 상태를 세션에 **주입**해 단추로 부르고,
-  `st.switch_page` 는 기록용 대역으로 바꾼다. AppTest 는 실행마다 페이지 목록을 새로 만들어 콜백
-  시점에는 아직 등록된 페이지가 없다 — 실제 서버는 세션의 페이지 목록이 회차를 넘어 남는다. 받는 쪽
-  (`resolve_process_and_month`)은 주소 인자·전달 칸을 넣고 돌린다.
+  `st.switch_page` 는 기록용 대역으로 바꾼다. 콜백은 이동 대기 칸만 적고 옮기는 것은 본문 첫 줄
+  (`switch_to_queued_process_detail`)이다 — 진짜 프래그먼트 회차(`tests/fragment_browser.py`)에서
+  이동이 콜백 밖인지도 본다. AppTest 에는 등록된 페이지가 없어 대역 없이 옮기면 갈 곳이 없다 —
+  실제 서버는 세션의 페이지 목록이 회차를 넘어 남는다. 받는 쪽(`resolve_process_and_month`)은 주소
+  인자·전달 칸을 넣고 돌린다.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from typing import Any
 
 import pytest
 import streamlit
+from fragment_browser import install_fragment_browser
+from streamlit.runtime.scriptrunner_utils.script_run_context import ThreadState
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.home_state import ADVANCE_TOGGLE_KEY, EXECUTION_TOGGLE_KEY
@@ -29,6 +33,7 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_ORIGIN_KEY,
     PROCESS_DETAIL_PROCESS_KEY,
     PROCESS_DETAIL_QUERY_SEEN_KEY,
+    PROCESS_DETAIL_QUEUED_KEY,
     PROCESS_DETAIL_REQUEST_KEY,
     HomeCellLink,
     ProcessDetailEntry,
@@ -222,7 +227,9 @@ def _home_click_app() -> None:
     import streamlit as st
 
     from capa_simulation.components.home_rendering import open_clicked_home_cell
+    from capa_simulation.process_detail_state import switch_to_queued_process_detail
 
+    switch_to_queued_process_detail()
     st.button(
         "칸 누름",
         key="test_home_cell_click",
@@ -309,6 +316,58 @@ def test_a_click_that_cannot_switch_leaves_no_transfer_slot() -> None:
     app = _clicked({"selection": {"points": [{"customdata": _link_row()}]}})
 
     assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+
+
+def _home_fragment_click_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.home_rendering import open_clicked_home_cell
+    from capa_simulation.process_detail_state import (
+        HOME_KEY_PROCESS_SECTION,
+        switch_to_queued_process_detail,
+    )
+
+    @st.fragment
+    def figures() -> None:
+        switch_to_queued_process_detail()
+        st.button(
+            "칸 누름",
+            key="test_home_cell_click",
+            on_click=open_clicked_home_cell,
+            args=("test_home_chart", HOME_KEY_PROCESS_SECTION),
+        )
+
+    figures()
+
+
+def test_a_cell_click_in_the_home_fragment_switches_outside_the_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streamlit 1.63 의 `st.switch_page` 는 끝에 `st.empty()` 를 그려, 프래그먼트 콜백 안에서
+    부르면 「A fragment rerun was triggered with a callback that displays one or more elements」
+    경고를 남긴다(사내 리뷰 202610182227 — 칸을 누를 때마다 한 줄). 진짜 프래그먼트 회차에서
+    콜백은 대기 칸만 적고, 이동은 같은 회차의 프래그먼트 본문에서 일어난다."""
+    runner = install_fragment_browser(monkeypatch)
+    in_callback: list[bool] = []
+
+    def record(page: str, *, query_params: dict[str, str] | None = None) -> None:
+        in_callback.append(ThreadState.get().in_fragment_callback)
+
+    monkeypatch.setattr(streamlit, "switch_page", record)
+    app = AppTest.from_function(_home_fragment_click_app)
+    app.session_state["test_home_chart"] = {"selection": {"points": [{"customdata": _link_row()}]}}
+    app.run()
+    assert in_callback == []
+    fragment = runner.fragment_of("test_home_cell_click")
+
+    runner.fragment_queue = [fragment]
+    app.button(key="test_home_cell_click").click().run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert runner.started == [[fragment]]
+    assert in_callback == [False]
+    assert PROCESS_DETAIL_QUEUED_KEY not in app.session_state
+    assert app.session_state[PROCESS_DETAIL_REQUEST_KEY].process == "DEMO-A"
 
 
 def _take_app() -> None:

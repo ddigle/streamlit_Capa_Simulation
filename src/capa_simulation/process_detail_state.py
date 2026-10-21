@@ -69,6 +69,9 @@ PROCESS_DETAIL_VIEW_FRAGMENT_KEY = "process_detail_view"
 PROCESS_DETAIL_CANVAS_CHART_KEY = "process_detail_summary_months"
 # HOME 이 적고 상세 화면이 첫 회차에 꺼내(`pop`) 쓰는 전달 칸.
 PROCESS_DETAIL_REQUEST_KEY = "process_detail_request"
+# HOME 칸 클릭 콜백이 적는 이동 대기 칸. 같은 회차의 HOME 프래그먼트 본문 첫 줄이 꺼내
+# (`switch_to_queued_process_detail`) 전달 칸에 옮겨 적고 화면을 옮긴다.
+PROCESS_DETAIL_QUEUED_KEY = "process_detail_queued"
 # 출처 띠가 읽는 HOME 칸 스냅숏. 전달 칸을 꺼낸 회차에 옮겨 두고, 공정을 바꾸거나 다른 화면에
 # 다녀오면 걷는다.
 PROCESS_DETAIL_ORIGIN_KEY = "process_detail_origin"
@@ -295,12 +298,14 @@ def request_query_params(request: ProcessDetailRequest, *, theme: str | None) ->
 
 
 def open_process_detail(request: ProcessDetailRequest) -> None:
-    """전달 칸을 적고 공정 Capa 상세로 옮긴다. **위젯 콜백 안에서** 부른다.
+    """전달 칸을 적고 공정 Capa 상세로 옮긴다. **위젯 콜백이 아니라 회차 본문에서** 부른다.
 
-    콜백 안의 `st.switch_page` 는 Streamlit 1.63 이 지원하는 길이다 — 지금 회차(HOME 프래그먼트)의
-    본문을 돌리지 않고 상세 화면이 앱 전체 회차로 돈다. 갈 곳이 없으면(내비게이션이 없는 단독 실행 —
-    AppTest 는 실행마다 페이지 목록을 새로 만들어 콜백 시점에는 등록된 페이지가 없다) 옮기지 않고
-    적은 전달 칸도 거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
+    Streamlit 1.63 의 `st.switch_page` 는 회차를 끊으려고 끝에 `st.empty()` 를 그린다. 프래그먼트
+    콜백 안에서 부르면 그 그리기가 「A fragment rerun was triggered with a callback that displays
+    one or more elements」 경고를 서버 로그에 남긴다(사내 리뷰 202610182227 — 화면 해는 없다).
+    본문에서 부르면 그 `st.empty()` 는 보내지기 전에 이동 요청이 회차를 끊는다. 갈 곳이
+    없으면(내비게이션이 없는 단독 실행 — AppTest 는 등록된 페이지가 없다) 옮기지 않고 적은 전달 칸도
+    거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
     """
     st.session_state[PROCESS_DETAIL_REQUEST_KEY] = request
     theme = st.query_params.get(THEME_QUERY_PARAM)
@@ -313,13 +318,29 @@ def open_process_detail(request: ProcessDetailRequest) -> None:
         st.session_state.pop(PROCESS_DETAIL_REQUEST_KEY, None)
 
 
-def open_home_cell(selection_state: object, *, section: str) -> bool:
-    """HOME 그림의 선택 상태로 상세 화면을 연다. 열 칸이 없으면(빈 선택·과거 칸) 아무것도 않는다."""
+def queue_home_cell(selection_state: object, *, section: str) -> bool:
+    """HOME 그림의 선택 상태를 이동 대기 칸에 적는다. **위젯 콜백에서** 부른다.
+
+    열 칸이 없으면(빈 선택·과거 칸) 아무것도 않는다. 옮기는 것은 같은 회차의 HOME 프래그먼트 본문
+    첫 줄이다(`switch_to_queued_process_detail`). 토글은 지금 값을 읽어 여기서 굳힌다.
+    """
     link = first_home_cell_link(selection_state)
     if link is None:
         return False
-    open_process_detail(home_cell_request(link, section=section))
+    st.session_state[PROCESS_DETAIL_QUEUED_KEY] = home_cell_request(link, section=section)
     return True
+
+
+def switch_to_queued_process_detail() -> None:
+    """이동 대기 칸이 있으면 꺼내 공정 Capa 상세로 옮긴다. HOME 프래그먼트 본문 **첫 줄**에서
+    부른다.
+
+    숨은 탭·그림 없는 회차에서 일찍 돌아가기 전이어야 한다 — 클릭이 앱 전체 회차로 묶여 Main 이
+    숨은 채 돌아도 HOME 은 이 프래그먼트를 늘 부르므로 대기 칸이 다음 HOME 방문까지 남지 않는다.
+    """
+    request = st.session_state.pop(PROCESS_DETAIL_QUEUED_KEY, None)
+    if isinstance(request, ProcessDetailRequest):
+        open_process_detail(request)
 
 
 def lowest_rate_process(items: Sequence[ProcessPickerItem]) -> str | None:
