@@ -1,8 +1,10 @@
 # Purpose: 시나리오 관리 페이지의 폼·목록 작업·보관함·복제 저장·캐시 무효화를 AppTest 로 고정한다.
 
 from pathlib import Path
+from typing import NoReturn
 from uuid import uuid4
 
+import duckdb
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -110,6 +112,40 @@ def test_list_management_acts_on_the_checked_scenario(
     assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
     execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled
+
+
+def test_a_database_held_by_another_program_shows_the_notice_instead_of_a_traceback(
+    seeded_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """따뜻한 프로세스에서는 저장소 생성자가 캐시라 페이지의 준비 단계가 DB 를 열지 않는다.
+
+    그 회차의 첫 DB 열기는 시나리오 목록 읽기다. 다른 프로그램이 파일을 쥐어 그 읽기가 막혀도
+    원문 트레이스백 대신 다른 화면과 같은 잠금 안내를 보이고, 이웃 두 탭도 그대로 선다.
+    """
+    database_path, equipment_path = seeded_databases
+    app = AppTest.from_string(
+        _page_script(PAGE_PATH, database_path, equipment_path), default_timeout=120
+    ).run()
+    assert not app.exception
+
+    def held_by_another_program(*args: object, **kwargs: object) -> NoReturn:
+        raise duckdb.IOException(
+            'IO Error: Could not set lock on file "scenario.duckdb": '
+            "Conflicting lock is held in python (PID 4242)"
+        )
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "list_scenarios", held_by_another_program)
+    app.run()
+
+    assert not app.exception
+    assert any("다른 프로그램이 파일을 열어 두었습니다" in error.value for error in app.error)
+    # 시나리오 관리 탭은 목록을 못 읽으면 작업 선택 앞에서 멈춘다.
+    assert "시나리오 작업" not in {widget.label for widget in app.segmented_control}
+    assert [tab.label for tab in app.main.tabs] == [
+        ":material/database: 시나리오 관리",
+        ":material/cloud_download: BigDataQuery 등록",
+        ":material/autorenew: 자동 갱신",
+    ]
 
 
 def _clone_official(database_path: Path, name: str, code: str) -> ScenarioSnapshot:

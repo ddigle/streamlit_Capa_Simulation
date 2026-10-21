@@ -116,7 +116,13 @@ def render_scenario_management(
     repository: DuckDBScenarioRepository,
     database_path: str,
 ) -> None:
-    scenarios = repository.list_scenarios()
+    # 저장소 생성자는 프로세스 캐시라 따뜻한 프로세스에서는 페이지 준비 단계가 DB 를 열지 않는다.
+    # 이 읽기가 그 회차의 첫 DB 열기이므로 다른 프로그램의 파일 잠금도 여기서 안내로 받는다.
+    try:
+        scenarios = repository.list_scenarios()
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        return
     _render_store_status(repository, scenarios)
     # 작업 이름이 바뀌었으므로 예전 세션에 남은 값은 위젯이 만들어지기 전에 버린다.
     # 옵션에 없는 값이 그대로 오면 Streamlit 이 선택을 잃고 필수 선택에서 막힌다.
