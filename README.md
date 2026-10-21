@@ -350,7 +350,7 @@ typed raw 로 그대로 보존합니다.
 | `audit_top_remigration.py` | `0026` 적용 뒤 이관 결과의 오염·누락을 점검한다 |
 | `check_deploy_screens.py` | 런북 7장 화면 확인을 별도 포트 앱과 저장소 밖 Playwright 로 돌린다 |
 | **배포·병행 개발** | |
-| `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD 면 멈춤) |
+| `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다 |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |
 | `check_worktree_isolation.py` | 작업 폴더가 제 가상환경·코드·DuckDB 만 쓰는지 확인한다 |

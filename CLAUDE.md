@@ -73,7 +73,7 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 (영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
 `scripts/generate_sample_core_data.py`(합성 Core Data 생성).
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
-`origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다).
+`origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도 ZIP 을 쓰기 전에 멈춘다).
 
 `mypy`는 `tests/`·`scripts/`까지 같은 strict 로 검사한다. 테스트에서 끄는 것은 pandas 스칼라
 합집합 마찰인 `operator` 하나뿐이고 모듈 셋으로 좁혀 두었다(`pyproject.toml` 의 overrides).

@@ -341,3 +341,59 @@ def test_a_clean_pushed_build_ships_head_and_tags_it(
         assert archive.read("app.py") == b"x = 1\n"
     assert manifest["commit"] == _git(pushed_repo, "rev-parse", "HEAD")
     assert _git(pushed_repo, "tag", "--list") == "deploy/202610131200"
+
+
+def test_a_second_tagged_build_with_the_same_stamp_stops_before_overwriting(
+    pushed_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """같은 stamp 의 태그가 이미 있으면 확인을 마친 ZIP 을 덮지 않고 멈춘다.
+
+    그대로 다시 만들면 송장의 직전 배포가 자기 자신이 되어 변경 목록이 비거나 고친 것 하나로
+    줄고, 태그는 첫 빌드 커밋에 남은 채 다른 내용의 ZIP 이 성공(0)으로 나간다.
+    """
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    out = tmp_path / "out"
+    zip_path = out / "202610131200.zip"
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 0
+    first_bytes = zip_path.read_bytes()
+    first_commit = _git(pushed_repo, "rev-parse", "HEAD")
+    (pushed_repo / "app.py").write_bytes(b"x = 2\n")
+    _git(pushed_repo, "commit", "-q", "-am", "확인 뒤 고침")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    capsys.readouterr()
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 1
+    assert "태그 deploy/202610131200 가 이미 있습니다" in capsys.readouterr().err
+    assert zip_path.read_bytes() == first_bytes
+    assert _git(pushed_repo, "rev-parse", "deploy/202610131200^{commit}") == first_commit
+
+
+def test_the_previous_deploy_is_the_last_tag_before_this_stamp(
+    pushed_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """이번 stamp 이상인 태그(같은 stamp 의 남은 태그·더 늦은 시험 태그)는 직전 배포가 아니다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    first_commit = _git(pushed_repo, "rev-parse", "HEAD")
+    _git(pushed_repo, "tag", "deploy/202610121200")
+    (pushed_repo / "app.py").write_bytes(b"x = 2\n")
+    _git(pushed_repo, "commit", "-q", "-am", "둘째 커밋")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    _git(pushed_repo, "tag", "deploy/202610131200")
+    _git(pushed_repo, "tag", "deploy/202610141200")
+    out = tmp_path / "out"
+
+    code = build_deploy_package.main(["--out", str(out), "--stamp", "202610131200", "--no-tag"])
+
+    assert code == 0
+    with zipfile.ZipFile(out / "202610131200.zip") as archive:
+        manifest = json.loads(archive.read("DEPLOY_MANIFEST.json"))
+    assert manifest["previous_deploy"] == "202610121200"
+    assert manifest["previous_commit"] == first_commit
+    assert manifest["changes"] == {"M": ["app.py"]}

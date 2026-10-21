@@ -19,7 +19,8 @@
 
 목록은 `git ls-files` 에서 오고 내용은 작업 트리에서 읽는다. 그래서 추적 파일에 커밋하지 않은
 수정이 있거나 HEAD 가 `origin/main` 과 다르면 멈춘다 — 송장의 커밋과 ZIP 내용이 어긋난 채로
-나가지 않게 한다(`--no-tag` 시험 빌드는 알리기만 한다).
+나가지 않게 한다(`--no-tag` 시험 빌드는 알리기만 한다). 같은 stamp 의 태그 `deploy/<stamp>` 가
+이미 있어도 ZIP 을 쓰기 전에 멈춘다 — 확인한 ZIP 을 덮지 않는다.
 
 사외 빌드 자리는 데스크탑 WSL 이다 — 런북 수치 재기부터 ZIP 전달까지는
 `docs/wsl_dev_environment.md` 5장.
@@ -189,10 +190,15 @@ def untracked_entries(root: Path) -> list[str]:
     return [line.strip() for line in listed.splitlines() if line.strip()]
 
 
-def previous_deploy_tag(root: Path) -> str:
-    """직전 배포 태그. 이름이 `deploy/YYYYMMDDHHMM` 이라 사전순이 곧 시간순이다."""
+def previous_deploy_tag(root: Path, *, before: str) -> str:
+    """직전 배포 태그. 이름이 `deploy/YYYYMMDDHHMM` 이라 사전순이 곧 시간순이다.
+
+    이번 stamp(`before`) 이상인 태그는 직전이 아니다 — 같은 stamp 로 남은 태그를 고르면
+    송장이 자기 자신과 견주고, 지우지 않은 더 늦은 시험 태그를 고르면 기준이 미래가 된다.
+    """
+    bound = f"{DEPLOY_TAG_PREFIX}{before}"
     listed = git_output(root, "tag", "--list", f"{DEPLOY_TAG_PREFIX}*")
-    tags = sorted(line.strip() for line in listed.splitlines() if line.strip())
+    tags = sorted(tag for line in listed.splitlines() if (tag := line.strip()) and tag < bound)
     return tags[-1] if tags else ""
 
 
@@ -230,7 +236,7 @@ def file_digests(root: Path, paths: Iterable[str]) -> dict[str, str]:
 
 def build_manifest(root: Path, paths: Sequence[str], *, stamp: str) -> dict[str, object]:
     """ZIP 에 함께 넣는 송장."""
-    previous_tag = previous_deploy_tag(root)
+    previous_tag = previous_deploy_tag(root, before=stamp)
     return {
         "manifest_version": MANIFEST_VERSION,
         "stamp": stamp,
@@ -445,6 +451,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("시험 빌드(--no-tag)라 멈추지 않습니다 — 이 ZIP 은 보내지 않습니다:")
         for problem in problems:
             print(f"  - {problem}")
+    # 같은 stamp 의 태그가 남아 있으면 그 이름의 ZIP 은 이미 만들어 확인까지 했을 수 있다.
+    # 다시 만들면 그 ZIP 을 덮고, 태그는 옛 커밋에 남아 다음 배포의 변경 목록 기준이 보낸 것과
+    # 어긋난다.
+    tag = f"{DEPLOY_TAG_PREFIX}{stamp}"
+    if not args.no_tag and git_output(
+        PROJECT_ROOT, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"
+    ):
+        print(f"빌드를 멈춥니다 — 태그 {tag} 가 이미 있습니다.", file=sys.stderr)
+        print(
+            "  그 ZIP 을 다시 보낼 때는 다시 만들지 않고, 고쳐 다시 만들 때는 "
+            f"`git tag -d {tag}` 뒤에 만듭니다.",
+            file=sys.stderr,
+        )
+        return 1
     untracked = untracked_entries(PROJECT_ROOT)
     if untracked:
         print(f"알림  추적하지 않는 파일 {len(untracked)}개는 ZIP 에 실리지 않습니다:")
@@ -472,7 +492,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("직전 배포 태그가 없습니다 — 첫 배포로 기록합니다.")
 
     if not args.no_tag:
-        tag = f"{DEPLOY_TAG_PREFIX}{stamp}"
         tagged = subprocess.run(
             ["git", "tag", tag],
             cwd=PROJECT_ROOT,
