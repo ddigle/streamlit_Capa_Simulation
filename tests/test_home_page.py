@@ -1403,8 +1403,16 @@ def test_both_detail_columns_center_when_the_gap_toggle_is_off(seeded_database: 
 # 남는다. 값 자체는 지워지지 않으므로 다시 켜면 그대로 돌아온다.
 
 
-def _seed_past_months(database_path: Path, months: list[int]) -> None:
-    """공용 과거 프로필에 월별 실적만 넣는다. 세 표는 한 버전을 공유하므로 함께 준다."""
+def _seed_past_months(
+    database_path: Path,
+    months: list[int],
+    *,
+    securement: list[tuple[int, str, float]] | None = None,
+) -> None:
+    """공용 과거 프로필에 월별 실적을 넣는다. 세 표는 한 버전을 공유하므로 함께 준다.
+
+    `securement` 는 과거 확보율 행 `(년월, 공정, 확보율)` 이다. 주지 않으면 확보율 표는 비운다.
+    """
     import pandas as pd
 
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -1426,7 +1434,11 @@ def _seed_past_months(database_path: Path, months: list[int]) -> None:
                 }
             ),
             "계획": empty_past_table(PAST_DETAIL_COLUMNS),
-            "확보율": empty_past_table(PAST_SECUREMENT_COLUMNS),
+            "확보율": (
+                pd.DataFrame(securement, columns=list(PAST_SECUREMENT_COLUMNS))
+                if securement
+                else empty_past_table(PAST_SECUREMENT_COLUMNS)
+            ),
         },
         source="test",
     )
@@ -1477,6 +1489,71 @@ def test_turning_the_toggle_off_leaves_only_the_scenario_months(tmp_path: Path) 
     app.session_state["home_preference_include_past"] = True
     app.run()
     assert "25.11" in _lob_month_labels(app)
+
+
+def _key_process_cell(app: AppTest, label: str) -> list[Any]:
+    """주요공정 월 Figure 에서 한 달 칸의 hover `customdata`.
+
+    차례는 `KEY_PROCESS_HOVER_TEMPLATE` 그대로다 — [년월, 공정, 확보율, 가용, 필요, 보정 줄, …].
+    """
+    figure = app.session_state["spy_figures"]["key_process_heatmap_months"]
+    cells = [
+        list(row)
+        for trace in figure.data
+        if trace.customdata is not None
+        for row in trace.customdata
+        if row[0] == label
+    ]
+    assert len(cells) == 1, cells
+    return cells[0]
+
+
+def test_a_past_month_takes_the_securement_adjustment_like_a_calculated_month(
+    tmp_path: Path,
+) -> None:
+    """과거 구간 달도 확보율 보정을 받는다 — HOME 은 과거 확보율 행을 합친 **뒤**에 보정을 얹는다.
+
+    Preference 입력 표의 년월에도 과거 달이 든다. 보정을 계산 구간 달에만 걸면 과거 달에 넣은
+    보정이 조용히 빠지거나 「짝이 없어 반영되지 않은 행」 으로 알려져, 저장된 공용 보정의 뜻이
+    바뀐다(AGENTS 6장 「HOME 얹기」). 그래서 화면까지 통과한 칸 값과 안내로 본다.
+    """
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "scenario.duckdb"
+    # 과거·보정·프리셋 프로필은 모두 `st.cache_data` 경계 뒤에 있어 앱을 돌리기 **전에** 심는다.
+    _seed_past_months(database_path, [202512], securement=[(202512, "DEMO_Chip_Attach", 1.10)])
+    repository = DuckDBScenarioRepository(database_path)
+    repository.replace_global_execution_capacity(
+        pd.DataFrame(
+            {
+                "생산계획년월": [202512],
+                "공정": ["DEMO_Chip_Attach"],
+                "증감 확보율": [-20.0],
+                "비고": ["과거 실적 보정"],
+            }
+        ),
+        source="테스트",
+    )
+    repository.replace_global_key_process_presets(
+        [("A 그룹", ["DEMO_Chip_Attach"])], source="테스트"
+    )
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.session_state["production_month_range_v2"] = ("2025-12", "2026-12")
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    # 보정을 끈 화면은 넣은 과거 확보율 그대로다.
+    assert app.session_state["home_show_execution"] is False
+    assert _key_process_cell(app, "25.12")[2] == "110.0%"
+
+    app.session_state["home_show_execution"] = True
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    cell = _key_process_cell(app, "25.12")
+    assert cell[2] == "90.0%"
+    assert "확보율 보정 -20.0%p" in str(cell[5])
+    assert not [item.value for item in app.warning if "짝이 없어" in str(item.value)]
 
 
 def test_the_home_guide_carries_what_left_the_body() -> None:
