@@ -36,6 +36,7 @@ from capa_simulation.services.equipment_contract import (
     empty_equipment_baseline,
 )
 from capa_simulation.services.equipment_samples import sample_equipment_master
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
     KIND_SHORTENED,
@@ -70,11 +71,12 @@ def _script(
     fail_scenario: bool = False,
     past_months: tuple[int, ...] = (),
     sidebar_first: int | None = None,
+    sidebar_last: int | None = None,
     labels: dict[str, str] | None = None,
 ) -> str:
     simulation_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
     months = _months()
-    first, last = sidebar_first or months[0], months[-1]
+    first, last = sidebar_first or months[0], sidebar_last or months[-1]
     return f"""
 from pathlib import Path
 from types import SimpleNamespace
@@ -112,7 +114,11 @@ reference_tables = {{
     "RQ_DISPLAY_ORDER": display_order,
     "RQ_PKG_PLAN": pd.DataFrame({{"생산계획년월": months}}),
 }}
-active = {{"content_token": "shortening-test", "tables": {{}}}}
+# 소요대수 산출 기준(RQ_REQB)은 데이터 범위만 쓰인다 — 조회기간이 그 밖일 때 알리는 범위.
+active = {{
+    "content_token": "shortening-test",
+    "tables": {{"RQ_REQB": pd.DataFrame({{"생산계획년월": months}})}},
+}}
 density = pd.DataFrame({{"생산계획년월": months, "부하량": [12.5 + i for i in range(len(months))]}})
 wafer = pd.DataFrame({{"생산계획년월": months, "Wafer 부하량": [198000.0] * len(months)}})
 
@@ -217,6 +223,7 @@ def _run(
     fail_scenario: bool = False,
     past_months: tuple[int, ...] = (),
     sidebar_first: int | None = None,
+    sidebar_last: int | None = None,
     labels: dict[str, str] | None = None,
 ) -> AppTest:
     script = _script(
@@ -224,6 +231,7 @@ def _run(
         fail_scenario=fail_scenario,
         past_months=past_months,
         sidebar_first=sidebar_first,
+        sidebar_last=sidebar_last,
         labels=labels,
     )
     return AppTest.from_string(script, default_timeout=120).run()
@@ -377,6 +385,46 @@ def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     assert "소요대수를 읽지 못해" in warnings, warnings
     assert "활성 시나리오가 없습니다" in warnings
     assert not _cards(app)
+    clear_equipment_repository()
+
+
+def test_a_period_outside_the_scenario_data_stops_with_the_data_range(tmp_path: Path) -> None:
+    """조회기간이 시나리오 데이터 밖이면 다른 계산 화면처럼 데이터 범위를 알리고 멈춘다.
+
+    소요대수가 하나도 없는 기간인데 계획을 세우면 맞댈 공정이 비어 「공정소분류가 시나리오
+    공정명과 같은지 확인하세요」로 엉뚱한 원인(이름 불일치)을 가리켰다. 범위 밖 달이 시작 월·끝 월
+    선택지(공용 프로필에 저장되는 값)로 서지도 않는다.
+    """
+    months = _months()
+    app = _run(
+        _database(tmp_path),
+        sidebar_first=_shift(months[-1], 3),
+        sidebar_last=_shift(months[-1], 6),
+    )
+
+    assert not app.exception, [element.message for element in app.exception]
+    errors = " ".join(str(item.value) for item in app.error)
+    assert "선택 범위에 소요대수 산출 기준이 없습니다." in errors, errors
+    assert f"(데이터 범위 {month_label(months[0])}–{month_label(months[-1])})" in errors, errors
+    infos = " ".join(str(item.value) for item in app.info)
+    assert "같은 이름으로 함께 있는 공정" not in infos, infos
+    assert not [expander.label for expander in app.expander if "맞대지 못한 공정" in expander.label]
+    assert not {"시작 월", "끝 월"} & {widget.label for widget in app.sidebar.selectbox}
+    assert not _cards(app)
+    clear_equipment_repository()
+
+
+def test_a_period_partly_before_the_scenario_data_still_plans(tmp_path: Path) -> None:
+    """조회기간이 데이터와 일부만 겹치면 지금처럼 겹친 달로 좁혀 계획을 세운다."""
+    months = _months()
+    app = _run(_database(tmp_path), sidebar_first=_shift(months[0], -6))
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert not app.error, [str(item.value) for item in app.error]
+    assert list(app.selectbox(key=SHORTENING_START_KEY).options) == [
+        month_label(month) for month in months
+    ]
+    assert _cards(app)
     clear_equipment_repository()
 
 

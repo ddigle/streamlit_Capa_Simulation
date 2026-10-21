@@ -225,7 +225,8 @@ def render_required_shortening_tab(
     프레임이 아니라 로더(`required_equipment`, `simulation_cache.scenario_required_equipment`)와
     그것을 낸 시나리오 키(`required_equipment_key`)로 받는다 — 고를 달은 그 키의 범위
     (`get_required_month_span`)로 정하고, 프레임은 그 캐시나 `get_required_shortening` 이 빗나갈
-    때만 로더로 꺼낸다. 달 범위를 꺼내다 멈추면 `scenario_error` 와 같은 경고로 멈춘다.
+    때만 로더로 꺼낸다. 달 범위를 꺼내다 멈추면 `scenario_error` 와 같은 경고로 멈추고, 조회기간에
+    소요대수가 없으면 다른 계산 화면처럼 데이터 범위를 알리고 멈춘다.
 
     `equipment_database_path` 는 공용 조회 조건 프로필과 진척 비교 기준선이 사는 설비 DB 다. 없으면
     (컴포넌트를 홀로 띄우는 자리) 조건은 세션 값뿐이고 진척 비교 상자·기준선 저장을 세우지 않는다.
@@ -313,6 +314,10 @@ def _prepare(
         # 페이지의 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 페이지가 잡은
         # 것과 같은 경고로 알린다.
         return _Stop("scenario", bootstrap_error_message(exc))
+    if demand_months is None:
+        # 조회기간에 소요대수가 하나도 없다 — 계획을 세우면 맞댈 공정이 비어 이름 불일치 안내로
+        # 떨어진다. 다른 계산 화면(`resolve_effective_months`)과 같은 문구로 멈춘다.
+        return _Stop("error", _no_demand_message(context))
     month_options = _month_options(context, demand_months)
     if not month_options:
         return _Stop("info", "조회기간에 월이 없습니다.")
@@ -936,16 +941,30 @@ def _months_between(start: int, end: int) -> list[int]:
     return months
 
 
-def _month_options(context: PageContext, demand_months: tuple[int, int] | None) -> list[int]:
+def _month_options(context: PageContext, demand_months: tuple[int, int]) -> list[int]:
     """고를 수 있는 달 — 사이드바 조회기간 가운데 소요대수가 있는 범위(HOME 「적용」 범위).
 
-    `demand_months` 는 소요대수가 있는 첫 달·끝 달(`get_required_month_span`)이다. 없으면 조회기간
-    그대로다.
+    `demand_months` 는 소요대수가 있는 첫 달·끝 달(`get_required_month_span`)이다.
     """
-    start, end = context.selected_start_month, context.selected_end_month
-    if demand_months is not None:
-        start, end = max(start, demand_months[0]), min(end, demand_months[1])
+    start = max(context.selected_start_month, demand_months[0])
+    end = min(context.selected_end_month, demand_months[1])
     return _months_between(start, end)
+
+
+def _no_demand_message(context: PageContext) -> str:
+    """조회기간에 소요대수가 없을 때의 안내 — 다른 계산 화면(`resolve_effective_months`)의 문구.
+
+    데이터 범위는 그 화면들과 같은 원천(활성 시나리오 `RQ_REQB`)에서 잰다. 그 범위가 조회기간과
+    겹치거나 원천을 못 읽으면 범위를 붙이지 않는다 — 옮겨 갈 곳을 틀리게 알리지 않도록.
+    """
+    message = "선택 범위에 소요대수 산출 기준이 없습니다."
+    try:
+        first, last = available_month_range(context.active_scenario["tables"]["RQ_REQB"], "RQ_REQB")
+    except (KeyError, ValueError):
+        return message
+    if first <= context.selected_end_month and context.selected_start_month <= last:
+        return message
+    return f"{message} (데이터 범위 {month_label(first)}–{month_label(last)})"
 
 
 def _ordered_processes(plan: ShorteningPlan, context: PageContext) -> list[str]:
