@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>따라하기 · Capa LOB Summary</title>
+<style>
+/* 색은 앱 design/tokens 의 두 벌(light · dark)에서 옮겼다. 밝기는 앱 창의 localStorage["capa-theme"] 를 읽고, 없으면 OS 설정을 따른다. */
+:root{
+  --bg:#F7F8FA;--card:#FFFFFF;--text:#18181B;--muted:#646973;--border:#DDE0E5;--strong:#A3A9B2;
+  --accent:#0F766E;--accent-soft:rgba(15,118,110,.10);--head:#EFF1F5;
+  --pending:#C2410C;--pending-bg:#FFF1E6;--saved:#52525B;--saved-bg:#EEEFF2;--official:#15803D;--official-bg:#E7F6EC;
+  --shared:#B91C1C;--shared-bg:#FDECEC;--eqp:#4B5563;--eqp-bg:#F1F2F4;
+  --mark:#2563EB;--mark-soft:rgba(37,99,235,.16);--no:#9CA3AF;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.06);
+  --shot-ring:transparent;
+}
+:root[data-theme="dark"]{
+  --bg:#131316;--card:#1C1C21;--text:#E9E9EC;--muted:#9B9BA6;--border:#35353E;--strong:#6B6B78;
+  --accent:#2DD4BF;--accent-soft:rgba(45,212,191,.12);--head:#191920;
+  --pending:#FDBA74;--pending-bg:rgba(176,71,0,.28);--saved:#D4D4D8;--saved-bg:#2B2B33;--official:#86EFAC;--official-bg:rgba(21,128,61,.28);
+  --shared:#FCA5A5;--shared-bg:rgba(143,0,64,.3);--eqp:#C6C6CE;--eqp-bg:#2B2B33;
+  --mark:#60A5FA;--mark-soft:rgba(96,165,250,.2);--no:#6B7280;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  --shot-ring:#35353E;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:15px/1.55 "Pretendard Variable",Pretendard,"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+img{display:block;max-width:100%}
+
+/* ---------- 넓은 창: 왼쪽에 「앱 창(예시)」, 오른쪽에 가이드 — 실제로는 가이드만 앱 옆 작은 창으로 뜬다 */
+#wrap{display:grid;grid-template-columns:1fr;height:100%}
+#demo{display:none}
+@media (min-width:1100px){
+  #wrap{grid-template-columns:minmax(0,1fr) 480px}
+  #demo{display:flex;flex-direction:column;min-width:0;padding:20px 20px 20px 24px;gap:10px;overflow:hidden}
+  #guide{border-left:1px solid var(--border)}
+}
+.demo-cap{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.demo-cap b{color:var(--text);font-weight:700}
+.demo-cap .pill{border:1px solid var(--border);border-radius:999px;padding:2px 10px;background:var(--card)}
+.appwin{flex:1;min-height:0;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.appwin .bar{height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--head);border-bottom:1px solid var(--border)}
+.appwin .bar i{width:10px;height:10px;border-radius:50%;background:var(--border)}
+.appwin .bar span{margin-left:8px;font-size:12px;color:var(--muted)}
+.appwin .stage{flex:1;min-height:0;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto}
+.appwin .stage .shot{width:100%;max-width:1200px}
+
+/* ---------- 가이드 창 */
+#guide{display:flex;flex-direction:column;min-width:0;height:100%;background:var(--bg)}
+.gtop{flex:none;display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}
+.gtop .mark{width:26px;height:26px;color:var(--accent)}
+.gtop .ttl{font-weight:800;font-size:16px;letter-spacing:-.01em}
+.gtop .page{margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.gtop .tm{width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;color:var(--muted)}
+#view{flex:1;min-height:0;overflow:auto;padding:14px 16px 96px}
+.sec{margin:20px 0 8px;display:flex;align-items:baseline;gap:8px}
+.sec h2{margin:0;font-size:14px;font-weight:800}
+.sec span{font-size:12px;color:var(--muted)}
+
+.search{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 12px}
+.search input{flex:1;border:0;outline:0;background:none;font:inherit;color:var(--text)}
+.search svg{width:18px;height:18px;color:var(--muted);flex:none}
+
+.pick{margin-top:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.pick .q{font-size:13px;font-weight:700;margin-bottom:8px}
+.pick .chips{display:flex;flex-wrap:wrap;gap:8px}
+.pick .ans{margin-top:10px;display:none;gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+.pick .ans.on{display:flex}
+.pick .ans p{margin:0;flex:1}
+.go{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+:root[data-theme="dark"] .go{color:#06201D}
+
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px 2px 8px;font-size:12.5px;font-weight:700;white-space:nowrap;border:1px solid transparent;cursor:default}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.badge.pending{color:var(--pending);background:var(--pending-bg)}
+.badge.saved{color:var(--saved);background:var(--saved-bg)}
+.badge.official{color:var(--official);background:var(--official-bg)}
+.badge.shared{color:var(--shared);background:var(--shared-bg)}
+.badge.eqp{color:var(--eqp);background:var(--eqp-bg)}
+.pick .badge{cursor:pointer;border-color:var(--border)}
+.pick .badge.sel{outline:2px solid var(--accent);outline-offset:1px}
+
+.reach{font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 7px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.reach.적용{color:var(--pending);border-color:currentColor}
+.reach.리비전{color:var(--saved);border-color:currentColor}
+.reach.공식{color:var(--official);border-color:currentColor}
+.reach.공용{color:var(--shared);border-color:currentColor}
+
+.card{display:grid;grid-template-columns:132px 1fr;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px;cursor:pointer;box-shadow:var(--shadow)}
+.card:hover{border-color:var(--accent)}
+.card .th{position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--head);aspect-ratio:16/10}
+.card .th img{width:100%;height:100%;object-fit:cover;object-position:center}
+.card h3{margin:2px 0 4px;font-size:14.5px;font-weight:800;line-height:1.35}
+.card p{margin:0 0 6px;font-size:12.5px;color:var(--muted);line-height:1.45}
+.card .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11.5px;color:var(--muted)}
+.warnflag{color:var(--shared);font-weight:700}
+.concept{grid-template-columns:44px 1fr}
+.concept .ic{width:44px;height:44px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.concept .ic svg{width:24px;height:24px}
+
+/* ---------- 과업 보기 */
+.back{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 0;font-size:13px}
+.t-head h1{margin:6px 0 6px;font-size:19px;font-weight:800;line-height:1.3;letter-spacing:-.01em}
+.t-head .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.route{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.route b{font-weight:600;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1px 7px;font-size:12px}
+.route i{font-style:normal;color:var(--muted)}
+.warnbox{margin-top:10px;display:flex;gap:8px;align-items:flex-start;background:var(--shared-bg);color:var(--shared);border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700}
+.dots{display:flex;gap:6px;margin:14px 0 10px}
+.dots button{flex:1;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--card);cursor:pointer;font-weight:800;font-size:13px;color:var(--muted)}
+.dots button.done{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+.dots button.on{color:#fff;background:var(--accent);border-color:var(--accent)}
+:root[data-theme="dark"] .dots button.on{color:#06201D}
+.step{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.step .hd{padding:12px 14px 8px}
+.step .k{font-size:12px;font-weight:800;color:var(--accent)}
+.step h2{margin:2px 0 6px;font-size:17px;font-weight:800;line-height:1.35}
+.where{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
+.where span{background:var(--head);border-radius:5px;padding:1px 6px}
+.fig{position:relative;margin:0 10px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--head);cursor:zoom-in}
+.fig .shotbox{position:relative}
+.step .hd{display:flex;gap:12px;align-items:flex-start}
+.step .hd .tx{flex:1;min-width:0}
+.mini{position:relative;flex:none;width:104px;border-radius:6px;overflow:hidden;border:1px solid var(--strong);background:var(--card);cursor:zoom-in;padding:0}
+.mini img{width:100%}
+.mini .area{position:absolute;border:2px solid var(--mark);background:var(--mark-soft);border-radius:2px}
+.mini em{display:block;font-style:normal;font-size:10px;text-align:center;color:var(--muted);background:var(--head);padding:1px 0;line-height:1.5}
+.fig .ph{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-align:center;padding:20px}
+.figcap{display:flex;justify-content:space-between;margin:4px 12px 0;font-size:11px;color:var(--muted)}
+.shot{position:relative;line-height:0}
+.shot img{width:100%;height:auto;border:0}
+.shot.split{border-top:6px solid var(--bg)}
+.box{position:absolute;border:3px solid var(--mark);border-radius:7px;box-shadow:0 0 0 4px var(--mark-soft);pointer-events:none}
+.box.do{animation:pulse 1.6s ease-in-out infinite}
+.box.see{border-style:dashed;border-width:2.5px;box-shadow:none}
+.box.no{border:2.5px dashed var(--no);box-shadow:none;background:rgba(156,163,175,.12)}
+.box .n{position:absolute;left:-13px;top:-13px;min-width:24px;height:24px;border-radius:12px;background:var(--mark);color:#fff;font:800 13px/24px system-ui,sans-serif;text-align:center;padding:0 6px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.box.no .n{background:var(--no)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--mark-soft)}50%{box-shadow:0 0 0 9px rgba(37,99,235,0)}}
+@media (prefers-reduced-motion:reduce){.box.do{animation:none}}
+.step .bd{padding:12px 14px 14px}
+.act{margin:0;font-size:15.5px;line-height:1.6;font-weight:600}
+.btn{display:inline-block;border:1px solid var(--strong);border-radius:6px;padding:0 7px;margin:0 1px;background:var(--card);font-weight:700;font-size:.92em;line-height:1.6;white-space:nowrap;box-shadow:0 1px 0 var(--border)}
+.nav{display:inline-block;color:var(--accent);font-weight:700}
+.ok{margin-top:10px;display:flex;gap:8px;align-items:flex-start;background:var(--official-bg);color:var(--official);border-radius:9px;padding:8px 10px;font-size:13.5px;font-weight:600}
+.ok svg,.warnbox svg{flex:none;width:18px;height:18px;margin-top:1px}
+.stuck{margin-top:8px;border:1px solid var(--border);border-radius:9px}
+.stuck summary{cursor:pointer;padding:7px 10px;font-size:13px;font-weight:700;color:var(--muted)}
+.stuck ul{margin:0;padding:0 12px 8px 28px;font-size:13px;color:var(--text)}
+.stuck li{margin:3px 0}
+.end{margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+.end h3{margin:0 0 6px;font-size:14px}
+.end p{margin:0 0 10px;font-size:14px}
+.bnav{position:sticky;bottom:0;display:flex;gap:8px;padding:12px 0 4px;background:linear-gradient(transparent,var(--bg) 30%)}
+.bnav button{flex:1;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--card);font-weight:800;cursor:pointer}
+.bnav button.pri{flex:2;background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .bnav button.pri{color:#06201D}
+.bnav button:disabled{opacity:.4;cursor:default}
+
+/* ---------- 지도 · 개념 */
+.mapfig{margin-top:12px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px;box-shadow:var(--shadow)}
+.spot{position:absolute;border:2.5px solid var(--mark);border-radius:7px;background:var(--mark-soft);cursor:pointer;padding:0}
+.spot .n{position:absolute;right:-11px;top:-11px;width:22px;height:22px;border-radius:11px;background:var(--mark);color:#fff;font:800 12px/22px system-ui,sans-serif;text-align:center}
+.spot.sel{background:rgba(37,99,235,.28)}
+.spotinfo{margin-top:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.spotinfo h3{margin:0 0 4px;font-size:15px}
+.spotinfo p{margin:0 0 8px;font-size:14px}
+.from{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);margin-bottom:10px}
+.from b{color:var(--text);background:var(--head);border-radius:6px;padding:1px 7px;font-weight:600}
+.ladder{margin-top:12px;display:flex;flex-direction:column;gap:0}
+.rung{display:grid;grid-template-columns:62px 1fr;gap:10px;align-items:stretch}
+.rung .lv{display:flex;flex-direction:column;align-items:center}
+.rung .lv b{width:56px;text-align:center;border-radius:8px;padding:6px 0;font-size:13px;font-weight:800;border:1.5px solid currentColor}
+.rung .lv i{flex:1;width:2px;background:var(--border);min-height:12px}
+.rung .lv.last i{visibility:hidden}
+.rung .box2{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.rung .box2 .l1{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px}
+.rung .box2 .l2{font-size:12.5px;color:var(--muted)}
+.branch{margin:6px 0 10px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.branch::before,.branch::after{content:"";flex:1;height:1px;background:var(--border)}
+.c-pending{color:var(--pending)}.c-saved{color:var(--saved)}.c-official{color:var(--official)}.c-shared{color:var(--shared)}.c-eqp{color:var(--eqp)}
+.grid4{margin-top:12px;display:grid;grid-template-columns:1fr;gap:10px}
+.grid4 .cell{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.grid4 .cell .cap{padding:8px 12px 10px;font-size:13px}
+.grid4 .cell .cap b{display:block;font-size:14px}
+.grid4 .cell .cap span{color:var(--muted)}
+
+/* ---------- 크게 보기 */
+#lb{position:fixed;inset:0;background:rgba(10,10,14,.82);display:none;align-items:center;justify-content:center;padding:24px;z-index:9;cursor:zoom-out}
+#lb.on{display:flex}
+#lb .shot{width:min(1400px,100%);border-radius:8px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.shotring{outline:1px solid var(--shot-ring)}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <section id="demo" aria-label="앱 창 예시">
+    <div class="demo-cap"><b>앱 창</b><span class="pill">예시 화면 · 합성 샘플</span><span id="demo-note">가이드 창을 앱 옆에 띄워 두고 번호대로 따라 합니다</span></div>
+    <div class="appwin"><div class="bar"><i></i><i></i><i></i><span id="demo-title">S.PKG CAPA — Capa LOB Summary</span></div><div class="stage" id="demo-stage"></div></div>
+  </section>
+  <aside id="guide" aria-label="따라하기 가이드">
+    <header class="gtop">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h11a5 5 0 0 1 0 10H9l-5 4z"/><path d="M8 9h7M8 12h4"/></svg>
+      <span class="ttl">따라하기</span>
+      <span class="page" id="pagechip"></span>
+      <button class="tm" id="tm" title="밝게 / 어둡게(시안 확인용)">◐</button>
+    </header>
+    <main id="view"></main>
+  </aside>
+</div>
+<div id="lb" role="dialog" aria-label="크게 보기"></div>
+<script>
+const DATA = /*__DATA__*/null;
+(function () {
+  "use strict";
+  const $ = (s, r = document) => r.querySelector(s);
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const IMG = DATA.images;
+  const TONE = { "미저장 변경": "pending", "저장된 리비전": "saved", "공식 vN": "official" };
+  const ICON = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.5"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',
+    layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  };
+
+  // ---------------------------------------------------------- 밝기: 앱 창과 같은 값을 따른다(같은 출처면 localStorage 를 함께 본다)
+  const root = document.documentElement;
+  function readTheme() {
+    let t = null;
+    try { t = localStorage.getItem("capa-theme"); } catch (e) { /* 막힌 저장소 */ }
+    if (t === "dark" || t === "light") return t;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  root.dataset.theme = readTheme();
+  $("#tm").onclick = () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; };
+  addEventListener("storage", (e) => { if (e.key === "capa-theme") root.dataset.theme = readTheme(); });
+
+  $("#pagechip").textContent = DATA.page;
+  const view = $("#view");
+  const TASK = Object.fromEntries(DATA.tasks.map((t) => [t.id, t]));
+  const CONC = Object.fromEntries(DATA.concepts.map((c) => [c.id, c]));
+
+  // ---------------------------------------------------------- 문장 표기 → 칩
+  function rich(s) {
+    return esc(s)
+      .replace(/\[\[(.+?)\]\]/g, '<span class="btn">$1</span>')
+      .replace(/\(\((.+?)\)\)/g, '<span class="nav">$1</span>')
+      .replace(/\{\{(.+?)\}\}/g, (m, b) => '<span class="badge ' + (TONE[b] || "saved") + '">' + b + "</span>");
+  }
+
+  // ---------------------------------------------------------- 그림 + 번호 상자(좌표는 그림에 대한 % — 창 폭이 바뀌어도 제자리)
+  function shot(img, boxes, opts = {}) {
+    const s = el("div", "shot");
+    if (!img || !IMG[img.src]) return s;
+    s.innerHTML = '<img alt="" src="' + IMG[img.src] + '">';
+    (boxes || []).forEach((b) => {
+      const d = el("div", "box " + (b.kind || "do"));
+      d.style.cssText = "left:" + b.x + "%;top:" + b.y + "%;width:" + b.w + "%;height:" + b.h + "%";
+      if (b.n != null || b.kind === "no") d.appendChild(el("span", "n", b.kind === "no" ? "✕" : esc(b.n)));
+      s.appendChild(d);
+    });
+    if (opts.ring) s.classList.add("shotring");
+    return s;
+  }
+  function figure(step) {
+    const f = el("div", "fig");
+    if (step.crops) {
+      // 표적이 화면 여기저기에 흩어진 단계 — 표적마다 한 장씩 위아래로
+      step.crops.forEach((c, i) => { const s = shot(c.crop, c.boxes); if (i) s.classList.add("split"); f.appendChild(s); });
+    } else if (step.crop) {
+      f.appendChild(shot(step.crop, step.boxes));
+    } else {
+      f.appendChild(el("div", "ph", "이 단계 그림은 시제품 단계에서 자동 촬영합니다<br><small>(" + esc(step.state) + ")</small>"));
+      return f;
+    }
+
+    f.onclick = () => lightbox(step.full, step.fullBoxes);
+    const w = el("div");
+    w.appendChild(f);
+    w.appendChild(el("div", "figcap", "<span>예시 화면 · 합성 샘플</span><span>누르면 크게</span>"));
+    return w;
+  }
+  // 화면 전체에서 이 그림이 어디쯤인지 — 작은 지도(누르면 크게)
+  function miniMap(step) {
+    if (!step.full || !step.area) return null;
+    const m = el("button", "mini");
+    m.title = "화면 전체에서 보기";
+    m.innerHTML = '<div style="position:relative;line-height:0"><img alt="" src="' + IMG[step.full.src] + '"></div><em>화면 어디쯤</em>';
+    const a = el("div", "area");
+    a.style.cssText = "left:" + step.area.x + "%;top:" + step.area.y + "%;width:" + step.area.w + "%;height:" + step.area.h + "%";
+    m.firstChild.appendChild(a);
+    m.onclick = () => lightbox(step.full, step.fullBoxes);
+    return m;
+  }
+  function lightbox(full, boxes) {
+    if (!full) return;
+    const lb = $("#lb");
+    lb.innerHTML = "";
+    lb.appendChild(shot(full, boxes));
+    lb.classList.add("on");
+  }
+  $("#lb").onclick = () => $("#lb").classList.remove("on");
+
+  // ---------------------------------------------------------- 넓은 창의 「앱 창(예시)」 — 지금 단계의 화면 전체와 같은 번호 상자
+  function demo(full, boxes, title) {
+    const st = $("#demo-stage");
+    st.innerHTML = "";
+    if (full) st.appendChild(shot(full, boxes));
+    $("#demo-title").textContent = "S.PKG CAPA — " + (title || DATA.page);
+  }
+
+  // ---------------------------------------------------------- 목록
+  const SYN = DATA.synonyms;
+  function matches(t, q) {
+    if (!q) return true;
+    q = q.trim().toLowerCase();
+    const hay = [t.title, t.sub, (t.steps || []).map((s) => s.title + " " + s.do).join(" ")].join(" ").toLowerCase();
+    if (hay.includes(q)) return true;
+    return Object.entries(SYN).some(([k, ids]) => k.toLowerCase().includes(q) && ids.includes(t.id));
+  }
+  function card(t) {
+    const b = el("button", "card");
+    const th = el("div", "th");
+    if (t.thumb && IMG[t.thumb.src]) th.innerHTML = '<img alt="" src="' + IMG[t.thumb.src] + '">';
+    b.appendChild(th);
+    const n = (t.steps || []).length;
+    const tx = el("div");
+    tx.innerHTML = "<h3>" + esc(t.title) + "</h3><p>" + esc(t.sub) + '</p><div class="meta"><span class="reach ' + t.reach + '">' + t.reach + "</span>" +
+      (n ? "<span>" + n + "단계</span>" : "<span>눌러 보기</span>") + "<span>· " + t.screens.join(" → ") + "</span>" +
+      (t.warn ? '<span class="warnflag">· 모두에게 곧바로</span>' : "") + "</div>";
+    b.appendChild(tx);
+    b.onclick = () => open(t.id);
+    return b;
+  }
+  function home(q = "") {
+    view.innerHTML = "";
+    view.scrollTop = 0;
+    const s = el("label", "search");
+    s.innerHTML = ICON.search + '<input placeholder="무엇을 하고 싶으세요? (예: 확정, 가용, 생산계획)" aria-label="과업 찾기">';
+    view.appendChild(s);
+    const inp = $("input", s);
+    inp.value = q;
+    inp.oninput = () => list(inp.value);
+    // 지금 상태로 시작점 고르기
+    const p = el("div", "pick");
+    p.innerHTML = '<div class="q">사이드바 시나리오 칸의 배지가 지금 무엇인가요?</div><div class="chips"></div><div class="ans"><p></p><button class="go">따라하기</button></div>';
+    DATA.statePick.forEach((sp) => {
+      const c = el("button", "badge " + sp.tone, esc(sp.badge));
+      c.onclick = () => {
+        p.querySelectorAll(".badge").forEach((x) => x.classList.toggle("sel", x === c));
+        const a = $(".ans", p);
+        a.classList.add("on");
+        $("p", a).textContent = sp.say;
+        $("button", a).textContent = "→ " + TASK[sp.go].title;
+        $("button", a).onclick = () => open(sp.go);
+      };
+      $(".chips", p).appendChild(c);
+    });
+    view.appendChild(p);
+    const box = el("div");
+    view.appendChild(box);
+    function list(qq) {
+      box.innerHTML = "";
+      DATA.groups.forEach(([gid, name, sub]) => {
+        const ts = DATA.tasks.filter((t) => t.group === gid && matches(t, qq));
+        if (!ts.length) return;
+        box.appendChild(el("div", "sec", "<h2>" + esc(name) + "</h2><span>" + esc(sub) + "</span>"));
+        ts.forEach((t) => box.appendChild(card(t)));
+      });
+      if (!qq) {
+        box.appendChild(el("div", "sec", "<h2>먼저 알아 두기</h2><span>막히는 곳의 대부분이 여기서 풀립니다</span>"));
+        DATA.concepts.forEach((c, i) => {
+          const b = el("button", "card concept");
+          b.innerHTML = '<div class="ic">' + (i ? ICON.eye : ICON.layers) + "</div><div><h3>" + esc(c.title) + "</h3><p>" + esc(c.sub) + "</p></div>";
+          b.onclick = () => open(c.id);
+          box.appendChild(b);
+        });
+      }
+      if (!box.children.length) box.appendChild(el("p", null, "찾는 과업이 없어요. 다른 말로 찾아 보세요."));
+    }
+    list(q);
+    demo(DATA.homeShot, [], DATA.page);
+    location.hash = "";
+  }
+
+  // ---------------------------------------------------------- 과업
+  let cur = null, k = 0;
+  function open(id) {
+    if (CONC[id]) return concept(CONC[id]);
+    cur = TASK[id];
+    k = 0;
+    if (cur.kind === "map") return mapView(cur);
+    render();
+  }
+  function headOf(t) {
+    const h = el("div", "t-head");
+    h.innerHTML = '<button class="back">← 목록</button><h1>' + esc(t.title) + '</h1><div class="row"><span class="reach ' + t.reach + '">끝나면 · ' + t.reach + '</span><span class="route">' +
+      t.screens.map((s) => "<b>" + esc(s) + "</b>").join("<i>→</i>") + "</span></div>" +
+      (t.warn ? '<div class="warnbox">' + ICON.warn + "<span>" + esc(t.warn) + "</span></div>" : "");
+    $(".back", h).onclick = () => home();
+    return h;
+  }
+  function render() {
+    const t = cur, st = t.steps[k], n = t.steps.length;
+    view.innerHTML = "";
+    view.appendChild(headOf(t));
+    const dots = el("div", "dots");
+    t.steps.forEach((s, i) => {
+      const d = el("button", i === k ? "on" : i < k ? "done" : "", String(i + 1));
+      d.title = s.title;
+      d.onclick = () => { k = i; render(); };
+      dots.appendChild(d);
+    });
+    view.appendChild(dots);
+    const c = el("div", "step");
+    const hd = el("div", "hd");
+    hd.innerHTML = '<div class="tx"><div class="k">' + (k + 1) + " / " + n + "</div><h2>" + esc(st.title) + '</h2><div class="where">' +
+      st.where.map((w) => "<span>" + esc(w) + "</span>").join("›") + "</div></div>";
+    const mm = miniMap(st);
+    if (mm) hd.appendChild(mm);
+    c.appendChild(hd);
+    c.appendChild(figure(st));
+    const bd = el("div", "bd");
+    bd.innerHTML = '<p class="act">' + rich(st.do) + "</p>" +
+      (st.ok ? '<div class="ok">' + ICON.ok + "<span>" + rich(st.ok) + "</span></div>" : "") +
+      (st.stuck ? '<details class="stuck"><summary>막히면</summary><ul>' + st.stuck.map((x) => "<li>" + rich(x) + "</li>").join("") + "</ul></details>" : "");
+    c.appendChild(bd);
+    view.appendChild(c);
+    if (k === n - 1) {
+      const e = el("div", "end");
+      e.innerHTML = "<h3>끝 · 무엇이 바뀌었나</h3><p>" + rich(t.end) + "</p>";
+      (t.next || []).forEach((id) => e.appendChild(card(TASK[id])));
+      view.appendChild(e);
+    }
+    const nav = el("div", "bnav");
+    nav.innerHTML = '<button class="prev">이전</button><button class="pri">' + (k < n - 1 ? "했어요 · 다음 →" : "목록으로") + "</button>";
+    $(".prev", nav).disabled = k === 0;
+    $(".prev", nav).onclick = () => { k--; render(); };
+    $(".pri", nav).onclick = () => { if (k < n - 1) { k++; render(); } else home(); };
+    view.appendChild(nav);
+    view.scrollTop = 0;
+    demo(st.full, st.fullBoxes, st.where[st.where.length - 1]);
+    location.hash = t.id + ":" + (k + 1);
+  }
+
+  // ---------------------------------------------------------- 「이 숫자는 어디서 오나」
+  function mapView(t) {
+    const m = t.map;
+    view.innerHTML = "";
+    view.appendChild(headOf(t));
+    view.appendChild(el("p", null, "<b>LOB 의 줄 이름을 눌러 보세요.</b> 그 숫자가 어디서 오는지, 바꾸려면 어디로 가는지 알려 줍니다."));
+    const f = el("div", "mapfig");
+    const sh = shot(m.crop, []);
+    const info = el("div", "spotinfo");
+    info.innerHTML = '<p style="margin:0;color:var(--muted)">번호를 누르면 여기에 설명이 나옵니다.</p>';
+    (m.spots || []).forEach((sp, i) => {
+      if (!sp.box) return;
+      const b = el("button", "spot");
+      b.style.cssText = "left:" + sp.box.x + "%;top:" + sp.box.y + "%;width:" + sp.box.w + "%;height:" + sp.box.h + "%";
+      b.appendChild(el("span", "n", String(i + 1)));
+      b.onclick = () => {
+        sh.querySelectorAll(".spot").forEach((x) => x.classList.toggle("sel", x === b));
+        info.innerHTML = "<h3>" + (i + 1) + ". " + esc(sp.name) + "</h3><p>" + esc(sp.what) + '</p><div class="from">오는 곳 ' +
+          sp.from.map((x) => "<b>" + esc(x) + "</b>").join("") + '</div><button class="go">→ ' + esc(TASK[sp.go].title) + "</button>";
+        $(".go", info).onclick = () => open(sp.go);
+      };
+      sh.appendChild(b);
+    });
+    f.appendChild(sh);
+    view.appendChild(f);
+    view.appendChild(info);
+    if (m.color) {
+      const c = el("div", "spotinfo");
+      c.innerHTML = "<h3>칸 색(확보 · 경고 · 부족)은?</h3><p>" + esc(m.color.what) + ' — HOME › Preference 의 공용 설정입니다.</p><button class="go">→ ' + esc(TASK[m.color.go].title) + "</button>";
+      $(".go", c).onclick = () => open(m.color.go);
+      view.appendChild(c);
+    }
+    demo(m.full, m.fullBoxes, "Capa LOB Summary");
+    location.hash = t.id;
+  }
+
+  // ---------------------------------------------------------- 개념 카드
+  function concept(c) {
+    view.innerHTML = "";
+    const h = el("div", "t-head");
+    h.innerHTML = '<button class="back">← 목록</button><h1>' + esc(c.title) + '</h1><div class="row">' + esc(c.sub) + "</div>";
+    $(".back", h).onclick = () => home();
+    view.appendChild(h);
+    if (c.rows) {
+      const L = el("div", "ladder");
+      c.rows.forEach((r, i) => {
+        if (i === 3) L.appendChild(el("div", "branch", "따로 가는 길 — 리비전과 상관없음"));
+        const g = el("div", "rung");
+        const last = i >= 2;                                   // 공식 다음과 따로 가는 두 줄은 잇지 않는다
+        g.innerHTML = '<div class="lv c-' + r.tone + (last ? " last" : "") + '"><b>' + esc(r.reach) + "</b><i></i></div>" +
+          '<div class="box2"><div class="l1"><span class="btn">' + esc(r.btn) + "</span>" + (r.badge ? '<span class="badge ' + r.tone + '">' + esc(r.badge) + "</span>" : "") +
+          '</div><div class="l2"><b style="color:var(--text)">' + esc(r.who) + "</b> · " + esc(r.note) + "</div></div>";
+        L.appendChild(g);
+      });
+      view.appendChild(L);
+      view.appendChild(el("p", null, "<b>「확정」은 두 번 누릅니다.</b> 적용 → 리비전 저장 → 공식버전 지정. 사이드바 배지가 차례로 " +
+        rich("{{미저장 변경}} → {{저장된 리비전}} → {{공식 vN}}") + " 으로 바뀝니다."));
+      demo(DATA.homeShot, [], DATA.page);
+    }
+    if (c.spots) {
+      const G = el("div", "grid4");
+      c.spots.forEach((sp, i) => {
+        const cell = el("div", "cell");
+        if (sp.crop) cell.appendChild(shot(sp.crop, sp.boxes));
+        else cell.appendChild(el("div", "fig", '<div class="ph">촬영 예정</div>'));
+        cell.appendChild(el("div", "cap", "<b>" + (i + 1) + ". " + esc(sp.name) + "</b><span>" + rich(sp.say) + "</span>"));
+        G.appendChild(cell);
+      });
+      view.appendChild(G);
+      demo(c.spots[0] && c.spots[0].full, c.spots[0] && c.spots[0].fullBoxes, "기준 정보");
+    }
+    location.hash = c.id;
+  }
+
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { if ($("#lb").classList.contains("on")) $("#lb").classList.remove("on"); else home(); }
+    if (!cur || !cur.steps || !view.querySelector(".step") || e.target.tagName === "INPUT") return;
+    if (e.key === "ArrowRight" && k < cur.steps.length - 1) { k++; render(); }
+    if (e.key === "ArrowLeft" && k > 0) { k--; render(); }
+  });
+  // 주소 #과업:단계 로 바로 연다(앱의 페이지 버튼이 「이 화면에서 하는 일」 이나 특정 과업으로 열 때 쓴다)
+  const m = /^#([a-z_]+)(?::(\d+))?$/.exec(location.hash);
+  if (m && (TASK[m[1]] || CONC[m[1]])) { open(m[1]); if (m[2] && cur && cur.steps) { k = Math.min(+m[2] - 1, cur.steps.length - 1); render(); } }
+  else home();
+})();
+</script>
+</body>
+</html>

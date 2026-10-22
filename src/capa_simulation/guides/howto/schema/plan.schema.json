@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "따라하기 가이드 촬영 계획(plan.json)",
+  "description": "상태 하나 = 앞 상태(from)의 화면에서 동작(ops)을 차례로 해서 닿는 화면 한 장과, 그 화면에서 잴 표적(targets). 동작 · 표적은 생성기 코드에 있는 정해진 낱말만 쓴다 — 사내는 새 낱말을 만들지 못한다. states 는 실행 차례다: 앞 상태가 바로 앞에 실행된 상태가 아니면 생성기는 새 세션을 열고 from 사슬을 뿌리부터 다시 돈다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page", "version", "viewport", "mask", "params", "states"],
+  "properties": {
+    "page": {"type": "string", "minLength": 1},
+    "version": {"$ref": "#/$defs/version"},
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "scale"],
+      "description": "촬영 창(CSS px)과 배율",
+      "properties": {
+        "width": {"type": "integer", "minimum": 800, "maximum": 3840},
+        "height": {"type": "integer", "minimum": 600, "maximum": 2160},
+        "scale": {"type": "integer", "minimum": 1, "maximum": 3}
+      }
+    },
+    "mask": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/target_word"},
+      "description": "찍기 전마다 가릴 것(담당 조직 · 문의처처럼 그림에 남기지 않을 글)"
+    },
+    "params": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {"$ref": "#/$defs/param_decl"}
+    },
+    "states": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/state"}}
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*@[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "뼈대 판 — 「가이드 이름@원고 날짜」. 원고 · 계획 · 사내 덮어쓰기 · 사내 매개값이 같은 값을 적는다"
+    },
+    "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "state_id": {"type": "string", "pattern": "^[0-9]{2}[a-z]?_[a-z0-9_]+$"},
+    "text": {"type": "string", "minLength": 1},
+    "param_decl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "default", "about"],
+      "description": "매개값 선언 — 형은 글자(text) · 정수(int) · 고르기(choice)뿐이다. 식이나 코드는 받지 않는다",
+      "properties": {
+        "type": {"enum": ["text", "int", "choice"]},
+        "default": {"type": ["string", "integer"]},
+        "about": {"type": "string", "minLength": 1},
+        "choices": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type": {"const": "int"}}},
+          "then": {"properties": {"default": {"type": "integer"}}, "not": {"required": ["choices"]}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "text"}}},
+          "then": {"properties": {"default": {"type": "string"}}, "not": {"required": ["choices"]}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "choice"}}},
+          "then": {"required": ["choices"], "properties": {"default": {"type": "string"}}}
+        }
+      ]
+    },
+    "param_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["param", "default"],
+      "description": "매개값 자리 — 이름은 params 에 선언돼 있어야 하고 default 는 그 선언과 같다. 사내는 review/guide/params.json 으로 바꾼다",
+      "properties": {"param": {"$ref": "#/$defs/name"}, "default": {"type": ["string", "integer"]}}
+    },
+    "value": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "boolean"}, {"$ref": "#/$defs/param_ref"}]},
+    "int_value": {"oneOf": [{"type": "integer"}, {"$ref": "#/$defs/param_ref"}]},
+    "target_word": {
+      "type": "string",
+      "pattern": "^(?:key:[A-Za-z0-9_-]+|(?:button|tab|nav|text):\\S.*|named:(?:SIDEBAR_SCEN|SIDEBAR_BADGE|SIDEBAR_PENDING|SIDEBAR_FOOTER|HEADER_BAND|PAGE_TITLE|DIALOG|DIALOG_SECTIONS|GRID|LAST_GRID|EDIT_CELL|EDIT_ROW|LOB_CHART|LOB_BN_BARS|KEY_PROCESS_GRID|DETAIL_BN|BN_CELL|PROC_HEAD|PROC_MONTH_CANVAS|PF_TILES)|named:(?:MAIN_LINK|MAIN_ALERT|HEAD_BOX|WIDGET|FORM_OF|EXPANDER|KEY_BUTTON|GRID_COLUMN|LOB_LABEL|LOB_ROW)\\(.+\\))$",
+      "description": "표적 낱말. 글자로 찾는 것: key:<st-key 이름> · button:<글자> · tab:<글자> · nav:<사이드바 메뉴 글자> · text:<글자>. 코드로 찾는 것: named:<이름> 또는 named:<이름>(<글자>) — 이름 목록은 이 pattern 이 정본이고 생성기가 같은 목록을 구현한다. 팝업이 열려 있으면 글자로 찾는 표적은 팝업 안부터 찾는다."
+    },
+    "target": {
+      "oneOf": [
+        {"$ref": "#/$defs/target_word"},
+        {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/target_word"}, "description": "여러 표적의 합집합 사각형"}
+      ]
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "page", "writes", "ops", "targets"],
+      "properties": {
+        "id": {"$ref": "#/$defs/state_id"},
+        "page": {"$ref": "#/$defs/text"},
+        "note": {"$ref": "#/$defs/text"},
+        "from": {"$ref": "#/$defs/state_id", "description": "이 상태의 동작이 출발하는 화면(앞 상태). 뿌리 상태에는 없다"},
+        "writes": {
+          "enum": ["none", "session", "db", "shared"],
+          "description": "이 상태의 동작이 쓰는 가장 넓은 자리 — none 보기만 · session 지금 창만(적용 포함, DB 쓰기 없음) · db 리비전이나 공식 · shared 공용 프로필. 생성기는 from 사슬 전체의 등급으로 찍을지를 가른다"
+        },
+        "ops": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/op"}},
+        "targets": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "#/$defs/name"},
+          "additionalProperties": {"$ref": "#/$defs/target"}
+        }
+      }
+    },
+    "op": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "입장 화면을 통과해 HOME 에 선다(뿌리 상태만)",
+          "required": ["op"],
+          "properties": {"op": {"const": "enter_app"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "사이드바 메뉴 글자를 누른다(접힌 묶음이면 먼저 편다)",
+          "required": ["op", "text"],
+          "properties": {"op": {"const": "nav"}, "text": {"$ref": "#/$defs/text"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "탭 글자를 누르고 고른 상태가 될 때까지 기다린다",
+          "required": ["op", "text"],
+          "properties": {
+            "op": {"const": "tab"},
+            "text": {"$ref": "#/$defs/text"},
+            "scope": {"enum": ["main", "sidebar", "dialog"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "표적을 화면 안으로 굴려 누른다(접기 상자면 머리를). optional 이면 없을 때 건너뛴다",
+          "required": ["op", "target"],
+          "properties": {"op": {"const": "click"}, "target": {"$ref": "#/$defs/target"}, "optional": {"type": "boolean"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "라벨이 붙은 입력칸에 적고 칸에서 빠진다(고르기 칸이면 적은 글의 첫 일치를 고른다). clear 면 먼저 비운다",
+          "required": ["op", "label", "value"],
+          "properties": {
+            "op": {"const": "fill"},
+            "label": {"$ref": "#/$defs/text"},
+            "value": {"$ref": "#/$defs/value"},
+            "clear": {"type": "boolean"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "키 하나를 누른다",
+          "required": ["op", "key"],
+          "properties": {"op": {"const": "key"}, "key": {"enum": ["Enter", "Escape", "Tab"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "본문을 맨 위로(to) 또는 표적이 block 자리에 오게 굴리고 offset(px)만큼 더 민다",
+          "required": ["op"],
+          "properties": {
+            "op": {"const": "scroll"},
+            "to": {"const": "top"},
+            "target": {"$ref": "#/$defs/target"},
+            "block": {"enum": ["start", "center", "end"]},
+            "offset": {"type": "integer"}
+          },
+          "oneOf": [
+            {
+              "required": ["to"],
+              "not": {"anyOf": [{"required": ["target"]}, {"required": ["block"]}, {"required": ["offset"]}]}
+            },
+            {"required": ["target"], "not": {"required": ["to"]}}
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "표적(사이드바 조건 칸 등)의 단추를 눌러 팝업을 열고, section 이 있으면 그 구획을 고른다",
+          "required": ["op", "target"],
+          "properties": {"op": {"const": "open_popup"}, "target": {"$ref": "#/$defs/target"}, "section": {"$ref": "#/$defs/text"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "격자(grid)에서 row(row_column 열의 글자, 없으면 아무 열) 행 · column 열 칸을 delta 만큼 늘리거나 value 로 바꾼다(체크 칸은 true 로 누른다). 고친 칸은 EDIT_CELL · EDIT_ROW 로 잰다",
+          "required": ["op", "grid", "row", "column"],
+          "properties": {
+            "op": {"const": "grid_edit"},
+            "grid": {"$ref": "#/$defs/target"},
+            "row": {"$ref": "#/$defs/value"},
+            "row_column": {"$ref": "#/$defs/text"},
+            "column": {"$ref": "#/$defs/value"},
+            "delta": {"$ref": "#/$defs/int_value"},
+            "value": {"$ref": "#/$defs/value"}
+          },
+          "oneOf": [{"required": ["delta"]}, {"required": ["value"]}]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "회차가 쉴 때까지 더 오래(seconds 까지) 기다린다. 모든 동작 뒤의 기본 기다림은 생성기가 한다",
+          "required": ["op"],
+          "properties": {"op": {"const": "wait_idle"}, "seconds": {"type": "integer", "minimum": 1, "maximum": 600}}
+        }
+      ]
+    }
+  }
+}

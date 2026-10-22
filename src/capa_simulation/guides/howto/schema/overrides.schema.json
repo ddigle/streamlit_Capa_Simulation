@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "따라하기 가이드 사내 덮어쓰기(review/guide/overrides.json)",
+  "description": "사내가 원고의 글만 고친다. 조립 차례: 원고 → text 바꿈 → add 덧붙임 → hide 감춤. 상태 · 표적 · 번호 · kind · 순서 · ID 는 받지 않고, HTML 꼬리표 · javascript: 도 받지 않는다. 주소가 원고에 있는지(고아) · 뼈대 판이 맞는지는 점검기가 원고와 대조해 본다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skeleton"],
+  "properties": {
+    "skeleton": {"$ref": "#/$defs/version"},
+    "text": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/text_address"},
+      "additionalProperties": {"$ref": "#/$defs/plain"}
+    },
+    "add": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stuck_list"},
+      "additionalProperties": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/plain"}}
+    },
+    "hide": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/stuck_item"}}
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*@[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "뼈대 판 — 「가이드 이름@원고 날짜」. 원고 · 계획 · 사내 덮어쓰기 · 사내 매개값이 같은 값을 적는다"
+    },
+    "plain": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "not": {"anyOf": [{"pattern": "<\\s*[A-Za-z/!?]"}, {"pattern": "[jJ][aA][vV][aA][sS][cC][rR][iI][pP][tT]\\s*:"}]},
+      "description": "글만 — HTML 꼬리표(<…)와 javascript: 는 받지 않는다"
+    },
+    "text_address": {
+      "type": "string",
+      "description": "과업.(title|sub|end) · 과업.단계.(title|do|ok) · 과업.단계.stuck.<번호> · 과업.spot.<표적>.what · concept.<id>.(title|sub) · concept.<id>.spot.<표적>.say",
+      "pattern": "^(?:[a-z][a-z0-9_]*\\.(?:title|sub|end)|[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.(?:title|do|ok)|[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.stuck\\.[0-9]+|[a-z][a-z0-9_]*\\.spot\\.[a-z][a-z0-9_]*\\.what|concept\\.[a-z][a-z0-9_]*\\.(?:title|sub)|concept\\.[a-z][a-z0-9_]*\\.spot\\.[a-z][a-z0-9_]*\\.say)$"
+    },
+    "stuck_list": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.stuck$",
+      "description": "과업.단계.stuck — 「막히면」 목록 끝에 덧붙인다"
+    },
+    "stuck_item": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.stuck\\.[0-9]+$",
+      "description": "과업.단계.stuck.<번호> — 원고의 그 「막히면」 한 줄을 감춘다"
+    }
+  }
+}

@@ -1,0 +1,527 @@
+{
+  "page": "Capa LOB Summary",
+  "version": "lob@2026-10-22",
+  "groups": [
+    ["here", "이 화면에서", "HOME 안에서 끝나는 일"],
+    ["change", "LOB 숫자를 바꾸려면", "다른 화면에서 값을 고쳐 HOME 에 반영"],
+    ["keep", "바꾼 값을 남기려면", "리비전 저장 → 공식버전 지정"]
+  ],
+  "state_pick": [
+    {"badge": "미저장 변경", "tone": "pending", "say": "고친 값이 지금 창에만 있어요. 창을 닫으면 사라집니다.", "go": "save_revision"},
+    {"badge": "저장된 리비전", "tone": "saved", "say": "리비전으로 남았어요. 모두가 기본으로 보게 하려면 공식버전으로 지정합니다.", "go": "set_official"},
+    {
+      "badge": "공식 vN",
+      "tone": "official",
+      "say": "지금 보는 것이 최신 공식버전이에요(옛 공식버전을 불러오면 「저장된 리비전」으로 보여요). 값을 바꾸려면 아래 「LOB 숫자를 바꾸려면」에서 시작합니다.",
+      "go": "lob_map"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "lob_map",
+      "group": "here",
+      "kind": "map",
+      "title": "LOB 숫자가 어디서 오는지 보기",
+      "sub": "숫자를 누르면 그 값을 고치는 곳으로 안내합니다",
+      "reach": "보기",
+      "screens": ["HOME"],
+      "thumb": {"state": "01_home_main", "targets": ["lob_chart"]},
+      "map": {
+        "state": "01_home_main",
+        "frame": ["lob_density", "lob_wafer_plan", "lob_wafer_capa", "lob_bn_bars"],
+        "spots": [
+          {
+            "t": "lob_density",
+            "row": true,
+            "name": "Density (억Gb)",
+            "what": "생산 계획(PKG 수량)을 Density 로 환산한 값",
+            "from": ["PKG PLAN", "수율"],
+            "go": "change_plan"
+          },
+          {
+            "t": "lob_wafer_plan",
+            "row": true,
+            "name": "Wafer 계획",
+            "what": "생산 계획을 Wafer 로 환산한 값",
+            "from": ["PKG PLAN", "수율"],
+            "go": "change_plan"
+          },
+          {
+            "t": "lob_wafer_capa",
+            "row": true,
+            "name": "Wafer Capa",
+            "what": "Wafer 계획 × 그 달 B/N 공정의 확보율. 확보율 = 가용대수 ÷ 소요대수이고, 가용대수는 기준 정보 › 설비대수 › 가용 에서만 옵니다",
+            "from": ["Wafer 계획", "가용대수", "UPEH · 효율 · 여유율 · 일수", "공정 필터"],
+            "go": "change_avail"
+          },
+          {
+            "t": "lob_bn_bars",
+            "name": "B/N 공정 막대 색",
+            "what": "그 달 가장 모자란 공정(B/N)의 확보율 색 — 확보는 회색, 경고는 주황, 부족은 빨강",
+            "from": ["가용대수 ÷ 소요대수", "판정 기준(%)"],
+            "go": "change_avail"
+          }
+        ],
+        "color": {"what": "B/N 막대 · 히트맵의 확보 · 경고 · 부족 색을 가르는 기준(%)", "go": "criteria"}
+      }
+    },
+    {
+      "id": "bn_drill",
+      "group": "here",
+      "title": "B/N 공정을 깊이 보기",
+      "sub": "칸을 누르면 그 공정의 산출 근거와 부족한 달이 열립니다",
+      "reach": "보기",
+      "screens": ["HOME", "공정 Capa 상세"],
+      "thumb": {"state": "02_home_lower", "targets": ["detail_bn"]},
+      "steps": [
+        {
+          "id": "pick_cell",
+          "title": "부족한 공정 칸을 누릅니다",
+          "where": ["HOME", "Main", "상세 B/N 공정"],
+          "state": "02_home_lower",
+          "focus": [{"t": "bn_cell", "n": 1}, {"t": "detail_bn", "kind": "see", "frame": false}],
+          "do": "「상세 B/N 공정」(또는 「주요공정」 히트맵)에서 보고 싶은 칸을 누릅니다. 빨간 칸이 부족한 달이에요.",
+          "stuck": ["과거 실적 달 · 연간 Total 칸 → 눌러도 옮겨 가지 않아요. 앞으로의 월 칸을 누르세요."]
+        },
+        {
+          "id": "read_detail",
+          "title": "산출 근거와 부족한 달을 봅니다",
+          "where": ["실행 관리", "공정 Capa 상세"],
+          "state": "03_process_detail",
+          "focus": [{"t": "proc_card", "n": 1, "kind": "see"}, {"t": "month_canvas", "n": 2, "kind": "see"}],
+          "do": "공정 이름과 달별 칸을 봅니다. 빨간(부족) 칸이 모자라는 달입니다.",
+          "ok": "이 화면은 읽기 전용입니다. 값을 고치는 곳은 ((기준 정보)) 예요."
+        },
+        {
+          "id": "back_home",
+          "title": "HOME 으로 돌아갑니다",
+          "where": ["공정 Capa 상세"],
+          "state": "03_process_detail",
+          "focus": [{"t": "back_home", "n": 1}],
+          "do": "[[HOME]] 을 누르면 보던 HOME 으로 돌아갑니다."
+        }
+      ],
+      "end": "아무것도 바뀌지 않았습니다(보기만 했어요).",
+      "next": ["change_avail"]
+    },
+    {
+      "id": "proc_filter",
+      "group": "here",
+      "title": "B/N 판정에 넣을 공정 좁히기",
+      "sub": "공정 필터로 B/N 을 찾을 공정만 남깁니다",
+      "reach": "적용",
+      "screens": ["HOME"],
+      "thumb": {"state": "04_procfilter_open", "targets": ["pf_tiles"]},
+      "steps": [
+        {
+          "id": "open",
+          "title": "「공정 필터」 칸을 엽니다",
+          "where": ["사이드바", "공정 필터"],
+          "state": "01_home_main",
+          "focus": [{"t": "sidebar_procfilter", "n": 1}],
+          "do": "사이드바의 [[공정 필터]] 칸을 누릅니다."
+        },
+        {
+          "id": "toggle",
+          "title": "공정을 끄고 켭니다",
+          "where": ["공정 필터"],
+          "state": "04_procfilter_open",
+          "focus": [{"t": "pf_tiles", "n": 1}, {"t": "pf_all_on", "n": 2}],
+          "do": "타일을 눌러 공정을 끄거나 켭니다. [[전체 ON]] 으로 처음부터 다시 고를 수 있어요."
+        },
+        {
+          "id": "apply",
+          "title": "「선택 공정 적용」을 누릅니다",
+          "where": ["공정 필터"],
+          "state": "04_procfilter_open",
+          "focus": [{"t": "pf_apply", "n": 1}],
+          "do": "[[선택 공정 적용]] 을 눌러야 HOME 의 B/N 이 다시 계산됩니다.",
+          "ok": "사이드바 칸에 「n / N 공정」(모두 켜면 「전체 N공정」)이 보입니다.",
+          "stuck": ["창을 그냥 닫았다 → 고른 것이 버려져요. 다시 열고 적용을 누르세요.", "리비전을 저장하면 이 공정 선택도 함께 담깁니다."]
+        }
+      ],
+      "end": "지금 창의 HOME 판정만 바뀝니다. 사이드바 배지는 그대로지만, 리비전을 저장하면 이 공정 선택도 함께 남습니다.",
+      "next": ["save_revision"]
+    },
+    {
+      "id": "gap",
+      "group": "here",
+      "title": "이전 리비전과 비교하기(GAP)",
+      "warn": "고른 비교 대상은 모든 사람에게 저장됩니다",
+      "sub": "비교할 리비전을 고르고 GAP 을 켜면 Density · Wafer 계획 아래에 증감이 붙습니다",
+      "reach": "공용",
+      "screens": ["HOME"],
+      "thumb": {"state": "20_home_pref_compare", "targets": ["pref_compare_scenario", "pref_compare_revision"]},
+      "steps": [
+        {
+          "id": "pick_compare",
+          "title": "Preference 탭에서 비교 대상을 고릅니다",
+          "where": ["HOME", "Preference"],
+          "state": "20_home_pref_compare",
+          "focus": [{"t": "pref_compare_scenario", "n": 1}, {"t": "pref_compare_revision", "n": 2}],
+          "do": "((Preference)) 탭 → [[비교 시나리오]] · [[비교 리비전]] 을 고릅니다.",
+          "ok": "고르는 순간 저장됩니다(따로 저장 버튼이 없어요). 공용 값이라 모든 사람의 비교 대상이 함께 바뀝니다."
+        },
+        {
+          "id": "back_main",
+          "title": "Main 탭으로 돌아옵니다",
+          "where": ["HOME", "Main"],
+          "state": "01_home_main",
+          "focus": [{"t": "tab_main", "n": 1}, {"t": "sidebar_lobcond", "n": 2, "kind": "see"}],
+          "do": "((Main)) 탭을 누르면 사이드바에 「LOB 표시 조건」 카드가 나타납니다(Main 에서만 보여요)."
+        },
+        {
+          "id": "gap_on",
+          "title": "「LOB 표시 조건」에서 GAP 을 켭니다",
+          "where": ["사이드바", "LOB 표시 조건"],
+          "state": "05_lobcond_open",
+          "focus": [{"t": "lc_gap", "n": 1}],
+          "do": "접힌 [[LOB 표시 조건]] 카드를 펼쳐 [[GAP]] 을 켭니다. Density · Wafer 계획 줄 아래에 증감이 붙습니다.",
+          "stuck": [
+            "GAP 이 잠겨 있다 → 툴팁 「Preference 탭에서 비교 시나리오를 먼저 고르세요.」 — 1단계로 돌아가세요.",
+            "같은 리비전을 고르면 증감이 모두 0 으로 나와요. 과거 실적 달에는 증감이 붙지 않습니다."
+          ]
+        }
+      ],
+      "end": "비교 대상은 공용으로 저장되어 모든 사람의 비교 · 입장 화면 Summary GAP 이 함께 바뀝니다. 계산 값은 그대로예요.",
+      "next": []
+    },
+    {
+      "id": "criteria",
+      "group": "here",
+      "warn": "모든 사람의 화면이 곧바로 바뀝니다",
+      "title": "확보 · 경고 기준(%) 바꾸기",
+      "sub": "B/N 막대 · 히트맵 색과 기준선을 정하는 값 — 공용 설정입니다",
+      "reach": "공용",
+      "screens": ["HOME"],
+      "thumb": {"state": "06_home_pref", "targets": ["pref_criteria_inputs", "pref_criteria_save"]},
+      "steps": [
+        {
+          "id": "find_box",
+          "title": "Preference 탭의 「확보율 판정 기준」",
+          "where": ["HOME", "Preference"],
+          "state": "06_home_pref",
+          "focus": [{"t": "pref_criteria_box", "n": 1, "kind": "see"}],
+          "do": "((Preference)) 탭에서 「확보율 판정 기준」 상자를 찾습니다."
+        },
+        {
+          "id": "edit_save",
+          "title": "기준(%)을 고치고 저장합니다",
+          "where": ["HOME", "Preference", "확보율 판정 기준"],
+          "state": "06_home_pref",
+          "focus": [{"t": "pref_criteria_inputs", "n": 1}, {"t": "pref_criteria_save", "n": 2}],
+          "do": "[[기본 확보 기준(%)]] · [[기본 경고 기준(%)]] 을 고치고 위의 [[판정 기준 저장]] 을 누릅니다.",
+          "ok": "「확보율 판정 기준을 공용 설정으로 저장했습니다.」",
+          "stuck": ["「기본 경고 기준(X%)이 기본 확보 기준(Y%)보다 큽니다.」 → 경고 기준을 확보 기준 이하로 고치세요.", "리비전과 상관없이 모든 사람 · 모든 시나리오에 곧바로 걸립니다."]
+        }
+      ],
+      "end": "모든 사람의 B/N 색 · Static Capa · 산출 결과 · 공정 Capa 상세 · 필요 단축 일정 · 입장 화면 Summary 판정이 함께 바뀝니다.",
+      "next": []
+    },
+    {
+      "id": "change_avail",
+      "group": "change",
+      "title": "확보율에 걸리는 가용대수 바꾸기",
+      "sub": "기준 정보 › 설비대수 › 가용 을 고치면 HOME 확보율이 다시 계산됩니다",
+      "reach": "적용",
+      "screens": ["기준 정보", "HOME"],
+      "thumb": {"state": "09_ref_edited", "targets": ["ref_edited_cell", "ref_apply"]},
+      "steps": [
+        {
+          "id": "nav",
+          "title": "「Static Capa」를 펼쳐 「기준 정보」로",
+          "where": ["사이드바", "Static Capa", "기준 정보"],
+          "state": "07_sidebar_static_open",
+          "focus": [{"t": "nav_reference", "n": 1}],
+          "do": "사이드바 ((Static Capa)) 상자를 펼치고 ((기준 정보)) 를 누릅니다.",
+          "stuck": ["메뉴가 안 보인다 → 「Static Capa」 상자가 접혀 있어요. 상자 머리를 누르세요."]
+        },
+        {
+          "id": "tabs",
+          "title": "「설비대수」 → 「가용」 탭",
+          "where": ["기준 정보", "설비대수", "가용"],
+          "state": "08_ref_avail",
+          "focus": [{"t": "tab_eqp", "n": 1}, {"t": "subtab_avail", "n": 2}, {"t": "subtab_own", "kind": "no"}],
+          "do": "((설비대수)) 탭 → 안쪽 ((가용)) 탭을 고릅니다.",
+          "stuck": ["「보유」 · 「대여」를 고치면 HOME 확보율은 그대로예요. HOME 은 「가용」만 읽습니다."]
+        },
+        {
+          "id": "edit_cell",
+          "title": "표의 칸을 고칩니다",
+          "where": ["기준 정보", "설비대수", "가용"],
+          "state": "09_ref_edited",
+          "focus": [{"t": "ref_edited_cell", "n": 1}, {"t": "ref_change_notice", "n": 2, "kind": "see"}],
+          "do": "고칠 달의 칸을 두 번 눌러(또는 칸을 고르고 바로 숫자 입력) 바꾸고 Enter 를 누릅니다.",
+          "ok": "버튼 줄 오른쪽에 「변경사항 확인 N개 값 · M개 행」이 뜨고, 「설비대수」 · 「가용」 탭 이름 옆에 주황 점이 찍힙니다.",
+          "stuck": ["원하는 달이 없다 → 사이드바 「조회기간」 밖의 달은 표에 나오지 않아요."]
+        },
+        {
+          "id": "apply",
+          "title": "「변경사항 적용」을 누릅니다",
+          "where": ["기준 정보"],
+          "state": "09_ref_edited",
+          "focus": [{"t": "ref_apply", "n": 1}],
+          "do": "[[변경사항 적용]] 을 누릅니다. 이걸 안 누르고 다른 화면으로 가면 고친 값이 사라져요(같은 화면의 다른 탭은 괜찮아요).",
+          "ok": "「RQ_EQP_AVBL 편집값을 활성 시나리오에 적용했습니다. …」 — 앞머리 RQ_EQP_AVBL 은 가용대수 표의 이름입니다."
+        },
+        {
+          "id": "badge",
+          "title": "배지가 「미저장 변경」으로 바뀝니다",
+          "where": ["사이드바", "시나리오 칸"],
+          "state": "10_ref_applied",
+          "focus": [{"t": "sidebar_scenario", "n": 1, "kind": "see"}, {"t": "ref_success", "n": 2, "kind": "see"}],
+          "do": "사이드바 시나리오 칸의 배지가 {{미저장 변경}} 이면 적용된 것입니다.",
+          "ok": "HOME 으로 가면 LOB 가 이미 새 값으로 다시 계산되어 있어요."
+        }
+      ],
+      "end": "지금 창에서만 바뀌었습니다. 창을 닫으면 사라지니 리비전으로 남기세요.",
+      "next": ["save_revision"]
+    },
+    {
+      "id": "change_plan",
+      "group": "change",
+      "title": "생산계획(PKG PLAN) 바꾸기",
+      "sub": "생산 계획 › PKG PLAN 을 고치고 「PKG PLAN 변경사항 적용」을 눌러야 반영됩니다",
+      "reach": "적용",
+      "screens": ["생산 계획", "HOME"],
+      "thumb": {"state": "12_loadconv_pkgplan", "targets": ["tab_pkgplan", "pkg_apply"]},
+      "steps": [
+        {
+          "id": "nav",
+          "title": "「Static Capa」 → 「생산 계획」",
+          "where": ["사이드바", "Static Capa", "생산 계획"],
+          "state": "07_sidebar_static_open",
+          "focus": [{"t": "nav_loadconv", "n": 1}],
+          "do": "사이드바 ((Static Capa)) 상자에서 ((생산 계획)) 을 누릅니다."
+        },
+        {
+          "id": "edit_qty",
+          "title": "「PKG PLAN」 탭에서 수량을 고칩니다",
+          "where": ["생산 계획", "PKG PLAN"],
+          "state": "12_loadconv_pkgplan",
+          "focus": [{"t": "tab_pkgplan", "n": 1}, {"t": "pkg_table", "n": 2}],
+          "do": "((PKG PLAN)) 탭의 표에서 고칠 달의 수량 칸을 바꿉니다."
+        },
+        {
+          "id": "apply",
+          "title": "「PKG PLAN 변경사항 적용」을 누릅니다",
+          "where": ["생산 계획", "PKG PLAN"],
+          "state": "12_loadconv_pkgplan",
+          "focus": [{"t": "pkg_apply", "n": 1}, {"t": "pkg_paste", "kind": "see", "n": "!"}],
+          "do": "[[PKG PLAN 변경사항 적용]] 을 눌러야 환산 · 확보율 · HOME 이 다시 계산됩니다.",
+          "ok": "「PKG PLAN을 전역 계획값에 반영했습니다…」 문구가 뜹니다.",
+          "stuck": [
+            "[[Excel 붙여넣기]] 로 넣었는데 HOME 이 그대로다 → PKG PLAN 은 붙여넣기만으로는 대기 상태예요. 이 버튼을 누르세요.",
+            "수율 · 기준 정보는 붙여넣으면 바로 반영되어 PKG PLAN 과 다릅니다."
+          ]
+        }
+      ],
+      "end": "지금 창에서만 바뀌었습니다. 리비전으로 남기세요.",
+      "next": ["save_revision", "gap"]
+    },
+    {
+      "id": "save_revision",
+      "group": "keep",
+      "title": "리비전으로 남기기",
+      "sub": "적용한 값을 저장소에 남깁니다 — 누구나 불러올 수 있어요",
+      "reach": "리비전",
+      "screens": ["사이드바"],
+      "thumb": {"state": "13_scenario_popup_save", "targets": ["popup_name", "popup_memo", "popup_save"]},
+      "steps": [
+        {
+          "id": "open_popup",
+          "title": "사이드바 시나리오 칸을 누릅니다",
+          "where": ["사이드바", "시나리오 · rN"],
+          "state": "10_ref_applied",
+          "focus": [{"t": "sidebar_scenario", "n": 1}],
+          "do": "배지가 {{미저장 변경}} 인 「시나리오명 · rN」 칸을 누릅니다.",
+          "ok": "「시나리오·리비전」 창이 「새 리비전 저장」 쪽으로 열립니다.",
+          "stuck": ["배지가 안 바뀌었다(공정 필터만 바꿈) → 창이 「불러오기」 쪽으로 열려요. 위에서 「새 리비전 저장」을 누르세요."]
+        },
+        {
+          "id": "name_save",
+          "title": "이름과 메모를 적고 저장합니다",
+          "where": ["시나리오·리비전", "새 리비전 저장"],
+          "state": "13_scenario_popup_save",
+          "focus": [{"t": "popup_name", "n": 1}, {"t": "popup_memo", "n": 2}, {"t": "popup_save", "n": 3}],
+          "do": "[[새 리비전명]](꼭 적기) · [[변경 메모]](비워도 됨)를 적고 [[신규 리비전 저장]] 을 누릅니다.",
+          "stuck": ["「적용하지 않은 편집을 버리고 저장」이 보인다 → 체크하지 말고 창을 닫아 먼저 「변경사항 적용」을 누르세요."]
+        },
+        {
+          "id": "badge",
+          "title": "배지가 「저장된 리비전」이 됩니다",
+          "where": ["사이드바"],
+          "state": "14_scenario_saved",
+          "focus": [{"t": "save_success", "n": 1, "kind": "see"}, {"t": "sidebar_scenario", "n": 2, "kind": "see"}],
+          "do": "창은 저절로 닫힙니다. 사이드바 시나리오 칸 바로 아래 초록 문구와 배지 {{저장된 리비전}} 을 확인합니다.",
+          "ok": "「신규 리비전 rN을(를) 저장했습니다.」"
+        }
+      ],
+      "end": "저장소에 rN 으로 남았습니다. 다른 사람은 「불러오기」로 볼 수 있고, 모두의 기본 화면이 되려면 공식버전으로 지정합니다.",
+      "next": ["set_official"]
+    },
+    {
+      "id": "set_official",
+      "group": "keep",
+      "title": "공식버전으로 지정하기",
+      "sub": "모두가 새로 열 때 보는 기본 판을 정합니다 — 시나리오 관리 메뉴에서만 됩니다",
+      "reach": "공식",
+      "screens": ["시나리오 관리"],
+      "thumb": {"state": "16_scenmgmt_selected", "targets": ["rev_select", "btn_official"]},
+      "steps": [
+        {
+          "id": "nav",
+          "title": "사이드바 「시나리오 관리」로",
+          "where": ["사이드바", "시나리오 관리"],
+          "state": "01_home_main",
+          "focus": [{"t": "nav_scenario_mgmt", "n": 1}],
+          "do": "사이드바 ((시나리오 관리)) 를 누릅니다.",
+          "stuck": ["사이드바 시나리오 칸의 창에는 공식 지정이 없어요. 꼭 이 메뉴로 갑니다."]
+        },
+        {
+          "id": "pick_row",
+          "title": "목록에서 시나리오를 한 건 고릅니다",
+          "where": ["시나리오 관리", "목록 관리"],
+          "state": "15_scenmgmt_list",
+          "focus": [{"t": "work_mode", "n": 1, "kind": "see"}, {"t": "scen_select_col", "n": 2}],
+          "do": "((목록 관리)) 인지 보고, 표의 [[선택]] 칸을 한 건만 체크합니다.",
+          "stuck": ["「시나리오는 한 번에 한 건만 선택할 수 있습니다. 체크를 하나만 남기세요.」 → 체크를 하나만 남기세요."]
+        },
+        {
+          "id": "open_form",
+          "title": "리비전을 확인하고 「공식버전 지정」",
+          "where": ["시나리오 관리", "목록 관리"],
+          "state": "16_scenmgmt_selected",
+          "focus": [{"t": "rev_select", "n": 1}, {"t": "btn_official", "n": 2}],
+          "do": "[[리비전]] 이 방금 저장한 rN 인지 보고(활성 시나리오면 미리 골라져 있어요) [[공식버전 지정]] 을 누릅니다.",
+          "ok": "아래에 지정 폼이 펼쳐집니다(새 창이 아니에요)."
+        },
+        {
+          "id": "fill_confirm",
+          "title": "이름 · 메모를 적고 지정합니다",
+          "where": ["시나리오 관리", "공식버전 지정 폼"],
+          "state": "17_official_dialog",
+          "clip_w": 620,
+          "focus": [{"t": "off_name", "n": 1}, {"t": "off_memo", "n": 2}, {"t": "off_confirm", "n": 3}],
+          "do": "[[공식버전명]](「시나리오명 공식안」이 미리 채워져 있어요) · [[공식 지정 메모]] 를 적고 [[선택 리비전을 공식버전으로 지정]] 을 누릅니다.",
+          "stuck": ["「가상 제품이 포함된 것을 확인했습니다」가 보이면 체크해야 버튼이 열려요."]
+        },
+        {
+          "id": "check",
+          "title": "「공식 vN」이 되었는지 봅니다",
+          "where": ["시나리오 관리"],
+          "state": "18_official_done",
+          "focus": [{"t": "off_success", "n": 1, "kind": "see"}, {"t": "sidebar_scenario", "n": 2, "kind": "see"}],
+          "do": "「…Capa 계산을 확인하는 중입니다...」가 몇 초 돈 뒤, 화면 맨 위 초록 문구와 사이드바 배지 {{공식 vN}} 을 확인합니다.",
+          "ok": "「공식 vN · 공식버전명을(를) 지정했습니다.」"
+        }
+      ],
+      "end": "내 HOME 숫자는 그대로입니다(내용이 같고 표시만 공식으로 바뀝니다). 다른 사람은 새로 여는 창부터 이 판을 봅니다.",
+      "next": []
+    }
+  ],
+  "concepts": [
+    {
+      "id": "five_saves",
+      "title": "저장 버튼마다 닿는 곳이 다릅니다",
+      "sub": "적용 · 리비전 · 공식 · 공용 · 설비 — 다섯 겹",
+      "rows": [
+        {
+          "reach": "적용",
+          "btn": "변경사항 적용",
+          "who": "나만 · 지금 창",
+          "badge": "미저장 변경",
+          "tone": "pending",
+          "note": "창을 닫으면 사라짐"
+        },
+        {
+          "reach": "리비전",
+          "btn": "신규 리비전 저장",
+          "who": "불러오면 누구나",
+          "badge": "저장된 리비전",
+          "tone": "saved",
+          "note": "rN 으로 쌓임"
+        },
+        {
+          "reach": "공식",
+          "btn": "선택 리비전을 공식버전으로 지정",
+          "who": "모두 · 새로 열 때",
+          "badge": "공식 vN",
+          "tone": "official",
+          "note": "기본으로 열리는 판"
+        },
+        {
+          "reach": "공용",
+          "btn": "판정 기준 저장 · 비교 대상 선택 등",
+          "who": "모두 · 곧바로",
+          "badge": "",
+          "tone": "shared",
+          "note": "리비전과 무관 — 조심"
+        },
+        {
+          "reach": "설비",
+          "btn": "확인 후 리비전 저장 등",
+          "who": "설비 화면들",
+          "badge": "",
+          "tone": "eqp",
+          "note": "HOME 확보율에는 안 들어감"
+        }
+      ]
+    },
+    {
+      "id": "read_state",
+      "title": "지금 상태는 네 자리에서 읽습니다",
+      "sub": "고친 게 적용됐는지 · 저장됐는지",
+      "spots": [
+        {
+          "state": "10_ref_applied",
+          "t": "sidebar_scenario",
+          "name": "사이드바 시나리오 칸 배지",
+          "say": "{{미저장 변경}} → {{저장된 리비전}} → {{공식 vN}}"
+        },
+        {"state": "10_ref_applied", "t": "header_band", "name": "머리 띠", "say": "지금 시나리오 · 리비전 · 공식 상태를 한 줄로"},
+        {
+          "state": "09_ref_edited",
+          "t": "ref_tab_dot",
+          "name": "탭 이름 옆 주황 점",
+          "say": "이 탭에 적용 안 한 편집이 있음 — 적용하면 사라짐"
+        },
+        {
+          "state": "09_ref_edited",
+          "t": "sidebar_pending_notice",
+          "name": "사이드바 「적용 전 편집」 줄",
+          "say": "적용 안 한 편집이 남아 있음 — 시나리오 · 기간을 바꾸면 사라짐"
+        }
+      ]
+    }
+  ],
+  "synonyms": {
+    "확정": ["set_official", "save_revision"],
+    "결재": ["set_official"],
+    "공식": ["set_official"],
+    "모두에게": ["set_official"],
+    "저장": ["save_revision"],
+    "남기기": ["save_revision"],
+    "리비전": ["save_revision", "set_official"],
+    "가용": ["change_avail"],
+    "설비대수": ["change_avail"],
+    "기준정보": ["change_avail"],
+    "확보율": ["change_avail", "lob_map"],
+    "생산계획": ["change_plan"],
+    "계획": ["change_plan"],
+    "PKG": ["change_plan"],
+    "수량": ["change_plan"],
+    "비교": ["gap"],
+    "증감": ["gap"],
+    "필터": ["proc_filter"],
+    "공정": ["proc_filter", "bn_drill"],
+    "기준": ["criteria"],
+    "색": ["criteria", "lob_map"],
+    "B/N": ["bn_drill"],
+    "병목": ["bn_drill"],
+    "부족": ["bn_drill"],
+    "어디서": ["lob_map"],
+    "Density": ["lob_map"],
+    "Wafer": ["lob_map"]
+  }
+}

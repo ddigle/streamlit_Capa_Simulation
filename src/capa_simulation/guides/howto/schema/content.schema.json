@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "따라하기 가이드 원고(content.json)",
+  "description": "과업 · 단계 · 개념 카드 · 「이 숫자는 어디서 오나」 지도. 그림 · 번호 상자 자리는 촬영 계획(plan.json)의 상태 · 표적 이름으로만 가리킨다. 단계의 전체 ID 는 「과업.단계」다. 한 번 쓴 ID 는 바꾸지 않는다(사내 덮어쓰기가 붙는 자리). 글 안 표기: [[버튼 · 탭 · 입력칸 이름 원문]] · ((메뉴 칩)) · {{상태 배지 칩}} · 「앱 글자 인용」.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page", "version", "groups", "state_pick", "tasks", "concepts"],
+  "properties": {
+    "page": {"$ref": "#/$defs/text"},
+    "version": {"$ref": "#/$defs/version"},
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "description": "과업 묶음 — [묶음 ID, 이름, 설명]",
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "items": false,
+        "prefixItems": [{"$ref": "#/$defs/id"}, {"$ref": "#/$defs/text"}, {"$ref": "#/$defs/text"}]
+      }
+    },
+    "state_pick": {
+      "type": "array",
+      "description": "「지금 사이드바 배지는?」 — 사람이 고른 배지에 따라 권할 과업",
+      "items": {"$ref": "#/$defs/state_pick"}
+    },
+    "tasks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/task"}},
+    "concepts": {"type": "array", "items": {"$ref": "#/$defs/concept"}},
+    "synonyms": {
+      "type": "object",
+      "description": "찾기 칸의 낱말 → 과업 ID",
+      "additionalProperties": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}}
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*@[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "뼈대 판 — 「가이드 이름@원고 날짜」. 원고 · 계획 · 사내 덮어쓰기 · 사내 매개값이 같은 값을 적는다"
+    },
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "state": {"type": "string", "pattern": "^[0-9]{2}[a-z]?_[a-z0-9_]+$"},
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "not": {"anyOf": [{"pattern": "<\\s*[A-Za-z/!?]"}, {"pattern": "[jJ][aA][vV][aA][sS][cC][rR][iI][pP][tT]\\s*:"}]}
+    },
+    "maybe_text": {
+      "type": "string",
+      "not": {"anyOf": [{"pattern": "<\\s*[A-Za-z/!?]"}, {"pattern": "[jJ][aA][vV][aA][sS][cC][rR][iI][pP][tT]\\s*:"}]}
+    },
+    "reach": {"enum": ["보기", "적용", "리비전", "공식", "공용"], "description": "끝나면 어디까지 닿나"},
+    "tone": {"enum": ["pending", "saved", "official", "shared", "eqp"]},
+    "state_pick": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["badge", "tone", "say", "go"],
+      "properties": {
+        "badge": {"$ref": "#/$defs/text"},
+        "tone": {"$ref": "#/$defs/tone"},
+        "say": {"$ref": "#/$defs/text"},
+        "go": {"$ref": "#/$defs/id"}
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "group", "title", "sub", "reach", "screens", "thumb"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "group": {"$ref": "#/$defs/id"},
+        "kind": {"const": "map"},
+        "title": {"$ref": "#/$defs/text"},
+        "sub": {"$ref": "#/$defs/text"},
+        "warn": {"$ref": "#/$defs/text"},
+        "reach": {"$ref": "#/$defs/reach"},
+        "screens": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "thumb": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "targets"],
+          "properties": {
+            "state": {"$ref": "#/$defs/state"},
+            "targets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}}
+          }
+        },
+        "map": {"$ref": "#/$defs/map"},
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}},
+        "end": {"$ref": "#/$defs/text"},
+        "next": {"type": "array", "items": {"$ref": "#/$defs/id"}}
+      },
+      "if": {"required": ["kind"]},
+      "then": {"required": ["map"], "not": {"required": ["steps"]}},
+      "else": {"required": ["steps", "end", "next"], "not": {"required": ["map"]}}
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "where", "state", "focus", "do"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "title": {"$ref": "#/$defs/text"},
+        "where": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "state": {"$ref": "#/$defs/state"},
+        "focus": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/focus"}},
+        "do": {"$ref": "#/$defs/text"},
+        "ok": {"$ref": "#/$defs/text"},
+        "stuck": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "clip_w": {"type": "integer", "minimum": 300, "maximum": 1440, "description": "자르는 폭 상한(CSS px)"}
+      }
+    },
+    "focus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t"],
+      "properties": {
+        "t": {"$ref": "#/$defs/id"},
+        "n": {"oneOf": [{"type": "integer", "minimum": 1}, {"const": "!"}], "description": "번호 상자 글자(숫자 또는 「!」)"},
+        "kind": {"enum": ["do", "see", "no"], "description": "do 누르는 곳(기본) · see 보는 곳 · no 건드리지 않는 곳"},
+        "frame": {"type": "boolean", "description": "false 면 상자만 그리고 자르는 범위에서 뺀다"},
+        "from": {"$ref": "#/$defs/state", "description": "다른 상태에서 잰 자리를 빌린다"}
+      }
+    },
+    "map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "frame", "spots"],
+      "properties": {
+        "state": {"$ref": "#/$defs/state"},
+        "frame": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}},
+        "spots": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/spot"}},
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["what", "go"],
+          "properties": {"what": {"$ref": "#/$defs/text"}, "go": {"$ref": "#/$defs/id"}}
+        }
+      }
+    },
+    "spot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "name", "what", "from", "go"],
+      "properties": {
+        "t": {"$ref": "#/$defs/id"},
+        "row": {"type": "boolean"},
+        "name": {"$ref": "#/$defs/text"},
+        "what": {"$ref": "#/$defs/text"},
+        "from": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}, "description": "이 숫자를 만드는 입력(글)"},
+        "go": {"$ref": "#/$defs/id"}
+      }
+    },
+    "concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "sub"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "title": {"$ref": "#/$defs/text"},
+        "sub": {"$ref": "#/$defs/text"},
+        "rows": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/concept_row"}},
+        "spots": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/concept_spot"}}
+      },
+      "oneOf": [{"required": ["rows"]}, {"required": ["spots"]}]
+    },
+    "concept_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reach", "btn", "who", "badge", "tone", "note"],
+      "properties": {
+        "reach": {"$ref": "#/$defs/text"},
+        "btn": {"$ref": "#/$defs/text"},
+        "who": {"$ref": "#/$defs/text"},
+        "badge": {"$ref": "#/$defs/maybe_text"},
+        "tone": {"$ref": "#/$defs/tone"},
+        "note": {"$ref": "#/$defs/text"}
+      }
+    },
+    "concept_spot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "t", "name", "say"],
+      "properties": {
+        "state": {"$ref": "#/$defs/state"},
+        "t": {"$ref": "#/$defs/id"},
+        "name": {"$ref": "#/$defs/text"},
+        "say": {"$ref": "#/$defs/text"}
+      }
+    }
+  }
+}
