@@ -15,14 +15,14 @@
 수치는 이 PC 의 합성 표본 기준이고 실데이터 크기에 따라 달라진다. 절대값이 아니라
 **단계 사이의 차이**를 본다.
 
-**실 DB 사본(`--data-dir <사본 폴더>`).** 사내 런북 6-3 이 실 DB 사본으로 HOME 을 잴 때
-쓴다. 합성 표본을 만들지 않고 그 폴더의 두 DB 를 그대로 쓰며, 비교·선행·실행 프로필이 없어
-잠긴 토글은 `skipped` 로 적고 건너뛴다. 저장소의 `data/`(사용자 앱의 운영 DB)는 받지 않는다 —
-앱이 마이그레이션을 걸 수 있어 사본에만 돌린다. 출력에는 사본의 이름·경로·행 수가 없다.
-HOME 이 멈추면 그 문구(공정·제품 이름, DB 오류면 사본 경로가 실린다)도 찍지 않는다 — 단계·예외
-종류·문구에 든 계약 표 이름(`RQ_*`)만 한 줄로 찍고 1 로 끝난다(`inspect_revision_calculations.py`
-와 같은 규칙). 잡히지 않은 예외는 Streamlit 이 자기 로거로 문구를 표준 오류에 찍으므로 사본을
-재는 동안은 로그를 끈다. 출력은 리뷰 문서를 거쳐 사외로 나간다.
+**실 DB 사본(`--data-dir <사본 폴더>`).** 사내 런북 6-3 이 실 DB 사본으로 HOME 을 잴 때 쓴다. 합성
+표본을 만들지 않고 그 폴더의 두 DB 를 그대로 쓰며, 비교·선행·실행 프로필이 없어 잠긴 토글은
+`skipped` 로 적고 건너뛴다. 저장소의 `data/`(사용자 앱의 운영 DB)와 저장소 안은 받지 않는다 — 앱이
+마이그레이션을 걸 수 있어 저장소 밖 사본에만 돌린다. 출력에는 사본의 이름·경로·행 수가 없다. HOME 이
+멈추면 그 문구(공정·제품 이름, DB 오류면 사본 경로가 실린다)도 찍지 않는다 — 단계·예외 종류·문구에
+든 계약 표 이름(`RQ_*`)만 한 줄로 찍고 1 로 끝난다(`inspect_revision_calculations.py` 와 같은 규칙).
+잡히지 않은 예외는 Streamlit 이 자기 로거로 문구를 표준 오류에 찍으므로 사본을 재는 동안은 로그를
+끈다. 출력은 리뷰 문서를 거쳐 사외로 나간다.
 
 **출력은 UTF-8 이다.** 사내 Windows(한국어 로캘)의 파이프 출력은 cp949 라 「—」 같은 기호에서
 멈추므로 표준 출력·오류를 UTF-8 로 바꾼다. PowerShell 5.1 의 `>` 는 그 출력을 콘솔 코드페이지로
@@ -299,13 +299,17 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def copy_folder_problem(data_dir: Path) -> str | None:
     """`--data-dir` 로 쓸 수 없는 까닭. 쓸 수 있으면 None.
 
-    저장소의 `data/` 는 사용자 앱이 쓰는 운영 DB 다 — 벤치마크는 마이그레이션을 걸고 세션
-    상태를 만들므로 사본에만 돌린다. 그 아래 폴더도 받지 않는다(`inspect_revision_calculations.py`
-    의 `--database` 거절과 같은 꼴 — 운영 DB 옆에 둔 사본은 경로 한 글자 틀림이 곧 운영 DB 다).
+    저장소의 `data/` 는 사용자 앱이 쓰는 운영 DB 다 — 벤치마크는 마이그레이션을 걸고 세션 상태를
+    만들므로 사본에만 돌린다. 그 아래 폴더와 git 저장소 안도 받지 않는다
+    (`inspect_revision_calculations.py` 의 `--database` 거절과 같은 판정 —
+    `settings.is_operational_database_place`. 운영 DB 옆에 둔 사본은 경로 한 글자 틀림이 곧 운영 DB
+    다).
     """
+    from capa_simulation.settings import is_operational_database_place
+
     folder = data_dir.expanduser().resolve()
-    if folder.is_relative_to((PROJECT_ROOT / "data").resolve()):
-        return "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
+    if is_operational_database_place(folder, (PROJECT_ROOT / "data" / "capa_simulation.duckdb",)):
+        return "저장소 안(data/ 포함)은 쓰지 않는다 — 저장소 밖 사본 폴더를 준다(런북 6-3)"
     if not (folder / "capa_simulation.duckdb").is_file():
         return "그 폴더에 capa_simulation.duckdb 가 없다"
     return None

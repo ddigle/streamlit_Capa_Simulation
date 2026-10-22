@@ -22,6 +22,7 @@ import sys
 import types
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -430,14 +431,43 @@ def test_unrouted_load_branches_name_only_the_contract_vocabulary() -> None:
     assert "키 어긋남 · PKG · (PKG) 1" in text
     assert "규칙상 미사용 · PKG · (PKG) 1" in text
     assert SENTINEL not in text
-    # 전송용 요약 — 갈래 줄 그대로와, 세는 갈래만 더한 검산 줄(규칙상 미사용은 빠진다).
-    assert notes[1] == (
-        "- 8-2 경로 갈래(규칙상 미사용은 세지 않음) — REQB 에 없는 제품 · CHIP · 그 밖 1 · "
-        "규칙상 미사용 · PKG · (PKG) 1 · 키 어긋남 · CHIP · BUFFER 1 · 키 어긋남 · PKG · (PKG) 1"
-    )
-    assert notes[2] == "  - 검산 — 1 + 1 + 1 = 경로에 닿지 않음 3"
-    assert _check_sums(notes) == 1
+    # 전송용 요약 — 세는 갈래만 짧은 이름으로 더한 줄 안 식(합 = 경로에 닿지 않음)과 규칙상 미사용.
+    assert notes == [
+        "- 8-2X 0 · 0 · 3 · 0",
+        "- 8-2B 3 = K·CHIP·BUFFER 1 + K·PKG·(PKG) 1 + P·CHIP·? 1 · U 1",
+    ]
+    assert checks.check_transcript(checks.summary_lines(notes)) == []
     assert SENTINEL not in "\n".join(notes)
+
+
+def test_many_unrouted_branches_keep_the_summary_line_short() -> None:
+    """갈래가 많아도 요약 줄은 큰 갈래 셋과 「그 밖 n갈래 m」 뿐이고 줄 안 식의 합은 그대로 선다."""
+    reasons = [UNROUTED_KEY_MISMATCH_REASON, UNROUTED_UNKNOWN_PRODUCT_REASON]
+    divisions = ["BUFFER", "CORE", "TOP", "DUMMY", "MASTER"]
+    rows = [
+        (reason, division)
+        for index, division in enumerate(divisions)
+        for reason in reasons
+        for _ in range(index + 1)
+    ]
+    required = pd.DataFrame()
+    required.attrs["unrouted_required_loads"] = pd.DataFrame(
+        {
+            **{key: ["X"] * len(rows) for key in LOAD_KEYS},
+            "소요기준": ["CHIP"] * len(rows),
+            "WF 구분": [division for _, division in rows],
+            "부하량": [1.0] * len(rows),
+            "제외사유": [reason for reason, _ in rows],
+        }
+    )
+
+    notes: list[str] = []
+    checks._left_out_lines(required, notes)
+
+    assert notes[1] == (
+        "- 8-2B 30 = K·CHIP·MASTER 5 + P·CHIP·MASTER 5 + K·CHIP·DUMMY 4 + 그 밖 7갈래 16 · U 0"
+    )
+    assert checks.check_transcript(checks.summary_lines(notes)) == []
 
 
 def test_an_unknown_demand_basis_is_counted_not_named(
@@ -791,10 +821,9 @@ def test_route_wafer_values_are_split_by_the_column_that_carries_them(
     assert "| WF 경로 키 13 · 신규 `부하량` |" in output
     assert re.search(r"\| `Step수` \| (\d+) \| \1 \| \1 \| 0 \| 0 \|", output)
     assert re.search(r"\| `WF측정률` \| (\d+) \| \1 \| 0 \| 0 \| 0 \|", output)
-    # 전송용 요약 — Wafer 경로 판정 줄은 가장 잘 따라가는 칸과 그 ≈ 비율이다.
+    # 전송용 요약 — Wafer 경로 줄은 갈리는 칸 · 맞대기 중앙 · 가장 잘 따라가는 칸과 그 ≈ 칸 / 칸 ≠1.
     assert re.search(
-        rf"^- 8-2 Wafer 경로 — 갈리는 칸 {cells} / {cells} · 경로 키 맞대기 차이율 중앙 [\d.]+% · "
-        r"가장 잘 따라가는 칸 `Step수` ≈ 칸 (\d+) / 칸 ≠1 \1 \(100\.00%\)$",
+        rf"^- 8-2W {cells}/{cells} · [\d.]+% · Step수 (\d+)/\1 #\d\d$",
         output,
         flags=re.MULTILINE,
     )
@@ -904,6 +933,61 @@ def test_a_failing_wafer_route_section_leaves_the_rest_of_the_legacy_block(
     assert "reindex" not in output and "Traceback" not in output
     assert "**소요대수**" in output
     assert "**PCB수(K매)**" in output
+
+
+def test_a_failing_ratio_grouping_stays_inside_the_requirement_section(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """≈60 무리를 세는 `ratio_groups` 가 멈춰도 그 실패는 소요대수 절 안에 머문다 — PCB 절과 8-2
+    의 나머지는 그대로 찍히고, 요약 8-2R 줄에는 무리 칸만 「실패(종류)」 다."""
+
+    def broken(*_args: object, **_kwargs: object) -> object:
+        raise ValueError(f"{SENTINEL} 문구")
+
+    monkeypatch.setattr(checks, "ratio_groups", broken)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(simulation_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "블록이 멈췄다" not in output
+    assert "- ≈60 배 가르기 실패(ValueError)" in output
+    assert "**PCB수(K매)**" in output
+    bare = _uncoded(_summary(output))
+    assert re.fullmatch(r"- 8-2R 100\.00% · [\d.]+% · 실패\(ValueError\)", bare[3]), bare
+
+
+def test_a_failing_summary_line_keeps_the_block(
+    simulation_db: Path,
+    equipment_db: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """요약 줄을 짓다 멈춰도(칸이 비는 등) 블록 출력은 그대로 남고 요약에는 그 키와 종류만
+    적는다."""
+    shape = checks._column_shape_lines
+
+    def without_facts(
+        connection: duckdb.DuckDBPyConnection, revision_id: str, facts: dict[str, str] | None = None
+    ) -> list[str]:
+        return shape(connection, revision_id)
+
+    monkeypatch.setattr(checks, "_column_shape_lines", without_facts)
+
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(equipment_db),
+    )
+
+    assert code == 0
+    assert "블록이 멈췄다" not in output
+    assert "| Area Code(classification_1) = Main | 4 |" in output
+    assert _uncoded(_summary(output)) == ["- 8-4 요약 실패(KeyError)"]
 
 
 def test_a_locked_database_stops_with_the_app_running_message(
@@ -1287,21 +1371,17 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     assert "| 첫 적재일 (1/2) | 100 | 100 | 4 | 100 | 0 · 80 | 0 · 0 | 20 | 0 | 0 |" in output
     assert "여러 날 코드 더함" not in output
     assert "| 판정 |" not in output and "통째 사본" not in output
-    # 전송용 요약 — 목록 · 전 코드 적재일(검산) · 표본 · 사본 코드마다 네 칸(과 기준 날에만)의 합.
-    summary = _summary(output)
-    assert re.match(
-        r"- 8-5 목록 — 31일 2행 [\d.]+초 · 366일 4행 [\d.]+초 · 규칙 위반 코드 1 / 4$", summary[1]
-    )
-    assert summary[2:] == [
-        "- 8-5 전 코드 적재일 — 1일 1 · 2–5일 1 · 6일 이상 1",
-        "  - 검산 — 1 + 1 + 1 = 코드 3",
-        "- 8-5 표본 — 기본 창 행 = 넓은 창 행 1 / 3 · 기본 창이 놓친 행 75.86%",
-        "- 8-5 사본 코드 1(표본) — 적재일 32일 · 견준 날 3 · 그날에만(잘게) 0 · "
-        "기준 날에만(잘게) 0 · 행이 다른 키 0 · 그 밖 칸만 다른 행 0 · 하루 안 충돌 0",
-        "- 8-5 사본 코드 2(표본) — 적재일 2일 · 견준 날 1 · 그날에만(잘게) 80 · 기준 날에만(잘게) "
-        "0 · 행이 다른 키 20 · 그 밖 칸만 다른 행 0 · 하루 안 충돌 0",
+    # 전송용 요약 — 목록 · 전 코드 적재일(줄 안 식) · 표본 · 사본 코드마다 네 칸(과 기준 날에만)의
+    # 합.
+    summary = _uncoded(_summary(output))
+    assert re.match(r"- 8-5L 31일 2행 [\d.]+초 · 366일 4행 [\d.]+초 · 위반 1/4$", summary[0])
+    assert summary[1:] == [
+        "- 8-5D 3 = 1 + 1 + 1",
+        "- 8-5S 1/3 · 75.86%",
+        "- 8-5C1 표본 32일 · 3 · 0 · 0 · 0 · 0 · 0",
+        "- 8-5C2 표본 2일 · 1 · 80 · 0 · 20 · 0 · 0",
     ]
-    assert _check_sums(summary) == 1
+    assert checks.check_transcript(_summary(output)) == []
     assert not [line for line in output.splitlines() if _self_check_pattern().search(line)]
 
 
@@ -1418,7 +1498,12 @@ def test_a_stopped_run_keeps_the_parts_already_written(
     assert "| 적재일 1일 · 2–5일 · 6일 이상 |" in written
     assert "| 표본 적재일 | 값 |" in written
     assert "**여러 날 적재 — 날마다 무엇이 같고 다른가**" in written
-    assert written.rstrip().endswith("블록이 멈췄다 — 중단(KeyboardInterrupt)")
+    # 멈춤 줄 뒤에 잰 데까지의 요약이 「(중단 — 여기까지)」 와 함께 붙는다.
+    stop = written.index("블록이 멈췄다 — 중단(KeyboardInterrupt)")
+    assert stop < written.index(checks.SUMMARY_HEADING)
+    summary = _summary(written)
+    assert summary[0] == "(중단 — 여기까지)"
+    assert _uncoded(summary[1:])[-1] == "- 8-5 멈춤 중단"
     assert SENTINEL not in written
     assert written.strip() in capsys.readouterr().out
 
@@ -1889,34 +1974,29 @@ def test_code_rule_counts_do_not_rely_on_pandas_string_reductions(
 
 # ------------------------------------------------------------------- 8-10 센서스 · 전송용 요약
 
-CENSUS_ROWS = {
-    "ratio": "| 효율·측정률 1 초과(`CAPA_RUN_RATE`·`Lot 측정률`·`WF측정률`) | 결정 8 · E5 |",
-    "negative": (
-        "| 편집 값 칸 음수(UPEH·ST·효율·편중률·측정률·RUN_DAY·보유·대여평가·가용) | 결정 8 · E5 |"
-    ),
-    "run_day": "| `RQ_RUN_DAY` 0 칸 | 고침 · E2 |",
-    "plan": "| `RQ_PKG_PLAN` 빈 생산수량 | 고침 · P5 |",
-    "own": "| 빈 보유대수(`RQ_EQP_OWN`) | 결정 8 · P7 |",
-    "lent": "| 빈 대여평가(`RQ_EQP_LENT`) | 결정 8 · P7 |",
-    "division": "| 같은 키에 `WF 구분` 대소문자만 다른 행이 둘 이상(표 일곱) | 결정 6 · P8 |",
-    "fold": "| `RQ_REQB` 에서 계산이 앞 행과 같은 경로로 접는, 표기만 다른 행 | 결정 8 · P4 |",
-    "blank": (
-        "| 효율·편중률·모듈수·RUN_DAY 빈 칸 가운데 붙은 경로가 모두 뒤에서 빠질 칸 | 결정 7 · P6 |"
-    ),
-    "merge": (
-        "| 월 머지 리비전의 달력 공백 달(첫 달 ~ 끝 달 사이 어느 월 표에도 없는 달) | 결정 9 · D6 |"
-    ),
-    "flag": "| 원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(빈 칸 포함) | 사내 확인 요청 · P8 |",
-    "names": (
-        "| 앞뒤 공백·대소문자만 다른 설비명 묶음(설비 DB · 수는 최신 리비전) | 결정 10 · Q6·Q7 |"
-    ),
+# 센서스 줄 이름 → 요약 키. 표 줄은 `| 키 | 항목 | 근거 | 걸림 / 봄 | 수 |` 다.
+CENSUS_KEYS = {
+    "ratio": "C1",
+    "negative": "C2",
+    "run_day": "C3",
+    "plan": "C4",
+    "own": "C5",
+    "lent": "C6",
+    "division": "C7",
+    "fold": "C8",
+    "blank": "C9",
+    "merge": "C10",
+    "flag": "C11",
+    "names": "C12",
 }
 
 
 def _census_row(output: str, key: str) -> str:
-    rows = [line for line in output.splitlines() if line.startswith(CENSUS_ROWS[key])]
+    """센서스 표에서 그 키 줄의 `걸림 / 봄 | 수 |` 부분."""
+    rows = [line for line in output.splitlines() if line.startswith(f"| {CENSUS_KEYS[key]} | ")]
     assert len(rows) == 1, (key, rows)
-    return rows[0][len(CENSUS_ROWS[key]) :].strip()
+    cells = rows[0].split(" | ")
+    return " | ".join(cells[3:]).strip()
 
 
 def _plant_census(simulation: Path, equipment: Path) -> None:
@@ -2056,8 +2136,22 @@ def test_the_census_counts_each_planted_shape_without_names(
         "names": "1 / 1 설비 리비전 | 묶음 1 |",
     }
     assert {key: _census_row(output, key) for key in expected} == expected
-    assert "- 8-10 센서스 — 0 이 아닌 항목 12 / 12 · 본 리비전 1" in output
-    assert "  - 검산 — 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 2 + 1 = 수 합 14" in output
+    # 근거 칸은 「근거 · 결정 n(잰 부분)」 이고, 옛 리비전이 대상인 결정 6 · 9 는 그것을 밝힌다.
+    basis = {item.key: item.basis for item in checks.CENSUS_ITEMS}
+    assert all(
+        text.startswith(("근거 · 결정 ", "근거 · 사내 확인 요청", "참고 · 고침 "))
+        for text in basis.values()
+    )
+    assert "--census-all-revisions" in basis["C7"] and "--census-all-revisions" in basis["C10"]
+    assert "지금대로" not in "".join(basis.values())
+    # 요약 — 0 이 아닌 줄만 키와 함께 한 줄씩, 머리는 그 줄 수와 합.
+    summary = _uncoded(_summary(output))
+    assert summary[0] == "- 8-10 활성 1 · 0 아님 12/12 · 합 14"
+    assert summary[1:] == [
+        f"- 8-10 C{index} {count}"
+        for index, count in enumerate([1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1], start=1)
+    ]
+    assert checks.check_transcript(_summary(output)) == []
 
 
 def test_the_census_counts_every_revision_only_when_asked(
@@ -2098,6 +2192,13 @@ def test_the_census_counts_every_revision_only_when_asked(
     assert _census_row(every, "run_day") == "1 / 2 리비전 | 칸 2 |"
     # 설비 DB 가 없으면 그 줄만 이 스크립트의 문구로 멈춘다.
     assert _census_row(every, "names") == "- | 설비 DB 를 열지 못함 |"
+    # 요약 머리는 범위(전부 · 본 리비전 수)를 밝히고, 멈춘 줄은 수 줄과 따로 센다.
+    assert _uncoded(_summary(every)) == [
+        "- 8-10 전부 2 · 0 아님 1/12 · 실패 1 · 합 2",
+        "- 8-10 C3 2",
+        "- 8-10 C12 설비 DB 를 열지 못함",
+    ]
+    assert checks.check_transcript(_summary(every)) == []
 
 
 def test_the_census_value_ranges_follow_the_reference_editor() -> None:
@@ -2144,24 +2245,21 @@ def _self_check_pattern() -> re.Pattern[str]:
 
 
 def _summary(output: str) -> list[str]:
-    head = "### 전송용 요약 (`inspect_real_data_checks.py`)"
-    assert output.count(head) == 1
-    return [line for line in output.split(head, 1)[1].splitlines() if line.strip()]
+    """요약 머리 아래의 줄(빈 줄 뺌)."""
+    assert output.count(checks.SUMMARY_HEADING) == 1
+    return [
+        line for line in output.split(checks.SUMMARY_HEADING, 1)[1].splitlines() if line.strip()
+    ]
 
 
-def _check_sums(lines: Sequence[str]) -> int:
-    """`검산` 줄마다 왼쪽 수의 합이 오른쪽 수와 같은지 — 같으면 센 줄 수를 돌려준다."""
-    checked = 0
+def _uncoded(lines: Sequence[str]) -> list[str]:
+    """줄 끝 확인 코드(` #NN`)를 뗀 줄 — 코드가 줄의 수로 셈한 값인지도 함께 본다."""
+    bare = []
     for line in lines:
-        if not line.startswith("  - 검산"):
-            continue
-        left, right = line.split(" — ", 1)[1].rsplit(" = ", 1)
-        terms = [
-            int(re.findall(r"[\d,]+", term)[-1].replace(",", "")) for term in left.split(" + ")
-        ]
-        assert sum(terms) == int(re.findall(r"[\d,]+", right)[-1].replace(",", "")), line
-        checked += 1
-    return checked
+        body, code = line.rsplit(" #", 1)
+        assert code == checks.summary_code(body[2:]), line
+        bare.append(body)
+    return bare
 
 
 def test_the_report_and_its_summary_stay_clear_of_the_review_self_check(
@@ -2186,36 +2284,151 @@ def test_the_report_and_its_summary_stay_clear_of_the_review_self_check(
 def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """전송용 요약 — 사람이 손으로 옮겨 적을 몫이라 20줄 안팎이고, 블록마다 판정에 쓰는 수 한 줄이
-    블록 차례로 서며, 검산 줄은 스스로 합이 맞는다. 블록 출력은 요약 앞에 그대로 있다."""
+    """전송용 요약 — 사람이 손으로 옮겨 적을 몫이라 블록마다 짧은 키와 수만 실은 한 줄이 블록
+    차례로 서고(8-10 은 0 이 아닌 줄만 더한다), 줄마다 확인 코드가 붙으며 줄 안 식은 스스로 선다.
+    블록 출력은 요약 앞에 그대로 있고, 요약 머리 아래에는 옮겨 적을 줄만 있다(안내문 없음)."""
     code, output = _run(
         capsys, "--database", str(simulation_db), "--equipment-database", str(equipment_db)
     )
 
     assert code == 0
     _assert_no_leak(output)
-    assert output.index("### 8-10.") < output.index("### 전송용 요약")
+    assert output.index("### 8-10.") < output.index(checks.SUMMARY_HEADING)
     lines = _summary(output)
-    assert len(lines) <= 24
-    heads = [
-        "- 8-1 — 마이그레이션 시뮬레이션 ",
-        "- 8-2 부하량 — 차이율 최대 Wafer ",
-        "- 8-2 Wafer 경로 — 갈리는 칸 ",
-        "- 8-2 ST 정의 대조 — ",
-        "- 8-2 소요대수 — 키 연결 100.00% (기대 100%)",
-        "- 8-2 들지 않은 수요 — ",
-        "- 8-2 경로 갈래 — 없음(경로에 닿지 않은 부하 0)",
-        "- 8-3 — 행 ",
-        "- 8-4 — 최신 r1 · ",
-        "- 8-9 — 계획 달 12 · 양산 Density 없는 달 EDP 포함 0 · 뺌 0 (둘 다 0 이면 닫힘)",
-        "- 8-10 센서스 — 0 이 아닌 항목 0 / 12 · 본 리비전 1",
+    keys = [line.split(" ", 2)[1] for line in lines]
+    assert keys == [
+        "8-1",
+        "8-2L",
+        "8-2W",
+        "8-2T",
+        "8-2R",
+        "8-2X",
+        "8-2B",
+        "8-3",
+        "8-4",
+        "8-9",
+        "8-10",
     ]
-    positions = [
-        next(index for index, line in enumerate(lines) if line.startswith(head)) for head in heads
+    assert all(line.startswith("- ") and re.search(r" #\d\d$", line) for line in lines)
+    # 손으로 옮겨 적는 줄이라 짧다 — 범례(런북 8-6)가 키의 뜻을 맡는다.
+    assert max(len(line) for line in lines) <= 90, lines
+    bare = _uncoded(lines)
+    assert re.fullmatch(r"- 8-1 S (\d+)/\1 · E (\d+)/\2 · R 1 · O 1", bare[0]), bare[0]
+    assert bare[4].startswith("- 8-2R 100.00% · ")
+    assert bare[6] == "- 8-2B 0"
+    assert bare[9] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
+    assert bare[10] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert checks.check_transcript(lines) == []
+    assert (
+        sum(1 for line in lines if " = " in line) == 3
+    )  # 8-3 · 8-4 · 8-9 (경로 갈래 0 이라 8-2B 는 식 없음)
+
+
+def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:
+    """확인 코드는 줄의 숫자 한 자리를 바꾸거나 한 수 안의 이웃한 두 자리를 바꾸면 늘 달라진다 —
+    「(기대 0)」 칸의 0 을 8 로 잘못 쳐도, 마이그레이션 번호를 바꿔 써도 잡힌다. 수 하나를
+    빼먹거나 쪼갠 것은 97 가운데 96 꼴로 잡힌다(빼먹기는 이 표본 줄에서 모두 — 쪼개기는 보장이
+    아니라 고정하지 않는다). 글자·쉼표·우선순위 표지는 코드에 들지 않는다."""
+    lines = [
+        "8-1 S 35/35 · E 23/23 · R 12 · O 3",
+        "8-2R 100.00% · 0.01% · 0",
+        "8-4 r6 · M 1,020 = 계획 700 + 확정 300 + 완료 0 + 지연 0 + 빈 20 + ? 0 · T 0 · Q 0 · D 0",
+        "8-5C1 표본 32일 · 3 · 0 · 0 · 0 · 0 · 0",
     ]
-    assert positions == sorted(positions)
-    assert "같다 / 설비 " in lines[positions[0]] and "(기대: 같다)" in lines[positions[0]]
-    assert _check_sums(lines) == 4  # 8-3 · 8-4 · 8-9 · 8-10
+    for line in lines:
+        code = checks.summary_code(line)
+        for index, char in enumerate(line):
+            if not char.isdigit():
+                continue
+            for other in "0123456789":
+                if other != char:
+                    slipped = line[:index] + other + line[index + 1 :]
+                    assert checks.summary_code(slipped) != code, (line, slipped)
+        for index in range(len(line) - 1):
+            pair = line[index : index + 2]
+            # 한 수 안의 이웃한 두 자리(소수점 포함) 자리바꿈.
+            if pair[0] != pair[1] and all(char.isdigit() or char == "." for char in pair):
+                swapped = line[:index] + pair[::-1] + line[index + 2 :]
+                assert checks.summary_code(swapped) != code, (line, swapped)
+        # 수 하나를 빼먹은(` 0 ·` 하나) 전사.
+        for found in re.finditer(r"\d+", line):
+            dropped = line[: found.start()] + line[found.end() :]
+            assert checks.summary_code(dropped) != code, (line, dropped)
+    # 손으로 옮길 때 붙는 것 — 우선순위 표지·쉼표 빠짐·글자 바뀜은 코드를 바꾸지 않는다.
+    assert checks.summary_code("8-4 r6 · M 1020 = 계획 700") == checks.summary_code(
+        "8-4 r6 · M 1,020 = 계획 700"
+    )
+    coded = checks.summary_lines(["- 8-2R 100.00% · 0.01% · 0"])[2]
+    assert checks.check_transcript([f"[1] {coded[2:]}"]) == []
+    assert checks.check_transcript([coded.replace("0.01%", "0.10%")]) != []
+
+
+def test_a_dropped_or_shifted_census_line_is_caught() -> None:
+    """8-10 은 0 이 아닌 줄만 키와 함께 옮긴다. 줄 하나를 빼거나 겹쳐 적으면 머리의
+    `0 아님 k` · `합` 과 어긋나고, 수를 다른 키 줄로 옮겨 적으면 확인 코드가 어긋난다."""
+    scope = checks.CensusScope(picked="", revisions=5, label="")
+    rows = [
+        checks.CensusRow(key=item.key, label=item.label, basis=item.basis, unit=item.unit)
+        for item in checks.CENSUS_ITEMS
+    ]
+    rows[0] = replace(rows[0], count=3)
+    rows[7] = replace(rows[7], count=4)
+    summary = checks.summary_lines(checks._census_notes(scope, rows, all_revisions=False))
+    lines = [line for line in summary if line.startswith("- ")]
+    assert _uncoded(lines) == [
+        "- 8-10 활성 5 · 0 아님 2/12 · 합 7",
+        "- 8-10 C1 3",
+        "- 8-10 C8 4",
+    ]
+    assert checks.check_transcript(lines) == []
+
+    dropped = checks.check_transcript([lines[0], lines[2]])
+    assert len(dropped) == 1 and "줄이 빠졌거나 겹쳤다" in dropped[0]
+    doubled = checks.check_transcript([*lines, lines[2]])
+    assert len(doubled) == 1 and "줄이 빠졌거나 겹쳤다" in doubled[0]
+    shifted = lines[1].replace("C1 3", "C2 3")
+    assert checks.check_transcript([lines[0], shifted, lines[2]]) != []
+
+    # 리뷰 파일처럼 전송본과 전문의 요약이 함께 들어도 8-10 은 머리마다 따로 센다.
+    assert checks.check_transcript([*lines, "판정 — 손으로 쓴 줄", *lines]) == []
+    orphan = checks.check_transcript([lines[1]])
+    assert orphan == ["줄 1 — 8-10 수 줄인데 위에 8-10 머리 줄이 없다"]
+
+    zeros = [replace(row, count=0) for row in rows]
+    all_zero = checks._census_notes(scope, zeros, all_revisions=True)
+    assert all_zero == ["- 8-10 전부 5 · 모두 0 (12/12)"]
+    assert checks.check_transcript(checks.summary_lines(all_zero)) == []
+
+
+def test_check_summary_reads_a_transcript_without_opening_a_database(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--check-summary` 는 사외가 받은 전송본에 돌린다 — DB 를 열지 않고 맞지 않는 줄 번호만
+    찍는다."""
+
+    def must_not_open(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
+        raise AssertionError("전송본 확인은 DB 를 열지 않는다")
+
+    monkeypatch.setattr(duckdb, "connect", must_not_open)
+    good = checks.summary_lines(
+        ["- 8-1 S 35/35 · E 23/23 · R 12 · O 3", "- 8-9 12 · 포함 1 = 1 + 0 · 뺌 0"]
+    )
+    transcript = tmp_path / "transcript.txt"
+    transcript.write_text(
+        "판정 — 손으로 쓴 줄은 보지 않는다\n"
+        + "\n".join(f"[1] {line[2:]}" for line in good if line.startswith("- ")),
+        encoding="utf-8",
+    )
+    assert checks.main(["--check-summary", str(transcript)]) == 0
+    assert capsys.readouterr().out.splitlines() == ["확인 코드가 있는 줄 2 · 맞지 않는 것 0"]
+
+    transcript.write_text(
+        transcript.read_text(encoding="utf-8").replace("S 35/35", "S 35/36"), encoding="utf-8"
+    )
+    assert checks.main(["--check-summary", str(transcript)]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "확인 코드가 있는 줄 2 · 맞지 않는 것 1"
+    assert out[1].startswith("- 줄 2 — 확인 코드가 맞지 않는다")
 
 
 def test_a_block_that_stops_is_named_in_the_summary(
@@ -2230,4 +2443,42 @@ def test_a_block_that_stops_is_named_in_the_summary(
 
     assert code == 0
     _assert_no_leak(output)
-    assert "- 8-3 — 블록이 멈췄다 — 실패(RuntimeError)" in _summary(output)
+    assert "- 8-3 멈춤 실패(RuntimeError)" in _uncoded(_summary(output))
+
+
+def test_an_interrupted_run_still_prints_the_summary_so_far(
+    simulation_db: Path,
+    equipment_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`Ctrl+C` 로 멈춰도 멈춤 줄 뒤에 잰 데까지의 요약이 「(중단 — 여기까지)」 와 함께
+    남는다 — 사외로 가는 것은 이 요약뿐이다. 센서스는 그 줄까지 센 수를 남긴다."""
+    calls = {"n": 0}
+    measure = checks.CensusItem.measure
+
+    def stop_after_three(
+        self: checks.CensusItem, session: checks.Session, scope: checks.CensusScope
+    ) -> checks.CensusRow:
+        calls["n"] += 1
+        if calls["n"] > 3:
+            raise KeyboardInterrupt
+        return measure(self, session, scope)
+
+    monkeypatch.setattr(checks.CensusItem, "measure", stop_after_three)
+    target = tmp_path / "out.md"
+    argv = ["--database", str(simulation_db), "--equipment-database", str(equipment_db)]
+
+    with pytest.raises(KeyboardInterrupt):
+        checks.main(["--only", "env,census", *argv, "--output", str(target)])
+
+    written = target.read_text(encoding="utf-8")
+    stop = written.index("- `8-10` 블록이 멈췄다 — 중단(KeyboardInterrupt)")
+    assert stop < written.index(checks.SUMMARY_HEADING)
+    summary = _summary(written)
+    assert summary[0] == "(중단 — 여기까지)"
+    bare = _uncoded(summary[1:])
+    assert bare[0].startswith("- 8-1 S ")
+    assert bare[1:] == ["- 8-10 활성 1 · 0 아님 0/3 · 중단 잰 3/12 · 합 0", "- 8-10 멈춤 중단"]
+    assert written.strip() in capsys.readouterr().out

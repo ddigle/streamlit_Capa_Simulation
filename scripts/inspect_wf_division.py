@@ -30,8 +30,9 @@ EDP-TSV 제품의 PKG 행이 어떤 WF 구분을 싣는지는 사외가 모른�
     uv run --no-sync python scripts/inspect_wf_division.py                      # 운영 DB
     uv run --no-sync python scripts/inspect_wf_division.py --database <DB 사본> # 6-3 사본
 
-**`--database` 로 사본을 주면 앱 프로세스를 보지 않는다.** 운영 DB(`settings.DUCKDB_PATH`)를
-열 때만 사용자 앱이 떠 있는지 먼저 보고 멈춘다 — `inspect_real_data_checks.py` 와 같은 꼴이다.
+**`--database` 로 사본을 주면 앱 프로세스를 보지 않는다.** 운영 DB 자리(운영 DB 와 같은
+파일 · 운영 `data/` 아래 · git 저장소 안 — `settings.is_operational_database_place`)를 열 때만
+사용자 앱이 떠 있는지 먼저 보고 멈춘다 — `inspect_real_data_checks.py` 와 같은 판정이다.
 사본이면 사용자 앱을 끄지 않아도 된다(운영 DB 는 앱을 끈 뒤 돌린다).
 """
 
@@ -50,7 +51,11 @@ if hasattr(sys.stdout, "reconfigure"):
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from capa_simulation.settings import DUCKDB_PATH  # noqa: E402
+from capa_simulation.settings import (  # noqa: E402
+    DUCKDB_PATH,
+    EQUIPMENT_DUCKDB_PATH,
+    is_operational_database_place,
+)
 
 # `0013`·`0014` 가 `WF 구분` 을 건드린 표. 두 스키마에 같은 이름으로 있다.
 # `rq_pkg_plan` 은 뺀다 — 0013 이 EDP 행을 가려내려고 **읽기만** 할 뿐 그 표에는
@@ -201,7 +206,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not path.exists():
         print(f"DB 파일이 없습니다: {path.name}")
         return 1
-    copy = path.resolve() != DUCKDB_PATH.resolve()
+    # 사본 판정은 운영 DB 자리 판정의 거꾸로다 — 같은 파일(하드링크·긴 경로 접두 포함)·운영 data
+    # 아래·git 저장소 안이면 운영으로 보고 앱 프로세스를 먼저 본다.
+    copy = args.database is not None and not is_operational_database_place(
+        path, (DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+    )
     if not copy:
         # 앱은 rerun 동안만 DB 를 쥐므로 쉬는 앱은 아래 잠금 갈래에 안 잡힌다 — 프로세스를 먼저
         # 본다. 살피지 못하면(None) 잠금만 본다. 판정은 화면 확인 스크립트와 같은 것을 쓴다.

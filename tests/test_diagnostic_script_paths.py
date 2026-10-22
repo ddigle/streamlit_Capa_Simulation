@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -159,6 +160,27 @@ def test_database_naming_the_operational_file_still_looks_for_the_user_app(
     monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 1)
 
     assert inspect_wf_division.main(["--database", str(path)]) == 1
+
+    assert capsys.readouterr().out.splitlines() == [
+        "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
+    ]
+
+
+def test_a_hard_link_to_the_operational_database_still_looks_for_the_user_app(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """글자가 다른 운영 DB(하드링크 — Windows 의 긴 경로 접두·UNC 공유도 같은 꼴)는 사본이 아니다 —
+    앱 프로세스를 보고, 떠 있으면 열지 않는다."""
+    path = _point_at(monkeypatch, inspect_wf_division, tmp_path / "live")
+    path.parent.mkdir()
+    duckdb.connect(str(path)).close()
+    linked = tmp_path / "linked.duckdb"
+    os.link(path, linked)
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 1)
+
+    assert inspect_wf_division.main(["--database", str(linked)]) == 1
 
     assert capsys.readouterr().out.splitlines() == [
         "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."

@@ -170,7 +170,9 @@ def test_a_cp949_pipe_still_gets_the_whole_report(tmp_path: Path) -> None:
     refused = _run(str(SCRIPT), "--data-dir", str(PROJECT_ROOT / "data"), io_encoding="cp949")
 
     assert refused.returncode == 2, refused.stderr[-3000:]
-    assert refused.stdout.strip() == "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
+    assert refused.stdout.strip() == (
+        "저장소 안(data/ 포함)은 쓰지 않는다 — 저장소 밖 사본 폴더를 준다(런북 6-3)"
+    )
 
 
 def test_the_output_file_is_emptied_and_holds_the_same_report(tmp_path: Path) -> None:
@@ -235,19 +237,18 @@ def test_an_uncaught_home_exception_does_not_reach_stderr_through_the_streamlit_
     assert "ZeroDivisionError" in finished.stderr.strip()
 
 
-def test_the_repository_data_folder_is_refused() -> None:
+def test_the_repository_data_folder_is_refused(tmp_path: Path) -> None:
     """저장소의 `data/` 는 사용자 앱의 운영 DB 다 — 벤치마크가 마이그레이션을 걸 수 있다."""
     sys.path.insert(0, str(SCRIPT.parent))
     import benchmark_home
 
-    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "data") == (
-        "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
-    )
-    # 그 아래 폴더도 운영 DB 옆이다 — `inspect_revision_calculations.py --database` 와 같은 꼴.
-    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "data" / "temp" / "copy") == (
-        "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
-    )
-    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "no-such-folder") == (
+    refused = "저장소 안(data/ 포함)은 쓰지 않는다 — 저장소 밖 사본 폴더를 준다(런북 6-3)"
+    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "data") == refused
+    # 그 아래 폴더와 저장소 안 다른 폴더도 받지 않는다 — `inspect_revision_calculations.py
+    # --database` 와 같은 판정(`settings.is_operational_database_place`).
+    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "data" / "temp" / "copy") == refused
+    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "no-such-folder") == refused
+    assert benchmark_home.copy_folder_problem(tmp_path / "no-such-folder") == (
         "그 폴더에 capa_simulation.duckdb 가 없다"
     )
 

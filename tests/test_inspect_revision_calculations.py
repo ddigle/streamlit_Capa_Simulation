@@ -523,6 +523,47 @@ def test_a_moved_operational_database_is_refused_wherever_settings_point(
     assert str(tmp_path) not in output
 
 
+def test_other_spellings_of_the_operational_place_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """글자를 견주는 거절은 비켜 갈 수 있다 — 하드링크(Windows 의 긴 경로 접두·UNC 관리 공유도 같은
+    파일을 다른 글자로 가리킨다)·심볼릭 링크·상대 경로·git 저장소 안의 다른 `data/`. 그래서 파일
+    번호와 조상 폴더로 본다(`settings.is_operational_database_place`)."""
+    live = tmp_path / "live" / "data"
+    live.mkdir(parents=True)
+    operational = live / "capa_simulation.duckdb"
+    duckdb.connect(str(operational)).close()
+    monkeypatch.setattr(script, "DUCKDB_PATH", operational)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    hardlink = outside / "linked.duckdb"
+    os.link(operational, hardlink)
+    assert script.operational_path(hardlink)
+    symlink = outside / "symlinked.duckdb"
+    symlink.symlink_to(operational)
+    assert script.operational_path(symlink)
+    folder_link = outside / "data-link"
+    folder_link.symlink_to(live, target_is_directory=True)
+    assert script.operational_path(folder_link / "other.duckdb")
+    monkeypatch.chdir(outside)
+    assert script.operational_path(Path("..") / "live" / "data" / "x.duckdb")
+
+    # 사본 트리의 스크립트는 제 트리만 안다 — 다른 git 저장소의 `data/` 도 저장소 안이라 거절한다.
+    other_repository = tmp_path / "other_repository"
+    (other_repository / ".git").mkdir(parents=True)
+    assert script.operational_path(other_repository / "data" / "capa_simulation.duckdb")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
+    assert script.operational_path(worktree / "sub" / "copy.duckdb")
+
+    copy = outside / "e2e_copy" / "data" / "capa_simulation.duckdb"
+    copy.parent.mkdir(parents=True)
+    copy.write_bytes(operational.read_bytes())
+    assert not script.operational_path(copy)
+
+
 def test_a_missing_file_stops_without_its_path(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
