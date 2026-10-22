@@ -751,7 +751,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 결과 자리: 합성 예시판 `static/guides/howto/<가이드>.html`(추적, 공개 저장소 — 그림 밖 글에 실 담당 조직 · 문의처
     · 이메일이 없음을 `tests/test_page_guide.py` 가 본다)과 사내판 `static/guides/local/<가이드>.html`(git 무시, 사내가
     저장소 밖 결과를 손으로 복사). 둘 다 Streamlit 정적 서빙으로 `app/static/…` 에 서고 1.63 은 `.html` 을
-    `text/html` 로 내보낸다. 원고 판(`version`)을 올리면 예시판과 `example/` 을 같은 변경에서 다시 만든다.
+    `text/html` 로 내보낸다. 원고 판(`version`)을 올리면 예시판과 `example/` 을 같은 변경에서 다시 만든다. 틀만 고쳐도
+    예시판을 다시 조립한다(`--example --assemble-only`, 작업 폴더가 없으면 촬영부터) — 데이터 자리 밖이 틀과 같은지와 창이
+    앱 테마 값(`capa-theme` 의 `"Dark"`·`"Light"`)을 대소문자 없이 따르는지를 `tests/test_page_guide_theme.py` 가 본다.
   - 생성기 `scripts/build_page_guide.py` 가 앱 사본을 띄워 찍고(`page_guide_capture.py` + 페이지 도우미
     `page_guide_helpers.js`, Playwright 는 저장소 밖) 조립한다(`page_guide_core.py` — 자르기 · 상자 % · 덮어쓰기 ·
     매개값 · 리뷰 한 줄). `--example` 은 `git archive` 사본 + 합성 시드(`scripts/guide_example_seed.py`), `--internal` 은
@@ -2621,7 +2623,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   안정 ID 원고 · 점검기 · 합성 예시판을 보내고, 사내는 안정 ID 에 붙는 덮어쓰기와 매개값만 고쳐 실 DB 사본에서 완성한다. 사내 작업
   자리 `review/<산출물>/` 과 사내판 `static/<산출물>/local/`(사용자가 복사 — 사내 에이전트는 `static/` 에 쓰지 않는다)은 git 이
   무시하고, 완성본은 사내 밖으로 나가지 않는다(리뷰에는 개수 · ID · 고정 라벨만). 뼈대에 모자란 것은 리뷰 「사외 요청」 으로 받아
-  다음 뼈대에 넣는다. 한 번 쓴 안정 ID 는 바꾸지 않는다 — 바꾸면 사내 덮어쓰기가 모두 고아가 된다. 사내 절차는 그 생성기를 싣는 배포가 런북 10장으로 쓴다(9장은 사내 탐색).
+  다음 뼈대에 넣는다. 한 번 쓴 안정 ID 는 바꾸지 않는다 — 바꾸면 사내 덮어쓰기가 모두 고아가 된다. 사내 절차는 런북 10장 「코드 밖 산출물 만들기(따라하기 가이드)」 다(9장은 사내 탐색).
 
 실제로 이 규칙이 없어서, 표본의 `Mold` 소요기준이 `CHIP` 인 것을 근거로 사용자의 공정
 설명이 데이터와 충돌한다고 보고한 적이 있다. 충돌 상대는 실데이터가 아니라 생성기였다.
