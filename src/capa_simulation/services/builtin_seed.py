@@ -158,6 +158,15 @@ def load_builtin_display_order() -> pd.DataFrame:
         return display_order_from_csv(
             LOCAL_DISPLAY_ORDER_CSV_PATH.read_bytes(), allow_value_clashes=True
         )
+    return load_tracked_display_order()
+
+
+def load_tracked_display_order() -> pd.DataFrame:
+    """Git 이 추적하는 내장 표시순서 시드만 읽는다 — 로컬 시드 CSV 는 보지 않는다.
+
+    결과가 저장소마다 같아야 하는 합성 시드(가이드 예시판 `scripts/guide_example_seed.py`)가 쓴다.
+    로컬 CSV 가 있는 자리에서 돌려도 그 값이 시드에 섞이지 않는다.
+    """
     payload = cast(object, json.loads(BUILTIN_DISPLAY_ORDER_PATH.read_text(encoding="utf-8")))
     if not isinstance(payload, dict) or not all(isinstance(key, str) for key in payload):
         raise ValueError("내장 표시순서 시드의 최상위 값은 객체여야 합니다.")
