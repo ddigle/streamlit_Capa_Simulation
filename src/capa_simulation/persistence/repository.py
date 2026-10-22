@@ -319,6 +319,17 @@ class OfficialReleaseMoved(ValueError):
         self.current = current
 
 
+class RevisionNameMoved(ValueError):
+    """리비전명을 바꾸려는 사이 다른 사용자가 먼저 그 이름을 바꿨다. 아무것도 쓰지 않았다.
+
+    `current` 는 쓰기 트랜잭션 안에서 읽은 지금 이름이다. 화면은 이 이름을 보이고 다시 고치게 한다.
+    """
+
+    def __init__(self, current: str) -> None:
+        super().__init__(f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current}).")
+        self.current = current
+
+
 class DuckDBScenarioRepository:
     """Persist immutable datasets and full editable-table revision snapshots."""
 
@@ -1349,6 +1360,57 @@ class DuckDBScenarioRepository:
             if scenario.scenario_id == scenario_id:
                 return scenario
         raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
+
+    def rename_revision(
+        self, revision_id: str, revision_name: str, *, expected_name: str
+    ) -> RevisionSummary:
+        """리비전명 한 칸만 고친다. 리비전의 내용은 그대로다.
+
+        바뀌는 것은 `scenario_revision.revision_name` 뿐이다. 14표·프리셋·가상 제품·
+        `reference_hash`·번호·부모·저장 시각·메모, 공식 발행 행(공식버전명 포함), 시나리오의
+        `updated_at`(목록의 「최근 수정」 차례)은 건드리지 않는다. 계산 캐시 키는 리비전 id·
+        내용에서 나오므로 이름이 바뀌어도 계산이 다시 돌지 않는다. 이력은 남기지 않는다(시나리오명
+        변경과 같다).
+
+        **비교 후 쓰기다.** `expected_name` 은 부르는 쪽이 보고 고친 지금 이름이다. 그 사이 다른
+        사용자가 먼저 바꿨으면 `RevisionNameMoved` 로 거절하고 아무것도 쓰지 않는다 — 옛 이름을 든
+        화면이 남의 변경을 조용히 되돌리지 않게 한다. 같은 이름도 허용한다(번호가 늘 가른다).
+        보관된 시나리오의 리비전은 고치지 않는다(새 리비전 저장·공식 지정이 막히는 것과 같다).
+        """
+        label = required_text(revision_name, "리비전명")
+        with self._write_transaction() as connection:
+            owner = connection.execute(
+                """
+                SELECT r.revision_name, s.status
+                FROM app_meta.scenario_revision r
+                JOIN app_meta.scenario s ON s.scenario_id = r.scenario_id
+                WHERE r.revision_id = ?
+                """,
+                [revision_id],
+            ).fetchone()
+            if owner is None:
+                raise KeyError(f"리비전을 찾을 수 없습니다: {revision_id}")
+            if str(owner[1]) != "ACTIVE":
+                raise ValueError(
+                    "보관된 시나리오의 리비전명은 바꿀 수 없습니다. 먼저 목록으로 되돌리세요."
+                )
+            changed = connection.execute(
+                """
+                UPDATE app_meta.scenario_revision
+                SET revision_name = ?
+                WHERE revision_id = ? AND revision_name = ?
+                RETURNING revision_id
+                """,
+                [label, revision_id, expected_name],
+            ).fetchone()
+            if changed is None:
+                raise RevisionNameMoved(str(owner[0]))
+            row = connection.execute(
+                REVISION_SUMMARY_SELECT + " WHERE revision_id = ?", [revision_id]
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("이름을 바꾼 리비전을 다시 읽지 못했습니다.")
+        return revision_summary(row)
 
     def publish_official_revision(
         self,

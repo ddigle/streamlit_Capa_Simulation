@@ -524,3 +524,61 @@ def test_a_rename_in_another_session_keeps_the_comparison_choice(
     assert browser.wire == "비교용 새 이름", "상자가 옛 이름을 그대로 보입니다."
     assert _saved_profile(database) == (s2, s2_newer)
     assert _profile_version(database) == version, "고르지 않았는데 공용 프로필을 다시 썼습니다."
+
+
+TRACED_REVISION_SCRIPT = """
+import streamlit as st
+
+from capa_simulation.components.home_preference import (
+    COMPARISON_REVISION_KEY,
+    _render_comparison_picker,
+)
+
+# 피커 **앞**에서 읽은 비교 리비전 — HOME 본문이 GAP 비교 계획을 고를 때 읽는 자리와 같다.
+st.session_state.setdefault("test_revision_before_picker", []).append(
+    st.session_state.get(COMPARISON_REVISION_KEY)
+)
+_render_comparison_picker(st.session_state["database_path"])
+"""
+
+
+def test_a_revision_renamed_in_another_session_stays_the_comparison_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 세션이 고른 비교 리비전의 이름을 바꿔도 HOME 이 견주는 리비전은 그대로다.
+
+    선택지 글자에는 리비전명이 든다. 피커가 고른 값을 위젯 앞에서 다시 적지 않으면 브라우저가 옛
+    글자를 되보내고, Streamlit 1.63 은 그 글자를 못 찾아 **예외 없이** 첫 리비전(최신)으로 되돌린다
+    — GAP 이 알림 없이 다른 리비전과 견준다. 회차마다 피커 앞에서 읽는 값(HOME 이 쓰는 값)을 잰다.
+    """
+    from widget_browser import BrowserChoice
+
+    database = tmp_path / "scenario.duckdb"
+    _s1, _s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    repository = DuckDBScenarioRepository(database)
+    repository.replace_global_comparison_scenario(s2, s2_older, source="테스트")
+    older_name = next(
+        revision.revision_name
+        for revision in repository.list_revisions(s2)
+        if revision.revision_id == s2_older
+    )
+    monkeypatch.setattr(home_preference, "active_persisted_revision_id", lambda: None)
+    app = AppTest.from_string(TRACED_REVISION_SCRIPT, default_timeout=120)
+    app.session_state["database_path"] = str(database)
+    browser = BrowserChoice(app, "selectbox", COMPARISON_REVISION_KEY)
+    browser.start()
+    assert not app.exception, [element.message for element in app.exception]
+    assert browser.wire == f"r1 · {older_name}"
+
+    repository.rename_revision(s2_older, "비교용 옛 리비전 새 이름", expected_name=older_name)
+    version = _profile_version(database)
+    for _ in range(3):
+        browser.run()
+        assert not app.exception, [element.message for element in app.exception]
+        assert app.session_state["test_revision_before_picker"][-1] == s2_older
+        assert app.session_state[COMPARISON_REVISION_KEY] == s2_older
+
+    assert browser.wire == "r1 · 비교용 옛 리비전 새 이름", "상자가 옛 이름을 그대로 보입니다."
+    assert _saved_profile(database) == (s2, s2_older)
+    assert _profile_version(database) == version, "고르지 않았는데 공용 프로필을 다시 썼습니다."
+    assert s2_newer != s2_older

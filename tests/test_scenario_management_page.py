@@ -108,7 +108,22 @@ def test_list_management_acts_on_the_checked_scenario(
     app.run()
 
     assert not app.exception
-    # 보관은 되돌릴 수 있으므로 확인이 체크박스 한 번이다. 영구 삭제만 이름을 받는다.
+    # 첫 행은 내장 시드 — 지금 최신 공식버전의 시나리오다. 체크·단추 대신 보관할 수 없다는
+    # 안내만 선다.
+    assert any("보관할 수 없습니다" in item.value for item in app.info)
+    assert "보관합니다" not in "".join(widget.label for widget in app.checkbox)
+    assert "보관 실행" not in {button.label for button in app.button}
+
+    # 공식이 아닌 시나리오는 보관할 수 있다. 되돌릴 수 있으므로 확인이 체크박스 한 번이다.
+    other = _clone_official(database_path, "보관해 볼 시나리오", "ARCHIVE-TRY")
+    app = AppTest.from_string(script, default_timeout=120)
+    _check_row(app, database_path, other.scenario.scenario_id)
+    app.run()
+    app.session_state["scenario_list_action"] = "archive"
+    app.run()
+
+    assert not app.exception
+    assert not any("보관할 수 없습니다" in item.value for item in app.info)
     assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
     execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled
@@ -1011,3 +1026,273 @@ def test_a_picked_bigdataquery_row_keeps_its_form_after_the_list_order_is_saved(
     assert not app.exception
     assert app.text_input(key=FORM_CODE_KEY).value == "DEMO-A-001"
     assert app.text_input(key=FORM_SCENARIO_NAME_KEY).value == "알파 시뮬 (DEMO-A-001)"
+
+
+def _list_frame(app: AppTest) -> pd.DataFrame:
+    """목록 편집표(첫 탭의 시나리오 표)를 시나리오명 → 행으로 읽는다."""
+    for element in app.dataframe:
+        frame: pd.DataFrame = element.value
+        if "시나리오명" in frame.columns and "최신 리비전" in frame.columns:
+            return frame.set_index("시나리오명")
+    raise AssertionError("시나리오 목록 표가 없습니다.")
+
+
+def test_the_list_names_the_latest_revision_and_which_revision_is_official(
+    tmp_path: Path,
+) -> None:
+    """「최신 리비전」은 마지막으로 저장한 리비전이고, 공식 칸은 공식 리비전 번호를 함께 적는다.
+
+    「활성 리비전」이라 부르던 열은 세션에 올라와 있는 리비전처럼 읽혀, 「r5 | v5 · 최신」이 r5 를
+    공식으로 오독하게 했다(2026-10-22 화면 점검).
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    seed_release = repository.latest_official_release()
+    assert seed_release is not None
+    seed = repository.load_revision(seed_release.revision_id)
+    newer = repository.save_revision(
+        seed.scenario.scenario_id, seed.tables, seed.preset, revision_name="공식 뒤 저장"
+    )
+    clone = _clone_official(database_path, "공식 복제", "OFFICIAL-CLONE")
+    repository.publish_official_revision(
+        clone.scenario.scenario_id, clone.revision.revision_id, release_name="복제 공식안"
+    )
+
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    table = _list_frame(app)
+    assert "활성 리비전" not in table.columns
+    seed_row = table.loc[seed.scenario.scenario_name]
+    assert seed_row["최신 리비전"] == f"r{newer.revision.revision_no}"
+    assert seed_row["공식버전"] == f"v{seed_release.release_no} · r{seed_release.revision_no}"
+    assert table.loc["공식 복제"]["공식버전"] == (
+        f"v{seed_release.release_no + 1} · r{clone.revision.revision_no} · 최신"
+    )
+
+
+def test_a_revision_renamed_elsewhere_is_still_the_one_loaded_and_published(
+    tmp_path: Path,
+) -> None:
+    """다른 세션이 고른 리비전의 이름을 바꿔도 「불러오기」·「공식버전 지정」은 고른 리비전에
+    걸린다.
+
+    카드 리비전 상자의 글자에는 리비전명이 든다. 브라우저는 옛 글자를 들고 있다가 되보내고,
+    Streamlit 1.63 은 그 글자를 선택지에서 못 찾으면 **예외 없이** 첫 항목(최신 리비전)으로
+    되돌렸다 — r2 를 고르고 누른 「불러오기」가 r3 을 올렸다(2026-10-22 AppTest 실측). 그래서 예외
+    없음이 아니라 누른 회차에 실제로 걸린 리비전 id 를 잰다. 브라우저 글자는 `BrowserChoice` 가
+    들고 다닌다.
+    """
+    from widget_browser import BrowserChoice
+
+    from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
+
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    target = _clone_official(database_path, "이름 바꿀 시나리오", "RENAME-1")
+    scenario_id = target.scenario.scenario_id
+    picked = repository.save_revision(
+        scenario_id,
+        target.tables,
+        target.preset,
+        revision_name="고를 리비전",
+        parent_revision_id=target.revision.revision_id,
+    ).revision
+    newest = repository.save_revision(
+        scenario_id,
+        target.tables,
+        target.preset,
+        revision_name="최신 리비전",
+        parent_revision_id=picked.revision_id,
+    ).revision
+
+    def pick_then_rename(new_name: str) -> tuple[AppTest, BrowserChoice]:
+        app = AppTest.from_string(script, default_timeout=120)
+        _check_row(app, database_path, scenario_id)
+        browser = BrowserChoice(app, "selectbox", REVISION_SELECT_KEY)
+        browser.start()
+        assert not app.exception
+        assert browser.wire == f"r{newest.revision_no} · 최신 리비전"
+        current = next(
+            revision.revision_name
+            for revision in repository.list_revisions(scenario_id)
+            if revision.revision_id == picked.revision_id
+        )
+        browser.pick(f"r{picked.revision_no} · {current}")
+        browser.run()
+        assert app.session_state[REVISION_SELECT_KEY] == picked.revision_id
+        # 다른 세션이 고른 리비전의 이름을 바꾼다. 이 세션은 그 사이 다른 조작을 한 번 한다.
+        repository.rename_revision(picked.revision_id, new_name, expected_name=current)
+        browser.run()
+        assert not app.exception
+        assert app.session_state[REVISION_SELECT_KEY] == picked.revision_id
+        assert browser.wire == f"r{picked.revision_no} · {new_name}", "상자가 옛 이름을 보입니다."
+        return app, browser
+
+    app, browser = pick_then_rename("고른 뒤 바뀐 이름")
+    next(button for button in app.button if button.label == "시나리오 불러오기").click()
+    browser.run()
+    assert not app.exception
+    assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == picked.revision_id
+
+    app, browser = pick_then_rename("두 번째로 바뀐 이름")
+    app.session_state[ACTION_KEY] = "official"
+    browser.run()
+    assert not app.exception
+    # 지정 칸은 대상 리비전을 이름으로도 적는다 — 사람 눈으로도 확인한다.
+    assert any(
+        f"r{picked.revision_no} · 두 번째로 바뀐 이름" in item.value for item in app.caption
+    ), [item.value for item in app.caption]
+    _official_button(app).click()
+    browser.run()
+    assert not app.exception
+    latest = repository.latest_official_release()
+    assert latest is not None
+    assert latest.revision_id == picked.revision_id
+
+
+def test_permanent_delete_says_what_goes_with_it_right_above_an_empty_box(
+    tmp_path: Path,
+) -> None:
+    """영구 삭제 입력 바로 위에 함께 지워질 리비전 수·공식 발행 이력 수와 되돌릴 수 없다는 말이
+    선다.
+
+    입력 칸은 빈 칸으로 선다 — 시나리오명을 placeholder 로 깔면 이미 채워진 칸처럼 보였다.
+    단추는 눈에 띄는 primary 다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    doomed = _clone_official(database_path, "지울 시나리오", "DELETE-1")
+    repository.save_revision(
+        doomed.scenario.scenario_id, doomed.tables, doomed.preset, revision_name="둘째"
+    )
+    repository.publish_official_revision(
+        doomed.scenario.scenario_id, doomed.revision.revision_id, release_name="잠깐 공식"
+    )
+    seed = repository.list_official_releases()[-1]
+    repository.publish_official_revision(
+        seed.scenario_id, seed.revision_id, release_name="다시 시드"
+    )
+    repository.archive_scenario(doomed.scenario.scenario_id)
+
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    assert any(
+        item.value
+        == "영구 삭제하면 리비전 2개와 공식 발행 이력 1건이 함께 지워지고 되돌릴 수 없습니다."
+        for item in app.warning
+    ), [item.value for item in app.warning]
+    assert not any("영구 삭제는 되돌릴 수 없습니다" in item.value for item in app.caption)
+    confirm = app.text_input(key=DELETE_CONFIRM_KEY)
+    assert confirm.label == "확인: 「지울 시나리오」를 그대로 입력하세요"
+    assert confirm.placeholder == ""
+    execute = next(button for button in app.button if button.label == "영구 삭제 실행")
+    assert execute.proto.type == "primary"
+    assert execute.disabled
+
+
+def test_the_clone_form_names_what_it_copies(tmp_path: Path) -> None:
+    """복제 폼 위에 지금 올라와 있는 시나리오·리비전과 저장하지 않은 편집이 들어가는지를 적는다."""
+    from capa_simulation.components.literal_markdown import literal_markdown
+    from capa_simulation.services.korean_particle import object_particle
+
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    release = DuckDBScenarioRepository(database_path).latest_official_release()
+    assert release is not None
+    app.segmented_control(key=MODE_KEY).set_value("현재 활성 RQ 복제").run()
+    assert not app.exception
+
+    expected = (
+        f"지금 올라와 있는 「{release.scenario_name}」 r{release.revision_no}"
+        f"{object_particle(str(release.revision_no))} 새 시나리오로 복제합니다 — "
+        "저장하지 않은 편집은 없습니다."
+    )
+    shown = expected.replace(release.scenario_name, literal_markdown(release.scenario_name))
+    assert shown in [item.value for item in app.caption], [item.value for item in app.caption]
+    # 원천 코드·원천명은 비워 둔다 — 원천명은 자동 갱신 주차 판정의 근거다.
+    assert _clone_inputs(app)["원천 시뮬레이션 코드"] == ""
+    assert _clone_inputs(app)["원천 시뮬레이션명"] == ""
+
+
+def test_names_in_markdown_places_are_shown_as_typed(tmp_path: Path) -> None:
+    """카드 제목·보관 확인처럼 마크다운으로 그려지는 자리에 시나리오명을 글자 그대로 싣는다.
+
+    그대로면 「A~B~C」의 물결표는 취소선으로, 「$x$」는 수식으로 사라진다(AGENTS 9장).
+    """
+    from capa_simulation.components.literal_markdown import literal_markdown
+
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    name = "A~B~C $x$ *y*"
+    target = _clone_official(database_path, name, "MARKDOWN-1")
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _check_row(app, database_path, target.scenario.scenario_id)
+    app.run()
+    app.session_state[ACTION_KEY] = "archive"
+    app.run()
+    assert not app.exception
+    escaped = literal_markdown(name)
+    assert any(item.value == f"#### :material/check_box: {escaped}" for item in app.markdown)
+    assert any(widget.label.startswith(escaped) for widget in app.checkbox)
+
+
+def _archived_box_place(app: AppTest) -> int:
+    """첫 탭 안에서 보관함 상자가 몇 번째 자식인가(브라우저가 블록을 가리키는 순번)."""
+    tab = app.main.tabs[0]
+    box = app.main.get_by_key(ARCHIVED_EXPANDER_KEY)
+    return next(index for index, child in tab.children.items() if child is box)
+
+
+def test_the_archived_box_keeps_its_place_with_or_without_notices(tmp_path: Path) -> None:
+    """맨 위 알림·두 건 체크 경고가 생기고 사라져도 보관함 상자의 순번이 같다.
+
+    보관함의 「되돌리기」·「영구 삭제」는 본문에서 `st.rerun()` 으로 회차를 끊는다. 다음 회차에
+    알림이 생겨 key 있는 보관함 상자가 한 칸 밀리면 옛 자리에 흐린 사본이 남아 모드를 바꿔도
+    새로고침 전까지 따라왔다(2026-10-22 사본 앱 이분 탐색 — 알림·상자 key·본문 rerun 셋이 모두
+    있을 때만). 알림은 늘 서 있는 칸 안에 그려 자리를 고정한다(AGENTS 9장).
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    first = _clone_official(database_path, "보관 자리 하나", "PLACE-1")
+    _clone_official(database_path, "보관 자리 둘", "PLACE-2")
+    archived = _clone_official(database_path, "보관 자리 셋", "PLACE-3")
+    repository.archive_scenario(archived.scenario.scenario_id)
+
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    quiet = _archived_box_place(app)
+
+    app.session_state[FLASH_KEY] = "보관 자리 셋을 목록으로 되돌렸습니다."
+    app.session_state["scenario_management_flash_warning"] = "남은 계산 경고"
+    app.run()
+    assert not app.exception
+    assert any("되돌렸습니다" in item.value for item in app.success)
+    assert _archived_box_place(app) == quiet
+
+    order = [scenario.scenario_id for scenario in repository.list_scenarios()]
+    app.session_state[LIST_EDITOR_KEY] = {
+        "edited_rows": {index: {"선택": True} for index in range(len(order))},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.run()
+    assert not app.exception
+    assert any("한 건만 선택할 수 있습니다" in item.value for item in app.warning)
+    assert _archived_box_place(app) == quiet
+
+    _check_row(app, database_path, first.scenario.scenario_id)
+    app.run()
+    assert not app.exception
+    assert _archived_box_place(app) == quiet

@@ -296,6 +296,8 @@ def test_archiving_a_scenario_rechecks_the_summary(
     scenario_ui: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _Repo()
+    # 최신 공식버전의 시나리오면 보관 칸이 안내만 그린다. 여기서는 보관할 수 있는 시나리오다.
+    monkeypatch.setattr(repo, "latest_official_release", lambda: None, raising=False)
     with pytest.raises(_Rerun):
         scenario_management._render_archive(repo, SUMMARY)  # type: ignore[arg-type]
     assert repo.calls == ["archive_scenario"] and _forgotten(scenario_ui)
@@ -307,6 +309,7 @@ def test_deleting_a_scenario_rechecks_the_summary(
     repo = _Repo()
     monkeypatch.setattr(st, "text_input", lambda *args, **kwargs: SUMMARY.scenario_name)
     monkeypatch.setattr(repo, "count_official_releases", lambda scenario_id: 0, raising=False)
+    monkeypatch.setattr(repo, "list_revisions", lambda scenario_id: [SUMMARY], raising=False)
     with pytest.raises(_Rerun):
         scenario_management._render_delete(repo, SUMMARY)  # type: ignore[arg-type]
     assert "delete_scenario" in repo.calls and _forgotten(scenario_ui)

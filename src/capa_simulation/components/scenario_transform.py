@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
+from capa_simulation.components.revision_label import revision_label
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -140,12 +141,15 @@ def render_source_selector(
             st.session_state[seed_key] = active_revision
     else:
         st.session_state.pop(seed_key, None)
+    # 씨앗 뒤에도 **매 회차** 고른 id 를 다시 적는다. 선택지 글자의 리비전명은 다른 세션이 바꿀 수
+    # 있어, 적지 않으면 브라우저가 옛 글자를 되보내 1.63 이 첫 리비전으로 조용히 되돌린다 — 준비하던
+    # 원본이 알림 없이 다른 리비전으로 바뀐다(AGENTS 9장 「글자가 바뀌는 것을 피할 수 없는 상자」).
+    if revisions:
+        prune_choice(revision_key, list(revisions), default=next(iter(revisions)))
     revision_id = st.selectbox(
         f"{label} 리비전",
         options=list(revisions),
-        format_func=lambda value: (
-            f"r{revisions[value].revision_no} · {revisions[value].revision_name}"
-        ),
+        format_func=lambda value: revision_label(revisions[value]),
         key=revision_key,
         persist_state="session",
         help=(

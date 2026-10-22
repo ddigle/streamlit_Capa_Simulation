@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 import pandas as pd
@@ -20,6 +21,8 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.intro_summary import forget_intro_summary_check
+from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_month_merge import (
     MERGE_SOURCE_ROLES,
     render_scenario_month_merge,
@@ -34,13 +37,21 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_version,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message, prune_choice
+from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
     clear_global_securement_threshold_cache,
     clear_scenario_snapshot_cache,
+    get_scenario_repository,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSummary
+from capa_simulation.persistence.models import (
+    OfficialReleaseSummary,
+    RevisionSummary,
+    ScenarioCreate,
+    ScenarioPreset,
+    ScenarioSummary,
+)
 from capa_simulation.persistence.repository import (
     REVISION_TABLES,
     DuckDBScenarioRepository,
@@ -50,8 +61,10 @@ from capa_simulation.scenario_activation import (
     activate_saved_revision,
     active_persisted_revision_id,
     active_persisted_scenario_id,
+    active_scenario_label,
     clear_persisted_scenario_activation,
     has_unsaved_scenario_changes,
+    rename_active_revision_label,
     rename_active_scenario_label,
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
@@ -61,7 +74,7 @@ from capa_simulation.scenario_state import (
     session_virtual_products,
 )
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
-from capa_simulation.services.korean_particle import object_particle, with_direction_particle
+from capa_simulation.services.korean_particle import direction_particle, object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_virtual_products import (
     inherit_virtual_product_records,
@@ -160,12 +173,18 @@ def _render_store_status(
     repository: DuckDBScenarioRepository,
     scenarios: list[ScenarioSummary],
 ) -> None:
+    # 알림은 늘 서 있는 한 칸 안에 그린다(AGENTS 9장 「key 가 있어도 자리는 고정한다」). 형제
+    # 자리에 바로 그리면 알림이 생기는 회차에 그 아래가 한 칸 밀린다 — 보관함의 「되돌리기」·
+    # 「영구 삭제」는 본문에서 `st.rerun()` 으로 회차를 끊으므로, 끊긴 회차의 key 있는 보관함
+    # 상자가 옛 자리에 흐린 사본으로 남아 모드를 바꿔도 새로고침 전까지 따라왔다(2026-10-22 사본
+    # 앱 이분 탐색 — 알림을 빼거나 상자 key 를 빼거나 되돌리기를 콜백으로 바꾸면 각각 사라졌다).
+    notice = st.container()
     flash = st.session_state.pop(FLASH_KEY, None)
     if isinstance(flash, str):
-        st.success(flash)
+        notice.success(flash)
     warning = st.session_state.pop(FLASH_WARNING_KEY, None)
     if isinstance(warning, str):
-        st.warning(warning, icon=":material/warning:")
+        notice.warning(warning, icon=":material/warning:")
     official = repository.latest_official_release()
     with st.container(border=True):
         st.markdown("#### :material/database: 저장소 상태")
@@ -184,8 +203,8 @@ def _render_store_status(
             st.warning("공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다.")
         else:
             st.success(
-                f"최신 공식 v{official.release_no} · {official.scenario_name} "
-                f"r{official.revision_no} · {official.release_name}"
+                f"최신 공식 v{official.release_no} · {literal_markdown(official.scenario_name)} "
+                f"r{official.revision_no} · {literal_markdown(official.release_name)}"
             )
             if official.source_simulation_code == BUILTIN_SEED_SOURCE_CODE:
                 st.info(
@@ -201,10 +220,13 @@ def _active_scenario_line(
     active_id: str,
     active_revision_id: str,
 ) -> str:
-    """활성 시나리오·리비전을 사람이 읽는 이름으로 적는다. 이름을 못 찾으면 ID 로 적는다."""
+    """활성 시나리오·리비전을 사람이 읽는 이름으로 적는다. 이름을 못 찾으면 ID 로 적는다.
+
+    `st.write` 가 마크다운으로 그리므로 사람이 적은 이름은 `literal_markdown` 으로 싣는다.
+    """
     scenario = next((item for item in scenarios if item.scenario_id == active_id), None)
-    scenario_label = scenario.scenario_name if scenario is not None else active_id
-    revision_label = active_revision_id
+    scenario_text = scenario.scenario_name if scenario is not None else active_id
+    revision_text = active_revision_id
     if scenario is not None:
         revision = next(
             (
@@ -215,9 +237,9 @@ def _active_scenario_line(
             None,
         )
         if revision is not None:
-            revision_label = f"r{revision.revision_no} · {revision.revision_name}"
+            revision_text = revision_label(revision)
     dirty = " · :orange-badge[저장하지 않은 변경 있음]" if has_unsaved_scenario_changes() else ""
-    return f"**{scenario_label}** · {revision_label}{dirty}"
+    return f"**{literal_markdown(scenario_text)}** · {literal_markdown(revision_text)}{dirty}"
 
 
 def _render_list_management(
@@ -230,7 +252,9 @@ def _render_list_management(
         _render_archived_scenarios(repository)
         return
     edited = _render_scenario_list_editor(repository, scenarios)
-    selected_id = _resolve_selected_scenario(edited)
+    # 두 건 체크 경고도 늘 서 있는 칸 안에 그린다 — 아래 보관함 상자의 자리를 고정한다(위 알림 칸과
+    # 같은 까닭). 고른 것이 없을 때의 안내와 고른 시나리오 카드는 한 칸씩이라 자리가 같다.
+    selected_id = _resolve_selected_scenario(edited, st.container())
     if selected_id is None:
         st.caption(
             "표에서 시나리오 한 건을 선택하면 불러오기·이름 수정·공식버전 지정·보관을 "
@@ -247,12 +271,18 @@ def _render_scenario_list_editor(
     repository: DuckDBScenarioRepository,
     scenarios: list[ScenarioSummary],
 ) -> pd.DataFrame:
-    """누적 목록 표. 체크박스와 순서만 편집할 수 있고 나머지는 읽기 전용이다."""
+    """누적 목록 표. 체크박스와 순서만 편집할 수 있고 나머지는 읽기 전용이다.
+
+    「최신 리비전」은 그 시나리오에 마지막으로 저장한 리비전이다(`active_revision_no`). 이 세션에
+    올라와 있는 리비전은 위 저장소 상태 줄이 말한다 — 「활성 리비전」이라 부르던 때는 그 둘이 같은
+    것으로 읽혀, 「r5 | v5 · 최신」이 r5 를 공식으로 오독하게 했다. 그래서 공식 칸에 공식 리비전
+    번호를 함께 적는다(`_official_label`).
+    """
     # 발행 이력은 최신 번호가 먼저 온다. 시나리오마다 첫 번째가 그 시나리오의 최신 공식이다.
     releases = repository.list_official_releases()
-    official_by_scenario: dict[str, int] = {}
+    official_by_scenario: dict[str, OfficialReleaseSummary] = {}
     for release in releases:
-        official_by_scenario.setdefault(release.scenario_id, release.release_no)
+        official_by_scenario.setdefault(release.scenario_id, release)
     # 최신 공식 시나리오는 기본 진입점이라 삭제가 막힌다. 눌러 보고 알게 하지 않는다.
     latest_official_scenario = releases[0].scenario_id if releases else None
     table = pd.DataFrame(
@@ -261,7 +291,7 @@ def _render_scenario_list_editor(
             ORDER_COLUMN: range(1, len(scenarios) + 1),
             "시나리오명": [scenario.scenario_name for scenario in scenarios],
             "원천 코드": [scenario.source_simulation_code for scenario in scenarios],
-            "활성 리비전": [f"r{scenario.active_revision_no}" for scenario in scenarios],
+            "최신 리비전": [f"r{scenario.active_revision_no}" for scenario in scenarios],
             "공식버전": [
                 _official_label(
                     scenario.scenario_id, official_by_scenario, latest_official_scenario
@@ -307,13 +337,13 @@ def _render_scenario_list_editor(
             ),
             "시나리오명": st.column_config.TextColumn("시나리오명", width=300),
             "원천 코드": st.column_config.TextColumn("원천 코드", width=240),
-            "활성 리비전": st.column_config.TextColumn("활성 리비전", width=70),
-            "공식버전": st.column_config.TextColumn("공식버전", width=90),
+            "최신 리비전": st.column_config.TextColumn("최신 리비전", width=70),
+            "공식버전": st.column_config.TextColumn("공식버전", width=110),
             "최근 수정": st.column_config.DatetimeColumn(
                 "최근 수정", format="YYYY-MM-DD HH:mm", width=140
             ),
         },
-        disabled=["시나리오명", "원천 코드", "활성 리비전", "공식버전", "최근 수정"],
+        disabled=["시나리오명", "원천 코드", "최신 리비전", "공식버전", "최근 수정"],
     )
     if order_clicked:
         _save_list_order(repository, edited, order_notice)
@@ -322,16 +352,17 @@ def _render_scenario_list_editor(
 
 def _official_label(
     scenario_id: str,
-    official_by_scenario: dict[str, int],
+    official_by_scenario: Mapping[str, OfficialReleaseSummary],
     latest_official_scenario: str | None,
 ) -> str:
-    """그 시나리오의 최신 공식버전 번호. 저장소 전체의 최신이면 그 사실을 함께 적는다."""
-    release_no = official_by_scenario.get(scenario_id)
-    if release_no is None:
+    """그 시나리오의 최신 공식버전과 그 리비전(「v3 · r3」). 저장소 전체의 최신이면 「· 최신」."""
+    release = official_by_scenario.get(scenario_id)
+    if release is None:
         return ""
+    label = f"v{release.release_no} · r{release.revision_no}"
     if scenario_id == latest_official_scenario:
-        return f"v{release_no} · 최신"
-    return f"v{release_no}"
+        return f"{label} · 최신"
+    return label
 
 
 def _save_list_order(
@@ -349,15 +380,15 @@ def _save_list_order(
     st.rerun()
 
 
-def _resolve_selected_scenario(edited: pd.DataFrame) -> str | None:
-    """체크한 시나리오 하나. 두 건 이상이면 고른 것이 없는 것으로 본다."""
+def _resolve_selected_scenario(edited: pd.DataFrame, notice: DeltaGenerator) -> str | None:
+    """체크한 시나리오 하나. 두 건 이상이면 고른 것이 없는 것으로 보고 `notice` 칸에 알린다."""
     checked = [
         str(scenario_id)
         for scenario_id, selected in zip(edited.index, edited[SELECT_COLUMN], strict=True)
         if bool(selected)
     ]
     if len(checked) > 1:
-        st.warning("시나리오는 한 번에 한 건만 선택할 수 있습니다. 체크를 하나만 남기세요.")
+        notice.warning("시나리오는 한 번에 한 건만 선택할 수 있습니다. 체크를 하나만 남기세요.")
         return None
     return checked[0] if checked else None
 
@@ -377,9 +408,12 @@ def _render_scenario_actions(
         st.session_state.pop(REVISION_SELECT_KEY, None)
         st.session_state.pop(REVISION_SEED_KEY, None)
     with st.container(border=True):
-        st.markdown(f"#### :material/check_box: {summary.scenario_name}")
+        st.markdown(f"#### :material/check_box: {literal_markdown(summary.scenario_name)}")
         revisions = repository.list_revisions(summary.scenario_id)
         revision_by_id = {revision.revision_id: revision for revision in revisions}
+        if not revision_by_id:
+            st.info("이 시나리오에 저장된 리비전이 없습니다.")
+            return
         # 목록은 최신 리비전이 먼저 온다. 그러나 지금 보고 있는 시나리오라면 **활성
         # 리비전**이 미리 골라져 있어야 한다. 화면과 다른 것이 골라져 있으면 "같은 것을
         # 다시 불러왔다" 고 여기면서 실은 다른 리비전을 올리게 된다. 활성 리비전이 바뀌면
@@ -401,12 +435,19 @@ def _render_scenario_actions(
             # 넣은 리비전으로 돌아왔을 때 「같은 씨앗」으로 읽혀 상자가 따라오지 않았다
             # (2026-10-11 재검증).
             st.session_state.pop(REVISION_SEED_KEY, None)
+        # 씨앗 뒤에도 **매 회차** 고른 id 를 다시 적는다. 선택지 글자에 든 리비전명은 고칠 수 있어
+        # (`rename_revision`), 다른 세션이 이름을 바꾸면 브라우저가 옛 글자를 되보낸다. 적지 않으면
+        # Streamlit 1.63 은 그 글자를 선택지에서 못 찾아 **첫 항목(최신 리비전)으로 조용히** 되돌려,
+        # 다음 「시나리오 불러오기」·「공식버전 지정」이 고른 것과 다른 리비전에 걸린다(AGENTS 9장).
+        prune_choice(
+            REVISION_SELECT_KEY,
+            list(revision_by_id),
+            default=_seed_revision(summary, revision_by_id, active_revision_id),
+        )
         selected_revision_id = st.selectbox(
             "리비전",
             options=list(revision_by_id),
-            format_func=lambda value: (
-                f"r{revision_by_id[value].revision_no} · {revision_by_id[value].revision_name}"
-            ),
+            format_func=lambda value: revision_label(revision_by_id[value]),
             key=REVISION_SELECT_KEY,
         )
         # 불러오는 입구가 둘이다 — 이 카드와 사이드바 시나리오 팝업. 확인 절차와 글자를 맞춘다
@@ -438,9 +479,26 @@ def _render_scenario_actions(
         if action == "rename":
             _render_rename(repository, summary)
         elif action == "official":
-            _render_official(repository, database_path, summary, selected_revision_id)
+            _render_official(
+                repository, database_path, summary, revision_by_id[selected_revision_id]
+            )
         elif action == "archive":
             _render_archive(repository, summary)
+
+
+def _seed_revision(
+    summary: ScenarioSummary,
+    revision_by_id: Mapping[str, RevisionSummary],
+    active_revision_id: str | None,
+) -> str:
+    """카드 리비전 상자의 기본값. 올라와 있는 시나리오면 올라와 있는 리비전, 아니면 최신 리비전."""
+    if (
+        summary.scenario_id == active_persisted_scenario_id()
+        and active_revision_id is not None
+        and active_revision_id in revision_by_id
+    ):
+        return active_revision_id
+    return next(iter(revision_by_id))
 
 
 def _action_button(label: str, action: str, icon: str) -> None:
@@ -459,7 +517,7 @@ def _load_revision(database_path: str, revision_id: str) -> None:
         return
     activate_persisted_snapshot(snapshot)
     st.session_state[FLASH_KEY] = (
-        f"{snapshot.scenario.scenario_name} r{snapshot.revision.revision_no}"
+        f"{literal_markdown(snapshot.scenario.scenario_name)} r{snapshot.revision.revision_no}"
         f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
     )
     st.rerun()
@@ -486,19 +544,56 @@ def _render_rename(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     forget_intro_summary_check()
     # 머리 띠의 시나리오명은 활성화 때 떠 둔 값이다. 올라와 있는 시나리오면 같이 바꾼다.
     rename_active_scenario_label(summary.scenario_id, renamed_summary.scenario_name)
+    renamed_name = renamed_summary.scenario_name
     st.session_state[FLASH_KEY] = (
-        f"시나리오명을 {with_direction_particle(renamed_summary.scenario_name)} 변경했습니다."
+        f"시나리오명을 {literal_markdown(renamed_name)}{direction_particle(renamed_name)} "
+        "변경했습니다."
     )
     st.session_state.pop(ACTION_KEY, None)
     st.rerun()
+
+
+def save_revision_name(
+    database_path: str, revision: RevisionSummary, revision_name: str
+) -> RevisionSummary | None:
+    """리비전 하나의 이름표만 바꾸고 이 세션의 후속 처리를 한다. 바뀐 것이 없으면 쓰지 않고 `None`.
+
+    `revision` 은 화면이 그 회차에 읽어 보인 요약이다. 그 이름을 `expected_name` 으로 넘겨 비교 후
+    쓰기를 한다 — 그 사이 다른 사용자가 먼저 바꿨으면 저장소가 `RevisionNameMoved` 로 거절한다.
+    빈 이름·보관된 시나리오·파일 잠금도 저장소 예외(`BOOTSTRAP_ERRORS` 안)로 그대로 올리고, 부르는
+    쪽이 누른 자리에서 알린다. 콜백에서도 부를 수 있게 DB 핀을 스스로 잡는다(겹쳐도 된다).
+
+    후속 처리는 셋이다. 스냅샷 payload 가 리비전 요약을 통째로 담으므로 프로세스 캐시를 비우고
+    (`clear_scenario_snapshot_cache`), 파생 화면이 메모한 원본(요약 포함)을 버리고
+    (`forget_derived_sources`), 그 리비전이 이 세션에 올라와 있으면 머리 띠·팝업 머리 줄의 이름표를
+    바꾼다(`rename_active_revision_label` — 활성화는 다시 하지 않는다). 공식 이력·비교 프로필·입장
+    화면 Summary 는 리비전명을 싣지 않아 건드리지 않는다. 시나리오 「최근 수정」도 오르지 않아 목록
+    차례와 행 선택이 그대로다.
+    """
+    if revision_name.strip() == revision.revision_name:
+        return None
+    with pinned_connections(Path(database_path)):
+        renamed = get_scenario_repository(database_path).rename_revision(
+            revision.revision_id, revision_name, expected_name=revision.revision_name
+        )
+    clear_scenario_snapshot_cache()
+    forget_derived_sources()
+    rename_active_revision_label(renamed.revision_id, renamed.revision_name)
+    return renamed
 
 
 def _render_official(
     repository: DuckDBScenarioRepository,
     database_path: str,
     summary: ScenarioSummary,
-    revision_id: str,
+    revision: RevisionSummary,
 ) -> None:
+    revision_id = revision.revision_id
+    # 지정 대상을 사람 눈으로도 확인하게 적는다. 모두의 첫 화면이 바뀌는 작업이다.
+    st.caption(
+        f"대상: **{literal_markdown(summary.scenario_name)}** "
+        f"{literal_markdown(revision_label(revision))}"
+    )
     # 가상 제품은 실적과 대조할 수 없는 값이다. 그런 리비전이 모두의 첫 화면이 되기 전에
     # 지정하는 사람이 그 사실을 보고 확인하게 한다(2026-10-06 사용자 결정). 확인 체크는 폼
     # **밖**에 둔다 — 폼 안의 체크는 누를 때 다시 그리지 않아 지정 버튼을 풀 수 없다.
@@ -542,7 +637,7 @@ def _render_official(
             st.error(bootstrap_error_message(exc))
         else:
             st.session_state[FLASH_KEY] = (
-                f"공식 v{release.release_no} · {release.release_name}"
+                f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
                 f"{object_particle(release.release_name)} 지정했습니다."
             )
             # 허락하면서 하는 경고(소요대수에 들지 않은 수요 건수)는 지정한 사람이 그 자리에서 본다.
@@ -591,13 +686,25 @@ def official_virtual_product_warning(records: Sequence[VirtualProductRecord]) ->
 
 
 def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSummary) -> None:
+    # 최신 공식버전의 시나리오는 저장소가 보관을 거절한다(`_require_not_latest_official`). 체크하고
+    # 눌러 본 뒤에야 알게 하지 않고 그린 회차의 최신 공식으로 미리 말한다. 저장소 검사는 그대로
+    # 마지막 방어선이다(그 사이 다른 사용자가 공식을 바꾼 경우).
+    official = repository.latest_official_release()
+    if official is not None and official.scenario_id == summary.scenario_id:
+        st.info(
+            f"지금 최신 공식버전(v{official.release_no})의 시나리오라 보관할 수 없습니다 — "
+            "다른 리비전을 먼저 공식으로 지정하세요.",
+            icon=":material/block:",
+        )
+        return
     st.info(
         "보관하면 목록에서 숨겨지고 새 리비전 저장·공식버전 지정이 막힙니다. 데이터는 "
         "그대로 남아 아래 「보관된 시나리오」에서 되돌릴 수 있습니다."
     )
     # 보관이 파일 크기를 줄이지 않는다는 것(용량 목적이면 영구 삭제 + compact)은 Guide 가 말한다.
     confirmed = st.checkbox(
-        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 보관합니다",
+        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
+        "보관합니다",
         key=ARCHIVE_CONFIRM_KEY,
     )
     if not st.button(
@@ -624,7 +731,8 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = (
-        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 보관했습니다."
+        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
+        "보관했습니다."
     )
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
@@ -662,7 +770,7 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
             key=ARCHIVED_SELECT_KEY,
         )
         summary = by_id[selected_id]
-        restore_column, delete_column = st.columns(2)
+        restore_column, _ = st.columns(2)
         with restore_column:
             if st.button(
                 "되돌리기",
@@ -671,8 +779,6 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
                 key="scenario_archived_restore",
             ):
                 _restore_scenario(repository, summary)
-        with delete_column:
-            st.caption("영구 삭제는 되돌릴 수 없습니다.")
         _render_delete(repository, summary)
 
 
@@ -688,27 +794,38 @@ def _restore_scenario(
     clear_scenario_snapshot_cache()
     forget_derived_sources()
     st.session_state[FLASH_KEY] = (
-        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 목록으로 되돌렸습니다."
+        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
+        "목록으로 되돌렸습니다."
     )
     discard_editor(LIST_EDITOR_KEY)
     st.rerun()
 
 
 def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummary) -> None:
-    """영구 삭제. 보관본에만 연다 — 되돌릴 수 없는 길을 한 단계 뒤에 둔다."""
-    release_count = repository.count_official_releases(summary.scenario_id)
-    if release_count:
-        st.warning(f"이 시나리오의 공식 발행 이력 {release_count}건도 함께 사라집니다.")
+    """영구 삭제. 보관본에만 연다 — 되돌릴 수 없는 길을 한 단계 뒤에 둔다.
+
+    지워질 양(리비전 수·공식 발행 이력 수)과 되돌릴 수 없다는 말을 **입력 칸 바로 위** 한 줄에
+    둔다. 입력 칸은 빈 칸으로 선다 — 이름을 placeholder 로 깔면 이미 채워진 칸처럼 보였다.
+    """
+    st.warning(
+        delete_scope_warning(
+            len(repository.list_revisions(summary.scenario_id)),
+            repository.count_official_releases(summary.scenario_id),
+        ),
+        icon=":material/delete_forever:",
+    )
     if st.session_state.pop(DELETE_CLEAR_KEY, False):
         st.session_state[DELETE_CONFIRM_KEY] = ""
     typed = st.text_input(
-        "영구 삭제하려면 시나리오명을 그대로 입력하세요",
+        f"확인: 「{literal_markdown(summary.scenario_name)}」"
+        f"{object_particle(summary.scenario_name)} 그대로 입력하세요",
         key=DELETE_CONFIRM_KEY,
-        placeholder=summary.scenario_name,
+        placeholder="",
     )
     if not st.button(
         "영구 삭제 실행",
         icon=":material/delete_forever:",
+        type="primary",
         disabled=typed.strip() != summary.scenario_name,
         width="stretch",
     ):
@@ -728,13 +845,23 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
     st.session_state[FLASH_KEY] = (
-        f"{summary.scenario_name}{object_particle(summary.scenario_name)} 영구 삭제했습니다."
+        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
+        "영구 삭제했습니다."
     )
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY):
         st.session_state.pop(key, None)
     st.session_state[DELETE_CLEAR_KEY] = True
     st.rerun()
+
+
+def delete_scope_warning(revision_count: int, release_count: int) -> str:
+    """영구 삭제 입력 칸 위 한 줄. 함께 지워질 리비전·공식 발행 이력의 수와 되돌릴 수 없다는 것."""
+    if release_count:
+        scope = f"리비전 {revision_count}개와 공식 발행 이력 {release_count}건이"
+    else:
+        scope = f"리비전 {revision_count}개가"
+    return f"영구 삭제하면 {scope} 함께 지워지고 되돌릴 수 없습니다."
 
 
 def clone_field_key(field: str) -> str:
@@ -757,6 +884,10 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             f"신규 시나리오의 기준 표시순서를 준비하지 못했습니다: {bootstrap_error_message(exc)}"
         )
         return
+    # 무엇을 복제하는지 폼 위에 적는다. 원천 코드·이름 칸의 기본값은 비워 둔다 — 원천 시뮬레이션명은
+    # 공식버전 자동 갱신이 주차(W##)를 읽는 두 번째 근거라, 복제본이 원본의 이름을 물려받으면 그
+    # 복제를 공식으로 지정했을 때 기준 주차가 달라진다.
+    st.caption(clone_target_caption())
     with st.form("scenario_create_form"):
         # 이름은 보관본을 포함해 겹칠 수 없다 — 검사는 저장소가 한다(`create_scenario`).
         scenario_name = st.text_input("시나리오명", key=clone_field_key("name"))
@@ -828,7 +959,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         # HOME 토글을 푼다.
         activate_persisted_snapshot(snapshot)
         st.session_state[FLASH_KEY] = (
-            f"{snapshot.scenario.scenario_name}"
+            f"{literal_markdown(snapshot.scenario.scenario_name)}"
             f"{object_particle(snapshot.scenario.scenario_name)} 저장했습니다."
             + virtual_product_save_notice(len(virtual_products))
         )
@@ -838,6 +969,22 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0)) + 1
         )
         st.rerun()
+
+
+def clone_target_caption() -> str:
+    """복제 폼 위 한 줄 — 지금 올라와 있는 리비전과 저장하지 않은 편집이 함께 들어가는지."""
+    edits = (
+        "저장하지 않은 편집도 함께 들어갑니다"
+        if has_unsaved_scenario_changes()
+        else "저장하지 않은 편집은 없습니다"
+    )
+    label = active_scenario_label()
+    if label is None:
+        return f"지금 올라와 있는 편집본을 새 시나리오로 복제합니다 — {edits}."
+    return (
+        f"지금 올라와 있는 「{literal_markdown(label.scenario_name)}」 r{label.revision_no}"
+        f"{object_particle(str(label.revision_no))} 새 시나리오로 복제합니다 — {edits}."
+    )
 
 
 def revision_field_key(field: str) -> str:

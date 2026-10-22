@@ -5,6 +5,7 @@ from typing import cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_transform import (
     month_table_summary,
     render_derived_save,
@@ -258,11 +259,7 @@ def _month_source_display(
                 "겹침": "겹침" if in_base and in_donor else "",
                 "선택 출처": origin,
                 "사용할 시나리오": selected.scenario.scenario_name if selected else "선택 필요",
-                "리비전": (
-                    f"r{selected.revision.revision_no} · {selected.revision.revision_name}"
-                    if selected
-                    else "—"
-                ),
+                "리비전": revision_label(selected.revision) if selected else "—",
             }
         )
     return pd.DataFrame(rows)

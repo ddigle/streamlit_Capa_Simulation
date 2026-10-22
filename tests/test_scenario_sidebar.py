@@ -671,3 +671,85 @@ def test_a_revision_the_compatibility_check_blocks_is_not_loaded(sidebar_app: Ap
     assert "test_activated_revision" not in app.session_state
     assert any("경로 키가 빈 옛 리비전" in item.value for item in app.error)
     assert app.session_state[SCENARIO_DIALOG_KEY] is True
+
+
+def test_a_revision_renamed_while_the_dialog_is_open_is_still_the_one_loaded(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업이 열린 동안 다른 세션이 고른 리비전의 이름을 바꿔도 「불러오기」는 고른 리비전을 올린다.
+
+    radio 선택지 글자에는 리비전명이 든다. 브라우저가 옛 글자를 되보내면 Streamlit 1.63 은 그 글자를
+    못 찾아 **예외 없이** 첫 선택지로 되돌렸다. 그래서 누른 회차에 실제로 올린 리비전 id 를 잰다.
+    """
+    from widget_browser import BrowserChoice
+
+    newest = revision("revision-1c", "scenario-1", 3, "세 번째")
+    picked = revision("revision-1b", "scenario-1", 2, "두 번째")
+    monkeypatch.setitem(REVISIONS, "scenario-1", [newest, picked, *REVISIONS["scenario-1"]])
+    app = _open(sidebar_app.run())
+    browser = BrowserChoice(app, "radio", SIDEBAR_REVISION_KEY)
+    browser.sync()
+    assert browser.wire == "r1 · 초기"
+    browser.pick("r2 · 두 번째")
+    browser.run()
+    assert app.session_state[SIDEBAR_REVISION_KEY] == "revision-1b"
+
+    # 다른 세션이 이름을 바꾼다. 이 세션은 팝업에서 다른 조작을 한 번 한다.
+    monkeypatch.setattr(picked, "revision_name", "바뀐 이름")
+    browser.run()
+    assert not app.exception
+    assert browser.wire == "r2 · 바뀐 이름", "radio 가 옛 이름을 보입니다."
+
+    app.button(key="sidebar_load_revision").click()
+    browser.run()
+    assert not app.exception
+    assert app.session_state["test_activated_revision"] == "revision-1b"
+
+
+def test_a_scenario_renamed_while_the_dialog_is_open_is_still_the_one_loaded(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 팝업의 시나리오 상자도 고른 값을 매 회차 다시 적는다 — 글자에 시나리오명이 든다."""
+    from widget_browser import BrowserChoice
+
+    app = _open(sidebar_app.run())
+    browser = BrowserChoice(app, "selectbox", SIDEBAR_SCENARIO_KEY)
+    browser.sync()
+    browser.pick("증산안 · SIM-002")
+    browser.run()
+    assert app.session_state[SIDEBAR_SCENARIO_KEY] == "scenario-2"
+
+    monkeypatch.setattr(SCENARIOS[1], "scenario_name", "증산 새안")
+    browser.run()
+    assert not app.exception
+    assert browser.wire == "증산 새안 · SIM-002", "상자가 옛 이름을 보입니다."
+
+    app.button(key="sidebar_load_revision").click()
+    browser.run()
+    assert not app.exception
+    assert app.session_state["test_activated_revision"] == "revision-2"
+
+
+def test_names_in_the_dialog_are_shown_as_typed(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """머리 줄 캡션·radio 선택지·메모 캡션은 마크다운으로 그려진다. 사람이 적은 글은 글자 그대로."""
+    from capa_simulation.components.literal_markdown import literal_markdown
+
+    monkeypatch.setattr(LABEL, "scenario_name", "A~B~C")
+    monkeypatch.setattr(LABEL, "revision_name", "$x$")
+    odd = revision("revision-1", "scenario-1", 1, "*별*", "기간 2026-08-01~2026-08-31~")
+    monkeypatch.setitem(REVISIONS, "scenario-1", [odd])
+    app = _open(sidebar_app.run())
+
+    assert any(
+        item.value.startswith(
+            f"올라와 있음 · {literal_markdown('A~B~C')} · r1 {literal_markdown('$x$')}"
+        )
+        for item in app.caption
+    ), [item.value for item in app.caption]
+    revisions = app.radio(key=SIDEBAR_REVISION_KEY)
+    assert revisions.options == [literal_markdown("r1 · *별*")]
+    assert list(revisions.proto.captions) == [
+        "26.10.08 저장 · 올라와 있음 · " + literal_markdown("기간 2026-08-01~2026-08-31~")
+    ]

@@ -506,6 +506,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 값 칸(`_STALE_VALUE_KEYS`)을 지우고 HOME 토글에 기본값을 적으므로 토글을 그리기 전에만 부른다(9장). 활성
     시나리오의 새 리비전 저장(`activate_saved_revision`)은 토글을 둔다. UPEH 가정 % 도 같은 길에서 100 을 적고 그
     공유 위젯의 주인 칸을 지운다(구간은 둔다, `tests/test_scenario_activation.py`).
+  - 이름 변경은 활성화가 아니다 — `rename_active_scenario_label`·`rename_active_revision_label` 이 같은 id 일 때 이름표
+    한 칸만 고친다(다른 세션은 다시 불러올 때 바뀐다).
   - 프리셋을 걸 때 HOME 의 아는 공정 기억(`PROCESS_SEEN_KEY`)을 지운다(`tests/test_process_filter_activation.py`).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
 - `src/capa_simulation/upeh_assumption_state.py` — UPEH 가정 세 칸(%·적용 시작·끝)의 세션 키와 기본값. UI 를 import 하지
@@ -959,6 +961,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`REASON_*`)을 갖고 값은 반올림하지 않는다.
 - `src/capa_simulation/services/key_process.py` — HOME 주요공정 히트맵의 공정 상한(`KEY_PROCESS_LIMIT`)·프리셋 규칙
   (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음).
+- `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
+  카드·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로 쓰는 상자는
+  매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
@@ -1062,6 +1067,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
+  - 리비전명 변경은 `save_revision_name` 한 곳을 거친다 — 저장소의 비교 후 쓰기(`rename_revision`, 다른 사용자가 먼저
+    바꿨으면 `RevisionNameMoved`) 뒤 스냅샷 캐시·파생 원본 메모를 비우고 이 세션 이름표만 고친다(활성화하지 않는다).
+    시나리오 「최근 수정」·공식 이력·비교 프로필은 건드리지 않는다(`tests/test_revision_rename.py`).
+  - 맨 위 알림·두 건 체크 경고는 늘 서 있는 칸 안에 그린다 — 보관함 상자(key 있음) 앞 순번이 알림 때문에 밀리면
+    본문 `st.rerun()` 뒤 흐린 사본이 남았다(9장 「key 가 있어도 자리는 고정한다」).
   - 파생·월 머지·연도 이동은 화면(`components/scenario_transform.py`·`components/scenario_month_merge.py`·
     `components/scenario_year_shift.py`)과 규칙(`services/scenario_transform.py`·`services/scenario_month_merge.py`·
     `services/scenario_year_shift.py`·`services/scenario_virtual_products.py`)으로 나뉜다.
@@ -2062,11 +2072,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다시 돌린다(HOME 비교 리비전, 2026-10-08). 바뀌는 상태는 상자 밖 캡션에 적는다(HOME 비교
   선택의 `_comparison_active_note`, 주요공정 「고칠 프리셋」의 기본 프리셋 캡션). 글자가 바뀌는 것을
   피할 수 없는 상자(공정 표시명의 「표시명 (원본)」 가르기 — `ProcessLabels.unique_format_func`, 다른
-  세션의 이름 바꾸기로 바뀌는 시나리오 이름 — HOME 비교 시나리오·파생 시나리오 원본 상자)는
-  위젯 앞에서 매 회차 잡은 값을 세션에 다시 적어(`prune_choice`·`prune_list_selection`) 브라우저에
-  새 글자를 보낸다. 적지 않으면 브라우저가 옛 글자를 되보내 다음 회차에 그 글자가 id 자리에 들어가거나
-  선택이 빈 값으로 풀린다. 일반 `AppTest.run()` 은 회차마다 세션 값으로 글자를 다시 만들어 이 결함을 보지
-  못한다 — 브라우저처럼 글자를 들고 다니는 `tests/widget_browser.py` 의 `BrowserChoice` 로 잰다.
+  세션의 이름 바꾸기로 바뀌는 시나리오 이름 — HOME 비교 시나리오·파생 시나리오 원본 상자·사이드바 시나리오 팝업의
+  시나리오 상자, 리비전명 변경으로 바뀌는 「r{번호} · {리비전명}」 — 시나리오 관리 카드 리비전 상자·HOME 비교
+  리비전·파생 원본 리비전·사이드바 팝업 리비전 radio)는 위젯 앞에서 매 회차 잡은 값을 세션에 다시
+  적어(`prune_choice`·`prune_list_selection`) 브라우저에 새 글자를 보낸다. 적지 않으면 브라우저가 옛 글자를
+  되보내 다음 회차에 그 글자가 id 자리에 들어가거나, 선택이 빈 값으로 풀리거나, **예외 없이 첫 항목으로
+  조용히 바뀐다**(카드에서 r2 를 고르고 누른 「시나리오 불러오기」가 최신 r3 을 올렸다 — 2026-10-22 AppTest 실측).
+  그래서 시험은 「예외 없음」이 아니라 **누른 회차에 실제로 걸린 대상 id** 로 잰다. 일반 `AppTest.run()` 은 회차마다
+  세션 값으로 글자를 다시 만들어 이 결함을 보지 못한다 — 브라우저처럼 글자를 들고 다니는
+  `tests/widget_browser.py` 의 `BrowserChoice`(selectbox·multiselect·radio)로 잰다.
   AppTest 의 `select`·`set_value` 는 **값**을 받아 `format_func` 로 글자를 만든다 — 보이는 글자(「가공」)를
   넘기면 선택지 밖 값으로 걷힌다. 사용자가 보이는 글자를 고르는 것을 재려면 `BrowserChoice.pick` 을 쓴다.
   **key 없는 상자**(HOME 주요공정 프리셋 `공정` — `default=` 로 프리셋 값을 받는다)는 위젯 id 에 보이는
@@ -2130,7 +2144,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     새로고침 전까지 다른 페이지까지 따라왔다(가용설비 RawData 두 번째 저장). 수가 바뀌는 알림은
     `st.container()` 한 칸 안에 그려 그 아래 형제의 자리를 고정한다. VOC 도 같다 — 답변 0 인 글에
     첫 답변을 남기면 맨 위 알림과 첫 답글이 함께 생겨, 적은 답변이 든 옛 글 상자가 회색 사본으로
-    남았다. 맨 위 알림과 상자 안 답글 목록을 각각 늘 서 있는 한 칸에 둔다. Components v2 컴포넌트 앞에서는 특히
+    남았다. 맨 위 알림과 상자 안 답글 목록을 각각 늘 서 있는 한 칸에 둔다. 시나리오 관리도 같다 — 보관함에서
+    「되돌리기」를 누르면 다음 회차 맨 위 알림이 key 있는 보관함 상자를 한 칸 밀어, 옛 자리에 흐린 상자 둘이 모드를
+    바꿔도 남았다(2026-10-22 사본 앱 이분 탐색: 알림·상자 key·본문 `st.rerun()` 가운데 하나만 빼도 사라졌다). Components v2 컴포넌트 앞에서는 특히
     그렇다 — 순번이 밀리면 컴포넌트가 다시 마운트되어 브라우저에 둔 상태(배율·서랍)를 잃고 스크롤이 튀므로, 그 앞의
     생겼다 사라지는 상자·경고는 늘 서 있는 `st.container()` 칸 안에 그린다. 표준 목표 결과 상자의 가용대수 누락 경고·
     「누락 공정·주차 확인」(`availability_notice_slot`)과 공용 계층 월 표의 행 페이지 줄(`page_slot`)이 그 예다 — 없을
@@ -2286,6 +2302,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 활성 리비전을 씨앗으로 쓰는 위젯은 「무엇으로 씨앗을 넣었나」를 함께 적어 두고 활성 리비전이 바뀌면 다시 적는다
   (`components/scenario_management.py` 의 `REVISION_SEED_KEY`, `components/scenario_transform.py` 의 원본 리비전 상자)
   — 칸이 없을 때만 넣으면 사이드바 팝업에서 불러온 뒤에도 옛 리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다.
+  씨앗 처리 뒤에도 **매 회차** 고른 id 를 되쓴다 — 선택지 글자의 리비전명이 바뀔 수 있다(위 「글자가 바뀌는 것을 피할
+  수 없는 상자」).
 - `st.query_params` 는 자기 키만 넣고 `del` 한다. `st.query_params.clear()` 는 쓰지 않는다 — 테마 인자
   (`design/theme.THEME_QUERY_PARAM`)까지 지워 첫 방문으로 보고 다시 새로고침한다. 키 둘 이상을 지울 때는 `del` 을 되풀이하지
   않고 남길 인자를 `get_all` 로 다시 실어 `st.query_params.from_dict` 한 번으로 바꾼다 — 1.63 은 바꿀 때마다 주소 메시지를

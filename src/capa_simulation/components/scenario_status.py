@@ -37,6 +37,8 @@ import capa_simulation.settings as settings
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.intro_summary import latest_official_revision
+from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
     forget_pending_edits,
     pending_edit_labels,
@@ -55,6 +57,7 @@ from capa_simulation.page_bootstrap import (
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
     forget_page_dialogs,
+    prune_choice,
 )
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
@@ -335,8 +338,8 @@ def _render_dialog_header(
         st.caption("올라와 있는 리비전이 없습니다. 아래에서 불러오세요.")
         return
     st.caption(
-        f"올라와 있음 · {label.scenario_name} · r{label.revision_no} {label.revision_name}"
-        + (f" {badge}" if badge else "")
+        f"올라와 있음 · {literal_markdown(label.scenario_name)} · r{label.revision_no} "
+        f"{literal_markdown(label.revision_name)}" + (f" {badge}" if badge else "")
     )
 
 
@@ -352,14 +355,23 @@ def _render_load(
     unsaved: bool,
     pending_edits: Sequence[str],
 ) -> None:
-    """불러오기 구획. 작업 줄이 목록 **위**다 — 공정 필터 팝업과 같은 문법이다."""
-    if st.session_state.get(SIDEBAR_SCENARIO_KEY) not in scenario_by_id:
-        st.session_state[SIDEBAR_SCENARIO_KEY] = (
+    """불러오기 구획. 작업 줄이 목록 **위**다 — 공정 필터 팝업과 같은 문법이다.
+
+    시나리오 상자·리비전 radio 의 고른 값은 위젯 앞에서 **매 회차** 다시 적는다. 두 선택지 글자에
+    든 시나리오명·리비전명은 다른 세션이 바꿀 수 있고, 팝업이 열린 동안 브라우저는 옛 글자를
+    되보낸다. 적지 않으면 Streamlit 1.63 이 그 글자를 선택지에서 못 찾아 첫 항목으로 조용히
+    되돌려 다음 「불러오기」가 고른 것과 다른 리비전에 걸린다(AGENTS 9장 「글자가 바뀌는 것을 피할
+    수 없는 상자」).
+    """
+    selected_scenario_id = prune_choice(
+        SIDEBAR_SCENARIO_KEY,
+        list(scenario_by_id),
+        default=(
             active_scenario_id
-            if active_scenario_id in scenario_by_id
+            if active_scenario_id is not None and active_scenario_id in scenario_by_id
             else next(iter(scenario_by_id))
-        )
-    selected_scenario_id = str(st.session_state[SIDEBAR_SCENARIO_KEY])
+        ),
+    )
     try:
         revisions = repository.list_revisions(selected_scenario_id)
     except BOOTSTRAP_ERRORS as exc:
@@ -410,12 +422,14 @@ def _render_load(
         st.info("선택한 시나리오에 저장된 리비전이 없습니다.")
     else:
         options = list(revision_by_id)
-        # 라벨은 리비전마다 고정된 글자다. 공식·올라와 있음처럼 바뀌는 상태는 캡션에 둔다 —
-        # 선택지 라벨이 바뀌면 브라우저가 옛 라벨을 되보낸다(AGENTS 9장).
+        # 공식·올라와 있음처럼 회차마다 바뀌는 상태는 라벨이 아니라 캡션에 둔다 — 라벨이 바뀌면
+        # 브라우저가 옛 라벨을 되보낸다(AGENTS 9장). 라벨의 리비전명도 이름 바꾸기로 바뀔 수 있어
+        # `_ensure_revision_selection` 이 고른 값을 매 회차 되쓴다. radio 선택지는 마크다운으로
+        # 그려져 사람이 적은 이름을 `literal_markdown` 으로 싣는다.
         st.radio(
             "리비전",
             options=options,
-            format_func=lambda value: _revision_label(revision_by_id[value]),
+            format_func=lambda value: literal_markdown(revision_label(revision_by_id[value])),
             captions=[
                 _revision_caption(
                     revision_by_id[revision_id],
@@ -449,7 +463,7 @@ def _render_load(
             st.error(f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}")
             return
         _finish(
-            f"{snapshot.scenario.scenario_name} "
+            f"{literal_markdown(snapshot.scenario.scenario_name)} "
             f"r{snapshot.revision.revision_no}"
             f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
         )
@@ -605,29 +619,32 @@ def _ensure_revision_selection(
     active_scenario_id: str | None,
     active_revision_id: str | None,
 ) -> None:
-    """고른 시나리오가 바뀌어 리비전 초안이 목록에 없으면 **새 값을 적는다**(지우지 않는다).
+    """리비전 초안을 위젯 앞에서 **매 회차 다시 적는다**(지우지 않는다).
 
-    같은 시나리오면 올라와 있는 리비전, 다른 시나리오면 그 시나리오의 활성 리비전이다. 위젯을
-    만들기 전에 부른다.
+    목록에 있으면 그 값 그대로 — 리비전명이 바뀌어도 브라우저가 새 글자를 받게 한다. 고른 시나리오가
+    바뀌어 목록에 없으면 같은 시나리오는 올라와 있는 리비전, 다른 시나리오는 그 시나리오의 최신
+    리비전이다. 위젯을 만들기 전에 부른다.
     """
-    if not revision_by_id or st.session_state.get(SIDEBAR_REVISION_KEY) in revision_by_id:
+    if not revision_by_id:
         return
     preferred = (
         active_revision_id
         if scenario.scenario_id == active_scenario_id
         else scenario.active_revision_id
     )
-    st.session_state[SIDEBAR_REVISION_KEY] = (
-        preferred if preferred in revision_by_id else next(iter(revision_by_id))
+    prune_choice(
+        SIDEBAR_REVISION_KEY,
+        list(revision_by_id),
+        default=(
+            preferred
+            if preferred is not None and preferred in revision_by_id
+            else next(iter(revision_by_id))
+        ),
     )
 
 
 def _scenario_label(summary: ScenarioSummary) -> str:
     return f"{summary.scenario_name} · {summary.source_simulation_code}"
-
-
-def _revision_label(revision: RevisionSummary) -> str:
-    return f"r{revision.revision_no} · {revision.revision_name}"
 
 
 def _revision_caption(
@@ -645,5 +662,7 @@ def _revision_caption(
         parts.append("올라와 있음")
     note = (revision.note or "").strip().replace("\n", " ")
     if note:
-        parts.append(note if len(note) <= _NOTE_PREVIEW_LIMIT else note[:_NOTE_PREVIEW_LIMIT] + "…")
+        # 캡션은 마크다운으로 그려진다. 메모(사람·시스템이 적은 글)는 글자 그대로 싣는다.
+        shown = note if len(note) <= _NOTE_PREVIEW_LIMIT else note[:_NOTE_PREVIEW_LIMIT] + "…"
+        parts.append(literal_markdown(shown))
     return " · ".join(parts)

@@ -2,12 +2,13 @@
 
 """선택 상자 하나의 **브라우저 쪽 글자**를 들고 다니는 테스트 대역.
 
-Streamlit 1.63 의 selectbox·multiselect 는 브라우저와 값을 보이는 글자(`format_func` 의 결과)로
-주고받는다. 브라우저는 마지막으로 받은 글자(서버가 `set_value` 로 보낸 것) 또는 사용자가 고른
-글자를 들고 있다가 다음 조작마다 **그대로** 되보낸다. 일반 `AppTest.run()` 은 그러지 않고 회차마다
-세션의 값을 지금 `format_func` 로 다시 글자로 만들어 보낸다 — 그래서 선택지의 글자가 바뀌는 회차에
-브라우저가 옛 글자로 다른 값을 되살리는 결함(2026-10-10 재검증)을 보지 못한다. 이 대역은 목표 상자
-하나의 글자를 들고 있다가 `run()` 마다 그 글자를 끼워 보낸다. 다른 위젯은 `AppTest` 와 같이 보낸다.
+Streamlit 1.63 의 selectbox·multiselect·radio 는 브라우저와 값을 보이는 글자
+(`format_func` 의 결과)로 주고받는다. 브라우저는 마지막으로 받은 글자(서버가 `set_value` 로
+보낸 것) 또는 사용자가 고른 글자를 들고 있다가 다음 조작마다 **그대로** 되보낸다. 일반
+`AppTest.run()` 은 그러지 않고 회차마다 세션의 값을 지금 `format_func` 로 다시 글자로 만들어
+보낸다 — 그래서 선택지의 글자가 바뀌는 회차에 브라우저가 옛 글자로 다른 값을 되살리는
+결함(2026-10-10 재검증)을 보지 못한다. 이 대역은 목표 상자 하나의 글자를 들고 있다가 `run()`
+마다 그 글자를 끼워 보낸다. 다른 위젯은 `AppTest` 와 같이 보낸다.
 """
 
 from __future__ import annotations
@@ -16,9 +17,9 @@ from typing import Literal
 
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import Multiselect, Selectbox, get_widget_state
+from streamlit.testing.v1.element_tree import Multiselect, Radio, Selectbox, get_widget_state
 
-ChoiceKind = Literal["selectbox", "multiselect"]
+ChoiceKind = Literal["selectbox", "multiselect", "radio"]
 
 
 class BrowserChoice:
@@ -32,9 +33,11 @@ class BrowserChoice:
         self.widget_id: str | None = None
         self.last_set_value = False
 
-    def element(self) -> Selectbox[object] | Multiselect[object]:
+    def element(self) -> Selectbox[object] | Multiselect[object] | Radio[object]:
         if self.kind == "multiselect":
             return self.app.multiselect(key=self.key)
+        if self.kind == "radio":
+            return self.app.radio(key=self.key)
         return self.app.selectbox(key=self.key)
 
     def sync(self) -> None:

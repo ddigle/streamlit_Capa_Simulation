@@ -353,6 +353,52 @@ def test_a_rename_in_another_session_keeps_the_chosen_source(stores: Stores) -> 
     assert browser.wire == "새 이름 2027", "상자가 옛 이름을 그대로 보입니다."
 
 
+def test_a_revision_renamed_in_another_session_stays_the_chosen_source(stores: Stores) -> None:
+    """다른 세션이 고른 원본 리비전의 이름을 바꿔도 원본은 고른 리비전 그대로다.
+
+    리비전 상자의 글자에는 리비전명이 든다. 위젯 앞에서 고른 값을 다시 적지 않으면 브라우저가 옛
+    글자를 되보내고, Streamlit 1.63 은 그 글자를 못 찾아 **예외 없이** 첫 리비전(최신)으로 되돌린다
+    — 준비하던 연도 Shift 의 원본이 알림 없이 다른 리비전이 된다. 출처 메모에 든 리비전 id 로 잰다.
+    """
+    from widget_browser import BrowserChoice
+
+    repository, database, first, _second = stores
+    scenario_id = first.scenario.scenario_id
+    newer = repository.save_revision(
+        scenario_id,
+        _monthly_tables([202701, 202702]),
+        ScenarioPreset(202701, 202702, ("Process-A",)),
+        revision_name="새 리비전",
+        parent_revision_id=first.revision.revision_id,
+    )
+    revision_key = f"shift_source_revision_{scenario_id}"
+    app = AppTest.from_string(_script(database, SHIFT_BODY), default_timeout=60).run()
+    app.selectbox(key="shift_source_scenario").set_value(scenario_id).run()
+    assert not app.exception
+    browser = BrowserChoice(app, "selectbox", revision_key)
+    browser.sync()
+    assert browser.wire == f"r2 · {newer.revision.revision_name}"
+    browser.pick(f"r1 · {first.revision.revision_name}")
+    browser.run()
+    app.number_input(key="scenario_shift_years").set_value(1)
+    browser.run()
+    assert not app.exception
+    assert f"[리비전 {first.revision.revision_id}]" in _provenance(app)
+
+    repository.rename_revision(
+        first.revision.revision_id, "원본 새 이름", expected_name=first.revision.revision_name
+    )
+    clear_scenario_snapshot_cache()
+    for years in (2, 3):
+        app.number_input(key="scenario_shift_years").set_value(years)
+        browser.run()
+        assert not app.exception
+        assert app.selectbox(key=revision_key).value == first.revision.revision_id
+        assert f"[리비전 {first.revision.revision_id}]" in _provenance(app)
+    assert browser.wire == "r1 · 원본 새 이름", "상자가 옛 이름을 그대로 보입니다."
+    assert "r1 원본 새 이름" in _provenance(app)
+
+
 # ---------------------------------------------------------------- 앱 전체에서 페이지 옮기기
 
 

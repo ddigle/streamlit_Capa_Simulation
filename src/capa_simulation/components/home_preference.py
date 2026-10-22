@@ -25,12 +25,14 @@ import streamlit as st
 
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
     HasProfileVersion as VersionedProfile,
 )
 from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.revision_label import revision_label
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY as ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -64,6 +66,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     forget_page_dialogs,
+    prune_choice,
 )
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
 from capa_simulation.persistence.cache import (
@@ -547,13 +550,18 @@ def _render_comparison_picker(database_path: str) -> None:
         # 시나리오를 바꾸면 앞서 고른 리비전은 남의 것이 된다. 위젯을 만들기 전에 그 시나리오의
         # 첫 리비전(선택 상자의 기본값)으로 **적는다.** 칸을 지우기만 하면 서버는 기본값을 쓰지만
         # 브라우저는 그 사실을 듣지 못해 앞 시나리오의 리비전 이름을 계속 보여 준다(2026-10-05 E2E).
-        if st.session_state.get(COMPARISON_REVISION_KEY) not in revision_by_id:
-            st.session_state[COMPARISON_REVISION_KEY] = next(iter(revision_by_id))
+        # 목록에 있는 값도 **매 회차** 다시 적는다 — 선택지 글자의 리비전명은 다른 세션이 바꿀 수
+        # 있고, 적지 않으면 브라우저가 옛 글자를 되보내 1.63 이 첫 리비전으로 조용히 되돌린다
+        # (AGENTS 9장 「글자가 바뀌는 것을 피할 수 없는 상자」). 적기는 `on_change` 를 부르지 않아
+        # 공용 프로필을 다시 쓰지 않는다.
+        prune_choice(
+            COMPARISON_REVISION_KEY, list(revision_by_id), default=next(iter(revision_by_id))
+        )
         active_revision_id = active_persisted_revision_id()
         st.selectbox(
             "비교 리비전",
             options=list(revision_by_id),
-            format_func=lambda value: _revision_label(revision_by_id[value]),
+            format_func=lambda value: revision_label(revision_by_id[value]),
             key=COMPARISON_REVISION_KEY,
             persist_state="session",
             on_change=_save_comparison_revision,
@@ -591,7 +599,8 @@ def _comparison_active_note(
             "지금 화면이 쓰고 있는 리비전입니다. 자기와 견주는 셈이라 증감이 모두 0 으로 나옵니다."
         )
     return (
-        f"지금 화면에는 이 시나리오의 {_revision_label(active_revision)} 리비전이 올라와 있습니다."
+        f"지금 화면에는 이 시나리오의 {literal_markdown(revision_label(active_revision))} "
+        "리비전이 올라와 있습니다."
     )
 
 
@@ -737,11 +746,6 @@ def _comparison_label(scenarios: dict[str, ScenarioSummary], value: str | None) 
     if value is None:
         return "선택 안 함"
     return scenarios[value].scenario_name
-
-
-def _revision_label(revision: RevisionSummary) -> str:
-    """비교 리비전 선택지의 글. 활성 상태와 무관하게 늘 같다 — `_render_comparison_picker`."""
-    return f"r{revision.revision_no} · {revision.revision_name}"
 
 
 def render_threshold_editor(

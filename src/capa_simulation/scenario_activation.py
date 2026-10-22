@@ -197,6 +197,17 @@ def rename_active_scenario_label(scenario_id: str, scenario_name: str) -> None:
         st.session_state[ACTIVE_SCENARIO_LABEL_KEY] = {**held, "scenario_name": scenario_name}
 
 
+def rename_active_revision_label(revision_id: str, revision_name: str) -> None:
+    """리비전명을 바꿨을 때 그 리비전이 올라와 있으면 이름표의 리비전명만 바꾼다.
+
+    활성화 함수는 부르지 않는다 — 내용은 그대로라 HOME 토글·미저장 편집을 풀 까닭이 없다. 다른
+    세션의 이름표는 그 세션이 다시 불러올 때 바뀐다(시나리오명 변경과 같다).
+    """
+    held = st.session_state.get(ACTIVE_SCENARIO_LABEL_KEY)
+    if isinstance(held, dict) and held.get("revision_id") == revision_id:
+        st.session_state[ACTIVE_SCENARIO_LABEL_KEY] = {**held, "revision_name": revision_name}
+
+
 def activate_persisted_snapshot(snapshot: ScenarioSnapshot) -> ActiveScenario:
     """보는 내용을 다른 리비전으로 바꾼다 — 불러오기·부트스트랩·새 시나리오. HOME 토글을 푼다.
 
