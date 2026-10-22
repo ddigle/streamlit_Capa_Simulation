@@ -77,7 +77,8 @@ LABEL = SimpleNamespace(
 class FakeRepository:
     def list_scenarios(self) -> list[SimpleNamespace]:
         _count_read()
-        return SCENARIOS
+        listed: list[SimpleNamespace] = st.session_state.get("test_scenarios", SCENARIOS)
+        return listed
 
     def list_revisions(self, scenario_id: str) -> list[SimpleNamespace]:
         _count_read()
@@ -174,7 +175,7 @@ def sidebar_app() -> Iterator[AppTest]:
         "pending_edit_labels": lambda _page: list(st.session_state.get("test_pending_edits", [])),
         "active_persisted_scenario_id": lambda: "scenario-1",
         "active_persisted_revision_id": lambda: "revision-1",
-        "active_scenario_label": lambda: LABEL,
+        "active_scenario_label": lambda: st.session_state.get("test_label", LABEL),
         "latest_official_revision": lambda: st.session_state.get("test_official"),
         "has_unsaved_scenario_changes": lambda: bool(st.session_state.get("test_unsaved", False)),
         "discard_unsaved_scenario_changes": lambda _tables, version: st.session_state.__setitem__(
@@ -253,6 +254,30 @@ def test_the_field_reads_only_the_session_until_the_dialog_opens(sidebar_app: Ap
 
     app = _open(app)
     assert app.session_state["test_repository_reads"] > 0
+
+
+def test_the_field_and_the_save_line_show_a_markdown_like_name_as_typed(
+    sidebar_app: AppTest,
+) -> None:
+    """시나리오명은 사람이 적은 글이다 — 값 칸(버튼 라벨)과 저장 구획 caption 은 마크다운으로
+    그려지므로 「*별* _밑_ `코드`」 가 기울임·코드로 바뀌어 글자가 빠졌다. 구두점을 escape 해 싣는다
+    (`literal_markdown`)."""
+    from capa_simulation.components.literal_markdown import literal_markdown
+
+    name = "*별* _밑_ `코드`"
+    app = sidebar_app
+    app.session_state["test_label"] = SimpleNamespace(**{**LABEL.__dict__, "scenario_name": name})
+    app.session_state["test_scenarios"] = [
+        scenario("scenario-1", name, "SIM-001", "revision-1", 1),
+        *SCENARIOS[1:],
+    ]
+    app = _open_save(app.run())
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.button(key=SCENARIO_FIELD_KEY).label == f"{literal_markdown(name)} · r1"
+    assert f"「{literal_markdown(name)}」에 새 리비전으로 저장합니다." in " ".join(
+        str(item.value) for item in app.caption
+    )
 
 
 def test_the_badge_says_official_saved_or_unsaved_in_that_order() -> None:

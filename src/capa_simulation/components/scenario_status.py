@@ -133,8 +133,10 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
     warning = st.session_state.pop(SIDEBAR_FLASH_WARNING_KEY, None)
     label = active_scenario_label()
     unsaved = has_unsaved_scenario_changes()
+    # 값 칸은 버튼 라벨이라 마크다운으로 그려진다 — 사람이 적은 시나리오명은 글자 그대로 싣는다
+    # (「*별*」 이 기울임이 되어 별표가 빠졌다). 말줄임 풍선도 그려진 글자를 쓴다.
     value = (
-        f"{label.scenario_name} · r{label.revision_no}"
+        f"{literal_markdown(label.scenario_name)} · r{label.revision_no}"
         if label is not None
         else "올라온 리비전 없음"
     )
@@ -533,8 +535,8 @@ def _render_revision_save(
         return
     # 공정 필터·조회기간은 리비전 프리셋이 담는다. 편집이 없어도 저장할 것이 있다는 사실을 남긴다.
     st.caption(
-        f"「{active_summary.scenario_name}」에 새 리비전으로 저장합니다. 지금 화면의 편집과 함께 "
-        "조회기간·공정 필터도 담깁니다."
+        f"「{literal_markdown(active_summary.scenario_name)}」에 새 리비전으로 저장합니다. "
+        "지금 화면의 편집과 함께 조회기간·공정 필터도 담깁니다."
     )
     # 적용하지 않은 편집은 저장에 실리지 않고 저장하는 순간 사라진다. 그래서 그 편집을 버린다는
     # 확인 칸을 체크해야 저장한다. 확인 칸은 폼 **밖**이라 체크가 곧바로 세션에 남는다.
