@@ -2389,7 +2389,8 @@ def test_a_dropped_or_shifted_census_line_is_caught() -> None:
     shifted = lines[1].replace("C1 3", "C2 3")
     assert checks.check_transcript([lines[0], shifted, lines[2]]) != []
 
-    # 리뷰 파일처럼 전송본과 전문의 요약이 함께 들어도 8-10 은 머리마다 따로 센다.
+    # 요약이 둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 8-10 은 머리마다
+    # 따로 센다.
     assert checks.check_transcript([*lines, "판정 — 손으로 쓴 줄", *lines]) == []
     orphan = checks.check_transcript([lines[1]])
     assert orphan == ["줄 1 — 8-10 수 줄인데 위에 8-10 머리 줄이 없다"]
@@ -2403,11 +2404,11 @@ def test_a_dropped_or_shifted_census_line_is_caught() -> None:
 def test_check_summary_reads_a_transcript_without_opening_a_database(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--check-summary` 는 사외가 받은 전송본에 돌린다 — DB 를 열지 않고 맞지 않는 줄 번호만
+    """`--check-summary` 는 사외가 받은 리뷰 압축본에 돌린다 — DB 를 열지 않고 맞지 않는 줄 번호만
     찍는다."""
 
     def must_not_open(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
-        raise AssertionError("전송본 확인은 DB 를 열지 않는다")
+        raise AssertionError("압축본 확인은 DB 를 열지 않는다")
 
     monkeypatch.setattr(duckdb, "connect", must_not_open)
     good = checks.summary_lines(

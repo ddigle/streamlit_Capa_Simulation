@@ -347,7 +347,7 @@ typed raw 로 그대로 보존합니다.
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
 | `compare_legacy_results.py` | 원천에 보존된 기존 결과와 신규 계산값을 대조해 요약·상세 CSV 를 만든다 |
 | **사내 실데이터 확인(읽기 전용 — 값은 찍지 않고 개수만)** | |
-| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)을 재고, 끝에 리뷰 전송본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장). `--check-summary <파일>` 은 DB 없이 옮겨 적은 전송본을 다시 센다 |
+| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)을 재고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장). `--check-summary <파일>` 은 DB 없이 옮겨 적은 압축본을 다시 센다 |
 | `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 사본 필수 — 운영 DB 자리는 거절) |
 | `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다(`--database` 로 사본도) |
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |
@@ -372,7 +372,7 @@ typed raw 로 그대로 보존합니다.
 | `docs/design_system.md` | 색·서체·표 밀도와 화면 구성 규칙 |
 | `docs/migration_catalog.md` | SQL 마이그레이션마다의 목적·출처 카탈로그 |
 | `docs/wsl_dev_environment.md` | 사외 개발 자리(데스크탑 WSL) 준비·명령·앱 띄우기·배포 |
-| `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 리뷰 문서 양식(사람이 옮겨 적는 맨 앞 「전송본」 + 사내에 남는 전문) |
+| `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(사외 뼈대 · 사내 완성), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
 | `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장) 포함 |
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
