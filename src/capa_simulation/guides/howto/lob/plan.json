@@ -1,6 +1,6 @@
 {
   "page": "Capa LOB Summary",
-  "version": "lob@2026-10-22",
+  "version": "lob@2026-10-23",
   "viewport": {"width": 1440, "height": 900, "scale": 2},
   "mask": ["named:SIDEBAR_FOOTER"],
   "params": {
@@ -289,7 +289,7 @@
           "column": "선택",
           "value": true
         },
-        {"op": "click", "target": "button:공식버전 지정"},
+        {"op": "click", "target": "button:공식으로 지정…"},
         {"op": "click", "target": "named:WIDGET(가상 제품이 포함된 것을 확인했습니다)", "optional": true},
         {
           "op": "fill",
@@ -332,7 +332,7 @@
     {
       "id": "16_scenmgmt_selected",
       "page": "시나리오 관리",
-      "note": "시나리오 행의 「선택」 체크 → 아래 작업 카드",
+      "note": "시나리오 행의 「선택」 체크 → 아래 고른 시나리오 카드(작업 줄 · 리비전 표)",
       "from": "15_scenmgmt_list",
       "writes": "none",
       "ops": [
@@ -343,25 +343,25 @@
           "column": "선택",
           "value": true
         },
-        {"op": "scroll", "target": "button:공식버전 지정", "block": "center"}
+        {"op": "scroll", "target": "button:공식으로 지정…", "block": "center"}
       ],
       "targets": {
         "scen_selected_row": "named:EDIT_ROW",
         "scen_select_cell": "named:EDIT_CELL",
-        "rev_select": "named:WIDGET(리비전)",
-        "btn_official": "button:공식버전 지정",
-        "btn_load": "button:시나리오 불러오기",
+        "rev_select": "named:LAST_GRID",
+        "btn_official": "button:공식으로 지정…",
+        "btn_load": "button:선택한 리비전 불러오기",
         "scen_table": "named:GRID"
       }
     },
     {
       "id": "17_official_dialog",
       "page": "시나리오 관리",
-      "note": "「공식버전 지정」 → 카드 안 지정 폼 — 이름 · 메모 입력(지정은 누르지 않는다)",
+      "note": "「공식으로 지정…」 → 「공식버전 지정」 확인 팝업 — 이름 · 메모 입력(지정은 누르지 않는다)",
       "from": "16_scenmgmt_selected",
       "writes": "none",
       "ops": [
-        {"op": "click", "target": "button:공식버전 지정"},
+        {"op": "click", "target": "button:공식으로 지정…"},
         {"op": "click", "target": "named:WIDGET(가상 제품이 포함된 것을 확인했습니다)", "optional": true},
         {
           "op": "fill",
@@ -373,19 +373,18 @@
         {"op": "scroll", "target": "named:FORM_OF(공식버전명)", "block": "center"}
       ],
       "targets": {
-        "off_dialog": "named:FORM_OF(공식버전명)",
+        "off_dialog": "named:DIALOG",
         "off_name": "named:WIDGET(공식버전명)",
         "off_memo": "named:WIDGET(공식 지정 메모)",
         "off_confirm": "button:선택 리비전을 공식버전으로 지정",
-        "official_history": "named:LAST_GRID",
-        "btn_official": "button:공식버전 지정"
+        "btn_official": "button:공식으로 지정…"
       }
     },
     {
       "id": "19_scenario_popup_load",
       "page": "시나리오·리비전 팝업",
       "note": "사이드바 시나리오 칸 → 팝업 「불러오기」 구획",
-      "from": "17_official_dialog",
+      "from": "16_scenmgmt_selected",
       "writes": "none",
       "ops": [{"op": "open_popup", "target": "named:SIDEBAR_SCEN", "section": "불러오기"}],
       "targets": {

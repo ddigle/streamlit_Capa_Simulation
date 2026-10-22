@@ -307,7 +307,7 @@ def test_an_older_skeleton_version_is_reported_not_refused() -> None:
     line = core.review_line(SKELETON, None, None, report)
 
     assert report.applied == 1 and not report.version_matches
-    assert line.startswith("가이드 lob@1022 판 다름(덮어쓰기 lob@1015) ")
+    assert line.startswith("가이드 lob@1023 판 다름(덮어쓰기 lob@1015) ")
 
 
 # ------------------------------------------------------------------ 매개값
@@ -552,7 +552,8 @@ def test_a_new_session_replays_the_chain_when_the_previous_state_is_not_the_pare
     camera = FakeCamera(tmp_path)
     _run(camera)
 
-    assert camera.calls.count("session") == 7  # 첫 세션 + 04 · 05 · 06 · 07 · 08 · 15 앞
+    # 첫 세션 + 04 · 05 · 06 · 07 · 08 · 15 · 19 앞(19 는 팝업이 뜬 17 이 아니라 16 에서 잇는다)
+    assert camera.calls.count("session") == 8
     first_08 = camera.calls.index("shot:08_ref_avail")
     session = max(i for i, call in enumerate(camera.calls[:first_08]) if call == "session")
     assert camera.calls[session + 1 : first_08] == [
@@ -617,7 +618,7 @@ def test_review_line_for_a_clean_internal_first_pass(tmp_path: Path, example_dir
     total = sum(len(SKELETON.target_names(sid)) for sid in SKELETON.read_only_ids())
 
     assert line == (
-        f"가이드 lob@1022 상태 18/18; 표적 {total}/{total} ok; 고아 0; 덮어씀 1; 예시 4; "
+        f"가이드 lob@1023 상태 18/18; 표적 {total}/{total} ok; 고아 0; 덮어씀 1; 예시 4; "
         "DB 변화 없음"
     )
     assert sorted(d for d in details if d.startswith("예시")) == [
@@ -710,7 +711,7 @@ def test_assemble_only_writes_the_board_outside_and_stops_on_a_db_change(
 
     assert result == code
     assert (dist / "lob.html").stat().st_size > 10_000
-    assert "가이드 lob@1022 상태 18/18;" in out
+    assert "가이드 lob@1023 상태 18/18;" in out
     block = output.read_text(encoding="utf-8")
     assert ("끝 — 조립만" in block) == (db == "same")
     assert ("DB 변화 있음" in block) == (db == "changed")
@@ -1023,7 +1024,7 @@ def test_checker_refuses_markup_in_overrides_and_bad_param_types(
     assert "onerror" not in capsys.readouterr().err
     assert checker.main(["--params", str(params)]) == checker.EXIT_NOT_READY
     assert checker.main([]) == checker.EXIT_OK
-    assert capsys.readouterr().out.strip().endswith("가이드 lob@1022 고아 0; 덮어씀 0")
+    assert capsys.readouterr().out.strip().endswith("가이드 lob@1023 고아 0; 덮어씀 0")
 
 
 # ------------------------------------------------------------------ 낱말 · 가림
