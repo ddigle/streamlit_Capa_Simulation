@@ -1049,6 +1049,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     주소에서 막히고 신규 호기 칸 뒤를 버린다. 목표 칸에는 `step` 을 주지 않는다 — Streamlit 1.63 편집표 `NumberColumn` 은
     `step` 의 소수 자릿수에서 값을 잘라 저장한다(19.3456 → 19.34). 계산이 가벼워 캐시하지 않는다.
   - 원본은 입력을 브라우저 저장소에 남겼고 앱은 세션에만 둔다 — 메울지는 사용자 결정 대기(`docs/TODO.md` 2장).
+  - 배치는 원본처럼 넓으면 입력 칸(420px) 옆에 결과 칸, 두 칸을 담은 줄이 결과 칸이 호기별 표를 다 담지 못할 만큼
+    좁으면 위아래로 쌓는다(`layout_style` — 줄 폭 컨테이너 질의, flex 항목은 `stLayoutWrapper`). 창 폭이 아니라 줄
+    폭으로 가르는 것은 사이드바가 본문 폭을 바꾸기 때문이다. Streamlit 격자는 칸 폭의 합이 표보다 좁으면 남는 폭을
+    붙박지 않은 칸에 고루 붙이고 넓으면 가로로 넘기므로, 편집표 세 칸 폭의 합은 입력 칸 안에 두고(넘치면 `신규 호기`
+    를 고칠 때 `월` 칸이 가려진다) 호기별 표 `메모` 칸에는 메모 한 가지가 다 보이는 폭을 준다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 `Preference` 의 Cut-off 편집표·저장·CSV 왕복과
   빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다.
   - 저장은 초안 지문 대조다(`process_cutoff_fingerprint` → `ProcessCutoffConflict`) — 표 전체 교체라 옛 초안이 남의

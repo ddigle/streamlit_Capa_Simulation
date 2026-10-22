@@ -19,6 +19,15 @@
 버린다. 목표 칸에는 `step` 을 주지 않는다 — Streamlit 1.63 편집표는 `step` 의 소수 자릿수에서 값을
 **잘라** 저장해(19.3456 → 19.34) 원본과 다른 마감을 낸다. 원본의 「복사」 두 단추는 같은 표를 CSV 로
 내려받는 단추다(`table_toolbar` 관례 — 결과 표도 칸을 골라 Ctrl+C 로 복사된다).
+
+**배치는 원본과 같다** — 넓으면 입력 칸(고정 폭) 옆에 결과 칸, 좁으면 위아래로 쌓는다(원본
+`.cols`). 원본은 창 폭으로 갈랐지만 앱은 사이드바가 본문 폭을 바꾸므로 두 칸을 담은 줄의 폭으로
+가른다(CSS 컨테이너 질의 — `intro_summary` 의 사이드바 머리칸과 같은 길). 가르는 폭은 결과 칸이
+호기별 표를 가로 넘김 없이 담는 폭에서 나온다(`_STACK_BELOW_PX`). Streamlit 편집 격자는 칸 폭의
+합이 표보다 좁으면 남는 폭을 붙박지 않은 칸에 고루 나눠 늘리고, 넓으면 표 안에서 가로로 넘긴다 —
+그래서 편집표 칸 폭의 합은 입력 칸 안에 들게 두고(넘치면 「신규 호기」 칸을 고칠 때 표가 넘어가
+「월」 칸이 가려진다), 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면
+머리 글 폭에 고른 몫만 붙어 90px 안팎으로 잘렸다).
 """
 
 from __future__ import annotations
@@ -101,6 +110,11 @@ PASTE_TEXT_KEY = "equipment_qualcalc_paste_text_v1"
 PASTE_APPLY_KEY = "equipment_qualcalc_paste_apply_v1"
 PASTE_NOTICE_KEY = "equipment_qualcalc_paste_notice_v1"
 _KPI_ROW_KEY = "equipment_qualcalc_kpis"
+# 두 칸 배치 — 줄(컨테이너 질의의 기준)·입력 칸·결과 칸.
+_LAYOUT_KEY = "equipment_qualcalc_layout"
+_INPUTS_BOX_KEY = "equipment_qualcalc_inputs_box"
+_RESULTS_BOX_KEY = "equipment_qualcalc_results_box"
+_LAYOUT_CONTAINER_NAME = "capa-qualcalc"
 _UNITS_CSV_KEY = "equipment_qualcalc_units_csv_v1"
 _MONTHS_CSV_KEY = "equipment_qualcalc_months_csv_v1"
 
@@ -118,14 +132,29 @@ _MIN_TODAY, _MAX_TODAY = date(_MIN_YEAR, 1, 1), date(_MAX_YEAR, 12, 31)
 _ROW_HEIGHT_PX = tokens.MONTH_GRID_ROW_HEIGHT_PX
 _MAX_VISIBLE_UNIT_ROWS = 15
 _SCROLLED_UNIT_TABLE_PX = (_MAX_VISIBLE_UNIT_ROWS + 1) * _ROW_HEIGHT_PX
-# 호기별 표의 짧은 칸 폭 — 내용 폭에 맞춰 좁게 두어 긴 `메모` 칸이 결과 칸 안에서 더 보이게 한다.
+# 호기별 표의 칸 폭 — 짧은 칸은 내용 폭에 맞춰 좁게 두고, `메모` 칸에는 원본 메모 한 가지
+# (「그 달 일부만 채움, 다음 달부터 1대」·「3월에 적은 호기 — 5월에 처음 필요」)가 다 보이는 폭을
+# 준다. 결과 칸이 이보다 넓으면 남는 폭이 칸마다 고루 붙는다.
 _UNIT_COLUMN_PX = {
     "호기": 80,
     "쓰이는 달": 72,
     "그 달 기여": 80,
     "Qual 완료 마감": 108,
     "기여 시작": 96,
+    "메모": 250,
 }
+# 편집표 칸 폭 — 셋의 합이 입력 칸 안(`_INPUTS_BOX_PX - _BOX_CHROME_PX`)에 들어야 표가 가로로 넘지
+# 않는다. 「월」 은 Streamlit `small`(75px)과 같은 폭이다.
+_EDITOR_COLUMN_PX = {MONTH_COLUMN: 75, TARGET_COLUMN: 120, UNITS_COLUMN: 180}
+# 두 칸 배치(모듈 설명). 입력 칸은 원본(440px)보다 조금 좁게 둔다 — 편집표 세 칸이 들고 결과
+# 칸이 그만큼 넓다. 상자 안쪽 여백·선과 표 테두리(양쪽 합, 상자 420px → 표 안쪽 390px)와 두 칸
+# 사이 틈(`gap="medium"`)은 1600px 창 실측이다.
+_INPUTS_BOX_PX = 420
+_BOX_CHROME_PX = 30
+_LAYOUT_GAP_PX = 28
+_RESULTS_MIN_PX = sum(_UNIT_COLUMN_PX.values()) + _BOX_CHROME_PX
+# 두 칸을 담은 줄이 이보다 좁으면 위아래로 쌓는다 — 옆에 두면 결과 칸이 호기별 표를 다 담지 못한다.
+_STACK_BELOW_PX = _INPUTS_BOX_PX + _LAYOUT_GAP_PX + _RESULTS_MIN_PX
 # 판정 칩·지난 마감 칸의 옅은 면 — 상태색을 표 면(`SURFACE`)에 섞은 불투명 색이라 그 위 본문 글자가
 # 라이트·다크 모두 읽힌다. 짙기는 확보율 표의 부족 띠(0.12~0.3)보다 한 단 진하게 둔다 — 칸 하나다.
 _TINT_ALPHA: dict[VerdictTone, float] = {"ok": 0.16, "warn": 0.28, "bad": 0.26}
@@ -332,16 +361,19 @@ def _render_inputs(today: date) -> QualDeadlineInput:
         row_height=_ROW_HEIGHT_PX,
         placeholder="",
         column_config={
-            MONTH_COLUMN: st.column_config.TextColumn(MONTH_COLUMN, width="small"),
+            MONTH_COLUMN: st.column_config.TextColumn(
+                MONTH_COLUMN, width=_EDITOR_COLUMN_PX[MONTH_COLUMN]
+            ),
             # `step`·`format` 을 주지 않는다 — `step` 은 그 자릿수에서 값을 잘라 저장한다(모듈
             # 설명). 표시는 기본(소수 넷째 자리까지, 뒤 0 없음)이라 적은 값이 그대로 보인다.
             TARGET_COLUMN: st.column_config.NumberColumn(
                 TARGET_COLUMN,
+                width=_EDITOR_COLUMN_PX[TARGET_COLUMN],
                 help="그 달 W/D 구간 전체 기준 대수(소수 가능). 비우면 그 달은 판정하지 않습니다.",
             ),
             UNITS_COLUMN: st.column_config.TextColumn(
                 UNITS_COLUMN,
-                width="large",
+                width=_EDITOR_COLUMN_PX[UNITS_COLUMN],
                 help="그 달 목표를 채울 차례대로 적습니다 — 쉼표·띄어쓰기·줄바꿈으로 나눕니다.",
             ),
         },
@@ -495,7 +527,7 @@ def _render_results(result: QualDeadlineResult) -> None:
             height=_unit_table_height(len(unit_rows)),
             row_height=_ROW_HEIGHT_PX,
             column_config={
-                # 결과 칸이 좁으면 `메모` 까지 가로로 넘긴다 — 호기 이름은 붙박아 둔다.
+                # 결과 칸이 표보다 좁아지면(아주 좁은 창) 가로로 넘긴다 — 호기 이름은 붙박아 둔다.
                 "호기": _text_column("호기", width=_UNIT_COLUMN_PX["호기"], pinned=True),
                 "쓰이는 달": _text_column("쓰이는 달", width=_UNIT_COLUMN_PX["쓰이는 달"]),
                 "그 달 기여": _text_column(
@@ -513,7 +545,14 @@ def _render_results(result: QualDeadlineResult) -> None:
                     width=_UNIT_COLUMN_PX["Qual 완료 마감"],
                 ),
                 "기여 시작": _text_column("기여 시작", width=_UNIT_COLUMN_PX["기여 시작"]),
-                "메모": _text_column("메모"),
+                "메모": _text_column(
+                    "메모",
+                    width=_UNIT_COLUMN_PX["메모"],
+                    help=(
+                        "메모가 둘 이상 붙어 잘리면 이 머리 칸 오른쪽 경계를 끌어 넓히거나 "
+                        "「호기별 결과 CSV」 로 봅니다."
+                    ),
+                ),
             },
         )
     else:
@@ -550,6 +589,31 @@ def _render_results(result: QualDeadlineResult) -> None:
     )
 
 
+def layout_style() -> str:
+    """두 칸 배치 CSS — 넓으면 입력 칸 고정 폭 옆에 결과 칸, 줄이 `_STACK_BELOW_PX` 보다 좁으면
+    위아래.
+
+    Streamlit 가로 컨테이너는 이미 줄을 접을(`flex-wrap: wrap`) 수 있다. 칸마다 flex 를 덮어 넓을
+    때는 접히지 않게(결과 칸이 줄어든다) 두고, 좁을 때는 두 칸 다 한 줄을 차지하게 해 위아래로
+    쌓는다. 가로 컨테이너의 flex 항목은 키 붙은 칸이 아니라 그것을 한 번 감싼 `stLayoutWrapper`
+    다(1.63 — `app_header.STATUS_SLOT_SELECTOR` 와 같은 꼴).
+    """
+    inputs = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{_INPUTS_BOX_KEY})'
+    results = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{_RESULTS_BOX_KEY})'
+    return "\n".join(
+        [
+            "<style>",
+            f".st-key-{_LAYOUT_KEY} {{ container: {_LAYOUT_CONTAINER_NAME} / inline-size; }}",
+            f"{inputs} {{ flex: 0 0 {_INPUTS_BOX_PX}px !important; min-width: 0 !important; }}",
+            f"{results} {{ flex: 1 1 0 !important; min-width: 0 !important; }}",
+            f"@container {_LAYOUT_CONTAINER_NAME} (width < {_STACK_BELOW_PX}px) {{",
+            f"  {inputs}, {results} {{ flex: 1 1 100% !important; }}",
+            "}",
+            "</style>",
+        ]
+    )
+
+
 def render_qual_deadline_calculator(*, today: date) -> None:
     """탭 본문 하나. `today` 는 「오늘」 칸의 처음 값이자 예시 표지가 견주는 날이다."""
     _seed_defaults(today)
@@ -558,9 +622,10 @@ def render_qual_deadline_calculator(*, today: date) -> None:
         "Cut-off · 월별 목표 가용대수 · 신규 호기를 넣으면 호기마다 Qual 완료 마감을 냅니다. "
         "설비 DB 와 잇지 않은 계산기라 적은 값은 이 화면에만 남습니다."
     )
-    inputs_column, results_column = st.columns([5, 7], gap="medium")
-    with inputs_column, st.container(border=True):
-        inputs = _render_inputs(today)
-    result = compute_qual_deadlines(inputs)
-    with results_column, st.container(border=True):
-        _render_results(result)
+    st.html(layout_style())
+    with st.container(horizontal=True, gap="medium", key=_LAYOUT_KEY):
+        with st.container(border=True, key=_INPUTS_BOX_KEY):
+            inputs = _render_inputs(today)
+        result = compute_qual_deadlines(inputs)
+        with st.container(border=True, key=_RESULTS_BOX_KEY):
+            _render_results(result)

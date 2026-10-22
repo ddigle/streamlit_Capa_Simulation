@@ -22,10 +22,12 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
 
+from capa_simulation.components import qual_deadline_calculator as calculator
 from capa_simulation.components.qual_deadline_calculator import (
     BASE_KEY,
     CUTOFF_KEY,
     EDITOR_KEY,
+    MONTH_COLUMN,
     MONTHS_KEY,
     PASTE_APPLY_KEY,
     PASTE_TEXT_KEY,
@@ -33,10 +35,15 @@ from capa_simulation.components.qual_deadline_calculator import (
     TODAY_KEY,
     UNITS_COLUMN,
     YEAR_KEY,
+    layout_style,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import EQUIPMENT_TAB_KEY
-from capa_simulation.services.qual_deadline import EMPTY_UNITS_MESSAGE, NO_PASTED_LINES_MESSAGE
+from capa_simulation.services.qual_deadline import (
+    EMPTY_UNITS_MESSAGE,
+    NO_PASTED_LINES_MESSAGE,
+    UNIT_TABLE_COLUMNS,
+)
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -240,6 +247,58 @@ def test_the_target_column_keeps_every_decimal() -> None:
     # 잘렸다면 「19.34」·「부족 1.34대」 다.
     january = app.dataframe[2].value.loc[0]
     assert (january["목표"], january["판정"]) == ("19.35", "부족 1.35대")
+
+
+def _column_widths(app: AppTest, index: int) -> dict[str, object]:
+    config = json.loads(app.dataframe[index].proto.columns)
+    return {name: spec.get("width") for name, spec in config.items() if name != "_index"}
+
+
+def test_the_month_editor_fits_inside_the_input_box() -> None:
+    """편집표 세 칸 폭의 합이 입력 칸 안에 든다. 넘으면 표가 칸 안에서 가로로 넘어, 「신규 호기」
+    칸을 고칠 때 표가 오른쪽으로 밀려 「월」 칸이 가려진다(`large` 일 때 1600px 창에서 105px
+    넘쳤다)."""
+    widths = _column_widths(_component(), 0)
+
+    assert list(widths) == [MONTH_COLUMN, TARGET_COLUMN, UNITS_COLUMN]
+    assert all(isinstance(width, int) for width in widths.values())
+    total = sum(int(str(width)) for width in widths.values())
+    assert total <= calculator._INPUTS_BOX_PX - calculator._BOX_CHROME_PX
+
+
+def test_the_unit_table_gives_the_memo_room_and_fits_the_side_by_side_results_box() -> None:
+    """호기별 표 칸마다 폭이 있고 `메모` 칸이 원본 메모 한 가지를 다 담는다(폭을 주지 않으면 머리 글
+    폭에 고른 몫만 붙어 1600px 창에서 90px 안팎으로 잘렸다). 결과 칸이 옆에 설 때의 가장 좁은 폭은
+    이 표를 가로 넘김 없이 담는 폭이다."""
+    widths = _column_widths(_component(), 1)
+
+    assert list(widths) == list(UNIT_TABLE_COLUMNS)
+    assert all(isinstance(width, int) for width in widths.values())
+    assert int(str(widths["메모"])) >= 240
+    total = sum(int(str(width)) for width in widths.values())
+    assert calculator._RESULTS_MIN_PX == total + calculator._BOX_CHROME_PX
+
+
+def test_the_two_boxes_stack_when_the_row_cannot_hold_both() -> None:
+    """원본처럼 좁으면 위아래로 — 두 칸을 담은 줄의 폭으로 가른다(사이드바가 본문 폭을 바꾼다).
+    가르는 폭은 입력 칸 · 틈 · 결과 칸의 가장 좁은 폭의 합이고, 900px 창(사이드바 열림, 줄
+    565px)은 쌓이고 1600px 창(줄 1265px)은 나란히 선다."""
+    app = _component()
+    style = layout_style()
+
+    assert style in [str(element.proto.body) for element in app.get("html")]
+    assert calculator._STACK_BELOW_PX == (
+        calculator._INPUTS_BOX_PX + calculator._LAYOUT_GAP_PX + calculator._RESULTS_MIN_PX
+    )
+    assert 565 < calculator._STACK_BELOW_PX < 1265
+    layout_key = calculator._LAYOUT_KEY
+    assert f".st-key-{layout_key} {{ container: capa-qualcalc / inline-size; }}" in style
+    assert f"@container capa-qualcalc (width < {calculator._STACK_BELOW_PX}px)" in style
+    # 가로 컨테이너의 flex 항목은 키 붙은 칸을 감싼 `stLayoutWrapper` 다.
+    for key in (calculator._INPUTS_BOX_KEY, calculator._RESULTS_BOX_KEY):
+        assert f'[data-testid="stLayoutWrapper"]:has(> .st-key-{key})' in style
+        assert _has_key(app, key)
+    assert f"flex: 0 0 {calculator._INPUTS_BOX_PX}px" in style
 
 
 def _paste(app: AppTest, text: str) -> None:
