@@ -24,24 +24,98 @@ Streamlit 이 걷어 간다.
 
 가이드 원문은 `guides/<페이지 파일 이름>.md` 다. 코드 밖 글이라 설명을 고칠 때 코드를 건드리지
 않는다.
+
+## 따라하기 가이드(옆 창)
+
+따라하기 가이드(`guides/howto/` 뼈대로 만든 한 파일 HTML)가 있는 화면은 `Guide` 가 대화상자가
+아니라 **앱 옆의 작은 창**을 연다 — 앱 화면을 덮지 않고 번호대로 따라 하게 하려는 것이다. 고르는
+차례는 `find_howto_guide` 한 곳이다.
+
+1. `static/guides/local/<가이드>.html` — 사내판. 사내가 실화면으로 만들어 손으로 복사한다(git 무시).
+2. `static/guides/howto/<가이드>.html` — 합성 예시판. 사외가 만들어 추적한다.
+3. 둘 다 없으면 지금의 md 대화상자.
+
+창은 Streamlit 정적 서빙(`.streamlit/config.toml` 의 `enableStaticServing`)이 보내는 파일을 연다.
+Streamlit 1.63 은 `app/static/…` 을 확장자대로(`.html` 은 `text/html`) 내보내므로 브라우저가 그대로
+그린다. 주소는 문서 기준 상대 경로 `app/static/guides/…` 다 — 사내 WebIDE 처럼 앞에 접두 경로
+(`/proxy/<포트>/`)가 붙어도 맞는다(글꼴 `typography.FONT_URL_PREFIX` 와 같은 길).
+
+창은 누르는 순간 열어야 팝업 막이에 걸리지 않는다. 파이썬 회차를 거치면 사용자 몸짓이 사라지므로
+툴바 버튼이 **스스로** 연다. 어느 파일을 열지는 파이썬이 정해 툴바 버튼을 보이게 하는 규칙에 CSS
+변수(`GUIDE_HREF_VARIABLE`)로 싣고, 버튼은 누를 때 그 값을 읽는다 — 변수가 없으면(가이드 없음)
+지금처럼 숨은 버튼을 눌러 대화상자를 연다. 팝업이 막히면 대화상자로 물러선다. 같은 이름의 창이
+이미 열려 있으면 그 창을 앞으로 부를 뿐 다시 읽지 않는다(보던 단계가 남는다).
+
+md 원문은 창 머리의 「설정 사전」 단추로 남는다. 창은 `window.opener`(앱 창)의 숨은 버튼을 같은
+방법으로 눌러 앱 창에 대화상자를 연다 — 그 선택자는 틀(`guides/howto/template.html`)이 사본으로
+들고 있고 `tests/test_page_guide.py` 가 맞대 본다.
 """
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Final, Literal
 
 import streamlit as st
 
 from capa_simulation.components.theme_toggle import GUIDE_BUTTON_ID, TOOLBAR_SLOT
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import forget_page_dialogs
+from capa_simulation.settings import PROJECT_ROOT
 
 GUIDE_TRIGGER_KEY = "page_guide_trigger"
 # id 와 툴바 차례는 다른 툴바 단추와 함께 `theme_toggle` 한 곳에 있다(`TOOLBAR_BUTTON_ORDER`).
 BUTTON_ID = GUIDE_BUTTON_ID
 GUIDE_DIR = Path(__file__).resolve().parents[1] / "guides"
-# 툴바 버튼이 누를 숨은 버튼. Streamlit 은 `key` 를 `st-key-<key>` 클래스로 단다.
-_TRIGGER_SELECTOR = f".st-key-{GUIDE_TRIGGER_KEY} button"
+# 툴바 버튼이 누를 숨은 버튼. Streamlit 은 `key` 를 `st-key-<key>` 클래스로 단다. 따라하기 창의
+# 「설정 사전」 단추도 같은 선택자로 앱 창의 숨은 버튼을 누른다(틀 `guides/howto/template.html`).
+TRIGGER_SELECTOR: Final = f".st-key-{GUIDE_TRIGGER_KEY} button"
+
+# 따라하기 가이드 자리. Streamlit 정적 서빙은 `app.py` 옆 `static/` 을 `app/static/…` 으로 보낸다.
+STATIC_DIR: Final = PROJECT_ROOT / "static"
+STATIC_URL_PREFIX: Final = "app/static/"
+# 고르는 차례 그대로다 — 사내판(git 무시, 사내가 복사) → 합성 예시판(추적).
+HOWTO_FOLDERS: Final[tuple[tuple[Literal["local", "example"], str], ...]] = (
+    ("local", "guides/local"),
+    ("example", "guides/howto"),
+)
+# 툴바 버튼이 누르는 순간 읽는 CSS 변수(값은 따옴표 친 상대 주소). 없으면 대화상자를 연다.
+GUIDE_HREF_VARIABLE: Final = "--capa-guide-href"
+# 옆 창 이름과 폭. 같은 이름이면 브라우저가 창을 하나만 둔다. 폭은 틀이 가이드만 세우는 좁은
+# 꼴(1100px 미만)이고 그림이 읽히는 폭이다.
+GUIDE_WINDOW_NAME: Final = "capa-guide"
+GUIDE_WINDOW_WIDTH: Final = 520
+# 가이드 이름은 파일 이름이자 CSS 문자열 안에 들어간다 — 따옴표 · 경로 글자를 받지 않는다.
+_HOWTO_NAME = re.compile(r"[a-z][a-z0-9_]*")
+
+
+@dataclass(frozen=True)
+class HowtoGuide:
+    """옆 창으로 열 따라하기 가이드 한 벌."""
+
+    kind: Literal["local", "example"]
+    path: Path
+    # 문서 기준 상대 주소(`app/static/guides/…`).
+    url: str
+
+
+def find_howto_guide(name: str, *, static_dir: Path = STATIC_DIR) -> HowtoGuide | None:
+    """`name` 가이드의 사내판 → 예시판 차례로 처음 있는 것. 둘 다 없으면 None(md 대화상자).
+
+    회차마다 파일 둘을 볼 뿐이라 캐시하지 않는다 — 사내가 사내판을 복사한 뒤 앱을 다시 띄우지
+    않아도 다음 회차부터 그것을 연다.
+    """
+    if not _HOWTO_NAME.fullmatch(name):
+        raise ValueError(f"따라하기 가이드 이름이 아닙니다: {name!r}")
+    for kind, folder in HOWTO_FOLDERS:
+        relative = f"{folder}/{name}.html"
+        path = static_dir / relative
+        if path.is_file():
+            return HowtoGuide(kind=kind, path=path, url=STATIC_URL_PREFIX + relative)
+    return None
+
 
 _SCRIPT = """
 (function () {
@@ -53,6 +127,39 @@ _SCRIPT = """
   // 그 규칙은 같은 iframe 의 맨 앞 스크립트가 정의한다.
   function dark() {
     return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
+  }
+
+  // 페이지가 그린 규칙이 버튼에 싣는 가이드 주소(따옴표 친 상대 주소). 이 iframe 은 페이지를
+  // 옮겨도 남으므로 **누르는 순간** 읽는다.
+  function guideHref(button) {
+    var raw = parentWindow.getComputedStyle(button).getPropertyValue("%(href_var)s").trim();
+    return raw.replace(/^["']|["']$/g, "");
+  }
+
+  // 앱 옆(화면 오른쪽 끝)에 좁은 창을 연다. 같은 이름의 창이 이미 있으면 다시 읽지 않고 앞으로
+  // 부른다 — 빈 주소로 열면 있는 창을 그대로 돌려받는다. 새로 생긴 빈 창만 가이드로 보낸다.
+  function openGuideWindow(href) {
+    if (!href) return false;
+    var url;
+    try { url = new parentWindow.URL(href, doc.baseURI).href; } catch (error) { return false; }
+    var screen = parentWindow.screen;
+    var width = %(width)d;
+    var availWidth = screen.availWidth || width;
+    var height = Math.max(480, (screen.availHeight || 900) - 24);
+    var left = (screen.availLeft || 0) + Math.max(0, availWidth - width);
+    var top = screen.availTop || 0;
+    var features = "popup=yes,width=" + width + ",height=" + height +
+      ",left=" + left + ",top=" + top;
+    var win = parentWindow.open("", "%(window)s", features);
+    if (!win) return false;
+    try {
+      if (win.location.href.split("#")[0] !== url) win.location.replace(url);
+    } catch (error) {
+      // 다른 출처(이전 앱 주소 등)의 창이면 주소를 읽지 못한다 — 가이드로 다시 보낸다.
+      win = parentWindow.open(url, "%(window)s", features) || win;
+    }
+    try { win.focus(); } catch (error) { /* 막혀도 창은 열렸다 */ }
+    return true;
   }
 
   function place() {
@@ -82,6 +189,9 @@ _SCRIPT = """
     // 사람이 누른 click 처럼 `detail=1` 로 보내면 본문 버튼으로 연 팝업과 같이 대화상자가 포커스를
     // 받는다(브라우저 실측).
     button.onclick = function () {
+      // 따라하기 가이드가 있는 화면이면 옆 창을 연다. 열지 못하면(가이드 없음 · 팝업 막힘)
+      // 대화상자로 간다.
+      if (openGuideWindow(guideHref(button))) return;
       var trigger = doc.querySelector('%(trigger)s');
       if (!trigger) return;
       trigger.dispatchEvent(new parentWindow.MouseEvent("click", {
@@ -123,7 +233,10 @@ def guide_toolbar_script() -> str:
     """
     return _SCRIPT % {
         "id": BUTTON_ID,
-        "trigger": _TRIGGER_SELECTOR,
+        "trigger": TRIGGER_SELECTOR,
+        "href_var": GUIDE_HREF_VARIABLE,
+        "window": GUIDE_WINDOW_NAME,
+        "width": GUIDE_WINDOW_WIDTH,
         "light_border": tokens.palette_value("light", "BORDER"),
         "dark_border": tokens.palette_value("dark", "BORDER"),
         "light_ink": tokens.palette_value("light", "TEXT"),
@@ -143,14 +256,29 @@ def load_guide(page: str) -> str:
     return (GUIDE_DIR / f"{page}.md").read_text(encoding="utf-8")
 
 
-def render_page_guide(page: str, *, title: str) -> None:
+def guide_show_style(guide: HowtoGuide | None) -> str:
+    """툴바 버튼을 보이게 하는 규칙. 따라하기 가이드가 있으면 그 주소를 CSS 변수로 함께 싣는다.
+
+    스타일만 든 `st.html` 이라 본문 자리를 먹지 않고, 페이지를 옮기면 Streamlit 이 걷어 간다 —
+    주소도 그 화면에 있는 동안만 산다.
+    """
+    if guide is None:
+        return _SHOW_STYLE
+    return (
+        f"<style>html body #{BUTTON_ID} {{ display: inline-block !important;"
+        f' {GUIDE_HREF_VARIABLE}: "{guide.url}"; }}</style>'
+    )
+
+
+def render_page_guide(page: str, *, title: str, howto: str | None = None) -> None:
     """이 화면의 Guide 를 단다. 페이지 본문 맨 앞에서 한 번 부른다.
 
     툴바 버튼을 보이게 하는 규칙과 그 버튼이 누를 숨은 버튼을 그린다. 숨은 버튼이 눌린
-    회차에 대화상자를 연다.
+    회차에 대화상자를 연다. `howto` 는 이 화면의 따라하기 가이드 이름이다 — 그 HTML 이 있으면
+    툴바 버튼이 옆 창을 열고, 대화상자는 창 안 「설정 사전」 단추가 연다.
     """
     body = load_guide(page)
-    st.html(_SHOW_STYLE)
+    st.html(guide_show_style(find_howto_guide(howto) if howto else None))
     # 누르면 이 화면에 열려 있던 팝업 칸을 먼저 비운다 — 팝업은 한 회차에 하나뿐이라, 붙여넣기
     # 팝업이 열린 채 Guide 를 열면 Streamlit 이 멈춘다. 콜백은 스크립트보다 먼저 돈다.
     if st.button("Guide", key=GUIDE_TRIGGER_KEY, on_click=forget_page_dialogs):

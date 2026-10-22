@@ -86,6 +86,10 @@ B/N       = 그 달 확보율이 가장 낮은 공정
   은 `공정 필터`·`주요공정 히트맵` 까지). 화면 고유의 설정은 그 아래 접히는 **조건 카드**입니다.
 - 화면 설명은 헤더 툴바 맨 왼쪽 `Guide` 버튼에 있습니다(원문 `src/capa_simulation/guides/`). 툴바 차례는
   `Guide` · `Print` · 테마입니다.
+- HOME 의 `Guide` 는 번호대로 따라 하는 **따라하기 가이드**를 앱 옆의 작은 창으로 엽니다. 사내판
+  (`static/guides/local/lob.html` — 사내 실화면, git 무시)이 있으면 그것을, 없으면 합성 예시판
+  (`static/guides/howto/lob.html` — 숫자 · 이름은 모두 합성)을 열고, 둘 다 없으면 지금의 설명 대화상자를 엽니다.
+  설명 대화상자는 창 머리의 `설정 사전` 단추로 앱 창에 뜹니다. 팝업이 막히면 대화상자로 물러섭니다.
 - 입장 화면은 한 탭에 한 번 뜹니다(새로고침·테마 바꾸기에도 다시 뜨지 않음). Summary 머리 줄의 `선행 B/O`·`선행 입고`·
   `GAP` 토글은 브라우저 안에서만 켜고 끄며 앱 계산을 바꾸지 않습니다. `Esc`·`Detail` 이 앱으로 돌아갑니다.
 - 공정 이름은 **화면은 표시명, 파일은 원본**입니다. 화면에서 읽는 공정명은 `Admin Area` 의 표시명이고, 저장값과
@@ -387,6 +391,7 @@ typed raw 로 그대로 보존합니다.
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |
 | `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계) |
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
+| `static/guides/howto/` | 따라하기 가이드 합성 예시판(한 파일 HTML — 뼈대는 `src/capa_simulation/guides/howto/`, 만들기는 `scripts/build_page_guide.py --example`) |
 | `config/data_contract.json` | Core Data 78컬럼 계약 |
 | `index.html` | 대표 발표 자료 한 파일(앱과 무관, 숫자는 합성 샘플). 원본은 저장소 밖 쇼케이스 폴더(`AGENTS.md` 3장 끝) |
 

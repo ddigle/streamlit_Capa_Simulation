@@ -735,9 +735,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대화상자다. 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 다.
   - 툴바 버튼이 본문의 숨은 버튼(`page_guide_trigger`)을 대신 누르고 파이썬이 `st.dialog` 로 연다.
     `render_page_guide` 를 부른 화면에만 버튼이 보인다.
+  - 따라하기 가이드를 단 화면(`render_page_guide(..., howto=<가이드>)` — 지금은 HOME 의 `lob`)은 `find_howto_guide`
+    가 사내판 `static/guides/local/<가이드>.html`(git 무시) → 예시판 `static/guides/howto/<가이드>.html`(추적) → md
+    대화상자 차례로 고른다. 고른 주소(문서 기준 상대 `app/static/guides/…` — WebIDE `/proxy/<포트>/` 접두에서도 맞다)를
+    버튼 규칙의 CSS 변수(`GUIDE_HREF_VARIABLE`)로 싣고, 툴바 버튼이 누르는 순간 그 주소로 이름 붙은 좁은 옆 창
+    (`capa-guide`, 폭 520)을 연다 — 파이썬 회차를 거치면 사용자 몸짓이 사라져 팝업 막이에 걸린다. 이미 열린 창은
+    다시 읽지 않고 앞으로 부르며, 창을 못 열면 대화상자로 물러선다. md 원문은 창 머리 「설정 사전」 단추가
+    `window.opener` 의 숨은 버튼을 눌러 앱 창에 연다(선택자 사본은 틀 `template.html`, `tests/test_page_guide.py`).
 - `src/capa_simulation/guides/howto/` — 따라하기 가이드 뼈대(사외 정본): 원고 `<가이드>/content.json` · 촬영 계획
   `plan.json` · ID 장부 `ids.json` · 형식 `schema/*.json` · 틀 `template.html` · 사내가 찍지 않는 상태의 합성 예시 그림
-  `<가이드>/example/`. 사내는 `review/guide/` 의 글 덮어쓰기 · 매개값만 얹는다.
+  `<가이드>/example/`(WebP · `shots.json`). 사내는 `review/guide/` 의 글 덮어쓰기 · 매개값만 얹는다(git 무시).
+  - 결과 자리: 합성 예시판 `static/guides/howto/<가이드>.html`(추적, 공개 저장소 — 그림 밖 글에 실 담당 조직 · 문의처
+    · 이메일이 없음을 `tests/test_page_guide.py` 가 본다)과 사내판 `static/guides/local/<가이드>.html`(git 무시, 사내가
+    저장소 밖 결과를 손으로 복사). 둘 다 Streamlit 정적 서빙으로 `app/static/…` 에 서고 1.63 은 `.html` 을
+    `text/html` 로 내보낸다. 원고 판(`version`)을 올리면 예시판과 `example/` 을 같은 변경에서 다시 만든다.
   - 생성기 `scripts/build_page_guide.py` 가 앱 사본을 띄워 찍고(`page_guide_capture.py` + 페이지 도우미
     `page_guide_helpers.js`, Playwright 는 저장소 밖) 조립한다(`page_guide_core.py` — 자르기 · 상자 % · 덮어쓰기 ·
     매개값 · 리뷰 한 줄). `--example` 은 `git archive` 사본 + 합성 시드(`scripts/guide_example_seed.py`), `--internal` 은
@@ -2067,6 +2078,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **화면 사용 설명은 본문이 아니라 Guide 에 둔다.** 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 이고 화면이
   `page_guide.render_page_guide` 를 진행 막대 자리(`render_page_header_with_status`)보다 먼저 부른다. 옮긴 핵심 문구는 화면
   테스트(`test_*_guide_carries_*`)가 대조한다. 누르기 전에 알아야 하는 경고(되돌릴 수 없는 저장)는 버튼 곁에 남긴다.
+  따라하기 가이드(`guides/howto/`)가 있는 화면의 Guide 는 앱을 덮지 않는 옆 창을 열고, md 원문은 그 창의 「설정 사전」이
+  된다(3장 `page_guide.py`) — md 를 지우지 않는다.
 - **사이드바 상자는 한 모양이고 오른쪽 끝 표식으로 용도를 가른다.** 목록 상자와 조건 카드는 같은 서식의 `st.expander`
   이고, 다른 화면으로 가는 링크는 `arrow_forward`, 그 자리에서 펼치는 패널은 `expand_more`, 팝업이 뜨는 값 칸은
   `unfold_more` 다. `›` 는 Streamlit hover 글리프라 쓰지 않고 서식 예외 상자를 만들지 않는다.

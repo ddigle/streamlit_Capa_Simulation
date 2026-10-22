@@ -359,10 +359,17 @@
 ### 문서 및 테스트
 
 - [ ] 정상·누락·중복·0 수율·혼류 생산 테스트를 추가한다.
-- [~] **따라하기 가이드 예시판·사내판** — 뼈대(`guides/howto/`)와 생성기 · 점검기(`scripts/build_page_guide.py` ·
-  `check_page_guide.py`)는 섰다. 남은 것: `--example` 결과(`lob.html` · `example/*.webp`)를 정본 자리에 커밋,
-  `.gitignore` 의 `review/guide/` · `static/guides/local/`, Guide 버튼이 사내판 → 예시판 → md 차례로 옆 창을 여는 것,
-  런북 10장(사내 1단계 — 사본에서 쓰지 않는 상태만)과 그 배포의 7장.
+- [~] **따라하기 가이드 예시판·사내판** — 뼈대(`guides/howto/`) · 생성기 · 점검기 · 합성 예시판(`static/guides/howto/lob.html`
+  · `guides/howto/lob/example/`) · HOME Guide 옆 창(사내판 → 예시판 → md)은 섰다. 남은 것:
+  - 운영 규칙(쇼케이스 handoff `dual-env-proposal.md` — dual_env §0 · §1 · §2 · §4 · §6 · §7, 런북 0장 · 5장)을 문서에 반영한다
+    (사내 탐색 갈래와 겹쳐 통합 단계에서 한 번에 쓴다). CLAUDE.md 「보조 스크립트」 문단에 생성기 · 점검기 · 시드를 더한다.
+  - 런북 **10장**(9장은 사내 탐색) — 사내 1단계 절차: 사본 트리 · `review/guide/params.json` · 생성기 백그라운드 · 결과 그림
+    검수 · `overrides.json` 고치고 `--assemble-only` · 사용자가 `static/guides/local/` 로 한 줄 복사 · Guide 로 열림(DRM 포함)
+    확인 · 실화면 그림과 사본은 사용자가 지움 · 리뷰 md 에 점검기 한 줄. 그 배포의 런북 7장에 「가이드 1단계 — 사본에서 쓰지
+    않는 상태만」 확인 줄.
+  - **사내 촬영은 보안 담당 확인 뒤에 연다.** 그 전에는 사본에서 생성기를 돌려 저장소 밖 검수까지만 한다(결과를
+    `static/guides/local/` 에 두지 않는다).
+  - 다른 화면의 따라하기 가이드(지금은 HOME `lob` 하나) — 화면마다 원고 · 계획 · 예시판을 같은 형식으로 더한다.
 
 ### 업무 키 승격
 
@@ -636,6 +643,13 @@
 
 ### 화면
 
+- (2026-10-22) 따라하기 가이드 1단계 — 뼈대(원고 · 촬영 계획 · 형식 · 틀 · 합성 예시 그림)는 사외 정본이고 사내는 글 덮어쓰기
+  · 매개값(`review/guide/`, git 무시)만 얹는다. 사내 1단계는 쓰기 등급 `db` · `shared` 상태를 찍지 않고(사본 두 DB 지문이
+  같아야 함) 합성 예시 그림으로 대신한다. HOME `Guide` 는 사내판 `static/guides/local/` → 예시판 `static/guides/howto/` → md
+  대화상자 차례로 고르고 앱을 덮지 않는 옆 창(이름 `capa-guide`, 폭 520)으로 연다 — Streamlit 1.63 정적 서빙이 `.html` 을
+  `text/html` 로 내보내 숨은 페이지 없이 그 파일을 연다(합성 앱 실측, `/proxy/<포트>/` 접두 포함). md 원문은 창 머리
+  「설정 사전」으로 남는다. 예시판 시드는 MI ST 를 분 단위로 맞춘 합성 시드(`scripts/guide_example_seed.py`) —
+  관련: `components/page_guide.py`·`guides/howto/`·`scripts/build_page_guide.py`
 - (2026-09-29) 조건 카드·Guide 규칙 — 사이드바 카드에는 그 화면이 실제로 읽는 거르는 조건만(하위 보기 전환은 본문), 설명은
   툴바 Guide, 작업 버튼은 표 위 작업 줄, 붙여넣기·등록은 팝업 — 관련: 전 화면·`docs/design_system.md`
 - (2026-10-10) 사이드바 「조회 조건」은 늘 펼친 통합 패널 하나 — 줄마다 값 칸이 팝업을 열고, 조회기간도 팝업에서 「적용」을

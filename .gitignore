@@ -87,3 +87,9 @@ imgtmp/
 # 커밋되면 그 포트가 다른 폴더와 사내까지 따라간다. `.streamlit/config.toml` 에 포트를 적지
 # 않는 이유도 같다 — 그 파일은 추적 대상이고 배포 ZIP 에 실린다.
 /run.ps1
+
+# 따라하기 가이드의 사내 자리. 사내 덮어쓰기 · 매개값(`review/guide/`)과 사내판(`static/guides/local/`)은
+# 사내가 실데이터로 만드는 것이라 커밋하지 않는다. 무시된 파일은 배포 적용기의 지움 후보가 아니라 적용
+# 뒤에도 남는다. 합성 예시판(`static/guides/howto/`)은 추적한다(`components/page_guide.py`).
+review/guide/
+static/guides/local/

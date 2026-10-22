@@ -32,6 +32,8 @@
 *.gif binary
 *.ico binary
 *.zip binary
+# 따라하기 가이드의 합성 예시 그림(src/capa_simulation/guides/howto/<가이드>/example/).
+*.webp binary
 # 부분 글꼴(components/intro_overlay_assets, static/fonts). 줄바꿈 정규화가 닿으면 글꼴이 깨진다.
 *.woff2 binary
 *.woff binary

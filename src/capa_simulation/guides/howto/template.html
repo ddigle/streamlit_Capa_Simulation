@@ -56,6 +56,8 @@ img{display:block;max-width:100%}
 .gtop .ttl{font-weight:800;font-size:16px;letter-spacing:-.01em}
 .gtop .page{margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px;white-space:nowrap}
 .gtop .tm{width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;color:var(--muted)}
+.gtop .dict{font-size:12px;font-weight:700;color:var(--accent);background:none;border:1px solid var(--border);border-radius:999px;padding:3px 10px;cursor:pointer;white-space:nowrap}
+.gtop .dict[hidden]{display:none}
 #view{flex:1;min-height:0;overflow:auto;padding:14px 16px 96px}
 .sec{margin:20px 0 8px;display:flex;align-items:baseline;gap:8px}
 .sec h2{margin:0;font-size:14px;font-weight:800}
@@ -207,6 +209,7 @@ img{display:block;max-width:100%}
       <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h11a5 5 0 0 1 0 10H9l-5 4z"/><path d="M8 9h7M8 12h4"/></svg>
       <span class="ttl">따라하기</span>
       <span class="page" id="pagechip"></span>
+      <button class="dict" id="dict" type="button" hidden title="앱 창에 이 화면의 Guide 대화상자(설정과 쓰는 법)를 엽니다">설정 사전</button>
       <button class="tm" id="tm" title="밝게 / 어둡게(시안 확인용)">◐</button>
     </header>
     <main id="view"></main>
@@ -241,6 +244,31 @@ const DATA = /*__DATA__*/null;
   root.dataset.theme = readTheme();
   $("#tm").onclick = () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; };
   addEventListener("storage", (e) => { if (e.key === "capa-theme") root.dataset.theme = readTheme(); });
+
+  // ---------------------------------------------------------- 설정 사전: 앱 창의 Guide 대화상자(md 원문)
+  // 이 창은 앱의 Guide 버튼이 연다(`components/page_guide.py`). 앱 창이 그리는 숨은 Guide 버튼을 그 버튼과
+  // 같은 방법(detail 1 click)으로 눌러 대화상자를 앱 창에 연다. 선택자는 `page_guide.TRIGGER_SELECTOR` 의 사본이다.
+  // 창을 연 것이 툴바 스크립트의 iframe 이어도 맨 위 창이 앱 창이다. 앱 없이 열린 파일이면 단추를 감춘다.
+  const DICT_TRIGGER = ".st-key-page_guide_trigger button";
+  function appWindow() {
+    try {
+      const w = window.opener && !window.opener.closed ? window.opener.top || window.opener : null;
+      return w && w.document ? w : null;
+    } catch (e) { return null; }                         // 다른 출처
+  }
+  const dict = $("#dict");
+  dict.hidden = !appWindow();
+  dict.onclick = () => {
+    const w = appWindow();
+    const trigger = w && w.document.querySelector(DICT_TRIGGER);
+    if (!trigger) {
+      dict.textContent = "앱 창을 찾지 못했어요";
+      setTimeout(() => { dict.textContent = "설정 사전"; }, 2500);
+      return;
+    }
+    trigger.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, view: w, detail: 1 }));
+    try { w.focus(); } catch (e) { /* 막혀도 대화상자는 앱 창에 열렸다 */ }
+  };
 
   $("#pagechip").textContent = DATA.page;
   const view = $("#view");

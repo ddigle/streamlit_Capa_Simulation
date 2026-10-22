@@ -1692,6 +1692,24 @@ def test_a_past_month_takes_the_securement_adjustment_like_a_calculated_month(
     assert not [item.value for item in app.warning if "짝이 없어" in str(item.value)]
 
 
+def test_home_offers_the_lob_howto_board_through_its_guide_button(seeded_database: Path) -> None:
+    """HOME 의 Guide 는 따라하기 가이드 `lob` 를 고르는 차례(사내판 → 예시판 → md)대로 연다.
+
+    어느 판이 서는지는 그 자리의 파일이 정한다(사내에는 사내판이 있을 수 있다) — 같은 고르기
+    함수의 결과가 툴바 버튼 규칙에 실렸는지만 본다.
+    """
+    from capa_simulation.components.page_guide import find_howto_guide, guide_show_style
+
+    app = _run(seeded_database)
+    styles = [
+        element.proto.body
+        for element in app.get("html")
+        if "#capa-guide-button" in element.proto.body
+    ]
+
+    assert styles == [guide_show_style(find_howto_guide("lob"))]
+
+
 def test_the_home_guide_carries_what_left_the_body() -> None:
     """토글 툴팁·Preference·Past Data 의 설명은 Guide 로 옮겼다."""
     from capa_simulation.components.page_guide import load_guide
