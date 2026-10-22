@@ -211,6 +211,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 편집표와 적용은 같은 적용 기간(선택기간 ∩ 활성 리비전 UPEH 범위)을 쓴다. 필터는 보기만 좁힌다(`month_editor.py`).
   - STEP 표·팝업은 STEP 탭이나 팝업이 열린 회차에만 만들고 팝업 값은 경로 키다(`test_reference_data_perf.py`).
   - UPEH 왕복은 고친 칸만 원본 위에 덮는다 — 원본 표기를 정규화해 저장하면 STEP 목록의 REQB 일치가 끊긴다.
+  - UPEH 편집표는 증분 없이 유효숫자 서식(`EDITOR_FORMATS` 의 `%,.6g`)으로 그리고, 월 칸 머리 도움말
+    (`EDITOR_VALUE_HELP`)이 Main 행 UPEH · MI 행 ST(분)를 밝힌다. Streamlit 숫자 칸은 증분의 소수 자릿수에서 값을
+    잘라 0.01 증분이면 0.01분보다 작은 ST 가 0.00 으로 보이고 그렇게만 넣어진다.
   - 적용하지 않은 편집이 남은 탭의 주황 점(`tab_marks.py`)은 원본 토큰으로 편집표를 비운 뒤에 정한다.
 - `app_pages/calculation_result.py` — `산출 결과` 화면. `대당 Capa`·`소요대수`·`확보율` 탭(언패킹 순서 = `TAB_NAMES`)과
   제외 목록을 보인다. 설명은 `guides/calculation_result.md`.

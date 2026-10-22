@@ -1050,8 +1050,11 @@ EQUIPMENT_EDITOR_SPECS = tuple(
     )
 )
 # 편집기의 값 형식. (숫자 형식, 한 칸 증분, 최댓값)
-EDITOR_FORMATS: dict[str, tuple[str, float, float | None]] = {
-    "RQ_UPEH": ("%,.2f", 0.01, None),
+# UPEH 표는 증분 없이 유효숫자 여섯 자리로 그린다. MI 행 값은 ST(분)라 0.01 보다 작은 값이
+# 정의대로 들어오는데, Streamlit 숫자 칸은 증분의 소수 자릿수에서 값을 잘라 0.01 증분이면 그런
+# ST 가 0.00 으로 보이고 손으로도 그렇게만 넣어진다(0 은 ST 검사에 막힌다).
+EDITOR_FORMATS: dict[str, tuple[str, float | None, float | None]] = {
+    "RQ_UPEH": ("%,.6g", None, None),
     "RQ_RUN_RATE": ("percent", 0.001, 1.0),
     "RQ_VITAL": ("percent", 0.001, None),
     "RQ_LOT_RATIO": ("percent", 0.001, 1.0),
@@ -1060,6 +1063,10 @@ EDITOR_FORMATS: dict[str, tuple[str, float, float | None]] = {
     "RQ_EQP_OWN": ("%,.2f", 0.01, None),
     "RQ_EQP_LENT": ("%,.2f", 0.01, None),
     "RQ_EQP_AVBL": ("%,.2f", 0.01, None),
+}
+# 월 칸 머리의 도움말 — 한 칸에 행마다 다른 값이 들어가는 표만 그 뜻·단위를 밝힌다.
+EDITOR_VALUE_HELP: dict[str, str] = {
+    "RQ_UPEH": "Main 행은 UPEH(시간당 처리량), MI 행은 ST(분) — 한 개를 처리하는 데 드는 분입니다.",
 }
 
 # 측정률 표에 이 기간 행이 없으면 편집표가 0 행이다(모든 칸을 비워 적용했거나 원천에 행이 없다).
@@ -1098,6 +1105,7 @@ for editor in (*EDITORS, *EQUIPMENT_EDITOR_SPECS):
         # 필터 옵션 표기만 다른 화면과 맞춘다. 선택값·편집표·왕복 CSV 는 원본 공정명이다.
         value_labels=process_labels.value_labels(),
         outer_tab=equipment_tab if is_equipment else None,
+        value_help=EDITOR_VALUE_HELP.get(editor.table_name),
     )
     editor_results.append((editor, edited_table, applied))
 

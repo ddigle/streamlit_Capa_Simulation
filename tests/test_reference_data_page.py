@@ -1409,6 +1409,34 @@ def test_the_table_filters_and_the_overview_detail_live_in_the_sidebar_card() ->
     assert not app.main.toggle
 
 
+def test_the_upeh_editor_names_st_minutes_and_keeps_small_values() -> None:
+    """UPEH 편집표의 월 칸은 머리 도움말에 「ST(분)」를 밝히고, 증분 없이 유효숫자 서식으로 그린다.
+
+    Streamlit 숫자 칸은 증분의 소수 자릿수에서 값을 자른다 — 0.01 증분이면 0.01분보다 작은 MI 의
+    ST 가 0.00 으로 보이고 손으로도 그렇게만 넣어진다. 다른 표의 증분은 그대로다.
+    """
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["reference_data_active_tab"] = REF_TAB["UPEH"]
+    app.run()
+    assert not app.exception
+
+    editor = next(frame for frame in app.dataframe if "Area_Name" in frame.value.columns)
+    config = json.loads(editor.proto.columns)
+    months = [column for column in editor.value.columns if str(column).isdigit()]
+    assert months
+    for month in months:
+        assert "ST(분)" in config[month]["help"]
+        assert config[month]["type_config"]["format"] == "%,.6g"
+        assert "step" not in config[month]["type_config"]
+
+    app.session_state["reference_data_active_tab"] = REF_TAB["일수"]
+    app.run()
+    run_day = next(frame for frame in app.dataframe if "RUN_DAY" not in frame.value.columns)
+    run_day_config = json.loads(run_day.proto.columns)
+    assert run_day_config["202608"]["type_config"]["step"] == 1.0
+    assert "help" not in run_day_config["202608"]
+
+
 def test_the_guide_carries_what_left_the_body() -> None:
     from capa_simulation.components.page_guide import load_guide
 
@@ -1417,6 +1445,7 @@ def test_the_guide_carries_what_left_the_body() -> None:
         "60 ÷ ST",
         "**ST(분)**",
         "ST 는 분 단위로 입력합니다",
+        "유효숫자 여섯 자리",
         "STEP 수는 같은 공정·제품 경로 안의",
         "필터는 화면만 좁힙니다",
         "편집 취소",

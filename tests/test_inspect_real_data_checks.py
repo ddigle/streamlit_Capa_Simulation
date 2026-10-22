@@ -662,7 +662,8 @@ def test_the_st_definition_line_reads_upeh_times_minutes_st_over_sixty(
 ) -> None:
     """두 칸이 다 있는 행을 심는다 — MI 는 정의대로(UPEH = 60 ÷ ST → 1), Main 은 초로 적은 ST(→ 60).
 
-    분포·개수만 찍고 판정하지 않는다. 값은 새지 않는다.
+    MI 와 Main 은 따로 찍힌다 — 계산에 쓰지 않는 Main 의 ST 가 MI 분포를 가리지 않는다. 분포·개수만
+    찍고 판정하지 않는다. 값은 새지 않는다.
     """
     path = tmp_path / "capa_simulation.duckdb"
     path.write_bytes(simulation_db.read_bytes())
@@ -695,8 +696,8 @@ def test_the_st_definition_line_reads_upeh_times_minutes_st_over_sixty(
     _assert_no_leak(output)
     lines = [line for line in output.splitlines() if line.startswith(ST_DEFINITION_LINE)]
     assert lines == [
-        f"{ST_DEFINITION_LINE} — UPEH·ST 가 둘 다 양수인 행 {mi + main}(Main {main} · MI {mi}) · "
-        f"p5 · 중앙 · p95 1 · 60 · 60 · 1 ±5% 안 {mi}"
+        f"{ST_DEFINITION_LINE} — MI {mi} · p5 · 중앙 · p95 1 · 1 · 1 · 1 ±5% 안 {mi} / "
+        f"Main(계산에 쓰지 않음) {main} · p5 · 중앙 · p95 60 · 60 · 60 · 1 ±5% 안 0"
     ]
 
 

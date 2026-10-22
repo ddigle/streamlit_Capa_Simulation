@@ -86,7 +86,7 @@ def render_month_editor(
     dimensions: list[str],
     editor_key: str,
     number_format: str,
-    step: float,
+    step: float | None,
     min_value: float = 0.0,
     max_value: float | None = None,
     *,
@@ -97,8 +97,13 @@ def render_month_editor(
     card_name: str,
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
     outer_tab: OpenTab | None = None,
+    value_help: str | None = None,
 ) -> tuple[pd.DataFrame, bool]:
     """월 편집표 하나. 돌려주는 것은 (되머지한 전체 표, 적용 버튼이 눌렸는가) 다.
+
+    `step` 은 월 칸의 한 칸 증분이다. Streamlit 숫자 칸은 증분의 소수 자릿수에서 **값 자체를
+    자른다**(보이는 값과 손으로 넣는 값 모두) — 그 아래 자리가 뜻이 있는 표는 `None` 을 준다.
+    `value_help` 는 월 칸 머리의 도움말로, 값 칸의 뜻·단위를 밝힌다.
 
     **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다.** `st.data_editor` 는 그리지 않은
     회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을 누르는 순간 편집이
@@ -193,6 +198,7 @@ def render_month_editor(
                 **{
                     month: st.column_config.NumberColumn(
                         month,
+                        help=value_help,
                         width=80,
                         min_value=min_value,
                         max_value=max_value,

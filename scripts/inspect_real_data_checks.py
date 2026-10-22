@@ -995,11 +995,14 @@ def _requirement_section(
 
 
 def _st_definition_lines(tables: dict[str, pd.DataFrame]) -> list[str]:
-    """ST 정의 대조(참고) — `RQ_UPEH` 에서 UPEH·ST 가 둘 다 양수인 행의 UPEH × ST ÷ 60.
+    """ST 정의 대조(참고) — `RQ_UPEH` 에서 UPEH·ST 가 둘 다 양수인 행의 UPEH × ST ÷ 60 을 MI·Main
+    으로 나눠 찍는다.
 
     `RQ_UPEH` 의 MI 행 ST 는 한 개당 분이다(정의). 두 칸이 같은 처리 속도를 적었으면 1 근처이고,
-    벗어나면 원천 입력이 정의와 다르다는 신호다. 판정하지 않고 행 수와 분포만 찍는다. ≈60 가르기와
-    달리 소요대수 대조가 없어도 늘 찍는다.
+    MI 쪽이 벗어나면 원천 입력이 정의와 다르다는 신호다. 계산이 쓰는 ST 는 MI 행뿐이라 MI 를 앞에
+    따로 두고, ST 가 계산에 들지 않는 Main 행은 뒤에 참고로만 둔다 — 한 분포로 섞으면 Main 에 다른
+    뜻으로 실린 ST 가 MI 분포를 가린다. 판정하지 않고 행 수와 분포만 찍는다. ≈60 가르기와 달리
+    소요대수 대조가 없어도 늘 찍는다.
     """
     head = "- ST 정의 대조(참고) — 리비전 1 `RQ_UPEH` 의 UPEH × ST ÷ 60(ST 는 분 단위라 기대 1)"
     upeh = tables.get("RQ_UPEH")
@@ -1009,14 +1012,26 @@ def _st_definition_lines(tables: dict[str, pd.DataFrame]) -> list[str]:
     if agreement.empty:
         return [f"{head} — UPEH·ST 가 둘 다 양수인 행 0"]
     area = match_key(upeh["Area_Name"]).loc[agreement.index]
-    near = int(agreement.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
-    main, mi = int(area.eq("main").sum()), int(area.eq("mi").sum())
-    p5, median, p95 = (float(np.quantile(agreement.to_numpy(), q)) for q in (0.05, 0.5, 0.95))
-    return [
-        f"{head} — UPEH·ST 가 둘 다 양수인 행 {len(agreement):,}(Main {main:,} · MI {mi:,}) · "
-        f"p5 · 중앙 · p95 {_ratio(p5)} · {_ratio(median)} · {_ratio(p95)} · "
-        f"1 ±{NEAR_TOLERANCE:.0%} 안 {near:,}"
+    parts = [
+        _agreement_part("MI", agreement.loc[area.eq("mi")]),
+        _agreement_part("Main(계산에 쓰지 않음)", agreement.loc[area.eq("main")]),
     ]
+    others = int((~area.isin(["mi", "main"])).sum())
+    if others:
+        parts.append(f"그 밖 {others:,}")
+    return [f"{head} — {' / '.join(parts)}"]
+
+
+def _agreement_part(label: str, values: pd.Series) -> str:
+    """한 Area 의 UPEH × ST ÷ 60 — 행 수, p5·중앙·p95, 1 ±5% 안 행 수."""
+    if values.empty:
+        return f"{label} 0"
+    near = int(values.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
+    p5, median, p95 = (float(np.quantile(values.to_numpy(), q)) for q in (0.05, 0.5, 0.95))
+    return (
+        f"{label} {len(values):,} · p5 · 중앙 · p95 {_ratio(p5)} · {_ratio(median)} · "
+        f"{_ratio(p95)} · 1 ±{NEAR_TOLERANCE:.0%} 안 {near:,}"
+    )
 
 
 # 경로 없는 부하의 사유 → 짧은 이름. 사유는 코드 상수라 찍어도 실데이터 값이 아니다.
