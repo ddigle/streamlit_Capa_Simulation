@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>따라하기 · Capa LOB Summary</title>
 <style>
-/* 색은 앱 design/tokens 의 두 벌(light · dark)에서 옮겼다. 밝기는 앱 창의 localStorage["capa-theme"] 를 읽고, 없으면 OS 설정을 따른다. */
+/* 색은 앱 design/tokens 의 두 벌(light · dark)에서 옮겼다. 밝기는 앱 창의 localStorage["capa-theme"]("Dark"·"Light" — 대소문자를 가리지 않는다)를 읽고, 없으면 OS 설정을 따른다. */
 :root{
   --bg:#F7F8FA;--card:#FFFFFF;--text:#18181B;--muted:#646973;--border:#DDE0E5;--strong:#A3A9B2;
   --accent:#0F766E;--accent-soft:rgba(15,118,110,.10);--head:#EFF1F5;
@@ -234,10 +234,12 @@ const DATA = {"page": "Capa LOB Summary", "version": "lob@2026-10-23", "shotLabe
   };
 
   // ---------------------------------------------------------- 밝기: 앱 창과 같은 값을 따른다(같은 출처면 localStorage 를 함께 본다)
+  // 앱은 `theme_toggle.THEME_APP_KEY` 에 "Dark"·"Light"(첫 글자 대문자)를 적는다 — 소문자로 견준다.
   const root = document.documentElement;
   function readTheme() {
     let t = null;
     try { t = localStorage.getItem("capa-theme"); } catch (e) { /* 막힌 저장소 */ }
+    t = typeof t === "string" ? t.trim().toLowerCase() : null;
     if (t === "dark" || t === "light") return t;
     return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
