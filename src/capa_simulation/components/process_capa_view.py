@@ -40,8 +40,9 @@
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
 페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
-**판정은 한 기준이다** — 캔버스 부족 띠·② 판정 대조·KPI 미달·부족 원인·근거 패널의 다음 화면은 가정
-요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄 (「공식 n」)에만 둔다. 그림 캐시 키에 가정 토큰이 든다.
+**판정은 한 기준이다** — 캔버스 부족 띠·② 판정 대조·KPI 미달·부족 원인·근거 패널의 ③ 판정
+카드(머리 식·판정·원인)와 다음 화면은 가정 요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄
+(「공식 n」), ③ 카드의 회색 「공식: …」 한 줄에만 둔다. 그림 캐시 키에 가정 토큰이 든다.
 
 **부족 원인의 다음 화면** — 보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과, 가용 불일치 →
 가용설비 현황 `Static 대비 일정`, 일정 → 필요 단축 일정 이 공정 카드 강조(`open_shortening_page` —
@@ -999,23 +1000,27 @@ def judgement_card(
     assumed: Mapping[str, object] | None = None,
     token: UpehToken = NO_ASSUMPTION,
 ) -> EvidenceCard:
-    """③ 판정 — 확보율 식·과부족 식(그 달 확보기준)과 원인. 그 달이 UPEH 가정 구간이면 가정 판정 한
-    줄을 더한다(식은 공식 그대로다)."""
+    """③ 판정 — 확보율 식·과부족 식(그 달 확보기준)과 원인.
+
+    그 달이 UPEH 가정 구간이면(`assumed`) 판정은 한 기준이다 — 머리 식·판정·원인을 가정 레코드로
+    내고 식 첫 줄에 「소요 = 공식 ÷ f」 를 드러낸다. 공식 판정은 회색 「공식: …」 한 줄로
+    내린다(부족 띠·② 판정 대조·KPI·다음 화면 줄이 가정 요약을 읽는 것과 같은 기준이다).
+    """
     secure, warning = thresholds.for_month(month)
-    available = _number(record.get("가용대수"))
-    required = _number(record.get("소요대수"))
-    owned = _number(record.get(OWNED_COLUMN))
-    lent = _number(record.get(LENT_COLUMN))
-    status = record.get(STATUS_COLUMN)
+    basis = record if assumed is None else assumed
+    available = _number(basis.get("가용대수"))
+    required = _number(basis.get("소요대수"))
+    status = basis.get(STATUS_COLUMN)
+    title = "③ 판정" if assumed is None else f"③ 판정 (UPEH 가정 {token_percent(token)}%)"
     bases = (
         f"확보기준 {threshold_percent_label(secure)} ({secure:g}) · 경고기준 "
         f"{threshold_percent_label(warning)} ({warning:g})"
     )
     if required is None or required <= 0 or available is None:
-        return EvidenceCard("③ 판정", "소요 없음 — 판정하지 않습니다", (bases,))
+        return EvidenceCard(title, "소요 없음 — 판정하지 않습니다", (bases,))
     rate = available / required
     name = _STATUS_NAMES.get(str(status), _EMPTY)
-    balance = _whole(record.get(BALANCE_COLUMN))
+    balance = _whole(basis.get(BALANCE_COLUMN))
     raw = available - required * secure
     # 식의 숫자는 소수 둘째 자리다. 적은 숫자로 다시 셈한 값이 결과와 다르면 「≈」 로 밝힌다 —
     # 결과는 반올림 전 값으로 낸다(판정·과부족이 그 값을 쓴다).
@@ -1027,38 +1032,68 @@ def judgement_card(
     )
     raw_text = _signed_two(raw)
     raw_mark = _equals_mark(raw_text, _signed_two(shown_available - shown_required * secure))
-    formula = (
-        f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}\n"
+    lines = [
+        f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}",
         f"과부족 = {_two(available)} − {_two(required)}×{secure:g} {raw_mark} {raw_text}"
-        f" → {_signed_int(balance) if balance is not None else _EMPTY}"
-    )
+        f" → {_signed_int(balance) if balance is not None else _EMPTY}",
+    ]
+    if assumed is not None:
+        lines.insert(0, _assumed_required_line(_number(record.get("소요대수")), required, token))
     notes = [bases]
-    cause = "" if record.get(CAUSE_COLUMN) is None else str(record.get(CAUSE_COLUMN))
-    if cause == CAUSE_OWNED_SHORT and owned is not None:
-        notes.append(
-            f"원인: {cause} — 총보유 {_one(owned)} ÷ 소요 {_one(required)} = "
-            f"{owned / required:.1%} 도 확보기준 미달(투자 검토)"
-        )
-    elif cause == CAUSE_RENTAL:
-        notes.append(f"원인: {cause} — 총보유로는 확보, 대여 {_one(lent)} 대를 빼면 미달")
-    elif cause == CAUSE_AVAILABILITY_MISMATCH:
-        notes.append(f"원인: {cause} — 보유 − 대여로는 확보인데 가용대수가 따로 낮습니다")
-    elif cause:
-        notes.append(f"원인: {cause}")
+    cause_note = _cause_note(basis, required)
+    if cause_note:
+        notes.append(cause_note)
     if str(status) in _SHORT_STATUSES and balance == 0:
         notes.append("잡음 경계 — 확보율이 기준에 아주 조금 못 미쳐 칠했지만 과부족은 0 입니다")
     if assumed is not None:
-        assumed_rate = _number(assumed.get("확보율"))
-        assumed_balance = _whole(assumed.get(BALANCE_COLUMN))
-        assumed_cause = "" if assumed.get(CAUSE_COLUMN) is None else str(assumed.get(CAUSE_COLUMN))
-        notes.append(
-            f"UPEH 가정 {token_percent(token)}%: 확보율 "
-            + (f"{assumed_rate:.1%}" if assumed_rate is not None else _EMPTY)
-            + f" → {_STATUS_NAMES.get(str(assumed.get(STATUS_COLUMN)), _EMPTY)} · 과부족 "
-            + (_signed_int(assumed_balance) if assumed_balance is not None else _EMPTY)
-            + (f" · 원인 {assumed_cause}" if assumed_cause else "")
+        notes.append(_official_judgement_note(record))
+    return EvidenceCard(title, "\n".join(lines), tuple(notes))
+
+
+def _assumed_required_line(official: float | None, assumed: float, token: UpehToken) -> str:
+    """「소요 = 49.80 ÷ 1.5 = 33.20」 — 가정 판정의 소요가 공식 소요에서 어떻게 왔는지(검산이
+    어긋나면 「≈」)."""
+    factor = token_factor(token)
+    if official is None:
+        return f"소요 = 공식 ÷ {factor:g} = {_two(assumed)}"
+    mark = _equals_mark(_two(assumed), _two(round(official, 2) / factor))
+    return f"소요 = {_two(official)} ÷ {factor:g} {mark} {_two(assumed)}"
+
+
+def _cause_note(record: Mapping[str, object], required: float) -> str:
+    """「원인: …」 한 줄 — 원인이 없으면 빈 글자. `required` 는 그 레코드의 소요(0 보다 크다)."""
+    cause = "" if record.get(CAUSE_COLUMN) is None else str(record.get(CAUSE_COLUMN))
+    owned = _number(record.get(OWNED_COLUMN))
+    if cause == CAUSE_OWNED_SHORT and owned is not None:
+        return (
+            f"원인: {cause} — 총보유 {_one(owned)} ÷ 소요 {_one(required)} = "
+            f"{owned / required:.1%} 도 확보기준 미달(투자 검토)"
         )
-    return EvidenceCard("③ 판정", formula, tuple(notes))
+    if cause == CAUSE_RENTAL:
+        return (
+            f"원인: {cause} — 총보유로는 확보, 대여 {_one(_number(record.get(LENT_COLUMN)))} 대를 "
+            "빼면 미달"
+        )
+    if cause == CAUSE_AVAILABILITY_MISMATCH:
+        return f"원인: {cause} — 보유 − 대여로는 확보인데 가용대수가 따로 낮습니다"
+    return f"원인: {cause}" if cause else ""
+
+
+def _official_judgement_note(record: Mapping[str, object]) -> str:
+    """UPEH 가정 달의 회색 한 줄 — 「공식: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도
+    부족」."""
+    available = _number(record.get("가용대수"))
+    required = _number(record.get("소요대수"))
+    if required is None or required <= 0 or available is None:
+        return "공식: 소요 없음 — 판정하지 않습니다"
+    balance = _whole(record.get(BALANCE_COLUMN))
+    cause = "" if record.get(CAUSE_COLUMN) is None else str(record.get(CAUSE_COLUMN))
+    return (
+        f"공식: 확보율 {available / required:.1%} → "
+        f"{_STATUS_NAMES.get(str(record.get(STATUS_COLUMN)), _EMPTY)} · 과부족 "
+        + (_signed_int(balance) if balance is not None else _EMPTY)
+        + (f" · 원인 {cause}" if cause else "")
+    )
 
 
 def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:

@@ -855,6 +855,9 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     )
     legend = next(body for body in _html(app) if "pcd-legend" in body)
     assert "UPEH 가정 확보기준 미달 달" in legend
+    # 근거 ③ 판정 카드도 같은 기준이다 — 머리 식은 가정, 공식 판정은 회색 「공식: …」 한 줄.
+    cards = next(body for body in _html(app) if "pcd-cards" in body)
+    assert "③ 판정 (UPEH 가정 110%)" in cards and "공식: 확보율 " in cards
     inverse = [str(item.value) for item in app.caption if " → " in str(item.value)]
     assert any(text.startswith("확보기준 미달 0 → ") for text in inverse), inverse
     assert any(text.startswith("구간 안 단축 0 → ") for text in inverse), inverse

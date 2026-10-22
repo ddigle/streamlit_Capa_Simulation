@@ -15,7 +15,14 @@ from datetime import date
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
-from test_process_capa_canvas import MONTHS, THRESHOLDS, TODAY, _dynamic, _summary
+from test_process_capa_canvas import (
+    MONTHS,
+    THRESHOLDS,
+    TODAY,
+    _assumed_summary,
+    _dynamic,
+    _summary,
+)
 from test_required_shortening import PROCESS
 
 from capa_simulation.components.process_capa_canvas import (
@@ -38,6 +45,7 @@ from capa_simulation.components.process_capa_view import (
     cause_summary,
     contributing_units,
     demand_card,
+    evidence_cards,
     evidence_cards_html,
     initial_scroll_px,
     judgement_card,
@@ -676,6 +684,57 @@ def test_the_month_next_screens_read_that_month_cause_and_schedule() -> None:
     assert month_next_screens(view, short[0]).schedule == "이 달 일정 부족 — 필요 단축 일정"
     # 설비 일정이 없으면 일정 단추가 없다.
     assert month_next_screens(_view(summary=summary), short[0]).schedule is None
+
+
+@pytest.mark.parametrize(
+    ("percent", "month", "head", "official", "owned_link"),
+    [
+        # 공식은 경고(보유로도 부족)인데 150% 면 확보 — ③ 머리도 확보, 다음 화면 줄도 없다.
+        (
+            150,
+            202702,
+            "→ 확보",
+            "공식: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도 부족",
+            None,
+        ),
+        # 공식은 확보인데 80% 면 부족(보유로도 부족) — ③ 머리도 부족, 다음 화면 줄도 선다.
+        (
+            80,
+            202611,
+            "→ 부족",
+            "공식: 확보율 116.5% → 확보 · 과부족 +2",
+            "이 달 보유로도 부족 — 산출 결과",
+        ),
+    ],
+)
+def test_the_judgement_card_and_next_screens_read_the_same_assumed_basis(
+    percent: int, month: int, head: str, official: str, owned_link: str | None
+) -> None:
+    """UPEH 가정 구간 달의 ③ 판정 카드는 머리 식·판정·원인을 가정 요약으로 내고(소요 = 공식 ÷ f
+    를 식 첫 줄에), 공식 판정은 회색 「공식: …」 한 줄로 내린다 — 같은 패널의 다음 화면 줄과 같은
+    기준이다."""
+    window = set(MONTHS)
+    summary = _summary()
+    assumed = _assumed_summary(percent, window)
+    view = _view(summary=summary, assumed_summary=assumed, upeh_token=(percent, tuple(MONTHS)))
+
+    card = evidence_cards(view, month, None)[2]
+    official_required = float(_record(summary, month)["소요대수"])  # type: ignore[arg-type]
+    assumed_required = float(_record(assumed, month)["소요대수"])  # type: ignore[arg-type]
+    first, rate_line, _ = card.formula.split("\n")
+    assert card.title == f"③ 판정 (UPEH 가정 {percent}%)"
+    assert first.startswith(f"소요 = {official_required:,.2f} ÷ {percent / 100:g} ")
+    assert first.endswith(f" {assumed_required:,.2f}")
+    assert rate_line.endswith(head)
+    assert official in card.notes
+    assert card.notes[-1] == official
+    cause = _record(assumed, month)[CAUSE_COLUMN]
+    assert any(note.startswith("원인: ") for note in card.notes) == bool(cause)
+    assert month_next_screens(view, month).owned == owned_link
+    # 가정이 없으면 공식 그대로다(제목·식 두 줄, 「공식:」 줄 없음).
+    plain = evidence_cards(_view(summary=summary), month, None)[2]
+    assert plain.title == "③ 판정" and len(plain.formula.split("\n")) == 2
+    assert not any(note.startswith("공식: ") for note in plain.notes)
 
 
 def _gap_script() -> None:

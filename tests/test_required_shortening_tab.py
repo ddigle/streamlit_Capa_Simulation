@@ -871,12 +871,13 @@ def test_the_upeh_comparison_view_reads_official_to_assumed(tmp_path: Path) -> N
     )
     captured, compare = _csv(app, "equipment_shortening_upeh_compare_csv")
     assert "upeh150_" in str(captured["file_name"])
+    mark = f"UPEH 가정 150% · {_dash(_months()[0])}–{_dash(_months()[-1])}"
     assert list(compare.columns)[0] == "UPEH 가정"
+    # 열 이름만이 아니라 모든 행에 표지가 선다 — 빈 칸이면 파일이 공식 숫자로 읽힌다.
+    assert len(compare) > 0 and set(compare["UPEH 가정"]) == {mark}
     _, units = _csv(app, "equipment_shortening_upeh_units_csv")
     assert list(units.columns)[0] == "UPEH 가정"
-    assert set(units["UPEH 가정"]) <= {
-        f"UPEH 가정 150% · {_dash(_months()[0])}–{_dash(_months()[-1])}"
-    }
+    assert set(units["UPEH 가정"]) <= {mark}
     # 목표를 바꿔도 같은 보기다(가정 계획은 다섯 목표를 한 번에 들고 있다).
     app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
     assert not app.exception

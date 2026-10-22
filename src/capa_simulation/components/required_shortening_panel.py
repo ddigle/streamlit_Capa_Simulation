@@ -164,6 +164,7 @@ from capa_simulation.services.upeh_assumption import (
     percent_to_clear_target,
     plan_counts,
     required_drop,
+    token_label,
     token_months,
 )
 from capa_simulation.services.usage_basis import usage_exclusion_notice
@@ -1279,7 +1280,13 @@ def _render_assumption_compare(
         )
         return
     table = _assumption_table(
-        shown, official_level, assumed_level, official_short, assumed_short, window
+        shown,
+        official_level,
+        assumed_level,
+        official_short,
+        assumed_short,
+        window,
+        mark=token_label(token),
     )
     view = table.assign(공정=[labels.label(process) for process in table["공정"]])
     st.dataframe(
@@ -1356,8 +1363,14 @@ def _assumption_table(
     official_short: set[str],
     assumed_short: set[str],
     window: Sequence[int],
+    *,
+    mark: str,
 ) -> pd.DataFrame:
-    """공정마다 공식→가정 한 줄(원본 공정명 — 화면은 표시명으로 바꿔 보인다, CSV 는 원본 그대로)."""
+    """공정마다 공식→가정 한 줄(원본 공정명 — 화면은 표시명으로 바꿔 보인다, CSV 는 원본 그대로).
+
+    첫 열 「UPEH 가정」 은 모든 행에 `mark`(가정 계획 키의 토큰 글 — 「가정 계획 호기별 CSV」 와
+    같은 표지)를 싣는다. 파일이 공식 숫자로 읽히지 않게 하는 표지다.
+    """
     rows: list[dict[str, object]] = []
     official_months = official.process_months
     for process in shown:
@@ -1380,7 +1393,7 @@ def _assumption_table(
         )
         rows.append(
             {
-                "UPEH 가정": "",
+                "UPEH 가정": mark,
                 "공정": process,
                 "상태": state,
                 "단축 호기": f"{before.shortened}→{after.shortened}",

@@ -1056,7 +1056,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목표는 `target_label`(「110% (1.095)」)로 적는다.
   - 「구획」 칩(`st.pills`)은 선택지 넷을 늘 고정하고 칸이 없으면 넷 모두로 심는다(`seed_sections`). 접힘은 그림 기억
     키에 들고, 접힌 ③·④ 의 「더 보기」 는 숨는다. 화면을 옮기는 다음 화면 단추는 본문에서 옮긴다(프래그먼트 콜백 금지).
-  - UPEH 가정 토큰도 그림 기억 키에 든다. KPI 는 가정 요약 값에 회색 줄 「공식 n」, 근거 카드 ①·③ 은 구간 달에 가정 한 줄.
+  - UPEH 가정 토큰도 그림 기억 키에 든다. KPI 는 가정 요약 값에 회색 줄 「공식 n」, 근거 카드 ① 은 구간 달에 가정 한 줄,
+    ③ 은 구간 달이면 머리 식·판정·원인을 가정 요약으로 내고(식 첫 줄 「소요 = 공식 ÷ f」) 공식 판정은 회색 「공식: …」 한
+    줄이다 — 같은 패널의 다음 화면 줄과 같은 기준.
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
