@@ -1527,6 +1527,31 @@ def test_a_list_save_with_one_refused_name_writes_nothing(tmp_path: Path) -> Non
     assert renamed == {ids[0]: names[1], ids[1]: names[0], ids[2]: "새 이름"}
 
 
+def test_a_name_only_save_keeps_the_row_where_the_table_showed_it(tmp_path: Path) -> None:
+    """순서를 한 번도 저장하지 않은 목록에서 아래 행의 이름만 고쳐 「변경 저장」 해도 그 행이
+    맨 위로 가지 않는다(목록 차례는 `list_order NULLS LAST, updated_at DESC` 인데 이름 변경이
+    「최근 수정」을 올렸다). 저장이 그때 보인 차례를 함께 적는다 — 「최근 수정」 칸은 그대로
+    오른다."""
+    script, database_path, ids, names = _three_scenarios(tmp_path)
+    repository = DuckDBScenarioRepository(database_path)
+    app = AppTest.from_string(script, default_timeout=120)
+    tables = BrowserTables(app)
+    tables.run()
+    before = _list_frame(app)["최근 수정"].tolist()
+    tables.edit(_shown_key(app, LIST_EDITOR_KEY), 2, "시나리오명", "아래 새 이름")
+    tables.run()
+    app.button(key="scenario_list_save").click()
+    tables.run()
+
+    assert not app.exception
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == ids
+    frame = _list_frame(app)
+    assert frame.index.tolist() == [names[0], names[1], "아래 새 이름"]
+    after = frame["최근 수정"].tolist()
+    assert after[:2] == before[:2] and after[2] > before[2]
+
+
 def test_an_order_changed_elsewhere_refuses_the_order_and_keeps_the_names(tmp_path: Path) -> None:
     """순서를 고치는 사이 다른 곳에서 목록 차례가 바뀌면 순서는 쓰지 않는다(남의 차례를 덮지 않음).
 

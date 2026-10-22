@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,50 @@ def test_list_edits_write_names_and_order_in_one_go(tmp_path: Path) -> None:
         second,
     ]
     assert _names(repository) == {first: "둘", second: "하나", third: "셋"}
+
+
+def _updated_at(repository: DuckDBScenarioRepository) -> dict[str, datetime]:
+    return {
+        scenario.scenario_id: scenario.updated_at
+        for scenario in repository.list_scenarios(include_archived=True)
+    }
+
+
+def test_a_name_only_save_keeps_the_shown_order_and_still_bumps_the_recent_edit(
+    tmp_path: Path,
+) -> None:
+    """순서를 한 번도 저장하지 않은(`list_order` 가 모두 NULL) 목록에서 이름만 바꿔도 행이 맨
+    위로 가지 않는다 — 이름을 쓰기 전의 차례를 `list_order` 로 함께 적는다. 「최근 수정」은
+    그대로 오른다."""
+    repository = _repository(tmp_path)
+    _scenarios(repository, "하나", "둘", "셋")
+    shown = [scenario.scenario_id for scenario in repository.list_scenarios()]
+    bottom = shown[-1]
+    before = _updated_at(repository)
+
+    repository.apply_scenario_list_edits({bottom: (_names(repository)[bottom], "새 이름")})
+
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == shown
+    assert _names(repository)[bottom] == "새 이름"
+    after = _updated_at(repository)
+    assert after[bottom] > before[bottom]
+    assert all(after[other] == before[other] for other in shown if other != bottom)
+
+
+def test_a_name_only_save_does_not_overwrite_an_order_saved_elsewhere(tmp_path: Path) -> None:
+    """이름만 바꾼 저장이 적는 차례는 이 트랜잭션 안에서 읽은 지금 차례다 — 표를 그린 뒤 다른
+    곳에서 바꾼 차례를 옛 차례로 덮지 않는다."""
+    repository = _repository(tmp_path)
+    first, second, third = _scenarios(repository, "하나", "둘", "셋")
+    repository.reorder_scenarios([second, third, first])
+
+    repository.apply_scenario_list_edits({first: ("하나", "새 하나")})
+
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == [
+        second,
+        third,
+        first,
+    ]
 
 
 def test_list_edits_refuse_everything_when_one_row_is_refused(tmp_path: Path) -> None:

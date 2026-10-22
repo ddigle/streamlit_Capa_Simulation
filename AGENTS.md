@@ -331,6 +331,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장은 모두 콜백이고 하나라도 거부되면 아무것도 쓰지 않는다(`apply_scenario_list_edits`·`rename_revisions` →
     `BatchEditRefused`, 결과·오류는 표 위·카드의 늘 서 있는 칸). 이름은 비교 후 쓰기, 순서는 처음 고칠 때의 저장 차례와
     지금 차례가 같을 때만 쓴다. 빠른 두 번 누름은 성공한 저장이 초안을 비우고 이름이 비교 후 쓰기라 두 번 쓰지 않는다.
+    이름만 바꾼 「변경 저장」도 쓰기 전의 지금 차례를 `list_order` 로 적는다 — 목록은 `list_order NULLS LAST, updated_at
+    DESC` 라 순서를 저장한 적 없는 행이 「최근 수정」이 올라 맨 위로 갔다(`tests/test_scenario_list_edits.py`).
   - 이름의 비교 대상은 그 칸을 처음 고친 편집이 붙은 표가 **보인** 저장 이름(`TableDraft.name_base`)이다 — 마지막 회차에
     다시 읽은 이름과 대조하면 남이 먼저 바꾼 뒤 회차가 한 번만 돌아도 대조가 통과해 남의 이름을 덮었다(2026-10-22 리뷰).
     먼저 바뀐 이름은 저장 전에 경고(`moved_names`)하고, 거부되면 그 행의 이름 편집만 버려(`drop_names`,

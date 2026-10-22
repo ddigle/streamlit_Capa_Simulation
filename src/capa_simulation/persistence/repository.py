@@ -1267,9 +1267,9 @@ class DuckDBScenarioRepository:
     def list_scenarios(self, *, include_archived: bool = False) -> list[ScenarioSummary]:
         """누적 시나리오 목록. 사용자가 지정한 순서가 있으면 그 순서를 먼저 따른다.
 
-        `list_order` 는 「목록 관리」에서 저장할 때만 채워진다. 한 번도 순서를 저장하지
-        않았거나 그 뒤에 새로 만든 시나리오는 NULL 이므로 예전과 같이 최근 수정 순으로
-        뒤에 붙는다.
+        `list_order` 는 「목록 관리」에서 저장할 때만 채워진다(순서를 고치지 않고 이름만 바꾼
+        「변경 저장」도 그때의 차례를 적는다). 한 번도 저장하지 않았거나 그 뒤에 새로 만든
+        시나리오는 NULL 이므로 예전과 같이 최근 수정 순으로 뒤에 붙는다.
 
         보관본은 기본으로 빠진다. 같은 원천 코드의 중복 등록을 막는 쪽처럼 **숨은 것까지
         봐야 하는 호출자만** `include_archived=True` 를 쓴다 — 그 판정이 보관본을 못 보면
@@ -1379,6 +1379,12 @@ class DuckDBScenarioRepository:
         저장 차례다 — 지금 차례가 그것과 다르면(다른 곳에서 더하거나 빼거나 순서를 바꿈) 남의
         차례를 덮지 않게 거부한다(`SCENARIO_LIST_MOVED_MESSAGE`). 거부는 모두 `BatchEditRefused`
         한 번에 모아 낸다.
+
+        순서를 고치지 않고 이름만 바꿔도 **이름을 쓰기 전의 지금 차례**(목록이 보인 차례)를
+        `list_order` 로 함께 적는다. 목록은 `list_order NULLS LAST, updated_at DESC` 차례라,
+        순서를 한 번도 저장하지 않은(NULL) 행은 이름을 바꾸면 「최근 수정」이 올라 맨 위로
+        갔다. 지금 차례를 이 트랜잭션 안에서 읽어 적으므로 다른 곳이 먼저 바꾼 차례를 덮지
+        않는다.
         """
         with self._write_transaction() as connection:
             rows = connection.execute(
@@ -1432,8 +1438,10 @@ class DuckDBScenarioRepository:
                     [label, scenario_id],
                 )
                 home_profile_store.touch_global_comparison_scenario(connection, scenario_id)
-            if order is not None:
-                for position, scenario_id in enumerate(order, start=1):
+            # 이름만 바꾼 저장도 지금 차례를 고정한다 — 「최근 수정」이 올라도 행이 움직이지 않게.
+            written = order if order is not None else (active_order if labels else None)
+            if written is not None:
+                for position, scenario_id in enumerate(written, start=1):
                     connection.execute(
                         "UPDATE app_meta.scenario SET list_order = ? WHERE scenario_id = ?",
                         [position, str(scenario_id)],
