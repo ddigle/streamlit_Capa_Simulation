@@ -265,7 +265,8 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     app = _run(_database(tmp_path))
 
     assert not app.exception, [element.message for element in app.exception]
-    # 별도 화면이라 가용설비 현황의 탭 묶음(Main·Static 대비 일정·Preference·RawData)이 없다.
+    # 별도 화면이라 가용설비 현황의 탭 묶음(Main·Static 대비 일정·Qual 마감 계산기·Preference·
+    # RawData)이 없다.
     assert not [tab for tab in app.tabs if tab.label.endswith((" Main", " RawData"))]
     body = _html(app)
     assert "부족 공정" in body and "신규 필요" in body
