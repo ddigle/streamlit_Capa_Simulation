@@ -2475,7 +2475,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `uv run --no-sync python scripts/inspect_revision_calculations.py --database <사본>` 꼴로 부른다 — 이 거절과 고정한 꼴이 권한
   템플릿에 allow 를 줄 전제다(`docs/TODO.md` 결정 12). HOME 시간은
   `scripts/benchmark_home.py --data-dir <사본 폴더> --output <파일>`(같은 판정으로 저장소 안은 거절, 입력 없는 토글은 `skipped`)로
-  잰다. 사본 모드는 실패해도 HOME 의 문구를 찍지 않고 같은 규칙(단계·예외 종류·계약 표 이름)의 한 줄만 찍으며, 재는
+  잰다. UPEH 가정 계획 1회 시간(`scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더> --output <파일>`)도 같은 판정으로
+  저장소 안을 거절한다. 사본 모드는 실패해도 HOME 의 문구를 찍지 않고 같은 규칙(단계·예외 종류·계약 표 이름)의 한 줄만 찍으며, 재는
   동안 Streamlit 로그를 끈다(잡히지 않은 예외는 그 로그가 문구째 찍는다). 두 스크립트의 출력은 UTF-8 이다 — 사내 Windows 파이프는
   cp949 라 그대로 두면 「—」에서 멈춘다. 벤치마크는 화면 모듈을 **첫 AppTest 실행 안에서** 처음 불러온다 — 먼저 불러오면
   Components v2 가 실행 밖에 등록돼 HOME 이 「Component … is not registered」로 멈춘다(`tests/test_benchmark_home.py`).

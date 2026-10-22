@@ -146,9 +146,9 @@
   아니라 저장소에서 부른다(사본 트리 스크립트는 사본 `data/` 를 운영 자리로 보고 거절), 7-8 뒤 `inspect_wf_division.py` 는 사본으로도
   돌 수 있다(정본은 앱을 끈 채 — 사본으로 돌렸으면 「사본 <시각>」).
 - [ ] **스크립트 짧은 출력 — 손 전사 검산 넓히기(2026-10-22 리뷰 압축 검토 후속, 다음 배포 후보)** — 압축본의 수 가운데 8장
-  요약 줄 밖(6-3 a·b·c 머리 수 · 7-8 `ng` 줄 · `inspect_wf_division.py` 의 수 · 6-2 블록 머리 · 산출물 점검기 줄)은 합이 서는 식으로
-  적을 수 있는 것만 검산이 선다. `check_deploy_screens.py` · `inspect_revision_calculations.py` · `benchmark_home.py` ·
-  `inspect_wf_division.py` · 가이드 점검기에 `--brief`(머리 한 줄의 수와 `ok` 가 아닌 줄만, 줄 끝에 `inspect_real_data_checks.summary_code`
+  요약 줄 밖(6-3 a·b·c 머리 수 · 가정 계획의 초 · 7-8 `ng` 줄 · `inspect_wf_division.py` 의 수 · 6-2 블록 머리 · 산출물 점검기 줄)은
+  합이 서는 식으로 적을 수 있는 것만 검산이 선다. `check_deploy_screens.py` · `inspect_revision_calculations.py` · `benchmark_home.py` ·
+  `benchmark_upeh_assumption.py` · `inspect_wf_division.py` · 가이드 점검기에 `--brief`(머리 한 줄의 수와 `ok` 가 아닌 줄만, 줄 끝에 `inspect_real_data_checks.summary_code`
   와 같은 확인 코드 `#NN`)를 더하면 에이전트가 줄을 고를 일도 없어진다. 넣으면 런북 5장 「손 전사 검산」 셋째 줄과 압축본 양식
   (`6-3a` · `A` 줄)을 그 출력으로 바꾸고, `--check-summary` 가 그 키를 확인 코드 줄로 본다.
 - [ ] **사내 리뷰 `202610200720` 후속 — 남은 것**(리뷰 10-21 받음: 갈래 (가) · `d0a0e93` 적용 · 관문 넷 · B 손 확인 5/5 · 7-15 A

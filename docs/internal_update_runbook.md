@@ -970,8 +970,9 @@ uv run --no-sync python scripts/benchmark_home.py --data-dir "$e2e\data" --outpu
 
 **b 에 이어 — 가정 계획 1회 시간** — `scripts/benchmark_upeh_assumption.py --data-dir`. 공정 Capa 상세·필요 단축 일정의
 「UPEH 가정」 % 칸은 1 단위로 바꾸면 곧바로 반영한다 — 바꿀 때마다 가정 계획(다섯 목표)을 새로 세우는 그 한 번의 시간이다.
-b 와 같이 **저장소에서** 돌리고 사본 폴더만 준다(저장소의 `data\` 는 받지 않는다). 사본의 최신 공식버전과 설비 저장본·Cut-off 로
-이번 달부터의 공식 계획과 110% 가정 계획을 한 번씩 세운다(읽기만 한다). a · b 와 같은 꼴로 부른다.
+b 와 같이 **저장소에서** 돌리고 저장소 밖 사본 폴더만 준다 — 저장소 안(`data\` 와 그 아래 포함)은 a · b 와 같은 판정으로 받지
+않는다. 사본의 최신 공식버전과 설비 저장본·Cut-off 로 이번 달부터의 공식 계획과 110% 가정 계획을 한 번씩 세운다(읽기만 한다).
+a · b 와 같은 꼴로 부른다.
 
 ```powershell
 uv run --no-sync python scripts/benchmark_upeh_assumption.py --data-dir "$e2e\data" --output $HOME\upeh_bench.json

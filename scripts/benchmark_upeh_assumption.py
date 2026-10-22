@@ -17,7 +17,8 @@ DB 사본의 최신 저장본·Cut-off 로 이번 달부터 시나리오 끝 달
 두 계획 시간과 ÷f 를 거는 시간을 찍는다.
 
 **지키는 것** — `inspect_revision_calculations.py` 와 같다. 사본에만 돌린다(`--data-dir` 은 기본값이
-없고, 저장소의 `data/` 는 `benchmark_home.py` 처럼 거절한다). 저장소(Repository)는 읽기만 하고
+없고, 저장소 안(`data/` 와 그 아래 포함)은 `benchmark_home.py` 처럼 거절한다 —
+`settings.is_operational_database_place`). 저장소(Repository)는 읽기만 하고
 `initialize()`(마이그레이션 — 쓰기)를 부르지 않는다. 값을 찍지 않는다 — 초·달 수·공정 수·호기 수만
 찍고, 실패는 단계와 예외 종류 한 줄이다(문구에는 공정·제품 이름이 실린다). 사외에서 돌린 수는 합성
 표본의 `샘플 관측` 일 뿐 업무 사실이 아니다(AGENTS.md 10-1).
@@ -174,6 +175,22 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
     }
 
 
+def copy_folder_refused(data_dir: Path) -> bool:
+    """`--data-dir` 가 운영 DB 자리인가 — 저장소의 `data/` 와 그 아래, git 저장소 안.
+
+    `benchmark_home.py`·`inspect_revision_calculations.py` 와 같은 판정이다
+    (`settings.is_operational_database_place` — 운영 DB 옆에 둔 사본은 경로 한 글자 틀림이 곧 운영
+    DB 다).
+    """
+    from capa_simulation.settings import is_operational_database_place
+
+    folder = data_dir.expanduser().resolve()
+    return is_operational_database_place(
+        folder,
+        (PROJECT_ROOT / "data" / SCENARIO_DATABASE, PROJECT_ROOT / "data" / EQUIPMENT_DATABASE),
+    )
+
+
 def _emit(text: str, output: Path | None, stream: TextIO) -> None:
     stream.write(text + "\n")
     if output is not None:
@@ -199,9 +216,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if output is not None:
         output.write_text("", encoding="utf-8")
     data_dir = Path(args.data_dir)
-    if data_dir.expanduser().resolve() == (PROJECT_ROOT / "data").resolve():
+    if copy_folder_refused(data_dir):
         # 저장소 연결은 읽기 전용이 아니다 — 재는 동안 사용자 앱의 운영 DB 연결을 막는다.
-        _emit("저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)", output, sys.stderr)
+        _emit(
+            "저장소 안(data/ 포함)은 쓰지 않는다 — 저장소 밖 사본 폴더를 준다(런북 6-3)",
+            output,
+            sys.stderr,
+        )
         return 2
     if not PERCENT_MIN <= int(args.percent) <= PERCENT_MAX:
         _emit(f"--percent 는 {PERCENT_MIN}~{PERCENT_MAX} 입니다", output, sys.stderr)

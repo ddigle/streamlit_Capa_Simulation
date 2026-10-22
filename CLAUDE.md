@@ -75,7 +75,8 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 7장 화면 확인 — 별도 포트에 앱을 띄워 저장소 밖 Playwright·깔린 Chrome 으로 보고 개수·있음/없음만
 찍는다. 항목은 함수 하나 + `ITEMS` 한 줄), `scripts/benchmark_home.py`(HOME 단계별 성능 — 기본은 합성
 표본이고, `--data-dir <사본 폴더>` 를 주면 실 DB 사본으로 잰다. 사내 런북 6-3 b 이며 같은 판정으로 저장소 안은
-받지 않는다), `scripts/validate_duckdb_persistence.py`
+받지 않는다), `scripts/benchmark_upeh_assumption.py`(UPEH 가정 계획 1회 시간 — 사내 런북 6-3 b 에 이어,
+`--data-dir <사본 폴더>` 만 받고 같은 판정으로 저장소 안은 거절), `scripts/validate_duckdb_persistence.py`
 (영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
 `scripts/generate_sample_core_data.py`(합성 Core Data 생성).
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가

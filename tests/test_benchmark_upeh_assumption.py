@@ -74,9 +74,13 @@ def test_the_cli_writes_json_and_refuses_a_bad_folder_or_percent(
     assert benchmark.main(["--data-dir", str(tmp_path)]) == 2
     assert "사본 폴더에 없는 파일" in capsys.readouterr().err
     assert benchmark.main(["--data-dir", str(copy_folder), "--percent", "200"]) == 2
-    # 저장소의 data/(운영 DB)는 받지 않는다 — 사본 폴더만.
-    assert benchmark.main(["--data-dir", str(PROJECT_ROOT / "data")]) == 2
-    assert "사본 폴더를 준다" in capsys.readouterr().err
+    assert "--percent 는" in capsys.readouterr().err
+    # 저장소 안(운영 data/ 와 그 아래 포함)은 받지 않는다 — 저장소 밖 사본 폴더만
+    # (`settings.is_operational_database_place`, `benchmark_home.py` 와 같은 판정).
+    refused = "저장소 안(data/ 포함)은 쓰지 않는다 — 저장소 밖 사본 폴더를 준다(런북 6-3)"
+    for inside in (PROJECT_ROOT / "data", PROJECT_ROOT / "data" / "temp" / "copy", PROJECT_ROOT):
+        assert benchmark.main(["--data-dir", str(inside)]) == 2
+        assert capsys.readouterr().err.strip() == refused
 
 
 def test_a_failure_names_only_the_stage_and_the_exception_kind(tmp_path: Path) -> None:
