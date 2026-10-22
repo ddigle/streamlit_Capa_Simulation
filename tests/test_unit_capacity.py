@@ -21,11 +21,13 @@ from capa_simulation.services.unit_capacity import (
     VITAL_KEYS,
     calculate_unit_capacity,
     capacity_assumptions,
+    converted_upeh,
     unit_capacity_to_month_table,
 )
 
 
 def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
+    """MI 행 ST 는 한 개당 분이다(정의) — ST 36분 → 시간당 60/36 개, PKG 라 다시 ÷1000."""
     upeh = pd.DataFrame(
         {
             "생산계획년월": [202608, 202608],
@@ -72,8 +74,11 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
     assert result.loc[result["Area_Name"].eq("Main"), "대당 Capa"].iloc[0] == pytest.approx(
         (100 / 1000) * 24 * 0.8 * 2 * 30
     )
+    assert result.loc[result["Area_Name"].eq("MI"), "환산_UPEH"].iloc[0] == pytest.approx(
+        (60 / 36) / 1000
+    )
     assert result.loc[result["Area_Name"].eq("MI"), "대당 Capa"].iloc[0] == pytest.approx(
-        ((3600 / 36) / 1000) * 24 * 0.8 * 2 * 30
+        ((60 / 36) / 1000) * 24 * 0.8 * 2 * 30
     )
 
     invalid_lot_ratio = lot_ratio.copy()
@@ -88,6 +93,66 @@ def test_unit_capacity_uses_upeh_for_main_and_converted_st_for_mi() -> None:
             invalid_lot_ratio,
             wf_ratio,
         )
+
+
+def test_mi_st_is_minutes_per_unit_so_the_hourly_rate_is_sixty_over_st() -> None:
+    """`RQ_UPEH` 의 MI 행 ST 는 한 개당 분(정의, 2026-10-22) — 값 크기로 단위를 가르지 않는다.
+
+    ST 2분 → 시간당 30개(WF), CHIP·PKG 는 다시 ÷1000. 작은 ST(0.0005분)도 같은 식이다.
+    """
+    upeh = pd.DataFrame(
+        {
+            "생산계획년월": 202608,
+            "Area_Name": ["Main", "MI", "MI", "MI"],
+            "소요기준": ["WF", "WF", "CHIP", "PKG"],
+            "공정": ["Main-WF", "MI-WF", "MI-CHIP", "MI-PKG"],
+            "STEP_SEQ": "P100",
+            "MCP_SEQ": "1A",
+            "양산구분": "양산",
+            "제품정보": "Product-A",
+            "Stack": "12H",
+            "WF 구분": "Core",
+            "UPEH": [45.0, None, None, None],
+            "ST": [None, 2.0, 0.0005, 0.25],
+        }
+    )
+    route = upeh.drop(columns=["소요기준", "UPEH", "ST"])
+    by_month = route[["생산계획년월", "공정", "양산구분"]]
+
+    result = calculate_unit_capacity(
+        upeh,
+        by_month.assign(CAPA_RUN_RATE=1.0),
+        by_month.assign(편중률=1.0),
+        route[["공정"]].assign(모듈수=1.0),
+        route[["생산계획년월", "공정"]].assign(RUN_DAY=1.0),
+        route.assign(**{"Lot 측정률": 1.0}),
+        route.assign(WF측정률=1.0),
+    )
+
+    rate = result.set_index("공정")["환산_UPEH"]
+    assert rate["Main-WF"] == pytest.approx(45.0)
+    assert rate["MI-WF"] == pytest.approx(30.0)
+    assert rate["MI-CHIP"] == pytest.approx(60 / 0.0005 / 1000)
+    assert rate["MI-PKG"] == pytest.approx(60 / 0.25 / 1000)
+    # 대당 Capa 는 환산_UPEH × 24 (나머지 인자 1).
+    assert result.set_index("공정").loc["MI-WF", "대당 Capa"] == pytest.approx(30.0 * 24)
+
+
+def test_converted_upeh_leaves_rows_that_are_neither_main_nor_mi_blank() -> None:
+    upeh = pd.Series([10.0, 10.0, 10.0])
+    st = pd.Series([3.0, 3.0, 3.0])
+
+    rate = converted_upeh(
+        upeh,
+        st,
+        main=pd.Series([True, False, False]),
+        mi=pd.Series([False, True, False]),
+        per_kea=pd.Series([False, True, False]),
+    )
+
+    assert rate.iloc[0] == 10.0
+    assert rate.iloc[1] == pytest.approx(60 / 3 / 1000)
+    assert pd.isna(rate.iloc[2])
 
 
 def test_unit_capacity_names_each_excluded_row_by_its_own_cause() -> None:

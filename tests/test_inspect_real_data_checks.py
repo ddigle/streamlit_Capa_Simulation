@@ -73,6 +73,9 @@ RENAMED_COLUMNS = {
     "Pack Code": f"{SENTINEL}PK-",
 }
 TODAY = date(2026, 10, 7)
+ST_DEFINITION_LINE = (
+    "- ST 정의 대조(참고) — 리비전 1 `RQ_UPEH` 의 UPEH × ST ÷ 60(ST 는 분 단위라 기대 1)"
+)
 HOME_PLAN_MONTHS_LINE = (
     "- 계획 달(`RQ_PKG_PLAN` 에 생산수량이 0 보다 큰 행이 있는 달 · 리비전 1 전체 기간)"
 )
@@ -272,6 +275,8 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     assert "| 경로 키 13 · 같은 경로 반복을 접음 | 72 |" in output
     # 기존 값이 표지값 하나라 60 배 무리가 없다 — 가르기는 한 줄로 끝난다.
     assert "- ≈60 배 가르기 — 비율이 정의된 경로 키 72 가운데 ≈60 이 없어 건너뛴다" in output
+    # ST 정의 대조는 ≈60 무리와 무관하게 늘 찍힌다. 내장 시드는 Main 은 UPEH, MI 는 ST 만 적는다.
+    assert f"{ST_DEFINITION_LINE} — UPEH·ST 가 둘 다 양수인 행 0" in output
     # Chip 부하량은 정식 대조 표의 한 줄이다. 답이 난 탐색 비율(GOOD_DIE 등)은 더 찍지 않는다.
     assert "| Chip `Plan_Chip(K개)` | 24 |" in output
     assert "GOOD_DIE` ÷" not in output
@@ -650,6 +655,49 @@ def test_the_sixty_fold_group_is_localized_by_counts_only(
     assert re.search(rf"\| 모듈수 \| 전부 \|.*\| {mi_keys} / {suspects} \| {wf_agree} \|", output)
     # 원천 범주 칸 — 표지값 모델명 하나를 두 무리가 같이 쓴다(값은 적지 않는다).
     assert "| `모델명` | 1 / 1 / 0 | 1 | 0 (0키) | 0 | - |" in output
+
+
+def test_the_st_definition_line_reads_upeh_times_minutes_st_over_sixty(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """두 칸이 다 있는 행을 심는다 — MI 는 정의대로(UPEH = 60 ÷ ST → 1), Main 은 초로 적은 ST(→ 60).
+
+    분포·개수만 찍고 판정하지 않는다. 값은 새지 않는다.
+    """
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            'UPDATE rev_data.rq_upeh SET "UPEH" = 60.0 / "ST" WHERE "Area_Name" = ? AND "ST" > 0',
+            ["MI"],
+        )
+        connection.execute(
+            'UPDATE rev_data.rq_upeh SET "ST" = 3600.0 / "UPEH" '
+            'WHERE "Area_Name" = ? AND "UPEH" > 0',
+            ["Main"],
+        )
+        mi, main = (
+            int(
+                connection.execute(
+                    "SELECT count(*) FROM rev_data.rq_upeh AS u "
+                    "JOIN app_meta.scenario_revision AS r USING (revision_id) "
+                    'WHERE r.revision_no = 1 AND u."Area_Name" = ?',
+                    [area],
+                ).fetchone()[0]  # type: ignore[index]
+            )
+            for area in ("MI", "Main")
+        )
+    assert mi > 0 and main > mi
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = [line for line in output.splitlines() if line.startswith(ST_DEFINITION_LINE)]
+    assert lines == [
+        f"{ST_DEFINITION_LINE} — UPEH·ST 가 둘 다 양수인 행 {mi + main}(Main {main} · MI {mi}) · "
+        f"p5 · 중앙 · p95 1 · 60 · 60 · 1 ±5% 안 {mi}"
+    ]
 
 
 def _plant_route_wafers(path: Path) -> int:

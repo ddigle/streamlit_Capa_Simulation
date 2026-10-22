@@ -46,32 +46,32 @@ class ProcessSpec:
 _BASE_PROCESS_SPECS = (
     ProcessSpec("Pre B/D", "Main", "CHIP", 76000, 0.86, 1.04, 1, 1.00, 1.00, 5, 0),
     ProcessSpec("Wafer_Sorter", "Main", "WF", 42, 0.82, 1.05, 1, 1.00, 0.98, 18, 1),
-    ProcessSpec("AVI-CoW", "MI", "WF", 5.0, 0.90, 1.04, 1, 0.98, 0.97, 1, 0),
+    ProcessSpec("AVI-CoW", "MI", "WF", 0.0833, 0.90, 1.04, 1, 0.98, 0.97, 1, 0),
     ProcessSpec("Laser Grooving", "Main", "WF", 33, 0.83, 1.06, 2, 1.00, 1.00, 16, 1),
     ProcessSpec("Wafer Grinding", "Main", "WF", 28, 0.80, 1.08, 2, 0.99, 0.98, 14, 1),
     ProcessSpec("Wafer Mount", "Main", "WF", 48, 0.88, 1.03, 1, 1.00, 1.00, 12, 0),
-    ProcessSpec("Wafer Saw", "MI", "WF", 7.2, 0.84, 1.07, 1, 0.97, 0.96, 1, 0),
+    ProcessSpec("Wafer Saw", "MI", "WF", 0.12, 0.84, 1.07, 1, 0.97, 0.96, 1, 0),
     ProcessSpec("Plasma Clean", "Main", "CHIP", 92000, 0.89, 1.03, 1, 1.00, 1.00, 3, 0),
     ProcessSpec("DAF Attach", "Main", "CHIP", 68000, 0.82, 1.06, 1, 0.98, 0.99, 4, 0),
-    ProcessSpec("Die Attach", "MI", "CHIP", 0.045, 0.78, 1.10, 1, 0.96, 0.97, 4, 0),
+    ProcessSpec("Die Attach", "MI", "CHIP", 0.00075, 0.78, 1.10, 1, 0.96, 0.97, 4, 0),
     ProcessSpec("TC Bonding", "Main", "CHIP", 54000, 0.76, 1.12, 1, 0.95, 0.96, 5, 0),
     ProcessSpec("Mass Reflow", "Main", "CHIP", 105000, 0.91, 1.03, 1, 1.00, 1.00, 3, 0),
-    ProcessSpec("Underfill", "MI", "CHIP", 0.052, 0.81, 1.08, 1, 0.97, 0.98, 4, 0),
+    ProcessSpec("Underfill", "MI", "CHIP", 0.000867, 0.81, 1.08, 1, 0.97, 0.98, 4, 0),
     ProcessSpec("Mold", "Main", "CHIP", 83000, 0.84, 1.06, 1, 0.99, 0.99, 3, 0),
     ProcessSpec("Cure", "Main", "CHIP", 120000, 0.92, 1.02, 1, 1.00, 1.00, 2, 0),
-    ProcessSpec("Laser Marking", "MI", "CHIP", 0.035, 0.87, 1.04, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Laser Marking", "MI", "CHIP", 0.000583, 0.87, 1.04, 1, 1.00, 1.00, 2, 0),
     ProcessSpec("Ball Attach", "Main", "CHIP", 74000, 0.83, 1.07, 1, 0.98, 0.98, 4, 0),
     ProcessSpec("Flux Clean", "Main", "CHIP", 98000, 0.88, 1.04, 1, 1.00, 1.00, 2, 0),
-    ProcessSpec("Singulation", "MI", "CHIP", 0.041, 0.79, 1.09, 1, 0.96, 0.97, 3, 0),
+    ProcessSpec("Singulation", "MI", "CHIP", 0.000683, 0.79, 1.09, 1, 0.96, 0.97, 3, 0),
     ProcessSpec("Package Sorter", "Main", "CHIP", 112000, 0.90, 1.03, 1, 1.00, 1.00, 3, 0),
     ProcessSpec("Burn-In", "Main", "CHIP", 61000, 0.75, 1.11, 1, 0.94, 0.95, 5, 0),
-    ProcessSpec("Final Test", "MI", "CHIP", 0.058, 0.77, 1.10, 1, 0.95, 0.96, 5, 0),
+    ProcessSpec("Final Test", "MI", "CHIP", 0.000967, 0.77, 1.10, 1, 0.95, 0.96, 5, 0),
     ProcessSpec("AVI-PKG", "Main", "CHIP", 88000, 0.86, 1.05, 1, 0.99, 0.99, 3, 0),
     ProcessSpec("O/S Test", "Main", "CHIP", 97000, 0.89, 1.04, 1, 1.00, 1.00, 2, 0),
-    ProcessSpec("Taping", "MI", "CHIP", 0.032, 0.85, 1.05, 1, 1.00, 1.00, 2, 0),
+    ProcessSpec("Taping", "MI", "CHIP", 0.000533, 0.85, 1.05, 1, 1.00, 1.00, 2, 0),
     ProcessSpec("Packing", "Main", "CHIP", 125000, 0.92, 1.02, 1, 1.00, 1.00, 2, 0),
     ProcessSpec("X-Ray", "Main", "CHIP", 57000, 0.80, 1.09, 1, 0.95, 0.96, 4, 0),
-    ProcessSpec("SAM", "MI", "CHIP", 0.650, 0.78, 1.10, 2, 0.94, 0.95, 22, 3),
+    ProcessSpec("SAM", "MI", "CHIP", 0.0108, 0.78, 1.10, 2, 0.94, 0.95, 22, 3),
     ProcessSpec("Warpage", "Main", "CHIP", 69000, 0.84, 1.07, 1, 0.97, 0.98, 3, 0),
     ProcessSpec("Shipping Inspection", "Main", "CHIP", 118000, 0.93, 1.02, 1, 1.00, 1.00, 2, 0),
 )
@@ -133,7 +133,7 @@ def varied_process_spec(spec: ProcessSpec) -> ProcessSpec:
     run_rate = 0.90 + 0.16 * stable_fraction(spec.name, "run-rate")
     return replace(
         spec,
-        # MI는 초 단위 ST이므로 처리량 배율을 반대로 걸어 Main과 뜻을 맞춘다.
+        # MI 는 ST(한 개당 분)라 작을수록 빠르다 — 처리량 배율을 반대로 걸어 Main 과 뜻을 맞춘다.
         performance=(
             spec.performance * throughput if spec.area == "Main" else spec.performance / throughput
         ),
@@ -293,7 +293,8 @@ def process_rows(plan_rows: list[dict[str, str]]) -> list[dict[str, str]]:
                 row["ST"] = ""
             else:
                 row["UPEH"] = ""
-                row["ST"] = f"{performance:.6f}"
+                # ST 는 한 개당 분이라 0.000x 꼴이 있다 — 유효숫자를 남기려고 자리를 더 둔다.
+                row["ST"] = f"{performance:.9f}"
             row["Lot 측정률"] = f"{spec.lot_ratio:.4f}"
             row["WF측정률"] = f"{spec.wf_ratio:.4f}"
             row["모듈수"] = str(spec.module)

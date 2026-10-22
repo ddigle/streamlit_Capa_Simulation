@@ -67,6 +67,26 @@ VITAL_KEYS = ["생산계획년월", "공정", "양산구분"]
 MODULE_KEYS = ["공정"]
 RUN_DAY_KEYS = ["생산계획년월", "공정"]
 
+# `RQ_UPEH` 의 MI 행 `ST` 는 한 개당 분(min/unit)으로 입력한다(정의). 시간당 처리량은 60 ÷ ST 다.
+# 값 크기로 단위를 가르거나 갈래를 두지 않는다.
+ST_MINUTES_PER_HOUR = 60.0
+# 소요기준 CHIP·PKG 의 부하량은 K개라 시간당 처리량도 1,000 으로 나눠 K개로 맞춘다.
+_UNITS_PER_KEA = 1000.0
+
+
+def converted_upeh(
+    upeh: pd.Series, st: pd.Series, *, main: pd.Series, mi: pd.Series, per_kea: pd.Series
+) -> pd.Series:
+    """환산_UPEH — Main 행은 UPEH, MI 행은 60 ÷ ST(ST 는 분 단위 — 정의), CHIP·PKG 는 다시 ÷ 1,000.
+
+    대당 Capa 계산(`_prepare_performance`)과 기존 결과 대조(`legacy_comparison.hourly_rate`)가 이
+    하나를 같이 쓴다. Main·MI 어느 쪽도 아닌 행은 빈 값이다.
+    """
+    rate = upeh.astype("float64").where(main)
+    rate = rate.mask(mi, ST_MINUTES_PER_HOUR / st.astype("float64"))
+    return rate.mask(per_kea, rate / _UNITS_PER_KEA)
+
+
 # 음수이면 그 행만 계산에서 빼는 컬럼. 둘 다 대당 Capa 식의 분모이고 결측 기본값이
 # 1.0 인 쌍둥이 기준정보라 같은 규칙을 쓴다.
 NEGATIVE_EXCLUDED_COLUMNS = (
@@ -280,10 +300,13 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     if st_values.loc[mi_rows].le(0).any():
         raise ValueError("RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다.")
 
-    result["환산_UPEH"] = upeh_values
-    result.loc[mi_rows, "환산_UPEH"] = 3600.0 / st_values.loc[mi_rows]
-    kea_rows = result["소요기준"].isin(["CHIP", "PKG"])
-    result.loc[kea_rows, "환산_UPEH"] = result.loc[kea_rows, "환산_UPEH"] / 1000.0
+    result["환산_UPEH"] = converted_upeh(
+        upeh_values,
+        st_values,
+        main=main_rows,
+        mi=mi_rows,
+        per_kea=result["소요기준"].isin(["CHIP", "PKG"]),
+    )
     return result
 
 

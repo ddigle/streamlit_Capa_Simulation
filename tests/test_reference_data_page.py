@@ -1414,7 +1414,9 @@ def test_the_guide_carries_what_left_the_body() -> None:
 
     guide = load_guide("reference_data")
     for text in (
-        "3600 ÷ ST",
+        "60 ÷ ST",
+        "**ST(분)**",
+        "ST 는 분 단위로 입력합니다",
         "STEP 수는 같은 공정·제품 경로 안의",
         "필터는 화면만 좁힙니다",
         "편집 취소",

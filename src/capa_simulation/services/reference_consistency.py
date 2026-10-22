@@ -452,7 +452,7 @@ def _mi_st_values(upeh: pd.DataFrame) -> pd.DataFrame:
 def nonpositive_mi_st_rows(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
     """이번 UPEH 편집이 0 이하로 만든 MI 행 ST. (월 + 경로)와 넣은 값을 돌려준다.
 
-    MI 행은 ST 로 환산 UPEH(`3600 ÷ ST`)를 만든다. 계산이 쓰는 MI 행(`UNIMPLEMENTED_BASES` 제외)의
+    MI 행은 ST(분)로 환산 UPEH(`60 ÷ ST`)를 만든다. 계산이 쓰는 MI 행(`UNIMPLEMENTED_BASES` 제외)의
     ST 가 0 이하면 대당 Capa 전체가 「RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다」로 멈추는데
     (`unit_capacity._prepare_performance`), 편집기는 하한이 0 이라 0 을 받는다. Main 행 UPEH 0 은 그
     경로만 제외 목록으로 빠지므로 여기 없다.
@@ -480,7 +480,7 @@ def describe_nonpositive_mi_st_rows(found: pd.DataFrame, limit: int = 3) -> str:
     more = f" 외 {len(found) - limit:,}건" if len(found) > limit else ""
     return (
         f"「UPEH」 표에서 MI 행 ST 를 0 이하로 넣은 칸 {len(found):,}개 — "
-        f"{'; '.join(examples)}{more}. MI 행은 ST 로 환산 UPEH(3600 ÷ ST)를 만들어 0 이하이면 "
+        f"{'; '.join(examples)}{more}. MI 행은 ST(분)로 환산 UPEH(60 ÷ ST)를 만들어 0 이하이면 "
         "계산 전체가 「RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다」로 멈춥니다. 그 칸에 0보다 큰 "
         "ST 를 넣거나, 그 달 경로를 쓰지 않으려면 칸을 비우세요."
     )

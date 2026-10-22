@@ -67,7 +67,9 @@ from capa_simulation.services.unit_capacity import (
     PERFORMANCE_KEYS,
     RUN_DAY_KEYS,
     RUN_RATE_KEYS,
+    ST_MINUTES_PER_HOUR,
     VITAL_KEYS,
+    converted_upeh,
 )
 
 # 원천 행과 신규 계산 행을 잇는 키. 둘 다 이 조합을 갖고 있다.
@@ -386,10 +388,11 @@ def _normalized(frame: pd.DataFrame, keys: list[str], value_column: str) -> pd.D
 
 # ---------------------------------------------------------------- 소요대수 ≈60 배 가르기
 #
-# 사내 실데이터(리뷰 202610071831·202610080745 8-2)에서 경로 키 27,568개 가운데 약 절반이 기존 =
-# 신규 × 60 이었고 WF 소요기준에 몰렸다. 분↔시간 같은 단위 어긋남으로 보이지만 **어느 쪽이 틀렸는지
-# 모른다.** 아래 함수들은 그 무리가 어디서 나는지를 값 없이 개수로 가른다(2026-10-08 사용자 결정).
-# 세 무리 — 기존 ÷ 신규가 ≈60, ≈1(각 ±`NEAR_TOLERANCE`), 그 밖 — 로 나누고 무리마다 속성·공정·산식
+# 사내 실데이터(리뷰 202610071831~202610182227 8-2)의 ≈60 무리(마지막 13,077키, 60 ±0.1%)는
+# 모두 MI 경로였다. `RQ_UPEH` 의 ST 는 한 개당 분이라는 정의(2026-10-22 사용자 결정)로 신규
+# 환산이 60 ÷ ST 이므로 그 무리는 ≈1 이 된다. 아래 함수들은 ≈60 무리가 다시 나는지 보는
+# 감시로, 나면 어디서 나는지를 값 없이 개수로 가른다(2026-10-08 사용자 결정). 세 무리 —
+# 기존 ÷ 신규가 ≈60, ≈1(각 ±`NEAR_TOLERANCE`), 그 밖 — 로 나누고 무리마다 속성·공정·산식
 # 인자를 견준다. 입력은 `compare_metric(keys=REQB_COLUMNS)` 결과(경로 키 13)다.
 
 SUSPECT_RATIO = 60.0
@@ -634,7 +637,7 @@ _PERFORMANCE_INPUT_KEYS = (*PERFORMANCE_KEYS, "소요기준")
 
 # 산식(AGENTS.md 6장): 소요대수 = 부하량 ÷ 대당 Capa,
 # 대당 Capa = 환산_UPEH × 24 × CAPA_RUN_RATE ÷ 편중률 × 모듈수 × RUN_DAY ÷ Lot 측정률 ÷ WF측정률,
-# 환산_UPEH = UPEH(Main) 또는 3600 ÷ ST(MI), CHIP·PKG 는 ÷ 1000.
+# 환산_UPEH = UPEH(Main) 또는 60 ÷ ST(MI — ST 는 분 단위), CHIP·PKG 는 ÷ 1000.
 # WF 부하량 = 생산수량 × 1000 × 구분_Chip ÷ EDS ÷ BE ÷ Net Die,
 # CHIP 부하량 = 생산수량 × 구분_Chip ÷ BE, PKG 부하량 = 생산수량.
 # Dummy 는 (1 − EDS) 가 더 걸려 수율이 곱으로만 들지 않는다.
@@ -695,24 +698,32 @@ def input_applies(frame: pd.DataFrame, item: FormulaInput) -> pd.Series:
 
 
 def hourly_rate(frame: pd.DataFrame) -> pd.Series:
-    """계산이 쓰는 환산_UPEH — Main 은 UPEH, MI 는 3600 ÷ ST, CHIP·PKG 는 ÷ 1000.
+    """계산이 쓰는 환산_UPEH — Main 은 UPEH, MI 는 60 ÷ ST(ST 는 분 단위 — 정의), CHIP·PKG 는 ÷1000.
 
-    `attach_formula_inputs` 가 붙인 `UPEH`·`ST` 칸을 쓴다.
+    `attach_formula_inputs` 가 붙인 `UPEH`·`ST` 칸을 대당 Capa 계산과 같은 식(`converted_upeh`)에
+    넣는다. ST 가 0 이하인 키는 빈 값이다.
     """
     area = _match_column(frame, "Area_Name")
     upeh = pd.to_numeric(frame["UPEH"], errors="coerce").astype("float64")
     st = pd.to_numeric(frame["ST"], errors="coerce").astype("float64")
-    rate = upeh.where(area.eq("main"))
-    rate = rate.mask(area.eq("mi"), 3600.0 / st.where(st.gt(0)))
-    per_kea = _match_column(frame, "소요기준").isin({"chip", "pkg"})
-    return rate.mask(per_kea, rate / 1000.0)
+    return converted_upeh(
+        upeh,
+        st.where(st.gt(0)),
+        main=area.eq("main"),
+        mi=area.eq("mi"),
+        per_kea=_match_column(frame, "소요기준").isin({"chip", "pkg"}),
+    )
 
 
 def time_agreement(frame: pd.DataFrame) -> pd.Series:
-    """UPEH × ST ÷ 3600 — 두 시간 칸이 다 있는 키에서 서로 맞는지(초 단위 ST 면 1 근처)."""
+    """UPEH × ST ÷ 60 — 두 칸이 다 있는 키의 참고 대조.
+
+    ST 가 정의(한 개당 분)대로 입력됐고 UPEH 가 같은 처리 속도를 적었으면 1 근처다. 벗어나면 원천
+    입력이 정의와 다르다는 신호다 — 판정하지 않고 분포만 낸다.
+    """
     upeh = pd.to_numeric(frame["UPEH"], errors="coerce").astype("float64")
     st = pd.to_numeric(frame["ST"], errors="coerce").astype("float64")
-    return (upeh * st / 3600.0).where(upeh.gt(0) & st.gt(0))
+    return (upeh * st / ST_MINUTES_PER_HOUR).where(upeh.gt(0) & st.gt(0))
 
 
 def folded_route_totals(

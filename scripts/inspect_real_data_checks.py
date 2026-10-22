@@ -12,7 +12,7 @@
 | 블록 | `--only` | 무엇을 |
 |---|---|---|
 | 8-1 | `env` | 두 DB 의 마이그레이션 번호·주요 표 행 수, 적용 배포, `ref_data` 사본 |
-| 8-2 | `legacy` | 기존 결과와 신규 계산의 차이율·비율 분포, Wafer 경로 값·소요대수 ≈60 배 가르기 |
+| 8-2 | `legacy` | 기존 결과 대조 차이율·비율 분포, Wafer 경로 값, ST 정의 대조, ≈60 배 가르기 |
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 옛 Qual 자리표·모듈 환산비·일정 미정·사용기준·38열 개편 분포 |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·전 코드 적재일·표본 적재일·사본 여부 |
@@ -904,7 +904,11 @@ def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
 def _requirement_section(
     core: pd.DataFrame, tables: dict[str, pd.DataFrame], calculated: Required
 ) -> list[str]:
-    lines = ["**소요대수** — 신규는 리비전 1 로 다시 계산한 `RQ_REQB` 행별 소요대수다.", ""]
+    lines = [
+        "**소요대수** — 신규는 리비전 1 로 다시 계산한 `RQ_REQB` 행별 소요대수다.",
+        "",
+        *_st_definition_lines(tables),
+    ]
     contract = load_core_data_contract()
     required = calculated.frame
     if required is None:
@@ -990,6 +994,31 @@ def _requirement_section(
     return lines
 
 
+def _st_definition_lines(tables: dict[str, pd.DataFrame]) -> list[str]:
+    """ST 정의 대조(참고) — `RQ_UPEH` 에서 UPEH·ST 가 둘 다 양수인 행의 UPEH × ST ÷ 60.
+
+    `RQ_UPEH` 의 MI 행 ST 는 한 개당 분이다(정의). 두 칸이 같은 처리 속도를 적었으면 1 근처이고,
+    벗어나면 원천 입력이 정의와 다르다는 신호다. 판정하지 않고 행 수와 분포만 찍는다. ≈60 가르기와
+    달리 소요대수 대조가 없어도 늘 찍는다.
+    """
+    head = "- ST 정의 대조(참고) — 리비전 1 `RQ_UPEH` 의 UPEH × ST ÷ 60(ST 는 분 단위라 기대 1)"
+    upeh = tables.get("RQ_UPEH")
+    if upeh is None or not {"Area_Name", "UPEH", "ST"} <= set(upeh.columns):
+        return [f"{head} — 칸 없음"]
+    agreement = time_agreement(upeh).dropna()
+    if agreement.empty:
+        return [f"{head} — UPEH·ST 가 둘 다 양수인 행 0"]
+    area = match_key(upeh["Area_Name"]).loc[agreement.index]
+    near = int(agreement.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
+    main, mi = int(area.eq("main").sum()), int(area.eq("mi").sum())
+    p5, median, p95 = (float(np.quantile(agreement.to_numpy(), q)) for q in (0.05, 0.5, 0.95))
+    return [
+        f"{head} — UPEH·ST 가 둘 다 양수인 행 {len(agreement):,}(Main {main:,} · MI {mi:,}) · "
+        f"p5 · 중앙 · p95 {_ratio(p5)} · {_ratio(median)} · {_ratio(p95)} · "
+        f"1 ±{NEAR_TOLERANCE:.0%} 안 {near:,}"
+    ]
+
+
 # 경로 없는 부하의 사유 → 짧은 이름. 사유는 코드 상수라 찍어도 실데이터 값이 아니다.
 _UNROUTED_REASON_LABELS = {
     UNROUTED_KEY_MISMATCH_REASON: "키 어긋남",
@@ -1056,8 +1085,9 @@ def _ratio_breakdown(
 ) -> list[str]:
     """경로 키 대조를 기존÷신규 ≈60·≈1·그 밖 세 무리로 나눠 어디서 60 배가 나는지 센다.
 
-    사내 리뷰 202610071831·202610080745 에서 경로 키 절반이 기존 = 신규 × 60 이었다. 어느 쪽이
-    틀렸는지 모르므로 판정하지 않고 가르기만 한다 — 속성·공정·산식 인자·원천 칸마다 개수와 분포.
+    사내 리뷰 202610071831~202610182227 의 ≈60 무리는 모두 MI 경로였고, `RQ_UPEH` 의 ST 를 분
+    단위로 읽는 정의(2026-10-22)로 신규가 그 무리에 맞는다. 이 가르기는 ≈60 무리가 다시 나는지 보는
+    감시다 — 나오면 다른 원인이라 판정하지 않고 속성·공정·산식 인자·원천 칸마다 개수와 분포를 낸다.
     """
     groups = ratio_groups(path)
     frame = groups.frame
@@ -1071,7 +1101,7 @@ def _ratio_breakdown(
     lines = [
         "**소요대수 ≈60 배 가르기** — 위 `경로 키 13` 대조의 키를 기존÷신규 ≈60 · ≈1(각 ±"
         f"{NEAR_TOLERANCE:.0%}) · 그 밖 세 무리로 나눠 60 배가 어디서 나는지 개수로 본다. "
-        "어느 쪽이 틀렸는지는 판정하지 않는다.",
+        "ST 를 분 단위로 읽는 정의 뒤에도 남은 무리다 — 판정하지 않는다.",
         "",
         f"- 비율이 정의된 경로 키 {len(frame):,} — ≈60 {sizes[SUSPECT_GROUP]:,}"
         f"(그 가운데 60 ±0.1% 안 {groups.tight:,}) · ≈1 {sizes[AGREE_GROUP]:,} · 그 밖 "
@@ -1229,7 +1259,7 @@ def _formula_input_lines(
     daily_need = folded_route_totals(inputs, route, "일 필요", grain)
     derived: list[tuple[str, pd.Series]] = [
         ("환산_UPEH (CHIP·PKG ÷1000)", hourly_rate(inputs)),
-        ("UPEH × ST ÷ 3600 (둘 다 있는 키)", time_agreement(inputs)),
+        ("UPEH × ST ÷ 60 (둘 다 있는 키 — 정의대로면 1)", time_agreement(inputs)),
         ("원천 `일 필요` ÷ (부하량 ÷ RUN_DAY)", daily_need / daily_load),
         *[(f"원천 `{column}`", link.numbers(column)) for column in ROUTE_NUMBERS],
     ]
@@ -1246,8 +1276,8 @@ def _formula_input_lines(
         "",
         *_table(_INPUT_HEADERS, rows),
         "",
-        "- 상수(하루 24시간 · MI 의 3600 ÷ ST · CHIP·PKG 의 ÷1000)는 인자 값처럼 가를 수 없다 — "
-        "3600 은 MI, ÷1000 은 CHIP·PKG 에만 걸리므로 위 속성 표의 Main/MI·소요기준 줄이 그 "
+        "- 상수(하루 24시간 · MI 의 60 ÷ ST · CHIP·PKG 의 ÷1000)는 인자 값처럼 가를 수 없다 — "
+        "60 은 MI, ÷1000 은 CHIP·PKG 에만 걸리므로 위 속성 표의 Main/MI·소요기준 줄이 그 "
         "답이다. `원천 …` 줄은 기존 시스템이 실어 보낸 값이라 신규 산식에 없다 — `일 필요` 가 "
         "하루 부하라면 그 줄이 ≈60 무리에서도 1 근처일 때 60 배는 부하가 아니라 능력(대당 Capa) "
         "쪽에 있다.",

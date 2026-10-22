@@ -937,7 +937,13 @@ def _render_route_factors(trace: ProcessMonthTrace | None) -> None:
     if routes.empty:
         st.caption("이 달 이 공정의 경로가 없습니다.")
     else:
-        st.dataframe(routes, hide_index=True, width="stretch", key="process_detail_routes")
+        st.dataframe(
+            routes,
+            hide_index=True,
+            width="stretch",
+            column_config={"ST": "ST(분)"},
+            key="process_detail_routes",
+        )
     common = trace.common_factors
     parts = []
     if common.run_day is not None:

@@ -782,6 +782,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 사내 실데이터는 분포·개수로만 가른다(`difference_distribution`·`ratio_groups`·`scaling_check`·
     `fold_route_cells` 등 → `scripts/inspect_real_data_checks.py`).
   - 지표를 더하면 두 스크립트의 계산 사전(`LOAD_BUILDERS`)도 더하고, 산식이 바뀌면 `FORMULA_INPUTS` 도 고친다.
+    환산 UPEH 는 `hourly_rate` 가 `unit_capacity.converted_upeh` 를 부르고, `time_agreement`(UPEH × ST ÷ 60)는
+    그 모듈의 `ST_MINUTES_PER_HOUR` 를 쓴다 — 식을 복제하지 않는다.
 - `src/capa_simulation/components/tab_state.py` — 열린 탭을 서버가 알게 하는 `stateful_tabs` 와 판정
   `tab_is_hidden` 이다. 차트가 든 탭은 반드시 이것으로 만든다 — 숨은 탭의 Plotly 표는 글자 폭이 0 으로 재진다.
 - `src/capa_simulation/components/editor_state.py` — 편집표에 고친 것이 남았는가(`editor_has_edits`)와 편집을
@@ -1331,7 +1333,11 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 ```
 
 - `Area_Name = Main`: `UPEH`
-- `Area_Name = MI`: `3600 / ST`
+- `Area_Name = MI`: `60 / ST`
+  - **`RQ_UPEH` 의 `ST` 는 한 개당 분(min/unit)으로 입력한다**(정의, 2026-10-22 사용자 결정). 값 크기로 단위를
+    가르거나 갈래를 두지 않는다. 근거: 사내 8-2 의 기존÷신규 ≈60 무리(13,077키)가 모두 MI 경로·60 ±0.1% 였다.
+    식은 `unit_capacity.converted_upeh` 한 곳이고 기존 결과 대조(`legacy_comparison.hourly_rate`)도 그것을 부른다.
+- 소요기준 `CHIP`·`PKG` 는 위 값을 다시 1,000 으로 나눈다(부하량이 K개).
 - UPEH·Lot/WF 측정률과 `RQ_REQB`의 `Area_Name`은 Core Data 변환 및 기존 리비전의
   런타임 소요대수 연결에서 대소문자와 앞뒤 공백을 정규화해 `Main`·`MI`로 통일한다.
   Lot/WF 측정률의 빈 값과 **`0`**과 **행 부재**는 모두 측정 대상이 아닌 경로로 보고
@@ -2309,8 +2315,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `MPGA TEST` 의 소수 `모듈수` 는 사내 BigDataQuery 관측이라 근거가 있다.
 - **실데이터로만 답이 나오는 질문은 사내에서 잰다.** `scripts/inspect_real_data_checks.py` 가 두 DB 를
   `read_only` 로 열어(저장소 `initialize()` 는 마이그레이션을 걸어 쓰므로 부르지 않는다) 기존 결과 대조
-  분포(소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축(양산 Density
-  가 있는 달)에서 빠지는 계획 달 수(8-9 — 2026-10-22 결정 A: 월 축은 그대로 두고 0 이면 그 결정 대기를 닫는다)를 재고,
+  분포(ST 정의 대조 UPEH × ST ÷ 60·소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·
+  BigDataQuery·HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수(8-9 — 2026-10-22 결정 A: 월 축은 그대로 두고 0 이면 그 결정 대기를 닫는다)를 재고,
   **개수·비율·dtype·초만** Markdown 블록으로 찍는다 — 이름·코드·키별 값·합계 물량·파일 경로·예외 문구를
   찍지 않는다(이 앱의 오류 문구에는 식별값이 실린다). 값 이름은 계약 어휘(소요기준·Main/MI·`WF 구분` 선언
   목록)만 찍고 그 밖은 종류 수로 센다. 자동 판정(통과·실패·결론)은 넣지 않는다 — 넣으면 재검증이 갈래마다

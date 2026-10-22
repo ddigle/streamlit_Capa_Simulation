@@ -238,7 +238,8 @@ RQ_DISPLAY_ORDER   RQ_MODULE
 1부터 부여하며, 원본 컬럼명과 순서를 유지한다. 업무 고유 키는
 `config/data_contract.json`의 `derived_keys`에 테이블별로 정의한다.
 `RQ_UPEH`·`RQ_LOT_RATIO`·`RQ_WF_RATIO`는 생산계획년월·Area·공정·`STEP_SEQ`·
-`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. 조인 키로 쓰는 `WF 구분`의
+`MCP_SEQ`·양산구분·제품정보·Stack·WF 구분을 경로 키로 사용한다. `RQ_UPEH` 의 `UPEH` 는 Main 행의
+시간당 처리량, `ST` 는 MI 행의 한 개당 분(min/unit)이다(정의 — 계산은 60 ÷ ST, AGENTS.md 6장). 조인 키로 쓰는 `WF 구분`의
 값은 EDP-TSV 행에서 `Top`이 아니라 `Top_e`다. 원천에는 없는 값이며 `services/product_type.py`의
 규칙에 따라 `build_q_core_data`가 파생 경계에서 한 번만 갈라 붙인다. 0014 이전에 적재한
 기준정보·리비전 스냅샷은 마이그레이션이 같은 값으로 맞춘다. `RQ_REQB`와 대당 Capa를 연결할

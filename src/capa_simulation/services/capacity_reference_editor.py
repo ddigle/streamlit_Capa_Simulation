@@ -89,7 +89,7 @@ def reference_from_edit_table(
 
 
 def performance_to_edit_table(data: pd.DataFrame) -> pd.DataFrame:
-    """Expose UPEH for Main rows and ST for MI rows as one editable value."""
+    """Main 행은 UPEH, MI 행은 ST(분)를 한 편집 값 칸으로 보인다."""
     required = [
         "생산계획년월",
         *PERFORMANCE_EDITOR_DIMENSIONS,

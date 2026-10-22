@@ -52,6 +52,7 @@ from capa_simulation.services.legacy_comparison import (
     fold_route_result,
     folded_route_totals,
     group_spread,
+    hourly_rate,
     input_applies,
     legacy_grain,
     measured_wafer_load,
@@ -67,8 +68,10 @@ from capa_simulation.services.legacy_comparison import (
     split_mixed_processes,
     split_route_cells,
     summarize_comparison,
+    time_agreement,
 )
 from capa_simulation.services.required_equipment import REQB_COLUMNS
+from capa_simulation.services.unit_capacity import PERFORMANCE_KEYS, calculate_unit_capacity
 
 METRIC = LegacyMetric(label="Wafer 부하량 (매)", legacy_column="WF수(매)")
 CONTRACT = load_core_data_contract()
@@ -476,6 +479,70 @@ def test_formula_inputs_are_read_per_key_and_a_minutes_input_stands_out() -> Non
     assert inputs["부하량"].eq(10.0).all()
     # 표가 없으면 빈 칸이다 — 멈추지 않는다.
     assert inputs["UPEH"].isna().all()
+
+
+def test_hourly_rate_is_the_rate_the_capacity_calculation_uses() -> None:
+    """8-2 산식 인자 표의 `환산_UPEH` 는 대당 Capa 계산과 같은 식이다 — MI 는 60 ÷ ST(분 단위)."""
+    rows = [
+        ("MAIN", "WF", "P-1", 45.0, None),
+        ("Main", "CHIP", "P-2", 72_000.0, None),
+        ("mi", "WF", "P-3", None, 2.0),
+        ("MI", "CHIP", "P-4", None, 0.5),
+        ("MI ", "PKG", "P-5", None, 0.25),
+    ]
+    upeh = pd.DataFrame(
+        {
+            "생산계획년월": 202608,
+            "Area_Name": [row[0] for row in rows],
+            "소요기준": [row[1] for row in rows],
+            "공정": [row[2] for row in rows],
+            "STEP_SEQ": "S1",
+            "MCP_SEQ": "1A",
+            "양산구분": "양산",
+            "제품정보": "Product-A",
+            "Stack": "8H",
+            "WF 구분": "Core",
+            "UPEH": [row[3] for row in rows],
+            "ST": [row[4] for row in rows],
+        }
+    )
+    by_month = upeh[["생산계획년월", "공정", "양산구분"]]
+    calculated = calculate_unit_capacity(
+        upeh,
+        by_month.assign(CAPA_RUN_RATE=0.8),
+        by_month.assign(편중률=1.0),
+        upeh[["공정"]].assign(모듈수=1.0),
+        upeh[["생산계획년월", "공정"]].assign(RUN_DAY=30.0),
+        upeh[PERFORMANCE_KEYS].assign(**{"Lot 측정률": 1.0}),
+        upeh[PERFORMANCE_KEYS].assign(WF측정률=1.0),
+    ).set_index("공정")["환산_UPEH"]
+
+    rate = hourly_rate(upeh).set_axis(upeh["공정"])
+
+    assert rate.tolist() == pytest.approx([45.0, 72.0, 30.0, 0.12, 0.24])
+    assert rate.tolist() == pytest.approx(calculated.reindex(rate.index).tolist())
+
+
+def test_hourly_rate_leaves_a_non_positive_st_blank() -> None:
+    frame = pd.DataFrame(
+        {"Area_Name": ["MI", "MI"], "소요기준": ["WF", "WF"], "UPEH": None, "ST": [0.0, -1.0]}
+    )
+
+    assert hourly_rate(frame).isna().all()
+
+
+def test_time_agreement_is_one_when_upeh_and_minutes_st_tell_the_same_speed() -> None:
+    """UPEH × ST ÷ 60 — ST 가 정의(한 개당 분)대로면 1. 한쪽이라도 없거나 0 이하면 빈 값."""
+    frame = pd.DataFrame(
+        {"UPEH": [120.0, 120.0, None, 0.0], "ST": [0.5, 30.0, 0.5, 0.5]},
+    )
+
+    agreement = time_agreement(frame)
+
+    assert agreement.iloc[0] == pytest.approx(1.0)
+    # 초로 적힌 ST 는 정의와 달라 60 배로 드러난다.
+    assert agreement.iloc[1] == pytest.approx(60.0)
+    assert agreement.iloc[2:].isna().all()
 
 
 def test_route_columns_are_counted_by_group_without_values() -> None:

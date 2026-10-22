@@ -31,6 +31,7 @@ data/equipment_availability.duckdb   기존 보유대수 · 설비 마스터 · 
 ```text
 부하량    PKG·Chip(Kea) · Wafer(매) · Density(억Gb) — PKG PLAN 에 수율·Chip 구성을 걸어 환산
 대당 Capa = 환산_UPEH × 24 × 효율 ÷ 여유율 × 모듈수 × 가동일수 ÷ Lot측정률 ÷ WF측정률
+환산_UPEH = UPEH(Main) · 60 ÷ ST(MI — ST 는 한 개당 분으로 입력), CHIP·PKG 는 다시 ÷ 1,000
 소요대수  = 부하량 ÷ 대당 Capa        (RQ_REQB 의 Area·STEP·MCP 경로별로 나눈 뒤 공정으로 합산)
 확보율    = 가용대수(RQ_EQP_AVBL) ÷ 소요대수
 B/N       = 그 달 확보율이 가장 낮은 공정
