@@ -899,6 +899,41 @@ def test_every_popup_opener_clears_the_other_popup_keys_first(
         assert app.session_state[opened_key] is True
 
 
+def test_the_official_popup_opener_clears_the_other_popup_keys_first(
+    _app: AppTest, tmp_path: Path
+) -> None:
+    """다섯째 여는 칸 — 시나리오 관리 카드의 「공식으로 지정…」도 다른 팝업 열림 키부터 비운다.
+
+    사이드바 시나리오 팝업 열림 키가 남은 채 열면 한 실행에 팝업이 둘 불려
+    `StreamlitInvalidLayoutContextError` 로 화면이 멈춘다. 2026-10-22 리뷰가 위 넷의 목록에 이 칸이
+    빠져 여는 콜백의 `forget_page_dialogs` 를 지워도 시험이 통과한다고 짚었다.
+    """
+    from capa_simulation.components.pick_edit_table import TableDraft, draft_session_key
+    from capa_simulation.components.scenario_management import (
+        ACTION_KEY,
+        LIST_EDITOR_KEY,
+        OFFICIAL_DIALOG_KEY,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    app = _app.run()
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    (scenario,) = DuckDBScenarioRepository(tmp_path / "scenario.duckdb").list_scenarios()
+    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(picked=scenario.scenario_id)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    app.session_state[SCENARIO_DIALOG_KEY] = True
+    app.button(key=f"{ACTION_KEY}_official").click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert SCENARIO_DIALOG_KEY not in app.session_state
+    assert app.session_state[OFFICIAL_DIALOG_KEY] == (
+        scenario.scenario_id,
+        scenario.active_revision_id,
+    )
+
+
 def test_the_scenario_dialog_stays_open_across_reruns_and_closes_on_leaving(
     _app: AppTest,
 ) -> None:
