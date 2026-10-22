@@ -82,3 +82,18 @@ def build_process_picker_summary(
         summaries.get(process, ProcessPickerItem(process, None, None, 0, "unavailable"))
         for process in ordered_options
     )
+
+
+def shortfall_order(items: Sequence[ProcessPickerItem]) -> tuple[ProcessPickerItem, ...]:
+    """확보기준 미달 공정(`shortfall`)만 조회기간 최저 확보율이 낮은 차례로 둔다.
+
+    같은 확보율이면 입력 차례(공용 표시순서)를 지킨다. 공정 Capa 상세의 ◀▶ 가 이 차례로 넘긴다.
+    미달 여부는 요약의 판정(`group` — 달마다 그 달 확보기준) 그대로다.
+    """
+    shortfall = [
+        (position, item)
+        for position, item in enumerate(items)
+        if item.group == "shortfall" and item.minimum_rate is not None
+    ]
+    shortfall.sort(key=lambda pair: (float(pair[1].minimum_rate or 0.0), pair[0]))
+    return tuple(item for _, item in shortfall)

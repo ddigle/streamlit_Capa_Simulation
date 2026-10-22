@@ -39,6 +39,11 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_RATE,
     ROW_REQUIRED,
     ROW_THRESHOLD,
+    SECTION_DOWNTIME,
+    SECTION_DYNAMIC,
+    SECTION_IDS,
+    SECTION_SUMMARY,
+    SECTION_UNITS,
     SUMMARY_TITLE_DETAIL,
     SUMMARY_TITLE_HEIGHT_PX,
     TITLE_HEIGHT_PX,
@@ -235,6 +240,7 @@ def _canvas(
     dynamic: DynamicCanvasInput | None = None,
     summary: pd.DataFrame | None = None,
     thresholds: SecurementThresholds = THRESHOLDS,
+    collapsed: frozenset[str] = frozenset(),
 ) -> ProcessCapaCanvas:
     return build_process_capa_canvas(
         process_label="Die Attach",
@@ -249,6 +255,7 @@ def _canvas(
             else None
         ),
         dynamic=dynamic,
+        collapsed=collapsed,
     )
 
 
@@ -402,6 +409,88 @@ def test_without_schedule_or_home_rates_the_canvas_ends_at_the_reference_row() -
     )
 
 
+def _section_rows(row_ids: tuple[str, ...], section: str) -> list[str]:
+    """그 구획 제목 줄 밑, 다음 제목 줄 앞까지의 행 id."""
+    start = row_ids.index(f"title:{section}") + 1
+    rows: list[str] = []
+    for row in row_ids[start:]:
+        if row.startswith("title:"):
+            break
+        rows.append(row)
+    return rows
+
+
+@pytest.mark.parametrize("section", SECTION_IDS)
+def test_a_collapsed_section_keeps_only_its_title_row(section: str) -> None:
+    """접힌 구획은 제목 줄(▸)만 남고, 다른 구획의 행은 그대로다. 제목 줄 높이는 같다."""
+    dynamic = _dynamic()
+    full = _canvas(dynamic=dynamic)
+    folded = _canvas(dynamic=dynamic, collapsed=frozenset({section}))
+
+    titles = [row for row in folded.row_ids if row.startswith("title:")]
+    assert titles == [f"title:{name}" for name in SECTION_IDS]
+    assert _section_rows(full.row_ids, section)
+    assert _section_rows(folded.row_ids, section) == []
+    for other in SECTION_IDS:
+        if other != section:
+            assert _section_rows(folded.row_ids, other) == _section_rows(full.row_ids, other)
+    label_texts = [item["text"] for item in _annotations(folded.labels)]
+    marks = {
+        name: next(text for text in label_texts if text.startswith("<b>") and text[3:4] == mark)[-5]
+        for name, mark in zip(SECTION_IDS, "①②③④", strict=True)
+    }
+    assert marks == {name: "▸" if name == section else "▾" for name in SECTION_IDS}
+    assert folded.height < full.height
+
+
+def test_folding_the_summary_keeps_the_shortage_band_and_the_cross_check() -> None:
+    """판정·원인은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠와 ② 판정 대조는 같다."""
+    dynamic = _dynamic()
+    full = _canvas(dynamic=dynamic)
+    folded = _canvas(dynamic=dynamic, collapsed=frozenset({SECTION_SUMMARY}))
+
+    def bands(canvas: ProcessCapaCanvas) -> list[float]:
+        return sorted(
+            shape["x0"]
+            for shape in _shapes(canvas.months)
+            if shape.get("fillcolor") == tokens.SHORTAGE_MONTH_BAND
+        )
+
+    assert bands(folded) and bands(folded) == bands(full)
+    assert _row_texts(folded, ROW_DYNAMIC_COMPARE) == _row_texts(full, ROW_DYNAMIC_COMPARE)
+    assert ROW_RATE not in folded.row_ids and ROW_HOME_RATE not in folded.row_ids
+
+
+def test_folded_units_and_downtime_draw_no_rows_and_count_nothing_hidden() -> None:
+    events = _many_new_units(ROW_LIMIT + 5)
+    dynamic = _dynamic(unit_events=events, exits=pd.DataFrame())
+    folded = _canvas(dynamic=dynamic, collapsed=frozenset({SECTION_UNITS, SECTION_DOWNTIME}))
+
+    assert _canvas(dynamic=dynamic).hidden_units == 5
+    assert folded.hidden_units == 0 and folded.hidden_arrow_units == 0
+    assert not [row for row in folded.row_ids if row.startswith(("unit:", "arrow:", "note:"))]
+    # 오늘 점선은 남은 본문(②)에만 긋는다.
+    dashes = [
+        shape
+        for shape in _shapes(folded.months)
+        if shape["type"] == "line" and shape.get("line", {}).get("dash") == "dash"
+    ]
+    assert len(dashes) == 1
+
+
+def test_an_absent_or_unknown_section_is_ignored() -> None:
+    plain = _canvas(products=False, home=False)
+    ignored = _canvas(products=False, home=False, collapsed=frozenset({SECTION_DYNAMIC, "그 밖"}))
+
+    assert ignored.row_ids == plain.row_ids
+    assert ignored.height == plain.height
+    # 설비 일정이 호기 없이 ② 만 서면 ② 를 접어도 ③·④ 자리의 까닭 줄은 남는다.
+    baseline_only = _canvas(
+        dynamic=_dynamic(has_units=False), collapsed=frozenset({SECTION_DYNAMIC})
+    )
+    assert _section_rows(baseline_only.row_ids, SECTION_DYNAMIC) == ["note:no_units"]
+
+
 def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> None:
     """구획 제목의 출처·단위 글은 스크롤되지 않는 라벨 Figure 에 선다 — 월 Figure 에 두면 고른 달로
     밀어 연 화면에서 잘린다(브라우저 확인 결함). 월 Figure 의 제목 줄에는 글이 없다."""
@@ -426,7 +515,8 @@ def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> N
         "③ 신규 설비 일정과 단축",
         "④ 호기별 비가동",
     ):
-        assert f"<b>{title}</b>" in label_texts
+        # 펼친 구획은 제목 끝에 ▾ 다(소요대수 줄과 같은 꼴).
+        assert f"<b>{title} ▾</b>" in label_texts
         assert title not in month_texts
     # 세부 글 줄은 라벨 칸 폭(좌우 여백 뺀 240px, 11px 글자) 안이다.
     budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 20) / 11
@@ -1014,6 +1104,61 @@ def test_arrow_rows_carry_the_month_loss_in_their_hover() -> None:
     digits = 1 if round(abs(loss), 1) > 0 else 2
     assert first["비가동유형"] in hover
     assert f"이 달 {MINUS}{abs(loss):.{digits}f} (환산대수)" in hover
+
+
+def _row_hover(canvas: ProcessCapaCanvas, row_id: str) -> str:
+    return str(
+        next(
+            data[CUSTOMDATA_HOVER]
+            for data, _, _ in _targets(canvas)
+            if data[CUSTOMDATA_ROW] == row_id
+        )
+    )
+
+
+def test_unit_and_downtime_labels_leave_the_module_count_to_the_hovers() -> None:
+    """라벨에는 「N모듈」 을 적지 않는다(2026-10-22 사용자 요청). 모듈 묶음은 풍선 첫 줄 「· 모듈
+    N」 이고, ④ 풍선은 화살표 줄마다 그 모듈의 설비명을 앞에 적는다. 단독 호기는 모듈 글이 없다."""
+    canvas = _canvas(dynamic=_dynamic())
+
+    assert "모듈" not in json.dumps(_annotations(canvas.labels), ensure_ascii=False)
+    unit_lines = _row_hover(canvas, "unit:EQ-21").split("<br>")
+    assert unit_lines[0].endswith("EQ-21 · 모듈 2")
+    assert any(line.startswith("모듈별 Qual EQ-21A") for line in unit_lines)
+    assert "모듈" not in _row_hover(canvas, "unit:EQ-22").split("<br>")[0]
+
+    first, *arrows = _row_hover(canvas, "arrow:EQ-21#0").split("<br>")
+    assert first.endswith("EQ-21 · 모듈 2")
+    assert arrows and all(line.startswith("EQ-21A · 셋업 · ") for line in arrows)
+    single_first, *single = _row_hover(canvas, "arrow:EQ-02#0").split("<br>")
+    assert "모듈" not in single_first
+    assert all(line.startswith("정기 PM · ") for line in single)
+
+
+def test_a_stopping_module_group_names_its_modules_in_the_hover() -> None:
+    exits = pd.DataFrame(
+        [
+            {
+                "호기": "EQ-30",
+                "설비명": "EQ-30A, EQ-30B",
+                "Model": "M-1",
+                "모듈 수": 2,
+                "기존설비여부": "Y",
+                "반출이설일": date(2027, 3, 10),
+                "반출이설구분": "정지",
+                "반출이설 위치": 4.3,
+            }
+        ]
+    )
+    canvas = _canvas(dynamic=_dynamic(exits=exits))
+
+    labels = [item["text"] for item in _annotations(canvas.labels)]
+    assert "<b>EQ-30</b>" in labels
+    assert (
+        _row_hover(canvas, "exit:EQ-30")
+        .split("<br>")[0]
+        .endswith("EQ-30 · 모듈 2 · 정지 2027-03-10 · M-1")
+    )
 
 
 # ---------------------------------------------------------------------- 검증 경로·테마

@@ -20,6 +20,14 @@
 4. **④ 호기별 비가동** — 비가동 한 행이 화살표 하나. 가용을 깎은 것만 진한 실선과 촉, 나머지는 흐린
    점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」.
 
+호기·Model 라벨에는 모듈 수를 적지 않는다(2026-10-22 사용자 요청) — 모듈 묶음은 풍선이
+밝힌다. ③ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ④ 풍선 첫 줄에 「· 모듈 N」과 화살표
+줄마다 그 모듈의 설비명이다.
+
+**구획 접기**(`collapsed`, 구획 id `SECTION_IDS`) — 접힌 구획은 제목 줄만 남고(글자 끝 ▸, 펼친
+구획은 ▾) 그 밑 행을 그리지 않는다. 판정·부족 원인은 요약 프레임에서 그대로 내므로 ① 을 접어도 부족
+띠와 ② 판정 대조는 같다. 접힌 ③·④ 는 줄을 만들지 않아 「n대 더」 수도 0 이다.
+
 **네 구획이 한 Figure 쌍인 까닭** — 확보기준에 못 미친 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금
 보는 달의 열 테두리가 구획을 넘어 이어져야 하고(구획마다 그림을 나누면 제목 줄에서 끊긴다), 칸
 선택(`on_select`)이 그림 하나에서 와야 한다. 그래서 구획 제목도 Figure 안의 한 줄이다. 제목과 그
@@ -40,7 +48,7 @@ from __future__ import annotations
 
 import html
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Final, NamedTuple, cast
@@ -113,6 +121,7 @@ from capa_simulation.components.plotly_layout import flush_layout_items
 from capa_simulation.components.shortening_timeline import month_day
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_ID_COLUMN,
     QUAL_STATUS_COLUMN,
     STATUS_EXITED,
     STATUS_STOPPED,
@@ -170,6 +179,11 @@ __all__ = [
     "ROW_THRESHOLD",
     "ROW_TITLE_PREFIX",
     "ROW_UNIT_PREFIX",
+    "SECTION_DOWNTIME",
+    "SECTION_DYNAMIC",
+    "SECTION_IDS",
+    "SECTION_SUMMARY",
+    "SECTION_UNITS",
     "SUMMARY_TITLE_DETAIL",
     "SUMMARY_TITLE_HEIGHT_PX",
     "DynamicCanvasInput",
@@ -222,6 +236,13 @@ ROW_DYNAMIC_BALANCE: Final = "dynamic_balance"
 ROW_UNIT_PREFIX: Final = "unit:"
 ROW_EXIT_PREFIX: Final = "exit:"
 ROW_ARROW_PREFIX: Final = "arrow:"
+
+# 구획 id — 제목 줄 행 id(`title:<id>`)의 꼬리이고, 페이지의 「구획」 칩 값이다.
+SECTION_SUMMARY: Final = "summary"
+SECTION_DYNAMIC: Final = "dynamic"
+SECTION_UNITS: Final = "units"
+SECTION_DOWNTIME: Final = "downtime"
+SECTION_IDS: Final = (SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_UNITS, SECTION_DOWNTIME)
 
 _SHORT_STATUSES: Final = frozenset({"warning", "shortage"})
 _STATUS_NAMES: Final[Mapping[str, str]] = {"secure": "확보", "warning": "경고", "shortage": "부족"}
@@ -288,6 +309,7 @@ def build_process_capa_canvas(
     product_demand: pd.DataFrame | None = None,
     home_rates: Mapping[int, float | None] | None = None,
     dynamic: DynamicCanvasInput | None = None,
+    collapsed: Collection[str] = frozenset(),
 ) -> ProcessCapaCanvas:
     """공정 하나의 결합 월 캔버스(라벨 Figure · 월 Figure)를 만든다.
 
@@ -300,6 +322,8 @@ def build_process_capa_canvas(
       회색).
     - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 페이지가 까닭 카드를 둔다).
     - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
+    - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
+      id 는 무시한다.
     """
     axis = [int(month) for month in months]
     if not axis:
@@ -307,11 +331,16 @@ def build_process_capa_canvas(
     if len(set(axis)) != len(axis) or axis != sorted(axis):
         raise ValueError("결합 캔버스의 월 축은 겹치지 않는 오름차순이어야 합니다.")
     index_of = {month: position for position, month in enumerate(axis)}
+    folded = frozenset(str(section) for section in collapsed)
 
+    # 판정·원인은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠·② 판정 대조가 바뀌지 않는다.
     statuses = _summary_statuses(summary, axis)
     causes = _summary_causes(summary, axis)
     rows: list[_Row] = [_header_row(process_label, axis, thresholds)]
-    rows += _summary_rows(axis, summary, thresholds, product_demand, home_rates)
+    if SECTION_SUMMARY in folded:
+        rows.append(_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, folded))
+    else:
+        rows += _summary_rows(axis, summary, thresholds, product_demand, home_rates)
     hidden_units = 0
     hidden_arrow_units = 0
     today_x: float | None = None
@@ -319,7 +348,7 @@ def build_process_capa_canvas(
     if dynamic is not None:
         dynamic_first = len(rows)
         dynamic_rows, hidden_units, hidden_arrow_units = _dynamic_rows(
-            axis, statuses, causes, dynamic
+            axis, statuses, causes, dynamic, folded
         )
         rows += dynamic_rows
         today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
@@ -371,6 +400,21 @@ def _summary_causes(summary: pd.DataFrame, axis: Sequence[int]) -> dict[int, str
         cause = records.get(month, {}).get(CAUSE_COLUMN)
         causes[month] = "" if _blank(cause) else str(cause)
     return causes
+
+
+# 구획 제목 글자. 끝에 펼침(▾)·접힘(▸)을 붙인다 — ① 소요대수 줄의 ▾/▸ 와 같은 꼴이다.
+_SECTION_TITLES: Final[Mapping[str, str]] = {
+    SECTION_SUMMARY: "① 공식 기준",
+    SECTION_DYNAMIC: "② 설비 일정 기준 가용",
+    SECTION_UNITS: "③ 신규 설비 일정과 단축",
+    SECTION_DOWNTIME: "④ 호기별 비가동",
+}
+
+
+def _section_title_row(section: str, detail: str, folded: Collection[str]) -> _Row:
+    """구획 제목 줄. 접혔으면 「▸」, 펼쳤으면 「▾」 — 세부 글은 같아 줄 높이가 그대로다."""
+    mark = "▸" if section in folded else "▾"
+    return _title_row(section, f"{_SECTION_TITLES[section]} {mark}", detail)
 
 
 def _header_row(process_label: str, axis: Sequence[int], thresholds: SecurementThresholds) -> _Row:
@@ -523,7 +567,7 @@ def _summary_rows(
                 f"경고기준 {threshold_percent_label(warning)} ({_ratio(warning)})"
             ),
         )
-    rows = [_title_row("summary", "① 공식 기준", SUMMARY_TITLE_DETAIL)]
+    rows = [_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, ())]
     rows += [owned, available, required]
     if product_demand is not None:
         rows += _product_rows(axis, product_demand, records)
@@ -636,6 +680,7 @@ def _dynamic_rows(
     statuses: Mapping[int, str | None],
     causes: Mapping[int, str],
     dynamic: DynamicCanvasInput,
+    folded: Collection[str] = (),
 ) -> tuple[list[_Row], int, int]:
     today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
     # 오늘이 든 생산월보다 앞선 달은 「기한 지남」이다 — 단축으로 바꿀 수 없어 흐리게 둔다.
@@ -646,7 +691,7 @@ def _dynamic_rows(
     detail = f"참고 · 설비 DB · 환산대수 · 생산월(Cut-off {dynamic.cutoff_days}일)"
     if not today_position.before and not today_position.after:
         detail += f" · 점선은 오늘({dynamic.today:%m.%d})"
-    rows: list[_Row] = [_title_row("dynamic", "② 설비 일정 기준 가용", detail)]
+    rows: list[_Row] = [_section_title_row(SECTION_DYNAMIC, detail, folded)]
     compare = _Row(
         ROW_DYNAMIC_COMPARE,
         _VALUE,
@@ -729,23 +774,29 @@ def _dynamic_rows(
                 else f"{head} · 축 첫 달이라 전월 대비가 없습니다"
             ),
         )
-    rows += [compare, available, delta, balance]
+    if SECTION_DYNAMIC not in folded:
+        rows += [compare, available, delta, balance]
     if not dynamic.has_units:
+        # ③·④ 가 서지 않는 공정의 까닭 — ② 를 접어도 남긴다(③·④ 자리의 글이다).
         rows.append(_note_row("no_units", "호기 일정 없음 — 기존보유만 있는 공정입니다"))
         return rows, 0, 0
-    unit_rows, hidden_units = _unit_rows(axis, dynamic)
+    hidden_units = 0
+    hidden_arrow_units = 0
     # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)는 캔버스 아래 범례가 적는다.
-    rows.append(_title_row("units", "③ 신규 설비 일정과 단축", f"{target_text} · 호기마다 한 줄"))
-    rows += unit_rows
-    arrow_rows, hidden_arrow_units = _arrow_rows(axis, dynamic)
+    rows.append(_section_title_row(SECTION_UNITS, f"{target_text} · 호기마다 한 줄", folded))
+    if SECTION_UNITS not in folded:
+        unit_rows, hidden_units = _unit_rows(axis, dynamic)
+        rows += unit_rows
     rows.append(
-        _title_row(
-            "downtime",
-            "④ 호기별 비가동",
+        _section_title_row(
+            SECTION_DOWNTIME,
             "진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다",
+            folded,
         )
     )
-    rows += arrow_rows
+    if SECTION_DOWNTIME not in folded:
+        arrow_rows, hidden_arrow_units = _arrow_rows(axis, dynamic)
+        rows += arrow_rows
     return rows, hidden_units, hidden_arrow_units
 
 
@@ -857,8 +908,6 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
     today = dynamic.today
     kind = str(event.get("줄"))
     unit = str(event.get("호기"))
-    modules = _whole(event.get("모듈 수")) or 1
-    name = f"{unit} · {modules}모듈" if modules > 1 else unit
     arrival = _as_date(event.get("반입일정"))
     qual = _as_date(event.get("Qual일정"))
     target = _as_date(event.get("목표 Qual"))
@@ -875,7 +924,7 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
         f"{ROW_UNIT_PREFIX}{unit}",
         _UNIT,
         UNIT_ROW_HEIGHT_PX,
-        label=name,
+        label=unit,
         detail=detail,
         label_bold=True,
         label_fill=tokens.SURFACE_CLASSIFICATION,
@@ -886,7 +935,6 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
 
 def _exit_row(record: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
     unit = str(record.get("호기"))
-    modules = _whole(record.get("모듈 수")) or 1
     kind = "" if _blank(record.get("반출이설구분")) else str(record.get("반출이설구분"))
     day = _as_date(record.get("반출이설일"))
     model = "" if _blank(record.get("Model")) else str(record.get("Model"))
@@ -894,17 +942,24 @@ def _exit_row(record: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row
         f"{ROW_EXIT_PREFIX}{unit}",
         _UNIT,
         UNIT_ROW_HEIGHT_PX,
-        label=f"{unit} · {modules}모듈" if modules > 1 else unit,
+        label=unit,
         detail=f"{kind} {_day(day, dynamic.today)}" + (f" · {model}" if model else ""),
         label_bold=True,
         label_fill=tokens.SURFACE_CLASSIFICATION,
         payload=("exit", dict(record)),
         hover=(
-            f"{html.escape(unit)} · {html.escape(kind)} {_iso(day)}"
+            f"{html.escape(unit)}{_module_text(record)} · {html.escape(kind)} {_iso(day)}"
             + (f" · {html.escape(model)}" if model else "")
             + "<br>정지·반출/이설은 그날부터 가용에서 빠집니다"
         ),
     )
+
+
+def _module_text(record: Mapping[str, object]) -> str:
+    """모듈 묶음이면 「 · 모듈 N」, 단독 호기면 빈 글자 — 라벨에서 걷은 모듈 수를 풍선 첫 줄에
+    둔다."""
+    modules = _whole(record.get("모듈 수")) or 1
+    return f" · 모듈 {modules}" if modules > 1 else ""
 
 
 def _unit_hover(event: Mapping[str, object]) -> str:
@@ -914,6 +969,7 @@ def _unit_hover(event: Mapping[str, object]) -> str:
     model = "" if _blank(event.get("Model")) else str(event.get("Model"))
     if model:
         lines[0] += f" · {html.escape(model)}"
+    lines[0] += _module_text(event)
     if kind == ROW_VIRTUAL:
         lines.append(f"신규 필요 Qual {_iso(_as_date(event.get('목표 Qual')))}")
     else:
@@ -970,11 +1026,8 @@ def _arrow_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[
     for unit in units:
         arrows = groups[unit]
         first = arrows[0]
-        modules = _whole(first.get("모듈 수")) or 1
         model = "" if _blank(first.get("Model")) else str(first.get("Model"))
-        name = (
-            unit + (f" · {model}" if model else "") + (f" ({modules}모듈)" if modules > 1 else "")
-        )
+        name = unit + (f" · {model}" if model else "")
         for lane, members in enumerate(_lanes(arrows)):
             rows.append(
                 _Row(
@@ -1018,7 +1071,14 @@ def _lanes(arrows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]
 
 
 def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
-    lines = [f"<b>{month_label(month)}</b> · {html.escape(str(arrows[0].get('설비키') or ''))}"]
+    """④ 줄 풍선 — 첫 줄은 달·호기(모듈 묶음이면 「· 모듈 N」), 화살표마다 한 줄. 모듈 묶음은 줄마다
+    그 화살표의 모듈 설비명을 앞에 적는다 — 어느 모듈이 멈췄는지(같은 호기 둘째 줄의 까닭)."""
+    first = arrows[0]
+    grouped = bool(_module_text(first))
+    lines = [
+        f"<b>{month_label(month)}</b> · {html.escape(str(first.get('설비키') or ''))}"
+        + _module_text(first)
+    ]
     for arrow in arrows:
         kind = html.escape(str(arrow.get("비가동유형") or "비가동"))
         start = _iso(_as_date(arrow.get("시작일")))
@@ -1030,7 +1090,9 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
             effect = f"이 달 {_signed_one(-loss) if loss else '0.0'} (환산대수)"
         else:
             effect = "가용 영향 없음(셋업·보관·사용기준 제외 등)"
-        lines.append(f"{kind} · {start}~{end} · {effect}")
+        module = str(arrow.get(EQUIPMENT_ID_COLUMN) or "").strip() if grouped else ""
+        head = f"{html.escape(module)} · " if module else ""
+        lines.append(f"{head}{kind} · {start}~{end} · {effect}")
     return "<br>".join(lines)
 
 

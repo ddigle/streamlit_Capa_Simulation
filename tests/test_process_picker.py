@@ -5,7 +5,11 @@ from dataclasses import FrozenInstanceError
 import pandas as pd
 import pytest
 
-from capa_simulation.services.process_picker import ProcessPickerItem, build_process_picker_summary
+from capa_simulation.services.process_picker import (
+    ProcessPickerItem,
+    build_process_picker_summary,
+    shortfall_order,
+)
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 
@@ -181,3 +185,17 @@ def test_a_month_with_a_higher_threshold_can_make_a_process_fall_short() -> None
         thresholds=SecurementThresholds(1.095, 0.995),
     )
     assert plain.group == "sufficient"
+
+
+def test_the_shortfall_order_keeps_only_shortfall_processes_lowest_rate_first() -> None:
+    """공정 Capa 상세 ◀▶ 차례 — 미달 공정만, 최저 확보율이 낮은 차례, 같으면 입력(표시순서) 차례."""
+    items = (
+        ProcessPickerItem("DEMO-A", 0.95, 202602, 3, "shortfall"),
+        ProcessPickerItem("DEMO-B", None, None, 0, "unavailable"),
+        ProcessPickerItem("DEMO-C", 0.90, 202601, 3, "shortfall"),
+        ProcessPickerItem("DEMO-D", 0.80, 202603, 3, "sufficient"),
+        ProcessPickerItem("DEMO-E", 0.90, 202603, 3, "shortfall"),
+    )
+
+    assert [item.process for item in shortfall_order(items)] == ["DEMO-C", "DEMO-E", "DEMO-A"]
+    assert shortfall_order(()) == ()

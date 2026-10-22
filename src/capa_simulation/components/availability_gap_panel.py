@@ -90,7 +90,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     prune_choice,
 )
-from capa_simulation.process_detail_state import MONTH_PARAM, PROCESS_PARAM
+from capa_simulation.process_detail_state import FROM_GAP, FROM_PARAM, MONTH_PARAM, PROCESS_PARAM
 from capa_simulation.services.availability_gap import GapComparison
 from capa_simulation.services.availability_sheet import (
     BREAKDOWN_LENT_COLUMN,
@@ -1047,8 +1047,9 @@ def _schedule_lines(lines: pd.DataFrame, row: str, *, with_process: bool = True)
 
 
 def _render_detail_link(process: str, month: int) -> None:
-    """공정 Capa 상세 ④(비가동 화살표)로 — 그 공정·그 달로 연다(주소 인자)."""
-    params = {PROCESS_PARAM: process, MONTH_PARAM: str(month)}
+    """공정 Capa 상세 ④(비가동 화살표)로 — 그 공정·그 달로 연다(주소 인자). `from=gap` 이라 상세
+    화면이 ④ 를 접어 두었어도 다시 편다."""
+    params = {PROCESS_PARAM: process, MONTH_PARAM: str(month), FROM_PARAM: FROM_GAP}
     current_theme = st.query_params.get(THEME_QUERY_PARAM)
     if current_theme:
         params[THEME_QUERY_PARAM] = current_theme

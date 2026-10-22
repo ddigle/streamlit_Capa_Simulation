@@ -221,7 +221,8 @@ PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
     "absent": "process_detail_dynamic_absent",
 }
 # 월 그림에서 누를 칸의 세로 자리(px, 그림 위 끝부터) — 머리 36 + ① 제목 44(제목 칸 26 + 세부 글
-# 한 줄 14 + 여백 4) + 값 27 × 3 + 반 줄. 확보율 줄의 가운데다(제품 행을 펼치지 않은 그림).
+# 한 줄 14 + 여백 4) + 값 27 × 3 + 반 줄. 확보율 줄의 가운데다(새 세션의 기본 — ① 은 펼치고 제품
+# 행은 펼치지 않은 그림. 제목 끝 ▾/▸ 는 제목 줄 높이를 바꾸지 않는다).
 PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 44 + 27 * 3 + 13
 # HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
 # 못 고른다.

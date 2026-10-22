@@ -18,10 +18,18 @@ from streamlit.testing.v1 import AppTest
 from test_process_capa_canvas import MONTHS, THRESHOLDS, TODAY, _dynamic, _summary
 from test_required_shortening import PROCESS
 
-from capa_simulation.components.process_capa_canvas import DynamicCanvasInput
+from capa_simulation.components.process_capa_canvas import (
+    SECTION_DOWNTIME,
+    SECTION_IDS,
+    SECTION_SUMMARY,
+    SECTION_UNITS,
+    DynamicCanvasInput,
+)
 from capa_simulation.components.process_capa_view import (
     CANVAS_MEMO_LIMIT,
+    ENTRY_SECTIONS,
     DynamicView,
+    NextScreens,
     Prescription,
     ProcessDetailView,
     availability_card,
@@ -33,15 +41,20 @@ from capa_simulation.components.process_capa_view import (
     evidence_cards_html,
     initial_scroll_px,
     judgement_card,
+    kpi_next_screens,
+    month_next_screens,
     prescription,
     prescription_text,
     production_month_example,
+    schedule_short_month,
     short_target_text,
     shortening_card,
     target_text,
 )
 from capa_simulation.design import theme
+from capa_simulation.process_detail_state import FROM_GAP, FROM_HOME, FROM_SHORTENING
 from capa_simulation.services.process_capa_detail import (
+    CAUSE_AVAILABILITY_MISMATCH,
     MISMATCH_COLUMN,
     ProcessCapaKpis,
     build_process_capa_summary,
@@ -51,6 +64,7 @@ from capa_simulation.services.required_shortening import (
     STATUS_MET,
     MonthlyTarget,
 )
+from capa_simulation.services.securement_rate import CAUSE_COLUMN, CAUSE_OWNED_SHORT
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 MINUS = "−"
@@ -422,6 +436,7 @@ def _key(
     split: str = "제품정보",
     units: bool = False,
     arrows: bool = False,
+    collapsed: frozenset[str] = frozenset(),
 ) -> tuple[object, ...]:
     return canvas_memo_key(
         view,
@@ -430,6 +445,7 @@ def _key(
         split=split,
         show_all_units=units,
         show_all_arrows=arrows,
+        collapsed=collapsed,
     )
 
 
@@ -449,6 +465,20 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
     theme._LOCAL.mode = "light"
     assert _key(_view(dynamic=None)) != key
     assert _key(_view(home_rates={202702: 1.0})) != _key(_view())
+    # 접힌 구획은 그림에 구워진다 — 차례와 상관없이 같은 집합이면 같은 키다.
+    assert _key(view, collapsed=frozenset({SECTION_UNITS})) != key
+    assert _key(view, collapsed=frozenset({SECTION_UNITS, SECTION_DOWNTIME})) == _key(
+        view, collapsed=frozenset({SECTION_DOWNTIME, SECTION_UNITS})
+    )
+
+
+def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() -> None:
+    """구획 접기·모듈 라벨 제거로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양
+    버전이 4 다(AGENTS 5장 16)."""
+    from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
+
+    assert CANVAS_SCHEMA_VERSION == 4
+    assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
 def _memo_script() -> None:
@@ -546,3 +576,117 @@ def test_the_month_steps_stop_at_the_axis_ends() -> None:
         app.session_state["step"] = step
         app.run()
         assert app.session_state["process_detail_month"] == expected
+
+
+# ------------------------------------------------------------------ 구획 접기
+
+
+def _sections_script() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.process_capa_view import reopen_entry_section, seed_sections
+    from capa_simulation.process_detail_state import PROCESS_DETAIL_SECTIONS_KEY
+
+    action = st.session_state.pop("action", None)
+    if action == "seed":
+        seed_sections()
+    elif action == "reopen":
+        reopen_entry_section(st.session_state.pop("source"))
+    st.session_state["seen"] = st.session_state.get(PROCESS_DETAIL_SECTIONS_KEY)
+
+
+def _sections(app: AppTest, action: str, **values: object) -> object:
+    app.session_state["action"] = action
+    for name, value in values.items():
+        app.session_state[name] = value
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    return app.session_state["seen"]
+
+
+def test_the_sections_seed_all_open_and_keep_only_known_ids() -> None:
+    app = AppTest.from_function(_sections_script, default_timeout=60).run()
+    assert _sections(app, "seed") == list(SECTION_IDS)
+    app.session_state["process_detail_sections"] = [SECTION_UNITS, "그 밖", SECTION_SUMMARY]
+    # 모르는 값은 지우지 않고 아는 값만 남긴 새 목록을 적는다(차례는 구획 차례).
+    assert _sections(app, "seed") == [SECTION_SUMMARY, SECTION_UNITS]
+    app.session_state["process_detail_sections"] = []
+    assert _sections(app, "seed") == []
+
+
+@pytest.mark.parametrize(
+    ("source", "section"),
+    [(FROM_HOME, SECTION_SUMMARY), (FROM_GAP, SECTION_DOWNTIME), (FROM_SHORTENING, SECTION_UNITS)],
+)
+def test_an_entry_reopens_only_the_section_its_path_points_at(source: str, section: str) -> None:
+    assert ENTRY_SECTIONS[source] == section
+    app = AppTest.from_function(_sections_script, default_timeout=60).run()
+    app.session_state["process_detail_sections"] = []
+    assert _sections(app, "reopen", source=source) == [section]
+    # 다른 구획의 접힘은 둔다. 이미 펼쳐 있으면 그대로다.
+    assert _sections(app, "reopen", source=source) == [section]
+
+
+def test_an_entry_without_a_known_path_leaves_the_sections() -> None:
+    app = AppTest.from_function(_sections_script, default_timeout=60).run()
+    app.session_state["process_detail_sections"] = [SECTION_SUMMARY]
+    assert _sections(app, "reopen", source="") == [SECTION_SUMMARY]
+    assert _sections(app, "reopen", source=None) == [SECTION_SUMMARY]
+
+
+# ------------------------------------------------------------------ 부족 원인의 다음 화면
+
+
+def test_the_kpi_next_screens_follow_the_cause_counts() -> None:
+    plan = Prescription(shortened=1, new=0, unresolved_months=0, dynamic_short_months=2)
+    screens = kpi_next_screens(_kpis(owned_short_months=1, mismatch_months=3), plan)
+    assert screens == NextScreens(
+        owned="보유로도 부족 1개월 — 산출 결과",
+        mismatch="가용 불일치 3개월 — 가용설비 현황",
+        schedule="일정 2개월 — 필요 단축 일정",
+    )
+    # 대여 영향만 있으면(공식 기준 안의 차이) 옮겨 갈 화면이 없다.
+    none = kpi_next_screens(_kpis(owned_short_months=0, rental_months=4), None)
+    assert none == NextScreens() and not none.present()
+
+
+def test_the_month_next_screens_read_that_month_cause_and_schedule() -> None:
+    summary = _summary()
+    month = 202703
+    summary.loc[summary["생산계획년월"].eq(month), CAUSE_COLUMN] = CAUSE_OWNED_SHORT
+    other = 202611
+    summary.loc[summary["생산계획년월"].eq(other), CAUSE_COLUMN] = CAUSE_AVAILABILITY_MISMATCH
+    dynamic = _dynamic_view()
+    view = _view(dynamic=dynamic, summary=summary)
+
+    owned = month_next_screens(view, month)
+    assert owned.owned == "이 달 보유로도 부족 — 산출 결과" and owned.mismatch is None
+    assert month_next_screens(view, other).mismatch == "이 달 가용 불일치 — 가용설비 현황"
+    gaps = pd.to_numeric(dynamic.canvas.process_months["과부족"]).round(9)
+    short = [
+        int(m)
+        for m, gap in zip(dynamic.canvas.process_months["생산계획년월"], gaps, strict=True)
+        if gap < 0
+    ]
+    assert short, "합성 계획에 일정 미달 달이 있어야 시험이 뜻이 있다"
+    assert all(schedule_short_month(dynamic, m) for m in short)
+    assert month_next_screens(view, short[0]).schedule == "이 달 일정 부족 — 필요 단축 일정"
+    # 설비 일정이 없으면 일정 단추가 없다.
+    assert month_next_screens(_view(summary=summary), short[0]).schedule is None
+
+
+def _gap_script() -> None:
+    from capa_simulation.components.process_capa_view import open_availability_gap
+
+    open_availability_gap()
+
+
+def test_the_gap_link_remembers_the_static_tab_without_touching_its_widget_or_filters() -> None:
+    from capa_simulation.components.tab_state import remembered_tab_key
+    from capa_simulation.navigation import EQUIPMENT_GAP_TAB, EQUIPMENT_TAB_KEY
+
+    app = AppTest.from_function(_gap_script, default_timeout=60).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] == EQUIPMENT_GAP_TAB
+    assert EQUIPMENT_TAB_KEY not in app.session_state

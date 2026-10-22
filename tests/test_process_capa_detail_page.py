@@ -31,15 +31,27 @@ from test_required_shortening import _cutoff, _downtime, _master, _unit
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.process_capa_canvas import (
+    SECTION_DOWNTIME,
+    SECTION_DYNAMIC,
+    SECTION_IDS,
+    SECTION_SUMMARY,
+    SECTION_UNITS,
+)
 from capa_simulation.components.process_capa_view import (
     DYNAMIC_ERROR_TITLE,
+    INVESTMENT_BADGE,
     NEXT_MONTH_KEY,
+    SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
-from capa_simulation.persistence.cache import clear_global_execution_capacity_cache
+from capa_simulation.persistence.cache import (
+    clear_global_execution_capacity_cache,
+    clear_global_securement_threshold_cache,
+)
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.process_detail_state import (
@@ -48,9 +60,12 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_CANVAS_CHART_KEY,
     PROCESS_DETAIL_EXPAND_KEY,
     PROCESS_DETAIL_MONTH_KEY,
+    PROCESS_DETAIL_NEXT_PROCESS_KEY,
+    PROCESS_DETAIL_PREVIOUS_PROCESS_KEY,
     PROCESS_DETAIL_PROCESS_KEY,
     PROCESS_DETAIL_PRODUCT_FILTER_KEY,
     PROCESS_DETAIL_REQUEST_KEY,
+    PROCESS_DETAIL_SECTIONS_KEY,
     PROCESS_DETAIL_SPLIT_KEY,
     PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
     ProcessDetailRequest,
@@ -314,17 +329,16 @@ def test_expanding_products_adds_rows_and_the_split_drops_a_single_basis(
 ) -> None:
     app = _ok(_app(databases).run())
     assert "소요대수 ▸" in _label_texts(app)
-    assert not app.get("button_group")
+    assert not app.segmented_control
 
     app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
     _ok(app.run())
     first_product = app.multiselect(key=PROCESS_DETAIL_PRODUCT_FILTER_KEY).options[0]
     assert "소요대수 ▾" in _label_texts(app)
     assert first_product in _label_texts(app)
-    split = app.get("button_group")
-    assert len(split) == 1
+    split = app.segmented_control(key=PROCESS_DETAIL_SPLIT_KEY)
     # 공정 안에서 늘 한 값인 소요기준은 「분류」에 두지 않는다.
-    options = [str(option) for option in split[0].proto.options]
+    options = [str(option) for option in split.proto.options]
     assert "소요기준" not in json.dumps(options, ensure_ascii=False)
     assert "Stack" in json.dumps(options, ensure_ascii=False)
 
@@ -485,6 +499,175 @@ def test_the_home_display_row_appears_only_when_home_adds_an_execution_delta(
     app.session_state[EXECUTION_TOGGLE_KEY] = True
     _ok(app.run())
     assert "확보율 (HOME 표시)" in _label_texts(app)
+
+
+# ------------------------------------------------------------------ 구획 접기
+
+
+def _sections(app: AppTest) -> list[str]:
+    return [str(value) for value in app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).value or []]
+
+
+def test_the_section_chips_start_all_open_with_four_fixed_options(
+    databases: tuple[Path, Path],
+) -> None:
+    """선택지는 설비 일정이 없는 공정에서도 넷 그대로다 — 빼면 세션 값이 선택지 밖으로 나가
+    지워진다."""
+    app = _ok(_app(databases).run())
+    chips = app.pills(key=PROCESS_DETAIL_SECTIONS_KEY)
+
+    assert list(chips.options) == ["① 공식", "② 일정 가용", "③ 단축", "④ 비가동"]
+    assert _sections(app) == list(SECTION_IDS)
+    assert "① 공식 기준 ▾" in _label_texts(app)
+
+
+def test_folding_the_summary_leaves_its_title_and_disables_the_product_toggle(
+    databases: tuple[Path, Path],
+) -> None:
+    app = _ok(_app(databases).run())
+    app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
+    _ok(app.run())
+    first_product = app.multiselect(key=PROCESS_DETAIL_PRODUCT_FILTER_KEY).options[0]
+    assert first_product in _label_texts(app)
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [SECTION_DYNAMIC, SECTION_UNITS, SECTION_DOWNTIME]
+    )
+    _ok(app.run())
+    labels = _label_texts(app)
+    assert "① 공식 기준 ▸" in labels
+    assert "총보유대수" not in labels and first_product not in labels
+    # 펼침 값은 남고(다시 펴면 그대로) 접힌 동안 토글은 쓸 수 없다. 분류도 서지 않는다.
+    assert app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).value is True
+    assert app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).proto.disabled
+    assert not app.segmented_control
+    # 근거 패널은 접힘과 상관없이 선다.
+    assert _panel_head(app).startswith("**산출 근거 ·")
+
+    # 세션 값이라 다시 돌아도 그대로다.
+    _ok(app.run())
+    assert _sections(app) == [SECTION_DYNAMIC, SECTION_UNITS, SECTION_DOWNTIME]
+
+
+def test_folding_units_hides_its_more_toggle_even_when_it_was_on(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    app = _dynamic_app(dynamic_databases)
+    app.session_state[SHOW_ALL_UNITS_KEY] = True
+    _ok(app.run())
+    assert any(toggle.label == "더 보기 — 신규 설비 모두" for toggle in app.toggle)
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_DOWNTIME]
+    )
+    _ok(app.run())
+    assert "③ 신규 설비 일정과 단축 ▸" in _label_texts(app)
+    assert not any(toggle.label == "더 보기 — 신규 설비 모두" for toggle in app.toggle)
+    assert app.session_state[SHOW_ALL_UNITS_KEY] is True
+
+
+def test_the_gap_link_reopens_the_downtime_section(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """가용설비 현황 「④ 에서 비가동 화살표로 보기」(`from=gap`)로 들어오면 접어 둔 ④ 를 다시 편다 —
+    링크 글이 거짓이 되지 않게. 다른 구획의 접힘은 둔다."""
+    app = _dynamic_app(dynamic_databases)
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([SECTION_SUMMARY])
+    _ok(app.run())
+    assert "④ 호기별 비가동 ▸" in _label_texts(app)
+    month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
+
+    app.query_params.update({"process": DYNAMIC_PROCESS, "month": str(month), "from": "gap"})
+    _ok(app.run())
+    assert _sections(app) == [SECTION_SUMMARY, SECTION_DOWNTIME]
+    assert "④ 호기별 비가동 ▾" in _label_texts(app)
+    assert "③ 신규 설비 일정과 단축 ▸" in _label_texts(app)
+
+
+def test_a_home_cell_reopens_the_summary_section(databases: tuple[Path, Path]) -> None:
+    app = _ok(_app(databases).run())
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([])
+    _ok(app.run())
+    assert "① 공식 기준 ▸" in _label_texts(app)
+    target = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process=target, month=app.session_state[PROCESS_DETAIL_MONTH_KEY]
+    )
+    _ok(app.run())
+    assert _sections(app) == [SECTION_SUMMARY]
+    assert "① 공식 기준 ▾" in _label_texts(app)
+
+
+# ------------------------------------------------------------------ ◀▶ 공정 넘기기·다음 화면
+
+
+@pytest.fixture(scope="module")
+def strict_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """판정 기준을 아주 높여 시드의 모든 공정이 확보기준 미달인 하네스 — ◀▶ 와 부족 원인 줄이 선다.
+    합성 시드의 확보율은 수천 % 대라 기준을 그만큼 올린다(표본 관측)."""
+    root = tmp_path_factory.mktemp("process_capa_detail_strict")
+    databases = (root / "scenario.duckdb", root / "equipment.duckdb")
+    _ok(_app(databases).run())
+    repository = DuckDBScenarioRepository(databases[0])
+    threshold = repository.load_global_securement_threshold()
+    repository.replace_global_securement_threshold(
+        100_000.0,
+        90_000.0,
+        pd.DataFrame(columns=["생산계획년월", "확보 기준", "경고 기준"]),
+        source="시험",
+        expected_version=threshold.version,
+    )
+    clear_global_securement_threshold_cache()
+    return databases
+
+
+def _step_caption(app: AppTest) -> str:
+    captions = [str(item.value) for item in app.caption if str(item.value).startswith("미달 ")]
+    assert len(captions) == 1, captions
+    return captions[0]
+
+
+def test_the_header_steps_through_shortfall_processes(
+    strict_databases: tuple[Path, Path],
+) -> None:
+    """머리 ◀▶ 는 확보기준 미달 공정을 최저 확보율이 낮은 차례로 넘기고, 옮긴 공정의 첫 미달 달을
+    연다. 기본 공정(최저 확보율)이 첫째라 ◀ 는 쓸 수 없다."""
+    app = _ok(_app(strict_databases).run())
+    first = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    caption = _step_caption(app)
+    assert caption.startswith("미달 1/")
+    assert app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).proto.disabled
+    months = _months(app)
+
+    app.button(key=PROCESS_DETAIL_NEXT_PROCESS_KEY).click()
+    _ok(app.run())
+    second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    assert second != first
+    assert _step_caption(app).startswith("미달 2/")
+    assert _header(app).startswith(f"**{second}**")
+    # 모든 달이 미달인 하네스 — 첫 미달 달은 축 첫 달이다.
+    assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[0]
+
+    app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).click()
+    _ok(app.run())
+    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == first
+
+
+def test_the_cause_row_marks_owned_shortfalls_for_investment(
+    strict_databases: tuple[Path, Path],
+) -> None:
+    """KPI 「부족 원인」 에 보유가 있으면 그 아래 줄에 「투자 검토 대상」 표지와 산출 결과 링크가
+    선다(단독 실행은 갈 페이지가 없어 글자로 물러선다). 대여만이면 줄이 없다."""
+    app = _ok(_app(strict_databases).run())
+    cause = next(metric for metric in app.metric if metric.label == "부족 원인")
+    badges = [item for item in app.markdown if str(item.value) == INVESTMENT_BADGE]
+    links = [str(item.value) for item in app.caption if "— 산출 결과" in str(item.value)]
+    if "보유" in str(cause.value):
+        assert badges and links
+        assert any(text.startswith("사이드바에서 보유로도 부족 ") for text in links)
+    else:
+        assert not links
 
 
 # ------------------------------------------------------------------ 설비 일정(참고)

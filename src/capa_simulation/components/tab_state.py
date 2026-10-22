@@ -50,6 +50,15 @@ def remembered_tab_key(key: str) -> str:
     return f"{key}__remembered"
 
 
+def remember_open_tab(key: str, label: str) -> None:
+    """다른 화면에서 그 화면의 탭 하나로 보낼 때 — 기억 칸만 적는다(위젯 키는 쓰지 않는다).
+
+    그 화면의 탭 위젯은 이 회차에 그려지지 않아 값이 이미 걷혔다. 그 화면에 들어간 첫 회차의
+    `stateful_tabs` 가 위젯 값이 없으면 기억 칸으로 되돌리므로 그 탭이 열린다.
+    """
+    st.session_state[remembered_tab_key(key)] = label
+
+
 def stateful_tabs(labels: Sequence[str], *, key: str) -> Sequence[OpenTab]:
     """열린 탭을 서버가 알 수 있는 `st.tabs` 를 만들고, 그 선택을 기억한다.
 

@@ -1060,3 +1060,38 @@ def test_downtime_is_lent_only_where_it_cut_availability() -> None:
     assert units["손실 기여일수"].tolist() == [5]
     captions = " ".join(item.value for item in app.caption)
     assert "가용을 깎지 않은 비가동 1호기(EQ-S" in captions
+
+
+def _detail_link_app() -> None:
+    import streamlit as st
+
+    import capa_simulation.components.availability_gap_panel as panel
+
+    original = st.page_link
+
+    def record(page: str, **kwargs: object) -> None:
+        st.session_state["test_link"] = {"page": page, **kwargs}
+
+    st.page_link = record  # type: ignore[assignment]
+    try:
+        panel._render_detail_link("DEMO_Die_Attach", 202611)
+    finally:
+        st.page_link = original
+
+
+def test_the_detail_link_opens_that_month_with_the_downtime_section() -> None:
+    """「④ 에서 비가동 화살표로 보기」 는 `from=gap` 을 싣는다 — 공정 Capa 상세가 ④ 를 접어 두었어도
+    다시 펴 링크 글이 거짓이 되지 않게. 테마 인자는 지금 값을 함께 싣는다."""
+    app = AppTest.from_function(_detail_link_app)
+    app.query_params["theme"] = "dark"
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    link = app.session_state["test_link"]
+    assert link["page"] == "app_pages/process_capa_detail.py"
+    assert link["query_params"] == {
+        "process": "DEMO_Die_Attach",
+        "month": "202611",
+        "from": "gap",
+        "theme": "dark",
+    }

@@ -14,8 +14,11 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
   **맨 앞에서**(부트스트랩보다 먼저) 꺼낸다(`take_process_detail_request`) — 그 회차가 오류로 멈춰도
   칸이 남아 나중에 사이드바로 들어온 방문을 「HOME 에서 온 것」으로 읽지 않는다. 옮기지 못한
   클릭(`StreamlitPageNotFoundError`)도 칸을 남기지 않는다.
-- **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `st.switch_page` 는 주소를
-  **통째로** 바꾸므로 테마 인자(`theme`)는 지금 값을 함께 싣는다. 받는 쪽은 읽은 키만 지운다 —
+- **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `from` 은 들어온
+  길이다 — `home`·`gap`(가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로
+  보기」)·`shortening`(필요 단축 일정 공정 카드). 들어온 회차에는 그 길이 가리키는 구획을 다시
+  편다(`ProcessDetailEntry.source`). `st.switch_page` 는 주소를 **통째로** 바꾸므로 테마
+  인자(`theme`)는 지금 값을 함께 싣는다. 받는 쪽은 읽은 키만 지운다 —
   `st.query_params.clear()` 는 테마 인자까지 지워 테마 스크립트가 첫 방문으로 보고 다시 새로고침한다
   (Space `?floor=` 와 같은 규칙). 지우는 것은 한 번의 갱신이다(`from_dict` 에 남길 인자를 다시
   싣는다) — 키마다 지우면 브라우저 기록이 키마다 쌓여 뒤로가 헛돈다. 한 번 적용한 인자 묶음은
@@ -63,6 +66,13 @@ PROCESS_DETAIL_MONTH_KEY = "process_detail_month"
 PROCESS_DETAIL_EXPAND_KEY = "process_detail_expand_products"
 PROCESS_DETAIL_SPLIT_KEY = "process_detail_product_split"
 PROCESS_DETAIL_PRODUCT_FILTER_KEY = "process_detail_product_filter"
+# 표 도구 줄의 「구획」 칩(고른 것 = 펼친 구획 id, 세션 값). 칸이 없으면 넷 모두 펼침으로 심는다.
+PROCESS_DETAIL_SECTIONS_KEY = "process_detail_sections"
+# 머리 공정명 옆 ◀▶(확보기준 미달 공정을 최저 확보율이 낮은 차례로 넘긴다) 단추와, 그 차례를 낼
+# 공정별 요약을 세션에 한 벌 기억하는 칸 — 키는 시나리오 키·표시순서 지문·판정 기준 지문이다.
+PROCESS_DETAIL_PREVIOUS_PROCESS_KEY = "process_detail_previous_process"
+PROCESS_DETAIL_NEXT_PROCESS_KEY = "process_detail_next_process"
+PROCESS_DETAIL_PICKER_MEMO_KEY = "process_detail_picker_memo"
 # 본문 프래그먼트(표 도구 줄·결합 캔버스·근거 패널)의 key 와 칸 선택을 켠 월 그림의 key. 칸을 누르면
 # 콜백이 지금 보는 달을 적고 이 프래그먼트만 다시 돌린다(`rerun_fragment_if_alone`). 선택을 켠
 # 그림은 그 위 터치 스크롤이 막히므로 `app.py` 가 이 그림 key 를 터치 스크롤
@@ -89,6 +99,10 @@ MONTH_PARAM = "month"
 FROM_PARAM = "from"
 DETAIL_QUERY_PARAMS = (PROCESS_PARAM, MONTH_PARAM, FROM_PARAM)
 FROM_HOME = "home"
+# 가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로 보기」 링크와 필요 단축 일정 공정
+# 카드 링크가 싣는 `from` 값.
+FROM_GAP = "gap"
+FROM_SHORTENING = "shortening"
 
 # 출처 띠가 부르는 HOME 구획 이름. HOME 의 구획 제목과 같은 글자다.
 HOME_KEY_PROCESS_SECTION = "주요공정 확보율"
@@ -157,6 +171,9 @@ class ProcessDetailEntry:
     month_outside: int | None = None
     # 결합 캔버스의 스크롤 시작 달(`PROCESS_DETAIL_SCROLL_ANCHOR_KEY`). 회차마다 바뀌지 않는다.
     scroll_month: int | None = None
+    # 밖에서 들어온 회차(전달 칸·주소)의 길 — HOME 전달 칸이면 `FROM_HOME`, 주소면 `from` 값(없으면
+    # 빈 글자). 들어온 회차가 아니면 None 이다. 페이지가 그 길이 가리키는 구획을 다시 편다.
+    source: str | None = None
 
 
 def _finite(value: object) -> float | None:
@@ -446,13 +463,17 @@ def resolve_process_and_month(
     wanted_process: str | None = None
     wanted_month: int | None = None
     entered = False
+    source: str | None = None
     if request is not None:
         wanted_process, wanted_month, entered = request.process, request.month, True
+        source = request.source
     elif query and query != st.session_state.get(PROCESS_DETAIL_QUERY_SEEN_KEY):
         values = dict(query)
         wanted_process = values.get(PROCESS_PARAM, "").strip() or None
         wanted_month = _month(values.get(MONTH_PARAM))
         entered = wanted_process is not None or wanted_month is not None
+        if entered:
+            source = values.get(FROM_PARAM, "").strip()
     if query:
         st.session_state[PROCESS_DETAIL_QUERY_SEEN_KEY] = query
         # 키마다 지우면 주소 메시지가 키 수만큼 가고, 브라우저가 메시지마다 기록을 하나씩 쌓아
@@ -537,7 +558,86 @@ def resolve_process_and_month(
         missing_process=missing_process,
         month_outside=month_outside,
         scroll_month=scroll_month,
+        source=source,
     )
+
+
+# ------------------------------------------------------------------ 공정 넘기기(◀▶)
+
+
+def remembered_picker_summary(
+    key: object, build: Callable[[], Sequence[ProcessPickerItem]]
+) -> tuple[ProcessPickerItem, ...]:
+    """공정별 요약(`build_process_picker_summary`)을 세션에 한 벌 기억한다.
+
+    기본 공정(최저 확보율 공정)과 ◀▶ 차례가 함께 읽는다. `key` 는 그 요약을 바꾸는 입력 전부
+    — 시나리오 키(내용 토큰·기간)·표시순서 지문·판정 기준 지문 — 다. 새 `st.cache_data` 를 두지
+    않는다.
+    """
+    memo = st.session_state.get(PROCESS_DETAIL_PICKER_MEMO_KEY)
+    if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == key:
+        return cast(tuple[ProcessPickerItem, ...], memo[1])
+    items = tuple(build())
+    st.session_state[PROCESS_DETAIL_PICKER_MEMO_KEY] = (key, items)
+    return items
+
+
+@dataclass(frozen=True)
+class ProcessStep:
+    """◀▶ 한 쪽이 옮겨 갈 공정. `month` 는 그 공정의 첫 확보기준 미달 달(없으면 None)."""
+
+    process: str
+    minimum_rate: float | None
+    month: int | None
+
+
+@dataclass(frozen=True)
+class ProcessSteps:
+    """지금 공정에서 본 ◀▶ — 확보기준 미달 공정 차례(최저 확보율이 낮은 차례)의 앞·뒤."""
+
+    previous: ProcessStep | None
+    following: ProcessStep | None
+    position: int | None
+    """지금 공정의 차례(1부터). 미달 공정이 아니면 None — ▶ 가 첫 미달 공정이다."""
+
+    total: int
+
+
+def process_steps(
+    order: Sequence[ProcessPickerItem],
+    current: str,
+    *,
+    month_of: Callable[[str], int | None],
+) -> ProcessSteps:
+    """미달 공정 차례(`process_picker.shortfall_order`)에서 지금 공정의 앞·뒤를 낸다.
+
+    지금 공정이 차례에 없으면(확보 공정) ◀ 는 없고 ▶ 는 가장 낮은 미달 공정이다. 달은 옮겨 갈 두
+    공정에만 묻는다(`month_of` — 그 공정의 첫 확보기준 미달 달).
+    """
+    processes = [item.process for item in order]
+
+    def step(index: int) -> ProcessStep | None:
+        if not 0 <= index < len(order):
+            return None
+        item = order[index]
+        return ProcessStep(item.process, item.minimum_rate, month_of(item.process))
+
+    if current in processes:
+        index = processes.index(current)
+        return ProcessSteps(step(index - 1), step(index + 1), index + 1, len(order))
+    return ProcessSteps(None, step(0), None, len(order))
+
+
+def step_to_process(process: str, month: int | None) -> None:
+    """◀▶ 콜백 — 공정 상자 값과 보는 달(그 공정의 첫 미달 달)을 적는다. 앱 전체 회차로 다시 돈다.
+
+    상자보다 먼저 공정·달을 정하는 `resolve_process_and_month` 가 다음 회차에 세션 값으로 읽는다 —
+    공정이 바뀌었으므로 스크롤 시작 달도 그 달로 다시 선다. 달이 없으면(미달 달을 못 낸 공정) 보던
+    달을 둔다.
+    """
+    st.session_state[PROCESS_DETAIL_PROCESS_KEY] = process
+    if month is not None:
+        st.session_state[PROCESS_DETAIL_MONTH_KEY] = int(month)
 
 
 # 출처 띠 앞 아이콘. 띠는 알림 상자가 아니라 캡션 한 줄이다 — 알림 상자 세 색은 뜻으로 가르고

@@ -4,10 +4,13 @@
 
 차례(2026-10-15 사용자 결정 4 — 목업 그대로):
 
-0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 오른쪽 끝 「← HOME」
-   링크, HOME 에서 왔으면 출처 띠. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품
-   거르기(펼친 제품 행에만 걸린다).
-1. **KPI 넷** — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
+0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보기준
+   미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
+   왔으면 출처 띠. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품 거르기(펼친 제품 행에만
+   걸린다).
+1. **KPI 넷** — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준). 그
+   아래 부족 원인마다 다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 →
+   필요 단축 일정).
 2. ~ 7. **본문 프래그먼트**(`components/process_capa_view.render_process_detail_view`, key
    `process_detail_view`) — 표 도구 줄, 결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준
    가용 · ③ 신규 설비와 단축 · ④ 호기별 비가동), 범례, 산출 근거 패널. 칸을 누르면 그 구획만
@@ -34,7 +37,8 @@
 
 공정·달은 **공정 선택 상자보다 먼저** 정한다(`process_detail_state.resolve_process_and_month`)
 — HOME 전달 칸 → 주소 인자 → 세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보기준 미달
-달). 전달 칸은 그보다도 앞, 부트스트랩 전에 꺼낸다 — 오류로 멈춘 회차가 칸을 남기지 않게.
+달). 전달 칸은 그보다도 앞, 부트스트랩 전에 꺼낸다 — 오류로 멈춘 회차가 칸을 남기지 않게. 밖에서
+들어온 회차에는 그 길(`from`)이 가리키는 구획을 다시 편다(`reopen_entry_section`).
 """
 
 from datetime import date
@@ -51,9 +55,12 @@ from capa_simulation.components.process_capa_canvas import DynamicCanvasInput
 from capa_simulation.components.process_capa_view import (
     DynamicView,
     ProcessDetailView,
+    render_cause_links,
     render_closing_row,
     render_process_detail_view,
     render_process_kpis,
+    render_process_steps,
+    reopen_entry_section,
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.home_state import (
@@ -86,9 +93,12 @@ from capa_simulation.process_detail_state import (
     ORIGIN_BAND_ICON,
     PROCESS_DETAIL_PROCESS_KEY,
     PROCESS_DETAIL_PRODUCT_FILTER_KEY,
+    ProcessSteps,
     first_shortfall_month,
     lowest_rate_process,
     origin_band_text,
+    process_steps,
+    remembered_picker_summary,
     resolve_process_and_month,
     take_process_detail_request,
 )
@@ -121,7 +131,11 @@ from capa_simulation.services.process_equipment_timeline import (
     production_position,
     unit_events,
 )
-from capa_simulation.services.process_picker import build_process_picker_summary
+from capa_simulation.services.process_picker import (
+    ProcessPickerItem,
+    build_process_picker_summary,
+    shortfall_order,
+)
 from capa_simulation.services.required_shortening import (
     target_from_thresholds,
     unit_export_frame,
@@ -238,18 +252,25 @@ months = sorted(
 )
 
 
-def default_process_choice() -> str | None:
-    """기본 공정 — 조회기간 최저 확보율 공정. 세션·전달 칸·주소로 공정이 정해지지 않은 회차에만
-    불린다(공정별 요약과 달마다 판정을 매 회차 만들지 않는다)."""
-    return lowest_rate_process(
-        build_process_picker_summary(
+def picker_items() -> tuple[ProcessPickerItem, ...]:
+    """공정별 요약(조회기간 최저 확보율·미달 여부). 세션에 한 벌 기억한다 — 키는 시나리오 키(내용
+    토큰·기간)·표시순서 지문·판정 기준 지문이라 같은 조건의 회차는 다시 세지 않는다."""
+    return remembered_picker_summary(
+        (capacity_cache_key, order_key, thresholds.digest),
+        lambda: build_process_picker_summary(
             securement_rate,
             process_options,
             start_month=effective_start,
             end_month=effective_end,
             thresholds=thresholds,
-        )
+        ),
     )
+
+
+def default_process_choice() -> str | None:
+    """기본 공정 — 조회기간 최저 확보율 공정. 세션·전달 칸·주소로 공정이 정해지지 않은 회차에만
+    불린다."""
+    return lowest_rate_process(picker_items())
 
 
 def default_month_for(process: str | None) -> int | None:
@@ -304,6 +325,9 @@ entry = resolve_process_and_month(
     default_process=default_process_choice,
     default_month=default_month_for,
 )
+# HOME → ①, 가용설비 현황 「④ 에서 비가동 화살표로 보기」 → ④, 필요 단축 일정 카드 → ③. 본문
+# 프래그먼트의 「구획」 칩보다 앞이라 세션에 적어도 된다.
+reopen_entry_section(entry.source)
 
 product_options: list[str] = []
 demand_bases = 0
@@ -619,8 +643,14 @@ elif dynamic_error:
     dynamic_badge = ":blue-badge[설비 일정 없음: 계산 오류]"
 else:
     dynamic_badge = f":blue-badge[{readiness.badge}]"
+try:
+    steps = process_steps(shortfall_order(picker_items()), process, month_of=default_month_for)
+except BOOTSTRAP_ERRORS:
+    # ◀▶ 는 곁 기능이다 — 공정별 요약을 못 내면 단추만 두지 않는다.
+    steps = ProcessSteps(previous=None, following=None, position=None, total=0)
 with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
     st.markdown(f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}", width="content")
+    render_process_steps(steps, label_of=process_labels.label)
     st.space("stretch")
     render_page_link(HOME.path, label="HOME", icon=":material/arrow_back:")
 
@@ -634,6 +664,7 @@ render_process_kpis(
         else (readiness.reason if not readiness.ready else "설비 일정 계산 오류")
     ),
 )
+render_cause_links(kpis, dynamic=dynamic, process=process)
 
 render_process_detail_view(
     ProcessDetailView(

@@ -29,6 +29,7 @@ from streamlit.testing.v1 import AppTest
 from capa_simulation.home_state import ADVANCE_TOGGLE_KEY, EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.process_detail_state import (
+    FROM_GAP,
     FROM_HOME,
     HOME_CELL_LINK_FIELDS,
     HOME_KEY_PROCESS_SECTION,
@@ -47,6 +48,7 @@ from capa_simulation.process_detail_state import (
     lowest_rate_process,
     origin_band_text,
     parse_home_cell_link,
+    process_steps,
     request_query_params,
 )
 from capa_simulation.services.process_picker import ProcessPickerItem
@@ -682,3 +684,107 @@ def test_the_scroll_start_stays_while_the_viewed_month_moves() -> None:
     app.session_state[APP_RUN_STATE_KEY] = {"page": "다른 화면"}
     app.run()
     assert _entry(app).scroll_month == 202603
+
+
+# ------------------------------------------------------------------ 들어온 길·공정 넘기기
+
+
+def test_an_entry_names_the_path_it_came_by_only_on_the_entering_run() -> None:
+    """들어온 회차의 길 — 전달 칸이면 HOME, 주소면 `from` 값(없으면 빈 글자). 그 뒤 회차는 None —
+    페이지가 그 길이 가리키는 구획을 그 회차에만 다시 편다."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    assert _entry(app).source is None
+
+    app.query_params.update({"process": "DEMO-C", "month": "202602", "from": FROM_GAP})
+    app.run()
+    assert _entry(app).source == FROM_GAP
+    app.run()
+    assert _entry(app).source is None
+
+    app.query_params.update({"process": "DEMO-A"})
+    app.run()
+    assert _entry(app).source == ""
+
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-C", month=202603
+    )
+    app.run()
+    assert _entry(app).source == FROM_HOME
+
+
+def _items(*rates: tuple[str, float]) -> tuple[ProcessPickerItem, ...]:
+    return tuple(ProcessPickerItem(name, rate, 202601, 3, "shortfall") for name, rate in rates)
+
+
+def test_process_steps_walk_the_shortfall_order_and_ask_months_only_for_neighbours() -> None:
+    order = _items(("DEMO-C", 0.80), ("DEMO-A", 0.90), ("DEMO-E", 0.95))
+    asked: list[str] = []
+
+    def month_of(process: str) -> int:
+        asked.append(process)
+        return {"DEMO-C": 202601, "DEMO-A": 202602, "DEMO-E": 202603}[process]
+
+    middle = process_steps(order, "DEMO-A", month_of=month_of)
+    assert (middle.position, middle.total) == (2, 3)
+    assert middle.previous is not None and middle.following is not None
+    assert (middle.previous.process, middle.previous.month) == ("DEMO-C", 202601)
+    assert (middle.following.process, middle.following.minimum_rate) == ("DEMO-E", 0.95)
+    assert sorted(asked) == ["DEMO-C", "DEMO-E"]
+
+    first = process_steps(order, "DEMO-C", month_of=month_of)
+    assert first.previous is None and first.following is not None
+    last = process_steps(order, "DEMO-E", month_of=month_of)
+    assert last.following is None
+    # 미달 공정이 아니면 ◀ 는 없고 ▶ 는 가장 낮은 미달 공정이다.
+    outside = process_steps(order, "DEMO-OK", month_of=month_of)
+    assert outside.position is None and outside.previous is None
+    assert outside.following is not None and outside.following.process == "DEMO-C"
+    assert process_steps((), "DEMO-A", month_of=month_of).total == 0
+
+
+def _step_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.process_detail_state import remembered_picker_summary, step_to_process
+    from capa_simulation.services.process_picker import ProcessPickerItem
+
+    action = st.session_state.pop("action", None)
+    if action == "step":
+        step_to_process(*st.session_state.pop("target"))
+    calls = st.session_state.setdefault("test_builds", [])
+
+    def build() -> tuple[ProcessPickerItem, ...]:
+        calls.append(1)
+        return (ProcessPickerItem("DEMO-A", 0.9, 202601, 1, "shortfall"),)
+
+    st.session_state["test_items"] = remembered_picker_summary(
+        st.session_state.get("test_memo_key", "k1"), build
+    )
+
+
+def test_a_step_writes_the_process_and_its_first_shortfall_month() -> None:
+    app = AppTest.from_function(_step_app).run()
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202601
+    app.session_state["action"] = "step"
+    app.session_state["target"] = ("DEMO-C", 202603)
+    app.run()
+    assert not app.exception
+    assert app.session_state[PROCESS_DETAIL_PROCESS_KEY] == "DEMO-C"
+    assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == 202603
+
+    # 미달 달을 못 낸 공정이면 보던 달을 둔다.
+    app.session_state["action"] = "step"
+    app.session_state["target"] = ("DEMO-A", None)
+    app.run()
+    assert app.session_state[PROCESS_DETAIL_PROCESS_KEY] == "DEMO-A"
+    assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == 202603
+
+
+def test_the_picker_summary_is_built_once_per_key() -> None:
+    app = AppTest.from_function(_step_app).run()
+    app.run()
+    assert len(app.session_state["test_builds"]) == 1
+    app.session_state["test_memo_key"] = "k2"
+    app.run()
+    assert len(app.session_state["test_builds"]) == 2
+    assert [item.process for item in app.session_state["test_items"]] == ["DEMO-A"]

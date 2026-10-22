@@ -5,10 +5,13 @@
 페이지(`app_pages/process_capa_detail.py`)가 앱 전체 회차에서 공정·축·요약·설비 일정을 모두
 정해 `ProcessDetailView` 하나로 넘기면, 여기서는 **지금 보는 달**에 닿는 것만 그린다.
 
-- **표 도구 줄** — 「제품별 소요대수」 펼침(`st.toggle`)과 펼쳤을 때의 「분류」
-  (`st.segmented_control`), 그리고 단축 목표 표시(고르는 위젯 없음 — 2026-10-15 사용자 결정
-  2). 펼침·분류는 조건 카드가 아니라 본문이다 — 2026-09-29 「상세는 카드」 규칙의 예외다(같은
-  날 사용자 결정 4 — 목업 그대로).
+- **표 도구 줄** — 「구획」 칩(`st.pills`, ①~④ 가운데 고른 것 = 펼침), 「제품별 소요대수」
+  펼침(`st.toggle`)과 펼쳤을 때의 「분류」(`st.segmented_control`), 그리고 단축 목표 표시(고르는
+  위젯 없음 — 2026-10-15 사용자 결정 2). 셋 다 조건 카드가 아니라 본문이다 — 2026-09-29 「상세는
+  카드」 규칙의 예외다(펼침·분류는 2026-10-15 사용자 결정 4 — 목업 그대로, 구획은 2026-10-22 사용자
+  요청 「소요대수처럼 접기」). 구획 칩은 선택지 넷을 늘 고정한다 — 설비 일정이 없는 공정에서 ②~④
+  를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서 들어온 회차에는 그 길이 가리키는 구획을
+  다시 편다(`reopen_entry_section` — HOME → ①, 가용설비 현황 → ④, 필요 단축 일정 카드 → ③).
 - **결합 월 캔버스** — HOME 틀 그대로 라벨 Figure(260px, `staticPlot`) + 월 Figure(달마다
   100px, hover)를 스크롤 상자 하나에 둔다. 월 Figure 의 칸을 누르면 `on_select` 콜백이 세션
   달을 적고 이 프래그먼트만 다시 돈다 — 프래그먼트 안 위젯이라 기본이 이 프래그먼트 회차이고,
@@ -16,10 +19,11 @@
   돌면 안 될 때(끊긴 전체 실행·다른 위젯도 바뀜)만 앱 전체로 올린다. 빈 선택(같은 칸 다시
   누르기·더블클릭)은 보던 달을 둔다. 그림은 세션에 몇 벌 기억한다(`remembered_canvas`, 재공
   현황 꼴) — 새 `st.cache_data` 를 두지 않는다.
-- **범례**(HTML 한 줄)·**「더 보기」 토글 둘**(③·④ 30줄 상한)·**설비 일정 없음 카드**(까닭
-  + 가용설비 현황 링크).
+- **범례**(HTML 한 줄)·**「더 보기」 토글 둘**(③·④ 30줄 상한, 그 구획이 접히면 숨는다)·**설비
+  일정 없음 카드**(까닭 + 가용설비 현황 링크).
 - **산출 근거 패널** — ① 소요 ② 가용 ③ 판정·원인 ④ 단축 근거(설비 일정 공정·그 달이 충족이
-  아닐 때)와 ◀▶ 달 이동, 닫힌 「경로별 인자」(`st.dataframe` 만 — Plotly 를 넣지 않는다).
+  아닐 때)와 ◀▶ 달 이동, 그 달 부족 원인의 다음 화면 링크, 닫힌 「경로별 인자」(`st.dataframe` 만
+  — Plotly 를 넣지 않는다).
 
 **이벤트 칸 수는 갈래마다 같다**(AGENTS 「본문 프래그먼트」). 이 프래그먼트가 이벤트 칸에 쓰는
 것은 스타일만 든 `st.html` 셋 — 두 컬럼 폭(`split_scroll_columns_style`)·라벨 칸 위 여백·스크롤
@@ -30,15 +34,21 @@
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
-정리 줄(알림·「이 공정 단축 일정 CSV」·필요 단축 일정 화면 링크)과 KPI 넷은 달에 닿지 않아
-프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
+정리 줄(알림·「이 공정 단축 일정 CSV」·필요 단축 일정 화면 링크), KPI 넷과 그 아래 부족 원인별
+다음 화면 줄, 머리 공정명 옆 ◀▶(확보기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서
+페이지가 그린다 — 그 그리기 함수도 여기 있다.
+
+**부족 원인의 다음 화면** — 보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과, 가용 불일치 →
+가용설비 현황 `Static 대비 일정`, 일정 → 필요 단축 일정(`open_shortening_page`). 화면을 옮기는
+단추는 콜백이 아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의
+`st.switch_page` 가 서버 로그 경고를 남긴다(`process_detail_state.open_process_detail`).
 """
 
 from __future__ import annotations
 
 import html
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from functools import partial
@@ -55,6 +65,11 @@ from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WI
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
+    SECTION_DOWNTIME,
+    SECTION_DYNAMIC,
+    SECTION_IDS,
+    SECTION_SUMMARY,
+    SECTION_UNITS,
     DynamicCanvasInput,
     ProcessCapaCanvas,
     build_process_capa_canvas,
@@ -71,15 +86,30 @@ from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
 )
+from capa_simulation.components.tab_state import remember_open_tab
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import theme, tokens
-from capa_simulation.navigation import REQUIRED_SHORTENING
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    EQUIPMENT_GAP_TAB,
+    EQUIPMENT_TAB_KEY,
+    REQUIRED_SHORTENING,
+)
 from capa_simulation.process_detail_state import (
+    FROM_GAP,
+    FROM_HOME,
+    FROM_SHORTENING,
     PROCESS_DETAIL_CANVAS_CHART_KEY,
     PROCESS_DETAIL_EXPAND_KEY,
     PROCESS_DETAIL_MONTH_KEY,
+    PROCESS_DETAIL_NEXT_PROCESS_KEY,
+    PROCESS_DETAIL_PREVIOUS_PROCESS_KEY,
+    PROCESS_DETAIL_SECTIONS_KEY,
     PROCESS_DETAIL_SPLIT_KEY,
     PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
+    ProcessStep,
+    ProcessSteps,
+    step_to_process,
 )
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.month_columns import month_label
@@ -136,6 +166,12 @@ ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
 # 정리 줄의 CSV·탭 링크 단추.
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
+# 부족 원인별 다음 화면 단추 — KPI 아래 줄과 근거 패널(그 달)이 따로 그린다.
+CAUSE_LINKS_KEY: Final = "process_detail_cause_links"
+CAUSE_GAP_BUTTON_KEY: Final = "process_detail_cause_open_gap"
+CAUSE_SHORTENING_BUTTON_KEY: Final = "process_detail_cause_open_shortening"
+EVIDENCE_GAP_BUTTON_KEY: Final = "process_detail_evidence_open_gap"
+EVIDENCE_SHORTENING_BUTTON_KEY: Final = "process_detail_evidence_open_shortening"
 # 라벨 칸·월 칸·스크롤 상자 컨테이너 key — CSS 가 이 이름으로 폭과 여백을 못박는다.
 LABEL_CANVAS_KEY: Final = "process_detail_label_canvas"
 MONTH_REGION_KEY: Final = "process_detail_month_region"
@@ -166,10 +202,29 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 3
+CANVAS_SCHEMA_VERSION: Final = 4
 
-# 가용설비 현황(설비 일정 원천이 사는 화면).
-AVAILABLE_EQUIPMENT_PAGE: Final = "app_pages/available_equipment_status.py"
+# 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
+SECTION_LABELS: Final[Mapping[str, str]] = {
+    SECTION_SUMMARY: "① 공식",
+    SECTION_DYNAMIC: "② 일정 가용",
+    SECTION_UNITS: "③ 단축",
+    SECTION_DOWNTIME: "④ 비가동",
+}
+# 밖에서 들어온 길(`from`)이 가리키는 구획 — 그 회차에 다시 편다. HOME 출처 띠는 ① 의 원
+# 확보율을, 가용설비 현황 링크 글은 「④ 에서 비가동 화살표로 보기」를, 필요 단축 일정 카드는 ③ 의
+# 호기를 가리킨다.
+ENTRY_SECTIONS: Final[Mapping[str, str]] = {
+    FROM_HOME: SECTION_SUMMARY,
+    FROM_GAP: SECTION_DOWNTIME,
+    FROM_SHORTENING: SECTION_UNITS,
+}
+
+# 가용설비 현황(설비 일정 원천이 사는 화면)과 산출 결과.
+AVAILABLE_EQUIPMENT_PAGE: Final = AVAILABLE_EQUIPMENT_STATUS.path
+CALCULATION_RESULT_PAGE: Final = "app_pages/calculation_result.py"
+# 보유로도 부족 원인의 표지 — 단축으로 못 메우는 투자 검토 대상이다.
+INVESTMENT_BADGE: Final = ":red-badge[투자 검토 대상]"
 # 표 도구 줄에 적는 단축 목표의 출처.
 TARGET_SOURCE_TEXT: Final = "HOME Preference 확보기준(월별)"
 # 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 카드 제목(머리 배지와 같은 말).
@@ -239,7 +294,7 @@ class ProcessDetailView:
 def render_process_detail_view(view: ProcessDetailView) -> None:
     """표 도구 줄 → 결합 캔버스 → 범례·더 보기 → (설비 일정 없음 카드) → 산출 근거 패널."""
     month = viewed_month(view.months)
-    expanded, split = _render_tool_row(view)
+    expanded, split, collapsed = _render_tool_row(view)
     product_demand = (
         simulation_cache.get_process_product_demand(
             view.scenario_key,
@@ -265,9 +320,15 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
         product_demand=product_demand,
         show_all_units=show_all_units,
         show_all_arrows=show_all_arrows,
+        collapsed=collapsed,
     )
     _render_canvas(view, canvas)
-    _render_more_toggles(canvas, show_all_units=show_all_units, show_all_arrows=show_all_arrows)
+    _render_more_toggles(
+        canvas,
+        show_all_units=show_all_units,
+        show_all_arrows=show_all_arrows,
+        collapsed=collapsed,
+    )
     st.html(
         canvas_legend_html(view.dynamic.canvas if view.dynamic is not None else None, view.months)
     )
@@ -285,21 +346,42 @@ def viewed_month(months: Sequence[int]) -> int:
     return int(months[0])
 
 
-def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str]:
-    """「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시."""
+def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]]:
+    """「구획」 칩 · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시.
+
+    돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획) 이다. ① 이 접혔으면 제품 행을 그리지 않는다.
+    """
     options = list(view.splits) or [DEFAULT_PRODUCT_SPLIT]
+    seed_sections()
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+        st.caption("구획", width="content")
+        opened = st.pills(
+            "구획",
+            list(SECTION_IDS),
+            selection_mode="multi",
+            format_func=lambda section: SECTION_LABELS.get(str(section), str(section)),
+            key=PROCESS_DETAIL_SECTIONS_KEY,
+            persist_state="session",
+            label_visibility="collapsed",
+            help=(
+                "고른 구획만 펼칩니다 — 접힌 구획은 제목 줄(▸)만 남습니다. ②~④ 는 설비 일정이 "
+                "서는 공정에만 있습니다."
+            ),
+        )
+        collapsed = frozenset(SECTION_IDS) - {str(section) for section in opened or ()}
+        summary_open = SECTION_SUMMARY not in collapsed
         expanded = st.toggle(
             "제품별 소요대수",
             key=PROCESS_DETAIL_EXPAND_KEY,
             persist_state="session",
+            disabled=not summary_open,
             help=(
                 "켜면 소요대수 아래에 분류별 행이 펼쳐집니다. 사이드바 제품 거르기는 이 행에만 "
-                "걸립니다."
+                "걸립니다. ① 이 접혀 있으면 쓰지 않습니다."
             ),
         )
         split = DEFAULT_PRODUCT_SPLIT
-        if expanded:
+        if expanded and summary_open:
             # 선택지에 없는 값(공정이 바뀌어 빠진 「소요기준」 등)은 지우지 않고 기본값을 적는다.
             if st.session_state.get(PROCESS_DETAIL_SPLIT_KEY) not in options:
                 st.session_state[PROCESS_DETAIL_SPLIT_KEY] = (
@@ -319,7 +401,39 @@ def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str]:
                 f"단축 목표 = {target_text(view.dynamic.canvas.target, view.months)}",
                 width="content",
             )
-    return bool(expanded), split
+    return bool(expanded) and summary_open, split, collapsed
+
+
+def seed_sections() -> None:
+    """「구획」 칩 값을 위젯 앞에서 다진다 — 칸이 없으면 넷 모두(기본 모두 펼침), 모르는 값이
+    섞였으면 아는 값만 남긴 새 목록을 **적는다**(지우지 않는다 — AGENTS 9장)."""
+    saved = st.session_state.get(PROCESS_DETAIL_SECTIONS_KEY)
+    if not isinstance(saved, (list, tuple)):
+        st.session_state[PROCESS_DETAIL_SECTIONS_KEY] = list(SECTION_IDS)
+        return
+    known = [section for section in SECTION_IDS if section in {str(item) for item in saved}]
+    if known != list(saved):
+        st.session_state[PROCESS_DETAIL_SECTIONS_KEY] = known
+
+
+def reopen_entry_section(source: str | None) -> None:
+    """밖에서 들어온 회차에 그 길이 가리키는 구획을 다시 편다(다른 구획의 접힘은 둔다).
+
+    페이지가 공정·달을 정한 뒤, 본문 프래그먼트(칩 위젯)보다 앞에서 부른다. 길이 없거나 구획을
+    가리키지 않으면(`from` 없는 주소) 아무것도 않는다.
+    """
+    section = ENTRY_SECTIONS.get(source or "")
+    if section is None:
+        return
+    saved = st.session_state.get(PROCESS_DETAIL_SECTIONS_KEY)
+    if not isinstance(saved, (list, tuple)):
+        # 칸이 없으면 칩 앞의 `seed_sections` 가 넷 모두로 심는다 — 이미 펼침이다.
+        return
+    opened = {str(item) for item in saved}
+    if section in opened:
+        return
+    opened.add(section)
+    st.session_state[PROCESS_DETAIL_SECTIONS_KEY] = [item for item in SECTION_IDS if item in opened]
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
@@ -351,8 +465,10 @@ def canvas_memo_key(
     split: str,
     show_all_units: bool,
     show_all_arrows: bool,
+    collapsed: Collection[str] = (),
 ) -> tuple[object, ...]:
-    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표가 그림에 구워지므로 든다."""
+    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획이 그림에
+    구워지므로 든다."""
     home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
     return (
         CANVAS_SCHEMA_VERSION,
@@ -371,6 +487,7 @@ def canvas_memo_key(
         view.dynamic.memo_key if view.dynamic is not None else None,
         bool(show_all_units),
         bool(show_all_arrows),
+        tuple(sorted(str(section) for section in collapsed)),
     )
 
 
@@ -383,12 +500,13 @@ def remembered_canvas(
     product_demand: pd.DataFrame | None,
     show_all_units: bool,
     show_all_arrows: bool,
+    collapsed: Collection[str] = (),
 ) -> ProcessCapaCanvas:
     """결합 캔버스를 세션에 몇 벌 기억한다(`CANVAS_MEMO_LIMIT`). 꺼낸 그림은 고치지 않는다.
 
     키(`canvas_memo_key`)는 그림을 바꾸는 조건 전부다 — 테마·시나리오 키·표시순서
     지문·축·공정·표시명· 판정 기준 지문·펼침/분류/거르기·지금 보는 달·HOME 표시 확보율·설비 일정
-    키(오늘·목표·네 표 지문)· 더 보기 둘·그림 모양 버전. 만들다 실패하면 기억하지 않는다.
+    키(오늘·목표·네 표 지문)· 더 보기 둘·접힌 구획·그림 모양 버전. 만들다 실패하면 기억하지 않는다.
     """
     key = canvas_memo_key(
         view,
@@ -397,6 +515,7 @@ def remembered_canvas(
         split=split,
         show_all_units=show_all_units,
         show_all_arrows=show_all_arrows,
+        collapsed=collapsed,
     )
     memo = st.session_state.get(CANVAS_MEMO_KEY)
     entries: list[tuple[tuple[object, ...], ProcessCapaCanvas]] = (
@@ -425,6 +544,7 @@ def remembered_canvas(
         product_demand=product_demand,
         home_rates=view.home_rates,
         dynamic=dynamic,
+        collapsed=frozenset(collapsed),
     )
     entries = [entry for entry in entries if entry[0] != key][-(CANVAS_MEMO_LIMIT - 1) :]
     st.session_state[CANVAS_MEMO_KEY] = [*entries, (key, canvas)]
@@ -506,13 +626,23 @@ def initial_scroll_px(months: Sequence[int], month: int | None) -> float:
 
 
 def _render_more_toggles(
-    canvas: ProcessCapaCanvas, *, show_all_units: bool, show_all_arrows: bool
+    canvas: ProcessCapaCanvas,
+    *,
+    show_all_units: bool,
+    show_all_arrows: bool,
+    collapsed: Collection[str] = (),
 ) -> None:
-    """30줄 상한을 넘긴 ③·④ 를 모두 그리는 토글. 넘긴 줄이 있거나 켜 둔 동안만 선다."""
+    """30줄 상한을 넘긴 ③·④ 를 모두 그리는 토글. 넘긴 줄이 있거나 켜 둔 동안만 서고, 그 구획이
+    접혔으면 켜 둔 채여도 숨는다(값은 세션에 남아 다시 펴면 그대로다)."""
     wanted = [
-        (canvas.hidden_units > 0 or show_all_units, "더 보기 — 신규 설비 모두", SHOW_ALL_UNITS_KEY),
         (
-            canvas.hidden_arrow_units > 0 or show_all_arrows,
+            SECTION_UNITS not in collapsed and (canvas.hidden_units > 0 or show_all_units),
+            "더 보기 — 신규 설비 모두",
+            SHOW_ALL_UNITS_KEY,
+        ),
+        (
+            SECTION_DOWNTIME not in collapsed
+            and (canvas.hidden_arrow_units > 0 or show_all_arrows),
             "더 보기 — 비가동 호기 모두",
             SHOW_ALL_ARROWS_KEY,
         ),
@@ -662,6 +792,7 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
             )
         cards = evidence_cards(view, month, trace)
         st.html(evidence_cards_html(cards))
+        _render_month_next_screens(view, month)
         st.caption(
             "Qual 을 당기면 바뀌는 것은 설비 일정 기준 가용입니다 — 공식 확보율은 Core Data 의 "
             "보유·대여가 갱신될 때 바뀝니다. 왜 이렇게 계산하는지는 Guide 에 있습니다."
@@ -1163,6 +1294,196 @@ def open_shortening_page(process: str) -> None:
         st.switch_page(REQUIRED_SHORTENING.path)
     except StreamlitPageNotFoundError:
         return
+
+
+# ================================================================== 부족 원인의 다음 화면
+
+
+def open_availability_gap() -> None:
+    """가용설비 현황 `Static 대비 일정` 탭으로 옮긴다 — 그 화면의 탭 기억 칸만 적는다.
+
+    그 탭의 공정·호기 필터는 심지 않는다(그 탭의 조건은 그 탭이 정한다). 갈 곳이 없으면(단독
+    실행) 옮기지 않는다. 콜백이 아니라 본문에서 부른다 — 프래그먼트 콜백 안의 `st.switch_page` 는
+    서버 로그 경고를 남긴다.
+    """
+    remember_open_tab(EQUIPMENT_TAB_KEY, EQUIPMENT_GAP_TAB)
+    try:
+        st.switch_page(AVAILABLE_EQUIPMENT_PAGE)
+    except StreamlitPageNotFoundError:
+        return
+
+
+class NextScreens(NamedTuple):
+    """원인마다 다음 화면 단추 글. None 인 원인은 단추가 없다."""
+
+    owned: str | None = None
+    """보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과."""
+
+    mismatch: str | None = None
+    """가용 불일치 → 가용설비 현황 `Static 대비 일정`."""
+
+    schedule: str | None = None
+    """일정(설비 일정 기준 단축 목표 미달) → 필요 단축 일정."""
+
+    def present(self) -> bool:
+        return any(text is not None for text in self)
+
+
+def kpi_next_screens(kpis: ProcessCapaKpis, plan: Prescription | None) -> NextScreens:
+    """KPI 「부족 원인」 의 달 수로 낸 다음 화면 글. 0 인 원인은 뺀다(대여 영향은 공식 기준 안의
+    차이라 옮겨 갈 화면이 없다)."""
+    schedule = plan.dynamic_short_months if plan is not None else 0
+    return NextScreens(
+        owned=(
+            f"보유로도 부족 {kpis.owned_short_months}개월 — 산출 결과"
+            if kpis.owned_short_months
+            else None
+        ),
+        mismatch=(
+            f"가용 불일치 {kpis.mismatch_months}개월 — 가용설비 현황"
+            if kpis.mismatch_months
+            else None
+        ),
+        schedule=f"일정 {schedule}개월 — 필요 단축 일정" if schedule else None,
+    )
+
+
+def month_next_screens(view: ProcessDetailView, month: int) -> NextScreens:
+    """고른 달의 원인으로 낸 다음 화면 글 — ③ 판정 카드의 원인과, 그 달이 설비 일정 기준 단축 대상
+    (오늘이 든 생산월부터 목표 미달)이면 일정."""
+    cause = _summary_record(view.summary, month).get(CAUSE_COLUMN)
+    cause_text = "" if cause is None else str(cause)
+    return NextScreens(
+        owned="이 달 보유로도 부족 — 산출 결과" if cause_text == CAUSE_OWNED_SHORT else None,
+        mismatch=(
+            "이 달 가용 불일치 — 가용설비 현황"
+            if cause_text == CAUSE_AVAILABILITY_MISMATCH
+            else None
+        ),
+        schedule=(
+            "이 달 일정 부족 — 필요 단축 일정"
+            if view.dynamic is not None and schedule_short_month(view.dynamic, month)
+            else None
+        ),
+    )
+
+
+def schedule_short_month(dynamic: DynamicView, month: int) -> bool:
+    """그 달이 KPI 「부족 원인 · 일정」 에 드는가 — 오늘이 든 생산월부터, 설비 일정 기준 가용이 단축
+    목표에 못 미친 달(`prescription` 이 세는 달과 같다)."""
+    record = _month_record(dynamic.canvas.process_months, month)
+    if record is None:
+        return False
+    gap = _number(record.get("과부족"))
+    if gap is None or round(gap, 9) >= 0:
+        return False
+    today_month = production_position(
+        dynamic.canvas.today, dynamic.canvas.cutoff_days, [int(month)]
+    ).month
+    return int(month) >= today_month
+
+
+def render_cause_links(kpis: ProcessCapaKpis, *, dynamic: DynamicView | None, process: str) -> None:
+    """KPI 아래 한 줄 — 부족 원인마다 다음 화면. 원인이 없으면 그리지 않는다(앱 전체 회차)."""
+    screens = kpi_next_screens(kpis, prescription(dynamic) if dynamic is not None else None)
+    if not screens.present():
+        return
+    with st.container(key=CAUSE_LINKS_KEY):
+        _render_next_screens(
+            screens,
+            process=process,
+            gap_key=CAUSE_GAP_BUTTON_KEY,
+            shortening_key=CAUSE_SHORTENING_BUTTON_KEY,
+        )
+
+
+def _render_month_next_screens(view: ProcessDetailView, month: int) -> None:
+    """근거 패널 — 고른 달의 원인으로 낸 다음 화면(본문 프래그먼트 안)."""
+    screens = month_next_screens(view, month)
+    if screens.present():
+        _render_next_screens(
+            screens,
+            process=view.process,
+            gap_key=EVIDENCE_GAP_BUTTON_KEY,
+            shortening_key=EVIDENCE_SHORTENING_BUTTON_KEY,
+        )
+
+
+def _render_next_screens(
+    screens: NextScreens, *, process: str, gap_key: str, shortening_key: str
+) -> None:
+    """다음 화면 줄 — 「다음 화면」 글 뒤에 원인마다 링크·단추. 화면을 옮기는 단추는 본문에서
+    옮긴다(근거 패널은 프래그먼트다)."""
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.caption("다음 화면", width="content")
+        if screens.owned is not None:
+            st.markdown(INVESTMENT_BADGE, width="content")
+            render_page_link(
+                CALCULATION_RESULT_PAGE, label=screens.owned, icon=":material/calculate:"
+            )
+        if screens.mismatch is not None and st.button(
+            screens.mismatch,
+            key=gap_key,
+            type="tertiary",
+            icon=":material/compare_arrows:",
+        ):
+            open_availability_gap()
+        if screens.schedule is not None and st.button(
+            screens.schedule,
+            key=shortening_key,
+            type="tertiary",
+            icon=":material/event_upcoming:",
+        ):
+            open_shortening_page(process)
+
+
+# ================================================================== 머리 ◀▶ 공정 넘기기
+
+
+def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str]) -> None:
+    """머리 공정명 옆 ◀▶ — 확보기준 미달 공정을 조회기간 최저 확보율이 낮은 차례로 넘긴다
+    (세션 값).
+
+    미달 공정이 없으면 그리지 않는다. 콜백(`step_to_process`)이 공정 상자 값과 그 공정의 첫 미달
+    달을 적고 앱 전체 회차로 다시 돈다 — 머리 줄은 프래그먼트 밖이다.
+    """
+    if steps.total == 0:
+        return
+    _step_button("◀", steps.previous, key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY, label_of=label_of)
+    st.caption(
+        f"미달 {steps.position}/{steps.total}"
+        if steps.position is not None
+        else f"미달 공정 {steps.total}개",
+        width="content",
+        help=(
+            "확보기준 미달 공정(판정이 확보가 아닌 달이 있는 공정)을 조회기간 최저 확보율이 낮은 "
+            "차례로 넘깁니다. 옮기면 그 공정의 첫 미달 달을 엽니다."
+        ),
+    )
+    _step_button("▶", steps.following, key=PROCESS_DETAIL_NEXT_PROCESS_KEY, label_of=label_of)
+
+
+def _step_button(
+    mark: str, step: ProcessStep | None, *, key: str, label_of: Callable[[str], str]
+) -> None:
+    if step is None:
+        st.button(
+            mark,
+            key=key,
+            type="tertiary",
+            disabled=True,
+            help="이쪽으로 넘길 미달 공정이 없습니다",
+        )
+        return
+    rate = f" · 최저 {step.minimum_rate:.1%}" if step.minimum_rate is not None else ""
+    st.button(
+        mark,
+        key=key,
+        type="tertiary",
+        help=f"{label_of(step.process)}{rate}",
+        on_click=step_to_process,
+        args=(step.process, step.month),
+    )
 
 
 # ================================================================== 값 다루기
