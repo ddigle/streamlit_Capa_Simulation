@@ -62,13 +62,15 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 (사내 실데이터의 `WF 구분`·재이관 전제를 **읽기 전용**으로 재는 것. 값은 찍지 않고
 개수만 보고한다), `scripts/audit_top_remigration.py`(`0026` 적용 뒤 이관 결과의 오염·누락을
 **읽기 전용**으로 점검), `scripts/inspect_real_data_checks.py`(실데이터로만 답이 나오는 확인 — 기존 결과
-대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery 를 **읽기 전용**으로 재어 집계만 찍는다. 사내 런북
-8장이 배포마다 부른다), `scripts/inspect_revision_calculations.py`(사내 런북 6-3 a 사본 E2E — 저장된
+대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·「지금대로」 결정의 유병률(8-10 센서스)을 **읽기 전용**으로
+재어 집계만 찍고, 끝에 리뷰 전송본에 옮길 「전송용 요약」 을 찍는다. 사내 런북 8장이 배포마다 부른다),
+`scripts/inspect_revision_calculations.py`(사내 런북 6-3 a 사본 E2E — 저장된
 모든 리비전의 대당 Capa → 소요대수 → 확보율을 앱과 같은 길로 **읽기 전용**으로 다시 돌려 상태·개수만
-찍는다. `--database` 는 기본값이 없어 늘 DB 사본을 준다), `scripts/check_deploy_screens.py`(사내 런북
+찍는다. `--database` 는 기본값이 없어 늘 DB 사본을 주고, 운영 DB 자리(저장소 `data/` 아래)는 거절한다),
+`scripts/check_deploy_screens.py`(사내 런북
 7장 화면 확인 — 별도 포트에 앱을 띄워 저장소 밖 Playwright·깔린 Chrome 으로 보고 개수·있음/없음만
 찍는다. 항목은 함수 하나 + `ITEMS` 한 줄), `scripts/benchmark_home.py`(HOME 단계별 성능 — 기본은 합성
-표본이고, `--data-dir <사본 폴더>` 를 주면 실 DB 사본으로 잰다. 사내 런북 6-3 b 이며 저장소 `data/` 는
+표본이고, `--data-dir <사본 폴더>` 를 주면 실 DB 사본으로 잰다. 사내 런북 6-3 b 이며 저장소 `data/` 와 그 아래는
 받지 않는다), `scripts/validate_duckdb_persistence.py`
 (영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
 `scripts/generate_sample_core_data.py`(합성 Core Data 생성).

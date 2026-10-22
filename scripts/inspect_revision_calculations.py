@@ -46,7 +46,10 @@ Markdown 블록**을 찍는다.
   — `initialize()` 는 마이그레이션을 건다(쓰기다).
 - **사본에만 돌린다.** `--database` 는 기본값이 없다. 앱은 연산마다 연결을 열고 닫아 쉬는
   동안에는 운영 DB 도 열리지만, 이 스크립트가 수 분 동안 쥐는 사이 사용자 앱의 연결은 다른
-  프로세스 잠금으로 곧바로 실패한다. 그래서 **사본** 경로를 늘 적어 준다(런북 6-3).
+  프로세스 잠금으로 곧바로 실패한다. 그래서 **사본** 경로를 늘 적어 준다(런북 6-3). 운영 DB
+  자리 — `settings.DUCKDB_PATH` 와 이 스크립트가 든 저장소의 `data/` 아래 — 는 받지 않고 DB 를
+  열기 전에 멈춘다(종료 2). 그래서 사본은 저장소에서 이 스크립트로 연다(사본 트리의 스크립트는
+  사본의 `data/` 를 운영 자리로 본다). 이 거절이 권한 템플릿에 이 스크립트를 허용하는 전제다.
 - **값을 찍지 않는다.** 개수·상태·초만 찍는다. 시나리오·리비전은 이름 대신 차례
   번호(`S3`·`r2`)로 적는다. 예외는 종류(클래스 이름)와 그 문구에 든 **계약 표
   이름(`RQ_*` 16개)** 만 적는다 — 이 앱의 오류 문구에는 공정·제품 이름이 실린다.
@@ -91,6 +94,7 @@ from capa_simulation.services.unit_capacity import (  # noqa: E402
     CAPACITY_EXCLUSIONS_ATTR,
     calculate_unit_capacity,
 )
+from capa_simulation.settings import DUCKDB_PATH  # noqa: E402
 
 # `capacity_gate` 는 Streamlit 캐시 래퍼 모듈을 함께 불러온다. 실행 문맥 밖이라 래퍼마다 「No
 # runtime found」 경고가 표준 오류에 한 줄씩(수십 줄) 찍혀 사내 창을 덮으므로 불러오는 동안만 끈다.
@@ -643,7 +647,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--database",
         type=Path,
         required=True,
-        help="시뮬레이션 DuckDB 사본(런북 6-3). 운영 DB 를 주면 그동안 사용자 앱이 막힌다",
+        help="시뮬레이션 DuckDB 사본(런북 6-3). 운영 DB 자리(저장소 data/ 아래)는 거절한다",
     )
     parser.add_argument(
         "--active-only",
@@ -667,6 +671,26 @@ def _use_utf8_stdout() -> None:
             reconfigure(encoding="utf-8")
         except (ValueError, OSError):
             pass
+
+
+_OPERATIONAL_REFUSAL: Final = (
+    "운영 DB 자리(`settings.DUCKDB_PATH` · 이 저장소의 `data/` 아래)는 받지 않는다 — DB 를 열지 "
+    "않았다. 런북 6-3 의 사본 경로를 저장소에서 준다(`--database <사본 폴더>/data/"
+    "capa_simulation.duckdb`)."
+)
+
+
+def operational_path(path: Path) -> bool:
+    """사용자 앱이 여는 운영 DB 자리인가 — `settings.DUCKDB_PATH` 이거나 이 저장소 `data/` 아래.
+
+    `data/` 아래 다른 이름도 막는다 — 사본을 거기 두면 운영 DB 와 한 폴더라 경로 한 글자 틀림이
+    곧 운영 DB 를 쥐는 일이 된다. 경로는 찍지 않는다.
+    """
+    target = path.expanduser().resolve()
+    folders = {DUCKDB_PATH.parent.resolve(), (PROJECT_ROOT / "data").resolve()}
+    return target == DUCKDB_PATH.resolve() or any(
+        target.is_relative_to(folder) for folder in folders
+    )
 
 
 def _open_read_only(path: Path) -> tuple[duckdb.DuckDBPyConnection | None, str | None, int]:
@@ -696,6 +720,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run(args: argparse.Namespace, sink: _Sink) -> int:
     path = Path(args.database)
+    if operational_path(path):
+        sink.emit(_OPERATIONAL_REFUSAL)
+        return 2
     connection, failure, code = _open_read_only(path)
     if connection is None:
         sink.emit(str(failure))

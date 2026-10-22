@@ -300,10 +300,11 @@ def copy_folder_problem(data_dir: Path) -> str | None:
     """`--data-dir` 로 쓸 수 없는 까닭. 쓸 수 있으면 None.
 
     저장소의 `data/` 는 사용자 앱이 쓰는 운영 DB 다 — 벤치마크는 마이그레이션을 걸고 세션
-    상태를 만들므로 사본에만 돌린다.
+    상태를 만들므로 사본에만 돌린다. 그 아래 폴더도 받지 않는다(`inspect_revision_calculations.py`
+    의 `--database` 거절과 같은 꼴 — 운영 DB 옆에 둔 사본은 경로 한 글자 틀림이 곧 운영 DB 다).
     """
     folder = data_dir.expanduser().resolve()
-    if folder == (PROJECT_ROOT / "data").resolve():
+    if folder.is_relative_to((PROJECT_ROOT / "data").resolve()):
         return "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
     if not (folder / "capa_simulation.duckdb").is_file():
         return "그 폴더에 capa_simulation.duckdb 가 없다"

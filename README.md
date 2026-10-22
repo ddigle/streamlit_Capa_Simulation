@@ -331,7 +331,7 @@ typed raw 로 그대로 보존합니다.
 
 ## 보조 스크립트
 
-모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈춥니다.
+모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(저장소 `data/` 아래)를 거절합니다.
 
 | 스크립트 | 하는 일 |
 |---|---|
@@ -347,9 +347,9 @@ typed raw 로 그대로 보존합니다.
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
 | `compare_legacy_results.py` | 원천에 보존된 기존 결과와 신규 계산값을 대조해 요약·상세 CSV 를 만든다 |
 | **사내 실데이터 확인(읽기 전용 — 값은 찍지 않고 개수만)** | |
-| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수를 잰다(런북 8장) |
-| `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 필수) |
-| `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다 |
+| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)을 재고, 끝에 리뷰 전송본에 옮길 「전송용 요약」 을 찍는다(런북 8장) |
+| `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 사본 필수 — 운영 DB 자리는 거절) |
+| `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다(`--database` 로 사본도) |
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |
 | `audit_top_remigration.py` | `0026` 적용 뒤 이관 결과의 오염·누락을 점검한다 |
 | `check_deploy_screens.py` | 런북 7장 화면 확인을 별도 포트 앱과 저장소 밖 Playwright 로 돌린다 |

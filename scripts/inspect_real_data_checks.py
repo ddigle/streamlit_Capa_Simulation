@@ -6,7 +6,7 @@
 스크립트는 그 질문을 사내에서 한 번에 재고, 결과를 리뷰 문서에 **그대로 붙일 수 있는 Markdown
 블록**으로 찍는다.
 
-    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 다섯
+    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 여섯
     uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq  # BigDataQuery
 
 | 블록 | `--only` | 무엇을 |
@@ -17,8 +17,15 @@
 | 8-4 | `equipment` | 설비 DB 의 옛 Qual 자리표·모듈 환산비·일정 미정·사용기준·38열 개편 분포 |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·전 코드 적재일·표본 적재일·사본 여부 |
 | 8-9 | `home` | HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수 — EDP 포함·뺌 |
+| 8-10 | `census` | 「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(센서스) |
 
 8-6 ~ 8-8 은 런북의 다른 절(리뷰에 옮기는 법 등)이 쓰는 번호라 블록 번호로 쓰지 않는다.
+
+**끝에 「전송용 요약」 을 찍는다.** 사내 리뷰는 사람이 손으로 옮겨 적는다(2026-10-22
+사용자 답) — 블록 전문은 리뷰 파일에 남고, 사외로 가는 것은 그 맨 앞 「전송본」 이다(런북
+5장). 그래서 돌린 블록마다 판정에 쓰는 수를 한 줄로, 합이 맞아야 하는 수 묶음에는 검산 줄을
+붙여 20줄 안팎으로 모은다. 블록 출력은 그대로 두고 요약은 그 뒤에 따로 찍는다. 요약도 판정은
+내리지 않는다 — 런북이 기대 꼴을 적은 수만 곁에 `기대` 로 적는다.
 
 **지키는 것 셋.**
 
@@ -45,8 +52,9 @@ import math
 import re
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Hashable, Iterable, Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from functools import lru_cache, partial
 from pathlib import Path
@@ -129,6 +137,7 @@ from capa_simulation.services.frame_contracts import (  # noqa: E402
     AREA_NAMES,
     DEMAND_BASES,
     UNIMPLEMENTED_BASES,
+    duplicate_route_rows,
     match_key,
     normalize_demand_basis,
 )
@@ -147,6 +156,7 @@ from capa_simulation.services.legacy_comparison import (  # noqa: E402
     WAFER_ROUTE_FACTORS,
     WAFER_ROUTE_RESULTS,
     DifferenceDistribution,
+    FactorAgreement,
     FormulaInput,
     LegacyMetric,
     Quantiles,
@@ -200,6 +210,10 @@ from capa_simulation.services.required_equipment import (  # noqa: E402
     calculate_required_equipment,
     required_exclusion_counts,
 )
+from capa_simulation.services.scenario_transform import (  # noqa: E402
+    MONTHLY_TABLES,
+    missing_calendar_months,
+)
 from capa_simulation.services.undated_equipment import (  # noqa: E402
     UNDATED_KIND_COLUMN,
     UNDATED_KINDS,
@@ -213,9 +227,24 @@ from capa_simulation.services.usage_basis import (  # noqa: E402
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH  # noqa: E402
 
-CHECKS: Final[tuple[str, ...]] = ("env", "legacy", "reqb", "equipment", "bdq", "home")
+CHECKS: Final[tuple[str, ...]] = (
+    "env",
+    "legacy",
+    "reqb",
+    "equipment",
+    "bdq",
+    "home",
+    "census",
+)
 # BigDataQuery 는 사내 DB 를 길게 훑는다. 따로 부를 때만 돈다.
-DEFAULT_CHECKS: Final[tuple[str, ...]] = ("env", "legacy", "reqb", "equipment", "home")
+DEFAULT_CHECKS: Final[tuple[str, ...]] = (
+    "env",
+    "legacy",
+    "reqb",
+    "equipment",
+    "home",
+    "census",
+)
 
 # 기존 결과가 실려 오는 원천 컬럼. 채움 상태는 늘 찍는다.
 LEGACY_CANDIDATES: Final[tuple[str, ...]] = (
@@ -326,9 +355,10 @@ DEFAULT_COPY_CODES: Final = 2
 DEFAULT_COPY_DAYS: Final = 4
 
 # 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
+MONTH_MERGE_SOURCE: Final = "SCENARIO_MONTH_MERGE"
 DERIVED_SOURCE_TYPES: Final[tuple[str, ...]] = (
     "DUCKDB_SCENARIO_CLONE",
-    "SCENARIO_MONTH_MERGE",
+    MONTH_MERGE_SOURCE,
     "SCENARIO_YEAR_SHIFT",
 )
 
@@ -420,6 +450,8 @@ class Session:
     _source: SourceData | None = None
     _source_failure: str | None = None
     locked: bool = False
+    # 전송용 요약에 모을 줄 — 블록이 돈 차례대로 쌓는다(`summary_lines`).
+    notes: list[str] = field(default_factory=list)
 
     def close(self) -> None:
         for connection in (self.simulation, self.equipment):
@@ -510,20 +542,39 @@ def _ref_data_copies(connection: duckdb.DuckDBPyConnection) -> tuple[int, int]:
     return datasets, rows
 
 
+def _migration_note(label: str, versions: list[int] | None, code_versions: Sequence[int]) -> str:
+    """전송용 요약의 마이그레이션 칸 — 「시뮬레이션 35 · 코드 35 같다」."""
+    if versions is None:
+        return f"{label} 읽지 못함"
+    db_max = max(versions, default=0)
+    code_max = max(code_versions, default=0)
+    return f"{label} {db_max} · 코드 {code_max} {'같다' if db_max == code_max else '**다르다**'}"
+
+
+def _env_note(parts: Sequence[str], revisions: str | None) -> str:
+    head, *migrations = parts
+    tail = f" · {revisions}" if revisions else ""
+    return f"- {head} {' / '.join(migrations)} (기대: 같다){tail}"
+
+
 def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> list[str]:
     lines = _heading("8-1", "환경 — 두 DB 와 적용 배포", "env")
     lines.append(f"- 실행 {now:%Y-%m-%d %H:%M} · 적용 배포 {_applied_deploy(root)}")
     code_simulation = [migration.version for migration in load_migrations()]
     code_equipment = [migration.version for migration in load_equipment_migrations()]
+    note = ["8-1 — 마이그레이션"]
+    revisions: str | None = None
 
     simulation = session.simulation
     if simulation is None:
         lines.append(f"- 시뮬레이션 DB — {session.simulation_failure}")
+        note.append("시뮬레이션 DB 열지 못함")
     else:
         versions = _versions(simulation, "app_meta.schema_migration")
         lines.append(
             _migration_line("시뮬레이션 DB", session.simulation_path, versions, code_simulation)
         )
+        note.append(_migration_note("시뮬레이션", versions, code_simulation))
         rows: list[list[str]] = []
         for label, sql in (
             ("데이터셋", "SELECT count(*) FROM app_meta.dataset"),
@@ -536,6 +587,8 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
             ("리비전 행 `rev_data.rq_pkg_plan`", "SELECT count(*) FROM rev_data.rq_pkg_plan"),
         ):
             rows.append([label, _safe_scalar(simulation, sql)])
+        counted = dict((label, value) for label, value in rows)
+        revisions = f"리비전 {counted['리비전']} · 공식버전 {counted['공식버전']}"
         try:
             kinds = simulation.execute(
                 "SELECT source_type, count(*) FROM app_meta.dataset GROUP BY 1 ORDER BY 1"
@@ -572,9 +625,13 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
     if equipment is None:
         lines.append(f"- 설비 DB — {session.equipment_failure}")
         lines.append("")
+        note.append("설비 DB 열지 못함")
+        session.notes.append(_env_note(note, revisions))
         return lines
     versions = _versions(equipment, "equipment_meta.schema_migration")
     lines.append(_migration_line("설비 DB", session.equipment_path, versions, code_equipment))
+    note.append(_migration_note("설비", versions, code_equipment))
+    session.notes.append(_env_note(note, revisions))
     rows = []
     latest = _latest_equipment_revision(equipment)
     rows.append(
@@ -902,16 +959,21 @@ def _required_equipment(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 
 def _requirement_section(
-    core: pd.DataFrame, tables: dict[str, pd.DataFrame], calculated: Required
+    core: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    calculated: Required,
+    notes: list[str] | None = None,
 ) -> list[str]:
+    notes = [] if notes is None else notes
     lines = [
         "**소요대수** — 신규는 리비전 1 로 다시 계산한 `RQ_REQB` 행별 소요대수다.",
         "",
-        *_st_definition_lines(tables),
+        *_st_definition_lines(tables, notes),
     ]
     contract = load_core_data_contract()
     required = calculated.frame
     if required is None:
+        notes.append(f"- 8-2 소요대수 — 신규 계산 {calculated.failure}")
         return [*lines, f"- 신규 소요대수 계산 {calculated.failure} — 대조하지 않았다", ""]
     route = _route_frame(core)
     exclusions = required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
@@ -923,14 +985,18 @@ def _requirement_section(
     fresh_keys = _key_set(required, REQB_COLUMNS) | excluded_keys
     route_keys = _key_set(route, REQB_COLUMNS)
     linked = len(fresh_keys & route_keys)
+    link_share = _percent(linked / len(fresh_keys) if fresh_keys else None, 2)
     lines.append(
         f"- 키 연결(값과 무관) — 신규 경로 키 {len(fresh_keys):,} 중 원천 경로에 있는 키 "
-        f"{linked:,} ({_percent(linked / len(fresh_keys) if fresh_keys else None, 2)}) · "
+        f"{linked:,} ({link_share}) · "
         "신규가 제외 목록에 둔 키 "
         f"{len(excluded_keys):,}"
     )
-    lines.extend(_left_out_lines(required))
+    requirement_note = f"- 8-2 소요대수 — 키 연결 {link_share} (기대 100%)"
+    left_out_notes: list[str] = []
+    lines.extend(_left_out_lines(required, left_out_notes))
     if not _filled(route, "소요대수"):
+        notes.extend([f"{requirement_note} · 원천 `소요대수` 가 비어 대조 불가", *left_out_notes])
         lines.extend(["- 원천 `소요대수` 가 비어 있어 대조 불가", ""])
         return lines
     unimplemented = route["소요기준"].isin(UNIMPLEMENTED_BASES).fillna(False)
@@ -986,15 +1052,25 @@ def _requirement_section(
     if ratio_rows:
         lines.extend([*_table(_RATIO_HEADERS, ratio_rows), ""])
     path = results[0].comparison
-    if path is not None:
+    if path is None:
+        requirement_note += f" · 경로 키 접음 {results[0].failure}"
+    else:
+        spread = difference_distribution(path)
+        requirement_note += (
+            f" · 경로 키 접음 차이율 최대 {_percent(spread.maximum)} · ≈60 무리 "
+            f"{ratio_groups(path).size(SUSPECT_GROUP):,} (기대 0)"
+        )
         try:
             lines.extend(_ratio_breakdown(path, compared, required, tables, finest))
         except Exception as exc:  # 가르기가 실패해도 아래 절은 계속 잰다
             lines.extend([f"- ≈60 배 가르기 {_failure(exc)}", ""])
+    notes.extend([requirement_note, *left_out_notes])
     return lines
 
 
-def _st_definition_lines(tables: dict[str, pd.DataFrame]) -> list[str]:
+def _st_definition_lines(
+    tables: dict[str, pd.DataFrame], notes: list[str] | None = None
+) -> list[str]:
     """ST 정의 대조(참고) — `RQ_UPEH` 에서 UPEH·ST 가 둘 다 양수인 행의 UPEH × ST ÷ 60 을 MI·Main
     으로 나눠 찍는다.
 
@@ -1005,20 +1081,33 @@ def _st_definition_lines(tables: dict[str, pd.DataFrame]) -> list[str]:
     소요대수 대조가 없어도 늘 찍는다.
     """
     head = "- ST 정의 대조(참고) — 리비전 1 `RQ_UPEH` 의 UPEH × ST ÷ 60(ST 는 분 단위라 기대 1)"
+    note = "- 8-2 ST 정의 대조 — "
+    notes = [] if notes is None else notes
     upeh = tables.get("RQ_UPEH")
     if upeh is None or not {"Area_Name", "UPEH", "ST"} <= set(upeh.columns):
+        notes.append(f"{note}칸 없음")
         return [f"{head} — 칸 없음"]
     agreement = time_agreement(upeh).dropna()
     if agreement.empty:
+        notes.append(f"{note}UPEH·ST 가 둘 다 양수인 행 0")
         return [f"{head} — UPEH·ST 가 둘 다 양수인 행 0"]
     area = match_key(upeh["Area_Name"]).loc[agreement.index]
+    mi = agreement.loc[area.eq("mi")]
     parts = [
-        _agreement_part("MI", agreement.loc[area.eq("mi")]),
+        _agreement_part("MI", mi),
         _agreement_part("Main(계산에 쓰지 않음)", agreement.loc[area.eq("main")]),
     ]
     others = int((~area.isin(["mi", "main"])).sum())
     if others:
         parts.append(f"그 밖 {others:,}")
+    if mi.empty:
+        notes.append(f"{note}MI 행 0")
+    else:
+        near = int(mi.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
+        notes.append(
+            f"{note}MI {len(mi):,}행 · 중앙 {_ratio(float(mi.median()))} · "
+            f"1 ±{NEAR_TOLERANCE:.0%} 안 {near:,} (기대: 중앙 1 근처)"
+        )
     return [f"{head} — {' / '.join(parts)}"]
 
 
@@ -1042,7 +1131,7 @@ _UNROUTED_REASON_LABELS = {
 }
 
 
-def _left_out_lines(required: pd.DataFrame) -> list[str]:
+def _left_out_lines(required: pd.DataFrame, notes: list[str] | None = None) -> list[str]:
     """소요대수에 들지 않은 수요 건수(알림 모음·발행 검사가 알리는 것과 같은 셈)와 경로 없는 부하의
     갈래.
 
@@ -1058,8 +1147,15 @@ def _left_out_lines(required: pd.DataFrame) -> list[str]:
         f"않은 계획 부하 {counts.unrouted_loads:,} · 대당 Capa 없는 부하 경로 "
         f"{counts.excluded_routes:,}"
     ]
+    notes = [] if notes is None else notes
+    notes.append(
+        f"- 8-2 들지 않은 수요 — 기준정보 없음 {counts.excluded_plans:,} · 생산수량 빈 "
+        f"{counts.blank_plans:,} · 경로에 닿지 않음 {counts.unrouted_loads:,} (원천 그대로면 0) · "
+        f"대당 Capa 없는 경로 {counts.excluded_routes:,}"
+    )
     unrouted = required.attrs.get(UNROUTED_LOADS_ATTR)
     if not isinstance(unrouted, pd.DataFrame) or unrouted.empty:
+        notes.append("- 8-2 경로 갈래 — 없음(경로에 닿지 않은 부하 0)")
         return lines
     bases = {name.casefold(): name for name in KNOWN_BASES}
     divisions = {name.casefold(): name.upper() for name in DECLARED_DIVISIONS}
@@ -1077,13 +1173,25 @@ def _left_out_lines(required: pd.DataFrame) -> list[str]:
         }
     )
     groups = labels.groupby(["reason", "basis", "division"]).size().reset_index(name="count")
+    branches = " · ".join(
+        f"{reason} · {basis} · {division} {int(count):,}"
+        for reason, basis, division, count in groups.itertuples(index=False)
+    )
     lines.append(
         "  - 경로에 닿지 않은 계획 부하의 갈래(사유 · 소요기준 · WF 구분 → 개수, 규칙상 미사용은 "
-        "세지 않음) "
-        + " · ".join(
-            f"{reason} · {basis} · {division} {int(count):,}"
-            for reason, basis, division, count in groups.itertuples(index=False)
-        )
+        "세지 않음) " + branches
+    )
+    unused = _UNROUTED_REASON_LABELS[UNROUTED_UNUSED_REASON]
+    counted = [
+        int(count) for reason, *_, count in groups.itertuples(index=False) if reason != unused
+    ]
+    notes.extend(
+        [
+            f"- 8-2 경로 갈래(규칙상 미사용은 세지 않음) — {branches}",
+            "  - 검산 — "
+            + (" + ".join(f"{count:,}" for count in counted) or "0")
+            + f" = 경로에 닿지 않음 {counts.unrouted_loads:,}",
+        ]
     )
     return lines
 
@@ -1444,9 +1552,13 @@ def _wafer_route_comparison(
     required: Required,
     grain: Sequence[str],
     contract: CoreDataContract,
+    note: list[str] | None = None,
 ) -> list[str]:
+    """`note` 에는 전송용 요약의 Wafer 경로 줄 조각(맞대기 차이율·가장 잘 따라가는 칸)을 더한다."""
     column = "WF수(매)"
+    note = [] if note is None else note
     if required.frame is None:
+        note.append(f"신규 계산 {required.failure}")
         return [f"- 신규 계산 {required.failure} — 경로 키로 맞대지 않았다", ""]
     route = _route_frame(core)
     wf_route = route.loc[route["소요기준"].eq("WF").fillna(False).astype(bool)]
@@ -1486,12 +1598,20 @@ def _wafer_route_comparison(
         lines.extend([*_table(_RATIO_HEADERS, ratio_rows), ""])
     path = results[0].comparison
     if path is None:
+        note.append(f"경로 키 맞대기 {results[0].failure}")
         return lines
+    note.append(f"경로 키 맞대기 차이율 중앙 {_percent(difference_distribution(path).median)}")
     frame = ratio_groups(path).frame
     link = RouteLink.build(frame, wf_route)
     rows: list[list[str]] = []
+    best: FactorAgreement | None = None
     for factor in WAFER_ROUTE_FACTORS:
         agreement = factor_agreement(frame, route_factor_by_key(link, factor), label=factor.label)
+        if agreement.off_one and (
+            best is None
+            or agreement.near_factor * best.off_one > best.near_factor * agreement.off_one
+        ):
+            best = agreement
         rows.append(
             [
                 f"`{agreement.label}`",
@@ -1516,6 +1636,15 @@ def _wafer_route_comparison(
             "",
         ]
     )
+    if best is None:
+        note.append("따라갈 칸 없음(칸 ≠1 인 키 0)")
+    elif best.near_factor == 0:
+        note.append("따라가는 칸 없음(모든 경로 칸에서 ≈ 칸 0)")
+    else:
+        note.append(
+            f"가장 잘 따라가는 칸 `{best.label}` ≈ 칸 {best.near_factor:,} / 칸 ≠1 "
+            f"{best.off_one:,} ({_percent(best.near_factor / best.off_one, 2)})"
+        )
     return lines
 
 
@@ -1525,12 +1654,14 @@ def _wafer_route_section(
     required: Required,
     grain: Sequence[str],
     contract: CoreDataContract,
+    notes: list[str] | None = None,
 ) -> list[str]:
     """Wafer `WF수(매)` 를 경로 단위로 본다(2026-10-10 사용자 결정).
 
     원천 안에서 경로 값이 무엇으로 갈리는지 가르고, 신규 계산과 경로 키 13 으로 맞댄다.
     """
     column = "WF수(매)"
+    notes = [] if notes is None else notes
     lines = [
         "**Wafer `WF수(매)` 경로 값** — 위 표의 Wafer `값 불일치` 는 계획 줄 × WF 구분 안에서 "
         "경로 행마다 `WF수(매)` 가 갈려서다(계획 줄 값이 아니라 경로 값). 신규 계산에는 경로마다 "
@@ -1540,6 +1671,7 @@ def _wafer_route_section(
         "",
     ]
     if not _filled(core, column):
+        notes.append("- 8-2 Wafer 경로 — 원천 `WF수(매)` 가 비어 있다")
         return [*lines, "- 원천 `WF수(매)` 가 비어 있다", ""]
     spread, cells = route_cells(core, column, grain)
     lines.extend(
@@ -1553,7 +1685,9 @@ def _wafer_route_section(
     )
     if spread.route_split:
         lines.extend(_wafer_route_tables(cells))
-    lines.extend(_wafer_route_comparison(core, tables, required, grain, contract))
+    note = [f"갈리는 칸 {spread.route_split:,} / {spread.route_cells:,}"]
+    lines.extend(_wafer_route_comparison(core, tables, required, grain, contract, note))
+    notes.append("- 8-2 Wafer 경로 — " + " · ".join(note))
     return lines
 
 
@@ -1603,8 +1737,10 @@ def _pcb_section(raw: pd.DataFrame, core: pd.DataFrame, grain: Sequence[str]) ->
 
 def check_legacy(session: Session) -> list[str]:
     lines = _heading("8-2", "기존 결과 대조 — 분포만", "legacy")
+    notes = session.notes
     source = load_source(session)
     if source is None:
+        notes.append(f"- 8-2 — 원천을 읽지 못함 — {session._source_failure}")
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     raw, tables = source.raw, source.tables
     lines.extend([f"- {source.dataset_label}", ""])
@@ -1615,11 +1751,13 @@ def check_legacy(session: Session) -> list[str]:
         ]
     )
     if raw.empty:
+        notes.append("- 8-2 — 원천 행이 없다")
         return [*lines, "- 원천 행이 없다", ""]
     contract = load_core_data_contract()
     try:
         core = build_q_core_data(raw, contract)
     except Exception as exc:  # 원천이 계약을 어기면 여기서 멈춘다
+        notes.append(f"- 8-2 — 파생 프레임을 만들지 못함 — {_failure(exc)}")
         return [*lines, f"- 파생 프레임을 만들지 못함 — {_failure(exc)}", ""]
     grain = legacy_grain(contract)
 
@@ -1631,9 +1769,11 @@ def check_legacy(session: Session) -> list[str]:
         ]
     )
     load_results: list[ComparisonResult] = []
+    load_names: list[str] = []
     for metric in COMPARISONS:
         name, build = LOAD_BUILDERS.get(metric.legacy_column, (metric.label, None))
         label = f"{name} `{metric.legacy_column}`"
+        load_names.append(name)
         if build is None:
             load_results.append(ComparisonResult(label=label, failure="신규 계산 연결 없음"))
             continue
@@ -1644,14 +1784,30 @@ def check_legacy(session: Session) -> list[str]:
             _guarded(label, partial(_compare_built, core, partial(build, tables), metric, contract))
         )
     lines.extend([*_table(_DIFFERENCE_HEADERS, [_difference_row(r) for r in load_results]), ""])
+    notes.append(
+        "- 8-2 부하량 — 차이율 최대 "
+        + " · ".join(
+            f"{name} "
+            + (
+                result.failure or "-"
+                if result.comparison is None
+                else _percent(difference_distribution(result.comparison).maximum)
+            )
+            for name, result in zip(load_names, load_results, strict=True)
+        )
+        + " (기대: 0.5% 안)"
+    )
 
     required = _calculate_required(tables)
     try:
-        lines.extend(_wafer_route_section(core, tables, required, grain, contract))
+        lines.extend(_wafer_route_section(core, tables, required, grain, contract, notes))
     except Exception as exc:  # 이 절이 멈춰도 소요대수·PCB 절과 다음 블록은 잰다
+        notes.append(f"- 8-2 Wafer 경로 — {_failure(exc)}")
         lines.extend([f"- Wafer `WF수(매)` 경로 값 — {_failure(exc)}", ""])
     lines.extend(
-        _requirement_section(_with_raw_columns(core, raw, ROUTE_CATEGORIES), tables, required)
+        _requirement_section(
+            _with_raw_columns(core, raw, ROUTE_CATEGORIES), tables, required, notes
+        )
     )
     lines.extend(_pcb_section(raw, core, grain))
     lines.extend(
@@ -1672,10 +1828,12 @@ def check_reqb(session: Session) -> list[str]:
     lines = _heading("8-3", "원천 RQ_REQB 소요기준 분포", "reqb")
     source = load_source(session)
     if source is None:
+        session.notes.append(f"- 8-3 — 원천을 읽지 못함 — {session._source_failure}")
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     reqb = source.tables.get("RQ_REQB", pd.DataFrame()).copy()
     lines.extend([f"- {source.dataset_label}", ""])
     if reqb.empty:
+        session.notes.append("- 8-3 — 리비전 1 의 `RQ_REQB` 가 비어 있다")
         return [*lines, "- 리비전 1 의 `RQ_REQB` 가 비어 있다", ""]
     reqb["소요기준"] = normalize_demand_basis(reqb["소요기준"]).fillna("")
     reqb["공정"] = reqb["공정"].astype("string").str.strip()
@@ -1720,15 +1878,24 @@ def check_reqb(session: Session) -> list[str]:
         ]
     )
     bases_per_process = reqb.groupby("공정")["소요기준"].nunique()
+    mixed = int(bases_per_process.gt(1).sum())
     lines.append(
         f"- 그 밖의 소요기준 {others['소요기준'].nunique():,}종 {len(others):,}행 "
         f"{others['공정'].nunique():,}공정(값은 적지 않는다)"
     )
     lines.append(
         f"- 공정 {reqb['공정'].nunique():,}개 가운데 소요기준이 둘 이상인 공정 "
-        f"{int(bases_per_process.gt(1).sum()):,} (업무 규칙상 0 이어야 한다)"
+        f"{mixed:,} (업무 규칙상 0 이어야 한다)"
     )
     lines.append("")
+    by_basis = [f"{basis} {int(reqb['소요기준'].eq(basis).sum()):,}" for basis in KNOWN_BASES]
+    session.notes.extend(
+        [
+            f"- 8-3 — 행 {len(reqb):,} · 공정 {reqb['공정'].nunique():,} · 그 밖 소요기준 "
+            f"{others['소요기준'].nunique():,}종 · 소요기준 둘 이상인 공정 {mixed:,} (기대 0)",
+            f"  - 검산 — {' + '.join(by_basis)} + 그 밖 {len(others):,} = 행 {len(reqb):,}",
+        ]
+    )
     return lines
 
 
@@ -1798,11 +1965,13 @@ def check_home_months(session: Session) -> list[str]:
     lines = _heading("8-9", "HOME 월 축 — 양산 Density 없는 계획 달", "home")
     source = load_source(session)
     if source is None:
+        session.notes.append(f"- 8-9 — 원천을 읽지 못함 — {session._source_failure}")
         return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
     tables = source.tables
     plan = tables.get("RQ_PKG_PLAN", pd.DataFrame())
     lines.extend([f"- {source.dataset_label}", ""])
     if plan.empty:
+        session.notes.append("- 8-9 — 리비전 1 의 `RQ_PKG_PLAN` 이 비어 있다")
         return [*lines, "- 리비전 1 의 `RQ_PKG_PLAN` 이 비어 있다", ""]
     plan_months = _months(drop_unplanned_rows(plan))
     full_years = complete_years(sorted(plan_months))
@@ -1816,19 +1985,36 @@ def check_home_months(session: Session) -> list[str]:
     )
     rows = [[label, *cells] for label, *cells in zip(_HOME_MONTH_ROWS, *columns, strict=True)]
     lines.extend(["", *_table(["달 수", "EDP 포함(기본)", "EDP 뺌(HOME 토글)"], rows), ""])
+    shown, hidden = columns
+    session.notes.extend(
+        [
+            f"- 8-9 — 계획 달 {len(plan_months):,} · 양산 Density 없는 달 EDP 포함 {shown[1]} · "
+            f"뺌 {hidden[1]} (둘 다 0 이면 닫힘)",
+            f"  - 검산(EDP 포함) — 양산 계획 없는 달 {shown[2]} + Density 가 붙지 않은 달 "
+            f"{shown[3]} = 없는 달 {shown[1]}",
+        ]
+    )
     return lines
 
 
 # ---------------------------------------------------------------------------------- 8-4 equipment
 
 
+_PLACEHOLDER_ROW: Final = (
+    f"Qual일정 = {LEGACY_QUAL_PLACEHOLDER} (최신 리비전, 이제 빈 Qual 로 읽음)"
+)
+_TRUNCATED_ROW: Final = f"**모듈 행 환산비 {TRUNCATED_RATIO}** — 다시 입력할 행"
+
+
 def check_equipment(session: Session) -> list[str]:
     lines = _heading("8-4", "설비 DB — 옛 Qual 자리표·환산비 0.2·일정 미정·사용기준", "equipment")
     connection = session.equipment
     if connection is None:
+        session.notes.append(f"- 8-4 — 설비 DB — {session.equipment_failure}")
         return [*lines, f"- 설비 DB — {session.equipment_failure}", ""]
     latest = _latest_equipment_revision(connection)
     if latest is None:
+        session.notes.append("- 8-4 — 설비 리비전이 없다")
         return [*lines, "- 설비 리비전이 없다(저장한 적이 없다)", ""]
     revision_id, revision_no, contract = latest
     lines.append(f"- 최신 설비 리비전 r{revision_no} · 계약 v{contract}")
@@ -1850,7 +2036,7 @@ def check_equipment(session: Session) -> list[str]:
             [revision_id],
         ),
         (
-            f"Qual일정 = {LEGACY_QUAL_PLACEHOLDER} (최신 리비전, 이제 빈 Qual 로 읽음)",
+            _PLACEHOLDER_ROW,
             f"SELECT count(*) FROM {master} WHERE revision_id = ? AND qual_date = {placeholder}",
             [revision_id],
         ),
@@ -1873,7 +2059,7 @@ def check_equipment(session: Session) -> list[str]:
         ("모듈 행(Main 설비 있음)", module),
         (f"모듈 행 환산비 {MODULE_RATIO}", f"{module} AND {ratio_is.format(value=MODULE_RATIO)}"),
         (
-            f"**모듈 행 환산비 {TRUNCATED_RATIO}** — 다시 입력할 행",
+            _TRUNCATED_ROW,
             f"{module} AND {ratio_is.format(value=TRUNCATED_RATIO)}",
         ),
         (
@@ -1900,11 +2086,28 @@ def check_equipment(session: Session) -> list[str]:
     lines.extend(["", *_table(["항목", "수"], rows), ""])
     lines.extend(_undated_lines(session, connection, revision_id, contract))
     lines.append("")
-    lines.extend(_column_shape_lines(connection, revision_id))
+    facts: dict[str, str] = {}
+    lines.extend(_column_shape_lines(connection, revision_id, facts))
+    counted = dict((label, value) for label, value in rows)
+    master_rows = counted["최신 리비전 설비 마스터 행"]
+    statuses = [f"{status} {facts[f'Qual상태 {status}']}" for status in QUAL_CONFIRMATION_STATUSES]
+    session.notes.extend(
+        [
+            f"- 8-4 — 최신 r{revision_no} · 마스터 {master_rows}행 · 환산비 "
+            f"{TRUNCATED_RATIO} 모듈 행 {counted[_TRUNCATED_ROW]} · 자리표 Qual "
+            f"{counted[_PLACEHOLDER_ROW]}행 · 개편 전 두 날짜 {facts['개편 전 두 날짜']} (기대 0)",
+            f"  - 검산 — Qual상태 {' + '.join(statuses)} + 빈 칸 {facts['Qual상태 빈 칸']} + "
+            f"그 밖 {facts['Qual상태 그 밖']} = 마스터 {master_rows}행",
+        ]
+    )
     return lines
 
 
-def _column_shape_lines(connection: duckdb.DuckDBPyConnection, revision_id: str) -> list[str]:
+def _column_shape_lines(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+    facts: dict[str, str] | None = None,
+) -> list[str]:
     """설비 마스터 38열 개편(2026-10-16)이 기대는 값의 꼴 — 최신 리비전의 DB 컬럼을 직접 센다.
 
     Area Code(`classification_1`)·공정구분(`line_type`)은 계약이 정한 이름(Main·MI·부대, 공정구분
@@ -1984,16 +2187,20 @@ def _column_shape_lines(connection: duckdb.DuckDBPyConnection, revision_id: str)
             before[1] if before else "없음",
         ]
     )
+    facts = {} if facts is None else facts
+    facts["개편 전 두 날짜"] = (
+        _safe_scalar(
+            connection,
+            f"SELECT count(*) FROM {master} WHERE revision_id = ? AND ({both})",
+            [before[0]],
+        )
+        if before
+        else "-"
+    )
     rows.append(
         [
             "**개편 전 마지막 리비전의 정지일정·반출/이설일정 둘 다 있는 행** — 0 이어야 함",
-            _safe_scalar(
-                connection,
-                f"SELECT count(*) FROM {master} WHERE revision_id = ? AND ({both})",
-                [before[0]],
-            )
-            if before
-            else "-",
+            facts["개편 전 두 날짜"],
         ]
     )
     rows.append(
@@ -2003,20 +2210,15 @@ def _column_shape_lines(connection: duckdb.DuckDBPyConnection, revision_id: str)
         ]
     )
     for status in QUAL_CONFIRMATION_STATUSES:
-        rows.append(
-            [
-                f"Qual상태(qual_confirmation_status) = {status}",
-                count(f"trim(qual_confirmation_status) = '{status}'"),
-            ]
-        )
+        facts[f"Qual상태 {status}"] = count(f"trim(qual_confirmation_status) = '{status}'")
+        rows.append([f"Qual상태(qual_confirmation_status) = {status}", facts[f"Qual상태 {status}"]])
     status_listed = listed("qual_confirmation_status", QUAL_CONFIRMATION_STATUSES)
-    rows.append(["Qual상태 빈 칸", count(blank("qual_confirmation_status"))])
-    rows.append(
-        [
-            "Qual상태 그 밖",
-            count(f"NOT ({blank('qual_confirmation_status')}) AND NOT ({status_listed})"),
-        ]
+    facts["Qual상태 빈 칸"] = count(blank("qual_confirmation_status"))
+    facts["Qual상태 그 밖"] = count(
+        f"NOT ({blank('qual_confirmation_status')}) AND NOT ({status_listed})"
     )
+    rows.append(["Qual상태 빈 칸", facts["Qual상태 빈 칸"]])
+    rows.append(["Qual상태 그 밖", facts["Qual상태 그 밖"]])
     return [
         "- 38열 개편 컬럼 분포(최신 리비전, 값은 찍지 않고 계약 이름만 적는다)",
         "",
@@ -2154,6 +2356,546 @@ def _usage_basis_line(equipment: pd.DataFrame) -> str:
     )
 
 
+# ---------------------------------------------------------------------------------- 8-10 census
+
+# 센서스가 보는 리비전. 기본은 시나리오마다 활성 리비전과 공식버전 대상(런북 6-3 a
+# `--active-only` 와 같은 묶음)이고, `--census-all-revisions` 면 저장된 모든 리비전이다.
+_ACTIVE_REVISIONS: Final = (
+    "picked AS (SELECT revision_id FROM app_meta.scenario_revision "
+    "WHERE revision_id IN (SELECT active_revision_id FROM app_meta.scenario) "
+    "OR revision_id IN (SELECT revision_id FROM app_meta.official_release))"
+)
+_ALL_REVISIONS: Final = "picked AS (SELECT revision_id FROM app_meta.scenario_revision)"
+
+# 편집 격자가 상한 1 로 받는 값 칸과, 하한 0 으로 받는 값 칸 전부. 격자의 범위는
+# `app_pages/reference_data.EDITOR_FORMATS` 다 — 화면 모듈이라 부르지 않고 시험이 맞대 본다.
+# Excel 붙여넣기가 그 범위를 거치지 않던 때(사내 리뷰 202610120655 E5)의 값이 저장 리비전에
+# 남았을 수 있다.
+CENSUS_RATIO_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
+    ("RQ_RUN_RATE", "CAPA_RUN_RATE"),
+    ("RQ_LOT_RATIO", "Lot 측정률"),
+    ("RQ_WF_RATIO", "WF측정률"),
+)
+CENSUS_VALUE_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
+    ("RQ_UPEH", "UPEH"),
+    ("RQ_UPEH", "ST"),
+    ("RQ_RUN_RATE", "CAPA_RUN_RATE"),
+    ("RQ_VITAL", "편중률"),
+    ("RQ_LOT_RATIO", "Lot 측정률"),
+    ("RQ_WF_RATIO", "WF측정률"),
+    ("RQ_RUN_DAY", "RUN_DAY"),
+    ("RQ_EQP_OWN", "설비보유"),
+    ("RQ_EQP_LENT", "설비대여평가"),
+    ("RQ_EQP_AVBL", "가용대수"),
+)
+# `WF 구분` 칸이 있는 리비전 표 — 계산은 이 칸의 대소문자를 접지 않는다(결정 6).
+CENSUS_DIVISION_TABLES: Final[tuple[str, ...]] = (
+    "RQ_CHIP_EQ",
+    "RQ_CHIP_QTY",
+    "RQ_LOT_RATIO",
+    "RQ_REQB",
+    "RQ_UPEH",
+    "RQ_WF_RATIO",
+    "RQ_YLD",
+)
+
+# 대당 Capa 계산(`unit_capacity.calculate_unit_capacity`)은 효율·편중률·모듈수·RUN_DAY 를 경로에
+# 붙인 뒤 **제외를 정하기 전에** 빈 칸을 막는다(결정 7). 이 SQL 은 그 빈 칸 가운데 붙은 경로가 모두
+# 뒤에서 빠질 경로(Main UPEH 0 이하 · 효율 0 이하 · 측정률 음수)인 칸을 리비전마다 센다 — 그 칸
+# 때문에 그 리비전 계산이 멈춘다. 연결은 계산과 같은 키이고 글자 키는 앞뒤 공백을 떼어 견준다
+# (`Area_Name` 은 대소문자도 무시). BOX·PCB 경로는 계산 대상이 아니라 처음부터 뺀다.
+_PERFORMANCE_JOIN: Final = (
+    '{alias}.revision_id = perf.revision_id AND {alias}."생산계획년월" = perf.m '
+    'AND lower(trim({alias}."Area_Name")) = perf.a AND trim({alias}."공정") = perf.p '
+    'AND trim({alias}."STEP_SEQ") = perf.s AND trim({alias}."MCP_SEQ") = perf.c '
+    'AND trim({alias}."양산구분") = perf.q AND trim({alias}."제품정보") = perf.g '
+    'AND trim({alias}."Stack") = perf.k AND trim({alias}."WF 구분") = perf.w'
+)
+_BLANK_ONLY_ON_DROPPED_ROUTES: Final = """
+WITH {picked},
+perf AS MATERIALIZED (
+    SELECT u.revision_id, u."생산계획년월" AS m, trim(u."공정") AS p, trim(u."양산구분") AS q,
+           lower(trim(u."Area_Name")) AS a, trim(u."STEP_SEQ") AS s, trim(u."MCP_SEQ") AS c,
+           trim(u."제품정보") AS g, trim(u."Stack") AS k, trim(u."WF 구분") AS w,
+           coalesce(lower(trim(u."Area_Name")) = 'main' AND u."UPEH" <= 0, false) AS upeh_out
+    FROM rev_data.rq_upeh AS u JOIN picked USING (revision_id)
+    WHERE upper(trim(u."소요기준")) NOT IN ('BOX', 'PCB')
+),
+routes AS MATERIALIZED (
+    SELECT perf.revision_id, perf.m, perf.p, perf.q,
+           perf.upeh_out
+           OR coalesce(rr."CAPA_RUN_RATE" <= 0, false)
+           OR coalesce(lr."Lot 측정률" < 0, false)
+           OR coalesce(wr."WF측정률" < 0, false) AS dropped
+    FROM perf
+    LEFT JOIN rev_data.rq_run_rate AS rr
+      ON rr.revision_id = perf.revision_id AND rr."생산계획년월" = perf.m
+     AND trim(rr."공정") = perf.p AND trim(rr."양산구분") = perf.q
+    LEFT JOIN rev_data.rq_lot_ratio AS lr ON {lot_join}
+    LEFT JOIN rev_data.rq_wf_ratio AS wr ON {wf_join}
+),
+datasets AS (
+    SELECT r.revision_id, d.dataset_id
+    FROM app_meta.scenario_revision AS r JOIN picked USING (revision_id)
+    JOIN app_meta.dataset AS d ON d.scenario_id = r.scenario_id
+),
+cells AS (
+    SELECT b.revision_id, bool_and(routes.dropped) AS only_dropped
+    FROM rev_data.rq_run_rate AS b JOIN picked USING (revision_id)
+    JOIN routes ON routes.revision_id = b.revision_id AND routes.m = b."생산계획년월"
+     AND routes.p = trim(b."공정") AND routes.q = trim(b."양산구분")
+    WHERE b."CAPA_RUN_RATE" IS NULL
+    GROUP BY b.revision_id, b.source_row_no
+    UNION ALL
+    SELECT b.revision_id, bool_and(routes.dropped)
+    FROM rev_data.rq_vital AS b JOIN picked USING (revision_id)
+    JOIN routes ON routes.revision_id = b.revision_id AND routes.m = b."생산계획년월"
+     AND routes.p = trim(b."공정") AND routes.q = trim(b."양산구분")
+    WHERE b."편중률" IS NULL
+    GROUP BY b.revision_id, b.source_row_no
+    UNION ALL
+    SELECT b.revision_id, bool_and(routes.dropped)
+    FROM rev_data.rq_run_day AS b JOIN picked USING (revision_id)
+    JOIN routes ON routes.revision_id = b.revision_id AND routes.m = b."생산계획년월"
+     AND routes.p = trim(b."공정")
+    WHERE b."RUN_DAY" IS NULL
+    GROUP BY b.revision_id, b.source_row_no
+    UNION ALL
+    SELECT datasets.revision_id, bool_and(routes.dropped)
+    FROM ref_data.rq_module AS b JOIN datasets USING (dataset_id)
+    JOIN routes ON routes.revision_id = datasets.revision_id AND routes.p = trim(b."공정")
+    WHERE b."모듈수" IS NULL
+    GROUP BY datasets.revision_id, b.source_row_no
+)
+SELECT revision_id, count(*) FROM cells WHERE only_dropped GROUP BY 1
+"""
+
+
+@dataclass(frozen=True)
+class CensusScope:
+    """센서스가 보는 리비전 묶음 — CTE 한 덩이와 그 리비전 수."""
+
+    picked: str
+    revisions: int
+    label: str
+
+
+@dataclass(frozen=True)
+class CensusRow:
+    """센서스 한 줄. `hit` 은 그 꼴이 하나라도 있는 리비전(또는 데이터셋·설비 리비전) 수다."""
+
+    label: str
+    closes: str
+    unit: str
+    scope: str = "리비전"
+    hit: int = 0
+    seen: int = 0
+    count: int = 0
+    failure: str | None = None
+
+    def cells(self) -> list[str]:
+        if self.failure is not None:
+            return [self.label, self.closes, "-", self.failure]
+        return [
+            self.label,
+            self.closes,
+            f"{self.hit:,} / {self.seen:,} {self.scope}",
+            f"{self.unit} {self.count:,}",
+        ]
+
+
+def _by_owner(
+    connection: duckdb.DuckDBPyConnection, sql: str, params: Sequence[object] = ()
+) -> Counter[str]:
+    """`SELECT 주인, 개수` 결과 → 주인마다 개수(0 은 뺀다)."""
+    return Counter(
+        {
+            str(owner): int(count)
+            for owner, count in connection.execute(sql, list(params)).fetchall()
+            if count
+        }
+    )
+
+
+def _cells_where(
+    connection: duckdb.DuckDBPyConnection,
+    scope: CensusScope,
+    columns: Sequence[tuple[str, str]],
+    condition: str,
+) -> Counter[str]:
+    """리비전 표의 값 칸이 `condition`(`{value}` 자리)에 걸리는 행 수를 리비전마다 더한다."""
+    found: Counter[str] = Counter()
+    for logical, column in columns:
+        value = f't."{column}"'
+        found.update(
+            _by_owner(
+                connection,
+                f"WITH {scope.picked} SELECT t.revision_id, count(*) "
+                f"FROM rev_data.{REVISION_TABLES[logical]} AS t JOIN picked USING (revision_id) "
+                f"WHERE {condition.format(value=value)} GROUP BY 1",
+            )
+        )
+    return found
+
+
+def _census_key_columns(connection: duckdb.DuckDBPyConnection, table: str) -> list[str]:
+    """리비전 표의 키 칸(값 칸 `DOUBLE`·주인·행 번호·`WF 구분` 을 뺀 것).
+
+    글자 칸은 앞뒤 공백을 떼어 견준다 — 계산이 키를 붙이기 전에 하는 것과 같다.
+    """
+    columns = connection.execute(
+        "SELECT column_name, data_type FROM duckdb_columns() "
+        "WHERE schema_name = 'rev_data' AND table_name = ? ORDER BY column_index",
+        [table],
+    ).fetchall()
+    keys: list[str] = []
+    for name, kind in columns:
+        if name in ("revision_id", "source_row_no", "WF 구분") or kind == "DOUBLE":
+            continue
+        keys.append(f'trim(t."{name}")' if kind == "VARCHAR" else f't."{name}"')
+    return keys
+
+
+def _census_division_case(
+    connection: duckdb.DuckDBPyConnection, scope: CensusScope
+) -> Counter[str]:
+    """`WF 구분` 의 대소문자만 다른 행이 같은 키에 둘 이상 있는 키 수 — 표 일곱의 합."""
+    found: Counter[str] = Counter()
+    for logical in CENSUS_DIVISION_TABLES:
+        table = REVISION_TABLES[logical]
+        keys = ", ".join(_census_key_columns(connection, table))
+        found.update(
+            _by_owner(
+                connection,
+                f"""
+                WITH {scope.picked}
+                SELECT revision_id, count(*) FROM (
+                    SELECT t.revision_id
+                    FROM rev_data.{table} AS t JOIN picked USING (revision_id)
+                    GROUP BY t.revision_id, {keys}, lower(trim(t."WF 구분"))
+                    HAVING count(DISTINCT trim(t."WF 구분")) > 1
+                ) GROUP BY 1
+                """,
+            )
+        )
+    return found
+
+
+def _picked_revisions(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> list[str]:
+    return [
+        str(row[0])
+        for row in connection.execute(
+            f"WITH {scope.picked} SELECT revision_id FROM picked ORDER BY 1"
+        ).fetchall()
+    ]
+
+
+def _census_route_folds(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> Counter[str]:
+    """`RQ_REQB` 에서 계산이 앞 행과 같은 경로로 접는 행 가운데 글자 그대로는 다른 행.
+
+    접는 규칙은 등록·계산과 같은 `frame_contracts.duplicate_route_rows` 다(앞뒤 공백 · 소요기준
+    `WAFER` · `Area_Name` 대소문자). 리비전마다 따로 읽어 한 번에 한 리비전만 메모리에 둔다.
+    """
+    columns = ", ".join(f'"{column}"' for column in REQB_COLUMNS)
+    found: Counter[str] = Counter()
+    for revision_id in _picked_revisions(connection, scope):
+        frame = connection.execute(
+            f"SELECT {columns} FROM rev_data.rq_reqb WHERE revision_id = ?", [revision_id]
+        ).fetch_df()
+        folded = duplicate_route_rows(frame, REQB_COLUMNS) & ~frame.duplicated(subset=REQB_COLUMNS)
+        if folded.any():
+            found[revision_id] = int(folded.sum())
+    return found
+
+
+def _census_blank_capacity(
+    connection: duckdb.DuckDBPyConnection, scope: CensusScope
+) -> Counter[str]:
+    return _by_owner(
+        connection,
+        _BLANK_ONLY_ON_DROPPED_ROUTES.format(
+            picked=scope.picked,
+            lot_join=_PERFORMANCE_JOIN.format(alias="lr"),
+            wf_join=_PERFORMANCE_JOIN.format(alias="wr"),
+        ),
+    )
+
+
+def _census_merge_gaps(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusCount:
+    """월 머지로 만든 시나리오의 리비전마다 첫 달 ~ 끝 달 사이 어느 월 표에도 없는 달."""
+    merged = [
+        str(row[0])
+        for row in connection.execute(
+            f"WITH {scope.picked} SELECT r.revision_id "
+            "FROM app_meta.scenario_revision AS r JOIN picked USING (revision_id) "
+            "JOIN app_meta.dataset AS d ON d.scenario_id = r.scenario_id "
+            "WHERE d.source_type = ?",
+            [MONTH_MERGE_SOURCE],
+        ).fetchall()
+    ]
+    months_sql = " UNION ".join(
+        f'SELECT "생산계획년월" FROM rev_data.{REVISION_TABLES[name]} WHERE revision_id = ?'
+        for name in MONTHLY_TABLES
+    )
+    found: Counter[str] = Counter()
+    for revision_id in merged:
+        months = [
+            int(row[0])
+            for row in connection.execute(
+                months_sql, [revision_id] * len(MONTHLY_TABLES)
+            ).fetchall()
+            if row[0] is not None
+        ]
+        gaps = len(missing_calendar_months(months))
+        if gaps:
+            found[revision_id] = gaps
+    return len(found), len(merged), sum(found.values())
+
+
+def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusCount:
+    """원천 `계획기초정보여부` 가 앞뒤 공백·대소문자를 무시해도 `Y`·`N` 이 아닌 행(빈 칸 포함).
+
+    본 리비전의 시나리오가 가진 데이터셋 가운데 원천 행이 있는 것(복제는 원천 행이 없다)만 센다.
+    """
+    rows = connection.execute(
+        f"""
+        WITH {scope.picked},
+        sets AS (
+            SELECT DISTINCT d.dataset_id
+            FROM app_meta.scenario_revision AS r JOIN picked USING (revision_id)
+            JOIN app_meta.dataset AS d ON d.scenario_id = r.scenario_id
+        )
+        SELECT c.dataset_id, count(*) FILTER (
+            WHERE upper(trim(coalesce(c."계획기초정보여부", ''))) NOT IN ('Y', 'N')
+        )
+        FROM raw_data.core_data AS c JOIN sets USING (dataset_id)
+        GROUP BY 1
+        """
+    ).fetchall()
+    return sum(1 for _, count in rows if count), len(rows), sum(int(count) for _, count in rows)
+
+
+def _census_equipment_names(connection: duckdb.DuckDBPyConnection) -> CensusCount:
+    """설비 마스터에서 앞뒤 공백·대소문자만 다른 설비명 묶음 — 수는 최신 리비전의 묶음 수."""
+    found = _by_owner(
+        connection,
+        """
+        SELECT revision_id, count(*) FROM (
+            SELECT revision_id FROM equipment_ops.equipment_master_snapshot
+            GROUP BY revision_id, lower(trim(equipment_id))
+            HAVING count(DISTINCT equipment_id) > 1
+        ) GROUP BY 1
+        """,
+    )
+    seen = _scalar(connection, "SELECT count(*) FROM equipment_ops.revision")
+    latest = _latest_equipment_revision(connection)
+    return len(found), seen, 0 if latest is None else found.get(latest[0], 0)
+
+
+class _NotOpened(Exception):
+    """센서스 줄이 볼 DB 를 열지 못했다 — 문구는 이 스크립트가 지은 것뿐이다."""
+
+
+def _opened(connection: duckdb.DuckDBPyConnection | None, label: str) -> duckdb.DuckDBPyConnection:
+    if connection is None:
+        raise _NotOpened(f"{label} 를 열지 못함")
+    return connection
+
+
+CensusCount = tuple[int, int, int]
+CensusRun = Callable[[Session, CensusScope], CensusCount]
+
+
+@dataclass(frozen=True)
+class CensusItem:
+    """센서스 한 줄의 정의 — `run` 은 (걸린 수, 본 수, 꼴의 수) 를 돌려준다."""
+
+    label: str
+    closes: str
+    unit: str
+    run: CensusRun
+    scope: str = "리비전"
+
+    def measure(self, session: Session, scope: CensusScope) -> CensusRow:
+        row = CensusRow(label=self.label, closes=self.closes, unit=self.unit, scope=self.scope)
+        try:
+            hit, seen, count = self.run(session, scope)
+        except _NotOpened as exc:
+            return replace(row, failure=str(exc))
+        except Exception as exc:  # 한 줄이 멈춰도 다음 줄은 센다. 문구는 찍지 않는다
+            return replace(row, failure=_failure(exc))
+        return replace(row, hit=hit, seen=seen, count=count)
+
+
+def _per_revision(count: Callable[..., Counter[str]], *args: object) -> CensusRun:
+    """리비전마다 센 수 → (걸린 리비전, 본 리비전, 합)."""
+
+    def run(session: Session, scope: CensusScope) -> CensusCount:
+        found = count(_opened(session.simulation, "시뮬레이션 DB"), scope, *args)
+        return len(found), scope.revisions, sum(found.values())
+
+    return run
+
+
+def _on_simulation(
+    count: Callable[[duckdb.DuckDBPyConnection, CensusScope], CensusCount],
+) -> CensusRun:
+    return lambda session, scope: count(_opened(session.simulation, "시뮬레이션 DB"), scope)
+
+
+# 센서스 줄 차례. 닫는 결정은 `docs/TODO.md` 「사내 리뷰 `202610120655` 후속 — 사용자 결정 대기」 의
+# 번호와 그 리뷰의 결함 ID 다. 「고침」 은 결정 없이 이미 고친 것의 남은 꼴(참고)이다.
+CENSUS_ITEMS: Final[tuple[CensusItem, ...]] = (
+    CensusItem(
+        "효율·측정률 1 초과(`CAPA_RUN_RATE`·`Lot 측정률`·`WF측정률`)",
+        "결정 8 · E5",
+        "칸",
+        _per_revision(_cells_where, CENSUS_RATIO_COLUMNS, "{value} > 1"),
+    ),
+    CensusItem(
+        "편집 값 칸 음수(UPEH·ST·효율·편중률·측정률·RUN_DAY·보유·대여평가·가용)",
+        "결정 8 · E5",
+        "칸",
+        _per_revision(_cells_where, CENSUS_VALUE_COLUMNS, "{value} < 0"),
+    ),
+    CensusItem(
+        "`RQ_RUN_DAY` 0 칸",
+        "고침 · E2",
+        "칸",
+        _per_revision(_cells_where, (("RQ_RUN_DAY", "RUN_DAY"),), "{value} = 0"),
+    ),
+    CensusItem(
+        "`RQ_PKG_PLAN` 빈 생산수량",
+        "고침 · P5",
+        "행",
+        _per_revision(_cells_where, (("RQ_PKG_PLAN", "생산수량"),), "{value} IS NULL"),
+    ),
+    CensusItem(
+        "빈 보유대수(`RQ_EQP_OWN`)",
+        "결정 8 · P7",
+        "칸",
+        _per_revision(_cells_where, (("RQ_EQP_OWN", "설비보유"),), "{value} IS NULL"),
+    ),
+    CensusItem(
+        "빈 대여평가(`RQ_EQP_LENT`)",
+        "결정 8 · P7",
+        "칸",
+        _per_revision(_cells_where, (("RQ_EQP_LENT", "설비대여평가"),), "{value} IS NULL"),
+    ),
+    CensusItem(
+        "같은 키에 `WF 구분` 대소문자만 다른 행이 둘 이상(표 일곱)",
+        "결정 6 · P8",
+        "키",
+        _per_revision(_census_division_case),
+    ),
+    CensusItem(
+        "`RQ_REQB` 에서 계산이 앞 행과 같은 경로로 접는, 표기만 다른 행",
+        "결정 8 · P4",
+        "행",
+        _per_revision(_census_route_folds),
+    ),
+    CensusItem(
+        "효율·편중률·모듈수·RUN_DAY 빈 칸 가운데 붙은 경로가 모두 뒤에서 빠질 칸",
+        "결정 7 · P6",
+        "칸",
+        _per_revision(_census_blank_capacity),
+    ),
+    CensusItem(
+        "월 머지 리비전의 달력 공백 달(첫 달 ~ 끝 달 사이 어느 월 표에도 없는 달)",
+        "결정 9 · D6",
+        "달",
+        _on_simulation(_census_merge_gaps),
+        scope="머지 리비전",
+    ),
+    CensusItem(
+        "원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(빈 칸 포함)",
+        "사내 확인 요청 · P8",
+        "행",
+        _on_simulation(_census_plan_flag),
+        scope="원천 데이터셋",
+    ),
+    CensusItem(
+        "앞뒤 공백·대소문자만 다른 설비명 묶음(설비 DB · 수는 최신 리비전)",
+        "결정 10 · Q6·Q7",
+        "묶음",
+        lambda session, _scope: _census_equipment_names(_opened(session.equipment, "설비 DB")),
+        scope="설비 리비전",
+    ),
+)
+
+
+def _census_scope(connection: duckdb.DuckDBPyConnection, all_revisions: bool) -> CensusScope:
+    picked = _ALL_REVISIONS if all_revisions else _ACTIVE_REVISIONS
+    count = _scalar(connection, f"WITH {picked} SELECT count(*) FROM picked")
+    label = (
+        "저장된 모든 리비전(`--census-all-revisions`)"
+        if all_revisions
+        else "시나리오마다 활성 리비전과 공식버전 대상(6-3 a `--active-only` 와 같은 묶음)"
+    )
+    return CensusScope(picked=picked, revisions=count, label=label)
+
+
+_CENSUS_HEADERS: Final = ("항목", "닫는 결정", "걸림 / 봄", "수")
+
+
+def iter_census(session: Session, *, all_revisions: bool = False) -> Iterator[list[str]]:
+    """8-10 을 줄마다 내준다 — 한 줄이 끝나는 대로 찍혀 중간에 멈춰도 앞 줄은 남는다.
+
+    「지금대로」 로 정한 결정(`docs/TODO.md` 사내 리뷰 `202610120655` 후속 결정 대기)마다 그 꼴이
+    저장 리비전에 몇 개 있는지 **개수만** 센다. 0 이면 그 결정을 닫고, 0 이 아니면 사외가 사용자와
+    다시 정한다. BigDataQuery 조회가 있어야 하는 것(PSM 코드의 주차 꼴 등)은 넣지 않는다.
+    """
+    started = time.perf_counter()
+    lines = _heading("8-10", "센서스 — 「지금대로」 결정의 실데이터 유병률", "census")
+    connection = session.simulation
+    if connection is None:
+        session.notes.append(f"- 8-10 — 시뮬레이션 DB — {session.simulation_failure}")
+        yield [*lines, f"- 시뮬레이션 DB — {session.simulation_failure}", ""]
+        return
+    try:
+        scope = _census_scope(connection, all_revisions)
+    except duckdb.Error as exc:
+        session.notes.append(f"- 8-10 — 리비전 목록 {_failure(exc)}")
+        yield [*lines, f"- 리비전 목록을 읽지 못함 — {_failure(exc)}", ""]
+        return
+    yield [
+        *lines,
+        f"- 본 리비전 {scope.revisions:,} — {scope.label}",
+        "- 개수만 센다(값·이름은 찍지 않는다). `닫는 결정` 은 `docs/TODO.md` 「사내 리뷰 "
+        "`202610120655` 후속 — 사용자 결정 대기」 의 번호 · 그 리뷰의 결함 ID 다(「고침」 은 이미 "
+        "고친 것의 남은 꼴 — 참고).",
+        "",
+        *_table(_CENSUS_HEADERS, []),
+    ]
+    rows: list[CensusRow] = []
+    for item in CENSUS_ITEMS:
+        row = item.measure(session, scope)
+        rows.append(row)
+        yield ["| " + " | ".join(row.cells()) + " |"]
+    yield [
+        "",
+        "- 읽는 법 — `걸림 / 봄` 은 그 꼴이 하나라도 있는 리비전(또는 데이터셋 · 설비 리비전) "
+        "수 / 본 수, `수` 는 그 꼴의 칸 · 키 · 행 · 달 · 묶음 수의 합이다(설비명 묶음만 최신 "
+        "리비전의 수). **0 이면 그 결정을 「지금대로」 로 닫는다** — 0 이 아니면 사외가 사용자와 "
+        "다시 정한다. 에이전트는 판정하지 않고 수만 옮긴다.",
+        f"- 걸린 시간 {time.perf_counter() - started:.1f}초",
+        "",
+    ]
+    counts = [row for row in rows if row.failure is None]
+    failed = len(rows) - len(counts)
+    session.notes.extend(
+        [
+            f"- 8-10 센서스 — 0 이 아닌 항목 {sum(1 for row in counts if row.count):,} / "
+            f"{len(rows):,}"
+            + (f" · 실패 {failed:,}" if failed else "")
+            + f" · 본 리비전 {scope.revisions:,}",
+            "  - 검산 — "
+            + (" + ".join(f"{row.count:,}" for row in counts) or "0")
+            + f" = 수 합 {sum(row.count for row in counts):,}",
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------------- 8-5 bdq
 
 
@@ -2281,6 +3023,13 @@ def _catalog_row(run: CatalogRun) -> list[str]:
     ]
 
 
+def _catalog_note(run: CatalogRun) -> str:
+    """전송용 요약의 목록 칸 — 「366일 4행 1.2초」."""
+    if run.frame is None:
+        return f"{run.window.days}일 {run.failure or '-'}"
+    return f"{run.window.days}일 {len(run.frame):,}행 {_seconds(run.seconds)}초"
+
+
 def _value_shape(value: object) -> str:
     """값의 꼴만 — 숫자는 9, 영문은 A, 그 밖의 글자는 ? 로 바꾸고 기호·공백은 남긴다."""
     text = str(value)[:40]
@@ -2358,6 +3107,12 @@ def describe_registered_at(values: pd.Series) -> list[str]:
     return lines
 
 
+def _code_rule_split(codes: pd.Series) -> tuple[list[str], list[str]]:
+    """(서로 다른 코드, 그 가운데 규칙을 어긴 코드). 코드는 부르는 쪽이 찍지 않는다."""
+    distinct = [str(code) for code in codes.astype("string").fillna("").unique()]
+    return distinct, [code for code in distinct if not is_valid_simulation_code(code)]
+
+
 def describe_codes(codes: pd.Series) -> str:
     """`catb_sim_info_id` 규칙 위반 수와 까닭의 종류. 코드는 찍지 않는다.
 
@@ -2365,8 +3120,7 @@ def describe_codes(codes: pd.Series) -> str:
     문자열로 돌려줘 `.sum()` 이 `Cannot perform reduction 'sum' with string dtype` 으로 죽었다
     (사내 리뷰 202610070927·202610071831 의 8-5). 판올림마다 갈리는 dtype 추론에 기대지 않는다.
     """
-    distinct = [str(code) for code in codes.astype("string").fillna("").unique()]
-    invalid = [code for code in distinct if not is_valid_simulation_code(code)]
+    distinct, invalid = _code_rule_split(codes)
     empty = sum(1 for code in invalid if not code.strip())
     spaced = sum(1 for code in invalid if re.search(r"\s", code.strip()))
     non_ascii = sum(1 for code in invalid if not code.isascii())
@@ -2656,6 +3410,20 @@ def _code_load_day_rows(loads: CodeLoadDays) -> list[list[str]]:
             "여러 날 코드 가운데 끝 적재일이 목록 창 끝날(오늘)인 코드",
             f"{at_end:,} / {len(multi):,}",
         ],
+    ]
+
+
+def _code_load_day_notes(loads: CodeLoadDays) -> list[str]:
+    """전송용 요약의 전 코드 적재일 줄과 그 검산(1일 + 2–5일 + 6일 이상 = 코드)."""
+    if loads.failure is not None:
+        return [f"- 8-5 전 코드 적재일 — {loads.failure}"]
+    spans = list(loads.spans.values())
+    one = sum(1 for span in spans if span.days == 1)
+    few = sum(1 for span in spans if 2 <= span.days <= 5)
+    many = sum(1 for span in spans if span.days >= 6)
+    return [
+        f"- 8-5 전 코드 적재일 — 1일 {one:,} · 2–5일 {few:,} · 6일 이상 {many:,}",
+        f"  - 검산 — {one:,} + {few:,} + {many:,} = 코드 {len(spans):,}",
     ]
 
 
@@ -3137,6 +3905,32 @@ def copy_lines(index: int, check: CopyCheck) -> list[str]:
     ]
 
 
+def _summed(values: Iterable[int | None]) -> str:
+    """견준 날들의 칸 합. 칸이 없는 날이 하나라도 있으면 「칸 없음」."""
+    numbers = list(values)
+    if any(value is None for value in numbers):
+        return _NO_COLUMNS
+    return f"{sum(value for value in numbers if value is not None):,}"
+
+
+def copy_note(index: int, check: CopyCheck) -> str:
+    """전송용 요약의 사본 줄 — 견준 날의 네 칸(과 기준 날에만)을 날마다 더한 합. 판정은 없다."""
+    head = f"- 8-5 사본 코드 {index}({'더함' if check.extra else '표본'})"
+    if check.failure is not None:
+        return f"{head} — {check.failure}"
+    compared = [facts for facts in check.days if facts.compared]
+    if not compared:
+        return f"{head} — 적재일 {check.load_days:,}일 · 여러 날이 아님"
+    return (
+        f"{head} — 적재일 {check.load_days:,}일 · 견준 날 {len(compared):,} · 그날에만(잘게) "
+        f"{_summed(facts.only_day_finest for facts in compared)} · 기준 날에만(잘게) "
+        f"{_summed(facts.only_reference_finest for facts in compared)} · 행이 다른 키 "
+        f"{_summed(facts.changed for facts in compared)} · 그 밖 칸만 다른 행 "
+        f"{_summed(facts.other_only for facts in compared)} · 하루 안 충돌 "
+        f"{_summed(facts.conflicts for facts in check.days)}"
+    )
+
+
 def _copy_parts(
     probe: BigDataQueryProbe,
     picked: Sequence[str],
@@ -3146,8 +3940,10 @@ def _copy_parts(
     today: date,
     max_codes: int,
     max_days: int,
+    notes: list[str] | None = None,
 ) -> Iterator[list[str]]:
     """사본 확인을 머리와 코드마다 한 조각으로 내준다 — 끝난 코드는 바로 찍힌다."""
+    notes = [] if notes is None else notes
     days = max(max_days, 2)
     title = (
         "**여러 날 적재 — 날마다 무엇이 같고 다른가** — 표본의 여러 날 코드(적재일이 많은 순)를 "
@@ -3158,6 +3954,7 @@ def _copy_parts(
         "옮기고 사외가 정한다**(칸 뜻은 런북 8-5)."
     )
     if max_codes <= 0 or max_days <= 0:
+        notes.append("- 8-5 사본 — 껐다(`--bdq-copy-codes 0` 또는 `--bdq-copy-days 0`)")
         yield [
             title,
             "",
@@ -3166,10 +3963,12 @@ def _copy_parts(
         ]
         return
     if any(results[code].load_failure for code in picked):
+        notes.append("- 8-5 사본 — 적재일 조회가 실패해 건너뜀")
         yield [title, "", "- 적재일 조회가 실패해 건너뛴다.", ""]
         return
     targets = _copy_targets(picked, results, loads, max_codes=max_codes)
     if not targets:
+        notes.append("- 8-5 사본 — 여러 날 적재된 코드 없음")
         yield [title, "", "- 여러 날 적재된 코드가 표본에도 전 코드 조회에도 없다.", ""]
         return
     yield [title, ""]
@@ -3183,6 +3982,7 @@ def _copy_parts(
             bounded=target.bounded,
             max_days=days,
         )
+        notes.append(copy_note(index, check))
         yield copy_lines(index, check)
 
 
@@ -3196,14 +3996,20 @@ def iter_bigdataquery(
     copy_codes: int = DEFAULT_COPY_CODES,
     copy_days: int = DEFAULT_COPY_DAYS,
     probe: BigDataQueryProbe | None = None,
+    notes: list[str] | None = None,
 ) -> Iterator[list[str]]:
-    """8-5 를 조각마다 내준다 — 부르는 쪽이 조각이 끝나는 대로 찍는다."""
+    """8-5 를 조각마다 내준다 — 부르는 쪽이 조각이 끝나는 대로 찍는다.
+
+    `notes` 에는 전송용 요약 줄(목록 · 전 코드 적재일과 그 검산 · 표본 · 사본 코드마다)을 더한다.
+    """
+    notes = [] if notes is None else notes
     lines = _heading("8-5", "BigDataQuery — 목록·등록일·코드·적재일·사본", "bdq")
     account = (
         "있음" if resolve_user_name() else "없음(Windows 는 없어도 된다 — 로그인 이름으로 묻는다)"
     )
     if probe is None:
         if not is_bigdataquery_package_available():
+            notes.append("- 8-5 — `bigdataquery` 패키지가 없어 건너뜀")
             yield [
                 *lines,
                 "- `bigdataquery` 패키지가 없다 — 사외 PC 이거나 맨 `uv sync` 가 지웠다"
@@ -3213,11 +4019,13 @@ def iter_bigdataquery(
             ]
             return
         if not (is_bigdataquery_catalog_configured() and is_bigdataquery_adapter_configured()):
+            notes.append("- 8-5 — SQL 이 설정되지 않아 건너뜀")
             yield [*lines, "- 목록 또는 상세 SQL 이 설정되지 않았다 — 이 절은 건너뛴다.", ""]
             return
         try:
             probe = CompanyProbe()
         except Exception as exc:  # 패키지를 불러오다 실패
+            notes.append(f"- 8-5 — 패키지를 불러오지 못함 — {_bdq_failure(exc)}")
             yield [*lines, f"- 패키지를 불러오지 못함 — {_bdq_failure(exc)}", ""]
             return
     # 머리말·준비 줄과 목록 표 머리는 조회 전에 내보낸다 — 첫 조회에서 멈춰도 블록 제목이 남는다.
@@ -3258,9 +4066,16 @@ def iter_bigdataquery(
         yield _table(catalog_headers, [_catalog_row(runs[-1])])[2:]
     widest = next((run for run in reversed(runs) if run.frame is not None), None)
     if widest is None or widest.frame is None:
+        notes.append("- 8-5 목록 — " + " · ".join(_catalog_note(run) for run in runs))
         yield ["", "- 목록 조회가 모두 실패해 나머지는 건너뛴다.", ""]
         return
     frame = widest.frame
+    distinct, invalid = _code_rule_split(frame["simulation_code"])
+    notes.append(
+        "- 8-5 목록 — "
+        + " · ".join(_catalog_note(run) for run in runs)
+        + f" · 규칙 위반 코드 {len(invalid):,} / {len(distinct):,}"
+    )
     lines = ["", f"- 아래는 `{widest.label}` 목록 기준"]
     lines.extend(describe_registered_at(frame["regist_data"]))
     per_pair = (
@@ -3285,11 +4100,14 @@ def iter_bigdataquery(
     loads: CodeLoadDays | None = None
     if code_days:
         loads = _run_code_load_days(probe, widest.window)
+        notes.extend(_code_load_day_notes(loads))
         yield [*_table(["전 코드 적재일", "값"], _code_load_day_rows(loads)), ""]
     else:
+        notes.append("- 8-5 전 코드 적재일 — 건너뜀(`--bdq-no-code-days`)")
         yield ["- 전 코드 적재일 조회는 `--bdq-no-code-days` 라 건너뛰었다.", ""]
 
     if sample <= 0:
+        notes.append("- 8-5 표본 · 사본 — 건너뜀(`--bdq-sample 0`)")
         yield [
             "- 표본 적재일 확인과 사본 확인(전 코드 조회로 더하는 코드 포함)은 `--bdq-sample 0` "
             "이라 건너뛰었다.",
@@ -3350,6 +4168,10 @@ def iter_bigdataquery(
         ],
         *_load_day_stats(sampled),
     ]
+    notes.append(
+        f"- 8-5 표본 — 기본 창 행 = 넓은 창 행 {same:,} / {len(measured):,} · 기본 창이 놓친 행 "
+        f"{_percent(total_missing / total_wide if total_wide else None, 2)}"
+    )
     yield [*_table(["표본 적재일", "값"], rows), ""]
     yield from _copy_parts(
         probe,
@@ -3359,6 +4181,7 @@ def iter_bigdataquery(
         today=today,
         max_codes=copy_codes,
         max_days=copy_days,
+        notes=notes,
     )
 
 
@@ -3372,13 +4195,18 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--only",
         default=",".join(DEFAULT_CHECKS),
-        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 다섯",
+        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 여섯",
     )
     parser.add_argument("--database", type=Path, default=DUCKDB_PATH, help="시뮬레이션 DuckDB")
     parser.add_argument(
         "--equipment-database", type=Path, default=EQUIPMENT_DUCKDB_PATH, help="설비 DuckDB"
     )
     parser.add_argument("--dataset-id", default=None, help="비우면 가장 최근에 적재한 데이터셋")
+    parser.add_argument(
+        "--census-all-revisions",
+        action="store_true",
+        help="8-10 센서스를 저장된 모든 리비전으로 센다(기본은 활성·공식버전 대상 리비전)",
+    )
     parser.add_argument(
         "--bdq-sample",
         type=int,
@@ -3459,6 +4287,7 @@ _BLOCK_TITLES: Final[dict[str, str]] = {
     "equipment": "8-4",
     "bdq": "8-5",
     "home": "8-9",
+    "census": "8-10",
 }
 
 
@@ -3481,6 +4310,8 @@ def _block_parts(
         yield check_equipment(session)
     elif name == "home":
         yield check_home_months(session)
+    elif name == "census":
+        yield from iter_census(session, all_revisions=args.census_all_revisions)
     else:
         yield from iter_bigdataquery(
             today=today,
@@ -3491,7 +4322,22 @@ def _block_parts(
             copy_codes=args.bdq_copy_codes,
             copy_days=args.bdq_copy_days,
             probe=probe,
+            notes=session.notes,
         )
+
+
+_SUMMARY_HEAD: Final = (
+    "### 전송용 요약 (`inspect_real_data_checks.py`)",
+    "",
+    "- 리뷰 「전송본」 에는 이 절만 손으로 옮겨 적는다(런북 5장 · 8-6) — 위 블록은 고치지 않고 "
+    "리뷰 전문에 붙인다. 판정은 내리지 않는다 — `기대` 는 런북 8장이 적은 꼴이다. `검산` 줄은 "
+    "옮겨 적은 뒤 합이 맞는지 보는 줄이다.",
+)
+
+
+def summary_lines(notes: Sequence[str]) -> list[str]:
+    """돌린 블록이 모은 줄을 한 절로 — 블록 출력 뒤에 따로 찍는다."""
+    return [*_SUMMARY_HEAD, *notes, ""]
 
 
 _HEADER: Final = (
@@ -3536,8 +4382,8 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         equipment_path=Path(args.equipment_database),
         dataset_id=args.dataset_id,
     )
-    needs_simulation = any(name in selected for name in ("env", "legacy", "reqb", "home"))
-    needs_equipment = any(name in selected for name in ("env", "equipment"))
+    needs_simulation = any(name in selected for name in ("env", "legacy", "reqb", "home", "census"))
+    needs_equipment = any(name in selected for name in ("env", "equipment", "census"))
     if _opens_app_database(session, simulation=needs_simulation, equipment=needs_equipment):
         # 앱은 rerun 동안만 DB 를 쥔다(`pinned_connections`) — 쉬는 앱은 아래 잠금 확인을 지나치고,
         # 그동안 이 연결이 사용자 앱의 rerun 을 막는다. 판정은 화면 확인 스크립트와 같은 것을 쓴다.
@@ -3577,8 +4423,10 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
                 raise
             except Exception as exc:  # 한 블록이 멈춰도 다음 블록은 잰다. 문구는 찍지 않는다
                 sink.emit(f"\n- `{title}` 블록이 멈췄다 — {_failure(exc)}\n")
+                session.notes.append(f"- {title} — 블록이 멈췄다 — {_failure(exc)}")
     finally:
         session.close()
+    sink.emit("\n".join(summary_lines(session.notes)))
     return 0
 
 

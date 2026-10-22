@@ -479,6 +479,50 @@ def test_the_database_has_no_default(capsys: pytest.CaptureFixture[str]) -> None
     assert "--database" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        PROJECT_ROOT / "data" / "capa_simulation.duckdb",
+        PROJECT_ROOT / "data" / "temp" / "copy" / "capa_simulation.duckdb",
+        PROJECT_ROOT / "data" / ".." / "data" / "other.duckdb",
+    ],
+    ids=["operational-db", "under-data", "dotted-path"],
+)
+def test_the_operational_database_place_is_refused_before_it_opens(
+    target: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사본 강제 — 운영 DB 자리(`settings.DUCKDB_PATH` · 저장소 `data/` 아래)는 열기 전에 거절한다.
+    이 거절이 권한 템플릿에 이 스크립트를 허용할 전제다(런북 6-3 a · `docs/TODO.md` 결정 12)."""
+
+    def must_not_open(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
+        raise AssertionError("운영 DB 자리는 열지 않는다")
+
+    monkeypatch.setattr(duckdb, "connect", must_not_open)
+
+    code, output = _run(capsys, "--database", str(target))
+
+    assert code == 2
+    assert "운영 DB 자리" in output and "DB 를 열지 않았다" in output
+    assert str(PROJECT_ROOT) not in output
+
+
+def test_a_moved_operational_database_is_refused_wherever_settings_point(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영 DB 를 `settings.DUCKDB_PATH` 로 옮겨 두어도 그 파일과 그 폴더는 거절하고, 다른 폴더의
+    사본은 그대로 받는다."""
+    operational = tmp_path / "live" / "capa_simulation.duckdb"
+    monkeypatch.setattr(script, "DUCKDB_PATH", operational)
+
+    assert script.operational_path(operational)
+    assert script.operational_path(operational.parent / "sibling.duckdb")
+    assert not script.operational_path(tmp_path / "copy" / "capa_simulation.duckdb")
+
+    code, output = _run(capsys, "--database", str(operational))
+    assert code == 2
+    assert str(tmp_path) not in output
+
+
 def test_a_missing_file_stops_without_its_path(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

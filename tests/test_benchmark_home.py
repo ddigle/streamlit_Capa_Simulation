@@ -243,6 +243,10 @@ def test_the_repository_data_folder_is_refused() -> None:
     assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "data") == (
         "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
     )
+    # 그 아래 폴더도 운영 DB 옆이다 — `inspect_revision_calculations.py --database` 와 같은 꼴.
+    assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "data" / "temp" / "copy") == (
+        "저장소의 data/ 는 쓰지 않는다 — 사본 폴더를 준다(런북 6-3)"
+    )
     assert benchmark_home.copy_folder_problem(PROJECT_ROOT / "no-such-folder") == (
         "그 폴더에 capa_simulation.duckdb 가 없다"
     )

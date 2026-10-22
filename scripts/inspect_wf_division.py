@@ -27,12 +27,19 @@ EDP-TSV 제품의 PKG 행이 어떤 WF 구분을 싣는지는 사외가 모른�
 
 사용:
 
-    uv run --no-sync python scripts/inspect_wf_division.py
+    uv run --no-sync python scripts/inspect_wf_division.py                      # 운영 DB
+    uv run --no-sync python scripts/inspect_wf_division.py --database <DB 사본> # 6-3 사본
+
+**`--database` 로 사본을 주면 앱 프로세스를 보지 않는다.** 운영 DB(`settings.DUCKDB_PATH`)를
+열 때만 사용자 앱이 떠 있는지 먼저 보고 멈춘다 — `inspect_real_data_checks.py` 와 같은 꼴이다.
+사본이면 사용자 앱을 끄지 않아도 된다(운영 DB 는 앱을 끈 뒤 돌린다).
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import duckdb
@@ -172,27 +179,47 @@ def _pkg_counts(connection: duckdb.DuckDBPyConnection, schema: str) -> list[str]
     return lines
 
 
-def main() -> int:
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="`WF 구분` 값 분포(읽기 전용). 운영 DB 는 앱을 끈 뒤, 사본은 앱을 끄지 않고."
+    )
+    parser.add_argument(
+        "--database",
+        type=Path,
+        default=None,
+        help="시뮬레이션 DuckDB 사본(런북 6-3). 주면 앱 프로세스를 보지 않는다. 비우면 운영 DB",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """`argv` 가 없으면 인자 없이 돈다(운영 DB). 명령줄에서는 `__main__` 이 `sys.argv` 를 준다."""
+    args = parse_args([] if argv is None else argv)
+    path = DUCKDB_PATH if args.database is None else Path(args.database)
     # 경로는 찍지 않는다 — 이름과 예외 종류만. 출력은 리뷰 문서로 그대로 나가는데 DB 경로와
     # DuckDB 잠금 문구에는 사용자 폴더 이름이 든다.
-    if not DUCKDB_PATH.exists():
-        print(f"DB 파일이 없습니다: {DUCKDB_PATH.name}")
+    if not path.exists():
+        print(f"DB 파일이 없습니다: {path.name}")
         return 1
-    # 앱은 rerun 동안만 DB 를 쥐므로 쉬는 앱은 아래 잠금 갈래에 안 잡힌다 — 프로세스를 먼저 본다.
-    # 살피지 못하면(None) 잠금만 본다. 판정은 화면 확인 스크립트와 같은 것을 쓴다.
-    from check_deploy_screens import running_app_count
+    copy = path.resolve() != DUCKDB_PATH.resolve()
+    if not copy:
+        # 앱은 rerun 동안만 DB 를 쥐므로 쉬는 앱은 아래 잠금 갈래에 안 잡힌다 — 프로세스를 먼저
+        # 본다. 살피지 못하면(None) 잠금만 본다. 판정은 화면 확인 스크립트와 같은 것을 쓴다.
+        from check_deploy_screens import running_app_count
 
-    if running_app_count():
-        print("사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1).")
-        return 1
+        if running_app_count():
+            print(
+                "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
+            )
+            return 1
     try:
-        connection = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+        connection = duckdb.connect(str(path), read_only=True)
     except duckdb.Error as exc:
         print("DB 를 열지 못했습니다. 앱이 떠 있으면 먼저 끄세요 — DuckDB 는 배타 잠금입니다.")
         print(f"  {type(exc).__name__}")
         return 1
 
-    print(f"파일 {DUCKDB_PATH.name}")
+    print(f"파일 {path.name}" + (" · 사본(`--database` — 앱 프로세스는 보지 않음)" if copy else ""))
     print("`WF 구분` 값 분포 (대문자로 모아서 셈, 값은 찍지 않음)\n")
     try:
         _ref_data_coverage(connection)
@@ -218,4 +245,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

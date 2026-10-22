@@ -1,4 +1,4 @@
-# Purpose: 리뷰 문서에 붙는 WF 구분·재이관 진단 스크립트 셋이 DB 경로 없이 이름만 찍는지 고정한다.
+# Purpose: WF 구분·재이관 진단 스크립트 셋이 DB 경로 없이 이름만 찍고 사본은 앱을 안 보는지 본다.
 
 """사내 런북은 이 셋의 출력을 리뷰 문서에 그대로 붙인다. 리뷰 문서는 사내에서 사외로 나가는
 유일한 것이고, DB 절대경로에는 사내 사용자 폴더 이름이 든다. 그래서 같은 8장의 형제 스크립트
@@ -120,5 +120,46 @@ def test_a_resting_user_app_stops_the_wf_division_count_before_it_opens_the_data
 
     out = capsys.readouterr().out
     assert out.splitlines() == [
+        "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
+    ]
+
+
+def test_a_copy_given_with_database_is_counted_while_the_user_app_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """사본(`--database`)은 사용자 앱과 겹치지 않는다 — 앱이 떠 있어도 프로세스를 보지 않고 센다
+    (런북 6-3 사본으로 앱을 끄지 않고 돌린다). 첫 줄은 이름과 사본이라는 것만 찍는다."""
+    _point_at(monkeypatch, inspect_wf_division, tmp_path / "live")
+    copy = tmp_path / "copy" / DB_NAME
+    copy.parent.mkdir()
+    duckdb.connect(str(copy)).close()
+
+    def must_not_look(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("사본만 열 때는 사용자 앱 프로세스를 훑지 않는다")
+
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", must_not_look)
+
+    assert inspect_wf_division.main(["--database", str(copy)]) == 0
+
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == f"파일 {DB_NAME} · 사본(`--database` — 앱 프로세스는 보지 않음)"
+    assert str(tmp_path) not in out
+
+
+def test_database_naming_the_operational_file_still_looks_for_the_user_app(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--database` 가 운영 DB 자체면 인자 없이 부른 것과 같다 — 앱이 떠 있으면 열지 않는다."""
+    path = _point_at(monkeypatch, inspect_wf_division, tmp_path)
+    duckdb.connect(str(path)).close()
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 1)
+
+    assert inspect_wf_division.main(["--database", str(path)]) == 1
+
+    assert capsys.readouterr().out.splitlines() == [
         "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
     ]

@@ -35,7 +35,7 @@ from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
 from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV, QueryWindow
 from capa_simulation.io.core_data_source import load_core_data_contract
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.core_data_derivation import build_q_core_data
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
@@ -420,7 +420,8 @@ def test_unrouted_load_branches_name_only_the_contract_vocabulary() -> None:
         }
     )
 
-    lines = checks._left_out_lines(required)
+    notes: list[str] = []
+    lines = checks._left_out_lines(required, notes)
     text = "\n".join(lines)
 
     assert "경로에 닿지 않은 계획 부하 3" in lines[0]
@@ -429,6 +430,14 @@ def test_unrouted_load_branches_name_only_the_contract_vocabulary() -> None:
     assert "키 어긋남 · PKG · (PKG) 1" in text
     assert "규칙상 미사용 · PKG · (PKG) 1" in text
     assert SENTINEL not in text
+    # 전송용 요약 — 갈래 줄 그대로와, 세는 갈래만 더한 검산 줄(규칙상 미사용은 빠진다).
+    assert notes[1] == (
+        "- 8-2 경로 갈래(규칙상 미사용은 세지 않음) — REQB 에 없는 제품 · CHIP · 그 밖 1 · "
+        "규칙상 미사용 · PKG · (PKG) 1 · 키 어긋남 · CHIP · BUFFER 1 · 키 어긋남 · PKG · (PKG) 1"
+    )
+    assert notes[2] == "  - 검산 — 1 + 1 + 1 = 경로에 닿지 않음 3"
+    assert _check_sums(notes) == 1
+    assert SENTINEL not in "\n".join(notes)
 
 
 def test_an_unknown_demand_basis_is_counted_not_named(
@@ -782,6 +791,13 @@ def test_route_wafer_values_are_split_by_the_column_that_carries_them(
     assert "| WF 경로 키 13 · 신규 `부하량` |" in output
     assert re.search(r"\| `Step수` \| (\d+) \| \1 \| \1 \| 0 \| 0 \|", output)
     assert re.search(r"\| `WF측정률` \| (\d+) \| \1 \| 0 \| 0 \| 0 \|", output)
+    # 전송용 요약 — Wafer 경로 판정 줄은 가장 잘 따라가는 칸과 그 ≈ 비율이다.
+    assert re.search(
+        rf"^- 8-2 Wafer 경로 — 갈리는 칸 {cells} / {cells} · 경로 키 맞대기 차이율 중앙 [\d.]+% · "
+        r"가장 잘 따라가는 칸 `Step수` ≈ 칸 (\d+) / 칸 ≠1 \1 \(100\.00%\)$",
+        output,
+        flags=re.MULTILINE,
+    )
 
 
 def test_every_formal_comparison_has_a_new_calculation() -> None:
@@ -1271,6 +1287,22 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     assert "| 첫 적재일 (1/2) | 100 | 100 | 4 | 100 | 0 · 80 | 0 · 0 | 20 | 0 | 0 |" in output
     assert "여러 날 코드 더함" not in output
     assert "| 판정 |" not in output and "통째 사본" not in output
+    # 전송용 요약 — 목록 · 전 코드 적재일(검산) · 표본 · 사본 코드마다 네 칸(과 기준 날에만)의 합.
+    summary = _summary(output)
+    assert re.match(
+        r"- 8-5 목록 — 31일 2행 [\d.]+초 · 366일 4행 [\d.]+초 · 규칙 위반 코드 1 / 4$", summary[1]
+    )
+    assert summary[2:] == [
+        "- 8-5 전 코드 적재일 — 1일 1 · 2–5일 1 · 6일 이상 1",
+        "  - 검산 — 1 + 1 + 1 = 코드 3",
+        "- 8-5 표본 — 기본 창 행 = 넓은 창 행 1 / 3 · 기본 창이 놓친 행 75.86%",
+        "- 8-5 사본 코드 1(표본) — 적재일 32일 · 견준 날 3 · 그날에만(잘게) 0 · "
+        "기준 날에만(잘게) 0 · 행이 다른 키 0 · 그 밖 칸만 다른 행 0 · 하루 안 충돌 0",
+        "- 8-5 사본 코드 2(표본) — 적재일 2일 · 견준 날 1 · 그날에만(잘게) 80 · 기준 날에만(잘게) "
+        "0 · 행이 다른 키 20 · 그 밖 칸만 다른 행 0 · 하루 안 충돌 0",
+    ]
+    assert _check_sums(summary) == 1
+    assert not [line for line in output.splitlines() if _self_check_pattern().search(line)]
 
 
 def test_multi_day_codes_outside_the_sample_fill_the_copy_check(
@@ -1853,3 +1885,349 @@ def test_code_rule_counts_do_not_rely_on_pandas_string_reductions(
     assert checks.describe_codes(codes) == expected
     assert "코드 5개 중 4개" in expected
     assert "빈 값 2" in expected and "비ASCII 1" in expected
+
+
+# ------------------------------------------------------------------- 8-10 센서스 · 전송용 요약
+
+CENSUS_ROWS = {
+    "ratio": "| 효율·측정률 1 초과(`CAPA_RUN_RATE`·`Lot 측정률`·`WF측정률`) | 결정 8 · E5 |",
+    "negative": (
+        "| 편집 값 칸 음수(UPEH·ST·효율·편중률·측정률·RUN_DAY·보유·대여평가·가용) | 결정 8 · E5 |"
+    ),
+    "run_day": "| `RQ_RUN_DAY` 0 칸 | 고침 · E2 |",
+    "plan": "| `RQ_PKG_PLAN` 빈 생산수량 | 고침 · P5 |",
+    "own": "| 빈 보유대수(`RQ_EQP_OWN`) | 결정 8 · P7 |",
+    "lent": "| 빈 대여평가(`RQ_EQP_LENT`) | 결정 8 · P7 |",
+    "division": "| 같은 키에 `WF 구분` 대소문자만 다른 행이 둘 이상(표 일곱) | 결정 6 · P8 |",
+    "fold": "| `RQ_REQB` 에서 계산이 앞 행과 같은 경로로 접는, 표기만 다른 행 | 결정 8 · P4 |",
+    "blank": (
+        "| 효율·편중률·모듈수·RUN_DAY 빈 칸 가운데 붙은 경로가 모두 뒤에서 빠질 칸 | 결정 7 · P6 |"
+    ),
+    "merge": (
+        "| 월 머지 리비전의 달력 공백 달(첫 달 ~ 끝 달 사이 어느 월 표에도 없는 달) | 결정 9 · D6 |"
+    ),
+    "flag": "| 원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(빈 칸 포함) | 사내 확인 요청 · P8 |",
+    "names": (
+        "| 앞뒤 공백·대소문자만 다른 설비명 묶음(설비 DB · 수는 최신 리비전) | 결정 10 · Q6·Q7 |"
+    ),
+}
+
+
+def _census_row(output: str, key: str) -> str:
+    rows = [line for line in output.splitlines() if line.startswith(CENSUS_ROWS[key])]
+    assert len(rows) == 1, (key, rows)
+    return rows[0][len(CENSUS_ROWS[key]) :].strip()
+
+
+def _plant_census(simulation: Path, equipment: Path) -> None:
+    """센서스 줄마다 하나씩(대여평가·계획기초정보여부는 둘) 꼴을 심는다. 달을 갈라 줄끼리 섞이지
+    않게 하고, 머지 공백 달(202606)에는 아무것도 심지 않는다.
+
+    결정 7 은 202601 의 Main 공정 하나 — 그 (월·공정·양산구분) 의 Main UPEH 를 0 으로(뒤에서
+    빠질 경로) 두고 효율 칸을 비운다. 같은 공정의 202602 편중률도 비우지만 그 경로는 살아 있어
+    세지 않는다.
+    """
+    with duckdb.connect(str(simulation)) as connection:
+        month, process, kind = connection.execute(
+            'SELECT "생산계획년월", "공정", "양산구분" FROM rev_data.rq_upeh '
+            'WHERE "Area_Name" = \'Main\' AND "생산계획년월" = 202601 AND "공정" NOT IN '
+            '(SELECT "공정" FROM rev_data.rq_upeh WHERE "Area_Name" = \'MI\') '
+            'ORDER BY "공정" LIMIT 1'
+        ).fetchone()  # type: ignore[misc]
+        key = 'WHERE "생산계획년월" = ? AND "공정" = ? AND "양산구분" = ?'
+        connection.execute(f'UPDATE rev_data.rq_upeh SET "UPEH" = 0 {key}', [month, process, kind])
+        connection.execute(
+            f'UPDATE rev_data.rq_run_rate SET "CAPA_RUN_RATE" = NULL {key}', [month, process, kind]
+        )
+        connection.execute(
+            f'UPDATE rev_data.rq_vital SET "편중률" = NULL {key}', [202602, process, kind]
+        )
+
+        def one(table: str, assignment: str, month: int, *, rows: int = 1) -> None:
+            connection.execute(
+                f"UPDATE rev_data.{table} SET {assignment} WHERE source_row_no IN ("
+                f'SELECT source_row_no FROM rev_data.{table} WHERE "생산계획년월" = ? '
+                f"ORDER BY source_row_no LIMIT {rows})",
+                [month],
+            )
+
+        one("rq_lot_ratio", '"Lot 측정률" = 1.5', 202603)
+        one("rq_run_day", '"RUN_DAY" = 0', 202604)
+        one("rq_pkg_plan", '"생산수량" = NULL', 202604)
+        one("rq_eqp_avbl", '"가용대수" = -1', 202605)
+        one("rq_eqp_own", '"설비보유" = NULL', 202607)
+        one("rq_eqp_lent", '"설비대여평가" = NULL', 202608, rows=2)
+        connection.execute(
+            "INSERT INTO rev_data.rq_yld SELECT revision_id, source_row_no + 100000, "
+            '"생산계획년월", "제품정보", "Stack", upper("WF 구분"), "EDS_수율", "BE_수율" '
+            'FROM rev_data.rq_yld WHERE "WF 구분" = \'Core\' AND "생산계획년월" = 202609 '
+            "ORDER BY source_row_no LIMIT 1"
+        )
+        quoted = [f'"{column}"' for column in REQB_COLUMNS]
+        padded = ["' ' || \"공정\" || ' '" if column == '"공정"' else column for column in quoted]
+        connection.execute(
+            f"INSERT INTO rev_data.rq_reqb (revision_id, source_row_no, {', '.join(quoted)}) "
+            f"SELECT revision_id, source_row_no + 100000, {', '.join(padded)} "
+            'FROM rev_data.rq_reqb WHERE "생산계획년월" = 202610 ORDER BY source_row_no LIMIT 1'
+        )
+        for table in (
+            "rq_eqp_avbl",
+            "rq_eqp_lent",
+            "rq_eqp_own",
+            "rq_lot_ratio",
+            "rq_pkg_plan",
+            "rq_reqb",
+            "rq_run_day",
+            "rq_run_rate",
+            "rq_upeh",
+            "rq_vital",
+            "rq_wf_ratio",
+            "rq_yld",
+        ):
+            connection.execute(f'DELETE FROM rev_data.{table} WHERE "생산계획년월" = 202606')
+        connection.execute("UPDATE app_meta.dataset SET source_type = 'SCENARIO_MONTH_MERGE'")
+        flags = connection.execute(
+            "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no LIMIT 3"
+        ).fetchall()
+        for (row,), value in zip(flags, ["x", None, " y "], strict=True):
+            connection.execute(
+                'UPDATE raw_data.core_data SET "계획기초정보여부" = ? WHERE source_row_no = ?',
+                [value, row],
+            )
+    with duckdb.connect(str(equipment)) as connection:
+        columns = [
+            str(row[0])
+            for row in connection.execute(
+                "SELECT column_name FROM duckdb_columns() WHERE schema_name = 'equipment_ops' "
+                "AND table_name = 'equipment_master_snapshot' ORDER BY column_index"
+            ).fetchall()
+        ]
+        picked = ", ".join(
+            {
+                "source_row_no": "source_row_no + 100000",
+                "equipment_id": "lower(equipment_id) || ' '",
+            }.get(column, column)
+            for column in columns
+        )
+        connection.execute(
+            f"INSERT INTO equipment_ops.equipment_master_snapshot SELECT {picked} "
+            "FROM equipment_ops.equipment_master_snapshot ORDER BY source_row_no LIMIT 1"
+        )
+
+
+def test_the_census_counts_each_planted_shape_without_names(
+    simulation_db: Path, equipment_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """「지금대로」 결정마다 심은 꼴을 개수로만 센다 — 리비전·이름·값은 찍지 않는다."""
+    simulation = tmp_path / "capa_simulation.duckdb"
+    equipment = tmp_path / "equipment_availability.duckdb"
+    simulation.write_bytes(simulation_db.read_bytes())
+    equipment.write_bytes(equipment_db.read_bytes())
+    _plant_census(simulation, equipment)
+    before = (_md5(simulation), _md5(equipment))
+
+    code, output = _run(
+        capsys,
+        "--only",
+        "census",
+        "--database",
+        str(simulation),
+        "--equipment-database",
+        str(equipment),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (_md5(simulation), _md5(equipment)) == before
+    assert "### 8-10. 센서스 — 「지금대로」 결정의 실데이터 유병률 (`census`)" in output
+    assert "- 본 리비전 1 — 시나리오마다 활성 리비전과 공식버전 대상" in output
+    expected = {
+        "ratio": "1 / 1 리비전 | 칸 1 |",
+        "negative": "1 / 1 리비전 | 칸 1 |",
+        "run_day": "1 / 1 리비전 | 칸 1 |",
+        "plan": "1 / 1 리비전 | 행 1 |",
+        "own": "1 / 1 리비전 | 칸 1 |",
+        "lent": "1 / 1 리비전 | 칸 2 |",
+        "division": "1 / 1 리비전 | 키 1 |",
+        "fold": "1 / 1 리비전 | 행 1 |",
+        "blank": "1 / 1 리비전 | 칸 1 |",
+        "merge": "1 / 1 머지 리비전 | 달 1 |",
+        "flag": "1 / 1 원천 데이터셋 | 행 2 |",
+        "names": "1 / 1 설비 리비전 | 묶음 1 |",
+    }
+    assert {key: _census_row(output, key) for key in expected} == expected
+    assert "- 8-10 센서스 — 0 이 아닌 항목 12 / 12 · 본 리비전 1" in output
+    assert "  - 검산 — 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 2 + 1 = 수 합 14" in output
+
+
+def test_the_census_counts_every_revision_only_when_asked(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """기본은 활성·공식 리비전만 센다(6-3 a `--active-only` 와 같은 묶음). 옛 리비전의 꼴은
+    `--census-all-revisions` 에서만 잡힌다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision (revision_id, scenario_id, revision_no, "
+            "revision_name, parent_revision_id, note, reference_hash, created_at) "
+            "SELECT 'old-revision', scenario_id, 2, revision_name, NULL, note, reference_hash, "
+            "created_at FROM app_meta.scenario_revision"
+        )
+        connection.execute(
+            "INSERT INTO rev_data.rq_run_day SELECT 'old-revision', source_row_no, "
+            '"생산계획년월", "공정", 0 FROM rev_data.rq_run_day ORDER BY source_row_no LIMIT 2'
+        )
+    argv = (
+        "--only",
+        "census",
+        "--database",
+        str(path),
+        "--equipment-database",
+        str(tmp_path / "none.duckdb"),
+    )
+
+    code, active = _run(capsys, *argv)
+    assert code == 0
+    assert "- 본 리비전 1 — " in active
+    assert _census_row(active, "run_day") == "0 / 1 리비전 | 칸 0 |"
+
+    code, every = _run(capsys, *argv, "--census-all-revisions")
+    assert code == 0
+    assert "- 본 리비전 2 — 저장된 모든 리비전(`--census-all-revisions`)" in every
+    assert _census_row(every, "run_day") == "1 / 2 리비전 | 칸 2 |"
+    # 설비 DB 가 없으면 그 줄만 이 스크립트의 문구로 멈춘다.
+    assert _census_row(every, "names") == "- | 설비 DB 를 열지 못함 |"
+
+
+def test_the_census_value_ranges_follow_the_reference_editor() -> None:
+    """상한 1·하한 0 은 기준 정보 편집 격자(`app_pages/reference_data.EDITOR_FORMATS`)의 범위다.
+    화면 모듈이라 불러오지 않고 글자로 읽어 맞댄다 — 격자에 표가 늘면 센서스도 늘린다."""
+    source = (PROJECT_ROOT / "app_pages" / "reference_data.py").read_text(encoding="utf-8")
+    formats = next(
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "EDITOR_FORMATS"
+    )
+    assert formats is not None
+    editors: dict[str, tuple[str, float | None, float | None]] = ast.literal_eval(formats)
+
+    assert {table for table, *_ in checks.CENSUS_VALUE_COLUMNS} == set(editors)
+    assert {table for table, *_ in checks.CENSUS_RATIO_COLUMNS} == {
+        table for table, (_, _, top) in editors.items() if top == 1.0
+    }
+
+
+def test_the_census_division_tables_are_every_revision_table_with_a_wf_division(
+    simulation_db: Path,
+) -> None:
+    with duckdb.connect(str(simulation_db), read_only=True) as connection:
+        tables = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT table_name FROM duckdb_columns() WHERE schema_name = 'rev_data' "
+                "AND column_name = 'WF 구분'"
+            ).fetchall()
+        }
+    assert {REVISION_TABLES[name] for name in checks.CENSUS_DIVISION_TABLES} == tables
+
+
+def _self_check_pattern() -> re.Pattern[str]:
+    """런북 5장 자가 점검(`Select-String … -Pattern '…'`)의 그물. PowerShell 은 대소문자를 가리지
+    않는다."""
+    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
+    found = re.search(r"Select-String -Path review\\\*\.md -Pattern '([^']+)'", runbook)
+    assert found is not None
+    return re.compile(found.group(1), re.IGNORECASE)
+
+
+def _summary(output: str) -> list[str]:
+    head = "### 전송용 요약 (`inspect_real_data_checks.py`)"
+    assert output.count(head) == 1
+    return [line for line in output.split(head, 1)[1].splitlines() if line.strip()]
+
+
+def _check_sums(lines: Sequence[str]) -> int:
+    """`검산` 줄마다 왼쪽 수의 합이 오른쪽 수와 같은지 — 같으면 센 줄 수를 돌려준다."""
+    checked = 0
+    for line in lines:
+        if not line.startswith("  - 검산"):
+            continue
+        left, right = line.split(" — ", 1)[1].rsplit(" = ", 1)
+        terms = [
+            int(re.findall(r"[\d,]+", term)[-1].replace(",", "")) for term in left.split(" + ")
+        ]
+        assert sum(terms) == int(re.findall(r"[\d,]+", right)[-1].replace(",", "")), line
+        checked += 1
+    return checked
+
+
+def test_the_report_and_its_summary_stay_clear_of_the_review_self_check(
+    simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """사내는 블록을 고치지 못한다(런북 8-6 · 8-7). 그래서 출력이 5장 자가 점검에 걸리는 줄은 런북이
+    적은 예외 하나(8-4 사용기준 줄 — 계약 상수)뿐이어야 하고, 전송용 요약에는 하나도 없어야 한다."""
+    pattern = _self_check_pattern()
+
+    code, output = _run(
+        capsys, "--database", str(simulation_db), "--equipment-database", str(equipment_db)
+    )
+
+    assert code == 0
+    caught = [line for line in output.splitlines() if pattern.search(line)]
+    assert caught and all(
+        line.startswith("- 사용기준(`equipment_contract.counts_for_capacity`") for line in caught
+    ), caught
+    assert not [line for line in _summary(output) if pattern.search(line)]
+
+
+def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
+    simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """전송용 요약 — 사람이 손으로 옮겨 적을 몫이라 20줄 안팎이고, 블록마다 판정에 쓰는 수 한 줄이
+    블록 차례로 서며, 검산 줄은 스스로 합이 맞는다. 블록 출력은 요약 앞에 그대로 있다."""
+    code, output = _run(
+        capsys, "--database", str(simulation_db), "--equipment-database", str(equipment_db)
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert output.index("### 8-10.") < output.index("### 전송용 요약")
+    lines = _summary(output)
+    assert len(lines) <= 24
+    heads = [
+        "- 8-1 — 마이그레이션 시뮬레이션 ",
+        "- 8-2 부하량 — 차이율 최대 Wafer ",
+        "- 8-2 Wafer 경로 — 갈리는 칸 ",
+        "- 8-2 ST 정의 대조 — ",
+        "- 8-2 소요대수 — 키 연결 100.00% (기대 100%)",
+        "- 8-2 들지 않은 수요 — ",
+        "- 8-2 경로 갈래 — 없음(경로에 닿지 않은 부하 0)",
+        "- 8-3 — 행 ",
+        "- 8-4 — 최신 r1 · ",
+        "- 8-9 — 계획 달 12 · 양산 Density 없는 달 EDP 포함 0 · 뺌 0 (둘 다 0 이면 닫힘)",
+        "- 8-10 센서스 — 0 이 아닌 항목 0 / 12 · 본 리비전 1",
+    ]
+    positions = [
+        next(index for index, line in enumerate(lines) if line.startswith(head)) for head in heads
+    ]
+    assert positions == sorted(positions)
+    assert "같다 / 설비 " in lines[positions[0]] and "(기대: 같다)" in lines[positions[0]]
+    assert _check_sums(lines) == 4  # 8-3 · 8-4 · 8-9 · 8-10
+
+
+def test_a_block_that_stops_is_named_in_the_summary(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_args: object, **_kwargs: object) -> list[str]:
+        raise RuntimeError(f"{SENTINEL} 문구")
+
+    monkeypatch.setattr(checks, "check_reqb", broken)
+
+    code, output = _run(capsys, "--only", "env,reqb", "--database", str(simulation_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert "- 8-3 — 블록이 멈췄다 — 실패(RuntimeError)" in _summary(output)
