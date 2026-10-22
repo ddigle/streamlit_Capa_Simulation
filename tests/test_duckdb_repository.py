@@ -1132,7 +1132,7 @@ def test_list_order_is_saved_and_rejects_a_partial_list(tmp_path: Path) -> None:
 
     assert [scenario.scenario_id for scenario in reordered] == ids
     assert [scenario.scenario_id for scenario in repository.list_scenarios()] == ids
-    # 최근 수정 순서였다면 나중에 만든 쪽이 앞에 온다. 지정한 순서가 그것을 이긴다.
+    # 만든 차례(새 것이 위)였다면 나중에 만든 쪽이 앞에 온다. 지정한 순서가 그것을 이긴다.
     assert reordered[0].scenario_name == "First"
     with pytest.raises(ValueError, match="전체를 한 번에"):
         repository.reorder_scenarios([ids[0]])

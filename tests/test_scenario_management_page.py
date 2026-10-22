@@ -1541,8 +1541,8 @@ def test_a_list_save_with_one_refused_name_writes_nothing(tmp_path: Path) -> Non
 
 def test_a_name_only_save_keeps_the_row_where_the_table_showed_it(tmp_path: Path) -> None:
     """순서를 한 번도 저장하지 않은 목록에서 아래 행의 이름만 고쳐 「변경 저장」 해도 그 행이
-    맨 위로 가지 않는다(목록 차례는 `list_order NULLS LAST, updated_at DESC` 인데 이름 변경이
-    「최근 수정」을 올렸다). 저장이 그때 보인 차례를 함께 적는다 — 「최근 수정」 칸은 그대로
+    맨 위로 가지 않는다 — 순서를 저장한 적 없는 행은 만든 시각 차례라(`list_order NULLS LAST,
+    created_at DESC`) 이름 변경이 올리는 「최근 수정」을 따르지 않는다. 「최근 수정」 칸은 그대로
     오른다."""
     script, database_path, ids, names = _three_scenarios(tmp_path)
     repository = DuckDBScenarioRepository(database_path)

@@ -191,8 +191,8 @@ def test_a_name_only_save_keeps_the_shown_order_and_still_bumps_the_recent_edit(
     tmp_path: Path,
 ) -> None:
     """순서를 한 번도 저장하지 않은(`list_order` 가 모두 NULL) 목록에서 이름만 바꿔도 행이 맨
-    위로 가지 않는다 — 이름을 쓰기 전의 차례를 `list_order` 로 함께 적는다. 「최근 수정」은
-    그대로 오른다."""
+    위로 가지 않는다 — NULL 행은 만든 시각 차례라 「최근 수정」이 올라도 움직이지 않는다.
+    「최근 수정」은 그대로 오른다."""
     repository = _repository(tmp_path)
     _scenarios(repository, "하나", "둘", "셋")
     shown = [scenario.scenario_id for scenario in repository.list_scenarios()]
@@ -209,8 +209,8 @@ def test_a_name_only_save_keeps_the_shown_order_and_still_bumps_the_recent_edit(
 
 
 def test_a_name_only_save_does_not_overwrite_an_order_saved_elsewhere(tmp_path: Path) -> None:
-    """이름만 바꾼 저장이 적는 차례는 이 트랜잭션 안에서 읽은 지금 차례다 — 표를 그린 뒤 다른
-    곳에서 바꾼 차례를 옛 차례로 덮지 않는다."""
+    """이름만 바꾼 저장은 차례를 쓰지 않는다 — 표를 그린 뒤 다른 곳에서 바꾼 차례를 옛 차례로
+    덮지 않는다."""
     repository = _repository(tmp_path)
     first, second, third = _scenarios(repository, "하나", "둘", "셋")
     repository.reorder_scenarios([second, third, first])
@@ -222,6 +222,49 @@ def test_a_name_only_save_does_not_overwrite_an_order_saved_elsewhere(tmp_path: 
         third,
         first,
     ]
+
+
+def test_a_scenario_made_after_a_name_only_save_still_lands_on_top(tmp_path: Path) -> None:
+    """이름만 바꾼 저장이 차례를 고정하지 않는다 — 순서를 저장한 적 없는 목록에서는 그 뒤 새로
+    만든 시나리오(BigDataQuery 등록·복제·머지·Shift·자동 갱신)가 계속 맨 위에 선다.
+
+    2026-10-23 리뷰 — 이름 저장이 활성 시나리오 전부의 `list_order` 를 1..n 으로 적어 그 뒤
+    새 것이 맨 아래로 갔다.
+    """
+    repository = _repository(tmp_path)
+    _scenarios(repository, "하나", "둘", "셋")
+    shown = [scenario.scenario_id for scenario in repository.list_scenarios()]
+    bottom = shown[-1]
+    repository.apply_scenario_list_edits({bottom: (_names(repository)[bottom], "새 이름")})
+
+    (newest,) = _scenarios(repository, "새 것")
+
+    assert [scenario.scenario_id for scenario in repository.list_scenarios()] == [
+        newest,
+        *shown,
+    ]
+
+
+def test_a_new_revision_does_not_move_a_row_that_was_never_ordered(tmp_path: Path) -> None:
+    """순서를 저장한 적 없는 행은 새 리비전을 저장해 「최근 수정」이 올라도 그 자리에 있다 —
+    다른 세션의 리비전 저장이 고치던 표의 행 차례를 흔들지 않는다."""
+    repository = _repository(tmp_path)
+    _scenarios(repository, "하나", "둘", "셋")
+    shown = [scenario.scenario_id for scenario in repository.list_scenarios()]
+    bottom = shown[-1]
+    snapshot = repository.load_revision(repository.list_scenarios()[-1].active_revision_id)
+
+    repository.save_revision(
+        bottom,
+        snapshot.tables,
+        snapshot.preset,
+        revision_name="둘째",
+        parent_revision_id=snapshot.revision.revision_id,
+    )
+
+    after = repository.list_scenarios()
+    assert [scenario.scenario_id for scenario in after] == shown
+    assert after[-1].active_revision_no == 2
 
 
 def test_list_edits_refuse_everything_when_one_row_is_refused(tmp_path: Path) -> None:
