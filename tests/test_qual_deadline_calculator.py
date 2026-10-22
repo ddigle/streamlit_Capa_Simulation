@@ -3,8 +3,9 @@
 """Qual 마감 계산기 탭(`components/qual_deadline_calculator.py`).
 
 계산 글자가 원본과 같은지는 `test_qual_deadline.py` 가 본다. 여기서는 화면이 그 결과를 그리는지,
-「모두 비우기」·「예시로 되돌리기」 가 원본 규칙대로 칸을 바꾸는지, 편집표 편집이 닫힌 탭을 지나도
-남는지, 이 탭이 설비 DB 를 열지 않고 페이지의 다른 탭과 key 가 겹치지 않는지를 본다. AppTest 는
+「모두 비우기」·「예시로 되돌리기」·「표에 넣기」(엑셀 붙여넣기 칸)가 원본 규칙대로 칸을
+바꾸는지, 목표 칸이 소수를 자르지 않는지, 편집표 편집이 닫힌 탭을 지나도 남는지, 이 탭이 설비
+DB 를 열지 않고 페이지의 다른 탭과 key 가 겹치지 않는지를 본다. AppTest 는
 편집표 칸을 고칠 수 없어 브라우저가 보내는 델타 꼴을 세션에 넣는다(`test_month_editor_filter` 와
 같다).
 """
@@ -12,6 +13,8 @@
 from __future__ import annotations
 
 import ast
+import json
+import math
 from datetime import date
 from pathlib import Path
 
@@ -24,6 +27,8 @@ from capa_simulation.components.qual_deadline_calculator import (
     CUTOFF_KEY,
     EDITOR_KEY,
     MONTHS_KEY,
+    PASTE_APPLY_KEY,
+    PASTE_TEXT_KEY,
     TARGET_COLUMN,
     TODAY_KEY,
     UNITS_COLUMN,
@@ -31,7 +36,7 @@ from capa_simulation.components.qual_deadline_calculator import (
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import EQUIPMENT_TAB_KEY
-from capa_simulation.services.qual_deadline import EMPTY_UNITS_MESSAGE
+from capa_simulation.services.qual_deadline import EMPTY_UNITS_MESSAGE, NO_PASTED_LINES_MESSAGE
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -221,6 +226,80 @@ def test_reset_discards_the_editor_edits() -> None:
     assert _metrics(app)["목표 대비 부족 달"] == "0개월"
     assert _editor_key(app) != EDITOR_KEY
     assert _example_badge(app)
+
+
+def test_the_target_column_keeps_every_decimal() -> None:
+    """목표 칸에 `step` 을 주지 않는다 — Streamlit 1.63 편집표는 `step` 의 소수 자릿수에서 값을 잘라
+    저장한다(19.3456 → 19.34, 원본은 그대로 계산). `format` 도 없어 적은 값이 그대로 보인다."""
+    app = _component()
+    config = json.loads(app.dataframe[0].proto.columns)[TARGET_COLUMN]
+    assert config["type_config"] == {"type": "number"}
+
+    _edit(app, 0, TARGET_COLUMN, 19.3456)
+    app.run()
+    # 잘렸다면 「19.34」·「부족 1.34대」 다.
+    january = app.dataframe[2].value.loc[0]
+    assert (january["목표"], january["판정"]) == ("19.35", "부족 1.35대")
+
+
+def _paste(app: AppTest, text: str) -> None:
+    app.text_area(key=PASTE_TEXT_KEY).set_value(text)
+    app.button(key=PASTE_APPLY_KEY).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+
+
+def test_the_paste_box_fills_months_from_january_like_the_original() -> None:
+    """원본 「엑셀에서 한 번에 붙여넣기」 — 둘째 칸부터 끝까지가 호기, 붙여 넣은 줄 뒤 달은
+    그대로."""
+    app = _component()
+    _paste(app, "19.3456\tU1\tU2")
+
+    assert [element.value for element in app.success] == ["1개월을 넣었습니다."]
+    units = _units_table(app)
+    assert units.loc[:2, ["호기", "그 달 기여", "Qual 완료 마감"]].values.tolist() == [
+        ["U1", "1.00", "2026-12-21"],
+        ["U2", "0.35", "2027-01-10"],
+        ["U21", "0.50", "2027-04-05"],
+    ]
+    stored = app.session_state[MONTHS_KEY]
+    assert stored.loc[0, TARGET_COLUMN] == 19.3456
+    assert stored[UNITS_COLUMN].tolist()[:3] == ["U1 U2", "U21", "U22"]
+    assert not _example_badge(app)
+
+    # 알림은 한 번만 — 다음 회차에는 없다.
+    app.run()
+    assert not app.success
+
+
+def test_pasting_replaces_editor_edits_of_those_months() -> None:
+    """편집표 델타는 행 위치라 그대로 두면 붙여 넣은 값을 다시 덮는다 — 넣으면 편집표를 새로
+    세운다."""
+    app = _component()
+    _edit(app, 0, UNITS_COLUMN, "U20")
+    app.run()
+    assert _units_table(app).loc[0, "호기"] == "U20"
+
+    _paste(app, "18\tU9\n\t\n19")
+
+    assert _editor_key(app) != EDITOR_KEY
+    assert [element.value for element in app.success] == ["2개월을 넣었습니다."]
+    stored = app.session_state[MONTHS_KEY]
+    # 두 칸 다 빈 줄 「\t」 은 건너뛰어 「19」 가 2월로 간다(원본대로). 2월 호기 글은 비워진다.
+    assert stored.loc[:1, [TARGET_COLUMN, UNITS_COLUMN]].values.tolist() == [
+        [18.0, "U9"],
+        [19.0, ""],
+    ]
+    assert _units_table(app).loc[0, "호기"] == "U9"
+
+
+def test_an_empty_paste_changes_nothing() -> None:
+    app = _component()
+    _paste(app, " \n\t\n")
+
+    assert [element.value for element in app.info] == [NO_PASTED_LINES_MESSAGE]
+    assert _editor_key(app) == EDITOR_KEY
+    assert _example_badge(app)
+    assert not math.isnan(app.session_state[MONTHS_KEY].loc[0, TARGET_COLUMN])
 
 
 def _imported_modules(path: Path) -> set[str]:

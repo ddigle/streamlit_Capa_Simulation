@@ -4,16 +4,20 @@
 
 **다른 데이터와 잇지 않는다.** 설비 DB·시나리오·Cut-off 프로필을 읽지 않고 어디에도 쓰지 않는다 —
 사람이 적은 Cut-off·목표·호기만으로 계산한다. 입력은 이 세션에만 남는다(새로 고치거나 다른 사람이
-열면 예시에서 시작한다). 계산·글자는 `services/qual_deadline.py` 가 원본과 같게 내고, 이 파일은 칸을
-받아 넘기고 결과를 그리기만 한다. 계산이 가벼워(12개월·호기 수십) 캐시하지 않는다.
+열면 예시에서 시작한다 — 원본은 브라우저 저장소에 남겼다. 그 차이를 메울지는 사용자 결정 대기다,
+`docs/TODO.md` 2장 「Streamlit 화면」). 계산·글자는 `services/qual_deadline.py` 가 원본과 같게 내고,
+이 파일은 칸을 받아 넘기고 결과를 그리기만 한다. 계산이 가벼워(12개월·호기 수십) 캐시하지 않는다.
 
 **닫힌 탭에서는 그리지 않는다**(페이지가 `tab_is_hidden` 으로 건너뛴다). 그래도 입력은 남는다 —
 숫자·날짜 칸은 `persist_state="session"` 이 지키고, 편집표는 고칠 때마다 `on_change` 콜백이 편집을
 원본 표(`MONTHS_KEY`, 위젯 아닌 칸)에 옮겨 둔다. 콜백은 본문보다 먼저 돌므로, 칸을 고치고 바로 다른
 탭을 눌러 두 조작이 한 회차에 와도(그 회차에는 편집표를 그리지 않는다) 고친 값이 남는다.
 
-엑셀에서 여러 칸을 붙여 넣는 원본의 「한 번에 붙여넣기」 칸은 두지 않는다 — 편집표에 바로
-붙여 넣는다(1월 `목표 가용대수` 칸을 고르고 Ctrl+V). 원본의 「복사」 두 단추는 같은 표를 CSV 로
+엑셀 여러 칸은 원본처럼 「엑셀에서 한 번에 붙여넣기」 칸(글 칸 + 「표에 넣기」)으로 받는다 — 규칙은
+`parse_pasted_months`. 편집표에 바로 붙여 넣는 길은 덤이다: 표의 붙여넣기는 브라우저 클립보드 읽기라
+보안 문맥이 아닌 주소(평문 HTTP 로 다른 호스트)에서는 아무것도 들어가지 않고, 신규 호기 칸 뒤의 칸은
+버린다. 목표 칸에는 `step` 을 주지 않는다 — Streamlit 1.63 편집표는 `step` 의 소수 자릿수에서 값을
+**잘라** 저장해(19.3456 → 19.34) 원본과 다른 마감을 낸다. 원본의 「복사」 두 단추는 같은 표를 CSV 로
 내려받는 단추다(`table_toolbar` 관례 — 결과 표도 칸을 골라 Ctrl+C 로 복사된다).
 """
 
@@ -40,6 +44,7 @@ from capa_simulation.services.qual_deadline import (
     EXAMPLE_MONTHS,
     EXAMPLE_YEAR,
     MONTHS_PER_YEAR,
+    PASTE_HINT,
     UNIT_TABLE_COLUMNS,
     CheckTableRow,
     QualDeadlineInput,
@@ -54,9 +59,11 @@ from capa_simulation.services.qual_deadline import (
     is_example,
     month_check_rows,
     parse_number,
+    parse_pasted_months,
     unit_result_rows,
     unit_table_rows,
 )
+from capa_simulation.sidebar_status import remembered_expander
 
 __all__ = [
     "BASE_KEY",
@@ -64,6 +71,9 @@ __all__ = [
     "EDITOR_KEY",
     "MONTHS_KEY",
     "MONTH_COLUMN",
+    "PASTE_APPLY_KEY",
+    "PASTE_NOTICE_KEY",
+    "PASTE_TEXT_KEY",
     "TARGET_COLUMN",
     "TODAY_KEY",
     "UNITS_COLUMN",
@@ -82,6 +92,14 @@ MONTHS_KEY = "equipment_qualcalc_months_v1"
 EDITOR_KEY = "equipment_qualcalc_editor_v1"
 _RESET_KEY = "equipment_qualcalc_reset_v1"
 _CLEAR_KEY = "equipment_qualcalc_clear_v1"
+# 「엑셀에서 한 번에 붙여넣기」 — 펼침 상자(닫힌 탭을 지나도 펼침을 기억한다)·폼·글 칸·
+# 「표에 넣기」·알림. 글 칸은 입력 초안이라 `persist_state` 를 주지 않는다(AGENTS 9장 — 원본도
+# 저장하지 않았다).
+_PASTE_BOX_KEY = "equipment_qualcalc_paste_box_v1"
+_PASTE_FORM_KEY = "equipment_qualcalc_paste_form_v1"
+PASTE_TEXT_KEY = "equipment_qualcalc_paste_text_v1"
+PASTE_APPLY_KEY = "equipment_qualcalc_paste_apply_v1"
+PASTE_NOTICE_KEY = "equipment_qualcalc_paste_notice_v1"
 _KPI_ROW_KEY = "equipment_qualcalc_kpis"
 _UNITS_CSV_KEY = "equipment_qualcalc_units_csv_v1"
 _MONTHS_CSV_KEY = "equipment_qualcalc_months_csv_v1"
@@ -189,6 +207,61 @@ def _keep_editor_edits(widget_key: str) -> None:
     st.session_state[MONTHS_KEY] = merged
 
 
+def _apply_pasted_months() -> None:
+    """「표에 넣기」 — 원본 규칙(`parse_pasted_months`)으로 1월부터 붙여 넣은 줄 수만큼 달을
+    갈고, 그 뒤 달은 그대로 둔다. 원본 토스트 글자를 알림 칸에 남긴다.
+
+    갈았으면 편집표를 새 위젯으로 세운다 — 편집 델타는 행 위치라 그대로 두면 붙여 넣은 값을 다시
+    덮는다(되돌리기와 같다). 그 앞 편집은 `on_change` 콜백이 이미 원본 표에 옮겨 두었다.
+    """
+    pasted = parse_pasted_months(st.session_state.get(PASTE_TEXT_KEY))
+    current = st.session_state.get(MONTHS_KEY)
+    table = current.copy() if isinstance(current, pd.DataFrame) else months_frame(())
+    for row, month in enumerate(pasted.months):
+        table.loc[row, TARGET_COLUMN] = float("nan") if month.target is None else month.target
+        table.loc[row, UNITS_COLUMN] = month.units_text
+    if pasted.months:
+        st.session_state[MONTHS_KEY] = table
+        discard_editor(EDITOR_KEY)
+    st.session_state[PASTE_NOTICE_KEY] = (bool(pasted.months), pasted.message)
+
+
+def _render_paste_notice() -> None:
+    """「표에 넣기」 알림 — 한 번만 그린다. 늘 서 있는 한 칸 안이라 뒤 요소의 자리가 밀리지
+    않는다."""
+    notice = st.session_state.pop(PASTE_NOTICE_KEY, None)
+    with st.container():
+        if not (isinstance(notice, tuple) and len(notice) == 2):
+            return
+        applied, message = notice
+        if applied:
+            st.success(str(message), icon=":material/check_circle:")
+        else:
+            st.info(str(message), icon=":material/info:")
+
+
+def _render_paste_box() -> None:
+    """원본 「엑셀에서 한 번에 붙여넣기」 — 펼침 상자 안의 글 칸과 「표에 넣기」."""
+    with remembered_expander(
+        "엑셀에서 한 번에 붙여넣기", key=_PASTE_BOX_KEY, icon=":material/content_paste:"
+    ):
+        with st.form(_PASTE_FORM_KEY, border=False):
+            st.caption(PASTE_HINT)
+            st.text_area(
+                "엑셀 붙여넣기 칸",
+                key=PASTE_TEXT_KEY,
+                height=150,
+                label_visibility="collapsed",
+            )
+            st.form_submit_button(
+                "표에 넣기",
+                icon=":material/input:",
+                key=PASTE_APPLY_KEY,
+                on_click=_apply_pasted_months,
+            )
+        _render_paste_notice()
+
+
 def _month_inputs(table: pd.DataFrame) -> tuple[QualMonthInput, ...]:
     months: list[QualMonthInput] = []
     for target, units in zip(table[TARGET_COLUMN], table[UNITS_COLUMN], strict=True):
@@ -260,9 +333,10 @@ def _render_inputs(today: date) -> QualDeadlineInput:
         placeholder="",
         column_config={
             MONTH_COLUMN: st.column_config.TextColumn(MONTH_COLUMN, width="small"),
+            # `step`·`format` 을 주지 않는다 — `step` 은 그 자릿수에서 값을 잘라 저장한다(모듈
+            # 설명). 표시는 기본(소수 넷째 자리까지, 뒤 0 없음)이라 적은 값이 그대로 보인다.
             TARGET_COLUMN: st.column_config.NumberColumn(
                 TARGET_COLUMN,
-                step=0.01,
                 help="그 달 W/D 구간 전체 기준 대수(소수 가능). 비우면 그 달은 판정하지 않습니다.",
             ),
             UNITS_COLUMN: st.column_config.TextColumn(
@@ -272,6 +346,7 @@ def _render_inputs(today: date) -> QualDeadlineInput:
             ),
         },
     )
+    _render_paste_box()
     inputs = QualDeadlineInput(
         cutoff_days=parse_number(st.session_state.get(CUTOFF_KEY)),
         year=parse_number(st.session_state.get(YEAR_KEY)),

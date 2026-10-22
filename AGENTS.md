@@ -972,7 +972,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면·복사 글자. Cut-off·연도·직전 달 가용대수·월별 목표·신규 호기로 호기마다 Qual 완료 마감을 낸다. 어느 DB 도 열지 않는다.
   - 구간은 `wd_window` 그대로, 몫은 완료 다음 날부터다. 모자람 ≥ 1 이면 마감 = 구간 앞 경계(몫 1), < 1 이면 모자란 날 수만큼
     구간 끝에서 당긴 날(몫 = 일수 / 길이). 적은 차례로 꺼내고 남는 호기는 다음 달로, 목표를 비운 달은 판정하지 않는다.
-  - 숫자 글자는 JavaScript `toFixed`·`Math.round` 와 같게 만든다(`to_fixed`·`js_round` — 0.125 → 「0.13」).
+  - 숫자 글자는 JavaScript `toFixed`·`Math.round` 와 같게 만든다(`to_fixed`·`js_round` — 0.125 → 「0.13」). 붙여넣기 칸은
+    원본 `bulk-apply` 그대로다 — 공백뿐인 줄은 건너뛰고 앞 12줄, 첫 칸은 목표, 둘째 칸부터는 띄어쓰기로 이은 호기(`js_trim`).
     `tests/test_qual_deadline.py` 가 원본 스크립트를 node 로 돌린 값과 칸 글자까지 맞댄다(시험은 node 없이 돈다).
 - `src/capa_simulation/services/shortening_filter_profile.py` — 필요 단축 일정 공용 조회 조건(설비 DB `0019`) 모델
   `ShorteningFilterProfile` 과 정규화·심기·`merge_filter_processes` 규칙. Streamlit·DB 를 모르고 값은 원본 공정명이다.
@@ -1043,7 +1044,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감 칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
   - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
     (탭을 건너뛰어도 남는다). 「예시로 되돌리기」·「모두 비우기」 는 콜백이 칸을 적고 `discard_editor` 한다.
-  - 엑셀 여러 칸은 편집표에 바로 붙여 넣는다(별도 붙여넣기 칸 없음). 계산이 가벼워 캐시하지 않는다.
+  - 엑셀 여러 칸은 원본처럼 「엑셀에서 한 번에 붙여넣기」(`remembered_expander` 안 폼의 글 칸 + 「표에 넣기」 콜백,
+    규칙은 `qual_deadline.parse_pasted_months`)로 받는다 — 편집표 붙여넣기는 브라우저 클립보드 읽기라 보안 문맥이 아닌
+    주소에서 막히고 신규 호기 칸 뒤를 버린다. 목표 칸에는 `step` 을 주지 않는다 — Streamlit 1.63 편집표 `NumberColumn` 은
+    `step` 의 소수 자릿수에서 값을 잘라 저장한다(19.3456 → 19.34). 계산이 가벼워 캐시하지 않는다.
+  - 원본은 입력을 브라우저 저장소에 남겼고 앱은 세션에만 둔다 — 메울지는 사용자 결정 대기(`docs/TODO.md` 2장).
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 `Preference` 의 Cut-off 편집표·저장·CSV 왕복과
   빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다.
   - 저장은 초안 지문 대조다(`process_cutoff_fingerprint` → `ProcessCutoffConflict`) — 표 전체 교체라 옛 초안이 남의

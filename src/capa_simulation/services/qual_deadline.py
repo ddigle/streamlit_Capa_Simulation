@@ -46,12 +46,15 @@ __all__ = [
     "LEFTOVER_MEMO",
     "MONTHS_PER_YEAR",
     "MONTH_CHECK_HEADER",
+    "NO_PASTED_LINES_MESSAGE",
+    "PASTE_HINT",
     "UNIT_RESULT_HEADER",
     "UNIT_TABLE_COLUMNS",
     "AssignedUnit",
     "CheckTableRow",
     "LeftoverUnit",
     "MonthCheck",
+    "PastedMonths",
     "QualDeadlineInput",
     "QualDeadlineKpis",
     "QualDeadlineResult",
@@ -66,8 +69,10 @@ __all__ = [
     "format_short_day",
     "is_example",
     "js_round",
+    "js_trim",
     "month_check_rows",
     "parse_number",
+    "parse_pasted_months",
     "split_unit_names",
     "tab_separated_text",
     "to_fixed",
@@ -91,6 +96,9 @@ _ONE_DAY = timedelta(days=1)
 _JS_SPACE = "\t\n\v\f\r    -     　﻿"
 _UNIT_SEPARATOR = re.compile(f"[{_JS_SPACE},;]+")
 _LEADING_SPACE = re.compile(f"^[{_JS_SPACE}]+")
+_SPACE_CHARACTER = re.compile(f"[{_JS_SPACE}]")
+# 원본 붙여넣기 칸의 줄 나눔(`split(/\r?\n/)`).
+_LINE_BREAK = re.compile(r"\r?\n")
 # JavaScript `parseFloat` 가 읽는 앞머리 — 부호, `Infinity` 또는 십진수(지수 포함).
 _FLOAT_PREFIX = re.compile(r"[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
 
@@ -120,6 +128,9 @@ CHECK_TABLE_COLUMNS = (
 )
 EMPTY_UNITS_MESSAGE = "신규 호기를 적으면 여기에 호기별 Qual 마감이 나옵니다."
 LEFTOVER_MEMO = "목표를 채우는 데 쓰이지 않음(이 해 목표가 이미 채워짐)"
+# 원본 「엑셀에서 한 번에 붙여넣기」 칸의 안내와 「표에 넣기」 알림 글.
+PASTE_HINT = "한 줄에 한 달: `목표 가용대수 [탭] 호기들` — 1월부터 12줄. 호기 칸은 비워도 됩니다."
+NO_PASTED_LINES_MESSAGE = "붙여넣은 줄이 없습니다."
 
 
 @dataclass(frozen=True)
@@ -313,6 +324,47 @@ def parse_number(value: object) -> float | None:
         return None
     number = float(match.group(0))
     return number if math.isfinite(number) else None
+
+
+def js_trim(text: str) -> str:
+    """JavaScript `String.prototype.trim` — 앞뒤의 `\\s` 글자를 지운다. 파이썬 `strip` 은 고르는
+    글자가 달라(`\\x1c`~`\\x1f` 를 지우고 `﻿` 는 남긴다) 원본과 다른 글을 남길 수 있다."""
+    text = _LEADING_SPACE.sub("", text)
+    end = len(text)
+    while end and _SPACE_CHARACTER.fullmatch(text[end - 1]):
+        end -= 1
+    return text[:end]
+
+
+@dataclass(frozen=True)
+class PastedMonths:
+    """붙여넣기 칸을 읽은 결과 — 1월부터 차례로 갈 달(최대 열두 달)과 공백 아닌 줄 수."""
+
+    months: tuple[QualMonthInput, ...]
+    line_count: int
+
+    @property
+    def message(self) -> str:
+        """「표에 넣기」 알림 — 원본 토스트 글자 그대로다."""
+        if not self.line_count:
+            return NO_PASTED_LINES_MESSAGE
+        return f"{min(MONTHS_PER_YEAR, self.line_count)}개월을 넣었습니다."
+
+
+def parse_pasted_months(text: str | None) -> PastedMonths:
+    """원본 「표에 넣기」 — 엑셀에서 복사한 글을 1월부터 한 줄에 한 달로 읽는다.
+
+    공백뿐인 줄은 건너뛰고(엑셀의 두 칸이 다 빈 줄도 — 그 아래 달이 당겨진다) 앞 12줄만 쓴다.
+    줄을 탭으로 나눠 첫 칸은 목표 가용대수(`parse_number` — 못 읽으면 비운 달), 둘째 칸부터
+    끝까지는 띄어쓰기로 이어 신규 호기 글로 읽는다. 줄이 없는 달은 이 결과에 없다 — 부르는 쪽이
+    그 달을 그대로 둔다.
+    """
+    lines = [line for line in _LINE_BREAK.split(text or "") if js_trim(line)]
+    months: list[QualMonthInput] = []
+    for line in lines[:MONTHS_PER_YEAR]:
+        target, *units = line.split("\t")
+        months.append(QualMonthInput(parse_number(js_trim(target)), js_trim(" ".join(units))))
+    return PastedMonths(tuple(months), len(lines))
 
 
 def js_round(value: float) -> int:

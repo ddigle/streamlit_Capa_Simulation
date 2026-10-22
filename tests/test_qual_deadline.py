@@ -6,7 +6,8 @@
 DOM 위에 그대로 돌려 화면 표 칸·지표·두 복사 글을 뽑아 박았다(2026-10-22, node v22 — 이 시험은
 node 없이 돈다). 그래서 이 시험이 깨지면 원본과 다르게 계산하거나 다르게 적는 것이다. 사례는 원본
 예시와 경계 다섯이다 — 목표를 비운 달·남는 호기, Cut-off 0·윤년 2월·지난 마감, Cut-off 31·부족,
-구분자·반올림 동점(18.125 → 「18.13」)·여유, 빈 입력.
+구분자·반올림 동점(18.125 → 「18.13」)·여유, 빈 입력. 붙여넣기 칸(「표에 넣기」)의 사례도 같은
+방법으로 원본의 `bulk-apply` 를 돌려 넣은 달·토스트 글자·복사 글을 뽑았다(2026-10-23).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from capa_simulation.services.qual_deadline import (
     EMPTY_UNITS_MESSAGE,
     EXAMPLE_MONTHS,
     MONTHS_PER_YEAR,
+    NO_PASTED_LINES_MESSAGE,
     QualDeadlineInput,
     QualMonthInput,
     check_table_rows,
@@ -28,8 +30,10 @@ from capa_simulation.services.qual_deadline import (
     format_short_day,
     is_example,
     js_round,
+    js_trim,
     month_check_rows,
     parse_number,
+    parse_pasted_months,
     split_unit_names,
     tab_separated_text,
     to_fixed,
@@ -656,3 +660,104 @@ def test_example_flag_and_clear_follow_the_original() -> None:
     assert cleared.base_units is None
     assert cleared.months == tuple(QualMonthInput() for _ in range(MONTHS_PER_YEAR))
     assert not is_example(cleared, today)
+
+
+# 원본 「표에 넣기」 를 node 로 돌려 뽑은 값 — (붙여 넣은 글, 넣은 달(목표, 호기 글), 토스트 글자).
+PASTE_CASES: dict[str, tuple[str | None, tuple[tuple[float | None, str], ...], str]] = {
+    # 둘째 칸부터 끝까지는 띄어쓰기로 이어 호기 글이 된다(편집표 붙여넣기는 셋째 칸을 버린다).
+    "columns": ("19.3456\tU1\tU2", ((19.3456, "U1 U2"),), "1개월을 넣었습니다."),
+    # 공백뿐인 줄(엑셀의 두 칸이 다 빈 줄 「\t」 도)은 건너뛰어 그 아래 달이 당겨진다.
+    "blank lines": ("18\r\n\r\n  \t \n20.5\t\n", ((18.0, ""), (20.5, "")), "2개월을 넣었습니다."),
+    "thirteen lines": (
+        "\n".join(f"{20 + index}\tV{index}" for index in range(13)),
+        tuple((float(20 + index), f"V{index}") for index in range(12)),
+        "12개월을 넣었습니다.",
+    ),
+    "empty": ("", (), NO_PASTED_LINES_MESSAGE),
+    "spaces only": (" \n\t\n", (), NO_PASTED_LINES_MESSAGE),
+    "none": (None, (), NO_PASTED_LINES_MESSAGE),
+    "unreadable target and comma": (
+        "abc\tU1\n1,234\t U5 ,U6 ",
+        ((None, "U1"), (1234.0, "U5 ,U6")),
+        "2개월을 넣었습니다.",
+    ),
+    # JavaScript `trim` 은 BOM 을 지우고 `\x1c` 는 남긴다(파이썬 `strip` 은 거꾸로다).
+    "bom": ("\ufeff18\t\ufeffU1\ufeff", ((18.0, "U1"),), "1개월을 넣었습니다."),
+    "information separator": ("\x1c18\tU1\x1c", ((None, "U1\x1c"),), "1개월을 넣었습니다."),
+}
+
+
+@pytest.mark.parametrize("case", sorted(PASTE_CASES))
+def test_pasted_lines_fill_months_like_the_original(case: str) -> None:
+    text, months, message = PASTE_CASES[case]
+    pasted = parse_pasted_months(text)
+
+    assert pasted.months == tuple(QualMonthInput(target, units) for target, units in months)
+    assert pasted.message == message
+
+
+@pytest.mark.parametrize(
+    ("text", "trimmed"),
+    [
+        ("  U1  ", "U1"),
+        ("\ufeff\u3000U1\u00a0\n", "U1"),
+        ("\x1cU1\x1f", "\x1cU1\x1f"),
+        ("\t \r\n", ""),
+        ("", ""),
+    ],
+)
+def test_trim_is_javascript_trim(text: str, trimmed: str) -> None:
+    assert js_trim(text) == trimmed
+
+
+def _with_pasted(months: tuple[QualMonthInput, ...], text: str) -> tuple[QualMonthInput, ...]:
+    """화면 「표에 넣기」 와 같이 1월부터 붙여 넣은 달만 갈고 그 뒤 달은 둔다."""
+    pasted = parse_pasted_months(text).months
+    return pasted + months[len(pasted) :]
+
+
+def test_pasted_months_compute_like_the_original() -> None:
+    """예시 위에 세 칸 줄 하나를 넣은 것과, 빈 열두 달에 소수 넷째 자리 목표를 넣은 것 — 원본
+    복사 글."""
+    example = example_input(None)
+    over_example = compute_qual_deadlines(
+        QualDeadlineInput(
+            cutoff_days=example.cutoff_days,
+            year=example.year,
+            base_units=example.base_units,
+            today=None,
+            months=_with_pasted(example.months, "19.3456\tU1\tU2"),
+        )
+    )
+    assert tab_separated_text(unit_result_rows(over_example)).split("\n")[:4] == [
+        "호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작",
+        "U1\t2027-01\t1.00\t2026-12-21\t2026-12-22",
+        "U2\t2027-01\t0.35\t2027-01-10\t2027-01-11",
+        "U21\t2027-04\t0.50\t2027-04-05\t2027-04-06",
+    ]
+    assert month_check_rows(over_example)[1] == [
+        "2027-01",
+        "2026-12-21",
+        "2027-01-21",
+        "19.35",
+        "18.00",
+        "1.35",
+        "0.00",
+    ]
+
+    blank = tuple(QualMonthInput() for _ in range(MONTHS_PER_YEAR))
+    precise = compute_qual_deadlines(
+        QualDeadlineInput(
+            cutoff_days=10,
+            year=2027,
+            base_units=18,
+            today=None,
+            months=_with_pasted(blank, "18.3226\tU1\n19\tU2\tU3"),
+        )
+    )
+    # 18.32 로 잘렸다면 마감 2027-01-11 · 기여 0.32 다(Streamlit 편집표 `step=0.01` 의 자름).
+    assert tab_separated_text(unit_result_rows(precise)) == (
+        "호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작\n"
+        "U1\t2027-01\t0.35\t2027-01-10\t2027-01-11"
+    )
+    assert [unit.name for unit in precise.leftover] == ["U2", "U3"]
