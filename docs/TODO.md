@@ -359,6 +359,10 @@
 ### 문서 및 테스트
 
 - [ ] 정상·누락·중복·0 수율·혼류 생산 테스트를 추가한다.
+- [~] **따라하기 가이드 예시판·사내판** — 뼈대(`guides/howto/`)와 생성기 · 점검기(`scripts/build_page_guide.py` ·
+  `check_page_guide.py`)는 섰다. 남은 것: `--example` 결과(`lob.html` · `example/*.webp`)를 정본 자리에 커밋,
+  `.gitignore` 의 `review/guide/` · `static/guides/local/`, Guide 버튼이 사내판 → 예시판 → md 차례로 옆 창을 여는 것,
+  런북 10장(사내 1단계 — 사본에서 쓰지 않는 상태만)과 그 배포의 7장.
 
 ### 업무 키 승격
 

@@ -22,6 +22,7 @@ import ast
 import functools
 import json
 import re
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -31,61 +32,21 @@ import pytest
 
 from capa_simulation import settings
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+import page_guide_core as core  # noqa: E402
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HOWTO = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto"
 SCHEMA_DIR = HOWTO / "schema"
 LOB = HOWTO / "lob"
 SCHEMAS = ("content", "plan", "overrides", "params")
 
-WRITES = ("none", "session", "db", "shared")
-OPS = frozenset(
-    {
-        "enter_app",
-        "nav",
-        "tab",
-        "click",
-        "fill",
-        "key",
-        "scroll",
-        "open_popup",
-        "grid_edit",
-        "wait_idle",
-    }
-)
-TARGET_KINDS = frozenset({"key", "button", "tab", "nav", "text", "named"})
-# 코드로 찾는 표적 — 이름 → 괄호 안 글자를 받는지. 생성기가 이 목록을 그대로 구현한다.
-NAMED_TARGETS: dict[str, bool] = {
-    "SIDEBAR_SCEN": False,
-    "SIDEBAR_BADGE": False,
-    "SIDEBAR_PENDING": False,
-    "SIDEBAR_FOOTER": False,
-    "HEADER_BAND": False,
-    "PAGE_TITLE": False,
-    "DIALOG": False,
-    "DIALOG_SECTIONS": False,
-    "GRID": False,
-    "LAST_GRID": False,
-    "EDIT_CELL": False,
-    "EDIT_ROW": False,
-    "LOB_CHART": False,
-    "LOB_BN_BARS": False,
-    "KEY_PROCESS_GRID": False,
-    "DETAIL_BN": False,
-    "BN_CELL": False,
-    "PROC_HEAD": False,
-    "PROC_MONTH_CANVAS": False,
-    "PF_TILES": False,
-    "MAIN_LINK": True,
-    "MAIN_ALERT": True,
-    "HEAD_BOX": True,
-    "WIDGET": True,
-    "FORM_OF": True,
-    "EXPANDER": True,
-    "KEY_BUTTON": True,
-    "GRID_COLUMN": True,
-    "LOB_LABEL": True,
-    "LOB_ROW": True,
-}
+WRITES = core.WRITE_GRADES
+# 동작 · 표적 낱말의 정본은 생성기(`scripts/page_guide_core.py`)다 — 계획 형식이 같은지 본다.
+OPS = core.OPS
+TARGET_KINDS = core.TARGET_KINDS
+NAMED_TARGETS = core.NAMED_TARGETS
 # 사내 1단계(`db` · `shared` 상태는 건너뛴다)가 찍을 수 있는 상태 — handoff §4-4 의 18상태.
 INTERNAL_FIRST_PASS = frozenset(
     {

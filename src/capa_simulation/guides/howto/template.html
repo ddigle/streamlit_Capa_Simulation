@@ -199,7 +199,7 @@ img{display:block;max-width:100%}
 <body>
 <div id="wrap">
   <section id="demo" aria-label="앱 창 예시">
-    <div class="demo-cap"><b>앱 창</b><span class="pill">예시 화면 · 합성 샘플</span><span id="demo-note">가이드 창을 앱 옆에 띄워 두고 번호대로 따라 합니다</span></div>
+    <div class="demo-cap"><b>앱 창</b><span class="pill" id="demo-pill"></span><span id="demo-note">가이드 창을 앱 옆에 띄워 두고 번호대로 따라 합니다</span></div>
     <div class="appwin"><div class="bar"><i></i><i></i><i></i><span id="demo-title">S.PKG CAPA — Capa LOB Summary</span></div><div class="stage" id="demo-stage"></div></div>
   </section>
   <aside id="guide" aria-label="따라하기 가이드">
@@ -277,14 +277,16 @@ const DATA = /*__DATA__*/null;
     } else if (step.crop) {
       f.appendChild(shot(step.crop, step.boxes));
     } else {
-      f.appendChild(el("div", "ph", "이 단계 그림은 시제품 단계에서 자동 촬영합니다<br><small>(" + esc(step.state) + ")</small>"));
+      f.appendChild(el("div", "ph", "이 단계 그림은 찍지 못했습니다<br><small>(" + esc(step.state) + ")</small>"));
       return f;
     }
 
     f.onclick = () => lightbox(step.full, step.fullBoxes);
     const w = el("div");
     w.appendChild(f);
-    w.appendChild(el("div", "figcap", "<span>예시 화면 · 합성 샘플</span><span>누르면 크게</span>"));
+    // 그림 밑 꼬리표 — 사내판은 사내 화면에 촬영 날짜를, 합성 예시로 대신한 그림에는 예시라고 단다
+    const pic = step.crop || (step.crops && step.crops[0] && step.crops[0].crop) || {};
+    w.appendChild(el("div", "figcap", "<span>" + esc(pic.cap || DATA.shotLabel) + "</span><span>누르면 크게</span>"));
     return w;
   }
   // 화면 전체에서 이 그림이 어디쯤인지 — 작은 지도(누르면 크게)
@@ -311,6 +313,7 @@ const DATA = /*__DATA__*/null;
   // ---------------------------------------------------------- 넓은 창의 「앱 창(예시)」 — 지금 단계의 화면 전체와 같은 번호 상자
   function demo(full, boxes, title) {
     const st = $("#demo-stage");
+    $("#demo-pill").textContent = (full && full.cap) || DATA.shotLabel;
     st.innerHTML = "";
     if (full) st.appendChild(shot(full, boxes));
     $("#demo-title").textContent = "S.PKG CAPA — " + (title || DATA.page);
@@ -514,7 +517,7 @@ const DATA = /*__DATA__*/null;
       c.spots.forEach((sp, i) => {
         const cell = el("div", "cell");
         if (sp.crop) cell.appendChild(shot(sp.crop, sp.boxes));
-        else cell.appendChild(el("div", "fig", '<div class="ph">촬영 예정</div>'));
+        else cell.appendChild(el("div", "fig", '<div class="ph">그림 없음</div>'));
         cell.appendChild(el("div", "cap", "<b>" + (i + 1) + ". " + esc(sp.name) + "</b><span>" + rich(sp.say) + "</span>"));
         G.appendChild(cell);
       });

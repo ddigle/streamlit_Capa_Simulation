@@ -735,6 +735,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대화상자다. 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 다.
   - 툴바 버튼이 본문의 숨은 버튼(`page_guide_trigger`)을 대신 누르고 파이썬이 `st.dialog` 로 연다.
     `render_page_guide` 를 부른 화면에만 버튼이 보인다.
+- `src/capa_simulation/guides/howto/` — 따라하기 가이드 뼈대(사외 정본): 원고 `<가이드>/content.json` · 촬영 계획
+  `plan.json` · ID 장부 `ids.json` · 형식 `schema/*.json` · 틀 `template.html` · 사내가 찍지 않는 상태의 합성 예시 그림
+  `<가이드>/example/`. 사내는 `review/guide/` 의 글 덮어쓰기 · 매개값만 얹는다.
+  - 생성기 `scripts/build_page_guide.py` 가 앱 사본을 띄워 찍고(`page_guide_capture.py` + 페이지 도우미
+    `page_guide_helpers.js`, Playwright 는 저장소 밖) 조립한다(`page_guide_core.py` — 자르기 · 상자 % · 덮어쓰기 ·
+    매개값 · 리뷰 한 줄). `--example` 은 `git archive` 사본 + 합성 시드(`scripts/guide_example_seed.py`), `--internal` 은
+    런북 6-3 사본 트리에서만 돈다. 결과는 늘 저장소 밖(`--dist`)에 쓰고, 예시판은 사람이 정본 자리로 복사해 커밋한다.
+  - 사내 1단계는 쓰기 등급(`writes`)이 사슬에 `db` · `shared` 인 상태를 건너뛰고 예시 그림으로 대신하며, 사본 두 DB 의
+    크기 · sha256 이 앞뒤로 같아야 한다. 점검기 `scripts/check_page_guide.py` 가 같은 리뷰 한 줄을 다시 낸다.
 - `src/capa_simulation/components/print_button.py` — 헤더 툴바의 `Print` 버튼 스크립트다(감춘 ⋮ 메뉴의 인쇄를
   대신). 실행 중이면 멈출 때까지 기다렸다 인쇄하고, 어두운 테마면 `DARK_PRINT_CONFIRM` 으로 먼저 묻는다.
 - `src/capa_simulation/components/plotly_touch_scroll.py` — 칸 선택(`on_select`)을 켠 Plotly 그림 위에서 시작한

@@ -354,6 +354,11 @@ typed raw 로 그대로 보존합니다.
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |
 | `audit_top_remigration.py` | `0026` 적용 뒤 이관 결과의 오염·누락을 점검한다 |
 | `check_deploy_screens.py` | 런북 7장 화면 확인을 별도 포트 앱과 저장소 밖 Playwright 로 돌린다 |
+| **따라하기 가이드** | |
+| `build_page_guide.py` | 앱 사본을 띄워 가이드를 찍고 원고 · 덮어쓰기와 한 파일 HTML 로 묶는다(`--example` 합성 예시판 · `--internal` 사내판, 결과는 저장소 밖) |
+| `check_page_guide.py` | 덮어쓰기 · 매개값 · 촬영 결과를 뼈대에 대 보고 리뷰 한 줄을 낸다 |
+| `guide_example_seed.py` | 예시판이 띄울 합성 시나리오 DB 를 만든다(생성기 `--example` 의 시드 단계) |
+| `page_guide_core.py` · `page_guide_capture.py` · `page_guide_helpers.js` | 생성기 부품 — 조립 · 덮어쓰기(순수), Playwright 촬영, 페이지 도우미 |
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다 |
