@@ -283,11 +283,9 @@ def test_only_saving_a_revision_keeps_the_toggles() -> None:
     }
     assert not wrong, f"활성화 경로가 표와 다릅니다: {wrong}"
     savers = sorted(name for name, (_, calls) in found.items() if "save_revision" in calls)
-    # 저장 경로는 사이드바 「신규 리비전 저장」과 시나리오 관리 「새 리비전 저장」 둘이다.
-    assert savers == [
-        "scenario_management.py:_render_revision_save",
-        "scenario_status.py:_render_revision_save",
-    ], savers
+    # 저장 경로는 사이드바 팝업 「신규 리비전 저장」 하나다(2026-10-22 사용자 결정 S8 — 시나리오
+    # 관리 페이지의 「리비전 저장」 모드를 뺐다).
+    assert savers == ["scenario_status.py:_render_revision_save"], savers
 
 
 def test_view_state_is_not_cleared() -> None:

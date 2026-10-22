@@ -38,6 +38,7 @@ from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
     forget_pending_edits,
@@ -52,6 +53,7 @@ from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
 )
+from capa_simulation.navigation import SCENARIO_MANAGEMENT
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -270,10 +272,16 @@ def render_scenario_dialog_body(
     """
     resolved = (settings.DUCKDB_PATH if database_path is None else database_path).resolve()
     with pinned_connections(resolved):
-        _render_dialog_body(str(resolved), pending_edit_labels(page_file))
+        _render_dialog_body(
+            str(resolved),
+            pending_edit_labels(page_file),
+            on_management_page=page_file == Path(SCENARIO_MANAGEMENT.path).name,
+        )
 
 
-def _render_dialog_body(database_path: str, pending_edits: Sequence[str]) -> None:
+def _render_dialog_body(
+    database_path: str, pending_edits: Sequence[str], *, on_management_page: bool = False
+) -> None:
     active_scenario_id = active_persisted_scenario_id()
     active_revision_id = active_persisted_revision_id()
     unsaved = has_unsaved_scenario_changes()
@@ -291,7 +299,7 @@ def _render_dialog_body(database_path: str, pending_edits: Sequence[str]) -> Non
         unsaved=unsaved,
     )
     if not scenarios:
-        st.info("저장된 활성 시나리오가 없습니다.")
+        st.info("저장된 시나리오가 없습니다.")
         st.caption("시나리오 관리 페이지에서 신규 시나리오를 등록하세요.")
         return
     if st.session_state.get(SCENARIO_DIALOG_MODE_KEY) not in (LOAD_MODE, SAVE_MODE):
@@ -323,6 +331,21 @@ def _render_dialog_body(database_path: str, pending_edits: Sequence[str]) -> Non
         active_revision_id=active_revision_id,
         unsaved=unsaved,
         pending_edits=pending_edits,
+    )
+    _render_rename_route(on_management_page=on_management_page)
+
+
+def _render_rename_route(*, on_management_page: bool) -> None:
+    """이름 바꾸는 곳으로 가는 한 줄(2026-10-22 결정 S7). 이름 변경은 시나리오 관리 페이지 몫이다.
+
+    그 페이지에서 연 팝업이면 링크 대신 그 화면의 어디서 고치는지만 적는다 — 같은 페이지로 가는
+    링크는 팝업을 닫지 않는다.
+    """
+    if on_management_page:
+        st.caption("이름은 이 화면 「목록 관리」의 표에서 바로 고칩니다.")
+        return
+    render_page_link(
+        SCENARIO_MANAGEMENT.path, label="시나리오 관리에서 이름 바꾸기", icon=":material/edit:"
     )
 
 
@@ -506,7 +529,7 @@ def _render_revision_save(
         return
     active_summary = scenario_by_id.get(active_scenario_id)
     if active_summary is None:
-        st.warning("현재 활성 시나리오 정보를 찾지 못했습니다.")
+        st.warning("올라와 있는 시나리오 정보를 찾지 못했습니다.")
         return
     # 공정 필터·조회기간은 리비전 프리셋이 담는다. 편집이 없어도 저장할 것이 있다는 사실을 남긴다.
     st.caption(

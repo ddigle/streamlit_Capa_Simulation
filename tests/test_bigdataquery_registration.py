@@ -691,7 +691,7 @@ def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Pat
     assert not app.exception
     assert not app.error
     assert app.session_state["__window__"] == "2026-10-05 ~ 2026-10-15"
-    assert "활성화했습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
     [scenario] = repository.list_scenarios()
     assert (scenario.scenario_name, scenario.source_simulation_code) == (
         "PSM W41 (SIM-W41)",

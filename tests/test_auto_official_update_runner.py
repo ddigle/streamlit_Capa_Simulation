@@ -670,7 +670,7 @@ def test_runs_cut_off_by_a_stopped_app_are_closed(repository: DuckDBScenarioRepo
 
 
 def _clone(repository: DuckDBScenarioRepository, snapshot: ScenarioSnapshot) -> ScenarioSnapshot:
-    """「현재 활성 편집본 복제」와 같은 꼴 — 부모 없는 새 시나리오, 세션 프리셋 그대로."""
+    """「지금 편집본 복제」와 같은 꼴 — 부모 없는 새 시나리오, 세션 프리셋 그대로."""
     return repository.create_scenario(
         ScenarioCreate(
             scenario_name="PSM W41 사람 수정본",

@@ -363,12 +363,6 @@ def test_publishing_a_revision_with_demand_outside_the_requirement_warns(tmp_pat
     [
         (
             "src/capa_simulation/components/scenario_management.py",
-            "_render_revision_save",
-            "save_revision",
-            "revision_save_verdict",
-        ),
-        (
-            "src/capa_simulation/components/scenario_management.py",
             "_render_official",
             "publish_official_revision",
             "official_publish_verdict",

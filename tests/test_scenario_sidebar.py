@@ -753,3 +753,27 @@ def test_names_in_the_dialog_are_shown_as_typed(
     assert list(revisions.proto.captions) == [
         "26.10.08 저장 · 올라와 있음 · " + literal_markdown("기간 2026-08-01~2026-08-31~")
     ]
+
+
+def test_the_load_section_points_to_where_names_are_changed(sidebar_app: AppTest) -> None:
+    """이름 변경은 시나리오 관리 페이지 몫이라 불러오기 구획 끝에 그리로 가는 한 줄이 선다(S7).
+
+    네비게이션이 없는 단독 실행에서는 링크가 문구로 물러선다(`render_page_link`). 시나리오 관리
+    페이지에서 연 팝업이면 같은 페이지로 가는 링크 대신 그 화면에서 고치는 자리를 적는다.
+    """
+    app = _open(sidebar_app.run())
+    assert "사이드바에서 시나리오 관리에서 이름 바꾸기" in [item.value for item in app.caption]
+
+    _open_save(app)
+    assert "사이드바에서 시나리오 관리에서 이름 바꾸기" not in [item.value for item in app.caption]
+
+
+def test_the_popup_opened_on_the_management_page_names_the_table_instead() -> None:
+    """시나리오 관리 페이지에서 연 팝업은 링크 대신 「목록 관리」 표를 가리킨다."""
+    app = AppTest.from_string(
+        "from capa_simulation.components.scenario_status import _render_rename_route\n"
+        "_render_rename_route(on_management_page=True)\n"
+    ).run()
+    assert [item.value for item in app.caption] == [
+        "이름은 이 화면 「목록 관리」의 표에서 바로 고칩니다."
+    ]

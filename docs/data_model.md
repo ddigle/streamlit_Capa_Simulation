@@ -32,8 +32,9 @@
   정상이고, 규칙 0건으로 저장하면 지정을 전부 해제한다.
 - 리비전은 조회기간, B/N 포함 공정, 표준 목표 Capa 공정 기본값, 확보·경고 기준
   프리셋을 함께 소유한다.
-- 공식버전은 특정 불변 리비전을 가리키는 append-only 발행 이력이며 최신 발행을 새 웹
-  세션의 기본값으로 사용한다.
+- 공식버전은 특정 리비전(내용 불변)을 가리키는 append-only 발행 이력이며 최신 발행을 새 웹
+  세션의 기본값으로 사용한다. 리비전의 내용(표·프리셋·가상 제품·해시·부모·메모)은 갱신하지 않고, 이름표인
+  `revision_name` 만 비교 후 쓰기로 고칠 수 있다(이력 없음 — AGENTS 5장 8).
 - 저장과 삭제는 Repository의 쓰기 잠금과 DuckDB 트랜잭션 안에서 실행한다.
 - 기존 보유대수, 설비 마스터와 운영 비가동 일정은 시뮬레이션 DB·시나리오·`RQ_*`와
   독립된 불변 전체 스냅샷 리비전으로 저장한다.
@@ -53,7 +54,7 @@ app_meta.scenario 1 ── 1 app_meta.dataset                 (status ACTIVE·AR
        │                       └── N ref_data.rq_display_order · rq_module   (데이터셋 표 2 — 편집 대상 아님)
        │                           ref_data.rq_* 나머지 14 는 0033 이 남긴 옛 사본뿐(읽는 코드 없음)
        │
-       └── N app_meta.scenario_revision (append-only, parent_revision_id 로 분기)
+       └── N app_meta.scenario_revision (내용 append-only — revision_name 만 고침, parent_revision_id 로 분기)
                     │
                     ├── N rev_data.rq_* (리비전 표 14 — 편집·저장 단위)
                     │     rev_data.rq_display_order 는 0001 의 옛 자리(쓰지 않음, 공용 표시순서 첫 이관 때만 읽음)
@@ -161,7 +162,8 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `dataset`: 시나리오 소유 데이터셋, 원천 종류(`source_type` — `BIGDATAQUERY`·`CSV_CORE_DATA…`·
   `BUILTIN_SYNTHETIC_SEED`·`DUCKDB_SCENARIO_CLONE`·`SCENARIO_YEAR_SHIFT`·`SCENARIO_MONTH_MERGE`),
   원천 등록·적재 시각, 원천 행 수·해시, 변환 버전, 상태(`LOADING`→`READY`, 보관이면 `ARCHIVED`)
-- `scenario_revision`: 증가하는 리비전 번호, 부모 리비전, 입력 해시와 변경 메모
+- `scenario_revision`: 증가하는 리비전 번호, 리비전명(이름표 — 시나리오 관리 리비전 표에서 고칠 수 있다), 부모 리비전,
+  입력 해시와 변경 메모(시스템 출처 기록이 들어 고치지 않는다)
 - `scenario_preset`: 조회 시작·종료월, 내부 비율의 확보·경고 기준, 프리셋 해시와 표준
   목표 Capa 「조회·집계 설정」(`standard_target_start_date`·`standard_target_end_date`·
   `standard_target_show_detail`·`standard_target_detail_level`·

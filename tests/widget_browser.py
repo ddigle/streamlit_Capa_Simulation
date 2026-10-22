@@ -1,4 +1,4 @@
-# Purpose: AppTest 위에서 브라우저가 선택 상자의 보이는 글자를 들고 있다 되보내는 동작을 흉내 낸다.
+# Purpose: AppTest 위에서 브라우저가 선택 상자 글자·편집표 편집을 들고 있다 되보내는 것을 흉내 낸다.
 
 """선택 상자 하나의 **브라우저 쪽 글자**를 들고 다니는 테스트 대역.
 
@@ -8,11 +8,13 @@ Streamlit 1.63 의 selectbox·multiselect·radio 는 브라우저와 값을 보�
 `AppTest.run()` 은 그러지 않고 회차마다 세션의 값을 지금 `format_func` 로 다시 글자로 만들어
 보낸다 — 그래서 선택지의 글자가 바뀌는 회차에 브라우저가 옛 글자로 다른 값을 되살리는
 결함(2026-10-10 재검증)을 보지 못한다. 이 대역은 목표 상자 하나의 글자를 들고 있다가 `run()`
-마다 그 글자를 끼워 보낸다. 다른 위젯은 `AppTest` 와 같이 보낸다.
+마다 그 글자를 끼워 보낸다. 다른 위젯은 `AppTest` 와 같이 보낸다. 편집표의 칸 편집은
+`BrowserTables` 가 같은 방식으로 들고 다닌다.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
@@ -97,4 +99,70 @@ class BrowserChoice:
         """브라우저 조작 하나(어느 위젯이든)로 생기는 회차 — 목표 상자는 들고 있던 글자를 보낸다."""
         self.app._run(self._states())
         self.sync()
+        return self.app
+
+
+class BrowserTables:
+    """편집표(`st.data_editor`)들의 **브라우저 쪽 칸 편집**을 들고 다니는 대역.
+
+    브라우저는 편집표마다(위젯 id) 고친 칸을 행 위치로 들고 있다가 조작마다 통째로 되보낸다 — 고른
+    줄 체크·이름 칸 편집이 그렇다. 위젯 id 가 바뀌면(key 세대·행 차례 지문이 바뀌어 새 위젯이 섬)
+    그 편집은 사라진다. 일반 `AppTest.run()` 은 편집표 상태를 보내지 않으므로 `on_change`·초안
+    접기를 잴 수 없다. 이 대역은 `edit` 로 칸을 고치고 `run()` 마다 편집표 상태를 JSON 글로 끼워
+    보낸다(Streamlit 1.63 프런트엔드와 같은 `string_value`). 다른 위젯은 `AppTest` 와 같이 보낸다.
+    """
+
+    def __init__(self, app: AppTest) -> None:
+        self.app = app
+        self.edits: dict[str, dict[int, dict[str, object]]] = {}
+
+    def widget_id(self, widget_key: str) -> str:
+        """그 위젯 key 로 그려진 편집표의 위젯 id(「$$ID-…-<key>」)."""
+        for node in self.app._tree:
+            proto_id = getattr(getattr(node, "proto", None), "id", "")
+            if isinstance(proto_id, str) and proto_id.endswith(f"-{widget_key}"):
+                return proto_id
+        raise AssertionError(f"편집표가 없습니다: {widget_key}")
+
+    def edit(self, widget_key: str, position: int, column: str, value: object) -> None:
+        """그 편집표 `position` 번째 행의 `column` 칸을 고친다(다음 `run()` 에 보낸다)."""
+        rows = self.edits.setdefault(self.widget_id(widget_key), {})
+        rows.setdefault(position, {})[column] = value
+
+    def _states(self) -> WidgetStates:
+        states = WidgetStates()
+        mounted: set[str] = set()
+        for node in self.app._tree:
+            proto_id = getattr(getattr(node, "proto", None), "id", "")
+            if isinstance(proto_id, str) and proto_id in self.edits:
+                mounted.add(proto_id)
+                state = states.widgets.add()
+                state.id = proto_id
+                state.string_value = json.dumps(
+                    {
+                        "edited_rows": {
+                            str(position): change
+                            for position, change in self.edits[proto_id].items()
+                        },
+                        "added_rows": [],
+                        "deleted_rows": [],
+                    }
+                )
+                continue
+            other = get_widget_state(node)
+            if other is not None:
+                states.widgets.append(other)
+        return states
+
+    def run(self) -> AppTest:
+        """브라우저 조작 하나로 생기는 회차. 그 뒤 화면에 없는 편집표의 편집은 버린다(새 위젯)."""
+        self.app._run(self._states())
+        present = {
+            proto_id
+            for node in self.app._tree
+            if isinstance(proto_id := getattr(getattr(node, "proto", None), "id", ""), str)
+        }
+        self.edits = {
+            widget_id: rows for widget_id, rows in self.edits.items() if widget_id in present
+        }
         return self.app

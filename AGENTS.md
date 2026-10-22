@@ -323,7 +323,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
 - `app_pages/scenario_management.py` — `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭(늘 그린다 — form 입력
-  보존)으로 시나리오 목록·복제·리비전 저장·월 머지·연도 Shift·원천 등록을 맡는다. 설명은 `guides/scenario_management.md`.
+  보존)으로 시나리오 목록·지금 편집본 복제·월 머지·연도 Shift·원천 등록을 맡는다. 설명은 `guides/scenario_management.md`.
+  - 목록 관리는 C안(2026-10-22 사용자 결정)이다 — 목록 편집표(고름·순서·시나리오명 ✎)와 표 위 「변경 저장」·「편집
+    버리기」·위로/아래로/맨 위로, 고른 시나리오 카드의 리비전 편집표(고름·리비전명 ✎)와 그 위 「선택한 리비전 불러오기」·
+    「공식으로 지정…」(확인 팝업 `OFFICIAL_DIALOG_KEY`)·「이름 저장 (n)」·「편집 버리기」, 카드 아래 늘 서는 접힘 칸 둘(공식
+    발행 이력 — r 번호·공식버전명만, 보관된 시나리오). 고름·미저장 편집은 행 id 초안이다(`components/pick_edit_table.py`).
+  - 저장은 모두 콜백이고 하나라도 거부되면 아무것도 쓰지 않는다(`apply_scenario_list_edits`·`rename_revisions` →
+    `BatchEditRefused`, 결과·오류는 표 위·카드의 늘 서 있는 칸). 이름은 비교 후 쓰기, 순서는 처음 고칠 때의 저장 차례와
+    지금 차례가 같을 때만 쓴다. 빠른 두 번 누름은 성공한 저장이 초안을 비우고 이름이 비교 후 쓰기라 두 번 쓰지 않는다.
+  - 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다 — 이 페이지에는 「리비전 저장」 모드가 없고 모드 줄 아래 한 줄이
+    그 길을 적는다(`REVISION_SAVE_GUIDE`).
   - `자동 갱신`(`components/auto_official_update_tab.py`)과 BigDataQuery 사내 조회는 버튼을 누른 회차에만 돈다.
     보관은 숨길 뿐 파일을 줄이지 않는다(회수는 영구 삭제 뒤 `scripts/compact_duckdb.py`).
   - 월 머지·연도 Shift 는 원본을 바꾸지 않고 새 시나리오로 저장하며 `capacity_gate` 파생 검사를 먼저 돈다. 무월 표
@@ -355,7 +364,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 팝업 안 월 선택은 초안이고 「적용」해 범위가 실제로 바뀔 때만 `MONTH_RANGE_KEY` 를 쓴다. 고를 수 있는 범위는
     매 회차 `month_selection_bounds()` 로 읽고 범위 밖 조회기간은 `clamp_month_range` 로 끝에 끼워 되적는다.
 - `src/capa_simulation/components/scenario_status.py` — 사이드바 조건 패널의 시나리오 줄과 불러오기·새 리비전 저장·
-  편집 되돌리기 팝업(`SCENARIO_DIALOG_KEY`)이다. 이름 변경·발행·삭제·신규 생성은 `시나리오 관리` 페이지 몫이다.
+  편집 되돌리기 팝업(`SCENARIO_DIALOG_KEY`)이다. 이름 변경·발행·삭제·신규 생성은 `시나리오 관리` 페이지 몫이고, 불러오기
+  구획 끝 한 줄이 그리로 간다(「시나리오 관리에서 이름 바꾸기」 — 그 페이지에서 연 팝업이면 링크 대신 표 자리를 적는다).
   - 줄은 세션만 읽고 저장소는 팝업을 연 동안에만 읽는다(팝업 프래그먼트는 `app.py` 의 실행 핀 밖이라
     `pinned_connections` 를 스스로 잡는다). `tests/test_scenario_sidebar.py`·`test_app_navigation.py` 가 고정한다.
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
@@ -830,6 +840,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   브라우저까지 버리는 초기화(`discard_editor`)다.
   - 키가 있는 편집표는 모두 세대 번호를 붙인 `editor_widget_key` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
     `discard_editor` 를 부른다 — 세션만 지우면 브라우저가 옛 편집을 다음 회차에 되보낸다.
+- `src/capa_simulation/components/pick_edit_table.py` — 고름 하나와 이름(·순서) 칸을 바로 고치는 편집표(시나리오 관리
+  목록·리비전 표)의 미저장 초안(`TableDraft` — 이름·화면 차례·차례 기준·고른 행, 모두 행 id)과 접기·위젯 key 다.
+  - 그리기 **전에** `settle_table` 이 지난 회차에 그린 차례(`ShownTable`)로 브라우저 편집을 id 로 접고, 지금 저장된 행에
+    맞추고(`reconcile`), 두 줄이 골라지거나 순서 칸이 바뀌면 초안을 먼저 적고 세대를 올려 새 위젯으로 세운다 — 본문
+    `st.rerun()` 이 없다. 위젯 key 에 행 차례 지문을 실어 차례가 바뀌면 옛 위치 편집이 다른 행에 붙지 않는다(9장).
+  - 순서 칸 숫자는 그 자리로 끼워 넣기(`move_row`)라 칸은 늘 1..n 이다. 단추 콜백은 `peek_table`(쓰지 않는 접기)로
+    누른 회차의 편집까지 읽는다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
 - `src/capa_simulation/components/status_metric.py` — 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric
@@ -962,8 +979,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/key_process.py` — HOME 주요공정 히트맵의 공정 상한(`KEY_PROCESS_LIMIT`)·프리셋 규칙
   (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음).
 - `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
-  카드·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로 쓰는 상자는
-  매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
+  공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
+  쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
@@ -1222,7 +1239,7 @@ RQ_MODULE
    미저장 감지)는 `revision`을, 계산·Figure 캐시 키는 `content_token`을 본다 — `revision`
    번호는 내용이 달라도 겹칠 수 있다(세션 편집 0,1,2… 와 저장 리비전 번호). 편집 없는
    상태(리비전 활성화·원본 초기화)는 리비전에서 나온 고정 토큰이라 세션끼리 캐시를 나눈다
-   — 리비전은 append-only 라 같은 리비전이면 내용이 같다. 모듈수(`RQ_MODULE`)는 리비전이
+   — 리비전 **내용**은 append-only 라(이름표인 리비전명만 고칠 수 있다, 아래 8) 같은 리비전이면 내용이 같다. 모듈수(`RQ_MODULE`)는 리비전이
    아니라 시나리오 dataset 에서 오지만, dataset 은 시나리오를 만들 때 한 번 쓰이고 그 뒤로는
    앱 시작 때의 마이그레이션만 고치므로 같은 전제가 선다. 계산 캐시는 **시나리오 전체 기간**
    단위이고 조회기간은 그 결과를 자른다. **큰 DataFrame 을 `st.cache_data` 의 해시 인자로 넘기지 않는다** —
@@ -1256,8 +1273,12 @@ RQ_MODULE
    확신이 서지 않으면 넓게 둔다(틀린 그림이 느린 그림보다 나쁘다). Plotly 는 색을 Figure 에 구워 넣으므로
    Figure 캐시는 **테마로 가른다** — 칸 이름에 테마를 넣고(`home_rendering._themed_key`) 테마가 바뀌어도 캐시를
    비우지 않는다. 비우는 방식은 `st.context.theme` 이 틀리는 순간(첫 로드·전환 직후)에 잘못 읽은 테마의 그림을 눌러앉힌다.
-8. **과거 리비전을 갱신하지 않는다.** 변경은 새 전체 리비전으로만 저장하고, 과거
-   리비전에서 저장하면 해당 리비전을 부모로 갖는 새 분기를 만든다.
+8. **시뮬레이션 DB 의 과거 리비전 내용을 갱신하지 않는다.** 표 14·프리셋·가상 제품 이력·입력 해시·번호·부모·저장
+   시각·메모는 그대로다 — 변경은 새 전체 리비전으로만 저장하고, 과거 리비전에서 저장하면 해당 리비전을 부모로 갖는 새
+   분기를 만든다. 예외는 **이름표인 리비전명** 하나다(2026-10-22 사용자 결정 — `rename_revision`·`rename_revisions`,
+   비교 후 쓰기, 이력 없음, 시나리오 「최근 수정」 그대로). 계산 캐시 키·공식 발행 행(공식버전명)은 리비전명을 싣지 않아
+   이름을 바꿔도 계산이 다시 돌지 않는다. 메모는 시스템 출처 기록(상세 조회기간·월 머지·연도 Shift 출처)이 들어 고치지
+   않는다. 설비 DB 리비전은 이 예외가 없다(9 — 저장마다 새 전체 스냅샷).
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
    스냅샷을 만든다. `Static 대비 일정` 탭과 `필요 단축 일정` 화면만 시뮬레이션 기준정보·소요대수를 읽어
@@ -2073,12 +2094,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   선택의 `_comparison_active_note`, 주요공정 「고칠 프리셋」의 기본 프리셋 캡션). 글자가 바뀌는 것을
   피할 수 없는 상자(공정 표시명의 「표시명 (원본)」 가르기 — `ProcessLabels.unique_format_func`, 다른
   세션의 이름 바꾸기로 바뀌는 시나리오 이름 — HOME 비교 시나리오·파생 시나리오 원본 상자·사이드바 시나리오 팝업의
-  시나리오 상자, 리비전명 변경으로 바뀌는 「r{번호} · {리비전명}」 — 시나리오 관리 카드 리비전 상자·HOME 비교
-  리비전·파생 원본 리비전·사이드바 팝업 리비전 radio)는 위젯 앞에서 매 회차 잡은 값을 세션에 다시
+  시나리오 상자, 리비전명 변경으로 바뀌는 「r{번호} · {리비전명}」 — HOME 비교 리비전·파생 원본 리비전·사이드바
+  팝업 리비전 radio)는 위젯 앞에서 매 회차 잡은 값을 세션에 다시
   적어(`prune_choice`·`prune_list_selection`) 브라우저에 새 글자를 보낸다. 적지 않으면 브라우저가 옛 글자를
   되보내 다음 회차에 그 글자가 id 자리에 들어가거나, 선택이 빈 값으로 풀리거나, **예외 없이 첫 항목으로
-  조용히 바뀐다**(카드에서 r2 를 고르고 누른 「시나리오 불러오기」가 최신 r3 을 올렸다 — 2026-10-22 AppTest 실측).
-  그래서 시험은 「예외 없음」이 아니라 **누른 회차에 실제로 걸린 대상 id** 로 잰다. 일반 `AppTest.run()` 은 회차마다
+  조용히 바뀐다**(옛 시나리오 관리 카드 리비전 상자에서 r2 를 고르고 누른 「시나리오 불러오기」가 최신 r3 을 올렸다 —
+  2026-10-22 AppTest 실측). 시나리오 관리 목록 관리(C안)의 두 편집표는 고름을 글자가 아니라 행 id 초안으로 들어
+  (`components/pick_edit_table.py`) 이 목록에 들지 않는다. 그래서 시험은 「예외 없음」이 아니라 **누른 회차에 실제로 걸린
+  대상 id** 로 잰다. 일반 `AppTest.run()` 은 회차마다
   세션 값으로 글자를 다시 만들어 이 결함을 보지 못한다 — 브라우저처럼 글자를 들고 다니는
   `tests/widget_browser.py` 의 `BrowserChoice`(selectbox·multiselect·radio)로 잰다.
   AppTest 의 `select`·`set_value` 는 **값**을 받아 `format_func` 로 글자를 만든다 — 보이는 글자(「가공」)를
@@ -2284,7 +2307,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   (`st.dialog`) 열림 상태는 페이지에 한 칸(`<페이지>_open_dialog`, `page_bootstrap.PAGE_DIALOG_SUFFIX`)만 두고 열림 키가
   있는 동안 매 회차 그 함수를 부른다(탭은 닫혀도 매 회차 그리므로 탭마다 칸을 두면 둘이 뜰 수 있다). 여는 버튼은
   `on_click` 콜백이고 콜백마다 `forget_page_dialogs()` 로 다른 열림 키부터 비운다. 페이지가 바뀐 회차에는 `app.py` 가
-  열림 키를 버린다.
+  열림 키를 버린다. 시나리오 관리 공식 지정 확인 팝업(`scenario_official_open_dialog`)은 팝업이 보인 「지금 공식」 번호를
+  저장소에 넘겨(`expected_latest_release_no`) 팝업이 열린 사이 남이 먼저 지정했으면 쓰지 않는다 — 팝업 안 조작은
+  프래그먼트 회차라 마지막 전체 회차에 읽어 보인 값이 그대로 인자다.
 - 팝업 닫기는 `on_dismiss` 가 맡는다. 팝업 안 저장·삭제가 성공하면 열림 키를 직접 지우고 `st.rerun()` 으로 앱 전체를
   다시 돌린다 — 팝업은 프래그먼트라 그대로 두면 바깥 화면이 옛 값이고, `st.rerun()` 은 `on_dismiss` 를 거치지 않는다.
 - **세션 상태를 바꾸는 조작은 콜백(`on_click`·`on_change`·컴포넌트 `on_*_change`)으로 한다.** 콜백은 본문보다 먼저 돌아
@@ -2300,10 +2325,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   위젯의 `on_change` 에서, 값이 실제로 바뀐 때만 한다. 심기·가지치기·조회기간 변경으로 옮긴 값을 쓰면 공용 행이라 남이
   고른 값을 되쓰고(핑퐁), 선택지 밖 글자(브라우저가 되보낸 옛 라벨)가 섞인 콜백 값은 쓰지 않는다.
 - 활성 리비전을 씨앗으로 쓰는 위젯은 「무엇으로 씨앗을 넣었나」를 함께 적어 두고 활성 리비전이 바뀌면 다시 적는다
-  (`components/scenario_management.py` 의 `REVISION_SEED_KEY`, `components/scenario_transform.py` 의 원본 리비전 상자)
-  — 칸이 없을 때만 넣으면 사이드바 팝업에서 불러온 뒤에도 옛 리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다.
-  씨앗 처리 뒤에도 **매 회차** 고른 id 를 되쓴다 — 선택지 글자의 리비전명이 바뀔 수 있다(위 「글자가 바뀌는 것을 피할
-  수 없는 상자」).
+  (`components/scenario_management.py` 의 `REVISION_SEED_KEY` — 리비전 표의 고름을 `repick_table` 로 옮긴다,
+  `components/scenario_transform.py` 의 원본 리비전 상자) — 칸이 없을 때만 넣으면 사이드바 팝업에서 불러온 뒤에도 옛
+  리비전을 고른 채 남아 다음 동작이 엉뚱한 리비전에 걸린다. 선택 상자라면 씨앗 처리 뒤에도 **매 회차** 고른 id 를
+  되쓴다 — 선택지 글자의 리비전명이 바뀔 수 있다(위 「글자가 바뀌는 것을 피할 수 없는 상자」).
 - `st.query_params` 는 자기 키만 넣고 `del` 한다. `st.query_params.clear()` 는 쓰지 않는다 — 테마 인자
   (`design/theme.THEME_QUERY_PARAM`)까지 지워 첫 방문으로 보고 다시 새로고침한다. 키 둘 이상을 지울 때는 `del` 을 되풀이하지
   않고 남길 인자를 `get_all` 로 다시 실어 `st.query_params.from_dict` 한 번으로 바꾼다 — 1.63 은 바꿀 때마다 주소 메시지를
@@ -2329,6 +2354,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   놓친다.
 - 편집표에서 고른 행은 행 번호가 아니라 업무 키로 기억한다 — 편집본은 제출마다 다시 만들어지고 행을 지우면 번호가 다시
   매겨진다. 되살린 행은 지우기 전 자리로 넣는다(맨 뒤에 붙이면 순서만 다른 리비전이 생긴다).
+- **다른 세션이 행 차례를 바꿀 수 있는 편집표**(시나리오 관리 목록·리비전 표 — 남의 저장·이름 변경이 차례를 바꾼다)는
+  `components/pick_edit_table.py` 를 쓴다: 고친 값·고른 행을 회차마다 행 id 초안으로 접고, 위젯 key 에 행 차례 지문을
+  실어 차례가 바뀌면 새 위젯으로 세운다. 「고름 하나」는 두 줄이 골라진 회차에 초안을 먼저 적고 세대를 올린다 —
+  `discard_editor` 만 부르면 같은 표의 이름·순서 편집까지 사라진다. 접기와 다시 세우기는 그리기 **전에** 하므로 본문
+  `st.rerun()` 이 없다. 시험은 `tests/widget_browser.py` 의 `BrowserTables` 로 브라우저처럼 칸 편집을 보내 잰다
+  (`AppTest.run()` 은 편집표 상태를 보내지 않는다).
 - **편집 화면의 적용·저장 버튼과 변경 메모는 편집표 위에 둔다** — 표가 높으면 아래 버튼이 화면 밖이라 적용을 건너뛴다
   (버튼을 먼저 만들어도 누른 회차에 편집값이 들어온다). 적용 결과·오류는 누른 버튼 바로 아래 자리에 쓴다.
 - pandas Styler 표의 분류 칸 회색 배경은 Styler 를 직접 만들지 말고 `month_editor.classification_styled` 를 거친다 —

@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 from typing import Any
 
@@ -319,9 +319,15 @@ def test_renaming_a_scenario_rechecks_the_summary(
     scenario_ui: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """비교 대상의 이름이 바뀌면 GAP 풍선의 이름도 바뀌어야 한다(저장소가 비교 프로필 version 을
-    올리고, 이 세션은 곧바로 다시 확인한다)."""
+    올리고, 이 세션은 곧바로 다시 확인한다). 이름은 목록 표에서 고쳐 「변경 저장」으로 쓴다."""
+    from capa_simulation.components.pick_edit_table import TableDraft
+
     repo = _Repo()
-    monkeypatch.setattr(st, "text_input", lambda *args, **kwargs: "새 이름")
-    with pytest.raises(_Rerun):
-        scenario_management._render_rename(repo, SUMMARY)  # type: ignore[arg-type]
-    assert repo.calls == ["rename_scenario"] and _forgotten(scenario_ui)
+    monkeypatch.setattr(scenario_management, "get_scenario_repository", lambda path: repo)
+    monkeypatch.setattr(scenario_management, "pinned_connections", lambda path: nullcontext())
+    monkeypatch.setattr(
+        scenario_management, "peek_table", lambda *args: TableDraft(names={"S": "새 이름"})
+    )
+    monkeypatch.setattr(scenario_management, "forget_table_edits", lambda key: None)
+    scenario_management._save_list_edits(DB, ("S",), {"S": SUMMARY.scenario_name})
+    assert repo.calls == ["apply_scenario_list_edits"] and _forgotten(scenario_ui)

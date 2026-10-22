@@ -638,7 +638,7 @@ def _save_scenario(
     st.session_state[REGISTRATION_FLASH_KEY] = (
         f"{with_object_particle(snapshot.scenario.scenario_name)} 저장하고 "
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
-        "활성화했습니다."
+        "올렸습니다."
     )
     st.rerun()
 
@@ -771,7 +771,7 @@ def _render_reference_conflict_report() -> None:
         data=reference_conflicts_to_csv(report),
         file_name=file_name,
         key="reference_conflicts_download",
-        label="RQ 업무 키 충돌 CSV 다운로드",
+        label="기준정보 업무 키 충돌 CSV 다운로드",
     )
     with st.expander("충돌 상세 미리보기"):
         # `report` 는 세션에 담아 둔 보고서이고 바로 위 CSV 가 같은 객체를 내보낸다.

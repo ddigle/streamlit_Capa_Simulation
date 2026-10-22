@@ -126,7 +126,7 @@ def render_source_selector(
     revisions = {item.revision_id: item for item in repository.list_revisions(selected)}
     revision_key = f"{key}_revision_{selected}"
     # 리비전 상자에 씨앗으로 넣은 활성 리비전 id 를 역할·시나리오마다 적어 두고, 활성 리비전이
-    # 이것과 달라지면(사이드바 시나리오 팝업의 불러오기·저장, 같은 페이지 「리비전 저장」 모드)
+    # 이것과 달라지면(사이드바 시나리오 팝업의 불러오기·저장, 같은 페이지 목록 관리의 불러오기)
     # 상자를 새 활성 리비전으로 다시 적는다 — 상자는 `persist_state` 라 칸이 없을 때만 넣으면 옛
     # 리비전에 남는다. 사용자가 일부러 고른 리비전은 활성이 그대로인 동안 남고, 활성이 다른
     # 시나리오로 가면 씨앗만 버린다(AGENTS 9장, `scenario_management.REVISION_SEED_KEY`).
@@ -153,8 +153,8 @@ def render_source_selector(
         key=revision_key,
         persist_state="session",
         help=(
-            "현재 활성 시나리오는 활성 리비전, 나머지는 최신 리비전을 먼저 고릅니다. "
-            "현재 화면의 미저장 편집은 포함하지 않습니다."
+            "지금 올라와 있는 시나리오는 올라와 있는 리비전, 나머지는 최신 리비전을 먼저 "
+            "고릅니다. 저장하지 않은 편집은 들어가지 않습니다."
         ),
     )
     if revision_id is None:
@@ -222,7 +222,7 @@ def render_derived_save(
         if isinstance(saved.get("warning"), str):
             st.warning(saved["warning"], icon=":material/warning:")
     st.caption(
-        "현재 활성 편집본과 원본 시나리오는 유지합니다. 새 시나리오의 조회기간·포함공정은 "
+        "지금 올라와 있는 편집본과 원본 시나리오는 그대로입니다. 새 시나리오의 조회기간·포함공정은 "
         "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
     )
     if virtual_products:
