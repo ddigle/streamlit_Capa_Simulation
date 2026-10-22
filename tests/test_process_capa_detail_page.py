@@ -291,6 +291,21 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert any(str(element.value) == "사이드바에서 HOME" for element in app.caption)
 
 
+def test_the_route_factor_table_leaves_the_other_basis_cell_blank(
+    databases: tuple[Path, Path],
+) -> None:
+    """「경로별 인자」 표의 UPEH(Main)·ST(MI)는 경로마다 하나만 값이다 — 다른 칸은 「None」 글자가
+    아니라 빈칸이다(Streamlit 1.63 `st.dataframe` 은 `placeholder` 가 없으면 결측 칸에 「None」)."""
+    app = _ok(_app(databases).run())
+
+    (table,) = [
+        element
+        for element in app.dataframe
+        if {"UPEH", "ST", "환산_UPEH"} <= set(element.value.columns)
+    ]
+    assert table.proto.HasField("placeholder") and table.proto.placeholder == ""
+
+
 def test_a_chosen_process_survives_reruns_and_keeps_the_month(
     databases: tuple[Path, Path],
 ) -> None:

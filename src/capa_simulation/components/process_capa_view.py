@@ -1214,10 +1214,13 @@ def _render_route_factors(trace: ProcessMonthTrace | None) -> None:
     if routes.empty:
         st.caption("이 달 이 공정의 경로가 없습니다.")
     else:
+        # 경로마다 UPEH(Main)·ST(MI) 가운데 하나만 값이다 — 다른 칸은 비워 둔다. 주지 않으면
+        # Streamlit 이 그 칸에 「None」 글자를 그린다.
         st.dataframe(
             routes,
             hide_index=True,
             width="stretch",
+            placeholder="",
             column_config={"ST": "ST(분)"},
             key="process_detail_routes",
         )
