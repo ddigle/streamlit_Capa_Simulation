@@ -331,6 +331,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장은 모두 콜백이고 하나라도 거부되면 아무것도 쓰지 않는다(`apply_scenario_list_edits`·`rename_revisions` →
     `BatchEditRefused`, 결과·오류는 표 위·카드의 늘 서 있는 칸). 이름은 비교 후 쓰기, 순서는 처음 고칠 때의 저장 차례와
     지금 차례가 같을 때만 쓴다. 빠른 두 번 누름은 성공한 저장이 초안을 비우고 이름이 비교 후 쓰기라 두 번 쓰지 않는다.
+  - 이름의 비교 대상은 그 칸을 처음 고친 편집이 붙은 표가 **보인** 저장 이름(`TableDraft.name_base`)이다 — 마지막 회차에
+    다시 읽은 이름과 대조하면 남이 먼저 바꾼 뒤 회차가 한 번만 돌아도 대조가 통과해 남의 이름을 덮었다(2026-10-22 리뷰).
+    먼저 바뀐 이름은 저장 전에 경고(`moved_names`)하고, 거부되면 그 행의 이름 편집만 버려(`drop_names`,
+    `BatchEditRefused.moved_names`) 지금 이름을 다시 보인다.
   - 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다 — 이 페이지에는 「리비전 저장」 모드가 없고 모드 줄 아래 한 줄이
     그 길을 적는다(`REVISION_SAVE_GUIDE`).
   - `자동 갱신`(`components/auto_official_update_tab.py`)과 BigDataQuery 사내 조회는 버튼을 누른 회차에만 돈다.
@@ -841,7 +845,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 키가 있는 편집표는 모두 세대 번호를 붙인 `editor_widget_key` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
     `discard_editor` 를 부른다 — 세션만 지우면 브라우저가 옛 편집을 다음 회차에 되보낸다.
 - `src/capa_simulation/components/pick_edit_table.py` — 고름 하나와 이름(·순서) 칸을 바로 고치는 편집표(시나리오 관리
-  목록·리비전 표)의 미저장 초안(`TableDraft` — 이름·화면 차례·차례 기준·고른 행, 모두 행 id)과 접기·위젯 key 다.
+  목록·리비전 표)의 미저장 초안(`TableDraft` — 이름·이름 기준·화면 차례·차례 기준·고른 행, 모두 행 id)과 접기·위젯
+  key 다. 이름 기준(`name_base`)은 그 칸을 처음 고친 편집이 붙은 표가 보인 저장 이름이고(`ShownTable.names`),
+  `changed_names` 가 그것을 비교 후 쓰기의 대상으로 돌려준다.
   - 그리기 **전에** `settle_table` 이 지난 회차에 그린 차례(`ShownTable`)로 브라우저 편집을 id 로 접고, 지금 저장된 행에
     맞추고(`reconcile`), 두 줄이 골라지거나 순서 칸이 바뀌면 초안을 먼저 적고 세대를 올려 새 위젯으로 세운다 — 본문
     `st.rerun()` 이 없다. 위젯 key 에 행 차례 지문을 실어 차례가 바뀌면 옛 위치 편집이 다른 행에 붙지 않는다(9장).
@@ -1084,8 +1090,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
-  - 리비전명 변경은 `save_revision_name` 한 곳을 거친다 — 저장소의 비교 후 쓰기(`rename_revision`, 다른 사용자가 먼저
-    바꿨으면 `RevisionNameMoved`) 뒤 스냅샷 캐시·파생 원본 메모를 비우고 이 세션 이름표만 고친다(활성화하지 않는다).
+  - 리비전명 변경은 `save_revision_names`(카드 리비전 표, 한 건은 `save_revision_name`)를 거친다 — 저장소의 비교 후
+    쓰기(`rename_revisions`·`rename_revision`, 다른 사용자가 먼저 바꿨으면 `BatchEditRefused`·`RevisionNameMoved`) 뒤
+    스냅샷 캐시·파생 원본 메모를 비우고 이 세션 이름표만 고친다(활성화하지 않는다).
     시나리오 「최근 수정」·공식 이력·비교 프로필은 건드리지 않는다(`tests/test_revision_rename.py`).
   - 맨 위 알림·두 건 체크 경고는 늘 서 있는 칸 안에 그린다 — 보관함 상자(key 있음) 앞 순번이 알림 때문에 밀리면
     본문 `st.rerun()` 뒤 흐린 사본이 남았다(9장 「key 가 있어도 자리는 고정한다」).
@@ -2360,6 +2367,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `discard_editor` 만 부르면 같은 표의 이름·순서 편집까지 사라진다. 접기와 다시 세우기는 그리기 **전에** 하므로 본문
   `st.rerun()` 이 없다. 시험은 `tests/widget_browser.py` 의 `BrowserTables` 로 브라우저처럼 칸 편집을 보내 잰다
   (`AppTest.run()` 은 편집표 상태를 보내지 않는다).
+  - 그런 표의 비교 후 쓰기 기준은 사용자가 **본** 값이다(초안에 함께 적는다) — 저장 콜백이 받는 「지난 회차에 읽은
+    값」은 남의 변경 뒤 회차가 한 번만 돌아도 남의 값이 된다. 시험은 남의 변경을 클릭 직전에만 끼우지 말고, 그 뒤
+    회차를 한 번 이상(다른 행 고르기 등) 돌린 꼴도 둔다.
 - **편집 화면의 적용·저장 버튼과 변경 메모는 편집표 위에 둔다** — 표가 높으면 아래 버튼이 화면 밖이라 적용을 건너뛴다
   (버튼을 먼저 만들어도 누른 회차에 편집값이 들어온다). 적용 결과·오류는 누른 버튼 바로 아래 자리에 쓴다.
 - pandas Styler 표의 분류 칸 회색 배경은 Styler 를 직접 만들지 말고 `month_editor.classification_styled` 를 거친다 —

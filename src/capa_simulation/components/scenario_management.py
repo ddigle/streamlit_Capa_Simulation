@@ -35,10 +35,12 @@ from capa_simulation.components.pick_edit_table import (
     TableColumns,
     TableDraft,
     changed_names,
+    drop_names,
     forget_table,
     forget_table_edits,
     move_row,
     moved_count,
+    moved_names,
     peek_table,
     remount_table,
     repick_table,
@@ -414,6 +416,28 @@ def _render_list_toolbar(
             help="고른 시나리오를 맨 위로 옮깁니다. 「변경 저장」을 눌러야 저장됩니다.",
         )
     st.caption(list_edit_caption(len(renames), moved))
+    stale = moved_names(draft, base_names)
+    if stale:
+        st.warning(
+            moved_names_warning(
+                [
+                    (_row_place(f"{rows.index(row_id) + 1}행", draft.names[row_id]), current)
+                    for row_id, current in stale.items()
+                    if row_id in rows
+                ]
+            ),
+            icon=":material/warning:",
+        )
+
+
+def moved_names_warning(lines: Sequence[tuple[str, str]]) -> str:
+    """저장 전 미리 알림 — 보고 고친 뒤 다른 곳에서 먼저 바뀐 이름. 줄마다 (행 표지, 지금 이름)."""
+    head = (
+        "다른 사용자가 먼저 이름을 바꿨습니다 — 저장하면 거부되고 그 칸은 지금 이름으로 돌아갑니다."
+    )
+    return "\n".join(
+        [head, *(f"- {place}{literal_markdown(f'(지금: {current})')}" for place, current in lines)]
+    )
 
 
 def list_edit_caption(rename_count: int, moved: int) -> str:
@@ -443,10 +467,11 @@ def _save_list_edits(
 ) -> None:
     """「변경 저장」 콜백. 이름·순서 편집을 한 트랜잭션으로 쓴다. 하나라도 거부되면 쓰지 않는다.
 
-    이름은 비교 후 쓰기(보고 고친 이름 = `base_names`), 순서는 처음 고칠 때의 저장 차례
-    (`order_base`)와 지금 차례가 같을 때만 쓴다. 차례가 바뀌어 거부되면 순서 편집만 버려 지금
-    차례로 표를 다시 세운다(이름 편집은 행 id 로 남는다). 콜백이라 본문 `st.rerun()` 이 없고, DB
-    핀을 스스로 잡는다.
+    이름은 비교 후 쓰기(보고 고친 이름 = 초안의 `name_base` — 그 칸을 처음 고칠 때 표가 보인
+    이름), 순서는 처음 고칠 때의 저장 차례(`order_base`)와 지금 차례가 같을 때만 쓴다. 차례가
+    바뀌어 거부되면 순서 편집만 버려 지금 차례로 표를 다시 세운다(이름 편집은 행 id 로 남는다).
+    다른 사용자가 먼저 바꿔 거부된 이름은 그 행의 이름 편집만 버려 지금 이름을 다시 보인다. 콜백이라
+    본문 `st.rerun()` 이 없고, DB 핀을 스스로 잡는다.
     """
     draft = peek_table(LIST_EDITOR_KEY, base_ids, base_names, LIST_COLUMNS)
     renames = changed_names(draft, base_names)
@@ -474,11 +499,16 @@ def _save_list_edits(
                         message,
                     )
                     for row_id, message in exc.problems
-                ]
+                ],
+                reloaded=bool(exc.moved_names),
             ),
         )
-        if any(row_id is None for row_id, _ in exc.problems):
-            remount_table(LIST_EDITOR_KEY, replace(draft, order=None, order_base=None))
+        order_refused = any(row_id is None for row_id, _ in exc.problems)
+        if order_refused or exc.moved_names:
+            kept = drop_names(draft, exc.moved_names)
+            if order_refused:
+                kept = replace(kept, order=None, order_base=None)
+            remount_table(LIST_EDITOR_KEY, kept)
         else:
             store_draft(LIST_EDITOR_KEY, draft)
         return
@@ -509,12 +539,22 @@ def _row_place(place: str, name: str) -> str:
     return f"{place} 「{literal_markdown(name)}」"
 
 
-def refused_edits_message(problems: Sequence[tuple[str | None, str]]) -> str:
-    """거부된 일괄 저장의 알림. 줄마다 (행 표지, 까닭) — 표지가 없으면 목록 전체의 까닭이다."""
+def refused_edits_message(
+    problems: Sequence[tuple[str | None, str]], *, reloaded: bool = False
+) -> str:
+    """거부된 일괄 저장의 알림. 줄마다 (행 표지, 까닭) — 표지가 없으면 목록 전체의 까닭이다.
+
+    `reloaded` 면 먼저 바뀐 이름을 표에 지금 이름으로 다시 올렸다는 한 줄을 붙인다.
+    """
     lines = ["저장하지 않았습니다 — 하나라도 막히면 아무것도 쓰지 않습니다."]
     for place, message in problems:
         reason = literal_markdown(message)
         lines.append(f"- {place}: {reason}" if place else f"- {reason}")
+    if reloaded:
+        lines.append(
+            "\n먼저 바뀐 이름은 표에 지금 이름으로 다시 올렸습니다 — 그래도 바꾸려면 다시 고쳐 "
+            "저장하세요."
+        )
     return "\n".join(lines)
 
 
@@ -664,7 +704,9 @@ def _render_scenario_actions(
         draft, widget_key = settle_table(
             REVISION_EDITOR_KEY, base_ids, base_names, REVISION_COLUMNS
         )
-        draft, widget_key = _seed_revision_pick(summary, draft, widget_key, base_ids, first_view)
+        draft, widget_key = _seed_revision_pick(
+            summary, draft, widget_key, base_ids, base_names, first_view
+        )
         picked = revision_by_id.get(draft.picked) if draft.picked is not None else None
         args = (tuple(base_ids), dict(base_names))
         # 불러오는 입구가 둘이다 — 이 카드와 사이드바 시나리오 팝업. 확인 절차와 글자를 맞춘다
@@ -723,6 +765,23 @@ def _render_scenario_actions(
             official_names = _official_rename_notes(renames, revision_by_id, releases)
             if official_names:
                 st.caption(official_names)
+            stale = moved_names(draft, base_names)
+            if stale:
+                st.warning(
+                    moved_names_warning(
+                        [
+                            (
+                                _row_place(
+                                    f"r{revision_by_id[revision_id].revision_no}",
+                                    draft.names[revision_id],
+                                ),
+                                current,
+                            )
+                            for revision_id, current in stale.items()
+                        ]
+                    ),
+                    icon=":material/warning:",
+                )
         with archive_slot:
             if st.session_state.get(ACTION_KEY) == "archive":
                 _render_archive(repository, summary)
@@ -753,6 +812,7 @@ def _seed_revision_pick(
     draft: TableDraft,
     widget_key: str,
     base_ids: Sequence[str],
+    base_names: Mapping[str, str],
     first_view: bool,
 ) -> tuple[TableDraft, str]:
     """리비전 표의 고름 씨앗. 처음 볼 때와 올라와 있는 리비전이 바뀔 때만 코드가 고른다.
@@ -768,7 +828,9 @@ def _seed_revision_pick(
     )
     if active_here and st.session_state.get(REVISION_SEED_KEY) != active_revision_id:
         st.session_state[REVISION_SEED_KEY] = active_revision_id
-        widget_key = repick_table(REVISION_EDITOR_KEY, draft, active_revision_id, base_ids)
+        widget_key = repick_table(
+            REVISION_EDITOR_KEY, draft, active_revision_id, base_ids, base_names
+        )
         return replace(draft, picked=active_revision_id), widget_key
     if not active_here:
         # 올라와 있는 것이 다른 시나리오로 옮겨 가면 씨앗 기록을 버린다. 남겨 두면 마지막으로
@@ -776,7 +838,7 @@ def _seed_revision_pick(
         # (2026-10-11 재검증).
         st.session_state.pop(REVISION_SEED_KEY, None)
         if first_view:
-            widget_key = repick_table(REVISION_EDITOR_KEY, draft, base_ids[0], base_ids)
+            widget_key = repick_table(REVISION_EDITOR_KEY, draft, base_ids[0], base_ids, base_names)
             return replace(draft, picked=base_ids[0]), widget_key
     return draft, widget_key
 
@@ -926,7 +988,9 @@ def _load_picked_revision(
 def _save_revision_names_clicked(database_path: str, revisions: Sequence[RevisionSummary]) -> None:
     """「이름 저장 (n)」 콜백. 리비전 표에서 고친 이름을 한 번에 쓴다.
 
-    하나라도 거부되면 아무것도 쓰지 않고 리비전마다 까닭을 적는다.
+    이름마다 그 칸을 처음 고칠 때 표가 보인 이름(초안의 `name_base`)과 대조한다. 하나라도 거부되면
+    아무것도 쓰지 않고 리비전마다 까닭을 적는다. 다른 사용자가 먼저 바꿔 거부된 리비전은 그 이름
+    편집만 버려 표에 지금 이름을 다시 보인다.
     """
     by_id = {revision.revision_id: revision for revision in revisions}
     base_names = {revision.revision_id: revision.revision_name for revision in revisions}
@@ -936,9 +1000,7 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
         st.session_state[CARD_NOTICE_KEY] = ("info", "고친 리비전명이 없습니다.")
         return
     try:
-        saved = save_revision_names(
-            database_path, [(by_id[revision_id], new) for revision_id, (_, new) in renames.items()]
-        )
+        saved = save_revision_names(database_path, renames)
     except BatchEditRefused as exc:
         st.session_state[CARD_NOTICE_KEY] = (
             "error",
@@ -954,10 +1016,14 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
                         message,
                     )
                     for revision_id, message in exc.problems
-                ]
+                ],
+                reloaded=bool(exc.moved_names),
             ),
         )
-        store_draft(REVISION_EDITOR_KEY, draft)
+        if exc.moved_names:
+            remount_table(REVISION_EDITOR_KEY, drop_names(draft, exc.moved_names))
+        else:
+            store_draft(REVISION_EDITOR_KEY, draft)
         return
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[CARD_NOTICE_KEY] = ("error", bootstrap_error_message(exc))
@@ -993,13 +1059,14 @@ def save_revision_name(
 
 
 def save_revision_names(
-    database_path: str, changes: Sequence[tuple[RevisionSummary, str]]
+    database_path: str, renames: Mapping[str, tuple[str, str]]
 ) -> list[RevisionSummary]:
     """리비전 여러 개의 이름표를 한 트랜잭션으로 바꾸고 이 세션의 후속 처리를 한다.
 
-    `changes` 는 (화면이 그 회차에 읽어 보인 요약, 새 이름)이다. 요약의 이름을 보고 고친 이름으로
-    넘겨 비교 후 쓰기를 한다. 하나라도 거부되면 저장소가 `BatchEditRefused` 로 아무것도 쓰지 않는다.
-    이름이 그대로인 것은 빼고, 남는 것이 없으면 쓰지 않는다.
+    `renames` 는 리비전 id → (보고 고친 이름, 새 이름)이다(`changed_names`). 보고 고친 이름은 그
+    칸을 처음 고칠 때 표가 보인 이름이다 — 마지막 회차에 다시 읽은 이름을 넘기면 남이 먼저 바꾼 뒤
+    회차가 한 번만 돌아도 대조가 통과해 남의 변경을 덮는다. 하나라도 거부되면 저장소가
+    `BatchEditRefused` 로 아무것도 쓰지 않는다. 고친 것이 없으면 쓰지 않는다.
 
     후속 처리는 셋이다. 스냅샷 payload 가 리비전 요약을 통째로 담으므로 프로세스 캐시를 비우고
     (`clear_scenario_snapshot_cache`), 파생 화면이 메모한 원본(요약 포함)을 버리고
@@ -1008,15 +1075,10 @@ def save_revision_names(
     화면 Summary 는 리비전명을 싣지 않아 건드리지 않는다. 시나리오 「최근 수정」도 오르지 않아 목록
     차례와 행 선택이 그대로다.
     """
-    wanted = {
-        revision.revision_id: (revision.revision_name, name)
-        for revision, name in changes
-        if name.strip() != revision.revision_name
-    }
-    if not wanted:
+    if not renames:
         return []
     with pinned_connections(Path(database_path)):
-        renamed = get_scenario_repository(database_path).rename_revisions(wanted)
+        renamed = get_scenario_repository(database_path).rename_revisions(renames)
     _after_revision_rename(renamed)
     return renamed
 

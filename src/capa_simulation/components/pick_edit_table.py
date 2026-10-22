@@ -7,6 +7,9 @@
 세대를 올린다)은 모든 편집을 함께 버린다. 그래서
 
 - 고친 값은 회차마다 **행 id 로** 세션 초안(`TableDraft`)에 접어 둔다(`fold_edits`).
+- 이름은 비교 후 쓰기다. 그 칸을 처음 고친 편집이 붙은 표가 보인 저장 이름(`name_base`)을 함께 적어
+  두고, 저장할 때 그 이름과 지금 저장 이름을 대조한다. 마지막 회차에 다시 읽은 이름과 대조하면 남이
+  먼저 바꾼 뒤 회차가 한 번만 돌아도 대조가 통과해 남의 변경을 알림 없이 덮는다.
 - 위젯 key 에 그 회차 행 id 차례의 지문을 싣는다(`table_widget_key`). 차례가 바뀌면 새 위젯으로
   서고 초안이 id 로 값을 다시 싣는다 — 옛 위치의 편집이 다른 행에 붙지 않는다.
 - 고름은 하나만이다. 두 줄이 골라지면 새로 고른 줄만 남기고 표를 다시 세운다(`remount_table` —
@@ -22,7 +25,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
 import streamlit as st
@@ -34,12 +37,16 @@ from capa_simulation.components.editor_state import discard_editor, editor_widge
 class TableDraft:
     """편집표 하나의 미저장 초안. 모두 행 id 로 적는다.
 
-    `names` 는 저장된 이름과 다르게 고친 이름(앞뒤 공백을 뗀 글)이다. `order` 는 고친 화면 차례이고
-    저장 차례 그대로면 `None` 이다. `order_base` 는 순서를 처음 고친 회차의 저장 차례 — 저장할 때
-    지금 차례와 견줘 그 사이 다른 곳에서 바뀌었으면 쓰지 않는다. `picked` 는 고른 행 하나다.
+    `names` 는 저장된 이름과 다르게 고친 이름(앞뒤 공백을 뗀 글)이다. `name_base` 는 그 이름 칸을
+    처음 고친 편집이 붙은 표가 보인 저장 이름 — 사용자가 보고 고친 이름이다. 저장할 때 이것을 비교
+    대상으로 넘겨 그 사이 다른 곳에서 바뀌었으면 쓰지 않는다(`changed_names`). `order` 는 고친 화면
+    차례이고 저장 차례 그대로면 `None` 이다. `order_base` 는 순서를 처음 고친 회차의 저장 차례 —
+    저장할 때 지금 차례와 견줘 그 사이 다른 곳에서 바뀌었으면 쓰지 않는다. `picked` 는 고른 행
+    하나다.
     """
 
     names: dict[str, str] = field(default_factory=dict)
+    name_base: dict[str, str] = field(default_factory=dict)
     order: tuple[str, ...] | None = None
     order_base: tuple[str, ...] | None = None
     picked: str | None = None
@@ -66,10 +73,15 @@ def shown_session_key(key: str) -> str:
 
 @dataclass(frozen=True)
 class ShownTable:
-    """지난 회차에 그린 편집표 — 위젯 key 와 그 행 차례. 브라우저의 위치 편집은 이 차례로 읽는다."""
+    """지난 회차에 그린 편집표 — 위젯 key, 그 행 차례, 그때의 저장 이름.
+
+    브라우저의 위치 편집은 이 차례로 읽는다. `names` 는 그 표를 그릴 때 읽은 저장 이름이다 — 그
+    표에서 처음 고친 이름 칸의 「보고 고친 이름」(`TableDraft.name_base`)이 된다.
+    """
 
     widget_key: str
     rows: tuple[str, ...]
+    names: Mapping[str, str] = field(default_factory=dict)
 
 
 def load_draft(key: str) -> TableDraft:
@@ -140,8 +152,10 @@ def reconcile(draft: TableDraft, base_ids: Sequence[str]) -> TableDraft:
         order = (*kept, *(row_id for row_id in base_ids if row_id not in set(kept)))
         if order == tuple(base_ids):
             order = None
+    names = {row_id: name for row_id, name in draft.names.items() if row_id in present}
     return TableDraft(
-        names={row_id: name for row_id, name in draft.names.items() if row_id in present},
+        names=names,
+        name_base={row_id: seen for row_id, seen in draft.name_base.items() if row_id in names},
         order=order,
         order_base=draft.order_base if order is not None else None,
         picked=draft.picked if draft.picked in present else None,
@@ -178,15 +192,20 @@ def fold_edits(
     base_names: Mapping[str, str],
     edits: Mapping[int, Mapping[str, object]],
     columns: TableColumns,
+    seen_names: Mapping[str, str] | None = None,
 ) -> tuple[TableDraft, bool]:
     """브라우저 칸 편집을 초안에 접는다. 두 번째 값은 표를 다시 세워야 하는가다.
 
     `rows` 는 그 편집이 붙은 위젯을 그린 회차의 행 차례다 — 편집의 행 위치를 이것으로 id 로 바꾼다.
-    이름은 저장된 이름(`base_names`)과 같아지면 초안에서 뺀다. 두 줄이 골라졌으면 초안의 고른 행이
-    아닌 쪽(새로 고른 줄)을 남기고, 순서 칸을 고쳤으면 그 자리로 끼워 넣는다 — 둘 다 표를 다시
-    세운다. 같은 편집을 두 번 접어도 결과가 같다. 지금 저장된 행에 맞추는 것은 `reconcile` 몫이다.
+    이름은 지금 저장된 이름(`base_names`)과 같아지면 초안에서 뺀다. 처음 고친 이름 칸은 그 위젯을
+    그릴 때의 저장 이름(`seen_names`, 없으면 `base_names`)을 보고 고친 이름(`name_base`)으로 적고,
+    이미 적힌 것은 그대로 둔다. 두 줄이 골라졌으면 초안의 고른 행이 아닌 쪽(새로 고른 줄)을 남기고,
+    순서 칸을 고쳤으면 그 자리로 끼워 넣는다 — 둘 다 표를 다시 세운다. 같은 편집을 두 번 접어도
+    결과가 같다. 지금 저장된 행에 맞추는 것은 `reconcile` 몫이다.
     """
+    seen = base_names if seen_names is None else seen_names
     names = dict(draft.names)
+    name_base = dict(draft.name_base)
     checked: list[str] = []
     moves: list[tuple[str, int]] = []
     for position, row_id in enumerate(rows):
@@ -196,8 +215,12 @@ def fold_edits(
             text = "" if typed is None else str(typed).strip()
             if text == base_names.get(row_id):
                 names.pop(row_id, None)
+                name_base.pop(row_id, None)
             else:
                 names[row_id] = text
+                shown_name = seen.get(row_id, base_names.get(row_id))
+                if shown_name is not None:
+                    name_base.setdefault(row_id, shown_name)
         if bool(change.get(columns.pick, row_id == draft.picked)):
             checked.append(row_id)
         if columns.order is not None:
@@ -214,7 +237,13 @@ def fold_edits(
     order = tuple(rows)
     for row_id, number in moves:
         order = move_row(order, row_id, number - 1)
-    folded = TableDraft(names=names, order=draft.order, order_base=draft.order_base, picked=picked)
+    folded = TableDraft(
+        names=names,
+        name_base=name_base,
+        order=draft.order,
+        order_base=draft.order_base,
+        picked=picked,
+    )
     if order != tuple(rows):
         remount = True
         base = draft.order_base if draft.order is not None else tuple(rows)
@@ -233,7 +262,7 @@ def peek_table(
     shown = shown_table(key)
     if shown is not None:
         draft, _ = fold_edits(
-            draft, shown.rows, base_names, widget_edits(shown.widget_key), columns
+            draft, shown.rows, base_names, widget_edits(shown.widget_key), columns, shown.names
         )
     return reconcile(draft, base_ids)
 
@@ -252,38 +281,79 @@ def settle_table(
     remount = False
     if shown is not None:
         draft, remount = fold_edits(
-            draft, shown.rows, base_names, widget_edits(shown.widget_key), columns
+            draft, shown.rows, base_names, widget_edits(shown.widget_key), columns, shown.names
         )
     draft = reconcile(draft, base_ids)
     if remount:
         remount_table(key, draft)
     else:
         store_draft(key, draft)
-    return draft, mark_shown(key, draft, base_ids)
+    return draft, mark_shown(key, draft, base_ids, base_names)
 
 
-def mark_shown(key: str, draft: TableDraft, base_ids: Sequence[str]) -> str:
-    """이번 회차에 그릴 위젯 key 를 정하고 그 행 차례와 함께 적는다(다음 회차의 접기가 읽는다)."""
+def mark_shown(
+    key: str, draft: TableDraft, base_ids: Sequence[str], base_names: Mapping[str, str]
+) -> str:
+    """이번 회차에 그릴 위젯 key 를 정하고 그 행 차례·저장 이름과 함께 적는다(다음 회차의 접기가
+    읽는다)."""
     rows = table_rows(draft, base_ids)
     widget_key = table_widget_key(key, rows)
-    st.session_state[shown_session_key(key)] = ShownTable(widget_key=widget_key, rows=rows)
+    st.session_state[shown_session_key(key)] = ShownTable(
+        widget_key=widget_key,
+        rows=rows,
+        names={row_id: base_names[row_id] for row_id in rows if row_id in base_names},
+    )
     return widget_key
 
 
-def repick_table(key: str, draft: TableDraft, picked: str | None, base_ids: Sequence[str]) -> str:
+def repick_table(
+    key: str,
+    draft: TableDraft,
+    picked: str | None,
+    base_ids: Sequence[str],
+    base_names: Mapping[str, str],
+) -> str:
     """고른 행을 코드가 바꾼다(올라와 있는 리비전이 바뀜 등). 브라우저의 고름 편집과 겹치지 않게
     새 위젯으로 세우고, 이번 회차에 그릴 위젯 key 를 돌려준다."""
     remount_table(key, replace(draft, picked=picked))
-    return mark_shown(key, load_draft(key), base_ids)
+    return mark_shown(key, load_draft(key), base_ids, base_names)
 
 
 def changed_names(draft: TableDraft, base_names: Mapping[str, str]) -> dict[str, tuple[str, str]]:
-    """저장할 이름 바꾸기 — 행 id → (지금 저장된 이름, 새 이름)."""
+    """저장할 이름 바꾸기 — 행 id → (보고 고친 이름, 새 이름).
+
+    보고 고친 이름은 `name_base` 이고, 없으면(코드가 직접 넣은 초안) 지금 저장된 이름이다. 새 이름이
+    지금 저장된 이름과 같으면 쓸 것이 없어 뺀다.
+    """
     return {
-        row_id: (base_names[row_id], name)
+        row_id: (draft.name_base.get(row_id, base_names[row_id]), name)
         for row_id, name in draft.names.items()
         if row_id in base_names and name != base_names[row_id]
     }
+
+
+def moved_names(draft: TableDraft, base_names: Mapping[str, str]) -> dict[str, str]:
+    """고치는 중인 이름 가운데 보고 고친 뒤 다른 곳에서 먼저 바뀐 것 — 행 id → 지금 저장된 이름.
+
+    저장하면 비교 후 쓰기가 거부할 행이다. 화면은 저장 전에 미리 알린다.
+    """
+    return {
+        row_id: base_names[row_id]
+        for row_id, (seen, _) in changed_names(draft, base_names).items()
+        if seen != base_names[row_id]
+    }
+
+
+def drop_names(draft: TableDraft, row_ids: Iterable[str]) -> TableDraft:
+    """그 행들의 이름 편집을 버린다(다른 곳에서 먼저 바뀌어 거부된 행 — 지금 이름을 다시 보인다)."""
+    dropped = set(row_ids)
+    return replace(
+        draft,
+        names={row_id: name for row_id, name in draft.names.items() if row_id not in dropped},
+        name_base={
+            row_id: seen for row_id, seen in draft.name_base.items() if row_id not in dropped
+        },
+    )
 
 
 def moved_count(draft: TableDraft, base_ids: Sequence[str]) -> int:

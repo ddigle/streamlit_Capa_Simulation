@@ -326,20 +326,32 @@ class RevisionNameMoved(ValueError):
     """
 
     def __init__(self, current: str) -> None:
-        super().__init__(f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current}).")
+        super().__init__(name_moved_message(current))
         self.current = current
+
+
+def name_moved_message(current: str) -> str:
+    """비교 후 쓰기가 이름을 거부한 까닭 — 다른 사용자가 먼저 바꾼 지금 이름을 함께 적는다."""
+    return f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current})."
 
 
 class BatchEditRefused(ValueError):
     """여러 행을 한 번에 고치는 저장에서 하나라도 거부됐다. 아무것도 쓰지 않았다.
 
     `problems` 는 (행 id, 까닭) 의 차례다. 행 id 가 `None` 이면 목록 전체의 까닭(차례 바뀜 등)이다.
-    화면은 행 id 를 지금 표의 행 번호·이름으로 바꿔 한 줄씩 보인다.
+    화면은 행 id 를 지금 표의 행 번호·이름으로 바꿔 한 줄씩 보인다. `moved_names` 는 그 가운데
+    다른 사용자가 먼저 이름을 바꿔 거부된 행의 지금 이름(행 id → 이름)이다 — 화면은 그 행의 이름
+    편집을 버리고 지금 이름을 다시 보여 다시 고치게 한다.
     """
 
-    def __init__(self, problems: Sequence[tuple[str | None, str]]) -> None:
+    def __init__(
+        self,
+        problems: Sequence[tuple[str | None, str]],
+        moved_names: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(" / ".join(message for _, message in problems))
         self.problems = tuple(problems)
+        self.moved_names = dict(moved_names or {})
 
 
 SCENARIO_LIST_MOVED_MESSAGE = (
@@ -1379,6 +1391,7 @@ class DuckDBScenarioRepository:
             current = {str(row[0]): str(row[1]) for row in rows}
             active_order = [str(row[0]) for row in rows if str(row[2]) == "ACTIVE"]
             problems: list[tuple[str | None, str]] = []
+            moved_names: dict[str, str] = {}
             final = dict(current)
             labels: dict[str, str] = {}
             for scenario_id, (expected, wanted) in renames.items():
@@ -1386,12 +1399,8 @@ class DuckDBScenarioRepository:
                     problems.append((scenario_id, "목록에서 빠진 시나리오입니다(보관·삭제됨)."))
                     continue
                 if current[scenario_id] != expected:
-                    problems.append(
-                        (
-                            scenario_id,
-                            f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current[scenario_id]}).",
-                        )
-                    )
+                    moved_names[scenario_id] = current[scenario_id]
+                    problems.append((scenario_id, name_moved_message(current[scenario_id])))
                     continue
                 try:
                     labels[scenario_id] = required_text(wanted, "시나리오명")
@@ -1412,7 +1421,7 @@ class DuckDBScenarioRepository:
                 ):
                     problems.append((None, SCENARIO_LIST_MOVED_MESSAGE))
             if problems:
-                raise BatchEditRefused(problems)
+                raise BatchEditRefused(problems, moved_names)
             for scenario_id, label in labels.items():
                 connection.execute(
                     """
@@ -1537,6 +1546,7 @@ class DuckDBScenarioRepository:
                 ).fetchall()
             }
             problems: list[tuple[str | None, str]] = []
+            moved_names: dict[str, str] = {}
             labels: dict[str, str] = {}
             for revision_id, (expected, wanted) in changes.items():
                 owner = owners.get(revision_id)
@@ -1545,16 +1555,15 @@ class DuckDBScenarioRepository:
                 elif owner[1] != "ACTIVE":
                     problems.append((revision_id, "보관된 시나리오의 리비전명은 바꿀 수 없습니다."))
                 elif owner[0] != expected:
-                    problems.append(
-                        (revision_id, f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {owner[0]}).")
-                    )
+                    moved_names[revision_id] = owner[0]
+                    problems.append((revision_id, name_moved_message(owner[0])))
                 else:
                     try:
                         labels[revision_id] = required_text(wanted, "리비전명")
                     except ValueError as exc:
                         problems.append((revision_id, str(exc)))
             if problems:
-                raise BatchEditRefused(problems)
+                raise BatchEditRefused(problems, moved_names)
             for revision_id, label in labels.items():
                 connection.execute(
                     "UPDATE app_meta.scenario_revision SET revision_name = ? WHERE revision_id = ?",

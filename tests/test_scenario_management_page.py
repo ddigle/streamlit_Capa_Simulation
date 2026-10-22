@@ -15,6 +15,7 @@ from widget_browser import BrowserTables
 
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.pick_edit_table import (
+    ShownTable,
     TableDraft,
     draft_session_key,
     shown_session_key,
@@ -1694,3 +1695,124 @@ def test_a_revision_name_changed_elsewhere_refuses_the_whole_name_save(tmp_path:
         revision.revision_name for revision in repository.list_revisions(seed.scenario.scenario_id)
     ]
     assert names == ["남이 고친 이름", seed.revision.revision_name]
+
+
+def _row_position(app: AppTest, key: str, row_id: str) -> int:
+    """지난 회차에 그린 편집표에서 그 행 id 가 선 자리 — 칸 편집을 보낼 행 위치."""
+    shown = app.session_state[shown_session_key(key)]
+    assert isinstance(shown, ShownTable)
+    return shown.rows.index(row_id)
+
+
+def test_a_scenario_name_changed_elsewhere_is_not_overwritten_after_more_runs(
+    tmp_path: Path,
+) -> None:
+    """이름은 사용자가 그 칸을 고칠 때 **본** 이름과 대조한다(S6 비교 후 쓰기).
+
+    다른 사용자가 먼저 바꾼 뒤 이 세션에서 회차가 더 돌아도(다른 행 고르기 등) 대조 기준은 처음
+    본 이름이다. 마지막 회차에 다시 읽은 이름을 기준으로 삼으면 남의 변경을 알림 없이 덮는다
+    (2026-10-22 리뷰 — 클릭 직전에만 끼운 시험은 이 길을 못 봤다). 표 위에 미리 경고하고, 거부되면
+    그 행만 지금 이름으로 다시 세워 보고 다시 고치게 한다.
+    """
+    script, database_path, ids, names = _three_scenarios(tmp_path)
+    repository = DuckDBScenarioRepository(database_path)
+    app = AppTest.from_string(script, default_timeout=120)
+    tables = BrowserTables(app)
+    tables.run()
+    tables.edit(
+        _shown_key(app, LIST_EDITOR_KEY),
+        _row_position(app, LIST_EDITOR_KEY, ids[1]),
+        "시나리오명",
+        "내가 바꾼 이름",
+    )
+    tables.run()
+    repository.rename_scenario(ids[1], "남이 바꾼 이름")
+    tables.run()
+    tables.edit(
+        _shown_key(app, LIST_EDITOR_KEY), _row_position(app, LIST_EDITOR_KEY, ids[0]), "선택", True
+    )
+    tables.run()
+    assert not app.exception
+    assert _draft(app, LIST_EDITOR_KEY).picked == ids[0]
+    (warning,) = [item.value for item in app.warning if "먼저 이름을 바꿨습니다" in item.value]
+    assert literal_markdown("「내가 바꾼 이름」(지금: 남이 바꾼 이름)") in warning
+
+    app.button(key="scenario_list_save").click()
+    tables.run()
+    assert not app.exception
+    (error,) = [item.value for item in app.error]
+    assert literal_markdown("다른 사용자가 먼저 이름을 바꿨습니다(지금: 남이 바꾼 이름).") in error
+    stored = {
+        scenario.scenario_id: scenario.scenario_name for scenario in repository.list_scenarios()
+    }
+    assert stored == {ids[0]: names[0], ids[1]: "남이 바꾼 이름", ids[2]: names[2]}
+    # 그 행만 지금 이름으로 다시 선다. 고름은 남는다.
+    frame = _list_frame(app)
+    assert "남이 바꾼 이름" in frame.index and "내가 바꾼 이름" not in frame.index
+    assert _draft(app, LIST_EDITOR_KEY).picked == ids[0]
+    assert _caption_with(app, "고친 것").endswith("고친 것: 이름 0 · 순서 0")
+    assert not any("먼저 이름을 바꿨습니다" in item.value for item in app.warning)
+
+    # 지금 이름을 보고 다시 고치면 저장된다.
+    tables.edit(
+        _shown_key(app, LIST_EDITOR_KEY),
+        _row_position(app, LIST_EDITOR_KEY, ids[1]),
+        "시나리오명",
+        "내가 바꾼 이름",
+    )
+    tables.run()
+    app.button(key="scenario_list_save").click()
+    tables.run()
+    assert not app.exception
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    stored = {
+        scenario.scenario_id: scenario.scenario_name for scenario in repository.list_scenarios()
+    }
+    assert stored[ids[1]] == "내가 바꾼 이름"
+
+
+def test_a_revision_name_changed_elsewhere_is_not_overwritten_after_more_runs(
+    tmp_path: Path,
+) -> None:
+    """리비전 표도 그 칸을 고칠 때 본 이름과 대조한다 — 남의 변경 뒤 다른 줄을 골라(표를 다시
+    세우는 회차) 회차가 더 돌아도 남의 이름을 덮지 않는다(2026-10-22 리뷰)."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    seed = repository.load_revision(release.revision_id)
+    probe = repository.save_revision(
+        seed.scenario.scenario_id, seed.tables, seed.preset, revision_name="probe save"
+    ).revision
+
+    app = AppTest.from_string(script, default_timeout=120)
+    tables = BrowserTables(app)
+    _check_row(app, seed.scenario.scenario_id)
+    tables.run()
+    tables.edit(_shown_key(app, REVISION_EDITOR_KEY), 0, "리비전명", "내가 고친 이름")
+    tables.run()
+    repository.rename_revision(probe.revision_id, "남이 고친 이름", expected_name="probe save")
+    tables.run()
+    # 이미 고른 줄(r1, 올라와 있는 리비전)이 있는 채 r2 를 고르면 두 줄이 골라져 표를 다시 세운다.
+    tables.edit(_shown_key(app, REVISION_EDITOR_KEY), 0, "고름", True)
+    tables.run()
+    assert not app.exception
+    assert _draft(app, REVISION_EDITOR_KEY).picked == probe.revision_id
+    (warning,) = [item.value for item in app.warning if "먼저 이름을 바꿨습니다" in item.value]
+    assert literal_markdown("r2 「내가 고친 이름」(지금: 남이 고친 이름)") in warning
+
+    app.button(key="scenario_card_save_names").click()
+    tables.run()
+    assert not app.exception
+    (error,) = [item.value for item in app.error]
+    assert f"r2 「{literal_markdown('내가 고친 이름')}」" in error
+    assert literal_markdown("다른 사용자가 먼저 이름을 바꿨습니다(지금: 남이 고친 이름).") in error
+    names = [
+        revision.revision_name for revision in repository.list_revisions(seed.scenario.scenario_id)
+    ]
+    assert names == ["남이 고친 이름", seed.revision.revision_name]
+    assert _revision_frame(app)["리비전명"].tolist() == names
+    assert _draft(app, REVISION_EDITOR_KEY).picked == probe.revision_id
+    assert app.button(key="scenario_card_save_names").disabled
