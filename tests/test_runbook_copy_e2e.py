@@ -82,6 +82,19 @@ def test_the_home_benchmark_writes_through_output_not_a_redirect() -> None:
         assert "--output " in line and ">" not in line, line
 
 
+def test_the_upeh_plan_benchmark_reads_only_the_copy_and_writes_through_output() -> None:
+    """가정 계획 1회 시간(6-3 b) — 사본 폴더만 주고 `--output` 으로 받는다(`>` 는 한글을
+    깨뜨린다)."""
+    calls = [line for line in _code_lines(_copy_e2e()) if "benchmark_upeh_assumption.py" in line]
+
+    assert len(calls) == 1, calls
+    assert '--data-dir "$e2e\\data"' in calls[0]
+    assert "--output" in calls[0] and ">" not in calls[0]
+    script = (PROJECT_ROOT / "scripts" / "benchmark_upeh_assumption.py").read_text(encoding="utf-8")
+    assert '"--data-dir",\n        required=True' in script
+    assert '"--output"' in script
+
+
 def test_the_copy_compares_size_and_write_time_before_and_after() -> None:
     lines = _code_lines(_section("### 2) DB 복사", "### 3)"))
 

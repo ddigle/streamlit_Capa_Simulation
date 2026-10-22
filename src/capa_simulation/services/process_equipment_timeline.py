@@ -118,6 +118,7 @@ __all__ = [
     "downtime_loss",
     "dynamic_readiness",
     "exiting_unit_rows",
+    "keep_released_units",
     "new_unit_rows",
     "production_position",
     "unit_events",
@@ -857,6 +858,31 @@ def unit_events(timeline: ProcessEquipmentTimeline, plan_units: pd.DataFrame) ->
     for column in ("반입 전", "기여 시작 축 밖"):
         frame[column] = frame[column].astype("bool")
     return frame
+
+
+def keep_released_units(
+    events: pd.DataFrame, official_events: pd.DataFrame, units: Iterable[str]
+) -> pd.DataFrame:
+    """UPEH 가정 계획의 ③ 줄(`events`)에, 공식 계획에서는 당겼는데 가정 계획 줄에 없는 호기를 신규
+    줄로 더한다 — 가정으로 단축이 필요 없어진 호기를 흐린 줄로 남기려고(공정 Capa 상세 P5).
+
+    `official_events` 는 같은 설비 일정에 **공식** 계획을 겹친 `unit_events` 결과, `units` 는
+    공식·가정의 단축일수가 다른 호기(`upeh_assumption.pull_changes`)다. 기여 시작이 축 밖이라 가정
+    계획 줄에 들지 않은 호기만 더한다(축 안 호기는 이미 신규 줄로 있다). 차례는 추가N 앞이다.
+    """
+    present = set(events["호기"].astype(str)) if not events.empty else set()
+    wanted = [str(unit) for unit in units if str(unit) not in present]
+    if not wanted or official_events.empty:
+        return events
+    missing = official_events.loc[
+        official_events["호기"].astype(str).isin(wanted).to_numpy()
+    ].assign(줄=ROW_NEW)
+    if missing.empty:
+        return events
+    if events.empty:
+        return missing.reset_index(drop=True)
+    virtual = events["줄"].astype(str).eq(ROW_VIRTUAL).to_numpy()
+    return pd.concat([events.loc[~virtual], missing, events.loc[virtual]], ignore_index=True)
 
 
 def _plan_rows(plan_units: pd.DataFrame, process: str) -> list[dict[str, object]]:

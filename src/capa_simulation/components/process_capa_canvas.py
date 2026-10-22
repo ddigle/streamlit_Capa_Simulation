@@ -24,6 +24,15 @@
 밝힌다. ③ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ④ 풍선 첫 줄에 「· 모듈 N」과 화살표
 줄마다 그 모듈의 설비명이다.
 
+**UPEH 가정**(`assumption` — 공정 Capa 상세 조건 카드의 「이 세션만」 값)이 켜지면 ① 끝(기준 확보율
+아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보기준 과부족)이 선다 — 구간 달만 값이고 밖은
+빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
+가정이 켜지면 부족 띠·② 판정 대조는 가정 요약의 판정으로 칠한다(②~④ 가 가정 계획이라 한 그림에서
+공식 판정과 섞이지 않게). 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정
+대조·목표 과부족의 행 라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라 UPEH 와 무관하다.
+공식 계획에서는 당겼지만 가정 계획에서는 덜 당기는 호기는 ③ 에 흐린 줄로 남고 풍선에 「공식 −45일 →
+가정 0일」 이다(`DynamicCanvasInput.official_pulls`).
+
 **구획 접기**(`collapsed`, 구획 id `SECTION_IDS`) — 접힌 구획은 제목 줄만 남고(글자 끝 ▸, 펼친
 구획은 ▾) 그 밑 행을 그리지 않는다. 판정·부족 원인은 요약 프레임에서 그대로 내므로 ① 을 접어도 부족
 띠와 ② 판정 대조는 같다. 접힌 ③·④ 는 줄을 만들지 않아 「n대 더」 수도 0 이다.
@@ -179,6 +188,9 @@ __all__ = [
     "ROW_THRESHOLD",
     "ROW_TITLE_PREFIX",
     "ROW_UNIT_PREFIX",
+    "ROW_UPEH_BALANCE",
+    "ROW_UPEH_RATE",
+    "ROW_UPEH_REQUIRED",
     "SECTION_DOWNTIME",
     "SECTION_DYNAMIC",
     "SECTION_IDS",
@@ -186,6 +198,7 @@ __all__ = [
     "SECTION_UNITS",
     "SUMMARY_TITLE_DETAIL",
     "SUMMARY_TITLE_HEIGHT_PX",
+    "AssumptionCanvasInput",
     "DynamicCanvasInput",
     "ProcessCapaCanvas",
     "build_process_capa_canvas",
@@ -229,6 +242,9 @@ ROW_RATE: Final = "rate"
 ROW_BALANCE: Final = "balance"
 ROW_THRESHOLD: Final = "threshold"
 ROW_HOME_RATE: Final = "home_rate"
+ROW_UPEH_REQUIRED: Final = "upeh_required"
+ROW_UPEH_RATE: Final = "upeh_rate"
+ROW_UPEH_BALANCE: Final = "upeh_balance"
 ROW_DYNAMIC_COMPARE: Final = "dynamic_compare"
 ROW_DYNAMIC_AVAILABLE: Final = "dynamic_available"
 ROW_DYNAMIC_DELTA: Final = "dynamic_delta"
@@ -278,6 +294,22 @@ class DynamicCanvasInput:
 
     show_all_units: bool = False
     show_all_arrows: bool = False
+    official_pulls: Mapping[str, tuple[int, int]] | None = None
+    """UPEH 가정 계획을 그릴 때만 — 공식 계획과 단축일수가 다른 호기 → (공식 일, 가정 일)
+    (`upeh_assumption.pull_changes`). None 이면 공식 계획이다(② 라벨에 표지를 달지 않는다)."""
+
+
+@dataclass(frozen=True, eq=False)
+class AssumptionCanvasInput:
+    """UPEH 가정 — ① 끝 세 줄과 판정 기준(가정 요약)의 재료."""
+
+    percent: int
+    months: frozenset[int]
+    """가정을 건 달(토큰의 달)."""
+
+    summary: pd.DataFrame
+    """가정 요약 — 공식 요약과 같은 함수(`build_process_capa_summary`)에 소요 ÷f 를 건 확보율을 넣은
+    것."""
 
 
 class ProcessCapaCanvas(NamedTuple):
@@ -310,6 +342,7 @@ def build_process_capa_canvas(
     home_rates: Mapping[int, float | None] | None = None,
     dynamic: DynamicCanvasInput | None = None,
     collapsed: Collection[str] = frozenset(),
+    assumption: AssumptionCanvasInput | None = None,
 ) -> ProcessCapaCanvas:
     """공정 하나의 결합 월 캔버스(라벨 Figure · 월 Figure)를 만든다.
 
@@ -324,6 +357,8 @@ def build_process_capa_canvas(
     - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
     - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
       id 는 무시한다.
+    - `assumption` 을 넘기면 ① 끝에 「UPEH 가정」 세 줄이 서고, 부족 띠·② 판정 대조는 그 요약의
+      판정을 쓴다. `dynamic` 도 그때는 가정 계획이어야 한다(페이지가 맞춘다).
     """
     axis = [int(month) for month in months]
     if not axis:
@@ -333,14 +368,16 @@ def build_process_capa_canvas(
     index_of = {month: position for position, month in enumerate(axis)}
     folded = frozenset(str(section) for section in collapsed)
 
-    # 판정·원인은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠·② 판정 대조가 바뀌지 않는다.
-    statuses = _summary_statuses(summary, axis)
-    causes = _summary_causes(summary, axis)
+    # 판정·원인은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠·② 판정 대조가 바뀌지 않는다. UPEH
+    # 가정이 켜지면 그 요약 하나가 판정 기준이다(②~④ 가 가정 계획이다).
+    judged = assumption.summary if assumption is not None else summary
+    statuses = _summary_statuses(judged, axis)
+    causes = _summary_causes(judged, axis)
     rows: list[_Row] = [_header_row(process_label, axis, thresholds)]
     if SECTION_SUMMARY in folded:
         rows.append(_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, folded))
     else:
-        rows += _summary_rows(axis, summary, thresholds, product_demand, home_rates)
+        rows += _summary_rows(axis, summary, thresholds, product_demand, home_rates, assumption)
     hidden_units = 0
     hidden_arrow_units = 0
     today_x: float | None = None
@@ -446,6 +483,7 @@ def _summary_rows(
     thresholds: SecurementThresholds,
     product_demand: pd.DataFrame | None,
     home_rates: Mapping[int, float | None] | None,
+    assumption: AssumptionCanvasInput | None = None,
 ) -> list[_Row]:
     records = _by_month(summary, axis)
     supply_label, supply_month = (
@@ -572,6 +610,8 @@ def _summary_rows(
     if product_demand is not None:
         rows += _product_rows(axis, product_demand, records)
     rows += [rate, balance, reference]
+    if assumption is not None:
+        rows += _assumption_rows(axis, records, thresholds, assumption)
     if home_rates is not None:
         home = _Row(
             ROW_HOME_RATE,
@@ -593,6 +633,92 @@ def _summary_rows(
             )
         rows.append(home)
     return rows
+
+
+def _assumption_rows(
+    axis: Sequence[int],
+    records: Mapping[int, Mapping[str, object]],
+    thresholds: SecurementThresholds,
+    assumption: AssumptionCanvasInput,
+) -> list[_Row]:
+    """① 끝 「UPEH 가정」 세 줄 — 구간 달만 값, 밖은 빈칸(풍선 「구간 밖 — 공식과 같음」)."""
+    prefix = f"UPEH {assumption.percent}%"
+    factor = assumption.percent / 100
+    assumed = _by_month(assumption.summary, axis)
+    required = _Row(
+        ROW_UPEH_REQUIRED,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=f"{prefix} · 소요대수",
+        label_bold=True,
+        label_fill=tokens.SUMMARY_DEMAND_CLASSIFICATION,
+        month_fill=tokens.SUMMARY_DEMAND_SURFACE,
+        group_start=True,
+    )
+    rate = _Row(
+        ROW_UPEH_RATE,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=f"{prefix} · 확보율",
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+    )
+    balance = _Row(
+        ROW_UPEH_BALANCE,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=f"{prefix} · 확보기준 과부족",
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+    )
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        if month not in assumption.months:
+            outside = f"{head} · 구간 밖 — 공식과 같음"
+            for row in (required, rate, balance):
+                row.cells[index] = _Cell(text="", muted=True, hover=outside)
+            continue
+        official = records.get(month, {})
+        record = assumed.get(month, {})
+        demand = _number(record.get("소요대수"))
+        official_demand = _number(official.get("소요대수"))
+        available = _number(record.get("가용대수"))
+        rate_value = _number(record.get("확보율"))
+        status = _status(record.get(STATUS_COLUMN))
+        secure, warning = thresholds.for_month(month)
+        change = (
+            f"<br>공식 {_two(official_demand)} ÷ {factor:g} = {_two(demand)} "
+            f"({_signed_two((demand or 0.0) - (official_demand or 0.0))}대)"
+            if official_demand is not None and demand is not None
+            else ""
+        )
+        required.cells[index] = _Cell(
+            text=_one(demand),
+            bold=True,
+            hover=f"{head} · UPEH 가정 {assumption.percent}% 소요대수 {_one(demand)}대{change}",
+        )
+        fill = _status_color(status)
+        rate.cells[index] = _Cell(
+            text=_percent(rate_value) if status is not None else _EMPTY,
+            fill=fill,
+            bold=fill is not None,
+            hover=_rate_hover(head, rate_value, available, demand, status, secure, warning)
+            + f"<br>UPEH 가정 {assumption.percent}% — 공식 확보율 "
+            + f"{_percent(_number(official.get('확보율')))}",
+        )
+        value = _whole(record.get(BALANCE_COLUMN))
+        official_value = _whole(official.get(BALANCE_COLUMN))
+        painted = _status_color(status) if status in _SHORT_STATUSES else None
+        balance.cells[index] = _Cell(
+            text=_signed_int(value) if value is not None else _EMPTY,
+            fill=painted,
+            bold=painted is not None,
+            hover=_balance_hover(head, value, available, demand, secure, record.get(CAUSE_COLUMN))
+            + (
+                f"<br>공식 {_signed_int(official_value)} → 가정 {_signed_int(value)}"
+                if value is not None and official_value is not None
+                else ""
+            ),
+        )
+    return [required, rate, balance]
 
 
 def _product_rows(
@@ -692,11 +818,14 @@ def _dynamic_rows(
     if not today_position.before and not today_position.after:
         detail += f" · 점선은 오늘({dynamic.today:%m.%d})"
     rows: list[_Row] = [_section_title_row(SECTION_DYNAMIC, detail, folded)]
+    # UPEH 가정 계획이면 바뀌는 행(판정 대조·목표 과부족)의 라벨에만 표지를 단다 — 제목 줄 높이는
+    # 그대로다.
+    assumed_mark = " · UPEH 가정" if dynamic.official_pulls is not None else ""
     compare = _Row(
         ROW_DYNAMIC_COMPARE,
         _VALUE,
         VALUE_ROW_HEIGHT_PX,
-        label="판정 대조",
+        label=f"판정 대조{assumed_mark}",
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
     available = _Row(
@@ -717,7 +846,7 @@ def _dynamic_rows(
         ROW_DYNAMIC_BALANCE,
         _VALUE,
         TWO_LINE_ROW_HEIGHT_PX,
-        label=_target_balance_label(dynamic.target, axis),
+        label=f"{_target_balance_label(dynamic.target, axis)}{assumed_mark}",
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
     for index, month in enumerate(axis):
@@ -920,16 +1049,31 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
         detail = f"반입 {_day(arrival, today)} · Qual {_day(qual, today)}" + (
             f" · {confirmation}" if confirmation else ""
         )
+    hover = _unit_hover(event)
+    released = False
+    if dynamic.official_pulls is not None:
+        hover = hover.replace("<br>", " · UPEH 가정 계획<br>", 1) if "<br>" in hover else hover
+        change = dynamic.official_pulls.get(unit)
+        if change is not None:
+            official_days, assumed_days = change
+            hover += f"<br>공식 {_MINUS}{official_days}일 → 가정 " + (
+                f"{_MINUS}{assumed_days}일" if assumed_days else "0일"
+            )
+            # 가정으로 단축이 필요 없어진 호기 — 흐린 줄로 남긴다(P5).
+            if kind != ROW_SHORTENED:
+                released = True
+                detail = f"가정으로 단축 불필요 · 공식 {_MINUS}{official_days}일"
     return _Row(
         f"{ROW_UNIT_PREFIX}{unit}",
         _UNIT,
         UNIT_ROW_HEIGHT_PX,
         label=unit,
         detail=detail,
-        label_bold=True,
+        label_bold=not released,
+        label_muted=released,
         label_fill=tokens.SURFACE_CLASSIFICATION,
         payload=("event", dict(event)),
-        hover=_unit_hover(event),
+        hover=hover,
     )
 
 
@@ -1638,6 +1782,10 @@ def _changed(before: float | None, after: float | None) -> bool:
 def _ratio(value: float) -> str:
     """판정 기준 비율을 사람이 적은 꼴로(1.095 → 「1.095」)."""
     return f"{value:g}"
+
+
+def _two(value: float | None) -> str:
+    return _EMPTY if value is None else f"{value:,.2f}"
 
 
 def _signed_two(value: float) -> str:

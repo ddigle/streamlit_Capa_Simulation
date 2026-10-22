@@ -38,6 +38,11 @@
 다음 화면 줄, 머리 공정명 옆 ◀▶(확보기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서
 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 
+**UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
+페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
+**판정은 한 기준이다** — 캔버스 부족 띠·② 판정 대조·KPI 미달·부족 원인·근거 패널의 다음 화면은 가정
+요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄 (「공식 n」)에만 둔다. 그림 캐시 키에 가정 토큰이 든다.
+
 **부족 원인의 다음 화면** — 보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과, 가용 불일치 →
 가용설비 현황 `Static 대비 일정`, 일정 → 필요 단축 일정(`open_shortening_page`). 화면을 옮기는
 단추는 콜백이 아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의
@@ -70,6 +75,7 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
     build_process_capa_canvas,
@@ -149,6 +155,13 @@ from capa_simulation.services.securement_rate import (
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.simulation_cache import ScenarioCacheKey
 from capa_simulation.services.threshold_label import threshold_percent_label
+from capa_simulation.services.upeh_assumption import (
+    NO_ASSUMPTION,
+    UpehToken,
+    token_factor,
+    token_months,
+    token_percent,
+)
 from capa_simulation.services.wd_window import wd_window
 from capa_simulation.sidebar_status import remembered_expander, rerun_app_unless_alone
 
@@ -248,7 +261,15 @@ class DynamicView:
     """`plan.at(목표).units` 를 이 공정으로 거른 것(단축·추가N)."""
 
     memo_key: tuple[object, ...]
-    """그림 캐시 키에 넣는 설비 일정 입력 — 계획 키(오늘·목표 포함)와 설비 일정 키, 일정 미정 글."""
+    """그림 캐시 키에 넣는 설비 일정 입력 — 계획 키(오늘·목표·UPEH 가정 토큰 포함)와 설비 일정 키,
+    일정 미정 글."""
+
+    official_units: pd.DataFrame | None = None
+    """UPEH 가정 계획을 그릴 때 — 같은 공정의 **공식** 계획 호기 표(KPI 회색 줄 「공식 n」). 공식
+    계획을 그릴 때는 None 이다(`units` 가 곧 공식이다)."""
+
+    official_process_months: pd.DataFrame | None = None
+    """위와 같은 때의 공식 계획 공정·월 표."""
 
 
 @dataclass(frozen=True, eq=False)
@@ -281,10 +302,22 @@ class ProcessDetailView:
     """설비 일정 판정. None 이면 설비 DB 를 읽지 못한 것이다(`dynamic_error`)."""
 
     dynamic_error: str = ""
+    assumed_summary: pd.DataFrame | None = None
+    """UPEH 가정이 켜졌을 때의 가정 요약(소요 ÷f 를 건 확보율로 `build_process_capa_summary`). 판정
+    기준이다."""
+
+    upeh_token: UpehToken = NO_ASSUMPTION
+    """UPEH 가정 토큰(`upeh_assumption.UpehToken`) — 그림 캐시 키에 든다. 꺼졌으면 `()`."""
+
     initial_month: int | None = None
     """스크롤 시작 달(`ProcessDetailEntry.scroll_month`) — 새 방문·밖에서 들어옴·공정을 바꾼
     회차에만 바뀐다. 스크롤바는 이 값이 바뀔 때만 오프셋을 다시 걸므로, 칸을 눌러 달을 옮긴 뒤의
     앱 전체 회차가 보던 가로 위치를 되돌리지 않는다."""
+
+    @property
+    def judgement_summary(self) -> pd.DataFrame:
+        """판정·부족 원인을 읽는 요약 — UPEH 가정이 켜졌으면 가정 요약, 아니면 공식 요약."""
+        return self.assumed_summary if self.assumed_summary is not None else self.summary
 
 
 # ================================================================== 프래그먼트
@@ -330,7 +363,11 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
         collapsed=collapsed,
     )
     st.html(
-        canvas_legend_html(view.dynamic.canvas if view.dynamic is not None else None, view.months)
+        canvas_legend_html(
+            view.dynamic.canvas if view.dynamic is not None else None,
+            view.months,
+            assumed=bool(view.upeh_token),
+        )
     )
     if view.dynamic is None:
         _render_dynamic_absent(view)
@@ -467,8 +504,8 @@ def canvas_memo_key(
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
 ) -> tuple[object, ...]:
-    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획이 그림에
-    구워지므로 든다."""
+    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획·UPEH 가정 토큰이
+    그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이 정한다)."""
     home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
     return (
         CANVAS_SCHEMA_VERSION,
@@ -488,6 +525,7 @@ def canvas_memo_key(
         bool(show_all_units),
         bool(show_all_arrows),
         tuple(sorted(str(section) for section in collapsed)),
+        view.upeh_token,
     )
 
 
@@ -545,6 +583,15 @@ def remembered_canvas(
         home_rates=view.home_rates,
         dynamic=dynamic,
         collapsed=frozenset(collapsed),
+        assumption=(
+            AssumptionCanvasInput(
+                percent=token_percent(view.upeh_token),
+                months=token_months(view.upeh_token),
+                summary=view.assumed_summary,
+            )
+            if view.upeh_token and view.assumed_summary is not None
+            else None
+        ),
     )
     entries = [entry for entry in entries if entry[0] != key][-(CANVAS_MEMO_LIMIT - 1) :]
     st.session_state[CANVAS_MEMO_KEY] = [*entries, (key, canvas)]
@@ -658,13 +705,17 @@ def _render_more_toggles(
 # ================================================================== 범례
 
 
-def canvas_legend_html(dynamic: DynamicCanvasInput | None, months: Sequence[int]) -> str:
-    """캔버스 아래 범례 한 줄(서식 포함). 설비 일정이 서면 ②~④ 표지와 생산월 규칙을 더한다."""
+def canvas_legend_html(
+    dynamic: DynamicCanvasInput | None, months: Sequence[int], *, assumed: bool = False
+) -> str:
+    """캔버스 아래 범례 한 줄(서식 포함). 설비 일정이 서면 ②~④ 표지와 생산월 규칙을 더한다.
+    `assumed` 면 부족 띠가 UPEH 가정 판정이라고 적는다."""
     band = tokens.SHORTAGE_MONTH_BAND
     swatch = "display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px"
     items = [
         f'<span style="{swatch};background:{band};border:1px solid '
-        f'{tokens.STATUS_SHORTAGE}"></span>공식 확보기준 미달 달',
+        f'{tokens.STATUS_SHORTAGE}"></span>'
+        + ("UPEH 가정 확보기준 미달 달" if assumed else "공식 확보기준 미달 달"),
         f'<span style="{swatch};border:2px solid {tokens.ACCENT}"></span>지금 보는 달',
         "".join(
             f'<span style="{swatch};background:{color}"></span>'
@@ -804,6 +855,12 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
             key=ROUTE_FACTORS_EXPANDER_KEY,
             icon=":material/table_rows:",
         ):
+            if view.upeh_token:
+                st.caption(
+                    "경로별 인자는 기준정보 UPEH 그대로입니다 — UPEH 가정은 소요대수에만 사후로 "
+                    "겁니다"
+                    "(대당 Capa ×f 와 같습니다)."
+                )
             _render_route_factors(trace)
 
 
@@ -824,10 +881,15 @@ def evidence_cards(
     """고른 달의 근거 카드 — ① 소요 ② 가용 ③ 판정 (+ ④ 단축 근거)."""
     record = _summary_record(view.summary, month)
     bridge = _month_record(view.dynamic.canvas.bridge, month) if view.dynamic is not None else None
+    assumed = (
+        _month_record(view.assumed_summary, month)
+        if view.assumed_summary is not None and month in token_months(view.upeh_token)
+        else None
+    )
     cards = [
-        demand_card(trace, record),
+        demand_card(trace, record, assumed=assumed, token=view.upeh_token),
         availability_card(record, bridge),
-        judgement_card(record, view.thresholds, month),
+        judgement_card(record, view.thresholds, month, assumed=assumed, token=view.upeh_token),
     ]
     if view.dynamic is not None:
         card = shortening_card(view.dynamic, month)
@@ -836,14 +898,25 @@ def evidence_cards(
     return cards
 
 
-def demand_card(trace: ProcessMonthTrace | None, record: Mapping[str, object]) -> EvidenceCard:
-    """① 소요 — Σ 경로 부하량 ÷ 대당 Capa 와 경로 수·제외 경로, 상위 제품."""
+def demand_card(
+    trace: ProcessMonthTrace | None,
+    record: Mapping[str, object],
+    *,
+    assumed: Mapping[str, object] | None = None,
+    token: UpehToken = NO_ASSUMPTION,
+) -> EvidenceCard:
+    """① 소요 — Σ 경로 부하량 ÷ 대당 Capa 와 경로 수·제외 경로, 상위 제품. 그 달이 UPEH 가정
+    구간이면 (`assumed`) 가정 소요 한 줄을 더한다."""
     required = _number(record.get("소요대수"))
+    assumed_note = _assumed_demand_note(required, assumed, token)
     if trace is None:
         return EvidenceCard(
             "① 소요",
             f"Σ 경로 부하량 ÷ 대당 Capa\n= {_one(required)} 대",
-            ("경로 인자를 읽지 못했습니다 — 산출 결과 화면에서 확인합니다.",),
+            (
+                "경로 인자를 읽지 못했습니다 — 산출 결과 화면에서 확인합니다.",
+                *((assumed_note,) if assumed_note else ()),
+            ),
         )
     evidence = trace.evidence
     head = f"경로 {evidence.route_count} · 제외 {evidence.excluded_route_count}"
@@ -868,7 +941,24 @@ def demand_card(trace: ProcessMonthTrace | None, record: Mapping[str, object]) -
         notes.append(f"측정률 행 없음 → 1.0 가정 {evidence.assumed_ratio_routes}경로")
     if evidence.blank_ratio_routes:
         notes.append(f"측정률 빈칸·0 → 1.0 {evidence.blank_ratio_routes}경로")
+    if assumed_note:
+        notes.append(assumed_note)
     return EvidenceCard("① 소요", formula, tuple(notes))
+
+
+def _assumed_demand_note(
+    required: float | None, assumed: Mapping[str, object] | None, token: UpehToken
+) -> str:
+    """「UPEH 가정 110%: 소요 12.40 ÷ 1.1 = 11.27 (−1.13대)」 — 구간 밖이면 빈 글자."""
+    if assumed is None or required is None:
+        return ""
+    value = _number(assumed.get("소요대수"))
+    if value is None:
+        return ""
+    return (
+        f"UPEH 가정 {token_percent(token)}%: 소요 {_two(required)} ÷ {token_factor(token):g} = "
+        f"{_two(value)} ({_signed_two(value - required)}대)"
+    )
 
 
 def availability_card(
@@ -898,9 +988,15 @@ def availability_card(
 
 
 def judgement_card(
-    record: Mapping[str, object], thresholds: SecurementThresholds, month: int
+    record: Mapping[str, object],
+    thresholds: SecurementThresholds,
+    month: int,
+    *,
+    assumed: Mapping[str, object] | None = None,
+    token: UpehToken = NO_ASSUMPTION,
 ) -> EvidenceCard:
-    """③ 판정 — 확보율 식·과부족 식(그 달 확보기준)과 원인."""
+    """③ 판정 — 확보율 식·과부족 식(그 달 확보기준)과 원인. 그 달이 UPEH 가정 구간이면 가정 판정 한
+    줄을 더한다(식은 공식 그대로다)."""
     secure, warning = thresholds.for_month(month)
     available = _number(record.get("가용대수"))
     required = _number(record.get("소요대수"))
@@ -947,6 +1043,17 @@ def judgement_card(
         notes.append(f"원인: {cause}")
     if str(status) in _SHORT_STATUSES and balance == 0:
         notes.append("잡음 경계 — 확보율이 기준에 아주 조금 못 미쳐 칠했지만 과부족은 0 입니다")
+    if assumed is not None:
+        assumed_rate = _number(assumed.get("확보율"))
+        assumed_balance = _whole(assumed.get(BALANCE_COLUMN))
+        assumed_cause = "" if assumed.get(CAUSE_COLUMN) is None else str(assumed.get(CAUSE_COLUMN))
+        notes.append(
+            f"UPEH 가정 {token_percent(token)}%: 확보율 "
+            + (f"{assumed_rate:.1%}" if assumed_rate is not None else _EMPTY)
+            + f" → {_STATUS_NAMES.get(str(assumed.get(STATUS_COLUMN)), _EMPTY)} · 과부족 "
+            + (_signed_int(assumed_balance) if assumed_balance is not None else _EMPTY)
+            + (f" · 원인 {assumed_cause}" if assumed_cause else "")
+        )
     return EvidenceCard("③ 판정", formula, tuple(notes))
 
 
@@ -1113,9 +1220,20 @@ class Prescription(NamedTuple):
 
 def prescription(dynamic: DynamicView) -> Prescription:
     """설비 일정 계획을 이 공정으로 센다 — 단축(구분 「단축」)·신규(「신규」 = 추가N)·못 채운 달."""
-    units = dynamic.units
+    return _prescription(dynamic.units, dynamic.canvas.process_months, dynamic.canvas)
+
+
+def official_prescription(dynamic: DynamicView) -> Prescription | None:
+    """UPEH 가정 계획을 그릴 때 같은 공정의 공식 계획 셈(KPI 회색 줄). 공식 계획을 그리면 None."""
+    if dynamic.official_units is None or dynamic.official_process_months is None:
+        return None
+    return _prescription(dynamic.official_units, dynamic.official_process_months, dynamic.canvas)
+
+
+def _prescription(
+    units: pd.DataFrame, months: pd.DataFrame, canvas: DynamicCanvasInput
+) -> Prescription:
     kinds = units["구분"].astype("string") if "구분" in units.columns else pd.Series(dtype="string")
-    months = dynamic.canvas.process_months
     gaps = (
         pd.to_numeric(months["과부족"], errors="coerce").round(9)
         if "과부족" in months.columns
@@ -1127,7 +1245,7 @@ def prescription(dynamic: DynamicView) -> Prescription:
         known = plan_months.dropna()
         if not known.empty:
             today_month = production_position(
-                dynamic.canvas.today, dynamic.canvas.cutoff_days, [int(known.iloc[0])]
+                canvas.today, canvas.cutoff_days, [int(known.iloc[0])]
             ).month
             gaps = gaps.where(plan_months.ge(today_month).to_numpy())
     states = (
@@ -1147,10 +1265,13 @@ def render_process_kpis(
     thresholds: SecurementThresholds,
     dynamic: DynamicView | None,
     absent_reason: str,
+    official: ProcessCapaKpis | None = None,
 ) -> None:
     """KPI 넷 — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
 
-    값 글자를 짧게 둔다(카드 폭에 한 줄). 뜻풀이는 값 아래 회색 한 줄과 `?` 풍선이다.
+    값 글자를 짧게 둔다(카드 폭에 한 줄). 뜻풀이는 값 아래 회색 한 줄과 `?` 풍선이다. UPEH 가정이
+    켜졌으면 `kpis` 는 가정 요약의 것이고 `official` 이 공식 요약의 것이다 — 회색 줄에 「공식 n」 을
+    함께 적는다.
     """
     lowest_tone: MetricTone = "neutral"
     if kpis.lowest_rate is not None and kpis.lowest_rate_month is not None:
@@ -1160,6 +1281,16 @@ def render_process_kpis(
         elif status == "warning":
             lowest_tone = "attention"
     plan = prescription(dynamic) if dynamic is not None else None
+    official_plan = official_prescription(dynamic) if dynamic is not None else None
+    lowest_note = (
+        f" · 공식 {official.lowest_rate:.1%}"
+        if official is not None and official.lowest_rate is not None
+        else ""
+    )
+    shortage_note = f" · 공식 {official.shortage_months}개월" if official is not None else ""
+    prescription_note = (
+        f" · 공식 {prescription_text(official_plan)}" if official_plan is not None else ""
+    )
     # 이 줄의 값은 글이 섞여 다른 화면의 큰 숫자보다 길다 — 한 단계 작게 둔다.
     st.html(
         f'<style>.st-key-{KPI_ROW_KEY} [data-testid="stMetricValue"] '
@@ -1172,7 +1303,9 @@ def render_process_kpis(
             key="process_detail_kpi_lowest",
             tone=lowest_tone,
             caption=(
-                month_label(kpis.lowest_rate_month) if kpis.lowest_rate_month is not None else None
+                (month_label(kpis.lowest_rate_month) + lowest_note)
+                if kpis.lowest_rate_month is not None
+                else (lowest_note.removeprefix(" · ") or None)
             ),
         )
         render_status_metric(
@@ -1186,7 +1319,8 @@ def render_process_kpis(
                 f"월 최대 {_MINUS}{kpis.max_shortage}대"
                 if kpis.shortage_months
                 else "월별 확보기준"
-            ),
+            )
+            + shortage_note,
             help=(
                 "판정이 확보가 아닌 달 수와, 그 달들 가운데 확보기준까지 모자란 대수의 "
                 "최댓값입니다. 기간 합이 아닙니다 — 같은 설비가 여러 달에 다시 쓰입니다."
@@ -1196,7 +1330,9 @@ def render_process_kpis(
             "부족 원인",
             cause_summary(kpis, plan),
             key="process_detail_kpi_cause",
-            caption="달 수 · 공식 기준" + (" · 일정은 설비 일정" if plan is not None else ""),
+            caption="달 수 · "
+            + ("UPEH 가정 기준" if official is not None else "공식 기준")
+            + (" · 일정은 설비 일정" if plan is not None else ""),
             help=CAUSE_HELP,
         )
         render_status_metric(
@@ -1206,6 +1342,7 @@ def render_process_kpis(
             caption=(
                 "설비 일정 기준 · 목표 "
                 + short_target_text(dynamic.canvas.target, _plan_months(dynamic))
+                + prescription_note
                 if dynamic is not None
                 else absent_reason
             ),
@@ -1351,7 +1488,7 @@ def kpi_next_screens(kpis: ProcessCapaKpis, plan: Prescription | None) -> NextSc
 def month_next_screens(view: ProcessDetailView, month: int) -> NextScreens:
     """고른 달의 원인으로 낸 다음 화면 글 — ③ 판정 카드의 원인과, 그 달이 설비 일정 기준 단축 대상
     (오늘이 든 생산월부터 목표 미달)이면 일정."""
-    cause = _summary_record(view.summary, month).get(CAUSE_COLUMN)
+    cause = _summary_record(view.judgement_summary, month).get(CAUSE_COLUMN)
     cause_text = "" if cause is None else str(cause)
     return NextScreens(
         owned="이 달 보유로도 부족 — 산출 결과" if cause_text == CAUSE_OWNED_SHORT else None,

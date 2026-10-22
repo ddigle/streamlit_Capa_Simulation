@@ -111,6 +111,12 @@ from capa_simulation.services.unit_capacity import (
     capacity_assumptions,
     unit_capacity_to_month_table,
 )
+from capa_simulation.services.upeh_assumption import (
+    NO_ASSUMPTION,
+    UpehToken,
+    scale_required_equipment,
+    token_label,
+)
 from capa_simulation.services.usage_basis import usage_excluded_equipment
 from capa_simulation.services.weekly_availability_input import (
     build_weekly_availability_template,
@@ -247,8 +253,10 @@ def frame_digest(frame: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
-# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘).
-RequiredShorteningCacheKey = tuple[ScenarioCacheKey, str, str, str, str, tuple[int, ...], str]
+# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰).
+RequiredShorteningCacheKey = tuple[
+    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken
+]
 
 
 def required_shortening_cache_key(
@@ -260,6 +268,7 @@ def required_shortening_cache_key(
     cutoff: pd.DataFrame,
     months: tuple[int, ...],
     today: date,
+    upeh: UpehToken = NO_ASSUMPTION,
 ) -> RequiredShorteningCacheKey:
     """필요 단축 일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
 
@@ -267,6 +276,10 @@ def required_shortening_cache_key(
     싣는다 — 내용을 해시하면 적중에도 수십 ms 를 쓴다. 설비 쪽 네 표는 저장 안 한 편집본일 수
     있어 리비전 번호가 아니라 내용 지문이다. 오늘이 바뀌면 바닥(`max(구간 앞, 오늘)`)이 달라지므로
     날짜도 키에 든다.
+
+    끝 칸은 **UPEH 가정 토큰**(`upeh_assumption.UpehToken`)이다 — 공식 계획은 `()`. 가정의 배수는 늘
+    이 칸에서만 나온다(`required_shortening_plan_demand`). 이 키를 쓰는 CSV·진척 캐시는 키만으로
+    칸이 갈린다.
     """
     return (
         scenario_key,
@@ -276,7 +289,40 @@ def required_shortening_cache_key(
         frame_digest(cutoff),
         tuple(int(month) for month in months),
         today.isoformat(),
+        upeh,
     )
+
+
+def with_upeh_token(
+    key: RequiredShorteningCacheKey, token: UpehToken
+) -> RequiredShorteningCacheKey:
+    """같은 입력에 UPEH 가정 토큰만 바꾼 키 — 설비 쪽 네 지문을 다시 내지 않는다."""
+    scenario_key, equipment, downtime, baseline, cutoff, months, today, _ = key
+    return (scenario_key, equipment, downtime, baseline, cutoff, months, today, token)
+
+
+def shortening_key_token(key: RequiredShorteningCacheKey) -> UpehToken:
+    """계획 키의 UPEH 가정 토큰(공식이면 `()`)."""
+    return key[7]
+
+
+def assumed_required_equipment(
+    loader: Callable[[], pd.DataFrame], token: UpehToken
+) -> Callable[[], pd.DataFrame]:
+    """원 로더(`scenario_required_equipment`)에 UPEH 가정을 건 로더. 빈 토큰이면 원 로더 그대로다.
+
+    구간 달 소요대수 ÷f 를 건 **사본**을 한 번만 만든다(`functools.cache`) — 원 로더는 빗나갈 때만
+    부른다. 달 범위(`get_required_month_span`)·오류 확인(`check_scenario_capacity`)에는 원 로더를
+    그대로 넘긴다. 이 로더는 계획 래퍼 **안에서만** 만든다 — 키의 토큰이 배수의 유일한 출처다.
+    """
+    if not token:
+        return loader
+
+    @functools.cache
+    def load() -> pd.DataFrame:
+        return scale_required_equipment(loader(), token)
+
+    return load
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -1731,6 +1777,80 @@ def get_scenario_capacity_and_demand(
     )
 
 
+# 공식 계획 칸(`get_required_shortening`·`get_required_shortening_for_target`)과 UPEH 가정 계획 칸은
+# 따로다. 가정은 세션마다 %·구간을 이리저리 바꿔 보는 값이라 같은 칸에 두면 프로세스 전역의 공식
+# 계획(모두가 보는 것)을 밀어낸다. 가정 칸은 작게 둔다 — 넘치면 다시 계산할 뿐 틀리지 않는다.
+ASSUMED_PLAN_MAX_ENTRIES = 6
+
+
+class KeyedShorteningPlan(NamedTuple):
+    """계획과 그 계획을 낸 키 — **한 값으로만 다닌다.**
+
+    키 전용 캐시(CSV·진척 비교)는 계획을 해시하지 않으므로, 키와 계획을 따로 넘기면 한 곳만 어긋나도
+    가정 계획이 프로세스 전역의 공식 칸에 들어가 다른 사용자에게 보인다. 그래서 계획은 이 묶음으로만
+    받고(`load_required_shortening`), 캐시는 묶음의 키로 칸을 고르며 받은 키와 묶음의 키가 다르면
+    멈춘다.
+    """
+
+    key: RequiredShorteningCacheKey
+    plan: ShorteningPlan
+
+
+def _require_official(token: UpehToken, name: str) -> None:
+    if token:
+        raise ValueError(
+            f"{name} 는 공식 계획 칸입니다 — UPEH 가정 토큰이 든 키는 가정 계획 칸으로 부릅니다."
+        )
+
+
+def _require_assumed(token: UpehToken, name: str) -> None:
+    if not token:
+        raise ValueError(
+            f"{name} 는 UPEH 가정 계획 칸입니다 — 공식 키는 공식 계획 칸으로 부릅니다."
+        )
+
+
+def _require_pair(cache_key: RequiredShorteningCacheKey, keyed: KeyedShorteningPlan) -> None:
+    if keyed.key != cache_key:
+        raise ValueError("계획과 키가 짝이 아닙니다 — 계획은 그 계획을 낸 키로만 캐시합니다.")
+
+
+def _shortening_plan(
+    cache_key: RequiredShorteningCacheKey,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    required_equipment: Callable[[], pd.DataFrame],
+    levels: Sequence[float | MonthlyTarget] = TARGET_LEVELS,
+) -> ShorteningPlan:
+    """공식·가정 계획 칸이 함께 쓰는 몸통. 소요대수는 **키의 토큰으로** 가정을 건 로더에서
+    꺼낸다."""
+    _, equipment_digest, downtime_digest, _, _, months, today, token = cache_key
+    demand = assumed_required_equipment(required_equipment, token)()
+    span = span_date_range(months, cutoff) if months else None
+    spans = (
+        get_equipment_lifecycle_spans(
+            (equipment_digest, downtime_digest, span[0].isoformat(), span[1].isoformat()),
+            _equipment=equipment,
+            _downtime=downtime,
+        )
+        if span is not None
+        else None
+    )
+    return plan_required_shortening(
+        equipment=equipment,
+        downtime=downtime,
+        baseline=baseline,
+        cutoff=cutoff,
+        required_equipment=demand,
+        months=months,
+        today=date.fromisoformat(today),
+        levels=levels,
+        spans=spans,
+    )
+
+
 @st.cache_data(show_spinner=False, max_entries=8)
 def get_required_shortening(
     cache_key: RequiredShorteningCacheKey,
@@ -1740,7 +1860,8 @@ def get_required_shortening(
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
-    """다섯 목표의 필요 단축 일정. 목표·공정 선택은 이 결과를 고르기만 하므로 다시 계산하지 않는다.
+    """다섯 목표의 필요 단축 일정(**공식 계획**). 목표·공정 선택은 이 결과를 고르기만 하므로 다시
+    계산하지 않는다. UPEH 가정 토큰이 든 키는 받지 않는다(`get_assumed_required_shortening`).
 
     결과에는 CSV 가 호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 호기
     마스터에서만 나오므로 키의 마스터 내용 지문이 그것까지 덮는다.
@@ -1755,28 +1876,50 @@ def get_required_shortening(
     이 결과가 새로 돌 때도 구간(일정을 흩은 2,700행·32개월에 1초 안쪽, 샘플 관측)은 다시 만들지
     않고, 두 탭의 구간 범위가 같으면 한 벌을 나눈다.
     """
-    _, equipment_digest, downtime_digest, _, _, months, today = cache_key
-    required_equipment = _required_equipment()
-    span = span_date_range(months, _cutoff) if months else None
-    spans = (
-        get_equipment_lifecycle_spans(
-            (equipment_digest, downtime_digest, span[0].isoformat(), span[1].isoformat()),
-            _equipment=_equipment,
-            _downtime=_downtime,
-        )
-        if span is not None
-        else None
+    _require_official(shortening_key_token(cache_key), "get_required_shortening")
+    return _shortening_plan(
+        cache_key, _equipment, _downtime, _baseline, _cutoff, _required_equipment
     )
-    return plan_required_shortening(
-        equipment=_equipment,
-        downtime=_downtime,
-        baseline=_baseline,
-        cutoff=_cutoff,
-        required_equipment=required_equipment,
-        months=months,
-        today=date.fromisoformat(today),
-        spans=spans,
+
+
+@st.cache_data(show_spinner=False, max_entries=ASSUMED_PLAN_MAX_ENTRIES)
+def get_assumed_required_shortening(
+    cache_key: RequiredShorteningCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _required_equipment: Callable[[], pd.DataFrame],
+) -> ShorteningPlan:
+    """UPEH 가정 계획(다섯 목표) — 공식 칸과 따로 된 작은 칸(`ASSUMED_PLAN_MAX_ENTRIES`).
+
+    `_required_equipment` 는 **원 로더**(공식과 같은 `scenario_required_equipment`)다. 구간 달 ÷f 는
+    이 안에서 키의 토큰으로 건다(`assumed_required_equipment`) — 밖에서 가정 로더를 만들어 넘기는
+    길이 없어 키와 배수가 어긋날 수 없다. 공식 키(토큰 `()`)는 받지 않는다.
+    """
+    _require_assumed(shortening_key_token(cache_key), "get_assumed_required_shortening")
+    return _shortening_plan(
+        cache_key, _equipment, _downtime, _baseline, _cutoff, _required_equipment
     )
+
+
+def load_required_shortening(
+    key: RequiredShorteningCacheKey,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    *,
+    required_equipment: Callable[[], pd.DataFrame],
+) -> KeyedShorteningPlan:
+    """키의 토큰으로 공식·가정 칸을 골라 계획을 받고, 키와 한 묶음으로 돌려준다."""
+    wrapper = (
+        get_assumed_required_shortening if shortening_key_token(key) else get_required_shortening
+    )
+    plan = wrapper(
+        key, equipment, downtime, baseline, cutoff, _required_equipment=required_equipment
+    )
+    return KeyedShorteningPlan(key, plan)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -1785,30 +1928,48 @@ def get_required_shortening_csvs(
     level: float,
     processes: tuple[str, ...],
     months: tuple[int, ...],
-    _plan: ShorteningPlan,
+    _keyed: KeyedShorteningPlan,
 ) -> tuple[bytes, bytes, bytes]:
     """필요 단축 일정 CSV 세 벌의 바이트 — 고른 목표의 호기별, 다섯 목표의 호기별, 고른 목표의
     공정·월.
 
-    탭이 열린 rerun 마다(목표만 바꿔도) 세 표를 다시 만들고 직렬화했다(2026-10-08 점검 A10).
-    계획은 이미 `get_required_shortening` 이 캐시하므로, 그 키에 화면이 고르는 것(목표·공정 차례·
-    달)만 더한 키로 바이트를 둔다. `processes` 는 **화면의 차례 그대로**다 — CSV 의 공정 차례가
-    그것을 따른다. `_plan` 은 같은 `cache_key` 로 받은 바로 그 계획이어야 한다(해시하지 않는다).
-    지연 생성(콜러블)은 쓰지 않는다(TODO 결정 기록 — 콜러블의 예외는 삼켜지고 AppTest 가 바이트를 못
-    본다).
+    탭이 열린 rerun 마다(목표만 바꿔도) 세 표를 다시 만들고 직렬화했다(2026-10-08 점검 A10). 계획은
+    이미 `get_required_shortening` 이 캐시하므로, 그 키에 화면이 고르는 것(목표·공정 차례·달)만 더한
+    키로 바이트를 둔다. `processes` 는 **화면의 차례 그대로**다 — CSV 의 공정 차례가 그것을 따른다.
+    UPEH 가정 계획이면(키의 토큰) 세 표 첫 열에 「UPEH 가정」 표지가 선다. `_keyed` 는 `cache_key`
+    로 받은 계획 묶음이어야 한다 — 묶음의 키가 다르면 멈춘다 (`KeyedShorteningPlan`). 부르는 쪽은
+    `shortening_csvs` 로 묶음 하나만 넘긴다. 지연 생성(콜러블)은 쓰지 않는다(TODO 결정 기록 —
+    콜러블의 예외는 삼켜지고 AppTest 가 바이트를 못 본다).
 
     바이트는 BOM 이 붙은 UTF-8 이다 — Excel 이 한글을 깨뜨리지 않게(`table_toolbar.CSV_MIME` 과 짝).
     """
-    del cache_key
+    _require_pair(cache_key, _keyed)
+    plan = _keyed.plan
     frames = (
-        unit_export_frame(_plan, (level,), processes),
-        unit_export_frame(_plan, TARGET_LEVELS, processes),
-        process_month_export_frame(_plan, (level,), processes, months),
+        unit_export_frame(plan, (level,), processes),
+        unit_export_frame(plan, TARGET_LEVELS, processes),
+        process_month_export_frame(plan, (level,), processes, months),
     )
+    token = shortening_key_token(cache_key)
+    if token:
+        # 가정 계획의 CSV 는 첫 열에 표지를 단다 — 공식 CSV 로 읽히지 않게. 표지는 키의 토큰에서
+        # 낸다.
+        for frame in frames:
+            frame.insert(0, "UPEH 가정", token_label(token))
     units, all_levels, process_months = (
         frame.to_csv(index=False).encode("utf-8-sig") for frame in frames
     )
     return units, all_levels, process_months
+
+
+def shortening_csvs(
+    keyed: KeyedShorteningPlan,
+    level: float,
+    processes: tuple[str, ...],
+    months: tuple[int, ...],
+) -> tuple[bytes, bytes, bytes]:
+    """`get_required_shortening_csvs` 를 묶음의 키로 부른다 — 키와 계획을 따로 꺼내지 않는다."""
+    return get_required_shortening_csvs(keyed.key, level, processes, months, _keyed=keyed)
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -1816,22 +1977,34 @@ def get_shortening_progress(
     cache_key: RequiredShorteningCacheKey,
     baseline_id: str,
     level: float,
-    _plan: ShorteningPlan,
+    _keyed: KeyedShorteningPlan,
     _baseline: ShorteningBaseline,
 ) -> pd.DataFrame:
     """필요 단축 일정 진척 비교 — 고른 목표에서 기준선(과거)과 지금 계획(현재)을 짝지은 행.
 
     계획은 `get_required_shortening` 이 이미 캐시하므로, 그 키에 기준선 id·목표만 더한다. **기준선은
-    고칠 수 없어** id 가 내용을 정한다(지우고 같은 id 로 다시 생기는 일이 없다 — uuid). `_plan` 은
-    같은 `cache_key` 로 받은 바로 그 계획, `_baseline` 은 그 id 로 읽은 기준선이어야 한다(해시하지
-    않는다). 「비교 안 함」 회차는 이 함수까지 오지 않는다.
+    고칠 수 없어** id 가 내용을 정한다(지우고 같은 id 로 다시 생기는 일이 없다 — uuid). `_keyed` 는
+    `cache_key` 로 받은 계획 묶음, `_baseline` 은 그 id 로 읽은 기준선이어야 한다(해시하지 않는다).
+    **진척 비교는 늘 공식 계획이다** — UPEH 가정 토큰이 든 키는 받지 않는다(가정 효과가 진척으로
+    읽히지 않게). 「비교 안 함」 회차는 이 함수까지 오지 않는다.
     """
-    del cache_key, baseline_id
+    _require_official(shortening_key_token(cache_key), "get_shortening_progress")
+    _require_pair(cache_key, _keyed)
+    plan = _keyed.plan
     return compare_progress(
         _baseline.units_at(level),
-        _plan.at(level).units,
-        current_processes=_plan.processes,
-        today=_plan.today,
+        plan.at(level).units,
+        current_processes=plan.processes,
+        today=plan.today,
+    )
+
+
+def shortening_progress(
+    keyed: KeyedShorteningPlan, baseline: ShorteningBaseline, level: float
+) -> pd.DataFrame:
+    """`get_shortening_progress` 를 묶음의 키로 부른다(공식 계획만)."""
+    return get_shortening_progress(
+        keyed.key, baseline.summary.baseline_id, float(level), _keyed=keyed, _baseline=baseline
     )
 
 
@@ -1846,9 +2019,10 @@ def get_shortening_progress_csv(
     """「진척 비교 CSV」 의 바이트(BOM 이 붙은 UTF-8). `processes` 는 화면의 카드 차례다.
 
     필요 단축 일정 CSV 세 벌과 같은 규칙이다 — 키 캐시이고 지연 생성(콜러블)은 쓰지 않는다. `_rows`
-    는 같은 계획 키·기준선·목표로 받은 `get_shortening_progress` 의 결과여야 한다.
+    는 같은 계획 키·기준선·목표로 받은 `get_shortening_progress` 의 결과여야 한다(공식 계획만).
     """
-    del cache_key, baseline_id
+    _require_official(shortening_key_token(cache_key), "get_shortening_progress_csv")
+    del baseline_id
     frame = progress_export_frame(_rows, level=level, processes=processes)
     return frame.to_csv(index=False).encode("utf-8-sig")
 
@@ -2378,35 +2552,71 @@ def get_required_shortening_for_target(
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
-    """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요 단축 일정. `plan.at(목표)` 로 꺼낸다.
+    """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요 단축 일정(**공식 계획**).
+    `plan.at(목표)` 로 꺼낸다.
 
     탭(`get_required_shortening`)과 같은 규칙이다 — 프레임은 해시하지 않고 키가 내용 지문·시나리오
     키·달·오늘·목표를 모두 싣는다. 소요대수는 빗나갈 때만 로더로 꺼내고, 호기 구간은 같은 구간
     캐시(`get_equipment_lifecycle_spans`)에서 받는다. 목표는 키에서 다시 세운다 — 키와 다른 목표가
-    들어올 길이 없다. 공정 선택은 이 결과를 고르기만 한다(공정끼리 따로 계산한다).
+    들어올 길이 없다. 공정 선택은 이 결과를 고르기만 한다(공정끼리 따로 계산한다). UPEH 가정 토큰이
+    든 키는 받지 않는다(`get_assumed_required_shortening_for_target`).
     """
     shortening_key, default, monthly = cache_key
-    _, equipment_digest, downtime_digest, _, _, months, today = shortening_key
-    span = span_date_range(months, _cutoff) if months else None
-    spans = (
-        get_equipment_lifecycle_spans(
-            (equipment_digest, downtime_digest, span[0].isoformat(), span[1].isoformat()),
-            _equipment=_equipment,
-            _downtime=_downtime,
-        )
-        if span is not None
-        else None
-    )
-    return plan_required_shortening(
-        equipment=_equipment,
-        downtime=_downtime,
-        baseline=_baseline,
-        cutoff=_cutoff,
-        required_equipment=_required_equipment(),
-        months=months,
-        today=date.fromisoformat(today),
+    _require_official(shortening_key_token(shortening_key), "get_required_shortening_for_target")
+    return _shortening_plan(
+        shortening_key,
+        _equipment,
+        _downtime,
+        _baseline,
+        _cutoff,
+        _required_equipment,
         levels=(MonthlyTarget(default=default, monthly=monthly),),
-        spans=spans,
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=ASSUMED_PLAN_MAX_ENTRIES)
+def get_assumed_required_shortening_for_target(
+    cache_key: RequiredShorteningTargetCacheKey,
+    _equipment: pd.DataFrame,
+    _downtime: pd.DataFrame,
+    _baseline: pd.DataFrame,
+    _cutoff: pd.DataFrame,
+    _required_equipment: Callable[[], pd.DataFrame],
+) -> ShorteningPlan:
+    """달마다 다른 목표 하나의 UPEH 가정 계획 — 공식 칸과 따로 된 작은 칸. `_required_equipment` 는
+    원 로더이고 ÷f 는 키의 토큰으로 안에서 건다(`get_assumed_required_shortening` 과 같다)."""
+    shortening_key, default, monthly = cache_key
+    _require_assumed(
+        shortening_key_token(shortening_key), "get_assumed_required_shortening_for_target"
+    )
+    return _shortening_plan(
+        shortening_key,
+        _equipment,
+        _downtime,
+        _baseline,
+        _cutoff,
+        _required_equipment,
+        levels=(MonthlyTarget(default=default, monthly=monthly),),
+    )
+
+
+def load_required_shortening_for_target(
+    key: RequiredShorteningTargetCacheKey,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    baseline: pd.DataFrame,
+    cutoff: pd.DataFrame,
+    *,
+    required_equipment: Callable[[], pd.DataFrame],
+) -> ShorteningPlan:
+    """키(안의 계획 키) 토큰으로 공식·가정 칸을 골라 달마다 다른 목표의 계획을 받는다."""
+    wrapper = (
+        get_assumed_required_shortening_for_target
+        if shortening_key_token(key[0])
+        else get_required_shortening_for_target
+    )
+    return wrapper(
+        key, equipment, downtime, baseline, cutoff, _required_equipment=required_equipment
     )
 
 
@@ -2442,7 +2652,10 @@ def process_timeline_key_from_shortening(
     shortening_key: RequiredShorteningCacheKey, process: str
 ) -> ProcessEquipmentTimelineCacheKey:
     """필요 단축 일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
-    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _ = shortening_key
+    # 오늘·UPEH 가정 토큰은 넣지 않는다 — 설비 일정은 수요와 오늘을 보지 않는다.
+    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _, _ = (
+        shortening_key
+    )
     return (
         equipment_digest,
         downtime_digest,

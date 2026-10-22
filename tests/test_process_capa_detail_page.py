@@ -72,6 +72,11 @@ from capa_simulation.process_detail_state import (
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import UNIT_EXPORT_COLUMNS
+from capa_simulation.upeh_assumption_state import (
+    UPEH_ASSUMPTION_END_KEY,
+    UPEH_ASSUMPTION_PERCENT_KEY,
+    UPEH_ASSUMPTION_START_KEY,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / PROCESS_CAPA_DETAIL.path
@@ -85,12 +90,14 @@ def _page_script(database_path: Path, equipment_path: Path, *, fail_bootstrap: b
     내려받기 단추는 받은 바이트를 세션 `captured_downloads` 에 적어 둔다(시험이 CSV 를 읽는다).
     """
     return f"""
+from datetime import date
 from pathlib import Path
 
 import streamlit as st
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
+import capa_simulation.components.upeh_assumption_controls as upeh_controls
 import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.settings as settings
 
@@ -100,12 +107,18 @@ original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
 original_month_picker = month_range_picker.render_month_range_apply
 original_load_page_context = page_bootstrap.load_page_context
 original_download_button = st.download_button
+original_upeh_options = upeh_controls.assumption_month_options
 
 settings.DUCKDB_PATH = Path({str(database_path)!r})
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(equipment_path)!r})
 horizontal_scrollbar.render_horizontal_scrollbar = lambda *args, **kwargs: None
 month_range_picker.render_month_range_apply = (
     lambda *, start, end, min_month, max_month, key: None
+)
+# UPEH 적용 구간의 선택지는 「이번 달 이후」 다 — 시드(2026년) 달이 날짜에 따라 빠지지 않게
+# 오늘을 박는다.
+upeh_controls.assumption_month_options = lambda start, end, *, today: original_upeh_options(
+    start, end, today=date(2026, 1, 1)
 )
 
 
@@ -144,6 +157,7 @@ finally:
     month_range_picker.render_month_range_apply = original_month_picker
     page_bootstrap.load_page_context = original_load_page_context
     st.download_button = original_download_button
+    upeh_controls.assumption_month_options = original_upeh_options
 """
 
 
@@ -695,7 +709,11 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
         "단축 목표 = HOME Preference 확보기준(월별)" in str(element.value)
         for element in app.caption
     )
-    assert not app.get("selectbox")[1:]
+    # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).
+    assert {box.key for box in app.get("selectbox")[1:]} <= {
+        UPEH_ASSUMPTION_START_KEY,
+        UPEH_ASSUMPTION_END_KEY,
+    }
     legend = next(body for body in _html(app) if "pcd-legend" in body)
     assert "칸 = 생산월 — Cut-off 10일이면" in legend
     # 설비 일정 없음 카드는 서지 않는다.
@@ -731,6 +749,91 @@ def test_the_shortening_link_plants_only_session_keys(dynamic_databases: tuple[P
     repository = DuckDBEquipmentRepository(dynamic_databases[1])
     profile = repository.load_shortening_filter_profile()
     assert profile.processes == ()
+
+
+# ------------------------------------------------------------------ UPEH 가정
+
+
+def _upeh_app(databases: tuple[Path, Path], percent: int) -> AppTest:
+    """설비 일정이 서는 공정을 UPEH 가정 `percent`%(시드 전 기간)로 연다.
+
+    첫 회차는 공식버전 부트스트랩이 시나리오를 올리며 % 에 100 을 적으므로(시나리오 전환 리셋) 한 번
+    돌린 뒤 값을 넣는다.
+    """
+    app = _dynamic_app(databases)
+    app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = percent
+    app.session_state[UPEH_ASSUMPTION_START_KEY] = 202601
+    app.session_state[UPEH_ASSUMPTION_END_KEY] = 202612
+    return _ok(app.run())
+
+
+def _metric(app: AppTest, label: str) -> Any:
+    return next(metric for metric in app.metric if metric.label == label)
+
+
+def _percent_value(text: str) -> float:
+    return float(str(text).rstrip("%").replace(",", ""))
+
+
+def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """110% 면 머리 배지·효과 한 줄, ① 끝 세 줄, ② 바뀌는 행의 표지, KPI 회색 줄 「공식」, 역산 둘,
+    가정 CSV(파일 이름·첫 열)가 선다."""
+    app = _upeh_app(dynamic_databases, 110)
+
+    assert "UPEH 가정 110% · 26-01–26-12" in _header(app)
+    effect = [str(item.value) for item in app.caption if "소요 −9.1%" in str(item.value)]
+    assert len(effect) == 1, [str(item.value) for item in app.caption]
+    assert "필요 단축 일정과는 소요대수만 같습니다" in effect[0]
+    labels = _label_texts(app)
+    for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보기준 과부족"):
+        assert row in labels
+    assert "판정 대조 · UPEH 가정" in labels
+    # ② 가용·전월 대비와 ④ 는 UPEH 와 무관해 표지를 달지 않는다.
+    assert "가용 (환산) · UPEH 가정" not in labels and "전월 대비 · UPEH" not in labels
+    assert "공식" in str(_metric(app, "확보기준 미달").proto.help) or "공식" in "".join(
+        str(item.value) for item in app.caption
+    )
+    legend = next(body for body in _html(app) if "pcd-legend" in body)
+    assert "UPEH 가정 확보기준 미달 달" in legend
+    inverse = [str(item.value) for item in app.caption if " → " in str(item.value)]
+    assert any(text.startswith("확보기준 미달 0 → ") for text in inverse), inverse
+    assert any(text.startswith("구간 안 단축 0 → ") for text in inverse), inverse
+    captured = app.session_state["captured_downloads"][UNITS_CSV_KEY]
+    assert "_upeh110_202601_202612" in captured["file_name"]
+    frame = pd.read_csv(io.BytesIO(captured["data"]), encoding="utf-8-sig")
+    assert list(frame.columns) == ["UPEH 가정", *UNIT_EXPORT_COLUMNS]
+    assert set(frame["UPEH 가정"].astype(str)) <= {"UPEH 가정 110% · 26-01–26-12"}
+
+
+def test_at_100_percent_the_page_shows_only_the_official_basis(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    app = _upeh_app(dynamic_databases, 100)
+    assert "UPEH 가정" not in _header(app)
+    assert "UPEH 100%" not in _label_texts(app)
+    assert "판정 대조 · UPEH 가정" not in _label_texts(app)
+    legend = next(body for body in _html(app) if "pcd-legend" in body)
+    assert "공식 확보기준 미달 달" in legend
+    assert not any("소요 −" in str(item.value) for item in app.caption)
+    captured = app.session_state["captured_downloads"][UNITS_CSV_KEY]
+    assert "_upeh" not in captured["file_name"]
+
+
+def test_an_assumption_does_not_leak_into_the_official_rate_cache(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """HOME 오염 회귀(화면) — 150% 로 본 뒤 100% 로 다시 열면 최저 확보율이 처음 공식 값 그대로다.
+
+    가정 확보율은 캐시 밖 작은 프레임에서만 다시 세고 시나리오 키 전용 칸(HOME 과 같은 칸)에 넣지
+    않는다. 150% 는 구간(시드 전 기간)의 확보율을 1.5 배로 본다.
+    """
+    before = _metric(_upeh_app(dynamic_databases, 100), "최저 확보율").value
+    assumed = _metric(_upeh_app(dynamic_databases, 150), "최저 확보율").value
+    after = _metric(_upeh_app(dynamic_databases, 100), "최저 확보율").value
+    assert after == before
+    assert _percent_value(assumed) == pytest.approx(_percent_value(before) * 1.5, rel=1e-3)
 
 
 def _absent_card_titles(app: AppTest) -> list[str]:

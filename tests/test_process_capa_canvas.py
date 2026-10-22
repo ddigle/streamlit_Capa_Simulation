@@ -39,6 +39,9 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_RATE,
     ROW_REQUIRED,
     ROW_THRESHOLD,
+    ROW_UPEH_BALANCE,
+    ROW_UPEH_RATE,
+    ROW_UPEH_REQUIRED,
     SECTION_DOWNTIME,
     SECTION_DYNAMIC,
     SECTION_IDS,
@@ -47,6 +50,7 @@ from capa_simulation.components.process_capa_canvas import (
     SUMMARY_TITLE_DETAIL,
     SUMMARY_TITLE_HEIGHT_PX,
     TITLE_HEIGHT_PX,
+    AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
     build_process_capa_canvas,
@@ -1196,3 +1200,110 @@ def test_a_monthly_target_names_itself_once_in_the_titles() -> None:
 
     assert "단축 목표 = 확보기준(달마다)" in texts
     assert "목표 과부족" in {item["text"] for item in _annotations(canvas.labels)}
+
+
+# ---------------------------------------------------------------------- UPEH 가정
+
+
+def _assumed_summary(percent: int, months: set[int]) -> pd.DataFrame:
+    """구간 달의 소요를 ÷f 한 요약 — 페이지와 같은 길(`scale_securement_rate` → 같은 요약 함수)."""
+    from capa_simulation.services.upeh_assumption import scale_securement_rate
+
+    available = [float(value) for value in AVAILABLE]
+    rate = pd.DataFrame(
+        {
+            "생산계획년월": MONTHS,
+            "공정": PROCESS,
+            "가용대수": available,
+            "소요대수": REQUIRED,
+            "확보율": [a / r for a, r in zip(available, REQUIRED, strict=True)],
+        }
+    )
+    scaled = scale_securement_rate(rate, (percent, tuple(sorted(months))))
+    owned = pd.DataFrame({"생산계획년월": MONTHS, "공정": PROCESS, "설비보유": OWNED})
+    lent = pd.DataFrame(
+        {
+            "생산계획년월": MONTHS,
+            "공정": PROCESS,
+            "설비대여평가": [o - a for o, a in zip(OWNED, AVAILABLE, strict=True)],
+        }
+    )
+    return build_process_capa_summary(
+        scaled, owned, lent, process=PROCESS, months=MONTHS, thresholds=THRESHOLDS
+    )
+
+
+def _assumed_canvas(
+    percent: int, months: set[int], *, dynamic: DynamicCanvasInput | None = None
+) -> ProcessCapaCanvas:
+    return build_process_capa_canvas(
+        process_label="Die Attach",
+        months=MONTHS,
+        summary=_summary(),
+        thresholds=THRESHOLDS,
+        selected_month=202702,
+        dynamic=dynamic,
+        assumption=AssumptionCanvasInput(
+            percent=percent, months=frozenset(months), summary=_assumed_summary(percent, months)
+        ),
+    )
+
+
+def test_three_upeh_rows_stand_at_the_end_of_the_official_section() -> None:
+    """① 끝(기준 확보율 아래)에 세 줄이 서고, 확보율 줄의 세로 자리는 그대로다(배포 화면 확인
+    상수)."""
+    window = {202702, 202703, 202704}
+    official = _canvas(products=False, home=False)
+    assumed = _assumed_canvas(110, window)
+
+    ids = list(assumed.row_ids)
+    position = ids.index(ROW_THRESHOLD)
+    assert ids[position + 1 : position + 4] == [ROW_UPEH_REQUIRED, ROW_UPEH_RATE, ROW_UPEH_BALANCE]
+    assert _row_center(assumed, ROW_RATE) - assumed.height == pytest.approx(
+        _row_center(official, ROW_RATE) - official.height
+    )
+    # 구간 달만 값이고, 밖은 빈칸에 「구간 밖 — 공식과 같음」 풍선이다.
+    required = _row_texts(assumed, ROW_UPEH_REQUIRED)
+    inside = MONTHS.index(202702)
+    assert required[inside][0] == f"<b>{REQUIRED[inside] / 1.1:,.1f}</b>"
+    outside_hovers = [
+        str(data[CUSTOMDATA_HOVER])
+        for data, _, _ in _targets(assumed)
+        if data[CUSTOMDATA_ROW] == ROW_UPEH_RATE and data[CUSTOMDATA_MONTH] not in window
+    ]
+    assert outside_hovers and all("구간 밖 — 공식과 같음" in hover for hover in outside_hovers)
+    labels = json.dumps(_annotations(assumed.labels), ensure_ascii=False)
+    assert "UPEH 110% · 소요대수" in labels and "UPEH 110% · 확보기준 과부족" in labels
+
+
+def test_at_100_percent_the_rows_are_the_official_rows() -> None:
+    assert ROW_UPEH_REQUIRED not in _canvas().row_ids
+
+
+def test_with_an_assumption_the_shortage_band_follows_the_assumed_judgement() -> None:
+    """판정 기준은 하나다 — 가정이 켜지면 부족 띠는 가정 요약의 판정을 따른다(① 공식 줄은 공식
+    그대로)."""
+
+    def bands(canvas: ProcessCapaCanvas) -> list[float]:
+        return sorted(
+            shape["x0"]
+            for shape in _shapes(canvas.months)
+            if shape.get("fillcolor") == tokens.SHORTAGE_MONTH_BAND
+        )
+
+    official = _canvas(products=False, home=False)
+    assumed = _assumed_canvas(150, set(MONTHS))
+    assert bands(official)
+    assert len(bands(assumed)) < len(bands(official))
+    assert _row_texts(assumed, ROW_RATE) == _row_texts(official, ROW_RATE)
+
+
+def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_changing_rows() -> None:
+    dynamic = _dynamic()
+    marked = DynamicCanvasInput(**{**dynamic.__dict__, "official_pulls": {"EQ-21": (45, 0)}})
+    canvas = _assumed_canvas(110, set(MONTHS), dynamic=marked)
+    labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
+    assert "판정 대조 · UPEH 가정" in labels and "과부족 · UPEH 가정" in labels
+    assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
+    unit_hover = _row_hover(canvas, "unit:EQ-21")
+    assert "UPEH 가정 계획" in unit_hover and f"공식 {MINUS}45일 → 가정 0일" in unit_hover

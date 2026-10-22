@@ -470,6 +470,9 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
     assert _key(view, collapsed=frozenset({SECTION_UNITS, SECTION_DOWNTIME})) == _key(
         view, collapsed=frozenset({SECTION_DOWNTIME, SECTION_UNITS})
     )
+    # UPEH 가정 토큰(%·건 달)은 ① 끝 세 줄과 판정 기준을 바꾼다.
+    assert _key(_view(upeh_token=(110, (202702,)))) != _key(_view())
+    assert _key(_view(upeh_token=(110, (202702,)))) != _key(_view(upeh_token=(120, (202702,))))
 
 
 def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() -> None:

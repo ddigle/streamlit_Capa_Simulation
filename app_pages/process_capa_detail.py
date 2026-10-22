@@ -30,6 +30,14 @@
   사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요 단축 일정 화면의
   공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)은 읽지도 쓰지도 않는다(사용자
   결정 1).
+- **UPEH 가정**(조건 카드 끝 「이 세션만」 — `components/upeh_assumption_controls.py`, 필요 단축
+  일정과 같은 세션 칸) — 100% 가 아니면 구간 달의 소요대수를 ÷f 한 **가정 요약**(이미 받은 확보율
+  프레임에 사후로 건다 — 캐시를 쓰지 않는다)과 **가정 계획**(`load_required_shortening_for_target` —
+  계획 키 끝 칸의 토큰이 가정 칸을 고른다)을 더 세운다. 판정 기준은 하나다 — 부족 띠·② 판정
+  대조·KPI·부족 원인은 가정, 공식 값은 ① 공식 줄과 KPI 회색 줄 「공식 n」 에만. 머리에 배지와 효과
+  한 줄, 조건 카드에 역산 둘(구간 안 단축 0 · 확보기준 미달 0)과 「이 값으로」. 기본 공정·달
+  고르기·◀▶·HOME 표시 확보율은 공식 확보율 그대로다. 가정 프레임은 시나리오 키 전용 칸(HOME 과 같은
+  칸)에 넘기지 않는다.
 - **HOME 표시 확보율** — HOME 의 확보율 보정·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
   토글을 켜 두었으면, HOME 과 같은 함수로 얹은 값을 요약 표 회색 줄로 둔다. 선행 변동률의
   계획은 HOME 과 **같은 캐시 키**(`display_month_range` 범위)로 받는다. 원 확보율과 같으면 줄을
@@ -63,6 +71,11 @@ from capa_simulation.components.process_capa_view import (
     reopen_entry_section,
 )
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.upeh_assumption_controls import (
+    render_inverse,
+    render_upeh_assumption_controls,
+    upeh_badge,
+)
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
@@ -128,6 +141,7 @@ from capa_simulation.services.process_capa_detail import (
 from capa_simulation.services.process_equipment_timeline import (
     DynamicReadiness,
     dynamic_readiness,
+    keep_released_units,
     production_position,
     unit_events,
 )
@@ -137,6 +151,7 @@ from capa_simulation.services.process_picker import (
     shortfall_order,
 )
 from capa_simulation.services.required_shortening import (
+    STATUS_EXPIRED,
     target_from_thresholds,
     unit_export_frame,
 )
@@ -151,17 +166,31 @@ from capa_simulation.services.simulation_cache import (
     get_home_simulation,
     get_process_calculation_rows,
     get_process_equipment_timeline,
-    get_required_shortening_for_target,
     get_scenario_securement_rate,
     get_undated_equipment,
     get_usage_excluded_equipment,
+    load_required_shortening_for_target,
     process_timeline_key_from_shortening,
     required_shortening_cache_key,
     required_shortening_target_cache_key,
     scenario_cache_key,
     scenario_required_equipment,
+    with_upeh_token,
 )
 from capa_simulation.services.undated_equipment import undated_counts
+from capa_simulation.services.upeh_assumption import (
+    NO_ASSUMPTION,
+    AssumptionEffect,
+    UpehAssumption,
+    assumption_label,
+    effect_text,
+    percent_to_clear_securement,
+    percent_to_clear_target,
+    plan_counts,
+    pull_changes,
+    required_drop,
+    scale_securement_rate,
+)
 from capa_simulation.services.usage_basis import usage_excluded_count
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
@@ -365,6 +394,14 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         f"기간 {month_label(effective_start)}–{month_label(effective_end)} · 기본은 기간 최저 "
         "확보율 공정"
     )
+    # 「이 세션만」 묶음 — 필요 단축 일정과 같은 세션 칸을 쓴다. 역산 줄은 계획을 세운 뒤 채운다.
+    assumption: UpehAssumption | None = render_upeh_assumption_controls(
+        owner=CARD_NAME,
+        start_month=context.selected_start_month,
+        end_month=context.selected_end_month,
+        today=today,
+    )
+    inverse_slot = st.container()
 
 if entry.missing_process is not None:
     # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
@@ -406,7 +443,28 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
-kpis = process_capa_kpis(summary)
+official_kpis = process_capa_kpis(summary)
+# UPEH 가정 — 구간 달의 소요 ÷f 를 이 공정의 확보율 행에 사후로 걸고 같은 함수로 요약을 다시 낸다.
+# 캐시하지 않는다(작은 프레임). 이 프레임은 시나리오 키 전용 칸(HOME 과 같은 칸)에 넘기지 않는다.
+upeh_token = assumption.token(months) if assumption is not None else NO_ASSUMPTION
+assumed_summary: pd.DataFrame | None = None
+if upeh_token:
+    try:
+        assumed_summary = build_process_capa_summary(
+            scale_securement_rate(
+                securement_rate.loc[process_column.eq(process).fillna(False).to_numpy()],
+                upeh_token,
+            ),
+            scenario_tables["RQ_EQP_OWN"],
+            scenario_tables["RQ_EQP_LENT"],
+            process=process,
+            months=months,
+            thresholds=thresholds,
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(bootstrap_error_message(exc))
+        st.stop()
+kpis = process_capa_kpis(assumed_summary) if assumed_summary is not None else official_kpis
 
 
 # ------------------------------------------------------------------ HOME 표시 확보율
@@ -561,22 +619,42 @@ if (
         months=tuple(months),
         today=today,
     )
-    target_key = required_shortening_target_cache_key(shortening_key, target)
+    official_target_key = required_shortening_target_cache_key(shortening_key, target)
+    # UPEH 가정이면 같은 입력에 토큰만 바꾼 키 — 배수는 그 토큰에서만 나오고 가정 칸이 받는다.
+    target_key = (
+        required_shortening_target_cache_key(with_upeh_token(shortening_key, upeh_token), target)
+        if upeh_token
+        else official_target_key
+    )
     timeline_key = process_timeline_key_from_shortening(shortening_key, process)
+    demand_loader = scenario_required_equipment(
+        capacity_cache_key,
+        scenario_tables=scenario_tables,
+        reference_tables=reference_tables,
+    )
     try:
-        plan = get_required_shortening_for_target(
-            target_key,
+        official_plan = load_required_shortening_for_target(
+            official_target_key,
             equipment,
             downtime,
             baseline,
             cutoff,
-            _required_equipment=scenario_required_equipment(
-                capacity_cache_key,
-                scenario_tables=scenario_tables,
-                reference_tables=reference_tables,
-            ),
+            required_equipment=demand_loader,
+        )
+        plan = (
+            load_required_shortening_for_target(
+                target_key,
+                equipment,
+                downtime,
+                baseline,
+                cutoff,
+                required_equipment=demand_loader,
+            )
+            if upeh_token
+            else official_plan
         )
         level = plan.at(target)
+        official_level = official_plan.at(target)
         timeline = get_process_equipment_timeline(
             timeline_key, equipment, downtime, baseline, cutoff
         )
@@ -591,6 +669,22 @@ if (
         process_months = level.process_months.loc[in_process.fillna(False).to_numpy()]
         unit_mask = level.units["공정"].astype("string").str.strip().eq(process)
         process_units = level.units.loc[unit_mask.fillna(False).to_numpy()]
+        official_mask = official_level.units["공정"].astype("string").str.strip().eq(process)
+        official_units = official_level.units.loc[official_mask.fillna(False).to_numpy()]
+        official_in_process = (
+            official_level.process_months["공정"].astype("string").str.strip().eq(process)
+        )
+        official_process_months = official_level.process_months.loc[
+            official_in_process.fillna(False).to_numpy()
+        ]
+        # 공식 계획에서 당겼지만 가정 계획에서 덜 당기는 호기(③ 흐린 줄, 풍선 「공식 −n일 → 가정
+        # m일」).
+        changes = pull_changes(official_units, process_units, process) if upeh_token else {}
+        events = unit_events(timeline, level.units)
+        if changes:
+            events = keep_released_units(
+                events, unit_events(timeline, official_level.units), changes
+            )
         counts = undated_counts(undated, processes=[process])
         undated_total = round(sum(counts.values()), 6)
         undated_line = (
@@ -605,15 +699,20 @@ if (
                 today=today,
                 process_months=process_months.reset_index(drop=True),
                 bridge=timeline.bridge,
-                unit_events=unit_events(timeline, level.units),
+                unit_events=events,
                 arrows=timeline.arrows,
                 exits=timeline.exits,
                 has_units=readiness.has_units,
                 steady_units=timeline.steady_units,
                 undated_notice=undated_line,
+                official_pulls=changes if upeh_token else None,
             ),
             units=process_units.reset_index(drop=True),
             memo_key=(target_key, timeline_key, undated_line),
+            official_units=official_units.reset_index(drop=True) if upeh_token else None,
+            official_process_months=(
+                official_process_months.reset_index(drop=True) if upeh_token else None
+            ),
         )
         # 정리 줄 — 0 인 알림은 적지 않는다.
         excluded_count = usage_excluded_count(usage_excluded, processes=[process])
@@ -630,6 +729,9 @@ if (
         parts.append("단축 결과는 공식 확보율을 바꾸지 않습니다(설비 일정 기준 가용만 바뀜)")
         closing_notices.append(" · ".join(parts))
         export = unit_export_frame(plan, (target,), (process,))
+        if upeh_token and assumption is not None:
+            # 가정 계획의 호기 표다 — 첫 열과 파일 이름에 표지를 단다(공식 CSV 로 읽히지 않게).
+            export.insert(0, "UPEH 가정", assumption_label(assumption))
         units_csv = get_export_csv(
             csv_export_key("process_detail_units", export, (), "utf-8-sig"),
             partial(csv_bytes, export),
@@ -648,11 +750,53 @@ try:
 except BOOTSTRAP_ERRORS:
     # ◀▶ 는 곁 기능이다 — 공정별 요약을 못 내면 단추만 두지 않는다.
     steps = ProcessSteps(previous=None, following=None, position=None, total=0)
+assumption_badge = upeh_badge(upeh_token)
 with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
-    st.markdown(f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}", width="content")
+    st.markdown(
+        f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}"
+        + (f" {assumption_badge}" if assumption_badge else ""),
+        width="content",
+    )
     render_process_steps(steps, label_of=process_labels.label)
     st.space("stretch")
     render_page_link(HOME.path, label="HOME", icon=":material/arrow_back:")
+
+
+def assumption_effect_line() -> str:
+    """머리 아래 효과 한 줄 — 공식 → 가정(이 화면의 목표·기간을 함께 적는다). 가정이 꺼졌으면 빈
+    글자."""
+    if assumption is None or not assumption.active:
+        return ""
+    if not upeh_token or assumed_summary is None:
+        return effect_text(AssumptionEffect(percent=assumption.percent, applied=False))
+    official_counts = assumed_counts = None
+    if dynamic is not None and dynamic.official_units is not None:
+        assumed_counts = plan_counts(dynamic.units, dynamic.canvas.process_months)
+        official_counts = plan_counts(
+            dynamic.official_units,
+            dynamic.official_process_months
+            if dynamic.official_process_months is not None
+            else pd.DataFrame(),
+        )
+    effect = AssumptionEffect(
+        percent=assumption.percent,
+        applied=True,
+        required_drop=required_drop(summary, assumed_summary, upeh_token[1]),
+        official=official_counts,
+        assumed=assumed_counts,
+        shortage_months=(official_kpis.shortage_months, kpis.shortage_months),
+    )
+    basis = (
+        f"이 화면 단축 목표 = HOME Preference 확보기준(월별) · 기간 {month_label(effective_start)}–"
+        f"{month_label(effective_end)}(RQ_REQB) — 필요 단축 일정과는 소요대수만 같습니다"
+    )
+    return f"{effect_text(effect)} · {basis}"
+
+
+effect_line = assumption_effect_line()
+if effect_line:
+    with header_marks:
+        st.caption(f":material/science: {effect_line}")
 
 render_process_kpis(
     kpis,
@@ -663,6 +807,7 @@ render_process_kpis(
         if readiness is None
         else (readiness.reason if not readiness.ready else "설비 일정 계산 오류")
     ),
+    official=official_kpis if upeh_token else None,
 )
 render_cause_links(kpis, dynamic=dynamic, process=process)
 
@@ -686,14 +831,55 @@ render_process_detail_view(
         dynamic=dynamic,
         readiness=readiness,
         dynamic_error=dynamic_error,
+        assumed_summary=assumed_summary,
+        upeh_token=upeh_token,
         initial_month=entry.scroll_month,
     )
 )
 
+# 역산 — 조건 카드의 「이 세션만」 묶음 아래. 공식 값으로 낸 닫힌 식이다(구간 안 달만 본다).
+if assumption is not None:
+    window = assumption.months_within(months)
+    with inverse_slot:
+        if window:
+            render_inverse(
+                percent_to_clear_securement(summary, thresholds, window),
+                goal="확보기준 미달 0",
+                key="process_detail_upeh_inverse_securement",
+                current=assumption.percent,
+            )
+            if dynamic is not None:
+                official_months = (
+                    dynamic.official_process_months
+                    if dynamic.official_process_months is not None
+                    else dynamic.canvas.process_months
+                )
+                render_inverse(
+                    percent_to_clear_target(official_months, window, skip_states=(STATUS_EXPIRED,)),
+                    goal="구간 안 단축 0",
+                    key="process_detail_upeh_inverse_target",
+                    current=assumption.percent,
+                )
+            st.caption(
+                "역산은 구간 안 달만 보고 앞 달 단축이 넘겨 주는 몫을 빼서 보수적입니다(실제보다 "
+                "큰 %)."
+            )
+        else:
+            st.caption("적용 구간이 이 화면 기간과 겹치지 않아 역산하지 않습니다.")
+
+if upeh_token and assumption is not None:
+    closing_notices.append(
+        f"{assumption_label(assumption)} — 이 세션만입니다. 공식 확보율·HOME·공식버전은 "
+        "그대로이고, ② ~ ④·"
+        "KPI·이 공정 단축 일정 CSV 는 가정 계획입니다."
+    )
 if dynamic is not None:
+    upeh_suffix = (
+        f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
+    )
     render_closing_row(
         process=process,
         notices=closing_notices,
         csv_bytes=units_csv,
-        csv_file_name=f"process_capa_detail_units_{months[0]}_{months[-1]}.csv",
+        csv_file_name=f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_suffix}.csv",
     )

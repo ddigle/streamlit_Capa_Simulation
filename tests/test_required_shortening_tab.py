@@ -26,6 +26,7 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
     SHORTENING_START_KEY,
+    SHORTENING_UPEH_VIEW_KEY,
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -45,6 +46,11 @@ from capa_simulation.services.required_shortening import (
     UNIT_EXPORT_COLUMNS,
 )
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
+from capa_simulation.upeh_assumption_state import (
+    UPEH_ASSUMPTION_END_KEY,
+    UPEH_ASSUMPTION_PERCENT_KEY,
+    UPEH_ASSUMPTION_START_KEY,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
@@ -804,3 +810,146 @@ def test_the_unmatched_list_keeps_the_original_names(tmp_path: Path) -> None:
     texts = " ".join(str(item.value) for item in app.text)
     assert processes[0] in texts and "표시-빠진공정" not in texts
     clear_equipment_repository()
+
+
+# ------------------------------------------------------------------ UPEH 가정
+
+
+def _assumed(tmp_path: Path, percent: int = 150) -> AppTest:
+    """조건 카드의 UPEH 가정을 `percent`% · 조회 달 전체로 둔 화면."""
+    app = _run(_database(tmp_path))
+    months = _months()
+    app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = percent
+    app.session_state[UPEH_ASSUMPTION_START_KEY] = months[0]
+    app.session_state[UPEH_ASSUMPTION_END_KEY] = months[-1]
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    return app
+
+
+def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_default_view_official(
+    tmp_path: Path,
+) -> None:
+    """가정을 켜도 기본 보기·CSV 세 벌은 공식 계획이다 — 머리 아래 한 줄이 알리고 「UPEH 가정 비교」
+    를 켤 수 있다. 입력은 조건 카드(사이드바) 끝 「이 세션만」 묶음이다."""
+    app = _assumed(tmp_path)
+    assert {"UPEH 적용 시작", "UPEH 적용 끝"} <= {box.label for box in app.sidebar.selectbox}
+    assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == 150
+    hint = [str(item.value) for item in app.caption if "가 켜져 있습니다" in str(item.value)]
+    assert hint and "UPEH 가정 150%" in hint[0] and "공식 계획" in hint[0]
+    assert not app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert "UPEH 가정" not in units.columns
+    captured = app.session_state["captured_downloads"]["equipment_shortening_units_csv"]
+    assert "upeh" not in str(captured["file_name"])
+    clear_equipment_repository()
+
+
+def test_the_upeh_comparison_view_reads_official_to_assumed(tmp_path: Path) -> None:
+    app = _assumed(tmp_path)
+    app.toggle(key=SHORTENING_UPEH_VIEW_KEY).set_value(True).run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    body = _html(app)
+    assert 'aria-label="UPEH 가정 비교 요약"' in body
+    assert any("소요 −33.3%" in str(item.value) for item in app.caption)
+    assert any("소요대수만 같고" in str(item.value) for item in app.caption)
+    assert any(
+        str(item.value).startswith("보이는 공정 구간 안 단축 0(목표 110%) → ")
+        for item in app.caption
+    )
+    (table,) = app.dataframe
+    assert {"공정", "상태", "단축 호기", "단축일 합계", "신규", "구간 안 단축 0"} <= set(
+        table.value.columns
+    )
+    captured, compare = _csv(app, "equipment_shortening_upeh_compare_csv")
+    assert "upeh150_" in str(captured["file_name"])
+    assert list(compare.columns)[0] == "UPEH 가정"
+    _, units = _csv(app, "equipment_shortening_upeh_units_csv")
+    assert list(units.columns)[0] == "UPEH 가정"
+    assert set(units["UPEH 가정"]) <= {
+        f"UPEH 가정 150% · {_dash(_months()[0])}–{_dash(_months()[-1])}"
+    }
+    # 목표를 바꿔도 같은 보기다(가정 계획은 다섯 목표를 한 번에 들고 있다).
+    app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
+    assert not app.exception
+    assert 'aria-label="UPEH 가정 비교 요약"' in _html(app)
+    # 역산의 「이 값으로」 는 % 칸에 그 값을 적는다(범위 안이면).
+    inverse = [
+        str(item.value) for item in app.caption if str(item.value).startswith("보이는 공정 구간")
+    ]
+    wanted = re.search(r"UPEH ≥ (\d+)%", inverse[0]) if inverse else None
+    if wanted is not None and int(wanted.group(1)) != 150:
+        app.button(key="equipment_shortening_upeh_inverse").click().run()
+        assert not app.exception, [element.message for element in app.exception]
+        assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == int(
+            wanted.group(1)
+        )
+    clear_equipment_repository()
+
+
+def test_a_baseline_is_not_saved_while_an_assumption_is_on() -> None:
+    """가정이 켜진 동안 기준선 저장을 거절한다(미저장 시나리오 편집과 같은 꼴). 100% 면 거절하지
+    않는다.
+
+    샘플 fleet 화면은 그 전에 샘플이라 거절하므로 저장 문맥 함수를 바로 본다."""
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from capa_simulation.components.required_shortening_panel import _save_context
+    from capa_simulation.services.upeh_assumption import UpehAssumption
+
+    context = cast(
+        Any, SimpleNamespace(reference_version=1, active_scenario={"content_token": "token"})
+    )
+    plan = cast(Any, object())
+
+    def refusal(percent: int) -> str | None:
+        save = _save_context(
+            plan,
+            today=date(2026, 6, 1),
+            context=context,
+            database_path="equipment.duckdb",
+            revision=(None, None),
+            refusal=None,
+            assumption=UpehAssumption(percent, 202607, 202612),
+        )
+        assert save is not None
+        return save.refusal
+
+    refused = refusal(120)
+    assert refused is not None
+    assert "UPEH 가정 120%" in refused and "100% 로 되돌린 뒤" in refused
+    assert refusal(100) is None
+
+
+def test_an_assumption_outside_the_card_months_says_no_month_applies(tmp_path: Path) -> None:
+    """적용 구간이 카드 기간(공용 설정)과 겹치지 않으면 비교 보기를 켤 수 없고, 효과 줄과 같은
+    「적용된 달 없음」 으로 알린다 — 「켜면 견줍니다」 라고 하지 않는다."""
+    database_path = _database(tmp_path)
+    months = _months()
+    DuckDBEquipmentRepository(database_path).save_shortening_filter_months(
+        months[0], months[1], source="test"
+    )
+    app = _run(database_path)
+    app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = 120
+    app.session_state[UPEH_ASSUMPTION_START_KEY] = months[3]
+    app.session_state[UPEH_ASSUMPTION_END_KEY] = months[-1]
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
+    captions = [str(item.value) for item in app.caption]
+    assert any("UPEH 가정 120% — 적용된 달 없음" in caption for caption in captions)
+    assert not any("켜면 공식 대 가정을 견줍니다" in caption for caption in captions)
+    clear_equipment_repository()
+
+
+def test_at_100_percent_the_comparison_toggle_cannot_be_used(tmp_path: Path) -> None:
+    app = _run(_database(tmp_path))
+    assert app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
+    assert not any("가 켜져 있습니다" in str(item.value) for item in app.caption)
+    clear_equipment_repository()
+
+
+def _dash(month: int) -> str:
+    return f"{month // 100 % 100:02d}-{month % 100:02d}"

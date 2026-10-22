@@ -32,6 +32,11 @@ from capa_simulation.scenario_state import (
     reset_active_scenario,
 )
 from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.shared_widget_state import shared_widget_owner_key
+from capa_simulation.upeh_assumption_state import (
+    UPEH_ASSUMPTION_DEFAULT_PERCENT,
+    UPEH_ASSUMPTION_PERCENT_KEY,
+)
 
 ACTIVE_PERSISTED_SCENARIO_ID_KEY = "active_persisted_scenario_id"
 ACTIVE_PERSISTED_REVISION_ID_KEY = "active_persisted_revision_id"
@@ -64,6 +69,11 @@ ACTIVE_SCENARIO_LABEL_KEY = "active_scenario_label"
 # 칸은 저장에서도 버린다 — 리비전이 바뀌어 편집 화면의 원본 토큰이 달라지고(적용하지 않은 편집은
 # 저장·불러오기에 사라진다는 약속), Figure 캐시 칸은 새 리비전의 내용 토큰으로 다시 채워진다.
 #
+# **UPEH 가정 %**(공정 Capa 상세·필요 단축 일정이 함께 쓰는 세션 가정)도 같은 까닭으로 같은 경로에서
+# 100 을 적는다 — 새 시나리오는 있는 그대로 먼저 보여야 한다. 적용 구간(시작·끝 월)은 조회 조건이라
+# 둔다. 이 칸은 HOME 토글이 아니어서 `_STALE_UI_KEYS` 에 넣지 않고 `_release_stale_ui_state` 가 따로
+# 적는다.
+#
 # 탭과 조회 조건(필터·분류 수준)은 **넣지 않는다.** 그것들은 무엇을 보고 있는지일 뿐 값에
 # 닿지 않으므로, 지우면 시나리오를 바꿀 때마다 보던 자리를 다시 찾아야 한다.
 #
@@ -81,7 +91,7 @@ _STALE_UI_KEYS = (*_STALE_VALUE_KEYS, *HOME_TOGGLE_DEFAULTS)
 
 
 def _release_stale_ui_state(*, release_toggles: bool) -> None:
-    """앞 시나리오의 값이 담긴 칸은 지우고, HOME 토글에는 기본값을 **적는다.**
+    """앞 시나리오의 값이 담긴 칸은 지우고, HOME 토글과 UPEH 가정 % 에는 기본값을 **적는다.**
 
     `release_toggles=False`(활성 시나리오의 새 리비전 저장)이면 값 칸만 지우고 토글 칸은 그대로
     둔다 — 적지도 지우지도 않으므로 브라우저가 들고 있는 값과 서버 값이 계속 같다.
@@ -107,6 +117,10 @@ def _release_stale_ui_state(*, release_toggles: bool) -> None:
         return
     for key, default in HOME_TOGGLE_DEFAULTS.items():
         st.session_state[key] = default
+    # UPEH 가정 % 는 두 화면이 나눠 쓰는 위젯이다(`shared_widget_state`). 값을 적고 주인 칸을 지워,
+    # 다음에 그 위젯을 그리는 화면이 이 값을 다시 적어 브라우저에 알리게 한다.
+    st.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = UPEH_ASSUMPTION_DEFAULT_PERCENT
+    st.session_state.pop(shared_widget_owner_key(UPEH_ASSUMPTION_PERCENT_KEY), None)
 
 
 @dataclass(frozen=True)

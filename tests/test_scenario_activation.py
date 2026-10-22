@@ -137,6 +137,52 @@ def test_activating_a_snapshot_writes_the_toggle_defaults_instead_of_dropping_th
     assert state[activation.ACTIVE_PERSISTED_REVISION_ID_KEY] == "revision-2"
 
 
+def test_activating_another_scenario_writes_100_into_the_upeh_assumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UPEH 가정 % 도 HOME 토글처럼 시나리오를 바꾸는 길에서 100 을 **적는다**(지우지 않는다).
+
+    주인 칸을 지워 다음에 그 위젯을 그리는 화면이 값을 다시 적어 브라우저에 알리게 한다. 적용 구간은
+    조회 조건이라 둔다. 활성 시나리오의 새 리비전 저장은 건드리지 않는다.
+    """
+    import capa_simulation.scenario_activation as activation
+    from capa_simulation.shared_widget_state import shared_widget_owner_key
+    from capa_simulation.upeh_assumption_state import (
+        UPEH_ASSUMPTION_END_KEY,
+        UPEH_ASSUMPTION_PERCENT_KEY,
+        UPEH_ASSUMPTION_START_KEY,
+    )
+
+    owner = shared_widget_owner_key(UPEH_ASSUMPTION_PERCENT_KEY)
+    for saving in (False, True):
+        state = _fake_session(monkeypatch)
+        state.update(
+            {
+                UPEH_ASSUMPTION_PERCENT_KEY: 120,
+                owner: "process_capa_detail",
+                UPEH_ASSUMPTION_START_KEY: 202607,
+                UPEH_ASSUMPTION_END_KEY: 202612,
+                activation.ACTIVE_PERSISTED_SCENARIO_ID_KEY: "scenario-1",
+            }
+        )
+        monkeypatch.setattr(activation, "activate_persisted_reference_tables", lambda *a, **k: 3)
+        monkeypatch.setattr(activation, "activate_scenario_tables", lambda *a, **k: {"revision": 7})
+        monkeypatch.setattr(activation, "queue_scenario_preset", lambda preset: None)
+        snapshot = _label_snapshot(registered_at=None, plan_months=(202607,))
+        if saving:
+            activation.activate_saved_revision(snapshot)
+            assert state[UPEH_ASSUMPTION_PERCENT_KEY] == 120
+            assert state[owner] == "process_capa_detail"
+        else:
+            activation.activate_persisted_snapshot(snapshot)
+            assert state[UPEH_ASSUMPTION_PERCENT_KEY] == 100
+            assert owner not in state
+        assert (state[UPEH_ASSUMPTION_START_KEY], state[UPEH_ASSUMPTION_END_KEY]) == (
+            202607,
+            202612,
+        )
+
+
 def test_clearing_the_activation_writes_the_toggle_defaults_too(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

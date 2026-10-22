@@ -62,7 +62,17 @@ def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
     """목표만 바꾼 rerun 이 세 표를 다시 만들지 않는다 — 바이트는 새로 만든 것과 같다(점검 A10)."""
     simulation_cache.get_required_shortening_csvs.clear()
     plan = _worked_example()
-    key = ((1, "plan-token", MAY, MAY), "m", "d", "b", "c", plan.months, plan.today.isoformat())
+    key: simulation_cache.RequiredShorteningCacheKey = (
+        (1, "plan-token", MAY, MAY),
+        "m",
+        "d",
+        "b",
+        "c",
+        plan.months,
+        plan.today.isoformat(),
+        (),
+    )
+    keyed = simulation_cache.KeyedShorteningPlan(key, plan)
     built: list[tuple[float, ...]] = []
 
     def counting(
@@ -74,8 +84,8 @@ def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
     monkeypatch.setattr(simulation_cache, "unit_export_frame", counting)
     scope = (PROCESS,)
 
-    first = simulation_cache.get_required_shortening_csvs(key, 1.1, scope, (MAY,), _plan=plan)
-    again = simulation_cache.get_required_shortening_csvs(key, 1.1, scope, (MAY,), _plan=plan)
+    first = simulation_cache.shortening_csvs(keyed, 1.1, scope, (MAY,))
+    again = simulation_cache.shortening_csvs(keyed, 1.1, scope, (MAY,))
 
     assert again == first
     assert built == [(1.1,), TARGET_LEVELS]
@@ -87,7 +97,7 @@ def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
     assert first[0].startswith(b"\xef\xbb\xbf")
 
     # 목표를 바꾸면 새 키다 — 고른 목표의 두 표가 그 목표로 다시 나온다.
-    other = simulation_cache.get_required_shortening_csvs(key, 1.3, scope, (MAY,), _plan=plan)
+    other = simulation_cache.shortening_csvs(keyed, 1.3, scope, (MAY,))
     assert len(built) == 4
     assert other[0] == _csv(unit_export_frame(plan, (1.3,), scope))
     assert other[2] == _csv(process_month_export_frame(plan, (1.3,), scope, (MAY,)))

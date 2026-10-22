@@ -96,6 +96,10 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   손입력 보정」이고 실행 관리 그룹과 상관없다. 코드·저장 이름은 `execution` 그대로다(공용 프로필
   `app_meta.global_execution_capacity`, 마이그레이션 0021, 토글 키 `EXECUTION_TOGGLE_KEY`, 내부 컬럼
   `실행 비고`).
+- **「UPEH 가정」**(2026-10-22 사용자 요청): 공정 Capa 상세·필요 단축 일정 조건 카드 끝 「이 세션만」 % 칸이다. 뜻은 「적용
+  구간의 달에 기준정보 계획 UPEH 전체(Main UPEH·MI ST)가 p% 라면」 이고 소요대수에 ÷f 를 사후로 건다(6장 「소요대수와
+  확보율」). 세션 값이라 기준정보·리비전·HOME·공식버전·공용 프로필은 바뀌지 않는다. 「확보율 보정」(공용 손입력 %p
+  덧셈)과 다른 것이라 화면 글자·Guide 에 「보정」이라는 말을 쓰지 않는다. 코드·키 이름은 `upeh_assumption*` 이다.
 - 파일 이름·페이지 제목·주소는 그룹을 옮겨도 바꾸지 않는다 — 주소는 파일 이름에서 나오고, Static 하위
   네 제목은 표시순서 DB 의 페이지 키다(`services/display_order_scopes.py`). 그룹을 옮긴 화면의 북마크는
   그대로 산다.
@@ -169,6 +173,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   결함이 아니다 — 끝난 작업의 찌꺼기만 지우고 다시 돌린다.
 - 샌드박스 안에서 `TMPDIR` 이 비면 파이썬 `tempfile` 은 실패하지 않고 저장소 루트로 내려간다 — 오류로 드러나지 않으니
   `echo $TMPDIR` 로 본다(`docs/wsl_dev_environment.md` 2장).
+- UPEH 가정 계획 1회 시간은 `scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더>` 로 잰다(사내 런북 6-3 b — 1초를
+  넘으면 % 입력을 「적용」 단추 폼으로 바꾼다). 합성 시드와 샘플 fleet 은 공정이 겹치지 않아 사외에서는 뜻 있는 값이 없다.
 - HOME 단계별 소요시간은 `scripts/benchmark_home.py` 로 잰다. 화면에서 봐야 할 때만 세션 키 `dashboard_show_performance`
   (`components/home_rendering.HOME_PERFORMANCE_KEY`)를 켠다 — 개발용 계측이 모든 사용자가 늘 보는 자리를 차지하지 않게
   사이드바 토글은 두지 않는다.
@@ -231,6 +237,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 밖에서 들어온 회차는 그 길(`from`)의 구획을 다시 편다(HOME → ①, `gap` → ④, `shortening` → ③). 머리 ◀▶ 는 미달
     공정을 최저 확보율 차례로 넘기고(세션 값, 공정별 요약은 세션 칸에 한 벌), KPI 아래·근거 패널은 부족 원인마다
     다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 → 필요 단축 일정)을 단다.
+  - UPEH 가정(조건 카드 끝 「이 세션만」)이 켜지면 가정 요약(이미 받은 확보율 행에 ÷f — 캐시 밖)과 가정 계획(계획 키 끝
+    칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
+    줄과 KPI 회색 줄 「공식 n」 에만. 머리 배지·효과 한 줄(그 화면의 목표·기간)·카드의 역산 둘(「이 값으로」)·호기 CSV
+    표지가 선다. 기본 공정·달·◀▶·HOME 표시 확보율은 공식이다.
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
   대본으로 보여 준다.
   - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 세션에 한 번만 만든다.
@@ -256,6 +266,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     값만 읽는다(고치는 곳은 가용설비 Preference). 조건 카드는 `shortening` 이다.
   - 소요대수 프레임은 넘기지 않고 시나리오 키와 로더를 넘긴다. 계산은 DB 에 쓰지 않고 패널이 공용 조회 조건(`0019`)과
     진척 비교 기준선(`0021`)만 쓴다. 알림 자리는 토스트 규칙을 따른다(`test_shortening_baseline_notice.py`).
+  - UPEH 가정은 기본 보기를 바꾸지 않는다 — 머리 「UPEH 가정 비교」 를 켠 회차에만 가정 계획을 꺼내 공식→가정을 보인다.
+    가정이 켜진 동안 기준선 저장은 거절하고 진척 비교는 늘 공식 계획이다.
 - `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 조회·Static 비교·Cut-off·입력을
   `Main`·`Static 대비 일정`·`Preference`·`RawData` 네 탭으로 다룬다. 설명은 `guides/available_equipment_status.md`.
   - Main·Preference·RawData 는 설비 DB 만 쓰고 `Static 대비 일정` 만 시뮬레이션 DB 를 읽는다 — 못 읽어도 그 탭
@@ -482,9 +494,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
   - 값 칸(`_STALE_VALUE_KEYS`)을 지우고 HOME 토글에 기본값을 적으므로 토글을 그리기 전에만 부른다(9장). 활성
-    시나리오의 새 리비전 저장(`activate_saved_revision`)은 토글을 둔다.
+    시나리오의 새 리비전 저장(`activate_saved_revision`)은 토글을 둔다. UPEH 가정 % 도 같은 길에서 100 을 적고 그
+    공유 위젯의 주인 칸을 지운다(구간은 둔다, `tests/test_scenario_activation.py`).
   - 프리셋을 걸 때 HOME 의 아는 공정 기억(`PROCESS_SEEN_KEY`)을 지운다(`tests/test_process_filter_activation.py`).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
+- `src/capa_simulation/upeh_assumption_state.py` — UPEH 가정 세 칸(%·적용 시작·끝)의 세션 키와 기본값. UI 를 import 하지
+  않아 시나리오 전환 초기화(`scenario_activation`)가 읽는다.
 - `src/capa_simulation/sync_boot.py` — managed 모드일 때만 `sync_state` 에 두 DB 경로를 등록한다(설정을 못 읽으면 조용히 끈다).
 - `src/capa_simulation/performance.py` — HOME 단계별 소요시간을 잰다. 업무 데이터는 기록하지 않는다.
 - `src/capa_simulation/services/simulation_cache.py` — 계산 함수의 content-addressed Streamlit 캐시 래퍼를 모은 경계다
@@ -494,6 +509,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `full_capacity_outcome` 을 부른다.
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
     `tests/test_home_figure_cache.py`). 「소요대수만」 돌려주는 래퍼는 두지 않는다.
+  - 필요 단축 일정 계획 키 끝 칸은 UPEH 가정 토큰이다. 공식 칸과 가정 칸(`ASSUMED_PLAN_MAX_ENTRIES`)은 따로이고 서로의
+    키를 받지 않으며, 계획은 키와 한 묶음(`KeyedShorteningPlan`)으로만 CSV·진척 캐시에 간다(5장 31,
+    `tests/test_upeh_assumption_cache.py`).
 
 ### 계산 서비스
 
@@ -910,6 +928,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 늘어나는 몫은 엔진을 다시 돌리지 않고 기여일로 센다. 후보를 바닥 `max(구간 앞, 오늘)` 뒤에서 모자란 만큼만 당기고,
     한 달 상한을 넘은 가상 호기는 모두 걷는다(남기면 뒤 달 부족을 가린다).
   - 목표는 스칼라 또는 `MonthlyTarget` 이고 한 길로 계산한다(`tests/test_required_shortening_monthly_target.py`).
+- `src/capa_simulation/services/upeh_assumption.py` — UPEH 가정(`UpehAssumption`·캐시 키 토큰 `UpehToken`)과 소요대수 ÷f
+  사후 배수(`scale_required_equipment`·`scale_securement_rate` — 같은 확보율 함수로 다시 낸다), 닫힌 식 역산 둘
+  (구간 안 단축 0·확보기준 미달 0, 80~150 밖은 갈래), 효과 한 줄(`effect_text` — 정수가 그대로면 「덜 당김」)을 낸다.
+  - 선형 전제는 `tests/test_upeh_assumption.py` 가 `RQ_UPEH` 를 고쳐 다시 계산한 결과와 맞대어 지킨다.
 - `src/capa_simulation/services/process_equipment_timeline.py` — 공정 Capa 상세의 설비 일정(참고)을 생산월 좌표로
   정리하는 순수 함수(`build_process_equipment_timeline`·`unit_events`·`dynamic_readiness`). DB·오늘을 보지 않는다.
   - 비가동 손실은 반사실(비가동을 비운 구간과의 차이)이라 경계 규칙이 엔진 그대로다. 시험 불변식:
@@ -955,6 +977,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.
   - 머리·본문은 「본문 프래그먼트」다 — 기준선·판정 기준은 회차마다 다시 읽고 기준선 쓰기 표지를 보면
     `st.rerun(scope="app")` 한다(`tests/test_shortening_view_fragment.py`·`tests/fragment_browser.py`).
+  - 계획은 `_Plan.official`(키와 한 묶음)이고, UPEH 가정 계획은 `_Plan.assumed` 로더로 「UPEH 가정 비교」 보기에서만
+    꺼낸다(공식 부족 ∪ 가정 부족, 「가정으로 해소」, 역산 「이 값으로」 — 앱 전체 회차로 올린다, 표·CSV 첫 열 표지).
+- `src/capa_simulation/components/upeh_assumption_controls.py` — 두 화면 조건 카드 끝 「이 세션만」 UPEH 가정 묶음(% 칸
+  80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. 구간 선택지는
+  `assumption_month_options`(조회기간 ∩ 이번 달 이후) 하나이고, 세 칸 모두 위젯 앞에서 `carry_shared_widget_value` 를
+  부른다(`tests/test_upeh_assumption_controls.py` — 앱 전체로 페이지를 옮긴 첫 회차까지).
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
   - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
@@ -996,6 +1024,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     한 길이다. 칸은 `base` 막대 + 표적 막대(`HIT_TARGET`)이고 엔진 상수·`canvas_point` 를 이 모듈 이름으로도 내보낸다.
   - 접힌 구획(`collapsed`, id `SECTION_IDS`)은 제목 줄(▸)만 남는다 — 판정·원인은 요약에서 내 ① 을 접어도 부족 띠·판정
     대조가 같다. 호기 라벨에 「N모듈」 을 적지 않고 풍선(「· 모듈 N」, ④ 는 줄마다 모듈 설비명)에 둔다.
+  - `assumption`(UPEH 가정)이면 ① 끝에 세 줄(구간 달만 값)이 서고 부족 띠·② 판정 대조는 가정 요약의 판정이다. 표지는
+    바뀌는 행의 라벨·풍선에만(② 가용·전월 대비·④ 제외, 제목 줄 높이 그대로), 공식에서만 당긴 호기는 ③ 흐린 줄이다.
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
@@ -1004,6 +1034,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목표는 `target_label`(「110% (1.095)」)로 적는다.
   - 「구획」 칩(`st.pills`)은 선택지 넷을 늘 고정하고 칸이 없으면 넷 모두로 심는다(`seed_sections`). 접힘은 그림 기억
     키에 들고, 접힌 ③·④ 의 「더 보기」 는 숨는다. 화면을 옮기는 다음 화면 단추는 본문에서 옮긴다(프래그먼트 콜백 금지).
+  - UPEH 가정 토큰도 그림 기억 키에 든다. KPI 는 가정 요약 값에 회색 줄 「공식 n」, 근거 카드 ①·③ 은 구간 달에 가정 한 줄.
 - `src/capa_simulation/components/scenario_management.py`, `bigdataquery_registration.py`, `auto_official_update_tab.py`
   — 시나리오 관리 페이지의 세 탭 UI.
   - 저장 폼 칸은 성공한 회차에만 key 세대를 올린다. 원본 리비전 메모(`SOURCE_MEMO_KEY`)는 목록 요약이 같을 때만 쓴다.
@@ -1210,7 +1241,8 @@ RQ_MODULE
    **설비 운영 스냅샷을 읽는 시뮬레이션 쪽 페이지**도 있다 — `공정 Capa 상세` 는 설비 DB 의 최신
    저장본·Cut-off 를 **읽기만** 해(쓰지 않는다, `PageSpec.uses_equipment_db`) 공정 하나의 소요대수와
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 같은 키 방침(15)의
-   `simulation_cache` 래퍼(`get_required_shortening_for_target`·`get_process_equipment_timeline`)로만 부르고,
+   `simulation_cache` 래퍼(`get_required_shortening_for_target` — UPEH 가정이면 그 가정 칸, 31 —·
+   `get_process_equipment_timeline`)로만 부르고,
    필요 단축 일정 화면의 공용 조회 조건(`0019`)·기준선(`0021`)은 읽지도 쓰지도 않는다. 설비 DB 를 여는
    시뮬레이션 쪽 페이지는 셋이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행 관리,
    읽기만), 표준 대비 재공 현황(Dynamic, 표준 목표의 주차별 가용대수를 읽기만). 실행 관리 머리는 첫 판에서
@@ -1298,6 +1330,15 @@ RQ_MODULE
     한 번도 저장되지 않았을 때 기본값을 정하는 데만 최신 공식버전에서 읽는다. 세션 키 `dashboard_*_threshold_percent`
     는 다음 리비전 저장에 실어 보내는 운반용이고, 자동 갱신은 직전 공식버전 프리셋 값을 실어 간다(코드 기본값을
     실으면 발행 순간 모든 화면의 기준이 바뀐다).
+31. **UPEH 가정은 계획 키 안의 토큰으로만 계산에 든다.** `RQ_UPEH`·`content_token`·전체 기간 계산 캐시·
+    `ScenarioCacheKey` 는 건드리지 않는다. 필요 단축 일정 계획 키(`RequiredShorteningCacheKey`) 끝 칸이 토큰
+    (`(%, 건 달)`, 공식은 `()`)이고, 가정 계획 칸(`get_assumed_required_shortening`·`_for_target`, 작은 LRU)은 **원 로더와
+    그 키**를 받아 안에서 ÷f 로더를 만든다 — 밖에서 만든 가정 로더를 넘기는 길이 없다. 공식 칸은 가정 키를, 가정 칸은
+    공식 키를 받지 않는다(`ValueError`). 키 전용 CSV·진척 캐시는 계획을 키와 한 묶음(`KeyedShorteningPlan`)으로만 받고
+    짝이 다르면 멈추며, 진척 비교는 공식 키만 받는다. 가정을 건 프레임은 시나리오 키 전용 칸
+    (`get_securement_rate`·`get_scenario_securement_rate` — HOME 과 같은 칸)에 넘기지 않는다 — 공정 Capa 상세는 이미 받은
+    작은 확보율 프레임에 캐시 밖에서 건다. 설비 일정 키(`process_timeline_key_from_shortening`)는 토큰을 싣지 않는다.
+    `tests/test_upeh_assumption_cache.py` 가 짝 어긋남과 「가정을 돌린 뒤에도 공식 칸·HOME 확보율이 공식 그대로」를 본다.
 
 ## 6. 핵심 계산 규칙
 
@@ -1454,6 +1495,14 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 동일 공정·제품에 STEP 행이 여러 개면 같은 부하량을 각 STEP의 대당 Capa로 각각 나누고
 STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를 식별 컬럼으로 유지하되
 확보율과 HOME은 공정 수준으로 합산한다.
+
+**UPEH 가정(세션)은 소요대수 ÷f 사후다.** 대당 Capa 는 환산 UPEH 에 선형이고 소요대수는 올림이 없으므로 「구간 달의
+계획 UPEH 가 p%」는 그 달 대당 Capa ×f, 소요대수 ÷f(f = p/100)와 같다 — +10% 는 소요 −9.09% 다. 확보율은 같은
+`calculate_securement_rate` 로 다시 내고 과부족·판정은 다시 올림한다(정수 단계라 110% 여도 대수가 그대로인 경우가 흔하다
+— 효과 줄이 단축일 합계·월 최대 환산 부족 같은 연속값을 함께 적는다). 필요 단축 일정은 비선형이라 ÷f 소요로 계획을 다시
+세운다. 식에 상한·하한·반올림이 들어오면 사후 배수가 틀리므로 `tests/test_upeh_assumption.py` 의 선형 대조(내장 시드의
+`RQ_UPEH` 를 고쳐 다시 계산한 결과 = 사후 배수)가 깨진다 — 그때는 가정을 기준정보 쪽으로 옮긴다. 두 화면은 소요대수만
+같다(공정 Capa 상세는 확보기준 월별·`RQ_REQB` 기간, 필요 단축 일정은 목표 스칼라·카드 기간 — 2026-10-22 맞추지 않기로).
 
 **소요대수에 들지 않은 수요는 0 으로 접되 반드시 센다.** 계산을 멈추지 않고 이어 가는 대신 그
 수요는 어느 공정의 소요대수에도 들지 않아 확보율이 그만큼 높게 나온다. 넷이다.
@@ -1961,7 +2010,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `persist_state="session"` 패턴을 따른다.
 - **같은 key 의 위젯을 둘 이상의 페이지가 그리면 `persist_state` 만으로는 부족하다.** 위젯 id 에
   페이지가 들어가 넘어온 첫 회차의 위젯이 기본값으로 선다. 위젯을 만들기 전에
-  `shared_widget_state.carry_shared_widget_value` 를 부른다.
+  `shared_widget_state.carry_shared_widget_value` 를 부른다. 이것이 위 「`app.py` 에서만」 규칙의 예외다 — 판정 기준
+  두 칸, 「샘플 데이터」 스위치, UPEH 가정 세 칸(공정 Capa 상세·필요 단축 일정)이 그렇다. 두 화면의 선택지는 한 함수로
+  내야 옮긴 회차에 「선택지 밖 → 새 값」이 말없이 일어나지 않는다. 위젯을 그리지 않는 자리(시나리오 전환)가 그 값을
+  새로 적으면 주인 칸(`shared_widget_owner_key`)도 지운다.
 - **선택지가 바뀌어 세션 값을 버려야 할 때는 `pop` 하지 말고 새 값을 적는다.** 지우기만 하면
   서버는 기본값을 쓰지만 브라우저는 그 사실을 듣지 못해 옛 선택을 계속 보여 준다(HOME
   Preference 비교 리비전, 2026-10-05 E2E). 보여 주기만 하는 데서 그치지 않는다 — 브라우저는 그
@@ -2132,6 +2184,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   본문에 두고, 카드에는 거르는 조건(공정·기간·기준일·분류·호기 필터)만 둔다. 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」·「구획」(①~④ 접기, 2026-10-22 「소요대수처럼」)만 사용자 요청에 따른
   예외로 본문 표 도구 줄이다.
+- **계산 가정 칸(세션 전용)은 조건 카드 끝 「이 세션만」 묶음이다** — 거르는 조건이 아니지만 계산 입력이라 카드에 둔다
+  (예외). UPEH 가정이 그렇다(2026-10-22). 묶음 앞에 `:material/person:` 「이 세션만」 캡션을 두어 카드 머리의 「공용 설정」
+  안내와 가르고, 켜진 동안은 카드가 접혀 있어도 보이게 머리 배지·효과 한 줄·CSV 표지로 알린다.
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다.

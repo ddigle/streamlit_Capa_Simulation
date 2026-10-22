@@ -28,6 +28,13 @@ def _owner_key(key: str) -> str:
     return f"{key}__owner"
 
 
+def shared_widget_owner_key(key: str) -> str:
+    """`carry_shared_widget_value` 가 쓰는 주인 칸의 이름. 위젯을 그리지 않는 자리(시나리오 전환)가
+    값을 새로 적을 때 이 칸을 지우면, 다음에 위젯을 그리는 자리가 그 값을 다시 적어 브라우저에
+    알린다."""
+    return _owner_key(key)
+
+
 def carry_shared_widget_value(key: str, *, default: object, owner: str) -> None:
     """위젯을 만들기 **전에** 부른다. 값이 없으면 `default` 를 심고, 그리는 자리가 바뀌었으면
     지금 값을 다시 적어 새 자리의 위젯이 그 값으로 서게 한다.
