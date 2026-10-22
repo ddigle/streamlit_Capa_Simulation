@@ -28,8 +28,9 @@
 아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보기준 과부족)이 선다 — 구간 달만 값이고 밖은
 빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
 가정이 켜지면 부족 띠·② 판정 대조는 가정 요약의 판정으로 칠한다(②~④ 가 가정 계획이라 한 그림에서
-공식 판정과 섞이지 않게). 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정
-대조·목표 과부족의 행 라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라 UPEH 와 무관하다.
+공식 판정과 섞이지 않게) — ② 판정 대조 풍선도 「공식은 …」 이 아니라 「UPEH 가정 기준은 …」
+이다. 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정 대조·목표 과부족의 행
+라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라 UPEH 와 무관하다.
 공식 계획에서는 당겼지만 가정 계획에서는 덜 당기는 호기는 ③ 에 흐린 줄로 남고 풍선에 「공식 −45일 →
 가정 0일」 이다(`DynamicCanvasInput.official_pulls`).
 
@@ -385,7 +386,7 @@ def build_process_capa_canvas(
     if dynamic is not None:
         dynamic_first = len(rows)
         dynamic_rows, hidden_units, hidden_arrow_units = _dynamic_rows(
-            axis, statuses, causes, dynamic, folded
+            axis, statuses, causes, dynamic, folded, assumed=assumption is not None
         )
         rows += dynamic_rows
         today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
@@ -807,7 +808,11 @@ def _dynamic_rows(
     causes: Mapping[int, str],
     dynamic: DynamicCanvasInput,
     folded: Collection[str] = (),
+    *,
+    assumed: bool = False,
 ) -> tuple[list[_Row], int, int]:
+    """② ~ ④ 행. `assumed` 면 `statuses`·`causes` 가 UPEH 가정 요약의 판정이다 — ② 판정 대조 풍선이
+    그 기준을 「UPEH 가정 기준」 이라 부른다(공식 값은 ① 공식 줄과 KPI 회색 줄에만)."""
     today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
     # 오늘이 든 생산월보다 앞선 달은 「기한 지남」이다 — 단축으로 바꿀 수 없어 흐리게 둔다.
     today_month = today_position.month
@@ -868,7 +873,12 @@ def _dynamic_rows(
             state = "" if _blank(record.get("상태")) else str(record.get("상태"))
             dynamic_short = gap is not None and round(gap, 9) < 0
             compare.cells[index] = _compare_cell(
-                head, static_short, dynamic_short, cause=causes.get(month, ""), past=past
+                head,
+                static_short,
+                dynamic_short,
+                cause=causes.get(month, ""),
+                past=past,
+                assumed=assumed,
             )
             available.cells[index] = _Cell(
                 text=_one(before),
@@ -930,8 +940,18 @@ def _dynamic_rows(
 
 
 def _compare_cell(
-    head: str, static_short: bool, dynamic_short: bool, *, cause: str = "", past: bool
+    head: str,
+    static_short: bool,
+    dynamic_short: bool,
+    *,
+    cause: str = "",
+    past: bool,
+    assumed: bool = False,
 ) -> _Cell:
+    """② 판정 대조 칸 하나. `assumed` 면 「기준」 판정이 UPEH 가정 요약이라 풍선이 그 이름으로
+    부른다 — 공식 판정이 아니다."""
+    basis = "UPEH 가정" if assumed else "공식"
+    subject = "UPEH 가정 기준은" if assumed else "공식은"
     if static_short and dynamic_short:
         return _Cell(
             text="기준✕·일정✕",
@@ -939,13 +959,13 @@ def _compare_cell(
             bold=not past,
             muted=past,
             hover=(
-                f"{head} · 공식·설비 일정 두 기준 모두 부족 — 아래 단축이 이 달을 메웁니다"
+                f"{head} · {basis}·설비 일정 두 기준 모두 부족 — 아래 단축이 이 달을 메웁니다"
                 "(단위가 달라 크기는 참고)"
             ),
         )
     if static_short:
         hover = (
-            f"{head} · 공식은 부족, 설비 일정으로는 충족 — Core Data 보유·대여와 "
+            f"{head} · {subject} 부족, 설비 일정으로는 충족 — Core Data 보유·대여와 "
             "설비 DB 일정이 어긋날 수 있습니다"
         )
         # 보유로도 부족이면 단축할 것이 없는 달이 아니라 투자를 볼 달이다(설계 logic_final 3).
@@ -956,7 +976,7 @@ def _compare_cell(
         return _Cell(
             text="기준✓·일정✕",
             muted=True,
-            hover=f"{head} · 공식은 충족 — 설비 일정 기준으로만 부족(참고)",
+            hover=f"{head} · {subject} 충족 — 설비 일정 기준으로만 부족(참고)",
         )
     return _Cell(hover=f"{head} · 두 기준 모두 충족")
 

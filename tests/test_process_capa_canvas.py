@@ -1307,3 +1307,29 @@ def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_chang
     assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
     unit_hover = _row_hover(canvas, "unit:EQ-21")
     assert "UPEH 가정 계획" in unit_hover and f"공식 {MINUS}45일 → 가정 0일" in unit_hover
+
+
+def _compare_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:
+    return {
+        int(data[CUSTOMDATA_MONTH]): str(data[CUSTOMDATA_HOVER])
+        for data, _, _ in _targets(canvas)
+        if data[CUSTOMDATA_ROW] == ROW_DYNAMIC_COMPARE
+    }
+
+
+def test_the_cross_check_hover_names_the_assumed_basis_when_an_assumption_is_on() -> None:
+    """가정이 켜지면 ② 판정 대조의 「기준」 은 가정 요약의 판정이다 — 풍선이 「공식은 …」 이라고
+    적으면 공식 판정처럼 읽힌다. 공식 값은 ① 공식 줄과 KPI 회색 줄에만 둔다(명세 U6)."""
+    official = _compare_hovers(_canvas(dynamic=_dynamic()))
+    assumed = _compare_hovers(_assumed_canvas(80, set(MONTHS), dynamic=_dynamic()))
+
+    disagreeing = [hover for hover in official.values() if "공식은" in hover]
+    assert disagreeing, official
+    assert all("UPEH 가정" not in hover for hover in official.values())
+    named = [hover for hover in assumed.values() if "UPEH 가정" in hover]
+    assert named, assumed
+    assert all("공식은" not in hover and "공식·설비" not in hover for hover in assumed.values())
+    assert any(
+        "UPEH 가정 기준은" in hover or "UPEH 가정·설비 일정 두 기준 모두 부족" in hover
+        for hover in named
+    )
