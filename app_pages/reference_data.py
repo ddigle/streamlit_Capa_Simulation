@@ -435,9 +435,19 @@ with equipment_tab:
 # 만든다(`editor_will_render` — `render_month_editor` 의 조기 반환과 같은 함수: 바깥·안쪽 탭이
 # 모두 보이거나 적용하지 않은 편집이 남았다). 그리지 않는 회차에는 편집기가 양식을 읽지 않고,
 # 붙여넣기·적용도 그 편집기를 그린 회차에만 일어난다.
+# 행 차례는 `현황` 표와 같은 표시순서 범위(기준 정보 › 설비대수)를 따른다 — 다른 편집 탭과 같다.
+# 적용·붙여넣기는 위치가 아니라 `공정` 키로 되돌리므로(`merge_edited_months`·
+# `validate_reference_edit_table`) 차례가 바뀌어도 값은 제 공정에 든다.
 equipment_edit_tables = {
     table_name: (
-        equipment_count_to_edit_table(edit_slices.get_or_stop(table_name), category, value_column)
+        apply_display_order(
+            equipment_count_to_edit_table(
+                edit_slices.get_or_stop(table_name), category, value_column
+            ),
+            display_order,
+            PAGE_REFERENCE,
+            TAB_EQUIPMENT_COUNT,
+        )
         if editor_will_render(equipment_sub_tab, editor_key, equipment_tab)
         else pd.DataFrame()
     )

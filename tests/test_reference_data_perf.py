@@ -739,6 +739,61 @@ def test_each_equipment_form_equals_the_direct_build(sub_tab: str) -> None:
     pd.testing.assert_frame_equal(app.session_state["test_editor_templates"][editor_key], expected)
 
 
+def _descending_equipment_script() -> str:
+    """설비대수 범위에 `공정` 내림차순 규칙 하나를 넣은 두 공정 픽스처."""
+    return TWO_PROCESS_TEST_SCRIPT.replace(
+        "\nactive = {", _EQUIPMENT_DESCENDING + "\nactive = {", 1
+    )
+
+
+@pytest.mark.parametrize("sub_tab", list(EQUIPMENT_EDITORS))
+def test_each_equipment_form_follows_the_display_order(sub_tab: str) -> None:
+    """보유·대여·가용 편집 양식도 `현황` 과 같은 표시순서 범위(기준 정보 › 설비대수)로 줄을 세운다.
+
+    다른 편집 탭(UPEH 등)은 표시순서를 따르는데 이 세 표만 공정 이름순이었다 — 같은 화면의
+    `현황` 표와 차례가 달랐다.
+    """
+    table_name, value_column, editor_key = EQUIPMENT_EDITORS[sub_tab]
+    app = AppTest.from_string(
+        _probed(_descending_equipment_script(), f"test-ref-perf-form-order-{table_name}"),
+        default_timeout=60,
+    )
+    app = _open_equipment(app, sub_tab)
+    template = app.session_state["test_editor_templates"][editor_key]
+    assert template["공정"].tolist() == ["Process-B", "Process-A"]
+    expected = apply_display_order(
+        equipment_count_to_edit_table(_month_slice(app, table_name), sub_tab, value_column),
+        prepare_display_order(EQUIPMENT_DESCENDING_ORDER),
+        scopes.PAGE_REFERENCE,
+        scopes.TAB_EQUIPMENT_COUNT,
+    )
+    pd.testing.assert_frame_equal(template, expected)
+
+
+def test_an_equipment_edit_in_display_order_lands_on_its_process() -> None:
+    """표시순서로 줄이 바뀐 보유 편집표에서 첫 줄을 고쳐 적용하면 그 줄의 공정에 든다."""
+    app = AppTest.from_string(
+        _probed(_descending_equipment_script(), "test-ref-perf-equipment-order-apply"),
+        default_timeout=60,
+    )
+    app = _open_equipment(app, "보유")
+    key = editor_widget_key_in(app, "capa_eqp_own_editor")
+    edit = {"edited_rows": {0: {"202608": 7.0}}, "added_rows": [], "deleted_rows": []}
+    app.session_state[key] = edit
+    app.run()
+    app.session_state[key] = edit
+    next(button for button in app.button if button.key == "capa_eqp_own_editor_apply").click()
+    app.run()
+
+    assert not app.exception
+    assert [error.value for error in app.error] == []
+    saved = app.session_state["test_month_updates"]["RQ_EQP_OWN"]
+    assert dict(zip(saved["공정"], saved["설비보유"], strict=True)) == {
+        "Process-A": 2.0,
+        "Process-B": 7.0,
+    }
+
+
 def test_a_pending_equipment_edit_keeps_its_form_and_lands_on_its_row() -> None:
     """보유 칸을 고친 채 다른 탭으로 옮겨도 보유 양식을 만들고, 돌아와 적용하면 그 행에 든다."""
     app = AppTest.from_string(
