@@ -95,6 +95,7 @@ from capa_simulation.services.securement_cross_check import (
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.shortening_baseline import ShorteningBaseline
 from capa_simulation.services.shortening_progress import compare_progress, progress_export_frame
+from capa_simulation.services.shortening_watch import unit_qual_status
 from capa_simulation.services.space_unit_state import unit_boundaries
 from capa_simulation.services.standard_target_capacity import (
     add_pkg_equivalent_standard_target,
@@ -1403,6 +1404,18 @@ def get_undated_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
     넘겨 한 벌을 함께 쓰고, 범위는 받은 쪽이 좁힌다.
     """
     return undated_equipment(equipment)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def get_unit_qual_status(equipment: pd.DataFrame) -> pd.DataFrame:
+    """설비키마다 Qual 일정·실적·상태·담당자(`services/shortening_watch.unit_qual_status`)를 다시
+    쓴다.
+
+    필요 단축 일정의 이행 지연·진척 카드 담당자가 읽는다. 일정 미정(`get_undated_equipment`)과 같은
+    까닭이다 — 설비 마스터 검증을 거치고 결과가 마스터 내용만으로 정해져(기준일이 없다) 내용 해시가
+    곧 키다. 진척 비교를 고른 회차에만 부른다.
+    """
+    return unit_qual_status(equipment)
 
 
 @st.cache_data(show_spinner=False, max_entries=8)

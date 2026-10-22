@@ -34,6 +34,11 @@ from capa_simulation.services.equipment_contract import (
 )
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.required_shortening import KIND_SHORTENED
+from capa_simulation.services.shortening_baseline import (
+    BASELINE_UNIT_COLUMNS,
+    ShorteningBaselineDraft,
+    normalize_baseline_units,
+)
 from capa_simulation.services.shortening_progress import (
     PROGRESS_EXPORT_COLUMNS,
     PROGRESS_IMPROVED,
@@ -270,4 +275,68 @@ def test_an_unsaved_equipment_edit_does_not_block_saving_a_baseline(tmp_path: Pa
     assert after == before
     assert any(widget.label == "기준선 이름" for widget in app.text_input)
     assert not any("설비 편집" in str(item.value) for item in app.info)
+    clear_equipment_repository()
+
+
+def test_a_past_baseline_target_without_a_finished_qual_is_flagged_as_delayed(
+    tmp_path: Path,
+) -> None:
+    """이행 지연 — 기준선의 목표 Qual 이 지났는데 설비 마스터 Qual 이 끝나지 않은 당긴 호기. 진척
+    보드 아래 목록, 보드의 「이행 지연」 칸, 그 진척 카드 머리·호기 줄의 「지연」 표지가 선다.
+    담당자는 줄 옆 글과 풍선이다."""
+    database_path, master = _saved_database(tmp_path)
+    app = _run(database_path)
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    singles = units.loc[units["구분"].eq(KIND_SHORTENED) & units["모듈 수"].eq("1")]
+    unit, process = str(singles["호기"].iloc[0]), str(singles["공정"].iloc[0])
+    qual = pd.Timestamp(master.loc[master["설비명"].eq(unit), "Qual일정"].iloc[0]).date()
+    today = date.today()
+    target = today - timedelta(days=5)
+    row = dict.fromkeys(BASELINE_UNIT_COLUMNS)
+    row.update(
+        {
+            "목표 확보율(%)": 110,
+            "공정": process,
+            "호기": unit,
+            "구분": KIND_SHORTENED,
+            "설비명": unit,
+            "모듈 수": 1,
+            "환산비": 1.0,
+            "기존 Qual": qual,
+            "목표 Qual": target,
+            "단축일수": max((qual - target).days, 1),
+            "늘어난 환산대수": 0.5,
+            "대상 월": target.year * 100 + target.month,
+            "해소 기여 월": "",
+        }
+    )
+    stored = DuckDBEquipmentRepository(database_path).save_shortening_baseline(
+        ShorteningBaselineDraft(
+            name="지난 기준선",
+            plan_today=today - timedelta(days=30),
+            start_month=target.year * 100 + target.month,
+            end_month=target.year * 100 + target.month,
+            processes=(process,),
+            cutoff_days={process: 10},
+            units=normalize_baseline_units(pd.DataFrame([row])),
+        )
+    )
+    clear_equipment_repository()
+
+    app = _run(database_path)
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    labels = [str(box.label) for box in app.status]
+    assert "이행 지연 1대 — 기준선 목표 Qual 이 지났는데 Qual 미완료" in labels, labels
+    body = _html(app)
+    assert ">지연 1대</span>" in body and ">지연</span>" in body
+    assert "담당 샘플 담당자" in body
+    board = next(
+        frame.value
+        for frame in app.dataframe
+        if "equipment_shortening_board_" in str(frame.proto.id)
+    )
+    assert "기준선 대비" in board.columns and "이행 지연" in board.columns
+    assert int(board["이행 지연"].sum()) == 1
     clear_equipment_repository()

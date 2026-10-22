@@ -629,6 +629,7 @@ def test_the_unit_export_has_the_user_facing_columns_in_order() -> None:
         "층",
         "투자구분",
         "Main 설비",
+        "담당자",
         "설비명",
         "모듈 수",
         "환산비",
@@ -759,7 +760,13 @@ def test_a_single_unit_exports_its_own_master_row() -> None:
                 date(2026, 5, 10),
                 ratio=1.5,
                 arrival=date(2026, 4, 2),
-                attributes={"Model": "DA-9", "동": "C1", "층": "2F", "투자구분": "증설"},
+                attributes={
+                    "Model": "DA-9",
+                    "동": "C1",
+                    "층": "2F",
+                    "투자구분": "증설",
+                    "담당자": "DEMO 담당",
+                },
             )
         ],
         {MAY: 10 + 1.5 * 11 / 31 + 0.3},
@@ -772,6 +779,8 @@ def test_a_single_unit_exports_its_own_master_row() -> None:
     assert unit["환산비"] == pytest.approx(1.5)
     assert (unit["Model"], unit["동"], unit["층"]) == ("DA-9", "C1", "2F")
     assert unit["투자구분"] == "증설"
+    # 설비 마스터 담당자도 「호기별」 CSV 에 실린다(2026-10-22).
+    assert unit["담당자"] == "DEMO 담당"
     assert unit["반입일정"] == "2026-04-02"
     assert unit["Qual상태"] == "계획"
 
@@ -793,6 +802,7 @@ def test_virtual_units_export_blank_master_attributes_and_original_dates() -> No
         "층",
         "투자구분",
         "Main 설비",
+        "담당자",
         "설비명",
         "모듈 수",
         "환산비",

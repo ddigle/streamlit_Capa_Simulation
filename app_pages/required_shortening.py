@@ -2,6 +2,10 @@
 
 """필요 단축 일정(실행 관리 아래, 공정 Capa 상세 다음 — 2026-10-18 사용자 결정).
 
+정체성(2026-10-22 사용자 요청): **단축이 필요한 공정 전부의 진척 관리 한 페이지**다 — 공정 진척
+보드, 기한 임박·이행 지연, 공정 카드. 공정 하나를 깊게 보는 일은 카드의 「공정 Capa 상세에서 근거
+보기」 로 공정 Capa 상세에 넘긴다.
+
 가용설비 현황의 한 탭이던 것을 별도 페이지로 뗐다. 그 탭이 페이지에서 받던 것을 이 페이지가 스스로
 모은다 — 설비 운영 DB 의 저장본 사본·미저장 편집본(`equipment_data_workspace`, 가용설비 현황·Space
 현황과 같은 세션 칸), 샘플 fleet 스위치(같은 공용 칸), 저장된 공정별 Cut-off(가용설비 현황
@@ -71,7 +75,13 @@ def _baseline_refusal(*, sample: bool) -> str | None:
     return None
 
 
-render_page_header("필요 단축 일정")
+# 머리말 한 줄 — 이 화면의 정체성. 공정 Capa 상세 머리말과 짝이다.
+PAGE_DESCRIPTION = (
+    "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 공정 진척 보드 · 기한 임박 · 이행 지연 · "
+    "공정 카드. 공정 하나를 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."
+)
+
+render_page_header("필요 단축 일정", description=PAGE_DESCRIPTION)
 render_page_guide("required_shortening", title="필요 단축 일정")
 notices = st.container()
 
@@ -192,4 +202,6 @@ render_required_shortening_tab(
         else latest_snapshot.revision.revision_no
     ),
     baseline_refusal=_baseline_refusal(sample=using_dashboard_sample),
+    # 공정 Capa 상세는 설비 저장본만 본다 — 샘플 fleet 카드에서는 근거 링크를 숨긴다.
+    link_details=not using_dashboard_sample,
 )

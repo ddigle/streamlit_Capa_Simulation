@@ -39,9 +39,11 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_QUERY_SEEN_KEY,
     PROCESS_DETAIL_QUEUED_KEY,
     PROCESS_DETAIL_REQUEST_KEY,
+    PROCESS_DETAIL_SHORTENING_ORIGIN_KEY,
     HomeCellLink,
     ProcessDetailEntry,
     ProcessDetailRequest,
+    ShorteningOrigin,
     first_home_cell_link,
     first_shortfall_month,
     home_cell_link_values,
@@ -50,6 +52,8 @@ from capa_simulation.process_detail_state import (
     parse_home_cell_link,
     process_steps,
     request_query_params,
+    shortening_band_text,
+    shortening_card_query_params,
 )
 from capa_simulation.services.process_picker import ProcessPickerItem
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -788,3 +792,129 @@ def test_the_picker_summary_is_built_once_per_key() -> None:
     app.run()
     assert len(app.session_state["test_builds"]) == 2
     assert [item.process for item in app.session_state["test_items"]] == ["DEMO-A"]
+
+
+# ------------------------------------------------------------------ 필요 단축 일정 카드에서 들어옴
+
+
+def _card_params(**overrides: Any) -> dict[str, str]:
+    values: dict[str, Any] = {
+        "process": "DEMO-C",
+        "month": 202602,
+        "target": 1.1,
+        "start_month": 202601,
+        "end_month": 202603,
+        "shortened": 2,
+        "new": 1,
+        "theme": "dark",
+    }
+    values.update(overrides)
+    return shortening_card_query_params(**values)
+
+
+def test_the_card_link_carries_the_card_values_and_the_theme() -> None:
+    assert _card_params() == {
+        "process": "DEMO-C",
+        "month": "202602",
+        "from": "shortening",
+        "target": "1.1",
+        "period": "202601-202603",
+        "shortened": "2",
+        "new": "1",
+        "theme": "dark",
+    }
+    # 첫 부족 달이 없으면 달을 싣지 않는다(상세가 그 공정의 기본 달을 연다). 테마도 값이 있을 때만.
+    bare = _card_params(month=None, theme=None)
+    assert "month" not in bare and "theme" not in bare
+
+
+def test_a_card_link_opens_its_process_with_a_band_read_only_from_the_address() -> None:
+    """상세는 주소 인자만 읽는다 — 읽은 키는 모두 지우고 테마는 남긴다. 띠는 그 공정을 보는
+    동안만."""
+    app = AppTest.from_function(_detail_entry_app)
+    app.query_params.update(_card_params())
+    app.run()
+
+    assert not app.exception
+    entry = _entry(app)
+    assert (entry.process, entry.month, entry.source) == ("DEMO-C", 202602, "shortening")
+    assert entry.shortening_origin == ShorteningOrigin(
+        process="DEMO-C",
+        target=1.1,
+        start_month=202601,
+        end_month=202603,
+        shortened=2,
+        new=1,
+    )
+    assert entry.origin is None
+    assert _query(app) == {"theme": ["dark"]}
+
+    # 이 페이지를 이어 도는 회차에는 띠가 남는다.
+    app.session_state[APP_RUN_STATE_KEY] = {"page": app.session_state["test_page_hash"]}
+    app.run()
+    assert _entry(app).shortening_origin is not None
+
+    # 공정을 바꾸면 걷는다.
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A")
+    app.run()
+    assert _entry(app).shortening_origin is None
+    assert PROCESS_DETAIL_SHORTENING_ORIGIN_KEY not in app.session_state
+
+
+def test_a_card_band_is_dropped_by_another_route_or_a_new_visit() -> None:
+    app = AppTest.from_function(_detail_entry_app)
+    app.query_params.update(_card_params())
+    app.run()
+    assert _entry(app).shortening_origin is not None
+
+    # HOME 칸으로 들어오면 그 출처가 이긴다.
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-C", month=202603
+    )
+    app.run()
+    assert _entry(app).shortening_origin is None and _entry(app).origin is not None
+
+    # 다른 화면에 다녀오면 새 방문이다.
+    app.query_params.update(_card_params())
+    app.run()
+    assert _entry(app).shortening_origin is not None
+    app.session_state[APP_RUN_STATE_KEY] = {"page": "다른 화면"}
+    app.run()
+    assert _entry(app).shortening_origin is None
+
+
+def test_unreadable_card_values_are_left_out_of_the_band() -> None:
+    app = AppTest.from_function(_detail_entry_app)
+    app.query_params.update(
+        {
+            "process": "DEMO-C",
+            "from": "shortening",
+            "target": "lots",
+            "period": "202603-202601",
+            "shortened": "-1",
+            "new": "1.5",
+        }
+    )
+    app.run()
+
+    origin = _entry(app).shortening_origin
+    assert origin == ShorteningOrigin(process="DEMO-C")
+    assert shortening_band_text(origin) == (
+        "필요 단축 일정 카드에서 열었습니다 · 이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 "
+        "수 있습니다"
+    )
+    # `from` 이 다른 길이면 카드 값이 있어도 카드 띠가 아니다.
+    other = AppTest.from_function(_detail_entry_app)
+    other.query_params.update({**_card_params(theme=None), "from": "gap"})
+    other.run()
+    assert _entry(other).shortening_origin is None
+
+
+def test_the_card_band_names_the_card_target_period_and_counts() -> None:
+    origin = ShorteningOrigin(
+        process="DEMO-C", target=1.1, start_month=202601, end_month=202612, shortened=3, new=1
+    )
+    assert shortening_band_text(origin) == (
+        "필요 단축 일정 카드(목표 110%(1.10) · 기간 26.01–26.12)에서 열었습니다 · 이 화면은 "
+        "확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다 · 그 카드: 단축 3대 · 신규 1대"
+    )

@@ -16,8 +16,11 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
   클릭(`StreamlitPageNotFoundError`)도 칸을 남기지 않는다.
 - **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `from` 은 들어온
   길이다 — `home`·`gap`(가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로
-  보기」)·`shortening`(필요 단축 일정 공정 카드). 들어온 회차에는 그 길이 가리키는 구획을 다시
-  편다(`ProcessDetailEntry.source`). `st.switch_page` 는 주소를 **통째로** 바꾸므로 테마
+  보기」)·`shortening`(필요 단축 일정 공정 카드의 「공정 Capa 상세에서 근거 보기」). 들어온 회차에는
+  그 길이 가리키는 구획을 다시 편다(`ProcessDetailEntry.source`). 필요 단축 일정 카드는 그 카드의
+  목표·기간·단축/신규 대수(`target`·`period`·`shortened`·`new`)도 싣는다 — 상세는 **이 주소 인자만**
+  읽어 출처 띠를 낸다(`ShorteningOrigin`, `shortening_band_text`). 필요 단축 일정의 세션 칸·공용
+  프로필은 읽지 않는다. `st.switch_page` 는 주소를 **통째로** 바꾸므로 테마
   인자(`theme`)는 지금 값을 함께 싣는다. 받는 쪽은 읽은 키만 지운다 —
   `st.query_params.clear()` 는 테마 인자까지 지워 테마 스크립트가 첫 방문으로 보고 다시 새로고침한다
   (Space `?floor=` 와 같은 규칙). 지우는 것은 한 번의 갱신이다(`from_dict` 에 남길 인자를 다시
@@ -52,6 +55,7 @@ from capa_simulation.home_state import (
 )
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import prune_choice
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_picker import ProcessPickerItem
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.sidebar_status import APP_RUN_STATE_KEY
@@ -94,10 +98,27 @@ PROCESS_DETAIL_QUERY_SEEN_KEY = "process_detail_query_seen"
 # 그대로라 가로 스크롤바가 사용자가 옮겨 둔 위치를 그 달로 되돌리지 않는다.
 PROCESS_DETAIL_SCROLL_ANCHOR_KEY = "process_detail_scroll_anchor"
 
+# 필요 단축 일정 카드에서 들어온 방문의 출처 띠가 읽는 그 카드의 값(`ShorteningOrigin`). 그 공정을
+# 보는 동안만 있다 — HOME 출처(`PROCESS_DETAIL_ORIGIN_KEY`)와 같은 규칙.
+PROCESS_DETAIL_SHORTENING_ORIGIN_KEY = "process_detail_shortening_origin"
+
 PROCESS_PARAM = "process"
 MONTH_PARAM = "month"
 FROM_PARAM = "from"
-DETAIL_QUERY_PARAMS = (PROCESS_PARAM, MONTH_PARAM, FROM_PARAM)
+# 필요 단축 일정 카드가 함께 싣는 그 카드의 목표(비율, 1.1)·기간(`YYYYMM-YYYYMM`)·단축/신규 대수.
+TARGET_PARAM = "target"
+PERIOD_PARAM = "period"
+SHORTENED_PARAM = "shortened"
+NEW_PARAM = "new"
+DETAIL_QUERY_PARAMS = (
+    PROCESS_PARAM,
+    MONTH_PARAM,
+    FROM_PARAM,
+    TARGET_PARAM,
+    PERIOD_PARAM,
+    SHORTENED_PARAM,
+    NEW_PARAM,
+)
 FROM_HOME = "home"
 # 가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로 보기」 링크와 필요 단축 일정 공정
 # 카드 링크가 싣는 `from` 값.
@@ -158,6 +179,22 @@ class ProcessDetailRequest:
 
 
 @dataclass(frozen=True)
+class ShorteningOrigin:
+    """필요 단축 일정 공정 카드에서 들어온 방문 — **주소 인자로 받은** 그 카드의 값만 든다.
+
+    목표는 비율(1.1 = 110%), 기간은 그 카드의 조회 달(시작·끝 `YYYYMM`), 대수는 그 카드의 단축 호기·
+    신규(추가N) 대수다. 인자가 없거나 읽을 수 없는 칸은 None 이고 띠에서 뺀다.
+    """
+
+    process: str
+    target: float | None = None
+    start_month: int | None = None
+    end_month: int | None = None
+    shortened: int | None = None
+    new: int | None = None
+
+
+@dataclass(frozen=True)
 class ProcessDetailEntry:
     """페이지 첫머리에서 정한 공정·달과 출처."""
 
@@ -174,6 +211,9 @@ class ProcessDetailEntry:
     # 밖에서 들어온 회차(전달 칸·주소)의 길 — HOME 전달 칸이면 `FROM_HOME`, 주소면 `from` 값(없으면
     # 빈 글자). 들어온 회차가 아니면 None 이다. 페이지가 그 길이 가리키는 구획을 다시 편다.
     source: str | None = None
+    # 필요 단축 일정 카드 출처 띠의 근거. 그 카드 링크로 들어온 방문 동안, 그 공정을 보는 동안만
+    # 있다.
+    shortening_origin: ShorteningOrigin | None = None
 
 
 def _finite(value: object) -> float | None:
@@ -314,6 +354,72 @@ def request_query_params(request: ProcessDetailRequest, *, theme: str | None) ->
     if theme:
         params[THEME_QUERY_PARAM] = theme
     return params
+
+
+def _count(value: object) -> int | None:
+    """0 이상의 정수 글. 아니면 None."""
+    number = _finite(value)
+    if number is None or not number.is_integer() or number < 0:
+        return None
+    return int(number)
+
+
+def _target(value: object) -> float | None:
+    """목표 비율 글(`1.1`). 0 보다 크고 5 이하만 받는다 — 아니면 None."""
+    number = _finite(value)
+    return number if number is not None and 0 < number <= 5 else None
+
+
+def _period(value: object) -> tuple[int | None, int | None]:
+    """`YYYYMM-YYYYMM` 글. 읽을 수 없거나 차례가 거꾸로면 (None, None)."""
+    if not isinstance(value, str) or "-" not in value:
+        return None, None
+    start, end = (_month(part.strip()) for part in value.split("-", 1))
+    if start is None or end is None or start > end:
+        return None, None
+    return start, end
+
+
+def shortening_card_query_params(
+    *,
+    process: str,
+    month: int | None,
+    target: float,
+    start_month: int,
+    end_month: int,
+    shortened: int,
+    new: int,
+    theme: str | None,
+) -> dict[str, str]:
+    """필요 단축 일정 공정 카드의 「공정 Capa 상세에서 근거 보기」 링크 주소 인자.
+
+    달은 그 카드의 첫 부족 달(없으면 싣지 않는다 — 상세가 그 공정의 기본 달을 연다), 목표는 비율
+    글, 기간은 `YYYYMM-YYYYMM` 이다. 테마는 값이 있을 때만 싣는다(`request_query_params` 와 같은
+    까닭 — 링크는 주소를 통째로 바꾼다).
+    """
+    params = {PROCESS_PARAM: str(process)}
+    if month is not None:
+        params[MONTH_PARAM] = str(int(month))
+    params[FROM_PARAM] = FROM_SHORTENING
+    params[TARGET_PARAM] = f"{float(target):g}"
+    params[PERIOD_PARAM] = f"{int(start_month)}-{int(end_month)}"
+    params[SHORTENED_PARAM] = str(int(shortened))
+    params[NEW_PARAM] = str(int(new))
+    if theme:
+        params[THEME_QUERY_PARAM] = theme
+    return params
+
+
+def _shortening_origin(process: str, values: Mapping[str, str]) -> ShorteningOrigin:
+    start, end = _period(values.get(PERIOD_PARAM))
+    return ShorteningOrigin(
+        process=process,
+        target=_target(values.get(TARGET_PARAM)),
+        start_month=start,
+        end_month=end,
+        shortened=_count(values.get(SHORTENED_PARAM)),
+        new=_count(values.get(NEW_PARAM)),
+    )
 
 
 def open_process_detail(request: ProcessDetailRequest) -> None:
@@ -464,6 +570,7 @@ def resolve_process_and_month(
     wanted_month: int | None = None
     entered = False
     source: str | None = None
+    arrived_from_card: ShorteningOrigin | None = None
     if request is not None:
         wanted_process, wanted_month, entered = request.process, request.month, True
         source = request.source
@@ -474,6 +581,8 @@ def resolve_process_and_month(
         entered = wanted_process is not None or wanted_month is not None
         if entered:
             source = values.get(FROM_PARAM, "").strip()
+        if source == FROM_SHORTENING and wanted_process is not None:
+            arrived_from_card = _shortening_origin(wanted_process, values)
     if query:
         st.session_state[PROCESS_DETAIL_QUERY_SEEN_KEY] = query
         # 키마다 지우면 주소 메시지가 키 수만큼 가고, 브라우저가 메시지마다 기록을 하나씩 쌓아
@@ -551,6 +660,16 @@ def resolve_process_and_month(
     if not isinstance(origin, ProcessDetailRequest) or origin.process != process:
         st.session_state.pop(PROCESS_DETAIL_ORIGIN_KEY, None)
         origin = None
+    # 필요 단축 일정 카드 출처도 같은 규칙 — 그 링크로 들어온 회차에 적고, 새 방문·다른 길로 들어옴·
+    # 다른 공정이면 걷는다.
+    if arrived_from_card is not None:
+        st.session_state[PROCESS_DETAIL_SHORTENING_ORIGIN_KEY] = arrived_from_card
+    elif not continues or entered:
+        st.session_state.pop(PROCESS_DETAIL_SHORTENING_ORIGIN_KEY, None)
+    card_origin = st.session_state.get(PROCESS_DETAIL_SHORTENING_ORIGIN_KEY)
+    if not isinstance(card_origin, ShorteningOrigin) or card_origin.process != process:
+        st.session_state.pop(PROCESS_DETAIL_SHORTENING_ORIGIN_KEY, None)
+        card_origin = None
     return ProcessDetailEntry(
         process=process,
         month=month,
@@ -559,6 +678,7 @@ def resolve_process_and_month(
         month_outside=month_outside,
         scroll_month=scroll_month,
         source=source,
+        shortening_origin=card_origin,
     )
 
 
@@ -670,3 +790,28 @@ def origin_band_text(origin: ProcessDetailRequest, *, month_text: str) -> str:
     if origin.show_advance:
         formula += " (선행 B/O 반영)"
     return f"{head} · {formula} · 아래는 원 확보율"
+
+
+def _target_text(target: float) -> str:
+    return f"{round(target * 100)}%({target:.2f})"
+
+
+def shortening_band_text(origin: ShorteningOrigin) -> str:
+    """필요 단축 일정 카드 출처 띠 한 줄 — 주소 인자로 받은 그 카드의 값만 적는다.
+
+    두 화면의 단축 정의는 다르다(이 화면은 HOME 확보기준 월별·`RQ_REQB` 기간, 필요 단축 일정은 그
+    카드의 목표 스칼라·조건 카드 기간 — 2026-10-22 맞추지 않기로). 그래서 그 카드의 대수를 그대로
+    옮겨 적고 이 화면의 대수와 다를 수 있다고 먼저 밝힌다. 예: 「필요 단축 일정 카드(목표 110%(1.10)
+    · 기간 26.01–26.12)에서 열었습니다 · 이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수
+    있습니다 · 그 카드: 단축 3대 · 신규 1대」.
+    """
+    card: list[str] = []
+    if origin.target is not None:
+        card.append(f"목표 {_target_text(origin.target)}")
+    if origin.start_month is not None and origin.end_month is not None:
+        card.append(f"기간 {month_label(origin.start_month)}–{month_label(origin.end_month)}")
+    head = "필요 단축 일정 카드" + (f"({' · '.join(card)})" if card else "") + "에서 열었습니다"
+    parts = [head, "이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다"]
+    if origin.shortened is not None and origin.new is not None:
+        parts.append(f"그 카드: 단축 {origin.shortened}대 · 신규 {origin.new}대")
+    return " · ".join(parts)

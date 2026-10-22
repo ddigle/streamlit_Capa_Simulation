@@ -34,6 +34,11 @@
 `_Plan.assumed` 로더로 그 보기를 고른 회차에만 꺼낸다(가정 칸 캐시 — 목표만 바꾼 프래그먼트 회차는
 다시 계산하지 않는다). 가정이 켜진 동안 기준선 저장은 거절한다.
 
+**진척 관리**(2026-10-22 「단축이 필요한 공정 전부의 진척 관리 한 페이지」)는 `shortening_board` 다
+— KPI 아래·카드 위의 공정 진척 보드(줄을 고르면 그 카드 강조)·카드 차례·기한 임박·이행 지연,
+카드마다 「공정 Capa 상세에서 근거 보기」(샘플 fleet 이면 숨김). 공정 Capa 상세에서 옮겨 온 공정은
+**강조 공정**(세션 칸)으로 카드 맨 앞에 선다 — 공정 필터(공용 프로필 0019 의 세션 칸)는 심지 않는다.
+
 화면은 HOME 「Capa LOB Summary」 결의 HTML 이다(`st.html`). 색은 모두 `design/tokens` 에서 실행마다
 읽어 밝은·어두운 테마를 따른다. 상태색(`STATUS_*`)은 면색이라 그 위 글자는 `TEXT` 다. 호기·공정
 이름은 사용자가 적은 글이라 모두 이스케이프한다.
@@ -42,7 +47,7 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -56,6 +61,15 @@ import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.shortening_board import (
+    ShorteningHighlight,
+    current_highlight,
+    highlight_badge,
+    highlight_first,
+    render_detail_link,
+    render_highlight_notice,
+    render_progress_board,
+)
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     BaselineSaveContext,
@@ -131,6 +145,10 @@ from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
     absent_filter_processes,
     seeded_filter_month,
+)
+from capa_simulation.services.shortening_watch import (
+    delayed_units,
+    unit_managers,
 )
 from capa_simulation.services.undated_equipment import (
     undated_candidate_note,
@@ -265,6 +283,7 @@ def render_required_shortening_tab(
     equipment_revision_id: str | None = None,
     equipment_revision_no: int | None = None,
     baseline_refusal: str | None = None,
+    link_details: bool = True,
 ) -> None:
     """필요 단축 일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
 
@@ -282,7 +301,9 @@ def render_required_shortening_tab(
     `equipment_database_path` 는 공용 조회 조건 프로필과 진척 비교 기준선이 사는 설비 DB 다. 없으면
     (컴포넌트를 홀로 띄우는 자리) 조건은 세션 값뿐이고 진척 비교 상자·기준선 저장을 세우지 않는다.
     `equipment_revision_id`·`equipment_revision_no` 는 화면의 호기가 나온 저장 리비전(기준선 머리에
-    남긴다), `baseline_refusal` 은 기준선을 저장하지 않을 까닭(샘플 fleet)이다.
+    남긴다), `baseline_refusal` 은 기준선을 저장하지 않을 까닭(샘플 fleet)이다. `link_details` 가
+    거짓이면(샘플 fleet) 공정 카드의 「공정 Capa 상세에서 근거 보기」 를 숨긴다 — 상세는 설비
+    저장본만 본다.
 
     **둘로 나눠 그린다.** 조건 카드(시작 월·끝 월·공정)와 계획(`get_required_shortening`)은 이
     함수가 앱 전체 회차에서 먼저 끝내고(`_prepare`), 머리(`진척 비교`·`목표 확보율`)와 본문(KPI·LOB·
@@ -322,6 +343,7 @@ def render_required_shortening_tab(
             database_path=equipment_database_path,
             revision=(equipment_revision_id, equipment_revision_no),
             refusal=baseline_refusal,
+            link_details=link_details,
         )
 
 
@@ -456,6 +478,7 @@ def _render_view(
     database_path: str | None,
     revision: tuple[str | None, int | None],
     refusal: str | None,
+    link_details: bool = True,
 ) -> None:
     """머리(`진척 비교`·`목표 확보율`)와 본문 — 프래그먼트다.
 
@@ -486,6 +509,7 @@ def _render_view(
         database_path=database_path,
         revision=revision,
         refusal=refusal,
+        link_details=link_details,
     )
 
 
@@ -509,8 +533,14 @@ def _render_body(
     database_path: str | None,
     revision: tuple[str | None, int | None],
     refusal: str | None,
+    link_details: bool = True,
 ) -> None:
-    """고른 목표의 KPI·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교, 또는 UPEH 가정 비교."""
+    """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교, 또는 UPEH 가정
+    비교.
+
+    강조 공정(`shortening_board.current_highlight` — 공정 Capa 상세에서 옮겨 왔거나 보드 줄을
+    골랐다)은 세 보기 모두 카드 맨 앞이다. 공정 필터(조건 카드)는 건드리지 않는다.
+    """
     plan, months, labels = prepared.plan, list(prepared.months), prepared.labels
     ordered, selected = list(prepared.ordered), list(prepared.selected)
     level_plan = plan.at(level)
@@ -538,6 +568,7 @@ def _render_body(
         refusal=refusal,
         assumption=prepared.assumption,
     )
+    highlight = current_highlight()
     compared = load_selected_baseline(database_path, compare_id)
     if compared is not None:
         if prepared.assumption_active and prepared.assumption is not None:
@@ -555,13 +586,21 @@ def _render_body(
             selected=bool(selected),
             labels=labels,
             save=save,
+            equipment=equipment,
+            highlight=highlight,
+            link_details=link_details,
         )
         return
 
     thresholds = _thresholds()
     if upeh_view and prepared.assumed is not None:
         _render_assumption_compare(
-            prepared, level=level, scope=scope, selected=bool(selected), thresholds=thresholds
+            prepared,
+            level=level,
+            scope=scope,
+            selected=bool(selected),
+            thresholds=thresholds,
+            highlight=highlight,
         )
         return
     if prepared.assumption_active and prepared.assumption is not None:
@@ -584,6 +623,16 @@ def _render_body(
         months,
         extra=lambda: render_baseline_controls(save, None),
     )
+    managers = unit_managers(plan.unit_master)
+    order = render_progress_board(
+        level_plan,
+        shown,
+        scope=scope,
+        labels=labels,
+        today=plan.today,
+        months=months,
+        managers=managers,
+    )
     st.html(
         _lob_markup(
             months,
@@ -605,20 +654,47 @@ def _render_body(
             "다른 목표를 고르거나 조건 카드에서 공정을 골라 보세요.",
             icon=":material/check_circle:",
         )
-        return
-    for process in shown:
-        st.html(
-            _card_markup(
-                process,
-                labels.label(process),
-                plan.cutoff_days.get(process, 0),
-                level_plan,
-                months,
-                level,
-                thresholds,
-                plan.today,
+    for process in _card_order(order, highlight, plan=plan, scope=scope, labels=labels):
+        focus = highlight if highlight is not None and highlight.process == process else None
+        with st.container(gap="xsmall"):
+            st.html(
+                _card_markup(
+                    process,
+                    labels.label(process),
+                    plan.cutoff_days.get(process, 0),
+                    level_plan,
+                    months,
+                    level,
+                    thresholds,
+                    plan.today,
+                    highlight=highlight_badge(focus) if focus is not None else None,
+                    managers=managers,
+                )
             )
-        )
+            if link_details:
+                render_detail_link(level_plan, process, level=level, months=months)
+
+
+def _card_order(
+    order: Sequence[str],
+    highlight: ShorteningHighlight | None,
+    *,
+    plan: ShorteningPlan,
+    scope: Sequence[str],
+    labels: ProcessLabels,
+) -> list[str]:
+    """카드로 세울 공정 차례 — 강조 공정이 맨 앞이다(보이는 범위 밖이어도 맞댄 공정이면 선다).
+
+    강조가 있으면 그 안내 줄(공용 설정 밖·맞대지 못함과 「강조 끄기」)을 여기서 먼저 그린다.
+    """
+    if highlight is None:
+        return list(order)
+    matched = highlight.process in set(plan.processes)
+    render_highlight_notice(
+        highlight, labels=labels, matched=matched, in_scope=highlight.process in set(scope)
+    )
+    ranked = highlight_first(order, highlight)
+    return ranked if matched else ranked[1:]
 
 
 def _render_scenario_error(reason: str | None) -> None:
@@ -1005,11 +1081,16 @@ def _render_progress(
     selected: bool,
     labels: ProcessLabels,
     save: BaselineSaveContext | None,
+    equipment: pd.DataFrame | None = None,
+    highlight: ShorteningHighlight | None = None,
+    link_details: bool = True,
 ) -> None:
-    """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 카드(호기마다 두 줄).
+    """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 진척 보드(기준선 대비·이행 지연) →
+    공정 카드(호기마다 두 줄).
 
     짝짓기는 계획 키 + 기준선 id + 목표로 캐시한다(`get_shortening_progress`) — 공정 선택만 바꾼
     rerun 은 다시 짝짓지 않는다. 계획·LOB 요약은 그리지 않는다(`비교 안 함` 으로 돌아가면 그대로다).
+    이행 지연은 지금 설비 마스터(`equipment` — 계산과 같은 저장본 사본)의 Qual 실적·상태로 낸다.
     """
     key, plan = keyed
     rows = simulation_cache.shortening_progress(keyed, baseline, float(level))
@@ -1031,22 +1112,51 @@ def _render_progress(
     )
     if note is not None:
         st.caption(note)
+    level_plan = plan.at(level)
+    status = (
+        simulation_cache.get_unit_qual_status(equipment)
+        if equipment is not None and not equipment.empty
+        else pd.DataFrame()
+    )
+    delayed = delayed_units(view.rows, status, today=plan.today, processes=scope)
+    managers = unit_managers(plan.unit_master, status)
+    order = render_progress_board(
+        level_plan,
+        view.cards,
+        scope=scope,
+        labels=labels,
+        today=plan.today,
+        months=months,
+        managers=managers,
+        progress_rows=view.rows,
+        delayed=delayed,
+    )
     if not view.cards and not view.outside:
         st.success(
             f"목표 {_percent(level)} 에서 기준선과 지금 모두 단축할 호기가 없습니다.",
             icon=":material/check_circle:",
         )
-        return
-    for process in view.cards:
-        st.html(
-            progress_card_markup(
-                process,
-                labels.label(process),
-                plan.cutoff_days.get(process),
-                view,
-                today=plan.today,
+    late = {
+        str(process): frozenset(str(unit) for unit in units)
+        for process, units in (delayed.groupby("공정")["호기"] if not delayed.empty else ())
+    }
+    for process in _card_order(order, highlight, plan=plan, scope=scope, labels=labels):
+        focus = highlight if highlight is not None and highlight.process == process else None
+        with st.container(gap="xsmall"):
+            st.html(
+                progress_card_markup(
+                    process,
+                    labels.label(process),
+                    plan.cutoff_days.get(process),
+                    view,
+                    today=plan.today,
+                    delayed=late.get(process, frozenset()),
+                    managers=managers,
+                    highlight=highlight_badge(focus) if focus is not None else None,
+                )
             )
-        )
+            if link_details:
+                render_detail_link(level_plan, process, level=level, months=months)
     for process in view.outside:
         st.html(
             progress_card_markup(
@@ -1074,8 +1184,11 @@ def _render_assumption_compare(
     scope: Sequence[str],
     selected: bool,
     thresholds: SecurementThresholds,
+    highlight: ShorteningHighlight | None = None,
 ) -> None:
     """「UPEH 가정 비교」 보기 — 효과 타일·한 줄, 역산, 공정마다 공식→가정 표·CSV, 가정 계획 카드.
+
+    강조 공정은 카드 맨 앞에 선다(표·CSV 차례는 그대로).
 
     보이는 공정은 공정을 골랐으면 그 공정, 아니면 **공식 부족 ∪ 가정 부족** 이다 — 가정으로 부족이
     풀린 공정이 사라지면 효과가 보이지 않는다(「가정으로 해소」 표지). 이 화면의 단축 정의(목표
@@ -1194,7 +1307,7 @@ def _render_assumption_compare(
             label="가정 계획 호기별 CSV",
         )
     official_units = official_level.units
-    for process in shown:
+    for process in _card_order(shown, highlight, plan=prepared.plan, scope=scope, labels=labels):
         process_counts = plan_counts(official_units, official_level.process_months, [process])
         assumed_process = plan_counts(assumed_level.units, assumed_level.process_months, [process])
         inverse = percent_to_clear_target(
@@ -1203,6 +1316,7 @@ def _render_assumption_compare(
             skip_states=(STATUS_EXPIRED,),
         )
         badges: list[tuple[str, str]] = []
+        focus = highlight if highlight is not None and highlight.process == process else None
         if process in official_short and process not in assumed_short:
             badges.append((_RESOLVED, tokens.STATUS_SECURE))
         badges.append(
@@ -1224,6 +1338,7 @@ def _render_assumption_compare(
                 thresholds,
                 prepared.plan.today,
                 extra_badges=tuple(badges),
+                highlight=highlight_badge(focus) if focus is not None else None,
             )
         )
 
@@ -1673,11 +1788,14 @@ def _card_markup(
     today: date,
     *,
     extra_badges: Sequence[tuple[str, str]] = (),
+    highlight: str | None = None,
+    managers: Mapping[str, str] | None = None,
 ) -> str:
     """공정 카드 하나. 고르기는 원본 `process` 로, 제목·`aria-label` 은 `display_name`(공정
     표시명)으로 한다 — 표시명이 원본과 다르면 제목 풍선에 원본을 남긴다(CSV `공정` 칸은 원본이다).
     `extra_badges` 는 머리 오른쪽에 더 붙일 (글, 면색) — UPEH 가정 비교의 「가정으로
-    해소」·공식→가정 줄.
+    해소」·공식→가정 줄. `highlight` 는 강조 공정 배지 글(테두리를 강조색으로), `managers` 는
+    호기 → 담당자(호기 줄 풍선).
     """
     frame = level_plan.process_months
     rows = frame.loc[frame["공정"].eq(process) & frame["생산계획년월"].isin(list(months))]
@@ -1698,27 +1816,40 @@ def _card_markup(
         badge = (
             f'<span class="shk-badge" style="background:{tokens.STATUS_SECURE}">목표 충족</span>'
         )
-    if extra_badges:
+    badges = list(extra_badges)
+    if highlight is not None:
+        badges.insert(0, (highlight, tokens.SURFACE_SUBTLE))
+    if badges:
         badge = (
             '<span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
             + badge
             + "".join(
                 f'<span class="shk-badge" style="background:{color}">{_escape(text)}</span>'
-                for text, color in extra_badges
+                for text, color in badges
             )
             + "</span>"
         )
     table = _card_table(by_month, months, level, thresholds)
-    timeline = _units_markup(units, months, today=today, short=worst < 0)
+    timeline = _units_markup(units, months, today=today, short=worst < 0, managers=managers)
     name = _escape(display_name)
     original = f' title="원본 공정명 {_escape(process)}"' if display_name != process else ""
     return (
-        f'<section class="shk-card" aria-label="{name}">'
+        f'<section class="shk-card" aria-label="{name}"{_focus_attributes(highlight)}>'
         '<div class="shk-card-head"><div>'
         f'<span class="shk-card-name"{original}>{name}</span>'
         f'<span class="shk-card-cutoff">Cut-off {cutoff_days}일</span></div>{badge}</div>'
         f'<div class="shk-card-body shk-scroll">{table}</div>{timeline}</section>'
     )
+
+
+def _focus_attributes(highlight: str | None) -> str:
+    """강조 카드의 속성 — 테두리를 강조색 두 줄 굵기로. 강조가 아니면 빈 글.
+
+    클래스는 그대로 `shk-card` 다(화면 확인·시험이 카드를 그 글자로 찾는다).
+    """
+    if highlight is None:
+        return ""
+    return f' data-highlight="{_escape(highlight)}" style="border:2px solid {tokens.ACCENT}"'
 
 
 def _card_table(
@@ -1777,6 +1908,7 @@ def _units_markup(
     *,
     today: date,
     short: bool,
+    managers: Mapping[str, str] | None = None,
 ) -> str:
     if not months:
         return ""
@@ -1811,7 +1943,13 @@ def _units_markup(
     ]
     for row in units.to_dict("records"):
         rows.append(
-            _unit_row({str(k): v for k, v in row.items()}, axis, lines + today_mark, today=today)
+            _unit_row(
+                {str(k): v for k, v in row.items()},
+                axis,
+                lines + today_mark,
+                today=today,
+                manager=(managers or {}).get(str(row["호기"])),
+            )
         )
     return (
         f'<div class="shk-units">{legend}<div class="shk-scroll"><div style="min-width:'
@@ -1820,12 +1958,19 @@ def _units_markup(
     )
 
 
-def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str, *, today: date) -> str:
+def _unit_row(
+    row: dict[str, object],
+    axis: tuple[date, date],
+    lines: str,
+    *,
+    today: date,
+    manager: str | None = None,
+) -> str:
     """호기 하나를 **한 줄**로 — 이름과 「기존 MM.DD → 단축 MM.DD」, 타임라인, 「−N일」.
 
     가상 호기 「추가N」은 이름과 「필요 MM.DD」, 타임라인, 「신규」 다(2026-10-07 사용자 요청).
-    기여 시작일·늘어난 환산대수·모듈 수·해소 기여 월은 줄에서 걷고 줄의 풍선(`title`)에 연도까지
-    남긴다 — CSV 는 모든 칸을 그대로 낸다.
+    기여 시작일·늘어난 환산대수·모듈 수·해소 기여 월·담당자(설비 마스터)는 줄에서 걷고 줄의
+    풍선(`title`)에 연도까지 남긴다 — CSV 는 모든 칸을 그대로 낸다.
     """
     name = _escape(row["호기"])
     target = row["목표 Qual"]
@@ -1877,6 +2022,7 @@ def _unit_row(row: dict[str, object], axis: tuple[date, date], lines: str, *, to
         f"늘어난 환산대수 {gain}",
         *([f"모듈 {modules}"] if modules > 1 else []),
         f"해소 기여 월 {row['해소 기여 월'] or '-'}",
+        *([f"담당자 {manager}"] if manager else []),
     ]
     return (
         f'<div class="shk-unit" title="{_escape(" · ".join(details))}">'

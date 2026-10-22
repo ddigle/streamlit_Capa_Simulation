@@ -74,6 +74,7 @@ HASHED_FRAME_ARGUMENTS = frozenset(
         # 설비 마스터 한 벌(호기 수 규모).
         (SIMULATION_CACHE, "get_undated_equipment", "equipment"),
         (SIMULATION_CACHE, "get_usage_excluded_equipment", "equipment"),
+        (SIMULATION_CACHE, "get_unit_qual_status", "equipment"),
     }
 )
 

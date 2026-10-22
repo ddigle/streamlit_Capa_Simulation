@@ -30,6 +30,12 @@ from capa_simulation.components.required_shortening_panel import (
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.components.shortening_board import (
+    BOARD_ORDER_KEY,
+    HIGHLIGHT_FROM_DETAIL,
+    HIGHLIGHT_OFF_KEY,
+    SHORTENING_HIGHLIGHT_KEY,
+)
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
@@ -46,6 +52,7 @@ from capa_simulation.services.required_shortening import (
     UNIT_EXPORT_COLUMNS,
 )
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
+from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
     UPEH_ASSUMPTION_PERCENT_KEY,
@@ -953,3 +960,134 @@ def test_at_100_percent_the_comparison_toggle_cannot_be_used(tmp_path: Path) -> 
 
 def _dash(month: int) -> str:
     return f"{month // 100 % 100:02d}-{month % 100:02d}"
+
+
+# ------------------------------------------------------- 진척 관리 한 페이지(2026-10-22)
+
+DETAIL_LINK_FALLBACK = "사이드바에서 공정 Capa 상세에서 근거 보기"
+
+
+def _captions(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.caption]
+
+
+def _board(app: AppTest) -> pd.DataFrame:
+    boards = [
+        frame
+        for frame in app.dataframe
+        if str(frame.proto.id).split("-", 2)[-1].startswith("equipment_shortening_board_")
+    ]
+    assert len(boards) == 1, [str(frame.proto.id) for frame in app.dataframe]
+    value = boards[0].value
+    assert isinstance(value, pd.DataFrame)
+    return value
+
+
+def _highlighted(database_path: Path, process: str) -> AppTest:
+    app = AppTest.from_string(_script(database_path), default_timeout=120)
+    app.session_state[SHORTENING_HIGHLIGHT_KEY] = (process, HIGHLIGHT_FROM_DETAIL)
+    return app.run()
+
+
+def test_the_page_states_its_identity_and_draws_the_progress_board(tmp_path: Path) -> None:
+    """머리말은 이 화면의 정체성, KPI 아래·카드 위에 공정 진척 보드(카드와 같은 공정·차례)와 기한
+    임박, 이행 지연 안내가 선다. 샘플 fleet 에서는 상세 근거 링크를 숨긴다(상세는 저장본만 본다)."""
+    app = _run(_database(tmp_path))
+
+    assert not app.exception, [element.message for element in app.exception]
+    captions = _captions(app)
+    assert any("단축이 필요한 공정 전부의 진척 관리 한 페이지" in text for text in captions)
+    assert "**공정 진척 보드**" in [str(item.value) for item in app.markdown]
+    board = _board(app)
+    cards = _cards(app)
+    assert list(board["공정"]) == cards and cards
+    assert "기준선 대비" not in board.columns
+    assert {"첫 부족 달", "월 최대 부족", "당길 호기", "가장 이른 목표 Qual"} <= set(board.columns)
+    assert app.selectbox(key=BOARD_ORDER_KEY).label == "카드 차례"
+    assert any(widget.label == "기한 임박(일)" for widget in app.number_input)
+    # 아이콘을 단 접는 상자는 AppTest 에서 `status` 로 잡힌다.
+    assert any(str(box.label).startswith("기한 임박 ") for box in app.status)
+    assert any("이행 지연은 「진척 비교」 에서 기준선을 고르면" in text for text in captions)
+    assert DETAIL_LINK_FALLBACK not in captions
+    clear_equipment_repository()
+
+
+def test_the_card_order_follows_the_board_order(tmp_path: Path) -> None:
+    app = _run(_database(tmp_path))
+    app = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
+    app = app.selectbox(key=BOARD_ORDER_KEY).set_value(ORDER_LARGEST_GAP).run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    board = _board(app)
+    gaps = [float(value) for value in board["월 최대 부족"]]
+    assert gaps == sorted(gaps, reverse=True)
+    assert list(board["공정"]) == _cards(app)
+    clear_equipment_repository()
+
+
+def test_a_highlight_from_the_detail_page_tops_the_cards_without_writing_the_shared_filter(
+    tmp_path: Path,
+) -> None:
+    """공정 Capa 상세에서 옮겨 온 공정은 카드 맨 위(테두리·배지)다. 공용 설정의 공정 선택 밖이면 그
+    까닭을 적고, 공정 필터(0019 세션 칸·공용 프로필)는 건드리지 않는다 — 강조를 꺼도 그대로다."""
+    database_path = _database(tmp_path)
+    processes = _processes()
+    shared, outside = processes[0], processes[-1]
+    DuckDBEquipmentRepository(database_path).save_shortening_filter_processes(
+        [shared], visible=[shared], source="test"
+    )
+    before = _profile(database_path)
+
+    app = _highlighted(database_path, outside)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert _cards(app) == [outside, shared]
+    body = _html(app)
+    assert 'data-highlight="공정 Capa 상세에서 연 공정"' in body
+    assert "공용 설정의 공정 선택 밖 — KPI·CSV 에 들지 않음" in " ".join(_captions(app))
+    assert app.multiselect(key=SHORTENING_PROCESS_KEY).value == [shared]
+    # KPI·CSV 는 공용 설정의 공정만이다.
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    assert set(units["공정"]) <= {shared}
+    assert _profile(database_path) == before
+
+    app = app.button(key=HIGHLIGHT_OFF_KEY).click().run()
+    assert not app.exception
+    assert SHORTENING_HIGHLIGHT_KEY not in app.session_state
+    assert _cards(app) == [shared]
+    assert "data-highlight" not in _html(app)
+    assert _profile(database_path) == before
+    clear_equipment_repository()
+
+
+def test_an_unmatched_highlight_says_there_is_no_card(tmp_path: Path) -> None:
+    app = _highlighted(_database(tmp_path), "DEMO-NOT-MATCHED")
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert any("맞댄 공정이 아니라 카드가 없습니다" in text for text in _captions(app))
+    assert "DEMO-NOT-MATCHED" not in _cards(app)
+    clear_equipment_repository()
+
+
+def test_saved_fleet_cards_link_to_the_detail_page_and_carry_the_manager(tmp_path: Path) -> None:
+    """저장된 호기 마스터면 카드마다 「공정 Capa 상세에서 근거 보기」(단독 실행은 글자로 물러선다)가
+    서고, 설비 마스터 담당자가 호기 줄 풍선과 「호기별」 CSV 에 실린다."""
+    database_path = _database(tmp_path)
+    DuckDBEquipmentRepository(database_path).save_snapshot(
+        empty_equipment_baseline(),
+        sample_equipment_master(),
+        empty_downtime_schedule(),
+        note="상세 링크 시험",
+    )
+
+    app = _run(database_path)
+
+    assert not app.exception, [element.message for element in app.exception]
+    cards = _cards(app)
+    assert cards
+    assert _captions(app).count(DETAIL_LINK_FALLBACK) == len(cards)
+    assert "담당자 샘플 담당자" in _html(app)
+    _, units = _csv(app, "equipment_shortening_units_csv")
+    shortened = units.loc[units["구분"].eq(KIND_SHORTENED)]
+    assert set(shortened["담당자"]) == {"샘플 담당자"}
+    clear_equipment_repository()

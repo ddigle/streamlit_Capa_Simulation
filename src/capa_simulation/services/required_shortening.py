@@ -220,6 +220,8 @@ _MASTER_TEXT_COLUMNS = (
     "층",
     "투자구분",
     PARENT_EQUIPMENT_COLUMN,
+    # 호기 줄 풍선·진척 카드·「호기별」 CSV 가 싣는다(2026-10-22 사용자 요청). 계산에는 쓰지 않는다.
+    "담당자",
 )
 UNIT_MASTER_COLUMNS = (
     "호기",

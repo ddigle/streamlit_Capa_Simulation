@@ -30,9 +30,11 @@ from capa_simulation.navigation import (
 # 하위 화면이 **보는 것** 한 줄. 차례는 사이드바 선언(`EXECUTION_MANAGEMENT_SUBPAGES`)을 따르고,
 # 선언에 화면이 늘면 이 표도 함께 고친다(`tests/test_execution_management_page.py` 가 맞댄다).
 SUBPAGE_SUMMARIES: dict[str, str] = {
-    "app_pages/process_capa_detail.py": "공정 하나의 공식 부족 → 그 달을 메울 호기·기간(단축·신규)",
+    "app_pages/process_capa_detail.py": (
+        "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지 — 공식 부족 → 메울 호기·기간"
+    ),
     "app_pages/required_shortening.py": (
-        "목표 확보율에 모자란 공정 전체 → 당길 Qual 일수 · 신규 필요 · 진척 비교"
+        "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 진척 보드 · 기한 임박 · 이행 지연"
     ),
     "app_pages/available_equipment_status.py": (
         "설비 일정 기준 가용대수 · Static 대비 일정 · Cut-off"

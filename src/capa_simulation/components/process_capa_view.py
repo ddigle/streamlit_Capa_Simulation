@@ -44,7 +44,8 @@
 요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄 (「공식 n」)에만 둔다. 그림 캐시 키에 가정 토큰이 든다.
 
 **부족 원인의 다음 화면** — 보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과, 가용 불일치 →
-가용설비 현황 `Static 대비 일정`, 일정 → 필요 단축 일정(`open_shortening_page`). 화면을 옮기는
+가용설비 현황 `Static 대비 일정`, 일정 → 필요 단축 일정 이 공정 카드 강조(`open_shortening_page` —
+공정 필터를 심지 않고 강조 칸만 적는다). 화면을 옮기는
 단추는 콜백이 아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의
 `st.switch_page` 가 서버 로그 경고를 남긴다(`process_detail_state.open_process_detail`).
 """
@@ -81,10 +82,13 @@ from capa_simulation.components.process_capa_canvas import (
     build_process_capa_canvas,
     canvas_point,
 )
-from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
+)
+from capa_simulation.components.shortening_board import (
+    HIGHLIGHT_FROM_DETAIL,
+    highlight_shortening_process,
 )
 from capa_simulation.components.shortening_timeline import month_day
 from capa_simulation.components.status_metric import (
@@ -1419,14 +1423,15 @@ def render_closing_row(
 
 
 def open_shortening_page(process: str) -> None:
-    """필요 단축 일정 화면을 이 공정으로 연다 — **세션 키만 심는다**(콜백).
+    """필요 단축 일정 화면을 이 공정 카드 **강조**로 연다 — 강조 칸 하나만 적는다.
 
-    공정 상자(`SHORTENING_PROCESS_KEY=[공정]`)만 적고 그 화면(실행 관리 아래, 2026-10-18 가용설비
-    현황 탭에서 뗐다)으로 옮긴다. 그 화면의 공용 조회 조건(설비 DB `0019`)·기준선(`0021`)은 읽지도
-    쓰지도 않는다 — 공용 쓰기는 그 화면 위젯의 `on_change` 에서만 일어나므로 세션 값을 심는
-    것만으로는 쓰이지 않는다. 갈 곳이 없으면(내비게이션이 없는 단독 실행) 옮기지 않는다.
+    그 화면의 「강조 공정」(`shortening_board.SHORTENING_HIGHLIGHT_KEY`)에 이 공정을 적고 옮긴다 —
+    그 카드가 맨 위에 테두리·「공정 Capa 상세에서 연 공정」 배지로 선다. **공정 필터는 심지
+    않는다**: 필터 칸은 공용 조회 조건(설비 DB `0019`)의 세션 칸이라, 심은 [공정] 을 사용자가 지우면
+    빈 선택이 공용 프로필에 저장됐다(2026-10-22 결함). 기준선(`0021`)도 읽지도 쓰지도 않는다. 갈
+    곳이 없으면(내비게이션이 없는 단독 실행) 옮기지 않는다.
     """
-    st.session_state[SHORTENING_PROCESS_KEY] = [str(process)]
+    highlight_shortening_process(str(process), source=HIGHLIGHT_FROM_DETAIL)
     try:
         st.switch_page(REQUIRED_SHORTENING.path)
     except StreamlitPageNotFoundError:

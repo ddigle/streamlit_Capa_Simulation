@@ -2,11 +2,15 @@
 
 """공정 Capa 상세 — 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는 화면.
 
+정체성(2026-10-22 사용자 요청): **어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지**다. 공정
+전부의 진척 관리는 필요 단축 일정이 맡는다.
+
 차례(2026-10-15 사용자 결정 4 — 목업 그대로):
 
 0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
-   왔으면 출처 띠. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품 거르기(펼친 제품 행에만
+   왔으면 출처 띠, 필요 단축 일정 카드에서 왔으면 그 카드 출처 띠(주소 인자만 읽는다)와 「←
+   필요 단축 일정」. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품 거르기(펼친 제품 행에만
    걸린다).
 1. **KPI 넷** — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준). 그
    아래 부족 원인마다 다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 →
@@ -28,8 +32,8 @@
   없음」이다. 판정(`dynamic_readiness`)을 통과한 공정만 계획
   (`get_required_shortening_for_target` — 단축 목표는 HOME Preference 확보기준을 달마다,
   사용자 결정 2)과 설비 일정(`get_process_equipment_timeline`)을 받는다. 필요 단축 일정 화면의
-  공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)은 읽지도 쓰지도 않는다(사용자
-  결정 1).
+  공용 조회 조건(설비 DB `0019`)·진척 비교 기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다(사용자
+  결정 1) — 그 화면으로 옮길 때 적는 「강조 공정」 칸 하나만 예외다(공정 필터는 심지 않는다).
 - **UPEH 가정**(조건 카드 끝 「이 세션만」 — `components/upeh_assumption_controls.py`, 필요 단축
   일정과 같은 세션 칸) — 100% 가 아니면 구간 달의 소요대수를 ÷f 한 **가정 요약**(이미 받은 확보율
   프레임에 사후로 건다 — 캐시를 쓰지 않는다)과 **가정 계획**(`load_required_shortening_for_target` —
@@ -63,6 +67,7 @@ from capa_simulation.components.process_capa_canvas import DynamicCanvasInput
 from capa_simulation.components.process_capa_view import (
     DynamicView,
     ProcessDetailView,
+    open_shortening_page,
     render_cause_links,
     render_closing_row,
     render_process_detail_view,
@@ -113,6 +118,7 @@ from capa_simulation.process_detail_state import (
     process_steps,
     remembered_picker_summary,
     resolve_process_and_month,
+    shortening_band_text,
     take_process_detail_request,
 )
 from capa_simulation.scenario_state import scenario_month_table
@@ -201,6 +207,13 @@ CARD_NAME = "process_capa_detail"
 CARD_ICON = ":material/troubleshoot:"
 # 머리 배지. 공식 숫자는 늘, 설비 일정은 판정에 따라 「참고」·「없음: 까닭」.
 OFFICIAL_BADGE = ":gray-badge[공식 · Core Data]"
+# 필요 단축 일정 카드 출처 띠 옆 「← 필요 단축 일정」 단추(그 카드를 강조해 돌아간다).
+BACK_TO_SHORTENING_KEY = "process_detail_back_to_shortening"
+# 머리말 한 줄 — 이 화면의 정체성(2026-10-22 사용자 요청). 필요 단축 일정 머리말과 짝이다.
+PAGE_DESCRIPTION = (
+    "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지 — 산출 근거 → 부족한 달 → 그 달을 "
+    "메울 설비 일정. 공정 전부의 진척은 「필요 단축 일정」 입니다."
+)
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
 HOME_RATE_TOLERANCE = 1e-9
 
@@ -209,7 +222,7 @@ HOME_RATE_TOLERANCE = 1e-9
 # 「HOME 에서 온 것」으로 읽는다.
 home_request = take_process_detail_request()
 
-render_page_header("공정 Capa 상세")
+render_page_header("공정 Capa 상세", description=PAGE_DESCRIPTION)
 # 공정 표시명·배지 자리. 공정과 설비 일정 판정이 정해진 뒤 채운다 — 제목 바로 아래에 선다.
 # 블록이라 계산 동안 앞 회차 줄이 남는다(AGENTS 9장). 빈 블록은 그려지지 않으므로 border·height 를
 # 주지 않는다.
@@ -423,6 +436,21 @@ if entry.origin is not None:
         month_text=month_label(origin_month) if origin_month is not None else "-",
     )
     st.caption(f"{ORIGIN_BAND_ICON} {band}")
+if entry.shortening_origin is not None:
+    # 주소 인자로 받은 그 카드의 값만 적는다 — 필요 단축 일정의 세션 칸·공용 프로필은 읽지 않는다.
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.caption(
+            f"{ORIGIN_BAND_ICON} {shortening_band_text(entry.shortening_origin)}", width="content"
+        )
+        st.button(
+            "필요 단축 일정",
+            key=BACK_TO_SHORTENING_KEY,
+            icon=":material/arrow_back:",
+            type="tertiary",
+            help="필요 단축 일정으로 돌아가 이 공정 카드를 맨 위에 강조합니다(공정 필터는 그대로).",
+            on_click=open_shortening_page,
+            args=(entry.shortening_origin.process,),
+        )
 
 if selected_process is None or entry.month is None:
     st.info("조회기간에 확보율을 낼 공정이 없습니다.", icon=":material/info:")

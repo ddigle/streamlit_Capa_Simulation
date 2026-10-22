@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import html
 import time
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -143,6 +143,8 @@ _LANE_GAP_PX = 4
 _MAX_AXIS_LABELS = 12
 # 두 줄 타임라인에 서는 날짜 칸. 카드의 달 축은 이 날짜가 모두 들도록 넓힌다.
 _LANE_DATE_COLUMNS = ("과거 필요 시점", "과거 확보 시점", "현재 필요 시점", "현재 확보 시점")
+# 이행 지연 표지(기준선 목표 Qual 이 지났는데 마스터 Qual 미완료).
+_DELAYED = "지연"
 
 
 @dataclass(frozen=True)
@@ -787,12 +789,19 @@ def progress_card_markup(
     *,
     today: date,
     outside: bool = False,
+    delayed: Collection[str] = (),
+    managers: Mapping[str, str] | None = None,
+    highlight: str | None = None,
 ) -> str:
     """공정 카드 하나 — 머리에 공정 합계 과거 → 현재와 증감, 호기마다 두 줄.
 
     `outside` 면 기준선에만 있던 공정이다 — 「지금 범위 밖」 으로 접어 둔다(`<details>`). 제목은
     공정 표시명이고 다르면 풍선에 원본을 남긴다. 달 축은 화면의 모든 카드가 함께 쓰는
     `view.axis_months` 다.
+
+    `delayed` 는 이행 지연 호기(기준선 목표 Qual 이 지났는데 마스터 Qual 미완료 —
+    `shortening_watch.delayed_units`)다 — 그 호기 줄과 카드 머리에 「지연」 표지를 단다. `managers`
+    는 호기 → 담당자(줄 옆 글과 풍선), `highlight` 는 강조 공정 배지 글(테두리를 강조색으로)이다.
     """
     rows = view.rows.loc[view.rows["공정"].eq(process)]
     summary = summarize_progress(rows)
@@ -803,7 +812,8 @@ def progress_card_markup(
         if cutoff_days is not None
         else ""
     )
-    body = _units_markup(rows, view.axis_months, today=today)
+    late = frozenset(str(unit) for unit in delayed)
+    body = _units_markup(rows, view.axis_months, today=today, delayed=late, managers=managers)
     if outside:
         return (
             f'<details class="shk-prog-out" aria-label="진척 {name}"><summary>'
@@ -813,20 +823,44 @@ def progress_card_markup(
             f"{body}</details>"
         )
     change, color = _change_text(summary.change)
+    marks = ""
+    if highlight is not None:
+        marks += (
+            f'<span class="shk-badge" style="background:{tokens.SURFACE_SUBTLE}">'
+            f"{_escape(highlight)}</span>"
+        )
+    shown_late = late & {str(unit) for unit in rows["호기"]}
+    if shown_late:
+        marks += (
+            f'<span class="shk-prog-badge" style="color:{tokens.DELTA_INCREASE};'
+            f'border-color:{tokens.DELTA_INCREASE}">{_DELAYED} {len(shown_late)}대</span>'
+        )
     head_sum = (
-        f'<span class="shk-prog-head-sum">과거 {summary.past_days:,}일 → '
+        f'<span class="shk-prog-head-sum">{marks}과거 {summary.past_days:,}일 → '
         f"<b>현재 {summary.current_days:,}일</b>"
         f'<span class="shk-prog-delta" style="color:{color}">{_escape(change)}</span></span>'
     )
+    focus = (
+        f' data-highlight="{_escape(highlight)}" style="border:2px solid {tokens.ACCENT}"'
+        if highlight is not None
+        else ""
+    )
     return (
-        f'<section class="shk-card shk-prog" aria-label="진척 {name}">'
+        f'<section class="shk-card shk-prog" aria-label="진척 {name}"{focus}>'
         '<div class="shk-card-head"><div>'
         f'<span class="shk-card-name"{original}>{name}</span>{cutoff}</div>{head_sum}</div>'
         f"{body}</section>"
     )
 
 
-def _units_markup(rows: pd.DataFrame, months: Sequence[int], *, today: date) -> str:
+def _units_markup(
+    rows: pd.DataFrame,
+    months: Sequence[int],
+    *,
+    today: date,
+    delayed: frozenset[str] = frozenset(),
+    managers: Mapping[str, str] | None = None,
+) -> str:
     legend = (
         '<div class="shk-units-legend">호기마다 두 줄 — 과거(기준선, 회색) ◀ 필요 시점 ── ○ 확보 '
         "시점 · 현재(진하게) ◀ ━━ ● · ◌ 신규 필요 · 칸은 달 · 점선은 오늘 · 오른쪽은 기존 → 필요 "
@@ -858,7 +892,12 @@ def _units_markup(rows: pd.DataFrame, months: Sequence[int], *, today: date) -> 
     )
     units = "".join(
         _unit_markup(
-            {str(key): value for key, value in record.items()}, axis, lines + today_mark, today
+            {str(key): value for key, value in record.items()},
+            axis,
+            lines + today_mark,
+            today,
+            late=str(record["호기"]) in delayed,
+            manager=(managers or {}).get(str(record["호기"])),
         )
         for record in rows.to_dict("records")
     )
@@ -901,7 +940,16 @@ def _movement(row: dict[str, object]) -> str:
     return " · ".join(parts)
 
 
-def _unit_markup(row: dict[str, object], axis: tuple[date, date], lines: str, today: date) -> str:
+def _unit_markup(
+    row: dict[str, object],
+    axis: tuple[date, date],
+    lines: str,
+    today: date,
+    *,
+    late: bool = False,
+    manager: str | None = None,
+) -> str:
+    """호기 하나의 두 줄. `late` 면 「지연」 표지(이행 지연), `manager` 는 설비 마스터 담당자다."""
     virtual = row["구분"] == KIND_NEW
     status = row["상태"]
     badge, badge_color = _badge(row, virtual)
@@ -942,9 +990,24 @@ def _unit_markup(row: dict[str, object], axis: tuple[date, date], lines: str, to
         details.append(movement)
     if modules > 1:
         details.append(f"모듈 {modules}")
+    if late:
+        details.append(
+            f"{_DELAYED} — 기준선 목표 Qual 이 지났는데 설비 마스터 Qual실적이 비었거나 "
+            "Qual상태가 완료가 아님"
+        )
+    if manager:
+        details.append(f"담당자 {manager}")
     meta = (
         f'<span class="shk-prog-badge" style="color:{badge_color};border-color:{badge_color}">'
-        f"{_escape(badge)}</span>" + (f"<span>{_escape(movement)}</span>" if movement else "")
+        f"{_escape(badge)}</span>"
+        + (
+            f'<span class="shk-prog-badge" style="color:{tokens.DELTA_INCREASE};'
+            f'border-color:{tokens.DELTA_INCREASE}">{_DELAYED}</span>'
+            if late
+            else ""
+        )
+        + (f"<span>{_escape(movement)}</span>" if movement else "")
+        + (f"<span>담당 {_escape(manager)}</span>" if manager else "")
     )
     return (
         f'<div class="shk-prog-unit" title="{_escape(" · ".join(details))}">'

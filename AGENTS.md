@@ -227,11 +227,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     열린 회차에만 꺼내고 오류도 그 탭에만 띄운다(`test_calculation_result_tabs.py`). `STEP별` 은 공정을 골라야 계산한다.
   - 표 조건 카드 하나를 세 탭이 쓰고 열린 탭 것만 그린다. 대당 Capa `표시 방식` 은 본문이다(「하위 보기 전환은 본문」).
   - 소요대수 탭은 경로 쪽 제외 뒤에 계획 쪽 목록 둘을 그리고, 대당 Capa 제외 표는 `대당 Capa` 탭 하나가 그린다.
-- `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 공정 하나의 산출 근거 → 부족한 달 →
-  그 달을 메우는 설비 일정을 잇는다. 본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
+- `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
+  바로 깊게 보는 목적지**다(머리말, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
+  본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
   - 공정·달은 상자보다 먼저 정한다(HOME 전달 → 주소 → 세션 → 최저 확보율 공정의 첫 미달 달). 확보율은 키 전용 캐시다.
-  - 설비 DB 는 읽기만 하고 필요 단축 일정의 공용 조회 조건·기준선은 읽지 않는다(5장 9). 판정을 통과한 공정만
+  - 설비 DB 는 읽기만 하고 필요 단축 일정의 공용 조회 조건·기준선·세션 칸은 읽지 않는다(5장 9). 판정을 통과한 공정만
     계획·설비 일정을 받고, 아니면 까닭 카드 한 장이다.
+  - 필요 단축 일정 카드에서 왔으면(`from=shortening`) **주소 인자만** 읽어 그 카드의 목표·기간·단축/신규 대수로 출처
+    띠(「이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다」)와 「← 필요 단축 일정」 을 낸다. 필요 단축
+    일정으로 옮기는 단추는 모두 그 화면의 「강조 공정」 칸만 적는다 — 공정 필터(0019 세션 칸)는 심지 않는다.
   - HOME 표시 확보율 줄은 HOME 과 같은 함수(`home_display_rates`)·같은 캐시 키로 낸다. 「구획」·「제품별 소요대수」·
     「분류」는 「상세는 카드」의 예외로 본문 표 도구 줄이다. 출처 띠는 캡션 한 줄이다(`docs/design_system.md` 2-3).
   - 밖에서 들어온 회차는 그 길(`from`)의 구획을 다시 편다(HOME → ①, `gap` → ④, `shortening` → ③). 머리 ◀▶ 는 미달
@@ -260,8 +264,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 데모는 샘플 스위치로 끄고 세션에 한 번만 만든다(실DB 를 붙이면 그 칸 키에 원천 적재 시각을 넣는다).
   - 부서별 Gap·A/Item 로드맵은 실행 관리 머리에 있고 여기는 그쪽 링크 한 줄이다.
   - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않고, 공정 상세의 조건 위젯은 숨어도 그린다.
-- `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 설비 저장본·Cut-off·
-  소요대수를 모아 `required_shortening_panel.py` 에 넘긴다. 계산 규칙은 `services/required_shortening.py` 다.
+- `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 정체성은 **단축이 필요한 공정 전부의 진척
+  관리 한 페이지**다(머리말, 2026-10-22). 설비 저장본·Cut-off·소요대수를 모아 `required_shortening_panel.py` 에 넘긴다.
+  계산 규칙은 `services/required_shortening.py` 다.
+  - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py`)이 서고 카드마다 「공정 Capa
+    상세에서 근거 보기」(주소 인자, 샘플 fleet 이면 숨김)다. 카드 차례·기한 임박 날수·강조 공정은 세션 값이고 DB 에 쓰지
+    않는다.
   - 저장본·미저장 편집은 `equipment_data_workspace.py` 세션 칸(가용설비·Space 와 같은 토큰)에서, Cut-off 는 저장된
     값만 읽는다(고치는 곳은 가용설비 Preference). 조건 카드는 `shortening` 이다.
   - 소요대수 프레임은 넘기지 않고 시나리오 키와 로더를 넘긴다. 계산은 DB 에 쓰지 않고 패널이 공용 조회 조건(`0019`)과
@@ -487,7 +495,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
   - 칸 클릭 콜백은 이동 대기 칸만 적고(`queue_home_cell`), HOME 프래그먼트 본문 첫 줄이 전달 칸을 적어 옮기며
     (`switch_to_queued_process_detail` → `open_process_detail`), 받는 페이지 맨 앞에서 꺼낸다(`take_process_detail_request`).
-  - 주소 `from` 은 `home`·`gap`·`shortening` 이고 들어온 회차의 `ProcessDetailEntry.source` 가 된다. ◀▶ 차례
+  - 주소 `from` 은 `home`·`gap`·`shortening` 이고 들어온 회차의 `ProcessDetailEntry.source` 가 된다. `shortening` 링크는
+    그 카드의 `target`·`period`·`shortened`·`new` 도 싣고(`shortening_card_query_params`) 상세는 그것만 읽어
+    `ShorteningOrigin`(그 공정을 보는 동안만)·`shortening_band_text` 를 낸다. ◀▶ 차례
     (`process_steps`)와 그 콜백(`step_to_process` — 공정과 그 공정의 첫 미달 달)도 여기다.
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
@@ -912,6 +922,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   변동과 상태를 낸다(`compare_progress`·`summarize_progress`·`progress_export_frame`).
   - 짝짓기는 공정 안에서만 — 당긴 호기는 설비명끼리, 「추가N」은 차례끼리다. 지금 범위에 없는 기준선 공정은
     `지금 범위 밖`(해소 아님), 오늘보다 앞선 과거 필요 시점은 `필요 시점 지남` 으로 양쪽 증감에서 뺀다.
+- `src/capa_simulation/services/shortening_watch.py` — 필요 단축 일정의 공정 진척 보드(`process_board`)·카드 차례
+  (`board_order`)·기한 임박(`imminent_units`)·이행 지연(`delayed_units`)과 설비키마다 Qual 실적·상태·담당자
+  (`unit_qual_status` — 캐시 래퍼 `get_unit_qual_status`). Streamlit·DB 를 모르고 쓰지 않는다.
+  - 이행 지연 = 기준선 목표 Qual(과거 필요 시점) < 오늘인데 마스터 Qual실적이 비었거나 Qual상태가 「완료」 아닌 당긴 호기
+    (모듈 하나라도 미완료면 미완료, 마스터에 없으면 지연). 가상 호기는 보지 않는다.
 - `src/capa_simulation/services/monthly_equipment_availability.py` — 호기 생애주기 구간을 W/D 구간에 일수로 안분해
   월별·공정별·분류별 기여 대수를 만든다. 어느 DB 도 열지 않는다.
   - 상태는 바뀐 다음 날부터 기여하고 정지·반출/이설로 가용을 잃는 날만 당일부터 빠진다. 가용 소계는 `기존보유`·`가용`
@@ -979,6 +994,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `st.rerun(scope="app")` 한다(`tests/test_shortening_view_fragment.py`·`tests/fragment_browser.py`).
   - 계획은 `_Plan.official`(키와 한 묶음)이고, UPEH 가정 계획은 `_Plan.assumed` 로더로 「UPEH 가정 비교」 보기에서만
     꺼낸다(공식 부족 ∪ 가정 부족, 「가정으로 해소」, 역산 「이 값으로」 — 앱 전체 회차로 올린다, 표·CSV 첫 열 표지).
+  - 강조 공정(`shortening_board.SHORTENING_HIGHLIGHT_KEY`)은 세 보기 모두 카드 맨 앞이다(테두리·배지). 공용 설정 공정
+    밖이면 「KPI·CSV 에 들지 않음」 을 적고, 맞대지 못한 공정이면 카드 대신 그 말이다. 카드 class 는 그대로 `shk-card` 다.
+- `src/capa_simulation/components/shortening_board.py` — 필요 단축 일정의 공정 진척 보드(`st.dataframe` 한 줄 고르기 →
+  그 카드 강조, 표 key 세대를 올려 고른 줄을 남기지 않는다)·카드 차례·기한 임박 날수(세션 값, 선택지 고정)·기한 임박/이행
+  지연 상자·강조 공정 칸·카드의 상세 근거 링크(`st.page_link` + 주소 인자).
+  - 강조 공정 칸은 `(원본 공정명, 출처)` 튜플이다 — 공정 Capa 상세 이동(`detail`)과 보드 줄 고르기(`board`)만 적는다.
+    공정 필터·공용 프로필(0019)·기준선(0021)에는 닿지 않는다(`tests/test_required_shortening_tab.py`).
 - `src/capa_simulation/components/upeh_assumption_controls.py` — 두 화면 조건 카드 끝 「이 세션만」 UPEH 가정 묶음(% 칸
   80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. 구간 선택지는
   `assumption_month_options`(조회기간 ∩ 이번 달 이후) 하나이고, 세 칸 모두 위젯 앞에서 `carry_shared_widget_value` 를
@@ -1243,7 +1265,10 @@ RQ_MODULE
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 같은 키 방침(15)의
    `simulation_cache` 래퍼(`get_required_shortening_for_target` — UPEH 가정이면 그 가정 칸, 31 —·
    `get_process_equipment_timeline`)로만 부르고,
-   필요 단축 일정 화면의 공용 조회 조건(`0019`)·기준선(`0021`)은 읽지도 쓰지도 않는다. 설비 DB 를 여는
+   필요 단축 일정 화면의 공용 조회 조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다 — 필요 단축 일정 카드에서
+   들어온 방문은 **주소 인자로 받은 출처 값만 적는다**(그 카드의 목표·기간·대수). 거꾸로 공정 Capa 상세가 필요 단축
+   일정으로 옮길 때 적는 것은 그 화면의 「강조 공정」 세션 칸 하나다 — 공정 필터 칸(0019 세션 값)을 심으면 사용자가 그
+   [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). 설비 DB 를 여는
    시뮬레이션 쪽 페이지는 셋이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행 관리,
    읽기만), 표준 대비 재공 현황(Dynamic, 표준 목표의 주차별 가용대수를 읽기만). 실행 관리 머리는 첫 판에서
    어느 DB 도 열지 않는다.

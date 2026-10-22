@@ -46,6 +46,10 @@ from capa_simulation.components.process_capa_view import (
     UNITS_CSV_KEY,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
+from capa_simulation.components.shortening_board import (
+    HIGHLIGHT_FROM_DETAIL,
+    SHORTENING_HIGHLIGHT_KEY,
+)
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.persistence.cache import (
@@ -69,6 +73,7 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_SPLIT_KEY,
     PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
     ProcessDetailRequest,
+    shortening_card_query_params,
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import UNIT_EXPORT_COLUMNS
@@ -733,22 +738,75 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
     assert captured["data"].startswith("﻿".encode())
 
 
-def test_the_shortening_link_plants_only_session_keys(dynamic_databases: tuple[Path, Path]) -> None:
-    """필요 단축 일정 화면 링크는 공정 상자 세션 키만 심는다 — 공용 조회 조건(0019)에는 쓰지 않는다.
-    필요 단축 일정은 가용설비 현황의 탭이 아니라 별도 화면이라(2026-10-18) 그 탭 칸도 건드리지
-    않는다.
+def test_the_shortening_link_highlights_the_card_without_planting_the_filter(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """필요 단축 일정 링크는 「강조 공정」 칸 하나만 적는다 — 공정 필터(공용 조회 조건 0019 의 세션
+    칸)는 심지 않는다. 심은 [공정] 을 사용자가 지우면 빈 선택이 공용 프로필에 저장됐다(2026-10-22
+    결함). 필요 단축 일정은 별도 화면이라(2026-10-18) 가용설비 현황의 탭 칸도 건드리지 않는다.
 
     단독 실행이라 갈 페이지가 없어 옮기지는 않는다(`StreamlitPageNotFoundError` 를 삼킨다).
     """
     app = _dynamic_app(dynamic_databases)
+    repository = DuckDBEquipmentRepository(dynamic_databases[1])
+    before = repository.load_shortening_filter_profile()
     app.button(key="process_detail_open_shortening_tab").click()
     _ok(app.run())
 
     assert "equipment_active_tab" not in app.session_state
-    assert app.session_state[SHORTENING_PROCESS_KEY] == [DYNAMIC_PROCESS]
-    repository = DuckDBEquipmentRepository(dynamic_databases[1])
-    profile = repository.load_shortening_filter_profile()
-    assert profile.processes == ()
+    assert SHORTENING_PROCESS_KEY not in app.session_state
+    assert app.session_state[SHORTENING_HIGHLIGHT_KEY] == (DYNAMIC_PROCESS, HIGHLIGHT_FROM_DETAIL)
+    after = repository.load_shortening_filter_profile()
+    assert after == before and after.processes == ()
+
+
+def test_a_shortening_card_link_shows_its_band_from_the_address_only(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """필요 단축 일정 카드의 「공정 Capa 상세에서 근거 보기」 — 주소 인자로 받은 그 카드의
+    목표·기간·대수로 출처 띠를 내고, 접어 둔 ③ 을 다시 편다. 「← 필요 단축 일정」 은 그 공정을
+    강조해 돌아간다."""
+    app = _dynamic_app(dynamic_databases)
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([SECTION_SUMMARY])
+    _ok(app.run())
+    month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
+
+    app.query_params.update(
+        shortening_card_query_params(
+            process=DYNAMIC_PROCESS,
+            month=month,
+            target=1.2,
+            start_month=202601,
+            end_month=202606,
+            shortened=2,
+            new=1,
+            theme=None,
+        )
+    )
+    _ok(app.run())
+
+    bands = [str(item.value) for item in app.caption if "필요 단축 일정 카드" in str(item.value)]
+    assert len(bands) == 1, [str(item.value) for item in app.caption]
+    assert bands[0].startswith(ORIGIN_BAND_ICON)
+    assert "카드(목표 120%(1.20) · 기간 26.01–26.06)에서 열었습니다" in bands[0]
+    assert "대수가 다를 수 있습니다" in bands[0] and "그 카드: 단축 2대 · 신규 1대" in bands[0]
+    assert _sections(app) == [SECTION_SUMMARY, SECTION_UNITS]
+    assert dict(app.query_params) == {}
+
+    back = app.button(key="process_detail_back_to_shortening")
+    assert back.label == "필요 단축 일정"
+    back.click()
+    _ok(app.run())
+    assert app.session_state[SHORTENING_HIGHLIGHT_KEY] == (DYNAMIC_PROCESS, HIGHLIGHT_FROM_DETAIL)
+    assert SHORTENING_PROCESS_KEY not in app.session_state
+
+
+def test_the_header_states_the_page_identity(databases: tuple[Path, Path]) -> None:
+    app = _ok(_app(databases).run())
+    assert any(
+        "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지" in str(item.value)
+        for item in app.caption
+    )
 
 
 # ------------------------------------------------------------------ UPEH 가정

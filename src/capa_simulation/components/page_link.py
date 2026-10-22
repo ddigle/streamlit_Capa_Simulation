@@ -13,12 +13,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 
 
-def render_page_link(page_path: str, *, label: str, icon: str | None = None) -> None:
+def render_page_link(
+    page_path: str,
+    *,
+    label: str,
+    icon: str | None = None,
+    query_params: Mapping[str, str] | None = None,
+) -> None:
+    """`query_params` 를 주면 그 인자를 실은 주소로 연다 — 받는 페이지가 그 인자만 읽는다."""
     try:
-        st.page_link(page_path, label=label, icon=icon)
+        if query_params is None:
+            st.page_link(page_path, label=label, icon=icon)
+        else:
+            st.page_link(page_path, label=label, icon=icon, query_params=dict(query_params))
     except StreamlitPageNotFoundError:
         st.caption(f"사이드바에서 {label}")
