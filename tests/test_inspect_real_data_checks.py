@@ -1383,6 +1383,8 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     ]
     assert checks.check_transcript(_summary(output)) == []
     assert not [line for line in output.splitlines() if _self_check_pattern().search(line)]
+    bdq_keys = [line.split(" ", 2)[1] for line in summary]
+    assert all(_matches_a_key(key, bdq_keys) for key in _carried_keys() if key.startswith("8-5"))
 
 
 def test_multi_day_codes_outside_the_sample_fill_the_copy_check(
@@ -2235,13 +2237,38 @@ def test_the_census_division_tables_are_every_revision_table_with_a_wf_division(
     assert {REVISION_TABLES[name] for name in checks.CENSUS_DIVISION_TABLES} == tables
 
 
+RUNBOOK = PROJECT_ROOT / "docs" / "internal_update_runbook.md"
+DUAL_ENV = PROJECT_ROOT / "docs" / "dual_env_workflow.md"
+
+
 def _self_check_pattern() -> re.Pattern[str]:
     """런북 5장 자가 점검(`Select-String … -Pattern '…'`)의 그물. PowerShell 은 대소문자를 가리지
-    않는다."""
-    runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
-    found = re.search(r"Select-String -Path review\\\*\.md -Pattern '([^']+)'", runbook)
+    않는다. 점검은 이번 리뷰의 두 파일만 본다 — `review\\*.md` 는 지난 전문마다 남은 8-4 사용기준
+    줄까지 잡아 「예외 말고는 없음」 이 늘 거짓이 된다."""
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    found = re.search(
+        r"Select-String -Path review\\<ZIP 파일명>\.md, review\\<ZIP 파일명>\.full\.md "
+        r"-Pattern '([^']+)'",
+        runbook,
+    )
     assert found is not None
+    assert "Select-String -Path review\\*.md" not in runbook
     return re.compile(found.group(1), re.IGNORECASE)
+
+
+def _carried_keys() -> list[str]:
+    """런북 8-6 「늘 옮기는 줄」 이 적은 요약 키(`8-5C<i>` 꼴 포함) — 결정 대기의 근거라 압축본에서
+    `=` 로 접지 않는 줄."""
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    section = runbook[runbook.index("### 8-6.") :]
+    found = re.search(r"\*\*늘 옮기는 줄 — [^\n]*\n(?:  [^\n]*\n)*", section)
+    assert found is not None
+    return re.findall(r"`(8-[^`\s]+)`", found.group(0))
+
+
+def _matches_a_key(carried: str, keys: Sequence[str]) -> bool:
+    pattern = re.escape(carried).replace(re.escape("<i>"), r"\d+")
+    return any(re.fullmatch(pattern, key) for key in keys)
 
 
 def _summary(output: str) -> list[str]:
@@ -2309,6 +2336,12 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-9",
         "8-10",
     ]
+    # 런북 8-6 「늘 옮기는 줄」 의 키는 스크립트가 실제로 찍는 키다(8-5 는 BigDataQuery
+    # 시험이 본다).
+    carried = _carried_keys()
+    assert carried and all(
+        _matches_a_key(key, keys) for key in carried if not key.startswith("8-5")
+    ), carried
     assert all(line.startswith("- ") and re.search(r" #\d\d$", line) for line in lines)
     # 손으로 옮겨 적는 줄이라 짧다 — 범례(런북 8-6)가 키의 뜻을 맡는다.
     assert max(len(line) for line in lines) <= 90, lines
@@ -2328,7 +2361,7 @@ def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:
     """확인 코드는 줄의 숫자 한 자리를 바꾸거나 한 수 안의 이웃한 두 자리를 바꾸면 늘 달라진다 —
     「(기대 0)」 칸의 0 을 8 로 잘못 쳐도, 마이그레이션 번호를 바꿔 써도 잡힌다. 수 하나를
     빼먹거나 쪼갠 것은 97 가운데 96 꼴로 잡힌다(빼먹기는 이 표본 줄에서 모두 — 쪼개기는 보장이
-    아니라 고정하지 않는다). 글자·쉼표·우선순위 표지는 코드에 들지 않는다."""
+    아니라 고정하지 않는다). 글자·쉼표·목록 표지·칸 가름은 코드에 들지 않는다."""
     lines = [
         "8-1 S 35/35 · E 23/23 · R 12 · O 3",
         "8-2R 100.00% · 0.01% · 0",
@@ -2354,12 +2387,13 @@ def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:
         for found in re.finditer(r"\d+", line):
             dropped = line[: found.start()] + line[found.end() :]
             assert checks.summary_code(dropped) != code, (line, dropped)
-    # 손으로 옮길 때 붙는 것 — 우선순위 표지·쉼표 빠짐·글자 바뀜은 코드를 바꾸지 않는다.
+    # 손으로 옮길 때 바뀌는 것 — 쉼표 빠짐·칸 가름(` · ` → `;`)·글자 바뀜은 코드를 바꾸지 않는다.
     assert checks.summary_code("8-4 r6 · M 1020 = 계획 700") == checks.summary_code(
         "8-4 r6 · M 1,020 = 계획 700"
     )
     coded = checks.summary_lines(["- 8-2R 100.00% · 0.01% · 0"])[2]
-    assert checks.check_transcript([f"[1] {coded[2:]}"]) == []
+    assert checks.check_transcript([coded[2:]]) == []
+    assert checks.check_transcript([coded[2:].replace(" · ", "; ")]) == []
     assert checks.check_transcript([coded.replace("0.01%", "0.10%")]) != []
 
 
@@ -2416,8 +2450,8 @@ def test_check_summary_reads_a_transcript_without_opening_a_database(
     )
     transcript = tmp_path / "transcript.txt"
     transcript.write_text(
-        "판정 — 손으로 쓴 줄은 보지 않는다\n"
-        + "\n".join(f"[1] {line[2:]}" for line in good if line.startswith("- ")),
+        "202610300900 (가); 적용 ok; 관문 ok; 권한 ok; 발견 0; 사외요청 0; 식별값 없음 확인\n"
+        + "\n".join(line[2:] for line in good if line.startswith("- ")),
         encoding="utf-8",
     )
     assert checks.main(["--check-summary", str(transcript)]) == 0
@@ -2430,6 +2464,147 @@ def test_check_summary_reads_a_transcript_without_opening_a_database(
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "확인 코드가 있는 줄 2 · 맞지 않는 것 1"
     assert out[1].startswith("- 줄 2 — 확인 코드가 맞지 않는다")
+
+
+def _sample_compressed_review() -> list[str]:
+    """런북 5장 차례 · `docs/dual_env_workflow.md` 4장 양식대로 쓴 압축본 표본. 8장 줄은 스크립트가
+    찍은 그대로(확인 코드째)이고, 늘 옮기는 줄은 판정 · B · A 바로 아래, 나머지는 끝이다."""
+    eighth = [
+        line[2:]
+        for line in checks.summary_lines(
+            [
+                "- 8-1 S 35/35 · E 23/23 · R 12 · O 3",
+                "- 8-2W 0/12 · 0.00% · -",
+                "- 8-2B 3 = K·CHIP·BUFFER 1 + K·PKG·(PKG) 1 + P·CHIP·? 1 · U 1",
+                "- 8-5C1 표본 32일 · 3 · 0 · 0 · 0 · 0 · 0",
+                "- 8-10 활성 5 · 0 아님 2/12 · 합 7",
+                "- 8-10 C1 3",
+                "- 8-10 C8 4",
+                "- 8-4 r6 · M 1,020 = 계획 700 + 확정 300 + 완료 0 + 지연 0 + 빈 20 + ? 0"
+                " · T 0 · Q 0 · D 0",
+            ]
+        )
+        if line.startswith("- ")
+    ]
+    return [
+        "202610300900 (가); 적용 ok; 관문 ok; 권한 ng 복사함; 발견 1; 사외요청 1; 식별값 없음 확인",
+        "권한 템플릿 복사함; 모드 기본",
+        "적용먼저 확인 1030",
+        "wf TOP 0",
+        "B 6 = 기록 4 + 미기록 2; u3 a3; na칸 4; 빈칸 0",
+        "B 1)ok@u 2)ok,a3,b0@ua 3)na 시간 없음 4)ng 칸2 다름@u 5)12초@a 6)na 인쇄 못 함@a",
+        "A 15 = 기록 14 + 미기록 1 + 안함 0; ng a7 TimeoutError(PageUp)",
+        *eighth[1:7],
+        "6-3a 사본 1030 0910; 리비전 54 = 됨 52 + 멈춤 2 + 확보율멈춤 0 + 막힘 0 + 읽지못함 0;"
+        " 겹친키 0; 최신공식Density ok",
+        "탐색 1; 1) Buffer 표기 2종",
+        "발견 1) 멈춘 리비전 둘; 증상 계산 멈춤; 재현 DEMO_ 두 행, 표기만 다름; 관측 꼴 2종, 5행;"
+        " 제안 모름",
+        "사외요청 1) 6-3 b 시간 상한",
+        "7-8 ok",
+        "7장요청 9 = 했음 8 + 안함 1; 안함 4) 시간",
+        "데이터변화 리비전 +1; 호기 0; 사내커밋 0; 임시수정 0; 남은사본 0",
+        "6-3 b cold 12.3초; c 17/17; 8501 ok",
+        "8장 =202610200720 8-3 8-9",
+        eighth[0],
+        eighth[7],
+    ]
+
+
+def _recount_b(items: str) -> tuple[int, int, int, int]:
+    """B 항목 줄에서 N · n · u · a 를 다시 센다(런북 5장 「B 세는 법」) — 사외가 하는 셈."""
+    entries = re.findall(r"(\d+)\)(\S.*?)(?=\s\d+\)|$)", items.removeprefix("B "))
+    values = [value for _, value in entries]
+    marks = [value.rsplit("@", 1)[1] if "@" in value else "" for value in values]
+    recorded = sum(not value.startswith("na") for value in values)
+    return (
+        len(values),
+        recorded,
+        sum("u" in mark for mark in marks),
+        sum("a" in mark for mark in marks),
+    )
+
+
+def test_a_compressed_review_in_the_template_form_checks_clean() -> None:
+    """양식대로 쓴 압축본은 `--check-summary` 에 맞지 않는 것이 없다 — 8장 줄의 확인 코드와 8-10 줄
+    수, 손으로 쓴 줄(B · A · 6-3a · 7장요청)의 합계 식을 다시 센다. 손으로 쓴 식이 틀리거나 8장
+    줄의 확인 코드가 빠지면 그 줄 번호가 나온다. B 셈 줄의 수는 항목 줄의 표지로 다시 셀 수 있다."""
+    review = _sample_compressed_review()
+    assert checks.check_transcript(review) == []
+
+    count_line = review.index("B 6 = 기록 4 + 미기록 2; u3 a3; na칸 4; 빈칸 0")
+    assert _recount_b(review[count_line + 1]) == (6, 4, 3, 3)
+
+    slipped = [*review]
+    slipped[count_line] = slipped[count_line].replace("미기록 2", "미기록 1")
+    assert checks.check_transcript(slipped) == [
+        f"줄 {count_line + 1} — 줄 안 검산 식이 서지 않는다"
+    ]
+    revisions = next(n for n, line in enumerate(review) if line.startswith("6-3a "))
+    slipped = [*review]
+    slipped[revisions] = slipped[revisions].replace("멈춤 2", "멈춤 1")
+    assert checks.check_transcript(slipped) == [f"줄 {revisions + 1} — 줄 안 검산 식이 서지 않는다"]
+
+    census = next(n for n, line in enumerate(review) if line.startswith("8-10 C1 "))
+    uncoded = [*review]
+    uncoded[census] = uncoded[census].rsplit(" #", 1)[0]
+    assert checks.check_transcript(uncoded) == [
+        f"줄 {census + 1} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다"
+    ]
+
+
+def test_summary_lines_copied_with_keyboard_separators_still_check() -> None:
+    """손으로 옮기며 칸 가름 ` · ` 을 `;` 나 `, ` 로, 갈래 이름 안의 `·` 을 `.` 으로 바꿔 써도 확인
+    코드 · 줄 안 식 · 8-10 머리와 수 줄이 그대로 맞는다(런북 5장 · 8-6). 바꿔 쓴 줄에서도 숫자 한
+    자리는 잡힌다."""
+    review = _sample_compressed_review()
+    for separator in ("; ", ";", ", "):
+        typed = [
+            line.replace(" · ", separator).replace("·", ".") if re.match(r"8-\d", line) else line
+            for line in review
+        ]
+        assert typed != review
+        assert checks.check_transcript(typed) == [], separator
+        head = next(n for n, line in enumerate(typed) if line.startswith("8-10 활성"))
+        slipped = [*typed]
+        slipped[head] = slipped[head].replace("합 7", "합 8")
+        assert checks.check_transcript(slipped), separator
+
+
+def _compressed_template() -> list[str]:
+    """`docs/dual_env_workflow.md` 4장 압축본 양식 코드블록의 줄."""
+    text = DUAL_ENV.read_text(encoding="utf-8")
+    section = text[text.index("### 양식") :]
+    block = section[section.index("```text\n") + len("```text\n") :]
+    return [line for line in block[: block.index("```")].splitlines() if line.strip()]
+
+
+def _runbook_line_keys() -> list[list[str]]:
+    """런북 5장 「압축본 줄 — 이 차례로」 의 번호마다 줄 앞 백틱 키."""
+    text = RUNBOOK.read_text(encoding="utf-8")
+    section = text[text.index("**압축본 줄 — 이 차례로**") : text.index("**B 세는 법**")]
+    items = re.findall(r"^(\d+)\. ((?:`[^`]+`(?: · )?)+)", section, re.MULTILINE)
+    assert [int(number) for number, _ in items] == list(range(1, len(items) + 1))
+    return [re.findall(r"`([^`]+)`", keys) for _, keys in items]
+
+
+def test_the_compressed_review_template_follows_the_runbook_order() -> None:
+    """적는 꼴의 정본은 런북 5장이고 dual_env 4장은 양식만 둔다 — 양식의 줄은 런북 번호의 키로
+    시작하고 그 차례를 지키며 번호를 모두 덮는다. 결정 근거 줄의 키는 런북 8-6 「늘 옮기는 줄」 과
+    같다."""
+    keys = _runbook_line_keys()
+    positions = []
+    for line in _compressed_template():
+        found = [
+            index
+            for index, item in enumerate(keys)
+            if any(line == key or line.startswith(f"{key} ") for key in item)
+        ]
+        assert len(found) == 1, line
+        positions.append(found[0])
+    assert positions == sorted(positions), positions
+    assert set(positions) == set(range(len(keys)))
+    assert next(item for item in keys if "8-2W" in item) == _carried_keys()
 
 
 def test_a_block_that_stops_is_named_in_the_summary(

@@ -27,7 +27,8 @@
 수만으로** 한 줄에 싣는다(예: `8-2W 0/12 · 0.00% · -` — 키의 뜻은 런북 8-6 범례 한 곳). 합이
 서는 수 묶음은 같은 줄 안에 `합 = 항 + 항` 식으로 두고, 줄 끝에 그 줄의 수로 만든 확인 코드
 `#NN` 을 단다 — 사외가 받은 압축본에 `--check-summary <파일>` 을 돌려 한 자리 오타 · 자리바꿈 ·
-빠진 8-10 줄을 잡는다(DB 를 열지 않는다). 블록 출력은 그대로 두고 요약은 그 뒤에 따로
+빠진 8-10 줄을 잡는다(DB 를 열지 않는다. 압축본의 손으로 쓴 줄도 `합 = 항 + 항` 식은 다시 셈한다).
+블록 출력은 그대로 두고 요약은 그 뒤에 따로
 찍으며, 멈춘 실행(`Ctrl+C`)도 잰 데까지의 요약을 남긴다. 요약도 판정은 내리지 않는다 — 기대
 꼴은 런북 8장이 적는다.
 
@@ -450,8 +451,14 @@ def _heading(number: str, title: str, check: str) -> list[str]:
 
 _SUMMARY_NUMBER: Final = re.compile(r"\d+(?:\.\d+)?")
 _SUMMARY_CODE: Final = re.compile(r"^(?P<body>.*?)\s*#(?P<code>\d{2})\s*$")
-# 옮겨 적은 줄 앞의 목록 표지와 전송 우선순위(`[1]`~`[3]`) — 코드에 넣지 않는다.
-_SUMMARY_PREFIX: Final = re.compile(r"^\s*(?:[-*]\s+)?(?:\[\d\]\s*)?")
+# 옮겨 적은 줄 앞의 목록 표지 — 코드에 넣지 않는다.
+_SUMMARY_PREFIX: Final = re.compile(r"^\s*(?:[-*]\s+)?")
+# 칸 가름 — 찍는 것은 ` · ` 이고, 손으로 옮기며 `;` 나 `, ` 로 바꿔 써도 같은 칸으로 본다. 붙여 쓴
+# 가운뎃점(갈래 이름 `K·CHIP·WF`)과 띄지 않은 쉼표(천 단위 `1,020`)는 칸을 가르지 않는다.
+_CELL_SPLIT: Final = re.compile(r"\s*;\s*|\s+·\s*|\s*·\s+|,\s+")
+_CELL_SEP: Final = r"\s*(?:·|;|,)\s*"
+# 요약 줄의 키(`8-1` · `8-2W` · `8-5C1` · `8-10`) — 이 꼴로 시작하는 줄은 확인 코드가 있어야 한다.
+_SUMMARY_KEY: Final = re.compile(r"^8-\d+[A-Z]?\d*(?:\s|$)")
 
 
 def summary_code(text: str) -> str:
@@ -461,7 +468,9 @@ def summary_code(text: str) -> str:
     12 진수로 이어 97 로 나눈 나머지다. 97 이 12 보다 큰 소수라 숫자 한 자리를 바꾸거나 한 수 안의
     이웃한 두 자리를 바꾸면 늘 코드가 달라진다. 수 하나를 빼먹거나 쪼개거나 붙인 것은 97 가운데 96
     꼴로 잡힌다(보장은 아니다 — 8-10 줄 수는 머리의 `0 아님 k` 가 따로 잡는다). 글자·기호는 셈에
-    들지 않는다 — 손으로 옮기며 띄어쓰기·가운뎃점이 바뀌어도 같고, 키의 숫자(`8-2`)는 든다.
+    들지 않는다 — 손으로 옮기며 띄어쓰기를 바꾸거나 가운뎃점을 `;` · `, ` 로(갈래 이름 안의 것은
+    `.` 으로) 바꿔 써도 같고, 키의 숫자(`8-2`)는 든다. 칸 가름을 그렇게 바꾼 줄은 `check_transcript`
+    도 같은 칸으로 읽는다.
     """
     value = 0
     for token in _SUMMARY_NUMBER.findall(text.replace(",", "")):
@@ -4541,10 +4550,14 @@ def summary_lines(notes: Sequence[str], *, interrupted: bool = False) -> list[st
     return [*lines, ""]
 
 
-# 옮겨 적은 8-10 — 머리의 `0 아님 k/n` 과 `합 S`, 아래 수 줄(`8-10 C<번호> <수>`).
-_CENSUS_HEAD: Final = re.compile(r"^8-10 \S+ [\d,]+ · 0 아님 (?P<k>\d+)/\d+.* · 합 (?P<sum>[\d,]+)")
-_CENSUS_ALL_ZERO: Final = re.compile(r"^8-10 \S+ [\d,]+ · 모두 0 ")
-_CENSUS_ITEM: Final = re.compile(r"^8-10 C\d+ (?P<count>[\d,]+)$")
+# 옮겨 적은 8-10 — 머리의 `0 아님 k/n` 과 `합 S`, 아래 수 줄(`8-10 C<번호> <수>`). 칸 가름은
+# `_CELL_SEP` 꼴이면 된다(손으로 옮기며 가운뎃점을 바꿔 쓴 줄).
+_CENSUS_HEAD: Final = re.compile(
+    rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}0\s*아님\s*(?P<k>\d+)\s*/\s*\d+.*{_CELL_SEP}"
+    r"합\s*(?P<sum>[\d,]+)"
+)
+_CENSUS_ALL_ZERO: Final = re.compile(rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}모두\s*0\b")
+_CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*$")
 
 
 def _last_number(text: str) -> float | None:
@@ -4552,41 +4565,49 @@ def _last_number(text: str) -> float | None:
     return float(numbers[-1]) if numbers else None
 
 
-def _equations(body: str) -> Iterator[bool]:
+def _equations(body: str, *, coded: bool = True) -> Iterator[bool]:
     """줄 안의 `합 = 항 + 항` 식마다 맞는지.
 
-    칸(` · `)마다 보고, 수가 아닌 칸(실패 등)은 건너뛴다.
+    칸(` · ` — 손으로 옮긴 줄은 `;` · `, ` 도)마다 보고, 수가 아닌 칸(실패 등)은 건너뛴다. 손으로 쓴
+    줄(`coded=False`)은 항이 둘 이상인 식만 본다 — `8장 = <stamp> …` 처럼 띄어 쓴 접은 줄을 식으로
+    읽지 않게.
     """
-    for cell in body.split(" · "):
+    for cell in _CELL_SPLIT.split(body):
         if " = " not in cell:
             continue
         left, right = cell.split(" = ", 1)
+        parts = right.split(" + ")
+        if not coded and len(parts) < 2:
+            continue
         total = _last_number(left)
-        terms = [_last_number(term) for term in right.split(" + ")]
+        terms = [_last_number(term) for term in parts]
         if total is None or any(term is None for term in terms):
             continue
         yield math.isclose(total, sum(cast(float, term) for term in terms))
 
 
 def check_transcript(lines: Iterable[str]) -> list[str]:
-    """손으로 옮겨 적은 전송용 요약을 다시 셈한다 — 맞지 않는 것마다 한 줄. 비면 다 맞다.
+    """손으로 옮겨 적은 리뷰 압축본을 다시 셈한다 — 맞지 않는 것마다 한 줄. 비면 다 맞다.
 
-    셋을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 줄 안 `합 = 항 + 항`
-    식이 서는지, 8-10 머리의 `0 아님 k` · `합 S` 가 그 아래(다음 8-10 머리 전까지) 수 줄의 개수 ·
-    합과 같은지. 8-10 은 머리마다 따로 센다 — 요약이 둘 이상 든 파일(다시 돌린 블록을 함께 붙인
-    리뷰 전문 같은 것)도 본다. 줄 앞의 목록 표지와 `[1]` 같은 꼬리표는 떼고 본다. 코드가 없는
-    줄(판정 줄 등 손으로 쓴 줄)은 보지 않는다.
+    넷을 본다. 줄 끝 확인 코드(`#NN`)가 그 줄의 수로 다시 셈한 것과 같은지, 요약 키(`8-…`)로
+    시작하는 줄에 확인 코드가 있는지, 줄 안 `합 = 항 + 항` 식이 서는지(손으로 쓴 줄 — 판정 · B ·
+    A · 7장요청 같은 것 — 도 항이 둘 이상인 식은 본다), 8-10 머리의 `0 아님 k` · `합 S` 가 그
+    아래(다음 8-10 머리 전까지) 수 줄의 개수 · 합과 같은지. 8-10 은 머리마다 따로 센다 — 요약이
+    둘 이상 든 파일(다시 돌린 블록을 함께 붙인 리뷰 전문 같은 것)도 본다. 줄 앞의 목록 표지는
+    떼고 보고, 칸 가름은 ` · ` 대신 `;` · `, ` 로 바꿔 쓴 것도 같은 칸으로 읽는다.
     """
     problems: list[str] = []
     groups: list[tuple[int, int, int, list[int]]] = []
     for number, raw in enumerate(lines, start=1):
-        coded = _SUMMARY_CODE.match(_summary_body(raw))
+        text = _summary_body(raw)
+        coded = _SUMMARY_CODE.match(text)
+        body = text if coded is None else coded.group("body")
         if coded is None:
-            continue
-        body = coded.group("body")
-        if summary_code(body) != coded.group("code"):
+            if _SUMMARY_KEY.match(text):
+                problems.append(f"줄 {number} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다")
+        elif summary_code(body) != coded.group("code"):
             problems.append(f"줄 {number} — 확인 코드가 맞지 않는다(그 줄의 수를 다시 본다)")
-        if not all(_equations(body)):
+        if not all(_equations(body, coded=coded is not None)):
             problems.append(f"줄 {number} — 줄 안 검산 식이 서지 않는다")
         head = _CENSUS_HEAD.match(body)
         if head is not None:
