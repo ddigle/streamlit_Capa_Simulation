@@ -1,0 +1,107 @@
+{
+ "version": "lob@2026-10-22",
+ "mode": "example",
+ "viewport": [
+  1440,
+  900
+ ],
+ "scale": 2.0,
+ "states": [
+  {
+   "id": "14_scenario_saved",
+   "file": "14_scenario_saved.webp",
+   "targets": {
+    "save_success": [
+     52.3,
+     428.1,
+     195.4,
+     35.0
+    ],
+    "sidebar_scenario": [
+     38.3,
+     354.7,
+     223.4,
+     51.0
+    ],
+    "sidebar_badge": [
+     183.6,
+     354.9,
+     77.1,
+     16.5
+    ],
+    "header_band": [
+     321.0,
+     10.3,
+     347.9,
+     30.8
+    ]
+   }
+  },
+  {
+   "id": "18_official_done",
+   "file": "18_official_done.webp",
+   "targets": {
+    "off_success": [
+     317.5,
+     172.5,
+     1105.0,
+     49.0
+    ],
+    "repo_status": [
+     317.5,
+     235.5,
+     1105.0,
+     202.6
+    ],
+    "sidebar_scenario": [
+     38.3,
+     354.7,
+     223.4,
+     51.0
+    ],
+    "sidebar_badge": [
+     216.9,
+     354.9,
+     43.8,
+     16.5
+    ],
+    "header_band": [
+     321.0,
+     10.3,
+     319.9,
+     30.8
+    ]
+   }
+  },
+  {
+   "id": "20_home_pref_compare",
+   "file": "20_home_pref_compare.webp",
+   "targets": {
+    "pref_compare_box": [
+     317.5,
+     75.5,
+     1105.0,
+     201.2
+    ],
+    "pref_compare_scenario": [
+     331.5,
+     129.7,
+     1077.0,
+     59.5
+    ],
+    "pref_compare_revision": [
+     331.5,
+     203.2,
+     1077.0,
+     59.5
+    ],
+    "pref_criteria_box": [
+     317.5,
+     290.7,
+     1105.0,
+     379.2
+    ]
+   }
+  }
+ ]
+}

@@ -15,12 +15,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from capa_simulation import settings
 from capa_simulation.components import page_guide
 from capa_simulation.components.page_guide import (
     GUIDE_HREF_VARIABLE,
@@ -200,3 +202,83 @@ def test_tracked_guide_boards_sit_under_static_howto_and_match_a_skeleton() -> N
         text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
         assert "static/guides/howto/" in text, name
         assert "static/guides/local/" in text, name
+
+
+# ------------------------------------------------------------------------------ 커밋된 예시판
+
+
+def _board_data(html: str) -> dict[str, object]:
+    payload = html.split("const DATA = ", 1)[1].split(";\n", 1)[0]
+    data = json.loads(payload)
+    assert isinstance(data, dict)
+    return data
+
+
+def _identity_needles() -> list[str]:
+    """실 담당 조직 · 문의처와 거기서 나오는 조각(이름 · 회사). 값은 settings 정본에서 읽는다."""
+    from capa_simulation.io.object_storage import DEFAULT_PROFILE
+
+    local, domain = settings.APP_CONTACT_EMAIL.split("@", 1)
+    return [
+        settings.APP_OWNER_TEAM,
+        settings.APP_CONTACT_EMAIL,
+        local,
+        *[part for part in re.split(r"[._-]", local) if len(part) >= 3],
+        domain,
+        domain.split(".", 1)[0],
+        DEFAULT_PROFILE,
+    ]
+
+
+def test_the_committed_example_board_is_one_synthetic_self_contained_file() -> None:
+    """예시판(`static/guides/howto/lob.html`)은 공개 저장소에 실린다 — 한 파일로 서고(외부 참조 0),
+    그림 밖 글에 실 담당 조직 · 문의처 · 이메일이 없고, 지금 원고 판으로 만든 것이다."""
+    path = PROJECT_ROOT / "static" / "guides" / "howto" / "lob.html"
+    html = path.read_text(encoding="utf-8")
+    data = _board_data(html)
+    content = json.loads((HOWTO / "lob" / "content.json").read_text(encoding="utf-8"))
+
+    assert "\r" not in html
+    assert path.stat().st_size < 6 * 1024 * 1024
+    assert data["version"] == content["version"]
+    assert data["shotLabel"] == "예시 화면 · 합성 샘플"
+    images = data["images"]
+    assert isinstance(images, dict) and len(images) >= 40
+    assert all(str(uri).startswith("data:image/webp;base64,") for uri in images.values())
+    # 외부 참조 0.
+    assert not re.findall(r"""(?:src|href)\s*=\s*["']?\s*(?:https?:)?//""", html)
+    assert not re.findall(r"""url\(\s*["']?\s*(?:https?:)?//""", html)
+    assert "@import" not in html and "<link" not in html
+    # 그림 밖 글(그림 바이트를 걷어 낸 나머지)에 실 식별값이 없다. 그림은 촬영기가 가린다.
+    text = re.sub(r"data:image/webp;base64,[A-Za-z0-9+/=]+", "", html)
+    lowered = text.lower()
+    for needle in _identity_needles():
+        assert needle.lower() not in lowered, "예시판에 실 식별값이 남았습니다"
+    assert not re.findall(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", text)
+    # 설정 사전(md 대화상자로 가는 길)이 실린 틀로 만들었다.
+    assert ">설정 사전</button>" in html
+
+
+def test_the_committed_example_shots_cover_the_states_internal_runs_skip() -> None:
+    """사내 1단계가 찍지 않는 상태(사슬에 `db` · `shared`)의 합성 그림이 뼈대에 실려 있다."""
+    folder = HOWTO / "lob" / "example"
+    shots = json.loads((folder / "shots.json").read_text(encoding="utf-8"))
+    plan = json.loads((HOWTO / "lob" / "plan.json").read_text(encoding="utf-8"))
+    content = json.loads((HOWTO / "lob" / "content.json").read_text(encoding="utf-8"))
+    states = {state["id"]: state for state in plan["states"]}
+
+    def chain_writes(state_id: str) -> set[str]:
+        grades: set[str] = set()
+        current: str | None = state_id
+        while current:
+            grades.add(states[current]["writes"])
+            current = states[current].get("from")
+        return grades
+
+    skipped = {state_id for state_id in states if chain_writes(state_id) & {"db", "shared"}}
+
+    assert shots["version"] == content["version"] and shots["mode"] == "example"
+    assert {state["id"] for state in shots["states"]} == skipped
+    assert sorted(path.name for path in folder.glob("*.webp")) == sorted(
+        f"{state_id}.webp" for state_id in skipped
+    )
