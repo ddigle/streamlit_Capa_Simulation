@@ -26,6 +26,8 @@ from capa_simulation.components.scenario_management import (
     ARCHIVED_EXPANDER_KEY,
     ARCHIVED_SELECT_KEY,
     CLONE_MODE,
+    DELETE_BUTTON_KEY,
+    DELETE_BUTTON_LABEL,
     DELETE_CONFIRM_KEY,
     DISCARD_UNSAVED_KEY,
     FLASH_KEY,
@@ -625,7 +627,7 @@ def test_archive_and_delete_drop_the_cached_comparison_target(tmp_path: Path) ->
     assert not app.exception
     app.text_input(key=DELETE_CONFIRM_KEY).set_value("비교 대상")
     app.run()
-    next(button for button in app.button if button.label == "영구 삭제 실행").click()
+    app.button(key=DELETE_BUTTON_KEY).click()
     app.run()
     assert not app.exception
 
@@ -693,7 +695,7 @@ def test_the_archived_box_shows_what_the_next_restore_and_delete_act_on(tmp_path
     doomed = str(browser.wire)
     app.text_input(key=DELETE_CONFIRM_KEY).set_value(doomed)
     browser.run()
-    click("영구 삭제 실행")
+    click(DELETE_BUTTON_KEY)
     remaining = browser.options()
     assert doomed not in remaining
     assert len(remaining) == 1
@@ -1267,9 +1269,19 @@ def test_permanent_delete_says_what_goes_with_it_right_above_an_empty_box(
     confirm = app.text_input(key=DELETE_CONFIRM_KEY)
     assert confirm.label == "확인: 「지울 시나리오」를 그대로 입력하세요"
     assert confirm.placeholder == ""
-    execute = next(button for button in app.button if button.label == "영구 삭제 실행")
-    assert execute.proto.type == "primary"
+    # 되돌릴 수 없는 단추는 주 동작(청록 primary)이 아니다 — 보조 단추이고, 이름을 맞게 적어
+    # 누를 수 있을 때만 빨간 글자다(잠긴 단추가 빨가면 누를 수 있는 것처럼 보인다).
+    execute = app.button(key=DELETE_BUTTON_KEY)
+    assert execute.proto.type == "secondary"
     assert execute.disabled
+    assert execute.label == DELETE_BUTTON_LABEL
+    confirm.set_value("지울 시나리오")
+    app.run()
+    execute = app.button(key=DELETE_BUTTON_KEY)
+    assert execute.proto.type == "secondary"
+    assert not execute.disabled
+    assert execute.label == f":red[{DELETE_BUTTON_LABEL}]"
+    assert execute.proto.icon == ":material/delete_forever:"
 
 
 def test_the_clone_form_names_what_it_copies(tmp_path: Path) -> None:

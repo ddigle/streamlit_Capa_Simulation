@@ -148,6 +148,11 @@ DELETE_CONFIRM_KEY = "scenario_list_delete_confirm"
 # 바꿀 수 없고, 칸을 지우기(`pop`)만 하면 브라우저가 지운 이름을 계속 보인다. 다음 회차 칸 앞에서
 # 빈 값을 적는다(AGENTS 9장 「pop 하지 말고 새 값을 적는다」).
 DELETE_CLEAR_KEY = "scenario_list_delete_confirm_clear"
+# 「영구 삭제 실행」 단추. 주 동작(청록 primary)처럼 보이지 않게 보조 단추에 빨간 글자로 둔다 —
+# 빨간 글자는 이름을 맞게 적어 누를 수 있을 때만이다(잠긴 단추가 빨가면 누를 수 있는 것처럼 보인다).
+# 라벨이 바뀌어도 같은 단추로 남게 key 를 준다.
+DELETE_BUTTON_KEY = "scenario_list_delete_execute"
+DELETE_BUTTON_LABEL = "영구 삭제 실행"
 ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
 # 가상 제품이 든 리비전을 공식버전으로 지정할 때의 확인 체크. 리비전마다 따로 받는다
 # (`official_confirm_key`).
@@ -1413,11 +1418,13 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         key=DELETE_CONFIRM_KEY,
         placeholder="",
     )
+    ready = typed.strip() == summary.scenario_name
     if not st.button(
-        "영구 삭제 실행",
+        f":red[{DELETE_BUTTON_LABEL}]" if ready else DELETE_BUTTON_LABEL,
+        key=DELETE_BUTTON_KEY,
         icon=":material/delete_forever:",
-        type="primary",
-        disabled=typed.strip() != summary.scenario_name,
+        type="secondary",
+        disabled=not ready,
         width="stretch",
     ):
         return
