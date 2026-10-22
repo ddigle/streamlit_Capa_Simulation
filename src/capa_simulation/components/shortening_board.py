@@ -44,7 +44,6 @@ from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import KIND_NEW, LevelPlan
 from capa_simulation.services.shortening_watch import (
     BOARD_ORDERS,
-    MANAGER_COLUMN,
     ORDER_DISPLAY,
     ORDER_WORSENED_FIRST,
     board_order,
@@ -403,10 +402,15 @@ def _render_imminent(
         view = imminent.copy()
         view["공정"] = [labels.label(process) for process in imminent["공정"]]
         view["목표 Qual"] = [f"{day:%Y-%m-%d}" for day in imminent["목표 Qual"]]
-        view[MANAGER_COLUMN] = [
-            _EMPTY if pd.isna(value) else str(value) for value in imminent[MANAGER_COLUMN]
-        ]
-        st.dataframe(view, hide_index=True, width="stretch", key=_IMMINENT_TABLE_KEY)
+        # 빈 칸(신규 호기의 단축일수·담당자 없음)은 이행 지연 표처럼 「—」 다. 주지 않으면
+        # Streamlit 이 그 칸에 「None」 글자를 그린다.
+        st.dataframe(
+            view,
+            hide_index=True,
+            width="stretch",
+            placeholder=_EMPTY,
+            key=_IMMINENT_TABLE_KEY,
+        )
         new = int(imminent["구분"].eq(KIND_NEW).sum())
         if new:
             st.caption(

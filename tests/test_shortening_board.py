@@ -1,4 +1,4 @@
-# Purpose: 필요 단축 일정 강조 공정 칸·보드 줄 고르기 콜백·상세 근거 링크 주소 인자를 검사한다.
+# Purpose: 필요 단축 일정 강조 공정·보드 줄 고르기·상세 링크 인자·기한 임박 표 빈칸을 검사한다.
 
 """`components/shortening_board.py` 의 세션·주소 계약.
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 from test_shortening_watch import TODAY, _level
 
@@ -109,3 +110,39 @@ def test_the_detail_link_carries_the_card_first_shortage_month_target_period_and
     satisfied = detail_link_params(_level(), "DEMO_C", level=1.1, months=[202605], theme="dark")
     assert "month" not in satisfied and satisfied["theme"] == "dark"
     assert TODAY < date(2026, 6, 1)
+
+
+def _imminent_app() -> None:
+    from test_shortening_watch import TODAY, _level
+
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.components.shortening_board import _render_imminent
+
+    _render_imminent(
+        _level(),
+        ["DEMO_A", "DEMO_B"],
+        today=TODAY,
+        days=60,
+        labels=ProcessLabels(),
+        managers={"DEMO-A2": "DEMO 담당"},
+    )
+
+
+def test_the_imminent_table_draws_empty_cells_as_a_dash_like_the_delayed_table() -> None:
+    """신규(추가N) 줄의 단축일수·담당자 없는 칸은 「None」 글자가 아니라 「—」 다(이행 지연 표와
+    같다).
+
+    Streamlit 1.63 `st.dataframe` 은 `placeholder` 를 주지 않으면 결측 칸에 「None」 을 그린다.
+    """
+    app = AppTest.from_function(_imminent_app).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    # 고름이 없는 `st.dataframe` 은 key 를 요소 id 에 싣지 않는다 — 이 앱의 표는 하나다.
+    (table,) = app.dataframe
+    assert table.proto.HasField("placeholder") and table.proto.placeholder == "—"
+    frame = table.value
+    assert isinstance(frame, pd.DataFrame)
+    new = frame.loc[frame["호기"].eq("추가1")]
+    assert len(new) == 1 and pd.isna(new["단축일수"].iloc[0])
+    managers = frame.set_index("호기")["담당자"]
+    assert managers["DEMO-A2"] == "DEMO 담당" and pd.isna(managers["DEMO-B1"])
