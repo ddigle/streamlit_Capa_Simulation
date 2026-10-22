@@ -754,7 +754,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     매개값 · 리뷰 한 줄). `--example` 은 `git archive` 사본 + 합성 시드(`scripts/guide_example_seed.py`), `--internal` 은
     런북 6-3 사본 트리에서만 돈다. 결과는 늘 저장소 밖(`--dist`)에 쓰고, 예시판은 사람이 정본 자리로 복사해 커밋한다.
   - 사내 1단계는 쓰기 등급(`writes`)이 사슬에 `db` · `shared` 인 상태를 건너뛰고 예시 그림으로 대신하며, 사본 두 DB 의
-    크기 · sha256 이 앞뒤로 같아야 한다. 점검기 `scripts/check_page_guide.py` 가 같은 리뷰 한 줄을 다시 낸다.
+    크기 · sha256 이 앞뒤로 같아야 한다. 「앞」은 그 `--work` 의 첫 촬영 앞에 적은 기준 지문(`db_baseline.json`)이고, 같은
+    `--work` 로 다시 돌 때도(`--states` 여부와 상관없이) 그것과 견줘 사본이 이미 다르면 앱을 띄우지 않고 멈춘다 — 바뀐 DB 를
+    새 기준으로 삼지 않는다. 앱 오류 · 예외로 멈출 때도 판정을 `run.json` 에 적는다. 점검기 `scripts/check_page_guide.py` 가
+    같은 리뷰 한 줄을 다시 낸다.
 - `src/capa_simulation/components/print_button.py` — 헤더 툴바의 `Print` 버튼 스크립트다(감춘 ⋮ 메뉴의 인쇄를
   대신). 실행 중이면 멈출 때까지 기다렸다 인쇄하고, 어두운 테마면 `DARK_PRINT_CONFIRM` 으로 먼저 묻는다.
 - `src/capa_simulation/components/plotly_touch_scroll.py` — 칸 선택(`on_select`)을 켠 Plotly 그림 위에서 시작한

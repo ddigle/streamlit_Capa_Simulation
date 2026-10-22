@@ -4,7 +4,9 @@
 
 촬영은 브라우저 · 앱이 있어야 하므로 여기서는 가짜 촬영 결과(단색 그림 + 계획의 표적 좌표)로
 조립 · 리뷰 한 줄을 돌리고, 촬영 차례(새 세션 · 쓰기 등급으로 건너뛰기)는 가짜 촬영기로 잰다.
-실제 촬영은 사외 예시판을 만들 때(`--example`) 사람이 돌려 본다.
+생성기의 촬영 길(사내 쓰기 등급 건너뛰기 · 사본 DB 기준 지문 · 종료 코드)은 앱 · 브라우저 ·
+촬영기만 가짜로 바꾸고 `build_page_guide.main` 을 끝까지 돌려 잰다. 실제 촬영은 사외 예시판을
+만들 때(`--example`) 사람이 돌려 본다.
 """
 
 from __future__ import annotations
@@ -16,7 +18,9 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import build_page_guide as builder  # noqa: E402
+import check_deploy_screens as screens  # noqa: E402
 import check_page_guide as checker  # noqa: E402
 import page_guide_capture as capture  # noqa: E402
 import page_guide_core as core  # noqa: E402
@@ -723,6 +728,260 @@ def test_assemble_only_without_earlier_shots_stops(
 
     assert result == builder.EXIT_NOT_READY
     assert "shots.json" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ 촬영 길(가짜 앱 · 촬영기)
+
+
+WRITING_STATES = ["14_scenario_saved", "18_official_done", "20_home_pref_compare"]
+
+
+@dataclass
+class Rig:
+    """생성기의 촬영 길을 끝까지 돌리는 판 — 앱 · 브라우저 · 촬영기만 가짜다.
+
+    `write_db` 상태의 동작을 돌 때 사본 DB 에 한 바이트를 쓰고, `app_problem` 상태에서 앱 오류
+    화면을 낸다. `skips` 는 `run_states` 가 받은 건너뛸 목록, `apps` 는 띄운 앱 수를 적는다.
+    """
+
+    root: Path
+    copy_root: Path
+    write_db: str | None = None
+    app_problem: str | None = None
+    apps: int = 0
+    app_roots: list[Path] = field(default_factory=list)
+    skips: list[list[str]] = field(default_factory=list)
+    cameras: list[RigCamera] = field(default_factory=list)
+
+    @property
+    def work(self) -> Path:
+        return self.root / "work"
+
+    @property
+    def output(self) -> Path:
+        return self.root / "guide.md"
+
+    def main(self, *extra: str) -> int:
+        return self.run("--internal", "--copy-root", str(self.copy_root), *extra)
+
+    def run(self, *mode: str) -> int:
+        return builder.main(
+            [*mode, "--work", str(self.work), "--dist", str(self.root / "out")]
+            + ["--output", str(self.output), "--playwright-dir", str(self.root / "pw")]
+        )
+
+    def ops(self) -> list[str]:
+        return [call for camera in self.cameras for call in camera.calls if call.startswith("ops:")]
+
+
+class RigCamera:
+    """`capture.Camera` 자리 — 동작 차례를 적고, 찍기는 작은 그림과 계획의 표적 좌표를 남긴다."""
+
+    def __init__(self, rig: Rig, scale: float) -> None:
+        self.rig = rig
+        self.scale = scale
+        self.where = ""
+        self.calls: list[str] = []
+
+    def open_session(self) -> None:
+        self.calls.append("session")
+
+    def run_ops(self, state_id: str, ops: Sequence[Mapping[str, Any]]) -> None:
+        self.where = f"{state_id}.ops.0 {ops[0]['op']}"
+        self.calls.append(f"ops:{state_id}")
+        if state_id == self.rig.write_db:
+            with (self.rig.copy_root / "data" / builder.DATABASE_NAMES[0]).open("ab") as stream:
+                stream.write(b"!")
+        if state_id == self.rig.app_problem:
+            raise capture.AppProblem("가짜 앱 오류 화면")
+
+    def capture(self, state: Mapping[str, Any], folder: Path) -> core.ShotState:
+        state_id = str(state["id"])
+        folder.mkdir(parents=True, exist_ok=True)
+        image = folder / f"{state_id}.png"
+        Image.new("RGB", (64, 40), (200, 210, 220)).save(image)
+        targets = {str(name): _rect_for(i) for i, name in enumerate(state["targets"])}
+        return core.ShotState(state_id, image, targets, date=DATE, scale=self.scale)
+
+    def close(self) -> None:
+        self.calls.append("close")
+
+
+@pytest.fixture
+def rig(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, example_dir: Path) -> Rig:
+    built = Rig(root=tmp_path, copy_root=_copy_tree(tmp_path / "e2e"))
+
+    class FakeApp:
+        def __init__(self, port: int, *, root: Path, **_options: Any) -> None:
+            built.app_roots.append(root)
+            built.apps += 1
+            self.base_url = f"http://127.0.0.1:{port}/"
+            self.started_seconds = 0.1
+
+        def __enter__(self) -> FakeApp:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    @contextmanager
+    def fake_browser(_sync_api: Any, _channel: str, _no_sandbox: bool) -> Iterator[object]:
+        yield object()
+
+    def fake_camera(_browser: Any, _base_url: str, *, scale: float, **_options: Any) -> RigCamera:
+        camera = RigCamera(built, scale)
+        built.cameras.append(camera)
+        return camera
+
+    real_run_states = capture.run_states
+
+    def spy_run_states(
+        camera: capture.Shooter,
+        skeleton: core.Skeleton,
+        params: Mapping[str, str | int],
+        **options: Any,
+    ) -> None:
+        built.skips.append(list(options["skip"]))
+        real_run_states(camera, skeleton, params, **options)
+
+    monkeypatch.setattr(screens, "load_playwright", lambda _folder: object())
+    monkeypatch.setattr(screens, "locked_databases", lambda _paths: [])
+    monkeypatch.setattr(screens, "StreamlitApp", FakeApp)
+    monkeypatch.setattr(builder, "choose_port", lambda _requested: 8545)
+    monkeypatch.setattr(builder, "open_browser", fake_browser)
+    monkeypatch.setattr(capture, "Camera", fake_camera)
+    monkeypatch.setattr(capture, "run_states", spy_run_states)
+    return built
+
+
+def _last_line(capsys: pytest.CaptureFixture[str]) -> tuple[str, str]:
+    out = capsys.readouterr().out
+    return out, out.strip().splitlines()[-1]
+
+
+def test_internal_run_skips_writing_states_and_finds_the_copy_unchanged(
+    rig: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = rig.main()
+    _out, line = _last_line(capsys)
+
+    assert code == builder.EXIT_OK
+    assert [sorted(skip) for skip in rig.skips] == [WRITING_STATES]
+    # 건너뛴 상태의 동작은 사슬 재생으로도 한 번도 돌지 않는다
+    assert rig.ops() and not [call for call in rig.ops() if call[4:] in WRITING_STATES]
+    assert core.load_run(rig.work).db == "same"
+    assert core.load_run(rig.work).skipped == sorted(WRITING_STATES)
+    assert f"상태 {INTERNAL_FIRST_PASS}/{INTERNAL_FIRST_PASS};" in line
+    assert line.endswith("DB 변화 없음")
+    assert rig.app_roots == [rig.copy_root]
+    assert (rig.work / builder.BASELINE_FILE).exists()
+    assert "끝" in rig.output.read_text(encoding="utf-8")
+
+
+def test_a_copy_database_changed_by_the_run_stops_with_2(
+    rig: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rig.write_db = "01_home_main"
+
+    code = rig.main()
+    out, _line = _last_line(capsys)
+
+    assert code == builder.EXIT_NOT_READY
+    assert builder.DB_CHANGED_MESSAGE in out
+    assert core.load_run(rig.work).db == "changed"
+    block = rig.output.read_text(encoding="utf-8")
+    assert "DB 변화 있음" in block and "멈춤 — DB 변화 있음" in block
+
+
+def test_allow_writes_shoots_every_state_and_marks_the_run_as_writes(
+    rig: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rig.write_db = "14_scenario_saved"
+
+    code = rig.main("--allow-writes")
+    _out, line = _last_line(capsys)
+
+    assert code == builder.EXIT_OK
+    assert rig.skips == [[]]
+    assert {f"ops:{sid}" for sid in WRITING_STATES} <= set(rig.ops())
+    assert core.load_run(rig.work).db == "writes"
+    assert f"상태 {len(SKELETON.state_ids())}/{len(SKELETON.state_ids())};" in line
+    assert line.endswith(core.DB_WORDS["writes"])
+
+
+@pytest.mark.parametrize("again", [[], ["--states", "02_home_lower"]])
+def test_a_rerun_on_a_changed_copy_stops_before_the_app_instead_of_taking_a_new_baseline(
+    rig: Rig, capsys: pytest.CaptureFixture[str], again: list[str]
+) -> None:
+    rig.write_db = "01_home_main"
+    assert rig.main() == builder.EXIT_NOT_READY
+    rig.write_db = None
+    capsys.readouterr()
+
+    code = rig.main(*again)
+    out = capsys.readouterr().out
+
+    assert code == builder.EXIT_NOT_READY
+    assert "기준 지문" in out and "새 --work" in out
+    assert rig.apps == 1 and len(rig.cameras) == 1  # 다시 띄우지도 찍지도 않는다
+    assert core.load_run(rig.work).db == "changed"
+    assert "DB 변화 없음" not in out
+
+
+def test_an_app_error_after_a_write_records_the_change_and_blocks_the_rerun(
+    rig: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rig.write_db = "01_home_main"
+    rig.app_problem = "02_home_lower"
+
+    assert rig.main() == builder.EXIT_NOT_READY
+    out = capsys.readouterr().out
+    assert "앱이 오류 화면입니다" in out and builder.DB_CHANGED_MESSAGE in out
+    assert core.load_run(rig.work).db == "changed"
+
+    rig.write_db = rig.app_problem = None
+    assert rig.main() == builder.EXIT_NOT_READY
+    assert "기준 지문" in capsys.readouterr().out
+    assert rig.apps == 1
+    # 그 --work 를 조립만 해도 「DB 안 봄」이 아니라 변화가 남는다
+    assert rig.main("--assemble-only") == builder.EXIT_NOT_READY
+    assert capsys.readouterr().out.strip().splitlines()[-1] == builder.DB_CHANGED_MESSAGE
+
+
+def test_a_clean_rerun_with_states_compares_with_the_first_baseline_and_goes_on(
+    rig: Rig, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert rig.main() == builder.EXIT_OK
+    baseline = (rig.work / builder.BASELINE_FILE).read_bytes()
+    capsys.readouterr()
+
+    code = rig.main("--states", "02_home_lower")
+    _out, line = _last_line(capsys)
+
+    assert code == builder.EXIT_OK
+    assert rig.apps == 2
+    assert (rig.work / builder.BASELINE_FILE).read_bytes() == baseline
+    assert line.endswith("DB 변화 없음")
+
+
+def test_example_run_shoots_every_state_on_its_own_copy_without_a_baseline(
+    rig: Rig, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(builder, "uncommitted_app_changes", lambda: 0)
+    monkeypatch.setattr(builder, "make_example_copy", lambda work: _copy_tree(work / "app-x"))
+    monkeypatch.setattr(builder, "seed_example", lambda _copy: None)
+
+    code = rig.run("--example")
+    _out, line = _last_line(capsys)
+
+    assert code == builder.EXIT_OK
+    assert rig.skips == [[]]
+    assert rig.app_roots == [rig.work / "app-x"]
+    assert not (rig.work / "app-x").exists()  # 쓴 앱 사본은 지운다
+    assert not (rig.work / builder.BASELINE_FILE).exists()
+    assert core.load_run(rig.work).db == "example"
+    assert line.endswith(core.DB_WORDS["example"])
+    assert (rig.root / "out" / core.EXAMPLE_DIR / core.SHOTS_FILE).exists()
 
 
 # ------------------------------------------------------------------ 점검기 CLI

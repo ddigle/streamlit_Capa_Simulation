@@ -645,9 +645,10 @@
 
 - (2026-10-22) 따라하기 가이드 1단계 — 뼈대(원고 · 촬영 계획 · 형식 · 틀 · 합성 예시 그림)는 사외 정본이고 사내는 글 덮어쓰기
   · 매개값(`review/guide/`, git 무시)만 얹는다. 사내 1단계는 쓰기 등급 `db` · `shared` 상태를 찍지 않고(사본 두 DB 지문이
-  같아야 함) 합성 예시 그림으로 대신한다. HOME `Guide` 는 사내판 `static/guides/local/` → 예시판 `static/guides/howto/` → md
-  대화상자 차례로 고르고 앱을 덮지 않는 옆 창(이름 `capa-guide`, 폭 520)으로 연다 — Streamlit 1.63 정적 서빙이 `.html` 을
-  `text/html` 로 내보내 숨은 페이지 없이 그 파일을 연다(합성 앱 실측, `/proxy/<포트>/` 접두 포함). md 원문은 창 머리
+  그 `--work` 의 첫 촬영 앞 기준 지문과 같아야 함 — 다시 돌 때도 그 기준과 견준다) 합성 예시 그림으로 대신한다. HOME
+  `Guide` 는 사내판 `static/guides/local/` → 예시판 `static/guides/howto/` → md 대화상자 차례로 고르고 앱을 덮지 않는 옆 창
+  (이름 `capa-guide`, 폭 520)으로 연다 — Streamlit 1.63 정적 서빙이 `.html` 을 `text/html` 로 내보내 숨은 페이지 없이 그
+  파일을 연다(합성 앱 실측, `/proxy/<포트>/` 접두 포함). md 원문은 창 머리
   「설정 사전」으로 남는다. 예시판 시드는 MI ST 를 분 단위로 맞춘 합성 시드(`scripts/guide_example_seed.py`) —
   관련: `components/page_guide.py`·`guides/howto/`·`scripts/build_page_guide.py`
 - (2026-09-29) 조건 카드·Guide 규칙 — 사이드바 카드에는 그 화면이 실제로 읽는 거르는 조건만(하위 보기 전환은 본문), 설명은

@@ -32,7 +32,12 @@
   계획의 쓰기 등급으로 찍을지를 가른다 — 사슬에 `db`(리비전 · 공식) · `shared`(공용 프로필)가
   있는 상태는 건너뛰고 뼈대의 합성 예시 그림으로 대신한다(`--allow-writes` 일 때만 연다 — 런북
   7장이 사본 예외를 적었을 때). `none` · `session` 만 돌았으면 사본 두 DB 의 크기 · sha256 이
-  앞뒤로 같아야 한다 — 다르면 「DB 변화 있음」을 찍고 2 로 끝낸다.
+  앞뒤로 같아야 한다 — 다르면 「DB 변화 있음」을 찍고 2 로 끝낸다. 「앞」은 그 `--work` 의 첫
+  촬영 앞에 잰 기준 지문(`--work/db_baseline.json`)이다. 같은 `--work` 로 다시 돌면 `--states`
+  여부와 상관없이 그 기준과 견주고, 찍기 전에 사본 DB 가 이미 기준과 다르면(앞 실행이 바꿨거나
+  앱 오류 · 예외로 끝난 뒤) 앱을 띄우지 않고 2 로 멈춘다 — 새 사본 · 새 `--work` 로 다시 돈다.
+  바뀐 DB 를 새 기준으로 삼아 「DB 변화 없음」을 내는 길을 두지 않는다. 앱 오류 · 기동 실패로
+  멈출 때도 사본 DB 를 기준과 견줘 `run.json` 에 적는다.
 
 **자리.** 앱은 `127.0.0.1` 에서만 듣는다. 포트는 `--port` 를 주지 않으면 8552 부터 빈 것을
 고르고, 8501(사용자 앱) · 8551(화면 확인 기본)은 거절한다. 자식 앱 환경에서
@@ -40,10 +45,11 @@
 묶음(Windows Job Object · Linux `PR_SET_PDEATHSIG`) · 경로 거절은 `check_deploy_screens.py` 의
 것을 그대로 쓴다.
 
-**출력.** `--work`(중간 그림 · `shots.json` · `run.json`) · `--dist`(결과 HTML) · `--output`(진행
-블록) · `--playwright-dir` 는 저장소 밖만 받는다(사내는 사본 밖도). stdout · 로그 · 진행 블록에는
-상태 ID · 수 · 예외 종류만 찍는다 — 화면 글자는 판정에만 쓴다. 마지막 줄은 리뷰 md 에 옮길 한 줄
-(`page_guide_core.review_line`)이고, 같은 줄을 점검기(`scripts/check_page_guide.py`)가 다시 낸다.
+**출력.** `--work`(중간 그림 · `shots.json` · `run.json` · 사내 `db_baseline.json`) · `--dist`(결과
+HTML) · `--output`(진행 블록) · `--playwright-dir` 는 저장소 밖만 받는다(사내는 사본 밖도). stdout ·
+로그 · 진행 블록에는 상태 ID · 수 · 예외 종류만 찍는다 — 화면 글자는 판정에만 쓴다. 마지막 줄은
+리뷰 md 에 옮길 한 줄(`page_guide_core.review_line`)이고, 같은 줄을 점검기
+(`scripts/check_page_guide.py`)가 다시 낸다.
 
 **시간.** 15분 예산(`--budget-minutes`)을 시작부터 재고, 넘기면 남은 상태는 찍지 않고 조립한 뒤
 3(미룸)으로 끝낸다 — `--states a,b` 로 남은 것만 다시 돌리면 앞 결과에 합친다. `--assemble-only`
@@ -51,8 +57,8 @@
 
 **종료 코드**(`check_deploy_screens.py` 와 같은 표). 0 끝까지 돎(못 찾은 표적이 있어도 — 리뷰
 한 줄의 `ng`) · 2 준비 안 됨 · 멈춤(경로 · 모드 · 뼈대 · 조립 거절 · Playwright · 포트 · 사본 ·
-앱 기동 · 앱 오류 화면 · 브라우저 · DB 변화 있음 · 예상 밖 예외는 종류만) · 3 미룸(예산을 넘어 남은
-상태가 있음, 사본 DB 를 다른 프로세스가 쥐고 있음).
+앱 기동 · 앱 오류 화면 · 브라우저 · DB 변화 있음 · 사본 DB 가 기준 지문과 다름 · 예상 밖 예외는
+종류만) · 3 미룸(예산을 넘어 남은 상태가 있음, 사본 DB 를 다른 프로세스가 쥐고 있음).
 """
 
 from __future__ import annotations
@@ -60,6 +66,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import json
 import shutil
 import subprocess
 import sys
@@ -95,6 +102,11 @@ PORT_TRIES: Final = 8
 REFUSED_PORTS: Final = frozenset({8501, 8551})
 DEFAULT_BUDGET_MINUTES: Final = 15.0
 DATABASE_NAMES: Final = (DUCKDB_PATH.name, EQUIPMENT_DUCKDB_PATH.name)
+# 사내 `--work` 의 첫 촬영 앞에 잰 사본 두 DB 지문 — 그 `--work` 로 다시 돌 때도 이것과 견준다.
+BASELINE_FILE: Final = "db_baseline.json"
+DB_CHANGED_MESSAGE: Final = (
+    "DB 변화 있음 — 사본 DB 가 이 --work 의 첫 촬영 앞(기준 지문)과 다릅니다"
+)
 # 찍기 전마다 감추고, 감춘 뒤에도 남으면 찍지 않는 글 — 담당 조직 · 문의처(settings 정본).
 MASK_NEEDLES: Final = (APP_OWNER_TEAM, APP_CONTACT_EMAIL)
 SEED_SCRIPT: Final = Path("scripts") / "guide_example_seed.py"
@@ -277,6 +289,24 @@ def db_fingerprint(data: Path) -> Fingerprint:
 def db_verdict(before: Fingerprint, after: Fingerprint) -> str:
     """`same` | `changed` — 리뷰 한 줄의 「DB 변화 없음 · 있음」."""
     return "same" if before == after else "changed"
+
+
+def load_baseline(work: Path) -> Fingerprint | None:
+    """작업 폴더의 기준 지문(그 `--work` 의 첫 사내 촬영 앞에 잰 것). 없으면 None, 깨졌으면
+    `ValueError` — 고쳐 쓰지 않고 멈춘다(바뀐 DB 를 새 기준으로 삼지 않게)."""
+    path = work / BASELINE_FILE
+    if not path.exists():
+        return None
+    raw = core.load_json(path)
+    try:
+        return tuple((str(name), int(size), str(digest)) for name, size, digest in raw["files"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(BASELINE_FILE) from exc
+
+
+def save_baseline(work: Path, fingerprint: Fingerprint) -> None:
+    text = json.dumps({"files": [list(row) for row in fingerprint]}, ensure_ascii=False, indent=1)
+    (work / BASELINE_FILE).write_text(text + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------------- 예시판 사본
@@ -548,7 +578,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     print(line)
     run_facts = core.load_run(args.work)
     if run_facts.db == "changed":
-        print("DB 변화 있음 — 사본 DB 가 촬영 앞뒤로 다릅니다")
+        print(DB_CHANGED_MESSAGE)
         progress.stop("멈춤 — DB 변화 있음")
         return EXIT_NOT_READY
     if code == EXIT_DEFERRED:
@@ -556,6 +586,39 @@ def run(argv: Sequence[str] | None = None) -> int:
     else:
         progress.stop("끝 — 조립만" if args.assemble_only else "끝")
     return code
+
+
+def internal_baseline(
+    args: argparse.Namespace, data: Path, progress: Progress
+) -> Fingerprint | None:
+    """사내 촬영의 기준 지문. 이 `--work` 의 첫 촬영이면 지금 사본 DB 를 재 적고, 이미 적혀
+    있으면 지금 사본이 그것과 같아야 한다(`--states` 여부와 상관없이). 다르면 앞 실행이 사본을
+    바꿨거나(앱 오류 · 예외로 끝난 뒤 포함) 다른 사본이다 — `run.json` 에 「DB 변화 있음」을 적고
+    멈춘다(None). `--allow-writes` 는 쓰기를 허락한 실행이라 다름을 멈추지 않는다(판정은
+    `writes`)."""
+    try:
+        current = db_fingerprint(data)
+        baseline = load_baseline(args.work)
+        if baseline is None:
+            save_baseline(args.work, current)
+            return current
+        if baseline == current or args.allow_writes:
+            return baseline
+        if (args.work / core.RUN_FILE).exists():
+            facts = core.load_run(args.work)
+            facts.db = "changed"
+            core.save_run(facts, args.work)
+    except (OSError, ValueError) as exc:
+        print(f"사본 DB 기준 지문을 읽거나 적지 못했습니다 — {type(exc).__name__}")
+        progress.stop("멈춤 — 기준 지문을 읽거나 적지 못함")
+        return None
+    print(
+        "사본 DB 가 이 --work 의 첫 촬영 앞(기준 지문)과 다릅니다 — 앞 실행이 사본을 바꿨거나 "
+        "다른 사본입니다. 새 사본(런북 6-3) · 새 --work 로 다시 돌립니다"
+    )
+    progress.note(core.DB_WORDS["changed"])
+    progress.stop("멈춤 — 사본 DB 가 기준 지문과 다름")
+    return None
 
 
 def capture_states(
@@ -591,6 +654,7 @@ def capture_states(
 
     app_root: Path
     example_copy: Path | None = None
+    baseline: Fingerprint | None = None
     if args.example:
         changed = uncommitted_app_changes()
         if changed:
@@ -617,6 +681,9 @@ def capture_states(
             print("사본 DB 를 다른 프로세스가 쥐고 있습니다 — 사본 앱을 끈 뒤 다시 돌립니다")
             progress.stop("미룸 — 사본 DB 를 다른 프로세스가 쥐고 있음")
             return EXIT_DEFERRED
+        baseline = internal_baseline(args, data, progress)
+        if baseline is None:
+            return EXIT_NOT_READY
 
     try:
         return _shoot(
@@ -631,6 +698,7 @@ def capture_states(
             skip,
             previous,
             previous_run,
+            baseline,
         )
     finally:
         if example_copy is not None:
@@ -649,6 +717,7 @@ def _shoot(
     skip: list[str],
     previous: core.ShotSet | None,
     previous_run: core.RunFacts | None,
+    baseline: Fingerprint | None,
 ) -> int:
     skeleton = inputs.skeleton
     port = choose_port(args.port)
@@ -657,7 +726,6 @@ def _shoot(
         progress.stop("멈춤 — 빈 포트 없음")
         return EXIT_NOT_READY
     data = app_root / "data"
-    before = db_fingerprint(data) if mode == "internal" else None
     viewport_spec: Mapping[str, Any] = skeleton.plan["viewport"]
     fresh = core.ShotSet(
         viewport=(int(viewport_spec["width"]), int(viewport_spec["height"])),
@@ -674,6 +742,32 @@ def _shoot(
         core.save_shots(merged, args.work)
         facts = run_facts if previous_run is None else core.merge_runs(previous_run, run_facts)
         core.save_run(facts, args.work)
+
+    def judge_db() -> None:
+        """이 실행의 DB 판정 — 사내는 사본 DB 를 그 `--work` 의 기준 지문과 견준다."""
+        if mode == "example":
+            run_facts.db = "example"
+        elif args.allow_writes:
+            run_facts.db = "writes"
+        else:
+            assert baseline is not None
+            run_facts.db = db_verdict(baseline, db_fingerprint(data))
+
+    def judge_db_on_stop() -> None:
+        """멈추는 길(앱 기동 실패 · 앱 오류 · 예상 밖 예외)에서도 사본 DB 를 견줘 `run.json` 에
+        적는다 — 그 `--work` 로 조립 · 점검기를 돌려도 「DB 안 봄」이 아니라 사실이 나온다."""
+        if mode != "internal":
+            return
+        try:
+            judge_db()
+            facts = run_facts if previous_run is None else core.merge_runs(previous_run, run_facts)
+            core.save_run(facts, args.work)
+        except OSError as exc:
+            _progress(f"멈춘 뒤 사본 DB 를 견주지 못했습니다 — {type(exc).__name__}")
+            return
+        if run_facts.db == "changed":
+            print(DB_CHANGED_MESSAGE)
+            progress.note(core.DB_WORDS["changed"])
 
     def on_state(outcome: capture.StateOutcome, shot: core.ShotState | None) -> None:
         if outcome.result == "skipped":
@@ -719,25 +813,24 @@ def _shoot(
                         camera.close()
         except screens.AppStartError as exc:
             print(f"앱이 뜨지 않았습니다 — {exc}")
+            judge_db_on_stop()
             progress.stop(f"멈춤 — 앱이 뜨지 않았습니다: {exc}")
             return EXIT_NOT_READY
         except capture.AppProblem:
             print("앱이 오류 화면입니다 — 상태를 찍지 않습니다")
+            judge_db_on_stop()
             progress.stop("멈춤 — 앱 오류 화면")
             return EXIT_NOT_READY
+        except Exception:
+            judge_db_on_stop()
+            raise
     else:
         for sid in wanted:
             on_state(
                 capture.StateOutcome(sid, "skipped", total=len(skeleton.target_names(sid))), None
             )
 
-    if mode == "example":
-        run_facts.db = "example"
-    elif args.allow_writes:
-        run_facts.db = "writes"
-    else:
-        assert before is not None
-        run_facts.db = db_verdict(before, db_fingerprint(data))
+    judge_db()
     save()
     progress.note(core.DB_WORDS.get(run_facts.db, core.DB_WORDS["unchecked"]))
     if run_facts.left:
