@@ -78,7 +78,12 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 받지 않는다), `scripts/benchmark_upeh_assumption.py`(UPEH 가정 계획 1회 시간 — 사내 런북 6-3 b 에 이어,
 `--data-dir <사본 폴더>` 만 받고 같은 판정으로 저장소 안은 거절), `scripts/validate_duckdb_persistence.py`
 (영속성 통합 검증 — Windows·Excel·`templates/structure_template.xlsb` 가 있어야 돈다),
-`scripts/generate_sample_core_data.py`(합성 Core Data 생성).
+`scripts/generate_sample_core_data.py`(합성 Core Data 생성),
+`scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
+HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `scripts/guide_example_seed.py`, `--internal` 은 런북 6-3 사본
+트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
+`page_guide_capture.py`·`page_guide_helpers.js`), `scripts/check_page_guide.py`(가이드 점검기 — 덮어쓰기·매개값·촬영 결과를
+뼈대에 대 보고 리뷰 한 줄을 낸다. 앱·브라우저 없이 돈다).
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
 `origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도 ZIP 을 쓰기 전에 멈춘다).
 
