@@ -277,7 +277,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - UPEH 가정은 기본 보기를 바꾸지 않는다 — 머리 「UPEH 가정 비교」 를 켠 회차에만 가정 계획을 꺼내 공식→가정을 보인다.
     가정이 켜진 동안 기준선 저장은 거절하고 진척 비교는 늘 공식 계획이다.
 - `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 조회·Static 비교·Cut-off·입력을
-  `Main`·`Static 대비 일정`·`Preference`·`RawData` 네 탭으로 다룬다. 설명은 `guides/available_equipment_status.md`.
+  `Main`·`Static 대비 일정`·`Qual 마감 계산기`·`Preference`·`RawData` 다섯 탭으로 다룬다. 설명은
+  `guides/available_equipment_status.md`.
+  - `Qual 마감 계산기`(2026-10-22)는 다른 데이터와 잇지 않는다 — 페이지가 읽은 저장본·Cut-off 를 넘기지 않고, 설비 조건
+    카드·샘플 스위치도 서지 않는다(`viewing_tab_open` 은 Main·Static 대비 일정뿐). 닫혀 있으면 그리지 않는다.
   - Main·Preference·RawData 는 설비 DB 만 쓰고 `Static 대비 일정` 만 시뮬레이션 DB 를 읽는다 — 못 읽어도 그 탭
     안에서만 알린다(`test_equipment_scenario_demand.py`). RawData 는 원본 이름(`test_process_label_boundaries.py`).
   - 조건은 탭마다 따로다 — `Static 대비 일정` 은 Main 의 공정소분류·추가 조건 키를 읽지 않고, 비교 범위는 이 탭의
@@ -965,6 +968,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`RUN_DAY` 를 쓰면 설비 DB 가 시뮬레이션 DB 를 읽는다).
 - `src/capa_simulation/services/process_cutoff.py` — 공정별 Cut-off 입력 표의 계약·검증과 조회 사전(`cutoff_lookup`).
   없는 공정과 0 은 다르다 — 0 은 달력 월 그대로, 없으면 산출에서 빠지므로 화면이 `missing_cutoff_processes` 로 드러낸다.
+- `src/capa_simulation/services/qual_deadline.py` — Qual 마감 계산기(2026-10-22, 10-07 계산기 한 장을 옮김)의 계산과
+  화면·복사 글자. Cut-off·연도·직전 달 가용대수·월별 목표·신규 호기로 호기마다 Qual 완료 마감을 낸다. 어느 DB 도 열지 않는다.
+  - 구간은 `wd_window` 그대로, 몫은 완료 다음 날부터다. 모자람 ≥ 1 이면 마감 = 구간 앞 경계(몫 1), < 1 이면 모자란 날 수만큼
+    구간 끝에서 당긴 날(몫 = 일수 / 길이). 적은 차례로 꺼내고 남는 호기는 다음 달로, 목표를 비운 달은 판정하지 않는다.
+  - 숫자 글자는 JavaScript `toFixed`·`Math.round` 와 같게 만든다(`to_fixed`·`js_round` — 0.125 → 「0.13」).
+    `tests/test_qual_deadline.py` 가 원본 스크립트를 node 로 돌린 값과 칸 글자까지 맞댄다(시험은 node 없이 돈다).
 - `src/capa_simulation/services/shortening_filter_profile.py` — 필요 단축 일정 공용 조회 조건(설비 DB `0019`) 모델
   `ShorteningFilterProfile` 과 정규화·심기·`merge_filter_processes` 규칙. Streamlit·DB 를 모르고 값은 원본 공정명이다.
 - `src/capa_simulation/services/shortening_baseline.py` — 필요 단축 일정 기준선(설비 DB `0021`) 모델과 규칙. 기준선은
@@ -1030,6 +1039,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
     올리기 전에 막는다)를 쓴다. 서버 전체 상한(`config.toml` `maxUploadSize`)을 낮추지 않는다 — 다른 올리기 칸까지 묶인다.
+- `src/capa_simulation/components/qual_deadline_calculator.py` — 가용설비 현황 `Qual 마감 계산기` 탭. 숫자 칸 넷·12개월
+  편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감 칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
+  - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
+    (탭을 건너뛰어도 남는다). 「예시로 되돌리기」·「모두 비우기」 는 콜백이 칸을 적고 `discard_editor` 한다.
+  - 엑셀 여러 칸은 편집표에 바로 붙여 넣는다(별도 붙여넣기 칸 없음). 계산이 가벼워 캐시하지 않는다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 `Preference` 의 Cut-off 편집표·저장·CSV 왕복과
   빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다.
   - 저장은 초안 지문 대조다(`process_cutoff_fingerprint` → `ProcessCutoffConflict`) — 표 전체 교체라 옛 초안이 남의
@@ -1318,7 +1332,8 @@ RQ_MODULE
    스냅샷을 만든다. `Static 대비 일정` 탭과 `필요 단축 일정` 화면만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
-   공용 공정 표시명 하나다(2026-10-10 사용자 결정 — RawData 를 뺀 네 탭의 보이는 글자). 페이지가 회차마다
+   공용 공정 표시명 하나다(2026-10-10 사용자 결정 — RawData 를 뺀 탭의 보이는 글자, 공정명이 없는 Qual 마감 계산기는
+   제외). 페이지가 회차마다
    시뮬레이션 DB 의 그 프로필을 읽고(앱에서는 부트스트랩이 연 캐시), 못 읽으면 원본 공정명으로 그려
    설비 화면을 막지 않는다. 두 탭의
    비싼 계산(생애주기 구간 → 월별 일정 기준 가용 → Static 비교, 필요 단축 일정 계획·CSV)은

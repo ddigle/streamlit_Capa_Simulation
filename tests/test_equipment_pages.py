@@ -60,10 +60,12 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 운영 화면이라 상태 접미도 본문 배지도 없다(2026-10-19 사용자 요청).
     assert app.title[0].value == "가용설비 현황"
     assert not any("Data확보중" in element.value for element in app.markdown)
-    # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다.
-    assert [tab.label for tab in app.tabs[:4]] == [
+    # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다. Qual 마감
+    # 계산기(2026-10-22)는 보는 탭 뒤·입력 폼 앞이다.
+    assert [tab.label for tab in app.tabs[:5]] == [
         ":material/dashboard: Main",
         ":material/compare_arrows: Static 대비 일정",
+        ":material/calculate: Qual 마감 계산기",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]

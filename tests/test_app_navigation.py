@@ -1795,11 +1795,13 @@ def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTe
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "scenario", "period"}
 
-    # RawData 는 카드도 공통 조건도 없다 — 제목만 남는 빈 구역을 세우지 않는다.
-    app.session_state[EQUIPMENT_TAB_KEY] = ":material/table_rows: RawData"
-    app.run()
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert _common_boxes(app) == set()
+    # RawData 는 카드도 공통 조건도 없다 — 제목만 남는 빈 구역을 세우지 않는다. 다른 데이터와 잇지
+    # 않는 Qual 마감 계산기(2026-10-22)도 같다.
+    for label in (":material/table_rows: RawData", ":material/calculate: Qual 마감 계산기"):
+        app.session_state[EQUIPMENT_TAB_KEY] = label
+        app.run()
+        assert not list(app.exception), [element.message for element in app.exception]
+        assert _common_boxes(app) == set(), label
 
 
 def test_every_declared_condition_tab_is_a_real_label() -> None:
