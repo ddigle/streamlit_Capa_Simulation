@@ -319,8 +319,8 @@ def test_the_rawdata_save_refuses_a_module_edit_and_takes_a_whole_group_move(
     tmp_path: Path,
 ) -> None:
     """RawData 직접 편집 저장: 모듈 하나를 옮긴 편집본은 저장 전 경고와 저장 거부(어느 묶음인지)로
-    막히고 리비전이 생기지 않는다. 묶음째 옮긴 편집본은 저장된다. 편집표 위에 안내 한 줄이 늘
-    선다."""
+    막히고 리비전이 생기지 않는다 — 거부된 회차는 그 문구를 오류 하나로만 보이고 다음 회차에 경고가
+    돌아온다. 묶음째 옮긴 편집본은 저장된다. 편집표 위에 안내 한 줄이 늘 선다."""
     path = tmp_path / "equipment.duckdb"
     repository = _seed(path, _saved())
     app = _workspace_app(path)
@@ -335,6 +335,13 @@ def test_the_rawdata_save_refuses_a_module_edit_and_takes_a_whole_group_move(
     assert not app.exception, [item.message for item in app.exception]
     assert any(message in str(item.value) for item in app.error), [e.value for e in app.error]
     assert len(repository.list_revisions()) == 1
+    # 거부된 회차는 같은 긴 문구를 빨간 오류 하나로만 보인다 — 주황 경고를 거듭 세우지 않는다.
+    shown = [item.value for item in (*app.error, *app.warning)]
+    assert sum(message in str(value) for value in shown) == 1, shown
+    # 다음 회차에는 오류가 사라지고 저장 전 경고가 남는다(편집본은 아직 바둑판이 아니다).
+    app.run()
+    assert not any(message in str(item.value) for item in app.error), [e.value for e in app.error]
+    assert [item.value for item in app.warning].count(message) == 1, [w.value for w in app.warning]
 
     equipment = app.session_state[BUFFER_KEY][1]
     assert equipment.set_index("설비명").loc["G1-A", "X좌표"] == 52.0

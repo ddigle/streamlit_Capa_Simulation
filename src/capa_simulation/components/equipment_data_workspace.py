@@ -1778,10 +1778,13 @@ def render_equipment_data_workspace(
         for message in module_group_warnings(master):
             st.warning(message, icon=":material/view_module:")
         # 모듈 묶음 좌표·크기를 바둑판이 아니게 고친 편집은 저장이 막힌다 — 저장 전에 같은 문구로
-        # 알린다.
+        # 알린다. 방금 그 문구로 거부된 회차는 위 오류가 이미 말하므로 경고를 거듭 세우지 않는다
+        # (다음 회차부터 오류는 사라지고 이 경고가 남는다).
         violations = saved_master_violations(master)
         if violations:
-            st.warning(module_layout_message(violations), icon=":material/grid_view:")
+            layout_message = module_layout_message(violations)
+            if layout_message != error:
+                st.warning(layout_message, icon=":material/grid_view:")
         # Area Code 목록 밖과 일정 확인(미확인·실적 누락·상태 갱신 필요)도 같은 자리에서
         # 알리고 막지 않는다. 일정 확인은 한 줄 + 접힌 목록이라 이 칸 안에 둔다 — 칸 밖이면 그
         # 목록이 생기고 사라질 때마다 아래 key 있는 펼침·탭이 밀린다.

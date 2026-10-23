@@ -1225,8 +1225,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 마스터를 쓰는 모든 저장(직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장)은 `_save_equipment_frames` 에서
     모듈 묶음 좌표·크기 검사(`saved_master_violations` — 저장본 사본 `EQUIPMENT_DRAFT_KEY` 와 견준다)를 지나고, 걸리면
     `ValueError` 로 거부한다. 배치 편집기가 적용한 묶음의 모양은 `EDITOR_MODULE_LAYOUTS_KEY`(편집본과 함께 버려짐)에
-    두어 통과시킨다. 같은 판정을 폼 위 알림 칸이 저장 전에 경고로 보이고, 설비 마스터 편집표 위 한 줄·좌표·크기 칸
-    머리 도움말(`MODULE_LAYOUT_HELP`)이 「모듈 묶음 좌표·크기는 Space 배치 편집기에서」를 말한다.
+    두어 통과시킨다. 같은 판정을 폼 위 알림 칸이 저장 전에 경고로 보이고(그 문구로 거부된 회차에는 오류만 — 겹쳐
+    세우지 않는다), 설비 마스터 편집표 위 한 줄·좌표·크기 칸 머리 도움말(`MODULE_LAYOUT_HELP`)이 「모듈 묶음 좌표·크기는 Space 배치 편집기에서」를 말한다.
   - `ImportReview` 는 최종 저장 때 입력이 달라졌으면 다시 확인받는다(마스터 입력 `read_equipment_update`,
     `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
