@@ -315,6 +315,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 층의 Main 설비명 위치(대기분 `pending_floor_group_labels`, 없으면 `load_floor_group_labels`)를 편집기·뷰어에
     넘기고, 적용은 `next_group_labels` 로 층 위치 목록을 만들어 저장값과 다르면 `stage_floor_group_labels` 로 둔다.
     편집기·뷰어 epoch 와 층 대조(`FloorLayoutBase`)는 요소와 위치를 함께 본 `floor_layout_fingerprint` 다.
+  - 층 상세 아래 호기 표는 21칸(`space_layout.FLOOR_TABLE_COLUMNS` — 2026-10-23 요청 차례, 칸 이름은 설비 마스터 그대로,
+    「단계」는 기준일 상태)이다. 뷰어에서 누른 호기(`on_pick` 콜백 → 세션 `space_status_picked_unit` = (동, 층, 설비명))가
+    있으면 그 설비 줄만(`picked_unit_rows` — 모듈이면 같은 Main 설비 줄 전부, 누른 것이 첫 줄)이고 「층 전체 보기」
+    (`space_floor_show_all_<동>_<층>`, 늘 세움)·빈 곳·Esc 로 풀린다. 다른 층·FAB 로 옮기거나 그 층 행에 없으면(필터·이름
+    바꿈) 푼다. 층 CSV 는 늘 층 전체의 모든 칸이다. 뷰어 호기에는 설비지분 `share`(그 층 행의 고정 지분)를 싣는다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질`·`알림 모음` 네 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py`, 넷째는
   `components/alert_board.py` 를 그린다.
@@ -394,7 +399,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칩은 콜백). `open_scenario_dialog_on` 은 팝업을 불러오기 구획·주어진 짝으로 연다(칩이 편집이 있을 때 같은 확인을
     거치는 길).
 - `src/capa_simulation/components/space_layout.py` — Space 배치 집계(대수·점유율·층별 배치 `floor_placements`), 호기
-  상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`)와 영역·금지 색을 만든다.
+  상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 호기 표(`floor_table`·
+  `picked_unit_rows`)와 영역·금지 색을 만든다.
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이다.
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
@@ -408,7 +414,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
-    같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)는 버린다.
+    같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)·호기 누르기(`on_pick_change`)는
+    버린다.
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
   - **Main 설비 모듈 묶음**(편집기 모듈 + 숨은 모듈이 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선
@@ -459,6 +466,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       `op: 'groupLabel'`). 적용값 `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}](다른 층으로 보낸 묶음은
       빠짐)이다. `drawSelectionBox` 가 부르므로 옮기기·크기·배율을 따라가고, 보기 화면은 기준일에 묶음의 모듈이 하나도
       보이지 않으면(`__visible`) 이름도 숨긴다.
+  - **층 상세 보기 둘**(2026-10-23 사용자 요청 3·8, 보기 전용 층 뷰어만 — FAB·배치 편집기는 그대로).
+    - 호기 누르기: 끌지 않고 누른 뒤·Esc 뒤 `notePick` 이 고른 호기(호기가 아니면 null)를 트리거 `pick`
+      (`{epoch, id}`)으로 보낸다 — 같은 값은 다시 보내지 않는다. 파이썬 `_dispatch_pick` 이 epoch 를 대조해 `on_pick` 을
+      부른다. `data.picked`(파이썬이 쥔 값)가 바뀐 회차에 `syncPick` 이 도면의 고르기를 맞추고 새로 선 도면은 다시 고른다.
+    - 겹친 반입 예정 숨기기: 기준일에 반입 전인 호기가 그날 보이는(반입했고 안 빠진) 다른 호기와 넓이가 0 보다 크게
+      겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`unitCountText`,
+      `tests/test_space_viewer_pick.py` 가 node 로 돌림)이고 이웃은 겹침 짝(`overlapPairs`, `renderItems` 가 칠하기 전에
+      비움)이다. 반입 전끼리·같은 Main 설비 묶음 모듈끼리는 숨기지 않는다. 숨김은 `__visible` 에 들어 Main 설비명·겹침
+      꼭지가 따라가고, 판정이 바뀐 호기의 겹침 이웃도 다시 칠한다(`paintUnits`). 숨긴 호기의 설비지분(`share`) 합은
+      `showSummary` 가 요약 끝에 「겹쳐 숨긴 반입 예정 n대」로 붙인다(파이썬 범례 대수는 그대로).
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자

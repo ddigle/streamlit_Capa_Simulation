@@ -1,4 +1,4 @@
-# Purpose: Space 배치 집계(대수·점유율·층별 배치)와 호기 상자 색·층 상세 범례·요소 색을 만든다.
+# Purpose: Space 배치 집계(대수·점유율·층별 배치)·호기 상자 색·층 상세 범례·호기 표를 만든다.
 
 from __future__ import annotations
 
@@ -12,7 +12,11 @@ from typing import Any, Final, cast
 import pandas as pd
 
 from capa_simulation.design import theme, tokens
-from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN, LINE_TYPE_GROUPS
+from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_ID_COLUMN,
+    LINE_TYPE_GROUPS,
+    PARENT_EQUIPMENT_COLUMN,
+)
 from capa_simulation.services.equipment_units import (
     UNIT_COUNT_DECIMALS,
     UNIT_KEY_COLUMN,
@@ -34,6 +38,7 @@ from capa_simulation.services.space_color_basis import (
     CapaGroup,
     color_groups,
 )
+from capa_simulation.services.space_layout_edit import natural_name_key
 from capa_simulation.services.space_unit_state import (
     DELAYED_STATE,
     EXIT_PLANNED_STATE,
@@ -466,3 +471,60 @@ def invalid_equipment_rows(
         | numeric["Y좌표"].add(numeric["Ysize"]).gt(canvas_height)
     )
     return [int(index) + 1 for index in numeric.index[invalid].tolist()]
+
+
+# 층 상세 아래 호기 표의 칸 — 요청한 차례 그대로(2026-10-23 사용자 요청 3). 칸 이름은 설비
+# 마스터 그대로다: 요청의 「Qual 실적」 은 `Qual실적`, 「반입/Qual일정」 은 `반입/Qual 이력`,
+# 「단계」 는 기준일(페이더)의 상태 글자 `단계`(`build_space_equipment_status` 가 `상태` 를 옮겨
+# 적은 칸 — 도면 상자의 단계 이름과 같다)다. 층 CSV 는 이 표가 아니라 모든 칸이다(현장 배치
+# 검토용).
+FLOOR_TABLE_COLUMNS: Final = (
+    "Area Code",
+    "공정소분류",
+    EQUIPMENT_ID_COLUMN,
+    "공정구분",
+    "투자Capa",
+    "투자구분",
+    "사용기준",
+    "동",
+    "층",
+    "제진대일정",
+    "물류일정",
+    "반입일정",
+    "반입실적",
+    "반입상태",
+    "Qual일정",
+    "Qual실적",
+    "Qual상태",
+    "정지일정",
+    "반출/이설일정",
+    "반입/Qual 이력",
+    "단계",
+)
+
+
+def floor_table(rows: pd.DataFrame) -> pd.DataFrame:
+    """층 상세 아래 호기 표 — `FLOOR_TABLE_COLUMNS` 의 칸만 그 차례로(없는 칸은 건너뛴다)."""
+    return rows.loc[:, [column for column in FLOOR_TABLE_COLUMNS if column in rows.columns]]
+
+
+def picked_unit_rows(rows: pd.DataFrame, unit_id: str) -> pd.DataFrame:
+    """층 상세 도면에서 누른 호기의 줄(2026-10-23 사용자 결정 — 누른 설비 줄만).
+
+    Main 설비 모듈이면 그 Main 설비의 줄 전부이고 누른 모듈이 첫 줄, 나머지는 설비명 자연 정렬이다
+    (`rows` 는 그 층의 행 — 좌표 없는 형제·레이아웃표시 N 모듈도 그 설비의 RawData 라
+    든다). 설비명은 앞뒤 공백을 걷고 견준다. 누른 호기가 없으면 빈 표다."""
+    names = rows[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    hit = names.eq(unit_id).fillna(False).astype(bool)
+    if not hit.any():
+        return rows.iloc[0:0]
+    if PARENT_EQUIPMENT_COLUMN in rows.columns:
+        parents = rows[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+        parent = parents[hit].iloc[0]
+        if not pd.isna(parent) and parent:
+            hit |= parents.eq(parent).fillna(False).astype(bool)
+    order = sorted(
+        rows.index[hit],
+        key=lambda index: (names[index] != unit_id, natural_name_key(str(names[index]))),
+    )
+    return rows.loc[order]

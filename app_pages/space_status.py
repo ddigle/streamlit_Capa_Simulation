@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import date
 from functools import partial
 from typing import Any
@@ -51,8 +52,10 @@ from capa_simulation.components.space_layout import (
     equipment_unit_total,
     floor_block_stats,
     floor_placements,
+    floor_table,
     invalid_equipment_rows,
     occupancy_ratio,
+    picked_unit_rows,
     space_legend_counts,
     space_legend_markup,
     unit_appearance,
@@ -93,7 +96,12 @@ from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
 )
-from capa_simulation.services.equipment_units import format_unit_count, placed_unit_rows
+from capa_simulation.services.equipment_units import (
+    format_unit_count,
+    placed_unit_rows,
+    static_unit_shares,
+    unit_keys,
+)
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
@@ -206,6 +214,10 @@ _COLOR_KEY_PARTS = {COLOR_BASIS_LINE_TYPE: "line", COLOR_BASIS_CAPA: "capa"}
 # 사용자 결정). 세션에 든 날짜는 범위 안으로 맞춰 쓰고, 값이 없는 세션은 늘 오늘이다.
 # `space_status_stage_filter` 키는 읽지 않는다.
 SPACE_AS_OF_KEY = "space_status_as_of"
+# 층 상세 도면에서 누른 호기(동, 층, 설비명) — 아래 호기 표를 그 설비 줄만으로 좁힌다
+# (2026-10-23 사용자 결정). 뷰어의 `on_pick_change` 콜백이 쓰고 「층 전체 보기」 단추가 지운다.
+# 연 층이 바뀌면(다른 층·FAB) 풀린다.
+SPACE_PICKED_KEY = "space_status_picked_unit"
 
 
 def color_group_key(basis: str, group: str) -> str:
@@ -217,6 +229,43 @@ def _set_space_as_of(chosen: date) -> None:
     """페이더·「오늘로」의 기준일 콜백(`on_asOf_change`). 본문보다 먼저 돌아 그 회차의 범례·
     요약·호기 표가 새 기준일이다. 범위 밖이면 가까운 끝으로 맞춘다."""
     st.session_state[SPACE_AS_OF_KEY] = clamp_as_of(chosen, date.today())
+
+
+def _pick_unit(key: FloorKey, unit_id: str | None) -> None:
+    """층 상세 뷰어의 호기 누르기 콜백(`on_pick_change`). 누른 호기를 그 층과 함께 쥔다 —
+    아래 호기 표가 그 설비 줄만이다. None(도면 요소·빈 곳·Esc)이면 풀어 층 전체로 돌아간다."""
+    if unit_id is None:
+        st.session_state.pop(SPACE_PICKED_KEY, None)
+    else:
+        st.session_state[SPACE_PICKED_KEY] = (key[0], key[1], unit_id)
+
+
+def _show_whole_floor() -> None:
+    """「층 전체 보기」 콜백 — 누른 호기를 풀어 아래 표가 층 전체로 돌아간다(도면의 고르기도
+    풀린다)."""
+    st.session_state.pop(SPACE_PICKED_KEY, None)
+
+
+def _markdown_text(value: str) -> str:
+    """설비명을 마크다운 글자 그대로 — ASCII 문장부호 앞에 `\\` 를 붙인다(`*`·`_`·`$` 등이 서식이
+    되지 않게)."""
+    return re.sub(r"([!-/:-@\[-`{-~])", r"\\\1", value)
+
+
+def _picked_unit(key: FloorKey) -> str | None:
+    """이 층에서 누른 호기의 설비명. 다른 층에서 누른 값이면 지우고 None 이다(층을 바꾸면
+    풀린다)."""
+    stored = st.session_state.get(SPACE_PICKED_KEY)
+    if (
+        isinstance(stored, tuple)
+        and len(stored) == 3
+        and (stored[0], stored[1]) == key
+        and isinstance(stored[2], str)
+        and stored[2]
+    ):
+        return stored[2]
+    st.session_state.pop(SPACE_PICKED_KEY, None)
+    return None
 
 
 def _show_fab_overview() -> None:
@@ -522,6 +571,18 @@ def _floor_viewer_inputs(
     items = viewer_items(
         roster_rows, looks=unit_appearance(roster_rows, boundaries, choice=color_choice)
     )
+    # 설비지분(모듈 행 넷이면 0.25) — 뷰어 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로
+    # 센다. 그 층의 행 전체(레이아웃표시 N 형제 포함)로 나눈 고정 지분이다(기준일을 따르지
+    # 않는다 — 숨김은 브라우저가 기준일마다 정한다).
+    shares = dict(
+        zip(
+            floor_status[EQUIPMENT_ID_COLUMN].astype("string").str.strip(),
+            static_unit_shares(unit_keys(floor_status)),
+            strict=True,
+        )
+    )
+    for item in items:
+        item["share"] = float(shares.get(str(item["id"]), 1.0))
     roster = hashlib.sha256("|".join(str(item["id"]) for item in items).encode()).hexdigest()[:16]
     return tuple(marks), items, roster
 
@@ -1047,6 +1108,8 @@ with st.container(key="space_unsaved_layout_slot"):
         _render_unsaved_layout_panel(buffer_frames if editable else None)
 
 if selected is None:
+    # FAB 로 돌아오면 층 상세에서 누른 호기는 풀린다(층을 바꾼 것과 같다).
+    st.session_state.pop(SPACE_PICKED_KEY, None)
     placements = floor_placements(
         counted_equipment, unplaced_equipment, located_equipment, _canvas_of
     )
@@ -1215,6 +1278,15 @@ else:
             space_equipment["동"].eq(selected_building).fillna(False).astype(bool)
             & space_equipment["층"].eq(selected_floor).fillna(False).astype(bool)
         ]
+        # 도면에서 누른 호기(이 층의 것만). 그 사이 이름이 바뀌었거나 공정소분류 필터로 빠져
+        # 이 층 행에 없으면 푼다.
+        picked_unit = _picked_unit(selected)
+        picked_rows = (
+            picked_unit_rows(floor_status, picked_unit) if picked_unit is not None else None
+        )
+        if picked_rows is not None and picked_rows.empty:
+            st.session_state.pop(SPACE_PICKED_KEY, None)
+            picked_unit = picked_rows = None
         floor_boundaries = (
             get_space_unit_boundaries(floor_status, downtime, today=today) if viewing else None
         )
@@ -1310,12 +1382,40 @@ else:
                 today=today,
                 as_of_range=as_of_bounds,
                 on_as_of=_set_space_as_of,
+                picked=picked_unit,
+                on_pick=partial(_pick_unit, selected),
                 background_image=(
                     layout_profile.image_data_uri if layout_profile is not None else None
                 ),
             )
+    # 아래 호기 표는 요청한 21칸이다(`FLOOR_TABLE_COLUMNS`). 도면에서 호기를 누르면 그 설비
+    # 줄만(모듈이면 그 Main 설비 줄 전부, 누른 모듈이 첫 줄), 「층 전체 보기」 로 층 전체로
+    # 돌아간다(2026-10-23 사용자 결정). 줄 머리와 단추는 늘 세운다 — 누를 때마다 표 위 줄이
+    # 생기고 사라지며 아래가 밀리지 않게.
+    with st.container(
+        horizontal=True, gap="small", vertical_alignment="center", key="space_floor_table_head"
+    ):
+        if picked_rows is not None:
+            st.markdown(
+                f"**{_markdown_text(str(picked_unit))}** 의 RawData {len(picked_rows)}줄"
+                + (" (같은 Main 설비 모듈)" if len(picked_rows) > 1 else ""),
+                width="content",
+            )
+        else:
+            st.caption(
+                "층 전체 호기 · 도면에서 호기를 누르면 그 설비 줄만 봅니다.", width="content"
+            )
+        st.space("stretch")
+        st.button(
+            "층 전체 보기",
+            icon=":material/table_rows:",
+            key=f"space_floor_show_all_{selected_building}_{selected_floor}",
+            on_click=_show_whole_floor,
+            disabled=picked_rows is None,
+            help="도면에서 누른 설비만 보던 아래 표를 층 전체 호기로 돌립니다.",
+        )
     st.dataframe(
-        floor_equipment,
+        floor_table(floor_equipment if picked_rows is None else picked_rows),
         hide_index=True,
         width="stretch",
         # 아직 잡히지 않은 일정·메모 칸에 리터럴 "None" 이 찍혔다. 비워 두는 편이 맞다.
@@ -1325,7 +1425,7 @@ else:
             for column in DATE_COLUMNS
         },
     )
-    # 층별 호기 목록은 현장 배치 검토에 그대로 쓰인다.
+    # 층별 호기 목록은 현장 배치 검토에 그대로 쓰인다 — 표가 좁혀져도 층 전체·모든 칸이다.
     render_csv_download(
         data=floor_equipment.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"space_{selected_building}_{selected_floor}.csv",

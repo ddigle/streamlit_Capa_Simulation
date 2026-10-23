@@ -24,7 +24,9 @@ HTML·CSS·JS 는 `space_layout_editor_assets/` 의 파일이다(파이썬 문�
 
 FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우저가 `navigate` 를 보낸다. 받는 쪽은
 `on_navigate_change` 콜백이다 — 콜백은 본문보다 먼저 돌므로 그 자리에서 층을 바꾸면 재실행 한
-번으로 층 상세가 선다(콜백 안에서 `st.session_state[key].navigate` 로 읽힌다).
+번으로 층 상세가 선다(콜백 안에서 `st.session_state[key].navigate` 로 읽힌다). 층 상세 뷰어에서
+호기를 누르면 같은 꼴로 `pick` 을 보내고 `on_pick_change` 콜백이 받는다(아래 호기 표를 그 설비
+줄만으로).
 
 **기준일 페이더**(층 상세 보기, 도면 상자 맨 위 줄)도 브라우저 몫이다. 끄는 동안에는 파이썬으로
 아무것도 보내지 않고 브라우저가 호기마다 받은 경계 날짜를 글자로 견주어 class·면색만 바꾼다. 손을
@@ -162,13 +164,20 @@ def _spans(value: object) -> list[list[str | None]]:
     ]
 
 
+def _share_or_one(value: object) -> float:
+    """설비지분(`share`) — 0 보다 큰 유한한 수만, 아니면 한 대(1)."""
+    number = finite_or_none(value)
+    return number if number is not None and number > 0 else 1.0
+
+
 def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """브라우저로 보낼 호기. 숫자 아님은 None 으로, Main 설비는 글자일 때만 묶음으로.
 
     색 기준의 면·글자(`fill`·`ink`, `#RRGGBB` 만 — 아니면 빈 글자라 브라우저가 기본 회색)와 경계
     날짜(`realFrom`·`exitOn`·`stopOn`·`delays`·`offline`,
     `services/space_unit_state.boundary_payload`)· `storage`·`flag` 도 여기를 지난다. 이름에
-    `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다.
+    `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다. `share` 는 설비지분(모듈 행
+    넷이면 0.25, 없으면 1)이고 층 상세 보기 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다.
     """
     return [
         {
@@ -200,6 +209,7 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             "delays": _spans(item.get("delays")),
             "offline": _spans(item.get("offline")),
             "flag": bool(item.get("flag")),
+            "share": _share_or_one(item.get("share")),
         }
         for item in items
     ]
@@ -271,10 +281,22 @@ def render_space_layout_viewer(
     on_as_of: Callable[[date], None],
     background_image: str | None = None,
     group_labels: Mapping[str, str] | None = None,
+    picked: str | None = None,
+    on_pick: Callable[[str | None], None] | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
     오른쪽의 한 줄 요약(배치·미배치·점유율)이다. 돌려받는 값이 없다.
+
+    호기를 누르면(끌지 않고) 브라우저가 `pick`(``{"epoch", "id"}``)을 보내고 `on_pick(설비명)` 이
+    콜백에서 돈다 — 층 상세 아래 호기 표를 그 설비 줄만으로 좁히는 데 쓴다. 도면 요소·빈 곳을
+    누르거나 Esc 로 풀면 `on_pick(None)` 이다. 옛 epoch 값은 버린다(`_dispatch_pick`). `picked` 는
+    파이썬이 쥔 고른 호기이고, 바뀐 회차에 브라우저가 도면의 고르기를 그것에 맞춘다(「층 전체
+    보기」로 풀면 도면의 고르기도 풀린다).
+
+    기준일에 반입 전인 호기가 그날 보이는 다른 호기(반입됐고 아직 도면에서 빠지지 않은)와 넓이가
+    0 보다 크게 겹치면 브라우저가 그 호기를 그리지 않고, 요약 끝에 「겹쳐 숨긴 반입 예정 n대」를
+    붙인다(같은 Main 설비 묶음의 모듈끼리는 셈하지 않는다). 범례 대수는 그대로다.
 
     도면 상자 맨 위 줄은 **기준일 페이더**다(오늘 ± 12개월 = `as_of_range`, 하루 단위). 끄는 동안은
     브라우저가 호기마다 받은 경계 날짜와 글자로 견주어 테(반입 전 주황 점선·반출/이설 예정 노랑)·
@@ -300,6 +322,7 @@ def render_space_layout_viewer(
             "items": _clean_items(items),
             "marks": [mark.editor_payload() for mark in marks],
             "groupLabels": _clean_group_labels(group_labels),
+            "picked": picked if isinstance(picked, str) and picked else None,
             "canvas": {"width": canvas[0], "height": canvas[1]},
             "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
             "decimals": CANVAS_DECIMALS,
@@ -313,8 +336,28 @@ def render_space_layout_viewer(
         },
         on_apply_change=lambda: None,
         on_asOf_change=partial(_dispatch_as_of, key, on_as_of),
+        on_pick_change=partial(_dispatch_pick, key, epoch, on_pick),
         width="stretch",
     )
+
+
+def _dispatch_pick(key: str, epoch: str, on_pick: Callable[[str | None], None] | None) -> None:
+    """`on_pick_change` 콜백. 층 상세 뷰어에서 누른 호기(`{"epoch", "id"}`)를 `on_pick` 으로 넘긴다.
+
+    id 가 None 이면 고른 호기가 없다는 뜻이다(도면 요소·빈 곳을 눌렀거나 Esc). 뷰어를 그린 epoch 와
+    다른 값(도면이 다시 서기 전에 누른 옛 호기)과 글자가 아닌 id 는 버린다 — 블록 열기
+    (`_dispatch_navigate`)와 같은 규칙이다."""
+    if on_pick is None:
+        return
+    state = st.session_state.get(key)
+    payload = state.get("pick") if isinstance(state, Mapping) else getattr(state, "pick", None)
+    if not isinstance(payload, Mapping) or payload.get("epoch") != epoch:
+        return
+    raw = payload.get("id")
+    if raw is None:
+        on_pick(None)
+    elif isinstance(raw, str) and raw.strip():
+        on_pick(raw.strip())
 
 
 def _dispatch_navigate(key: str, epoch: str, on_open: Callable[[FloorKey], None]) -> None:

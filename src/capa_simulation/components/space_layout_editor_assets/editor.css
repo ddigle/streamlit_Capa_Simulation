@@ -80,8 +80,9 @@
 .sle-halo, .sle-hatch, .sle-ring, .sle-ring-out, .sle-flag, .sle-offline, .sle-corner { display: none; pointer-events: none; }
 .sle-halo { fill: none; stroke: var(--sle-ring-halo); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .sle-ring, .sle-ring-out { fill: none; vector-effect: non-scaling-stroke; }
-/* 기준일에 도면에 없는 호기는 visibility 로 숨긴다 — display 를 바꾸면 페이더 프레임마다 SVG 배치가 다시 돈다. */
-.sle.is-view .sle-unit.is-gone { visibility: hidden; }
+/* 기준일에 도면에 없는 호기는 visibility 로 숨긴다 — display 를 바꾸면 페이더 프레임마다 SVG 배치가 다시 돈다. 그날 보이는
+   호기와 겹친 반입 예정 호기(`is-covered`, JS `coveredBy`)도 같다 — 숨은 상자는 눌리지 않는다. */
+.sle.is-view .sle-unit.is-gone, .sle.is-view .sle-unit.is-covered { visibility: hidden; }
 .sle.is-view .sle-unit.is-selected .sle-halo { display: inline; }
 .sle.is-view .sle-unit.is-pre .sle-rect, .sle.is-view .sle-unit.is-exitplan .sle-rect { stroke: none; }
 .sle.is-view .sle-unit.is-pre .sle-ring { display: inline; stroke: var(--sle-ring-pre); stroke-width: 3.5; stroke-dasharray: 6 3.5; }

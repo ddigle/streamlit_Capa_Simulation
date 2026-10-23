@@ -60,11 +60,11 @@ def test_the_height_handle_is_a_horizontal_separator_under_the_stage() -> None:
 
 def test_resizing_stays_in_the_browser() -> None:
     """크기는 파이썬으로 보내지 않는다(보내면 페이지 전체가 다시 돈다). 보내는 것은 `적용` 과
-    FAB 층 블록의 `열기`(트리거), 그리고 기준일 `asOf`(상태 — 페이더를 놓을 때·FAB
-    「오늘로」)뿐이다."""
+    FAB 층 블록의 `열기`·층 상세 뷰어에서 누른 호기(`pick`, 트리거), 그리고 기준일 `asOf`(상태 —
+    페이더를 놓을 때·FAB 「오늘로」)뿐이다."""
     assert sorted(re.findall(r"setStateValue\('([A-Za-z]+)'", JS)) == ["asOf", "asOf"]
     assert JS.count("setStateValue(") == 2
-    assert sorted(re.findall(r"setTriggerValue\('([a-z]+)'", JS)) == ["apply", "navigate"]
+    assert sorted(re.findall(r"setTriggerValue\('([a-z]+)'", JS)) == ["apply", "navigate", "pick"]
     # 관찰자는 한 번만 만들고, 실행마다 새로 정의되는 S.onResize 를 부른다. 내릴 때 끊는다.
     assert JS.count("new ResizeObserver(") == 1
     assert "if (!S.ro &&" in JS and "S.onResize = " in JS
@@ -643,7 +643,9 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.
     last = _rule(".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary")
     assert "min-width: 0" in last and "text-overflow: ellipsis" in last
-    assert "setAttr(q('.sle-summary'), 'title', data.summary || '')" in JS
+    # 요약 글(겹쳐 숨긴 반입 예정 대수를 붙인 것)이 그대로 풍선이다(`showSummary`).
+    summary = _between("function showSummary() {", "function overlapPairs() {")
+    assert "setText(node, text)" in summary and "setAttr(node, 'title', text)" in summary
     # 대수 글자(미확인)는 말줄임으로 반만 잘리지 않는다 — 접을 때는 통째로.
     assert "ellipsis" not in _rule(".sle-flagnote")
     assert "flex: none" in _rule(".sle-toolbar > *")

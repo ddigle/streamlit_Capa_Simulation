@@ -18,6 +18,9 @@ export default function (component) {
     placedLog: [], trayAnchor: null, pasteSerial: 0, flash: '', hover: null, guideTimer: 0,
     // Main 설비 모듈 묶음 이름표 위치(묶음 열쇠 `groupKeyOf` → 'top'·'bottom', 없으면 가운데)와 처음 값.
     groupLabels: new Map(), originalGroupLabels: new Map(),
+    // 층 상세 보기: 겹쳐 숨긴 반입 예정 호기(id → 설비지분, `paintUnit`)와 아래 호기 표에 고른 호기 — 파이썬이 쥔 값
+    // (`data.picked`, 받은 그대로 `pickData`)과 브라우저가 보낸 값(`pickSent`).
+    covered: new Map(), pickData: undefined, pickSent: null,
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -231,11 +234,8 @@ export default function (component) {
   const pickBox = q('.sle-pick')
   const pickHint = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
-    : '호기를 누르면 정보가 여기 뜹니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
+    : '호기를 누르면 정보가 여기 뜨고 아래 표가 그 설비 줄만 보입니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
   if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
-  setText(q('.sle-summary'), data.summary || '')
-  // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitFabBar`) — 풍선에 온 글.
-  setAttr(q('.sle-summary'), 'title', data.summary || '')
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
   const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
@@ -573,6 +573,29 @@ export default function (component) {
       flag,
     }
   }
+  // ---------------------------------------------------------------- 겹친 반입 예정 숨기기(보기, 순수 함수)
+  // 층 상세 보기에서 기준일에 반입 전(실물 없음)인 호기가 그날 보이는 다른 호기 — 반입됐고 아직 도면에서 빠지지 않은, 실선으로
+  // 그리는 호기 — 와 넓이가 0 보다 크게 겹치면 그리지 않는다(2026-10-23 사용자 요청 8 · 결정). 기존 설비가 빠진 자리에 들어올
+  // 설비는 기존 설비가 빠지는 날부터 반입 예정(점선)으로 보인다. 반입 전끼리만 겹치면 둘 다 보이고, 같은 Main 설비 묶음의
+  // 모듈끼리의 겹침은 셈하지 않는다(모듈 상자마다 판정한다). 배치 편집기는 숨기지 않는다. `tests/test_space_viewer_pick.py` 가 아래
+  // 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <view-cover>
+  // item 의 판정 st(`unitState`)와 넓이가 겹치는 이웃 호기들 neighbours, 이웃의 판정을 내는 stateOf 로 숨길지 정한다.
+  function coveredBy(item, st, neighbours, stateOf) {
+    if (st.real || !st.visible) return false
+    for (const other of neighbours) {
+      if (item.group && other.group === item.group) continue
+      const seen = stateOf(other)
+      if (seen.visible && seen.real) return true
+    }
+    return false
+  }
+  // 대수 글자 — 파이썬 `equipment_units.format_unit_count` 처럼 소수 둘째 자리까지, 끝의 0 은 뗀다(1, 0.25, 1.5).
+  function unitCountText(n) {
+    const rounded = Math.round(n * 100) / 100 + 0
+    return rounded.toLocaleString('ko-KR', { maximumFractionDigits: 2 })
+  }
+  // </view-cover>
   // 채우기·글자: 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한 그룹색, 아니면 기본 회색).
   function unitColors(item, st) {
     if (st.delay) return { fill: 'var(--sle-unit-delay-fill)', ink: 'var(--sle-unit-delay-ink)' }
@@ -1479,14 +1502,19 @@ export default function (component) {
   function paintUnit(group, item) {
     const st = unitState(item, S.asOf)
     const look = unitColors(item, st)
-    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}`
-    group.__visible = st.visible
+    // 층 상세 보기에서 그날 보이는 호기와 겹친 반입 예정 호기는 숨긴다(`coveredBy`). 숨긴 호기의 몫은 요약 줄에 센다.
+    const covered = VIEW && !FAB && coveredAt(item, st)
+    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}${+covered}`
+    group.__visible = st.visible && !covered
+    if (covered) S.covered.set(item.id, item.share)
+    else S.covered.delete(item.id)
     if (group.__paint === code) return
     group.__paint = code
     group.querySelector('.sle-rect').style.fill = look.fill
     group.querySelector('.sle-label').style.fill = look.ink
     if (!VIEW) return
     group.classList.toggle('is-gone', !st.visible)
+    group.classList.toggle('is-covered', covered)
     group.classList.toggle('is-pre', !st.real)
     group.classList.toggle('is-exitplan', st.real && st.exitPlan)
     group.classList.toggle('is-stopped', st.stopped)
@@ -1635,6 +1663,10 @@ export default function (component) {
     trayList.replaceChildren()
     leavingList.replaceChildren()
     S.groups = new Map()
+    // 보기 화면은 기준일이 바뀌어도 숨김이 바뀐 호기의 짝만 다시 보도록 겹침 짝을 새로 만든다(그린 호기·자리가 바뀌는 때는
+    // 여기뿐이다). 상자를 칠하기(`paintUnit` — 겹친 반입 예정 숨김이 짝을 본다) 전에 비운다.
+    S.adjacency = null
+    S.covered = new Map()
     // 모듈 묶음의 모듈 상자에는 손잡이가 없다(`is-module` — 크기는 묶음 범위 테두리의 손잡이로 바꾼다).
     const counts = groupCounts()
     for (const item of S.items.values()) {
@@ -1660,12 +1692,11 @@ export default function (component) {
     applyTrayFilter()
     drawerCount.textContent = leavingN ? `${trayN} · 보냄 ${leavingN}` : String(trayN)
     trayBox.scrollTop = trayScroll
-    // 보기 화면은 기준일이 바뀌어도 바뀐 호기만 칠하도록 경계 날짜 목록을, 숨김이 바뀌면 짝만 다시 보도록 겹침 짝을
-    // 새로 만든다(그린 호기·자리가 바뀌는 때는 여기뿐이다).
-    S.adjacency = null
+    // 보기 화면은 기준일이 바뀌어도 바뀐 호기만 칠하도록 경계 날짜 목록을 새로 만든다.
     if (VIEW && !FAB) buildEvents()
     markSelection()
     markOverlaps()
+    showSummary()
   }
 
   // 단계·라벨은 같은 epoch 안에서도 바뀐다(테마 전환·기준일). 기하는 그대로 두고 칠·글자만 다시 쓴다.
@@ -1742,12 +1773,20 @@ export default function (component) {
       paintUnit(group, item)
       if (was !== group.__visible) flipped.push(id)
     }
-    if (ids) for (const id of ids) paintOne(id)
-    else for (const id of S.groups.keys()) paintOne(id)
+    if (ids) {
+      // 겹친 반입 예정 숨김은 이웃의 판정에도 달렸다 — 판정이 바뀐 호기와 넓이가 겹치는 이웃도 다시 본다.
+      const near = new Set(ids)
+      if (VIEW && !FAB) {
+        const pairs = overlapPairs()
+        for (const id of ids) for (const other of pairs.get(id) || []) near.add(other)
+      }
+      for (const id of near) paintOne(id)
+    } else for (const id of S.groups.keys()) paintOne(id)
     if (flipped.length) markOverlaps(flipped)
     // 기준일에 묶음이 통째로 보이거나 숨으면 Main 설비명도 따라간다.
     if (flipped.some((id) => S.items.get(id)?.group)) drawGroupNames()
     if (S.selection.size) updateStatus()
+    showSummary()
   }
   // 칠한 날이 `previous` 에서 S.asOf 로 옮겨 갔다(페이더 프레임·놓은 뒤 파이썬이 따로 바꾼 날) — 그 사이에 경계 날짜가
   // 든 호기만 다시 칠한다. 1천여 호기를 프레임마다 다 돌지 않는다.
@@ -1976,6 +2015,23 @@ export default function (component) {
     S.blocked = blocked.size
   }
 
+  // 층 상세 보기에서 기준일 판정 st 의 호기를 겹친 반입 예정으로 숨기는가(`coveredBy`). 이웃은 넓이가 겹치는 호기(`overlapPairs`)다.
+  function coveredAt(item, st) {
+    const neighbours = (overlapPairs().get(item.id) || []).map((id) => S.items.get(id)).filter(Boolean)
+    return coveredBy(item, st, neighbours, (other) => unitState(other, S.asOf))
+  }
+  // 도구 줄 오른쪽 한 줄 요약(파이썬 `summary` — 배치·미배치·점유율)에 겹쳐 숨긴 반입 예정 대수를 붙인다. 숨김은 기준일마다
+  // 브라우저가 정하므로(페이더를 끄는 동안에도) 붙이는 것도 브라우저다. 범례 대수는 그대로다.
+  function showSummary() {
+    const base = String(data.summary || '')
+    let hidden = 0
+    for (const share of S.covered.values()) hidden += share
+    const text = hidden > 0 ? `${base} · 겹쳐 숨긴 반입 예정 ${unitCountText(hidden)}대` : base
+    const node = q('.sle-summary')
+    setText(node, text)
+    // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitFabBar`) — 풍선에 온 글.
+    setAttr(node, 'title', text)
+  }
   // 보기 화면의 호기 겹침 짝(호기 → 겹치는 호기들). 격자 칸에 나눠 담아 같은 칸끼리만 견준다. 그린 호기가 바뀔 때
   // (`renderItems`)만 다시 만든다.
   const OVERLAP_CELL = 8
@@ -3093,6 +3149,8 @@ export default function (component) {
     group: raw.group ? String(raw.group) : null, x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h),
     isNew: Boolean(raw.isNew), arrived: Boolean(raw.arrived), floorless: Boolean(raw.floorless), moveTo: null, created: null,
     sizeGuessed: false, detail: String(raw.detail || ''), ...unitLook(raw),
+    // 설비지분(모듈 행 넷이면 0.25) — 층 상세 보기 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다. 없으면 한 대.
+    share: Number(raw.share) > 0 ? Number(raw.share) : 1,
   })
   const readMark = (raw) => ({
     id: String(raw.id), kind: String(raw.kind), label: String(raw.label || ''), stage: '', group: null,
@@ -3194,6 +3252,8 @@ export default function (component) {
     S.bgImage = data.backgroundImage || null
     drawStatic()
     renderItems()
+    // 새로 선 도면은 파이썬이 쥔 고른 호기(`data.picked`)를 다시 고른다(아래 `syncPick`).
+    S.pickData = undefined
   } else {
     // 같은 epoch: 기하는 브라우저가 쥔 것을 지키고, 단계·라벨·면·경계 날짜처럼 보기만 바뀐 것은 합친다. 받은 값이
     // 쥔 값과 같은 호기는 건드리지 않는다 — 페이더를 놓은 뒤 돌아온 회차처럼 기준일도 호기 값도 그대로면 아무것도
@@ -3221,6 +3281,35 @@ export default function (component) {
     } else if (touched.length || previous) repaint()
     else redrawMarks()
   }
+  showSummary()
+
+  // ------------------------------------------------------------- 아래 호기 표에 고른 호기(층 상세 보기)
+  // 층 상세 보기에서 호기를 누르면(끌지 않고) 그 호기를 `pick` 으로 알린다(2026-10-23 사용자 요청 3). 받는 쪽 파이썬
+  // `on_pick_change` 콜백이 층 상세 아래 호기 표를 그 설비 줄만으로 좁힌다 — 블록 열기(`navigate`)와 같은 꼴이고 epoch 가 다른
+  // 옛 값은 버린다. 호기가 아닌 것(도면 요소)을 누르거나 빈 곳을 누르거나 Esc 로 풀면 고른 호기가 없다는 값(id null)을 보내
+  // 표가 층 전체로 돌아간다. 같은 값은 다시 보내지 않는다. 표 위 「층 전체 보기」 단추로 파이썬이 풀면 `data.picked` 가 비어
+  // 도면의 고르기도 풀린다. 배치 편집기와 FAB 는 보내지 않는다.
+  const PICKS = VIEW && !FAB
+  function notePick() {
+    if (!PICKS) return
+    const item = S.selected ? S.items.get(S.selected) : null
+    const id = item && isUnit(item) ? item.id : null
+    if (id === S.pickSent) return
+    S.pickSent = id
+    setTriggerValue('pick', { epoch: S.epoch, id })
+  }
+  // 파이썬이 쥔 고른 호기가 지난 회차와 다르면(누른 회차·「층 전체 보기」·새로 선 도면) 도면의 고르기를 그것에 맞춘다.
+  function syncPick() {
+    if (!PICKS) return
+    const picked = typeof data.picked === 'string' && data.picked ? data.picked : null
+    if (picked === S.pickData) return
+    S.pickData = picked
+    S.pickSent = picked
+    if (picked && S.items.has(picked)) {
+      if (S.selected !== picked || S.selection.size !== 1) select(picked)
+    } else if (!picked && S.selected && isUnit(S.items.get(S.selected) || {})) select(null)
+  }
+  syncPick()
 
   // ------------------------------------------------------------- 끌기(속성 대입이라 겹쳐 쌓이지 않는다)
   svg.onmousedown = (event) => { if (event.button === 1) event.preventDefault() }
@@ -3430,6 +3519,7 @@ export default function (component) {
         return
       }
       select(drag.id)
+      notePick()
       return
     }
     if (drag.mode === 'marquee') {
@@ -3522,7 +3612,7 @@ export default function (component) {
       if (event.key === '+' || event.key === '=') zoomAt(S.view.z * ZOOM_STEP)
       else if (event.key === '-') zoomAt(S.view.z / ZOOM_STEP)
       else if (event.key === '0') zoomAt(1)
-      else if (event.key === 'Escape') select(null)
+      else if (event.key === 'Escape') { select(null); notePick() }
       else if (moves[event.key]) {
         if (!panBy(moves[event.key][0] * viewW(), moves[event.key][1] * viewH())) return
       } else return
