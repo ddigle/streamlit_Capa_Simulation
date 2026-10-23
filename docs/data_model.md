@@ -87,6 +87,7 @@ app_meta.global_securement_threshold 1 ── N global_securement_threshold_mont
 app_meta.global_advance_shipment     1 ── N global_advance_shipment_month    선행 입고 실적(0031, 계산 밖)
 app_meta.global_auto_official_update 1 ── N auto_official_update_setting_log 공식버전 자동 갱신 설정·변경 기록(0035)
 app_meta.auto_official_update_run    1 ── N auto_official_update_exclusion   실행·자동 off 공정(0035, run_id·머리 없음)
+app_meta.global_main_cases           1                                       HOME 주요 Case(0036 — 아래 예외)
 app_meta.voc_post                    1 ── N voc_reply (post_id)              VOC 게시판(0025, 머리 없음)
 
 app_meta.schema_migration · (옛 개발 DB 에만) 빈 equipment_ops 스키마(결번 2·3 의 흔적 — migration_catalog.md)
@@ -118,6 +119,11 @@ equipment_meta.schema_migration
 `0035` 공식버전 자동 갱신의 네 표가 그 꼴이다 — 실행이 만든 시나리오·리비전·공식버전을
 `created_scenario_id`·`base_revision_id`·`filtered_revision_id`·`official_release_id` 로 가리키기만 하고,
 이름이 소유 컬럼과 달라 자동 발견에 걸리지 않으므로 시나리오를 지워도 그날의 기록이 남는다.
+`0036` 주요 Case(`app_meta.global_main_cases`)도 가리키는 참조지만 칸 이름이 `case1_scenario_id`·
+`case1_revision_id`·`case2_scenario_id`·`case2_revision_id` 라 자동 발견에 걸리지 않는다(`_GLOBAL_PROFILE_TABLES` 에
+두지 않는다). 그래서 보관·영구 삭제가 같은 트랜잭션에서 그 시나리오를 가리키는 Case 만 명시적으로 비우고 행은
+남긴다(version+1, 출처 칸에 「Case2 지정 비움 — 시나리오 보관」 처럼 까닭). 가리키는 시나리오·리비전의 이름 바꾸기는
+version 만 올린다 — HOME 슬롯 글자가 시나리오명·리비전명을 싣는다.
 
 DuckDB 1.5.5는 서로 다른 스키마 사이의 외래 키를 만들 수 없으므로 스키마 간 FK는
 DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에서 소유 관계, 상위 리비전,
@@ -188,6 +194,10 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
 - `global_comparison_scenario`(0020): GAP 비교 대상 시나리오·리비전. 고르지 않은 상태는 두 값이
   NULL 이다. 공용 프로필 가운데 유일하게 `scenario_id`·`revision_id` 를 가져 소유 자동 발견에서
   뺀다(위 「스키마 관계」 아래 문단).
+- `global_main_cases`(0036): HOME 주요 Case — 슬롯 셋(공식버전·Case1·Case2) 가운데 Preference 에서 지정하는
+  Case1·Case2 의 시나리오·리비전 짝(한 행에 Case 마다 칸 둘). 슬롯 1 은 늘 최신 공식버전이라 담지 않는다. 지정
+  안 한 Case 는 두 값이 NULL 이고, 리비전만 있는 짝은 Case 마다 `CHECK` 가 막는다. 한 Case 교체는 다른 Case 를
+  같은 쓰기 트랜잭션에서 옮겨 적는다(위 「스키마 관계」 아래 문단).
 - `global_top5_band`(0022): B/N Top5 막대가 표현하는 확보율 구간(기본 50~200%).
 - `global_summary_note`(0023): HOME 상단 Summary 공지. 빈 문자열은 「공지를 내린 상태」다.
 - `global_key_process`(0024)·`global_key_process_preset`·`global_key_process_preset_item`(0028):
@@ -424,7 +434,8 @@ Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연 �
 - 목록에서 치우는 기본 수단은 보관이다 — `app_meta.scenario.status` 를 `ARCHIVED` 로
   바꾸고 `app_meta.dataset.status` 도 함께 옮긴다. 상태 컬럼은 `0001_initial.sql` 의
   `CHECK (status IN ('ACTIVE','ARCHIVED'))` 를 그대로 쓰므로 새 마이그레이션이 없다.
-  보관 시 공용 GAP 비교 프로필(`app_meta.global_comparison_scenario`)의 대상도 비운다.
+  보관 시 공용 GAP 비교 프로필(`app_meta.global_comparison_scenario`)의 대상과 그 시나리오를 가리키는 주요
+  Case(`app_meta.global_main_cases`)도 비운다 — 되돌려도 지정은 돌아오지 않는다. 영구 삭제도 같다.
 - 영구 삭제는 물리 삭제다. 지울 표는 `information_schema` 에서 소유 컬럼
   (`scenario_id`·`dataset_id`·`revision_id`)으로 찾아 한 트랜잭션에서 지운다. 표 목록을
   손으로 적으면 새 마이그레이션의 표가 빠져 주인 없는 행이 남고, 그 누락은 삭제한 뒤에야

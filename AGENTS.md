@@ -956,8 +956,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     적는다 — 남의 지정·이름 바꾸기가 다음 회차에 보이고 브라우저가 옛 글자를 되보내도 지정이 바뀌지 않는다(9장).
   - 시나리오 콜백은 그 시나리오 첫 리비전과 **짝으로** 저장한다(위젯 기본값은 `on_change` 를 부르지 않는다). Case 하나만
     바꾸고 다른 Case 는 같은 쓰기 트랜잭션에서 옮겨 적는다. 같은 짝·라벨 글자는 쓰지 않는다.
-  - 본문의 쓰기는 둘뿐이다 — 목록에 없는 시나리오를 가리키는 Case 비우기(조건부 UPDATE, 한 번 알림), 그 시나리오 것이
-    아닌 리비전 칸을 첫 리비전으로 메우기(본 version 대조). 둘 다 프로필만 보고 정해져 세션끼리 뒤집지 않는다.
+  - 리비전 콜백은 그 Case 의 지금 시나리오가 화면이 본 시나리오일 때만 쓴다(`expected_scenario_id` — 같은 쓰기
+    트랜잭션에서 대조). 낡은 화면이 짝을 통째 써서 남의 시나리오 고름을 알림 없이 되돌리지 않게 하고, 어긋나면 알린다.
+  - 본문의 쓰기는 둘뿐이다 — 목록에 없는 시나리오를 가리키는 Case 비우기(조건부 UPDATE, 한 번 알림 + 출처 칸에 까닭),
+    그 시나리오 것이 아닌 리비전 칸을 첫 리비전으로 메우기(본 version 대조). 둘 다 프로필만 보고 정해져 세션끼리
+    뒤집지 않는다.
+  - **숨은 `Preference` 회차는 DB 를 읽지도 쓰지도 않는다**(`owner_tab`) — 마지막으로 보인 화면 재료
+    (`MAIN_CASE_VIEW_KEY`)로 위젯을 그대로 그린다(탭을 누른 순간 보이는 것이 그 화면). 세션 첫 회차가 숨은 탭이면 한
+    번만 읽고 쓰지 않는다. 위 두 쓰기와 그 알림·콜백 실패 알림은 보이는 회차로 미룬다.
+  - 비운 Case 는 세션 API 로 `None` 을 적어 브라우저가 자리표시를 띄우므로 `placeholder` 를 비우기 선택지 글자로 준다
+    (주지 않으면 영문 「Choose an option」). 그 글자는 같은 이름의 시나리오가 있으면 「지정 안 함 (비움)」 으로
+    비켜 선다(`unset_choice_label` — 1.63 은 같은 글자를 첫 선택지로 읽어 그 Case 를 비울 수 없었다).
   - Case1·Case2 가 같은 짝, Case 가 공식버전과 같은 리비전이면 저장하고 캡션으로 알린다(`main_case_overlap_notes`).
     HOME Main 의 슬롯 고르기는 시안 답 뒤 2단계다(`services/main_cases.main_case_slots` 를 쓴다).
 - `src/capa_simulation/services/main_cases.py` — 주요 Case 슬롯 셋(공식버전·Case1·Case2)을 (글자, 시나리오 id, 리비전 id,
@@ -1199,8 +1208,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·공지·GAP 비교 대상(`0020`)·주요
   Case(`0036`)의 조회·교체·해제 SQL.
   - 주요 Case 는 한 행에 Case 마다 칸 둘(`case1_scenario_id`…)이다. 칸 이름이 `scenario_id` 가 아니라 `_owned_tables`
-    자동 발견에 걸리지 않고, 보관·영구 삭제는 그 시나리오를 가리키는 Case 만 비우며(`clear_global_main_cases`) 이름
-    바꾸기는 version 만 올린다(`touch_global_main_cases`). Case 하나 교체는 다른 Case 를 같은 트랜잭션에서 옮겨 적는다.
+    자동 발견에 걸리지 않고, 보관·영구 삭제는 그 시나리오를 가리키는 Case 만 비우며 출처 칸에 까닭을 적는다
+    (`clear_global_main_cases` — 「Case2 지정 비움 — 시나리오 보관」). 가리키는 시나리오·리비전의 이름 바꾸기는
+    version 만 올린다(`touch_global_main_cases`·`touch_global_main_cases_revision` — 슬롯 글자가 둘 다 싣는다). Case
+    하나 교체는 다른 Case 를 같은 트랜잭션에서 옮겨 적는다.
 - `src/capa_simulation/persistence/voc_store.py` — VOC 게시판 글·답글의 조회·삽입·삭제 SQL.
 - `src/capa_simulation/persistence/shortening_baseline_store.py` — 필요 단축 일정 기준선(설비 DB `0021`)의
   넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`).
@@ -1435,7 +1446,9 @@ RQ_MODULE
 22. **캐시 무효화는 DB 를 바꾼 호출부 몫이다.** 공용 프로필 캐시는 DB 경로 키라 `version` 이 올라도 비지 않는다
     — 표시순서 교체는 `clear_global_display_order_cache()`, 시나리오 이름 변경·보관·복원·삭제는
     `clear_scenario_snapshot_cache()`, 공용 비교 대상·주요 Case 를 비우거나 version 을 올리는 이름 변경·보관·삭제는
-    `clear_global_comparison_scenario_cache()`·`clear_global_main_cases_cache()` 까지 부른다. 입장 화면 Summary 가 읽는 공용 프로필·시나리오를 바꾸는 저장 길은
+    `clear_global_comparison_scenario_cache()`·`clear_global_main_cases_cache()`(리비전명 변경도 — 주요 Case 슬롯
+    글자가 리비전명을 싣는다) 까지 부른다(`tests/test_scenario_management_page.py`·`test_revision_rename.py` 가 지킨다).
+    입장 화면 Summary 가 읽는 공용 프로필·시나리오를 바꾸는 저장 길은
     `intro_summary.forget_intro_summary_check` 도 부른다(새 길은 `tests/test_summary_recheck_paths.py` 에 더한다).
 23. **모든 화면에서 회차마다 그리는 공통 요소는 DB 를 읽지 않는다.** 머리 띠·사이드바 조건 줄은 활성화·확인 때
     세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`intro_summary.latest_official_revision`)만 읽고
@@ -2264,7 +2277,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     않은 월·범위 밖 월·시작 > 끝은 보내지 않고 단추 옆에 까닭을 적는다. `min`·`max` 는 값이 바뀔 때만 다시 넣는다
     (같은 값이라도 넣으면 Chrome 이 두 자리 월 입력을 끊는다).
 - 숨은 탭에서 위젯을 그리지 않으면 Streamlit 이 그 값을 버린다. 본문에 남은 입력 위젯은
-  숨은 탭에서도 그리고 계산·표·차트만 건너뛴다. **조건 카드로 옮긴 위젯**은 열린 탭에서만
+  숨은 탭에서도 그리고 계산·표·차트만 건너뛴다. 공용 프로필을 그대로 비추는 상자(HOME `Preference` 의 주요 Case)는
+  숨은 회차에 DB 를 읽지 않고 마지막으로 보인 화면 재료로 위젯을 그린다(`home_main_cases`). **조건 카드로 옮긴 위젯**은 열린 탭에서만
   그리므로(사이드바 = 지금 화면의 조건) 반드시 `persist_state` 를 준다 — 그것이 닫힌 동안의
   값을 지킨다(`산출 결과`·`기준 정보`·`생산 계획`).
 - 위젯 없는 읽기 전용 표·정적 설명만 든 탭은 닫혀 있으면 통째로 건너뛴다(Admin `원천 품질`·Dynamic `산식 가이드`).
