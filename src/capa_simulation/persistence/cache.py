@@ -33,6 +33,7 @@ from capa_simulation.persistence.models import (
     GlobalSecurementThreshold,
     GlobalSummaryNote,
     GlobalTop5Band,
+    MainCaseTargets,
     RevisionSummary,
     ScenarioPreset,
     ScenarioSnapshot,
@@ -368,10 +369,53 @@ def load_global_main_cases(database_path: str) -> GlobalMainCases:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _load_main_case_targets_payload(
+    database_path: str, generation: WriteGeneration
+) -> dict[str, Any]:
+    del generation
+    repository = get_scenario_repository(database_path)
+    profile = repository.load_global_main_cases()
+    wanted = {
+        scenario_id for case_no in (1, 2) if (scenario_id := profile.case(case_no)[0]) is not None
+    }
+    scenarios = [
+        scenario for scenario in repository.list_scenarios() if scenario.scenario_id in wanted
+    ]
+    revisions = [
+        revision
+        for scenario in scenarios
+        for revision in repository.list_revisions(scenario.scenario_id)
+    ]
+    return {
+        "profile": _payload(profile, GlobalMainCases),
+        "scenarios": [_payload(scenario, ScenarioSummary) for scenario in scenarios],
+        "revisions": [_payload(revision, RevisionSummary) for revision in revisions],
+    }
+
+
+def load_main_case_targets(database_path: str) -> MainCaseTargets:
+    """주요 Case 프로필과 그것이 가리키는 시나리오·리비전 — HOME 제목 줄 칩이 회차마다 읽는다.
+
+    키는 주요 Case 프로필과 **같은 쓰기 세대**다. 칩 글자·상태를 바꾸는 일은 모두 그 세대를 올린다 —
+    지정 교체·비우기, 가리키는 시나리오·리비전의 이름 바꾸기(version 을 올린다), 보관·영구
+    삭제·리비전 삭제(그 Case 를 비운다). 그래서 HOME 회차는 저장한 뒤 한 번만 DB 를 읽고 나머지는
+    캐시에서 꺼낸다(머리 띠처럼 회차마다 DB 를 보지 않는다 — `app_header`). 모델 클래스는 캐시에
+    싣지 않는다.
+    """
+    payload = _load_main_case_targets_payload(database_path, _write_generation("main_cases"))
+    return MainCaseTargets(
+        profile=GlobalMainCases(**payload["profile"]),
+        scenarios=tuple(ScenarioSummary(**item) for item in payload["scenarios"]),
+        revisions=tuple(RevisionSummary(**item) for item in payload["revisions"]),
+    )
+
+
 def clear_global_main_cases_cache() -> None:
-    """주요 Case 프로필만 비운다. 어떤 `RQ_*` 표에도 얹히지 않아 리비전 스냅샷은 건드리지 않는다."""
+    """주요 Case 프로필과 칩 재료를 비운다. `RQ_*` 표에 얹히지 않아 리비전 스냅샷은 그대로다."""
     _bump_write_generation("main_cases")
     _load_global_main_cases_payload.clear()
+    _load_main_case_targets_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -621,6 +665,7 @@ def clear_scenario_repository() -> None:
     _load_global_securement_threshold_payload.clear()
     _load_global_comparison_scenario_payload.clear()
     _load_global_main_cases_payload.clear()
+    _load_main_case_targets_payload.clear()
     _load_global_execution_capacity_payload.clear()
     _load_global_top5_band_payload.clear()
     _load_global_key_process_payload.clear()

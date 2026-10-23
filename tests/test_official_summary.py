@@ -297,7 +297,13 @@ class _Repo:
     def __init__(self, release_id: str) -> None:
         self.calls = 0
         self.release = SimpleNamespace(
-            official_release_id=release_id, scenario_name="DEMO", revision_id="rev", release_no=1
+            official_release_id=release_id,
+            release_no=1,
+            release_name="공식 v1",
+            scenario_id="scenario",
+            scenario_name="DEMO",
+            revision_id="rev",
+            revision_no=1,
         )
 
     def latest_official_release(self) -> SimpleNamespace:
@@ -705,3 +711,12 @@ def test_a_failure_after_reading_the_official_version_keeps_its_identity(
     monkeypatch.setattr(module, "load_global_display_order", broken)
     assert module.official_summary_data("db")["available"] is False
     assert module.latest_official_revision() == ("rev", 1)
+    # HOME 주요 Case 의 공식 칩이 쓰는 이름까지 같은 세션 값에 남는다.
+    assert module.latest_official_identity() == module.OfficialIdentity(
+        release_no=1,
+        release_name="공식 v1",
+        scenario_id="scenario",
+        scenario_name="DEMO",
+        revision_id="rev",
+        revision_no=1,
+    )

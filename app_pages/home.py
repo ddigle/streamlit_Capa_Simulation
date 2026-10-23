@@ -3,6 +3,7 @@
 
 from collections.abc import Mapping
 from dataclasses import replace
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -20,6 +21,10 @@ from capa_simulation.components.home_figures import (
     build_key_process_heatmap_figures,
     build_lob_summary_figures,
     build_plan_detail_figures,
+)
+from capa_simulation.components.home_main_case_chips import (
+    render_main_case_chip_notice,
+    render_main_case_chips,
 )
 from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
@@ -53,6 +58,7 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
     take_home_figures,
 )
+from capa_simulation.components.intro_summary import latest_official_identity
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header_with_status
@@ -74,6 +80,9 @@ from capa_simulation.home_state import (
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
+    HOME_PAST_TAB,
+    HOME_TAB_KEY,
+    HOME_TAB_LABELS,
     HOME_TOGGLE_DEFAULTS,
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
@@ -230,7 +239,21 @@ render_page_guide("home", title="HOME", howto="lob")
 # 진행 표시는 화면 맨 위 띠(툴바 단추 바로 왼쪽)에 앉는다(2026-10-08 사용자 결정). 본문 흐름에
 # 두면 막대가 뜨고 질 때마다 아래 차트가 그만큼 밀려 보던 자리가 흔들린다. 띠 위에 고정되므로
 # 막대가 뜨고 져도 본문이 움직이지 않고, 어느 탭·어느 스크롤 자리에서든 같은 자리에서 읽힌다.
-loading = LoadingProgress(render_page_header_with_status("Capa LOB Summary"), HOME_LOADING_STAGES)
+# 제목 줄 끝은 주요 Case 칩 셋이다(공식 vN · Case1 · Case2 — 2026-10-23 사용자 결정). 누르면
+# 사이드바에서 그 리비전을 불러온 것과 같고(콜백), 칩 줄은 회차마다 DB 를 보지
+# 않는다(`home_main_case_chips`).
+loading = LoadingProgress(
+    render_page_header_with_status(
+        "Capa LOB Summary",
+        trailing=partial(
+            render_main_case_chips,
+            str(DUCKDB_PATH.resolve()),
+            official=latest_official_identity(),
+        ),
+    ),
+    HOME_LOADING_STAGES,
+)
+render_main_case_chip_notice()
 # 성능 진단은 **위젯이 아니라 세션 스위치**다. 사이드바에 토글을 두면 모든 사용자가 늘
 # 보는 자리를 개발용 계측 하나가 차지한다. 단계별 소요 시간은 `scripts/benchmark_home.py`
 # 로 재는 것이 정본이고, 화면에서 봐야 할 때만 이 키를 세션에 직접 넣는다.
@@ -822,14 +845,13 @@ figure_conditions = HomeFigureCacheKey(
 # **Figure 단계보다 먼저 만든다.** Main 이 숨은 회차인지 알아야 그 회차의 그림 조회·생성을 건너뛸
 # 수 있다. 여기서 아래 탭 본문까지는 본문 흐름에 요소를 내보내지 않으므로(진행 막대는 머리 띠
 # 자리다) 탭을 앞으로 당겨도 화면 배치는 같다.
-HOME_TAB_KEY = "home_active_tab"
-PAST_TAB = ":material/history: Past Data"
-HOME_TAB_LABELS = (":material/dashboard: Main", ":material/tune: Preference", PAST_TAB)
 main_tab, preference_tab, past_tab = stateful_tabs(HOME_TAB_LABELS, key=HOME_TAB_KEY)
 # 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 Past Data 탭 이름 옆에 점을 찍는다 — 다른
 # 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가 남아도 점이 없었다). 찍을
 # 것이 없어도 매 회차 부른다 — 저장한 다음 회차에 앞 회차의 점을 덮는다.
-mark_pending_tabs(HOME_TAB_KEY, HOME_TAB_LABELS, {PAST_TAB} if past_data_has_pending() else set())
+mark_pending_tabs(
+    HOME_TAB_KEY, HOME_TAB_LABELS, {HOME_PAST_TAB} if past_data_has_pending() else set()
+)
 # **숨은 Main 의 그림은 꺼내지도 만들지도 않는다.** Preference·Past Data 에서 저장하면 공용 프로필
 # version 이 바뀌어 묶음 키가 빗나가는데, 그 회차에 그린 그림은 숨은 탭이라 화면에 나가지 않는다.
 # Main 을 여는 회차는 탭의 `on_change="rerun"` 덕에 늘 앱 전체 회차이고, 그때 **현재 조건**

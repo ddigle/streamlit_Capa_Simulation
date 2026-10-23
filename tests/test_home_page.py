@@ -545,9 +545,13 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         None,
     ]
     # 붙여넣기는 표마다 작업 줄의 팝업이고, 저장은 Past Data 맨 위 한 곳이다. `Guide` 는
-    # 툴바 버튼이 누르는 숨은 버튼이다.
+    # 툴바 버튼이 누르는 숨은 버튼이다. 제목 줄 끝은 주요 Case 칩 셋이다 — 이 실행에는 입장 화면
+    # 요약이 없어 공식버전을 모르므로 공식 칩은 「공식」(잠김)이다(`test_home_main_case_chips.py`).
     assert sorted(widget.label for widget in app.button) == sorted(
         [
+            "공식",
+            "Case1",
+            "Case2",
             "Excel 붙여넣기",
             "Excel 붙여넣기",
             "Excel 붙여넣기",

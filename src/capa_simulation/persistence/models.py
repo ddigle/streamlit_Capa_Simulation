@@ -498,6 +498,20 @@ class RevisionSummary:
 
 
 @dataclass(frozen=True)
+class MainCaseTargets:
+    """주요 Case 프로필과 그것이 가리키는 시나리오·리비전 — HOME 제목 줄 칩의 재료.
+
+    `scenarios` 는 Case 가 가리키는 시나리오 가운데 목록(보관본 빼고)에 있는 것만, `revisions` 는 그
+    시나리오들의 리비전 전부다. 가리키는 것이 목록에 없으면 슬롯이 「사라짐」으로 읽는다
+    (`services/main_cases.main_case_slots`). 캐시 경계는 `persistence/cache.load_main_case_targets`.
+    """
+
+    profile: GlobalMainCases
+    scenarios: tuple[ScenarioSummary, ...]
+    revisions: tuple[RevisionSummary, ...]
+
+
+@dataclass(frozen=True)
 class OfficialReleaseSummary:
     official_release_id: str
     release_no: int

@@ -35,3 +35,13 @@ HOME_TOGGLE_DEFAULTS: Mapping[str, bool] = MappingProxyType(
         COMPARISON_TOGGLE_KEY: False,
     }
 )
+
+# HOME 의 세 탭(`stateful_tabs`)의 위젯 key 와 라벨. 페이지 스크립트는 import 할 수 없어 여기
+# 둔다. 제목 줄의 주요 Case 칩(`components/home_main_case_chips.py`)은 「지정 안 함」 칩을 누르면
+# 이 key 에 `Preference` 라벨을 적어 그 탭으로 옮긴다. 라벨은 탭의 위젯 값이라 바꾸면 세션에 남은
+# 값과 어긋난다.
+HOME_TAB_KEY = "home_active_tab"
+HOME_MAIN_TAB = ":material/dashboard: Main"
+HOME_PREFERENCE_TAB = ":material/tune: Preference"
+HOME_PAST_TAB = ":material/history: Past Data"
+HOME_TAB_LABELS = (HOME_MAIN_TAB, HOME_PREFERENCE_TAB, HOME_PAST_TAB)

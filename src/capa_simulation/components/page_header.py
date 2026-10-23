@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
@@ -20,6 +22,10 @@ from capa_simulation.navigation import IMPLEMENTING_SUFFIX
 # 진행 표시 자리(`render_page_header_with_status`)의 컨테이너 키. Streamlit 은 이것을 `st-key-<키>`
 # 클래스로 달고, 머리 띠 CSS(`app_header`)가 그 자리를 화면 맨 위 띠 안에 고정한다.
 STATUS_SLOT_KEY = "page_header_status"
+# 제목 줄을 제목 칸과 그 끝 칸(`trailing`)으로 나누는 비율. 끝 칸은 HOME 의 주요 Case 칩 셋이다 —
+# 칩 줄은 끝 칸 안에서 오른쪽 끝으로 붙는다. 좁은 화면(640px 미만)에서는 Streamlit 이 두 칸을
+# 위아래로 쌓아 칩이 제목 밑에 선다.
+TITLE_ROW_SPEC = (3, 2)
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
 # 사이드바 접미는 `(구현중)` 하나이고 본문 성숙도는 여기서 더 잘게 나눈다
@@ -70,8 +76,14 @@ def render_page_header_with_status(
     *,
     description: str | None = None,
     badges: str | None = None,
+    trailing: Callable[[], None] | None = None,
 ) -> DeltaGenerator:
     """진행 표시 자리를 둔 머리말. 그 자리를 쓸 `st.empty()` 를 돌려준다.
+
+    `trailing` 을 주면 제목 줄 끝 칸에 그것을 그린다(HOME 의 주요 Case 칩 —
+    `home_main_case_chips`). 제목과 끝 칸은 가로 컨테이너가 아니라 `st.columns` 로 나눈다 —
+    가로 컨테이너 안의 `st.title` 은 Streamlit 이 `h1` 위아래 여백을 지워 제목이 머리 띠에
+    올라붙는다(AGENTS 9장). 칼럼은 여백을 그대로 둬 제목 줄 높이가 다른 페이지와 같다.
 
     그 자리는 본문이 아니라 **화면 맨 위 띠**(Streamlit 헤더, 왼쪽에 시나리오 두 줄·오른쪽에 툴바
     단추)에 앉는다 — 툴바 단추 바로 왼쪽이다(2026-10-08 사용자 결정). 자리를 잡는 CSS 는 띠의
@@ -83,7 +95,14 @@ def render_page_header_with_status(
     제목은 다른 페이지와 같은 `st.title` 이다 — 자리가 본문 흐름 밖이라 제목 줄을 나눌 일이 없다.
     """
     heading, status_badge = _split_status_suffix(title)
-    st.title(heading)
+    if trailing is None:
+        st.title(heading)
+    else:
+        title_column, trailing_column = st.columns(TITLE_ROW_SPEC, vertical_alignment="center")
+        with title_column:
+            st.title(heading)
+        with trailing_column:
+            trailing()
     with st.container(key=STATUS_SLOT_KEY):
         slot = st.empty()
     _render_marks(status_badge, badges, description)

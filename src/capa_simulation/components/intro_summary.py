@@ -166,6 +166,20 @@ COMPARISON_PENDING = "비교 시나리오 값을 준비하는 중입니다 — �
 _CONTEXT = "_context"
 
 
+class OfficialIdentity(NamedTuple):
+    """이 세션이 마지막으로 확인한 최신 공식버전 — 슬롯·머리 띠가 회차마다 DB 를 보지 않고 쓰는 값.
+
+    `services/main_cases.OfficialPointer` 를 채운다(HOME 제목 줄의 공식 칩 풍선).
+    """
+
+    release_no: int
+    release_name: str
+    scenario_id: str
+    scenario_name: str
+    revision_id: str
+    revision_no: int
+
+
 class ToggleProfiles(NamedTuple):
     """Summary 토글 셋이 쓰는 공용 프로필. 공식버전을 확인할 때만 읽는다(캐시된 로더)."""
 
@@ -723,7 +737,7 @@ class _Transient(Exception):
 def _official_identity(release: OfficialReleaseSummary | None) -> dict[str, Any] | None:
     if release is None:
         return None
-    return {"revision_id": release.revision_id, "release_no": release.release_no}
+    return {field: getattr(release, field) for field in OfficialIdentity._fields}
 
 
 def _look_up(
@@ -867,6 +881,37 @@ def latest_official_revision() -> tuple[str, int] | None:
     if not isinstance(revision_id, str) or not isinstance(release_no, int):
         return None
     return revision_id, release_no
+
+
+def latest_official_identity() -> OfficialIdentity | None:
+    """`latest_official_revision` 과 같은 값의 이름까지 — 공식버전 번호·이름, 시나리오, 리비전.
+
+    HOME 제목 줄의 주요 Case 칩(`home_main_case_chips`)이 공식 칩 글자(`공식 vN`)와 풍선
+    (시나리오명·리비전 번호)을 쓴다. 머리 띠의 「공식 vN」과 같은 세션 값이라 둘이 서로 다른 말을
+    하지 않고, 회차마다 DB 를 보지 않는다. 모르거나 값이 어긋나면 `None` 이다.
+    """
+    held = st.session_state.get(_SESSION_KEY)
+    official = held.get("official") if isinstance(held, dict) else None
+    if not isinstance(official, dict):
+        return None
+    try:
+        identity = OfficialIdentity(
+            **{field: official[field] for field in OfficialIdentity._fields}
+        )
+    except KeyError:
+        return None
+    integers = (identity.release_no, identity.revision_no)
+    texts = (
+        identity.release_name,
+        identity.scenario_id,
+        identity.scenario_name,
+        identity.revision_id,
+    )
+    if not all(isinstance(value, int) for value in integers) or not all(
+        isinstance(value, str) for value in texts
+    ):
+        return None
+    return identity
 
 
 def forget_intro_summary_check() -> None:
