@@ -731,7 +731,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·설명·상태 배지다(상태 접미는 사이드바
   라벨과 같은 문자열). `render_page_header_with_status` 는 진행 표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. `trailing` 을 주면 제목 줄 끝 칸에 그것을
-  그린다(HOME 주요 Case 칩) — 제목과 끝 칸은 `st.columns`(`TITLE_ROW_SPEC`)다. 가로 컨테이너는 `h1` 여백을 지운다(9장).
+  그린다(HOME 주요 Case 칩) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
+  비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS) — 한 줄에 안 들면 끝 칸이 통째로 제목 밑
+  오른쪽으로 내려가고 제목은 접히지 않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
@@ -984,11 +986,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **누르면 사이드바에서 그 리비전을 불러온 것과 똑같다** — `scenario_status.load_saved_revision` 을 **콜백**에서
     부른다(본문 `st.rerun()` 은 그 회차에 안 그린 위젯 값을 버린다 — 9장). 저장하지 않은 편집·적용 전 편집이 있으면
     곧바로 올리지 않고 사이드바 팝업을 그 짝으로 연다(`open_scenario_dialog_on` — 같은 확인 칸·같은 단추).
-  - 칠하기(primary)는 세션 활성 시나리오·**리비전까지** 같은 칩만이고, 칠한 칩을 편집 없이 다시 누르면 아무것도 하지
-    않는다. 어느 칩도 칠하지 않으면 칩 줄 끝에 회색 「슬롯 밖」 한 마디(풍선 없음). 미지정 Case 는 점선 칩이고 누르면
-    `Preference` 탭(탭 key 를 콜백에서 적는다). 사라진 리비전·공식버전 없음은 잠근다(풍선이 까닭).
+  - **콜백은 누르는 순간 슬롯을 다시 푼다** — 콜백 인자는 그린 회차의 값이라, 그사이 다른 세션이 Case 를 다시
+    지정하거나 가리키던 시나리오를 보관하면 낡은 칩이 예전 Case·사이드바가 고를 수 없는 보관 시나리오를 올렸다. 칩은
+    (슬롯 차례, 그린 짝)만 넘기고 콜백이 그리기와 같은 `_slot_chips_now` 로 지금 짝을 풀어 다르면 아무것도 올리지 않고
+    제목 밑 칸에 알린다(`changed_slot_notice`).
+  - 칠하기(primary)는 세션 활성 시나리오·**리비전까지** 같은 칩만이고, 저장하지 않은 편집이 있으면 칠하지 않는다(머리
+    띠·사이드바 배지처럼 「미저장」이 먼저 — `painting_reference`). 칠한 칩을 편집 없이 다시 누르면 아무것도 하지
+    않는다. 칠한 칩 글자색은 `tokens.ACCENT_TEXT` 다(어두운 테마 강조색 위 흰 글자는 1.9:1). 어느 칩도 칠하지 않으면
+    칩 줄 **앞**에 회색 「슬롯 밖」 한 마디(풍선 없음) — 늘 그리고 슬롯 안이면 `visibility: hidden` 으로 감춰 자리를
+    잡아 둔다(나타나고 사라질 때 칩이 밀리거나 칩 줄이 접히지 않는다). 칩 줄은 한 줄(`nowrap`)이다.
+  - 미지정 Case 는 점선 칩이고 누르면 `Preference` 탭(탭 key 를 콜백에서 적는다). 가리키던 시나리오를 보관·영구 삭제하면
+    저장소가 그 Case 를 비우므로 점선 칩이 된다. 잠금은 목록에서 찾지 못하는 짝(저장소 밖에서 고친 DB 등)과 공식버전
+    없음뿐이다(풍선이 까닭).
   - 회차마다 DB 를 보지 않는다 — 공식은 `intro_summary.latest_official_identity`(머리 띠와 같은 세션 값), Case 는 주요
-    Case 쓰기 세대를 키로 한 캐시 `persistence/cache.load_main_case_targets` 다. `tests/test_home_main_case_chips.py`.
+    Case 쓰기 세대를 키로 한 캐시 `persistence/cache.load_main_case_targets` 다. `tests/test_home_main_case_chips.py`,
+    실제 `app.py` 배선과 둘째 회차 읽기 0 은 `tests/test_app_navigation.py`.
 - `src/capa_simulation/services/main_cases.py` — 주요 Case 슬롯 셋(공식버전·Case1·Case2)을 (글자, 시나리오 id, 리비전 id,
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
@@ -1474,7 +1486,8 @@ RQ_MODULE
     세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`intro_summary.latest_official_revision`)만 읽고
     저장소는 팝업을 연 동안에만 읽는다 — `tests/test_app_navigation.py` 가 그리는 동안 저장소·연결 호출 0 을 지킨다.
     HOME 제목 줄 주요 Case 칩도 같다 — 공식은 `intro_summary.latest_official_identity`, Case 는 주요 Case 쓰기 세대를
-    키로 한 캐시(`load_main_case_targets` — `clear_global_main_cases_cache()` 가 함께 비운다)다.
+    키로 한 캐시(`load_main_case_targets` — `clear_global_main_cases_cache()` 가 함께 비운다)다. 같은 시험이 칩도 감싸
+    첫 회차만 읽고 둘째 회차는 0 인 것을 지킨다.
 24. **공용 프로필에는 모두가 함께 쓰는 설정(비교 대상·판정 기준 등)만 담는다** — 켜고 끄는 보기 토글을 담으면 남의
     화면까지 켜진다. 바뀐 것이 없는 쓰기는 쓰지 않는다 — 설비 DB 의 필요 단축 일정 공용 조회 조건
     (`save_shortening_filter_months`·`_processes`)은 저장소가 쓰기 트랜잭션 안에서 견주어 같으면 version 도 동기화 dirty
