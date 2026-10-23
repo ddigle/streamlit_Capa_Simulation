@@ -1095,6 +1095,7 @@ with preference_tab:
         unmatched_execution=unmatched_execution,
         clamped_execution=clamped_execution,
         database_path=str(DUCKDB_PATH.resolve()),
+        owner_tab=preference_tab,
     )
 home_trace.mark("Plotly 전달")
 loading.close()

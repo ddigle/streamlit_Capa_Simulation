@@ -34,6 +34,7 @@ from capa_simulation.components.profile_caption import (
 )
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY as ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -398,16 +399,18 @@ def render_home_preference(
     unmatched_execution: pd.DataFrame,
     clamped_execution: pd.DataFrame,
     database_path: str,
+    owner_tab: OpenTab | None = None,
 ) -> None:
     """비교 시나리오·주요 Case 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·
     주요공정·실행 Capa 입력 시트.
 
     보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
     주요공정 프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라 회차마다 공용 프로필을 스스로
-    읽는다(`_render_key_process_editor`).
+    읽는다(`_render_key_process_editor`). `owner_tab` 은 이 `Preference` 탭이다 — 주요 Case 상자가
+    숨은 회차에 DB 를 읽지 않으려고 본다(`home_main_cases`).
     """
     _render_comparison_picker(database_path)
-    render_main_case_picker(database_path)
+    render_main_case_picker(database_path, owner_tab=owner_tab)
     render_threshold_editor(
         months=months,
         month_labels=month_labels,
