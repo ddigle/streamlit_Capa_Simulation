@@ -207,20 +207,36 @@ def open_scenario_dialog() -> None:
     초안뿐이라 페이지를 다시 계산할 까닭이 없다. 판정을 못 넘으면(직전 실행이 끝나지 않음·다른
     위젯도 바뀜) 앱 전체를 다시 돌린다(`sidebar_status.rerun_fragment_if_alone`).
     """
+    _open_dialog(
+        active_persisted_scenario_id(),
+        active_persisted_revision_id(),
+        mode=SAVE_MODE if has_unsaved_scenario_changes() else LOAD_MODE,
+    )
+    rerun_fragment_if_alone(CONDITION_DIALOG_FRAGMENT_KEY, SCENARIO_FIELD_KEY)
+
+
+def open_scenario_dialog_on(scenario_id: str, revision_id: str) -> None:
+    """팝업을 「불러오기」 구획으로, 초안을 그 시나리오·리비전으로 미리 골라 연다.
+
+    HOME 주요 Case 칩(`home_main_case_chips`)이 저장하지 않은 편집·적용 전 편집이 있을 때 쓴다 —
+    사이드바에서 다른 리비전을 불러올 때와 **같은 확인**(「변경을 버리고 불러오기」 확인 칸과
+    「불러오기」 단추)을 이 팝업 그대로 거친다. 칩의 콜백에서 부르고, 뒤이은 앱 전체 회차의 호스트
+    프래그먼트가 팝업을 그린다 — 그래서 값 칸의 콜백과 달리 프래그먼트만 다시 돌리지 않는다.
+    """
+    _open_dialog(scenario_id, revision_id, mode=LOAD_MODE)
+
+
+def _open_dialog(scenario_id: str | None, revision_id: str | None, *, mode: str) -> None:
+    """다른 팝업 칸을 비우고, 초안 둘과 구획을 적고, 열림 키를 단다. 콜백에서만 부른다."""
     forget_page_dialogs()
-    scenario_id = active_persisted_scenario_id()
-    revision_id = active_persisted_revision_id()
     for key, value in ((SIDEBAR_SCENARIO_KEY, scenario_id), (SIDEBAR_REVISION_KEY, revision_id)):
         # 닫힌 팝업 안 위젯은 브라우저에 없으니 지워도 되돌아올 옛 값이 없다.
         if value is None:
             st.session_state.pop(key, None)
         else:
             st.session_state[key] = value
-    st.session_state[SCENARIO_DIALOG_MODE_KEY] = (
-        SAVE_MODE if has_unsaved_scenario_changes() else LOAD_MODE
-    )
+    st.session_state[SCENARIO_DIALOG_MODE_KEY] = mode
     st.session_state[SCENARIO_DIALOG_KEY] = True
-    rerun_fragment_if_alone(CONDITION_DIALOG_FRAGMENT_KEY, SCENARIO_FIELD_KEY)
 
 
 def close_scenario_dialog() -> None:
@@ -229,7 +245,13 @@ def close_scenario_dialog() -> None:
 
 
 def _finish(flash: str) -> None:
-    """원본을 바꾼 동작(불러오기·저장·되돌리기)의 끝. 알림을 남기고 팝업을 닫고 앱을 다시 돌린다.
+    """원본을 바꾼 동작(불러오기·저장·되돌리기)의 끝. 알림을 남기고 팝업을 닫고 앱을 다시 돌린다."""
+    _settle(flash)
+    st.rerun()
+
+
+def _settle(flash: str) -> None:
+    """원본을 바꾼 뒤의 세션 정리 — 알림을 남기고 팝업을 닫는다. 다시 돌리기는 부르는 쪽 몫이다.
 
     적용하지 않은 편집 목록도 비운다 — 다음 회차에 페이지가 그 편집을 버리기 전에 사이드바가 먼저
     「적용 전 편집」으로 세지 않게(`scenario_edit_bar.forget_pending_edits`).
@@ -237,7 +259,33 @@ def _finish(flash: str) -> None:
     st.session_state[SIDEBAR_FLASH_KEY] = flash
     forget_pending_edits()
     close_scenario_dialog()
-    st.rerun()
+
+
+def load_saved_revision(database_path: str, revision_id: str) -> str | None:
+    """저장된 리비전 하나를 이 세션의 활성 시나리오로 올린다. 못 올렸으면 그 까닭 한 줄을 돌려준다.
+
+    팝업의 「불러오기」와 HOME 주요 Case 칩(`home_main_case_chips`)이 함께 쓰는 **한 길**이다 —
+    칩은 사이드바에서 그 리비전을 불러온 것과 똑같아야 한다(2026-10-23 사용자 결정). 활성화
+    **전에** 옛 리비전 호환을 본다(시나리오 관리 화면의 불러오기와 같은 검사) — 활성화한 뒤에
+    계산이 죽으면 활성 시나리오가 이미 바뀐 뒤라 화면에서 되돌릴 방법이 없다. 올렸으면 필드 아래
+    알림을 남기고 적용 전 편집 목록을 비우고 팝업을 닫는다(`_settle`). 앱 전체를 다시 돌리는 것은
+    부르는 쪽 몫이다 — 팝업은 `st.rerun()` 하고, 칩은 콜백이라 뒤이은 회차가 곧 새 시나리오의
+    회차다. 못 올렸으면 활성 시나리오는 그대로다. DB 핀(`pinned_connections`)은 부르는 쪽이 잡는다.
+    """
+    try:
+        snapshot = load_scenario_snapshot(database_path, revision_id)
+        blocked = revision_block_reason(snapshot.tables)
+        if blocked is not None:
+            return blocked
+        activate_persisted_snapshot(snapshot)
+    except BOOTSTRAP_ERRORS as exc:
+        return f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}"
+    _settle(
+        f"{literal_markdown(snapshot.scenario.scenario_name)} "
+        f"r{snapshot.revision.revision_no}"
+        f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
+    )
+    return None
 
 
 def scenario_dialog_is_open() -> bool:
@@ -473,25 +521,11 @@ def _render_load(
         )
         _finish("저장하지 않은 편집을 버렸습니다.")
     if load_clicked:
-        try:
-            snapshot = load_scenario_snapshot(
-                database_path, str(st.session_state[SIDEBAR_REVISION_KEY])
-            )
-            # 활성화 **전에** 본다(시나리오 관리 화면의 불러오기와 같은 검사). 활성화한 뒤에 계산이
-            # 죽으면 활성 시나리오가 이미 바뀐 뒤라 화면에서 되돌릴 방법이 없다.
-            blocked = revision_block_reason(snapshot.tables)
-            if blocked is not None:
-                st.error(blocked)
-                return
-            activate_persisted_snapshot(snapshot)
-        except BOOTSTRAP_ERRORS as exc:
-            st.error(f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}")
+        failure = load_saved_revision(database_path, str(st.session_state[SIDEBAR_REVISION_KEY]))
+        if failure is not None:
+            st.error(failure)
             return
-        _finish(
-            f"{literal_markdown(snapshot.scenario.scenario_name)} "
-            f"r{snapshot.revision.revision_no}"
-            f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
-        )
+        st.rerun()
 
 
 def _pending_edits_notice(pending_edits: Sequence[str]) -> str:
