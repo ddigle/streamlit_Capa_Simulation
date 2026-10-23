@@ -107,7 +107,9 @@ def _release_stale_ui_state(*, release_toggles: bool) -> None:
     뒤에는 Streamlit 이 적기를 막는다). 부르는 곳은 모두 그 조건을 지킨다 — 사이드바 시나리오
     팝업의 「불러오기」(토글을 그리지 않는 프래그먼트 실행)와 시나리오 관리 화면·BigDataQuery
     등록은 토글을 그리지 않는 자리에서 적고 곧바로 `st.rerun()` 한다(그 재실행은 세션을 다지지
-    않아 적은 값이 「새 값」인 채로 다음 회차의 토글에 닿는다).
+    않아 적은 값이 「새 값」인 채로 다음 회차의 토글에 닿는다). HOME 주요 Case 칩
+    (`home_main_case_chips`)은 같은 불러오기를 단추 **콜백**에서 부른다 — 콜백은 회차 스크립트보다
+    먼저 돌아 그 회차의 토글 위젯이 서기 전에 적는다.
     새 세션의 공식버전 부트스트랩은 `navigation.run()` 앞이다. 토글이 기본값을 위젯 `value=` 로
     받지 않는 것도 이 때문이다 — `components/home_preference.render_home_view_card`.
     """
