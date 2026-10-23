@@ -213,6 +213,17 @@ def test_the_advance_shipment_note_reads_on_every_month_cell() -> None:
     assert tokens._PALETTES["dark"]["ADVANCE_SHIPMENT_TEXT"] == tokens._PALETTES["dark"]["TEXT"]
 
 
+def test_text_on_the_accent_fill_reads_in_both_themes() -> None:
+    """강조색으로 칠한 칩(HOME 주요 Case 칩 — `home_main_case_chips.chip_style`)의 글자는 두
+    테마 모두 4.5:1 을 넘는다. 어두운 테마의 강조색은 밝아서 Streamlit 의 흰 글자로는 1.9:1
+    이었다.
+    """
+    for mode, palette in tokens._PALETTES.items():
+        ratio = contrast_ratio(palette["ACCENT_TEXT"], palette["ACCENT"])
+        assert ratio >= SMALL_TEXT_MINIMUM, f"{mode} 강조 면 위 글자 {ratio:.2f}:1"
+    assert contrast_ratio("#FFFFFF", tokens._PALETTES["dark"]["ACCENT"]) < SMALL_TEXT_MINIMUM
+
+
 # 사이드바 앱 이름 라벨이 서는 면 — 머리 띠와 올렸을 때의 면.
 
 

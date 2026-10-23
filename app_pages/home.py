@@ -58,7 +58,6 @@ from capa_simulation.components.home_rendering import (
     store_home_figures,
     take_home_figures,
 )
-from capa_simulation.components.intro_summary import latest_official_identity
 from capa_simulation.components.loading_progress import LoadingProgress
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header_with_status
@@ -245,11 +244,7 @@ render_page_guide("home", title="HOME", howto="lob")
 loading = LoadingProgress(
     render_page_header_with_status(
         "Capa LOB Summary",
-        trailing=partial(
-            render_main_case_chips,
-            str(DUCKDB_PATH.resolve()),
-            official=latest_official_identity(),
-        ),
+        trailing=partial(render_main_case_chips, str(DUCKDB_PATH.resolve())),
     ),
     HOME_LOADING_STAGES,
 )

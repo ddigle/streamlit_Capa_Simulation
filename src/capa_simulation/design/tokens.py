@@ -78,6 +78,9 @@ _LIGHT: Final[dict[str, Any]] = {
     "TEXT_MUTED": "#646973",  # grayColor
     "LINE": "#3F3F46",  # 표 격자·계열선. 강조색과 역할이 다르다
     "ACCENT": "#0F766E",  # primaryColor. 버튼·포커스 등 상호작용 표시
+    # 강조색으로 칠한 면 위의 글자(HOME 주요 Case 칩의 칠한 칩). 밝은 쪽은 Streamlit primary 단추의
+    # 흰 글자 그대로다(5.5:1).
+    "ACCENT_TEXT": "#FFFFFF",
     # 적용하지 않은 편집이 남은 탭 옆의 점. 사이드바 `미저장 변경` 배지(`:orange-badge[]`)와
     # 같은 뜻이라 `.streamlit/config.toml` 의 `orangeColor` 와 같은 값이다.
     "PENDING_MARK": "#B45309",
@@ -338,6 +341,8 @@ _DARK: Final[dict[str, Any]] = {
     "LINE": "#C6C6CE",
     # teal-700 은 어두운 면에서 3:1 을 못 넘는다. 한 단계 올린다.
     "ACCENT": "#2DD4BF",
+    # 밝게 올린 강조색 위에서 흰 글자는 1.9:1 이다. 페이지 바탕색으로 글자를 뒤집는다(10:1).
+    "ACCENT_TEXT": "#131316",
     "PENDING_MARK": "#F0B37A",  # `[theme.dark]` 의 `orangeColor`
     # 메인 심볼 가운데 다이. 밝은 테마와 같은 입장 화면 `die-warn` 이다.
     "BRAND_DIE_WARM": "#D29A3A",
@@ -578,6 +583,7 @@ if TYPE_CHECKING:
     # 알린다. `Final` 은 값 없이 쓸 수 없어 더미를 주는데, 이 블록이 실행되지 않으므로
     # 그 더미는 화면에 새지 않는다. 이름이 모듈에 없어야 `__getattr__` 이 불린다.
     ACCENT: Final[str] = ""
+    ACCENT_TEXT: Final[str] = ""
     ADVANCE_SHIPMENT_TEXT: Final[str] = ""
     BAR_TRACK: Final[str] = ""
     BORDER: Final[str] = ""

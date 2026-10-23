@@ -22,10 +22,9 @@ from capa_simulation.navigation import IMPLEMENTING_SUFFIX
 # 진행 표시 자리(`render_page_header_with_status`)의 컨테이너 키. Streamlit 은 이것을 `st-key-<키>`
 # 클래스로 달고, 머리 띠 CSS(`app_header`)가 그 자리를 화면 맨 위 띠 안에 고정한다.
 STATUS_SLOT_KEY = "page_header_status"
-# 제목 줄을 제목 칸과 그 끝 칸(`trailing`)으로 나누는 비율. 끝 칸은 HOME 의 주요 Case 칩 셋이다 —
-# 칩 줄은 끝 칸 안에서 오른쪽 끝으로 붙는다. 좁은 화면(640px 미만)에서는 Streamlit 이 두 칸을
-# 위아래로 쌓아 칩이 제목 밑에 선다.
-TITLE_ROW_SPEC = (3, 2)
+# 제목 칸과 그 끝 칸(`trailing` — HOME 의 주요 Case 칩 셋)을 든 컨테이너의 키. 두 칸의 폭은 비율이
+# 아니라 글자에서 나온다(`_title_row_style`).
+TITLE_ROW_KEY = "page_header_title_row"
 
 # 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
 # 사이드바 접미는 `(구현중)` 하나이고 본문 성숙도는 여기서 더 잘게 나눈다
@@ -83,7 +82,10 @@ def render_page_header_with_status(
     `trailing` 을 주면 제목 줄 끝 칸에 그것을 그린다(HOME 의 주요 Case 칩 —
     `home_main_case_chips`). 제목과 끝 칸은 가로 컨테이너가 아니라 `st.columns` 로 나눈다 —
     가로 컨테이너 안의 `st.title` 은 Streamlit 이 `h1` 위아래 여백을 지워 제목이 머리 띠에
-    올라붙는다(AGENTS 9장). 칼럼은 여백을 그대로 둬 제목 줄 높이가 다른 페이지와 같다.
+    올라붙는다(AGENTS 9장). 칼럼은 여백을 그대로 둬 제목 줄 높이가 다른 페이지와 같다. 두 칸의
+    폭은 비율이 아니라 글자 폭이다(`_title_row_style`) — 둘이 한 줄에 들면 끝 칸이 오른쪽 끝에
+    붙고, 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려간다. 비율로 나누면 사이드바를 편 좁은
+    화면에서 제목이 두 줄로 접히고 칩 줄이 끝 칸을 넘쳐 제목 쪽으로 밀려 들었다.
 
     그 자리는 본문이 아니라 **화면 맨 위 띠**(Streamlit 헤더, 왼쪽에 시나리오 두 줄·오른쪽에 툴바
     단추)에 앉는다 — 툴바 단추 바로 왼쪽이다(2026-10-08 사용자 결정). 자리를 잡는 CSS 는 띠의
@@ -92,21 +94,47 @@ def render_page_header_with_status(
     진행 막대를 본문 흐름에 그대로 두면 뜨고 질 때마다 아래의 모든 것이 그만큼 위아래로 밀린다.
     여기서는 컨테이너를 본문 흐름에서 빼서(`position: fixed`) 띠 위에 얹으므로, 막대가 뜨고 져도
     본문은 한 픽셀도 움직이지 않는다. 고정 배치된 칸은 flex 항목이 아니라 요소 간격도 먹지 않는다.
-    제목은 다른 페이지와 같은 `st.title` 이다 — 자리가 본문 흐름 밖이라 제목 줄을 나눌 일이 없다.
+    제목은 다른 페이지와 같은 `st.title` 이다 — 진행 자리가 본문 흐름 밖이라 그것 때문에 제목 줄을
+    나누지는 않는다(나누는 것은 `trailing` 뿐이다).
     """
     heading, status_badge = _split_status_suffix(title)
     if trailing is None:
         st.title(heading)
     else:
-        title_column, trailing_column = st.columns(TITLE_ROW_SPEC, vertical_alignment="center")
-        with title_column:
-            st.title(heading)
-        with trailing_column:
-            trailing()
+        with st.container(key=TITLE_ROW_KEY):
+            st.html(_title_row_style())
+            title_column, trailing_column = st.columns(2, vertical_alignment="center")
+            with title_column:
+                st.title(heading)
+            with trailing_column:
+                trailing()
     with st.container(key=STATUS_SLOT_KEY):
         slot = st.empty()
     _render_marks(status_badge, badges, description)
     return slot
+
+
+def _title_row_style() -> str:
+    """제목 칸·끝 칸의 폭을 글자에서 낸다 — 비율(`st.columns` 의 칸 폭)을 덮는다.
+
+    제목 칸은 글자 폭에서 자라기만 하고(`flex: 1 1 auto`), 끝 칸은 내용 폭 그대로 오른쪽 끝에 붙는다
+    (`margin-left: auto`). 칸 묶음은 Streamlit 이 이미 `flex-wrap: wrap` 이라 두 칸이 한 줄에 안
+    들면 끝 칸이 통째로 다음 줄로 내려가고, 그때도 오른쪽 끝이다 — 640px 미만에서 Streamlit 이 칸을
+    쌓을 때와 같은 꼴이다. 줄을 나누는 기준은 두 칸의 글자 폭이라 제목은 접히지 않는다(제목
+    칸만으로도 좁은 화면이면 그때만 접힌다 — `min-width: 0`, 가로 넘침이 없다). 고르는 것은 이
+    컨테이너 바로 밑 칸 묶음뿐이다(`>` — 끝 칸 안의 다른 가로 묶음은 건드리지 않는다). 스타일만 든
+    `st.html` 이라 본문 자리를 먹지 않는다.
+    """
+    columns = (
+        f'.st-key-{TITLE_ROW_KEY} > [data-testid="stLayoutWrapper"]'
+        ' > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]'
+    )
+    return (
+        "<style>"
+        f"{columns}:first-child {{ flex: 1 1 auto; width: auto; min-width: 0; }}\n"
+        f"{columns}:last-child {{ flex: 0 1 auto; width: auto; min-width: 0; margin-left: auto; }}"
+        "</style>"
+    )
 
 
 def _render_marks(status_badge: str | None, badges: str | None, description: str | None) -> None:
