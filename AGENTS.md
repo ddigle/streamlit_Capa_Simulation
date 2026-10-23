@@ -424,6 +424,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     - 숨은 모듈(`data.ghosts` → `S.ghosts`, 파이썬 `EditorInputs.ghosts`)은 그리지 않고 고르지 않지만 칸 수·자리에 들고
       (고른 묶음에서 점선 `sle-ghost-cell`) 묶음과 함께 옮겨져 적용값 `ghosts` 로 간다. 되돌리기·끌기 취소는 `itemOf` 로
       숨은 모듈도 되돌리고, 묶음 이름을 바꿔도 처음 Main 설비 이름(`groupKeyOf`)으로 이어진다. 보기 화면은 그대로다.
+      묶음째 도면에서 빠지면(빼기·Delete·다른 층 보내기) 숨은 모듈은 처음(편집기에 실린) 자리로 돌아간다
+      (`restoreGhosts`, 빼기·보내기와 같은 되돌리기 기록) — 옮기지 않고 바로 뺀 것과 같다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
@@ -703,7 +705,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 숨은 모듈(`EditorInputs.ghosts`)은 보내는 호기와 Main 설비가 같고 이 층에 상자가 있지만 도면 대상이 아닌
     형제(레이아웃표시 N·도면 이탈)다. 묶음의 칸 수·자리에 들어 기준일이 바뀌어도 바둑판이 그대로이고, 묶음과 함께
     옮겨진 값은 적용값 `ghosts` → `EditorApply.hidden_moves` 로 와서 `apply_layout_edits` 가 X·Y·크기만 바꾼다(층·
-    레이아웃표시 그대로). 상자 없는 숨은 형제는 세지 않는다. RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
+    레이아웃표시 그대로). 묶음째 빼거나 다른 층으로 보낸 적용에 옮겨진 숨은 모듈이 오면 거부한다(편집기는 처음 자리로
+    되돌려 보낸다) — 빼면 숨은 모듈은 이 층 제자리에 남고, 보내면 `_harmonize_groups` 가 층을 맞추며 X·Y 를 비운다.
+    상자 없는 숨은 형제는 세지 않는다. RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
 - `src/capa_simulation/services/floor_layout_profile.py` — 층 배경 도면의 치수 읽기·캔버스 기본값·크기 상한과 좌표 반올림
   (`rounded_to_canvas`)의 한 곳이다(`space_layout_edit`·`fab_layout` 이 import 한다 — 거꾸로 두면 순환).
 - `src/capa_simulation/services/display_order_editor.py`, `display_order_csv.py` — 웹 편집 표시순서 규칙의 검증·범위

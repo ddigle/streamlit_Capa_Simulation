@@ -602,6 +602,57 @@ def test_one_visible_module_with_hidden_siblings_is_still_a_group() -> None:
     prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
 
 
+@pytest.mark.parametrize("move_to", [None, "C2 2F"], ids=["빼기", "다른 층 보내기"])
+def test_a_group_taken_off_after_a_move_returns_its_hidden_module_and_applies(
+    move_to: str | None,
+) -> None:
+    """묶음을 옮기고 키운 뒤 빼거나 다른 층으로 보내면 편집기는 숨은 모듈을 처음(보낸) 자리로
+    되돌린다(`restoreGhosts` — 적용값 `ghosts` 가 빈다). 옮기지 않고 바로 뺀 것과 같은 적용이라
+    받아들여진다 — 빼면 숨은 모듈은 이 층 제자리에 남고, 보내면 묶음째 그 층으로 가며 X·Y 가
+    비워진다(`_harmonize_groups`, 크기는 남는다). 따라 옮겨진 자리를 그대로 보낸 값은 여전히
+    거부한다(묶음 없이 숨은 모듈만 옮긴 꼴)."""
+    master, after = _hidden_inputs(date(2026, 10, 1))
+    laid = _relaid(_shape(after), (51.0, 30.0, 24.0, 16.0))
+    visible = [name for name in G1 if name != "G1-B"]
+    if move_to is None:
+        changes = [{"id": name, "placed": False, "w": 12.0, "h": 8.0} for name in visible]
+    else:
+        changes = [{**_placed(name, laid[name]), "moveTo": move_to} for name in visible]
+    rode_along = _ghost_payload(after, laid)["ghosts"]
+
+    with pytest.raises(ValueError, match="숨은 모듈만 옮겨 왔습니다"):
+        _parse(
+            {"changes": changes, "ghosts": rode_along},
+            master,
+            editor_items=after.items,
+            editor_ghosts=after.ghosts,
+        )
+    applied = _parse(
+        {"changes": changes, "ghosts": []},
+        master,
+        editor_items=after.items,
+        editor_ghosts=after.ghosts,
+    )
+
+    assert sorted(_by_id(applied.changes)) == visible and applied.hidden_moves == ()
+    result = apply_layout_edits(master, applied, floor=FLOOR, canvases={}, default_canvas=CANVAS)
+    rows = result.set_index("설비명").loc[G1]
+    hidden = rows.loc["G1-B"]
+    assert (hidden["Xsize"], hidden["Ysize"]) == (10.0, 7.0)
+    assert hidden["정지일정"] == "2026-09-15" and hidden["레이아웃표시"] == "Y"
+    if move_to is None:
+        assert rows.loc[visible, ["X좌표", "Y좌표"]].isna().all(axis=None)
+        assert rows.loc[visible, ["Xsize", "Ysize"]].values.tolist() == [[12.0, 8.0]] * 3
+        assert (hidden["동"], hidden["층"], hidden["X좌표"], hidden["Y좌표"]) == (*FLOOR, 60, 37)
+    else:
+        assert {(row["동"], row["층"]) for _, row in rows.iterrows()} == {("C2", "2F")}
+        assert rows.loc[visible, ["X좌표", "Y좌표"]].values.tolist() == [
+            list(laid[name][:2]) for name in visible
+        ]
+        assert pd.isna(hidden["X좌표"]) and pd.isna(hidden["Y좌표"])
+    prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
+
+
 # ---------------------------------------------------------------- JS 와 대조(node)
 
 _SECTION = re.compile(r"// <module-tiling>\n(?P<body>.*?)\n\s*// </module-tiling>", re.S)
@@ -637,15 +688,21 @@ def _runtime() -> str | None:
 
 
 def _run_js(payload: dict[str, Any]) -> dict[str, Any]:
+    match = _SECTION.search(JS)
+    assert match, "editor.js 에 // <module-tiling> 구획이 없습니다"
+    return _node(match.group("body") + _RUNNER, payload)
+
+
+def _node(source: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """`source` 를 node(없으면 bun)로 돌려 표준 입력에 `payload`(JSON)를 주고 표준 출력
+    JSON 을 읽는다."""
     runtime = _runtime()
     if runtime is None:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             pytest.fail("CI 러너에 node 가 없다 — 모듈 묶음 JS 대조를 건너뛸 수 없다")
         pytest.skip("node·bun 이 없다 — CI 에서 돈다")
-    match = _SECTION.search(JS)
-    assert match, "editor.js 에 // <module-tiling> 구획이 없습니다"
     completed = subprocess.run(
-        [runtime, "-e", match.group("body") + _RUNNER],
+        [runtime, "-e", source],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -938,6 +995,126 @@ def test_hidden_modules_ride_along_in_the_editor() -> None:
     assert "for (const item of [...S.items.values(), ...S.ghosts.values()])" in _between(
         "const extents = () => {", "// ---"
     )
+
+
+def _js_decl(head: str) -> str:
+    """editor.js 의 한 선언(`const …`·`function …`)을 글자 그대로 떼어 낸다. 첫 줄이 `{` 로 끝나면
+    같은 들여쓰기의 닫는 줄(`}`·`})`)까지다."""
+    start = JS.index(f"\n  {head}") + 1
+    first_end = JS.index("\n", start)
+    if not JS[start:first_end].rstrip().endswith("{"):
+        return JS[start:first_end]
+    close = re.compile(r"\n  \}\)?\n").search(JS, first_end)
+    assert close, head
+    return JS[start : close.end()]
+
+
+# 빼기·보내기 둘레를 node 로 돌린다 — 선언은 editor.js 글자 그대로이고 그리기·선택만 빈 함수다.
+# 되돌리기는 편집기 `undo` 의 'set' 갈래(`Object.assign(itemOf(op.id), op.before)`)와 같다.
+_GHOST_DECLS = (
+    "const isUnit = ",
+    "const isMark = ",
+    "const snapshot = ",
+    "const sameGeometry = ",
+    "const onCanvas = ",
+    "const members = ",
+    "const itemOf = ",
+    "const groupKeyOf = ",
+    "const placedMembers = ",
+    "const expanded = ",
+    "function restoreGhosts(",
+    "function removeItems(",
+    "function sendItems(",
+)
+_GHOST_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const S = { items: new Map(), ghosts: new Map(), original: new Map() }
+const FLOOR = 'C1 1F'
+const OTHER_FLOORS = ['C2 2F']
+const stack = []
+const pushUndo = (ops) => { if (ops.length) stack.push(ops) }
+const clearSelection = () => {}
+const renderItems = () => {}
+const updateStatus = () => {}
+%s
+const undo = () => {
+  for (const op of [...stack.pop()].reverse()) Object.assign(itemOf(op.id), op.before)
+}
+const unit = (id, group, box, ghost) => ({
+  id, kind: 'unit', label: id, group, x: box[0], y: box[1], w: box[2], h: box[3],
+  placed: true, moveTo: null, sizeGuessed: false, ...(ghost ? { ghost: true } : {}),
+})
+for (const [id, group, box, ghost] of input.units) {
+  const m = unit(id, group, box, ghost)
+  ;(ghost ? S.ghosts : S.items).set(id, m)
+  S.original.set(id, snapshot(m))
+}
+const all = () => [...S.items.values(), ...S.ghosts.values()]
+const nudge = (key, dx, dw) => {
+  for (const m of all()) if (m.group === key) { m.x += dx; m.w += dw }
+}
+const state = () => Object.fromEntries(all().map((m) => [m.id,
+  [m.x, m.y, m.w, m.h, Boolean(m.placed), m.moveTo || null]]))
+const out = []
+const note = (step) => out.push({
+  step, undo: stack.length, last: stack.length ? stack[stack.length - 1].length : 0, state: state(),
+})
+nudge('GRP-1', 1, 2)
+nudge('GRP-9', 1, 0)
+removeItems([S.items.get('G1-A')])
+note('removed')
+undo()
+note('undone')
+sendItems([S.items.get('G1-C')], 'C2 2F')
+note('sent')
+undo()
+note('unsent')
+removeItems([S.items.get('G5-A')])
+note('unmoved')
+process.stdout.write(JSON.stringify({ steps: out }))
+"""
+
+
+def test_taking_a_moved_group_off_returns_its_hidden_modules_in_one_undo_step() -> None:
+    """옮기거나 키운 묶음을 빼거나(빼기·Delete) 다른 층으로 보내면 그 묶음의 숨은 모듈은 처음 자리로
+    돌아간다 — 옮기지 않고 바로 뺀 것과 같아 적용값 `ghosts` 가 비고 파이썬이 「숨은 모듈만 옮겨
+    왔습니다」로 거부하지 않는다. 되돌리기 한 번에 보이는 모듈과 숨은 모듈이 함께 옮긴 자리로
+    돌아온다. 다른 묶음의 숨은 모듈과 옮기지 않은 묶음은 건드리지 않는다(기록도 없다)."""
+    units = [
+        ["G1-A", "GRP-1", [50, 37, 10, 7], False],
+        ["G1-B", "GRP-1", [60, 37, 10, 7], True],
+        ["G1-C", "GRP-1", [50, 30, 10, 7], False],
+        ["G1-D", "GRP-1", [60, 30, 10, 7], False],
+        ["G9-A", "GRP-9", [10, 10, 5, 5], False],
+        ["G9-B", "GRP-9", [15, 10, 5, 5], True],
+        ["G5-A", "GRP-5", [10, 40, 5, 5], False],
+        ["G5-B", "GRP-5", [15, 40, 5, 5], True],
+    ]
+    source = _GHOST_RUNNER % "\n".join(_js_decl(head) for head in _GHOST_DECLS)
+    steps = {step["step"]: step for step in _node(source, {"units": units})["steps"]}
+
+    moved_b = [61, 37, 12, 7, True, None]
+    removed = steps["removed"]["state"]
+    assert removed["G1-B"] == [60, 37, 10, 7, True, None]
+    assert [removed[name][4] for name in ("G1-A", "G1-C", "G1-D")] == [False] * 3
+    assert removed["G9-B"] == [16, 10, 5, 5, True, None]
+    assert (steps["removed"]["undo"], steps["removed"]["last"]) == (1, 4)
+    undone = steps["undone"]["state"]
+    assert undone["G1-B"] == moved_b and undone["G1-A"] == [51, 37, 12, 7, True, None]
+    assert steps["undone"]["undo"] == 0
+    sent = steps["sent"]["state"]
+    assert sent["G1-B"] == [60, 37, 10, 7, True, None]
+    assert {sent[name][5] for name in ("G1-A", "G1-C", "G1-D")} == {"C2 2F"}
+    assert (steps["sent"]["undo"], steps["sent"]["last"]) == (1, 4)
+    unsent = steps["unsent"]["state"]
+    assert unsent["G1-B"] == moved_b and unsent["G1-C"] == [51, 30, 12, 7, True, None]
+    unmoved = steps["unmoved"]
+    assert unmoved["state"]["G5-B"] == [15, 40, 5, 5, True, None] and unmoved["last"] == 1
+    assert unmoved["state"]["G5-A"][4] is False
+    remove = _between("function removeItems(list) {", "function sendItems(list, floor) {")
+    assert "ops.push(...restoreGhosts(units))" in remove
+    send = _between("function sendItems(list, floor) {", "const renameTarget = (item) => {")
+    assert "pushUndo([...ops, ...restoreGhosts(sent)])" in send
 
 
 def test_an_empty_cell_inside_a_picked_group_drags_the_group() -> None:

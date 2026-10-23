@@ -2293,6 +2293,25 @@ export default function (component) {
     setMarkProps(item, { rot: ((item.rot || 0) + 90) % 360, w: item.h, h: item.w, x: cx - item.h / 2, y: cy - item.w / 2 })
   }
 
+  // 모듈 묶음이 이 층 도면에서 통째로 빠지면(빼기·Delete·다른 층 보내기) 그 묶음의 숨은 모듈을 처음(편집기에 실린) 자리로
+  // 되돌린다 — 묶음을 옮기지 않고 바로 뺀 것과 같다. 숨은 모듈은 빼면 이 층 제자리에 남고, 보내면 파이썬이 층을 맞추며 X·Y 를
+  // 비운다(`_harmonize_groups`). 따라 옮겨진 자리에 두면 적용값 `ghosts` 로 가서 파이썬이 「숨은 모듈만 옮겨 왔습니다」로
+  // 적용 전체를 거부한다. 돌려주는 기록(set)은 빼기·보내기 기록에 함께 담는다 — 되돌리기 한 번에 같이 돌아온다.
+  function restoreGhosts(units) {
+    const keys = new Set(units.filter((m) => isUnit(m) && m.group).map(groupKeyOf))
+    if (!keys.size) return []
+    const standing = new Set([...S.items.values()].filter((m) => isUnit(m) && m.group && onCanvas(m)).map(groupKeyOf))
+    const ops = []
+    for (const g of S.ghosts.values()) {
+      if (!keys.has(g.group) || standing.has(g.group)) continue
+      const o = S.original.get(g.id)
+      if (!o || sameGeometry(o, g)) continue
+      ops.push({ op: 'set', id: g.id, before: snapshot(g) })
+      Object.assign(g, { x: o.x, y: o.y, w: o.w, h: o.h })
+    }
+    return ops
+  }
+
   // 빼기·지우기: 호기는 트레이로(크기는 남는다), 도면 요소와 방금 넣은 호기는 지운다. 한 번에 되돌린다.
   function removeItems(list) {
     const fresh = list.filter((m) => isUnit(m) && m.created)
@@ -2308,6 +2327,7 @@ export default function (component) {
         m.sizeGuessed = false
       }
     }
+    ops.push(...restoreGhosts(units))
     for (const m of [...marks, ...fresh]) {
       ops.push({ op: 'delete', item: { ...m } })
       S.items.delete(m.id)
@@ -2320,14 +2340,17 @@ export default function (component) {
   }
 
   // 다른 층으로 보낸다. 묶음은 함께 간다(모듈 행은 동·층이 같아야 한다). 놓여 있던 호기는 같은 좌표·크기로
-  // 그 층에 서고(파이썬이 그 층 영역 안으로 맞춘다), 미배치였던 호기는 그 층 트레이로 간다.
+  // 그 층에 서고(파이썬이 그 층 영역 안으로 맞춘다), 미배치였던 호기는 그 층 트레이로 간다. 숨은 모듈은 처음 자리로
+  // 돌아가고(`restoreGhosts`) 층은 파이썬이 묶음째 맞춘다.
   function sendItems(list, floor) {
     if (!floor || floor === FLOOR || !OTHER_FLOORS.includes(floor)) return
     const targets = new Map()
     for (const item of list.filter(isUnit)) for (const m of members(item)) if (!m.moveTo) targets.set(m.id, m)
     if (!targets.size) return
-    commit([...targets.values()].map((m) => ({ id: m.id, before: snapshot(m) })))
-    for (const m of targets.values()) m.moveTo = floor
+    const sent = [...targets.values()]
+    const ops = sent.map((m) => ({ op: 'set', id: m.id, before: snapshot(m) }))
+    for (const m of sent) m.moveTo = floor
+    pushUndo([...ops, ...restoreGhosts(sent)])
     clearSelection()
     renderItems()
     updateStatus()

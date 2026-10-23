@@ -613,7 +613,9 @@ def _regrid_module_groups(
                 finals[unit_id] = None
                 apart.append(unit_id)
         if all(finals[unit_id] is None for unit_id in ids):
-            # 묶음째 트레이로 빼거나 다른 층으로 보냈다 — 숨은 모듈은 이 층에 그대로 남는다.
+            # 묶음째 트레이로 빼거나 다른 층으로 보냈다 — 숨은 모듈은 보낸 자리 그대로다
+            # (편집기 `restoreGhosts` 가 처음 자리로 되돌려 보낸다). 다른 층이면
+            # `_harmonize_groups` 가 층을 맞춘다.
             if any(ghost_id in moved_ghosts for ghost_id in ghost_ids):
                 raise ValueError(
                     f"Main 설비 {group} 의 숨은 모듈만 옮겨 왔습니다 — 묶음째 옮겨야 합니다."
