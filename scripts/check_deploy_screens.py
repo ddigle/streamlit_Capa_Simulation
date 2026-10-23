@@ -182,6 +182,9 @@ INTRO_HOST_ID: Final = "capa-intro-host"
 SUMMARY_LABEL_ID: Final = "capa-brand-label"
 EQUIPMENT_PAGE: Final = "available_equipment_status"
 SPACE_PAGE: Final = "space_status"
+# `Space 현황` 경로 줄 첫 칸 `S.PKG FAB 전체` 단추의 위젯 키. FAB 전체면 주 단추, 층을 열었으면 보조
+# 단추이고 누르면 FAB 로 돌아간다(콜백 — 세션의 연 층을 지운다).
+SPACE_FAB_CRUMB_KEY: Final = "space_status_fab_breadcrumb"
 # 설비 마스터 38열 개편(설비 마이그레이션 0023)의 RawData `직접 편집` 머리 칸 — 새 이름 일곱과
 # 지운 컬럼 하나. 앱 모듈(`equipment_contract`)을 부르지 않고 값만 옮긴다 — 화면이 계약과 같은지
 # 따로 보는 확인이라 계약에서 이름을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 계약과 같은지
@@ -1330,6 +1333,24 @@ class Screen:
             self.wait_for(arrived, timeout=5)
         self.wait_idle()
 
+    def open_space_overview(self) -> None:
+        """`Space 현황` 을 FAB 전체(층 목록 표가 서는 화면)로 연다. 연 층은 위젯이 아니라 세션
+        키라 다른 페이지를 거쳐 다시 와도 그 층 상세가 선다 — `space_drawer` 가 연 층에서
+        `space_fader` 가 층 목록 표를 기다리다 첫 판 · 다시 돈 판 모두 `TimeoutError` 였다(사내
+        리뷰 202610200720 발견 1). 경로 줄 `S.PKG FAB 전체` 가 보조 단추면(층이 열려 있다) 눌러
+        FAB 로 돌아간다."""
+        self.open_page(SPACE_PAGE)
+        crumb = self.page.locator(f".st-key-{SPACE_FAB_CRUMB_KEY} button").first
+        crumb.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+
+        def at_fab() -> bool:
+            return bool(crumb.get_attribute("data-testid") == "stBaseButton-primary")
+
+        if not at_fab():
+            crumb.click()
+            self.wait_for(at_fab, timeout=30)
+            self.wait_idle()
+
     def open_tab(self, name: str) -> None:
         """탭을 누른다. 탭 이름 앞의 아이콘 글자(`table_rows`)는 부분 일치로 넘긴다."""
         self.page.get_by_role("tab", name=name).first.click()
@@ -2015,7 +2036,9 @@ def check_space_drawer(screen: Screen) -> str:
 
     호기를 끌어 놓지 않고 `적용` 도 누르지 않는다. 층 이름·호기 이름은 고르는 데만 쓴다.
     """
-    screen.open_page(SPACE_PAGE)
+    screen.step("페이지 열기")
+    screen.open_space_overview()
+    screen.step("층 목록")
     grid, unplaced_column = screen.grid_with_column("미배치대수")
     building_column = screen.column_index(grid, "동")
     floor_column = screen.column_index(grid, "층")
@@ -2027,9 +2050,11 @@ def check_space_drawer(screen: Screen) -> str:
     if not candidates:
         return f"미배치 없음(층 {len(floors)}개 모두 0)"
     building, floor, unplaced = max(candidates, key=lambda floor: floor[2])
+    screen.step("층 고르기")
     screen.choose_by_typing("층 바로 가기", f"{building} {floor}")
     if screen.selectbox_value("층 바로 가기") != f"{building} {floor}":
         raise RuntimeError("층을 열지 못했다")
+    screen.step("서랍")
     if not screen.switch("배치 편집", True):
         return f"미배치 있는 층 {len(candidates)}개 · `배치 편집` 스위치 없음"
     try:
@@ -2116,7 +2141,7 @@ def check_space_fader(screen: Screen) -> str:
     호기 상자 class(반입 전·반출/이설 예정·숨김 …)가 바뀐 수, 키를 멈춘 뒤 머리 줄 범례의 「기준」
     날짜가 바뀌었는가, 「오늘」 단추로 오늘에 돌아오는가. 쓰지 않는다(기준일은 세션 값이다)."""
     screen.step("페이지 열기")
-    screen.open_page(SPACE_PAGE)
+    screen.open_space_overview()
     screen.step("층 목록")
     grid, placed_column = screen.grid_with_column("배치대수")
     building_column = screen.column_index(grid, "동")

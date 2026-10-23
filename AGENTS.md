@@ -2745,7 +2745,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   앞에 `screen.step("<고정 글자>")` 를 두어 미기록 칸이 어느 단계에서 멈췄는지 말하게 하고, 쓰지 않는 항목이 첫 판에
   `TimeoutError`(이 파일의 것이든 Playwright 의 같은 이름이든)면 `run_items` 가 한 번 더 돌려 칸 끝에 첫 판 줄을 남긴다.
   꺼질 수 있는 단추(페이더가 오늘일 때의 「오늘」 처럼 `disabled`)는 켜졌을 때만 누른다 — 꺼진 단추를 누르면 Playwright 가
-  켜지기를 30초 기다리다 `TimeoutError` 로 끝나 앞의 결과를 가린다. 확인용 앱은
+  켜지기를 30초 기다리다 `TimeoutError` 로 끝나 앞의 결과를 가린다. Space 두 항목은 `Screen.open_space_overview` 로
+  FAB 전체에서 시작한다 — 연 층은 위젯이 아니라 세션 값이라 앞 항목(`space_drawer`)이 연 층이 페이지를 다시 열어도
+  남고, 그 층 상세에는 층 목록 표가 없다(사내 리뷰 202610200720 발견 1). 확인용 앱은
   `127.0.0.1` 에서만 듣고, 자식의
   `PYTHONPATH` 맨 앞에 이 저장소의 `src` 를 두며, 스크립트가 강제로 끝나도 남지 않게 Windows Job Object
   (Linux `PR_SET_PDEATHSIG`)로 묶는다. `tests/test_check_deploy_screens.py` 는 Playwright 없이 뼈대(경로

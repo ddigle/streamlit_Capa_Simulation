@@ -13,7 +13,7 @@
 | 사내 리뷰 | 마지막으로 받은 것은 `202610200720`(10-21, `~/projects/Review/` — 서피스 `C:\Dev\Review` 에서 `update_publishing` 을 거쳐 `scp surface:`). 갈래 (가) · 관문 넷 · 7-15 A 15/15 · 발견 셋(아래 2장). 2227 리뷰와 겹치는 것은 사용자가 뺐다 |
 | 마이그레이션 | 시뮬레이션 `0036`(HOME 주요 Case 공용 프로필), 설비 `0025`(Space 영역 테두리 · 이름표 정렬 칸과 층 Main 설비명 위치 표) — 둘 다 10-23, 다음 배포 `202610231430` 에 처음 실림 |
 | 설정 | `.streamlit/config.toml` 에 `[global]` 두 줄(`maxCachedMessageAge = 20`·`minCachedMessageSize = 1000`)을 더했다 — 앱을 다시 띄워야 듣는다. 사외 8501 도 다시 띄운다 |
-| 관문 | 관문 스크립트(ruff format·ruff check·mypy·전체 pytest) PASS — pytest 5,382 통과 · skip 11 · xfail 1 · 실패 0, mypy 633 · ruff format 663(10-23, Space 위에 얹은 배포 준비 가지 `release-prep` — 런북 7장 4-3 의 기대 수). 화면 확인 `--list` 15줄 = 런북 7-18 A 표. 그 앞 통합 가지 `dd89f0a` 에서 화면 확인 15/15 · 합친 흐름 브라우저 16/16 |
+| 관문 | 관문 스크립트(ruff format·ruff check·mypy·전체 pytest) PASS — pytest 5,385 통과 · skip 11 · xfail 1 · 실패 0, mypy 633 · ruff format 663(10-23, Space 위에 얹은 배포 준비 가지 `release-prep` — 런북 7장 4-3 의 기대 수). 화면 확인 `--list` 15줄 = 런북 7-18 A 표. 그 앞 통합 가지 `dd89f0a` 에서 화면 확인 15/15 · 합친 흐름 브라우저 16/16 |
 | 작업 자리 | 개발·배포 빌드 모두 데스크탑 WSL(`docs/wsl_dev_environment.md`). 8501 은 사용자가 Claude 밖 tmux 에서 띄운다. 배포 ZIP 은 `~/projects/Deploy/` → 서피스 `C:\Dev\update_publishing` → 메일은 사용자가 서피스 Chrome 의 Outlook 웹 작성창에서 |
 
 ## 1-1. 10-21 밤 ~ 10-22 아침 — 밤샘 개선 루프와 결정 반영

@@ -2227,15 +2227,20 @@ class _FaderScreen(_FakeScreen):
     PageUp 한 번에 페이더가 한 달 옮겨 가되, 앞의 `lost` 번은 늦은 그림이 오늘로 되돌린다(층을
     옮긴 회차의 새 epoch). 「오늘」 단추는 페이더가 오늘이면 꺼져 있고, 꺼진 단추를 누르면
     Playwright 처럼 켜지기를 기다리다 `TimeoutError` 로 끝난다. `fail_at` 단계에서 범례를 읽으면
-    예외가 난다."""
+    예외가 난다. `floor_open` 이면 앞 항목이 연 층이 세션에 남은 채 페이지가 열린다 — 층 상세에는
+    층 목록 표가 없고, 경로 줄 `S.PKG FAB 전체` 는 보조 단추이며 누르면 FAB 로 돌아간다."""
 
-    def __init__(self, *, lost: int = 0, fail_at: str | None = None) -> None:
+    def __init__(
+        self, *, lost: int = 0, fail_at: str | None = None, floor_open: bool = False
+    ) -> None:
         super().__init__()
         self.lost = lost
         self.fail_at = fail_at
+        self.floor_open = floor_open
         self.month = 0
         self.presses = 0
         self.clicks = 0
+        self.crumb_clicks = 0
         self.chosen: list[str] = []
         fader = SimpleNamespace(
             wait_for=lambda **kwargs: None,
@@ -2244,8 +2249,25 @@ class _FaderScreen(_FakeScreen):
             press=self._press,
         )
         today = SimpleNamespace(is_enabled=lambda: self.month != 0, click=self._click)
-        found = {".sle-fader-input": fader, ".sle-fader-today": today}
+        crumb = SimpleNamespace(
+            wait_for=lambda **kwargs: None,
+            get_attribute=self._crumb_attribute,
+            click=self._crumb_click,
+        )
+        found = {
+            ".sle-fader-input": fader,
+            ".sle-fader-today": today,
+            f".st-key-{screens.SPACE_FAB_CRUMB_KEY} button": crumb,
+        }
         self.page = SimpleNamespace(locator=lambda selector: SimpleNamespace(first=found[selector]))
+
+    def _crumb_attribute(self, name: str) -> str:
+        assert name == "data-testid"
+        return "stBaseButton-secondary" if self.floor_open else "stBaseButton-primary"
+
+    def _crumb_click(self) -> None:
+        self.crumb_clicks += 1
+        self.floor_open = False
 
     def _fader_evaluate(self, script: str) -> Any:
         if script == screens._FADER_TODAY_JS:
@@ -2270,6 +2292,9 @@ class _FaderScreen(_FakeScreen):
 
     def grid_with_column(self, header: str, *, timeout: float = 30.0) -> tuple[Any, int]:
         assert header == "배치대수"
+        if self.floor_open:
+            # 층 상세에는 층 목록 표가 없다 — 실제 화면은 30초 기다린 뒤 이 예외다.
+            raise TimeoutError("기다린 화면이 서지 않았다")
         return "층 목록", 2
 
     def column_index(self, grid: Any, header: str) -> int | None:
@@ -2359,6 +2384,39 @@ def test_the_space_fader_item_names_the_failed_step_after_returning_to_today() -
     assert outcome.result == "미기록 — RuntimeError(범례)"
     assert SENTINEL not in outcome.result
     assert (screen.presses, screen.clicks, screen.month) == (1, 1, 0)
+
+
+@pytest.mark.parametrize(("floor_open", "crumb_clicks"), [(False, 0), (True, 1)])
+def test_the_space_fader_item_starts_from_the_fab_even_when_a_floor_was_left_open(
+    floor_open: bool, crumb_clicks: int
+) -> None:
+    """연 층은 세션 키라 `space_drawer` 가 연 층이 페이지를 다시 열어도 남는다 — 페이더 항목이
+    층 목록 표를 기다리다 첫 판 · 다시 돈 판 모두 `TimeoutError(층 목록)` 였다(사내 리뷰
+    202610200720 발견 1 — 사외 흉내 저장소에서 재현). 항목은 경로 줄 `S.PKG FAB 전체` 가 보조
+    단추일 때만 눌러 FAB 에서 시작하고, 첫 판에 기록한다."""
+    screen = _FaderScreen(floor_open=floor_open)
+    item = next(item for item in ITEMS if item.key == "space_fader")
+
+    [outcome] = screens.run_items(screen, [item], allow_writes=False, deadline=NO_DEADLINE)
+
+    assert outcome.result == f"{FADER_SUMMARY_HEAD}2개 · 놓은 뒤 범례 기준일 바뀜 · 「오늘」 돌아옴"
+    assert (screen.crumb_clicks, screen.floor_open) == (crumb_clicks, False)
+    assert screen.chosen == ["A동 2F"]
+
+
+def test_both_space_items_open_the_fab_overview_the_app_draws() -> None:
+    """두 Space 항목이 같은 길로 FAB 전체를 연다. 경로 줄 첫 칸은 그 키의 단추이고, FAB 전체면 주
+    단추 · 층을 열었으면 보조 단추이며, 누르면 세션의 연 층을 지운다(Streamlit 단추의 `data-testid`
+    는 `stBaseButton-<type>` 이다)."""
+    for check in (screens.check_space_drawer, screens.check_space_fader):
+        source = inspect.getsource(check)
+        assert "screen.open_space_overview()" in source
+        assert "screen.open_page(" not in source
+    page = _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+    assert f'key="{screens.SPACE_FAB_CRUMB_KEY}",' in page
+    assert 'type="primary" if selected is None else "secondary",' in page
+    assert "on_click=_show_fab_overview," in page
+    assert '"stBaseButton-primary"' in inspect.getsource(screens.Screen.open_space_overview)
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)
