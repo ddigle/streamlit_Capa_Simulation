@@ -388,7 +388,8 @@ def test_a_unit_label_is_fitted_by_its_measured_width() -> None:
     position = JS[JS.index("function position(") : JS.index("function drawMark(")]
     assert "labelEm(item.label)" in position
     assert "item.label.length" not in position
-    assert "fontSize / upp < 7 ? 'none' : ''" in position
+    assert "fontSize / upp < UNIT_LABEL_MIN_PX ? 'none' : ''" in position
+    assert "const UNIT_LABEL_MIN_PX = 7" in JS
     measure = JS[JS.index("const labelEm = ") : JS.index("const snapshot = ")]
     assert "measureText(text)" in measure and "`600 100px ${" in measure
     assert "font-weight: 600" in _rule(".sle-label")

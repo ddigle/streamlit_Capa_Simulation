@@ -165,9 +165,10 @@ def _spans(value: object) -> list[list[str | None]]:
 
 
 def _share_or_one(value: object) -> float:
-    """설비지분(`share`) — 0 보다 큰 유한한 수만, 아니면 한 대(1)."""
+    """설비지분(`share`) — 0 이상의 유한한 수만(일부 모듈만 반입한 Main 설비의 반입 전 모듈은
+    0), 아니면 한 대(1)."""
     number = finite_or_none(value)
-    return number if number is not None and number > 0 else 1.0
+    return number if number is not None and number >= 0 else 1.0
 
 
 def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -176,8 +177,9 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     색 기준의 면·글자(`fill`·`ink`, `#RRGGBB` 만 — 아니면 빈 글자라 브라우저가 기본 회색)와 경계
     날짜(`realFrom`·`exitOn`·`stopOn`·`delays`·`offline`,
     `services/space_unit_state.boundary_payload`)· `storage`·`flag` 도 여기를 지난다. 이름에
-    `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다. `share` 는 설비지분(모듈 행
-    넷이면 0.25, 없으면 1)이고 층 상세 보기 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다.
+    `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다. `share` 는 기준일
+    설비지분(모듈 행 넷이 모두 반입했으면 0.25, 없으면 1 — 범례와 같은 칸)이고 층 상세 보기
+    요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다.
     """
     return [
         {

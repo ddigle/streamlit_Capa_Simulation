@@ -56,6 +56,7 @@ from capa_simulation.components.space_layout import (
     invalid_equipment_rows,
     occupancy_ratio,
     picked_unit_rows,
+    row_unit_shares,
     space_legend_counts,
     space_legend_markup,
     unit_appearance,
@@ -99,8 +100,6 @@ from capa_simulation.services.equipment_samples import (
 from capa_simulation.services.equipment_units import (
     format_unit_count,
     placed_unit_rows,
-    static_unit_shares,
-    unit_keys,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
@@ -571,13 +570,15 @@ def _floor_viewer_inputs(
     items = viewer_items(
         roster_rows, looks=unit_appearance(roster_rows, boundaries, choice=color_choice)
     )
-    # 설비지분(모듈 행 넷이면 0.25) — 뷰어 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로
-    # 센다. 그 층의 행 전체(레이아웃표시 N 형제 포함)로 나눈 고정 지분이다(기준일을 따르지
-    # 않는다 — 숨김은 브라우저가 기준일마다 정한다).
+    # 설비지분(기준일 보유 지분 — 모듈 넷이 모두 반입했으면 0.25씩, 둘만 반입했으면 그
+    # 둘이 0.5씩이고 반입 전 둘은 0) — 뷰어 요약의 「겹쳐 숨긴 반입 예정 n대」를 범례·배치
+    # 대수와 같은 축으로 센다. 일부 모듈만 반입한 Main 설비의 반입 전 모듈은 범례의 반입 전
+    # 대수에 0 으로 들므로 숨겨도 0 이다. 파이썬의 기준일 값이라 페이더를 끄는 동안은 직전
+    # 날의 지분이다(놓으면 그 날로 다시 받는다).
     shares = dict(
         zip(
             floor_status[EQUIPMENT_ID_COLUMN].astype("string").str.strip(),
-            static_unit_shares(unit_keys(floor_status)),
+            row_unit_shares(floor_status),
             strict=True,
         )
     )

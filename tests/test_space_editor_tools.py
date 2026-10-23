@@ -30,7 +30,12 @@ from test_space_layout_edit import _master
 from test_space_module_group import _js_decl, _node
 
 from capa_simulation.components import space_layout_editor
-from capa_simulation.services.space_layout_edit import name_prefix, new_unit_options, prefix_sizes
+from capa_simulation.services.space_layout_edit import (
+    module_parents,
+    name_prefix,
+    new_unit_options,
+    prefix_sizes,
+)
 
 ASSETS = space_layout_editor._ASSETS
 JS = (ASSETS / "editor.js").read_text(encoding="utf-8")
@@ -126,7 +131,11 @@ def test_the_name_prefix_matches_python() -> None:
     BMP 밖 글자가 섞여도 파이썬 `name_prefix` 와 같다."""
     rnd = random.Random(20261023)
     parts = ["SMP", "-", "DAF", "1", "a", "가", " ", "\U0001f600", "\U00010400", "Σ", "ẞ", "  "]
+    parts += ["\ufeff", "\x1c", "\x85", "\xa0", "\u2028", "\t"]
     names = ["SMP-DAF-11", " smp-x ", "AB", "  AB  ", "", "가나다라", "\U0001f600\U0001f600x"]
+    # JS `trim` 과 파이썬 `str.strip` 이 다르게 걷는 글자 — BOM 은 남고,
+    # U+001C~U+001F·U+0085 는 걷힌다.
+    names += ["\ufeffABC-1", "ABC\ufeff", "\x1cABC-1", "\x1f\x85ABC", "AB\x85", "\u3000\u2028ABC"]
     names += ["".join(rnd.choice(parts) for _ in range(rnd.randint(0, 6))) for _ in range(300)]
 
     result = _run_tools({"prefixes": names})
@@ -212,7 +221,8 @@ def test_shift_picks_the_visible_chips_between_the_anchor_and_the_click() -> Non
 
 def test_a_paste_keeps_the_shape_and_stays_inside_the_canvas() -> None:
     """마우스 자리면 그 자리가 묶음의 왼쪽 아래, 아니면 오른쪽·아래로 offset. 영역 안으로 밀고
-    눈금에 맞춘다. 영역보다 크면 null."""
+    눈금에 맞춘다. 비켜 붙일 때 영역 끝에 막혀 0 이 된 축은 반대쪽으로 같은 거리. 영역보다 크면
+    null."""
     marks = [{"x": 10, "y": 20, "w": 4, "h": 2}, {"x": 16, "y": 18, "w": 2, "h": 2}]
     canvas = {"w": 100, "h": 60}
     result = _run_tools(
@@ -234,6 +244,27 @@ def test_a_paste_keeps_the_shape_and_stays_inside_the_canvas() -> None:
                     "at": None,
                     "offset": 1,
                 },
+                # 오른쪽 아래 끝의 기둥 — 두 축 다 막혀 반대쪽(왼쪽·위)으로.
+                {
+                    "marks": [{"x": 98.5, "y": 0, "w": 1.5, "h": 1.5}],
+                    "canvas": canvas,
+                    "at": None,
+                    "offset": 2,
+                },
+                # 바닥에 닿은 전체 폭 통로 — 가로는 양쪽 다 막혀 0, 세로만 위로.
+                {
+                    "marks": [{"x": 0, "y": 0, "w": 100, "h": 4}],
+                    "canvas": canvas,
+                    "at": None,
+                    "offset": 1,
+                },
+                # 영역을 가득 채운 요소 — 어느 쪽으로도 못 비킨다.
+                {
+                    "marks": [{"x": 0, "y": 0, "w": 100, "h": 60}],
+                    "canvas": canvas,
+                    "at": None,
+                    "offset": 1,
+                },
             ]
         }
     )
@@ -244,8 +275,12 @@ def test_a_paste_keeps_the_shape_and_stays_inside_the_canvas() -> None:
     assert pastes[2] == {"dx": 40, "dy": 12.1}
     # 오른쪽 끝(18 → 100)·바닥(18 → 0)에 막힌다.
     assert pastes[3] == {"dx": 82, "dy": -18}
-    assert pastes[4] == {"dx": 1, "dy": 0}
+    # 바닥(0)에 닿은 요소 — 아래로 못 비켜 위로 같은 거리(원본 자리에 쌓이지 않게).
+    assert pastes[4] == {"dx": 1, "dy": 1}
     assert pastes[5] is None
+    assert pastes[6] == {"dx": -2, "dy": 2}
+    assert pastes[7] == {"dx": 0, "dy": 1}
+    assert pastes[8] == {"dx": 0, "dy": 0}
 
 
 def test_pasted_floor_blocks_take_the_first_free_floors() -> None:
@@ -395,6 +430,7 @@ const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 const SCALE = 10
 const S = { items: new Map(), ghosts: new Map(), original: new Map(), placedLog: input.log }
 const PREFIX_SIZES = input.saved
+const MODULE_PARENTS = new Set(input.moduleParents || [])
 const defaultSize = { w: 12, h: 7 }
 %s
 %s
@@ -434,9 +470,13 @@ def test_the_tray_borrows_sizes_only_for_sizeless_units() -> None:
         {"id": "SMP-G-B", "group": "SMP-G", "w": None, "h": None},
         {"id": "SMP-G-C", "group": "SMP-G", "w": None, "h": None},
         {"id": "SMP-G-D", "group": "SMP-G", "w": None, "h": None},
+        # 형제가 이 편집기에 실리지 않은 모듈(설비 마스터에서는 Main 설비 행이 둘 이상) —
+        # 모듈 크기를 빌린다.
+        {"id": "SMP-X-1A", "group": "SMP-X", "w": None, "h": None},
     ]
     payload = {
         "items": items,
+        "moduleParents": ["SMP-G", "SMP-X"],
         "log": ["SMP-A1", "SMP-A2", "SMP-A3", "GONE"],
         "saved": {
             "unit": {"QRS": {"name": "QRS-99", "w": 3, "h": 2}},
@@ -449,6 +489,7 @@ def test_the_tray_borrows_sizes_only_for_sizeless_units() -> None:
             {"name": "fallback", "ids": ["XYZ-NEW"]},
             {"name": "own", "ids": ["SMP-OWN"]},
             {"name": "group", "ids": ["SMP-G-A"]},
+            {"name": "lone_module", "ids": ["SMP-X-1A"]},
         ],
     }
     source = _TRAY_RUNNER % (
@@ -473,6 +514,9 @@ def test_the_tray_borrows_sizes_only_for_sizeless_units() -> None:
         json.dumps({"w": 6, "h": 4, "guessed": True, "from": "SMP-Z-1D"}, sort_keys=True)
     }
     assert out["group"]["footprint"] == {"w": 12, "h": 8}
+    # 편집기에 하나만 실린 모듈도 파이썬 `prefix_sizes` 처럼 모듈이다 — 이번에 놓은 호기(SMP-A2)가
+    # 아니라 편집본의 모듈 크기를 빌린다.
+    assert size("lone_module") == {"w": 6, "h": 4, "guessed": True, "from": "SMP-Z-1D"}
 
 
 _CLIP_DECLS = (
@@ -501,6 +545,7 @@ _CLIP_DECLS = (
     "function writeClipboard(",
     "function readClipboard(",
     "function copyMarks(",
+    "function stacksOnMarks(",
     "function pasteMarks(",
 )
 _CLIP_RUNNER = """
@@ -648,6 +693,91 @@ def test_paste_lives_without_storage_and_blocks_link_free_floors() -> None:
     assert out["hovered"][0][-1] == "C1 1F"
 
 
+_STACK_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const SCALE = 10
+const FAB = false
+const SCOPE = 'floor'
+const FONT_SIZES = [9, 11, 13]
+const LINK_TARGETS = ['C1 1F']
+const window = { sessionStorage: { getItem: () => null, setItem: () => {} } }
+const S = {
+  items: new Map(), selection: new Set(), step: 0.5, seq: 0, hover: null, pasteSerial: 0, flash: '',
+  note: '',
+}
+const W = () => 100
+const H = () => 60
+const pushUndo = () => {}
+const renderItems = () => {}
+const updateStatus = () => {}
+const flashGuides = () => {}
+const svg = { focus: () => {} }
+const selectedItems = () => [...S.selection].map((id) => S.items.get(id))
+const setSelection = (ids) => { S.selection = new Set(ids) }
+const tick = (v) => Math.round(v * 10) / 10
+// 마우스 자리 그대로(정렬선 없이) — 원본 가운데를 가리키면 원본 자리다.
+const dropSpot = (p, w, h) => ({
+  x: tick(p.x - w / 2), y: tick(H() - p.top - h / 2), w, h, segments: [],
+})
+%s
+%s
+const mark = (id, kind, x, y, w, h) => S.items.set(id, {
+  id, kind, x, y, w, h, rot: 0, label: '', color: '', hatch: false, keepOut: false, link: '',
+  fontSize: null, fontColor: '', placed: true, moveTo: null,
+})
+mark('T1', 'text', 70, 40, 14, 3)
+mark('C1', 'column', 98.5, 0, 1.5, 1.5)
+mark('F1', 'zone', 0, 0, 100, 60)
+const pasted = (before) => [...S.items.values()]
+  .filter((m) => !before.has(m.id)).map((m) => [m.kind, m.x, m.y])
+const step = () => {
+  const before = new Set(S.items.keys())
+  const handled = pasteMarks(false)
+  return { handled, items: pasted(before), note: S.note }
+}
+const out = {}
+S.selection = new Set(['T1'])
+copyMarks()
+S.hover = { x: 77, top: 60 - 41.5 }
+out.onSource = step()
+out.onSourceAgain = step()
+S.hover = { x: 30, top: 30 }
+out.elsewhere = step()
+S.hover = null
+S.selection = new Set(['C1'])
+copyMarks()
+out.corner = step()
+out.cornerAgain = step()
+S.selection = new Set(['F1'])
+copyMarks()
+out.full = step()
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_paste_never_stacks_exactly_on_the_same_mark() -> None:
+    """사본이 같은 종류 요소와 자리·크기까지 똑같이 겹치지 않는다(겹친 사본은 보이지 않은 채
+    두 겹으로 저장된다).
+
+    - 고른 직후 마우스를 원본 위에 둔 채 Ctrl+C·V — 마우스 자리가 원본 그대로라 격자 한 칸씩
+      비켜 붙인다(거듭하면 한 칸 더). 다른 자리면 그 자리다.
+    - 영역 오른쪽 아래 끝의 기둥 — 비켜 붙일 때 막힌 두 축이 반대쪽(왼쪽·위)으로 비킨다.
+    - 영역을 가득 채운 영역 — 비킬 자리가 없어 붙이지 않고 알린다."""
+    source = _STACK_RUNNER % (
+        _block(_TOOLS),
+        "\n".join(_js_decl(head) for head in _CLIP_DECLS),
+    )
+    out = _node(source, {})
+
+    assert out["onSource"]["items"] == [["text", 71, 39]]
+    assert out["onSourceAgain"]["items"] == [["text", 72, 38]]
+    assert out["elsewhere"]["items"] == [["text", 23, 28.5]]
+    assert out["corner"]["items"] == [["column", 97.5, 1]]
+    assert out["cornerAgain"]["items"] == [["column", 96.5, 2]]
+    assert out["full"]["handled"] is True and out["full"]["items"] == []
+    assert "붙이지 않았습니다" in out["full"]["note"]
+
+
 # ---------------------------------------------------------------- 파이썬 정본 · 자산 글자
 
 
@@ -686,6 +816,18 @@ def test_prefix_sizes_pick_the_naturally_last_sized_row_per_kind() -> None:
     json.dumps(sizes, allow_nan=False)
     assert prefix_sizes(master.iloc[0:0]) == {"unit": {}, "module": {}}
     assert new_unit_options(_master())["prefixSizes"] == prefix_sizes(_master())
+    # 종류를 가르는 같은 기준(Main 설비 행이 둘 이상)을 편집기에도 보낸다 — 형제가 편집기에 실리지
+    # 않은 모듈도 모듈로 빌리게.
+    assert module_parents(master) == {"WBD-1"}
+    lone = master.copy()
+    lone["Main 설비"] = [None, None, None, None, None, "WBD-1", None, None, "X"]
+    assert module_parents(lone) == set()
+    grouped = _master(
+        {"설비명": "MOD-A", "Main 설비": "MOD"},
+        {"설비명": "MOD-B", "Main 설비": "MOD"},
+        {"설비명": "ONE-A", "Main 설비": "ONE"},
+    )
+    assert new_unit_options(grouped)["moduleParents"] == ["MOD"]
 
 
 def test_drags_snap_to_guides_before_the_grid_and_alt_skips_them() -> None:
@@ -760,8 +902,10 @@ _LOOK_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 process.stdout.write(JSON.stringify({
   tags: input.tags.map((c) => zoneTagX(c.lw, c.tagW, c.align)),
-  spots: input.spots.map((c) => groupNameSpot(c.range, c.position, c.fs, c.gap)),
-  sizes: input.sizes.map((c) => groupNameSize(c.range, c.position, c.em, c.max, c.upp)),
+  spots: input.spots.map((c) => groupNameSpot(c.range, c.position, c.fs, c.gap, c.canvasH ?? 100)),
+  sizes: input.sizes.map((c) =>
+    groupNameSize(c.range, c.position, c.em, c.max, c.upp, c.min ?? 7, c.bare ?? false)),
+  shown: (input.shown || []).map((boxes) => shownRange(boxes)),
 }))
 """
 
@@ -802,8 +946,8 @@ def test_a_group_name_sits_in_the_middle_or_just_outside_the_range() -> None:
             ],
             "sizes": [
                 {"range": box, "position": "top", "em": 5, "max": 12, "upp": 0.125},
-                {"range": box, "position": "center", "em": 5, "max": 12, "upp": 1},
-                {"range": {**box, "w": 6}, "position": "top", "em": 10, "max": 12, "upp": 1},
+                {"range": box, "position": "center", "em": 5, "max": 12, "upp": 0.25},
+                {"range": {**box, "w": 6}, "position": "top", "em": 10, "max": 12, "upp": 0.05},
             ],
         },
     )
@@ -817,6 +961,94 @@ def test_a_group_name_sits_in_the_middle_or_just_outside_the_range() -> None:
     assert sizes[0] == pytest.approx(1.5)  # 화면 12px × 0.125
     assert sizes[1] == pytest.approx(16 * 0.16)  # 가운데는 범위 높이로 막힌다
     assert sizes[2] == pytest.approx(6 * 0.92 / 10.9)  # 좁은 범위는 폭에 맞춰 준다
+
+
+def test_a_small_group_keeps_its_centre_name_and_edge_names_turn_inward() -> None:
+    """작은 묶음 · 영역 끝 묶음 · 일부만 보이는 묶음의 Main 설비명(2026-10-23 E2E · 리뷰).
+
+    - 범위 12×6(1px = 0.164 단위)인 묶음은 가운데 글자가 범위 높이 0.16 배(5.85px)로 7px
+      아래다. 모듈 칸 이름표가 하나도 서 있지 않으면(bare) 7px 알약이 범위 안에 들어 7px 로
+      선다 — 모듈 이름표가 서 있으면, 또는 7px 알약이 범위에 안 들면 숨는다(null). 위·아래는
+      bare 와 상관없이 7px 아래면 숨는다.
+    - 위·아래 알약이 영역 위·아래 끝 밖이면 범위 안쪽 띠로 뒤집는다(좁은 무대에서 잘리지 않게).
+    - 보기 화면에서 일부 모듈만 보이면 보이는 모듈 상자의 바깥 상자에 세운다."""
+    small = {"x": 50, "y": 30, "w": 12, "h": 6}
+    upp = 0.164
+    top_edge = {"x": 10, "y": 50, "w": 20, "h": 10}
+    floor_edge = {"x": 10, "y": 0, "w": 20, "h": 10}
+    out = _node(
+        _block(_LOOK) + _LOOK_RUNNER,
+        {
+            "tags": [],
+            "spots": [
+                {"range": top_edge, "position": "top", "fs": 1, "gap": 0.2, "canvasH": 60},
+                {"range": floor_edge, "position": "bottom", "fs": 1, "gap": 0.2, "canvasH": 60},
+                {"range": top_edge, "position": "top", "fs": 1, "gap": 0.2, "canvasH": 70},
+                {"range": floor_edge, "position": "top", "fs": 1, "gap": 0.2, "canvasH": 60},
+            ],
+            "sizes": [
+                {
+                    "range": small,
+                    "position": "center",
+                    "em": 3,
+                    "max": 12,
+                    "upp": upp,
+                    "bare": True,
+                },
+                {"range": small, "position": "center", "em": 3, "max": 12, "upp": upp},
+                {"range": small, "position": "top", "em": 3, "max": 12, "upp": upp, "bare": True},
+                {
+                    "range": {**small, "h": 1.5},
+                    "position": "center",
+                    "em": 3,
+                    "max": 12,
+                    "upp": upp,
+                    "bare": True,
+                },
+                {
+                    "range": {**small, "w": 3},
+                    "position": "center",
+                    "em": 3,
+                    "max": 12,
+                    "upp": upp,
+                    "bare": True,
+                },
+            ],
+            "shown": [
+                [{"x": 65, "y": 25, "w": 10, "h": 6}, {"x": 65, "y": 31, "w": 10, "h": 6}],
+                [],
+            ],
+        },
+    )
+
+    sizes = out["sizes"]
+    assert sizes[0] == pytest.approx(7 * upp)
+    assert sizes[1] is None and sizes[3] is None and sizes[4] is None
+    assert sizes[2] == pytest.approx(min(12 * upp, 12 * 0.92 / 3.9))
+    # 위 끝(60)에 닿은 범위의 「위」 — 바깥(60.2 + 0.8, 알약 위 끝 61.8)이 영역 밖이라
+    # 안쪽 띠(60 - 0.2 - 0.8).
+    assert out["spots"][0] == {"x": 20, "y": pytest.approx(59)}
+    # 바닥(0)에 닿은 범위의 「아래」 — 안쪽 띠(0 + 0.2 + 0.8).
+    assert out["spots"][1] == {"x": 20, "y": pytest.approx(1)}
+    # 위에 자리가 있으면 바깥 그대로.
+    assert out["spots"][2] == {"x": 20, "y": pytest.approx(61)}
+    assert out["spots"][3] == {"x": 20, "y": pytest.approx(11)}
+    assert out["shown"] == [{"x": 65, "y": 25, "w": 10, "h": 12}, None]
+
+
+def test_the_group_name_follows_the_label_rule_and_the_shown_modules() -> None:
+    """그리는 쪽 배선 — 모듈 칸 이름표 크기(`unitLabelSize`, 7px 아래 숨김)와 같은 기준으로
+    bare 를 정하고, 보기 화면은 기준일에 보이는 모듈(`seenModule`)이 일부일 때 그 바깥 상자에
+    세우며, 위·아래는 영역 높이 `H()` 를 넘겨 안쪽으로 뒤집을 수 있다."""
+    draw = _between("function drawGroupNames() {", "const GUIDE_PX = ")
+    assert "const seen = mods.filter(seenModule)" in draw
+    assert "VIEW && seen.length < mods.filter(onCanvas).length ? shownRange(seen) : whole" in draw
+    assert "unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX" in draw
+    assert "GROUP_NAME_PX, upp, UNIT_LABEL_MIN_PX, bare)" in draw
+    assert "if (fs === null) continue" in draw
+    assert "groupNameSpot(range, position, fs, 2 * upp, H())" in draw
+    seen = _js_decl("const seenModule = ")
+    assert "S.groups.get(m.id)?.__visible !== false" in seen
 
 
 def test_zone_looks_and_group_names_are_wired_through_the_editor() -> None:

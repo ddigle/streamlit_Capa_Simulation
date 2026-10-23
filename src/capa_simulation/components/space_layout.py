@@ -53,8 +53,9 @@ from capa_simulation.services.space_unit_state import (
 )
 
 
-def _unit_shares(equipment: pd.DataFrame) -> pd.Series:
-    """행마다 설비지분. 상태 판정을 거치지 않은 표(지분 컬럼이 없는 표)는 행 하나가 한 대다."""
+def row_unit_shares(equipment: pd.DataFrame) -> pd.Series:
+    """행마다 설비지분. 상태 판정을 거치지 않은 표(지분 컬럼이 없는 표)는 행 하나가 한
+    대다. 범례·배치 대수와 층 상세 뷰어의 「겹쳐 숨긴 반입 예정 n대」가 같은 축으로 센다."""
     if UNIT_SHARE_COLUMN in equipment.columns:
         return equipment[UNIT_SHARE_COLUMN].astype("float64").fillna(1.0)
     return pd.Series(1.0, index=equipment.index, dtype="float64")
@@ -62,7 +63,7 @@ def _unit_shares(equipment: pd.DataFrame) -> pd.Series:
 
 def equipment_unit_total(equipment: pd.DataFrame) -> float:
     """행이 아니라 설비 대수. Main 설비로 묶은 모듈 행 넷이 한 대다."""
-    return unit_total(_unit_shares(equipment))
+    return unit_total(row_unit_shares(equipment))
 
 
 def occupancy_ratio(placed: pd.DataFrame, canvas_width: float, canvas_height: float) -> float:
@@ -115,8 +116,8 @@ def floor_placements(
     호출하는 쪽이 따로 말한다."""
     # 층마다 프레임을 잘라 pandas 연산을 돌리면 빈 층까지 30번의 고정비가 회차마다 든다 — 표마다
     # (동, 층) 묶음을 한 번만 낸다. 빈 `located` 는 Xsize·Ysize 칸이 없어도 된다.
-    placed_by = _floor_sums(counted, _unit_shares(counted))
-    unplaced_by = _floor_sums(unplaced, _unit_shares(unplaced))
+    placed_by = _floor_sums(counted, row_unit_shares(counted))
+    unplaced_by = _floor_sums(unplaced, row_unit_shares(unplaced))
     area_by: dict[FloorKey, float] = {}
     if not located.empty:
         sizes = located.loc[:, ["Xsize", "Ysize"]].apply(pd.to_numeric, errors="coerce").fillna(0.0)
@@ -313,7 +314,7 @@ def space_legend_counts(
     if rows.empty:
         return {}
     states = unit_states_at(_aligned(boundaries, rows), as_of=as_of)
-    shares = _unit_shares(rows)
+    shares = row_unit_shares(rows)
     shown = states[VISIBLE_STATE]
     kinds = fill_kinds(states, color_groups(rows, choice.basis, choice.capa), choice.enabled)
     counts: dict[str, float] = {

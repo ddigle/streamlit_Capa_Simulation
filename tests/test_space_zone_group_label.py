@@ -261,13 +261,55 @@ def test_group_labels_drop_the_centre_and_sort_by_name() -> None:
         ({"G-1": "left"}, "이름 위치를 알 수 없습니다"),
         ({"G-1": None}, "이름 위치를 알 수 없습니다"),
         ({"": "top"}, "Main 설비 이름이 맞지 않습니다"),
-        ({"A" * 41: "top"}, "Main 설비 이름이 맞지 않습니다"),
+        ({"   ": "top"}, "Main 설비 이름이 맞지 않습니다"),
+        ({7: "top"}, "Main 설비 이름이 맞지 않습니다"),
         ({"G-1": "top", " G-1": "bottom"}, "두 번 왔습니다"),
     ],
 )
 def test_a_bad_group_label_rejects_the_floor(labels: dict[str, Any], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         prepare_group_labels(labels)
+
+
+def test_group_label_names_follow_the_master_rule() -> None:
+    """Main 설비 이름은 설비 마스터의 Main 설비 칸처럼 길이·글자를 묶지 않는다 — 편집기 적용
+    (`_parse_group_labels`)이 받은 이름을 저장이 거부하지 않게(앞뒤 공백만 걷는다)."""
+    long_name = "SMP-" + "G" * 40
+    assert prepare_group_labels({f" {long_name} ": "top", "G\x1f-1": "bottom"}) == {
+        "G\x1f-1": "bottom",
+        long_name: "top",
+    }
+
+
+def test_a_long_group_name_applies_and_saves(tmp_path: Path) -> None:
+    """설비 마스터가 받은 44자 Main 설비 — 적용(`parse_editor_apply` → `next_group_labels`)이
+    받은 위치를 층 저장도 받는다(저장이 거부되면 그 대기분이 다른 「배치 저장」 까지 막는다)."""
+    long_name = "SMP-" + "G" * 40
+    module = {"Main 설비": long_name, "Xsize": 10, "Ysize": 7}
+    master = _master(
+        {**module, "설비명": "G1-A", "X좌표": 50.0, "Y좌표": 37.0},
+        {**module, "설비명": "G1-B", "X좌표": 60.0, "Y좌표": 37.0},
+    )
+    items = _items(master)
+    applied = _parse(
+        {"changes": [], "groupLabels": [{"group": long_name, "position": "top"}]},
+        master,
+        editor_items=items,
+        editor_groups={long_name},
+    )
+    labels = next_group_labels({}, applied, module_group_names(items))
+    assert labels == {long_name: "top"}
+
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(_baseline(), _equipment(), _downtime())
+    repository.save_space_layout(
+        _baseline(),
+        _equipment(),
+        _downtime(),
+        floor_group_labels={KEY: labels},
+        floor_layout_bases={KEY: (None, floor_layout_fingerprint((), {}))},
+    )
+    assert repository.load_floor_group_labels(*KEY) == {long_name: "top"}
 
 
 def test_the_floor_fingerprint_is_the_marks_fingerprint_until_a_label_is_chosen() -> None:
@@ -423,6 +465,30 @@ def test_a_bad_position_rejects_the_apply(labels: object, message: str) -> None:
         _parse_labels({"changes": [], "groupLabels": labels})
 
 
+def test_a_group_with_a_hidden_module_takes_its_position() -> None:
+    """편집기에 모듈 하나만 실리고 형제는 숨은 모듈(레이아웃표시 N — 칸만 차지)인 묶음도 모듈
+    묶음이다 — 위치 검증이 숨은 모듈을 함께 센다(`editor_ghosts`)."""
+    master = _group_master()
+    items = [item for item in _items(master) if item["id"] != "G1-B"]
+    ghosts = [{"id": "G1-B", "group": "GRP-1", "x": 60.0, "y": 37.0, "w": 10.0, "h": 7.0}]
+    applied = _parse(
+        {"changes": [], "groupLabels": [{"group": "GRP-1", "position": "bottom"}]},
+        master,
+        editor_items=items,
+        editor_ghosts=ghosts,
+        editor_groups={"GRP-1", "GRP-2"},
+    )
+
+    assert applied.group_labels == (("GRP-1", "bottom"),)
+    with pytest.raises(ValueError, match="이 편집기에 없는 모듈 묶음"):
+        _parse(
+            {"changes": [], "groupLabels": [{"group": "GRP-1", "position": "bottom"}]},
+            master,
+            editor_items=items,
+            editor_groups={"GRP-1", "GRP-2"},
+        )
+
+
 def test_the_editor_groups_are_module_groups_only() -> None:
     """한 행짜리 묶음(자기 설비명을 Main 설비로 적은 행)은 이름표가 없다 — 모듈 둘 이상만."""
     items = [
@@ -478,3 +544,17 @@ def test_next_labels_follow_a_group_rename_with_or_without_positions() -> None:
 
     assert next_group_labels({"GRP-1": "bottom"}, with_labels, {"GRP-1"}) == {"GRP-9": "top"}
     assert next_group_labels({"GRP-1": "bottom"}, without, {"GRP-1"}) == {"GRP-9": "bottom"}
+    # 편집기에 모듈 하나만 실려 묶음이 아닌 채(실린 묶음 밖) 이름을 바꿔도 위치가 따라간다 — 다른
+    # 묶음의 위치를 보낸 적용이어도.
+    other = EditorApply(
+        changes=(),
+        created=(),
+        canvas=None,
+        marks=None,
+        renames=rename,
+        group_labels=(("GRP-2", "top"),),
+    )
+    assert next_group_labels({"GRP-1": "bottom"}, other, {"GRP-2"}) == {
+        "GRP-2": "top",
+        "GRP-9": "bottom",
+    }

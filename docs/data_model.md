@@ -102,9 +102,10 @@ equipment_ops.revision
 # data/equipment_availability.duckdb — 리비전 없는 공용 표(설비 리비전을 저장해도 복제되지 않음, 표끼리 FK 없음)
 equipment_ops.standard_target_weekly_availability         공정·Weeknum별 수동 가용대수(0005)
 equipment_ops.process_cutoff                              공정별 Cut-off 일수(0009, PK 공정·product_scope)
-equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017)
+equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 도면·캔버스와 비설비 요소(0007·0011·0017·0025)
                        (building, floor_name)
-equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017, layout_key 'FAB')
+equipment_ops.floor_layout_group_label                    층 Main 설비명 위치(0025, 키 동·층·Main 설비, PK 없음)
+equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017·0025, layout_key 'FAB')
 equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요 단축 일정 공용 조회 조건(0019)
 equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      진척 비교 기준선(0021 — 고칠 수 없는
                                      └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다)

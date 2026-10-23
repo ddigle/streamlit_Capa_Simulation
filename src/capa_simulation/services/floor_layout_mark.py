@@ -53,7 +53,6 @@ ZONE_LABEL_ALIGNS: Final = ("left", "center", "right")
 MARKS_PER_FLOOR_MAX: Final = 500
 # Main 설비 모듈 묶음 이름표 위치 — 묶음 범위 정가운데(기본), 범위 바깥 바로 위·아래.
 GROUP_LABEL_POSITIONS: Final = ("center", "top", "bottom")
-GROUP_LABEL_NAME_MAX: Final = 40
 _MARK_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,40}")
 
 
@@ -327,13 +326,14 @@ GroupLabels = Mapping[str, str]
 
 def prepare_group_labels(labels: Mapping[str, object]) -> dict[str, str]:
     """한 층의 Main 설비명 위치를 검증·정규화한다. 하나라도 어긋나면 `ValueError`(층 전체 교체라
-    버리지 않는다). Main 설비 이름은 앞뒤 공백을 걷은 1~40자이고 한 층에 한 번이다. 가운데(기본)는
-    행을 두지 않으므로 빼고, 이름 차례로 돌려준다."""
+    버리지 않는다). Main 설비 이름은 앞뒤 공백을 걷은 빈칸 아닌 글자이고 한 층에 한 번이다 — 길이·
+    글자는 설비 마스터의 Main 설비 칸처럼 묶지 않는다(편집기 적용 `_parse_group_labels` 가 받은
+    이름을 저장에서 거부하지 않게). 가운데(기본)는 행을 두지 않으므로 빼고, 이름 차례로 돌려준다."""
     prepared: dict[str, str] = {}
     seen: set[str] = set()
     for raw_name, raw_position in labels.items():
         name = raw_name.strip() if isinstance(raw_name, str) else ""
-        if not name or len(name) > GROUP_LABEL_NAME_MAX or not name.isprintable():
+        if not name:
             raise ValueError(f"Main 설비명 위치의 Main 설비 이름이 맞지 않습니다: {raw_name!r}")
         if name in seen:
             raise ValueError(f"Main 설비명 위치에 같은 Main 설비가 두 번 왔습니다: {name}")

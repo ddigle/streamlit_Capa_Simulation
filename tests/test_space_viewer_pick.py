@@ -21,6 +21,7 @@ AppTest 는 JS 를 못 돌린다 — `_EDITOR` 를 대역으로 바꿔 누른 �
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -173,12 +174,12 @@ def test_the_viewer_paints_the_cover_and_the_editor_does_not() -> None:
 
 def test_the_summary_adds_the_hidden_count_in_the_browser() -> None:
     """요약 줄은 파이썬 `summary` 에 숨긴 대수(설비지분 합)를 브라우저가 붙인다 — 숨김이 기준일마다
-    바뀌므로. 지분은 `_clean_items` 의 `share` 가 싣고 없으면 한 대다."""
+    바뀌므로. 지분은 `_clean_items` 의 `share` 가 싣고(`unitLook` 으로 읽음) 없으면 한 대다."""
     summary = _between("function showSummary() {", "function overlapPairs() {")
     assert "for (const share of S.covered.values()) hidden += share" in summary
     assert "겹쳐 숨긴 반입 예정 ${unitCountText(hidden)}대" in summary
     read = _between("const readUnit = (raw) => ({", "const readMark = (raw) => ({")
-    assert "share: Number(raw.share) > 0 ? Number(raw.share) : 1" in read
+    assert "...unitLook(raw)" in read
     cleaned = space_layout_editor._clean_items(
         [
             {"id": "A", "share": 0.25},
@@ -309,16 +310,17 @@ def downloads(monkeypatch: pytest.MonkeyPatch) -> list[bytes]:
     return got
 
 
-def _open(tmp_path: Path) -> AppTest:
+def _open(tmp_path: Path, master: pd.DataFrame | None = None) -> AppTest:
     """C1 1F — EQ-01·EQ-02, Main 설비 MOD-1 모듈 넷(Process-B, 행 차례 C·A·D·B), 2F 에 UP-01."""
     module = {"Main 설비": "MOD-1", "공정소분류": "Process-B", "Xsize": 6, "Ysize": 4}
-    master = _master(
-        {**module, "설비명": "MOD-1C", "X좌표": 60.0, "Y좌표": 10.0},
-        {**module, "설비명": "MOD-1A", "X좌표": 60.0, "Y좌표": 14.0},
-        {**module, "설비명": "MOD-1D", "X좌표": 66.0, "Y좌표": 10.0},
-        {**module, "설비명": "MOD-1B", "X좌표": 66.0, "Y좌표": 14.0},
-        {"설비명": "UP-01", "층": "2F"},
-    )
+    if master is None:
+        master = _master(
+            {**module, "설비명": "MOD-1C", "X좌표": 60.0, "Y좌표": 10.0},
+            {**module, "설비명": "MOD-1A", "X좌표": 60.0, "Y좌표": 14.0},
+            {**module, "설비명": "MOD-1D", "X좌표": 66.0, "Y좌표": 10.0},
+            {**module, "설비명": "MOD-1B", "X좌표": 66.0, "Y좌표": 14.0},
+            {"설비명": "UP-01", "층": "2F"},
+        )
     database = tmp_path / "space_pick.duckdb"
     repository = DuckDBEquipmentRepository(database)
     repository.initialize()
@@ -438,7 +440,7 @@ def test_the_viewer_sends_unit_shares_for_the_hidden_count(
     tmp_path: Path, calls: list[dict[str, Any]], downloads: list[bytes]
 ) -> None:
     """뷰어 호기마다 설비지분 — 모듈 넷은 0.25, 단독 호기는 1. 요약 줄의 「겹쳐 숨긴 반입 예정 n대」
-    가 설비 대수다."""
+    가 설비 대수다(범례와 같은 기준일 보유 지분)."""
     _open(tmp_path)
     shares = {item["id"]: item["share"] for item in _viewer(calls)["items"]}
     assert shares == {
@@ -450,3 +452,102 @@ def test_the_viewer_sends_unit_shares_for_the_hidden_count(
         "MOD-1D": 0.25,
     }
     clear_equipment_repository()
+
+
+def test_a_partly_arrived_group_sends_the_legend_shares(
+    tmp_path: Path, calls: list[dict[str, Any]], downloads: list[bytes]
+) -> None:
+    """일부 모듈만 반입한 Main 설비 — 지분은 범례·배치 대수와 같은 기준일 보유 지분(`설비지분`)이라
+    반입한 둘이 0.5씩이고 반입 전 둘은 0 이다. 그래서 반입 전 모듈이 겹쳐 숨어도 「겹쳐 숨긴 반입
+    예정」 은 범례의 반입 전 대수(0)와 어긋나지 않는다."""
+    today = date.today()
+
+    def day(days: int) -> str:
+        return (today + timedelta(days=days)).isoformat()
+
+    arrived = {
+        "Main 설비": "GRP",
+        "Xsize": 5,
+        "Ysize": 5,
+        "제진대일정": None,
+        "물류일정": None,
+        "반입일정": day(-90),
+        "반입실적": day(-90),
+        "Qual일정": day(300),
+    }
+    later = {**arrived, "반입일정": day(200), "반입실적": None, "Qual일정": day(230)}
+    master = _master(
+        {**arrived, "설비명": "G-A", "X좌표": 40.0, "Y좌표": 30.0},
+        {**arrived, "설비명": "G-B", "X좌표": 45.0, "Y좌표": 30.0},
+        {**later, "설비명": "G-C", "X좌표": 40.0, "Y좌표": 35.0},
+        {**later, "설비명": "G-D", "X좌표": 45.0, "Y좌표": 35.0},
+    )
+    _open(tmp_path, master)
+
+    shares = {item["id"]: item["share"] for item in _viewer(calls)["items"]}
+    assert {key: shares[key] for key in ("G-A", "G-B", "G-C", "G-D")} == {
+        "G-A": 0.5,
+        "G-B": 0.5,
+        "G-C": 0.0,
+        "G-D": 0.0,
+    }
+    assert shares["EQ-01"] == 1.0
+    clear_equipment_repository()
+
+
+def test_the_browser_keeps_a_zero_share_and_refreshes_it_in_the_same_epoch() -> None:
+    """0 은 그대로(한 대로 바꾸지 않는다), 숫자가 아니거나 음수면 한 대다. 지분은 같은 epoch
+    회차에도 새로 받는다(`unitLook` · `sameLook`) — 파이썬 기준일이 바뀌면 지분도 바뀐다."""
+    cleaned = space_layout_editor._clean_items([{"id": "A", "share": 0}, {"id": "B", "share": 0.5}])
+    assert [item["share"] for item in cleaned] == [0.0, 0.5]
+    look = _between("const unitLook = (raw) => ({", "const readUnit = (raw) => ({")
+    assert "share: shareOf(raw.share)" in look
+    assert "value >= 0 ? value : 1" in _js_decl("const shareOf = ")
+    assert "o.share === n.share" in _lines_until_blank("const sameLook = ")
+
+
+def test_the_floor_table_columns_are_the_requested_order() -> None:
+    """21칸 전체 차례를 글자 그대로 고정한다(요청 순 — 칸 이름은 설비 마스터 그대로)."""
+    assert FLOOR_TABLE_COLUMNS == (
+        "Area Code",
+        "공정소분류",
+        "설비명",
+        "공정구분",
+        "투자Capa",
+        "투자구분",
+        "사용기준",
+        "동",
+        "층",
+        "제진대일정",
+        "물류일정",
+        "반입일정",
+        "반입실적",
+        "반입상태",
+        "Qual일정",
+        "Qual실적",
+        "Qual상태",
+        "정지일정",
+        "반출/이설일정",
+        "반입/Qual 이력",
+        "단계",
+    )
+
+
+def test_a_drag_in_the_floor_viewer_is_not_a_press() -> None:
+    """보기 화면에서 호기 위를 눌러 문턱을 넘게 끌었다 놓으면(전체 보기라 화면이 움직이지 않아도)
+    고르지도 `pick` 을 보내지도 않는다 — FAB 블록 열기와 같은 규칙(`drag.travelled`)."""
+    up = _between(
+        "if (drag.mode === 'view') {\n      svg.classList.remove", "if (drag.mode === 'marquee')"
+    )
+    assert "if (!drag.travelled) openFloor(item)" in up
+    assert up.index("if (drag.travelled) return") < up.index("select(drag.id)")
+    move = _between("svg.onpointermove = (event) => {", "if (event.buttons === 0)")
+    assert move.index("if (far) drag.travelled = true") < move.index(
+        "if (drag.mode === 'view' && S.view.z <= 1) return"
+    )
+
+
+def test_a_new_drawing_drops_the_copy_paste_notice() -> None:
+    """복사·붙여넣기 알림(`S.flash`)은 그 도면의 것이다 — 새 epoch(적용 뒤 · 다른 층)에서 지운다."""
+    fresh = _between("if (S.epoch !== data.epoch) {", "} else {")
+    assert "S.flash = ''" in fresh

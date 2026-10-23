@@ -76,7 +76,7 @@
 /* 테는 뜻 하나씩이다: 실물 없음(반입 전) 주황 점선이 반출/이설 예정 노랑 두 겹(짙은 테 + 노랑)을 이긴다. 정지 중은
    빗금, 미확인은 오른쪽 위 「!」, 운영 비가동은 왼쪽 위 표식, 호기 겹침은 오른쪽 위 꼭지 삼각, 선택은 상자 밖 후광이다.
    부품은 늘 만들어 두고 class 로만 보인다(JS `paintUnit`) — 기준일이 바뀌어도 칠하기만 한다. 반입 예정(실물 없음) 점선은
-   3.5px 로 굵다 — 2px 은 면색 위에서 잘 안 보였다(2026-10-23 사용자 요청, 범례 견본은 3px). */
+   3.5px(범례 견본은 3px)이다. */
 .sle-halo, .sle-hatch, .sle-ring, .sle-ring-out, .sle-flag, .sle-offline, .sle-corner { display: none; pointer-events: none; }
 .sle-halo { fill: none; stroke: var(--sle-ring-halo); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .sle-ring, .sle-ring-out { fill: none; vector-effect: non-scaling-stroke; }

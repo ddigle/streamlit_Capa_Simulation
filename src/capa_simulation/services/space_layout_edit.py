@@ -359,7 +359,8 @@ def editor_inputs(
 
 def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
     """편집기의 호기 추가 폼 선택지. 크기 힌트는 공정소분류별 가운데 크기(모듈 행 제외). 서랍에서
-    크기 없는 호기를 놓을 때 빌릴 앞 3자리 크기(`prefix_sizes`)도 함께 보낸다."""
+    크기 없는 호기를 놓을 때 빌릴 앞 3자리 크기(`prefix_sizes`)와 그 종류를 가를 모듈 묶음의 Main
+    설비(`module_parents`)도 함께 보낸다."""
 
     def choices(column: str) -> list[str]:
         values = master[column].dropna().astype(str).str.strip()
@@ -387,7 +388,22 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
         "parentIds": sorted(parent_ids),
         "confirmations": list(QUAL_CONFIRMATION_STATUSES),
         "prefixSizes": prefix_sizes(master),
+        "moduleParents": sorted(module_parents(master)),
     }
+
+
+def _module_rows(master: pd.DataFrame) -> pd.Series:
+    """행마다 Main 설비 모듈 묶음의 모듈인가 — Main 설비가 같은 행이 표 전체에서 둘 이상."""
+    parents = _parents(master)
+    return parents.map(parents.value_counts()).fillna(0).ge(2).astype(bool)
+
+
+def module_parents(master: pd.DataFrame) -> set[str]:
+    """Main 설비 모듈 묶음(행 둘 이상)의 Main 설비. 서랍 크기 불러오기의 종류(모듈/호기)를 편집기가
+    `prefix_sizes` 와 같은 기준으로 가르도록 함께 보낸다 — 형제가 편집기에 실리지 않은 모듈도
+    모듈이다."""
+    parents = _parents(master)
+    return {str(name) for name in parents.loc[_module_rows(master)].dropna().unique()}
 
 
 # 서랍에서 크기 없는 호기를 놓을 때 크기를 빌릴 설비를 고르는 열쇠 — 설비명 앞 몇 글자
@@ -420,8 +436,7 @@ def prefix_sizes(master: pd.DataFrame) -> dict[str, dict[str, dict[str, Any]]]:
     names = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     widths = pd.to_numeric(master["Xsize"], errors="coerce")
     heights = pd.to_numeric(master["Ysize"], errors="coerce")
-    parents = _parents(master)
-    modules = parents.map(parents.value_counts()).fillna(0).ge(2)
+    modules = _module_rows(master)
     best: dict[tuple[str, str], tuple[Any, str, float, float]] = {}
     for name, raw_w, raw_h, module in zip(names, widths, heights, modules, strict=True):
         prefix = name_prefix(name)
@@ -1163,7 +1178,9 @@ def next_group_labels(
     if applied.group_labels is None:
         return dict(sorted((renamed.get(name, name), spot) for name, spot in current.items()))
     loaded = set(module_groups)
-    kept = {name: spot for name, spot in current.items() if name not in loaded}
+    # 실리지 않은 묶음의 위치도 이름 바꿈을 따라간다(모듈 하나만 실려 묶음이 아닌 채 Main
+    # 설비 이름을 바꾼 때).
+    kept = {renamed.get(name, name): spot for name, spot in current.items() if name not in loaded}
     for group, position in applied.group_labels:
         name = renamed.get(group, group)
         kept.pop(name, None)

@@ -768,7 +768,7 @@ def _save_equipment_frames(
     else:
         saved = repository.save_snapshot(*frames, **options)
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
-    floor_layouts = bool(canvases or marks or labels)
+    floor_layouts = floor_layout_words(canvases, marks, labels)
     if saved is None and not floor_layouts:
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
         return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
@@ -776,14 +776,21 @@ def _save_equipment_frames(
     if floor_layouts:
         clear_floor_layout_cache()
     reset_equipment_drafts()
-    layouts = " 층 캔버스·도면 요소도 함께 저장했습니다." if floor_layouts else ""
+    layouts = f" {floor_layouts}도 함께 저장했습니다." if floor_layouts else ""
     if saved is None:
-        return f"설비 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다.{fab}"
+        return f"설비 마스터가 바뀌지 않아 새 리비전 없이 {floor_layouts}만 저장했습니다.{fab}"
     return (
         f"설비 운영 데이터 r{saved.revision.revision_no}"
         f"{object_particle(str(saved.revision.revision_no))} 저장했습니다. "
         f"가용설비와 Space 현황에 반영됩니다.{layouts}{fab}"
     )
+
+
+def floor_layout_words(canvases: object, marks: object, labels: object) -> str:
+    """저장 알림에 적을 층 현행값 — 대기분이 있는 것만 차례대로(층 캔버스·도면 요소·Main 설비명
+    위치). 하나도 없으면 빈 글자."""
+    parts = (("층 캔버스", canvases), ("도면 요소", marks), ("Main 설비명 위치", labels))
+    return "·".join(word for word, pending in parts if pending)
 
 
 def current_data_file_name(

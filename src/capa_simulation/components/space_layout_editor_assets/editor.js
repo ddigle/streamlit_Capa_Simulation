@@ -91,6 +91,8 @@ export default function (component) {
   // 앞 3자리 → 편집본에서 설비명 자연 정렬이 가장 뒤인 같은 앞 3자리 설비의 크기({unit|module: {앞 3자리: {name, w, h}}},
   // 파이썬 `prefix_sizes`). 서랍에서 크기 없는 호기를 놓을 때 빌린다(`borrowedSize`).
   const PREFIX_SIZES = NEW_UNIT.prefixSizes && typeof NEW_UNIT.prefixSizes === 'object' ? NEW_UNIT.prefixSizes : {}
+  // 모듈 묶음의 Main 설비(편집본 전체에서 행이 둘 이상, 파이썬 `module_parents`) — 크기 불러오기의 종류(`sizeKind`).
+  const MODULE_PARENTS = new Set((Array.isArray(NEW_UNIT.moduleParents) ? NEW_UNIT.moduleParents : []).map(String))
   const MAX_ZOOM = 8
   const ZOOM_STEP = 1.25
   const DRAG_THRESHOLD_PX = 3
@@ -146,8 +148,11 @@ export default function (component) {
   const pickOr = (value, allowed) => (allowed.includes(value) ? value : allowed[0])
   // Main 설비 모듈 묶음 이름표 위치 — 범위 정가운데(처음 값)·범위 바깥 바로 위·아래(파이썬 `GROUP_LABEL_POSITIONS`).
   const GROUP_LABEL_POSITIONS = ['center', 'top', 'bottom']
-  // Main 설비명 글자의 가장 큰 크기(화면 px). 범위에 맞춰 줄고 7px 아래면 숨긴다(모듈 이름표와 같은 규칙).
+  // Main 설비명 글자의 가장 큰 크기(화면 px). 범위에 맞춰 줄고 UNIT_LABEL_MIN_PX 아래면 숨긴다(모듈 이름표와 같은 규칙 —
+  // 다만 모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 그 크기로라도 선다, `groupNameSize`).
   const GROUP_NAME_PX = 12
+  // 호기 이름표의 가장 작은 크기(화면 px) — 이보다 작으면 숨긴다(밀집 층, 확대하면 다시 보인다).
+  const UNIT_LABEL_MIN_PX = 7
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
   const HINT = FAB
     ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
@@ -459,8 +464,11 @@ export default function (component) {
     return out
   }
   // 설비명 앞 3자리 — 앞뒤 공백을 걷은 첫 세 글자(대소문자 그대로, 글자는 코드 포인트). 세 글자보다 짧으면 ''(빌리지 않는다).
+  // 공백은 파이썬 `str.strip` 의 것(`str.isspace`)이다 — JS `trim` 은 BOM(U+FEFF)을 걷고 U+001C~U+001F·U+0085 를 남겨
+  // 파이썬 `prefix_sizes` 의 열쇠와 어긋난다.
   function namePrefix(name) {
-    const chars = Array.from(String(name ?? '').trim())
+    const space = '[\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]'
+    const chars = Array.from(String(name ?? '').replace(new RegExp(`^${space}+|${space}+$`, 'g'), ''))
     return chars.length >= 3 ? chars.slice(0, 3).join('') : ''
   }
   // 크기 없는 호기(name, 종류 kind: 'unit' 호기 · 'module' Main 설비 모듈)가 빌릴 크기 {from, w, h}. 같은 앞 3자리·같은 종류
@@ -491,7 +499,9 @@ export default function (component) {
   }
   // 붙여넣기 이동량 {dx, dy} — 복사한 도면 요소들(원본 자리 [{x, y, w, h}])을 모양 그대로 옮긴다. at({x, y}, 데이터 좌표)이
   // 있으면 그 자리가 묶음의 왼쪽 아래(마우스 자리 — 부르는 쪽이 격자·정렬선을 맞춘 자리), 없으면 원본에서 offset 만큼 오른쪽·
-  // 아래로 비킨다. 영역 canvas {w, h} 안으로 밀고 눈금(scale)에 맞춘다. 묶음이 영역보다 크면 null.
+  // 아래로 비킨다. 영역 canvas {w, h} 안으로 밀고 눈금(scale)에 맞춘다. 비켜 붙일 때 영역 끝에 막혀 한 축의 이동량이 0 이 되면
+  // 그 축은 반대쪽(왼쪽·위)으로 같은 거리만큼 비킨다 — 영역 끝에 닿은 요소의 사본이 원본 자리에 그대로 쌓이지 않게. 두 축 모두
+  // 움직일 수 없으면(영역을 가득 채운 묶음) {dx: 0, dy: 0} 이다. 묶음이 영역보다 크면 null.
   function pasteShift(marks, canvas, at, offset, scale) {
     if (!marks.length) return null
     const left = Math.min(...marks.map((m) => m.x))
@@ -499,13 +509,14 @@ export default function (component) {
     const right = Math.max(...marks.map((m) => m.x + m.w))
     const top = Math.max(...marks.map((m) => m.y + m.h))
     if (right - left > canvas.w + 1e-9 || top - bottom > canvas.h + 1e-9) return null
-    const dx = at ? at.x - left : offset
-    const dy = at ? at.y - bottom : -offset
-    const tick = (v) => Math.round(v * scale) / scale
-    return {
-      dx: tick(Math.min(Math.max(dx, -left), canvas.w - right)),
-      dy: tick(Math.min(Math.max(dy, -bottom), canvas.h - top)),
+    const tick = (v) => Math.round(v * scale) / scale + 0
+    const fit = (v, lo, hi) => tick(Math.min(Math.max(v, lo), hi))
+    if (at) return { dx: fit(at.x - left, -left, canvas.w - right), dy: fit(at.y - bottom, -bottom, canvas.h - top) }
+    const away = (want, lo, hi) => {
+      const v = fit(want, lo, hi)
+      return v !== 0 ? v : fit(-want, lo, hi)
     }
+    return { dx: away(offset, -left, canvas.w - right), dy: away(-offset, -bottom, canvas.h - top) }
   }
   // 새 층 블록 count 개의 연결 — 새 요소 넣기처럼 아직 블록이 가리키지 않는 층(taken 밖의 targets)을 차례로, 다 찼으면 첫 층.
   function freeLinks(count, taken, targets) {
@@ -532,21 +543,43 @@ export default function (component) {
     return 0
   }
   // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
-  // 단위). 가운데(처음 값)는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를 띄워 붙인다 —
-  // 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다.
-  function groupNameSpot(r, position, fs, gap) {
+  // 단위), 영역 높이 canvasH. 가운데(처음 값)는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
+  // 띄워 붙인다 — 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다. 바깥 알약이 영역 위·아래 끝을 넘으면(범위가 영역 끝에 닿은
+  // 묶음 — 좁은 화면에서는 화면 밖으로 잘린다) 범위 안쪽 위·아래 띠로 뒤집는다.
+  function groupNameSpot(r, position, fs, gap, canvasH) {
     const x = r.x + r.w / 2
     const half = fs * 0.8
-    if (position === 'top') return { x, y: r.y + r.h + gap + half }
-    if (position === 'bottom') return { x, y: r.y - gap - half }
+    if (position === 'top') {
+      const outside = r.y + r.h + gap + half
+      return { x, y: outside + half <= canvasH + 1e-9 ? outside : r.y + r.h - gap - half }
+    }
+    if (position === 'bottom') {
+      const outside = r.y - gap - half
+      return { x, y: outside - half >= -1e-9 ? outside : r.y + gap + half }
+    }
     return { x, y: r.y + r.h / 2 }
   }
-  // Main 설비명 글자 크기(데이터 단위) — 화면 최대 maxSize 에서 범위 폭(알약 여백 포함)에 맞춰 줄이고, 가운데면 범위 높이의
-  // 0.16 배를 넘지 않게 한다(알약이 모듈 칸 이름표에 닿지 않게). em 은 글자 폭(em), upp 는 화면 px 당 데이터 단위.
-  function groupNameSize(r, position, em, maxSize, upp) {
-    let fs = Math.min(maxSize * upp, (r.w * 0.92) / (Math.max(em, 1) + 0.9))
+  // Main 설비명 글자 크기(데이터 단위) — 화면 최대 maxSize px 에서 범위 폭(알약 여백 포함)에 맞춰 줄이고, 가운데면 범위 높이의
+  // 0.16 배를 넘지 않게 한다(알약이 모듈 칸 이름표에 닿지 않게). em 은 글자 폭(em), upp 는 화면 px 당 데이터 단위. 화면
+  // minSize px 아래로 줄면 그리지 않는다(null). 다만 가운데이고 모듈 칸 이름표가 하나도 서 있지 않은(bare) 묶음은 minSize 의
+  // 알약이 범위 안에 들면 minSize 로 그린다 — 가릴 이름표가 없고, 묶음을 알아볼 글자가 하나는 남는다.
+  function groupNameSize(r, position, em, maxSize, upp, minSize, bare) {
+    const room = (r.w * 0.92) / (Math.max(em, 1) + 0.9)
+    let fs = Math.min(maxSize * upp, room)
     if (position === 'center') fs = Math.min(fs, r.h * 0.16)
-    return fs
+    if (fs / upp >= minSize) return fs
+    const least = minSize * upp
+    if (position === 'center' && bare && least <= room && least * 1.6 <= r.h) return least
+    return null
+  }
+  // 보기 화면에서 Main 설비명을 세울 범위 — 기준일에 보이는 모듈 상자들(shown [{x, y, w, h}])의 바깥 상자. 일부 모듈만 보이는
+  // 묶음(겹쳐 숨거나 빠진 모듈)은 이름이 숨은 모듈 자리 — 그 자리를 덮은 다른 설비 위 — 에 서지 않게 보이는 쪽으로 좁힌다.
+  // 하나도 없으면 null.
+  function shownRange(shown) {
+    if (!shown.length) return null
+    const x = Math.min(...shown.map((b) => b.x))
+    const y = Math.min(...shown.map((b) => b.y))
+    return { x, y, w: Math.max(...shown.map((b) => b.x + b.w)) - x, h: Math.max(...shown.map((b) => b.y + b.h)) - y }
   }
   // </layout-look>
 
@@ -925,19 +958,27 @@ export default function (component) {
   }
   // 보기 화면에서 묶음이 기준일에 보이는가 — 모듈 하나라도 보이면 보인다. 편집 화면은 늘 보인다(테·덧표시가 없다).
   const groupShown = (mods) => !VIEW || mods.some((m) => !m.ghost && S.groups.get(m.id)?.__visible !== false)
+  // 도면에 서 있고 (보기 화면이면) 기준일에 보이는 모듈.
+  const seenModule = (m) => onCanvas(m) && !m.ghost && (!VIEW || S.groups.get(m.id)?.__visible !== false)
   function drawGroupNames() {
     namesLayer.replaceChildren()
     if (FAB) return
     const upp = unitsPerPx()
     for (const [key, lead] of moduleGroups()) {
       const mods = moduleMembers(lead)
-      const range = mods ? groupRange(mods) : null
-      if (!range || !groupShown(mods)) continue
+      const whole = mods ? groupRange(mods) : null
+      if (!whole || !groupShown(mods)) continue
+      // 보기 화면에서 일부 모듈만 보이면 보이는 모듈의 바깥 상자에 세운다(`shownRange`).
+      const seen = mods.filter(seenModule)
+      const range = VIEW && seen.length < mods.filter(onCanvas).length ? shownRange(seen) : whole
+      if (!range) continue
       const name = String(lead.group)
       const position = groupLabelOf(key)
-      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX, upp)
-      if (fs / upp < 7) continue
-      const spot = groupNameSpot(range, position, fs, 2 * upp)
+      // 모듈 칸 이름표가 하나도 서 있지 않으면(밀집 층·작은 묶음) 가운데 이름은 가장 작은 크기로라도 선다.
+      const bare = !seen.some((m) => unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX)
+      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX, upp, UNIT_LABEL_MIN_PX, bare)
+      if (fs === null) continue
+      const spot = groupNameSpot(range, position, fs, 2 * upp, H())
       const cy = H() - spot.y
       const pillW = Math.min(range.w, labelEm(name) * fs + fs * 0.9)
       const node = el('g', { class: `sle-group-name-tag is-${position}` })
@@ -1265,16 +1306,20 @@ export default function (component) {
       // 확대하면 다시 보인다. 이름은 선택하면 상태줄·옆 칸에, 올려 두면 풍선에 나온다. 폭은 잰 글자 폭이라
       // 이름이 상자 밖으로 넘치지 않는다.
       const upp = unitsPerPx()
-      const fitFont = (item.w * 0.94) / Math.max(labelEm(item.label), 1)
-      const fontSize = Math.min(item.h * 0.32, fitFont, 14 * upp)
+      const fontSize = unitLabelSize(item, upp)
       label.setAttribute('font-size', fontSize)
-      label.style.display = fontSize / upp < 7 ? 'none' : ''
+      label.style.display = fontSize / upp < UNIT_LABEL_MIN_PX ? 'none' : ''
       positionUnitMarks(group, item, top)
     } else {
       drawMark(group, item, top)
     }
     positionHandles(group, item, top)
     group.classList.toggle('is-changed', isChanged(item) || isRenamed(item))
+  }
+  // 호기 이름표 글자 크기(데이터 단위) — 상자 높이의 0.32 배·잰 글자 폭으로 상자 폭에 맞춘 크기·화면 14px 가운데 가장 작은 것.
+  function unitLabelSize(item, upp) {
+    const fitFont = (item.w * 0.94) / Math.max(labelEm(item.label), 1)
+    return Math.min(item.h * 0.32, fitFont, 14 * upp)
   }
 
   const setBox = (node, x, y, w, h) => {
@@ -1806,11 +1851,11 @@ export default function (component) {
     tip.textContent = unitTip(item)
   }
 
-  // 같은 epoch 회차에 받은 호기 값이 쥔 값과 같은가 — 단계·공정 글자·이름표·면·글자·경계 날짜를 견준다.
+  // 같은 epoch 회차에 받은 호기 값이 쥔 값과 같은가 — 단계·공정 글자·이름표·면·글자·경계 날짜·설비지분을 견준다.
   const sameSpans = (a, b) => a.length === b.length && a.every((span, k) => span[0] === b[k][0] && span[1] === b[k][1])
   const sameLook = (o, n) => o.stage === n.stage && o.detail === n.detail && o.label === n.label
     && o.fill === n.fill && o.ink === n.ink && Boolean(o.storage) === Boolean(n.storage) && Boolean(o.flag) === Boolean(n.flag)
-    && o.realFrom === n.realFrom && o.exitOn === n.exitOn && o.stopOn === n.stopOn
+    && o.realFrom === n.realFrom && o.exitOn === n.exitOn && o.stopOn === n.stopOn && o.share === n.share
     && sameSpans(o.delays || [], n.delays || []) && sameSpans(o.offline || [], n.offline || [])
 
   // 보기 화면의 같은 epoch 회차 — 받은 값이 바뀐 호기만 고친다. 이름표가 바뀐 호기만 자리·글자 크기를 다시 맞추고, 풍선은
@@ -2592,8 +2637,12 @@ export default function (component) {
   }
 
   // 크기를 빌려 줄 종류 — Main 설비 모듈 묶음의 모듈('module')과 그 밖의 호기('unit')는 서로 빌리지 않는다(모듈 크기는 묶음
-  // 범위의 한 칸이다).
-  const sizeKind = (m) => (moduleMembers(m) ? 'module' : 'unit')
+  // 범위의 한 칸이다). 모듈은 설비 마스터(편집본) 전체에서 Main 설비가 같은 행이 둘 이상인 행이다(파이썬 `prefix_sizes` 와 같은
+  // 기준 — 형제가 이 편집기에 실리지 않은 모듈도 모듈이다). 이 편집기에서 묶음인 것도 모듈로 본다.
+  const sizeKind = (m) => {
+    const key = groupKeyOf(m)
+    return (key && MODULE_PARENTS.has(key)) || moduleMembers(m) ? 'module' : 'unit'
+  }
   // 이번 편집에서 서랍으로 놓은 호기(놓은 차례 — 뒤가 나중)의 지금 크기 [{name, kind, w, h}]. 아직 도면에 서 있고, 이 층 가운데
   // 크기로 어림한 것이 아닌(제 크기·사람이 고친 크기·다른 설비에서 불러온 크기) 호기만 크기를 빌려 준다(`borrowedSize`).
   function recentSizes() {
@@ -2777,23 +2826,41 @@ export default function (component) {
     updateStatus()
     return true
   }
+  // 이 이동량으로 붙인 사본 가운데 하나라도 지금 도면의 같은 종류 요소와 자리·크기까지 똑같이 겹치는가 — 그런 사본은 보이지
+  // 않은 채 두 겹으로 저장된다(요소끼리 겹침은 경고하지 않는다).
+  function stacksOnMarks(marks, shift) {
+    const same = (a, b) => Math.abs(a - b) < 0.5 / SCALE
+    const standing = [...S.items.values()].filter(isMark)
+    return marks.some((c) => standing.some((m) => m.kind === c.kind && same(m.x, c.x + shift.dx)
+      && same(m.y, c.y + shift.dy) && same(m.w, c.w) && same(m.h, c.h)))
+  }
   function pasteMarks(free) {
     const clip = readClipboard()
     if (!clip) return false
     if (S.clipAt !== clip.at) { S.clipAt = clip.at; S.pasteSerial = 0 }
     const outer = boxRect(bbox(clip.marks))
-    let at = null
+    const canvas = { w: W(), h: H() }
+    let shift = null
     let segments = []
     if (S.hover) {
+      // 마우스 자리(묶음 가운데 — 격자·정렬선에 맞춘 자리). 그 자리가 원본 그대로면(고른 직후 마우스를 그대로 둔 채 Ctrl+C·V —
+      // 정렬선이 원본 선에 도로 붙인다) 비켜 붙이기로 넘긴다.
       const spot = dropSpot(S.hover, outer.w, outer.h, free)
-      at = { x: spot.x, y: spot.y }
+      shift = pasteShift(clip.marks, canvas, { x: spot.x, y: spot.y }, 0, SCALE)
       segments = spot.segments
-    } else {
-      S.pasteSerial += 1
+      if (shift && stacksOnMarks(clip.marks, shift)) { shift = null; segments = [] }
     }
-    const shift = pasteShift(clip.marks, { w: W(), h: H() }, at, Math.max(S.step, 1) * S.pasteSerial, SCALE)
+    if (!shift) {
+      S.pasteSerial += 1
+      shift = pasteShift(clip.marks, canvas, null, Math.max(S.step, 1) * S.pasteSerial, SCALE)
+    }
     if (!shift) {
       S.note = `붙일 도면 요소(${roundTo(outer.w)}×${roundTo(outer.h)})가 편집 영역 ${W()}×${H()} 보다 커서 붙이지 않았습니다`
+      updateStatus()
+      return true
+    }
+    if (stacksOnMarks(clip.marks, shift)) {
+      S.note = '붙일 자리가 같은 요소와 똑같이 겹쳐 붙이지 않았습니다 — 마우스를 비어 있는 자리에 두고 Ctrl+V 하거나 편집 영역을 넓히세요'
       updateStatus()
       return true
     }
@@ -3139,18 +3206,19 @@ export default function (component) {
   // 호기의 색 기준 면·글자와 경계 날짜(파이썬 `boundary_payload`). 같은 epoch 회차에도 이것만은 새로 받아 칠한다 —
   // 체크·색 기준·기준일만 바뀐 회차는 epoch 가 그대로라 배율·편집을 지킨 채 색·테만 바뀐다. 이름에 `group`(Main 설비
   // 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다.
+  // 설비지분(파이썬 기준일의 보유 지분 — 범례와 같은 칸, 일부 모듈만 반입한 Main 설비의 반입 전 모듈은 0) — 층 상세 보기
+  // 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다. 0 이상의 수가 아니면 한 대.
+  const shareOf = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 1)
   const unitLook = (raw) => ({
     fill: hexOr(raw.fill), ink: hexOr(raw.ink), storage: Boolean(raw.storage), flag: Boolean(raw.flag),
     realFrom: dayOr(raw.realFrom), exitOn: dayOr(raw.exitOn), stopOn: dayOr(raw.stopOn),
-    delays: spansOf(raw.delays), offline: spansOf(raw.offline),
+    delays: spansOf(raw.delays), offline: spansOf(raw.offline), share: shareOf(raw.share),
   })
   const readUnit = (raw) => ({
     id: String(raw.id), kind: 'unit', label: String(raw.label ?? raw.id), stage: String(raw.stage || ''),
     group: raw.group ? String(raw.group) : null, x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h),
     isNew: Boolean(raw.isNew), arrived: Boolean(raw.arrived), floorless: Boolean(raw.floorless), moveTo: null, created: null,
     sizeGuessed: false, detail: String(raw.detail || ''), ...unitLook(raw),
-    // 설비지분(모듈 행 넷이면 0.25) — 층 상세 보기 요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다. 없으면 한 대.
-    share: Number(raw.share) > 0 ? Number(raw.share) : 1,
   })
   const readMark = (raw) => ({
     id: String(raw.id), kind: String(raw.kind), label: String(raw.label || ''), stage: '', group: null,
@@ -3232,6 +3300,8 @@ export default function (component) {
     clearSelection()
     S.drag = null
     S.note = ''
+    // 복사·붙여넣기 알림은 그 도면의 것이다 — 적용 뒤·다른 층의 새 도면까지 상태 줄에 남기지 않는다.
+    S.flash = ''
     // 새 epoch(층 이동·저장본·요소·그리는 호기가 바뀜)에서는 data 의 기준일을 그대로 쓴다.
     S.asOf = AS_OF
     S.dataAsOf = AS_OF
@@ -3518,6 +3588,8 @@ export default function (component) {
         if (!drag.travelled) openFloor(item)
         return
       }
+      // 문턱을 넘은 끌기는 누르기가 아니다(전체 보기에서 화면이 움직이지 않아도) — 고르지도 아래 표를 좁히지도 않는다.
+      if (drag.travelled) return
       select(drag.id)
       notePick()
       return
