@@ -2,9 +2,9 @@
 
 """시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
-저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열한 종
-(표시순서·공정 표시명·비교 시나리오·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·
-확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
+저장소 연결과 불변 리비전 스냅샷, 그리고 시나리오에 종속되지 않는 공용 프로필 열두 종
+(표시순서·공정 표시명·비교 시나리오·주요 Case·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·
+주요공정·확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다.
 
 DB 를 읽는 캐시는 모두 키에 쓰기 세대(`WriteGeneration`)를 둔다 — `clear_*` 가 비우기 전에 그 종류의
 세대를 올린다(`_bump_write_generation`).
@@ -27,6 +27,7 @@ from capa_simulation.persistence.models import (
     GlobalDisplayOrder,
     GlobalExecutionCapacity,
     GlobalKeyProcess,
+    GlobalMainCases,
     GlobalPastData,
     GlobalProcessRename,
     GlobalSecurementThreshold,
@@ -72,6 +73,7 @@ _write_generations: dict[str, int] = {
         "display_order",
         "process_rename",
         "comparison_scenario",
+        "main_cases",
         "advance_load",
         "advance_shipment",
         "securement_threshold",
@@ -345,6 +347,33 @@ def clear_global_comparison_scenario_cache() -> None:
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
+def _load_global_main_cases_payload(
+    database_path: str, generation: WriteGeneration
+) -> dict[str, Any]:
+    del generation
+    profile = get_scenario_repository(database_path).load_global_main_cases()
+    return _payload(profile, GlobalMainCases)
+
+
+def load_global_main_cases(database_path: str) -> GlobalMainCases:
+    """주요 Case(Case1·Case2) 공용 프로필. 모델 클래스는 캐시에 싣지 않는다.
+
+    키는 DB 경로와 쓰기 세대다 — version 은 DB 를 읽어야 알 수 있어 키가 될 수 없다. 그래서 다른
+    공용 프로필처럼 저장한 호출부가 `clear_global_main_cases_cache()` 로 비우고, 그 뒤의 읽기가 새
+    version 을 받는다. 그 version 이 이 프로필을 쓰는 화면 캐시의 키다.
+    """
+    return GlobalMainCases(
+        **_load_global_main_cases_payload(database_path, _write_generation("main_cases"))
+    )
+
+
+def clear_global_main_cases_cache() -> None:
+    """주요 Case 프로필만 비운다. 어떤 `RQ_*` 표에도 얹히지 않아 리비전 스냅샷은 건드리지 않는다."""
+    _bump_write_generation("main_cases")
+    _load_global_main_cases_payload.clear()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_advance_load_payload(
     database_path: str, generation: WriteGeneration
 ) -> dict[str, Any]:
@@ -590,6 +619,7 @@ def clear_scenario_repository() -> None:
     _load_global_advance_shipment_payload.clear()
     _load_global_securement_threshold_payload.clear()
     _load_global_comparison_scenario_payload.clear()
+    _load_global_main_cases_payload.clear()
     _load_global_execution_capacity_payload.clear()
     _load_global_top5_band_payload.clear()
     _load_global_key_process_payload.clear()

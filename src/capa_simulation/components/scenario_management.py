@@ -73,6 +73,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
+    clear_global_main_cases_cache,
     clear_global_securement_threshold_cache,
     clear_scenario_snapshot_cache,
     get_scenario_repository,
@@ -526,9 +527,11 @@ def _save_list_edits(
         # 원천명·출처 메모에 옛 이름이 남는다. 비교 대상이 이 시나리오면 저장소가 그 프로필
         # version 을 올렸다 — 입장 화면 Summary GAP 풍선의 이름이 바뀐다(캐시는 경로 키라 따로
         # 비우고, 이 세션은 곧바로 다시 확인한다). 머리 띠의 시나리오명은 활성화 때 떠 둔 값이다.
+        # 주요 Case 프로필도 같은 까닭으로 version 이 올랐다.
         clear_scenario_snapshot_cache()
         forget_derived_sources()
         clear_global_comparison_scenario_cache()
+        clear_global_main_cases_cache()
         forget_intro_summary_check()
         for scenario_id, (_, renamed) in renames.items():
             rename_active_scenario_label(scenario_id, renamed)
@@ -1317,8 +1320,10 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         return
     clear_scenario_snapshot_cache()
     forget_derived_sources()
-    # 저장소가 이 시나리오를 가리키던 공용 비교 대상을 비웠다. 캐시는 경로 키라 따로 비운다.
+    # 저장소가 이 시나리오를 가리키던 공용 비교 대상·주요 Case 를 비웠다. 캐시는 경로 키라 따로
+    # 비운다.
     clear_global_comparison_scenario_cache()
+    clear_global_main_cases_cache()
     # 입장 화면 Summary 의 GAP 도 그 비교 대상을 쓴다 — 이 세션은 곧바로 다시 확인한다.
     forget_intro_summary_check()
     # 보관한 시나리오의 공식버전이 판정 기준의 미저장 기본값을 정했을 수 있다.
@@ -1436,6 +1441,7 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     clear_scenario_snapshot_cache()
     forget_derived_sources()
     clear_global_comparison_scenario_cache()
+    clear_global_main_cases_cache()
     # 입장 화면 Summary 의 GAP 도 그 비교 대상을 쓴다 — 이 세션은 곧바로 다시 확인한다.
     forget_intro_summary_check()
     # 지운 시나리오의 공식버전이 판정 기준의 미저장 기본값을 정했을 수 있다.

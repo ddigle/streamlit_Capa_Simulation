@@ -660,6 +660,7 @@ _PROFILE_KINDS = (
     "display_order",
     "process_rename",
     "comparison_scenario",
+    "main_cases",
     "advance_load",
     "advance_shipment",
     "securement_threshold",

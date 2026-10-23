@@ -72,6 +72,32 @@ class GlobalComparisonScenario:
 
 
 @dataclass(frozen=True)
+class GlobalMainCases:
+    """HOME 주요 Case(Case1·Case2)로 지정한 시나리오·리비전 짝 둘(마이그레이션 0036).
+
+    슬롯은 셋으로 고정이고 슬롯 1 은 늘 지금 최신 공식버전이라 여기 담지 않는다 — 공식 지정은
+    시나리오 관리 한 곳이다. 프로필이 한 번도 저장되지 않은 상태가 정상이다. 그때는 `version=0`,
+    `updated_at=None`, 네 식별자가 `None` 이다. 리비전만 있고 시나리오가 없는 짝은 저장하지 않는다.
+    """
+
+    version: int
+    source: str
+    updated_at: datetime | None
+    case1_scenario_id: str | None = None
+    case1_revision_id: str | None = None
+    case2_scenario_id: str | None = None
+    case2_revision_id: str | None = None
+
+    def case(self, case_no: int) -> tuple[str | None, str | None]:
+        """Case 번호(1·2)의 (시나리오 id, 리비전 id)."""
+        if case_no == 1:
+            return self.case1_scenario_id, self.case1_revision_id
+        if case_no == 2:
+            return self.case2_scenario_id, self.case2_revision_id
+        raise ValueError(f"주요 Case 번호는 1·2 뿐입니다: {case_no}")
+
+
+@dataclass(frozen=True)
 class GlobalAdvanceLoad:
     """Scenario-independent advance-load profile in 억Gb per plan month.
 

@@ -1182,7 +1182,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/execution_capacity_store.py` — 공용 확보율 보정 프로필의 조회·교체 SQL.
 - `src/capa_simulation/persistence/key_process_store.py` — 공용 주요공정 프리셋 프로필(`0024`·`0028`)의 조회·교체 SQL.
   맨 앞 프리셋이 기본, 공정 차례가 행 순서다.
-- `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·공지·GAP 비교 대상의 조회·교체·해제 SQL.
+- `src/capa_simulation/persistence/home_profile_store.py` — HOME 공용 Top5 구간·공지·GAP 비교 대상(`0020`)·주요
+  Case(`0036`)의 조회·교체·해제 SQL.
+  - 주요 Case 는 한 행에 Case 마다 칸 둘(`case1_scenario_id`…)이다. 칸 이름이 `scenario_id` 가 아니라 `_owned_tables`
+    자동 발견에 걸리지 않고, 보관·영구 삭제는 그 시나리오를 가리키는 Case 만 비우며(`clear_global_main_cases`) 이름
+    바꾸기는 version 만 올린다(`touch_global_main_cases`). Case 하나 교체는 다른 Case 를 같은 트랜잭션에서 옮겨 적는다.
 - `src/capa_simulation/persistence/voc_store.py` — VOC 게시판 글·답글의 조회·삽입·삭제 SQL.
 - `src/capa_simulation/persistence/shortening_baseline_store.py` — 필요 단축 일정 기준선(설비 DB `0021`)의
   넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`).
@@ -1201,7 +1205,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 경고(`page_bootstrap.render_schema_ahead_warning`)는
     시뮬레이션 DB 는 `app.py`, 설비 DB 는 그 DB 를 여는 화면이 세운다.
 - `src/capa_simulation/persistence/migration_runner.py`, `equipment_migration_runner.py` — 각 DB 를 엔진에 묶는 진입점.
-- `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열한 종과 설비
+- `src/capa_simulation/persistence/cache.py`, `equipment_cache.py` — 불변 리비전 스냅샷·공용 프로필 열두 종과 설비
   스냅샷·층/FAB 도면·RawData 이력·필요 단축 일정 조건·기준선의 Streamlit 캐시 경계.
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).
@@ -1416,8 +1420,8 @@ RQ_MODULE
     다시 만들므로, 캐시되는 모델에 필드를 더하면 기본값을 둔다(옛 payload 를 `**payload` 로 다시 만들 수 있게).
 22. **캐시 무효화는 DB 를 바꾼 호출부 몫이다.** 공용 프로필 캐시는 DB 경로 키라 `version` 이 올라도 비지 않는다
     — 표시순서 교체는 `clear_global_display_order_cache()`, 시나리오 이름 변경·보관·복원·삭제는
-    `clear_scenario_snapshot_cache()`, 공용 비교 대상을 비우는 보관·삭제는 `clear_global_comparison_scenario_cache()`
-    까지 부른다. 입장 화면 Summary 가 읽는 공용 프로필·시나리오를 바꾸는 저장 길은
+    `clear_scenario_snapshot_cache()`, 공용 비교 대상·주요 Case 를 비우거나 version 을 올리는 이름 변경·보관·삭제는
+    `clear_global_comparison_scenario_cache()`·`clear_global_main_cases_cache()` 까지 부른다. 입장 화면 Summary 가 읽는 공용 프로필·시나리오를 바꾸는 저장 길은
     `intro_summary.forget_intro_summary_check` 도 부른다(새 길은 `tests/test_summary_recheck_paths.py` 에 더한다).
 23. **모든 화면에서 회차마다 그리는 공통 요소는 DB 를 읽지 않는다.** 머리 띠·사이드바 조건 줄은 활성화·확인 때
     세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`intro_summary.latest_official_revision`)만 읽고

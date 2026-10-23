@@ -63,6 +63,7 @@ from capa_simulation.persistence.models import (
     GlobalDisplayOrder,
     GlobalExecutionCapacity,
     GlobalKeyProcess,
+    GlobalMainCases,
     GlobalPastData,
     GlobalProcessRename,
     GlobalSecurementThreshold,
@@ -678,6 +679,62 @@ class DuckDBScenarioRepository:
                 connection, chosen_scenario, chosen_revision, source=source_label
             )
         return self.load_global_comparison_scenario()
+
+    def load_global_main_cases(self) -> GlobalMainCases:
+        """HOME 주요 Case(Case1·Case2) 공용 프로필. 미저장이면 네 칸이 빈 version 0 이다.
+
+        다른 공용 프로필과 같은 이유로 예외를 내지 않는다 — 미저장이 정상이다.
+        """
+        with self._connect() as connection:
+            return home_profile_store.load_global_main_cases(connection)
+
+    def replace_global_main_case(
+        self,
+        case_no: int,
+        scenario_id: str | None,
+        revision_id: str | None,
+        *,
+        source: str,
+        expected_version: int | None = None,
+    ) -> GlobalMainCases:
+        """Case 하나(1·2)의 시나리오·리비전 짝을 바꾼다. 다른 Case 는 그대로이고 version 이 오른다.
+
+        **지정 해제(둘 다 `None`)도 정상 저장이다.** 리비전만 있고 시나리오가 없는 짝은 저장하지
+        않는다 — 비교 대상과 같은 까닭이다. 값이 실제 시나리오·리비전인지는 화면이 목록과 견줘
+        거른다(비교 대상과 같다). `expected_version` 을 주면 그 사이 남이 저장했을 때 쓰지 않고
+        `ProfileVersionConflict` 를 올린다. 캐시는 경로 키라 저장한 호출부가
+        `clear_global_main_cases_cache()` 로 비운다.
+        """
+        if case_no not in (1, 2):
+            raise ValueError(f"주요 Case 번호는 1·2 뿐입니다: {case_no}")
+        chosen_scenario = (
+            None if scenario_id is None else required_text(scenario_id, "주요 Case 시나리오")
+        )
+        chosen_revision = (
+            None if revision_id is None else required_text(revision_id, "주요 Case 리비전")
+        )
+        if chosen_revision is not None and chosen_scenario is None:
+            raise ValueError("주요 Case 리비전만 저장할 수 없습니다. 시나리오를 함께 주세요.")
+        source_label = required_text(source, "주요 Case 변경 출처")
+        with self._write_transaction() as connection:
+            home_profile_store.replace_global_main_case(
+                connection,
+                case_no,
+                chosen_scenario,
+                chosen_revision,
+                source=source_label,
+                expected_version=expected_version,
+            )
+        return self.load_global_main_cases()
+
+    def clear_global_main_case_scenario(self, scenario_id: str) -> None:
+        """이 시나리오를 가리키는 Case 만 비운다. 가리키는 Case 가 없으면 쓰지 않는다.
+
+        보관·영구 삭제는 같은 트랜잭션에서 스스로 비운다. 이것은 그 밖의 길로 목록에서 사라진
+        시나리오를 화면(`home_main_cases`)이 만났을 때 쓴다 — 조건부 UPDATE 라 몇 번 불러도 같다.
+        """
+        with self._write_transaction() as connection:
+            home_profile_store.clear_global_main_cases(connection, scenario_id)
 
     def load_global_advance_load(self) -> GlobalAdvanceLoad:
         """Load the scenario-independent advance-load profile.
@@ -1315,6 +1372,7 @@ class DuckDBScenarioRepository:
                 [scenario_id],
             )
             home_profile_store.clear_global_comparison_scenario(connection, scenario_id)
+            home_profile_store.clear_global_main_cases(connection, scenario_id)
 
     def restore_scenario(self, scenario_id: str) -> None:
         """보관을 풀어 목록으로 되돌린다."""
@@ -1377,8 +1435,8 @@ class DuckDBScenarioRepository:
         `renames` 는 시나리오 id → (보고 고친 지금 이름, 새 이름)이다. 이름마다 비교 후 쓰기다 —
         그 사이 다른 사용자가 먼저 바꿨으면 거부한다. 새 이름은 앞뒤 공백을 떼고, 이 저장이 끝난
         뒤의 이름(보관본 포함)과 겹치면 거부한다 — 두 시나리오의 이름을 맞바꾸는 것은 된다.
-        이름을 바꾼 시나리오는 `rename_scenario` 처럼 「최근 수정」이 오르고 비교 프로필 version 이
-        오른다.
+        이름을 바꾼 시나리오는 `rename_scenario` 처럼 「최근 수정」이 오르고 비교·주요 Case 프로필
+        version 이 오른다.
 
         `order` 는 활성 시나리오 전체의 새 차례다. `expected_order` 는 그 순서 편집을 시작할 때의
         저장 차례다 — 지금 차례가 그것과 다르면(다른 곳에서 더하거나 빼거나 순서를 바꿈) 남의
@@ -1438,6 +1496,7 @@ class DuckDBScenarioRepository:
                     [label, scenario_id],
                 )
                 home_profile_store.touch_global_comparison_scenario(connection, scenario_id)
+                home_profile_store.touch_global_main_cases(connection, scenario_id)
             if order is not None:
                 for position, scenario_id in enumerate(order, start=1):
                     connection.execute(
@@ -1470,7 +1529,9 @@ class DuckDBScenarioRepository:
             if changed is None:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
             # 비교 대상의 이름이 바뀐 것을 입장 화면 Summary GAP 이 알게 한다(그 값의 키가 version).
+            # 주요 Case 슬롯 글자도 시나리오 이름을 쓴다.
             home_profile_store.touch_global_comparison_scenario(connection, scenario_id)
+            home_profile_store.touch_global_main_cases(connection, scenario_id)
         for scenario in self.list_scenarios():
             if scenario.scenario_id == scenario_id:
                 return scenario
@@ -1838,8 +1899,10 @@ class DuckDBScenarioRepository:
                         revision_ids,
                     )
             # 공용 프로필은 소유가 아니라 참조라 위 자동 발견에서 빠져 있다. 가리키고
-            # 있었다면 여기서 비운다.
+            # 있었다면 여기서 비운다. 주요 Case 표는 `case1_scenario_id` 처럼 칸 이름이 달라
+            # 자동 발견에 걸리지 않는다(0035 기록 표와 같은 방식).
             home_profile_store.clear_global_comparison_scenario(connection, scenario_id)
+            home_profile_store.clear_global_main_cases(connection, scenario_id)
             connection.execute("DELETE FROM app_meta.scenario WHERE scenario_id = ?", [scenario_id])
 
     def count_official_releases(self, scenario_id: str) -> int:
