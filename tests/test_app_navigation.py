@@ -720,6 +720,141 @@ def test_the_header_reads_no_database_on_a_rerun(
     assert calls == []
 
 
+def test_the_home_main_case_chips_read_no_database_on_a_rerun(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """규칙 23 — HOME 제목 줄의 주요 Case 칩도 회차마다 DB 를 읽지 않는다.
+
+    첫 회차만 주요 Case 재료를 쓰기 세대 키 캐시(`load_main_case_targets`)에 채우고, 다음 회차는
+    저장소 메서드도 DuckDB 연결도 부르지 않는다. 공식 칩은 입장 화면 요약이 세션에 둔 값이다.
+    """
+    import capa_simulation.components.home_main_case_chips as chips
+    import capa_simulation.persistence._sql_helpers as sql_helpers
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    runs: list[list[str]] = []
+    watching: list[int] = []
+    for name, value in list(vars(DuckDBScenarioRepository).items()):
+        if name.startswith("__") or not callable(value):
+            continue
+
+        def counted(
+            *args: object, __name: str = name, __func: Any = value, **kwargs: object
+        ) -> Any:
+            if watching:
+                runs[-1].append(__name)
+            return __func(*args, **kwargs)
+
+        monkeypatch.setattr(DuckDBScenarioRepository, name, counted)
+    original_connect = sql_helpers.connect
+
+    def counted_connect(*args: Any, **kwargs: Any) -> Any:
+        if watching:
+            runs[-1].append("connect")
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sql_helpers, "connect", counted_connect)
+    original_chips = chips.render_main_case_chips
+
+    def watched_chips(database_path: str) -> None:
+        runs.append([])
+        watching.append(1)
+        try:
+            original_chips(database_path)
+        finally:
+            watching.pop()
+
+    monkeypatch.setattr(chips, "render_main_case_chips", watched_chips)
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app = app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert len(runs) == 2
+    # 첫 회차는 정말 읽는다 — 이 시험이 칩 안의 읽기를 잡는다는 표지다.
+    assert "load_global_main_cases" in runs[0]
+    assert runs[1] == []
+
+
+def test_the_home_main_case_chips_follow_the_real_official_check(_app: AppTest) -> None:
+    """실제 `app.py` 배선 — 입장 화면 요약의 공식버전 확인 → HOME 제목 줄 칩 → 사이드바 불러오기.
+
+    새 세션은 공식버전으로 열리므로 공식 칩이 칠해져 있다(`latest_official_identity`). Case1 을
+    지정해 누르면 활성 시나리오와 사이드바 칸이 그 리비전이 되고, 켜 둔 HOME 토글이 기본값으로
+    돌아온다(콜백이 토글 위젯보다 먼저 적는다). 미지정 Case2 는 `Preference` 탭을 연다.
+    """
+    import capa_simulation.settings as settings
+    from capa_simulation.components.home_main_case_chips import (
+        CASE1_CHIP_KEY,
+        CASE2_CHIP_KEY,
+        OFFICIAL_CHIP_KEY,
+    )
+    from capa_simulation.home_state import (
+        EDP_TOGGLE_KEY,
+        HOME_PREFERENCE_TAB,
+        HOME_TAB_KEY,
+        HOME_TOGGLE_DEFAULTS,
+    )
+    from capa_simulation.persistence.cache import clear_global_main_cases_cache
+    from capa_simulation.persistence.models import ScenarioCreate
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.scenario_activation import (
+        ACTIVE_PERSISTED_REVISION_ID_KEY,
+        ACTIVE_PERSISTED_SCENARIO_ID_KEY,
+    )
+
+    def chip(app: AppTest, key: str) -> tuple[str, str, bool]:
+        button = app.button(key=key)
+        return str(button.label), str(button.proto.type), bool(button.disabled)
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    repository = DuckDBScenarioRepository(settings.DUCKDB_PATH)
+    release = repository.latest_official_release()
+    assert release is not None
+    assert chip(app, OFFICIAL_CHIP_KEY) == (f"공식 v{release.release_no}", "primary", False)
+    assert chip(app, CASE2_CHIP_KEY) == ("Case2", "secondary", False)
+
+    base = repository.load_revision(release.revision_id)
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="증설안",
+            source_simulation_code="CASE",
+            source_simulation_name="증설안",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        {name: frame.copy() for name, frame in base.tables.items()},
+        base.preset,
+    )
+    repository.replace_global_main_case(
+        1, created.scenario.scenario_id, created.revision.revision_id, source="시험"
+    )
+    clear_global_main_cases_cache()
+    toggled = not HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY]
+    app.session_state[EDP_TOGGLE_KEY] = toggled
+    app = app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[EDP_TOGGLE_KEY] is toggled
+
+    app = app.button(key=CASE1_CHIP_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert (
+        app.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY],
+        app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY],
+    ) == (created.scenario.scenario_id, created.revision.revision_id)
+    assert app.button(key=SCENARIO_FIELD_KEY).label == "증설안 · r1"
+    assert app.session_state[EDP_TOGGLE_KEY] is HOME_TOGGLE_DEFAULTS[EDP_TOGGLE_KEY]
+    assert chip(app, CASE1_CHIP_KEY)[1] == "primary"
+    assert chip(app, OFFICIAL_CHIP_KEY)[1] == "secondary"
+
+    app = app.button(key=CASE2_CHIP_KEY).click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[HOME_TAB_KEY] == HOME_PREFERENCE_TAB
+
+
 def test_the_bootstrap_error_screen_still_shows_the_app_name_in_the_header(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
