@@ -1,21 +1,30 @@
-# Purpose: Space 편집기 Main 설비 모듈 묶음의 바둑판 규칙과 적용 정규화를 검사한다.
+# Purpose: Space 편집기 Main 설비 모듈 묶음의 바둑판 규칙·JS 대조·적용 정규화·편집 길을 검사한다.
 
 """모듈 묶음 = 편집기에 실린 호기 가운데 Main 설비가 같은 것이 둘 이상(2026-10-23 사용자 요청).
 
 사람이 고치는 것은 묶음 범위뿐이고 안의 모듈은 범위를 바둑판으로 똑같이 나눈 칸에 자동으로
-선다. 규칙의 정본은 `services/space_layout_edit.tile_module_group` 이고, 적용 때
-`parse_editor_apply` 가 같은 규칙으로 바로잡는다.
+선다. 규칙의 정본은 `services/space_layout_edit.tile_module_group` 이고 편집기 JS(`editor.js` 의
+`// <module-tiling>` 구획)가 같은 값을 내는지 node 로 떼어 돌려 대조한다. node·bun 이 없는
+PC 에서는 그 대조만 건너뛰고, GitHub Actions 에서는 실패한다(`test_intro_scene_behavior` 와 같은
+규칙). 브라우저 조작 자체는 AppTest 가 못 돌리므로 모듈 하나만 편집하는 길이 막혔는지는 자산
+글자로 붙잡는다.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import random
+import re
+import shutil
+import subprocess
 from typing import Any
 
 import pandas as pd
 import pytest
 from test_space_layout_edit import CANVAS, FLOOR, _master, _parse, _status
 
+from capa_simulation.components import space_layout_editor
 from capa_simulation.services.equipment_validation import prepare_equipment_master
 from capa_simulation.services.space_layout_edit import (
     UnitChange,
@@ -26,6 +35,10 @@ from capa_simulation.services.space_layout_edit import (
     tile_module_group,
 )
 
+ASSETS = space_layout_editor._ASSETS
+JS = (ASSETS / "editor.js").read_text(encoding="utf-8")
+CSS = (ASSETS / "editor.css").read_text(encoding="utf-8")
+HTML = (ASSETS / "editor.html").read_text(encoding="utf-8")
 TICKS = 10
 
 
@@ -323,3 +336,195 @@ def test_a_regridded_group_never_leaves_the_canvas() -> None:
 
     with pytest.raises(ValueError, match="묶음 범위가 편집 영역"):
         _parse({"changes": thin}, master, editor_items=items)
+
+
+# ---------------------------------------------------------------- JS 와 대조(node)
+
+_SECTION = re.compile(r"// <module-tiling>\n(?P<body>.*?)\n\s*// </module-tiling>", re.S)
+_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  tiles: input.tiles.map((c) => tileModuleGroup(c.box, c.names, 10)),
+  sorted: input.sorted.map((names) => [...names].sort(naturalCompare)),
+  grids: input.grids.map((n) => moduleGrid(n)),
+  trays: input.trays.map((sizes) => trayModuleRange(sizes, 10)),
+}))
+"""
+
+
+def _runtime() -> str | None:
+    return shutil.which("node") or shutil.which("bun")
+
+
+def _run_js(payload: dict[str, Any]) -> dict[str, Any]:
+    runtime = _runtime()
+    if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다 — 모듈 묶음 JS 대조를 건너뛸 수 없다")
+        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    match = _SECTION.search(JS)
+    assert match, "editor.js 에 // <module-tiling> 구획이 없습니다"
+    completed = subprocess.run(
+        [runtime, "-e", match.group("body") + _RUNNER],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result: dict[str, Any] = json.loads(completed.stdout)
+    return result
+
+
+def _random_name(rnd: random.Random) -> str:
+    parts = ["SMP", "-", "GRP", "EQ", "12", "3", "007", "a", "B", "c", "가", "나", "_", "0"]
+    return "".join(rnd.choice(parts) for _ in range(rnd.randint(1, 6)))
+
+
+def test_the_editor_js_tiles_exactly_like_python() -> None:
+    """무작위 범위(정밀도 밖 소수 포함)·이름 수백 건에서 JS `tileModuleGroup`·`naturalCompare`·
+    `moduleGrid`·`trayModuleRange` 가 파이썬과 같은 값을 낸다 — 좌표는 부동소수까지 같다."""
+    rnd = random.Random(1023)
+    tiles: list[dict[str, Any]] = []
+    for _ in range(600):
+        names = sorted({_random_name(rnd) for _ in range(rnd.randint(1, 12))})
+        rnd.shuffle(names)
+        box = {
+            "x": round(rnd.uniform(-5, 400), rnd.choice([0, 1, 2, 3])),
+            "y": round(rnd.uniform(-5, 400), rnd.choice([0, 1, 2, 3])),
+            "w": round(rnd.uniform(0, 150), rnd.choice([0, 1, 2, 3])),
+            "h": round(rnd.uniform(0, 150), rnd.choice([0, 1, 2, 3])),
+        }
+        tiles.append({"box": box, "names": names})
+    sorted_cases = [[_random_name(rnd) for _ in range(rnd.randint(0, 9))] for _ in range(300)]
+    trays = [
+        [
+            {"w": round(rnd.uniform(0.1, 30), 1), "h": round(rnd.uniform(0.1, 30), 1)}
+            for _ in range(rnd.randint(1, 9))
+        ]
+        for _ in range(200)
+    ]
+    grids = list(range(1, 50))
+
+    result = _run_js({"tiles": tiles, "sorted": sorted_cases, "grids": grids, "trays": trays})
+
+    for case, spots in zip(tiles, result["tiles"], strict=True):
+        box = case["box"]
+        expected = tile_module_group((box["x"], box["y"], box["w"], box["h"]), case["names"])
+        assert [spot["name"] for spot in spots] == list(expected), case
+        assert {spot["name"]: (spot["x"], spot["y"], spot["w"], spot["h"]) for spot in spots} == (
+            expected
+        ), case
+    for names, ordered in zip(sorted_cases, result["sorted"], strict=True):
+        assert ordered == sorted(names, key=natural_name_key), names
+    assert [tuple(grid) for grid in result["grids"]] == [module_grid(n) for n in grids]
+    for sizes, tray in zip(trays, result["trays"], strict=True):
+        cols, rows = module_grid(len(sizes))
+        cell_w = max(_ticks(size["w"]) for size in sizes)
+        cell_h = max(_ticks(size["h"]) for size in sizes)
+        assert (tray["w"], tray["h"]) == (cols * cell_w / TICKS, rows * cell_h / TICKS), sizes
+
+
+def test_a_group_dropped_from_the_tray_spans_the_old_tray_grid_and_is_split_evenly() -> None:
+    """서랍에서 놓는 모듈 묶음의 범위는 지금까지의 서랍 격자와 같다(열 × 가장 큰 모듈 폭, 행 ×
+    가장 큰 모듈 높이). 안은 그 범위를 똑같이 나눈다 — 모듈마다 제 크기가 아니라 칸 크기다."""
+    sizes = [
+        {"w": 12.0, "h": 7.0},
+        {"w": 10.0, "h": 8.0},
+        {"w": 11.5, "h": 7.0},
+        {"w": 9.0, "h": 6.0},
+    ]
+    result = _run_js({"tiles": [], "sorted": [], "grids": [], "trays": [sizes]})
+
+    assert result["trays"] == [{"w": 24.0, "h": 16.0}]
+    tiles = tile_module_group((0.0, 0.0, 24.0, 16.0), ["G-1A", "G-1B", "G-1C", "G-1D"])
+    assert {tile[2:] for tile in tiles.values()} == {(12.0, 8.0)}
+    place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
+    assert "trayModuleRange(sizes, SCALE)" in place
+    assert "layModules(piece.mods, fitRange(spot, piece.mods.length))" in place
+
+
+# ---------------------------------------------------------------- 모듈 하나만 고치는 길(자산 글자)
+
+
+def _between(start: str, end: str) -> str:
+    return JS[JS.index(start) : JS.index(end, JS.index(start))]
+
+
+def test_no_path_moves_or_resizes_a_single_module() -> None:
+    """Alt+끌기 단독 이동이 없고, 모듈 상자의 손잡이는 숨고 눌려도 옮기기이며, 크기는 묶음 범위
+    테두리의 손잡이(`mode: 'range'`)로만 바꾼다. 끌기·방향키·숫자 칸은 모두 `movePlan`(모듈
+    묶음은 범위)을 지난다."""
+    down = _between("svg.onpointerdown = (event) => {", "svg.onpointermove = (event) => {")
+    assert "altKey" not in down and "Alt+끌기" not in JS
+    assert "sle-range-handle" in down and "mode: 'range'" in down
+    assert "const mode = onlyThis && dir && !moduleMembers(item) ? 'resize' : 'move'" in down
+    assert "movePlan(selectedItems())" in down
+    move = _between("svg.onpointermove = (event) => {", "svg.onpointerup = ")
+    assert (
+        "layModules(g.mods, resizedBox(g.range, drag.dir, dx, dTop, cols / SCALE, rows / SCALE))"
+        in (move)
+    )
+    assert re.search(r"\.sle-unit\.is-module \.sle-handle \{ display: none; \}", CSS)
+    assert "group.classList.toggle('is-module', (counts.get(item.group) || 0) >= 2)" in JS
+    keys = _between("host.onkeydown = (event) => {", "for (const input of fieldInputs) {")
+    assert "else moveItems(standing, ax, ay)" in keys and "setSizes(standing," in keys
+    fields = _between("for (const input of fieldInputs) {", "const selectedMark = () => {")
+    assert "movePlan(standing).box" in fields and "setSizes(standing," in fields
+    sizes = _between("function setSizes(list, patchOf) {", "function retileModules(item) {")
+    assert "layModules(mods, fitRange({ ...range, ...patchOf(range) }, mods.length))" in sizes
+
+
+def test_a_group_is_picked_and_dropped_whole() -> None:
+    """선택에는 묶음당 한 대만 남고(`onePerGroup` — 고르기·사각형·전체 선택·서랍),
+    Shift/Ctrl+클릭은 묶음째 더하고 뺀다. 빼기·다른 층 보내기는 묶음 전체다. 서랍은 도면에 선
+    묶음의 좌표 없는 모듈을 따로 내놓지 않는다."""
+    select = _between("function setSelection(ids, primary) {", "function select(id) {")
+    assert "onePerGroup(" in select
+    assert "S.selection = new Set(onePerGroup(drag.additive" in JS
+    down = _between("svg.onpointerdown = (event) => {", "svg.onpointermove = (event) => {")
+    assert "const bundle = (moduleMembers(item) || [item]).map((m) => m.id)" in down
+    remove = _between("function removeItems(list) {", "function sendItems(list, floor) {")
+    assert "expanded(list.filter((m) => isUnit(m) && !m.created))" in remove
+    send = _between("function sendItems(list, floor) {", "const renameTarget = (item) => {")
+    assert "for (const m of members(item))" in send
+    keep = _between("function trayKeep() {", "function trayEntries(keep) {")
+    assert "!(m.group && standing.has(m.group))" in keep
+    assert JS.count("trayEntries(trayKeep())") == 3
+
+
+def test_the_inspector_edits_the_group_range_and_offers_to_regrid_an_old_group() -> None:
+    """검사 칸의 X·Y·폭·높이는 묶음 범위다. 바둑판이 아닌 옛 묶음이면 「n등분이 아님 …」 한 줄과
+    「범위에 맞춰 n등분」 단추가 선다. 옛 묶음은 읽을 때 바꾸지 않는다(처음 그리기·같은 epoch
+    합치기에 다시 놓기가 없다)."""
+    sync = _between("function syncInspector() {", "function hasPendingEdits() {")
+    assert "input.value = String(extent(single)[field])" in sync
+    assert "moduleTile.hidden = !loose" in sync and "`범위에 맞춰 ${loose.length}등분`" in sync
+    caption = _between("function moduleCaption(item) {", "function syncInspector() {")
+    assert "등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다" in caption
+    assert "moduleTile.onclick" in JS and "retileModules(chosen[0])" in JS
+    init = _between("function initFromData() {", "function adoptAsOf(incoming) {")
+    merge = _between(
+        "// ------------------------------------------------------------- 회차마다",
+        "svg.onmousedown",
+    )
+    assert "layModules(" not in init and "layModules(" not in merge
+
+
+def test_one_group_edit_is_one_undo_step() -> None:
+    """묶음 조작 하나는 모듈 모두를 한 기록(`commit`)에 담는다 — 되돌리기 한 번에 넷이 같이
+    돌아온다."""
+    for name, end in (
+        ("function moveItems(list, dx, dy) {", "function setSizes(list, patchOf) {"),
+        ("function setSizes(list, patchOf) {", "function retileModules(item) {"),
+        ("function retileModules(item) {", "function setMarkProps(item, patch) {"),
+        ("function placeFromTray(lead, list, p, name) {", "function addMark(kind, at) {"),
+    ):
+        body = _between(name, end)
+        assert body.count("commit(") == 1, name
+    up = _between("svg.onpointerup = ", "svg.onlostpointercapture")
+    assert (
+        ".filter((e) => !sameSpot(e.before, S.items.get(e.id)))" in up and "commit(entries)" in up
+    )

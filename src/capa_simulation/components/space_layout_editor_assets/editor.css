@@ -154,6 +154,11 @@
 /* 여러 개를 고르면 크기 손잡이는 숨긴다 — 크기는 숫자 칸·Ctrl+방향키로 함께 바꾼다. */
 .sle-canvas.is-multi .sle-handle { opacity: 0 !important; pointer-events: none !important; }
 .sle-group-box { fill: none; stroke: var(--sle-accent); stroke-width: 1.5; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* Main 설비 모듈 묶음: 모듈 상자에는 손잡이가 없고(모듈 하나의 크기는 고치지 못한다) 고른 묶음의 범위 테두리에만 손잡이가
+   선다. 테두리는 범위 그대로(여백 없이) 실선이다. */
+.sle-unit.is-module .sle-handle { display: none; }
+.sle-group-box.is-range { stroke-width: 2; stroke-dasharray: none; }
+.sle-range-handle { opacity: 1; pointer-events: auto; }
 .sle-marquee { fill: var(--sle-accent); fill-opacity: 0.08; stroke: var(--sle-accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 
 /* ---- 팔레트 ---- */
@@ -274,7 +279,7 @@
 .sle-inspector-ext > *, .sle-markprops-kind > * { grid-area: 1 / 1; justify-self: start; }
 .sle-markprops { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .sle-zone-props { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden] {
+.sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden], .sle-module-tile[hidden] {
   display: inline-flex; visibility: hidden; pointer-events: none;
 }
 /* 고른 호기 하나의 이름(설비명, 모듈 묶음이면 Main 설비). 층 보내기 칸 안이라 그 칸과 함께 숨는다. */

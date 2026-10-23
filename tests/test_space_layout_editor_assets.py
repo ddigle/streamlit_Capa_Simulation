@@ -82,7 +82,8 @@ def test_a_plain_wheel_scrolls_the_page_even_when_zoomed() -> None:
     body = JS[start : JS.index("\n  }\n", start)]
     zoom = body.index("if (event.ctrlKey || event.metaKey) {")
     guard = body.index(
-        "const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize')"
+        "const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize' "
+        "|| S.drag.mode === 'range')"
     )
     pan = body.index("panBy(")
 
@@ -138,8 +139,11 @@ def test_the_inspector_keeps_its_size_whatever_is_selected() -> None:
     assert ext < HTML.index('class="sle-field sle-sendto"') < HTML.index('class="sle-markprops"')
     hidden = _rule(
         ".sle-markprops[hidden], .sle-sendto[hidden], "
-        ".sle-zone-only[hidden], .sle-mark-rotate[hidden]"
+        ".sle-zone-only[hidden], .sle-mark-rotate[hidden], .sle-module-tile[hidden]"
     )
+    # 모듈 묶음의 「범위에 맞춰 n등분」 단추도 층 보내기 칸 안에서 자리를 남긴 채 숨는다.
+    sendto = HTML[HTML.index('class="sle-field sle-sendto"') : HTML.index('class="sle-markprops"')]
+    assert 'class="sle-module-tile" hidden' in sendto
     assert "visibility: hidden" in hidden and "display: none" not in hidden
     # 이름 칸은 글자 길이와 무관한 정한 폭으로 줄을 나눈다.
     title = _rule(".sle-inspector > .sle-panel-title")
@@ -194,7 +198,7 @@ def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:
     열려 있는 동안만 서랍 폭만큼 더 옮길 수 있다 — 접으면 제자리로 돌아온다."""
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
     assert "setDrawer(false)" not in place
-    assert "revealFromTray(list)" in place
+    assert "revealFromTray(placed)" in place
     assert "function trayReserve()" in JS
     clamp = JS[JS.index("function clampView(") : JS.index("function applyView(")]
     assert "trayReserve()" in clamp and "center + reserve" in clamp
@@ -422,7 +426,7 @@ def test_several_tray_chips_can_be_picked_and_dropped_together() -> None:
     many = JS[JS.index("function placeManyFromTray(") : JS.index("function placeFromTray(")]
     assert "placeFromTray(lead, list, p," in many
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
-    assert "S.selection = new Set(name ? list.map((m) => m.id) : [lead.id])" in place
+    assert "S.selection = new Set(onePerGroup(name ? placed.map((m) => m.id) : [lead.id]))" in place
     assert "Ctrl·Shift" in HTML
 
 

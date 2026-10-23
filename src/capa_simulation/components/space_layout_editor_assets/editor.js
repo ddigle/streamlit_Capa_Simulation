@@ -131,7 +131,7 @@ export default function (component) {
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
   const HINT = FAB
     ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -170,6 +170,7 @@ export default function (component) {
   const unitLabel = q('.sle-unit-label')
   const moveSelect = q('.sle-move-floor')
   const moveButton = q('.sle-move')
+  const moduleTile = q('.sle-module-tile')
   const markProps = q('.sle-markprops')
   const markLabel = q('.sle-mark-label')
   const markFontSize = q('.sle-mark-font-size')
@@ -223,6 +224,78 @@ export default function (component) {
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi))
   // 가장 작은 크기는 저장 정밀도 한 칸이다. 격자 간격에 묶으면 격자 2 에서 1.5 기둥이 건드리기만 해도 커진다.
   const minSize = () => 1 / SCALE
+
+  // ---------------------------------------------------------------- 모듈 묶음 바둑판(순수 함수)
+  // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`tile_module_group` 과 같은 규칙이다 —
+  // `tests/test_space_module_group.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 파이썬과 대조한다. 그래서 바깥 이름을
+  // 쓰지 않는다(정밀도 `scale` 도 인자다). 한쪽을 고치면 다른 쪽도 고친다.
+  // <module-tiling>
+  // 모듈 수 → [열, 행]. 거의 정사각 격자(열 = ⌈√n⌉, 행 = ⌈n ÷ 열⌉) — 넷이면 2×2, 둘이면 2×1.
+  function moduleGrid(count) {
+    const cols = Math.max(1, Math.ceil(Math.sqrt(count)))
+    return [cols, Math.max(1, Math.ceil(count / cols))]
+  }
+  // 설비명 자연 정렬(…12A, 12B, 12C, 12D). 숫자 덩이(0-9)는 수로, 나머지 덩이는 소문자로 견주고, 덩이가 같으면 짧은 쪽이
+  // 앞, 그래도 같으면 글자 그대로 견준다.
+  function naturalCompare(a, b) {
+    const ta = a.match(/[0-9]+|[^0-9]+/g) || []
+    const tb = b.match(/[0-9]+|[^0-9]+/g) || []
+    for (let i = 0; i < Math.min(ta.length, tb.length); i += 1) {
+      const da = ta[i][0] >= '0' && ta[i][0] <= '9'
+      const db = tb[i][0] >= '0' && tb[i][0] <= '9'
+      if (da !== db) return da ? -1 : 1
+      if (da) {
+        const na = ta[i].replace(/^0+/, '')
+        const nb = tb[i].replace(/^0+/, '')
+        if (na.length !== nb.length) return na.length - nb.length
+        if (na !== nb) return na < nb ? -1 : 1
+        continue
+      }
+      const la = ta[i].toLowerCase()
+      const lb = tb[i].toLowerCase()
+      if (la !== lb) return la < lb ? -1 : 1
+    }
+    if (ta.length !== tb.length) return ta.length - tb.length
+    return a < b ? -1 : a > b ? 1 : 0
+  }
+  // 저장 정밀도 눈금(정수). 반올림은 파이썬과 같은 ⌊v × scale + 0.5⌋ 다(`Math.round` 와 끝이 다를 수 있어 쓰지 않는다).
+  const tickOf = (v, scale) => Math.floor(v * scale + 0.5)
+  // 범위 box {x, y, w, h} 를 열×행으로 똑같이 나눈 칸에 모듈을 하나씩 둔다 — [{name, x, y, w, h}], 자연 정렬 차례로
+  // 왼→오, 위→아래(첫 모듈 왼쪽 위). 칸은 눈금으로 범위 ÷ 열(행)의 내림이고 마지막 열(오른쪽)·마지막 행(맨 아래)이 나머지를
+  // 받아 틈·겹침이 없다. 범위가 칸마다 한 눈금보다 작으면 오른쪽·위로 넓힌다.
+  function tileModuleGroup(box, names, scale) {
+    if (!names.length) return []
+    const [cols, rows] = moduleGrid(names.length)
+    const left = tickOf(box.x, scale)
+    const bottom = tickOf(box.y, scale)
+    const width = Math.max(tickOf(box.w, scale), cols)
+    const height = Math.max(tickOf(box.h, scale), rows)
+    const cellW = (width - (width % cols)) / cols
+    const cellH = (height - (height % rows)) / rows
+    const lastW = width - cellW * (cols - 1)
+    const lastH = height - cellH * (rows - 1)
+    return [...names].sort(naturalCompare).map((name, index) => {
+      const col = index % cols
+      const row = (index - col) / cols
+      const y = row === rows - 1 ? bottom : bottom + lastH + (rows - 2 - row) * cellH
+      return {
+        name,
+        x: (left + col * cellW) / scale,
+        y: y / scale,
+        w: (col === cols - 1 ? lastW : cellW) / scale,
+        h: (row === rows - 1 ? lastH : cellH) / scale,
+      }
+    })
+  }
+  // 서랍에서 놓는 모듈 묶음의 범위 크기 {w, h} — 열 × 가장 큰 모듈 폭, 행 × 가장 큰 모듈 높이(칸이 모듈 크기의 최댓값).
+  function trayModuleRange(sizes, scale) {
+    const [cols, rows] = moduleGrid(sizes.length)
+    const cellW = Math.max(...sizes.map((size) => tickOf(size.w, scale)))
+    const cellH = Math.max(...sizes.map((size) => tickOf(size.h, scale)))
+    return { w: (cols * cellW) / scale, h: (rows * cellH) / scale }
+  }
+  // </module-tiling>
+
   const isUnit = (m) => m.kind === 'unit'
   const isMark = (m) => m.kind !== 'unit'
   const blocks = (m) => (m.kind === 'zone' && m.keepOut) || m.kind === 'shutter' || m.kind === 'door' || m.kind === 'column'
@@ -399,6 +472,98 @@ export default function (component) {
     dx: clamp(dx, -box.minX, W() - box.maxR),
     dy: clamp(dy, -box.minY, H() - box.maxT),
   })
+  // 자리·크기가 같은가. 미배치끼리는 크기만 견준다(좌표가 NaN 이다).
+  const sameSpot = (a, b) => a.placed === b.placed && (a.placed ? sameGeometry(a, b) : sameSize(a, b))
+
+  // Main 설비 **모듈 묶음** — 이 편집기에 모듈이 둘 이상인 묶음(2026-10-23 사용자 요청). 사람이 고치는 것은 묶음 범위(이 층
+  // 도면에 선 모듈의 바깥 상자)뿐이고, 안의 모듈은 범위를 바둑판으로 똑같이 나눈 칸에 자동으로 선다(`tileModuleGroup`).
+  // 모듈 하나만 옮기거나 키우는 길은 없다 — 고르기·끌기·방향키·숫자 칸·서랍·빼기·다른 층 보내기가 모두 묶음째다. 바둑판이
+  // 아닌 옛 묶음은 읽을 때 바꾸지 않고, 처음 옮기거나 키울 때 지금 바깥 상자를 범위로 다시 놓는다. 파이썬
+  // `parse_editor_apply` 가 같은 규칙으로 다시 놓아 본다(다르면 그 값으로 바로잡는다).
+  const moduleMembers = (item) => {
+    if (!item || !isUnit(item) || !item.group) return null
+    const list = members(item)
+    return list.length >= 2 ? list : null
+  }
+  // Main 설비 → 이 편집기의 모듈 수(한 번 훑어 센다 — 호기마다 `members` 를 부르지 않게).
+  const groupCounts = () => {
+    const counts = new Map()
+    for (const m of S.items.values()) if (isUnit(m) && m.group) counts.set(m.group, (counts.get(m.group) || 0) + 1)
+    return counts
+  }
+  const ticks = (v) => tickOf(v, SCALE)
+  // 범위를 정밀도·최소 크기(칸마다 최소 크기 한 칸 — 열·행 × 1 눈금)·영역 안으로 맞춘다. 크기 먼저, 그다음 위치.
+  function fitRange(r, count) {
+    const [cols, rows] = moduleGrid(count)
+    const w = Math.min(Math.max(roundTo(r.w), cols / SCALE), floorTo(W()))
+    const h = Math.min(Math.max(roundTo(r.h), rows / SCALE), floorTo(H()))
+    return { x: clamp(roundTo(r.x), 0, floorTo(W() - w)), y: clamp(roundTo(r.y), 0, floorTo(H() - h)), w, h }
+  }
+  // 묶음 범위 — 이 층 도면에 선 모듈의 바깥 상자. 선 모듈이 없으면(서랍·다른 층) null.
+  function groupRange(mods) {
+    const standing = mods.filter(onCanvas)
+    if (!standing.length) return null
+    const b = bbox(standing)
+    return fitRange({ x: b.minX, y: b.minY, w: b.maxR - b.minX, h: b.maxT - b.minY }, mods.length)
+  }
+  // 범위 바둑판의 제 칸에 모듈을 모두 세운다(좌표 없던 형제도 이때 놓인다).
+  function layModules(mods, range) {
+    const spots = new Map(tileModuleGroup(range, mods.map((m) => m.id), SCALE).map((spot) => [spot.name, spot]))
+    for (const m of mods) {
+      const spot = spots.get(m.id)
+      m.x = spot.x
+      m.y = spot.y
+      m.w = spot.w
+      m.h = spot.h
+      m.placed = true
+    }
+  }
+  // 바둑판 그대로인가 — 모듈이 모두 도면에 서 있고 바깥 상자를 나눈 제 칸과 눈금까지 같다.
+  function isTiled(mods) {
+    if (!mods.every(onCanvas)) return false
+    const b = bbox(mods)
+    const box = { x: b.minX, y: b.minY, w: b.maxR - b.minX, h: b.maxT - b.minY }
+    const spots = new Map(tileModuleGroup(box, mods.map((m) => m.id), SCALE).map((spot) => [spot.name, spot]))
+    return mods.every((m) => {
+      const s = spots.get(m.id)
+      return ticks(m.x) === ticks(s.x) && ticks(m.y) === ticks(s.y) && ticks(m.w) === ticks(s.w) && ticks(m.h) === ticks(s.h)
+    })
+  }
+  // 움직일 단위. 모듈 묶음은 묶음 하나(모든 모듈과 범위), 나머지는 이 층 도면에 선 호기·요소 하나씩이다. `box` 는 모두를
+  // 감싼 상자(묶음은 범위)다.
+  function movePlan(list) {
+    const groups = new Map()
+    const loose = new Map()
+    for (const item of list) {
+      const mods = moduleMembers(item)
+      if (!mods) {
+        for (const m of placedMembers(item)) loose.set(m.id, m)
+        continue
+      }
+      if (groups.has(item.group)) continue
+      const range = groupRange(mods)
+      if (range) groups.set(item.group, { mods, range })
+    }
+    const parts = [...groups.values()]
+    const shells = [...loose.values(), ...parts.map((g) => g.range)]
+    return {
+      loose: [...loose.values()],
+      groups: parts,
+      items: [...loose.values(), ...parts.flatMap((g) => g.mods)],
+      box: shells.length ? bbox(shells) : null,
+    }
+  }
+  // 모듈 묶음은 선택에 한 대만 둔다 — 고르는 단위가 묶음이다(모듈 하나만 고르는 길이 없다). 앞에 온 것이 남는다.
+  function onePerGroup(ids) {
+    const seen = new Set()
+    return ids.filter((id) => {
+      const item = S.items.get(id)
+      const key = item && isUnit(item) && item.group ? `g:${item.group}` : `i:${id}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
   // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 편집 영역은 이보다 작게 줄일 수 없다.
   const extents = () => {
     let right = RESERVED.right
@@ -869,6 +1034,14 @@ export default function (component) {
   const TRAY_ORDER = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' })
   const chipName = (entry) => String(entry.lead.group || entry.lead.label || '')
 
+  // 서랍에 뜰 호기 — 미배치이고 다른 층으로 보내지 않은 것. 도면에 선 모듈이 있는 묶음의 좌표 없는 모듈(상자를 한 모듈에만
+  // 그린 옛 설비)은 따로 내놓지 않는다 — 그 묶음을 옮기거나 키우면 바둑판 제 칸에 함께 놓인다.
+  function trayKeep() {
+    const standing = new Set()
+    for (const m of S.items.values()) if (isUnit(m) && m.group && onCanvas(m)) standing.add(m.group)
+    return (m) => !m.placed && !m.moveTo && !(m.group && standing.has(m.group))
+  }
+
   function trayEntries(keep) {
     const seen = new Set()
     const out = []
@@ -938,7 +1111,7 @@ export default function (component) {
       chip.title = '적용하면 그 층으로 갑니다. 놓여 있던 호기는 같은 좌표·크기로, 미배치였던 호기는 그 층 트레이로. 되돌리려면 실행 취소.'
       return chip
     }
-    chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다` : lead.label
+    chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다${list.length >= 2 ? '(범위 안 바둑판)' : ''}` : lead.label
     chip.onpointerdown = (event) => {
       // Ctrl·Shift(⌘)를 누른 채 누르면 서랍 안에서 여러 대를 고른다. 고른 칩 하나를 끌면 고른 것이 모두 함께 놓인다.
       const additive = event.shiftKey || event.ctrlKey || event.metaKey
@@ -976,13 +1149,18 @@ export default function (component) {
     trayList.replaceChildren()
     leavingList.replaceChildren()
     S.groups = new Map()
+    // 모듈 묶음의 모듈 상자에는 손잡이가 없다(`is-module` — 크기는 묶음 범위 테두리의 손잡이로 바꾼다).
+    const counts = groupCounts()
     for (const item of S.items.values()) {
       if (!onCanvas(item)) continue
-      if (isUnit(item)) layer.append(buildGroup(item))
-      else (item.kind === 'zone' ? zonesLayer : marksLayer).append(buildMark(item))
+      if (isUnit(item)) {
+        const group = buildGroup(item)
+        group.classList.toggle('is-module', (counts.get(item.group) || 0) >= 2)
+        layer.append(group)
+      } else (item.kind === 'zone' ? zonesLayer : marksLayer).append(buildMark(item))
     }
     let trayN = 0
-    for (const entry of trayEntries((m) => !m.placed && !m.moveTo)) {
+    for (const entry of trayEntries(trayKeep())) {
       trayN += entry.list.length
       trayList.append(buildChip(entry, false))
     }
@@ -1190,8 +1368,27 @@ export default function (component) {
   // 함께 움직일 범위(모듈 묶음·여러 개 선택)를 점선 상자로 둘러 보인다. 사각형으로 고르는 중이면 그 사각형도.
   function drawSelectionBox() {
     overlay.replaceChildren()
-    const list = expanded(selectedItems())
-    if (list.length >= 2) {
+    const chosen = selectedItems()
+    const list = expanded(chosen)
+    const mods = !VIEW && chosen.length === 1 ? moduleMembers(chosen[0]) : null
+    const range = mods ? groupRange(mods) : null
+    if (range) {
+      // 편집에서 고른 모듈 묶음 하나: 범위 테두리와 그 손잡이 여덟(모듈 상자에는 손잡이가 없다). 손잡이는 화면 px 로
+      // 크기를 정하고, 작은 범위에서는 변 가운데 손잡이를 감춘다(호기 손잡이와 같은 규칙). 보기 화면은 그대로다.
+      const top = H() - (range.y + range.h)
+      overlay.append(el('rect', { class: 'sle-group-box is-range', x: range.x, y: top, width: range.w, height: range.h }))
+      const hs = HANDLE_PX * unitsPerPx()
+      for (const dir of HANDLE_DIRS) {
+        const hx = dir.includes('w') ? range.x : dir.includes('e') ? range.x + range.w : range.x + range.w / 2
+        const hy = dir.includes('n') ? top : dir.includes('s') ? top + range.h : top + range.h / 2
+        const tooSmall = (dir === 'n' || dir === 's') ? range.w < hs * 3 : range.h < hs * 3
+        if (dir.length === 1 && tooSmall) continue
+        const handle = el('rect', { class: 'sle-handle sle-range-handle', x: hx - hs / 2, y: hy - hs / 2, width: hs, height: hs })
+        handle.dataset.dir = dir
+        handle.style.cursor = HANDLE_CURSORS[dir]
+        overlay.append(handle)
+      }
+    } else if (list.length >= 2) {
       const box = bbox(list)
       overlay.append(el('rect', {
         class: 'sle-group-box', rx: 0.6,
@@ -1204,10 +1401,17 @@ export default function (component) {
   }
 
   function markSelection() {
-    const together = new Set(expanded(selectedItems()).map((m) => m.id))
+    const chosen = selectedItems()
+    const together = new Set(expanded(chosen).map((m) => m.id))
+    // 편집에서 모듈 묶음은 모듈 하나를 골라도 묶음째 골라진 것이다 — 모듈 상자는 모두 「함께」 테만 두르고 손잡이는 범위
+    // 테두리에 선다. 보기 화면은 누른 모듈이 골라진 것 그대로다(후광).
+    const counts = VIEW ? new Map() : groupCounts()
+    const bundles = new Set(chosen.filter((m) => isUnit(m) && m.group && counts.get(m.group) >= 2).map((m) => m.group))
     for (const [id, group] of S.groups) {
-      group.classList.toggle('is-selected', S.selection.has(id))
-      group.classList.toggle('is-grouped', together.has(id) && !S.selection.has(id))
+      const item = S.items.get(id)
+      const selected = S.selection.has(id) && !(item && item.group && bundles.has(item.group))
+      group.classList.toggle('is-selected', selected)
+      group.classList.toggle('is-grouped', together.has(id) && !selected)
     }
     // 여러 개를 고르면 크기 손잡이를 감춘다(크기는 숫자 칸·Ctrl+방향키로 함께 바꾼다).
     svg.classList.toggle('is-multi', S.selection.size > 1)
@@ -1354,6 +1558,20 @@ export default function (component) {
     ...S.passthrough,
   ]
 
+  // 고른 모듈 묶음의 한 줄 — Main 설비·모듈 수·바둑판(옛 묶음이면 「n등분이 아님」).
+  function moduleCaption(item) {
+    const mods = moduleMembers(item)
+    const [cols, rows] = moduleGrid(mods.length)
+    const loose = untiledModules(item)
+    return `Main 설비 ${item.group} · 모듈 ${mods.length} (${cols}×${rows} 바둑판)`
+      + (loose ? ` · ${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다` : '')
+  }
+  // 도면에 선 모듈 묶음인데 바둑판이 아니면 그 모듈들(옛 데이터 — 읽을 때 바꾸지 않는다), 아니면 null.
+  function untiledModules(item) {
+    const mods = moduleMembers(item)
+    return mods && groupRange(mods) && !isTiled(mods) ? mods : null
+  }
+
   function syncInspector() {
     const chosen = selectedItems()
     const multi = chosen.length > 1
@@ -1368,12 +1586,21 @@ export default function (component) {
       inspectorName.textContent = `${chosen.length}개${together > chosen.length ? ` (모듈 묶음까지 ${together}개)` : ''}`
     } else if (isMark(single)) {
       inspectorName.textContent = `${MARK_KINDS[single.kind].name}${single.label ? ` · ${single.label}` : ''}`
+    } else if (moduleMembers(single)) {
+      inspectorName.textContent = moduleCaption(single)
     } else if (single.group) {
       inspectorName.textContent = `${single.label} · Main 설비 ${single.group} (모듈 ${members(single).length})`
     } else {
       inspectorName.textContent = single.label
     }
-    const box = editable ? bbox(expanded(standing)) : null
+    // 이름 줄은 한 줄 말줄임이다 — 다 못 보이는 글(모듈 묶음의 「n등분이 아님 …」)은 풍선으로.
+    setAttr(inspectorName, 'title', inspectorName.textContent)
+    const box = editable ? movePlan(standing).box : null
+    // 모듈 묶음은 묶음 범위가 곧 그 위치·크기다(고치면 범위를 고친다 — 모듈 하나의 값은 보이지도 고치지도 않는다).
+    const extent = (m) => {
+      const mods = moduleMembers(m)
+      return (mods && groupRange(mods)) || m
+    }
     for (const input of fieldInputs) {
       input.disabled = !editable
       input.step = String(S.step)
@@ -1381,11 +1608,11 @@ export default function (component) {
       if (!editable) { input.value = ''; continue }
       if (isFocused(input)) continue
       const field = input.dataset.field
-      if (!multi) { input.value = String(single[field]); continue }
+      if (!multi) { input.value = String(extent(single)[field]); continue }
       // 여러 개: X·Y 는 함께 움직일 범위의 왼쪽 아래, 폭·높이는 모두 같을 때만 값을 보인다.
       if (field === 'x') { input.value = String(roundTo(box.minX)); continue }
       if (field === 'y') { input.value = String(roundTo(box.minY)); continue }
-      const values = new Set(standing.map((m) => m[field]))
+      const values = new Set(standing.map((m) => extent(m)[field]))
       input.value = values.size === 1 ? String([...values][0]) : ''
       input.placeholder = values.size === 1 ? '' : '여러 값'
     }
@@ -1398,6 +1625,11 @@ export default function (component) {
     const canSend = units.length > 0 && units.every((m) => !m.moveTo) && OTHER_FLOORS.length > 0
     moveSelect.disabled = !canSend
     moveButton.disabled = !canSend
+    // 바둑판이 아닌 옛 모듈 묶음 하나를 골랐으면 「범위에 맞춰 n등분」(옮기거나 키울 때와 같은 다시 놓기).
+    const loose = single ? untiledModules(single) : null
+    moduleTile.hidden = !loose
+    moduleTile.disabled = !loose
+    if (loose) setText(moduleTile, `범위에 맞춰 ${loose.length}등분`)
     // 이름: 호기 하나를 골랐을 때만. 모듈 묶음이면 그 Main 설비(묶음 이름)를 고친다.
     const named = single && isUnit(single) && !single.moveTo ? single : null
     unitLabel.disabled = !named
@@ -1508,11 +1740,20 @@ export default function (component) {
     } else if (item && isMark(item)) {
       add('선택 ', `${MARK_KINDS[item.kind].name}${item.label ? ` ${item.label}` : ''}`)
       add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}${item.rot ? ` · ${item.rot}°` : ''}`)
+    } else if (item && moduleMembers(item)) {
+      const mods = moduleMembers(item)
+      const range = groupRange(mods)
+      const [cols, rows] = moduleGrid(mods.length)
+      add('선택 ', `Main 설비 ${item.group}`)
+      if (range) add(`범위 X ${range.x} · Y ${range.y} · 크기 ${range.w}×${range.h}`)
+      else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
+      add(`모듈 ${mods.length}대는 범위 안 ${cols}×${rows} 바둑판에 자동으로 섭니다 — 범위를 끌어 옮기고 테두리 손잡이로 키웁니다`)
+      if (untiledModules(item)) add(`${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다`)
     } else if (item) {
       add('선택 ', item.label)
       if (onCanvas(item)) add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}`)
       else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
-      if (item.group) add(`Main 설비 ${item.group} · 모듈 ${members(item).length}대가 함께 움직입니다 — 하나만 옮기려면 Alt+끌기`)
+      if (item.group) add(`Main 설비 ${item.group}`)
     } else {
       add(HINT)
     }
@@ -1556,7 +1797,8 @@ export default function (component) {
 
   function setSelection(ids, primary) {
     commitTyping()
-    S.selection = new Set(ids.filter((id) => S.items.has(id)))
+    const known = ids.filter((id) => S.items.has(id))
+    S.selection = new Set(onePerGroup(primary && known.includes(primary) ? [primary, ...known] : known))
     S.selected = primary && S.selection.has(primary) ? primary : ([...S.selection].pop() ?? null)
     markSelection()
     updateStatus()
@@ -1694,15 +1936,16 @@ export default function (component) {
   // 서랍에서 고른 칩들(미배치 호기 묶음 가운데 하나라도 골라진 것). 서랍 차례 그대로다.
   function pickedTrayEntries() {
     // 검색으로 가려진 칩은 고른 채여도 함께 놓지 않는다 — 보이는 것만 끌려간다.
-    return trayEntries((m) => !m.placed && !m.moveTo)
+    return trayEntries(trayKeep())
       .filter((entry) => trayMatches(entry) && entry.list.some((m) => S.selection.has(m.id)))
   }
 
   // 서랍 칩을 더하거나 뺀다. 도면 위 호기는 함께 고르지 않는다 — 서랍에서 고른 것만 함께 끌어 놓는다.
   function toggleTrayPick(list) {
-    const tray = new Set(trayEntries((m) => !m.placed && !m.moveTo).flatMap((entry) => entry.list.map((m) => m.id)))
+    const tray = new Set(trayEntries(trayKeep()).flatMap((entry) => entry.list.map((m) => m.id)))
     const ids = new Set([...S.selection].filter((id) => tray.has(id)))
-    const on = list.every((m) => ids.has(m.id))
+    // 모듈 묶음은 선택에 한 대만 남으므로(`onePerGroup`) 하나라도 골라져 있으면 고른 칩이다.
+    const on = list.some((m) => ids.has(m.id))
     for (const m of list) on ? ids.delete(m.id) : ids.add(m.id)
     setSelection([...ids], on ? null : list[0].id)
   }
@@ -1716,49 +1959,71 @@ export default function (component) {
   function placeFromTray(lead, list, p, name) {
     // 크기는 실제 설비 치수라 영역에 맞춰 자르지 않는다. 없을 때만 추정 크기(같은 공정의 가운데 크기)를 쓰고
     // 그 사실을 기억한다 — 다시 트레이로 빼면 추정 크기를 버려 「크기 없음」으로 돌아간다.
-    const sizes = list.map((m) => ({
+    const sizeOf = (m) => ({
       w: roundTo(hasSize(m) ? m.w : defaultSize.w),
       h: roundTo(hasSize(m) ? m.h : defaultSize.h),
       guessed: !hasSize(m),
-    }))
-    // 묶음은 거의 정사각 격자로 붙여 놓는다(모듈 넷 → 2×2, 첫 모듈이 왼쪽 위). 한 대면 놓은 자리가 가운데.
-    const cols = Math.ceil(Math.sqrt(list.length))
-    const rows = Math.ceil(list.length / cols)
-    const cellW = Math.max(...sizes.map((size) => size.w))
-    const cellH = Math.max(...sizes.map((size) => size.h))
+    })
+    // 놓을 덩이. 모듈 묶음은 묶음 하나다 — 범위는 열 × 가장 큰 모듈 폭, 행 × 가장 큰 모듈 높이(`trayModuleRange`)이고 안은
+    // 그 범위를 똑같이 나눈 바둑판(첫 모듈 왼쪽 위)이다. 그 밖의 호기는 제 크기 하나씩이다.
+    const pieces = []
+    const seen = new Set()
+    for (const m of list) {
+      if (seen.has(m.id)) continue
+      const mods = moduleMembers(m)
+      const units = mods || [m]
+      for (const u of units) seen.add(u.id)
+      const sizes = units.map(sizeOf)
+      const box = mods ? trayModuleRange(sizes, SCALE) : sizes[0]
+      pieces.push({ units, sizes, mods, w: box.w, h: box.h })
+    }
+    // 덩이 여럿은 거의 정사각 격자로 붙여 놓는다(첫 덩이가 왼쪽 위). 칸은 가장 큰 덩이 크기이고 덩이는 칸 왼쪽 아래에
+    // 선다. 덩이 하나면 놓은 자리가 가운데다.
+    const [cols, rows] = moduleGrid(pieces.length)
+    const cellW = Math.max(...pieces.map((piece) => piece.w))
+    const cellH = Math.max(...pieces.map((piece) => piece.h))
     if (cols * cellW > W() || rows * cellH > H()) {
       S.note = `${name || lead.group || lead.label} (${roundTo(cols * cellW)}×${roundTo(rows * cellH)}) 가 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
       updateStatus()
       return
     }
     S.note = ''
-    const entries = list.map((m) => ({ id: m.id, before: snapshot(m) }))
-    list.forEach((m, i) => {
-      m.w = sizes[i].w
-      m.h = sizes[i].h
-      m.sizeGuessed = sizes[i].guessed
-    })
+    const placed = pieces.flatMap((piece) => piece.units)
+    const entries = placed.map((m) => ({ id: m.id, before: snapshot(m) }))
     const left = snapDelta(p.x - (cols * cellW) / 2)
     const bottom = snapDelta(H() - p.top - (rows * cellH) / 2)
-    list.forEach((m, i) => {
-      m.x = roundTo(left + (i % cols) * cellW)
-      m.y = roundTo(bottom + (rows - 1 - Math.floor(i / cols)) * cellH)
+    const spots = pieces.map((piece, i) => ({
+      x: roundTo(left + (i % cols) * cellW),
+      y: roundTo(bottom + (rows - 1 - Math.floor(i / cols)) * cellH),
+      w: piece.w,
+      h: piece.h,
+    }))
+    const shift = clampShift(bbox(spots), 0, 0)
+    pieces.forEach((piece, i) => {
+      piece.units.forEach((m, k) => {
+        m.w = piece.sizes[k].w
+        m.h = piece.sizes[k].h
+        m.sizeGuessed = piece.sizes[k].guessed
+      })
+      const spot = { ...spots[i], x: roundTo(spots[i].x + shift.dx), y: roundTo(spots[i].y + shift.dy) }
+      if (piece.mods) {
+        layModules(piece.mods, fitRange(spot, piece.mods.length))
+        return
+      }
+      const m = piece.units[0]
+      m.x = spot.x
+      m.y = spot.y
       m.placed = true
-    })
-    const shift = clampShift(bbox(list), 0, 0)
-    for (const m of list) {
-      m.x = roundTo(m.x + shift.dx)
-      m.y = roundTo(m.y + shift.dy)
       fit(m)
-    }
+    })
     commit(entries)
-    // 여럿을 함께 놓았으면 놓은 것을 모두 고른 채로 둔다 — 그대로 끌어 자리를 옮길 수 있다.
-    S.selection = new Set(name ? list.map((m) => m.id) : [lead.id])
+    // 여럿을 함께 놓았으면 놓은 것을 모두 고른 채로 둔다 — 그대로 끌어 자리를 옮길 수 있다(모듈 묶음은 한 대로).
+    S.selection = new Set(onePerGroup(name ? placed.map((m) => m.id) : [lead.id]))
     S.selected = lead.id
     renderItems()
     updateStatus()
     // 서랍은 열어 둔다(이어서 놓는다). 놓은 호기가 서랍 아래면 화면을 옮겨 보인다.
-    revealFromTray(list)
+    revealFromTray(placed)
     svg.focus({ preventScroll: true })
   }
 
@@ -1786,41 +2051,84 @@ export default function (component) {
     svg.focus({ preventScroll: true })
   }
 
-  // 방향키·숫자 칸의 X·Y 는 고른 것 전부(모듈 묶음 포함)를 함께 옮긴다. 묶음 모양은 그대로다.
-  function moveItems(list, dx, dy) {
-    if (!list.length) return
-    const entries = list.map((m) => ({ id: m.id, before: snapshot(m) }))
-    const shift = clampShift(bbox(list), dx, dy)
-    for (const m of list) {
-      m.x = roundTo(m.x + shift.dx)
-      m.y = roundTo(m.y + shift.dy)
-    }
-    const moved = entries.filter((e) => !sameGeometry(e.before, S.items.get(e.id)))
-    if (!moved.length) { syncInspector(); return }
-    commit(moved)
+  // 자리를 바꾼 것을 다시 그린다. 도면에 새로 서거나 빠진 것(좌표 없던 모듈이 바둑판에 놓임 등)이 있으면 목록째 다시 만든다.
+  function redraw(list) {
+    if (list.some((m) => onCanvas(m) !== S.groups.has(m.id))) { renderItems(); return }
     for (const m of list) position(S.groups.get(m.id), m)
     drawSelectionBox()
     markOverlaps()
+  }
+
+  // 방향키·숫자 칸의 X·Y 는 고른 것 전부를 함께 옮긴다. 호기·요소는 모양 그대로, 모듈 묶음은 범위를 옮겨 바둑판으로 다시
+  // 놓는다(옛 묶음은 이때 바둑판이 된다). 되돌리기 한 번에 모두 돌아온다.
+  function moveItems(list, dx, dy) {
+    const plan = movePlan(list)
+    if (!plan.items.length) return
+    const entries = plan.items.map((m) => ({ id: m.id, before: snapshot(m) }))
+    const shift = clampShift(plan.box, dx, dy)
+    for (const m of plan.loose) {
+      m.x = roundTo(m.x + shift.dx)
+      m.y = roundTo(m.y + shift.dy)
+    }
+    for (const g of plan.groups) {
+      layModules(g.mods, { ...g.range, x: roundTo(g.range.x + shift.dx), y: roundTo(g.range.y + shift.dy) })
+    }
+    const moved = entries.filter((e) => !sameSpot(e.before, S.items.get(e.id)))
+    if (!moved.length) { syncInspector(); return }
+    commit(moved)
+    redraw(plan.items)
     updateStatus()
   }
 
-  // 크기는 고른 것 하나하나에 적용한다(묶음의 다른 모듈은 그대로). 폭은 오른쪽으로, 높이는 위로 자란다.
+  // 크기는 고른 것 하나하나에 적용한다 — 호기·요소는 그 하나, 모듈 묶음은 범위를 바꿔 바둑판으로 다시 놓는다. 폭은
+  // 오른쪽으로, 높이는 위로 자란다.
   function setSizes(list, patchOf) {
     const entries = []
+    const touched = []
+    const done = new Set()
     for (const item of list) {
+      const mods = moduleMembers(item)
+      if (mods) {
+        const range = done.has(item.group) ? null : groupRange(mods)
+        done.add(item.group)
+        if (!range) continue
+        const befores = mods.map((m) => ({ id: m.id, before: snapshot(m) }))
+        layModules(mods, fitRange({ ...range, ...patchOf(range) }, mods.length))
+        for (const e of befores) {
+          const m = S.items.get(e.id)
+          if (sameSpot(e.before, m)) continue
+          m.sizeGuessed = false
+          entries.push(e)
+        }
+        touched.push(...mods)
+        continue
+      }
       const before = snapshot(item)
       Object.assign(item, patchOf(item))
       fit(item)
       if (!sameGeometry(item, before)) {
         item.sizeGuessed = false
         entries.push({ id: item.id, before })
+        touched.push(item)
       }
     }
     if (!entries.length) { syncInspector(); return }
     commit(entries)
-    for (const e of entries) position(S.groups.get(e.id), S.items.get(e.id))
-    drawSelectionBox()
-    markOverlaps()
+    redraw(touched)
+    updateStatus()
+  }
+
+  // 「범위에 맞춰 n등분」 — 바둑판이 아닌 옛 묶음을 지금 바깥 상자 안에 다시 놓는다(옮기거나 키울 때와 같다).
+  function retileModules(item) {
+    const mods = moduleMembers(item)
+    const range = mods ? groupRange(mods) : null
+    if (!range) return
+    const entries = mods.map((m) => ({ id: m.id, before: snapshot(m) }))
+    layModules(mods, range)
+    const moved = entries.filter((e) => !sameSpot(e.before, S.items.get(e.id)))
+    if (!moved.length) { updateStatus(); return }
+    commit(moved)
+    redraw(mods)
     updateStatus()
   }
 
@@ -2007,31 +2315,28 @@ export default function (component) {
       updateStatus()
       return
     }
-    for (const [id, before] of drag.befores) {
-      const item = S.items.get(id)
-      Object.assign(item, before)
-      position(S.groups.get(id), item)
-    }
-    drawSelectionBox()
+    for (const [id, before] of drag.befores) Object.assign(S.items.get(id), before)
+    redraw([...drag.befores.keys()].map((id) => S.items.get(id)))
     clearDragOverlap()
     updateStatus()
   }
 
-  // 오른쪽·왼쪽·위·아래 변 가운데 움직이는 것만 옮긴다. 반대쪽 변은 그대로다.
-  function resizeTo(item, b, dir, dx, dTop) {
-    const m = minSize()
+  // 오른쪽·왼쪽·위·아래 변 가운데 움직이는 것만 옮긴다. 반대쪽 변은 그대로다. 폭·높이는 minW·minH 아래로 줄지 않는다.
+  function resizedBox(b, dir, dx, dTop, minW, minH) {
     let left = b.x
     let right = b.x + b.w
     let bottom = b.y
     let top = b.y + b.h
-    if (dir.includes('e')) right = clamp(right + dx, left + m, W())
-    if (dir.includes('w')) left = clamp(left + dx, 0, right - m)
-    if (dir.includes('n')) top = clamp(top - dTop, bottom + m, H())
-    if (dir.includes('s')) bottom = clamp(bottom - dTop, 0, top - m)
-    item.x = roundTo(left)
-    item.y = roundTo(bottom)
-    item.w = roundTo(Math.min(roundTo(right), floorTo(W())) - item.x)
-    item.h = roundTo(Math.min(roundTo(top), floorTo(H())) - item.y)
+    if (dir.includes('e')) right = clamp(right + dx, left + minW, W())
+    if (dir.includes('w')) left = clamp(left + dx, 0, right - minW)
+    if (dir.includes('n')) top = clamp(top - dTop, bottom + minH, H())
+    if (dir.includes('s')) bottom = clamp(bottom - dTop, 0, top - minH)
+    const x = roundTo(left)
+    const y = roundTo(bottom)
+    return { x, y, w: roundTo(Math.min(roundTo(right), floorTo(W())) - x), h: roundTo(Math.min(roundTo(top), floorTo(H())) - y) }
+  }
+  function resizeTo(item, b, dir, dx, dTop) {
+    Object.assign(item, resizedBox(b, dir, dx, dTop, minSize(), minSize()))
     item.sizeGuessed = false
   }
 
@@ -2186,6 +2491,20 @@ export default function (component) {
       svg.setPointerCapture(event.pointerId)
       return
     }
+    const rangeDir = event.target.classList && event.target.classList.contains('sle-range-handle') ? event.target.dataset.dir : null
+    const picked = selectedItems()
+    if (rangeDir && picked.length === 1 && moduleMembers(picked[0])) {
+      // 고른 모듈 묶음의 범위 테두리 손잡이 — 범위 크기를 바꾸면 안의 모듈이 바둑판으로 다시 선다.
+      const plan = movePlan(picked)
+      if (!plan.groups.length) return
+      S.drag = {
+        ...start, id: picked[0].id, mode: 'range', dir: rangeDir, loose: [], groups: plan.groups,
+        ids: plan.items.map((m) => m.id), befores: new Map(plan.items.map((m) => [m.id, snapshot(m)])), box: plan.box,
+        collapse: false,
+      }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
     const group = event.target.closest ? event.target.closest('.sle-item') : null
     const additive = event.shiftKey || event.ctrlKey || event.metaKey
     if (!group) {
@@ -2197,11 +2516,13 @@ export default function (component) {
     const item = S.items.get(group.dataset.id)
     if (!item) return
     if (additive) {
-      // Shift/Ctrl+클릭은 고른 묶음에 더하거나 뺀다(끌지 않는다).
+      // Shift/Ctrl+클릭은 고른 것에 더하거나 뺀다(끌지 않는다). 모듈 묶음은 묶음째 — 그 묶음이 골라져 있으면 뺀다.
       const ids = new Set(S.selection)
-      if (ids.has(item.id)) ids.delete(item.id)
-      else ids.add(item.id)
-      setSelection([...ids], ids.has(item.id) ? item.id : null)
+      const bundle = (moduleMembers(item) || [item]).map((m) => m.id)
+      const had = bundle.some((id) => ids.has(id))
+      for (const id of bundle) ids.delete(id)
+      if (!had) ids.add(item.id)
+      setSelection([...ids], had ? null : item.id)
       return
     }
     const chosen = selectedItems()
@@ -2210,18 +2531,20 @@ export default function (component) {
     if (!inSelection) select(item.id)
     else if (S.selection.has(item.id)) { S.selected = item.id; markSelection(); updateStatus() }
     const dir = event.target.classList.contains('sle-handle') ? event.target.dataset.dir : null
-    // 손잡이는 이미 하나만 고른 것에서만 듣는다 — 처음 누른 모서리가 크기를 바꾸지 않게.
-    const mode = onlyThis && dir ? 'resize' : 'move'
-    // 옮기기는 고른 것 전부와 그 모듈 묶음. Alt 를 누른 채 끌면 누른 것 하나만.
-    const list = mode === 'move' && !event.altKey ? expanded(selectedItems()) : [item]
+    // 손잡이는 이미 하나만 고른 것에서만 듣는다 — 처음 누른 모서리가 크기를 바꾸지 않게. 모듈 상자의 크기는 고치지
+    // 못한다(손잡이를 감추고, 눌려도 옮기기다 — 크기는 묶음 범위 테두리의 손잡이로).
+    const mode = onlyThis && dir && !moduleMembers(item) ? 'resize' : 'move'
+    // 옮기기는 고른 것 전부 — 모듈 묶음은 묶음째(범위를 옮겨 바둑판으로 다시 놓는다). 모듈 하나만 옮기는 길은 없다.
+    const plan = mode === 'move' ? movePlan(selectedItems()) : { loose: [item], groups: [], items: [item], box: bbox([item]) }
+    const list = plan.items
     // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다.
     for (const m of list) {
       const g = S.groups.get(m.id)
       if (g && g.parentNode) g.parentNode.append(g)
     }
     S.drag = {
-      ...start, id: item.id, mode, dir,
-      ids: list.map((m) => m.id), befores: new Map(list.map((m) => [m.id, snapshot(m)])), box: bbox(list),
+      ...start, id: item.id, mode, dir, loose: plan.loose, groups: plan.groups,
+      ids: list.map((m) => m.id), befores: new Map(list.map((m) => [m.id, snapshot(m)])), box: plan.box,
       // 여러 개를 고른 채 하나를 눌렀다 떼기만 하면 그 하나만 고른 상태로 좁힌다.
       collapse: inSelection && (S.selection.size > 1 || !S.selection.has(item.id)),
     }
@@ -2260,8 +2583,10 @@ export default function (component) {
       const inside = [...S.items.values()]
         .filter((m) => onCanvas(m) && m.x >= x0 && m.x + m.w <= x1 && m.y >= y0 && m.y + m.h <= y1)
         .map((m) => m.id)
-      S.selection = new Set(drag.additive ? [...drag.before, ...inside] : inside)
-      S.selected = inside.length ? inside[inside.length - 1] : (drag.additive ? drag.beforePrimary : null)
+      // 모듈 묶음은 한 대만 남긴다(`onePerGroup`) — 묶음째 골라진다.
+      S.selection = new Set(onePerGroup(drag.additive ? [...drag.before, ...inside] : inside))
+      const last = inside.length ? inside[inside.length - 1] : (drag.additive ? drag.beforePrimary : null)
+      S.selected = last && S.selection.has(last) ? last : ([...S.selection].pop() ?? null)
       markSelection()
       updateStatus()
       return
@@ -2269,20 +2594,30 @@ export default function (component) {
     const dx = snapDelta(p.x - drag.startX)
     const dTop = snapDelta(p.top - drag.startTop)
     if (drag.mode === 'move') {
-      // 이동량을 격자에 맞춘다(제자리 좌표를 격자로 끌어당기지 않는다). 화면에서 아래로 끌면 Y 는 준다.
+      // 이동량을 격자에 맞춘다(제자리 좌표를 격자로 끌어당기지 않는다). 화면에서 아래로 끌면 Y 는 준다. 모듈 묶음은
+      // 범위를 옮겨 바둑판으로 다시 놓는다.
       const shift = clampShift(drag.box, dx, -dTop)
-      for (const id of drag.ids) {
-        const m = S.items.get(id)
-        const b = drag.befores.get(id)
+      for (const m of drag.loose) {
+        const b = drag.befores.get(m.id)
         m.x = roundTo(b.x + shift.dx)
         m.y = roundTo(b.y + shift.dy)
-        position(S.groups.get(id), m)
       }
+      for (const g of drag.groups) {
+        layModules(g.mods, { ...g.range, x: roundTo(g.range.x + shift.dx), y: roundTo(g.range.y + shift.dy) })
+      }
+    } else if (drag.mode === 'range') {
+      // 모듈 묶음 범위 크기 — 칸마다 최소 크기 한 칸(열·행 × 1 눈금) 아래로 줄지 않는다.
+      const g = drag.groups[0]
+      const [cols, rows] = moduleGrid(g.mods.length)
+      layModules(g.mods, resizedBox(g.range, drag.dir, dx, dTop, cols / SCALE, rows / SCALE))
+      for (const m of g.mods) m.sizeGuessed = false
     } else {
-      const item = S.items.get(drag.id)
-      resizeTo(item, drag.befores.get(drag.id), drag.dir, dx, dTop)
-      position(S.groups.get(drag.id), item)
+      resizeTo(S.items.get(drag.id), drag.befores.get(drag.id), drag.dir, dx, dTop)
     }
+    const dragged = drag.ids.map((id) => S.items.get(id))
+    // 좌표 없던 모듈이 처음 놓이면 상자가 아직 없다 — 그때 한 번 목록을 다시 만든다.
+    if (dragged.some((m) => onCanvas(m) !== S.groups.has(m.id))) renderItems()
+    else for (const m of dragged) position(S.groups.get(m.id), m)
     drag.moved = true
     drawSelectionBox()
     markDragOverlap(new Set(drag.ids))
@@ -2319,7 +2654,7 @@ export default function (component) {
     clearDragOverlap()
     const entries = drag.ids
       .map((id) => ({ id, before: drag.befores.get(id) }))
-      .filter((e) => !sameGeometry(e.before, S.items.get(e.id)))
+      .filter((e) => !sameSpot(e.before, S.items.get(e.id)))
     if (drag.moved && entries.length) {
       commit(entries)
       markOverlaps()
@@ -2343,7 +2678,7 @@ export default function (component) {
       zoomAt(S.view.z * Math.exp(-event.deltaY * unit * 0.002), toUser(event))
       return
     }
-    const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize')
+    const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize' || S.drag.mode === 'range')
     if (!placing || S.view.z <= 1) return
     const upp = unitsPerPx()
     const dx = (event.shiftKey ? event.deltaY : event.deltaX) * unit * upp
@@ -2442,9 +2777,9 @@ export default function (component) {
     if (arrows[event.key]) {
       event.preventDefault()
       const [ax, ay] = arrows[event.key]
-      // Ctrl+방향키는 크기 — 고른 것마다 오른쪽 폭, 위 높이(왼쪽 아래 모서리는 그대로).
+      // Ctrl+방향키는 크기 — 고른 것마다 오른쪽 폭, 위 높이(왼쪽 아래 모서리는 그대로). 모듈 묶음은 범위다.
       if (ctrl) setSizes(standing, (m) => ({ w: m.w + ax, h: m.h + ay }))
-      else moveItems(expanded(standing), ax, ay)
+      else moveItems(standing, ax, ay)
     }
   }
 
@@ -2458,11 +2793,10 @@ export default function (component) {
         return
       }
       const field = input.dataset.field
-      const together = expanded(standing)
-      const box = bbox(together)
-      const single = standing.length === 1 ? standing[0] : null
-      if (field === 'x') moveItems(together, value - (single ? single.x : box.minX), 0)
-      else if (field === 'y') moveItems(together, 0, value - (single ? single.y : box.minY))
+      // X·Y 의 기준은 함께 움직일 것의 왼쪽 아래(하나면 그 상자, 모듈 묶음이면 그 범위)다.
+      const box = movePlan(standing).box
+      if (field === 'x') moveItems(standing, value - box.minX, 0)
+      else if (field === 'y') moveItems(standing, 0, value - box.minY)
       else setSizes(standing, () => ({ [field]: value }))
     }
     input.onkeydown = (event) => { if (event.key === 'Enter') input.blur() }
@@ -2603,6 +2937,10 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 단추
   moveButton.onclick = () => sendItems(selectedItems(), moveSelect.value)
+  moduleTile.onclick = () => {
+    const chosen = selectedItems()
+    if (chosen.length === 1) retileModules(chosen[0])
+  }
   const areaValue = (input, current) => {
     const value = input.value === '' ? NaN : Number(input.value)
     if (!Number.isFinite(value)) { input.value = current; return null }
