@@ -97,6 +97,7 @@
           <select class="sle-move-floor" aria-label="보낼 층"></select>
           <button type="button" class="sle-move" title="모듈 묶음은 함께 갑니다. 놓여 있던 호기는 같은 좌표·크기로 그 층에 섭니다.">다른 층으로 보내기</button>
           <button type="button" class="sle-module-tile" hidden title="바둑판이 아닌 Main 설비 모듈 묶음을 지금 바깥 상자(범위) 안에 똑같이 나눠 다시 놓습니다 — 옮기거나 크기를 바꿀 때도 이렇게 놓입니다">범위에 맞춰 4등분</button>
+          <label class="sle-field sle-group-name" hidden title="모듈 묶음 범위에 그리는 Main 설비 이름의 자리 — 가운데는 범위 정가운데, 위·아래는 범위 바깥 바로 위·아래"><span>Main 설비명</span><select class="sle-group-label-pos" aria-label="Main 설비명 위치"><option value="center">가운데</option><option value="top">위</option><option value="bottom">아래</option></select></label>
         </span>
         <span class="sle-markprops" hidden>
           <label class="sle-field"><span>이름</span><input class="sle-mark-label" type="text" maxlength="40" autocomplete="off"></label>
@@ -105,6 +106,8 @@
           <span class="sle-markprops-kind">
             <span class="sle-zone-props">
               <label class="sle-field sle-zone-only"><span>색</span><select class="sle-mark-color"></select></label>
+              <label class="sle-field sle-zone-only" title="영역 테두리 모양 — 고른 영역은 테두리와 따로 바깥 강조 테로 보입니다"><span>테두리</span><select class="sle-mark-border" aria-label="테두리 모양"><option value="dashed">점선</option><option value="solid">실선</option></select></label>
+              <label class="sle-field sle-zone-only" title="영역 이름표 자리 — 위 변의 왼쪽·가운데·오른쪽"><span>글자 정렬</span><select class="sle-mark-align" aria-label="이름표 정렬"><option value="left">왼쪽</option><option value="center">가운데</option><option value="right">오른쪽</option></select></label>
               <label class="sle-field sle-zone-only"><input class="sle-mark-hatch" type="checkbox"><span>빗금</span></label>
               <label class="sle-field sle-zone-only sle-floor-only" title="이 영역에 호기가 서면 경고합니다"><input class="sle-mark-keepout" type="checkbox"><span>설비 금지</span></label>
             </span>
@@ -136,6 +139,7 @@
         <g class="sle-zones"></g>
         <g class="sle-items"></g>
         <g class="sle-marks"></g>
+        <g class="sle-group-names"></g>
         <g class="sle-overlay"></g>
         <g class="sle-guides"></g>
       </svg>

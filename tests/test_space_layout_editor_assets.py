@@ -648,3 +648,11 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     assert "ellipsis" not in _rule(".sle-flagnote")
     assert "flex: none" in _rule(".sle-toolbar > *")
     assert "flex" not in _rule(".sle-summary")
+
+
+def test_the_pre_arrival_ring_is_drawn_thick() -> None:
+    """반입 예정(실물 없음) 테는 굵은 점선이다(2026-10-23 사용자 요청 — 2px 은 면색 위에서 잘 안
+    보였다). 범례 견본(`space_layout._mark_swatches`)은 3px 이다."""
+    ring = _rule(".sle.is-view .sle-unit.is-pre .sle-ring")
+    match = re.search(r"stroke-width: ([\d.]+)", ring)
+    assert match and float(match.group(1)) >= 3 and "stroke-dasharray" in ring

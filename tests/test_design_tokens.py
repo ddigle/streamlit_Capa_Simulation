@@ -624,3 +624,33 @@ def test_space_unit_rings_stand_out_from_the_canvas() -> None:
     light, dark = tokens._PALETTES["light"], tokens._PALETTES["dark"]
     assert contrast_ratio(light["SPACE_RING_EXIT"], light["SPACE_CANVAS"]) < 3
     assert dark["SPACE_RING_EXIT_OUTLINE"] == dark["SPACE_CANVAS"]
+
+
+LINE_TYPE_FLOOR = 15.0  # 정상 시야 OKLab ΔE — TEST 면이 다른 면과 갈리는 바닥
+
+
+def test_the_test_line_type_is_a_light_navy_apart_from_every_other_face() -> None:
+    """TEST 면은 연한 남색(검정 글자)이다(2026-10-23 사용자 요청 — 짙은 남색이 도면에서 무거웠다).
+    파랑이 가장 센 밝은 면이고, 다른 다섯 그룹·기본·보관·지연 면과 정상 시야 ΔE 15·색각이상 ΔE 8
+    이상 떨어진다. 글자 대비(4.5:1)는 `test_space_unit_faces_carry_readable_names_in_both_themes`
+    가 본다. 두 팔레트를 다 본다."""
+    failures: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        fills = palette["SPACE_LINE_TYPE_FILLS"]
+        test = fills["TEST"]
+        assert palette["SPACE_LINE_TYPE_INKS"]["TEST"] == "#111111", mode
+        red, green, blue = (int(test[index : index + 2], 16) for index in (1, 3, 5))
+        assert blue > max(red, green), (mode, test)
+        assert relative_luminance(test) > 0.15, (mode, test)
+        others = {key: value for key, value in fills.items() if key != "TEST"}
+        others.update(
+            {name: palette[f"SPACE_UNIT_{name}_FILL"] for name in ("DEFAULT", "STORAGE", "DELAY")}
+        )
+        for name, colour in others.items():
+            normal = _delta_e(test, colour)
+            cvd = min(_delta_e(test, colour, vision) for vision in CVD_MATRICES)
+            if normal < LINE_TYPE_FLOOR:
+                failures.append(f"{mode} TEST↔{name}: 정상시야 ΔE {normal:.1f}")
+            if cvd < CVD_TARGET:
+                failures.append(f"{mode} TEST↔{name}: 색각이상 ΔE {cvd:.1f}")
+    assert not failures, "TEST 면이 다른 면과 갈리지 않습니다:" + _bullets(failures)

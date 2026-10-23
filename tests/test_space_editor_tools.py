@@ -1,4 +1,4 @@
-# Purpose: Space 배치 편집기의 정렬선·앞 3자리 크기 불러오기·서랍 Shift 범위·요소 복사를 검사한다.
+# Purpose: Space 배치 편집기의 편집 조작 넷과 영역·Main 설비명 모양을 검사한다.
 
 """2026-10-23 사용자 요청 넷(편집기 조작).
 
@@ -25,6 +25,7 @@ import re
 from typing import Any
 
 import pandas as pd
+import pytest
 from test_space_layout_edit import _master
 from test_space_module_group import _js_decl, _node
 
@@ -487,6 +488,9 @@ _CLIP_DECLS = (
     "const minSize = ",
     "const fit = ",
     "const fontSizeOf = ",
+    "const BORDER_STYLES = ",
+    "const LABEL_ALIGNS = ",
+    "const pickOr = ",
     "const readMark = ",
     "const bbox = ",
     "const boxRect = ",
@@ -553,6 +557,7 @@ steps.paste1 = { handled: pasteMarks(false) }
 const first = ids().filter((id) => !before.has(id))
 steps.paste1.items = first.map(view)
 steps.paste1.selected = [...S.selection]
+steps.paste1.looks = first.map((id) => [S.items.get(id).borderStyle, S.items.get(id).labelAlign])
 steps.paste1.undo = undo.map((ops) => ops.map((op) => op.op))
 const before2 = new Set(ids())
 pasteMarks(false)
@@ -585,13 +590,23 @@ def test_copy_takes_marks_only_and_paste_offsets_with_new_ids_in_one_undo_step()
         fab=False,
         blocked=False,
         marks=[
-            ["Z1", "zone", 10, 20, 8, 4, {"label": "창고", "color": "green"}],
+            [
+                "Z1",
+                "zone",
+                10,
+                20,
+                8,
+                4,
+                {"label": "창고", "color": "green", "borderStyle": "solid", "labelAlign": "right"},
+            ],
             ["T1", "text", 30, 22, 6, 2, {"label": "메모"}],
         ],
         copy=["Z1", "T1", "U1"],
     )
 
     assert out["unitsOnly"]["handled"] is True and out["unitsOnly"]["clip"] is None
+    # 영역의 테두리 모양·이름표 정렬도 함께 붙는다(다른 요소는 처음 값).
+    assert out["paste1"]["looks"] == [["solid", "right"], ["dashed", "left"]]
     assert "호기는 복사하지 않습니다" in out["unitsOnly"]["flash"]
     assert out["copied"]["handled"] is True
     assert "도면 요소 2개 복사" in out["copied"]["flash"]
@@ -736,3 +751,124 @@ def test_borrowed_sizes_are_guesses_and_say_where_they_came_from() -> None:
     remove = _between("function removeItems(list) {", "function sendItems(")
     assert "m.sizeFrom = ''" in remove
     assert "NEW_UNIT.prefixSizes" in JS
+
+
+# ---------------------------------------------------------------- 영역 모양 · Main 설비명
+
+_LOOK = re.compile(r"// <layout-look>\n(?P<body>.*?)\n\s*// </layout-look>", re.S)
+_LOOK_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  tags: input.tags.map((c) => zoneTagX(c.lw, c.tagW, c.align)),
+  spots: input.spots.map((c) => groupNameSpot(c.range, c.position, c.fs, c.gap)),
+  sizes: input.sizes.map((c) => groupNameSize(c.range, c.position, c.em, c.max, c.upp)),
+}))
+"""
+
+
+def test_zone_tags_sit_left_centre_or_right_on_the_top_edge() -> None:
+    """영역 이름표 꼬리표는 위 변의 왼쪽(처음 값 — 지금 모습)·가운데·오른쪽이다. 모르는 값은
+    왼쪽."""
+    out = _node(
+        _block(_LOOK) + _LOOK_RUNNER,
+        {
+            "tags": [
+                {"lw": 20, "tagW": 6, "align": "left"},
+                {"lw": 20, "tagW": 6, "align": "center"},
+                {"lw": 20, "tagW": 6, "align": "right"},
+                {"lw": 20, "tagW": 6, "align": "weird"},
+            ],
+            "spots": [],
+            "sizes": [],
+        },
+    )
+
+    assert out["tags"] == [0, 7, 14, 0]
+
+
+def test_a_group_name_sits_in_the_middle_or_just_outside_the_range() -> None:
+    """가운데(처음 값)는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에
+    테두리를 띄워 붙인다(알약 반 높이 fs × 0.8 + 틈). 글자는 화면 최대 크기에서 범위 폭에 맞춰 줄고,
+    가운데면 범위 높이의 0.16 배를 넘지 않는다."""
+    box = {"x": 10, "y": 20, "w": 24, "h": 16}
+    out = _node(
+        _block(_LOOK) + _LOOK_RUNNER,
+        {
+            "tags": [],
+            "spots": [
+                {"range": box, "position": "center", "fs": 1.5, "gap": 0.25},
+                {"range": box, "position": "top", "fs": 1.5, "gap": 0.25},
+                {"range": box, "position": "bottom", "fs": 1.5, "gap": 0.25},
+            ],
+            "sizes": [
+                {"range": box, "position": "top", "em": 5, "max": 12, "upp": 0.125},
+                {"range": box, "position": "center", "em": 5, "max": 12, "upp": 1},
+                {"range": {**box, "w": 6}, "position": "top", "em": 10, "max": 12, "upp": 1},
+            ],
+        },
+    )
+
+    assert out["spots"] == [
+        {"x": 22, "y": 28},
+        {"x": 22, "y": 20 + 16 + 0.25 + 1.2},
+        {"x": 22, "y": 20 - 0.25 - 1.2},
+    ]
+    sizes = out["sizes"]
+    assert sizes[0] == pytest.approx(1.5)  # 화면 12px × 0.125
+    assert sizes[1] == pytest.approx(16 * 0.16)  # 가운데는 범위 높이로 막힌다
+    assert sizes[2] == pytest.approx(6 * 0.92 / 10.9)  # 좁은 범위는 폭에 맞춰 준다
+
+
+def test_zone_looks_and_group_names_are_wired_through_the_editor() -> None:
+    """영역의 테두리 모양·이름표 정렬은 읽기(`readMark`)·바뀜 판정·적용값·복사·되돌리기 기록에 모두
+    들고,
+    고른 영역의 강조는 테두리 모양과 따로(`sle-zone-select`)다. Main 설비명은 맨 위 가까운 층
+    (`sle-group-names`, 눌림 없음)에 그리고, 묶음마다 선택 칸에서 고르며 되돌리기 한 번이고 적용값
+    `groupLabels` 로 간다. 보기 화면은 기준일에 묶음이 숨으면 이름도 숨긴다."""
+    for start, end in (
+        ("const readMark = (raw) => ({", "})"),
+        ("const marksPayload = () => [", "...S.passthrough"),
+        ("const clipOf = (m) => ({", "})"),
+        ("const snapshot = (item) => ({", "})"),
+    ):
+        body = _between(start, end)
+        assert "borderStyle" in body and "labelAlign" in body, start
+    changed = _between("function isChanged(item) {", "function isRenamed(")
+    assert "pickOr(o.borderStyle, BORDER_STYLES)" in changed
+    assert "pickOr(o.labelAlign, LABEL_ALIGNS)" in changed
+    zone = _between("if (item.kind === 'zone') {", "} else if (item.kind === 'shutter')")
+    assert "'sle-zone-border is-solid'" in zone and "class: 'sle-zone-select'" in zone
+    assert "zoneTagX(lw, tagW, item.labelAlign)" in zone
+    assert ".sle-zone-border.is-solid { stroke-dasharray: none; }" in CSS
+    assert ".mark-zone.is-selected .sle-zone-select { display: inline;" in CSS
+    # 고르면 테두리 모양이 바뀌던 규칙은 없다(강조는 바깥 테로 따로).
+    assert ".mark-zone.is-selected .sle-zone-border" not in CSS
+    assert 'class="sle-mark-border"' in HTML and 'class="sle-mark-align"' in HTML
+    assert HTML.index('<g class="sle-marks"></g>') < HTML.index('<g class="sle-group-names"></g>')
+    assert HTML.index('<g class="sle-group-names"></g>') < HTML.index('<g class="sle-overlay"></g>')
+    assert ".sle-group-names { pointer-events: none; }" in CSS
+    assert 'class="sle-group-label-pos"' in HTML
+    setter = _between("function setGroupLabel(key, value) {", "const groupShown = ")
+    assert setter.count("pushUndo(") == 1 and "op: 'groupLabel'" in setter
+    assert "} else if (op.op === 'groupLabel') {" in _between(
+        "function undo() {", "function cancelDrag("
+    )
+    apply = _between("applyButton.onclick = () => {", "// ---")
+    assert "groupLabels: FAB ? null : groupLabelsPayload()" in apply
+    assert "groupLabelChangeCount()" in _between(
+        "function updateStatus() {", "function commitTyping("
+    )
+    assert "drawGroupNames()" in _between(
+        "function drawSelectionBox() {", "overlay.replaceChildren()"
+    )
+    assert "!VIEW || mods.some(" in JS
+
+
+def test_the_component_sends_only_top_or_bottom_group_labels() -> None:
+    """가운데(처음 값)와 모르는 값은 보내지 않는다 — 브라우저는 없는 묶음을 가운데로 그린다."""
+    cleaned = space_layout_editor._clean_group_labels(
+        {"G-1": "top", "G-2": "center", "G-3": "bottom", "G-4": "left"}
+    )
+
+    assert cleaned == {"G-1": "top", "G-3": "bottom"}
+    assert space_layout_editor._clean_group_labels(None) == {}

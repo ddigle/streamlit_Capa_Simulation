@@ -350,7 +350,15 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   유일성은 `services/floor_layout_mark.py` 가 맡는다. 리비전 저장과 같은 트랜잭션에 쓸 수 있다.
   이름표 글자 크기 `font_size`(INTEGER, 9·11·13·16·20·24 화면 px)와 글자 색 `font_color`(영역 색 키)는
   마이그레이션 17 의 NULL 허용 컬럼이다 — NULL 은 자동 크기·기본 글자색이다. `fab_layout_mark`
-  (마이그레이션 13)도 같은 두 컬럼을 갖는다.
+  (마이그레이션 13)도 같은 두 컬럼을 갖는다. 영역의 테두리 모양 `border_style`(`dashed`·`solid`)과
+  이름표 정렬 `label_align`(`left`·`center`·`right`)은 마이그레이션 25 의 NULL 허용 컬럼이다(두 표 모두) —
+  NULL 은 지금 모습(점선·왼쪽)이고 영역이 아닌 요소는 늘 NULL 이다.
+- `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`top`·`bottom`).
+  설비 마스터 칸이 아니라 `floor_layout_mark` 처럼 리비전 없는 층 현행값이고, 가운데(기본)는 행이 없다.
+  키는 (`building`, `floor_name`, `parent_equipment_id`)이고 층 단위 DELETE+INSERT 라 PK 를 두지 않는다.
+  층 저장의 동시성 대조는 요소와 위치를 함께 본 지문(`floor_layout_fingerprint`)이다. 검사는
+  `services/floor_layout_mark.prepare_group_labels`, 적용 합치기·이름 바꿈 따라가기는
+  `services/space_layout_edit.next_group_labels`.
 - `fab_layout_profile`·`fab_layout_mark`(마이그레이션 13): Space S.PKG FAB 전체 도면. 머리는
   `layout_key = 'FAB'` 한 행(캔버스·배경 도면 BLOB, `floor_layout_profile` 처럼 UPDATE 로 고친다)이고,
   요소는 `floor_layout_mark` 와 같은 열(동·층 제외)에 층 블록의 연결 대상 `link_building`·

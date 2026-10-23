@@ -343,7 +343,12 @@ def _mark_swatches() -> dict[str, tuple[str, str]]:
     """테·덧표시 칸의 견본(꼴, 안 글자). 도면의 테·빗금·표식과 같은 색이다."""
     box = f"{_SWATCH}width:14px;height:10px;border-radius:2px;"
     return {
-        LEGEND_PRE_ARRIVAL: (f"{box}border:2px dashed {tokens.SPACE_RING_PRE_ARRIVAL}", ""),
+        # 반입 예정 점선은 도면 테(3.5px)처럼 굵게 — 견본 칸도 3px 이라 2px 칸보다 조금 크다.
+        LEGEND_PRE_ARRIVAL: (
+            f"{_SWATCH}width:16px;height:11px;border-radius:2px;"
+            f"border:3px dashed {tokens.SPACE_RING_PRE_ARRIVAL}",
+            "",
+        ),
         LEGEND_EXIT_PLANNED: (
             f"{box}border:2px solid {tokens.SPACE_RING_EXIT};"
             f"box-shadow:0 0 0 1px {tokens.SPACE_RING_EXIT_OUTLINE}",

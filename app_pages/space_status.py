@@ -18,6 +18,7 @@ from capa_simulation.components.equipment_data_workspace import (
     follow_unit_renames,
     pending_fab_layout,
     pending_floor_canvases,
+    pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
     pop_discarded_notice,
@@ -28,6 +29,7 @@ from capa_simulation.components.equipment_data_workspace import (
     save_equipment_buffer,
     stage_fab_layout,
     stage_floor_canvas,
+    stage_floor_group_labels,
     stage_floor_marks,
     stage_unit_renames,
 )
@@ -70,6 +72,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_fab_layout,
+    load_floor_group_labels,
     load_floor_layout_canvases,
     load_floor_layout_marks,
     load_floor_layout_profile,
@@ -110,7 +113,11 @@ from capa_simulation.services.fab_layout import (
     prepare_fab_layout_marks,
     require_fab_layout_fits,
 )
-from capa_simulation.services.floor_layout_mark import FloorLayoutMark, marks_fingerprint
+from capa_simulation.services.floor_layout_mark import (
+    FloorLayoutMark,
+    floor_layout_fingerprint,
+    marks_fingerprint,
+)
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
@@ -139,8 +146,10 @@ from capa_simulation.services.space_layout_edit import (
     editor_inputs,
     layout_changes,
     layout_warnings,
+    module_group_names,
     name_changes,
     new_unit_options,
+    next_group_labels,
     other_change_count,
     parse_editor_apply,
     reserved_names,
@@ -503,7 +512,7 @@ def _canvas_text(key: FloorKey) -> str:
 def _floor_viewer_inputs(
     key: FloorKey, floor_status: pd.DataFrame, boundaries: pd.DataFrame
 ) -> tuple[tuple[FloorLayoutMark, ...], list[dict[str, Any]], str]:
-    """층 상세 뷰어의 도면 요소·호기 payload·그리는 호기 지문.
+    """층 상세 뷰어의 도면 요소·호기 payload·그리는 호기 지문(Main 설비명 위치는 따로 읽는다).
 
     그리는 호기는 기준일 하나의 행이 아니라 **페이더 범위 전체의 합집합**이다(레이아웃표시 Y ·
     좌표 · 범위 시작 뒤까지 도면에 남음, `drawn_in_range`). 기준일에 안 보이는 호기는 브라우저가
@@ -560,7 +569,15 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         changes, names = pd.DataFrame(), pd.DataFrame()
     canvases = pending_floor_canvases() if frames is not None else {}
     marks = pending_floor_marks() if frames is not None else {}
-    if changes.empty and names.empty and not canvases and not marks and fab_pending is None:
+    group_labels = pending_floor_group_labels() if frames is not None else {}
+    if (
+        changes.empty
+        and names.empty
+        and not canvases
+        and not marks
+        and not group_labels
+        and fab_pending is None
+    ):
         if isinstance(error, str):
             st.error(f"배치를 저장하지 못했습니다: {error}")
         return
@@ -589,6 +606,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         parts.append(f"편집 영역 {len(canvases)}개 층")
     if marks:
         parts.append(f"도면 요소 {len(marks)}개 층")
+    if group_labels:
+        parts.append(f"Main 설비명 위치 {len(group_labels)}개 층")
     if fab_pending is not None:
         parts.append("S.PKG FAB 전체 배치")
     with st.container(border=True, key="space_unsaved_layout_panel"):
@@ -643,6 +662,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             and names.empty
             and not canvases
             and not marks
+            and not group_labels
             and not others
             and not side_tables
         )
@@ -766,6 +786,8 @@ def _render_layout_editor(
     canvas = canvases.get(key, (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
     stored_marks = load_floor_layout_marks(equipment_database_path, building, floor)
     marks = pending_floor_marks().get(key, stored_marks)
+    stored_labels = load_floor_group_labels(equipment_database_path, building, floor)
+    group_labels = pending_floor_group_labels().get(key, stored_labels)
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
@@ -798,10 +820,10 @@ def _render_layout_editor(
         "층이 정해지지 않은 미배치 호기는 트레이에 함께 뜹니다. 기준일은 편집하는 동안 "
         f"{as_of.isoformat()} 로 고정입니다 — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다."
     )
-    # epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·**편집 대상 호기 목록**. 하나라도 바뀌면
-    # 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다. 호기 목록은
-    # 기준일로도 바뀐다(도면 이탈일이 지난 호기가 빠진다) — 빠뜨리면 브라우저가 옛 목록을 쥔 채
-    # 「이 편집기에 없는 호기」로 적용 전체가 거부된다.
+    # epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·Main 설비명 위치·**편집 대상 호기 목록**.
+    # 하나라도 바뀌면 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다.
+    # 호기 목록은 기준일로도 바뀐다(도면 이탈일이 지난 호기가 빠진다) — 빠뜨리면 브라우저가 옛
+    # 목록을 쥔 채 「이 편집기에 없는 호기」로 적용 전체가 거부된다.
     # 숨은 모듈(묶음 바둑판의 칸만 차지)도 기준일로 바뀐다 — 목록에 넣는다.
     roster = hashlib.sha256(
         "|".join(
@@ -816,7 +838,7 @@ def _render_layout_editor(
             revision_token(latest_snapshot),
             str(equipment_buffer_generation()),
             f"{canvas[0]:g}x{canvas[1]:g}",
-            marks_fingerprint(marks),
+            floor_layout_fingerprint(marks, group_labels),
             roster,
         )
     )
@@ -829,6 +851,7 @@ def _render_layout_editor(
         floor=key,
         floors=ALL_FLOORS,
         marks=marks,
+        group_labels=group_labels,
         new_unit=options,
         as_of=as_of,
         background_image=profile.image_data_uri if profile is not None else None,
@@ -872,11 +895,15 @@ def _render_layout_editor(
         prepared = prepare_equipment_master(master, floor_canvases=next_canvases)
         if applied.renames:
             prepare_downtime_for_prepared_equipment(downtime, prepared)
+        # Main 설비명 위치 — 실린 모듈 묶음은 보낸 위치로, 이름을 바꾼 묶음은 새 이름으로 따라간다.
+        next_labels = next_group_labels(
+            group_labels, applied, module_group_names(inputs.items, inputs.ghosts)
+        )
     except ValueError as exc:
         st.error(f"적용하지 못했습니다: {exc}")
         return
     stored_canvas = floor_canvases.get(key)
-    base = (stored_canvas, marks_fingerprint(stored_marks))
+    base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
     replace_equipment_buffer((frames[0], master, downtime))
     if applied.renames:
         stage_unit_renames(
@@ -891,6 +918,10 @@ def _render_layout_editor(
     if applied.marks is not None:
         unchanged = marks_fingerprint(applied.marks) == marks_fingerprint(stored_marks)
         stage_floor_marks(key, None if unchanged else applied.marks, base=base)
+    if next_labels != group_labels:
+        stage_floor_group_labels(
+            key, None if next_labels == stored_labels else next_labels, base=base
+        )
     renamed = (
         f" 이름 바꿈 {len(applied.renames)}건도 넣었습니다"
         + ("(비가동 일정의 설비명이 따라갑니다)." if applied.unit_renames else ".")
@@ -1249,6 +1280,9 @@ else:
                     get_space_unit_boundaries(floor_status, downtime, today=today),
                 )
             marks, items, roster = viewer_inputs
+            viewer_labels = load_floor_group_labels(
+                equipment_database_path, selected_building, selected_floor
+            )
             render_space_layout_viewer(
                 key=f"space_layout_viewer_{selected_building}_{selected_floor}",
                 # 저장본·캔버스·요소·그리는 호기(조건 카드 필터, 페이더 범위)가 바뀌면 새로 선다.
@@ -1262,7 +1296,7 @@ else:
                         selected_floor,
                         revision_token(latest_snapshot) if editable else "sample",
                         f"{canvas_width:g}x{canvas_height:g}",
-                        marks_fingerprint(marks),
+                        floor_layout_fingerprint(marks, viewer_labels),
                         roster,
                     )
                 ),
@@ -1270,6 +1304,7 @@ else:
                 canvas=(canvas_width, canvas_height),
                 floor=(selected_building, selected_floor),
                 marks=marks,
+                group_labels=viewer_labels,
                 summary=summary,
                 as_of=as_of,
                 today=today,

@@ -31,6 +31,8 @@ from typing import Any, Final
 from capa_simulation.services.floor_layout_mark import (
     MARK_COLOR_KEYS,
     MARKS_PER_FLOOR_MAX,
+    ZONE_BORDER_STYLES,
+    ZONE_LABEL_ALIGNS,
     mark_box,
     mark_flag,
     mark_font_color,
@@ -40,6 +42,7 @@ from capa_simulation.services.floor_layout_mark import (
     mark_rotation,
     marks_extent,
     zone_color,
+    zone_look,
 )
 from capa_simulation.services.floor_layout_profile import (
     CANVAS_DECIMALS,
@@ -133,6 +136,9 @@ class FabLayoutMark:
     # 이름표·블록 글자의 크기(None 은 자동)와 색 키(빈 값은 기본). 층 요소와 같은 계약이다.
     font_size: int | None = None
     font_color: str = ""
+    # 영역의 테두리 모양·이름표 정렬. 층 요소와 같은 계약이고 영역이 아니면 처음 값(점선·왼쪽)이다.
+    border_style: str = ZONE_BORDER_STYLES[0]
+    label_align: str = ZONE_LABEL_ALIGNS[0]
 
     def editor_payload(self) -> dict[str, Any]:
         """편집기(브라우저)에 보내는 모양. 층 도면 요소와 같은 키에 `link`(「C1 1F」)를 더한다.
@@ -152,6 +158,8 @@ class FabLayoutMark:
             "link": floor_label(self.link) if self.link is not None else "",
             "fontSize": self.font_size,
             "fontColor": self.font_color,
+            "borderStyle": self.border_style,
+            "labelAlign": self.label_align,
         }
 
 
@@ -326,7 +334,8 @@ def prepare_fab_layout_marks(
     받는 키는 편집기 계약(층 요소와 같고 `link` 를 더한다). 종류는 `FAB_MARK_KINDS`, 개수는 층과
     같은 상한이다. **층 블록은 연결(「C1 1F」, FAB 의 30개 층)이 필수**이고 색은 기본(빈 값) 또는
     `MARK_COLOR_KEYS` 다. 영역 색은 층 도면과 같다(비면 회색). 블록이 아닌 요소의 연결은 버린다.
-    글자 크기·색(`fontSize`·`fontColor`)은 층 요소와 같은 규칙으로 모든 종류가 갖는다.
+    글자 크기·색(`fontSize`·`fontColor`)은 층 요소와 같은 규칙으로 모든 종류가 갖고, 테두리 모양·
+    이름표 정렬(`borderStyle`·`labelAlign`)은 층 요소처럼 영역만 갖는다.
     두 블록이 같은 층을 가리키는 것은 막지 않는다(`duplicate_block_links` 로 경고만)."""
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"FAB 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -362,6 +371,7 @@ def prepare_fab_layout_marks(
                 hatch=kind == "zone" and mark_flag(raw.get("hatch")),
                 font_size=mark_font_size(raw, mark_id),
                 font_color=mark_font_color(raw, mark_id),
+                **zone_look(raw, kind, mark_id),
             )
         )
     return tuple(prepared)

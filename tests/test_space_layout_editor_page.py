@@ -232,6 +232,65 @@ def test_a_module_group_apply_is_tiled_and_carries_its_hidden_module(
     clear_equipment_repository()
 
 
+def test_a_group_label_apply_saves_without_a_revision_and_follows_a_rename(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """Main 설비명 위치(2026-10-23 사용자 요청)는 적용 → 대기분 → 「배치 저장」 한 번에 층
+    현행값으로 쓰이고 설비 리비전을 만들지 않는다. 뷰어도 같은 위치를 받는다. Main 설비 이름을
+    바꾸면 위치가 새 이름으로 따라간다."""
+    module = {"Main 설비": "GRP-1", "Xsize": 10, "Ysize": 7}
+    master = _master(
+        {**module, "설비명": "G1-A", "X좌표": 50.0, "Y좌표": 37.0},
+        {**module, "설비명": "G1-B", "X좌표": 60.0, "Y좌표": 37.0},
+    )
+    app, database = _open_editor(tmp_path, master)
+    assert editor_calls[-1]["groupLabels"] == {}
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [],
+        "marks": None,
+        "canvas": None,
+        "groupLabels": [{"group": "GRP-1", "position": "top"}],
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    assert any("Main 설비명 위치 1개 층" in item.value for item in app.markdown)
+    assert editor_calls[-1]["groupLabels"] == {"GRP-1": "top"}
+    repository = DuckDBEquipmentRepository(database)
+    assert repository.load_floor_group_labels("C1", "1F") == {}
+
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("새 리비전 없이" in item.value for item in app.success)
+    assert len(repository.list_revisions()) == 1
+    assert repository.load_floor_group_labels("C1", "1F") == {"GRP-1": "top"}
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    viewer = editor_calls[-1]
+    assert viewer["mode"] == "view" and viewer["groupLabels"] == {"GRP-1": "top"}
+
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [],
+        "marks": None,
+        "canvas": None,
+        "renames": [{"kind": "group", "from": "GRP-1", "to": "GRP-X"}],
+        "groupLabels": [{"group": "GRP-1", "position": "bottom"}],
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    assert editor_calls[-1]["groupLabels"] == {"GRP-X": "bottom"}
+    app.button(key="space_layout_save").click().run()
+    assert repository.load_floor_group_labels("C1", "1F") == {"GRP-X": "bottom"}
+    clear_equipment_repository()
+
+
 def test_an_apply_from_an_old_editor_is_not_applied(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

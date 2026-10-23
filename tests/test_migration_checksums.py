@@ -92,6 +92,7 @@ _EQUIPMENT_CHECKSUMS: dict[int, str] = {
     19: "a14665ebf14436dd2a94bade44b4ccdcfd4599dd8cbe8a75458ed2dfefce80b4",
     21: "ba537d93470581499a300c9dea6fb39d0a00e64ced4279b96bc6dd7c96d0139f",
     23: "9db213a9dd7f41261b0ee5daed2d82b1ed8cf673f6020229087d02806d4f7b60",
+    25: "fe4a15c67aabceac834fbcad801e1eac5d0fc67c72c442eb71b8b0e0df45b30e",
 }
 
 Loader = Callable[[], tuple[Migration, ...]]

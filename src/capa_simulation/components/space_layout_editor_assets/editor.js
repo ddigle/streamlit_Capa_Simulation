@@ -16,6 +16,8 @@ export default function (component) {
     // 서랍에서 놓은 호기 id(놓은 차례) — 크기 없는 호기가 같은 앞 3자리 설비의 크기를 빌릴 때 본다(`recentSizes`).
     // 서랍 Shift 범위의 기준 칩(`trayAnchor`), 도면 요소 붙여넣기의 비켜 놓기 차례(`pasteSerial`), 상태 줄 한 줄 알림(`flash`).
     placedLog: [], trayAnchor: null, pasteSerial: 0, flash: '', hover: null, guideTimer: 0,
+    // Main 설비 모듈 묶음 이름표 위치(묶음 열쇠 `groupKeyOf` → 'top'·'bottom', 없으면 가운데)와 처음 값.
+    groupLabels: new Map(), originalGroupLabels: new Map(),
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -134,6 +136,15 @@ export default function (component) {
   const FONT_SIZES = (Array.isArray(data.fontSizes) ? data.fontSizes : [9, 11, 13, 16, 20, 24]).map(Number)
   const LABEL_PX = 11
   const fontSizeOf = (raw) => (raw === null || raw === undefined || raw === '' || !FONT_SIZES.includes(Number(raw)) ? null : Number(raw))
+  // 영역 테두리 모양·이름표 정렬(2026-10-23 사용자 요청). 첫 값이 처음 값 — 지금 모습(점선, 왼쪽 위 꼬리표)이다. 파이썬
+  // `floor_layout_mark.ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS` 와 같다.
+  const BORDER_STYLES = ['dashed', 'solid']
+  const LABEL_ALIGNS = ['left', 'center', 'right']
+  const pickOr = (value, allowed) => (allowed.includes(value) ? value : allowed[0])
+  // Main 설비 모듈 묶음 이름표 위치 — 범위 정가운데(처음 값)·범위 바깥 바로 위·아래(파이썬 `GROUP_LABEL_POSITIONS`).
+  const GROUP_LABEL_POSITIONS = ['center', 'top', 'bottom']
+  // Main 설비명 글자의 가장 큰 크기(화면 px). 범위에 맞춰 줄고 7px 아래면 숨긴다(모듈 이름표와 같은 규칙).
+  const GROUP_NAME_PX = 12
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
   const HINT = FAB
     ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
@@ -149,6 +160,7 @@ export default function (component) {
   const zonesLayer = svg.querySelector('.sle-zones')
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
+  const namesLayer = svg.querySelector('.sle-group-names')
   const overlay = svg.querySelector('.sle-overlay')
   const guidesLayer = svg.querySelector('.sle-guides')
   const stage = q('.sle-stage')
@@ -178,11 +190,15 @@ export default function (component) {
   const moveSelect = q('.sle-move-floor')
   const moveButton = q('.sle-move')
   const moduleTile = q('.sle-module-tile')
+  const groupNameBox = q('.sle-group-name')
+  const groupNamePos = q('.sle-group-label-pos')
   const markProps = q('.sle-markprops')
   const markLabel = q('.sle-mark-label')
   const markFontSize = q('.sle-mark-font-size')
   const markFontColor = q('.sle-mark-font-color')
   const markColor = q('.sle-mark-color')
+  const markBorder = q('.sle-mark-border')
+  const markAlign = q('.sle-mark-align')
   const markHatch = q('.sle-mark-hatch')
   const markKeepOut = q('.sle-mark-keepout')
   const markRotate = q('.sle-mark-rotate')
@@ -504,6 +520,36 @@ export default function (component) {
   }
   // </edit-tools>
 
+  // ---------------------------------------------------------------- 영역 이름표·Main 설비명 자리(순수 함수)
+  // 영역 이름표 정렬과 Main 설비 모듈 묶음 이름표 위치(2026-10-23 사용자 요청)의 자리 계산이다. `tests/test_space_editor_tools.py`
+  // 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <layout-look>
+  // 영역 이름표 꼬리표의 왼쪽 x(영역 안 좌표) — 위 변의 왼쪽(처음 값)·가운데·오른쪽. 영역 폭 lw, 꼬리표 폭 tagW(영역보다
+  // 넓으면 영역 폭으로 줄여 부른다).
+  function zoneTagX(lw, tagW, align) {
+    if (align === 'center') return (lw - tagW) / 2
+    if (align === 'right') return lw - tagW
+    return 0
+  }
+  // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
+  // 단위). 가운데(처음 값)는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를 띄워 붙인다 —
+  // 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다.
+  function groupNameSpot(r, position, fs, gap) {
+    const x = r.x + r.w / 2
+    const half = fs * 0.8
+    if (position === 'top') return { x, y: r.y + r.h + gap + half }
+    if (position === 'bottom') return { x, y: r.y - gap - half }
+    return { x, y: r.y + r.h / 2 }
+  }
+  // Main 설비명 글자 크기(데이터 단위) — 화면 최대 maxSize 에서 범위 폭(알약 여백 포함)에 맞춰 줄이고, 가운데면 범위 높이의
+  // 0.16 배를 넘지 않게 한다(알약이 모듈 칸 이름표에 닿지 않게). em 은 글자 폭(em), upp 는 화면 px 당 데이터 단위.
+  function groupNameSize(r, position, em, maxSize, upp) {
+    let fs = Math.min(maxSize * upp, (r.w * 0.92) / (Math.max(em, 1) + 0.9))
+    if (position === 'center') fs = Math.min(fs, r.h * 0.16)
+    return fs
+  }
+  // </layout-look>
+
   const isUnit = (m) => m.kind === 'unit'
   const isMark = (m) => m.kind !== 'unit'
   const blocks = (m) => (m.kind === 'zone' && m.keepOut) || m.kind === 'shutter' || m.kind === 'door' || m.kind === 'column'
@@ -623,7 +669,7 @@ export default function (component) {
   const snapshot = (item) => ({
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
     sizeFrom: item.sizeFrom, rot: item.rot, label: item.label, group: item.group, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
-    link: item.link, fontSize: item.fontSize, fontColor: item.fontColor,
+    link: item.link, fontSize: item.fontSize, fontColor: item.fontColor, borderStyle: item.borderStyle, labelAlign: item.labelAlign,
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
@@ -808,6 +854,79 @@ export default function (component) {
       top = Math.max(top, item.y + item.h)
     }
     return { right: ceilTo(right), top: ceilTo(top) }
+  }
+
+  // ---------------------------------------------------------------- Main 설비명(모듈 묶음 이름표)
+  // 모듈 묶음(모듈 둘 이상)의 범위에 Main 설비명을 그린다(2026-10-23 사용자 요청) — 처음 값은 범위 정가운데, 묶음마다 범위
+  // 바깥 바로 위·아래를 고른다(배치 편집 선택 칸). 위치는 묶음 열쇠(`groupKeyOf` — 처음 Main 설비 이름)로 쥐고, 적용값
+  // `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}] 이다(파이썬 `next_group_labels` 가 이름 바꿈을 따라
+  // 층 위치 목록으로 합친다). 보기 화면은 기준일에 묶음의 모듈이 하나도 보이지 않으면 이름도 숨긴다.
+  const groupLabelOf = (key) => pickOr(S.groupLabels.get(key), GROUP_LABEL_POSITIONS)
+  // 이 편집기의 모듈 묶음 — 열쇠 → 대표 호기(편집기 호기, 숨은 모듈 아님). 한 번 훑는다.
+  function moduleGroups() {
+    const out = new Map()
+    const counts = groupCounts()
+    for (const m of S.items.values()) {
+      if (!isUnit(m) || !m.group) continue
+      const key = groupKeyOf(m)
+      if (!out.has(key) && (counts.get(key) || 0) >= 2) out.set(key, m)
+    }
+    return out
+  }
+  // 처음 값에서 바뀐 묶음 수.
+  function groupLabelChangeCount() {
+    let count = 0
+    for (const key of moduleGroups().keys()) {
+      if (groupLabelOf(key) !== pickOr(S.originalGroupLabels.get(key), GROUP_LABEL_POSITIONS)) count += 1
+    }
+    return count
+  }
+  // 적용값 `groupLabels` — 이 층에 남는 모듈 묶음마다(다른 층으로 보낸 묶음은 빠진다 — 그 층에서는 가운데로 선다).
+  function groupLabelsPayload() {
+    const out = []
+    for (const [key, lead] of moduleGroups()) {
+      if (members(lead).every((m) => m.moveTo)) continue
+      out.push({ group: key, position: groupLabelOf(key) })
+    }
+    return out
+  }
+  // 묶음 하나의 위치를 바꾼다. 되돌리기 한 번이다.
+  function setGroupLabel(key, value) {
+    const before = groupLabelOf(key)
+    const next = pickOr(value, GROUP_LABEL_POSITIONS)
+    if (before === next) { syncInspector(); return }
+    pushUndo([{ op: 'groupLabel', key, before }])
+    S.groupLabels.set(key, next)
+    drawGroupNames()
+    updateStatus()
+  }
+  // 보기 화면에서 묶음이 기준일에 보이는가 — 모듈 하나라도 보이면 보인다. 편집 화면은 늘 보인다(테·덧표시가 없다).
+  const groupShown = (mods) => !VIEW || mods.some((m) => !m.ghost && S.groups.get(m.id)?.__visible !== false)
+  function drawGroupNames() {
+    namesLayer.replaceChildren()
+    if (FAB) return
+    const upp = unitsPerPx()
+    for (const [key, lead] of moduleGroups()) {
+      const mods = moduleMembers(lead)
+      const range = mods ? groupRange(mods) : null
+      if (!range || !groupShown(mods)) continue
+      const name = String(lead.group)
+      const position = groupLabelOf(key)
+      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX, upp)
+      if (fs / upp < 7) continue
+      const spot = groupNameSpot(range, position, fs, 2 * upp)
+      const cy = H() - spot.y
+      const pillW = Math.min(range.w, labelEm(name) * fs + fs * 0.9)
+      const node = el('g', { class: `sle-group-name-tag is-${position}` })
+      node.dataset.group = key
+      node.append(
+        el('rect', { class: 'sle-group-name-pill', x: spot.x - pillW / 2, y: cy - fs * 0.8, width: pillW, height: fs * 1.6, rx: fs * 0.8 }),
+      )
+      const text = el('text', { class: 'sle-group-name-text', x: spot.x, y: cy, 'font-size': fs })
+      text.textContent = name
+      node.append(text)
+      namesLayer.append(node)
+    }
   }
 
   // ---------------------------------------------------------------- 정렬선(편집)
@@ -1200,13 +1319,18 @@ export default function (component) {
       fill.style.fill = c
       inner.append(fill)
       if (item.hatch) inner.append(el('rect', { x: 0, y: 0, width: lw, height: lh, fill: 'url(#sle-hatch)' }))
-      const border = el('rect', { class: 'sle-zone-border', x: 0, y: 0, width: lw, height: lh, rx: 0.4 })
+      // 테두리는 고른 모양(점선 처음 값·실선)이다. 고른 영역의 강조는 바깥에 띄운 강조 테(`sle-zone-select`, CSS 가 고를 때만
+      // 보인다)라 테두리 모양과 섞이지 않는다.
+      const border = el('rect', { class: item.borderStyle === 'solid' ? 'sle-zone-border is-solid' : 'sle-zone-border', x: 0, y: 0, width: lw, height: lh, rx: 0.4 })
       border.style.stroke = c
-      inner.append(border)
+      const pad = 3 * upp
+      inner.append(border, el('rect', { class: 'sle-zone-select', x: -pad, y: -pad, width: lw + pad * 2, height: lh + pad * 2, rx: 0.6 }))
+      // 이름표 꼬리표는 위 변의 왼쪽(처음 값)·가운데·오른쪽이다.
       const caption = (item.label || '영역') + (item.keepOut ? ' · 설비 금지' : '')
       const tagW = Math.min(lw, emWidth(caption) * fs + fs * 0.9)
-      const tag = el('rect', { class: 'sle-zone-tag', x: 0, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
-      inner.append(tag, text(caption, fs * 0.45, fs * 0.8, fs, 'start'))
+      const tagX = zoneTagX(lw, tagW, item.labelAlign)
+      const tag = el('rect', { class: 'sle-zone-tag', x: tagX, y: 0, width: tagW, height: fs * 1.6, rx: 0.3 })
+      inner.append(tag, text(caption, tagX + fs * 0.45, fs * 0.8, fs, 'start'))
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -1621,6 +1745,8 @@ export default function (component) {
     if (ids) for (const id of ids) paintOne(id)
     else for (const id of S.groups.keys()) paintOne(id)
     if (flipped.length) markOverlaps(flipped)
+    // 기준일에 묶음이 통째로 보이거나 숨으면 Main 설비명도 따라간다.
+    if (flipped.some((id) => S.items.get(id)?.group)) drawGroupNames()
     if (S.selection.size) updateStatus()
   }
   // 칠한 날이 `previous` 에서 S.asOf 로 옮겨 갔다(페이더 프레임·놓은 뒤 파이썬이 따로 바꾼 날) — 그 사이에 경계 날짜가
@@ -1684,6 +1810,8 @@ export default function (component) {
         || o.color !== item.color || o.hatch !== item.hatch || o.keepOut !== item.keepOut
         || (o.link || '') !== (item.link || '')
         || (o.fontSize ?? null) !== (item.fontSize ?? null) || (o.fontColor || '') !== (item.fontColor || '')
+        || pickOr(o.borderStyle, BORDER_STYLES) !== pickOr(item.borderStyle, BORDER_STYLES)
+        || pickOr(o.labelAlign, LABEL_ALIGNS) !== pickOr(item.labelAlign, LABEL_ALIGNS)
     }
     if ((o.moveTo || null) !== (item.moveTo || null)) return true
     if (o.placed !== item.placed) return true
@@ -1729,6 +1857,8 @@ export default function (component) {
 
   // 함께 움직일 범위(모듈 묶음·여러 개 선택)를 점선 상자로 둘러 보인다. 사각형으로 고르는 중이면 그 사각형도.
   function drawSelectionBox() {
+    // Main 설비명도 범위를 따라간다 — 자리·크기·배율이 바뀌는 길이 모두 여기를 지난다.
+    drawGroupNames()
     overlay.replaceChildren()
     const chosen = selectedItems()
     const list = expanded(chosen)
@@ -1930,6 +2060,7 @@ export default function (component) {
       id: m.id, kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0,
       label: m.label || '', color: m.color || '', hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut),
       fontSize: m.fontSize ?? null, fontColor: m.fontColor || '',
+      borderStyle: pickOr(m.borderStyle, BORDER_STYLES), labelAlign: pickOr(m.labelAlign, LABEL_ALIGNS),
       ...(m.kind === 'block' ? { link: m.link || '' } : {}),
     })),
     ...S.passthrough,
@@ -2008,6 +2139,11 @@ export default function (component) {
     moduleTile.hidden = !loose
     moduleTile.disabled = !loose
     if (loose) setText(moduleTile, `범위에 맞춰 ${loose.length}등분`)
+    // 모듈 묶음 하나를 골랐으면 「Main 설비명 위치」(가운데·위·아래). 다른 층으로 보낸 묶음은 이 층에 이름이 없다.
+    const bundleItem = single && isUnit(single) && !single.moveTo && moduleMembers(single) ? single : null
+    groupNameBox.hidden = !bundleItem
+    groupNamePos.disabled = !bundleItem
+    if (bundleItem) groupNamePos.value = groupLabelOf(groupKeyOf(bundleItem))
     // 이름: 호기 하나를 골랐을 때만. 모듈 묶음이면 그 Main 설비(묶음 이름)를 고친다.
     const named = single && isUnit(single) && !single.moveTo ? single : null
     unitLabel.disabled = !named
@@ -2048,6 +2184,8 @@ export default function (component) {
       markFontColor.value = mark.fontColor || ''
       for (const node of zoneOnly) node.hidden = mark.kind !== 'zone'
       markColor.value = mark.color || 'gray'
+      markBorder.value = pickOr(mark.borderStyle, BORDER_STYLES)
+      markAlign.value = pickOr(mark.labelAlign, LABEL_ALIGNS)
       markHatch.checked = Boolean(mark.hatch)
       markKeepOut.checked = Boolean(mark.keepOut)
       markRotate.hidden = !MARK_KINDS[mark.kind].rotatable
@@ -2117,7 +2255,7 @@ export default function (component) {
     }
     const chosen = selectedItems()
     const item = chosen.length === 1 ? chosen[0] : null
-    const changed = changes().length + renames().length + markChangeCount() + (canvasChanged() ? 1 : 0)
+    const changed = changes().length + renames().length + markChangeCount() + groupLabelChangeCount() + (canvasChanged() ? 1 : 0)
     statusBox.replaceChildren()
     const add = (text, strong) => {
       if (statusBox.childNodes.length) statusBox.append(document.createTextNode(' · '))
@@ -2517,6 +2655,7 @@ export default function (component) {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
       x: spot.x, y: spot.y, w, h, rot: 0,
       color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
+      borderStyle: BORDER_STYLES[0], labelAlign: LABEL_ALIGNS[0],
     }
     fit(item)
     S.items.set(id, item)
@@ -2538,7 +2677,7 @@ export default function (component) {
   const clipOf = (m) => ({
     kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0, label: m.label || '', color: m.color || '',
     hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut), link: m.link || '', fontSize: m.fontSize ?? null,
-    fontColor: m.fontColor || '',
+    fontColor: m.fontColor || '', borderStyle: pickOr(m.borderStyle, BORDER_STYLES), labelAlign: pickOr(m.labelAlign, LABEL_ALIGNS),
   })
   function writeClipboard(marks) {
     const clip = { at: Date.now(), marks }
@@ -2890,6 +3029,9 @@ export default function (component) {
         } else if (op.op === 'delete') {
           S.items.set(op.item.id, { ...op.item })
           applied += 1
+        } else if (op.op === 'groupLabel') {
+          S.groupLabels.set(op.key, op.before)
+          applied += 1
         }
       }
       if (!applied) { undo(); return }
@@ -2958,6 +3100,7 @@ export default function (component) {
     color: String(raw.color || ''), hatch: Boolean(raw.hatch), keepOut: Boolean(raw.keepOut),
     link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
     fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || ''),
+    borderStyle: pickOr(raw.borderStyle, BORDER_STYLES), labelAlign: pickOr(raw.labelAlign, LABEL_ALIGNS),
   })
 
   function initFromData() {
@@ -2983,6 +3126,12 @@ export default function (component) {
       S.ghosts.set(ghost.id, ghost)
       S.original.set(ghost.id, snapshot(ghost))
     }
+    // Main 설비명 위치(처음 받은 Main 설비 이름 → 위·아래). 없는 묶음은 가운데다.
+    S.groupLabels = new Map()
+    for (const [name, position] of Object.entries(data.groupLabels || {})) {
+      if (GROUP_LABEL_POSITIONS.includes(position) && position !== GROUP_LABEL_POSITIONS[0]) S.groupLabels.set(String(name), position)
+    }
+    S.originalGroupLabels = new Map(S.groupLabels)
     for (const raw of data.marks || []) {
       const mark = readMark(raw)
       if (!drawable(mark.kind) || ![mark.x, mark.y, mark.w, mark.h].every(Number.isFinite)) {
@@ -3490,6 +3639,13 @@ export default function (component) {
     unitLabel.blur()
   }
   markColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { color: markColor.value }) }
+  markBorder.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'zone') setMarkProps(mark, { borderStyle: pickOr(markBorder.value, BORDER_STYLES) }) }
+  markAlign.onchange = () => { const mark = selectedMark(); if (mark && mark.kind === 'zone') setMarkProps(mark, { labelAlign: pickOr(markAlign.value, LABEL_ALIGNS) }) }
+  groupNamePos.onchange = () => {
+    const one = singleSelected()
+    if (one && isUnit(one) && moduleMembers(one)) setGroupLabel(groupKeyOf(one), groupNamePos.value)
+    else syncInspector()
+  }
   markFontSize.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { fontSize: fontSizeOf(markFontSize.value) }) }
   markFontColor.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { fontColor: markFontColor.value }) }
   markHatch.onchange = () => { const mark = selectedMark(); if (mark) setMarkProps(mark, { hatch: markHatch.checked }) }
@@ -3633,7 +3789,8 @@ export default function (component) {
     const unitChanges = changes()
     const nameChanges = renames()
     const marksChanged = markChangeCount() > 0
-    if (!unitChanges.length && !nameChanges.length && !marksChanged && !canvasChanged()) return
+    const labelsChanged = groupLabelChangeCount() > 0
+    if (!unitChanges.length && !nameChanges.length && !marksChanged && !labelsChanged && !canvasChanged()) return
     setTriggerValue('apply', {
       epoch: S.epoch,
       changes: unitChanges,
@@ -3641,6 +3798,8 @@ export default function (component) {
       renames: nameChanges,
       canvas: canvasChanged() ? { width: W(), height: H() } : null,
       marks: marksChanged ? marksPayload() : null,
+      // 이 층에 남는 모듈 묶음의 Main 설비명 위치(늘 보낸다 — 다른 층으로 보낸 묶음이 빠지는 것도 여기서 안다).
+      groupLabels: FAB ? null : groupLabelsPayload(),
     })
   }
 

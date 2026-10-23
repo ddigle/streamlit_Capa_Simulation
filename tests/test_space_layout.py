@@ -447,6 +447,8 @@ def test_the_floor_legend_shows_counts_when_viewing_and_only_fill_meanings_when_
     assert "기준 2026-10-16" in viewing
     assert tokens.SPACE_LINE_TYPE_FILLS["PKG"] in viewing
     assert tokens.SPACE_RING_PRE_ARRIVAL in viewing and tokens.SPACE_FLAG_FILL in viewing
+    # 반입 예정 견본 점선은 도면 테처럼 굵다(3px — 2026-10-23 사용자 요청).
+    assert f"border:3px dashed {tokens.SPACE_RING_PRE_ARRIVAL}" in viewing
     for label in (*LINE_TYPE_GROUPS, LEGEND_DEFAULT, LEGEND_STORAGE, LEGEND_DELAY):
         assert f"</span>{label}</span>" in editing
     for label in (LEGEND_PRE_ARRIVAL, LEGEND_EXIT_PLANNED, LEGEND_STOPPED, LEGEND_UNCONFIRMED):

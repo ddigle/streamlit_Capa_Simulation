@@ -312,6 +312,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
   - 배치 편집은 RawData 와 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer(revision_optional=True)` 로
     저장한다. 도면 상자 앞 칸(`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
+  - 층의 Main 설비명 위치(대기분 `pending_floor_group_labels`, 없으면 `load_floor_group_labels`)를 편집기·뷰어에
+    넘기고, 적용은 `next_group_labels` 로 층 위치 목록을 만들어 저장값과 다르면 `stage_floor_group_labels` 로 둔다.
+    편집기·뷰어 epoch 와 층 대조(`FloorLayoutBase`)는 요소와 위치를 함께 본 `floor_layout_fingerprint` 다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질`·`알림 모음` 네 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py`, 넷째는
   `components/alert_board.py` 를 그린다.
@@ -443,6 +446,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       (`capa.space.clipboard.<floor|fab>`) + 페이지 안 쪽지(`window.__capaSpaceClipboard`)이고 모든 읽기·쓰기가 try 안이다.
       마우스가 도면 위면 그 자리가 묶음 가운데(`dropSpot`), 아니면 원본에서 max(격자, 1)씩 비켜(거듭하면 더) 붙인다. 영역
       안으로 밀고 새 id·되돌리기 한 번이며 층 블록은 빈 층(`freeLinks`)을 가리킨다. 글 칸 입력 중에는 가로채지 않는다.
+  - **모양·저장 셋**(2026-10-23 사용자 요청, 층·FAB 공통 — 3번째는 층만). 자리 계산은 `// <layout-look>` 구획
+    (`zoneTagX`·`groupNameSpot`·`groupNameSize`)이고 `tests/test_space_editor_tools.py` 가 node 로 돌린다.
+    - 영역 테두리 모양(`borderStyle` 점선·실선)·이름표 정렬(`labelAlign` 왼쪽·가운데·오른쪽, 위 변 꼬리표)은 처음 값이 지금
+      모습(점선·왼쪽)이고 영역 선택 칸의 `테두리`·`글자 정렬` 로 고른다. 고른 영역의 강조는 테두리 모양을 바꾸지 않고
+      바깥 강조 테(`sle-zone-select`)로 따로 보인다. 읽기·바뀜 판정·적용값·복사·되돌리기 기록에 모두 든다.
+    - 반입 예정(실물 없음) 테는 3.5px 점선(범례 견본 3px, `space_layout._mark_swatches`), TEST 면은 연한 남색에 검정
+      글자다(`tokens.SPACE_LINE_TYPE_FILLS`·`_INKS` — 다른 면과의 ΔE 는 `tests/test_design_tokens.py`).
+    - Main 설비명: 모듈 묶음(편집기 모듈 + 숨은 모듈 둘 이상, `moduleGroups`)의 범위에 `sle-group-names` 층(눌림 없음)으로
+      알약 바탕 + 모듈 이름보다 굵은 글자를 그린다. 위치는 묶음 열쇠(`groupKeyOf`)마다 `S.groupLabels` — 가운데(처음 값,
+      범위 정가운데)·위·아래(범위 바깥 바로 위·아래)이고, 묶음을 고르면 선택 칸 `Main 설비명` 에서 바꾼다(되돌리기 한 번,
+      `op: 'groupLabel'`). 적용값 `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}](다른 층으로 보낸 묶음은
+      빠짐)이다. `drawSelectionBox` 가 부르므로 옮기기·크기·배율을 따라가고, 보기 화면은 기준일에 묶음의 모듈이 하나도
+      보이지 않으면(`__visible`) 이름도 숨긴다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
@@ -705,6 +721,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다.
 - `src/capa_simulation/services/floor_layout_mark.py` — 층 도면 비설비 요소의 계약·검증(`prepare_floor_layout_marks`)이다.
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
+  - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
+    `zone_look`)을 갖는다. FAB 요소(`fab_layout.prepare_fab_layout_marks`)도 같은 규칙이다.
+  - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데는 행 없음)의 검증은 `prepare_group_labels`, 층 대조 지문은
+    요소와 위치를 함께 본 `floor_layout_fingerprint` 다(위치가 없으면 `marks_fingerprint` 와 같다).
 - `src/capa_simulation/services/fab_layout.py` — FAB 동·층 정의, 층 이름·주소 인자 변환, FAB 전체 도면의 계약·검증
   (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다.
 - `src/capa_simulation/services/space_layout_edit.py` — Space 배치 편집기의 순수 계산(입력, 적용값 검증, 반영, 미저장
@@ -725,6 +745,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     레이아웃표시 그대로). 묶음째 빼거나 다른 층으로 보낸 적용에 옮겨진 숨은 모듈이 오면 거부한다(편집기는 처음 자리로
     되돌려 보낸다) — 빼면 숨은 모듈은 이 층 제자리에 남고, 보내면 `_harmonize_groups` 가 층을 맞추며 X·Y 를 비운다.
     상자 없는 숨은 형제는 세지 않는다. RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
+  - 적용값 `groupLabels`(실린 모듈 묶음만, `module_group_names`)는 `EditorApply.group_labels` 가 되고
+    `next_group_labels` 가 층 위치 목록으로 합친다 — 실린 묶음은 보낸 위치로 갈고(보내지 않은 실린 묶음 = 다른 층으로
+    보냄은 빠짐), 실리지 않은 묶음은 그대로 두며, Main 설비 이름 바꿈(`group_renames`)을 새 이름으로 따라간다.
   - `prefix_sizes`(`new_unit_options` 의 `prefixSizes`)는 설비명 앞 3자리(`name_prefix` — 앞뒤 공백을 걷은 첫 세 글자,
     세 글자 미만은 빈 글자)마다 편집본에서 크기가 있는 설비 가운데 설비명 자연 정렬이 가장 뒤인 것의 크기다. 모듈 묶음의
     모듈(Main 설비가 같은 행이 둘 이상)과 그 밖을 따로 둔다 — 편집기 서랍의 크기 불러오기가 쓴다(편집기 절).
@@ -1146,7 +1169,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `render_equipment_period` 는 숨은 `owner_tab` 이면 조회를 건너뛴다.
 - `src/capa_simulation/components/equipment_data_workspace.py` — RawData 입력·직접 편집·저장 이력과 세 표 리비전 저장.
   - Space 편집기와 함께 쓰는 편집본 경계다 — 버퍼는 `replace_equipment_buffer` 로만 갈고 `BUFFER_GENERATION_KEY` 세대를
-    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다.
+    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다. 층 대기분은 캔버스·요소·Main
+    설비명 위치(`PENDING_GROUP_LABELS_KEY`) 셋이고 첫 대기분이 본 저장값(`PENDING_BASES_KEY`)을 함께 쓴다.
   - `ImportReview` 는 최종 저장 때 입력이 달라졌으면 다시 확인받는다(마스터 입력 `read_equipment_update`,
     `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
@@ -1328,6 +1352,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   필요 단축 일정 조건·기준선 저장소.
   - 최신 리비전·캔버스·요소는 쓰기 잠금 안에서 읽고 `base_revision_id`·`floor_layout_bases`·FAB `base` 가 다르면
     거부한다. `save_snapshot`·`save_space_layout` 은 트랜잭션 하나이고 안 쓴 저장은 dirty 를 세우지 않는다.
+  - 층 Main 설비명 위치(`floor_layout_group_label`, `0025`)는 `floor_group_labels`(층마다 전체)로 같은 트랜잭션에 쓰고
+    층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
+    `label_align`(`0025`, 영역 아닌 요소는 NULL)이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 기준선(`0021`)은 갈아 쓰지 않는다. FAB
     도면은 `fab_layout_profile`·`fab_layout_mark`(`0013`)다.
 

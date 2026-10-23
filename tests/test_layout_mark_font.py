@@ -215,7 +215,8 @@ def test_migration_0017_keeps_existing_marks_as_auto_and_default(tmp_path: Path)
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (17, 19, 21, 23)
+    # 0017 이 0015 다음 첫 번째로 걸린다(그 뒤 번호는 나중 마이그레이션이다).
+    assert repository.initialize()[:4] == (17, 19, 21, 23)
 
     (floor,) = repository.load_floor_layout_marks("C1", "1F")
     (block,) = repository.load_fab_layout_marks()

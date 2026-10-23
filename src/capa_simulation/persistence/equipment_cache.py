@@ -325,6 +325,26 @@ def load_floor_layout_marks(
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_floor_group_labels_payload(
+    database_path: str,
+    building: str,
+    floor: str,
+    generation: WriteGeneration,
+) -> dict[str, str]:
+    del generation
+    return get_equipment_repository(database_path).load_floor_group_labels(building, floor)
+
+
+def load_floor_group_labels(database_path: str, building: str, floor: str) -> dict[str, str]:
+    """한 층의 저장된 Main 설비명 위치(Main 설비 → 위·아래, 가운데는 빠짐)."""
+    return dict(
+        _load_floor_group_labels_payload(
+            database_path, building, floor, _write_generation("floor_layout")
+        )
+    )
+
+
 def load_floor_layout_summaries(database_path: str) -> tuple[FloorLayoutCanvas, ...]:
     """Load every stored floor canvas without the drawing bytes."""
     return tuple(
@@ -474,12 +494,14 @@ def clear_shortening_baseline_cache() -> None:
 
 
 def clear_floor_layout_cache() -> None:
-    """층·FAB 도면·캔버스·도면 요소 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비 리비전과 무관하므로
-    스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른 쪽이 둘 다 비운다."""
+    """층·FAB 도면·캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비
+    리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른
+    쪽이 둘 다 비운다."""
     _bump_write_generation("floor_layout")
     _load_floor_layout_summaries_payload.clear()
     _load_floor_layout_profile_payload.clear()
     _load_floor_layout_marks_payload.clear()
+    _load_floor_group_labels_payload.clear()
     _load_fab_layout_payload.clear()
 
 

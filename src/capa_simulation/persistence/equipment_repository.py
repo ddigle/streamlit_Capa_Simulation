@@ -74,10 +74,14 @@ from capa_simulation.services.fab_layout import (
     require_fab_layout_fits,
 )
 from capa_simulation.services.floor_layout_mark import (
+    ZONE_BORDER_STYLES,
+    ZONE_LABEL_ALIGNS,
     FloorLayoutMark,
+    GroupLabels,
+    floor_layout_fingerprint,
     marks_extent,
-    marks_fingerprint,
     prepare_floor_layout_marks,
+    prepare_group_labels,
 )
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
@@ -115,7 +119,8 @@ from capa_simulation.services.weekly_availability_input import prepare_weekly_av
 _WRITE_LOCK = threading.RLock()
 # 저장본이 하나도 없을 때의 출발 리비전 표시. 편집본이 「빈 저장소에서 나왔다」는 뜻이다.
 EMPTY_REVISION_TOKEN = "empty"
-# 한 층 편집을 시작할 때 본 저장값: (저장된 캔버스 — 없으면 None, 저장된 도면 요소의 지문).
+# 한 층 편집을 시작할 때 본 저장값: (저장된 캔버스 — 없으면 None, 저장된 도면 요소·Main 설비명
+# 위치의 지문 `floor_layout_fingerprint`).
 FloorLayoutBase = tuple[CanvasSize | None, str]
 
 
@@ -300,16 +305,18 @@ class DuckDBEquipmentRepository:
         floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None,
         base_revision_id: str | None = None,
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
+        floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None,
     ) -> EquipmentSnapshot:
         """세 표를 새 리비전으로 저장한다.
 
-        미저장 층 캔버스·도면 요소가 있으면 **같은 트랜잭션**에 함께 쓴다(호기는 넓힌 캔버스
-        기준으로 검증된다). 캔버스·요소는 리비전이 아니라 층 현행값이다.
+        미저장 층 캔버스·도면 요소·Main 설비명 위치(`floor_group_labels` — 층마다 Main 설비 → 위치,
+        그 층 전체)가 있으면 **같은 트랜잭션**에 함께 쓴다(호기는 넓힌 캔버스 기준으로 검증된다).
+        캔버스·요소·위치는 리비전이 아니라 층 현행값이다.
 
         `base_revision_id` 는 편집본이 나온 리비전(저장본이 없었으면 `EMPTY_REVISION_TOKEN`)이다.
         주면 쓰기 잠금 안에서 최신 리비전과 견줘, 그 사이 다른 사람이 저장했으면 거부한다 —
         옛 편집본이 남의 리비전을 조용히 되돌리지 않게. `floor_layout_bases` 는 층마다 편집을
-        시작할 때 본 캔버스·요소 지문이고, 저장 직전 값과 다르면 같은 이유로 거부한다.
+        시작할 때 본 캔버스·요소·위치 지문이고, 저장 직전 값과 다르면 같은 이유로 거부한다.
         """
         revision_id = self._save(
             baseline,
@@ -320,6 +327,7 @@ class DuckDBEquipmentRepository:
             floor_marks=floor_marks,
             base_revision_id=base_revision_id,
             floor_layout_bases=floor_layout_bases,
+            floor_group_labels=floor_group_labels,
             skip_unchanged=False,
         )
         assert revision_id is not None
@@ -336,10 +344,11 @@ class DuckDBEquipmentRepository:
         floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None,
         base_revision_id: str | None = None,
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
+        floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None,
     ) -> EquipmentSnapshot | None:
         """`save_snapshot` 과 같되, 세 표가 최신 리비전과 같으면 **리비전을 만들지 않고**
-        캔버스·도면 요소만 쓴다(Space 에서 요소만 고친 저장이 설비 마스터를 복제하지 않게).
-        새 리비전을 만들었으면 그 스냅샷, 아니면 None."""
+        캔버스·도면 요소·Main 설비명 위치만 쓴다(Space 에서 요소만 고친 저장이 설비 마스터를
+        복제하지 않게). 새 리비전을 만들었으면 그 스냅샷, 아니면 None."""
         revision_id = self._save(
             baseline,
             equipment,
@@ -349,6 +358,7 @@ class DuckDBEquipmentRepository:
             floor_marks=floor_marks,
             base_revision_id=base_revision_id,
             floor_layout_bases=floor_layout_bases,
+            floor_group_labels=floor_group_labels,
             skip_unchanged=True,
         )
         return self.load_snapshot(revision_id) if revision_id is not None else None
@@ -364,6 +374,7 @@ class DuckDBEquipmentRepository:
         floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None,
         base_revision_id: str | None,
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None,
+        floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None,
         skip_unchanged: bool,
     ) -> str | None:
         """검증·리비전·캔버스·요소를 **연결 하나, 트랜잭션 하나**에서 한다.
@@ -378,6 +389,10 @@ class DuckDBEquipmentRepository:
             canvases[(building, floor)] = normalize_canvas_size(*size)
         for building, floor in floor_marks or {}:
             _require_floor_key(building, floor)
+        prepared_labels: dict[FloorKey, dict[str, str]] = {}
+        for (building, floor), labels in (floor_group_labels or {}).items():
+            _require_floor_key(building, floor)
+            prepared_labels[(building, floor)] = prepare_group_labels(labels)
         prepared_baseline = prepare_equipment_baseline(baseline)
         normalized_note = note.strip() if note and note.strip() else None
         outcome = _WriteOutcome()
@@ -398,7 +413,7 @@ class DuckDBEquipmentRepository:
                 connection,
                 stored_canvases,
                 floor_layout_bases or {},
-                changed={*canvases, *(floor_marks or {})},
+                changed={*canvases, *(floor_marks or {}), *prepared_labels},
             )
             # 저장 시점에만 층 캔버스 상한과 실적 날짜(오늘보다 늦음·반입실적 > Qual실적)를
             # 강제한다. 과거 리비전을 다시 읽을 때는 둘 다 넘기지 않아, 도면 비율을 줄이거나 날이
@@ -454,7 +469,14 @@ class DuckDBEquipmentRepository:
                 _upsert_floor_canvas(connection, building, floor, width, height)
             for (building, floor), marks in prepared_marks.items():
                 _replace_floor_marks(connection, building, floor, marks)
-            outcome.wrote = revision_id is not None or bool(canvases) or bool(prepared_marks)
+            for (building, floor), labels in prepared_labels.items():
+                _replace_group_labels(connection, building, floor, labels)
+            outcome.wrote = (
+                revision_id is not None
+                or bool(canvases)
+                or bool(prepared_marks)
+                or bool(prepared_labels)
+            )
         return revision_id
 
     def latest_revision_id(self) -> str | None:
@@ -778,6 +800,11 @@ class DuckDBEquipmentRepository:
         """한 층의 도면 요소를 그리는 순서(`source_row_no`)대로 읽는다."""
         with self._connect() as connection:
             return _stored_floor_marks(connection, building, floor)
+
+    def load_floor_group_labels(self, building: str, floor: str) -> dict[str, str]:
+        """한 층의 Main 설비명 위치(Main 설비 → 위·아래). 가운데(기본)는 행이 없어 빠진다."""
+        with self._connect() as connection:
+            return _stored_group_labels(connection, building, floor)
 
     def replace_floor_layout_marks(
         self,
@@ -1174,8 +1201,9 @@ def _require_floor_layout_bases(
     *,
     changed: set[FloorKey],
 ) -> None:
-    """바꾸려는 층의 캔버스·요소가 편집을 시작할 때 본 값 그대로인가. 아니면 다른 사람이 먼저
-    저장한 것이다 — 요소는 층 전체 교체라 옛 목록으로 덮으면 그 사람의 요소가 지워진다."""
+    """바꾸려는 층의 캔버스·요소·Main 설비명 위치가 편집을 시작할 때 본 값 그대로인가. 아니면
+    다른 사람이 먼저 저장한 것이다 — 요소·위치는 층 전체 교체라 옛 목록으로 덮으면 그 사람의 것이
+    지워진다."""
     for key in sorted(changed & set(bases)):
         expected_canvas, expected_marks = bases[key]
         stored_canvas = stored_canvases.get(key)
@@ -1185,11 +1213,16 @@ def _require_floor_layout_bases(
             same_canvas = all(
                 abs(a - b) < 1e-9 for a, b in zip(stored_canvas, expected_canvas, strict=True)
             )
-        same_marks = marks_fingerprint(_stored_floor_marks(connection, *key)) == expected_marks
+        same_marks = (
+            floor_layout_fingerprint(
+                _stored_floor_marks(connection, *key), _stored_group_labels(connection, *key)
+            )
+            == expected_marks
+        )
         if not (same_canvas and same_marks):
             raise ValueError(
-                f"{key[0]} {key[1]} 의 캔버스·도면 요소를 다른 사용자가 먼저 바꿔 저장하지 "
-                "않았습니다. 저장 안 한 배치를 버리고 다시 고치세요."
+                f"{key[0]} {key[1]} 의 캔버스·도면 요소·Main 설비명 위치를 다른 사용자가 먼저 "
+                "바꿔 저장하지 않았습니다. 저장 안 한 배치를 버리고 다시 고치세요."
             )
 
 
@@ -1316,7 +1349,7 @@ def _stored_floor_marks(
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, keep_out, font_size, font_color
+               label, color_key, hatch, keep_out, font_size, font_color, border_style, label_align
         FROM equipment_ops.floor_layout_mark
         WHERE building = ? AND floor_name = ?
         ORDER BY source_row_no
@@ -1338,6 +1371,8 @@ def _stored_floor_marks(
             keep_out=bool(row[10]),
             font_size=int(row[11]) if row[11] is not None else None,
             font_color=str(row[12]) if row[12] is not None else "",
+            border_style=str(row[13]) if row[13] is not None else ZONE_BORDER_STYLES[0],
+            label_align=str(row[14]) if row[14] is not None else ZONE_LABEL_ALIGNS[0],
         )
         for row in rows
     )
@@ -1375,6 +1410,7 @@ def _replace_floor_marks(
                 "keep_out": mark.keep_out,
                 "font_size": mark.font_size,
                 "font_color": mark.font_color or None,
+                **_zone_look_columns(mark.kind, mark.border_style, mark.label_align),
             }
             for index, mark in enumerate(marks, start=1)
         ]
@@ -1384,6 +1420,45 @@ def _replace_floor_marks(
         schema="equipment_ops",
         table_name="floor_layout_mark",
         frame=_with_font_size_type(frame),
+    )
+
+
+def _zone_look_columns(kind: str, border_style: str, label_align: str) -> dict[str, str | None]:
+    """영역은 테두리 모양·이름표 정렬을 그대로 쓰고, 다른 요소는 NULL 이다(읽으면 처음 값)."""
+    if kind != "zone":
+        return {"border_style": None, "label_align": None}
+    return {"border_style": border_style, "label_align": label_align}
+
+
+def _stored_group_labels(
+    connection: duckdb.DuckDBPyConnection, building: str, floor: str
+) -> dict[str, str]:
+    rows = connection.execute(
+        """
+        SELECT parent_equipment_id, label_position
+        FROM equipment_ops.floor_layout_group_label
+        WHERE building = ? AND floor_name = ?
+        ORDER BY parent_equipment_id
+        """,
+        [building, floor],
+    ).fetchall()
+    return {str(row[0]): str(row[1]) for row in rows}
+
+
+def _replace_group_labels(
+    connection: duckdb.DuckDBPyConnection, building: str, floor: str, labels: GroupLabels
+) -> None:
+    """그 층의 Main 설비명 위치를 지우고 받은 것(가운데가 아닌 것)을 다시 넣는다."""
+    connection.execute(
+        "DELETE FROM equipment_ops.floor_layout_group_label WHERE building = ? AND floor_name = ?",
+        [building, floor],
+    )
+    if not labels:
+        return
+    connection.executemany(
+        "INSERT INTO equipment_ops.floor_layout_group_label "
+        "(building, floor_name, parent_equipment_id, label_position) VALUES (?, ?, ?, ?)",
+        [[building, floor, name, position] for name, position in sorted(labels.items())],
     )
 
 
@@ -1444,7 +1519,8 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
     rows = connection.execute(
         """
         SELECT mark_id, mark_kind, x_coordinate, y_coordinate, x_size, y_size, rotation_deg,
-               label, color_key, hatch, link_building, link_floor, font_size, font_color
+               label, color_key, hatch, link_building, link_floor, font_size, font_color,
+               border_style, label_align
         FROM equipment_ops.fab_layout_mark
         ORDER BY source_row_no
         """
@@ -1466,6 +1542,8 @@ def _stored_fab_marks(connection: duckdb.DuckDBPyConnection) -> tuple[FabLayoutM
             else None,
             font_size=int(row[12]) if row[12] is not None else None,
             font_color=str(row[13]) if row[13] is not None else "",
+            border_style=str(row[14]) if row[14] is not None else ZONE_BORDER_STYLES[0],
+            label_align=str(row[15]) if row[15] is not None else ZONE_LABEL_ALIGNS[0],
         )
         for row in rows
     )
@@ -1541,6 +1619,7 @@ def _replace_fab_marks(
                 "link_floor": mark.link[1] if mark.link is not None else None,
                 "font_size": mark.font_size,
                 "font_color": mark.font_color or None,
+                **_zone_look_columns(mark.kind, mark.border_style, mark.label_align),
             }
             for index, mark in enumerate(marks, start=1)
         ]

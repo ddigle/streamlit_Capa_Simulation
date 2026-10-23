@@ -56,6 +56,7 @@ from capa_simulation.services.fab_layout import (
     floor_label,
 )
 from capa_simulation.services.floor_layout_mark import (
+    GROUP_LABEL_POSITIONS,
     MARK_COLOR_KEYS,
     MARK_FONT_SIZES,
     FloorLayoutMark,
@@ -218,6 +219,16 @@ def _clean_ghosts(ghosts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return cleaned
 
 
+def _clean_group_labels(labels: Mapping[str, str] | None) -> dict[str, str]:
+    """브라우저로 보낼 Main 설비명 위치(Main 설비 → 위·아래). 가운데(기본)와 모르는 값은 뺀다 —
+    브라우저는 없는 묶음을 가운데로 그린다."""
+    return {
+        str(name): position
+        for name, position in (labels or {}).items()
+        if position in GROUP_LABEL_POSITIONS[1:]
+    }
+
+
 def _dispatch_as_of(key: str, on_as_of: Callable[[date], None]) -> None:
     """`on_asOf_change` 콜백. 페이더를 놓거나 「오늘로」를 누를 때 브라우저가 보낸 기준일
     (`YYYY-MM-DD`)을 `on_as_of(date)` 로 넘긴다. 콜백은 본문보다 먼저 돌아 그 회차의 범례·요약이 새
@@ -259,6 +270,7 @@ def render_space_layout_viewer(
     as_of_range: tuple[date, date],
     on_as_of: Callable[[date], None],
     background_image: str | None = None,
+    group_labels: Mapping[str, str] | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -271,7 +283,11 @@ def render_space_layout_viewer(
     한다(`space_unit_state.drawn_in_range`) — 기준일에 따라 목록이 달라지면 epoch 가 바뀌어 다시
     선다.
     `as_of`(세션 기준일)는 epoch 에 넣지 않는다 — 기준일·체크만 바뀐 회차는 같은 epoch 로 바뀐 것만
-    다시 칠하고 보던 배율을 지킨다."""
+    다시 칠하고 보던 배율을 지킨다.
+
+    Main 설비 모듈 묶음(모듈 둘 이상)은 묶음 범위에 Main 설비명을 그린다 — 위치는 `group_labels`
+    (Main 설비 → 위·아래, 없으면 가운데)이고, 기준일에 묶음의 모듈이 하나도 보이지 않으면 이름도
+    숨는다."""
     _EDITOR(
         key=key,
         data={
@@ -283,6 +299,7 @@ def render_space_layout_viewer(
             "summary": summary,
             "items": _clean_items(items),
             "marks": [mark.editor_payload() for mark in marks],
+            "groupLabels": _clean_group_labels(group_labels),
             "canvas": {"width": canvas[0], "height": canvas[1]},
             "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
             "decimals": CANVAS_DECIMALS,
@@ -435,6 +452,7 @@ def render_space_layout_editor(
     new_unit: Mapping[str, Any],
     as_of: date,
     background_image: str | None = None,
+    group_labels: Mapping[str, str] | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
@@ -443,7 +461,7 @@ def render_space_layout_editor(
     페이더 자리에 같은 높이의 「기준일 YYYY-MM-DD · 편집 중 고정」 줄이 선다(기준일이 바뀌면 편집
     대상 호기가 바뀌어 적용하지 않은 편집이 버려진다).
 
-    적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks"}``.
+    적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels"}``.
 
     - ``changes``: 바뀐 호기(배치). ``id`` 는 편집기에 보낸 **옛** 설비명이다. 놓인 호기는
       좌표·크기, 트레이로 뺀 호기는 크기만(있으면) 든다. 다른 층으로 보낸 호기는 ``moveTo`` 에 그
@@ -465,6 +483,10 @@ def render_space_layout_editor(
       `parse_editor_apply`·`apply_name_changes` 다.
     - ``canvas``: 편집 영역을 바꿨을 때만 ``{width, height}``.
     - ``marks``: 도면 요소를 바꿨을 때만 이 층 요소 전체 목록, 아니면 None.
+    - ``groupLabels``: 이 층에 남는 모듈 묶음마다의 Main 설비명 위치
+      ``[{"group": 옛 Main 설비, "position": "center"|"top"|"bottom"}]``(다른 층으로 보낸 묶음은
+      빠진다). 처음 위치는 `group_labels`(Main 설비 → 위·아래, 없으면 가운데)이고 층 위치 목록으로
+      합치는 것은 `space_layout_edit.next_group_labels` 다.
     """
     items = _clean_items(inputs.items)
     result = _EDITOR(
@@ -477,6 +499,7 @@ def render_space_layout_editor(
             "items": items,
             "ghosts": _clean_ghosts(inputs.ghosts),
             "marks": [mark.editor_payload() for mark in marks],
+            "groupLabels": _clean_group_labels(group_labels),
             "canvas": {"width": canvas[0], "height": canvas[1]},
             "canvasLimits": {
                 "min": MIN_CANVAS_EXTENT,

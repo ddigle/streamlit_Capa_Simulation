@@ -165,8 +165,10 @@ CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
 # **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
 PENDING_CANVASES_KEY = "equipment_pending_floor_canvases_v1"
 PENDING_MARKS_KEY = "equipment_pending_floor_marks_v1"
-# 층마다 편집을 시작할 때 본 저장값(캔버스·요소 지문). 저장이 이것과 지금 저장값을 견줘, 그 사이
-# 다른 사람이 바꾼 층을 옛 목록으로 덮지 않는다(요소는 층 전체 교체다).
+# 층마다 Main 설비 모듈 묶음 이름표 위치((동, 층) → {Main 설비: 위치}, 그 층 전체 — 가운데는 빠짐).
+PENDING_GROUP_LABELS_KEY = "equipment_pending_floor_group_labels_v1"
+# 층마다 편집을 시작할 때 본 저장값(캔버스·요소와 위치의 지문). 저장이 이것과 지금 저장값을 견줘, 그
+# 사이 다른 사람이 바꾼 층을 옛 목록으로 덮지 않는다(요소·위치는 층 전체 교체다).
 PENDING_BASES_KEY = "equipment_pending_floor_bases_v1"
 # Space FAB 편집기가 쌓는 미저장 FAB 전체 배치(캔버스·요소와 편집을 시작할 때 본 저장값). FAB 는
 # 설비 리비전과 무관한 현행값이라 **설비 저장본이 없어도** 쌓고 저장한다. 같은 저장 단추가 쓰고
@@ -269,6 +271,7 @@ def reset_equipment_drafts() -> None:
         LAST_REMOVED_KEY,
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
+        PENDING_GROUP_LABELS_KEY,
         PENDING_BASES_KEY,
         PENDING_FAB_KEY,
         PENDING_RENAMES_KEY,
@@ -398,7 +401,12 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             PENDING_RENAMES_KEY,
         ]
         if replaced:
-            stale += [PENDING_CANVASES_KEY, PENDING_MARKS_KEY, PENDING_BASES_KEY]
+            stale += [
+                PENDING_CANVASES_KEY,
+                PENDING_MARKS_KEY,
+                PENDING_GROUP_LABELS_KEY,
+                PENDING_BASES_KEY,
+            ]
         for key in stale:
             st.session_state.pop(key, None)
         _bump_buffer_generation()
@@ -486,8 +494,14 @@ def pending_floor_marks() -> dict[FloorKey, tuple[FloorLayoutMark, ...]]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def pending_floor_group_labels() -> dict[FloorKey, dict[str, str]]:
+    """Space 에서 바꿨지만 아직 저장하지 않은 층 Main 설비명 위치(층 전체 — 가운데는 빠짐)."""
+    value = st.session_state.get(PENDING_GROUP_LABELS_KEY)
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def pending_floor_bases() -> dict[FloorKey, FloorLayoutBase]:
-    """층마다 편집을 시작할 때 본 저장값(캔버스, 요소 지문)."""
+    """층마다 편집을 시작할 때 본 저장값(캔버스, 요소·위치 지문)."""
     value = st.session_state.get(PENDING_BASES_KEY)
     return dict(value) if isinstance(value, dict) else {}
 
@@ -495,7 +509,11 @@ def pending_floor_bases() -> dict[FloorKey, FloorLayoutBase]:
 def _remember_base(key: FloorKey, base: FloorLayoutBase | None) -> None:
     """그 층의 **첫** 대기분이 본 저장값만 남긴다. 대기분이 다 빠지면 함께 버린다."""
     bases = pending_floor_bases()
-    if key not in pending_floor_canvases() and key not in pending_floor_marks():
+    if (
+        key not in pending_floor_canvases()
+        and key not in pending_floor_marks()
+        and key not in pending_floor_group_labels()
+    ):
         bases.pop(key, None)
     elif key not in bases and base is not None:
         bases[key] = base
@@ -534,6 +552,26 @@ def stage_floor_marks(
     else:
         staged[key] = marks
     st.session_state[PENDING_MARKS_KEY] = staged
+    _remember_base(key, base)
+    _bump_buffer_generation()
+
+
+def stage_floor_group_labels(
+    key: FloorKey,
+    labels: Mapping[str, str] | None,
+    *,
+    base: FloorLayoutBase | None = None,
+) -> None:
+    """미저장 Main 설비명 위치(층 전체)를 둔다. None 이면 그 층 대기분을 지운다(저장값과 같아졌을
+    때)."""
+    staged = pending_floor_group_labels()
+    if labels is None and key not in staged:
+        return
+    if labels is None:
+        staged.pop(key, None)
+    else:
+        staged[key] = dict(labels)
+    st.session_state[PENDING_GROUP_LABELS_KEY] = staged
     _remember_base(key, base)
     _bump_buffer_generation()
 
@@ -714,6 +752,7 @@ def _save_equipment_frames(
         key: [mark.editor_payload() for mark in staged]
         for key, staged in pending_floor_marks().items()
     }
+    labels = pending_floor_group_labels()
     # 편집본이 나온 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
     # 저장소가 쓰기 잠금 안에서 거부한다 — 옛 편집이 남의 저장을 조용히 되돌리지 않게.
     options: dict[str, Any] = {
@@ -722,20 +761,22 @@ def _save_equipment_frames(
         "floor_marks": marks,
         "base_revision_id": st.session_state.get(_REVISION_KEY),
         "floor_layout_bases": pending_floor_bases(),
+        "floor_group_labels": labels,
     }
     if revision_optional:
         saved = repository.save_space_layout(*frames, **options)
     else:
         saved = repository.save_snapshot(*frames, **options)
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
-    if saved is None and not (canvases or marks):
+    floor_layouts = bool(canvases or marks or labels)
+    if saved is None and not floor_layouts:
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
         return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
     clear_equipment_snapshot_cache()
-    if canvases or marks:
+    if floor_layouts:
         clear_floor_layout_cache()
     reset_equipment_drafts()
-    layouts = " 층 캔버스·도면 요소도 함께 저장했습니다." if canvases or marks else ""
+    layouts = " 층 캔버스·도면 요소도 함께 저장했습니다." if floor_layouts else ""
     if saved is None:
         return f"설비 마스터가 바뀌지 않아 새 리비전 없이 층 캔버스·도면 요소만 저장했습니다.{fab}"
     return (

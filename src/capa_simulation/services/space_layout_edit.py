@@ -45,7 +45,12 @@ from capa_simulation.services.equipment_contract import (
 )
 from capa_simulation.services.equipment_units import unit_keys
 from capa_simulation.services.fab_layout import floor_label
-from capa_simulation.services.floor_layout_mark import FloorLayoutMark, prepare_floor_layout_marks
+from capa_simulation.services.floor_layout_mark import (
+    GROUP_LABEL_POSITIONS,
+    FloorLayoutMark,
+    GroupLabels,
+    prepare_floor_layout_marks,
+)
 from capa_simulation.services.floor_layout_profile import (
     CANVAS_DECIMALS,
     MAX_CANVAS_EXTENT,
@@ -124,6 +129,10 @@ class EditorApply:
     # 묶음과 함께 옮겨진 숨은 모듈(`EditorInputs.ghosts`)의 새 X·Y·크기. 같은 층이고 레이아웃표시는
     # 그대로 둔다(`apply_layout_edits`).
     hidden_moves: tuple[UnitChange, ...] = ()
+    # 이 층에 남는 모듈 묶음의 Main 설비명 위치 — (편집기에 실린 **옛** Main 설비 이름, 위치).
+    # 적용값에 `groupLabels` 가 없으면 None(위치는 그대로, 이름 바꿈만 따라간다 —
+    # `next_group_labels`).
+    group_labels: tuple[tuple[str, str], ...] | None = None
 
     @property
     def unit_renames(self) -> dict[str, str]:
@@ -995,7 +1004,9 @@ def parse_editor_apply(
     `editor_inputs(...).ghosts`)를 주면 이 층 도면에 놓이거나 자리·크기가 바뀐 Main 설비 모듈 묶음이
     묶음 범위의 바둑판 그대로인지 본다(`_regrid_module_groups` — 한 눈금 안의 어긋남은 칸 값으로
     바로잡고, 더 어긋나거나 갈라진 묶음은 거부한다). 묶음과 함께 옮겨진 숨은 모듈은 적용값의
-    ``ghosts`` 로 오고 `EditorApply.hidden_moves` 가 된다.
+    ``ghosts`` 로 오고 `EditorApply.hidden_moves` 가 된다. 모듈 묶음의 Main 설비명 위치는 적용값의
+    ``groupLabels`` 로 오고(실린 모듈 묶음만) `EditorApply.group_labels` 가 된다 — 층 위치 목록으로
+    합치는 것은 `next_group_labels` 다.
     """
     held = _reserved_reasons(reserved or ReservedNames())
     targets = {floor_label(key): key for key in floors if key != floor}
@@ -1079,6 +1090,9 @@ def parse_editor_apply(
     renames = _parse_renames(
         payload.get("renames"), editor_ids=editor_ids, editor_groups=editor_groups
     )
+    group_labels = _parse_group_labels(
+        payload.get("groupLabels"), set(_module_groups(editor_items, editor_ghosts))
+    )
     _require_distinct_names(
         renames,
         master_ids=master_ids | editor_ids,
@@ -1093,7 +1107,69 @@ def parse_editor_apply(
         marks=marks,
         renames=tuple(renames),
         hidden_moves=tuple(hidden_moves),
+        group_labels=group_labels,
     )
+
+
+def _parse_group_labels(
+    raw_labels: object, module_groups: Collection[str]
+) -> tuple[tuple[str, str], ...] | None:
+    """적용값의 `groupLabels`(``[{"group": 옛 Main 설비, "position": "center"|"top"|"bottom"}]``)를
+    읽는다. 이 편집기에 실린 모듈 묶음(모듈 둘 이상 — 숨은 모듈 포함)만 받고, 한 묶음에 한 번이다.
+    없으면 None."""
+    if raw_labels is None:
+        return None
+    if not isinstance(raw_labels, list):
+        raise ValueError("Main 설비명 위치 목록을 읽지 못했습니다.")
+    labels: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw in raw_labels:
+        if not isinstance(raw, Mapping):
+            raise ValueError("Main 설비명 위치 목록을 읽지 못했습니다.")
+        group = _text(raw.get("group")).strip()
+        if group not in module_groups:
+            raise ValueError(f"이 편집기에 없는 모듈 묶음의 Main 설비명 위치입니다: {group}")
+        if group in seen:
+            raise ValueError(f"같은 Main 설비의 이름 위치가 두 번 왔습니다: {group}")
+        seen.add(group)
+        position = _text(raw.get("position")).strip()
+        if position not in GROUP_LABEL_POSITIONS:
+            raise ValueError(
+                f"Main 설비 {group} 의 이름 위치를 알 수 없습니다: {position!r} — 가운데·위·아래 "
+                "중 하나입니다."
+            )
+        labels.append((group, position))
+    return tuple(labels)
+
+
+def module_group_names(
+    editor_items: Sequence[Mapping[str, Any]], ghosts: Sequence[Mapping[str, Any]] = ()
+) -> set[str]:
+    """이 편집기에 실린 모듈 묶음의 Main 설비(편집기 호기와 숨은 모듈을 합쳐 모듈 둘 이상)."""
+    return set(_module_groups(editor_items, ghosts))
+
+
+def next_group_labels(
+    current: GroupLabels, applied: EditorApply, module_groups: Collection[str]
+) -> dict[str, str]:
+    """적용 뒤 이 층의 Main 설비명 위치(가운데는 빠진다).
+
+    `current` 는 편집기에 보낸 위치(대기분, 없으면 저장값), `module_groups` 는 이 편집기에 실린
+    모듈 묶음(`module_group_names`)이다. 편집기가 위치를 보냈으면(`applied.group_labels`) 그
+    묶음들의 위치는 보낸 값으로 갈아 끼운다 — 보내지 않은 실린 묶음(다른 층으로 보냄)은 이 층에서
+    빠지고, 실리지 않은 묶음(지금 기준일에 편집기에 없는 묶음)의 위치는 그대로 남는다. Main 설비
+    이름 바꿈(`applied.group_renames`)은 새 이름으로 따라간다."""
+    renamed = applied.group_renames
+    if applied.group_labels is None:
+        return dict(sorted((renamed.get(name, name), spot) for name, spot in current.items()))
+    loaded = set(module_groups)
+    kept = {name: spot for name, spot in current.items() if name not in loaded}
+    for group, position in applied.group_labels:
+        name = renamed.get(group, group)
+        kept.pop(name, None)
+        if position != GROUP_LABEL_POSITIONS[0]:
+            kept[name] = position
+    return dict(sorted(kept.items()))
 
 
 # ------------------------------------------------------------------ 반영

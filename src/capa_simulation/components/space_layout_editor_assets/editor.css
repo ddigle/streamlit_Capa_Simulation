@@ -75,7 +75,8 @@
 /* ---- 보기 화면의 의미 표시(2026-10-16 사용자 결정) — 편집 화면에는 그리지 않는다 ---- */
 /* 테는 뜻 하나씩이다: 실물 없음(반입 전) 주황 점선이 반출/이설 예정 노랑 두 겹(짙은 테 + 노랑)을 이긴다. 정지 중은
    빗금, 미확인은 오른쪽 위 「!」, 운영 비가동은 왼쪽 위 표식, 호기 겹침은 오른쪽 위 꼭지 삼각, 선택은 상자 밖 후광이다.
-   부품은 늘 만들어 두고 class 로만 보인다(JS `paintUnit`) — 기준일이 바뀌어도 칠하기만 한다. */
+   부품은 늘 만들어 두고 class 로만 보인다(JS `paintUnit`) — 기준일이 바뀌어도 칠하기만 한다. 반입 예정(실물 없음) 점선은
+   3.5px 로 굵다 — 2px 은 면색 위에서 잘 안 보였다(2026-10-23 사용자 요청, 범례 견본은 3px). */
 .sle-halo, .sle-hatch, .sle-ring, .sle-ring-out, .sle-flag, .sle-offline, .sle-corner { display: none; pointer-events: none; }
 .sle-halo { fill: none; stroke: var(--sle-ring-halo); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .sle-ring, .sle-ring-out { fill: none; vector-effect: non-scaling-stroke; }
@@ -83,7 +84,7 @@
 .sle.is-view .sle-unit.is-gone { visibility: hidden; }
 .sle.is-view .sle-unit.is-selected .sle-halo { display: inline; }
 .sle.is-view .sle-unit.is-pre .sle-rect, .sle.is-view .sle-unit.is-exitplan .sle-rect { stroke: none; }
-.sle.is-view .sle-unit.is-pre .sle-ring { display: inline; stroke: var(--sle-ring-pre); stroke-width: 2; stroke-dasharray: 5 3; }
+.sle.is-view .sle-unit.is-pre .sle-ring { display: inline; stroke: var(--sle-ring-pre); stroke-width: 3.5; stroke-dasharray: 6 3.5; }
 .sle.is-view .sle-unit.is-exitplan .sle-ring-out { display: inline; stroke: var(--sle-ring-exit-outline); stroke-width: 5; }
 .sle.is-view .sle-unit.is-exitplan .sle-ring { display: inline; stroke: var(--sle-ring-exit); stroke-width: 3; }
 .sle.is-view .sle-unit.is-stopped .sle-hatch { display: inline; }
@@ -111,8 +112,12 @@
 .mark-zone .sle-mark-box { fill: none; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; pointer-events: stroke; }
 .mark-zone .sle-zone-tag { pointer-events: all; cursor: grab; }
 .sle-zone-fill { fill-opacity: 0.16; }
+/* 영역 테두리는 고른 모양(점선 기본·실선)이다. 고른 영역의 강조는 테두리 모양을 바꾸지 않고 바깥 강조 테로 따로 보인다. */
 .sle-zone-border { fill: none; stroke-width: 1.5; stroke-dasharray: 6 3; vector-effect: non-scaling-stroke; }
-.mark-zone.is-selected .sle-zone-border, .mark-zone.is-grouped .sle-zone-border { stroke-width: 3; stroke-dasharray: none; }
+.sle-zone-border.is-solid { stroke-dasharray: none; }
+.sle-zone-select { display: none; fill: none; stroke: var(--sle-accent); vector-effect: non-scaling-stroke; pointer-events: none; }
+.mark-zone.is-selected .sle-zone-select { display: inline; stroke-width: 2.5; }
+.mark-zone.is-grouped .sle-zone-select { display: inline; stroke-width: 1.5; stroke-dasharray: 2 3; }
 .mark-zone.is-violated .sle-zone-border, .mark-zone.is-overlap-live .sle-zone-border { stroke: var(--sle-danger) !important; stroke-width: 3; }
 .sle-zone-tag { fill: var(--sle-surface); fill-opacity: 0.88; }
 .sle-mark-text { fill: var(--sle-mark-ink); font-weight: 700; paint-order: stroke; stroke: var(--sle-surface); stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
@@ -159,6 +164,11 @@
 .sle-unit.is-module .sle-handle { display: none; }
 .sle-group-box.is-range { stroke-width: 2; stroke-dasharray: none; }
 .sle-range-handle { opacity: 1; pointer-events: auto; }
+/* Main 설비명 — 모듈 묶음 범위의 가운데(기본) 또는 바깥 바로 위·아래에 알약 바탕을 깔고 모듈 이름보다 한 단 굵게 쓴다.
+   눌림을 받지 않는다(가운데 이름 위를 눌러도 모듈이 골라진다). */
+.sle-group-names { pointer-events: none; }
+.sle-group-name-pill { fill: var(--sle-surface); fill-opacity: 0.92; stroke: var(--sle-frame); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sle-group-name-text { fill: var(--sle-text); font-weight: 800; text-anchor: middle; dominant-baseline: central; }
 /* 숨은 모듈(레이아웃표시 N·도면 이탈)이 차지한 칸 — 그 모듈은 그리지 않고 칸만 점선으로 보인다. */
 .sle-ghost-cell { fill: none; stroke: var(--sle-muted); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* 정렬선 — 끌거나 놓는 것의 변·가운데가 다른 호기·요소(모듈 묶음은 범위)의 같은 선에 붙으면 그 선을 긋는다. 놓을 자리
@@ -289,6 +299,8 @@
 .sle-markprops[hidden], .sle-sendto[hidden], .sle-zone-only[hidden], .sle-mark-rotate[hidden], .sle-module-tile[hidden] {
   display: inline-flex; visibility: hidden; pointer-events: none;
 }
+/* 「Main 설비명 위치」 — 모듈 묶음 하나를 골랐을 때만 보이고, 숨길 때도 자리를 남긴다(고를 때 칸 줄이 튀지 않게). */
+.sle-group-name[hidden] { display: inline-flex; visibility: hidden; pointer-events: none; }
 /* 고른 호기 하나의 이름(설비명, 모듈 묶음이면 Main 설비). 층 보내기 칸 안이라 그 칸과 함께 숨는다. */
 .sle-unit-name { margin-right: 6px; }
 /* 층 블록(FAB 편집) 속성 — 연결 층·색·[열기]. 영역 속성·돌리기와 한 칸에 겹친다. */

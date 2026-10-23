@@ -261,13 +261,15 @@ _LIGHT: Final[dict[str, Any]] = {
     # 채우기에서 빠지고, 고른 「색 기준」 그룹의 색 → 보관 검정 → 지연 빨강이 면을 칠한다(위가
     # 진다, 지연이 이긴다). 글자는 「검정」 `#111111`·「흰색」 `#FFFFFF` 이고 모든 면·글자 짝이
     # 4.5:1 이상이다 (`tests/test_design_tokens.py`). 키는 공정구분
-    # 그룹(`equipment_contract.LINE_TYPE_GROUPS`)이다.
+    # 그룹(`equipment_contract.LINE_TYPE_GROUPS`)이다. TEST 는 짙은 남색이 도면에서 무거워 연한
+    # 남색(검정 글자)으로 올렸다(2026-10-23 사용자 요청) — 다른 다섯 그룹·기본·보관·지연 면과
+    # 정상 시야·색각이상 모두 갈린다.
     "SPACE_LINE_TYPE_FILLS": {
         "물류": "#DCCFF7",
         "FRONT": "#F1E4C6",
         "PKG": "#CBE7F7",
         "MI": "#7B4F2C",
-        "TEST": "#1E3A6E",
+        "TEST": "#7F96D4",
         "FDY": "#D5F0B5",
     },
     "SPACE_LINE_TYPE_INKS": {
@@ -275,7 +277,7 @@ _LIGHT: Final[dict[str, Any]] = {
         "FRONT": "#111111",
         "PKG": "#111111",
         "MI": "#FFFFFF",
-        "TEST": "#FFFFFF",
+        "TEST": "#111111",
         "FDY": "#111111",
     },
     # 그룹이 없거나 체크를 끈 호기의 기본 면(회색에 검정 글자).
@@ -459,7 +461,7 @@ _DARK: Final[dict[str, Any]] = {
         "FRONT": "#D9C79F",
         "PKG": "#9CCBE8",
         "MI": "#8E5C35",
-        "TEST": "#2F5296",
+        "TEST": "#5A7DD4",
         "FDY": "#ADDB85",
     },
     "SPACE_LINE_TYPE_INKS": {
@@ -467,7 +469,7 @@ _DARK: Final[dict[str, Any]] = {
         "FRONT": "#111111",
         "PKG": "#111111",
         "MI": "#FFFFFF",
-        "TEST": "#FFFFFF",
+        "TEST": "#111111",
         "FDY": "#111111",
     },
     "SPACE_UNIT_DEFAULT_FILL": "#9AA1AB",
