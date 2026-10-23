@@ -408,6 +408,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)는 버린다.
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
+  - **Main 설비 모듈 묶음**(편집기에 모듈 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선 모듈의 바깥
+    상자)만 고치고 안은 바둑판 자동 배치다(`tileModuleGroup` — 파이썬 정본 `space_layout_edit.tile_module_group` 과
+    같은 규칙, `// <module-tiling>` 구획을 `tests/test_space_module_group.py` 가 node 로 대조). 모듈 하나만 옮기거나
+    키우는 길은 없다 — 끌기·방향키·숫자 칸·Ctrl+방향키는 `movePlan`(묶음은 범위), 크기 손잡이는 묶음 범위 테두리
+    (`sle-range-handle`, 모듈 상자 손잡이는 `is-module` 로 숨김), 선택은 묶음당 한 대(`onePerGroup`), 빼기·다른 층
+    보내기·서랍 놓기는 묶음째다. 묶음 조작 하나가 되돌리기 한 번이다. 바둑판이 아닌 옛 묶음은 읽을 때 바꾸지 않고
+    처음 옮기거나 키울 때(또는 「범위에 맞춰 n등분」) 지금 바깥 상자를 범위로 다시 놓는다. 보기 화면은 그대로다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
@@ -676,6 +683,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
     이름은 못 쓴다(`reserved_names`). 가림·겹침은 경고만 한다.
+  - 모듈 묶음 바둑판의 정본은 `tile_module_group`(열 = ⌈√n⌉·행 = ⌈n÷열⌉, 설비명 자연 정렬로 왼→오·위→아래, 저장
+    정밀도 눈금으로 똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)다. `parse_editor_apply`
+    는 `editor_items` 를 받으면 이 층에 놓이거나 자리·크기가 바뀐 묶음을 적용 뒤 바깥 상자로 다시 놓아 브라우저 값이
+    다르면 **바로잡는다**(거부하지 않는다). 안 바뀐 옛 묶음은 건드리지 않고, 묶음이 갈라져 오면(일부만 빼거나 보냄)
+    거부한다. 상자를 한 모듈에만 그린 묶음의 좌표 없는 형제는 `editor_inputs` 가 미배치 모듈로 함께 보낸다(서랍에는
+    뜨지 않고, 묶음을 처음 옮기거나 키울 때 제 칸에 놓인다). RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
 - `src/capa_simulation/services/floor_layout_profile.py` — 층 배경 도면의 치수 읽기·캔버스 기본값·크기 상한과 좌표 반올림
   (`rounded_to_canvas`)의 한 곳이다(`space_layout_edit`·`fab_layout` 이 import 한다 — 거꾸로 두면 순환).
 - `src/capa_simulation/services/display_order_editor.py`, `display_order_csv.py` — 웹 편집 표시순서 규칙의 검증·범위
