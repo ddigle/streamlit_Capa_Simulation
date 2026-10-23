@@ -308,7 +308,7 @@ uv run --no-sync python scripts/apply_deploy_package.py <ZIP> --reconcile-only
 <stamp> <갈래>; 적용 ok|ng <무엇>; 관문 ok|ng <무엇>; 권한 ok|ng <무엇>; 발견 <n>; 사외요청 <n>; 식별값 없음 확인
 적용 <사외 커밋 7자>; 앞 <stamp>; 해시 <n>/<N>; 지움 <N>; 정체불명 <N>; 목록만 <N>; mig <번호|->
 관문수 fmt <N>; mypy <N>; pytest <통과> 건너뜀 <n> <까닭>
-권한 템플릿 ok|복사함; 모드 기본|<그 밖>
+권한 템플릿 ok|복사함|다름; 모드 기본|<그 밖>
 적용먼저 확인 <MMDD>                 ← 런북 0-1 그 꼴일 때만
 <7장 키> <값>                         ← 7장이 압축본에 따로 적으라는 줄일 때만(머리 줄 · inspect_wf_division 의 수 같은 것)
 B <N> = 기록 <n> + 미기록 <N-n>; u<u> a<a>; na칸 <m>; 빈칸 <k>
