@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import duckdb
 
-from capa_simulation.persistence._sql_helpers import require_profile_version, reset_profile
+from capa_simulation.persistence._sql_helpers import (
+    ProfileVersionConflict,
+    require_profile_version,
+    reset_profile,
+)
 from capa_simulation.persistence.models import (
     GlobalComparisonScenario,
     GlobalMainCases,
@@ -14,6 +18,12 @@ from capa_simulation.persistence.models import (
     GlobalTop5Band,
 )
 from capa_simulation.services.top5_band import DEFAULT_TOP5_MAX_RATE, DEFAULT_TOP5_MIN_RATE
+
+# 주요 Case 를 비운 까닭 — 비우기가 출처 칸에 「Case2 지정 비움 — <까닭>」 으로 남겨 상자 아래
+# 버전 캡션이 보인다(`clear_global_main_cases`).
+MAIN_CASE_CLEARED_ARCHIVED = "시나리오 보관"
+MAIN_CASE_CLEARED_DELETED = "시나리오 영구 삭제"
+MAIN_CASE_CLEARED_VANISHED = "목록에 없는 시나리오"
 
 
 def load_global_top5_band(connection: duckdb.DuckDBPyConnection) -> GlobalTop5Band:
@@ -209,16 +219,28 @@ def replace_global_main_case(
     *,
     source: str,
     expected_version: int | None = None,
+    expected_scenario_id: str | None = None,
 ) -> None:
     """Case 하나(1·2)의 짝만 바꾸고 다른 Case 는 지금 행 그대로 둔다. 호출자가 쓰기 트랜잭션을 쥔다.
 
     두 Case 를 한 행에 두므로 통째 교체면 남이 방금 고른 다른 Case 를 이쪽 화면의 옛 값으로 덮는다.
-    지금 행을 **같은 쓰기 트랜잭션 안에서** 읽어 나머지 Case 를 옮겨 적는다. `expected_version` 을
-    주면 그 version 이 아닐 때 아무것도 쓰지 않고 `ProfileVersionConflict` 를 올린다(화면이 스스로
-    메우는 쓰기 — 그 사이 남이 고른 값을 덮지 않게).
+    지금 행을 **같은 쓰기 트랜잭션 안에서** 읽어 나머지 Case 를 옮겨 적는다. 대조 둘은 맞지 않으면
+    아무것도 쓰지 않고 `ProfileVersionConflict` 를 올린다.
+
+    - `expected_version` — 프로필 전체 version(화면이 스스로 메우는 쓰기 — 그 사이 남이 고른 값을
+      덮지 않게).
+    - `expected_scenario_id` — 그 Case 의 지금 시나리오(리비전만 고른 쓰기). 리비전 상자는 화면이 본
+      시나리오의 리비전이라, 그 사이 남이 그 Case 의 시나리오를 바꿨으면 이쪽 짝으로 통째 덮어 남의
+      시나리오 고름을 되돌리게 된다. 다른 Case 나 이름 바꾸기로 오른 version 은 막지 않는다. `None`
+      이면 대조하지 않는다.
     """
     require_profile_version(connection, "global_main_cases", expected_version, label="주요 Case")
     current = load_global_main_cases(connection)
+    if expected_scenario_id is not None and current.case(case_no)[0] != expected_scenario_id:
+        raise ProfileVersionConflict(
+            f"다른 사용자가 먼저 Case{case_no} 의 시나리오를 바꿔 고른 리비전은 저장하지 "
+            "않았습니다. 지금 지정을 확인한 뒤 다시 고르세요."
+        )
     pairs = {number: current.case(number) for number in (1, 2)}
     pairs[case_no] = (scenario_id, revision_id)
     version = reset_profile(connection, "global_main_cases")
@@ -234,10 +256,11 @@ def replace_global_main_case(
 
 
 def touch_global_main_cases(connection: duckdb.DuckDBPyConnection, scenario_id: str) -> None:
-    """어느 Case 든 이 시나리오를 가리키면 `version` 만 올린다(이름을 바꿨을 때).
+    """어느 Case 든 이 시나리오를 가리키면 `version` 만 올린다(시나리오 이름을 바꿨을 때).
 
-    가리키는 대상은 그대로다. 슬롯 글자는 시나리오 이름을 쓰므로 이 version 을 키로 삼는 캐시가 옛
-    이름을 들고 있지 않게 한다. 캐시는 경로 키라 호출부가 비운다(`clear_global_main_cases_cache`).
+    가리키는 대상은 그대로다. 슬롯 글자(`services/main_cases.case_slot_label`)는 시나리오 이름을
+    쓰므로 이 version 을 키로 삼는 캐시가 옛 이름을 들고 있지 않게 한다. 캐시는 경로 키라 호출부가
+    비운다(`clear_global_main_cases_cache`).
     """
     connection.execute(
         """
@@ -249,26 +272,49 @@ def touch_global_main_cases(connection: duckdb.DuckDBPyConnection, scenario_id: 
     )
 
 
-def clear_global_main_cases(connection: duckdb.DuckDBPyConnection, scenario_id: str) -> None:
-    """이 시나리오를 가리키는 Case 만 비운다(보관·영구 삭제). 다른 Case 는 그대로다.
+def touch_global_main_cases_revision(
+    connection: duckdb.DuckDBPyConnection, revision_id: str
+) -> None:
+    """어느 Case 든 이 리비전을 가리키면 `version` 만 올린다(리비전명을 바꿨을 때).
 
-    시나리오와 리비전 칸을 함께 비운다 — 표의 `CHECK (caseN_revision_id IS NULL OR caseN_scenario_id
-    IS NOT NULL)` 때문에 한쪽만 비우면 제약에 걸린다. `SET` 의 식은 모두 바꾸기 전 행을 읽는다. 다른
-    교체와 같은 결로 `version` 을 올리고, 캐시는 호출부가 비운다(`clear_global_main_cases_cache`).
+    슬롯 글자는 「시나리오명 · r{번호} · 리비전명」 이라 리비전명도 싣는다 — 시나리오 이름 바꾸기
+    (`touch_global_main_cases`)와 같은 까닭이다. 가리키는 대상은 그대로이고 캐시는 호출부가 비운다.
     """
     connection.execute(
         """
         UPDATE app_meta.global_main_cases
-        SET case1_scenario_id
-                = CASE WHEN case1_scenario_id = ? THEN NULL ELSE case1_scenario_id END,
-            case1_revision_id
-                = CASE WHEN case1_scenario_id = ? THEN NULL ELSE case1_revision_id END,
-            case2_scenario_id
-                = CASE WHEN case2_scenario_id = ? THEN NULL ELSE case2_scenario_id END,
-            case2_revision_id
-                = CASE WHEN case2_scenario_id = ? THEN NULL ELSE case2_revision_id END,
-            version = version + 1
-        WHERE case1_scenario_id = ? OR case2_scenario_id = ?
+        SET version = version + 1
+        WHERE case1_revision_id = ? OR case2_revision_id = ?
         """,
-        [scenario_id] * 6,
+        [revision_id, revision_id],
+    )
+
+
+def clear_global_main_cases(
+    connection: duckdb.DuckDBPyConnection, scenario_id: str, *, reason: str
+) -> None:
+    """이 시나리오를 가리키는 Case 만 비운다(보관·영구 삭제·목록에 없는 시나리오).
+
+    다른 Case 는 그대로이고, 가리키는 Case 가 없으면 쓰지 않는다. 시나리오와 리비전 칸을 함께
+    비운다 — 표의 `CHECK (caseN_revision_id IS NULL OR caseN_scenario_id IS NOT NULL)` 때문에
+    한쪽만 비우면 제약에 걸린다. 다른 교체와 같은 결로 `version` 을 올리고 **출처·저장 시각도 이
+    비우기로 적는다**(「Case2 지정 비움 — 시나리오 보관」) — 공용 지정이라 비운 화면을 보지 못한
+    사람도 상자 아래 버전 캡션에서 까닭을 읽는다. 캐시는 호출부가 비운다
+    (`clear_global_main_cases_cache`).
+    """
+    current = load_global_main_cases(connection)
+    hits = [number for number in (1, 2) if current.case(number)[0] == scenario_id]
+    if not hits:
+        return
+    pairs = {number: (None, None) if number in hits else current.case(number) for number in (1, 2)}
+    cases = "·".join(f"Case{number}" for number in hits)
+    connection.execute(
+        """
+        UPDATE app_meta.global_main_cases
+        SET case1_scenario_id = ?, case1_revision_id = ?,
+            case2_scenario_id = ?, case2_revision_id = ?,
+            version = version + 1, source = ?, updated_at = current_timestamp
+        WHERE profile_id = 1
+        """,
+        [*pairs[1], *pairs[2], f"{cases} 지정 비움 — {reason}"],
     )

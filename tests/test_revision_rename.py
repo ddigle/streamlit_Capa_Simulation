@@ -319,3 +319,35 @@ def test_saving_a_name_refreshes_this_sessions_label_and_caches(tmp_path: Path) 
     assert _revision(repository, second.revision.revision_id).revision_name == "다른 사용자 이름"
     # 거절된 쓰기는 이 세션의 이름표를 바꾸지 않는다.
     assert app.session_state[ACTIVE_SCENARIO_LABEL_KEY]["revision_name"] == "필터 저장 v2"
+
+
+def test_saving_a_name_refreshes_the_cached_main_cases(tmp_path: Path) -> None:
+    """주요 Case 슬롯 글자는 리비전명을 싣는다 — 가리키는 리비전명을 바꾸면 캐시도 새 version 이다.
+
+    캐시는 DB 경로 키라 저장소가 version 을 올려도 비지 않는다. 화면 후속 처리가 비우지 않으면 HOME
+    슬롯이 옛 리비전명을 들고 있는다.
+    """
+    from capa_simulation.persistence.cache import (
+        clear_global_main_cases_cache,
+        load_global_main_cases,
+    )
+
+    database = tmp_path / "scenario.duckdb"
+    repository = _repository(database)
+    _first, second = _two_revisions(repository)
+    repository.replace_global_main_case(
+        1, second.scenario.scenario_id, second.revision.revision_id, source="테스트"
+    )
+    clear_global_main_cases_cache()
+    seen = load_global_main_cases(str(database)).version
+
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["database_path"] = str(database)
+    app.session_state["scenario_id"] = second.scenario.scenario_id
+    app.session_state["revision_id"] = second.revision.revision_id
+    app.session_state["new_name"] = "주요 Case 리비전 새 이름"
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["test_renamed"] == "주요 Case 리비전 새 이름"
+    assert load_global_main_cases(str(database)).version == seen + 1

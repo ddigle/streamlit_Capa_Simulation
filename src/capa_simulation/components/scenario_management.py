@@ -1076,12 +1076,13 @@ def save_revision_names(
     회차가 한 번만 돌아도 대조가 통과해 남의 변경을 덮는다. 하나라도 거부되면 저장소가
     `BatchEditRefused` 로 아무것도 쓰지 않는다. 고친 것이 없으면 쓰지 않는다.
 
-    후속 처리는 셋이다. 스냅샷 payload 가 리비전 요약을 통째로 담으므로 프로세스 캐시를 비우고
+    후속 처리는 넷이다. 스냅샷 payload 가 리비전 요약을 통째로 담으므로 프로세스 캐시를 비우고
     (`clear_scenario_snapshot_cache`), 파생 화면이 메모한 원본(요약 포함)을 버리고
     (`forget_derived_sources`), 그 리비전이 이 세션에 올라와 있으면 머리 띠·팝업 머리 줄의 이름표를
-    바꾼다(`rename_active_revision_label` — 활성화는 다시 하지 않는다). 공식 이력·비교 프로필·입장
-    화면 Summary 는 리비전명을 싣지 않아 건드리지 않는다. 시나리오 「최근 수정」도 오르지 않아 목록
-    차례와 행 선택이 그대로다.
+    바꾼다(`rename_active_revision_label` — 활성화는 다시 하지 않는다). 주요 Case 슬롯 글자는
+    리비전명을 실어 저장소가 그 프로필 version 을 올렸다 — 경로 키 캐시를 비운다
+    (`clear_global_main_cases_cache`). 공식 이력·비교 프로필·입장 화면 Summary 는 리비전명을 싣지
+    않아 건드리지 않는다. 시나리오 「최근 수정」도 오르지 않아 목록 차례와 행 선택이 그대로다.
     """
     if not renames:
         return []
@@ -1094,6 +1095,7 @@ def save_revision_names(
 def _after_revision_rename(renamed: Sequence[RevisionSummary]) -> None:
     clear_scenario_snapshot_cache()
     forget_derived_sources()
+    clear_global_main_cases_cache()
     for revision in renamed:
         rename_active_revision_label(revision.revision_id, revision.revision_name)
 

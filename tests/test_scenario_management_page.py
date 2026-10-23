@@ -41,7 +41,9 @@ from capa_simulation.components.scenario_management import (
 )
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
+    clear_global_main_cases_cache,
     load_global_comparison_scenario,
+    load_global_main_cases,
     load_scenario_snapshot,
 )
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
@@ -635,6 +637,71 @@ def test_archive_and_delete_drop_the_cached_comparison_target(tmp_path: Path) ->
         scenario.scenario_id for scenario in repository.list_scenarios(include_archived=True)
     }
     assert load_global_comparison_scenario(database).scenario_id is None
+
+
+def test_rename_archive_and_delete_refresh_the_cached_main_cases(tmp_path: Path) -> None:
+    """목록 이름 바꾸기·보관·영구 삭제는 DB 의 주요 Case 프로필을 바꾼다. 캐시도 새로 읽혀야 한다.
+
+    캐시는 DB 경로 키라 저장소가 `version` 을 올리거나 Case 를 비워도 무효화되지 않는다. 남아 있으면
+    HOME 슬롯(캐시만 읽는다)이 옛 이름이나 보관·삭제된 시나리오를 그대로 가리킨다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    database = str(database_path)
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    target = _clone_official(database_path, "주요 대상", "MAIN-CASE-1")
+    target_id = target.scenario.scenario_id
+    target_revision = target.revision.revision_id
+    repository.replace_global_main_case(2, target_id, target_revision, source="테스트")
+    clear_global_main_cases_cache()
+    seen = load_global_main_cases(database)
+    assert seen.case(2) == (target_id, target_revision)
+
+    # 목록 표에서 이름 바꾸기 — 저장소가 version 을 올렸다.
+    app = AppTest.from_string(script, default_timeout=120)
+    tables = BrowserTables(app)
+    tables.run()
+    position = list(_list_frame(app).index).index("주요 대상")
+    tables.edit(_shown_key(app, LIST_EDITOR_KEY), position, "시나리오명", "주요 대상 새 이름")
+    tables.run()
+    app.button(key="scenario_list_save").click()
+    tables.run()
+    assert not app.exception
+    assert "시나리오명 1건을 저장했습니다." in [item.value for item in app.success]
+    assert load_global_main_cases(database).version == seen.version + 1
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _check_row(app, target_id)
+    app.run()
+    app.button(key=f"{ACTION_KEY}_archive").click().run()
+    assert not app.exception
+    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    app.run()
+    next(button for button in app.button if button.label == "보관 실행").click()
+    app.run()
+    assert not app.exception
+    assert repository.load_global_main_cases().case(2) == (None, None)
+    assert load_global_main_cases(database).case(2) == (None, None)
+
+    # 영구 삭제 칸만 따로 본다. 보관이 DB 를 이미 비웠으므로 보관본을 다시 가리키게 한다.
+    repository.replace_global_main_case(2, target_id, target_revision, source="테스트")
+    clear_global_main_cases_cache()
+    assert load_global_main_cases(database).case(2) == (target_id, target_revision)
+
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[ARCHIVED_SELECT_KEY] = target_id
+    app.run()
+    assert not app.exception
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value("주요 대상 새 이름")
+    app.run()
+    app.button(key=DELETE_BUTTON_KEY).click()
+    app.run()
+    assert not app.exception
+    assert target_id not in {
+        scenario.scenario_id for scenario in repository.list_scenarios(include_archived=True)
+    }
+    assert load_global_main_cases(database).case(2) == (None, None)
 
 
 def test_the_archived_box_shows_what_the_next_restore_and_delete_act_on(tmp_path: Path) -> None:

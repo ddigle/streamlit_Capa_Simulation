@@ -126,6 +126,30 @@ def test_a_stale_expected_version_writes_nothing(tmp_path: Path) -> None:
     assert filled.case(1) == ("S9", "R8")
 
 
+def test_a_revision_pick_writes_only_while_its_case_keeps_the_scenario(tmp_path: Path) -> None:
+    """리비전만 고른 쓰기는 그 Case 의 지금 시나리오를 대조한다(`expected_scenario_id`).
+
+    낡은 화면의 리비전 상자는 화면이 본 시나리오의 것이다 — 그 사이 남이 그 Case 의 시나리오를
+    바꿨으면 쓰지 않는다. 다른 Case 교체로 오른 version 은 막지 않는다.
+    """
+    repository = _repository(tmp_path)
+    repository.replace_global_main_case(1, "S1", "R1", source="본 값")
+    repository.replace_global_main_case(2, "S2", "R2", source="다른 Case")
+
+    kept = repository.replace_global_main_case(
+        1, "S1", "R1b", source="리비전", expected_scenario_id="S1"
+    )
+    assert (kept.case(1), kept.case(2)) == (("S1", "R1b"), ("S2", "R2"))
+
+    repository.replace_global_main_case(1, "S9", "R9", source="다른 사용자")
+    with pytest.raises(ProfileVersionConflict, match="Case1 의 시나리오를 바꿔"):
+        repository.replace_global_main_case(
+            1, "S1", "R1", source="리비전", expected_scenario_id="S1"
+        )
+    after = repository.load_global_main_cases()
+    assert (after.case(1), after.version, after.source) == (("S9", "R9"), 4, "다른 사용자")
+
+
 def test_renaming_a_pointed_scenario_bumps_only_the_version(tmp_path: Path) -> None:
     """슬롯 글자가 시나리오 이름을 쓴다 — 이름만 바꿔도 version 이 올라야 그 키의 캐시가 풀린다.
 
@@ -143,6 +167,42 @@ def test_renaming_a_pointed_scenario_bumps_only_the_version(tmp_path: Path) -> N
     assert repository.load_global_main_cases().version == 2
 
     repository.apply_scenario_list_edits({pointed: ("새 이름", "또 새 이름")})
+    assert repository.load_global_main_cases().version == 3
+
+
+def test_renaming_a_pointed_revision_bumps_only_the_version(tmp_path: Path) -> None:
+    """슬롯 글자는 「시나리오명 · r{번호} · 리비전명」 이다 — 리비전명만 바꿔도 version 이 오른다.
+
+    가리키지 않는 리비전의 이름은 건드리지 않는다. 여러 리비전을 한 번에 고치는 길도 같다.
+    """
+    repository = _repository(tmp_path)
+    (pointed, pointed_revision), (_other, other_revision) = _scenarios(
+        repository, "가리킨 것", "다른 것"
+    )
+    repository.replace_global_main_case(1, pointed, pointed_revision, source="테스트")
+
+    def name_of(revision_id: str) -> str:
+        return repository.load_revision(revision_id).revision.revision_name
+
+    repository.rename_revision(
+        pointed_revision, "새 리비전명", expected_name=name_of(pointed_revision)
+    )
+    renamed = repository.load_global_main_cases()
+    assert (renamed.case(1), renamed.version, renamed.source) == (
+        (pointed, pointed_revision),
+        2,
+        "테스트",
+    )
+
+    repository.rename_revision(other_revision, "무관한 이름", expected_name=name_of(other_revision))
+    assert repository.load_global_main_cases().version == 2
+
+    repository.rename_revisions(
+        {
+            pointed_revision: ("새 리비전명", "또 새 리비전명"),
+            other_revision: ("무관한 이름", "또 무관한 이름"),
+        }
+    )
     assert repository.load_global_main_cases().version == 3
 
 
@@ -166,6 +226,11 @@ def test_removing_a_scenario_clears_only_the_cases_pointing_at_it(
     assert after.case(1) == (None, None)
     assert after.case(2) == (kept, kept_revision)
     assert after.version == before.version + 1
+    # 비운 까닭이 출처 칸에 남는다 — 상자 아래 버전 캡션이 이 화면을 보지 못한 사람에게도 알린다.
+    reason = {"archive_scenario": "시나리오 보관", "delete_scenario": "시나리오 영구 삭제"}[action]
+    assert after.source == f"Case1 지정 비움 — {reason}"
+    assert before.updated_at is not None and after.updated_at is not None
+    assert after.updated_at >= before.updated_at
 
 
 def test_removing_a_scenario_that_both_cases_point_at_clears_both(tmp_path: Path) -> None:
@@ -177,6 +242,7 @@ def test_removing_a_scenario_that_both_cases_point_at_clears_both(tmp_path: Path
     repository.archive_scenario(doomed)
     after = repository.load_global_main_cases()
     assert (after.case(1), after.case(2), after.version) == ((None, None), (None, None), 3)
+    assert after.source == "Case1·Case2 지정 비움 — 시나리오 보관"
 
     # 되돌려도 지정은 돌아오지 않는다 — 비교 시나리오와 같다.
     repository.restore_scenario(doomed)

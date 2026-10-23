@@ -360,7 +360,8 @@ def load_global_main_cases(database_path: str) -> GlobalMainCases:
 
     키는 DB 경로와 쓰기 세대다 — version 은 DB 를 읽어야 알 수 있어 키가 될 수 없다. 그래서 다른
     공용 프로필처럼 저장한 호출부가 `clear_global_main_cases_cache()` 로 비우고, 그 뒤의 읽기가 새
-    version 을 받는다. 그 version 이 이 프로필을 쓰는 화면 캐시의 키다.
+    version 을 받는다. 그 version 이 이 프로필을 쓰는 화면 캐시의 키다 — 지정 교체·비우기뿐 아니라
+    가리키는 시나리오·리비전의 이름 바꾸기도 version 을 올린다(슬롯 글자가 둘 다 싣는다).
     """
     return GlobalMainCases(
         **_load_global_main_cases_payload(database_path, _write_generation("main_cases"))
