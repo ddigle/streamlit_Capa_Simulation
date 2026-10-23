@@ -62,7 +62,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 | 화면 | 하는 일 |
 |---|---|
 | 입장 화면 · Summary · Introduce | 탭을 처음 열면 첫 로딩을 덮는 입장 화면. `Detail` 은 앱으로, `Summary` 는 최신 공식버전 여섯 달 요약으로, `Introduce` 는 40초 티저를 화면 안에 띄움(← · Esc 로 돌아오며 재생도 멈춤 — 루트 `index.html` 발표 덱은 GitHub Pages 용). 앱 안에서는 사이드바 맨 위 앱 이름 라벨이 Summary 를 다시 열고, Summary 머리 줄 ← 가 입장 화면으로 돌아감 |
-| **HOME** | 대시보드. `Main`(Capa 요약·LOB·B/N)·`Preference`(공용 설정)·`Past Data`(과거 구간) 세 탭 |
+| **HOME** | 대시보드. `Main`(Capa 요약·LOB·B/N)·`Preference`(공용 설정 — 비교 시나리오·주요 Case(Case1·Case2)·판정 기준 등)·`Past Data`(과거 구간) 세 탭 |
 | Capa Chatbot (구현중) | 대화형 분석 화면의 틀. LLM·Capa 데이터·대화 이력은 아직 잇지 않음 |
 | 시나리오 관리 | 시나리오·리비전 표에서 이름·순서 바로 고치기, 리비전 불러오기, 공식버전 지정(확인 팝업), 지금 편집본 복제, 사내 `BigDataQuery 등록`, 공식버전 `자동 갱신`, 보관·삭제 (새 리비전 저장은 사이드바 시나리오 팝업) |
 | **Static Capa** | 월·공정별로 경고 기준까지, 경고에서 확보 기준까지 모자라는 설비 대수 |
@@ -310,7 +310,7 @@ typed raw 로 그대로 보존합니다.
 
 | 파일 | 내용 |
 |---|---|
-| `data/capa_simulation.duckdb` | 시뮬레이션 DB — 시나리오·리비전·공식버전·공용 프로필(표시순서·공정 표시명·판정 기준 등) |
+| `data/capa_simulation.duckdb` | 시뮬레이션 DB — 시나리오·리비전·공식버전·공용 프로필(표시순서·공정 표시명·판정 기준·주요 Case 등) |
 | `data/equipment_availability.duckdb` | 설비 운영 DB — 설비 마스터·비가동·기존 보유대수 리비전, 주차별 가용대수, 도면 |
 | `data/capa_simulation.db` | 옛 Excel/SQLite 병행 검증용. 앱은 읽지 않음 |
 | `templates/*.xlsb` | 일회성 초기 이관·병행 검증용 로컬 Excel |

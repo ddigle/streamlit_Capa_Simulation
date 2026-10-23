@@ -84,6 +84,10 @@
 
 ### Streamlit 화면
 
+- [ ] **HOME 슬롯 UI — 시안 아티팩트 답 대기(2026-10-23 사용자 요청)** — `Capa LOB Summary` 의 Summary 위에 주요 Case 슬롯
+  셋(공식버전·Case1·Case2)을 고르는 자리를 둔다. 1단계(Preference 의 「주요 Case」 지정·공용 프로필 `0036`)는 했고, 고르는 화면의
+  꼴은 사용자가 시안을 고른 뒤 2단계로 한다 — 그 화면은 `services/main_cases.main_case_slots`·캐시 `load_global_main_cases` 를
+  쓴다(관련: `components/home_main_cases.py`, 결정 기록 「화면」 2026-10-23)
 - [ ] **Qual 마감 계산기를 설비 데이터와 잇기(2026-10-22 사용자: 일단 잇지 않는다 — 다음에)** — 공정을 고르면 Cut-off
   (Preference)·직전 달 가용대수(설비 일정 기준 가용)·신규 호기(설비 마스터의 Qual 전 호기)를 채우는 길이 후보다. 지금 탭은
   사람이 적은 값만 본다 — 관련: `components/qual_deadline_calculator.py`(결정 기록 「화면」 2026-10-22)
@@ -736,6 +740,10 @@
 
 ### 화면
 
+- (2026-10-23) HOME 주요 Case 슬롯은 **셋 고정**이다 — 슬롯 1 은 지정된(최신) 공식버전을 그대로 쓰고 따로 지정하는 화면을 만들지
+  않는다(공식 지정은 시나리오 관리). Case1·Case2 는 Preference 「주요 Case」 에서 시나리오 + 리비전을 Case 마다 고르고 고르는 것이
+  곧 공용 저장이다(시나리오를 고르면 최신 리비전과 짝). 두 Case 가 같거나 공식버전과 같아도 막지 않고 알린다. 가리키던 시나리오를
+  보관·영구 삭제하면 그 Case 를 비운다 — 관련: `components/home_main_cases.py`·`services/main_cases.py`·마이그레이션 0036
 - (2026-10-22) 따라하기 가이드 1단계 — 뼈대(원고 · 촬영 계획 · 형식 · 틀 · 합성 예시 그림)는 사외 정본이고 사내는 글 덮어쓰기
   · 매개값(`review/guide/`, git 무시)만 얹는다. 사내 1단계는 쓰기 등급 `db` · `shared` 상태를 찍지 않고(사본 두 DB 지문이
   그 `--work` 의 첫 촬영 앞 기준 지문과 같아야 함 — 다시 돌 때도 그 기준과 견준다) 합성 예시 그림으로 대신한다. HOME
