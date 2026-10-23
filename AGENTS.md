@@ -944,11 +944,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `leading_past_column_count` 는 과거 구간의 연속된 앞머리만 센다(`build_past_month_labels` 와 함께 면색·스크롤 근거).
 
 - `src/capa_simulation/components/home_preference.py` — HOME `LOB 표시 조건` 카드·`Capa LOB 현황` 제목 줄과 `Preference`
-  편집기 여덟을 그려 공용 프로필에 저장한다.
+  편집기 여덟을 그려 공용 프로필에 저장한다. 「비교 시나리오」 바로 아래에 「주요 Case」 상자(`home_main_cases`)를 세운다.
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
   - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
+- `src/capa_simulation/components/home_main_cases.py` — HOME `Preference` 의 「주요 Case」 상자(2026-10-23 사용자 요청).
+  HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
+  Case2 마다 「시나리오」·「리비전」 상자를 두고(넓으면 두 칸, 좁으면 위아래) 고르는 것이 곧 저장이다(공용 프로필 `0036`).
+  - **공용 프로필이 정본이고 상자는 거울이다.** 비교 시나리오(세션 우선)와 달리 회차마다 프로필 값을 위젯 앞에서 상자에
+    적는다 — 남의 지정·이름 바꾸기가 다음 회차에 보이고 브라우저가 옛 글자를 되보내도 지정이 바뀌지 않는다(9장).
+  - 시나리오 콜백은 그 시나리오 첫 리비전과 **짝으로** 저장한다(위젯 기본값은 `on_change` 를 부르지 않는다). Case 하나만
+    바꾸고 다른 Case 는 같은 쓰기 트랜잭션에서 옮겨 적는다. 같은 짝·라벨 글자는 쓰지 않는다.
+  - 본문의 쓰기는 둘뿐이다 — 목록에 없는 시나리오를 가리키는 Case 비우기(조건부 UPDATE, 한 번 알림), 그 시나리오 것이
+    아닌 리비전 칸을 첫 리비전으로 메우기(본 version 대조). 둘 다 프로필만 보고 정해져 세션끼리 뒤집지 않는다.
+  - Case1·Case2 가 같은 짝, Case 가 공식버전과 같은 리비전이면 저장하고 캡션으로 알린다(`main_case_overlap_notes`).
+    HOME Main 의 슬롯 고르기는 시안 답 뒤 2단계다(`services/main_cases.main_case_slots` 를 쓴다).
+- `src/capa_simulation/services/main_cases.py` — 주요 Case 슬롯 셋(공식버전·Case1·Case2)을 (글자, 시나리오 id, 리비전 id,
+  상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
+  읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
   만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다.
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
@@ -2162,9 +2176,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다시 돌린다(HOME 비교 리비전, 2026-10-08). 바뀌는 상태는 상자 밖 캡션에 적는다(HOME 비교
   선택의 `_comparison_active_note`, 주요공정 「고칠 프리셋」의 기본 프리셋 캡션). 글자가 바뀌는 것을
   피할 수 없는 상자(공정 표시명의 「표시명 (원본)」 가르기 — `ProcessLabels.unique_format_func`, 다른
-  세션의 이름 바꾸기로 바뀌는 시나리오 이름 — HOME 비교 시나리오·파생 시나리오 원본 상자·사이드바 시나리오 팝업의
-  시나리오 상자, 리비전명 변경으로 바뀌는 「r{번호} · {리비전명}」 — HOME 비교 리비전·파생 원본 리비전·사이드바
-  팝업 리비전 radio)는 위젯 앞에서 매 회차 잡은 값을 세션에 다시
+  세션의 이름 바꾸기로 바뀌는 시나리오 이름 — HOME 비교 시나리오·주요 Case 시나리오·파생 시나리오 원본 상자·사이드바
+  시나리오 팝업의 시나리오 상자, 리비전명 변경으로 바뀌는 「r{번호} · {리비전명}」 — HOME 비교 리비전·주요 Case
+  리비전·파생 원본 리비전·사이드바 팝업 리비전 radio)는 위젯 앞에서 매 회차 잡은 값을 세션에 다시
   적어(`prune_choice`·`prune_list_selection`) 브라우저에 새 글자를 보낸다. 적지 않으면 브라우저가 옛 글자를
   되보내 다음 회차에 그 글자가 id 자리에 들어가거나, 선택이 빈 값으로 풀리거나, **예외 없이 첫 항목으로
   조용히 바뀐다**(옛 시나리오 관리 카드 리비전 상자에서 r2 를 고르고 누른 「시나리오 불러오기」가 최신 r3 을 올렸다 —

@@ -4,9 +4,9 @@
 
 **화면을 보는 조건(선행 B/O·선행 입고·확보율 보정·GAP·상세·EDP·Past Data·제품별 비중 단위)은
 사이드바 조건 카드**다(2026-09-29 사용자 결정 — 전에는 제목 줄과 Preference 의 `표시 기준` 상자에
-흩어져 있었다). 탭에는 비교 시나리오·확보율 판정 기준·선행 B/O·선행 입고 실적·`Summary 공지`·
-Top5 대역·주요공정·확보율 보정 편집기가 있고, 저장은 모두 공용 프로필 교체다. 저장 버튼은 편집
-칸 **위**다. 설명은 Guide(`guides/home.md`)다.
+흩어져 있었다). 탭에는 비교 시나리오·주요 Case(`home_main_cases`)·확보율 판정 기준·선행 B/O·선행
+입고 실적·`Summary 공지`·Top5 대역·주요공정·확보율 보정 편집기가 있고, 저장은 모두 공용 프로필
+교체다. 저장 버튼은 편집 칸 **위**다. 설명은 Guide(`guides/home.md`)다.
 
 토글 **값은 계산보다 먼저** 필요하고 **위젯은 계산 뒤에** 그려진다. 그래서 `app_pages/home.py`
 는 위젯이 쓰는 세션 키를 직접 읽고, 여기서는 같은 키로 위젯을 만든다. 키와 기본값은 UI
@@ -25,6 +25,7 @@ import streamlit as st
 
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
@@ -398,14 +399,15 @@ def render_home_preference(
     clamped_execution: pd.DataFrame,
     database_path: str,
 ) -> None:
-    """비교 시나리오 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·주요공정·실행
-    Capa 입력 시트.
+    """비교 시나리오·주요 Case 선택과 판정 기준·선행 B/O·선행 입고 실적·Summary 공지·Top5 대역·
+    주요공정·실행 Capa 입력 시트.
 
     보는 조건(EDP·Past Data 포함 등)은 사이드바 `LOB 표시 조건` 카드다(`render_home_view_card`).
     주요공정 프리셋은 인자로 받지 않는다 — 그 카드는 프래그먼트라 회차마다 공용 프로필을 스스로
     읽는다(`_render_key_process_editor`).
     """
     _render_comparison_picker(database_path)
+    render_main_case_picker(database_path)
     render_threshold_editor(
         months=months,
         month_labels=month_labels,

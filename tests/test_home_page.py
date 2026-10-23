@@ -537,6 +537,13 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
         "Past Data 포함",
     ]
     assert [widget.label for widget in app.main.toggle] == []
+    # Preference 「주요 Case」 상자(2026-10-23) — Case 마다 시나리오 상자가 서고 지정 전이라 빈다.
+    from capa_simulation.components.home_main_cases import main_case_scenario_key
+
+    assert [app.selectbox(key=main_case_scenario_key(case)).value for case in (1, 2)] == [
+        None,
+        None,
+    ]
     # 붙여넣기는 표마다 작업 줄의 팝업이고, 저장은 Past Data 맨 위 한 곳이다. `Guide` 는
     # 툴바 버튼이 누르는 숨은 버튼이다.
     assert sorted(widget.label for widget in app.button) == sorted(
