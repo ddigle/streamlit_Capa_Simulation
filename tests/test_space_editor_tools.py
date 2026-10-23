@@ -1096,11 +1096,39 @@ def test_zone_looks_and_group_names_are_wired_through_the_editor() -> None:
     assert "!VIEW || mods.some(" in JS
 
 
-def test_the_component_sends_only_top_or_bottom_group_labels() -> None:
-    """가운데(처음 값)와 모르는 값은 보내지 않는다 — 브라우저는 없는 묶음을 가운데로 그린다."""
+def test_the_component_sends_every_known_group_label() -> None:
+    """가운데도 보낸다(한 줄 묶음에서 고른 가운데) — 모르는 값만 뺀다. 브라우저는 없는 묶음을 그
+    모양의 처음 위치(한 줄 묶음은 위, 그 밖은 가운데)로 그린다."""
     cleaned = space_layout_editor._clean_group_labels(
         {"G-1": "top", "G-2": "center", "G-3": "bottom", "G-4": "left"}
     )
 
-    assert cleaned == {"G-1": "top", "G-3": "bottom"}
+    assert cleaned == {"G-1": "top", "G-2": "center", "G-3": "bottom"}
     assert space_layout_editor._clean_group_labels(None) == {}
+
+
+def test_a_group_name_starts_from_its_shape_and_undo_forgets_a_first_choice() -> None:
+    """고른 적이 없는 묶음의 Main 설비명은 모양의 처음 위치(`groupLabelDefault` — 한 줄 묶음은
+    위)다. 읽을 때 가운데 행도 받고(한 줄 묶음에서 고른 가운데), 처음 고른 것을 되돌리면 「고른 적
+    없음」으로 돌아간다(처음 위치를 따른다). 이름표를 그리는 위치·바뀜 판정·적용값이 모두 같은 셈을
+    쓴다."""
+    label_of = _js_decl("const groupLabelOf = ")
+    assert "labelIn(S.groupLabels, key, count)" in label_of
+    label_in = _js_decl("const labelIn = ")
+    assert "groupLabelDefault(count)" in label_in and "map.has(key)" in label_in
+    init = JS[JS.index("function initFromData() {") : JS.index("function adoptAsOf(incoming) {")]
+    assert "if (GROUP_LABEL_POSITIONS.includes(position)) S.groupLabels.set(" in init
+    setter = JS[JS.index("function setGroupLabel(key, value) {") : JS.index("const groupShown = ")]
+    assert "before: S.groupLabels.has(key) ? S.groupLabels.get(key) : null" in setter
+    undo = JS[JS.index("function undo() {") : JS.index("function cancelDrag(")]
+    assert "if (op.before === null) S.groupLabels.delete(op.key)" in undo
+    draw = JS[
+        JS.index("function drawGroupNames() {") : JS.index(
+            "// ---", JS.index("function drawGroupNames() {")
+        )
+    ]
+    assert "groupLabelOf(key, mods.length)" in draw
+    changes = JS[
+        JS.index("function groupLabelChangeCount() {") : JS.index("function groupLabelsPayload() {")
+    ]
+    assert "labelIn(S.originalGroupLabels, key, n)" in changes

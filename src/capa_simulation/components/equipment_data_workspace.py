@@ -117,7 +117,12 @@ from capa_simulation.services.schedule_confirmation import (
     schedule_confirmation_summary,
 )
 from capa_simulation.services.simulation_cache import get_schedule_confirmation_issues
-from capa_simulation.services.space_layout_edit import PendingRenames
+from capa_simulation.services.space_layout_edit import (
+    ModuleLayout,
+    PendingRenames,
+    module_layout_message,
+    module_layout_violations,
+)
 
 FLASH_KEY = "equipment_status_flash"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
@@ -165,7 +170,8 @@ CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
 # **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
 PENDING_CANVASES_KEY = "equipment_pending_floor_canvases_v1"
 PENDING_MARKS_KEY = "equipment_pending_floor_marks_v1"
-# 층마다 Main 설비 모듈 묶음 이름표 위치((동, 층) → {Main 설비: 위치}, 그 층 전체 — 가운데는 빠짐).
+# 층마다 Main 설비 모듈 묶음 이름표 위치((동, 층) → {Main 설비: 위치}, 그 층 전체 — 처음 위치인
+# 묶음은 빠짐).
 PENDING_GROUP_LABELS_KEY = "equipment_pending_floor_group_labels_v1"
 # 층마다 편집을 시작할 때 본 저장값(캔버스·요소와 위치의 지문). 저장이 이것과 지금 저장값을 견줘, 그
 # 사이 다른 사람이 바꾼 층을 옛 목록으로 덮지 않는다(요소·위치는 층 전체 교체다).
@@ -179,6 +185,15 @@ PENDING_FAB_KEY = "equipment_pending_fab_layout_v1"
 # 함께 버려진다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을 바꾼 호기가 「지운 호기 +
 # 새 호기」로 읽힌다(`services/space_layout_edit.PendingRenames`).
 PENDING_RENAMES_KEY = "equipment_pending_unit_renames_v1"
+# Space 배치 편집기가 적용한 모듈 묶음의 적용 뒤 모양(Main 설비 → `ModuleLayout`). 저장 검사
+# (`module_layout_violations`)가 이 모양 그대로인 묶음을 편집기 결과로 보고 통과시킨다 — RawData 가
+# 그 뒤에 그 묶음 좌표·크기를 고치면 모양이 달라져 다시 검사받는다. 편집본과 함께 버려진다.
+EDITOR_MODULE_LAYOUTS_KEY = "equipment_editor_module_layouts_v1"
+# 설비 마스터 편집표 위 한 줄과 좌표·크기 칸 머리 도움말.
+MODULE_LAYOUT_HELP = (
+    "Main 설비 모듈 묶음(모듈 둘 이상)의 X좌표·Y좌표·Xsize·Ysize 는 Space 현황 배치 편집기에서 "
+    "묶음 범위로 고칩니다 — 여기서 고쳐 묶음 범위의 바둑판이 아니게 되면 저장이 막힙니다."
+)
 # 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
 DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
 # 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 RawData 제출은 옛
@@ -275,6 +290,7 @@ def reset_equipment_drafts() -> None:
         PENDING_BASES_KEY,
         PENDING_FAB_KEY,
         PENDING_RENAMES_KEY,
+        EDITOR_MODULE_LAYOUTS_KEY,
         _SEEDED_GENERATION_KEY,
     ):
         st.session_state.pop(key, None)
@@ -399,6 +415,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             PENDING_DELETE_KEY,
             LAST_REMOVED_KEY,
             PENDING_RENAMES_KEY,
+            EDITOR_MODULE_LAYOUTS_KEY,
         ]
         if replaced:
             stale += [
@@ -461,6 +478,37 @@ def stage_unit_renames(renames: PendingRenames) -> None:
         st.session_state.pop(PENDING_RENAMES_KEY, None)
 
 
+def editor_module_layouts() -> dict[str, ModuleLayout]:
+    """Space 배치 편집기가 적용한 모듈 묶음의 적용 뒤 모양(Main 설비 → 모양)."""
+    value = st.session_state.get(EDITOR_MODULE_LAYOUTS_KEY)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def stage_editor_module_layouts(layouts: Mapping[str, ModuleLayout]) -> None:
+    """배치 편집기 적용이 옮기거나 빼거나 보낸 묶음의 적용 뒤 모양을 더한다(같은 묶음은 새 모양이
+    이긴다). 저장 검사가 이 모양 그대로인 묶음을 통과시킨다(`saved_master_violations`)."""
+    if layouts:
+        st.session_state[EDITOR_MODULE_LAYOUTS_KEY] = {**editor_module_layouts(), **layouts}
+
+
+def _saved_master() -> pd.DataFrame:
+    """편집본이 나온 저장본의 설비 마스터(`ensure_equipment_drafts` 가 세운 사본, 없으면 빈 표)."""
+    saved = st.session_state.get(EQUIPMENT_DRAFT_KEY)
+    return saved if isinstance(saved, pd.DataFrame) else empty_equipment_master()
+
+
+def saved_master_violations(master: pd.DataFrame) -> list[str]:
+    """저장하려는 설비 마스터에서 모듈 좌표·크기가 저장본과 달라졌는데 바둑판이 아닌 Main 설비
+    묶음(`space_layout_edit.module_layout_violations` — 저장 안 한 Space 이름 바꿈과 배치 편집기가
+    적용한 묶음 모양을 함께 넘긴다). 비면 저장해도 된다."""
+    return module_layout_violations(
+        _saved_master(),
+        master,
+        renames=pending_unit_renames().units,
+        approved=editor_module_layouts(),
+    )
+
+
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
     """Space 편집기가 이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을
     기억한 RawData 칸을 따라 옮긴다 — 설비 마스터·비가동 일정의 선택은 새 설비명으로 옮기고,
@@ -495,7 +543,8 @@ def pending_floor_marks() -> dict[FloorKey, tuple[FloorLayoutMark, ...]]:
 
 
 def pending_floor_group_labels() -> dict[FloorKey, dict[str, str]]:
-    """Space 에서 바꿨지만 아직 저장하지 않은 층 Main 설비명 위치(층 전체 — 가운데는 빠짐)."""
+    """Space 에서 바꿨지만 아직 저장하지 않은 층 Main 설비명 위치(층 전체 — 처음 위치인 묶음은
+    빠짐)."""
     value = st.session_state.get(PENDING_GROUP_LABELS_KEY)
     return dict(value) if isinstance(value, dict) else {}
 
@@ -746,7 +795,14 @@ def _save_equipment_frames(
     revision_optional: bool,
     fab_saved: bool,
 ) -> str:
-    """`save_equipment_buffer` 의 설비 쪽(세 표 + 층 캔버스·요소 한 트랜잭션)."""
+    """`save_equipment_buffer` 의 설비 쪽(세 표 + 층 캔버스·요소 한 트랜잭션).
+
+    설비 마스터를 쓰는 모든 저장(RawData 직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장)이 이
+    한 곳을 지나므로 모듈 묶음 좌표·크기 검사(`saved_master_violations` — 바뀐 묶음은 묶음 범위의
+    바둑판이어야 한다, 2026-10-23 사용자 답 「막자」)도 여기서 한다."""
+    violations = saved_master_violations(frames[1])
+    if violations:
+        raise ValueError(module_layout_message(violations))
     canvases = pending_floor_canvases()
     marks = {
         key: [mark.editor_payload() for mark in staged]
@@ -1378,16 +1434,16 @@ def _render_editors(
             "동": st.column_config.SelectboxColumn(options=list(VALID_BUILDINGS)),
             "층": st.column_config.SelectboxColumn(options=list(VALID_FLOORS)),
             "X좌표": st.column_config.NumberColumn(
-                min_value=0.0, max_value=max_extent[0], step=1.0
+                min_value=0.0, max_value=max_extent[0], step=1.0, help=MODULE_LAYOUT_HELP
             ),
             "Y좌표": st.column_config.NumberColumn(
-                min_value=0.0, max_value=max_extent[1], step=1.0
+                min_value=0.0, max_value=max_extent[1], step=1.0, help=MODULE_LAYOUT_HELP
             ),
             "Xsize": st.column_config.NumberColumn(
-                min_value=0.1, max_value=max_extent[0], step=1.0
+                min_value=0.1, max_value=max_extent[0], step=1.0, help=MODULE_LAYOUT_HELP
             ),
             "Ysize": st.column_config.NumberColumn(
-                min_value=0.1, max_value=max_extent[1], step=1.0
+                min_value=0.1, max_value=max_extent[1], step=1.0, help=MODULE_LAYOUT_HELP
             ),
             # 목록 밖 값도 받는다(저장 미리보기에서 경고만) — 고르는 칸으로 묶지 않는다.
             AREA_CODE_COLUMN: st.column_config.TextColumn(
@@ -1418,6 +1474,7 @@ def _render_editors(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
         )
         equipment_action = _selection_buttons("master")
+        st.caption(f":material/grid_view: {MODULE_LAYOUT_HELP}")
         edited_equipment, equipment_checked = _selectable_editor(
             equipment,
             equipment_view,
@@ -1720,6 +1777,11 @@ def render_equipment_data_workspace(
         master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
         for message in module_group_warnings(master):
             st.warning(message, icon=":material/view_module:")
+        # 모듈 묶음 좌표·크기를 바둑판이 아니게 고친 편집은 저장이 막힌다 — 저장 전에 같은 문구로
+        # 알린다.
+        violations = saved_master_violations(master)
+        if violations:
+            st.warning(module_layout_message(violations), icon=":material/grid_view:")
         # Area Code 목록 밖과 일정 확인(미확인·실적 누락·상태 갱신 필요)도 같은 자리에서
         # 알리고 막지 않는다. 일정 확인은 한 줄 + 접힌 목록이라 이 칸 안에 둔다 — 칸 밖이면 그
         # 목록이 생기고 사라질 때마다 아래 key 있는 펼침·탭이 밀린다.

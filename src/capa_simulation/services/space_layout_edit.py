@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Final, Literal, cast
 
+import numpy as np
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import (
@@ -469,13 +470,26 @@ _TICKS_PER_UNIT: Final = 10**CANVAS_DECIMALS
 _NAME_TOKEN: Final = re.compile(r"[0-9]+|[^0-9]+")
 ModuleBox = tuple[float, float, float, float]
 _Ticks = tuple[int, int, int, int]
+# 이만큼까지의 모듈은 가로 한 줄로 선다(2026-10-23 사용자 답 「2모듈이거나 3모듈이면 가로로 일렬
+# 배치」). 그보다 많으면 거의 정사각 격자다.
+ONE_ROW_MODULES: Final = 3
 
 
 def module_grid(count: int) -> tuple[int, int]:
-    """모듈 수 → (열, 행). 거의 정사각 격자다(열 = ⌈√n⌉, 행 = ⌈n ÷ 열⌉) — 넷이면 2×2,
-    둘이면 2×1."""
-    cols = max(1, math.ceil(math.sqrt(count)))
-    return cols, max(1, math.ceil(count / cols))
+    """모듈 수 → (열, 행). 셋까지는 가로 한 줄(열 = n, 행 = 1 — 둘이면 2×1, 셋이면 3×1)이고,
+    넷부터는 거의 정사각 격자다(열 = ⌈√n⌉, 행 = ⌈n ÷ 열⌉ — 넷이면 2×2, 다섯이면 3×2)."""
+    if count <= ONE_ROW_MODULES:
+        return max(1, count), 1
+    cols = math.ceil(math.sqrt(count))
+    return cols, math.ceil(count / cols)
+
+
+def default_group_label(count: int) -> str:
+    """Main 설비명 위치를 고른 적이 없는(층 위치 행이 없는) 모듈 묶음의 위치. 한 줄 묶음
+    (`module_grid` 의 행이 1 — 모듈 2·3)은 범위 바깥 위다 — 가운데는 가운데 모듈 이름표와 겹친다
+    (2026-10-24 결정 (e)). 두 줄 이상(모듈 넷부터)은 범위 정가운데(모듈 꼭짓점이 만나는 자리)다.
+    편집기 JS(`editor.js` 의 `// <module-tiling>` 구획 `groupLabelDefault`)가 같은 규칙이다."""
+    return GROUP_LABEL_POSITIONS[1] if module_grid(count)[1] == 1 else GROUP_LABEL_POSITIONS[0]
 
 
 def natural_name_key(name: str) -> tuple[tuple[tuple[int, int, str], ...], str]:
@@ -541,7 +555,7 @@ def module_cells(box: ModuleBox, count: int) -> list[ModuleBox]:
 def tile_module_group(box: ModuleBox, names: Sequence[str]) -> dict[str, ModuleBox]:
     """묶음을 **새로** 놓을 때(서랍에서 놓기)의 자리 — 범위 `box` 를 `module_grid` 열×행으로
     똑같이 나눈 칸에 설비명 자연 정렬(`natural_name_key`) 차례로 모듈을 하나씩 둔다(이름 → 칸).
-    첫 모듈이 왼쪽 위다. 칸이 남으면(모듈 셋 → 2×2) 마지막 칸이 빈다."""
+    첫 모듈이 왼쪽 위다. 칸이 남으면(모듈 다섯 → 3×2) 마지막 칸이 빈다."""
     if not names:
         return {}
     cells = module_cells(box, len(names))
@@ -768,6 +782,155 @@ def _parse_ghost_moves(
             )
         moves[unit_id] = (x, y, w, h)
     return moves
+
+
+# ------------------------------------------------------------------ 마스터 저장의 묶음 좌표·크기
+
+# 모듈 묶음의 좌표·크기는 Space 배치 편집기에서 묶음 범위로만 고친다(2026-10-23 사용자 답 「막자」).
+# 설비 마스터를 저장하는 길(RawData 직접 편집·붙여넣기·CSV 업로드·일괄 삭제·Space 배치 저장 — 모두
+# `components/equipment_data_workspace.save_equipment_buffer`)은 저장 직전에
+# `module_layout_violations` 로 저장본과 견줘, 모듈 좌표·크기가 바뀌었는데 바둑판이 아닌 묶음이
+# 있으면 저장을 거부한다. 배치 편집기가 적용한 묶음은 적용 뒤 모양(`module_layouts`)을 세션에 두고
+# 그 모양 그대로면 통과시킨다 — 편집기 결과는 `parse_editor_apply` 가 이미 같은 규칙으로 봤고,
+# 숨은 모듈이 있는 묶음을 빼거나 다른 층으로 보낸 결과처럼 바둑판 칸이 비는 모양도 있다.
+_COORDINATE_COLUMNS: Final = (*POSITION_COLUMNS, *SIZE_COLUMNS)
+# 한 행의 좌표·크기 눈금(X좌표·Y좌표·Xsize·Ysize, 빈 칸·못 읽는 값은 None).
+_RowTicks = tuple[int | None, int | None, int | None, int | None]
+# 한 묶음의 모양 — 행마다 (설비명, 좌표·크기 눈금), 설비명 차례.
+ModuleLayout = tuple[tuple[str, _RowTicks], ...]
+
+
+def _row_ticks(frame: pd.DataFrame) -> dict[str, _RowTicks]:
+    """설비명(앞뒤 공백 제거) → 좌표·크기 눈금. 반올림은 바둑판 눈금(`_ticks`)과 같다. 설비명이
+    비거나 겹치는 행(저장 검증이 막는다)은 처음 것만 본다."""
+    if frame.empty or EQUIPMENT_ID_COLUMN not in frame.columns:
+        return {}
+    numbers = (
+        frame.reindex(columns=list(_COORDINATE_COLUMNS))
+        .apply(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype="float64", na_value=np.nan)
+    )
+    finite = np.isfinite(numbers)
+    scaled = np.floor(np.where(finite, numbers, 0.0) * _TICKS_PER_UNIT + 0.5)
+    names = frame[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    out: dict[str, _RowTicks] = {}
+    for name, values, oks in zip(names, scaled.tolist(), finite.tolist(), strict=True):
+        if pd.isna(name) or not name or str(name) in out:
+            continue
+        x, y, w, h = (int(value) if ok else None for value, ok in zip(values, oks, strict=True))
+        out[str(name)] = (x, y, w, h)
+    return out
+
+
+def _module_rows_by_group(
+    master: pd.DataFrame, ticks: Mapping[str, _RowTicks] | None = None
+) -> dict[str, list[tuple[str, _RowTicks]]]:
+    """Main 설비 모듈 묶음(Main 설비 행 둘 이상) → 그 행들의 (설비명, 좌표·크기 눈금). `ticks` 는
+    이미 구한 `_row_ticks(master)` 다."""
+    if master.empty or EQUIPMENT_ID_COLUMN not in master.columns:
+        return {}
+    ticks = _row_ticks(master) if ticks is None else ticks
+    names = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    groups: dict[str, list[tuple[str, _RowTicks]]] = {}
+    for name, parent in zip(names, _parents(master), strict=True):
+        if pd.isna(parent) or pd.isna(name) or str(name) not in ticks:
+            continue
+        groups.setdefault(str(parent), []).append((str(name), ticks[str(name)]))
+    return {group: rows for group, rows in groups.items() if len(rows) >= 2}
+
+
+def _layout_of(rows: Sequence[tuple[str, _RowTicks]]) -> ModuleLayout:
+    return tuple(sorted(rows, key=lambda row: row[0]))
+
+
+def module_layouts(master: pd.DataFrame, groups: Collection[str]) -> dict[str, ModuleLayout]:
+    """`groups` 가운데 `master` 에서 모듈 묶음(Main 설비 행 둘 이상)인 것의 모양. 배치 편집기 적용
+    뒤 그 적용이 옮기거나 빼거나 보낸 묶음의 모양을 세션에 두면, 저장 검사
+    (`module_layout_violations`)가 그 모양 그대로인 묶음을 편집기 결과로 보고 통과시킨다."""
+    rows = _module_rows_by_group(master)
+    return {group: _layout_of(rows[group]) for group in groups if group in rows}
+
+
+def _placed_ticks(row: _RowTicks) -> bool:
+    return row[0] is not None and row[1] is not None
+
+
+def module_layout_violations(
+    saved: pd.DataFrame,
+    candidate: pd.DataFrame,
+    *,
+    renames: Mapping[str, str] | None = None,
+    approved: Mapping[str, ModuleLayout] | None = None,
+) -> list[str]:
+    """설비 마스터 저장 후보 `candidate` 에서 모듈 좌표·크기가 저장본 `saved` 와 달라졌는데 묶음
+    범위의 바둑판이 아닌 Main 설비 묶음(설비명 자연 정렬). 비면 저장해도 된다.
+
+    - **바뀐 묶음**: 묶음 행 하나라도 X좌표·Y좌표·Xsize·Ysize 가 저장본의 같은 설비명(`renames` —
+      지금 이름 → 저장본 이름, Space 에서 바꾼 저장 안 한 이름)과 다르다. 저장본에 없는 설비명은
+      좌표·크기가 하나라도 있으면 바뀐 것이다 — 다만 저장본에서 사라진 행과 값이 같으면 RawData 에서
+      이름만 바꾼 행으로 보고 바뀌지 않은 것이다. 행을 묶음에 넣거나 빼는 편집(Main 설비 칸)만으로는
+      바뀌지 않는다(그 행의 좌표·크기가 그대로면).
+    - 바뀌지 않은 묶음(바둑판이 아닌 옛 묶음 포함)은 보지 않는다. `approved`(배치 편집기가 적용한
+      묶음 → 적용 뒤 모양, `module_layouts`)와 모양이 같은 묶음도 보지 않는다.
+    - 바뀐 묶음은 좌표가 있는 행이 하나도 없거나(묶음째 미배치), 좌표가 있던 행이 좌표를 잃지
+      않았고 좌표가 있는 행이 모두 크기를 갖고 그 바깥 상자를 행 수 바둑판으로 나눈 칸
+      (`assign_module_cells` 배정)과 모두 한 눈금(`_TILE_TOLERANCE`) 안이어야 한다 — 배치 편집기
+      적용의 서버 판정과 같다. 좌표 없는 형제는 칸 수에 넣지 않는다(편집기가 묶음을 처음 옮길 때
+      놓는다)."""
+    after = _row_ticks(candidate)
+    groups = _module_rows_by_group(candidate, after)
+    if not groups:
+        return []
+    mapping = renames or {}
+    accepted = approved or {}
+    before = _row_ticks(saved)
+    present = {mapping.get(name, name) for name in after}
+    # 저장본에 있었는데 후보에 없는 행의 값 — RawData 에서 이름만 바꾼 행이 바뀐 행으로 읽히지 않게
+    # 같은 값과 한 번씩 짝짓는다.
+    vanished: dict[_RowTicks, int] = {}
+    for name, row in before.items():
+        if name not in present and any(value is not None for value in row):
+            vanished[row] = vanished.get(row, 0) + 1
+    violations: list[str] = []
+    for group, rows in groups.items():
+        if accepted.get(group) == _layout_of(rows):
+            continue
+        changed = lost = False
+        for name, row in rows:
+            old = before.get(mapping.get(name, name))
+            if old is None:
+                if all(value is None for value in row):
+                    continue
+                if vanished.get(row, 0) > 0:
+                    vanished[row] -= 1
+                    continue
+                changed = True
+            elif old != row:
+                changed = True
+                lost = lost or (_placed_ticks(old) and not _placed_ticks(row))
+        if not changed:
+            continue
+        placed = {name: row for name, row in rows if _placed_ticks(row)}
+        if not placed:
+            continue
+        if lost or any(None in row for row in placed.values()):
+            violations.append(group)
+            continue
+        boxes = {name: cast(_Ticks, row) for name, row in placed.items()}
+        if _deviation_ticks(boxes)[0] > _TILE_TOLERANCE:
+            violations.append(group)
+    return sorted(violations, key=natural_name_key)
+
+
+def module_layout_message(groups: Sequence[str]) -> str:
+    """`module_layout_violations` 가 찾은 묶음으로 저장을 거부하는 문구 — 어느 묶음인지 말한다."""
+    shown = ", ".join(groups[:3]) + (f" 외 {len(groups) - 3}개" if len(groups) > 3 else "")
+    return (
+        f"Main 설비 {shown} 의 모듈 좌표·크기는 Space 배치 편집기에서 묶음 범위로 고칩니다 — "
+        "RawData·붙여넣기·CSV 로 바꾼 X좌표·Y좌표·Xsize·Ysize 가 묶음 범위를 바둑판으로 나눈 칸이 "
+        "아니어서 저장할 수 없습니다. 그 값을 저장본대로 되돌리거나, Space 현황 층 상세의 "
+        "`배치 편집` 에서 그 묶음을 옮기거나 키워 다시 놓은 뒤 저장하세요."
+    )
 
 
 # ------------------------------------------------------------------ 검증
@@ -1157,34 +1320,46 @@ def _parse_group_labels(
     return tuple(labels)
 
 
-def module_group_names(
+def module_group_sizes(
     editor_items: Sequence[Mapping[str, Any]], ghosts: Sequence[Mapping[str, Any]] = ()
-) -> set[str]:
-    """이 편집기에 실린 모듈 묶음의 Main 설비(편집기 호기와 숨은 모듈을 합쳐 모듈 둘 이상)."""
-    return set(_module_groups(editor_items, ghosts))
+) -> dict[str, int]:
+    """이 편집기에 실린 모듈 묶음(편집기 호기와 숨은 모듈을 합쳐 모듈 둘 이상)의 Main 설비 → 모듈
+    수. 편집기 JS(`groupCounts`)와 같은 셈이다 — 바둑판 칸 수이자 Main 설비명 처음 위치
+    (`default_group_label`)의 근거다."""
+    return {
+        group: len(items) + len(hidden)
+        for group, (items, hidden) in _module_groups(editor_items, ghosts).items()
+    }
 
 
 def next_group_labels(
-    current: GroupLabels, applied: EditorApply, module_groups: Collection[str]
+    current: GroupLabels, applied: EditorApply, module_groups: Mapping[str, int]
 ) -> dict[str, str]:
-    """적용 뒤 이 층의 Main 설비명 위치(가운데는 빠진다).
+    """적용 뒤 이 층의 Main 설비명 위치(행이 없는 묶음은 처음 위치 `default_group_label` 로 선다).
 
     `current` 는 편집기에 보낸 위치(대기분, 없으면 저장값), `module_groups` 는 이 편집기에 실린
-    모듈 묶음(`module_group_names`)이다. 편집기가 위치를 보냈으면(`applied.group_labels`) 그
-    묶음들의 위치는 보낸 값으로 갈아 끼운다 — 보내지 않은 실린 묶음(다른 층으로 보냄)은 이 층에서
-    빠지고, 실리지 않은 묶음(지금 기준일에 편집기에 없는 묶음)의 위치는 그대로 남는다. Main 설비
-    이름 바꿈(`applied.group_renames`)은 새 이름으로 따라간다."""
+    모듈 묶음과 모듈 수(`module_group_sizes`)다. 편집기가 위치를 보냈으면(`applied.group_labels`)
+    그 묶음들의 위치는 보낸 값으로 갈아 끼운다 — 보내지 않은 실린 묶음(다른 층으로 보냄)은 이
+    층에서 빠지고, 실리지 않은 묶음(지금 기준일에 편집기에 없는 묶음)의 위치는 그대로 남는다. Main
+    설비 이름 바꿈(`applied.group_renames`)은 새 이름으로 따라간다.
+
+    보낸 위치가 그 묶음의 처음 위치이면 행을 두지 않는다 — 다만 이미 같은 위치의 행이 있으면(손대지
+    않은 묶음) 그대로 둬, 아무것도 고르지 않은 적용이 층 위치 목록을 바꾸지 않는다. 한 줄 묶음(모듈
+    2·3)은 처음 위치가 위라 가운데를 고르면 가운데 행이 남는다."""
     renamed = applied.group_renames
     if applied.group_labels is None:
         return dict(sorted((renamed.get(name, name), spot) for name, spot in current.items()))
-    loaded = set(module_groups)
     # 실리지 않은 묶음의 위치도 이름 바꿈을 따라간다(모듈 하나만 실려 묶음이 아닌 채 Main
     # 설비 이름을 바꾼 때).
-    kept = {renamed.get(name, name): spot for name, spot in current.items() if name not in loaded}
+    kept = {
+        renamed.get(name, name): spot for name, spot in current.items() if name not in module_groups
+    }
     for group, position in applied.group_labels:
         name = renamed.get(group, group)
         kept.pop(name, None)
-        if position != GROUP_LABEL_POSITIONS[0]:
+        if current.get(group) == position or position != default_group_label(
+            module_groups.get(group, 0)
+        ):
             kept[name] = position
     return dict(sorted(kept.items()))
 

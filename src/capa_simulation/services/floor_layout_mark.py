@@ -11,8 +11,9 @@
 버리면 그 요소가 지워진다 — 그래서 하나라도 어긋나면 `ValueError` 로 저장을 거부한다.
 
 같은 층 현행값으로 **Main 설비 모듈 묶음 이름표의 위치**(`GROUP_LABEL_POSITIONS` — 묶음 범위
-가운데·위·아래, 2026-10-23 사용자 요청)도 여기 둔다. 설비 마스터 칸이 아니고, 가운데(기본)는
-행을 두지 않는다. 층 저장의 동시성 대조는 요소와 위치를 함께 본다(`floor_layout_fingerprint`).
+가운데·위·아래, 2026-10-23 사용자 요청)도 여기 둔다. 설비 마스터 칸이 아니고, 행이 없는 묶음은
+묶음 모양의 처음 위치(`space_layout_edit.default_group_label` — 한 줄 묶음은 위, 그 밖은
+가운데)로 선다. 층 저장의 동시성 대조는 요소와 위치를 함께 본다(`floor_layout_fingerprint`).
 """
 
 from __future__ import annotations
@@ -51,7 +52,8 @@ MARK_FONT_SIZES: Final = (9, 11, 13, 16, 20, 24)
 ZONE_BORDER_STYLES: Final = ("dashed", "solid")
 ZONE_LABEL_ALIGNS: Final = ("left", "center", "right")
 MARKS_PER_FLOOR_MAX: Final = 500
-# Main 설비 모듈 묶음 이름표 위치 — 묶음 범위 정가운데(기본), 범위 바깥 바로 위·아래.
+# Main 설비 모듈 묶음 이름표 위치 — 묶음 범위 정가운데, 범위 바깥 바로 위·아래. 고른 적이 없는
+# 묶음은 모양에 따라 가운데(두 줄 이상) 또는 위(한 줄 — 모듈 2·3)다(`default_group_label`).
 GROUP_LABEL_POSITIONS: Final = ("center", "top", "bottom")
 _MARK_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,40}")
 
@@ -320,7 +322,8 @@ def marks_fingerprint(marks: Sequence[FloorLayoutMark]) -> str:
 
 # ------------------------------------------------------------------ Main 설비명 위치
 
-# 한 층의 Main 설비명 위치 — Main 설비 → 위치(`GROUP_LABEL_POSITIONS`). 가운데(기본)는 넣지 않는다.
+# 한 층의 Main 설비명 위치 — Main 설비 → 위치(`GROUP_LABEL_POSITIONS`). 고른 적이 없거나 처음
+# 위치로 되돌린 묶음은 넣지 않는다(`space_layout_edit.next_group_labels`).
 GroupLabels = Mapping[str, str]
 
 
@@ -328,7 +331,8 @@ def prepare_group_labels(labels: Mapping[str, object]) -> dict[str, str]:
     """한 층의 Main 설비명 위치를 검증·정규화한다. 하나라도 어긋나면 `ValueError`(층 전체 교체라
     버리지 않는다). Main 설비 이름은 앞뒤 공백을 걷은 빈칸 아닌 글자이고 한 층에 한 번이다 — 길이·
     글자는 설비 마스터의 Main 설비 칸처럼 묶지 않는다(편집기 적용 `_parse_group_labels` 가 받은
-    이름을 저장에서 거부하지 않게). 가운데(기본)는 행을 두지 않으므로 빼고, 이름 차례로 돌려준다."""
+    이름을 저장에서 거부하지 않게). 가운데도 행으로 남긴다 — 한 줄 묶음(모듈 2·3)은 처음 위치가
+    위라 가운데를 고른 것을 지켜야 한다(옛 저장값에는 가운데 행이 없다). 이름 차례로 돌려준다."""
     prepared: dict[str, str] = {}
     seen: set[str] = set()
     for raw_name, raw_position in labels.items():
@@ -344,8 +348,7 @@ def prepare_group_labels(labels: Mapping[str, object]) -> dict[str, str]:
                 f"Main 설비 {name} 의 이름 위치를 알 수 없습니다: {raw_position!r} — "
                 "가운데(center)·위(top)·아래(bottom) 중 하나입니다."
             )
-        if position != GROUP_LABEL_POSITIONS[0]:
-            prepared[name] = position
+        prepared[name] = position
     return dict(sorted(prepared.items()))
 
 

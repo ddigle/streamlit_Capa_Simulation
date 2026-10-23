@@ -16,7 +16,7 @@ export default function (component) {
     // 서랍에서 놓은 호기 id(놓은 차례) — 크기 없는 호기가 같은 앞 3자리 설비의 크기를 빌릴 때 본다(`recentSizes`).
     // 서랍 Shift 범위의 기준 칩(`trayAnchor`), 도면 요소 붙여넣기의 비켜 놓기 차례(`pasteSerial`), 상태 줄 한 줄 알림(`flash`).
     placedLog: [], trayAnchor: null, pasteSerial: 0, flash: '', hover: null, guideTimer: 0,
-    // Main 설비 모듈 묶음 이름표 위치(묶음 열쇠 `groupKeyOf` → 'top'·'bottom', 없으면 가운데)와 처음 값.
+    // Main 설비 모듈 묶음 이름표 위치(묶음 열쇠 `groupKeyOf` → 'center'·'top'·'bottom', 없으면 그 모양의 처음 위치)와 처음 값.
     groupLabels: new Map(), originalGroupLabels: new Map(),
     // 층 상세 보기: 겹쳐 숨긴 반입 예정 호기(id → 설비지분, `paintUnit`)와 아래 호기 표에 고른 호기 — 파이썬이 쥔 값
     // (`data.picked`, 받은 그대로 `pickData`)과 브라우저가 보낸 값(`pickSent`).
@@ -146,7 +146,8 @@ export default function (component) {
   const BORDER_STYLES = ['dashed', 'solid']
   const LABEL_ALIGNS = ['left', 'center', 'right']
   const pickOr = (value, allowed) => (allowed.includes(value) ? value : allowed[0])
-  // Main 설비 모듈 묶음 이름표 위치 — 범위 정가운데(처음 값)·범위 바깥 바로 위·아래(파이썬 `GROUP_LABEL_POSITIONS`).
+  // Main 설비 모듈 묶음 이름표 위치 — 범위 정가운데·범위 바깥 바로 위·아래(파이썬 `GROUP_LABEL_POSITIONS`). 고른 적이 없는
+  // 묶음은 모양에 따라 가운데(두 줄 이상) 또는 위(한 줄 — 모듈 2·3)다(`groupLabelDefault`).
   const GROUP_LABEL_POSITIONS = ['center', 'top', 'bottom']
   // Main 설비명 글자의 가장 큰 크기(화면 px). 범위에 맞춰 줄고 UNIT_LABEL_MIN_PX 아래면 숨긴다(모듈 이름표와 같은 규칙 —
   // 다만 모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 그 크기로라도 선다, `groupNameSize`).
@@ -255,15 +256,20 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 모듈 묶음 바둑판(순수 함수)
   // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`module_cells`·`tile_module_group`·
-  // `assign_module_cells`·`module_tile_deviation` 과 같은 규칙이다 — `tests/test_space_module_group.py` 가 아래 두 표시 줄
+  // `assign_module_cells`·`module_tile_deviation`·`default_group_label` 과 같은 규칙이다 — `tests/test_space_module_group.py` 가 아래 두 표시 줄
   // 사이를 떼어 node 로 돌려 파이썬과 대조하고 칸 배정·다시 놓기 판단을 시험한다. 그래서 바깥 이름을 쓰지 않는다(정밀도
   // `scale` 도 인자다). 한쪽을 고치면 다른 쪽도 고친다.
   // <module-tiling>
-  // 모듈 수 → [열, 행]. 거의 정사각 격자(열 = ⌈√n⌉, 행 = ⌈n ÷ 열⌉) — 넷이면 2×2, 둘이면 2×1.
+  // 모듈 수 → [열, 행]. 셋까지는 가로 한 줄(열 n·행 1 — 둘이면 2×1, 셋이면 3×1), 넷부터는 거의 정사각 격자(열 = ⌈√n⌉,
+  // 행 = ⌈n ÷ 열⌉ — 넷이면 2×2, 다섯이면 3×2).
   function moduleGrid(count) {
-    const cols = Math.max(1, Math.ceil(Math.sqrt(count)))
-    return [cols, Math.max(1, Math.ceil(count / cols))]
+    if (count <= 3) return [Math.max(1, count), 1]
+    const cols = Math.ceil(Math.sqrt(count))
+    return [cols, Math.ceil(count / cols)]
   }
+  // Main 설비명 위치를 고른 적이 없는 모듈 묶음의 위치 — 한 줄 묶음(행 1, 모듈 2·3)은 범위 바깥 위(가운데는 가운데 모듈
+  // 이름표와 겹친다), 두 줄 이상은 범위 정가운데.
+  const groupLabelDefault = (count) => (moduleGrid(count)[1] === 1 ? 'top' : 'center')
   // 글자를 코드 포인트로 견준다 — 파이썬 글자 비교와 같다(UTF-16 단위로 견주면 BMP 밖 글자에서 갈린다).
   function codeCompare(a, b) {
     const pa = Array.from(a)
@@ -543,7 +549,7 @@ export default function (component) {
     return 0
   }
   // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
-  // 단위), 영역 높이 canvasH. 가운데(처음 값)는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
+  // 단위), 영역 높이 canvasH. 가운데는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
   // 띄워 붙인다 — 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다. 바깥 알약이 영역 위·아래 끝을 넘으면(범위가 영역 끝에 닿은
   // 묶음 — 좁은 화면에서는 화면 밖으로 잘린다) 범위 안쪽 위·아래 띠로 뒤집는다.
   function groupNameSpot(r, position, fs, gap, canvasH) {
@@ -913,11 +919,14 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- Main 설비명(모듈 묶음 이름표)
-  // 모듈 묶음(모듈 둘 이상)의 범위에 Main 설비명을 그린다(2026-10-23 사용자 요청) — 처음 값은 범위 정가운데, 묶음마다 범위
-  // 바깥 바로 위·아래를 고른다(배치 편집 선택 칸). 위치는 묶음 열쇠(`groupKeyOf` — 처음 Main 설비 이름)로 쥐고, 적용값
-  // `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}] 이다(파이썬 `next_group_labels` 가 이름 바꿈을 따라
-  // 층 위치 목록으로 합친다). 보기 화면은 기준일에 묶음의 모듈이 하나도 보이지 않으면 이름도 숨긴다.
-  const groupLabelOf = (key) => pickOr(S.groupLabels.get(key), GROUP_LABEL_POSITIONS)
+  // 모듈 묶음(모듈 둘 이상)의 범위에 Main 설비명을 그린다(2026-10-23 사용자 요청). 고른 적이 없는 묶음은 그 모양의 처음
+  // 위치(`groupLabelDefault` — 한 줄 묶음은 범위 바깥 위, 두 줄 이상은 범위 정가운데)이고, 묶음마다 가운데·범위 바깥 바로
+  // 위·아래를 고른다(배치 편집 선택 칸). 고른 위치(저장된 행 포함)는 묶음 열쇠(`groupKeyOf` — 처음 Main 설비 이름)로
+  // `S.groupLabels` 에 쥐고, 적용값 `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}] 이다(파이썬
+  // `next_group_labels` 가 이름 바꿈을 따라 층 위치 목록으로 합치고, 처음 위치는 행을 두지 않는다). 보기 화면은 기준일에
+  // 묶음의 모듈이 하나도 보이지 않으면 이름도 숨긴다.
+  const labelIn = (map, key, count) => (map.has(key) ? pickOr(map.get(key), GROUP_LABEL_POSITIONS) : groupLabelDefault(count))
+  const groupLabelOf = (key, count = groupCounts().get(key) || 0) => labelIn(S.groupLabels, key, count)
   // 이 편집기의 모듈 묶음 — 열쇠 → 대표 호기(편집기 호기, 숨은 모듈 아님). 한 번 훑는다.
   function moduleGroups() {
     const out = new Map()
@@ -931,18 +940,21 @@ export default function (component) {
   }
   // 처음 값에서 바뀐 묶음 수.
   function groupLabelChangeCount() {
+    const counts = groupCounts()
     let count = 0
     for (const key of moduleGroups().keys()) {
-      if (groupLabelOf(key) !== pickOr(S.originalGroupLabels.get(key), GROUP_LABEL_POSITIONS)) count += 1
+      const n = counts.get(key) || 0
+      if (labelIn(S.groupLabels, key, n) !== labelIn(S.originalGroupLabels, key, n)) count += 1
     }
     return count
   }
-  // 적용값 `groupLabels` — 이 층에 남는 모듈 묶음마다(다른 층으로 보낸 묶음은 빠진다 — 그 층에서는 가운데로 선다).
+  // 적용값 `groupLabels` — 이 층에 남는 모듈 묶음마다(다른 층으로 보낸 묶음은 빠진다 — 그 층에서는 처음 위치로 선다).
   function groupLabelsPayload() {
+    const counts = groupCounts()
     const out = []
     for (const [key, lead] of moduleGroups()) {
       if (members(lead).every((m) => m.moveTo)) continue
-      out.push({ group: key, position: groupLabelOf(key) })
+      out.push({ group: key, position: groupLabelOf(key, counts.get(key) || 0) })
     }
     return out
   }
@@ -951,7 +963,8 @@ export default function (component) {
     const before = groupLabelOf(key)
     const next = pickOr(value, GROUP_LABEL_POSITIONS)
     if (before === next) { syncInspector(); return }
-    pushUndo([{ op: 'groupLabel', key, before }])
+    // 되돌리기는 고른 값이 없던 묶음을 다시 「고른 적 없음」(처음 위치)으로 돌린다.
+    pushUndo([{ op: 'groupLabel', key, before: S.groupLabels.has(key) ? S.groupLabels.get(key) : null }])
     S.groupLabels.set(key, next)
     drawGroupNames()
     updateStatus()
@@ -973,7 +986,7 @@ export default function (component) {
       const range = VIEW && seen.length < mods.filter(onCanvas).length ? shownRange(seen) : whole
       if (!range) continue
       const name = String(lead.group)
-      const position = groupLabelOf(key)
+      const position = groupLabelOf(key, mods.length)
       // 모듈 칸 이름표가 하나도 서 있지 않으면(밀집 층·작은 묶음) 가운데 이름은 가장 작은 크기로라도 선다.
       const bare = !seen.some((m) => unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX)
       const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX, upp, UNIT_LABEL_MIN_PX, bare)
@@ -2683,9 +2696,10 @@ export default function (component) {
       const box = mods ? trayModuleRange(sizes, SCALE) : sizes[0]
       pieces.push({ units, sizes, mods, w: box.w, h: box.h })
     }
-    // 덩이 여럿은 거의 정사각 격자로 붙여 놓는다(첫 덩이가 왼쪽 위). 칸은 가장 큰 덩이 크기이고 덩이는 칸 왼쪽 아래에
-    // 선다. 덩이 하나면 놓은 자리가 가운데다.
-    const [cols, rows] = moduleGrid(pieces.length)
+    // 덩이 여럿은 거의 정사각 격자로 붙여 놓는다(첫 덩이가 왼쪽 위 — 셋이면 2×2). 칸은 가장 큰 덩이 크기이고 덩이는 칸
+    // 왼쪽 아래에 선다. 덩이 하나면 놓은 자리가 가운데다. 모듈 묶음 안 바둑판(`moduleGrid` — 셋까지 한 줄)과는 따로다.
+    const cols = Math.max(1, Math.ceil(Math.sqrt(pieces.length)))
+    const rows = Math.max(1, Math.ceil(pieces.length / cols))
     const cellW = Math.max(...pieces.map((piece) => piece.w))
     const cellH = Math.max(...pieces.map((piece) => piece.h))
     return { pieces, cols, rows, cellW, cellH, footprint: { w: roundTo(cols * cellW), h: roundTo(rows * cellH) } }
@@ -3153,7 +3167,8 @@ export default function (component) {
           S.items.set(op.item.id, { ...op.item })
           applied += 1
         } else if (op.op === 'groupLabel') {
-          S.groupLabels.set(op.key, op.before)
+          if (op.before === null) S.groupLabels.delete(op.key)
+          else S.groupLabels.set(op.key, op.before)
           applied += 1
         }
       }
@@ -3252,10 +3267,10 @@ export default function (component) {
       S.ghosts.set(ghost.id, ghost)
       S.original.set(ghost.id, snapshot(ghost))
     }
-    // Main 설비명 위치(처음 받은 Main 설비 이름 → 위·아래). 없는 묶음은 가운데다.
+    // Main 설비명 위치(처음 받은 Main 설비 이름 → 가운데·위·아래). 없는 묶음은 그 모양의 처음 위치다(`groupLabelDefault`).
     S.groupLabels = new Map()
     for (const [name, position] of Object.entries(data.groupLabels || {})) {
-      if (GROUP_LABEL_POSITIONS.includes(position) && position !== GROUP_LABEL_POSITIONS[0]) S.groupLabels.set(String(name), position)
+      if (GROUP_LABEL_POSITIONS.includes(position)) S.groupLabels.set(String(name), position)
     }
     S.originalGroupLabels = new Map(S.groupLabels)
     for (const raw of data.marks || []) {

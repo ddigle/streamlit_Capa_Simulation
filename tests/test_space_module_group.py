@@ -35,6 +35,7 @@ from capa_simulation.services.space_layout_edit import (
     UnitChange,
     apply_layout_edits,
     assign_module_cells,
+    default_group_label,
     editor_inputs,
     module_cells,
     module_grid,
@@ -88,20 +89,51 @@ def test_the_last_column_and_bottom_row_take_the_remainder() -> None:
     }
 
 
-def test_two_modules_sit_side_by_side_and_three_leave_the_last_cell_empty() -> None:
-    assert module_grid(2) == (2, 1) and module_grid(3) == (2, 2) and module_grid(4) == (2, 2)
-    assert module_grid(5) == (3, 2) and module_grid(9) == (3, 3) and module_grid(10) == (4, 3)
+def test_two_and_three_modules_line_up_in_one_row_and_five_leave_a_cell_empty() -> None:
+    """셋까지는 가로 한 줄(열 n·행 1 — 2026-10-23 사용자 답 「2모듈이거나 3모듈이면 가로로 일렬
+    배치」), 넷부터는 거의 정사각(⌈√n⌉ 열)이다."""
+    assert [module_grid(n) for n in (1, 2, 3)] == [(1, 1), (2, 1), (3, 1)]
+    assert module_grid(4) == (2, 2) and module_grid(5) == (3, 2) and module_grid(6) == (3, 2)
+    assert module_grid(9) == (3, 3) and module_grid(10) == (4, 3)
 
     assert tile_module_group((0.0, 0.0, 24.0, 7.0), ["M-2", "M-1"]) == {
         "M-1": (0.0, 0.0, 12.0, 7.0),
         "M-2": (12.0, 0.0, 12.0, 7.0),
     }
-    three = tile_module_group((0.0, 0.0, 20.0, 14.0), ["A", "B", "C"])
-    # 오른쪽 아래 칸이 빈다 — 그래도 바깥 상자는 범위 그대로다.
-    assert three == {
+    # 셋은 한 줄로 범위 폭을 셋으로 나눈다(마지막 칸이 나머지를 받는다) — 빈 칸이 없다.
+    assert tile_module_group((0.0, 0.0, 20.0, 14.0), ["C", "A", "B"]) == {
+        "A": (0.0, 0.0, 6.6, 14.0),
+        "B": (6.6, 0.0, 6.6, 14.0),
+        "C": (13.2, 0.0, 6.8, 14.0),
+    }
+    five = tile_module_group((0.0, 0.0, 30.0, 14.0), list("EDCBA"))
+    # 다섯은 3×2 — 오른쪽 아래 칸이 빈다. 그래도 바깥 상자는 범위 그대로다.
+    assert five == {
         "A": (0.0, 7.0, 10.0, 7.0),
         "B": (10.0, 7.0, 10.0, 7.0),
-        "C": (0.0, 0.0, 10.0, 7.0),
+        "C": (20.0, 7.0, 10.0, 7.0),
+        "D": (0.0, 0.0, 10.0, 7.0),
+        "E": (10.0, 0.0, 10.0, 7.0),
+    }
+
+
+def test_an_old_three_module_two_by_two_is_no_longer_a_tiling() -> None:
+    """1·2차(셋도 2×2)로 놓인 모듈 셋 묶음은 이제 바둑판이 아니다(「3등분이 아님」) — 읽을 때는
+    그대로 두고, 처음 옮기거나 키울 때 지금 바깥 상자를 범위로 삼아 한 줄로 다시 놓인다. 칸 배정은
+    상자 중심에 가까운 칸이다(왼쪽 위·오른쪽 위·왼쪽 아래 → 왼쪽·가운데·왼쪽 다툼은 자연 정렬 앞이
+    먼저)."""
+    old: dict[str, Box | None] = {
+        "T-A": (0.0, 7.0, 10.0, 7.0),
+        "T-B": (10.0, 7.0, 10.0, 7.0),
+        "T-C": (0.0, 0.0, 10.0, 7.0),
+    }
+
+    deviation = module_tile_deviation(old)
+    assert deviation is not None and deviation > 1
+    assert _relaid(old, (0.0, 0.0, 21.0, 14.0)) == {
+        "T-A": (0.0, 0.0, 7.0, 14.0),
+        "T-B": (14.0, 0.0, 7.0, 14.0),
+        "T-C": (7.0, 0.0, 7.0, 14.0),
     }
 
 
@@ -155,12 +187,19 @@ def test_cells_fill_the_range_without_gaps_or_overlaps() -> None:
 
 
 def test_cells_are_numbered_left_to_right_from_the_top_row() -> None:
-    """칸 번호는 왼→오, 위→아래다(0 이 왼쪽 위). 칸 수는 열×행이라 모듈 셋도 칸 넷이다."""
-    assert module_cells((0.0, 0.0, 20.0, 14.0), 3) == [
+    """칸 번호는 왼→오, 위→아래다(0 이 왼쪽 위). 칸 수는 열×행이라 모듈 다섯도 칸 여섯이다."""
+    assert module_cells((0.0, 0.0, 30.0, 14.0), 5) == [
         (0.0, 7.0, 10.0, 7.0),
         (10.0, 7.0, 10.0, 7.0),
+        (20.0, 7.0, 10.0, 7.0),
         (0.0, 0.0, 10.0, 7.0),
         (10.0, 0.0, 10.0, 7.0),
+        (20.0, 0.0, 10.0, 7.0),
+    ]
+    assert module_cells((0.0, 0.0, 30.0, 14.0), 3) == [
+        (0.0, 0.0, 10.0, 14.0),
+        (10.0, 0.0, 10.0, 14.0),
+        (20.0, 0.0, 10.0, 14.0),
     ]
 
 
@@ -213,9 +252,11 @@ def test_an_old_group_takes_its_nearest_cells_and_coordless_siblings_the_rest() 
         "Z-C": None,
     }
     assert assign_module_cells(lone) == {"Z-D": 0, "Z-A": 1, "Z-B": 2, "Z-C": 3}
-    # 상자 넷이 한 자리에 겹치면 자연 정렬 차례로 칸을 나눠 갖는다.
-    stacked: dict[str, Box | None] = {name: (0.0, 0.0, 4.0, 4.0) for name in ("Q-2", "Q-10", "Q-1")}
-    assert assign_module_cells(stacked) == {"Q-1": 0, "Q-2": 1, "Q-10": 2}
+    # 상자 넷이 한 자리에 겹치면(네 칸 중심이 모두 같은 거리) 자연 정렬 차례로 칸을 나눠 갖는다.
+    stacked: dict[str, Box | None] = {
+        name: (0.0, 0.0, 4.0, 4.0) for name in ("Q-2", "Q-10", "Q-1", "Q-3")
+    }
+    assert assign_module_cells(stacked) == {"Q-1": 0, "Q-2": 1, "Q-3": 2, "Q-10": 3}
 
 
 def test_the_deviation_is_zero_only_for_a_tiling() -> None:
@@ -667,6 +708,7 @@ process.stdout.write(JSON.stringify({
   cells: (input.cells || []).map((c) => moduleCells(c.box, c.count, 10)),
   sorted: (input.sorted || []).map((names) => [...names].sort(naturalCompare)),
   grids: (input.grids || []).map((n) => moduleGrid(n)),
+  labels: (input.grids || []).map((n) => groupLabelDefault(n)),
   trays: (input.trays || []).map((sizes) => trayModuleRange(sizes, 10)),
   slots: (input.slots || []).map((boxes) => asObject(assignModuleCells(asMods(boxes), 10))),
   deviations: (input.slots || []).map((boxes) => {
@@ -768,8 +810,8 @@ def _as_boxes(layout: dict[str, list[float] | None]) -> dict[str, Box | None]:
 
 def test_the_editor_js_tiles_exactly_like_python() -> None:
     """무작위 범위(정밀도 밖 소수 포함)·이름(BMP 밖 글자 포함) 수백 건에서 JS 의 `tileModuleGroup`·
-    `moduleCells`·`naturalCompare`·`moduleGrid`·`trayModuleRange`·`assignModuleCells`·`tileDeviation`
-    이 파이썬과 같은 값을 낸다 — 좌표는 부동소수까지 같다."""
+    `moduleCells`·`naturalCompare`·`moduleGrid`·`trayModuleRange`·`assignModuleCells`·`tileDeviation`·
+    `groupLabelDefault` 가 파이썬과 같은 값을 낸다 — 좌표는 부동소수까지 같다."""
     rnd = random.Random(1023)
     tiles: list[dict[str, Any]] = []
     for _ in range(600):
@@ -815,6 +857,7 @@ def test_the_editor_js_tiles_exactly_like_python() -> None:
     for names, ordered in zip(sorted_cases, result["sorted"], strict=True):
         assert ordered == sorted(names, key=natural_name_key), names
     assert [tuple(grid) for grid in result["grids"]] == [module_grid(n) for n in grids]
+    assert result["labels"] == [default_group_label(n) for n in grids]
     for sizes, tray in zip(trays, result["trays"], strict=True):
         cols, rows = module_grid(len(sizes))
         cell_w = max(_ticks(size["w"]) for size in sizes)
@@ -872,6 +915,39 @@ def test_the_editor_js_keeps_cells_and_leaves_an_unchanged_range_alone() -> None
     kept = {spot["name"]: (spot["x"], spot["y"]) for spot in result["relaid"][3]}
     assert kept == {"G7A": (31, 40), "G7B": (41, 40), "G7C": (31, 47), "G7D": (41, 47)}
     assert result["natural"] == [{"G7A": 0, "G7B": 1, "G7C": 2, "G7D": 3}]
+
+
+def test_the_editor_js_lines_up_three_modules_and_relays_an_old_two_by_two_three() -> None:
+    """JS 도 모듈 셋은 한 줄이다 — 서랍 범위는 3 × 가장 큰 모듈 폭 × 1 × 가장 큰 모듈 높이이고,
+    1·2차의 2×2 로 놓인 셋 묶음은 「3등분이 아님」(편차 > 0)이며 범위가 그대로면 다시 놓지 않고
+    범위가 바뀌면 한 줄로 다시 놓는다(파이썬 `_relaid` 와 같은 칸)."""
+    old: dict[str, list[float] | None] = {
+        "T-A": [0, 7, 10, 7],
+        "T-B": [10, 7, 10, 7],
+        "T-C": [0, 0, 10, 7],
+    }
+    outer = {"x": 0, "y": 0, "w": 20, "h": 14}
+    result = _run_js(
+        {
+            "trays": [[{"w": 12.0, "h": 7.0}, {"w": 10.0, "h": 8.0}, {"w": 11.5, "h": 6.0}]],
+            "slots": [old],
+            "relaid": [
+                {"boxes": old, "from": outer, "to": dict(outer)},
+                {"boxes": old, "from": outer, "to": {"x": 0, "y": 0, "w": 21, "h": 14}},
+            ],
+        }
+    )
+
+    assert result["trays"] == [{"w": 36.0, "h": 8.0}]
+    assert result["deviations"][0] == module_tile_deviation(_as_boxes(old)) and (
+        result["deviations"][0] > 1
+    )
+    assert result["relaid"][0] is None
+    relaid = {
+        spot["name"]: (spot["x"], spot["y"], spot["w"], spot["h"]) for spot in result["relaid"][1]
+    }
+    assert relaid == _relaid(_as_boxes(old), (0.0, 0.0, 21.0, 14.0))
+    assert {box[3] for box in relaid.values()} == {14.0}
 
 
 def test_a_group_dropped_from_the_tray_spans_the_old_tray_grid_and_is_split_evenly() -> None:
@@ -1119,7 +1195,7 @@ def test_taking_a_moved_group_off_returns_its_hidden_modules_in_one_undo_step() 
 
 
 def test_an_empty_cell_inside_a_picked_group_drags_the_group() -> None:
-    """모듈 셋·다섯 묶음의 남는 칸이나 숨은 모듈 칸처럼 고른 묶음 범위 안의 빈 곳을 누르면 선택이
+    """모듈 다섯 묶음의 남는 칸이나 숨은 모듈 칸처럼 고른 묶음 범위 안의 빈 곳을 누르면 선택이
     풀리지 않고 그 묶음을 끈다(사각형 고르기보다 먼저 본다)."""
     down = _between("svg.onpointerdown = (event) => {", "svg.onpointermove = (event) => {")
     held = down.index("if (!group && !additive && pickedRangeAt(picked, p)) {")

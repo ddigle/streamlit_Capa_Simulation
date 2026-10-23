@@ -313,8 +313,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 배치 편집은 RawData 와 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer(revision_optional=True)` 로
     저장한다. 도면 상자 앞 칸(`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
   - 층의 Main 설비명 위치(대기분 `pending_floor_group_labels`, 없으면 `load_floor_group_labels`)를 편집기·뷰어에
-    넘기고, 적용은 `next_group_labels` 로 층 위치 목록을 만들어 저장값과 다르면 `stage_floor_group_labels` 로 둔다.
-    편집기·뷰어 epoch 와 층 대조(`FloorLayoutBase`)는 요소와 위치를 함께 본 `floor_layout_fingerprint` 다.
+    넘기고, 적용은 `next_group_labels`(실린 묶음의 모듈 수 `module_group_sizes` 로 처음 위치를 가른다)로 층 위치
+    목록을 만들어 저장값과 다르면 `stage_floor_group_labels` 로 둔다. 편집기·뷰어 epoch 와 층 대조
+    (`FloorLayoutBase`)는 요소와 위치를 함께 본 `floor_layout_fingerprint` 다.
+  - 적용이 옮기거나 빼거나 보낸 모듈 묶음(이 적용의 `changes`·`hidden_moves` 에 모듈이 든 묶음)의 적용 뒤 모양
+    (`module_layouts`)을 `stage_editor_module_layouts` 로 둔다 — 저장의 모듈 묶음 좌표·크기 검사가 그 모양 그대로인
+    묶음을 편집기 결과로 통과시킨다(`equipment_data_workspace.saved_master_violations`).
   - 층 상세 아래 호기 표는 21칸(`space_layout.FLOOR_TABLE_COLUMNS` — 2026-10-23 요청 차례, 칸 이름은 설비 마스터 그대로,
     「단계」는 기준일 상태)이다. 뷰어에서 누른 호기(`on_pick` 콜백 → 세션 `space_status_picked_unit` = (동, 층, 설비명))가
     있으면 그 설비 줄만(`picked_unit_rows` — 모듈이면 같은 Main 설비 줄 전부, 누른 것이 첫 줄)이고 「층 전체 보기」
@@ -420,9 +424,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
   - **Main 설비 모듈 묶음**(편집기 모듈 + 숨은 모듈이 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선
-    모듈의 바깥 상자)만 고치고 안은 바둑판 자동 배치다. 바둑판 순수 함수는 `// <module-tiling>` 구획(`moduleCells`·
-    `tileModuleGroup`·`assignModuleCells`·`tileDeviation`·`relaidGroup`)이고 파이썬 정본 `space_layout_edit` 과 같은
-    규칙이다(`tests/test_space_module_group.py` 가 node 로 대조). 모듈 하나만 옮기거나 키우는 길은 없다 — 끌기·방향키·
+    모듈의 바깥 상자)만 고치고 안은 바둑판 자동 배치다 — 모듈 2·3 은 가로 한 줄(열 n·행 1), 넷부터 ⌈√n⌉ 열(넷이면
+    2×2, 2026-10-23 사용자 답). 바둑판 순수 함수는 `// <module-tiling>` 구획(`moduleGrid`·`moduleCells`·
+    `tileModuleGroup`·`assignModuleCells`·`tileDeviation`·`relaidGroup`·`groupLabelDefault`)이고 파이썬 정본
+    `space_layout_edit` 과 같은 규칙이다(`tests/test_space_module_group.py` 가 node 로 대조). 서랍에서 여러 덩이를 한
+    번에 놓을 때 덩이끼리의 격자(`trayPlan`)는 이것과 따로 ⌈√n⌉ 열 그대로다(셋이면 2×2). 모듈 하나만 옮기거나 키우는 길은 없다 — 끌기·방향키·
     X·Y 칸은 `movePlan`(묶음은 범위), 크기(폭·높이 칸·Ctrl+방향키)는 `setSizes`, 범위 테두리 손잡이는
     `mode: 'range'`(`sle-range-handle`, 모듈 상자 손잡이는 `is-module` 로 숨김)이고 셋 모두 `relayGroup` 으로 다시
     놓는다. 선택은 묶음당 한 대(`onePerGroup`), 고른 묶음 범위 안의 빈 칸을 눌러도 그 묶음을 끈다(`pickedRangeAt`),
@@ -432,6 +438,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       모양(`tileDeviation`)이다.
     - 바둑판이 아닌 옛 묶음은 읽을 때 바꾸지 않고, 범위가 실제로 바뀌는 첫 조작(또는 「범위에 맞춰 n등분」)에 그 범위로
       다시 놓는다. 범위가 눈금까지 그대로인 조작(벽에 막힌 방향키·제자리에서 뗀 끌기·같은 숫자)은 다시 놓지 않는다.
+      1·2차 규칙(셋도 2×2)으로 놓인 모듈 셋 묶음도 이 옛 묶음이다(「3등분이 아님」 — 처음 만질 때 한 줄로 선다).
     - 숨은 모듈(`data.ghosts` → `S.ghosts`, 파이썬 `EditorInputs.ghosts`)은 그리지 않고 고르지 않지만 칸 수·자리에 들고
       (고른 묶음에서 점선 `sle-ghost-cell`) 묶음과 함께 옮겨져 적용값 `ghosts` 로 간다. 되돌리기·끌기 취소는 `itemOf` 로
       숨은 모듈도 되돌리고, 묶음 이름을 바꿔도 처음 Main 설비 이름(`groupKeyOf`)으로 이어진다. 보기 화면은 그대로다.
@@ -466,9 +473,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     - 반입 예정(실물 없음) 테는 3.5px 점선(범례 견본 3px, `space_layout._mark_swatches`), TEST 면은 연한 남색에 검정
       글자다(`tokens.SPACE_LINE_TYPE_FILLS`·`_INKS` — 다른 면과의 ΔE 는 `tests/test_design_tokens.py`).
     - Main 설비명: 모듈 묶음(편집기 모듈 + 숨은 모듈 둘 이상, `moduleGroups`)의 범위에 `sle-group-names` 층(눌림 없음)으로
-      알약 바탕 + 모듈 이름보다 굵은 글자를 그린다. 위치는 묶음 열쇠(`groupKeyOf`)마다 `S.groupLabels` — 가운데(처음 값,
-      범위 정가운데)·위·아래(범위 바깥 바로 위·아래)이고, 묶음을 고르면 선택 칸 `Main 설비명` 에서 바꾼다(되돌리기 한 번,
-      `op: 'groupLabel'`). 적용값 `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}](다른 층으로 보낸 묶음은
+      알약 바탕 + 모듈 이름보다 굵은 글자를 그린다. 위치는 가운데(범위 정가운데)·위·아래(범위 바깥 바로 위·아래)이고,
+      고른 위치(저장된 행 포함)는 묶음 열쇠(`groupKeyOf`)마다 `S.groupLabels` 에 쥔다. 고른 적이 없는 묶음은 모양의 처음
+      위치(`groupLabelDefault` — 한 줄 묶음(모듈 2·3)은 위, 그 밖은 가운데, 2026-10-24 결정 (e))다. 모듈 수는 편집기는
+      숨은 모듈까지(`groupCounts` = 파이썬 `module_group_sizes`), 보기 화면은 그리는 모듈만 센다(숨은 모듈을 받지 않아 드물게
+      다를 수 있다). 묶음을 고르면 선택 칸
+      `Main 설비명` 에서 바꾼다(되돌리기 한 번, `op: 'groupLabel'` — 처음 고른 것을 되돌리면 「고른 적 없음」으로). 적용값 `groupLabels` 는 이 층에 남는 묶음마다 [{group: 열쇠, position}](다른 층으로 보낸 묶음은
       빠짐)이다. `drawSelectionBox` 가 부르므로 옮기기·크기·배율을 따라가고, 보기 화면은 기준일에 묶음의 모듈이 하나도
       보이지 않으면(`__visible`) 이름도 숨기며 일부만 보이면 보이는 모듈의 바깥 상자(`shownRange`)에 세운다. 글자는 화면
       12px 에서 범위 폭에 맞춰 줄고 가운데는 범위 높이의 0.16 배까지이며 7px(`UNIT_LABEL_MIN_PX`) 아래면 숨는다 — 다만
@@ -750,7 +760,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
     `zone_look`)을 갖는다. FAB 요소(`fab_layout.prepare_fab_layout_marks`)도 같은 규칙이다.
-  - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데는 행 없음)의 검증은 `prepare_group_labels`(Main 설비 이름은
+  - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데·위·아래 모두 행으로 받는다. 고른 적이 없거나 처음 위치로
+    되돌린 묶음은 행이 없고 모양의 처음 위치 `space_layout_edit.default_group_label` 로 선다 — 한 줄 묶음(모듈 2·3)은
+    위라 가운데를 고르면 가운데 행이 남는다)의 검증은 `prepare_group_labels`(Main 설비 이름은
     빈칸 아닌 글자 — 설비 마스터처럼 길이·글자를 묶지 않아 적용이 받은 이름을 저장이 거부하지 않는다), 층 대조 지문은
     요소와 위치를 함께 본 `floor_layout_fingerprint` 다(위치가 없으면 `marks_fingerprint` 와 같다).
 - `src/capa_simulation/services/fab_layout.py` — FAB 동·층 정의, 층 이름·주소 인자 변환, FAB 전체 도면의 계약·검증
@@ -759,7 +771,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
     이름은 못 쓴다(`reserved_names`). 가림·겹침은 경고만 한다.
-  - 모듈 묶음 바둑판의 정본은 `module_cells`(열 = ⌈√n⌉·행 = ⌈n÷열⌉, 칸 번호는 왼→오·위→아래, 저장 정밀도 눈금으로
+  - 모듈 묶음 바둑판의 정본은 `module_cells`(`module_grid` — 모듈 2·3 은 열 n·행 1, 넷부터 열 = ⌈√n⌉·행 = ⌈n÷열⌉,
+    칸 번호는 왼→오·위→아래, 저장 정밀도 눈금으로
     똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)와 칸 배정 `assign_module_cells`(지금
     자리에 가까운 칸 — 이미 바둑판이면 제 칸, 좌표 없는 형제는 남은 칸을 자연 정렬로)다. `tile_module_group` 은 새로
     놓을 때의 자연 정렬 배정이다. `parse_editor_apply` 는 `editor_items`·`editor_ghosts` 를 받으면 이 층에 놓이거나
@@ -772,9 +785,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮겨진 값은 적용값 `ghosts` → `EditorApply.hidden_moves` 로 와서 `apply_layout_edits` 가 X·Y·크기만 바꾼다(층·
     레이아웃표시 그대로). 묶음째 빼거나 다른 층으로 보낸 적용에 옮겨진 숨은 모듈이 오면 거부한다(편집기는 처음 자리로
     되돌려 보낸다) — 빼면 숨은 모듈은 이 층 제자리에 남고, 보내면 `_harmonize_groups` 가 층을 맞추며 X·Y 를 비운다.
-    상자 없는 숨은 형제는 세지 않는다. RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
-  - 적용값 `groupLabels`(실린 모듈 묶음만, `module_group_names`)는 `EditorApply.group_labels` 가 되고
-    `next_group_labels` 가 층 위치 목록으로 합친다 — 실린 묶음은 보낸 위치로 갈고(보내지 않은 실린 묶음 = 다른 층으로
+    상자 없는 숨은 형제는 세지 않는다.
+  - **설비 마스터 저장의 묶음 좌표·크기**(2026-10-23 사용자 답 「막자」): `module_layout_violations` 는 저장 후보를
+    저장본과 견줘, 묶음 행 하나라도 X좌표·Y좌표·Xsize·Ysize 가 바뀐 묶음(저장 안 한 Space 이름 바꿈 `renames`, RawData 에서
+    이름만 바꾼 행은 저장본에서 사라진 행과 값이 같으면 같은 행)이 좌표 있는 행이 하나도 없거나 — 좌표를 잃은 행 없이 —
+    좌표 있는 행의 바깥 상자를 그 행 수 바둑판으로 나눈 칸과 한 눈금 안이 아니면 그 Main 설비를 돌려준다(문구는
+    `module_layout_message`). 안 바뀐 옛 묶음, Main 설비 칸만 고친 묶음 넣기·빼기, 좌표 없는 새 묶음은 막지 않는다.
+    배치 편집기가 적용한 묶음은 적용 뒤 모양(`module_layouts`)이 `approved` 와 같으면 보지 않는다 — 숨은 모듈이 있는
+    묶음을 빼거나 다른 층으로 보낸 결과처럼 이 규칙으로는 바둑판이 아닌 편집기 결과가 있다.
+  - 적용값 `groupLabels`(실린 모듈 묶음만, `module_group_sizes`)는 `EditorApply.group_labels` 가 되고
+    `next_group_labels` 가 층 위치 목록으로 합친다 — 실린 묶음은 보낸 위치로 갈고(그 묶음 모양의 처음 위치
+    `default_group_label` 이면 행을 두지 않되 이미 같은 위치의 행이 있으면 그대로 둔다, 보내지 않은 실린 묶음 = 다른 층으로
     보냄은 빠짐), 실리지 않은 묶음은 그대로 두며, Main 설비 이름 바꿈(`group_renames`)을 새 이름으로 따라간다(실리지 않은
     묶음의 위치도 — 모듈 하나만 실려 묶음이 아닌 채 이름을 바꾼 때).
   - `prefix_sizes`(`new_unit_options` 의 `prefixSizes`)는 설비명 앞 3자리(`name_prefix` — 앞뒤 공백을 걷은 첫 세 글자,
@@ -1201,6 +1222,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - Space 편집기와 함께 쓰는 편집본 경계다 — 버퍼는 `replace_equipment_buffer` 로만 갈고 `BUFFER_GENERATION_KEY` 세대를
     올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다. 층 대기분은 캔버스·요소·Main
     설비명 위치(`PENDING_GROUP_LABELS_KEY`) 셋이고 첫 대기분이 본 저장값(`PENDING_BASES_KEY`)을 함께 쓴다.
+  - 설비 마스터를 쓰는 모든 저장(직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장)은 `_save_equipment_frames` 에서
+    모듈 묶음 좌표·크기 검사(`saved_master_violations` — 저장본 사본 `EQUIPMENT_DRAFT_KEY` 와 견준다)를 지나고, 걸리면
+    `ValueError` 로 거부한다. 배치 편집기가 적용한 묶음의 모양은 `EDITOR_MODULE_LAYOUTS_KEY`(편집본과 함께 버려짐)에
+    두어 통과시킨다. 같은 판정을 폼 위 알림 칸이 저장 전에 경고로 보이고, 설비 마스터 편집표 위 한 줄·좌표·크기 칸
+    머리 도움말(`MODULE_LAYOUT_HELP`)이 「모듈 묶음 좌표·크기는 Space 배치 편집기에서」를 말한다.
   - `ImportReview` 는 최종 저장 때 입력이 달라졌으면 다시 확인받는다(마스터 입력 `read_equipment_update`,
     `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가

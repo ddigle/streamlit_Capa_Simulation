@@ -802,7 +802,8 @@ class DuckDBEquipmentRepository:
             return _stored_floor_marks(connection, building, floor)
 
     def load_floor_group_labels(self, building: str, floor: str) -> dict[str, str]:
-        """한 층의 Main 설비명 위치(Main 설비 → 위·아래). 가운데(기본)는 행이 없어 빠진다."""
+        """한 층의 Main 설비명 위치(Main 설비 → 가운데·위·아래). 고른 적이 없는 묶음은 행이 없어
+        빠진다(그 모양의 처음 위치로 선다 — `space_layout_edit.default_group_label`)."""
         with self._connect() as connection:
             return _stored_group_labels(connection, building, floor)
 
@@ -1448,7 +1449,7 @@ def _stored_group_labels(
 def _replace_group_labels(
     connection: duckdb.DuckDBPyConnection, building: str, floor: str, labels: GroupLabels
 ) -> None:
-    """그 층의 Main 설비명 위치를 지우고 받은 것(가운데가 아닌 것)을 다시 넣는다."""
+    """그 층의 Main 설비명 위치를 지우고 받은 것을 다시 넣는다."""
     connection.execute(
         "DELETE FROM equipment_ops.floor_layout_group_label WHERE building = ? AND floor_name = ?",
         [building, floor],

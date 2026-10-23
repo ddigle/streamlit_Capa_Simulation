@@ -232,12 +232,13 @@ def _clean_ghosts(ghosts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _clean_group_labels(labels: Mapping[str, str] | None) -> dict[str, str]:
-    """브라우저로 보낼 Main 설비명 위치(Main 설비 → 위·아래). 가운데(기본)와 모르는 값은 뺀다 —
-    브라우저는 없는 묶음을 가운데로 그린다."""
+    """브라우저로 보낼 Main 설비명 위치(Main 설비 → 가운데·위·아래). 모르는 값은 뺀다 — 브라우저는
+    없는 묶음을 그 모양의 처음 위치(한 줄 묶음은 위, 그 밖은 가운데 — `groupLabelDefault`)로
+    그린다."""
     return {
         str(name): position
         for name, position in (labels or {}).items()
-        if position in GROUP_LABEL_POSITIONS[1:]
+        if position in GROUP_LABEL_POSITIONS
     }
 
 
@@ -310,8 +311,8 @@ def render_space_layout_viewer(
     다시 칠하고 보던 배율을 지킨다.
 
     Main 설비 모듈 묶음(모듈 둘 이상)은 묶음 범위에 Main 설비명을 그린다 — 위치는 `group_labels`
-    (Main 설비 → 위·아래, 없으면 가운데)이고, 기준일에 묶음의 모듈이 하나도 보이지 않으면 이름도
-    숨는다."""
+    (Main 설비 → 가운데·위·아래, 없으면 한 줄 묶음은 위·그 밖은 가운데)이고, 기준일에 묶음의 모듈이
+    하나도 보이지 않으면 이름도 숨는다."""
     _EDITOR(
         key=key,
         data={
@@ -530,8 +531,8 @@ def render_space_layout_editor(
     - ``marks``: 도면 요소를 바꿨을 때만 이 층 요소 전체 목록, 아니면 None.
     - ``groupLabels``: 이 층에 남는 모듈 묶음마다의 Main 설비명 위치
       ``[{"group": 옛 Main 설비, "position": "center"|"top"|"bottom"}]``(다른 층으로 보낸 묶음은
-      빠진다). 처음 위치는 `group_labels`(Main 설비 → 위·아래, 없으면 가운데)이고 층 위치 목록으로
-      합치는 것은 `space_layout_edit.next_group_labels` 다.
+      빠진다). 처음 위치는 `group_labels`(Main 설비 → 가운데·위·아래, 없으면 한 줄 묶음은 위·그
+      밖은 가운데)이고 층 위치 목록으로 합치는 것은 `space_layout_edit.next_group_labels` 다.
     """
     items = _clean_items(inputs.items)
     result = _EDITOR(

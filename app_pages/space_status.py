@@ -28,6 +28,7 @@ from capa_simulation.components.equipment_data_workspace import (
     reset_equipment_drafts,
     revision_token,
     save_equipment_buffer,
+    stage_editor_module_layouts,
     stage_fab_layout,
     stage_floor_canvas,
     stage_floor_group_labels,
@@ -153,7 +154,8 @@ from capa_simulation.services.space_layout_edit import (
     editor_inputs,
     layout_changes,
     layout_warnings,
-    module_group_names,
+    module_group_sizes,
+    module_layouts,
     name_changes,
     new_unit_options,
     next_group_labels,
@@ -957,16 +959,25 @@ def _render_layout_editor(
         prepared = prepare_equipment_master(master, floor_canvases=next_canvases)
         if applied.renames:
             prepare_downtime_for_prepared_equipment(downtime, prepared)
-        # Main 설비명 위치 — 실린 모듈 묶음은 보낸 위치로, 이름을 바꾼 묶음은 새 이름으로 따라간다.
-        next_labels = next_group_labels(
-            group_labels, applied, module_group_names(inputs.items, inputs.ghosts)
-        )
+        # Main 설비명 위치 — 실린 모듈 묶음은 보낸 위치로(처음 위치면 행 없음), 이름을 바꾼 묶음은
+        # 새 이름으로 따라간다.
+        sizes = module_group_sizes(inputs.items, inputs.ghosts)
+        next_labels = next_group_labels(group_labels, applied, sizes)
     except ValueError as exc:
         st.error(f"적용하지 못했습니다: {exc}")
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
     replace_equipment_buffer((frames[0], master, downtime))
+    # 이 적용이 옮기거나 빼거나 보낸 모듈 묶음의 적용 뒤 모양 — 저장 검사가 그 모양 그대로인 묶음을
+    # 편집기 결과로 보고 통과시킨다(RawData 의 모듈 좌표·크기 막기, `saved_master_violations`).
+    touched = {change.unit_id for change in (*applied.changes, *applied.hidden_moves)}
+    moved_groups = {
+        applied.group_renames.get(str(row["group"]), str(row["group"]))
+        for row in (*inputs.items, *inputs.ghosts)
+        if row.get("group") in sizes and str(row["id"]) in touched
+    }
+    stage_editor_module_layouts(module_layouts(master, moved_groups))
     if applied.renames:
         stage_unit_renames(
             compose_renames(pending_unit_renames(), applied, saved=latest_snapshot.equipment)

@@ -337,7 +337,7 @@ def _load_floor_group_labels_payload(
 
 
 def load_floor_group_labels(database_path: str, building: str, floor: str) -> dict[str, str]:
-    """한 층의 저장된 Main 설비명 위치(Main 설비 → 위·아래, 가운데는 빠짐)."""
+    """한 층의 저장된 Main 설비명 위치(Main 설비 → 가운데·위·아래, 고른 적이 없는 묶음은 빠짐)."""
     return dict(
         _load_floor_group_labels_payload(
             database_path, building, floor, _write_generation("floor_layout")

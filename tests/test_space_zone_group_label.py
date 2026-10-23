@@ -4,9 +4,11 @@
 
 - 영역 요소: 테두리 실선/점선·이름표 왼쪽/가운데/오른쪽. 처음 값은 지금 모습(점선·왼쪽)이고 옛 행(칸
   없음)도 처음 값이다. 영역만 갖고 다른 요소는 늘 처음 값이다. 층·FAB 요소 표 둘(0025).
-- Main 설비명 위치: 모듈 묶음마다 가운데(기본, 행 없음)·위·아래. 설비 마스터 칸이 아니라 층 현행값
-  (`floor_layout_group_label`, 0025)이고, 층 저장의 동시성 대조(요소와 함께 본 지문)·적용
-  (`parse_editor_apply` → `next_group_labels`)·Main 설비 이름 바꾸기 따라가기에 든다.
+- Main 설비명 위치: 모듈 묶음마다 가운데·위·아래. 고른 적이 없는 묶음(행 없음)은 모양의 처음 위치 —
+  한 줄 묶음(모듈 2·3)은 위, 그 밖은 가운데(2026-10-24 결정 (e), `default_group_label`)다. 설비
+  마스터 칸이 아니라 층 현행값(`floor_layout_group_label`, 0025)이고, 층 저장의 동시성 대조(요소와
+  함께 본 지문)·적용(`parse_editor_apply` → `next_group_labels`)·Main 설비 이름 바꾸기 따라가기에
+  든다.
 """
 
 from __future__ import annotations
@@ -39,7 +41,8 @@ from capa_simulation.services.floor_layout_mark import (
 )
 from capa_simulation.services.space_layout_edit import (
     EditorApply,
-    module_group_names,
+    default_group_label,
+    module_group_sizes,
     next_group_labels,
 )
 
@@ -247,12 +250,27 @@ def test_migration_0025_reads_old_zones_as_dashed_left_and_starts_with_no_labels
 # ------------------------------------------------------------------------------- 위치 계약
 
 
-def test_group_labels_drop_the_centre_and_sort_by_name() -> None:
+def test_group_labels_keep_every_position_and_sort_by_name() -> None:
+    """가운데도 행으로 남는다 — 한 줄 묶음(모듈 2·3)은 처음 위치가 위라 가운데를 고른 것을 지켜야
+    한다. 처음 위치인 묶음을 빼는 것은 적용(`next_group_labels`)의 몫이다."""
     assert prepare_group_labels({"G-2": "bottom", " G-1 ": "top", "G-3": "center"}) == {
         "G-1": "top",
         "G-2": "bottom",
+        "G-3": "center",
     }
     assert prepare_group_labels({}) == {}
+
+
+def test_a_one_row_group_starts_above_its_range_and_a_grid_group_in_the_middle() -> None:
+    """한 줄 묶음(모듈 2·3 — `module_grid` 의 행이 1)은 범위 바깥 위, 두 줄 이상(넷부터)은
+    가운데."""
+    assert [default_group_label(count) for count in (2, 3, 4, 5, 9)] == [
+        "top",
+        "top",
+        "center",
+        "center",
+        "center",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -297,8 +315,16 @@ def test_a_long_group_name_applies_and_saves(tmp_path: Path) -> None:
         editor_items=items,
         editor_groups={long_name},
     )
-    labels = next_group_labels({}, applied, module_group_names(items))
-    assert labels == {long_name: "top"}
+    # 모듈 둘이라 처음 위치가 위다 — 위를 보내면 행이 없고, 아래를 보내야 행이 선다.
+    assert next_group_labels({}, applied, module_group_sizes(items)) == {}
+    applied = _parse(
+        {"changes": [], "groupLabels": [{"group": long_name, "position": "bottom"}]},
+        master,
+        editor_items=items,
+        editor_groups={long_name},
+    )
+    labels = next_group_labels({}, applied, module_group_sizes(items))
+    assert labels == {long_name: "bottom"}
 
     repository = _repository(tmp_path / "equipment.duckdb")
     repository.save_snapshot(_baseline(), _equipment(), _downtime())
@@ -309,7 +335,7 @@ def test_a_long_group_name_applies_and_saves(tmp_path: Path) -> None:
         floor_group_labels={KEY: labels},
         floor_layout_bases={KEY: (None, floor_layout_fingerprint((), {}))},
     )
-    assert repository.load_floor_group_labels(*KEY) == {long_name: "top"}
+    assert repository.load_floor_group_labels(*KEY) == {long_name: "bottom"}
 
 
 def test_the_floor_fingerprint_is_the_marks_fingerprint_until_a_label_is_chosen() -> None:
@@ -341,9 +367,13 @@ def test_group_labels_save_without_a_revision_and_reload(tmp_path: Path) -> None
     )
 
     assert saved is None and len(repository.list_revisions()) == before
-    assert repository.load_floor_group_labels(*KEY) == {"G-1": "top", "G-3": "bottom"}
+    assert repository.load_floor_group_labels(*KEY) == {
+        "G-1": "top",
+        "G-2": "center",
+        "G-3": "bottom",
+    }
     assert repository.load_floor_group_labels("C1", "2F") == {}
-    # 층 전체 교체 — 빈 목록이면 그 층 위치가 모두 가운데로 돌아간다.
+    # 층 전체 교체 — 빈 목록이면 그 층 위치가 모두 처음 위치로 돌아간다.
     repository.save_space_layout(
         _baseline(), _equipment(), _downtime(), floor_group_labels={KEY: {}}
     )
@@ -499,7 +529,7 @@ def test_the_editor_groups_are_module_groups_only() -> None:
     ]
     ghosts = [{"id": "D", "group": "H", "x": 1, "y": 1, "w": 1, "h": 1}]
 
-    assert module_group_names(items, ghosts) == {"G", "H"}
+    assert module_group_sizes(items, ghosts) == {"G": 2, "H": 2}
 
 
 def test_next_labels_replace_loaded_groups_keep_others_and_follow_a_rename() -> None:
@@ -513,8 +543,9 @@ def test_next_labels_replace_loaded_groups_keep_others_and_follow_a_rename() -> 
         group_labels=(("GRP-1", "center"), ("GRP-2", "bottom")),
     )
 
-    # GRP-1 은 가운데로(행 없음), GRP-2 는 아래로, 편집기에 없는 GONE 은 그대로.
-    assert next_group_labels(current, applied, {"GRP-1", "GRP-2"}) == {
+    # 모듈 넷인 GRP-1 은 가운데(처음 위치 — 행 없음)로, GRP-2 는 아래로, 편집기에 없는 GONE 은
+    # 그대로.
+    assert next_group_labels(current, applied, {"GRP-1": 4, "GRP-2": 4}) == {
         "GONE": "top",
         "GRP-2": "bottom",
     }
@@ -522,10 +553,29 @@ def test_next_labels_replace_loaded_groups_keep_others_and_follow_a_rename() -> 
     sent_away = EditorApply(
         changes=(), created=(), canvas=None, marks=None, group_labels=(("GRP-2", "top"),)
     )
-    assert next_group_labels(current, sent_away, {"GRP-1", "GRP-2"}) == {
+    assert next_group_labels(current, sent_away, {"GRP-1": 4, "GRP-2": 4}) == {
         "GONE": "top",
         "GRP-2": "top",
     }
+
+
+def test_a_one_row_group_keeps_a_centre_row_and_drops_a_return_to_the_top() -> None:
+    """한 줄 묶음(모듈 2·3)은 처음 위치가 위다 — 가운데를 고르면 가운데 행이 서고, 위로 되돌리면
+    행이 빠진다. 이미 있는 행과 같은 위치를 보낸 묶음(손대지 않은 묶음)은 행을 그대로 둬 아무것도
+    고르지 않은 적용이 층 위치 목록을 바꾸지 않는다."""
+
+    def labels_of(*pairs: tuple[str, str]) -> EditorApply:
+        return EditorApply(changes=(), created=(), canvas=None, marks=None, group_labels=pairs)
+
+    sizes = {"ROW-2": 2, "ROW-3": 3, "GRID-4": 4}
+    chosen = labels_of(("ROW-2", "center"), ("ROW-3", "top"), ("GRID-4", "center"))
+    assert next_group_labels({}, chosen, sizes) == {"ROW-2": "center"}
+    back = labels_of(("ROW-2", "top"), ("ROW-3", "top"), ("GRID-4", "center"))
+    assert next_group_labels({"ROW-2": "center"}, back, sizes) == {}
+    # 옛 저장값(가운데 행이 없던 때)의 위 행·가운데 행은 같은 위치가 오면 그대로 남는다.
+    untouched = labels_of(("ROW-2", "top"), ("ROW-3", "top"), ("GRID-4", "center"))
+    kept = {"ROW-3": "top", "GRID-4": "center"}
+    assert next_group_labels(kept, untouched, sizes) == kept
 
 
 def test_next_labels_follow_a_group_rename_with_or_without_positions() -> None:
@@ -542,8 +592,8 @@ def test_next_labels_follow_a_group_rename_with_or_without_positions() -> None:
     )
     without = EditorApply(changes=(), created=(), canvas=None, marks=None, renames=rename)
 
-    assert next_group_labels({"GRP-1": "bottom"}, with_labels, {"GRP-1"}) == {"GRP-9": "top"}
-    assert next_group_labels({"GRP-1": "bottom"}, without, {"GRP-1"}) == {"GRP-9": "bottom"}
+    assert next_group_labels({"GRP-1": "bottom"}, with_labels, {"GRP-1": 4}) == {"GRP-9": "top"}
+    assert next_group_labels({"GRP-1": "bottom"}, without, {"GRP-1": 4}) == {"GRP-9": "bottom"}
     # 편집기에 모듈 하나만 실려 묶음이 아닌 채(실린 묶음 밖) 이름을 바꿔도 위치가 따라간다 — 다른
     # 묶음의 위치를 보낸 적용이어도.
     other = EditorApply(
@@ -554,7 +604,7 @@ def test_next_labels_follow_a_group_rename_with_or_without_positions() -> None:
         renames=rename,
         group_labels=(("GRP-2", "top"),),
     )
-    assert next_group_labels({"GRP-1": "bottom"}, other, {"GRP-2"}) == {
+    assert next_group_labels({"GRP-1": "bottom"}, other, {"GRP-2": 4}) == {
         "GRP-2": "top",
         "GRP-9": "bottom",
     }

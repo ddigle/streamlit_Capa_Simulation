@@ -354,8 +354,11 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   (마이그레이션 13)도 같은 두 컬럼을 갖는다. 영역의 테두리 모양 `border_style`(`dashed`·`solid`)과
   이름표 정렬 `label_align`(`left`·`center`·`right`)은 마이그레이션 25 의 NULL 허용 컬럼이다(두 표 모두) —
   NULL 은 지금 모습(점선·왼쪽)이고 영역이 아닌 요소는 늘 NULL 이다.
-- `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`top`·`bottom`).
-  설비 마스터 칸이 아니라 `floor_layout_mark` 처럼 리비전 없는 층 현행값이고, 가운데(기본)는 행이 없다.
+- `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`center`·`top`·`bottom`).
+  설비 마스터 칸이 아니라 `floor_layout_mark` 처럼 리비전 없는 층 현행값이다. 행이 없는 묶음은 모양의 처음
+  위치(한 줄 묶음 — 모듈 2·3 — 은 위, 그 밖은 가운데, `space_layout_edit.default_group_label`)로 서고, 처음 위치를
+  고르면 행을 두지 않는다 — 그래서 한 줄 묶음에서 고른 가운데는 `center` 행이다(2026-10-24 결정 (e) 전에는 가운데가
+  늘 처음 위치라 `center` 행이 없었다).
   키는 (`building`, `floor_name`, `parent_equipment_id`)이고 층 단위 DELETE+INSERT 라 PK 를 두지 않는다.
   층 저장의 동시성 대조는 요소와 위치를 함께 본 지문(`floor_layout_fingerprint`)이다. 검사는
   `services/floor_layout_mark.prepare_group_labels`, 적용 합치기·이름 바꿈 따라가기는
