@@ -121,6 +121,9 @@ class EditorApply:
     canvas: CanvasSize | None
     marks: tuple[FloorLayoutMark, ...] | None
     renames: tuple[NameChange, ...] = ()
+    # 묶음과 함께 옮겨진 숨은 모듈(`EditorInputs.ghosts`)의 새 X·Y·크기. 같은 층이고 레이아웃표시는
+    # 그대로 둔다(`apply_layout_edits`).
+    hidden_moves: tuple[UnitChange, ...] = ()
 
     @property
     def unit_renames(self) -> dict[str, str]:
@@ -171,6 +174,10 @@ class EditorInputs:
     reserved_extent: CanvasSize
     default_size: CanvasSize
     unplaced_floorless: int
+    # 숨은 모듈 — 편집기에 실린 모듈 묶음의 형제 가운데 이 층에 상자(X·Y·크기)가 있지만 도면 대상이
+    # 아닌 행(레이아웃표시 N·도면 이탈 …). 그리지 않지만 묶음 바둑판의 제 칸을 차지하고 묶음과 함께
+    # 옮겨진다(``{"id", "group", "x", "y", "w", "h"}``).
+    ghosts: tuple[dict[str, Any], ...] = ()
 
 
 def finite_or_none(value: object) -> float | None:
@@ -250,6 +257,8 @@ def editor_inputs(
       키울 때 바둑판 제 칸에 함께 놓는다(`tile_module_group`).
     - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출/이설 완료 …)가 차지한 범위.
       저장 검증은 그런 행에도 캔버스 상한을 걸므로 영역을 그보다 줄이지 못하게 한다.
+    - 숨은 모듈(`ghosts`): 그런 호기 가운데 보내는 호기와 Main 설비가 같은 것. 묶음 바둑판의 칸
+      수·자리에 들어가(빈 칸으로 남는다) 보이는 모듈이 제 칸을 지키고, 묶음을 옮기면 함께 옮겨진다.
     - `appearance` 를 주면 보내는 호기(도면·트레이)에만 불러 그 면·글자·경계 날짜를 항목에 얹는다.
     """
     target = status[LAYOUT_REFLECTED_COLUMN].fillna(False).astype(bool)
@@ -317,11 +326,25 @@ def editor_inputs(
             }
         )
     unplaced_floorless = int((target & ~has_position & floorless).sum())
+    sent_groups = {item["group"] for item in items if item["group"]}
+    ghostly = hidden & parents.isin(sent_groups).fillna(False).astype(bool)
+    ghosts = tuple(
+        {
+            "id": str(row[EQUIPMENT_ID_COLUMN]).strip(),
+            "group": str(row["_parent"]),
+            "x": finite_or_none(row["X좌표"]),
+            "y": finite_or_none(row["Y좌표"]),
+            "w": finite_or_none(row["Xsize"]),
+            "h": finite_or_none(row["Ysize"]),
+        }
+        for row in status.loc[ghostly].assign(_parent=parents[ghostly]).to_dict(orient="records")
+    )
     return EditorInputs(
         items=tuple(items),
         reserved_extent=reserved,
         default_size=default_size,
         unplaced_floorless=unplaced_floorless,
+        ghosts=ghosts,
     )
 
 
@@ -358,14 +381,16 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
 
 # ------------------------------------------------------------------ 모듈 묶음 바둑판
 
-# 모듈 묶음 = 이 편집기에 실린 호기 가운데 Main 설비가 같은 것이 둘 이상인 묶음(2026-10-23 사용자
-# 요청). 사람이 고치는 것은 묶음 범위(이 층 도면에 선 모듈의 바깥 상자)뿐이고, 안의 모듈은 범위를
-# 바둑판으로 똑같이 나눈 칸에 자동으로 선다. 편집기 JS(`editor.js` 의 `tileModuleGroup`·
-# `naturalCompare`·`moduleGrid`)가 같은 규칙이고 `tests/test_space_module_group.py` 가 node 로 둘을
-# 대조한다 — 한쪽을 고치면 다른 쪽도 고친다.
+# 모듈 묶음 = 이 편집기에 실린 호기와 숨은 모듈(`EditorInputs.ghosts`) 가운데 Main 설비가 같은 것이
+# 둘 이상인 묶음(2026-10-23 사용자 요청). 사람이 고치는 것은 묶음 범위(이 층 도면에 선 모듈의 바깥
+# 상자)뿐이고, 안의 모듈은 범위를 바둑판으로 똑같이 나눈 칸에 자동으로 선다. 칸 자리는 지금
+# 자리를 지킨다(`assign_module_cells`) — 새로 놓을 때만 설비명 자연 정렬이다
+# (`tile_module_group`). 편집기 JS(`editor.js` 의 `// <module-tiling>` 구획)가 같은 규칙이고
+# `tests/test_space_module_group.py` 가 node 로 둘을 대조한다 — 한쪽을 고치면 다른 쪽도 고친다.
 _TICKS_PER_UNIT: Final = 10**CANVAS_DECIMALS
 _NAME_TOKEN: Final = re.compile(r"[0-9]+|[^0-9]+")
 ModuleBox = tuple[float, float, float, float]
+_Ticks = tuple[int, int, int, int]
 
 
 def module_grid(count: int) -> tuple[int, int]:
@@ -378,7 +403,7 @@ def module_grid(count: int) -> tuple[int, int]:
 def natural_name_key(name: str) -> tuple[tuple[tuple[int, int, str], ...], str]:
     """설비명 자연 정렬 열쇠(…12A, 12B, 12C, 12D — `EQ2` 가 `EQ10` 앞). 숫자 덩이(ASCII 0-9)는
     수로, 나머지 덩이는 소문자로 견주고, 덩이가 같으면 짧은 쪽이 앞이며, 그래도 같으면 글자 그대로
-    견준다."""
+    견준다. 글자는 코드 포인트로 견준다(JS 도 `Array.from` 으로 같게 본다)."""
     tokens = tuple(
         (0, int(token), "") if "0" <= token[0] <= "9" else (1, 0, token.lower())
         for token in _NAME_TOKEN.findall(name)
@@ -391,48 +416,143 @@ def _ticks(value: float) -> int:
     return math.floor(value * _TICKS_PER_UNIT + 0.5)
 
 
-def tile_module_group(box: ModuleBox, names: Sequence[str]) -> dict[str, ModuleBox]:
-    """묶음 범위 `box`(X, Y, 폭, 높이)를 `module_grid` 열×행으로 **똑같이** 나눈 칸에 모듈을 하나씩
-    둔다(이름 → 칸).
+def _cell_ticks(box: _Ticks, count: int) -> list[_Ticks]:
+    """눈금 범위를 `module_grid(count)` 열×행으로 **똑같이** 나눈 칸(칸 번호 차례 — 왼→오, 위→아래).
 
-    - 차례는 설비명 자연 정렬(`natural_name_key`)로 왼→오, 위→아래 — 첫 모듈이 왼쪽 위다. 칸이
-      남으면(모듈 셋 → 2×2) 마지막 칸이 빈다.
-    - 칸 폭·높이는 저장 정밀도 눈금으로 범위 ÷ 열(행)의 내림이고 **마지막 열(오른쪽)·마지막
-      행(맨 아래)이 나머지를 받는다** — 칸들이 범위를 틈·겹침 없이 꼭 채운다.
-    - 범위가 칸마다 한 눈금(`1 / 10^자리`)보다 작으면 오른쪽·위로 넓힌다(영역 밖으로 나가는지는
-      부르는 쪽이 본다).
-    """
-    if not names:
-        return {}
-    cols, rows = module_grid(len(names))
-    left, bottom = _ticks(box[0]), _ticks(box[1])
-    width, height = max(_ticks(box[2]), cols), max(_ticks(box[3]), rows)
+    칸 폭·높이는 범위 ÷ 열(행)의 내림이고 마지막 열(오른쪽)·마지막 행(맨 아래)이 나머지를 받는다 —
+    칸들이 범위를 틈·겹침 없이 꼭 채운다. 범위가 칸마다 한 눈금보다 작으면 오른쪽·위로 넓힌다."""
+    cols, rows = module_grid(count)
+    left, bottom = box[0], box[1]
+    width, height = max(box[2], cols), max(box[3], rows)
     cell_w, cell_h = width // cols, height // rows
     last_w, last_h = width - cell_w * (cols - 1), height - cell_h * (rows - 1)
-    scale = _TICKS_PER_UNIT
-    tiles: dict[str, ModuleBox] = {}
-    for index, name in enumerate(sorted(names, key=natural_name_key)):
-        col, row = index % cols, index // cols
-        x = left + col * cell_w
+    cells: list[_Ticks] = []
+    for row in range(rows):
         # 행은 위(0)에서 센다. 맨 아래 행이 범위 바닥에 서고 그 위로 칸 높이씩 쌓인다.
         y = bottom if row == rows - 1 else bottom + last_h + (rows - 2 - row) * cell_h
-        w = last_w if col == cols - 1 else cell_w
         h = last_h if row == rows - 1 else cell_h
-        tiles[name] = (x / scale, y / scale, w / scale, h / scale)
-    return tiles
+        for col in range(cols):
+            w = last_w if col == cols - 1 else cell_w
+            cells.append((left + col * cell_w, y, w, h))
+    return cells
 
 
-def _module_groups(editor_items: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
-    """편집기에 실린 호기를 Main 설비로 묶어 모듈이 둘 이상인 묶음만(Main 설비 → 호기들)."""
-    groups: dict[str, list[Mapping[str, Any]]] = {}
+def _value_box(ticks: _Ticks) -> ModuleBox:
+    scale = _TICKS_PER_UNIT
+    return (ticks[0] / scale, ticks[1] / scale, ticks[2] / scale, ticks[3] / scale)
+
+
+def _tick_box(box: ModuleBox) -> _Ticks:
+    return _ticks(box[0]), _ticks(box[1]), _ticks(box[2]), _ticks(box[3])
+
+
+def _outer_ticks(boxes: Collection[_Ticks]) -> _Ticks:
+    left = min(box[0] for box in boxes)
+    bottom = min(box[1] for box in boxes)
+    right = max(box[0] + box[2] for box in boxes)
+    top = max(box[1] + box[3] for box in boxes)
+    return left, bottom, right - left, top - bottom
+
+
+def module_cells(box: ModuleBox, count: int) -> list[ModuleBox]:
+    """묶음 범위 `box`(X, Y, 폭, 높이)를 `count` 칸 바둑판으로 똑같이 나눈 칸(칸 번호 차례 —
+    왼→오, 위→아래). 칸 수는 열×행이라 `count` 보다 많을 수 있다(남는 칸은 빈다)."""
+    return [_value_box(cell) for cell in _cell_ticks(_tick_box(box), count)]
+
+
+def tile_module_group(box: ModuleBox, names: Sequence[str]) -> dict[str, ModuleBox]:
+    """묶음을 **새로** 놓을 때(서랍에서 놓기)의 자리 — 범위 `box` 를 `module_grid` 열×행으로
+    똑같이 나눈 칸에 설비명 자연 정렬(`natural_name_key`) 차례로 모듈을 하나씩 둔다(이름 → 칸).
+    첫 모듈이 왼쪽 위다. 칸이 남으면(모듈 셋 → 2×2) 마지막 칸이 빈다."""
+    if not names:
+        return {}
+    cells = module_cells(box, len(names))
+    return {name: cells[index] for index, name in enumerate(sorted(names, key=natural_name_key))}
+
+
+def _assign_cell_ticks(boxes: Mapping[str, _Ticks | None]) -> dict[str, int]:
+    """`assign_module_cells` 의 눈금 본(이름 → 칸 번호)."""
+    order = sorted(boxes, key=natural_name_key)
+    boxed = [name for name in order if boxes[name] is not None]
+    used: set[int] = set()
+    slots: dict[str, int] = {}
+    if boxed:
+        cells = _cell_ticks(_outer_ticks([cast(_Ticks, boxes[name]) for name in boxed]), len(order))
+        pairs = []
+        for index, name in enumerate(boxed):
+            x, y, w, h = cast(_Ticks, boxes[name])
+            for number, (cx, cy, cw, ch) in enumerate(cells):
+                dx, dy = (2 * x + w) - (2 * cx + cw), (2 * y + h) - (2 * cy + ch)
+                pairs.append((dx * dx + dy * dy, index, number))
+        for _, index, number in sorted(pairs):
+            if boxed[index] in slots or number in used:
+                continue
+            slots[boxed[index]] = number
+            used.add(number)
+    cols, rows = module_grid(len(order))
+    free = (number for number in range(cols * rows) if number not in used)
+    for name in order:
+        if name not in slots:
+            slots[name] = next(free)
+    return slots
+
+
+def assign_module_cells(mods: Mapping[str, ModuleBox | None]) -> dict[str, int]:
+    """묶음 모듈의 칸 배정(이름 → 칸 번호, `module_cells` 차례) — **지금 자리를 지킨다**.
+
+    상자가 있는 모듈의 바깥 상자를 모듈 수만큼의 바둑판으로 나눠, 상자 중심과 칸 중심의 거리
+    (눈금 제곱)가 가까운 짝부터 묶는다 — 같으면 설비명 자연 정렬 앞 모듈, 앞 칸이 먼저다. 이미
+    바둑판이면 모듈마다 제 칸이다(차례가 이름순이 아니어도). 상자가 없는 모듈(좌표 없는 형제)은
+    남은 칸을 자연 정렬 차례로 받는다."""
+    return _assign_cell_ticks(
+        {name: None if box is None else _tick_box(box) for name, box in mods.items()}
+    )
+
+
+def _deviation_ticks(boxes: Mapping[str, _Ticks]) -> tuple[int, dict[str, _Ticks]]:
+    """바깥 상자를 모듈 수 바둑판으로 나눈 칸(지금 자리 배정)과의 가장 큰 눈금 차, 그리고 그 칸."""
+    cells = _cell_ticks(_outer_ticks(list(boxes.values())), len(boxes))
+    slots = _assign_cell_ticks(dict(boxes))
+    laid = {name: cells[slots[name]] for name in boxes}
+    worst = max(
+        abs(a - b) for name, box in boxes.items() for a, b in zip(box, laid[name], strict=True)
+    )
+    return worst, laid
+
+
+def module_tile_deviation(mods: Mapping[str, ModuleBox | None]) -> int | None:
+    """묶음이 바둑판에서 얼마나 벗어났나(눈금) — 모두 상자가 있을 때, 바깥 상자를 모듈 수
+    바둑판으로 나눈 칸(지금 자리 배정 `assign_module_cells`)과의 가장 큰 차. 0 이면 바둑판
+    그대로다. 상자 없는 모듈이 있으면 None."""
+    if not mods or any(box is None for box in mods.values()):
+        return None
+    return _deviation_ticks({name: _tick_box(cast(ModuleBox, box)) for name, box in mods.items()})[
+        0
+    ]
+
+
+def _module_groups(
+    editor_items: Sequence[Mapping[str, Any]], ghosts: Sequence[Mapping[str, Any]]
+) -> dict[str, tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]]:
+    """편집기에 실린 호기와 숨은 모듈을 Main 설비로 묶어, 둘을 합쳐 모듈이 둘 이상이고 실린 호기가
+    하나라도 있는 묶음만(Main 설비 → (실린 호기들, 숨은 모듈들))."""
+    groups: dict[str, tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]] = {}
     for item in editor_items:
         group = item.get("group")
         if isinstance(group, str) and group:
-            groups.setdefault(group, []).append(item)
-    return {group: items for group, items in groups.items() if len(items) >= 2}
+            groups.setdefault(group, ([], []))[0].append(item)
+    for ghost in ghosts:
+        group = ghost.get("group")
+        if isinstance(group, str) and group in groups:
+            groups[group][1].append(ghost)
+    return {
+        group: members
+        for group, members in groups.items()
+        if len(members[0]) + len(members[1]) >= 2
+    }
 
 
-def _box_ticks(values: Sequence[float | None]) -> tuple[int, int, int, int] | None:
+def _box_ticks(values: Sequence[float | None]) -> _Ticks | None:
     """(X, Y, 폭, 높이) → 눈금 넷. 하나라도 없으면 None."""
     x, y, w, h = values
     if x is None or y is None or w is None or h is None:
@@ -440,77 +560,134 @@ def _box_ticks(values: Sequence[float | None]) -> tuple[int, int, int, int] | No
     return _ticks(x), _ticks(y), _ticks(w), _ticks(h)
 
 
+def _sent_box(item: Mapping[str, Any]) -> _Ticks | None:
+    return _box_ticks([finite_or_none(item.get(key)) for key in ("x", "y", "w", "h")])
+
+
+# 브라우저 값이 바둑판 칸과 이만큼(눈금)까지 다르면 바로잡고, 더 다르면 거부한다 — 반올림 한 끝
+# 차이로 적용이 막히지 않게 하되, 모듈 하나만 옮기거나 키운 값을 묶음 범위를 넓혀 받아들이지
+# 않는다.
+_TILE_TOLERANCE: Final = 1
+
+
 def _regrid_module_groups(
     changes: Sequence[UnitChange],
     editor_items: Sequence[Mapping[str, Any]],
     bounds: CanvasSize,
-) -> list[UnitChange]:
-    """이번 적용에서 이 층 도면에 놓이거나 자리·크기가 바뀐 모듈 묶음을 정본 규칙
-    (`tile_module_group`)으로 다시 놓는다.
+    ghosts: Sequence[Mapping[str, Any]] = (),
+    ghost_moves: Mapping[str, ModuleBox] | None = None,
+) -> tuple[list[UnitChange], list[UnitChange]]:
+    """이번 적용에서 이 층 도면에 놓이거나 자리·크기가 바뀐 모듈 묶음이 묶음 범위의 바둑판
+    그대로인지 보고 정본 칸 값으로 맞춘다(바뀐 호기 목록, 숨은 모듈의 새 자리).
 
-    범위는 적용 뒤 이 층 도면에 선 모듈(이번에 바뀐 것은 바뀐 값, 아닌 것은 편집기에 보낸 값)의
-    바깥 상자이고, 묶음의 모든 모듈(좌표가 없던 형제 포함)이 그 범위의 제 칸에 선다. 브라우저 값이
-    규칙과 다르면(반올림 한 끝 등) **규칙 값으로 바로잡는다** — 거부하지 않는다. 바뀐 모듈이 없는
-    묶음(바둑판이 아닌 옛 묶음 포함)은 건드리지 않는다. 묶음째 트레이로 빼거나 다른 층으로 보낸
-    묶음도 그대로다. 한 묶음의 모듈이 갈라지면(일부만 빼거나 보냄) 편집기가 막는 길이라
-    `ValueError` 다."""
+    적용 뒤 묶음의 모든 모듈(바뀐 것은 바뀐 값, 아닌 것은 편집기에 보낸 값, 숨은 모듈은 함께 옮겨
+    온 값)의 바깥 상자를 범위로 삼아 칸을 나누고, 모듈마다 지금 자리에 가까운 칸
+    (`assign_module_cells`)과 견준다. 차이가 모듈마다 `_TILE_TOLERANCE` 눈금 안이면(반올림 한 끝 등)
+    **칸 값으로 바로잡고**, 더 크면 모듈 하나만 옮기거나 키운 값이라 `ValueError` 다. 바뀐 모듈이
+    없는 묶음(바둑판이 아닌 옛 묶음 포함)은 건드리지 않는다. 묶음째 트레이로 빼거나 다른 층으로
+    보낸 묶음도 그대로다(숨은 모듈은 남는다). 한 묶음의 모듈이 갈라지면(일부만 빼거나 보내거나 좌표
+    없는 형제가 안 놓임) 편집기가 막는 길이라 `ValueError` 다."""
+    moved_ghosts = dict(ghost_moves or {})
     by_id = {change.unit_id: change for change in changes}
     fixed: dict[str, UnitChange] = {}
     added: list[UnitChange] = []
-    for group, items in _module_groups(editor_items).items():
+    hidden: list[UnitChange] = []
+    for group, (items, hidden_rows) in _module_groups(editor_items, ghosts).items():
         ids = [str(item["id"]) for item in items]
-        if not any(unit_id in by_id for unit_id in ids):
+        ghost_ids = [str(ghost["id"]) for ghost in hidden_rows]
+        if not any(unit_id in by_id for unit_id in ids) and not any(
+            ghost_id in moved_ghosts for ghost_id in ghost_ids
+        ):
             continue
-        before: dict[str, tuple[int, int, int, int] | None] = {}
-        boxes: list[tuple[int, int, int, int]] = []
+        before: dict[str, _Ticks | None] = {}
+        finals: dict[str, _Ticks | None] = {}
         apart: list[str] = []
         for item, unit_id in zip(items, ids, strict=True):
-            sent = (
-                _box_ticks([finite_or_none(item.get(key)) for key in ("x", "y", "w", "h")])
-                if bool(item.get("placed"))
-                else None
-            )
-            before[unit_id] = sent
+            before[unit_id] = _sent_box(item) if bool(item.get("placed")) else None
             change = by_id.get(unit_id)
-            now = (
-                sent
-                if change is None
-                else _box_ticks([change.x, change.y, change.w, change.h])
-                if change.placed and change.move_to is None
-                else None
-            )
-            if change is not None and now is None:
+            if change is None:
+                finals[unit_id] = before[unit_id]
+            elif change.placed and change.move_to is None:
+                finals[unit_id] = _box_ticks([change.x, change.y, change.w, change.h])
+            else:
+                finals[unit_id] = None
                 apart.append(unit_id)
-            if now is not None:
-                boxes.append(now)
-        if not boxes:
+        if all(finals[unit_id] is None for unit_id in ids):
+            # 묶음째 트레이로 빼거나 다른 층으로 보냈다 — 숨은 모듈은 이 층에 그대로 남는다.
+            if any(ghost_id in moved_ghosts for ghost_id in ghost_ids):
+                raise ValueError(
+                    f"Main 설비 {group} 의 숨은 모듈만 옮겨 왔습니다 — 묶음째 옮겨야 합니다."
+                )
             continue
         if apart:
             raise ValueError(
                 f"Main 설비 {group} 의 모듈은 묶음째 옮기거나 빼야 합니다 — "
                 f"{', '.join(sorted(apart, key=natural_name_key))} 만 따로 왔습니다."
             )
-        left = min(box[0] for box in boxes)
-        bottom = min(box[1] for box in boxes)
-        right = max(box[0] + box[2] for box in boxes)
-        top = max(box[1] + box[3] for box in boxes)
-        scale = _TICKS_PER_UNIT
-        tiles = tile_module_group(
-            (left / scale, bottom / scale, (right - left) / scale, (top - bottom) / scale), ids
-        )
-        for unit_id in ids:
-            x, y, w, h = tiles[unit_id]
+        left_out = [unit_id for unit_id in ids if finals[unit_id] is None]
+        if left_out:
+            raise ValueError(
+                f"Main 설비 {group} 의 모듈은 묶음째 옮기거나 빼야 합니다 — "
+                f"{', '.join(sorted(left_out, key=natural_name_key))} 가 묶음 범위에 놓이지 "
+                "않았습니다."
+            )
+        for ghost, ghost_id in zip(hidden_rows, ghost_ids, strict=True):
+            before[ghost_id] = _sent_box(ghost)
+            moved = moved_ghosts.get(ghost_id)
+            finals[ghost_id] = before[ghost_id] if moved is None else _tick_box(moved)
+        boxes = {name: cast(_Ticks, box) for name, box in finals.items()}
+        worst, laid = _deviation_ticks(boxes)
+        if worst > _TILE_TOLERANCE:
+            raise ValueError(
+                f"Main 설비 {group} 의 모듈이 묶음 범위를 바둑판으로 나눈 칸에 서 있지 않습니다 — "
+                "모듈 하나만 옮기거나 크기를 바꿀 수 없으니 묶음째 옮기거나 범위를 고치세요."
+            )
+        for name, cell in laid.items():
+            x, y, w, h = _value_box(cell)
             if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
                 raise ValueError(
                     f"Main 설비 {group} 의 묶음 범위가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 "
                     "벗어났습니다."
                 )
-            tile = UnitChange(unit_id, True, x, y, w, h, None)
-            if unit_id in by_id:
-                fixed[unit_id] = tile
-            elif before[unit_id] != _box_ticks([x, y, w, h]):
-                added.append(tile)
-    return [fixed.get(change.unit_id, change) for change in changes] + added
+            tile = UnitChange(name, True, x, y, w, h, None)
+            if name in by_id:
+                fixed[name] = tile
+            elif before[name] != cell:
+                (hidden if name in ghost_ids else added).append(tile)
+    return [fixed.get(change.unit_id, change) for change in changes] + added, hidden
+
+
+def _parse_ghost_moves(
+    raw_ghosts: object, ghosts: Sequence[Mapping[str, Any]], bounds: CanvasSize
+) -> dict[str, ModuleBox]:
+    """적용값의 `ghosts`(묶음과 함께 옮겨진 숨은 모듈 ``[{"id", "x", "y", "w", "h"}]``)를 읽는다.
+    이번 편집기에 보낸 숨은 모듈만 받고, 값은 이 층 영역 안이어야 한다."""
+    if raw_ghosts is None:
+        return {}
+    if not isinstance(raw_ghosts, list):
+        raise ValueError("숨은 모듈 목록을 읽지 못했습니다.")
+    known = {str(ghost["id"]) for ghost in ghosts}
+    moves: dict[str, ModuleBox] = {}
+    for raw in raw_ghosts:
+        if not isinstance(raw, Mapping):
+            raise ValueError("숨은 모듈 목록을 읽지 못했습니다.")
+        unit_id = _text(raw.get("id")).strip()
+        if unit_id not in known:
+            raise ValueError(f"이 편집기에 없는 숨은 모듈입니다: {unit_id}")
+        if unit_id in moves:
+            raise ValueError(f"같은 숨은 모듈이 두 번 왔습니다: {unit_id}")
+        values = [finite_or_none(raw.get(key)) for key in ("x", "y", "w", "h")]
+        if any(value is None for value in values):
+            raise ValueError(f"숨은 모듈 {unit_id} 의 좌표·크기를 읽지 못했습니다.")
+        x, y, w, h = (rounded_to_canvas(cast(float, value)) for value in values)
+        if x < 0 or y < 0 or w <= 0 or h <= 0:
+            raise ValueError(f"숨은 모듈 {unit_id} 의 좌표·크기가 맞지 않습니다.")
+        if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
+            raise ValueError(
+                f"숨은 모듈 {unit_id} 가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 벗어났습니다."
+            )
+        moves[unit_id] = (x, y, w, h)
+    return moves
 
 
 # ------------------------------------------------------------------ 검증
@@ -748,6 +925,7 @@ def parse_editor_apply(
     editor_groups: Collection[str] = frozenset(),
     reserved: ReservedNames | None = None,
     editor_items: Sequence[Mapping[str, Any]] = (),
+    editor_ghosts: Sequence[Mapping[str, Any]] = (),
 ) -> EditorApply:
     """브라우저 적용값을 검증한다. **하나라도 어긋나면 `ValueError`** — 일부만 반영하지 않는다.
 
@@ -757,10 +935,11 @@ def parse_editor_apply(
     없어도 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름이다. 다른 층으로 보낸 호기의 좌표는 그
     층 영역을 여기서 모르므로 범위를 보지 않는다 — `apply_layout_edits` 가 그 층 캔버스 안으로 민다.
 
-    `editor_items`(이번 편집기에 보낸 호기 `editor_inputs(...).items`)를 주면 이 층 도면에
-    놓이거나 자리·크기가 바뀐 Main 설비 모듈 묶음을 정본 규칙으로 다시 놓는다
-    (`_regrid_module_groups` — 브라우저 값이 규칙과 다르면 규칙 값으로 바로잡고, 좌표가 없던 형제도
-    제 칸에 놓는다).
+    `editor_items`(이번 편집기에 보낸 호기 `editor_inputs(...).items`)와 `editor_ghosts`(숨은 모듈
+    `editor_inputs(...).ghosts`)를 주면 이 층 도면에 놓이거나 자리·크기가 바뀐 Main 설비 모듈 묶음이
+    묶음 범위의 바둑판 그대로인지 본다(`_regrid_module_groups` — 한 눈금 안의 어긋남은 칸 값으로
+    바로잡고, 더 어긋나거나 갈라진 묶음은 거부한다). 묶음과 함께 옮겨진 숨은 모듈은 적용값의
+    ``ghosts`` 로 오고 `EditorApply.hidden_moves` 가 된다.
     """
     held = _reserved_reasons(reserved or ReservedNames())
     targets = {floor_label(key): key for key in floors if key != floor}
@@ -828,7 +1007,13 @@ def parse_editor_apply(
         if raw.get("created") is not None and (w is None or h is None):
             raise ValueError(f"새 호기 {unit_id} 의 크기가 없습니다.")
         changes.append(UnitChange(unit_id, placed, x, y, w, h, move_to))
-    changes = _regrid_module_groups(changes, editor_items, bounds)
+    changes, hidden_moves = _regrid_module_groups(
+        changes,
+        editor_items,
+        bounds,
+        editor_ghosts,
+        _parse_ghost_moves(payload.get("ghosts"), editor_ghosts, bounds),
+    )
     raw_marks = payload.get("marks")
     marks: tuple[FloorLayoutMark, ...] | None = None
     if raw_marks is not None:
@@ -851,6 +1036,7 @@ def parse_editor_apply(
         canvas=new_canvas,
         marks=marks,
         renames=tuple(renames),
+        hidden_moves=tuple(hidden_moves),
     )
 
 
@@ -991,6 +1177,7 @@ def apply_layout_edits(
     - 트레이로 빼기: X·Y 만 비우고 크기는 남긴다. 동·층은 그대로(그 층 트레이에 남는다)
     - 다른 층으로 보내기: 동·층을 바꾸고, 놓여 있던 호기는 좌표째 그 층 영역 안으로 민다
     - 새 호기: 받은 값만 채운 행을 끝에 붙인다(층 미정·미배치, 놓았으면 그 자리)
+    - 숨은 모듈(`hidden_moves`): 묶음과 함께 옮겨진 X·Y·크기만 바꾼다(층·레이아웃표시 그대로)
     """
     result = master.copy()
     sizes = {change.unit_id: (change.w, change.h) for change in apply.changes}
@@ -1023,6 +1210,12 @@ def apply_layout_edits(
             if change.move_to is not None:
                 result.loc[mask, ["동", "층"]] = [target[0], target[1]]
         result.loc[mask, "레이아웃표시"] = "Y"
+    for move in apply.hidden_moves:
+        # 묶음과 함께 옮겨진 숨은 모듈 — 같은 층의 자리·크기만 바꾸고 레이아웃표시는 그대로 둔다.
+        mask = _id_mask(result, move.unit_id)
+        if not mask.any():
+            raise ValueError(f"편집본에 없는 호기입니다: {move.unit_id}")
+        result.loc[mask, ["X좌표", "Y좌표", "Xsize", "Ysize"]] = [move.x, move.y, move.w, move.h]
     _fit_moved_into_canvases(result, apply.changes, canvases, default_canvas)
     _harmonize_groups(result, [change.unit_id for change in apply.changes])
     return result

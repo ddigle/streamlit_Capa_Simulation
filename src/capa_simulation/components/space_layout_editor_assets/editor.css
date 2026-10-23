@@ -159,6 +159,8 @@
 .sle-unit.is-module .sle-handle { display: none; }
 .sle-group-box.is-range { stroke-width: 2; stroke-dasharray: none; }
 .sle-range-handle { opacity: 1; pointer-events: auto; }
+/* 숨은 모듈(레이아웃표시 N·도면 이탈)이 차지한 칸 — 그 모듈은 그리지 않고 칸만 점선으로 보인다. */
+.sle-ghost-cell { fill: none; stroke: var(--sle-muted); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .sle-marquee { fill: var(--sle-accent); fill-opacity: 0.08; stroke: var(--sle-accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 
 /* ---- 팔레트 ---- */

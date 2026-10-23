@@ -4,7 +4,7 @@ export default function (component) {
   if (!host || !data) return
   const NS = 'http://www.w3.org/2000/svg'
   const S = host.__sle || (host.__sle = {
-    epoch: null, items: new Map(), original: new Map(), originalMarkIds: new Set(), groups: new Map(), undo: [],
+    epoch: null, items: new Map(), ghosts: new Map(), original: new Map(), originalMarkIds: new Set(), groups: new Map(), undo: [],
     selected: null, selection: new Set(), step: 0.5, drag: null, overlapPairs: 0, blocked: 0,
     canvas: null, originalCanvas: null, note: '', view: { z: 1, x: 0, top: 0 }, spaceDown: false, seq: 0,
     passthrough: [], bgImage: null,
@@ -226,14 +226,24 @@ export default function (component) {
   const minSize = () => 1 / SCALE
 
   // ---------------------------------------------------------------- 모듈 묶음 바둑판(순수 함수)
-  // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`tile_module_group` 과 같은 규칙이다 —
-  // `tests/test_space_module_group.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 파이썬과 대조한다. 그래서 바깥 이름을
-  // 쓰지 않는다(정밀도 `scale` 도 인자다). 한쪽을 고치면 다른 쪽도 고친다.
+  // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`module_cells`·`tile_module_group`·
+  // `assign_module_cells`·`module_tile_deviation` 과 같은 규칙이다 — `tests/test_space_module_group.py` 가 아래 두 표시 줄
+  // 사이를 떼어 node 로 돌려 파이썬과 대조하고 칸 배정·다시 놓기 판단을 시험한다. 그래서 바깥 이름을 쓰지 않는다(정밀도
+  // `scale` 도 인자다). 한쪽을 고치면 다른 쪽도 고친다.
   // <module-tiling>
   // 모듈 수 → [열, 행]. 거의 정사각 격자(열 = ⌈√n⌉, 행 = ⌈n ÷ 열⌉) — 넷이면 2×2, 둘이면 2×1.
   function moduleGrid(count) {
     const cols = Math.max(1, Math.ceil(Math.sqrt(count)))
     return [cols, Math.max(1, Math.ceil(count / cols))]
+  }
+  // 글자를 코드 포인트로 견준다 — 파이썬 글자 비교와 같다(UTF-16 단위로 견주면 BMP 밖 글자에서 갈린다).
+  function codeCompare(a, b) {
+    const pa = Array.from(a)
+    const pb = Array.from(b)
+    for (let i = 0; i < Math.min(pa.length, pb.length); i += 1) {
+      if (pa[i] !== pb[i]) return pa[i].codePointAt(0) - pb[i].codePointAt(0)
+    }
+    return pa.length - pb.length
   }
   // 설비명 자연 정렬(…12A, 12B, 12C, 12D). 숫자 덩이(0-9)는 수로, 나머지 덩이는 소문자로 견주고, 덩이가 같으면 짧은 쪽이
   // 앞, 그래도 같으면 글자 그대로 견준다.
@@ -253,39 +263,120 @@ export default function (component) {
       }
       const la = ta[i].toLowerCase()
       const lb = tb[i].toLowerCase()
-      if (la !== lb) return la < lb ? -1 : 1
+      if (la !== lb) return codeCompare(la, lb)
     }
     if (ta.length !== tb.length) return ta.length - tb.length
-    return a < b ? -1 : a > b ? 1 : 0
+    return codeCompare(a, b)
   }
   // 저장 정밀도 눈금(정수). 반올림은 파이썬과 같은 ⌊v × scale + 0.5⌋ 다(`Math.round` 와 끝이 다를 수 있어 쓰지 않는다).
   const tickOf = (v, scale) => Math.floor(v * scale + 0.5)
-  // 범위 box {x, y, w, h} 를 열×행으로 똑같이 나눈 칸에 모듈을 하나씩 둔다 — [{name, x, y, w, h}], 자연 정렬 차례로
-  // 왼→오, 위→아래(첫 모듈 왼쪽 위). 칸은 눈금으로 범위 ÷ 열(행)의 내림이고 마지막 열(오른쪽)·마지막 행(맨 아래)이 나머지를
-  // 받아 틈·겹침이 없다. 범위가 칸마다 한 눈금보다 작으면 오른쪽·위로 넓힌다.
-  function tileModuleGroup(box, names, scale) {
-    if (!names.length) return []
-    const [cols, rows] = moduleGrid(names.length)
-    const left = tickOf(box.x, scale)
-    const bottom = tickOf(box.y, scale)
-    const width = Math.max(tickOf(box.w, scale), cols)
-    const height = Math.max(tickOf(box.h, scale), rows)
+  const boxTicks = (box, scale) => [tickOf(box.x, scale), tickOf(box.y, scale), tickOf(box.w, scale), tickOf(box.h, scale)]
+  const tickBox = (t, scale) => ({ x: t[0] / scale, y: t[1] / scale, w: t[2] / scale, h: t[3] / scale })
+  // 눈금 상자들의 바깥 상자 [왼쪽, 바닥, 폭, 높이].
+  function outerTicks(list) {
+    const left = Math.min(...list.map((t) => t[0]))
+    const bottom = Math.min(...list.map((t) => t[1]))
+    return [left, bottom, Math.max(...list.map((t) => t[0] + t[2])) - left, Math.max(...list.map((t) => t[1] + t[3])) - bottom]
+  }
+  // 눈금 범위를 count 칸 바둑판(열×행)으로 똑같이 나눈 칸 — 칸 번호 차례(왼→오, 위→아래)의 눈금 상자. 칸은 범위 ÷ 열(행)의
+  // 내림이고 마지막 열(오른쪽)·마지막 행(맨 아래)이 나머지를 받아 틈·겹침이 없다. 범위가 칸마다 한 눈금보다 작으면 오른쪽·위로
+  // 넓힌다. 칸 수는 열×행이라 count 보다 많을 수 있다(남는 칸은 빈다).
+  function cellTicks(box, count) {
+    const [cols, rows] = moduleGrid(count)
+    const left = box[0]
+    const bottom = box[1]
+    const width = Math.max(box[2], cols)
+    const height = Math.max(box[3], rows)
     const cellW = (width - (width % cols)) / cols
     const cellH = (height - (height % rows)) / rows
     const lastW = width - cellW * (cols - 1)
     const lastH = height - cellH * (rows - 1)
-    return [...names].sort(naturalCompare).map((name, index) => {
-      const col = index % cols
-      const row = (index - col) / cols
+    const cells = []
+    for (let row = 0; row < rows; row += 1) {
       const y = row === rows - 1 ? bottom : bottom + lastH + (rows - 2 - row) * cellH
-      return {
-        name,
-        x: (left + col * cellW) / scale,
-        y: y / scale,
-        w: (col === cols - 1 ? lastW : cellW) / scale,
-        h: (row === rows - 1 ? lastH : cellH) / scale,
+      const h = row === rows - 1 ? lastH : cellH
+      for (let col = 0; col < cols; col += 1) cells.push([left + col * cellW, y, col === cols - 1 ? lastW : cellW, h])
+    }
+    return cells
+  }
+  // 범위 box {x, y, w, h} 를 count 칸으로 나눈 칸 [{x, y, w, h}](칸 번호 차례).
+  function moduleCells(box, count, scale) {
+    return cellTicks(boxTicks(box, scale), count).map((t) => tickBox(t, scale))
+  }
+  // 묶음을 **새로** 놓을 때(서랍)의 자리 — 범위 box 의 칸에 자연 정렬 차례로 하나씩([{name, x, y, w, h}], 첫 모듈 왼쪽 위).
+  function tileModuleGroup(box, names, scale) {
+    if (!names.length) return []
+    const cells = moduleCells(box, names.length, scale)
+    return [...names].sort(naturalCompare).map((name, index) => ({ name, ...cells[index] }))
+  }
+  // 자연 정렬 칸 배정 Map(이름 → 칸 번호) — 새로 놓을 때.
+  const naturalSlots = (names) => new Map([...names].sort(naturalCompare).map((name, index) => [name, index]))
+  // 묶음 모듈의 칸 배정 Map(이름 → 칸 번호) — **지금 자리를 지킨다**. mods 는 [{name, x, y, w, h, placed}]. 상자가 있는
+  // 모듈(placed)의 바깥 상자를 모듈 수 바둑판으로 나눠, 상자 중심과 칸 중심의 거리(눈금 제곱)가 가까운 짝부터 묶는다 — 같으면
+  // 자연 정렬 앞 모듈·앞 칸이 먼저다. 이미 바둑판이면 모듈마다 제 칸이다(차례가 이름순이 아니어도). 상자 없는 모듈은 남은 칸을
+  // 자연 정렬 차례로 받는다.
+  function assignModuleCells(mods, scale) {
+    const order = [...mods].sort((a, b) => naturalCompare(a.name, b.name))
+    const boxed = order.filter((m) => m.placed)
+    const used = new Set()
+    const slots = new Map()
+    if (boxed.length) {
+      const boxes = boxed.map((m) => boxTicks(m, scale))
+      const cells = cellTicks(outerTicks(boxes), order.length)
+      const pairs = []
+      boxes.forEach(([x, y, w, h], index) => {
+        cells.forEach(([cx, cy, cw, ch], number) => {
+          const dx = 2 * x + w - (2 * cx + cw)
+          const dy = 2 * y + h - (2 * cy + ch)
+          pairs.push([dx * dx + dy * dy, index, number])
+        })
+      })
+      pairs.sort((p, q) => p[0] - q[0] || p[1] - q[1] || p[2] - q[2])
+      for (const [, index, number] of pairs) {
+        if (slots.has(boxed[index].name) || used.has(number)) continue
+        slots.set(boxed[index].name, number)
+        used.add(number)
       }
+    }
+    let free = 0
+    for (const m of order) {
+      if (slots.has(m.name)) continue
+      while (used.has(free)) free += 1
+      slots.set(m.name, free)
+      used.add(free)
+    }
+    return slots
+  }
+  // 묶음이 바둑판에서 얼마나 벗어났나(눈금) — 모두 상자가 있을 때 바깥 상자를 모듈 수 바둑판으로 나눈 칸(지금 자리 배정)과의
+  // 가장 큰 차. 0 이면 바둑판 그대로, 상자 없는 모듈이 있으면 Infinity(파이썬은 None).
+  function tileDeviation(mods, scale) {
+    if (!mods.length || mods.some((m) => !m.placed)) return Infinity
+    const boxes = mods.map((m) => boxTicks(m, scale))
+    const cells = cellTicks(outerTicks(boxes), mods.length)
+    const slots = assignModuleCells(mods, scale)
+    let worst = 0
+    mods.forEach((m, index) => {
+      const cell = cells[slots.get(m.name)]
+      for (let k = 0; k < 4; k += 1) worst = Math.max(worst, Math.abs(boxes[index][k] - cell[k]))
     })
+    return worst
+  }
+  // 두 범위가 눈금까지 같은가.
+  function sameTicks(a, b, scale) {
+    const p = boxTicks(a, scale)
+    const q = boxTicks(b, scale)
+    return p.every((v, k) => v === q[k])
+  }
+  // 범위 box 의 칸에 배정 slots 대로 선 자리 [{name, x, y, w, h}].
+  function layModuleGroup(box, names, slots, scale) {
+    const cells = moduleCells(box, names.length, scale)
+    return names.map((name) => ({ name, ...cells[slots.get(name)] }))
+  }
+  // 묶음 범위를 from 에서 to 로 바꾼 자리. 범위가 눈금까지 그대로면 null — 다시 놓지 않는다(벽에 막힌 방향키·제자리에서 뗀
+  // 끌기·같은 숫자처럼 옮기거나 키우지 않은 조작이 바둑판이 아닌 옛 묶음을 바꾸지 않게. 다시 놓기만 하는 길은 「범위에 맞춰
+  // n등분」 하나다).
+  function relaidGroup(names, slots, from, to, scale) {
+    return sameTicks(from, to, scale) ? null : layModuleGroup(to, names, slots, scale)
   }
   // 서랍에서 놓는 모듈 묶음의 범위 크기 {w, h} — 열 × 가장 큰 모듈 폭, 행 × 가장 큰 모듈 높이(칸이 모듈 크기의 최댓값).
   function trayModuleRange(sizes, scale) {
@@ -441,6 +532,19 @@ export default function (component) {
   const onCanvas = (m) => m.placed && !m.moveTo
   // Main 설비로 묶은 모듈 행은 한 덩어리다. 묶음이 없으면 자기 하나.
   const members = (item) => (item.group ? [...S.items.values()].filter((m) => m.group === item.group) : [item])
+  // 그 id 의 호기 — 편집기 호기, 아니면 숨은 모듈(`S.ghosts`). 되돌리기·끌기 취소가 둘을 함께 되돌린다.
+  const itemOf = (id) => S.items.get(id) || S.ghosts.get(id)
+  // 묶음 열쇠 — 처음 받은 Main 설비 이름. 묶음 이름을 바꿔도 숨은 모듈과 이어진다.
+  const groupKeyOf = (m) => {
+    const o = S.original.get(m.id)
+    return (o && o.group) || m.group || null
+  }
+  // 묶음의 숨은 모듈 — 이 층에 상자가 있지만 도면 대상이 아닌 형제(레이아웃표시 N·도면 이탈 …). 그리지 않고 고르지 않지만
+  // 바둑판의 제 칸을 차지하고 묶음과 함께 옮겨진다(파이썬 `EditorInputs.ghosts`).
+  const ghostsOf = (item) => {
+    const key = groupKeyOf(item)
+    return key ? [...S.ghosts.values()].filter((g) => g.group === key) : []
+  }
   const placedMembers = (item) => members(item).filter(onCanvas)
   // 고른 것들. S.selected 는 그중 기준(마지막으로 누른) 것이다.
   const selectedItems = () => [...S.selection].map((id) => S.items.get(id)).filter(Boolean)
@@ -475,23 +579,25 @@ export default function (component) {
   // 자리·크기가 같은가. 미배치끼리는 크기만 견준다(좌표가 NaN 이다).
   const sameSpot = (a, b) => a.placed === b.placed && (a.placed ? sameGeometry(a, b) : sameSize(a, b))
 
-  // Main 설비 **모듈 묶음** — 이 편집기에 모듈이 둘 이상인 묶음(2026-10-23 사용자 요청). 사람이 고치는 것은 묶음 범위(이 층
-  // 도면에 선 모듈의 바깥 상자)뿐이고, 안의 모듈은 범위를 바둑판으로 똑같이 나눈 칸에 자동으로 선다(`tileModuleGroup`).
-  // 모듈 하나만 옮기거나 키우는 길은 없다 — 고르기·끌기·방향키·숫자 칸·서랍·빼기·다른 층 보내기가 모두 묶음째다. 바둑판이
-  // 아닌 옛 묶음은 읽을 때 바꾸지 않고, 처음 옮기거나 키울 때 지금 바깥 상자를 범위로 다시 놓는다. 파이썬
-  // `parse_editor_apply` 가 같은 규칙으로 다시 놓아 본다(다르면 그 값으로 바로잡는다).
+  // Main 설비 **모듈 묶음** — 이 편집기의 모듈과 숨은 모듈을 합쳐 둘 이상인 묶음(2026-10-23 사용자 요청). 사람이 고치는 것은
+  // 묶음 범위(이 층 도면에 선 모듈의 바깥 상자)뿐이고, 안의 모듈은 범위를 바둑판으로 똑같이 나눈 칸에 자동으로 선다. 칸
+  // 자리는 지금 자리를 지킨다(`assignModuleCells` — 이미 바둑판이면 제 칸, 새로 놓을 때만 자연 정렬). 모듈 하나만 옮기거나
+  // 키우는 길은 없다 — 고르기·끌기·방향키·숫자 칸·서랍·빼기·다른 층 보내기가 모두 묶음째다. 바둑판이 아닌 옛 묶음은 읽을 때
+  // 바꾸지 않고, 처음 옮기거나 키울 때(범위가 실제로 바뀔 때) 그 범위로 다시 놓는다. 파이썬 `parse_editor_apply` 가 같은
+  // 규칙으로 견준다(한 눈금 안이면 바로잡고, 더 다르면 거부한다). 돌려주는 목록에는 숨은 모듈(`ghost`)도 든다.
   const moduleMembers = (item) => {
-    if (!item || !isUnit(item) || !item.group) return null
-    const list = members(item)
+    if (!item || !isUnit(item) || !item.group || item.ghost) return null
+    const list = [...members(item), ...ghostsOf(item)]
     return list.length >= 2 ? list : null
   }
-  // Main 설비 → 이 편집기의 모듈 수(한 번 훑어 센다 — 호기마다 `members` 를 부르지 않게).
+  // 묶음 열쇠 → 이 편집기의 모듈 수(숨은 모듈 포함, 한 번 훑어 센다 — 호기마다 `members` 를 부르지 않게).
   const groupCounts = () => {
     const counts = new Map()
-    for (const m of S.items.values()) if (isUnit(m) && m.group) counts.set(m.group, (counts.get(m.group) || 0) + 1)
+    const add = (key) => counts.set(key, (counts.get(key) || 0) + 1)
+    for (const m of S.items.values()) if (isUnit(m) && m.group) add(groupKeyOf(m))
+    for (const g of S.ghosts.values()) add(g.group)
     return counts
   }
-  const ticks = (v) => tickOf(v, SCALE)
   // 범위를 정밀도·최소 크기(칸마다 최소 크기 한 칸 — 열·행 × 1 눈금)·영역 안으로 맞춘다. 크기 먼저, 그다음 위치.
   function fitRange(r, count) {
     const [cols, rows] = moduleGrid(count)
@@ -499,18 +605,20 @@ export default function (component) {
     const h = Math.min(Math.max(roundTo(r.h), rows / SCALE), floorTo(H()))
     return { x: clamp(roundTo(r.x), 0, floorTo(W() - w)), y: clamp(roundTo(r.y), 0, floorTo(H() - h)), w, h }
   }
-  // 묶음 범위 — 이 층 도면에 선 모듈의 바깥 상자. 선 모듈이 없으면(서랍·다른 층) null.
+  // 묶음 범위 — 이 층 도면에 선 모듈(숨은 모듈 포함)의 바깥 상자. 보이는 모듈이 도면에 하나도 없으면(서랍·다른 층) null.
   function groupRange(mods) {
-    const standing = mods.filter(onCanvas)
-    if (!standing.length) return null
-    const b = bbox(standing)
+    if (!mods.some((m) => !m.ghost && onCanvas(m))) return null
+    const b = bbox(mods.filter(onCanvas))
     return fitRange({ x: b.minX, y: b.minY, w: b.maxR - b.minX, h: b.maxT - b.minY }, mods.length)
   }
-  // 범위 바둑판의 제 칸에 모듈을 모두 세운다(좌표 없던 형제도 이때 놓인다).
-  function layModules(mods, range) {
-    const spots = new Map(tileModuleGroup(range, mods.map((m) => m.id), SCALE).map((spot) => [spot.name, spot]))
+  // 바둑판 순수 함수에 넘길 모양 {name, x, y, w, h, placed}.
+  const slotView = (m) => ({ name: m.id, x: m.x, y: m.y, w: m.w, h: m.h, placed: onCanvas(m) })
+  // 지금 자리를 지키는 칸 배정(`assignModuleCells`).
+  const groupSlots = (mods) => assignModuleCells(mods.map(slotView), SCALE)
+  const setSpots = (mods, spots) => {
+    const at = new Map(spots.map((spot) => [spot.name, spot]))
     for (const m of mods) {
-      const spot = spots.get(m.id)
+      const spot = at.get(m.id)
       m.x = spot.x
       m.y = spot.y
       m.w = spot.w
@@ -518,16 +626,22 @@ export default function (component) {
       m.placed = true
     }
   }
-  // 바둑판 그대로인가 — 모듈이 모두 도면에 서 있고 바깥 상자를 나눈 제 칸과 눈금까지 같다.
+  // 범위 바둑판의 제 칸(slots — 없으면 지금 자리 배정)에 모듈을 모두 세운다(좌표 없던 형제·숨은 모듈도 이때 놓인다).
+  function layModules(mods, range, slots = groupSlots(mods)) {
+    setSpots(mods, layModuleGroup(range, mods.map((m) => m.id), slots, SCALE))
+  }
+  // 묶음 g {mods, range, slots} 를 새 범위 to 로 다시 놓는다. 범위가 눈금까지 그대로면 다시 놓지 않고 거짓이다 — befores 를
+  // 주면(끌기) 처음 값으로 되돌린다(끌다 제자리로 돌아온 때).
+  function relayGroup(g, to, befores) {
+    const spots = relaidGroup(g.mods.map((m) => m.id), g.slots, g.range, to, SCALE)
+    if (spots) { setSpots(g.mods, spots); return true }
+    if (befores) for (const m of g.mods) Object.assign(m, befores.get(m.id))
+    return false
+  }
+  // 바둑판 그대로인가 — 모듈이 모두 도면에 서 있고 바깥 상자를 나눈 칸(지금 자리 배정)과 눈금까지 같다. 이름 차례는 보지
+  // 않는다(칸 모양만).
   function isTiled(mods) {
-    if (!mods.every(onCanvas)) return false
-    const b = bbox(mods)
-    const box = { x: b.minX, y: b.minY, w: b.maxR - b.minX, h: b.maxT - b.minY }
-    const spots = new Map(tileModuleGroup(box, mods.map((m) => m.id), SCALE).map((spot) => [spot.name, spot]))
-    return mods.every((m) => {
-      const s = spots.get(m.id)
-      return ticks(m.x) === ticks(s.x) && ticks(m.y) === ticks(s.y) && ticks(m.w) === ticks(s.w) && ticks(m.h) === ticks(s.h)
-    })
+    return tileDeviation(mods.map(slotView), SCALE) === 0
   }
   // 움직일 단위. 모듈 묶음은 묶음 하나(모든 모듈과 범위), 나머지는 이 층 도면에 선 호기·요소 하나씩이다. `box` 는 모두를
   // 감싼 상자(묶음은 범위)다.
@@ -540,12 +654,14 @@ export default function (component) {
         for (const m of placedMembers(item)) loose.set(m.id, m)
         continue
       }
-      if (groups.has(item.group)) continue
+      const key = groupKeyOf(item)
+      if (groups.has(key)) continue
       const range = groupRange(mods)
-      if (range) groups.set(item.group, { mods, range })
+      if (range) groups.set(key, { mods, range, slots: groupSlots(mods) })
     }
     const parts = [...groups.values()]
     const shells = [...loose.values(), ...parts.map((g) => g.range)]
+    // items 에는 숨은 모듈도 든다(되돌리기·끌기 취소 기록). 그릴 것은 `redraw` 가 거른다.
     return {
       loose: [...loose.values()],
       groups: parts,
@@ -568,7 +684,8 @@ export default function (component) {
   const extents = () => {
     let right = RESERVED.right
     let top = RESERVED.top
-    for (const item of S.items.values()) {
+    // 숨은 모듈은 묶음과 함께 옮겨지므로 지금 자리로 센다(처음 자리는 RESERVED 에 들어 있다).
+    for (const item of [...S.items.values(), ...S.ghosts.values()]) {
       if (!onCanvas(item)) continue
       right = Math.max(right, item.x + item.w)
       top = Math.max(top, item.y + item.h)
@@ -1155,7 +1272,7 @@ export default function (component) {
       if (!onCanvas(item)) continue
       if (isUnit(item)) {
         const group = buildGroup(item)
-        group.classList.toggle('is-module', (counts.get(item.group) || 0) >= 2)
+        group.classList.toggle('is-module', (counts.get(groupKeyOf(item)) || 0) >= 2)
         layer.append(group)
       } else (item.kind === 'zone' ? zonesLayer : marksLayer).append(buildMark(item))
     }
@@ -1377,6 +1494,10 @@ export default function (component) {
       // 크기를 정하고, 작은 범위에서는 변 가운데 손잡이를 감춘다(호기 손잡이와 같은 규칙). 보기 화면은 그대로다.
       const top = H() - (range.y + range.h)
       overlay.append(el('rect', { class: 'sle-group-box is-range', x: range.x, y: top, width: range.w, height: range.h }))
+      // 숨은 모듈이 차지한 칸은 점선으로만 보인다(그 모듈은 그리지 않는다).
+      for (const g of mods.filter((m) => m.ghost && onCanvas(m))) {
+        overlay.append(el('rect', { class: 'sle-ghost-cell', x: g.x, y: H() - (g.y + g.h), width: g.w, height: g.h }))
+      }
       const hs = HANDLE_PX * unitsPerPx()
       for (const dir of HANDLE_DIRS) {
         const hx = dir.includes('w') ? range.x : dir.includes('e') ? range.x + range.w : range.x + range.w / 2
@@ -1406,7 +1527,7 @@ export default function (component) {
     // 편집에서 모듈 묶음은 모듈 하나를 골라도 묶음째 골라진 것이다 — 모듈 상자는 모두 「함께」 테만 두르고 손잡이는 범위
     // 테두리에 선다. 보기 화면은 누른 모듈이 골라진 것 그대로다(후광).
     const counts = VIEW ? new Map() : groupCounts()
-    const bundles = new Set(chosen.filter((m) => isUnit(m) && m.group && counts.get(m.group) >= 2).map((m) => m.group))
+    const bundles = new Set(chosen.filter((m) => isUnit(m) && m.group && counts.get(groupKeyOf(m)) >= 2).map((m) => m.group))
     for (const [id, group] of S.groups) {
       const item = S.items.get(id)
       const selected = S.selection.has(id) && !(item && item.group && bundles.has(item.group))
@@ -1547,6 +1668,17 @@ export default function (component) {
     return out
   }
 
+  // 묶음과 함께 옮겨진 숨은 모듈의 새 자리(파이썬 `EditorApply.hidden_moves`).
+  function ghostChanges() {
+    const out = []
+    for (const g of S.ghosts.values()) {
+      const o = S.original.get(g.id)
+      if (o && sameGeometry(o, g)) continue
+      out.push({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h })
+    }
+    return out
+  }
+
   // 그리지 못한 요소(모르는 종류·숫자 아님)도 그대로 돌려보낸다 — 층 단위 교체라 빼면 지워진다.
   const marksPayload = () => [
     ...[...S.items.values()].filter(isMark).map((m) => ({
@@ -1563,7 +1695,8 @@ export default function (component) {
     const mods = moduleMembers(item)
     const [cols, rows] = moduleGrid(mods.length)
     const loose = untiledModules(item)
-    return `Main 설비 ${item.group} · 모듈 ${mods.length} (${cols}×${rows} 바둑판)`
+    const hidden = mods.filter((m) => m.ghost).length
+    return `Main 설비 ${item.group} · 모듈 ${mods.length} (${cols}×${rows} 바둑판${hidden ? ` · 숨은 모듈 ${hidden}` : ''})`
       + (loose ? ` · ${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다` : '')
   }
   // 도면에 선 모듈 묶음인데 바둑판이 아니면 그 모듈들(옛 데이터 — 읽을 때 바꾸지 않는다), 아니면 null.
@@ -1748,6 +1881,8 @@ export default function (component) {
       if (range) add(`범위 X ${range.x} · Y ${range.y} · 크기 ${range.w}×${range.h}`)
       else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
       add(`모듈 ${mods.length}대는 범위 안 ${cols}×${rows} 바둑판에 자동으로 섭니다 — 범위를 끌어 옮기고 테두리 손잡이로 키웁니다`)
+      const hidden = mods.filter((m) => m.ghost).map((m) => m.id)
+      if (hidden.length) add(`숨은 모듈 ${hidden.join(', ')}(레이아웃표시 N·도면 이탈)는 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
       if (untiledModules(item)) add(`${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다`)
     } else if (item) {
       add('선택 ', item.label)
@@ -1965,7 +2100,8 @@ export default function (component) {
       guessed: !hasSize(m),
     })
     // 놓을 덩이. 모듈 묶음은 묶음 하나다 — 범위는 열 × 가장 큰 모듈 폭, 행 × 가장 큰 모듈 높이(`trayModuleRange`)이고 안은
-    // 그 범위를 똑같이 나눈 바둑판(첫 모듈 왼쪽 위)이다. 그 밖의 호기는 제 크기 하나씩이다.
+    // 그 범위를 똑같이 나눈 바둑판(새로 놓기라 자연 정렬 — 첫 모듈 왼쪽 위)이다. 숨은 모듈도 제 칸에 함께 놓인다. 그 밖의
+    // 호기는 제 크기 하나씩이다.
     const pieces = []
     const seen = new Set()
     for (const m of list) {
@@ -2007,7 +2143,7 @@ export default function (component) {
       })
       const spot = { ...spots[i], x: roundTo(spots[i].x + shift.dx), y: roundTo(spots[i].y + shift.dy) }
       if (piece.mods) {
-        layModules(piece.mods, fitRange(spot, piece.mods.length))
+        layModules(piece.mods, fitRange(spot, piece.mods.length), naturalSlots(piece.mods.map((m) => m.id)))
         return
       }
       const m = piece.units[0]
@@ -2017,13 +2153,15 @@ export default function (component) {
       fit(m)
     })
     commit(entries)
-    // 여럿을 함께 놓았으면 놓은 것을 모두 고른 채로 둔다 — 그대로 끌어 자리를 옮길 수 있다(모듈 묶음은 한 대로).
-    S.selection = new Set(onePerGroup(name ? placed.map((m) => m.id) : [lead.id]))
+    // 여럿을 함께 놓았으면 놓은 것을 모두 고른 채로 둔다 — 그대로 끌어 자리를 옮길 수 있다(모듈 묶음은 한 대로). 숨은 모듈은
+    // 고르지도 보이지도 않는다.
+    const shown = placed.filter((m) => !m.ghost)
+    S.selection = new Set(onePerGroup(name ? shown.map((m) => m.id) : [lead.id]))
     S.selected = lead.id
     renderItems()
     updateStatus()
     // 서랍은 열어 둔다(이어서 놓는다). 놓은 호기가 서랍 아래면 화면을 옮겨 보인다.
-    revealFromTray(placed)
+    revealFromTray(shown)
     svg.focus({ preventScroll: true })
   }
 
@@ -2053,14 +2191,15 @@ export default function (component) {
 
   // 자리를 바꾼 것을 다시 그린다. 도면에 새로 서거나 빠진 것(좌표 없던 모듈이 바둑판에 놓임 등)이 있으면 목록째 다시 만든다.
   function redraw(list) {
-    if (list.some((m) => onCanvas(m) !== S.groups.has(m.id))) { renderItems(); return }
-    for (const m of list) position(S.groups.get(m.id), m)
+    const shown = list.filter((m) => m && !m.ghost)
+    if (shown.some((m) => onCanvas(m) !== S.groups.has(m.id))) { renderItems(); return }
+    for (const m of shown) position(S.groups.get(m.id), m)
     drawSelectionBox()
     markOverlaps()
   }
 
   // 방향키·숫자 칸의 X·Y 는 고른 것 전부를 함께 옮긴다. 호기·요소는 모양 그대로, 모듈 묶음은 범위를 옮겨 바둑판으로 다시
-  // 놓는다(옛 묶음은 이때 바둑판이 된다). 되돌리기 한 번에 모두 돌아온다.
+  // 놓는다(옛 묶음은 이때 바둑판이 된다 — 벽에 막혀 이동량이 0 이면 다시 놓지 않는다). 되돌리기 한 번에 모두 돌아온다.
   function moveItems(list, dx, dy) {
     const plan = movePlan(list)
     if (!plan.items.length) return
@@ -2070,18 +2209,16 @@ export default function (component) {
       m.x = roundTo(m.x + shift.dx)
       m.y = roundTo(m.y + shift.dy)
     }
-    for (const g of plan.groups) {
-      layModules(g.mods, { ...g.range, x: roundTo(g.range.x + shift.dx), y: roundTo(g.range.y + shift.dy) })
-    }
-    const moved = entries.filter((e) => !sameSpot(e.before, S.items.get(e.id)))
+    for (const g of plan.groups) relayGroup(g, { ...g.range, x: roundTo(g.range.x + shift.dx), y: roundTo(g.range.y + shift.dy) })
+    const moved = entries.filter((e) => !sameSpot(e.before, itemOf(e.id)))
     if (!moved.length) { syncInspector(); return }
     commit(moved)
     redraw(plan.items)
     updateStatus()
   }
 
-  // 크기는 고른 것 하나하나에 적용한다 — 호기·요소는 그 하나, 모듈 묶음은 범위를 바꿔 바둑판으로 다시 놓는다. 폭은
-  // 오른쪽으로, 높이는 위로 자란다.
+  // 크기는 고른 것 하나하나에 적용한다 — 호기·요소는 그 하나, 모듈 묶음은 범위를 바꿔 바둑판으로 다시 놓는다(범위가 그대로면
+  // 다시 놓지 않는다). 폭은 오른쪽으로, 높이는 위로 자란다.
   function setSizes(list, patchOf) {
     const entries = []
     const touched = []
@@ -2089,13 +2226,14 @@ export default function (component) {
     for (const item of list) {
       const mods = moduleMembers(item)
       if (mods) {
-        const range = done.has(item.group) ? null : groupRange(mods)
-        done.add(item.group)
+        const key = groupKeyOf(item)
+        const range = done.has(key) ? null : groupRange(mods)
+        done.add(key)
         if (!range) continue
         const befores = mods.map((m) => ({ id: m.id, before: snapshot(m) }))
-        layModules(mods, fitRange({ ...range, ...patchOf(range) }, mods.length))
+        if (!relayGroup({ mods, range, slots: groupSlots(mods) }, fitRange({ ...range, ...patchOf(range) }, mods.length))) continue
         for (const e of befores) {
-          const m = S.items.get(e.id)
+          const m = itemOf(e.id)
           if (sameSpot(e.before, m)) continue
           m.sizeGuessed = false
           entries.push(e)
@@ -2125,7 +2263,7 @@ export default function (component) {
     if (!range) return
     const entries = mods.map((m) => ({ id: m.id, before: snapshot(m) }))
     layModules(mods, range)
-    const moved = entries.filter((e) => !sameSpot(e.before, S.items.get(e.id)))
+    const moved = entries.filter((e) => !sameSpot(e.before, itemOf(e.id)))
     if (!moved.length) { updateStatus(); return }
     commit(moved)
     redraw(mods)
@@ -2283,8 +2421,8 @@ export default function (component) {
       let applied = 0
       for (const op of [...last.ops].reverse()) {
         if (op.op === 'set') {
-          // 추가를 취소해 사라진 것의 기록은 건너뛴다.
-          const item = S.items.get(op.id)
+          // 추가를 취소해 사라진 것의 기록은 건너뛴다. 숨은 모듈도 같은 기록으로 돌아온다.
+          const item = itemOf(op.id)
           if (!item) continue
           Object.assign(item, op.before)
           applied += 1
@@ -2315,8 +2453,8 @@ export default function (component) {
       updateStatus()
       return
     }
-    for (const [id, before] of drag.befores) Object.assign(S.items.get(id), before)
-    redraw([...drag.befores.keys()].map((id) => S.items.get(id)))
+    for (const [id, before] of drag.befores) Object.assign(itemOf(id), before)
+    redraw([...drag.befores.keys()].map(itemOf))
     clearDragOverlap()
     updateStatus()
   }
@@ -2364,6 +2502,7 @@ export default function (component) {
 
   function initFromData() {
     S.items = new Map()
+    S.ghosts = new Map()
     S.original = new Map()
     S.originalMarkIds = new Set()
     S.passthrough = []
@@ -2372,6 +2511,17 @@ export default function (component) {
       item.placed = Boolean(raw.placed) && [item.x, item.y, item.w, item.h].every(Number.isFinite)
       S.items.set(item.id, item)
       S.original.set(item.id, snapshot(item))
+    }
+    // 숨은 모듈(파이썬 `EditorInputs.ghosts`) — 그리지 않고 묶음 바둑판의 칸만 차지한다. 처음 값은 S.original 에 둔다
+    // (`ghostChanges` 가 견준다).
+    for (const raw of data.ghosts || []) {
+      const ghost = {
+        id: String(raw.id), kind: 'unit', ghost: true, label: String(raw.id), group: raw.group ? String(raw.group) : null,
+        x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h), placed: true, moveTo: null, sizeGuessed: false,
+      }
+      if (!ghost.group || S.items.has(ghost.id) || ![ghost.x, ghost.y, ghost.w, ghost.h].every(Number.isFinite)) continue
+      S.ghosts.set(ghost.id, ghost)
+      S.original.set(ghost.id, snapshot(ghost))
     }
     for (const raw of data.marks || []) {
       const mark = readMark(raw)
@@ -2465,6 +2615,15 @@ export default function (component) {
 
   // ------------------------------------------------------------- 끌기(속성 대입이라 겹쳐 쌓이지 않는다)
   svg.onmousedown = (event) => { if (event.button === 1) event.preventDefault() }
+  // 고른 것 가운데 도면 점 p(화면 좌표 {x, top})를 범위 안에 품은 모듈 묶음이 있는가.
+  function pickedRangeAt(picked, p) {
+    const y = H() - p.top
+    return picked.some((item) => {
+      const mods = moduleMembers(item)
+      const range = mods && groupRange(mods)
+      return Boolean(range) && p.x >= range.x && p.x <= range.x + range.w && y >= range.y && y <= range.y + range.h
+    })
+  }
   svg.onpointerdown = (event) => {
     if (event.button !== 0 && event.button !== 1) return
     const p = toUser(event)
@@ -2507,6 +2666,17 @@ export default function (component) {
     }
     const group = event.target.closest ? event.target.closest('.sle-item') : null
     const additive = event.shiftKey || event.ctrlKey || event.metaKey
+    if (!group && !additive && pickedRangeAt(picked, p)) {
+      // 고른 모듈 묶음의 범위 안 빈 칸(모듈 셋·다섯 묶음의 남는 칸, 숨은 모듈 칸)도 묶음이다 — 누르면 그 묶음을 끈다.
+      const plan = movePlan(picked)
+      S.drag = {
+        ...start, id: S.selected, mode: 'move', dir: null, loose: plan.loose, groups: plan.groups,
+        ids: plan.items.map((m) => m.id), befores: new Map(plan.items.map((m) => [m.id, snapshot(m)])), box: plan.box,
+        collapse: false,
+      }
+      svg.setPointerCapture(event.pointerId)
+      return
+    }
     if (!group) {
       // 빈 곳을 끌면 사각형 안에 다 들어온 것을 고른다. Shift/Ctrl 이면 지금 고른 것에 더한다.
       S.drag = { ...start, mode: 'marquee', additive, before: new Set(S.selection), beforePrimary: S.selected, rect: null }
@@ -2602,19 +2772,22 @@ export default function (component) {
         m.x = roundTo(b.x + shift.dx)
         m.y = roundTo(b.y + shift.dy)
       }
+      // 이동량이 0 이면(제자리로 돌아옴) 묶음은 처음 값 그대로다(`relayGroup`).
       for (const g of drag.groups) {
-        layModules(g.mods, { ...g.range, x: roundTo(g.range.x + shift.dx), y: roundTo(g.range.y + shift.dy) })
+        relayGroup(g, { ...g.range, x: roundTo(g.range.x + shift.dx), y: roundTo(g.range.y + shift.dy) }, drag.befores)
       }
     } else if (drag.mode === 'range') {
-      // 모듈 묶음 범위 크기 — 칸마다 최소 크기 한 칸(열·행 × 1 눈금) 아래로 줄지 않는다.
+      // 모듈 묶음 범위 크기 — 칸마다 최소 크기 한 칸(열·행 × 1 눈금) 아래로 줄지 않는다. 범위가 그대로면 처음 값이다.
       const g = drag.groups[0]
       const [cols, rows] = moduleGrid(g.mods.length)
-      layModules(g.mods, resizedBox(g.range, drag.dir, dx, dTop, cols / SCALE, rows / SCALE))
-      for (const m of g.mods) m.sizeGuessed = false
+      if (relayGroup(g, resizedBox(g.range, drag.dir, dx, dTop, cols / SCALE, rows / SCALE), drag.befores)) {
+        for (const m of g.mods) m.sizeGuessed = false
+      }
     } else {
       resizeTo(S.items.get(drag.id), drag.befores.get(drag.id), drag.dir, dx, dTop)
     }
-    const dragged = drag.ids.map((id) => S.items.get(id))
+    // 숨은 모듈은 그리지 않는다.
+    const dragged = drag.ids.map(itemOf).filter((m) => !m.ghost)
     // 좌표 없던 모듈이 처음 놓이면 상자가 아직 없다 — 그때 한 번 목록을 다시 만든다.
     if (dragged.some((m) => onCanvas(m) !== S.groups.has(m.id))) renderItems()
     else for (const m of dragged) position(S.groups.get(m.id), m)
@@ -2654,7 +2827,7 @@ export default function (component) {
     clearDragOverlap()
     const entries = drag.ids
       .map((id) => ({ id, before: drag.befores.get(id) }))
-      .filter((e) => !sameSpot(e.before, S.items.get(e.id)))
+      .filter((e) => !sameSpot(e.before, itemOf(e.id)))
     if (drag.moved && entries.length) {
       commit(entries)
       markOverlaps()
@@ -2991,6 +3164,7 @@ export default function (component) {
     setTriggerValue('apply', {
       epoch: S.epoch,
       changes: unitChanges,
+      ghosts: ghostChanges(),
       renames: nameChanges,
       canvas: canvasChanged() ? { width: W(), height: H() } : null,
       marks: marksChanged ? marksPayload() : null,

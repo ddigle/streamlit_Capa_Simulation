@@ -17,6 +17,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_space_layout_edit import _master
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -40,11 +41,13 @@ def editor_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return calls
 
 
-def _open_editor(tmp_path: Path) -> tuple[AppTest, Path]:
+def _open_editor(tmp_path: Path, equipment: pd.DataFrame | None = None) -> tuple[AppTest, Path]:
     database = tmp_path / "space_edit.duckdb"
     repository = DuckDBEquipmentRepository(database)
     repository.initialize()
-    repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="r1")
+    repository.save_snapshot(
+        _baseline(), _equipment() if equipment is None else equipment, _downtime(), note="r1"
+    )
     clear_equipment_repository()
     app = AppTest.from_string(_page_script(PAGE, database), default_timeout=60)
     app.session_state["space_status_selected_building"] = "C1"
@@ -174,6 +177,58 @@ def test_a_bad_apply_is_refused_with_its_reason_and_leaves_the_draft(
     assert any(message in item.value for item in app.error)
     assert editor_calls[-1]["epoch"] == epoch
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    clear_equipment_repository()
+
+
+def test_a_module_group_apply_is_tiled_and_carries_its_hidden_module(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """페이지 적용 경로가 모듈 묶음 정규화(`editor_items`)와 숨은 모듈(`editor_ghosts`)을 넘긴다 —
+    한 눈금 어긋난 브라우저 값은 칸 값으로 바로잡혀 편집본에 들어가고, 묶음과 함께 옮겨진 숨은
+    모듈(레이아웃표시 N)도 제 칸으로 가며 N 은 그대로다."""
+    module = {"Main 설비": "GRP-1", "Xsize": 10, "Ysize": 7}
+    master = _master(
+        {**module, "설비명": "G1-A", "X좌표": 50.0, "Y좌표": 37.0},
+        {**module, "설비명": "G1-B", "X좌표": 60.0, "Y좌표": 37.0, "레이아웃표시": "N"},
+        {**module, "설비명": "G1-C", "X좌표": 50.0, "Y좌표": 30.0},
+        {**module, "설비명": "G1-D", "X좌표": 60.0, "Y좌표": 30.0},
+    )
+    app, _ = _open_editor(tmp_path, master)
+    data = editor_calls[-1]
+    assert data["ghosts"] == [
+        {"id": "G1-B", "group": "GRP-1", "x": 60.0, "y": 37.0, "w": 10.0, "h": 7.0}
+    ]
+    assert "G1-B" not in {item["id"] for item in data["items"]}
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [
+            {"id": "G1-A", "placed": True, "x": 52, "y": 37, "w": 10, "h": 7},
+            {"id": "G1-C", "placed": True, "x": 52, "y": 30, "w": 10, "h": 7},
+            {"id": "G1-D", "placed": True, "x": 61.9, "y": 30, "w": 10, "h": 7},
+        ],
+        "ghosts": [{"id": "G1-B", "x": 62, "y": 37, "w": 10, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [item.value for item in app.error]
+    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    after = editor_calls[-1]
+    assert {
+        item["id"]: (item["x"], item["y"], item["w"], item["h"])
+        for item in after["items"]
+        if item["group"] == "GRP-1"
+    } == {
+        "G1-A": (52.0, 37.0, 10.0, 7.0),
+        "G1-C": (52.0, 30.0, 10.0, 7.0),
+        "G1-D": (62.0, 30.0, 10.0, 7.0),
+    }
+    assert after["ghosts"] == [
+        {"id": "G1-B", "group": "GRP-1", "x": 62.0, "y": 37.0, "w": 10.0, "h": 7.0}
+    ]
     clear_equipment_repository()
 
 

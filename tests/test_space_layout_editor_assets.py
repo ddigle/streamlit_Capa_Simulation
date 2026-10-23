@@ -198,7 +198,7 @@ def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:
     열려 있는 동안만 서랍 폭만큼 더 옮길 수 있다 — 접으면 제자리로 돌아온다."""
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
     assert "setDrawer(false)" not in place
-    assert "revealFromTray(placed)" in place
+    assert "revealFromTray(shown)" in place
     assert "function trayReserve()" in JS
     clamp = JS[JS.index("function clampView(") : JS.index("function applyView(")]
     assert "trayReserve()" in clamp and "center + reserve" in clamp
@@ -426,7 +426,7 @@ def test_several_tray_chips_can_be_picked_and_dropped_together() -> None:
     many = JS[JS.index("function placeManyFromTray(") : JS.index("function placeFromTray(")]
     assert "placeFromTray(lead, list, p," in many
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
-    assert "S.selection = new Set(onePerGroup(name ? placed.map((m) => m.id) : [lead.id]))" in place
+    assert "S.selection = new Set(onePerGroup(name ? shown.map((m) => m.id) : [lead.id]))" in place
     assert "Ctrl·Shift" in HTML
 
 

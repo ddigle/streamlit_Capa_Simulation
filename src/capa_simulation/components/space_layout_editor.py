@@ -202,6 +202,20 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _clean_ghosts(ghosts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """브라우저로 보낼 숨은 모듈(`EditorInputs.ghosts`). 상자 넷이 다 숫자이고 Main 설비가 글자인
+    것만 — 그리지 않고 묶음 바둑판의 칸만 차지한다."""
+    cleaned: list[dict[str, Any]] = []
+    for ghost in ghosts:
+        box = [finite_or_none(ghost.get(key)) for key in ("x", "y", "w", "h")]
+        group = ghost.get("group")
+        if any(value is None for value in box) or not isinstance(group, str) or not group:
+            continue
+        x, y, w, h = box
+        cleaned.append({"id": str(ghost["id"]), "group": group, "x": x, "y": y, "w": w, "h": h})
+    return cleaned
+
+
 def _dispatch_as_of(key: str, on_as_of: Callable[[date], None]) -> None:
     """`on_asOf_change` 콜백. 페이더를 놓거나 「오늘로」를 누를 때 브라우저가 보낸 기준일
     (`YYYY-MM-DD`)을 `on_as_of(date)` 로 넘긴다. 콜백은 본문보다 먼저 돌아 그 회차의 범례·요약이 새
@@ -427,7 +441,7 @@ def render_space_layout_editor(
     페이더 자리에 같은 높이의 「기준일 YYYY-MM-DD · 편집 중 고정」 줄이 선다(기준일이 바뀌면 편집
     대상 호기가 바뀌어 적용하지 않은 편집이 버려진다).
 
-    적용값: ``{"epoch", "changes", "renames", "canvas", "marks"}``.
+    적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks"}``.
 
     - ``changes``: 바뀐 호기(배치). ``id`` 는 편집기에 보낸 **옛** 설비명이다. 놓인 호기는
       좌표·크기, 트레이로 뺀 호기는 크기만(있으면) 든다. 다른 층으로 보낸 호기는 ``moveTo`` 에 그
@@ -436,7 +450,10 @@ def render_space_layout_editor(
       ``group``(Main 설비)이 같은 호기는 한 덩어리로 움직인다. 모듈이 둘 이상인 묶음은 묶음 범위만
       고치고 안의 모듈은 범위를 바둑판으로 똑같이 나눈 칸에 선다(모듈 하나만 옮기거나 키우는 길이
       없다) — 놓이거나 자리·크기가 바뀐 묶음은 `parse_editor_apply` 가 같은 규칙
-      (`space_layout_edit.tile_module_group`)으로 다시 놓아 본다.
+      (`space_layout_edit.module_cells`·`assign_module_cells`)으로 견줘 한 눈금 안이면 바로잡고 더
+      어긋나면 거부한다.
+    - ``ghosts``: 묶음과 함께 옮겨진 숨은 모듈(`EditorInputs.ghosts` — 도면 대상이 아니라 그리지
+      않지만 묶음 바둑판의 칸을 차지한다)의 새 자리 ``[{"id", "x", "y", "w", "h"}]``.
     - ``renames``: 선택 칸 `이름` 으로 바꾼 이름(배치와 따로 — 이름만 바꾸면 ``changes`` 가 비어
       있다). ``[{"kind": "unit", "from": 옛 설비명, "to": 새 설비명}]`` 과 모듈 묶음이면
       ``[{"kind": "group", "from": 옛 Main 설비, "to": 새 Main 설비}]``(묶음 하나에 한 항목,
@@ -456,6 +473,7 @@ def render_space_layout_editor(
             "asOf": as_of.isoformat(),
             "title": title,
             "items": items,
+            "ghosts": _clean_ghosts(inputs.ghosts),
             "marks": [mark.editor_payload() for mark in marks],
             "canvas": {"width": canvas[0], "height": canvas[1]},
             "canvasLimits": {

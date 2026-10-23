@@ -802,8 +802,12 @@ def _render_layout_editor(
     # 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다. 호기 목록은
     # 기준일로도 바뀐다(도면 이탈일이 지난 호기가 빠진다) — 빠뜨리면 브라우저가 옛 목록을 쥔 채
     # 「이 편집기에 없는 호기」로 적용 전체가 거부된다.
+    # 숨은 모듈(묶음 바둑판의 칸만 차지)도 기준일로 바뀐다 — 목록에 넣는다.
     roster = hashlib.sha256(
-        "|".join(f"{item['id']}:{int(bool(item['placed']))}" for item in inputs.items).encode()
+        "|".join(
+            [f"{item['id']}:{int(bool(item['placed']))}" for item in inputs.items]
+            + [f"ghost:{ghost['id']}" for ghost in inputs.ghosts]
+        ).encode()
     ).hexdigest()[:16]
     epoch = "|".join(
         (
@@ -844,8 +848,10 @@ def _render_layout_editor(
             canvas=canvas,
             unit_options=options,
             editor_groups={str(item["group"]) for item in inputs.items if item.get("group")},
-            # 놓이거나 자리·크기가 바뀐 모듈 묶음은 정본 바둑판 규칙으로 다시 놓는다.
+            # 놓이거나 자리·크기가 바뀐 모듈 묶음은 정본 바둑판 규칙과 견줘 바로잡거나 거부한다.
+            # 숨은 모듈은 그 칸을 차지하고 묶음과 함께 옮겨진다.
             editor_items=inputs.items,
+            editor_ghosts=inputs.ghosts,
             # 편집본에 없지만 새 설비명으로 쓸 수 없는 이름 — RawData 에서 지우고 저장 안 한 저장본
             # 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정.
             reserved=reserved_names(
