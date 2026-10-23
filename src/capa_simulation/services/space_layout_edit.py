@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -244,7 +245,9 @@ def editor_inputs(
 
     - 도면: 레이아웃반영여부(레이아웃표시 Y · 도면 이탈일 전) 이고 이 층에 X·Y·크기가 다 있는 호기
     - 트레이: 같은 대상 중 X·Y 가 없고 이 층이거나 층 미정인 호기. Main 설비 묶음의 다른 모듈이
-      이 층 도면에 서 있으면 그 형제는 트레이에 따로 내놓지 않는다(상자를 한 모듈에만 그린 설비).
+      이 층 도면에 서 있으면 그 형제는 트레이에 따로 내놓지 않고 묶음의 미배치 모듈(`placed`
+      거짓)로 함께 보낸다(상자를 한 모듈에만 그린 옛 설비) — 편집기가 그 묶음을 처음 옮기거나
+      키울 때 바둑판 제 칸에 함께 놓는다(`tile_module_group`).
     - 영역 하한: 이 층에 좌표가 있지만 편집기에 안 나오는 호기(N·반출/이설 완료 …)가 차지한 범위.
       저장 검증은 그런 행에도 캔버스 상한을 걸므로 영역을 그보다 줄이지 못하게 한다.
     - `appearance` 를 주면 보내는 호기(도면·트레이)에만 불러 그 면·글자·경계 날짜를 항목에 얹는다.
@@ -260,7 +263,10 @@ def editor_inputs(
     placed = target & on_floor & has_position & has_size
     keys = unit_keys(status)
     placed_keys = set(keys[placed].tolist())
-    tray = target & ~has_position & (on_floor | floorless) & ~keys.isin(placed_keys)
+    parents = _parents(status)
+    unplaced = target & ~has_position & (on_floor | floorless)
+    tray = unplaced & ~keys.isin(placed_keys)
+    companions = unplaced & keys.isin(placed_keys) & parents.notna()
     hidden = on_floor & has_position & has_size & ~placed
     reserved = (
         (
@@ -270,7 +276,6 @@ def editor_inputs(
         if hidden.any()
         else (0.0, 0.0)
     )
-    parents = _parents(status)
     standalone = placed & parents.isna()
     sizes = status.loc[standalone, list(SIZE_COLUMNS)]
     default_size = (
@@ -281,7 +286,7 @@ def editor_inputs(
     stages = stage_of or {}
     news = new_ids or set()
     arrivals = arrived_ids or set()
-    shown = placed | tray
+    shown = placed | tray | companions
     rows = status.loc[shown].assign(
         _placed=placed[shown], _floorless=floorless[shown], _parent=parents[shown]
     )
@@ -349,6 +354,163 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
         "parentIds": sorted(parent_ids),
         "confirmations": list(QUAL_CONFIRMATION_STATUSES),
     }
+
+
+# ------------------------------------------------------------------ 모듈 묶음 바둑판
+
+# 모듈 묶음 = 이 편집기에 실린 호기 가운데 Main 설비가 같은 것이 둘 이상인 묶음(2026-10-23 사용자
+# 요청). 사람이 고치는 것은 묶음 범위(이 층 도면에 선 모듈의 바깥 상자)뿐이고, 안의 모듈은 범위를
+# 바둑판으로 똑같이 나눈 칸에 자동으로 선다. 편집기 JS(`editor.js` 의 `tileModuleGroup`·
+# `naturalCompare`·`moduleGrid`)가 같은 규칙이고 `tests/test_space_module_group.py` 가 node 로 둘을
+# 대조한다 — 한쪽을 고치면 다른 쪽도 고친다.
+_TICKS_PER_UNIT: Final = 10**CANVAS_DECIMALS
+_NAME_TOKEN: Final = re.compile(r"[0-9]+|[^0-9]+")
+ModuleBox = tuple[float, float, float, float]
+
+
+def module_grid(count: int) -> tuple[int, int]:
+    """모듈 수 → (열, 행). 거의 정사각 격자다(열 = ⌈√n⌉, 행 = ⌈n ÷ 열⌉) — 넷이면 2×2,
+    둘이면 2×1."""
+    cols = max(1, math.ceil(math.sqrt(count)))
+    return cols, max(1, math.ceil(count / cols))
+
+
+def natural_name_key(name: str) -> tuple[tuple[tuple[int, int, str], ...], str]:
+    """설비명 자연 정렬 열쇠(…12A, 12B, 12C, 12D — `EQ2` 가 `EQ10` 앞). 숫자 덩이(ASCII 0-9)는
+    수로, 나머지 덩이는 소문자로 견주고, 덩이가 같으면 짧은 쪽이 앞이며, 그래도 같으면 글자 그대로
+    견준다."""
+    tokens = tuple(
+        (0, int(token), "") if "0" <= token[0] <= "9" else (1, 0, token.lower())
+        for token in _NAME_TOKEN.findall(name)
+    )
+    return tokens, name
+
+
+def _ticks(value: float) -> int:
+    """좌표·치수를 저장 정밀도 눈금(정수)으로 — 반올림은 JS 와 같은 `⌊v × 10^자리 + 0.5⌋`."""
+    return math.floor(value * _TICKS_PER_UNIT + 0.5)
+
+
+def tile_module_group(box: ModuleBox, names: Sequence[str]) -> dict[str, ModuleBox]:
+    """묶음 범위 `box`(X, Y, 폭, 높이)를 `module_grid` 열×행으로 **똑같이** 나눈 칸에 모듈을 하나씩
+    둔다(이름 → 칸).
+
+    - 차례는 설비명 자연 정렬(`natural_name_key`)로 왼→오, 위→아래 — 첫 모듈이 왼쪽 위다. 칸이
+      남으면(모듈 셋 → 2×2) 마지막 칸이 빈다.
+    - 칸 폭·높이는 저장 정밀도 눈금으로 범위 ÷ 열(행)의 내림이고 **마지막 열(오른쪽)·마지막
+      행(맨 아래)이 나머지를 받는다** — 칸들이 범위를 틈·겹침 없이 꼭 채운다.
+    - 범위가 칸마다 한 눈금(`1 / 10^자리`)보다 작으면 오른쪽·위로 넓힌다(영역 밖으로 나가는지는
+      부르는 쪽이 본다).
+    """
+    if not names:
+        return {}
+    cols, rows = module_grid(len(names))
+    left, bottom = _ticks(box[0]), _ticks(box[1])
+    width, height = max(_ticks(box[2]), cols), max(_ticks(box[3]), rows)
+    cell_w, cell_h = width // cols, height // rows
+    last_w, last_h = width - cell_w * (cols - 1), height - cell_h * (rows - 1)
+    scale = _TICKS_PER_UNIT
+    tiles: dict[str, ModuleBox] = {}
+    for index, name in enumerate(sorted(names, key=natural_name_key)):
+        col, row = index % cols, index // cols
+        x = left + col * cell_w
+        # 행은 위(0)에서 센다. 맨 아래 행이 범위 바닥에 서고 그 위로 칸 높이씩 쌓인다.
+        y = bottom if row == rows - 1 else bottom + last_h + (rows - 2 - row) * cell_h
+        w = last_w if col == cols - 1 else cell_w
+        h = last_h if row == rows - 1 else cell_h
+        tiles[name] = (x / scale, y / scale, w / scale, h / scale)
+    return tiles
+
+
+def _module_groups(editor_items: Sequence[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
+    """편집기에 실린 호기를 Main 설비로 묶어 모듈이 둘 이상인 묶음만(Main 설비 → 호기들)."""
+    groups: dict[str, list[Mapping[str, Any]]] = {}
+    for item in editor_items:
+        group = item.get("group")
+        if isinstance(group, str) and group:
+            groups.setdefault(group, []).append(item)
+    return {group: items for group, items in groups.items() if len(items) >= 2}
+
+
+def _box_ticks(values: Sequence[float | None]) -> tuple[int, int, int, int] | None:
+    """(X, Y, 폭, 높이) → 눈금 넷. 하나라도 없으면 None."""
+    x, y, w, h = values
+    if x is None or y is None or w is None or h is None:
+        return None
+    return _ticks(x), _ticks(y), _ticks(w), _ticks(h)
+
+
+def _regrid_module_groups(
+    changes: Sequence[UnitChange],
+    editor_items: Sequence[Mapping[str, Any]],
+    bounds: CanvasSize,
+) -> list[UnitChange]:
+    """이번 적용에서 이 층 도면에 놓이거나 자리·크기가 바뀐 모듈 묶음을 정본 규칙
+    (`tile_module_group`)으로 다시 놓는다.
+
+    범위는 적용 뒤 이 층 도면에 선 모듈(이번에 바뀐 것은 바뀐 값, 아닌 것은 편집기에 보낸 값)의
+    바깥 상자이고, 묶음의 모든 모듈(좌표가 없던 형제 포함)이 그 범위의 제 칸에 선다. 브라우저 값이
+    규칙과 다르면(반올림 한 끝 등) **규칙 값으로 바로잡는다** — 거부하지 않는다. 바뀐 모듈이 없는
+    묶음(바둑판이 아닌 옛 묶음 포함)은 건드리지 않는다. 묶음째 트레이로 빼거나 다른 층으로 보낸
+    묶음도 그대로다. 한 묶음의 모듈이 갈라지면(일부만 빼거나 보냄) 편집기가 막는 길이라
+    `ValueError` 다."""
+    by_id = {change.unit_id: change for change in changes}
+    fixed: dict[str, UnitChange] = {}
+    added: list[UnitChange] = []
+    for group, items in _module_groups(editor_items).items():
+        ids = [str(item["id"]) for item in items]
+        if not any(unit_id in by_id for unit_id in ids):
+            continue
+        before: dict[str, tuple[int, int, int, int] | None] = {}
+        boxes: list[tuple[int, int, int, int]] = []
+        apart: list[str] = []
+        for item, unit_id in zip(items, ids, strict=True):
+            sent = (
+                _box_ticks([finite_or_none(item.get(key)) for key in ("x", "y", "w", "h")])
+                if bool(item.get("placed"))
+                else None
+            )
+            before[unit_id] = sent
+            change = by_id.get(unit_id)
+            now = (
+                sent
+                if change is None
+                else _box_ticks([change.x, change.y, change.w, change.h])
+                if change.placed and change.move_to is None
+                else None
+            )
+            if change is not None and now is None:
+                apart.append(unit_id)
+            if now is not None:
+                boxes.append(now)
+        if not boxes:
+            continue
+        if apart:
+            raise ValueError(
+                f"Main 설비 {group} 의 모듈은 묶음째 옮기거나 빼야 합니다 — "
+                f"{', '.join(sorted(apart, key=natural_name_key))} 만 따로 왔습니다."
+            )
+        left = min(box[0] for box in boxes)
+        bottom = min(box[1] for box in boxes)
+        right = max(box[0] + box[2] for box in boxes)
+        top = max(box[1] + box[3] for box in boxes)
+        scale = _TICKS_PER_UNIT
+        tiles = tile_module_group(
+            (left / scale, bottom / scale, (right - left) / scale, (top - bottom) / scale), ids
+        )
+        for unit_id in ids:
+            x, y, w, h = tiles[unit_id]
+            if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
+                raise ValueError(
+                    f"Main 설비 {group} 의 묶음 범위가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 "
+                    "벗어났습니다."
+                )
+            tile = UnitChange(unit_id, True, x, y, w, h, None)
+            if unit_id in by_id:
+                fixed[unit_id] = tile
+            elif before[unit_id] != _box_ticks([x, y, w, h]):
+                added.append(tile)
+    return [fixed.get(change.unit_id, change) for change in changes] + added
 
 
 # ------------------------------------------------------------------ 검증
@@ -585,6 +747,7 @@ def parse_editor_apply(
     unit_options: Mapping[str, Sequence[str]],
     editor_groups: Collection[str] = frozenset(),
     reserved: ReservedNames | None = None,
+    editor_items: Sequence[Mapping[str, Any]] = (),
 ) -> EditorApply:
     """브라우저 적용값을 검증한다. **하나라도 어긋나면 `ValueError`** — 일부만 반영하지 않는다.
 
@@ -593,6 +756,11 @@ def parse_editor_apply(
     전체 목록은 `unit_options["parentIds"]` 다. `reserved`(`reserved_names`)는 편집본에 호기가
     없어도 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름이다. 다른 층으로 보낸 호기의 좌표는 그
     층 영역을 여기서 모르므로 범위를 보지 않는다 — `apply_layout_edits` 가 그 층 캔버스 안으로 민다.
+
+    `editor_items`(이번 편집기에 보낸 호기 `editor_inputs(...).items`)를 주면 이 층 도면에
+    놓이거나 자리·크기가 바뀐 Main 설비 모듈 묶음을 정본 규칙으로 다시 놓는다
+    (`_regrid_module_groups` — 브라우저 값이 규칙과 다르면 규칙 값으로 바로잡고, 좌표가 없던 형제도
+    제 칸에 놓는다).
     """
     held = _reserved_reasons(reserved or ReservedNames())
     targets = {floor_label(key): key for key in floors if key != floor}
@@ -660,6 +828,7 @@ def parse_editor_apply(
         if raw.get("created") is not None and (w is None or h is None):
             raise ValueError(f"새 호기 {unit_id} 의 크기가 없습니다.")
         changes.append(UnitChange(unit_id, placed, x, y, w, h, move_to))
+    changes = _regrid_module_groups(changes, editor_items, bounds)
     raw_marks = payload.get("marks")
     marks: tuple[FloorLayoutMark, ...] | None = None
     if raw_marks is not None:

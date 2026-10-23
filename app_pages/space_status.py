@@ -844,6 +844,8 @@ def _render_layout_editor(
             canvas=canvas,
             unit_options=options,
             editor_groups={str(item["group"]) for item in inputs.items if item.get("group")},
+            # 놓이거나 자리·크기가 바뀐 모듈 묶음은 정본 바둑판 규칙으로 다시 놓는다.
+            editor_items=inputs.items,
             # 편집본에 없지만 새 설비명으로 쓸 수 없는 이름 — RawData 에서 지우고 저장 안 한 저장본
             # 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정.
             reserved=reserved_names(

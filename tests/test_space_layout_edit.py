@@ -89,7 +89,10 @@ def test_inputs_split_the_floor_into_drawing_and_tray() -> None:
     assert inputs.default_size == (12.0, 7.0)
 
 
-def test_a_module_group_standing_on_the_floor_keeps_its_coordless_siblings_off_the_tray() -> None:
+def test_a_module_group_standing_on_the_floor_sends_its_coordless_siblings_with_the_group() -> None:
+    """상자를 한 모듈에만 그린 옛 설비 — 좌표 없는 형제는 트레이 칩이 아니라 그 묶음의 미배치
+    모듈로 함께 간다(편집기가 묶음을 처음 옮기거나 키울 때 바둑판 제 칸에 함께 놓는다 — 서랍에서는
+    거른다)."""
     master = _master(
         {"설비명": "M-1", "Main 설비": "BIG", "X좌표": 50.0, "Y좌표": 30.0},
         {"설비명": "M-2", "Main 설비": "BIG", "X좌표": None, "Y좌표": None},
@@ -98,8 +101,9 @@ def test_a_module_group_standing_on_the_floor_keeps_its_coordless_siblings_off_t
     inputs = editor_inputs(_status(master), floor=FLOOR)
 
     by_id = {item["id"]: item for item in inputs.items}
-    assert by_id["M-1"]["group"] == "BIG"
-    assert "M-2" not in by_id
+    assert by_id["M-1"]["group"] == "BIG" and by_id["M-1"]["placed"] is True
+    assert by_id["M-2"]["group"] == "BIG" and by_id["M-2"]["placed"] is False
+    assert by_id["M-2"]["x"] is None and by_id["M-2"]["w"] == 12.0
 
 
 def test_arrivals_from_another_floor_are_drawn_last() -> None:
