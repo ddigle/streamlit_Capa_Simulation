@@ -316,6 +316,9 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_FLAG_FILL": "#B45309",
     "SPACE_FLAG_INK": "#FFFFFF",
     "SPACE_HATCH": "#4B5563",
+    # 배치 편집기 정렬선(끌거나 놓는 것이 다른 호기·요소의 선에 붙을 때). 선택 테(강조색)·
+    # 경고(빨강)와 갈리는 자홍이고 캔버스와 3:1 이상이다.
+    "SPACE_GUIDE": "#DB2777",
     # ------------------------------------------------------------------ 스크롤바 색
     "SCROLLBAR_TRACK": "#ECEEF1",
     "SCROLLBAR_THUMB": "#8F9399",
@@ -499,6 +502,7 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_FLAG_FILL": "#F59E0B",
     "SPACE_FLAG_INK": "#111111",
     "SPACE_HATCH": "#E5E7EB",
+    "SPACE_GUIDE": "#F472B6",
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
     "SCROLLBAR_TRACK": "#22222A",
     "SCROLLBAR_THUMB": "#55555F",
@@ -632,6 +636,7 @@ if TYPE_CHECKING:
     SPACE_FLAG_FILL: Final[str] = ""
     SPACE_FLAG_INK: Final[str] = ""
     SPACE_GRID: Final[str] = ""
+    SPACE_GUIDE: Final[str] = ""
     SPACE_HATCH: Final[str] = ""
     SPACE_LABEL_TEXT: Final[str] = ""
     SPACE_LINE_TYPE_FILLS: Final[dict[str, str]] = {}

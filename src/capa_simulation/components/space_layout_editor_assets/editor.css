@@ -161,6 +161,11 @@
 .sle-range-handle { opacity: 1; pointer-events: auto; }
 /* 숨은 모듈(레이아웃표시 N·도면 이탈)이 차지한 칸 — 그 모듈은 그리지 않고 칸만 점선으로 보인다. */
 .sle-ghost-cell { fill: none; stroke: var(--sle-muted); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* 정렬선 — 끌거나 놓는 것의 변·가운데가 다른 호기·요소(모듈 묶음은 범위)의 같은 선에 붙으면 그 선을 긋는다. 놓을 자리
+   미리 보기(서랍·팔레트에서 끄는 동안)는 같은 색의 옅은 상자다. 눌림을 받지 않는다. */
+.sle-guides { pointer-events: none; }
+.sle-guide { stroke: var(--sle-guide); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sle-drop-preview { fill: var(--sle-guide); fill-opacity: 0.08; stroke: var(--sle-guide); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .sle-marquee { fill: var(--sle-accent); fill-opacity: 0.08; stroke: var(--sle-accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 
 /* ---- 팔레트 ---- */

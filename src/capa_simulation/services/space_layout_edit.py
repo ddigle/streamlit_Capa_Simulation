@@ -349,7 +349,8 @@ def editor_inputs(
 
 
 def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
-    """편집기의 호기 추가 폼 선택지. 크기 힌트는 공정소분류별 가운데 크기(모듈 행 제외)."""
+    """편집기의 호기 추가 폼 선택지. 크기 힌트는 공정소분류별 가운데 크기(모듈 행 제외). 서랍에서
+    크기 없는 호기를 놓을 때 빌릴 앞 3자리 크기(`prefix_sizes`)도 함께 보낸다."""
 
     def choices(column: str) -> list[str]:
         values = master[column].dropna().astype(str).str.strip()
@@ -376,7 +377,60 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
         "existingIds": sorted(unit_ids | parent_ids),
         "parentIds": sorted(parent_ids),
         "confirmations": list(QUAL_CONFIRMATION_STATUSES),
+        "prefixSizes": prefix_sizes(master),
     }
+
+
+# 서랍에서 크기 없는 호기를 놓을 때 크기를 빌릴 설비를 고르는 열쇠 — 설비명 앞 몇 글자
+# (2026-10-23 사용자 결정). 편집기 JS(`editor.js` 의 `// <edit-tools>` 구획 `namePrefix`)가 같은
+# 규칙이다.
+NAME_PREFIX_LENGTH: Final = 3
+
+
+def name_prefix(name: object) -> str:
+    """설비명 앞 3자리 — 앞뒤 공백을 걷은 첫 세 글자(대소문자 그대로, 글자는 코드 포인트).
+    세 글자보다 짧거나 비면 ``""``(빌리지 않는다)."""
+    if not _present(name):
+        return ""
+    text = str(name).strip()
+    return text[:NAME_PREFIX_LENGTH] if len(text) >= NAME_PREFIX_LENGTH else ""
+
+
+def prefix_sizes(master: pd.DataFrame) -> dict[str, dict[str, dict[str, Any]]]:
+    """설비명 앞 3자리 → 그 앞 3자리이고 크기(Xsize·Ysize 가 0 보다 큼)가 있는 설비 가운데
+    설비명 자연 정렬(`natural_name_key`)이 가장 뒤인 설비의 ``{"name", "w", "h"}``.
+
+    배치 편집기 서랍에서 크기 없는 호기를 놓을 때, 이번 편집에서 놓은 같은 앞 3자리 설비가
+    없으면 이 크기를 빌린다(없으면 이 층 가운데 크기 — 2026-10-23 사용자 결정). ``master`` 는
+    편집본(저장본 + 저장 안 한 편집)이다. Main 설비 모듈 묶음(Main 설비가 같은 행이 둘 이상)의
+    모듈(``"module"``)과 그 밖의 설비(``"unit"``)는 따로 고른다 — 모듈 크기는 묶음 범위의 한
+    칸이라 서로 빌리지 않는다."""
+    out: dict[str, dict[str, dict[str, Any]]] = {"unit": {}, "module": {}}
+    if master.empty:
+        return out
+    names = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    widths = pd.to_numeric(master["Xsize"], errors="coerce")
+    heights = pd.to_numeric(master["Ysize"], errors="coerce")
+    parents = _parents(master)
+    modules = parents.map(parents.value_counts()).fillna(0).ge(2)
+    best: dict[tuple[str, str], tuple[Any, str, float, float]] = {}
+    for name, raw_w, raw_h, module in zip(names, widths, heights, modules, strict=True):
+        prefix = name_prefix(name)
+        width, height = finite_or_none(raw_w), finite_or_none(raw_h)
+        if not prefix or width is None or height is None or width <= 0 or height <= 0:
+            continue
+        kind = "module" if bool(module) else "unit"
+        key = natural_name_key(str(name))
+        current = best.get((kind, prefix))
+        if current is None or key > current[0]:
+            best[(kind, prefix)] = (key, str(name), width, height)
+    for (kind, prefix), (_, name, width, height) in sorted(best.items()):
+        out[kind][prefix] = {
+            "name": name,
+            "w": rounded_to_canvas(width),
+            "h": rounded_to_canvas(height),
+        }
+    return out
 
 
 # ------------------------------------------------------------------ 모듈 묶음 바둑판

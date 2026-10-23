@@ -412,22 +412,27 @@ def test_dropping_from_the_tray_keeps_the_tray_scroll_position() -> None:
 
 
 def test_several_tray_chips_can_be_picked_and_dropped_together() -> None:
-    """Ctrl·Shift(⌘)+누르기로 서랍 칩 여럿을 고르고, 고른 칩 하나를 끌면 모두 한 격자로 함께
-    놓인다.
+    """Ctrl(⌘)+누르기로 서랍 칩을 하나씩 더하거나 빼고, Shift+누르기로 기준 칩부터 그 칩까지(보이는
+    차례) 고르며(2026-10-23 사용자 요청 — Ctrl+Shift 는 그 범위를 더한다), 고른 칩 하나를 끌면 모두
+    한 격자로 함께 놓인다.
 
     배치는 모듈 설비를 한 번에 놓는 격자(`placeFromTray`)를 그대로 쓴다. 고르지 않은 칩을 끌면
     지금처럼 그 칩만 놓이고, 수식키 없이 누르면 그 칩 하나만 골라진다. 놓은 뒤에는 놓은 것이 모두
-    골라진 채다.
+    골라진 채다. 범위 판정은 `tests/test_space_editor_tools.py` 가 node 로 돌린다.
     """
     chip = JS[JS.index("function buildChip(") : JS.index("function renderItems()")]
-    assert "const additive = event.shiftKey || event.ctrlKey || event.metaKey" in chip
-    assert "placeManyFromTray(lead, picked, p)" in chip
-    assert "additive ? toggleTrayPick(list) : select(lead.id)" in chip
+    assert "const keys = { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey }" in chip
+    assert "placeManyFromTray(lead, picked, p, free)" in chip
+    assert "() => pickChip(lead, list, keys)" in chip
+    pick = JS[JS.index("function pickChip(") : JS.index("function placeManyFromTray(")]
+    assert "trayRangeIds(order, S.trayAnchor, lead.id)" in pick
+    assert "visible: !chip.hidden" in pick and "keys.ctrl ? [...S.selection]" in pick
+    assert "S.trayAnchor = lead.id" in pick and "if (keys.ctrl) toggleTrayPick(list)" in pick
     many = JS[JS.index("function placeManyFromTray(") : JS.index("function placeFromTray(")]
     assert "placeFromTray(lead, list, p," in many
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
     assert "S.selection = new Set(onePerGroup(name ? shown.map((m) => m.id) : [lead.id]))" in place
-    assert "Ctrl·Shift" in HTML
+    assert "<b>Ctrl</b>" in HTML and "<b>Shift</b>" in HTML and "<b>Ctrl+Shift</b>" in HTML
 
 
 def test_the_tray_lists_units_by_name_and_can_be_searched() -> None:

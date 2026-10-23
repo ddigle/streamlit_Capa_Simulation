@@ -889,8 +889,9 @@ def test_a_group_dropped_from_the_tray_spans_the_old_tray_grid_and_is_split_even
     assert result["trays"] == [{"w": 24.0, "h": 16.0}]
     tiles = tile_module_group((0.0, 0.0, 24.0, 16.0), ["G-1A", "G-1B", "G-1C", "G-1D"])
     assert {tile[2:] for tile in tiles.values()} == {(12.0, 8.0)}
+    plan = JS[JS.index("function trayPlan(") : JS.index("function placeFromTray(")]
+    assert "trayModuleRange(sizes, SCALE)" in plan
     place = JS[JS.index("function placeFromTray(") : JS.index("function addMark(")]
-    assert "trayModuleRange(sizes, SCALE)" in place
     assert (
         "layModules(piece.mods, fitRange(spot, piece.mods.length), "
         "naturalSlots(piece.mods.map((m) => m.id)))" in place
@@ -1172,7 +1173,10 @@ def test_one_group_edit_is_one_undo_step() -> None:
         ("function moveItems(list, dx, dy) {", "function setSizes(list, patchOf) {"),
         ("function setSizes(list, patchOf) {", "function retileModules(item) {"),
         ("function retileModules(item) {", "function setMarkProps(item, patch) {"),
-        ("function placeFromTray(lead, list, p, name) {", "function addMark(kind, at) {"),
+        (
+            "function placeFromTray(lead, list, p, name, free) {",
+            "function addMark(kind, at, free) {",
+        ),
     ):
         body = _between(name, end)
         assert body.count("commit(") == 1, name

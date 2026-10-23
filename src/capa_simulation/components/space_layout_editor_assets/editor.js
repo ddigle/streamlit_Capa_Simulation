@@ -13,6 +13,9 @@ export default function (component) {
     // 와도 브라우저가 쥔 날을 지킨다.
     asOf: '', dataAsOf: '', sent: new Set(), lastSent: '', faderTarget: '', faderFrame: 0, faderBusy: false,
     commitTimer: 0, faderKey: '',
+    // 서랍에서 놓은 호기 id(놓은 차례) — 크기 없는 호기가 같은 앞 3자리 설비의 크기를 빌릴 때 본다(`recentSizes`).
+    // 서랍 Shift 범위의 기준 칩(`trayAnchor`), 도면 요소 붙여넣기의 비켜 놓기 차례(`pasteSerial`), 상태 줄 한 줄 알림(`flash`).
+    placedLog: [], trayAnchor: null, pasteSerial: 0, flash: '', hover: null, guideTimer: 0,
   })
   // 보기 전용(Space 층 상세 뷰어). 같은 도면을 그리되 편집 도구를 숨기고, 끌기는 화면 이동,
   // 누르기는 그 호기의 정보 한 줄이다.
@@ -80,6 +83,9 @@ export default function (component) {
   const defaultSize = data.defaultSize || { w: 12, h: 7 }
   const NEW_UNIT = data.newUnit || {}
   const EXISTING_IDS = new Set((NEW_UNIT.existingIds || []).map(String))
+  // 앞 3자리 → 편집본에서 설비명 자연 정렬이 가장 뒤인 같은 앞 3자리 설비의 크기({unit|module: {앞 3자리: {name, w, h}}},
+  // 파이썬 `prefix_sizes`). 서랍에서 크기 없는 호기를 놓을 때 빌린다(`borrowedSize`).
+  const PREFIX_SIZES = NEW_UNIT.prefixSizes && typeof NEW_UNIT.prefixSizes === 'object' ? NEW_UNIT.prefixSizes : {}
   const MAX_ZOOM = 8
   const ZOOM_STEP = 1.25
   const DRAG_THRESHOLD_PX = 3
@@ -130,8 +136,8 @@ export default function (component) {
   const fontSizeOf = (raw) => (raw === null || raw === undefined || raw === '' || !FONT_SIZES.includes(Number(raw)) ? null : Number(raw))
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -144,6 +150,7 @@ export default function (component) {
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
   const overlay = svg.querySelector('.sle-overlay')
+  const guidesLayer = svg.querySelector('.sle-guides')
   const stage = q('.sle-stage')
   const resizeHandle = q('.sle-resize')
   const drawer = q('.sle-drawer')
@@ -387,6 +394,116 @@ export default function (component) {
   }
   // </module-tiling>
 
+  // ---------------------------------------------------------------- 편집 도구 판정(순수 함수)
+  // 정렬선 붙임·앞 3자리 크기 불러오기·서랍 Shift 범위·도면 요소 붙여넣기 자리(2026-10-23 사용자 요청)의 판정이다.
+  // `tests/test_space_editor_tools.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 시험한다(앞 3자리는 파이썬
+  // `space_layout_edit.name_prefix` 와 대조). 그래서 바깥 이름을 쓰지 않는다(정밀도 `scale` 도 인자다).
+  // <edit-tools>
+  // 상자 {x, y, w, h} 의 세로 정렬선(왼·가운데·오른 x)과 가로 정렬선(아래·가운데·위 y — 데이터 Y 는 위로 간다).
+  function linesX(b) {
+    return [b.x, b.x + b.w / 2, b.x + b.w]
+  }
+  function linesY(b) {
+    return [b.y, b.y + b.h / 2, b.y + b.h]
+  }
+  // 움직이는 선들(moving) 가운데 하나를 목표 선(targets)의 하나에 붙이는 이동량 — 거리가 tol 이하인 짝 가운데 가장 가까운
+  // 것(같으면 먼저 본 짝). 없으면 null.
+  function nearestSnap(moving, targets, tol) {
+    let best = null
+    for (const m of moving) {
+      for (const t of targets) {
+        const d = t - m
+        if (Math.abs(d) <= tol && (best === null || Math.abs(d) < Math.abs(best))) best = d
+      }
+    }
+    return best
+  }
+  // 그릴 정렬선 — 상자 box 의 선(useX·useY 는 쓸 선 번호: 0 왼·아래, 1 가운데, 2 오른·위) 가운데 다른 상자(others)의 어느
+  // 선과 eps 안에서 같은 것. 세로선은 {axis: 'x', at, from, to}(from·to 는 데이터 Y), 가로선은 {axis: 'y', at, from, to}(X)이고
+  // 길이는 box 와 그 선을 함께 쓰는 상자들을 모두 잇는다.
+  function guideSegments(box, others, eps, useX = [0, 1, 2], useY = [0, 1, 2]) {
+    const out = []
+    const scan = (axis, at, lines, span, own) => {
+      let from = own[0]
+      let to = own[1]
+      let hit = false
+      for (const o of others) {
+        if (!lines(o).some((v) => Math.abs(v - at) <= eps)) continue
+        const [lo, hi] = span(o)
+        from = Math.min(from, lo)
+        to = Math.max(to, hi)
+        hit = true
+      }
+      if (hit) out.push({ axis, at, from, to })
+    }
+    const xs = linesX(box)
+    const ys = linesY(box)
+    for (const k of useX) scan('x', xs[k], linesX, (o) => [o.y, o.y + o.h], [box.y, box.y + box.h])
+    for (const k of useY) scan('y', ys[k], linesY, (o) => [o.x, o.x + o.w], [box.x, box.x + box.w])
+    return out
+  }
+  // 설비명 앞 3자리 — 앞뒤 공백을 걷은 첫 세 글자(대소문자 그대로, 글자는 코드 포인트). 세 글자보다 짧으면 ''(빌리지 않는다).
+  function namePrefix(name) {
+    const chars = Array.from(String(name ?? '').trim())
+    return chars.length >= 3 ? chars.slice(0, 3).join('') : ''
+  }
+  // 크기 없는 호기(name, 종류 kind: 'unit' 호기 · 'module' Main 설비 모듈)가 빌릴 크기 {from, w, h}. 같은 앞 3자리·같은 종류
+  // 가운데 이번 편집에서 마지막으로 놓은 것(recent [{name, kind, w, h}] — 뒤가 나중), 없으면 편집본(저장본 + 저장 안 한 편집)에서
+  // 설비명 자연 정렬이 가장 뒤인 것(saved[kind][앞 3자리] = {name, w, h}, 파이썬 `prefix_sizes`). 둘 다 없으면 null — 지금
+  // 규칙(이 층 가운데 크기)으로 놓는다.
+  function borrowedSize(name, kind, recent, saved) {
+    const prefix = namePrefix(name)
+    if (!prefix) return null
+    const usable = (w, h) => Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0
+    for (let k = recent.length - 1; k >= 0; k -= 1) {
+      const r = recent[k]
+      if (r.kind === kind && namePrefix(r.name) === prefix && usable(r.w, r.h)) return { from: String(r.name), w: r.w, h: r.h }
+    }
+    const table = saved && Object.prototype.hasOwnProperty.call(saved, kind) ? saved[kind] : null
+    const s = table && Object.prototype.hasOwnProperty.call(table, prefix) ? table[prefix] : null
+    if (s && usable(Number(s.w), Number(s.h))) return { from: String(s.name), w: Number(s.w), h: Number(s.h) }
+    return null
+  }
+  // 서랍 Shift 범위 — 칩 차례 order([{id, visible, ids}], 서랍 그대로)에서 기준 칩 anchor 부터 누른 칩 target 까지(양 끝 포함)
+  // 지금 보이는 칩의 호기 id(묶음 칩은 한 칸 — 그 모듈 id 모두). 기준 칩이나 누른 칩이 목록에 없으면 null.
+  function trayRangeIds(order, anchor, target) {
+    const a = order.findIndex((chip) => chip.id === anchor)
+    const b = order.findIndex((chip) => chip.id === target)
+    if (a < 0 || b < 0) return null
+    const [lo, hi] = a < b ? [a, b] : [b, a]
+    return order.slice(lo, hi + 1).filter((chip) => chip.visible || chip.id === target).flatMap((chip) => chip.ids)
+  }
+  // 붙여넣기 이동량 {dx, dy} — 복사한 도면 요소들(원본 자리 [{x, y, w, h}])을 모양 그대로 옮긴다. at({x, y}, 데이터 좌표)이
+  // 있으면 그 자리가 묶음의 왼쪽 아래(마우스 자리 — 부르는 쪽이 격자·정렬선을 맞춘 자리), 없으면 원본에서 offset 만큼 오른쪽·
+  // 아래로 비킨다. 영역 canvas {w, h} 안으로 밀고 눈금(scale)에 맞춘다. 묶음이 영역보다 크면 null.
+  function pasteShift(marks, canvas, at, offset, scale) {
+    if (!marks.length) return null
+    const left = Math.min(...marks.map((m) => m.x))
+    const bottom = Math.min(...marks.map((m) => m.y))
+    const right = Math.max(...marks.map((m) => m.x + m.w))
+    const top = Math.max(...marks.map((m) => m.y + m.h))
+    if (right - left > canvas.w + 1e-9 || top - bottom > canvas.h + 1e-9) return null
+    const dx = at ? at.x - left : offset
+    const dy = at ? at.y - bottom : -offset
+    const tick = (v) => Math.round(v * scale) / scale
+    return {
+      dx: tick(Math.min(Math.max(dx, -left), canvas.w - right)),
+      dy: tick(Math.min(Math.max(dy, -bottom), canvas.h - top)),
+    }
+  }
+  // 새 층 블록 count 개의 연결 — 새 요소 넣기처럼 아직 블록이 가리키지 않는 층(taken 밖의 targets)을 차례로, 다 찼으면 첫 층.
+  function freeLinks(count, taken, targets) {
+    const used = new Set(taken)
+    const out = []
+    for (let k = 0; k < count; k += 1) {
+      const link = targets.find((target) => !used.has(target)) || targets[0] || ''
+      used.add(link)
+      out.push(link)
+    }
+    return out
+  }
+  // </edit-tools>
+
   const isUnit = (m) => m.kind === 'unit'
   const isMark = (m) => m.kind !== 'unit'
   const blocks = (m) => (m.kind === 'zone' && m.keepOut) || m.kind === 'shutter' || m.kind === 'door' || m.kind === 'column'
@@ -505,7 +622,7 @@ export default function (component) {
   }
   const snapshot = (item) => ({
     x: item.x, y: item.y, w: item.w, h: item.h, placed: item.placed, moveTo: item.moveTo, sizeGuessed: item.sizeGuessed,
-    rot: item.rot, label: item.label, group: item.group, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
+    sizeFrom: item.sizeFrom, rot: item.rot, label: item.label, group: item.group, color: item.color, hatch: item.hatch, keepOut: item.keepOut,
     link: item.link, fontSize: item.fontSize, fontColor: item.fontColor,
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
@@ -691,6 +808,131 @@ export default function (component) {
       top = Math.max(top, item.y + item.h)
     }
     return { right: ceilTo(right), top: ceilTo(top) }
+  }
+
+  // ---------------------------------------------------------------- 정렬선(편집)
+  // 끌어 옮기기·크기 바꾸기·서랍에서 놓기·새 도면 요소 놓기·붙여넣기 때(2026-10-23 사용자 요청), 움직이는 것의 왼·가운데·오른
+  // x 와 아래·가운데·위 y 가 화면에 보이는 다른 호기·도면 요소(모듈 묶음은 범위)의 같은 선과 화면 GUIDE_PX 안이면 그 선에
+  // 붙이고 정렬선을 그린다. 격자 붙임보다 먼저다. Alt 를 누른 채면 붙이지 않는다. 놓으면 선은 사라진다. 층·FAB 편집이 같다.
+  const GUIDE_PX = 6
+  const guideTol = () => GUIDE_PX * unitsPerPx()
+  // 선이 맞닿았는가 — 눈금 반 칸 안(가운데 선은 눈금 반 칸 끝을 가질 수 있다).
+  const GUIDE_EPS = 0.5 / SCALE
+  // 정렬선을 줄 상자 — 이 층 도면에 서 있고 지금 화면(viewBox)에 걸친 호기·도면 요소. 모듈 묶음은 범위(도면에 선 모듈의 바깥
+  // 상자) 하나다. exclude(움직이는 것의 id)는 빼고, 모듈 하나라도 빠지는 묶음은 통째로 뺀다. 숨은 모듈은 그 범위에만 든다.
+  function guideTargets(exclude) {
+    const view = { x0: S.view.x, x1: S.view.x + viewW(), y0: H() - (S.view.top + viewH()), y1: H() - S.view.top }
+    const counts = groupCounts()
+    const ranges = new Map()
+    const boxes = []
+    const keep = (b) => {
+      if (b.x > view.x1 || b.x + b.w < view.x0 || b.y > view.y1 || b.y + b.h < view.y0) return
+      boxes.push(b)
+    }
+    for (const m of [...S.items.values(), ...S.ghosts.values()]) {
+      if (!onCanvas(m)) continue
+      const key = isUnit(m) && m.group ? (m.ghost ? m.group : groupKeyOf(m)) : null
+      if (key && (counts.get(key) || 0) >= 2) {
+        const range = ranges.get(key) || { minX: Infinity, minY: Infinity, maxR: -Infinity, maxT: -Infinity, out: false, shown: false }
+        range.minX = Math.min(range.minX, m.x)
+        range.minY = Math.min(range.minY, m.y)
+        range.maxR = Math.max(range.maxR, m.x + m.w)
+        range.maxT = Math.max(range.maxT, m.y + m.h)
+        if (exclude.has(m.id)) range.out = true
+        if (!m.ghost) range.shown = true
+        ranges.set(key, range)
+        continue
+      }
+      if (m.ghost || exclude.has(m.id)) continue
+      keep({ x: m.x, y: m.y, w: m.w, h: m.h })
+    }
+    for (const r of ranges.values()) {
+      if (!r.out && r.shown) keep({ x: r.minX, y: r.minY, w: r.maxR - r.minX, h: r.maxT - r.minY })
+    }
+    return { boxes, xs: boxes.flatMap(linesX), ys: boxes.flatMap(linesY) }
+  }
+  // 정렬선(과 놓을 자리 미리 보기 preview {x, y, w, h})을 그린다. 맨 위 층이고 눌림을 받지 않는다.
+  function drawGuides(segments, preview) {
+    if (S.guideTimer) { clearTimeout(S.guideTimer); S.guideTimer = 0 }
+    const nodes = segments.map((s) => (s.axis === 'x'
+      ? el('line', { class: 'sle-guide', x1: s.at, x2: s.at, y1: H() - s.to, y2: H() - s.from })
+      : el('line', { class: 'sle-guide', x1: s.from, x2: s.to, y1: H() - s.at, y2: H() - s.at })))
+    if (preview) {
+      nodes.unshift(el('rect', { class: 'sle-drop-preview', x: preview.x, y: H() - (preview.y + preview.h), width: preview.w, height: preview.h }))
+    }
+    guidesLayer.replaceChildren(...nodes)
+  }
+  function clearGuides() {
+    if (S.guideTimer) { clearTimeout(S.guideTimer); S.guideTimer = 0 }
+    if (guidesLayer.firstChild) guidesLayer.replaceChildren()
+  }
+  // 끌기 없이 붙인 것(붙여넣기)의 정렬선은 잠깐 보였다 사라진다.
+  function flashGuides(segments) {
+    if (!segments.length) return
+    drawGuides(segments)
+    S.guideTimer = setTimeout(clearGuides, 900)
+  }
+  // 상자 {minX, minY, maxR, maxT} → {x, y, w, h}.
+  const boxRect = (b) => ({ x: b.minX, y: b.minY, w: b.maxR - b.minX, h: b.maxT - b.minY })
+  // 끄는 것이 붙을 정렬선 상자 — 끄는 동안 한 번 구하고, 화면(배율·이동)·영역이 바뀌면 다시 구한다.
+  function dragGuides(drag) {
+    const key = `${S.view.x}|${S.view.top}|${S.view.z}|${W()}|${H()}`
+    if (!drag.guides || drag.guides.key !== key) drag.guides = { key, ...guideTargets(new Set(drag.ids)) }
+    return drag.guides
+  }
+  // 크기 손잡이 방향 → 움직이는 선 번호(세로선 x, 가로선 y). e 오른쪽(2)·w 왼쪽(0)·n 위(2)·s 아래(0).
+  const edgeLines = (dir) => ({
+    x: dir.includes('e') ? [2] : dir.includes('w') ? [0] : [],
+    y: dir.includes('n') ? [2] : dir.includes('s') ? [0] : [],
+  })
+  // 끄는 중의 정렬선 붙임 — 손 그대로의 이동량(rawDx 오른쪽, rawDTop 화면 아래쪽)에서 정렬선에 닿는 축만 그 선에 붙인 이동량
+  // {dx, dTop}(닿지 않은 축은 null — 격자 붙임). 옮기기는 함께 움직이는 범위(모듈 묶음은 범위)의 세 선씩, 크기 바꾸기는
+  // 움직이는 변만 본다. free(Alt)면 붙이지 않는다.
+  function alignDrag(drag, rawDx, rawDTop, free) {
+    if (free || !['move', 'resize', 'range'].includes(drag.mode)) return { dx: null, dTop: null }
+    const g = dragGuides(drag)
+    const tol = guideTol()
+    let sx = null
+    let sy = null
+    if (drag.mode === 'move') {
+      if (!drag.box) return { dx: null, dTop: null }
+      const raw = { ...boxRect(drag.box), x: drag.box.minX + rawDx, y: drag.box.minY - rawDTop }
+      sx = nearestSnap(linesX(raw), g.xs, tol)
+      sy = nearestSnap(linesY(raw), g.ys, tol)
+    } else {
+      const b = drag.mode === 'range' ? drag.groups[0].range : drag.befores.get(drag.id)
+      const edges = edgeLines(drag.dir)
+      // 손 그대로 옮긴 변의 자리 — 0 왼쪽·아래, 2 오른쪽·위.
+      const xAt = { 0: b.x + rawDx, 2: b.x + b.w + rawDx }
+      const yAt = { 0: b.y - rawDTop, 2: b.y + b.h - rawDTop }
+      sx = nearestSnap(edges.x.map((k) => xAt[k]), g.xs, tol)
+      sy = nearestSnap(edges.y.map((k) => yAt[k]), g.ys, tol)
+    }
+    return { dx: sx === null ? null : rawDx + sx, dTop: sy === null ? null : rawDTop - sy }
+  }
+  // 끈 뒤 자리의 정렬선을 그린다(free 면 지운다). 옮기기는 세 선씩, 크기 바꾸기는 움직이는 변만.
+  function showDragGuides(drag, free) {
+    if (free || !['move', 'resize', 'range'].includes(drag.mode)) { clearGuides(); return }
+    const standing = drag.ids.map(itemOf).filter((m) => m && onCanvas(m))
+    if (!standing.length) { clearGuides(); return }
+    const edges = drag.mode === 'move' ? { x: [0, 1, 2], y: [0, 1, 2] } : edgeLines(drag.dir)
+    drawGuides(guideSegments(boxRect(bbox(standing)), dragGuides(drag).boxes, GUIDE_EPS, edges.x, edges.y))
+  }
+  // 서랍·팔레트·붙여넣기로 놓을 자리(왼쪽 아래 {x, y, w, h, segments}) — 점 p(화면 좌표 {x, top})가 가운데인 w×h 상자를 격자에
+  // 맞추고, 정렬선에 닿는 축은 그 선에 붙인다(free 면 붙이지 않는다). 영역 안으로 민다.
+  function dropSpot(p, w, h, free) {
+    const raw = { x: p.x - w / 2, y: H() - p.top - h / 2, w, h }
+    let x = snapDelta(raw.x)
+    let y = snapDelta(raw.y)
+    const g = free ? null : guideTargets(new Set())
+    if (g) {
+      const sx = nearestSnap(linesX(raw), g.xs, guideTol())
+      const sy = nearestSnap(linesY(raw), g.ys, guideTol())
+      if (sx !== null) x = raw.x + sx
+      if (sy !== null) y = raw.y + sy
+    }
+    const spot = { x: roundTo(clamp(x, 0, W() - w)), y: roundTo(clamp(y, 0, H() - h)), w, h }
+    return { ...spot, segments: g ? guideSegments(spot, g.boxes, GUIDE_EPS) : [] }
   }
 
   // ---------------------------------------------------------------- 확대·축소
@@ -1230,16 +1472,19 @@ export default function (component) {
     }
     chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다${list.length >= 2 ? '(범위 안 바둑판)' : ''}` : lead.label
     chip.onpointerdown = (event) => {
-      // Ctrl·Shift(⌘)를 누른 채 누르면 서랍 안에서 여러 대를 고른다. 고른 칩 하나를 끌면 고른 것이 모두 함께 놓인다.
-      const additive = event.shiftKey || event.ctrlKey || event.metaKey
+      // Ctrl(⌘)을 누른 채 누르면 서랍 안에서 한 대씩 더하거나 빼고, Shift 는 기준 칩(마지막으로 그냥·Ctrl 로 누른 칩)부터 그
+      // 칩까지 지금 보이는 차례로 고른다(Ctrl+Shift 는 그 범위를 더한다). 고른 칩 하나를 끌면 고른 것이 모두 함께 놓인다.
+      const keys = { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey }
       const picked = pickedTrayEntries()
       const together = picked.length > 1 && picked.some((entry) => entry.lead.id === lead.id)
       const units = together ? picked.reduce((n, entry) => n + entry.list.length, 0) : 0
+      const dropping = together ? picked.flatMap((entry) => entry.list) : list
       ghostDrag(
         event,
         together ? `${picked.length}개 함께 (${units}대)` : lead.group ? `${lead.group} (모듈 ${list.length})` : lead.label,
-        (p) => (together ? placeManyFromTray(lead, picked, p) : placeFromTray(lead, list, p)),
-        () => (additive ? toggleTrayPick(list) : select(lead.id)),
+        (p, free) => (together ? placeManyFromTray(lead, picked, p, free) : placeFromTray(lead, list, p, undefined, free)),
+        () => pickChip(lead, list, keys),
+        () => trayPlan(dropping).footprint,
       )
     }
     if (lead.created) {
@@ -1846,6 +2091,21 @@ export default function (component) {
       + `${item.group ? ` · Main 설비 ${item.group}` : ''} · X ${item.x} · Y ${item.y} · ${item.w}×${item.h}`
   }
 
+  // 서랍에서 크기 없이 놓은 호기의 한 줄 — 「크기를 SMP-DAF-11 에서 불러옴」(같은 앞 3자리 설비에서 빌림), 빌릴 곳이 없어 이 층
+  // 가운데 크기로 어림했으면 그렇게. 그 크기는 트레이로 다시 빼면 버린다(`sizeGuessed`). 사람이 크기를 고치면 사라진다.
+  function sizeNote(list) {
+    const guessed = list.filter((m) => m && isUnit(m) && !m.ghost && m.sizeGuessed && onCanvas(m))
+    if (!guessed.length) return ''
+    const sources = [...new Set(guessed.map((m) => m.sizeFrom).filter(Boolean))]
+    const parts = []
+    if (sources.length) {
+      const named = sources.length > 3 ? `${sources.slice(0, 3).join(', ')} 외 ${sources.length - 3}곳` : sources.join(', ')
+      parts.push(`크기를 ${named} 에서 불러옴`)
+    }
+    if (guessed.some((m) => !m.sizeFrom)) parts.push('크기 없는 호기는 이 층 가운데 크기로 놓음')
+    return `${parts.join(' · ')}(트레이로 다시 빼면 버림)`
+  }
+
   function updateStatus() {
     if (VIEW) {
       const chosen = selectedItems()
@@ -1867,9 +2127,13 @@ export default function (component) {
       b.textContent = strong
       statusBox.append(b)
     }
+    // 방금 한 일의 한 줄(복사·붙여넣기) — 다음 고르기·편집에서 지운다.
+    if (S.flash) add(S.flash)
     if (chosen.length > 1) {
       add('선택 ', `${chosen.length}개`)
       add(`${expanded(chosen).length}개가 함께 움직입니다 — Shift/Ctrl+클릭으로 더하거나 빼기 · Esc 선택 풀기`)
+      const sized = sizeNote(expanded(chosen))
+      if (sized) add(sized)
     } else if (item && isMark(item)) {
       add('선택 ', `${MARK_KINDS[item.kind].name}${item.label ? ` ${item.label}` : ''}`)
       add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}${item.rot ? ` · ${item.rot}°` : ''}`)
@@ -1884,11 +2148,15 @@ export default function (component) {
       const hidden = mods.filter((m) => m.ghost).map((m) => m.id)
       if (hidden.length) add(`숨은 모듈 ${hidden.join(', ')}(레이아웃표시 N·도면 이탈)는 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
       if (untiledModules(item)) add(`${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다`)
+      const sized = sizeNote(mods)
+      if (sized) add(sized)
     } else if (item) {
       add('선택 ', item.label)
       if (onCanvas(item)) add(`X ${item.x} · Y ${item.y} · 크기 ${item.w}×${item.h}`)
       else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
       if (item.group) add(`Main 설비 ${item.group}`)
+      const sized = sizeNote([item])
+      if (sized) add(sized)
     } else {
       add(HINT)
     }
@@ -1932,6 +2200,7 @@ export default function (component) {
 
   function setSelection(ids, primary) {
     commitTyping()
+    S.flash = ''
     const known = ids.filter((id) => S.items.has(id))
     S.selection = new Set(onePerGroup(primary && known.includes(primary) ? [primary, ...known] : known))
     S.selected = primary && S.selection.has(primary) ? primary : ([...S.selection].pop() ?? null)
@@ -1989,6 +2258,7 @@ export default function (component) {
   // 실행 취소 기록. set = 값 되돌리기, create = 새로 만든 것 지우기, delete = 지운 것 되살리기.
   function pushUndo(ops) {
     if (!ops.length) return
+    S.flash = ''
     S.undo.push({ kind: 'ops', ops })
     if (S.undo.length > 200) S.undo.shift()
   }
@@ -2020,8 +2290,9 @@ export default function (component) {
     updateStatus()
   }
 
-  // 트레이 칩·팔레트에서 끌어 도면에 놓는다. 끌지 않고 누르기만 하면 onClick.
-  function ghostDrag(event, label, onDrop, onClick) {
+  // 트레이 칩·팔레트에서 끌어 도면에 놓는다. 끌지 않고 누르기만 하면 onClick. footprint()가 놓을 상자 크기 {w, h} 를 주면
+  // 도면 위에서 놓일 자리(격자·정렬선에 맞춘 `dropSpot`)와 정렬선을 미리 보인다. onDrop(p, free) 의 free 는 Alt 다.
+  function ghostDrag(event, label, onDrop, onClick, footprint) {
     if (event.button !== 0) return
     // 아래 preventDefault 가 초점 옮기기를 막는다 — 적던 이름은 지금 대상에 먼저 확정한다(`commitTyping`).
     commitTyping()
@@ -2044,24 +2315,38 @@ export default function (component) {
       const r = trayBox.getBoundingClientRect()
       return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
     }
+    // 놓을 수 있는 도면 위 점(화면 좌표 {x, top}) — 도면 밖이거나 비치기 전의 서랍 위면 null.
+    const dropPoint = (e) => {
+      const box = svg.getBoundingClientRect()
+      const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom
+        && !(overTray(e) && !peek)
+      return inside ? toUser(e) : null
+    }
+    let size = null
+    const preview = (e) => {
+      const p = footprint ? dropPoint(e) : null
+      if (p && !size) size = footprint()
+      if (!p || !size) { clearGuides(); return }
+      const spot = dropSpot(p, size.w, size.h, e.altKey)
+      drawGuides(spot.segments, spot)
+    }
     const finish = (e, dropped) => {
       source.onpointermove = null
       source.onpointerup = source.onpointercancel = source.onlostpointercapture = null
       ghost.remove()
       drawer.classList.remove('is-peek')
+      clearGuides()
       if (!dropped) return
       const still = Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD_PX
       if (still) { onClick(); return }
-      const box = svg.getBoundingClientRect()
-      const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom
-        && !(overTray(e) && !peek)
-      const p = inside ? toUser(e) : null
-      if (p) onDrop(p)
+      const p = dropPoint(e)
+      if (p) onDrop(p, e.altKey)
     }
     source.onpointermove = (e) => {
       if (!shown && Math.hypot(e.clientX - startX, e.clientY - startY) >= DRAG_THRESHOLD_PX) { host.append(ghost); shown = true }
       if (shown && fromTray && !peek && !overTray(e)) { peek = true; drawer.classList.add('is-peek') }
       move(e)
+      if (shown) preview(e)
     }
     source.onpointerup = (e) => finish(e, true)
     source.onpointercancel = (e) => finish(e, false)
@@ -2085,20 +2370,62 @@ export default function (component) {
     setSelection([...ids], on ? null : list[0].id)
   }
 
-  // 고른 칩 여럿을 한 번에 놓는다 — 모두 한 격자로 붙여(`placeFromTray` 와 같은 배치) 놓은 자리가 가운데다.
-  function placeManyFromTray(lead, picked, p) {
-    const list = picked.flatMap((entry) => entry.list)
-    placeFromTray(lead, list, p, `${picked.length}개(${list.length}대)`)
+  // 서랍 칩 누르기(끌지 않음). 그냥 누르면 그 칩 하나, Ctrl 은 더하거나 빼기 — 둘 다 그 칩이 Shift 범위의 기준 칩이 된다. Shift 는
+  // 기준 칩부터 누른 칩까지 지금 보이는 차례(검색 반영)로 고르고(기준 칩은 그대로), Ctrl+Shift 는 그 범위를 더한다. 묶음 칩은
+  // 한 칸이다. 기준 칩이 서랍에 없으면(놓았거나 처음) 그냥 누른 것과 같다.
+  function pickChip(lead, list, keys) {
+    if (keys.shift) {
+      const order = [...trayList.children]
+        .filter((chip) => chip.__entry)
+        .map((chip) => ({ id: chip.dataset.id, visible: !chip.hidden, ids: chip.__ids }))
+      const range = trayRangeIds(order, S.trayAnchor, lead.id)
+      if (range) {
+        const tray = new Set(order.flatMap((chip) => chip.ids))
+        const kept = keys.ctrl ? [...S.selection].filter((id) => tray.has(id)) : []
+        setSelection([...kept, ...range], lead.id)
+        return
+      }
+    }
+    S.trayAnchor = lead.id
+    if (keys.ctrl) toggleTrayPick(list)
+    else select(lead.id)
   }
 
-  function placeFromTray(lead, list, p, name) {
-    // 크기는 실제 설비 치수라 영역에 맞춰 자르지 않는다. 없을 때만 추정 크기(같은 공정의 가운데 크기)를 쓰고
-    // 그 사실을 기억한다 — 다시 트레이로 빼면 추정 크기를 버려 「크기 없음」으로 돌아간다.
-    const sizeOf = (m) => ({
-      w: roundTo(hasSize(m) ? m.w : defaultSize.w),
-      h: roundTo(hasSize(m) ? m.h : defaultSize.h),
-      guessed: !hasSize(m),
-    })
+  // 고른 칩 여럿을 한 번에 놓는다 — 모두 한 격자로 붙여(`placeFromTray` 와 같은 배치) 놓은 자리가 가운데다.
+  function placeManyFromTray(lead, picked, p, free) {
+    const list = picked.flatMap((entry) => entry.list)
+    placeFromTray(lead, list, p, `${picked.length}개(${list.length}대)`, free)
+  }
+
+  // 크기를 빌려 줄 종류 — Main 설비 모듈 묶음의 모듈('module')과 그 밖의 호기('unit')는 서로 빌리지 않는다(모듈 크기는 묶음
+  // 범위의 한 칸이다).
+  const sizeKind = (m) => (moduleMembers(m) ? 'module' : 'unit')
+  // 이번 편집에서 서랍으로 놓은 호기(놓은 차례 — 뒤가 나중)의 지금 크기 [{name, kind, w, h}]. 아직 도면에 서 있고, 이 층 가운데
+  // 크기로 어림한 것이 아닌(제 크기·사람이 고친 크기·다른 설비에서 불러온 크기) 호기만 크기를 빌려 준다(`borrowedSize`).
+  function recentSizes() {
+    return S.placedLog
+      .map((id) => S.items.get(id))
+      .filter((m) => m && isUnit(m) && onCanvas(m) && hasSize(m) && !(m.sizeGuessed && !m.sizeFrom))
+      .map((m) => ({ name: m.label, kind: sizeKind(m), w: m.w, h: m.h }))
+  }
+
+  // 서랍에서 놓을 덩이와 그 격자. 크기는 실제 설비 치수라 영역에 맞춰 자르지 않는다. 크기(Xsize·Ysize)가 없는 호기만 같은 앞
+  // 3자리·같은 종류 설비의 크기를 빌린다(2026-10-23 사용자 결정 — 이번 편집에서 마지막으로 놓은 것 → 편집본에서 설비명 자연 정렬이
+  // 가장 뒤인 것 → 이 층 가운데 크기). 빌리거나 어림한 크기는 `sizeGuessed` 로 기억한다 — 다시 트레이로 빼면 버려 「크기
+  // 없음」으로 돌아간다. 같이 놓는 호기 가운데 제 크기가 있는 것도 이번에 놓은 것으로 본다.
+  function trayPlan(list) {
+    const recent = recentSizes()
+    for (const m of list) {
+      for (const u of moduleMembers(m) || [m]) {
+        if (!u.ghost && hasSize(u)) recent.push({ name: u.label, kind: sizeKind(u), w: u.w, h: u.h })
+      }
+    }
+    const sizeOf = (m) => {
+      if (hasSize(m)) return { w: roundTo(m.w), h: roundTo(m.h), guessed: false, from: '' }
+      const borrowed = borrowedSize(m.label, sizeKind(m), recent, PREFIX_SIZES)
+      const size = borrowed || defaultSize
+      return { w: roundTo(size.w), h: roundTo(size.h), guessed: true, from: borrowed ? borrowed.from : '' }
+    }
     // 놓을 덩이. 모듈 묶음은 묶음 하나다 — 범위는 열 × 가장 큰 모듈 폭, 행 × 가장 큰 모듈 높이(`trayModuleRange`)이고 안은
     // 그 범위를 똑같이 나눈 바둑판(새로 놓기라 자연 정렬 — 첫 모듈 왼쪽 위)이다. 숨은 모듈도 제 칸에 함께 놓인다. 그 밖의
     // 호기는 제 크기 하나씩이다.
@@ -2118,19 +2445,24 @@ export default function (component) {
     const [cols, rows] = moduleGrid(pieces.length)
     const cellW = Math.max(...pieces.map((piece) => piece.w))
     const cellH = Math.max(...pieces.map((piece) => piece.h))
-    if (cols * cellW > W() || rows * cellH > H()) {
-      S.note = `${name || lead.group || lead.label} (${roundTo(cols * cellW)}×${roundTo(rows * cellH)}) 가 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
+    return { pieces, cols, rows, cellW, cellH, footprint: { w: roundTo(cols * cellW), h: roundTo(rows * cellH) } }
+  }
+
+  function placeFromTray(lead, list, p, name, free) {
+    const { pieces, cols, rows, cellW, cellH, footprint } = trayPlan(list)
+    if (footprint.w > W() || footprint.h > H()) {
+      S.note = `${name || lead.group || lead.label} (${footprint.w}×${footprint.h}) 가 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
       updateStatus()
       return
     }
     S.note = ''
     const placed = pieces.flatMap((piece) => piece.units)
     const entries = placed.map((m) => ({ id: m.id, before: snapshot(m) }))
-    const left = snapDelta(p.x - (cols * cellW) / 2)
-    const bottom = snapDelta(H() - p.top - (rows * cellH) / 2)
+    // 놓은 점이 가운데인 격자 상자를 격자·정렬선에 맞춘 자리(`dropSpot` — 끄는 동안 미리 보인 자리와 같다).
+    const at = dropSpot(p, footprint.w, footprint.h, free)
     const spots = pieces.map((piece, i) => ({
-      x: roundTo(left + (i % cols) * cellW),
-      y: roundTo(bottom + (rows - 1 - Math.floor(i / cols)) * cellH),
+      x: roundTo(at.x + (i % cols) * cellW),
+      y: roundTo(at.y + (rows - 1 - Math.floor(i / cols)) * cellH),
       w: piece.w,
       h: piece.h,
     }))
@@ -2140,6 +2472,7 @@ export default function (component) {
         m.w = piece.sizes[k].w
         m.h = piece.sizes[k].h
         m.sizeGuessed = piece.sizes[k].guessed
+        m.sizeFrom = piece.sizes[k].from
       })
       const spot = { ...spots[i], x: roundTo(spots[i].x + shift.dx), y: roundTo(spots[i].y + shift.dy) }
       if (piece.mods) {
@@ -2156,6 +2489,7 @@ export default function (component) {
     // 여럿을 함께 놓았으면 놓은 것을 모두 고른 채로 둔다 — 그대로 끌어 자리를 옮길 수 있다(모듈 묶음은 한 대로). 숨은 모듈은
     // 고르지도 보이지도 않는다.
     const shown = placed.filter((m) => !m.ghost)
+    S.placedLog.push(...shown.map((m) => m.id))
     S.selection = new Set(onePerGroup(name ? shown.map((m) => m.id) : [lead.id]))
     S.selected = lead.id
     renderItems()
@@ -2165,20 +2499,23 @@ export default function (component) {
     svg.focus({ preventScroll: true })
   }
 
-  // 도면 요소를 넣는다. 자리를 주지 않으면 지금 보이는 화면의 가운데.
-  function addMark(kind, at) {
+  // 이 도면의 층 블록이 가리키는 층.
+  const linkedFloors = () => [...S.items.values()].filter((m) => m.kind === 'block').map((m) => m.link)
+  // 도면 요소를 넣는다. 자리를 주지 않으면(누르기) 지금 보이는 화면의 가운데, 끌어 놓았으면 놓은 점이 가운데이고 격자·정렬선에
+  // 맞춘다(`dropSpot`, free 면 정렬선에 붙이지 않는다).
+  function addMark(kind, at, free) {
     const spec = MARK_KINDS[kind]
     if (!spec) return
     const [w, h] = spec.size
     S.seq += 1
     const id = `MK-${Date.now().toString(36)}-${S.seq}`
     const center = at || { x: S.view.x + viewW() / 2, top: S.view.top + viewH() / 2 }
+    const spot = at ? dropSpot(at, w, h, free) : { x: snapDelta(center.x - w / 2), y: snapDelta(H() - center.top - h / 2) }
     // 새 층 블록은 아직 블록이 없는 첫 층을 가리킨다(모두 있으면 첫 층). 선택 칸에서 바꾼다 — 블록은 연결이 필수다.
-    const linked = new Set([...S.items.values()].filter((m) => m.kind === 'block').map((m) => m.link))
-    const link = kind === 'block' ? (LINK_TARGETS.find((target) => !linked.has(target)) || LINK_TARGETS[0] || '') : ''
+    const link = kind === 'block' ? freeLinks(1, linkedFloors(), LINK_TARGETS)[0] : ''
     const item = {
       id, kind, label: spec.label, stage: '', group: null, placed: true, moveTo: null, isNew: false, arrived: false,
-      x: snapDelta(center.x - w / 2), y: snapDelta(H() - center.top - h / 2), w, h, rot: 0,
+      x: spot.x, y: spot.y, w, h, rot: 0,
       color: kind === 'zone' ? 'blue' : '', hatch: false, keepOut: false, link, fontSize: null, fontColor: '',
     }
     fit(item)
@@ -2187,6 +2524,104 @@ export default function (component) {
     renderItems()
     setSelection([id], id)
     svg.focus({ preventScroll: true })
+  }
+
+  // ---------------------------------------------------------------- 도면 요소 복사·붙여넣기
+  // Ctrl+C 는 고른 것 가운데 도면 요소만 복사한다 — 호기는 복사하지 않는다(2026-10-23 사용자 요청). 클립보드는 시스템 클립보드가
+  // 아니라 이 편집기의 것이다 — 같은 브라우저 탭에서 층을 바꿔도 남게 sessionStorage(범위마다 — 층끼리, FAB 은 FAB 끼리)에 두고,
+  // 막힌 창에서는 이 페이지 안 쪽지(`window.__capaSpaceClipboard`)로 산다. Ctrl+V 는 마우스가 도면 위면 그 자리(묶음 가운데,
+  // 모양 그대로 — 격자·정렬선에 맞춘다), 아니면 원본에서 격자 한 칸씩 비켜(거듭 붙이면 한 칸씩 더) 붙인다. 영역 안으로 밀고, 새
+  // id 를 받고, 되돌리기 한 번이며, 붙인 것이 골라진다. 층 블록은 새로 넣을 때처럼 아직 블록이 없는 층을 가리킨다.
+  const CLIP_KEY = `capa.space.clipboard.${SCOPE}`
+  const clipMemo = window.__capaSpaceClipboard || (window.__capaSpaceClipboard = {})
+  // 복사해 둘 도면 요소 값(자리·모양·글자 — id 는 붙일 때 새로 받는다).
+  const clipOf = (m) => ({
+    kind: m.kind, x: m.x, y: m.y, w: m.w, h: m.h, rot: m.rot || 0, label: m.label || '', color: m.color || '',
+    hatch: Boolean(m.hatch), keepOut: Boolean(m.keepOut), link: m.link || '', fontSize: m.fontSize ?? null,
+    fontColor: m.fontColor || '',
+  })
+  function writeClipboard(marks) {
+    const clip = { at: Date.now(), marks }
+    clipMemo[SCOPE] = clip
+    try {
+      window.sessionStorage.setItem(CLIP_KEY, JSON.stringify(clip))
+    } catch {
+      // 저장소가 막힌 창 — 이 페이지 안 쪽지로 붙인다.
+    }
+  }
+  // 붙일 수 있는 클립보드(이 범위에서 그리는 종류이고 자리·크기가 숫자인 요소만) — 둘 가운데 나중 것. 없으면 null.
+  function readClipboard() {
+    let stored = null
+    try {
+      stored = JSON.parse(window.sessionStorage.getItem(CLIP_KEY) || 'null')
+    } catch {
+      stored = null
+    }
+    const memo = clipMemo[SCOPE] || null
+    const clip = [stored, memo].filter((c) => c && Array.isArray(c.marks)).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0))[0]
+    if (!clip) return null
+    const marks = clip.marks
+      .filter((m) => m && typeof m === 'object' && drawable(String(m.kind)))
+      .map((m) => ({ ...m, kind: String(m.kind), x: num(m.x), y: num(m.y), w: num(m.w), h: num(m.h) }))
+      .filter((m) => [m.x, m.y, m.w, m.h].every(Number.isFinite) && m.w > 0 && m.h > 0)
+    return marks.length ? { at: Number(clip.at) || 0, marks } : null
+  }
+  function copyMarks() {
+    const chosen = selectedItems()
+    const marks = chosen.filter(isMark)
+    const units = chosen.length - marks.length
+    if (!marks.length) {
+      if (!units) return false
+      S.flash = '호기는 복사하지 않습니다 — 도면 요소(영역·글자·기둥 …)만 복사합니다'
+      updateStatus()
+      return true
+    }
+    writeClipboard(marks.map(clipOf))
+    S.pasteSerial = 0
+    S.flash = `도면 요소 ${marks.length}개 복사 — Ctrl+V 로 붙입니다${units ? ' · 호기는 복사하지 않습니다' : ''}`
+    updateStatus()
+    return true
+  }
+  function pasteMarks(free) {
+    const clip = readClipboard()
+    if (!clip) return false
+    if (S.clipAt !== clip.at) { S.clipAt = clip.at; S.pasteSerial = 0 }
+    const outer = boxRect(bbox(clip.marks))
+    let at = null
+    let segments = []
+    if (S.hover) {
+      const spot = dropSpot(S.hover, outer.w, outer.h, free)
+      at = { x: spot.x, y: spot.y }
+      segments = spot.segments
+    } else {
+      S.pasteSerial += 1
+    }
+    const shift = pasteShift(clip.marks, { w: W(), h: H() }, at, Math.max(S.step, 1) * S.pasteSerial, SCALE)
+    if (!shift) {
+      S.note = `붙일 도면 요소(${roundTo(outer.w)}×${roundTo(outer.h)})가 편집 영역 ${W()}×${H()} 보다 커서 붙이지 않았습니다`
+      updateStatus()
+      return true
+    }
+    const links = freeLinks(clip.marks.filter((m) => m.kind === 'block').length, linkedFloors(), LINK_TARGETS)
+    const ids = []
+    for (const source of clip.marks) {
+      S.seq += 1
+      const id = `MK-${Date.now().toString(36)}-${S.seq}`
+      const item = readMark({ ...source, id, x: source.x + shift.dx, y: source.y + shift.dy })
+      if (item.kind === 'block') item.link = links.shift()
+      fit(item)
+      S.items.set(id, item)
+      ids.push(id)
+    }
+    pushUndo(ids.map((id) => ({ op: 'create', id })))
+    S.note = ''
+    renderItems()
+    setSelection(ids, ids[ids.length - 1])
+    S.flash = `도면 요소 ${ids.length}개를 붙였습니다`
+    updateStatus()
+    flashGuides(segments)
+    svg.focus({ preventScroll: true })
+    return true
   }
 
   // 자리를 바꾼 것을 다시 그린다. 도면에 새로 서거나 빠진 것(좌표 없던 모듈이 바둑판에 놓임 등)이 있으면 목록째 다시 만든다.
@@ -2325,6 +2760,7 @@ export default function (component) {
         m.w = NaN
         m.h = NaN
         m.sizeGuessed = false
+        m.sizeFrom = ''
       }
     }
     ops.push(...restoreGhosts(units))
@@ -2467,6 +2903,7 @@ export default function (component) {
     const drag = S.drag
     if (!drag) return
     S.drag = null
+    clearGuides()
     svg.classList.remove('is-panning')
     if (drag.mode === 'pan') return
     if (drag.mode === 'marquee') {
@@ -2744,6 +3181,8 @@ export default function (component) {
     svg.setPointerCapture(event.pointerId)
   }
   svg.onpointermove = (event) => {
+    // 붙여넣기 자리(마우스가 도면 위면 그 자리)로 마지막 포인터 자리를 기억한다 — 편집에서만.
+    if (!VIEW) S.hover = toUser(event)
     const drag = S.drag
     if (!drag || event.pointerId !== drag.pointerId) return
     if (drag.mode === 'pan' || drag.mode === 'view') {
@@ -2784,8 +3223,10 @@ export default function (component) {
       updateStatus()
       return
     }
-    const dx = snapDelta(p.x - drag.startX)
-    const dTop = snapDelta(p.top - drag.startTop)
+    // 이동량은 격자에 맞추되, 정렬선에 닿는 축은 그 선에 붙인 이동량이 이긴다(Alt 를 누른 채면 붙이지 않는다).
+    const aligned = alignDrag(drag, p.x - drag.startX, p.top - drag.startTop, event.altKey)
+    const dx = aligned.dx ?? snapDelta(p.x - drag.startX)
+    const dTop = aligned.dTop ?? snapDelta(p.top - drag.startTop)
     if (drag.mode === 'move') {
       // 이동량을 격자에 맞춘다(제자리 좌표를 격자로 끌어당기지 않는다). 화면에서 아래로 끌면 Y 는 준다. 모듈 묶음은
       // 범위를 옮겨 바둑판으로 다시 놓는다.
@@ -2816,6 +3257,7 @@ export default function (component) {
     else for (const m of dragged) position(S.groups.get(m.id), m)
     drag.moved = true
     drawSelectionBox()
+    showDragGuides(drag, event.altKey)
     markDragOverlap(new Set(drag.ids))
     updateStatus()
   }
@@ -2823,6 +3265,7 @@ export default function (component) {
     const drag = S.drag
     if (!drag || (event && event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return
     S.drag = null
+    clearGuides()
     if (drag.mode === 'pan') { svg.classList.remove('is-panning'); return }
     if (drag.mode === 'view') {
       svg.classList.remove('is-panning')
@@ -2861,6 +3304,7 @@ export default function (component) {
     updateStatus()
   }
   svg.onlostpointercapture = () => { if (S.drag) svg.onpointerup({ pointerId: S.drag.pointerId }) }
+  svg.onpointerleave = () => { S.hover = null }
   // Ctrl+휠(터치패드 오므리기 포함)은 마우스 자리를 축으로 확대·축소한다. 맨 휠은 확대 중에도 도면을
   // 옮기지 않고 페이지로 보낸다 — 확대한 도면이 먼저 굴러가다 끝에 닿아야 페이지가 굴러가면, 도면
   // 위아래의 단추로 가려던 스크롤이 도면부터 옮겨 놓는다(2026-10-10 사용자 요청). 화면 이동은 끌기
@@ -2872,6 +3316,7 @@ export default function (component) {
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault()
       zoomAt(S.view.z * Math.exp(-event.deltaY * unit * 0.002), toUser(event))
+      if (!VIEW) S.hover = toUser(event)
       return
     }
     const placing = S.drag && (S.drag.mode === 'move' || S.drag.mode === 'resize' || S.drag.mode === 'range')
@@ -2958,6 +3403,10 @@ export default function (component) {
     if (!ctrl && event.key === '0') { event.preventDefault(); zoomAt(1); return }
     if (event.key === 'Escape' && S.selection.size) { event.preventDefault(); select(null); return }
     if (S.drag) return
+    // 도면 요소 복사·붙여넣기(호기는 복사하지 않는다). 한글 자판에서도 듣게 글쇠 자리(code)도 본다. 글 칸에서는 위에서 비켰다.
+    const letter = event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v' : event.key.toLowerCase()
+    if (ctrl && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
+    if (ctrl && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
     const chosen = selectedItems()
     const standing = chosen.filter(onCanvas)
     // 지우기는 도면에 포커스가 있을 때만 — 툴바 단추를 누른 뒤 Backspace 가 고른 것을 지우지 않게.
@@ -3051,7 +3500,8 @@ export default function (component) {
   blockOpen.onclick = () => openFloor(selectedMark(), true)
   for (const button of host.querySelectorAll('.sle-palette [data-kind]')) {
     const kind = button.dataset.kind
-    button.onpointerdown = (event) => ghostDrag(event, MARK_KINDS[kind].name, (p) => addMark(kind, p), () => addMark(kind))
+    const [w, h] = MARK_KINDS[kind].size
+    button.onpointerdown = (event) => ghostDrag(event, MARK_KINDS[kind].name, (p, free) => addMark(kind, p, free), () => addMark(kind), () => ({ w, h }))
   }
 
   // ---------------------------------------------------------------- 편집기에서 호기 추가

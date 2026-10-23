@@ -130,6 +130,8 @@ def _palette() -> dict[str, str]:
         "flag": tokens.SPACE_FLAG_FILL,
         "flag-ink": tokens.SPACE_FLAG_INK,
         "hatch": tokens.SPACE_HATCH,
+        # 배치 편집기 정렬선·놓을 자리 미리 보기.
+        "guide": tokens.SPACE_GUIDE,
         "mark-ink": tokens.SPACE_TEXT,
         "mark-muted": tokens.SPACE_LABEL_TEXT,
         # 도면 요소 이름표의 「글자 색」(`fontColor`). 편집기가 `var(--sle-mark-text-<키>)` 로 쓴다.

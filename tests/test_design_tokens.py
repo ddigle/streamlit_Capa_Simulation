@@ -597,14 +597,14 @@ def test_space_unit_faces_carry_readable_names_in_both_themes() -> None:
 
 
 def test_space_unit_rings_stand_out_from_the_canvas() -> None:
-    """보기 화면 호기 테(반입 전 주황 점선·반출/이설 예정 노랑·선택 후광)는 캔버스와 3:1
-    이상이다(비텍스트 대비). 밝은 캔버스 위 노랑은 혼자 3:1 에 못 미쳐 짙은 바깥 테를 두르고,
-    그 짙은 테가 캔버스와 3:1·노랑과 3:1 이상이어야 한다. 어두운 테마는 노랑 혼자 넉넉해 짙은
-    테가 캔버스색이다."""
+    """보기 화면 호기 테(반입 전 주황 점선·반출/이설 예정 노랑·선택 후광)와 배치 편집기
+    정렬선은 캔버스와 3:1 이상이다(비텍스트 대비). 밝은 캔버스 위 노랑은 혼자 3:1 에 못 미쳐 짙은
+    바깥 테를 두르고, 그 짙은 테가 캔버스와 3:1·노랑과 3:1 이상이어야 한다. 어두운 테마는 노랑
+    혼자 넉넉해 짙은 테가 캔버스색이다."""
     weak: list[str] = []
     for mode, palette in tokens._PALETTES.items():
         canvas = palette["SPACE_CANVAS"]
-        for name in ("SPACE_RING_PRE_ARRIVAL", "SPACE_RING_HALO"):
+        for name in ("SPACE_RING_PRE_ARRIVAL", "SPACE_RING_HALO", "SPACE_GUIDE"):
             ratio = contrast_ratio(palette[name], canvas)
             if ratio < 3:
                 weak.append(f"{mode}.{name} on canvas: {ratio:.2f}")

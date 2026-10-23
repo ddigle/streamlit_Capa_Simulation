@@ -426,6 +426,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       숨은 모듈도 되돌리고, 묶음 이름을 바꿔도 처음 Main 설비 이름(`groupKeyOf`)으로 이어진다. 보기 화면은 그대로다.
       묶음째 도면에서 빠지면(빼기·Delete·다른 층 보내기) 숨은 모듈은 처음(편집기에 실린) 자리로 돌아간다
       (`restoreGhosts`, 빼기·보내기와 같은 되돌리기 기록) — 옮기지 않고 바로 뺀 것과 같다.
+  - **편집 조작 넷**(2026-10-23 사용자 요청, 층·FAB 편집 공통). 순수 판정은 `// <edit-tools>` 구획(`nearestSnap`·
+    `guideSegments`·`namePrefix`·`borrowedSize`·`trayRangeIds`·`pasteShift`·`freeLinks`)이고
+    `tests/test_space_editor_tools.py` 가 node 로 돌린다(둘레 함수는 선언 그대로 떼어 돌린다).
+    - 정렬선: 끌기·크기(`alignDrag`)·서랍·팔레트 놓기·붙여넣기(`dropSpot`)에서 움직이는 것(모듈 묶음은 범위 — 1차 규칙)의
+      왼·가운데·오른 x 와 아래·가운데·위 y 가 화면(viewBox)에 걸친 다른 호기·요소(묶음은 범위, `guideTargets`)의 선과 화면
+      6px 안이면 그 선에 붙는다. 격자보다 먼저이고 Alt 면 붙지 않는다. 선은 맨 위 `sle-guides` 층에 긋고(색 `guide` =
+      `tokens.SPACE_GUIDE`) 놓으면 지운다. 크기 바꾸기는 움직이는 변만 본다.
+    - 크기 불러오기: 서랍에서 크기 없는 호기만, 같은 앞 3자리·같은 종류(모듈 / 그 밖) 가운데 이번 편집에서 마지막으로 놓은
+      것(`S.placedLog`, 지금도 서 있고 층 가운데 크기 어림이 아닌 것) → 편집본에서 설비명 자연 정렬이 가장 뒤인 것
+      (`newUnit.prefixSizes` = 파이썬 `prefix_sizes`) → 이 층 가운데 크기(`defaultSize`). 빌린 크기는 `sizeGuessed`·
+      `sizeFrom` 이고 상태 줄에 「크기를 … 에서 불러옴」을 쓴다(`trayPlan`).
+    - 서랍 Shift 범위(`pickChip`): 기준 칩(마지막으로 그냥·Ctrl 로 누른 칩, `S.trayAnchor`)부터 누른 칩까지 지금 보이는
+      차례, Ctrl+Shift 는 더하기, 묶음 칩은 한 칸.
+    - 도면 요소 복사·붙여넣기(`copyMarks`·`pasteMarks`): 호기는 복사하지 않는다. 클립보드는 범위별 sessionStorage
+      (`capa.space.clipboard.<floor|fab>`) + 페이지 안 쪽지(`window.__capaSpaceClipboard`)이고 모든 읽기·쓰기가 try 안이다.
+      마우스가 도면 위면 그 자리가 묶음 가운데(`dropSpot`), 아니면 원본에서 max(격자, 1)씩 비켜(거듭하면 더) 붙인다. 영역
+      안으로 밀고 새 id·되돌리기 한 번이며 층 블록은 빈 층(`freeLinks`)을 가리킨다. 글 칸 입력 중에는 가로채지 않는다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
@@ -708,6 +725,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     레이아웃표시 그대로). 묶음째 빼거나 다른 층으로 보낸 적용에 옮겨진 숨은 모듈이 오면 거부한다(편집기는 처음 자리로
     되돌려 보낸다) — 빼면 숨은 모듈은 이 층 제자리에 남고, 보내면 `_harmonize_groups` 가 층을 맞추며 X·Y 를 비운다.
     상자 없는 숨은 형제는 세지 않는다. RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
+  - `prefix_sizes`(`new_unit_options` 의 `prefixSizes`)는 설비명 앞 3자리(`name_prefix` — 앞뒤 공백을 걷은 첫 세 글자,
+    세 글자 미만은 빈 글자)마다 편집본에서 크기가 있는 설비 가운데 설비명 자연 정렬이 가장 뒤인 것의 크기다. 모듈 묶음의
+    모듈(Main 설비가 같은 행이 둘 이상)과 그 밖을 따로 둔다 — 편집기 서랍의 크기 불러오기가 쓴다(편집기 절).
 - `src/capa_simulation/services/floor_layout_profile.py` — 층 배경 도면의 치수 읽기·캔버스 기본값·크기 상한과 좌표 반올림
   (`rounded_to_canvas`)의 한 곳이다(`space_layout_edit`·`fab_layout` 이 import 한다 — 거꾸로 두면 순환).
 - `src/capa_simulation/services/display_order_editor.py`, `display_order_csv.py` — 웹 편집 표시순서 규칙의 검증·범위
