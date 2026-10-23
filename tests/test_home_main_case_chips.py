@@ -463,6 +463,28 @@ def test_an_official_chip_drawn_before_the_official_changed_loads_nothing(seeded
     assert _chip(app, OFFICIAL_CHIP_KEY)[0] == f"공식 v{official.release_no}"
 
 
+def test_an_official_chip_drawn_before_a_new_release_elsewhere_loads_nothing(
+    seeded: Seeded,
+) -> None:
+    """다른 곳에서 새 공식버전을 발행한 뒤 낡은 공식 칩을 누르면 옛 공식버전을 올리지 않는다.
+
+    세션의 공식버전은 입장 화면 요약이 30초마다 보는 값이라 그린 짝과 다시 푼 짝이 함께 낡는다 —
+    콜백이 저장소의 지금 공식버전과 대조하고, 다음 회차가 곧바로 다시 확인하게 세션 값을 버린다.
+    """
+    app = _app(seeded)
+    app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
+    assert _active(app) == (seeded.case_scenario, seeded.newer_revision)
+    seeded.repository.publish_official_revision(
+        seeded.case_scenario, seeded.older_revision, release_name="다른 세션 발행"
+    )
+
+    app = _ran(app.button(key=OFFICIAL_CHIP_KEY).click().run())
+
+    assert _active(app) == (seeded.case_scenario, seeded.newer_revision)
+    assert _notices(app) == [changed_slot_notice(0)]
+    assert OFFICIAL_SESSION_KEY not in app.session_state
+
+
 def test_unsaved_edits_paint_no_chip_and_do_not_say_outside_the_slots(seeded: Seeded) -> None:
     """저장하지 않은 편집이 있으면 칠하지 않는다 — 머리 띠·사이드바 배지처럼 「미저장」이 먼저다.
 

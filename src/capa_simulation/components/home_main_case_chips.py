@@ -23,7 +23,8 @@ HOME 토글 기본값 쓰기(`_release_stale_ui_state`)와 리비전 프리셋 �
 사이 다른 세션이 Case 를 다시 지정했거나 가리키던 시나리오를 보관했으면 그린 짝은 낡았다. 그래서
 칩은 (슬롯 차례, 그린 짝)만 넘기고, 콜백이 같은 재료(`_slot_chips_now`)로 지금 짝을 풀어 그린 것과
 다르면 아무것도 올리지 않고 칩 밑 한 칸에 알린다 — 사이드바가 고를 수 없는 보관 시나리오를 칩이
-올리는 일이 없다. 뒤이은 회차가 새 칩을 그린다.
+올리는 일이 없다. 뒤이은 회차가 새 칩을 그린다. 공식 칩은 세션 값이 그린 짝과 함께 낡을 수 있어
+저장소의 지금 공식버전과 한 번 더 대조한다(`_official_still_current`).
 
 상태마다(2026-10-23 사용자 결정 — 제안대로):
 
@@ -56,7 +57,10 @@ from pathlib import Path
 import streamlit as st
 
 from capa_simulation.components.home_main_cases import UNSET_CHOICE
-from capa_simulation.components.intro_summary import latest_official_identity
+from capa_simulation.components.intro_summary import (
+    forget_intro_summary_check,
+    latest_official_identity,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_edit_bar import pending_edit_labels
 from capa_simulation.components.scenario_status import (
@@ -68,7 +72,7 @@ from capa_simulation.home_state import HOME_PREFERENCE_TAB, HOME_TAB_KEY
 from capa_simulation.navigation import HOME
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import pinned_connections
-from capa_simulation.persistence.cache import load_main_case_targets
+from capa_simulation.persistence.cache import get_scenario_repository, load_main_case_targets
 from capa_simulation.scenario_activation import (
     active_persisted_revision_id,
     active_persisted_scenario_id,
@@ -97,6 +101,8 @@ MISSING_REVISION_HELP = "리비전 없음 — Preference 에서 다시 지정"
 # 눌리지 않는다 — 그린 뒤에 잠길 상태가 된 칩을 누르면 콜백이 다시 풀어 알림만 남긴다.
 _NO_TARGET: tuple[str | None, str | None] = (None, None)
 _CASE_CHIP_KEYS = (CASE1_CHIP_KEY, CASE2_CHIP_KEY)
+# 칩 셋에서 공식 칩의 차례.
+_OFFICIAL_SLOT = 0
 # 알림이 칩을 부르는 이름(슬롯 차례). 공식 칩 글자 `공식 vN` 은 그사이 바뀌었을 수 있어 번호를 뺀다.
 _SLOT_NAMES = (OFFICIAL_CHIP_TEXT, *(case_title(case_no) for case_no in MAIN_CASE_NUMBERS))
 HOME_PAGE_FILE = Path(HOME.path).name
@@ -303,6 +309,8 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
     if chip.disabled or chip.target != drawn:
         st.session_state[CHIP_NOTICE_KEY] = changed_slot_notice(index)
         return
+    if index == _OFFICIAL_SLOT and not _official_still_current(database_path, chip.target):
+        return
     scenario_id, revision_id = chip.target
     if scenario_id is None or revision_id is None:
         st.session_state[HOME_TAB_KEY] = HOME_PREFERENCE_TAB
@@ -319,6 +327,30 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
         failure = load_saved_revision(database_path, revision_id)
     if failure is not None:
         st.session_state[CHIP_NOTICE_KEY] = failure
+
+
+def _official_still_current(database_path: str, target: tuple[str | None, str | None]) -> bool:
+    """공식 칩의 짝이 저장소의 지금 공식버전인가. 아니면 알리고 세션의 공식버전을 버린다.
+
+    공식 칩을 푸는 세션 값(`latest_official_identity`)은 입장 화면 요약이 30초마다 다시 보는
+    값이라 그사이 다른 곳에서 새 공식버전을 발행했으면 낡았다 — 그린 짝과 다시 푼 짝이 함께 낡아
+    위의 대조로 잡히지 않는다. 누를 때만 도는 콜백이라 저장소를 바로 읽는다(회차마다 읽지 않는
+    규칙 23 과 무관). 낡았으면 `forget_intro_summary_check` 로 다음 회차가 공식버전을 곧바로 다시
+    확인해 칩을 새로 그린다.
+    """
+    try:
+        with pinned_connections(Path(database_path)):
+            release = get_scenario_repository(database_path).latest_official_release()
+    except BOOTSTRAP_ERRORS as exc:
+        st.session_state[CHIP_NOTICE_KEY] = (
+            f"공식버전을 읽지 못했습니다: {bootstrap_error_message(exc)}"
+        )
+        return False
+    if release is not None and (release.scenario_id, release.revision_id) == target:
+        return True
+    forget_intro_summary_check()
+    st.session_state[CHIP_NOTICE_KEY] = changed_slot_notice(_OFFICIAL_SLOT)
+    return False
 
 
 def chip_style(chips: tuple[SlotChip, ...], *, outside: bool) -> str:
