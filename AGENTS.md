@@ -203,6 +203,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     금지(`test_hidden_tab_rendering.py`). 제품별 비중(`product_share.py`)의 색 구분은 `test_categorical_palettes.py`.
   - `Main` 맨 위에는 결론 줄(최저 확보율 공정·기준 미달 수)도 「소요대수에 들지 않은 수요」 줄도 두지 않는다 — 계산
     알림은 Admin Area `알림 모음`(`components/alert_board.py`)이 시나리오 전체 기간으로 모은다. 측정률 가정 한 줄은 남는다.
+  - 제목 줄 끝 칸은 주요 Case 칩 셋(`공식 vN`·`Case1`·`Case2` — `components/home_main_case_chips.py`, 2026-10-23)이고
+    칩이 못 불러온 까닭은 그 밑 한 칸이다. 세 탭의 key·라벨은 `home_state.py`(칩이 미지정 Case 를 누르면 `Preference`).
 - `app_pages/load_conversion.py` — `생산 계획` 화면. `환산`·`PKG PLAN`·`수율` 탭으로 계획·수율을 편집하고
   부하량 환산을 보인다. 조건 카드·Guide(`page_guide.py`, `guides/load_conversion.md`)를 처음 적용한 화면이다.
   - 환산 조건은 조건 카드이고 환산은 그 탭이 열렸을 때만 한다. 작업 줄(적용·붙여넣기·가상 제품 등록)은 표 위, 붙여넣기와
@@ -384,6 +386,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
     저장 폼은 성공 회차에만 key 세대(`SAVE_FORM_GENERATION_KEY`)를 올려 비운다.
   - 저장은 부모 리비전의 가상 제품 이력에 세션 등록을 더해 넘긴다(`inherit_virtual_product_records`, 활성화 전에 읽음).
+  - **리비전 불러오기는 `load_saved_revision` 한 길이다** — 팝업 「불러오기」와 HOME 주요 Case 칩이 함께 쓴다(옛 리비전
+    호환 검사 → 활성화 → 필드 알림·적용 전 편집 목록 비우기·팝업 닫기, 다시 돌리기는 부르는 쪽 — 팝업은 `st.rerun()`,
+    칩은 콜백). `open_scenario_dialog_on` 은 팝업을 불러오기 구획·주어진 짝으로 연다(칩이 편집이 있을 때 같은 확인을
+    거치는 길).
 - `src/capa_simulation/components/space_layout.py` — Space 배치 집계(대수·점유율·층별 배치 `floor_placements`), 호기
   상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`)와 영역·금지 색을 만든다.
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
@@ -514,7 +520,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 리비전 스냅샷은 `st.cache_resource` 에 읽기 전용 한 벌을 두고 깊은 사본(`_private_copy`)을 넘긴다. 목록은 캐시하지
     않고, 무효화는 DB 를 바꾼 호출부의 `clear_*_cache()` 다(5장).
   - 표 저장 위치는 4장·`docs/data_model.md` 다. `compare_legacy_results.py` 의 대조 기준은 리비전 1 이다.
-- `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값을 UI·저장소 import 없이 선언한다.
+- `src/capa_simulation/home_state.py` — HOME 토글 일곱 개의 세션 키와 불변 기본값, 세 탭의 key·라벨(`HOME_TAB_KEY`)을
+  UI·저장소 import 없이 선언한다. 페이지 스크립트는 import 할 수 없어 탭 상수도 여기다(주요 Case 칩이 탭을 옮긴다).
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
   - 칸 클릭 콜백은 이동 대기 칸만 적고(`queue_home_cell`), HOME 프래그먼트 본문 첫 줄이 전달 칸을 적어 옮기며
     (`switch_to_queued_process_detail` → `open_process_detail`), 받는 페이지 맨 앞에서 꺼낸다(`take_process_detail_request`).
@@ -723,7 +730,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `begin_run()` 을 부르지 않는다(`tests/test_shortening_view_fragment.py`).
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·설명·상태 배지다(상태 접미는 사이드바
   라벨과 같은 문자열). `render_page_header_with_status` 는 진행 표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
-  돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다.
+  돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. `trailing` 을 주면 제목 줄 끝 칸에 그것을
+  그린다(HOME 주요 Case 칩) — 제목과 끝 칸은 `st.columns`(`TITLE_ROW_SPEC`)다. 가로 컨테이너는 `h1` 여백을 지운다(9장).
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
@@ -795,7 +803,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 서버 캐시는 요약(`get_intro_summary_payload`)과 토글 몫(`simulation_cache.shared_intro_toggle_store`) 둘이다.
     GAP 몫이 없으면 「준비 중」으로 보내고 페이지 뒤 `warm_intro_summary` 가 만든다.
   - 확인 주기는 `RECHECK_SECONDS` 이고 무효화는 `forget_intro_summary_check`(`tests/test_summary_recheck_paths.py`)다.
-    확인 때 본 `latest_official_revision` 을 머리 띠가 읽는다. 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나다.
+    확인 때 본 `latest_official_revision` 을 머리 띠가 읽는다(이름까지 든 같은 값 `latest_official_identity` 는 HOME 공식
+    칩). 라벨 id 는 `intro_overlay.SUMMARY_LABEL_ID` 하나다.
 - `src/capa_simulation/services/official_summary.py` — Summary 가 그리는 공식버전 6개월 요약(생산계획·B/N·부족
   대수·제품 비중)의 순수 계산이다. HOME 토글 기본값과 같은 화면이고 B/N 은 HOME 과 같은 순위 함수다.
   부족 대수는 B/N 공정이 그 달 실효 경고 기준까지 모자란 정수 대수다(6장 「경고 기준 필요대수」와 같은 식).
@@ -968,7 +977,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (주지 않으면 영문 「Choose an option」). 그 글자는 같은 이름의 시나리오가 있으면 「지정 안 함 (비움)」 으로
     비켜 선다(`unset_choice_label` — 1.63 은 같은 글자를 첫 선택지로 읽어 그 Case 를 비울 수 없었다).
   - Case1·Case2 가 같은 짝, Case 가 공식버전과 같은 리비전이면 저장하고 캡션으로 알린다(`main_case_overlap_notes`).
-    HOME Main 의 슬롯 고르기는 시안 답 뒤 2단계다(`services/main_cases.main_case_slots` 를 쓴다).
+    HOME 제목 줄에서 슬롯을 고르는 칩은 `home_main_case_chips` 다(같은 `services/main_cases.main_case_slots` 를 쓴다).
+- `src/capa_simulation/components/home_main_case_chips.py` — HOME 제목 줄 끝의 주요 Case 칩 셋(2026-10-23 사용자 결정 —
+  시안 C · 동작 (가)). 칩 글자는 `공식 vN`·`Case1`·`Case2` 뿐이고 시나리오·리비전은 단추 `help` 풍선이 말한다(사람 글은
+  `literal_markdown`). 지금 적용된 시나리오는 머리 띠가 말하므로 칩 옆에 적지 않는다.
+  - **누르면 사이드바에서 그 리비전을 불러온 것과 똑같다** — `scenario_status.load_saved_revision` 을 **콜백**에서
+    부른다(본문 `st.rerun()` 은 그 회차에 안 그린 위젯 값을 버린다 — 9장). 저장하지 않은 편집·적용 전 편집이 있으면
+    곧바로 올리지 않고 사이드바 팝업을 그 짝으로 연다(`open_scenario_dialog_on` — 같은 확인 칸·같은 단추).
+  - 칠하기(primary)는 세션 활성 시나리오·**리비전까지** 같은 칩만이고, 칠한 칩을 편집 없이 다시 누르면 아무것도 하지
+    않는다. 어느 칩도 칠하지 않으면 칩 줄 끝에 회색 「슬롯 밖」 한 마디(풍선 없음). 미지정 Case 는 점선 칩이고 누르면
+    `Preference` 탭(탭 key 를 콜백에서 적는다). 사라진 리비전·공식버전 없음은 잠근다(풍선이 까닭).
+  - 회차마다 DB 를 보지 않는다 — 공식은 `intro_summary.latest_official_identity`(머리 띠와 같은 세션 값), Case 는 주요
+    Case 쓰기 세대를 키로 한 캐시 `persistence/cache.load_main_case_targets` 다. `tests/test_home_main_case_chips.py`.
 - `src/capa_simulation/services/main_cases.py` — 주요 Case 슬롯 셋(공식버전·Case1·Case2)을 (글자, 시나리오 id, 리비전 id,
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
@@ -1453,6 +1473,8 @@ RQ_MODULE
 23. **모든 화면에서 회차마다 그리는 공통 요소는 DB 를 읽지 않는다.** 머리 띠·사이드바 조건 줄은 활성화·확인 때
     세션에 떠 둔 값(`scenario_activation.active_scenario_label`·`intro_summary.latest_official_revision`)만 읽고
     저장소는 팝업을 연 동안에만 읽는다 — `tests/test_app_navigation.py` 가 그리는 동안 저장소·연결 호출 0 을 지킨다.
+    HOME 제목 줄 주요 Case 칩도 같다 — 공식은 `intro_summary.latest_official_identity`, Case 는 주요 Case 쓰기 세대를
+    키로 한 캐시(`load_main_case_targets` — `clear_global_main_cases_cache()` 가 함께 비운다)다.
 24. **공용 프로필에는 모두가 함께 쓰는 설정(비교 대상·판정 기준 등)만 담는다** — 켜고 끄는 보기 토글을 담으면 남의
     화면까지 켜진다. 바뀐 것이 없는 쓰기는 쓰지 않는다 — 설비 DB 의 필요 단축 일정 공용 조회 조건
     (`save_shortening_filter_months`·`_processes`)은 저장소가 쓰기 트랜잭션 안에서 견주어 같으면 version 도 동기화 dirty
