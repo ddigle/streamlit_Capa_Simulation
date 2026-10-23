@@ -408,13 +408,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)는 버린다.
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
-  - **Main 설비 모듈 묶음**(편집기에 모듈 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선 모듈의 바깥
-    상자)만 고치고 안은 바둑판 자동 배치다(`tileModuleGroup` — 파이썬 정본 `space_layout_edit.tile_module_group` 과
-    같은 규칙, `// <module-tiling>` 구획을 `tests/test_space_module_group.py` 가 node 로 대조). 모듈 하나만 옮기거나
-    키우는 길은 없다 — 끌기·방향키·숫자 칸·Ctrl+방향키는 `movePlan`(묶음은 범위), 크기 손잡이는 묶음 범위 테두리
-    (`sle-range-handle`, 모듈 상자 손잡이는 `is-module` 로 숨김), 선택은 묶음당 한 대(`onePerGroup`), 빼기·다른 층
-    보내기·서랍 놓기는 묶음째다. 묶음 조작 하나가 되돌리기 한 번이다. 바둑판이 아닌 옛 묶음은 읽을 때 바꾸지 않고
-    처음 옮기거나 키울 때(또는 「범위에 맞춰 n등분」) 지금 바깥 상자를 범위로 다시 놓는다. 보기 화면은 그대로다.
+  - **Main 설비 모듈 묶음**(편집기 모듈 + 숨은 모듈이 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선
+    모듈의 바깥 상자)만 고치고 안은 바둑판 자동 배치다. 바둑판 순수 함수는 `// <module-tiling>` 구획(`moduleCells`·
+    `tileModuleGroup`·`assignModuleCells`·`tileDeviation`·`relaidGroup`)이고 파이썬 정본 `space_layout_edit` 과 같은
+    규칙이다(`tests/test_space_module_group.py` 가 node 로 대조). 모듈 하나만 옮기거나 키우는 길은 없다 — 끌기·방향키·
+    X·Y 칸은 `movePlan`(묶음은 범위), 크기(폭·높이 칸·Ctrl+방향키)는 `setSizes`, 범위 테두리 손잡이는
+    `mode: 'range'`(`sle-range-handle`, 모듈 상자 손잡이는 `is-module` 로 숨김)이고 셋 모두 `relayGroup` 으로 다시
+    놓는다. 선택은 묶음당 한 대(`onePerGroup`), 고른 묶음 범위 안의 빈 칸을 눌러도 그 묶음을 끈다(`pickedRangeAt`),
+    빼기·다른 층 보내기·서랍 놓기는 묶음째다. 묶음 조작 하나가 되돌리기 한 번이다.
+    - 칸 자리는 지금 자리를 지킨다(`assignModuleCells` — 이미 바둑판이면 이름 차례와 상관없이 제 칸, 옛 묶음은 가까운
+      칸). 자연 정렬은 서랍에서 새로 놓을 때(`naturalSlots`)와 좌표 없던 형제에만 쓴다. 「n등분이 아님」 판정도 칸
+      모양(`tileDeviation`)이다.
+    - 바둑판이 아닌 옛 묶음은 읽을 때 바꾸지 않고, 범위가 실제로 바뀌는 첫 조작(또는 「범위에 맞춰 n등분」)에 그 범위로
+      다시 놓는다. 범위가 눈금까지 그대로인 조작(벽에 막힌 방향키·제자리에서 뗀 끌기·같은 숫자)은 다시 놓지 않는다.
+    - 숨은 모듈(`data.ghosts` → `S.ghosts`, 파이썬 `EditorInputs.ghosts`)은 그리지 않고 고르지 않지만 칸 수·자리에 들고
+      (고른 묶음에서 점선 `sle-ghost-cell`) 묶음과 함께 옮겨져 적용값 `ghosts` 로 간다. 되돌리기·끌기 취소는 `itemOf` 로
+      숨은 모듈도 되돌리고, 묶음 이름을 바꿔도 처음 Main 설비 이름(`groupKeyOf`)으로 이어진다. 보기 화면은 그대로다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
@@ -683,12 +692,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
     이름은 못 쓴다(`reserved_names`). 가림·겹침은 경고만 한다.
-  - 모듈 묶음 바둑판의 정본은 `tile_module_group`(열 = ⌈√n⌉·행 = ⌈n÷열⌉, 설비명 자연 정렬로 왼→오·위→아래, 저장
-    정밀도 눈금으로 똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)다. `parse_editor_apply`
-    는 `editor_items` 를 받으면 이 층에 놓이거나 자리·크기가 바뀐 묶음을 적용 뒤 바깥 상자로 다시 놓아 브라우저 값이
-    다르면 **바로잡는다**(거부하지 않는다). 안 바뀐 옛 묶음은 건드리지 않고, 묶음이 갈라져 오면(일부만 빼거나 보냄)
-    거부한다. 상자를 한 모듈에만 그린 묶음의 좌표 없는 형제는 `editor_inputs` 가 미배치 모듈로 함께 보낸다(서랍에는
-    뜨지 않고, 묶음을 처음 옮기거나 키울 때 제 칸에 놓인다). RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
+  - 모듈 묶음 바둑판의 정본은 `module_cells`(열 = ⌈√n⌉·행 = ⌈n÷열⌉, 칸 번호는 왼→오·위→아래, 저장 정밀도 눈금으로
+    똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)와 칸 배정 `assign_module_cells`(지금
+    자리에 가까운 칸 — 이미 바둑판이면 제 칸, 좌표 없는 형제는 남은 칸을 자연 정렬로)다. `tile_module_group` 은 새로
+    놓을 때의 자연 정렬 배정이다. `parse_editor_apply` 는 `editor_items`·`editor_ghosts` 를 받으면 이 층에 놓이거나
+    자리·크기가 바뀐 묶음(숨은 모듈 포함)이 적용 뒤 바깥 상자의 바둑판인지 보고, 모듈마다 한 눈금 안이면 칸 값으로
+    **바로잡고** 더 다르면(모듈 하나만 옮기거나 키운 값) 거부한다. 안 바뀐 옛 묶음은 건드리지 않고, 묶음이 갈라져
+    오면(일부만 빼거나 보내거나 좌표 없는 형제가 안 놓임) 거부한다. 상자를 한 모듈에만 그린 묶음의 좌표 없는 형제는
+    `editor_inputs` 가 미배치 모듈로 함께 보낸다(서랍에는 뜨지 않고, 묶음을 처음 옮기거나 키울 때 제 칸에 놓인다).
+  - 숨은 모듈(`EditorInputs.ghosts`)은 보내는 호기와 Main 설비가 같고 이 층에 상자가 있지만 도면 대상이 아닌
+    형제(레이아웃표시 N·도면 이탈)다. 묶음의 칸 수·자리에 들어 기준일이 바뀌어도 바둑판이 그대로이고, 묶음과 함께
+    옮겨진 값은 적용값 `ghosts` → `EditorApply.hidden_moves` 로 와서 `apply_layout_edits` 가 X·Y·크기만 바꾼다(층·
+    레이아웃표시 그대로). 상자 없는 숨은 형제는 세지 않는다. RawData 편집표의 모듈별 좌표·크기 편집은 막지 않는다.
 - `src/capa_simulation/services/floor_layout_profile.py` — 층 배경 도면의 치수 읽기·캔버스 기본값·크기 상한과 좌표 반올림
   (`rounded_to_canvas`)의 한 곳이다(`space_layout_edit`·`fab_layout` 이 import 한다 — 거꾸로 두면 순환).
 - `src/capa_simulation/services/display_order_editor.py`, `display_order_csv.py` — 웹 편집 표시순서 규칙의 검증·범위
