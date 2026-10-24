@@ -1971,7 +1971,7 @@ def other_change_count(
 
 def table_changed(saved: pd.DataFrame, buffer: pd.DataFrame) -> bool:
     """두 표의 내용이 다른가(값의 형 차이는 무시). 설비 마스터 표 밖의 설비 마스터 탭 편집(기존
-    보유대수· 비가동 일정)을 알린다. 「다르다」로 잘못 보면 메모 칸이 더 뜰 뿐이라 행 순서도
+    보유대수·비가동 일정)을 알린다. 「다르다」로 잘못 보면 메모 칸이 더 뜰 뿐이라 행 순서도
     견준다."""
     if list(saved.columns) != list(buffer.columns) or len(saved) != len(buffer):
         return True

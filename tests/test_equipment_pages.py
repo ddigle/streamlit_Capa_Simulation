@@ -527,6 +527,92 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
     clear_equipment_repository()
 
 
+def _recording_page_script(page_path: Path, database_path: Path) -> str:
+    """`_page_script` 에 Summary 의 두 본문(Main 탐색·Static 대비 일정 구간 계산)을 부른 기록을
+    단다."""
+    simulation_database_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
+    return f"""
+from pathlib import Path
+import streamlit as st
+import capa_simulation.settings as settings
+import capa_simulation.components.equipment_explorer as explorer
+import capa_simulation.services.simulation_cache as simulation_cache
+
+settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+settings.DUCKDB_PATH = Path({str(simulation_database_path)!r})
+calls = st.session_state.setdefault("summary_calls", [])
+original_explorer = explorer.render_equipment_explorer
+original_spans = simulation_cache.get_equipment_lifecycle_spans
+
+
+def recording_explorer(*args, **kwargs):
+    calls.append("explorer")
+    return original_explorer(*args, **kwargs)
+
+
+def recording_spans(*args, **kwargs):
+    calls.append("spans")
+    return original_spans(*args, **kwargs)
+
+
+explorer.render_equipment_explorer = recording_explorer
+simulation_cache.get_equipment_lifecycle_spans = recording_spans
+try:
+    page_source = Path({str(page_path)!r}).read_text(encoding="utf-8")
+    exec(compile(page_source, {str(page_path)!r}, "exec"), {{"__name__": "__main__"}})
+finally:
+    explorer.render_equipment_explorer = original_explorer
+    simulation_cache.get_equipment_lifecycle_spans = original_spans
+"""
+
+
+def test_the_master_tab_run_skips_the_summary_work(tmp_path: Path) -> None:
+    """Summary 의 안쪽 탭은 바깥 Summary 안에서 늘 부르므로 바깥이 숨어도 안쪽 고른 탭의 `open` 은
+    참이다 — 본문 갈래는 둘을 합친 판정(`NestedTab`)이라 ① 을 보는 회차에 Main 탐색·Static 대비 일정
+    구간 계산을 부르지 않는다(사양 R23)."""
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _recording_page_script(page_path, tmp_path / "skip.duckdb"), default_timeout=60
+    ).run()
+    assert not app.exception
+    assert app.session_state["summary_calls"] == []
+
+    _open_tab(app, "Static 대비 일정")
+    assert "spans" in app.session_state["summary_calls"]
+    _open_tab(app, "Main")
+    assert "explorer" in app.session_state["summary_calls"]
+
+    # ① 로 돌아오면(안쪽은 Main 을 고른 채) 다시 부르지 않는다.
+    app.session_state["summary_calls"] = []
+    _open_tab(app, "설비 마스터")
+    assert not app.exception
+    assert app.session_state["summary_calls"] == []
+    clear_equipment_repository()
+
+
+def test_unsaved_equipment_edits_put_a_dot_on_the_master_tab(tmp_path: Path) -> None:
+    """저장하지 않은 설비 편집이 있으면 ① 탭 이름 옆에 점 — 라벨 글자는 그대로(탭 위젯 id), CSS 로
+    찍는다(`tab_marks`). 판정은 화면 탭 줄의 점과 같다(편집본 세대가 씨앗보다 앞섬)."""
+    from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+    from capa_simulation.components.tab_marks import pending_tabs_style
+    from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TABS
+
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "dot.duckdb"), default_timeout=60
+    ).run()
+    dot = pending_tabs_style(EQUIPMENT_TAB_KEY, EQUIPMENT_TABS, {EQUIPMENT_MASTER_TAB}).strip()
+    bodies = [str(element.proto.body).strip() for element in app.get("html")]
+    assert dot not in bodies
+
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.run()
+    assert not app.exception
+    assert dot in [str(element.proto.body).strip() for element in app.get("html")]
+    assert app.tabs[0].label == EQUIPMENT_MASTER_TAB
+    clear_equipment_repository()
+
+
 def test_the_first_data_checklist_disappears_once_a_revision_exists(tmp_path: Path) -> None:
     """저장본이 생기면 목록을 그리지 않는다. 첫 행동 안내와 같은 조건이다."""
     database_path = tmp_path / "availability.duckdb"

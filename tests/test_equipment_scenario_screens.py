@@ -461,6 +461,34 @@ def test_scenario_management_opens_on_simulation_and_switches_to_equipment(
     assert _heading(app) == "이 세션: 운영 일정 · r1 · 공식 v1"
 
 
+def test_an_equipment_db_error_stays_inside_the_equipment_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """설비 DB 를 읽지 못해도 시뮬레이션 구획은 그대로 서고, 설비 구획만 까닭을 알린다(설비 DB 는 그
+    구획 안에서만 연다)."""
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.settings as settings
+
+    broken = tmp_path / "not_a_database"
+    broken.mkdir()
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", broken)
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+    app = _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
+    _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
+    assert any("저장소 상태" in str(item.value) for item in app.markdown)
+
+    _equipment_section(app)
+    assert any("설비 시나리오를 준비하지 못했습니다" in str(item.value) for item in app.error)
+    # 「관리할 시나리오」 전환과 다른 탭은 그대로다.
+    assert app.segmented_control(key=SCENARIO_KIND_KEY).value == EQUIPMENT_KIND
+    assert len(app.tabs) >= 3
+
+
 def test_the_section_heading_names_the_sessions_pair() -> None:
     catalog = _catalog()
     official = EquipmentSession(

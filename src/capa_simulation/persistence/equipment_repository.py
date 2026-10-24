@@ -295,8 +295,8 @@ class EquipmentScenarioCatalog:
 class EquipmentSnapshot:
     """화면이 쓰는 설비 데이터 한 벌 — 공통 대장 리비전 + 설비 시나리오 일정 리비전을 합친 것.
 
-    - `equipment` 는 39칸 합친 마스터이고 **일정 없음 호기도 든다**(편집·RawData·CSV 용). 계산에는
-      `calculation_frames()` 를 쓴다.
+    - `equipment` 는 39칸 합친 마스터이고 **일정 없음 호기도 든다**(편집·설비 마스터 탭·CSV 용).
+      계산에는 `calculation_frames()` 를 쓴다.
     - `schedule` 이 None 이면 일정 리비전 없이 읽은 것이다(옛 길 `_read_legacy_snapshot`, 또는
       발행이 없는 공통 리비전).
     - 호기 키는 (설비명, 키) 쌍 튜플로 든다 — 캐시 본문에 실리는 모델이라 `MappingProxyType` 처럼
@@ -555,7 +555,7 @@ class EquipmentSaveResult:
       발행은 시나리오 관리 › 설비 시나리오에서」).
     - `forced_common` 은 0027 뒤 첫 저장이라 공통이 그대로여도 v4 공통을 함께 썼다는 뜻이다.
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
-      빠진다 — RawData 설비명 고침도 지운 + 새 호기다).
+      빠진다 — 설비 마스터 탭 설비명 고침도 지운 + 새 호기다).
     """
 
     common: EquipmentRevisionSummary | None
