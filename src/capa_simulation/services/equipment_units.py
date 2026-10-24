@@ -117,24 +117,50 @@ def unit_transitions(events: pd.DataFrame) -> pd.DataFrame:
     return events.assign(Qual확정=confirmed.astype(bool)).drop_duplicates(keys)
 
 
-def module_group_warnings(equipment: pd.DataFrame) -> list[str]:
-    """저장은 막지 않지만 알릴 것. 검증을 통과한 설비 마스터를 받는다.
+# 모듈 묶음 환산비 경고의 칸 문구. 문장 경고(`module_group_warnings`)와 칸 단위 결과
+# (`equipment_validation.equipment_master_issues` 의 `module_ratio_default`)가 함께 쓴다.
+MODULE_RATIO_WARNING = (
+    "Main 설비로 묶은 모듈 행의 환산비가 모두 1 입니다 — 능력이 모듈 수만큼 부풀려집니다"
+)
 
-    모듈 행 여럿을 묶었는데 환산비가 모두 1 이면 능력 축이 모듈 수만큼 부풀려진다(4모듈이면
-    4대 몫). 모듈 행에는 보통 1 ÷ 모듈수(0.25)를 적는다.
+
+def module_ratio_warning_rows(equipment: pd.DataFrame) -> pd.Series:
+    """환산비가 모두 1 인 모듈 묶음(같은 Main 설비를 적은 줄 둘 이상)의 줄 — `equipment` 와 같은
+    색인의 참거짓.
+
+    저장은 막지 않는 경고다. 모듈 행 여럿을 묶었는데 환산비가 모두 1 이면 능력 축이 모듈 수만큼
+    부풀려진다(4모듈이면 4대 몫). 모듈 행에는 보통 1 ÷ 모듈수(0.25)를 적는다.
+
+    검증 전 편집본도 받는다 — 화면은 막는 오류가 남은 편집본으로도 경고 문장을 세우고, 칸 단위
+    결과(`equipment_validation` 의 `module_ratio_default`)도 막는 결과와 함께 낸다. 그래서 **Main
+    설비를 적은 줄만** 묶음으로 센다 — 설비명이 겹친 줄(막는 규칙 「설비명 중복」 의 몫)은 묶음이
+    아니고, 검증을 통과한 표에서는 묶음 줄이 모두 Main 설비를 적은 줄이라 결과가 같다. 설비명이 빈
+    줄은 저장이 조용히 빼므로 세지 않는다. 못 읽은 환산비는 빈 칸처럼 1 로 본다.
     """
+    none = pd.Series(False, index=equipment.index, dtype=bool)
     if equipment.empty or PARENT_EQUIPMENT_COLUMN not in equipment.columns:
+        return none
+    units = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    parents = equipment[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+    modules = units.notna() & units.ne("") & parents.notna() & parents.ne("")
+    keys = parents.where(modules.fillna(False).to_numpy(dtype=bool))
+    grouped = keys.map(keys.value_counts()).gt(1).fillna(False).astype(bool)
+    if not grouped.any():
+        return none
+    ratios = pd.to_numeric(equipment.loc[grouped, CONVERSION_RATIO_COLUMN], errors="coerce")
+    all_one = ratios.fillna(1.0).eq(1.0).groupby(keys.loc[grouped]).all()
+    suspicious = all_one.index[all_one.to_numpy(dtype=bool)]
+    return grouped & keys.isin(suspicious).fillna(False).astype(bool)
+
+
+def module_group_warnings(equipment: pd.DataFrame) -> list[str]:
+    """저장은 막지 않지만 알릴 것 — `module_ratio_warning_rows` 의 묶음을 한 문장으로(검증 전
+    편집본도 받는다)."""
+    rows = module_ratio_warning_rows(equipment)
+    if not rows.any():
         return []
-    keys = unit_keys(equipment)
-    grouped = equipment.assign(_key=keys).loc[keys.map(keys.value_counts()).gt(1)]
-    if grouped.empty:
-        return []
-    ratios = pd.to_numeric(grouped[CONVERSION_RATIO_COLUMN], errors="coerce").fillna(1.0)
-    all_one = ratios.eq(1.0).groupby(grouped["_key"]).all()
-    suspicious = sorted(str(key) for key, flag in all_one.items() if flag)
-    if not suspicious:
-        return []
+    suspicious = sorted({str(key) for key in unit_keys(equipment).loc[rows]})
     return [
-        "Main 설비로 묶은 모듈 행의 환산비가 모두 1 입니다 — 능력이 모듈 수만큼 부풀려집니다. "
-        f"모듈 행에는 1 ÷ 모듈수(4모듈이면 0.25)를 적습니다: {suspicious[:5]}"
+        f"{MODULE_RATIO_WARNING}. 모듈 행에는 1 ÷ 모듈수(4모듈이면 0.25)를 적습니다: "
+        f"{suspicious[:5]}"
     ]
