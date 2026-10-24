@@ -22,10 +22,13 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.equipment_data_workspace import (
+    DOWNTIME_VIEW_PREFIX,
+    FOLLOWED_FILTERS_KEY,
     LAST_REMOVED_KEY,
     PENDING_RENAMES_KEY,
     SELECTION_KEY,
 )
+from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_bulk_delete import DOWNTIME_TARGET, EQUIPMENT_TARGET
@@ -561,6 +564,9 @@ def test_a_rename_is_applied_to_the_draft_and_saved_as_a_new_revision(
         DOWNTIME_TARGET: frozenset({("EQ-01", "고장", "2026-08-10")}),
     }
     app.session_state[LAST_REMOVED_KEY] = (_baseline().iloc[:0], _equipment().iloc[:0], _downtime())
+    # RawData 비가동 일정 표에서 고른 설비명 필터(이 화면에서는 그리지 않는다).
+    downtime_filter = filter_widget_key(DOWNTIME_VIEW_PREFIX, "설비명")
+    app.session_state[downtime_filter] = ["EQ-01"]
 
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": epoch,
@@ -604,6 +610,10 @@ def test_a_rename_is_applied_to_the_draft_and_saved_as_a_new_revision(
     assert set(first.equipment["설비명"]) == {"EQ-01", "EQ-02"}
     assert first.downtime["설비명"].tolist() == ["EQ-01"]
     assert PENDING_RENAMES_KEY not in app.session_state
+    # 저장한 이름은 저장본 이름이라 RawData 필터가 따라갈 지도는 저장 뒤에도 남는다(다음 RawData
+    # 회차가 얹는다). 편집본과 함께 버리면 옛 이름이 선택지 밖이라 필터가 「전체」 로 돌아간다.
+    assert app.session_state[FOLLOWED_FILTERS_KEY][downtime_filter] == {"EQ-01": "EQ-101"}
+    assert app.session_state[downtime_filter] == ["EQ-01"]
     clear_equipment_repository()
 
 

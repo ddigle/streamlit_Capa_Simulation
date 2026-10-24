@@ -1423,7 +1423,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     결과 알림은 공통 rN·시나리오 rN·함께 넣은 목록·발행·「지운 호기 n대는 모든 설비 시나리오에서 빠졌습니다」 를 적는다.
   - **이름 바꾸기는 같은 호기다**(G4·R2). `follow_unit_renames` 가 이름을 기억한 RawData 칸 — 선택·삭제 확인 대기의 키, 목록
     필터(설비 마스터 `Main 설비`·비가동 `설비명`, 위젯을 그리기 전에만 고칠 수 있어 `FOLLOWED_FILTERS_KEY` 에 모았다가
-    `_render_editors` 가 얹는다) — 를 새 이름으로 옮기고 `방금 삭제 되돌리기` 는 버린다. 저장 안 한 이름 바꿈은 Space 상자와
+    `_render_editors` 가 얹는다 — 자기 저장 뒤에도 남기고 버리기·남의 저장에는 버린다) — 를 새 이름으로 옮기고 `방금 삭제
+    되돌리기` 는 버린다. 저장 안 한 이름 바꿈은 Space 상자와
     RawData 알림 칸이 같은 `render_name_changes`(「이름 바꿈 n건」·`NAME_CHANGES_CAPTION`)로 보인다. 이 편집표의 설비명 칸은
     아직 키다(고치면 「지운 + 새 호기」 — 칸 도움말 `RENAME_CELL_HELP`, 지운 + 새 호기 저장 결과 꼬리 `RENAME_INSTEAD_HINT`).
     옛 편집표의 위젯 delta 짝짓기(설계 11-2)는 개편 B1 의 표가 행 id 로 공용 넷을 부르는 쪽으로 대신한다.

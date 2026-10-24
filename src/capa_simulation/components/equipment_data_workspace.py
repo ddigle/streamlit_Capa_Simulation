@@ -585,11 +585,14 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             PENDING_DELETE_KEY,
             LAST_REMOVED_KEY,
             PENDING_RENAMES_KEY,
-            FOLLOWED_FILTERS_KEY,
             EDITOR_MODULE_LAYOUTS_KEY,
         ]
         if replaced:
+            # 남의 저장으로 다시 세우면 저장 안 한 이름 바꿈이 돌아가므로 필터가 따라갈 지도도
+            # 버린다(자기 저장 뒤의 지도는 `_save_equipment_frames` 가 남긴다 — 이름이 저장본이
+            # 됐다).
             stale += [
+                FOLLOWED_FILTERS_KEY,
                 PENDING_CANVASES_KEY,
                 PENDING_MARKS_KEY,
                 PENDING_GROUP_LABELS_KEY,
@@ -1244,7 +1247,14 @@ def _save_equipment_frames(
     clear_equipment_snapshot_cache()
     if floor_layouts:
         clear_floor_layout_cache()
+    # 저장한 이름 바꿈은 이제 저장본 이름이다 — RawData 를 그리지 않은 채(Space 에서) 저장했으면
+    # 목록 필터가 따라갈 지도가 아직 남아 있으니 편집본과 함께 버리지 않는다(버리면 다음 RawData
+    # 회차에 옛 이름이 선택지 밖이라 필터가 「전체」 로 돌아간다). 버리기·남의 저장은 이름이
+    # 돌아가므로 버린다.
+    followed = st.session_state.get(FOLLOWED_FILTERS_KEY)
     reset_equipment_drafts()
+    if followed:
+        st.session_state[FOLLOWED_FILTERS_KEY] = followed
     if result.schedule is not None:
         st.session_state[SAVED_SCHEDULE_KEY] = {
             "scenario_id": result.schedule.equipment_scenario_id,
