@@ -905,6 +905,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
     이름은 못 쓴다(`reserved_names`). 가림·겹침은 경고만 한다.
+  - **이름 바꾸기 공용 넷**(G4·R2 — 이름 바꾸기는 같은 호기, 설비 시나리오 2단계 S1). 이름 바꾸는 자리(Space 편집기·개편
+    뒤 설비 마스터 호기 상세)는 모두 이것을 쓴다 — 새 자리가 규칙을 따로 짜지 않는다.
+    `check_unit_rename(old, new, *, master, reserved, renaming)` 는 바꾸기 **전** 편집본으로 한 바꿈을 보고 거부 까닭(Space
+    적용 거부 문구 그대로 — `_require_name`·`_require_distinct_names(only=…)` 를 같이 지난다) 또는 None 을 낸다(`renaming` 은
+    같은 제출의 다른 바꿈 — 맞바꿈·사슬은 받고 같은 새 이름은 막는다). `compose_unit_renames` 는 저장 안 한 이름 지도
+    (`PendingRenames.units`)를 잇고 `compose_renames` 가 그것을 부른다. `rename_followers` 는 설비명이 이미 새 이름인 마스터에서
+    비가동 설비명과 자기 이름을 Main 설비로 적은 한 행 묶음의 Main 설비를 옮기고(같은 제출에서 사용자가 고친 칸
+    `touched_*` 는 두고), `apply_name_changes` 가 그것을 지난다. 세션 쪽 넷째는 `equipment_data_workspace.follow_unit_renames`.
+  - `existing_layout_edits`·`keep_layout_cells` 는 가정 설비 시나리오의 배치 칸 임시 잠금(5장 32) 재료다 — 저장본에서 온
+    호기의 배치 일곱 칸(`PLACE_COLUMNS`)이 바뀐 행을 이름으로 찾고 그 칸만 되돌린다.
   - 모듈 묶음 바둑판의 정본은 `module_cells`(`module_grid` — 모듈 2·3 은 열 n·행 1, 넷부터 열 = ⌈√n⌉·행 = ⌈n÷열⌉,
     칸 번호는 왼→오·위→아래, 저장 정밀도 눈금으로
     똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)와 칸 배정 `assign_module_cells`(지금
@@ -1411,6 +1421,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     셋)를 읽고, 편집 대조·`_saved_master()` 는 39칸 전부를 본다. 저장은 `save_equipment(EquipmentSaveRequest)` 로 간다 —
     출발점 칸(`_BASE_KEY` — 공통·일정·시나리오 id)과 이름 지도(`PendingRenames.units`)·저장 칸 값(`equipment_save_fields.py`).
     결과 알림은 공통 rN·시나리오 rN·함께 넣은 목록·발행·「지운 호기 n대는 모든 설비 시나리오에서 빠졌습니다」 를 적는다.
+  - **이름 바꾸기는 같은 호기다**(G4·R2). `follow_unit_renames` 가 이름을 기억한 RawData 칸 — 선택·삭제 확인 대기의 키, 목록
+    필터(설비 마스터 `Main 설비`·비가동 `설비명`, 위젯을 그리기 전에만 고칠 수 있어 `FOLLOWED_FILTERS_KEY` 에 모았다가
+    `_render_editors` 가 얹는다) — 를 새 이름으로 옮기고 `방금 삭제 되돌리기` 는 버린다. 저장 안 한 이름 바꿈은 Space 상자와
+    RawData 알림 칸이 같은 `render_name_changes`(「이름 바꿈 n건」·`NAME_CHANGES_CAPTION`)로 보인다. 이 편집표의 설비명 칸은
+    아직 키다(고치면 「지운 + 새 호기」 — 칸 도움말 `RENAME_CELL_HELP`, 지운 + 새 호기 저장 결과 꼬리 `RENAME_INSTEAD_HINT`).
+    옛 편집표의 위젯 delta 짝짓기(설계 11-2)는 개편 B1 의 표가 행 id 로 공용 넷을 부르는 쪽으로 대신한다.
+  - **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장**(설계 11-2 6단계)은 확인 체크 뒤에만 간다. `removals_elsewhere`
+    (저장본 이름 − 편집본 − 이름 바꿈으로 비운 이름 → 호기 키 `DRAFT_UNIT_KEYS_KEY` → `load_units_scheduled_elsewhere`)가
+    RawData 저장 칸 아래 경고·체크(`REMOVAL_CONFIRM_KEY` — 꼬리가 호기 목록 지문)를 세우고, `_save_equipment_frames` 가 확인한
+    이름(`removal_confirmed`)에 없는 호기가 있으면 거부한다 — 체크가 없는 자리(Space 「배치 저장」·팝업)도 같은 판정으로 막힌다.
+  - **가정 설비 시나리오의 배치 칸 임시 잠금**(설비 시나리오 2단계 S1 — `basis.official_scenario` 가 거짓): 저장본에서 온 호기의
+    배치 일곱 칸 고침은 제출에서 그 칸만 되돌리고(나머지 편집은 반영, 그 회차 저장·미리보기는 하지 않고 까닭을 맨 위에)
+    붙여넣기는 미리보기 전에 막는다(`assumption_paste_refusal`). 칸을 `disabled` 로 두지 않는다 — `레이아웃표시` 는 기본값
+    없는 필수 고르기 칸이라 잠그면 새 호기 행을 넣을 수 없다. 새 호기의 배치 값은 받는다. 문구 `ASSUMPTION_LAYOUT_LOCK`.
   - 세션이 **낡음**이면 RawData 맨 위에 그 알림을 세우고 시나리오 일곱 칸·비가동 일정 표를 `disabled` 로, 행 추가를 막으며,
     붙여넣기 미리보기는 일정 칸 변경·새 행·비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 도움말 첫 마디가 「공통 — …」/「공통 — 공식 일정
     기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」 이고 편집표 위 한 줄 범례(`SCENARIO_COLUMN_LEGEND`)가 같은 뜻이다.
@@ -1459,6 +1483,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     없음 수와 그 리비전 뒤에 든 호기 수를 적는다. 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 키) 한 칸.
   - **리비전명**은 칸을 세울 때 본 이름을 따로 들고(`…__seen`) 그 이름으로 비교 후 쓰기를 한다 — 칸이 고치지 않은 채면 남이
     바꾼 이름으로 다시 선다. 비우면 지운다.
+  - **공식으로 발행**은 확인 글을 그린 회차의 {고른 리비전, 공식 번호}를 `PUBLISH_SEEN_KEY` 에 남기고, 단추를 누른 회차에 그
+    번호가 지금과 다르면(그 사이 남이 발행) 쓰지 않고 `_refused` 로 까닭을 알린다(`publish_seen_refusal`) — 누른 회차에는 확인
+    글이 이미 새 목록으로 다시 그려져, 지금 번호로만 대조하면 「v1 → v2」 를 본 사람이 말없이 v3 을 낸다. 저장소 대조값도 그 번호다.
+  - **이대로 이어 쓰기** 확인 체크 key 꼬리는 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전 번호·빠지는 호기 수 —
+    `continue_confirm_key`)이다(되돌리기 체크와 같은 까닭).
 - `src/capa_simulation/components/qual_deadline_calculator.py` — 가용설비 현황 `Qual 마감 계산기` 탭. 숫자 칸 넷·12개월
   편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감 칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
   - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
@@ -1657,7 +1686,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목록(`load_equipment_schedule_revisions`)은 (DB, stat, 세대 `"equipment_scenario"`) 키에 TTL 15초, 8칸이다. 공식 스냅샷
     (`load_official_equipment_snapshot`)은 공통 최신 id + 목록의 최신 발행 → 합친 본문이라 발행만 바뀌어도 다른 쌍 키로 간다.
     CSV 바이트도 쌍 키다. 이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터
-    저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다.
+    저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다. 「다른 ACTIVE 시나리오 최신에 일정이
+    있는 호기 키」(`load_units_scheduled_elsewhere` — RawData 호기 삭제 확인 재료, 지운 호기가 있는 회차에만 읽는다)도 목록과
+    같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)다.
   - **리비전명은 바뀔 수 있는 이름표라 불변 본문에 싣지 않는다**(E7 — 5장 8). 합친 본문의 `schedule.revision_name` 은 늘 None
     으로 꺼내고, 이름은 리비전 목록 캐시(쓰기 세대 `"equipment_scenario"`·stat·TTL)에서만 읽는다(글자는
     `equipment_data_workspace.schedule_revision_title`). 되돌리기 확인 재료(`load_schedule_restore_preview`)는 (DB, 공통 id, 그 시나리오 최신 id, 고른 id)
@@ -2012,6 +2043,16 @@ RQ_MODULE
       (`wrote=False` — dirty 도 없다). 새 쓰기는 모두 `_write_transaction(outcome)` 을 지난다.
     - 새 표 여섯에는 **외래 키가 없다** — DuckDB 1.5.5 가 FK 부모의 한 트랜잭션 삭제·UNIQUE 칸 UPDATE(이름)를 막아서다.
       소유·정합은 저장소가 같은 트랜잭션에서 지킨다(`docs/data_model.md`). `copy_database` 차례에 더한 것이 없다.
+    - **공식 판정은 저장소와 같은 규칙**이다 — 최신 발행의 시나리오, 발행이 없으면 「운영 일정」(있으면), 그것도 없으면 목록
+      첫 시나리오. 세션·화면은 `EquipmentScenarioCatalog.effective_official_scenario_id` 하나로 본다(`EquipmentSession.
+      official_scenario_id`·새 세션 기본 선택·저장 이력 시나리오) — 목록 차례를 바꾼 빈 발행 DB 에서 화면의 「공식」 과 저장의
+      역할이 갈리지 않게(설계 검토 L13).
+    - **이름 바꾸기는 같은 호기다**(G4·R2, 2026-10-24 사용자 결정 「나」). 호기 키가 그대로라 모든 시나리오의 일정·비가동·
+      이력이 새 이름을 따라간다. 이름 바꾸는 자리는 `space_layout_edit` 의 공용 넷(3장)만 쓴다. 붙여넣기·CSV 는 설비명이 키라
+      이름 바꾸기를 나타낼 수 없다(없는 이름이면 새 호기 — 지우지 않는다).
+    - **가정 설비 시나리오의 배치 칸은 임시로 잠근다**(설비 시나리오 2단계 S1 — 다음 판 S3 가 그 시나리오의 배치 차이로 연다).
+      이 판에서 배치 일곱 칸은 공통 칸이라 가정 세션에서 고치면 공식 배치가 바뀐다(LY4 에 어긋남). RawData 제출·붙여넣기
+      미리보기가 저장본에서 온 호기의 고침을 막는다(3장 `equipment_data_workspace`). Space 편집은 1단계대로 공식 발행 쌍에서만이다.
 33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
     `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만 남긴다. 탭을 누르는 것은
     사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
