@@ -144,6 +144,12 @@ from capa_simulation.services.korean_particle import (
     topic_particle,
     with_direction_particle,
 )
+from capa_simulation.services.layout_overlay import (
+    Place,
+    assumption_common_places,
+    misplaced_rows,
+    place_rows,
+)
 from capa_simulation.services.schedule_confirmation import (
     ACTUAL_COLUMN,
     CONFIRMATION_KIND_COLUMN,
@@ -809,39 +815,96 @@ def layout_lock_origins(
     return inherited_unit_names(names, set(saved_names) - {""}, renames)
 
 
-def assumption_layout_drift(
+@dataclass(frozen=True)
+class AssumptionLayoutLock:
+    """가정 설비 시나리오 편집본의 배치 칸 잠금(설비 시나리오 2단계 S1·S2) — 저장했을 때 배치 차이가
+    생길 행.
+
+    - `restore` — 배치 칸을 저장본 값으로 되돌릴 있던 호기(지금 설비명 → 저장본 설비명).
+    - `place` — 가정 역할 저장이 공통 대장에 쓸 자리로 맞출 행(지금 설비명 → 일곱 칸 — 새 호기는
+      동·층·X좌표·Y좌표를 비우고, 있는 묶음에 드는 모듈과 묶음에 든 공식 미정 호기는 그 묶음의 공식
+      동·층). 크기·레이아웃표시는 편집본 값 그대로다.
+
+    둘 다 비어야 가정 세션의 저장이 배치 차이를 만들지 않는다 — 이 판의 화면은 차이를 보이지도
+    지우지도 못한다(「배치 차이 모두 지우기」 는 S4). 공식 세션 저장은 둘이 비어 있지 않으면 배치
+    편집이 든 것이라 대조 역할 "official" 을 넘긴다(`_layout_role_of`)."""
+
+    restore: Mapping[str, str]
+    place: Mapping[str, Place]
+
+    def __bool__(self) -> bool:
+        return bool(self.restore or self.place)
+
+    def apply(self, buffer: pd.DataFrame, saved: pd.DataFrame) -> pd.DataFrame:
+        """잠근 칸을 되돌리고 맞춘 `buffer` 사본(나머지 칸·행은 그대로)."""
+        return place_rows(restore_saved_layout(buffer, saved, self.restore), self.place)
+
+
+def assumption_layout_lock(
     buffer: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]
-) -> dict[str, str]:
-    """편집본에서 배치 일곱 칸이 저장본 그 호기와 달라진 있던 호기 — 지금 설비명 → 저장본 설비명
-    (`buffer` 차례). 가정 설비 시나리오에서는 비어 있어야 한다(S1 임시 잠금)."""
+) -> AssumptionLayoutLock:
+    """편집본(`buffer`)을 세션 저장본(`saved`)에 대 본 배치 칸 잠금. 「있던 호기」 는 저장의 호기 키
+    규칙(`layout_lock_origins`)으로 고르고, 그 가운데 공통 쪽 규칙으로 자리가 정해지는 행(공식 미정
+    호기를 묶음에 넣음)은 저장본 값이 아니라 그 자리로 맞춘다."""
     origins = layout_lock_origins(buffer, saved, renames)
-    return {name: origins[name] for name in saved_layout_drift(saved, buffer, origins)}
+    governed = assumption_common_places(buffer, saved, origins)
+    restore = {
+        name: origins[name]
+        for name in saved_layout_drift(saved, buffer, origins)
+        if name not in governed
+    }
+    return AssumptionLayoutLock(restore=restore, place=misplaced_rows(buffer, governed))
 
 
 def assumption_layout_refusal(
-    names: Sequence[str], *, scenario_name: str | None, pasted: bool, held: bool = False
+    names: Sequence[str],
+    *,
+    scenario_name: str | None,
+    pasted: bool,
+    held: bool = False,
+    placed: Sequence[str] = (),
 ) -> str:
-    """가정 설비 시나리오에서 있던 호기의 배치 칸을 고친 제출·붙여넣기를 막는 글. `held` 는 그
-    제출이 저장·미리보기 단추였다는 뜻이다 — 되돌린 칸을 보게 그 회차 저장·미리보기는 하지
-    않는다."""
+    """가정 설비 시나리오에서 배치 칸 잠금에 걸린 제출·붙여넣기 글 — `names` 는 배치 칸을 고친 있던
+    호기, `placed` 는 자리 없이 넣도록 맞춘(붙여넣기면 맞춰야 할) 행이다. `held` 는 그 제출이
+    저장·미리보기 단추였다는 뜻이다 — 고친 칸을 보게 그 회차 저장·미리보기는 하지 않는다."""
     if scenario_name:
         quoted = f"「{scenario_name}」"
         where = f"「{literal_markdown(scenario_name)}」{topic_particle(quoted)}"
     else:
         where = "지금 설비 시나리오는"
     units = f"있던 호기 {len(names):,}대({_sample_names(names)})"
+    news = f"새 호기 {len(placed):,}대({_sample_names(placed)})"
     if pasted:
-        head = (
-            f"붙여넣기가 {units}의 배치 칸을 바꿉니다 — {where} 가정 설비 시나리오라 미리보지 "
-            "않았습니다. 배치 칸을 빼거나 저장본 값 그대로 다시 붙여넣으세요."
-        )
+        moves = f"{units}의 배치 칸을"
+        places = f"{news}에 자리(동·층·X좌표·Y좌표)를"
+        if names and placed:
+            what = f"{moves} 바꾸고 {places} 넣습니다"
+        elif names:
+            what = f"{moves} 바꿉니다"
+        else:
+            what = f"{places} 넣습니다"
+        head = f"붙여넣기가 {what} — {where} 가정 설비 시나리오라 미리보지 않았습니다."
+        if names:
+            head += " 있던 호기의 배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요."
+        if placed:
+            head += (
+                " 새 호기는 자리 없이 넣으니 동·층·X좌표·Y좌표를 비우고(있는 묶음에 드는 모듈은 "
+                "그 묶음의 공식 동·층) 다시 붙여넣으세요."
+            )
     else:
+        parts = []
+        if names:
+            parts.append(f"{units}의 배치 칸 고침은 저장본 값으로 되돌리고")
+        if placed:
+            parts.append(
+                f"{news}는 자리 없이 넣도록 동·층·X좌표·Y좌표를 맞추고(있는 "
+                "묶음에 드는 모듈은 그 묶음의 공식 동·층)"
+            )
         head = (
-            f"{where} 가정 설비 시나리오라 {units}의 배치 칸 고침은 저장본 값으로 되돌리고 나머지 "
-            "편집은 편집본에 반영했습니다."
+            f"{where} 가정 설비 시나리오라 {' '.join(parts)} 나머지 편집은 편집본에 반영했습니다."
         )
         if held:
-            head += " 이번에 누른 저장·미리보기는 하지 않았습니다 — 되돌린 칸을 보고 다시 누르세요."
+            head += " 이번에 누른 저장·미리보기는 하지 않았습니다 — 바뀐 칸을 보고 다시 누르세요."
     return f"{head} {ASSUMPTION_LAYOUT_LOCK}"
 
 
@@ -852,15 +915,18 @@ def assumption_paste_refusal(
     renames: Mapping[str, str],
     scenario_name: str | None,
 ) -> str | None:
-    """가정 설비 시나리오에서 있던 호기의 배치 칸을 저장본과 다르게 만드는 설비 마스터 붙여넣기를
-    미리보기 전에 막는다(S1 임시 잠금 — `saved` 는 세션 저장본, `renames` 는 저장 안 한 이름 지도).
-    새 호기 행의 배치 칸은 받는다. 막을 것이 없으면 None."""
+    """가정 설비 시나리오에서 배치 차이를 만들 설비 마스터 붙여넣기를 미리보기 전에 막는다(S1·S2
+    임시 잠금 — `saved` 는 세션 저장본, `renames` 는 저장 안 한 이름 지도): 있던 호기의 배치 칸을
+    저장본과 다르게 하거나, 새 호기에 자리(동·층·X좌표·Y좌표)를 넣는 것. 새 호기 행 자체·크기·
+    레이아웃표시는 받는다. 막을 것이 없으면 None."""
     if review.target != "설비 마스터":
         return None
-    drift = assumption_layout_drift(review.candidate[1], saved, renames)
-    if not drift:
+    lock = assumption_layout_lock(review.candidate[1], saved, renames)
+    if not lock:
         return None
-    return assumption_layout_refusal(list(drift), scenario_name=scenario_name, pasted=True)
+    return assumption_layout_refusal(
+        list(lock.restore), scenario_name=scenario_name, pasted=True, placed=list(lock.place)
+    )
 
 
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
@@ -1265,6 +1331,7 @@ def _save_equipment_frames(
     if removal is not None and not removal.covered_by(removal_confirmed):
         raise ValueError(removal.refusal())
     schedule_id = base.get("schedule")
+    renames = pending_unit_renames()
     # 편집본이 나온 두 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
     # 저장소가 쓰기 잠금 안에서 거부한다 — 옛 편집이 남의 저장을 조용히 되돌리지 않게.
     request = EquipmentSaveRequest(
@@ -1274,7 +1341,8 @@ def _save_equipment_frames(
         equipment_scenario_id=scenario_id,
         base_common_revision_id=str(base["common"]),
         base_schedule_revision_id=schedule_id if isinstance(schedule_id, str) else None,
-        renames=dict(pending_unit_renames().units),
+        renames=dict(renames.units),
+        group_renames=dict(renames.groups),
         note=note,
         saved_by=chosen.saved_by,
         propagate_new_units=chosen.propagate_new_units,
@@ -1285,6 +1353,9 @@ def _save_equipment_frames(
         floor_marks=marks,
         floor_layout_bases=pending_floor_bases(),
         floor_group_labels=labels,
+        expected_layout_role=_layout_role_of(
+            frames[1], renames.units, floor_values=bool(canvases or marks or labels)
+        ),
     )
     result = repository.save_equipment(request)
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
@@ -1313,6 +1384,22 @@ def _save_equipment_frames(
         return f"설비 마스터가 바뀌지 않아 새 리비전 없이 {floor_layouts}만 저장했습니다.{fab}"
     name = basis.scenario_name if basis is not None else None
     return save_result_message(result, scenario_name=name) + layouts + fab
+
+
+def _layout_role_of(
+    master: pd.DataFrame, renames: Mapping[str, str], *, floor_values: bool
+) -> str | None:
+    """저장이 저장소에 넘기는 대조 역할(설계 6-2) — 배치 편집이 들었으면 "official", 아니면 None.
+
+    이 판(설비 시나리오 2단계 S2)에서 배치 편집은 **공식 역할에서만** 생긴다 — Space 편집은 공식
+    발행 쌍에서만 열리고, 가정 세션의 RawData·붙여넣기는 배치 칸 잠금(`assumption_layout_lock`)이
+    막는다. 그래서 편집본이 그 잠금에 걸리거나 층 값(캔버스·도면 요소·Main 설비명 위치) 대기분이
+    있으면 공식 배치에 들어갈 편집이다. 그 사이 남의 발행으로 이 시나리오가 가정이 됐으면 저장소가
+    `EquipmentLayoutRoleChanged` 로 막는다 — Space 잠김 저장 상자가 공식 배치 편집을 가정 배치
+    차이로 조용히 쓰지 않게. 적용할 때 역할을 찍는 것은 가정 배치 편집을 여는 S3 몫이다."""
+    if floor_values or assumption_layout_lock(master, _saved_master(), renames):
+        return "official"
+    return None
 
 
 # 설비 마스터 편집표 설비명 칸 도움말. 이 표의 설비명은 키라 고치면 「지운 호기 + 새 호기」 다 —
@@ -2014,16 +2101,19 @@ SAVE_FIELDS_PREFIX = "equipment_workspace_save"
 # (호기, 그 일정이 든 시나리오들)의 지문(`RemovalElsewhere.token`)이라 글이 바뀌면 체크가 풀린 새
 # 칸으로 선다.
 REMOVAL_CONFIRM_KEY = "equipment_workspace_removal_confirm_v1"
-# 가정 설비 시나리오의 배치 칸 임시 잠금(설비 시나리오 2단계 S1). 이 판에서 배치 일곱 칸은 공통
-# 칸이라 가정 세션에서 고치면 **공식 배치**가 바뀐다(LY4 에 어긋남). 칸을 잠그지(`disabled`) 않고
-# 제출·붙여넣기 미리보기에서 저장본 호기를 잇는 행의 일곱 칸이 저장본과 다르면 저장본 값으로
-# 되돌린다(`assumption_layout_drift`) — `레이아웃표시` 는 기본값 없는 필수 고르기 칸이라 잠그면 새
-# 호기 행을 넣을 수 없다. 저장본에 없는 설비명의 새 호기 배치 값은 받는다.
+# 가정 설비 시나리오의 배치 칸 임시 잠금(설비 시나리오 2단계 S1·S2). S2 부터 가정 세션 저장은
+# 배치를 그 시나리오의 **배치 차이**로 쓰는데, 이 판의 화면은 그 차이를 보이지도 지우지도 못하고
+# 차이가 있는 시나리오는 공식으로 발행되지 않는다. 그래서 저장이 차이를 만들 칸을 제출·붙여넣기
+# 미리보기에서 막는다(`assumption_layout_lock`): 있던 호기의 일곱 칸은 저장본 값으로 되돌리고, 새
+# 호기는 자리 없이(동·층·X좌표·Y좌표 비움 — 있는 묶음에 드는 모듈은 그 묶음의 공식 동·층)
+# 맞춘다. 칸을 잠그지(`disabled`) 않는다 — `레이아웃표시` 는 기본값 없는 필수 고르기 칸이라
+# 잠그면 새 호기 행을 넣을 수 없다. S3 가 가정 배치 편집을 열면 걷는다.
 ASSUMPTION_LAYOUT_LOCK = (
-    "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 Space 현황에서 "
-    "고칩니다 — 다음 판에서 열립니다. 지금은 공식 설비 시나리오에서 고치세요(이 판에서는 배치 칸이 "
-    "공통이라 여기서 고치면 공식 배치가 바뀝니다). 저장본에 없는 설비명으로 새로 넣는 호기의 배치 "
-    "칸은 받습니다 — 지운 호기를 같은 설비명으로 다시 넣으면 같은 호기라 저장본 배치 그대로입니다."
+    "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 다음 판에서 Space "
+    "현황으로 이 시나리오에만 따로 놓습니다 — 지금은 있던 호기의 배치 칸 고침을 저장본 값으로 "
+    "되돌리고, 새로 넣는 호기는 자리 없이(동·층·X좌표·Y좌표를 비움 — 있는 묶음에 드는 모듈은 그 "
+    "묶음의 공식 동·층) 넣습니다. 배치는 공식 설비 시나리오에서 고치세요. 지운 호기를 같은 "
+    "설비명으로 다시 넣으면 같은 호기라 저장본 배치 그대로입니다."
 )
 
 
@@ -2420,6 +2510,7 @@ ORIGIN_WORDS = {
     "clone": "복제",
     "propagate": "함께 넣기",
     "restore": "되돌리기",
+    "layout_clear": "배치 차이 정리",
 }
 
 
@@ -3003,18 +3094,15 @@ def render_equipment_data_workspace(
         # 반영한다(막고 위젯 delta 에만 남기면 남의 저장·화면 이동 때 같은 제출의 다른 편집도
         # 잃는다). 「있던 호기」 는 저장했을 때 저장본 호기 키를 잇는 행이다 — 앞 제출에서 지우거나
         # 설비명을 바꿔 둔 호기를 같은 이름으로 다시 넣는 길도 여기서 막힌다.
-        drift = assumption_layout_drift(edited[1], _saved_master(), pending_unit_renames().units)
-        if drift:
-            edited = (
-                edited[0],
-                restore_saved_layout(edited[1], _saved_master(), drift),
-                edited[2],
-            )
+        lock = assumption_layout_lock(edited[1], _saved_master(), pending_unit_renames().units)
+        if lock:
+            edited = (edited[0], lock.apply(edited[1], _saved_master()), edited[2])
             layout_refusal = assumption_layout_refusal(
-                list(drift),
+                list(lock.restore),
                 scenario_name=scenario_name,
                 pasted=False,
                 held=preview_clicked or import_save_clicked or edit_save_clicked,
+                placed=list(lock.place),
             )
     _remember_edits(edited)
     _apply_bulk_actions(

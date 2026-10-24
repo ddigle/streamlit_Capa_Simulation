@@ -78,6 +78,7 @@ from capa_simulation.persistence.equipment_cache import (
 )
 from capa_simulation.persistence.equipment_repository import (
     SCHEDULE_REVISION_NAME_MAX_CHARS,
+    EquipmentLayoutRoleChanged,
     EquipmentReleaseMoved,
     EquipmentRevisionConflict,
     EquipmentScenarioSummary,
@@ -87,7 +88,10 @@ from capa_simulation.persistence.equipment_repository import (
     ScheduleRestoreResult,
     legacy_trace_message,
 )
-from capa_simulation.services.equipment_scenario import ScheduleRestorePreview
+from capa_simulation.services.equipment_scenario import (
+    ScheduleRestorePreview,
+    restore_writes_nothing,
+)
 from capa_simulation.services.korean_particle import (
     object_particle,
     topic_particle,
@@ -592,12 +596,58 @@ def restore_preview_lines(
         added_since_sentence(revision, preview.added_since),
         "공통 대장(호기 정보·실적·상태·Space 실물)과 다른 설비 시나리오는 그대로입니다.",
     ]
+    layout = restore_layout_sentence(revision, preview, official_scenario=official_scenario)
+    if layout:
+        lines.append(layout)
     if official_scenario:
         lines.append(
             "공식 설비 시나리오입니다 — 아래 발행 체크가 켜져 있고 그 사이 발행하지 않은 더 새 "
             "리비전이 없으면 새 리비전을 공식으로 발행합니다."
         )
     return lines
+
+
+def _stored_layout_words(units: int, marks: int, labels: int) -> str:
+    """「호기 1행·요소 2개」 — 저장된 배치 차이 행 수(0 인 것은 뺀다)."""
+    parts = [
+        f"{word} {count:,}{unit}"
+        for word, count, unit in (
+            ("호기", units, "행"),
+            ("요소", marks, "개"),
+            ("이름표", labels, "개"),
+        )
+        if count
+    ]
+    return "·".join(parts)
+
+
+def restore_layout_sentence(
+    revision: EquipmentScheduleRevisionSummary,
+    preview: ScheduleRestorePreview,
+    *,
+    official_scenario: bool,
+) -> str:
+    """되돌리기가 배치 차이(설비 0031)에 하는 일 한 문장 — 고른 리비전과 지금 최신의 저장된 차이가
+    같으면 빈 글. 공식 설비 시나리오면 차이를 버린다(I2), 가정이면 고른 리비전의 차이를 되살린다.
+    판정은 저장소와 같은 `restore_writes_nothing` 의 몫과 맞는다(설계 6-6)."""
+    if preview.layout_identical:
+        return ""
+    title = f"r{revision.revision_no}"
+    stored = _stored_layout_words(
+        preview.layout_unit_rows, preview.layout_mark_rows, preview.layout_label_rows
+    )
+    if official_scenario:
+        if not stored:
+            return ""
+        return (
+            f"{title}에 저장된 배치 차이({stored})는 공식 설비 시나리오라 따라오지 않습니다 — "
+            "일정·비가동만 되돌립니다."
+        )
+    if stored:
+        return f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다."
+    return (
+        f"{title}에는 배치 차이가 없어 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다."
+    )
 
 
 def restore_confirm_label(
@@ -625,7 +675,7 @@ def restore_result_message(
     moved: bool,
     kept_unsaved: bool,
 ) -> str:
-    """되돌리기 뒤 알림 — 새 리비전·바뀐 호기 수·발행·세션 이동."""
+    """되돌리기 뒤 알림 — 새 리비전·바뀐 호기 수·배치 차이·발행·세션 이동."""
     name = literal_markdown(scenario_name)
     title = f"r{revision.revision_no}"
     if result.schedule is None:
@@ -636,6 +686,17 @@ def restore_result_message(
         f"{with_object_particle(created)} 저장했습니다(일정이 바뀐 호기 "
         f"{result.preview.changed_units:,}대)."
     ]
+    if not result.preview.layout_identical:
+        stored = _stored_layout_words(
+            result.schedule.layout_unit_count,
+            result.schedule.layout_mark_count,
+            result.schedule.layout_label_count,
+        )
+        sentences.append(
+            f"배치 차이도 {title} 것으로 맞췄습니다({created}에 저장된 차이 {stored})."
+            if stored
+            else f"{created}에는 배치 차이가 없습니다 — 공식 배치를 따릅니다."
+        )
     if result.release_no is not None:
         sentences.append(f"{with_direction_particle(f'공식 v{result.release_no}')} 발행했습니다.")
     elif result.release_withheld:
@@ -695,7 +756,9 @@ def _render_restore(
         scenario, revision, preview, official_scenario=official_scenario
     ):
         st.caption(line)
-    if preview.identical:
+    # 단추를 세울지는 저장소의 「쓸 것 없음」 판정과 같은 함수다 — 공식 시나리오는 배치 차이를
+    # 버리므로 일정·비가동만 본다(확인 글과 실제 쓰기가 갈리지 않게, 설계 6-6).
+    if restore_writes_nothing(preview, official_scenario=official_scenario):
         st.info(
             f"최신 r{scenario.latest_revision_no} 의 일정·비가동과 모두 같아 되돌릴 것이 없습니다."
         )
@@ -752,7 +815,15 @@ def _render_restore(
             revision_name=revision_name or None,
             publish_official=publish,
             expected_release_no=release_no,
+            expected_layout_role="official" if official_scenario else "overlay",
         )
+    except EquipmentLayoutRoleChanged:
+        # 확인 글(배치 차이를 버리나 되살리나)을 정한 역할이 그 사이 남의 발행으로 바뀌었다.
+        _refused(
+            "그 사이 공식 설비 시나리오가 바뀌어 되돌리지 않았습니다 — 바뀐 확인 글을 다시 보고 "
+            "되돌리세요."
+        )
+        return
     except EquipmentRevisionConflict as exc:
         # 확인 글의 수가 그 사이 바뀌었다 — 목록·공통 최신을 다시 읽어 새 확인 글을 보인다.
         _refused(

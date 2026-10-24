@@ -136,6 +136,10 @@ SCENARIO_SCHEDULE_COLUMNS = (*SCENARIO_SCHEDULE_DATE_COLUMNS, SCENARIO_MEMO_COLU
 COMMON_MASTER_COLUMNS = tuple(
     column for column in EQUIPMENT_COLUMNS if column not in SCENARIO_SCHEDULE_COLUMNS
 )
+# Space 배치 일곱 칸. 공통 칸 그대로다 — 공통 대장이 **공식 배치**를 들고, 가정 설비 시나리오는 그
+# 위의 「공식과 다른 것만」 을 일정 리비전의 배치 차이로 든다(설비 `0031`, 2026-10-24 사용자 결정
+# LY1·LY2 — 나누기·얹기는 `services/layout_overlay.py`). 39칸·CSV·붙여넣기 양식은 그대로다.
+SCENARIO_LAYOUT_COLUMNS = ("동", "층", "X좌표", "Y좌표", "Xsize", "Ysize", "레이아웃표시")
 
 # 단계 전환의 단계 이름. 정지·반출/이설은 컬럼 이름을 따른다(그날 그 이름의 상태가 된다). 실적은
 # 넣지 않는다 — 넣으면 단계 전환 이벤트가 늘어난다.

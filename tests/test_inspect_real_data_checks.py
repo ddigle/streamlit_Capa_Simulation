@@ -2792,3 +2792,16 @@ def test_an_interrupted_run_still_prints_the_summary_so_far(
     assert bare[0].startswith("- 8-1 S ")
     assert bare[1:] == ["- 8-10 활성 1 · 0 아님 0/3 · 중단 잰 3/12 · 합 0", "- 8-10 멈춤 중단"]
     assert written.strip() in capsys.readouterr().out
+
+
+def test_a_copy_before_equipment_0031_is_named_as_such_and_skips_the_official_read(
+    tmp_path: Path,
+) -> None:
+    """검토 F19 — 0027 뒤 0031 전 사본은 「0027 전」 이 아니라 「설비 0031 전」 으로 적고 리비전
+    투영(배치 차이 셈 칸)을 부르지 않는다."""
+    path = tmp_path / "equipment_availability.duckdb"
+    _database_before(path, 29)
+    with duckdb.connect(str(path), read_only=True) as connection:
+        found = checks._read_official_equipment(connection)
+    assert isinstance(found, str) and found.startswith("설비 0031 전")
+    assert "0027 전" not in found

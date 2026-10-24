@@ -19,6 +19,12 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 
 MIGRATION_VERSION = 29
 NEW_TABLES = ("floor_state_profile", "floor_state")
+# 0029 뒤 번호가 만드는 빈 표(설비 0031 — 가정 배치 차이). 지금 코드의 `initialize()` 가 함께 건다.
+LATER_TABLES = (
+    "equipment_schedule_layout_unit",
+    "equipment_schedule_layout_mark",
+    "equipment_schedule_layout_label",
+)
 
 
 def _apply_through(path: Path, version: int) -> None:
@@ -109,14 +115,19 @@ def test_a_database_at_0027_keeps_every_other_row_and_gets_empty_tables(tmp_path
     assert not set(NEW_TABLES) & set(before)
     assert before["equipment_scenario"] == 1 and before["revision"] == 3
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION,)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == {
         "floor_state_profile": 0,
         "floor_state": 0,
     }
-    assert {table: count for table, count in after.items() if table not in NEW_TABLES} == before
+    assert {table: after[table] for table in LATER_TABLES} == dict.fromkeys(LATER_TABLES, 0)
+    assert {
+        table: count
+        for table, count in after.items()
+        if table not in NEW_TABLES and table not in LATER_TABLES
+    } == before
     repository = DuckDBEquipmentRepository(path)
     states = repository.load_floor_states()
     assert (states.rows, states.version) == ((), 0)

@@ -222,7 +222,7 @@ def test_migration_0025_reads_old_zones_as_dashed_left_and_starts_with_no_labels
         )
 
     repository = DuckDBEquipmentRepository(database)
-    assert repository.initialize() == (25, 27, 29)
+    assert repository.initialize() == (25, 27, 29, 31)
 
     (floor,) = repository.load_floor_layout_marks(*KEY)
     (fab,) = repository.load_fab_layout_marks()
@@ -236,6 +236,7 @@ def test_migration_0025_reads_old_zones_as_dashed_left_and_starts_with_no_labels
                 """
                 SELECT table_name, column_name, is_nullable FROM information_schema.columns
                 WHERE table_schema = 'equipment_ops'
+                  AND table_name IN ('floor_layout_mark', 'fab_layout_mark')
                   AND column_name IN ('border_style', 'label_align')
                 """
             ).fetchall()

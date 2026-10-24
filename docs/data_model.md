@@ -104,8 +104,12 @@ equipment_ops.revision                          공통 호기 대장 리비전(�
 # data/equipment_availability.duckdb — 설비 시나리오(0027, 표끼리 FK 없음 — 아래 「설비 시나리오의 가리킴」)
 equipment_ops.equipment_scenario                설비 시나리오(이름 고칠 수 있음 · status ACTIVE/ARCHIVED)
 equipment_ops.equipment_schedule_revision       시나리오 일정 리비전(번호는 시나리오마다 r1… · UNIQUE (시나리오, 번호))
+                                                + layout_hash(0031 — 배치 차이 지문, 0031 뒤 코드가 늘 채움)
        ⋯ equipment_schedule_snapshot            호기 키마다 날짜 여섯 + 시나리오 메모(PK 리비전·키)
        ⋯ equipment_schedule_downtime_snapshot   비가동 일정 전체(F2 — UNIQUE 리비전·키·유형·시작일)
+       ⋯ equipment_schedule_layout_unit   (0031) 호기 키마다 배치 일곱 칸 + 저장 당시 Main 설비 — 공식과 다른 호기만
+       ⋯ equipment_schedule_layout_mark   (0031) (층, 요소 id)마다 set/drop — 공식과 다른 요소만
+       ⋯ equipment_schedule_layout_label  (0031) (층, Main 설비)마다 위치 또는 NULL(공식 행 지움) — 다른 것만
        ⋯ legacy_revision_id  → revision         이관 리비전만: 옛 마스터 일정 칸·비가동을 읽는다
        ⋯ common_revision_id  → revision         저장 때 함께 본 공통 리비전(「그때 그대로」 보기)
 equipment_ops.equipment_official_release        공식 발행(append-only · release_no 전역)
@@ -150,6 +154,35 @@ version 만 올린다 — HOME 슬롯 글자가 시나리오명·리비전명을
 한 트랜잭션의 행끼리 같다). `0027` 이 넣는 id 는 결정적 글(`'operations'`·`'legacy-' || revision_id`·`'release-1'`·경계 1)이라
 동기화로 받은 DB 를 다른 PC 가 다시 이관해도 같은 행이 나온다. 호기 키 유일 색인은 두지 않는다 — 유일성은 저장소의 키
 배정 검사·합치기의 `one_to_one`·새 일정 표 PK 가 지킨다. 옛 행의 키는 NULL 이고 읽을 때 `'n' || md5(equipment_id)` 로 본다.
+
+**가정 설비 시나리오의 배치 차이(`0031`).** **공식 배치** = 공통 대장 최신의 배치 일곱 칸(동·층·X좌표·Y좌표·Xsize·
+Ysize·레이아웃표시) + 층 현행값(도면 요소·Main 설비명 위치·캔버스·배경 도면) + FAB + 층 사용(0029)이다. 가정 설비 시나리오는
+그 위의 **공식과 다른 것만**을 일정 리비전의 차이 표 셋에 든다(2026-10-24 결정 LY1·LY2 — 손대지 않은 호기·요소는 공식을
+따라간다). 층 캔버스·배경 도면·FAB·층 사용은 시나리오마다 갈리지 않는다(공통 — 가정 시나리오에서 고칠 수 없다).
+
+- **차이의 단위**: 호기 하나의 일곱 칸 **통째**(Q5), 모듈 묶음(Main 설비 행 둘 이상)은 **묶음 통째**(한 모듈이라도 다르면 모든
+  모듈을 적는다). 요소는 id 마다 `set`(그 요소 통째)·`drop`(공식 요소를 지움), 이름표는 (층, Main 설비)마다 위치·NULL.
+- **합치기**(`services/layout_overlay.apply_unit_overlay`): 합친 마스터 위, 읽기 검증 앞에 얹고 **예외를 내지 않는다**(I4).
+  공통에서 지운 호기의 차이는 버리고 센다. 공식에서 묶음 소속이 바뀐 모듈(저장 당시 Main 설비 `parent_equipment_id` 로
+  가른다)은 그 가정 배치에서 동·층만 묶음의 가정 자리로 맞추고 X·Y 를 비운다 — 늘 「모듈 행 동·층 같음」 을 지난다.
+  요소는 공식 차례로 훑어 `drop` 은 빼고 `set` 은 바꾼 뒤 공식에 없는 `set` 을 붙인다. 이름표는 공식에 덮는다. 저장하는
+  요소 차이의 차례는 정해져 있다(공식 id 는 공식 차례 → 새 요소) — 같은 뜻의 차이가 같은 `layout_hash` 를 낸다.
+- **쓰기 때 정규화**: 그 리비전을 쓰는 모든 길(저장·함께 넣기·되돌리기·복제·배치 차이 지우기·발행 정리)이 그 쓰기의 공통·층
+  현행값과 같아진 차이를 지운다. 그래서 **저장된 행 수**(원시)와 **공식과 실제로 다른 수**(실효)가 갈릴 수 있다.
+- **불변식**: I1 차이 행은 넣기만 한다(UPDATE·DELETE 없음 — 합친 본문 캐시의 (공통, 일정) 쌍 키가 그대로 맞는다). I2 공식 설비
+  시나리오의 최신·최신 공식 발행 리비전에는 차이 행이 없다(원시 기준 — 공식 대상 저장은 차이를 쓰지 않고, 차이가 있는
+  시나리오는 공식으로 발행하지 않는다. 남은 행이 공식과 같아졌을 뿐이면 차이를 비운 `layout_clear` 리비전을 써서 그것을
+  발행한다). I3 리비전의 차이는 그 리비전 `common_revision_id` 와 그때의 층 현행값 기준 「다른 것만」 이다. I4 합치기는 예외가
+  없고, 가정 리비전을 쓴 저장은 커밋 전에 그 쌍을 다시 읽는다. I7 가정 역할의 저장이 쓰는 공통도 읽기 검증을 지나고 공식
+  배치를 옮기지 않는다(있던 호기는 공통 대장의 원래 칸 값 그대로 — 견줄 값처럼 반올림하지 않는다. 새 호기는 자리 없이 — 있는
+  묶음의 새 모듈과 묶음에 넣은 공식 동·층 미정 호기만 그 묶음 공식 동·층, 공식 층이 다른 호기를 한 묶음으로 묶는 고침은 거부).
+- `layout_hash`: 빈 차이는 고정 지문 `empty`, NULL 은 이관 리비전이거나 0031 을 모르는 코드가 쓴 리비전이라 차이 표를 읽지
+  않는다. 쓰임 — 가정 배치만 바꾼 저장의 빨리 감기(그 시나리오 최신의 지문이 출발과 같으면 낡아도 최신 일정 위에 받는다),
+  옛 코드 흔적(차이가 있던 리비전 뒤 지문 NULL 리비전 — 시나리오 목록 `layout_trace_count`, 저장은 막지 않고 E7 되돌리기로
+  되살린다), 질의 생략.
+- 일정 리비전 출처 `origin` 에 `layout_clear`(「배치 차이 모두 지우기」·공식 발행 정리)가 더해진다(0027 DDL 주석은 체크섬
+  때문에 그대로 — 허용값은 `layout_overlay.SCHEDULE_REVISION_ORIGINS`). 일정 리비전이 소유하는 내용 표 목록은
+  `equipment_scenario_store.SCHEDULE_REVISION_OWNED_TABLES`(영구 삭제가 자식 먼저 지울 목록)다.
 
 DuckDB 1.5.5는 서로 다른 스키마 사이의 외래 키를 만들 수 없으므로 스키마 간 FK는
 DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에서 소유 관계, 상위 리비전,
@@ -437,6 +470,10 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   `shortening_baseline` 에는 설비 쪽 출처 칸 넷(`equipment_schedule_revision_ref`·`equipment_schedule_revision_no`·
   `equipment_scenario_name`·`equipment_release_no`)이 붙는다. SQL 은 `persistence/equipment_scenario_store.py`, 나누기·합치기
   규칙은 `services/equipment_scenario.py`.
+- `equipment_schedule_layout_unit`·`equipment_schedule_layout_mark`·`equipment_schedule_layout_label`과
+  `equipment_schedule_revision.layout_hash`(마이그레이션 31): **가정 설비 시나리오의 Space 배치 차이**(위 「가정 설비 시나리오의
+  배치 차이」). PK 가 있고 FK 가 없으며 넣기만 한다. 칸 이름은 공통 대장 마스터 표·층 요소 표(`floor_layout_mark`)와 같다.
+  얹기·나누기·정규화는 `services/layout_overlay.py`, 역할 나누기·발행 막기는 `persistence/equipment_repository.py`.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
 - `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
   보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.
@@ -444,7 +481,10 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 화면이 보는 한 벌은 **(공통 대장 최신, 설비 시나리오 일정 리비전) 쌍을 합친 스냅샷**이다. 세션은 일정 리비전 하나를
 고정해 들고(새 세션은 최신 공식 발행) 그 합친 스냅샷이 가용설비 현황·필요 단축 일정·공정 Capa 상세의 편집 원본·계산 원천이며
 제약 시뮬레이션의 계산 원천(읽기만 — 어느 DB 에도 쓰지 않는다)이고,
-Space 현황은 늘 공식(공통 최신 + 최신 공식 발행)을 그린다. 일정 수정, 신규 호기·비가동 추가 또는 행 삭제 후 저장하면 기존
+Space 현황은 지금 판에서 늘 공식(공통 최신 + 최신 공식 발행)을 그린다(설비 시나리오 2단계 S3 에서 세션 시나리오로 바뀐다).
+가정 설비 시나리오의 합친 스냅샷에는 그 리비전의 호기 배치 차이가 얹혀 있다(설비 `0031`) — 위치는 가용대수·확보율 계산에
+들지 않지만 계산 프레임은 얹은 그대로라 배치만 바꾼 가정 시나리오도 계산 캐시 칸을 따로 쓴다(값은 같다 — LY6). 저장은
+대상이 공식 설비 시나리오면 배치를 공통 대장·층 현행값에, 가정이면 그 시나리오 새 일정 리비전의 배치 차이로 쓴다. 일정 수정, 신규 호기·비가동 추가 또는 행 삭제 후 저장하면 기존
 리비전을 갱신하지 않고 **바뀐 쪽만** 새 전체 스냅샷을 추가한다 — 공통 칸·기존 보유대수가 바뀌었으면 공통 대장 리비전, 일정
 칸·비가동이 바뀌었으면 그 시나리오의 일정 리비전, 둘 다 그대로면 아무것도 쓰지 않는다(`0027` 뒤 첫 저장만은 공통이 그대로여도
 계약 v4 공통 한 벌을 함께 쓴다). 새 호기·새 비가동은 기본으로 다른 시나리오에도 같은 일정으로 넣고(그 시나리오들에 새 일정

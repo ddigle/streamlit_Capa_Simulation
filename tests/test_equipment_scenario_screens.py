@@ -60,6 +60,8 @@ from capa_simulation.components.equipment_scenario_management import (
     branch_unscheduled_sentence,
     publish_preview,
     restore_confirm_label,
+    restore_layout_sentence,
+    restore_result_message,
     session_heading,
 )
 from capa_simulation.components.equipment_scenario_status import (
@@ -96,6 +98,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioCatalog,
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
+    ScheduleRestoreResult,
 )
 from capa_simulation.process_detail_state import (
     EQUIPMENT_BASIS_OFFICIAL,
@@ -687,6 +690,62 @@ def test_space_keeps_unsaved_layout_edits_savable_when_a_new_official_locks_edit
     assert saved.schedule is not None and saved.schedule.revision_no == 2
 
 
+def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_official(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """S2 리뷰 — 공식 세션에서 좌표를 적용해 둔 사이 남이 다른 설비 시나리오를 공식으로 내면 그
+    세션은 가정이 된다. 잠김 상자의 「배치 저장」 이 그 공식 배치 편집을 가정 배치 차이로 조용히
+    쓰고 「저장했습니다」 를 띄우면 편집은 Space(공식)에서 사라지고 그 시나리오는 다시 공식이 될 수
+    없다(차이를 지울 화면이 아직 없다). 저장은 배치 편집이 공식 역할에서 났다고 대조해 막는다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        BUFFER_GENERATION_KEY,
+        BUFFER_KEY,
+    )
+
+    repository = _repository(tmp_path)
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    moved = equipment.copy()
+    first = moved.index[moved["설비명"].eq("EQ-01")][0]
+    moved.loc[first, "X좌표"] = 40.0
+    app.session_state[BUFFER_KEY] = (baseline, moved, downtime)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    _ok(app.run())
+    clone = _clone(repository)
+    assert clone.latest_schedule_revision_id is not None
+    repository.publish_equipment_release(
+        clone.latest_schedule_revision_id,
+        released_by=None,
+        note=None,
+        expected_latest_release_no=1,
+    )
+    clear_equipment_scenario_cache()
+    _ok(app.run())
+    assert any("잠기기 전에 적용한 변경이 이 세션에 남아 있습니다" in t for t in _texts(app))
+    before = [len(repository.list_revisions())] + [
+        item.revision_count for item in repository.list_equipment_scenarios()
+    ]
+
+    app.button(key="space_layout_save").click()
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert any(
+        "그 사이 공식 설비 시나리오가 바뀌어 이 배치 변경(공식 배치에 들어갈 편집이었음)을 "
+        "저장하지 않았습니다" in text
+        for text in texts
+    )
+    assert not any("설비 데이터를 저장했습니다" in text for text in texts)
+    after = [len(repository.list_revisions())] + [
+        item.revision_count for item in repository.list_equipment_scenarios()
+    ]
+    assert after == before
+    assert all(item.latest_layout_unit_count == 0 for item in repository.list_equipment_scenarios())
+    official = repository.load_official_snapshot()
+    assert official is not None and _value_of(official, "EQ-01", "X좌표") == 10
+
+
 def test_space_layout_save_refuses_removing_a_unit_another_scenario_schedules(
     _shell: AppTest, tmp_path: Path
 ) -> None:
@@ -1044,6 +1103,71 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     assert _value_of(official, "EQ-02", "Qual일정") == pd.Timestamp("2026-08-21")
     assert official.unscheduled_units == frozenset({"EQ-NEW"})
     assert _heading(app) == "이 세션: 운영 일정 · r3 · 공식 v3"
+
+
+def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothing(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """S2 리뷰 — 공식 시나리오의 「가정이던 때」 리비전(배치 차이만 다름)을 고르면 저장소는 차이를
+    버리고 쓸 것이 없다고 본다. 확인 화면도 같은 판정이라 확인 체크·단추를 세우지 않고, 차이가
+    따라오지 않는다고 적는다(전에는 체크·단추가 서고 누르면 아무것도 쓰지 않았다)."""
+    repository = _repository(tmp_path)
+    clone = _clone(repository)
+    mine = _session(repository, clone.equipment_scenario_id)
+    saved = repository.save_equipment(
+        _request(
+            mine,
+            clone.equipment_scenario_id,
+            equipment=_set(mine.equipment, "EQ-01", "X좌표", 50.0),
+        )
+    )
+    assert saved.schedule is not None
+    cleared = repository.clear_layout_overlay(
+        clone.equipment_scenario_id,
+        expected_latest_schedule_revision_id=saved.schedule.schedule_revision_id,
+    )
+    assert cleared is not None
+    repository.publish_equipment_release(
+        cleared.schedule_revision_id, released_by=None, note=None, expected_latest_release_no=1
+    )
+    app = _scenario_tab(_shell)
+    app.selectbox(key=SCENARIO_KEY).set_value(clone.equipment_scenario_id)
+    _ok(app.run())
+    app.selectbox(key=REVISION_KEY).set_value(saved.schedule.schedule_revision_id)
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert any(
+        "r2에 저장된 배치 차이(호기 1행)는 공식 설비 시나리오라 따라오지 않습니다" in text
+        for text in texts
+    )
+    assert any("모두 같아 되돌릴 것이 없습니다" in text for text in texts)
+    assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
+    assert not [button for button in app.button if button.key == RESTORE_BUTTON_KEY]
+
+
+def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
+    """가정 시나리오의 배치만 다른 리비전을 되돌리면 확인 글·결과 글이 배치 차이를 말한다(「일정이
+    바뀐 호기 0대」 만 적지 않게)."""
+    chosen = _summary(2)
+    preview = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d")
+    assert restore_layout_sentence(chosen, preview, official_scenario=False) == (
+        "r2의 가정 배치(저장된 차이 호기 1행)도 되살립니다."
+    )
+    assert "따라오지 않습니다" in restore_layout_sentence(chosen, preview, official_scenario=True)
+    assert restore_layout_sentence(chosen, ScheduleRestorePreview(), official_scenario=False) == ""
+    created = EquipmentScheduleRevisionSummary(
+        "s4", OPERATIONS, 4, "restore", datetime(2026, 10, 25), layout_unit_count=1
+    )
+    message = restore_result_message(
+        "셋업 실무",
+        chosen,
+        ScheduleRestoreResult(schedule=created, preview=preview),
+        moved=False,
+        kept_unsaved=False,
+    )
+    assert "(일정이 바뀐 호기 0대)" in message
+    assert "배치 차이도 r2 것으로 맞췄습니다(r4에 저장된 차이 호기 1행)." in message
 
 
 def _saved_elsewhere(repository: DuckDBEquipmentRepository, unit: str, value: str) -> None:
