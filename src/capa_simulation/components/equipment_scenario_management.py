@@ -8,7 +8,9 @@
   불러오기」), 「복제해 새 시나리오」(출처 = 그 시나리오 최신 / 공식 발행 리비전 — 만들기는
   복제로만), 「이름 바꾸기」, 「공식으로 발행」(지금 공식 → 새 공식을 나란히, 최신이 아니면 그
   사실도).
-- **옛 배포 흔적**이 있을 때만 「이대로 이어 쓰기」(설비 저장 막기를 푼다 — 백업 복원 대신).
+- **옛 배포 흔적**이 있을 때만 「이대로 이어 쓰기」(설비 저장 막기를 푼다 — 백업 복원 대신). 확인
+  체크(빠지는 호기 수)를 켜야 단추가 서고, 옛 배포 리비전이 일정과 합쳐지지 않으면 단추 대신 백업
+  복원 안내만 선다.
 
 목록·리비전은 설비 시나리오 목록 캐시(세대·stat·TTL)에서 받는다 — 이 탭을 그리는 회차에만 읽는다.
 쓰기(복제·이름·발행·이어 쓰기)는 저장소가 하고 그 뒤 `clear_equipment_scenario_cache()` 를 부른다
@@ -38,13 +40,16 @@ from capa_simulation.persistence.equipment_cache import (
     latest_equipment_revision_id,
     load_equipment_revision_summaries,
     load_equipment_schedule_revisions,
+    load_legacy_trace_review,
 )
 from capa_simulation.persistence.equipment_repository import (
     EquipmentRelease,
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
+    LegacyTraceReview,
     legacy_trace_message,
 )
+from capa_simulation.services.korean_particle import object_particle
 
 __all__ = ["render_equipment_scenario_management"]
 
@@ -62,6 +67,7 @@ PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
 PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
+CONTINUE_CONFIRM_KEY = "equipment_scenario_manage_continue_confirm_v1"
 # 이 탭 작업 알림 — 다음 회차에 한 번, 탭 맨 위.
 FLASH_KEY = "equipment_scenario_manage_flash_v1"
 # 입력 칸 세대 — 쓰기에 성공한 회차에 올라 다음 회차에 빈 칸으로 선다(옛 값을 되보내지 않게).
@@ -417,14 +423,52 @@ def _render_publish(
         )
 
 
-def _render_legacy_trace(database_path: str, count: int) -> None:
-    """옛 배포 흔적 — 경고와 「이대로 이어 쓰기」(흔적 수를 대조해 이관 경계를 덧붙인다)."""
-    st.warning(legacy_trace_message(count), icon=":material/history:")
-    st.caption(
-        "이어 쓰면 옛 배포로 저장한 공통 칸은 남고, 옛 배포에서 고친 일정은 들어오지 않습니다 — "
-        "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2)."
+def continue_confirm_label(review: LegacyTraceReview) -> str:
+    """「이대로 이어 쓰기」 확인 체크 글 — 무엇을 잃는지 수로 적는다(설계 2-4)."""
+    revision = (
+        f"옛 배포 리비전 r{review.trace_revision_no}"
+        if review.trace_revision_no
+        else "옛 배포 리비전"
     )
-    if st.button("이대로 이어 쓰기", icon=":material/fast_forward:", key=CONTINUE_BUTTON_KEY):
+    dropped = (
+        f" 지금 공통 대장의 호기 {review.dropped_units:,}대가 그 리비전에 없어 모든 설비 "
+        "시나리오에서 빠지고(그 일정·비가동은 고아가 됩니다),"
+        if review.dropped_units
+        else ""
+    )
+    return (
+        f"{revision}{object_particle(revision)} 공통 대장 최신으로 받아들입니다 —{dropped} 옛 "
+        "배포에서 고친 일정은 들어오지 않습니다. 백업 복원 대신 이대로 이어 씁니다."
+    )
+
+
+def _render_legacy_trace(database_path: str, count: int) -> None:
+    """옛 배포 흔적 — 경고와 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
+    덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 옛 배포
+    리비전이 어느 시나리오 일정과도 합쳐지지 않으면 단추를 끄고 백업 복원만 남긴다."""
+    st.warning(legacy_trace_message(count), icon=":material/history:")
+    try:
+        review = load_legacy_trace_review(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        return
+    if review.refusal is not None:
+        st.error(
+            "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 이어 쓸 수 없습니다 — "
+            f"{literal_markdown(review.refusal)} 런북 4-2 대로 백업을 복원하세요.",
+            icon=":material/block:",
+        )
+        return
+    st.caption(
+        "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
+    )
+    agreed = st.checkbox(continue_confirm_label(review), key=_keyed(CONTINUE_CONFIRM_KEY))
+    if st.button(
+        "이대로 이어 쓰기",
+        icon=":material/fast_forward:",
+        key=CONTINUE_BUTTON_KEY,
+        disabled=not agreed,
+    ):
         try:
             get_equipment_repository(database_path).acknowledge_legacy_trace(
                 expected_trace_count=count, note="이대로 이어 쓰기"

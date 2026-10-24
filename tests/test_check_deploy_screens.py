@@ -1917,6 +1917,19 @@ def test_the_equipment_scenario_line_contract_matches_the_app() -> None:
     assert '"리비전",' in _text(COMPONENTS / "equipment_scenario_status.py")
 
 
+def test_the_equipment_scenario_value_reads_the_label_without_the_icon_text() -> None:
+    """값 칸 단추에는 머티리얼 아이콘이 있다 — 실제 Chrome 의 단추 `innerText` 는
+    「account_tree\\n\\n운영 일정 · r3」 이었다(FG 차례 실행). 스크립트는 라벨 칸만 읽고, 그래도
+    단추 전체 글이 오면 마지막 줄로 꼴을 본다(거짓 「꼴 다름」 을 내지 않는다)."""
+    assert "stMarkdownContainer" in screens._EQUIPMENT_ROW_JS
+    assert screens.equipment_field_text("account_tree\n\n운영 일정 · r3") == "운영 일정 · r3"
+    assert screens.equipment_field_text("운영 일정 · r3") == "운영 일정 · r3"
+    assert screens.equipment_field_text(None) == ""
+    row = {"name": "설비 시나리오", "badge": "공식 v1", "value": "account_tree\n\n운영 일정 · r3"}
+    line = screens.summarize_equipment_scenario_line(row, None, None, False)
+    assert "꼴 같음" in line and "account_tree" not in line
+
+
 def test_the_equipment_scenario_line_summary_names_only_shapes_and_badge_kinds() -> None:
     row = {"name": "설비 시나리오", "badge": "공식 v3", "value": "운영 일정 · r12"}
     facts = {"modes": ["불러오기", "저장"], "selected": "불러오기", "revisions": 4}

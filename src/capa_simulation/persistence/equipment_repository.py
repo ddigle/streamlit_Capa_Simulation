@@ -408,6 +408,30 @@ class EquipmentLegacyTraceError(ValueError):
         self.count = count
 
 
+class EquipmentLegacyTraceUnmergeable(ValueError):
+    """옛 배포가 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 「이대로 이어 쓰기」 를 하지
+    않았다 — 이어 쓰면 그 시나리오(공식이면 공식)를 다시는 읽을 수 없다. 백업 복원만 남는다."""
+
+
+@dataclass(frozen=True)
+class LegacyTraceReview:
+    """「이대로 이어 쓰기」 확인 재료(쓰기 전에 읽는다).
+
+    - `count` — 이관 경계 뒤 계약 v3 이하 공통 리비전 수(0 이면 나머지는 뜻이 없다).
+    - `trace_revision_no` — 이어 쓰면 공통 최신이 될 옛 배포 리비전 번호.
+    - `dropped_units` — 흔적 앞 공통 대장(새 판이 마지막으로 쓴 것)에 있다가 옛 배포 리비전에는 없어
+      이어 쓰면 **모든 설비 시나리오**에서 빠지는 호기 수(새 판에서 만든 호기는 늘 든다 — 옛 배포는
+      그 키를 모른다).
+    - `refusal` — 옛 배포 리비전이 어느 시나리오 최신·공식 발행과 합쳐지지 않으면 그 까닭(이어
+      쓰기를 막는다). 합쳐지면 None.
+    """
+
+    count: int = 0
+    trace_revision_no: int | None = None
+    dropped_units: int = 0
+    refusal: str | None = None
+
+
 def legacy_trace_message(count: int) -> str:
     """옛 배포 흔적 경고 문구 — 저장 거부와 화면 맨 위 경고가 같은 글자를 쓴다."""
     return (
@@ -1170,13 +1194,21 @@ class DuckDBEquipmentRepository:
             assert published is not None
         return _release(published)
 
+    def legacy_trace_review(self) -> LegacyTraceReview:
+        """「이대로 이어 쓰기」 확인 재료 — 흔적 수, 빠지는 호기 수, 합쳐지지 않는 까닭(읽기만)."""
+        with self._connect() as connection:
+            return _legacy_trace_review(connection)
+
     def acknowledge_legacy_trace(self, *, expected_trace_count: int, note: str | None) -> int:
         """옛 배포 흔적을 확인하고 이어 쓴다 — 이관 경계 행 하나를 덧붙이고 그 번호를 돌려준다.
 
         흔적 수가 쓰기 잠금 안에서 `expected_trace_count` 와 같을 때만 `through_revision_no = 지금
         공통 최신 번호` 로 덧붙인다(다르면 `ValueError`). 흔적이 없으면 쓰지 않고 지금 마지막 경계
         번호를 돌려준다. 옛 판에서 고친 일정은 들어오지 않는다 — 계약 v3 공통의 일정 칸은 공통
-        읽기가 버린다.
+        읽기가 버린다. 옛 배포 리비전이 어느 ACTIVE 시나리오 최신이나 최신 공식 발행과 합쳐지지
+        않으면 쓰지 않고 `EquipmentLegacyTraceUnmergeable` 를 낸다 — 이어 쓰면 그 리비전이 공통
+        최신으로 굳어 그 시나리오(공식이면 모든 설비 화면의 공식)를 다시 읽을 수 없다(「각 시나리오
+        최신·공식은 늘 합쳐진다」 를 저장 교차 검증처럼 여기서도 지킨다).
         """
         outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:
@@ -1190,6 +1222,9 @@ class DuckDBEquipmentRepository:
                 return scenario_store.latest_boundary_no(connection)
             latest = _latest_revision(connection)
             assert latest is not None
+            refusal = _trace_merge_refusal(connection, latest[0])
+            if refusal is not None:
+                raise EquipmentLegacyTraceUnmergeable(_unmergeable_trace_message(refusal))
             boundary_no = scenario_store.insert_boundary(
                 connection,
                 through_revision_no=latest[1],
@@ -2173,6 +2208,78 @@ def _merge_read(
     )
 
 
+def _unmergeable_trace_message(refusal: str) -> str:
+    return (
+        f"옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 이어 쓰지 않았습니다 — "
+        f"{refusal} 이어 쓰면 그 일정을 다시 읽을 수 없습니다. 런북 4-2 대로 백업을 복원하세요."
+    )
+
+
+def _trace_merge_refusal(connection: duckdb.DuckDBPyConnection, common_id: str) -> str | None:
+    """공통 `common_id` 가 ACTIVE 시나리오마다의 최신·최신 공식 발행과 합쳐지는가. 첫 실패의 까닭
+    (「「운영 일정」 r2 … 필수입니다」), 다 합쳐지면 None."""
+    targets: list[str] = []
+    for row in scenario_store.scenario_rows(connection):
+        latest = row.get("latest_schedule_revision_id")
+        if row.get("status") == "ACTIVE" and isinstance(latest, str):
+            targets.append(latest)
+    release = scenario_store.latest_release_row(connection)
+    if release is not None and str(release["schedule_revision_id"]) not in targets:
+        targets.append(str(release["schedule_revision_id"]))
+    for schedule_id in targets:
+        try:
+            read_merged(connection, common_id, schedule_id)
+        except EquipmentScenarioIncompatible as error:
+            return f"「{error.scenario_name}」 r{error.revision_no} 일정과 합치면 {error.reason}"
+    return None
+
+
+def _pre_trace_revision_id(connection: duckdb.DuckDBPyConnection) -> str | None:
+    """흔적 앞 공통 대장 — 흔적(경계 뒤 계약 v3 이하)이 아닌 리비전 가운데 번호가 가장 큰 것."""
+    row = connection.execute(
+        """
+        SELECT r.revision_id
+        FROM equipment_ops.revision r
+        WHERE NOT (
+            COALESCE(r.equipment_contract_version, 2) <= 3
+            AND r.revision_no > COALESCE(
+                (SELECT b.through_revision_no FROM equipment_ops.equipment_legacy_boundary b
+                 ORDER BY b.boundary_no DESC LIMIT 1),
+                0
+            )
+        )
+        ORDER BY r.revision_no DESC LIMIT 1
+        """
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
+def _common_keys(connection: duckdb.DuckDBPyConnection, revision_id: str) -> set[str]:
+    summary, contract_version = _revision_row(connection, revision_id)
+    common = _common_frames(connection, revision_id, summary, contract_version, checked=False)
+    return {str(key) for key in common.equipment[UNIT_KEY_COLUMN]}
+
+
+def _legacy_trace_review(connection: duckdb.DuckDBPyConnection) -> LegacyTraceReview:
+    count = legacy_trace_count(connection)
+    if count == 0:
+        return LegacyTraceReview()
+    latest = _latest_revision(connection)
+    assert latest is not None
+    before = _pre_trace_revision_id(connection)
+    dropped = (
+        len(_common_keys(connection, before) - _common_keys(connection, latest[0]))
+        if before is not None
+        else 0
+    )
+    return LegacyTraceReview(
+        count=count,
+        trace_revision_no=latest[1],
+        dropped_units=dropped,
+        refusal=_trace_merge_refusal(connection, latest[0]),
+    )
+
+
 def read_official_pair(connection: duckdb.DuckDBPyConnection) -> tuple[str, str | None] | None:
     """(공통 최신, 최신 공식 발행의 일정 리비전).
 
@@ -2465,7 +2572,12 @@ def _plan_propagations(
     """
     unit_keys = edit.new_keys if request.propagate_new_units else frozenset()
     fresh = (
-        new_downtime_rows(base.downtime, edit.downtime, exclude_keys=edit.new_keys)
+        new_downtime_rows(
+            base.downtime,
+            edit.downtime,
+            exclude_keys=edit.new_keys,
+            unit_keys=edit.unit_keys.values(),
+        )
         if request.propagate_new_downtime
         else edit.downtime.iloc[0:0]
     )
@@ -2553,12 +2665,13 @@ def _plan_publish(
     공식 시나리오에 새 일정 리비전이 생기고(이 저장이든 함께 넣기든) 저장 전 최신 발행이 그
     시나리오의 최신이었을 때만 발행한다 — 남이 발행하지 않은 더 새 리비전을 함께 내지 않게. 그런
     리비전이 있으면 발행을 미룬다(`withheld`). 발행이 하나도 없으면 이 저장의 일정 리비전이 v1
-    이다. 발행할 때만 `expected_release_no` 를 대조한다.
+    이다 — 「공식으로 발행」 을 꺼도 그렇다(끄는 것은 지금 공식을 남긴다는 뜻인데 남길 공식이 없다.
+    발행 없는 상태로 두면 세션 판정은 그 시나리오 최신을 공식 자리로 보는데 공식 스냅샷은 일정 없이
+    읽혀 둘이 갈라진다). 발행할 때만 `expected_release_no` 를 대조한다.
     """
-    wanted = request.publish_official or force_publish
     plan = _PublishPlan()
     if release is None:
-        if write_schedule and wanted:
+        if write_schedule:
             plan = _PublishPlan(target.equipment_scenario_id)
     else:
         official = release.equipment_scenario_id

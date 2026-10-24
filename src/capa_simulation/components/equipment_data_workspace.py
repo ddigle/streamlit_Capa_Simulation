@@ -1476,7 +1476,8 @@ def _selectable_editor(
     """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다.
 
     `locked_columns` 는 고칠 수 없게 잠글 칸, `fixed_rows` 는 행 추가·삭제를 막는다(낡은 설비
-    시나리오 세션 — 설계 4-2). 선택 칸은 늘 고칠 수 있다(일괄 삭제는 공통 대장 변경이다).
+    시나리오 세션 — 설계 4-2). 선택 칸은 늘 고칠 수 있다 — 낡은 세션에서 호기·비가동의 「선택 행
+    삭제」 는 단추가 막는다(`_selection_buttons(delete_locked=)`).
     """
     display = view.frame.copy()
     display.insert(0, SELECT_COLUMN, _selection_flags(display, target, selection))
@@ -1508,10 +1509,11 @@ def _selectable_editor(
     return edited, checked
 
 
-def _selection_buttons(slug: str) -> str | None:
+def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | None:
     """표 **위** 세 버튼(2026-09-29 — 작업 버튼은 표 위). 폼 안이라 모두 제출 버튼이고, 누른
     것의 이름을 돌려준다. 버튼 값은 표보다 먼저 만들어도 같은 제출의 편집·선택이 함께 들어온다.
-    필터·삭제·저장의 관계는 가용설비 현황 Guide 가 말한다.
+    필터·삭제·저장의 관계는 가용설비 현황 Guide 가 말한다. `delete_locked` 를 주면 「선택 행 삭제」
+    를 끄고 그 까닭을 풍선으로 보인다(낡은 세션의 설비 마스터·비가동 일정).
     """
     with st.container(horizontal=True, gap="small"):
         matching = st.form_submit_button(
@@ -1523,7 +1525,11 @@ def _selection_buttons(slug: str) -> str | None:
             "선택 해제", key=f"equipment_{slug}_select_clear_v1", icon=":material/deselect:"
         )
         delete = st.form_submit_button(
-            "선택 행 삭제", key=f"equipment_{slug}_delete_selected_v1", icon=":material/delete:"
+            "선택 행 삭제",
+            key=f"equipment_{slug}_delete_selected_v1",
+            icon=":material/delete:",
+            disabled=delete_locked is not None,
+            help=delete_locked,
         )
     if matching:
         return SELECT_MATCHING
@@ -1699,9 +1705,22 @@ def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
     latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
     return (
         f"「{basis.scenario_name}」 {latest} 가 더 새롭습니다 — 지금 보는 r{basis.revision_no} "
-        "에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가를 잠갔습니다. 일정을 "
-        f"고치려면 사이드바 「설비 시나리오」 에서 최신 {latest} 를 불러오세요. 공통 칸은 그대로 "
-        "고쳐 저장됩니다."
+        "에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가, 호기·비가동 지우기를 "
+        "잠갔습니다. 일정을 고치거나 호기를 지우려면 사이드바 「설비 시나리오」 에서 "
+        f"최신 {latest} 를 불러오세요. 공통 칸(기존 보유대수 지우기 포함)은 그대로 고쳐 "
+        "저장됩니다."
+    )
+
+
+def stale_delete_lock(basis: EquipmentSaveBasis) -> str:
+    """낡은 세션에서 호기·비가동 「선택 행 삭제」 를 끈 까닭(단추 풍선). 호기를 지우면 그 호기의
+    일정 행도 이 설비 시나리오에서 빠져 일정이 바뀐 저장이 되고, 낡은 리비전 위의 일정 저장은
+    저장소가 늘 거부한다 — 지운 편집을 버려야 했다."""
+    latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
+    return (
+        f"지금 보는 r{basis.revision_no} 는 「{basis.scenario_name}」 최신이 아니라 지울 수 "
+        f"없습니다 — 호기·비가동을 지우면 이 설비 시나리오의 일정도 바뀝니다. 최신 {latest} 를 "
+        "불러온 뒤 지우세요."
     )
 
 
@@ -1815,7 +1834,10 @@ def _render_editors(
     *,
     stale: bool = False,
     scenario_name: str | None = None,
+    delete_locked: str | None = None,
 ) -> EditorResult:
+    """직접 편집 세 표. `stale` 이면 일정 칸·비가동 표·행 추가를 잠그고, `delete_locked`(그 까닭)를
+    주면 설비 마스터·비가동 일정의 「선택 행 삭제」 를 끈다 — 기존 보유대수는 공통이라 그대로다."""
     baseline, equipment, downtime = frames
     # 위에 삭제 확인이 서거나 사라지면 이 탭의 자리가 밀린다 — key 가 고른 표를 지킨다.
     master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS), key=EDITOR_TABS_KEY)
@@ -1895,7 +1917,7 @@ def _render_editors(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
         )
         config = _with_scope_help(config, list(equipment.columns), scenario_name)
-        equipment_action = _selection_buttons("master")
+        equipment_action = _selection_buttons("master", delete_locked=delete_locked)
         st.caption(f":material/grid_view: {MODULE_LAYOUT_HELP}")
         edited_equipment, equipment_checked = _selectable_editor(
             equipment,
@@ -1949,7 +1971,7 @@ def _render_editors(
             label="운영 비가동 일정 · 표 보기 설정",
         )
         types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
-        downtime_action = _selection_buttons("downtime")
+        downtime_action = _selection_buttons("downtime", delete_locked=delete_locked)
         edited_downtime, downtime_checked = _selectable_editor(
             downtime,
             downtime_view,
@@ -2385,7 +2407,9 @@ def render_equipment_data_workspace(
         note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
         # 저장자·함께 넣기·공식 발행 칸. 폼 안이라 늘 세우고 수를 적지 않는다 — 이 회차의 편집본에는
         # 같은 제출의 새 호기가 아직 없다. 실제로 퍼진 목록은 저장 결과 알림이 적는다(설계 6-4).
-        save_fields = render_equipment_save_fields(SAVE_FIELDS_PREFIX)
+        save_fields = render_equipment_save_fields(
+            SAVE_FIELDS_PREFIX, release_exists=basis is None or basis.release_no > 0
+        )
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장
         # 완료)이 생기거나 사라지는 제출마다 이 탭의 자리가 한 칸 밀려 새로 마운트되고,
@@ -2462,9 +2486,20 @@ def render_equipment_data_workspace(
                     icon=":material/save:",
                 )
                 view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
+            delete_locked = stale_delete_lock(basis) if stale and basis is not None else None
+            if delete_locked is not None:
+                # 낡기 전에 눌러 둔 호기·비가동 삭제 확인도 버린다 — 확정하면 저장이 늘 거부된다.
+                pending = st.session_state.get(PENDING_DELETE_KEY)
+                if isinstance(pending, tuple) and pending[0] in (EQUIPMENT_TARGET, DOWNTIME_TARGET):
+                    st.session_state.pop(PENDING_DELETE_KEY, None)
             confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
             editor = _render_editors(
-                frames, max_extent, _current_selection(), stale=stale, scenario_name=scenario_name
+                frames,
+                max_extent,
+                _current_selection(),
+                stale=stale,
+                scenario_name=scenario_name,
+                delete_locked=delete_locked,
             )
             edited = editor.frames
         with history_tab:

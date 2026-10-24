@@ -44,7 +44,10 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+from capa_simulation.equipment_scenario_activation import (
+    official_snapshot_for,
+    resolve_equipment_session,
+)
 from capa_simulation.navigation import (
     EQUIPMENT_GAP_TAB,
     EQUIPMENT_MAIN_TAB,
@@ -64,7 +67,6 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_floor_layout_canvases,
-    load_official_equipment_snapshot,
     load_process_cutoff,
 )
 from capa_simulation.services.equipment_contract import (
@@ -156,7 +158,7 @@ try:
     # 가정 설비 시나리오면 미확인(Main·RawData 일정 확인 목록)을 공식 일정으로 본다 — 공통은 늘
     # 최신이라 공식 스냅샷의 공통이 곧 지금 공통이다. 공식 시나리오 세션은 읽지 않는다.
     official_snapshot = (
-        load_official_equipment_snapshot(equipment_database_path)
+        official_snapshot_for(equipment_database_path, equipment_session)
         if equipment_session.is_assumption
         else None
     )

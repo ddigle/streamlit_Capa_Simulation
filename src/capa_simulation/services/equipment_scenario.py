@@ -316,32 +316,40 @@ def new_downtime_rows(
     downtime: pd.DataFrame,
     *,
     exclude_keys: Collection[str] = (),
+    unit_keys: Collection[str] | None = None,
 ) -> pd.DataFrame:
     """편집본 비가동(키 + 다섯 칸) 가운데 다른 시나리오에 함께 넣을 **새 비가동**만 고른다.
 
     한 비가동은 (호기 키, 유형, 시작일) 로 가린다. 저장본에 없던 행이라도 고침이면 새 비가동이
-    아니다 — 결정 「고치기·지우기는 지금 시나리오만」. 고친 시작일·유형이 다른 시나리오에 겹친
-    공사로 남지 않게 둘을 고침으로 본다:
+    아니다 — 결정 「고치기·지우기는 지금 시나리오만」. 고친 행이 다른 시나리오에 옛 행과 겹친 공사로
+    남지 않게(겹침은 검증이 막지 않아 가용대수가 두 번 줄어든다) 이번에 사라진 행과 닮은 새 행은
+    모두 고침으로 본다:
 
-    - 같은 (호기 키, 유형) 묶음에서 이번에 사라진 행이 있으면 그 묶음의 새 행은 모두 고침이다
-      (시작일 고침).
-    - 같은 (호기 키, 시작일) 의 행이 다른 유형으로 사라졌으면 고침이다(유형 고침).
+    - 같은 호기 키에서 이번에 사라진 행이 있으면 그 호기의 새 행은 모두 고침이다(시작일·유형 가운데
+      하나든 둘 다든).
+    - 같은 (유형, 시작일) 의 행이 다른 호기에서 사라졌으면 고침이다(비가동 행의 설비명만 옮김).
+
+    한 저장에서 옛 비가동을 지우고 같은 호기에 새 비가동을 넣으면 새 것도 이 시나리오에만 남는다 —
+    퍼뜨리지 않는 쪽으로 틀린다(결과 알림의 「함께 넣은 목록」 에 없으니 보인다).
 
     `exclude_keys`(보통 새 호기)의 비가동은 고르지 않는다 — 새 호기 비가동은 새 호기 넣기를 따른다.
+    `unit_keys`(편집본 공통의 호기 키)를 주면 지운 호기와 함께 빠진 비가동은 둘째 규칙에서 뺀다 —
+    옮긴 것이 아니라 호기째 지운 것이다.
     """
     base_ids = downtime_identities(base_downtime)
     frame = downtime.reset_index(drop=True)
     ids = downtime_identities(frame)
     removed = set(base_ids) - set(ids)
-    removed_groups = {(key, kind) for key, kind, _ in removed}
-    removed_starts = {(key, start) for key, _, start in removed}
+    kept = None if unit_keys is None else {str(key) for key in unit_keys}
+    removed_keys = {key for key, _, _ in removed}
+    removed_events = {(kind, start) for key, kind, start in removed if kept is None or key in kept}
     excluded = {str(key) for key in exclude_keys}
     known = set(base_ids)
     wanted = [
         identity not in known
         and identity[0] not in excluded
-        and (identity[0], identity[1]) not in removed_groups
-        and (identity[0], identity[2]) not in removed_starts
+        and identity[0] not in removed_keys
+        and (identity[1], identity[2]) not in removed_events
         for identity in ids
     ]
     return frame.loc[wanted].reset_index(drop=True)

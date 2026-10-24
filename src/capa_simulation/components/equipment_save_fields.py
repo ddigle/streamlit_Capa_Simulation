@@ -26,6 +26,8 @@ DEFAULT_PROPAGATE_NEW_DOWNTIME = True
 PROPAGATE_UNITS_LABEL = "새로 넣은 호기를 다른 설비 시나리오에도 같은 일정으로 넣기"
 PROPAGATE_DOWNTIME_LABEL = "새로 넣은 비가동을 모든 설비 시나리오에 넣기"
 PUBLISH_OFFICIAL_LABEL = "공식 설비 시나리오에 새 일정 리비전이 생기면 공식으로 발행"
+# 발행이 하나도 없을 때 발행 체크 대신 서는 한 줄 — 저장소가 첫 일정 리비전을 늘 공식 v1 로 낸다.
+FIRST_RELEASE_NOTE = "아직 공식 발행이 없어 이 저장의 일정 리비전이 공식 v1 이 됩니다."
 SAVED_BY_LABEL = "저장자(선택)"
 
 
@@ -67,14 +69,20 @@ class SaveCandidateCounts:
 
 
 def render_equipment_save_fields(
-    prefix: str, *, counts: SaveCandidateCounts | None = None, show_publish: bool = True
+    prefix: str,
+    *,
+    counts: SaveCandidateCounts | None = None,
+    show_publish: bool = True,
+    release_exists: bool = True,
 ) -> EquipmentSaveFields:
     """저장자 칸과 세 체크를 그리고 지금 값을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
 
     `prefix` 로 칸 key 를 가른다 — 같은 화면의 두 자리(폼 안·팝업)가 서로의 값을 덮지 않게. 저장자는
     세션에 남아 다음 저장에 그대로 선다(같은 사람이 이어 저장한다). `show_publish` 가 거짓이면(공식
     시나리오가 아닌 세션) 발행 체크를 그리지 않고 기본값을 돌려준다 — 그 저장이 공식 시나리오에 새
-    리비전을 만드는 길은 함께 넣기뿐이라 결과 알림이 말한다.
+    리비전을 만드는 길은 함께 넣기뿐이라 결과 알림이 말한다. `release_exists` 가 거짓이면(공식
+    발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을 둔다 — 저장소가 첫 일정 리비전을 늘
+    공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
     """
     saved_by = st.text_input(
         SAVED_BY_LABEL,
@@ -94,7 +102,9 @@ def render_equipment_save_fields(
         downtime_label, value=DEFAULT_PROPAGATE_NEW_DOWNTIME, key=f"{prefix}_propagate_downtime"
     )
     publish = DEFAULT_PUBLISH_OFFICIAL
-    if show_publish:
+    if show_publish and not release_exists:
+        st.caption(f":material/verified: {FIRST_RELEASE_NOTE}")
+    elif show_publish:
         publish = st.checkbox(
             PUBLISH_OFFICIAL_LABEL, value=DEFAULT_PUBLISH_OFFICIAL, key=f"{prefix}_publish"
         )

@@ -94,7 +94,8 @@ def test_pasting_one_column_changes_only_that_column_of_existing_units() -> None
     review = _review(_tab(("설비명", "담당자"), ("EQ-01", "담당B")))
 
     saved = review.candidate[1]
-    assert saved["설비명"].tolist() == ["EQ-02", "EQ-01"]
+    # 바꾼 호기는 제자리다 — 행 차례는 공통 대장 내용이라 끝으로 옮기면 공통 리비전이 생긴다.
+    assert saved["설비명"].tolist() == ["EQ-01", "EQ-02"]
     assert _row(saved, "EQ-01")["담당자"] == "담당B"
     # 붙여넣지 않은 열 37개는 한 칸도 바뀌지 않는다(값과 dtype 모두).
     others = [column for column in EQUIPMENT_COLUMNS if column not in ("설비명", "담당자")]

@@ -3115,7 +3115,8 @@ def check_gap_sheet(screen: Screen) -> str:
 
 
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.
-# 설비 시나리오 줄 — 이름 줄 캡션(이름·배지)과 값 칸 글자.
+# 설비 시나리오 줄 — 이름 줄 캡션(이름·배지)과 값 칸 글자. 값 칸 단추에는 머티리얼 아이콘이 있어
+# 단추 전체 `innerText` 에 아이콘 이름(「account_tree」)과 줄바꿈이 섞이므로 라벨 칸만 읽는다.
 _EQUIPMENT_ROW_JS = """(keys) => {
   const side = document.querySelector('[data-testid="stSidebar"]');
   if (!side) return null;
@@ -3124,15 +3125,22 @@ _EQUIPMENT_ROW_JS = """(keys) => {
   const captions = row
     ? [...row.querySelectorAll('[data-testid="stCaptionContainer"]')].map((c) => c.innerText.trim())
     : [];
+  const label = field ? field.querySelector('[data-testid="stMarkdownContainer"]') : null;
   return {
     name: captions.length ? captions[0] : null,
     badge: captions.length > 1 ? captions[1] : null,
-    value: field ? field.innerText.trim() : null,
+    value: field ? (label || field).innerText.trim() : null,
     disabled: field ? field.disabled : null,
   };
 }"""
 # 값 칸 글자 꼴 — 「<시나리오 이름> · r<번호>」(이름은 값이라 찍지 않고 꼴만 본다).
 _EQUIPMENT_VALUE_SHAPE: Final = re.compile(r"^.+ · r\d+$")
+
+
+def equipment_field_text(value: object) -> str:
+    """값 칸 글자 — 단추 전체 글을 읽었으면 아이콘 이름 줄을 떼고 마지막 줄만 둔다."""
+    lines = [line.strip() for line in str(value or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
 
 
 def summarize_equipment_scenario_line(
@@ -3147,7 +3155,7 @@ def summarize_equipment_scenario_line(
     """
     if not row or row.get("name") != EQUIPMENT_SCENARIO_ROW_NAME:
         return f"「{EQUIPMENT_SCENARIO_ROW_NAME}」 줄 없음"
-    value = str(row.get("value") or "")
+    value = equipment_field_text(row.get("value"))
     shape = "같음" if _EQUIPMENT_VALUE_SHAPE.match(value) else "다름"
     badge_text = str(row.get("badge") or "")
     badge = next((kind for kind in EQUIPMENT_STATUS_BADGES if badge_text.startswith(kind)), None)

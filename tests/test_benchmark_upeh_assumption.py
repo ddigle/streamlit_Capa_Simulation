@@ -107,3 +107,38 @@ def test_it_reads_the_official_equipment_scenario_not_the_wrapper(
     monkeypatch.setattr(DuckDBEquipmentRepository, "load_snapshot", wrapper)
     result = benchmark.measure(copy_folder, percent=120, today=date(2026, 1, 1))
     assert result["processes"] == 1
+
+
+def test_a_copy_from_before_0027_is_read_through_a_migrated_temporary_copy(
+    tmp_path: Path,
+) -> None:
+    """사용자 앱이 새 배포로 설비 화면을 아직 열지 않은 사본(설비 마이그레이션 0025 까지) — 받은
+    사본은 그대로 두고 임시 사본에만 마이그레이션을 걸어 잰다(전에는 「설비 읽기 실패 —
+    CatalogException」)."""
+    import duckdb
+    from test_equipment_migration_0027_scenarios import build_legacy_database
+
+    scenario = DuckDBScenarioRepository(tmp_path / benchmark.SCENARIO_DATABASE)
+    scenario.initialize()
+    ensure_initial_scenario(scenario)
+    equipment = tmp_path / benchmark.EQUIPMENT_DATABASE
+    build_legacy_database(equipment)
+    before = equipment.read_bytes()
+
+    result = benchmark.measure(tmp_path, percent=110, today=date(2026, 1, 1))
+
+    assert result["equipment_migrated_copy"] is True
+    assert equipment.read_bytes() == before
+    with duckdb.connect(str(equipment), read_only=True) as connection:
+        row = connection.execute(
+            "SELECT MAX(version) FROM equipment_meta.schema_migration"
+        ).fetchone()
+    assert row is not None and row[0] == 25
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(
+        [benchmark.SCENARIO_DATABASE, benchmark.EQUIPMENT_DATABASE]
+    )
+
+
+def test_a_migrated_copy_says_so_only_when_it_was_needed(copy_folder: Path) -> None:
+    result = benchmark.measure(copy_folder, percent=110, today=date(2026, 1, 1))
+    assert result["equipment_migrated_copy"] is False

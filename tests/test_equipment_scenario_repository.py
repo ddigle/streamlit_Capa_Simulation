@@ -26,6 +26,7 @@ from capa_simulation.persistence.equipment_repository import (
     EMPTY_REVISION_TOKEN,
     DuckDBEquipmentRepository,
     EquipmentLegacyTraceError,
+    EquipmentLegacyTraceUnmergeable,
     EquipmentReleaseMoved,
     EquipmentRevisionConflict,
     EquipmentSaveRequest,
@@ -35,6 +36,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioNameMoved,
     EquipmentScenarioSummary,
     EquipmentSnapshot,
+    LegacyTraceReview,
     PropagatedRevision,
     _read_legacy_snapshot,
 )
@@ -488,6 +490,11 @@ def test_a_legacy_trace_blocks_every_equipment_save_until_it_is_acknowledged(
             """
         )
     session = _session(repository)
+    # 확인 재료 — 새 판에서 만든 두 호기(uuid 키)는 옛 배포 리비전에 없어 이어 쓰면 빠진다. 합쳐는
+    # 진다(옛 키 EQ-01 은 일정 없음이 될 뿐).
+    assert repository.legacy_trace_review() == LegacyTraceReview(
+        count=1, trace_revision_no=2, dropped_units=2, refusal=None
+    )
 
     with pytest.raises(EquipmentLegacyTraceError, match="1개") as caught:
         repository.save_equipment(
@@ -506,8 +513,52 @@ def test_a_legacy_trace_blocks_every_equipment_save_until_it_is_acknowledged(
     assert caught.value.count == 1
     assert boundary == 2 and repository.legacy_trace_count() == 0
     assert session.unscheduled_units == frozenset({"EQ-01"})
+    assert repository.legacy_trace_review() == LegacyTraceReview()
     assert saved.schedule is not None
     assert repository.acknowledge_legacy_trace(expected_trace_count=0, note=None) == 2
+
+
+def _add_unmergeable_trace(repository: DuckDBEquipmentRepository) -> None:
+    """0027 뒤 옛 판이 저장한 계약 v3 r4 — 「설비01」 의 Qual일정·Qual상태를 비웠다(옛 판에서는 맞는
+    값). 공통으로 읽으면 Qual상태가 비고, 「운영 일정」 r3(옛 r3)의 Qual일정과 합치면 검증에
+    막힌다."""
+    from test_equipment_migration_0027_scenarios import (
+        _MASTER_COLUMNS,
+        _insert_revision,
+        _master_row,
+    )
+
+    with duckdb.connect(str(repository.database_path)) as connection:
+        _insert_revision(
+            connection, "r4", 4, contract=3, note="옛 배포", created_at="2026-10-24 09:00:00"
+        )
+        placeholders = ", ".join("?" for _ in _MASTER_COLUMNS)
+        connection.execute(
+            f"INSERT INTO equipment_ops.equipment_master_snapshot ({', '.join(_MASTER_COLUMNS)}) "
+            f"VALUES ({placeholders})",
+            list(_master_row("r4", 1, "설비01", qual=None, status=None)),
+        )
+
+
+def test_an_unmergeable_legacy_trace_cannot_be_continued_and_the_review_says_why(
+    tmp_path: Path,
+) -> None:
+    """옛 배포 리비전이 공식 일정과 합쳐지지 않으면 이어 쓰기를 쓰지 않고 거절한다 — 이어 쓰면 그
+    리비전이 공통 최신으로 굳어 공식을 다시 읽을 수 없다. 확인 재료가 그 까닭과 빠지는 호기 수(옛
+    배포 리비전에 없는 셋)를 말한다."""
+    repository = _migrated(tmp_path)
+    _add_unmergeable_trace(repository)
+
+    review = repository.legacy_trace_review()
+    with pytest.raises(EquipmentLegacyTraceUnmergeable, match="백업을 복원하세요") as caught:
+        repository.acknowledge_legacy_trace(expected_trace_count=1, note=None)
+
+    assert (review.count, review.trace_revision_no, review.dropped_units) == (1, 4, 3)
+    assert review.refusal is not None and "「운영 일정」 r3 일정과 합치면" in review.refusal
+    assert "Qual상태" in review.refusal and "Qual상태" in str(caught.value)
+    assert repository.legacy_trace_count() == 1
+    with pytest.raises(EquipmentScenarioIncompatible):
+        repository.load_official_snapshot()
 
 
 # ── 번호 ───────────────────────────────────────────────────────────────────────────
@@ -663,6 +714,54 @@ def test_a_downtime_whose_start_date_or_type_was_edited_does_not_spread(tmp_path
     other = _session(repository, setup.equipment_scenario_id)
     assert other.schedule is not None and other.schedule.revision_no == 1
     assert other.downtime["시작일"].tolist() == [pd.Timestamp("2026-08-10")]
+
+
+@pytest.mark.parametrize("edit", ["type_and_start", "unit_name"])
+def test_a_downtime_edited_in_two_cells_or_moved_to_another_unit_does_not_spread(
+    tmp_path: Path, edit: str
+) -> None:
+    """유형과 시작일을 함께 고친 비가동, 비가동 행의 설비명만 옮긴 비가동도 고침이다 — 다른
+    시나리오(셋업 실무)는 옛 비가동 하나 그대로이고 고친 행이 겹쳐 더해지지 않는다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+    session = _session(repository)
+    edited = session.downtime.copy()
+    if edit == "type_and_start":
+        edited.loc[0, "비가동유형"] = "개조"
+        edited.loc[0, "시작일"] = pd.Timestamp("2026-08-12")
+    else:
+        edited.loc[0, "설비명"] = "EQ-02"
+
+    result = repository.save_equipment(_request(session, downtime=edited))
+
+    assert result.schedule is not None and result.propagated == ()
+    other = _session(repository, setup.equipment_scenario_id)
+    assert other.schedule is not None and other.schedule.revision_no == 1
+    assert list(zip(other.downtime["설비명"], other.downtime["비가동유형"], strict=True)) == [
+        ("EQ-01", "고장")
+    ]
+
+
+def test_a_pasted_schedule_cell_on_an_earlier_row_writes_no_common_revision(
+    tmp_path: Path,
+) -> None:
+    """목록 끝이 아닌 호기의 Qual일정만 붙여넣어 저장해도 공통 대장 리비전은 생기지 않는다 —
+    붙여넣기 병합(`merge_equipment_rows`)이 바꾼 행을 제자리에 둔다(끝으로 옮기면 행 차례가 공통
+    내용이라 공통 rN 이 새로 생기고 다른 세션의 미저장 편집이 버려진다)."""
+    from capa_simulation.services.equipment_csv import merge_equipment_rows
+
+    repository = _seeded(tmp_path)
+    session = _session(repository)
+    assert session.equipment["설비명"].tolist() == ["EQ-01", "EQ-02"]
+    pasted = _set(session.equipment, "EQ-01", "Qual일정", "2026-08-14").iloc[[0]]
+
+    merged = merge_equipment_rows(session.equipment, pasted)
+    result = repository.save_equipment(_request(session, equipment=merged))
+
+    assert merged["설비명"].tolist() == ["EQ-01", "EQ-02"]
+    assert result.common is None
+    assert result.schedule is not None and result.schedule.revision_no == 2
+    assert _value(_session(repository), "EQ-01", "Qual일정") == pd.Timestamp("2026-08-14")
 
 
 def test_a_unit_renamed_through_the_name_map_keeps_its_schedule_in_other_scenarios(
@@ -828,6 +927,33 @@ def test_the_first_save_into_an_empty_database_is_official_v1(tmp_path: Path) ->
     assert (result.common.revision_no, result.schedule.revision_no, result.release_no) == (1, 1, 1)
     official = repository.load_official_snapshot()
     assert official is not None and official.equipment["설비명"].tolist() == ["EQ-01", "EQ-02"]
+
+
+def test_the_first_schedule_revision_is_official_v1_even_with_publishing_unchecked(
+    tmp_path: Path,
+) -> None:
+    """발행이 하나도 없으면 「공식으로 발행」 을 꺼도 이 저장의 일정 리비전이 v1 이다. 끄는 것은
+    지금 공식을 남긴다는 뜻인데 남길 공식이 없다 — 발행 없는 상태로 두면 세션은 「운영 일정」 r1 을
+    공식 자리로 보는데 공식 스냅샷은 일정 없이 호기 0대가 된다."""
+    repository = _repository(tmp_path)
+
+    result = repository.save_equipment(
+        EquipmentSaveRequest(
+            baseline=_baseline(),
+            equipment=_equipment(),
+            downtime=_downtime(),
+            equipment_scenario_id=OPERATIONS,
+            base_common_revision_id=EMPTY_REVISION_TOKEN,
+            base_schedule_revision_id=None,
+            publish_official=False,
+        )
+    )
+
+    assert result.release_no == 1
+    official = repository.load_official_snapshot()
+    assert official is not None and official.schedule is not None
+    assert official.unscheduled_units == frozenset()
+    assert len(official.calculation_frames()[1]) == 2
 
 
 def test_a_save_does_not_publish_over_an_unpublished_newer_revision(tmp_path: Path) -> None:

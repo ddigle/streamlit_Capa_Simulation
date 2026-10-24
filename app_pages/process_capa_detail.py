@@ -60,6 +60,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.equipment_scenario_status import (
+    HOME_VISIT_LOCK_REASON,
     equipment_basis_label,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
@@ -89,6 +90,7 @@ from capa_simulation.components.upeh_assumption_controls import (
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     official_session,
+    official_snapshot_for,
     resolve_equipment_session,
 )
 from capa_simulation.home_state import (
@@ -116,7 +118,6 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
-    load_official_equipment_snapshot,
     load_process_cutoff,
 )
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
@@ -403,7 +404,7 @@ try:
     equipment_session = resolve_equipment_session(equipment_path)
     if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
         shown_session = official_session(
-            equipment_session, load_official_equipment_snapshot(equipment_path)
+            equipment_session, official_snapshot_for(equipment_path, equipment_session)
         )
     else:
         shown_session = equipment_session
@@ -419,7 +420,7 @@ except BOOTSTRAP_ERRORS as exc:
 else:
     if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
         # 잠근 꼴 — HOME 칸은 공식이다. ◀▶ 로 출처 띠가 걷혀도 이 줄이 기준을 계속 보인다.
-        render_equipment_scenario_row(shown_session, locked_reason="(HOME 칸에서 들어온 방문)")
+        render_equipment_scenario_row(shown_session, locked_reason=HOME_VISIT_LOCK_REASON)
     else:
         render_equipment_scenario_row(shown_session)
 # 출처 띠 끝에 적을 이 화면의 설비 기준(「공식 v3」·「셋업 실무 r4」). 설비 저장본이 없으면(빈 설비

@@ -439,6 +439,18 @@ def test_a_stale_session_locks_the_schedule_cells_and_row_adds_but_not_common_ce
         assert not locked
         assert master.editing_mode == Dataframe.DYNAMIC
         assert not any("가 더 새롭습니다" in item.value for item in app.warning)
+    # 낡은 세션에서 호기·비가동을 지우면 그 시나리오 일정도 바뀌어 저장이 늘 거부된다 — 「선택 행
+    # 삭제」 를 끄고 까닭을 풍선으로 보인다. 기존 보유대수는 공통이라 그대로 지운다.
+    deletes = {
+        slug: next(
+            button for button in app.button if button.key == f"equipment_{slug}_delete_selected_v1"
+        )
+        for slug in ("master", "baseline", "downtime")
+    }
+    assert deletes["master"].disabled is stale and deletes["downtime"].disabled is stale
+    assert not deletes["baseline"].disabled
+    if stale:
+        assert "최신 r2 를 불러온 뒤 지우세요" in str(deletes["master"].help)
     # 칸 도움말 첫 마디가 어느 쪽인지 말한다.
     assert columns["Qual일정"]["help"].startswith("시나리오 — 「운영 일정」 에만 저장")
     assert columns["담당자"]["help"].startswith("공통 — 모든 설비 시나리오에 같은 값")

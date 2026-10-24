@@ -8,7 +8,8 @@
   단추는 위젯 상태가 없고 값은 세션 칸에만 있어 페이지가 그려도 화면 사이에 잃을 것이 없다.
 - 값 칸 「운영 일정 · r12」, 배지 하나 — `미저장 변경`(주황 띠) → `공식 vN` → `최신 rM 있음`(낡음) →
   `저장된 리비전` 차례. 라벨은 늘 「설비 시나리오」.
-- **잠근 꼴**(팝업 없음): Space 「공식 vN · 운영 일정 r12 (고정)」, 공정 Capa 상세 HOME 방문.
+- **잠근 꼴**(팝업 없음): 값 칸 「운영 일정 · r12 (고정)」 — Space, 공정 Capa 상세 HOME 방문(까닭은
+  줄 아래 한 줄). 긴 이름은 값 칸에서 줄여 리비전 번호가 늘 보인다.
 - **팝업은 세션 키로 연다** — `app.py` 의 호스트 프래그먼트가 셋째 갈래로 부른다(한 실행에 팝업
   하나). 「불러오기」 는 모든 설비 화면, 「저장」 은 편집본을 세우는 화면(가용설비 현황·필요 단축
   일정)에만 선다. 저장소는 팝업을 연 동안에만 읽는다.
@@ -25,8 +26,10 @@ import streamlit as st
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation.components.app_header import (
+    UNMERGED_STATUS,
     equipment_header_suffix,
     refresh_equipment_header,
+    short_scenario_name,
 )
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.equipment_data_workspace import (
@@ -107,6 +110,12 @@ _NOTE_PREVIEW_LIMIT = 40
 
 # 늘 공식을 보는 화면(Space 현황)의 잠근 꼴 꼬리. 머리 띠도 「공식 vN (고정)」 으로 적는다.
 FIXED_LOCK_REASON = "(고정)"
+# HOME 칸으로 들어온 공정 Capa 상세의 잠근 까닭. 값 칸에는 「(고정)」 만 붙이고 이 글은 줄 아래 한
+# 줄로 둔다 — 값 칸 끝에 붙이면 1280px 창에서도 「(HOME 칸에서 들어…」 로 잘리고, 꺼진 단추라
+# 풍선도 없어 ◀▶ 뒤(출처 띠가 걷힌 뒤) 기준을 알리는 자리가 사라진다(2026-10-24 E2E).
+HOME_VISIT_LOCK_REASON = (
+    "HOME 칸에서 들어온 방문이라 공식 설비 시나리오로 고정했습니다 — ◀▶ 로 옮겨도 그대로입니다."
+)
 # 가정 설비 시나리오에서 Preference(공용 Cut-off)를 잠근 까닭(E3).
 PREFERENCE_LOCK_MESSAGE = (
     "Cut-off 는 모든 설비 시나리오 공용입니다 — 공식 설비 시나리오에서 고칩니다. 지금은 가정 설비 "
@@ -155,6 +164,11 @@ def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
     까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지 않은 리비전. 시나리오가
     없거나(빈 설비 DB) 공식 발행 쌍이면 None.
     """
+    if session is not None and session.unmerged:
+        return (
+            "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 "
+            "기준선을 저장하지 않습니다 — 런북 4-2 대로 백업을 복원한 뒤 저장하세요."
+        )
     if session is None or session.scenario is None or session.is_official_pair:
         return None
     official = f"공식 v{session.release_no}" if session.release_no is not None else "공식"
@@ -196,12 +210,22 @@ def equipment_value_label(session: EquipmentSession) -> str:
     return f"{name} · r{session.revision_no}" if session.revision_no is not None else name
 
 
+def equipment_field_label(session: EquipmentSession) -> str:
+    """사이드바 값 칸 글 — 「운영 일정 · r12」. 이름이 길면 줄여 「 · rN」 이 잘리지 않게 한다."""
+    if session.scenario_name is None:
+        return "설비 시나리오 없음"
+    name = literal_markdown(short_scenario_name(session.scenario_name))
+    return f"{name} · r{session.revision_no}" if session.revision_no is not None else name
+
+
 def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
     """이름 줄 배지 하나 — 미저장 → 공식 vN → 낡음 → 저장된 리비전 차례."""
     if unsaved:
         return ":orange-badge[미저장 변경]"
     if session.scenario is None:
         return ""
+    if session.unmerged:
+        return f":red-badge[{UNMERGED_STATUS}]"
     if session.is_official_pair and session.release_no is not None:
         return f":green-badge[공식 v{session.release_no}]"
     if session.stale and session.latest_revision_no is not None:
@@ -214,8 +238,9 @@ def render_equipment_scenario_row(
 ) -> None:
     """패널의 설비 시나리오 줄을 칸에 그린다(칸이 없는 회차는 그리지 않는다). **세션만 읽는다.**
 
-    `locked_reason` 을 주면 팝업 없는 잠근 꼴이다 — 값 칸이 꺼지고 그 까닭이 값 칸 끝에 붙는다
-    (Space 「(고정)」, 공정 Capa 상세 「(HOME 칸에서 들어온 방문)」).
+    `locked_reason` 을 주면 팝업 없는 잠근 꼴이다 — 값 칸이 꺼지고 값 칸 끝에 「(고정)」 이 붙는다.
+    까닭이 「(고정)」 그 자체가 아니면(공정 Capa 상세 HOME 방문 — `HOME_VISIT_LOCK_REASON`) 그 글은
+    줄 아래 한 줄로 선다(값 칸은 한 줄 말줄임이고 꺼진 단추라 풍선이 없다).
     """
     slot = equipment_scenario_slot()
     if slot is None:
@@ -228,9 +253,9 @@ def render_equipment_scenario_row(
             session.label(), fixed=locked_reason == FIXED_LOCK_REASON, unsaved=unsaved
         )
     )
-    value = equipment_value_label(session)
+    value = equipment_field_label(session)
     if locked_reason is not None:
-        value = f"{value} {locked_reason}"
+        value = f"{value} {FIXED_LOCK_REASON}"
     with slot.container():
         condition_field(
             EQUIPMENT_SCENARIO_FIELD_LABEL,
@@ -244,6 +269,8 @@ def render_equipment_scenario_row(
             on_click=open_equipment_scenario_dialog,
         )
         with st.container():
+            if locked_reason is not None and locked_reason != FIXED_LOCK_REASON:
+                st.caption(f":material/lock: {locked_reason}")
             if isinstance(flash, str):
                 st.success(flash)
             if session.notice:
@@ -495,6 +522,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
     fields = render_equipment_save_fields(
         SAVE_FIELDS_PREFIX,
         counts=save_candidate_counts(buffer, st.session_state.get(EQUIPMENT_DRAFT_KEY)),
+        release_exists=basis.release_no > 0,
     )
     clicked = st.button(
         "설비 데이터 저장",

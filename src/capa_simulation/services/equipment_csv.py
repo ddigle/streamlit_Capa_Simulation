@@ -803,12 +803,40 @@ def _merge_by_keys(
     incoming: pd.DataFrame,
     keys: tuple[str, ...],
 ) -> pd.DataFrame:
+    """붙여넣은 행으로 같은 키의 편집본 행을 **그 자리에서** 바꾸고, 새 키 행은 끝에 잇는다.
+
+    바꾼 행을 끝으로 옮기면 행 차례가 달라진다. 설비 마스터의 행 차례는 공통 대장 내용이라(저장소
+    `_common_digest`) 일정 칸만 고친 붙여넣기가 공통 대장 리비전까지 새로 만들고, 그 공통 저장이
+    다른 설비 시나리오 세션의 미저장 편집을 버리게 한다. 같은 키가 편집본에 여럿이면 첫 자리에 한 번
+    넣고 나머지는 지운다. 붙여넣은 쪽에 같은 키가 여럿이면 모두 그 자리에 넣는다 — 중복은 뒤의
+    검증이 막는다(옛 동작과 같은 행 묶음이고 차례만 다르다).
+    """
     if incoming.empty:
         return current.copy().reset_index(drop=True)
-    current_index = _comparable_keys(current, keys)
-    incoming_index = _comparable_keys(incoming, keys)
-    current_without_updates = current.loc[~current_index.isin(incoming_index)]
-    return pd.concat([current_without_updates, incoming], ignore_index=True)
+    width = len(current)
+    both = pd.concat(
+        [_comparable_keys(current, keys).to_frame(), _comparable_keys(incoming, keys).to_frame()],
+        ignore_index=True,
+    )
+    codes = both.groupby(list(keys), dropna=False, sort=False).ngroup().to_numpy()
+    current_codes, incoming_codes = codes[:width], codes[width:]
+    incoming_rows: dict[int, list[int]] = {}
+    for position, code in enumerate(incoming_codes):
+        incoming_rows.setdefault(int(code), []).append(width + position)
+    order: list[int] = []
+    placed: set[int] = set()
+    for position, code in enumerate(current_codes):
+        replacements = incoming_rows.get(int(code))
+        if replacements is None:
+            order.append(position)
+        elif int(code) not in placed:
+            placed.add(int(code))
+            order.extend(replacements)
+    known = {int(code) for code in current_codes}
+    order.extend(
+        width + position for position, code in enumerate(incoming_codes) if int(code) not in known
+    )
+    return pd.concat([current, incoming], ignore_index=True).iloc[order].reset_index(drop=True)
 
 
 def _comparable_keys(frame: pd.DataFrame, keys: Sequence[str]) -> pd.MultiIndex:

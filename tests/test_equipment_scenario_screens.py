@@ -42,6 +42,7 @@ from capa_simulation.components.equipment_scenario_management import (
 )
 from capa_simulation.components.equipment_scenario_status import (
     EQUIPMENT_SCENARIO_FIELD_KEY,
+    HOME_VISIT_LOCK_REASON,
     PREFERENCE_LOCK_MESSAGE,
     baseline_equipment_refusal,
     shortening_equipment_basis,
@@ -348,6 +349,21 @@ def test_the_header_ends_with_the_equipment_scenario_in_the_same_run(_shell: App
     assert "설비 시나리오 · 운영 일정 · r1 · 공식 v1 (고정)" in _header_bodies(app)[-1]
 
 
+def test_on_narrow_windows_the_equipment_tail_comes_first_in_the_bottom_line() -> None:
+    """꼬리를 줄 끝에 두면 사이드바를 연 1280px 미만 창에서 말줄임이 꼬리를 통째로 지운다(900px 자리
+    355px · 필요 526px — 2026-10-24 E2E). 1280px 미만에서는 아래 줄을 꼬리 먼저로 바꿔 적는다.
+    꼬리가 없는 화면에는 그 규칙이 없다."""
+    from capa_simulation.components.app_header import _header_css
+
+    tail = "설비 시나리오 · 셋업 실무 · r4 · 저장된 리비전"
+    css = _header_css("위", f"DEMO · 적용 26.01–26.12 · {tail}", narrow_bottom=f"{tail} · DEMO")
+
+    wide, narrow = css.split("@media (max-width: 1279.98px)")
+    assert f'content: "DEMO · 적용 26.01–26.12 · {tail}"' in wide
+    assert f'content: "{tail} · DEMO"' in narrow
+    assert "@media (max-width: 1279.98px)" not in _header_css("위", "DEMO")
+
+
 def test_the_scenario_tab_clones_publishes_and_the_session_stays_pinned(
     _shell: AppTest, tmp_path: Path
 ) -> None:
@@ -459,6 +475,55 @@ def test_space_shows_the_official_and_locks_editing_on_an_assumption(
     assert not any("배치 편집은 공식 설비 시나리오" in text for text in _texts(app))
 
 
+def test_space_keeps_unsaved_layout_edits_savable_when_a_new_official_locks_editing(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """Space 에서 좌표를 적용해 둔 사이 남이 「운영 일정」 일정을 저장해 공식 v2 를 내면 세션이 공식
+    발행 쌍에서 밀려나 배치 편집이 잠긴다. 그래도 남은 변경의 상자(배치 저장·버리기)는 서고 저장이
+    된다(좌표는 공통 칸). 잠금 문구는 같은 시나리오의 리비전을 말한다 — 「다른 설비 시나리오」 가
+    아니다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        BUFFER_GENERATION_KEY,
+        BUFFER_KEY,
+    )
+
+    repository = _repository(tmp_path)
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    moved = equipment.copy()
+    first = moved.index[moved["설비명"].eq("EQ-01")][0]
+    moved.loc[first, "X좌표"] = float(moved.loc[first, "X좌표"]) + 1
+    app.session_state[BUFFER_KEY] = (baseline, moved, downtime)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    _ok(app.run())
+    assert not app.button(key="space_layout_save").disabled
+
+    other = _session(repository)
+    published = repository.save_equipment(
+        _request(other, equipment=_set(other.equipment, "EQ-02", "Qual일정", "2026-08-24"))
+    )
+    assert published.release_no == 2
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert any("같은 설비 시나리오의 r1(공식 발행이 아닌 리비전)" in text for text in texts)
+    assert not any("다른 설비 시나리오를 보고 있어" in text for text in texts)
+    assert any("잠기기 전에 적용한 변경이 이 세션에 남아 있습니다" in text for text in texts)
+    save = app.button(key="space_layout_save")
+    assert not save.disabled
+    save.click()
+    _ok(app.run())
+    saved = _session(repository)
+    assert saved.revision.revision_no == 2
+    assert _value_of(saved, "EQ-01", "X좌표") == float(equipment.loc[first, "X좌표"]) + 1
+    assert saved.schedule is not None and saved.schedule.revision_no == 2
+
+
+def _value_of(snapshot: Any, name: str, column: str) -> Any:
+    return snapshot.equipment.set_index("설비명").loc[name, column]
+
+
 def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     _shell: AppTest, tmp_path: Path
 ) -> None:
@@ -474,17 +539,52 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     assert app.session_state[PROCESS_DETAIL_EQUIPMENT_BASIS_KEY] == EQUIPMENT_BASIS_OFFICIAL
     field = _field(app)
     assert field is not None and field.disabled
-    assert field.label == "운영 일정 · r1 (HOME 칸에서 들어온 방문)"
+    # 값 칸은 「(고정)」 만 붙여 1280px 에서도 잘리지 않고, 까닭은 줄 아래 한 줄로 선다(꺼진 단추라
+    # 풍선이 없다 — ◀▶ 뒤에는 출처 띠가 걷혀 이 줄이 기준을 알리는 자리다).
+    assert field.label == "운영 일정 · r1 (고정)"
+    assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
 
     _ok(app.run())
     field = _field(app)
-    assert field is not None and field.disabled and "HOME 칸" in field.label
+    assert field is not None and field.disabled and field.label.endswith("(고정)")
+    assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
 
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
     _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
     field = _field(app)
     assert field is not None and not field.disabled and field.label == "셋업 실무 · r1"
     assert PROCESS_DETAIL_EQUIPMENT_BASIS_KEY not in app.session_state
+    assert not any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
+
+
+def test_a_long_scenario_name_is_shortened_in_the_field_so_the_revision_stays_visible() -> None:
+    """값 칸은 한 줄 말줄임이다 — 26자 이름(「셋업 실무 2026 하반기 반입 지연 가정 케이스」)이면
+    1280px·900px 모두 「 · r4」 가 잘려 고정된 리비전 번호가 보이지 않았다(2026-10-24 E2E). 이름만
+    줄인다. 짧은 이름은 그대로다."""
+    from capa_simulation.components.app_header import FIELD_NAME_WIDTH, short_scenario_name
+    from capa_simulation.components.equipment_scenario_status import equipment_field_label
+
+    long = "셋업 실무 2026 하반기 반입 지연 가정 케이스"
+    short = short_scenario_name(long)
+    assert short.endswith("…") and long.startswith(short[:-1])
+    width = sum(2 if "가" <= char <= "힣" else 1 for char in short)
+    assert width <= FIELD_NAME_WIDTH
+    assert short_scenario_name("운영 일정") == "운영 일정"
+    assert short_scenario_name("A" * FIELD_NAME_WIDTH) == "A" * FIELD_NAME_WIDTH
+
+    catalog = _catalog()
+    session = EquipmentSession(
+        catalog=catalog,
+        scenario=EquipmentScenarioSummary(
+            "setup", long, "ACTIVE", latest_schedule_revision_id="b4", latest_revision_no=4
+        ),
+        schedule_revision_id="b4",
+    )
+    assert equipment_field_label(session) == f"{short} · r4"
+    # 머리 띠 꼬리도 같은 줄인 이름이다 — 좁은 창에서 꼬리 끝 상태까지 들어간다.
+    assert equipment_header_suffix(session.label()) == (
+        f"설비 시나리오 · {short} · r4 · 저장된 리비전"
+    )
 
 
 def test_a_legacy_trace_warns_and_the_tab_continues_writing(
@@ -511,10 +611,61 @@ def test_a_legacy_trace_warns_and_the_tab_continues_writing(
     _ok(app.run())
     assert any("옛 배포로 저장한 설비 리비전 1개" in str(item.value) for item in app.warning)
 
+    # 되돌릴 수 없는 쓰기라 확인 체크를 켜야 단추가 선다. 체크 글은 빠지는 호기 수를 말한다(새
+    # 판에서 만든 두 호기 — 옛 배포 리비전 r2 는 비어 있다).
+    assert app.button(key=CONTINUE_BUTTON_KEY).disabled
+    confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
+    assert "옛 배포 리비전 r2를 공통 대장 최신으로" in str(confirm.label)
+    assert "호기 2대가 그 리비전에 없어 모든 설비 시나리오에서 빠지고" in str(confirm.label)
+    confirm.check()
+    _ok(app.run())
     app.button(key=CONTINUE_BUTTON_KEY).click()
     _ok(app.run())
     assert repository.legacy_trace_count() == 0
     assert not any("옛 배포로 저장한 설비 리비전" in str(item.value) for item in app.warning)
+
+
+def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_says_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """옛 배포 리비전이 공식 일정과도 합쳐지지 않으면 설비 화면이 「준비하지 못했습니다」 로 멈추지
+    않고 공통만 읽어 **일정 없이** 연다(배지 「일정 없이 엶」·알림). 설비 시나리오 탭은 이어 쓰기
+    단추 대신 그 까닭과 백업 복원을 말하고, Space 도 열린다(편집 잠금)."""
+    from test_equipment_migration_0027_scenarios import build_legacy_database
+    from test_equipment_scenario_repository import _add_unmergeable_trace
+
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.settings as settings
+
+    path = tmp_path / "equipment.duckdb"
+    build_legacy_database(path)
+    repository = DuckDBEquipmentRepository(path)
+    repository.initialize()
+    _add_unmergeable_trace(repository)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", path)
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+    app = _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
+
+    app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SCENARIO_TAB
+    _ok(app.run())
+    texts = _texts(app) + [str(item.value) for item in app.sidebar.warning]
+    assert not any("준비하지 못했습니다" in text for text in texts)
+    assert any("일정 없이 열었습니다" in text for text in texts)
+    assert any("옛 배포로 저장한 설비 리비전 1개" in text for text in texts)
+    assert any("이어 쓸 수 없습니다" in text and "백업을 복원하세요" in text for text in texts)
+    assert not any(button.key == CONTINUE_BUTTON_KEY for button in app.button)
+    field = _field(app)
+    assert field is not None and field.label == "운영 일정"
+    assert any("일정 없이 엶" in str(item.value) for item in app.sidebar.caption)
+
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    assert not any("준비하지 못했습니다" in text for text in _texts(app))
 
 
 def _fields_app() -> None:
@@ -543,6 +694,32 @@ def test_the_space_layout_save_reads_its_save_fields_from_the_session() -> None:
     assert app.session_state["after"] == EquipmentSaveFields(
         saved_by="홍길동", publish_official=False
     )
+
+
+def _first_release_fields_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.equipment_save_fields import render_equipment_save_fields
+
+    st.session_state["fields"] = render_equipment_save_fields("first", release_exists=False)
+
+
+def test_before_any_release_the_save_fields_say_v1_instead_of_a_publish_checkbox() -> None:
+    """발행이 하나도 없으면 저장소가 첫 일정 리비전을 늘 공식 v1 로 낸다 — 끌 수 있는 발행 체크 대신
+    그 한 줄이 선다."""
+    from capa_simulation.components.equipment_save_fields import (
+        FIRST_RELEASE_NOTE,
+        EquipmentSaveFields,
+    )
+
+    app = _ok(AppTest.from_function(_first_release_fields_app).run())
+
+    assert [box.key for box in app.checkbox] == [
+        "first_propagate_units",
+        "first_propagate_downtime",
+    ]
+    assert any(FIRST_RELEASE_NOTE in str(item.value) for item in app.caption)
+    assert app.session_state["fields"] == EquipmentSaveFields()
 
 
 def test_the_layout_editor_turns_off_only_the_new_unit_form_when_asked() -> None:

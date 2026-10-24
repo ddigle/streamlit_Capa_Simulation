@@ -1332,8 +1332,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·Preference 잠금·옛 배포 흔적 경고·기준선 거부·설비 출처 띠).
   - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
-    「운영 일정 · r12」, 배지는 `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) / `최신 rM 있음` / `저장된 리비전` / `미저장
-    변경`. 잠근 꼴(팝업 없음)은 Space 「… (고정)」 과 공정 Capa 상세 HOME 방문 「… (HOME 칸에서 들어온 방문)」 이다.
+    「운영 일정 · r12」(긴 이름은 `app_header.short_scenario_name` 으로 줄여 「 · rN」 이 늘 보인다 — 값 칸은 한 줄
+    말줄임. 머리 띠 꼬리도 같은 이름), 배지는 `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) / `최신 rM 있음` / `저장된
+    리비전` / `미저장 변경` / `일정 없이 엶`(옛 배포 흔적이 공식과도 합쳐지지 않은 회차). 잠근 꼴(팝업 없음)은 값 칸 끝 「(고정)」 — Space, 공정 Capa 상세 HOME 방문(그
+    까닭 `HOME_VISIT_LOCK_REASON` 은 줄 아래 한 줄 — 꺼진 단추라 풍선이 없다).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
     선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23).
@@ -1568,7 +1570,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 최신 또는 최신 공식 발행, SQL 사본이 아니라 합친 읽기 길로 읽은
     일곱 칸·비가동을 새 두 표에, `origin='clone'`)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name`
     대조 → `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` —
-    흔적 수 대조 뒤 경계 행 하나)가 1단계 관리 쓰기다. 흔적은 설비 마스터 저장만 막는다.
+    흔적 수 대조 뒤 경계 행 하나)가 1단계 관리 쓰기다. 흔적은 설비 마스터 저장만 막는다. 이어 쓰기는 옛 배포 리비전이 ACTIVE
+    시나리오마다의 최신·최신 공식 발행과 합쳐질 때만 쓴다(아니면 `EquipmentLegacyTraceUnmergeable` — 굳히면 그 일정을 다시 못
+    읽는다). 탭은 `legacy_trace_review()`(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭)로 확인 체크 글을 쓴다. 흔적이 공식과도
+    합쳐지지 않는 동안 `resolve_equipment_session` 은 멈추지 않고 공통만 읽어 일정 없이 연다(`EquipmentSession.unmerged` — 공식
+    발행 쌍이 아니고, 공식을 그리는 화면은 `official_snapshot_for` 로 같은 한 벌을 쓴다).
+  - **비가동 「새 비가동」 판정**(`new_downtime_rows`): 이번 저장에서 같은 호기의 행이 사라졌거나 같은 (유형, 시작일) 이 다른
+    호기에서 사라졌으면(지운 호기째 빠진 것은 빼고) 고침이라 퍼뜨리지 않는다 — 유형·시작일을 함께 고치거나 설비명만 옮긴 행이
+    다른 시나리오에 겹친 공사로 남지 않게.
+  - **붙여넣기 병합**(`services/equipment_csv._merge_by_keys`)은 같은 키 행을 제자리에서 바꾸고 새 키만 끝에 잇는다 — 행 차례가
+    공통 대장 내용(`_common_digest`)이라 끝으로 옮기면 일정만 고친 붙여넣기가 공통 rN 까지 만들고 다른 세션의 미저장 편집을 버린다.
+  - **발행이 하나도 없으면** 일정 리비전을 만드는 첫 저장이 「공식으로 발행」 체크와 무관하게 공식 v1 이다(저장 칸은 체크 대신
+    그 한 줄 — `render_equipment_save_fields(release_exists=False)`).
   - **호환 래퍼**(시험·스크립트용 — 화면·캐시는 부르지 않는다): `save_snapshot`·`save_space_layout` 은 공식 시나리오에 늘
     공통 v4 와 일정 리비전을 함께 써 같은 트랜잭션에서 발행한다(래퍼만 쓰면 공통 rN 과 운영 일정 rN 이 같은 번호로 오른다).
     `load_snapshot(공통 id)` 은 그 공통을 `common_revision_id` 로 가진 공식 시나리오 일정 리비전 마지막 것과의 짝이고, 짝이
@@ -2745,6 +2758,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   번 더 보낸다**(`refresh_equipment_header` — 같은 글이어도. 바뀐 회차에만 보내면 이벤트 칸 자리가 회차마다 밀려 그 뒤 알림 칸
   시험이 깨진다. 같은 글은 메시지 캐시로 해시만 간다). 페이지는 그 꼬리를 페이지 몫으로 세션 칸(`app_header_equipment_label_v1`
   — 페이지 스크립트 해시째)에 남기고, `app.py` 는 다음 회차에 그 글로 먼저 그려 둔다(다른 페이지의 꼬리는 읽지 않는다).
+  1280px 보다 좁은 창에서는 아랫줄을 꼬리 먼저로 바꿔 적는다(`_header_css(narrow_bottom=)` 의 미디어 규칙) — 끝에 두면 말줄임이
+  꼬리를 통째로 지운다(사이드바를 연 900px 창 자리 355px · 꼬리 포함 필요 526px — 2026-10-24 E2E).
 - **여닫을 때 본문을 다시 돌리지 않는다.** 사이드바 상자 전부(페이지 그룹·`sidebar_expander`·조건 카드)의 `on_change` 는
   `sidebar_status.on_box_toggle` 이다 — 기억 칸을 적고 `app.py` 맨 위의 빈 프래그먼트(`SIDEBAR_TOGGLE_FRAGMENT_KEY`)만
   다시 돌린다. 같은 페이지의 끝까지 돈 실행 뒤(`begin_app_run` 의 `AppRun` 표지)이고 다른 위젯이 함께 바뀌지 않았을

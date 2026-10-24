@@ -31,6 +31,7 @@ from capa_simulation.persistence.equipment_cache import (
     latest_equipment_revision_id,
     load_equipment_scenario_catalog,
     load_merged_equipment_snapshot,
+    load_official_equipment_snapshot,
 )
 from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioCatalog,
@@ -58,6 +59,10 @@ class EquipmentSession:
     snapshot: EquipmentSnapshot | None = None
     # 이번 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 그 알림.
     notice: str | None = None
+    # 옛 배포 흔적(경계 뒤 계약 v3 공통)이 어느 일정과도 합쳐지지 않아 공통만 읽은 회차 — 일정 없이
+    # 연 것이다(`snapshot.schedule` 이 None, 모든 호기가 일정 없음). 공식 발행 쌍이 아니고 저장도
+    # 막혀 있다(흔적). 빠져나갈 길은 백업 복원뿐이다(이어 쓰기는 같은 까닭으로 거절된다).
+    unmerged: bool = False
 
     @property
     def scenario_id(self) -> str | None:
@@ -69,7 +74,10 @@ class EquipmentSession:
 
     @property
     def revision_no(self) -> int | None:
-        """세션이 든 일정 리비전 번호(그 시나리오 안의 rN). 리비전이 없으면 None."""
+        """세션이 든 일정 리비전 번호(그 시나리오 안의 rN). 리비전이 없거나 일정 없이 열었으면
+        None."""
+        if self.unmerged:
+            return None
         if self.snapshot is not None and self.snapshot.schedule is not None:
             return self.snapshot.schedule.revision_no
         if self.scenario is not None and self.schedule_revision_id is not None:
@@ -103,8 +111,11 @@ class EquipmentSession:
     def is_official_pair(self) -> bool:
         """세션 (시나리오, 리비전) = 최신 공식 발행(E5 기준선 저장, Space 배치 편집 — 질문 3).
 
-        발행이 하나도 없으면(빈 저장소) 공식 시나리오의 최신을 공식 자리로 본다.
+        발행이 하나도 없으면(빈 저장소) 공식 시나리오의 최신을 공식 자리로 본다. 일정 없이 연 회차
+        (`unmerged`)는 그 쌍을 읽지 못한 것이라 아니다.
         """
+        if self.unmerged:
+            return False
         release = self.catalog.latest_release
         if release is None:
             return self.is_official_scenario and not self.stale
@@ -153,6 +164,7 @@ class EquipmentSession:
             "official_scenario": self.is_official_scenario,
             "official_pair": self.is_official_pair,
             "stale": self.stale,
+            "unmerged": self.unmerged,
         }
 
 
@@ -165,6 +177,19 @@ def space_editing_allowed(session: EquipmentSession) -> bool:
     return session.snapshot is not None and session.is_official_pair
 
 
+def official_snapshot_for(
+    database_path: str, session: EquipmentSession
+) -> EquipmentSnapshot | None:
+    """화면이 「공식」 으로 그릴 스냅샷 — 공통 최신 + 최신 공식 발행(공식 스냅샷 캐시).
+
+    일정 없이 연 회차(`unmerged` — 옛 배포 흔적이 공식과도 합쳐지지 않음)는 공식을 읽으면 같은
+    까닭으로 멈추므로 세션이 읽은 공통만의 한 벌을 그대로 쓴다(알림은 세션이 낸다).
+    """
+    if session.unmerged:
+        return session.snapshot
+    return load_official_equipment_snapshot(database_path)
+
+
 def official_session(
     session: EquipmentSession, official_snapshot: EquipmentSnapshot | None
 ) -> EquipmentSession:
@@ -173,7 +198,7 @@ def official_session(
     `official_snapshot` 은 공식 스냅샷(`load_official_equipment_snapshot`)이다. 세션이 이미 공식
     발행 쌍이면 그대로 돌려준다. 세션 칸은 건드리지 않는다.
     """
-    if session.is_official_pair:
+    if session.is_official_pair or session.unmerged:
         return session
     selection = _default_selection(session.catalog)
     if selection is None:
@@ -244,6 +269,10 @@ def resolve_equipment_session(database_path: str) -> EquipmentSession:
     옛 리비전과 부딪침) 그 시나리오 최신으로, 그것도 안 되면 공식으로 옮기고 편집본을 다시 세운 뒤
     한 번 알린다(검토 2-12). 각 시나리오 최신과 최신 공식 발행은 저장 때의 교차 검증이 늘 합쳐지게
     지키므로 공식에서도 막히면 그 예외를 그대로 낸다(화면의 「준비하지 못했습니다」).
+
+    예외 하나 — **옛 배포 흔적**(경계 뒤 계약 v3 공통)은 교차 검증 없이 공통 최신이 된다. 그것이
+    공식과도 합쳐지지 않으면 공통만 읽어 **일정 없이** 연다(`unmerged`, 선택 칸은 그대로). 멈추면
+    설비 화면 어디에서도 흔적 경고와 설비 시나리오 탭(백업 복원 안내)에 닿을 수 없다.
     """
     catalog = load_equipment_scenario_catalog(database_path)
     selection = _settled_selection(catalog)
@@ -257,24 +286,44 @@ def resolve_equipment_session(database_path: str) -> EquipmentSession:
     common_id = latest_equipment_revision_id(database_path)
     snapshot: EquipmentSnapshot | None = None
     notice: str | None = None
+    unmerged = False
     if common_id is not None:
         try:
             snapshot = load_merged_equipment_snapshot(database_path, common_id, schedule_id)
         except (EquipmentScenarioIncompatible, KeyError) as error:
-            scenario, schedule_id, snapshot, notice = _move_after_incompatible(
-                database_path, catalog, common_id, scenario, schedule_id, error
-            )
+            try:
+                scenario, schedule_id, snapshot, notice = _move_after_incompatible(
+                    database_path, catalog, common_id, scenario, schedule_id, error
+                )
+            except EquipmentScenarioIncompatible as last:
+                if not catalog.legacy_trace_count:
+                    raise
+                snapshot = load_merged_equipment_snapshot(database_path, common_id, None)
+                notice = unmerged_trace_notice(last)
+                unmerged = True
     assert scenario is not None
-    _write_selection(scenario.equipment_scenario_id, schedule_id)
+    if not unmerged:
+        _write_selection(scenario.equipment_scenario_id, schedule_id)
     session = EquipmentSession(
         catalog=catalog,
         scenario=scenario,
         schedule_revision_id=schedule_id,
         snapshot=snapshot,
         notice=notice,
+        unmerged=unmerged,
     )
     st.session_state[LABEL_KEY] = session.label()
     return session
+
+
+def unmerged_trace_notice(error: EquipmentScenarioIncompatible) -> str:
+    """옛 배포 흔적이 공식과도 합쳐지지 않아 일정 없이 연 회차의 알림."""
+    return (
+        "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 일정 없이 열었습니다(모든 "
+        f"호기가 일정 없음) — 「{error.scenario_name}」 r{error.revision_no} 일정과 합치면 "
+        f"{error.reason} 설비 저장은 막혀 있고 「이대로 이어 쓰기」 도 같은 까닭으로 되지 "
+        "않습니다. 런북 4-2 대로 백업을 복원하세요."
+    )
 
 
 def _move_after_incompatible(

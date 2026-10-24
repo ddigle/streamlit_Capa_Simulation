@@ -425,6 +425,28 @@ def test_a_downtime_whose_type_was_corrected_is_not_new() -> None:
     assert new_downtime_rows(base, edited).empty
 
 
+def test_a_downtime_whose_type_and_start_were_both_corrected_is_not_new() -> None:
+    """한 행의 유형과 시작일을 함께 고쳐도 고침이다 — 같은 호기에서 행이 사라졌다. 새 비가동으로
+    보면 다른 시나리오에 옛 행과 겹친 공사로 남는다."""
+    base = _events(("k1", "고장", "2026-08-10"), ("k2", "공사", "2026-09-01"))
+    edited = _events(("k1", "개조", "2026-08-12"), ("k2", "공사", "2026-09-01"))
+
+    assert new_downtime_rows(base, edited).empty
+
+
+def test_a_downtime_moved_to_another_unit_is_not_new_but_a_deleted_units_is_ignored() -> None:
+    """비가동 행의 설비명만 옮긴 것(같은 유형·시작일이 다른 호기에서 사라짐)은 고침이다. 그 호기를
+    통째로 지워 함께 빠진 비가동은 옮긴 것이 아니다 — `unit_keys` 를 주면 둘째 규칙에서 뺀다."""
+    base = _events(("k1", "고장", "2026-08-10"))
+    moved = _events(("k2", "고장", "2026-08-10"))
+
+    assert new_downtime_rows(base, moved).empty
+    assert new_downtime_rows(base, moved, unit_keys={"k1", "k2"}).empty
+    assert _identities(new_downtime_rows(base, moved, unit_keys={"k2"})) == [
+        ("k2", "고장", "2026-08-10")
+    ]
+
+
 def test_end_date_or_detail_edits_and_new_unit_downtime_are_not_new_downtime() -> None:
     base = _events(("k1", "공사", "2026-09-01"))
     edited = _events(("k1", "공사", "2026-09-01"), ("new-unit", "공사", "2026-09-01"))

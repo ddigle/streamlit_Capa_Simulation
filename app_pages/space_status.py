@@ -85,6 +85,7 @@ from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     official_session,
+    official_snapshot_for,
     resolve_equipment_session,
     select_equipment_scenario,
     space_editing_allowed,
@@ -102,7 +103,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_marks,
     load_floor_layout_profile,
     load_floor_layout_summaries,
-    load_official_equipment_snapshot,
 )
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
@@ -369,7 +369,7 @@ try:
     # (질문 3) — 그때 세션 스냅샷이 곧 공식 스냅샷이라 편집본을 세션 토큰 그대로 세운다. 아니면 이
     # 화면은 편집본을 건드리지 않는다(다른 토큰으로 세우면 세션 편집을 버린다).
     equipment_session = resolve_equipment_session(equipment_database_path)
-    official_snapshot = load_official_equipment_snapshot(equipment_database_path)
+    official_snapshot = official_snapshot_for(equipment_database_path, equipment_session)
     space_editing = space_editing_allowed(equipment_session)
     latest_snapshot = equipment_session.snapshot if space_editing else official_snapshot
     floor_canvases = load_floor_layout_canvases(equipment_database_path)
@@ -456,6 +456,18 @@ if editable:
     discarded_notice = pop_discarded_notice()
     if discarded_notice:
         notices.warning(discarded_notice, icon=":material/sync_problem:")
+# 잠긴 회차에도 잠기기 전에 적용한 배치(세션 편집본)는 남아 있다 — 남의 저장이 새 공식을 내 세션이
+# 공식 발행 쌍에서 밀려난 경우다. 그 편집본을 세션 토큰 그대로 받아 저장·버리기 상자를 세운다(세션
+# 토큰이라 다른 화면의 편집을 버리지 않는다). 편집이 없으면 편집본을 건드리지 않는다.
+locked_frames: Frames | None = None
+if locked_by_scenario and equipment_session.snapshot is not None and has_unsaved_equipment_edits():
+    locked_frames = ensure_equipment_drafts(equipment_session.snapshot)
+    pop_drafts_replaced()
+    discarded_notice = pop_discarded_notice()
+    if discarded_notice:
+        notices.warning(discarded_notice, icon=":material/sync_problem:")
+    if not has_unsaved_equipment_edits():
+        locked_frames = None
 # 설비 샘플 화면(설비 마스터가 비어 샘플 스위치를 켠 상태)인가. 이때는 FAB 편집도 끈다 — 합성 fleet
 # 위에서 고친 FAB 가 실제 저장소에 들어간다(2026-10-03 사용자 결정 2).
 showing_sample = False
@@ -662,12 +674,38 @@ def _saved_frames() -> Frames:
     return (latest_snapshot.baseline, latest_snapshot.equipment, latest_snapshot.downtime)
 
 
-def space_lock_message(official: EquipmentSession) -> str:
-    """배치 편집이 잠긴 까닭 한 줄 — 「배치 편집은 공식 설비 시나리오(운영 일정 · r12)에서」."""
+# 잠긴 회차에 남은 배치 변경 상자의 한 줄.
+SPACE_LOCKED_PENDING_NOTE = (
+    "배치 편집은 잠겼지만 잠기기 전에 적용한 변경이 이 세션에 남아 있습니다 — {place} 에 "
+    "저장하거나 버리세요. 「공식으로 바꾸기」 를 하면 이 변경은 버려집니다."
+)
+
+
+def _session_place() -> str:
+    """세션 설비 시나리오 「운영 일정 · r1」(저장할 곳)."""
+    return f"「{equipment_value_label(equipment_session)}」"
+
+
+def space_lock_message(official: EquipmentSession, session: EquipmentSession) -> str:
+    """배치 편집이 잠긴 까닭 한 줄 — 「배치 편집은 공식 설비 시나리오(운영 일정 · r12)에서」.
+
+    세션이 공식 시나리오 그대로인데 리비전만 공식 발행이 아니면(남이 저장해 새 공식을 냄 — 질문 1
+    기본 켬, 발행하지 않은 자기 리비전을 엶) 「다른 설비 시나리오」 가 아니라 그 리비전을 말한다.
+    """
     place = equipment_value_label(official) if official.scenario is not None else "공식"
+    if session.unmerged:
+        return (
+            "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 "
+            "배치 편집을 잠갔습니다 — 런북 4-2 대로 백업을 복원하세요."
+        )
+    if session.scenario_id is not None and session.scenario_id == official.scenario_id:
+        seen = f"r{session.revision_no}" if session.revision_no is not None else "다른 리비전"
+        why = f"지금 세션은 같은 설비 시나리오의 {seen}(공식 발행이 아닌 리비전)을 보고 있어"
+    else:
+        why = "지금 세션은 다른 설비 시나리오를 보고 있어"
     return (
-        f"배치 편집은 공식 설비 시나리오({place})에서 합니다 — 지금 세션은 다른 설비 시나리오를 "
-        "보고 있어 배치 편집을 잠갔습니다. 도면은 늘 공식입니다."
+        f"배치 편집은 공식 설비 시나리오({place})에서 합니다 — {why} 배치 편집을 잠갔습니다. "
+        "도면은 늘 공식입니다."
     )
 
 
@@ -701,7 +739,13 @@ def _render_switch_to_official() -> None:
     """잠긴 동안 본문 맨 위 한 줄 — 까닭과 「공식으로 바꾸기」(미저장이면 버림 확인)."""
     unsaved = has_unsaved_equipment_edits()
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.caption(f":material/lock: {space_lock_message(shown_official)}", width="content")
+        st.caption(
+            f":material/lock: {space_lock_message(shown_official, equipment_session)}",
+            width="content",
+        )
+        if equipment_session.unmerged:
+            # 공식으로 옮겨도 같은 까닭으로 합쳐지지 않는다 — 바꾸기 단추를 두지 않는다.
+            return
         with st.popover("공식으로 바꾸기", icon=":material/swap_horiz:"):
             st.caption(
                 "세션의 설비 시나리오를 공식으로 옮깁니다 — 가용설비 현황·필요 단축 일정도 공식을 "
@@ -731,7 +775,12 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     저장은 가용설비 RawData 와 같은 `save_equipment_buffer` 다 — 편집본 전체를 저장하므로 RawData
     의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비 리비전과
     무관한 별도 쓰기라 `frames` 가 None(설비 저장본이 없는 화면)이어도 상자가 서고 FAB 만 저장한다.
+
+    편집본은 늘 세션 스냅샷에서 섰다 — 견주기도 그것과 한다. 배치 편집이 잠긴 회차(세션이 공식 발행
+    쌍에서 밀려남)에도 잠기기 전에 적용한 변경이 있으면 상자가 서고, 세션 설비 시나리오에 저장하거나
+    버릴 수 있다(좌표는 공통 칸이라 낡은 세션에서도 저장된다).
     """
+    saved_snapshot = equipment_session.snapshot
     # 저장 오류는 상자를 그리지 않는 회차에도 한 번만 보이고 버린다(남의 저장으로 편집이 버려진
     # 회차에는 상자가 없다). 남겨 두면 나중의 상관없는 적용 옆에 다시 뜬다.
     error = st.session_state.pop(SAVE_ERROR_KEY, None)
@@ -739,11 +788,19 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     renames = pending_unit_renames()
     # 편집본이 저장본과 내용까지 같고 이름 바꿈이 없으면 셀 비교(1,566행이면 회차마다 0.1초 넘게)를
     # 건너뛴다 — 결과는 모두 빈 값이다. 판정은 내용으로만 한다(세대 번호는 일괄 삭제를 놓친다).
-    unchanged = frames is None or buffer_matches_saved(_saved_frames(), frames, renames)
+    unchanged = (
+        frames is None
+        or saved_snapshot is None
+        or buffer_matches_saved(
+            (saved_snapshot.baseline, saved_snapshot.equipment, saved_snapshot.downtime),
+            frames,
+            renames,
+        )
+    )
     if frames is not None and not unchanged:
-        assert latest_snapshot is not None
-        changes = layout_changes(latest_snapshot.equipment, frames[1], renames)
-        names = name_changes(latest_snapshot.equipment, frames[1], renames)
+        assert saved_snapshot is not None
+        changes = layout_changes(saved_snapshot.equipment, frames[1], renames)
+        names = name_changes(saved_snapshot.equipment, frames[1], renames)
     else:
         changes, names = pd.DataFrame(), pd.DataFrame()
     canvases = pending_floor_canvases() if frames is not None else {}
@@ -763,17 +820,17 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     # RawData 의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
     others, side_tables = 0, []
     if frames is not None and not unchanged:
-        assert latest_snapshot is not None
-        others = other_change_count(latest_snapshot.equipment, frames[1], renames)
+        assert saved_snapshot is not None
+        others = other_change_count(saved_snapshot.equipment, frames[1], renames)
         # 저장은 세 표를 다 견준다. 설비 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
         # 비가동 일정은 저장본에 이름 바꿈을 얹어 견준다 — 따라간 설비명은 RawData 편집이 아니다.
         renamed_downtime = downtime_with_renames(
-            latest_snapshot.downtime, renames, saved=latest_snapshot.equipment, buffer=frames[1]
+            saved_snapshot.downtime, renames, saved=saved_snapshot.equipment, buffer=frames[1]
         )
         side_tables = [
             label
             for label, saved, buffer in (
-                (BASELINE_TARGET, latest_snapshot.baseline, frames[0]),
+                (BASELINE_TARGET, saved_snapshot.baseline, frames[0]),
                 (DOWNTIME_TARGET, renamed_downtime, frames[2]),
             )
             if table_changed(saved, buffer)
@@ -811,6 +868,12 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             )
             + (f" {SAMPLE_SAVE_BLOCKED}" if not fab_editable else "")
         )
+        if frames is not None and not editable:
+            # 잠긴 회차의 상자 — 새로 고칠 수는 없고, 남은 변경을 세션 설비 시나리오에 저장하거나
+            # 버린다. 「공식으로 바꾸기」 는 이 변경을 버린다.
+            st.caption(
+                f":material/lock: {SPACE_LOCKED_PENDING_NOTE.format(place=_session_place())}"
+            )
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건"):
                 st.dataframe(changes, hide_index=True, width="stretch")
@@ -856,7 +919,10 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 # 저장자·함께 넣기·공식 발행 칸(RawData 저장과 같은 부품). 수는 적지 않는다 — 실제로
                 # 퍼진 목록은 저장 결과 알림이 적는다.
                 with st.popover("저장 칸", icon=":material/tune:"):
-                    render_equipment_save_fields(SPACE_SAVE_FIELDS_PREFIX)
+                    render_equipment_save_fields(
+                        SPACE_SAVE_FIELDS_PREFIX,
+                        release_exists=equipment_session.release_no is not None,
+                    )
             # 설비 샘플 화면에서는 FAB 편집이 꺼진다(결정 2). 그 전에 적용한 FAB 대기분도 저장하지
             # 않는다 — 대기분은 두고, 스위치를 끄면 저장할 수 있다. 버리기는 그대로 된다.
             st.button(
@@ -1252,8 +1318,8 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
 # key 가 아니라 순번으로 갈아 끼우므로 편집기를 새로 마운트한다. 그 사이 본문 높이가 화면
 # 높이로 무너져 스크롤이 맨 위로 튀고, 브라우저에 둔 편집기 상태(서랍·배율)도 잃는다.
 with st.container(key="space_unsaved_layout_slot"):
-    if editable or pending_fab_layout() is not None:
-        _render_unsaved_layout_panel(buffer_frames if editable else None)
+    if editable or locked_frames is not None or pending_fab_layout() is not None:
+        _render_unsaved_layout_panel(buffer_frames if editable else locked_frames)
 # 배치 편집이 설비 시나리오 때문에 잠긴 회차 — 까닭과 「공식으로 바꾸기」(층 상세의 편집 토글은
 # 꺼진 채 선다). 저장 오류(바꾸기 실패)는 상자가 없는 회차에도 여기서 한 번 보인다.
 if locked_by_scenario:
@@ -1491,7 +1557,7 @@ else:
                         value=False,
                         key=LOCKED_EDIT_TOGGLE_KEY,
                         disabled=True,
-                        help=space_lock_message(shown_official),
+                        help=space_lock_message(shown_official, equipment_session),
                     )
             st.space("stretch")
             # 보기는 기준일의 색·테·덧표시별 대수(미확인은 오늘 기준 설비 수)다. 편집 중에는

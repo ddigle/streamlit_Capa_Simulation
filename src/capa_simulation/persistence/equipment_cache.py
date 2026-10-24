@@ -28,6 +28,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
     EquipmentSnapshot,
+    LegacyTraceReview,
 )
 from capa_simulation.services.equipment_csv import (
     baseline_csv_bytes,
@@ -256,6 +257,29 @@ def load_equipment_scenario_catalog(database_path: str) -> EquipmentScenarioCata
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_legacy_trace_review_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> dict[str, Any]:
+    del stamp, generation
+    return _payload(
+        get_equipment_repository(database_path).legacy_trace_review(), LegacyTraceReview
+    )
+
+
+def load_legacy_trace_review(database_path: str) -> LegacyTraceReview:
+    """「이대로 이어 쓰기」 확인 재료(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭).
+
+    흔적이 있을 때 설비 시나리오 탭이 그리는 회차에만 부른다. 시나리오마다 합쳐 읽어 보므로 목록과
+    같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다.
+    """
+    return LegacyTraceReview(
+        **_load_legacy_trace_review_payload(
+            database_path, database_stamp(database_path), _write_generation("equipment_scenario")
+        )
+    )
+
+
 # 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·설비 시나리오 탭 표).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
@@ -318,6 +342,7 @@ def clear_equipment_scenario_cache() -> None:
     _bump_write_generation("equipment_scenario")
     _load_scenario_catalog_payload.clear()
     _load_schedule_revisions_payload.clear()
+    _load_legacy_trace_review_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)

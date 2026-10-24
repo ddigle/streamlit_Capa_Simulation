@@ -20,25 +20,34 @@ Cut-off 로 이번 달부터 시나리오 끝 달까지 다섯 목표 계획을 
 **지키는 것** — `inspect_revision_calculations.py` 와 같다. 사본에만 돌린다(`--data-dir` 은 기본값이
 없고, 저장소 안(`data/` 와 그 아래 포함)은 `benchmark_home.py` 처럼 거절한다 —
 `settings.is_operational_database_place`). 저장소(Repository)는 읽기만 하고
-`initialize()`(마이그레이션 — 쓰기)를 부르지 않는다. 값을 찍지 않는다 — 초·달 수·공정 수·호기 수만
-찍고, 실패는 단계와 예외 종류 한 줄이다(문구에는 공정·제품 이름이 실린다). 사외에서 돌린 수는 합성
-표본의 `샘플 관측` 일 뿐 업무 사실이 아니다(AGENTS.md 10-1).
+`initialize()`(마이그레이션 — 쓰기)를 부르지 않는다. 설비 DB 사본이 설비 시나리오 표(`0027`) 전이면
+— 사용자 앱이 새 배포로 설비 화면을 아직 열지 않은 사본 — 그 파일을 임시 폴더에 한 번 더 복사해
+거기에만 마이그레이션을 걸고 읽는다(앱이 처음 설비 화면을 열 때 거는 것과 같은 한 벌이다. 받은 사본
+폴더는 그대로 두고, 임시 사본은 끝나면 지운다 — JSON 의 `equipment_migrated_copy`). 값을 찍지
+않는다 — 초·달 수·공정 수·호기 수만 찍고, 실패는 단계와 예외 종류 한 줄이다(문구에는 공정·제품
+이름이 실린다). 사외에서 돌린 수는 합성 표본의 `샘플 관측` 일 뿐 업무 사실이 아니다(AGENTS.md 10-1).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
+import tempfile
 import time
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import TextIO
 
+import duckdb
 import pandas as pd
 
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentSnapshot,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.equipment_availability import build_equipment_lifecycle_spans
 from capa_simulation.services.monthly_equipment_availability import span_date_range
@@ -78,6 +87,28 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def read_official_equipment(path: Path) -> tuple[EquipmentSnapshot | None, pd.DataFrame, bool]:
+    """(공식 설비 시나리오, Cut-off, 임시 사본에 마이그레이션을 걸었나).
+
+    사본에 설비 시나리오 표가 없으면(`0027` 전 — 표·칸이 없다는 DuckDB 오류) 임시 폴더에 사본을 한
+    번 더 만들어 거기에만 `initialize()` 를 걸고 읽는다. 받은 사본 파일은 읽기만 한다.
+    """
+    repository = DuckDBEquipmentRepository(path)
+    try:
+        return repository.load_official_snapshot(), repository.load_process_cutoff(), False
+    except (duckdb.CatalogException, duckdb.BinderException):
+        pass
+    with tempfile.TemporaryDirectory(prefix="upeh-bench-") as folder:
+        copy = Path(folder) / path.name
+        shutil.copy2(path, copy)
+        wal = path.with_name(f"{path.name}.wal")
+        if wal.exists():
+            shutil.copy2(wal, copy.with_name(f"{copy.name}.wal"))
+        migrated = DuckDBEquipmentRepository(copy)
+        migrated.initialize()
+        return migrated.load_official_snapshot(), migrated.load_process_cutoff(), True
+
+
 def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
     """두 계획의 시간과 개수. 실패는 `RuntimeError(단계 · 예외 종류)` 로 줄여 올린다."""
     stage = "시나리오 읽기"
@@ -111,14 +142,12 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
         if not months:
             raise LookupError("이번 달 이후 소요 없음")
         stage = "설비 읽기"
-        equipment_repository = DuckDBEquipmentRepository(data_dir / EQUIPMENT_DATABASE)
         # 공식 설비 시나리오(공통 최신 + 최신 공식 발행) — 앱 화면이 새 세션에 여는 한 벌이다.
-        official = equipment_repository.load_official_snapshot()
+        official, cutoff, migrated_copy = read_official_equipment(data_dir / EQUIPMENT_DATABASE)
         if official is None:
             raise LookupError("설비 저장본 없음")
         # 계산은 그 시나리오에 일정이 없는 호기와 그 비가동을 뺀 세 표다(앱 계산과 같다).
         baseline_frame, equipment_frame, downtime_frame = official.calculation_frames()
-        cutoff = equipment_repository.load_process_cutoff()
         stage = "호기 구간"
         span = span_date_range(months, cutoff)
         spans = (
@@ -170,6 +199,7 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
         "assumed_seconds": round(assumed_total, 3),
         "official_unit_rows": official_units,
         "assumed_unit_rows": assumed_units,
+        "equipment_migrated_copy": migrated_copy,
         "verdict": (
             f"{LIMIT_SECONDS:g}초 이하 — 1 단위 곧바로 반영 그대로"
             if assumed_total <= LIMIT_SECONDS

@@ -76,6 +76,7 @@ localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Commu
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
 """
 
+import unicodedata
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -556,12 +557,34 @@ def css_string(text: str) -> str:
     return "".join(out)
 
 
-def _header_css(top: str = APP_LABEL, bottom: str = APP_SUBTITLE) -> str:
+# 설비 시나리오 꼬리가 붙은 아래 줄을 좁은 창에서 꼬리 먼저로 바꿔 적는 경계. 꼬리를 끝에 두면
+# 사이드바를 연 1280px 창에서 겨우 들어가고(필요 499~528px · 자리 510~538px — 2026-10-24 E2E 실측),
+# 그보다 좁으면 말줄임이 꼬리를 통째로 지워 설비 시나리오·낡음 배지가 띠에서 사라졌다(900px 자리
+# 355px, 사이드바가 접히는 700px 자리 420px). 좁은 창에서는 꼬리가 먼저 서고 시뮬레이션 쪽 글(코드·
+# 적용 달·등록일)이 말줄임된다 — 그 글은 윗줄 시나리오명과 사이드바 시나리오 팝업에도 있다.
+_EQUIPMENT_TAIL_FIRST_RULE = """
+@media (max-width: 1279.98px) {
+  [data-testid="stHeader"]::after {
+    content: "__NARROW_BOTTOM_LINE__";
+  }
+}
+"""
+
+
+def _header_css(
+    top: str = APP_LABEL, bottom: str = APP_SUBTITLE, *, narrow_bottom: str | None = None
+) -> str:
     """이 실행의 팔레트와 두 줄로 헤더 CSS 를 만든다. 아래 줄이 비면 위 줄이 띠 가운데에 선다.
 
-    사용자 글이 든 두 줄은 **맨 마지막에** 넣는다 — 시나리오명에 센티넬 글자(`__TEXT__` 등)가 들어
-    있어도 다른 치환이 그것을 건드리지 못한다.
+    `narrow_bottom` 을 주면 좁은 창(1280px 미만)의 아래 줄을 그 글로 바꾼다(설비 시나리오 꼬리
+    먼저). 사용자 글이 든 줄은 **맨 마지막에** 넣는다 — 시나리오명에 센티넬 글자(`__TEXT__` 등)가
+    들어 있어도 다른 치환이 그것을 건드리지 못한다.
     """
+    narrow = (
+        _EQUIPMENT_TAIL_FIRST_RULE.replace("__NARROW_BOTTOM_LINE__", css_string(narrow_bottom))
+        if narrow_bottom
+        else ""
+    )
     return (
         (
             _HEADER_TEMPLATE.replace("__ACCENT__", tokens.ACCENT)
@@ -577,6 +600,7 @@ def _header_css(top: str = APP_LABEL, bottom: str = APP_SUBTITLE) -> str:
         )
         + _NARROW_HEADER_RULES
         + _status_slot_css()
+        + narrow
     )
 
 
@@ -606,6 +630,38 @@ def _status_slot_css() -> str:
     )
 
 
+# 값 칸의 시나리오 이름 폭 상한(전각 2 · 반각 1). 사이드바 값 칸 글자 자리는 1280px·900px 창 모두
+# 175px 남짓이고(칸 223px 에서 아이콘·여백을 뺀 것) 「 · r12」 몫을 남기면 이름은 한글 아홉 자
+# 남짓이다. 넘으면 이름 끝을 줄여 리비전 번호가 늘 보이게 한다 — 전체 이름은 팝업 머리에 있다. 머리
+# 띠 꼬리도 같은 이름을 쓴다(좁은 창에서 꼬리 끝 상태까지 들어가게 — 26자 이름이면 900px 에서 상태가
+# 잘렸다).
+FIELD_NAME_WIDTH = 18
+
+
+def _text_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
+
+
+def short_scenario_name(name: str, width: int = FIELD_NAME_WIDTH) -> str:
+    """사이드바 값 칸·머리 띠 꼬리의 시나리오 이름 — 폭(전각 2 · 반각 1)이 `width` 를 넘으면 끝을
+    줄여 「…」."""
+    if _text_width(name) <= width:
+        return name
+    kept: list[str] = []
+    used = 0
+    for char in name:
+        step = _text_width(char)
+        if used + step > width - 1:
+            break
+        kept.append(char)
+        used += step
+    return "".join(kept).rstrip() + "…"
+
+
+# 일정 없이 연 설비 시나리오 세션의 꼬리 상태(사이드바 배지 「일정 없이 엶」 과 같은 말).
+UNMERGED_STATUS = "일정 없이 엶"
+
+
 def equipment_header_suffix(
     label: Mapping[str, object] | None, *, fixed: bool = False, unsaved: bool = False
 ) -> str | None:
@@ -617,13 +673,16 @@ def equipment_header_suffix(
     """
     if not label or not label.get("scenario_name"):
         return None
-    parts = [EQUIPMENT_HEADER_HEAD, str(label["scenario_name"])]
+    parts = [EQUIPMENT_HEADER_HEAD, short_scenario_name(str(label["scenario_name"]))]
     revision_no = label.get("revision_no")
     if isinstance(revision_no, int):
         parts.append(f"r{revision_no}")
     release_no = label.get("release_no")
     latest_no = label.get("latest_revision_no")
-    if fixed:
+    if label.get("unmerged"):
+        # 옛 배포 흔적이 공식과도 합쳐지지 않아 일정 없이 연 회차 — 고정 화면도 같은 말이다.
+        parts.append(UNMERGED_STATUS)
+    elif fixed:
         parts.append(f"공식 v{release_no} (고정)" if isinstance(release_no, int) else "공식 (고정)")
     elif unsaved:
         parts.append(STATUS_UNSAVED)
@@ -662,10 +721,12 @@ def render_app_header(*, equipment_suffix: str | None = None) -> None:
         official=latest_official_revision(),
         unsaved=has_unsaved_scenario_changes(),
     )
+    narrow: str | None = None
     if equipment_suffix:
+        narrow = f"{equipment_suffix} · {bottom}" if bottom else equipment_suffix
         bottom = f"{bottom} · {equipment_suffix}" if bottom else equipment_suffix
     st.session_state[EQUIPMENT_HEADER_DRAWN_KEY] = equipment_suffix
-    st.html(f"<style>{_header_css(top, bottom)}</style>")
+    st.html(f"<style>{_header_css(top, bottom, narrow_bottom=narrow)}</style>")
 
 
 def refresh_equipment_header(suffix: str | None) -> None:
