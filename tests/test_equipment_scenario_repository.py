@@ -1071,7 +1071,8 @@ def test_only_publishing_changes_what_the_official_snapshot_shows(tmp_path: Path
 
 def test_a_revision_that_no_longer_merges_cannot_be_published_or_cloned(tmp_path: Path) -> None:
     """옛 r1(Qual일정 있음)은 최신도 공식도 아니어서 교차 검증이 지키지 않는다 — 공통에서 Qual상태를
-    비운 뒤로는 발행·복제할 수 없다."""
+    비운 뒤로는 발행·복제할 수 없다. 복제(「여기서 새 시나리오」, E7)는 어느 리비전에서나 되지만
+    지금 공통 대장과 합쳐지는 리비전만이다."""
     repository = _seeded(tmp_path)
     first = _session(repository)
     assert first.schedule is not None
@@ -1090,11 +1091,12 @@ def test_a_revision_that_no_longer_merges_cannot_be_published_or_cloned(tmp_path
             note=None,
             expected_latest_release_no=2,
         )
-    with pytest.raises(ValueError, match="최신도 공식 발행도 아니라"):
+    with pytest.raises(EquipmentScenarioIncompatible, match="「운영 일정」 r1"):
         repository.clone_equipment_scenario(
             first.schedule.schedule_revision_id, name="옛 복제", created_by=None
         )
     assert _counts(repository)[2] == 2
+    assert [item.scenario_name for item in repository.list_equipment_scenarios()] == ["운영 일정"]
 
 
 # ── 복제·이름 ─────────────────────────────────────────────────────────────────────────

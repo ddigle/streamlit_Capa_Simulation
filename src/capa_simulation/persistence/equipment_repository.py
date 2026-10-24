@@ -9,8 +9,10 @@
 Cut-off, 주차별 가용대수, 필요 단축 일정 조건·기준선은 리비전이 아닌 현행값이다.
 
 쓰기는 `save_equipment`(바뀐 쪽만 · 대조 · 함께 넣기 · 교차 검증 · 공식 발행 — 한 트랜잭션)와
-설비 시나리오 복제·이름·발행·옛 배포 흔적 이어 쓰기다. `save_snapshot`·`save_space_layout`·
-`load_snapshot` 은 시험·스크립트용 호환 래퍼다 — 화면·캐시는 부르지 않는다.
+설비 시나리오 복제(고른 리비전에서 — 「여기서 새 시나리오」)·이름·발행·옛 배포 흔적 이어 쓰기, 일정
+리비전의 리비전명(이름표)·「이 리비전으로 되돌리기」(E7 — 새 리비전으로 다시 저장)다.
+`save_snapshot`·`save_space_layout`·`load_snapshot` 은 시험·스크립트용 호환 래퍼다 — 화면·캐시는
+부르지 않는다.
 """
 
 from __future__ import annotations
@@ -82,6 +84,7 @@ from capa_simulation.services.equipment_scenario import (
     SCHEDULE_DOWNTIME_COLUMNS,
     SCHEDULE_FRAME_COLUMNS,
     UNIT_KEY_COLUMN,
+    ScheduleRestorePreview,
     assign_unit_keys,
     downtime_identities,
     legacy_unit_key,
@@ -90,6 +93,7 @@ from capa_simulation.services.equipment_scenario import (
     new_unit_keys,
     normalize_schedule_downtime,
     normalize_schedule_frame,
+    schedule_restore_preview,
     select_schedule_rows,
     split_downtime,
     split_equipment,
@@ -203,8 +207,14 @@ class EquipmentScheduleRevisionSummary:
     """설비 시나리오 일정 리비전 한 줄. 번호는 시나리오마다 r1 부터다(화면의 「rN」).
 
     `origin` 은 legacy·save·clone·propagate·restore 가운데 하나다 — legacy 는 0027 이관 리비전이고
-    `legacy_revision_id` 의 옛 마스터·비가동이 그 원천이다. `common_revision_id` 는 저장 때 함께 본
-    공통 리비전(이력 「그때 그대로」), `unit_row_count` 는 이 리비전에 일정 행이 있는 호기 수다.
+    `legacy_revision_id` 의 옛 마스터·비가동이 그 원천이다. restore 는 「이 리비전으로
+    되돌리기」(E7)가 옛 리비전의 일정을 새 번호로 다시 저장한 것이다. `common_revision_id` 는 저장
+    때 함께 본 공통 리비전(이력 「그때 그대로」), `unit_row_count` 는 이 리비전에 일정 행이 있는
+    호기 수다.
+
+    `revision_name`(리비전명)은 **이름표**라 나중에 고칠 수 있다(E7 — 내용은 그대로). 그래서 불변
+    본문을 쌍 키로 싣는 합친 본문 캐시에는 싣지 않는다(`equipment_cache` — 늘 None 으로 꺼낸다).
+    이름표는 리비전 목록(쓰기 세대·stat·TTL 로 지키는 캐시)에서 읽는다.
     """
 
     schedule_revision_id: str
@@ -452,6 +462,33 @@ class EquipmentScenarioNameMoved(ValueError):
     def __init__(self, current: str) -> None:
         super().__init__(f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current}).")
         self.current = current
+
+
+class EquipmentScheduleRevisionNameMoved(ValueError):
+    """일정 리비전의 리비전명을 바꾸려는 사이 다른 사용자가 먼저 바꿨다(비교 후 쓰기). 아무것도 쓰지
+    않았다. `current` 는 쓰기 잠금 안에서 읽은 지금 이름(없으면 None)이다."""
+
+    def __init__(self, current: str | None) -> None:
+        shown = current if current is not None else "이름 없음"
+        super().__init__(f"다른 사용자가 먼저 리비전명을 바꿨습니다(지금: {shown}).")
+        self.current = current
+
+
+@dataclass(frozen=True)
+class ScheduleRestoreResult:
+    """「이 리비전으로 되돌리기」(`restore_schedule_revision`)가 실제로 쓴 것.
+
+    - `schedule` 은 새로 만든 일정 리비전(`origin='restore'`). 고른 리비전의 일정이 그 시나리오
+      최신과 같아 아무것도 쓰지 않았으면 None 이다(빈 리비전을 만들지 않는다).
+    - `release_no`·`release_withheld` 는 저장과 같은 규칙의 공식 발행 결과다(공식 시나리오에서
+      되돌렸을 때만 뜻이 있다 — `EquipmentSaveResult` 와 같다).
+    - `preview` 는 쓰기 잠금 안에서 다시 잰 차이(확인 글과 같은 함수)다.
+    """
+
+    schedule: EquipmentScheduleRevisionSummary | None
+    preview: ScheduleRestorePreview
+    release_no: int | None = None
+    release_withheld: bool = False
 
 
 @dataclass(frozen=True)
@@ -930,7 +967,6 @@ class DuckDBEquipmentRepository:
                 else []
             )
             publish = _plan_publish(
-                request,
                 scenarios,
                 release,
                 target=scenario,
@@ -938,6 +974,8 @@ class DuckDBEquipmentRepository:
                 propagated_ids={
                     plan.scenario.equipment_scenario_id for plan in propagations if plan.writes
                 },
+                publish_official=request.publish_official,
+                expected_release_no=request.expected_release_no,
                 force_publish=force_publish,
             )
             if write_common or any(plan.writes for plan in propagations):
@@ -1065,10 +1103,13 @@ class DuckDBEquipmentRepository:
         """설비 시나리오를 복제로 만든다(E8 — 만들기는 복제로만). 새 시나리오 한 줄(최신 = r1)을
         돌려준다.
 
-        출처는 그 시나리오의 최신 또는 최신 공식 발행 리비전이다. 새 r1 은 SQL 사본이 아니라
-        `read_merged` 로 읽은 출처(지금 공통 대장과 합친 것)의 일정 일곱 칸·비가동이다 — 이관
-        리비전의 Qual 자리표·계약 v2 변환·레거시 비가동 중복 제거가 원본과 같게 걸린다. 출처의 일정
-        없음 호기는 복제본에서도 일정 없음이다. 이름은 보관본까지 겹칠 수 없다.
+        출처는 그 시나리오의 **어느 일정 리비전이든** 된다(「여기서 새 시나리오」). 새 r1 은 SQL
+        사본이 아니라 `read_merged` 로 읽은 출처(지금 공통 대장과 합친 것)의 일정 일곱
+        칸·비가동이다 — 이관 리비전의 Qual 자리표·계약 v2 변환·레거시 비가동 중복 제거가 원본과
+        같게 걸린다. 출처의 일정 없음 호기(그 리비전 뒤에 공통 대장에 든 호기 포함)는 복제본에서도
+        일정 없음이다. 지금 공통 대장과 합칠 수 없는 옛 리비전은
+        `EquipmentScenarioIncompatible` 로 막는다 — 최신·공식 발행은 저장 때 교차 검증이 늘 합쳐지게
+        지키지만 그 밖은 아니다. 이름은 보관본까지 겹칠 수 없다.
         """
         clean_name = _required_scenario_name(name)
         creator = _clean_text(created_by)
@@ -1087,16 +1128,6 @@ class DuckDBEquipmentRepository:
                 raise ValueError(
                     "출처 리비전의 설비 시나리오를 찾을 수 없습니다: "
                     f"{source.equipment_scenario_id}"
-                )
-            release_row = scenario_store.latest_release_row(connection)
-            allowed = {origin.latest_schedule_revision_id}
-            if release_row is not None:
-                allowed.add(str(release_row["schedule_revision_id"]))
-            if source.schedule_revision_id not in allowed:
-                subject = with_topic_particle(f"「{origin.scenario_name}」 r{source.revision_no}")
-                raise ValueError(
-                    f"{subject} 최신도 공식 발행도 아니라 복제할 수 없습니다 — 최신 리비전이나 "
-                    "공식 발행 리비전에서 복제하세요."
                 )
             latest = _latest_revision(connection)
             if latest is None:
@@ -1199,6 +1230,167 @@ class DuckDBEquipmentRepository:
             published = scenario_store.latest_release_row(connection)
             assert published is not None
         return _release(published)
+
+    def rename_schedule_revision(
+        self,
+        schedule_revision_id: str,
+        *,
+        name: str | None,
+        expected_name: str | None,
+    ) -> EquipmentScheduleRevisionSummary:
+        """일정 리비전의 리비전명(이름표)만 고친다 — E7. 일정·비가동·번호·메모·저장자·저장 시각은
+        그대로다(리비전 **내용**은 append-only — AGENTS 5장 8 의 이름표 예외).
+
+        - 비우면(None·빈 글자) 이름이 지워진다. 같은 이름을 다른 리비전에도 허용한다(번호가 늘
+          가른다). 앞뒤 공백을 뗀 뒤 `SCHEDULE_REVISION_NAME_MAX_CHARS` 자를 넘으면 쓰지 않고
+          `ValueError`(화면 칸도 같은 한도다).
+        - **비교 후 쓰기** — `expected_name` 은 부르는 쪽이 보고 고친 지금 이름(없으면 None)이다.
+          쓰기 잠금 안의 이름과 다르면 `EquipmentScheduleRevisionNameMoved` 로 거절한다 — 옛 이름을
+          든 화면이 남의 변경을 조용히 되돌리지 않게.
+        - 보관한 시나리오의 리비전은 고치지 않는다. 같은 이름이면 쓰지 않는다(동기화 dirty 도 없다).
+        - 공식 발행 행·합친 본문 캐시는 이름을 싣지 않아 계산·공식이 그대로다. 리비전 목록 캐시는
+          호출부가 `clear_equipment_scenario_cache()` 로 비운다(쓰기 세대를 올린다).
+        """
+        label = _schedule_revision_label(name)
+        expected = _clean_text(expected_name)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            target = _require_schedule_revision(connection, schedule_revision_id)
+            _require_active_scenario(
+                _scenario_map(connection), target.equipment_scenario_id, verb="리비전명을 바꿀"
+            )
+            if target.revision_name != expected:
+                raise EquipmentScheduleRevisionNameMoved(target.revision_name)
+            if label != target.revision_name:
+                scenario_store.rename_schedule_revision(connection, schedule_revision_id, label)
+                outcome.wrote = True
+            renamed = _require_schedule_revision(connection, schedule_revision_id)
+        return renamed
+
+    def preview_schedule_restore(
+        self,
+        schedule_revision_id: str,
+        *,
+        common_revision_id: str,
+        current_schedule_revision_id: str | None,
+    ) -> ScheduleRestorePreview:
+        """「이 리비전으로 되돌리기」·「여기서 새 시나리오」 확인 재료 — 읽기만 한다(E7).
+
+        `common_revision_id` 는 지금 공통 대장, `current_schedule_revision_id` 는 그 시나리오의 지금
+        최신이다. 세 id 가 결과를 다 정하고 세 리비전 내용은 불변이라 캐시가 이 셋을 키로 둔다
+        (`equipment_cache.load_schedule_restore_preview`). 되돌리기 쓰기
+        (`restore_schedule_revision`)가 쓰기 잠금 안에서 같은 함수로 다시 잰다. 고른 리비전을
+        지금 공통 대장과 합칠 수 없으면 `EquipmentScenarioIncompatible`.
+        """
+        with self._connect() as connection:
+            target = _require_schedule_revision(connection, schedule_revision_id)
+            preview, _ = _restore_preview(
+                connection, common_revision_id, current_schedule_revision_id, target
+            )
+        return preview
+
+    def restore_schedule_revision(
+        self,
+        schedule_revision_id: str,
+        *,
+        expected_common_revision_id: str,
+        expected_latest_schedule_revision_id: str | None,
+        saved_by: str | None = None,
+        note: str | None = None,
+        revision_name: str | None = None,
+        publish_official: bool = True,
+        expected_release_no: int | None = None,
+    ) -> ScheduleRestoreResult:
+        """「이 리비전으로 되돌리기」(E7) — 고른 일정 리비전의 일정을 **같은 시나리오의 새 리비전**
+        (`origin='restore'`)으로 다시 저장한다. 옛 리비전·사이 리비전·공통 대장은 그대로다.
+
+        1. 막기 — 옛 배포 흔적(`EquipmentLegacyTraceError` — 설비 저장과 같다), 보관한 시나리오,
+           확인을 보인 뒤 공통 최신이나 그 시나리오 최신이 바뀜(`EquipmentRevisionConflict` — 확인
+           글의 수가 달라진다). 모든 설비 시나리오에서 되돌릴 수 있다(공식 시나리오도).
+        2. 새 리비전의 일정(날짜 여섯·시나리오 메모·비가동) = 고른 리비전을 **지금 공통 대장**과
+           합친 것(복제와 같은 길 — `read_merged`). 그 리비전 뒤에 공통 대장에 든 호기는 그 리비전에
+           일정 행이 없어 「일정 없음」 이 된다(F4). 그 뒤 지운 호기의 옛 일정은 합칠 때 버려진다.
+           합칠 수 없으면 `EquipmentScenarioIncompatible`.
+        3. 지금 최신과 모든 호기의 일정·비가동이 같으면 쓰지 않는다(`schedule=None`) — 빈 리비전을
+           만들지 않는다.
+        4. 공식 발행은 설비 마스터 저장과 같은 규칙(`_plan_publish`)이다 — 공식 시나리오에서
+           되돌렸고 `publish_official` 이며 저장 전 최신 발행이 그 시나리오 최신이었을 때만 새
+           리비전을 발행한다(발행 안 한 더 새 리비전이 있었으면 `release_withheld`). 발행할 때만
+           `expected_release_no` 를 대조한다.
+
+        공통을 쓰지 않으므로 교차 검증이 없다 — 새 리비전은 지금 공통 대장과 합쳐 읽기 검증을 지난
+        값이고 다른 시나리오는 건드리지 않는다. 메모는 「rK 일정으로 되돌림」 뒤에 적은 메모를
+        붙인다. 새 리비전명은 `rename_schedule_revision` 과 같은 글자 수 한도다(넘으면 쓰기 전에
+        `ValueError`). 캐시는 호출부가 `clear_equipment_scenario_cache()` 로 비운다.
+        """
+        label = _schedule_revision_label(revision_name)
+        author = _clean_text(saved_by)
+        user_note = _clean_text(note)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            traces = legacy_trace_count(connection)
+            if traces:
+                raise EquipmentLegacyTraceError(traces)
+            target = _require_schedule_revision(connection, schedule_revision_id)
+            scenarios = _scenario_map(connection)
+            scenario = _require_active_scenario(
+                scenarios, target.equipment_scenario_id, verb="되돌릴"
+            )
+            latest = _latest_revision(connection)
+            if latest is None:
+                raise ValueError("공통 대장 리비전이 없어 되돌릴 수 없습니다.")
+            if latest[0] != expected_common_revision_id:
+                raise EquipmentRevisionConflict("common", f"공통 대장 r{latest[1]}")
+            if scenario.latest_schedule_revision_id != expected_latest_schedule_revision_id:
+                raise EquipmentRevisionConflict(
+                    "schedule", f"「{scenario.scenario_name}」 r{scenario.latest_revision_no}"
+                )
+            preview, restored = _restore_preview(
+                connection, latest[0], scenario.latest_schedule_revision_id, target
+            )
+            if preview.identical:
+                return ScheduleRestoreResult(schedule=None, preview=preview)
+            release_row = scenario_store.latest_release_row(connection)
+            publish = _plan_publish(
+                scenarios,
+                _release(release_row) if release_row is not None else None,
+                target=scenario,
+                write_schedule=True,
+                propagated_ids=(),
+                publish_official=publish_official,
+                expected_release_no=expected_release_no,
+                force_publish=False,
+            )
+            schedule, downtime = _scheduled_frames(restored)
+            system_note = f"r{target.revision_no} 일정으로 되돌림"
+            new_id = _insert_schedule(
+                connection,
+                equipment_scenario_id=scenario.equipment_scenario_id,
+                origin="restore",
+                common_revision_id=latest[0],
+                note=f"{system_note} — {user_note}" if user_note else system_note,
+                saved_by=author,
+                schedule=schedule,
+                downtime=downtime,
+                revision_name=label,
+            )
+            release_no: int | None = None
+            if publish.scenario_id is not None:
+                release_no = scenario_store.insert_release(
+                    connection,
+                    equipment_scenario_id=publish.scenario_id,
+                    schedule_revision_id=new_id,
+                    released_by=author,
+                    note="되돌리기와 함께 발행",
+                )
+            outcome.wrote = True
+            created = _require_schedule_revision(connection, new_id)
+        return ScheduleRestoreResult(
+            schedule=created,
+            preview=preview,
+            release_no=release_no,
+            release_withheld=publish.withheld,
+        )
 
     def legacy_trace_review(self) -> LegacyTraceReview:
         """「이대로 이어 쓰기」 확인 재료 — 흔적 수, 빠지는 호기 수, 합쳐지지 않는 까닭(읽기만)."""
@@ -2349,6 +2541,8 @@ _SaveMode = Literal["changed", "if_any", "always"]
 DUPLICATE_EQUIPMENT_SCENARIO_NAME_MESSAGE = (
     "같은 이름의 설비 시나리오가 이미 있습니다(보관본 포함). 이름을 바꿔 저장하세요."
 )
+# 일정 리비전 리비전명 글자 수 한도(선택지·표에서 리비전 번호가 밀려나지 않게) — 화면 칸도 이 수다.
+SCHEDULE_REVISION_NAME_MAX_CHARS = 40
 
 
 @dataclass(frozen=True)
@@ -2451,6 +2645,17 @@ def _clean_text(value: str | None) -> str | None:
     return text or None
 
 
+def _schedule_revision_label(name: str | None) -> str | None:
+    """리비전명 — 앞뒤 공백을 떼고 비면 None. `SCHEDULE_REVISION_NAME_MAX_CHARS` 자를 넘으면
+    `ValueError`(자르지 않는다 — 적은 이름이 말없이 바뀌지 않게)."""
+    label = _clean_text(name)
+    if label is not None and len(label) > SCHEDULE_REVISION_NAME_MAX_CHARS:
+        raise ValueError(
+            f"리비전명은 {SCHEDULE_REVISION_NAME_MAX_CHARS}자까지입니다(지금 {len(label)}자)."
+        )
+    return label
+
+
 def _required_scenario_name(name: str) -> str:
     text = name.strip()
     if not text:
@@ -2459,16 +2664,27 @@ def _required_scenario_name(name: str) -> str:
 
 
 def _require_active_scenario(
-    scenarios: Mapping[str, EquipmentScenarioSummary], equipment_scenario_id: str
+    scenarios: Mapping[str, EquipmentScenarioSummary],
+    equipment_scenario_id: str,
+    *,
+    verb: str = "저장·발행할",
 ) -> EquipmentScenarioSummary:
+    """ACTIVE 시나리오 한 줄. 없거나 보관했으면 `ValueError`(`verb` 는 「저장·발행할」 따위)."""
     scenario = scenarios.get(equipment_scenario_id)
     if scenario is None:
         raise ValueError(f"설비 시나리오를 찾을 수 없습니다: {equipment_scenario_id}")
     if scenario.status != "ACTIVE":
-        raise ValueError(
-            f"「{scenario.scenario_name}」 은(는) 보관한 설비 시나리오라 저장·발행할 수 없습니다."
-        )
+        subject = with_topic_particle(f"「{scenario.scenario_name}」")
+        raise ValueError(f"{subject} 보관한 설비 시나리오라 {verb} 수 없습니다.")
     return scenario
+
+
+def _scenario_map(connection: duckdb.DuckDBPyConnection) -> dict[str, EquipmentScenarioSummary]:
+    """설비 시나리오 id → 한 줄(각 최신·리비전 수와 함께)."""
+    return {
+        summary.equipment_scenario_id: summary
+        for summary in map(_scenario_summary, scenario_store.scenario_rows(connection))
+    }
 
 
 def _require_scenario_summary(
@@ -2504,6 +2720,38 @@ def _scheduled_frames(snapshot: EquipmentSnapshot) -> tuple[pd.DataFrame, pd.Dat
         key for name, key in snapshot.unit_key_pairs if name not in snapshot.unscheduled_units
     }
     return _rows_for(schedule, scheduled), split_downtime(snapshot.downtime, keys)
+
+
+def _restore_preview(
+    connection: duckdb.DuckDBPyConnection,
+    common_revision_id: str,
+    current_schedule_revision_id: str | None,
+    target: EquipmentScheduleRevisionSummary,
+) -> tuple[ScheduleRestorePreview, EquipmentSnapshot]:
+    """(되돌리기 차이, 고른 리비전을 그 공통과 합친 한 벌). 확인 글과 되돌리기 쓰기가 같이 쓴다.
+
+    「그 리비전 뒤에 공통 대장에 든 호기」 는 그 리비전을 저장할 때 함께 본 공통
+    대장(`common_revision_id`)에 키가 없는 호기다. 함께 본 공통이 비어 있으면(그런 저장은 없다) 그
+    리비전에 일정이 있는 호기를 그때의 호기로 본다.
+    """
+    restored = read_merged(connection, common_revision_id, target.schedule_revision_id)
+    current = (
+        restored
+        if current_schedule_revision_id == target.schedule_revision_id
+        else read_merged(connection, common_revision_id, current_schedule_revision_id)
+    )
+    if target.common_revision_id is None:
+        source_keys: Collection[str] = {
+            key for name, key in restored.unit_key_pairs if name not in restored.unscheduled_units
+        }
+    elif target.common_revision_id == common_revision_id:
+        source_keys = {key for _, key in restored.unit_key_pairs}
+    else:
+        source_keys = _common_keys(connection, target.common_revision_id)
+    return (
+        schedule_restore_preview(current, restored, source_unit_keys=source_keys),
+        restored,
+    )
 
 
 def _read_base_state(
@@ -2694,13 +2942,14 @@ def _propagation_note(source_name: str, plan: _PropagationPlan) -> str:
 
 
 def _plan_publish(
-    request: EquipmentSaveRequest,
     scenarios: Mapping[str, EquipmentScenarioSummary],
     release: EquipmentRelease | None,
     *,
     target: EquipmentScenarioSummary,
     write_schedule: bool,
     propagated_ids: Collection[str],
+    publish_official: bool,
+    expected_release_no: int | None,
     force_publish: bool,
 ) -> _PublishPlan:
     """이번 저장이 공식 발행을 하는가(쓰기 전에 정한다).
@@ -2710,7 +2959,8 @@ def _plan_publish(
     리비전이 있으면 발행을 미룬다(`withheld`). 발행이 하나도 없으면 이 저장의 일정 리비전이 v1
     이다 — 「공식으로 발행」 을 꺼도 그렇다(끄는 것은 지금 공식을 남긴다는 뜻인데 남길 공식이 없다.
     발행 없는 상태로 두면 세션 판정은 그 시나리오 최신을 공식 자리로 보는데 공식 스냅샷은 일정 없이
-    읽혀 둘이 갈라진다). 발행할 때만 `expected_release_no` 를 대조한다.
+    읽혀 둘이 갈라진다). 발행할 때만 `expected_release_no` 를 대조한다. 설비 마스터 저장과
+    「이 리비전으로 되돌리기」(E7)가 이 한 규칙을 쓴다.
     """
     plan = _PublishPlan()
     if release is None:
@@ -2728,16 +2978,14 @@ def _plan_publish(
                 if official_scenario is not None
                 else None
             )
-            if force_publish or (
-                request.publish_official and release.schedule_revision_id == before
-            ):
+            if force_publish or (publish_official and release.schedule_revision_id == before):
                 plan = _PublishPlan(official)
-            elif request.publish_official:
+            elif publish_official:
                 plan = _PublishPlan(withheld=True)
-    if plan.scenario_id is not None and request.expected_release_no is not None:
+    if plan.scenario_id is not None and expected_release_no is not None:
         current = release.release_no if release is not None else 0
-        if request.expected_release_no != current:
-            raise EquipmentReleaseMoved(request.expected_release_no, current)
+        if expected_release_no != current:
+            raise EquipmentReleaseMoved(expected_release_no, current)
     return plan
 
 
@@ -2852,6 +3100,7 @@ def _insert_schedule(
     saved_by: str | None,
     schedule: pd.DataFrame,
     downtime: pd.DataFrame,
+    revision_name: str | None = None,
 ) -> str:
     """일정 리비전 하나를 넣는다 — 일정 행은 키 차례, 감사 해시는 넣는 값 그대로."""
     rows = normalize_schedule_frame(
@@ -2871,6 +3120,7 @@ def _insert_schedule(
         downtime=events,
         schedule_hash=hash_frame(rows),
         downtime_hash=hash_frame(events),
+        revision_name=revision_name,
     )
 
 

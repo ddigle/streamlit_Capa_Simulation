@@ -838,6 +838,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 합치기는 공통 행 차례대로 키로 왼쪽 결합(`one_to_one`)이고, 일정 행이 없는 호기는 일정 칸이 비고 **일정 없음**
     (`unscheduled_units`)에 든다. 공통에 없는 키의 일정·비가동은 버리고 `orphan_rows` 로 센다. 계산 프레임은 일정 없음 호기와
     그 비가동을 뺀다(`calculation_frames` — 질문 2 권장안의 한 곳, 기존설비·보관 Y 도 뺀다).
+  - 되돌리기 확인 재료(`schedule_restore_preview` → `ScheduleRestorePreview`, E7): 같은 공통 대장과 합친 두 한 벌(지금 최신·
+    고른 리비전)을 호기마다 견준다 — 일정 일곱 칸과 일정 행 있음/없음, 비가동 다섯 칸 묶음(차례와 무관). 바뀌는 호기 수·비가동
+    행 수·되돌린 뒤 일정 없음·새로 일정 없음이 되는 호기·「그 리비전 뒤에 공통 대장에 든 호기」(그 리비전이 함께 본 공통에 키가
+    없는 호기)를 낸다. 0 이면 `identical` — 되돌려도 리비전을 만들지 않는다.
   - 함께 넣기 후보: 새 호기 = 저장본 공통에 없던 키(`new_unit_keys`). 새 비가동(`new_downtime_rows`)은 같은 (키, 유형)
     묶음에 저장본에 없던 시작일이 생겼고 그 묶음에서 사라진 행이 없을 때만이다 — 같은 (키, 시작일) 행이 다른 유형으로
     사라졌어도 고침으로 본다(시작일·유형만 고친 비가동은 퍼지지 않는다). 쓸 일정 행은 「저장본에 일정 행이 있던 호기 ∪
@@ -1381,12 +1385,32 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (질문 1·F6·F2 — 답이 다르면 여기 하나만 바꾼다). 폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다(같은 제출의 새 호기가
     그 회차 편집본에 아직 없다) — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
-- `src/capa_simulation/components/equipment_scenario_management.py` — 가용설비 현황 「설비 시나리오」 탭(1단계 몫). 시나리오
-  표(이름 ✎·공식/활성·최신 rN·리비전 수)·고른 시나리오의 리비전 표(출처 `이관/저장/복제/함께 넣기`·공통 rN·행 수)와
-  「이 리비전 불러오기」·「복제해 새 시나리오」(출처 = 최신 또는 공식 발행)·「공식으로 발행…」(지금 공식 → 새 공식, 최신이
-  아니면 그 사실, 발행 번호 대조)·옛 배포 흔적이 있을 때만 「이대로 이어 쓰기」.
+- `src/capa_simulation/components/equipment_scenario_management.py` — 가용설비 현황 「설비 시나리오」 탭(1단계 몫 + E7). 시나리오
+  표(공식/활성·최신 rN·리비전 수)와 고른 시나리오의 「시나리오 이름 바꾸기」, 리비전 표(리비전명·출처 `이관/저장/복제/함께
+  넣기/되돌리기`·공통 rN·행 수)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
+  시나리오」·「리비전명」·「공식으로 발행…」(지금 공식 → 새 공식, 최신이 아니면 그 사실, 발행 번호 대조) — 과 옛 배포 흔적이
+  있을 때만 「이대로 이어 쓰기」. 페이지에서 DB 경로와 그 회차 세션만 받아 따로 선다(뒤에 시나리오 관리 화면으로 옮길 수 있게).
   - 쓰기는 저장소가 하고 그 뒤 이 화면이 `clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 import 하지
-    않는다). 열린 회차에만 목록을 읽는다.
+    않는다). 열린 회차에만 목록을 읽는다. 그 사이 남의 쓰기로 거절된 작업(되돌리기의 최신·공통·발행 대조, 리비전명 비교 후
+    쓰기)은 `_refused` 가 공통 최신·목록을 비우고 입력 칸 세대를 올려(옛 확인 체크로 다시 누르지 않게) 맨 위에 알린다.
+  - **되돌리기**(E7)는 고른 리비전이 최신이 아닐 때만 확인 글을 세운다 — 새 번호, 바뀌는 호기 수·비가동 행 수·일정 없음,
+    「rK 뒤에 공통 대장에 든 호기(지금 n대)는 rK 에 일정이 없어 「일정 없음」 이 됩니다」(늘 수와 함께 — 0대면 「없습니다(0대)」),
+    공통 대장·다른 시나리오는 그대로, 공식 시나리오면 발행 체크(기본 켬). 확인 체크(바뀌는 수를 적는다)를 켜야 단추가 선다. 이
+    세션이 그 시나리오를 보고 저장 안 한 설비 편집이 없으면 세션을 새 리비전으로 옮기고(`select_equipment_scenario`), 편집이
+    있으면 두고 낡음 잠금에 맡긴다. 탭의 리비전 상자도 다음 회차에 새 리비전으로 옮긴다(`PENDING_REVISION_KEY` — 위젯을 그리기
+    전에 적는다).
+  - **확인 체크는 본 확인 글에 묶는다.** Streamlit 1.63 체크박스는 key 가 같으면 글이 바뀌어도 값을 지킨다. 그래서 체크 key 꼬리는
+    확인 글을 정한 값 다섯(`restore_seen_token` — 시나리오·고른 리비전·그 시나리오 최신·공통 최신·공식 발행 번호)이고 입력 칸
+    (새 리비전명·메모·저장자·발행 체크) key 꼬리는 고른 리비전이다. 저장소에 넘기는 대조값도 그 회차에 그 꼬리를 만든 같은 값이다
+    — 다른 리비전을 고르거나 확인 뒤 남의 저장·발행으로 값이 바뀐 회차에는 체크가 풀린 새 칸이 서고 단추가 잠긴다. 잠가 그린
+    단추의 클릭은 서버가 버리므로(9장 「잠긴(disabled) 위젯」) 단추는 「확인 체크 뒤에만 선다」 대로 잠그되, 체크가 켜진 회차의
+    값을 `RESTORE_AGREED_KEY` 에 적어 두고 같은 리비전에서 값만 바뀐 회차에 체크를 풀었다고 알린다 — 누른 회차에 버려진 클릭도
+    그 알림으로 까닭이 보인다. 단추 처리도 체크를 다시 본다(`not clicked or not agreed`). 값이 그대로인데 캐시가
+    늦어 저장소가 그 사이 쓰기를 보면 `EquipmentRevisionConflict`·`EquipmentReleaseMoved` 로 거절한다(`_refused`).
+  - **여기서 새 시나리오**는 1단계 복제(만들기는 복제로만)의 출처를 고른 리비전으로 넓힌 것이다 — 안내가 새 시나리오의 일정
+    없음 수와 그 리비전 뒤에 든 호기 수를 적는다. 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 키) 한 칸.
+  - **리비전명**은 칸을 세울 때 본 이름을 따로 들고(`…__seen`) 그 이름으로 비교 후 쓰기를 한다 — 칸이 고치지 않은 채면 남이
+    바꾼 이름으로 다시 선다. 비우면 지운다.
 - `src/capa_simulation/components/qual_deadline_calculator.py` — 가용설비 현황 `Qual 마감 계산기` 탭. 숫자 칸 넷·12개월
   편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감 칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
   - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
@@ -1584,8 +1608,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     설비 시나리오 목록(`load_equipment_scenario_catalog` — 시나리오·각 최신·리비전 수·최신 발행·흔적 수)과 시나리오 리비전
     목록(`load_equipment_schedule_revisions`)은 (DB, stat, 세대 `"equipment_scenario"`) 키에 TTL 15초, 8칸이다. 공식 스냅샷
     (`load_official_equipment_snapshot`)은 공통 최신 id + 목록의 최신 발행 → 합친 본문이라 발행만 바뀌어도 다른 쌍 키로 간다.
-    CSV 바이트도 쌍 키다. 이름·발행·복제·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터 저장 뒤에는
-    `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다.
+    CSV 바이트도 쌍 키다. 이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터
+    저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다.
+  - **리비전명은 바뀔 수 있는 이름표라 불변 본문에 싣지 않는다**(E7 — 5장 8). 합친 본문의 `schedule.revision_name` 은 늘 None
+    으로 꺼내고, 이름은 리비전 목록 캐시(쓰기 세대 `"equipment_scenario"`·stat·TTL)에서만 읽는다(글자는
+    `equipment_data_workspace.schedule_revision_title`). 되돌리기 확인 재료(`load_schedule_restore_preview`)는 (DB, 공통 id, 그 시나리오 최신 id, 고른 id)
+    키에 세대가 없다 — 셋 다 내용이 불변이고 누가 저장하면 화면이 새 id 로 부른다.
   - **어느 캐시도 저장소의 호환 래퍼(`save_snapshot`·`save_space_layout`·`load_snapshot`)를 부르지 않는다** — 래퍼
     `load_snapshot` 은 발행에 따라 값이 바뀌는 뜻이라 공통 id 하나 키에 실으면 발행 뒤 낡은 값을 낸다. 시험이
     `app_pages/`·`components/`·이 파일을 훑는다(`tests/test_equipment_current_reads.py`).
@@ -1609,10 +1637,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **발행**: 공식 시나리오에 새 일정 리비전이 생겼고(자기 저장이든 함께 넣기든) 저장 전 공식 = 그 시나리오 최신일 때만
     `publish_official` 이면 그 리비전을 발행한다. 남의 미발행 더 새 리비전이 있으면 발행하지 않고 `release_withheld`. 발행이
     없으면(빈 DB) 이 저장의 일정 리비전이 공식 v1 이다. `expected_release_no` 가 다르면 `EquipmentReleaseMoved`.
-  - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 최신 또는 최신 공식 발행, SQL 사본이 아니라 합친 읽기 길로 읽은
-    일곱 칸·비가동을 새 두 표에, `origin='clone'`)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name`
-    대조 → `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` —
-    흔적 수 대조 뒤 경계 행 하나)가 1단계 관리 쓰기다. 흔적은 설비 마스터 저장만 막는다. 이어 쓰기는 옛 배포 리비전이 ACTIVE
+  - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 **어느 일정 리비전이든**(E7 「여기서 새 시나리오」), SQL 사본이
+    아니라 지금 공통과 합친 읽기 길로 읽은 일곱 칸·비가동을 새 두 표에, `origin='clone'`. 지금 공통과 합쳐지지 않는 옛 리비전은
+    `EquipmentScenarioIncompatible`)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name` 대조 →
+    `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` — 흔적 수
+    대조 뒤 경계 행 하나)가 1단계 관리 쓰기다.
+  - **E7 리비전 도구**: 리비전명(`rename_schedule_revision` — 이름표 한 칸만 UPDATE, 비우면 NULL, 비교 후 쓰기 →
+    `EquipmentScheduleRevisionNameMoved`, 같은 이름이면 쓰지 않음, 보관 시나리오 거절)과 되돌리기(`restore_schedule_revision` —
+    고른 리비전을 **지금 공통 대장**과 합친 일정·비가동으로 같은 시나리오에 새 리비전 `origin='restore'`, 메모 「rK 일정으로
+    되돌림」. 옛 배포 흔적이면 `EquipmentLegacyTraceError`, 확인 때 본 공통 최신·시나리오 최신이 바뀌었으면
+    `EquipmentRevisionConflict`, 지금 최신과 같으면 쓰지 않음(`schedule=None`), 발행은 저장과 같은 `_plan_publish`, 공통을 쓰지
+    않아 교차 검증 없음). 리비전명은 둘 다 앞뒤 공백을 뗀 뒤 `SCHEDULE_REVISION_NAME_MAX_CHARS`(40)자까지이고 넘으면 쓰기 전에
+    `ValueError` 다(자르지 않는다 — 화면 칸 `max_chars` 도 이 수). 확인 재료는 `preview_schedule_restore`(읽기만 — 쓰기도 잠금
+    안에서 같은 `_restore_preview` 로 다시 잰다). 「그 리비전 뒤에 공통 대장에 든 호기」 는 그 리비전이 함께 본
+    공통(`common_revision_id`)에 키가 없는 호기다.
+  - 옛 배포 흔적은 설비 마스터 저장과 되돌리기를 막는다(복제·이름·리비전명·발행은 막지 않는다). 이어 쓰기는 옛 배포 리비전이 ACTIVE
     시나리오마다의 최신·최신 공식 발행과 합쳐질 때만 쓴다(아니면 `EquipmentLegacyTraceUnmergeable` — 굳히면 그 일정을 다시 못
     읽는다). 탭은 `legacy_trace_review()`(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭)로 확인 체크 글을 쓴다. 흔적이 공식과도
     합쳐지지 않는 동안 `resolve_equipment_session` 은 멈추지 않고 공통만 읽어 일정 없이 연다(`EquipmentSession.unmerged` — 공식
@@ -1765,8 +1804,12 @@ RQ_MODULE
    이름을 바꿔도 계산이 다시 돌지 않는다. 메모는 시스템 출처 기록(상세 조회기간·월 머지·연도 Shift 출처)이 들어 고치지
    않는다. 설비 DB 리비전은 이 예외가 없다 — **공통 대장 리비전**(`equipment_ops.revision`, 번호 전역)·**설비 시나리오 일정
    리비전**(번호는 시나리오마다 r1 부터)·**공식 발행**(`release_no` 전역)이 모두 append-only 이고, 고칠 수 있는 것은 설비
-   시나리오 **이름** 하나다(리비전명 칸 `revision_name` 은 E7 답 대기라 자리만 있다). 설비 `0027` 뒤 첫 저장은 무엇을
-   바꾸든 계약 v4 공통 한 벌을 쓴다(32).
+   시나리오 **이름**과 설비 시나리오 일정 리비전의 **리비전명**(`revision_name`, E7 — 2026-10-24 「권장대로」) 둘이다.
+   리비전명은 시뮬레이션과 같은 이름표 예외다 — `rename_schedule_revision`(비교 후 쓰기, 비우면 지움, 이력 없음)이 그 한 칸만
+   고치고 공식 발행 행·계산 캐시 키는 이름을 싣지 않는다. 설비 캐시는 리비전 id 키 본문이 불변이라는 전제에 서므로 **이름을 불변
+   본문 캐시에 싣지 않고**(합친 본문의 `schedule.revision_name` 은 늘 None) 리비전 목록 캐시가 쓰기 세대(`"equipment_scenario"`)로
+   새 이름을 읽는다 — 이름을 바꾼 화면이 `clear_equipment_scenario_cache()` 를 부른다. 「이 리비전으로 되돌리기」 는 옛 리비전을
+   고치지 않고 그 일정을 새 리비전으로 다시 저장한다. 설비 `0027` 뒤 첫 저장은 무엇을 바꾸든 계약 v4 공통 한 벌을 쓴다(32).
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 바뀐 쪽(공통 대장·설비 시나리오 일정)의
    새 전체 스냅샷을 만든다. 설비 시나리오는 설비 DB 안의 독립 시나리오이고 시뮬레이션 시나리오와 짝짓지 않는다(E1 — HOME·
@@ -3205,9 +3248,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   옛 판은 설비 마스터를 빈 표로 읽는다(첫 저장이 계약 v4 공통이라). 옛 판에서 저장한 흔적(경계 뒤 계약 v3 공통)이 있으면
   새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면 맨 위에 경고를 세운다. 빠져나가는 길은 백업 복원과
   설비 시나리오 탭 「이대로 이어 쓰기」 둘이다.
-- **설비 시나리오 2단계는 아직 없다**(1단계 = 구조·이관·고르기·두 쪽 저장·발행·복제·이름·화면 최소·사내 이관 확인):
-  시나리오끼리 일정 비교(F7), 보관·되살리기·영구 삭제·순서·공통 대장 이력 표(E8 나머지), 리비전명·되돌리기·여기서 새
-  시나리오(E7 — 답 대기, 스키마 칸 `revision_name`·`origin='restore'` 만 있음), 남의 공통 저장 때 일정 편집 다시 얹기(rebase),
+- **설비 시나리오 2단계는 아직 없다**(1단계 = 구조·이관·고르기·두 쪽 저장·발행·복제·이름·화면 최소·사내 이관 확인, 그 위에
+  E7 리비전명·되돌리기·여기서 새 시나리오):
+  시나리오끼리 일정 비교(F7), 보관·되살리기·영구 삭제·순서·공통 대장 이력 표(E8 나머지), 남의 공통 저장 때 일정 편집 다시 얹기(rebase),
   함께 넣기 행 단위 고르기, RawData 설비명 고침을 이름 바꿈으로 짝짓기(지금은 「지운 + 새 호기」 — 질문 4 권장안), 일정 없음
   호기를 「이 시나리오에 넣기」, 운영 변경 끌어오기. 스키마는 1단계 그대로 받는다. 지금은 단일 사용자 전제라 여러 세션이
   함께 쓰면 함께 넣기·남의 공통 저장이 낡음·버림을 자주 만든다.

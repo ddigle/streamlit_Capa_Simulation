@@ -41,6 +41,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     pending_unit_renames,
     save_equipment_buffer,
+    schedule_revision_title,
 )
 from capa_simulation.components.equipment_save_fields import (
     SaveCandidateCounts,
@@ -413,7 +414,9 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
         st.radio(
             "리비전",
             options=options,
-            format_func=lambda value: f"r{revision_by_id[value].revision_no}",
+            format_func=lambda value: literal_markdown(
+                schedule_revision_title(revision_by_id[value])
+            ),
             captions=[
                 _revision_caption(
                     revision_by_id[value],
