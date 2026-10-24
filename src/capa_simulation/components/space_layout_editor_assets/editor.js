@@ -735,13 +735,19 @@ export default function (component) {
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
+  // 비활성 층(사용 안 함·생산라인 아님)을 가리키는 블록의 사유 글. 연결 층의 `linkStats.inactive` 에서 온다 — 회색 빗금으로
+  // 그리고 보기에서 눌러도 열지 않는다(그 층은 층 목록 표 「비활성 층」에서 연다). 사용 층이면 빈 글.
+  const blockOff = (item) => (item && item.kind === 'block' && item.link && LINK_STATS[item.link] && LINK_STATS[item.link].inactive) || ''
   const blockLines = (item) => {
     const stats = LINK_STATS[item.link] || {}
+    // 비활성 블록은 대수 줄 대신 사유다(대수는 풍선에 남는다).
+    if (blockOff(item)) return [blockHead(item), blockOff(item)].map(String)
     return [blockHead(item), stats.placed, stats.unplaced].filter(Boolean).map(String)
   }
-  const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link)
+  const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link && !blockOff(item))
   const blockTip = (item) => {
     const stats = LINK_STATS[item.link] || {}
+    if (blockOff(item)) return [blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced].filter(Boolean).join(' · ')
     const parts = [blockHead(item), stats.placed, stats.unplaced, stats.occupancy].filter(Boolean)
     return parts.join(' · ') + (opensFloor(item) ? ' · 누르면 열기' : '')
   }
@@ -1387,7 +1393,8 @@ export default function (component) {
     const upp = unitsPerPx()
     // 이름표 글자는 화면 px 로 정한다(확대해도 같은 크기). 고른 크기가 없으면 LABEL_PX.
     const fs = (item.fontSize || LABEL_PX) * upp
-    const ink = fontInk(item)
+    // 비활성 층 블록은 고른 「글자 색」을 달지 않는다 — 인라인 색이 CSS 의 흐린 글자(muted)를 이긴다.
+    const ink = blockOff(item) ? '' : fontInk(item)
     const text = (value, x, y, size, anchor) => {
       const node = el('text', { class: 'sle-mark-text', x, y, 'font-size': size, 'text-anchor': anchor || 'middle', 'dominant-baseline': 'central' })
       node.textContent = value
@@ -1452,9 +1459,21 @@ export default function (component) {
       // 층 블록: 면(고른 색 또는 Space 기본 면)·테두리·가운데 글자 줄. 글자는 블록에 맞춰 줄이고 화면에서 13px 를
       // 넘지 않는다. 줄이 다 안 들어가면 이름 줄만, 그것도 6px 아래면 숨긴다(풍선·초점 이름에는 남는다).
       const fill = el('rect', { class: 'sle-block-fill', x: 0, y: 0, width: lw, height: lh, rx: 0.4 })
-      // 고른 색은 팔레트가 캔버스 위에 미리 섞어 둔 불투명 면이다(반투명이면 뒤의 도면·격자가 비친다).
-      if (item.color && markColors[item.color]) fill.style.fill = `var(--sle-block-tint-${item.color})`
-      inner.append(fill, el('rect', { class: 'sle-block-border', x: 0, y: 0, width: lw, height: lh, rx: 0.4 }))
+      const off = blockOff(item)
+      group.classList.toggle('is-inactive', Boolean(off))
+      // 고른 색은 팔레트가 캔버스 위에 미리 섞어 둔 불투명 면이다(반투명이면 뒤의 도면·격자가 비친다). 비활성 층 블록은
+      // 고른 색 대신 회색 면(`block-off`, CSS)과 영역 빗금 무늬다 — 인라인 색을 달지 않는다.
+      if (item.color && markColors[item.color] && !off) fill.style.fill = `var(--sle-block-tint-${item.color})`
+      inner.append(fill)
+      if (off) inner.append(el('rect', { class: 'sle-block-hatch', x: 0, y: 0, width: lw, height: lh, rx: 0.4, fill: 'url(#sle-hatch)' }))
+      inner.append(el('rect', { class: 'sle-block-border', x: 0, y: 0, width: lw, height: lh, rx: 0.4 }))
+      // 보기 FAB 의 키보드 초점은 지금 상태를 따른다 — 비활성이면 Tab 이 건너뛰게 초점·역할을 걷는다. 새 epoch 의
+      // `buildMark` 가 보통 다시 세우지만(뷰어 epoch 에 상태 지문) 두 겹이다.
+      if (VIEW && FAB && !opensFloor(item)) {
+        group.removeAttribute('tabindex')
+        group.removeAttribute('role')
+        group.removeAttribute('aria-label')
+      }
       const fitLines = (lines) => {
         const longest = Math.max(...lines.map(emWidth), 1)
         return Math.min((lh * 0.8) / (lines.length * 1.3), (lw * 0.9) / longest, 13 * upp)
@@ -2308,8 +2327,12 @@ export default function (component) {
         blockColor.value = mark.color || ''
         // 적용하지 않은 FAB 편집이 있으면 열지 않는다 — 열면 이 편집기가 내려가 그 편집이 사라진다.
         const pending = hasPendingEdits()
-        blockOpen.disabled = pending || !mark.link
-        blockOpen.title = pending ? '먼저 적용하세요 — 적용하지 않은 FAB 편집이 있습니다' : `${mark.link || '연결 층'} 을 엽니다`
+        blockOpen.disabled = pending || !mark.link || Boolean(blockOff(mark))
+        blockOpen.title = pending
+          ? '먼저 적용하세요 — 적용하지 않은 FAB 편집이 있습니다'
+          : blockOff(mark)
+            ? '비활성 층 — 층 목록 표 「비활성 층」에서 엽니다'
+            : `${mark.link || '연결 층'} 을 엽니다`
       }
     }
   }
@@ -2321,12 +2344,18 @@ export default function (component) {
   // 층 블록 위에 올려 두거나 초점을 두면 선택 줄에 「C1 1F · 누르면 열기」. 떠나면 원래 줄로 돌린다.
   S.showBlockHint = (group) => {
     const item = group ? S.items.get(group.dataset.id) : null
+    // 비활성 층 블록은 열지 않는다 — 어디서 여는지 알린다(초점은 오지 않는다 — tabindex 가 없다).
+    if (VIEW && FAB && blockOff(item)) {
+      pickBox.textContent = `${item.link} · 비활성(${blockOff(item)}) — 층 목록 표 아래 「비활성 층」에서 엽니다`
+      pickBox.title = pickBox.textContent
+      return
+    }
     if (!opensFloor(item)) { updateStatus(); return }
     pickBox.textContent = `${item.link} · 누르면 열기`
     pickBox.title = pickBox.textContent
   }
   // FAB 편집의 선택 칸 [열기]: 고른 층 블록이고 적용하지 않은 편집이 없을 때만.
-  const opensFromInspector = (item) => Boolean(!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits())
+  const opensFromInspector = (item) => Boolean(!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits() && !blockOff(item))
   // 블록이 가리키는 층을 연다. 파이썬 `on_navigate_change` 콜백이 층을 바꿔 재실행 한 번으로 층 상세가 선다.
   // 보기 전용 FAB 의 블록 누르기·Enter, 그리고 FAB 편집 선택 칸의 [열기] 가 모두 여기로 온다.
   function openFloor(item, fromInspector = false) {
@@ -3596,7 +3625,9 @@ export default function (component) {
       S.lastViewDragMoved = drag.moved
       // 포인터 캡처 때문에 뒤따르는 click·dblclick 의 target 은 캔버스로 바뀐다. 블록 위를 눌렀는지는 여기서 기억한다.
       const item = drag.id ? S.items.get(drag.id) : null
-      S.lastViewOnBlock = opensFloor(item)
+      // 블록 위인지는 종류로 정한다 — 비활성·연결 없는 블록도 블록이라 고르지 않는다(보기 FAB 에는 고르기가 없다).
+      // 열지 말지는 `openFloor` 가 거른다.
+      S.lastViewOnBlock = Boolean(FAB && item && item.kind === 'block')
       if (drag.moved) return
       // FAB 의 층 블록은 누르면 그 층을 연다(끌었으면 열지 않는다). 나머지는 고르기다.
       if (S.lastViewOnBlock) {

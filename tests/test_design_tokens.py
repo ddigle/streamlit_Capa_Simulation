@@ -440,10 +440,25 @@ def test_space_mark_text_colours_read_on_every_space_surface() -> None:
         inks = palette["SPACE_MARK_TEXT_COLORS"]
         assert set(inks) == set(MARK_COLOR_KEYS), mode
         for key, ink in inks.items():
-            for surface in ("SURFACE", "SPACE_CANVAS", "SPACE_BLOCK_FILL"):
+            for surface in ("SURFACE", "SPACE_CANVAS", "SPACE_BLOCK_FILL", "SPACE_BLOCK_OFF_FILL"):
                 ratio = contrast_ratio(ink, palette[surface])
                 if ratio < 4.5:
                     weak.append(f"{mode}.{key} {ink} on {surface}: {ratio:.2f}")
+
+    assert not weak, "\n".join(weak)
+
+
+def test_inactive_floor_blocks_keep_their_reason_and_head_readable() -> None:
+    """비활성 층 블록(회색 빗금)의 사유 글자(TEXT_MUTED)와 머리 줄(SPACE_TEXT)은 두 테마의 off 면 위
+    4.5:1 이상이다. off 면은 기본 블록 면과 다른 색이다(구분돼야 한다)."""
+    weak: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        off = palette["SPACE_BLOCK_OFF_FILL"]
+        assert off != palette["SPACE_BLOCK_FILL"], mode
+        for ink_name in ("TEXT_MUTED", "SPACE_TEXT"):
+            ratio = contrast_ratio(palette[ink_name], off)
+            if ratio < 4.5:
+                weak.append(f"{mode}.{ink_name} on SPACE_BLOCK_OFF_FILL: {ratio:.2f}")
 
     assert not weak, "\n".join(weak)
 

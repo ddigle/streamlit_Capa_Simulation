@@ -245,6 +245,9 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_GRID": "#E5E8EB",
     # FAB 도면 층 블록의 기본 면(색 키를 고르지 않은 블록). 캔버스보다 한 단 짙다.
     "SPACE_BLOCK_FILL": "#E7EDF2",
+    # 비활성 층 블록(사용 안 함·생산라인 아님)의 면. 기본 블록 면보다 옅은 회색이고 그 위에 영역
+    # 빗금 무늬(`#sle-hatch`)와 TEXT_MUTED 사유 글자가 선다(TEXT_MUTED·SPACE_TEXT 모두 4.5:1 이상).
+    "SPACE_BLOCK_OFF_FILL": "#F0F1F3",
     # Space 도면 요소 이름표의 「글자 색」. 키는 영역 색 키(`floor_layout_mark.MARK_COLOR_KEYS`)와
     # 같고 계열도 같다 — 영역 면색(제품별 비중 색)은 하늘·장미·보라가 흰 면 대비 2.2~3.6:1 이라
     # 글자로는 흐려 계열은 두고 명도만 내렸다. 이름표 글자에는 SURFACE 테두리가 둘러지므로 그 면이
@@ -444,6 +447,8 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_LABEL_TEXT": "#98A3B0",
     "SPACE_GRID": "#2A323C",
     "SPACE_BLOCK_FILL": "#1E2630",
+    # 비활성 층 블록 면 — 캔버스에 가까운 어두운 회색.
+    "SPACE_BLOCK_OFF_FILL": "#191E24",
     # 이름표 글자 색. 같은 계열을 어두운 면 위의 밝은 띠로 옮겼다(모든 면 위 6.3:1 이상).
     "SPACE_MARK_TEXT_COLORS": {
         "blue": "#79A7F7",
@@ -629,6 +634,7 @@ if TYPE_CHECKING:
     SERIES_STANDARD: Final[str] = ""
     SHORTAGE_MONTH_BAND: Final[str] = ""
     SPACE_BLOCK_FILL: Final[str] = ""
+    SPACE_BLOCK_OFF_FILL: Final[str] = ""
     SPACE_BORDER: Final[str] = ""
     SPACE_CANVAS: Final[str] = ""
     SPACE_CANVAS_OVERLAY: Final[str] = ""
