@@ -985,7 +985,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
-    한 번 알린다(`show_row_order_reset`). 앞 토큰이 없으면(첫 회차·시나리오 전환이 지운 뒤) 알리지 않는다.
+    한 번 알린다(`show_row_order_reset`). 앞 토큰이 없으면(첫 회차·시나리오 전환이 지운 뒤) 알리지 않는다. 줄 위치로 남지
+    않는 상태(PKG PLAN 붙여넣기 대기와 그 표 위의 편집, 기준 정보 STEP 상자)는 `order_free_keys` 로 넘겨 차례만 바뀐 회차에 남긴다.
   - 화면이 스스로 적용한 편집은 `mark_own_change` 로 적어 그 적용이 건드린 편집표만 비운다. 편집 되돌리기는
     `components/scenario_status.py` 의 팝업이 맡는다.
   - `register_pending_edits` 로 화면이 제 편집표·붙여넣기 대기를 적고 사이드바가 `pending_edit_labels` 로 앞 회차
@@ -2634,9 +2635,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `register_pending_edits` 가 고정 키 목록으로 편집표를 찾으므로 키가 바뀌면 청소와 「적용 전 편집」 표시가 그 편집을
   놓친다.
 - **공용 표시순서로 줄을 세우는 편집표는 원본 토큰에 그 지문을 싣는다**(`scenario_edit_bar.source_token(...,
-  row_order=display_order_digest(...))`). 차례가 바뀐 회차에는 적용 전 편집·붙여넣기 대기를 비우고 탭 묶음 위에 늘 서 있는
-  알림 칸에 한 번 알린다 — 틀린 줄에 저장하는 대신 적용 전 편집만 잃는다. 그 회차에 함께 온 「적용」 클릭은 적용하지 않는다
-  (`render_month_editor` 는 편집이 있을 때만 참을 돌려준다 — 단추가 편집이 있을 때만 열리므로 편집 없는 클릭은 버린 편집의 것).
+  row_order=display_order_digest(...))`). 차례가 바뀐 회차에는 줄 위치로 남는 적용 전 편집을 비우고 탭 묶음 위에 늘 서 있는
+  알림 칸에 한 번 알린다 — 틀린 줄에 저장하는 대신 적용 전 편집만 잃는다. 제 줄 차례를 들고 있는 붙여넣기 대기 표·그 표를
+  원본으로 그린 편집표·키로 고르는 상자는 `order_free_keys` 로 남긴다(버릴 까닭이 없다). 그 회차에 함께 온 「적용」 클릭은
+  따로 막지 않는다 — 단추를 `disabled=not pending` 으로 그리면 Streamlit 1.63 이 잠겨 그린 위젯의 값을 서버에서 버린다
+  (`tests/test_editor_row_order_guard.py` 가 그 전제를 지킨다).
 - **뜻이 걸리는 `NumberColumn` 에 `step` 을 두지 않는다.** Streamlit 1.63 은 `step` 의 소수 자릿수 아래를 반올림하지 않고
   **버린다**(보이는 값·칸 복사·손 입력·칸 붙여넣기 — 0.001 이면 98.75% 가 98.7%, 0.01 이면 0.333 대가 0.33). `format` 만 두면
   보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 소수 0~2자리). `step` 이 없으면 **정수 dtype 칸에 증분 1 이 스스로

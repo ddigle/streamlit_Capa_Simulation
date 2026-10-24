@@ -202,7 +202,17 @@ STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
 # 칸**이다 — 알림이 생기고 사라질 때 탭 묶음 자리가 밀리지 않게 한다(가용설비 현황의 알림 칸).
 notices = st.container()
 # 줄 차례 지문은 두 편집표 캐시 키와 같은 표시순서 지문이다 — PKG PLAN·수율 모두 이 표시순서로 줄을
-# 세운다. 바뀌면 적용 전 편집이 다른 제품 줄에 붙으므로 비운다.
+# 세운다. 바뀌면 적용 전 편집이 다른 제품 줄에 붙으므로 비운다. **붙여넣기 대기 표는 남긴다** —
+# 붙여넣은 차례 그대로 PKG PLAN 편집표의 원본이 되고(아래 `plan_editor_source`) 적용도 업무 키로
+# 하므로 표시순서와 상관없다. 그 표가 편집 원본인 동안(행 차원이 맞는 대기 표 — PKG PLAN 탭의
+# 스키마 검사와 같다)은 그 위의 PKG PLAN 편집도 같은 까닭으로 남긴다.
+_staged_plan = st.session_state.get(PLAN_STAGED_KEY)
+plan_order_free: tuple[str, ...] = (
+    (PLAN_STAGED_KEY, PLAN_EDITOR_KEY)
+    if isinstance(_staged_plan, pd.DataFrame)
+    and set(PLAN_EDITOR_DIMENSIONS).issubset(_staged_plan.columns)
+    else (PLAN_STAGED_KEY,)
+)
 source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(
@@ -216,6 +226,7 @@ source_reset = reset_editors_on_source_change(
     other_keys=(PLAN_STAGED_KEY,),
     own_change_key=OWN_CHANGE_KEY,
     names={**EDITOR_NAMES, **STAGED_NAMES},
+    order_free_keys=plan_order_free,
 )
 show_row_order_reset(notices, source_reset)
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
@@ -708,9 +719,9 @@ with yield_tab:
                 },
             },
         )
-        # 버튼은 편집이 있을 때만 열린다. 편집이 없는 회차의 클릭은 원본·줄 차례가 바뀌어 버린
-        # 편집의 것이라 적용하지 않는다(버린 편집 대신 원본을 「적용」해 리비전만 오른다).
-        if apply_yield and yield_pending:
+        # 원본·줄 차례가 바뀌어 편집을 버린 회차에는 버튼이 잠겨 그려지고, Streamlit 은 잠겨 그린
+        # 버튼의 클릭을 서버에서 버린다 — 그 회차에 함께 온 클릭은 여기까지 오지 않는다.
+        if apply_yield:
             try:
                 _apply_yield(
                     edited_yield_table,
@@ -728,8 +739,8 @@ with yield_tab:
 # 서버에서 사라져 수율 탭 점과 사이드바 경고가 꺼졌다. 그때 누른 「신규 리비전 저장」은 다음 조작에
 # 브라우저가 되보낸 편집 때문에 잠긴 버튼이 되어 말없이 무시됐다(2026-10-01 브라우저 E2E). 오류
 # 알림은 작업 줄 아래 자리(`plan_notice`)에 쓰므로 여기서 처리해도 누른 자리에 뜬다.
-# 편집·붙여넣기 대기가 없는 회차의 클릭은 버려진 편집의 것이라 적용하지 않는다(수율과 같다).
-if apply_plan and plan_pending:
+# 편집을 버린 회차의 클릭은 잠겨 그린 버튼이라 Streamlit 이 버린다(수율과 같다).
+if apply_plan:
     try:
         updated_plan = attach_plan_attributes(
             plan_from_edit_table(edited_plan_table), simulation_plan

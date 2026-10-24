@@ -378,7 +378,7 @@ EDITOR_NAMES = {
 }
 # 줄 차례 지문은 편집표 캐시 키와 같은 표시순서 지문이다 — 아홉 편집표가 모두 이 표시순서로 줄을
 # 세운다(설비대수 세 표는 `apply_display_order`). 바뀌면 적용 전 편집이 다른 공정 줄에 붙으므로
-# 비운다.
+# 비운다. STEP 복제·삭제 상자는 줄 위치가 아니라 경로 키로 고르므로 차례만 바뀐 회차에는 남긴다.
 source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(
@@ -392,6 +392,7 @@ source_reset = reset_editors_on_source_change(
     other_keys=step_widget_keys,
     own_change_key=OWN_CHANGE_KEY,
     names=EDITOR_NAMES,
+    order_free_keys=step_widget_keys,
 )
 show_row_order_reset(notices, source_reset)
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표를 알린다. 방금
@@ -453,8 +454,9 @@ with equipment_tab:
 # 모두 보이거나 적용하지 않은 편집이 남았다). 그리지 않는 회차에는 편집기가 양식을 읽지 않고,
 # 붙여넣기·적용도 그 편집기를 그린 회차에만 일어난다.
 # 행 차례는 `현황` 표와 같은 표시순서 범위(기준 정보 › 설비대수)를 따른다 — 다른 편집 탭과 같다.
-# 적용·붙여넣기는 위치가 아니라 `공정` 키로 되돌리므로(`merge_edited_months`·
-# `validate_reference_edit_table`) 차례가 바뀌어도 값은 제 공정에 든다.
+# 적용·붙여넣기는 `공정` 키로 되돌리지만(`merge_edited_months`·`validate_reference_edit_table`)
+# **편집표의 적용 전 편집은 줄 위치로 남는다** — 차례가 바뀐 채 두면 다른 공정 줄에 붙으므로 위
+# `source_token` 의 줄 차례 지문이 바뀐 회차에 그 편집을 비운다.
 equipment_edit_tables = {
     table_name: (
         apply_display_order(

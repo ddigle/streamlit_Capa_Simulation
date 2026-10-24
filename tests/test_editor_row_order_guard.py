@@ -190,6 +190,84 @@ def test_an_own_apply_does_not_shield_the_other_tables_when_the_order_changes(
     assert "own" not in session.session_state
 
 
+def _reset_with_order_free(
+    session: SimpleNamespace, token: str, *, own_change_key: str | None = None
+) -> scenario_edit_bar.SourceReset:
+    """붙여넣기 대기(`staged`)와 그 표를 원본으로 그린 편집표(`upeh`)가 줄 차례와 상관없는 화면."""
+    return scenario_edit_bar.reset_editors_on_source_change(
+        "token",
+        token,
+        ("upeh", "run_day"),
+        other_keys=("staged",),
+        own_change_key=own_change_key,
+        names=NAMES,
+        order_free_keys=("staged", "upeh"),
+    )
+
+
+def test_order_free_state_survives_a_row_order_change_and_is_not_named(
+    session: SimpleNamespace,
+) -> None:
+    """제 줄 차례를 들고 있는 상태는 차례만 바뀐 회차에 버릴 까닭이 없다.
+
+    남기고 알림에도 싣지 않는다. 줄 위치로 남는 편집(일수)만 버리고 그 이름을 싣는다.
+    """
+    session.session_state["token"] = _token("a")
+    session.session_state["upeh"] = _edit(MONTH, 1.0)
+    session.session_state["run_day"] = _edit(MONTH, 20.0)
+    staged = object()
+    session.session_state["staged"] = staged
+
+    reset = _reset_with_order_free(session, _token("b"))
+
+    assert reset.changed
+    assert reset.row_order_dropped == ("일수",)
+    assert session.session_state["staged"] is staged
+    assert editor_state.editor_has_edits("upeh")
+    assert _generation(session, "upeh") == 0
+    assert _generation(session, "run_day") == 1
+    assert session.session_state["token"] == _token("b")
+
+
+def test_order_free_state_still_drops_when_the_source_changes_too(
+    session: SimpleNamespace,
+) -> None:
+    """리비전·기간이 함께 바뀌면 행·월 구성이 달라져 모두 버린다.
+
+    차례 탓에 잃은 것이 아니라 알리지 않는다(기간 변경과 같다).
+    """
+    session.session_state["token"] = _token("a", revision=1)
+    session.session_state["upeh"] = _edit(MONTH, 1.0)
+    session.session_state["run_day"] = _edit(MONTH, 20.0)
+    session.session_state["staged"] = object()
+
+    reset = _reset_with_order_free(session, _token("b", revision=2))
+
+    assert reset == scenario_edit_bar.SourceReset(changed=True)
+    assert "staged" not in session.session_state
+    assert _generation(session, "upeh") == 1
+    assert _generation(session, "run_day") == 1
+
+
+def test_an_own_apply_with_an_order_change_keeps_the_order_free_state(
+    session: SimpleNamespace,
+) -> None:
+    """방금 적용한 표는 버리고, 남은 것 가운데 줄 위치로 남는 편집만 차례 탓에 버린다."""
+    session.session_state["token"] = _token("a", revision=1)
+    session.session_state["upeh"] = _edit(MONTH, 1.0)
+    session.session_state["run_day"] = _edit(MONTH, 20.0)
+    staged = object()
+    session.session_state["staged"] = staged
+    scenario_edit_bar.mark_own_change("own", ("upeh",))
+
+    reset = _reset_with_order_free(session, _token("b", revision=2), own_change_key="own")
+
+    assert reset.row_order_dropped == ("일수",)
+    assert _generation(session, "upeh") == 1
+    assert _generation(session, "run_day") == 1
+    assert session.session_state["staged"] is staged
+
+
 def test_the_notice_names_what_was_dropped() -> None:
     message = scenario_edit_bar.row_order_reset_message(("효율", "설비대수 보유"))
     assert message.startswith(NOTICE_HEAD)
@@ -390,6 +468,169 @@ def test_the_plan_editor_drops_an_unapplied_edit_only_when_the_order_changes(
             "Product-A": 555.0,
             "Product-B": 100.0,
         }
+
+
+PLAN_STAGED_KEY = "pkg_plan_staged_paste"
+
+
+def _stage_plan_paste(app: AppTest, product_a_quantity: float) -> pd.DataFrame:
+    """PKG PLAN 「Excel 붙여넣기」 가 남기는 대기 표.
+
+    지금 편집표 그대로에서 Product-A 칸만 바꾼다.
+    """
+    editor = next(frame for frame in app.dataframe if _is_editor(frame.proto.id, "pkg_plan_editor"))
+    staged = pd.DataFrame(editor.value).copy()
+    staged.loc[staged["제품정보"] == "Product-A", MONTH] = product_a_quantity
+    app.session_state[PLAN_STAGED_KEY] = staged
+    return staged
+
+
+@pytest.mark.parametrize("edit_on_top", [False, True], ids=["staged-only", "edit-on-staged"])
+def test_a_staged_plan_paste_survives_a_display_order_change(edit_on_top: bool) -> None:
+    """붙여넣기 대기 표는 붙여넣은 차례 그대로 편집 원본이 되고 키로 적용된다 — 표시순서와 상관없다.
+
+    전에는 차례가 바뀐 회차에 대기 표까지 버리고 「…(PKG PLAN 붙여넣기)을 다른 줄에 붙지 않게
+    버렸습니다」라고 알렸다(2026-10-24 브라우저 E2E — 같은 세션에서 붙여넣기 → Admin 표시순서
+    저장 → 생산 계획 복귀). 이제 대기 표와 그 위의 편집(대기 표 둘째 줄 Product-B)이 남고 알림이
+    없으며, 적용은 제 제품에 든다.
+    """
+    editor_key = "pkg_plan_editor"
+    second_row_edit = {"edited_rows": {1: {MONTH: 555.0}}, "added_rows": [], "deleted_rows": []}
+
+    def resend_edit() -> None:
+        # AppTest 는 세션에 넣은 편집표 값을 한 회차만 들고 있다 — 브라우저처럼 조작마다
+        # 다시 보낸다.
+        if edit_on_top:
+            app.session_state[editor_widget_key_in(app, editor_key)] = second_row_edit
+
+    app = AppTest.from_string(PLAN_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
+    app.session_state["load_conversion_active_tab"] = PLAN_TAB
+    app.run()
+    assert not app.exception
+    staged = _stage_plan_paste(app, 777.0)
+    app.run()
+    assert not app.exception
+    resend_edit()
+    app.run()
+    assert not app.exception
+    assert not _apply_disabled(app, "apply_pkg_plan_changes")
+    before = _generation_in(app, editor_key)
+
+    app.session_state["test_display_order_descending"] = True
+    resend_edit()
+    app.run()
+
+    assert not app.exception
+    assert not _notices(app)
+    assert app.session_state[PLAN_STAGED_KEY] is staged
+    # 편집표는 대기 표의 차례(붙여넣은 차례) 그대로다.
+    assert _plan_products(app) == ["Product-A", "Product-B"]
+    assert _generation_in(app, editor_key) == before
+    assert not _apply_disabled(app, "apply_pkg_plan_changes")
+
+    resend_edit()
+    app.button(key="apply_pkg_plan_changes").click()
+    app.run()
+
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_PKG_PLAN"]
+    assert dict(zip(saved["제품정보"], saved["생산수량"], strict=True)) == {
+        "Product-A": 777.0,
+        "Product-B": 555.0 if edit_on_top else 100.0,
+    }
+
+
+YIELD_TAB = ":material/percent: 수율"
+
+
+def _yield_rows(app: AppTest) -> list[tuple[str, str]]:
+    editor = next(
+        frame
+        for frame in app.dataframe
+        if frame.proto.editing_mode and _is_editor(frame.proto.id, "yield_editor")
+    )
+    return [
+        (str(product), str(kind))
+        for product, kind in zip(editor.value["제품정보"], editor.value["수율 구분"], strict=True)
+    ]
+
+
+@pytest.mark.parametrize("descending", [True, False], ids=["order-changed", "order-held"])
+def test_the_yield_editor_drops_an_unapplied_edit_only_when_the_order_changes(
+    descending: bool,
+) -> None:
+    """수율 첫 줄(Product-A · BE)을 고친 채 「수율 변경사항 적용」을 누른다.
+
+    표시순서가 뒤집힌 회차면 첫 줄이 Product-B 가 되므로 편집을 비우고 「…(수율)…」을 한 번
+    알리며 적용하지 않는다. 그대로인 회차면 편집이 남아 Product-A 의 BE 수율에 든다.
+    """
+    editor_key = "yield_editor"
+    app = AppTest.from_string(PLAN_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
+    app.session_state["load_conversion_active_tab"] = YIELD_TAB
+    app.run()
+    assert not app.exception
+    assert _yield_rows(app)[0] == ("Product-A", "BE")
+    edit = _edit(MONTH, 0.5)
+    app.session_state[editor_widget_key_in(app, editor_key)] = edit
+    app.run()
+    assert not app.exception
+    assert not _apply_disabled(app, "apply_yield_changes")
+    before = _generation_in(app, editor_key)
+
+    app.session_state["test_display_order_descending"] = descending
+    app.session_state[editor_widget_key_in(app, editor_key)] = edit
+    app.button(key="apply_yield_changes").click()
+    app.run()
+
+    assert not app.exception
+    if descending:
+        assert _yield_rows(app)[0][0] == "Product-B"
+        assert "test_month_updates" not in app.session_state
+        assert _generation_in(app, editor_key) == before + 1
+        assert _apply_disabled(app, "apply_yield_changes")
+        notices = _notices(app)
+        assert len(notices) == 1
+        assert "(수율)" in notices[0]
+        app.run()
+        assert not _notices(app)
+    else:
+        assert not _notices(app)
+        saved = app.session_state["test_month_updates"]["RQ_YLD"]
+        assert dict(zip(saved["제품정보"], saved["BE_수율"], strict=True)) == {
+            "Product-A": 0.5,
+            "Product-B": 1.0,
+        }
+
+
+# 회차마다 `test_lock` 으로 잠글지를 정하는 단추 하나.
+_DISABLED_BUTTON_SCRIPT = """
+import streamlit as st
+
+clicked = st.button("적용", key="apply", disabled=bool(st.session_state.get("test_lock")))
+st.session_state["test_clicks"] = st.session_state.get("test_clicks", 0) + int(clicked)
+"""
+
+
+def test_streamlit_discards_a_click_on_a_button_drawn_disabled_in_that_run() -> None:
+    """편집을 버린 회차에 함께 온 「적용」 클릭을 페이지가 따로 막지 않는 전제다.
+
+    클릭은 단추가 열려 있던 화면에서 눌렸고, 그 회차에 페이지는 편집을 버려 단추를 잠가 그린다
+    (`disabled=not pending`). Streamlit 1.63 은 잠겨 그린 위젯의 값을 서버에서 버린다. 이
+    전제가 깨지면(Streamlit 판올림) 버린 편집 대신 원본을 「적용」해 리비전만 오른다 — 그때는
+    페이지가 막아야 한다.
+    """
+    app = AppTest.from_string(_DISABLED_BUTTON_SCRIPT, default_timeout=30)
+    app.run()
+    app.button(key="apply").click()
+    app.run()
+    assert app.session_state["test_clicks"] == 1
+
+    app.button(key="apply").click()
+    app.session_state["test_lock"] = True
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["test_clicks"] == 1
 
 
 # ------------------------------------------------------------------ 숫자 칸 증분

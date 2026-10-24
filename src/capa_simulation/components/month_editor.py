@@ -107,9 +107,10 @@ def render_month_editor(
     이 증분 1 을 스스로 걸어 소수를 버린다.
     `value_help` 는 월 칸 머리의 도움말로, 값 칸의 뜻·단위를 밝힌다.
 
-    돌려주는 「적용 버튼이 눌렸는가」는 **이 회차에 적용 전 편집이 있을 때만** 참이다. 원본·줄
-    차례가 바뀌어 편집을 버린 회차에 함께 온 클릭(버리기 전에 누른 것)은 버린 편집 대신 원본을
-    「적용」하게 된다.
+    돌려주는 「적용 버튼이 눌렸는가」는 **이 회차에 적용 전 편집이 있을 때만** 참이다. 버튼은
+    편집이 없으면 잠겨 그려지고(`disabled=not pending`), Streamlit 1.63 은 그 회차에 잠겨 그린
+    위젯의 값을 서버에서 버린다 — 원본·줄 차례가 바뀌어 편집을 버린 회차에 함께 온 클릭(버리기
+    전에 누른 것)도 여기서 거짓이 된다. 페이지가 따로 막지 않는다.
 
     **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다.** `st.data_editor` 는 그리지 않은
     회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을 누르는 순간 편집이
@@ -246,8 +247,7 @@ def render_month_editor(
             min_value=min_value,
             max_value=max_value,
         )
-    # 버튼은 편집이 있을 때만 열린다. 편집이 없는 회차의 클릭은 그 앞에 버려진 편집의 것이다.
-    return merged, submitted and pending
+    return merged, submitted
 
 
 def float_month_columns(table: pd.DataFrame, month_columns: Sequence[str]) -> pd.DataFrame:

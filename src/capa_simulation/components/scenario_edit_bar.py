@@ -11,12 +11,13 @@
 화면은 공용 표시순서로 줄을 세우는데 표시순서는 기준정보 버전·리비전을 바꾸지 않고 바뀌므로, 토큰에
 그 지문이 없으면 적용 전 편집이 다른 공정 줄에 붙은 채 「적용」이 그대로 저장한다. 차례가 바뀌어
 편집을 버린 회차는 화면이 한 번 알린다(`show_row_order_reset`) — 틀린 저장 대신 적용 전 편집만
-잃는다(2026-10-24 사용자 결정).
+잃는다(2026-10-24 사용자 결정). 줄 위치로 남지 않는 상태(붙여넣기 대기처럼 제 줄 차례를 들고 있는
+표, 키로 고르는 선택 상자)는 차례만 바뀐 회차에 버리지 않는다(`order_free_keys`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 import streamlit as st
@@ -61,13 +62,21 @@ def _row_order_of(token: object) -> str | None:
     return token.rpartition(_ROW_ORDER_MARK)[2]
 
 
+def _source_of(token: object) -> object:
+    """토큰에서 줄 차례 지문을 뺀 앞부분(기준정보 버전·리비전·기간). 지문이 없는 토큰은 그대로다."""
+    if not isinstance(token, str) or _ROW_ORDER_MARK not in token:
+        return token
+    return token.rpartition(_ROW_ORDER_MARK)[0]
+
+
 @dataclass(frozen=True)
 class SourceReset:
     """`reset_editors_on_source_change` 의 결과.
 
-    `changed` 는 원본이 바뀌어 무엇이든 비웠는가, `row_order_dropped` 는 **줄 차례가 바뀌어** 버린
-    적용 전 편집·붙여넣기 대기의 이름(화면이 준 `names` 의 값)이다. 비어 있으면 알릴 것이 없다 —
-    시나리오 불러오기·저장처럼 사용자가 버린다고 확인한 변경은 여기 들지 않는다.
+    `changed` 는 원본이 바뀌어 무엇이든 비웠는가, `row_order_dropped` 는 **줄 차례가 바뀐 탓에**
+    버린 적용 전 편집의 이름(화면이 준 `names` 의 값)이다 — 차례가 그대로였다면 남았을 것만 든다.
+    비어 있으면 알릴 것이 없다. 시나리오 불러오기·저장처럼 사용자가 버린다고 확인한 변경과, 기간처럼
+    차례와 상관없이 모두 버리는 변경은 여기 들지 않는다.
     """
 
     changed: bool
@@ -204,6 +213,7 @@ def reset_editors_on_source_change(
     other_keys: Sequence[str] = (),
     own_change_key: str | None = None,
     names: Mapping[str, str] | None = None,
+    order_free_keys: Collection[str] = (),
 ) -> SourceReset:
     """원본이 바뀌었으면 편집기·임시 상태를 비우고 새 토큰을 기록한다.
 
@@ -214,9 +224,15 @@ def reset_editors_on_source_change(
     바뀐 원본이 이 화면 자신의 적용이면(`mark_own_change`) 적어 둔 것만 비운다. **줄 차례가 함께
     바뀌었으면 그 예외를 두지 않는다** — 남겨 둔 다른 표의 편집이 다른 줄에 붙기 때문이다.
 
+    `order_free_keys` 는 줄 차례가 바뀌어도 뜻이 그대로인 편집표·상태다 — 제 줄 차례를 들고 있는
+    붙여넣기 대기 표와 그 표를 원본으로 그린 편집표, 줄 위치가 아니라 키로 고르는 선택 상자. 원본은
+    그대로이고 **차례만** 바뀐 회차(또는 이 화면 자신의 적용과 겹친 회차)에 이것은 남긴다. 기준정보
+    버전·리비전·기간이 바뀐 회차에는 지금처럼 함께 버린다(행·월 구성이 달라진다).
+
     `names` 는 알림에 적을 이름(편집표·붙여넣기 대기 키 → 이름, `register_pending_edits` 와 같은
-    값)이다. 앞 토큰이 있고 그 줄 차례 지문이 지금과 다를 때만, 그때 적용 전 편집이 남아 있던 것의
-    이름을 `SourceReset.row_order_dropped` 에 싣는다(방금 이 화면이 적용한 표는 뺀다).
+    값)이다. 앞 토큰이 있고 그 줄 차례 지문이 지금과 다를 때, **차례가 그대로였다면 남았을** 적용 전
+    편집의 이름만 `SourceReset.row_order_dropped` 에 싣는다 — 방금 이 화면이 적용한 표, 차례와
+    상관없는 것(`order_free_keys`), 원본이 함께 바뀌어 어차피 버릴 것은 빠진다.
 
     `token_key` 는 페이지가 소유한다 — 두 편집 화면이 한 칸을 나눠 쓰면 한쪽을 열었다는
     이유로 다른 쪽 편집기가 안 갈린다.
@@ -226,35 +242,33 @@ def reset_editors_on_source_change(
     row_order_changed = previous_order is not None and previous_order != _row_order_of(token)
     own = st.session_state.pop(own_change_key, None) if own_change_key else None
     own_keys = [str(key) for key in own] if isinstance(own, list) else None
-    if own_keys is not None and not row_order_changed:
-        for key in own_keys:
-            if key in editor_keys:
-                discard_editor(key)
-            else:
-                st.session_state.pop(key, None)
-        st.session_state[token_key] = token
-        return SourceReset(changed=True)
-    if previous == token:
+    if own_keys is None and previous == token:
         return SourceReset(changed=False)
-    dropped: tuple[str, ...] = ()
+    every_key = [*editor_keys, *other_keys]
+    # 줄 차례가 그대로였다면 남았을 것 — 이 화면 자신의 적용이면 그 적용이 건드리지 않은 것,
+    # 원본은 같고 차례만 바뀌었으면 전부, 그 밖에 원본이 바뀌었으면 없다.
+    if own_keys is not None:
+        kept = [key for key in every_key if key not in own_keys]
+    elif row_order_changed and _source_of(previous) == _source_of(token):
+        kept = every_key
+    else:
+        kept = []
+    lost_to_order: set[str] = set()
     if row_order_changed:
-        skipped = set(own_keys or ())
-        dropped = tuple(
-            name
-            for key, name in (names or {}).items()
-            if key not in skipped
-            and (
-                editor_has_edits(key)
-                if key in editor_keys
-                else st.session_state.get(key) is not None
-            )
-        )
-    for key in editor_keys:
-        discard_editor(key)
-    for key in other_keys:
-        st.session_state.pop(key, None)
-    for key in own_keys or ():
-        if key not in editor_keys:
+        lost_to_order = {key for key in kept if key not in order_free_keys}
+        kept = [key for key in kept if key in order_free_keys]
+    dropped = tuple(
+        name
+        for key, name in (names or {}).items()
+        if key in lost_to_order
+        and (editor_has_edits(key) if key in editor_keys else st.session_state.get(key) is not None)
+    )
+    for key in [*every_key, *(key for key in own_keys or () if key not in every_key)]:
+        if key in kept:
+            continue
+        if key in editor_keys:
+            discard_editor(key)
+        else:
             st.session_state.pop(key, None)
     st.session_state[token_key] = token
     return SourceReset(changed=True, row_order_dropped=dropped)
