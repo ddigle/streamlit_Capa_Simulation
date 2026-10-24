@@ -13,10 +13,11 @@ HOME 틀 그대로 라벨 칸(`DASHBOARD_LABEL_COLUMN_WIDTH_PX`, 260px)과 월 �
 잘리거나 사라진다. 세부 글은 라벨 칸 폭에 맞춰 「 · 」 마디로 줄을 나누고
 (`title_detail_lines`), 그 줄 수만큼 제목 줄이 높아진다(`title_row_height`).
 
-**쓰는 곳이 둘이다** — 공정 Capa 상세 결합 캔버스(`process_capa_canvas`)와 가용설비 현황
-「Static 대비 일정」 비교 시트(`availability_sheet_canvas`). 엔진은 행·칸·글자·표적 막대·라벨
-Figure 와 월 Figure 의 뼈대만 갖고, 쓰는 쪽만의 그림(③·④ 의 선과 표지, 부족 띠, 오늘 선,
-지금 보는 달 열)은 월 Figure 의 훅(`month_figure` 의 `row_hook`·`header_hook`·`finish_hook`)으로
+**쓰는 곳이 셋이다** — 공정 Capa 상세 결합 캔버스(`process_capa_canvas`), 가용설비 현황
+「Static 대비 일정」 비교 시트(`availability_sheet_canvas`), 제약 시뮬레이션 월별
+계산표(`constraint_simulation_figures`). 엔진은 행·칸·글자·표적 막대·라벨 Figure 와 월 Figure 의
+뼈대만 갖고, 쓰는 쪽만의 그림(③·④ 의 선과 표지, 부족 띠, 오늘 선, 지금 보는 달 열, 제약 기간
+머리 칠)은 월 Figure 의 훅(`month_figure` 의 `row_hook`·`header_hook`·`finish_hook`)으로
 얹는다. 훅을 부르는 자리는 도형·주석·trace 의 차례를 정한다 — 공정 Capa 상세의 출력이 엔진으로
 옮기기 전과 같다.
 
