@@ -913,7 +913,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     일곱 칸에 값이 있는 호기 ∪ 비가동이 있는 호기 ∪ 새 호기」 다(`select_schedule_rows`).
 - `src/capa_simulation/services/equipment_units.py` — 모듈 행을 설비 한 대로 묶는 `설비키`·`설비지분`과 소수 대수 표기의
   단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다. 모듈 묶음 환산비 경고는 줄 판정(`module_ratio_warning_rows`)과
-  문장(`module_group_warnings`)이 같은 판정·같은 문구 조각(`MODULE_RATIO_WARNING`)이다.
+  문장(`module_group_warnings`)이 같은 판정·같은 문구 조각(`MODULE_RATIO_WARNING`)이다 — 검증 전 편집본도 받고, Main 설비를
+  적은 줄만 묶음으로 센다(설비명이 겹친 줄·설비명이 빈 줄은 묶음이 아니다).
 - `src/capa_simulation/services/undated_equipment.py` — 반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비를 지분으로
   세고 「일정 미정 N대」 한 줄을 만든다(화면은 `simulation_cache.get_undated_equipment`).
 - `src/capa_simulation/services/schedule_confirmation.py` — 일정·실적·상태로 미확인·실적 누락·상태 갱신 필요를 고른다.
@@ -928,10 +929,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/equipment_validation.py` — 설비 세 입력의 정규화·검증(`prepare_*`)이다(조이지 않는다, 7장).
   - 설비 마스터는 **규칙 표 하나**(`MASTER_RULES` — 코드·찾는 함수·막음/경고)를 셋이 함께 본다. `prepare_equipment_master` 는
     차례대로 처음 걸린 규칙 하나를 예전 문구·예외 형으로 던지고, `equipment_master_issues` 는 같은 인자로 끝까지 보며 칸마다
-    `MasterIssue`(줄 자리 `iloc`·설비명·대표 칸·규칙·칸 문구 = 거부 문구 앞머리·막음)를 낸다(못 읽은 값은 결측으로 보고 이어 봄,
-    경고 셋 — Area Code 목록 밖·대소문자만 다른 설비명·모듈 묶음 환산비 모두 1 — 도 표의 줄). `coerce_master_cell` 은 칸 하나를
-    저장 정규화와 같은 함수(`_read_date`·`_read_number`·`_read_ratio`·Y/N·Area Code·글·동층/상태 허용값)로 다듬고 못 맞추면 그
-    규칙 문구의 `CellParseError` 를 준다. 표 차례가 저장 거부 문구의 계약이다(`tests/test_equipment_validation_issues.py`).
+    `MasterIssue`(줄 자리 `iloc`·설비명·대표 칸·규칙·칸 문구 = 거부 문구 앞머리·막음)를 낸다(못 읽은 값은 결측으로 보고 이어 봄).
+    결과 차례는 규칙 표 → (칸 여럿을 따로 보는 규칙은) 칸 → 줄이고, 막는 결과가 있다 ⇔ 저장이 막힌다(처음 막는 결과가 던질
+    규칙·칸). 경고 셋 — Area Code 목록 밖·대소문자만 다른 설비명·모듈 묶음 환산비 모두 1 — 도 표의 줄이고 막는 결과가 있어도 낸다.
+    문장 경고와 줄 판정을 나눈다(`area_code_warnings` ↔ `area_code_warning_rows`, `module_group_warnings` ↔
+    `module_ratio_warning_rows`). 대소문자는 붙여넣기 미리보기(새 이름 ↔ 편집본 이름)가 표 안 짝의 일부이고 열쇠가 같다.
+    `coerce_master_cell` 은 칸 하나를 저장 정규화와 같은 함수(`_read_master_dates`·`_read_number`·`_read_ratio`·Y/N·Area Code·
+    글·동층/상태 허용값)로 다듬고 못 맞추면 그 규칙 문구의 `CellParseError` 를 준다. 시간대가 붙은 날짜는 세 쓰임 모두 못 읽은
+    날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
+    문구를 글자 그대로(예시·다섯 개 제한까지) 고정한다(`tests/test_equipment_validation_issues.py`).
   - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사는 저장할 때만
     `today=` 로 돈다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
   - Space 위치: 레이아웃표시는 도면 대상인지만 가르고 좌표를 강제하지 않는다(없으면 미배치 트레이). X·Y·크기는 짝으로 둔다.
