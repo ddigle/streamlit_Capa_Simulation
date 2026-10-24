@@ -2509,7 +2509,9 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
     from capa_simulation.navigation import (
         EQUIPMENT_MASTER_TAB,
         EQUIPMENT_SUMMARY_TAB,
+        EQUIPMENT_SUMMARY_TAB_KEY,
         EQUIPMENT_SUMMARY_TABS,
+        EQUIPMENT_TAB_KEY,
     )
 
     assert EQUIPMENT_MASTER_TAB.endswith(f" {screens.EQUIPMENT_MASTER_TAB}")
@@ -2527,6 +2529,8 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
         assert f'"{label}",' in calculator_source
     assert screens.SCENARIO_KIND_KEY == section.SCENARIO_KIND_KEY
     assert screens.SCENARIO_KINDS == section.SCENARIO_KINDS
+    assert screens.EQUIPMENT_TAB_KEY == EQUIPMENT_TAB_KEY
+    assert screens.EQUIPMENT_SUMMARY_TAB_KEY == EQUIPMENT_SUMMARY_TAB_KEY
     assert f'"{screens.EQUIPMENT_SCENARIO_TABLE_ANCHOR}":' in _text(
         COMPONENTS / "equipment_scenario_management.py"
     )
@@ -2535,15 +2539,11 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
 
 
 def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
-    tabs = [
-        "table_rows 설비 마스터",
-        "insights Summary",
-        "dashboard Main",
-        "compare_arrows Static 대비 일정",
-        "입력",
-    ]
+    outer = ["table_rows 설비 마스터", "insights Summary"]
+    summary = ["dashboard Main", "compare_arrows Static 대비 일정"]
+    anywhere = [*outer, "입력", "직접 편집", "저장 이력", "설비 마스터", "비가동 일정", *summary]
     text = screens.summarize_equipment_moves(
-        tabs,
+        screens.EquipmentTabNames(outer, summary, anywhere),
         ("설정", True, True),
         ("Qual 마감 계산기", 4, True),
         (True, True),
@@ -2553,11 +2553,77 @@ def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
         "있음 · Esc 닫힘 · 필요 단축 일정 — 팝업 제목 「Qual 마감 계산기」 같음 · 지표 4/4 · "
         "Esc 닫힘 · 시나리오 관리 — 설비 시나리오 구획 표 있음 · 전환 되돌림"
     )
+    old_tabs = ["table_rows RawData", "tune Preference"]
     old = screens.summarize_equipment_moves(
-        ["table_rows RawData", "tune Preference"], None, None, None
+        screens.EquipmentTabNames(old_tabs, [], old_tabs), None, None, None
     )
     assert old.startswith("탭 0/2 · Summary 안쪽 0/2 · 옛 탭 2곳")
     assert "「설정」 단추 없음" in old and "「관리할 시나리오」 전환 없음" in old
+
+
+def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_same_name() -> None:
+    """① 안 「직접 편집」 의 편집표 탭 「설비 마스터」 는 바깥 탭이 아니다 — 바깥 ① 이 없어지거나
+    이름이 바뀌어도 그 안쪽 탭으로 「탭 2/2」 가 나오면 안 된다(2026-10-25 리뷰). 셈은 바깥 탭 묶음
+    (`st-key-equipment_active_tab`)·Summary 안쪽 탭 묶음의 제 탭 목록에서만 한다."""
+    inner_editor = ["입력", "직접 편집", "저장 이력", "설비 마스터", "비가동 일정"]
+    summary = ["dashboard Main", "compare_arrows Static 대비 일정"]
+    text = screens.summarize_equipment_moves(
+        screens.EquipmentTabNames(
+            ["table_rows 설비 대장", "insights Summary"],
+            summary,
+            ["table_rows 설비 대장", "insights Summary", *inner_editor, *summary],
+        ),
+        None,
+        None,
+        None,
+    )
+    assert text.startswith("탭 1/2 · Summary 안쪽 2/2 · 옛 탭 0곳")
+    # 안쪽 탭 묶음의 「Main」 만 Summary 안쪽으로 센다 — 다른 자리의 같은 이름은 들지 않는다.
+    stray = screens.summarize_equipment_moves(
+        screens.EquipmentTabNames(["table_rows 설비 마스터", "insights Summary"], [], summary),
+        None,
+        None,
+        None,
+    )
+    assert stray.startswith("탭 2/2 · Summary 안쪽 0/2")
+    script = inspect.getsource(screens.check_equipment_moves)
+    assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_TAB_KEY" in script
+    assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY" in script
+
+
+def test_the_next_deploy_draft_names_what_the_app_and_the_script_show() -> None:
+    """런북 7-19 초안(다음 배포 몫)이 가리키는 단추 글·기대 꼴·항목 수가 앱·스크립트와 맞는다
+    (2026-10-25 리뷰). 사내 에이전트는 런북 글 그대로 찾는다.
+
+    - B 손 확인의 공정 Capa 상세 다음 화면 단추는 앱 글 그대로다(없는 「… 에서 보기」 가 아니다).
+    - 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 이 배포의 39열 기대(`새 이름 8/8`)로
+      읽는다.
+    - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
+    - A 항목 수 — 런북 압축본 기대와 TODO 「다음 배포 — 사내 이관 확인」 줄이 `ITEMS` 수와 같다.
+    """
+    runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
+    draft = runbook.split("### 7-19. ", 1)[1].split("### 7-20. ", 1)[0]
+    view = _text(COMPONENTS / "process_capa_view.py")
+    assert 'f"가용 불일치 {kpis.mismatch_months}개월 — 가용설비 현황"' in view
+    assert '"이 달 가용 불일치 — 가용설비 현황"' in view
+    assert "`가용 불일치 n개월 — 가용설비 현황`" in draft
+    assert "`이 달 가용 불일치 — 가용설비 현황`" in draft
+    assert "에서 보기」 다음 화면 단추" not in draft
+
+    places = draft.split("**7-18 항목의 새 자리**", 1)[1].split("**가용설비 현황 탭 둘**", 1)[0]
+    headers_row = next(line for line in places.splitlines() if "| A `equipment_headers` |" in line)
+    count = len(screens.EQUIPMENT_NEW_HEADERS)
+    assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음`" in headers_row
+    assert 'f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"' in _text(
+        PROJECT_ROOT / "app_pages" / "space_status.py"
+    )
+    assert "「… 의 **설비 마스터** n줄」" in places
+
+    items = len(screens.ITEMS)
+    assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in draft
+    todo = _text(PROJECT_ROOT / "docs" / "TODO.md")
+    next_deploy = todo.split("**다음 배포 — 사내 이관 확인**", 1)[1].split("\n- [", 1)[0]
+    assert f"`A {items}`" in next_deploy
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)

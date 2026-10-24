@@ -317,6 +317,9 @@ EQUIPMENT_SUMMARY_TAB: Final = "Summary"
 EQUIPMENT_SUMMARY_TABS: Final = ("Main", GAP_TAB)
 # 개편 전 바깥 탭 이름 — 화면에 남았는지 센다.
 EQUIPMENT_OLD_TABS: Final = ("RawData", "Preference", "Qual 마감 계산기", "설비 시나리오")
+# 바깥 탭 묶음·Summary 안쪽 탭 묶음의 `st.tabs` key(`st-key-<key>` 칸) — 제 탭만 센다.
+EQUIPMENT_TAB_KEY: Final = "equipment_active_tab"
+EQUIPMENT_SUMMARY_TAB_KEY: Final = "equipment_summary_tab"
 EQUIPMENT_SETTINGS_BUTTON_KEY: Final = "equipment_settings_open_v1"
 EQUIPMENT_SETTINGS_TITLE: Final = "설정"
 CUTOFF_EDITOR_ANCHOR: Final = "Cutoff일수"
@@ -3417,30 +3420,53 @@ def check_space_floor_state(screen: Screen) -> str:
     return summarize_space_floor_state(len(values), in_use, inactive, int(grey), edit_columns)
 
 
-# 본문 탭 이름(`role="tab"`) 전부. 아이콘 글자(`table_rows` 등)는 앞에 붙어 온다 — 끝 글자로 가른다.
+# 본문 탭 이름(`role="tab"`) 전부 — 옛 탭 이름이 어디에든 남았는지 셀 때만. 아이콘 글자(`table_rows`
+# 등)는 앞에 붙어 온다 — 끝 글자로 가른다.
 _MAIN_TAB_NAMES_JS = """() => [...document.querySelectorAll('[data-testid="stMain"] [role="tab"]')]
   .map((tab) => tab.innerText.replace(/\\s+/g, " ").trim())"""
+# key 를 준 탭 묶음 하나(`st.tabs(key=…)` — `st-key-<key>` 칸)의 제 탭 이름만. 그 칸 안 첫 탭
+# 목록이 제 것이고(안쪽 탭 묶음의 탭 목록은 패널 안이라 뒤에 온다), 숨은 패널 안 탭도 innerText
+# 가 남으므로 본문 전체에서 세면 ① 안 「직접 편집」 의 편집표 탭 「설비 마스터」 가 바깥 탭으로
+# 잘못 셈에 든다.
+_KEYED_TAB_NAMES_JS = """(key) => {
+  const box = document.querySelector(`[data-testid="stMain"] .st-key-${key}`);
+  const list = box ? box.querySelector('[role="tablist"]') : null;
+  return list ? [...list.querySelectorAll('[role="tab"]')]
+    .map((tab) => tab.innerText.replace(/\\s+/g, " ").trim()) : [];
+}"""
 # 보이는 팝업 안의 지표 카드 라벨(`st.metric`).
 _DIALOG_METRIC_LABELS_JS = """(box) => [...box.querySelectorAll('[data-testid="stMetricLabel"]')]
   .map((label) => label.innerText.trim())"""
 
 
+@dataclass(frozen=True)
+class EquipmentTabNames:
+    """가용설비 현황에서 읽은 탭 이름 — 바깥 탭 묶음, Summary 안쪽 탭 묶음, 본문 전체."""
+
+    outer: Sequence[str]
+    summary: Sequence[str]
+    anywhere: Sequence[str]
+
+
 def summarize_equipment_moves(
-    tabs: Sequence[str],
+    tabs: EquipmentTabNames,
     settings: tuple[str | None, bool, bool] | None,
     calculator: tuple[str | None, int, bool] | None,
     section: tuple[bool, bool] | None,
 ) -> str:
     """개편 확인 결과 — 탭 이름은 정한 어휘(`EQUIPMENT_*`)만 적고, 팝업 제목·지표 라벨은 판정에만
-    쓴다."""
-    names = [name.strip() for name in tabs]
+    쓴다. 바깥 둘은 바깥 탭 묶음에서만, 안쪽 둘은 Summary 안쪽 탭 묶음에서만 센다(본문 전체에서
+    세면 안쪽 편집표 탭 「설비 마스터」 가 바깥 탭 대신 셈에 든다). 옛 탭 이름은 본문 어디에서든
+    센다."""
 
-    def has(label: str) -> bool:
-        return any(name == label or name.endswith(f" {label}") for name in names)
+    def has(names: Sequence[str], label: str) -> bool:
+        return any(name.strip() == label or name.strip().endswith(f" {label}") for name in names)
 
-    outer = [label for label in (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB) if has(label)]
-    inner = [label for label in EQUIPMENT_SUMMARY_TABS if has(label)]
-    old = [label for label in EQUIPMENT_OLD_TABS if has(label)]
+    outer = [
+        label for label in (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB) if has(tabs.outer, label)
+    ]
+    inner = [label for label in EQUIPMENT_SUMMARY_TABS if has(tabs.summary, label)]
+    old = [label for label in EQUIPMENT_OLD_TABS if has(tabs.anywhere, label)]
     parts = [
         f"탭 {len(outer)}/2 · Summary 안쪽 {len(inner)}/2 · 옛 탭 {len(old)}곳",
     ]
@@ -3487,8 +3513,15 @@ def check_equipment_moves(screen: Screen) -> str:
     않는다), 전환은 처음 값으로 되돌린다(세션 값 — DB 에 쓰지 않는다)."""
     screen.open_page(EQUIPMENT_PAGE)
     open_equipment_tab(screen, EQUIPMENT_SUMMARY_TABS[0])
-    tabs = screen.poll(
-        lambda: screen.js(_MAIN_TAB_NAMES_JS), timeout=30, accept=lambda value: bool(value)
+    outer = screen.poll(
+        lambda: screen.js(_KEYED_TAB_NAMES_JS, EQUIPMENT_TAB_KEY),
+        timeout=30,
+        accept=lambda value: bool(value),
+    )
+    tabs = EquipmentTabNames(
+        outer=outer or [],
+        summary=screen.js(_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY) or [],
+        anywhere=screen.js(_MAIN_TAB_NAMES_JS) or [],
     )
     settings: tuple[str | None, bool, bool] | None = None
     if screen.page.locator(_main_button(EQUIPMENT_SETTINGS_BUTTON_KEY)).count():
@@ -3543,7 +3576,7 @@ def check_equipment_moves(screen: Screen) -> str:
             _choose_segment(screen, SCENARIO_KIND_KEY, before)
         restored = screen.js(_SEGMENT_JS, SCENARIO_KIND_KEY) == before
         section = (table, restored)
-    return summarize_equipment_moves(tabs or [], settings, calculator, section)
+    return summarize_equipment_moves(tabs, settings, calculator, section)
 
 
 ITEMS: tuple[Item, ...] = (
