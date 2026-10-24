@@ -21,6 +21,15 @@ from typing import Final, Protocol, cast
 
 import pandas as pd
 
+from capa_simulation.io.container_start_report import (
+    BDQ_USER_NAME_ENV as BDQ_USER_NAME_ENV,
+)
+from capa_simulation.io.container_start_report import (
+    STEP_INSTALL,
+    STEP_TOKEN,
+    STEP_USER_NAME,
+    start_check_hint,
+)
 from capa_simulation.io.core_data_source import CoreDataBatch
 
 _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -35,9 +44,8 @@ DEFAULT_QUERY_WINDOW_DAYS: Final = 90
 # 시뮬레이션은 등록 화면에서 기간을 넓혀 조회한다.
 DETAIL_WINDOW_DAYS_BEFORE: Final = 7
 DETAIL_WINDOW_DAYS_AFTER: Final = 3
-# 조회 요청자의 사내 계정을 넣는 환경변수. 사람마다 다른 값이라 저장소에 두지 않는다 —
-# 배포 ZIP 을 받은 다른 사람이 남의 계정으로 조회하게 된다.
-BDQ_USER_NAME_ENV: Final = "CAPA_BDQ_USER_NAME"
+# 조회 요청자의 사내 계정을 넣는 환경변수 `BDQ_USER_NAME_ENV` 는 C-DEP CD 시작 스크립트도 읽어
+# `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
 
 # ---------------------------------------------------------------------------
 # 사내 환경 설정 영역
@@ -438,9 +446,27 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
                 f"BigDataQuery 조회에 요청자의 사내 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
                 f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
                 f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
-                f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.'
+                f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
             ) from error
-        raise BigDataQueryCallError(error) from error
+        hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
+        raise BigDataQueryCallError(error, hint=hint) from error
+
+
+def _start_check_line(step: str) -> str:
+    """C-DEP CD 컨테이너 시작 스크립트가 남긴 그 단계의 결과 한 단락(앞에 빈 줄). 결과 파일이 없는
+    개발·사내 PC 에서는 빈 문자열이라 안내가 지금과 같다."""
+    hint = start_check_hint(step)
+    return f"\n\n{hint}" if hint else ""
+
+
+def is_login_token_failure(error: BaseException) -> bool:
+    """로그인 토큰이 없거나 받지 않은 패키지 예외인가(`TokenNotFoundException` 꼴). 종류 이름과
+    문구로 가른 추정이고 안내를 덧붙이는 데만 쓴다 — 갈래(`classify_query_failure`)는 그대로다."""
+    chain = _failure_chain(error)
+    if any("token" in type(link).__name__.casefold() for link in chain):
+        return True
+    text = " ".join(str(link) for link in chain).casefold()
+    return "bigdataquery token" in text or ".credential" in text
 
 
 # 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
@@ -544,12 +570,12 @@ class BigDataQueryCallError(RuntimeError):
     두면 화면이 traceback 으로 멈춘다(사내 리뷰 202610200720, 목록 조회 첫 판 실패). 원래 예외는
     `__cause__` 에 있다."""
 
-    def __init__(self, error: BaseException) -> None:
+    def __init__(self, error: BaseException, *, hint: str = "") -> None:
         self.kind = classify_query_failure(error)
         self.type_names = failure_type_names(error)
         super().__init__(
             f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"
-            f"원문 — {_original_text(error)}"
+            f"원문 — {_original_text(error)}{hint}"
         )
 
 
@@ -559,7 +585,9 @@ def load_bigdataquery_module() -> ModuleType:
     패키지가 깔렸어도 불러오다 깨질 수 있다(DLL·numpy 판·패키지가 쓰는 모듈 없음). 그 예외
     (`ImportError`·`AttributeError` 등)는 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록 조회·저장이
     traceback 으로 멈춘다. 「패키지가 없다」는 안내는 패키지 자체가 없을 때만 낸다 — 점검
-    스크립트가 그 문구로 가른다. `KeyboardInterrupt` 같은 `BaseException` 은 잡지 않는다.
+    스크립트가 그 문구로 가른다. 그 첫 문장은 바꾸지 않고, C-DEP CD 컨테이너(셸이 없어 설치 안내를
+    따를 수 없다)에서는 시작 스크립트의 설치 단계 결과를 뒤에 덧붙인다. `KeyboardInterrupt` 같은
+    `BaseException` 은 잡지 않는다.
     """
     try:
         return importlib.import_module("bigdataquery")
@@ -569,6 +597,7 @@ def load_bigdataquery_module() -> ModuleType:
                 "현재 환경에 bigdataquery 패키지가 없습니다. "
                 "이 패키지는 사내 전용이라 pyproject.toml 의존성에 넣지 않습니다. "
                 "사내 환경에서 `uv pip install bigdataquery` 로 따로 설치한 뒤 실행하세요."
+                + _start_check_line(STEP_INSTALL)
             ) from exc
         raise RuntimeError(
             f"bigdataquery 패키지를 불러오지 못했습니다 — 패키지가 쓰는 모듈 `{exc.name}` 이 "

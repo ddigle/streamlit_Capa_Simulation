@@ -707,3 +707,82 @@ def test_the_form_saves_through_the_session_free_registration_path(tmp_path: Pat
         "DEMO_Final_Test",
         "DEMO_Wafer_Inspect",
     )
+
+
+CD_PACKAGE_MISSING_SCRIPT = """
+import json
+import sys
+from datetime import date
+from pathlib import Path
+from types import SimpleNamespace
+
+import streamlit as st
+
+import capa_simulation.settings as settings
+from capa_simulation.components import bigdataquery_registration as registration
+from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+
+REPORT = __REPORT__
+if REPORT is not None:
+    settings.CONTAINER_START_REPORT_PATH = Path(REPORT)
+    Path(REPORT).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "written_at": "2026-10-24T09:00:00+09:00",
+                "steps": {
+                    "install": {
+                        "status": "skipped",
+                        "reason": "CD 환경변수 CAPA_ARTIFACTORY_TOKEN 없음",
+                    },
+                    "token": {"status": "skipped", "reason": "CD 환경변수 CAPA_BDQ_TOKEN 없음"},
+                    "user_name": {"status": "ok", "reason": "있음"},
+                },
+                "bigdataquery_version": None,
+                "token_file": {"exists": False, "modified_at": None},
+                "user_name": {"present": True, "masked": "fa***"},
+                "missing_environment": ["CAPA_ARTIFACTORY_TOKEN", "CAPA_BDQ_TOKEN"],
+                "pip_tail": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+saved = sys.modules.get("bigdataquery")
+sys.modules["bigdataquery"] = None
+try:
+    registration.render_bigdataquery_registration(
+        SimpleNamespace(list_scenarios=lambda **_kwargs: []), "demo.duckdb"
+    )
+    registration._run_catalog_query(
+        QueryWindow(start_date=date(2026, 9, 21), end_date=date(2026, 10, 21))
+    )
+finally:
+    if saved is None:
+        sys.modules.pop("bigdataquery", None)
+    else:
+        sys.modules["bigdataquery"] = saved
+"""
+
+
+@pytest.mark.parametrize("with_report", [False, True], ids=["dev-or-company-pc", "cd-container"])
+def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_report: bool
+) -> None:
+    """CD 서버에는 셸이 없어 `uv pip install` 안내를 따를 수 없다. 시작 스크립트가 남긴 결과가
+    있으면 목록 조회 오류와 화면 머리 경고에 설치 단계 결과와 넣을 환경변수를 덧붙이고, 없으면
+    지금과 같다."""
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: False)
+    report = repr(str(tmp_path / "container_start.json")) if with_report else "None"
+    app = AppTest.from_string(CD_PACKAGE_MISSING_SCRIPT.replace("__REPORT__", report))
+    app.run(timeout=60)
+
+    assert not app.exception
+    [error] = app.error
+    assert error.value.startswith("현재 환경에 bigdataquery 패키지가 없습니다.")
+    banner = " ".join(warning.value for warning in app.warning)
+    assert "bigdataquery 패키지가 없어" in banner
+    for text in (error.value, banner):
+        assert ("서버 시작 점검" in text) is with_report
+        assert ("`CAPA_ARTIFACTORY_TOKEN`" in text) is with_report

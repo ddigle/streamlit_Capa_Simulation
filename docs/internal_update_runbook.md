@@ -348,6 +348,10 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 - 이 파일에는 프로젝트 자신(`-e .`)이 **일부러 빠져 있다.** 그래서 컨테이너는
   `Dockerfile-prod` 의 `ENV PYTHONPATH=/project/src` 로 `src` 를 찾는다. 둘은 한 쌍이라
   한쪽만 보고 판단하지 않는다.
+- 그 이미지의 시작 명령(`CMD`)은 `scripts/container_start.py` 다 — C-DEP 배포 설정의 환경변수로 사내
+  `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 `data/temp/container_start.json`(Admin Area 「서버 시작
+  점검」)에 남긴 뒤 `streamlit run app.py --server.port 8080` 으로 바뀐다. 사내 WebIDE 터미널에서는 부르지 않는다
+  (넣을 key 는 [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」).
 
 ### 3-4. 지움이 있는 배포 — 적용 직후 재대조에 `사외에서 지워진 파일` 이 그대로 찍힌다
 

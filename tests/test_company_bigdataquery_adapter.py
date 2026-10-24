@@ -534,3 +534,144 @@ def test_the_detail_window_never_ends_after_today() -> None:
     assert yesterday.start_date == today - timedelta(days=8)
     assert yesterday.end_date == today
     assert tomorrow.start_date <= tomorrow.end_date <= today
+
+
+def _start_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    install: tuple[str, str] = ("skipped", "CD 환경변수 CAPA_ARTIFACTORY_USER 없음"),
+    token: tuple[str, str] = ("skipped", "CD 환경변수 CAPA_BDQ_TOKEN 없음"),
+    user_name: tuple[str, str] = ("skipped", "CD 환경변수 CAPA_BDQ_USER_NAME 없음"),
+    missing: tuple[str, ...] = ("CAPA_ARTIFACTORY_USER", "CAPA_BDQ_TOKEN", "CAPA_BDQ_USER_NAME"),
+) -> None:
+    """C-DEP CD 시작 스크립트가 남기는 결과 파일(`settings.CONTAINER_START_REPORT_PATH`)."""
+    import capa_simulation.settings as settings
+
+    path = tmp_path / "container_start.json"
+    steps = {"install": install, "token": token, "user_name": user_name}
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "written_at": "2026-10-24T09:00:00+09:00",
+                "steps": {
+                    name: {"status": status, "reason": reason}
+                    for name, (status, reason) in steps.items()
+                },
+                "bigdataquery_version": None,
+                "token_file": {"exists": None, "modified_at": None},
+                "user_name": {"present": False, "masked": None},
+                "missing_environment": list(missing),
+                "pip_tail": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", path)
+
+
+def test_a_missing_package_in_the_cd_container_adds_the_start_check_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CD 서버에는 셸이 없어 설치 안내(`uv pip install …`)를 따를 수 없다. 시작 스크립트가 남긴 설치
+    단계 결과와 넣을 환경변수를 덧붙인다. 첫 문장은 점검 스크립트가 가르는 문구라 그대로다."""
+    _start_report(tmp_path, monkeypatch, install=("failed", "설치 시도 실패 — pip 종료 코드 1"))
+    monkeypatch.setitem(sys.modules, "bigdataquery", None)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.load_bigdataquery_module()
+
+    text = str(raised.value)
+    assert text.startswith(_PACKAGE_MISSING_TEXT)
+    assert "서버 시작 점검" in text and "pip 종료 코드 1" in text
+    assert adapter.BDQ_USER_NAME_ENV not in text
+
+    _start_report(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError) as raised:
+        adapter.load_bigdataquery_module()
+    assert "`CAPA_ARTIFACTORY_USER`" in str(raised.value)
+
+
+class TokenNotFoundException(Exception):
+    """사내 패키지가 로그인 토큰이 없을 때 내는 꼴(`docs/bigdataquery_webide_setup.md` 1단계)."""
+
+
+def _missing_token(**_kwargs: object) -> pd.DataFrame:
+    raise TokenNotFoundException(
+        "There is no bigdataquery token issued for AD user 'fake' at '/config/.credential/' "
+        "on 'Linux'."
+    )
+
+
+def test_a_missing_login_token_in_the_cd_container_adds_the_start_check_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """토큰이 없다는 패키지 예외에는 토큰 파일 단계 결과와 `CAPA_BDQ_TOKEN` 을 덧붙인다. 갈래·종류
+    이름(점검 스크립트가 찍는 것)은 결과 파일이 있든 없든 같다."""
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "fake")
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(_missing_token))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as plain:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+    assert "서버 시작 점검" not in str(plain.value)
+
+    _start_report(tmp_path, monkeypatch)
+    with pytest.raises(adapter.BigDataQueryCallError) as hinted:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    text = str(hinted.value)
+    assert text.startswith(str(plain.value))
+    assert "서버 시작 점검" in text and "`CAPA_BDQ_TOKEN`" in text
+    assert (hinted.value.kind, hinted.value.type_names) == (
+        plain.value.kind,
+        plain.value.type_names,
+    )
+
+
+def test_a_written_token_that_is_still_refused_points_at_expiry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "fake")
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(_missing_token))
+    _start_report(tmp_path, monkeypatch, token=("ok", "토큰 파일을 씀"), missing=())
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert "만료" in str(raised.value) and "WebIDE" in str(raised.value)
+
+
+def test_a_missing_account_in_the_cd_container_adds_the_start_check_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise ValueError("Parameter user_name is necessary.")
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+    _start_report(tmp_path, monkeypatch)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    text = str(raised.value)
+    assert text.startswith("BigDataQuery 조회에 요청자의 사내 계정이 필요합니다.")
+    assert "서버 시작 점검" in text and "C-DEP" in text
+
+
+def test_an_unrelated_failure_gets_no_start_check_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise ValueError("table not found")
+
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "fake")
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+    _start_report(tmp_path, monkeypatch)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert "서버 시작 점검" not in str(raised.value)

@@ -85,6 +85,56 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 포트를 적는 까닭 — 빼면 8501 이 막혔을 때 **알리지 않고** 다음 번호로 옮겨 서고, 적으면 「Port 8501 is not available」
 을 찍고 멈춘다([`internal_update_runbook.md`](internal_update_runbook.md) 4-2).
 
+## C-DEP CD(배포 서버)
+
+CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/CD 단추 → 통과하면 바로 실행되고 접속 링크만 준다).
+넣을 수 있는 것은 **배포 설정의 환경변수 표(key·value)** 뿐이다. 그래서 이미지(`docker/Dockerfile-prod`)의 `CMD` 가
+시작 스크립트 `scripts/container_start.py` 를 부르고, 스크립트가 아래 환경변수만으로 위 0·1·2 를 푼 뒤
+`streamlit run app.py --server.port 8080` 으로 바뀐다. 어느 단계가 실패해도 앱은 뜬다.
+
+### 넣을 환경변수
+
+| key | value | 푸는 단계 |
+|---|---|---|
+| `CAPA_ARTIFACTORY_USER` | 사내 Artifactory 계정(`<AD 계정>`) | 0. 설치 |
+| `CAPA_ARTIFACTORY_TOKEN` | Artifactory API 토큰(읽기 전용으로 발급한 것) | 0. 설치 |
+| `CAPA_BDQ_TOKEN` | WebIDE 에서 로그인해 만든 토큰 파일의 **내용**(아래) | 1. 로그인 |
+| `CAPA_BDQ_USER_NAME` | 본인 AD 계정(`<AD 계정>`) — 토큰 파일 이름과 `getData(user_name=…)` 에 함께 쓴다 | 1·2 |
+
+- 설치는 `bigdataquery` 가 없을 때만 한다. 판과 인덱스는 `requirements-company.txt` 를 읽어 그 인덱스를 **추가
+  인덱스**로 넣고(이미지가 `PIP_INDEX_URL` 을 공개 미러로 고정해 둔다), OS 인증서 묶음이 있으면 `--cert` 로 준다.
+  앱 판 고정(`requirements.txt`)을 제약으로 걸어 사내 패키지가 앱 의존성을 바꾸지 못하게 한다. 제한시간은 300초다.
+- 토큰은 `/config/.credential/bigdataquery.token.<CAPA_BDQ_USER_NAME>` 에 0600 으로 쓴다(같은 내용이면 다시 쓰지
+  않는다). 패키지가 그 자리만 보므로 `/config` 에 못 쓰면 다른 곳에 쓰지 않고 실패로 적는다.
+
+### 토큰 값 얻는 법
+
+1. WebIDE 에서 위 1단계(로그인)를 한다 — `bdq.login()` 이 `/config/.credential/bigdataquery.token.<AD 계정>` 을 만든다.
+2. 그 파일 내용을 `CAPA_BDQ_TOKEN` 값으로 넣는다. **줄바꿈이 있으면** value 칸에 그대로 못 넣으니 `base64:` 를
+   앞에 붙인 한 줄로 넣는다 — WebIDE 터미널의 `base64 -w0 /config/.credential/bigdataquery.token.<AD 계정>` 출력이다.
+3. 토큰은 **주기적으로 만료된다.** 조회가 토큰 오류로 막히면 WebIDE 에서 다시 로그인해 값을 바꾸고 CI/CD 를 다시
+   돌린다(시작 스크립트는 컨테이너가 설 때만 돈다).
+
+### 결과 보는 곳
+
+로그를 볼 수 없다고 보고 결과를 **앱 화면**에 둔다. 시작 스크립트는 `data/temp/container_start.json` 에 단계마다
+`정상`·`건너뜀(까닭)`·`실패(까닭)`, 깔린 `bigdataquery` 판, 토큰 파일 있음/없음·수정 시각, `CAPA_BDQ_USER_NAME`
+있음/없음(앞 두 글자만), pip 출력 끝을 남긴다.
+
+- **Admin Area 「서버 시작 점검」** — 탭 위 펼침 하나다. 파일이 있을 때만 선다(개발·사내 PC 에는 없다).
+- **BigDataQuery 안내** — 「패키지가 없습니다」·로그인 토큰 오류·`user_name` 안내 뒤에 그 단계의 결과 한 줄과 넣을
+  환경변수 이름이 붙는다.
+
+**비밀값(Artifactory 토큰·BDQ 토큰·주소 안의 자격증명)은 파일·화면·표준 출력 어디에도 남기지 않는다** — 실행 줄의
+두 토큰은 앱 프로세스에도 넘기지 않는다.
+
+### 주의
+
+- C-DEP 의 환경변수 표는 **그 프로젝트 사람에게 보일 수 있다.** Artifactory 토큰은 읽기 전용으로 발급하고,
+  BDQ 토큰으로 하는 조회는 **넣은 사람 본인 권한**으로 나간다 — 그 서버로 조회하는 모든 사용자가 그 사람 이름으로
+  조회한다는 뜻이다.
+- 값은 사람마다 다르고 비밀이라 저장소·배포 ZIP 에 넣지 않는다(예시도 `<AD 계정>` 꼴로만 적는다).
+
 ## 참고
 
 - 로컬 PC(Windows)에서는 `USERNAME` 환경변수와 Windows API 로 요청자가 자동 식별되어

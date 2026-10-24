@@ -1,10 +1,11 @@
-# Purpose: 공정 표시명·공용 표시순서·원천 품질·알림 모음 같은 운영 관리 기능을 탭으로 모아 제공한다.
+# Purpose: 표시명·표시순서·원천 품질·알림 모음 운영 탭과 그 위 CD 서버 시작 점검을 보인다.
 
 from __future__ import annotations
 
 import streamlit as st
 
 from capa_simulation.components.alert_board import render_alert_board
+from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.display_order_management import (
     render_display_order_management,
 )
@@ -33,6 +34,9 @@ TAB_NAMES = (
 
 render_page_header("Admin Area")
 render_page_guide("admin_area", title="Admin Area")
+# C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
+# 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
+render_container_start_check()
 
 try:
     database_path = str(DUCKDB_PATH.resolve())

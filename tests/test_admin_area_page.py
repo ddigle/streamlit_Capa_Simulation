@@ -1,5 +1,6 @@
 # Purpose: Admin Area 페이지와 Proc Rename 탭의 렌더링·저장 흐름을 검증한다.
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -54,6 +55,8 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert not any(area.label == "공정 표시명 표 붙여넣기" for area in app.text_area)
     assert app.button(key="admin_area_process_rename_open_paste")
     assert any("공용 버전 없음" in caption.value for caption in app.caption)
+    # C-DEP CD 컨테이너가 남기는 시작 점검 결과가 없으면(개발·사내 PC) 그 펼침도 없다.
+    assert not _start_check_expanders(app)
     # 앱 정보는 이 화면이 아니라 모든 화면 사이드바 맨 아래 카드다(2026-10-07 사용자 결정). 카드는
     # `app.py` 가 그리므로 이 화면만 돌린 여기에는 그 글이 한 줄도 없다.
     from capa_simulation.settings import APP_CONTACT_EMAIL, APP_VERSION
@@ -345,3 +348,69 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error)
     assert any("무시합니다" in info.value for info in app.info)
+
+
+def _start_check_expanders(app: AppTest) -> list[str]:
+    """「서버 시작 점검」 펼침의 제목. 아이콘이 달린 펼침을 AppTest 는 `status` 로 센다."""
+    labels = [item.label for item in app.expander] + [item.label for item in app.status]
+    return [label for label in labels if "서버 시작 점검" in label]
+
+
+def _start_check_script(database_path: Path, report_path: Path) -> str:
+    return f"""
+from pathlib import Path
+
+import capa_simulation.settings as settings
+
+settings.DUCKDB_PATH = Path({str(database_path)!r})
+settings.CONTAINER_START_REPORT_PATH = Path({str(report_path)!r})
+
+source = Path({str(PAGE)!r})
+exec(
+    compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+    {{"__name__": "__main__"}},
+)
+"""
+
+
+def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> None:
+    """CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 화면에서 읽는다. 결과 파일이 있을 때만
+    펼침 하나가 탭 위에 서고, 단계 표·남은 환경변수·pip 출력 끝을 싣는다. 탭은 그대로다."""
+    report = tmp_path / "container_start.json"
+    report.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "written_at": "2026-10-24T09:00:00+09:00",
+                "steps": {
+                    "install": {"status": "failed", "reason": "설치 시도 실패 — pip 종료 코드 1"},
+                    "token": {"status": "ok", "reason": "토큰 파일을 씀"},
+                    "user_name": {"status": "ok", "reason": "있음"},
+                },
+                "bigdataquery_version": None,
+                "token_file": {"exists": True, "modified_at": "2026-10-24T09:00:00+09:00"},
+                "user_name": {"present": True, "masked": "fa***"},
+                "missing_environment": [],
+                "pip_tail": ["ERROR: No matching distribution found for bigdataquery==9.9.9"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    app = AppTest.from_string(_start_check_script(tmp_path / "scenario.duckdb", report))
+    app.run(timeout=120)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    [expander] = _start_check_expanders(app)
+    assert "실패" in expander
+    [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
+    assert steps.value["결과"].tolist() == ["실패", "정상", "정상"]
+    assert "pip 종료 코드 1" in steps.value["까닭"].iloc[0]
+    assert any("No matching distribution" in block.value for block in app.code)
+    assert any("fa\\*\\*\\*" in caption.value for caption in app.caption)
+    assert [tab.label for tab in app.main.tabs] == [
+        ":material/label: Proc Rename",
+        ":material/sort: 표시순서 관리",
+        ":material/fact_check: 원천 품질",
+        ":material/notifications: 알림 모음",
+    ]

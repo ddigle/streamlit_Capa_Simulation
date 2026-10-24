@@ -39,6 +39,11 @@ INPUT_DIR = DATA_DIR / "input"
 DUCKDB_PATH = DATA_DIR / "capa_simulation.duckdb"
 EQUIPMENT_DUCKDB_PATH = DATA_DIR / "equipment_availability.duckdb"
 CORE_DATA_CSV_PATH = INPUT_DIR / "Core_Data.csv"
+# C-DEP CD 컨테이너가 시작할 때 `scripts/container_start.py` 가 남기는 점검 결과(사내
+# bigdataquery 설치·로그인 토큰 파일·요청자 계정). CD 서버에는 셸도 로그도 없어 앱 화면(Admin
+# Area 「서버 시작 점검」·BigDataQuery 안내)이 이 파일을 읽는다. 개발·사내 PC 에는 없다.
+# `data/temp/` 라 git·이미지에 실리지 않는다.
+CONTAINER_START_REPORT_PATH = DATA_DIR / "temp" / "container_start.json"
 
 
 def format_month(month: int) -> str:

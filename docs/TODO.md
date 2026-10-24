@@ -40,6 +40,16 @@
   PowerShell 전용이고 기본 자리가 샌드박스 쓰기 범위 밖이다 — 후보는 `claude -w` 의 저장소 안 / 저장소 옆
   (`docs/wsl_dev_environment.md` 6장).
 
+### 사내 배포 서버(C-DEP CD)
+
+- [ ] **CD 서버 BDQ — 첫 배포 뒤 Admin 서버 시작 점검으로 세 단계 결과 확인**(2026-10-24 — 가지 `feat/cd-bdq-start`).
+  CD 는 시작 명령을 못 바꾸고 셸도 없어 이미지 `CMD` 를 `scripts/container_start.py` 로 바꿨다. 사용자가 C-DEP 배포
+  설정의 환경변수 표에 넷(`CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN`·`CAPA_BDQ_TOKEN`·`CAPA_BDQ_USER_NAME` —
+  `docs/bigdataquery_webide_setup.md` 「C-DEP CD」)을 넣고 CI/CD 를 돌린 뒤 Admin Area 「서버 시작 점검」의 설치 ·
+  로그인 토큰 파일 · 요청자 계정이 모두 `정상` 인지, `시나리오 관리 → BigDataQuery 등록` 의 코드 조회가 되는지 본다.
+  막히면 그 펼침의 까닭 · pip 출력 끝(가린 꼴)을 알려 준다. 사외에서는 가짜 pip · 임시 자리로만 흉내 냈다 — 사내
+  Artifactory · 패키지의 토큰 파일 꼴 · CD 이미지의 `/config` 쓰기 권한은 확인하지 못했다.
+
 ## 2. 구현 사항
 
 ### Excel 입력 계층

@@ -40,6 +40,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (
     is_bigdataquery_package_available,
     registration_detail_window,
 )
+from capa_simulation.io.container_start_report import STEP_INSTALL, start_check_hint
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import load_global_display_order
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -229,9 +230,11 @@ def _render_configuration_banner(
         st.warning("사내 " + " 과 ".join(missing) + " 이(가) 아직 설정되지 않았습니다.")
         return
     if not package_ready:
+        # C-DEP CD 컨테이너에서는 시작 스크립트가 남긴 설치 단계 결과와 넣을 환경변수를 잇는다.
+        hint = start_check_hint(STEP_INSTALL)
         st.warning(
             "SQL 설정은 확인했습니다. 다만 현재 PC 에는 bigdataquery 패키지가 없어 "
-            "실제 조회는 사내 PC 에서만 성공합니다."
+            "실제 조회는 사내 PC 에서만 성공합니다." + (f"\n\n{hint}" if hint else "")
         )
         return
     st.success("사내 BigDataQuery 목록·상세 조회 SQL 과 패키지를 확인했습니다.")

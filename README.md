@@ -160,6 +160,9 @@ uv pip install -r requirements-company.txt
   extra·group 을 해석하므로 사내 인덱스에 닿지 못하는 개발 PC 에서 `uv lock` 이 죽습니다. 덕분에 배포 ZIP 에서
   빼야 할 파일이 없습니다.
 - 패키지가 없어도 앱은 뜹니다. `BigDataQuery 등록` 화면만 안내를 띄우고 멈춥니다.
+- C-DEP CD(배포 서버)에는 셸이 없어 위 명령을 칠 수 없습니다. 배포 설정의 환경변수 표에 값을 넣으면 이미지의 시작
+  스크립트(`scripts/container_start.py`)가 설치·로그인 토큰을 갖추고 결과를 Admin Area 「서버 시작 점검」에 남깁니다 —
+  넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」.
 
 ### 5단계. 배포 적용 도구 자리 잡기 (사내, 최초 1회)
 
@@ -366,6 +369,7 @@ typed raw 로 그대로 보존합니다.
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다 |
+| `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run app.py --server.port 8080`)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |
 | `check_worktree_isolation.py` | 작업 폴더가 제 가상환경·코드·DuckDB 만 쓰는지 확인한다 |
 

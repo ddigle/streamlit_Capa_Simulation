@@ -91,6 +91,20 @@ def _without_auto_update_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _without_container_start_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """CD 컨테이너 시작 점검 결과(`settings.CONTAINER_START_REPORT_PATH`)를 없는 자리로 돌린다.
+
+    그 파일이 있으면 BigDataQuery 안내에 한 단락이 붙고 Admin Area 에 펼침이 선다. 작업 트리에서
+    `scripts/container_start.py` 를 한 번 돌려 `data/temp/` 에 남으면 「지금 문구 그대로」를 보는
+    시험이 그 트리에서만 깨진다. 결과 파일이 필요한 시험은 자리를 따로 옮긴다.
+    """
+    absent = tmp_path_factory.getbasetemp() / "absent-container-start.json"
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
+
+
+@pytest.fixture(autouse=True)
 def _restore_settings_paths() -> Iterator[None]:
     original = (settings.DUCKDB_PATH, settings.EQUIPMENT_DUCKDB_PATH)
     yield
