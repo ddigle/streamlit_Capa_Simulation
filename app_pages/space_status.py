@@ -774,7 +774,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     화면에서나 뜬다.
 
     저장은 가용설비 설비 마스터와 같은 `save_equipment_buffer` 다 — 편집본 전체를 저장하므로 설비
-    마스터 의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비
+    마스터의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비
     리비전과 무관한 별도 쓰기라 `frames` 가 None(설비 저장본이 없는 화면)이어도 상자가 서고 FAB 만
     저장한다.
 
