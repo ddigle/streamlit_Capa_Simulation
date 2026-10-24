@@ -430,7 +430,11 @@ def describe_case_variants(variants: Sequence[tuple[str, str]], limit: int = 5) 
 
 
 def _case_variants(names: Sequence[object], existing: pd.Index) -> tuple[tuple[str, str], ...]:
-    """새 호기 이름 가운데 대소문자만 다른 기존 이름이 있는 것 — (새 이름, 기존 이름)."""
+    """새 호기 이름 가운데 대소문자만 다른 기존 이름이 있는 것 — (새 이름, 기존 이름).
+
+    짝 열쇠(`scalar_match_key`)는 설비 마스터 칸 경고
+    (`equipment_validation.unit_case_variant_rows`)와 같다 — 다르면 한쪽만 경고한다.
+    """
     by_key: dict[str, str] = {}
     for name in existing:
         by_key.setdefault(scalar_match_key(name), str(name))
