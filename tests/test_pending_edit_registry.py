@@ -139,3 +139,43 @@ def test_each_page_registers_under_its_own_file_name() -> None:
         "reference_data.py": "reference_data.py",
         "load_conversion.py": "load_conversion.py",
     }
+
+
+def test_pages_split_editor_and_staged_edits_and_the_labels_keep_their_order(
+    session: SimpleNamespace,
+) -> None:
+    """화면 탭 줄은 화면별로 읽는다(`pending_edit_pages`). 사이드바 한 줄·저장 팝업의 목록
+    (`pending_edit_labels`)은 그것을 등록부 차례로 편 것이라 전과 같다."""
+    _register(session)
+    session.session_state["upeh_editor"] = EDIT
+    session.session_state["plan_editor"] = EDIT
+    session.session_state["plan_staged"] = object()
+
+    pages = scenario_edit_bar.pending_edit_pages("load_conversion.py")
+
+    assert list(pages) == ["load_conversion.py"]
+    plan = pages["load_conversion.py"]
+    assert plan.editors == ("생산 계획 · PKG PLAN",)
+    assert plan.staged == ("생산 계획 · PKG PLAN 붙여넣기",)
+    assert scenario_edit_bar.pending_edit_labels("load_conversion.py") == list(plan.labels)
+    assert scenario_edit_bar.pending_edit_pages("home.py") == {
+        "load_conversion.py": scenario_edit_bar.PageEdits(
+            "생산 계획", (), ("생산 계획 · PKG PLAN 붙여넣기",)
+        )
+    }
+
+
+def test_the_list_table_draft_counts_as_unsaved_only_while_it_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """시나리오 관리 목록 초안의 점 판정(`table_has_edits`). 고름만 있으면 편집이 아니다."""
+    from capa_simulation.components import pick_edit_table
+
+    monkeypatch.setattr(pick_edit_table, "st", SimpleNamespace(session_state={}))
+    assert not pick_edit_table.table_has_edits("list")
+    pick_edit_table.store_draft("list", pick_edit_table.TableDraft(picked="a"))
+    assert not pick_edit_table.table_has_edits("list")
+    pick_edit_table.store_draft("list", pick_edit_table.TableDraft(names={"a": "새"}))
+    assert pick_edit_table.table_has_edits("list")
+    pick_edit_table.store_draft("list", pick_edit_table.TableDraft(order=("b", "a")))
+    assert pick_edit_table.table_has_edits("list")

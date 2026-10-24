@@ -43,6 +43,7 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.intro_overlay as intro_overlay
 import capa_simulation.components.intro_summary as intro_summary
 import capa_simulation.components.month_range_picker as month_range_picker
+import capa_simulation.components.page_tabs as page_tabs
 import capa_simulation.settings as settings
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.home_preference import (
@@ -280,6 +281,8 @@ def switch(tmp_path_factory: pytest.TempPathFactory) -> Iterator[SwitchObservati
         patch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
         patch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
         patch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+        # 모듈 범위 픽스처라 conftest 의 함수 범위 탭 줄 대역이 아직 서지 않았다 — 여기서 건다.
+        patch.setattr(page_tabs, "_PAGE_TABS", lambda **kwargs: None)
         patch.setattr(st, "plotly_chart", _spy_plotly_chart)
 
         app = AppTest.from_file(str(APP_PATH), default_timeout=600)

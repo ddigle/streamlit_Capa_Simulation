@@ -664,6 +664,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     출처 띠와 달리 ◀▶ 로 공정을 넘겨도 그 방문 동안 남는다. 새 방문·다른 길(사이드바·카드·주소)이면 걷어 세션 설비
     시나리오를 따른다. 필요 단축 일정 카드 링크의 `eq` 는 그 카드가 본 설비 시나리오 한 마디(표시용)이고, 이 화면 기준과
     다를 때만 출처 띠 끝에 적는다(`equipment_band_tail`).
+- `src/capa_simulation/page_tabs_state.py` — 머리 띠 아래 화면 탭 줄의 상태다(2026-10-24 사용자 결정). 이 접속에서 연 탭
+  (`PageSpec.path`, 보이는 차례)·고정한 탭·이동 대기 칸·「이미 연 탭으로 들어옴」 표지(`reentered_open_tab`)를 세션에 두고,
+  열기(끝에 붙임)·닫기(지금 탭이면 오른쪽, 없으면 왼쪽 이웃)·고정(고정 탭은 왼쪽, 닫기 없음, 마지막 하나는 닫지 않음)·
+  상한(`MAX_TABS` 10 — 넘는 화면은 직전 화면으로 되돌리고 탭 줄에 알림)을 순수 함수로 정한다. UI 가 없어
+  `process_detail_state` 가 불러온다. 탭 줄 컴포넌트 key(`PAGE_TABS_COMPONENT_KEY`)도 여기다 — 껍데기 CSS 가 그 key 를 고른다.
+  - 옮기는 것은 `app.py` 의 `st.navigation()` 바로 뒤 본문(`switch_to_queued_tab` — 테마 인자를 싣는 `st.switch_page`)이다.
+    콜백은 칸만 적는다(9장 「팝업과 콜백」). 목록은 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME 하나로 돌아간다.
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
@@ -940,6 +947,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다(HOME 주요 Case 칩) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
   비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS) — 한 줄에 안 들면 끝 칸이 통째로 제목 밑
   오른쪽으로 내려가고 제목은 접히지 않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
+- `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
+  (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
+  조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
+  컴포넌트」). data 는 세션 목록·`PageSpec` 상수뿐이고 DB 를 읽지 않는다. 트리거 셋(`select`·`close`·`pin`)의 콜백은 목록 칸·
+  이동 대기 칸만 적는다. 탭 이름은 사이드바 라벨에서 「(구현중)」만 뗀 글, 아이콘은 사이드바 Material 아이콘이다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
