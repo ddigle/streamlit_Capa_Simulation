@@ -14,9 +14,10 @@
   날짜 비례로 놓으려면 수 축이어야 한다(범주 축 규칙은 「26.07」 글자를 x 값으로 쓸 때의 것이고
   여기서는 글자를 x 에 쓰지 않는다).
 - 선: 제약 없을 때(`TEXT_MUTED` 파선) · 기존 제품 — 제약 반영(`ACCENT` 굵게, 점은 기준 미달이면
-  `STATUS_SHORTAGE`) · 제약 제품(`STATUS_WARNING`, 기간 안만) · 비중대로(`SERIES_STANDARD` 점선,
-  토글 켬·기간 안만). 기준선은 달마다 G 가 다르면 `hv` 계단, 같으면 수평선이고 제약 목표 수평선이
-  함께 선다.
+  `STATUS_SHORTAGE`) · 제약 제품(`STATUS_WARNING`, 기간 안만 — 점은 `LINE` 테두리) · 비중대로
+  (`SERIES_STANDARD` 점선, 토글 켬·기간 안만). 기준선은 달마다 G 가 다르면 `hv` 계단, 같으면
+  수평선이고 제약 목표 수평선이 함께 선다. 오른쪽 끝 글(「기준 …」 `TEXT_MUTED` · 「제약 n%」
+  `TEXT`)은 글자색이라 주의 색(면색)을 쓰지 않는다.
 - 아래 띠(y2): 개조 비가동 가로 막대 trace **하나**(`base` = 시작 위치, `x` = 길이). 날 → x 는 그
   날이 든 보이는 달 j 의 **W/D 구간**에서 `j − 0.5 + (날 − 첫날) ÷ 일수` 다 — 가용대수가 일할된 바로
   그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다. 겹치는 창은 아래 줄로 내린다.
@@ -97,7 +98,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 2
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 3
 CHART_HEIGHT_PX: Final = 340
 # 아래 띠(개조 비가동 막대)와 본 그림의 y 도메인.
 _BAND_TOP: Final = 0.12
@@ -414,7 +415,13 @@ def rate_figure(
             "y": constrained,
             "mode": "lines+markers",
             "line": {"color": tokens.STATUS_WARNING, "width": 2.4},
-            "marker": {"color": tokens.STATUS_WARNING, "size": 7},
+            # 주의 색은 면색이라 밝은 그림 면에서 2.3:1 이다 — 점마다 `LINE` 테두리를 둘러 점이 그림
+            # 요소 대비(3:1)를 넘게 한다(새 색 토큰을 두지 않는다).
+            "marker": {
+                "color": tokens.STATUS_WARNING,
+                "size": 7,
+                "line": {"color": tokens.LINE, "width": 1},
+            },
             "hoverinfo": "skip",
             "name": "제약 제품",
         }
@@ -586,7 +593,8 @@ def rate_figure(
             "xanchor": "left",
             "yanchor": "middle",
             "xshift": 4,
-            "font": {"size": 11, "color": tokens.STATUS_WARNING},
+            # 글자는 본문색이다 — 주의 색(면색) 11px 글자는 두 테마 모두 4.5:1 에 못 미쳤다.
+            "font": {"size": 11, "color": tokens.TEXT},
         },
     ]
     append_layout_items(figure, shapes=shapes, annotations=annotations)

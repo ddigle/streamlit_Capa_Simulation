@@ -121,6 +121,36 @@ def test_the_rate_figure_draws_four_lines_and_three_without_the_proportional_tog
     assert LINE_NAMES - hidden == {"기존 제품 — 비중대로 나눴을 때"}
 
 
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_the_end_labels_use_text_colours_and_the_constrained_points_get_an_outline(
+    mode: str,
+) -> None:
+    """주의 색(`STATUS_WARNING`)은 글자를 얹는 면색이다 — 오른쪽 끝 「제약 n%」 글을 그 색으로 쓰면
+    두 테마 모두 작은 글자 대비(4.5:1)에 못 미쳤다(밝은 2.3:1 · 어두운 3.0:1). 글은 본문색이고, 제약
+    제품 점은 `LINE` 테두리로 그림 요소 대비(3:1)를 넘는다."""
+    from test_design_tokens import contrast_ratio
+
+    from capa_simulation.design import theme
+
+    theme._LOCAL.mode = mode
+    try:
+        palette = tokens._PALETTES[mode]
+        spec = _spec(rate_figure(_run(), LABELS, selected_month=202705, show_proportional=True))
+        labels = {item["text"]: item["font"]["color"] for item in spec["layout"]["annotations"]}
+        assert labels["제약 120%"] == palette["TEXT"]
+        assert palette["STATUS_WARNING"] not in labels.values()
+        for color in labels.values():
+            assert contrast_ratio(color, palette["SURFACE"]) >= 4.5
+        (constrained,) = _traces(
+            rate_figure(_run(), LABELS, selected_month=202705, show_proportional=True), "제약 제품"
+        )
+        outline = constrained["marker"]["line"]
+        assert outline["color"] == palette["LINE"] and outline["width"] >= 1
+        assert contrast_ratio(palette["LINE"], palette["SURFACE"]) >= 3
+    finally:
+        theme._LOCAL.mode = "light"
+
+
 def test_the_constrained_and_proportional_lines_stay_inside_the_period() -> None:
     result = _run()
     figure = rate_figure(result, LABELS, selected_month=None, show_proportional=True)

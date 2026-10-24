@@ -310,10 +310,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     목표는 키 맞춤용 HOME 확보기준)의 단축 전 `가용대수` 다. 설비는 늘 **세션 설비 시나리오**(HOME 칸 방문 공식 잠금을
     잇지 않는다 — D6)이고, 필요 단축 일정의 공용 조회 조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH
     가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 출처 띠 끝 한 줄).
-  - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 공정
+  - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 한 번
+    적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY` 에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
+    덮지 않게 하고, 인자가 걷힌 회차에 비운다(공정 Capa 상세 `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이). 공정
     선택지는 공정 Capa 상세와 같은 전 공정이고(D12) 설비 일정이 서지 않으면 까닭 카드 한 장(`readiness.badge`·`detail`, 판정을
     지나도 계획에 없는 공정은 「계획에 공정 없음」·「Cut-off 미기재」)으로 멈춘다.
-  - 오류는 셋으로 가른다 — 공통 진입(카드 캡션), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
+  - 오류는 넷으로 가른다 — 공통 진입(카드 캡션), 제품별 소요 받기(카드 캡션 + 본문 「제품별 소요를 읽지 못했습니다 — {글}」 —
+    「소요가 있는 제품이 없다」 안내와 가른다), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
     `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」). `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError`
     가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로 둔갑한다.
   - 조건 카드 「제약 시뮬레이션 조건」 은 대상(공정·제약 제품·제약 시작·제약 끝 상자 둘)과 「이 세션만」 의 확보율(제약 확보율·
@@ -1557,15 +1560,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/preset_number_field.py` — 미리 정한 값 버튼(`st.pills`, `required=True`)과 늘 지금 값을
   보이는 직접 입력 숫자 칸을 **정본 한 칸**(위젯 아닌 세션 칸)으로 묶는다(제약 시뮬레이션 D10). 두 위젯 칸은 위젯 앞에서 매
   회차 정본에서 다시 서되 **다를 때만** 적고(같은 값을 적으면 `set_value` 가 회차마다 가서 치다 만 숫자를 덮는다), 콜백이 정본을
-  적는다. `None` 버튼(「HOME 기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다.
+  적는다. `None` 버튼(「HOME 기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
+  주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
+  `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
   비가동 막대를 W/D 구간 날짜 비례로 놓는다, 표적 막대가 달 누름을 받는다)와 월별 계산표(`month_sheet_canvas` 엔진)를 계산
-  결과에서 만드는 순수 함수. 새 색 토큰 없이 기존 토큰에 도형 `opacity` 를 준다(제약 기간 칠·고른 달 띠). 그림 모양을 바꾸면
-  `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
+  결과에서 만드는 순수 함수. 새 색 토큰 없이 기존 토큰에 도형 `opacity` 를 준다(제약 기간 칠·고른 달 띠). 주의 색
+  (`STATUS_WARNING`)은 면색이라 글자에 쓰지 않는다 — 오른쪽 끝 「제약 n%」 는 `TEXT`, 제약 제품 점은 `LINE` 테두리. 그림 모양을
+  바꾸면 `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/constraint_simulation_view.py` — 제약 시뮬레이션 본문 프래그먼트(`constraint_sim_view` —
   비중 토글·그래프·계산표·고른 달 계산 다섯 단계·개조 일정·가용이 모자란 달)와 요약 넷. 달 누름은 두 그림의 `on_select`
   **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 그림은 세션 memo(4칸 —
-  키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 이벤트 칸은 스타일만 든 `st.html` 셋(공정 Capa 상세와 같은 틀)이다.
+  키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 위 줄(그래프 카드 + 고른 달 계산 카드)은 가로 컨테이너 하나(3 : 2)이고
+  줄이 `TOP_ROW_STACK_BELOW_PX`(900px)보다 좁으면 컨테이너 질의로 위아래로 쌓는다(`top_row_style` — 사이드바를 편 900px 창에서
+  3 : 2 그대로면 그래프 그림 칸이 169px 로 줄어 달 누름이 어려웠다). 이벤트 칸은 스타일만 든 `st.html` 넷(위 줄 배치 + 공정
+  Capa 상세와 같은 계산표 틀 셋)이다.
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
   - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고

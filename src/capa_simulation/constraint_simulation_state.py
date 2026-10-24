@@ -16,6 +16,7 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
   실수)·개조 기간(정수 일). 버튼과 직접 입력 칸 둘이 한 정본을 나눠
   쓴다(`components/preset_number_field.py`).
 - **고른 달**(위젯 아님)과 두 그림의 칸 누름 세대(한 칸 — 어느 그림을 눌러도 둘 다 새 요소가 된다).
+- **주소 인자 막이**(위젯 아님) — 마지막으로 적용한 `?process=` 값(`CONSTRAINT_QUERY_SEEN_KEY`).
 
 제약 시작·끝 상자는 정수 달 선택지라 `page_bootstrap.prune_choice`(글자 선택지 전용)를 쓰지 않고
 `settle_period` 가 위젯 앞에서 매 회차 잡는다 — 칸이 없으면 기본값, 보이는 달 밖이면 가장 가까운
@@ -51,6 +52,7 @@ __all__ = [
     "CONSTRAINT_PRODUCT_KEY",
     "CONSTRAINT_PRODUCT_LIMIT",
     "CONSTRAINT_PROPORTIONAL_KEY",
+    "CONSTRAINT_QUERY_SEEN_KEY",
     "CONSTRAINT_SELECT_GENERATION_KEY",
     "CONSTRAINT_SHEET_KEY",
     "CONSTRAINT_TARGET_INPUT_KEY",
@@ -130,6 +132,10 @@ CONSTRAINT_PRODUCT_LIMIT: Final = 10_000
 # 공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 링크가 싣는 원본 공정명. 받는 쪽은 무엇보다 먼저
 # 꺼내고 그 키 하나만 지운다(테마 인자는 남는다).
 PROCESS_PARAM: Final = "process"
+# 주소 `?process=` 를 마지막으로 적용한 값(위젯 아님). 지운 것이 브라우저에 닿기 전에 옛 주소를 실은
+# 회차가 와도 사용자가 그 뒤 고른 공정을 덮지 않는다 — 공정 Capa 상세
+# `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이다. 주소에 인자가 없는 회차에 비운다.
+CONSTRAINT_QUERY_SEEN_KEY: Final = "constraint_sim_query_seen"
 
 
 def constraint_query_params(process: str, *, theme: str | None) -> dict[str, str]:
@@ -145,11 +151,19 @@ def take_constraint_process_request() -> str | None:
 
     부트스트랩이 오류로 멈춘 회차에도 주소에 남지 않게 맨 앞에서 꺼낸다(그 회차는 넘겨받은 공정만
     잃는다). 빈 글자는 None 이다.
+
+    한 번 적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY` 에 남긴다 — 같은 값이 다시 오면(지운 것이
+    브라우저에 닿기 전에 옛 주소를 실은 회차) 적용하지 않고 지우기만 한다. 인자가 걷힌 회차에 그
+    칸을 비우므로 같은 링크로 다시 들어오면 다시 적용한다.
     """
     if PROCESS_PARAM not in st.query_params:
+        st.session_state.pop(CONSTRAINT_QUERY_SEEN_KEY, None)
         return None
     value = str(st.query_params.get(PROCESS_PARAM, "")).strip()
     del st.query_params[PROCESS_PARAM]
+    if st.session_state.get(CONSTRAINT_QUERY_SEEN_KEY) == value:
+        return None
+    st.session_state[CONSTRAINT_QUERY_SEEN_KEY] = value
     return value or None
 
 

@@ -18,11 +18,13 @@
   확보기준)을 받아 `가용대수` 열만 읽는다(D3). 필요 단축 일정의 공용 조회
   조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH 가정·HOME 얹기는 걸지 않는다(D5).
 
-계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 셋으로 가른다 — 공통
-진입(카드 캡션 「계산을 멈춰 …」), 계획 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로),
-어댑터·서비스의 `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로
-없음). `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의
-글로 둔갑한다.
+계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 넷으로 가른다 — 공통
+진입(카드 캡션 「계산을 멈춰 …」), 제품별 소요 받기(카드 캡션 「제품을 읽지 못했습니다」 + 본문
+「제품별 소요를 읽지 못했습니다 — {글}」 — 「소요가 있는 제품이 없다」 안내와 가른다), 계획
+받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
+`ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로 없음).
+`BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로
+둔갑한다.
 
 본문은 머리 한 줄 → 출처 띠 → 요약 넷(프래그먼트 밖) → 본문
 프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
@@ -251,7 +253,9 @@ def first_demand_month(table: pd.DataFrame, product: str | None) -> int:
 
 product_table = pd.DataFrame()
 product_options: list[str] = []
-product_error = False
+# 제품별 소요를 읽지 못한 까닭(빈 글자 = 읽음). 카드에는 짧은 캡션, 본문에는 이 글을 싣는다 —
+# 「소요가 있는 제품이 없다」 와 가른다.
+product_error = ""
 cutoff_line = "Cut-off 미기재"
 with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
     st.caption("**대상**")
@@ -277,8 +281,8 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
                 _display_order=context.display_order,
                 limit=CONSTRAINT_PRODUCT_LIMIT,
             )
-        except BOOTSTRAP_ERRORS:
-            product_table, product_error = pd.DataFrame(), True
+        except BOOTSTRAP_ERRORS as exc:
+            product_table, product_error = pd.DataFrame(), bootstrap_error_message(exc)
         product_options = product_choices(product_table)
     prune_choice(
         CONSTRAINT_PRODUCT_KEY,
@@ -474,6 +478,10 @@ if not readiness.ready or readiness.cutoff_days is None or snapshot is None:
         "섭니다.",
         equipment_link=True,
     )
+    st.stop()
+if product_error:
+    render_header(process, f"**{literal_markdown(process_label)}**")
+    st.error(f"제품별 소요를 읽지 못했습니다 — {product_error}")
     st.stop()
 if selected_product is None:
     render_header(process, f"**{literal_markdown(process_label)}**")

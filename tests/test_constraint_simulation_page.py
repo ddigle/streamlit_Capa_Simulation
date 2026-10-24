@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -637,8 +638,8 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
     app = _opened(dynamic_databases)
     view = browser.fragment_keyed(CONSTRAINT_VIEW_FRAGMENT_KEY)
     full_slots = {slot for slot, owner in _event_slots(browser.messages).items() if owner == view}
-    # 스타일만 든 `st.html` 셋 — 두 컬럼 폭 · 라벨 칸 위 여백 · 스크롤 상자.
-    assert len(full_slots) == 3
+    # 스타일만 든 `st.html` 넷 — 위 줄 배치 · 계산표 두 컬럼 폭 · 라벨 칸 위 여백 · 스크롤 상자.
+    assert len(full_slots) == 4
 
     browser.fragment_queue = [view]
     app.session_state[CONSTRAINT_MONTH_KEY] = 202609
@@ -661,3 +662,198 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
     _ok(app.run())
     assert json.dumps(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["shapes"]) == in_fragment
     assert _has_chart(app, CONSTRAINT_SHEET_KEY)
+
+
+def _pick_script() -> None:
+    """두 그림 콜백을 앱 회차에서 직접 부른다(AppTest 는 Plotly 칸 누름을 못 낸다 — 공정 Capa 상세
+    `pick_canvas_month` 시험과 같은 꼴). 부른 뒤 지금 세대로 두 그림을 만들어 세대를 적어 둔다."""
+    from datetime import date
+
+    import streamlit as st
+    from test_constraint_simulation import _run
+
+    from capa_simulation.components.constraint_simulation_figures import ConstraintLabels
+    from capa_simulation.components.constraint_simulation_view import (
+        ConstraintView,
+        pick_chart_month,
+        pick_sheet_month,
+        remembered_figures,
+    )
+    from capa_simulation.constraint_simulation_state import (
+        CONSTRAINT_CHART_KEY,
+        CONSTRAINT_MONTH_KEY,
+        CONSTRAINT_SELECT_GENERATION_KEY,
+        CONSTRAINT_SHEET_KEY,
+    )
+
+    result = _run()
+    months = tuple(row.month for row in result.months)
+    st.session_state.setdefault(CONSTRAINT_MONTH_KEY, 202705)
+    action = st.session_state.pop("action", None)
+    if action == "chart":
+        st.session_state[CONSTRAINT_CHART_KEY] = st.session_state.pop("selection")
+        pick_chart_month(months)
+    elif action == "sheet":
+        st.session_state[CONSTRAINT_SHEET_KEY] = st.session_state.pop("selection")
+        pick_sheet_month(months)
+    generation = st.session_state.get(CONSTRAINT_SELECT_GENERATION_KEY, 0)
+    view = ConstraintView(
+        result=result,
+        labels=ConstraintLabels("TC Bonding", "TC Bonding", "HBM라E", 120, None),
+        today=date(2027, 1, 1),
+    )
+    chart, sheet = remembered_figures(
+        view,
+        month=st.session_state[CONSTRAINT_MONTH_KEY],
+        show_proportional=True,
+        generation=generation,
+    )
+    st.session_state["drawn"] = (
+        chart.layout.meta["generation"],
+        sheet.months.layout.meta["generation"],
+    )
+
+
+def _chart_pick(month: int) -> dict[str, Any]:
+    return {"selection": {"points": [{"customdata": [month, "풍선"]}]}}
+
+
+def _sheet_pick(month: int, row: str = "existing_rate") -> dict[str, Any]:
+    return {"selection": {"points": [{"customdata": [month, row, "풍선"]}]}}
+
+
+def test_the_chart_and_sheet_callbacks_write_the_month_and_bump_one_shared_generation() -> None:
+    """그래프 칸·계산표 칸 콜백(D9·R-12) — 누른 칸의 달을 적고(계산표는 행과 상관없이 그 열), 두
+    그림이 한 세대 칸을 함께 올려 둘 다 새 요소가 된다. 마지막 누름이 이긴다. 빈 선택(같은 칸 다시
+    누름)·축 밖 점은 보던 달 그대로지만 세대는 오른다 — 두 그림의 옛 선택이 함께 비워진다."""
+    app = AppTest.from_function(_pick_script, default_timeout=60).run()
+    _ok(app)
+    assert app.session_state[CONSTRAINT_MONTH_KEY] == 202705
+    assert app.session_state["drawn"] == (0, 0)
+
+    steps: list[tuple[str, dict[str, Any], int, int]] = [
+        ("chart", _chart_pick(202709), 202709, 1),
+        # 계산표는 (달, 행 id) 차례다 — 어느 행을 눌러도 그 열의 달.
+        ("sheet", _sheet_pick(202712, "constrained_need"), 202712, 2),
+        ("chart", _chart_pick(202801), 202801, 3),
+        ("sheet", {"selection": {"points": []}}, 202801, 4),
+        ("chart", _chart_pick(199001), 202801, 5),
+        ("sheet", _sheet_pick(202707), 202707, 6),
+    ]
+    for action, selection, month, generation in steps:
+        app.session_state["action"] = action
+        app.session_state["selection"] = selection
+        _ok(app.run())
+        assert app.session_state[CONSTRAINT_MONTH_KEY] == month, (action, selection)
+        assert app.session_state["constraint_sim_select_generation"] == generation
+        # 어느 쪽을 눌러도 두 그림이 같은 세대로 다시 선다.
+        assert app.session_state["drawn"] == (generation, generation)
+
+
+def test_both_figures_wire_their_cell_clicks_to_the_month_callbacks(
+    dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """두 그림은 칸 누름(`selection_mode="points"`)을 켜고 `on_select` 가 달 콜백이다 — 위 콜백
+    시험이 도는 것과 화면이 그 콜백을 거는 것을 함께 지킨다."""
+    import streamlit as st
+
+    from capa_simulation.components.constraint_simulation_view import (
+        pick_chart_month,
+        pick_sheet_month,
+    )
+
+    seen: dict[str, Any] = {}
+    original = st.plotly_chart
+
+    def recording(figure: Any, *args: Any, **kwargs: Any) -> Any:
+        seen[str(kwargs.get("key"))] = kwargs
+        return original(figure, *args, **kwargs)
+
+    monkeypatch.setattr(st, "plotly_chart", recording)
+    _opened(dynamic_databases)
+    for key, callback in (
+        (CONSTRAINT_CHART_KEY, pick_chart_month),
+        (CONSTRAINT_SHEET_KEY, pick_sheet_month),
+    ):
+        kwargs = seen[key]
+        assert kwargs["selection_mode"] == "points"
+        assert kwargs["on_select"].func is callback
+        # 콜백이 받는 달은 화면의 달 축 그대로다(조회기간 26.01~26.12).
+        assert kwargs["on_select"].args == (tuple(range(202601, 202613)),)
+
+
+def test_a_product_read_error_says_so_instead_of_no_products(
+    dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """제품별 소요를 읽다 실패하면 본문이 그 오류 글을 싣는다 — 「소요가 있는 제품이 없어」 안내로
+    까닭을 바꾸지 않는다(카드 캡션 「제품을 읽지 못했습니다」 와 같은 까닭)."""
+
+    def broken(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        raise ValueError("시험 — 제품별 소요 표를 만들지 못했습니다")
+
+    monkeypatch.setattr(simulation_cache, "get_process_product_demand", broken)
+    app = _opened(dynamic_databases)
+    errors = " ".join(str(item.value) for item in app.error)
+    assert "제품별 소요를 읽지 못했습니다 — 시험 — 제품별 소요 표를 만들지 못했습니다" in errors
+    assert not any("소요가 있는 제품이 없어" in str(item.value) for item in app.info)
+    assert "제품을 읽지 못했습니다." in _captions(app)
+    assert not app.metric
+
+
+def test_a_stale_process_param_does_not_overwrite_a_later_pick(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """링크로 들어와 곧바로 공정을 바꿨는데, 지운 `?process=` 가 브라우저에 닿기 전이라 옛 주소를
+    실은 회차가 오면 — 그 값은 이미 적용했으므로 다시 적용하지 않는다(공정 Capa 상세의 「적용한
+    묶음」 막이와 같다). 인자가 걷힌 회차가 지나면 같은 링크로 다시 들어올 때 다시 적용한다."""
+    app = _opened(dynamic_databases)
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(OTHER_PROCESS)
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == OTHER_PROCESS
+    assert "process" not in app.query_params
+
+    # 인자 없는 회차 → 같은 링크로 다시 들어오면 그 공정이다.
+    _ok(app.run())
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+
+
+def test_the_chart_and_steps_row_stacks_below_the_narrow_width(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """그래프 카드와 고른 달 계산 카드는 한 가로 컨테이너에 서고(3 : 2), 줄이
+    `TOP_ROW_STACK_BELOW_PX` 보다 좁으면 위아래로 쌓인다 — 사이드바를 편 900px 창에서 3 : 2 그대로면
+    그래프 그림 칸이 169px(달 한 칸 14px)로 줄어 칸 누름이 어려웠다(2026-10-25 리뷰). 쌓이는 폭은
+    1280px 창 · 사이드바 펼침(줄 약 930px)보다 좁고 900px 창 · 사이드바 펼침(약 550px)보다 넓다."""
+    from capa_simulation.components.constraint_simulation_view import (
+        CHART_CARD_KEY,
+        STEPS_CARD_KEY,
+        TOP_ROW_KEY,
+        TOP_ROW_STACK_BELOW_PX,
+        top_row_style,
+    )
+
+    assert 550 < TOP_ROW_STACK_BELOW_PX < 930
+    style = top_row_style()
+    assert f".st-key-{TOP_ROW_KEY} {{ container: " in style
+    assert f"(width < {TOP_ROW_STACK_BELOW_PX}px)" in style
+    for key in (CHART_CARD_KEY, STEPS_CARD_KEY):
+        assert f'[data-testid="stLayoutWrapper"]:has(> .st-key-{key})' in style
+    app = _opened(dynamic_databases)
+    assert any(str(element.proto.body) == style for element in app.get("html"))
+
+    def keyed(node: Any) -> Iterator[Any]:
+        if getattr(node, "key", None):
+            yield node
+        children = getattr(node, "children", None)
+        for child in children.values() if isinstance(children, dict) else ():
+            yield from keyed(child)
+
+    (row,) = [node for node in keyed(app._tree) if node.key == TOP_ROW_KEY]
+    container = row.proto.flex_container
+    assert container.direction == container.HORIZONTAL and container.wrap
+    assert [child.key for child in row.children.values()] == [CHART_CARD_KEY, STEPS_CARD_KEY]

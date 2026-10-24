@@ -11,8 +11,10 @@
 
 - **보기 줄** — 「소요 비중대로 나눴을 때 함께 보기」 토글(`persist_state="session"` — 보기 조건).
 - **위 줄** — 월별 확보율 그래프(`CONSTRAINT_CHART_KEY`)와 그 옆 고른 달의 계산 다섯
-  단계(`month_steps` — 순수 함수)·결과 상자. **그 아래 온 폭** — 월별 계산표(라벨 Figure + 가로로
-  스크롤되는 월 Figure `CONSTRAINT_SHEET_KEY`). 계산표는 컬럼 안에 넣지 않는다 — 두 컬럼 폭
+  단계(`month_steps` — 순수 함수)·결과 상자. 가로 컨테이너 하나(3 : 2)이고 줄 폭이
+  `TOP_ROW_STACK_BELOW_PX` 보다 좁으면 위아래로 쌓는다(`top_row_style` — 컨테이너 질의, 가용설비
+  현황 Qual 마감 계산기와 같은 꼴). **그 아래 온 폭** — 월별 계산표(라벨 Figure + 가로로 스크롤되는
+  월 Figure `CONSTRAINT_SHEET_KEY`). 계산표는 컬럼 안에 넣지 않는다 — 두 컬럼 폭
   규칙(`split_scroll_columns_style` 의 `:has()`)이 바깥 컬럼에도 걸린다. 칸을 누르면 `on_select`
   **콜백**이 고른 달을 적는다 — 회차마다 두 그림의 선택 상태를 읽으면 브라우저에 남은 다른 그림의 옛
   선택이 마지막 누름을 덮는다. 세대 번호는 두 그림이 한 칸을 나눠 써 누를 때마다 둘 다 새 요소가
@@ -20,9 +22,9 @@
 - **맨 아래** — 개조 일정 · 가용이 모자란 달. 생겼다 사라지는 알림은 늘 서 있는 `st.container()` 칸
   안에 그린다(AGENTS 9장 「자리는 고정한다」).
 
-**이벤트 칸 수는 갈래마다 같다** — 이 프래그먼트가 이벤트 칸에 쓰는 것은 스타일만 든 `st.html` 셋(두
-컬럼 폭 · 라벨 칸 위 여백 · 스크롤 상자 — 공정 Capa 상세와 같은 틀)이고 어느 갈래(비중 켬·끔, 개조
-켬·끔, 고른 달)에서도 셋 그대로다.
+**이벤트 칸 수는 갈래마다 같다** — 이 프래그먼트가 이벤트 칸에 쓰는 것은 스타일만 든 `st.html` 넷(위
+줄 배치 · 계산표 두 컬럼 폭 · 라벨 칸 위 여백 · 스크롤 상자 — 뒤 셋은 공정 Capa 상세와 같은 틀)이고
+어느 갈래(비중 켬·끔, 개조 켬·끔, 고른 달)에서도 넷 그대로다.
 
 그림은 세션에 몇 벌 기억한다(`remembered_figures`, 공정 Capa 상세 `remembered_canvas` 꼴 — Streamlit
 캐시가 아니다). 키는 그림 모양 버전·테마·계산 결과(값으로 같다)·화면 글자·고른 달·비중 토글·세대다.
@@ -107,6 +109,7 @@ __all__ = [
     "schedule_lines",
     "settle_selected_month",
     "short_lines",
+    "top_row_style",
 ]
 
 KPI_ROW_KEY: Final = "constraint_sim_kpis"
@@ -118,6 +121,15 @@ _SHEET_SCROLL_KEY: Final = "constraint_sim_sheet"
 _SHEET_SCROLLBAR_KEY: Final = "constraint_sim_sheet_scrollbar"
 STEPS_CARD_KEY: Final = "constraint_sim_steps"
 SCHEDULE_CARD_KEY: Final = "constraint_sim_schedule"
+# 위 줄(그래프 카드 + 고른 달 계산 카드) 가로 컨테이너와 그래프 카드.
+TOP_ROW_KEY: Final = "constraint_sim_top_row"
+CHART_CARD_KEY: Final = "constraint_sim_chart_card"
+_TOP_ROW_CONTAINER_NAME: Final = "capa-constraint-top"
+# 위 줄이 이보다 좁으면 그래프 위·계산 아래로 쌓는다. 3 : 2 로 두면 사이드바를 편 900px 창에서
+# 그래프 그림 칸이 169 × 130px(달 한 칸 14px)로 줄어 칸 누름(D9)이 어려웠다(2026-10-25 리뷰, 사본
+# 앱). 이 폭이면 그래프 카드가 약 530px 아래로 내려가지 않는다(1280px 창 · 사이드바 펼침은 나란히
+# 선다).
+TOP_ROW_STACK_BELOW_PX: Final = 900
 _EMPTY: Final = "—"
 SCHEDULE_DEFINITION: Final = (
     "개조 비가동은 그 달 W/D 첫날(그 달 1일 − Cut-off)을 끝으로, 개조 기간만큼 앞서 "
@@ -532,7 +544,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
 
 @st.fragment(key=CONSTRAINT_VIEW_FRAGMENT_KEY)
 def render_constraint_view(view: ConstraintView) -> None:
-    """보기 줄 → (왼쪽) 그래프 · 계산표 / (오른쪽) 고른 달 계산 · 개조 일정 · 모자란 달."""
+    """보기 줄 → 위 줄(그래프 · 고른 달 계산) → 계산표(온 폭) → 개조 일정 · 모자란 달."""
     result = view.result
     months = tuple(row.month for row in result.months)
     seed_toggle(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL)
@@ -551,14 +563,15 @@ def render_constraint_view(view: ConstraintView) -> None:
     chart, sheet = remembered_figures(
         view, month=month, show_proportional=bool(show_proportional), generation=generation
     )
-    # 그래프와 고른 달 계산을 한 줄에(달을 누르면 바로 옆이 바뀐다). 계산표는 그 아래 온 폭이다 —
-    # 계산표의 두 컬럼 폭 규칙(`split_scroll_columns_style`, `:has()` 선택자)이 바깥 컬럼에도
-    # 걸리므로 컬럼 안에 넣지 않는다(2026-10-25 브라우저 — 바깥 왼쪽 컬럼이 260px 로 눌렸다).
-    chart_column, steps_column = st.columns([3, 2], gap="medium")
-    with chart_column:
-        with st.container(border=True):
+    # 그래프와 고른 달 계산을 한 줄에(달을 누르면 바로 옆이 바뀐다 — 좁으면 위아래). 계산표는 그
+    # 아래 온 폭이다 — 계산표의 두 컬럼 폭 규칙(`split_scroll_columns_style`, `:has()` 선택자)이
+    # 바깥 컬럼에도 걸리므로 컬럼 안에 넣지 않는다(2026-10-25 브라우저 — 바깥 왼쪽 컬럼이 260px 로
+    # 눌렸다).
+    st.html(top_row_style())
+    with st.container(horizontal=True, gap="medium", key=TOP_ROW_KEY):
+        with st.container(border=True, key=CHART_CARD_KEY):
             st.markdown("**월별 확보율**")
-            st.caption("달 칸을 누르면 옆에 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간")
+            st.caption("달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간")
             st.plotly_chart(
                 chart,
                 width="stretch",
@@ -567,7 +580,6 @@ def render_constraint_view(view: ConstraintView) -> None:
                 on_select=partial(pick_chart_month, months),
                 selection_mode="points",
             )
-    with steps_column:
         _render_month_steps(view, month, show_proportional=bool(show_proportional))
     with st.container(border=True):
         st.markdown("**월별 계산표**")
@@ -591,6 +603,30 @@ def render_constraint_view(view: ConstraintView) -> None:
                         st.caption(shortage)
                     for line in overdrawn:
                         st.caption(f":material/warning: {line}")
+
+
+def top_row_style() -> str:
+    """위 줄 배치 CSS — 넓으면 그래프 카드 3 : 계산 카드 2, 줄이 `TOP_ROW_STACK_BELOW_PX` 보다
+    좁으면 두 카드 모두 한 줄씩(위아래).
+
+    가로 컨테이너의 flex 항목은 키 붙은 칸이 아니라 그것을 한 번 감싼 `stLayoutWrapper` 다(1.63 —
+    `qual_deadline_calculator.layout_style` 와 같은 꼴). 컨테이너 질의라 사이드바를 여닫아 본문 폭만
+    바뀌어도 따라간다.
+    """
+    chart = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{CHART_CARD_KEY})'
+    steps = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STEPS_CARD_KEY})'
+    return "\n".join(
+        [
+            "<style>",
+            f".st-key-{TOP_ROW_KEY} {{ container: {_TOP_ROW_CONTAINER_NAME} / inline-size; }}",
+            f"{chart} {{ flex: 3 1 0 !important; min-width: 0 !important; }}",
+            f"{steps} {{ flex: 2 1 0 !important; min-width: 0 !important; }}",
+            f"@container {_TOP_ROW_CONTAINER_NAME} (width < {TOP_ROW_STACK_BELOW_PX}px) {{",
+            f"  {chart}, {steps} {{ flex: 1 1 100% !important; }}",
+            "}",
+            "</style>",
+        ]
+    )
 
 
 def _render_sheet(sheet: SheetCanvas, months: tuple[int, ...]) -> None:

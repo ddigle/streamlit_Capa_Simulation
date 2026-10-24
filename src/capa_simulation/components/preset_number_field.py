@@ -90,15 +90,24 @@ def _pick_number(value_key: str, input_key: str, integer: bool) -> None:
         st.session_state[value_key] = _number(float(typed), integer)
 
 
+# 켜진 버튼 — 1.63 의 pills 단추는 react-aria 토글 단추라 한 개 고름이면 켜진 단추가
+# `role="radio"`·`aria-checked="true"` 다(옛 `stBaseButton-pillsActive` testid 는 그리지 않는다).
+ACTIVE_PILL_SELECTOR: Final = 'button[role="radio"][aria-checked="true"]'
+
+
 def _tone_style(pills_key: str, tone: PresetTone) -> str:
-    """켜진 버튼 색 — 주의 색(제약 확보율 — 초안의 주황)일 때만 덮는다. 기본은 앱 강조색이다."""
+    """켜진 버튼 색 — 주의 색(제약 확보율 — 초안의 주황)일 때만 덮는다. 기본은 앱 강조색이다.
+
+    주의 색은 글자를 얹는 **면색**이라 글자는 `TEXT` 다(밝은 테마 검정 · 어두운 테마 흰색 — 두 테마
+    모두 4.5:1 이상, `tokens` 상태색 주석). 면 위에 `SURFACE` 를 얹으면 어두운 테마에서 3.0:1 이다.
+    """
     if tone != "warning":
         return ""
     color = tokens.STATUS_WARNING
     return (
-        f'<style>.st-key-{pills_key} [data-testid="stBaseButton-pillsActive"] '
+        f"<style>.st-key-{pills_key} {ACTIVE_PILL_SELECTOR} "
         f"{{ background: {color} !important; border-color: {color} !important; "
-        f"color: {tokens.SURFACE} !important; }}</style>"
+        f"color: {tokens.TEXT} !important; }}</style>"
     )
 
 
