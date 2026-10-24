@@ -125,17 +125,25 @@ MODULE_RATIO_WARNING = (
 
 
 def module_ratio_warning_rows(equipment: pd.DataFrame) -> pd.Series:
-    """환산비가 모두 1 인 모듈 묶음(같은 설비키 행 둘 이상)의 줄 — `equipment` 와 같은 색인의
-    참거짓.
+    """환산비가 모두 1 인 모듈 묶음(같은 Main 설비를 적은 줄 둘 이상)의 줄 — `equipment` 와 같은
+    색인의 참거짓.
 
-    저장은 막지 않는 경고다. 검증을 통과한 설비 마스터를 받는다. 모듈 행 여럿을 묶었는데 환산비가
-    모두 1 이면 능력 축이 모듈 수만큼 부풀려진다(4모듈이면 4대 몫). 모듈 행에는 보통 1 ÷ 모듈수
-    (0.25)를 적는다.
+    저장은 막지 않는 경고다. 모듈 행 여럿을 묶었는데 환산비가 모두 1 이면 능력 축이 모듈 수만큼
+    부풀려진다(4모듈이면 4대 몫). 모듈 행에는 보통 1 ÷ 모듈수(0.25)를 적는다.
+
+    검증 전 편집본도 받는다 — 화면은 막는 오류가 남은 편집본으로도 경고 문장을 세우고, 칸 단위
+    결과(`equipment_validation` 의 `module_ratio_default`)도 막는 결과와 함께 낸다. 그래서 **Main
+    설비를 적은 줄만** 묶음으로 센다 — 설비명이 겹친 줄(막는 규칙 「설비명 중복」 의 몫)은 묶음이
+    아니고, 검증을 통과한 표에서는 묶음 줄이 모두 Main 설비를 적은 줄이라 결과가 같다. 설비명이 빈
+    줄은 저장이 조용히 빼므로 세지 않는다. 못 읽은 환산비는 빈 칸처럼 1 로 본다.
     """
     none = pd.Series(False, index=equipment.index, dtype=bool)
     if equipment.empty or PARENT_EQUIPMENT_COLUMN not in equipment.columns:
         return none
-    keys = unit_keys(equipment)
+    units = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    parents = equipment[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+    modules = units.notna() & units.ne("") & parents.notna() & parents.ne("")
+    keys = parents.where(modules.fillna(False).to_numpy(dtype=bool))
     grouped = keys.map(keys.value_counts()).gt(1).fillna(False).astype(bool)
     if not grouped.any():
         return none
@@ -146,8 +154,8 @@ def module_ratio_warning_rows(equipment: pd.DataFrame) -> pd.Series:
 
 
 def module_group_warnings(equipment: pd.DataFrame) -> list[str]:
-    """저장은 막지 않지만 알릴 것 — `module_ratio_warning_rows` 의 묶음을 한 문장으로. 검증을 통과한
-    설비 마스터를 받는다."""
+    """저장은 막지 않지만 알릴 것 — `module_ratio_warning_rows` 의 묶음을 한 문장으로(검증 전
+    편집본도 받는다)."""
     rows = module_ratio_warning_rows(equipment)
     if not rows.any():
         return []

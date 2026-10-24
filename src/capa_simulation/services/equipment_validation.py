@@ -204,22 +204,24 @@ def equipment_master_issues(
     """설비 마스터의 칸 단위 결과 — `prepare_equipment_master` 와 **같은 규칙 표, 같은 인자**다.
 
     저장 함수는 처음 걸린 규칙에서 멈추지만 여기서는 모든 규칙을 본다. 못 읽은 값(날짜·좌표·크기·
-    환산비)은 결측으로 보고 다음 규칙을 이어 본다. 결과 차례는 규칙 표 차례, 한 규칙 안에서는 줄
-    차례다. 그래서 처음 막는 결과의 규칙이 저장 함수가 던질 규칙이다 — 시간대가 붙은 날짜 칸만
-    다르다(칸 결과는 「날짜 형식」 으로 막고, 저장 함수는 예전처럼 받거나 pandas 예외로 멈춘다).
+    환산비)은 결측으로 보고 다음 규칙을 이어 본다.
 
-    막지 않는 경고(`blocking=False`)도 함께 낸다. 모듈 묶음 환산비 경고는 지금처럼 검증을 통과한
-    표에만 본다 — 막는 결과가 하나라도 있으면 건너뛴다.
+    결과 차례는 규칙 표 차례다. 한 규칙 안에서는 **칸 차례가 먼저, 그 칸 안에서 줄 차례**다 — 칸
+    여럿을 따로 보는 규칙(Y/N·좌표·크기 못 읽음·모듈 행 칸 불일치·날짜·상태 값·반출 < 반입·
+    실적 > 오늘)은 칸마다 결과를 묶어 낸다. 저장 함수도 같은 차례로 보므로 처음 막는 결과가 저장
+    함수가 던질 규칙(칸 여럿을 보는 규칙이면 그 칸)이고, 그 문구가 거부 문구의 앞머리다. 저장이
+    막힌다 ⇔ 막는 결과가 있다.
+
+    막지 않는 경고(`blocking=False`)는 막는 결과가 있어도 낸다 — 경고 문장(`area_code_warnings`·
+    `equipment_units.module_group_warnings`)이 검증 전 편집본을 보고 서는 것과 같다.
 
     표에 계약 칸이 없으면 저장 함수와 같은 `ValueError` 다. 설비명이 빈 줄은 결과가 없다.
     """
-    master = _read_master(data, floor_canvases=floor_canvases, today=today, collect=True)
+    master = _read_master(data, floor_canvases=floor_canvases, today=today)
     if master is None:
         return ()
     issues: list[MasterIssue] = []
     for rule in MASTER_RULES:
-        if rule.after_valid and any(issue.blocking for issue in issues):
-            continue
         for finding in rule.check(master):
             issues.extend(_finding_issues(master, rule, finding))
     return tuple(issues)
@@ -236,18 +238,17 @@ def coerce_master_cell(column: str, text: str) -> CellValue | CellParseError:
     다듬지 못하면 `CellParseError` 다(문구는 저장이 그 글을 막는 규칙의 문구 앞머리). 빈 값은 늘
     받는다 — 비우면 안 되는 칸(설비명·공정소분류·Y/N)은 저장 규칙이 칸 결과로 막는다.
 
-    시간대가 붙은 날짜는 계약 칸(시간대 없는 날짜)에 넣을 수 없어 못 읽은 날짜로 돌려준다.
+    시간대가 붙은 날짜는 저장과 같이 못 읽은 날짜다(`_read_master_dates`).
     """
     if column not in EQUIPMENT_COLUMNS:
         raise ValueError(f"설비 마스터 계약 칸이 아닙니다: {column}")
     cell = pd.Series([text], dtype="object")
     refuse = partial(CellParseError, column, text)
     if column in DATE_COLUMNS:
-        dates, invalid, fault = _read_date(cell)
-        value = dates.iloc[0]
-        if bool(invalid.iloc[0]) or fault is not None or getattr(value, "tzinfo", None) is not None:
+        dates, invalid = _read_master_dates(cell)
+        if bool(invalid.iloc[0]):
             return refuse("date_unreadable", _date_message(column))
-        return _cell_value(value)
+        return _cell_value(dates.iloc[0])
     if column in COORDINATE_COLUMNS:
         numbers, unreadable = _read_number(cell)
         if bool(unreadable.iloc[0]):
@@ -381,17 +382,14 @@ class _MasterFrame:
     - `raw_dates` — 날짜 칸의 입력 값 그대로(날짜 못 읽음의 예시는 입력 글자다).
     - `data` — 칸마다 저장 정규화를 지난 값. **못 읽은 값은 결측**이다 — 저장 함수는 그 칸의
       규칙에서 먼저 멈추므로 결측으로 본 값이 뒤 규칙에 닿지 않고, 모으는 쪽은 결측으로 이어
-      본다.
+      본다. 날짜 칸은 늘 시간대 없는 날짜 dtype 이다.
     - `unreadable` — 좌표·크기·환산비·날짜 칸마다 못 읽은 줄.
-    - `date_faults` — 한 날짜 dtype 으로 모이지 않은 칸(시간대가 섞인 날짜 등)의 예외와 그 칸의
-      찬 줄.
     """
 
     raw_dates: pd.DataFrame
     data: pd.DataFrame
     unreadable: Mapping[str, pd.Series]
     ratio_not_positive: pd.Series
-    date_faults: Mapping[str, tuple[_DateFault, pd.Series]]
     floor_canvases: FloorCanvasMap | None
     today: date | None
 
@@ -428,16 +426,12 @@ class _Finding:
 
 @dataclass(frozen=True)
 class MasterRule:
-    """설비 마스터 규칙 표의 한 줄 — 코드와 그 규칙이 걸린 줄을 찾는 함수.
-
-    `after_valid` 는 막는 규칙을 모두 통과한 표에서만 보는 경고다(모듈 묶음 환산비 — 묶음 키가
-    검증을 통과해야 뜻이 있다).
-    """
+    """설비 마스터 규칙 표의 한 줄 — 코드와 그 규칙이 걸린 줄을 찾는 함수. `blocking` 이 거짓이면
+    저장을 막지 않는 경고다(저장 함수는 건너뛰고, 칸 결과는 막는 결과가 있어도 낸다)."""
 
     code: str
     check: Callable[[_MasterFrame], Iterator[_Finding]] = field(repr=False, compare=False)
     blocking: bool = True
-    after_valid: bool = False
 
 
 def _read_master(
@@ -445,14 +439,8 @@ def _read_master(
     *,
     floor_canvases: FloorCanvasMap | None,
     today: date | None,
-    collect: bool = False,
 ) -> _MasterFrame | None:
-    """칸을 모두 다듬는다 — 막지 않는다. 설비명이 빈 줄은 뺀다(남는 줄이 없으면 None).
-
-    `collect`(칸 단위 결과)면 시간대가 붙은 날짜 칸을 한 dtype 으로 모이지 않은 칸으로 본다 — 계약
-    칸(시간대 없는 날짜)과 견줄 수 없어 뒤 규칙이 견주다 멈추기 때문이다. 저장 함수는 예전처럼 그
-    칸을 받고 견주는 규칙에서 pandas 예외로 멈춘다.
-    """
+    """칸을 모두 다듬는다 — 막지 않는다. 설비명이 빈 줄은 뺀다(남는 줄이 없으면 None)."""
     data = with_optional_equipment_columns(data)
     require_columns(data, EQUIPMENT_COLUMNS, "설비 마스터")
     selected = data.loc[:, list(EQUIPMENT_COLUMNS)].reset_index(drop=True)
@@ -477,19 +465,9 @@ def _read_master(
         result[CONVERSION_RATIO_COLUMN]
     )
     result[CONVERSION_RATIO_COLUMN] = ratio
-    faults: dict[str, tuple[_DateFault, pd.Series]] = {}
     for column in DATE_COLUMNS:
-        dates, invalid, fault = _read_date(result[column])
-        if collect and fault is None and isinstance(dates.dtype, pd.DatetimeTZDtype):
-            fault = _DateFault(TypeError(f"{column} 칸에 시간대가 붙은 날짜가 있습니다"), False)
-            dates = pd.Series(pd.NaT, index=dates.index, dtype="datetime64[ns]")
-        result[column] = dates
-        unreadable[column] = invalid
-        if fault is not None:
-            entered = raw_dates[column]
-            filled = entered.notna() & entered.astype("string").str.strip().ne("")
-            faults[column] = (fault, _flags(filled) & ~_flags(invalid))
-    return _MasterFrame(raw_dates, result, unreadable, not_positive, faults, floor_canvases, today)
+        result[column], unreadable[column] = _read_master_dates(raw_dates[column])
+    return _MasterFrame(raw_dates, result, unreadable, not_positive, floor_canvases, today)
 
 
 def _flags(mask: pd.Series) -> pd.Series:
@@ -538,10 +516,6 @@ def _rejection(master: _MasterFrame, finding: _Finding) -> Exception:
         return finding.error()
     examples = master.data.loc[finding.rows, EQUIPMENT_ID_COLUMN].head(5).tolist()
     return _listed(finding.head, examples)
-
-
-def _same(error: Exception) -> Exception:
-    return error
 
 
 def _finding_issues(
@@ -787,21 +761,9 @@ def _check_dates(master: _MasterFrame) -> Iterator[_Finding]:
     for column in DATE_COLUMNS:
         head = _date_message(column)
         invalid = _flags(master.unreadable[column])
-        # 예시는 입력 글자다 — 칸에서 무엇을 고칠지 보이게.
+        # 예시는 입력 글자다 — 칸에서 무엇을 고칠지 보이게(시간대 붙은 값도 그 글자).
         entered = master.raw_dates[column]
-        unreadable = _hit(
-            invalid, head, column, error=partial(_listed_values, head, entered, invalid)
-        )
-        fault = master.date_faults.get(column)
-        if fault is None:
-            yield unreadable
-            continue
-        # 한 날짜 dtype 으로 모이지 않은 칸 — 칸 결과는 그 칸의 찬 줄 모두다(어느 값 탓인지 칸
-        # 전체를 읽어서는 알 수 없다). 저장 함수는 예전 자리(읽기 예외는 못 읽은 값 검사 앞, 다듬기
-        # 예외는 뒤)에서 그 예외를 그대로 던진다.
-        error, rows = fault
-        broken = _hit(rows, head, column, error=partial(_same, error.error))
-        yield from (broken, unreadable) if error.early else (unreadable, broken)
+        yield _hit(invalid, head, column, error=partial(_listed_values, head, entered, invalid))
 
 
 def _check_qual_status_required(master: _MasterFrame) -> Iterator[_Finding]:
@@ -921,7 +883,7 @@ def _check_actual_reversed(master: _MasterFrame) -> Iterator[_Finding]:
 
 
 def _check_area_code(master: _MasterFrame) -> Iterator[_Finding]:
-    yield _hit(unknown_area_codes(master.data[AREA_CODE_COLUMN]), _AREA_CODE_CELL, AREA_CODE_COLUMN)
+    yield _hit(area_code_warning_rows(master.data), _AREA_CODE_CELL, AREA_CODE_COLUMN)
 
 
 def _check_case_variants(master: _MasterFrame) -> Iterator[_Finding]:
@@ -970,19 +932,33 @@ MASTER_RULES: tuple[MasterRule, ...] = (
     MasterRule("actual_reversed", _check_actual_reversed),  # 반입실적(`today` 줄 때만)
     MasterRule("area_code_unknown", _check_area_code, blocking=False),  # Area Code
     MasterRule("unit_case_variant", _check_case_variants, blocking=False),  # 설비명
-    MasterRule(
-        "module_ratio_default", _check_module_ratio, blocking=False, after_valid=True
-    ),  # 묶음 줄들의 환산비
+    MasterRule("module_ratio_default", _check_module_ratio, blocking=False),  # 묶음 줄들의 환산비
 )
+
+
+def area_code_warning_rows(equipment: pd.DataFrame) -> pd.Series:
+    """Area Code 가 Main·MI·부대 밖인 줄 — `equipment` 와 같은 색인의 참거짓.
+
+    칸 단위 결과(`area_code_unknown`)와 경고 문장(`area_code_warnings`)이 이 판정 하나를 본다.
+    검증 전 편집본도 받는다(칸이 없으면 모두 거짓). 설비명이 빈 줄은 저장이 조용히 빼므로 세지
+    않는다 — 저장되지 않을 줄을 「확인하세요」 라고 하지 않는다.
+    """
+    if AREA_CODE_COLUMN not in equipment.columns:
+        return pd.Series(False, index=equipment.index, dtype=bool)
+    unknown = unknown_area_codes(equipment[AREA_CODE_COLUMN]).to_numpy(dtype=bool)
+    if EQUIPMENT_ID_COLUMN in equipment.columns:
+        names = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+        unknown = unknown & _flags(names.notna() & names.ne("")).to_numpy(dtype=bool)
+    return pd.Series(unknown, index=equipment.index, dtype=bool)
 
 
 def area_code_warnings(equipment: pd.DataFrame) -> list[str]:
     """Area Code 가 Main·MI·부대 밖인 호기를 알리는 경고(저장은 막지 않는다). 검증 전 편집본도
     받는다 — 컬럼이 없거나 표가 비면 빈 목록이다. 칸 단위 결과(`equipment_master_issues` 의
-    `area_code_unknown`)와 같은 판정(`unknown_area_codes`)·같은 문구 조각이다."""
-    if equipment.empty or AREA_CODE_COLUMN not in equipment.columns:
+    `area_code_unknown`)와 같은 줄 판정(`area_code_warning_rows`)·같은 문구 조각이다."""
+    if equipment.empty:
         return []
-    unknown = unknown_area_codes(equipment[AREA_CODE_COLUMN]).to_numpy()
+    unknown = area_code_warning_rows(equipment).to_numpy(dtype=bool)
     if not unknown.any():
         return []
     rows = equipment.loc[unknown]
@@ -1398,11 +1374,12 @@ def _year_first_text(value: object) -> str | None:
 
 @dataclass(frozen=True)
 class _DateFault:
-    """날짜 칸이 한 날짜 dtype 으로 모이지 않았다(시간대가 있는 값과 없는 값이 섞임 등).
+    """날짜 칸이 한 날짜 dtype 으로 모이지 않았다(시간대가 서로 다른 값이 섞임 등).
 
-    `early` 는 읽기(`to_datetime`)에서 난 예외 — 못 읽은 값 검사보다 **앞**에 던진다. 아니면 읽은 뒤
-    날짜 다듬기(`dt.normalize`)에서 난 예외로, 못 읽은 값 검사 **뒤**에 던진다. 저장 함수는 그
-    예외를 그 자리에서 그대로 던진다(예전과 같은 예외 형).
+    `early` 는 읽기(`to_datetime`)에서 난 예외 — 비가동 일정(`_normalize_date`)은 못 읽은 값
+    검사보다 **앞**에 던진다. 아니면 읽은 뒤 날짜 다듬기(`dt.normalize`)에서 난 예외로, 못 읽은 값
+    검사 **뒤**에 던진다. 설비 마스터는 이 예외를 던지지 않고 시간대 붙은 값을 빼고 다시 읽는다
+    (`_read_master_dates`).
     """
 
     error: Exception
@@ -1433,6 +1410,39 @@ def _read_date(series: pd.Series) -> tuple[pd.Series, pd.Series, _DateFault | No
     except Exception as error:  # 그 칸 차례에 그대로 던진다(예전과 같은 예외 형)
         return not_dates, invalid, _DateFault(error, False)
     return normalized, invalid, None
+
+
+def _read_master_dates(entered: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """설비 마스터 날짜 칸을 읽는다 — (시간대 없는 날짜, 못 읽은 줄). 저장·칸 결과·칸 다듬기가
+    함께 쓴다.
+
+    계약 칸은 시간대 없는 날짜(DB 의 DATE)다. **시간대가 붙은 값(`…T00:00+09:00`)은 못 읽은
+    값**으로 보고 나머지 값만 칸으로 다시 읽는다. 그대로 읽으면 칸이 어긋난다 — 시간대 붙은 값이 칸
+    첫 값이면 pandas 가 칸 전체를 그 꼴로 읽어 멀쩡한 날짜가 못 읽은 값이 되고, 시간대가 서로 다르면
+    칸이 날짜 dtype 으로 모이지 않아 영어 pandas 예외(화면이 잡지 못하는 `AttributeError` 까지)로
+    멈추며, 한 칸이 모두 시간대 꼴이면 시간대 없는 칸과 견주다 멈추거나 그대로 통과한다. 시간대를
+    떼고 받지 않는다(그 날짜가 하루 밀릴 수 있다). 저장본은 시간대가 없으니 다시 읽는 리비전은 이
+    길에서 달라지지 않는다.
+    """
+    dates, invalid, fault = _read_date(entered)
+    if fault is None and not isinstance(dates.dtype, pd.DatetimeTZDtype):
+        return dates, invalid
+    zoned = pd.Series(
+        [_zoned_date(value) for value in entered.tolist()], index=entered.index, dtype=bool
+    )
+    dates, invalid, fault = _read_date(entered.mask(zoned))
+    if fault is None and not isinstance(dates.dtype, pd.DatetimeTZDtype):
+        return dates, invalid | zoned
+    # 시간대 붙은 값을 빼고도 한 dtype 으로 모이지 않는 칸 — 어느 값 탓인지 칸으로는 알 수 없어 찬
+    # 줄 모두를 못 읽은 값으로 본다.
+    filled = entered.notna() & entered.astype("string").str.strip().ne("")
+    return pd.Series(pd.NaT, index=entered.index, dtype="datetime64[ns]"), _flags(filled)
+
+
+def _zoned_date(value: object) -> bool:
+    """값 하나를 혼자 읽으면 시간대 꼴 날짜가 되거나 날짜로 모이지 않는가."""
+    dates, _, fault = _read_date(pd.Series([value], dtype="object"))
+    return fault is not None or isinstance(dates.dtype, pd.DatetimeTZDtype)
 
 
 def _normalize_date(series: pd.Series, label: str) -> pd.Series:
