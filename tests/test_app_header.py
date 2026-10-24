@@ -10,6 +10,8 @@ from streamlit.string_util import clean_text
 
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
+    PAGE_TABS_SELECTOR,
+    PAGE_TITLE_SELECTOR,
     SHELL_STYLE,
     STATUS_SLOT_SELECTOR,
     _header_css,
@@ -19,8 +21,9 @@ from capa_simulation.components.app_header import (
     source_type_label,
 )
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
-from capa_simulation.components.page_header import STATUS_SLOT_KEY
+from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
 from capa_simulation.design import theme
+from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
     APP_CONTACT_EMAIL,
@@ -213,15 +216,27 @@ def test_inline_code_in_body_text_is_close_to_the_body_size() -> None:
     assert '[data-testid="stCaptionContainer"] :not(pre) > code' in block
 
 
+def _media_block(css: str, media: str) -> str:
+    # 안쪽 중괄호 한 겹(`@page {}`·규칙들)까지만 품는 덩어리다.
+    blocks = re.findall(rf"@media {media} \{{(?:[^{{}}]*\{{[^{{}}]*\}})*[^{{}}]*\}}", css)
+    assert len(blocks) == 1, blocks
+    return str(blocks[0])
+
+
 def _split_shell_style() -> tuple[str, str]:
-    """껍데기 스타일을 `@media print` 덩어리와 그 밖(화면에도 걸리는 규칙)으로 나눈다."""
+    """껍데기 스타일을 `@media print` 덩어리와 그 밖(늘 걸리는 규칙)으로 나눈다. 화면 덩어리
+    (`@media screen`)는 어느 쪽에도 넣지 않는다 — `_screen_block` 이 따로 본다."""
     body = re.fullmatch(r"<style>(.*)</style>", SHELL_STYLE, re.S)
     assert body is not None
     css = body.group(1)
-    # 안쪽 중괄호 한 겹(`@page {}`·규칙들)까지만 품는 덩어리다.
-    blocks = re.findall(r"@media print \{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", css)
-    assert len(blocks) == 1, blocks
-    return css.replace(blocks[0], ""), blocks[0]
+    printed = _media_block(css, "print")
+    return css.replace(printed, "").replace(_media_block(css, "screen"), ""), printed
+
+
+def _screen_block() -> str:
+    body = re.fullmatch(r"<style>(.*)</style>", SHELL_STYLE, re.S)
+    assert body is not None
+    return _media_block(body.group(1), "screen")
 
 
 def test_the_streamlit_main_menu_and_deploy_are_hidden_and_nothing_else() -> None:
@@ -284,12 +299,32 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
         '[data-testid="stSidebar"]',
         '[data-testid="stHeader"]',
         STATUS_SLOT_SELECTOR,
+        PAGE_TABS_SELECTOR,
         "#capa-intro-host",
     }
     # 본문은 종이 폭을 다 쓴다.
     assert re.search(
         r'\[data-testid="stMainBlockContainer"\] \{\s*max-width: none !important;\s*\}', block
     )
+
+
+def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> None:
+    """화면 덩어리는 둘뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
+    밑에 붙고 z-index 는 펼침 목록·팝업보다 낮다. 큰 제목은 `display: none` 이 아니라 sr-only 라
+    읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다)."""
+    block = _screen_block()
+    rules = re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
+    assert {selector.strip() for selector, _ in rules} == {PAGE_TABS_SELECTOR, PAGE_TITLE_SELECTOR}
+    by_selector = {selector.strip(): body for selector, body in rules}
+    strip = by_selector[PAGE_TABS_SELECTOR]
+    assert "position: sticky;" in strip and "top: 3.75rem;" in strip
+    z_index = re.search(r"z-index: (\d+);", strip)
+    assert z_index is not None and int(z_index.group(1)) < 1000
+    title = by_selector[PAGE_TITLE_SELECTOR]
+    assert "display" not in title
+    assert "clip-path: inset(50%);" in title and "position: absolute !important;" in title
+    assert PAGE_TITLE_SELECTOR.endswith(f".st-key-{PAGE_TITLE_KEY})")
+    assert PAGE_TABS_SELECTOR == f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 
 
 def test_print_keeps_screen_colours_and_leaves_orientation_to_the_browser() -> None:

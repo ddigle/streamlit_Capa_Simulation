@@ -57,6 +57,7 @@ from capa_simulation.navigation import (
     PROCESS_CAPA_DETAIL,
     SPACE_STATUS,
 )
+from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
@@ -528,7 +529,8 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     _shell: AppTest, tmp_path: Path
 ) -> None:
     """세션이 가정(셋업 실무)이어도 HOME 칸으로 들어온 공정 Capa 상세는 공식이고 줄이 잠긴다. 같은
-    화면에서 다시 돌아도(◀▶ 와 같은 회차) 공식이고, 사이드바로 새로 들어오면 세션을 따른다."""
+    화면에서 다시 돌아도(◀▶ 와 같은 회차) 공식이고, 그 화면 탭이 열린 채 다른 화면에 갔다 와도 이어
+    보아 공식이다(2026-10-24 페이지 탭). 탭을 닫고 새로 들어오면 세션을 따른다."""
     clone = _clone(_repository(tmp_path))
     app = _ok(_shell.run())
     _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
@@ -550,6 +552,16 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
 
     _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+    _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
+    field = _field(app)
+    assert field is not None and field.disabled and field.label.endswith("(고정)")
+    assert app.session_state[PROCESS_DETAIL_EQUIPMENT_BASIS_KEY] == EQUIPMENT_BASIS_OFFICIAL
+
+    _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+    # 공정 Capa 상세 탭을 닫았다(`page_tabs._on_close` 가 남기는 목록).
+    app.session_state[PAGE_TABS_OPEN_KEY] = tuple(
+        path for path in app.session_state[PAGE_TABS_OPEN_KEY] if path != PROCESS_CAPA_DETAIL.path
+    )
     _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
     field = _field(app)
     assert field is not None and not field.disabled and field.label == "셋업 실무 · r1"

@@ -8,6 +8,12 @@
 
 `(구현중)` 은 제목 문자열에 섞어 두지 않고 배지로 뽑는다. 사이드바 라벨은 여전히
 `navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다.
+
+**큰 제목은 화면에서 숨고 인쇄·읽기 도구에 남는다**(2026-10-24 사용자 결정). 머리 띠 아래 화면 탭
+줄(`components/page_tabs.py`)이 지금 화면의 이름을 말한다. 제목은 그대로 `st.title` 로 내보내되 키
+컨테이너(`PAGE_TITLE_KEY`)에 담고, 껍데기 스타일(`app_header.SHELL_STYLE`)이 화면에서만 그 칸을
+시각적으로 숨긴다(sr-only — `display: none` 이 아니라 h1 이 읽기 도구에 남는다). 인쇄에는 보인다.
+배지·설명 줄은 화면에 그대로 둔다.
 """
 
 from __future__ import annotations
@@ -22,6 +28,9 @@ from capa_simulation.navigation import IMPLEMENTING_SUFFIX
 # 진행 표시 자리(`render_page_header_with_status`)의 컨테이너 키. Streamlit 은 이것을 `st-key-<키>`
 # 클래스로 달고, 머리 띠 CSS(`app_header`)가 그 자리를 화면 맨 위 띠 안에 고정한다.
 STATUS_SLOT_KEY = "page_header_status"
+# 큰 제목(`st.title`)을 담는 컨테이너의 키. 껍데기 스타일이 이 키로 화면에서만 제목을 숨긴다 — CSS
+# 로 고르는 컨테이너 key 는 계약이다(AGENTS 9장). 한 회차에 한 번만 그린다.
+PAGE_TITLE_KEY = "page_header_title"
 # 제목 칸과 그 끝 칸(`trailing` — HOME 의 주요 Case 칩 셋)을 든 컨테이너의 키. 두 칸의 폭은 비율이
 # 아니라 글자에서 나온다(`_title_row_style`).
 TITLE_ROW_KEY = "page_header_title_row"
@@ -64,9 +73,11 @@ def render_page_header(
     짧아지고 미구현 여부가 색으로 먼저 읽힌다. `show_status=False` 면 배지를 그리지 않는다 —
     `title` 은 그대로 사이드바 라벨과 같게 넘긴다(두 제목이 같다는 계약은 표기 유무와 무관하다).
     Space 현황이 그렇다(2026-10-01 사용자 결정 — 본문은 배치도가 쓸 자리다).
+
+    제목은 화면에서 숨고(탭 줄이 이름을 말한다) 인쇄·읽기 도구에 남는다(모듈 설명).
     """
     heading, status_badge = _split_status_suffix(title)
-    st.title(heading)
+    _render_title(heading)
     _render_marks(status_badge if show_status else None, badges, description)
 
 
@@ -96,16 +107,19 @@ def render_page_header_with_status(
     본문은 한 픽셀도 움직이지 않는다. 고정 배치된 칸은 flex 항목이 아니라 요소 간격도 먹지 않는다.
     제목은 다른 페이지와 같은 `st.title` 이다 — 진행 자리가 본문 흐름 밖이라 그것 때문에 제목 줄을
     나누지는 않는다(나누는 것은 `trailing` 뿐이다).
+
+    제목은 화면에서 숨고(탭 줄이 이름을 말한다) 인쇄·읽기 도구에 남는다 — 제목 줄에서는 끝 칸만
+    오른쪽 끝에 보인다(모듈 설명).
     """
     heading, status_badge = _split_status_suffix(title)
     if trailing is None:
-        st.title(heading)
+        _render_title(heading)
     else:
         with st.container(key=TITLE_ROW_KEY):
             st.html(_title_row_style())
             title_column, trailing_column = st.columns(2, vertical_alignment="center")
             with title_column:
-                st.title(heading)
+                _render_title(heading)
             with trailing_column:
                 trailing()
     with st.container(key=STATUS_SLOT_KEY):
@@ -135,6 +149,12 @@ def _title_row_style() -> str:
         f"{columns}:last-child {{ flex: 0 1 auto; width: auto; min-width: 0; margin-left: auto; }}"
         "</style>"
     )
+
+
+def _render_title(heading: str) -> None:
+    """큰 제목. 키 칸 안에 담아 화면에서만 숨긴다(`app_header.SHELL_STYLE`, 인쇄에는 보인다)."""
+    with st.container(key=PAGE_TITLE_KEY):
+        st.title(heading)
 
 
 def _render_marks(status_badge: str | None, badges: str | None, description: str | None) -> None:

@@ -85,8 +85,9 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
-from capa_simulation.components.page_header import STATUS_SLOT_KEY
+from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
 from capa_simulation.design import tokens
+from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import (
     ActiveScenarioLabel,
     active_scenario_label,
@@ -119,6 +120,11 @@ EQUIPMENT_HEADER_LABEL_KEY = "app_header_equipment_label_v1"
 # 컨테이너(`st-key-<키>`)를 `stLayoutWrapper` 로 한 번 감싸고, 본문 세로 블록의 flex 항목은 그
 # 감싼 칸이다 — 안쪽 블록만 고정하면 감싼 칸이 흐름에 남아 요소 간격 한 칸을 먹는다(1.63 확인).
 STATUS_SLOT_SELECTOR = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_SLOT_KEY})'
+# 큰 제목 칸(`page_header.PAGE_TITLE_KEY`)도 같은 꼴로 감싼 칸이 본문 세로 블록의 flex 항목이다.
+PAGE_TITLE_SELECTOR = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{PAGE_TITLE_KEY})'
+# 화면 탭 줄(`components/page_tabs.py`)의 요소 칸. 컴포넌트는 컨테이너가 아니라 요소라 감싼 칸 없이
+# key 클래스를 단 요소 칸(`stElementContainer`)이 곧 flex 항목이다(1.63 브라우저 확인).
+PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
 #
@@ -156,7 +162,19 @@ STATUS_SLOT_SELECTOR = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_S
 #   `data-testid` 는 없다. 테두리 상자(`st.container(border=True)`)는 테두리가 emotion 스타일에만
 #   있고 DOM 에 표지가 없어 `data-testid` 로 고를 수 없으므로 걸지 않는다.
 # - 용지 방향은 브라우저 인쇄 창에 맡긴다(`@page` 에 `size` 를 두지 않는다). 여백만 정한다.
-SHELL_STYLE = """<style>
+# - 화면 탭 줄(`PAGE_TABS_SELECTOR`)도 뺀다 — 화면을 옮기는 단추라 종이에는 쓸모가 없다. 대신
+#   화면에서 숨긴 큰 제목이 인쇄에는 보인다(아래 화면 덩어리가 `@media screen` 안이다).
+#
+# 화면 덩어리(`@media screen`)는 둘이다(2026-10-24 사용자 결정 — 페이지 탭).
+# - 화면 탭 줄은 머리 띠 바로 밑에 붙어 본문과 함께 스크롤되지 않는다(`position: sticky` — 스크롤
+#   칸은 `stMain` 이고 띠는 그 밖이라 띠 높이 3.75rem 아래에 선다). z-index 는 본문 위·머리 띠
+#   (999990)·진행 막대(999991) 아래이고, 펼침 목록·팝업(baseweb 층)보다도 아래인 100 이다 — 높이면
+#   위로 펼친 목록이 탭 줄 밑에 깔린다. 바탕은 컴포넌트 안 `nav` 가 칠한다.
+# - 큰 제목 칸(`PAGE_TITLE_SELECTOR`)은 화면에서만 시각적으로 숨긴다(sr-only — 1px 상자 밖을
+#   자른다). `display: none` 이 아니라 h1 이 읽기 도구에 남는다. 흐름에서 빠져 요소 간격도 먹지
+#   않는다.
+SHELL_STYLE = (
+    """<style>
 [data-testid="stMainMenu"],
 [data-testid="stAppDeployButton"] {
   display: none !important;
@@ -164,11 +182,28 @@ SHELL_STYLE = """<style>
 [data-testid="stHeaderActionElements"] > a[href^="#"] {
   display: none !important;
 }
+@media screen {
+  __PAGE_TABS__ {
+    position: sticky;
+    top: 3.75rem;
+    z-index: 100;
+  }
+  __PAGE_TITLE__ {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 @media print {
   @page { margin: 10mm; }
   [data-testid="stSidebar"],
   [data-testid="stHeader"],
   __STATUS_SLOT__,
+  __PAGE_TABS__,
   #capa-intro-host {
     display: none !important;
   }
@@ -187,6 +222,9 @@ SHELL_STYLE = """<style>
   }
 }
 </style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
+    .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
+    .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
+)
 
 # CSS 는 중괄호가 많아 f-string 으로 두면 전부 이스케이프해야 한다. 색·글자 자리에
 # 센티넬을 두고 **그릴 때마다** 치환한다.

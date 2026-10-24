@@ -1,7 +1,7 @@
 .capa-tabs {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
   min-width: 0;
   padding-top: 0.25rem;
   background: var(--st-background-color);
@@ -170,8 +170,16 @@
   display: none;
 }
 
-.capa-tabs-item:not(.is-pinned):not(.is-active):not(:hover):not(:focus-within) .capa-tabs-pin {
+.capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin {
+  position: absolute;
+  right: 1.75rem;
+  background: color-mix(in srgb, var(--st-text-color) 6%, var(--st-background-color));
   opacity: 0;
+}
+
+.capa-tabs-item:not(.is-pinned):not(.is-active):hover .capa-tabs-pin,
+.capa-tabs-item:not(.is-pinned):not(.is-active):focus-within .capa-tabs-pin {
+  opacity: 1;
 }
 
 .capa-tabs-item.is-pinned .capa-tabs-pin {
@@ -196,30 +204,20 @@
 }
 
 .capa-tabs-notice {
-  flex: 0 1 auto;
-  max-width: 55%;
-  margin: 0 0 0.25rem;
-  padding: 0.25rem 0.5rem;
-  overflow: hidden;
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  z-index: 1;
+  max-width: min(36rem, 100%);
+  margin: 0;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--capa-tabs-pending) 45%, transparent);
   border-radius: 0.375rem;
-  background: color-mix(in srgb, var(--capa-tabs-pending) 16%, transparent);
+  background: var(--st-background-color);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--st-text-color) 14%, transparent);
   font-size: 0.8125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .capa-tabs-notice[hidden] {
   display: none;
-}
-
-@media (max-width: 639.98px) {
-  .capa-tabs {
-    flex-wrap: wrap;
-  }
-
-  .capa-tabs-notice {
-    flex-basis: 100%;
-    max-width: none;
-    white-space: normal;
-  }
 }

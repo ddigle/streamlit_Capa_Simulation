@@ -185,8 +185,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app.py` — 유일한 실행 진입점. 공식 시나리오 부트스트랩·공통 사이드바·조회기간을 세우고 페이지를 돌린다.
   - 차례 「입장 화면(`intro_overlay.py`) → 껍데기 스타일 → 서체 → 툴바 → 부트스트랩(최신 공식 리비전 활성화) →
-    자동 갱신 예약 → 요약(`intro_summary.py`) → 사이드바 → 페이지」는 `test_app_navigation.py` 가 지킨다. 페이지가
-    `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘 `static/icons/capa_mark.svg` 는 `test_settings.py` 가 본다.
+    자동 갱신 예약 → 요약(`intro_summary.py`) → 사이드바 → 조건 팝업 칸 → 화면 탭 줄 → 페이지」는 `test_app_navigation.py`·
+    `test_page_tabs.py` 가 지킨다. 페이지가 `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘
+    `static/icons/capa_mark.svg` 는 `test_settings.py` 가 본다.
+  - 화면 탭 줄(`components/page_tabs.py`, 상태 `page_tabs_state.py`)의 훅은 세 자리다 — (a) `st.navigation()` 바로 뒤
+    이동 대기·상한 처리(`route_page_tabs`), (b) 직전 화면 주소를 바꾼 바로 뒤 지금 화면을 목록에 더함
+    (`note_current_page`), (c) 조건 팝업 칸 바로 뒤 탭 줄 그리기(`render_page_tabs`). 점 판정(`page_unsaved_marks`)은
+    한 번 내어 테마 표지와 탭 줄이 함께 쓴다.
   - 사이드바는 `navigation.py` 선언을 그리기만 한다(CSS `sidebar_style.py`, 상자·카드 `sidebar_status.py`). 순번 고정 —
     그룹 상자 → `Support`·앱 카드(`app_credits.py`, `apply_deploy_package.py` 가 쓴 `.deploy/applied.json`) → 조회 조건.
   - 조건 패널(`condition_field.py`)의 시나리오(`scenario_status.py`)·조회기간(`period_field.py`)·설비 시나리오
@@ -661,9 +666,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `ShorteningOrigin`(그 공정을 보는 동안만)·`shortening_band_text` 를 낸다. ◀▶ 차례
     (`process_steps`)와 그 콜백(`step_to_process` — 공정과 그 공정의 첫 미달 달)도 여기다.
   - 설비 시나리오 **방문 기준**(`PROCESS_DETAIL_EQUIPMENT_BASIS_KEY`)도 여기다. HOME 칸으로 들어온 방문은 `"official"` 이고
-    출처 띠와 달리 ◀▶ 로 공정을 넘겨도 그 방문 동안 남는다. 새 방문·다른 길(사이드바·카드·주소)이면 걷어 세션 설비
-    시나리오를 따른다. 필요 단축 일정 카드 링크의 `eq` 는 그 카드가 본 설비 시나리오 한 마디(표시용)이고, 이 화면 기준과
+    출처 띠와 달리 ◀▶ 로 공정을 넘겨도 그 방문 동안 남는다. 새 방문(탭을 닫았다 다시 연 것 포함 — 아래)·다른 길(카드·
+    주소)이면 걷어 세션 설비 시나리오를 따른다. 필요 단축 일정 카드 링크의 `eq` 는 그 카드가 본 설비 시나리오 한 마디(표시용)이고, 이 화면 기준과
     다를 때만 출처 띠 끝에 적는다(`equipment_band_tail`).
+  - 「새 방문」 판정(`_continues_this_page`)은 **이미 연 화면 탭으로 다시 들어온 회차를 이어 봄으로 본다**
+    (`page_tabs_state.reentered_open_tab`, 2026-10-24) — 탭을 오가도 출처 띠·가로 시작 달·설비 방문 기준이 남는다.
+    탭을 닫았다 다시 열면 새 방문이다.
 - `src/capa_simulation/page_tabs_state.py` — 머리 띠 아래 화면 탭 줄의 상태다(2026-10-24 사용자 결정). 이 접속에서 연 탭
   (`PageSpec.path`, 보이는 차례)·고정한 탭·이동 대기 칸·「이미 연 탭으로 들어옴」 표지(`reentered_open_tab`)를 세션에 두고,
   열기(끝에 붙임)·닫기(지금 탭이면 오른쪽, 없으면 왼쪽 이웃)·고정(고정 탭은 왼쪽, 닫기 없음, 마지막 하나는 닫지 않음)·
@@ -942,7 +950,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 프래그먼트만 도는 회차는 세션(`_capa_theme_mode`)의 직전 전체 회차 테마를 잇는다 — 프래그먼트 본문에서
     `begin_run()` 을 부르지 않는다(`tests/test_shortening_view_fragment.py`).
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·설명·상태 배지다(상태 접미는 사이드바
-  라벨과 같은 문자열). `render_page_header_with_status` 는 진행 표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
+  라벨과 같은 문자열). **큰 제목은 키 칸(`PAGE_TITLE_KEY`)에 담아 화면에서만 sr-only 로 숨기고**(화면 탭 줄이 이름을
+  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지·설명 줄은 그대로다. `render_page_header_with_status` 는 진행
+  표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. `trailing` 을 주면 제목 줄 끝 칸에 그것을
   그린다(HOME 주요 Case 칩) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
   비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS) — 한 줄에 안 들면 끝 칸이 통째로 제목 밑
@@ -952,6 +962,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
   컴포넌트」). data 는 세션 목록·`PageSpec` 상수뿐이고 DB 를 읽지 않는다. 트리거 셋(`select`·`close`·`pin`)의 콜백은 목록 칸·
   이동 대기 칸만 적는다. 탭 이름은 사이드바 라벨에서 「(구현중)」만 뗀 글, 아이콘은 사이드바 Material 아이콘이다.
+  - 점(`page_unsaved_marks`)은 세션만 읽는다 — 붙여넣기 대기·설비 편집본(가용설비·Space 두 탭)·Past Data 초안·시나리오
+    관리 표 초안은 어느 화면에서나, 편집표의 적용 전 편집은 지금 탭에만 찍는다. 지금 화면의 편집표 편집이 있으면 다른 탭
+    누름·지금 탭 × 에서 `confirm` 으로 묻는다(`leave_notice`). 사이드바 링크·뒤로가기에는 묻지 않는다. 시나리오 미저장·
+    Cut-off 초안·Qual 계산기는 점 대상이 아니다. 테마 단추의 「저장 안 함」 표지도 이 판정 하나를 쓴다.
+  - 상한(10개)에 걸린 이동은 `route_page_tabs` 가 직전 화면으로 되돌리고 HOME 칸 전달 칸을 버린 뒤 탭 줄 아래에 알린다.
+    탭 데이터에는 2단계(떠 있는 창) 대비로 화면 주소(`href`)를 싣는다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
@@ -1040,7 +1056,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(Space 는 「공식 vN
     (고정)」)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
-    보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다.
+    보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 둘이다 — 화면
+    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래)와 큰 제목 칸 sr-only
+    (`PAGE_TITLE_SELECTOR`). 인쇄에는 제목이 보인다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
   - 회차마다 소켓으로 다시 가는 스타일이라 CSS 안에 주석을 두지 않는다 — 규칙 설명은 그 조각 바로 위 파이썬 주석이다
     (9장 「스크립트와 컴포넌트」).
@@ -1083,7 +1101,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 화면이 스스로 적용한 편집은 `mark_own_change` 로 적어 그 적용이 건드린 편집표만 비운다. 편집 되돌리기는
     `components/scenario_status.py` 의 팝업이 맡는다.
   - `register_pending_edits` 로 화면이 제 편집표·붙여넣기 대기를 적고 사이드바가 `pending_edit_labels` 로 앞 회차
-    목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`).
+    목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`). 화면 탭 줄은 같은 규칙의
+    화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫)으로 점과 떠날 때 물을 것을 정한다.
 - `src/capa_simulation/components/roadmap_panel.py` — 업무 활용 목적·부서별 Action Item·로드맵을 기본 닫힌
   상자로 그린다(지금은 실행 관리 머리).
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
@@ -1119,7 +1138,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     맞추고(`reconcile`), 두 줄이 골라지거나 순서 칸이 바뀌면 초안을 먼저 적고 세대를 올려 새 위젯으로 세운다 — 본문
     `st.rerun()` 이 없다. 위젯 key 에 행 차례 지문을 실어 차례가 바뀌면 옛 위치 편집이 다른 행에 붙지 않는다(9장).
   - 순서 칸 숫자는 그 자리로 끼워 넣기(`move_row`)라 칸은 늘 1..n 이다. 단추 콜백은 `peek_table`(쓰지 않는 접기)로
-    누른 회차의 편집까지 읽는다.
+    누른 회차의 편집까지 읽는다. `table_has_edits` 는 초안에 이름·순서 편집이 남았는가(세션만 — 화면 탭 줄의 점)다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
 - `src/capa_simulation/components/status_metric.py` — 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric
@@ -1884,6 +1903,12 @@ RQ_MODULE
       (`wrote=False` — dirty 도 없다). 새 쓰기는 모두 `_write_transaction(outcome)` 을 지난다.
     - 새 표 여섯에는 **외래 키가 없다** — DuckDB 1.5.5 가 FK 부모의 한 트랜잭션 삭제·UNIQUE 칸 UPDATE(이름)를 막아서다.
       소유·정합은 저장소가 같은 트랜잭션에서 지킨다(`docs/data_model.md`). `copy_database` 차례에 더한 것이 없다.
+33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
+    `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME 하나로 돌아간다. 탭을 누르는 것은
+    사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
+    (편집표의 적용 전 편집·폼 초안·팝업·접힌 상자·스크롤은 처음으로 간다). 탭을 닫아도 그 화면의 보기 조건·세션 편집은
+    지우지 않는다. 탭 줄은 23번처럼 DB 를 읽지 않는다 — `tests/test_page_tabs.py` 가 그리는 동안 저장소·연결 호출 0 을
+    지킨다. 탭 목록은 `scenario_activation._STALE_UI_KEYS` 에 넣지 않는다(무엇을 보고 있는지라 시나리오를 바꿔도 남는다).
 
 ## 6. 핵심 계산 규칙
 
@@ -2563,7 +2588,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   같은 까닭으로 `navigation.run()` **앞**에서 보낸다(`components/intro_summary.py`).
 - 페이지 전용 위젯에는 고유 `key`를 부여한다.
 - 페이지 이동 후에도 유지해야 하는 위젯은 현재 Streamlit 버전의
-  `persist_state="session"` 패턴을 따른다.
+  `persist_state="session"` 패턴을 따른다. 이동 길은 사이드바와 화면 탭 줄 둘이고 위젯 정리는 같다(탭 줄도
+  `st.switch_page` 다). **보기 조건 위젯에는 `"page"` 를 쓰지 않는다** — 하위 보기 전환(산출 결과 「표시 방식」)도
+  보기 조건이라 탭으로 다른 화면에 갔다 오면 돌아가 같은 카드의 다른 칸과 어긋난다. 남길 탭 묶음은
+  `stateful_tabs` 로 만든다(시나리오 관리 세 탭 — 폼 입력을 지키려 세 탭을 다 그린다).
 - **같은 key 의 위젯을 둘 이상의 페이지가 그리면 `persist_state` 만으로는 부족하다.** 위젯 id 에
   페이지가 들어가 넘어온 첫 회차의 위젯이 기본값으로 선다. 위젯을 만들기 전에
   `shared_widget_state.carry_shared_widget_value` 를 부른다. 이것이 위 「`app.py` 에서만」 규칙의 예외다 — 판정 기준
@@ -2623,7 +2651,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   살아남으면 다음 화면이 이미 체크된 채로 뜬다. 초안이 사라지는 회차에는 그 초안에서 나온 위젯 아닌
   칸(미리보기)도 함께 거둔다 — 설비 RawData 입력은 페이지에 새로 들어온 회차(`page_bootstrap.page_visit`,
   `app.py` 가 페이지가 바뀐 회차에 올린다)에 미리보기를 버린다. 「입력 칸이 세션에 없으면 거둔다」로
-  가르지 않는다 — 같은 페이지의 `st.rerun()` 도 서버에서는 칸이 비지만 브라우저가 입력을 다시 보낸다.
+  가르지 않는다 — 같은 페이지의 `st.rerun()` 도 서버에서는 칸이 비지만 브라우저가 입력을 다시 보낸다. 화면 탭 줄로
+  오가는 왕복에도 초안은 남기지 않는다(같은 규칙 — 제출 전 폼 글은 서버에 없다).
 - 탭은 `components/tab_state.py` 의 `stateful_tabs` 가 열린 탭을 위젯 아닌 칸에 적어 두고
   위젯 값이 사라졌을 때만 되돌린다. **`st.tabs` 의 `default` 인자는 쓰지 않는다** — 그 값이
   위젯 id 계산에 들어가 탭을 옮길 때마다 위젯이 새로 만들어지고 선택이 또 사라진다.
@@ -2853,8 +2882,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   주소를 통째로 바꾸므로 지금 테마 인자를 함께 싣는다. `st.switch_page` 는 위젯 콜백이 아니라 회차 본문에서 부른다 — 1.63 은
   끝에 `st.empty()` 를 그려, 프래그먼트 안 위젯의 콜백에서 부르면 「A fragment rerun was triggered with a callback that
   displays one or more elements」 경고를 남긴다. 콜백은 대기 칸만 적고 프래그먼트 본문 첫 줄이 옮긴다
-  (`process_detail_state.switch_to_queued_process_detail`). AppTest 에는 등록된 페이지가 없어 `st.switch_page` 대역으로
-  시험한다(이동이 콜백 밖인지는 `tests/fragment_browser.py` 로 본다).
+  (`process_detail_state.switch_to_queued_process_detail`). 화면 탭 줄도 같다 — 트리거 콜백은 목록·대기 칸만 적고
+  `app.py` 의 `st.navigation()` 바로 뒤 본문이 옮긴다(`page_tabs_state.switch_to_queued_tab`). AppTest 에는 등록된 페이지가
+  없어 `st.switch_page` 대역으로 시험한다(이동이 콜백 밖인지는 `tests/fragment_browser.py` 로 본다). `app.py` 를 연
+  AppTest 는 진짜로 옮기지만 회차 안의 이동을 다음 `run()` 의 화면으로 기억하지 않는다(`tests/test_page_tabs.py`).
 
 ### 편집표와 내려받기
 
@@ -2924,6 +2955,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 스크립트를 싣는 칸은 `st.iframe` 이다 — `st.html` 은 스크립트를 실행하지 않고 `components.v1.html` 은 회차마다 폐기
   예고를 찍는다. 헤더 툴바·사이드바 머리칸에 단추를 다는 스크립트는 iframe 을 따로 두지 않고 테마 버튼 iframe 의
   `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다).
+- **모든 화면에 걸친 컴포넌트(화면 탭 줄)는 `app.py` 에서 고정 key 로, 앞에 조건부 칸 없이 그린다.**
+  `navigation.run()` 밖이라 요소 id 에 주 스크립트 해시가 들어가 화면을 옮겨도 같은 요소다 — 페이지 안에서 그리면
+  화면마다 다시 마운트된다. 그 앞 본문에 생겼다 사라지는 칸(스키마 경고 등)을 두면 순번이 밀려 다시 마운트된다
+  (`tests/test_page_tabs.py` 자리 시험). **프래그먼트로 감싸지 않는다** — 프래그먼트 안의 트리거는 돌고 있는 앱 전체
+  실행을 끊지 못해 무거운 회차 중에 누른 탭이 그 계산을 기다린다. 탭 패널이 없는 이동 목록에는 탭 역할(ARIA)을 쓰지
+  않는다 — `check_deploy_screens` 의 `get_by_role("tab")` 이 그림자 DOM 을 뚫어 본문 탭보다 먼저 잡는다.
 - **팝업(`st.dialog`) 안에 마운트하는 Components v2 컴포넌트는 그림자 DOM 에 가두지 않는다**(`isolate_styles=False`) —
   팝업의 포커스 순서가 그림자 DOM 안을 보지 못해 Tab 이 닫기 단추로 가 고친 값을 버린다. 서식은 고유 클래스 접두어로만
   건다(월 입력 컴포넌트는 위 「월 입력」 항목).
@@ -3212,7 +3249,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 5. 페이지 왕복 후 입력값 유지 확인
 6. **시나리오를 불러온 뒤에도 보던 탭과 조회 조건이 그대로인지 확인** — 사이드바의
    `st.rerun()` 이 페이지 본문을 건너뛰므로 `persist_state` 가 없는 위젯은 값을 잃는다
-7. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
+7. **새 보기 위젯은 다른 화면에 갔다가 화면 탭으로 돌아와도 남는가**(`persist_state="session"`) — 확인 체크·초안은
+   남기지 않는다
+8. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
 
 ## 13. 문서 우선순위
 
