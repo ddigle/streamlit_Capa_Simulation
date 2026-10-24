@@ -51,6 +51,7 @@ from capa_simulation.components.scenario_status import (
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
+from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
 from capa_simulation.design import theme
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
@@ -160,6 +161,8 @@ CELL_SELECT_CHART_KEYS = (
     *HOME_CELL_CHART_KEYS,
     PROCESS_DETAIL_CANVAS_CHART_KEY,
     GAP_SHEET_CHART_KEY,
+    CONSTRAINT_CHART_KEY,
+    CONSTRAINT_SHEET_KEY,
 )
 
 # 이번 실행이 끝까지 돌았는지의 표지(`sidebar_status.begin_app_run`). **메시지를 보내는 첫
@@ -194,7 +197,8 @@ render_intro_overlay()
 # 한다. `Print` 는 감춘 메뉴의 인쇄를 대신한다. 사이드바
 # 머리칸의 앱 이름 라벨도 같은 iframe 이 세운다 — 원래 화면에서 공식버전 요약(Summary)으로
 # 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 그림(HOME 두
-# 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트 — `CELL_SELECT_CHART_KEYS`) 위에서 시작한
+# 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트·제약 시뮬레이션 그래프와 계산표 —
+# `CELL_SELECT_CHART_KEYS`) 위에서 시작한
 # 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의

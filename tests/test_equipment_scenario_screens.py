@@ -769,6 +769,122 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     assert not any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
 
 
+def test_a_home_visit_judges_the_constraint_link_by_the_session_snapshot(
+    _shell: AppTest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HOME 칸 방문(공식 잠금)이고 세션이 가정 설비 시나리오면 「이 공정 제약 시뮬레이션」 판정만
+    세션 스냅샷으로 한 번 더 낸다 — 제약 시뮬레이션은 늘 사이드바 설비 시나리오다(D6·R-14). 풍선이
+    그 사실을 말한다. 사이드바로 들어온 방문은 화면의 판정을 그대로 쓴다(한 번)."""
+    import streamlit as st
+
+    import capa_simulation.services.process_equipment_timeline as timeline
+    from capa_simulation.navigation import CONSTRAINT_SIMULATION
+
+    clone = _clone(_repository(tmp_path))
+    calls: list[str] = []
+    original = timeline.dynamic_readiness
+
+    def recording(
+        equipment: pd.DataFrame | None,
+        baseline: pd.DataFrame | None,
+        cutoff: pd.DataFrame | None,
+        *,
+        process: str,
+    ) -> Any:
+        calls.append(process)
+        return original(equipment, baseline, cutoff, process=process)
+
+    links: list[dict[str, Any]] = []
+    original_link = st.page_link
+
+    def record(page: Any, **kwargs: Any) -> Any:
+        links.append({"page": str(getattr(page, "_page", page)), **kwargs})
+        return original_link(page, **kwargs)
+
+    monkeypatch.setattr(timeline, "dynamic_readiness", recording)
+    monkeypatch.setattr(st, "page_link", record)
+    app = _ok(_shell.run())
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO_Chip_Attach", month=202601
+    )
+    calls.clear()
+    links.clear()
+    _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
+    assert calls == ["DEMO_Chip_Attach", "DEMO_Chip_Attach"]
+    constraint = [link for link in links if link["page"].endswith(CONSTRAINT_SIMULATION.path)]
+    assert constraint
+    assert "사이드바 설비 시나리오 기준으로 엽니다" in str(constraint[-1]["help"])
+
+    # 탭을 닫고 사이드바로 새로 들어오면(세션 기준) 화면의 판정 하나뿐이다.
+    _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+    app.session_state[PAGE_TABS_OPEN_KEY] = tuple(
+        path for path in app.session_state[PAGE_TABS_OPEN_KEY] if path != PROCESS_CAPA_DETAIL.path
+    )
+    calls.clear()
+    _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
+    assert calls == ["DEMO_Chip_Attach"]
+
+
+@pytest.mark.parametrize(
+    ("official_ready", "session_ready"),
+    [(True, False), (False, True)],
+)
+def test_a_home_visit_opens_or_locks_the_constraint_link_by_the_session_judgment(
+    _shell: AppTest,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    official_ready: bool,
+    session_ready: bool,
+) -> None:
+    """R-14 — HOME 칸 방문(공식 잠금)이고 세션이 가정 설비 시나리오면 링크의 켜짐·꺼짐은 **세션
+    스냅샷 판정**을 따른다. 공식은 서고 가정은 서지 않는 공정이면 꺼지고(까닭 풍선), 그 반대면
+    켜진다. 판정 차례는 화면 판정(공식 스냅샷) → 링크 판정(세션 스냅샷)이다 — 두 판정의 답을 갈라
+    링크가 어느 쪽을 보는지 잰다."""
+    import streamlit as st
+
+    import capa_simulation.services.process_equipment_timeline as timeline
+    from capa_simulation.navigation import CONSTRAINT_SIMULATION
+
+    clone = _clone(_repository(tmp_path))
+    answers = iter([official_ready, session_ready])
+
+    def judged(
+        equipment: pd.DataFrame | None,
+        baseline: pd.DataFrame | None,
+        cutoff: pd.DataFrame | None,
+        *,
+        process: str,
+    ) -> Any:
+        if next(answers):
+            return timeline.DynamicReadiness(
+                timeline.READY, cutoff_days=7, has_units=True, has_baseline=True
+            )
+        return timeline.DynamicReadiness(timeline.NO_EQUIPMENT)
+
+    links: list[dict[str, Any]] = []
+    original_link = st.page_link
+
+    def record(page: Any, **kwargs: Any) -> Any:
+        links.append({"page": str(getattr(page, "_page", page)), **kwargs})
+        return original_link(page, **kwargs)
+
+    app = _ok(_shell.run())
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO_Chip_Attach", month=202601
+    )
+    monkeypatch.setattr(timeline, "dynamic_readiness", judged)
+    monkeypatch.setattr(st, "page_link", record)
+    _ok(app.switch_page(PROCESS_CAPA_DETAIL.path).run())
+    constraint = [link for link in links if link["page"].endswith(CONSTRAINT_SIMULATION.path)]
+    assert constraint
+    assert constraint[-1]["disabled"] is (not session_ready)
+    help_text = str(constraint[-1]["help"])
+    assert "사이드바 설비 시나리오 기준으로 엽니다" in help_text
+    assert ("설비 일정이 서야 엽니다" in help_text) is (not session_ready)
+
+
 def test_a_long_scenario_name_is_shortened_in_the_field_so_the_revision_stays_visible() -> None:
     """값 칸은 한 줄 말줄임이다 — 26자 이름(「셋업 실무 2026 하반기 반입 지연 가정 케이스」)이면
     1280px·900px 모두 「 · r4」 가 잘려 고정된 리비전 번호가 보이지 않았다(2026-10-24 E2E). 이름만

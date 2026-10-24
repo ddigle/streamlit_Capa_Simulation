@@ -27,12 +27,15 @@ import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
+from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import PreparedDisplayOrder
+from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.settings import (
     DUCKDB_PATH,
     MONTH_SELECTION_END,
@@ -396,3 +399,100 @@ def stop_calculation_on_error(
     except ValueError:
         show_calculation_stopped()
         raise
+
+
+@dataclass(frozen=True)
+class ProcessPageInputs:
+    """공정 하나를 보는 화면(공정 Capa 상세·제약 시뮬레이션)의 공통 진입 결과.
+
+    두 화면이 **글자 하나까지 같은 차례**로 낸 값이라 계획 캐시 키(시나리오 키·달)가 같다 — 상세에서
+    링크로 넘어오면 확보율·계획이 적중한다.
+    """
+
+    thresholds: SecurementThresholds
+    context: PageContext
+    effective_start: int
+    effective_end: int
+    capacity_cache_key: simulation_cache.ScenarioCacheKey
+    securement_rate: pd.DataFrame
+    months: tuple[int, ...]
+    """확보율 프레임의 달 가운데 유효 기간 안(오름차순)."""
+
+    order_key: str
+    process_options: list[str]
+    """공정 선택지 — 공용 표시순서(산출 결과 · 확보율)."""
+
+
+def process_page_inputs(database_path: str) -> ProcessPageInputs:
+    """판정 기준 → 공통 진입 → 유효 기간(`RQ_REQB`) → 시나리오 키 → 확보율 → 달·공정 선택지.
+
+    `database_path` 는 시뮬레이션 DB 경로 글자다(페이지가 `settings.DUCKDB_PATH` 를 그 회차에 읽어
+    넘긴다 — 시험이 설정을 바꾼다). 확보율 계산이 멈추면 「계산 멈춤」 과 함께 그 오류를 먼저
+    낸다(Static Capa 와 같은 길). 예외는 모두 `BOOTSTRAP_ERRORS` 이고 카드 캡션·`st.error`·`st.stop`
+    은 부르는 페이지가 쥔다. 계산 함수는 **부를 때** 모듈에서 찾는다(페이지 시험이 그 속성을 바꿔
+    계산을 흉내 낸다).
+    """
+    # 판정 기준은 HOME → Preference 의 공용 프로필이다(기본값 + 월별 예외).
+    thresholds = load_global_securement_threshold(database_path).thresholds
+    context = load_page_context()
+    active = context.active_scenario
+    reference_tables = context.reference_tables
+    # 유효 기간은 산출 결과와 같이 RQ_REQB 원천에서 잡는다 — 같은 시나리오 키를 나눠 쓴다.
+    effective_start, effective_end = resolve_effective_months(
+        context,
+        active["tables"]["RQ_REQB"],
+        "RQ_REQB",
+        empty_message=NO_DEMAND_MESSAGE,
+    )
+    capacity_cache_key = simulation_cache.scenario_cache_key(
+        context.reference_version, active, effective_start, effective_end
+    )
+    try:
+        securement_rate = simulation_cache.get_scenario_securement_rate(
+            capacity_cache_key,
+            _scenario_tables=active["tables"],
+            _reference_tables=reference_tables,
+            _available_equipment=scenario_state.scenario_month_table(
+                active, "RQ_EQP_AVBL", effective_start, effective_end
+            ),
+        )
+    except BOOTSTRAP_ERRORS:
+        # 대당 Capa·소요대수 계산이 멈춘 것이면 「계산 멈춤」과 함께 그 오류를 먼저 낸다. 계산은
+        # 섰는데 가용대수·확보율에서 난 오류면 그 오류를 그대로 낸다.
+        stop_calculation_on_error(
+            simulation_cache.check_scenario_capacity,
+            capacity_cache_key,
+            _scenario_tables=active["tables"],
+            _reference_tables=reference_tables,
+        )
+        raise
+    months = tuple(
+        sorted(
+            {
+                int(month)
+                for month in securement_rate["생산계획년월"]
+                if effective_start <= int(month) <= effective_end
+            }
+        )
+    )
+    order_key = simulation_cache.display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
+    # 공정 차례는 산출 결과 확보율 탭·HOME 공정 필터와 같은 공용 표시순서 범위다.
+    process_column = securement_rate["공정"].astype("string").str.strip()
+    process_options = simulation_cache.get_display_ordered_values(
+        pd.DataFrame({"공정": sorted(process_column.dropna().unique().tolist())}),
+        order_key,
+        PAGE_CALCULATION,
+        TAB_SECUREMENT,
+        _display_order=context.display_order,
+    )
+    return ProcessPageInputs(
+        thresholds=thresholds,
+        context=context,
+        effective_start=effective_start,
+        effective_end=effective_end,
+        capacity_cache_key=capacity_cache_key,
+        securement_rate=securement_rate,
+        months=months,
+        order_key=order_key,
+        process_options=list(process_options),
+    )

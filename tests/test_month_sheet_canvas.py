@@ -227,3 +227,31 @@ def test_fine_one_follows_the_signed_digit_rule_without_a_sign(
     """부호 없는 칸도 그 자리로 0 이 되는 0 아닌 값은 한 자리 더 적는다 — 「0.00」 으로 적힌 칸에
     값이 숨지 않게."""
     assert fine_one(value, digits) == expected
+
+
+def test_the_docstring_names_every_module_that_builds_on_the_engine() -> None:
+    """모듈 설명의 「쓰는 곳」 목록이 엔진으로 그림을 세우는 모듈(`month_figure` 를 부르는 곳)과
+    같다 — 세 번째 쓰는 곳(제약 시뮬레이션 계산표)을 더하고도 설명은 「둘」 로 남았던 일을 막는다.
+    """
+    import ast
+    import pathlib
+
+    import capa_simulation.components.month_sheet_canvas as engine
+
+    source_root = pathlib.Path(engine.__file__).resolve().parents[1]
+    builders: set[str] = set()
+    for path in source_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == engine.__name__
+                and any(alias.name == "month_figure" for alias in node.names)
+            ):
+                builders.add(path.stem)
+    assert builders, "엔진을 쓰는 모듈을 찾지 못했다"
+    doc = engine.__doc__ or ""
+    numbers = {1: "하나", 2: "둘", 3: "셋", 4: "넷", 5: "다섯"}
+    assert f"**쓰는 곳이 {numbers[len(builders)]}이다**" in doc
+    for name in builders:
+        assert f"`{name}`" in doc, name
