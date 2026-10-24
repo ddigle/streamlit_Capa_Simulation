@@ -42,6 +42,7 @@ from capa_simulation.services.equipment_contract import (
     QUAL_CONFIRMATION_STATUSES,
     QUAL_DATE_COLUMN,
     QUAL_STATUS_COLUMN,
+    SCENARIO_LAYOUT_COLUMNS,
     STORAGE_FLAG_COLUMN,
 )
 from capa_simulation.services.equipment_units import unit_keys
@@ -69,9 +70,10 @@ from capa_simulation.services.korean_particle import (
 
 POSITION_COLUMNS: Final = ("X좌표", "Y좌표")
 SIZE_COLUMNS: Final = ("Xsize", "Ysize")
-# 편집기가 바꾸는 칸. 나머지 칸이 다르면 RawData 의 다른 편집이다. 이름 바꿈(설비명·Main 설비)은
-# 이 칸이 아니라 `PendingRenames` 가 가른다.
-PLACE_COLUMNS: Final = ("동", "층", "X좌표", "Y좌표", "Xsize", "Ysize", "레이아웃표시")
+# 편집기가 바꾸는 칸(계약의 배치 일곱 칸 — 가정 설비 시나리오의 배치 차이도 이 일곱 칸이다). 나머지
+# 칸이 다르면 RawData 의 다른 편집이다. 이름 바꿈(설비명·Main 설비)은 이 칸이 아니라
+# `PendingRenames` 가 가른다.
+PLACE_COLUMNS: Final = SCENARIO_LAYOUT_COLUMNS
 UNIT_ID_MAX: Final = 40
 NEW_UNIT_HISTORY: Final = "Space 편집기에서 추가"
 _DEFAULT_SIZE: Final = (12.0, 7.0)
@@ -393,10 +395,17 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def module_group_rows(master: pd.DataFrame) -> pd.Series:
+    """행마다 그 행이 든 Main 설비 모듈 묶음(Main 설비가 같은 행이 표 전체에서 둘 이상)의 Main 설비,
+    묶음 밖이면 NA. 모듈 묶음 판정의 한 곳이다 — 저장 전 바둑판 검사(`module_layout_violations`)와
+    가정 설비 시나리오 배치 차이의 묶음 통째 규칙(`services/layout_overlay.py`)이 같이 쓴다."""
+    parents = _parents(master)
+    return parents.where(parents.map(parents.value_counts()).fillna(0).ge(2).astype(bool))
+
+
 def _module_rows(master: pd.DataFrame) -> pd.Series:
     """행마다 Main 설비 모듈 묶음의 모듈인가 — Main 설비가 같은 행이 표 전체에서 둘 이상."""
-    parents = _parents(master)
-    return parents.map(parents.value_counts()).fillna(0).ge(2).astype(bool)
+    return module_group_rows(master).notna()
 
 
 def module_parents(master: pd.DataFrame) -> set[str]:
@@ -832,9 +841,8 @@ def _module_rows_by_group(master: pd.DataFrame) -> dict[str, list[tuple[str, _Ro
     묶음 행만 읽는다 — 저장 전 검사가 회차마다 돌아 마스터 전체를 훑지 않는다."""
     if master.empty or EQUIPMENT_ID_COLUMN not in master.columns:
         return {}
-    parents = _parents(master)
-    counts = parents.value_counts()
-    member = parents.isin(counts.index[counts >= 2]).to_numpy(dtype=bool)
+    parents = module_group_rows(master)
+    member = parents.notna().to_numpy(dtype=bool)
     if not member.any():
         return {}
     rows = master[member]
