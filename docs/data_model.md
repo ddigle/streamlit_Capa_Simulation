@@ -93,11 +93,25 @@ app_meta.voc_post                    1 ── N voc_reply (post_id)             
 app_meta.schema_migration · (옛 개발 DB 에만) 빈 equipment_ops 스키마(결번 2·3 의 흔적 — migration_catalog.md)
 
 # data/equipment_availability.duckdb — 리비전(append-only 전체 스냅샷)
-equipment_ops.revision
-       ├── N equipment_ops.baseline_snapshot
-       ├── N equipment_ops.equipment_master_snapshot
-       ├── N equipment_ops.downtime_schedule_snapshot
-       └── (레거시 — 쓰지 않음) schedule_snapshot(0001) · equipment_snapshot · downtime_snapshot(0002)
+equipment_ops.revision                          공통 호기 대장 리비전(번호 전역 · 0027 + saved_by)
+       ├── N equipment_ops.baseline_snapshot             기존 보유대수 — 공통(F3)
+       ├── N equipment_ops.equipment_master_snapshot     공통 칸 + unit_key(0027). 계약 v4 는 일정 칸 NULL(읽지 않음),
+       │                                                 v3 이하(이관 리비전)는 옛 일정 칸이 「운영 일정」 이관 리비전의 원천
+       ├── N equipment_ops.downtime_schedule_snapshot    v3 이하만 — 이관 리비전의 비가동 원천. v4 는 쓰지 않는다
+       └── (레거시 — 쓰지 않음) schedule_snapshot(0001) · equipment_snapshot · downtime_snapshot(0002)   v2 이하 원천(읽기만)
+       (위 자식 6표의 FK 는 그대로 — 공통 리비전은 지우지 않는다)
+
+# data/equipment_availability.duckdb — 설비 시나리오(0027, 표끼리 FK 없음 — 아래 「설비 시나리오의 가리킴」)
+equipment_ops.equipment_scenario                설비 시나리오(이름 고칠 수 있음 · status ACTIVE/ARCHIVED)
+equipment_ops.equipment_schedule_revision       시나리오 일정 리비전(번호는 시나리오마다 r1… · UNIQUE (시나리오, 번호))
+       ⋯ equipment_schedule_snapshot            호기 키마다 날짜 여섯 + 시나리오 메모(PK 리비전·키)
+       ⋯ equipment_schedule_downtime_snapshot   비가동 일정 전체(F2 — UNIQUE 리비전·키·유형·시작일)
+       ⋯ legacy_revision_id  → revision         이관 리비전만: 옛 마스터 일정 칸·비가동을 읽는다
+       ⋯ common_revision_id  → revision         저장 때 함께 본 공통 리비전(「그때 그대로」 보기)
+equipment_ops.equipment_official_release        공식 발행(append-only · release_no 전역)
+equipment_ops.equipment_legacy_boundary         이관 경계 번호(0027 이 1행 · 「이대로 이어 쓰기」 가 덧붙임)
+equipment_ops.shortening_baseline (0021)        + 설비 쪽 출처 칸 넷(0027 — 가리키기만)
+   (⋯ = FK 없는 가리킴. 소유·정합은 저장소가 같은 트랜잭션에서 지킨다)
 
 # data/equipment_availability.duckdb — 리비전 없는 공용 표(설비 리비전을 저장해도 복제되지 않음, 표끼리 FK 없음)
 equipment_ops.standard_target_weekly_availability         공정·Weeknum별 수동 가용대수(0005)
@@ -125,6 +139,16 @@ equipment_meta.schema_migration
 두지 않는다). 그래서 보관·영구 삭제가 같은 트랜잭션에서 그 시나리오를 가리키는 Case 만 명시적으로 비우고 행은
 남긴다(version+1, 출처 칸에 「Case2 지정 비움 — 시나리오 보관」 처럼 까닭). 가리키는 시나리오·리비전의 이름 바꾸기는
 version 만 올린다 — HOME 슬롯 글자가 시나리오명·리비전명을 싣는다.
+
+**설비 시나리오의 가리킴(`0027`).** 새 표 여섯에는 외래 키가 없다 — DuckDB 1.5.5 는 FK 부모 행을 자식과 한
+트랜잭션에서 지우는 것(2단계 영구 삭제)과 FK 부모의 UNIQUE 칸 UPDATE(시나리오 이름 바꾸기)를 `ConstraintException` 으로
+막는다. 시뮬레이션 `scenario`·`scenario_revision`·`official_release` 와 설비 `0021` 기준선도 같은 이유로 FK 가 없다. 소유
+칸은 `equipment_scenario_id`·`schedule_revision_id` 이고, 기준선의 설비 쪽 출처는 `equipment_schedule_revision_ref` 처럼
+소유 칸과 다른 이름으로 가리키기만 한다(`0036` `case1_scenario_id` 와 같은 까닭). 「시나리오의 최신」 은 칸이 아니라
+`MAX(revision_no)` 이고, 차례는 `revision_no`·`release_no`·`boundary_no` 로 정한다(`created_at` 은 트랜잭션 시작 시각이라
+한 트랜잭션의 행끼리 같다). `0027` 이 넣는 id 는 결정적 글(`'operations'`·`'legacy-' || revision_id`·`'release-1'`·경계 1)이라
+동기화로 받은 DB 를 다른 PC 가 다시 이관해도 같은 행이 나온다. 호기 키 유일 색인은 두지 않는다 — 유일성은 저장소의 키
+배정 검사·합치기의 `one_to_one`·새 일정 표 PK 가 지킨다. 옛 행의 키는 NULL 이고 읽을 때 `'n' || md5(equipment_id)` 로 본다.
 
 DuckDB 1.5.5는 서로 다른 스키마 사이의 외래 키를 만들 수 없으므로 스키마 간 FK는
 DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에서 소유 관계, 상위 리비전,
@@ -306,13 +330,16 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
 ### 설비 전용 DB의 `equipment_meta`, `equipment_ops`
 
 - `equipment_meta.schema_migration`: 설비 DB에만 적용하는 SQL 버전과 체크섬
-- `revision`: 설비 운영 입력의 증가 리비전 번호, 변경 메모, 입력 해시와 저장 시각
+- `revision`: **공통 호기 대장 리비전** — 증가 리비전 번호(전역 하나), 변경 메모, 입력 해시, 저장 시각과 저장자
+  (`saved_by`, `0027` — 선택 입력). 계약 버전(`equipment_contract_version`)이 4 면 마스터의 일정 칸이 NULL 이고 비가동 행이
+  없다(일정은 설비 시나리오 표에). 3 이하는 `0027` 전 리비전이라 옛 일정 칸·비가동이 「운영 일정」 이관 리비전의 원천이다.
 - `baseline_snapshot`: 공정·분류별 기존 보유대수와 비고의 전체 스냅샷
 - `equipment_master_snapshot`: 설비명(`equipment_id`)을 키로 Area Code·공정대/소분류, Maker·Model,
   공정구분·투자Capa·투자구분·사용기준·담당자 등 참고 속성, 동·층, Space X/Y 좌표와 X/Y 크기,
   제진대·물류·반입 일정, 반입실적·반입상태, Qual 일정·Qual실적·Qual상태, 정지·반출/이설 일정,
   반입/Qual 이력·호기이력·설비이력, 보관유무·기존설비여부·레이아웃표시, 환산비·Main 설비, 메모1~3 을
-  저장하는 전체 스냅샷(38열, 2026-10-16 사용자 결정). **`사용기준`(`classification_2`)은 참고 속성이
+  저장하는 전체 스냅샷(38열, 2026-10-16 사용자 결정 — `0027` 뒤 화면 계약은 `시나리오 메모` 를 더한 39칸이고, 그 가운데
+  일정 일곱 칸은 설비 시나리오 표에 둔다. 계약 v4 리비전에서 이 표의 일정 칸은 NULL 이고 `unit_key` 를 싣는다). **`사용기준`(`classification_2`)은 참고 속성이
   아니라 가용대수 대상을 가른다** — 설비 일정 기준 가용대수·필요 단축 일정은 이 값이 `HBM` 또는 `EDP`(앞뒤
   공백·대소문자 무시, 완전 일치)인 행만 한 가용대수로 센다(2026-10-08 사용자 결정,
   `equipment_contract.counts_for_capacity`).
@@ -386,13 +413,30 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   시나리오·리비전·`content_token` — 모르면 NULL), 공정 표는 그때 맞댄 공정과 Cut-off, 호기 표는
   목표(90~130%)마다 당긴 호기와 가상 호기(「추가N」)다. 외래키는 없다. SQL 은
   `persistence/shortening_baseline_store.py`, 얼리는 규칙은 `services/shortening_baseline.py`.
+- `equipment_scenario`·`equipment_schedule_revision`·`equipment_schedule_snapshot`·`equipment_schedule_downtime_snapshot`·
+  `equipment_official_release`·`equipment_legacy_boundary`(마이그레이션 27): **설비 시나리오**. 설비 마스터의 일정 일곱 칸
+  (제진대·물류·반입·Qual·정지·반출/이설 일정 — 정지·반출/이설의 DB 이름은 `removal_date`·`relocation_date` 그대로 — 과
+  `scenario_memo`)과 비가동 일정 전체가 시나리오 일정 리비전에 매달리고 공통 칸은 공통 대장 리비전에 남는다. 일정·비가동은
+  설비명이 아니라 호기 키(`unit_key`)에 매달린다 — 공통에서 이름을 바꿔도 다른 시나리오의 일정이 고아가 되지 않는다.
+  이관 리비전(`origin='legacy'`)은 스냅샷 행 없이 `legacy_revision_id` 가 옛 행을 가리킨다(읽기 투영·레거시 변환째 읽는다).
+  리비전 머리는 `origin`(legacy·save·clone·propagate·restore — 허용값은 서비스가 본다)·`common_revision_id`(저장 때 함께 본
+  공통)·`saved_by`·`revision_name`(E7 답 대기 — 자리만)·내용 해시를 갖는다. 공식 발행은 append-only 이고 「옛 배포로 저장한
+  흔적」 은 마지막 경계 행의 `through_revision_no` 뒤 계약 v3 이하 공통 리비전이다(있으면 설비 마스터 저장을 막는다).
+  `shortening_baseline` 에는 설비 쪽 출처 칸 넷(`equipment_schedule_revision_ref`·`equipment_schedule_revision_no`·
+  `equipment_scenario_name`·`equipment_release_no`)이 붙는다. SQL 은 `persistence/equipment_scenario_store.py`, 나누기·합치기
+  규칙은 `services/equipment_scenario.py`.
 - `schedule_snapshot`: 마이그레이션 1에서 생성한 기존 입고·셋업 일정 보존용 레거시 테이블.
 - `equipment_snapshot`, `downtime_snapshot`: 마이그레이션 2 계약의 과거 리비전
   보존용 레거시 테이블. 신규 저장은 마이그레이션 3의 두 스냅샷 테이블을 사용한다.
 
-현재 화면은 가장 최근 리비전을 편집 원본, 가용설비 대시보드와 Space 현황의 공통 원천으로
-사용한다. 일정 수정, 신규 호기·비가동 추가 또는 행 삭제 후 저장하면 기존 리비전을 갱신하지
-않고 세 입력의 새 전체 스냅샷을 추가한다. 기존 보유대수는 즉시 가용, 신규 호기는 반입일부터
+화면이 보는 한 벌은 **(공통 대장 최신, 설비 시나리오 일정 리비전) 쌍을 합친 스냅샷**이다. 세션은 일정 리비전 하나를
+고정해 들고(새 세션은 최신 공식 발행) 그 합친 스냅샷이 가용설비 현황·필요 단축 일정·공정 Capa 상세의 편집 원본·계산 원천이며,
+Space 현황은 늘 공식(공통 최신 + 최신 공식 발행)을 그린다. 일정 수정, 신규 호기·비가동 추가 또는 행 삭제 후 저장하면 기존
+리비전을 갱신하지 않고 **바뀐 쪽만** 새 전체 스냅샷을 추가한다 — 공통 칸·기존 보유대수가 바뀌었으면 공통 대장 리비전, 일정
+칸·비가동이 바뀌었으면 그 시나리오의 일정 리비전, 둘 다 그대로면 아무것도 쓰지 않는다(`0027` 뒤 첫 저장만은 공통이 그대로여도
+계약 v4 공통 한 벌을 함께 쓴다). 새 호기·새 비가동은 기본으로 다른 시나리오에도 같은 일정으로 넣고(그 시나리오들에 새 일정
+리비전), 공식 시나리오에 새 일정 리비전이 생기면 기본으로 공식 발행까지 한다. 그 시나리오에 일정 행이 없는 호기(일정 없음)는
+그 시나리오 계산에 들지 않는다. 기존 보유대수는 즉시 가용, 신규 호기는 반입일부터
 총대수, Qual일부터 가용대수로 계산한다. 보관유무 Y 와 활성 운영 비가동은 가용에서 제외하고,
 정지일정·반출/이설일정 가운데 이른 날부터 보유·가용에서, 반출/이설일정(없으면 정지일정)부터
 레이아웃에서 제외한다. 신규 호기의 반입·Qual 일정은 비워도

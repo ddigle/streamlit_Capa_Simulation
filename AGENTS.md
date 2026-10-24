@@ -189,8 +189,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `st.stop()` 해도 닿아야 할 것은 모두 그 앞이다. 탭 아이콘 `static/icons/capa_mark.svg` 는 `test_settings.py` 가 본다.
   - 사이드바는 `navigation.py` 선언을 그리기만 한다(CSS `sidebar_style.py`, 상자·카드 `sidebar_status.py`). 순번 고정 —
     그룹 상자 → `Support`·앱 카드(`app_credits.py`, `apply_deploy_package.py` 가 쓴 `.deploy/applied.json`) → 조회 조건.
-  - 조건 패널(`condition_field.py`)의 시나리오(`scenario_status.py`)·조회기간(`period_field.py`) 팝업은 키 붙은 호스트
-    프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만 서고 기간 범위는 `scenario_month_bounds.py` 다.
+  - 조건 패널(`condition_field.py`)의 시나리오(`scenario_status.py`)·조회기간(`period_field.py`)·설비 시나리오
+    (`equipment_scenario_status.py`) 팝업은 키 붙은 호스트 프래그먼트가 매 전체 실행 빠짐없이 부른다. 공통 줄은 읽는 화면에만
+    서고 기간 범위는 `scenario_month_bounds.py` 다. 설비 시나리오 칸은 빈 블록 칸만 세우고 줄은 페이지가 그린다 — `app.py`
+    는 설비 DB 를 열지 않는다(9장).
 - `app_pages/home.py` — HOME 대시보드. `Main`(계획·LOB·주요공정·B/N Figure)·`Preference`(공용 프로필 편집기)·
   `Past Data`(`past_data_management.py`) 세 탭으로 전체 계산 결과를 조합한다. 설명은 `guides/home.md`.
   - 보는 조건(토글 일곱·제품별 비중 단위)은 조건 카드 `LOB 표시 조건`, 키·기본값은 `home_state.py` 한 곳이다. 시나리오를
@@ -237,6 +239,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 공정·달은 상자보다 먼저 정한다(HOME 전달 → 주소 → 세션 → 최저 확보율 공정의 첫 미달 달). 확보율은 키 전용 캐시다.
   - 설비 DB 는 읽기만 하고 필요 단축 일정의 공용 조회 조건·기준선·세션 칸은 읽지 않는다(5장 9). 판정을 통과한 공정만
     계획·설비 일정을 받고, 아니면 까닭 카드 한 장이다.
+  - 설비는 **방문 기준**이다 — HOME 칸으로 들어온 방문은 ◀▶ 뒤에도 그 방문 동안 공식 설비 시나리오(사이드바 줄은 잠근
+    꼴, 출처 띠 끝 「설비는 공식 vN 기준」), 그 밖의 길은 세션 설비 시나리오다(`process_detail_state`). 설비 시나리오는 공정·
+    달을 정한 바로 뒤에 읽는다 — 출처 띠를 자리(`st.empty`)에 다시 쓰지 않게(9장 placeholder 시험). 설비 DB 가 코드보다
+    새면 경고(`render_schema_ahead_warning`), 옛 배포 흔적이면 흔적 경고를 세운다. 팝업은 「불러오기」 만이다.
   - 필요 단축 일정 카드에서 왔으면(`from=shortening`) **주소 인자만** 읽어 그 카드의 목표·기간·단축/신규 대수로 출처
     띠(「이 화면은 확보기준·RQ_REQB 기간 기준이라 대수가 다를 수 있습니다」)와 「← 필요 단축 일정」 을 낸다. 필요 단축
     일정으로 옮기는 단추는 모두 그 화면의 「강조 공정」 칸만 적는다 — 공정 필터(0019 세션 칸)는 심지 않는다.
@@ -280,9 +286,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     진척 비교 기준선(`0021`)만 쓴다. 알림 자리는 토스트 규칙을 따른다(`test_shortening_baseline_notice.py`).
   - UPEH 가정은 기본 보기를 바꾸지 않는다 — 머리 「UPEH 가정 비교」 를 켠 회차에만 가정 계획을 꺼내 공식→가정을 보인다.
     가정이 켜진 동안 기준선 저장은 거절하고 진척 비교는 늘 공식 계획이다.
-- `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 조회·Static 비교·Cut-off·입력을
-  `Main`·`Static 대비 일정`·`Qual 마감 계산기`·`Preference`·`RawData` 다섯 탭으로 다룬다. 설명은
+  - 설비는 **세션 설비 시나리오**다(`resolve_equipment_session`). 기준선 저장은 세션이 공식 발행 쌍일 때만이고(거부 까닭은
+    「가정 설비 시나리오」·「발행하지 않은 리비전」 둘), 기준선에는 공통 rN + 설비 시나리오·rN·공식 vN 출처가 실린다. 진척
+    비교는 늘 보이고, 세션이 공식 발행 쌍이 아니면 머리에 「지금 = 셋업 실무 r4 · 기준선 = 공식」 을 적는다. 카드 링크는
+    표시용 `eq`(그 카드가 본 설비 시나리오)를 싣는다.
+- `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 조회·Static 비교·Cut-off·입력·설비 시나리오를
+  `Main`·`Static 대비 일정`·`Qual 마감 계산기`·`Preference`·`RawData`·`설비 시나리오` 여섯 탭으로 다룬다. 설명은
   `guides/available_equipment_status.md`.
+  - 진입은 `resolve_equipment_session` 이고 계산은 `calculation_drafts()` 다(일정 없음 호기를 뺌 — 「일정 없음 n대」 한 줄).
+    가정 설비 시나리오면 Main 미확인은 **공식 스냅샷의 미확인**을 화면 호기로 좁혀 쓰고(꼬리표 「공식 일정 기준」),
+    Preference Cut-off 는 읽기 전용(「설비 공정으로 채우기」 꺼짐)이다. 설비 시나리오 줄은 Qual 마감 계산기 탭에 서지 않는다
+    (`PageSpec.equipment_scenario_tabs`).
   - `Qual 마감 계산기`(2026-10-22)는 다른 데이터와 잇지 않는다 — 페이지가 읽은 저장본·Cut-off 를 넘기지 않고, 설비 조건
     카드·샘플 스위치도 서지 않는다(`viewing_tab_open` 은 Main·Static 대비 일정뿐). 닫혀 있으면 그리지 않는다.
   - Main·Preference·RawData 는 설비 DB 만 쓰고 `Static 대비 일정` 만 시뮬레이션 DB 를 읽는다 — 못 읽어도 그 탭
@@ -310,8 +324,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지운다(`st.query_params.clear()` 금지). 자리 이동은 모두 콜백이다. 브라우저 뒤로/앞으로는 층 이동이 아니다.
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
-  - 배치 편집은 RawData 와 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer(revision_optional=True)` 로
-    저장한다. 도면 상자 앞 칸(`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
+  - 보기는 늘 **공식** 설비 시나리오다(E5 — `load_official_equipment_snapshot().calculation_frames()`, 사이드바 줄은 잠근 꼴
+    「… (고정)」, `PageSpec.uses_equipment_db=True`). 공식 일정이 없는 호기는 그리지 않고 「공식 일정 없음 n대」 로 알린다.
+    미확인·캔버스 줄이기 검사도 공식 마스터다(좌표는 공통).
+  - 층 상세 배치 편집은 `space_editing_allowed`(세션이 공식 발행 쌍)일 때만 열린다 — 그때는 편집본 = 공식이라 지금 코드
+    그대로다. 아니면 편집 단추가 꺼지고 본문 위에 「배치 편집은 공식 설비 시나리오(…)에서 — [공식으로 바꾸기]」(미저장
+    편집이 있으면 버림 확인)가 서며, 편집본은 건드리지 않는다(다른 토큰으로 `ensure` 를 부르지 않는다). 공식 발행 쌍이지만
+    낡았으면 새 호기 폼만 꺼진다. FAB 전체 배치 편집은 설비 리비전과 무관한 공통 현행값이라 잠그지 않는다.
+  - 배치 편집은 RawData 와 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer` 로 저장한다(「배치 저장」 확인
+    팝오버에 저장 칸 — 공통·일정이 모두 그대로면 층 값만 쓰고 리비전을 만들지 않는다). 도면 상자 앞 칸
+    (`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
   - 층의 Main 설비명 위치(대기분 `pending_floor_group_labels`, 없으면 `load_floor_group_labels`)를 편집기·뷰어에
     넘기고, 적용은 `next_group_labels`(실린 묶음의 모듈 수 `module_group_sizes` 로 처음 위치를 가른다)로 층 위치
     목록을 만들어 저장값과 다르면 `stage_floor_group_labels` 로 둔다. 편집기·뷰어 epoch 와 층 대조
@@ -638,6 +660,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 카드의 `target`·`period`·`shortened`·`new` 도 싣고(`shortening_card_query_params`) 상세는 그것만 읽어
     `ShorteningOrigin`(그 공정을 보는 동안만)·`shortening_band_text` 를 낸다. ◀▶ 차례
     (`process_steps`)와 그 콜백(`step_to_process` — 공정과 그 공정의 첫 미달 달)도 여기다.
+  - 설비 시나리오 **방문 기준**(`PROCESS_DETAIL_EQUIPMENT_BASIS_KEY`)도 여기다. HOME 칸으로 들어온 방문은 `"official"` 이고
+    출처 띠와 달리 ◀▶ 로 공정을 넘겨도 그 방문 동안 남는다. 새 방문·다른 길(사이드바·카드·주소)이면 걷어 세션 설비
+    시나리오를 따른다. 필요 단축 일정 카드 링크의 `eq` 는 그 카드가 본 설비 시나리오 한 마디(표시용)이고, 이 화면 기준과
+    다를 때만 출처 띠 끝에 적는다(`equipment_band_tail`).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
@@ -648,6 +674,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 이름 변경은 활성화가 아니다 — `rename_active_scenario_label`·`rename_active_revision_label` 이 같은 id 일 때 이름표
     한 칸만 고친다(다른 세션은 다시 불러올 때 바뀐다).
   - 프리셋을 걸 때 HOME 의 아는 공정 기억(`PROCESS_SEEN_KEY`)을 지운다(`tests/test_process_filter_activation.py`).
+- `src/capa_simulation/equipment_scenario_activation.py` — 세션의 설비 시나리오(시뮬레이션 `scenario_activation.py` 의 짝).
+  세션은 (설비 시나리오, 일정 리비전) 하나를 고정해 들고(`equipment_scenario_selection_v1` — 기본형만), 보는 한 벌은
+  (공통 대장 최신, 고른 일정 리비전) 쌍을 합친 스냅샷이다.
+  - 페이지 진입은 `resolve_equipment_session(path)` 다 — 설비 화면이 `BOOTSTRAP_ERRORS` 아래에서 부르고(`app.py` 는 설비
+    DB 를 열지 않는다) 목록·공통 최신 id·합친 본문을 모두 캐시에서 받는다. 선택이 없으면 공식(최신 발행 → 없으면 목록 첫
+    시나리오 최신)이다. 고정 쌍을 지금 공통과 합칠 수 없으면(`EquipmentScenarioIncompatible`) 그 시나리오 최신 → 공식으로
+    옮기고 편집본을 다시 세운 뒤 그 회차 `EquipmentSession.notice` 로 한 번 알린다.
+  - 판정은 셋이다(「공식」 하나로 가르지 않는다) — **공식 시나리오**(세션 시나리오 = 최신 발행의 시나리오: Preference 편집·
+    미확인은 자기 일정), **공식 발행 쌍**(세션 쌍 = 최신 발행: 기준선 저장·Space 배치 편집 — `space_editing_allowed` 한
+    곳), **가정**(공식 시나리오가 아님: Preference 읽기 전용·미확인은 공식 기준). 따로 **낡음**(세션 리비전 ≠ 그 시나리오
+    최신)은 일정 칸·행 추가를 잠근다. 발행이 하나도 없으면 공식 시나리오의 최신을 공식 자리로 본다.
+  - `select_equipment_scenario` 는 팝업 「불러오기」 다 — 미저장 설비 편집이 있으면 「변경을 버리고 불러오기」 체크가 있어야
+    하고, 합친 스냅샷을 먼저 읽어 검증한 뒤에야 편집본을 비우고(FAB 대기분은 남김) 선택을 적는다. 자기 저장이 일정 리비전을
+    만들었으면 다음 회차 선택이 그 리비전으로 옮긴다(작업 공간 표지 칸 — 거꾸로 import 하면 순환이다).
+  - 머리 띠·사이드바 줄 글자 재료는 라벨 칸(`equipment_scenario_label_v1`)에 페이지가 그 회차 목록을 읽은 뒤 적는다(5장 23).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
 - `src/capa_simulation/upeh_assumption_state.py` — UPEH 가정 세 칸(%·적용 시작·끝)의 세션 키와 기본값. UI 를 import 하지
   않아 시나리오 전환 초기화(`scenario_activation`)가 읽는다.
@@ -697,7 +738,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/equipment_csv.py` — 설비 세 표의 CSV 양식·내보내기·붙여넣기 검증과 자연키 병합을 맡는다.
   - 내보낸 파일을 그대로 되붙여도 통과해야 한다(읽는 쪽 `*_COLUMNS` 와 같은 이름·차례, `reference_csv.guard_excel_text`).
   - 일부 열 붙여넣기(`read_equipment_update`)는 붙여넣은 열만 바꾸고(빈 칸 = 지움) 겹친 머리글을 막는다. 모르는
-    머리글은 38열이 다 있거나 옛 36열 꼴일 때만 알림과 함께 넘기고 그 밖에는 막는다.
+    머리글은 39열이 다 있거나 옛 36열·옛 38열(`시나리오 메모` 만 없음) 꼴일 때만 알림과 함께 넘기고 그 밖에는 막는다.
 - `src/capa_simulation/services/dashboard.py` — HOME 월별 집계와 B/N 월별 순위(Top 1·Top 5·상세)·Wafer Capa 를 낸다.
   - 월 축은 양산 Density 가 있는 달이다 — 양산 없이 ER 만 있는 달은 Wafer 계획·Wafer Capa·B/N·Top5·연간 Total 에서
     빠진다. 그대로 두고 사내 런북 8-9 가 그런 달 수를 잰다(2026-10-22 결정 A). 넓힐 때는 이 파일의 조인 넷과
@@ -754,8 +795,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     빠진 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 알림만 남긴다. 선택 컬럼은 없어도 된다 — 설비 마스터 입구
     (`read_equipment_update`)에서 새 호기는 빈 칸, 기존 호기는 저장값을 지킨다.
   - 사용기준 규칙(`COUNTED_USAGE_BASIS`·`counts_for_capacity`)과 모듈 일치 컬럼(`UNIT_CONSISTENT_COLUMNS`)의 단일
-    선언이다. 한글↔DB 칸 매핑은 `equipment_repository.EQUIPMENT_MASTER_DB_COLUMNS` 한 곳이다.
+    선언이다. 한글↔DB 칸 매핑은 공통 칸이 `equipment_repository.EQUIPMENT_MASTER_DB_COLUMNS`, 시나리오 일곱 칸이
+    `equipment_scenario_store.SCENARIO_SCHEDULE_DB_COLUMNS` 다(저장소가 그 모듈을 부르므로 그쪽에 둔다).
+  - 설비 마스터 39칸은 **공통 32**(`COMMON_MASTER_COLUMNS`)와 **시나리오 7**(`SCENARIO_SCHEDULE_COLUMNS` — 날짜 여섯 +
+    `시나리오 메모`)로 갈린다. `시나리오 메모` 는 `반출/이설일정` 다음 칸이고 선택 칸이다(`OPTIONAL_EQUIPMENT_COLUMNS` —
+    옛 38칸 CSV·붙여넣기가 막히지 않는다). 화면 프레임에는 호기 키 칸을 두지 않는다(스냅샷이 따로 든다).
   - `환산비` 는 기준 모델 한 대 대비 몫(능력 축)이고 월별 환산대수·확보율 교차검증만 곱한다.
+- `src/capa_simulation/services/equipment_scenario.py` — 설비 마스터를 공통 대장과 시나리오 일정으로 나누고 합치는 순수
+  규칙(Streamlit·DB 를 모른다). 저장소와 `scripts/inspect_real_data_checks.py` 가 같은 합치기를 쓴다.
+  - 호기 키: 옛 행은 `legacy_unit_key(설비명)` = `"n" + md5(설비명)`(SQL `'n' || md5(equipment_id)` 와 같아야 한다), 새 호기는
+    uuid. `assign_unit_keys` 는 이름 지도(지금 → 저장본)로 이어받은 키가 먼저 차지하고 남은 호기는 같은 이름의 저장본 키를,
+    그 밖은 새 키를 받는다 — 「A→B 이름 바꿈 + 새 A」 의 새 A 는 새 키, 결과 키가 겹치면 `ValueError` 다.
+  - 합치기는 공통 행 차례대로 키로 왼쪽 결합(`one_to_one`)이고, 일정 행이 없는 호기는 일정 칸이 비고 **일정 없음**
+    (`unscheduled_units`)에 든다. 공통에 없는 키의 일정·비가동은 버리고 `orphan_rows` 로 센다. 계산 프레임은 일정 없음 호기와
+    그 비가동을 뺀다(`calculation_frames` — 질문 2 권장안의 한 곳, 기존설비·보관 Y 도 뺀다).
+  - 함께 넣기 후보: 새 호기 = 저장본 공통에 없던 키(`new_unit_keys`). 새 비가동(`new_downtime_rows`)은 같은 (키, 유형)
+    묶음에 저장본에 없던 시작일이 생겼고 그 묶음에서 사라진 행이 없을 때만이다 — 같은 (키, 시작일) 행이 다른 유형으로
+    사라졌어도 고침으로 본다(시작일·유형만 고친 비가동은 퍼지지 않는다). 쓸 일정 행은 「저장본에 일정 행이 있던 호기 ∪
+    일곱 칸에 값이 있는 호기 ∪ 비가동이 있는 호기 ∪ 새 호기」 다(`select_schedule_rows`).
 - `src/capa_simulation/services/equipment_units.py` — 모듈 행을 설비 한 대로 묶는 `설비키`·`설비지분`과 소수 대수 표기의
   단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다.
 - `src/capa_simulation/services/undated_equipment.py` — 반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비를 지분으로
@@ -836,7 +893,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `PageSpec`·`SIDEBAR_GROUPS`·`SIDEBAR_SECTIONS`(`section.key` 가 컨테이너 key·CSS 선택자의 근거)·`ADMIN_AREA`·
     `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나이고 `page_header.py` 가 배지로 쓴다.
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
-    설비 DB 핀(`uses_equipment_db`)을 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다.
+    설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
+    `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 가용설비 현황 탭
+    라벨(`EQUIPMENT_*_TAB`, 새 `EQUIPMENT_SCENARIO_TAB` 포함)도 사이드바가 열린 탭을 보므로 여기 둔다.
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
   조회기간과 원천 유효 구간 확정)다. 페이지는 `BOOTSTRAP_ERRORS` 를 잡는다.
   - 잡은 예외의 화면 문구는 `bootstrap_error_message` 한 곳이다. `duckdb.Error` 는 갈래마다 조치를 바꾼다 — 쥔 PID 가
@@ -966,7 +1025,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
     `intro_summary.latest_official_revision` 만 읽는다(`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
-    이스케이프한다.
+    이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(Space 는 「공식 vN
+    (고정)」)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
@@ -1189,6 +1249,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/shortening_baseline.py` — 필요 단축 일정 기준선(설비 DB `0021`) 모델과 규칙. 기준선은
   저장한 그때 계획을 얼린 고칠 수 없는 기록이다(`freeze_plan` → `ShorteningBaselineDraft`, `normalize_baseline_name`·
   `baseline_label`·`normalize_baseline_units`).
+  - 설비 쪽 출처(`ShorteningEquipmentBasis` — 공통 rN · 설비 시나리오 이름 · 일정 rN · 공식 vN, 설비 `0027` 의 가리키는 칸
+    넷)도 기준선에 싣는다. 기준선은 세션이 **공식 발행 쌍**일 때만 저장한다(E5 — 거부 까닭은 「가정 설비 시나리오」 와
+    「발행하지 않은 리비전」 둘, `equipment_scenario_status.baseline_equipment_refusal`).
 - `src/capa_simulation/services/shortening_progress.py` — 기준선과 지금 계획의 같은 목표 호기 표를 짝지어 시점·단축일수
   변동과 상태를 낸다(`compare_progress`·`summarize_progress`·`progress_export_frame`).
   - 짝짓기는 공정 안에서만 — 당긴 호기는 설비명끼리, 「추가N」은 차례끼리다. 지금 범위에 없는 기준선 공정은
@@ -1255,6 +1318,37 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
     올리기 전에 막는다)를 쓴다. 서버 전체 상한(`config.toml` `maxUploadSize`)을 낮추지 않는다 — 다른 올리기 칸까지 묶인다.
+  - 편집본은 세션의 **설비 시나리오 한 벌**이다(5장 32). `revision_token` 은 (공통, 일정) 쌍 토큰이고 저장본 사본과 함께
+    그 쌍의 일정 없음(`DRAFT_UNSCHEDULED_KEY`)을 적는다. 계산 화면은 `calculation_drafts()`(일정 없음 호기와 그 비가동을 뺀
+    셋)를 읽고, 편집 대조·`_saved_master()` 는 39칸 전부를 본다. 저장은 `save_equipment(EquipmentSaveRequest)` 로 간다 —
+    출발점 칸(`_BASE_KEY` — 공통·일정·시나리오 id)과 이름 지도(`PendingRenames.units`)·저장 칸 값(`equipment_save_fields.py`).
+    결과 알림은 공통 rN·시나리오 rN·함께 넣은 목록·발행·「지운 호기 n대는 모든 설비 시나리오에서 빠졌습니다」 를 적는다.
+  - 세션이 **낡음**이면 RawData 맨 위에 그 알림을 세우고 시나리오 일곱 칸·비가동 일정 표를 `disabled` 로, 행 추가를 막으며,
+    붙여넣기 미리보기는 일정 칸 변경·새 행·비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 도움말 첫 마디가 「공통 — …」/「공통 — 공식 일정
+    기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」 이고 편집표 위 한 줄 범례(`SCENARIO_COLUMN_LEGEND`)가 같은 뜻이다.
+  - 저장 이력은 고른 설비 시나리오의 일정 리비전(번호·저장자·출처·공통 rN)이고 조회는 `load_saved_pair`(저장 때의 짝)다.
+    「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인 목록은
+    공식 일정 + 편집본 공통 칸이다(세션 칸 한 벌).
+- `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
+  화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·Preference 잠금·옛 배포 흔적 경고·기준선 거부·설비 출처 띠).
+  - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
+    「운영 일정 · r12」, 배지는 `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) / `최신 rM 있음` / `저장된 리비전` / `미저장
+    변경`. 잠근 꼴(팝업 없음)은 Space 「… (고정)」 과 공정 Capa 상세 HOME 방문 「… (HOME 칸에서 들어온 방문)」 이다.
+  - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
+    표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
+    선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23).
+- `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
+  체크)과 저장 출발점 값(`EquipmentSaveBasis`). RawData 「설비 데이터 저장」(폼 안)·「확인 후 리비전 저장」·사이드바 팝업
+  「저장」·Space 「배치 저장」(팝오버, 콜백이 `save_fields_from_state` 로 읽음)이 같은 부품을 쓴다.
+  - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
+    (질문 1·F6·F2 — 답이 다르면 여기 하나만 바꾼다). 폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다(같은 제출의 새 호기가
+    그 회차 편집본에 아직 없다) — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
+- `src/capa_simulation/components/equipment_scenario_management.py` — 가용설비 현황 「설비 시나리오」 탭(1단계 몫). 시나리오
+  표(이름 ✎·공식/활성·최신 rN·리비전 수)·고른 시나리오의 리비전 표(출처 `이관/저장/복제/함께 넣기`·공통 rN·행 수)와
+  「이 리비전 불러오기」·「복제해 새 시나리오」(출처 = 최신 또는 공식 발행)·「공식으로 발행…」(지금 공식 → 새 공식, 최신이
+  아니면 그 사실, 발행 번호 대조)·옛 배포 흔적이 있을 때만 「이대로 이어 쓰기」.
+  - 쓰기는 저장소가 하고 그 뒤 이 화면이 `clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 import 하지
+    않는다). 열린 회차에만 목록을 읽는다.
 - `src/capa_simulation/components/qual_deadline_calculator.py` — 가용설비 현황 `Qual 마감 계산기` 탭. 숫자 칸 넷·12개월
   편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감 칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
   - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
@@ -1408,7 +1502,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하나 교체는 다른 Case 를 같은 트랜잭션에서 옮겨 적는다.
 - `src/capa_simulation/persistence/voc_store.py` — VOC 게시판 글·답글의 조회·삽입·삭제 SQL.
 - `src/capa_simulation/persistence/shortening_baseline_store.py` — 필요 단축 일정 기준선(설비 DB `0021`)의
-  넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`).
+  넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`). 설비 쪽 출처 칸 넷(`0027` —
+  `equipment_schedule_revision_ref`·`_no`·`equipment_scenario_name`·`equipment_release_no`)은 가리키기만 한다.
+- `src/capa_simulation/persistence/equipment_scenario_store.py` — 설비 DB `0027` 의 새 표 여섯(설비 시나리오·일정 리비전·일정
+  스냅샷·일정 비가동 스냅샷·공식 발행·이관 경계)의 SQL. 열린 연결만 받고 트랜잭션·신호는 저장소 몫이다. 시나리오 칸 DB 매핑
+  `SCENARIO_SCHEDULE_DB_COLUMNS`, 이관 시나리오 id `OPERATIONS_SCENARIO_ID`(`'operations'`), 「시나리오의 최신」 은 칸이 아니라
+  `MAX(revision_no)` 다. 차례는 늘 `revision_no`·`release_no`·`boundary_no` 로 정하고 `created_at` 으로 정하지 않는다(한
+  트랜잭션의 행은 시각이 같다). 옛 배포 흔적 수(`legacy_trace_count`)는 「마지막 경계 행의 `through_revision_no` 뒤 계약 v3
+  이하 공통 리비전」 이다.
 - `src/capa_simulation/persistence/past_data_store.py` — 공용 과거 구간 프로필 세 표의 조회·교체 SQL.
 - `src/capa_simulation/persistence/preset_store.py` — 리비전이 소유한 조회·판정 프리셋의 저장·복원.
 - `src/capa_simulation/persistence/source_data_store.py` — 데이터셋이 소유한 원천 Core Data raw 와 컬럼 프로파일 저장.
@@ -1434,10 +1535,47 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세션의 읽기가 비운 뒤 옛 값을 다시 심는다(TTL 없는 프로필은 다음 저장·재시작까지 남는다). 새 캐시도 같은 세대를 쓴다.
   - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`·`load_standard_target_availability`)는
     (DB 경로, DB·WAL stat, 쓰기 세대) 키에 TTL 15초다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
-- `src/capa_simulation/persistence/equipment_repository.py` — 설비 운영 세 표의 불변 전체 스냅샷과 Space 층·FAB 도면,
-  필요 단축 일정 조건·기준선 저장소.
-  - 최신 리비전·캔버스·요소는 쓰기 잠금 안에서 읽고 `base_revision_id`·`floor_layout_bases`·FAB `base` 가 다르면
-    거부한다. `save_snapshot`·`save_space_layout` 은 트랜잭션 하나이고 안 쓴 저장은 dirty 를 세우지 않는다.
+  - 설비 쪽은 **리비전 내용(불변)과 바뀔 수 있는 것**을 나눈다. 합친 본문 `_load_merged_payload`(공개
+    `load_merged_equipment_snapshot`)는 (DB, 공통 id, 일정 id) **쌍 키**에 세대가 없다(`MERGED_SNAPSHOT_CACHE_ENTRIES` 16칸).
+    설비 시나리오 목록(`load_equipment_scenario_catalog` — 시나리오·각 최신·리비전 수·최신 발행·흔적 수)과 시나리오 리비전
+    목록(`load_equipment_schedule_revisions`)은 (DB, stat, 세대 `"equipment_scenario"`) 키에 TTL 15초, 8칸이다. 공식 스냅샷
+    (`load_official_equipment_snapshot`)은 공통 최신 id + 목록의 최신 발행 → 합친 본문이라 발행만 바뀌어도 다른 쌍 키로 간다.
+    CSV 바이트도 쌍 키다. 이름·발행·복제·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터 저장 뒤에는
+    `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다.
+  - **어느 캐시도 저장소의 호환 래퍼(`save_snapshot`·`save_space_layout`·`load_snapshot`)를 부르지 않는다** — 래퍼
+    `load_snapshot` 은 발행에 따라 값이 바뀌는 뜻이라 공통 id 하나 키에 실으면 발행 뒤 낡은 값을 낸다. 시험이
+    `app_pages/`·`components/`·이 파일을 훑는다(`tests/test_equipment_current_reads.py`).
+- `src/capa_simulation/persistence/equipment_repository.py` — 설비 운영 세 표의 불변 스냅샷(공통 대장 리비전 + 설비 시나리오
+  일정 리비전)과 Space 층·FAB 도면, 필요 단축 일정 조건·기준선 저장소.
+  - **읽기 셋**은 연결을 받는 모듈 함수다 — 저장소 메서드와 읽기 전용 연결을 여는 `scripts/inspect_real_data_checks.py` 가
+    같은 함수를 써서 합치기 규칙이 두 벌이 되지 않는다. `read_common`(공통 32칸 + 키, 일정 칸이 아예 없음)·`read_schedule`
+    (키별 일곱 칸·비가동 — 이관 리비전은 옛 행을 읽기 투영·레거시 변환째)·`read_merged`(합친 39칸 스냅샷, 같은 레거시
+    리비전이면 한 번만 읽음, 끝에 읽기 검증 — 실패는 `EquipmentScenarioIncompatible`)·`read_official_pair`(공통 최신, 최신
+    발행 일정 리비전)·`legacy_trace_count`. 옛 `_read_snapshot` 은 `_read_legacy_snapshot` 이고 계약 v4 를 받으면 `ValueError`
+    다. 모델은 캐시에 실리므로 필드에 기본값을 두고 `Mapping` 대신 쌍 튜플(`unit_key_pairs`)·`frozenset` 을 쓴다.
+  - **저장은 `save_equipment(EquipmentSaveRequest)` 하나다**(연결 하나·트랜잭션 하나, 모든 쓰기가 `_write_transaction`).
+    메모리에서 막기(옛 배포 흔적 → `EquipmentLegacyTraceError`, 공통 최신 ≠ 출발 공통 → `EquipmentRevisionConflict`, 일정을
+    쓰는데 시나리오 최신 ≠ 출발 일정 → 같은 예외 `side`)·검증·호기 키·나누기·바뀐 쪽 가르기·함께 넣기·교차 검증·발행을 모두
+    정한 뒤 쓴다. 바뀐 쪽만 쓰고 둘 다 그대로면 리비전을 만들지 않는다(`wrote=False`). 예외 하나 — 공통 최신이 계약 v3
+    이하인 동안의 첫 저장은 공통이 그대로여도 v4 공통 한 벌을 함께 쓴다(`forced_common`, 옛 ZIP 으로 되돌리면 「빈 설비」 로
+    드러나게). 출발 두 리비전은 잠금 안에서 다시 읽는다(불변이라 화면이 든 값과 같다).
+  - **교차 검증**: 공통을 쓰거나 함께 넣기가 있으면 모든 시나리오(자기 포함)의 「이번 저장 뒤 최신」 과 최신 공식 발행을 새
+    공통과 합쳐 읽기 검증을 돈다 — 실패는 `EquipmentScenarioGuardError`(어느 시나리오·rN·규칙과 빠져나갈 길). 그래서 각
+    시나리오 최신과 최신 발행은 늘 합쳐진다.
+  - **발행**: 공식 시나리오에 새 일정 리비전이 생겼고(자기 저장이든 함께 넣기든) 저장 전 공식 = 그 시나리오 최신일 때만
+    `publish_official` 이면 그 리비전을 발행한다. 남의 미발행 더 새 리비전이 있으면 발행하지 않고 `release_withheld`. 발행이
+    없으면(빈 DB) 이 저장의 일정 리비전이 공식 v1 이다. `expected_release_no` 가 다르면 `EquipmentReleaseMoved`.
+  - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 최신 또는 최신 공식 발행, SQL 사본이 아니라 합친 읽기 길로 읽은
+    일곱 칸·비가동을 새 두 표에, `origin='clone'`)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name`
+    대조 → `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` —
+    흔적 수 대조 뒤 경계 행 하나)가 1단계 관리 쓰기다. 흔적은 설비 마스터 저장만 막는다.
+  - **호환 래퍼**(시험·스크립트용 — 화면·캐시는 부르지 않는다): `save_snapshot`·`save_space_layout` 은 공식 시나리오에 늘
+    공통 v4 와 일정 리비전을 함께 써 같은 트랜잭션에서 발행한다(래퍼만 쓰면 공통 rN 과 운영 일정 rN 이 같은 번호로 오른다).
+    `load_snapshot(공통 id)` 은 그 공통을 `common_revision_id` 로 가진 공식 시나리오 일정 리비전 마지막 것과의 짝이고, 짝이
+    없으면 최신 공식 발행 일정이다. `list_revisions()` 는 공통 대장 이력이고 v4 공통의 비가동 행 수는 0 이다(비가동은 일정
+    리비전 요약이 센다).
+  - 최신 리비전·캔버스·요소는 쓰기 잠금 안에서 읽고 출발 리비전·`floor_layout_bases`·FAB `base` 가 다르면 거부한다. 안 쓴
+    저장은 dirty 를 세우지 않는다.
   - 층 Main 설비명 위치(`floor_layout_group_label`, `0025`)는 `floor_group_labels`(층마다 전체)로 같은 트랜잭션에 쓰고
     층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
     `label_align`(`0025`, 영역 아닌 요소는 NULL)이다.
@@ -1566,10 +1704,14 @@ RQ_MODULE
    분기를 만든다. 예외는 **이름표인 리비전명** 하나다(2026-10-22 사용자 결정 — `rename_revision`·`rename_revisions`,
    비교 후 쓰기, 이력 없음, 시나리오 「최근 수정」 그대로). 계산 캐시 키·공식 발행 행(공식버전명)은 리비전명을 싣지 않아
    이름을 바꿔도 계산이 다시 돌지 않는다. 메모는 시스템 출처 기록(상세 조회기간·월 머지·연도 Shift 출처)이 들어 고치지
-   않는다. 설비 DB 리비전은 이 예외가 없다(9 — 저장마다 새 전체 스냅샷).
+   않는다. 설비 DB 리비전은 이 예외가 없다 — **공통 대장 리비전**(`equipment_ops.revision`, 번호 전역)·**설비 시나리오 일정
+   리비전**(번호는 시나리오마다 r1 부터)·**공식 발행**(`release_no` 전역)이 모두 append-only 이고, 고칠 수 있는 것은 설비
+   시나리오 **이름** 하나다(리비전명 칸 `revision_name` 은 E7 답 대기라 자리만 있다). 설비 `0027` 뒤 첫 저장은 무엇을
+   바꾸든 계약 v4 공통 한 벌을 쓴다(32).
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
-   전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 새 전체
-   스냅샷을 만든다. `Static 대비 일정` 탭과 `필요 단축 일정` 화면만 시뮬레이션 기준정보·소요대수를 읽어
+   전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 바뀐 쪽(공통 대장·설비 시나리오 일정)의
+   새 전체 스냅샷을 만든다. 설비 시나리오는 설비 DB 안의 독립 시나리오이고 시뮬레이션 시나리오와 짝짓지 않는다(E1 — HOME·
+   Static 확보율 `RQ_EQP_AVBL` 계산에 들지 않는다). `Static 대비 일정` 탭과 `필요 단축 일정` 화면만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
    공용 공정 표시명 하나다(2026-10-10 사용자 결정 — RawData 를 뺀 탭의 보이는 글자, 공정명이 없는 Qual 마감 계산기는
@@ -1582,8 +1724,9 @@ RQ_MODULE
    시나리오 키와 오늘, 진척 비교는 그 계획 키 + 기준선 id + 목표)다. 코드 상수는 넣지 않는다(아래 15
    「키 방침」). 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
    (`tests/test_equipment_view_cache.py` 가 입력마다 키가 갈리고 캐시 결과 = 새 계산인지 본다).
-   **설비 운영 스냅샷을 읽는 시뮬레이션 쪽 페이지**도 있다 — `공정 Capa 상세` 는 설비 DB 의 최신
-   저장본·Cut-off 를 **읽기만** 해(쓰지 않는다, `PageSpec.uses_equipment_db`) 공정 하나의 소요대수와
+   **설비 운영 스냅샷을 읽는 시뮬레이션 쪽 페이지**도 있다 — `공정 Capa 상세` 는 설비 DB 의 설비 시나리오 스냅샷(방문
+   기준 — HOME 칸으로 들어온 방문은 그 방문 동안 공식, 그 밖은 세션 설비 시나리오, 32)·Cut-off 를 **읽기만** 해(쓰지 않는다,
+   `PageSpec.uses_equipment_db`) 공정 하나의 소요대수와
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 같은 키 방침(15)의
    `simulation_cache` 래퍼(`get_required_shortening_for_target` — UPEH 가정이면 그 가정 칸, 31 —·
    `get_process_equipment_timeline`)로만 부르고,
@@ -1655,7 +1798,9 @@ RQ_MODULE
     저장소는 팝업을 연 동안에만 읽는다 — `tests/test_app_navigation.py` 가 그리는 동안 저장소·연결 호출 0 을 지킨다.
     HOME 제목 줄 주요 Case 칩도 같다 — 공식은 `intro_summary.latest_official_identity`, Case 는 주요 Case 쓰기 세대를
     키로 한 캐시(`load_main_case_targets` — `clear_global_main_cases_cache()` 가 함께 비운다)다. 같은 시험이 칩도 감싸
-    첫 회차만 읽고 둘째 회차는 0 인 것을 지킨다.
+    첫 회차만 읽고 둘째 회차는 0 인 것을 지킨다. 사이드바 「설비 시나리오」 줄은 이 규칙의 예외가 아니다 — `app.py` 는 칸만
+    세우고 **페이지가** `resolve_equipment_session`(캐시) 뒤에 그 칸에 그리며, 머리 띠 끝 「설비 시나리오 · …」 은 페이지가
+    남긴 라벨 칸(`equipment_scenario_label_v1`)만 읽는다(9장).
 24. **공용 프로필에는 모두가 함께 쓰는 설정(비교 대상·판정 기준 등)만 담는다** — 켜고 끄는 보기 토글을 담으면 남의
     화면까지 켜진다. 바뀐 것이 없는 쓰기는 쓰지 않는다 — 설비 DB 의 필요 단축 일정 공용 조회 조건
     (`save_shortening_filter_months`·`_processes`)은 저장소가 쓰기 트랜잭션 안에서 견주어 같으면 version 도 동기화 dirty
@@ -1694,6 +1839,26 @@ RQ_MODULE
     (`get_securement_rate`·`get_scenario_securement_rate` — HOME 과 같은 칸)에 넘기지 않는다 — 공정 Capa 상세는 이미 받은
     작은 확보율 프레임에 캐시 밖에서 건다. 설비 일정 키(`process_timeline_key_from_shortening`)는 토큰을 싣지 않는다.
     `tests/test_upeh_assumption_cache.py` 가 짝 어긋남과 「가정을 돌린 뒤에도 공식 칸·HOME 확보율이 공식 그대로」를 본다.
+32. **설비 시나리오는 (공통, 일정) 쌍으로만 읽는다**(설비 `0027`, 2026-10-24 결정 E1~E9·F1~F7). 설비 마스터는 공통 호기 대장
+    (호기 정보·Space 실물·실적·상태·이력·메모·기존 보유대수 — 시나리오와 무관하게 늘 최신)과 설비 시나리오 일정(날짜 여섯 +
+    `시나리오 메모` + 비가동 일정 전체)으로 갈리고, 일정·비가동은 설비명이 아니라 **호기 키**에 매달린다.
+    - **세션은 (시나리오, 일정 리비전) 하나를 고정해 든다.** 새 세션 = 최신 공식 발행(E5). 편집본 토큰·계산 사본·Space
+      편집기 epoch 는 쌍 토큰(`EquipmentSnapshot.token`)이고, 계산 캐시 키는 지금처럼 내용 지문이라 바뀐 것이 없다
+      (`시나리오 메모` 만 바꿔도 마스터 지문이 바뀌어 다시 계산하는 것은 받아들인다). 세션이 공식 발행 쌍이면 공식 스냅샷과
+      같은 쌍 키라 같은 본문 칸을 쓴다.
+    - **낡음 잠금**: 남이 내 시나리오에 일정을 저장해(함께 넣기 포함) 세션 리비전 ≠ 그 시나리오 최신이면 **편집하기 전에**
+      사이드바 배지를 「최신 r14 있음」 으로, RawData 맨 위에 「「운영 일정」 r14 가 더 새롭습니다 — … 사이드바 「설비 시나리오」
+      에서 최신 r14 를 불러오세요」 를 세우고 일정 여섯·시나리오 메모 칸과 비가동 표·행 추가를 잠근다(막힌 뒤에 버리는 일이
+      없게 — 붙여넣기 미리보기도 `stale_paste_refusal`). 공통 칸은 그대로 저장된다. 남이 공통을 저장하면 지금처럼 편집본을 다시 세우고 「공통 대장
+      rN」 으로 알린다(일정 쪽 편집을 새 공통 위로 옮기는 것은 2단계).
+    - **교차 검증**(3장 `equipment_repository`)이 각 시나리오 최신과 최신 공식 발행을 늘 합쳐지게 지킨다. 그 밖의 옛
+      리비전은 막힐 수 있고, 세션이 그런 쌍을 들면 `resolve_equipment_session` 이 시나리오 최신 → 공식으로 옮기고 알린다.
+    - **일정 없음** 호기(그 시나리오에 일정 행이 없는 호기 — 함께 넣기를 끄고 넣은 호기)는 그 시나리오 계산·Space 에서
+      뺀다(`calculation_frames`, 질문 2 권장안). 편집·RawData·CSV 의 39칸 프레임에는 그대로 든다.
+    - **어느 캐시도 호환 래퍼를 부르지 않는다**(3장 `equipment_cache`). 바뀐 것 없는 설비 저장은 리비전을 만들지 않는다
+      (`wrote=False` — dirty 도 없다). 새 쓰기는 모두 `_write_transaction(outcome)` 을 지난다.
+    - 새 표 여섯에는 **외래 키가 없다** — DuckDB 1.5.5 가 FK 부모의 한 트랜잭션 삭제·UNIQUE 칸 UPDATE(이름)를 막아서다.
+      소유·정합은 저장소가 같은 트랜잭션에서 지킨다(`docs/data_model.md`). `copy_database` 차례에 더한 것이 없다.
 
 ## 6. 핵심 계산 규칙
 
@@ -2050,6 +2215,15 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   저장할 때 오늘보다 늦을 수 없고 반입실적 ≤ Qual실적이어야 한다. 미확인(상태 계획·확정 + 실적 공백 +
   일정 < 오늘)·실적 누락·상태 갱신 필요는 저장을 막지 않는 알림이다(`services/schedule_confirmation.py`) —
   RawData 편집표 위 한 줄·접힌 목록(편집본 기준)과 Main `호기 현황` 머리 줄 아래 미확인 한 줄(저장본 기준).
+  **미확인은 공식 설비 시나리오 일정 기준이다** — 세션이 공식 시나리오면 자기 일정 그대로, 가정 설비 시나리오면 Main 은
+  공식 스냅샷의 미확인을 화면 호기로 좁혀 쓰고(합치지 않는다 — 공통은 늘 최신이라 공식 스냅샷의 공통이 곧 지금 공통)
+  꼬리표 「공식 일정 기준」 을 달며, RawData 확인 목록은 공식 일정 + 편집본 공통 칸으로 센다. 상태 둘(반입상태·Qual상태)은
+  공통 칸이고 칸 머리가 「공통 — 공식 일정 기준」 이다.
+- **설비 시나리오에 일정이 없는 호기는 그 시나리오에 없는 호기와 같다**(F4 — 2026-10-24 결정, 질문 2 권장안). 그 시나리오의
+  주차·월별 가용·Static 대비 일정·필요 단축 일정·공정 Capa 상세·「일정 미정 N대」 셈에서 빠지고(기존설비 Y·보관 Y 도),
+  화면은 「이 설비 시나리오에 일정이 없는 호기 n대 — …」 한 줄로 알린다. Space(공식)는 공식 일정이 없는 호기를 그리지 않고
+  「공식 일정 없음 n대」 다. 이관·복제로 만든 시나리오는 모든 호기에 일정 행이 있어 해당하는 것은 함께 넣기를 끄고 넣은
+  호기뿐이다.
 - 입고 후 Qual 전인 호기는 셋업중대수와 비가동 호기 목록에 포함한다.
 - Qual 완료 또는 기존설비에 활성화된 개발대여·공사·고장·이설 등의 운영 비가동 일정이 있으면
   가용대수에서 제외한다. 같은 호기의 중복 비가동 일정은 한 대로 집계한다.
@@ -2559,6 +2733,18 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다.
+- **설비 시나리오 줄은 페이지가 그린다.** `PageSpec.equipment_scenario`(`"session"` — 가용설비 현황·필요 단축 일정·공정 Capa
+  상세, `"official"` — Space 현황)와 `equipment_scenario_tabs`(가용설비 현황은 Qual 마감 계산기 탭을 뺀다)를 선언하면
+  `app.py` 조건 패널이 「적용 전 편집 → 시나리오 → 조회기간 → **설비 시나리오 칸** → 페이지 칸」 차례로 빈 블록 칸
+  (`sidebar_status` 에 등록 · 꺼내기 함수)을 세우고, 페이지가 `resolve_equipment_session` 뒤에 그 칸에 줄을 그린다 — 부트스트랩
+  오류는 페이지의 오류 처리 안에서 나고, 배지는 그 회차 목록으로 맞으며(한 회차 늦지 않음), `app.py` 는 설비 DB 를 읽지 않는다.
+  값 칸 단추는 위젯 상태가 없고 값은 세션 칸에만 있어 페이지가 그려도 화면 사이에 잃을 것이 없다. 팝업은
+  `render_condition_dialogs` 의 셋째 갈래다(한 실행에 팝업 하나).
+- **머리 띠 끝 「설비 시나리오 · …」** 은 설비 시나리오를 선언한 화면의 아랫줄 끝에 선다(Space 는 「· 공식 vN (고정)」). 머리 띠는
+  `app.py` 가 페이지보다 먼저 그리므로 라벨 칸만으로는 한 회차 늦다 — 그래서 **설비 화면에서는 페이지가 회차마다 머리 띠를 한
+  번 더 보낸다**(`refresh_equipment_header` — 같은 글이어도. 바뀐 회차에만 보내면 이벤트 칸 자리가 회차마다 밀려 그 뒤 알림 칸
+  시험이 깨진다. 같은 글은 메시지 캐시로 해시만 간다). 페이지는 그 꼬리를 페이지 몫으로 세션 칸(`app_header_equipment_label_v1`
+  — 페이지 스크립트 해시째)에 남기고, `app.py` 는 다음 회차에 그 글로 먼저 그려 둔다(다른 페이지의 꼬리는 읽지 않는다).
 - **여닫을 때 본문을 다시 돌리지 않는다.** 사이드바 상자 전부(페이지 그룹·`sidebar_expander`·조건 카드)의 `on_change` 는
   `sidebar_status.on_box_toggle` 이다 — 기억 칸을 적고 `app.py` 맨 위의 빈 프래그먼트(`SIDEBAR_TOGGLE_FRAGMENT_KEY`)만
   다시 돌린다. 같은 페이지의 끝까지 돈 실행 뒤(`begin_app_run` 의 `AppRun` 표지)이고 다른 위젯이 함께 바뀌지 않았을
@@ -2803,6 +2989,12 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   DB 자리가 아니면) 앱 프로세스를 보지 않는다. 운영 DB 자리 판정은 `settings.is_operational_database_place` 한 벌이다 — 같은 파일
   (하드링크 · Windows 긴 경로 접두 · UNC 공유처럼 글자가 달라도 장치 · 파일 번호로), 운영 `data/` 그 자체나 그 아래, git 저장소
   안(사본은 저장소 밖 — 사본 트리의 스크립트가 다른 저장소의 `data/` 를 못 가리는 것도 이것이 막는다). 경로 글자만 견주지 않는다.
+  설비 DB 는 **공식 설비 시나리오**(공통 최신 + 최신 공식 발행)를 앱과 같은 읽기 길(`equipment_repository.read_official_pair`·
+  `read_merged` — 3장)로 한 번 읽어 8-1·8-4 가 나눈다. 공통 칸 수는 공통 최신 SQL, 일정 칸 수(Q 자리표·개편 전 두 날짜·일정
+  미정·정지+반출·비가동 행)는 공식 일정 리비전으로 센다 — Q 자리표는 레거시 원천 행만 센다(새 일정 표에는 자리표가 없다).
+  8-4 요약 키의 `r` 은 공식 일정 리비전 번호라 일정은 그대로 두고 공통만 v4 로 저장해도 8-1·8-4 키가 그대로다(시험). 이관 확인
+  줄(설비 `0027` — 시나리오 수·이관 리비전/이관 전 리비전·공식·옛 배포 흔적·일정 없음·고아 일정 행)은 요약 키 `8-4s` 로 따로
+  지어 8-4 줄이 멈춰도 남는다. 시나리오 이름은 값이라 찍지 않는다.
 - **배포마다 바뀌는 사내 화면 확인(런북 7장)은 `scripts/check_deploy_screens.py` 가 맡는다.** 별도 포트에 띄운
   앱을 저장소 밖에 깐 Playwright(깔린 Chrome, headless)로 보고, 결과 칸에는 개수·있음/없음·같음/다름·px 만
   둔다 — 화면에서 읽은 이름은 판정에만 쓰고 옮기지 않는다. 항목은 공통 뼈대(`Screen`)만 쓰는 함수 하나와
@@ -2888,7 +3080,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 
 - SQLite는 실제 런타임 Repository가 아니다.
 - 실행 결과 스냅샷과 사용자 권한은 미구현이다.
-- 설비 운영 이력의 등록자 식별·승인 및 Capa 계산 입력 전환은 미구현이다.
+- 설비 운영 이력의 등록자 식별·승인 및 Capa 계산 입력 전환은 미구현이다. 설비 리비전마다 「저장자」 를 선택 입력으로
+  남길 뿐 누구나 저장한다(E9 — 권한은 사내 로그인 기능 때).
 - Dynamic Capa는 현재 데모 프로토타입이며 실적효율·생산실적 DB 조회, 원천 컬럼 매핑,
   누적 이력 저장소와 표준 Capa 리비전 연결은 미구현이다.
 - 원천이 붙지 않은 화면은 **샘플 스위치**(`components/sample_data.py`)를 갖는다. 기본은
@@ -2938,6 +3131,16 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - **DB 가 코드보다 새 것이면 막지 않고 알린다.** 적용된 마이그레이션 최고 번호가 코드보다 높으면(옛 배포 ZIP 으로 되돌린
   상태) 앱은 그대로 뜨고 화면 맨 위에 경고만 선다(`MigrationOutcome.schema_ahead`) — 막으면 DB 를 복원하기 전에는 되돌릴
   수 없다.
+- **설비 `0027` 을 실은 배포부터 옛 배포 ZIP 으로 되돌리지 않는다**(사내 런북 4-2 끝) — 새 판에서 한 번이라도 저장한 뒤의
+  옛 판은 설비 마스터를 빈 표로 읽는다(첫 저장이 계약 v4 공통이라). 옛 판에서 저장한 흔적(경계 뒤 계약 v3 공통)이 있으면
+  새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면 맨 위에 경고를 세운다. 빠져나가는 길은 백업 복원과
+  설비 시나리오 탭 「이대로 이어 쓰기」 둘이다.
+- **설비 시나리오 2단계는 아직 없다**(1단계 = 구조·이관·고르기·두 쪽 저장·발행·복제·이름·화면 최소·사내 이관 확인):
+  시나리오끼리 일정 비교(F7), 보관·되살리기·영구 삭제·순서·공통 대장 이력 표(E8 나머지), 리비전명·되돌리기·여기서 새
+  시나리오(E7 — 답 대기, 스키마 칸 `revision_name`·`origin='restore'` 만 있음), 남의 공통 저장 때 일정 편집 다시 얹기(rebase),
+  함께 넣기 행 단위 고르기, RawData 설비명 고침을 이름 바꿈으로 짝짓기(지금은 「지운 + 새 호기」 — 질문 4 권장안), 일정 없음
+  호기를 「이 시나리오에 넣기」, 운영 변경 끌어오기. 스키마는 1단계 그대로 받는다. 지금은 단일 사용자 전제라 여러 세션이
+  함께 쓰면 함께 넣기·남의 공통 저장이 낡음·버림을 자주 만든다.
 - 시나리오 보관은 파일 크기를 줄이지 않는다 — DuckDB 용량 회수는 영구 삭제 뒤 `scripts/compact_duckdb.py` 재구축뿐이다.
 - 브라우저 뒤로/앞으로는 페이지 안 상태 이동이 아니다 — Streamlit 1.63 은 그 재실행에 브라우저 주소가 아니라 파이썬이
   마지막으로 쓴 조회 문자열을 보내 주소 표시줄만 바뀐다. 주소 인자는 새로고침 복원용으로만 쓰고 이동은 화면 안 길(경로
