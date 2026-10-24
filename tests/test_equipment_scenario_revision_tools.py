@@ -45,6 +45,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_schedule_restore_preview,
 )
 from capa_simulation.persistence.equipment_repository import (
+    SCHEDULE_REVISION_NAME_MAX_CHARS,
     DuckDBEquipmentRepository,
     EquipmentLegacyTraceError,
     EquipmentRevisionConflict,
@@ -230,6 +231,33 @@ def test_a_revision_name_is_compared_with_what_was_seen_before_it_is_written(
     with pytest.raises(EquipmentScheduleRevisionNameMoved, match="지금: 이름 없음"):
         repository.rename_schedule_revision(first, name="내 이름", expected_name="남이 붙인 이름")
     assert _revisions(repository)[1].revision_name is None
+
+
+def test_a_revision_name_over_the_limit_is_refused_by_the_repository_too(
+    tmp_path: Path, marked: list[Path]
+) -> None:
+    """리비전명 글자 수 한도는 화면 칸(`max_chars`)만이 아니다 — 저장소도 리비전명 고치기와 되돌리기
+    모두에서 자르지 않고 쓰기 전에 거절한다. 앞뒤 공백은 세지 않는다."""
+    repository = _seeded(tmp_path)
+    _changed_qual(repository)
+    first = _schedule_id(repository, 1)
+    counts = _counts(repository)
+    too_long = "가" * (SCHEDULE_REVISION_NAME_MAX_CHARS + 1)
+    refusal = rf"리비전명은 {SCHEDULE_REVISION_NAME_MAX_CHARS}자까지입니다\(지금 "
+    marked.clear()
+
+    with pytest.raises(ValueError, match=refusal):
+        repository.rename_schedule_revision(first, name=too_long, expected_name=None)
+    with pytest.raises(ValueError, match=refusal):
+        _restore(repository, 1, revision_name=too_long)
+    assert _counts(repository) == counts and marked == []
+    assert _revisions(repository)[1].revision_name is None
+
+    exact = "가" * SCHEDULE_REVISION_NAME_MAX_CHARS
+    named = repository.rename_schedule_revision(first, name=f"  {exact}  ", expected_name=None)
+    assert named.revision_name == exact
+    restored = _restore(repository, 1, revision_name=exact)
+    assert restored.schedule is not None and restored.schedule.revision_name == exact
 
 
 def test_a_rename_reaches_the_cached_list_through_the_write_generation_not_the_body(

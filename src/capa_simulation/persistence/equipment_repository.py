@@ -1097,11 +1097,11 @@ class DuckDBEquipmentRepository:
         """설비 시나리오를 복제로 만든다(E8 — 만들기는 복제로만). 새 시나리오 한 줄(최신 = r1)을
         돌려준다.
 
-        출처는 그 시나리오의 **어느 일정 리비전이든** 된다(E7 「여기서 새 시나리오」 — 최신·공식
-        발행만이 아니다). 새 r1 은 SQL 사본이 아니라 `read_merged` 로 읽은 출처(지금 공통 대장과
-        합친 것)의 일정 일곱 칸·비가동이다 — 이관 리비전의 Qual 자리표·계약 v2 변환·레거시 비가동
-        중복 제거가 원본과 같게 걸린다. 출처의 일정 없음 호기(그 리비전 뒤에 공통 대장에 든 호기
-        포함)는 복제본에서도 일정 없음이다. 지금 공통 대장과 합칠 수 없는 옛 리비전은
+        출처는 그 시나리오의 **어느 일정 리비전이든** 된다(「여기서 새 시나리오」). 새 r1 은 SQL
+        사본이 아니라 `read_merged` 로 읽은 출처(지금 공통 대장과 합친 것)의 일정 일곱
+        칸·비가동이다 — 이관 리비전의 Qual 자리표·계약 v2 변환·레거시 비가동 중복 제거가 원본과
+        같게 걸린다. 출처의 일정 없음 호기(그 리비전 뒤에 공통 대장에 든 호기 포함)는 복제본에서도
+        일정 없음이다. 지금 공통 대장과 합칠 수 없는 옛 리비전은
         `EquipmentScenarioIncompatible` 로 막는다 — 최신·공식 발행은 저장 때 교차 검증이 늘 합쳐지게
         지키지만 그 밖은 아니다. 이름은 보관본까지 겹칠 수 없다.
         """
@@ -1236,7 +1236,8 @@ class DuckDBEquipmentRepository:
         그대로다(리비전 **내용**은 append-only — AGENTS 5장 8 의 이름표 예외).
 
         - 비우면(None·빈 글자) 이름이 지워진다. 같은 이름을 다른 리비전에도 허용한다(번호가 늘
-          가른다).
+          가른다). 앞뒤 공백을 뗀 뒤 `SCHEDULE_REVISION_NAME_MAX_CHARS` 자를 넘으면 쓰지 않고
+          `ValueError`(화면 칸도 같은 한도다).
         - **비교 후 쓰기** — `expected_name` 은 부르는 쪽이 보고 고친 지금 이름(없으면 None)이다.
           쓰기 잠금 안의 이름과 다르면 `EquipmentScheduleRevisionNameMoved` 로 거절한다 — 옛 이름을
           든 화면이 남의 변경을 조용히 되돌리지 않게.
@@ -1244,7 +1245,7 @@ class DuckDBEquipmentRepository:
         - 공식 발행 행·합친 본문 캐시는 이름을 싣지 않아 계산·공식이 그대로다. 리비전 목록 캐시는
           호출부가 `clear_equipment_scenario_cache()` 로 비운다(쓰기 세대를 올린다).
         """
-        label = _clean_text(name)
+        label = _schedule_revision_label(name)
         expected = _clean_text(expected_name)
         outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:
@@ -1313,9 +1314,10 @@ class DuckDBEquipmentRepository:
 
         공통을 쓰지 않으므로 교차 검증이 없다 — 새 리비전은 지금 공통 대장과 합쳐 읽기 검증을 지난
         값이고 다른 시나리오는 건드리지 않는다. 메모는 「rK 일정으로 되돌림」 뒤에 적은 메모를
-        붙인다. 캐시는 호출부가 `clear_equipment_scenario_cache()` 로 비운다.
+        붙인다. 새 리비전명은 `rename_schedule_revision` 과 같은 글자 수 한도다(넘으면 쓰기 전에
+        `ValueError`). 캐시는 호출부가 `clear_equipment_scenario_cache()` 로 비운다.
         """
-        label = _clean_text(revision_name)
+        label = _schedule_revision_label(revision_name)
         author = _clean_text(saved_by)
         user_note = _clean_text(note)
         outcome = _WriteOutcome(wrote=False)
@@ -2496,6 +2498,8 @@ _SaveMode = Literal["changed", "if_any", "always"]
 DUPLICATE_EQUIPMENT_SCENARIO_NAME_MESSAGE = (
     "같은 이름의 설비 시나리오가 이미 있습니다(보관본 포함). 이름을 바꿔 저장하세요."
 )
+# 일정 리비전 리비전명 글자 수 한도(선택지·표에서 리비전 번호가 밀려나지 않게) — 화면 칸도 이 수다.
+SCHEDULE_REVISION_NAME_MAX_CHARS = 40
 
 
 @dataclass(frozen=True)
@@ -2596,6 +2600,17 @@ def _clean_text(value: str | None) -> str | None:
         return None
     text = value.strip()
     return text or None
+
+
+def _schedule_revision_label(name: str | None) -> str | None:
+    """리비전명 — 앞뒤 공백을 떼고 비면 None. `SCHEDULE_REVISION_NAME_MAX_CHARS` 자를 넘으면
+    `ValueError`(자르지 않는다 — 적은 이름이 말없이 바뀌지 않게)."""
+    label = _clean_text(name)
+    if label is not None and len(label) > SCHEDULE_REVISION_NAME_MAX_CHARS:
+        raise ValueError(
+            f"리비전명은 {SCHEDULE_REVISION_NAME_MAX_CHARS}자까지입니다(지금 {len(label)}자)."
+        )
+    return label
 
 
 def _required_scenario_name(name: str) -> str:

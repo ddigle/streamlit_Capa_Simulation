@@ -56,6 +56,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_schedule_restore_preview,
 )
 from capa_simulation.persistence.equipment_repository import (
+    SCHEDULE_REVISION_NAME_MAX_CHARS,
     EquipmentReleaseMoved,
     EquipmentRevisionConflict,
     EquipmentScenarioSummary,
@@ -80,7 +81,7 @@ SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
 DISCARD_KEY = "equipment_scenario_manage_discard_v1"
 LOAD_BUTTON_KEY = "equipment_scenario_manage_load_v1"
-# 「여기서 새 시나리오」 — 고른 리비전을 r1 로 복제한다(key 는 1단계 「복제해 새 시나리오」 그대로).
+# 「여기서 새 시나리오」 — 고른 리비전을 r1 로 복제한다.
 CLONE_NAME_KEY = "equipment_scenario_manage_clone_name_v1"
 CLONE_BY_KEY = "equipment_scenario_manage_clone_by_v1"
 CLONE_BUTTON_KEY = "equipment_scenario_manage_clone_v1"
@@ -89,13 +90,18 @@ RENAME_BUTTON_KEY = "equipment_scenario_manage_rename_button_v1"
 # 「리비전명」 — 고른 리비전의 이름표.
 REVISION_NAME_KEY = "equipment_scenario_manage_revision_name_v1"
 REVISION_NAME_BUTTON_KEY = "equipment_scenario_manage_revision_name_button_v1"
-# 「이 리비전으로 되돌리기」.
+# 「이 리비전으로 되돌리기」. 입력 칸 key 는 고른 리비전을, 확인 체크 key 는 확인 글을 정하는 값
+# 다섯(시나리오·고른 리비전·그 시나리오 최신·공통 최신·공식 발행 번호)을 덧붙인다 — 다른 리비전을
+# 고르거나 확인 뒤 그 값이 바뀌면 체크가 풀린 새 칸으로 선다(본 적 없는 글로 되돌리지 않게).
 RESTORE_NAME_KEY = "equipment_scenario_manage_restore_name_v1"
 RESTORE_NOTE_KEY = "equipment_scenario_manage_restore_note_v1"
 RESTORE_BY_KEY = "equipment_scenario_manage_restore_by_v1"
 RESTORE_PUBLISH_KEY = "equipment_scenario_manage_restore_publish_v1"
 RESTORE_CONFIRM_KEY = "equipment_scenario_manage_restore_confirm_v1"
 RESTORE_BUTTON_KEY = "equipment_scenario_manage_restore_v1"
+# 확인 체크가 켜진 회차의 그 값 다섯 — 다음 회차에 값이 바뀌어 체크가 풀렸으면 그 까닭을 알린다
+# (Streamlit 1.63 은 잠가 그린 단추의 클릭을 서버에서 버려 누른 회차에 코드가 알 수 없다).
+RESTORE_AGREED_KEY = "equipment_scenario_manage_restore_agreed_v1"
 PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
 PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
@@ -112,8 +118,8 @@ PENDING_REVISION_KEY = "equipment_scenario_manage_pending_revision_v1"
 # 입력 칸 세대 — 쓰기에 성공한 회차에 올라 다음 회차에 빈 칸으로 선다(옛 값을 되보내지 않게).
 GENERATION_KEY = "equipment_scenario_manage_generation_v1"
 
-# 리비전명 칸 글자 수 한도(선택지·표에서 리비전 번호가 밀려나지 않게).
-REVISION_NAME_MAX_CHARS = 40
+# 리비전명 칸 글자 수 한도 — 저장소도 같은 한도로 거절한다.
+REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS
 
 
 def _generation() -> int:
@@ -131,6 +137,7 @@ def _written(message: str) -> None:
     clear_equipment_scenario_cache()
     st.session_state[FLASH_KEY] = message
     st.session_state[GENERATION_KEY] = _generation() + 1
+    st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.rerun()
 
 
@@ -140,6 +147,7 @@ def _refused(message: str) -> None:
     clear_equipment_snapshot_cache()
     st.session_state[REFUSED_KEY] = message
     st.session_state[GENERATION_KEY] = _generation() + 1
+    st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.rerun()
 
 
@@ -335,19 +343,26 @@ def _render_load(
         st.rerun()
 
 
-def _preview_for(
-    database_path: str,
-    scenario: EquipmentScenarioSummary,
-    revision: EquipmentScheduleRevisionSummary,
-) -> ScheduleRestorePreview:
-    """고른 리비전을 지금 공통 대장과 합쳐 그 시나리오 최신 자리에 놓았을 때의 차이(캐시).
-
-    「이 리비전으로 되돌리기」 와 「여기서 새 시나리오」 가 같은 칸을 쓴다. 공통 대장이 없거나 그
-    리비전을 지금 공통 대장과 합칠 수 없으면 예외다(`BOOTSTRAP_ERRORS` 안 — 부르는 쪽이 알린다).
-    """
+def _latest_common_id(database_path: str) -> str:
+    """지금 공통 대장 최신 id(캐시). 없으면 `KeyError`(`BOOTSTRAP_ERRORS` 안 — 부르는 쪽이
+    알린다)."""
     common_id = latest_equipment_revision_id(database_path)
     if common_id is None:
         raise KeyError("공통 대장 리비전이 없습니다.")
+    return common_id
+
+
+def _preview_for(
+    database_path: str,
+    common_id: str,
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+) -> ScheduleRestorePreview:
+    """고른 리비전을 공통 대장 `common_id` 와 합쳐 그 시나리오 최신 자리에 놓았을 때의 차이(캐시).
+
+    「이 리비전으로 되돌리기」 와 「여기서 새 시나리오」 가 같은 칸을 쓴다. 그 리비전을 공통 대장과
+    합칠 수 없으면 예외다(`BOOTSTRAP_ERRORS` 안 — 부르는 쪽이 알린다).
+    """
     return load_schedule_restore_preview(
         database_path,
         common_id,
@@ -356,12 +371,60 @@ def _preview_for(
     )
 
 
+def restore_seen_token(
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    *,
+    common_id: str,
+    release_no: int,
+) -> str:
+    """되돌리기 확인 글을 정하는 값 다섯 — 확인 체크 key 꼬리이자 저장소에 넘기는 대조값의 짝.
+
+    확인 재료는 (공통, 그 시나리오 최신, 고른 리비전) 이 정하고 공식 시나리오의 발행 줄은 공식 발행
+    번호가 정한다. 앞 두 칸(시나리오·고른 리비전)은 「같은 리비전에서 값만 바뀌었는가」 를 가른다.
+    """
+    return "__".join(
+        (
+            scenario.equipment_scenario_id,
+            revision.schedule_revision_id,
+            scenario.latest_schedule_revision_id or "",
+            common_id,
+            str(release_no),
+        )
+    )
+
+
 def added_since_sentence(revision: EquipmentScheduleRevisionSummary, count: int) -> str:
-    """그 리비전 뒤에 공통 대장에 든 호기가 「일정 없음」 이 된다는 한 문장(F4 — 수는 늘 적는다)."""
+    """그 리비전 뒤에 공통 대장에 든 호기가 「일정 없음」 이 된다는 한 문장(F4 — 수는 늘 적는다).
+    0대면 빠지는 호기가 없다고 적는다."""
     title = f"r{revision.revision_no}"
+    if not count:
+        return f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
     return (
         f"{title} 뒤에 공통 대장에 든 호기(지금 {count:,}대)는 {title}에 일정이 없어 이 설비 "
         "시나리오에서 「일정 없음」 이 됩니다 — 그 시나리오 계산·Space 에서 빠집니다."
+    )
+
+
+def branch_unscheduled_sentence(
+    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
+) -> str:
+    """「여기서 새 시나리오」 안내 — 새 시나리오의 일정 없음 수와 그 가운데 그 리비전 뒤에 든
+    호기 수(0대면 없다고 적는다)."""
+    title = f"r{revision.revision_no}"
+    if not preview.unscheduled_after:
+        return (
+            f"{title}에는 일정이 없는 호기가 없습니다(0대) — 새 시나리오의 모든 호기가 일정을 "
+            "듭니다."
+        )
+    added = (
+        f"그 가운데 {title} 뒤에 공통 대장에 든 호기가 {preview.added_since:,}대입니다."
+        if preview.added_since
+        else f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+    )
+    return (
+        f"{title}에 일정이 없는 호기 {preview.unscheduled_after:,}대는 새 시나리오에서도 「일정 "
+        f"없음」 입니다 — {added}"
     )
 
 
@@ -403,12 +466,17 @@ def restore_preview_lines(
 def restore_confirm_label(
     revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
 ) -> str:
-    """되돌리기 확인 체크 글 — 바뀌는 호기 수와 「일정 없음」 이 되는 호기를 수로 적는다."""
+    """되돌리기 확인 체크 글 — 바뀌는 호기 수와 「일정 없음」 이 되는 호기를 수로 적는다(0대면 그
+    리비전 뒤에 든 호기가 없다고)."""
     title = f"r{revision.revision_no}"
+    added = (
+        f"{title} 뒤에 공통 대장에 든 호기 {preview.added_since:,}대는 「일정 없음」 이 됩니다."
+        if preview.added_since
+        else f"{title} 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+    )
     return (
         f"{with_direction_particle(title + '의 일정')} 되돌립니다 — 호기 "
-        f"{preview.changed_units:,}대의 일정이 바뀌고, {title} 뒤에 공통 대장에 든 호기 "
-        f"{preview.added_since:,}대는 「일정 없음」 이 됩니다."
+        f"{preview.changed_units:,}대의 일정이 바뀌고, {added}"
     )
 
 
@@ -460,7 +528,13 @@ def _render_restore(
     모든 설비 시나리오에서 된다(공식 시나리오면 저장과 같은 발행 규칙 — 발행 체크 기본 켬). 이
     세션이 그 시나리오를 보고 있고 저장하지 않은 설비 편집이 없으면 세션을 새 리비전으로 옮긴다(자기
     저장 뒤와 같다). 편집이 있으면 옮기지 않는다 — 버리지 않게 하고 낡음 잠금이 최신을 알린다.
+
+    확인 체크는 그 회차에 확인 글을 정한 값 다섯(`restore_seen_token`)에 묶이고, 저장소에는 같은
+    값을 대조값으로 넘긴다 — 다른 리비전을 고르거나 그 사이 남의 저장·발행으로 값이 바뀐 회차에는
+    체크가 풀린 새 칸이 서고(그 까닭을 알린다) 단추가 잠긴다. 값이 그대로인데 저장소가 그 사이
+    쓰기를 보면(캐시가 늦은 경우) 거절한다.
     """
+    agreed_before = st.session_state.pop(RESTORE_AGREED_KEY, None)
     if revision.schedule_revision_id == scenario.latest_schedule_revision_id:
         title = f"r{revision.revision_no}"
         st.caption(
@@ -472,10 +546,13 @@ def _render_restore(
         st.caption(legacy_trace_message(session.legacy_trace_count))
         return
     try:
-        preview = _preview_for(database_path, scenario, revision)
+        common_id = _latest_common_id(database_path)
+        preview = _preview_for(database_path, common_id, scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}")
         return
+    release_no = session.catalog.release_no or 0
+    seen = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
     official_scenario = session.official_scenario_id == scenario.equipment_scenario_id
     for line in restore_preview_lines(
         scenario, revision, preview, official_scenario=official_scenario
@@ -486,44 +563,58 @@ def _render_restore(
             f"최신 r{scenario.latest_revision_no} 의 일정·비가동과 모두 같아 되돌릴 것이 없습니다."
         )
         return
+    chosen = revision.schedule_revision_id
     revision_name = st.text_input(
         "새 리비전명(선택)",
-        key=_keyed(RESTORE_NAME_KEY),
+        key=f"{_keyed(RESTORE_NAME_KEY)}__{chosen}",
         max_chars=REVISION_NAME_MAX_CHARS,
         placeholder=f"예: r{revision.revision_no} 일정 복원",
     )
-    note = st.text_input("변경 메모(선택)", key=_keyed(RESTORE_NOTE_KEY))
-    saved_by = st.text_input(SAVED_BY_LABEL, key=_keyed(RESTORE_BY_KEY))
+    note = st.text_input("변경 메모(선택)", key=f"{_keyed(RESTORE_NOTE_KEY)}__{chosen}")
+    saved_by = st.text_input(SAVED_BY_LABEL, key=f"{_keyed(RESTORE_BY_KEY)}__{chosen}")
     publish = DEFAULT_PUBLISH_OFFICIAL
     if official_scenario:
         publish = st.checkbox(
             PUBLISH_OFFICIAL_LABEL,
             value=DEFAULT_PUBLISH_OFFICIAL,
-            key=_keyed(RESTORE_PUBLISH_KEY),
+            key=f"{_keyed(RESTORE_PUBLISH_KEY)}__{chosen}",
         )
-    agreed = st.checkbox(restore_confirm_label(revision, preview), key=_keyed(RESTORE_CONFIRM_KEY))
-    if not st.button(
+    if (
+        isinstance(agreed_before, str)
+        and agreed_before != seen
+        and agreed_before.startswith(f"{scenario.equipment_scenario_id}__{chosen}__")
+    ):
+        st.warning(
+            "확인한 뒤 공통 대장·이 시나리오 최신·공식 발행이 바뀌어 확인 체크를 풀었습니다 — 바뀐 "
+            "확인 글을 다시 보고 체크하세요.",
+            icon=":material/sync_problem:",
+        )
+    agreed = st.checkbox(
+        restore_confirm_label(revision, preview), key=f"{_keyed(RESTORE_CONFIRM_KEY)}__{seen}"
+    )
+    if agreed:
+        st.session_state[RESTORE_AGREED_KEY] = seen
+    clicked = st.button(
         "되돌리기",
         icon=":material/history:",
         type="primary",
         disabled=not agreed,
         key=RESTORE_BUTTON_KEY,
         width="stretch",
-    ):
+    )
+    if not clicked or not agreed:
         return
-    common_id = latest_equipment_revision_id(database_path)
     try:
-        if common_id is None:
-            raise KeyError("공통 대장 리비전이 없습니다.")
+        # 대조값은 확인 체크를 묶은 값 그대로다 — 확인 글을 그린 값과 저장소가 대조하는 값이 같다.
         result = get_equipment_repository(database_path).restore_schedule_revision(
-            revision.schedule_revision_id,
+            chosen,
             expected_common_revision_id=common_id,
             expected_latest_schedule_revision_id=scenario.latest_schedule_revision_id,
             saved_by=saved_by or None,
             note=note or None,
             revision_name=revision_name or None,
             publish_official=publish,
-            expected_release_no=session.catalog.release_no or 0,
+            expected_release_no=release_no,
         )
     except EquipmentRevisionConflict as exc:
         # 확인 글의 수가 그 사이 바뀌었다 — 목록·공통 최신을 다시 읽어 새 확인 글을 보인다.
@@ -573,8 +664,8 @@ def _render_branch(
 ) -> None:
     """「여기서 새 시나리오」(E7) — 고른 리비전의 일정을 r1 로 든 새 설비 시나리오(복제로만 만든다).
 
-    1단계 복제와 같은 길이고 출처만 고른 리비전이다(최신·공식 발행만이 아니다). 새 r1 은 그
-    리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통 대장에 든 호기는 일정 없음이다.
+    출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
+    대장에 든 호기는 일정 없음이다.
     """
     name = literal_markdown(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -583,15 +674,11 @@ def _render_branch(
         "r1 로 옮깁니다. 이 시나리오는 그대로입니다."
     )
     try:
-        preview = _preview_for(database_path, scenario, revision)
+        preview = _preview_for(database_path, _latest_common_id(database_path), scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
         return
-    st.caption(
-        f"{title}에 일정이 없는 호기 {preview.unscheduled_after:,}대는 새 시나리오에서도 「일정 "
-        f"없음」 입니다 — 그 가운데 {title} 뒤에 공통 대장에 든 호기가 "
-        f"{preview.added_since:,}대입니다."
-    )
+    st.caption(branch_unscheduled_sentence(revision, preview))
     new_name = st.text_input(
         "새 설비 시나리오 이름", key=_keyed(CLONE_NAME_KEY), placeholder="예: 셋업 실무"
     )

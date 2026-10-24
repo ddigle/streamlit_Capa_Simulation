@@ -41,11 +41,16 @@ from capa_simulation.components.equipment_scenario_management import (
     PUBLISH_BUTTON_KEY,
     RESTORE_BUTTON_KEY,
     RESTORE_CONFIRM_KEY,
+    RESTORE_NAME_KEY,
+    RESTORE_PUBLISH_KEY,
     REVISION_KEY,
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
     SCENARIO_KEY,
+    added_since_sentence,
+    branch_unscheduled_sentence,
     publish_preview,
+    restore_confirm_label,
 )
 from capa_simulation.components.equipment_scenario_status import (
     EQUIPMENT_SCENARIO_FIELD_KEY,
@@ -84,6 +89,7 @@ from capa_simulation.process_detail_state import (
     equipment_band_tail,
     shortening_card_query_params,
 )
+from capa_simulation.services.equipment_scenario import ScheduleRestorePreview
 from capa_simulation.services.schedule_confirmation import (
     CONFIRMATION_KIND_COLUMN,
     STAGE_COLUMN,
@@ -619,6 +625,18 @@ def _revision_table(app: AppTest) -> pd.DataFrame:
     return next(frame.value for frame in app.dataframe if "리비전명" in frame.value.columns)
 
 
+def _restore_confirm(app: AppTest) -> Any:
+    """되돌리기 확인 체크 — key 꼬리가 확인 글을 정한 값 다섯이라 머리로 찾는다(늘 하나)."""
+    (confirm,) = [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
+    return confirm
+
+
+def _restore_input(app: AppTest, base: str) -> Any:
+    """되돌리기 입력 칸 — key 꼬리가 고른 리비전이라 머리로 찾는다(늘 하나)."""
+    (field,) = [item for item in app.text_input if str(item.key).startswith(base)]
+    return field
+
+
 def _moved_on(repository: DuckDBEquipmentRepository) -> None:
     """「운영 일정」 r2 — EQ-02 의 Qual일정을 옮기고 새 호기 EQ-NEW 를 넣는다(공통 r2 · 공식 v2)."""
     session = _session(repository)
@@ -685,7 +703,7 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
         "없음」 이 됩니다" in text
         for text in texts
     )
-    confirm = app.checkbox(key=RESTORE_CONFIRM_KEY)
+    confirm = _restore_confirm(app)
     assert str(confirm.label) == (
         "r1의 일정으로 되돌립니다 — 호기 2대의 일정이 바뀌고, r1 뒤에 공통 대장에 든 호기 1대는 "
         "「일정 없음」 이 됩니다."
@@ -714,6 +732,184 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     assert official.unscheduled_units == frozenset({"EQ-NEW"})
     field = _field(app)
     assert field is not None and field.label == "운영 일정 · r3"
+
+
+def _saved_elsewhere(repository: DuckDBEquipmentRepository, unit: str, value: str) -> None:
+    """다른 세션의 저장 — 「운영 일정」 최신 위에 그 호기의 Qual일정만 옮긴 새 리비전(공식 발행)."""
+    session = _session(repository)
+    repository.save_equipment(
+        _request(session, equipment=_set(session.equipment, unit, "Qual일정", value))
+    )
+
+
+def test_the_restore_confirm_and_fields_belong_to_the_chosen_revision(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """확인 체크는 고른 리비전의 확인 글에 묶인다 — r1 에서 체크한 뒤 r2 를 고르면 r2 의 확인 글은
+    풀린 채 서고 단추가 잠긴다(r2 글을 보지 않고 되돌리지 않게). 새 리비전명 칸도 리비전마다
+    따로다(「r1 일정 복원」 이 r2 로 따라가지 않게). 리비전만 바꾼 것이라 「그 사이 바뀌었다」
+    알림은 없다."""
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    _saved_elsewhere(repository, "EQ-01", "2026-09-30")
+    first = _revision_id(repository, 1)
+    second = _revision_id(repository, 2)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    _restore_input(app, RESTORE_NAME_KEY).input("r1 일정 복원")
+    _restore_confirm(app).check()
+    _ok(app.run())
+    assert not app.button(key=RESTORE_BUTTON_KEY).disabled
+
+    app.selectbox(key=REVISION_KEY).set_value(second)
+    _ok(app.run())
+    confirm = _restore_confirm(app)
+    assert str(confirm.label).startswith("r2의 일정으로 되돌립니다")
+    assert confirm.value is False
+    assert app.button(key=RESTORE_BUTTON_KEY).disabled
+    assert _restore_input(app, RESTORE_NAME_KEY).value == ""
+    assert not any("확인 체크를 풀었습니다" in text for text in _texts(app))
+    assert len(repository.list_schedule_revisions(OPERATIONS)) == 3
+
+
+def test_a_restore_confirmed_before_someone_else_saved_waits_for_a_new_confirm(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """확인 체크 뒤 다른 사용자가 저장하면(확인 글을 정한 그 시나리오 최신이 바뀜) 누른 회차에
+    체크가 풀린 새 칸이 서고 단추가 잠긴다 — 본 적 없는 차이로 되돌리지 않고 까닭을 알린다. 바뀐
+    글을 보고 다시 체크하면 그 글의 수대로 되돌린다."""
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    seen = str(_restore_confirm(app).label)
+    assert "호기 2대의 일정이 바뀌고" in seen
+    _restore_confirm(app).check()
+    _ok(app.run())
+
+    _saved_elsewhere(repository, "EQ-01", "2026-09-30")
+    clear_equipment_scenario_cache()
+    app.button(key=RESTORE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert len(repository.list_schedule_revisions(OPERATIONS)) == 3
+    assert any("확인 체크를 풀었습니다" in text for text in _texts(app))
+    confirm = _restore_confirm(app)
+    assert confirm.value is False
+    assert "호기 3대의 일정이 바뀌고" in str(confirm.label)
+    assert app.button(key=RESTORE_BUTTON_KEY).disabled
+
+    confirm.check()
+    _ok(app.run())
+    assert not any("확인 체크를 풀었습니다" in text for text in _texts(app))
+    app.button(key=RESTORE_BUTTON_KEY).click()
+    _ok(app.run())
+    message = next(text for text in _texts(app) if "되돌려" in text)
+    assert "r1의 일정으로 되돌려 r4를 저장했습니다(일정이 바뀐 호기 3대)." in message
+
+
+def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """이 세션에 저장하지 않은 설비 편집이 있으면 되돌린 뒤에도 세션을 새 리비전으로 옮기지
+    않는다 — 편집을 버리지 않고, 알림이 사이드바에서 최신을 불러오라고 말한다. 탭의 리비전 상자는
+    새 리비전으로 간다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        _SEEDED_GENERATION_KEY,
+        BUFFER_GENERATION_KEY,
+    )
+
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    _restore_confirm(app).check()
+    _ok(app.run())
+    app.button(key=RESTORE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    message = next(text for text in _texts(app) if "되돌려" in text)
+    assert "r1의 일정으로 되돌려 r3을 저장했습니다" in message
+    assert "저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다" in message
+    assert "이 세션을" not in message
+    field = _field(app)
+    assert field is not None and field.label == "운영 일정 · r2"
+    assert app.selectbox(key=REVISION_KEY).value == _revision_id(repository, 3)
+    # 편집은 버리지 않았다(`has_unsaved_equipment_edits` 와 같은 판정).
+    assert int(app.session_state[BUFFER_GENERATION_KEY]) > int(
+        app.session_state[_SEEDED_GENERATION_KEY]
+    )
+
+
+def test_restoring_the_official_scenario_over_an_unpublished_revision_says_it_did_not_publish(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """공식 시나리오에 발행하지 않은 더 새 리비전(r2)이 있으면 발행 체크가 켜져 있어도 되돌린 r3 을
+    발행하지 않고 알림이 그 까닭과 「공식으로 발행」 을 말한다."""
+    repository = _repository(tmp_path)
+    session = _session(repository)
+    repository.save_equipment(
+        _request(
+            session,
+            equipment=_set(session.equipment, "EQ-02", "Qual일정", "2026-08-24"),
+            publish_official=False,
+        )
+    )
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    assert any("공식 설비 시나리오입니다" in text for text in _texts(app))
+    (publish,) = [box for box in app.checkbox if str(box.key).startswith(RESTORE_PUBLISH_KEY)]
+    assert publish.value is True
+    _restore_confirm(app).check()
+    _ok(app.run())
+    app.button(key=RESTORE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    message = next(text for text in _texts(app) if "되돌려" in text)
+    assert "r1의 일정으로 되돌려 r3을 저장했습니다" in message
+    assert (
+        "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — 이 "
+        "탭의 「공식으로 발행」 으로 냅니다." in message
+    )
+    assert "발행했습니다." not in message
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 1
+
+
+def _summary(revision_no: int) -> EquipmentScheduleRevisionSummary:
+    return EquipmentScheduleRevisionSummary(
+        f"s{revision_no}", OPERATIONS, revision_no, "save", datetime(2026, 10, 24)
+    )
+
+
+def test_the_restore_sentences_say_none_when_no_unit_came_after_the_revision() -> None:
+    """그 리비전 뒤에 공통 대장에 든 호기가 0대면 「일정 없음이 된다 — 빠진다」 대신 없다고
+    적는다(수는 늘 적는다). 「여기서 새 시나리오」 안내도 같다."""
+    first = _summary(1)
+    none_added = ScheduleRestorePreview(changed_units=2, unscheduled_after=1, added_since=0)
+    assert added_since_sentence(first, 0) == "r1 뒤에 공통 대장에 든 호기는 없습니다(0대)."
+    assert "빠집니다" in added_since_sentence(first, 3) and "(지금 3대)" in added_since_sentence(
+        first, 3
+    )
+    assert restore_confirm_label(first, none_added) == (
+        "r1의 일정으로 되돌립니다 — 호기 2대의 일정이 바뀌고, r1 뒤에 공통 대장에 든 호기는 "
+        "없습니다(0대)."
+    )
+    assert branch_unscheduled_sentence(first, none_added) == (
+        "r1에 일정이 없는 호기 1대는 새 시나리오에서도 「일정 없음」 입니다 — r1 뒤에 공통 "
+        "대장에 든 호기는 없습니다(0대)."
+    )
+    assert branch_unscheduled_sentence(first, ScheduleRestorePreview()) == (
+        "r1에는 일정이 없는 호기가 없습니다(0대) — 새 시나리오의 모든 호기가 일정을 듭니다."
+    )
 
 
 def test_the_tab_starts_a_new_scenario_from_an_old_revision(
