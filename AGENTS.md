@@ -1319,8 +1319,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 접힌 구획(`collapsed`, id `SECTION_IDS`)은 제목 줄(▸)만 남는다 — 판정·원인은 요약에서 내 ① 을 접어도 부족 띠·판정
     대조가 같다. 호기 라벨에 「N모듈」 을 적지 않고 풍선(「· 모듈 N」, ④ 는 줄마다 모듈 설비명)에 둔다.
   - ③ 호기 풍선은 세 줄(호기 · −N일 · Model / Qual → 목표 · 기여 / 해소 · ⚠ — UPEH 가정 계획만 넷째 줄)이고 그
-    호기 그림이 걸친 달 칸(`_unit_marks` → `_unit_span`, 그림과 한 자리)과 줄 이름 칸에서만 뜬다. 빈 달 칸은 풍선
-    없이 누르면 그 달이다. 라벨 Figure 는 그 풍선이 있을 때만 hover 를 켠다(`process_capa_view`).
+    호기 그림이 걸친 달 칸(`_unit_marks` → `_unit_span`, 그림과 한 자리 — 표지는 반지름까지, 붙은 글자는 어림 폭의
+    `_SPAN_TEXT_SHARE` 몫까지)과 줄 이름 칸에서만 뜬다. 빈 달 칸은 풍선 없이 누르면 그 달이다. 해소 기여 월은 해소
+    눈금이 서는 줄(단축 · 추가N)만 적는다. 라벨 Figure 는 그 풍선이 있을 때만 hover 를 켠다(`process_capa_view`).
   - `assumption`(UPEH 가정)이면 ① 끝에 세 줄(구간 달만 값)이 서고 부족 띠·② 판정 대조는 가정 요약의 판정이다. 표지는
     바뀌는 행의 라벨·풍선에만(② 가용·전월 대비·④ 제외, 제목 줄 높이 그대로), 공식에서만 당긴 호기는 ③ 흐린 줄이다.
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」

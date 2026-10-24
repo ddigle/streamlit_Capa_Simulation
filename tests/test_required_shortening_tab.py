@@ -589,8 +589,65 @@ def test_the_shortfall_cell_puts_the_after_value_and_the_status_on_separate_line
         '<span class="shk-sub">→ −1.20</span><span class="shk-sub">남은 날 부족</span></div>'
         in markup
     )
-    assert '<span class="shk-sub">→ +0.00</span></div>' in markup
     assert " · 기한 지남" not in markup and " · 남은 날 부족" not in markup
+    # 상태 글이 없는 부족 칸도 그 줄 자리를 비워 둔다 — 칸은 세로 가운데 맞춤이라 줄 수가 갈리면
+    # 같은 줄 부족 칩의 높이가 어긋난다(10-24 리뷰).
+    assert (
+        '<span class="shk-sub">→ +0.00</span>'
+        '<span class="shk-sub" aria-hidden="true">&nbsp;</span></div>' in markup
+    )
+    assert {len(lines) for lines in _shortfall_cells(markup)} == {2}
+
+
+def _shortfall_cells(markup: str) -> list[list[str]]:
+    """카드 표 과부족 줄의 부족 칸(빨간 칩)마다 큰 숫자 아래 줄들."""
+    return [
+        re.findall(r'<span class="shk-sub"[^>]*>(.*?)</span>', cell)
+        for cell in re.findall(
+            r'<div title="[^"]*"><span class="shk-num shk-short">.*?</div>', markup
+        )
+    ]
+
+
+def test_shortfall_chips_in_one_card_keep_one_height() -> None:
+    """한 카드 과부족 줄의 부족 칸은 줄 수가 같다 — 상태 글 줄이 하나라도 서면 모든 부족 칸이 그 줄
+    자리를 갖고, 아무 달에도 상태 글이 없으면 「→ 단축 후」 한 줄 그대로다."""
+    months = [202611, 202612, 202701]
+
+    def row(gap: float, status: str) -> dict[str, object]:
+        return {
+            "가용대수": 10.0,
+            "단축후가용대수": 10.0,
+            "소요대수": 12.0,
+            "확보율": 10 / 12,
+            "과부족": gap,
+            "단축후과부족": gap + 1,
+            "상태": status,
+        }
+
+    thresholds = SecurementThresholds(1.0, 0.9)
+    mixed = _card_table(
+        {
+            202611: row(-0.02, STATUS_EXPIRED),
+            202612: row(-0.17, STATUS_SHORTENED),
+            202701: row(0.5, STATUS_SHORTENED),
+        },
+        months,
+        1.0,
+        thresholds,
+    )
+    plain = _card_table(
+        {202611: row(-0.02, STATUS_SHORTENED), 202612: row(-0.17, STATUS_SHORTENED)},
+        months,
+        1.0,
+        thresholds,
+    )
+
+    assert _shortfall_cells(mixed) == [["→ +0.98", "기한 지남"], ["→ +0.83", "&nbsp;"]]
+    assert _shortfall_cells(plain) == [["→ +0.98"], ["→ +0.83"]]
+    assert "&nbsp;" not in plain
+    # 부족이 아닌 달은 숫자 하나 그대로다.
+    assert '<div><span class="shk-num">+0.50</span></div>' in mixed
 
 
 def test_a_row_date_in_another_year_carries_its_year() -> None:

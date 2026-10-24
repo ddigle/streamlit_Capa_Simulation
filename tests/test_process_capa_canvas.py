@@ -50,6 +50,7 @@ from capa_simulation.components.process_capa_canvas import (
     SUMMARY_TITLE_DETAIL,
     SUMMARY_TITLE_HEIGHT_PX,
     TITLE_HEIGHT_PX,
+    UNIT_ROW_HEIGHT_PX,
     AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
@@ -1148,7 +1149,7 @@ def test_a_unit_hover_shows_only_on_the_months_its_drawing_spans() -> None:
 
 def test_hover_months_cover_every_drawn_mark_of_the_fixture_units() -> None:
     """풍선 칸(`_unit_span`)과 그림(`_draw_unit`)은 같은 자리(`_unit_marks`)에서 나온다 — 표지가
-    선 달은 모두 풍선 칸이고 풍선 칸은 이어진 한 덩어리다."""
+    그려진 달(가운데 ± 반지름)은 모두 풍선 칸이고 풍선 칸은 이어진 한 덩어리다."""
     canvas = _canvas(dynamic=_dynamic())
     centers = {
         str(data[CUSTOMDATA_ROW]): y
@@ -1159,10 +1160,12 @@ def test_hover_months_cover_every_drawn_mark_of_the_fixture_units() -> None:
     for trace in _json(canvas.months)["data"]:
         if trace.get("mode") != "markers":
             continue
+        half = trace["marker"]["size"] / 2 / tokens.MONTH_COLUMN_WIDTH_PX
         for x, y in zip(trace["x"], trace["y"], strict=True):
             for row, center in centers.items():
                 if y == pytest.approx(center):
-                    marks[row].add(MONTHS[min(len(MONTHS) - 1, math.floor(x))])
+                    for edge in (x - half, x + half - 1e-9):
+                        marks[row].add(MONTHS[min(len(MONTHS) - 1, max(0, math.floor(edge)))])
     assert any(marks.values())
     for row, months in marks.items():
         hovered = _hover_months(canvas, row)
@@ -1170,6 +1173,100 @@ def test_hover_months_cover_every_drawn_mark_of_the_fixture_units() -> None:
         if hovered:
             first, last = MONTHS.index(hovered[0]), MONTHS.index(hovered[-1])
             assert hovered == MONTHS[first : last + 1], row
+
+
+def test_a_mark_on_a_month_edge_opens_both_months() -> None:
+    """달 경계에 선 표지는 앞 달 칸에도 반이 그려진다 — 그 반쪽에서도 풍선이 뜬다(10-24 리뷰). 표본
+    EQ-26 의 ◆ 반입(반입 다음 날 04.21 = Cut-off 10일 생산월 202705 첫날)은 x 6.0 에 선다."""
+    canvas = _canvas(dynamic=_dynamic())
+    center = _row_center(canvas, "unit:EQ-26")
+    diamonds = next(
+        trace
+        for trace in _json(canvas.months)["data"]
+        if trace.get("marker", {}).get("symbol") == "diamond"
+    )
+    arrival = [x for x, y in zip(diamonds["x"], diamonds["y"], strict=True) if y == center]
+
+    assert arrival == [6.0]
+    assert _hover_months(canvas, "unit:EQ-26")[0] == MONTHS[5]
+
+
+def test_a_text_estimate_grazing_a_month_edge_does_not_open_that_month() -> None:
+    """「−N일」 · 「반입 전」 배지 폭은 넘치지 않게 잡은 어림(위 끝)이라 렌더보다 넓다. 어림만 앞 달
+    경계를 넘고 그림은 그 달에 없는 줄은 앞 달에 풍선이 뜨지 않는다(10-24 리뷰 — 합성 화면
+    SMP-DAF-12 「−198일 · 반입 전」: 어림 왼쪽 끝 3.9993, 렌더 4.045)."""
+    event: dict[str, Any] = dict.fromkeys(UNIT_EVENT_COLUMNS)
+    event.update(
+        {
+            "줄": ROW_SHORTENED,
+            "호기": "EQ-91",
+            "모듈 수": 2,
+            "반입일정": date(2027, 5, 1),
+            "Qual일정": date(2027, 5, 20),
+            "기여 시작": date(2027, 5, 21),
+            "Qual상태": "계획",
+            "모듈별 Qual": (),
+            "목표 Qual": date(2027, 3, 28),
+            "목표 기여 시작": date(2027, 3, 29),
+            "단축일수": 198,
+            "늘어난 환산대수": 0.5,
+            "반입 전": True,
+            "해소 기여 월": (),
+            "기여 시작 위치": 6.5,
+            "기여 시작 축 밖": False,
+            "목표 기여 위치": 4.9333,
+        }
+    )
+    canvas = _canvas(
+        dynamic=_dynamic(
+            unit_events=pd.DataFrame([event], columns=list(UNIT_EVENT_COLUMNS)),
+            exits=pd.DataFrame(),
+        )
+    )
+    # 어림 그대로 세면 왼쪽 끝이 202702 칸(열 3)으로 0.07px 넘어간다.
+    estimated_left = (
+        4.9333
+        - 0.08
+        - (_text_width_units(f"{MINUS}198일") * 11 + 8 + _text_width_units("반입 전") * 10 + 4)
+        / tokens.MONTH_COLUMN_WIDTH_PX
+    )
+    assert 3.99 < estimated_left < 4.0
+
+    assert _hover_months(canvas, "unit:EQ-91")[0] == MONTHS[4]
+
+
+def _resolved_ticks(canvas: ProcessCapaCanvas, row_id: str) -> list[float]:
+    """그 줄의 해소 눈금(굵기 2 가로 도형)의 왼쪽 x."""
+    center = _row_center(canvas, row_id)
+    return [
+        shape["x0"]
+        for shape in _json(canvas.months)["layout"].get("shapes", [])
+        if shape.get("type") == "line"
+        and shape.get("line", {}).get("width") == 2
+        and abs(shape["y0"] - center) < UNIT_ROW_HEIGHT_PX / 2
+    ]
+
+
+def test_a_released_unit_hover_drops_the_official_resolved_months() -> None:
+    """UPEH 가정으로 단축이 필요 없어진 흐린 신규 줄은 공식 계획의 해소 기여 월을 들고 오지만 그림에
+    해소 눈금이 없다 — 풍선 셋째 줄에도 「해소」 를 적지 않는다(10-24 리뷰). 단축 · 추가N 줄은
+    그대로다."""
+    dynamic = _dynamic()
+    events = dynamic.unit_events.copy()
+    released = events["호기"].astype(str).eq("EQ-24").to_numpy()
+    assert events.loc[released, "해소 기여 월"].iloc[0]
+    events.loc[released, "줄"] = ROW_NEW
+    marked = DynamicCanvasInput(
+        **{**dynamic.__dict__, "unit_events": events, "official_pulls": {"EQ-24": (62, 0)}}
+    )
+    canvas = _canvas(dynamic=marked)
+    hovers = _label_hovers(canvas)
+
+    assert len(_resolved_ticks(_canvas(dynamic=dynamic), "unit:EQ-24")) == 3
+    assert _resolved_ticks(canvas, "unit:EQ-24") == []
+    assert "해소" not in hovers["unit:EQ-24"]
+    assert hovers["unit:EQ-24"].split("<br>")[-1] == f"UPEH 가정 계획 · 공식 {MINUS}62일 → 가정 0일"
+    assert "해소 " in hovers["unit:EQ-25"] and "해소 " in hovers["unit:추가1"]
 
 
 def _many_new_units(count: int) -> pd.DataFrame:

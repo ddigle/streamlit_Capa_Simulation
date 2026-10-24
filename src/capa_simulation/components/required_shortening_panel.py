@@ -210,6 +210,11 @@ _TRACK_CENTER_PX = _TRACK_HEIGHT_PX / 2
 _TRACK_MIN_PX = 480
 # 타임라인 위 달 이름의 최대 개수. 넘으면 몇 달씩 건너뛴다.
 _MAX_AXIS_LABELS = 12
+# 카드 과부족 칸 「→ 단축 후」 아래 한 줄로 적는 상태 글 — 단축으로 다 못 메운 까닭.
+_STATUS_NOTES: Mapping[str, str] = {
+    STATUS_EXPIRED: "기한 지남",
+    STATUS_NEW_LIMIT: "남은 날 부족",
+}
 
 
 @dataclass(frozen=True)
@@ -1895,6 +1900,13 @@ def _card_table(
         rate = float("nan") if row is None else float(str(row["확보율"]))
         cells.append(f"<div>{_rate_chip(rate, month, thresholds)}</div>")
     cells.append(f'<div class="shk-row">과부족 (목표 {_percent(level)})</div>')
+    # 상태 글 줄이 하나라도 서면 부족 칸마다 그 줄 자리를 둔다 — 칸은 세로 가운데 맞춤이라 줄 수가
+    # 갈리면 같은 줄 부족 칩(큰 숫자)의 높이가 어긋난다.
+    status_line = any(
+        float(str(row["과부족"])) < 0 and str(row["상태"]) in _STATUS_NOTES
+        for row in (by_month.get(month) for month in months)
+        if row is not None
+    )
     for month in months:
         row = by_month.get(month)
         if row is None:
@@ -1905,14 +1917,14 @@ def _card_table(
         if gap < 0:
             # 단축 후 값과 상태 글은 따로 한 줄씩이다 — 한 줄로 이으면 `nowrap` 이라 84px 달
             # 칸을 넘어 옆 달에 얹힌다.
-            notes = [f"→ {_signed(after_gap)}"]
-            if status in (STATUS_EXPIRED, STATUS_NEW_LIMIT):
-                notes.append("기한 지남" if status == STATUS_EXPIRED else "남은 날 부족")
+            notes = [f'<span class="shk-sub">→ {_escape(_signed(after_gap))}</span>']
+            if status in _STATUS_NOTES:
+                notes.append(f'<span class="shk-sub">{_escape(_STATUS_NOTES[status])}</span>')
+            elif status_line:
+                notes.append('<span class="shk-sub" aria-hidden="true">&nbsp;</span>')
             cells.append(
                 f'<div title="{_escape(status)}"><span class="shk-num shk-short">'
-                f"{_signed(gap)}</span>"
-                + "".join(f'<span class="shk-sub">{_escape(note)}</span>' for note in notes)
-                + "</div>"
+                f"{_signed(gap)}</span>" + "".join(notes) + "</div>"
             )
         else:
             cells.append(f'<div><span class="shk-num">{_signed(gap)}</span></div>')

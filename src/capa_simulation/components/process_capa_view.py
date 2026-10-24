@@ -221,7 +221,7 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 4
+CANVAS_SCHEMA_VERSION: Final = 5
 
 # 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
 SECTION_LABELS: Final[Mapping[str, str]] = {

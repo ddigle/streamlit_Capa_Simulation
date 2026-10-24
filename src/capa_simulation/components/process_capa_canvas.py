@@ -29,7 +29,8 @@
 반입일·Qual상태·대상 월은 그림 표지(◆ · ● 색)와 CSV 가 말해 적지 않고, UPEH 가정 계획만 넷째
 줄이다. 그 호기 그림(선·화살표·표지와 붙은 글자)이 걸친 달 칸과 줄 이름 칸(라벨 Figure 의
 `label_hover`)에서만 뜨고, 빈 달 칸은 풍선 없는 표적이라 누르면 그 달만 골라진다. 풍선 칸과 그림은
-한 자리(`_unit_marks`)에서 낸다.
+한 자리(`_unit_marks`)에서 낸다 — 표지는 반지름까지, 붙은 글자는 어림 폭의 몫
+(`_SPAN_TEXT_SHARE`)까지 센다(어림만 달 경계를 넘은 빈 칸에 풍선이 뜨지 않게).
 
 **UPEH 가정**(`assumption` — 공정 Capa 상세 조건 카드의 「이 세션만」 값)이 켜지면 ① 끝(기준 확보율
 아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보기준 과부족)이 선다 — 구간 달만 값이고 밖은
@@ -242,6 +243,17 @@ _BEFORE_ARRIVAL_TEXT: Final = "반입 전"
 _VIRTUAL_RADIUS_PX: Final = 6.0
 _VIRTUAL_TEXT_GAP: Final = 0.1
 _VIRTUAL_TEXT: Final = "신규 필요"
+# ③ 표지 크기(px, Plotly `marker.size` — 지름). 풍선 칸(`_unit_span`)도 이 반지름까지 센다 — 달
+# 경계에 선 표지는 앞뒤 두 달 칸에 반씩 그려진다.
+_ARRIVAL_MARKER_PX: Final = 9
+_START_MARKER_PX: Final = 12
+_PULL_HEAD_MARKER_PX: Final = 12
+_EXIT_MARKER_PX: Final = 11
+# 풍선 칸을 셀 때 쓰는 글자 폭 몫. 글자 폭 어림(`_text_width_units` — 전각 1.0 · 반각 0.6)은 넘치지
+# 않게 잡은 위 끝이라 렌더 폭보다 넓다(headless Chrome 「−198일」 34.9px ↔ 어림 37.4px, 「반입 전」
+# 배지 35px ↔ 40px). 어림 그대로 세면 그림은 달 경계 안인데 어림만 앞 달로 넘어가 아무것도 없는 칸에
+# 풍선이 뜬다 — 어림의 이 몫까지만 센다.
+_SPAN_TEXT_SHARE: Final = 0.85
 # ③·④ 의 줄 상한. 넘으면 「n대 더」 한 줄을 두고, 페이지의 「더 보기」가 모두 그린다.
 ROW_LIMIT: Final = 30
 # ④ 화살표 위 비가동유형 글자의 상한(글자 수).
@@ -1157,8 +1169,8 @@ def _unit_hover(event: Mapping[str, object], today: date) -> str:
     - 1줄 — 호기 · (단축이면 −N일, 추가N 이면 「신규」) · Model · (모듈 묶음이면 「모듈 N」).
     - 2줄 — 단축 「Qual MM.DD → 목표 MM.DD · MM.DD부터 기여 +0.10대」, 추가N 「필요 Qual MM.DD ·
       MM.DD부터 기여 +1.00대」, 그 밖 신규 「Qual MM.DD · MM.DD부터 기여」.
-    - 3줄 — 해소 기여 월 · 「⚠ 반입 전」 · 정지·반출/이설일 · 모듈마다 Qual 이 갈리면 그 범위.
-      조각이 없으면 줄이 없다.
+    - 3줄 — 해소 기여 월(단축 · 추가N 만 — 해소 눈금이 서는 줄) · 「⚠ 반입 전」 · 정지·반출/이설일 ·
+      모듈마다 Qual 이 갈리면 그 범위. 조각이 없으면 줄이 없다.
 
     UPEH 가정 계획의 넷째 줄은 `_unit_row` 가 붙인다.
     """
@@ -1190,7 +1202,11 @@ def _unit_hover(event: Mapping[str, object], today: date) -> str:
             f"{_day(_as_date(event.get('기여 시작')), today)}부터 기여"
         )
     last: list[str] = []
-    resolved = _month_tuple(event.get("해소 기여 월"))
+    # 해소 기여 월은 해소 눈금을 그리는 줄(단축 · 추가N)만 적는다 — UPEH 가정으로 단축이 필요 없어진
+    # 흐린 신규 줄은 공식 계획의 해소 달을 들고 오지만 그림에는 눈금이 없다.
+    resolved = (
+        _month_tuple(event.get("해소 기여 월")) if kind in (ROW_SHORTENED, ROW_VIRTUAL) else ()
+    )
     if resolved:
         last.append("해소 " + ", ".join(month_label(month) for month in resolved))
     if kind == ROW_SHORTENED and bool(event.get("반입 전")):
@@ -1488,16 +1504,28 @@ class _Track:
         if self.pull_x:
             traces.append(_line_trace(self.pull_x, self.pull_y, tokens.TEXT, 3.0))
         if self.arrival.x:
-            traces.append(_marker_trace(self.arrival, "diamond", 9, tokens.TEXT_MUTED))
+            traces.append(
+                _marker_trace(self.arrival, "diamond", _ARRIVAL_MARKER_PX, tokens.TEXT_MUTED)
+            )
         if self.start.x:
             traces.append(
-                _marker_trace(self.start, "circle", 12, self.start.color, outline=tokens.TEXT)
+                _marker_trace(
+                    self.start, "circle", _START_MARKER_PX, self.start.color, outline=tokens.TEXT
+                )
             )
         if self.pull_head.x:
-            traces.append(_marker_trace(self.pull_head, "triangle-left", 12, tokens.TEXT))
+            traces.append(
+                _marker_trace(self.pull_head, "triangle-left", _PULL_HEAD_MARKER_PX, tokens.TEXT)
+            )
         if self.exit.x:
             traces.append(
-                _marker_trace(self.exit, "triangle-down", 11, self.exit.color, outline=tokens.TEXT)
+                _marker_trace(
+                    self.exit,
+                    "triangle-down",
+                    _EXIT_MARKER_PX,
+                    self.exit.color,
+                    outline=tokens.TEXT,
+                )
             )
         if self.loss_head.x:
             traces.append(_marker_trace(self.loss_head, "triangle-right", 11, loss_color))
@@ -1627,17 +1655,38 @@ def _unit_marks(
 def _unit_span(marks: _UnitMarks, count: int) -> tuple[int, int] | None:
     """그 줄 그림(선·화살표·표지와 붙은 글자 — 「−N일」·「반입 전」·「신규 필요」)이 걸친 달 칸의
     (첫 열, 끝 열) — 가장 이른 것 ~ 가장 늦은 것이 든 달이고 축 안으로 자른다. 그릴 것이 없으면
-    None 이다(풍선은 줄 이름 칸에만 뜬다)."""
+    None 이다(풍선은 줄 이름 칸에만 뜬다).
+
+    표지는 반지름까지 센다 — 달 경계에 선 ◆ 는 앞 달 칸에도 반이 그려진다. 글자는 그리는 앵커는
+    `_draw_unit` 과 같고, 앵커에서 펴지는 폭만 어림의 `_SPAN_TEXT_SHARE` 몫으로 센다.
+    """
     column_px = tokens.MONTH_COLUMN_WIDTH_PX
-    extents = [(x, x) for x in (marks.arrival, marks.start, marks.exit) if x is not None]
+
+    def around(x: float, size_px: float) -> tuple[float, float]:
+        half = size_px / 2 / column_px
+        return x - half, x + half
+
+    extents = [
+        around(x, size_px)
+        for x, size_px in (
+            (marks.arrival, _ARRIVAL_MARKER_PX),
+            (marks.start, _START_MARKER_PX),
+            (marks.exit, _EXIT_MARKER_PX),
+        )
+        if x is not None
+    ]
     if marks.pull is not None:
         start_x, target_x = marks.pull
-        left = target_x - _PULL_TEXT_GAP - _pull_label_px(marks.pull_days) / column_px
+        # 「−N일」 은 촉 왼쪽 앵커에서, 「반입 전」 배지는 그보다 왼쪽 앵커에서 왼쪽으로 펴진다.
+        label_right = target_x - _PULL_TEXT_GAP
+        left = label_right - _pull_label_px(marks.pull_days) * _SPAN_TEXT_SHARE / column_px
         if marks.before_arrival:
-            left -= (_BADGE_GAP_PX + _badge_px()) / column_px
-        extents.append((min(left, start_x), max(start_x, target_x)))
+            badge_right = _badge_right(target_x, marks.pull_days)
+            left = min(left, badge_right - _badge_px(_SPAN_TEXT_SHARE) / column_px)
+        head_left, head_right = around(target_x, _PULL_HEAD_MARKER_PX)
+        extents.append((min(left, head_left, start_x), max(start_x, head_right)))
     if marks.virtual is not None:
-        text_px = _text_width_units(_VIRTUAL_TEXT) * TRACK_TEXT_FONT_PX
+        text_px = _text_width_units(_VIRTUAL_TEXT) * TRACK_TEXT_FONT_PX * _SPAN_TEXT_SHARE
         extents.append(
             (
                 marks.virtual - _VIRTUAL_RADIUS_PX / column_px,
@@ -1662,9 +1711,21 @@ def _pull_label_px(days: int) -> float:
     return _text_width_units(f"{_MINUS}{days}일") * TRACK_TEXT_FONT_PX
 
 
-def _badge_px() -> float:
-    """「반입 전」 배지 폭(px) — 글자와 좌우 안쪽 여백."""
-    return _text_width_units(_BEFORE_ARRIVAL_TEXT) * ARROW_TEXT_FONT_PX + 2 * _BADGE_PAD_PX
+def _badge_px(text_share: float = 1.0) -> float:
+    """「반입 전」 배지 폭(px) — 글자(어림의 `text_share` 몫)와 좌우 안쪽 여백."""
+    return (
+        _text_width_units(_BEFORE_ARRIVAL_TEXT) * ARROW_TEXT_FONT_PX * text_share
+        + 2 * _BADGE_PAD_PX
+    )
+
+
+def _badge_right(target_x: float, pull_days: int) -> float:
+    """「반입 전」 배지 오른쪽 끝(달 단위 x) — 「−N일」 어림 폭과 틈만큼 그 글자 왼쪽이다."""
+    return (
+        target_x
+        - _PULL_TEXT_GAP
+        - (_pull_label_px(pull_days) + _BADGE_GAP_PX) / tokens.MONTH_COLUMN_WIDTH_PX
+    )
 
 
 def _draw_unit(
@@ -1723,12 +1784,9 @@ def _draw_unit(
             label = f"{_MINUS}{marks.pull_days}일"
             track.pull_text.add(x=target_x - _PULL_TEXT_GAP, y=center, text=f"<b>{label}</b>")
             if marks.before_arrival:
-                label_px = _pull_label_px(marks.pull_days)
                 annotations.append(
                     {
-                        "x": target_x
-                        - _PULL_TEXT_GAP
-                        - (label_px + _BADGE_GAP_PX) / tokens.MONTH_COLUMN_WIDTH_PX,
+                        "x": _badge_right(target_x, marks.pull_days),
                         "y": center,
                         "xref": "x",
                         "yref": "y",
