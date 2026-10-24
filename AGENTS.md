@@ -678,7 +678,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상한(`MAX_TABS` 10 — 넘는 화면은 열지 않고 탭 줄에 알림)을 순수 함수로 정한다. UI 가 없어
   `process_detail_state` 가 불러온다. 탭 줄 컴포넌트 key(`PAGE_TABS_COMPONENT_KEY`)도 여기다 — 껍데기 CSS 가 그 key 를 고른다.
   - 옮기는 것은 `app.py` 의 `st.navigation()` 바로 뒤 본문(`switch_to_queued_tab` — 테마 인자를 싣는 `st.switch_page`)이다.
-    콜백은 칸만 적는다(9장 「팝업과 콜백」). 목록은 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME 하나로 돌아간다.
+    콜백은 칸만 적는다(9장 「팝업과 콜백」). 목록은 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만
+    남는다.
   - 상한은 **옮기기 전에** 막는다 — 화면을 옮기는 파이썬 도우미(HOME 칸 `open_process_detail`, 공정 Capa 상세의
     `open_shortening_page`·`open_availability_gap`)는 전달 칸을 적기 전에 `refused_at_tab_limit` 을 부른다(걸리면 알림을
     남기고 `st.rerun()`). `st.switch_page` 로 옮긴 뒤 `app.py` 가 되돌리면 Streamlit 프런트가 두 화면을 `pushState` 로
@@ -961,8 +962,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. `trailing` 을 주면 제목 줄 끝 칸에 그것을
   그린다(HOME 주요 Case 칩) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
-  비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS) — 한 줄에 안 들면 끝 칸이 통째로 제목 밑
-  오른쪽으로 내려가고 제목은 접히지 않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
+  비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS). 화면에서는 제목이 숨어(흐름에서 빠진다) 끝
+  칸만 오른쪽 끝에 선다. 제목이 보이는 인쇄에서는 한 줄에 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려가고 제목은 접히지
+  않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
@@ -990,8 +992,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     의 오른쪽 비움 폭(`_NARROW_HEADER_RULES` 포함)과 진행 막대 자리(`_status_slot_css`)를 다시 잰다 — 셋 다 지금 툴바를
     잰 값이다.
   - 전환은 새 세션이라 미저장 시나리오·설비 편집이 있으면 `confirm` 으로 묻는다(표지 `unsaved_edits_marker`).
-    Space FAB 전체 배치 대기분은 설비 편집본 세대 밖이라 `app.py` 가 `pending_fab_layout()` 으로 따로 넣는다.
-    적용 전 편집(편집표·붙여넣기 대기)도 시나리오 밖이라 같은 회차의 `pending_edit_labels` 로 넣는다.
+    시나리오 밖의 것 — 설비 편집본·Space FAB 전체 배치 대기분(설비 편집본 세대 밖)·적용 전 편집(편집표·붙여넣기 대기)·
+    Past Data 초안·시나리오 관리 표 초안 — 은 `app.py` 가 같은 회차의 탭 점 판정(`page_tabs.page_unsaved_marks`)으로
+    넣는다.
 - `src/capa_simulation/components/page_guide.py` — 헤더 툴바 맨 왼쪽 `Guide` 버튼과 화면별 사용 안내
   대화상자다. 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 다.
   - 툴바 버튼이 본문의 숨은 버튼(`page_guide_trigger`)을 대신 누르고 파이썬이 `st.dialog` 로 연다.
@@ -1916,7 +1919,7 @@ RQ_MODULE
     - 새 표 여섯에는 **외래 키가 없다** — DuckDB 1.5.5 가 FK 부모의 한 트랜잭션 삭제·UNIQUE 칸 UPDATE(이름)를 막아서다.
       소유·정합은 저장소가 같은 트랜잭션에서 지킨다(`docs/data_model.md`). `copy_database` 차례에 더한 것이 없다.
 33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
-    `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME 하나로 돌아간다. 탭을 누르는 것은
+    `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만 남긴다. 탭을 누르는 것은
     사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
     (편집표의 적용 전 편집·폼 초안·팝업·접힌 상자·스크롤은 처음으로 간다). 탭을 닫아도 그 화면의 보기 조건·세션 편집은
     지우지 않는다. 탭 줄은 23번처럼 DB 를 읽지 않는다 — `tests/test_page_tabs.py` 가 그리는 동안 저장소·연결 호출 0 을
