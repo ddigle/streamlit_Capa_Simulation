@@ -1647,13 +1647,15 @@ else:
                 # 저장본·캔버스·요소·그리는 호기(조건 카드 필터, 페이더 범위)가 바뀌면 새로 선다.
                 # 기준일·색 기준·그룹 체크만 바뀌면 같은 epoch 다 — 날짜는 epoch 에 넣지 않는다
                 # (기준일은 epoch 밖의 `asOf`, 색은 호기마다의 `fill`·`ink`). 브라우저는 바뀐 것만
-                # 다시 칠하고 보던 배율을 지킨다.
+                # 다시 칠하고 보던 배율을 지킨다. 저장본 쌍 토큰은 편집이 잠긴 회차에도 넣는다 —
+                # 같은 epoch 회차에 브라우저는 상자 기하(자리·크기)를 쥔 것대로 지키므로, 잠긴 두
+                # 쌍을 오가거나 잠긴 회차에 남이 공통을 저장하면 옛 좌표가 남는다(설계 8-1·검토 F1).
                 epoch="|".join(
                     (
                         "view",
                         selected_building,
                         selected_floor,
-                        revision_token(latest_snapshot) if editable else "sample",
+                        "sample" if using_sample_equipment else revision_token(latest_snapshot),
                         f"{canvas_width:g}x{canvas_height:g}",
                         floor_layout_fingerprint(marks, viewer_labels),
                         roster,
