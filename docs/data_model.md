@@ -420,7 +420,9 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   설비명이 아니라 호기 키(`unit_key`)에 매달린다 — 공통에서 이름을 바꿔도 다른 시나리오의 일정이 고아가 되지 않는다.
   이관 리비전(`origin='legacy'`)은 스냅샷 행 없이 `legacy_revision_id` 가 옛 행을 가리킨다(읽기 투영·레거시 변환째 읽는다).
   리비전 머리는 `origin`(legacy·save·clone·propagate·restore — 허용값은 서비스가 본다)·`common_revision_id`(저장 때 함께 본
-  공통)·`saved_by`·`revision_name`(E7 답 대기 — 자리만)·내용 해시를 갖는다. 공식 발행은 append-only 이고 「옛 배포로 저장한
+  공통)·`saved_by`·`revision_name`(E7 — 나중에 고칠 수 있는 이름표, 이 한 칸만 UPDATE 한다)·내용 해시를 갖는다. 「이 리비전으로
+  되돌리기」 는 옛 리비전을 고치지 않고 그 일정을 지금 공통과 합쳐 같은 시나리오의 새 리비전(`origin='restore'`)으로 넣는다.
+  공식 발행은 append-only 이고 「옛 배포로 저장한
   흔적」 은 마지막 경계 행의 `through_revision_no` 뒤 계약 v3 이하 공통 리비전이다(있으면 설비 마스터 저장을 막는다).
   `shortening_baseline` 에는 설비 쪽 출처 칸 넷(`equipment_schedule_revision_ref`·`equipment_schedule_revision_no`·
   `equipment_scenario_name`·`equipment_release_no`)이 붙는다. SQL 은 `persistence/equipment_scenario_store.py`, 나누기·합치기
