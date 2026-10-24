@@ -234,6 +234,7 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
     assert list(floor_table.columns) == [
         "동",
         "층",
+        "사용",
         "배치대수",
         "미배치대수",
         "점유율",

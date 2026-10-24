@@ -1622,7 +1622,7 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
         ("src/capa_simulation/navigation.py", '"app_pages/required_shortening.py",'),
         ("app_pages/space_status.py", '"층 바로 가기",'),
         ("app_pages/space_status.py", '"배치 편집",'),
-        ("app_pages/space_status.py", '"미배치대수":'),
+        ("src/capa_simulation/components/space_floor_list.py", '"미배치대수":'),
     ],
 )
 def test_the_labels_the_items_look_for_exist_in_the_app(path: str, label: str) -> None:
@@ -2252,7 +2252,7 @@ def test_the_space_fader_item_reads_what_the_app_draws() -> None:
     assert found is not None and found.group(1) == "2026-10-17"
     # 「기준일 …에 반출/이설을 마친」(FAB 안내)은 범례 날짜가 아니다.
     assert screens._LEGEND_DATE.search("기준일 2026-10-17에 반출/이설") is None
-    assert '"배치대수":' in _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+    assert '"배치대수":' in _text(COMPONENTS / "space_floor_list.py")
 
 
 def test_the_space_fader_summary_carries_counts_only() -> None:

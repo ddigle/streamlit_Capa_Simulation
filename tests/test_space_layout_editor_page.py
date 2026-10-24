@@ -725,3 +725,46 @@ def test_the_space_boundary_wrapper_keys_on_master_columns_and_today(
     get_space_unit_boundaries(moved, downtime, today=today)
     get_space_unit_boundaries(early, downtime, today=date(2026, 10, 2))
     assert calls == [today.isoformat(), today.isoformat(), "2026-10-02"]
+
+
+def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_a_note(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """「다른 층으로 보내기」 목록은 사용 층(과 지금 층)이다 — 비활성 층은 빠진다. 목록이 줄기 전에
+    보낸 적용은 받고(저장 검사 그대로, S5) 적용 flash 끝에 알린다."""
+    from capa_simulation.persistence.equipment_cache import clear_floor_state_cache
+
+    database = tmp_path / "space_edit.duckdb"
+    repository = DuckDBEquipmentRepository(database)
+    repository.initialize()
+    repository.save_floor_states(
+        {("C2", "3F"): "UNUSED", ("C1", "1F"): "NOT_LINE"}, expected_version=0, source="test"
+    )
+    app, _ = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    assert not app.exception
+    # 지금 층(C1 1F)은 비활성이어도 남는다(편집기가 자기 층은 뺀다). 다른 비활성 층은 빠진다.
+    assert "C1 1F" in data["floors"] and "C2 3F" not in data["floors"]
+    assert "C2 2F" in data["floors"]
+    assert any("이 층은 비활성(생산라인 아님)입니다" in item.value for item in app.info)
+
+    # 그 사이 다른 층이 꺼졌어도 이미 단 `moveTo` 는 받는다 — 적용 검사는 30개 층이다.
+    repository.save_floor_states(
+        {("C2", "3F"): "UNUSED", ("C1", "1F"): "NOT_LINE", ("C2", "2F"): "UNUSED"},
+        expected_version=1,
+        source="남",
+    )
+    clear_floor_state_cache()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [{"id": "EQ-01", "placed": False, "w": 12, "h": 7, "moveTo": "C2 2F"}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    (flash,) = [item.value for item in app.success if "편집본에 적용했습니다" in item.value]
+    assert "보낸 층 C2 2F 는 비활성 층입니다" in flash
+    assert "C2 2F" not in editor_calls[-1]["floors"]
+    clear_equipment_repository()

@@ -472,6 +472,36 @@ def test_a_warm_run_of_the_page_does_not_reopen_the_equipment_database(
     clear_equipment_repository()
 
 
+def test_a_warm_run_of_the_space_page_reads_the_floor_states_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Space 는 회차마다 층 사용 상태를 읽는다 — 위젯 하나에 다시 도는 회차는 캐시에서 받는다(설비
+    DB 를 다시 열지 않는다)."""
+    database, _outsider = _seeded(tmp_path)
+    calls = {"floor_state": 0}
+    original = DuckDBEquipmentRepository.load_floor_states
+
+    def counting(self: DuckDBEquipmentRepository) -> FloorStates:
+        calls["floor_state"] += 1
+        return original(self)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "load_floor_states", counting)
+    monkeypatch.setattr(
+        space_layout_editor, "_EDITOR", lambda **_kwargs: SimpleNamespace(apply=None)
+    )
+    space_page = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(_page_script(space_page, Path(database)), default_timeout=120)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert calls["floor_state"] == 1
+
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert calls["floor_state"] == 1
+    clear_equipment_repository()
+
+
 def test_availability_pasted_or_cleared_on_the_screen_is_what_the_next_run_counts_with(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -431,9 +431,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 호기 표(`floor_table`·
   `picked_unit_rows`)와 영역·금지 색을 만든다.
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
-    Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이다.
+    Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
+    블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
     판정한다. 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
+- `src/capa_simulation/components/space_floor_list.py` — Space FAB 전체 아래 **층 목록**(2026-10-24 결정 S1~S6). 보기는
+  사용 층 표(`사용` 칸, 행 고르기 = 층 열기)와 늘 서는 자리 칸 안의 접힌 「비활성 층 n개」 표(거기서도 연다), 표 머리
+  `사용 편집` 토글을 켜면 저장 줄 · 끄기 확인 · 알림 · 동 머리 줄(`st.segmented_control` 다섯 — 값은 회차마다 초안에서
+  세션에 적고 `default=`·세대 꼬리 없음) · 30줄 편집표다.
+  - 초안(「C1 3F」 → 사유 코드)·편집 시작 저장본 `(version, rows)`·확인 대기·단추 세대는 세션 칸이고, 편집표 칸 편집은
+    회차마다·콜백 첫머리에 초안으로 접는다(`_fold` — 빈 사유는 「사용 안 함」, 사용 층에서 사유를 고르면 끄기, 위젯이
+    보이는 값과 다르면 `discard_editor` 로 다시 세움). 쓰기 단추는 그린 회차의 세대를 인자로 받아 옛 누름을 거른다.
+  - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
+    저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
+    칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 토글이 꺼진 채 그려지는 회차는 남은 초안을
+    지운다(층을 열면 토글 위젯 상태가 버려진다). `floor_state_draft_pending()` 은 세션만 읽는 테마 전환 표지다.
+  - 설비 시나리오 편집 잠금과 무관하게 열고 샘플 fleet 화면에서만 잠근다(값도 끈다). Streamlit 캐시를 두지 않는다.
 - `src/capa_simulation/components/floor_layout_upload.py` — Space 층·FAB 전체의 배경 도면 업로드·삭제와 캔버스 치수
   팝업(`FLOOR_LAYOUT_DIALOG_KEY`)이다. 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
   - 캔버스를 줄여 생기는 호기 이탈은 저장된 설비 마스터의 그 층 호기 전부로 잰다(저장 검증과 같은 행, 확인 체크).
