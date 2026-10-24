@@ -105,7 +105,14 @@ RESTORE_AGREED_KEY = "equipment_scenario_manage_restore_agreed_v1"
 PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
 PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
+# 「공식으로 발행」 확인 글을 그린 회차의 {고른 리비전, 지금 공식 번호}. 단추를 누른 회차에는 확인
+# 글이 이미 새 목록으로 다시 그려지므로, 누르기 **전** 회차에 본 번호를 여기 남겨 누른 회차의 번호와
+# 견준다 — 그 사이 남이 발행했으면 본 적 없는 새 번호(v5 → v6)로 말없이 발행하지 않는다.
+PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
 CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
+# 「이대로 이어 쓰기」 확인 체크. key 꼬리에 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전
+# 번호·빠지는 호기 수)을 붙인다 — 그 값이 바뀌면 체크가 풀린 새 칸으로 서서 본 적 없는 글로 이어
+# 쓰지 않는다.
 CONTINUE_CONFIRM_KEY = "equipment_scenario_manage_continue_confirm_v1"
 # 이 탭 작업 알림 — 다음 회차에 한 번, 탭 맨 위.
 FLASH_KEY = "equipment_scenario_manage_flash_v1"
@@ -821,14 +828,42 @@ def _revision_no(
     return None
 
 
+def publish_seen_refusal(seen: object, *, schedule_revision_id: str, release_no: int) -> str | None:
+    """「공식으로 발행」 을 누른 회차에 거절할 까닭 — 누르기 전 회차의 확인 글(`seen` — 그 회차에
+    남긴 {고른 리비전, 공식 번호})이 지금과 다르면 그 사실을, 같으면 None.
+
+    단추를 누른 회차에는 확인 글이 지금 목록으로 다시 그려진다. 그 사이 남이 발행했으면 지금 번호로
+    대조해도 맞아 「지금 공식 v4 → 새 공식 v5」 를 본 사람이 말없이 v6 을 내게 된다(E7 리뷰).
+    """
+    if not isinstance(seen, dict) or seen.get("revision") != schedule_revision_id:
+        return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
+    before = seen.get("release_no")
+    if before == release_no:
+        return None
+    was = f"v{before}" if isinstance(before, int) and before > 0 else "발행 없음"
+    now = f"v{release_no}" if release_no > 0 else "발행 없음"
+    return (
+        f"확인 글을 본 뒤 공식이 바뀌어({was} → 지금 {now}) 발행하지 않았습니다 — 다른 사용자가 "
+        f"그 사이 발행했습니다. 바뀐 확인 글(지금 공식 {now} → 새 공식 v{release_no + 1})을 다시 "
+        "보고 발행하세요."
+    )
+
+
 def _render_publish(
     database_path: str,
     session: EquipmentSession,
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
 ) -> None:
+    # 앞 회차(누르기 전)에 그린 확인 글의 값 — 이번 회차 값으로 바꿔 두기 전에 꺼낸다.
+    seen_before = st.session_state.pop(PUBLISH_SEEN_KEY, None)
+    release_no = session.catalog.release_no or 0
     for line in publish_preview(session, scenario, revision):
         st.caption(line)
+    st.session_state[PUBLISH_SEEN_KEY] = {
+        "revision": revision.schedule_revision_id,
+        "release_no": release_no,
+    }
     st.caption(
         "공식은 Space·새 세션·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 설비 시나리오입니다. "
         "발행은 append-only 입니다."
@@ -836,13 +871,27 @@ def _render_publish(
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
     if st.button("공식으로 발행", type="primary", key=PUBLISH_BUTTON_KEY, width="stretch"):
+        refusal = publish_seen_refusal(
+            seen_before, schedule_revision_id=revision.schedule_revision_id, release_no=release_no
+        )
+        if refusal is not None:
+            _refused(refusal)
+            return
         try:
+            # 대조값은 누르기 전 확인 글이 보인 번호다(위 대조로 지금 목록 번호와 같다) — 목록
+            # 캐시가 늦어 그 사이의 발행을 못 봤으면 저장소가 쓰기 잠금 안에서 거절한다.
             published = get_equipment_repository(database_path).publish_equipment_release(
                 revision.schedule_revision_id,
                 released_by=released_by or None,
                 note=note or None,
-                expected_latest_release_no=session.catalog.release_no,
+                expected_latest_release_no=release_no or None,
             )
+        except EquipmentReleaseMoved as exc:
+            _refused(
+                f"확인 글을 본 뒤 공식이 바뀌어(v{exc.expected} → 지금 v{exc.current}) 발행하지 "
+                "않았습니다 — 바뀐 확인 글을 다시 보고 발행하세요."
+            )
+            return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
             return
@@ -871,6 +920,15 @@ def continue_confirm_label(review: LegacyTraceReview) -> str:
     )
 
 
+def continue_confirm_key(count: int, review: LegacyTraceReview) -> str:
+    """「이대로 이어 쓰기」 확인 체크 key — 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전
+    번호·빠지는 호기 수)이 바뀌면 다른 key 라 체크가 풀린 새 칸으로 선다."""
+    return (
+        f"{_keyed(CONTINUE_CONFIRM_KEY)}__{count}__{review.trace_revision_no or 0}"
+        f"__{review.dropped_units}"
+    )
+
+
 def _render_legacy_trace(database_path: str, count: int) -> None:
     """옛 배포 흔적 — 경고와 「이대로 이어 쓰기」(확인 체크 뒤, 흔적 수를 대조해 이관 경계를
     덧붙인다). 이어 쓰기는 append-only 라 되돌릴 수 없다 — 빠지는 호기 수를 체크 글에 적고, 옛 배포
@@ -891,7 +949,7 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
     st.caption(
         "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
     )
-    agreed = st.checkbox(continue_confirm_label(review), key=_keyed(CONTINUE_CONFIRM_KEY))
+    agreed = st.checkbox(continue_confirm_label(review), key=continue_confirm_key(count, review))
     if st.button(
         "이대로 이어 쓰기",
         icon=":material/fast_forward:",
