@@ -85,8 +85,8 @@ def get_equipment_repository(database_path: str) -> DuckDBEquipmentRepository:
 
 
 # 합친 본문 칸 수. 세션 하나가 보는 쌍은 공식(= 공통 최신 + 공식 발행)과 고른 시나리오 하나라
-# 둘이고, 이력 「그때 그대로」 조회가 한 칸 더 쓴다. 두 시나리오 × 두 세션 측정(설계 4-1)으로
-# 다시 본다.
+# 둘이고, 이력 「그때 그대로」 조회가 한 칸 더 쓴다. 공통 최신이 바뀌면 모든 쌍이 새 키로 가므로
+# 살아 있는 칸은 「세션들이 고른 시나리오 수 + 1」 안팎이다 — 시나리오 2~3개 운영에 넉넉하다.
 MERGED_SNAPSHOT_CACHE_ENTRIES = 16
 
 
