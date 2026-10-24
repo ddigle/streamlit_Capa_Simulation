@@ -18,6 +18,7 @@ from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
 from capa_simulation.components import space_layout_editor
+from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
 def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
@@ -98,10 +99,13 @@ def _without_container_start_report(
 
     그 파일이 있으면 BigDataQuery 안내에 한 단락이 붙고 Admin Area 에 펼침이 선다. 작업 트리에서
     `scripts/container_start.py` 를 한 번 돌려 `data/temp/` 에 남으면 「지금 문구 그대로」를 보는
-    시험이 그 트리에서만 깨진다. 결과 파일이 필요한 시험은 자리를 따로 옮긴다.
+    시험이 그 트리에서만 깨진다. 결과 파일이 필요한 시험은 자리를 따로 옮긴다. CD 전용 환경변수도
+    지운다 — 결과 파일이 없을 때 그 key 가 있으면 「결과 없음」 안내가 붙는다.
     """
     absent = tmp_path_factory.getbasetemp() / "absent-container-start.json"
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
+    for name in CD_ONLY_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

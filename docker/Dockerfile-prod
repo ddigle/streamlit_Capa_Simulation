@@ -24,6 +24,12 @@ ENV PYTHONPATH=/project/src
 # 컨테이너에는 브라우저도 입력도 없다. 첫 실행 이메일 안내와 브라우저 열기를 끈다.
 ENV STREAMLIT_SERVER_HEADLESS=true
 
+# 사내 bigdataquery 가 로그인 토큰을 찾는 자리. 앱은 `$DSUSER` 로 돌아(위 `sudo` 가 그 까닭이다)
+# `/` 에 폴더를 만들 수 없으므로, 시작 스크립트가 토큰 파일을 쓸 수 있게 미리 만들어 넘겨준다.
+RUN sudo mkdir -p /config/.credential \
+    && sudo chown $DSUSER:$DSUSER /config/.credential \
+    && sudo chmod 700 /config/.credential
+
 # C-DEP CD 는 시작 명령을 바꿀 수 없고 서버 셸도 없다 — 배포 설정의 환경변수 표만 넣을 수 있다.
 # 시작 스크립트가 그 환경변수로 사내 bigdataquery 설치·로그인 토큰 파일을 갖추고 결과를
 # `data/temp/container_start.json` 에 남긴 뒤(앱의 Admin Area 「서버 시작 점검」 이 읽는다)

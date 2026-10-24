@@ -17,6 +17,7 @@ CD 서버는 시작 명령을 바꿀 수 없고 셸에 들어갈 수도 없다. 
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,13 @@ CD_ENVIRONMENT: Final = (
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
 )
+# 시작 스크립트가 앱 프로세스에 넘기지 않는 두 비밀값. 앱 환경에 남아 있으면 스크립트가 돌지
+# 않았다는 뜻이다(`missing_report_notice`).
+APP_WITHHELD_ENVIRONMENT: Final = (ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
+# CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 하나만 쓰므로 그것만으로는
+# CD 서버인지 가르지 않는다.
+CD_ONLY_ENVIRONMENT: Final = (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
+START_SCRIPT: Final = "scripts/container_start.py"
 
 REPORT_VERSION: Final = 1
 STEP_INSTALL: Final = "install"
@@ -87,6 +95,12 @@ class ContainerStartReport:
     user_name_masked: str | None
     missing_environment: tuple[str, ...]
     pip_tail: tuple[str, ...]
+    # 토큰 파일 자리(계정은 가린 꼴)와 컨테이너의 실행 사용자·HOME. 패키지가 토큰을 다른 이름이나
+    # 자리에서 찾는지 화면만으로 가르려고 싣는다. 옛 꼴 파일에는 없어 `None` 이다.
+    token_file_path: str | None = None
+    os_user_masked: str | None = None
+    os_user_is_bdq_user: bool | None = None
+    home_masked: str | None = None
 
 
 def mask_account(name: str) -> str:
@@ -126,6 +140,8 @@ def parse_report(data: object) -> ContainerStartReport | None:
         steps[name] = StartStep(status=str(status), reason=reason)
     token_file = _mapping(data.get("token_file"))
     user_name = _mapping(data.get("user_name"))
+    runtime = _mapping(data.get("runtime"))
+    same_user = runtime.get("os_user_is_bdq_user")
     missing = data.get("missing_environment")
     tail = data.get("pip_tail")
     exists = token_file.get("exists")
@@ -140,6 +156,10 @@ def parse_report(data: object) -> ContainerStartReport | None:
             str(name) for name in (missing if isinstance(missing, list) else [])
         ),
         pip_tail=tuple(str(line) for line in (tail if isinstance(tail, list) else [])),
+        token_file_path=_text_or_none(token_file.get("path")),
+        os_user_masked=_text_or_none(runtime.get("os_user")),
+        os_user_is_bdq_user=same_user if isinstance(same_user, bool) else None,
+        home_masked=_text_or_none(runtime.get("home")),
     )
 
 
@@ -171,8 +191,14 @@ def step_hint(report: ContainerStartReport, step: str) -> str:
             "돌리세요."
         )
     elif step == STEP_TOKEN and result.status == STATUS_OK:
+        # 파일을 써 두었는데도 토큰 오류면 두 갈래다 — 패키지가 다른 이름·자리를 찾거나 토큰이
+        # 만료됐다. 원문의 계정·자리를 먼저 대 보게 해 헛된 재로그인으로 보내지 않는다.
+        written = f"`{report.token_file_path}`" if report.token_file_path else "토큰 파일"
         line += (
-            " 토큰이 만료됐을 수 있습니다 — WebIDE 에서 다시 로그인해 "
+            f" 시작 스크립트는 {written} 에 써 두었습니다 — 위 원문이 찾은 계정·자리가 "
+            "그와 다르면 패키지가 다른 이름이나 자리를 보는 것이니 Admin Area 「서버 시작 "
+            "점검」 의 실행 사용자·HOME 과 함께 알려 주세요. 같다면 토큰이 만료됐을 수 "
+            "있습니다 — WebIDE 에서 다시 로그인해 "
             f"`{BDQ_TOKEN_ENV}` 값을 바꾸고 CI/CD 를 다시 돌리세요."
         )
     elif result.status == STATUS_FAILED:
@@ -180,10 +206,44 @@ def step_hint(report: ContainerStartReport, step: str) -> str:
     return line
 
 
-def start_check_hint(step: str, path: Path | None = None) -> str | None:
-    """결과 파일이 있으면 그 단계의 안내 한 단락, 없으면 `None`(지금 문구 그대로)."""
+def start_check_hint(
+    step: str, path: Path | None = None, environ: Mapping[str, str] | None = None
+) -> str | None:
+    """결과 파일이 있으면 그 단계의 안내 한 단락이다. 없으면 CD 서버로 보일 때만 「결과 없음」
+    한 단락(`missing_report_notice`)이고, 개발·사내 PC 는 `None`(지금 문구 그대로)이다."""
     report = read_container_start_report(path)
-    return None if report is None else step_hint(report, step)
+    if report is None:
+        return missing_report_notice(environ)
+    return step_hint(report, step)
+
+
+def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | None:
+    """CD 환경변수는 앱에 들어왔는데 결과 파일이 없을 때의 한 단락. CD 전용 key 가 없으면 `None`.
+
+    시작 스크립트는 두 비밀값을 앱에 넘기지 않으므로, 그 key 가 앱 환경에 있으면 스크립트가 돌지
+    않은 것이다(C-DEP 이 이미지 `CMD` 대신 다른 시작 명령을 썼을 때). 비밀값이 없고 계정만 있으면
+    스크립트가 돌지 않았는지 결과를 쓰지 못했는지 가를 수 없다. 이 문구에 `CAPA_BDQ_USER_NAME` 을
+    섞지 않는다 — 점검 스크립트가 그 이름으로 「요청자 계정 필요」를 가른다.
+    """
+    env = os.environ if environ is None else environ
+    present = [name for name in CD_ONLY_ENVIRONMENT if env.get(name, "").strip()]
+    if not present:
+        return None
+    withheld = [name for name in APP_WITHHELD_ENVIRONMENT if name in present]
+    if withheld:
+        names = "·".join(f"`{name}`" for name in withheld)
+        return (
+            f"서버 시작 점검 결과가 없습니다 — 시작 스크립트(`{START_SCRIPT}`)가 돌지 않은 "
+            f"것으로 보입니다. 그 스크립트가 앱에 넘기지 않는 CD 환경변수 {names} 가 앱에 "
+            "그대로 있습니다. C-DEP 이 이미지의 시작 명령(`CMD`) 대신 다른 명령으로 앱을 띄운 "
+            "것으로 보이고, 그러면 시작 스크립트로 설치·로그인 토큰을 갖출 수 없습니다 — 이 "
+            "문구를 그대로 알려 주세요."
+        )
+    return (
+        f"서버 시작 점검 결과가 없습니다 — CD 환경변수 `{ARTIFACTORY_USER_ENV}` 는 들어왔는데 "
+        f"시작 스크립트(`{START_SCRIPT}`)의 결과 파일이 없습니다. 스크립트가 돌지 않았거나 "
+        "`data/temp/` 에 결과를 쓰지 못했습니다."
+    )
 
 
 def report_verdict(report: ContainerStartReport) -> str:

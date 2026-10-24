@@ -675,3 +675,24 @@ def test_an_unrelated_failure_gets_no_start_check_line(
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
 
     assert "서버 시작 점검" not in str(raised.value)
+
+
+def test_a_cd_server_without_a_start_report_says_so_after_the_missing_package_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CD 환경변수는 들어왔는데 결과 파일이 없으면(스크립트가 돌지 않음) 첫 문장 뒤에 그 사실을
+    덧붙인다. 첫 문장과 점검 스크립트가 가르는 이름은 그대로다."""
+    import capa_simulation.settings as settings
+
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", tmp_path / "없음.json")
+    monkeypatch.setenv("CAPA_ARTIFACTORY_TOKEN", "FAKE-artifactory-token")
+    monkeypatch.setitem(sys.modules, "bigdataquery", None)
+
+    with pytest.raises(RuntimeError) as raised:
+        adapter.load_bigdataquery_module()
+
+    text = str(raised.value)
+    assert text.startswith(_PACKAGE_MISSING_TEXT)
+    assert "서버 시작 점검 결과가 없습니다" in text and "돌지 않은 것으로" in text
+    assert adapter.BDQ_USER_NAME_ENV not in text
+    assert "FAKE-artifactory-token" not in text

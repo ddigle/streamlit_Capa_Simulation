@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
@@ -414,3 +415,22 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
         ":material/fact_check: 원천 품질",
         ":material/notifications: 알림 모음",
     ]
+
+
+def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CD 가 이미지 `CMD` 를 덮어써 시작 스크립트가 돌지 않으면 결과 파일이 없어 화면이 개발 PC
+    와 같아진다. 스크립트가 앱에 넘기지 않는 비밀값 key 가 앱에 있으면 「결과 없음」 펼침으로
+    알린다."""
+    monkeypatch.setenv("CAPA_BDQ_TOKEN", "FAKE-bdq-login-token-0000")
+    app = AppTest.from_string(
+        _start_check_script(tmp_path / "scenario.duckdb", tmp_path / "없음.json")
+    )
+    app.run(timeout=120)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    [expander] = _start_check_expanders(app)
+    assert "결과 없음" in expander
+    assert any("돌지 않은 것으로" in warning.value for warning in app.warning)
+    assert not any("FAKE-bdq-login-token-0000" in warning.value for warning in app.warning)
