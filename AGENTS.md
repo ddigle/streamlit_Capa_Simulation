@@ -857,7 +857,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   규칙(Streamlit·DB 를 모른다). 저장소와 `scripts/inspect_real_data_checks.py` 가 같은 합치기를 쓴다.
   - 호기 키: 옛 행은 `legacy_unit_key(설비명)` = `"n" + md5(설비명)`(SQL `'n' || md5(equipment_id)` 와 같아야 한다), 새 호기는
     uuid. `assign_unit_keys` 는 이름 지도(지금 → 저장본)로 이어받은 키가 먼저 차지하고 남은 호기는 같은 이름의 저장본 키를,
-    그 밖은 새 키를 받는다 — 「A→B 이름 바꿈 + 새 A」 의 새 A 는 새 키, 결과 키가 겹치면 `ValueError` 다.
+    그 밖은 새 키를 받는다 — 「A→B 이름 바꿈 + 새 A」 의 새 A 는 새 키, 결과 키가 겹치면 `ValueError` 다. 앞의 두 규칙(어느
+    편집본 행이 어느 저장본 호기를 잇는가)은 `inherited_unit_names` 하나이고, 가정 설비 시나리오의 배치 칸 임시 잠금도 그것으로
+    「있던 호기」 를 고른다 — 둘이 갈리면 잠금이 새 호기로 본 행이 저장에서 있던 호기의 공통 칸을 고친다.
   - 합치기는 공통 행 차례대로 키로 왼쪽 결합(`one_to_one`)이고, 일정 행이 없는 호기는 일정 칸이 비고 **일정 없음**
     (`unscheduled_units`)에 든다. 공통에 없는 키의 일정·비가동은 버리고 `orphan_rows` 로 센다. 계산 프레임은 일정 없음 호기와
     그 비가동을 뺀다(`calculation_frames` — 질문 2 권장안의 한 곳, 기존설비·보관 Y 도 뺀다).
@@ -907,14 +909,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이름은 못 쓴다(`reserved_names`). 가림·겹침은 경고만 한다.
   - **이름 바꾸기 공용 넷**(G4·R2 — 이름 바꾸기는 같은 호기, 설비 시나리오 2단계 S1). 이름 바꾸는 자리(Space 편집기·개편
     뒤 설비 마스터 호기 상세)는 모두 이것을 쓴다 — 새 자리가 규칙을 따로 짜지 않는다.
-    `check_unit_rename(old, new, *, master, reserved, renaming)` 는 바꾸기 **전** 편집본으로 한 바꿈을 보고 거부 까닭(Space
-    적용 거부 문구 그대로 — `_require_name`·`_require_distinct_names(only=…)` 를 같이 지난다) 또는 None 을 낸다(`renaming` 은
-    같은 제출의 다른 바꿈 — 맞바꿈·사슬은 받고 같은 새 이름은 막는다). `compose_unit_renames` 는 저장 안 한 이름 지도
+    `check_unit_rename(old, new, *, master, reserved, renaming, group_renaming, created)` 는 한 바꿈을 보고 거부 까닭(Space
+    적용 거부 문구 그대로 — `_require_name`·`_require_distinct_names(only=…)` 를 지난다) 또는 None 을 낸다(`renaming` 은
+    같은 제출의 다른 설비명 바꿈 — 맞바꿈·사슬은 받고 같은 새 이름은 막는다, `group_renaming`·`created` 는 같은 제출의 Main
+    설비 바꿈·새 호기). `master` 는 바꾸기 **전** 편집본이든 제출 **뒤** 마스터(이 바꿈이 이미 든 — 설계 11-2 4단계)든 받는다
+    (`_names_before` — 옛 이름이 모두 있으면 전, 아니고 새 이름이 모두 있으면 뒤로 읽어 새 이름 행 하나를 옛 이름으로 돌린다).
+    Space 적용(`parse_editor_apply` → `_require_distinct_renames`)도 설비명 바꿈마다 이 함수를 부른다(이름 모음만 아는 자리라
+    두 칸짜리 판정용 표 `_names_master` 를 넘긴다) — 규칙을 더하면 Space 도 따라간다. `compose_unit_renames` 는 저장 안 한 이름 지도
     (`PendingRenames.units`)를 잇고 `compose_renames` 가 그것을 부른다. `rename_followers` 는 설비명이 이미 새 이름인 마스터에서
     비가동 설비명과 자기 이름을 Main 설비로 적은 한 행 묶음의 Main 설비를 옮기고(같은 제출에서 사용자가 고친 칸
     `touched_*` 는 두고), `apply_name_changes` 가 그것을 지난다. 세션 쪽 넷째는 `equipment_data_workspace.follow_unit_renames`.
-  - `existing_layout_edits`·`keep_layout_cells` 는 가정 설비 시나리오의 배치 칸 임시 잠금(5장 32) 재료다 — 저장본에서 온
-    호기의 배치 일곱 칸(`PLACE_COLUMNS`)이 바뀐 행을 이름으로 찾고 그 칸만 되돌린다.
+  - `saved_layout_drift`·`restore_saved_layout` 는 가정 설비 시나리오의 배치 칸 임시 잠금(5장 32) 재료다 — 저장본 호기를
+    잇는 행(지금 설비명 → 저장본 설비명 지도, `equipment_scenario.inherited_unit_names`)의 배치 일곱 칸(`PLACE_COLUMNS`)을
+    **저장본** 그 호기와 견주어 다른 행을 찾고 그 칸만 저장본 값으로 되돌린다(제출 전 편집본과 견주면 지운 뒤 다시 넣기·이름을
+    바꿨다 되돌리기가 새 호기로 읽혀 지나간다).
   - 모듈 묶음 바둑판의 정본은 `module_cells`(`module_grid` — 모듈 2·3 은 열 n·행 1, 넷부터 열 = ⌈√n⌉·행 = ⌈n÷열⌉,
     칸 번호는 왼→오·위→아래, 저장 정밀도 눈금으로
     똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)와 칸 배정 `assign_module_cells`(지금
@@ -1430,11 +1438,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옛 편집표의 위젯 delta 짝짓기(설계 11-2)는 개편 B1 의 표가 행 id 로 공용 넷을 부르는 쪽으로 대신한다.
   - **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장**(설계 11-2 6단계)은 확인 체크 뒤에만 간다. `removals_elsewhere`
     (저장본 이름 − 편집본 − 이름 바꿈으로 비운 이름 → 호기 키 `DRAFT_UNIT_KEYS_KEY` → `load_units_scheduled_elsewhere`)가
-    RawData 저장 칸 아래 경고·체크(`REMOVAL_CONFIRM_KEY` — 꼬리가 호기 목록 지문)를 세우고, `_save_equipment_frames` 가 확인한
-    이름(`removal_confirmed`)에 없는 호기가 있으면 거부한다 — 체크가 없는 자리(Space 「배치 저장」·팝업)도 같은 판정으로 막힌다.
-  - **가정 설비 시나리오의 배치 칸 임시 잠금**(설비 시나리오 2단계 S1 — `basis.official_scenario` 가 거짓): 저장본에서 온 호기의
-    배치 일곱 칸 고침은 제출에서 그 칸만 되돌리고(나머지 편집은 반영, 그 회차 저장·미리보기는 하지 않고 까닭을 맨 위에)
-    붙여넣기는 미리보기 전에 막는다(`assumption_paste_refusal`). 칸을 `disabled` 로 두지 않는다 — `레이아웃표시` 는 기본값
+    RawData 저장 칸 아래 경고·체크(`REMOVAL_CONFIRM_KEY` — 꼬리 `RemovalElsewhere.token` 은 (호기, 그 일정이 든 시나리오들)의
+    지문이라 글이 바뀌면 체크가 풀린 새 칸)를 세우고, `_save_equipment_frames` 가 다시 센 삭제를 체크로 본 것
+    (`removal_confirmed` — 그 글의 `RemovalElsewhere`)이 덮지 않으면(`covered_by` — 확인 안 한 호기, 본 뒤 그 호기 일정이 든
+    시나리오가 늚) 거부한다 — 체크가 없는 자리(Space 「배치 저장」·팝업)도 같은 판정으로 막힌다.
+  - **가정 설비 시나리오의 배치 칸 임시 잠금**(설비 시나리오 2단계 S1 — `basis.official_scenario` 가 거짓): 저장하면 저장본
+    호기 키를 잇는 행(`layout_lock_origins` — 저장이 넘기는 저장 안 한 이름 지도까지 `inherited_unit_names` 그대로)의 배치 일곱
+    칸이 **저장본**과 다르면(`assumption_layout_drift`) 제출에서 그 칸만 저장본 값으로 되돌리고(나머지 편집은 반영, 그 회차
+    저장·미리보기는 하지 않고 「하지 않았다」 까지 맨 위에) 붙여넣기는 미리보기 전에 막는다(`assumption_paste_refusal`). 지운 뒤
+    같은 설비명으로 다시 넣기·설비명을 바꿨다 되돌리기도 저장하면 같은 호기라 막힌다. 칸을 `disabled` 로 두지 않는다 — `레이아웃표시` 는 기본값
     없는 필수 고르기 칸이라 잠그면 새 호기 행을 넣을 수 없다. 새 호기의 배치 값은 받는다. 문구 `ASSUMPTION_LAYOUT_LOCK`.
   - 세션이 **낡음**이면 RawData 맨 위에 그 알림을 세우고 시나리오 일곱 칸·비가동 일정 표를 `disabled` 로, 행 추가를 막으며,
     붙여넣기 미리보기는 일정 칸 변경·새 행·비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 도움말 첫 마디가 「공통 — …」/「공통 — 공식 일정
@@ -1488,7 +1500,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     번호가 지금과 다르면(그 사이 남이 발행) 쓰지 않고 `_refused` 로 까닭을 알린다(`publish_seen_refusal`) — 누른 회차에는 확인
     글이 이미 새 목록으로 다시 그려져, 지금 번호로만 대조하면 「v1 → v2」 를 본 사람이 말없이 v3 을 낸다. 저장소 대조값도 그 번호다.
   - **이대로 이어 쓰기** 확인 체크 key 꼬리는 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전 번호·빠지는 호기 수 —
-    `continue_confirm_key`)이다(되돌리기 체크와 같은 까닭).
+    `continue_confirm_key`)이다(되돌리기 체크와 같은 까닭). 발행 번호 0 은 「v0」 이 아니라 「발행 없음」(`release_words`)이다.
 - `src/capa_simulation/components/qual_deadline_calculator.py` — 가용설비 현황 `Qual 마감 계산기` 탭. 숫자 칸 넷·12개월
   편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감 칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
   - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
