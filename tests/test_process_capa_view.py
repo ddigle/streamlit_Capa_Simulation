@@ -745,11 +745,19 @@ def _gap_script() -> None:
 
 
 def test_the_gap_link_remembers_the_static_tab_without_touching_its_widget_or_filters() -> None:
+    """Static 대비 일정은 Summary 안쪽 탭이다(2026-10-24) — 바깥·안쪽 기억 칸을 함께 적는다."""
     from capa_simulation.components.tab_state import remembered_tab_key
-    from capa_simulation.navigation import EQUIPMENT_GAP_TAB, EQUIPMENT_TAB_KEY
+    from capa_simulation.navigation import (
+        EQUIPMENT_GAP_TAB,
+        EQUIPMENT_SUMMARY_TAB,
+        EQUIPMENT_SUMMARY_TAB_KEY,
+        EQUIPMENT_TAB_KEY,
+    )
 
     app = AppTest.from_function(_gap_script, default_timeout=60).run()
 
     assert not app.exception, [element.message for element in app.exception]
-    assert app.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] == EQUIPMENT_GAP_TAB
+    assert app.session_state[remembered_tab_key(EQUIPMENT_TAB_KEY)] == EQUIPMENT_SUMMARY_TAB
+    assert app.session_state[remembered_tab_key(EQUIPMENT_SUMMARY_TAB_KEY)] == EQUIPMENT_GAP_TAB
     assert EQUIPMENT_TAB_KEY not in app.session_state
+    assert EQUIPMENT_SUMMARY_TAB_KEY not in app.session_state

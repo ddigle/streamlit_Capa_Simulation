@@ -1,4 +1,4 @@
-# Purpose: Preference의 Cut-off 입력과 Static 대비 일정 비교가 독립적으로 동작하는지 검사한다.
+# Purpose: 「설정」 팝업의 Cut-off 입력과 Static 대비 일정 비교가 독립적으로 동작하는지 검사한다.
 
 """탭을 늘리면 **화면이 죽는 자리가 타입 검사에 안 걸린다.**
 
@@ -7,7 +7,8 @@
 `pd.Series([pd.NA] * n, dtype="float64")` 가 `TypeError` 로 죽는 것을 잡았다.
 
 이 페이지는 **활성 시나리오가 없어도 열리는 유일한 계산 계열 화면**이다. Static 을 읽는
-탭이 생겼으므로, 그 탭이 못 읽어도 나머지가 살아 있어야 한다.
+탭이 생겼으므로, 그 탭이 못 읽어도 나머지가 살아 있어야 한다. Cut-off 는 머리 「설정」 팝업이다
+(2026-10-24 — 개편 전 `Preference` 탭).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
-from test_equipment_pages import _open_tab, _page_script
+from test_equipment_pages import _open_settings, _open_tab, _page_script
 
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
 from capa_simulation.persistence.equipment_cache import (
@@ -45,17 +46,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 
 
-def _run(database_path: Path, *, tab: str = "Preference") -> AppTest:
+def _run(database_path: Path, *, tab: str | None = None) -> AppTest:
+    """탭을 주면 그 탭을, 안 주면 「설정」 팝업(공정별 Cut-off)을 연다."""
     app = AppTest.from_string(_page_script(PAGE, database_path), default_timeout=120).run()
-    return _open_tab(app, tab)
+    return _open_settings(app) if tab is None else _open_tab(app, tab)
 
 
-def test_preference_offers_cutoff_input_on_an_empty_database(tmp_path: Path) -> None:
+def test_settings_offers_cutoff_input_on_an_empty_database(tmp_path: Path) -> None:
     app = _run(tmp_path / "availability.duckdb")
 
     assert not app.exception
-    preference = next(tab for tab in app.tabs if tab.label.endswith(" Preference"))
-    labels = [button.label for button in preference.button]
+    labels = [button.label for button in app.button]
     assert "Cut-off 저장" in labels, labels
     assert "설비 공정으로 채우기" in labels, labels
     assert not any(tab.label.endswith(" Cut-off") for tab in app.tabs)
@@ -85,8 +86,8 @@ def test_a_saved_cutoff_lets_the_gap_tab_draw(tmp_path: Path) -> None:
     assert not app.exception
     selectbox_labels = [widget.label for widget in app.selectbox]
     assert "공정" in selectbox_labels, selectbox_labels
-    # 활성 시나리오가 없어도 비교 안내에 그치고 Preference 입력은 계속 사용할 수 있다.
-    _open_tab(app, "Preference")
+    # 활성 시나리오가 없어도 비교 안내에 그치고 「설정」 의 Cut-off 입력은 계속 사용할 수 있다.
+    _open_settings(app)
     assert not app.exception
     assert any(button.label == "Cut-off 저장" for button in app.button)
     clear_equipment_repository()

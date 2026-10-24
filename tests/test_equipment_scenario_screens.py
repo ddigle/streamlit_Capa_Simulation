@@ -69,12 +69,11 @@ from capa_simulation.components.equipment_scenario_status import (
     shortening_equipment_basis,
     unscheduled_notice,
 )
+from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
-    EQUIPMENT_PREFERENCE_TAB,
-    EQUIPMENT_TAB_KEY,
     PROCESS_CAPA_DETAIL,
     SCENARIO_MANAGEMENT,
     SPACE_STATUS,
@@ -475,14 +474,15 @@ def test_the_section_heading_names_the_sessions_pair() -> None:
     assert session_heading(EquipmentSession(catalog=catalog)) == "이 세션: 설비 시나리오 없음"
 
 
-def test_preference_is_read_only_on_an_assumption_and_open_on_the_official(
+def test_settings_cutoff_is_read_only_on_an_assumption_and_open_on_the_official(
     _shell: AppTest, tmp_path: Path
 ) -> None:
+    """「설정」 팝업의 공용 Cut-off — 가정 설비 시나리오면 읽기 전용(E3, 개편 전 `Preference`
+    탭)."""
     clone = _clone(_repository(tmp_path))
     app = _ok(_shell.run())
-    app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path)
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_PREFERENCE_TAB
-    _ok(app.run())
+    _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+    _ok(app.button(key=SETTINGS_BUTTON_KEY).click().run())
     assert not any(item.value == PREFERENCE_LOCK_MESSAGE for item in app.info)
     assert any(button.label == "Cut-off 저장" for button in app.button)
 

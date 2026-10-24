@@ -50,6 +50,8 @@ from capa_simulation.equipment_scenario_activation import (
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     EQUIPMENT_GAP_TAB,
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_SUMMARY_TAB_KEY,
     EQUIPMENT_TAB_KEY,
     PROCESS_CAPA_DETAIL,
     REQUIRED_SHORTENING,
@@ -685,7 +687,8 @@ def test_every_equipment_tab_has_the_equipment_row(_shell: AppTest) -> None:
     app = _shell.run()
     app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run()
     assert _field(app) is not None
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_GAP_TAB
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_GAP_TAB
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     assert _field(app) is not None

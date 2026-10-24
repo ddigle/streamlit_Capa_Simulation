@@ -1616,10 +1616,10 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
         ("src/capa_simulation/components/shortening_progress_panel.py", '"비교 안 함"'),
         ("src/capa_simulation/components/required_shortening_panel.py", '"목표 확보율",'),
         # 가용설비 현황 탭 라벨은 사이드바(설비 시나리오 줄을 세우는 탭)와 함께 `navigation` 에
-        # 있다.
+        # 있다(2026-10-24 두 탭 개편 — RawData 는 설비 마스터 탭).
         (
             "src/capa_simulation/navigation.py",
-            'EQUIPMENT_RAWDATA_TAB = ":material/table_rows: RawData"',
+            'EQUIPMENT_MASTER_TAB = ":material/table_rows: 설비 마스터"',
         ),
         # 필요 단축 일정은 별도 화면이다(2026-10-18) — 사이드바 링크 주소로 간다(`SHORTENING_PAGE`).
         ("src/capa_simulation/navigation.py", '"app_pages/required_shortening.py",'),
@@ -1669,6 +1669,7 @@ NEW_ITEM_KEYS = [
     "equipment_scenario_line",
     "space_floor_state",
     "page_tabs",
+    "equipment_moves",
 ]
 
 
@@ -2495,6 +2496,68 @@ def test_both_space_items_open_the_fab_overview_the_app_draws() -> None:
     assert 'type="primary" if selected is None else "secondary",' in page
     assert "on_click=_show_fab_overview," in page
     assert '"stBaseButton-primary"' in inspect.getsource(screens.Screen.open_space_overview)
+
+
+# ------------------------------------------- 가용설비 현황 두 탭 개편(`equipment_moves`)
+
+
+def test_the_equipment_moves_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 탭 이름·단추 key·팝업 제목·지표·전환이 앱과
+    같은지 여기서 본다."""
+    from capa_simulation.components import equipment_scenario_management as section
+    from capa_simulation.components import equipment_settings_dialog as settings
+    from capa_simulation.navigation import (
+        EQUIPMENT_MASTER_TAB,
+        EQUIPMENT_SUMMARY_TAB,
+        EQUIPMENT_SUMMARY_TABS,
+    )
+
+    assert EQUIPMENT_MASTER_TAB.endswith(f" {screens.EQUIPMENT_MASTER_TAB}")
+    assert EQUIPMENT_SUMMARY_TAB.endswith(f" {screens.EQUIPMENT_SUMMARY_TAB}")
+    assert [label.split(" ", 1)[1] for label in EQUIPMENT_SUMMARY_TABS] == list(
+        screens.EQUIPMENT_SUMMARY_TABS
+    )
+    assert screens.EQUIPMENT_SETTINGS_BUTTON_KEY == settings.SETTINGS_BUTTON_KEY
+    assert screens.EQUIPMENT_SETTINGS_TITLE == settings.SETTINGS_DIALOG_TITLE
+    shortening = _text(PROJECT_ROOT / "app_pages" / "required_shortening.py")
+    assert f'QUAL_CALCULATOR_BUTTON_KEY = "{screens.QUAL_CALCULATOR_BUTTON_KEY}"' in shortening
+    assert f'"{screens.QUAL_CALCULATOR_TITLE}", width="large"' in shortening
+    calculator_source = _text(COMPONENTS / "qual_deadline_calculator.py")
+    for label in screens.QUAL_CALCULATOR_KPIS:
+        assert f'"{label}",' in calculator_source
+    assert screens.SCENARIO_KIND_KEY == section.SCENARIO_KIND_KEY
+    assert screens.SCENARIO_KINDS == section.SCENARIO_KINDS
+    assert f'"{screens.EQUIPMENT_SCENARIO_TABLE_ANCHOR}":' in _text(
+        COMPONENTS / "equipment_scenario_management.py"
+    )
+    cutoff_source = _text(COMPONENTS / "cutoff_management.py")
+    assert f'"{screens.CUTOFF_EDITOR_ANCHOR}"' in cutoff_source
+
+
+def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
+    tabs = [
+        "table_rows 설비 마스터",
+        "insights Summary",
+        "dashboard Main",
+        "compare_arrows Static 대비 일정",
+        "입력",
+    ]
+    text = screens.summarize_equipment_moves(
+        tabs,
+        ("설정", True, True),
+        ("Qual 마감 계산기", 4, True),
+        (True, True),
+    )
+    assert text == (
+        "탭 2/2 · Summary 안쪽 2/2 · 옛 탭 0곳 · 설정 — 팝업 제목 「설정」 같음 · Cut-off 표 "
+        "있음 · Esc 닫힘 · 필요 단축 일정 — 팝업 제목 「Qual 마감 계산기」 같음 · 지표 4/4 · "
+        "Esc 닫힘 · 시나리오 관리 — 설비 시나리오 구획 표 있음 · 전환 되돌림"
+    )
+    old = screens.summarize_equipment_moves(
+        ["table_rows RawData", "tune Preference"], None, None, None
+    )
+    assert old.startswith("탭 0/2 · Summary 안쪽 0/2 · 옛 탭 2곳")
+    assert "「설정」 단추 없음" in old and "「관리할 시나리오」 전환 없음" in old
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)

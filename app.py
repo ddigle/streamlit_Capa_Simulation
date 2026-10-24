@@ -49,7 +49,6 @@ from capa_simulation.components.scenario_status import (
     show_scenario_dialog,
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
-from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.design import theme
@@ -108,15 +107,12 @@ def active_condition_tab(spec: PageSpec) -> str | None:
     사이드바는 페이지보다 먼저 그려진다. 그래도 탭을 누른 회차에는 위젯 값이 이미 세션에
     들어와 있고, 다른 화면에 갔다 온 회차에는 위젯 값이 버려졌어도 `stateful_tabs` 가 적어 둔
     기억 칸이 남아 있다 — 페이지가 그 기억으로 탭을 되돌리므로 여기서도 같은 칸을 본다.
-    둘 다 없으면 첫 탭이다.
+    둘 다 없으면 첫 탭이다. 바깥 탭이 안쪽 탭을 품은 탭(`SubTabs.parent`)이면 안쪽 탭 라벨을 같은
+    길로 정해 돌려준다(`ConditionTabs.active_label`).
     """
     if spec.condition_tabs is None:
         return None
-    key = spec.condition_tabs.key
-    for value in (st.session_state.get(key), st.session_state.get(remembered_tab_key(key))):
-        if isinstance(value, str):
-            return value
-    return spec.condition_tabs.first
+    return spec.condition_tabs.active_label(st.session_state)
 
 
 @st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)
