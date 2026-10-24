@@ -1,4 +1,4 @@
-# Purpose: 한 공정 소요·가용을 제약·기존 제품으로 나눠 개조 비가동과 우선 배정의 확보율을 계산한다.
+# Purpose: 공정 소요·가용을 제약·기존 제품으로 나눠 개조·우선 배정·비중 배분 확보율과 요약을 낸다.
 
 """제약 시뮬레이션 — 「한 공정에 미래 제약이 생기면 기존 제품 확보율이 언제부터 얼마나 주나」.
 
@@ -34,7 +34,9 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
 판정이 아니라 표시 문턱이다.
 
 「소요 비중대로 나눴을 때」 견주기는 개조 비가동 없이 가용을 소요 비중대로 **사사오입** 정수로
-나눈다(초안의 `Math.round` — 파이썬 `round` 는 은행가 반올림이라 쓰지 않는다, D15).
+나눈다(초안의 `Math.round` — 파이썬 `round` 는 은행가 반올림이라 쓰지 않는다, D15). 다만 제약 몫은
+가용 A 의 내림을 넘지 않는다 — A 가 소수(환산 대수)라 사사오입한 몫이 A 보다 커져 기존 몫·확보율이
+음수가 되지 않게(초안은 A 가 정수라 드러나지 않았다).
 
 대수는 모두 **환산 대수**다 — 가용 A 가 호기별 환산비를 곱한 값이라(소요대수가 능력 기준 대수라서)
 「개조 n대」·「배정 n대」 도 환산 대수다. 어느 호기를 개조하는지는 정하지 않는다(대수 모델).
@@ -76,7 +78,8 @@ __all__ = [
 ]
 
 NEED_TOLERANCE: Final = 1e-9
-"""올림·내림 전에 빼고 더하는 잡음(10 × 1.1 = 11.000000000000002 → 11)."""
+"""올림·내림 전에 빼고 더하는 잡음 — 올림은 100 × 1.1 = 110.00000000000001 → 110(없으면 111),
+내림은 1.4 − 12/30 = 0.9999999999999999 → 1(없으면 0)."""
 
 IMPACT_TOLERANCE: Final = 0.0005
 """「영향 시작」: 기존 확보율이 제약 없을 때보다 0.05%p 넘게 낮은 첫 달. 판정이 아니라 표시
@@ -258,7 +261,8 @@ class ConstraintMonth:
     """제약 없을 때 확보율이 기준 이상인가. 확보율이 없으면 None."""
 
     proportional_constrained: int
-    """비중대로 나눈 제약 몫(사사오입 정수, 개조 비가동 없음). 기간 밖·R 0 이면 0."""
+    """비중대로 나눈 제약 몫(사사오입 정수, 개조 비가동 없음 — A 의 내림을 넘지 않는다). 기간 밖·R 0
+    이면 0."""
 
     proportional_existing: float
     """비중대로 나눈 기존 몫 = A − 제약 몫."""
@@ -327,7 +331,7 @@ class ConstraintResult:
 def required_units(demand: float, target: float) -> int:
     """제약 몫 필요 대수 = 올림(소요 × 확보율). 소요가 0 이하면 0 이다.
 
-    올림 전에 `NEED_TOLERANCE` 를 뺀다 — 10 × 1.1 이 11.000000000000002 라 12 가 되지 않게.
+    올림 전에 `NEED_TOLERANCE` 를 뺀다 — 100 × 1.1 이 110.00000000000001 이라 111 이 되지 않게.
     """
     if demand <= 0:
         return 0
@@ -375,6 +379,16 @@ def _ratio(numerator: float, denominator: float) -> float | None:
 def _half_up(value: float) -> int:
     """사사오입 정수(초안 `Math.round` 와 같다 — 2.5 → 3)."""
     return math.floor(value + 0.5)
+
+
+def _proportional_share(available: float, constrained: float, required: float) -> int:
+    """「소요 비중대로」 제약 몫 = 사사오입(A × Rc' ÷ R), 단 A 의 내림을 넘지 않는다.
+
+    A 는 환산 대수라 소수다 — A 7.6 · Rc'/R 0.99 면 사사오입이 8 이라 A 를 넘고 기존 몫이 −0.4 가
+    된다. 우선 배정(`allocated`)과 같은 내림(`NEED_TOLERANCE`)으로 막아 기존 몫이 늘 0 이상이다.
+    """
+    share = _half_up(available * constrained / required)
+    return min(share, math.floor(available + NEED_TOLERANCE))
 
 
 # ================================================================== 검증
@@ -506,7 +520,7 @@ def simulate_constraint(
         has_constraint = inside and constrained > 0
         constrained_rate = _ratio(allocated, constrained) if has_constraint else None
         proportional = (
-            _half_up(row.available * constrained / row.required)
+            _proportional_share(row.available, constrained, row.required)
             if inside and row.required > 0
             else 0
         )
@@ -622,7 +636,9 @@ def constraint_month_inputs(
       전). 그 공정 행이 하나도 없으면 `KeyError`, 보이는 달이 빠졌거나 겹치면 `ValueError` 다.
     - `product_demand` 는 `build_process_product_demand(split="제품정보")` 꼴(그 공정, 보이는 달
       칸)이다. **행을 다 더하면 그 공정 소요**라 `|Σ 표 − R| > SUM_TOLERANCE × max(1, R)` 이면
-      `ValueError` 다. Rc 는 `제품정보 == product` 이고 「그 밖」 이 아닌 행이다(없으면 0).
+      `ValueError` 다. Rc 는 `제품정보 == product` 이고 「그 밖」 이 아닌 행이다(없으면 0). 빈
+      `product` 는 `ValueError` 다 — 표가 빈 제품정보를 「그 밖」 이 아닌 한 묶음 행으로 두므로
+      (`fillna("")`) 그 묶음을 제약 제품으로 고르지 않게 한다(제품 선택지도 빈 이름을 뺀다).
       `Rc > R + NEED_TOLERANCE` 도 `ValueError`, `R < Rc ≤ R + NEED_TOLERANCE` 면 Rc = R 로
       접는다. 다른 제품 소요가 0 인 달도 Rc = R 로 접는다 — 합하는 차례만 다른 두 근거가 1e-16
       만큼 어긋나 Re 가 0 이 아닌 잡음이 되지 않게.
@@ -648,6 +664,10 @@ def constraint_month_inputs(
         by_month[stamp] = (float(required), float(available))
 
     wanted = str(product).strip()
+    if not wanted:
+        raise ValueError(
+            "제약 제품이 비었습니다 — 제품정보가 빈 묶음은 제약 제품으로 고를 수 없습니다."
+        )
     names_column = product_demand["제품정보"] if "제품정보" in product_demand.columns else None
     other_column = (
         product_demand[OTHER_ROW_COLUMN] if OTHER_ROW_COLUMN in product_demand.columns else None

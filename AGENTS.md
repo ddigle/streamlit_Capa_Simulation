@@ -779,8 +779,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   순수 계산. 공정 하나의 월별 소요(R)를 제약 제품(`제품정보` 하나)과 기존 제품으로 나누고, 설비 일정 기준 가용(단축 전
   환산 대수)에서 개조 비가동을 빼고 제약 몫을 먼저 정수로 뗀 뒤 기존 제품 확보율·「소요 비중대로」 견주기·요약 넷을 낸다
   (`simulate_constraint`). Streamlit·세션·캐시·DB 를 모르고, pandas 는 어댑터 `constraint_month_inputs`(필요 단축 일정
-  계획의 공정 x 월 표 + `build_process_product_demand(split="제품정보")` 표 → 달마다 입력, 합이 R 과 어긋나면
-  `ValueError`·계획에 공정이 없으면 `KeyError`) 하나만 쓴다. 식은 6장 「제약 시뮬레이션」.
+  계획의 공정 x 월 표 + `build_process_product_demand(split="제품정보")` 표 → 달마다 입력, 합이 R 과 어긋나거나 제약
+  제품이 빈 이름이면 `ValueError`·계획에 공정이 없으면 `KeyError`) 하나만 쓴다. 빈 이름을 막는 까닭은 표가 빈 `제품정보` 를
+  「그 밖」 이 아닌 한 묶음 행으로 두기 때문이다(제품 선택지도 빈 이름을 뺀다). 식은 6장 「제약 시뮬레이션」.
   - 기준 판정은 `secure()` → `capacity_status` 한 길(허용치 없음), 제약 충족은 `allocated >= need` 정수 비교다 — 이 모듈에
     기준·제약 확보율을 비율과 직접 견주는 식이 없는지 `tests/test_constraint_simulation.py` 가 AST 로 본다.
 - `src/capa_simulation/services/securement_threshold.py` — 공용 판정 기준(기본 + 월별 예외)의 정규화·검증, 달별 실효 기준
@@ -2473,7 +2474,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   기준 미달 달·그중 제약 없었다면 기준 이상이던 「새로 미달」·「영향 시작」(기존이 제약 없을 때보다 0.05%p 넘게 낮은 첫
   달 — 판정이 아니라 표시 문턱 `IMPACT_TOLERANCE`), 개조 대수(가장 큰 pool — 개조 끔이면 없음)·창 수·첫 비가동 날.
 - **「소요 비중대로 나눴을 때」 견주기.** 개조 비가동 없이 기간 안 R > 0 달만 `제약 몫 = floor(A × Rc' ÷ R + 0.5)`(사사오입 —
-  파이썬 `round` 의 은행가 반올림이 아니다, D15), 기존 몫 = A − 제약 몫.
+  파이썬 `round` 의 은행가 반올림이 아니다, D15), 기존 몫 = A − 제약 몫. 제약 몫은 `floor(A + 1e-9)` 를 넘지 않는다 — A 가
+  소수(환산 대수)라 Rc' 가 R 에 가까운 달에 사사오입이 A 를 넘어 기존 몫·확보율이 음수가 되지 않게(우선 배정과 같은 내림).
 - **허용치 셋**은 판정 경계가 아니다 — `NEED_TOLERANCE` 1e-9(올림·내림 전 잡음), `IMPACT_TOLERANCE` 0.0005(영향 표시
   문턱), `SUM_TOLERANCE` 1e-6 × max(1, R)(어댑터의 제품별 합 대조). 어댑터는 `R < Rc ≤ R + 1e-9` 와 「다른 제품 소요가 0 인
   달」 의 Rc 를 R 로 접는다 — 합하는 차례만 다른 두 근거의 잡음이 Re 에 남아 기존 확보율이 터지지 않게.

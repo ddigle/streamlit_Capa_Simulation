@@ -257,12 +257,54 @@ def test_demand_and_availability_are_conserved_every_month() -> None:
 
 @pytest.mark.parametrize(
     ("demand", "target", "expected"),
-    [(10, 1.1, 11), (5, 1.2, 6), (4.3, 1.2, 6), (0, 1.2, 0), (-1, 1.2, 0), (7, 1.0, 7)],
+    [
+        (100, 1.1, 110),
+        (50, 1.1, 55),
+        (10, 1.1, 11),
+        (5, 1.2, 6),
+        (4.3, 1.2, 6),
+        (0, 1.2, 0),
+        (-1, 1.2, 0),
+        (7, 1.0, 7),
+    ],
 )
 def test_required_units_rounds_up_after_removing_float_noise(
     demand: float, target: float, expected: int
 ) -> None:
     assert required_units(demand, target) == expected
+
+
+def test_the_noise_examples_really_carry_float_noise() -> None:
+    """위 시험과 아래 배정 시험의 전제 — 허용치 없이 올리고 내리면 한 대가 어긋나는 꼴이다.
+
+    10 × 1.1 은 배정밀도에서 정확히 11.0 이라 잡음이 없다(그래서 잡음 예로 쓰지 않는다).
+    """
+    assert 100 * 1.1 > 110 and math.ceil(100 * 1.1) == 111
+    assert 50 * 1.1 > 55 and math.ceil(50 * 1.1) == 56
+    assert 1.4 - 12 / 30 < 1 and math.floor(1.4 - 12 / 30) == 0
+    assert 10 * 1.1 == 11.0
+
+
+def test_the_allocation_floors_after_removing_float_noise() -> None:
+    """A 1.4 에서 다음 달 몫 1대 × 12/30일 비가동을 빼면 usable 이 0.9999999999999999 다.
+
+    허용치 없이 내리면 배정 0 · 「가용이 모자란 달」 이 되지만 실제로는 1대가 남는다.
+    """
+    result = simulate_constraint(
+        [
+            _one(202706, required=10, available=1.4, demand=1),
+            _one(202707, required=10, available=5, demand=2),
+        ],
+        ConstraintConditions(202706, 202707, 1.0, 12, 7),
+    )
+    row = result.month(202706)
+
+    assert row.downtime_shares == (DowntimeShare(202707, 1, 12, 30),)
+    assert row.usable < 1
+    assert (row.dedicated, row.allocated) == (1, 1)
+    assert row.short is False and row.met is True
+    assert result.short_months == ()
+    assert row.existing_available == pytest.approx(0.0, abs=1e-9)
 
 
 # ------------------------------------------------------------------ ④ 개조 끔
@@ -447,7 +489,42 @@ def test_a_home_exception_outside_the_input_range_is_used_as_is() -> None:
     result = _run(general_by_month={202709: 2.5, 202801: 0.3})
 
     assert 202709 in result.kpis.below_months
+    # 제약이 없어도 113.04% < 250% 라 미달이었다 — 「새로 미달」 이 아니다.
+    assert 202709 not in result.kpis.newly_below_months
     assert 202801 not in result.kpis.below_months
+
+
+def test_newly_below_counts_only_months_that_were_secure_without_the_constraint() -> None:
+    """KPI3 — 기준 120% 인 202709 는 기존 110.53% 로 미달이지만 제약 없을 때(113.04%)도 미달이다."""
+    result = _run(general_by_month={202709: 1.2})
+    row = result.month(202709)
+
+    assert (row.existing_secure, row.baseline_secure) == (False, False)
+    assert result.kpis.below_months == (202705, 202706, 202707, 202708, 202709, 202710)
+    assert result.kpis.newly_below_months == (202705, 202706, 202707, 202708, 202710)
+
+
+# ------------------------------------------------------------------ KPI2 같으면 이른 달
+
+
+def test_the_lowest_existing_rate_keeps_the_earlier_month_on_a_tie() -> None:
+    """기존 최저 확보율이 같은 두 달이면 이른 달과 그 달의 제약 없을 때 확보율을 낸다.
+
+    두 달 모두 기존 9/8 = 112.5% 이고 제약 없을 때는 11/10 = 110% · 13/12 ≈ 108.33% 로 다르다.
+    """
+    result = simulate_constraint(
+        [
+            _one(202706, required=10, available=11, demand=2),
+            _one(202707, required=12, available=13, demand=4),
+            _one(202708, required=10, available=14, demand=2),
+        ],
+        ConstraintConditions(202706, 202708, 1.0, None, 7),
+    )
+
+    assert result.month(202706).existing_rate == result.month(202707).existing_rate == 1.125
+    assert result.kpis.lowest_existing_month == 202706
+    assert result.kpis.lowest_existing_rate == 1.125
+    assert result.kpis.lowest_baseline_rate == pytest.approx(1.1)
 
 
 # ------------------------------------------------------------------ ⑭ 비중 사사오입
@@ -465,6 +542,59 @@ def test_the_proportional_split_rounds_half_up() -> None:
     assert row.proportional_existing == 7.0
     assert row.proportional_existing_rate == pytest.approx(7 / 3)
     assert row.proportional_constrained_rate == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize(
+    ("required", "constrained", "available", "share"),
+    [
+        # 7.6 × 0.99 = 7.524 → 사사오입 8 > 7.6 — 가용의 내림 7 로 막는다.
+        (10.0, 9.9, 7.6, 7),
+        (10.0, 9.9, 5.6, 5),
+        # 40.7 × 0.996 = 40.5372 → 41 > 40.7 → 40.
+        (100.0, 99.6, 40.7, 40),
+        # 모두 제약 제품이면 몫은 가용의 내림이다(0.6 → 0).
+        (10.0, 10.0, 0.6, 0),
+        # 막지 않아도 되는 달은 사사오입 그대로다.
+        (10.0, 5.0, 7.6, 4),
+    ],
+)
+def test_the_proportional_share_never_exceeds_the_fractional_availability(
+    required: float, constrained: float, available: float, share: int
+) -> None:
+    """A 는 환산 대수라 소수다 — 사사오입한 제약 몫이 A 를 넘어 기존 몫·확보율이 음수가 되지
+    않는다."""
+    result = simulate_constraint(
+        [_one(202706, required=required, available=available, demand=constrained)],
+        ConstraintConditions(202706, 202706, 1.2, None, 7),
+    )
+    row = result.month(202706)
+
+    assert row.proportional_constrained == share
+    assert row.proportional_existing == pytest.approx(available - share)
+    assert row.proportional_existing >= 0
+    assert row.proportional_existing_rate is None or row.proportional_existing_rate >= 0
+
+
+def test_the_proportional_split_stays_within_availability_over_a_sweep() -> None:
+    """A 0.0~20.0(0.1 간격) × Rc'/R 0~1(0.01 간격)에서 제약 몫은 0 이상 A 이하다."""
+    months = [202001 + (step // 12) * 100 + step % 12 for step in range(101)]
+    broken: list[tuple[float, float, int]] = []
+    for tenths in range(201):
+        available = tenths / 10
+        result = simulate_constraint(
+            [
+                _one(month, required=100.0, available=available, demand=float(share))
+                for share, month in enumerate(months)
+            ],
+            ConstraintConditions(months[0], months[-1], 1.0, None, 7),
+        )
+        broken.extend(
+            (available, row.product_demand, row.proportional_constrained)
+            for row in result.months
+            if not 0 <= row.proportional_constrained <= available + 1e-9
+        )
+
+    assert broken == []
 
 
 # ------------------------------------------------------------------ ⑮ 검증
@@ -510,6 +640,30 @@ def test_invalid_months_are_rejected(months: list[ConstraintMonthInput]) -> None
 @pytest.mark.parametrize("general", [2.5, 0.3])
 def test_any_positive_threshold_is_accepted(general: float) -> None:
     simulate_constraint([_one(202706, required=1, available=1, general=general)], CONDITIONS)
+
+
+@pytest.mark.parametrize(("target", "need"), [(0.5, 3), (0.8, 4), (1.0, 5), (3.0, 15)])
+def test_a_constraint_target_below_one_hundred_percent_is_allowed(target: float, need: int) -> None:
+    """2-7 — 제약 확보율 < 100% 도 받는다(50% 하한·300% 상한). need 는 같은 올림이다
+    (5 × 0.5 = 2.5 → 3)."""
+    result = simulate_constraint(
+        [_one(202706, required=10, available=20, demand=5)],
+        ConstraintConditions(202706, 202706, target, None, 7),
+    )
+    row = result.month(202706)
+
+    assert (row.need, row.allocated) == (need, need)
+    assert row.met is True
+    assert row.constrained_rate == pytest.approx(need / 5)
+
+
+@pytest.mark.parametrize("days", [1, 365])
+def test_the_modification_days_bounds_are_accepted(days: int) -> None:
+    result = _run(replace(CONDITIONS, modification_days=days))
+    first = result.windows[0]
+
+    assert (first.end - first.start).days == days
+    assert first.end == wd_window(202706, 7).first_day
 
 
 # ------------------------------------------------------------------ ⑯ 어댑터
@@ -577,19 +731,91 @@ def test_an_unknown_product_has_no_constrained_demand() -> None:
     assert inputs[0].constrained_demand == 0.0
 
 
-def test_the_adapter_rejects_a_product_table_that_does_not_add_up() -> None:
-    table = _product_table()
-    table["202706"] = table["202706"] + [1e-3] + [0.0] * (len(table) - 1)
+def _inputs_from(
+    table: pd.DataFrame,
+    *,
+    plan: pd.DataFrame | None = None,
+    product: str = "HBM라E",
+    months: tuple[int, ...] = (202706,),
+) -> tuple[ConstraintMonthInput, ...]:
+    return constraint_month_inputs(
+        _plan_rows() if plan is None else plan,
+        table,
+        process="TC Bonding",
+        product=product,
+        months=months,
+        general_target=lambda _month: 1.1,
+    )
 
-    with pytest.raises(ValueError, match="제품별 소요 합이 공정 소요와 다릅니다"):
-        constraint_month_inputs(
-            _plan_rows(),
-            table,
-            process="TC Bonding",
-            product="HBM라E",
-            months=(202706,),
-            general_target=lambda _month: 1.1,
-        )
+
+def _plan(*rows: tuple[float, float]) -> pd.DataFrame:
+    """TC Bonding 계획 행 — (달, 소요대수), 가용은 50. 달 NaN 은 수가 아닌 생산계획년월이다."""
+    frame = pd.DataFrame(
+        [
+            {"공정": "TC Bonding", "생산계획년월": month, "소요대수": required, "가용대수": 50.0}
+            for month, required in rows
+        ]
+    )
+    return frame.reindex(columns=list(PROCESS_MONTH_COLUMNS))
+
+
+def _table(values: dict[str, float]) -> pd.DataFrame:
+    """제품정보 → 202706 소요. 「그 밖」 이 아닌 행만."""
+    return pd.DataFrame(
+        {
+            "제품정보": list(values),
+            "분류": list(values),
+            OTHER_ROW_COLUMN: [False] * len(values),
+            "묶은 수": [1] * len(values),
+            "202706": list(values.values()),
+        }
+    )
+
+
+@pytest.mark.parametrize(("shift", "rejected"), [(1e-3, True), (1e-8, False)])
+def test_the_adapter_rejects_a_product_table_that_does_not_add_up(
+    shift: float, rejected: bool
+) -> None:
+    """고르지 않은 제품(DDR5) 한 칸만 어긋나게 한다 — 합 43 ± 허용치 4.3e-5 를 넘는 1e-3 만 오류."""
+    table = _product_table()
+    other = table["제품정보"].eq("DDR5").to_numpy()
+    assert other.sum() == 1
+    table.loc[other, "202706"] += shift
+
+    if rejected:
+        with pytest.raises(ValueError, match="제품별 합 43.001 · 공정 43"):
+            _inputs_from(table)
+    else:
+        (row,) = _inputs_from(table)
+        assert row.constrained_demand == 5.0
+
+
+def test_the_adapter_rejects_a_product_demand_above_the_process_demand() -> None:
+    """명세 1-2 — 합 허용치(1e-6 × 10) 안이어도 Rc > R + 1e-9 면 오류다."""
+    with pytest.raises(ValueError, match="보다 큽니다"):
+        _inputs_from(_table({"HBM라E": 10 + 5e-7}), plan=_plan((202706, 10.0)))
+
+
+def test_the_adapter_folds_a_product_demand_just_above_the_process_demand() -> None:
+    """명세 1-2 — R < Rc ≤ R + 1e-9 면 Rc = R 로 접는다(다른 제품 소요가 0 이 아닌 달에도)."""
+    (row,) = _inputs_from(_table({"HBM라E": 10 + 5e-10, "DDR5": 1e-12}), plan=_plan((202706, 10.0)))
+
+    assert row.constrained_demand == row.required == 10.0
+
+
+@pytest.mark.parametrize(
+    ("plan", "message"),
+    [
+        (_plan((202707, 44.0)), "202706 공정 「TC Bonding」 행이 없습니다"),
+        (_plan((202706, 43.0), (202706, 43.0)), "행이 둘 이상입니다"),
+        (_plan((202706, 43.0), (math.nan, 1.0)), "생산계획년월이 수가 아닙니다"),
+    ],
+)
+def test_the_adapter_rejects_a_plan_without_exactly_one_row_per_month(
+    plan: pd.DataFrame, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _inputs_from(_product_table(), plan=plan)
 
 
 def test_the_adapter_raises_key_error_for_a_process_missing_from_the_plan() -> None:
@@ -604,8 +830,8 @@ def test_the_adapter_raises_key_error_for_a_process_missing_from_the_plan() -> N
         )
 
 
-def test_the_adapter_ignores_the_other_bucket_and_blank_names() -> None:
-    """「그 밖」 묶음 행은 분류값이 빈 글자다 — 빈 이름을 골라도 그 행을 고르지 않는다."""
+def test_the_adapter_ignores_the_other_bucket() -> None:
+    """「그 밖」 묶음 행은 분류값이 빈 글자다 — 고른 제품만 Rc 로 센다."""
     table = pd.DataFrame(
         {
             "제품정보": ["HBM라E", ""],
@@ -616,19 +842,32 @@ def test_the_adapter_ignores_the_other_bucket_and_blank_names() -> None:
         }
     )
 
-    def constrained(product: str) -> float:
-        (row,) = constraint_month_inputs(
-            _plan_rows(),
-            table,
-            process="TC Bonding",
-            product=product,
-            months=(202706,),
-            general_target=lambda _month: 1.1,
-        )
-        return row.constrained_demand
+    (row,) = _inputs_from(table)
+    assert row.constrained_demand == 5.0
 
-    assert constrained("") == 0.0
-    assert constrained("HBM라E") == 5.0
+
+@pytest.mark.parametrize("product", ["", "  "])
+def test_the_adapter_rejects_a_blank_product(product: str) -> None:
+    """빈 제품정보는 「그 밖」 이 아닌 한 묶음 행이 된다(`fillna("")`) — 빈 이름으로 그 묶음을
+    고르지 않는다.
+
+    실제 `build_process_product_demand` 표: HBM 5 · 제품정보 None 3 · DDR5 35.
+    """
+    frame = pd.DataFrame(
+        [("HBM", "양산", 202706, 5.0), (None, "양산", 202706, 3.0), ("DDR5", "양산", 202706, 35.0)],
+        columns=["제품정보", "양산구분", "생산계획년월", "소요대수"],
+    )
+    frame["공정"] = "TC Bonding"
+    table = build_process_product_demand(
+        frame, process="TC Bonding", split="제품정보", months=(202706,), limit=10_000
+    )
+    blank = table["제품정보"].eq("").to_numpy()
+    assert blank.sum() == 1 and not table.loc[blank, OTHER_ROW_COLUMN].any()
+
+    with pytest.raises(ValueError, match="제약 제품이 비었습니다"):
+        _inputs_from(table, product=product)
+    (row,) = _inputs_from(table, product="HBM")
+    assert row.constrained_demand == 5.0
 
 
 def test_the_adapter_folds_float_noise_onto_the_process_demand() -> None:
