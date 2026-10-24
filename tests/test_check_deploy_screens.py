@@ -1656,6 +1656,7 @@ NEW_ITEM_KEYS = [
     "sidebar_groups",
     "space_fader",
     "gap_sheet",
+    "equipment_scenario_line",
 ]
 
 
@@ -1685,6 +1686,8 @@ def test_the_list_shows_this_deploys_items(capsys: pytest.CaptureFixture[str]) -
         ("주요공정 히트맵", "주요공정 히트맵"),
         ("B/N 집계 공정", "그 밖"),
         ("시나리오관리", "그 밖"),
+        ("설비 시나리오", "설비 시나리오"),
+        (" 설비 시나리오 ", "설비 시나리오"),
         (SENTINEL, "그 밖"),
         ("", "그 밖"),
     ],
@@ -1899,6 +1902,45 @@ def test_the_condition_panel_contract_matches_the_app() -> None:
     assert screens.panel_row_name(scenario_status.scenario_name_label(None)) == "시나리오"
 
 
+def test_the_equipment_scenario_line_contract_matches_the_app() -> None:
+    """설비 시나리오 줄 항목이 읽는 key·이름·팝업 구획은 앱 값과 같다(스크립트는 앱 모듈을 부르지
+    않고 값만 옮긴다)."""
+    from capa_simulation.components import equipment_scenario_status as status
+
+    assert screens.EQUIPMENT_SCENARIO_FIELD_KEY == status.EQUIPMENT_SCENARIO_FIELD_KEY
+    assert screens.EQUIPMENT_SCENARIO_ROW_NAME == status.EQUIPMENT_SCENARIO_FIELD_LABEL
+    assert screens.EQUIPMENT_SCENARIO_DIALOG_TITLE == status.EQUIPMENT_SCENARIO_DIALOG_TITLE
+    assert screens.EQUIPMENT_SCENARIO_DIALOG_MODES == (status.LOAD_MODE, status.SAVE_MODE)
+    assert 'slug="equipment_scenario"' in _text(COMPONENTS / "equipment_scenario_status.py")
+    assert screens.panel_row_name(status.EQUIPMENT_SCENARIO_FIELD_LABEL) == "설비 시나리오"
+    assert screens.REVISION_RADIO_LABEL == "리비전"
+    assert '"리비전",' in _text(COMPONENTS / "equipment_scenario_status.py")
+
+
+def test_the_equipment_scenario_line_summary_names_only_shapes_and_badge_kinds() -> None:
+    row = {"name": "설비 시나리오", "badge": "공식 v3", "value": "운영 일정 · r12"}
+    facts = {"modes": ["불러오기", "저장"], "selected": "불러오기", "revisions": 4}
+
+    line = screens.summarize_equipment_scenario_line(row, "설비 시나리오", facts, True)
+
+    assert line == (
+        "「설비 시나리오」 줄 있음 · 값 칸 「이름 · rN」 꼴 같음 · 배지 「공식 v…」 · 팝업 제목 "
+        "「설비 시나리오」 같음 · 구획 「불러오기」·「저장」 있음 · 리비전 4개 · Esc 닫힘"
+    )
+    # 시나리오 이름·번호는 값이라 찍지 않는다.
+    assert "운영 일정" not in line and "r12" not in line and "v3" not in line
+    assert "|" not in line
+    assert screens.summarize_equipment_scenario_line(None, None, None, False) == (
+        "「설비 시나리오」 줄 없음"
+    )
+    odd = screens.summarize_equipment_scenario_line(
+        {"name": "설비 시나리오", "badge": "", "value": "운영 일정"}, None, None, False
+    )
+    assert (
+        odd == "「설비 시나리오」 줄 있음 · 값 칸 「이름 · rN」 꼴 다름 · 배지 없음 · 팝업 안 열림"
+    )
+
+
 @pytest.mark.parametrize(
     ("path", "text"),
     [
@@ -1948,9 +1990,15 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
         spec = specs[page]
         # 탭으로 가르지 않고, 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다).
         assert spec.condition_tabs is None and spec.url_path is None
+        # 설비 시나리오 줄(`equipment_scenario`·`reads_equipment_scenario_on`)도 선언에서 읽는다 —
+        # Space 현황은 공식 설비 시나리오 줄만 선다.
         rows = tuple(
             name
-            for name, shown in (("시나리오", spec.reads_scenario), ("조회기간", spec.reads_period))
+            for name, shown in (
+                ("시나리오", spec.reads_scenario),
+                ("조회기간", spec.reads_period),
+                ("설비 시나리오", spec.reads_equipment_scenario_on(None)),
+            )
             if shown
         )
         assert (rows or None) == expected
@@ -2009,7 +2057,7 @@ def test_the_process_detail_summary_counts_without_screen_text(
     assert "26." not in line
 
 
-# ------------------------------------------------------------------ RawData 설비 마스터 머리(38열)
+# ------------------------------------------------------------------ RawData 설비 마스터 머리(39열)
 
 
 def test_the_equipment_header_names_match_the_contract() -> None:
@@ -2023,6 +2071,7 @@ def test_the_equipment_header_names_match_the_contract() -> None:
         QUAL_ACTUAL_COLUMN,
         QUAL_STATUS_COLUMN,
         RELOCATION_DATE_COLUMN,
+        SCENARIO_MEMO_COLUMN,
         STOP_DATE_COLUMN,
     )
 
@@ -2034,7 +2083,9 @@ def test_the_equipment_header_names_match_the_contract() -> None:
         QUAL_STATUS_COLUMN,
         STOP_DATE_COLUMN,
         RELOCATION_DATE_COLUMN,
+        SCENARIO_MEMO_COLUMN,
     )
+    assert len(EQUIPMENT_COLUMNS) == 39
     assert set(screens.EQUIPMENT_NEW_HEADERS) <= set(EQUIPMENT_COLUMNS)
     assert screens.EQUIPMENT_DROPPED_HEADER in OBSOLETE_EQUIPMENT_COLUMNS
     assert screens.EQUIPMENT_DROPPED_HEADER not in EQUIPMENT_COLUMNS
@@ -2045,14 +2096,14 @@ def test_the_equipment_header_summary_counts_and_names_only_missing_contract_nam
     every = dict.fromkeys(screens.EQUIPMENT_NEW_HEADERS, True)
 
     assert screens.summarize_equipment_headers(every, False) == (
-        "새 이름 7/7 있음 · 「설비가동현황」 없음"
+        "새 이름 8/8 있음 · 「설비가동현황」 없음"
     )
     partial = {**every, "반입실적": False, "Qual실적": False}
     line = screens.summarize_equipment_headers(partial, True)
-    assert line == "새 이름 5/7 있음(없음: 반입실적, Qual실적) · 「설비가동현황」 있음"
+    assert line == "새 이름 6/8 있음(없음: 반입실적, Qual실적) · 「설비가동현황」 있음"
     # 결과 표 칸을 깨는 글자가 없다.
     assert "|" not in line
-    assert screens.summarize_equipment_headers({}, False).startswith("새 이름 0/7 있음(없음: ")
+    assert screens.summarize_equipment_headers({}, False).startswith("새 이름 0/8 있음(없음: ")
 
 
 # ------------------------------------------------------------------ 사이드바 그룹 셋

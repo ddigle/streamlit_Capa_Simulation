@@ -93,3 +93,17 @@ def test_a_failure_names_only_the_stage_and_the_exception_kind(tmp_path: Path) -
     with pytest.raises(RuntimeError) as caught:
         benchmark.measure(tmp_path, percent=110, today=date(2026, 1, 1))
     assert str(caught.value) == "설비 읽기 실패 — LookupError"
+
+
+def test_it_reads_the_official_equipment_scenario_not_the_wrapper(
+    copy_folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """설비는 공식 설비 시나리오(공통 최신 + 최신 공식 발행)로 읽는다 — 앱 새 세션과 같은 한 벌이다.
+    공통 id 하나로 짝을 찾는 호환 래퍼(`load_snapshot`)는 부르지 않는다."""
+
+    def wrapper(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("호환 래퍼 load_snapshot 을 불렀다")
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "load_snapshot", wrapper)
+    result = benchmark.measure(copy_folder, percent=120, today=date(2026, 1, 1))
+    assert result["processes"] == 1

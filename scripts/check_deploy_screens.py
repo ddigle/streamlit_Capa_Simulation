@@ -185,10 +185,10 @@ SPACE_PAGE: Final = "space_status"
 # `Space 현황` 경로 줄 첫 칸 `S.PKG FAB 전체` 단추의 위젯 키. FAB 전체면 주 단추, 층을 열었으면 보조
 # 단추이고 누르면 FAB 로 돌아간다(콜백 — 세션의 연 층을 지운다).
 SPACE_FAB_CRUMB_KEY: Final = "space_status_fab_breadcrumb"
-# 설비 마스터 38열 개편(설비 마이그레이션 0023)의 RawData `직접 편집` 머리 칸 — 새 이름 일곱과
-# 지운 컬럼 하나. 앱 모듈(`equipment_contract`)을 부르지 않고 값만 옮긴다 — 화면이 계약과 같은지
-# 따로 보는 확인이라 계약에서 이름을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 계약과 같은지
-# 본다.
+# 설비 마스터 RawData `직접 편집` 머리 칸 — 38열 개편(설비 마이그레이션 0023)의 새 이름 일곱과
+# 설비 시나리오(0027)의 39번째 칸 「시나리오 메모」, 그리고 지운 컬럼 하나. 앱 모듈
+# (`equipment_contract`)을 부르지 않고 값만 옮긴다 — 화면이 계약과 같은지 따로 보는 확인이라
+# 계약에서 이름을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 계약과 같은지 본다.
 EQUIPMENT_NEW_HEADERS: Final = (
     "Area Code",
     "반입실적",
@@ -197,6 +197,7 @@ EQUIPMENT_NEW_HEADERS: Final = (
     "Qual상태",
     "정지일정",
     "반출/이설일정",
+    "시나리오 메모",
 )
 EQUIPMENT_DROPPED_HEADER: Final = "설비가동현황"
 # 설비 마스터 편집표에만 있는 머리 칸 — 그 표를 고르는 데만 쓴다(일정 확인 목록 표에도 `설비명`이
@@ -242,6 +243,9 @@ CONDITION_CARD_PREFIX: Final = "condition_card_"
 LOB_CARD_LABEL: Final = "LOB 표시 조건"
 # 패널 줄 이름(정한 어휘)과 HOME Main 탭의 차례. 시나리오 줄 이름은 「시나리오 · rN」이다.
 PANEL_ROW_NAMES: Final = ("시나리오", "조회기간", "공정 필터", "주요공정 히트맵")
+# 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세·Space 현황)의 설비 시나리오 줄 이름. HOME
+# 에는 서지 않는다(`navigation.PageSpec.equipment_scenario`).
+EQUIPMENT_SCENARIO_ROW_NAME: Final = "설비 시나리오"
 UNKNOWN_ROW_NAME: Final = "그 밖"
 # 이번 배포에서 걷은 사이드바 상자 제목. 「시나리오·리비전」은 이제 팝업 제목이다(사이드바 밖).
 OLD_BOX_TITLES: Final = ("B/N 집계 공정", "시나리오·리비전")
@@ -257,13 +261,21 @@ MONTH_INPUT_IDS: Final = ("capa-start-month", "capa-end-month")
 MONTH_APPLY_ID: Final = "capa-month-apply"
 MONTH_APPLY_LABEL: Final = "적용"
 PROCESS_DIALOG_TITLE: Final = "공정 필터"
+# 설비 시나리오 줄(`components/equipment_scenario_status.py`) — 값 칸 위젯 key·이름 줄 slug·팝업
+# 제목·구획 둘(「저장」 은 편집본을 세우는 가용설비 현황·필요 단축 일정에만 선다).
+EQUIPMENT_SCENARIO_FIELD_KEY: Final = "sidebar_equipment_scenario_field"
+EQUIPMENT_SCENARIO_ROW_SLUG: Final = "equipment_scenario"
+EQUIPMENT_SCENARIO_DIALOG_TITLE: Final = "설비 시나리오"
+EQUIPMENT_SCENARIO_DIALOG_MODES: Final = ("불러오기", "저장")
+EQUIPMENT_STATUS_BADGES: Final = ("공식 v", "최신 r", "저장된 리비전", "미저장 변경")
 THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합니다."
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
 # 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
     (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
-    (SPACE_PAGE, "Space 현황", None),
+    # Space 현황은 시나리오·조회기간을 읽지 않고 공식 설비 시나리오 줄(잠근 꼴)만 선다.
+    (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
 )
 # 사이드바 계산 그룹 셋(2026-10-17 사용자 결정 — 약속 · 이행 · 실적) — (상자 slug, 상자 제목,
 # 하위 화면 수), 사이드바 차례 그대로. 상자는 `st-key-<slug>_box`, 안의 링크는 머리(「현황 요약」)
@@ -1994,9 +2006,10 @@ def summarize_equipment_headers(found: Mapping[str, bool], dropped: bool) -> str
 
 
 def check_equipment_headers(screen: Screen) -> str:
-    """`가용설비 현황` RawData `직접 편집` 의 설비 마스터 표 머리 — 38열 개편의 새 이름 일곱이 있고
-    지운 「설비가동현황」이 없는가. 표 보기 설정은 바꾸지 않는다(기본은 모든 칸이 보인다). 편집표는
-    가로로 그린 칸만 DOM 에 있어 칸마다 가로로 굴려 찾는다(`Screen.column_index`)."""
+    """`가용설비 현황` RawData `직접 편집` 의 설비 마스터 표 머리 — 38열 개편의 새 이름 일곱과
+    설비 시나리오의 「시나리오 메모」(39열)가 있고 지운 「설비가동현황」이 없는가. 표 보기 설정은
+    바꾸지 않는다(기본은 모든 칸이 보인다). 편집표는 가로로 그린 칸만 DOM 에 있어 칸마다 가로로 굴려
+    찾는다(`Screen.column_index`)."""
     screen.open_page(EQUIPMENT_PAGE)
     screen.open_tab("RawData")
     screen.open_tab(EQUIPMENT_EDIT_TAB)
@@ -2392,9 +2405,12 @@ def _sidebar_button(widget_key: str) -> str:
 
 
 def panel_row_name(text: str) -> str:
-    """패널 줄 이름 글을 정한 어휘(`PANEL_ROW_NAMES`)로. 시나리오 줄은 「시나리오 · rN」이라
-    앞머리로 가른다 — 리비전 번호는 값이라 옮기지 않는다. 어휘에 없으면 「그 밖」."""
+    """패널 줄 이름 글을 정한 어휘(`PANEL_ROW_NAMES` 와 설비 시나리오 줄)로. 시나리오 줄은
+    「시나리오 · rN」이라 앞머리로 가른다 — 리비전 번호는 값이라 옮기지 않는다. 어휘에 없으면
+    「그 밖」."""
     head = text.strip()
+    if head == EQUIPMENT_SCENARIO_ROW_NAME:
+        return EQUIPMENT_SCENARIO_ROW_NAME
     for name in PANEL_ROW_NAMES:
         if head == name or head.startswith(f"{name} · "):
             return name
@@ -2538,7 +2554,7 @@ def check_sidebar_panel(screen: Screen) -> str:
 
 
 def check_panel_rows_other_pages(screen: Screen) -> str:
-    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(패널 없음)의 패널 줄."""
+    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(설비 시나리오)의 패널 줄."""
     seen: list[tuple[str, tuple[str, ...] | None, Sequence[object] | None]] = []
     for page, title, expected in OTHER_PAGE_PANELS:
         screen.open_page(page)
@@ -3099,6 +3115,92 @@ def check_gap_sheet(screen: Screen) -> str:
 
 
 # 배포마다 바뀌는 확인 목록 — 항목 하나에 한 줄. 차례대로 돈다.
+# 설비 시나리오 줄 — 이름 줄 캡션(이름·배지)과 값 칸 글자.
+_EQUIPMENT_ROW_JS = """(keys) => {
+  const side = document.querySelector('[data-testid="stSidebar"]');
+  if (!side) return null;
+  const row = side.querySelector(`.st-key-${keys.row}`);
+  const field = side.querySelector(`.st-key-${keys.field} button`);
+  const captions = row
+    ? [...row.querySelectorAll('[data-testid="stCaptionContainer"]')].map((c) => c.innerText.trim())
+    : [];
+  return {
+    name: captions.length ? captions[0] : null,
+    badge: captions.length > 1 ? captions[1] : null,
+    value: field ? field.innerText.trim() : null,
+    disabled: field ? field.disabled : null,
+  };
+}"""
+# 값 칸 글자 꼴 — 「<시나리오 이름> · r<번호>」(이름은 값이라 찍지 않고 꼴만 본다).
+_EQUIPMENT_VALUE_SHAPE: Final = re.compile(r"^.+ · r\d+$")
+
+
+def summarize_equipment_scenario_line(
+    row: Mapping[str, Any] | None,
+    title: str | None,
+    facts: Mapping[str, Any] | None,
+    closed: bool,
+) -> str:
+    """가용설비 현황 사이드바 설비 시나리오 줄 한 줄 — 줄·값 칸 꼴·배지·팝업 구획·리비전 수·Esc.
+
+    시나리오 이름·리비전 번호는 값이라 찍지 않는다 — 꼴이 맞는지(같음·다름)와 배지 종류만 적는다.
+    """
+    if not row or row.get("name") != EQUIPMENT_SCENARIO_ROW_NAME:
+        return f"「{EQUIPMENT_SCENARIO_ROW_NAME}」 줄 없음"
+    value = str(row.get("value") or "")
+    shape = "같음" if _EQUIPMENT_VALUE_SHAPE.match(value) else "다름"
+    badge_text = str(row.get("badge") or "")
+    badge = next((kind for kind in EQUIPMENT_STATUS_BADGES if badge_text.startswith(kind)), None)
+    badge_words = f"배지 「{badge}…」" if badge in ("공식 v", "최신 r") else f"배지 「{badge}」"
+    head = f"「{EQUIPMENT_SCENARIO_ROW_NAME}」 줄 있음 · 값 칸 「이름 · rN」 꼴 {shape} · " + (
+        badge_words if badge is not None else "배지 없음"
+    )
+    if title is None:
+        return f"{head} · 팝업 안 열림"
+    modes = tuple(facts["modes"]) if facts else ()
+    control = "있음" if modes == EQUIPMENT_SCENARIO_DIALOG_MODES else "없음"
+    revisions = facts["revisions"] if facts else None
+    listed = "리비전 목록 없음" if revisions is None else f"리비전 {int(revisions)}개"
+    names = "·".join(f"「{mode}」" for mode in EQUIPMENT_SCENARIO_DIALOG_MODES)
+    return (
+        f"{head} · {_title_text(title, EQUIPMENT_SCENARIO_DIALOG_TITLE)} · 구획 {names} "
+        f"{control} · {listed} · {_closed_text(closed)}"
+    )
+
+
+def check_equipment_scenario_line(screen: Screen) -> str:
+    """`가용설비 현황` 사이드바의 설비 시나리오 줄과 팝업 — 줄 이름·값 칸 꼴·배지, 팝업 제목·구획
+    「불러오기」·「저장」·리비전 수. 불러오기·저장은 누르지 않고 `Esc` 로 닫는다(DB 쓰기 없음)."""
+    screen.open_page(EQUIPMENT_PAGE)
+    keys = {
+        "row": f"{CONDITION_NAME_ROW_PREFIX}{EQUIPMENT_SCENARIO_ROW_SLUG}",
+        "field": EQUIPMENT_SCENARIO_FIELD_KEY,
+    }
+    row = screen.poll(
+        lambda: screen.js(_EQUIPMENT_ROW_JS, keys),
+        timeout=60,
+        accept=lambda value: bool(value) and value["name"] is not None and bool(value["value"]),
+    )
+    if not row or row.get("name") is None or row.get("disabled"):
+        return summarize_equipment_scenario_line(row, None, None, False)
+    screen.open_dialog(_sidebar_button(EQUIPMENT_SCENARIO_FIELD_KEY))
+    load = EQUIPMENT_SCENARIO_DIALOG_MODES[0]
+    try:
+        title = screen.dialog_title()
+        facts = screen.poll(
+            lambda: screen.dialog_read(_SCENARIO_DIALOG_JS, REVISION_RADIO_LABEL),
+            timeout=30,
+            accept=lambda value: (
+                bool(value)
+                and bool(value["modes"])
+                and (value["selected"] != load or value["revisions"] is not None)
+            ),
+        )
+    finally:
+        closed = screen.close_dialog()
+    return summarize_equipment_scenario_line(row, title, facts, closed)
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
@@ -3111,10 +3213,11 @@ ITEMS: tuple[Item, ...] = (
     Item("period_popup", "조회기간 팝업", check_period_popup),
     Item("process_popup", "공정 필터 팝업", check_process_popup),
     Item("process_detail", "공정 Capa 상세", check_process_detail),
-    Item("equipment_headers", "RawData 설비 마스터 머리(38열)", check_equipment_headers),
+    Item("equipment_headers", "RawData 설비 마스터 머리(39열)", check_equipment_headers),
     Item("sidebar_groups", "사이드바 그룹 셋", check_sidebar_groups),
     Item("space_fader", "Space 기준일 페이더", check_space_fader),
     Item("gap_sheet", "Static 대비 일정 비교 시트", check_gap_sheet),
+    Item("equipment_scenario_line", "설비 시나리오 줄·팝업", check_equipment_scenario_line),
 )
 
 

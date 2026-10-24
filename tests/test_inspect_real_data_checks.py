@@ -18,6 +18,7 @@ import hashlib
 import importlib.machinery
 import re
 import runpy
+import shutil
 import sys
 import types
 from collections import Counter
@@ -35,12 +36,14 @@ from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.io.bigdataquery_catalog import CATALOG_COLUMNS
 from capa_simulation.io.company_bigdataquery_adapter import BDQ_USER_NAME_ENV, QueryWindow
 from capa_simulation.io.core_data_source import load_core_data_contract
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    EQUIPMENT_MASTER_DB_COLUMNS,
+    DuckDBEquipmentRepository,
+    EquipmentSaveRequest,
+)
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.core_data_derivation import build_q_core_data
 from capa_simulation.services.equipment_contract import (
-    BASELINE_COLUMNS,
-    DOWNTIME_COLUMNS,
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
 )
@@ -58,6 +61,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import check_deploy_screens  # noqa: E402
 import inspect_real_data_checks as checks  # noqa: E402
+from test_equipment_migration_0027_scenarios import _database_before  # noqa: E402
 
 SENTINEL = "ZZSENTINEL"
 # 기존 결과 컬럼에 심는 값. 출력은 비율을 4자리 유효숫자로만 찍으므로 이 자릿수가 보이면 샌 것이다.
@@ -177,12 +181,60 @@ def _equipment_row(
     return row
 
 
+# 옛 판이 쓴 계약 v3 리비전의 날짜 칸 — 넣을 때 날짜로 바꾼다.
+_LEGACY_DATE_COLUMNS = tuple(
+    column for column in EQUIPMENT_MASTER_DB_COLUMNS if "일정" in column or "실적" in column
+)
+
+
+def _legacy_equipment_database(
+    path: Path, revisions: Sequence[tuple[int, str | None, list[dict[str, object]]]]
+) -> None:
+    """옛 판(설비 마이그레이션 25 까지)이 저장한 계약 v3 리비전을 넣은 뒤 지금 판으로 연다(0027
+    이관).
+
+    옛 Qual 자리표 2262-04-11 은 옛 판의 마스터 표에만 있을 수 있다 — 0027 뒤의 저장은 계약 v4 라
+    마스터 표에 일정 칸을 쓰지 않는다. 그래서 그런 리비전은 0027 전에 옛 꼴로 넣는다. `revisions` 는
+    (번호, 저장 시각 — None 이면 지금, 마스터 행)이다.
+    """
+    _database_before(path, 25)
+    with duckdb.connect(str(path)) as connection:
+        for number, created_at, rows in revisions:
+            revision_id = f"legacy-r{number}"
+            connection.execute(
+                """
+                INSERT INTO equipment_ops.revision (
+                    revision_id, revision_no, note, baseline_hash, schedule_hash,
+                    equipment_hash, downtime_hash, equipment_contract_version, created_at
+                ) VALUES (?, ?, '옛 판', 'b', 's', 'e', 'd', 3,
+                          COALESCE(CAST(? AS TIMESTAMP), current_timestamp))
+                """,
+                [revision_id, number, created_at],
+            )
+            frame = pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS))
+            frame = frame.loc[:, list(EQUIPMENT_MASTER_DB_COLUMNS)]
+            for column in _LEGACY_DATE_COLUMNS:
+                frame[column] = pd.to_datetime(frame[column])
+            frame = frame.rename(columns=dict(EQUIPMENT_MASTER_DB_COLUMNS))
+            frame.insert(0, "source_row_no", range(1, len(frame) + 1))
+            frame.insert(0, "revision_id", revision_id)
+            columns = ", ".join(frame.columns)
+            connection.register("legacy_rows", frame)
+            connection.execute(
+                f"INSERT INTO equipment_ops.equipment_master_snapshot ({columns}) "
+                f"SELECT {columns} FROM legacy_rows"
+            )
+            connection.unregister("legacy_rows")
+    DuckDBEquipmentRepository(path).initialize()
+
+
 @pytest.fixture(scope="module")
 def equipment_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Main 설비 묶음 하나(모듈 넷, 환산비 0.2 로 잘림), 옛 자리표 Qual 한 대, 반입 미정 한 대."""
+    """Main 설비 묶음 하나(모듈 넷, 환산비 0.2 로 잘림), 옛 자리표 Qual 한 대, 반입 미정 한 대.
+
+    옛 판이 저장한 계약 v3 리비전 하나를 0027 로 옮긴 DB 다 — 공통 r1 · 「운영 일정」 r1 · 공식 v1.
+    """
     path = tmp_path_factory.mktemp("equipment") / "equipment_availability.duckdb"
-    repository = DuckDBEquipmentRepository(path)
-    repository.initialize()
     rows = [_equipment_row(f"{SENTINEL}EQ-M{index}", f"{SENTINEL}MAIN", 0.2) for index in range(4)]
     # 38열 개편 분포(Area Code·공정구분·정지/반출이설) — 목록 밖 값은 표지값이라 찍히면 누출이다.
     rows.append(
@@ -222,11 +274,7 @@ def equipment_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     rows.append(
         _equipment_row(f"{SENTINEL}EQ-B", None, 1.0, usage=None, area=None, stop="2026-03-01")
     )
-    repository.save_snapshot(
-        pd.DataFrame(columns=list(BASELINE_COLUMNS)),
-        pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS)),
-        pd.DataFrame(columns=list(DOWNTIME_COLUMNS)),
-    )
+    _legacy_equipment_database(path, [(1, None, rows)])
     return path
 
 
@@ -286,7 +334,7 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     # 설비 — 잘린 환산비·옛 자리표·일정 미정.
     assert "| **모듈 행 환산비 0.2** — 다시 입력할 행 | 4 |" in output
     assert "| Main 설비 묶음 / 그 가운데 모듈 환산비 합이 1 이 아닌 묶음(±0.01) | 1 / 1 |" in output
-    assert "| Qual일정 = 2262-04-11 (최신 리비전, 이제 빈 Qual 로 읽음) | 1 |" in output
+    assert "| Qual일정 = 2262-04-11 (공식 일정 리비전의 원천, 이제 빈 Qual 로 읽음) | 1 |" in output
     assert "반입 미정 1대(1행) · Qual 미정 1대(1행)" in output
     assert "옛 자리표 2262-04-11 에서 온 것 1행" in output
     assert (
@@ -311,11 +359,19 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
         in output
     )
     assert (
-        "| 최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 0 |"
+        "| 공식 일정 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 0 |"
         in output
     )
     assert "| Qual상태(qual_confirmation_status) = 완료 | 8 |" in output
     assert "| Qual상태 빈 칸 | 1 |" in output
+    # 설비 시나리오 이관 확인(0027) — 이관 직후: 시나리오 하나, 이관 리비전 = 이관 전 리비전.
+    assert "| 공식 일정 리비전 | 공식 v1 → 이관 시나리오 r1 |" in output
+    assert "| 공식 일정 리비전 비가동 일정 | 0 |" in output
+    assert "| 설비 시나리오 | 1 |" in output
+    assert "| 이관 시나리오(operations) 리비전 / 그 가운데 이관(legacy) | 1 / 1 |" in output
+    assert "| 이관 전 설비 리비전(이관 경계 1행) — 이관 리비전 수와 같아야 함 | 1 |" in output
+    assert "| **경계 뒤 계약 v3 공통(옛 배포로 저장한 흔적)** — 0 이어야 함 | 0 |" in output
+    assert "| 공식 일정 리비전의 일정 없음 호기 / 고아 일정 행(이관 직후 0) | 0 / 0 |" in output
 
 
 def test_the_both_dates_check_looks_at_the_last_revision_saved_before_0023(
@@ -327,23 +383,22 @@ def test_the_both_dates_check_looks_at_the_last_revision_saved_before_0023(
     수 있어(2026-10-16 결정) 최신 리비전의 수는 정보 줄이다. 시각만 옮겨 r1 을 0023 전, r2 를
     뒤로 둔다."""
     path = tmp_path / "equipment_availability.duckdb"
-    repository = DuckDBEquipmentRepository(path)
-    repository.initialize()
     both = {"stop": "2026-03-01", "relocation": "2026-04-01"}
-    for count in (1, 2):
-        rows = [
-            _equipment_row(f"{SENTINEL}EQ-{index}", None, 1.0, **both) for index in range(count)
-        ]
-        repository.save_snapshot(
-            pd.DataFrame(columns=list(BASELINE_COLUMNS)),
-            pd.DataFrame(rows, columns=list(EQUIPMENT_COLUMNS)),
-            pd.DataFrame(columns=list(DOWNTIME_COLUMNS)),
-        )
+    _legacy_equipment_database(
+        path,
+        [
+            (
+                count,
+                created_at,
+                [
+                    _equipment_row(f"{SENTINEL}EQ-{index}", None, 1.0, **both)
+                    for index in range(count)
+                ],
+            )
+            for count, created_at in ((1, "2026-01-01"), (2, "2026-03-01"))
+        ],
+    )
     with duckdb.connect(str(path)) as connection:
-        connection.execute(
-            "UPDATE equipment_ops.revision SET created_at = CASE revision_no "
-            "WHEN 1 THEN TIMESTAMP '2026-01-01' ELSE TIMESTAMP '2026-03-01' END"
-        )
         connection.execute(
             "UPDATE equipment_meta.schema_migration SET applied_at = TIMESTAMP '2026-02-01' "
             "WHERE version = 23"
@@ -367,9 +422,78 @@ def test_the_both_dates_check_looks_at_the_last_revision_saved_before_0023(
         in output
     )
     assert (
-        "| 최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 2 |"
+        "| 공식 일정 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보) | 2 |"
         in output
     )
+
+
+def _summary_keys(
+    capsys: pytest.CaptureFixture[str], simulation: Path, equipment: Path
+) -> dict[str, str]:
+    """`--only env,equipment` 요약의 키별 줄(확인 코드 포함)."""
+    code, output = _run(
+        capsys,
+        "--only",
+        "env,equipment",
+        "--database",
+        str(simulation),
+        "--equipment-database",
+        str(equipment),
+    )
+    assert code == 0
+    _assert_no_leak(output)
+    return {line.split(" ", 2)[1]: line for line in _summary(output)}
+
+
+def test_a_common_only_v4_save_keeps_the_8_1_and_8_4_keys(
+    simulation_db: Path,
+    equipment_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """회귀(설계 5장) — 일정은 그대로 두고 공통만 계약 v4 로 저장한 직후에도 8-1·8-4 요약 키가 저장
+    전과 같다. 공통 칸 수는 공통 최신(이제 v4 r2)에서, 일정 칸 수(Q 자리표·D·일정 미정·비가동)는
+    공식 일정 리비전(아직 이관 리비전 「운영 일정」 r1 — 그 원천 옛 r1)에서 센다. 8-4 의 r 은 공식
+    일정 리비전 번호라 공통 번호가 올라도 그대로다."""
+    copied = tmp_path / "equipment_availability.duckdb"
+    shutil.copyfile(equipment_db, copied)
+    before = _summary_keys(capsys, simulation_db, copied)
+
+    repository = DuckDBEquipmentRepository(copied)
+    official = repository.load_official_snapshot()
+    assert official is not None and official.schedule is not None
+    equipment = official.equipment.copy()
+    equipment.loc[0, "담당자"] = "담당 바뀜"
+    result = repository.save_equipment(
+        EquipmentSaveRequest(
+            baseline=official.baseline,
+            equipment=equipment,
+            downtime=official.downtime,
+            equipment_scenario_id="operations",
+            base_common_revision_id=official.revision.revision_id,
+            base_schedule_revision_id=official.schedule.schedule_revision_id,
+        )
+    )
+    assert result.common is not None and result.common.revision_no == 2
+    assert result.schedule is None and result.release_no is None
+    after = _summary_keys(capsys, simulation_db, copied)
+
+    assert after["8-1"] == before["8-1"]
+    assert after["8-4"] == before["8-4"]
+    assert after["8-4"].startswith("- 8-4 r1 · M 9 = ")
+    assert after["8-4s"] == before["8-4s"]
+
+
+def test_the_migration_check_line_is_carried_and_checked(
+    simulation_db: Path, equipment_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """8-4s(설비 시나리오 이관 확인)도 확인 코드가 붙고 `--check-summary` 가 키로 알아본다 — 코드를
+    떼면 「확인 코드가 없다」, 수 하나를 바꾸면 「맞지 않는다」."""
+    line = _summary_keys(capsys, simulation_db, equipment_db)["8-4s"]
+    assert checks.check_transcript([line]) == []
+    body = line.rsplit(" #", 1)[0]
+    assert "확인 코드(`#NN`)가 없다" in checks.check_transcript([body])[0]
+    assert checks.check_transcript([line.replace("X0", "X8")]) != []
 
 
 def test_an_error_message_carrying_names_is_reported_by_kind_only(
@@ -383,7 +507,7 @@ def test_an_error_message_carrying_names_is_reported_by_kind_only(
     def broken(*_args: object, **_kwargs: object) -> pd.DataFrame:
         raise ValueError(f"{SENTINEL}EQ-M0 의 일정이 틀렸습니다")
 
-    monkeypatch.setattr(checks, "_read_snapshot", broken)
+    monkeypatch.setattr(checks, "read_merged", broken)
     monkeypatch.setattr(checks, "calculate_unit_capacity", broken)
 
     code, output = _run(
@@ -968,7 +1092,11 @@ def test_a_failing_summary_line_keeps_the_block(
     shape = checks._column_shape_lines
 
     def without_facts(
-        connection: duckdb.DuckDBPyConnection, revision_id: str, facts: dict[str, str] | None = None
+        connection: duckdb.DuckDBPyConnection,
+        revision_id: str,
+        facts: dict[str, str] | None = None,
+        *,
+        official: object = None,
     ) -> list[str]:
         return shape(connection, revision_id)
 
@@ -987,7 +1115,11 @@ def test_a_failing_summary_line_keeps_the_block(
     assert code == 0
     assert "블록이 멈췄다" not in output
     assert "| Area Code(classification_1) = Main | 4 |" in output
-    assert _uncoded(_summary(output)) == ["- 8-4 요약 실패(KeyError)"]
+    # 이관 확인 줄(8-4s)은 따로 지어 8-4 줄이 멈춰도 남는다.
+    assert _uncoded(_summary(output)) == [
+        "- 8-4 요약 실패(KeyError)",
+        "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0",
+    ]
 
 
 def test_a_locked_database_stops_with_the_app_running_message(
@@ -2333,6 +2465,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-2B",
         "8-3",
         "8-4",
+        "8-4s",
         "8-9",
         "8-10",
     ]
@@ -2349,8 +2482,9 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert re.fullmatch(r"- 8-1 S (\d+)/\1 · E (\d+)/\2 · R 1 · O 1", bare[0]), bare[0]
     assert bare[4].startswith("- 8-2R 100.00% · ")
     assert bare[6] == "- 8-2B 0"
-    assert bare[9] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
-    assert bare[10] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0"
+    assert bare[10] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
+    assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
     assert checks.check_transcript(lines) == []
     assert (
         sum(1 for line in lines if " = " in line) == 3

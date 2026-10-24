@@ -106,9 +106,15 @@ from capa_simulation.persistence.equipment_migration_runner import (  # noqa: E4
 )
 from capa_simulation.persistence.equipment_repository import (  # noqa: E402
     LEGACY_QUAL_PLACEHOLDER,
+    EquipmentSnapshot,
+    read_merged,
+    read_official_pair,
 )
-from capa_simulation.persistence.equipment_repository import (  # noqa: E402
-    _read_legacy_snapshot as _read_snapshot,
+from capa_simulation.persistence.equipment_scenario_store import (  # noqa: E402
+    OPERATIONS_SCENARIO_ID,
+    latest_release_row,
+    legacy_trace_count,
+    schedule_revision_row,
 )
 from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
 from capa_simulation.persistence.repository import (  # noqa: E402
@@ -132,6 +138,8 @@ from capa_simulation.services.equipment_contract import (  # noqa: E402
     EQUIPMENT_ID_COLUMN,
     LINE_TYPE_GROUPS,
     QUAL_CONFIRMATION_STATUSES,
+    RELOCATION_DATE_COLUMN,
+    STOP_DATE_COLUMN,
     USAGE_BASIS_COLUMN,
     counts_for_capacity,
     usage_basis_key,
@@ -459,8 +467,9 @@ _SUMMARY_PREFIX: Final = re.compile(r"^\s*(?:[-*]\s+)?")
 # 가운뎃점(갈래 이름 `K·CHIP·WF`)과 띄지 않은 쉼표(천 단위 `1,020`)는 칸을 가르지 않는다.
 _CELL_SPLIT: Final = re.compile(r"\s*;\s*|\s+·\s*|\s*·\s+|,\s+")
 _CELL_SEP: Final = r"\s*(?:·|;|,)\s*"
-# 요약 줄의 키(`8-1` · `8-2W` · `8-5C1` · `8-10`) — 이 꼴로 시작하는 줄은 확인 코드가 있어야 한다.
-_SUMMARY_KEY: Final = re.compile(r"^8-\d+[A-Z]?\d*(?:\s|$)")
+# 요약 줄의 키(`8-1` · `8-2W` · `8-4s` · `8-5C1` · `8-10`) — 이 꼴로 시작하는 줄은 확인 코드가
+# 있어야 한다.
+_SUMMARY_KEY: Final = re.compile(r"^8-\d+[A-Za-z]?\d*(?:\s|$)")
 
 
 def summary_code(text: str) -> str:
@@ -525,6 +534,15 @@ class Session:
     locked: bool = False
     # 전송용 요약에 모을 줄 — 블록이 돈 차례대로 쌓는다(`summary_lines`).
     notes: list[str] = field(default_factory=list)
+    # 공식 설비 시나리오 한 벌(8-1·8-4 가 나눈다 — 한 번만 읽는다). 못 읽었으면 그 까닭 글.
+    _official: OfficialEquipment | str | None = None
+
+    def official_equipment(self) -> OfficialEquipment | str:
+        """공식 설비 시나리오(공통 최신 + 최신 공식 발행)를 한 번 읽어 둔다."""
+        if self._official is None:
+            assert self.equipment is not None
+            self._official = _read_official_equipment(self.equipment)
+        return self._official
 
     def close(self) -> None:
         for connection in (self.simulation, self.equipment):
@@ -584,6 +602,81 @@ def _migration_line(
         f"- {label} `{path.name}` {size:,.1f} MB — 마이그레이션 {_ranges(versions)} "
         f"(최고 {db_max} · 코드 {code_max}, {state})"
     )
+
+
+# ---------------------------------------------------------------------------------- 공식 설비
+
+
+@dataclass(frozen=True)
+class OfficialEquipment:
+    """공식 설비 시나리오 한 벌 — 앱이 새 세션에 여는 것과 같은 길(`read_official_pair` →
+    `read_merged`)로 읽는다.
+
+    공통 칸은 공통 대장 최신(`common_*`), 일정 칸(날짜 여섯·시나리오 메모·비가동)은 최신 공식 발행의
+    일정 리비전(`schedule_*`)이다. 일정 리비전이 0027 이관 리비전이면 그 원천인 옛 리비전 id 가
+    `legacy_revision_id` 다 — 옛 Qual 자리표는 그 원천 행에만 있다(새 표에는 없다 — 읽기 투영이
+    빈칸으로 바꿔 넣는다). 합친 읽기가 막히면 `snapshot` 이 None 이고 `failure` 가 그 종류다.
+    """
+
+    common_id: str
+    common_no: int
+    contract: int
+    schedule_id: str | None = None
+    schedule_no: int | None = None
+    legacy_revision_id: str | None = None
+    migrated_scenario: bool = False
+    release_no: int | None = None
+    snapshot: EquipmentSnapshot | None = None
+    failure: str | None = None
+
+
+def _read_official_equipment(connection: duckdb.DuckDBPyConnection) -> OfficialEquipment | str:
+    """공식 설비 시나리오를 읽는다. 리비전이 없거나 설비 시나리오 표가 없으면(0027 전) 그 까닭
+    글."""
+    try:
+        pair = read_official_pair(connection)
+        if pair is None:
+            return "리비전 0"
+        common_id, schedule_id = pair
+        common = _latest_equipment_revision(connection)
+        assert common is not None
+        schedule = schedule_revision_row(connection, schedule_id) if schedule_id else None
+        release = latest_release_row(connection)
+    except duckdb.Error as exc:
+        return f"설비 시나리오 표를 읽지 못함 {_failure(exc)} — 0027 전이면 앱을 띄운 뒤 다시"
+    snapshot: EquipmentSnapshot | None = None
+    failure: str | None = None
+    try:
+        snapshot = read_merged(connection, common_id, schedule_id)
+    except Exception as exc:  # 검증 오류 문구는 설비명을 싣는다. 종류만 적는다
+        failure = _failure(exc)
+    return OfficialEquipment(
+        common_id=common_id,
+        common_no=common[1],
+        contract=common[2],
+        schedule_id=schedule_id,
+        schedule_no=int(str(schedule["revision_no"])) if schedule is not None else None,
+        legacy_revision_id=(
+            str(schedule["legacy_revision_id"])
+            if schedule is not None and schedule["legacy_revision_id"] is not None
+            else None
+        ),
+        migrated_scenario=(
+            schedule is not None and schedule["equipment_scenario_id"] == OPERATIONS_SCENARIO_ID
+        ),
+        release_no=int(str(release["release_no"])) if release is not None else None,
+        snapshot=snapshot,
+        failure=failure,
+    )
+
+
+def _official_downtime_rows(official: OfficialEquipment | str) -> str:
+    """공식 일정 리비전의 비가동 행 수(합친 읽기 — 레거시 비가동 중복은 앱처럼 하나로 본다)."""
+    if isinstance(official, str):
+        return _short(official)
+    if official.snapshot is None:
+        return official.failure or "-"
+    return f"{len(official.snapshot.downtime):,}"
 
 
 # ---------------------------------------------------------------------------------- 8-1 env
@@ -708,11 +801,13 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
         rows.append(["최신 설비 리비전", "없음"])
     else:
         revision_id, revision_no, contract = latest
+        # 설비 리비전 = 공통 호기 대장 리비전(0027 뒤). 마스터·보유대수는 공통 최신, 비가동은 설비
+        # 시나리오 일정에 있어 **공식 일정 리비전**(최신 공식 발행)으로 센다 — 공통만 저장해도
+        # 비가동 수가 0 으로 보이지 않는다.
         rows.append(["최신 설비 리비전", f"r{revision_no} · 계약 v{contract}"])
         for label, table in (
             ("최신 리비전 설비 마스터", "equipment_master_snapshot"),
             ("최신 리비전 기존 보유대수", "baseline_snapshot"),
-            ("최신 리비전 비가동 일정", "downtime_schedule_snapshot"),
         ):
             rows.append(
                 [
@@ -724,8 +819,24 @@ def check_env(session: Session, *, now: datetime, root: Path = PROJECT_ROOT) -> 
                     ),
                 ]
             )
+        official = session.official_equipment()
+        rows.append(
+            [
+                "공식 일정 리비전",
+                _short(official) if isinstance(official, str) else _official_place(official),
+            ]
+        )
+        rows.append(["공식 일정 리비전 비가동 일정", _official_downtime_rows(official)])
     lines.extend(["", *_table(["설비 DB", "행"], rows), ""])
     return lines
+
+
+def _official_place(official: OfficialEquipment) -> str:
+    """「공식 v1 → 이관 시나리오 r3」 — 시나리오 이름은 사용자가 지은 값이라 찍지 않는다."""
+    if official.release_no is None or official.schedule_no is None:
+        return "발행 없음"
+    scenario = "이관 시나리오" if official.migrated_scenario else "다른 시나리오"
+    return f"공식 v{official.release_no} → {scenario} r{official.schedule_no}"
 
 
 def _latest_equipment_revision(
@@ -2127,7 +2238,7 @@ def check_home_months(session: Session) -> list[str]:
 
 
 _PLACEHOLDER_ROW: Final = (
-    f"Qual일정 = {LEGACY_QUAL_PLACEHOLDER} (최신 리비전, 이제 빈 Qual 로 읽음)"
+    f"Qual일정 = {LEGACY_QUAL_PLACEHOLDER} (공식 일정 리비전의 원천, 이제 빈 Qual 로 읽음)"
 )
 _TRUNCATED_ROW: Final = f"**모듈 행 환산비 {TRUNCATED_RATIO}** — 다시 입력할 행"
 
@@ -2143,7 +2254,12 @@ def check_equipment(session: Session) -> list[str]:
         session.notes.append(_note("8-4", "리비전 0"))
         return [*lines, "- 설비 리비전이 없다(저장한 적이 없다)", ""]
     revision_id, revision_no, contract = latest
-    lines.append(f"- 최신 설비 리비전 r{revision_no} · 계약 v{contract}")
+    official = session.official_equipment()
+    lines.append(f"- 최신 설비 리비전(공통 대장) r{revision_no} · 계약 v{contract}")
+    lines.append(
+        "- 공식 일정 리비전(일정 칸·비가동은 여기서 센다) — "
+        + (_short(official) if isinstance(official, str) else _official_place(official))
+    )
     if contract < 3:
         lines.extend(
             [
@@ -2155,29 +2271,42 @@ def check_equipment(session: Session) -> list[str]:
     rows: list[list[str]] = []
     placeholder = f"DATE '{LEGACY_QUAL_PLACEHOLDER}'"
     master = "equipment_ops.equipment_master_snapshot"
-    for label, sql, params in (
-        (
+    # 옛 Qual 자리표는 **레거시 원천 행**에만 있다 — 새 일정 표에는 없다(읽기 투영이 빈칸으로 바꿔
+    # 넣는다). 공식 일정 리비전이 이관 리비전이면 그 원천 리비전의 행을 세고, 아니면 0 이다. 0027 전
+    # DB(설비 시나리오 표 없음)는 최신 리비전이 곧 원천이다.
+    placeholder_source = _placeholder_source(official, revision_id)
+    rows.append(
+        [
             "최신 리비전 설비 마스터 행",
-            f"SELECT count(*) FROM {master} WHERE revision_id = ?",
-            [revision_id],
-        ),
-        (
+            _safe_scalar(
+                connection, f"SELECT count(*) FROM {master} WHERE revision_id = ?", [revision_id]
+            ),
+        ]
+    )
+    rows.append(
+        [
             _PLACEHOLDER_ROW,
-            f"SELECT count(*) FROM {master} WHERE revision_id = ? AND qual_date = {placeholder}",
-            [revision_id],
-        ),
+            _safe_scalar(
+                connection,
+                f"SELECT count(*) FROM {master} "
+                f"WHERE revision_id = ? AND qual_date = {placeholder}",
+                [placeholder_source],
+            )
+            if placeholder_source is not None
+            else "0",
+        ]
+    )
+    for label, sql in (
         (
             f"Qual일정 = {LEGACY_QUAL_PLACEHOLDER} (모든 리비전 합)",
             f"SELECT count(*) FROM {master} WHERE qual_date = {placeholder}",
-            [],
         ),
         (
             f"Qual일정 = {LEGACY_QUAL_PLACEHOLDER} 이 든 리비전",
             f"SELECT count(DISTINCT revision_id) FROM {master} WHERE qual_date = {placeholder}",
-            [],
         ),
     ):
-        rows.append([label, _safe_scalar(connection, sql, params)])
+        rows.append([label, _safe_scalar(connection, sql)])
 
     module = "nullif(trim(parent_equipment_id), '') IS NOT NULL"
     ratio_is = "abs(conversion_ratio - {value}) < 1e-9"
@@ -2210,33 +2339,44 @@ def check_equipment(session: Session) -> list[str]:
         ]
     )
     lines.extend(["", *_table(["항목", "수"], rows), ""])
-    lines.extend(_undated_lines(session, connection, revision_id, contract))
+    lines.extend(_undated_lines(connection, official, placeholder_source))
     lines.append("")
     facts: dict[str, str] = {}
-    lines.extend(_column_shape_lines(connection, revision_id, facts))
+    lines.extend(_column_shape_lines(connection, revision_id, facts, official=official))
+    migration: dict[str, str] = {}
+    lines.extend(_scenario_migration_lines(connection, official, migration))
     counted = dict((label, value) for label, value in rows)
 
     def note() -> list[str]:
-        # 「8-4 r최신 · M 마스터 행 = Qual상태마다 + 빈 + ? · T 환산비 0.2 · Q 자리표 · D 개편 전 두
-        # 날짜」.
+        # 「8-4 r공식 · M 마스터 행 = Qual상태마다 + 빈 + ? · T 환산비 0.2 · Q 자리표 · D 개편 전 두
+        # 날짜」. r 은 공식 일정 리비전 번호다 — 공통만 저장해도(공통 rN+1) 일정 쪽 수와 이 줄이
+        # 그대로다(이관 직후 공식 「운영 일정」 rK 는 옛 rK 와 같은 번호다). 0027 전 DB 는 최신
+        # 리비전 번호다.
         statuses = [
             f"{status} {facts[f'Qual상태 {status}']}" for status in QUAL_CONFIRMATION_STATUSES
         ]
         terms = " + ".join(
             [*statuses, f"빈 {facts['Qual상태 빈 칸']}", f"? {facts['Qual상태 그 밖']}"]
         )
+        shown_no = (
+            official.schedule_no
+            if isinstance(official, OfficialEquipment) and official.schedule_no is not None
+            else revision_no
+        )
         return [
             _note(
                 "8-4",
-                f"r{revision_no}",
+                f"r{shown_no}",
                 f"M {counted['최신 리비전 설비 마스터 행']} = {terms}",
                 f"T {counted[_TRUNCATED_ROW]}",
                 f"Q {counted[_PLACEHOLDER_ROW]}",
                 f"D {facts['개편 전 두 날짜']}",
-            )
+            ),
         ]
 
     _noted(session.notes, "8-4", note)
+    # 이관 확인 줄은 따로 짓는다 — 8-4 줄이 멈춰도 이 줄은 남는다.
+    _noted(session.notes, "8-4s", lambda: [_scenario_migration_note(migration)])
     return lines
 
 
@@ -2244,8 +2384,13 @@ def _column_shape_lines(
     connection: duckdb.DuckDBPyConnection,
     revision_id: str,
     facts: dict[str, str] | None = None,
+    *,
+    official: OfficialEquipment | str | None = None,
 ) -> list[str]:
-    """설비 마스터 38열 개편(2026-10-16)이 기대는 값의 꼴 — 최신 리비전의 DB 컬럼을 직접 센다.
+    """설비 마스터 38열 개편(2026-10-16)이 기대는 값의 꼴 — 공통 칸은 최신(공통 대장) 리비전의 DB
+    컬럼을 직접 세고, 일정 칸(정지일정·반출/이설일정)은 **공식 일정 리비전**을 합쳐 읽은 마스터로
+    센다(`official` — 0027 뒤 공통 리비전의 마스터 표에는 일정 칸이 비어 있다). `official` 을 주지
+    않거나 0027 전 DB 면 최신 리비전의 DB 컬럼을 센다.
 
     Area Code(`classification_1`)·공정구분(`line_type`)은 계약이 정한 이름(Main·MI·부대, 공정구분
     여섯)만 이름을 적고, 그 밖의 값은 **종류 수와 행 수**로만 접는다(값을 찍지 않는다). 대조는
@@ -2306,16 +2451,20 @@ def _column_shape_lines(
             count(f"NOT ({blank('classification_3')})"),
         ]
     )
-    for title, column in (
-        ("정지일정(removal_date)", "removal_date"),
-        ("반출/이설일정(relocation_date)", "relocation_date"),
+    schedule = _official_master(official)
+    for title, column, contract_column in (
+        ("정지일정(removal_date)", "removal_date", STOP_DATE_COLUMN),
+        ("반출/이설일정(relocation_date)", "relocation_date", RELOCATION_DATE_COLUMN),
     ):
-        rows.append(
-            [
-                f"{title} 값 있는 행 / 오늘 전",
-                f"{count(f'{column} IS NOT NULL')} / {count(f'{column} < current_date')}",
-            ]
-        )
+        if isinstance(schedule, pd.DataFrame):
+            dates = pd.to_datetime(schedule[contract_column], errors="coerce")
+            before_today = int(dates.lt(pd.Timestamp(date.today())).sum())
+            value = f"{int(dates.notna().sum()):,} / {before_today:,}"
+        elif isinstance(schedule, str):
+            value = schedule
+        else:
+            value = f"{count(f'{column} IS NOT NULL')} / {count(f'{column} < current_date')}"
+        rows.append([f"{title} 값 있는 행 / 오늘 전", value])
     both = "removal_date IS NOT NULL AND relocation_date IS NOT NULL"
     before = _pre_column_overhaul_revision(connection)
     rows.append(
@@ -2340,10 +2489,17 @@ def _column_shape_lines(
             facts["개편 전 두 날짜"],
         ]
     )
+    if isinstance(schedule, pd.DataFrame):
+        both_mask = schedule[STOP_DATE_COLUMN].notna() & schedule[RELOCATION_DATE_COLUMN].notna()
+        both_rows = f"{int(both_mask.sum()):,}"
+    elif isinstance(schedule, str):
+        both_rows = schedule
+    else:
+        both_rows = count(both)
     rows.append(
         [
-            "최신 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보)",
-            count(both),
+            "공식 일정 리비전의 정지일정·반출/이설일정 둘 다 있는 행 (개편 뒤 저장 가능 — 정보)",
+            both_rows,
         ]
     )
     for status in QUAL_CONFIRMATION_STATUSES:
@@ -2357,7 +2513,8 @@ def _column_shape_lines(
     rows.append(["Qual상태 빈 칸", facts["Qual상태 빈 칸"]])
     rows.append(["Qual상태 그 밖", facts["Qual상태 그 밖"]])
     return [
-        "- 38열 개편 컬럼 분포(최신 리비전, 값은 찍지 않고 계약 이름만 적는다)",
+        "- 38열 개편 컬럼 분포(공통 칸은 최신 리비전, 정지·반출/이설일정은 공식 일정 리비전 — 값은 "
+        "찍지 않고 계약 이름만 적는다)",
         "",
         *_table(["항목", "수"], rows),
         "",
@@ -2415,8 +2572,12 @@ def _module_groups(connection: duckdb.DuckDBPyConnection, revision_id: str) -> s
 
 
 def _undated_lines(
-    session: Session, connection: duckdb.DuckDBPyConnection, revision_id: str, contract: int
+    connection: duckdb.DuckDBPyConnection,
+    official: OfficialEquipment | str,
+    placeholder_source: str | None,
 ) -> list[str]:
+    """일정 미정·사용기준 — 공식 설비 시나리오의 **계산 프레임**(그 시나리오에 일정이 없는 호기를
+    뺀 것)을 앱 화면과 같은 셈으로 센다. 옛 자리표에서 온 Qual 미정은 레거시 원천 행만 본다."""
     code_max = max((migration.version for migration in load_equipment_migrations()), default=0)
     db_max = max(_versions(connection, "equipment_meta.schema_migration") or [0])
     if db_max < code_max:
@@ -2424,12 +2585,16 @@ def _undated_lines(
             f"- 일정 미정 — 건너뜀: 설비 DB 마이그레이션이 코드보다 낮다({db_max} < {code_max}). "
             "앱을 띄워 `가용설비 현황` 을 연 뒤 앱을 끄고 다시 돌린다(4-2)."
         ]
+    if isinstance(official, str):
+        return [f"- 일정 미정 — {_short(official)}"]
+    if official.snapshot is None:
+        return [f"- 일정 미정 — {official.failure or '-'}"]
     try:
-        snapshot = _read_snapshot(connection, revision_id)
-        undated = undated_equipment(snapshot.equipment)
+        equipment = official.snapshot.calculation_frames()[1]
+        undated = undated_equipment(equipment)
     except Exception as exc:  # 검증 오류 문구는 설비명을 싣는다. 종류만 적는다
         return [f"- 일정 미정 — {_failure(exc)}"]
-    usage_line = _usage_basis_line(snapshot.equipment)
+    usage_line = _usage_basis_line(equipment)
     counts = undated_counts(undated)
     rows_by_kind = {
         kind: int(undated[UNDATED_KIND_COLUMN].eq(kind).sum()) for kind in UNDATED_KINDS
@@ -2439,14 +2604,14 @@ def _undated_lines(
         for kind in UNDATED_KINDS
     )
     placeholder_units = 0
-    if contract >= 3:
+    if placeholder_source is not None:
         try:
             placeholder_ids = {
                 str(row[0])
                 for row in connection.execute(
                     "SELECT equipment_id FROM equipment_ops.equipment_master_snapshot "
                     f"WHERE revision_id = ? AND qual_date = DATE '{LEGACY_QUAL_PLACEHOLDER}'",
-                    [revision_id],
+                    [placeholder_source],
                 ).fetchall()
             }
         except duckdb.Error:
@@ -2456,11 +2621,107 @@ def _undated_lines(
             qual_rows[EQUIPMENT_ID_COLUMN].astype("string").isin(placeholder_ids).sum()
         )
     return [
-        f"- 일정 미정(`services/undated_equipment.py`, 화면 알림과 같은 셈) — {parts}",
+        f"- 일정 미정(`services/undated_equipment.py`, 화면 알림과 같은 셈 — 공식 설비 시나리오) — "
+        f"{parts}",
         f"- 그 가운데 Qual 미정 행이 옛 자리표 {LEGACY_QUAL_PLACEHOLDER} 에서 온 것 "
         f"{placeholder_units:,}행",
         usage_line,
     ]
+
+
+def _official_master(official: OfficialEquipment | str | None) -> pd.DataFrame | str | None:
+    """일정 칸을 셀 마스터 — 공식 합친 스냅샷(39칸). 0027 전이거나 주지 않았으면 None(옛 길), 합친
+    읽기가 막혔으면 그 실패 글."""
+    if not isinstance(official, OfficialEquipment):
+        return None
+    if official.snapshot is None:
+        return official.failure or "-"
+    return official.snapshot.equipment
+
+
+def _placeholder_source(official: OfficialEquipment | str, latest_revision_id: str) -> str | None:
+    """옛 Qual 자리표를 셀 레거시 원천 리비전 — 공식 일정 리비전이 이관 리비전이면 그 원천, 새
+    리비전이면 None(새 표에는 자리표가 없다). 0027 전 DB(설비 시나리오 표 없음)는 최신
+    리비전이다."""
+    if isinstance(official, OfficialEquipment):
+        return official.legacy_revision_id
+    return latest_revision_id
+
+
+def _scenario_migration_lines(
+    connection: duckdb.DuckDBPyConnection,
+    official: OfficialEquipment | str,
+    facts: dict[str, str],
+) -> list[str]:
+    """설비 시나리오 이관(0027) 확인 줄 — 시나리오 수, 이관 시나리오 리비전 수와 그 가운데 이관 수,
+    이관 전 설비 리비전 수(경계 1행), 공식, 옛 배포 흔적, 공식 리비전의 일정 없음·고아 일정 행.
+
+    이관 직후에는 시나리오 1 · 이관 리비전 = 이관 전 리비전 · 공식 v1 → 마지막 이관 리비전 ·
+    흔적 0 · 일정 없음 0 · 고아 0 이다. 시나리오 이름은 사용자가 지은 값이라 찍지 않는다.
+    """
+    if isinstance(official, str):
+        facts["skip"] = _short(official)
+        return [f"- 설비 시나리오 이관 확인 — {_short(official)}", ""]
+
+    def scalar(sql: str) -> str:
+        return _safe_scalar(connection, sql)
+
+    facts["S"] = scalar("SELECT count(*) FROM equipment_ops.equipment_scenario")
+    migrated = f"equipment_scenario_id = '{OPERATIONS_SCENARIO_ID}'"
+    facts["L"] = scalar(
+        "SELECT count(*) FROM equipment_ops.equipment_schedule_revision "
+        f"WHERE {migrated} AND origin = 'legacy'"
+    )
+    facts["all"] = scalar(
+        f"SELECT count(*) FROM equipment_ops.equipment_schedule_revision WHERE {migrated}"
+    )
+    facts["N"] = scalar(
+        "SELECT coalesce((SELECT through_revision_no FROM equipment_ops.equipment_legacy_boundary "
+        "ORDER BY boundary_no LIMIT 1), 0)"
+    )
+    try:
+        facts["X"] = f"{legacy_trace_count(connection):,}"
+    except duckdb.Error as exc:
+        facts["X"] = _failure(exc)
+    facts["O"] = (
+        f"v{official.release_no}→r{official.schedule_no}"
+        if official.release_no is not None and official.schedule_no is not None
+        else "-"
+    )
+    snapshot = official.snapshot
+    facts["U"] = f"{len(snapshot.unscheduled_units):,}" if snapshot is not None else "-"
+    facts["G"] = f"{snapshot.orphan_rows:,}" if snapshot is not None else "-"
+    rows = [
+        ["설비 시나리오", facts["S"]],
+        [
+            "이관 시나리오(operations) 리비전 / 그 가운데 이관(legacy)",
+            f"{facts['all']} / {facts['L']}",
+        ],
+        ["이관 전 설비 리비전(이관 경계 1행) — 이관 리비전 수와 같아야 함", facts["N"]],
+        ["공식", _official_place(official)],
+        ["**경계 뒤 계약 v3 공통(옛 배포로 저장한 흔적)** — 0 이어야 함", facts["X"]],
+        [
+            "공식 일정 리비전의 일정 없음 호기 / 고아 일정 행(이관 직후 0)",
+            f"{facts['U']} / {facts['G']}",
+        ],
+    ]
+    return ["- 설비 시나리오 이관 확인(0027)", "", *_table(["항목", "수"], rows), ""]
+
+
+def _scenario_migration_note(facts: dict[str, str]) -> str:
+    """요약의 8-4s — 「8-4s S1 · L3/3 · O v1→r3 · X0 · U0 · G0」(시나리오 · 이관 리비전/이관 전
+    리비전 · 공식 · 흔적 · 일정 없음 · 고아)."""
+    if "skip" in facts:
+        return _note("8-4s", facts["skip"])
+    return _note(
+        "8-4s",
+        f"S{facts['S']}",
+        f"L{facts['L']}/{facts['N']}",
+        f"O {facts['O']}",
+        f"X{facts['X']}",
+        f"U{facts['U']}",
+        f"G{facts['G']}",
+    )
 
 
 def _usage_basis_line(equipment: pd.DataFrame) -> str:

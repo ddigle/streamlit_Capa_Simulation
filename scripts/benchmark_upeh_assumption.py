@@ -11,9 +11,10 @@ UPEH 가정 % 칸은 1 단위로 바꾸면 곧바로 반영한다(2026-10-22 사
         --output <저장소 밖 파일>
 
 **하는 일.** 사본의 최신 공식버전 리비전으로 대당 Capa → 소요대수(시나리오 전체 기간)를 세고, 설비
-DB 사본의 최신 저장본·Cut-off 로 이번 달부터 시나리오 끝 달까지 다섯 목표 계획을 세운다 — 앱의 필요
-단축 일정과 같은 함수(`plan_required_shortening`)이고, 호기 구간은 앱처럼 한 번 만들어 두 계획이
-나눈다(앱의 구간 캐시). 그다음 같은 달에 `--percent`(기본 110) 가정을 건 소요대수로 한 번 더 세운다.
+DB 사본의 공식 설비 시나리오(공통 최신 + 최신 공식 발행 — 그 시나리오에 일정이 없는 호기는 뺀다)·
+Cut-off 로 이번 달부터 시나리오 끝 달까지 다섯 목표 계획을 세운다 — 앱의 필요 단축 일정과 같은
+함수(`plan_required_shortening`)이고, 호기 구간은 앱처럼 한 번 만들어 두 계획이 나눈다(앱의 구간
+캐시). 그다음 같은 달에 `--percent`(기본 110) 가정을 건 소요대수로 한 번 더 세운다.
 두 계획 시간과 ÷f 를 거는 시간을 찍는다.
 
 **지키는 것** — `inspect_revision_calculations.py` 와 같다. 사본에만 돌린다(`--data-dir` 은 기본값이
@@ -111,17 +112,19 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
             raise LookupError("이번 달 이후 소요 없음")
         stage = "설비 읽기"
         equipment_repository = DuckDBEquipmentRepository(data_dir / EQUIPMENT_DATABASE)
-        revision_id = equipment_repository.latest_revision_id()
-        if revision_id is None:
+        # 공식 설비 시나리오(공통 최신 + 최신 공식 발행) — 앱 화면이 새 세션에 여는 한 벌이다.
+        official = equipment_repository.load_official_snapshot()
+        if official is None:
             raise LookupError("설비 저장본 없음")
-        snapshot = equipment_repository.load_snapshot(revision_id)
+        # 계산은 그 시나리오에 일정이 없는 호기와 그 비가동을 뺀 세 표다(앱 계산과 같다).
+        baseline_frame, equipment_frame, downtime_frame = official.calculation_frames()
         cutoff = equipment_repository.load_process_cutoff()
         stage = "호기 구간"
         span = span_date_range(months, cutoff)
         spans = (
             build_equipment_lifecycle_spans(
-                snapshot.equipment,
-                snapshot.downtime,
+                equipment_frame,
+                downtime_frame,
                 start_date=span[0],
                 end_date=span[1],
                 with_unit_share=True,
@@ -133,9 +136,9 @@ def measure(data_dir: Path, *, percent: int, today: date) -> dict[str, object]:
         def plan(demand: pd.DataFrame) -> tuple[float, int, int]:
             started = time.perf_counter()
             result = plan_required_shortening(
-                equipment=snapshot.equipment,
-                downtime=snapshot.downtime,
-                baseline=snapshot.baseline,
+                equipment=equipment_frame,
+                downtime=downtime_frame,
+                baseline=baseline_frame,
                 cutoff=cutoff,
                 required_equipment=demand,
                 months=months,
