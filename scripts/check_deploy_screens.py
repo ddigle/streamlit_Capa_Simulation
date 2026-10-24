@@ -3472,8 +3472,12 @@ def summarize_equipment_moves(
 
 
 def _main_button(widget_key: str) -> str:
-    """본문 위젯 key 의 단추 선택자(Streamlit 은 key 를 `st-key-<key>` 클래스로 단다)."""
-    return f'[data-testid="stMain"] .st-key-{widget_key} button'
+    """본문 위젯 key 의 **보이는** 단추 선택자(Streamlit 은 key 를 `st-key-<key>` 클래스로 단다).
+
+    `help=` 를 준 단추는 숨은 사본이 같은 key 칸에 함께 있어(1.63 — 좁은 창에서는 숨은 쪽이 먼저
+    잡힌다) Playwright 의 `:visible` 로 보이는 것만 고른다.
+    """
+    return f'[data-testid="stMain"] .st-key-{widget_key} button:visible'
 
 
 def check_equipment_moves(screen: Screen) -> str:
