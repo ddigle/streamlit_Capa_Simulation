@@ -1,6 +1,13 @@
-# Purpose: Immutable DuckDB snapshots for unified equipment operations input.
+# Purpose: 설비 DB 의 불변 리비전(공통 호기 대장·설비 시나리오 일정)과 설비 현행값을 읽고 쓴다.
 
-"""Immutable DuckDB snapshots for unified equipment operations input."""
+"""설비 DB 의 불변 리비전과 설비 현행값.
+
+설비 마스터는 **공통 호기 대장 리비전**(`equipment_ops.revision` — 번호 전역)과 **설비 시나리오 일정
+리비전**(시나리오마다 r1 부터)으로 나뉜다(설비 DB `0027`). 화면이 쓰는 한 벌은 두 리비전을 호기 키로
+합친 `EquipmentSnapshot` 이다(`read_merged`). 계약 v3 이하 리비전은 마스터에 일정이 함께 든 옛
+꼴이라 `_read_legacy_snapshot` 으로 읽고, 0027 이관 리비전의 일정 원천이 된다. 층·FAB 도면, 공정별
+Cut-off, 주차별 가용대수, 필요 단축 일정 조건·기준선은 리비전이 아닌 현행값이다.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +15,7 @@ import hashlib
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -17,6 +24,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.persistence import equipment_scenario_store as scenario_store
 from capa_simulation.persistence import sync_state
 from capa_simulation.persistence._sql_helpers import (
     as_datetime,
@@ -43,6 +51,7 @@ from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     ARRIVAL_STATUS_COLUMN,
     BASELINE_COLUMNS,
+    COMMON_MASTER_COLUMNS,
     DEFAULT_CONVERSION_RATIO,
     DOWNTIME_COLUMNS,
     DOWNTIME_KEY_COLUMNS,
@@ -57,6 +66,21 @@ from capa_simulation.services.equipment_contract import (
     VALID_BUILDINGS,
     VALID_FLOORS,
     empty_equipment_master,
+)
+from capa_simulation.services.equipment_scenario import (
+    COMMON_FRAME_COLUMNS,
+    SCHEDULE_DOWNTIME_COLUMNS,
+    SCHEDULE_FRAME_COLUMNS,
+    UNIT_KEY_COLUMN,
+    legacy_unit_key,
+    merge_equipment,
+    normalize_schedule_downtime,
+    normalize_schedule_frame,
+    split_downtime,
+    split_equipment,
+)
+from capa_simulation.services.equipment_scenario import (
+    calculation_frames as scenario_calculation_frames,
 )
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
@@ -137,6 +161,13 @@ class _WriteOutcome:
 
 @dataclass(frozen=True)
 class EquipmentRevisionSummary:
+    """공통 호기 대장 리비전(`equipment_ops.revision`) 한 줄. 번호는 전역 하나다(「공통 rN」).
+
+    계약 v4(설비 시나리오 뒤의 저장)는 비가동 행 수가 늘 0 이다 — 비가동은 설비 시나리오 일정
+    리비전에 있고 그 요약(`EquipmentScheduleRevisionSummary.downtime_row_count`)이 센다. 캐시에
+    실리는 모델이라 새 필드는 기본값을 둔다.
+    """
+
     revision_id: str
     revision_no: int
     note: str | None
@@ -144,24 +175,142 @@ class EquipmentRevisionSummary:
     equipment_row_count: int
     downtime_row_count: int
     created_at: datetime
+    saved_by: str | None = None
+
+
+@dataclass(frozen=True)
+class EquipmentScheduleRevisionSummary:
+    """설비 시나리오 일정 리비전 한 줄. 번호는 시나리오마다 r1 부터다(화면의 「rN」).
+
+    `origin` 은 legacy·save·clone·propagate·restore 가운데 하나다 — legacy 는 0027 이관 리비전이고
+    `legacy_revision_id` 의 옛 마스터·비가동이 그 원천이다. `common_revision_id` 는 저장 때 함께 본
+    공통 리비전(이력 「그때 그대로」), `unit_row_count` 는 이 리비전에 일정 행이 있는 호기 수다.
+    """
+
+    schedule_revision_id: str
+    equipment_scenario_id: str
+    revision_no: int
+    origin: str
+    created_at: datetime
+    revision_name: str | None = None
+    note: str | None = None
+    saved_by: str | None = None
+    common_revision_id: str | None = None
+    legacy_revision_id: str | None = None
+    unit_row_count: int = 0
+    downtime_row_count: int = 0
+
+
+@dataclass(frozen=True)
+class EquipmentScenarioSummary:
+    """설비 시나리오 한 줄 — 각 최신은 칸이 아니라 `MAX(revision_no)` 로 낸다."""
+
+    equipment_scenario_id: str
+    scenario_name: str
+    status: str
+    list_order: int | None = None
+    latest_schedule_revision_id: str | None = None
+    latest_revision_no: int | None = None
+    revision_count: int = 0
+
+
+@dataclass(frozen=True)
+class EquipmentRelease:
+    """공식 발행 한 줄(append-only). 번호(「공식 vN」)는 전역 하나다."""
+
+    release_no: int
+    equipment_scenario_id: str
+    schedule_revision_id: str
+    released_at: datetime
+    released_by: str | None = None
+    note: str | None = None
 
 
 @dataclass(frozen=True)
 class EquipmentSnapshot:
+    """화면이 쓰는 설비 데이터 한 벌 — 공통 대장 리비전 + 설비 시나리오 일정 리비전을 합친 것.
+
+    - `equipment` 는 39칸 합친 마스터이고 **일정 없음 호기도 든다**(편집·RawData·CSV 용). 계산에는
+      `calculation_frames()` 를 쓴다.
+    - `schedule` 이 None 이면 일정 리비전 없이 읽은 것이다(옛 길 `_read_legacy_snapshot`, 또는
+      발행이 없는 공통 리비전).
+    - 호기 키는 (설비명, 키) 쌍 튜플로 든다 — 캐시 본문에 실리는 모델이라 `MappingProxyType` 처럼
+      pickle 이 안 되는 값을 두지 않는다. 꺼낼 때 `unit_keys` 가 dict 를 만든다.
+    - 시나리오명·공식 번호 같은 라벨은 싣지 않는다 — 바뀔 수 있는 값이라 목록에서 읽는다.
+    """
+
     revision: EquipmentRevisionSummary
     baseline: pd.DataFrame
     equipment: pd.DataFrame
     downtime: pd.DataFrame
+    schedule: EquipmentScheduleRevisionSummary | None = None
+    unit_key_pairs: tuple[tuple[str, str], ...] = ()
+    unscheduled_units: frozenset[str] = frozenset()
+    orphan_rows: int = 0
+
+    @property
+    def token(self) -> str:
+        """(공통 리비전, 일정 리비전) 쌍 토큰. 두 리비전 내용은 불변이라 토큰이 같으면 값이 같다."""
+        schedule_id = self.schedule.schedule_revision_id if self.schedule is not None else "-"
+        return f"{self.revision.revision_id}|{schedule_id}"
+
+    @property
+    def unit_keys(self) -> dict[str, str]:
+        """설비명 → 호기 키."""
+        return dict(self.unit_key_pairs)
+
+    def calculation_frames(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """계산에 넘길 (기존 보유대수, 설비 마스터, 비가동) — 일정 없음 호기와 그 비가동을 뺀다."""
+        return scenario_calculation_frames(
+            self.baseline, self.equipment, self.downtime, self.unscheduled_units
+        )
 
 
-# 리비전 요약 한 줄을 만드는 투영. 계약 버전 3 을 기준으로 표가 갈려 CASE 가 길고, 두 조회
-# (스냅샷 하나 · 목록)가 **같은 열 순서**로 읽어야 모델 생성이 맞는다.
+@dataclass(frozen=True)
+class CommonFrames:
+    """공통 대장 리비전 하나 — 기존 보유대수와 공통 32칸 + 호기 키(`COMMON_FRAME_COLUMNS`). 일정
+    칸은 아예 없다."""
+
+    revision: EquipmentRevisionSummary
+    contract_version: int
+    baseline: pd.DataFrame
+    equipment: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class ScheduleFrames:
+    """설비 시나리오 일정 리비전 하나 — 키별 일곱 칸(`SCHEDULE_FRAME_COLUMNS`)과 키별 비가동
+    (`SCHEDULE_DOWNTIME_COLUMNS`)."""
+
+    revision: EquipmentScheduleRevisionSummary
+    schedule: pd.DataFrame
+    downtime: pd.DataFrame
+
+
+class EquipmentScenarioIncompatible(ValueError):
+    """일정 리비전을 지금 공통 대장과 합치면 설비 마스터 검증을 통과하지 못한다.
+
+    각 시나리오의 최신과 최신 공식 발행은 저장 때의 교차 검증이 늘 합쳐지게 지킨다. 그 밖의 옛
+    리비전은 막힐 수 있다 — 화면은 불러오기 전에 막거나 시나리오 최신으로 옮긴다.
+    """
+
+    def __init__(self, scenario_name: str, revision_no: int, reason: str) -> None:
+        subject = with_object_particle(f"「{scenario_name}」 r{revision_no}")
+        super().__init__(f"{subject} 지금 공통 대장과 합칠 수 없습니다 — {reason}")
+        self.scenario_name = scenario_name
+        self.revision_no = revision_no
+        self.reason = reason
+
+
+# 리비전 요약 한 줄을 만드는 투영. 계약 버전에 따라 표가 갈려 CASE 가 길고, 두 조회
+# (스냅샷 하나 · 목록)가 **같은 열 순서**로 읽어야 모델 생성이 맞는다. 계약 v4(설비 시나리오 뒤의
+# 공통 대장)는 마스터 표의 행을 세고 비가동은 0 이다 — 비가동은 설비 시나리오 일정 리비전에 있다.
 _REVISION_SUMMARY_PROJECTION = """
                 r.revision_id, r.revision_no, r.note,
                        (SELECT COUNT(*) FROM equipment_ops.baseline_snapshot b
                         WHERE b.revision_id = r.revision_id),
                        CASE
-                           WHEN r.equipment_contract_version = 3
+                           WHEN r.equipment_contract_version IN (3, 4)
                            THEN (SELECT COUNT(*) FROM equipment_ops.equipment_master_snapshot e
                                  WHERE e.revision_id = r.revision_id)
                            WHEN (SELECT COUNT(*) FROM equipment_ops.equipment_snapshot e
@@ -172,13 +321,14 @@ _REVISION_SUMMARY_PROJECTION = """
                                  WHERE s.revision_id = r.revision_id)
                        END,
                        CASE
+                           WHEN r.equipment_contract_version = 4 THEN 0
                            WHEN r.equipment_contract_version = 3
                            THEN (SELECT COUNT(*) FROM equipment_ops.downtime_schedule_snapshot d
                                  WHERE d.revision_id = r.revision_id)
                            ELSE (SELECT COUNT(*) FROM equipment_ops.downtime_snapshot d
                                  WHERE d.revision_id = r.revision_id)
                        END,
-                       r.created_at
+                       r.created_at, r.saved_by
 """
 
 
@@ -249,6 +399,17 @@ _EQUIPMENT_MASTER_READ_EXPRESSIONS: Mapping[str, str] = MappingProxyType(
 _EQUIPMENT_MASTER_PROJECTION = ", ".join(
     f'{_EQUIPMENT_MASTER_READ_EXPRESSIONS.get(db_column, db_column)} AS "{column}"'
     for column, db_column in EQUIPMENT_MASTER_DB_COLUMNS.items()
+)
+
+# 계약 v4 공통 대장의 마스터 — 공통 32칸과 호기 키. 마스터 표의 일정 칸은 읽지 않는다(v4 는 NULL).
+# 키가 NULL 인 행(옛 판에서 옮겨 온 행)은 `legacy_unit_key` 와 같은 `'n' || md5(설비명)` 이다.
+_COMMON_MASTER_PROJECTION = ", ".join(
+    [
+        f'{_EQUIPMENT_MASTER_READ_EXPRESSIONS.get(db_column, db_column)} AS "{column}"'
+        for column, db_column in EQUIPMENT_MASTER_DB_COLUMNS.items()
+        if column in COMMON_MASTER_COLUMNS
+    ]
+    + [f"COALESCE(unit_key, 'n' || md5(equipment_id)) AS \"{UNIT_KEY_COLUMN}\""]
 )
 
 DOWNTIME_DB_COLUMNS: Mapping[str, str] = MappingProxyType(
@@ -456,7 +617,9 @@ class DuckDBEquipmentRepository:
                         for frame in (prepared_baseline, prepared_equipment, prepared_downtime)
                     )
                 else:
-                    unchanged = _content_hashes(_read_snapshot(connection, latest[0])) == content
+                    unchanged = (
+                        _content_hashes(_read_legacy_snapshot(connection, latest[0])) == content
+                    )
             revision_id: str | None = None
             if not unchanged:
                 revision_id = _insert_revision(
@@ -491,7 +654,65 @@ class DuckDBEquipmentRepository:
 
     def load_snapshot(self, revision_id: str) -> EquipmentSnapshot:
         with self._connect() as connection:
-            return _read_snapshot(connection, revision_id)
+            return _read_legacy_snapshot(connection, revision_id)
+
+    def load_merged_snapshot(
+        self, common_revision_id: str, schedule_revision_id: str | None
+    ) -> EquipmentSnapshot:
+        """공통 리비전 + 일정 리비전을 합친 스냅샷(`read_merged`). 두 리비전 내용은 불변이다."""
+        with self._connect() as connection:
+            return read_merged(connection, common_revision_id, schedule_revision_id)
+
+    def load_official_snapshot(self) -> EquipmentSnapshot | None:
+        """공통 최신 + 최신 공식 발행 일정 리비전. 공통 리비전이 없으면 None."""
+        with self._connect() as connection:
+            pair = read_official_pair(connection)
+            if pair is None:
+                return None
+            return read_merged(connection, *pair)
+
+    def load_saved_pair(self, schedule_revision_id: str) -> EquipmentSnapshot:
+        """이력 「그때 그대로」 — 그 일정 리비전 + 그 저장이 함께 본 공통 리비전.
+
+        함께 본 공통(`common_revision_id`)이 비어 있으면(그런 저장은 없다) 공통 최신과 합친다.
+        """
+        with self._connect() as connection:
+            schedule = _require_schedule_revision(connection, schedule_revision_id)
+            common = schedule.common_revision_id
+            if common is None:
+                latest = _latest_revision(connection)
+                if latest is None:
+                    raise KeyError("공통 대장 리비전이 없습니다.")
+                common = latest[0]
+            return read_merged(connection, common, schedule_revision_id)
+
+    def list_equipment_scenarios(self) -> list[EquipmentScenarioSummary]:
+        """설비 시나리오 목록(`list_order` 다음 이름 차례) — 각 최신·리비전 수와 함께."""
+        with self._connect() as connection:
+            return [_scenario_summary(row) for row in scenario_store.scenario_rows(connection)]
+
+    def list_schedule_revisions(
+        self, equipment_scenario_id: str, *, limit: int = 50
+    ) -> list[EquipmentScheduleRevisionSummary]:
+        """한 설비 시나리오의 일정 리비전, 번호 큰 것부터."""
+        if limit <= 0:
+            raise ValueError("설비 시나리오 리비전 조회 건수는 1 이상이어야 합니다.")
+        with self._connect() as connection:
+            rows = scenario_store.schedule_revision_rows(
+                connection, equipment_scenario_id, limit=limit
+            )
+        return [_schedule_revision_summary(row) for row in rows]
+
+    def latest_equipment_release(self) -> EquipmentRelease | None:
+        """최신 공식 발행. 발행이 없으면 None."""
+        with self._connect() as connection:
+            row = scenario_store.latest_release_row(connection)
+        return _release(row) if row is not None else None
+
+    def legacy_trace_count(self) -> int:
+        """이관 경계 뒤 계약 v3 이하 공통 리비전 수(옛 배포로 저장한 흔적)."""
+        with self._connect() as connection:
+            return legacy_trace_count(connection)
 
     def list_revisions(self, *, limit: int = 50) -> list[EquipmentRevisionSummary]:
         if limit <= 0:
@@ -1153,8 +1374,11 @@ def _latest_revision(connection: duckdb.DuckDBPyConnection) -> tuple[str, int] |
     return (str(row[0]), int(row[1])) if row is not None else None
 
 
-def _read_snapshot(connection: duckdb.DuckDBPyConnection, revision_id: str) -> EquipmentSnapshot:
-    revision_row = connection.execute(
+def _revision_row(
+    connection: duckdb.DuckDBPyConnection, revision_id: str
+) -> tuple[EquipmentRevisionSummary, int]:
+    """(공통 리비전 요약, 계약 버전). 없으면 `KeyError`."""
+    row = connection.execute(
         f"""
         SELECT {_REVISION_SUMMARY_PROJECTION}, r.equipment_contract_version
         FROM equipment_ops.revision r
@@ -1162,10 +1386,38 @@ def _read_snapshot(connection: duckdb.DuckDBPyConnection, revision_id: str) -> E
         """,
         [revision_id],
     ).fetchone()
-    if revision_row is None:
+    if row is None:
         raise KeyError(f"설비 이력을 찾을 수 없습니다: {revision_id}")
+    contract_version = int(row[8]) if row[8] is not None else 2
+    return _revision_summary(row), contract_version
+
+
+def _read_legacy_snapshot(
+    connection: duckdb.DuckDBPyConnection, revision_id: str
+) -> EquipmentSnapshot:
+    """계약 v3 이하 리비전 하나를 옛 길 그대로 읽는다 — 마스터에 일정 칸이 함께 든 리비전이다.
+
+    설비 DB `0027` 이관 리비전의 일정 원천이기도 하다(「운영 일정」 rK 의 `legacy_revision_id`).
+    계약 v4(공통 대장만 든 리비전 — 일정 칸 NULL, 비가동 없음)를 이 길로 읽으면 일정이 모두 빈
+    마스터가 되므로 받지 않는다 — `read_merged` 로 읽는다. 일정 리비전을 모르므로 `schedule` 은
+    None 이다.
+    """
+    summary, contract_version = _revision_row(connection, revision_id)
+    return _legacy_snapshot(connection, revision_id, summary, contract_version)
+
+
+def _legacy_snapshot(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+    summary: EquipmentRevisionSummary,
+    contract_version: int,
+) -> EquipmentSnapshot:
+    if contract_version >= 4:
+        raise ValueError(
+            f"공통 r{summary.revision_no} 은 설비 시나리오 뒤의 공통 대장 리비전(계약 "
+            f"{contract_version})이라 옛 길로 읽지 않습니다 — 일정 리비전과 합쳐 읽으세요."
+        )
     baseline = _load_baseline(connection, revision_id)
-    contract_version = int(revision_row[7])
     if contract_version == 3:
         equipment = _load_equipment_master(connection, revision_id)
         downtime = _load_downtime_schedule(connection, revision_id)
@@ -1176,13 +1428,253 @@ def _read_snapshot(connection: duckdb.DuckDBPyConnection, revision_id: str) -> E
         downtime = _load_legacy_downtime(connection, revision_id)
     prepared_equipment = prepare_equipment_master(equipment.reindex(columns=EQUIPMENT_COLUMNS))
     return EquipmentSnapshot(
-        revision=_revision_summary(revision_row),
+        revision=summary,
         baseline=prepare_equipment_baseline(baseline.reindex(columns=BASELINE_COLUMNS)),
         equipment=prepared_equipment,
         downtime=prepare_downtime_for_prepared_equipment(
             downtime.reindex(columns=DOWNTIME_COLUMNS), prepared_equipment
         ),
     )
+
+
+def _legacy_unit_keys(equipment: pd.DataFrame) -> dict[str, str]:
+    """옛 리비전 호기의 키 — 설비명마다 `legacy_unit_key`(행 차례).
+
+    옛 행의 `unit_key` 는 늘 NULL 이다 — 새 판은 계약 v4 로만 쓰고 옛 판은 그 칸을 모른다.
+    """
+    return {str(name): legacy_unit_key(str(name)) for name in equipment[EQUIPMENT_ID_COLUMN]}
+
+
+def read_common(connection: duckdb.DuckDBPyConnection, common_revision_id: str) -> CommonFrames:
+    """공통 대장 리비전 하나 — 기존 보유대수와 공통 32칸 + 호기 키. 일정 칸은 아예 없다.
+
+    계약 v4 는 마스터 표에서 공통 칸과 `COALESCE(unit_key, 'n' || md5(equipment_id))` 만 고른다. v3
+    이하는 `_read_legacy_snapshot` 의 결과(읽기 투영·옛 변환이 걸린 것)에서 일정 칸을 버린다. 둘 다
+    읽기 검증을 지난 값이다.
+    """
+    summary, contract_version = _revision_row(connection, common_revision_id)
+    return _common_frames(connection, common_revision_id, summary, contract_version, checked=True)
+
+
+def _common_frames(
+    connection: duckdb.DuckDBPyConnection,
+    revision_id: str,
+    summary: EquipmentRevisionSummary,
+    contract_version: int,
+    *,
+    checked: bool,
+) -> CommonFrames:
+    """공통 쪽 프레임. `checked=False` 는 v4 마스터를 검증 없이 돌려준다(합친 뒤 한 번 검증)."""
+    if contract_version < 4:
+        legacy = _legacy_snapshot(connection, revision_id, summary, contract_version)
+        common, _ = split_equipment(legacy.equipment, _legacy_unit_keys(legacy.equipment))
+        return CommonFrames(summary, contract_version, legacy.baseline, common)
+    baseline = prepare_equipment_baseline(
+        _load_baseline(connection, revision_id).reindex(columns=BASELINE_COLUMNS)
+    )
+    master = connection.execute(
+        f"""
+        SELECT {_COMMON_MASTER_PROJECTION}
+        FROM equipment_ops.equipment_master_snapshot
+        WHERE revision_id = ? ORDER BY source_row_no
+        """,
+        [revision_id],
+    ).fetchdf()
+    master = master.reindex(columns=list(COMMON_FRAME_COLUMNS))
+    if checked:
+        keys = dict(
+            zip(
+                master[EQUIPMENT_ID_COLUMN].astype(str),
+                master[UNIT_KEY_COLUMN].astype(str),
+                strict=True,
+            )
+        )
+        prepared = prepare_equipment_master(
+            master.drop(columns=[UNIT_KEY_COLUMN]).reindex(columns=EQUIPMENT_COLUMNS)
+        )
+        master, _ = split_equipment(prepared, keys)
+    return CommonFrames(summary, contract_version, baseline, master)
+
+
+def read_schedule(
+    connection: duckdb.DuckDBPyConnection, schedule_revision_id: str
+) -> ScheduleFrames:
+    """설비 시나리오 일정 리비전 하나 — 키별 일곱 칸과 키별 비가동(계약 형으로 맞춘 것).
+
+    이관 리비전(`legacy_revision_id`)은 `_read_legacy_snapshot` 의 일정 칸·비가동을 키로 바꿔 쓴다 —
+    읽기 투영(Qual 자리표 → 빈칸)·계약 v2 변환·레거시 비가동 중복 제거가 그대로 걸린다. 이관
+    리비전은 그 리비전의 모든 호기에 일정 행이 있다. 그 밖은 새 두 표에서 읽는다.
+    """
+    summary = _require_schedule_revision(connection, schedule_revision_id)
+    return _schedule_frames(connection, summary)
+
+
+def _require_schedule_revision(
+    connection: duckdb.DuckDBPyConnection, schedule_revision_id: str
+) -> EquipmentScheduleRevisionSummary:
+    row = scenario_store.schedule_revision_row(connection, schedule_revision_id)
+    if row is None:
+        raise KeyError(f"설비 시나리오 리비전을 찾을 수 없습니다: {schedule_revision_id}")
+    return _schedule_revision_summary(row)
+
+
+def _schedule_frames(
+    connection: duckdb.DuckDBPyConnection, summary: EquipmentScheduleRevisionSummary
+) -> ScheduleFrames:
+    if summary.legacy_revision_id is not None:
+        legacy = _read_legacy_snapshot(connection, summary.legacy_revision_id)
+        keys = _legacy_unit_keys(legacy.equipment)
+        _, schedule = split_equipment(legacy.equipment, keys)
+        downtime = split_downtime(legacy.downtime, keys)
+    else:
+        schedule = scenario_store.schedule_frame(connection, summary.schedule_revision_id)
+        downtime = scenario_store.schedule_downtime_frame(connection, summary.schedule_revision_id)
+    return ScheduleFrames(
+        revision=summary,
+        schedule=normalize_schedule_frame(schedule),
+        downtime=normalize_schedule_downtime(downtime),
+    )
+
+
+def read_merged(
+    connection: duckdb.DuckDBPyConnection,
+    common_revision_id: str,
+    schedule_revision_id: str | None,
+) -> EquipmentSnapshot:
+    """공통 리비전 + 일정 리비전을 합친 스냅샷(39칸).
+
+    - 공통과 일정이 **같은 레거시 리비전**이면(이관 직후의 공식) 레거시 읽기 한 번으로 둘 다 낸다 —
+      그 리비전의 모든 호기에 일정 행이 있으므로 합친 결과가 레거시 읽기 그대로다.
+    - 그 밖은 공통 행 차례대로 키로 붙인다(`merge_equipment`). 일정 행이 없는 호기는 일정 칸이 비고
+      `unscheduled_units` 에 든다. 공통에 없는 키의 일정·비가동 행은 버리고 `orphan_rows` 에 센다.
+      비가동의 설비명은 키로 지금 공통 이름을 붙인다.
+    - 끝에 읽기 검증(`prepare_equipment_master`·`prepare_downtime_for_prepared_equipment` —
+      캔버스·오늘 없이)을 한다. 실패하면 `EquipmentScenarioIncompatible(시나리오명, rN, 까닭)`.
+    - `schedule_revision_id` 가 None 이면 일정 리비전이 없는 것이다 — 모든 호기가 일정 없음이다.
+    """
+    summary, contract_version = _revision_row(connection, common_revision_id)
+    schedule = (
+        _require_schedule_revision(connection, schedule_revision_id)
+        if schedule_revision_id is not None
+        else None
+    )
+    if (
+        schedule is not None
+        and schedule.legacy_revision_id is not None
+        and schedule.legacy_revision_id == common_revision_id
+    ):
+        legacy = _legacy_snapshot(connection, common_revision_id, summary, contract_version)
+        return replace(
+            legacy,
+            schedule=schedule,
+            unit_key_pairs=tuple(_legacy_unit_keys(legacy.equipment).items()),
+        )
+    common = _common_frames(
+        connection, common_revision_id, summary, contract_version, checked=False
+    )
+    frames = _schedule_frames(connection, schedule) if schedule is not None else None
+    return _merge_read(connection, common, frames)
+
+
+def _merge_read(
+    connection: duckdb.DuckDBPyConnection,
+    common: CommonFrames,
+    schedule: ScheduleFrames | None,
+) -> EquipmentSnapshot:
+    """읽어 둔 공통·일정을 합치고 읽기 검증을 한다(`read_merged` 의 일반 길)."""
+    merged = merge_equipment(
+        common.equipment,
+        schedule.schedule if schedule is not None else pd.DataFrame(columns=SCHEDULE_FRAME_COLUMNS),
+        schedule.downtime
+        if schedule is not None
+        else pd.DataFrame(columns=SCHEDULE_DOWNTIME_COLUMNS),
+    )
+    try:
+        equipment = prepare_equipment_master(merged.equipment)
+        downtime = prepare_downtime_for_prepared_equipment(merged.downtime, equipment)
+    except ValueError as error:
+        if schedule is None:
+            raise
+        revision = schedule.revision
+        name = scenario_store.scenario_name(connection, revision.equipment_scenario_id)
+        raise EquipmentScenarioIncompatible(
+            name or revision.equipment_scenario_id, revision.revision_no, str(error)
+        ) from error
+    return EquipmentSnapshot(
+        revision=common.revision,
+        baseline=common.baseline,
+        equipment=equipment,
+        downtime=downtime,
+        schedule=schedule.revision if schedule is not None else None,
+        unit_key_pairs=merged.unit_key_pairs,
+        unscheduled_units=merged.unscheduled_units,
+        orphan_rows=merged.orphan_rows,
+    )
+
+
+def read_official_pair(connection: duckdb.DuckDBPyConnection) -> tuple[str, str | None] | None:
+    """(공통 최신, 최신 공식 발행의 일정 리비전).
+
+    공통 리비전이 없으면 None, 발행이 없으면 둘째가 None 이다. 공통은 시나리오와 무관하게 늘
+    최신이다(E2 — 실적·호기 정보는 공식이 옛 리비전이어도 최신으로 보인다).
+    """
+    latest = _latest_revision(connection)
+    if latest is None:
+        return None
+    release = scenario_store.latest_release_row(connection)
+    return latest[0], str(release["schedule_revision_id"]) if release is not None else None
+
+
+def legacy_trace_count(connection: duckdb.DuckDBPyConnection) -> int:
+    """이관 경계 뒤 계약 v3 이하 공통 리비전 수 — 옛 배포로 저장한 흔적이다(0 이 아니면 저장을
+    막는다)."""
+    return scenario_store.legacy_trace_count(connection)
+
+
+def _schedule_revision_summary(row: Mapping[str, object]) -> EquipmentScheduleRevisionSummary:
+    return EquipmentScheduleRevisionSummary(
+        schedule_revision_id=str(row["schedule_revision_id"]),
+        equipment_scenario_id=str(row["equipment_scenario_id"]),
+        revision_no=as_int(row["revision_no"], "설비 시나리오 리비전 번호"),
+        origin=str(row["origin"]),
+        created_at=as_datetime(row["created_at"]),
+        revision_name=_optional_str(row["revision_name"]),
+        note=_optional_str(row["note"]),
+        saved_by=_optional_str(row["saved_by"]),
+        common_revision_id=_optional_str(row["common_revision_id"]),
+        legacy_revision_id=_optional_str(row["legacy_revision_id"]),
+        unit_row_count=as_int(row["unit_row_count"], "일정 행 수"),
+        downtime_row_count=as_int(row["downtime_row_count"], "비가동 일정 행 수"),
+    )
+
+
+def _scenario_summary(row: Mapping[str, object]) -> EquipmentScenarioSummary:
+    return EquipmentScenarioSummary(
+        equipment_scenario_id=str(row["equipment_scenario_id"]),
+        scenario_name=str(row["scenario_name"]),
+        status=str(row["status"]),
+        list_order=None if row["list_order"] is None else as_int(row["list_order"], "목록 차례"),
+        latest_schedule_revision_id=_optional_str(row["latest_schedule_revision_id"]),
+        latest_revision_no=None
+        if row["latest_revision_no"] is None
+        else as_int(row["latest_revision_no"], "최신 리비전 번호"),
+        revision_count=as_int(row["revision_count"], "리비전 수"),
+    )
+
+
+def _release(row: Mapping[str, object]) -> EquipmentRelease:
+    return EquipmentRelease(
+        release_no=as_int(row["release_no"], "공식 발행 번호"),
+        equipment_scenario_id=str(row["equipment_scenario_id"]),
+        schedule_revision_id=str(row["schedule_revision_id"]),
+        released_at=as_datetime(row["released_at"]),
+        released_by=_optional_str(row["released_by"]),
+        note=_optional_str(row["note"]),
+    )
+
+
+def _optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
 
 
 def _content_hashes(snapshot: EquipmentSnapshot) -> tuple[str, str, str]:
@@ -1870,4 +2362,5 @@ def _revision_summary(row: Sequence[object]) -> EquipmentRevisionSummary:
         equipment_row_count=as_int(row[4], "설비 마스터 행 수"),
         downtime_row_count=as_int(row[5], "비가동 일정 행 수"),
         created_at=as_datetime(row[6]),
+        saved_by=str(row[7]) if row[7] is not None else None,
     )

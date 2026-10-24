@@ -106,7 +106,9 @@ from capa_simulation.persistence.equipment_migration_runner import (  # noqa: E4
 )
 from capa_simulation.persistence.equipment_repository import (  # noqa: E402
     LEGACY_QUAL_PLACEHOLDER,
-    _read_snapshot,
+)
+from capa_simulation.persistence.equipment_repository import (  # noqa: E402
+    _read_legacy_snapshot as _read_snapshot,
 )
 from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
 from capa_simulation.persistence.repository import (  # noqa: E402
