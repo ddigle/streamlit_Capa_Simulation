@@ -1246,6 +1246,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_qual_deadline.py` 가 원본 스크립트를 node 로 돌린 값과 칸 글자까지 맞댄다(시험은 node 없이 돈다).
 - `src/capa_simulation/services/shortening_filter_profile.py` — 필요 단축 일정 공용 조회 조건(설비 DB `0019`) 모델
   `ShorteningFilterProfile` 과 정규화·심기·`merge_filter_processes` 규칙. Streamlit·DB 를 모르고 값은 원본 공정명이다.
+- `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
+  `FloorStates`(비활성 층만의 (동, 층, 사유 코드) 행 — `UNUSED` 사용 안 함·`NOT_LINE` 생산라인 아님)와 규칙. 저장 입구
+  `prepare_floor_states`(30개 층·사유 둘만, 빈 값 = 사용)만 엄격하고 읽기는 관용이다(모르는 사유는 `inactive_label` 이
+  「비활성」). 동 머리(`building_state`·`with_building`), 끄기 확인 대상(`newly_inactive` — 사유만 바꾼 층은 아님)과 층별 설비
+  대수(`floor_unit_counts` — 도면 이탈 제외·레이아웃 Y/N 모두·설비키), 층 고르기 거르기(`selectable_floor_keys` — 연 층은
+  남김, RawData 칸 단위 `master_location_options` — 표에 있는 값은 남김, 짝 단위 `floors_by_building`), 저장 미리보기 경고
+  `inactive_floor_warnings`(막지 않음). Streamlit·DB 를 모른다. **설비 마스터 저장 검사(C1~C5·1F~6F)는 그대로다**(S5).
 - `src/capa_simulation/services/shortening_baseline.py` — 필요 단축 일정 기준선(설비 DB `0021`) 모델과 규칙. 기준선은
   저장한 그때 계획을 얼린 고칠 수 없는 기록이다(`freeze_plan` → `ShorteningBaselineDraft`, `normalize_baseline_name`·
   `baseline_label`·`normalize_baseline_units`).
@@ -1506,6 +1513,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/shortening_baseline_store.py` — 필요 단축 일정 기준선(설비 DB `0021`)의
   넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`). 설비 쪽 출처 칸 넷(`0027` —
   `equipment_schedule_revision_ref`·`_no`·`equipment_scenario_name`·`equipment_release_no`)은 가리키기만 한다.
+- `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
+  `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과
+  견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지
+  않는다). 읽기는 30개 층 밖 행을 버리고 머리 없는 층 행은 version 0 으로 싣는다.
 - `src/capa_simulation/persistence/equipment_scenario_store.py` — 설비 DB `0027` 의 새 표 여섯(설비 시나리오·일정 리비전·일정
   스냅샷·일정 비가동 스냅샷·공식 발행·이관 경계)의 SQL. 열린 연결만 받고 트랜잭션·신호는 저장소 몫이다. 시나리오 칸 DB 매핑
   `SCENARIO_SCHEDULE_DB_COLUMNS`, 이관 시나리오 id `OPERATIONS_SCENARIO_ID`(`'operations'`), 「시나리오의 최신」 은 칸이 아니라
@@ -1519,7 +1530,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`SCENARIO_SUMMARY_SELECT` 등)을 매퍼 옆에 두어 열 순서와 row 인덱스가 짝을 이룬다.
 - `src/capa_simulation/persistence/_sql_helpers.py` — 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두 Repository
   와 `_migration_core` 가 `transaction()` 한 벌을 쓰고, 공용 프로필 버전 대조 `require_profile_version()`
-  (`ProfileVersionConflict`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
+  (`ProfileVersionConflict` — 기본 스키마 `app_meta`, 설비 DB 층 사용 상태는 `schema="equipment_ops"`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
   `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
@@ -1532,11 +1543,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).
   - 덮어쓰거나 지울 수 있는 값을 담는 캐시(시뮬레이션 공용 프로필·리비전 스냅샷·비교 계획, 설비 최신 id·Cut-off·
-    주차별 가용대수·층/FAB 도면·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가
+    주차별 가용대수·층/FAB 도면·층 사용 상태·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가
     `.clear()` 앞에서 그 종류의 세대를 올린다. `.clear()` 는 진행 중인 캐시 미스를 막지 못해, 저장 직전에 시작된 다른
     세션의 읽기가 비운 뒤 옛 값을 다시 심는다(TTL 없는 프로필은 다음 저장·재시작까지 남는다). 새 캐시도 같은 세대를 쓴다.
-  - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`·`load_standard_target_availability`)는
-    (DB 경로, DB·WAL stat, 쓰기 세대) 키에 TTL 15초다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
+  - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`·`load_standard_target_availability`·
+    `load_floor_states`)는 (DB 경로, DB·WAL stat, 쓰기 세대) 키에 TTL 15초다. 층 사용 상태(`0029`, 세대 `"floor_state"`)는
+    다른 PC·동기화로 받은 DB 의 변경도 회차 안에 보여야 하는 공용 설정이라 이 꼴이고, 도면 캐시와 묶지 않는다 — 저장 길(Space
+    층 목록 저장 콜백)이 `clear_floor_state_cache()` 를 부르고 `clear_equipment_repository()` 도 부른다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
   - 설비 쪽은 **리비전 내용(불변)과 바뀔 수 있는 것**을 나눈다. 합친 본문 `_load_merged_payload`(공개
     `load_merged_equipment_snapshot`)는 (DB, 공통 id, 일정 id) **쌍 키**에 세대가 없다(`MERGED_SNAPSHOT_CACHE_ENTRIES` 16칸).
     설비 시나리오 목록(`load_equipment_scenario_catalog` — 시나리오·각 최신·리비전 수·최신 발행·흔적 수)과 시나리오 리비전
@@ -1594,6 +1607,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `label_align`(`0025`, 영역 아닌 요소는 NULL)이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 기준선(`0021`)은 갈아 쓰지 않는다. FAB
     도면은 `fab_layout_profile`·`fab_layout_mark`(`0013`)다.
+  - 층 사용 상태(`load_floor_states`·`save_floor_states`, `0029`)는 리비전을 만들지 않는 공용 현행값이다 — 쓰기 잠금 안에서
+    `require_profile_version(schema="equipment_ops")` 로 화면이 본 version 을 먼저 대조하고(내용이 같아도 version 이 다르면
+    충돌), 같은 내용이면 쓰지 않는다(`wrote=False` — version·dirty 그대로). 설비 시나리오·리비전·공식 발행·옛 배포 흔적 잠금과
+    무관하다.
 
 ### 저장소 루트의 발표 자료
 

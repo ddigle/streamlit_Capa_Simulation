@@ -1,4 +1,4 @@
-# Purpose: DuckDB 공용 헬퍼의 감사 해시가 표 하나·표 묶음에서 같은 바이트 열을 내는지 못박는다.
+# Purpose: DuckDB 공용 헬퍼의 감사 해시 바이트 열과 공용 프로필 버전 대조(두 스키마)를 못박는다.
 
 """저장된 `reference_hash`·`equipment_hash` 는 append-only 감사값이다.
 
@@ -7,9 +7,16 @@
 그대로 핀한 것이다 — 값이 바뀌면 감사 기록과의 호환이 깨진 것이지 테스트가 낡은 것이 아니다.
 """
 
+import duckdb
 import pandas as pd
+import pytest
 
-from capa_simulation.persistence._sql_helpers import hash_frame, hash_tables
+from capa_simulation.persistence._sql_helpers import (
+    ProfileVersionConflict,
+    hash_frame,
+    hash_tables,
+    require_profile_version,
+)
 
 
 def _frames() -> dict[str, pd.DataFrame]:
@@ -52,3 +59,39 @@ def test_hash_tables_sorts_names_and_shares_the_frame_digest() -> None:
     assert hash_tables(frames, ["A", "B"]) == (
         "c22c7fb7a0b0a91565ce6ff988bd2470472f13b96ddf51745b5d63c23f44e6d0"
     )
+
+
+@pytest.mark.parametrize(
+    ("schema", "keyword"),
+    [("app_meta", False), ("equipment_ops", True)],
+    ids=["기본 스키마", "설비 스키마"],
+)
+def test_require_profile_version_compares_the_header_in_the_given_schema(
+    schema: str, keyword: bool
+) -> None:
+    """기본값은 시뮬레이션 DB 의 `app_meta` 그대로이고, 설비 DB 공용 프로필은 `schema=` 로 같은
+    형·같은 문구를 쓴다. 머리 행이 없으면 version 0 이다."""
+    connection = duckdb.connect(":memory:")
+    connection.execute(f"CREATE SCHEMA {schema}")
+    connection.execute(
+        f"CREATE TABLE {schema}.demo_profile (profile_id INTEGER PRIMARY KEY, version INTEGER)"
+    )
+
+    def check(expected: int | None) -> None:
+        if keyword:
+            require_profile_version(
+                connection, "demo_profile", expected, label="데모", schema=schema
+            )
+        else:
+            require_profile_version(connection, "demo_profile", expected, label="데모")
+
+    check(0)
+    check(None)
+    with pytest.raises(ProfileVersionConflict, match="데모를 저장해.*편집 시작 v1 · 지금 v0"):
+        check(1)
+
+    connection.execute(f"INSERT INTO {schema}.demo_profile VALUES (1, 3)")
+    check(3)
+    with pytest.raises(ProfileVersionConflict, match="편집 시작 v2 · 지금 v3"):
+        check(2)
+    connection.close()

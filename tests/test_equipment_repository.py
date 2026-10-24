@@ -61,6 +61,7 @@ def _repository(path: Path) -> DuckDBEquipmentRepository:
         23,
         25,
         27,
+        29,
     )
     assert repository.initialize() == ()
     return repository
@@ -314,7 +315,26 @@ def test_legacy_revision_loads_after_contract_migration(tmp_path: Path) -> None:
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 21, 23, 25, 27)
+    assert repository.initialize() == (
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        13,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25,
+        27,
+        29,
+    )
     snapshot = repository.load_snapshot("legacy-r1")
 
     assert snapshot.equipment.loc[0, "설비명"] == "EQ-LEGACY"

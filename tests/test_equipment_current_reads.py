@@ -55,6 +55,7 @@ from capa_simulation.persistence.equipment_cache import (
     clear_equipment_scenario_cache,
     clear_equipment_snapshot_cache,
     clear_floor_layout_cache,
+    clear_floor_state_cache,
     clear_process_cutoff_cache,
     clear_shortening_baseline_cache,
     clear_shortening_filter_cache,
@@ -63,6 +64,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_equipment_scenario_catalog,
     load_equipment_schedule_revisions,
     load_floor_layout_canvases,
+    load_floor_states,
     load_merged_equipment_snapshot,
     load_official_equipment_snapshot,
     load_process_cutoff,
@@ -79,6 +81,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.floor_state import FloorStates
 from capa_simulation.services.monthly_equipment_availability import processes_in
 from capa_simulation.services.shortening_baseline import freeze_plan
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
@@ -366,6 +369,38 @@ def test_a_read_in_flight_does_not_bring_back_an_old_filter_baseline_list_or_flo
     reader.join(30)
     assert result["value"] == {}
     assert load_floor_layout_canvases(database) == {("C1", "1F"): (120.0, 80.0)}
+    clear_equipment_repository()
+
+
+def test_floor_states_follow_the_stat_the_clearing_and_a_read_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """층 사용 상태(설비 0029)는 Cut-off 와 같은 꼴이다 — 앱 밖의 저장은 stat 이, 앱의 저장(Space 층
+    목록의 저장 콜백)은 비우기가, 저장과 겹친 읽기는 쓰기 세대가 맡는다."""
+    database, outsider = _seeded(tmp_path)
+    equipment_cache.get_equipment_repository(database)
+    assert load_floor_states(database).rows == ()
+
+    outsider.save_floor_states({("C1", "3F"): "UNUSED"}, expected_version=0, source="밖")
+    assert load_floor_states(database).inactive == {("C1", "3F"): "UNUSED"}
+
+    monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
+    load_floor_states(database)
+    outsider.save_floor_states({}, expected_version=1, source="밖")
+    assert load_floor_states(database).version == 1  # stat 이 못 잡으면 비우기 전까지 옛 값
+    clear_floor_state_cache()
+    assert (load_floor_states(database).rows, load_floor_states(database).version) == ((), 2)
+
+    clear_floor_state_cache()  # 다른 세션의 캐시 미스를 흉내 내려 칸을 비운다
+    reader, release, result = _in_flight_read(
+        monkeypatch, "load_floor_states", lambda: load_floor_states(database)
+    )
+    outsider.save_floor_states({("C2", "1F"): "NOT_LINE"}, expected_version=2, source="밖")
+    clear_floor_state_cache()
+    release.set()
+    reader.join(30)
+    assert cast(FloorStates, result["value"]).rows == ()
+    assert load_floor_states(database).inactive == {("C2", "1F"): "NOT_LINE"}
     clear_equipment_repository()
 
 
