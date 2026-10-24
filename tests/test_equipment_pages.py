@@ -61,11 +61,10 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     assert app.title[0].value == "가용설비 현황"
     assert not any("Data확보중" in element.value for element in app.markdown)
     # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다. Qual 마감
-    # 계산기(2026-10-22)는 보는 탭 뒤·입력 폼 앞이다.
-    assert [tab.label for tab in app.tabs[:5]] == [
+    # 계산기는 필요 단축 일정 머리 단추의 팝업이다(2026-10-24).
+    assert [tab.label for tab in app.tabs[:4]] == [
         ":material/dashboard: Main",
         ":material/compare_arrows: Static 대비 일정",
-        ":material/calculate: Qual 마감 계산기",
         ":material/tune: Preference",
         ":material/table_rows: RawData",
     ]

@@ -1,11 +1,12 @@
-# Purpose: 「Qual 마감 계산기」 탭이 서고 예시·비우기·편집·탭 왕복이 원본대로 도는지 검사한다.
+# Purpose: 「Qual 마감 계산기」 팝업이 서고 예시·비우기·편집·팝업 왕복이 원본대로 도는지 검사한다.
 
-"""Qual 마감 계산기 탭(`components/qual_deadline_calculator.py`).
+"""Qual 마감 계산기 팝업(`components/qual_deadline_calculator.py`) — 필요 단축 일정 머리 단추가 연다
+(2026-10-24 사용자 결정, 그 전에는 가용설비 현황의 탭).
 
 계산 글자가 원본과 같은지는 `test_qual_deadline.py` 가 본다. 여기서는 화면이 그 결과를 그리는지,
 「모두 비우기」·「예시로 되돌리기」·「표에 넣기」(엑셀 붙여넣기 칸)가 원본 규칙대로 칸을
-바꾸는지, 목표 칸이 소수를 자르지 않는지, 편집표 편집이 닫힌 탭을 지나도 남는지, 이 탭이 설비
-DB 를 열지 않고 페이지의 다른 탭과 key 가 겹치지 않는지를 본다. AppTest 는
+바꾸는지, 목표 칸이 소수를 자르지 않는지, 편집표 편집이 닫힌 팝업을 지나도 남는지, 계산기가 설비
+DB 를 열지 않고 호기가 없어도 열리며, 팝업을 여닫아도 이벤트 칸 자리 수가 같은지를 본다. AppTest 는
 편집표 칸을 고칠 수 없어 브라우저가 보내는 델타 꼴을 세션에 넣는다(`test_month_editor_filter` 와
 같다).
 """
@@ -15,10 +16,15 @@ from __future__ import annotations
 import ast
 import json
 import math
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
+from fragment_browser import install_fragment_browser
+from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
 
@@ -35,24 +41,25 @@ from capa_simulation.components.qual_deadline_calculator import (
     TODAY_KEY,
     UNITS_COLUMN,
     YEAR_KEY,
+    calculator_style_markup,
     layout_style,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
-from capa_simulation.navigation import EQUIPMENT_TAB_KEY
 from capa_simulation.services.qual_deadline import (
     EMPTY_UNITS_MESSAGE,
     NO_PASTED_LINES_MESSAGE,
     UNIT_TABLE_COLUMNS,
 )
-from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PAGE_PATH = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
-TAB_LABEL = ":material/calculate: Qual 마감 계산기"
+PAGE_PATH = PROJECT_ROOT / "app_pages" / "required_shortening.py"
+# 필요 단축 일정 화면의 팝업 칸·여는 단추(`app_pages/required_shortening.py`).
+DIALOG_KEY = "required_shortening_open_dialog"
+OPEN_BUTTON_KEY = "required_shortening_qual_calculator_v1"
 TODAY = date(2026, 10, 7)
 
-# 설비 DB·시뮬레이션 DB 를 여는 길(`duckdb.connect`)을 막고 탭 본문만 그린다. 세션 칸
-# `hide_calculator` 가 참이면 닫힌 탭처럼 그리지 않는다 — 페이지의 `tab_is_hidden` 갈래와 같다.
+# 설비 DB·시뮬레이션 DB 를 여는 길(`duckdb.connect`)을 막고 팝업 본문만 그린다. 세션 칸
+# `hide_calculator` 가 참이면 닫힌 팝업처럼 그리지 않는다 — 페이지의 팝업 호스트 갈래와 같다.
 # `merge_editor` 가 참이면 Streamlit 이 편집표 `on_change` 를 부르는 자리(본문 앞)에서 그 콜백을
 # 부른다 — AppTest 는 세션에 넣은 델타로 콜백을 부르지 않는다.
 COMPONENT_SCRIPT = f"""
@@ -286,7 +293,7 @@ def test_the_two_boxes_stack_when_the_row_cannot_hold_both() -> None:
     app = _component()
     style = layout_style()
 
-    assert style in [str(element.proto.body) for element in app.get("html")]
+    assert any(style in str(element.proto.body) for element in app.get("html"))
     assert calculator._STACK_BELOW_PX == (
         calculator._INPUTS_BOX_PX + calculator._LAYOUT_GAP_PX + calculator._RESULTS_MIN_PX
     )
@@ -408,56 +415,89 @@ def _page(tmp_path: Path) -> AppTest:
     return app
 
 
-def test_the_tab_sits_after_the_viewing_tabs_and_before_the_input_forms(tmp_path: Path) -> None:
-    app = _page(tmp_path)
-
-    assert [tab.label for tab in app.tabs[:5]] == [
-        ":material/dashboard: Main",
-        ":material/compare_arrows: Static 대비 일정",
-        TAB_LABEL,
-        ":material/tune: Preference",
-        ":material/table_rows: RawData",
-    ]
-    # 닫혀 있으면 그리지 않는다.
-    assert not any(element.value.endswith("Qual 마감 계산기") for element in app.markdown)
-
-
-def test_the_open_tab_draws_without_cards_samples_or_key_clashes(tmp_path: Path) -> None:
-    """빈 설비 DB(샘플 조회) 페이지에서 이 탭을 연다. Preference·RawData 의 입력 폼도 같은 회차에
-    그려지므로 key 가 겹치면 여기서 예외가 난다."""
-    app = _page(tmp_path)
-    app.session_state[EQUIPMENT_TAB_KEY] = TAB_LABEL
-    app.run()
-
+def _open(app: AppTest) -> AppTest:
+    app.button(key=OPEN_BUTTON_KEY).click().run()
     assert not app.exception, [element.message for element in app.exception]
+    return app
+
+
+def test_the_header_button_opens_the_calculator_in_a_dialog(tmp_path: Path) -> None:
+    """필요 단축 일정 머리 끝의 단추가 팝업을 연다. 닫혀 있으면 계산기를 그리지 않는다. 팝업 안에는
+    본문 제목을 다시 적지 않는다(팝업 머리가 제목이다)."""
+    app = _page(tmp_path)
+    assert not _has_key(app, CUTOFF_KEY)
+    assert DIALOG_KEY not in app.session_state
+
+    _open(app)
+
+    assert app.session_state[DIALOG_KEY] == "qual_calculator"
     assert _metrics(app)["마감 낸 호기"] == "9대"
     assert app.date_input(key=TODAY_KEY).value == date.today()
-    # 설비 조회 조건 카드와 샘플 스위치는 보는 탭(Main·Static 대비 일정)에만 선다.
-    assert not _has_key(app, f"{CONDITION_CARD_PREFIX}equipment")
-    assert not _has_key(app, SAMPLE_TOGGLE_KEY)
-
-    app.session_state[EQUIPMENT_TAB_KEY] = ":material/dashboard: Main"
-    app.run()
-    assert _has_key(app, f"{CONDITION_CARD_PREFIX}equipment")
-    assert _has_key(app, SAMPLE_TOGGLE_KEY)
+    assert not any(element.value.endswith("Qual 마감 계산기") for element in app.markdown)
+    # 화면 탭 묶음이 아니다 — 필요 단축 일정에는 여전히 탭이 없다.
+    assert not app.tabs
 
 
-def test_inputs_survive_a_round_trip_through_another_tab(tmp_path: Path) -> None:
+def test_the_calculator_opens_even_when_the_screen_has_no_units(tmp_path: Path) -> None:
+    """호기가 없어 화면이 멈춰도(`st.stop`) 계산기는 열린다 — 설비 데이터와 잇지 않는다."""
     app = _page(tmp_path)
-    app.session_state[EQUIPMENT_TAB_KEY] = TAB_LABEL
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
     app.run()
+    assert any("등록된 호기가 없습니다" in element.value for element in app.info)
+
+    _open(app)
+
+    assert _metrics(app)["마감 낸 호기"] == "9대"
+
+
+def test_inputs_survive_closing_and_reopening_the_dialog(tmp_path: Path) -> None:
+    app = _open(_page(tmp_path))
     app.number_input(key=CUTOFF_KEY).set_value(15).run()
     app.number_input(key=BASE_KEY).set_value(17.5).run()
     first = _metrics(app)
 
-    app.session_state[EQUIPMENT_TAB_KEY] = ":material/tune: Preference"
+    # 닫기(`on_dismiss`)는 열림 칸을 지운다.
+    del app.session_state[DIALOG_KEY]
     app.run()
     assert not app.exception
-    assert not [widget for widget in app.number_input if widget.key == CUTOFF_KEY]
-    app.session_state[EQUIPMENT_TAB_KEY] = TAB_LABEL
-    app.run()
+    assert not _has_key(app, CUTOFF_KEY)
+    _open(app)
 
-    assert not app.exception
     assert app.number_input(key=CUTOFF_KEY).value == 15
     assert app.number_input(key=BASE_KEY).value == 17.5
     assert _metrics(app) == first
+
+
+def _event_slot_count(messages: Sequence[ForwardMsg]) -> int:
+    """앱 전체 회차가 이벤트 칸(본문 밖 최상위 칸)에 쓴 자리 수."""
+    count = 0
+    for message in messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) == 2 and path[0] == RootContainer.EVENT:
+            count = max(count, path[1] + 1)
+    return count
+
+
+def test_opening_the_dialog_keeps_the_event_slot_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업을 연 회차와 닫은 회차가 이벤트 칸에 같은 수의 자리를 쓴다. 다르면 그 뒤 기준선 알림
+    토스트 자리가 밀려 지난 알림이 다시 뜬다(`shortening_progress_panel`). 계산기 서식은 안내 줄과
+    한 `st.html` 에 실려 본문 칸으로 간다 — 지난 마감·부족 달이 생겨 띠 색이 붙어도 같다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = _page(tmp_path)
+    closed = _event_slot_count(browser.messages)
+
+    assert closed > 0
+    _open(app)
+    opened = _event_slot_count(browser.messages)
+    assert opened == closed
+    # 띠 색이 붙는 갈래(지난 마감 — 오늘을 아주 뒤로).
+    app.date_input(key=TODAY_KEY).set_value(date(2099, 1, 1)).run()
+    assert not app.exception
+    assert _metrics(app)["이미 지난 마감"] != "0대"
+    assert _event_slot_count(browser.messages) == closed
+    markup = calculator_style_markup()
+    assert any(markup in str(element.proto.body) for element in app.get("html"))

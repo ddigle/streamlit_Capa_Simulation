@@ -407,7 +407,8 @@ with pinned_connections(DUCKDB_PATH):
     reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
-    # 설비 시나리오 줄은 공통 조건과 따로 선언한다(가용설비 현황은 Qual 마감 계산기 탭에서만 뺀다).
+    # 설비 시나리오 줄은 공통 조건과 따로 선언한다(`PageSpec.equipment_scenario`·
+    # `equipment_scenario_tabs`).
     # **여기서는 칸만 세운다** — 줄은 페이지가 `resolve_equipment_session` 뒤에 그린다. `app.py` 는
     # 설비 DB 를 열지 않는다(사이드바가 그리는 동안 저장소 호출 0).
     shows_equipment = current_spec is not None and current_spec.reads_equipment_scenario_on(

@@ -49,7 +49,7 @@ from capa_simulation.equipment_scenario_activation import (
 )
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
-    EQUIPMENT_QUAL_CALCULATOR_TAB,
+    EQUIPMENT_GAP_TAB,
     EQUIPMENT_TAB_KEY,
     PROCESS_CAPA_DETAIL,
     REQUIRED_SHORTENING,
@@ -677,14 +677,17 @@ def test_the_row_stands_on_the_equipment_screens_with_this_runs_label(_shell: Ap
     assert field.label == "운영 일정 · r1 (고정)"
 
 
-def test_the_qual_calculator_tab_has_no_equipment_row(_shell: AppTest) -> None:
+def test_every_equipment_tab_has_the_equipment_row(_shell: AppTest) -> None:
+    """설비 데이터를 읽지 않던 Qual 마감 계산기 탭은 필요 단축 일정 팝업으로 옮겼다(2026-10-24) —
+    가용설비 현황에는 줄을 빼는 탭이 없다."""
+    assert AVAILABLE_EQUIPMENT_STATUS.equipment_scenario_tabs is None
     app = _shell.run()
     app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run()
     assert _field(app) is not None
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_QUAL_CALCULATOR_TAB
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_GAP_TAB
     app.run()
     assert not app.exception, [item.message for item in app.exception]
-    assert _field(app) is None
+    assert _field(app) is not None
 
 
 def test_the_badge_turns_when_someone_else_publishes_in_the_same_run(

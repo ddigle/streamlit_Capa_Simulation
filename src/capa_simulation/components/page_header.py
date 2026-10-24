@@ -66,6 +66,7 @@ def render_page_header(
     description: str | None = None,
     badges: str | None = None,
     show_status: bool = True,
+    trailing: Callable[[], None] | None = None,
 ) -> None:
     """페이지 제목과 설명을 그린다.
 
@@ -74,10 +75,14 @@ def render_page_header(
     `title` 은 그대로 사이드바 라벨과 같게 넘긴다(두 제목이 같다는 계약은 표기 유무와 무관하다).
     Space 현황이 그렇다(2026-10-01 사용자 결정 — 본문은 배치도가 쓸 자리다).
 
+    `trailing` 을 주면 제목 줄 끝 칸에 그것을 그린다 — 가용설비 현황 「설정」·필요 단축 일정
+    「Qual 마감 계산기」 단추. 칸 나누기·폭은 `render_page_header_with_status` 의 끝 칸과 같다
+    (`_render_title_row`).
+
     제목은 화면에서 숨고(탭 줄이 이름을 말한다) 인쇄·읽기 도구에 남는다(모듈 설명).
     """
     heading, status_badge = _split_status_suffix(title)
-    _render_title(heading)
+    _render_title_row(heading, trailing)
     _render_marks(status_badge if show_status else None, badges, description)
 
 
@@ -113,20 +118,26 @@ def render_page_header_with_status(
     오른쪽 끝에 보인다(모듈 설명).
     """
     heading, status_badge = _split_status_suffix(title)
-    if trailing is None:
-        _render_title(heading)
-    else:
-        with st.container(key=TITLE_ROW_KEY):
-            st.html(_title_row_style())
-            title_column, trailing_column = st.columns(2, vertical_alignment="center")
-            with title_column:
-                _render_title(heading)
-            with trailing_column:
-                trailing()
+    _render_title_row(heading, trailing)
     with st.container(key=STATUS_SLOT_KEY):
         slot = st.empty()
     _render_marks(status_badge, badges, description)
     return slot
+
+
+def _render_title_row(heading: str, trailing: Callable[[], None] | None) -> None:
+    """큰 제목, 또는 제목과 끝 칸(`trailing`)을 나눈 제목 줄. 끝 칸이 있으면 늘 같은 꼴로 그린다
+    (스타일만 든 `st.html` 하나 — 이벤트 칸 자리 수가 회차마다 같다)."""
+    if trailing is None:
+        _render_title(heading)
+        return
+    with st.container(key=TITLE_ROW_KEY):
+        st.html(_title_row_style())
+        title_column, trailing_column = st.columns(2, vertical_alignment="center")
+        with title_column:
+            _render_title(heading)
+        with trailing_column:
+            trailing()
 
 
 def _title_row_style() -> str:

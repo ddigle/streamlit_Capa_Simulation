@@ -73,8 +73,8 @@ class PageSpec:
     # 읽는 화면에서는 조건 패널에 「설비 시나리오」 칸이 서고, **그 줄은 페이지가**
     # `resolve_equipment_session` 뒤에 그 칸에 그린다 — `app.py` 는 설비 DB 를 열지 않는다.
     equipment_scenario: Literal["session", "official"] | None = None
-    # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(가용설비 현황은 Qual 마감 계산기 탭을
-    # 뺀다 — 그 탭은 설비 데이터를 읽지 않는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
+    # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(설비 데이터를 읽지 않는 탭이 있는
+    # 화면만 적는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
     equipment_scenario_tabs: frozenset[str] | None = None
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
@@ -217,9 +217,6 @@ EQUIPMENT_TAB_KEY = "equipment_active_tab"
 EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 # 기준정보(Static) 가용대수와 설비 마스터 일정으로 낸 **설비 일정 기준** 가용대수를 맞대는 탭이다.
 EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static 대비 일정"
-# 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22 사용자 요청). 설비 시나리오 줄도 세우지
-# 않는다.
-EQUIPMENT_QUAL_CALCULATOR_TAB = ":material/calculate: Qual 마감 계산기"
 EQUIPMENT_PREFERENCE_TAB = ":material/tune: Preference"
 EQUIPMENT_RAWDATA_TAB = ":material/table_rows: RawData"
 # 설비 시나리오 목록·리비전·복제·이름·공식 발행(E8). 탭 차례 맨 끝이다.
@@ -242,16 +239,8 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     # 리비전 목록·도면·조회 조건 프로필·기준선을 따로 읽어 한 회차에 여러 번 연다 — 그 회차를
     # 위한 핀이다.
     uses_equipment_db=True,
+    # 모든 탭이 설비 시나리오를 읽는다(Qual 마감 계산기는 필요 단축 일정의 팝업으로 옮겼다).
     equipment_scenario="session",
-    equipment_scenario_tabs=frozenset(
-        {
-            EQUIPMENT_MAIN_TAB,
-            EQUIPMENT_GAP_TAB,
-            EQUIPMENT_PREFERENCE_TAB,
-            EQUIPMENT_RAWDATA_TAB,
-            EQUIPMENT_SCENARIO_TAB,
-        }
-    ),
 )
 # 설비 DB 만 본다. 공정소분류·색 기준은 자기 조건 카드(`Space 조건`), 기준일은 층 상세 도면 위
 # 페이더다. 보기는 늘 **공식** 설비 시나리오다(E5 — 좌표는 공통, 상태 색은 공식 일정). 한 회차에

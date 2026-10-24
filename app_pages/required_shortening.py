@@ -1,4 +1,4 @@
-# Purpose: 설비 일정과 시나리오 소요대수를 모아 목표 확보율을 채울 Qual 단축 화면을 그린다.
+# Purpose: 설비 일정·소요대수로 목표 확보율을 채울 Qual 단축 화면과 Qual 마감 계산기 팝업을 그린다.
 
 """필요 단축 일정(실행 관리 아래, 공정 Capa 상세 다음 — 2026-10-18 사용자 결정).
 
@@ -8,9 +8,15 @@
 
 가용설비 현황의 한 탭이던 것을 별도 페이지로 뗐다. 그 탭이 페이지에서 받던 것을 이 페이지가 스스로
 모은다 — 설비 운영 DB 의 저장본 사본·미저장 편집본(`equipment_data_workspace`, 가용설비 현황·Space
-현황과 같은 세션 칸), 샘플 fleet 스위치(같은 공용 칸), 저장된 공정별 Cut-off(가용설비 현황
-Preference 에서 고친다), 활성 시나리오의 소요대수 로더. 그림·조건·진척 비교는 그대로
+현황과 같은 세션 칸), 샘플 fleet 스위치(같은 공용 칸), 저장된 공정별 Cut-off(가용설비 현황 머리
+「설정」 팝업에서 고친다), 활성 시나리오의 소요대수 로더. 그림·조건·진척 비교는 그대로
 `required_shortening_panel` 이다.
+
+머리 끝의 「Qual 마감 계산기」 단추는 큰 팝업을 연다(2026-10-24 사용자 결정 — 가용설비 현황의
+탭이던 것). 계산기는 설비 데이터와 잇지 않아 호기가 없어도 열리므로 팝업 호스트는 머리 바로 뒤,
+데이터를 읽기 전이다. 호스트는 이벤트 칸에 늘 한 자리를 쓴다 — 열렸으면 팝업, 아니면 빈 스타일
+자리표시자다. 그 뒤의 기준선 알림 토스트 자리(`shortening_progress_panel`)가 팝업을 여닫을 때
+밀리지 않게 한다.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
@@ -44,8 +51,10 @@ from capa_simulation.equipment_scenario_activation import (
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
     PageContext,
     bootstrap_error_message,
+    forget_page_dialogs,
     load_page_context,
     render_schema_ahead_warning,
 )
@@ -90,18 +99,58 @@ PAGE_DESCRIPTION = (
     "공정 카드. 공정 하나를 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."
 )
 
-render_page_header("필요 단축 일정", description=PAGE_DESCRIPTION)
+# 이 화면의 팝업 칸(페이지에 한 칸 — 값이 팝업을 가른다, AGENTS 9장 「팝업과 콜백」).
+DIALOG_KEY = f"required_shortening{PAGE_DIALOG_SUFFIX}"
+QUAL_CALCULATOR_DIALOG = "qual_calculator"
+QUAL_CALCULATOR_BUTTON_KEY = "required_shortening_qual_calculator_v1"
+
+
+def _open_qual_calculator() -> None:
+    """여는 단추의 콜백 — 다른 팝업 칸(사이드바 조건 팝업 등)부터 비운다."""
+    forget_page_dialogs()
+    st.session_state[DIALOG_KEY] = QUAL_CALCULATOR_DIALOG
+
+
+def _close_dialog() -> None:
+    st.session_state.pop(DIALOG_KEY, None)
+
+
+@st.dialog("Qual 마감 계산기", width="large", icon=":material/calculate:", on_dismiss=_close_dialog)
+def _qual_calculator_dialog(today: date) -> None:
+    render_qual_deadline_calculator(today=today)
+
+
+def _render_header_actions() -> None:
+    st.button(
+        "Qual 마감 계산기",
+        icon=":material/calculate:",
+        key=QUAL_CALCULATOR_BUTTON_KEY,
+        on_click=_open_qual_calculator,
+        help=(
+            "Cut-off · 월별 목표 가용대수 · 신규 호기로 호기마다 Qual 완료 마감을 내는 "
+            "계산기입니다. 설비 데이터와 잇지 않습니다."
+        ),
+    )
+
+
+render_page_header("필요 단축 일정", description=PAGE_DESCRIPTION, trailing=_render_header_actions)
 render_page_guide("required_shortening", title="필요 단축 일정")
 notices = st.container()
 
 today = date.today()
+# 팝업 호스트 — 이벤트 칸에 늘 한 자리(모듈 설명). 데이터를 읽기 전이라 호기가 없거나 설비 DB 를
+# 못 읽어도 계산기는 열린다.
+if st.session_state.get(DIALOG_KEY) == QUAL_CALCULATOR_DIALOG:
+    _qual_calculator_dialog(today)
+else:
+    st.html("<style></style>")
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
     # 세션이 든 설비 시나리오(새 세션은 공식) — 공통 최신 + 고른 일정 리비전의 합친 스냅샷.
     equipment_session = resolve_equipment_session(equipment_database_path)
     latest_snapshot = equipment_session.snapshot
-    # 저장된 Cut-off. 고치는 곳은 가용설비 현황 Preference 다.
+    # 저장된 Cut-off. 고치는 곳은 가용설비 현황 머리 「설정」 팝업이다.
     stored_cutoff = load_process_cutoff(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
     st.error(

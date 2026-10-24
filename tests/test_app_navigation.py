@@ -1938,12 +1938,6 @@ def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTe
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "equipment"}
-    # 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22)는 설비 시나리오 줄도 없다 — 제목만 남는
-    # 빈 구역을 세우지 않는다.
-    app.session_state[EQUIPMENT_TAB_KEY] = ":material/calculate: Qual 마감 계산기"
-    app.run()
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert _common_boxes(app) == set()
 
 
 def test_every_declared_condition_tab_is_a_real_label() -> None:

@@ -41,7 +41,6 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import (
@@ -52,7 +51,6 @@ from capa_simulation.navigation import (
     EQUIPMENT_GAP_TAB,
     EQUIPMENT_MAIN_TAB,
     EQUIPMENT_PREFERENCE_TAB,
-    EQUIPMENT_QUAL_CALCULATOR_TAB,
     EQUIPMENT_RAWDATA_TAB,
     EQUIPMENT_SCENARIO_TAB,
     EQUIPMENT_TAB_KEY,
@@ -90,9 +88,7 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
-# 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22 사용자 요청 — 10-07 계산기 한 장을 내장).
-# 탭 라벨은 사이드바(설비 시나리오 줄을 세우는 탭)가 함께 보므로 `navigation` 한 곳에 둔다.
-TAB_QUAL_CALCULATOR = EQUIPMENT_QUAL_CALCULATOR_TAB
+# 탭 라벨은 사이드바(공통 조건·조건 카드를 세우는 탭)가 함께 보므로 `navigation` 한 곳에 둔다.
 TAB_PREFERENCE = EQUIPMENT_PREFERENCE_TAB
 TAB_RAWDATA = EQUIPMENT_RAWDATA_TAB
 TAB_SCENARIO = EQUIPMENT_SCENARIO_TAB
@@ -210,20 +206,18 @@ first_action = st.empty()
 sample_notice = st.empty()
 # 필요 단축 일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
 # `app_pages/required_shortening.py`). Cut-off 는 여기 Preference 에서 고친다. Qual 마감 계산기는
-# 보는 탭(Main·Static 대비 일정) 뒤, 입력 폼(Preference·RawData) 앞이다.
-main_tab, gap_tab, qual_tab, preference_tab, rawdata_tab, scenario_tab = stateful_tabs(
+# 필요 단축 일정 머리 단추의 팝업이다(2026-10-24 사용자 결정).
+main_tab, gap_tab, preference_tab, rawdata_tab, scenario_tab = stateful_tabs(
     [
         EQUIPMENT_MAIN_TAB,
         EQUIPMENT_GAP_TAB,
-        TAB_QUAL_CALCULATOR,
         TAB_PREFERENCE,
         TAB_RAWDATA,
         TAB_SCENARIO,
     ],
     key=EQUIPMENT_TAB_KEY,
 )
-# 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭). Preference·RawData 는 입력 폼이고,
-# Qual 마감 계산기는 설비 데이터를 읽지 않는 계산기라 카드도 샘플 스위치도 없다.
+# 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭). Preference·RawData 는 입력 폼이다.
 viewing_tab_open = any(not tab_is_hidden(tab) for tab in (main_tab, gap_tab))
 if latest_snapshot is None and not tab_is_hidden(main_tab):
     with first_action.container():
@@ -300,12 +294,6 @@ with main_tab:
                     OFFICIAL_CONFIRMATION_BASIS if official_snapshot is not None else None
                 ),
             )
-
-with qual_tab:
-    # 설비 DB·시나리오와 잇지 않는다 — 위에서 읽은 저장본·Cut-off 를 넘기지 않는다. 닫혀 있으면
-    # 그리지 않는다(입력은 위젯 `persist_state` 와 편집표 콜백이 세션에 지킨다).
-    if not tab_is_hidden(qual_tab):
-        render_qual_deadline_calculator(today=today)
 
 with preference_tab:
     # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다. 돌려받는 **저장된** Cut-off 를
