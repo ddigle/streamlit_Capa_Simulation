@@ -10,7 +10,11 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.editor_state import discard_editor, editor_widget_key
+from capa_simulation.components.editor_state import (
+    discard_editor,
+    editor_has_edits,
+    editor_widget_key,
+)
 from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
@@ -37,6 +41,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_equipment_revision_summaries,
     load_equipment_scenario_catalog,
     load_equipment_schedule_revisions,
+    load_floor_states,
     load_merged_equipment_snapshot,
 )
 from capa_simulation.persistence.equipment_repository import (
@@ -119,6 +124,13 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
+from capa_simulation.services.floor_state import (
+    FloorStates,
+    inactive_floor_summary,
+    inactive_floor_warnings,
+    master_location_options,
+    present_location_values,
+)
 from capa_simulation.services.korean_particle import object_particle, with_direction_particle
 from capa_simulation.services.schedule_confirmation import (
     ACTUAL_COLUMN,
@@ -143,6 +155,11 @@ from capa_simulation.services.space_layout_edit import (
 FLASH_KEY = "equipment_status_flash"
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
 EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
+# 설비 마스터 편집표 `동`·`층` 칸의 지난 회차 선택지 (동 목록, 층 목록). 거름이 없는 편집표는
+# `num_rows="dynamic"` 이라 Streamlit 1.63 이 `column_config` 를 위젯 정체에 넣는다 — 남이 Space
+# 에서 층을 끄면 선택지가 바뀌어 적용 전 칸 편집이 사라진다. 그래서 칸 편집이 있는 동안은 이
+# 선택지를 그대로 쓴다(Space 층 사용 상태, 설비 0029).
+LOCATION_OPTIONS_KEY = "equipment_master_location_options_v1"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
@@ -1827,6 +1844,29 @@ def _history_scenario(
     return catalog.scenarios[0].equipment_scenario_id if catalog.scenarios else None
 
 
+def _location_options(
+    floor_states: FloorStates | None, equipment: pd.DataFrame
+) -> tuple[list[str], list[str]]:
+    """설비 마스터 `동`·`층` 칸의 선택지. 적용 전 칸 편집이 있는 동안은 지난 회차 선택지를 그대로
+    쓴다(`LOCATION_OPTIONS_KEY`) — 단, 표에 있는 유효 값이 그 선택지 밖이면(붙여넣기로 바뀐 편집본)
+    새로 낸다(선택지 밖 값은 칸 오류로 그려진다)."""
+    if floor_states is None:
+        return list(VALID_BUILDINGS), list(VALID_FLOORS)
+    held = st.session_state.get(LOCATION_OPTIONS_KEY)
+    if (
+        editor_has_edits(EQUIPMENT_EDITOR_KEY)
+        and isinstance(held, tuple)
+        and len(held) == 2
+        and all(isinstance(part, tuple) for part in held)
+    ):
+        present_buildings, present_floors = present_location_values(equipment)
+        if present_buildings <= set(held[0]) and present_floors <= set(held[1]):
+            return list(held[0]), list(held[1])
+    buildings, floors = master_location_options(floor_states, equipment)
+    st.session_state[LOCATION_OPTIONS_KEY] = (tuple(buildings), tuple(floors))
+    return buildings, floors
+
+
 def _render_editors(
     frames: Frames,
     max_extent: CanvasSize,
@@ -1835,10 +1875,16 @@ def _render_editors(
     stale: bool = False,
     scenario_name: str | None = None,
     delete_locked: str | None = None,
+    floor_states: FloorStates | None = None,
 ) -> EditorResult:
     """직접 편집 세 표. `stale` 이면 일정 칸·비가동 표·행 추가를 잠그고, `delete_locked`(그 까닭)를
-    주면 설비 마스터·비가동 일정의 「선택 행 삭제」 를 끈다 — 기존 보유대수는 공통이라 그대로다."""
+    주면 설비 마스터·비가동 일정의 「선택 행 삭제」 를 끈다 — 기존 보유대수는 공통이라 그대로다.
+
+    `floor_states`(Space 층 사용 상태)를 주면 설비 마스터 `동`·`층` 칸의 선택지에서 쓰지 않는
+    값을 칸 단위로 뺀다(`master_location_options` — 표에 이미 있는 값은 남긴다). 저장 검사는
+    그대로다(S5)."""
     baseline, equipment, downtime = frames
+    buildings, floors = _location_options(floor_states, equipment)
     # 위에 삭제 확인이 서거나 사라지면 이 탭의 자리가 밀린다 — key 가 고른 표를 지킨다.
     master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS), key=EDITOR_TABS_KEY)
     with master_tab:
@@ -1874,8 +1920,8 @@ def _render_editors(
         config: dict[str, Any] = {
             EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True),
             "공정소분류": st.column_config.TextColumn(required=True),
-            "동": st.column_config.SelectboxColumn(options=list(VALID_BUILDINGS)),
-            "층": st.column_config.SelectboxColumn(options=list(VALID_FLOORS)),
+            "동": st.column_config.SelectboxColumn(options=buildings),
+            "층": st.column_config.SelectboxColumn(options=floors),
             "X좌표": st.column_config.NumberColumn(
                 min_value=0.0, max_value=max_extent[0], step=1.0, help=MODULE_LAYOUT_HELP
             ),
@@ -1919,6 +1965,16 @@ def _render_editors(
         config = _with_scope_help(config, list(equipment.columns), scenario_name)
         equipment_action = _selection_buttons("master", delete_locked=delete_locked)
         st.caption(f":material/grid_view: {MODULE_LAYOUT_HELP}")
+        # 비활성 층 안내 — 자리는 늘 선다(생기고 사라질 때 아래 편집표가 밀리지 않게).
+        with st.container(key="equipment_master_floor_state_note"):
+            inactive_summary = (
+                inactive_floor_summary(floor_states) if floor_states is not None else ""
+            )
+            if inactive_summary:
+                st.caption(
+                    f":material/block: 비활성 층: {inactive_summary} — 동·층 칸은 따로 골라 그 "
+                    "짝을 다 거르지 못합니다. 골라도 저장은 되고 Space 목록·도면에서 숨습니다."
+                )
         edited_equipment, equipment_checked = _selectable_editor(
             equipment,
             equipment_view,
@@ -2295,6 +2351,13 @@ def render_equipment_data_workspace(
     frames = ensure_equipment_drafts(latest_snapshot)
     scenario_name = basis.scenario_name if basis is not None else None
     stale = basis is not None and basis.stale
+    # Space 층 사용 상태(설비 0029, 공용 현행값) — 동·층 칸 선택지와 저장 미리보기 경고에 쓴다.
+    # 못 읽으면 지금처럼 30개 층 그대로다(RawData 를 막지 않는다).
+    floor_states: FloorStates | None
+    try:
+        floor_states = load_floor_states(str(repository.database_path))
+    except BOOTSTRAP_ERRORS:
+        floor_states = None
     if latest_snapshot is None:
         st.info(
             "아직 저장된 설비 데이터가 없습니다. 설비 마스터를 붙여넣고 "
@@ -2361,6 +2424,14 @@ def render_equipment_data_workspace(
         # 목록이 생기고 사라질 때마다 아래 key 있는 펼침·탭이 밀린다.
         for message in area_code_warnings(master):
             st.warning(message, icon=":material/rule:")
+        # 비활성 층으로 옮기거나 새로 넣은 호기 — 저장은 되고 Space 목록·도면에서 숨는다(막지
+        # 않는다).
+        if floor_states is not None:
+            saved_master = (
+                latest_snapshot.equipment if latest_snapshot is not None else master.iloc[0:0]
+            )
+            for message in inactive_floor_warnings(master, saved_master, floor_states):
+                st.warning(message, icon=":material/block:")
         _render_schedule_confirmation(
             _confirmation_master(master, confirmation_official, pending),
             today=today or date.today(),
@@ -2500,6 +2571,7 @@ def render_equipment_data_workspace(
                 stale=stale,
                 scenario_name=scenario_name,
                 delete_locked=delete_locked,
+                floor_states=floor_states,
             )
             edited = editor.frames
         with history_tab:

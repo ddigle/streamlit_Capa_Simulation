@@ -448,3 +448,33 @@ def test_the_fab_summary_tells_how_many_units_sit_on_inactive_floors(
     assert str(fab["summary"]).endswith(" · 비활성 층 3대")
     assert fab["linkStats"]["C1 1F"]["inactive"] == "사용 안 함"
     clear_equipment_repository()
+
+
+def _pending_script() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.space_floor_list import floor_state_draft_pending
+
+    st.session_state["pending_result"] = floor_state_draft_pending()
+
+
+@pytest.mark.parametrize(
+    ("toggle", "draft", "expected"),
+    [
+        (True, {"C1 3F": "UNUSED"}, True),
+        (True, {}, False),
+        (False, {"C1 3F": "UNUSED"}, False),
+    ],
+    ids=["켜짐·다름", "켜짐·같음", "꺼짐·남은 초안"],
+)
+def test_the_theme_marker_counts_only_a_live_changed_draft(
+    toggle: bool, draft: dict[str, str], expected: bool
+) -> None:
+    """테마 전환 미저장 표지(`app.py`)는 세션만 읽는다 — 토글이 켜져 있고 초안이 편집 시작 저장본과
+    다를 때만 참이다."""
+    app = AppTest.from_function(_pending_script)
+    app.session_state[EDIT_TOGGLE_KEY] = toggle
+    app.session_state[DRAFT_KEY] = draft
+    app.session_state[BASE_KEY] = (0, ())
+    app.run()
+    assert app.session_state["pending_result"] is expected

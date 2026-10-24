@@ -53,6 +53,7 @@ __all__ = [
     "master_location_options",
     "newly_inactive",
     "prepare_floor_states",
+    "present_location_values",
     "selectable_floor_keys",
     "with_building",
 ]
@@ -248,6 +249,14 @@ def _present_values(present: pd.DataFrame, column: str, valid: Iterable[str]) ->
         return set()
     values = set(present[column].dropna().astype("string").str.strip())
     return values & set(valid)
+
+
+def present_location_values(present: pd.DataFrame) -> tuple[set[str], set[str]]:
+    """표에 이미 있는 유효 동·층 값(C1~C5 · 1F~6F 안). 선택지가 꼭 품어야 하는 값이다."""
+    return (
+        _present_values(present, "동", VALID_BUILDINGS),
+        _present_values(present, "층", VALID_FLOORS),
+    )
 
 
 def master_location_options(
