@@ -173,6 +173,39 @@ def test_a_missing_package_keeps_the_install_advice(monkeypatch: pytest.MonkeyPa
     assert isinstance(raised.value.__cause__, ModuleNotFoundError)
 
 
+def test_a_failure_the_screen_catches_still_leaves_one_log_line(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """화면이 잡아 보여 주는 실패도 앱 로그에 한 줄 남는다 — 셸·화면을 볼 수 없는 C-DEP CD 에서는
+    로그가 유일한 단서일 수 있다. 원문(계정 이름 등이 든다)은 화면에만 두고 로그에는 갈래·종류만."""
+    secret_like = "AD user 'someone' at '/config/.credential/'"
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise ValueError(f"table not found {secret_like}")
+
+    monkeypatch.delenv(adapter.BDQ_USER_NAME_ENV, raising=False)
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+    caplog.set_level("WARNING", logger=adapter.__name__)
+
+    with pytest.raises(adapter.BigDataQueryCallError):
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    lines = [record.getMessage() for record in caplog.records]
+    assert lines == [
+        f"BigDataQuery 실패: 조회 실패 갈래={adapter.QUERY_FAILURE_SQL} 종류=ValueError"
+    ]
+    assert secret_like not in "\n".join(lines)
+
+    caplog.clear()
+    monkeypatch.undo()
+    monkeypatch.setitem(sys.modules, "bigdataquery", None)
+    with pytest.raises(RuntimeError):
+        adapter.load_bigdataquery_module()
+    assert [record.getMessage() for record in caplog.records] == [
+        "BigDataQuery 실패: 패키지를 불러오지 못함(없는 모듈 bigdataquery)"
+    ]
+
+
 @pytest.mark.parametrize(
     ("init_body", "original"),
     [

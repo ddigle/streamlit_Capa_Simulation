@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import os
 import re
 from collections.abc import Mapping
@@ -442,6 +443,9 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
         return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
         if resolve_user_name() is None and "user_name" in str(error):
+            _log_failure(
+                f"요청자 계정({BDQ_USER_NAME_ENV}) 없음", type_names=failure_type_names(error)
+            )
             raise RuntimeError(
                 f"BigDataQuery 조회에 요청자의 사내 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
                 f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
@@ -449,7 +453,9 @@ def call_get_data(module: BigDataQueryModule, query: str) -> object:
                 f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
             ) from error
         hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
-        raise BigDataQueryCallError(error, hint=hint) from error
+        failure = BigDataQueryCallError(error, hint=hint)
+        _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
+        raise failure from error
 
 
 def _start_check_line(step: str) -> str:
@@ -564,6 +570,19 @@ def classify_query_failure(error: BaseException) -> str:
     return QUERY_FAILURE_OTHER
 
 
+# 화면이 잡아 보여 주는 실패도 앱 로그에 한 줄 남긴다 — 셸·화면을 볼 수 없는 자리(C-DEP CD)에서
+# 로그가 유일한 단서일 수 있다. 원문(계정 이름 등이 든다)은 화면에만 두고, 로그에는 첫 문장과
+# 갈래만 적는다.
+_LOGGER = logging.getLogger(__name__)
+
+
+def _log_failure(message: str, *, kind: str = "", type_names: tuple[str, ...] = ()) -> None:
+    detail = f" 갈래={kind}" if kind else ""
+    if type_names:
+        detail += f" 종류={','.join(type_names)}"
+    _LOGGER.warning("BigDataQuery 실패: %s%s", message.split(". ")[0].splitlines()[0], detail)
+
+
 class BigDataQueryCallError(RuntimeError):
     """`getData` 가 낸 패키지 예외. 화면들이 잡는 `RuntimeError` 로 올려 갈래와 다시 할 길을
     알린다 — 패키지의 `Error` 같은 종류는 화면이 잡는 예외 튜플(`BOOTSTRAP_ERRORS`) 밖이라 그대로
@@ -592,6 +611,7 @@ def load_bigdataquery_module() -> ModuleType:
     try:
         return importlib.import_module("bigdataquery")
     except ModuleNotFoundError as exc:
+        _log_failure(f"패키지를 불러오지 못함(없는 모듈 {exc.name})")
         if exc.name in (None, "bigdataquery"):
             raise RuntimeError(
                 "현재 환경에 bigdataquery 패키지가 없습니다. "
@@ -605,6 +625,7 @@ def load_bigdataquery_module() -> ModuleType:
             "4단계)."
         ) from exc
     except Exception as exc:  # 패키지 초기화가 낼 예외 종류를 모른다
+        _log_failure("패키지 초기화 실패", type_names=failure_type_names(exc))
         raise RuntimeError(
             "bigdataquery 패키지를 불러오지 못했습니다. 사내 환경에서 패키지를 다시 설치한 뒤 "
             "실행하세요(README 「초기 설정」 4단계). 같은 실패가 이어지면 아래 원문을 관리자에게 "
