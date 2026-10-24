@@ -21,6 +21,8 @@ CLEARED_EACH_RUN: frozenset[tuple[str, str]] = frozenset(
         ("available_equipment_status.py", "sample_notice"),
         ("load_conversion.py", "plan_notice"),
         ("load_conversion.py", "yield_notice"),
+        # 설비 세션을 옮겼다는 한 번뿐인 알림 — 다음 회차에 남으면 이미 지난 이동을 다시 알린다.
+        ("scenario_management.py", "equipment_notice_slot"),
     }
 )
 
