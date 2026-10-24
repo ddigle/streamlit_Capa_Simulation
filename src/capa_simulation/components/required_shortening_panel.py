@@ -140,6 +140,7 @@ from capa_simulation.services.shortening_baseline import (
     BaselineProvenance,
     ShorteningBaseline,
     ShorteningBaselineSummary,
+    ShorteningEquipmentBasis,
 )
 from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
@@ -290,8 +291,12 @@ def render_required_shortening_tab(
     equipment_revision_no: int | None = None,
     baseline_refusal: str | None = None,
     link_details: bool = True,
+    equipment_basis: ShorteningEquipmentBasis | None = None,
 ) -> None:
     """필요 단축 일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
+
+    `equipment_basis` 는 세션 설비 시나리오 쪽 출처·표시(`ShorteningEquipmentBasis`)다. 없으면
+    (컴포넌트만 띄운 자리) 기준선 머리에 공통 리비전만 남기고 카드 링크에 `eq` 를 싣지 않는다.
 
     조건 위젯 값은 숨은 동안 `persist_state` 가 지킨다.
 
@@ -350,6 +355,7 @@ def render_required_shortening_tab(
             revision=(equipment_revision_id, equipment_revision_no),
             refusal=baseline_refusal,
             link_details=link_details,
+            equipment_basis=equipment_basis,
         )
 
 
@@ -485,6 +491,7 @@ def _render_view(
     revision: tuple[str | None, int | None],
     refusal: str | None,
     link_details: bool = True,
+    equipment_basis: ShorteningEquipmentBasis | None = None,
 ) -> None:
     """머리(`진척 비교`·`목표 확보율`)와 본문 — 프래그먼트다.
 
@@ -516,6 +523,7 @@ def _render_view(
         revision=revision,
         refusal=refusal,
         link_details=link_details,
+        equipment_basis=equipment_basis,
     )
 
 
@@ -540,6 +548,7 @@ def _render_body(
     revision: tuple[str | None, int | None],
     refusal: str | None,
     link_details: bool = True,
+    equipment_basis: ShorteningEquipmentBasis | None = None,
 ) -> None:
     """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교, 또는 UPEH 가정
     비교.
@@ -573,10 +582,14 @@ def _render_body(
         revision=revision,
         refusal=refusal,
         assumption=prepared.assumption,
+        equipment_basis=equipment_basis,
     )
     highlight = current_highlight()
     compared = load_selected_baseline(database_path, compare_id)
+    link_label = equipment_basis.label if equipment_basis is not None else None
     if compared is not None:
+        if equipment_basis is not None and equipment_basis.compare_note is not None:
+            st.caption(f":material/account_tree: {equipment_basis.compare_note}")
         if prepared.assumption_active and prepared.assumption is not None:
             st.caption(
                 f":material/info: 진척 비교는 늘 공식 계획입니다 — "
@@ -595,6 +608,7 @@ def _render_body(
             equipment=equipment,
             highlight=highlight,
             link_details=link_details,
+            equipment_label=link_label,
         )
         return
 
@@ -678,7 +692,9 @@ def _render_body(
                 )
             )
             if link_details:
-                render_detail_link(level_plan, process, level=level, months=months)
+                render_detail_link(
+                    level_plan, process, level=level, months=months, equipment=link_label
+                )
 
 
 def _card_order(
@@ -1036,6 +1052,7 @@ def _save_context(
     revision: tuple[str | None, int | None],
     refusal: str | None,
     assumption: UpehAssumption | None = None,
+    equipment_basis: ShorteningEquipmentBasis | None = None,
 ) -> BaselineSaveContext | None:
     """「기준선 저장」 이 얼릴 계획과 머리에 남길 출처. 설비 DB 가 없는 자리면 None(단추 없음).
 
@@ -1071,6 +1088,18 @@ def _save_context(
             scenario_revision_id=label.revision_id if label is not None else None,
             scenario_revision_no=label.revision_no if label is not None else None,
             scenario_content_token=str(context.active_scenario["content_token"]),
+            equipment_schedule_revision_ref=(
+                equipment_basis.schedule_revision_id if equipment_basis is not None else None
+            ),
+            equipment_schedule_revision_no=(
+                equipment_basis.schedule_revision_no if equipment_basis is not None else None
+            ),
+            equipment_scenario_name=(
+                equipment_basis.scenario_name if equipment_basis is not None else None
+            ),
+            equipment_release_no=(
+                equipment_basis.release_no if equipment_basis is not None else None
+            ),
         ),
         refusal=refusal,
     )
@@ -1090,6 +1119,7 @@ def _render_progress(
     equipment: pd.DataFrame | None = None,
     highlight: ShorteningHighlight | None = None,
     link_details: bool = True,
+    equipment_label: str | None = None,
 ) -> None:
     """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 진척 보드(기준선 대비·이행 지연) →
     공정 카드(호기마다 두 줄).
@@ -1162,7 +1192,9 @@ def _render_progress(
                 )
             )
             if link_details:
-                render_detail_link(level_plan, process, level=level, months=months)
+                render_detail_link(
+                    level_plan, process, level=level, months=months, equipment=equipment_label
+                )
     for process in view.outside:
         st.html(
             progress_card_markup(

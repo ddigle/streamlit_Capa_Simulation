@@ -68,6 +68,7 @@ from capa_simulation.services.equipment_contract import (
     AREA_CODES,
     ARRIVAL_STATUS_COLUMN,
     ARRIVAL_STATUSES,
+    COMMON_MASTER_COLUMNS,
     DATE_COLUMNS,
     DOWNTIME_TYPES,
     EQUIPMENT_ID_COLUMN,
@@ -1742,6 +1743,55 @@ def stale_paste_refusal(
     return None
 
 
+def paste_split_summary(source: Frames, candidate: Frames) -> str | None:
+    """붙여넣기 미리보기의 두 쪽 한 줄 — 「공통 칸 n · 시나리오 칸 m 바뀜 · 새 호기 k · 새
+    비가동 j」.
+
+    칸 수는 두 편집본에 다 있는 호기의 바뀐 칸 수다(공통 = 공통 대장으로, 시나리오 = 이 설비
+    시나리오 일정으로 간다). 새 호기·새 비가동은 저장할 때 다른 설비 시나리오에 함께 넣을
+    후보다(저장 칸의 두 체크 — 실제로 퍼진 목록은 저장 결과 알림이 적는다). 바뀐 것이 없으면 None.
+    """
+    before = source[1].set_index(EQUIPMENT_ID_COLUMN, drop=False)
+    after = candidate[1].set_index(EQUIPMENT_ID_COLUMN, drop=False)
+    before = before.loc[~before.index.duplicated()]
+    after = after.loc[~after.index.duplicated()]
+    kept = [name for name in after.index if name in before.index]
+    new_units = len(after.index) - len(kept)
+
+    def changed(columns: Sequence[str]) -> int:
+        shown = [
+            column for column in columns if column in after.columns and column in before.columns
+        ]
+        if not kept or not shown:
+            return 0
+        # 칸 형(날짜·수·글자)이 두 표에서 달라도 같은 값이면 같다 — 글자로 맞춰 견준다.
+        left = before.loc[kept, shown].reset_index(drop=True).astype("string").fillna("")
+        right = after.loc[kept, shown].reset_index(drop=True).astype("string").fillna("")
+        return int(left.ne(right).to_numpy().sum())
+
+    common = changed([column for column in COMMON_MASTER_COLUMNS if column != EQUIPMENT_ID_COLUMN])
+    schedule = changed(list(SCENARIO_SCHEDULE_COLUMNS))
+
+    def downtime_keys(frame: pd.DataFrame) -> set[tuple[str, str, str]]:
+        if frame.empty:
+            return set()
+        starts = pd.to_datetime(frame["시작일"], errors="coerce").dt.strftime("%Y-%m-%d")
+        return {
+            (str(name), str(kind), str(start))
+            for name, kind, start in zip(
+                frame[EQUIPMENT_ID_COLUMN], frame["비가동유형"], starts, strict=True
+            )
+        }
+
+    new_downtime = len(downtime_keys(candidate[2]) - downtime_keys(source[2]))
+    if not (common or schedule or new_units or new_downtime):
+        return None
+    return (
+        f"공통 칸 {common:,} · 시나리오 칸 {schedule:,} 바뀜 · 새 호기 {new_units:,} · 새 비가동 "
+        f"{new_downtime:,}(다른 설비 시나리오에 넣을 후보)"
+    )
+
+
 def _history_scenario(
     repository: DuckDBEquipmentRepository,
     basis: EquipmentSaveBasis | None,
@@ -2089,9 +2139,57 @@ def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, 
     return f"r{number}" if number is not None else ""
 
 
-def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
+# 가정 설비 시나리오의 일정 확인 목록이 볼 마스터 한 벌 — ((공식 토큰, 편집본 세대, 미리보기), 표).
+_CONFIRMATION_OFFICIAL_KEY = "equipment_schedule_confirmation_official_v1"
+
+
+def official_confirmation_master(master: pd.DataFrame, official: EquipmentSnapshot) -> pd.DataFrame:
+    """가정 설비 시나리오의 일정 확인 목록이 볼 마스터 — 편집본의 공통 칸 + 공식 일정 일곱 칸.
+
+    미확인은 공식 시나리오 일정 기준이다(결정). 공통 칸(실적·상태)은 편집본 그대로라 실적·상태를
+    고치면 목록에서 빠지고, 이 시나리오에서 고친 일정은 목록을 바꾸지 않는다. 공식에 없는 호기(새
+    호기·공식 일정 없음)는 일정 칸이 빈다. Space 편집기로 이름을 바꾼 호기는 저장본 이름으로 찾는다.
+    """
+    columns = [column for column in SCENARIO_SCHEDULE_COLUMNS if column in master.columns]
+    source = official.equipment.copy()
+    source.index = pd.Index(source[EQUIPMENT_ID_COLUMN].astype("string").str.strip())
+    source = source.loc[~source.index.duplicated()]
+    renames = pending_unit_renames().units
+    names = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    lookup = names.map(lambda name: renames.get(str(name), str(name)) if pd.notna(name) else name)
+    result = master.copy()
+    for column in columns:
+        result[column] = lookup.map(source[column]).to_numpy()
+        if pd.api.types.is_datetime64_any_dtype(source[column]):
+            result[column] = pd.to_datetime(result[column])
+    return result
+
+
+def _confirmation_master(
+    master: pd.DataFrame, official: EquipmentSnapshot | None, preview: object
+) -> pd.DataFrame:
+    """일정 확인 목록이 볼 마스터. 공식 기준이면 세션 칸에 한 벌(공식 토큰·편집본 세대·미리보기로
+    키) — 이 작업 공간은 숨은 탭에서도 회차마다 그려지므로 바뀐 것이 없는 회차에 다시 짓지
+    않는다."""
+    if official is None:
+        return master
+    key = (official.token, equipment_buffer_generation(), id(preview) if preview else None)
+    memo = st.session_state.get(_CONFIRMATION_OFFICIAL_KEY)
+    if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == key:
+        cached = memo[1]
+        if isinstance(cached, pd.DataFrame):
+            return cached
+    built = official_confirmation_master(master, official)
+    st.session_state[_CONFIRMATION_OFFICIAL_KEY] = (key, built)
+    return built
+
+
+def _render_schedule_confirmation(
+    master: pd.DataFrame, *, today: date, official_basis: bool = False
+) -> None:
     """반입·Qual 의 일정·실적·상태가 맞지 않는 호기 — 경고 한 줄과 접힌 목록. 셋 다 없으면 그리지
-    않는다. 저장은 막지 않는다.
+    않는다. 저장은 막지 않는다. `official_basis` 면 `master` 의 일정은 공식 설비 시나리오의 것이다
+    (가정 설비 시나리오 — 그 사실을 한 줄 더 적는다).
 
     `master` 는 편집본(미리보기 중이면 저장될 후보)이다. 편집표가 폼 안이라 칸만 고쳐서는 바뀌지
     않고, 저장하지 않은 편집도 제출(보기 적용·저장·변경 미리보기 등) 뒤 회차에 보인다.
@@ -2107,6 +2205,11 @@ def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
     with st.expander(
         f"일정 확인 목록 · {len(issues):,}건", expanded=False, key=CONFIRMATION_EXPANDER_KEY
     ):
+        if official_basis:
+            st.caption(
+                "가정 설비 시나리오라 일정은 **공식 설비 시나리오 기준**입니다 — 이 시나리오에서 "
+                "고친 일정은 이 목록을 바꾸지 않고, 실적·상태(공통)를 고치면 빠집니다."
+            )
         st.caption(
             f"**{UNCONFIRMED}** — 일정이 지났는데({today:%Y-%m-%d} 기준, 당일은 빼고) 실적이 "
             f"비고 상태가 계획·확정 · **{MISSING_ACTUAL}** — 상태가 완료인데 실적이 빔 · "
@@ -2147,9 +2250,13 @@ def render_equipment_data_workspace(
     drafts_replaced: bool = False,
     today: date | None = None,
     basis: EquipmentSaveBasis | None = None,
+    confirmation_official: EquipmentSnapshot | None = None,
 ) -> None:
     """입력·직접 편집·조회 중 한 작업을 표시하고 편집본을 저장한다(바뀐 쪽만 — 공통 대장·설비
     시나리오 일정).
+
+    `confirmation_official` 을 주면(가정 설비 시나리오) 일정 확인 목록은 공식 일정 + 편집본 공통
+    칸으로 본다 — 미확인은 공식 시나리오 일정 기준이다(결정).
 
     `basis` 는 세션의 설비 시나리오(저장할 곳·화면이 본 공식 번호·낡음)다. 낡았으면(세션 리비전이
     그 시나리오 최신이 아님) 일정 일곱 칸과 비가동 표·행 추가를 잠그고, 일정이 바뀌는 붙여넣기
@@ -2232,7 +2339,11 @@ def render_equipment_data_workspace(
         # 목록이 생기고 사라질 때마다 아래 key 있는 펼침·탭이 밀린다.
         for message in area_code_warnings(master):
             st.warning(message, icon=":material/rule:")
-        _render_schedule_confirmation(master, today=today or date.today())
+        _render_schedule_confirmation(
+            _confirmation_master(master, confirmation_official, pending),
+            today=today or date.today(),
+            official_basis=confirmation_official is not None,
+        )
     # 표마다 무엇을 키로 대체하는지·Main 설비·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
     # 내려받기만 남긴다.
     with st.expander(
@@ -2322,6 +2433,9 @@ def render_equipment_data_workspace(
                 )
             if isinstance(pending, ImportReview):
                 st.markdown(f"**{pending.target} · 저장할 변경 {len(pending.changes):,}행**")
+                split = paste_split_summary(pending.source, pending.candidate)
+                if split is not None:
+                    st.caption(f":material/call_split: {split}")
                 for message in pending.notices:
                     st.info(message, icon=":material/info:")
                 for message in pending.cautions:

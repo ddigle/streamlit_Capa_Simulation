@@ -101,6 +101,11 @@ PROCESS_DETAIL_SCROLL_ANCHOR_KEY = "process_detail_scroll_anchor"
 # 필요 단축 일정 카드에서 들어온 방문의 출처 띠가 읽는 그 카드의 값(`ShorteningOrigin`). 그 공정을
 # 보는 동안만 있다 — HOME 출처(`PROCESS_DETAIL_ORIGIN_KEY`)와 같은 규칙.
 PROCESS_DETAIL_SHORTENING_ORIGIN_KEY = "process_detail_shortening_origin"
+# 이 방문의 설비 시나리오 기준. HOME 칸으로 들어온 방문은 `"official"`(E5 — HOME 칸은 공식) — ◀▶
+# 로 공정을 넘겨도 그 방문 동안 남는다(출처 띠와 달리 공정이 바뀌어도 걷지 않는다). 새 방문·다른
+# 길(사이드바·카드·주소)로 들어오면 걷어 세션의 설비 시나리오를 따른다.
+PROCESS_DETAIL_EQUIPMENT_BASIS_KEY = "process_detail_equipment_basis"
+EQUIPMENT_BASIS_OFFICIAL = "official"
 
 PROCESS_PARAM = "process"
 MONTH_PARAM = "month"
@@ -110,6 +115,9 @@ TARGET_PARAM = "target"
 PERIOD_PARAM = "period"
 SHORTENED_PARAM = "shortened"
 NEW_PARAM = "new"
+# 그 카드가 본 설비 시나리오 한 마디(「셋업 실무 r4」·「공식 v3」) — 표시용이다. 받은 화면의 기준과
+# 다르면 출처 띠가 그 사실을 적는다(새 탭으로 연 경우 등). 이 화면의 설비 기준은 바꾸지 않는다.
+EQUIPMENT_PARAM = "eq"
 DETAIL_QUERY_PARAMS = (
     PROCESS_PARAM,
     MONTH_PARAM,
@@ -118,6 +126,7 @@ DETAIL_QUERY_PARAMS = (
     PERIOD_PARAM,
     SHORTENED_PARAM,
     NEW_PARAM,
+    EQUIPMENT_PARAM,
 )
 FROM_HOME = "home"
 # 가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로 보기」 링크와 필요 단축 일정 공정
@@ -192,6 +201,8 @@ class ShorteningOrigin:
     end_month: int | None = None
     shortened: int | None = None
     new: int | None = None
+    # 그 카드가 본 설비 시나리오 한 마디(`EQUIPMENT_PARAM`). 표시용이다.
+    equipment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +225,8 @@ class ProcessDetailEntry:
     # 필요 단축 일정 카드 출처 띠의 근거. 그 카드 링크로 들어온 방문 동안, 그 공정을 보는 동안만
     # 있다.
     shortening_origin: ShorteningOrigin | None = None
+    # 이 방문의 설비 시나리오 기준 — `EQUIPMENT_BASIS_OFFICIAL`(HOME 칸 방문) 또는 None(세션).
+    equipment_basis: str | None = None
 
 
 def _finite(value: object) -> float | None:
@@ -390,8 +403,12 @@ def shortening_card_query_params(
     shortened: int,
     new: int,
     theme: str | None,
+    equipment: str | None = None,
 ) -> dict[str, str]:
     """필요 단축 일정 공정 카드의 「공정 Capa 상세에서 근거 보기」 링크 주소 인자.
+
+    `equipment` 는 그 카드가 본 설비 시나리오 한 마디(「셋업 실무 r4」)다 — 표시용 `eq` 인자로만
+    싣는다(값이 있을 때만).
 
     달은 그 카드의 첫 부족 달(없으면 싣지 않는다 — 상세가 그 공정의 기본 달을 연다), 목표는 비율
     글, 기간은 `YYYYMM-YYYYMM` 이다. 테마는 값이 있을 때만 싣는다(`request_query_params` 와 같은
@@ -405,6 +422,8 @@ def shortening_card_query_params(
     params[PERIOD_PARAM] = f"{int(start_month)}-{int(end_month)}"
     params[SHORTENED_PARAM] = str(int(shortened))
     params[NEW_PARAM] = str(int(new))
+    if equipment:
+        params[EQUIPMENT_PARAM] = str(equipment)
     if theme:
         params[THEME_QUERY_PARAM] = theme
     return params
@@ -419,6 +438,7 @@ def _shortening_origin(process: str, values: Mapping[str, str]) -> ShorteningOri
         end_month=end,
         shortened=_count(values.get(SHORTENED_PARAM)),
         new=_count(values.get(NEW_PARAM)),
+        equipment=(values.get(EQUIPMENT_PARAM) or "").strip() or None,
     )
 
 
@@ -670,6 +690,13 @@ def resolve_process_and_month(
     if not isinstance(card_origin, ShorteningOrigin) or card_origin.process != process:
         st.session_state.pop(PROCESS_DETAIL_SHORTENING_ORIGIN_KEY, None)
         card_origin = None
+    # 설비 시나리오 기준 — HOME 칸으로 들어온 방문은 공식(E5). 출처 띠와 달리 ◀▶ 로 공정을 넘겨도
+    # 그 방문 동안 남는다(같은 화면에서 설비 기준이 말없이 바뀌지 않게). 새 방문·다른 길이면 걷는다.
+    if request is not None and request.source == FROM_HOME:
+        st.session_state[PROCESS_DETAIL_EQUIPMENT_BASIS_KEY] = EQUIPMENT_BASIS_OFFICIAL
+    elif not continues or entered:
+        st.session_state.pop(PROCESS_DETAIL_EQUIPMENT_BASIS_KEY, None)
+    basis = st.session_state.get(PROCESS_DETAIL_EQUIPMENT_BASIS_KEY)
     return ProcessDetailEntry(
         process=process,
         month=month,
@@ -679,6 +706,7 @@ def resolve_process_and_month(
         scroll_month=scroll_month,
         source=source,
         shortening_origin=card_origin,
+        equipment_basis=basis if basis == EQUIPMENT_BASIS_OFFICIAL else None,
     )
 
 
@@ -815,3 +843,13 @@ def shortening_band_text(origin: ShorteningOrigin) -> str:
     if origin.shortened is not None and origin.new is not None:
         parts.append(f"그 카드: 단축 {origin.shortened}대 · 신규 {origin.new}대")
     return " · ".join(parts)
+
+
+def equipment_band_tail(card: str | None, here: str | None) -> str | None:
+    """출처 띠 끝 — 카드가 본 설비 시나리오(`eq`)가 이 화면의 기준과 다를 때만 그 사실 한 마디.
+
+    예: 「카드는 「셋업 실무 r4」 기준 — 이 화면은 공식 v3」. 같거나 어느 한쪽을 모르면 None.
+    """
+    if not card or not here or card == here:
+        return None
+    return f"카드는 「{card}」 기준 — 이 화면은 {here}"

@@ -242,17 +242,25 @@ def _undated_caption(notice: str | None) -> None:
 
 
 def _confirmation_notice(
-    equipment: pd.DataFrame, filtered: pd.DataFrame, *, today: date
+    equipment: pd.DataFrame,
+    filtered: pd.DataFrame,
+    *,
+    today: date,
+    basis: str | None = None,
 ) -> str | None:
     """반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인 설비(미확인) 한 줄. 없으면 `None`.
 
     오늘 기준으로 고정이다(Main 의 기준일과 상관없다 — 2026-10-16 사용자 결정). 고르기는 거르기
     전 설비 마스터로 하고(캐시 — 같은 저장본이면 다시 고르지 않는다) 이 화면의 조건으로 거른
-    호기만 센다.
+    호기만 센다. `equipment` 가 화면과 다른 기준(가정 설비 시나리오의 공식 일정)이면 `basis` 를
+    줄 끝 꼬리표로 단다.
     """
     issues = get_schedule_confirmation_issues(equipment, today=today)
     unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    return schedule_confirmation_notice(issues, unit_ids=unit_ids)
+    notice = schedule_confirmation_notice(issues, unit_ids=unit_ids)
+    if notice is None or basis is None:
+        return notice
+    return f"{notice} ({basis})"
 
 
 def _confirmation_caption(notice: str | None) -> None:
@@ -478,8 +486,15 @@ def render_equipment_explorer(
     owner_tab: OpenTab | None = None,
     conditions: DeltaGenerator | None = None,
     process_labels: ProcessLabels | None = None,
+    confirmation_equipment: pd.DataFrame | None = None,
+    confirmation_basis: str | None = None,
 ) -> None:
     """Main 탭. 거르는 조건(공정·기간·기준일·추가 조건)은 `conditions`(사이드바 조건 카드)다.
+
+    `confirmation_equipment` 를 주면 미확인 알림은 그 마스터(가정 설비 시나리오일 때 공식 스냅샷
+    그대로)로 고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다(결정). 합치지
+    않는다(공통은 늘 최신이라 공식 스냅샷의 공통이 곧 지금 공통이다). `confirmation_basis` 는 그
+    줄의 꼬리표(「공식 일정 기준」)다.
 
     **무엇을 볼지 고르는 전환(볼 내용·보기·표현)은 본문이다.** 탭 안의 하위 탭과 같은 것이라
     카드에 넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). `conditions` 를
@@ -679,7 +694,14 @@ def render_equipment_explorer(
     )
     # 일정 확인(미확인)은 호기 이름을 보이는 호기 현황에서만 알린다 — 대수와 상관없는 확인할 거리다.
     confirmation_notice = (
-        _confirmation_notice(equipment, filtered, today=today) if shows_status else None
+        _confirmation_notice(
+            equipment if confirmation_equipment is None else confirmation_equipment,
+            filtered,
+            today=today,
+            basis=confirmation_basis if confirmation_equipment is not None else None,
+        )
+        if shows_status
+        else None
     )
     # 사용기준 제외는 대수를 세는 `가용대수` 에서만 알린다. 호기 현황(상태 분포·호기 목록)은 이름을
     # 보이는 자리라 HBM·EDP 가 아닌 호기도 그대로 센다.

@@ -104,3 +104,21 @@ def render_equipment_save_fields(
         propagate_new_downtime=bool(propagate_downtime),
         publish_official=bool(publish),
     )
+
+
+def save_fields_from_state(prefix: str) -> EquipmentSaveFields:
+    """`render_equipment_save_fields(prefix)` 가 세운 칸의 지금 값을 세션에서 읽는다 — 저장이 단추
+    콜백(Space 「배치 저장」)이라 그리는 회차의 돌려준 값을 쓸 수 없을 때. 칸이 아직 없으면
+    기본값."""
+
+    def flag(suffix: str, default: bool) -> bool:
+        value = st.session_state.get(f"{prefix}_{suffix}", default)
+        return value if isinstance(value, bool) else default
+
+    saved_by = st.session_state.get(f"{prefix}_saved_by")
+    return EquipmentSaveFields(
+        saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
+        propagate_new_units=flag("propagate_units", DEFAULT_PROPAGATE_NEW_UNITS),
+        propagate_new_downtime=flag("propagate_downtime", DEFAULT_PROPAGATE_NEW_DOWNTIME),
+        publish_official=flag("publish", DEFAULT_PUBLISH_OFFICIAL),
+    )

@@ -17,6 +17,7 @@ from capa_simulation.components.equipment_data_workspace import (
     ensure_equipment_drafts,
     equipment_buffer_generation,
     follow_unit_renames,
+    has_unsaved_equipment_edits,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -35,8 +36,18 @@ from capa_simulation.components.equipment_data_workspace import (
     stage_floor_marks,
     stage_unit_renames,
 )
-from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
-from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
+from capa_simulation.components.equipment_save_fields import (
+    EquipmentSaveBasis,
+    render_equipment_save_fields,
+    save_fields_from_state,
+)
+from capa_simulation.components.equipment_scenario_status import (
+    FIXED_LOCK_REASON,
+    equipment_value_label,
+    render_equipment_scenario_row,
+    render_legacy_trace_warning,
+    unscheduled_notice,
+)
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.floor_layout_upload import (
     render_fab_layout_drawing_editor,
@@ -72,8 +83,10 @@ from capa_simulation.components.space_layout_editor import (
 )
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.equipment_scenario_activation import (
+    EquipmentSession,
     official_session,
     resolve_equipment_session,
+    select_equipment_scenario,
     space_editing_allowed,
 )
 from capa_simulation.page_bootstrap import (
@@ -213,6 +226,19 @@ DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
 SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
     "저장할 수 있습니다."
+)
+# 배치 저장의 저장 칸(저장자·함께 넣기·공식 발행 — `equipment_save_fields`). 가용설비 RawData 의
+# 칸과 key 를 가른다.
+SPACE_SAVE_FIELDS_PREFIX = "space_layout_save_fields"
+# 배치 편집이 잠긴 동안(세션이 공식 발행 쌍이 아님)의 「공식으로 바꾸기」.
+SWITCH_TO_OFFICIAL_KEY = "space_switch_to_official"
+SWITCH_DISCARD_KEY = "space_switch_to_official_discard"
+LOCKED_EDIT_TOGGLE_KEY = "space_layout_edit_mode_locked"
+# 공식 발행 쌍이지만 그 시나리오에 더 새 리비전이 있는 세션 — 새 호기 폼만 끈다(일정이 생기는 새
+# 호기는 낡은 리비전 위 저장에서 막힌다).
+STALE_NEW_UNIT_REASON = (
+    "이 공식 리비전보다 더 새 설비 시나리오 리비전이 있어 새 호기를 넣지 않습니다 — 사이드바 설비 "
+    "시나리오에서 최신을 불러온 뒤 넣으세요. 자리·크기·이름 편집은 그대로 됩니다."
 )
 # 도면 「색 기준」(공정구분 | 투자Capa)과 그 기준의 그룹 체크(2026-10-16 사용자 결정). 체크 key 는
 # `space_color_<line|capa>_<그룹>` 이다 — 기준마다 따로라 기준을 바꿔도 다른 쪽 체크가 남는다.
@@ -354,13 +380,15 @@ try:
     }
     # 저장된 FAB 전체 도면(캔버스·배경 도면 행, 요소). 요소가 없으면 기본 배치를 그린다.
     fab_profile, fab_stored_marks = load_fab_layout(equipment_database_path)
+    # 공식 일정이 없는 호기(가정 설비 시나리오에만 든 호기)는 그리지 않는다(질문 2 — 계산 프레임).
+    official_unscheduled = 0
     if latest_snapshot is None or latest_snapshot.equipment.empty:
         equipment = sample_equipment_master(anchor_date=today)
         downtime = sample_downtime_schedule(anchor_date=today)
         using_sample_equipment = True
     else:
-        equipment = latest_snapshot.equipment
-        downtime = latest_snapshot.downtime
+        _, equipment, downtime = latest_snapshot.calculation_frames()
+        official_unscheduled = len(latest_snapshot.unscheduled_units)
         using_sample_equipment = False
 except BOOTSTRAP_ERRORS as exc:
     st.error(
@@ -405,13 +433,20 @@ with notices:
     render_flash(SPACE_FLASH_KEY)
     # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
     render_schema_ahead_warning(get_equipment_repository(equipment_database_path).schema_ahead)
+    render_legacy_trace_warning(equipment_session)
+    official_unscheduled_line = unscheduled_notice(official_unscheduled, official=True)
+    if official_unscheduled_line is not None:
+        st.caption(f":material/event_busy: {official_unscheduled_line}")
 # 사이드바 「설비 시나리오」 줄 — 잠근 꼴(팝업 없음). 이 화면은 늘 공식이다.
-render_equipment_scenario_row(
-    official_session(equipment_session, official_snapshot), locked_reason="(고정)"
-)
+shown_official = official_session(equipment_session, official_snapshot)
+render_equipment_scenario_row(shown_official, locked_reason=FIXED_LOCK_REASON)
 # 배치 편집은 실제 저장본이 있을 때만 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이 막힌다.
 # 세션이 공식 발행 쌍이 아니면(가정 설비 시나리오) 잠근다.
 editable = not using_sample_equipment and latest_snapshot is not None and space_editing
+# 실제 저장본이 있는데 설비 시나리오 때문에 잠갔다 — 단추를 꺼 두고 「공식으로 바꾸기」 를 보인다.
+locked_by_scenario = (
+    not using_sample_equipment and latest_snapshot is not None and not space_editing
+)
 if editable:
     # 가용설비 RawData 와 **같은 편집본**이다. 어느 페이지를 먼저 열어도 같은 저장본 토큰으로 선다.
     buffer_frames: Frames = ensure_equipment_drafts(latest_snapshot)
@@ -627,6 +662,68 @@ def _saved_frames() -> Frames:
     return (latest_snapshot.baseline, latest_snapshot.equipment, latest_snapshot.downtime)
 
 
+def space_lock_message(official: EquipmentSession) -> str:
+    """배치 편집이 잠긴 까닭 한 줄 — 「배치 편집은 공식 설비 시나리오(운영 일정 · r12)에서」."""
+    place = equipment_value_label(official) if official.scenario is not None else "공식"
+    return (
+        f"배치 편집은 공식 설비 시나리오({place})에서 합니다 — 지금 세션은 다른 설비 시나리오를 "
+        "보고 있어 배치 편집을 잠갔습니다. 도면은 늘 공식입니다."
+    )
+
+
+def _official_target(
+    session: EquipmentSession, official: EquipmentSession
+) -> tuple[str, str | None]:
+    """「공식으로 바꾸기」 가 옮겨 갈 (시나리오, 일정 리비전) — 최신 공식 발행, 없으면 공식 자리."""
+    release = session.catalog.latest_release
+    if release is not None:
+        return release.equipment_scenario_id, release.schedule_revision_id
+    return official.scenario_id or "", official.schedule_revision_id
+
+
+def _switch_to_official(
+    database_path: str, scenario_id: str, schedule_revision_id: str | None, discard: bool
+) -> None:
+    """「공식으로 바꾸기」 콜백 — 세션 설비 시나리오를 최신 공식 발행으로 옮긴다. 미저장 편집이
+    있으면 「변경을 버리고 바꾸기」 를 체크해야 한다(`select_equipment_scenario` 가 막는다)."""
+    if not scenario_id:
+        return
+    failure = select_equipment_scenario(
+        database_path, scenario_id, schedule_revision_id, discard=discard
+    )
+    if failure is not None:
+        st.session_state[SAVE_ERROR_KEY] = failure
+        return
+    queue_flash(SPACE_FLASH_KEY, "공식 설비 시나리오를 불러왔습니다 — 배치 편집을 할 수 있습니다.")
+
+
+def _render_switch_to_official() -> None:
+    """잠긴 동안 본문 맨 위 한 줄 — 까닭과 「공식으로 바꾸기」(미저장이면 버림 확인)."""
+    unsaved = has_unsaved_equipment_edits()
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.caption(f":material/lock: {space_lock_message(shown_official)}", width="content")
+        with st.popover("공식으로 바꾸기", icon=":material/swap_horiz:"):
+            st.caption(
+                "세션의 설비 시나리오를 공식으로 옮깁니다 — 가용설비 현황·필요 단축 일정도 공식을 "
+                "봅니다."
+            )
+            discard = True
+            if unsaved:
+                discard = st.checkbox("변경을 버리고 바꾸기", key=SWITCH_DISCARD_KEY)
+            st.button(
+                "공식으로 바꾸기",
+                type="primary",
+                key=SWITCH_TO_OFFICIAL_KEY,
+                disabled=not discard or shown_official.scenario_id is None,
+                on_click=_switch_to_official,
+                args=(
+                    equipment_database_path,
+                    *_official_target(equipment_session, shown_official),
+                    discard,
+                ),
+            )
+
+
 def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
     화면에서나 뜬다.
@@ -756,6 +853,10 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 st.text_input(
                     "변경 메모", key=note_key, placeholder="예: C1 1F 반입구 앞 정리", width=360
                 )
+                # 저장자·함께 넣기·공식 발행 칸(RawData 저장과 같은 부품). 수는 적지 않는다 — 실제로
+                # 퍼진 목록은 저장 결과 알림이 적는다.
+                with st.popover("저장 칸", icon=":material/tune:"):
+                    render_equipment_save_fields(SPACE_SAVE_FIELDS_PREFIX)
             # 설비 샘플 화면에서는 FAB 편집이 꺼진다(결정 2). 그 전에 적용한 FAB 대기분도 저장하지
             # 않는다 — 대기분은 두고, 스위치를 끄면 저장할 수 있다. 버리기는 그대로 된다.
             st.button(
@@ -827,6 +928,7 @@ def _save_space_layout(
     note_key: str,
     database_path: str,
     basis: EquipmentSaveBasis | None = None,
+    fields_prefix: str = SPACE_SAVE_FIELDS_PREFIX,
 ) -> None:
     """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다. FAB 전체
     배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다. 저장은 바뀐 쪽만
@@ -839,6 +941,7 @@ def _save_space_layout(
             frames,
             note if isinstance(note, str) else "",
             basis=basis,
+            fields=save_fields_from_state(fields_prefix),
         )
     except BOOTSTRAP_ERRORS as exc:
         # 검증·충돌(ValueError)만이 아니라 DuckDB 잠금 같은 저장 실패도 문구로 남긴다 — 콜백에서
@@ -903,6 +1006,11 @@ def _render_layout_editor(
         ),
     )
     options = new_unit_options(frames[1])
+    # 공식 발행 쌍이지만 낡은 세션 — 새 호기 폼만 끈다(일정이 생기는 새 호기는 저장에서 막힌다).
+    stale_session = equipment_session.stale
+    if stale_session:
+        options = {**options, "disabled": STALE_NEW_UNIT_REASON}
+        st.caption(f":material/lock_clock: {STALE_NEW_UNIT_REASON}")
     st.caption(
         "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
         "조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
@@ -970,6 +1078,9 @@ def _render_layout_editor(
                 latest_snapshot.equipment, frames[1], frames[2], pending_unit_renames()
             ),
         )
+        if stale_session and applied.created:
+            # 폼을 껐지만 옛 화면이 보낸 적용 — 새 호기는 낡은 리비전 위 저장에서 막힌다.
+            raise ValueError(STALE_NEW_UNIT_REASON)
         next_canvases = {**canvases, **({key: applied.canvas} if applied.canvas else {})}
         master = apply_layout_edits(
             frames[1],
@@ -1143,6 +1254,13 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
 with st.container(key="space_unsaved_layout_slot"):
     if editable or pending_fab_layout() is not None:
         _render_unsaved_layout_panel(buffer_frames if editable else None)
+# 배치 편집이 설비 시나리오 때문에 잠긴 회차 — 까닭과 「공식으로 바꾸기」(층 상세의 편집 토글은
+# 꺼진 채 선다). 저장 오류(바꾸기 실패)는 상자가 없는 회차에도 여기서 한 번 보인다.
+if locked_by_scenario:
+    switch_error = None if editable else st.session_state.pop(SAVE_ERROR_KEY, None)
+    if isinstance(switch_error, str):
+        st.error(switch_error)
+    _render_switch_to_official()
 
 if selected is None:
     # FAB 로 돌아오면 층 상세에서 누른 호기는 풀린다(층을 바꾼 것과 같다).
@@ -1343,24 +1461,38 @@ else:
             )
             # 캔버스 이탈 검사는 그린 호기(`floor_equipment`, 필터·레이아웃표시를 지난 것)가 아니라
             # 저장된 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다.
+            # 캔버스 줄이기 검사는 **공식** 마스터로 한다 — 좌표는 공통이라 공식 스냅샷의 마스터가
+            # 곧 지금 좌표다(배치 편집이 잠긴 세션도 같은 검사를 받는다).
             render_floor_layout_editor(
                 database_path=equipment_database_path,
                 building=selected_building,
                 floor=selected_floor,
                 saved_equipment=(
-                    latest_snapshot.equipment
-                    if editable and latest_snapshot is not None
+                    official_snapshot.equipment
+                    if not using_sample_equipment and official_snapshot is not None
                     else empty_equipment_master()
                 ),
             )
-            editing = editable and st.toggle(
-                "배치 편집",
-                key=EDIT_MODE_KEY,
-                help=(
-                    "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
-                    "저장하기 전까지 이 세션에만 있습니다."
-                ),
-            )
+            if editable:
+                editing = st.toggle(
+                    "배치 편집",
+                    key=EDIT_MODE_KEY,
+                    help=(
+                        "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
+                        "저장하기 전까지 이 세션에만 있습니다."
+                    ),
+                )
+            else:
+                editing = False
+                if locked_by_scenario:
+                    # 꺼진 단추 — 까닭은 풍선과 본문 위 「공식으로 바꾸기」 줄이 말한다.
+                    st.toggle(
+                        "배치 편집",
+                        value=False,
+                        key=LOCKED_EDIT_TOGGLE_KEY,
+                        disabled=True,
+                        help=space_lock_message(shown_official),
+                    )
             st.space("stretch")
             # 보기는 기준일의 색·테·덧표시별 대수(미확인은 오늘 기준 설비 수)다. 편집 중에는
             # 편집본을 그리므로 저장본의 대수를 달지 않고 채우기 뜻만 보인다(편집 화면은 테·덧표시를

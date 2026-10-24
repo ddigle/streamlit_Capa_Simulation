@@ -198,8 +198,10 @@ def detail_link_params(
     level: float,
     months: Sequence[int],
     theme: str | None,
+    equipment: str | None = None,
 ) -> dict[str, str]:
-    """카드 하나의 상세 링크 주소 인자 — 그 카드의 첫 부족 달·목표·기간·단축/신규 대수."""
+    """카드 하나의 상세 링크 주소 인자 — 그 카드의 첫 부족 달·목표·기간·단축/신규 대수와, 그 카드가
+    본 설비 시나리오 한 마디(`equipment` — 표시용 `eq`, 「셋업 실무 r4」)."""
     shortened, new = process_counts(level_plan, process)
     return shortening_card_query_params(
         process=process,
@@ -210,13 +212,20 @@ def detail_link_params(
         shortened=shortened,
         new=new,
         theme=theme,
+        equipment=equipment,
     )
 
 
 def render_detail_link(
-    level_plan: LevelPlan, process: str, *, level: float, months: Sequence[int]
+    level_plan: LevelPlan,
+    process: str,
+    *,
+    level: float,
+    months: Sequence[int],
+    equipment: str | None = None,
 ) -> None:
-    """카드 아래 「공정 Capa 상세에서 근거 보기」. 달이 없으면 그리지 않는다."""
+    """카드 아래 「공정 Capa 상세에서 근거 보기」. 달이 없으면 그리지 않는다. `equipment` 는 이
+    화면이 본 설비 시나리오 한 마디(받은 상세 화면의 기준과 다르면 그쪽 출처 띠가 알린다)."""
     if not months:
         return
     theme = st.query_params.get(THEME_QUERY_PARAM)
@@ -225,7 +234,7 @@ def render_detail_link(
         label="공정 Capa 상세에서 근거 보기",
         icon=":material/troubleshoot:",
         query_params=detail_link_params(
-            level_plan, process, level=level, months=months, theme=theme
+            level_plan, process, level=level, months=months, theme=theme, equipment=equipment
         ),
     )
 

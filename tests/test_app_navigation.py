@@ -703,10 +703,10 @@ def test_the_header_reads_no_database_on_a_rerun(
     original_header = app_header.render_app_header
     rendered: list[int] = []
 
-    def watched_header() -> None:
+    def watched_header(**kwargs: Any) -> None:
         inside.append(1)
         try:
-            original_header()
+            original_header(**kwargs)
         finally:
             inside.pop()
         rendered.append(1)
@@ -2193,11 +2193,13 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
         f"시뮬레이션 DB 가 이 코드보다 새 버전입니다(DB {newer} · 코드"
     )
 
-    # 설비 DB 를 여는 다섯 화면 모두를 돈다. 페이지 소스에서 경고 호출을 찾아 대조해 두어,
-    # 호출을 지우거나 새 화면에 더하면 이 목록도 같이 고치게 한다.
+    # 설비 DB 를 여는 여섯 화면 모두를 돈다(공정 Capa 상세는 설비 시나리오를 읽으며 경고를 세운다).
+    # 페이지 소스에서 경고 호출을 찾아 대조해 두어, 호출을 지우거나 새 화면에 더하면 이 목록도 같이
+    # 고치게 한다.
     equipment_pages = (
         AVAILABLE_EQUIPMENT_STATUS.path,
         REQUIRED_SHORTENING.path,
+        PROCESS_CAPA_DETAIL.path,
         SPACE_STATUS.path,
         STANDARD_TARGET_CAPA.path,
         WIP_STATUS.path,

@@ -64,13 +64,23 @@ localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Commu
 줄은 원래 폭으로 돌아온다 — 띠 글자가 잠깐 줄었다 펴지는 것은 막대가 없는 화면의 글자 폭을 늘 좁혀
 두는 것보다 낫다고 보고 고른 값이다.
 
+**설비 시나리오**(설계 6-5). 설비 시나리오를 읽는 화면(가용설비 현황 — Qual 마감 계산기 탭 제외 —
+·필요 단축 일정·공정 Capa 상세·Space 현황)은 아래 줄 **끝**에 `설비 시나리오 · 운영 일정 · r12 ·
+공식 v3`(Space 는 `· 공식 v3 (고정)`)을 단다. 설비 DB 를 읽지 않는다 — 페이지가 그 회차 목록을 읽어
+그린 사이드바 설비 시나리오 줄이 꼬리 글을 정해(`refresh_equipment_header`) 이 페이지 몫으로 세션에
+남기고 같은 회차에 띠 CSS 를 한 번 더 보내 덮는다 — 첫 진입·불러오기·남의 저장 뒤에도 한 회차 늦지
+않는다. `app.py` 는 그 글로 먼저 그려 둔다(페이지가 그리기 전 회차 사이에 꼬리가 사라졌다 서지
+않게).
+
 `data-testid` 는 emotion 클래스와 달리 판올림 사이에 비교적 안정적이지만 어디까지나
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
 """
 
+from collections.abc import Mapping
 from datetime import datetime
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
@@ -98,6 +108,11 @@ _CSV_SOURCE_PREFIX = "CSV_CORE_DATA"
 STATUS_OFFICIAL = "공식 v{release_no}"
 STATUS_SAVED = "저장된 리비전"
 STATUS_UNSAVED = "미저장 변경"
+EQUIPMENT_HEADER_HEAD = "설비 시나리오"
+# 이 회차에 `app.py` 가 그린 설비 시나리오 꼬리(없으면 None)와, 페이지가 정해 둔 페이지별 꼬리
+# ({"page": 페이지 스크립트 해시, "suffix": 글}). 둘 다 세션 칸이라 DB 를 읽지 않는다.
+EQUIPMENT_HEADER_DRAWN_KEY = "app_header_equipment_drawn_v1"
+EQUIPMENT_HEADER_LABEL_KEY = "app_header_equipment_label_v1"
 
 # 진행 막대 자리(`page_header.STATUS_SLOT_KEY`)를 본문 흐름에서 빼는 요소. Streamlit 은 키를 단
 # 컨테이너(`st-key-<키>`)를 `stLayoutWrapper` 로 한 번 감싸고, 본문 세로 블록의 flex 항목은 그
@@ -591,17 +606,78 @@ def _status_slot_css() -> str:
     )
 
 
-def render_app_header() -> None:
-    """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다.
+def equipment_header_suffix(
+    label: Mapping[str, object] | None, *, fixed: bool = False, unsaved: bool = False
+) -> str | None:
+    """아래 줄 끝 설비 시나리오 꼬리 — `설비 시나리오 · 운영 일정 · r12 · 공식 v3`.
+
+    `label` 은 `EquipmentSession.label()` 꼴(시나리오명·rN·최신 rM·공식 vN·판정)이다. 상태 차례는
+    사이드바 줄 배지와 같다(미저장 → 공식 vN → 최신 rM 있음 → 저장된 리비전). `fixed` 면 늘 공식을
+    보는 화면(Space)이라 `공식 vN (고정)` 이다. 시나리오가 없으면 None.
+    """
+    if not label or not label.get("scenario_name"):
+        return None
+    parts = [EQUIPMENT_HEADER_HEAD, str(label["scenario_name"])]
+    revision_no = label.get("revision_no")
+    if isinstance(revision_no, int):
+        parts.append(f"r{revision_no}")
+    release_no = label.get("release_no")
+    latest_no = label.get("latest_revision_no")
+    if fixed:
+        parts.append(f"공식 v{release_no} (고정)" if isinstance(release_no, int) else "공식 (고정)")
+    elif unsaved:
+        parts.append(STATUS_UNSAVED)
+    elif label.get("official_pair") and isinstance(release_no, int):
+        parts.append(STATUS_OFFICIAL.format(release_no=release_no))
+    elif label.get("stale") and isinstance(latest_no, int):
+        parts.append(f"최신 r{latest_no} 있음")
+    else:
+        parts.append(STATUS_SAVED)
+    return " · ".join(parts)
+
+
+def _page_hash() -> str | None:
+    ctx = get_script_run_ctx(suppress_warning=True)
+    return ctx.page_script_hash if ctx is not None else None
+
+
+def remembered_equipment_suffix() -> str | None:
+    """이 페이지가 지난 회차에 정해 둔 설비 시나리오 꼬리(`app.py` 가 띠를 그릴 때 읽는다)."""
+    remembered = st.session_state.get(EQUIPMENT_HEADER_LABEL_KEY)
+    if not isinstance(remembered, dict) or remembered.get("page") != _page_hash():
+        return None
+    suffix = remembered.get("suffix")
+    return suffix if isinstance(suffix, str) else None
+
+
+def render_app_header(*, equipment_suffix: str | None = None) -> None:
+    """헤더 글을 그린다. 페이지마다 부르지 말고 `app.py` 에서 한 번만 부른다(설비 시나리오 꼬리가
+    그 회차에 바뀐 페이지만 `refresh_equipment_header` 로 한 번 더 보낸다).
 
     `render_intro_summary` **뒤**여야 한다 — 최신 공식버전은 그 회차에 요약이 확인한 값이다.
+    `equipment_suffix` 는 아래 줄 끝 설비 시나리오 꼬리다(설비 시나리오를 읽는 화면만).
     """
     top, bottom = header_lines(
         active_scenario_label(),
         official=latest_official_revision(),
         unsaved=has_unsaved_scenario_changes(),
     )
+    if equipment_suffix:
+        bottom = f"{bottom} · {equipment_suffix}" if bottom else equipment_suffix
+    st.session_state[EQUIPMENT_HEADER_DRAWN_KEY] = equipment_suffix
     st.html(f"<style>{_header_css(top, bottom)}</style>")
+
+
+def refresh_equipment_header(suffix: str | None) -> None:
+    """페이지가 그 회차 목록으로 정한 설비 시나리오 꼬리를 남기고 띠를 한 번 더 그린다(뒤의
+    스타일이 앞의 것을 덮는다 — 한 회차 늦지 않게).
+
+    **꼬리가 같아도 늘 그린다.** 스타일만 든 `st.html` 은 이벤트 칸에 서는데, 바뀐 회차에만 그리면
+    회차마다 이벤트 칸 자리가 하나씩 밀려 그 뒤 프래그먼트가 쓰는 자리(필요 단축 일정의 기준선 알림
+    등)가 흔들린다. 같은 글은 메시지 캐시로 해시만 간다(`minCachedMessageSize`).
+    """
+    st.session_state[EQUIPMENT_HEADER_LABEL_KEY] = {"page": _page_hash(), "suffix": suffix}
+    render_app_header(equipment_suffix=suffix)
 
 
 def render_shell_style() -> None:

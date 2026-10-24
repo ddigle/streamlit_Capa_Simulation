@@ -27,13 +27,21 @@ from capa_simulation.components.equipment_data_workspace import (
     ensure_equipment_drafts,
     pop_discarded_notice,
 )
-from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
+from capa_simulation.components.equipment_scenario_status import (
+    baseline_equipment_refusal,
+    render_equipment_scenario_row,
+    render_legacy_trace_warning,
+    shortening_equipment_basis,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
-from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+from capa_simulation.equipment_scenario_activation import (
+    EquipmentSession,
+    resolve_equipment_session,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
@@ -60,19 +68,20 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
 
-def _baseline_refusal(*, sample: bool) -> str | None:
+def _baseline_refusal(*, sample: bool, session: EquipmentSession | None = None) -> str | None:
     """「기준선 저장」 을 막을 까닭. 기준선은 모든 사용자가 보는 고칠 수 없는 기록이라 합성 샘플에서
-    만들지 않는다.
+    만들지 않고, 설비는 **공식 발행 쌍**에서만 얼린다(E5 — 진척 비교 기준선은 공식에서만 저장).
 
-    미저장 설비 편집(RawData 제출·Space 배치)은 막지 않는다 — 그 편집은 편집본(buffer)에만 있고
-    계산은 저장본 사본(draft)만 읽으므로, 화면의 계획은 늘 저장 리비전 그대로다.
+    공식 발행 쌍이 아닌 까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지
+    않은 리비전. 미저장 설비 편집(RawData 제출·Space 배치)은 막지 않는다 — 그 편집은 편집본(buffer)
+    에만 있고 계산은 저장본 사본(draft)만 읽으므로, 화면의 계획은 늘 저장 리비전 그대로다.
     """
     if sample:
         return (
             "샘플 데이터를 보는 중이라 기준선을 저장하지 않습니다 — 공용 기록은 저장된 호기 "
             "마스터에서만 만듭니다."
         )
-    return None
+    return baseline_equipment_refusal(session)
 
 
 # 머리말 한 줄 — 이 화면의 정체성. 공정 Capa 상세 머리말과 짝이다.
@@ -102,6 +111,7 @@ except BOOTSTRAP_ERRORS as exc:
     st.stop()
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
+    render_legacy_trace_warning(equipment_session)
 
 # 저장본 사본과 미저장 편집본 — 가용설비 현황·Space 현황과 같은 세션 칸이라 어디서 먼저 세웠어도
 # 같은 토큰이다. 계산은 저장본 사본만 읽는다.
@@ -203,7 +213,11 @@ render_required_shortening_tab(
         if using_dashboard_sample or latest_snapshot is None
         else latest_snapshot.revision.revision_no
     ),
-    baseline_refusal=_baseline_refusal(sample=using_dashboard_sample),
+    baseline_refusal=_baseline_refusal(sample=using_dashboard_sample, session=equipment_session),
     # 공정 Capa 상세는 설비 저장본만 본다 — 샘플 fleet 카드에서는 근거 링크를 숨긴다.
     link_details=not using_dashboard_sample,
+    # 기준선 머리의 설비 시나리오 출처(공식 발행 쌍에서만 저장)·진척 비교 머리·카드 링크 `eq`.
+    equipment_basis=(
+        None if using_dashboard_sample else shortening_equipment_basis(equipment_session)
+    ),
 )

@@ -43,6 +43,7 @@ __all__ = [
     "ShorteningBaseline",
     "ShorteningBaselineDraft",
     "ShorteningBaselineSummary",
+    "ShorteningEquipmentBasis",
     "baseline_label",
     "baseline_units_frame",
     "default_baseline_name",
@@ -93,6 +94,29 @@ class BaselineProvenance:
     scenario_revision_id: str | None = None
     scenario_revision_no: int | None = None
     scenario_content_token: str | None = None
+    # 설비 쪽 출처(0027) — 공식 발행 쌍에서만 저장하므로(E5) 그 공식 일정 리비전·설비 시나리오
+    # 이름·공식 번호다. `equipment_revision_*` 는 공통 대장 리비전이다.
+    equipment_schedule_revision_ref: str | None = None
+    equipment_schedule_revision_no: int | None = None
+    equipment_scenario_name: str | None = None
+    equipment_release_no: int | None = None
+
+
+@dataclass(frozen=True)
+class ShorteningEquipmentBasis:
+    """화면의 호기가 나온 설비 시나리오 쪽 — 기준선 머리의 0027 출처 칸·진척 비교 머리·카드 링크.
+
+    기준선은 공식 발행 쌍에서만 저장하므로(E5) 저장되는 출처는 늘 공식 일정 리비전이다.
+    `label` 은 카드 링크의 표시 인자 `eq`(「셋업 실무 r4」·「공식 v3」), `compare_note` 는 세션이
+    공식 발행 쌍이 아닐 때 진척 비교 머리에 다는 한 줄(「지금 = 셋업 실무 r4 · 기준선 = 공식」)이다.
+    """
+
+    schedule_revision_id: str | None = None
+    schedule_revision_no: int | None = None
+    scenario_name: str | None = None
+    release_no: int | None = None
+    label: str | None = None
+    compare_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +138,10 @@ class ShorteningBaselineSummary:
     scenario_revision_id: str | None = None
     scenario_revision_no: int | None = None
     scenario_content_token: str | None = None
+    equipment_schedule_revision_ref: str | None = None
+    equipment_schedule_revision_no: int | None = None
+    equipment_scenario_name: str | None = None
+    equipment_release_no: int | None = None
 
 
 @dataclass(frozen=True)

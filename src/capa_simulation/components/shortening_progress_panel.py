@@ -755,8 +755,16 @@ def progress_summary_markup(
         f"그날 오늘 {head.plan_today:%Y-%m-%d} · 조회 {_span((head.start_month, head.end_month))}"
     )
     origin = []
+    # 설비 쪽은 공통 대장 rN 과(0027 뒤 저장이면) 그때 공식 설비 시나리오 rN · 공식 vN 이다.
+    scheduled = head.equipment_schedule_revision_no is not None
     if head.equipment_revision_no is not None:
-        origin.append(f"설비 r{head.equipment_revision_no}")
+        origin.append(f"설비 {'공통 ' if scheduled else ''}r{head.equipment_revision_no}")
+    if scheduled:
+        scenario = head.equipment_scenario_name or "설비 시나리오"
+        release = (
+            f" · 공식 v{head.equipment_release_no}" if head.equipment_release_no is not None else ""
+        )
+        origin.append(f"{scenario} r{head.equipment_schedule_revision_no}{release}")
     if head.scenario_name:
         revision = f" r{head.scenario_revision_no}" if head.scenario_revision_no is not None else ""
         origin.append(f"시나리오 {head.scenario_name}{revision}")

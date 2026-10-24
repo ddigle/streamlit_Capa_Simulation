@@ -8,7 +8,11 @@ from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.app_credits import render_app_credits
-from capa_simulation.components.app_header import render_app_header, render_shell_style
+from capa_simulation.components.app_header import (
+    remembered_equipment_suffix,
+    render_app_header,
+    render_shell_style,
+)
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
@@ -284,7 +288,16 @@ with pinned_connections(DUCKDB_PATH):
         )
     )
     # 머리 띠의 「공식 vN」은 위 요약이 이 회차에 확인한 값을 읽는다 — 요약보다 뒤여야 한다.
-    render_app_header()
+    # 설비 시나리오를 읽는 화면은 아래 줄 끝에 설비 시나리오 꼬리를 단다 — 그 글은 페이지가 지난
+    # 회차에 남긴 세션 값이다(설비 DB 를 읽지 않는다). 그 회차에 바뀌면 페이지가 띠를 다시 그린다.
+    active_tab = None if current_spec is None else active_condition_tab(current_spec)
+    render_app_header(
+        equipment_suffix=(
+            remembered_equipment_suffix()
+            if current_spec is not None and current_spec.reads_equipment_scenario_on(active_tab)
+            else None
+        )
+    )
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")
 
@@ -380,7 +393,6 @@ with pinned_connections(DUCKDB_PATH):
     # `navigation.PageSpec` 의 선언이 말한다. 세우지 않은 줄의 값은 사라지지 않는다 — 시나리오는
     # 세션의 활성 리비전, 조회기간은 위젯이 아닌 `MONTH_RANGE_KEY` 라 그 조건을 읽는 화면으로
     # 돌아오면 그대로 선다.
-    active_tab = None if current_spec is None else active_condition_tab(current_spec)
     reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)

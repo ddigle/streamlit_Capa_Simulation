@@ -172,6 +172,56 @@ def test_a_saved_baseline_round_trips_and_is_listed_newest_first(tmp_path: Path)
     assert list(at_100["목표 Qual"]) == list(plan.at(1.0).units["목표 Qual"])
 
 
+def test_the_equipment_scenario_source_round_trips_and_shows_in_the_head(tmp_path: Path) -> None:
+    """0027 의 설비 쪽 출처 칸 — 기준선은 공식 발행 쌍에서만 저장하므로(E5) 그 공식 일정 리비전·
+    설비 시나리오 이름·공식 번호를 남기고, 진척 비교 요약 머리에 「설비 공통 r12 · 운영 일정 r9 ·
+    공식 v3」 로 적는다. 0027 전 기준선(출처 칸 없음)은 「설비 r12」 그대로다."""
+    from capa_simulation.components.shortening_progress_panel import (
+        ProgressView,
+        progress_summary_markup,
+    )
+    from capa_simulation.services.shortening_progress import ProgressSummary
+
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    plan = _bundle_plan()
+    provenance = BaselineProvenance(
+        equipment_revision_id="rev-1",
+        equipment_revision_no=12,
+        equipment_schedule_revision_ref="sched-9",
+        equipment_schedule_revision_no=9,
+        equipment_scenario_name="운영 일정",
+        equipment_release_no=3,
+    )
+    saved = repository.save_shortening_baseline(
+        freeze_plan(plan, name="공식 기준선", provenance=provenance)
+    )
+    older = repository.save_shortening_baseline(
+        freeze_plan(
+            plan,
+            name="옛 기준선",
+            provenance=BaselineProvenance(equipment_revision_id="rev-1", equipment_revision_no=12),
+        )
+    )
+
+    loaded = repository.load_shortening_baseline(saved.baseline_id)
+    assert loaded.summary.equipment_schedule_revision_ref == "sched-9"
+    assert loaded.summary.equipment_schedule_revision_no == 9
+    assert loaded.summary.equipment_scenario_name == "운영 일정"
+    assert loaded.summary.equipment_release_no == 3
+    assert older.equipment_schedule_revision_no is None
+
+    view = ProgressView(
+        rows=pd.DataFrame(), cards=(), outside=(), summary=ProgressSummary(), axis_months=(202601,)
+    )
+    head = progress_summary_markup(view, loaded, 1.0, selected=False)
+    assert "설비 공통 r12 · 운영 일정 r9 · 공식 v3" in head
+    old_head = progress_summary_markup(
+        view, repository.load_shortening_baseline(older.baseline_id), 1.0, selected=False
+    )
+    assert "설비 r12" in old_head and "설비 공통" not in old_head
+
+
 def test_a_duplicate_or_blank_name_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
     path = tmp_path / "equipment.duckdb"
     repository = _repository(path)

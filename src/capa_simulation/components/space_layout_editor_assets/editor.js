@@ -3868,7 +3868,15 @@ export default function (component) {
   const showHint = () => { const [w, h] = sizeHint(); newW.placeholder = String(w); newH.placeholder = String(h) }
   showHint()
   newProcess.onchange = showHint
+  // 새 호기 폼을 끈 편집(공식 발행 쌍이지만 그 시나리오에 더 새 리비전이 있는 세션 — 일정이 생기는 새
+  // 호기는 저장에서 막힌다). 단추를 끄고 까닭을 풍선으로 보인다. 다른 편집은 그대로다.
+  if (NEW_UNIT.disabled) {
+    addToggle.disabled = true
+    addToggle.title = String(NEW_UNIT.disabled)
+    addForm.hidden = true
+  }
   addToggle.onclick = () => {
+    if (NEW_UNIT.disabled) return
     addForm.hidden = !addForm.hidden
     addToggle.setAttribute('aria-expanded', String(!addForm.hidden))
     if (!addForm.hidden) newId.focus()

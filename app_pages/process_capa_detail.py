@@ -59,7 +59,11 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
+from capa_simulation.components.equipment_scenario_status import (
+    equipment_basis_label,
+    render_equipment_scenario_row,
+    render_legacy_trace_warning,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -82,7 +86,11 @@ from capa_simulation.components.upeh_assumption_controls import (
     render_upeh_assumption_controls,
     upeh_badge,
 )
-from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+from capa_simulation.equipment_scenario_activation import (
+    EquipmentSession,
+    official_session,
+    resolve_equipment_session,
+)
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
@@ -96,6 +104,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
     prune_list_selection,
+    render_schema_ahead_warning,
     resolve_effective_months,
     stop_calculation_on_error,
 )
@@ -105,12 +114,19 @@ from capa_simulation.persistence.cache import (
     load_global_past_data,
     load_global_securement_threshold,
 )
-from capa_simulation.persistence.equipment_cache import load_process_cutoff
+from capa_simulation.persistence.equipment_cache import (
+    get_equipment_repository,
+    load_official_equipment_snapshot,
+    load_process_cutoff,
+)
+from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
 from capa_simulation.process_detail_state import (
+    EQUIPMENT_BASIS_OFFICIAL,
     ORIGIN_BAND_ICON,
     PROCESS_DETAIL_PROCESS_KEY,
     PROCESS_DETAIL_PRODUCT_FILTER_KEY,
     ProcessSteps,
+    equipment_band_tail,
     first_shortfall_month,
     lowest_rate_process,
     origin_band_text,
@@ -227,6 +243,9 @@ render_page_header("공정 Capa 상세", description=PAGE_DESCRIPTION)
 # 주지 않는다.
 header_marks = st.container()
 render_page_guide("process_capa_detail", title="공정 Capa 상세")
+# 설비 DB 경고(이 코드보다 새 스키마·옛 배포 흔적) 자리. 설비 시나리오는 아래 설비 일정 구획에서
+# 읽으므로 그 뒤에 채운다 — 맨 위에 서야 한다.
+equipment_notices = st.container()
 # 공정 표시명은 화면 라벨이다. 선택값·세션값·주소 인자는 원본 공정명이다.
 process_labels = get_process_labels()
 today = date.today()
@@ -370,6 +389,47 @@ entry = resolve_process_and_month(
 # 프래그먼트의 「구획」 칩보다 앞이라 세션에 적어도 된다.
 reopen_entry_section(entry.source)
 
+# 설비 시나리오 — 공정·달을 정한 바로 뒤에 읽는다(목록·합친 본문은 캐시라 가볍다). 출처 띠가 그
+# 기준을 끝에 적고, 잠근 줄·경고가 계산 전에 선다. 사이드바에서 고른 설비 시나리오(새 세션은 공식)를
+# 따르되, HOME 칸으로 들어온 방문은 ◀▶ 로 공정을 넘겨도 그 방문 동안 공식이다(E5 — 방문 기준 칸,
+# `process_detail_state`). 못 읽으면 설비 일정 구획이 그 까닭을 말한다.
+equipment_session: EquipmentSession | None = None
+shown_session: EquipmentSession | None = None
+snapshot: EquipmentSnapshot | None = None
+cutoff = pd.DataFrame()
+equipment_error = ""
+try:
+    equipment_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
+    equipment_session = resolve_equipment_session(equipment_path)
+    if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
+        shown_session = official_session(
+            equipment_session, load_official_equipment_snapshot(equipment_path)
+        )
+    else:
+        shown_session = equipment_session
+    snapshot = shown_session.snapshot
+    cutoff = load_process_cutoff(equipment_path)
+    with equipment_notices:
+        render_schema_ahead_warning(get_equipment_repository(equipment_path).schema_ahead)
+        render_legacy_trace_warning(equipment_session)
+except BOOTSTRAP_ERRORS as exc:
+    snapshot = None
+    cutoff = pd.DataFrame()
+    equipment_error = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+else:
+    if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
+        # 잠근 꼴 — HOME 칸은 공식이다. ◀▶ 로 출처 띠가 걷혀도 이 줄이 기준을 계속 보인다.
+        render_equipment_scenario_row(shown_session, locked_reason="(HOME 칸에서 들어온 방문)")
+    else:
+        render_equipment_scenario_row(shown_session)
+# 출처 띠 끝에 적을 이 화면의 설비 기준(「공식 v3」·「셋업 실무 r4」). 설비 저장본이 없으면(빈 설비
+# DB) 적지 않는다 — 설비 일정 구획이 그 까닭을 말한다.
+equipment_here = (
+    equipment_basis_label(shown_session)
+    if shown_session is not None and shown_session.snapshot is not None
+    else None
+)
+
 product_options: list[str] = []
 demand_bases = 0
 with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
@@ -434,13 +494,19 @@ if entry.origin is not None:
         entry.origin,
         month_text=month_label(origin_month) if origin_month is not None else "-",
     )
+    # HOME 칸 방문은 공식 설비 시나리오다 — 띠 끝에 그 기준을 적는다.
+    if equipment_here is not None:
+        band = f"{band} · 설비는 {equipment_here} 기준"
     st.caption(f"{ORIGIN_BAND_ICON} {band}")
 if entry.shortening_origin is not None:
     # 주소 인자로 받은 그 카드의 값만 적는다 — 필요 단축 일정의 세션 칸·공용 프로필은 읽지 않는다.
+    # 그 카드가 본 설비 시나리오(`eq`)가 이 화면의 기준과 다르면 띠 끝에 그 사실을 적는다.
+    card_band = shortening_band_text(entry.shortening_origin)
+    card_tail = equipment_band_tail(entry.shortening_origin.equipment, equipment_here)
+    if card_tail is not None:
+        card_band = f"{card_band} · {card_tail}"
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.caption(
-            f"{ORIGIN_BAND_ICON} {shortening_band_text(entry.shortening_origin)}", width="content"
-        )
+        st.caption(f"{ORIGIN_BAND_ICON} {card_band}", width="content")
         st.button(
             "필요 단축 일정",
             key=BACK_TO_SHORTENING_KEY,
@@ -611,19 +677,18 @@ dynamic: DynamicView | None = None
 dynamic_error = ""
 closing_notices: list[str] = []
 units_csv: bytes | None = None
-try:
-    equipment_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
-    # 사이드바에서 고른 설비 시나리오(새 세션은 공식). HOME 칸으로 들어온 방문의 공식 잠금은 방문
-    # 기준 칸(F)이 맡는다.
-    equipment_session = resolve_equipment_session(equipment_path)
-    snapshot = equipment_session.snapshot
-    cutoff = load_process_cutoff(equipment_path)
-except BOOTSTRAP_ERRORS as exc:
-    snapshot = None
-    cutoff = pd.DataFrame()
-    dynamic_error = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+if equipment_error:
+    dynamic_error = equipment_error
 else:
-    render_equipment_scenario_row(equipment_session)
+    if (
+        entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL
+        and equipment_session is not None
+        and not equipment_session.is_official_pair
+    ):
+        closing_notices.append(
+            "필요 단축 일정은 사이드바의 설비 시나리오 기준입니다(이 화면은 HOME 칸에서 들어와 "
+            "공식 설비 시나리오)."
+        )
     readiness = dynamic_readiness(
         snapshot.calculation_frames()[1] if snapshot is not None else None,
         snapshot.baseline if snapshot is not None else None,

@@ -24,6 +24,10 @@ import streamlit as st
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation.components.app_header import (
+    equipment_header_suffix,
+    refresh_equipment_header,
+)
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
@@ -61,8 +65,10 @@ from capa_simulation.persistence.equipment_cache import (
 )
 from capa_simulation.persistence.equipment_repository import (
     EquipmentScheduleRevisionSummary,
+    legacy_trace_message,
 )
 from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
+from capa_simulation.services.shortening_baseline import ShorteningEquipmentBasis
 from capa_simulation.sidebar_status import (
     CONDITION_DIALOG_FRAGMENT_KEY,
     equipment_scenario_slot,
@@ -99,6 +105,89 @@ SAVE_PAGES = frozenset(
 _NOTE_PREVIEW_LIMIT = 40
 
 
+# 늘 공식을 보는 화면(Space 현황)의 잠근 꼴 꼬리. 머리 띠도 「공식 vN (고정)」 으로 적는다.
+FIXED_LOCK_REASON = "(고정)"
+# 가정 설비 시나리오에서 Preference(공용 Cut-off)를 잠근 까닭(E3).
+PREFERENCE_LOCK_MESSAGE = (
+    "Cut-off 는 모든 설비 시나리오 공용입니다 — 공식 설비 시나리오에서 고칩니다. 지금은 가정 설비 "
+    "시나리오를 보는 중이라 표를 잠갔습니다."
+)
+
+
+def unscheduled_notice(count: int, *, official: bool = False) -> str | None:
+    """이 설비 시나리오에 일정 행이 없는 호기 n대 한 줄(F4). 0대면 None.
+
+    `official` 이면 Space 처럼 공식 설비 시나리오를 그리는 화면의 문구다(「공식 일정 없음 n대」).
+    """
+    if count <= 0:
+        return None
+    if official:
+        return (
+            f"공식 일정 없음 {count:,}대 — 공식 설비 시나리오에 일정이 없는 호기는 이 화면에 "
+            "그리지 않습니다(가정 설비 시나리오에만 든 호기)."
+        )
+    return (
+        f"이 설비 시나리오에 일정이 없는 호기 {count:,}대 — 이 시나리오 계산에 들지 않습니다. "
+        "넣으려면 그 호기의 일정 칸이나 시나리오 메모에 값을 적어 저장하세요."
+    )
+
+
+def render_legacy_trace_warning(session: EquipmentSession) -> None:
+    """옛 배포로 저장한 설비 리비전이 있으면 맨 위 경고 한 줄(저장 거부 문구와 같은 글)."""
+    if session.legacy_trace_count:
+        st.warning(legacy_trace_message(session.legacy_trace_count), icon=":material/history:")
+
+
+def equipment_basis_label(session: EquipmentSession) -> str | None:
+    """화면이 보는 설비 시나리오 한 마디 — 「셋업 실무 r4」(공식 발행 쌍이면 「공식 v3」)."""
+    if session.scenario_name is None:
+        return None
+    if session.is_official_pair and session.release_no is not None:
+        return f"공식 v{session.release_no}"
+    if session.revision_no is None:
+        return session.scenario_name
+    return f"{session.scenario_name} r{session.revision_no}"
+
+
+def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
+    """진척 비교 기준선을 저장하지 않을 설비 쪽 까닭 — 세션이 **공식 발행 쌍**이 아니면(E5).
+
+    까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지 않은 리비전. 시나리오가
+    없거나(빈 설비 DB) 공식 발행 쌍이면 None.
+    """
+    if session is None or session.scenario is None or session.is_official_pair:
+        return None
+    official = f"공식 v{session.release_no}" if session.release_no is not None else "공식"
+    if session.is_assumption:
+        return (
+            f"가정 설비 시나리오(「{session.scenario_name}」 r{session.revision_no})를 보는 중이라 "
+            f"기준선을 저장하지 않습니다 — 진척 비교 기준선은 공식 설비 시나리오({official})에서만 "
+            "저장합니다. 사이드바 설비 시나리오에서 공식을 불러온 뒤 저장하세요."
+        )
+    return (
+        f"발행하지 않은 리비전(「{session.scenario_name}」 r{session.revision_no} — 공식은 "
+        f"{official})을 보는 중이라 기준선을 저장하지 않습니다 — 공식으로 발행하거나 공식 "
+        "리비전을 불러온 뒤 저장하세요."
+    )
+
+
+def shortening_equipment_basis(session: EquipmentSession) -> ShorteningEquipmentBasis:
+    """필요 단축 일정이 기준선 머리(0027 출처 칸)·진척 비교 머리·카드 링크 `eq` 에 실을 설비 쪽."""
+    schedule = session.snapshot.schedule if session.snapshot is not None else None
+    label = equipment_basis_label(session)
+    note = None
+    if session.scenario is not None and not session.is_official_pair:
+        note = f"지금 = {label} · 기준선 = 공식(진척 비교 기준선은 공식 설비 시나리오에서 저장)"
+    return ShorteningEquipmentBasis(
+        schedule_revision_id=schedule.schedule_revision_id if schedule is not None else None,
+        schedule_revision_no=schedule.revision_no if schedule is not None else None,
+        scenario_name=session.scenario_name,
+        release_no=session.release_no if session.is_official_pair else None,
+        label=label,
+        compare_note=note,
+    )
+
+
 def equipment_value_label(session: EquipmentSession) -> str:
     """값 칸 글 — 「운영 일정 · r12」(리비전이 없으면 시나리오 이름만)."""
     if session.scenario_name is None:
@@ -133,6 +222,12 @@ def render_equipment_scenario_row(
         return
     flash = st.session_state.pop(FLASH_KEY, None)
     unsaved = has_unsaved_equipment_edits() and locked_reason is None
+    # 머리 띠 아래 줄 끝의 설비 시나리오 꼬리 — 이 회차 목록으로 정해 같은 회차에 맞춘다.
+    refresh_equipment_header(
+        equipment_header_suffix(
+            session.label(), fixed=locked_reason == FIXED_LOCK_REASON, unsaved=unsaved
+        )
+    )
     value = equipment_value_label(session)
     if locked_reason is not None:
         value = f"{value} {locked_reason}"

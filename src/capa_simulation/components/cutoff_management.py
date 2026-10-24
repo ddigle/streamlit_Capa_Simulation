@@ -53,6 +53,7 @@ _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
 _FLASH_KEY = "equipment_cutoff_flash_v1"
 _CONFLICT_KEY = "equipment_cutoff_conflict_v1"
+_LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 
 
 def render_cutoff_management(
@@ -60,8 +61,13 @@ def render_cutoff_management(
     *,
     equipment_processes: list[str],
     process_labels: ProcessLabels | None = None,
+    locked_reason: str | None = None,
 ) -> pd.DataFrame:
     """Cut-off 탭을 그리고 **현재 저장된 값**을 돌려준다.
+
+    `locked_reason` 을 주면 표를 읽기 전용으로 보이고(저장값 그대로) 「설비 공정으로 채우기」·저장을
+    세우지 않는다 — Cut-off 는 모든 설비 시나리오 공용이라 가정 설비 시나리오에서는 고치지 않는다
+    (E3). 잠근 동안 초안(세션 칸)은 건드리지 않는다 — 공식으로 돌아가면 하던 편집이 그대로 선다.
 
     돌려주는 것이 편집 중인 값이 아니라 저장된 값인 것은, 옆 탭의 GAP 계산이 저장되지
     않은 초안으로 숫자를 내면 안 되기 때문이다. 화면에 보이는 수와 계산에 쓰인 수가
@@ -89,6 +95,22 @@ def render_cutoff_management(
         )
     elif equipment_processes:
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")
+
+    if locked_reason is not None:
+        st.info(locked_reason, icon=":material/lock:")
+        render_csv_download(
+            data=stored.to_csv(index=False).encode("utf-8-sig"),
+            file_name="process_cutoff.csv",
+            key="equipment_cutoff_csv_v1",
+        )
+        st.dataframe(
+            stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS] if not stored.empty else stored,
+            hide_index=True,
+            width="stretch",
+            placeholder="",
+            key=_LOCKED_VIEW_KEY,
+        )
+        return stored
 
     draft = st.session_state.get(CUTOFF_DRAFT_KEY)
     if not isinstance(draft, pd.DataFrame) or CUTOFF_BASE_KEY not in st.session_state:

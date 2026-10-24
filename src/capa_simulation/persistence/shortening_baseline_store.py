@@ -1,4 +1,4 @@
-# Purpose: 필요 단축 일정 기준선(설비 DB 0021)의 머리·공정·호기 행을 읽고 넣고 지우는 SQL 을 둔다.
+# Purpose: 필요 단축 일정 기준선(설비 DB 0021·0027)의 머리·공정·호기 행을 읽고 넣고 지우는 SQL.
 
 """필요 단축 일정 기준선의 SQL.
 
@@ -64,7 +64,9 @@ _UNIT_PROJECTION = ", ".join(
 _SUMMARY_PROJECTION = """
     baseline_id, baseline_name, saved_at, plan_today, start_month, end_month, saved_by,
     equipment_revision_id, equipment_revision_no, reference_version, scenario_id, scenario_name,
-    scenario_revision_id, scenario_revision_no, scenario_content_token
+    scenario_revision_id, scenario_revision_no, scenario_content_token,
+    equipment_schedule_revision_ref, equipment_schedule_revision_no, equipment_scenario_name,
+    equipment_release_no
 """
 
 
@@ -89,8 +91,10 @@ def insert_baseline(
         INSERT INTO equipment_ops.shortening_baseline (
             baseline_id, baseline_name, saved_at, saved_by, plan_today, start_month, end_month,
             equipment_revision_id, equipment_revision_no, reference_version, scenario_id,
-            scenario_name, scenario_revision_id, scenario_revision_no, scenario_content_token
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            scenario_name, scenario_revision_id, scenario_revision_no, scenario_content_token,
+            equipment_schedule_revision_ref, equipment_schedule_revision_no,
+            equipment_scenario_name, equipment_release_no
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             baseline_id,
@@ -108,6 +112,10 @@ def insert_baseline(
             source.scenario_revision_id,
             source.scenario_revision_no,
             source.scenario_content_token,
+            source.equipment_schedule_revision_ref,
+            source.equipment_schedule_revision_no,
+            source.equipment_scenario_name,
+            source.equipment_release_no,
         ],
     )
     if draft.processes:
@@ -231,6 +239,10 @@ def _summary(row: Sequence[object]) -> ShorteningBaselineSummary:
         scenario_revision_id=_text(row[12]),
         scenario_revision_no=_integer(row[13]),
         scenario_content_token=_text(row[14]),
+        equipment_schedule_revision_ref=_text(row[15]),
+        equipment_schedule_revision_no=_integer(row[16]),
+        equipment_scenario_name=_text(row[17]),
+        equipment_release_no=_integer(row[18]),
     )
 
 

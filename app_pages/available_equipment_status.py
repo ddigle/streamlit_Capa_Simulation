@@ -1,4 +1,4 @@
-# Purpose: 설비 조회·월별 비교·Qual 마감 계산·Cut-off·입력을 잇고 저장본과 데모의 경계를 관리한다.
+# Purpose: 설비 조회·월별 비교·Qual 계산·Cut-off·입력·설비 시나리오를 잇고 데모 경계를 관리한다.
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     FLASH_KEY,
     calculation_drafts,
+    draft_unscheduled_units,
     effective_floor_canvases,
     ensure_equipment_drafts,
     pop_discarded_notice,
@@ -29,7 +30,15 @@ from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
     render_equipment_period,
 )
-from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
+from capa_simulation.components.equipment_scenario_management import (
+    render_equipment_scenario_management,
+)
+from capa_simulation.components.equipment_scenario_status import (
+    PREFERENCE_LOCK_MESSAGE,
+    render_equipment_scenario_row,
+    render_legacy_trace_warning,
+    unscheduled_notice,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
@@ -42,6 +51,7 @@ from capa_simulation.navigation import (
     EQUIPMENT_PREFERENCE_TAB,
     EQUIPMENT_QUAL_CALCULATOR_TAB,
     EQUIPMENT_RAWDATA_TAB,
+    EQUIPMENT_SCENARIO_TAB,
     EQUIPMENT_TAB_KEY,
 )
 from capa_simulation.page_bootstrap import (
@@ -54,6 +64,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_floor_layout_canvases,
+    load_official_equipment_snapshot,
     load_process_cutoff,
 )
 from capa_simulation.services.equipment_contract import (
@@ -82,6 +93,9 @@ from capa_simulation.sidebar_status import condition_card
 TAB_QUAL_CALCULATOR = EQUIPMENT_QUAL_CALCULATOR_TAB
 TAB_PREFERENCE = EQUIPMENT_PREFERENCE_TAB
 TAB_RAWDATA = EQUIPMENT_RAWDATA_TAB
+TAB_SCENARIO = EQUIPMENT_SCENARIO_TAB
+# 가정 설비 시나리오의 미확인 알림 꼬리표 — 미확인은 공식 시나리오 일정 기준이다(결정).
+OFFICIAL_CONFIRMATION_BASIS = "공식 일정 기준"
 
 
 def _months_between(start: date, end: date) -> list[int]:
@@ -139,6 +153,13 @@ try:
     # 세션이 든 설비 시나리오(새 세션은 공식) — 공통 최신 + 고른 일정 리비전의 합친 스냅샷.
     equipment_session = resolve_equipment_session(equipment_database_path)
     latest_snapshot = equipment_session.snapshot
+    # 가정 설비 시나리오면 미확인(Main·RawData 일정 확인 목록)을 공식 일정으로 본다 — 공통은 늘
+    # 최신이라 공식 스냅샷의 공통이 곧 지금 공통이다. 공식 시나리오 세션은 읽지 않는다.
+    official_snapshot = (
+        load_official_equipment_snapshot(equipment_database_path)
+        if equipment_session.is_assumption
+        else None
+    )
     stored_floor_canvases = load_floor_layout_canvases(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
     st.error(
@@ -149,6 +170,8 @@ except BOOTSTRAP_ERRORS as exc:
 # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
 with notices:
     render_schema_ahead_warning(repository.schema_ahead)
+    # 옛 배포로 저장한 설비 리비전이 있으면 설비 저장이 막힌다 — 맨 위에 까닭과 빠져나갈 길.
+    render_legacy_trace_warning(equipment_session)
 
 # 저장본 사본과 미저장 편집본을 한 곳에서 세운다 — Space 현황이 먼저 세웠어도 같은 토큰이다.
 ensure_equipment_drafts(latest_snapshot)
@@ -169,6 +192,10 @@ saved_equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
 saved_downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
 _, equipment, downtime = calculation_drafts()
 using_dashboard_sample = saved_equipment.empty
+# 이 설비 시나리오에 일정이 없는 호기(함께 넣기를 끄고 넣은 호기) — 계산에 들지 않는다는 한 줄.
+unscheduled_line = unscheduled_notice(len(draft_unscheduled_units()))
+if unscheduled_line is not None:
+    notices.info(unscheduled_line, icon=":material/event_busy:")
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
 # Static 대비 일정·Preference). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
 # 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔 캐시다). 못
@@ -182,13 +209,14 @@ sample_notice = st.empty()
 # 필요 단축 일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
 # `app_pages/required_shortening.py`). Cut-off 는 여기 Preference 에서 고친다. Qual 마감 계산기는
 # 보는 탭(Main·Static 대비 일정) 뒤, 입력 폼(Preference·RawData) 앞이다.
-main_tab, gap_tab, qual_tab, preference_tab, rawdata_tab = stateful_tabs(
+main_tab, gap_tab, qual_tab, preference_tab, rawdata_tab, scenario_tab = stateful_tabs(
     [
         EQUIPMENT_MAIN_TAB,
         EQUIPMENT_GAP_TAB,
         TAB_QUAL_CALCULATOR,
         TAB_PREFERENCE,
         TAB_RAWDATA,
+        TAB_SCENARIO,
     ],
     key=EQUIPMENT_TAB_KEY,
 )
@@ -252,6 +280,7 @@ with main_tab:
                 "샘플 데이터를 켜서 화면을 살펴보세요."
             )
         else:
+            # 가정 설비 시나리오면 미확인은 공식 일정 기준(공식 스냅샷 그대로를 화면 호기로 좁힘).
             render_equipment_explorer(
                 baseline=dashboard_baseline,
                 equipment=dashboard_equipment,
@@ -260,6 +289,14 @@ with main_tab:
                 owner_tab=main_tab,
                 conditions=conditions_card,
                 process_labels=process_labels,
+                confirmation_equipment=(
+                    official_snapshot.equipment
+                    if official_snapshot is not None and not using_dashboard_sample
+                    else None
+                ),
+                confirmation_basis=(
+                    OFFICIAL_CONFIRMATION_BASIS if official_snapshot is not None else None
+                ),
             )
 
 with qual_tab:
@@ -272,10 +309,13 @@ with preference_tab:
     # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다. 돌려받는 **저장된** Cut-off 를
     # Static 대비 일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 여러 번 열었다.
     # 저장은 그 자리에서 `st.rerun()` 하므로 이 회차에 낡은 값이 남지 않는다.
+    # Cut-off 는 모든 설비 시나리오 공용이다 — 가정 설비 시나리오에서는 읽기 전용(E3). 공식
+    # 시나리오의 발행 안 한 리비전에서는 열린다.
     stored_cutoff = render_cutoff_management(
         repository,
         equipment_processes=processes_in(dashboard_equipment, dashboard_baseline),
         process_labels=process_labels,
+        locked_reason=PREFERENCE_LOCK_MESSAGE if equipment_session.is_assumption else None,
     )
 
 with gap_tab:
@@ -424,4 +464,10 @@ with rawdata_tab:
         drafts_replaced=drafts_replaced,
         today=today,
         basis=equipment_session.save_basis(),
+        confirmation_official=official_snapshot,
     )
+
+with scenario_tab:
+    # 시나리오·리비전 표와 불러오기·복제·이름·발행·이어 쓰기. 열린 회차에만 목록을 읽는다.
+    if not tab_is_hidden(scenario_tab):
+        render_equipment_scenario_management(equipment_database_path, equipment_session)

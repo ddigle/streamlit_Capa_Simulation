@@ -29,10 +29,13 @@ from streamlit.testing.v1 import AppTest
 from capa_simulation.home_state import ADVANCE_TOGGLE_KEY, EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.process_detail_state import (
+    EQUIPMENT_BASIS_OFFICIAL,
+    EQUIPMENT_PARAM,
     FROM_GAP,
     FROM_HOME,
     HOME_CELL_LINK_FIELDS,
     HOME_KEY_PROCESS_SECTION,
+    PROCESS_DETAIL_EQUIPMENT_BASIS_KEY,
     PROCESS_DETAIL_MONTH_KEY,
     PROCESS_DETAIL_ORIGIN_KEY,
     PROCESS_DETAIL_PROCESS_KEY,
@@ -624,6 +627,49 @@ def test_a_new_visit_drops_the_origin_band() -> None:
 
     assert _entry(app).origin is None
     assert _entry(app).process == "DEMO-C"
+
+
+def test_a_home_visit_keeps_the_official_equipment_basis_across_steps_until_a_new_visit() -> None:
+    """HOME 칸으로 들어온 방문은 설비 시나리오가 공식이다(E5). 출처 띠와 달리 ◀▶ 로 공정을 넘겨도
+    그 방문 동안 남고, 새 방문·다른 길(주소)로 들어오면 걷힌다."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    assert _entry(app).equipment_basis is None
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-C", month=202603
+    )
+    app.run()
+    assert _entry(app).equipment_basis == EQUIPMENT_BASIS_OFFICIAL
+
+    app.session_state[APP_RUN_STATE_KEY] = {"page": app.session_state["test_page_hash"]}
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A")
+    app.run()
+    assert _entry(app).origin is None  # 출처 띠는 공정을 바꾸면 걷힌다
+    assert _entry(app).equipment_basis == EQUIPMENT_BASIS_OFFICIAL
+
+    app.query_params.update(_card_params())
+    app.run()
+    assert _entry(app).equipment_basis is None
+    assert PROCESS_DETAIL_EQUIPMENT_BASIS_KEY not in app.session_state
+
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-C", month=202603
+    )
+    app.run()
+    app.session_state[APP_RUN_STATE_KEY] = {"page": "다른 화면"}
+    app.run()
+    assert _entry(app).equipment_basis is None
+
+
+def test_a_card_link_carries_its_equipment_scenario_for_display_only() -> None:
+    app = AppTest.from_function(_detail_entry_app)
+    app.query_params.update(_card_params(equipment="셋업 실무 r4"))
+    app.run()
+
+    entry = _entry(app)
+    assert entry.shortening_origin is not None
+    assert entry.shortening_origin.equipment == "셋업 실무 r4"
+    assert entry.equipment_basis is None
+    assert EQUIPMENT_PARAM not in _query(app)
 
 
 def test_a_missing_process_or_an_outside_month_falls_back_and_says_so() -> None:
