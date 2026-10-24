@@ -650,8 +650,8 @@ def hypothetical_common_places(edited_base: LayoutBase, official: LayoutBase) ->
       미정 호기도 새 모듈처럼 맞춰야 가정에서 자리 없이 넣은 호기를 나중에 그 시나리오의 묶음에
       넣을 수 있다(공식 배치를 가르지 않는다).
 
-    S2 화면 잠금(RawData 제출·붙여넣기)도 이 값으로 편집본을 맞춘다 — 그러면 저장이 배치 차이를
-    만들지 않는다(화면이 차이를 보이기 전에는 만들지 않게)."""
+    S2 화면 잠금(설비 마스터 탭 제출·붙여넣기)도 이 값으로 편집본을 맞춘다 — 그러면 저장이 배치
+    차이를 만들지 않는다(화면이 차이를 보이기 전에는 만들지 않게)."""
     common: dict[str, Place] = {}
     for key in edited_base.keys:
         place = edited_base.places[key]
@@ -694,8 +694,9 @@ def assumption_common_places(
     값 그대로라 저장본 값으로 되돌린다(`space_layout_edit.saved_layout_drift`).
 
     `origins` 는 지금 설비명 → 저장하면 이어받을 저장본 설비명(`inherited_unit_names`)이다. 설비
-    시나리오 2단계 S2 화면 잠금(RawData 제출·붙여넣기 미리보기)이 편집본을 이 자리로 맞춰, 가정
-    세션의 저장이 화면이 아직 보이지 않는 배치 차이를 만들지 않게 한다(S3 가 가정 배치 편집을 연다).
+    시나리오 2단계 S2 화면 잠금(설비 마스터 탭 제출·붙여넣기 미리보기)이 편집본을 이 자리로
+    맞춰, 가정 세션의 저장이 화면이 아직 보이지 않는 배치 차이를 만들지 않게 한다(S3 가 가정 배치
+    편집을 연다).
     """
     rows, names = _named_rows(buffer)
     saved_rows, saved_names = _named_rows(saved)

@@ -1392,11 +1392,12 @@ def _layout_role_of(
     """저장이 저장소에 넘기는 대조 역할(설계 6-2) — 배치 편집이 들었으면 "official", 아니면 None.
 
     이 판(설비 시나리오 2단계 S2)에서 배치 편집은 **공식 역할에서만** 생긴다 — Space 편집은 공식
-    발행 쌍에서만 열리고, 가정 세션의 RawData·붙여넣기는 배치 칸 잠금(`assumption_layout_lock`)이
-    막는다. 그래서 편집본이 그 잠금에 걸리거나 층 값(캔버스·도면 요소·Main 설비명 위치) 대기분이
-    있으면 공식 배치에 들어갈 편집이다. 그 사이 남의 발행으로 이 시나리오가 가정이 됐으면 저장소가
-    `EquipmentLayoutRoleChanged` 로 막는다 — Space 잠김 저장 상자가 공식 배치 편집을 가정 배치
-    차이로 조용히 쓰지 않게. 적용할 때 역할을 찍는 것은 가정 배치 편집을 여는 S3 몫이다."""
+    발행 쌍에서만 열리고, 가정 세션의 설비 마스터 탭·붙여넣기는 배치 칸 잠금
+    (`assumption_layout_lock`)이 막는다. 그래서 편집본이 그 잠금에 걸리거나 층 값(캔버스·도면 요소·
+    Main 설비명 위치) 대기분이 있으면 공식 배치에 들어갈 편집이다. 그 사이 남의 발행으로 이
+    시나리오가 가정이 됐으면 저장소가 `EquipmentLayoutRoleChanged` 로 막는다 — Space 잠김 저장
+    상자가 공식 배치 편집을 가정 배치 차이로 조용히 쓰지 않게. 적용할 때 역할을 찍는 것은 가정 배치
+    편집을 여는 S3 몫이다."""
     if floor_values or assumption_layout_lock(master, _saved_master(), renames):
         return "official"
     return None
