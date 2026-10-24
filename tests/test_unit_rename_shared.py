@@ -135,6 +135,71 @@ def test_check_unit_rename_keeps_the_reserved_names_out() -> None:
     )
 
 
+def _renamed(master: pd.DataFrame, renames: dict[str, str]) -> pd.DataFrame:
+    """설비명을 바꾼 **제출 뒤** 마스터(Main 설비는 그대로) — 설비 마스터 호기 상세가 넘기는 꼴."""
+    after = master.copy()
+    after["설비명"] = after["설비명"].map(lambda name: renames.get(name, name))
+    return after
+
+
+def test_check_unit_rename_also_reads_a_master_after_the_submit() -> None:
+    """설계 11-2 4단계는 제출 뒤 마스터를 넘긴다(S1 리뷰) — 새 이름이 그 행에 이미 들어 있어도 자기
+    행으로 읽어 정상 바꿈을 받고, 겹침은 그대로 막는다."""
+    master = _bundle_master()
+    assert (
+        check_unit_rename("EQ-01", "EQ-101", master=_renamed(master, {"EQ-01": "EQ-101"})) is None
+    )
+    # 맞바꿈·사슬도 뒤 마스터로 받는다.
+    swapped = _renamed(master, {"EQ-01": "EQ-02", "EQ-02": "EQ-01"})
+    assert check_unit_rename("EQ-01", "EQ-02", master=swapped, renaming={"EQ-02": "EQ-01"}) is None
+    chained = _renamed(master, {"EQ-01": "EQ-02", "EQ-02": "EQ-03"})
+    assert check_unit_rename("EQ-01", "EQ-02", master=chained, renaming={"EQ-02": "EQ-03"}) is None
+    # 자기 설비명을 Main 설비로 적은 한 행 묶음 — Main 설비가 따라갔든 아니든.
+    solo = _master({"설비명": "SOLO", "Main 설비": "SOLO", "X좌표": 70.0, "Y좌표": 40.0})
+    followed, _ = rename_followers(
+        _renamed(solo, {"SOLO": "SOLO-2"}), _downtime(), {"SOLO": "SOLO-2"}
+    )
+    assert check_unit_rename("SOLO", "SOLO-2", master=followed) is None
+    assert check_unit_rename("SOLO", "SOLO-2", master=_renamed(solo, {"SOLO": "SOLO-2"})) is None
+
+
+def test_a_master_after_the_submit_still_refuses_clashes() -> None:
+    master = _bundle_master()
+    # 다른 행도 같은 새 이름(대소문자만 다름 포함)이면 겹친다.
+    doubled = _renamed(master, {"EQ-01": "EQ-02"})
+    clash = check_unit_rename("EQ-01", "EQ-02", master=doubled)
+    assert clash is not None and "이미 있는 설비명입니다(EQ-02)" in clash
+    lower = _renamed(master, {"EQ-01": "eq-02"})
+    assert "이미 있는 설비명입니다(EQ-02)" in str(check_unit_rename("EQ-01", "eq-02", master=lower))
+    # 다른 묶음의 Main 설비 이름과 겹친 새 이름.
+    grouped = _renamed(master, {"EQ-01": "BIG"})
+    assert "이미 Main 설비 이름입니다(BIG)" in str(
+        check_unit_rename("EQ-01", "BIG", master=grouped)
+    )
+
+
+def test_the_space_editor_calls_the_shared_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Space 적용(`parse_editor_apply`)의 설비명 바꿈 판정은 공용 `check_unit_rename` 을 지난다 — 그
+    함수에 규칙을 더하면 Space 도 따라간다(S1 리뷰 · 개편 B0)."""
+    import capa_simulation.services.space_layout_edit as space_layout_edit
+
+    seen: list[tuple[str, str, dict[str, str]]] = []
+
+    def spy(old: str, new: str, **kwargs: Any) -> str | None:
+        seen.append((old, new, dict(kwargs.get("renaming") or {})))
+        return "공용 판정이 막았습니다" if new == "BLOCKED" else None
+
+    monkeypatch.setattr(space_layout_edit, "check_unit_rename", spy)
+    master = _master()
+    _parse(_rename(("unit", "EQ-01", "EQ-101"), ("unit", "EQ-02", "EQ-102")), master)
+    assert seen == [
+        ("EQ-01", "EQ-101", {"EQ-02": "EQ-102"}),
+        ("EQ-02", "EQ-102", {"EQ-01": "EQ-101"}),
+    ]
+    with pytest.raises(ValueError, match="공용 판정이 막았습니다"):
+        _parse(_rename(("unit", "EQ-01", "BLOCKED")), master)
+
+
 # ------------------------------------------------------------------ compose_unit_renames
 
 

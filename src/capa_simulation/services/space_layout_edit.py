@@ -1196,21 +1196,28 @@ def check_unit_rename(
     master: pd.DataFrame,
     reserved: ReservedNames | None = None,
     renaming: Mapping[str, str] | None = None,
+    group_renaming: Mapping[str, str] | None = None,
+    created: Collection[str] = (),
 ) -> str | None:
-    """설비명 하나의 이름 바꿈(옛 → 새)을 Space 편집기와 **같은 규칙·같은 문구**로 본다 — 걸리면 그
-    까닭, 받으면 None. 이름 바꾸기 자리(Space 편집기·설비 마스터 호기 상세)가 모두 이 판정을 쓴다
-    (G4·R2 — 이름 바꾸기는 같은 호기).
+    """설비명 하나의 이름 바꿈(옛 → 새)을 보고 걸리면 그 까닭, 받으면 None. 이름 바꾸기 자리(Space
+    편집기 `parse_editor_apply`·설비 마스터 호기 상세)가 **모두 이 함수를 부른다**(G4·R2 — 이름
+    바꾸기는 같은 호기) — 규칙을 더하면 모든 자리가 따라간다.
 
-    - `master` 는 이름을 바꾸기 **전**의 편집본 설비 마스터다(옛 이름이 있다).
+    - `master` 는 편집본 설비 마스터다. 바꾸기 **전**(옛 이름이 있다)이든 제출 **뒤**(이 바꿈과
+      `renaming` 이 이미 들어 옛 이름이 없고 새 이름이 있다 — 비가동·Main 설비가 따라갔든
+      아니든)든 받는다(`_names_before` 가 가른다). 제출 뒤 마스터에 새 이름이 두 행이면 다른
+      호기와 겹친 것이다.
     - `renaming` 은 같은 제출의 다른 설비명 이름 바꿈(옛 → 새)이다. 그 옛 이름은 비워져 다시 쓸 수
       있고(맞바꿈 A↔B·사슬 A→B→C) 새 이름은 차지된다(두 호기를 같은 새 이름으로 바꾸면 거부).
+    - `group_renaming` 은 같은 제출의 Main 설비 이름 바꿈, `created` 는 같은 제출에서 새로 넣는 호기
+      이름이다(Space 편집기 — 비운 Main 설비 이름은 쓸 수 있고 새 이름·새 호기 이름은 차지된다).
     - `reserved`(`reserved_names`)는 편집본에 호기가 없어도 쓸 수 없는 이름(저장 안 한 지운 이름·
       설비 마스터에 없는 설비명의 비가동 일정)이다.
 
     글자는 1~`UNIT_ID_MAX` 자·인쇄 가능, 비울 수 없다. 다른 호기 설비명·Main 설비 이름과
     대소문자·앞뒤 공백 무시로 겹치면 거부하고, 자기 이름의 대소문자만 바꾸는 것과 자기 설비명을 Main
     설비로 적은 한 행 묶음(Main 설비가 따라간다)은 받는다. 같은 이름(앞뒤 공백만 다름 포함)이면 바꿀
-    것이 없어 None.
+    것이 없어 None. 거부 문구는 Space 적용 거부 그대로다.
     """
     old_name, new_name = old.strip(), new.strip()
     if new_name == old_name:
@@ -1218,24 +1225,75 @@ def check_unit_rename(
     subject = f"{old_name} 의 새 이름"
     if not new_name:
         return f"{subject}을 비울 수 없습니다."
+    change = NameChange(kind="unit", old=old_name, new=new_name)
     others = [
         NameChange(kind="unit", old=other.strip(), new=target.strip())
         for other, target in (renaming or {}).items()
         if other.strip() != old_name and other.strip() != target.strip()
     ]
+    groups = [
+        NameChange(kind="group", old=other.strip(), new=target.strip())
+        for other, target in (group_renaming or {}).items()
+        if other.strip() != target.strip()
+    ]
+    unit_ids, group_ids = _names_before(master, [change, *others])
     try:
         _require_name(new_name, subject)
         _require_distinct_names(
-            [NameChange(kind="unit", old=old_name, new=new_name), *others],
-            master_ids=_name_set(master[EQUIPMENT_ID_COLUMN]),
-            group_ids=_name_set(_parents(master)),
-            created_ids=(),
+            [change, *others, *groups],
+            master_ids=unit_ids,
+            group_ids=group_ids,
+            created_ids=created,
             reserved=_reserved_reasons(reserved or ReservedNames()),
             only=("unit", old_name),
         )
     except ValueError as exc:
         return str(exc)
     return None
+
+
+def _names_before(master: pd.DataFrame, changes: Sequence[NameChange]) -> tuple[set[str], set[str]]:
+    """`check_unit_rename` 이 볼 바꾸기 **전** (설비명 모음, Main 설비 이름 모음).
+
+    옛 이름이 모두 있거나 새 이름이 하나라도 없으면 `master` 를 바꾸기 전으로 읽는다(맞바꿈 A↔B
+    는 앞뒤 모음이 같다). 아니면 제출 뒤 마스터다 — 바꿈마다 새 이름 행 **하나**를 옛 이름으로
+    돌린다(같은 새 이름이 둘 이상이면 남은 행이 「이미 있는 설비명」 으로 걸린다). 그 행이 자기
+    설비명을 Main 설비로 적은 한 행 묶음이었으면(`rename_followers` 가 따라 옮긴 꼴) Main 설비도
+    돌린다 — 다른 묶음의 Main 설비 이름과 겹친 새 이름은 그대로 두어 겹침으로 걸리게."""
+    ids = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    parents = _parents(master)
+    present = _name_set(ids)
+    named = [change for change in changes if change.new]
+    if all(change.old in present for change in named) or not all(
+        change.new in present for change in named
+    ):
+        return present, _name_set(parents)
+    restored_ids: list[object] = list(ids)
+    restored_parents: list[object] = list(parents)
+    group_rows = parents.value_counts()
+    done: set[int] = set()
+    for change in named:
+        position = next(
+            (
+                index
+                for index, name in enumerate(ids)
+                if index not in done and isinstance(name, str) and name == change.new
+            ),
+            None,
+        )
+        if position is None:
+            continue
+        done.add(position)
+        restored_ids[position] = change.old
+        parent = restored_parents[position]
+        if isinstance(parent, str) and parent == change.new and int(group_rows.get(parent, 0)) == 1:
+            restored_parents[position] = change.old
+    return _text_set(restored_ids), _text_set(restored_parents)
+
+
+def _text_set(values: Sequence[object]) -> set[str]:
+    """글자 값만(빈 글자 빼고) 모은 이름 모음."""
+    return {value for value in values if isinstance(value, str) and value}
 
 
 def parse_editor_apply(
@@ -1353,12 +1411,12 @@ def parse_editor_apply(
     group_labels = _parse_group_labels(
         payload.get("groupLabels"), set(_module_groups(editor_items, editor_ghosts))
     )
-    _require_distinct_names(
+    _require_distinct_renames(
         renames,
         master_ids=master_ids | editor_ids,
         group_ids=set(unit_options.get("parentIds", ())),
         created_ids={unit.unit_id for unit in created},
-        reserved=held,
+        reserved=reserved,
     )
     return EditorApply(
         changes=tuple(changes),
@@ -1368,6 +1426,57 @@ def parse_editor_apply(
         renames=tuple(renames),
         hidden_moves=tuple(hidden_moves),
         group_labels=group_labels,
+    )
+
+
+def _require_distinct_renames(
+    renames: Sequence[NameChange],
+    *,
+    master_ids: Collection[str],
+    group_ids: Collection[str],
+    created_ids: Collection[str],
+    reserved: ReservedNames | None,
+) -> None:
+    """Space 적용의 이름 바꿈 겹침 검사 — 적용값 차례대로, 설비명은 공용 `check_unit_rename`
+    (설비 마스터 호기 상세와 같은 함수), Main 설비는 같은 판정(`_require_distinct_names`)으로 보고
+    처음 걸린 바꿈의 까닭으로 `ValueError`. 이름 모음만 아는 자리라 두 칸짜리 판정용 표를 만들어
+    넘긴다."""
+    units = {change.old: change.new for change in renames if change.kind == "unit"}
+    groups = {change.old: change.new for change in renames if change.kind == "group"}
+    names = _names_master(master_ids, group_ids)
+    for change in renames:
+        if change.kind == "unit":
+            refusal = check_unit_rename(
+                change.old,
+                change.new,
+                master=names,
+                reserved=reserved,
+                renaming={old: new for old, new in units.items() if old != change.old},
+                group_renaming=groups,
+                created=created_ids,
+            )
+            if refusal is not None:
+                raise ValueError(refusal)
+            continue
+        _require_distinct_names(
+            renames,
+            master_ids=master_ids,
+            group_ids=group_ids,
+            created_ids=created_ids,
+            reserved=_reserved_reasons(reserved or ReservedNames()),
+            only=(change.kind, change.old),
+        )
+
+
+def _names_master(unit_ids: Collection[str], group_ids: Collection[str]) -> pd.DataFrame:
+    """설비명 모음·Main 설비 이름 모음만 든 판정용 설비 마스터(`check_unit_rename` 이 읽는 두
+    칸)."""
+    units, groups = sorted(unit_ids), sorted(group_ids)
+    return pd.DataFrame(
+        {
+            EQUIPMENT_ID_COLUMN: pd.array([*units, *([pd.NA] * len(groups))], dtype="string"),
+            PARENT_EQUIPMENT_COLUMN: pd.array([*([pd.NA] * len(units)), *groups], dtype="string"),
+        }
     )
 
 
