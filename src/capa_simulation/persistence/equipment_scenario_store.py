@@ -309,26 +309,29 @@ def insert_schedule_revision(
     downtime: pd.DataFrame,
     schedule_hash: str,
     downtime_hash: str,
+    revision_name: str | None = None,
 ) -> str:
     """일정 리비전 하나(머리 + 키별 일곱 칸 + 비가동)를 넣고 id 를 돌려준다.
 
     번호는 그 시나리오의 `MAX(revision_no) + 1` 이다(E6 — 시나리오마다 r1 부터). `schedule` 은
     키 + 일곱 칸(`SCHEDULE_FRAME_COLUMNS`), `downtime` 은 키 + 다섯 칸이고 검증을 마친 값이다.
+    리비전명(이름표, E7)은 넣을 때 함께 적는다 — 같은 트랜잭션에서 넣은 행을 다시 고치지 않는다.
     """
     schedule_revision_id = uuid4().hex
     connection.execute(
         """
         INSERT INTO equipment_ops.equipment_schedule_revision (
-            schedule_revision_id, equipment_scenario_id, revision_no, note, saved_by, origin,
-            common_revision_id, schedule_hash, downtime_hash
+            schedule_revision_id, equipment_scenario_id, revision_no, revision_name, note,
+            saved_by, origin, common_revision_id, schedule_hash, downtime_hash
         )
-        SELECT ?, ?, COALESCE(MAX(revision_no), 0) + 1, ?, ?, ?, ?, ?, ?
+        SELECT ?, ?, COALESCE(MAX(revision_no), 0) + 1, ?, ?, ?, ?, ?, ?, ?
         FROM equipment_ops.equipment_schedule_revision
         WHERE equipment_scenario_id = ?
         """,
         [
             schedule_revision_id,
             equipment_scenario_id,
+            revision_name,
             note,
             saved_by,
             origin,
@@ -368,6 +371,21 @@ def insert_schedule_revision(
             frame=events,
         )
     return schedule_revision_id
+
+
+def rename_schedule_revision(
+    connection: duckdb.DuckDBPyConnection, schedule_revision_id: str, name: str | None
+) -> None:
+    """일정 리비전의 이름표(`revision_name`)만 고친다(None 이면 지운다). 내용·번호·메모·저장자·
+    시각은 그대로다 — 리비전 내용은 append-only 다(AGENTS 5장 8)."""
+    connection.execute(
+        """
+        UPDATE equipment_ops.equipment_schedule_revision
+        SET revision_name = ?
+        WHERE schedule_revision_id = ?
+        """,
+        [name, schedule_revision_id],
+    )
 
 
 def insert_release(

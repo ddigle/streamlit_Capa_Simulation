@@ -1,4 +1,4 @@
-# Purpose: 설비 마스터를 공통 대장과 시나리오 일정으로 나누고 합치며 호기 키·일정 없음을 가른다.
+# Purpose: 설비 마스터를 공통·시나리오 일정으로 나눠 합치고 호기 키·일정 없음·되돌림 차이를 본다.
 
 """설비 마스터를 공통 호기 대장과 설비 시나리오 일정으로 나누고 합친다.
 
@@ -10,6 +10,8 @@
 - 새 호기는 `new_unit_key()`(uuid) 를 받는다. 저장 때 키를 정하는 규칙은 `assign_unit_keys`.
 - 화면 프레임(39칸)에는 키 칸이 없다 — 붙여넣기·CSV·편집표가 그대로다. 키는 따로 (설비명, 키) 쌍으로
   든다.
+- 「이 리비전으로 되돌리기」·「여기서 새 시나리오」(E7)의 확인 재료는 `schedule_restore_preview`
+  다 — 같은 공통 대장과 합친 두 한 벌을 호기마다 견준다.
 
 이 모듈은 DB·화면을 모른다. 읽기·저장 순서는 `persistence/equipment_repository.py` 가 정한다.
 """
@@ -19,6 +21,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any, Protocol
 from uuid import uuid4
 
 import pandas as pd
@@ -364,3 +367,120 @@ def downtime_identities(frame: pd.DataFrame) -> list[tuple[str, str, str]]:
             frame[UNIT_KEY_COLUMN], frame["비가동유형"], frame["시작일"], strict=True
         )
     ]
+
+
+class MergedView(Protocol):
+    """합친 한 벌 — 39칸 마스터·비가동·(설비명, 호기 키)·일정 없음. `MergedEquipment` 와
+    `persistence` 의 `EquipmentSnapshot` 이 이 꼴이다(이 모듈은 저장소 모델을 모른다)."""
+
+    @property
+    def equipment(self) -> pd.DataFrame: ...
+
+    @property
+    def downtime(self) -> pd.DataFrame: ...
+
+    @property
+    def unit_key_pairs(self) -> tuple[tuple[str, str], ...]: ...
+
+    @property
+    def unscheduled_units(self) -> frozenset[str]: ...
+
+
+@dataclass(frozen=True)
+class ScheduleRestorePreview:
+    """일정 리비전 하나를 **지금 공통 대장**과 합쳐 그 시나리오 최신 자리에 놓으면 무엇이 바뀌는가.
+
+    E7 「이 리비전으로 되돌리기」 확인 글과 「여기서 새 시나리오」 안내가 쓴다. 수는 모두 지금 공통
+    대장의 호기 기준이다(그 뒤로 지운 호기의 옛 일정은 합칠 때 버려져 어디에도 세지 않는다).
+
+    - `changed_units` — 일정(날짜 여섯·시나리오 메모·일정 행 있음/없음)이나 비가동이 하나라도
+      달라지는 호기 수. 0 이면 되돌릴 것이 없다(`identical`).
+    - `downtime_rows_before`·`downtime_rows_after` — 비가동 행 수(지금 최신 → 되돌린 뒤).
+    - `unscheduled_after` — 되돌린 뒤 일정 없음 호기 수(그 리비전에 일정 행이 없는 호기).
+    - `newly_unscheduled` — 지금은 일정이 있다가 되돌리면 일정 없음이 되는 호기 수.
+    - `added_since` — 그 리비전을 저장한 뒤 공통 대장에 든 호기 수. 그 리비전은 그 호기를 몰라
+      일정 행이 없으므로 늘 일정 없음이 된다(F4 — 그 시나리오 계산·Space 에서 빠진다).
+    """
+
+    changed_units: int = 0
+    downtime_rows_before: int = 0
+    downtime_rows_after: int = 0
+    unscheduled_after: int = 0
+    newly_unscheduled: int = 0
+    added_since: int = 0
+
+    @property
+    def identical(self) -> bool:
+        """일정·비가동이 모든 호기에서 같다 — 되돌려도 새 리비전을 만들지 않는다."""
+        return self.changed_units == 0
+
+
+def schedule_restore_preview(
+    current: MergedView,
+    restored: MergedView,
+    *,
+    source_unit_keys: Collection[str],
+) -> ScheduleRestorePreview:
+    """지금 최신(`current`)과 되돌릴 리비전(`restored`)을 호기마다 견준다.
+
+    두 한 벌은 **같은 공통 대장**과 합친 것이어야 한다(호기 키 쌍이 같다 — 다르면 `ValueError`).
+    일정은 날짜 여섯·시나리오 메모와 일정 행 있음/없음을, 비가동은 그 호기의 (유형·시작일·종료일·
+    상세사유·비고) 묶음을 차례와 무관하게 견준다 — 비가동 행 차례는 내용이 아니다.
+    `source_unit_keys` 는 그 리비전을 저장할 때 함께 본 공통 대장의 호기 키다(`added_since`).
+    """
+    if tuple(current.unit_key_pairs) != tuple(restored.unit_key_pairs):
+        raise ValueError("두 한 벌의 공통 대장이 달라 일정을 견줄 수 없습니다.")
+    before = _schedule_signatures(current)
+    after = _schedule_signatures(restored)
+    before_events = _downtime_signatures(current.downtime)
+    after_events = _downtime_signatures(restored.downtime)
+    known = {str(key) for key in source_unit_keys}
+    changed = 0
+    newly_unscheduled = 0
+    added_since = 0
+    for name, key in current.unit_key_pairs:
+        if before[name] != after[name] or before_events.get(name, ()) != after_events.get(name, ()):
+            changed += 1
+        if before[name] is not None and after[name] is None:
+            newly_unscheduled += 1
+        if key not in known:
+            added_since += 1
+    return ScheduleRestorePreview(
+        changed_units=changed,
+        downtime_rows_before=len(current.downtime),
+        downtime_rows_after=len(restored.downtime),
+        unscheduled_after=sum(1 for value in after.values() if value is None),
+        newly_unscheduled=newly_unscheduled,
+        added_since=added_since,
+    )
+
+
+def _comparable(value: Any) -> str:
+    """견주기용 글자 — 빈 값은 빈 글자, 날짜는 `YYYY-MM-DD`(단위 ns·us 와 무관)."""
+    if value is None or (not isinstance(value, str) and bool(pd.isna(value))):
+        return ""
+    if isinstance(value, pd.Timestamp):
+        return value.strftime("%Y-%m-%d")
+    return str(value)
+
+
+def _schedule_signatures(view: MergedView) -> dict[str, tuple[str, ...] | None]:
+    """설비명 → 일곱 칸 글자(일정 없음 호기는 None)."""
+    frame = view.equipment
+    names = [str(name) for name in frame[EQUIPMENT_ID_COLUMN]]
+    rows = frame.loc[:, list(SCENARIO_SCHEDULE_COLUMNS)].itertuples(index=False, name=None)
+    unscheduled = view.unscheduled_units
+    return {
+        name: None if name in unscheduled else tuple(_comparable(value) for value in row)
+        for name, row in zip(names, rows, strict=True)
+    }
+
+
+def _downtime_signatures(downtime: pd.DataFrame) -> dict[str, tuple[tuple[str, ...], ...]]:
+    """설비명 → 그 호기 비가동 다섯 칸 글자 묶음(정렬 — 차례와 무관)."""
+    grouped: dict[str, list[tuple[str, ...]]] = {}
+    names = [str(name) for name in downtime[EQUIPMENT_ID_COLUMN]]
+    rows = downtime.loc[:, list(DOWNTIME_VALUE_COLUMNS)].itertuples(index=False, name=None)
+    for name, row in zip(names, rows, strict=True):
+        grouped.setdefault(name, []).append(tuple(_comparable(value) for value in row))
+    return {name: tuple(sorted(events)) for name, events in grouped.items()}

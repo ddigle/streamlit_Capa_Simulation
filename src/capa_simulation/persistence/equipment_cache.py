@@ -4,8 +4,11 @@
 
 - **리비전 내용은 불변이다.** 화면이 쓰는 한 벌은 (공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍을
   합친 것이고 그 본문은 쌍 키로만 캐시한다(`load_merged_equipment_snapshot`) — 쓰기 세대가 없다.
-- **바뀔 수 있는 것**(시나리오 이름·공식 발행·각 시나리오 최신·옛 배포 흔적, 공통 최신 id, 현행값)은
-  DB·WAL stat·쓰기 세대·TTL 을 키에 둔 목록 캐시로 뺀다.
+  되돌리기 확인 재료(`load_schedule_restore_preview`)도 불변 리비전 id 셋이 키다.
+- **바뀔 수 있는 것**(시나리오 이름·일정 리비전의 리비전명·공식 발행·각 시나리오 최신·옛 배포 흔적,
+  공통 최신 id, 현행값)은 DB·WAL stat·쓰기 세대·TTL 을 키에 둔 목록 캐시로 뺀다. 리비전명은 이름표라
+  고칠 수 있어(E7) 불변 본문에 싣지 않는다 — 본문의 `schedule.revision_name` 은 늘 None 이고 이름은
+  리비전 목록(`load_equipment_schedule_revisions`)에서 읽는다.
 - **어느 캐시도 저장소의 호환 래퍼(`save_snapshot`·`save_space_layout`·`load_snapshot`)를 부르지
   않는다.** 래퍼 `load_snapshot` 은 공식 발행에 따라 값이 바뀌는 뜻이라 공통 id 하나를 키로 실으면
   발행 뒤 낡은 값을 낸다(시험이 이 파일을 훑는다).
@@ -35,6 +38,7 @@ from capa_simulation.services.equipment_csv import (
     downtime_csv_bytes,
     equipment_csv_bytes,
 )
+from capa_simulation.services.equipment_scenario import ScheduleRestorePreview
 from capa_simulation.services.fab_layout import FabLayoutMark, FabLayoutProfile
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import (
@@ -99,7 +103,9 @@ def _load_merged_payload(
 ) -> _MergedSnapshotPayload:
     """(공통, 일정) 쌍 하나의 합친 본문. 두 리비전 내용은 불변이라 쓰기 세대를 두지 않는다.
 
-    합칠 수 없는 쌍(`EquipmentScenarioIncompatible`)은 예외라 캐시에 남지 않는다.
+    합칠 수 없는 쌍(`EquipmentScenarioIncompatible`)은 예외라 캐시에 남지 않는다. 일정 리비전 요약의
+    리비전명(이름표)은 고칠 수 있는 값이라 싣지 않는다(None) — 실으면 이름을 바꾼 뒤에도 이 쌍 키가
+    옛 이름을 낸다(AGENTS 5장 8).
     """
     snapshot = get_equipment_repository(database_path).load_merged_snapshot(
         common_revision_id, schedule_revision_id
@@ -110,7 +116,7 @@ def _load_merged_payload(
         "equipment": snapshot.equipment,
         "downtime": snapshot.downtime,
         "schedule": (
-            _payload(snapshot.schedule, EquipmentScheduleRevisionSummary)
+            {**_payload(snapshot.schedule, EquipmentScheduleRevisionSummary), "revision_name": None}
             if snapshot.schedule is not None
             else None
         ),
@@ -126,6 +132,7 @@ def load_merged_equipment_snapshot(
     """(공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍의 합친 스냅샷 — 쌍 키 본문 캐시.
 
     모델은 꺼낼 때 **지금 import 한 클래스**로 다시 만든다(핫리로드 뒤 옛 클래스가 실리지 않게).
+    `schedule.revision_name` 은 늘 None 이다 — 리비전명은 리비전 목록에서 읽는다.
     """
     payload = _load_merged_payload(database_path, common_revision_id, schedule_revision_id)
     schedule = payload["schedule"]
@@ -318,6 +325,45 @@ def load_equipment_schedule_revisions(
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_schedule_restore_preview_payload(
+    database_path: str,
+    common_revision_id: str,
+    current_schedule_revision_id: str | None,
+    schedule_revision_id: str,
+) -> dict[str, Any]:
+    return _payload(
+        get_equipment_repository(database_path).preview_schedule_restore(
+            schedule_revision_id,
+            common_revision_id=common_revision_id,
+            current_schedule_revision_id=current_schedule_revision_id,
+        ),
+        ScheduleRestorePreview,
+    )
+
+
+def load_schedule_restore_preview(
+    database_path: str,
+    common_revision_id: str,
+    current_schedule_revision_id: str | None,
+    schedule_revision_id: str,
+) -> ScheduleRestorePreview:
+    """「이 리비전으로 되돌리기」·「여기서 새 시나리오」 확인 재료(E7) — 바뀌는 호기 수·일정 없음.
+
+    결과는 세 리비전(지금 공통 대장·그 시나리오 지금 최신·고른 리비전)의 **내용**만으로 정해지고 셋
+    다 불변이라 쓰기 세대 없이 id 셋을 키로 둔다. 누가 저장해 최신이 바뀌면 화면이 새 id 로 부르므로
+    다른 칸으로 간다. 고른 리비전을 지금 공통 대장과 합칠 수 없으면 예외라 캐시에 남지 않는다.
+    """
+    return ScheduleRestorePreview(
+        **_load_schedule_restore_preview_payload(
+            database_path,
+            common_revision_id,
+            current_schedule_revision_id,
+            schedule_revision_id,
+        )
+    )
+
+
 def load_official_equipment_snapshot(database_path: str) -> EquipmentSnapshot | None:
     """공식 스냅샷 = 공통 최신 + 최신 공식 발행 일정 리비전(발행이 없으면 일정 없음).
 
@@ -336,7 +382,8 @@ def load_official_equipment_snapshot(database_path: str) -> EquipmentSnapshot | 
 def clear_equipment_scenario_cache() -> None:
     """설비 시나리오 목록·시나리오 리비전 목록을 비우고 세대를 올린다.
 
-    이름·발행·복제·이어 쓰기 뒤에는 이것만 부르면 된다(리비전 본문은 불변이다). 설비 마스터 저장은
+    이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 이것만 부르면 된다(리비전 본문은 불변이고
+    리비전명은 본문에 싣지 않는다 — 목록만 이름을 싣는다). 설비 마스터 저장은
     `clear_equipment_snapshot_cache` 가 이것까지 부른다 — 저장마다 일정 리비전·발행이 생길 수 있다.
     """
     _bump_write_generation("equipment_scenario")
@@ -691,6 +738,7 @@ def clear_equipment_snapshot_cache() -> None:
     _load_merged_payload.clear()
     _load_revision_summaries_payload.clear()
     load_equipment_csv_payloads.clear()
+    _load_schedule_restore_preview_payload.clear()
     clear_equipment_scenario_cache()
 
 
