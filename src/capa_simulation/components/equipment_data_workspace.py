@@ -1501,12 +1501,13 @@ def _render_editors(
             column_config={
                 "공정": st.column_config.TextColumn(required=True, pinned=True),
                 "분류": st.column_config.TextColumn(required=True),
-                # 소수 둘째 자리(모듈 단위 기존 보유 0.25대)까지 받는다. Streamlit 은 step 의
-                # 소수 자릿수만큼 입력을 자른다(step=0.1 이면 0.25 → 0.2).
+                # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
+                # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
+                # 자리만 형식이 소수 둘째 자리로 반올림한다. 칸은 늘 실수다
+                # (`prepare_equipment_baseline`).
                 "기존보유대수": st.column_config.NumberColumn(
                     "기존 보유대수",
                     min_value=0,
-                    step=0.01,
                     format="%.2f 대",
                     required=True,
                 ),

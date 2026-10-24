@@ -103,7 +103,13 @@ def render_month_editor(
 
     `step` 은 월 칸의 한 칸 증분이다. Streamlit 숫자 칸은 증분의 소수 자릿수에서 **값 자체를
     자른다**(보이는 값과 손으로 넣는 값 모두) — 그 아래 자리가 뜻이 있는 표는 `None` 을 준다.
+    그때는 정수 dtype 월 칸을 실수로 바꿔 그린다(`float_month_columns`) — 정수 칸에는 Streamlit
+    이 증분 1 을 스스로 걸어 소수를 버린다.
     `value_help` 는 월 칸 머리의 도움말로, 값 칸의 뜻·단위를 밝힌다.
+
+    돌려주는 「적용 버튼이 눌렸는가」는 **이 회차에 적용 전 편집이 있을 때만** 참이다. 원본·줄
+    차례가 바뀌어 편집을 버린 회차에 함께 온 클릭(버리기 전에 누른 것)은 버린 편집 대신 원본을
+    「적용」하게 된다.
 
     **적용하지 않은 편집이 남은 표는 탭이 닫혀도 그린다.** `st.data_editor` 는 그리지 않은
     회차에 편집 상태를 잃는다 — 전에는 닫힌 탭을 건너뛰어, 고친 뒤 다른 탭을 누르는 순간 편집이
@@ -123,6 +129,8 @@ def render_month_editor(
         st.session_state.pop(_notice_key(editor_key), None)
         return pd.DataFrame(), False
     month_columns = [column for column in default_table.columns if column not in dimensions]
+    if step is None:
+        default_table = float_month_columns(default_table, month_columns)
     visible_table = _visible_table(
         default_table,
         dimensions,
@@ -238,7 +246,27 @@ def render_month_editor(
             min_value=min_value,
             max_value=max_value,
         )
-    return merged, submitted
+    # 버튼은 편집이 있을 때만 열린다. 편집이 없는 회차의 클릭은 그 앞에 버려진 편집의 것이다.
+    return merged, submitted and pending
+
+
+def float_month_columns(table: pd.DataFrame, month_columns: Sequence[str]) -> pd.DataFrame:
+    """정수 dtype 월 칸을 실수(`float64`)로 바꾼 표. 바꿀 칸이 없으면 받은 표 그대로다.
+
+    `step` 을 주지 않은 `NumberColumn` 은 정수 칸에 증분 1 을 스스로 걸어(Streamlit 1.63) 소수
+    아래를 버린다 — 붙여넣기가 정수만 실어 와 표가 정수 dtype 이 되면 98.75% 효율이 0, 0.333 대가 0
+    이 된다. 결측이 섞인 정수 칸(`Int64`)은 결측을 `NaN` 으로 옮긴다.
+    """
+    integer_columns = [
+        column
+        for column in month_columns
+        if column in table.columns
+        and pd.api.types.is_integer_dtype(table[column])
+        and not pd.api.types.is_bool_dtype(table[column])
+    ]
+    if not integer_columns:
+        return table
+    return table.astype(dict.fromkeys(integer_columns, "float64"))
 
 
 def editor_will_render(tab: OpenTab, editor_key: str, outer_tab: OpenTab | None = None) -> bool:

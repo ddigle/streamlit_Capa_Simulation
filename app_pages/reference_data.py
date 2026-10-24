@@ -33,6 +33,7 @@ from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
     reset_editors_on_source_change,
+    show_row_order_reset,
     source_token,
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
@@ -151,6 +152,9 @@ RATIO_DIMENSIONS = [
 RATIO_TABLES = ("RQ_LOT_RATIO", "RQ_WF_RATIO")
 render_page_header("기준 정보")
 render_page_guide("reference_data", title="기준 정보")
+# 줄 차례가 바뀌어 적용 전 편집을 버린 회차의 알림 자리(`show_row_order_reset`). **늘 서 있는 한
+# 칸**이다 — 알림이 생기고 사라질 때 아래 탭 묶음 자리가 밀리지 않게 한다(가용설비 현황의 알림 칸).
+notices = st.container()
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
@@ -362,27 +366,40 @@ SOURCE_TOKEN_KEY = "reference_data_source_token"
 # 이 화면이 스스로 적용한 편집(표 하나·STEP). 원본이 바뀌어도 그 적용이 건드린 표만 비운다 —
 # 다른 탭에서 고치고 아직 적용하지 않은 편집은 남는다.
 OWN_CHANGE_KEY = "reference_data_own_change"
-reset_editors_on_source_change(
+# 편집표 이름 — 사이드바 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
+EDITOR_NAMES = {
+    EDITOR_UPEH: "UPEH",
+    EDITOR_RUN_RATE: "효율",
+    EDITOR_VITAL: "여유율",
+    EDITOR_LOT_RATIO: "Lot측정률",
+    EDITOR_WF_RATIO: "WF측정률",
+    EDITOR_RUN_DAY: "일수",
+    **{editor_key: f"설비대수 {label}" for _, label, _, editor_key in EQUIPMENT_EDITORS},
+}
+# 줄 차례 지문은 편집표 캐시 키와 같은 표시순서 지문이다 — 아홉 편집표가 모두 이 표시순서로 줄을
+# 세운다(설비대수 세 표는 `apply_display_order`). 바뀌면 적용 전 편집이 다른 공정 줄에 붙으므로
+# 비운다.
+source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
-    source_token(reference_version, active_scenario, effective_start_month, effective_end_month),
+    source_token(
+        reference_version,
+        active_scenario,
+        effective_start_month,
+        effective_end_month,
+        row_order=edit_display_order_key,
+    ),
     editor_keys,
     other_keys=step_widget_keys,
     own_change_key=OWN_CHANGE_KEY,
+    names=EDITOR_NAMES,
 )
+show_row_order_reset(notices, source_reset)
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표를 알린다. 방금
 # 적용한 표는 사이드바가 빼고 센다(`OWN_CHANGE_KEY`).
 register_pending_edits(
     "reference_data.py",
     "기준 정보",
-    {
-        EDITOR_UPEH: "UPEH",
-        EDITOR_RUN_RATE: "효율",
-        EDITOR_VITAL: "여유율",
-        EDITOR_LOT_RATIO: "Lot측정률",
-        EDITOR_WF_RATIO: "WF측정률",
-        EDITOR_RUN_DAY: "일수",
-        **{editor_key: f"설비대수 {label}" for _, label, _, editor_key in EQUIPMENT_EDITORS},
-    },
+    EDITOR_NAMES,
     own_change_key=OWN_CHANGE_KEY,
 )
 
@@ -1060,19 +1077,22 @@ EQUIPMENT_EDITOR_SPECS = tuple(
     )
 )
 # 편집기의 값 형식. (숫자 형식, 한 칸 증분, 최댓값)
-# UPEH 표는 증분 없이 유효숫자 여섯 자리로 그린다. MI 행 값은 ST(분)라 0.01 보다 작은 값이
-# 정의대로 들어오는데, Streamlit 숫자 칸은 증분의 소수 자릿수에서 값을 잘라 0.01 증분이면 그런
-# ST 가 0.00 으로 보이고 손으로도 그렇게만 넣어진다(0 은 ST 검사에 막힌다).
+# **소수 아래 자리에 뜻이 있는 표는 증분을 두지 않는다**(`None`). Streamlit 1.63 숫자 칸은 증분의
+# 소수 자릿수 아래를 반올림하지 않고 **버린다** — 보이는 값·칸 복사·손 입력·칸 붙여넣기 모두. 0.001
+# 증분이면 98.75% 효율이 98.7% 로만 들어가고, 0.01 증분이면 1/3 모듈 설비대수 0.333… 이 0.33 이
+# 된다. 증분이 없으면 형식이 보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 소수 둘째
+# 자리까지, `%,.2f` 는 둘째 자리로 보인다). UPEH 는 유효숫자 여섯 자리로 그린다 — MI 행 값은
+# ST(분)라 0.01 보다 작은 값이 정의대로 들어온다. 일수는 1일 단위로 충분해 증분을 둔다.
 EDITOR_FORMATS: dict[str, tuple[str, float | None, float | None]] = {
     "RQ_UPEH": ("%,.6g", None, None),
-    "RQ_RUN_RATE": ("percent", 0.001, 1.0),
-    "RQ_VITAL": ("percent", 0.001, None),
-    "RQ_LOT_RATIO": ("percent", 0.001, 1.0),
-    "RQ_WF_RATIO": ("percent", 0.001, 1.0),
+    "RQ_RUN_RATE": ("percent", None, 1.0),
+    "RQ_VITAL": ("percent", None, None),
+    "RQ_LOT_RATIO": ("percent", None, 1.0),
+    "RQ_WF_RATIO": ("percent", None, 1.0),
     "RQ_RUN_DAY": ("%,.0f", 1.0, None),
-    "RQ_EQP_OWN": ("%,.2f", 0.01, None),
-    "RQ_EQP_LENT": ("%,.2f", 0.01, None),
-    "RQ_EQP_AVBL": ("%,.2f", 0.01, None),
+    "RQ_EQP_OWN": ("%,.2f", None, None),
+    "RQ_EQP_LENT": ("%,.2f", None, None),
+    "RQ_EQP_AVBL": ("%,.2f", None, None),
 }
 # 월 칸 머리의 도움말 — 한 칸에 행마다 다른 값이 들어가는 표만 그 뜻·단위를 밝힌다.
 EDITOR_VALUE_HELP: dict[str, str] = {

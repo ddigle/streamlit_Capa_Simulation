@@ -983,7 +983,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
-  리비전·조회기간)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
+  리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
+  - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
+    한 번 알린다(`show_row_order_reset`). 앞 토큰이 없으면(첫 회차·시나리오 전환이 지운 뒤) 알리지 않는다.
   - 화면이 스스로 적용한 편집은 `mark_own_change` 로 적어 그 적용이 건드린 편집표만 비운다. 편집 되돌리기는
     `components/scenario_status.py` 의 팝업이 맡는다.
   - `register_pending_edits` 로 화면이 제 편집표·붙여넣기 대기를 적고 사이드바가 `pending_edit_labels` 로 앞 회차
@@ -1601,7 +1603,10 @@ RQ_MODULE
     `canvas_memo_key` 의 모양 버전)을 올린다 — 떠 있는 서버는 고친 코드를 다시 읽지만 세션 공용 칸에는 옛 그림이 남는다.
 17. **표시순서는 `reference_version` 을 바꾸지 않고 바뀐다.** 표시순서로 정렬한 결과를 캐시하는 래퍼는
     `display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])` 를 키에 함께 넣는다(HOME
-    `build_home_simulation_cache_key`·기준 정보 편집표가 이 한 함수를 쓴다).
+    `build_home_simulation_cache_key`·기준 정보 편집표가 이 한 함수를 쓴다). **표시순서 지문은 편집 화면
+    `source_token` 에도 든다**(`row_order=` — 기준 정보·생산 계획). 편집표 편집은 줄 위치로 남아 지문이 빠지면 적용 전
+    편집이 다른 공정 줄에 붙은 채 적용된다 — 바뀐 회차에 편집을 비우고 한 번 알린다(9장 「편집표와 내려받기」). 표시순서로
+    줄을 세우는 편집 화면을 새로 만들면 같은 지문을 그 화면 토큰에 넣는다.
 18. **페이지는 큰 계산 프레임을 풀지 않는다.** 탭이 쓰는 작은 표는 시나리오 키(정렬이 들면 표시순서 지문까지)로
     갈린 키 전용 캐시(`get_scenario_securement_rate`·`get_required_month_table` 등)에서 꺼내고, 대당 Capa·소요대수
     프레임은 그 캐시가 빗나갈 때만 캐시 안에서 로더로 받는다.
@@ -2628,6 +2633,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   표다(`merge_edited_months` 되머지). `editor_key` 에는 필터를 섞지 않는다 — `reset_editors_on_source_change`·
   `register_pending_edits` 가 고정 키 목록으로 편집표를 찾으므로 키가 바뀌면 청소와 「적용 전 편집」 표시가 그 편집을
   놓친다.
+- **공용 표시순서로 줄을 세우는 편집표는 원본 토큰에 그 지문을 싣는다**(`scenario_edit_bar.source_token(...,
+  row_order=display_order_digest(...))`). 차례가 바뀐 회차에는 적용 전 편집·붙여넣기 대기를 비우고 탭 묶음 위에 늘 서 있는
+  알림 칸에 한 번 알린다 — 틀린 줄에 저장하는 대신 적용 전 편집만 잃는다. 그 회차에 함께 온 「적용」 클릭은 적용하지 않는다
+  (`render_month_editor` 는 편집이 있을 때만 참을 돌려준다 — 단추가 편집이 있을 때만 열리므로 편집 없는 클릭은 버린 편집의 것).
+- **뜻이 걸리는 `NumberColumn` 에 `step` 을 두지 않는다.** Streamlit 1.63 은 `step` 의 소수 자릿수 아래를 반올림하지 않고
+  **버린다**(보이는 값·칸 복사·손 입력·칸 붙여넣기 — 0.001 이면 98.75% 가 98.7%, 0.01 이면 0.333 대가 0.33). `format` 만 두면
+  보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 소수 0~2자리). `step` 이 없으면 **정수 dtype 칸에 증분 1 이 스스로
+  걸리므로** 정수로 올 수 있는 표는 실수로 바꿔 그린다(`month_editor.float_month_columns`). 그 단위로 충분한 칸(일수 1일·
+  Cut-off·PKG PLAN 등)만 `step` 을 둔다.
 - 편집표에서 고른 행은 행 번호가 아니라 업무 키로 기억한다 — 편집본은 제출마다 다시 만들어지고 행을 지우면 번호가 다시
   매겨진다. 되살린 행은 지우기 전 자리로 넣는다(맨 뒤에 붙이면 순서만 다른 리비전이 생긴다).
 - **다른 세션이 행 차례를 바꿀 수 있는 편집표**(시나리오 관리 목록·리비전 표 — 남의 저장·이름 변경이 차례를 바꾼다)는

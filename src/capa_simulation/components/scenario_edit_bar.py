@@ -1,4 +1,4 @@
-# Purpose: 편집 화면의 원본을 토큰으로 식별해 바뀌면 편집기를 비우고, 미적용 편집을 알린다.
+# Purpose: 편집 화면의 원본·줄 차례를 토큰으로 식별해 바뀌면 편집기를 비우고, 미적용 편집을 알린다.
 
 """편집 화면(생산 계획·기준 정보)이 함께 쓰는 원본 식별과 편집기 초기화.
 
@@ -6,19 +6,29 @@
 사이드바 시나리오 줄의 미저장 배지와 같은 말을 했고, 초기화는 모든 화면의 편집을 버리는
 시나리오 단위 동작이라 사이드바 시나리오 팝업의 「편집 되돌리기」로 옮겼다(2026-09-29 사용자 결정).
 적용하지 않은 편집이 남은 곳은 사이드바 조건 패널 맨 위 한 줄이 알린다(`pending_edits_notice`).
+
+**원본 토큰에는 줄 차례도 든다.** `st.data_editor` 의 편집은 줄 위치(`edited_rows`)로 남는다. 두
+화면은 공용 표시순서로 줄을 세우는데 표시순서는 기준정보 버전·리비전을 바꾸지 않고 바뀌므로, 토큰에
+그 지문이 없으면 적용 전 편집이 다른 공정 줄에 붙은 채 「적용」이 그대로 저장한다. 차례가 바뀌어
+편집을 버린 회차는 화면이 한 번 알린다(`show_row_order_reset`) — 틀린 저장 대신 적용 전 편집만
+잃는다(2026-10-24 사용자 결정).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.editor_state import discard_editor, editor_has_edits
 from capa_simulation.scenario_state import ActiveScenario
 
 # 화면마다 「적용하지 않은 편집이 남을 수 있는 곳」의 목록. 사이드바가 저장·불러오기 전에 읽는다.
 _PENDING_REGISTRY_KEY = "scenario_pending_edit_registry"
+# 원본 토큰에서 줄 차례 지문이 시작하는 표지. 토큰 앞부분(버전·리비전·기간)에는 나오지 않는 글자다.
+_ROW_ORDER_MARK = "|order:"
 
 
 def source_token(
@@ -26,13 +36,62 @@ def source_token(
     active_scenario: ActiveScenario,
     start_month: int,
     end_month: int,
+    *,
+    row_order: str,
 ) -> str:
     """편집기가 지금 보고 있는 원본을 한 문자열로 식별한다.
 
     기준정보 버전·활성 리비전·조회기간 중 하나라도 달라지면 표의 행과 월 구성이 달라진다.
     페이지마다 같은 f-string 을 다시 적으면 한쪽만 구성 요소가 늘어 편집기가 안 갈린다.
+
+    `row_order` 는 **그 화면이 줄을 세우는 데 실제로 쓰는 값의 지문**이다 — 두 화면은 공용 표시순서
+    (`simulation_cache.display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])`, 편집표 캐시 키와
+    같은 값)로 줄을 세운다. 차례가 바뀌면 이 값이 바뀌어 편집표가 비워진다(모듈 설명).
     """
-    return f"duckdb:{reference_version}:{active_scenario['revision']}:{start_month}:{end_month}"
+    return (
+        f"duckdb:{reference_version}:{active_scenario['revision']}:{start_month}:{end_month}"
+        f"{_ROW_ORDER_MARK}{row_order}"
+    )
+
+
+def _row_order_of(token: object) -> str | None:
+    """토큰의 줄 차례 지문. 그 칸이 없는 토큰(첫 회차·시나리오 전환 뒤·옛 형식)은 `None` 이다."""
+    if not isinstance(token, str) or _ROW_ORDER_MARK not in token:
+        return None
+    return token.rpartition(_ROW_ORDER_MARK)[2]
+
+
+@dataclass(frozen=True)
+class SourceReset:
+    """`reset_editors_on_source_change` 의 결과.
+
+    `changed` 는 원본이 바뀌어 무엇이든 비웠는가, `row_order_dropped` 는 **줄 차례가 바뀌어** 버린
+    적용 전 편집·붙여넣기 대기의 이름(화면이 준 `names` 의 값)이다. 비어 있으면 알릴 것이 없다 —
+    시나리오 불러오기·저장처럼 사용자가 버린다고 확인한 변경은 여기 들지 않는다.
+    """
+
+    changed: bool
+    row_order_dropped: tuple[str, ...] = ()
+
+
+def row_order_reset_message(names: Sequence[str]) -> str:
+    """줄 차례가 바뀌어 적용 전 편집을 버린 회차의 알림 한 줄."""
+    return (
+        "공용 표시순서가 바뀌어 표의 줄 차례가 달라졌습니다. 적용하지 않은 편집"
+        f"({' · '.join(names)})을 다른 줄에 붙지 않게 버렸습니다 — 다시 입력하세요."
+    )
+
+
+def show_row_order_reset(slot: DeltaGenerator, reset: SourceReset) -> None:
+    """줄 차례가 바뀌어 편집을 버린 회차에만 `slot` 에 한 번 알린다. 다음 회차에는 그리지 않는다.
+
+    `slot` 은 화면이 탭 묶음 **위에 늘 세워 두는** 알림 칸이다 — 알림이 생기고 사라질 때 탭 묶음
+    자리가 밀리지 않게(가용설비 현황의 버림 알림과 같은 꼴·아이콘).
+    """
+    if reset.row_order_dropped:
+        slot.warning(
+            row_order_reset_message(reset.row_order_dropped), icon=":material/sync_problem:"
+        )
 
 
 def register_pending_edits(
@@ -144,32 +203,58 @@ def reset_editors_on_source_change(
     *,
     other_keys: Sequence[str] = (),
     own_change_key: str | None = None,
-) -> bool:
-    """원본이 바뀌었으면 편집기·임시 상태를 비우고 새 토큰을 기록한다. 바뀌었으면 True.
+    names: Mapping[str, str] | None = None,
+) -> SourceReset:
+    """원본이 바뀌었으면 편집기·임시 상태를 비우고 새 토큰을 기록한다.
 
     편집표(`editor_keys`)는 `discard_editor` 로 **브라우저까지** 버린다 — 세션 칸만 지우면
     브라우저가 옛 편집을 다시 보낸다. 편집표가 아닌 상태(`other_keys` — 붙여넣기 대기, 선택
     위젯)는 칸만 지운다.
 
-    바뀐 원본이 이 화면 자신의 적용이면(`mark_own_change`) 적어 둔 것만 비운다.
+    바뀐 원본이 이 화면 자신의 적용이면(`mark_own_change`) 적어 둔 것만 비운다. **줄 차례가 함께
+    바뀌었으면 그 예외를 두지 않는다** — 남겨 둔 다른 표의 편집이 다른 줄에 붙기 때문이다.
+
+    `names` 는 알림에 적을 이름(편집표·붙여넣기 대기 키 → 이름, `register_pending_edits` 와 같은
+    값)이다. 앞 토큰이 있고 그 줄 차례 지문이 지금과 다를 때만, 그때 적용 전 편집이 남아 있던 것의
+    이름을 `SourceReset.row_order_dropped` 에 싣는다(방금 이 화면이 적용한 표는 뺀다).
 
     `token_key` 는 페이지가 소유한다 — 두 편집 화면이 한 칸을 나눠 쓰면 한쪽을 열었다는
     이유로 다른 쪽 편집기가 안 갈린다.
     """
+    previous = st.session_state.get(token_key)
+    previous_order = _row_order_of(previous)
+    row_order_changed = previous_order is not None and previous_order != _row_order_of(token)
     own = st.session_state.pop(own_change_key, None) if own_change_key else None
-    if isinstance(own, list):
-        for key in own:
+    own_keys = [str(key) for key in own] if isinstance(own, list) else None
+    if own_keys is not None and not row_order_changed:
+        for key in own_keys:
             if key in editor_keys:
                 discard_editor(key)
             else:
                 st.session_state.pop(key, None)
         st.session_state[token_key] = token
-        return True
-    if st.session_state.get(token_key) == token:
-        return False
+        return SourceReset(changed=True)
+    if previous == token:
+        return SourceReset(changed=False)
+    dropped: tuple[str, ...] = ()
+    if row_order_changed:
+        skipped = set(own_keys or ())
+        dropped = tuple(
+            name
+            for key, name in (names or {}).items()
+            if key not in skipped
+            and (
+                editor_has_edits(key)
+                if key in editor_keys
+                else st.session_state.get(key) is not None
+            )
+        )
     for key in editor_keys:
         discard_editor(key)
     for key in other_keys:
         st.session_state.pop(key, None)
+    for key in own_keys or ():
+        if key not in editor_keys:
+            st.session_state.pop(key, None)
     st.session_state[token_key] = token
-    return True
+    return SourceReset(changed=True, row_order_dropped=dropped)

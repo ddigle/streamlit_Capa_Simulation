@@ -30,6 +30,7 @@ from capa_simulation.components.grouped_monthly_table import (
 from capa_simulation.components.month_editor import (
     PASTE_DROPS_EDITS_NOTICE,
     classification_styled,
+    float_month_columns,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
@@ -42,6 +43,7 @@ from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
     reset_editors_on_source_change,
+    show_row_order_reset,
     source_token,
 )
 from capa_simulation.components.tab_marks import mark_pending_tabs
@@ -166,6 +168,12 @@ try:
         _yield_data=filtered_yield,
         _display_order=prepared_display_order,
     )
+    # 수율 칸은 증분 없이 그린다(아래 편집표). 정수만 붙여넣어 정수 dtype 이 된 표는 실수로 바꾼다 —
+    # 정수 칸에는 Streamlit 이 증분 1 을 스스로 걸어 98.5% 가 0 이 된다.
+    default_yield_table = float_month_columns(
+        default_yield_table,
+        [column for column in default_yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS],
+    )
 except ValueError as exc:
     yield_build_error = str(exc)
 
@@ -187,20 +195,36 @@ YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 �
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
 OWN_CHANGE_KEY = "load_conversion_own_change"
-reset_editors_on_source_change(
+# 편집표·붙여넣기 대기 이름 — 사이드바 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
+EDITOR_NAMES = {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"}
+STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
+# 줄 차례가 바뀌어 적용 전 편집을 버린 회차의 알림 자리. 탭 묶음 바로 위에 **늘 서 있는 한
+# 칸**이다 — 알림이 생기고 사라질 때 탭 묶음 자리가 밀리지 않게 한다(가용설비 현황의 알림 칸).
+notices = st.container()
+# 줄 차례 지문은 두 편집표 캐시 키와 같은 표시순서 지문이다 — PKG PLAN·수율 모두 이 표시순서로 줄을
+# 세운다. 바뀌면 적용 전 편집이 다른 제품 줄에 붙으므로 비운다.
+source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
-    source_token(reference_version, active_scenario, effective_start_month, effective_end_month),
+    source_token(
+        reference_version,
+        active_scenario,
+        effective_start_month,
+        effective_end_month,
+        row_order=display_order_key,
+    ),
     (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY),
     other_keys=(PLAN_STAGED_KEY,),
     own_change_key=OWN_CHANGE_KEY,
+    names={**EDITOR_NAMES, **STAGED_NAMES},
 )
+show_row_order_reset(notices, source_reset)
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
 # 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(
     "load_conversion.py",
     "생산 계획",
-    {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"},
-    staged={PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"},
+    EDITOR_NAMES,
+    staged=STAGED_NAMES,
     own_change_key=OWN_CHANGE_KEY,
 )
 
@@ -674,7 +698,9 @@ with yield_tab:
                         width=80,
                         min_value=0.0,
                         max_value=1.0,
-                        step=0.001,
+                        # 증분을 두지 않는다 — Streamlit 숫자 칸은 증분의 소수 자릿수 아래를 버려
+                        # 0.001 이면 98.75% 가 98.7% 로만 들어간다. 보이는 자리는 `percent` 가
+                        # 소수 둘째 자리까지 반올림하고 값은 적은 그대로다.
                         format="percent",
                         alignment="center",
                     )
@@ -682,7 +708,9 @@ with yield_tab:
                 },
             },
         )
-        if apply_yield:
+        # 버튼은 편집이 있을 때만 열린다. 편집이 없는 회차의 클릭은 원본·줄 차례가 바뀌어 버린
+        # 편집의 것이라 적용하지 않는다(버린 편집 대신 원본을 「적용」해 리비전만 오른다).
+        if apply_yield and yield_pending:
             try:
                 _apply_yield(
                     edited_yield_table,
@@ -700,7 +728,8 @@ with yield_tab:
 # 서버에서 사라져 수율 탭 점과 사이드바 경고가 꺼졌다. 그때 누른 「신규 리비전 저장」은 다음 조작에
 # 브라우저가 되보낸 편집 때문에 잠긴 버튼이 되어 말없이 무시됐다(2026-10-01 브라우저 E2E). 오류
 # 알림은 작업 줄 아래 자리(`plan_notice`)에 쓰므로 여기서 처리해도 누른 자리에 뜬다.
-if apply_plan:
+# 편집·붙여넣기 대기가 없는 회차의 클릭은 버려진 편집의 것이라 적용하지 않는다(수율과 같다).
+if apply_plan and plan_pending:
     try:
         updated_plan = attach_plan_attributes(
             plan_from_edit_table(edited_plan_table), simulation_plan
