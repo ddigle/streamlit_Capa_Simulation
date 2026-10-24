@@ -263,9 +263,40 @@ def migrated(tmp_path: Path) -> tuple[Path, dict[str, list[tuple[object, ...]]]]
     path = tmp_path / "legacy.duckdb"
     build_legacy_database(path)
     before = _legacy_rows(path)
-    # 0027 뒤의 설비 0029(층 사용 상태 빈 표 둘)도 함께 걸린다.
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 29)
+    # 0027 뒤의 설비 0029(층 사용 상태 빈 표 둘)·0031(가정 배치 차이 빈 표 셋)도 함께 걸린다.
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 29, 31)
     return path, before
+
+
+def _apply_up_to(path: Path, version: int) -> None:
+    """이미 적용된 번호 다음부터 `version` 까지만 SQL 그대로 건다 — 그 번호까지 아는 옛 코드가 연
+    DB(뒤 번호가 더한 칸이 섞이지 않는다)."""
+    with duckdb.connect(str(path)) as connection:
+        applied = {
+            int(row[0])
+            for row in connection.execute(
+                "SELECT version FROM equipment_meta.schema_migration"
+            ).fetchall()
+        }
+        for migration in load_equipment_migrations():
+            if migration.version in applied or migration.version > version:
+                continue
+            connection.execute(migration.sql)
+            connection.execute(
+                "INSERT INTO equipment_meta.schema_migration (version, name, checksum) "
+                "VALUES (?, ?, ?)",
+                [migration.version, migration.name, migration.checksum],
+            )
+
+
+@pytest.fixture
+def migrated_through_0027(tmp_path: Path) -> Path:
+    """옛 DB 에 0027 **까지만** 건 경로(상한 27) — 0027 이 만든 칸·키만 본다. 뒤 번호(설비 0031 의
+    `layout_hash`)가 더한 칸은 그 번호의 시험이 본다."""
+    path = tmp_path / "legacy.duckdb"
+    build_legacy_database(path)
+    _apply_up_to(path, MIGRATION_VERSION)
+    return path
 
 
 def test_every_revision_becomes_an_operations_revision_with_the_same_number_time_and_note(
@@ -494,11 +525,11 @@ def _constraints(
 
 
 def test_new_tables_have_their_columns_and_keys_and_no_foreign_key(
-    migrated: tuple[Path, dict[str, list[tuple[object, ...]]]],
+    migrated_through_0027: Path,
 ) -> None:
     """새 여섯 표에 FK 가 없다 — 한 트랜잭션 삭제와 UNIQUE 칸 UPDATE 를 DuckDB 1.5.5 가 막지 않게.
-    옛 자식 여섯의 `revision` FK 는 그대로다."""
-    path, _ = migrated
+    옛 자식 여섯의 `revision` FK 는 그대로다. 칸 목록은 0027 까지만 건 DB 로 본다(상한 27)."""
+    path = migrated_through_0027
     with duckdb.connect(str(path), read_only=True) as connection:
         for table, columns in _EXPECTED_COLUMNS.items():
             found = [

@@ -229,6 +229,7 @@ def test_migration_0017_keeps_existing_marks_as_auto_and_default(tmp_path: Path)
                 """
                 SELECT table_name, column_name, is_nullable FROM information_schema.columns
                 WHERE table_schema = 'equipment_ops'
+                  AND table_name IN ('floor_layout_mark', 'fab_layout_mark')
                   AND column_name IN ('font_size', 'font_color')
                 """
             ).fetchall()
