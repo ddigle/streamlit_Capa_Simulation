@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -20,9 +21,11 @@ from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveFields,
     render_equipment_save_fields,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     TableView,
+    filter_widget_key,
     merge_edited_rows,
     render_table_view_controls,
 )
@@ -43,6 +46,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_equipment_schedule_revisions,
     load_floor_states,
     load_merged_equipment_snapshot,
+    load_units_scheduled_elsewhere,
 )
 from capa_simulation.persistence.equipment_repository import (
     EMPTY_REVISION_TOKEN,
@@ -111,7 +115,7 @@ from capa_simulation.services.equipment_csv import (
     untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
-from capa_simulation.services.equipment_scenario import calculation_frames
+from capa_simulation.services.equipment_scenario import calculation_frames, legacy_unit_key
 from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
@@ -148,8 +152,14 @@ from capa_simulation.services.simulation_cache import get_schedule_confirmation_
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     PendingRenames,
+    existing_layout_edits,
+    keep_layout_cells,
+    live_renames,
     module_layout_message,
     module_layout_violations,
+    name_changes,
+    natural_name_key,
+    reserved_names,
 )
 
 FLASH_KEY = "equipment_status_flash"
@@ -168,6 +178,8 @@ DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
 # 저장본 사본(draft)이 나온 설비 시나리오 일정 리비전에 일정 행이 없는 설비명(F4). 계산 화면은 이
 # 호기와 그 비가동을 뺀 사본을 읽는다(`calculation_drafts`). 편집·RawData·CSV 는 39칸 전체다.
 DRAFT_UNSCHEDULED_KEY = "equipment_draft_unscheduled_v1"
+# 저장본 사본의 (설비명, 호기 키) 쌍 — 지우는 호기가 다른 설비 시나리오에 일정이 있는지 키로 본다.
+DRAFT_UNIT_KEYS_KEY = "equipment_draft_unit_keys_v1"
 # 편집본(buffer)이 나온 출발점 — {"common": 공통 id 또는 EMPTY_REVISION_TOKEN, "schedule": 일정 id
 # 또는 None, "scenario": 시나리오 id 또는 None, "common_no", "schedule_no"}. 기본형만 담는다.
 # 저장 요청의 두 대조 값이 여기서 나온다.
@@ -230,6 +242,21 @@ PENDING_FAB_KEY = "equipment_pending_fab_layout_v1"
 # 함께 버려진다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을 바꾼 호기가 「지운 호기 +
 # 새 호기」로 읽힌다(`services/space_layout_edit.PendingRenames`).
 PENDING_RENAMES_KEY = "equipment_pending_unit_renames_v1"
+# 이름 바꿈을 따라갈 RawData 목록 필터(칸 이름 → {옛 값: 새 값}). 이름은 그 필터가 그려지기
+# **전**에만 고칠 수 있어(위젯 key) 여기 모았다가 `_render_editors` 가 필터를 그리기 전에 얹는다.
+FOLLOWED_FILTERS_KEY = "equipment_workspace_followed_filters_v1"
+# 설비 마스터·비가동 일정 편집표 보기 설정의 key 접두어(`render_table_view_controls`).
+MASTER_VIEW_PREFIX = "equipment_master_view"
+DOWNTIME_VIEW_PREFIX = "equipment_downtime_view"
+# 「이름 바꿈」 목록 펼침(RawData 알림 칸).
+NAME_CHANGES_EXPANDER_KEY = "equipment_workspace_name_changes_v1"
+# 이름 바꿈 목록 아래 한 줄 — Space 편집기 상자와 RawData 가 같이 쓴다(G4·R2 — 이름 바꾸기는 같은
+# 호기다).
+NAME_CHANGES_CAPTION = (
+    "이름 바꾸기는 같은 호기입니다 — 저장하면 새 리비전부터 새 이름이고, 모든 설비 시나리오의 "
+    "일정·비가동이 새 이름을 따라갑니다. 지난 리비전과 필요 단축 일정 진척 비교 기준선은 옛 이름 "
+    "그대로이고, 설비 마스터를 바깥 Excel 에서 붙여넣어 관리하면 그 Excel 의 이름도 바꿔야 합니다."
+)
 # Space 배치 편집기가 적용한 모듈 묶음의 적용 뒤 모양(Main 설비 → `ModuleLayout`). 저장 검사
 # (`module_layout_violations`)가 이 모양 그대로인 묶음을 편집기 결과로 보고 통과시킨다 — RawData 가
 # 그 뒤에 그 묶음 좌표·크기를 고치면 모양이 달라져 다시 검사받는다. 편집본과 함께 버려진다.
@@ -321,6 +348,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         DOWNTIME_DRAFT_KEY,
         DRAFT_REVISION_KEY,
         DRAFT_UNSCHEDULED_KEY,
+        DRAFT_UNIT_KEYS_KEY,
         _BASE_KEY,
         BASELINE_IMPORT_KEY,
         EQUIPMENT_IMPORT_KEY,
@@ -341,6 +369,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         PENDING_BASES_KEY,
         *(() if keep_fab else (PENDING_FAB_KEY,)),
         PENDING_RENAMES_KEY,
+        FOLLOWED_FILTERS_KEY,
         EDITOR_MODULE_LAYOUTS_KEY,
         _SEEDED_GENERATION_KEY,
     ):
@@ -519,6 +548,9 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             if latest_snapshot is not None
             else frozenset()
         )
+        st.session_state[DRAFT_UNIT_KEYS_KEY] = (
+            tuple(latest_snapshot.unit_key_pairs) if latest_snapshot is not None else ()
+        )
         st.session_state[DRAFT_REVISION_KEY] = token
         for preview_key in (BASELINE_IMPORT_KEY, EQUIPMENT_IMPORT_KEY, DOWNTIME_IMPORT_KEY):
             st.session_state.pop(preview_key, None)
@@ -553,6 +585,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             PENDING_DELETE_KEY,
             LAST_REMOVED_KEY,
             PENDING_RENAMES_KEY,
+            FOLLOWED_FILTERS_KEY,
             EDITOR_MODULE_LAYOUTS_KEY,
         ]
         if replaced:
@@ -647,25 +680,219 @@ def saved_master_violations(master: pd.DataFrame) -> list[str]:
     )
 
 
+def draft_unit_keys() -> dict[str, str]:
+    """저장본 사본의 설비명 → 호기 키(`ensure_equipment_drafts` 가 세운다, 없으면 빈 지도)."""
+    value = st.session_state.get(DRAFT_UNIT_KEYS_KEY)
+    if not isinstance(value, tuple):
+        return {}
+    return {str(name): str(key) for name, key in value}
+
+
+def _sample_names(names: Sequence[str], limit: int = 3) -> str:
+    """「APW01, APW02 외 3」 — 자연 정렬 앞 `limit` 개."""
+    ordered = sorted(names, key=natural_name_key)
+    head = ", ".join(ordered[:limit])
+    return head if len(ordered) <= limit else f"{head} 외 {len(ordered) - limit}"
+
+
+@dataclass(frozen=True)
+class RemovalElsewhere:
+    """편집본에서 지운 저장본 호기 가운데 **다른** 설비 시나리오 최신에 일정이 있는 것 — (설비명, 그
+    시나리오 이름들). 저장하면 공통 대장에서 빠져 그 시나리오들의 일정·비가동도 빠진다(설계 11-2
+    6단계 — 호기 목록은 공통 하나다)."""
+
+    units: tuple[tuple[str, tuple[str, ...]], ...]
+
+    @property
+    def names(self) -> frozenset[str]:
+        return frozenset(name for name, _ in self.units)
+
+    @property
+    def scenarios(self) -> tuple[str, ...]:
+        return tuple(sorted({scenario for _, names in self.units for scenario in names}))
+
+    @property
+    def token(self) -> str:
+        """확인 체크 key 꼬리 — 호기 목록의 지문(목록이 바뀌면 체크가 풀린 새 칸)."""
+        text = "\n".join(sorted(self.names))
+        return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+    def message(self) -> str:
+        scenarios = "·".join(f"「{literal_markdown(name)}」" for name in self.scenarios)
+        return (
+            f"지우는 호기 {len(self.units):,}대({_sample_names(sorted(self.names))})는 다른 설비 "
+            f"시나리오 {len(self.scenarios):,}개({scenarios})에도 일정이 있습니다 — 저장하면 공통 "
+            "대장에서 빠져 그 설비 시나리오에서도 일정·비가동과 함께 빠집니다. 이 시나리오에서만 "
+            "빼려면 지우지 말고 정지·반출/이설일정을 적으세요."
+        )
+
+    def confirm_label(self) -> str:
+        return (
+            f"다른 설비 시나리오 {len(self.scenarios):,}개에서 {len(self.units):,}대의 일정이 "
+            "빠지는 것을 알고 저장합니다"
+        )
+
+    def refusal(self) -> str:
+        return (
+            f"{self.message()} 저장하려면 가용설비 현황 RawData 저장 칸의 "
+            f"「{self.confirm_label()}」 를 켜고 다시 저장하세요."
+        )
+
+
+def removals_elsewhere(
+    frames: Frames, *, database_path: str, scenario_id: str | None
+) -> RemovalElsewhere | None:
+    """편집본(`frames`)에서 지운 저장본 호기 가운데 `scenario_id` 가 아닌 ACTIVE 설비 시나리오
+    최신에 일정이 있는 것. 지운 호기가 없으면 저장소를 읽지 않는다. 이름 바꿈으로 비운 이름은 지운
+    것이 아니다(`reserved_names`). 없으면 None."""
+    saved = _saved_master()
+    deleted = reserved_names(saved, frames[1], frames[2], pending_unit_renames()).deleted
+    if not deleted:
+        return None
+    elsewhere = load_units_scheduled_elsewhere(database_path, scenario_id)
+    if not elsewhere:
+        return None
+    keys = draft_unit_keys()
+    units = tuple(
+        (name, elsewhere[key])
+        for name in sorted(deleted, key=natural_name_key)
+        if (key := keys.get(name, legacy_unit_key(name))) in elsewhere
+    )
+    return RemovalElsewhere(units) if units else None
+
+
+def _target_scenario_id(basis: EquipmentSaveBasis | None) -> str | None:
+    """저장이 갈 설비 시나리오 — 세션 것, 없으면 편집본이 나온 것(`_save_equipment_frames` 와 같은
+    차례, 끝의 공식 조회만 뺀다)."""
+    if basis is not None:
+        return basis.equipment_scenario_id
+    base = st.session_state.get(_BASE_KEY)
+    scenario = base.get("scenario") if isinstance(base, dict) else None
+    return scenario if isinstance(scenario, str) else None
+
+
+def existing_unit_names(buffer: pd.DataFrame) -> frozenset[str]:
+    """편집본에서 저장본에서 온 호기의 지금 설비명(저장 안 한 이름 바꿈을 거친 이름 포함). 이 세션에
+    새로 넣은 호기는 빠진다."""
+    saved = _saved_master()
+    saved_names = set(saved[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip())
+    origins = live_renames(pending_unit_renames(), saved, buffer).units
+    names = buffer[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip()
+    return frozenset(name for name in names if origins.get(name, name) in saved_names)
+
+
+def assumption_layout_refusal(
+    names: Sequence[str], *, scenario_name: str | None, pasted: bool
+) -> str:
+    """가정 설비 시나리오에서 있던 호기의 배치 칸을 고친 제출·붙여넣기를 막는 글."""
+    where = f"「{literal_markdown(scenario_name)}」 은" if scenario_name else "지금 설비 시나리오는"
+    units = f"있던 호기 {len(names):,}대({_sample_names(names)})"
+    if pasted:
+        head = (
+            f"붙여넣기가 {units}의 배치 칸을 바꿉니다 — {where} 가정 설비 시나리오라 미리보지 "
+            "않았습니다. 배치 칸을 빼거나 지금 값 그대로 다시 붙여넣으세요."
+        )
+    else:
+        head = (
+            f"{where} 가정 설비 시나리오라 {units}의 배치 칸 고침은 되돌리고 나머지 편집은 "
+            "반영했습니다."
+        )
+    return f"{head} {ASSUMPTION_LAYOUT_LOCK}"
+
+
+def assumption_paste_refusal(
+    review: ImportReview, current: Frames, *, existing: frozenset[str], scenario_name: str | None
+) -> str | None:
+    """가정 설비 시나리오에서 있던 호기의 배치 칸을 바꾸는 설비 마스터 붙여넣기를 미리보기 전에
+    막는다(S1 임시 잠금). 새 호기 행의 배치 칸은 받는다. 막을 것이 없으면 None."""
+    if review.target != "설비 마스터":
+        return None
+    names = existing_layout_edits(current[1], review.candidate[1], existing=existing)
+    if not names:
+        return None
+    return assumption_layout_refusal(names, scenario_name=scenario_name, pasted=True)
+
+
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
-    """Space 편집기가 이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을
-    기억한 RawData 칸을 따라 옮긴다 — 설비 마스터·비가동 일정의 선택은 새 설비명으로 옮기고,
-    `방금 삭제 되돌리기` 는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을 지니므로 되살리면
-    비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
-    한 설비가 둘로 갈린다(검증은 통과해 그대로 저장된다)."""
+    """이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을 기억한 RawData
+    칸을 따라 옮긴다 — Space 편집기와 설비 마스터 호기 상세(개편)가 같이 부른다.
+
+    - 설비 마스터·비가동 일정의 **선택**과 **삭제 확인 대기**(`PENDING_DELETE_KEY`)의 키는 새
+      설비명으로 옮긴다 — 옛 이름에 매달린 확인이 엉뚱한 행을 지우거나 비게 되지 않게.
+    - 목록 필터의 고른 값(설비 마스터 `Main 설비`, 비가동 일정 `설비명`)도 새 이름으로 옮긴다
+      — 그대로 두면 다음 회차에 선택지에 없는 값이라 지워져 필터가 「전체」 로 돌아간다. 필터
+      위젯이 그려지기 전에만 고칠 수 있어 `FOLLOWED_FILTERS_KEY` 에 모았다가 `_render_editors` 가
+      얹는다.
+    - `방금 삭제 되돌리기` 는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을 지니므로 되살리면
+      비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
+      한 설비가 둘로 갈린다(검증은 통과해 그대로 저장된다).
+    """
+    renames = {old: new for old, new in renames.items() if old != new}
+    groups = {old: new for old, new in groups.items() if old != new}
     if not renames and not groups:
         return
     selection = _current_selection()
     if selection and renames:
         st.session_state[SELECTION_KEY] = {
-            target: (
-                frozenset((renames.get(key[0], key[0]), *key[1:]) for key in keys)
-                if target in (EQUIPMENT_TARGET, DOWNTIME_TARGET)
-                else keys
-            )
+            target: (_renamed_keys(keys, renames) if target in _NAMED_TARGETS else keys)
             for target, keys in selection.items()
         }
+    pending = st.session_state.get(PENDING_DELETE_KEY)
+    if renames and isinstance(pending, tuple) and len(pending) == 2:
+        target, keys = pending
+        if target in _NAMED_TARGETS and isinstance(keys, frozenset):
+            st.session_state[PENDING_DELETE_KEY] = (target, _renamed_keys(keys, renames))
+    # Main 설비 칸에는 묶음 이름과, 자기 설비명을 Main 설비로 적은 한 행 묶음의 설비명이 든다(그
+    # 설비명은 다른 Main 설비 이름과 겹칠 수 없어 두 지도가 부딪치지 않는다).
+    _stage_followed_filter(
+        filter_widget_key(MASTER_VIEW_PREFIX, PARENT_EQUIPMENT_COLUMN), {**renames, **groups}
+    )
+    _stage_followed_filter(filter_widget_key(DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN), renames)
     st.session_state.pop(LAST_REMOVED_KEY, None)
+
+
+# 선택·삭제 대기 키의 첫 칸이 설비명인 표.
+_NAMED_TARGETS = (EQUIPMENT_TARGET, DOWNTIME_TARGET)
+
+
+def _renamed_keys(keys: frozenset[RowKey], renames: Mapping[str, str]) -> frozenset[RowKey]:
+    """업무 키(첫 칸 설비명)의 설비명을 옛 → 새로 한꺼번에 옮긴다(맞바꿈도 맞게 간다)."""
+    return frozenset((renames.get(key[0], key[0]), *key[1:]) for key in keys)
+
+
+def _stage_followed_filter(filter_key: str, mapping: Mapping[str, str]) -> None:
+    """목록 필터 한 칸이 따라갈 이름 지도를 앞서 모은 지도에 잇는다(A→B 뒤 B→C 는 A→C·B→C)."""
+    if not mapping:
+        return
+    staged = st.session_state.get(FOLLOWED_FILTERS_KEY)
+    followed: dict[str, dict[str, str]] = dict(staged) if isinstance(staged, dict) else {}
+    before = dict(followed.get(filter_key, {}))
+    joined = {old: mapping.get(new, new) for old, new in before.items()}
+    joined.update({old: new for old, new in mapping.items() if old not in joined})
+    followed[filter_key] = joined
+    st.session_state[FOLLOWED_FILTERS_KEY] = followed
+
+
+def _apply_followed_filters() -> None:
+    """모아 둔 이름 지도를 목록 필터의 고른 값에 얹는다. 필터 위젯을 그리기 **전**에 부른다."""
+    staged = st.session_state.pop(FOLLOWED_FILTERS_KEY, None)
+    if not isinstance(staged, dict):
+        return
+    for filter_key, mapping in staged.items():
+        chosen = st.session_state.get(filter_key)
+        if not isinstance(chosen, list) or not isinstance(mapping, dict):
+            continue
+        moved = list(dict.fromkeys(mapping.get(str(value), str(value)) for value in chosen))
+        if moved != chosen:
+            st.session_state[filter_key] = moved
+
+
+def render_name_changes(names: pd.DataFrame, *, key: str | None = None) -> None:
+    """저장 안 한 이름 바꿈 목록(`space_layout_edit.name_changes`) — 접힌 「이름 바꿈 n건」 과 그
+    뜻. Space 편집기 상자와 RawData 가 같은 꼴로 그린다."""
+    with st.expander(f"이름 바꿈 {len(names)}건", key=key):
+        st.dataframe(names, hide_index=True, width="stretch")
+        st.caption(NAME_CHANGES_CAPTION)
 
 
 def pending_floor_canvases() -> dict[FloorKey, CanvasSize]:
@@ -868,6 +1095,7 @@ def save_equipment_buffer(
     *,
     basis: EquipmentSaveBasis | None = None,
     fields: EquipmentSaveFields | None = None,
+    removal_confirmed: frozenset[str] = frozenset(),
 ) -> str:
     """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
 
@@ -883,6 +1111,11 @@ def save_equipment_buffer(
     반대 순서면 설비 저장 뒤 편집본을 비우면서 FAB 대기분까지 잃는다. FAB 가 거부돼도(남이 먼저
     저장) 설비 저장은 그대로 하고, FAB 대기분은 남긴 채 두 결과를 함께 적은 `ValueError` 를 낸다.
     `frames` 가 None 이면(설비 저장본이 없어 대조할 출발 리비전이 없는 화면) FAB 대기분만 쓴다.
+
+    `removal_confirmed` 는 RawData 저장 칸의 확인 체크로 「다른 설비 시나리오에서도 일정이 빠지는
+    것을 알고 지운다」 고 확인한 설비명이다(`RemovalElsewhere`). 지운 호기 가운데 다른 시나리오에
+    일정이 있는데 확인하지 않은 호기가 있으면 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의
+    저장도 같은 까닭으로 막힌다.
     """
     if frames is None:
         return FAB_SAVED_MESSAGE if save_pending_fab_layout(repository) else NOTHING_SAVED_MESSAGE
@@ -902,7 +1135,13 @@ def save_equipment_buffer(
         fab_saved, fab_error = False, str(exc)
     try:
         message = _save_equipment_frames(
-            repository, frames, note, basis=basis, fields=fields, fab_saved=fab_saved
+            repository,
+            frames,
+            note,
+            basis=basis,
+            fields=fields,
+            fab_saved=fab_saved,
+            removal_confirmed=removal_confirmed,
         )
     except BOOTSTRAP_ERRORS as exc:
         if not (fab_saved or fab_error):
@@ -937,6 +1176,7 @@ def _save_equipment_frames(
     basis: EquipmentSaveBasis | None,
     fields: EquipmentSaveFields | None,
     fab_saved: bool,
+    removal_confirmed: frozenset[str] = frozenset(),
 ) -> str:
     """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션).
 
@@ -967,6 +1207,12 @@ def _save_equipment_frames(
     )
     if scenario_id is None:
         raise ValueError("설비 시나리오가 없어 설비 마스터를 저장하지 않았습니다.")
+    # 지운 호기가 다른 설비 시나리오에도 일정이 있으면 확인한 것만 지운다(설계 11-2 6단계).
+    removal = removals_elsewhere(
+        frames, database_path=str(repository.database_path), scenario_id=scenario_id
+    )
+    if removal is not None and not removal.names <= removal_confirmed:
+        raise ValueError(removal.refusal())
     schedule_id = base.get("schedule")
     # 편집본이 나온 두 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
     # 저장소가 쓰기 잠금 안에서 거부한다 — 옛 편집이 남의 저장을 조용히 되돌리지 않게.
@@ -1011,6 +1257,20 @@ def _save_equipment_frames(
     return save_result_message(result, scenario_name=name) + layouts + fab
 
 
+# 설비 마스터 편집표 설비명 칸 도움말. 이 표의 설비명은 키라 고치면 「지운 호기 + 새 호기」 다 —
+# 이름 바꾸기(같은 호기, G4·R2)는 Space 편집기와 개편 뒤 설비 마스터 호기 상세에서 한다.
+RENAME_CELL_HELP = (
+    "설비명은 호기를 가르는 키입니다 — 여기서 고치면 저장할 때 옛 호기를 지우고 새 호기로 넣어 "
+    "다른 설비 시나리오의 그 호기 일정이 빠집니다. 이름만 바꾸려면 Space 편집기 「이름 바꾸기」 "
+    "를 쓰세요."
+)
+# 지운 호기와 새 호기가 한 저장에 함께 있을 때 결과 알림 꼬리(설계 11-4).
+RENAME_INSTEAD_HINT = (
+    "이름만 바꾸려면 Space 편집기 「이름 바꾸기」 를 쓰세요 — 지우고 새로 넣으면 다른 설비 "
+    "시나리오의 그 호기 일정이 빠집니다."
+)
+
+
 def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | None) -> str:
     """저장 결과 알림 — 공통 rN · 시나리오 rN · 함께 넣은 목록 · 발행 · 지운 호기(설계 6-3·6-4)."""
     written: list[str] = []
@@ -1050,7 +1310,9 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
     if result.removed_units:
         removed = f"지운 호기 {len(result.removed_units):,}대는 모든 설비 시나리오에서 빠졌습니다."
         if result.new_units:
-            removed += " 이름만 바꾸려면 Space 편집기 「이름 바꾸기」 를 쓰세요."
+            # 붙여넣기·CSV·RawData 설비명 칸 고침은 설비명이 키라 이름 바꾸기가 아니다(지운 + 새
+            # 호기).
+            removed += f" {RENAME_INSTEAD_HINT}"
         sentences.append(removed)
     sentences.append("가용설비와 필요 단축 일정에 반영되고, Space 현황은 공식 기준입니다.")
     return " ".join(sentences)
@@ -1416,9 +1678,15 @@ def _save_snapshot(
     *,
     basis: EquipmentSaveBasis | None,
     fields: EquipmentSaveFields,
+    removal_confirmed: frozenset[str] = frozenset(),
 ) -> None:
     st.session_state[FLASH_KEY] = save_equipment_buffer(
-        repository, frames, note, basis=basis, fields=fields
+        repository,
+        frames,
+        note,
+        basis=basis,
+        fields=fields,
+        removal_confirmed=removal_confirmed,
     )
 
 
@@ -1684,6 +1952,18 @@ UNIT_DELETE_SCOPE_NOTE = (
 )
 # RawData 폼 안 저장 칸 key 접두어(`equipment_save_fields`).
 SAVE_FIELDS_PREFIX = "equipment_workspace_save"
+# 지우는 호기가 다른 설비 시나리오에 일정이 있을 때의 확인 체크(설계 11-2 6단계). key 꼬리는 그 호기
+# 목록의 지문이라 목록이 바뀌면 체크가 풀린 새 칸으로 선다.
+REMOVAL_CONFIRM_KEY = "equipment_workspace_removal_confirm_v1"
+# 가정 설비 시나리오의 배치 칸 임시 잠금(설비 시나리오 2단계 S1). 이 판에서 배치 일곱 칸은 공통
+# 칸이라 가정 세션에서 고치면 **공식 배치**가 바뀐다(LY4 에 어긋남). 칸을 잠그지(`disabled`) 않고
+# 제출·붙여넣기 미리보기에서 있던 호기의 고침만 되돌린다 — `레이아웃표시` 는 기본값 없는 필수 고르기
+# 칸이라 잠그면 새 호기 행을 넣을 수 없다. 새 호기의 배치 값은 받는다.
+ASSUMPTION_LAYOUT_LOCK = (
+    "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 Space 현황에서 "
+    "고칩니다 — 다음 판에서 열립니다. 지금은 공식 설비 시나리오에서 고치세요(이 판에서는 배치 칸이 "
+    "공통이라 여기서 고치면 공식 배치가 바뀝니다). 새로 넣는 호기의 배치 칸은 받습니다."
+)
 
 
 def scenario_column_help(column: str, scenario_name: str | None) -> str:
@@ -1839,9 +2119,7 @@ def _history_scenario(
     if snapshot is not None and snapshot.schedule is not None:
         return snapshot.schedule.equipment_scenario_id
     catalog = load_equipment_scenario_catalog(str(repository.database_path))
-    if catalog.official_scenario_id is not None:
-        return catalog.official_scenario_id
-    return catalog.scenarios[0].equipment_scenario_id if catalog.scenarios else None
+    return catalog.effective_official_scenario_id
 
 
 def _location_options(
@@ -1884,6 +2162,8 @@ def _render_editors(
     값을 칸 단위로 뺀다(`master_location_options` — 표에 이미 있는 값은 남긴다). 저장 검사는
     그대로다(S5)."""
     baseline, equipment, downtime = frames
+    # 이름 바꿈이 남긴 필터 지도를 필터를 그리기 전에 얹는다(`follow_unit_renames`).
+    _apply_followed_filters()
     buildings, floors = _location_options(floor_states, equipment)
     # 위에 삭제 확인이 서거나 사라지면 이 탭의 자리가 밀린다 — key 가 고른 표를 지킨다.
     master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS), key=EDITOR_TABS_KEY)
@@ -1891,7 +2171,7 @@ def _render_editors(
         equipment_view, equipment_requested = _editor_view(
             equipment,
             key=EQUIPMENT_EDITOR_KEY,
-            prefix="equipment_master_view",
+            prefix=MASTER_VIEW_PREFIX,
             filters=(
                 "공정소분류",
                 "공정구분",
@@ -1918,7 +2198,7 @@ def _render_editors(
         )
         # 설비명은 고정하지 않는다. 고정 열은 Streamlit 이 맨 앞으로 옮겨 계약 차례(6번째)가 깨진다.
         config: dict[str, Any] = {
-            EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True),
+            EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True, help=RENAME_CELL_HELP),
             "공정소분류": st.column_config.TextColumn(required=True),
             "동": st.column_config.SelectboxColumn(options=buildings),
             "층": st.column_config.SelectboxColumn(options=floors),
@@ -2021,7 +2301,7 @@ def _render_editors(
         downtime_view, downtime_requested = _editor_view(
             downtime,
             key=DOWNTIME_EDITOR_KEY,
-            prefix="equipment_downtime_view",
+            prefix=DOWNTIME_VIEW_PREFIX,
             filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
             locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
             label="운영 비가동 일정 · 표 보기 설정",
@@ -2369,6 +2649,9 @@ def render_equipment_data_workspace(
     frames = ensure_equipment_drafts(latest_snapshot)
     scenario_name = basis.scenario_name if basis is not None else None
     stale = basis is not None and basis.stale
+    # 가정 설비 시나리오 — 있던 호기의 배치 칸 고침을 제출·붙여넣기 미리보기에서 막는다(S1 임시
+    # 잠금).
+    assumption = basis is not None and not basis.official_scenario
     # Space 층 사용 상태(설비 0029, 공용 현행값) — 동·층 칸 선택지와 저장 미리보기 경고에 쓴다.
     # 못 읽으면 지금처럼 30개 층 그대로다(RawData 를 막지 않는다).
     floor_states: FloorStates | None
@@ -2388,6 +2671,8 @@ def render_equipment_data_workspace(
             "시나리오)."
         )
     st.caption(SCENARIO_COLUMN_LEGEND)
+    if assumption:
+        st.caption(f":material/lock: {ASSUMPTION_LAYOUT_LOCK}")
     if stale and basis is not None:
         st.warning(_stale_lock_message(basis), icon=":material/lock_clock:")
     # 미리보기는 등록할 표·붙여넣기·업로드에서 나온 위젯 아닌 칸이라 그 입력보다 오래 산다.
@@ -2409,6 +2694,12 @@ def render_equipment_data_workspace(
         notice = st.session_state.pop(_NOTICE_KEY, None)
         if isinstance(notice, str):
             st.info(notice)
+        # Space 편집기에서 바꾼 저장 안 한 이름 — 여기서 저장해도 함께 저장되고 같은 호기로 이어진다
+        # (G4·R2). Space 상자와 같은 목록 꼴이다.
+        renames = pending_unit_renames()
+        names = name_changes(_saved_master(), frames[1], renames) if renames else pd.DataFrame()
+        if not names.empty:
+            render_name_changes(names, key=NAME_CHANGES_EXPANDER_KEY)
         # **저장을 누르기 전에 말한다.** 30행을 다 붙여넣고 저장에서 막히는 것과, 들어오자마자
         # 아는 것은 다르다. 폼 밖이라 일반 버튼이 되고 콜백이 그 자리에서 지운다.
         example_rows = _example_row_count(frames, pending)
@@ -2498,6 +2789,25 @@ def render_equipment_data_workspace(
         # 같은 제출의 새 호기가 아직 없다. 실제로 퍼진 목록은 저장 결과 알림이 적는다(설계 6-4).
         save_fields = render_equipment_save_fields(
             SAVE_FIELDS_PREFIX, release_exists=basis is None or basis.release_no > 0
+        )
+        # 지운 호기가 다른 설비 시나리오에도 일정이 있으면 저장 전에 확인한다(설계 11-2 6단계). 같은
+        # 제출에서 더 지우면 목록이 달라져 저장이 거부되고 다음 회차에 새 체크가 선다.
+        try:
+            removal = removals_elsewhere(
+                frames,
+                database_path=str(repository.database_path),
+                scenario_id=_target_scenario_id(basis),
+            )
+        except BOOTSTRAP_ERRORS:
+            removal = None
+        removal_agreed = False
+        if removal is not None:
+            st.warning(removal.message(), icon=":material/group_remove:")
+            removal_agreed = st.checkbox(
+                removal.confirm_label(), key=f"{REMOVAL_CONFIRM_KEY}__{removal.token}"
+            )
+        removal_confirmed: frozenset[str] = (
+            removal.names if removal is not None and removal_agreed else frozenset()
         )
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장
@@ -2628,6 +2938,19 @@ def render_equipment_data_workspace(
             icon=":material/sync_problem:",
         )
         return
+    layout_refusal: str | None = None
+    if assumption:
+        # 가정 설비 시나리오의 있던 호기 배치 칸 고침은 그 칸만 제출 전 값으로 되돌리고 나머지
+        # 편집은 반영한다(막고 위젯 delta 에만 남기면 남의 저장·화면 이동 때 같은 제출의 다른 편집도
+        # 잃는다).
+        touched = existing_layout_edits(
+            frames[1], edited[1], existing=existing_unit_names(frames[1])
+        )
+        if touched:
+            edited = (edited[0], keep_layout_cells(edited[1], frames[1], touched), edited[2])
+            layout_refusal = assumption_layout_refusal(
+                touched, scenario_name=scenario_name, pasted=False
+            )
     _remember_edits(edited)
     _apply_bulk_actions(
         editor,
@@ -2635,6 +2958,10 @@ def render_equipment_data_workspace(
         undo=undo_delete,
         view_applied=view_clicked,
     )
+    if layout_refusal is not None:
+        # 저장·미리보기는 하지 않는다 — 되돌린 칸을 보고 다시 누르게.
+        st.session_state[_ERROR_KEY] = layout_refusal
+        st.rerun()
     try:
         if preview_clicked or import_save_clicked:
             if clipboard.strip() and uploaded is not None:
@@ -2650,7 +2977,14 @@ def render_equipment_data_workspace(
                 and isinstance(pending, ImportReview)
                 and pending.matches(target, content, edited)
             ):
-                _save_snapshot(repository, pending.candidate, note, basis=basis, fields=save_fields)
+                _save_snapshot(
+                    repository,
+                    pending.candidate,
+                    note,
+                    basis=basis,
+                    fields=save_fields,
+                    removal_confirmed=removal_confirmed,
+                )
             else:
                 review = build_import_review(
                     target,
@@ -2663,6 +2997,15 @@ def render_equipment_data_workspace(
                     refusal = stale_paste_refusal(review, edited, basis)
                     if refusal is not None:
                         raise ValueError(refusal)
+                if assumption:
+                    refusal = assumption_paste_refusal(
+                        review,
+                        edited,
+                        existing=existing_unit_names(edited[1]),
+                        scenario_name=scenario_name,
+                    )
+                    if refusal is not None:
+                        raise ValueError(refusal)
                 st.session_state[PREVIEW_KEY] = review
                 if import_save_clicked:
                     st.session_state[_NOTICE_KEY] = (
@@ -2670,7 +3013,14 @@ def render_equipment_data_workspace(
                         "변경 내용을 확인한 뒤 다시 저장하세요."
                     )
         elif edit_save_clicked:
-            _save_snapshot(repository, edited, note, basis=basis, fields=save_fields)
+            _save_snapshot(
+                repository,
+                edited,
+                note,
+                basis=basis,
+                fields=save_fields,
+                removal_confirmed=removal_confirmed,
+            )
     except BOOTSTRAP_ERRORS as exc:
         if preview_clicked or import_save_clicked:
             st.session_state.pop(PREVIEW_KEY, None)

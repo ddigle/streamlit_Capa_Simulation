@@ -26,6 +26,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_unit_renames,
     pop_discarded_notice,
     pop_drafts_replaced,
+    render_name_changes,
     replace_equipment_buffer,
     reset_equipment_drafts,
     revision_token,
@@ -879,14 +880,9 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 st.dataframe(changes, hide_index=True, width="stretch")
         if not names.empty:
             # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
-            # 결정). 비가동 일정은 따라가고, 진척 비교 기준선·바깥 Excel 은 따라가지 않는다(Guide).
-            with st.expander(f"바꾼 이름 {len(names)}건"):
-                st.dataframe(names, hide_index=True, width="stretch")
-                st.caption(
-                    "저장하면 새 리비전부터 새 이름입니다. 지난 리비전과 필요 단축 일정 진척 비교 "
-                    "기준선은 옛 이름 그대로이고, 설비 마스터를 바깥 Excel 에서 붙여넣어 관리하면 "
-                    "그 Excel 의 이름도 바꿔야 합니다."
-                )
+            # 결정). 같은 호기라 모든 설비 시나리오의 일정·비가동이 따라가고(G4·R2), 진척 비교
+            # 기준선·바깥 Excel 은 따라가지 않는다(Guide). RawData 와 같은 목록 꼴이다.
+            render_name_changes(names)
         if fab_pending is not None and fab_pending.marks is not None:
             for label in duplicate_block_links(fab_pending.marks):
                 st.caption(
@@ -1202,7 +1198,12 @@ def _render_layout_editor(
         )
     renamed = (
         f" 이름 바꿈 {len(applied.renames)}건도 넣었습니다"
-        + ("(비가동 일정의 설비명이 따라갑니다)." if applied.unit_renames else ".")
+        + (
+            " — 같은 호기라 비가동 일정의 설비명이 따라가고, 저장하면 모든 설비 시나리오의 일정이 "
+            "새 이름을 따라갑니다."
+            if applied.unit_renames
+            else "."
+        )
         if applied.renames
         else ""
     )

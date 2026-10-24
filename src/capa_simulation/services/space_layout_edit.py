@@ -1108,6 +1108,7 @@ def _require_distinct_names(
     group_ids: Collection[str],
     created_ids: Collection[str],
     reserved: Mapping[str, str],
+    only: tuple[RenameKind, str] | None = None,
 ) -> None:
     """바꾼 뒤에도 설비명·Main 설비 이름이 겹치지 않는지 본다(설비 마스터 전체 — 다른 층·
     미배치·레이아웃 제외 포함). 겹침은 `scalar_match_key` 로 본다 — 대소문자·앞뒤 공백만 다른 두
@@ -1120,6 +1121,9 @@ def _require_distinct_names(
     - Main 설비 이름을 바꾸면: 어떤 설비명과도, 다른 Main 설비 이름과도 겹칠 수 없다.
     - 설비명은 편집본에 호기가 없어도 `reserved`(`_reserved_reasons` — RawData 에서 지우고 저장 안
       한 저장본 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정)와도 겹칠 수 없다.
+
+    `only`(종류, 옛 이름)를 주면 그 바꿈 하나만 거부 대상으로 본다 — 나머지는 비우는 이름·차지하는
+    이름으로만 셈에 든다(`check_unit_rename`).
     """
     units = {change.old: change.new for change in renames if change.kind == "unit"}
     groups = {change.old: change.new for change in renames if change.kind == "group"}
@@ -1163,6 +1167,8 @@ def _require_distinct_names(
         )
 
     for change in renames:
+        if only is not None and (change.kind, change.old) != only:
+            continue
         key = scalar_match_key(change.new)
         owner = f"{change.kind}:{change.old}"
         subject = (
@@ -1181,6 +1187,55 @@ def _require_distinct_names(
             raise ValueError(
                 f"{subject} {with_topic_particle(change.new)} 쓸 수 없습니다 — {reserved[key]}."
             )
+
+
+def check_unit_rename(
+    old: str,
+    new: str,
+    *,
+    master: pd.DataFrame,
+    reserved: ReservedNames | None = None,
+    renaming: Mapping[str, str] | None = None,
+) -> str | None:
+    """설비명 하나의 이름 바꿈(옛 → 새)을 Space 편집기와 **같은 규칙·같은 문구**로 본다 — 걸리면 그
+    까닭, 받으면 None. 이름 바꾸기 자리(Space 편집기·설비 마스터 호기 상세)가 모두 이 판정을 쓴다
+    (G4·R2 — 이름 바꾸기는 같은 호기).
+
+    - `master` 는 이름을 바꾸기 **전**의 편집본 설비 마스터다(옛 이름이 있다).
+    - `renaming` 은 같은 제출의 다른 설비명 이름 바꿈(옛 → 새)이다. 그 옛 이름은 비워져 다시 쓸 수
+      있고(맞바꿈 A↔B·사슬 A→B→C) 새 이름은 차지된다(두 호기를 같은 새 이름으로 바꾸면 거부).
+    - `reserved`(`reserved_names`)는 편집본에 호기가 없어도 쓸 수 없는 이름(저장 안 한 지운 이름·
+      설비 마스터에 없는 설비명의 비가동 일정)이다.
+
+    글자는 1~`UNIT_ID_MAX` 자·인쇄 가능, 비울 수 없다. 다른 호기 설비명·Main 설비 이름과
+    대소문자·앞뒤 공백 무시로 겹치면 거부하고, 자기 이름의 대소문자만 바꾸는 것과 자기 설비명을 Main
+    설비로 적은 한 행 묶음(Main 설비가 따라간다)은 받는다. 같은 이름(앞뒤 공백만 다름 포함)이면 바꿀
+    것이 없어 None.
+    """
+    old_name, new_name = old.strip(), new.strip()
+    if new_name == old_name:
+        return None
+    subject = f"{old_name} 의 새 이름"
+    if not new_name:
+        return f"{subject}을 비울 수 없습니다."
+    others = [
+        NameChange(kind="unit", old=other.strip(), new=target.strip())
+        for other, target in (renaming or {}).items()
+        if other.strip() != old_name and other.strip() != target.strip()
+    ]
+    try:
+        _require_name(new_name, subject)
+        _require_distinct_names(
+            [NameChange(kind="unit", old=old_name, new=new_name), *others],
+            master_ids=_name_set(master[EQUIPMENT_ID_COLUMN]),
+            group_ids=_name_set(_parents(master)),
+            created_ids=(),
+            reserved=_reserved_reasons(reserved or ReservedNames()),
+            only=("unit", old_name),
+        )
+    except ValueError as exc:
+        return str(exc)
+    return None
 
 
 def parse_editor_apply(
@@ -1580,8 +1635,9 @@ def apply_name_changes(
     `apply_layout_edits` **뒤에** 부른다 — 배치 변경은 옛 설비명으로 온다. 바꿈은 한꺼번에 한다(A↔B
     처럼 서로 바꾼 이름도 맞게 간다). 좌표·크기 등 나머지 칸은 그대로라 배치가 남는다.
 
-    - 설비명: 그 행의 설비명과, 그 설비명을 가리키는 비가동 일정의 설비명. 자기 설비명을 Main 설비로
-      적은 한 행짜리 묶음은 Main 설비도 따라간다.
+    - 설비명: 그 행의 설비명. 따라가는 칸(비가동 일정의 설비명, 자기 설비명을 Main 설비로 적은 한
+      행짜리 묶음의 Main 설비)은 `rename_followers` 가 옮긴다 — 설비 마스터 호기 상세의 이름
+      바꾸기와 같은 함수다.
     - Main 설비: 그 이름을 쓰는 모든 행(편집기에 없는 형제 포함). 비가동 일정은 설비명만 가리키므로
       바꿀 것이 없다.
     """
@@ -1591,28 +1647,69 @@ def apply_name_changes(
         return master, downtime
     result = master.copy()
     ids = result[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-    parents = _parents(result)
     renamed = ids.isin(list(units)).fillna(False).astype(bool)
-    new_parents = parents.copy()
-    grouped = parents.isin(list(groups)).fillna(False).astype(bool)
-    new_parents.loc[grouped] = parents.loc[grouped].map(groups)
-    follows = renamed & parents.eq(ids).fillna(False).astype(bool)
-    new_parents.loc[follows] = ids.loc[follows].map(units)
     if renamed.any():
         result.loc[renamed, EQUIPMENT_ID_COLUMN] = ids.loc[renamed].map(units)
-    changed_parents = grouped | follows
-    if changed_parents.any():
-        result.loc[changed_parents, PARENT_EQUIPMENT_COLUMN] = new_parents.loc[changed_parents]
-    return result, _renamed_downtime(downtime, units)
+    # 자기 이름을 Main 설비로 적은 행이 먼저 따라간다 — 묶음 이름 바꿈은 그 뒤 남은 행에만 닿는다
+    # (새 설비명은 다른 Main 설비 이름과 겹칠 수 없어 따라간 행이 묶음 바꿈에 다시 걸리지 않는다).
+    result, schedule = rename_followers(result, downtime, units)
+    if groups:
+        parents = _parents(result)
+        grouped = parents.isin(list(groups)).fillna(False).astype(bool)
+        if grouped.any():
+            result.loc[grouped, PARENT_EQUIPMENT_COLUMN] = parents.loc[grouped].map(groups)
+    return result, schedule
 
 
-def _renamed_downtime(downtime: pd.DataFrame, units: Mapping[str, str]) -> pd.DataFrame:
-    """비가동 일정의 설비명을 (옛 이름 → 새 이름) 지도대로 한꺼번에 바꾼 사본."""
+def rename_followers(
+    master: pd.DataFrame,
+    downtime: pd.DataFrame,
+    renames: Mapping[str, str],
+    *,
+    touched_parent_rows: Collection[Any] = (),
+    touched_downtime_rows: Collection[Any] = (),
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """설비명 이름 바꿈(옛 → 새)을 따라가는 칸을 옮긴 새 프레임 둘(원본은 그대로). `master` 의
+    설비명은 **이미 새 이름**이다(Space 는 `apply_name_changes` 가, 설비 마스터 호기 상세는 칸
+    고침이 넣는다).
+
+    - 비가동 일정의 설비명: 옛 → 새로 한꺼번에(맞바꿈 A↔B 도 맞게 간다).
+    - 자기 설비명을 Main 설비로 적은 한 행짜리 묶음: 그 행의 Main 설비가 옛 이름이면 새 이름으로
+      (저장 검증이 이름이 같아도 받는 유일한 묶음이다).
+
+    `touched_parent_rows`·`touched_downtime_rows` 는 같은 제출에서 사용자가 그 칸(Main 설비·비가동
+    설비명)을 직접 고친 행의 **index 라벨**이다 — 손댄 값을 이름 바꿈이 덮지 않는다. Space 는 빈
+    값을 넘긴다. 이름 바꿈은 호기 키를 그대로 두므로 저장하면 모든 설비 시나리오의 일정·비가동이
+    따라간다(`equipment_scenario.assign_unit_keys`).
+    """
+    units = {old: new for old, new in renames.items() if old != new}
+    if not units:
+        return master, downtime
+    result = master.copy()
+    ids = result[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    origins = ids.map({new: old for old, new in units.items()})
+    follows = (
+        origins.notna().fillna(False).astype(bool)
+        & _parents(result).eq(origins).fillna(False).astype(bool)
+        & ~pd.Series(result.index.isin(list(touched_parent_rows)), index=result.index)
+    )
+    if follows.any():
+        result.loc[follows, PARENT_EQUIPMENT_COLUMN] = ids.loc[follows]
+    return result, _renamed_downtime(downtime, units, keep=touched_downtime_rows)
+
+
+def _renamed_downtime(
+    downtime: pd.DataFrame, units: Mapping[str, str], *, keep: Collection[Any] = ()
+) -> pd.DataFrame:
+    """비가동 일정의 설비명을 (옛 이름 → 새 이름) 지도대로 한꺼번에 바꾼 사본. `keep`(index 라벨)
+    행은 그대로 둔다."""
     schedule = downtime.copy()
     if not units or schedule.empty:
         return schedule
     names = schedule[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-    hit = names.isin(list(units)).fillna(False).astype(bool)
+    hit = names.isin(list(units)).fillna(False).astype(bool) & ~pd.Series(
+        schedule.index.isin(list(keep)), index=schedule.index
+    )
     if hit.any():
         schedule.loc[hit, EQUIPMENT_ID_COLUMN] = names.loc[hit].map(units)
     return schedule
@@ -1640,12 +1737,29 @@ def _compose(
     return result
 
 
+def compose_unit_renames(
+    pending: PendingRenames, renames: Mapping[str, str], *, saved_names: Collection[str]
+) -> PendingRenames:
+    """설비명 이름 바꿈(옛 → 새)을 세션의 저장 안 한 이름 지도에 잇는다 — Main 설비 쪽은 그대로.
+
+    A→B 뒤 B→C 는 C→A 로, 다시 A 로 돌리면 항목이 빠진다. 저장본 이름(`saved_names`)에 없던 이름(이
+    세션에 새로 넣은 호기)은 기억하지 않는다 — 짝지을 저장본 호기가 없다. Space 편집기
+    (`compose_renames`)와 설비 마스터 호기 상세가 같은 함수로 잇는다."""
+    return PendingRenames(
+        units=_compose(pending.units, renames, set(saved_names)), groups=dict(pending.groups)
+    )
+
+
 def compose_renames(
     pending: PendingRenames, apply: EditorApply, *, saved: pd.DataFrame
 ) -> PendingRenames:
-    """이번 적용의 이름 바꿈을 세션의 저장 안 한 이름 바꿈에 잇는다(`saved` 는 최신 저장본)."""
+    """이번 적용의 이름 바꿈을 세션의 저장 안 한 이름 바꿈에 잇는다(`saved` 는 최신 저장본).
+    설비명은 `compose_unit_renames`, Main 설비는 같은 규칙으로 따로 잇는다."""
+    units = compose_unit_renames(
+        pending, apply.unit_renames, saved_names=_name_set(saved[EQUIPMENT_ID_COLUMN])
+    )
     return PendingRenames(
-        units=_compose(pending.units, apply.unit_renames, _name_set(saved[EQUIPMENT_ID_COLUMN])),
+        units=units.units,
         groups=_compose(pending.groups, apply.group_renames, _name_set(_parents(saved))),
     )
 
@@ -1915,6 +2029,55 @@ def layout_changes(
     return pd.DataFrame(
         rows, columns=[EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN, "변경", "이전", "새"]
     )
+
+
+def _rows_by_name(frame: pd.DataFrame) -> dict[str, Mapping[Any, Any]]:
+    """설비명(앞뒤 공백 걷음) → 그 행(같은 이름이 여럿이면 첫 행)."""
+    rows: dict[str, Mapping[Any, Any]] = {}
+    for row in frame.to_dict(orient="records"):
+        rows.setdefault(_text(row.get(EQUIPMENT_ID_COLUMN)).strip(), row)
+    return rows
+
+
+def existing_layout_edits(
+    before: pd.DataFrame, after: pd.DataFrame, *, existing: Collection[str]
+) -> list[str]:
+    """`before`(제출 전 편집본) → `after`(제출 뒤)에서 배치 일곱 칸(`PLACE_COLUMNS`)이 바뀐 **있던
+    호기**의 설비명(`after` 차례). 있던 호기는 설비명이 `existing`(저장본에서 온 호기 — 이름 바꿈을
+    거친 지금 이름)에 드는 행이다. 이 세션에 새로 넣은 호기·두 쪽 어디에 없는 이름은 보지 않는다.
+
+    가정 설비 시나리오의 배치 칸 임시 잠금(설비 시나리오 2단계 S1 — 이 판에서 배치 칸은 공통이라
+    고치면 공식 배치가 바뀐다)이 RawData 제출·붙여넣기 미리보기에서 쓴다."""
+    before_rows = _rows_by_name(before)
+    touched: list[str] = []
+    for row in after.to_dict(orient="records"):
+        name = _text(row.get(EQUIPMENT_ID_COLUMN)).strip()
+        previous = before_rows.get(name)
+        if previous is None or name not in existing or name in touched:
+            continue
+        if any(_comparable(previous.get(c)) != _comparable(row.get(c)) for c in PLACE_COLUMNS):
+            touched.append(name)
+    return touched
+
+
+def keep_layout_cells(
+    after: pd.DataFrame, before: pd.DataFrame, names: Collection[str]
+) -> pd.DataFrame:
+    """`names` 호기의 배치 일곱 칸을 `before` 값으로 되돌린 `after` 사본(나머지 칸·행은 그대로)."""
+    if not names:
+        return after
+    result = after.copy()
+    before_rows = _rows_by_name(before)
+    columns = [column for column in PLACE_COLUMNS if column in result.columns]
+    ids = result[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    for name in names:
+        previous = before_rows.get(name)
+        if previous is None:
+            continue
+        mask = ids.eq(name).fillna(False).astype(bool)
+        for column in columns:
+            result.loc[mask, column] = previous.get(column)
+    return result
 
 
 def _parent_follows(

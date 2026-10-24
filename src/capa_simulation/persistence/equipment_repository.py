@@ -286,6 +286,19 @@ class EquipmentScenarioCatalog:
         return self.latest_release.equipment_scenario_id if self.latest_release else None
 
     @property
+    def effective_official_scenario_id(self) -> str | None:
+        """공식으로 볼 설비 시나리오 — 저장소 `equipment_scenario_store.official_scenario_id` 와
+        같은 규칙이다: 최신 발행의 시나리오, 발행이 없으면 「운영 일정」(있으면), 그것도 없으면 목록
+        첫 시나리오. 시나리오가 없으면 None. 화면의 「공식」 판정과 저장의 역할 판정이 갈리지 않게
+        세션·화면은 이것을 쓴다(목록 차례를 바꾼 빈 발행 DB 에서도 같다)."""
+        if self.latest_release is not None:
+            return self.latest_release.equipment_scenario_id
+        ids = [summary.equipment_scenario_id for summary in self.scenarios]
+        if scenario_store.OPERATIONS_SCENARIO_ID in ids:
+            return scenario_store.OPERATIONS_SCENARIO_ID
+        return ids[0] if ids else None
+
+    @property
     def release_no(self) -> int | None:
         """최신 공식 번호(「공식 vN」). 발행이 없으면 None."""
         return self.latest_release.release_no if self.latest_release else None
@@ -1460,6 +1473,28 @@ class DuckDBEquipmentRepository:
                     raise KeyError("공통 대장 리비전이 없습니다.")
                 common = latest[0]
             return read_merged(connection, common, schedule_revision_id)
+
+    def units_scheduled_elsewhere(
+        self, equipment_scenario_id: str | None
+    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        """다른 ACTIVE 설비 시나리오의 **최신** 리비전에 일정 행이 있는 호기 — (호기 키, 그 시나리오
+        이름들) 키 차례. RawData 에서 호기를 지우는 저장의 확인 재료다(지우면 공통 대장에서 빠져 그
+        시나리오들의 일정도 빠진다 — 설계 11-2 6단계). `equipment_scenario_id` 가 None 이면 모든
+        ACTIVE 시나리오를 본다. 이관 리비전은 그 리비전의 모든 호기에 일정 행이
+        있다(`read_schedule`)."""
+        found: dict[str, list[str]] = {}
+        with self._connect() as connection:
+            for summary in map(_scenario_summary, scenario_store.scenario_rows(connection)):
+                if (
+                    summary.status != "ACTIVE"
+                    or summary.equipment_scenario_id == equipment_scenario_id
+                    or summary.latest_schedule_revision_id is None
+                ):
+                    continue
+                frames = read_schedule(connection, summary.latest_schedule_revision_id)
+                for key in frames.schedule[UNIT_KEY_COLUMN].dropna().astype(str):
+                    found.setdefault(key, []).append(summary.scenario_name)
+        return tuple((key, tuple(names)) for key, names in sorted(found.items()))
 
     def list_equipment_scenarios(self) -> list[EquipmentScenarioSummary]:
         """설비 시나리오 목록(`list_order` 다음 이름 차례) — 각 최신·리비전 수와 함께."""

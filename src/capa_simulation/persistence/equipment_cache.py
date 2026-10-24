@@ -290,6 +290,36 @@ def load_legacy_trace_review(database_path: str) -> LegacyTraceReview:
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_units_scheduled_elsewhere_payload(
+    database_path: str,
+    equipment_scenario_id: str | None,
+    stamp: DatabaseStamp,
+    generation: WriteGeneration,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    del stamp, generation
+    return get_equipment_repository(database_path).units_scheduled_elsewhere(equipment_scenario_id)
+
+
+def load_units_scheduled_elsewhere(
+    database_path: str, equipment_scenario_id: str | None
+) -> dict[str, tuple[str, ...]]:
+    """다른 ACTIVE 설비 시나리오 최신에 일정이 있는 호기 키 → 그 시나리오 이름들(설계 7-2·11-2 6단계
+    — RawData 에서 호기를 지우는 저장의 확인 재료).
+
+    남의 저장·복제·되돌리기로 바뀌므로 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로
+    지킨다. 지운 호기가 있는 회차에만 부른다.
+    """
+    return dict(
+        _load_units_scheduled_elsewhere_payload(
+            database_path,
+            equipment_scenario_id,
+            database_stamp(database_path),
+            _write_generation("equipment_scenario"),
+        )
+    )
+
+
 # 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·설비 시나리오 탭 표).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
@@ -393,6 +423,7 @@ def clear_equipment_scenario_cache() -> None:
     _load_scenario_catalog_payload.clear()
     _load_schedule_revisions_payload.clear()
     _load_legacy_trace_review_payload.clear()
+    _load_units_scheduled_elsewhere_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)

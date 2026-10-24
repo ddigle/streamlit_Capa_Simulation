@@ -56,6 +56,11 @@ class TableView:
         return "fixed" if self.filtered else "dynamic"
 
 
+def filter_widget_key(key_prefix: str, column: str) -> str:
+    """행 필터 한 칸의 위젯 key — 그 칸이 고른 값(목록)이 세션의 이 이름에 남는다."""
+    return f"{key_prefix}_filter_{column}"
+
+
 def _options(data: pd.DataFrame, column: str) -> list[str]:
     values = data[column].dropna().astype(str).str.strip()
     return sorted(value for value in values.unique().tolist() if value)
@@ -112,7 +117,7 @@ def render_table_view_controls(
                     option_text = ProcessLabels(labels=labels or {}).unique_format_func(options)
                     if labels:
                         options = sorted(options, key=lambda value: (option_text(value), value))
-                    filter_key = f"{key_prefix}_filter_{column}"
+                    filter_key = filter_widget_key(key_prefix, column)
                     # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만
                     # 브라우저에 가므로 보이는 글자가 바뀌어도 새 글자를 받는다(2026-10-10 재검증).
                     prune_list_selection(filter_key, options)

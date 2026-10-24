@@ -96,11 +96,10 @@ class EquipmentSession:
 
     @property
     def official_scenario_id(self) -> str | None:
-        """공식 설비 시나리오 — 최신 발행의 시나리오. 발행이 없으면 목록 첫 시나리오(이관이 넣은
-        「운영 일정」 이 맨 앞이다)."""
-        if self.catalog.official_scenario_id is not None:
-            return self.catalog.official_scenario_id
-        return self.catalog.scenarios[0].equipment_scenario_id if self.catalog.scenarios else None
+        """공식 설비 시나리오 — 최신 발행의 시나리오. 발행이 없으면 「운영 일정」(있으면), 그것도
+        없으면 목록 첫 시나리오(`EquipmentScenarioCatalog.effective_official_scenario_id` — 저장소의
+        역할 판정과 같은 규칙. 목록 차례를 바꾼 빈 발행 DB 에서 화면과 저장이 갈리지 않는다)."""
+        return self.catalog.effective_official_scenario_id
 
     @property
     def is_official_scenario(self) -> bool:
@@ -231,14 +230,17 @@ def _write_selection(scenario_id: str, schedule_revision_id: str | None) -> None
 
 
 def _default_selection(catalog: EquipmentScenarioCatalog) -> tuple[str, str | None] | None:
-    """새 세션 = 최신 공식 발행 → 없으면 목록 첫 시나리오의 최신 → 시나리오가 없으면 None."""
+    """새 세션 = 최신 공식 발행 → 없으면 공식으로 볼 시나리오(「운영 일정」, 없으면 목록 첫
+    시나리오 — `effective_official_scenario_id`)의 최신 → 시나리오가 없으면 None."""
     release = catalog.latest_release
     if release is not None and catalog.scenario(release.equipment_scenario_id) is not None:
         return release.equipment_scenario_id, release.schedule_revision_id
-    if not catalog.scenarios:
-        return None
-    first = catalog.scenarios[0]
-    return first.equipment_scenario_id, first.latest_schedule_revision_id
+    official = catalog.scenario(catalog.effective_official_scenario_id)
+    if official is None:
+        if not catalog.scenarios:
+            return None
+        official = catalog.scenarios[0]
+    return official.equipment_scenario_id, official.latest_schedule_revision_id
 
 
 def _settled_selection(catalog: EquipmentScenarioCatalog) -> tuple[str, str | None] | None:
