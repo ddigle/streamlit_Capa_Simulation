@@ -187,6 +187,25 @@ def test_floor_blocks_count_placement_not_state() -> None:
     )
 
 
+def test_an_inactive_floor_block_carries_its_reason_and_keeps_its_counts() -> None:
+    """비활성 층 칸에만 짧은 사유 글(`inactive`)이 실린다 — 대수 칸은 그대로(풍선이 쓴다). 다른 층
+    칸은 전과 같다(키가 늘지 않는다)."""
+    equipment = _space_equipment()
+    unplaced = pd.DataFrame({"동": ["C1", "C1", None], "층": ["2F", "2F", None]})
+    placements = floor_placements(equipment, unplaced, equipment, lambda key: (100.0, 60.0))
+
+    stats = floor_block_stats(placements, inactive={("C1", "2F"): "생산라인 아님"})
+
+    assert stats["C1 2F"] == {
+        "placed": "배치 0대",
+        "unplaced": "미배치 2대",
+        "occupancy": None,
+        "inactive": "생산라인 아님",
+    }
+    assert stats["C1 1F"] == floor_block_stats(placements)["C1 1F"]
+    assert "inactive" not in stats["C1 1F"]
+
+
 def _floor_placements_one_floor_at_a_time(
     counted: pd.DataFrame,
     unplaced: pd.DataFrame,

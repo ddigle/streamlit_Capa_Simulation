@@ -702,7 +702,7 @@ def test_migration_0015_adds_nullable_columns_and_keeps_investment_basis(tmp_pat
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (15, 17, 19, 21, 23, 25, 27)
+    assert repository.initialize() == (15, 17, 19, 21, 23, 25, 27, 29)
     old = repository.load_snapshot("r-old").equipment
 
     assert old.loc[0, "설비명"] == "EQ-OLD"
@@ -805,7 +805,7 @@ def test_migration_0023_adds_actual_columns_and_keeps_the_dropped_status_column(
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (23, 25, 27)
+    assert repository.initialize() == (23, 25, 27, 29)
     columns = _nullable_columns(database_path)
     for column in ("arrival_actual_date", "arrival_status", "qual_actual_date"):
         assert columns[column] == "YES", column

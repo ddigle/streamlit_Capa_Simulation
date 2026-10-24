@@ -600,3 +600,35 @@ def test_a_refused_fab_does_not_block_the_equipment_save(tmp_path: Path) -> None
     assert app.session_state["pending_base"] == app.session_state["expected_base"]
     assert [mark.mark_id for mark in repository.load_fab_layout_marks()] == ["THEIRS"]
     clear_equipment_repository()
+
+
+def test_a_floor_state_save_keeps_the_fab_editor_epoch_and_its_open_is_filtered(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """남이 층 사용 상태를 저장해도 FAB 편집기 epoch 는 그대로다(적용 전 FAB 편집을 잃지 않는다) —
+    블록 글자의 `inactive` 만 다음 회차에 바뀐다. 편집 [열기] 로 온 비활성 층은 서버도 거른다."""
+    from capa_simulation.persistence.equipment_cache import clear_floor_state_cache
+
+    database = tmp_path / "fab_edit.duckdb"
+    app = _app(database, saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    before = _fab_calls(editor_calls, editing=True)[-1]
+    assert "inactive" not in before["linkStats"]["C1 3F"]
+
+    DuckDBEquipmentRepository(database).save_floor_states(
+        {("C1", "3F"): "NOT_LINE"}, expected_version=0, source="남"
+    )
+    clear_floor_state_cache()
+    app.run()
+
+    after = _fab_calls(editor_calls, editing=True)[-1]
+    assert not app.exception
+    assert after["epoch"] == before["epoch"]
+    assert after["linkStats"]["C1 3F"]["inactive"] == "생산라인 아님"
+
+    app.session_state[FAKE_NAVIGATE_KEY] = {"epoch": after["epoch"], "target": "C1 3F"}
+    app.run()
+    app.run()
+    assert not app.exception
+    assert "space_status_selected_building" not in app.session_state
+    clear_equipment_repository()

@@ -392,6 +392,9 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
     1.8:1 이라 짙은 테(`SPACE_RING_EXIT_OUTLINE`)를 한 겹 두르고, 어둡게는 노랑 혼자 넉넉해 짙은 테 값이
     캔버스색이다. 선택 후광(`SPACE_RING_HALO`)은 `ACCENT` 다. `tests/test_design_tokens.py` 가 두 대비를
     고정한다.
+  - 비활성 층 블록(사용 안 함·생산라인 아님, 설비 `0029`)은 `SPACE_BLOCK_OFF_FILL`(밝게는 기본 블록 면보다 옅은 회색,
+    어둡게는 캔버스에 가까운 어두운 회색) 면에 영역 빗금 무늬 `#sle-hatch` 와 `TEXT_MUTED` 사유 글자다. 사유·머리
+    글자(`TEXT_MUTED`·`SPACE_TEXT`)는 두 테마의 그 면 위 4.5:1 이상이고 고른 블록 색·「글자 색」 은 달지 않는다.
 - **첫 접속 입장 화면과 Summary 요약 화면**(`components/intro_overlay.py`)은 앱 테마와 무관한
   어두운 한 벌(`tokens.INTRO_PALETTE`)이고, 워드마크·타이틀·`Detail`·`Summary`·시트의 달만 Archivo
   800·폭 75%, 요약 차트의 숫자만 Archivo 700 을 쓴다. 사내망에 외부 글꼴이 없어 이 화면이 쓰는 글자만

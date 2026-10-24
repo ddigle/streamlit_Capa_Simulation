@@ -4,8 +4,8 @@
 
 - **리비전 내용은 불변이다.** 화면이 쓰는 한 벌은 (공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍을
   합친 것이고 그 본문은 쌍 키로만 캐시한다(`load_merged_equipment_snapshot`) — 쓰기 세대가 없다.
-- **바뀔 수 있는 것**(시나리오 이름·공식 발행·각 시나리오 최신·옛 배포 흔적, 공통 최신 id, 현행값)은
-  DB·WAL stat·쓰기 세대·TTL 을 키에 둔 목록 캐시로 뺀다.
+- **바뀔 수 있는 것**(시나리오 이름·공식 발행·각 시나리오 최신·옛 배포 흔적, 공통 최신 id, 현행값 —
+  Cut-off·주차별 가용대수·층 사용 상태 등)은 DB·WAL stat·쓰기 세대·TTL 을 키에 둔 목록 캐시로 뺀다.
 - **어느 캐시도 저장소의 호환 래퍼(`save_snapshot`·`save_space_layout`·`load_snapshot`)를 부르지
   않는다.** 래퍼 `load_snapshot` 은 공식 발행에 따라 값이 바뀌는 뜻이라 공통 id 하나를 키로 실으면
   발행 뒤 낡은 값을 낸다(시험이 이 파일을 훑는다).
@@ -41,6 +41,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorLayoutCanvas,
     FloorLayoutProfile,
 )
+from capa_simulation.services.floor_state import FloorStates
 from capa_simulation.services.shortening_baseline import (
     ShorteningBaseline,
     ShorteningBaselineSummary,
@@ -148,8 +149,8 @@ DatabaseStamp = tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
 CURRENT_READ_TTL_SECONDS = 15
 # 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 비운 횟수). 비울 때마다 오른다. 덮어쓰거나 지울 수
 # 있는 값을 담는 캐시(공통 최신 id·설비 시나리오 목록·시나리오 리비전 목록·Cut-off·주차별
-# 가용대수·층/FAB 도면·필요 단축 일정 조건·기준선)는 모두 이 세대를 키에 둔다. 고칠 수도 지울 수도
-# 없는 리비전 id 키의 캐시(합친 본문·공통 이력·CSV)는 겹쳐도 같은 값이라 두지 않는다.
+# 가용대수·층/FAB 도면·층 사용 상태·필요 단축 일정 조건·기준선)는 모두 이 세대를 키에 둔다. 고칠
+# 수도 지울 수도 없는 리비전 id 키의 캐시(합친 본문·공통 이력·CSV)는 겹쳐도 같은 값이라 두지 않는다.
 WriteGeneration = tuple[str, int]
 _MODULE_EPOCH = uuid4().hex
 _GENERATION_LOCK = threading.Lock()
@@ -161,6 +162,7 @@ _write_generations = {
     "floor_layout": 0,
     "shortening_filter": 0,
     "shortening_baseline": 0,
+    "floor_state": 0,
 }
 
 
@@ -670,6 +672,35 @@ def clear_shortening_baseline_cache() -> None:
     _load_shortening_baseline_payload.clear()
 
 
+@st.cache_data(show_spinner=False, max_entries=4, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_floor_states_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> dict[str, Any]:
+    del stamp, generation
+    return _payload(get_equipment_repository(database_path).load_floor_states(), FloorStates)
+
+
+def load_floor_states(database_path: str) -> FloorStates:
+    """Space 동·층 사용 상태(`0029`, 리비전 없는 공용 현행값).
+
+    Space(회차마다)와 가용설비 현황 RawData(편집표를 그리는 회차마다)가 읽는다. Cut-off 와 같은
+    방식이다 — 이 앱의 저장(`space_floor_list` 의 저장 콜백)이 성공한 직후
+    `clear_floor_state_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의
+    쓰기(다른 PC·동기화로 받은 DB)를 맡는다. 도면 캐시(`floor_layout` 세대)와 묶지 않는다 — 층
+    사용 저장이 배경 도면까지 비울 까닭이 없다.
+    """
+    return FloorStates(
+        **_load_floor_states_payload(
+            database_path, database_stamp(database_path), _write_generation("floor_state")
+        )
+    )
+
+
+def clear_floor_state_cache() -> None:
+    _bump_write_generation("floor_state")
+    _load_floor_states_payload.clear()
+
+
 def clear_floor_layout_cache() -> None:
     """층·FAB 도면·캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 도면만 바꾼 저장(팝업)은 설비
     리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른
@@ -701,4 +732,5 @@ def clear_equipment_repository() -> None:
     clear_floor_layout_cache()
     clear_shortening_filter_cache()
     clear_shortening_baseline_cache()
+    clear_floor_state_cache()
     get_equipment_repository.clear()

@@ -145,3 +145,61 @@ def test_the_floor_jump_and_the_fab_breadcrumb_keep_the_theme_param(
     assert "floor" not in app.query_params
     assert app.query_params["theme"] == ["dark"]
     assert app.selectbox(key="space_status_floor_jump_fab").value is None
+
+
+def _with_inactive_floors(tmp_path: Path, inactive: dict[tuple[str, str], str]) -> None:
+    """앱을 띄우기 전에 그 DB 에 층 사용 상태를 저장한다(앱 밖의 쓰기 — 캐시는 DB stat 이
+    가른다)."""
+    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+    repository = DuckDBEquipmentRepository(tmp_path / "space_nav.duckdb")
+    repository.initialize()
+    repository.save_floor_states(inactive, expected_version=None, source="test")
+
+
+def test_an_inactive_floor_block_is_marked_and_a_press_on_it_stays_on_the_fab(
+    tmp_path: Path, viewer_calls: list[dict[str, Any]]
+) -> None:
+    """비활성 층 블록 칸에는 짧은 사유가 실리고, 같은 epoch 로 그 블록을 눌러도(옛 브라우저·경합)
+    서버가 거른다 — 사용 층 블록은 그대로 열린다."""
+    _with_inactive_floors(tmp_path, {("C1", "3F"): "UNUSED", ("C2", "1F"): "NOT_LINE"})
+    app = _app(tmp_path).run()
+    assert not app.exception
+    fab = viewer_calls[-1]
+    assert fab["linkStats"]["C1 3F"]["inactive"] == "사용 안 함"
+    assert fab["linkStats"]["C2 1F"]["inactive"] == "생산라인 아님"
+    assert "inactive" not in fab["linkStats"]["C2 2F"]
+
+    app.session_state[FAKE_NAVIGATE_KEY] = {"epoch": fab["epoch"], "target": "C1 3F"}
+    app.run()
+    app.run()
+    assert not app.exception
+    assert viewer_calls[-1]["scope"] == "fab"
+    assert "space_status_selected_building" not in app.session_state
+
+    app.session_state[FAKE_NAVIGATE_KEY] = {"epoch": viewer_calls[-1]["epoch"], "target": "C2 2F"}
+    app.run()
+    app.run()
+    assert viewer_calls[-1]["scope"] == "floor" and viewer_calls[-1]["floor"] == "C2 2F"
+
+
+def test_saving_floor_states_rebuilds_the_fab_viewer_epoch(
+    tmp_path: Path, viewer_calls: list[dict[str, Any]]
+) -> None:
+    """층 사용 상태가 바뀌면 FAB 뷰어가 새 epoch 로 다시 선다(블록의 초점·역할이 서는 때). 같은
+    내용이면 epoch 도 같다."""
+    from capa_simulation.persistence.equipment_cache import clear_floor_state_cache
+
+    app = _app(tmp_path).run()
+    before = viewer_calls[-1]["epoch"]
+    app.run()
+    assert viewer_calls[-1]["epoch"] == before
+
+    _with_inactive_floors(tmp_path, {("C1", "3F"): "UNUSED"})
+    clear_floor_state_cache()
+    app.run()
+
+    assert not app.exception
+    assert viewer_calls[-1]["scope"] == "fab"
+    assert viewer_calls[-1]["epoch"] != before
+    assert viewer_calls[-1]["epoch"].startswith(before.rsplit("|", 1)[0] + "|")

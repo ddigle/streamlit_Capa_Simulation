@@ -154,7 +154,10 @@ def test_only_a_floor_block_in_the_fab_viewer_opens_a_floor() -> None:
     """누르면 열리는 것은 보기 전용 FAB 의 층 블록뿐이다. 끌었으면 열지 않고, 키보드(Enter·
     Space)로도 연다. 영역·글자는 꾸밈이라 눌림을 받지 않는다. 층 블록은 FAB 범위에서만 그린다."""
     assert JS.count("setTriggerValue('navigate'") == 1
-    assert "Boolean(VIEW && FAB && item && item.kind === 'block' && item.link)" in JS
+    assert (
+        "Boolean(VIEW && FAB && item && item.kind === 'block' && item.link && !blockOff(item))"
+        in JS
+    )
     assert "if (!drag.travelled) openFloor(item)" in JS
     assert "(event.key === 'Enter' || event.key === ' ')" in JS
     assert "group.setAttribute('tabindex', '0')" in JS
@@ -191,6 +194,44 @@ def test_the_inspector_open_is_locked_while_fab_edits_are_unapplied() -> None:
     assert "blockOpen.onclick = () => openFloor(selectedMark(), true)" in JS
     assert "(fromInspector && opensFromInspector(item))" in JS
     assert "!VIEW && FAB && item && item.kind === 'block' && item.link && !hasPendingEdits()" in JS
+
+
+def test_an_inactive_floor_block_is_grey_hatched_and_never_opens() -> None:
+    """비활성 층(사용 안 함·생산라인 아님)을 가리키는 블록은 회색 면 + 영역 빗금 + 흐린 사유 글자로
+    그리고, 보기에서 눌러도·Enter 로도 열리지 않으며 고르지도 않는다(강조 테두리가 서지 않는다).
+    편집에서는 그대로 옮기고 [열기] 만 꺼진다. 사유는 연결 층의 `linkStats.inactive` 에서 온다."""
+    assert "LINK_STATS[item.link].inactive" in JS
+    # 사유 줄이 대수 줄을 대신한다(풍선에는 대수가 남고 「누르면 열기」 는 없다).
+    assert "if (blockOff(item)) return [blockHead(item), blockOff(item)]" in JS
+    assert "[blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced]" in JS
+    # 면·빗금·글자: 인라인 고른 색과 「글자 색」 을 달지 않는다(인라인이 CSS 를 이긴다).
+    draw = JS[JS.index("} else if (item.kind === 'block') {") : JS.index("function appendHandles(")]
+    assert "group.classList.toggle('is-inactive', Boolean(off))" in draw
+    assert "item.color && markColors[item.color] && !off" in draw
+    assert "class: 'sle-block-hatch'" in draw and "fill: 'url(#sle-hatch)'" in draw
+    assert "const ink = blockOff(item) ? '' : fontInk(item)" in JS
+    # 보기 FAB 에서 비활성이면 Tab 이 건너뛴다(초점·역할을 걷는다).
+    assert "group.removeAttribute('tabindex')" in draw
+    # 보기 누름: 블록 위인지는 종류로 정해 비활성 블록을 고르지 않는다 — 열지 말지는 `openFloor` 가
+    # 거른다.
+    assert "S.lastViewOnBlock = Boolean(FAB && item && item.kind === 'block')" in JS
+    assert "S.lastViewOnBlock = opensFloor(item)" not in JS
+    # 편집 [열기] 잠금과 선택 칸 경로.
+    assert "blockOpen.disabled = pending || !mark.link || Boolean(blockOff(mark))" in JS
+    assert "item.link && !hasPendingEdits() && !blockOff(item)" in JS
+    # 올리면 선택 줄에 어디서 여는지 알린다.
+    hint = JS[JS.index("S.showBlockHint = (group) => {") : JS.index("const opensFromInspector")]
+    assert hint.index("blockOff(item)") < hint.index("if (!opensFloor(item))")
+    assert "「비활성 층」에서 엽니다" in hint
+    # CSS: 회색 면이 고른 색을 이기고, 사유 글자는 muted, 보기에서는 손가락·강조 테두리가 없다.
+    assert "fill: var(--sle-block-off) !important" in _rule(
+        ".mark-block.is-inactive .sle-block-fill"
+    )
+    assert "fill: var(--sle-muted)" in _rule(".mark-block.is-inactive .sle-mark-text")
+    assert "cursor: default" in _rule(".sle.is-view.is-fab .mark-block.is-inactive")
+    assert "stroke: var(--sle-frame)" in _rule(
+        ".sle.is-view.is-fab .mark-block.is-inactive:hover .sle-block-border"
+    )
 
 
 def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:

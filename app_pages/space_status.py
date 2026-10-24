@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from datetime import date
 from functools import partial
 from typing import Any
@@ -59,6 +60,7 @@ from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
 )
+from capa_simulation.components.space_floor_list import render_space_floor_list
 from capa_simulation.components.space_layout import (
     ColorChoice,
     color_check_style,
@@ -103,6 +105,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_marks,
     load_floor_layout_profile,
     load_floor_layout_summaries,
+    load_floor_states,
 )
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
@@ -151,6 +154,12 @@ from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_WIDTH,
     FloorKey,
     FloorLayoutProfile,
+)
+from capa_simulation.services.floor_state import (
+    floor_states_fingerprint,
+    floor_unit_counts,
+    inactive_label,
+    selectable_floor_keys,
 )
 from capa_simulation.services.schedule_confirmation import UNCONFIRMED, confirmation_counts
 from capa_simulation.services.simulation_cache import (
@@ -202,10 +211,8 @@ SELECTED_FLOOR_KEY = "space_status_selected_floor"
 # `st.query_params.clear()` 는 테마 인자(`theme`)까지 지워 테마 스크립트가 첫 방문으로 보고 다시
 # 새로고침한다.
 FLOOR_PARAM = "floor"
-# 층 목록 표·층 바로 가기의 위젯 키. 층을 열면 FAB 화면은 그려지지 않아 표 선택은 그 회차에
-# 버려진다(그리지 않은 위젯 상태는 버려진다). 바로 가기는 지금 자리(FAB·층)마다 키를 갈라 그
-# 자리의 값으로 선다.
-FLOOR_TABLE_KEY = "space_status_floor_table"
+# 층 바로 가기의 위젯 키. 지금 자리(FAB·층)마다 키를 갈라 그 자리의 값으로 선다. 층 목록 표의
+# 키는 `components/space_floor_list.py` 가 갖는다.
 FLOOR_JUMP_KEY = "space_status_floor_jump"
 FAB_VIEWER_KEY = "space_fab_viewer"
 FAB_EDITOR_KEY = "space_fab_editor"
@@ -319,6 +326,15 @@ def _open_floor(key: FloorKey) -> None:
         st.query_params[FLOOR_PARAM] = floor_param(key)
 
 
+def _open_unless_inactive(inactive: frozenset[FloorKey], key: FloorKey) -> None:
+    """FAB 도면 블록 누르기(뷰어·편집기 [열기])의 서버 쪽 거름 — 그린 회차의 비활성 층이면
+    아무것도 하지 않는다. 브라우저도 비활성 블록을 열지 않지만 옛 브라우저·같은 epoch 안의 경합
+    대비 두 겹이다. 층 목록 표·층 바로 가기·주소는 이 거름을 지나지 않는다(비활성 층도 연다)."""
+    if key in inactive:
+        return
+    _open_floor(key)
+
+
 def _jump_to_floor(widget_key: str) -> None:
     """`층 바로 가기` 콜백."""
     key = floor_from_label(st.session_state.get(widget_key))
@@ -326,37 +342,8 @@ def _jump_to_floor(widget_key: str) -> None:
         _open_floor(key)
 
 
-def _open_from_table(keys: tuple[FloorKey, ...]) -> None:
-    """층 목록 표의 행 고르기 콜백. 키보드로 층을 여는 길이기도 하다."""
-    state = st.session_state.get(FLOOR_TABLE_KEY)
-    if state is None:
-        return
-    try:
-        rows = list(state["selection"]["rows"])
-    except (KeyError, TypeError):
-        return
-    if rows and 0 <= int(rows[0]) < len(keys):
-        _open_floor(keys[int(rows[0])])
-
-
 def _units(value: float) -> str:
     return f"{format_unit_count(value)}대"
-
-
-_PLACED_HELP = "도면에 그린 설비입니다. Main 설비로 묶은 모듈 행은 합쳐 1대입니다."
-_UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
-_OCCUPANCY_HELP = (
-    "도면에 그린 호기 사각형 면적 합 ÷ 캔버스 면적. 캔버스 단위의 상대값이며 "
-    "겹친 자리는 두 번 셉니다."
-)
-_DRAWING_HELP = "그 층에 배경 도면 이미지를 올렸는지입니다."
-# 층 목록 표의 대수·비율 칸. 대수는 설비지분 합이라 모듈 설비가 있으면 소수가 나온다.
-_TABLE_COLUMNS = {
-    "배치대수": st.column_config.NumberColumn(format="localized", help=_PLACED_HELP),
-    "미배치대수": st.column_config.NumberColumn(format="localized", help=_UNPLACED_HELP),
-    "점유율": st.column_config.NumberColumn(format="percent", help=_OCCUPANCY_HELP),
-    "배치 도면": st.column_config.TextColumn(help=_DRAWING_HELP),
-}
 
 
 SPACE_CARD_LABEL = "Space 조건"
@@ -380,6 +367,11 @@ try:
     }
     # 저장된 FAB 전체 도면(캔버스·배경 도면 행, 요소). 요소가 없으면 기본 배치를 그린다.
     fab_profile, fab_stored_marks = load_fab_layout(equipment_database_path)
+    # 동·층 사용 상태(설비 0029, 공용 현행값 — 설비 시나리오와 무관). 비활성 층은 층 목록 표 맨
+    # 아래로 내려가고 FAB 도면에서 회색 빗금으로 흐려지며, 층 고르기(바로 가기·「다른 층으로
+    # 보내기」)에서 빠진다. 샘플 fleet 화면에서도 저장된 상태를 그대로 그린다.
+    floor_states = load_floor_states(equipment_database_path)
+    inactive_floors = floor_states.inactive
     # 공식 일정이 없는 호기(가정 설비 시나리오에만 든 호기)는 그리지 않는다(질문 2 — 계산 프레임).
     official_unscheduled = 0
     if latest_snapshot is None or latest_snapshot.equipment.empty:
@@ -653,6 +645,14 @@ def _floor_viewer_inputs(
         item["share"] = float(shares.get(str(item["id"]), 1.0))
     roster = hashlib.sha256("|".join(str(item["id"]) for item in items).encode()).hexdigest()[:16]
     return tuple(marks), items, roster
+
+
+def _today_status() -> pd.DataFrame:
+    """오늘 기준 상태(층 사용 끄기 확인의 호기 셈 — 공정소분류 필터 전). 세션 기준일이 오늘이면 이
+    회차의 `all_status` 를 그대로 쓴다. 편집 모드 본문에서만 부른다."""
+    if as_of == today:
+        return all_status
+    return get_space_equipment_status(equipment, downtime, as_of=today)
 
 
 def _unconfirmed_count() -> int:
@@ -1112,7 +1112,10 @@ def _render_layout_editor(
         inputs=inputs,
         canvas=canvas,
         floor=key,
-        floors=ALL_FLOORS,
+        # 「다른 층으로 보내기」 목록은 사용 층(과 지금 층 — 편집기가 자기 층은 뺀다)이다. epoch
+        # 밖이라 남이 층을 꺼도 다음 회차에 목록만 준다. 적용 검사(`parse_editor_apply`)는 30개
+        # 그대로다.
+        floors=selectable_floor_keys(floor_states, keep=key),
         marks=marks,
         group_labels=group_labels,
         new_unit=options,
@@ -1203,19 +1206,33 @@ def _render_layout_editor(
         if applied.renames
         else ""
     )
+    # 목록이 줄기 전에 비활성 층으로 보낸 호기 — 받되(저장 검사 그대로, S5) 알린다.
+    sent_to = {change.move_to for change in applied.changes if change.move_to is not None}
+    sent_note = "".join(
+        f" 보낸 층 {floor_label(target)} 는 비활성 층입니다 — 호기는 그 층에 들어가고 Space "
+        "목록·도면에서 숨습니다."
+        for target in FLOOR_KEYS
+        if target in sent_to and target in inactive_floors
+    )
     queue_flash(
         SPACE_FLASH_KEY,
         f"{building} {floor} 배치를 편집본에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
-        + renamed,
+        + renamed
+        + sent_note,
     )
     st.rerun()
 
 
 def _render_fab_editor(
-    link_stats: dict[str, dict[str, str | None]], background_image: str | None
+    link_stats: dict[str, dict[str, str | None]],
+    background_image: str | None,
+    on_open: Callable[[FloorKey], None],
 ) -> None:
     """FAB 전체 배치 편집기. 대기분(없으면 저장본, 그것도 없으면 기본 배치)을 그리고, `적용` 이
-    오면 검증해 세션 대기분에 얹는다(저장 전). 설비 편집본과 무관하다."""
+    오면 검증해 세션 대기분에 얹는다(저장 전). 설비 편집본과 무관하다. 비활성 층 블록은 회색으로
+    그리고(`link_stats` 의 `inactive`) 옮기기·크기·연결 바꾸기는 되며 [열기] 만 꺼진다(`on_open` 이
+    서버에서도 거른다). epoch 에 층 사용 상태를 넣지 않는다 — 남이 층을 꺼도 적용 전 편집을 잃지
+    않게."""
     pending = pending_fab_layout()
     stored_canvas, stored_marks = effective_fab_layout(fab_profile, fab_stored_marks)
     canvas = pending.canvas if pending is not None and pending.canvas else stored_canvas
@@ -1242,7 +1259,7 @@ def _render_fab_editor(
         canvas=canvas,
         marks=marks,
         link_stats=link_stats,
-        on_open=_open_floor,
+        on_open=on_open,
         background_image=background_image,
     )
     if submission is None:
@@ -1299,7 +1316,11 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
         on_click=_show_fab_overview,
     )
     st.markdown(":material/chevron_right:", width="content")
-    floor_labels = [floor_label(key) for key in FLOOR_KEYS]
+    # 선택지는 사용 층과 지금 연 층(비활성이어도 — 경로 줄이 「지금 어디인가」 를 말하게)이다.
+    # 글자는 「C1 3F」 그대로다 — 라벨에 상태를 넣으면 남이 그 층을 다시 켤 때 브라우저가 옛 글자를
+    # 되보낸다(AGENTS 9장). 비활성이라는 말은 층 상세의 배너가 한다. 비활성 층으로 옮기는 길은 층
+    # 목록 표 「비활성 층」 이다.
+    floor_labels = [floor_label(key) for key in selectable_floor_keys(floor_states, keep=selected)]
     jump_key = f"{FLOOR_JUMP_KEY}_{floor_param(selected) if selected is not None else 'fab'}"
     st.selectbox(
         "층 바로 가기",
@@ -1311,6 +1332,7 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
         args=(jump_key,),
         label_visibility="collapsed",
         width=170,
+        disabled=not floor_labels,
     )
 
 # 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
@@ -1347,11 +1369,25 @@ if selected is None:
             " · 미배치 중 동·층 미정 "
             f"{_units(equipment_unit_total(unplaced_equipment.loc[location_unknown]))}"
         )
+    # 합계는 모든 층이다(가용설비 현황 대수와 맞는다). 비활성 층에 남은 배치·미배치는 끝에 따로
+    # 말한다 — 사용 층 표 합 + 비활성 층 + 동·층 미정 = 배치 + 미배치.
+    inactive_units = sum(
+        placement.placed + placement.unplaced
+        for placement in placements
+        if placement.key in inactive_floors
+    )
+    if inactive_units > 0:
+        fab_summary += f" · 비활성 층 {_units(inactive_units)}"
     # 보기는 저장본이다(저장된 요소가 없으면 기본 배치). 저장 안 한 FAB 편집은 편집기와 상자가
     # 말한다.
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
     fab_background = fab_profile.image_data_uri if fab_profile is not None else None
-    block_stats = floor_block_stats(placements)
+    block_stats = floor_block_stats(
+        placements,
+        inactive={key: inactive_label(reason) for key, reason in inactive_floors.items()},
+    )
+    # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
+    open_active_floor = partial(_open_unless_inactive, frozenset(inactive_floors))
     with st.container(border=True):
         # 머리 줄은 층 상세와 같은 구조다(제목 · 도면·캔버스 편집 · 배치 편집 · 오른쪽 범례 자리).
         # FAB 범례 자리는 비워 둔다 — 블록 색의 뜻은 사용자가 도면 글자로 적는다.
@@ -1384,18 +1420,25 @@ if selected is None:
             )
             st.space("stretch")
         if fab_editing:
-            _render_fab_editor(block_stats, fab_background)
+            _render_fab_editor(block_stats, fab_background, open_active_floor)
         else:
             render_fab_layout_viewer(
                 key=FAB_VIEWER_KEY,
-                # 도면(캔버스·요소)이 바뀔 때만 새로 선다. 블록 대수·기준일·미확인 대수는 epoch
-                # 밖이라 기준일·필터가 바뀌면 글자만 다시 쓰고 보던 배율을 지킨다.
-                epoch="|".join(("fab", fab_layout_fingerprint(fab_canvas, fab_marks))),
+                # 도면(캔버스·요소)과 층 사용 상태가 바뀔 때만 새로 선다 — 비활성 블록의 초점·역할은
+                # 블록을 세울 때 정해진다. 보던 배율은 잃지 않는다(FAB 의 보기 층은 늘 같다). 블록
+                # 대수·기준일·미확인 대수는 epoch 밖이라 기준일·필터가 바뀌면 글자만 다시 쓴다.
+                epoch="|".join(
+                    (
+                        "fab",
+                        fab_layout_fingerprint(fab_canvas, fab_marks),
+                        floor_states_fingerprint(floor_states),
+                    )
+                ),
                 canvas=fab_canvas,
                 marks=fab_marks,
                 link_stats=block_stats,
                 summary=fab_summary,
-                on_open=_open_floor,
+                on_open=open_active_floor,
                 as_of=as_of,
                 today=today,
                 as_of_range=as_of_bounds,
@@ -1410,27 +1453,18 @@ if selected is None:
         )
 
     # 층 목록 표. 층마다 배치·미배치·점유율을 견주는 자리이고, 층 바로 가기와 함께 키보드로 층을
-    # 여는 길이다(행에 초점을 두고 Shift+Space). 행을 고르면 그 층이 열린다.
-    floor_rows = [
-        {
-            "동": placement.key[0],
-            "층": placement.key[1],
-            "배치대수": placement.placed,
-            "미배치대수": placement.unplaced,
-            "점유율": placement.occupancy,
-            "배치 도면": "등록" if placement.key in floors_with_layout_image else "미등록",
-            "캔버스": _canvas_text(placement.key),
-        }
-        for placement in placements
-    ]
-    st.dataframe(
-        pd.DataFrame(floor_rows),
-        hide_index=True,
-        width="stretch",
-        column_config=_TABLE_COLUMNS,
-        key=FLOOR_TABLE_KEY,
-        on_select=partial(_open_from_table, tuple(placement.key for placement in placements)),
-        selection_mode="single-row",
+    # 여는 길이다(행에 초점을 두고 Shift+Space). 행을 고르면 그 층이 열린다. 비활성 층은 맨 아래
+    # 접힌 「비활성 층 n개」 로 내려가고 표 머리 `사용 편집` 이 층 사용 상태를 고친다(공용 설정 —
+    # 설비 시나리오와 무관해 배치 편집 잠금과 상관없이 열고, 샘플 fleet 화면에서만 잠근다).
+    render_space_floor_list(
+        database_path=equipment_database_path,
+        placements=placements,
+        floors_with_image=floors_with_layout_image,
+        canvas_text=_canvas_text,
+        states=floor_states,
+        unit_counts=lambda: floor_unit_counts(_today_status()),
+        editable=not showing_sample,
+        on_open=_open_floor,
     )
 
 else:
@@ -1461,6 +1495,16 @@ else:
             st.warning(
                 f"캔버스 {canvas_width:g} × {canvas_height:g}를 벗어난 호기가 있습니다: "
                 + ", ".join(map(str, invalid_rows))
+            )
+    # 비활성 층을 연 회차(층 목록 표 「비활성 층」·주소)의 배너. 자리는 늘 선다 — 남이 층을 켜고
+    # 끌 때 아래 층 상세가 밀리지 않게.
+    with st.container(key="space_floor_inactive_notice_slot"):
+        selected_reason = floor_states.reason_of(selected)
+        if selected_reason is not None:
+            st.info(
+                f":material/block: 이 층은 비활성({inactive_label(selected_reason)})입니다 — FAB "
+                "도면·층 바로 가기·「다른 층으로 보내기」에서 빠집니다. 호기는 그대로이고 FAB 전체 "
+                "층 목록 표의 「사용 편집」에서 다시 켭니다."
             )
 
     floor_counted = counted_equipment.loc[

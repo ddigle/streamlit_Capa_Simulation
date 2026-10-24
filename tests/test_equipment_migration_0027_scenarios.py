@@ -263,7 +263,8 @@ def migrated(tmp_path: Path) -> tuple[Path, dict[str, list[tuple[object, ...]]]]
     path = tmp_path / "legacy.duckdb"
     build_legacy_database(path)
     before = _legacy_rows(path)
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION,)
+    # 0027 뒤의 설비 0029(층 사용 상태 빈 표 둘)도 함께 걸린다.
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 29)
     return path, before
 
 

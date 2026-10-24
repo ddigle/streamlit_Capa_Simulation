@@ -347,6 +347,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`space_floor_show_all_<동>_<층>`, 늘 세움)·빈 곳·Esc 로 풀린다. 다른 층·FAB 로 옮기거나 그 층 행에 없으면(필터·이름
     바꿈) 푼다. 층 CSV 는 늘 층 전체의 모든 칸이다. 뷰어 호기에는 설비지분 `share`(기준일 보유 지분
     `space_layout.row_unit_shares` — 범례·배치 대수와 같은 칸, 일부 모듈만 반입한 묶음의 반입 전 모듈은 0)를 싣는다.
+  - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
+    목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
+    FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다 — 뷰어 epoch 에 상태 지문(`floor_states_fingerprint`,
+    배율은 그대로)을 넣고 편집기 epoch 에는 넣지 않으며(적용 전 FAB 편집을 지킨다), 뷰어·편집기 `on_open` 은 그린 회차의
+    비활성 층을 서버에서도 거른다(`_open_unless_inactive`). `층 바로 가기`·배치 편집기 `다른 층으로 보내기` 선택지는
+    `selectable_floor_keys(keep=연 층)` 이다(글자는 「C1 3F」 그대로 — 상태는 배너). 주소 `?floor=` 가 비활성 층이어도 열고
+    늘 서는 칸(`space_floor_inactive_notice_slot`)에 배너를 세운다. 적용 검사(`parse_editor_apply(floors=ALL_FLOORS)`)·
+    `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
+    알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질`·`알림 모음` 네 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py`, 넷째는
   `components/alert_board.py` 를 그린다.
@@ -431,9 +440,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 호기 표(`floor_table`·
   `picked_unit_rows`)와 영역·금지 색을 만든다.
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
-    Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이다.
+    Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
+    블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
     판정한다. 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
+- `src/capa_simulation/components/space_floor_list.py` — Space FAB 전체 아래 **층 목록**(2026-10-24 결정 S1~S6). 보기는
+  사용 층 표(`사용` 칸, 행 고르기 = 층 열기)와 늘 서는 자리 칸 안의 접힌 「비활성 층 n개」 표(거기서도 연다), 표 머리
+  `사용 편집` 토글을 켜면 저장 줄 · 끄기 확인 · 알림 · 동 머리 줄(`st.segmented_control` 다섯 — 값은 회차마다 초안에서
+  세션에 적고 `default=`·세대 꼬리 없음) · 30줄 편집표다.
+  - 초안(「C1 3F」 → 사유 코드)·편집 시작 저장본 `(version, rows)`·확인 대기·단추 세대는 세션 칸이고, 편집표 칸 편집은
+    회차마다·콜백 첫머리에 초안으로 접는다(`_fold` — 빈 사유는 「사용 안 함」, 사용 층에서 사유를 고르면 끄기). 칸 편집은
+    위젯에 남아 접은 초안을 그린 위에 얹혀 보이므로, 다시 세우는 것(`discard_editor`)은 그렇게 보일 값이 접은 값과 다를
+    때뿐이다(비활성 층의 사유 지움 등) — 끄기·켜기·사유 고르기는 같은 위젯이라 보던 스크롤·초점이 남는다. `사유` 칸은
+    `string` 으로 고정한다(9장 「편집표와 내려받기」). 쓰기 단추는 그린 회차의 세대를 인자로 받아 옛 누름을 거른다.
+  - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
+    저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
+    칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 토글이 꺼진 채 그려지는 회차는 남은 초안을
+    지운다(층을 열면 토글 위젯 상태가 버려진다). `floor_state_draft_pending()` 은 세션만 읽는 테마 전환 표지다 —
+    `app.py` 가 페이지보다 먼저 부르므로 이 회차 편집표 위젯 상태의 칸 편집까지 (적지 않고) 접어 저장본과 견준다.
+  - 설비 시나리오 편집 잠금과 무관하게 열고 샘플 fleet 화면에서만 잠근다(값도 끈다). Streamlit 캐시를 두지 않는다.
 - `src/capa_simulation/components/floor_layout_upload.py` — Space 층·FAB 전체의 배경 도면 업로드·삭제와 캔버스 치수
   팝업(`FLOOR_LAYOUT_DIALOG_KEY`)이다. 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
   - 캔버스를 줄여 생기는 호기 이탈은 저장된 설비 마스터의 그 층 호기 전부로 잰다(저장 검증과 같은 행, 확인 체크).
@@ -445,6 +470,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)·호기 누르기(`on_pick_change`)는
     버린다.
+  - FAB 블록 글자 `linkStats` 의 `inactive`(비활성 층의 짧은 사유)가 있으면 JS 가 그 블록을 `is-inactive` 로 —
+    팔레트 `block-off` 면 + `#sle-hatch` 빗금 + `muted` 글자(고른 색·「글자 색」 인라인을 달지 않는다)로 그리고, 보기에서는
+    `opensFloor` 가 거짓이라 열지도 고르지도 않으며(누름 갈래는 블록 종류로 `lastViewOnBlock`) 초점·역할을 걷는다. 편집에서는
+    옮기기·연결은 되고 `[열기]` 만 꺼진다(`syncInspector`).
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
   - **Main 설비 모듈 묶음**(편집기 모듈 + 숨은 모듈이 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선
@@ -1246,6 +1275,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_qual_deadline.py` 가 원본 스크립트를 node 로 돌린 값과 칸 글자까지 맞댄다(시험은 node 없이 돈다).
 - `src/capa_simulation/services/shortening_filter_profile.py` — 필요 단축 일정 공용 조회 조건(설비 DB `0019`) 모델
   `ShorteningFilterProfile` 과 정규화·심기·`merge_filter_processes` 규칙. Streamlit·DB 를 모르고 값은 원본 공정명이다.
+- `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
+  `FloorStates`(비활성 층만의 (동, 층, 사유 코드) 행 — `UNUSED` 사용 안 함·`NOT_LINE` 생산라인 아님)와 규칙. 저장 입구
+  `prepare_floor_states`(30개 층·사유 둘만, 빈 값 = 사용)만 엄격하고 읽기는 관용이다(모르는 사유는 `inactive_label` 이
+  「비활성」). 동 머리(`building_state`·`with_building`), 끄기 확인 대상(`newly_inactive` — 사유만 바꾼 층은 아님)과 층별 설비
+  대수(`floor_unit_counts` — 도면 이탈 제외·레이아웃 Y/N 모두·설비키), 층 고르기 거르기(`selectable_floor_keys` — 연 층은
+  남김, RawData 칸 단위 `master_location_options` — 표에 있는 값은 남김, 짝 단위 `floors_by_building`), 저장 미리보기 경고
+  `inactive_floor_warnings`(막지 않음). Streamlit·DB 를 모른다. **설비 마스터 저장 검사(C1~C5·1F~6F)는 그대로다**(S5).
 - `src/capa_simulation/services/shortening_baseline.py` — 필요 단축 일정 기준선(설비 DB `0021`) 모델과 규칙. 기준선은
   저장한 그때 계획을 얼린 고칠 수 없는 기록이다(`freeze_plan` → `ShorteningBaselineDraft`, `normalize_baseline_name`·
   `baseline_label`·`normalize_baseline_units`).
@@ -1506,6 +1542,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/persistence/shortening_baseline_store.py` — 필요 단축 일정 기준선(설비 DB `0021`)의
   넣기·목록·읽기·지우기 SQL(UPDATE 없음)과 칸 매핑(`BASELINE_UNIT_DB_COLUMNS`). 설비 쪽 출처 칸 넷(`0027` —
   `equipment_schedule_revision_ref`·`_no`·`equipment_scenario_name`·`equipment_release_no`)은 가리키기만 한다.
+- `src/capa_simulation/persistence/floor_state_store.py` — Space 동·층 사용 상태(설비 DB `0029` — 머리
+  `floor_state_profile`, 층 `floor_state` 행 = 비활성 층·PK (동, 층))의 읽기·쓰기 SQL. 쓰기는 같은 트랜잭션에서 읽은 저장본과
+  견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지
+  않는다). 읽기는 30개 층 밖 행을 버리고 머리 없는 층 행은 version 0 으로 싣는다.
 - `src/capa_simulation/persistence/equipment_scenario_store.py` — 설비 DB `0027` 의 새 표 여섯(설비 시나리오·일정 리비전·일정
   스냅샷·일정 비가동 스냅샷·공식 발행·이관 경계)의 SQL. 열린 연결만 받고 트랜잭션·신호는 저장소 몫이다. 시나리오 칸 DB 매핑
   `SCENARIO_SCHEDULE_DB_COLUMNS`, 이관 시나리오 id `OPERATIONS_SCENARIO_ID`(`'operations'`), 「시나리오의 최신」 은 칸이 아니라
@@ -1519,7 +1559,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`SCENARIO_SUMMARY_SELECT` 등)을 매퍼 옆에 두어 열 순서와 row 인덱스가 짝을 이룬다.
 - `src/capa_simulation/persistence/_sql_helpers.py` — 프레임 저장·조회·값 변환과 트랜잭션 경계 공용 헬퍼. 두 Repository
   와 `_migration_core` 가 `transaction()` 한 벌을 쓰고, 공용 프로필 버전 대조 `require_profile_version()`
-  (`ProfileVersionConflict`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
+  (`ProfileVersionConflict` — 기본 스키마 `app_meta`, 설비 DB 층 사용 상태는 `schema="equipment_ops"`)과 감사 해시 `hash_frame()`(`tests/test_sql_helpers.py`)이 여기 있다. DB 통째 복사
   `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
@@ -1532,11 +1572,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).
   - 덮어쓰거나 지울 수 있는 값을 담는 캐시(시뮬레이션 공용 프로필·리비전 스냅샷·비교 계획, 설비 최신 id·Cut-off·
-    주차별 가용대수·층/FAB 도면·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가
+    주차별 가용대수·층/FAB 도면·층 사용 상태·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가
     `.clear()` 앞에서 그 종류의 세대를 올린다. `.clear()` 는 진행 중인 캐시 미스를 막지 못해, 저장 직전에 시작된 다른
     세션의 읽기가 비운 뒤 옛 값을 다시 심는다(TTL 없는 프로필은 다음 저장·재시작까지 남는다). 새 캐시도 같은 세대를 쓴다.
-  - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`·`load_standard_target_availability`)는
-    (DB 경로, DB·WAL stat, 쓰기 세대) 키에 TTL 15초다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
+  - 「지금 저장된 값」 읽기(`latest_equipment_revision_id`·`load_process_cutoff`·`load_standard_target_availability`·
+    `load_floor_states`)는 (DB 경로, DB·WAL stat, 쓰기 세대) 키에 TTL 15초다. 층 사용 상태(`0029`, 세대 `"floor_state"`)는
+    다른 PC·동기화로 받은 DB 의 변경도 회차 안에 보여야 하는 공용 설정이라 이 꼴이고, 도면 캐시와 묶지 않는다 — 저장 길(Space
+    층 목록 저장 콜백)이 `clear_floor_state_cache()` 를 부르고 `clear_equipment_repository()` 도 부른다. 1차 장치는 비우기라 새 쓰기 길을 더하면 같은 비우기를 부른다.
   - 설비 쪽은 **리비전 내용(불변)과 바뀔 수 있는 것**을 나눈다. 합친 본문 `_load_merged_payload`(공개
     `load_merged_equipment_snapshot`)는 (DB, 공통 id, 일정 id) **쌍 키**에 세대가 없다(`MERGED_SNAPSHOT_CACHE_ENTRIES` 16칸).
     설비 시나리오 목록(`load_equipment_scenario_catalog` — 시나리오·각 최신·리비전 수·최신 발행·흔적 수)과 시나리오 리비전
@@ -1594,6 +1636,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `label_align`(`0025`, 영역 아닌 요소는 NULL)이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 기준선(`0021`)은 갈아 쓰지 않는다. FAB
     도면은 `fab_layout_profile`·`fab_layout_mark`(`0013`)다.
+  - 층 사용 상태(`load_floor_states`·`save_floor_states`, `0029`)는 리비전을 만들지 않는 공용 현행값이다 — 쓰기 잠금 안에서
+    `require_profile_version(schema="equipment_ops")` 로 화면이 본 version 을 먼저 대조하고(내용이 같아도 version 이 다르면
+    충돌), 같은 내용이면 쓰지 않는다(`wrote=False` — version·dirty 그대로). 설비 시나리오·리비전·공식 발행·옛 배포 흔적 잠금과
+    무관하다.
 
 ### 저장소 루트의 발표 자료
 
@@ -1749,7 +1795,8 @@ RQ_MODULE
    [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). 설비 DB 를 여는
    시뮬레이션 쪽 페이지는 셋이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행 관리,
    읽기만), 표준 대비 재공 현황(Dynamic, 표준 목표의 주차별 가용대수를 읽기만). 실행 관리 머리는 첫 판에서
-   어느 DB 도 열지 않는다.
+   어느 DB 도 열지 않는다. **Space 층 사용 상태**(설비 `0029`)는 설비 시나리오·설비 리비전과 무관한 공용 현행값이다 —
+   소유 칸이 없어 복제·보관·영구 삭제가 건드리지 않고, 설비 마스터의 동·층 값과 저장 검사(C1~C5·1F~6F)는 그대로다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
@@ -1817,13 +1864,15 @@ RQ_MODULE
 24. **공용 프로필에는 모두가 함께 쓰는 설정(비교 대상·판정 기준 등)만 담는다** — 켜고 끄는 보기 토글을 담으면 남의
     화면까지 켜진다. 바뀐 것이 없는 쓰기는 쓰지 않는다 — 설비 DB 의 필요 단축 일정 공용 조회 조건
     (`save_shortening_filter_months`·`_processes`)은 저장소가 쓰기 트랜잭션 안에서 견주어 같으면 version 도 동기화 dirty
-    도 올리지 않는다(`_WriteOutcome(wrote=False)`). 시뮬레이션 DB 공용 프로필 저장소는 늘 version 을 올리므로 화면이
-    값이 실제로 바뀐 때만 저장한다(9장 「공용 프로필을 기본값으로 심는 조회 위젯」).
+    도 올리지 않는다(`_WriteOutcome(wrote=False)`). 층 사용 상태(`save_floor_states`, `0029`)도 같다. 시뮬레이션 DB 공용
+    프로필 저장소는 늘 version 을 올리므로 화면이 값이 실제로 바뀐 때만 저장한다(9장 「공용 프로필을 기본값으로 심는 조회
+    위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
     표시명·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
-    이다. 새 편집 프로필은 `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
+    이다. Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
+    `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
     확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 숫자 칸에는 key 를 두지 않는다.
 26. **보이지 않는 저장값은 남긴다.** 공용 프로필 편집기는 지금 화면(조회기간·시나리오·맞댄 공정)에 보이는 칸만
     갈아 끼우고 보이지 않는 달·공정은 그대로 둔다 — 범위를 좁힌 채 저장한 사람이 모르는 새 남의 값을 날리지 않게.
@@ -2867,6 +2916,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보이는 자리만 반올림하고 값은 적은 그대로다(`percent` 는 소수 0~2자리). `step` 이 없으면 **정수 dtype 칸에 증분 1 이 스스로
   걸리므로** 정수로 올 수 있는 표는 실수로 바꿔 그린다(`month_editor.float_month_columns`). 그 단위로 충분한 칸(일수 1일·
   Cut-off·PKG PLAN 등)만 `step` 을 둔다.
+- **키가 있는 `num_rows="fixed"` 편집표의 정체는 키 + 데이터 서명이다**(Streamlit 1.63 — 칸 이름·Arrow 타입·data kind·
+  행 수·잠근 칸). 값만 바뀌면 같은 위젯이라 남은 칸 편집·스크롤·초점이 그대로이고, 서명이 바뀌면 새 위젯이 서서 셋 다
+  사라진다. None 만 든 칸은 Arrow `null` 이라 첫 값이 들어오는 회차에 `string` 으로 바뀐다 — 비거나 찰 수 있는 글 칸은
+  `astype("string")` 으로 고정한다(`space_floor_list._render_editor` 의 `사유`). 칸 편집을 초안에 접고 접은 초안을 다시
+  그리는 표는 다시 세울지를 「접은 값을 그린 위에 남은 편집을 얹어 보일 값」 이 접은 값과 다를 때만 정한다(접기 전 값과
+  견주면 거의 모든 편집이 다시 세우기가 된다).
 - 편집표에서 고른 행은 행 번호가 아니라 업무 키로 기억한다 — 편집본은 제출마다 다시 만들어지고 행을 지우면 번호가 다시
   매겨진다. 되살린 행은 지우기 전 자리로 넣는다(맨 뒤에 붙이면 순서만 다른 리비전이 생긴다).
 - **다른 세션이 행 차례를 바꿀 수 있는 편집표**(시나리오 관리 목록·리비전 표 — 남의 저장·이름 변경이 차례를 바꾼다)는

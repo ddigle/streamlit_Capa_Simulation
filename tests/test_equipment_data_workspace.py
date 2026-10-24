@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
+from widget_browser import BrowserTables
 
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
@@ -964,3 +965,122 @@ def test_a_rerun_on_the_same_page_keeps_the_review(tmp_path: Path) -> None:
     assert PREVIEW_KEY in app.session_state
     assert _review_headings(app) == ["**기존 보유대수 · 저장할 변경 1행**"]
     assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is False
+
+
+def _master_location_choices(app: AppTest) -> tuple[list[str], list[str]]:
+    """설비 마스터 편집표 `동`·`층` 칸의 선택지."""
+    import json
+
+    stack = list(app.main.children.values())
+    while stack:
+        node = stack.pop()
+        stack.extend(getattr(node, "children", {}).values())
+        proto = getattr(node, "proto", None)
+        if getattr(node, "type", None) != "dataframe" or proto is None:
+            continue
+        columns = json.loads(proto.columns or "{}")
+        if "Qual일정" in columns and "동" in columns:
+            return (
+                list(columns["동"]["type_config"]["options"]),
+                list(columns["층"]["type_config"]["options"]),
+            )
+    raise AssertionError("설비 마스터 편집표가 없습니다")
+
+
+def _located_master(rows: list[tuple[str, str | None, str | None]]) -> pd.DataFrame:
+    frame = _master([name for name, _, _ in rows])
+    frame["동"] = [building for _, building, _ in rows]
+    frame["층"] = [floor for _, _, floor in rows]
+    return frame
+
+
+def test_inactive_floors_leave_the_location_choices_but_present_values_stay(
+    tmp_path: Path,
+) -> None:
+    """Space 에서 끈 층은 RawData `동`·`층` 칸 선택지에서 칸 단위로 빠진다 — 6개 층을 다 끈 동, 다섯
+    동 모두에서 끈 층. 표에 이미 있는 값은 남는다(선택지 밖이면 칸 오류). 짝(C1 3F)만 끈 층은 거르지
+    못한다. 비활성 층으로 옮긴 호기는 미리보기 경고만 서고 저장은 된다(저장 검사 그대로, S5)."""
+    from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _located_master([("EQ-C4", "C4", "1F"), ("EQ-NONE", None, None)]),
+        empty_downtime_schedule(),
+    )
+    inactive = {("C5", floor): "NOT_LINE" for floor in ("1F", "2F", "3F", "4F", "5F", "6F")}
+    inactive |= {(building, "6F"): "UNUSED" for building in ("C1", "C2", "C3", "C4")}
+    inactive[("C1", "3F")] = "UNUSED"
+    repository.save_floor_states(inactive, expected_version=0, source="test")
+    clear_equipment_repository()
+    app = _app(path)
+    assert not app.exception
+
+    buildings, floors = _master_location_choices(app)
+    assert buildings == ["C1", "C2", "C3", "C4"]
+    assert floors == ["1F", "2F", "3F", "4F", "5F"]
+    assert any("비활성 층: C1 3F·6F(사용 안 함)" in item.value for item in app.caption)
+    assert any("C5 1F~6F(생산라인 아님)" in item.value for item in app.caption)
+
+    # 표에 C5 6F 호기가 있으면 그 값은 남는다. 저장은 되고(검사 그대로) 미리보기 경고가 선다.
+    _preview(
+        app,
+        _located_master([("EQ-C4", "C4", "1F"), ("EQ-NONE", "C5", "6F")]).to_csv(
+            index=False, sep="\t"
+        ),
+    )
+    assert any(
+        "비활성 층으로 옮긴 호기 1대" in item.value and "C5 6F 생산라인 아님" in item.value
+        for item in app.warning
+    )
+    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    assert not app.exception and not app.error
+    assert len(repository.list_revisions()) == 2
+    buildings, floors = _master_location_choices(app)
+    assert "C5" in buildings and "6F" in floors
+    clear_equipment_repository()
+
+
+def test_location_choices_hold_while_the_master_editor_has_edits(tmp_path: Path) -> None:
+    """적용 전 칸 편집이 있는 동안 남이 층을 꺼도 `동`·`층` 선택지는 지난 회차 그대로다 — 거름 없는
+    편집표는 dynamic 이라 선택지가 바뀌면 새 위젯이 되어 편집이 사라진다(D19)."""
+    from capa_simulation.persistence.equipment_cache import (
+        clear_equipment_repository,
+        clear_floor_state_cache,
+    )
+
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _located_master([("EQ-C1", "C1", "1F")]),
+        empty_downtime_schedule(),
+    )
+    clear_equipment_repository()
+    app = _app(path)
+    assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4", "C5"]
+    tables = BrowserTables(app)
+    generation_key = f"{EQUIPMENT_EDITOR_KEY}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    widget_key = f"{EQUIPMENT_EDITOR_KEY}__g{generation}" if generation else EQUIPMENT_EDITOR_KEY
+    tables.edit(widget_key, 0, "설비이력", "고치는 중")
+    tables.run()
+    assert not app.exception
+
+    repository.save_floor_states(
+        {("C5", floor): "NOT_LINE" for floor in ("1F", "2F", "3F", "4F", "5F", "6F")},
+        expected_version=0,
+        source="남",
+    )
+    clear_floor_state_cache()
+    tables.run()
+
+    assert not app.exception
+    assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4", "C5"]
+    assert app.session_state[widget_key]["edited_rows"]
+    # 편집이 없어지면(버림·저장) 새 선택지다.
+    tables.edits.clear()
+    tables.run()
+    assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4"]
+    clear_equipment_repository()

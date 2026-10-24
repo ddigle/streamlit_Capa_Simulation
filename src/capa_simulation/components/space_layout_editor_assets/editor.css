@@ -150,6 +150,13 @@
   stroke: var(--sle-accent); stroke-width: 3;
 }
 .sle.is-view.is-fab .mark-block:focus { outline: none; }
+/* 비활성 층 블록(사용 안 함·생산라인 아님): 회색 면 + 영역 빗금 무늬 + 흐린 사유 글자. 보기에서는 눌러도 열리지 않아
+   손가락 모양·강조 테두리를 걷는다. 면 색은 고른 색보다 이긴다(JS 도 비활성이면 인라인 색을 달지 않는다). */
+.mark-block.is-inactive .sle-block-fill { fill: var(--sle-block-off) !important; }
+.mark-block.is-inactive .sle-block-hatch { pointer-events: none; }
+.mark-block.is-inactive .sle-mark-text { fill: var(--sle-muted); }
+.sle.is-view.is-fab .mark-block.is-inactive { cursor: default; }
+.sle.is-view.is-fab .mark-block.is-inactive:hover .sle-block-border { stroke: var(--sle-frame); stroke-width: 1.5; }
 
 /* ---- 손잡이·선택 ---- */
 .sle-handle {

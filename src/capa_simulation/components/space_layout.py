@@ -139,14 +139,21 @@ def floor_placements(
 
 def floor_block_stats(
     placements: Collection[FloorPlacement],
+    *,
+    inactive: Mapping[FloorKey, str] | None = None,
 ) -> dict[str, dict[str, str | None]]:
     """층 블록 글자(편집기 `data.linkStats`). 키는 블록의 연결(「C1 1F」)이다.
 
     블록 안에는 배치 대수와, 있으면 미배치 대수만 적는다(점유율은 풍선). 상태별 대수는 넣지
     않는다 — FAB·층 칸은 배치를 센다(2026-10-01 결정). 이 값은 epoch 에 넣지 않는다: 넣으면 기준일만
-    바꿔도 편집 중 내용과 실행 취소가 지워진다."""
-    return {
-        floor_label(placement.key): {
+    바꿔도 편집 중 내용과 실행 취소가 지워진다.
+
+    `inactive` 는 비활성 층 → 짧은 사유 글(「사용 안 함」)이다. 그 층 칸에만 `"inactive"` 를
+    싣는다 — 편집기가 회색 빗금 + 사유 글자로 그리고 보기에서는 열지 않는다. 대수 칸은 그대로
+    싣는다(풍선)."""
+    stats: dict[str, dict[str, str | None]] = {}
+    for placement in placements:
+        cell: dict[str, str | None] = {
             "placed": f"배치 {format_unit_count(placement.placed)}대",
             "unplaced": (
                 f"미배치 {format_unit_count(placement.unplaced)}대"
@@ -155,8 +162,10 @@ def floor_block_stats(
             ),
             "occupancy": (f"점유율 {placement.occupancy:.1%}" if placement.placed > 0 else None),
         }
-        for placement in placements
-    }
+        if inactive and placement.key in inactive:
+            cell["inactive"] = inactive[placement.key]
+        stats[floor_label(placement.key)] = cell
+    return stats
 
 
 def mark_colors() -> dict[str, str]:

@@ -353,18 +353,20 @@ def require_profile_version(
     expected_version: int | None,
     *,
     label: str,
+    schema: str = "app_meta",
 ) -> None:
     """공용 프로필의 지금 version 이 편집을 시작할 때 본 version 인가. 쓰기 트랜잭션 안에서 부른다.
 
     `expected_version` 이 None 이면 대조하지 않는다(시드·스크립트처럼 화면 밖에서 통째로 쓰는 길).
     한 번도 저장하지 않은 프로필은 0 이다 — 화면의 미저장 version 과 같다. 다르면 아무것도 쓰지
     않고 `ProfileVersionConflict` 를 올린다. 교체 저장이라 그대로 쓰면 그 사이 저장된 행을 모르는
-    채 덮는다.
+    채 덮는다. 머리 표는 `profile_id = 1` 한 행이다 — 시뮬레이션 DB 는 `app_meta`, 설비 DB 의 공용
+    프로필(층 사용 상태)은 `schema="equipment_ops"` 로 같은 형·같은 문구를 쓴다.
     """
     if expected_version is None:
         return
     row = connection.execute(
-        f"SELECT version FROM app_meta.{quote(header_table)} WHERE profile_id = 1"
+        f"SELECT version FROM {quote(schema)}.{quote(header_table)} WHERE profile_id = 1"
     ).fetchone()
     stored = 0 if row is None else int(row[0])
     if stored != int(expected_version):

@@ -37,11 +37,16 @@ from capa_simulation.persistence._sql_helpers import (
     connect,
     hash_frame,
     insert_by_name,
+    require_profile_version,
     transaction,
 )
 from capa_simulation.persistence.equipment_migration_runner import (
     SchemaAheadOfCode,
     apply_equipment_migrations,
+)
+from capa_simulation.persistence.floor_state_store import (
+    read_floor_states,
+    write_floor_states,
 )
 from capa_simulation.persistence.shortening_baseline_store import (
     baseline_name_exists,
@@ -131,6 +136,7 @@ from capa_simulation.services.floor_layout_profile import (
     require_total_layout_budget,
     to_data_uri,
 )
+from capa_simulation.services.floor_state import FloorStates, prepare_floor_states
 from capa_simulation.services.korean_particle import (
     object_particle,
     with_object_particle,
@@ -1431,6 +1437,43 @@ class DuckDBEquipmentRepository:
         """필요 단축 일정 공용 조회 조건(0019). 한 번도 저장하지 않았으면 `version` 0 의 빈 값."""
         with self._connect() as connection:
             return _read_shortening_filter(connection)
+
+    def load_floor_states(self) -> FloorStates:
+        """Space 동·층 사용 상태(0029). 저장한 적이 없으면 `version` 0 의 빈 값(모두 사용)."""
+        with self._connect() as connection:
+            return read_floor_states(connection)
+
+    def save_floor_states(
+        self,
+        inactive: Mapping[FloorKey, object],
+        *,
+        expected_version: int | None,
+        source: str,
+    ) -> bool:
+        """동·층 사용 상태를 갈아 쓴다(비활성 층 → 사유 코드, 30개 층 전체 초안). 썼으면 True.
+
+        설비 리비전을 만들지 않는다 — 설비 시나리오·공식 발행과 무관한 공용 현행값이다(S6).
+        `expected_version` 은 화면이 편집을 시작할 때 본 version 이다 — 쓰기 잠금 안에서 지금
+        version 과 다르면 아무것도 쓰지 않고 `ProfileVersionConflict` 를 올린다(None 은 대조하지
+        않는다 — 시험·스크립트). 대조가 먼저, 같은지 보기가 다음이다. 같은 내용이면 쓰지 않는다
+        (version·동기화 dirty 그대로). 쓰는 것은 바뀐 층뿐이다(`floor_state_store`).
+        """
+        rows = prepare_floor_states(inactive)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            require_profile_version(
+                connection,
+                "floor_state_profile",
+                expected_version,
+                label="층 사용 설정",
+                schema="equipment_ops",
+            )
+            current = read_floor_states(connection)
+            if current.rows == rows:
+                return False
+            write_floor_states(connection, current, rows, source=source)
+            outcome.wrote = True
+        return True
 
     def save_shortening_filter_months(
         self, start_month: object, end_month: object, *, source: str
