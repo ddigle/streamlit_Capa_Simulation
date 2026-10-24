@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import ast
 import inspect
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -2966,3 +2968,108 @@ def test_the_constraint_simulation_summary_counts_without_screen_text(
     assert line == expected
     # 달·공정 글자는 찍지 않는다.
     assert "27." not in line
+
+
+# 브라우저 없이 두 JS 를 돌리는 가짜 문서 — 고르는 글(선택자)마다 요소를 돌려준다. 요소는
+# `innerText`·`value`·속성과 제 아래 선택자 표를 갖는다. 모르는 선택자는 없음(null·빈 목록)이다.
+_FAKE_DOM_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const element = (spec) => spec && {
+  innerText: spec.innerText ?? '',
+  textContent: spec.innerText ?? '',
+  value: spec.value,
+  getAttribute: (name) => (spec.attrs || {})[name] ?? null,
+  hasAttribute: (name) => name in (spec.attrs || {}),
+  getBoundingClientRect: () => ({left: 0, top: 0, width: 100, height: 100}),
+  querySelector: (selector) => element((spec.one || {})[selector]) || null,
+  querySelectorAll: (selector) => ((spec.all || {})[selector] || []).map(element),
+};
+globalThis.document = element(input.document);
+globalThis.getComputedStyle = () => ({pointerEvents: 'auto'});
+const run = (source, arg) => eval(source)(arg);
+process.stdout.write(JSON.stringify({
+  link: run(input.linkScript, input.linkArg),
+  page: run(input.pageScript, input.pageArg),
+}));
+"""
+
+
+def _run_constraint_scripts(document: dict[str, Any]) -> dict[str, Any]:
+    runtime = shutil.which("node") or shutil.which("bun")
+    if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다 — 화면 확인 JS 시험을 건너뛸 수 없다")
+        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    payload = {
+        "document": document,
+        "linkScript": screens._CONSTRAINT_LINK_JS,
+        "linkArg": {**screens.CONSTRAINT_KEYS, "label": screens.CONSTRAINT_LINK_LABEL},
+        "pageScript": screens._CONSTRAINT_JS,
+        "pageArg": screens.CONSTRAINT_KEYS,
+    }
+    completed = subprocess.run(
+        [runtime, "-e", _FAKE_DOM_RUNNER],
+        input=json.dumps(payload, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result: dict[str, Any] = json.loads(completed.stdout)
+    return result
+
+
+@pytest.mark.parametrize("box_text", ["", "공정"])
+def test_the_constraint_check_reads_the_chosen_process_from_the_combobox_value(
+    box_text: str,
+) -> None:
+    """Streamlit 1.63 selectbox 는 고른 값을 콤보 상자 `<input>` 의 `value` 에만 둔다 — 상자 글은
+    카드가 접혔으면 빈 글자, 폈으면 라벨 「공정」 뿐이다. 그 글로 견주면 링크가 켜진 정상 화면이
+    늘 「공정 다름」 이었다(2026-10-25 리뷰 — 사본 앱에서 두 상자 모두 `innerText` "" · 값
+    'Wafer Saw'). 두 JS 를 가짜 문서로 돌려 값끼리 견주는지 본다."""
+    keys = screens.CONSTRAINT_KEYS
+
+    def box(value: str) -> dict[str, Any]:
+        return {"innerText": box_text, "one": {"input": {"value": value}}}
+
+    link = {"innerText": screens.CONSTRAINT_LINK_LABEL, "attrs": {}}
+    document: dict[str, dict[str, Any]] = {
+        "all": {
+            '[data-testid="stMain"] a': [link],
+            '.st-key-process_detail_kpis [data-testid="stMetric"]': [{}] * 4,
+        },
+        "one": {
+            f".st-key-{keys['detailProcess']}": box("Wafer Saw"),
+            f".st-key-{keys['process']}": box("Wafer Saw"),
+        },
+    }
+    result = _run_constraint_scripts(document)
+    assert result["link"] == {
+        "found": True,
+        "disabled": False,
+        "ready": True,
+        "process": "Wafer Saw",
+    }
+    assert result["page"]["process"] == "Wafer Saw"
+    assert screens.constraint_process_matches(result["link"], result["page"]) is True
+
+    # 제약 화면이 다른 공정으로 열렸으면 다름이다.
+    document["one"][f".st-key-{keys['process']}"] = box("Mold")
+    other = _run_constraint_scripts(document)
+    assert screens.constraint_process_matches(other["link"], other["page"]) is False
+
+
+def test_the_constraint_process_match_is_none_without_a_followed_link() -> None:
+    page = {"process": "Wafer Saw"}
+    assert screens.constraint_process_matches(None, page) is None
+    assert screens.constraint_process_matches({"found": False}, page) is None
+    assert screens.constraint_process_matches({"found": True, "disabled": True}, page) is None
+    # 값을 읽지 못하면 같다고 짐작하지 않는다.
+    assert (
+        screens.constraint_process_matches(
+            {"found": True, "disabled": False, "process": None}, {"process": None}
+        )
+        is False
+    )

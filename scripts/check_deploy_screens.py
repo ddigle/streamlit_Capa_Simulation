@@ -2754,11 +2754,23 @@ def check_process_detail(screen: Screen) -> str:
     return summarize_process_detail(before, after)
 
 
-_CONSTRAINT_LINK_JS = """(keys) => {
+# 공정 선택 상자가 지금 고른 값(표시명). Streamlit 1.63 selectbox 는 고른 값을 콤보 상자 `<input>`
+# 의 `value` 에만 둔다 — 상자의 `innerText` 는 카드가 접혀 있으면 빈 글자, 펴 있으면 라벨 「공정」
+# 뿐이다.
+_SELECTED_VALUE_JS = """const selectedValue = (box) => {
+    if (!box) return null;
+    const input = box.querySelector('input');
+    return input ? String(input.value || '').trim() : null;
+  };"""
+
+_CONSTRAINT_LINK_JS = (
+    """(keys) => {
+  """
+    + _SELECTED_VALUE_JS
+    + """
   const links = Array.from(document.querySelectorAll('[data-testid="stMain"] a'));
   const link = links.find((item) => item.innerText.includes(keys.label));
-  const box = document.querySelector(`.st-key-${keys.detailProcess}`);
-  const process = box ? box.innerText : null;
+  const process = selectedValue(document.querySelector(`.st-key-${keys.detailProcess}`));
   const kpis = document.querySelectorAll(
     '.st-key-process_detail_kpis [data-testid="stMetric"]'
   ).length;
@@ -2769,8 +2781,13 @@ _CONSTRAINT_LINK_JS = """(keys) => {
     getComputedStyle(link).pointerEvents === 'none';
   return {found: true, disabled, ready: kpis > 0, process};
 }"""
+)
 
-_CONSTRAINT_JS = """(keys) => {
+_CONSTRAINT_JS = (
+    """(keys) => {
+  """
+    + _SELECTED_VALUE_JS
+    + """
   const q = (selector) => document.querySelector(selector);
   const steps = q(`.st-key-${keys.steps}`);
   const month = steps ? (steps.innerText.match(/(\\d\\d\\.\\d\\d) · /) || [])[1] : null;
@@ -2797,7 +2814,6 @@ _CONSTRAINT_JS = """(keys) => {
       };
     }
   }
-  const process = q(`.st-key-${keys.process}`);
   return {
     kpis: document.querySelectorAll(`.st-key-${keys.kpi} [data-testid="stMetric"]`).length,
     chart: !!chart,
@@ -2806,10 +2822,24 @@ _CONSTRAINT_JS = """(keys) => {
     schedule: lines,
     month: month || null,
     absent: !!q(`.st-key-${keys.absent}`),
-    process: process ? process.innerText : null,
+    process: selectedValue(q(`.st-key-${keys.process}`)),
     point,
   };
 }"""
+)
+
+
+def constraint_process_matches(
+    link: Mapping[str, Any] | None, before: Mapping[str, Any]
+) -> bool | None:
+    """링크로 연 제약 시뮬레이션의 공정이 공정 Capa 상세에서 보던 공정과 같은가 — 두 공정 상자의
+    지금 값(둘 다 같은 표시명 규칙 `unique_format_func`)끼리 견준다. 링크를 누르지
+    않았으면(없음·꺼짐) None. 어느 쪽 값이든 읽지 못했으면 거짓이다(같다고 짐작하지 않는다)."""
+    if link is None or not link.get("found") or link.get("disabled"):
+        return None
+    detail = str(link.get("process") or "").strip()
+    here = str(before.get("process") or "").strip()
+    return bool(detail) and detail == here
 
 
 def summarize_constraint_simulation(
@@ -2854,7 +2884,6 @@ def check_constraint_simulation(screen: Screen) -> str:
     link = screen.wait_for(
         lambda: screen.js(_CONSTRAINT_LINK_JS, arg), timeout=120, accept=lambda v: bool(v["ready"])
     )
-    same_process: bool | None = None
     if link.get("found") and not link.get("disabled"):
 
         def arrived() -> bool:
@@ -2875,10 +2904,7 @@ def check_constraint_simulation(screen: Screen) -> str:
             and (bool(value["absent"]) or (bool(value["chart"]) and value["month"] is not None))
         ),
     )
-    if link.get("found") and not link.get("disabled"):
-        detail = str(link.get("process") or "").replace("공정", "", 1).strip()
-        here = str(before.get("process") or "").replace("공정", "", 1).strip()
-        same_process = bool(detail) and detail == here
+    same_process = constraint_process_matches(link, before)
     after: Mapping[str, Any] | None = None
     point = before.get("point")
     if point is not None and not before.get("absent"):
