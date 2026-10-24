@@ -53,6 +53,7 @@ from capa_simulation.components.process_capa_canvas import (
     AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
+    _unit_hover,
     build_process_capa_canvas,
     canvas_point,
     title_detail_lines,
@@ -268,9 +269,31 @@ def _json(figure: go.Figure) -> Any:
 
 
 def _targets(canvas: ProcessCapaCanvas) -> list[Any]:
-    """칸 표적 막대의 (customdata, y 가운데, 높이)."""
-    trace = next(item for item in _json(canvas.months)["data"] if item.get("customdata"))
-    return list(zip(trace["customdata"], trace["y"], trace["width"], strict=True))
+    """칸 표적 막대의 (customdata, y 가운데, 높이) — 풍선 있는 칸과 없는 칸(둘째 trace) 모두."""
+    return [
+        item
+        for trace in _json(canvas.months)["data"]
+        if trace.get("customdata")
+        for item in zip(trace["customdata"], trace["y"], trace["width"], strict=True)
+    ]
+
+
+def _label_hovers(canvas: ProcessCapaCanvas) -> dict[str, str]:
+    """줄 이름 칸 풍선 — 행 id → 풍선 글(라벨 Figure 의 표적 막대)."""
+    return {
+        str(row_id): str(hover)
+        for trace in _json(canvas.labels)["data"]
+        for row_id, hover in trace["customdata"]
+    }
+
+
+def _hover_months(canvas: ProcessCapaCanvas, row_id: str) -> list[int]:
+    """그 행에서 풍선이 뜨는 달."""
+    return sorted(
+        int(data[CUSTOMDATA_MONTH])
+        for data, _, _ in _targets(canvas)
+        if data[CUSTOMDATA_ROW] == row_id and data[CUSTOMDATA_HOVER]
+    )
 
 
 def _row_center(canvas: ProcessCapaCanvas, row_id: str) -> float:
@@ -576,22 +599,29 @@ def test_no_table_or_heatmap_and_no_trace_dims_when_a_cell_is_clicked() -> None:
 
 
 def test_every_cell_target_carries_its_month_row_and_hover() -> None:
+    """칸마다 표적 하나 — 풍선 글이 있는 칸은 첫 trace(`hovertemplate`), ③ 의 빈 달 칸은 둘째 trace
+    (`hoverinfo: "none"`, 풍선 상자 없음)다. 둘 다 달·행 id 를 실어 누르면 그 달이 골라진다."""
     canvas = _canvas(dynamic=_dynamic())
     targets = _targets(canvas)
     clickable = [row for row in canvas.row_ids if not row.startswith(("title:", "note:"))]
 
     assert len(targets) == len(clickable) * len(MONTHS)
+    assert {(data[CUSTOMDATA_MONTH], data[CUSTOMDATA_ROW]) for data, _, _ in targets} == {
+        (month, row) for month in MONTHS for row in clickable
+    }
     for data, _, _ in targets:
-        assert data[CUSTOMDATA_MONTH] in MONTHS
-        assert data[CUSTOMDATA_ROW] in clickable
-        assert data[CUSTOMDATA_HOVER]
+        if not data[CUSTOMDATA_HOVER]:
+            assert str(data[CUSTOMDATA_ROW]).startswith(("unit:", "exit:"))
     rate_months = [
         data[CUSTOMDATA_MONTH] for data, _, _ in targets if data[CUSTOMDATA_ROW] == ROW_RATE
     ]
     assert rate_months == MONTHS
-    trace = next(trace for trace in canvas.months.data if trace.customdata is not None)
-    assert trace.hovertemplate == "%{customdata[2]}<extra></extra>"
-    assert trace.marker.color == tokens.HIT_TARGET
+    hovered, silent = (trace for trace in canvas.months.data if trace.customdata is not None)
+    assert hovered.hovertemplate == "%{customdata[2]}<extra></extra>"
+    assert all(item[CUSTOMDATA_HOVER] for item in hovered.customdata)
+    assert silent.hoverinfo == "none" and silent.hovertemplate is None
+    assert silent.customdata and not any(item[CUSTOMDATA_HOVER] for item in silent.customdata)
+    assert hovered.marker.color == silent.marker.color == tokens.HIT_TARGET
 
 
 def test_canvas_point_reads_the_month_and_row_of_a_clicked_cell() -> None:
@@ -999,6 +1029,149 @@ def test_contribution_starts_take_the_confirmation_colour() -> None:
     assert colours["계획"] in starts["marker"]["color"]
 
 
+def test_a_shortened_unit_hover_is_three_short_lines() -> None:
+    """③ 단축 호기 풍선은 세 줄이다(2026-10-24 사용자 결정 2-1 (가) — 시안 그대로). 반입일 ·
+    Qual상태 · 대상 월은 그림 표지(◆ · ● 색)와 CSV 가 말해 적지 않고, 날짜는 줄 라벨처럼
+    짧게(올해 밖이면 연도) 적는다."""
+    event: dict[str, Any] = dict.fromkeys(UNIT_EVENT_COLUMNS)
+    event.update(
+        {
+            "줄": ROW_SHORTENED,
+            "호기": "SMP-DAF-11",
+            "Model": "DEMO-X1",
+            "모듈 수": 1,
+            "반입일정": date(2026, 11, 1),
+            "Qual일정": date(2026, 11, 15),
+            "기여 시작": date(2026, 11, 16),
+            "Qual상태": "확정",
+            "모듈별 Qual": (),
+            "목표 Qual": date(2026, 10, 23),
+            "목표 기여 시작": date(2026, 10, 24),
+            "단축일수": 23,
+            "늘어난 환산대수": 0.1,
+            "반입 전": True,
+            "대상 월": 202611,
+            "해소 기여 월": (202611,),
+        }
+    )
+    today = date(2026, 10, 24)
+
+    assert _unit_hover(event, today).split("<br>") == [
+        f"SMP-DAF-11 · {MINUS}23일 · DEMO-X1",
+        "Qual 11.15 → 목표 10.23 · 10.24부터 기여 +0.10대",
+        "해소 26.11 · ⚠ 반입 전",
+    ]
+    # 모듈 묶음이면 첫 줄 끝에 「· 모듈 N」, ⚠ 는 반입 전인 호기에만, 해소 달이 없으면 그
+    # 조각이 빠진다.
+    grouped = {**event, "모듈 수": 2, "반입 전": False, "해소 기여 월": ()}
+    assert _unit_hover(grouped, today).split("<br>") == [
+        f"SMP-DAF-11 · {MINUS}23일 · DEMO-X1 · 모듈 2",
+        "Qual 11.15 → 목표 10.23 · 10.24부터 기여 +0.10대",
+    ]
+    # 해가 다르면 연도가 붙는다(줄 라벨과 같은 꼴).
+    assert "Qual 26.11.15 → 목표 26.10.23" in _unit_hover(event, date(2027, 1, 5))
+
+
+def test_unit_hovers_stay_within_three_lines_and_an_assumption_adds_the_fourth() -> None:
+    dynamic = _dynamic()
+    official = _label_hovers(_canvas(dynamic=dynamic))
+    marked = DynamicCanvasInput(**{**dynamic.__dict__, "official_pulls": {"EQ-21": (45, 0)}})
+    assumed = _label_hovers(_assumed_canvas(110, set(MONTHS), dynamic=marked))
+    units = [row for row in official if row.startswith(("unit:", "exit:"))]
+
+    assert len(units) >= 5 and set(units) == set(official)
+    assert all(1 <= len(official[row].split("<br>")) <= 3 for row in units)
+    assert all("UPEH" not in hover for hover in official.values())
+    for row in (row for row in assumed if row.startswith("unit:")):
+        lines = assumed[row].split("<br>")
+        assert len(lines) <= 4 and lines[-1].startswith("UPEH 가정 계획")
+        assert lines[:-1] == official[row].split("<br>")
+
+
+def test_a_unit_hover_shows_only_on_the_months_its_drawing_spans() -> None:
+    """풍선은 그 호기 그림(선 · 화살표 · 표지)이 걸친 달 칸과 줄 이름 칸에서만 뜬다. 빈 달 칸도
+    표적은 있어(풍선 없는 trace) 누르면 그 달이 골라진다."""
+    event: dict[str, Any] = dict.fromkeys(UNIT_EVENT_COLUMNS)
+    event.update(
+        {
+            "줄": ROW_SHORTENED,
+            "호기": "EQ-90",
+            "모듈 수": 1,
+            "반입일정": date(2026, 12, 5),
+            "Qual일정": date(2027, 2, 10),
+            "기여 시작": date(2027, 2, 11),
+            "Qual상태": "계획",
+            "모듈별 Qual": (),
+            "목표 Qual": date(2026, 12, 20),
+            "목표 기여 시작": date(2026, 12, 21),
+            "단축일수": 52,
+            "늘어난 환산대수": 0.5,
+            "반입 전": False,
+            "해소 기여 월": (202701,),
+            "반입 위치": 1.48,
+            "기여 시작 위치": 3.7,
+            "기여 시작 축 밖": False,
+            "목표 기여 위치": 1.97,
+        }
+    )
+    events = pd.DataFrame([event], columns=list(UNIT_EVENT_COLUMNS))
+    canvas = _canvas(dynamic=_dynamic(unit_events=events, exits=pd.DataFrame()))
+
+    # ◆ 반입(12월) · ◀ 목표(12월) · ● 기여 시작(2월) — 12월~2월만.
+    assert _hover_months(canvas, "unit:EQ-90") == [202612, 202701, 202702]
+    assert "unit:EQ-90" in _label_hovers(canvas)
+    cells = {
+        int(data[CUSTOMDATA_MONTH]): data[CUSTOMDATA_HOVER]
+        for data, _, _ in _targets(canvas)
+        if data[CUSTOMDATA_ROW] == "unit:EQ-90"
+    }
+    assert sorted(cells) == MONTHS
+    assert {month for month, hover in cells.items() if not hover} == set(MONTHS) - {
+        202612,
+        202701,
+        202702,
+    }
+    assert canvas_point(
+        {"selection": {"points": [{"customdata": [202705, "unit:EQ-90", ""]}]}}
+    ) == (202705, "unit:EQ-90")
+
+    # 「반입 전」 배지는 「−N일」 왼쪽이라 그림이 앞 달까지 걸친다.
+    early = {**event, "반입 전": True, "목표 기여 위치": 1.3, "반입 위치": 1.48}
+    canvas = _canvas(
+        dynamic=_dynamic(
+            unit_events=pd.DataFrame([early], columns=list(UNIT_EVENT_COLUMNS)),
+            exits=pd.DataFrame(),
+        )
+    )
+    assert _hover_months(canvas, "unit:EQ-90")[0] == 202611
+
+
+def test_hover_months_cover_every_drawn_mark_of_the_fixture_units() -> None:
+    """풍선 칸(`_unit_span`)과 그림(`_draw_unit`)은 같은 자리(`_unit_marks`)에서 나온다 — 표지가
+    선 달은 모두 풍선 칸이고 풍선 칸은 이어진 한 덩어리다."""
+    canvas = _canvas(dynamic=_dynamic())
+    centers = {
+        str(data[CUSTOMDATA_ROW]): y
+        for data, y, _ in _targets(canvas)
+        if str(data[CUSTOMDATA_ROW]).startswith(("unit:", "exit:"))
+    }
+    marks: dict[str, set[int]] = {row: set() for row in centers}
+    for trace in _json(canvas.months)["data"]:
+        if trace.get("mode") != "markers":
+            continue
+        for x, y in zip(trace["x"], trace["y"], strict=True):
+            for row, center in centers.items():
+                if y == pytest.approx(center):
+                    marks[row].add(MONTHS[min(len(MONTHS) - 1, math.floor(x))])
+    assert any(marks.values())
+    for row, months in marks.items():
+        hovered = _hover_months(canvas, row)
+        assert months <= set(hovered), row
+        if hovered:
+            first, last = MONTHS.index(hovered[0]), MONTHS.index(hovered[-1])
+            assert hovered == MONTHS[first : last + 1], row
+
+
 def _many_new_units(count: int) -> pd.DataFrame:
     rows = []
     for number in range(count):
@@ -1115,7 +1288,7 @@ def _row_hover(canvas: ProcessCapaCanvas, row_id: str) -> str:
         next(
             data[CUSTOMDATA_HOVER]
             for data, _, _ in _targets(canvas)
-            if data[CUSTOMDATA_ROW] == row_id
+            if data[CUSTOMDATA_ROW] == row_id and data[CUSTOMDATA_HOVER]
         )
     )
 
@@ -1126,10 +1299,12 @@ def test_unit_and_downtime_labels_leave_the_module_count_to_the_hovers() -> None
     canvas = _canvas(dynamic=_dynamic())
 
     assert "모듈" not in json.dumps(_annotations(canvas.labels), ensure_ascii=False)
-    unit_lines = _row_hover(canvas, "unit:EQ-21").split("<br>")
-    assert unit_lines[0].endswith("EQ-21 · 모듈 2")
-    assert any(line.startswith("모듈별 Qual EQ-21A") for line in unit_lines)
-    assert "모듈" not in _row_hover(canvas, "unit:EQ-22").split("<br>")[0]
+    unit_lines = _label_hovers(canvas)["unit:EQ-21"].split("<br>")
+    assert unit_lines[0].endswith("EQ-21 · −1일 · 모듈 2")
+    # 모듈마다 Qual 이 갈리면 셋째 줄에 그 범위만 — 모듈마다의 날짜는 가용설비 현황 Main 이 적는다.
+    assert unit_lines[2].endswith("모듈 Qual 12.20~12.22")
+    assert "EQ-21A" not in "".join(unit_lines)
+    assert "모듈" not in _label_hovers(canvas)["unit:EQ-22"]
 
     first, *arrows = _row_hover(canvas, "arrow:EQ-21#0").split("<br>")
     assert first.endswith("EQ-21 · 모듈 2")
@@ -1158,11 +1333,12 @@ def test_a_stopping_module_group_names_its_modules_in_the_hover() -> None:
 
     labels = [item["text"] for item in _annotations(canvas.labels)]
     assert "<b>EQ-30</b>" in labels
-    assert (
-        _row_hover(canvas, "exit:EQ-30")
-        .split("<br>")[0]
-        .endswith("EQ-30 · 모듈 2 · 정지 2027-03-10 · M-1")
-    )
+    assert _label_hovers(canvas)["exit:EQ-30"].split("<br>") == [
+        "EQ-30 · M-1 · 모듈 2",
+        "정지 27.03.10부터 가용에서 빠집니다",
+    ]
+    # ▼ 가 든 달 칸에만 풍선이 뜬다.
+    assert _hover_months(canvas, "exit:EQ-30") == [202703]
 
 
 # ---------------------------------------------------------------------- 검증 경로·테마
@@ -1305,8 +1481,9 @@ def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_chang
     labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
     assert "판정 대조 · UPEH 가정" in labels and "과부족 · UPEH 가정" in labels
     assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
-    unit_hover = _row_hover(canvas, "unit:EQ-21")
-    assert "UPEH 가정 계획" in unit_hover and f"공식 {MINUS}45일 → 가정 0일" in unit_hover
+    unit_hover = _label_hovers(canvas)["unit:EQ-21"]
+    assert unit_hover.split("<br>")[-1] == f"UPEH 가정 계획 · 공식 {MINUS}45일 → 가정 0일"
+    assert _row_hover(canvas, "unit:EQ-21") == unit_hover
 
 
 def _compare_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:

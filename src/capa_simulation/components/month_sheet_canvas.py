@@ -25,6 +25,14 @@ Figure 와 월 Figure 의 뼈대만 갖고, 쓰는 쪽만의 그림(③·④ 의
 - **고른 칸 테두리**(`month_figure` 의 `selected_cell`)는 그 칸 하나에 `ACCENT` 2px 를 두른다.
 - **서식**(`one`·`signed_one`)은 자릿수(`digits`, 기본 1)를 받는다 — 공정 Capa 상세는 1자리, 비교
   시트는 2자리다.
+- **풍선 없는 칸** — 풍선 글(`Cell.hover`, 없으면 `Row.hover`)이 빈 칸은 둘째 표적 trace 에
+  모은다(`hoverinfo: "none"`, `hovertemplate` 없음). 풍선 상자는 뜨지 않고 누르면 그 칸이
+  골라진다 — 한 trace 에 두면 `hovertemplate` 가 빈 글에도 16px 빈 상자를 띄우고, 점별
+  `hoverinfo`(`"none"`·`"skip"`)는 `hovertemplate` 에 진다(2026-10-24 브라우저 확인). 그런 칸이
+  없으면 trace 도 없다.
+- **줄 이름 칸 풍선**(`Row.label_hover`) — 준 행만 라벨 Figure 에 보이지 않는 표적 막대가 서서
+  그 줄 이름 칸에 풍선을 띄운다. 준 행이 없으면 라벨 Figure 에 trace 가 없다(쓰는 쪽은 그때
+  `staticPlot` 그대로).
 
 순수 함수다. 세션·캐시·DB 를 보지 않는다.
 """
@@ -189,6 +197,9 @@ class Row:
     clickable: bool = True
     cells: dict[int, Cell] = field(default_factory=dict)
     hover: str = ""
+    label_hover: str = ""
+    """줄 이름 칸(라벨 Figure)의 풍선 글. 비면 그 칸에 풍선이 없다."""
+
     payload: Any = None
     top: float = 0.0
 
@@ -356,7 +367,8 @@ def note_row(name: str, text: str) -> Row:
 
 
 def label_figure(rows: Sequence[Row], height: int) -> go.Figure:
-    """라벨 칸 Figure — 행 면·행 경계·라벨 글(제목 줄은 제목과 세부 글 줄)."""
+    """라벨 칸 Figure — 행 면·행 경계·라벨 글(제목 줄은 제목과 세부 글 줄), 그리고 `label_hover` 를
+    준 행의 줄 이름 칸 풍선(보이지 않는 표적 막대 — `customdata` 는 `(행 id, 풍선 글)`)."""
     figure = go.Figure()
     figure.update_layout(
         height=height,
@@ -410,9 +422,44 @@ def label_figure(rows: Sequence[Row], height: int) -> go.Figure:
                     muted=True,
                 )
             )
+    hovered = [row for row in rows if row.label_hover]
+    if hovered:
+        # 막대는 오른쪽 끝(1)에서 왼쪽 끝(0)으로 긋는다 — Plotly 는 풍선을 막대 끝에 붙이므로 풍선이
+        # 라벨 칸 왼쪽에서 오른쪽으로 펴지고, 칸보다 넓으면 월 컬럼 쪽으로 넘친다(왼쪽으로 넘치면
+        # 사이드바 경계에서 잘린다 — 2026-10-24 브라우저).
+        figure.add_trace(
+            go.Bar(
+                x=[-1.0] * len(hovered),
+                y=[height - row.top - row.height / 2 for row in hovered],
+                base=[1.0] * len(hovered),
+                width=[row.height for row in hovered],
+                orientation="h",
+                marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
+                customdata=[[row.row_id, row.label_hover] for row in hovered],
+                hovertemplate="%{customdata[1]}<extra></extra>",
+                showlegend=False,
+            )
+        )
+        # 라벨 칸은 좁아 Plotly 가 풍선을 가운데 맞춤으로 당긴다 — 여러 줄 글은 왼쪽 맞춤으로
+        # 읽힌다.
+        figure.update_layout(
+            barmode="overlay",
+            bargap=0,
+            hovermode="closest",
+            hoverlabel={**_hover_label(), "align": "left"},
+        )
     append_layout_items(figure, shapes=shapes, annotations=annotations)
     add_figure_outer_border(figure, emphasize_bottom=True)
     return figure
+
+
+def _hover_label() -> dict[str, Any]:
+    """두 Figure 풍선의 서식. 토큰은 부를 때 읽는다(테마가 회차마다 다르다)."""
+    return {
+        "bgcolor": tokens.SURFACE,
+        "bordercolor": tokens.BORDER_STRONG,
+        "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
+    }
 
 
 def _title_annotations(row: Row, budget: float, height: int) -> list[dict[str, Any]]:
@@ -528,14 +575,16 @@ def month_figure(
 
     차례: 행마다(월 면 → 묶음 경계 → 칸 표적·면·글자 → `row_hook`) → 머리 달 글자 → `header_hook` →
     월 경계 세로선 → `finish_hook` → 고른 칸 테두리(`selected_cell` = (열 위치, 행 id)). trace 는
-    표적 막대 · 칸 면 막대 · 훅이 더한 trace · 글자((색, 크기)마다 하나) 차례다. `meta` 는 그림의
-    `layout.meta` 로 싣는다(그리는 것은 바꾸지 않는다).
+    표적 막대 · (풍선 없는 칸의 표적 막대 — 그런 칸이 있을 때만) · 칸 면 막대 · 훅이 더한 trace ·
+    글자((색, 크기)마다 하나) 차례다. `meta` 는 그림의 `layout.meta` 로 싣는다(그리는 것은 바꾸지
+    않는다).
     """
     count = len(axis)
     inset = CELL_INSET_PX / tokens.MONTH_COLUMN_WIDTH_PX
     header = rows[0]
 
     targets = Points()
+    silent = Points()
     fills = Points()
     texts: dict[tuple[str, int], Points] = {}
     layers = MonthLayers()
@@ -556,11 +605,12 @@ def month_figure(
             if cell is None:
                 continue
             if row.clickable:
-                targets.add(
+                hover = cell.hover or row.hover
+                (targets if hover else silent).add(
                     x=index,
                     y=center,
                     width=row.height,
-                    data=[int(axis[index]), row.row_id, cell.hover or row.hover],
+                    data=[int(axis[index]), row.row_id, hover],
                 )
             if cell.fill is not None:
                 fills.add(
@@ -639,6 +689,7 @@ def month_figure(
             hovertemplate="%{customdata[2]}<extra></extra>",
             showlegend=False,
         ),
+        *_silent_targets(silent),
         go.Bar(
             x=[1.0 - 2 * inset] * len(fills.x),
             y=fills.y,
@@ -678,11 +729,7 @@ def month_figure(
         showlegend=False,
         dragmode=False,
         hovermode="closest",
-        hoverlabel={
-            "bgcolor": tokens.SURFACE,
-            "bordercolor": tokens.BORDER_STRONG,
-            "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
-        },
+        hoverlabel=_hover_label(),
         xaxis={**_HIDDEN_AXIS, "range": [0, count]},
         yaxis={**_HIDDEN_AXIS, "range": [0, height]},
     )
@@ -691,6 +738,26 @@ def month_figure(
     append_layout_items(figure, shapes=layers.below + layers.above, annotations=layers.annotations)
     add_figure_outer_border(figure, emphasize_left=False, emphasize_bottom=True)
     return figure
+
+
+def _silent_targets(points: Points) -> list[Any]:
+    """풍선 글이 빈 칸의 표적 막대 — `hoverinfo: "none"` 이라 풍선 상자가 뜨지 않고 hover·누름
+    사건은 그대로라 누르면 그 칸이 골라진다. 그런 칸이 없으면 trace 를 두지 않는다."""
+    if not points.x:
+        return []
+    return [
+        go.Bar(
+            x=[1.0] * len(points.x),
+            y=points.y,
+            base=points.x,
+            width=points.width,
+            orientation="h",
+            marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
+            customdata=points.data,
+            hoverinfo="none",
+            showlegend=False,
+        )
+    ]
 
 
 def _cell_border(

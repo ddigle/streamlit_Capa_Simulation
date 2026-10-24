@@ -27,6 +27,7 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_PROCESS_KEY,
     SHORTENING_START_KEY,
     SHORTENING_UPEH_VIEW_KEY,
+    _card_table,
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -49,8 +50,12 @@ from capa_simulation.services.required_shortening import (
     KIND_SHORTENED,
     LEVEL_COLUMN,
     PROCESS_MONTH_EXPORT_COLUMNS,
+    STATUS_EXPIRED,
+    STATUS_NEW_LIMIT,
+    STATUS_SHORTENED,
     UNIT_EXPORT_COLUMNS,
 )
+from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP
 from capa_simulation.upeh_assumption_state import (
@@ -546,6 +551,46 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
         "EQ&lt;LONG&gt;-0001 · 기존 Qual 2026-12-10 → 목표 Qual 2026-10-07 · −64일 · "
         "기여 시작 2026-10-08 · 늘어난 환산대수 +0.29대 · 모듈 2 · 해소 기여 월 26.10"
     )
+
+
+def test_the_shortfall_cell_puts_the_after_value_and_the_status_on_separate_lines() -> None:
+    """과부족 칸 둘째 줄은 「→ 단축 후」 한 줄, 상태 글(기한 지남 · 남은 날 부족)은 그 아래 한
+    줄이다(2026-10-24 사용자 결정 2-3 (가)) — 한 줄로 이으면 `nowrap` 이라 84px 달 칸을 넘어 옆
+    달에 얹혔다."""
+    months = [202611, 202612, 202701]
+
+    def row(gap: float, after: float, status: str) -> dict[str, object]:
+        return {
+            "가용대수": 10.0,
+            "단축후가용대수": 10.0,
+            "소요대수": 12.0,
+            "확보율": 10 / 12,
+            "과부족": gap,
+            "단축후과부족": after,
+            "상태": status,
+        }
+
+    markup = _card_table(
+        {
+            202611: row(-102.63, -102.63, STATUS_EXPIRED),
+            202612: row(-3.5, -1.2, STATUS_NEW_LIMIT),
+            202701: row(-2.0, 0.0, STATUS_SHORTENED),
+        },
+        months,
+        1.0,
+        SecurementThresholds(1.0, 0.9),
+    )
+
+    assert (
+        '<span class="shk-sub">→ −102.63</span><span class="shk-sub">기한 지남</span></div>'
+        in markup
+    )
+    assert (
+        '<span class="shk-sub">→ −1.20</span><span class="shk-sub">남은 날 부족</span></div>'
+        in markup
+    )
+    assert '<span class="shk-sub">→ +0.00</span></div>' in markup
+    assert " · 기한 지남" not in markup and " · 남은 날 부족" not in markup
 
 
 def test_a_row_date_in_another_year_carries_its_year() -> None:

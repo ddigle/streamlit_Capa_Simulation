@@ -243,6 +243,14 @@ def _chart_spec(app: AppTest, key: str) -> dict[str, Any]:
     raise AssertionError(f"{key} 그림이 없다")
 
 
+def _chart_config(app: AppTest, key: str) -> dict[str, Any]:
+    for chart in app.get("plotly_chart"):
+        if str(chart.proto.id).endswith(f"-{key}"):
+            config: dict[str, Any] = json.loads(chart.proto.config)
+            return config
+    raise AssertionError(f"{key} 그림이 없다")
+
+
 def _label_texts(app: AppTest) -> str:
     """라벨 Figure 의 글자 전부(주석·글자 trace)."""
     return json.dumps(_chart_spec(app, "process_detail_summary_labels"), ensure_ascii=False)
@@ -271,9 +279,11 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
         "대책",
     ]
     assert app.metric[3].value == "일정 없음"
-    # 결합 캔버스 — 라벨 Figure(정적)와 월 Figure(칸 선택).
+    # 결합 캔버스 — 라벨 Figure(정적 — ③ 호기 줄이 없어 줄 이름 칸 풍선도 없다)와 월
+    # Figure(칸 선택).
     spec = _chart_spec(app, PROCESS_DETAIL_CANVAS_CHART_KEY)
     assert spec["layout"]["xaxis"]["range"][0] == 0
+    assert _chart_config(app, "process_detail_summary_labels")["staticPlot"] is True
     assert "① 공식 기준" in _label_texts(app)
     assert "② 설비 일정 기준 가용" not in _label_texts(app)
     # 산출 근거 패널은 고른 달이고 카드는 ① ~ ③ 셋이다.
@@ -724,6 +734,14 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
     for title in ("② 설비 일정 기준 가용", "③ 신규 설비 일정과 단축", "④ 호기별 비가동"):
         assert title in labels
     assert "DA-01" in labels
+    # ③ 호기 줄 이름 칸에 풍선이 있으면 라벨 그림도 hover 를 켠다(`staticPlot` 을 뺀다).
+    label_spec = _chart_spec(app, "process_detail_summary_labels")
+    assert any(
+        str(row_id).startswith(("unit:", "exit:"))
+        for trace in label_spec["data"]
+        for row_id, _ in trace["customdata"]
+    )
+    assert "staticPlot" not in _chart_config(app, "process_detail_summary_labels")
     # 단축 목표는 HOME Preference 확보기준 표시뿐이다 — 고르는 위젯이 없다.
     assert any(
         "단축 목표 = HOME Preference 확보기준(월별)" in str(element.value)

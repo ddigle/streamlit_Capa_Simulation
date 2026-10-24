@@ -24,6 +24,13 @@
 밝힌다. ③ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ④ 풍선 첫 줄에 「· 모듈 N」과 화살표
 줄마다 그 모듈의 설비명이다.
 
+**③ 풍선은 세 줄이고 그림 위에서만 뜬다**(2026-10-24 사용자 결정 (가)) — 「호기 · −N일 · Model」,
+「Qual MM.DD → 목표 MM.DD · MM.DD부터 기여 +0.10대」, 「해소 YY.MM · ⚠ 반입 전」(`_unit_hover`).
+반입일·Qual상태·대상 월은 그림 표지(◆ · ● 색)와 CSV 가 말해 적지 않고, UPEH 가정 계획만 넷째
+줄이다. 그 호기 그림(선·화살표·표지와 붙은 글자)이 걸친 달 칸과 줄 이름 칸(라벨 Figure 의
+`label_hover`)에서만 뜨고, 빈 달 칸은 풍선 없는 표적이라 누르면 그 달만 골라진다. 풍선 칸과 그림은
+한 자리(`_unit_marks`)에서 낸다.
+
 **UPEH 가정**(`assumption` — 공정 Capa 상세 조건 카드의 「이 세션만」 값)이 켜지면 ① 끝(기준 확보율
 아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보기준 과부족)이 선다 — 구간 달만 값이고 밖은
 빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
@@ -226,6 +233,15 @@ SHORTAGE_STRIP_PX: Final = 4
 SELECTED_UNDERLINE_PX: Final = 1.5
 TRACK_TEXT_FONT_PX: Final = 11
 ARROW_TEXT_FONT_PX: Final = 10
+# ③ 표지 둘레 글자 — 단축 촉 왼쪽 「−N일」(촉에서 달 단위 0.08 떨어짐)과 그 왼쪽 「반입 전」
+# 배지(8px 틈·안쪽 여백 2px), 추가N ◌(반지름 6px)과 그 오른쪽 「신규 필요」(달 단위 0.1 떨어짐).
+_PULL_TEXT_GAP: Final = 0.08
+_BADGE_GAP_PX: Final = 8
+_BADGE_PAD_PX: Final = 2
+_BEFORE_ARRIVAL_TEXT: Final = "반입 전"
+_VIRTUAL_RADIUS_PX: Final = 6.0
+_VIRTUAL_TEXT_GAP: Final = 0.1
+_VIRTUAL_TEXT: Final = "신규 필요"
 # ③·④ 의 줄 상한. 넘으면 「n대 더」 한 줄을 두고, 페이지의 「더 보기」가 모두 그린다.
 ROW_LIMIT: Final = 30
 # ④ 화살표 위 비가동유형 글자의 상한(글자 수).
@@ -1040,9 +1056,12 @@ def _unit_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_
     rows: list[_Row] = []
     for kind, record in entries:
         row = _exit_row(record, dynamic) if kind == "exit" else _unit_row(record, dynamic)
-        # 칸마다 같은 호기 풍선 — 줄 어디를 눌러도 그 열의 달이 골라진다.
-        for index, month in enumerate(axis):
-            row.cells[index] = _Cell(hover=f"<b>{month_label(month)}</b> · {row.hover}")
+        # 풍선은 그 호기 그림이 걸친 달 칸과 줄 이름 칸에서만 뜬다. 빈 달 칸도 칸은 두어(풍선 없는
+        # 표적) 줄 어디를 눌러도 그 열의 달이 골라진다.
+        span = _unit_span(_unit_marks(kind, record, axis, dynamic), len(axis))
+        for index in range(len(axis)):
+            inside = span is not None and span[0] <= index <= span[1]
+            row.cells[index] = _Cell(hover=row.label_hover if inside else "")
         rows.append(row)
     if not rows:
         rows.append(_note_row("no_new_units", "조회기간에 새로 붙는 설비가 없습니다"))
@@ -1069,20 +1088,23 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
         detail = f"반입 {_day(arrival, today)} · Qual {_day(qual, today)}" + (
             f" · {confirmation}" if confirmation else ""
         )
-    hover = _unit_hover(event)
+    hover = _unit_hover(event, today)
     released = False
     if dynamic.official_pulls is not None:
-        hover = hover.replace("<br>", " · UPEH 가정 계획<br>", 1) if "<br>" in hover else hover
+        # UPEH 가정 계획만 넷째 줄 — 표지와, 공식과 단축일수가 다른 호기면
+        # 「공식 −N일 → 가정 −M일」.
+        mark = "UPEH 가정 계획"
         change = dynamic.official_pulls.get(unit)
         if change is not None:
             official_days, assumed_days = change
-            hover += f"<br>공식 {_MINUS}{official_days}일 → 가정 " + (
+            mark += f" · 공식 {_MINUS}{official_days}일 → 가정 " + (
                 f"{_MINUS}{assumed_days}일" if assumed_days else "0일"
             )
             # 가정으로 단축이 필요 없어진 호기 — 흐린 줄로 남긴다(P5).
             if kind != ROW_SHORTENED:
                 released = True
                 detail = f"가정으로 단축 불필요 · 공식 {_MINUS}{official_days}일"
+        hover += f"<br>{mark}"
     return _Row(
         f"{ROW_UNIT_PREFIX}{unit}",
         _UNIT,
@@ -1093,7 +1115,7 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
         label_muted=released,
         label_fill=tokens.SURFACE_CLASSIFICATION,
         payload=("event", dict(event)),
-        hover=hover,
+        label_hover=hover,
     )
 
 
@@ -1111,10 +1133,12 @@ def _exit_row(record: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row
         label_bold=True,
         label_fill=tokens.SURFACE_CLASSIFICATION,
         payload=("exit", dict(record)),
-        hover=(
-            f"{html.escape(unit)}{_module_text(record)} · {html.escape(kind)} {_iso(day)}"
+        label_hover=(
+            html.escape(unit)
             + (f" · {html.escape(model)}" if model else "")
-            + "<br>정지·반출/이설은 그날부터 가용에서 빠집니다"
+            + _module_text(record)
+            + f"<br>{html.escape(kind or '정지·반출/이설')} {_day(day, dynamic.today)}부터 가용에서"
+            " 빠집니다"
         ),
     )
 
@@ -1126,54 +1150,80 @@ def _module_text(record: Mapping[str, object]) -> str:
     return f" · 모듈 {modules}" if modules > 1 else ""
 
 
-def _unit_hover(event: Mapping[str, object]) -> str:
+def _unit_hover(event: Mapping[str, object], today: date) -> str:
+    """③ 호기 줄 풍선 — 세 줄까지. 그림 표지(◆ 반입 · ● 색 = Qual상태)와 줄 라벨·CSV 가 이미 말하는
+    반입일·Qual상태·대상 월은 적지 않는다. 날짜는 줄 라벨과 같은 짧은 꼴(올해 밖이면 연도)이다.
+
+    - 1줄 — 호기 · (단축이면 −N일, 추가N 이면 「신규」) · Model · (모듈 묶음이면 「모듈 N」).
+    - 2줄 — 단축 「Qual MM.DD → 목표 MM.DD · MM.DD부터 기여 +0.10대」, 추가N 「필요 Qual MM.DD ·
+      MM.DD부터 기여 +1.00대」, 그 밖 신규 「Qual MM.DD · MM.DD부터 기여」.
+    - 3줄 — 해소 기여 월 · 「⚠ 반입 전」 · 정지·반출/이설일 · 모듈마다 Qual 이 갈리면 그 범위.
+      조각이 없으면 줄이 없다.
+
+    UPEH 가정 계획의 넷째 줄은 `_unit_row` 가 붙인다.
+    """
     kind = str(event.get("줄"))
-    unit = html.escape(str(event.get("호기")))
-    lines = [f"{unit}"]
-    model = "" if _blank(event.get("Model")) else str(event.get("Model"))
-    if model:
-        lines[0] += f" · {html.escape(model)}"
-    lines[0] += _module_text(event)
-    if kind == ROW_VIRTUAL:
-        lines.append(f"신규 필요 Qual {_iso(_as_date(event.get('목표 Qual')))}")
+    first = [html.escape(str(event.get("호기")))]
+    if kind == ROW_SHORTENED:
+        first.append(f"{_MINUS}{_whole(event.get('단축일수')) or 0}일")
+    elif kind == ROW_VIRTUAL:
+        first.append("신규")
+    if not _blank(event.get("Model")):
+        first.append(html.escape(str(event.get("Model"))))
+    lines = [" · ".join(first) + _module_text(event)]
+    gain = _number(event.get("늘어난 환산대수"))
+    contribution = " 기여" + (f" +{gain:,.2f}대" if gain is not None else "")
+    target = _as_date(event.get("목표 Qual"))
+    target_start = _as_date(event.get("목표 기여 시작")) or _next_day(target)
+    if kind == ROW_SHORTENED:
+        lines.append(
+            f"Qual {_day(_as_date(event.get('Qual일정')), today)} → 목표 {_day(target, today)} · "
+            f"{_day(target_start, today)}부터{contribution}"
+        )
+    elif kind == ROW_VIRTUAL:
+        lines.append(
+            f"필요 Qual {_day(target, today)} · {_day(target_start, today)}부터{contribution}"
+        )
     else:
         lines.append(
-            f"반입 {_iso(_as_date(event.get('반입일정')))} · Qual "
-            f"{_iso(_as_date(event.get('Qual일정')))} (기여 시작 "
-            f"{_iso(_as_date(event.get('기여 시작')))})"
+            f"Qual {_day(_as_date(event.get('Qual일정')), today)} · "
+            f"{_day(_as_date(event.get('기여 시작')), today)}부터 기여"
         )
-        confirmation = _qual_status(event)
-        if confirmation:
-            lines[-1] += f" · {html.escape(confirmation)}"
-    if kind == ROW_SHORTENED:
-        days = _whole(event.get("단축일수"))
-        lines.append(
-            f"단축 목표 Qual {_iso(_as_date(event.get('목표 Qual')))} · {_MINUS}{days or 0}일"
-        )
-        if bool(event.get("반입 전")):
-            lines.append("⚠ 목표 Qual 이 반입일정보다 이릅니다(반입 전)")
-    gain = _number(event.get("늘어난 환산대수"))
-    if gain is not None:
-        lines.append(f"늘어난 환산대수 +{gain:,.2f}")
-    target_month = _whole(event.get("대상 월"))
-    if target_month is not None:
-        lines.append(f"대상 월 {month_label(target_month)}")
+    last: list[str] = []
     resolved = _month_tuple(event.get("해소 기여 월"))
     if resolved:
-        lines.append("해소 기여 월 " + ", ".join(month_label(month) for month in resolved))
+        last.append("해소 " + ", ".join(month_label(month) for month in resolved))
+    if kind == ROW_SHORTENED and bool(event.get("반입 전")):
+        last.append("⚠ 반입 전")
     exit_day = _as_date(event.get("반출이설일"))
     if exit_day is not None:
-        lines.append(f"{html.escape(str(event.get('반출이설구분') or ''))} {_iso(exit_day)}")
-    per_module = event.get("모듈별 Qual")
-    if isinstance(per_module, (tuple, list)) and per_module:
-        parts = [
-            f"{html.escape(str(item[0]))} {_iso(_as_date(item[1]))}"
-            for item in per_module
-            if isinstance(item, (tuple, list)) and len(item) == 2
-        ]
-        if parts:
-            lines.append("모듈별 Qual " + ", ".join(parts))
+        exit_kind = "" if _blank(event.get("반출이설구분")) else str(event.get("반출이설구분"))
+        last.append(f"{html.escape(exit_kind or '정지·반출/이설')} {_day(exit_day, today)}")
+    spread = _module_qual_spread(event.get("모듈별 Qual"), today)
+    if spread:
+        last.append(spread)
+    if last:
+        lines.append(" · ".join(last))
     return "<br>".join(lines)
+
+
+def _module_qual_spread(value: object, today: date) -> str:
+    """모듈 묶음의 모듈마다 Qual 이 갈리면 「모듈 Qual MM.DD~MM.DD」(가장 이른 ~ 가장 늦은), 같거나
+    단독 호기면 빈 글자. 모듈마다의 날짜는 가용설비 현황 Main(설비 마스터 모듈 행)이 적는다."""
+    if not isinstance(value, (tuple, list)):
+        return ""
+    days = sorted(
+        {
+            day
+            for item in value
+            if isinstance(item, (tuple, list))
+            and len(item) == 2
+            and (day := _as_date(item[1])) is not None
+        }
+    )
+    if len(days) < 2:
+        return ""
+    return f"모듈 Qual {_day(days[0], today)}~{_day(days[-1], today)}"
 
 
 def _arrow_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_Row], int]:
@@ -1512,6 +1562,111 @@ def _marker_trace(
     )
 
 
+@dataclass(frozen=True)
+class _UnitMarks:
+    """③ 한 줄의 그림 자리(달 단위 x). `_draw_unit` 이 그리고 `_unit_span` 이 풍선을 띄울 달 칸을
+    고른다 — 한 곳에서 내야 그림과 풍선 칸이 어긋나지 않는다."""
+
+    arrival: float | None = None
+    """◆ 반입(반입 다음 날). 축 밖이면 None."""
+
+    start: float | None = None
+    """● 기여 시작. 축 밖이라 잘렸으면 None."""
+
+    pull: tuple[float, float] | None = None
+    """단축 선 (기여 시작, 목표 기여 시작) — 기여 시작이 축 밖이면 잘린 자리(축 끝)에서 긋는다."""
+
+    pull_days: int = 0
+    before_arrival: bool = False
+    virtual: float | None = None
+    """추가N ◌ 의 목표 기여 자리."""
+
+    exit: float | None = None
+    """▼ 정지·반출/이설. 축 밖이면 None."""
+
+    resolved: tuple[int, ...] = ()
+    """해소 기여 월 눈금의 열 index(축 안만)."""
+
+
+def _unit_marks(
+    kind: str, record: Mapping[str, object], axis: Sequence[int], dynamic: DynamicCanvasInput
+) -> _UnitMarks:
+    def inside(day: date | None) -> float | None:
+        if day is None:
+            return None
+        position = production_position(day, dynamic.cutoff_days, axis)
+        return None if position.before or position.after else position.x
+
+    if kind == "exit":
+        return _UnitMarks(exit=inside(_as_date(record.get("반출이설일"))))
+    line = str(record.get("줄"))
+    columns = {month: index for index, month in enumerate(axis)}
+    resolved = tuple(
+        columns[month] for month in _month_tuple(record.get("해소 기여 월")) if month in columns
+    )
+    if line == ROW_VIRTUAL:
+        target_x = _number(record.get("목표 기여 위치"))
+        return _UnitMarks() if target_x is None else _UnitMarks(virtual=target_x, resolved=resolved)
+    start_x = _number(record.get("기여 시작 위치"))
+    pull: tuple[float, float] | None = None
+    if line == ROW_SHORTENED:
+        target_x = _number(record.get("목표 기여 위치"))
+        if target_x is not None and start_x is not None:
+            pull = (start_x, target_x)
+    return _UnitMarks(
+        arrival=inside(_next_day(_as_date(record.get("반입일정")))),
+        start=None if bool(record.get("기여 시작 축 밖")) else start_x,
+        pull=pull,
+        pull_days=_whole(record.get("단축일수")) or 0,
+        before_arrival=bool(record.get("반입 전")),
+        exit=inside(_as_date(record.get("반출이설일"))),
+        resolved=resolved if line == ROW_SHORTENED else (),
+    )
+
+
+def _unit_span(marks: _UnitMarks, count: int) -> tuple[int, int] | None:
+    """그 줄 그림(선·화살표·표지와 붙은 글자 — 「−N일」·「반입 전」·「신규 필요」)이 걸친 달 칸의
+    (첫 열, 끝 열) — 가장 이른 것 ~ 가장 늦은 것이 든 달이고 축 안으로 자른다. 그릴 것이 없으면
+    None 이다(풍선은 줄 이름 칸에만 뜬다)."""
+    column_px = tokens.MONTH_COLUMN_WIDTH_PX
+    extents = [(x, x) for x in (marks.arrival, marks.start, marks.exit) if x is not None]
+    if marks.pull is not None:
+        start_x, target_x = marks.pull
+        left = target_x - _PULL_TEXT_GAP - _pull_label_px(marks.pull_days) / column_px
+        if marks.before_arrival:
+            left -= (_BADGE_GAP_PX + _badge_px()) / column_px
+        extents.append((min(left, start_x), max(start_x, target_x)))
+    if marks.virtual is not None:
+        text_px = _text_width_units(_VIRTUAL_TEXT) * TRACK_TEXT_FONT_PX
+        extents.append(
+            (
+                marks.virtual - _VIRTUAL_RADIUS_PX / column_px,
+                marks.virtual + _VIRTUAL_TEXT_GAP + text_px / column_px,
+            )
+        )
+    extents += [(index + 0.35, index + 0.65) for index in marks.resolved]
+    if not extents:
+        return None
+
+    def column(x: float) -> int:
+        return min(count - 1, max(0, math.floor(x)))
+
+    # 오른쪽 끝이 달 경계에 딱 닿는 선·글자는 그 다음 달에 들지 않는다(점 하나는 그 자리의 달).
+    first = min(column(left) for left, _ in extents)
+    last = max(column(right - 1e-9 if right > left else right) for left, right in extents)
+    return first, last
+
+
+def _pull_label_px(days: int) -> float:
+    """단축 촉 왼쪽 「−N일」 글자 폭(px)."""
+    return _text_width_units(f"{_MINUS}{days}일") * TRACK_TEXT_FONT_PX
+
+
+def _badge_px() -> float:
+    """「반입 전」 배지 폭(px) — 글자와 좌우 안쪽 여백."""
+    return _text_width_units(_BEFORE_ARRIVAL_TEXT) * ARROW_TEXT_FONT_PX + 2 * _BADGE_PAD_PX
+
+
 def _draw_unit(
     track: _Track,
     row: _Row,
@@ -1526,33 +1681,25 @@ def _draw_unit(
     track.baseline_x += [0.0, float(count), None]
     track.baseline_y += [center, center, None]
     kind, record = row.payload
-
-    def inside(day: date | None) -> float | None:
-        if day is None:
-            return None
-        position = production_position(day, dynamic.cutoff_days, axis)
-        return None if position.before or position.after else position.x
-
+    marks = _unit_marks(kind, record, axis, dynamic)
     if kind == "exit":
-        exit_x = inside(_as_date(record.get("반출이설일")))
-        if exit_x is not None:
-            track.exit.add(x=exit_x, y=center, color=_exit_color(record.get("반출이설구분")))
+        if marks.exit is not None:
+            track.exit.add(x=marks.exit, y=center, color=_exit_color(record.get("반출이설구분")))
         return
     line = str(record.get("줄"))
     if line == ROW_VIRTUAL:
-        target_x = _number(record.get("목표 기여 위치"))
-        if target_x is None:
+        if marks.virtual is None:
             return
-        radius = 6.0
-        half = radius / tokens.MONTH_COLUMN_WIDTH_PX
+        target_x = marks.virtual
+        half = _VIRTUAL_RADIUS_PX / tokens.MONTH_COLUMN_WIDTH_PX
         # 추가N ◌ — 부족 면에 점선 테두리. Plotly 표지는 테두리를 점선으로 못 그려 도형으로 둔다.
         shapes.append(
             {
                 "type": "circle",
                 "x0": target_x - half,
                 "x1": target_x + half,
-                "y0": center - radius,
-                "y1": center + radius,
+                "y0": center - _VIRTUAL_RADIUS_PX,
+                "y1": center + _VIRTUAL_RADIUS_PX,
                 "xref": "x",
                 "yref": "y",
                 "fillcolor": tokens.STATUS_SHORTAGE,
@@ -1560,37 +1707,37 @@ def _draw_unit(
                 "layer": "above",
             }
         )
-        track.virtual_text.add(x=target_x + 0.1, y=center, text="<b>신규 필요</b>")
-        _resolved_ticks(record, axis, bottom, shapes)
+        track.virtual_text.add(
+            x=target_x + _VIRTUAL_TEXT_GAP, y=center, text=f"<b>{_VIRTUAL_TEXT}</b>"
+        )
+        _resolved_ticks(marks.resolved, bottom, shapes)
         return
-    arrival_x = inside(_next_day(_as_date(record.get("반입일정"))))
-    if arrival_x is not None:
-        track.arrival.add(x=arrival_x, y=center)
-    start_x = _number(record.get("기여 시작 위치"))
-    clipped = bool(record.get("기여 시작 축 밖"))
+    if marks.arrival is not None:
+        track.arrival.add(x=marks.arrival, y=center)
     if line == ROW_SHORTENED:
-        target_x = _number(record.get("목표 기여 위치"))
-        if target_x is not None and start_x is not None:
+        if marks.pull is not None:
+            start_x, target_x = marks.pull
             track.pull_x += [start_x, target_x, None]
             track.pull_y += [center, center, None]
             track.pull_head.add(x=target_x, y=center)
-            days = _whole(record.get("단축일수")) or 0
-            label = f"{_MINUS}{days}일"
-            track.pull_text.add(x=target_x - 0.08, y=center, text=f"<b>{label}</b>")
-            if bool(record.get("반입 전")):
-                label_px = _text_width_units(label) * TRACK_TEXT_FONT_PX
+            label = f"{_MINUS}{marks.pull_days}일"
+            track.pull_text.add(x=target_x - _PULL_TEXT_GAP, y=center, text=f"<b>{label}</b>")
+            if marks.before_arrival:
+                label_px = _pull_label_px(marks.pull_days)
                 annotations.append(
                     {
-                        "x": target_x - 0.08 - (label_px + 8) / tokens.MONTH_COLUMN_WIDTH_PX,
+                        "x": target_x
+                        - _PULL_TEXT_GAP
+                        - (label_px + _BADGE_GAP_PX) / tokens.MONTH_COLUMN_WIDTH_PX,
                         "y": center,
                         "xref": "x",
                         "yref": "y",
                         "xanchor": "right",
                         "yanchor": "middle",
-                        "text": "<b>반입 전</b>",
+                        "text": f"<b>{_BEFORE_ARRIVAL_TEXT}</b>",
                         "showarrow": False,
                         "bgcolor": tokens.STATUS_WARNING,
-                        "borderpad": 2,
+                        "borderpad": _BADGE_PAD_PX,
                         "font": {
                             "color": tokens.TEXT,
                             "size": ARROW_TEXT_FONT_PX,
@@ -1598,25 +1745,18 @@ def _draw_unit(
                         },
                     }
                 )
-        _resolved_ticks(record, axis, bottom, shapes)
-    if start_x is not None and not clipped:
+        _resolved_ticks(marks.resolved, bottom, shapes)
+    if marks.start is not None:
         track.start.add(
-            x=start_x, y=center, color=_confirmation_color(record.get(QUAL_STATUS_COLUMN))
+            x=marks.start, y=center, color=_confirmation_color(record.get(QUAL_STATUS_COLUMN))
         )
-    exit_x = inside(_as_date(record.get("반출이설일")))
-    if exit_x is not None:
-        track.exit.add(x=exit_x, y=center, color=_exit_color(record.get("반출이설구분")))
+    if marks.exit is not None:
+        track.exit.add(x=marks.exit, y=center, color=_exit_color(record.get("반출이설구분")))
 
 
-def _resolved_ticks(
-    record: Mapping[str, object], axis: Sequence[int], bottom: float, shapes: list[dict[str, Any]]
-) -> None:
+def _resolved_ticks(columns: Sequence[int], bottom: float, shapes: list[dict[str, Any]]) -> None:
     """「해소 기여 월」 칸 아래 가장자리 2px 눈금 — 이 호기가 메운 달."""
-    positions = {month: index for index, month in enumerate(axis)}
-    for month in _month_tuple(record.get("해소 기여 월")):
-        index = positions.get(month)
-        if index is None:
-            continue
+    for index in columns:
         shapes.append(
             {
                 "type": "line",

@@ -1903,12 +1903,16 @@ def _card_table(
         gap, after_gap = float(str(row["과부족"])), float(str(row["단축후과부족"]))
         status = str(row["상태"])
         if gap < 0:
-            note = f"→ {_signed(after_gap)}"
+            # 단축 후 값과 상태 글은 따로 한 줄씩이다 — 한 줄로 이으면 `nowrap` 이라 84px 달
+            # 칸을 넘어 옆 달에 얹힌다.
+            notes = [f"→ {_signed(after_gap)}"]
             if status in (STATUS_EXPIRED, STATUS_NEW_LIMIT):
-                note += " · " + ("기한 지남" if status == STATUS_EXPIRED else "남은 날 부족")
+                notes.append("기한 지남" if status == STATUS_EXPIRED else "남은 날 부족")
             cells.append(
                 f'<div title="{_escape(status)}"><span class="shk-num shk-short">'
-                f'{_signed(gap)}</span><span class="shk-sub">{_escape(note)}</span></div>'
+                f"{_signed(gap)}</span>"
+                + "".join(f'<span class="shk-sub">{_escape(note)}</span>' for note in notes)
+                + "</div>"
             )
         else:
             cells.append(f'<div><span class="shk-num">{_signed(gap)}</span></div>')

@@ -1,9 +1,10 @@
-# Purpose: 월 시트 캔버스 엔진의 칸 글자색 trace·고른 칸 테두리·자릿수 서식·layout.meta 를 검사한다.
+# Purpose: 월 시트 캔버스 엔진의 글자색·고른 칸 테두리·풍선 없는 칸·줄 이름 칸 풍선을 검사한다.
 
 """월 시트 캔버스 엔진(`components/month_sheet_canvas.py`).
 
 공정 Capa 상세 결합 캔버스의 출력은 `tests/test_process_capa_canvas.py` 가 그대로 지킨다. 여기는
-엔진에 더한 것 — 칸 글자색, 고른 칸 테두리, 서식 자릿수, 그림 `meta` — 만 본다.
+엔진에 더한 것 — 칸 글자색, 고른 칸 테두리, 풍선 없는 칸의 표적, 줄 이름 칸 풍선, 서식 자릿수, 그림
+`meta` — 만 본다.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import pytest
 
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
+    CUSTOMDATA_HOVER,
     CUSTOMDATA_MONTH,
     CUSTOMDATA_ROW,
     HEADER_HEIGHT_PX,
@@ -26,7 +28,9 @@ from capa_simulation.components.month_sheet_canvas import (
     VALUE_ROW_HEIGHT_PX,
     Cell,
     Row,
+    canvas_point,
     fine_one,
+    label_figure,
     month_figure,
     one,
     signed_one,
@@ -94,6 +98,53 @@ def test_the_header_row_draws_no_target_and_value_cells_carry_month_and_row() ->
     assert {(item[CUSTOMDATA_MONTH], item[CUSTOMDATA_ROW]) for item in targets} == {
         (month, row) for month in AXIS for row in ("plain", "colored")
     }
+
+
+def test_cells_without_a_hover_get_a_silent_target_that_still_selects() -> None:
+    """풍선 글이 빈 칸은 둘째 표적 trace 다 — `hoverinfo: "none"` 에 `hovertemplate` 가 없어
+    풍선 상자가 뜨지 않고(한 trace 에 두면 빈 글에도 빈 상자가 뜬다), 달 · 행 id 를 실어 누르면
+    그 칸이 골라진다. 그런 칸이 없으면 trace 도 없다(위 시험의 그림 그대로)."""
+    rows = _rows()
+    quiet = Row("quiet", KIND_VALUE, VALUE_ROW_HEIGHT_PX, label="호기")
+    for index in range(len(AXIS)):
+        quiet.cells[index] = Cell(hover="풍선" if index == 1 else "")
+    rows.append(quiet)
+    figure = month_figure(rows, AXIS, stack_rows(rows))
+    keep_unselected_opaque(figure)
+    hovered, silent = (trace for trace in _json(figure)["data"] if trace.get("customdata"))
+
+    assert hovered["hovertemplate"] == "%{customdata[2]}<extra></extra>"
+    assert [item[CUSTOMDATA_MONTH] for item in hovered["customdata"] if item[1] == "quiet"] == [
+        AXIS[1]
+    ]
+    assert silent["hoverinfo"] == "none" and "hovertemplate" not in silent
+    assert [(item[CUSTOMDATA_MONTH], item[CUSTOMDATA_ROW]) for item in silent["customdata"]] == [
+        (AXIS[0], "quiet"),
+        (AXIS[2], "quiet"),
+    ]
+    assert all(item[CUSTOMDATA_HOVER] == "" for item in silent["customdata"])
+    assert silent["unselected"]["marker"]["opacity"] == 1
+    point = {"selection": {"points": [{"customdata": silent["customdata"][0]}]}}
+    assert canvas_point(point) == (AXIS[0], "quiet")
+    assert sum(1 for trace in _figure()["data"] if trace.get("customdata")) == 1
+
+
+def test_label_hovers_put_one_target_bar_on_the_label_figure_only_when_given() -> None:
+    rows = _rows()
+    height = stack_rows(rows)
+    assert _json(label_figure(rows, height))["data"] == []
+
+    rows[2].label_hover = "줄 풍선"
+    height = stack_rows(rows)
+    figure = _json(label_figure(rows, height))
+    (trace,) = figure["data"]
+    assert trace["customdata"] == [["plain", "줄 풍선"]]
+    assert trace["hovertemplate"] == "%{customdata[1]}<extra></extra>"
+    assert trace["y"] == [pytest.approx(height - rows[2].top - rows[2].height / 2)]
+    # 오른쪽 끝에서 왼쪽 끝으로 — 풍선이 막대 끝(왼쪽)에 붙어 오른쪽으로 펴진다.
+    assert trace["width"] == [rows[2].height] and trace["base"] == [1.0] and trace["x"] == [-1.0]
+    assert trace["marker"]["color"] == tokens.HIT_TARGET
+    assert figure["layout"]["hovermode"] == "closest"
 
 
 def test_the_selected_cell_gets_one_accent_border_and_none_without_a_choice() -> None:

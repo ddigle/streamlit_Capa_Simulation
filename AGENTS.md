@@ -1306,6 +1306,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     제품명·거래선은 제 칸 경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
 - `src/capa_simulation/components/month_sheet_canvas.py` — 월 시트 캔버스 엔진(라벨·월 Figure 한 쌍의 `Row`·
   `Cell`·글자·표적·서식·`canvas_point`). 공정 Capa 상세와 비교 시트가 훅(`row_hook` 등)으로 쓰는 순수 함수다.
+  - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
+    준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
   함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다.
 - `src/capa_simulation/components/availability_sheet_keys.py` — 비교 시트 key(`GAP_SHEET_CHART_KEY` 등)를 가벼운 모듈에
@@ -1316,6 +1318,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     한 길이다. 칸은 `base` 막대 + 표적 막대(`HIT_TARGET`)이고 엔진 상수·`canvas_point` 를 이 모듈 이름으로도 내보낸다.
   - 접힌 구획(`collapsed`, id `SECTION_IDS`)은 제목 줄(▸)만 남는다 — 판정·원인은 요약에서 내 ① 을 접어도 부족 띠·판정
     대조가 같다. 호기 라벨에 「N모듈」 을 적지 않고 풍선(「· 모듈 N」, ④ 는 줄마다 모듈 설비명)에 둔다.
+  - ③ 호기 풍선은 세 줄(호기 · −N일 · Model / Qual → 목표 · 기여 / 해소 · ⚠ — UPEH 가정 계획만 넷째 줄)이고 그
+    호기 그림이 걸친 달 칸(`_unit_marks` → `_unit_span`, 그림과 한 자리)과 줄 이름 칸에서만 뜬다. 빈 달 칸은 풍선
+    없이 누르면 그 달이다. 라벨 Figure 는 그 풍선이 있을 때만 hover 를 켠다(`process_capa_view`).
   - `assumption`(UPEH 가정)이면 ① 끝에 세 줄(구간 달만 값)이 서고 부족 띠·② 판정 대조는 가정 요약의 판정이다. 표지는
     바뀌는 행의 라벨·풍선에만(② 가용·전월 대비·④ 제외, 제목 줄 높이 그대로), 공식에서만 당긴 호기는 ③ 흐린 줄이다.
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
@@ -2497,6 +2502,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   기본값으로 돌아가므로 셋을 직접 끄고, 드래그 확대는 축 양쪽 `fixedrange` 로 막는다.
   그 세 키는 `components/plotly_layout.hover_chart_config()` 가 돌려주고, 조작이 아예 없는
   그림은 `static_chart_config()` 를 쓴다.
+- 칸마다 표적을 둔 그림에서 **풍선이 없어야 할 칸**은 빈 글을 `hovertemplate` 에 넣지 않는다 — 빈 상자(16px)가
+  뜬다. `hoverinfo: "none"`·`hovertemplate` 없는 trace 로 가른다(누름은 그대로다). 한 trace 안의 점별 `hoverinfo`
+  (`"none"`·`"skip"`)는 `hovertemplate` 에 진다(`month_sheet_canvas` — 2026-10-24 브라우저 확인).
 - **칸 선택(`on_select`)을 켠 Plotly 그림**은 모든 trace 에 `unselected` 불투명도 1 을 주고
   (`home_figure_common.keep_unselected_opaque`) 차트 key 를 `app.py` 의 `CELL_SELECT_CHART_KEYS` 에 더한다 — Streamlit 이
   `dragmode=False` 를 `pan` 으로 덮어 그 위 터치 스크롤이 막히므로 `components/plotly_touch_scroll.py` 가 그 묶음만 풀어
