@@ -89,7 +89,7 @@ def _resolving(database: str) -> None:
     from capa_simulation.components.equipment_data_workspace import ensure_equipment_drafts
     from capa_simulation.equipment_scenario_activation import (
         resolve_equipment_session,
-        space_editing_allowed,
+        space_edit_mode,
     )
 
     session = resolve_equipment_session(database)
@@ -104,7 +104,7 @@ def _resolving(database: str) -> None:
         "official_pair": session.is_official_pair,
         "assumption": session.is_assumption,
         "stale": session.stale,
-        "space": space_editing_allowed(session),
+        "space": space_edit_mode(session, stamped_role=None).layout,
         "notice": session.notice,
         "token": session.snapshot.token if session.snapshot is not None else None,
     }
@@ -140,7 +140,7 @@ def test_a_new_session_opens_the_latest_official_release(tmp_path: Path) -> None
 
     assert seen["scenario"] == OPERATIONS and seen["name"] == "운영 일정"
     assert (seen["revision_no"], seen["latest_no"], seen["release_no"]) == (1, 1, 1)
-    assert seen["official_scenario"] and seen["official_pair"] and seen["space"]
+    assert seen["official_scenario"] and seen["official_pair"] and seen["space"] == "official"
     assert not seen["assumption"] and not seen["stale"]
     assert seen["token"] == _session(repository).token
 
@@ -162,9 +162,13 @@ def test_a_new_session_on_an_unpublished_newer_revision_opens_stale(tmp_path: Pa
 
     assert (seen["revision_no"], seen["latest_no"], seen["release_no"]) == (1, 2, 1)
     assert seen["official_pair"] and seen["stale"]
+    # 공식 시나리오의 낡은 세션도 공식 배치를 고친다(위치는 공통 — 새 호기만 꺼진다, 설계 8-4).
+    assert seen["space"] == "official"
 
 
-def test_another_scenario_is_an_assumption_and_locks_space_editing(tmp_path: Path) -> None:
+def test_another_scenario_is_an_assumption_and_edits_its_own_layout(tmp_path: Path) -> None:
+    """가정 설비 시나리오 세션의 Space 는 그 시나리오의 배치 차이를 고친다(LY4 — 1단계 「공식 발행
+    쌍에서만」 잠금을 걷었다)."""
     repository = _seeded(tmp_path)
     clone = _clone(repository)
     app = _app(repository)
@@ -174,7 +178,7 @@ def test_another_scenario_is_an_assumption_and_locks_space_editing(tmp_path: Pat
 
     assert seen["name"] == "셋업 실무" and seen["revision_no"] == 1
     assert seen["assumption"] and not seen["official_scenario"] and not seen["official_pair"]
-    assert not seen["space"] and not seen["stale"]
+    assert seen["space"] == "overlay" and not seen["stale"]
 
 
 def test_someone_elses_save_into_my_scenario_keeps_my_pin_and_marks_it_stale(
@@ -200,6 +204,8 @@ def test_someone_elses_save_into_my_scenario_keeps_my_pin_and_marks_it_stale(
     assert before["token"] == after["token"]
     assert (after["revision_no"], after["latest_no"]) == (1, 2)
     assert after["stale"] and not after["official_pair"]
+    # 남이 일정만 저장했다(배치 지문 같음) — 가정 배치 편집은 빨리 감기로 이어진다(설계 6-1).
+    assert after["space"] == "overlay"
 
 
 def test_a_pinned_pair_that_no_longer_merges_moves_to_the_latest_with_a_notice(
@@ -665,19 +671,19 @@ def test_the_row_stands_on_the_equipment_screens_with_this_runs_label(_shell: Ap
     app = _shell.run()
     assert _field(app) is None  # HOME 은 설비 시나리오를 읽지 않는다
 
-    for spec in (AVAILABLE_EQUIPMENT_STATUS, REQUIRED_SHORTENING, PROCESS_CAPA_DETAIL):
+    # Space 현황도 고를 수 있는 줄이다(설비 시나리오 2단계 S3 — 그 시나리오의 배치를 그린다).
+    for spec in (
+        AVAILABLE_EQUIPMENT_STATUS,
+        REQUIRED_SHORTENING,
+        PROCESS_CAPA_DETAIL,
+        SPACE_STATUS,
+    ):
         app.switch_page(spec.path).run()
         assert not app.exception, [item.message for item in app.exception]
         field = _field(app)
         assert field is not None, spec.path
         assert field.label == "운영 일정 · r1" and not field.disabled
         assert ":green-badge[공식 v1]" in _sidebar_captions(app)
-
-    app.switch_page(SPACE_STATUS.path).run()
-    assert not app.exception, [item.message for item in app.exception]
-    field = _field(app)
-    assert field is not None and field.disabled
-    assert field.label == "운영 일정 · r1 (고정)"
 
 
 def test_every_equipment_tab_has_the_equipment_row(_shell: AppTest) -> None:

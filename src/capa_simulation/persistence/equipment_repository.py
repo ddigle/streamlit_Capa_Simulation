@@ -1896,6 +1896,30 @@ class DuckDBEquipmentRepository:
                     found.setdefault(key, []).append(summary.scenario_name)
         return tuple((key, tuple(names)) for key, names in sorted(found.items()))
 
+    def layout_overlay_floor_counts(self, building: str, floor: str) -> tuple[tuple[str, int], ...]:
+        """ACTIVE **가정** 설비 시나리오(공식 시나리오 밖) 최신마다 그 리비전의 호기 배치 차이에서
+        이 층에 놓인 호기 행 수 — (시나리오 이름, 수) 목록 차례, 0 인 시나리오는 뺀다. Space 층
+        사용 끄기 확인의 덧줄 재료다(설계 13-2 — 층 사용은 공통이라 그 시나리오 목록·도면에서도
+        숨는다). 차이가 없는 리비전은 질의하지 않는다(`read_layout_overlay`)."""
+        found: list[tuple[str, int]] = []
+        with self._connect() as connection:
+            official = scenario_store.official_scenario_id(connection)
+            for summary in map(_scenario_summary, scenario_store.scenario_rows(connection)):
+                if (
+                    summary.status != "ACTIVE"
+                    or summary.equipment_scenario_id == official
+                    or summary.latest_schedule_revision_id is None
+                    or summary.latest_layout_unit_count == 0
+                ):
+                    continue
+                overlay = read_layout_overlay(connection, summary.latest_schedule_revision_id)
+                count = sum(
+                    1 for _, _, place in overlay.units if (place[0], place[1]) == (building, floor)
+                )
+                if count:
+                    found.append((summary.scenario_name, count))
+        return tuple(found)
+
     def list_equipment_scenarios(self) -> list[EquipmentScenarioSummary]:
         """설비 시나리오 목록(`list_order` 다음 이름 차례) — 각 최신·리비전 수와 함께."""
         with self._connect() as connection:

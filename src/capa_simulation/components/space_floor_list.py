@@ -19,8 +19,10 @@
   인자로 받는다 — 콜백은 본문보다 먼저 돌아 그 회차 상태 프레임이 아직 없다.
 - 성공 문구는 flash(`st.success`), 충돌·검증 오류·「바뀐 층이 없습니다」 는 같은 상자 안 알림
   칸이다.
-- 설비 시나리오·설비 리비전과 무관한 공용 현행값이라 Space 의 설비 시나리오 편집 잠금이 걸리지
-  않는다(S6). 샘플 fleet 화면에서만 잠근다(값도 끈다).
+- 설비 시나리오·설비 리비전과 무관한 공용 현행값이다(S6). 그래서 **공식 설비 시나리오에서만**
+  고친다(설비 시나리오 2단계 Q3 — FAB 전체와 같은 까닭, 건물·층은 가정 시나리오가 없다). 가정 세션과
+  샘플 fleet 화면에서는 잠근다(값도 끈다 — 까닭은 풍선). 끄기 확인은 공식 배치의 호기 수에 더해
+  가정 설비 시나리오의 배치에서 그 층에 놓인 호기 수를 덧줄로 적는다(설계 13-2).
 
 Streamlit 캐시는 두지 않는다 — DB 는 `equipment_cache.load_floor_states`·`get_equipment_repository`
 로만 연다.
@@ -43,6 +45,7 @@ from capa_simulation.persistence.equipment_cache import (
     clear_floor_state_cache,
     get_equipment_repository,
     load_floor_states,
+    load_layout_overlay_floor_counts,
 )
 from capa_simulation.services.equipment_contract import VALID_BUILDINGS
 from capa_simulation.services.fab_layout import FLOOR_KEYS, floor_from_label, floor_label
@@ -585,6 +588,8 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
                 + "\n".join(f"- {label} · 호기 {count}대" for label, count in shown),
                 icon=":material/warning:",
             )
+        for line in _overlay_lines(database_path, shown):
+            st.caption(f":material/layers: {line}")
         st.caption("설비 마스터의 동·층 값은 바뀌지 않습니다. 다시 켜면 그대로 보입니다.")
         with st.container(horizontal=True, gap="small"):
             st.button(
@@ -595,6 +600,26 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
                 args=(database_path, _generation(), shown, dict(counts)),
             )
             st.button("취소", key=CANCEL_BUTTON_KEY, on_click=_cancel_confirm)
+
+
+def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list[str]:
+    """끄기 확인의 덧줄 — 가정 설비 시나리오의 배치에서 그 층에 놓인 호기(층 사용은 공통이라 그
+    시나리오 목록·도면에서도 숨는다). 못 읽으면 덧줄 없이 둔다(확인을 막지 않는다)."""
+    lines: list[str] = []
+    for label, _ in shown:
+        key = floor_from_label(label)
+        if key is None:
+            continue
+        try:
+            counts = load_layout_overlay_floor_counts(database_path, *key)
+        except BOOTSTRAP_ERRORS:
+            continue
+        for name, count in counts:
+            lines.append(
+                f"가정 설비 시나리오 「{name}」 의 배치에서 {label} 에 놓인 호기 {count}대도 그 "
+                "시나리오 목록·도면에서 숨습니다."
+            )
+    return lines
 
 
 def _render_buildings(draft: Draft) -> None:
@@ -732,10 +757,12 @@ def render_space_floor_list(
     unit_counts: Callable[[], Mapping[FloorKey, int]],
     editable: bool,
     on_open: Callable[[FloorKey], None],
+    locked_reason: str | None = None,
 ) -> None:
     """FAB 전체 아래 층 목록. `states` 는 이 회차에 읽은 층 사용 상태(보기 표·도면과 같은 값)이고,
-    `unit_counts` 는 편집 모드 본문에서만 부른다(층별 설비 대수 — 끄기 확인의 n). `editable` 이
-    거짓이면(샘플 fleet) `사용 편집` 을 잠그고 값도 끈다."""
+    `unit_counts` 는 편집 모드 본문에서만 부른다(층별 설비 대수 — 공식 배치 기준, 끄기 확인의 n).
+    `editable` 이 거짓이면(샘플 fleet·가정 설비 시나리오) `사용 편집` 을 잠그고 값도 끈다 —
+    `locked_reason` 이 풍선이다(없으면 샘플 문구)."""
     with st.container(
         horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
     ):
@@ -751,7 +778,7 @@ def render_space_floor_list(
                 disabled=not editable,
                 on_change=_toggle_changed,
                 args=(database_path,),
-                help=SAMPLE_LOCKED if not editable else _TOGGLE_HELP,
+                help=(locked_reason or SAMPLE_LOCKED) if not editable else _TOGGLE_HELP,
             )
             and editable
         )

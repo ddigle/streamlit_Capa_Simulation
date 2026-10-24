@@ -501,8 +501,14 @@ def render_space_layout_editor(
     as_of: date,
     background_image: str | None = None,
     group_labels: Mapping[str, str] | None = None,
+    canvas_editable: bool = True,
+    canvas_lock: str | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
+
+    `canvas_editable` 이 거짓이면 「편집 영역」 칸(폭·높이·±·맞춤)을 끄고 `canvas_lock` 을 풍선으로
+    둔다 — 층 캔버스는 공용 값이라 가정 설비 시나리오에서는 고치지 않는다(설계 8-4). 옛 브라우저가
+    보낸 캔버스 값은 서버(`app_pages/space_status.py`)가 다시 거부한다(두 겹).
 
     면은 보기와 같은 규칙(지연 → 보관 → 체크한 그룹 → 기본, 기준일 `as_of`)이지만 **의미 테·덧표시는
     그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다. 기준일은 편집 중 고정이다 —
@@ -564,6 +570,8 @@ def render_space_layout_editor(
             "floor": floor_label(floor),
             "floors": [floor_label(key) for key in floors],
             "newUnit": dict(new_unit),
+            "canvasEditable": bool(canvas_editable),
+            "canvasLock": canvas_lock or "",
         },
         on_apply_change=lambda: None,
         width="stretch",

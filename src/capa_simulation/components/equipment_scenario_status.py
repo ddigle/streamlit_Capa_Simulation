@@ -6,10 +6,12 @@
   `resolve_equipment_session` 뒤 그 칸에 줄을 그린다 — 배지가 그 회차 목록으로 맞고(한 회차 늦지
   않음), 부트스트랩 오류는 페이지의 오류 처리 안에서 나며, `app.py` 는 설비 DB 를 읽지 않는다. 값 칸
   단추는 위젯 상태가 없고 값은 세션 칸에만 있어 페이지가 그려도 화면 사이에 잃을 것이 없다.
-- 값 칸 「운영 일정 · r12」, 배지 하나 — `미저장 변경`(주황 띠) → `공식 vN` → `최신 rM 있음`(낡음) →
-  `저장된 리비전` 차례. 라벨은 늘 「설비 시나리오」.
-- **잠근 꼴**(팝업 없음): 값 칸 「운영 일정 · r12 (고정)」 — Space, 공정 Capa 상세 HOME 방문(까닭은
-  줄 아래 한 줄). 긴 이름은 값 칸에서 줄여 리비전 번호가 늘 보인다.
+- 값 칸 「운영 일정 · r12」, 배지 하나 — `미저장 변경`(주황 띠) → `일정 없이 엶` → `공식 vN` →
+  `최신 rM 있음`(낡음) → `가정 배치`(그리는 한 벌의 배치가 공식과 다름 — 설비 0031) → `저장된
+  리비전` 차례. 라벨은 늘 「설비 시나리오」.
+- **잠근 꼴**(팝업 없음): 값 칸 「운영 일정 · r12 (고정)」 — 공정 Capa 상세 HOME 방문(까닭은 줄 아래
+  한 줄). 긴 이름은 값 칸에서 줄여 리비전 번호가 늘 보인다. Space 현황은 고를 수 있는 줄이다(설비
+  시나리오 2단계 S3 — 그 시나리오의 배치를 그린다).
 - **팝업은 세션 키로 연다** — `app.py` 의 호스트 프래그먼트가 셋째 갈래로 부른다(한 실행에 팝업
   하나). 「불러오기」 는 모든 설비 화면, 「저장」 은 편집본을 세우는 화면(가용설비 현황·필요 단축
   일정)에만 선다. 저장소는 팝업을 연 동안에만 읽는다.
@@ -110,8 +112,10 @@ SAVE_PAGES = frozenset(
 _NOTE_PREVIEW_LIMIT = 40
 
 
-# 늘 공식을 보는 화면(Space 현황)의 잠근 꼴 꼬리. 머리 띠도 「공식 vN (고정)」 으로 적는다.
+# 잠근 꼴(공정 Capa 상세 HOME 방문)의 값 칸 꼬리.
 FIXED_LOCK_REASON = "(고정)"
+# 이름 줄 배지 「가정 배치」 — 그리는 한 벌의 배치가 공식과 다르다(가정 설비 시나리오의 배치 차이).
+LAYOUT_BADGE = "가정 배치"
 # HOME 칸으로 들어온 공정 Capa 상세의 잠근 까닭. 값 칸에는 「(고정)」 만 붙이고 이 글은 줄 아래 한
 # 줄로 둔다 — 값 칸 끝에 붙이면 1280px 창에서도 「(HOME 칸에서 들어…」 로 잘리고, 꺼진 단추라
 # 풍선도 없어 ◀▶ 뒤(출처 띠가 걷힌 뒤) 기준을 알리는 자리가 사라진다(2026-10-24 E2E).
@@ -128,7 +132,8 @@ PREFERENCE_LOCK_MESSAGE = (
 def unscheduled_notice(count: int, *, official: bool = False) -> str | None:
     """이 설비 시나리오에 일정 행이 없는 호기 n대 한 줄(F4). 0대면 None.
 
-    `official` 이면 Space 처럼 공식 설비 시나리오를 그리는 화면의 문구다(「공식 일정 없음 n대」).
+    `official` 이면 공식 설비 시나리오(공식 발행 쌍)를 그리는 회차의 문구다(「공식 일정 없음 n대」 —
+    Space 가 공식 세션일 때).
     """
     if count <= 0:
         return None
@@ -224,7 +229,11 @@ def equipment_field_label(session: EquipmentSession) -> str:
 
 
 def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
-    """이름 줄 배지 하나 — 미저장 → 공식 vN → 낡음 → 저장된 리비전 차례."""
+    """이름 줄 배지 하나 — 미저장 → 일정 없이 엶 → 공식 vN → 낡음 → 가정 배치 → 저장된 리비전
+    차례(공식 쌍은 배치 차이가 없어 「공식 vN」 과 겹치지 않고, 낡음이 더 급하다 — 설계 8-2).
+    「가정 배치」 재료는 세션 라벨의 판정(`EquipmentSession.layout_differs`)이라 그리는 동안
+    저장소를
+    부르지 않는다."""
     if unsaved:
         return ":orange-badge[미저장 변경]"
     if session.scenario is None:
@@ -235,6 +244,8 @@ def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
         return f":green-badge[공식 v{session.release_no}]"
     if session.stale and session.latest_revision_no is not None:
         return f":orange-badge[최신 r{session.latest_revision_no} 있음]"
+    if session.layout_differs:
+        return f":violet-badge[{LAYOUT_BADGE}]"
     return ":gray-badge[저장된 리비전]"
 
 
@@ -245,7 +256,8 @@ def render_equipment_scenario_row(
 
     `locked_reason` 을 주면 팝업 없는 잠근 꼴이다 — 값 칸이 꺼지고 값 칸 끝에 「(고정)」 이 붙는다.
     까닭이 「(고정)」 그 자체가 아니면(공정 Capa 상세 HOME 방문 — `HOME_VISIT_LOCK_REASON`) 그 글은
-    줄 아래 한 줄로 선다(값 칸은 한 줄 말줄임이고 꺼진 단추라 풍선이 없다).
+    줄 아래 한 줄로 선다(값 칸은 한 줄 말줄임이고 꺼진 단추라 풍선이 없다). 머리 띠 꼬리는 잠근
+    꼴에서도 세션 라벨 그대로다(「(고정)」 을 붙이지 않는다).
     """
     slot = equipment_scenario_slot()
     if slot is None:
@@ -253,11 +265,7 @@ def render_equipment_scenario_row(
     flash = st.session_state.pop(FLASH_KEY, None)
     unsaved = has_unsaved_equipment_edits() and locked_reason is None
     # 머리 띠 아래 줄 끝의 설비 시나리오 꼬리 — 이 회차 목록으로 정해 같은 회차에 맞춘다.
-    refresh_equipment_header(
-        equipment_header_suffix(
-            session.label(), fixed=locked_reason == FIXED_LOCK_REASON, unsaved=unsaved
-        )
-    )
+    refresh_equipment_header(equipment_header_suffix(session.label(), unsaved=unsaved))
     value = equipment_field_label(session)
     if locked_reason is not None:
         value = f"{value} {FIXED_LOCK_REASON}"

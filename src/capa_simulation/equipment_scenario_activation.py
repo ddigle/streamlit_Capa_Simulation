@@ -9,15 +9,20 @@
   부른다 — 마이그레이션·DB 오류는 그 화면의 「준비하지 못했습니다」 로 선다. `app.py` 는 설비 DB 를
   열지 않고, 사이드바 설비 시나리오 줄도 페이지가 이 함수 뒤에 그린다(같은 회차 목록으로 맞다).
 - **판정 셋**(검토 2-4 — 「공식」 하나로 셋을 가르지 않는다): 공식 시나리오(설정 팝업 Cut-off
-  편집·미확인은 자기 일정), 공식 발행 쌍(기준선 저장·Space 배치 편집), 가정 시나리오(공식 시나리오가
-  아님). 따로 **낡음**(세션 리비전 ≠ 그 시나리오 최신 — 일정 칸·행 추가 잠금).
+  편집·미확인은 자기 일정·Space 공식 배치 편집), 공식 발행 쌍(기준선 저장), 가정 시나리오(공식
+  시나리오가 아님 — Space 는 그 시나리오의 배치 차이를 고친다). 따로 **낡음**(세션 리비전 ≠ 그
+  시나리오 최신 — 일정 칸·행 추가 잠금).
+- **Space 편집 권한은 `space_edit_mode` 한 곳**(설비 시나리오 2단계 S3 — 설계 8-4)이다. Space 는
+  세션 설비 시나리오의 배치를 그리고(LY3), 공식 배치는 공식 시나리오에서만·가정 배치는 그
+  시나리오에서만 고친다(LY4). FAB 전체·층 캔버스·배경 도면·층 사용(0029)은 공식 시나리오에서만이다
+  (G5·Q3). Space 편집기·설비 마스터 탭 배치 칸·붙여넣기 배치 칸이 같은 판정의 `layout` 을 쓴다.
 - 세션 칸에는 기본형만 둔다(AGENTS 5장 21).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import streamlit as st
 
@@ -39,7 +44,16 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioSummary,
     EquipmentSnapshot,
 )
-from capa_simulation.services.korean_particle import object_particle, with_direction_particle
+from capa_simulation.services.korean_particle import (
+    object_particle,
+    subject_particle,
+    with_direction_particle,
+)
+from capa_simulation.services.layout_overlay import (
+    EMPTY_LAYOUT_DIGEST,
+    LayoutRole,
+    layout_counts_words,
+)
 
 # {"scenario_id": str, "schedule_revision_id": str | None} — 세션이 고정해 든 쌍의 일정 쪽.
 SELECTION_KEY = "equipment_scenario_selection_v1"
@@ -108,7 +122,7 @@ class EquipmentSession:
 
     @property
     def is_official_pair(self) -> bool:
-        """세션 (시나리오, 리비전) = 최신 공식 발행(E5 기준선 저장, Space 배치 편집 — 질문 3).
+        """세션 (시나리오, 리비전) = 최신 공식 발행(E5 기준선 저장).
 
         발행이 하나도 없으면(빈 저장소) 공식 시나리오의 최신을 공식 자리로 본다. 일정 없이 연 회차
         (`unmerged`)는 그 쌍을 읽지 못한 것이라 아니다.
@@ -139,6 +153,49 @@ class EquipmentSession:
     def legacy_trace_count(self) -> int:
         return self.catalog.legacy_trace_count
 
+    @property
+    def layout_role(self) -> LayoutRole:
+        """이 세션의 배치 편집이 들어갈 자리 — 공식 시나리오(또는 시나리오 없음)면 "official"(공식
+        배치 — 공통 대장·층 현행값), 가정 시나리오면 "overlay"(그 시나리오의 배치 차이). 저장소의
+        역할 판정(`save_equipment`)과 같은 규칙이다."""
+        return "overlay" if self.is_assumption else "official"
+
+    @property
+    def layout_digest(self) -> str:
+        """세션이 든 일정 리비전의 배치 차이 지문(차이가 없거나 이관·옛 코드 리비전이면 빈 지문)."""
+        schedule = self.snapshot.schedule if self.snapshot is not None else None
+        return schedule.layout_digest if schedule is not None else EMPTY_LAYOUT_DIGEST
+
+    @property
+    def stored_layout_rows(self) -> tuple[int, int, int]:
+        """세션이 든 일정 리비전에 **저장된** 배치 차이 행 수(호기, 도면 요소, Main 설비명
+        위치)."""
+        schedule = self.snapshot.schedule if self.snapshot is not None else None
+        if schedule is None:
+            return 0, 0, 0
+        return (
+            schedule.layout_unit_count,
+            schedule.layout_mark_count,
+            schedule.layout_label_count,
+        )
+
+    @property
+    def layout_differs(self) -> bool:
+        """그리는 한 벌의 배치가 공식과 다른가 — 호기는 실효(공식과 실제로 다른 호기), 도면 요소·
+        Main 설비명 위치는 저장된 행(실효는 층 현행값과 견줘야 알아 Space 가 따로 센다). 사이드바
+        「가정 배치」 배지 재료다(그리는 동안 저장소를 부르지 않는다)."""
+        if self.unmerged or self.snapshot is None:
+            return False
+        _, marks, labels = self.stored_layout_rows
+        return bool(self.snapshot.layout_overridden_keys or marks or labels)
+
+    @property
+    def latest_layout_digest(self) -> str:
+        """그 시나리오 최신의 배치 차이 지문(목록 — 배치 빨리 감기 화면 판정)."""
+        if self.scenario is None:
+            return EMPTY_LAYOUT_DIGEST
+        return self.scenario.latest_layout_hash or EMPTY_LAYOUT_DIGEST
+
     def save_basis(self) -> EquipmentSaveBasis | None:
         """저장 요청의 출발점(저장할 시나리오·화면이 본 공식 번호·낡음). 시나리오가 없으면 None."""
         if self.scenario is None:
@@ -164,16 +221,175 @@ class EquipmentSession:
             "official_pair": self.is_official_pair,
             "stale": self.stale,
             "unmerged": self.unmerged,
+            "layout_differs": self.layout_differs,
         }
 
 
-def space_editing_allowed(session: EquipmentSession) -> bool:
-    """Space 배치 편집을 열어도 되는가 — 세션이 공식 발행 쌍일 때만(질문 3 권장안의 한 곳).
+# Space 편집 권한(설계 8-4)의 잠금 글. 단추(「최신 rM 불러오기」·「공식 설비 시나리오로 바꾸기」·
+# 「배치 변경만 버리기」)는 화면이 글 옆에 세운다.
+FAB_LOCK_REASON = (
+    "FAB 전체 배치는 공식 설비 시나리오에서만 고칩니다 — 건물은 가정 설비 시나리오가 없습니다."
+)
+CANVAS_LOCK_REASON = (
+    "층 캔버스·배경 도면은 공식 설비 시나리오에서 고칩니다 — 모든 설비 시나리오에 같은 공용 "
+    "값입니다."
+)
+FLOOR_STATE_LOCK_REASON = (
+    "층 사용은 공식 설비 시나리오에서 고칩니다 — 건물·층은 가정 설비 시나리오가 없습니다."
+)
+UNMERGED_LOCK_REASON = (
+    "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 배치 "
+    "편집을 잠갔습니다 — 런북 4-2 대로 백업을 복원하세요."
+)
+SpaceLockAction = Literal["latest", "discard_layout"]
 
-    Space 보기는 늘 공식이다(E5). 가정 시나리오 편집본을 공식 일정 색 위에서 고치면 새 호기 날짜·
-    색·겹침 경고가 서로 다른 일정을 보게 된다.
+
+@dataclass(frozen=True)
+class SpaceEditMode:
+    """Space 편집 권한 한 벌(설계 8-4) — `space_edit_mode` 가 낸다.
+
+    - `layout` — 층 배치(호기·도면 요소·Main 설비명 위치, 설비 마스터 탭 배치 일곱 칸도)를 어디에
+      고치나. "official" 은 공식 배치, "overlay" 는 그 시나리오의 배치 차이, "locked" 는 잠금
+      (`lock_reason` 이 까닭, `lock_action` 이 빠져나갈 단추 — 「최신 rM 불러오기」 또는 「배치
+      변경만 버리기」).
+    - `new_units` — 새 호기 폼(`new_unit_reason` 이 꺼진 까닭). `canvas`·`fab`·`floor_state` — 층
+      캔버스·배경 도면, FAB 전체, 층 사용(0029) 편집(공식 시나리오에서만 — G5·Q3).
+    - `fast_forward_from` — 가정·낡음이지만 그 시나리오 최신의 배치 지문이 이 리비전과 같아 배치
+      저장을 최신 rM 의 일정 위에 받는다(설계 6-1 배치 빨리 감기). 그 rM 번호.
+    - `notice` — 잠금은 아니지만 편집 자리에 둘 한 줄(빨리 감기 캡션).
     """
-    return session.snapshot is not None and session.is_official_pair
+
+    layout: Literal["official", "overlay", "locked"]
+    lock_reason: str | None = None
+    lock_action: SpaceLockAction | None = None
+    new_units: bool = False
+    new_unit_reason: str | None = None
+    canvas: bool = False
+    fab: bool = False
+    floor_state: bool = False
+    fast_forward_from: int | None = None
+    notice: str | None = None
+
+    @property
+    def layout_editable(self) -> bool:
+        return self.layout != "locked"
+
+
+def _quoted(name: str | None) -> str:
+    return f"「{name}」" if name else "이 설비 시나리오"
+
+
+def stale_new_unit_reason(session: EquipmentSession) -> str:
+    """낡은 세션(그 시나리오에 더 새 리비전)에서 새 호기 폼을 끈 까닭."""
+    latest = f"r{session.latest_revision_no}" if session.latest_revision_no is not None else "최신"
+    return (
+        f"{_quoted(session.scenario_name)} {latest}{subject_particle(latest)} 이 리비전보다 더 "
+        "새로워 새 호기를 넣지 않습니다 — 사이드바 설비 시나리오에서 최신을 불러온 뒤 넣으세요. "
+        "자리·크기·이름 편집은 그대로 됩니다."
+    )
+
+
+def role_changed_reason(session: EquipmentSession, stamped: str) -> str:
+    """찍힌 역할 ≠ 지금 역할(그 사이 남의 발행) — 쌓인 배치 변경을 저장할 수 없는 까닭(설계 6-2)."""
+    official = session.catalog.scenario(session.official_scenario_id)
+    official_name = official.scenario_name if official is not None else None
+    if stamped == "official":
+        was = "공식 배치에 들어갈 편집이었음"
+    else:
+        was = f"{_quoted(session.scenario_name)} 의 가정 배치에 들어갈 편집이었음"
+    moved = (
+        f"공식 설비 시나리오가 {with_direction_particle(_quoted(official_name))} 바뀌어"
+        if official_name
+        else "공식 설비 시나리오가 바뀌어"
+    )
+    return (
+        f"그 사이 {moved} 이 배치 변경({was})을 저장할 수 없습니다 — 「배치 변경만 버리기」 로 "
+        "버린 뒤 다시 고치세요. 설비 마스터의 다른 편집은 남습니다."
+    )
+
+
+def space_edit_mode(session: EquipmentSession, *, stamped_role: str | None) -> SpaceEditMode:
+    """Space·설비 마스터 탭 배치 칸·붙여넣기가 함께 쓰는 편집 권한(설계 8-4 표).
+
+    `stamped_role` 은 이 세션 편집본에 쌓인 배치 편집을 적용할 때 찍은 역할이다(없으면 None —
+    `equipment_data_workspace.stamped_layout_role`). 샘플 fleet 은 화면이 따로 잠근다.
+    """
+    role = session.layout_role
+    official = role == "official"
+    if session.unmerged:
+        return SpaceEditMode(
+            layout="locked",
+            lock_reason=UNMERGED_LOCK_REASON,
+            fab=official,
+            floor_state=official,
+        )
+    if stamped_role is not None and stamped_role != role:
+        return SpaceEditMode(
+            layout="locked",
+            lock_reason=role_changed_reason(session, stamped_role),
+            lock_action="discard_layout",
+            new_units=official and not session.stale,
+            new_unit_reason=stale_new_unit_reason(session) if session.stale else None,
+            canvas=official,
+            fab=official,
+            floor_state=official,
+        )
+    if official:
+        if session.layout_digest != EMPTY_LAYOUT_DIGEST:
+            # 그 시나리오가 가정이던 때의 리비전 — 합친 본문 캐시는 역할을 키에 못 담아 그 차이가
+            # 그대로 그려진다. 공식 배치를 고치면 손대지 않은 가정 자리가 공식으로 새므로 잠근다.
+            units, marks, labels = session.stored_layout_rows
+            counts = layout_counts_words(units, marks, labels) or "배치 차이"
+            latest = (
+                f"최신 r{session.latest_revision_no}"
+                if session.latest_revision_no is not None
+                else "최신"
+            )
+            name = _quoted(session.scenario_name)
+            return SpaceEditMode(
+                layout="locked",
+                lock_reason=(
+                    f"이 리비전에는 {name}{subject_particle(name)} 가정이던 때의 배치 "
+                    f"차이({counts})가 있어 배치 편집을 잠갔습니다 — "
+                    f"{latest}{object_particle(latest)} 불러오면 공식 배치를 고칠 수 있습니다."
+                ),
+                lock_action="latest" if session.stale else None,
+                canvas=True,
+                fab=True,
+                floor_state=True,
+            )
+        return SpaceEditMode(
+            layout="official",
+            new_units=not session.stale,
+            new_unit_reason=stale_new_unit_reason(session) if session.stale else None,
+            canvas=True,
+            fab=True,
+            floor_state=True,
+        )
+    if not session.stale:
+        return SpaceEditMode(layout="overlay", new_units=True)
+    latest_no = session.latest_revision_no
+    name = _quoted(session.scenario_name)
+    if session.latest_layout_digest == session.layout_digest:
+        return SpaceEditMode(
+            layout="overlay",
+            new_unit_reason=stale_new_unit_reason(session),
+            fast_forward_from=latest_no,
+            notice=(
+                f"{name} r{latest_no}{subject_particle(f'r{latest_no}')} 더 새롭지만 배치는 "
+                f"같습니다 — 배치는 r{latest_no} 의 일정 위 새 리비전으로 저장됩니다(일정 칸은 "
+                "그대로 잠금)."
+            ),
+        )
+    return SpaceEditMode(
+        layout="locked",
+        lock_reason=(
+            f"{name} r{latest_no} 에 다른 배치가 저장됐습니다 — 배치를 고치려면 최신 "
+            f"r{latest_no}{object_particle(f'r{latest_no}')} 불러오세요."
+        ),
+        lock_action="latest",
+        new_unit_reason=stale_new_unit_reason(session),
+    )
 
 
 def official_snapshot_for(

@@ -1,14 +1,13 @@
-# Purpose: 가정 시나리오 설비 마스터 탭 배치 칸 잠금·다른 시나리오 호기 삭제 확인·공식 판정을 본다.
+# Purpose: 설비 마스터 탭 배치 칸 역할·다른 시나리오 호기 삭제 확인·공식 판정 대체 규칙을 본다.
 
-"""설비 시나리오 2단계 S1 — 설비 마스터 탭(개편 전 RawData) 쪽 셋.
+"""설비 시나리오 2단계 — 설비 마스터 탭(개편 전 RawData) 쪽 셋.
 
-- **가정 세션 저장이 배치 차이를 만들 칸은 막는다**(설계 10장 「S1 부터 임시 잠금」 — S2 리뷰).
-  S2 부터 가정 세션의 배치는 그 시나리오의 배치 차이로 가는데 이 판의 화면은 그것을 보이지도
-  지우지도 못하고, 차이가 있는 시나리오는 공식으로 발행되지 않는다. 칸을 잠그지 않고 제출 검사·
-  붙여넣기 미리보기에서 막는다 — 있던 호기의 배치 칸 고침은 저장본 값으로 되돌리고, 새 호기는
-  자리 없이(동·층·X좌표·Y좌표 비움 — 있는 묶음에 드는 모듈은 그 묶음의 공식 동·층) 맞춘다. 같은
-  제출의 다른 편집은 받는다. 「있던 호기」 는 저장하면 저장본 호기 키를 잇는 행이고 견주는 값은
-  **저장본**이다(S1 리뷰) — 지운 뒤 같은 이름으로 다시 넣기·설비명을 바꿨다 되돌리기도 막힌다.
+- **배치 칸은 Space 와 같은 판정이다**(S3 — 설계 8-4·10장 `space_edit_mode(...).layout`). 공식 설비
+  시나리오에서는 공식 배치(공통 대장), 가정에서는 그 시나리오의 배치 차이(공식은 바뀌지 않는다 —
+  새 호기는 공통에 자리 없이, Q1), 잠긴 회차(`locked`)에서는 S1·S2 임시 잠금처럼 있던 호기 배치 칸
+  고침을 저장본 값으로 되돌리고 새 호기를 자리 없이 맞춘다. 칸을 `disabled` 로 두지 않는다. 「있던
+  호기」 는 저장하면 저장본 호기 키를 잇는 행이고 견주는 값은 **저장본**이다(S1 리뷰). 배치 칸을
+  고친 제출은 그때의 역할을 찍는다. 붙여넣기는 가정 세션에서 「배치 칸도 붙여넣기」(기본 끔, Q2).
 - **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장은 확인 체크 뒤에**(11-2 6단계). 호기 목록은
   공통 하나라 지우면 그 시나리오들의 일정도 빠진다. 체크는 본 글(호기·그 일정이 든 시나리오)에
   묶이고, 체크가 없는 Space 「배치 저장」·사이드바 팝업 저장도 같은 판정으로 막힌다.
@@ -31,22 +30,24 @@ from test_equipment_scenario_repository import _clone, _seeded, _session, _with_
 from widget_browser import BrowserTables
 
 from capa_simulation.components.equipment_data_workspace import (
-    ASSUMPTION_LAYOUT_LOCK,
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
     CLIPBOARD_KEY,
     EDIT_SAVE_BUTTON_KEY,
     EQUIPMENT_EDITOR_KEY,
+    FLASH_KEY,
+    LAYOUT_ROLE_KEY,
+    PASTE_LAYOUT_KEY,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
     REMOVAL_CONFIRM_KEY,
     TARGET_KEY,
     VIEW_APPLY_BUTTON_KEY,
-    AssumptionLayoutLock,
     ImportReview,
+    LayoutLock,
     RemovalElsewhere,
-    assumption_layout_lock,
-    assumption_paste_refusal,
+    layout_edits,
+    layout_paste_refusal,
 )
 from capa_simulation.equipment_scenario_activation import EquipmentSession, _default_selection
 from capa_simulation.persistence.equipment_cache import (
@@ -75,8 +76,13 @@ def _fresh_caches() -> Any:
     clear_equipment_repository()
 
 
-def _workspace(path: Path, scenario_id: str) -> AppTest:
-    """세션 설비 시나리오 `scenario_id` 의 최신을 보는 RawData — 페이지와 같은 저장 출발점."""
+# 잠긴 회차의 까닭(시험용 — 화면은 `space_edit_mode` 의 글을 넘긴다).
+LOCK_REASON = "시험 잠금"
+
+
+def _workspace(path: Path, scenario_id: str, *, layout_mode: str | None = None) -> AppTest:
+    """세션 설비 시나리오 `scenario_id` 의 최신을 보는 RawData — 페이지와 같은 저장 출발점.
+    `layout_mode` 를 주면 배치 칸 판정을 그것으로(없으면 basis 의 역할)."""
     return AppTest.from_string(
         f"""
 from pathlib import Path
@@ -105,6 +111,7 @@ render_equipment_data_workspace(
     repository=repository, latest_snapshot=snapshot, baseline=snapshot.baseline,
     equipment=snapshot.equipment, downtime=snapshot.downtime,
     floor_canvases={{}}, max_extent=(100.0, 60.0), basis=basis,
+    layout_mode={layout_mode!r}, layout_lock_reason={LOCK_REASON!r},
 )
 """,
         default_timeout=60,
@@ -144,15 +151,53 @@ def _ok(app: AppTest) -> AppTest:
     return app
 
 
-# ------------------------------------------------------------------ 배치 칸 임시 잠금
+# ------------------------------------------------------------------ 배치 칸 — 가정·공식·잠금
 
 
-def test_an_assumption_reverts_layout_edits_of_saved_units_and_keeps_the_rest(
+def _scenario(repository: DuckDBEquipmentRepository, scenario_id: str) -> Any:
+    return next(
+        item
+        for item in repository.list_equipment_scenarios()
+        if item.equipment_scenario_id == scenario_id
+    )
+
+
+def test_an_assumption_keeps_layout_edits_as_its_own_and_stamps_the_role(
+    tmp_path: Path,
+) -> None:
+    """가정 세션의 배치 칸 고침은 편집본에 그대로 들어가고(S3 — 임시 잠금을 걷었다) 그때의 역할
+    "overlay" 를 찍는다. 저장하면 그 시나리오 새 리비전의 배치 차이가 되고 공식은 그대로다."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    assert any("가정 설비 시나리오 — 배치 칸 고침은" in text for text in _texts(app, "caption"))
+    tables = BrowserTables(app)
+    key = _editor_key(app)
+    tables.edit(key, 0, "X좌표", 50.0)
+    tables.edit(key, 0, "설비이력", "고치는 중")
+    app.button(key=VIEW_APPLY_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert _buffer_value(app, "EQ-01", "X좌표") == 50.0
+    assert _buffer_value(app, "EQ-01", "설비이력") == "고치는 중"
+    assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
+    assert not app.error
+
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+    scenario = _scenario(repository, setup)
+    assert scenario.latest_revision_no == 2 and scenario.latest_layout_unit_count == 1
+    assert _official(repository, "EQ-01", "X좌표") == 10
+    flash = str(app.session_state[FLASH_KEY])
+    assert "「셋업 실무」의 가정 배치를 저장했습니다(공식과 다른 호기 1대)" in flash
+    assert "Space 현황은 고른 설비 시나리오의 배치입니다" in flash
+
+
+def test_a_locked_layout_reverts_layout_edits_of_saved_units_and_keeps_the_rest(
     tmp_path: Path,
 ) -> None:
     _, setup = _two_scenarios(tmp_path)
-    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
-    assert any(ASSUMPTION_LAYOUT_LOCK in text for text in _texts(app, "caption"))
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup, layout_mode="locked").run())
+    assert any("배치 편집이 잠겨 있어" in text for text in _texts(app, "caption"))
     tables = BrowserTables(app)
     key = _editor_key(app)
     tables.edit(key, 0, "X좌표", 50.0)
@@ -164,17 +209,20 @@ def test_an_assumption_reverts_layout_edits_of_saved_units_and_keeps_the_rest(
     assert _buffer_value(app, "EQ-01", "설비이력") == "고치는 중"
     errors = _texts(app, "error")
     assert any(
-        "「셋업 실무」는 가정 설비 시나리오라 있던 호기 1대(EQ-01)의 배치 칸 고침은 저장본 값으로 "
-        "되돌리고 나머지 편집은 편집본에 반영했습니다" in text
+        "배치 편집이 잠겨 있어 있던 호기 1대(EQ-01)의 배치 칸 고침은 저장본 값으로 되돌리고 "
+        "나머지 편집은 편집본에 반영했습니다"
+        in text
+        and LOCK_REASON in text
         for text in errors
     )
     # 보기 적용이라 「저장·미리보기를 하지 않았다」 는 말은 없다.
     assert not any("저장·미리보기는 하지 않았습니다" in text for text in errors)
+    assert LAYOUT_ROLE_KEY not in app.session_state
 
 
-def test_an_assumption_save_with_a_layout_edit_saves_nothing(tmp_path: Path) -> None:
+def test_a_locked_save_with_a_layout_edit_saves_nothing(tmp_path: Path) -> None:
     repository, setup = _two_scenarios(tmp_path)
-    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup, layout_mode="locked").run())
     tables = BrowserTables(app)
     tables.edit(_editor_key(app), 1, "층", "2F")
     app.button(key=EDIT_SAVE_BUTTON_KEY).click()
@@ -188,11 +236,11 @@ def test_an_assumption_save_with_a_layout_edit_saves_nothing(tmp_path: Path) -> 
     )
 
 
-def test_a_new_unit_goes_in_without_a_place_in_an_assumption(tmp_path: Path) -> None:
-    """S2 리뷰 — 가정 세션의 새 호기 자리는 저장하면 그 시나리오의 배치 차이가 되어 공식 발행을
-    막는데, 이 판의 화면에는 그 차이를 지울 단추가 없다. 그래서 자리 없이 넣도록 동·층·X·Y 를
-    비우고(크기·레이아웃표시는 그대로) 알린다. 저장하면 차이가 없어 그 시나리오를 공식으로 발행할
-    수 있다."""
+def test_a_new_unit_in_an_assumption_keeps_its_place_only_there(tmp_path: Path) -> None:
+    """가정 세션에서 넣은 새 호기의 자리는 그 시나리오의 배치 차이다(Q1) — 공통(공식)에는 자리 없이
+    들어가고, 그 시나리오는 배치 차이가 있어 공식으로 발행되지 않는다(Q4)."""
+    from capa_simulation.persistence.equipment_repository import EquipmentLayoutPublishBlocked
+
     repository, setup = _two_scenarios(tmp_path)
     app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
     baseline, equipment, downtime = app.session_state[BUFFER_KEY]
@@ -203,58 +251,83 @@ def test_a_new_unit_goes_in_without_a_place_in_an_assumption(tmp_path: Path) -> 
     app.button(key=EDIT_SAVE_BUTTON_KEY).click()
     _ok(tables.run())
 
-    row = _row_of(app, "EQ-NEW").iloc[0]
-    assert pd.isna(row["X좌표"]) and pd.isna(row["Y좌표"])
-    assert pd.isna(row["동"]) and pd.isna(row["층"])
-    assert (row["Xsize"], row["Ysize"], row["레이아웃표시"]) == (12, 7, "Y")
-    assert any(
-        "새 호기 1대(EQ-NEW)는 자리 없이 넣도록 동·층·X좌표·Y좌표를 맞추고" in text
-        and "이번에 누른 저장·미리보기는 하지 않았습니다" in text
-        for text in _texts(app, "error")
-    )
-    assert len(repository.list_revisions()) == 1
-
-    app.button(key=EDIT_SAVE_BUTTON_KEY).click()
-    _ok(app.run())
-    scenario = next(
-        item
-        for item in repository.list_equipment_scenarios()
-        if item.equipment_scenario_id == setup
-    )
-    assert scenario.latest_revision_no == 2 and scenario.latest_layout_unit_count == 0
+    assert not app.error
+    scenario = _scenario(repository, setup)
+    assert scenario.latest_revision_no == 2 and scenario.latest_layout_unit_count == 1
     official = repository.load_official_snapshot()
     assert official is not None
     official_new = official.equipment.loc[official.equipment["설비명"].eq("EQ-NEW")]
     assert official_new[["동", "X좌표"]].isna().all().all()
+    mine = _session(repository, setup).equipment.set_index("설비명")
+    assert mine.loc["EQ-NEW", "X좌표"] == 80.0
     release = repository.latest_equipment_release()
     assert release is not None and scenario.latest_schedule_revision_id is not None
-    published = repository.publish_equipment_release(
-        scenario.latest_schedule_revision_id,
-        released_by=None,
-        note=None,
-        expected_latest_release_no=release.release_no,
-    )
-    assert published.equipment_scenario_id == setup
+    with pytest.raises(EquipmentLayoutPublishBlocked):
+        repository.publish_equipment_release(
+            scenario.latest_schedule_revision_id,
+            released_by=None,
+            note=None,
+            expected_latest_release_no=release.release_no,
+        )
 
 
 def test_the_official_scenario_edits_layout_cells_as_before(tmp_path: Path) -> None:
     _two_scenarios(tmp_path)
     app = _ok(_workspace(tmp_path / "equipment.duckdb", OPERATIONS).run())
-    assert not any(ASSUMPTION_LAYOUT_LOCK in text for text in _texts(app, "caption"))
+    assert not any("배치 편집이 잠겨" in text for text in _texts(app, "caption"))
+    assert not any("가정 설비 시나리오 —" in text for text in _texts(app, "caption"))
     tables = BrowserTables(app)
     tables.edit(_editor_key(app), 0, "X좌표", 50.0)
     app.button(key=VIEW_APPLY_BUTTON_KEY).click()
     _ok(tables.run())
 
     assert _buffer_value(app, "EQ-01", "X좌표") == 50.0
+    assert app.session_state[LAYOUT_ROLE_KEY] == "official"
     assert not app.error
 
 
-def test_an_assumption_paste_that_moves_a_saved_unit_is_refused_before_preview(
+def test_an_assumption_paste_keeps_saved_layout_unless_asked(tmp_path: Path) -> None:
+    """가정 세션 붙여넣기 「배치 칸도 붙여넣기」 는 기본 끔이다(Q2) — 있던 호기의 배치 칸은 지금
+    값을 두고 알린다. 켜면 그 시나리오의 가정 배치가 바뀐다고 경고하고 받는다."""
+    _, setup = _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    assert not app.checkbox(key=PASTE_LAYOUT_KEY).value
+    app.selectbox(TARGET_KEY).set_value("설비 마스터")
+    app.text_area(CLIPBOARD_KEY).set_value("설비명\tX좌표\nEQ-01\t55")
+    app.button(PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+
+    review = app.session_state[PREVIEW_KEY]
+    assert isinstance(review, ImportReview)
+    assert review.candidate[1].set_index("설비명").loc["EQ-01", "X좌표"] == 10
+    assert any("배치 칸은 붙여넣지 않고 지금 값을 두었습니다" in text for text in review.notices)
+
+    app.checkbox(key=PASTE_LAYOUT_KEY).check()
+    app.button(PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+    review = app.session_state[PREVIEW_KEY]
+    assert review.candidate[1].set_index("설비명").loc["EQ-01", "X좌표"] == 55
+    assert any("가정 배치 1대(EQ-01)가 바뀝니다" in text for text in review.cautions)
+
+
+def test_an_official_paste_warns_it_moves_the_official_layout(tmp_path: Path) -> None:
+    _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", OPERATIONS).run())
+    app.selectbox(TARGET_KEY).set_value("설비 마스터")
+    app.text_area(CLIPBOARD_KEY).set_value("설비명\tX좌표\nEQ-01\t55")
+    app.button(PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+
+    review = app.session_state[PREVIEW_KEY]
+    assert review.candidate[1].set_index("설비명").loc["EQ-01", "X좌표"] == 55
+    assert any("공식 배치 1칸(호기 1대 — EQ-01)이 바뀝니다" in text for text in review.cautions)
+
+
+def test_a_locked_paste_that_moves_a_saved_unit_is_refused_before_preview(
     tmp_path: Path,
 ) -> None:
     _, setup = _two_scenarios(tmp_path)
-    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup, layout_mode="locked").run())
     app.selectbox(TARGET_KEY).set_value("설비 마스터")
     app.text_area(CLIPBOARD_KEY).set_value("설비명\tX좌표\nEQ-01\t55")
     app.button(PREVIEW_BUTTON_KEY).click()
@@ -283,12 +356,13 @@ def _official(repository: DuckDBEquipmentRepository, name: str, column: str) -> 
     return _session(repository).equipment.set_index("설비명").loc[name, column]
 
 
-def test_a_removed_unit_pasted_back_with_a_moved_layout_is_refused(tmp_path: Path) -> None:
+def test_a_removed_unit_pasted_back_with_a_moved_layout_is_refused_when_locked(
+    tmp_path: Path,
+) -> None:
     """앞 제출에서 지운 저장본 호기를 같은 설비명 한 줄 전체로 다시 붙여넣으면 저장할 때 그 호기
-    키를 이어 공통 배치를 고친다 — 제출 전 편집본에 없던 이름이어도 막는다(S1 리뷰 재현: 고치기
-    전에는 미리보기가 서고 「확인 후 리비전 저장」 으로 공식 X좌표가 10 → 55 가 됐다)."""
+    키를 잇는다 — 잠긴 회차에는 제출 전 편집본에 없던 이름이어도 막는다(S1 리뷰 재현)."""
     repository, setup = _two_scenarios(tmp_path)
-    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup, layout_mode="locked").run())
     row = _row_of(app, "EQ-01").assign(X좌표=55.0)
     _without(app, "EQ-01")
     _ok(app.run())
@@ -308,11 +382,13 @@ def test_a_removed_unit_pasted_back_with_a_moved_layout_is_refused(tmp_path: Pat
     assert _official(repository, "EQ-01", "X좌표") == 10
 
 
-def test_a_row_added_back_under_a_removed_name_gets_the_saved_layout(tmp_path: Path) -> None:
-    """지운 호기를 편집표 「+」 로 같은 설비명 다시 넣고 배치를 적어 저장을 눌러도, 같은 호기라 배치
-    일곱 칸은 저장본 값으로 되돌리고 그 회차 저장은 하지 않는다."""
+def test_a_row_added_back_under_a_removed_name_gets_the_saved_layout_when_locked(
+    tmp_path: Path,
+) -> None:
+    """지운 호기를 편집표 「+」 로 같은 설비명 다시 넣고 배치를 적어 저장을 눌러도, 잠긴 회차에는
+    같은 호기라 배치 일곱 칸을 저장본 값으로 되돌리고 그 회차 저장은 하지 않는다."""
     repository, setup = _two_scenarios(tmp_path)
-    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup, layout_mode="locked").run())
     _without(app, "EQ-01")
     _ok(app.run())
     tables = BrowserTables(app)
@@ -330,30 +406,23 @@ def test_a_row_added_back_under_a_removed_name_gets_the_saved_layout(tmp_path: P
     assert _official(repository, "EQ-01", "X좌표") == 10
 
 
-def test_renaming_away_and_back_does_not_move_the_saved_layout(tmp_path: Path) -> None:
-    """설비명 칸 EQ-01 → EQ-01-TMP 와 X좌표를 한 제출에 고치면 새 호기라 받되 자리 없이 맞춘다(S2 —
-    저장하면 새 키). 다음 제출에서 이름을 EQ-01 로 되돌리면 저장본 EQ-01 을 잇는 행이 되므로 배치
-    칸이 저장본으로 돌아가고 저장되지 않는다(고치기 전에는 공식 X좌표가 10 → 77 이 됐다)."""
+def test_an_assumption_layout_save_never_moves_the_official_unit(tmp_path: Path) -> None:
+    """가정 세션에서 지운 호기를 같은 이름으로 다시 넣고 배치를 옮겨 저장해도 같은 호기(저장본 키)라
+    그 시나리오의 배치 차이로 가고 공식 X좌표는 그대로다(S1 리뷰가 막던 「공식으로 샘」 을 S3 는
+    역할 저장으로 막는다)."""
     repository, setup = _two_scenarios(tmp_path)
     app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
-    tables = BrowserTables(app)
-    tables.edit(_editor_key(app), 0, "설비명", "EQ-01-TMP")
-    tables.edit(_editor_key(app), 0, "X좌표", 77.0)
-    app.button(key=VIEW_APPLY_BUTTON_KEY).click()
-    _ok(tables.run())
-    assert pd.isna(_buffer_value(app, "EQ-01-TMP", "X좌표"))
-    assert any("새 호기 1대(EQ-01-TMP)" in text for text in _texts(app, "error"))
-
-    names = app.session_state[BUFFER_KEY][1]["설비명"].tolist()
-    tables = BrowserTables(app)
-    tables.edit(_editor_key(app), names.index("EQ-01-TMP"), "설비명", "EQ-01")
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    kept = equipment.loc[equipment["설비명"].ne("EQ-01")].reset_index(drop=True)
+    readded = _with_unit(kept, "EQ-01", 77.0)
+    _store(app, (baseline, readded, downtime))
+    _ok(app.run())
     app.button(key=EDIT_SAVE_BUTTON_KEY).click()
-    _ok(tables.run())
+    _ok(app.run())
 
-    assert len(repository.list_revisions()) == 1
-    assert _buffer_value(app, "EQ-01", "X좌표") == 10
-    assert any("있던 호기 1대(EQ-01)" in text for text in _texts(app, "error"))
+    assert not app.error, _texts(app, "error")
     assert _official(repository, "EQ-01", "X좌표") == 10
+    assert _session(repository, setup).equipment.set_index("설비명").loc["EQ-01", "X좌표"] == 77.0
 
 
 def _master_editor(app: AppTest) -> Any:
@@ -370,16 +439,19 @@ def _master_editor(app: AppTest) -> Any:
     raise AssertionError("설비 마스터 편집표가 없습니다")
 
 
-def test_the_lock_keeps_the_layout_cells_open_for_a_new_unit_row(tmp_path: Path) -> None:
-    """임시 잠금은 칸을 `disabled` 로 두지 않는다(검토 F12) — 레이아웃표시는 기본값 없는 필수 고르기
-    칸이라 잠그면 새 호기 행을 넣을 수 없다. 편집표 「+」 로 넣은 새 호기는 받되 자리(동·층·X·Y)는
-    비우고 크기·레이아웃표시는 그대로 둔다(S2 리뷰)."""
+def test_layout_cells_stay_open_and_carry_the_layout_help(tmp_path: Path) -> None:
+    """배치 칸은 `disabled` 로 두지 않는다(검토 F12 — 레이아웃표시는 기본값 없는 필수 고르기 칸이라
+    잠그면 새 호기 행을 넣을 수 없다). 칸 도움말은 셋째 묶음 「배치」 다(설계 10장)."""
     _, setup = _two_scenarios(tmp_path)
     app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
     proto = _master_editor(app)
     columns = json.loads(proto.columns)
     assert not any(columns.get(column, {}).get("disabled") for column in PLACE_COLUMNS)
     assert proto.editing_mode == DataframeProto.EditingMode.DYNAMIC
+    assert all(
+        str(columns.get(column, {}).get("help", "")).startswith("배치 — ")
+        for column in PLACE_COLUMNS
+    )
 
     tables = BrowserTables(app)
     tables.add(
@@ -400,12 +472,14 @@ def test_the_lock_keeps_the_layout_cells_open_for_a_new_unit_row(tmp_path: Path)
     _ok(tables.run())
 
     row = _row_of(app, "EQ-NEW").iloc[0]
-    assert pd.isna(row["X좌표"]) and pd.isna(row["층"])
+    assert (row["X좌표"], row["층"]) == (80.0, "2F")
     assert (row["Xsize"], row["Ysize"], row["레이아웃표시"]) == (12.0, 6.0, "Y")
-    assert any("새 호기 1대(EQ-NEW)" in text for text in _texts(app, "error"))
+    assert not app.error
 
 
-def test_the_paste_check_takes_new_units_and_unchanged_layout_cells(tmp_path: Path) -> None:
+def test_the_locked_paste_check_takes_new_units_and_unchanged_layout_cells(
+    tmp_path: Path,
+) -> None:
     repository = _seeded(tmp_path)
     current = _session(repository)
     saved = current.equipment
@@ -416,8 +490,8 @@ def test_the_paste_check_takes_new_units_and_unchanged_layout_cells(tmp_path: Pa
         return ImportReview("설비 마스터", "붙여넣기", frames, candidate, pd.DataFrame())
 
     def refusal(master: pd.DataFrame, renames: dict[str, str] | None = None) -> str | None:
-        return assumption_paste_refusal(
-            review(master), saved=saved, renames=renames or {}, scenario_name="셋업 실무"
+        return layout_paste_refusal(
+            review(master), saved=saved, renames=renames or {}, reason=LOCK_REASON
         )
 
     unplaced = {"동": None, "층": None, "X좌표": None, "Y좌표": None}
@@ -442,7 +516,7 @@ def test_the_paste_check_takes_new_units_and_unchanged_layout_cells(tmp_path: Pa
     assert "있던 호기 1대(EQ-101)" in str(refusal(renamed, {"EQ-101": "EQ-01"}))
     # 다른 표의 붙여넣기는 보지 않는다.
     downtime = ImportReview("비가동 일정", "붙여넣기", frames, frames, pd.DataFrame())
-    assert assumption_paste_refusal(downtime, saved=saved, renames={}, scenario_name=None) is None
+    assert layout_paste_refusal(downtime, saved=saved, renames={}, reason=None) is None
 
 
 def test_the_lock_aligns_new_modules_and_undecided_units_to_their_groups_official_floor() -> None:
@@ -462,7 +536,7 @@ def test_the_lock_aligns_new_modules_and_undecided_units_to_their_groups_officia
     buffer.at[undecided, "층"] = "1F"
     buffer.at[undecided, "X좌표"] = 90.0
 
-    lock = assumption_layout_lock(buffer, saved, {})
+    lock = layout_edits(buffer, saved, {})
 
     assert dict(lock.restore) == {}
     assert set(lock.place) == {"EQ-03", "EQ-U"}
@@ -470,8 +544,8 @@ def test_the_lock_aligns_new_modules_and_undecided_units_to_their_groups_officia
     rows = fixed.loc[fixed["설비명"].isin(["EQ-03", "EQ-U"])]
     assert rows[["동", "층"]].drop_duplicates().to_numpy().tolist() == [["C1", "1F"]]
     assert rows[["X좌표", "Y좌표"]].isna().all().all()
-    assert not assumption_layout_lock(lock.apply(buffer, saved), saved, {})
-    assert not AssumptionLayoutLock(restore={}, place={})
+    assert not layout_edits(lock.apply(buffer, saved), saved, {})
+    assert not LayoutLock(restore={}, place={})
 
 
 def test_layout_drift_is_read_against_the_saved_unit_and_restores_its_cells() -> None:

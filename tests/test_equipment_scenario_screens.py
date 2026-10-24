@@ -9,8 +9,9 @@
 - 필요 단축 일정: 기준선 저장은 공식 발행 쌍에서만(거부 까닭 둘), 기준선 머리의 설비 시나리오 출처,
   진척 비교 머리, 카드 링크 `eq`.
 - 공정 Capa 상세: HOME 칸 방문은 ◀▶ 뒤에도 공식(방문 기준 칸), 잠근 줄, 카드 `eq` 가 다르면 띠 꼬리.
-- Space: 가정이면 배치 편집이 잠기고 「공식으로 바꾸기」, 공식 일정 없음 호기는 그리지 않음.
-- 머리 띠: 아래 줄 끝 「설비 시나리오 · 운영 일정 · r1 · 공식 v1」(Space 「(고정)」).
+- Space: 세션 설비 시나리오의 배치를 그리고(가정이면 그 시나리오 일정 호기도), FAB 전체 배치 편집은
+  공식에서만(「공식으로 바꾸기」), 찍힌 역할이 바뀌면 배치 저장이 꺼지고 「배치 변경만 버리기」.
+- 머리 띠: 아래 줄 끝 「설비 시나리오 · 운영 일정 · r1 · 공식 v1」(Space 도 같은 꼬리).
 - 설비 시나리오 구획의 E7 도구: 리비전명(비교 후 쓰기), 「이 리비전으로 되돌리기」(확인 글·확인 체크
   뒤 새 리비전, 세션이 따라감), 「여기서 새 시나리오」(옛 리비전에서).
 """
@@ -197,7 +198,9 @@ def test_the_unscheduled_notice_says_how_many_and_what_to_do() -> None:
     assert official is not None and official.startswith("공식 일정 없음 1대")
 
 
-def test_the_header_suffix_follows_the_badge_order_and_space_is_fixed() -> None:
+def test_the_header_suffix_follows_the_badge_order() -> None:
+    """차례는 사이드바 배지와 같다 — 미저장 → 공식 vN → 낡음 → 가정 배치 → 저장된 리비전(설계 8-2).
+    Space 의 「(고정)」 꼬리는 걷었다(S3 — Space 도 세션 설비 시나리오를 그린다)."""
     label = {
         "scenario_name": "운영 일정",
         "revision_no": 12,
@@ -205,18 +208,17 @@ def test_the_header_suffix_follows_the_badge_order_and_space_is_fixed() -> None:
         "release_no": 3,
         "official_pair": True,
         "stale": True,
+        "layout_differs": True,
     }
     assert equipment_header_suffix(label) == "설비 시나리오 · 운영 일정 · r12 · 공식 v3"
-    assert (
-        equipment_header_suffix(label, fixed=True)
-        == "설비 시나리오 · 운영 일정 · r12 · 공식 v3 (고정)"
-    )
     assert equipment_header_suffix(label, unsaved=True) == (
         "설비 시나리오 · 운영 일정 · r12 · 미저장 변경"
     )
     stale = {**label, "official_pair": False}
     assert equipment_header_suffix(stale) == "설비 시나리오 · 운영 일정 · r12 · 최신 r14 있음"
-    saved = {**stale, "stale": False}
+    layout = {**stale, "stale": False}
+    assert equipment_header_suffix(layout) == "설비 시나리오 · 운영 일정 · r12 · 가정 배치"
+    saved = {**layout, "layout_differs": False}
     assert equipment_header_suffix(saved) == "설비 시나리오 · 운영 일정 · r12 · 저장된 리비전"
     assert equipment_header_suffix({"scenario_name": None}) is None
     assert equipment_header_suffix(None) is None
@@ -384,8 +386,8 @@ def _header_bodies(app: AppTest) -> list[str]:
 
 
 def test_the_header_ends_with_the_equipment_scenario_in_the_same_run(_shell: AppTest) -> None:
-    """설비 화면 첫 회차부터 머리 띠 아래 줄 끝에 설비 시나리오가 선다(한 회차 늦지 않음). Space 는
-    「(고정)」."""
+    """설비 화면 첫 회차부터 머리 띠 아래 줄 끝에 설비 시나리오가 선다(한 회차 늦지 않음). Space 도
+    같은 꼬리다(S3 — 「(고정)」 을 걷었다)."""
     app = _ok(_shell.run())
     assert not any("설비 시나리오 ·" in body for body in _header_bodies(app))
 
@@ -399,7 +401,8 @@ def test_the_header_ends_with_the_equipment_scenario_in_the_same_run(_shell: App
     assert all("설비 시나리오 · 운영 일정 · r1 · 공식 v1" in body for body in bodies)
 
     _ok(app.switch_page(SPACE_STATUS.path).run())
-    assert "설비 시나리오 · 운영 일정 · r1 · 공식 v1 (고정)" in _header_bodies(app)[-1]
+    assert "설비 시나리오 · 운영 일정 · r1 · 공식 v1" in _header_bodies(app)[-1]
+    assert "(고정)" not in _header_bodies(app)[-1]
 
 
 def test_on_narrow_windows_the_equipment_tail_comes_first_in_the_bottom_line() -> None:
@@ -613,12 +616,13 @@ def test_an_unscheduled_unit_is_announced_and_left_out_of_the_assumption(
     assert not any("일정이 없는 호기" in str(item.value) for item in app.info)
 
 
-def test_space_shows_the_official_and_locks_editing_on_an_assumption(
+def test_space_draws_the_assumption_and_locks_only_the_fab_there(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """가정 설비 시나리오면 Space 배치 편집이 잠기고 「공식으로 바꾸기」 가 선다. 공식 일정이 없는
-    호기(가정에만 넣은 호기)는 그리지 않고 「공식 일정 없음 1대」 를 알린다. 바꾸면 세션이 공식이
-    된다."""
+    """가정 설비 시나리오 세션의 Space 는 그 시나리오를 그린다(LY3 — 그 시나리오에만 일정이 있는
+    호기도 서고 「공식 일정 없음」 알림이 없다). 층 배치 편집은 열리고(LY4), FAB 전체 배치 편집은
+    잠기며
+    (G5) 그 자리의 「공식으로 바꾸기」 가 세션을 공식으로 옮긴다."""
     repository = _repository(tmp_path)
     clone = _clone(repository)
     mine = _session(repository, clone.equipment_scenario_id)
@@ -635,23 +639,26 @@ def test_space_shows_the_official_and_locks_editing_on_an_assumption(
     _select(app, clone.equipment_scenario_id, None)
     _ok(app.run())
     texts = _texts(app)
-    assert any("배치 편집은 공식 설비 시나리오(운영 일정 · r1)에서 합니다" in t for t in texts)
-    assert any("공식 일정 없음 1대" in text for text in texts)
+    assert not any("공식 일정 없음" in text for text in texts)
+    assert not any("배치 편집은 공식 설비 시나리오" in text for text in texts)
+    assert app.toggle(key="space_fab_edit_mode").disabled
+    field = _field(app)
+    assert field is not None and not field.disabled and field.label == "셋업 실무 · r2"
     switch = app.button(key="space_switch_to_official")
     assert not switch.disabled
     switch.click()
     _ok(app.run())
     assert app.session_state[SELECTION_KEY]["scenario_id"] == OPERATIONS
-    assert not any("배치 편집은 공식 설비 시나리오" in text for text in _texts(app))
+    assert not app.toggle(key="space_fab_edit_mode").disabled
+    assert any("공식 일정 없음 1대" in text for text in _texts(app))
 
 
 def test_space_keeps_unsaved_layout_edits_savable_when_a_new_official_locks_editing(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """Space 에서 좌표를 적용해 둔 사이 남이 「운영 일정」 일정을 저장해 공식 v2 를 내면 세션이 공식
-    발행 쌍에서 밀려나 배치 편집이 잠긴다. 그래도 남은 변경의 상자(배치 저장·버리기)는 서고 저장이
-    된다(좌표는 공통 칸). 잠금 문구는 같은 시나리오의 리비전을 말한다 — 「다른 설비 시나리오」 가
-    아니다."""
+    """Space 에서 좌표를 적용해 둔 사이 남이 「운영 일정」 일정을 저장해 공식 v2 를 내면 세션은 공식
+    시나리오의 낡은 리비전이 된다. 공식 배치는 공통이라 낡아도 잠기지 않고(설계 8-4 — 새 호기 폼만
+    꺼진다) 남은 변경의 상자가 그대로 저장한다."""
     from capa_simulation.components.equipment_data_workspace import (
         BUFFER_GENERATION_KEY,
         BUFFER_KEY,
@@ -677,9 +684,7 @@ def test_space_keeps_unsaved_layout_edits_savable_when_a_new_official_locks_edit
     _ok(app.run())
 
     texts = _texts(app)
-    assert any("같은 설비 시나리오의 r1(공식 발행이 아닌 리비전)" in text for text in texts)
-    assert not any("다른 설비 시나리오를 보고 있어" in text for text in texts)
-    assert any("잠기기 전에 적용한 변경이 이 세션에 남아 있습니다" in text for text in texts)
+    assert not any("배치 편집이 잠겨" in text for text in texts)
     save = app.button(key="space_layout_save")
     assert not save.disabled
     save.click()
@@ -693,13 +698,15 @@ def test_space_keeps_unsaved_layout_edits_savable_when_a_new_official_locks_edit
 def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_official(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """S2 리뷰 — 공식 세션에서 좌표를 적용해 둔 사이 남이 다른 설비 시나리오를 공식으로 내면 그
-    세션은 가정이 된다. 잠김 상자의 「배치 저장」 이 그 공식 배치 편집을 가정 배치 차이로 조용히
-    쓰고 「저장했습니다」 를 띄우면 편집은 Space(공식)에서 사라지고 그 시나리오는 다시 공식이 될 수
-    없다(차이를 지울 화면이 아직 없다). 저장은 배치 편집이 공식 역할에서 났다고 대조해 막는다."""
+    """공식 세션에서 좌표를 적용해 둔 사이(적용이 역할 official 을 찍는다) 남이 다른 설비 시나리오를
+    공식으로 내면 그 세션은 가정이 된다. 그 공식 배치 편집이 가정 배치 차이로 조용히 들어가지 않게
+    층 배치 편집이 잠기고(찍힌 역할 ≠ 지금 역할 — 설계 6-2) 상자의 「배치 저장」 이 꺼지며 「배치
+    변경만 버리기」 가 선다. 그 단추는 배치만 되돌리고 다른 편집은 남긴다(검토 M5). 저장소도 찍힌
+    역할을 대조해 막는다(두 겹)."""
     from capa_simulation.components.equipment_data_workspace import (
         BUFFER_GENERATION_KEY,
         BUFFER_KEY,
+        LAYOUT_ROLE_KEY,
     )
 
     repository = _repository(tmp_path)
@@ -709,8 +716,10 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     moved = equipment.copy()
     first = moved.index[moved["설비명"].eq("EQ-01")][0]
     moved.loc[first, "X좌표"] = 40.0
+    moved.loc[first, "설비이력"] = "남길 편집"
     app.session_state[BUFFER_KEY] = (baseline, moved, downtime)
     app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.session_state[LAYOUT_ROLE_KEY] = "official"
     _ok(app.run())
     clone = _clone(repository)
     assert clone.latest_schedule_revision_id is not None
@@ -722,21 +731,24 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     )
     clear_equipment_scenario_cache()
     _ok(app.run())
-    assert any("잠기기 전에 적용한 변경이 이 세션에 남아 있습니다" in t for t in _texts(app))
+    texts = _texts(app)
+    assert any(
+        "그 사이 공식 설비 시나리오가 「셋업 실무」로 바뀌어 이 배치 변경(공식 배치에 들어갈 "
+        "편집이었음)을 저장할 수 없습니다" in text
+        for text in texts
+    )
+    assert app.button(key="space_layout_save").disabled
     before = [len(repository.list_revisions())] + [
         item.revision_count for item in repository.list_equipment_scenarios()
     ]
 
-    app.button(key="space_layout_save").click()
+    app.button(key="space_layout_discard_layout").click()
     _ok(app.run())
 
-    texts = _texts(app)
-    assert any(
-        "그 사이 공식 설비 시나리오가 바뀌어 이 배치 변경(공식 배치에 들어갈 편집이었음)을 "
-        "저장하지 않았습니다" in text
-        for text in texts
-    )
-    assert not any("설비 데이터를 저장했습니다" in text for text in texts)
+    _, kept, _ = app.session_state[BUFFER_KEY]
+    row = kept.loc[kept["설비명"].eq("EQ-01")].iloc[0]
+    assert row["X좌표"] == 10 and row["설비이력"] == "남길 편집"
+    assert LAYOUT_ROLE_KEY not in app.session_state
     after = [len(repository.list_revisions())] + [
         item.revision_count for item in repository.list_equipment_scenarios()
     ]

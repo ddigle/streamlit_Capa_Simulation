@@ -129,20 +129,38 @@ def render_floor_layout_editor(
     building: str,
     floor: str,
     saved_equipment: pd.DataFrame,
+    disabled: bool = False,
+    reason: str | None = None,
 ) -> None:
     """층 상세 작업 줄의 `도면·캔버스 편집` 버튼. 누르면 그 층의 팝업이 열린다.
 
     `saved_equipment` 는 **저장된 설비 마스터 전체**다(필터 전, 레이아웃표시 무관). 캔버스를
     줄이거나 지울 때 그 층 호기가 밖으로 나가는지 저장 검증과 같은 행으로 잰다. 설비 저장본이
-    없으면(샘플 화면) 빈 표를 넘긴다 — 저장을 막을 호기가 없다.
+    없으면(샘플 화면) 빈 표를 넘긴다 — 저장을 막을 호기가 없다. `disabled` 면 단추를 끄고 `reason`
+    을 풍선으로 둔다 — 층 캔버스·배경 도면은 공용 값이라 가정 설비 시나리오에서 잠근다(G5 와 같은
+    까닭 — 설계 8-4).
     """
-    _render_open_button(database_path, _DrawingTarget((building, floor)), saved_equipment)
+    _render_open_button(
+        database_path,
+        _DrawingTarget((building, floor)),
+        saved_equipment,
+        disabled=disabled,
+        reason=reason,
+    )
 
 
-def render_fab_layout_drawing_editor(*, database_path: str, disabled: bool = False) -> None:
-    """FAB 전체 머리 줄의 `도면·캔버스 편집` 버튼. 층 팝업을 FAB 범위로 연다. `disabled` 는 설비
-    샘플 화면(합성 fleet 을 보는 중)에서 쓰기를 막는다."""
-    _render_open_button(database_path, _DrawingTarget(None), pd.DataFrame(), disabled=disabled)
+def render_fab_layout_drawing_editor(
+    *, database_path: str, disabled: bool = False, reason: str | None = None
+) -> None:
+    """FAB 전체 머리 줄의 `도면·캔버스 편집` 버튼. 층 팝업을 FAB 범위로 연다. `disabled` 는 쓰기를
+    막고 `reason` 이 그 까닭(풍선)이다 — 설비 샘플 화면(합성 fleet 을 보는 중), 가정 설비 시나리오
+    (FAB 은 공식에서만 — G5)."""
+    _render_open_button(
+        database_path, _DrawingTarget(None), pd.DataFrame(), disabled=disabled, reason=reason
+    )
+
+
+SAMPLE_DRAWING_LOCK = "샘플 데이터를 보는 중에는 FAB 도면을 고치지 않습니다."
 
 
 def _render_open_button(
@@ -151,6 +169,7 @@ def _render_open_button(
     saved_equipment: pd.DataFrame,
     *,
     disabled: bool = False,
+    reason: str | None = None,
 ) -> None:
     st.button(
         "도면·캔버스 편집",
@@ -159,7 +178,7 @@ def _render_open_button(
         on_click=_open_dialog,
         args=(target.scope,),
         disabled=disabled,
-        help="샘플 데이터를 보는 중에는 FAB 도면을 고치지 않습니다." if disabled else None,
+        help=(reason or SAMPLE_DRAWING_LOCK) if disabled else None,
     )
     if not disabled and st.session_state.get(FLOOR_LAYOUT_DIALOG_KEY) == target.scope:
         _floor_layout_dialog(

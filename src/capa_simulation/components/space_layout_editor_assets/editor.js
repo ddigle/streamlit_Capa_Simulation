@@ -2459,7 +2459,7 @@ export default function (component) {
     unplaceButton.disabled = !chosen.some((m) => onCanvas(m) || m.created)
     zoomSel.disabled = !chosen.some(onCanvas)
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
-    areaNote.textContent = S.note
+    areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
     syncInspector()
   }
 
@@ -2547,6 +2547,9 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 편집 영역(캔버스) 크기
   function setCanvas(requestedW, requestedH, { record = true } = {}) {
+    // 층 캔버스를 고치지 않는 편집기(가정 설비 시나리오 — 공용 값). 칸은 꺼져 있지만 옛 단축키·되돌리기
+    // 길도 막는다. 서버도 적용의 캔버스 값을 거부한다(두 겹).
+    if (data.canvasEditable === false) { areaW.value = W(); areaH.value = H(); return }
     const ext = extents()
     const minW = Math.max(MIN_EXTENT, ext.right)
     const minH = Math.max(MIN_EXTENT, ext.top)
@@ -3963,6 +3966,14 @@ export default function (component) {
     const value = input.value === '' ? NaN : Number(input.value)
     if (!Number.isFinite(value)) { input.value = current; return null }
     return value
+  }
+  if (data.canvasEditable === false) {
+    // 편집 영역 칸을 끄고 까닭을 풍선·알림 칸에 둔다(보기는 그대로 — 폭·높이 값은 지금 캔버스).
+    for (const control of q('.sle-area').querySelectorAll('input, button')) {
+      control.disabled = true
+      control.title = data.canvasLock || '이 편집기에서는 편집 영역을 바꾸지 않습니다'
+    }
+    areaNote.textContent = data.canvasLock || ''
   }
   areaW.onchange = () => { const v = areaValue(areaW, W()); if (v !== null) setCanvas(v, H()) }
   areaH.onchange = () => { const v = areaValue(areaH, H()); if (v !== null) setCanvas(W(), v) }
