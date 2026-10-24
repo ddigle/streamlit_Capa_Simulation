@@ -627,6 +627,50 @@ def test_editor_edits_mark_only_the_current_tab_and_ask_before_leaving(
     assert _data(sent)["leave"] == ""
 
 
+def _floor_state_marks_script() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.page_tabs import leave_notice, page_unsaved_marks
+
+    page = st.session_state["test_page_file"]
+    st.session_state["test_marks"] = page_unsaved_marks(page)
+    st.session_state["test_leave"] = leave_notice(page)
+
+
+@pytest.mark.parametrize(
+    ("page_file", "toggle", "draft", "dirty"),
+    [
+        ("space_status.py", True, {"C1 3F": "UNUSED"}, True),
+        ("space_status.py", True, {}, False),
+        ("space_status.py", False, {"C1 3F": "UNUSED"}, False),
+        ("home.py", True, {"C1 3F": "UNUSED"}, False),
+    ],
+    ids=["Space·켜짐·다름", "Space·켜짐·같음", "Space·꺼짐", "다른 화면"],
+)
+def test_a_floor_state_draft_marks_only_the_space_tab_and_asks_before_leaving(
+    page_file: str, toggle: bool, draft: dict[str, str], dirty: bool
+) -> None:
+    """Space 층 사용 편집 초안은 `사용 편집` 토글(위젯 상태)이 화면을 떠나면 꺼져 버려진다 — 편집표
+    편집처럼 Space 가 지금 화면일 때만 점을 찍고 떠날 때 묻는다. 테마 표지도 이 점으로 본다."""
+    from capa_simulation.components.space_floor_list import BASE_KEY, DRAFT_KEY, EDIT_TOGGLE_KEY
+
+    app = AppTest.from_function(_floor_state_marks_script)
+    app.session_state["test_page_file"] = page_file
+    app.session_state[EDIT_TOGGLE_KEY] = toggle
+    app.session_state[DRAFT_KEY] = draft
+    app.session_state[BASE_KEY] = (0, ())
+    _ok(app.run())
+
+    marks = app.session_state["test_marks"]
+    leave = app.session_state["test_leave"]
+    if dirty:
+        assert marks == {SPACE_STATUS.path: "저장하지 않은 층 사용 편집"}
+        assert leave == page_tabs.FLOOR_STATE_LEAVE_LABEL == "Space 현황 · 층 사용 편집"
+    else:
+        assert marks == {}
+        assert leave == ""
+
+
 # ------------------------------------------------------------------ 탭 왕복에 남는 보기 조건
 
 _CALCULATION_RESULT = "app_pages/calculation_result.py"
