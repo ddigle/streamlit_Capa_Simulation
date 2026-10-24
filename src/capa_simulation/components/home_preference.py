@@ -1543,6 +1543,9 @@ def _render_key_process_editor(
             "고칠 프리셋",
             options=targets,
             key=KEY_PROCESS_EDIT_TARGET_KEY,
+            # 보는 프리셋은 다른 화면(탭)에 갔다 와도 남는다. 위에서 세션에 먼저 적으므로 `index=`
+            # 를 주지 않는다.
+            persist_state="session",
         )
         if names:
             st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 「{names[0]}」입니다.")

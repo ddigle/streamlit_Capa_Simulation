@@ -411,3 +411,71 @@ def test_editor_edits_mark_only_the_current_tab_and_ask_before_leaving(
     _ok(app.switch_page(A).run())
     assert _tab(sent, H)["dirty"] is False
     assert _data(sent)["leave"] == ""
+
+
+# ------------------------------------------------------------------ 탭 왕복에 남는 보기 조건
+
+_CALCULATION_RESULT = "app_pages/calculation_result.py"
+
+
+def _via_tab(app: AppTest, here: str, target: str) -> AppTest:
+    """`here` 화면의 탭 줄에서 `target` 탭을 누른 회차 — 콜백이 남긴 대기 칸을 `app.py` 가
+    옮긴다."""
+    app.session_state[PAGE_TABS_QUEUED_KEY] = target
+    return _ok(app.switch_page(here).run())
+
+
+def test_conditions_survive_a_tab_round_trip(_app: AppTest, sent: list[dict[str, Any]]) -> None:
+    """산출 결과 「표시 방식」은 같은 카드의 「집계 수준」처럼 다른 탭에 갔다 와도 남는다."""
+    app = _ok(_app.run())
+    _ok(app.switch_page(_CALCULATION_RESULT).run())
+    _ok(app.selectbox(key="unit_capacity_detail_level").set_value("양산").run())
+    _ok(app.segmented_control(key="unit_capacity_view_mode").set_value("STEP별").run())
+
+    _via_tab(app, _CALCULATION_RESULT, H)
+    assert _data(sent)["active"] == H
+    _via_tab(app, H, _CALCULATION_RESULT)
+
+    assert _data(sent)["active"] == _CALCULATION_RESULT
+    assert app.segmented_control(key="unit_capacity_view_mode").value == "STEP별"
+    assert app.selectbox(key="unit_capacity_detail_level").value == "양산"
+
+
+def test_closing_a_background_tab_keeps_the_page_and_its_conditions(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """다른 탭을 닫아도 지금 화면은 그대로이고, 닫은 화면을 다시 열면 보던 조건이 이어진다."""
+    app = _ok(_app.run())
+    _ok(app.switch_page(_CALCULATION_RESULT).run())
+    _ok(app.segmented_control(key="unit_capacity_view_mode").set_value("STEP별").run())
+    _via_tab(app, _CALCULATION_RESULT, H)
+
+    # `_on_close(산출 결과)` 를 HOME 에서 누른 결과 — 목록에서만 빠지고 이동은 없다.
+    app.session_state[PAGE_TABS_OPEN_KEY] = (H,)
+    _ok(app.switch_page(H).run())
+    assert _ids(sent) == [H] and _data(sent)["active"] == H
+
+    _ok(app.switch_page(_CALCULATION_RESULT).run())
+    assert _ids(sent) == [H, _CALCULATION_RESULT]
+    assert app.segmented_control(key="unit_capacity_view_mode").value == "STEP별"
+
+
+def test_the_scenario_management_tab_is_remembered_across_a_tab_round_trip(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    from capa_simulation.components.tab_state import remembered_tab_key
+
+    key = "scenario_management_tabs"
+    app = _ok(_app.run())
+    _ok(app.switch_page(B).run())
+    labels = [tab.label for tab in app.tabs]
+    query = next(label for label in labels if "BigDataQuery" in label)
+    app.session_state[key] = query
+    _ok(app.switch_page(B).run())
+    assert app.session_state[remembered_tab_key(key)] == query
+
+    _via_tab(app, B, H)
+    _via_tab(app, H, B)
+
+    assert app.session_state[remembered_tab_key(key)] == query
+    assert app.session_state[key] == query
