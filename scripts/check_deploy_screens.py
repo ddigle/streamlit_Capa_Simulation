@@ -3209,6 +3209,83 @@ def check_equipment_scenario_line(screen: Screen) -> str:
     return summarize_equipment_scenario_line(row, title, facts, closed)
 
 
+# Space 층 사용(2026-10-24 S1~S6) — 층 목록 표의 칸·스위치 이름과 편집표 칸. 머리 글은 완전 일치로
+# 찾으므로 앱의 칸 이름을 바꾸면 여기도 바꾼다(`components/space_floor_list.py`).
+SPACE_FLOOR_STATE_SWITCH: Final = "사용 편집"
+SPACE_FLOOR_USE_COLUMN: Final = "사용"
+SPACE_FLOOR_EDIT_COLUMNS: Final = ("사용", "사유", "호기")
+_INACTIVE_COUNT = re.compile(r"비활성 층 (\d+)개")
+
+
+def summarize_space_floor_state(
+    rows: int | None,
+    in_use: int,
+    inactive: int | None,
+    grey: int,
+    edit_columns: bool | None,
+) -> str:
+    """층 사용 칸 확인 결과 — 개수·있음/없음만. 층 이름은 찍지 않는다.
+
+    `rows` None 은 사용 칸 없음, `inactive` 는 「비활성 층 n개」 펼침의 n(없으면 0), `edit_columns`
+    None 은 스위치 없음이다. 회색 블록 수와 비활성 n 이 다르면 그 차이를 적는다."""
+    if rows is None:
+        return "사용 칸 없음"
+    folded = inactive or 0
+    parts = [
+        "사용 칸 있음",
+        f"목록 {rows}줄(사용 {in_use})",
+        f"비활성 층 {folded}개",
+        f"회색 블록 {grey}개" if grey == folded else f"회색 블록 {grey} ≠ 비활성 {folded}",
+    ]
+    if edit_columns is None:
+        parts.append("스위치 없음")
+    elif edit_columns:
+        parts.append(f"편집 칸 {'·'.join(SPACE_FLOOR_EDIT_COLUMNS)} 있음")
+    else:
+        parts.append("편집 칸 없음")
+    return " · ".join(parts)
+
+
+def check_space_floor_state(screen: Screen) -> str:
+    """Space 층 사용 칸 — FAB 전체 층 목록 표의 `사용` 칸 줄 수·참 개수, 접힌 「비활성 층 n개」, FAB
+    도면의 회색 블록 수, `사용 편집` 을 켠 편집표 칸(`사용`·`사유`·`호기`). **저장하지 않고** 끈다
+    (세션만 — DB 쓰기 없음). 층 이름은 찍지 않는다."""
+    screen.step("페이지 열기")
+    screen.open_space_overview()
+    screen.step("층 목록")
+    try:
+        grid, use_column = screen.grid_with_column(SPACE_FLOOR_USE_COLUMN, timeout=20)
+    except TimeoutError:
+        return summarize_space_floor_state(None, 0, None, 0, None)
+    values = [row[0] for row in screen.grid_rows(grid, [use_column])]
+    in_use = sum(1 for value in values if str(value).strip().lower() in ("true", "✓", "✔"))
+    folded = screen.page.locator('[data-testid="stExpander"]').filter(has_text="비활성 층")
+    inactive = 0
+    if folded.count():
+        found = _INACTIVE_COUNT.search(folded.first.inner_text())
+        inactive = int(found.group(1)) if found else 0
+    grey = screen.poll(
+        lambda: screen.page.locator(".mark-block.is-inactive").count(),
+        timeout=10,
+        accept=lambda count: count == inactive,
+    )
+    screen.step("사용 편집")
+    if not screen.switch(SPACE_FLOOR_STATE_SWITCH, True):
+        return summarize_space_floor_state(len(values), in_use, inactive, int(grey), None)
+    try:
+        try:
+            editor, _ = screen.grid_with_column("호기", timeout=20)
+        except TimeoutError:
+            edit_columns = False
+        else:
+            edit_columns = all(
+                screen.column_index(editor, name) is not None for name in SPACE_FLOOR_EDIT_COLUMNS
+            )
+    finally:
+        screen.switch(SPACE_FLOOR_STATE_SWITCH, False)
+    return summarize_space_floor_state(len(values), in_use, inactive, int(grey), edit_columns)
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
@@ -3226,6 +3303,7 @@ ITEMS: tuple[Item, ...] = (
     Item("space_fader", "Space 기준일 페이더", check_space_fader),
     Item("gap_sheet", "Static 대비 일정 비교 시트", check_gap_sheet),
     Item("equipment_scenario_line", "설비 시나리오 줄·팝업", check_equipment_scenario_line),
+    Item("space_floor_state", "Space 층 사용 칸", check_space_floor_state),
 )
 
 

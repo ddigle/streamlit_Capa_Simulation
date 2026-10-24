@@ -347,6 +347,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`space_floor_show_all_<동>_<층>`, 늘 세움)·빈 곳·Esc 로 풀린다. 다른 층·FAB 로 옮기거나 그 층 행에 없으면(필터·이름
     바꿈) 푼다. 층 CSV 는 늘 층 전체의 모든 칸이다. 뷰어 호기에는 설비지분 `share`(기준일 보유 지분
     `space_layout.row_unit_shares` — 범례·배치 대수와 같은 칸, 일부 모듈만 반입한 묶음의 반입 전 모듈은 0)를 싣는다.
+  - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
+    목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
+    FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다 — 뷰어 epoch 에 상태 지문(`floor_states_fingerprint`,
+    배율은 그대로)을 넣고 편집기 epoch 에는 넣지 않으며(적용 전 FAB 편집을 지킨다), 뷰어·편집기 `on_open` 은 그린 회차의
+    비활성 층을 서버에서도 거른다(`_open_unless_inactive`). `층 바로 가기`·배치 편집기 `다른 층으로 보내기` 선택지는
+    `selectable_floor_keys(keep=연 층)` 이다(글자는 「C1 3F」 그대로 — 상태는 배너). 주소 `?floor=` 가 비활성 층이어도 열고
+    늘 서는 칸(`space_floor_inactive_notice_slot`)에 배너를 세운다. 적용 검사(`parse_editor_apply(floors=ALL_FLOORS)`)·
+    `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
+    알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
   `원천 품질`·`알림 모음` 네 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py`, 넷째는
   `components/alert_board.py` 를 그린다.
@@ -458,6 +467,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)·호기 누르기(`on_pick_change`)는
     버린다.
+  - FAB 블록 글자 `linkStats` 의 `inactive`(비활성 층의 짧은 사유)가 있으면 JS 가 그 블록을 `is-inactive` 로 —
+    팔레트 `block-off` 면 + `#sle-hatch` 빗금 + `muted` 글자(고른 색·「글자 색」 인라인을 달지 않는다)로 그리고, 보기에서는
+    `opensFloor` 가 거짓이라 열지도 고르지도 않으며(누름 갈래는 블록 종류로 `lastViewOnBlock`) 초점·역할을 걷는다. 편집에서는
+    옮기기·연결은 되고 `[열기]` 만 꺼진다(`syncInspector`).
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
   - **Main 설비 모듈 묶음**(편집기 모듈 + 숨은 모듈이 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선
@@ -1779,7 +1792,8 @@ RQ_MODULE
    [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). 설비 DB 를 여는
    시뮬레이션 쪽 페이지는 셋이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행 관리,
    읽기만), 표준 대비 재공 현황(Dynamic, 표준 목표의 주차별 가용대수를 읽기만). 실행 관리 머리는 첫 판에서
-   어느 DB 도 열지 않는다.
+   어느 DB 도 열지 않는다. **Space 층 사용 상태**(설비 `0029`)는 설비 시나리오·설비 리비전과 무관한 공용 현행값이다 —
+   소유 칸이 없어 복제·보관·영구 삭제가 건드리지 않고, 설비 마스터의 동·층 값과 저장 검사(C1~C5·1F~6F)는 그대로다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
@@ -1847,13 +1861,15 @@ RQ_MODULE
 24. **공용 프로필에는 모두가 함께 쓰는 설정(비교 대상·판정 기준 등)만 담는다** — 켜고 끄는 보기 토글을 담으면 남의
     화면까지 켜진다. 바뀐 것이 없는 쓰기는 쓰지 않는다 — 설비 DB 의 필요 단축 일정 공용 조회 조건
     (`save_shortening_filter_months`·`_processes`)은 저장소가 쓰기 트랜잭션 안에서 견주어 같으면 version 도 동기화 dirty
-    도 올리지 않는다(`_WriteOutcome(wrote=False)`). 시뮬레이션 DB 공용 프로필 저장소는 늘 version 을 올리므로 화면이
-    값이 실제로 바뀐 때만 저장한다(9장 「공용 프로필을 기본값으로 심는 조회 위젯」).
+    도 올리지 않는다(`_WriteOutcome(wrote=False)`). 층 사용 상태(`save_floor_states`, `0029`)도 같다. 시뮬레이션 DB 공용
+    프로필 저장소는 늘 version 을 올리므로 화면이 값이 실제로 바뀐 때만 저장한다(9장 「공용 프로필을 기본값으로 심는 조회
+    위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
     표시명·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
-    이다. 새 편집 프로필은 `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
+    이다. Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
+    `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
     확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 숫자 칸에는 key 를 두지 않는다.
 26. **보이지 않는 저장값은 남긴다.** 공용 프로필 편집기는 지금 화면(조회기간·시나리오·맞댄 공정)에 보이는 칸만
     갈아 끼우고 보이지 않는 달·공정은 그대로 둔다 — 범위를 좁힌 채 저장한 사람이 모르는 새 남의 값을 날리지 않게.

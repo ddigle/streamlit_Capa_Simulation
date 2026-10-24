@@ -1623,6 +1623,13 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
         ("app_pages/space_status.py", '"층 바로 가기",'),
         ("app_pages/space_status.py", '"배치 편집",'),
         ("src/capa_simulation/components/space_floor_list.py", '"미배치대수":'),
+        # 층 사용 칸 항목(`space_floor_state`)이 찾는 칸·스위치 이름.
+        ("src/capa_simulation/components/space_floor_list.py", '"사용 편집",'),
+        ("src/capa_simulation/components/space_floor_list.py", '_USE_COLUMN = "사용"'),
+        ("src/capa_simulation/components/space_floor_list.py", '_REASON_COLUMN = "사유"'),
+        ("src/capa_simulation/components/space_floor_list.py", '_UNITS_COLUMN = "호기"'),
+        ("src/capa_simulation/components/space_floor_list.py", '"비활성 층 {len(inactive)}개"'),
+        ("src/capa_simulation/components/space_layout_editor_assets/editor.js", "'is-inactive'"),
     ],
 )
 def test_the_labels_the_items_look_for_exist_in_the_app(path: str, label: str) -> None:
@@ -1657,6 +1664,7 @@ NEW_ITEM_KEYS = [
     "space_fader",
     "gap_sheet",
     "equipment_scenario_line",
+    "space_floor_state",
 ]
 
 
@@ -2804,3 +2812,34 @@ def test_the_gap_sheet_item_restores_the_switches_it_changed_even_when_reading_f
     # 바꾼 것만, 바꾼 차례의 거꾸로 되돌린다 — 화면은 처음 선택지로 돌아온다.
     assert chosen[2:] == restored
     assert shown == first
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            (30, 30, 0, 0, True),
+            "사용 칸 있음 · 목록 30줄(사용 30) · 비활성 층 0개 · 회색 블록 0개 · "
+            "편집 칸 사용·사유·호기 있음",
+        ),
+        (
+            (23, 23, 7, 7, True),
+            "사용 칸 있음 · 목록 23줄(사용 23) · 비활성 층 7개 · 회색 블록 7개 · "
+            "편집 칸 사용·사유·호기 있음",
+        ),
+        (
+            (29, 29, 1, 0, False),
+            "사용 칸 있음 · 목록 29줄(사용 29) · 비활성 층 1개 · 회색 블록 0 ≠ 비활성 1 · "
+            "편집 칸 없음",
+        ),
+        (
+            (30, 30, None, 0, None),
+            "사용 칸 있음 · 목록 30줄(사용 30) · 비활성 층 0개 · 회색 블록 0개 · 스위치 없음",
+        ),
+        ((None, 0, None, 0, None), "사용 칸 없음"),
+    ],
+)
+def test_the_space_floor_state_summary_carries_counts_only(
+    args: tuple[int | None, int, int | None, int, bool | None], expected: str
+) -> None:
+    assert screens.summarize_space_floor_state(*args) == expected
