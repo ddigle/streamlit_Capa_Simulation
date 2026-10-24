@@ -47,6 +47,7 @@ from capa_simulation.components.equipment_save_fields import (
     SaveCandidateCounts,
     render_equipment_save_fields,
 )
+from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
@@ -117,7 +118,7 @@ FIXED_LOCK_REASON = "(고정)"
 HOME_VISIT_LOCK_REASON = (
     "HOME 칸에서 들어온 방문이라 공식 설비 시나리오로 고정했습니다 — ◀▶ 로 옮겨도 그대로입니다."
 )
-# 가정 설비 시나리오에서 Preference(공용 Cut-off)를 잠근 까닭(E3).
+# 가정 설비 시나리오에서 「설정」 팝업의 공용 Cut-off 를 잠근 까닭(E3).
 PREFERENCE_LOCK_MESSAGE = (
     "Cut-off 는 모든 설비 시나리오 공용입니다 — 공식 설비 시나리오에서 고칩니다. 지금은 가정 설비 "
     "시나리오를 보는 중이라 표를 잠갔습니다."
@@ -143,9 +144,12 @@ def unscheduled_notice(count: int, *, official: bool = False) -> str | None:
 
 
 def render_legacy_trace_warning(session: EquipmentSession) -> None:
-    """옛 배포로 저장한 설비 리비전이 있으면 맨 위 경고 한 줄(저장 거부 문구와 같은 글)."""
+    """옛 배포로 저장한 설비 리비전이 있으면 맨 위 경고 한 줄(저장 거부 문구와 같은 글)과 「시나리오
+    관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비 시나리오」
+    구획)에 있어 그리로 옮기는 길을 둔다."""
     if session.legacy_trace_count:
         st.warning(legacy_trace_message(session.legacy_trace_count), icon=":material/history:")
+        render_legacy_trace_goto()
 
 
 def equipment_basis_label(session: EquipmentSession) -> str | None:

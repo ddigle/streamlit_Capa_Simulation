@@ -14,11 +14,12 @@ from pathlib import Path
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
-from test_equipment_pages import _open_tab, _page_script
+from test_equipment_pages import _open_settings, _open_tab, _page_script
 from widget_browser import BrowserChoice
 
 from capa_simulation.components.availability_gap_panel import PROCESS_FILTER_KEY
 from capa_simulation.components.equipment_explorer import SMALL_PROCESS_KEY
+from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -72,6 +73,7 @@ def _main_options(app: AppTest) -> list[str]:
 def test_without_display_names_the_page_keeps_the_original_names(tmp_path: Path) -> None:
     """표시명을 정한 공정이 없으면 지금과 글자까지 같다 — 선택지는 원본 공정명의 가나다순이다."""
     app = AppTest.from_string(_page_script(PAGE, _database(tmp_path)), default_timeout=120).run()
+    app = _open_tab(app, "Main")
 
     assert not app.exception, [item.message for item in app.exception]
     expected = sorted(
@@ -86,6 +88,7 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     database_path = _database(tmp_path)
     first, second = _processes()[:2]
     app = AppTest.from_string(_page_script(PAGE, database_path), default_timeout=120).run()
+    app = _open_tab(app, "Main")
     assert not app.exception, [item.message for item in app.exception]
     assert first in _main_options(app)
 
@@ -100,9 +103,9 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     app.multiselect(key=SMALL_PROCESS_KEY).set_value([second]).run()
     assert app.session_state[SMALL_PROCESS_KEY] == [second]
 
-    # Preference — 편집표의 `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고는 원본(새 행에 그 이름을
-    # 적어야 맞댄다), `표 보기 설정` 의 공정 필터 선택지만 표시명이다.
-    app = _open_tab(app, "Preference")
+    # 「설정」 팝업 — 편집표의 `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고는 원본(새 행에 그
+    # 이름을 적어야 맞댄다), `표 보기 설정` 의 공정 필터 선택지만 표시명이다.
+    app = _open_settings(app)
     assert not app.exception
     warnings = " ".join(str(item.value) for item in app.warning)
     assert first in warnings and "표시-첫공정" not in warnings
@@ -115,7 +118,8 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     assert second in set(editors[0]["공정"])
     assert not any(str(value).startswith("표시-") for value in editors[0]["공정"])
 
-    # Static 대비 일정 — `공정` 선택지는 표시명, 값은 원본이다.
+    # Static 대비 일정 — `공정` 선택지는 표시명, 값은 원본이다. 팝업은 닫고 간다.
+    del app.session_state[EQUIPMENT_DIALOG_KEY]
     app = _open_tab(app, "Static 대비 일정")
     assert not app.exception, [item.message for item in app.exception]
     # 이 상자는 브라우저처럼 다룬다 — 브라우저는 고른 **글자**를 들고 있다가 다음 조작마다 되보낸다

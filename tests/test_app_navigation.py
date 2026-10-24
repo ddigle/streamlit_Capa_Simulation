@@ -36,6 +36,7 @@ from capa_simulation.components.scenario_status import (
     SCENARIO_FIELD_KEY,
     save_field_key,
 )
+from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.components.theme_toggle import UNSAVED_EDITS_CSS_VARIABLE
 from capa_simulation.navigation import (
     ADMIN_AREA,
@@ -47,7 +48,13 @@ from capa_simulation.navigation import (
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
     EQUIPMENT_GAP_TAB,
+    EQUIPMENT_MAIN_TAB,
+    EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_SUMMARY_TAB_KEY,
+    EQUIPMENT_SUMMARY_TABS,
     EQUIPMENT_TAB_KEY,
+    EQUIPMENT_TABS,
     EXECUTION_MANAGEMENT,
     EXECUTION_MANAGEMENT_SUBPAGES,
     HOME,
@@ -1918,38 +1925,89 @@ def test_hidden_boxes_keep_their_choice_for_the_screens_that_read_them(_app: App
 
 
 def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTest) -> None:
-    """가용설비 현황은 `Static 대비 일정` 탭만 활성 시나리오·조회기간을 읽는다."""
+    """가용설비 현황은 `Summary` › `Static 대비 일정` 탭만 활성 시나리오·조회기간을 읽는다.
+
+    바깥 탭 ① 「설비 마스터」(처음 여는 탭)는 카드도 공통 조건도 없지만 설비 시나리오를
+    편집·저장하는 탭이라 그 줄만 서고, Summary 는 안쪽 탭으로 가른다(`SubTabs`).
+    """
     equipment = AVAILABLE_EQUIPMENT_STATUS
     assert equipment.condition_tabs is not None
     app = _app.run()
     app.switch_page(equipment.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    # Main 은 공통 조건을 읽지 않지만 자기 조건 카드(`설비 조회 조건`)가 있어 제목은 서고, 설비
-    # 시나리오 줄이 패널에 선다.
     assert _common_boxes(app) == {"heading", "equipment"}
 
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_GAP_TAB
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_GAP_TAB
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "scenario", "period", "equipment"}
 
-    # RawData 는 카드도 공통 조건도 없지만 설비 시나리오를 편집·저장하는 탭이라 그 줄만 선다.
-    app.session_state[EQUIPMENT_TAB_KEY] = ":material/table_rows: RawData"
+    # Main 은 공통 조건을 읽지 않지만 자기 조건 카드(`설비 조회 조건`)가 있어 제목은 서고, 설비
+    # 시나리오 줄이 패널에 선다.
+    app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_MAIN_TAB
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "equipment"}
-    # 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22)는 설비 시나리오 줄도 없다 — 제목만 남는
-    # 빈 구역을 세우지 않는다.
-    app.session_state[EQUIPMENT_TAB_KEY] = ":material/calculate: Qual 마감 계산기"
+
+    # 다시 ① 로 — 안쪽에 Static 대비 일정을 남겨 두어도 바깥이 ① 이면 공통 조건 줄을 세우지 않는다.
+    app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_GAP_TAB
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert _common_boxes(app) == set()
+    assert _common_boxes(app) == {"heading", "equipment"}
+
+
+def test_the_sidebar_reads_the_innermost_tab_and_ignores_old_labels() -> None:
+    """`ConditionTabs.active_label`(사이드바 `app.active_condition_tab`)은 바깥 탭이 안쪽 탭을
+    품었으면 안쪽 라벨을 돌려준다. 위젯 값 → 기억 칸 → 첫 탭 차례이고, 먼저 찾은 값이 라벨 목록
+    밖(개편 전 「RawData」 등)이면 `stateful_tabs` 처럼 첫 탭으로 본다 — 사이드바와 본문이 한 회차
+    어긋나지 않게."""
+    state: dict[str, object] = {}
+    spec = AVAILABLE_EQUIPMENT_STATUS
+    tabs = spec.condition_tabs
+    assert tabs is not None and tabs.sub is not None
+    assert tabs.sub.parent == EQUIPMENT_SUMMARY_TAB
+
+    def active() -> str:
+        assert tabs is not None
+        return tabs.active_label(state)
+
+    assert active() == EQUIPMENT_MASTER_TAB
+
+    state[EQUIPMENT_TAB_KEY] = ":material/table_rows: RawData"
+    assert active() == EQUIPMENT_MASTER_TAB
+
+    state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    assert active() == EQUIPMENT_MAIN_TAB
+    state[remembered_tab_key(EQUIPMENT_SUMMARY_TAB_KEY)] = EQUIPMENT_GAP_TAB
+    assert active() == EQUIPMENT_GAP_TAB
+    state[EQUIPMENT_SUMMARY_TAB_KEY] = ":material/tune: Preference"
+    assert active() == EQUIPMENT_MAIN_TAB
+    state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_MAIN_TAB
+    assert active() == EQUIPMENT_MAIN_TAB
+
+    # 위젯 값이 없으면 기억 칸 — 다른 화면에서 Summary › Static 대비 일정으로 보낸 꼴.
+    state.clear()
+    state[remembered_tab_key(EQUIPMENT_TAB_KEY)] = EQUIPMENT_SUMMARY_TAB
+    state[remembered_tab_key(EQUIPMENT_SUMMARY_TAB_KEY)] = EQUIPMENT_GAP_TAB
+    assert active() == EQUIPMENT_GAP_TAB
+    assert spec.reads_common_conditions_on(active())
 
 
 def test_every_declared_condition_tab_is_a_real_label() -> None:
-    """선언한 탭 라벨이 페이지의 실제 탭과 어긋나면 그 탭에서도 상자가 영영 서지 않는다."""
+    """선언한 탭 라벨이 페이지의 실제 탭과 어긋나면 그 탭에서도 상자가 영영 서지 않는다. 페이지는
+    선언의 라벨 목록 그대로 탭을 세우고, 안쪽 탭은 바깥 Summary 안에서 세운다."""
     source = (PROJECT_ROOT / AVAILABLE_EQUIPMENT_STATUS.path).read_text(encoding="utf-8")
-    assert "EQUIPMENT_GAP_TAB," in source and "key=EQUIPMENT_TAB_KEY" in source
+    assert "stateful_tabs(EQUIPMENT_TABS, key=EQUIPMENT_TAB_KEY)" in source
+    assert "stateful_tabs(EQUIPMENT_SUMMARY_TABS, key=EQUIPMENT_SUMMARY_TAB_KEY)" in source
+    tabs = AVAILABLE_EQUIPMENT_STATUS.condition_tabs
+    assert tabs is not None and tabs.sub is not None
+    assert tabs.tabs == EQUIPMENT_TABS and tabs.first in tabs.tabs
+    assert tabs.sub.parent in tabs.tabs
+    assert tabs.sub.tabs == EQUIPMENT_SUMMARY_TABS and tabs.sub.first in tabs.sub.tabs
+    inner = set(tabs.sub.tabs)
+    assert tabs.labels <= inner and (tabs.card_labels or set()) <= inner
 
 
 # ----------------------------------------------------------------- 설비 DB 핀
@@ -1961,13 +2019,15 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
     """가용설비 현황·필요 단축 일정·공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러
     번 연다)와 Space 현황(공식 스냅샷·설비 시나리오 목록·공통 최신·도면을 한 회차에 따로
-    읽는다)이다."""
+    읽는다), 시나리오 관리(「설비 시나리오」 구획이 목록·리비전·공통 최신을 따로 읽는다 —
+    2026-10-24)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
     assert declared == {
         AVAILABLE_EQUIPMENT_STATUS.path,
         REQUIRED_SHORTENING.path,
         PROCESS_CAPA_DETAIL.path,
         SPACE_STATUS.path,
+        SCENARIO_MANAGEMENT.path,
     }
 
 
@@ -2058,6 +2118,12 @@ def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
     app.switch_page(HOME.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert pinned == [(settings.DUCKDB_PATH,)]
+    # 시나리오 관리도 설비 DB 를 핀 대상에 적는다(「설비 시나리오」 구획). 게으른 핀이라 시뮬레이션
+    # 구획만 그린 회차에는 설비 DB 를 열지 않는다 — 아래 시험이 연결 수로 본다.
+    pinned.clear()
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert pinned == [(settings.DUCKDB_PATH,), (equipment_db,)]
 
 
 def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
@@ -2126,8 +2192,10 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
         scenario_reads[path] = read_counts[scenario_db]
         expected = read_counts[scenario_db] + (1 if read_counts[scenario_db] else 0)
         assert opens[scenario_db] == expected, (path, opens, read_counts)
-        if path == EXECUTION_MANAGEMENT.path:
-            # 실행 관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다.
+        if path in (EXECUTION_MANAGEMENT.path, SCENARIO_MANAGEMENT.path):
+            # 실행 관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다. 시나리오 관리는 설비
+            # DB 핀을 선언했지만 「시뮬레이션 시나리오」 쪽(처음 값)만 그린 회차에는 설비 DB 를
+            # 열지 않는다(게으른 핀).
             assert opens[equipment_db] == read_counts[equipment_db] == 0, (opens, read_counts)
     # Chatbot·실행 관리 머리는 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다
     # 목록을 읽으므로 핀이 실제로 잡히는 길도 지난다.

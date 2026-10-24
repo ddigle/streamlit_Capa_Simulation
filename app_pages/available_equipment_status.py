@@ -1,4 +1,20 @@
-# Purpose: 설비 조회·월별 비교·Qual 계산·Cut-off·입력·설비 시나리오를 잇고 데모 경계를 관리한다.
+# Purpose: 가용설비 현황 두 탭(설비 마스터·Summary)과 「설정」 팝업을 잇고 데모 경계를 관리한다.
+
+"""가용설비 현황 — 탭 둘(2026-10-24 사용자 결정 — 두 탭 개편).
+
+- ① **설비 마스터**(처음 여는 탭) — 설비 입력·직접 편집·저장
+  이력(`render_equipment_data_workspace`). 편집표 델타를 지키려고 **숨은 회차에도 늘 그린다**. 그
+  작업 공간은 제출을 처리한 뒤 본문에서 `st.rerun()` 으로 끝나므로(AGENTS 9장 「`st.rerun()` 은 그
+  화면의 모든 편집표를 그린 뒤에만」) **코드 차례는 Summary 블록 뒤**다 — 화면 차례는
+  `stateful_tabs` 목록이 정해 ① 이 먼저다.
+- ② **Summary** — 안쪽 탭 「Main」(설비 조회)·「Static 대비 일정」(월별 비교). 안쪽 탭은 바깥
+  Summary 블록 안에서 늘 부르고(위젯 값이 남아 사이드바가 읽는다), 본문 갈래는 바깥·안쪽이 함께
+  열렸을 때만 돈다(`NestedTab`) — ① 을 보는 회차에 Main 탐색·Static 대비 일정 계산이 돌지 않는다.
+- 머리 끝 「설정」 단추 → 공정별 Cut-off 팝업(`equipment_settings_dialog`). Static 대비 일정은
+  Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접 읽는다.
+- Qual 마감 계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·발행은 시나리오 관리 › 설비
+  시나리오다.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +28,6 @@ import streamlit as st
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
-from capa_simulation.components.cutoff_management import render_cutoff_management
 from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
     DOWNTIME_DRAFT_KEY,
@@ -22,6 +37,8 @@ from capa_simulation.components.equipment_data_workspace import (
     draft_unscheduled_units,
     effective_floor_canvases,
     ensure_equipment_drafts,
+    has_unsaved_equipment_edits,
+    pending_fab_layout,
     pop_discarded_notice,
     pop_drafts_replaced,
     render_equipment_data_workspace,
@@ -30,32 +47,32 @@ from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
     render_equipment_period,
 )
-from capa_simulation.components.equipment_scenario_management import (
-    render_equipment_scenario_management,
-)
 from capa_simulation.components.equipment_scenario_status import (
     PREFERENCE_LOCK_MESSAGE,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
     unscheduled_notice,
 )
+from capa_simulation.components.equipment_settings_dialog import (
+    open_equipment_settings,
+    render_equipment_dialog_host,
+    render_equipment_settings_button,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
-from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.components.tab_marks import mark_pending_tabs
+from capa_simulation.components.tab_state import NestedTab, stateful_tabs, tab_is_hidden
 from capa_simulation.equipment_scenario_activation import (
     official_snapshot_for,
     resolve_equipment_session,
 )
 from capa_simulation.navigation import (
-    EQUIPMENT_GAP_TAB,
-    EQUIPMENT_MAIN_TAB,
-    EQUIPMENT_PREFERENCE_TAB,
-    EQUIPMENT_QUAL_CALCULATOR_TAB,
-    EQUIPMENT_RAWDATA_TAB,
-    EQUIPMENT_SCENARIO_TAB,
+    EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_SUMMARY_TAB_KEY,
+    EQUIPMENT_SUMMARY_TABS,
     EQUIPMENT_TAB_KEY,
+    EQUIPMENT_TABS,
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -90,12 +107,6 @@ from capa_simulation.services.simulation_cache import (
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
-# 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22 사용자 요청 — 10-07 계산기 한 장을 내장).
-# 탭 라벨은 사이드바(설비 시나리오 줄을 세우는 탭)가 함께 보므로 `navigation` 한 곳에 둔다.
-TAB_QUAL_CALCULATOR = EQUIPMENT_QUAL_CALCULATOR_TAB
-TAB_PREFERENCE = EQUIPMENT_PREFERENCE_TAB
-TAB_RAWDATA = EQUIPMENT_RAWDATA_TAB
-TAB_SCENARIO = EQUIPMENT_SCENARIO_TAB
 # 가정 설비 시나리오의 미확인 알림 꼬리표 — 미확인은 공식 시나리오 일정 기준이다(결정).
 OFFICIAL_CONFIRMATION_BASIS = "공식 일정 기준"
 
@@ -111,12 +122,10 @@ def _months_between(start: date, end: date) -> list[int]:
     return months
 
 
-def _open_tab(label: str) -> None:
-    st.session_state[EQUIPMENT_TAB_KEY] = label
-
-
-def _open_input() -> None:
-    _open_tab(TAB_RAWDATA)
+def _open_master_import() -> None:
+    """설비 입력으로 가는 콜백 — 탭 ① 「설비 마스터」 를 연다(그 안의 「입력」 탭은 key 만 있는
+    `st.tabs` 라 서버가 고를 수 없다 — 개편 전과 같다)."""
+    st.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
 
 
 def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
@@ -125,24 +134,27 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
     맞는지부터 따져야 한다. Cut-off 는 저장본이 없는 이 자리에서만 한 번 더 읽는다.
     """
     steps = (
-        ("설비 마스터", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_master_v1"),
-        ("운영 비가동 일정", "RawData 에서 붙여넣기", TAB_RAWDATA, "equipment_first_data_down_v1"),
-        ("공정별 Cut-off", "Preference 에서 보기", TAB_PREFERENCE, "equipment_first_data_cut_v1"),
+        ("설비 마스터", "설비 마스터 탭에서 붙여넣기", _open_master_import),
+        ("운영 비가동 일정", "설비 마스터 탭에서 붙여넣기", _open_master_import),
+        ("공정별 Cut-off", "설정에서 보기", open_equipment_settings),
     )
-    for (title, action, label, key), count in zip(steps, counts, strict=True):
+    keys = (
+        "equipment_first_data_master_v1",
+        "equipment_first_data_down_v1",
+        "equipment_first_data_cut_v1",
+    )
+    for (title, action, callback), key, count in zip(steps, keys, counts, strict=True):
         with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
             st.markdown(f"{'✓' if count else '✗'} **{title}** {count:,}건")
-            st.button(
-                action, icon=":material/arrow_forward:", key=key, on_click=_open_tab, args=(label,)
-            )
+            st.button(action, icon=":material/arrow_forward:", key=key, on_click=callback)
 
 
-render_page_header("가용설비 현황")
+render_page_header("가용설비 현황", trailing=render_equipment_settings_button)
 render_page_guide("available_equipment_status", title="가용설비 현황")
 # 저장 알림·버림 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 탭
 # 묶음의 자리가 한 칸 밀리면, `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 가
 # 있는 탭 묶음이 옛 자리에 회색 사본으로 남아 다른 페이지까지 따라왔다(2026-10-05 E2E — 두
-# 번째 RawData 저장마다). 자리를 고정하면 탭 묶음은 늘 같은 자리다.
+# 번째 설비 마스터 저장마다). 자리를 고정하면 탭 묶음은 늘 같은 자리다.
 notices = st.container()
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
@@ -155,7 +167,7 @@ try:
     # 세션이 든 설비 시나리오(새 세션은 공식) — 공통 최신 + 고른 일정 리비전의 합친 스냅샷.
     equipment_session = resolve_equipment_session(equipment_database_path)
     latest_snapshot = equipment_session.snapshot
-    # 가정 설비 시나리오면 미확인(Main·RawData 일정 확인 목록)을 공식 일정으로 본다 — 공통은 늘
+    # 가정 설비 시나리오면 미확인(Main·설비 마스터 일정 확인 목록)을 공식 일정으로 본다 — 공통은 늘
     # 최신이라 공식 스냅샷의 공통이 곧 지금 공통이다. 공식 시나리오 세션은 읽지 않는다.
     official_snapshot = (
         official_snapshot_for(equipment_database_path, equipment_session)
@@ -187,7 +199,7 @@ floor_canvases = effective_floor_canvases(stored_floor_canvases)
 max_extent = max_canvas_extent(floor_canvases)
 # 사이드바 「설비 시나리오」 줄 — 이 회차 목록으로 그린다(칸이 없는 탭·회차는 그리지 않는다).
 render_equipment_scenario_row(equipment_session)
-# 저장본 사본 그대로(편집·RawData·CSV 견주기 — 39칸 전체)와 계산에 넘길 사본(이 설비 시나리오에
+# 저장본 사본 그대로(편집·설비 마스터·CSV 견주기 — 39칸 전체)와 계산에 넘길 사본(이 설비 시나리오에
 # 일정이 없는 호기와 그 비가동을 뺀 것 — F4).
 baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
 saved_equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
@@ -199,38 +211,47 @@ unscheduled_line = unscheduled_notice(len(draft_unscheduled_units()))
 if unscheduled_line is not None:
     notices.info(unscheduled_line, icon=":material/event_busy:")
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
-# Static 대비 일정·Preference). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
-# 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔 캐시다). 못
-# 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을 표시명 때문에 막지
-# 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서 고치면 프로필
-# 캐시가 비워져 다음 회차에 그대로 보인다.
+# Static 대비 일정·설정 팝업의 표 보기 필터). 선택값·저장값·CSV·설비 마스터 입력은 원본이다.
+# 표시명은 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔
+# 캐시다). 못 읽으면 원본 공정명 그대로 그린다(`get_process_labels` 가 삼킨다) — 설비 화면을 표시명
+# 때문에 막지 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서 고치면
+# 프로필 캐시가 비워져 다음 회차에 그대로 보인다.
 process_labels = process_labels_module.get_process_labels()
 
 first_action = st.empty()
 sample_notice = st.empty()
-# 필요 단축 일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
-# `app_pages/required_shortening.py`). Cut-off 는 여기 Preference 에서 고친다. Qual 마감 계산기는
-# 보는 탭(Main·Static 대비 일정) 뒤, 입력 폼(Preference·RawData) 앞이다.
-main_tab, gap_tab, qual_tab, preference_tab, rawdata_tab, scenario_tab = stateful_tabs(
-    [
-        EQUIPMENT_MAIN_TAB,
-        EQUIPMENT_GAP_TAB,
-        TAB_QUAL_CALCULATOR,
-        TAB_PREFERENCE,
-        TAB_RAWDATA,
-        TAB_SCENARIO,
-    ],
-    key=EQUIPMENT_TAB_KEY,
+# 탭 둘(2026-10-24 사용자 결정): ① 설비 마스터(처음 여는 탭) ② Summary(안쪽 Main·Static 대비 일정).
+# 필요 단축 일정은 실행 관리 아래 별도 페이지(2026-10-18), Qual 마감 계산기는 그 화면 머리의 팝업,
+# 설비 시나리오는 시나리오 관리 › 설비 시나리오다.
+master_tab, summary_tab = stateful_tabs(EQUIPMENT_TABS, key=EQUIPMENT_TAB_KEY)
+with summary_tab:
+    # 안쪽 탭은 바깥이 숨어도 늘 부른다 — 위젯 값이 남아 사이드바(`app.active_condition_tab`)가
+    # 읽는다.
+    main_tab, gap_tab = stateful_tabs(EQUIPMENT_SUMMARY_TABS, key=EQUIPMENT_SUMMARY_TAB_KEY)
+# 바깥 Summary 가 숨으면 안쪽 고른 탭의 `open` 도 거짓으로 본다(① 을 보는 회차에 Summary 계산을 하지
+# 않는다). 본문 갈래와 두 부품의 `owner_tab` 은 이것을 본다.
+main_view = NestedTab(summary_tab, main_tab)
+gap_view = NestedTab(summary_tab, gap_tab)
+# 저장하지 않은 설비 편집(편집본·Space FAB 배치 대기)이 있으면 ① 탭 이름 옆에 점(라벨 글자는 그대로
+# — 탭 위젯 id). 화면 탭 줄의 점과 같은 판정이다. 찍을 것이 없어도 빈 규칙을 매 회차 그린다.
+mark_pending_tabs(
+    EQUIPMENT_TAB_KEY,
+    EQUIPMENT_TABS,
+    {EQUIPMENT_MASTER_TAB}
+    if has_unsaved_equipment_edits() or pending_fab_layout() is not None
+    else set(),
 )
-# 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭). Preference·RawData 는 입력 폼이고,
-# Qual 마감 계산기는 설비 데이터를 읽지 않는 계산기라 카드도 샘플 스위치도 없다.
-viewing_tab_open = any(not tab_is_hidden(tab) for tab in (main_tab, gap_tab))
-if latest_snapshot is None and not tab_is_hidden(main_tab):
+# 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭) — Summary 의 두 안쪽 탭.
+viewing_tab_open = not tab_is_hidden(main_view) or not tab_is_hidden(gap_view)
+if latest_snapshot is None and not tab_is_hidden(main_view):
     with first_action.container():
         with st.container(horizontal=True, vertical_alignment="center"):
             st.markdown("**처음 사용하시나요?** 설비 마스터를 붙여넣어 첫 데이터를 저장하세요.")
             st.button(
-                "설비 데이터 입력", icon=":material/add:", type="primary", on_click=_open_input
+                "설비 데이터 입력",
+                icon=":material/add:",
+                type="primary",
+                on_click=_open_master_import,
             )
         cutoff = load_process_cutoff(equipment_database_path)
         # 이 안내는 저장본이 없을 때만 선다 — 저장된 호기·비가동은 0건이다.
@@ -241,6 +262,7 @@ if using_dashboard_sample and viewing_tab_open:
         show_sample_fleet = render_sample_switch(
             key="equipment_sample_switch", source="설비 운영 DB"
         )
+
 # 합성값은 조회에만 사용한다. 첫 편집본에 샘플을 섞으면 실제 첫 저장을 막는다.
 dashboard_equipment = (
     sample_equipment_master(anchor_date=today)
@@ -257,28 +279,37 @@ dashboard_baseline = (
     if latest_snapshot is None and baseline.empty and using_dashboard_sample and show_sample_fleet
     else baseline
 )
+# 「설정」 팝업(공정별 Cut-off — Preference 탭이던 것). 이벤트 칸에 늘 한 자리를 쓴다. 「Cut-off 를
+# 적지 않은 공정」 경고는 지금처럼 화면 호기의 공정으로 낸다. Cut-off 는 모든 설비 시나리오 공용이라
+# 가정 설비 시나리오에서는 읽기 전용(E3)이고, 공식 시나리오의 발행 안 한 리비전에서는 열린다.
+render_equipment_dialog_host(
+    repository,
+    equipment_processes=processes_in(dashboard_equipment, dashboard_baseline),
+    process_labels=process_labels,
+    locked_reason=PREFERENCE_LOCK_MESSAGE if equipment_session.is_assumption else None,
+)
 
-# 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Main·
+# 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Summary 의 Main·
 # Static 대비 일정이 **한 카드**를 쓰고 안의 내용만 열린 탭 것이다 — 한 번 편 카드는
 # 탭을 옮겨도 편 채로 남는다(카드를 세우는 탭은 `navigation` 의 `card_labels` 선언과 같아야 한다).
-# Preference(Cut-off)·RawData 의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
+# 설비 마스터의 표 보기 설정은 그 표의 입력 폼과 한 몸이라 본문에 둔다.
 conditions_card = condition_card("설비 조회 조건", name="equipment") if viewing_tab_open else None
 # 호기가 없고 샘플도 끈 Main 에는 고를 조건이 없다. 빈 카드 대신 까닭을 한 줄 적는다 — 카드를
 # 아예 빼면 사이드바에서 이 화면의 조건 자리가 통째로 사라져 까닭을 알 수 없다.
 if (
     conditions_card is not None
-    and not tab_is_hidden(main_tab)
+    and not tab_is_hidden(main_view)
     and using_dashboard_sample
     and not show_sample_fleet
 ):
     with conditions_card:
-        st.caption("조회할 호기가 없습니다. RawData 에서 입력하거나 샘플 데이터를 켜세요.")
+        st.caption("조회할 호기가 없습니다. 설비 마스터 탭에서 입력하거나 샘플 데이터를 켜세요.")
 
 with main_tab:
-    if not tab_is_hidden(main_tab):
+    if not tab_is_hidden(main_view):
         if using_dashboard_sample and not show_sample_fleet:
             st.info(
-                "등록된 호기가 없습니다. RawData에서 설비 마스터를 입력하거나 "
+                "등록된 호기가 없습니다. 설비 마스터 탭에서 설비 마스터를 입력하거나 "
                 "샘플 데이터를 켜서 화면을 살펴보세요."
             )
         else:
@@ -288,7 +319,7 @@ with main_tab:
                 equipment=dashboard_equipment,
                 downtime=dashboard_downtime,
                 today=today,
-                owner_tab=main_tab,
+                owner_tab=main_view,
                 conditions=conditions_card,
                 process_labels=process_labels,
                 confirmation_equipment=(
@@ -301,30 +332,15 @@ with main_tab:
                 ),
             )
 
-with qual_tab:
-    # 설비 DB·시나리오와 잇지 않는다 — 위에서 읽은 저장본·Cut-off 를 넘기지 않는다. 닫혀 있으면
-    # 그리지 않는다(입력은 위젯 `persist_state` 와 편집표 콜백이 세션에 지킨다).
-    if not tab_is_hidden(qual_tab):
-        render_qual_deadline_calculator(today=today)
-
-with preference_tab:
-    # 입력 폼을 계속 생성해 탭 왕복 중 미제출 편집을 보존한다. 돌려받는 **저장된** Cut-off 를
-    # Static 대비 일정이 그대로 쓴다 — 탭마다 다시 읽으면 rerun 마다 DB 를 여러 번 열었다.
-    # 저장은 그 자리에서 `st.rerun()` 하므로 이 회차에 낡은 값이 남지 않는다.
-    # Cut-off 는 모든 설비 시나리오 공용이다 — 가정 설비 시나리오에서는 읽기 전용(E3). 공식
-    # 시나리오의 발행 안 한 리비전에서는 열린다.
-    stored_cutoff = render_cutoff_management(
-        repository,
-        equipment_processes=processes_in(dashboard_equipment, dashboard_baseline),
-        process_labels=process_labels,
-        locked_reason=PREFERENCE_LOCK_MESSAGE if equipment_session.is_assumption else None,
-    )
-
 with gap_tab:
-    if not tab_is_hidden(gap_tab):
+    if not tab_is_hidden(gap_view):
         assert conditions_card is not None
         with conditions_card:
             start_date, end_date = render_equipment_period(today=today, width="stretch")
+        # 저장된 Cut-off 는 캐시 경계에서 직접 읽는다(필요 단축 일정과 같다 — 「설정」 팝업이
+        # 저장하면 그 캐시를 비우고 앱 전체를 다시 돌린다). 저장되지 않은 팝업 표 편집으로 숫자를
+        # 내지 않는다.
+        stored_cutoff = load_process_cutoff(equipment_database_path)
         # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
         # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
         # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
@@ -443,7 +459,7 @@ with gap_tab:
                 required_equipment=gap_required_equipment,
                 required_equipment_key=gap_required_key,
                 no_demand_message=gap_no_demand_message,
-                owner_tab=gap_tab,
+                owner_tab=gap_view,
                 conditions=conditions_card,
                 # 분류별 내역의 `호기 필터` 가 이 표의 컬럼으로 호기를 좁힌다. 구간과 같은 표다.
                 units=dashboard_equipment,
@@ -453,8 +469,9 @@ with gap_tab:
             )
 
 
-with rawdata_tab:
-    # 입력 위젯은 숨은 탭에서도 유지한다. editor delta가 사라지면 안 된다.
+with master_tab:
+    # 입력 위젯은 숨은 탭에서도 유지한다. editor delta가 사라지면 안 된다. 제출을 처리한 뒤 본문에서
+    # `st.rerun()` 으로 끝나므로 코드 차례는 Summary 뒤다(모듈 설명).
     render_equipment_data_workspace(
         repository=repository,
         latest_snapshot=latest_snapshot,
@@ -468,8 +485,3 @@ with rawdata_tab:
         basis=equipment_session.save_basis(),
         confirmation_official=official_snapshot,
     )
-
-with scenario_tab:
-    # 시나리오·리비전 표와 불러오기·복제·이름·발행·이어 쓰기. 열린 회차에만 목록을 읽는다.
-    if not tab_is_hidden(scenario_tab):
-        render_equipment_scenario_management(equipment_database_path, equipment_session)

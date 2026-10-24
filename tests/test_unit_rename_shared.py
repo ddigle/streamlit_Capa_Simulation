@@ -1,4 +1,4 @@
-# Purpose: 이름 바꾸기 공용 함수 넷과 RawData 이름 바꿈 목록·저장 결과 꼬리를 검사한다.
+# Purpose: 이름 바꾸기 공용 함수 넷과 설비 마스터 탭 이름 바꿈 목록·저장 결과 꼬리를 검사한다.
 
 """G4·R2 — 이름 바꾸기는 같은 호기다(설비 시나리오 2단계 S1).
 
@@ -127,7 +127,7 @@ def test_check_unit_rename_keeps_the_reserved_names_out() -> None:
 
     refusal = check_unit_rename("EQ-01", "eq-02", master=buffer, reserved=reserved)
 
-    assert refusal is not None and "RawData 에서 지우고 아직 저장하지" in refusal
+    assert refusal is not None and "설비 마스터에서 지우고 아직 저장하지" in refusal
     assert refusal == _space_refusal(buffer, "EQ-01", "eq-02", reserved=reserved)
     orphan = ReservedNames(orphan_downtime=frozenset({"GHOST"}))
     assert "비가동 일정을 먼저 고치거나" in str(

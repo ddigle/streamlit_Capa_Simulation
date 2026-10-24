@@ -308,8 +308,8 @@ class EquipmentScenarioCatalog:
 class EquipmentSnapshot:
     """화면이 쓰는 설비 데이터 한 벌 — 공통 대장 리비전 + 설비 시나리오 일정 리비전을 합친 것.
 
-    - `equipment` 는 39칸 합친 마스터이고 **일정 없음 호기도 든다**(편집·RawData·CSV 용). 계산에는
-      `calculation_frames()` 를 쓴다.
+    - `equipment` 는 39칸 합친 마스터이고 **일정 없음 호기도 든다**(편집·설비 마스터 탭·CSV 용).
+      계산에는 `calculation_frames()` 를 쓴다.
     - `schedule` 이 None 이면 일정 리비전 없이 읽은 것이다(옛 길 `_read_legacy_snapshot`, 또는
       발행이 없는 공통 리비전).
     - 호기 키는 (설비명, 키) 쌍 튜플로 든다 — 캐시 본문에 실리는 모델이라 `MappingProxyType` 처럼
@@ -428,8 +428,9 @@ class EquipmentReleaseMoved(ValueError):
 class EquipmentLegacyTraceError(ValueError):
     """이관 경계 뒤에 옛 배포가 저장한 계약 v3 공통 리비전이 있다 — 설비 마스터 저장을 막는다.
 
-    그 위로 저장이 쌓이면 나머지 호기가 모든 시나리오에서 고아가 된다. 빠져나가는 길은 런북 4-2
-    의 백업 복원, 또는 설비 시나리오 탭의 「이대로 이어 쓰기」(`acknowledge_legacy_trace`).
+    그 위로 저장이 쌓이면 나머지 호기가 모든 시나리오에서 고아가 된다. 빠져나가는 길은 런북 4-2 의
+    백업 복원, 또는 시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」
+    (`acknowledge_legacy_trace`).
     """
 
     def __init__(self, count: int) -> None:
@@ -465,7 +466,7 @@ def legacy_trace_message(count: int) -> str:
     """옛 배포 흔적 경고 문구 — 저장 거부와 화면 맨 위 경고가 같은 글자를 쓴다."""
     return (
         f"옛 배포로 저장한 설비 리비전 {count}개가 있어 설비 저장을 막았습니다 — 런북 4-2 대로 "
-        "백업을 복원하거나, 가용설비 현황 「설비 시나리오」 탭의 「이대로 이어 쓰기」 를 쓰세요."
+        "백업을 복원하거나, 시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」 를 쓰세요."
     )
 
 
@@ -564,10 +565,10 @@ class EquipmentSaveResult:
       시나리오도 `revision_no=None` 으로 적는다.
     - `release_no` 는 이번 저장이 낸 공식 발행 번호, `release_withheld` 는 공식 시나리오에 새
       리비전이 생겼지만 그 전에 발행 안 한 더 새 리비전이 있어 발행하지 않았다는 뜻이다(「공식
-      발행은 설비 시나리오 탭에서」).
+      발행은 시나리오 관리 › 설비 시나리오에서」).
     - `forced_common` 은 0027 뒤 첫 저장이라 공통이 그대로여도 v4 공통을 함께 썼다는 뜻이다.
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
-      빠진다 — RawData 설비명 고침도 지운 + 새 호기다).
+      빠진다 — 설비 마스터 탭 설비명 고침도 지운 + 새 호기다).
     """
 
     common: EquipmentRevisionSummary | None
@@ -1478,9 +1479,9 @@ class DuckDBEquipmentRepository:
         self, equipment_scenario_id: str | None
     ) -> tuple[tuple[str, tuple[str, ...]], ...]:
         """다른 ACTIVE 설비 시나리오의 **최신** 리비전에 일정 행이 있는 호기 — (호기 키, 그 시나리오
-        이름들) 키 차례. RawData 에서 호기를 지우는 저장의 확인 재료다(지우면 공통 대장에서 빠져 그
-        시나리오들의 일정도 빠진다 — 설계 11-2 6단계). `equipment_scenario_id` 가 None 이면 모든
-        ACTIVE 시나리오를 본다. 이관 리비전은 그 리비전의 모든 호기에 일정 행이
+        이름들) 키 차례. 설비 마스터 탭에서 호기를 지우는 저장의 확인 재료다(지우면 공통 대장에서
+        빠져 그 시나리오들의 일정도 빠진다 — 설계 11-2 6단계). `equipment_scenario_id` 가 None
+        이면 모든 ACTIVE 시나리오를 본다. 이관 리비전은 그 리비전의 모든 호기에 일정 행이
         있다(`read_schedule`)."""
         found: dict[str, list[str]] = {}
         with self._connect() as connection:

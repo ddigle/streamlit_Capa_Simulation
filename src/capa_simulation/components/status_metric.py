@@ -49,8 +49,46 @@ VALUE_LINE_HEIGHT = 1.45
 DELTA_LINE_HEIGHT = 1.5
 
 
+def metric_row_style(key: str) -> str:
+    """`metric_row` 의 서식(카드 폭·높이 맞춤).
+
+    따로 그릴 때(`emit_style=False`)는 부르는 쪽이 보이는 HTML 과 한 `st.html` 에 싣는다 — 스타일만
+    든 `st.html` 은 이벤트 칸으로 가 팝업 본문의 이벤트 칸 수를 흔든다(AGENTS 9장)."""
+    return "\n".join(
+        [
+            "<style>",
+            f'.st-key-{key} [data-testid="stHorizontalBlock"] {{',
+            "    align-items: stretch !important;",
+            "}",
+            f'.st-key-{key} [data-testid="stHorizontalBlock"] > * {{',
+            "    flex: 1 1 0 !important;",
+            "    min-width: min-content !important;",
+            "}",
+            f'.st-key-{key} [data-testid="stVerticalBlock"]'
+            ' > [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {',
+            "    flex: 1 1 auto;",
+            "}",
+            f'.st-key-{key} [data-testid="stMetric"] {{',
+            "    height: 100%;",
+            "}",
+            f'.st-key-{key} [data-testid="stMetricLabel"] {{',
+            "    min-width: max-content;",
+            "}",
+            f'.st-key-{key} [data-testid="stMetricValue"],',
+            f'.st-key-{key} [data-testid="stMetricValue"] * {{',
+            f"    line-height: {VALUE_LINE_HEIGHT};",
+            "}",
+            f'.st-key-{key} [data-testid="stMetricDelta"],',
+            f'.st-key-{key} [data-testid="stMetricDelta"] * {{',
+            f"    line-height: {DELTA_LINE_HEIGHT};",
+            "}",
+            "</style>",
+        ]
+    )
+
+
 @contextmanager
-def metric_row(*, key: str) -> Iterator[None]:
+def metric_row(*, key: str, emit_style: bool = True) -> Iterator[None]:
     """지표 카드를 **같은 폭·같은 높이로** 늘어놓고, 모자라면 자르지 않고 줄을 접는 가로 줄.
 
     `render_status_metric` 은 CSS 를 걸 자리를 만들려고 카드를 컨테이너로 한 번 감싼다.
@@ -72,39 +110,8 @@ def metric_row(*, key: str) -> Iterator[None]:
     자리를 맞추고, 칸을 줄 높이로 늘려 카드 상자가 가장 높은 카드에 맞게 한다 — 감싼 카드는
     감싼 컨테이너 안에서 한 번 더 늘린다.
     """
-    st.html(
-        "\n".join(
-            [
-                "<style>",
-                f'.st-key-{key} [data-testid="stHorizontalBlock"] {{',
-                "    align-items: stretch !important;",
-                "}",
-                f'.st-key-{key} [data-testid="stHorizontalBlock"] > * {{',
-                "    flex: 1 1 0 !important;",
-                "    min-width: min-content !important;",
-                "}",
-                f'.st-key-{key} [data-testid="stVerticalBlock"]'
-                ' > [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {',
-                "    flex: 1 1 auto;",
-                "}",
-                f'.st-key-{key} [data-testid="stMetric"] {{',
-                "    height: 100%;",
-                "}",
-                f'.st-key-{key} [data-testid="stMetricLabel"] {{',
-                "    min-width: max-content;",
-                "}",
-                f'.st-key-{key} [data-testid="stMetricValue"],',
-                f'.st-key-{key} [data-testid="stMetricValue"] * {{',
-                f"    line-height: {VALUE_LINE_HEIGHT};",
-                "}",
-                f'.st-key-{key} [data-testid="stMetricDelta"],',
-                f'.st-key-{key} [data-testid="stMetricDelta"] * {{',
-                f"    line-height: {DELTA_LINE_HEIGHT};",
-                "}",
-                "</style>",
-            ]
-        )
-    )
+    if emit_style:
+        st.html(metric_row_style(key))
     with st.container(key=key):
         with st.container(horizontal=True, gap="small"):
             yield
@@ -123,6 +130,7 @@ def render_status_metric(
     tone: MetricTone = "neutral",
     help: str | None = None,
     caption: str | None = None,
+    emit_style: bool = True,
 ) -> None:
     """상태색 띠가 붙은 metric 카드 하나를 그린다.
 
@@ -131,6 +139,9 @@ def render_status_metric(
 
     `caption` 은 값 아래 회색 한 줄(그 값의 달·출처 등)이다. 증감이 아니므로 화살표·색 없이
     `delta` 자리에 적는다.
+
+    `emit_style=False` 면 띠 서식을 그리지 않는다 — 부르는 쪽이 `status_metric_style` 을 보이는
+    HTML 과 한 `st.html` 에 미리 실었을 때다(팝업 본문, `metric_row_style` 과 같은 까닭).
     """
     metric_options: dict[str, Any] = {"border": True, "help": help}
     if caption:
@@ -138,17 +149,25 @@ def render_status_metric(
     if tone not in _TONE_TOKENS:
         st.metric(label, value, **metric_options)
         return
-    color = tone_color(tone)
-    st.html(
-        "\n".join(
-            [
-                "<style>",
-                f'.st-key-{key} [data-testid="stMetric"] {{',
-                f"    border-left: {STRIPE_WIDTH_PX}px solid {color} !important;",
-                "}",
-                "</style>",
-            ]
-        )
-    )
+    if emit_style:
+        st.html(status_metric_style(key, tone))
     with st.container(key=key):
         st.metric(label, value, **metric_options)
+
+
+def status_metric_style(key: str, tone: MetricTone) -> str:
+    """`render_status_metric` 의 상태색 띠 서식. 평상(`neutral`)이면 빈 글이다.
+
+    띠는 그 key 의 칸에만 걸린다 — 평상으로 그린 카드는 key 칸이 없어 미리 실어 둔 서식이 닿지
+    않는다. 그래서 색이 바뀔 수 있는 카드의 서식을 미리 실어도 평상 카드는 그대로다."""
+    if tone not in _TONE_TOKENS:
+        return ""
+    return "\n".join(
+        [
+            "<style>",
+            f'.st-key-{key} [data-testid="stMetric"] {{',
+            f"    border-left: {STRIPE_WIDTH_PX}px solid {tone_color(tone)} !important;",
+            "}",
+            "</style>",
+        ]
+    )

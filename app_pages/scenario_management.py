@@ -1,4 +1,4 @@
-# Purpose: 시나리오 관리·BigDataQuery 등록·공식버전 자동 갱신 기능을 탭으로 제공한다.
+# Purpose: 시뮬레이션·설비 시나리오 관리, BigDataQuery 등록, 공식버전 자동 갱신을 탭으로 제공한다.
 
 from __future__ import annotations
 
@@ -8,15 +8,22 @@ from capa_simulation.components.auto_official_update_tab import render_auto_offi
 from capa_simulation.components.bigdataquery_registration import (
     render_bigdataquery_registration,
 )
+from capa_simulation.components.equipment_scenario_management import (
+    EQUIPMENT_KIND,
+    SCENARIO_KIND_KEY,
+    SCENARIO_KINDS,
+    SCENARIO_MANAGEMENT_TAB,
+    SCENARIO_MANAGEMENT_TABS_KEY,
+    SIMULATION_KIND,
+    render_equipment_scenario_section,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
-from capa_simulation.components.tab_state import stateful_tabs
+from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
-
-SCENARIO_MANAGEMENT_TABS_KEY = "scenario_management_tabs"
 
 render_page_header("시나리오 관리")
 render_page_guide("scenario_management", title="시나리오 관리")
@@ -40,9 +47,15 @@ except BOOTSTRAP_ERRORS as exc:
 # 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다. 세 탭을 다 그리므로 그
 # rerun 에도 폼 위젯은 같은 자리에 남는다.
 # 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B).
+#
+# 탭 묶음 위 자리 하나 — 설비 시나리오 세션을 다른 리비전으로 옮겼다는 한 번뿐인 알림(미저장
+# 설비 편집을 버렸다는 말이 든다)을 「시나리오 관리」 탭이 숨은 회차에 여기 그린다. 세 탭을 늘
+# 다 그리므로 다른 탭을 보는 회차에도 설비 시나리오 구획이 세션을 풀고, 숨은 패널에 그린 알림은
+# 보지 못한 채 다음 회차에 사라진다(이 화면에는 사이드바 설비 시나리오 줄이 없다).
+equipment_notice_slot = st.empty()
 management_tab, query_tab, auto_update_tab = stateful_tabs(
     [
-        ":material/database: 시나리오 관리",
+        SCENARIO_MANAGEMENT_TAB,
         ":material/cloud_download: BigDataQuery 등록",
         ":material/autorenew: 자동 갱신",
     ],
@@ -50,7 +63,27 @@ management_tab, query_tab, auto_update_tab = stateful_tabs(
 )
 
 with management_tab:
-    render_scenario_management(repository, database_path)
+    # 「관리할 시나리오」 전환 — 시뮬레이션 시나리오(지금까지의 저장소 상태·시나리오 작업)와 설비
+    # 시나리오(가용설비 현황의 탭이던 것, 2026-10-24 사용자 결정 D4). 고른 쪽 구획만 그린다 — 고르지
+    # 않은 쪽의 위젯은 그 회차에 버려진다(아래 「시나리오 작업」 전환과 같은 성질). 설비 시나리오
+    # 구획만 설비 DB 를 연다(시뮬레이션 쪽을 고른 회차에는 설비 DB 연결이 없다). 다른 화면(옛 배포
+    # 흔적 경고의 단추)이 값을 적으므로 `default=` 를 주지 않고 칸이 없거나 목록 밖일 때만 심는다.
+    if st.session_state.get(SCENARIO_KIND_KEY) not in SCENARIO_KINDS:
+        st.session_state[SCENARIO_KIND_KEY] = SIMULATION_KIND
+    kind = st.segmented_control(
+        "관리할 시나리오",
+        list(SCENARIO_KINDS),
+        key=SCENARIO_KIND_KEY,
+        persist_state="session",
+        # 선택 해제를 허용하면 None 이 되어 아무 구획도 그리지 않는다.
+        required=True,
+    )
+    if kind == EQUIPMENT_KIND:
+        render_equipment_scenario_section(
+            notice_slot=equipment_notice_slot if tab_is_hidden(management_tab) else None
+        )
+    else:
+        render_scenario_management(repository, database_path)
 with query_tab:
     render_bigdataquery_registration(repository, database_path)
 with auto_update_tab:

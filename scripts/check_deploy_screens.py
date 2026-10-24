@@ -61,7 +61,7 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 
     def check_new_thing(screen: Screen) -> str:
         screen.open_page(EQUIPMENT_PAGE)
-        screen.open_tab("RawData")
+        screen.open_tab("설비 마스터")
         return "있음" if screen.selectbox_value("등록할 표") is not None else "없음"
 
     ITEMS = (..., Item("new_thing", "새 확인", check_new_thing),)
@@ -308,6 +308,33 @@ LABEL_NARROW_WIDTHS_PX: Final = (280, 236, SIDEBAR_NARROW_WIDTH_PX)
 # 정한 9행과 같은지 따로 보는 확인이라 앱에서 라벨을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가
 # 앱과 같은지 본다.
 GAP_TAB: Final = "Static 대비 일정"
+# 가용설비 현황 두 탭 개편(2026-10-24 사용자 결정) — 바깥 탭 둘(① 설비 마스터 ② Summary), Summary
+# 안쪽 탭 둘(라벨 글자는 개편 전 그대로), 머리 「설정」 팝업(공정별 Cut-off), 필요 단축 일정 머리
+# 「Qual 마감 계산기」 팝업, 시나리오 관리 「관리할 시나리오」 전환의 설비 시나리오 구획. 앱 모듈을
+# 부르지 않고 값만 옮긴다(테스트가 앱과 같은지 본다).
+EQUIPMENT_MASTER_TAB: Final = "설비 마스터"
+EQUIPMENT_SUMMARY_TAB: Final = "Summary"
+EQUIPMENT_SUMMARY_TABS: Final = ("Main", GAP_TAB)
+# 개편 전 바깥 탭 이름 — 화면에 남았는지 센다.
+EQUIPMENT_OLD_TABS: Final = ("RawData", "Preference", "Qual 마감 계산기", "설비 시나리오")
+# 바깥 탭 묶음·Summary 안쪽 탭 묶음의 `st.tabs` key(`st-key-<key>` 칸) — 제 탭만 센다.
+EQUIPMENT_TAB_KEY: Final = "equipment_active_tab"
+EQUIPMENT_SUMMARY_TAB_KEY: Final = "equipment_summary_tab"
+EQUIPMENT_SETTINGS_BUTTON_KEY: Final = "equipment_settings_open_v1"
+EQUIPMENT_SETTINGS_TITLE: Final = "설정"
+CUTOFF_EDITOR_ANCHOR: Final = "Cutoff일수"
+QUAL_CALCULATOR_BUTTON_KEY: Final = "required_shortening_qual_calculator_v1"
+QUAL_CALCULATOR_TITLE: Final = "Qual 마감 계산기"
+QUAL_CALCULATOR_KPIS: Final = (
+    "마감 낸 호기",
+    "가장 이른 마감",
+    "이미 지난 마감",
+    "목표 대비 부족 달",
+)
+SCENARIO_KIND_KEY: Final = "scenario_management_kind_v1"
+SCENARIO_KINDS: Final = ("시뮬레이션 시나리오", "설비 시나리오")
+# 설비 시나리오 구획의 시나리오 표 머리 칸(`equipment_scenario_management.scenario_rows`).
+EQUIPMENT_SCENARIO_TABLE_ANCHOR: Final = "설비 시나리오"
 # 탭 안 두 전환(`st.segmented_control`)의 위젯 key 와 시트를 여는 선택지.
 GAP_RESULT_VIEW_KEY: Final = "equipment_gap_result_view_v1"
 GAP_SHEET_VIEW: Final = "분류별 내역"
@@ -2027,10 +2054,18 @@ def check_sidebar_symbol(screen: Screen) -> str:
     )
 
 
+def open_equipment_tab(screen: Screen, name: str) -> None:
+    """가용설비 현황의 탭 하나를 누른다 — Summary 안쪽 탭이면 Summary 를 먼저 누른다."""
+    if name in EQUIPMENT_SUMMARY_TABS:
+        screen.open_tab(EQUIPMENT_SUMMARY_TAB)
+    screen.open_tab(name)
+
+
 def check_rawdata_target(screen: Screen) -> str:
-    """`가용설비 현황` RawData 의 `등록할 표` 기본값이 「설비 마스터」인가, 옛 이름이 남았는가."""
+    """`가용설비 현황` 설비 마스터 탭(개편 전 RawData)의 `등록할 표` 기본값이 「설비 마스터」인가,
+    옛 이름이 남았는가."""
     screen.open_page(EQUIPMENT_PAGE)
-    screen.open_tab("RawData")
+    open_equipment_tab(screen, EQUIPMENT_MASTER_TAB)
     box = screen.selectbox("등록할 표")
     screen.poll(box.count, timeout=30, accept=lambda count: count > 0)
     value = screen.selectbox_value("등록할 표")
@@ -2052,12 +2087,12 @@ def summarize_equipment_headers(found: Mapping[str, bool], dropped: bool) -> str
 
 
 def check_equipment_headers(screen: Screen) -> str:
-    """`가용설비 현황` RawData `직접 편집` 의 설비 마스터 표 머리 — 38열 개편의 새 이름 일곱과
-    설비 시나리오의 「시나리오 메모」(39열)가 있고 지운 「설비가동현황」이 없는가. 표 보기 설정은
-    바꾸지 않는다(기본은 모든 칸이 보인다). 편집표는 가로로 그린 칸만 DOM 에 있어 칸마다 가로로 굴려
-    찾는다(`Screen.column_index`)."""
+    """`가용설비 현황` 설비 마스터 탭 `직접 편집` 의 설비 마스터 표 머리 — 38열 개편의 새 이름
+    일곱과 설비 시나리오의 「시나리오 메모」(39열)가 있고 지운 「설비가동현황」이 없는가. 표 보기
+    설정은 바꾸지 않는다(기본은 모든 칸이 보인다). 편집표는 가로로 그린 칸만 DOM 에 있어 칸마다
+    가로로 굴려 찾는다(`Screen.column_index`)."""
     screen.open_page(EQUIPMENT_PAGE)
-    screen.open_tab("RawData")
+    open_equipment_tab(screen, EQUIPMENT_MASTER_TAB)
     screen.open_tab(EQUIPMENT_EDIT_TAB)
     grid, _ = screen.grid_with_column(EQUIPMENT_EDITOR_ANCHOR, timeout=60)
     found = {name: screen.column_index(grid, name) is not None for name in EQUIPMENT_NEW_HEADERS}
@@ -3144,14 +3179,14 @@ def _click_gap_cell(screen: Screen, cell: tuple[int, str]) -> bool:
 
 
 def check_gap_sheet(screen: Screen) -> str:
-    """가용설비 현황 → `Static 대비 일정` → `분류별 내역` 9행 비교 시트 — 행 라벨이 정한 9행 차례와
-    같은가와 달 수, 설비 일정 기준 칸(대여(비가동)가 0 아닌 칸 먼저, 없으면 가용 칸) 하나를 누르면
-    아래 근거 카드가 그 칸의 것으로 열리고(카드 제목 앞머리·굵은 칸) 표 줄이 몇인가, 같은 칸을 다시
-    누르면 닫히는가, 예외 상자 수. 기본 범위(전체 합계)로 본다 — 공정을 고르지 않는다. 칸 누름·
-    전환은 세션 값이라 DB 에 쓰지 않고, 바꾼 전환은 끝에(읽다 깨져도) 되돌린다. 공정·호기 이름과
-    칸 값·카드 제목은 판정에만 쓰고 찍지 않는다."""
+    """가용설비 현황 → `Summary` › `Static 대비 일정` → `분류별 내역` 9행 비교 시트 — 행 라벨이 정한
+    9행 차례와 같은가와 달 수, 설비 일정 기준 칸(대여(비가동)가 0 아닌 칸 먼저, 없으면 가용 칸)
+    하나를 누르면 아래 근거 카드가 그 칸의 것으로 열리고(카드 제목 앞머리·굵은 칸) 표 줄이 몇인가,
+    같은 칸을 다시 누르면 닫히는가, 예외 상자 수. 기본 범위(전체 합계)로 본다 — 공정을 고르지
+    않는다. 칸 누름·전환은 세션 값이라 DB 에 쓰지 않고, 바꾼 전환은 끝에(읽다 깨져도) 되돌린다.
+    공정·호기 이름과 칸 값·카드 제목은 판정에만 쓰고 찍지 않는다."""
     screen.open_page(EQUIPMENT_PAGE)
-    screen.open_tab(GAP_TAB)
+    open_equipment_tab(screen, GAP_TAB)
     changed: list[tuple[str, str]] = []
     try:
         for key, option in (
@@ -3385,10 +3420,169 @@ def check_space_floor_state(screen: Screen) -> str:
     return summarize_space_floor_state(len(values), in_use, inactive, int(grey), edit_columns)
 
 
+# 본문 탭 이름(`role="tab"`) 전부 — 옛 탭 이름이 어디에든 남았는지 셀 때만. 아이콘 글자(`table_rows`
+# 등)는 앞에 붙어 온다 — 끝 글자로 가른다.
+_MAIN_TAB_NAMES_JS = """() => [...document.querySelectorAll('[data-testid="stMain"] [role="tab"]')]
+  .map((tab) => tab.innerText.replace(/\\s+/g, " ").trim())"""
+# key 를 준 탭 묶음 하나(`st.tabs(key=…)` — `st-key-<key>` 칸)의 제 탭 이름만. 그 칸 안 첫 탭
+# 목록이 제 것이고(안쪽 탭 묶음의 탭 목록은 패널 안이라 뒤에 온다), 숨은 패널 안 탭도 innerText
+# 가 남으므로 본문 전체에서 세면 ① 안 「직접 편집」 의 편집표 탭 「설비 마스터」 가 바깥 탭으로
+# 잘못 셈에 든다.
+_KEYED_TAB_NAMES_JS = """(key) => {
+  const box = document.querySelector(`[data-testid="stMain"] .st-key-${key}`);
+  const list = box ? box.querySelector('[role="tablist"]') : null;
+  return list ? [...list.querySelectorAll('[role="tab"]')]
+    .map((tab) => tab.innerText.replace(/\\s+/g, " ").trim()) : [];
+}"""
+# 보이는 팝업 안의 지표 카드 라벨(`st.metric`).
+_DIALOG_METRIC_LABELS_JS = """(box) => [...box.querySelectorAll('[data-testid="stMetricLabel"]')]
+  .map((label) => label.innerText.trim())"""
+
+
+@dataclass(frozen=True)
+class EquipmentTabNames:
+    """가용설비 현황에서 읽은 탭 이름 — 바깥 탭 묶음, Summary 안쪽 탭 묶음, 본문 전체."""
+
+    outer: Sequence[str]
+    summary: Sequence[str]
+    anywhere: Sequence[str]
+
+
+def summarize_equipment_moves(
+    tabs: EquipmentTabNames,
+    settings: tuple[str | None, bool, bool] | None,
+    calculator: tuple[str | None, int, bool] | None,
+    section: tuple[bool, bool] | None,
+) -> str:
+    """개편 확인 결과 — 탭 이름은 정한 어휘(`EQUIPMENT_*`)만 적고, 팝업 제목·지표 라벨은 판정에만
+    쓴다. 바깥 둘은 바깥 탭 묶음에서만, 안쪽 둘은 Summary 안쪽 탭 묶음에서만 센다(본문 전체에서
+    세면 안쪽 편집표 탭 「설비 마스터」 가 바깥 탭 대신 셈에 든다). 옛 탭 이름은 본문 어디에서든
+    센다."""
+
+    def has(names: Sequence[str], label: str) -> bool:
+        return any(name.strip() == label or name.strip().endswith(f" {label}") for name in names)
+
+    outer = [
+        label for label in (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB) if has(tabs.outer, label)
+    ]
+    inner = [label for label in EQUIPMENT_SUMMARY_TABS if has(tabs.summary, label)]
+    old = [label for label in EQUIPMENT_OLD_TABS if has(tabs.anywhere, label)]
+    parts = [
+        f"탭 {len(outer)}/2 · Summary 안쪽 {len(inner)}/2 · 옛 탭 {len(old)}곳",
+    ]
+    if settings is None:
+        parts.append("「설정」 단추 없음")
+    else:
+        title, editor, closed = settings
+        parts.append(
+            f"설정 — {_title_text(title, EQUIPMENT_SETTINGS_TITLE)} · Cut-off 표 "
+            f"{'있음' if editor else '없음'} · {_closed_text(closed)}"
+        )
+    if calculator is None:
+        parts.append("「Qual 마감 계산기」 단추 없음")
+    else:
+        title, kpis, closed = calculator
+        parts.append(
+            f"필요 단축 일정 — {_title_text(title, QUAL_CALCULATOR_TITLE)} · 지표 "
+            f"{kpis}/{len(QUAL_CALCULATOR_KPIS)} · {_closed_text(closed)}"
+        )
+    if section is None:
+        parts.append("「관리할 시나리오」 전환 없음")
+    else:
+        table, restored = section
+        parts.append(
+            f"시나리오 관리 — 설비 시나리오 구획 표 {'있음' if table else '없음'} · 전환 "
+            f"{'되돌림' if restored else '못 되돌림'}"
+        )
+    return " · ".join(parts)
+
+
+def _main_button(widget_key: str) -> str:
+    """본문 위젯 key 의 **보이는** 단추 선택자(Streamlit 은 key 를 `st-key-<key>` 클래스로 단다).
+
+    `help=` 를 준 단추는 숨은 사본이 같은 key 칸에 함께 있어(1.63 — 좁은 창에서는 숨은 쪽이 먼저
+    잡힌다) Playwright 의 `:visible` 로 보이는 것만 고른다.
+    """
+    return f'[data-testid="stMain"] .st-key-{widget_key} button:visible'
+
+
+def check_equipment_moves(screen: Screen) -> str:
+    """가용설비 현황 두 탭 개편의 새 자리 — 바깥 탭 둘·Summary 안쪽 둘·옛 탭 이름 0곳, 머리 「설정」
+    팝업의 Cut-off 표, 필요 단축 일정 머리 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리
+    「관리할 시나리오」 의 「설비 시나리오」 구획 표. 팝업은 `Esc` 로 닫고(저장·채우기·넣기는 누르지
+    않는다), 전환은 처음 값으로 되돌린다(세션 값 — DB 에 쓰지 않는다)."""
+    screen.open_page(EQUIPMENT_PAGE)
+    open_equipment_tab(screen, EQUIPMENT_SUMMARY_TABS[0])
+    outer = screen.poll(
+        lambda: screen.js(_KEYED_TAB_NAMES_JS, EQUIPMENT_TAB_KEY),
+        timeout=30,
+        accept=lambda value: bool(value),
+    )
+    tabs = EquipmentTabNames(
+        outer=outer or [],
+        summary=screen.js(_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY) or [],
+        anywhere=screen.js(_MAIN_TAB_NAMES_JS) or [],
+    )
+    settings: tuple[str | None, bool, bool] | None = None
+    if screen.page.locator(_main_button(EQUIPMENT_SETTINGS_BUTTON_KEY)).count():
+        screen.open_dialog(_main_button(EQUIPMENT_SETTINGS_BUTTON_KEY))
+        try:
+            title = screen.dialog_title()
+            editor = bool(
+                screen.poll(
+                    lambda: screen.dialog_read(
+                        "(box, header) => [...box.querySelectorAll('[role=\"columnheader\"]')]"
+                        ".some((cell) => cell.textContent.trim() === header)",
+                        CUTOFF_EDITOR_ANCHOR,
+                    ),
+                    timeout=30,
+                )
+            )
+        finally:
+            closed = screen.close_dialog()
+        settings = (title, editor, closed)
+    screen.open_page(SHORTENING_PAGE)
+    calculator: tuple[str | None, int, bool] | None = None
+    if screen.page.locator(_main_button(QUAL_CALCULATOR_BUTTON_KEY)).count():
+        screen.open_dialog(_main_button(QUAL_CALCULATOR_BUTTON_KEY))
+        try:
+            title = screen.dialog_title()
+            labels = screen.poll(
+                lambda: screen.dialog_read(_DIALOG_METRIC_LABELS_JS),
+                timeout=30,
+                accept=lambda value: bool(value) and len(value) >= len(QUAL_CALCULATOR_KPIS),
+            )
+            kpis = sum(1 for label in QUAL_CALCULATOR_KPIS if label in (labels or []))
+        finally:
+            closed = screen.close_dialog()
+        calculator = (title, kpis, closed)
+    screen.open_page(SCENARIO_MANAGEMENT_PAGE)
+    section: tuple[bool, bool] | None = None
+    before = _choose_segment(screen, SCENARIO_KIND_KEY, SCENARIO_KINDS[1])
+    if before is not None:
+        try:
+            table = bool(
+                screen.poll(
+                    lambda: screen.js(
+                        "(header) => [...document.querySelectorAll("
+                        '\'[data-testid="stMain"] [role="columnheader"]\')]'
+                        ".some((cell) => cell.textContent.trim() === header)",
+                        EQUIPMENT_SCENARIO_TABLE_ANCHOR,
+                    ),
+                    timeout=60,
+                )
+            )
+        finally:
+            _choose_segment(screen, SCENARIO_KIND_KEY, before)
+        restored = screen.js(_SEGMENT_JS, SCENARIO_KIND_KEY) == before
+        section = (table, restored)
+    return summarize_equipment_moves(tabs, settings, calculator, section)
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
-    Item("rawdata_target", "RawData 등록할 표", check_rawdata_target),
+    Item("rawdata_target", "설비 마스터 등록할 표", check_rawdata_target),
     Item("progress_box", "필요 단축 일정 진척 비교 상자", check_progress_box),
     Item("space_drawer", "Space 미배치 서랍", check_space_drawer),
     Item("sidebar_panel", "HOME 조회 조건 패널", check_sidebar_panel),
@@ -3397,13 +3591,14 @@ ITEMS: tuple[Item, ...] = (
     Item("period_popup", "조회기간 팝업", check_period_popup),
     Item("process_popup", "공정 필터 팝업", check_process_popup),
     Item("process_detail", "공정 Capa 상세", check_process_detail),
-    Item("equipment_headers", "RawData 설비 마스터 머리(39열)", check_equipment_headers),
+    Item("equipment_headers", "설비 마스터 표 머리(39열)", check_equipment_headers),
     Item("sidebar_groups", "사이드바 그룹 셋", check_sidebar_groups),
     Item("space_fader", "Space 기준일 페이더", check_space_fader),
     Item("gap_sheet", "Static 대비 일정 비교 시트", check_gap_sheet),
     Item("equipment_scenario_line", "설비 시나리오 줄·팝업", check_equipment_scenario_line),
     Item("space_floor_state", "Space 층 사용 칸", check_space_floor_state),
     Item("page_tabs", "화면 탭 줄", check_page_tabs),
+    Item("equipment_moves", "가용설비 현황 탭 둘·옮긴 자리", check_equipment_moves),
 )
 
 

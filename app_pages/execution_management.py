@@ -37,7 +37,7 @@ SUBPAGE_SUMMARIES: dict[str, str] = {
         "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 진척 보드 · 기한 임박 · 이행 지연"
     ),
     "app_pages/available_equipment_status.py": (
-        "설비 일정 기준 가용대수 · Static 대비 일정 · Cut-off"
+        "설비 마스터 편집 · 설비 일정 기준 가용대수 · Static 대비 일정"
     ),
     "app_pages/space_status.py": "셋업 이행을 공간·호기로 — 반입 전·지연·미확인 표식",
     "app_pages/actual_efficiency.py": "효율 기준 대비 실적 Gap 과 개선 우선순위",

@@ -1,6 +1,6 @@
-# Purpose: 가정 시나리오 RawData 배치 칸 잠금·다른 시나리오 일정 호기 삭제 확인·공식 판정을 본다.
+# Purpose: 가정 시나리오 설비 마스터 탭 배치 칸 잠금·다른 시나리오 호기 삭제 확인·공식 판정을 본다.
 
-"""설비 시나리오 2단계 S1 — RawData 쪽 셋.
+"""설비 시나리오 2단계 S1 — 설비 마스터 탭(개편 전 RawData) 쪽 셋.
 
 - **가정 세션의 있던 호기 배치 칸 고침은 되돌린다**(설계 10장 「S1 부터 임시 잠금」). 이 판에서 배치
   일곱 칸은 공통이라 가정 세션에서 고치면 공식 배치가 바뀐다. 칸을 잠그지 않고 제출 검사·붙여넣기
@@ -460,7 +460,7 @@ def test_removing_a_unit_scheduled_in_another_scenario_needs_the_confirm(tmp_pat
     _ok(app.run())
     assert len(repository.list_revisions()) == 1
     assert any(
-        "저장하려면 가용설비 현황 RawData 저장 칸의" in text for text in _texts(app, "error")
+        "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text for text in _texts(app, "error")
     )
 
     box = _removal_box(app)
@@ -563,7 +563,7 @@ def test_the_popup_save_has_no_check_and_is_refused_the_same_way(tmp_path: Path)
     assert len(repository.list_revisions()) == 1
     assert any(
         "지우는 호기 1대(EQ-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다" in text
-        and "저장하려면 가용설비 현황 RawData 저장 칸의" in text
+        and "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text
         for text in _texts(app, "error")
     )
 

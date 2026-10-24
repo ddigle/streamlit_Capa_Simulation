@@ -8,9 +8,9 @@
 - **페이지 진입 = `resolve_equipment_session`.** 설비 화면이 각자 `BOOTSTRAP_ERRORS` 처리 아래에서
   부른다 — 마이그레이션·DB 오류는 그 화면의 「준비하지 못했습니다」 로 선다. `app.py` 는 설비 DB 를
   열지 않고, 사이드바 설비 시나리오 줄도 페이지가 이 함수 뒤에 그린다(같은 회차 목록으로 맞다).
-- **판정 셋**(검토 2-4 — 「공식」 하나로 셋을 가르지 않는다): 공식 시나리오(Preference 편집·미확인은
-  자기 일정), 공식 발행 쌍(기준선 저장·Space 배치 편집), 가정 시나리오(공식 시나리오가 아님). 따로
-  **낡음**(세션 리비전 ≠ 그 시나리오 최신 — 일정 칸·행 추가 잠금).
+- **판정 셋**(검토 2-4 — 「공식」 하나로 셋을 가르지 않는다): 공식 시나리오(설정 팝업 Cut-off
+  편집·미확인은 자기 일정), 공식 발행 쌍(기준선 저장·Space 배치 편집), 가정 시나리오(공식 시나리오가
+  아님). 따로 **낡음**(세션 리비전 ≠ 그 시나리오 최신 — 일정 칸·행 추가 잠금).
 - 세션 칸에는 기본형만 둔다(AGENTS 5장 21).
 """
 
@@ -103,7 +103,7 @@ class EquipmentSession:
 
     @property
     def is_official_scenario(self) -> bool:
-        """세션 시나리오 = 공식 시나리오(E3 Preference 편집, 미확인은 세션 자기 일정)."""
+        """세션 시나리오 = 공식 시나리오(E3 설정 팝업 Cut-off 편집, 미확인은 세션 자기 일정)."""
         return self.scenario_id is not None and self.scenario_id == self.official_scenario_id
 
     @property
@@ -125,7 +125,7 @@ class EquipmentSession:
 
     @property
     def is_assumption(self) -> bool:
-        """가정 시나리오 — 공식 시나리오가 아님(Preference 읽기 전용, 미확인은 공식 기준)."""
+        """가정 시나리오 — 공식 시나리오가 아님(설정 팝업 Cut-off 읽기 전용, 미확인은 공식 기준)."""
         return self.scenario is not None and not self.is_official_scenario
 
     @property
@@ -274,7 +274,8 @@ def resolve_equipment_session(database_path: str) -> EquipmentSession:
 
     예외 하나 — **옛 배포 흔적**(경계 뒤 계약 v3 공통)은 교차 검증 없이 공통 최신이 된다. 그것이
     공식과도 합쳐지지 않으면 공통만 읽어 **일정 없이** 연다(`unmerged`, 선택 칸은 그대로). 멈추면
-    설비 화면 어디에서도 흔적 경고와 설비 시나리오 탭(백업 복원 안내)에 닿을 수 없다.
+    설비 화면 어디에서도 흔적 경고와 시나리오 관리 「설비 시나리오」 구획(백업 복원 안내)에 닿을 수
+    없다.
     """
     catalog = load_equipment_scenario_catalog(database_path)
     selection = _settled_selection(catalog)

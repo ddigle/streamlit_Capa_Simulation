@@ -381,7 +381,7 @@ def test_pressing_a_unit_narrows_the_table_and_the_button_brings_the_floor_back(
     assert view["picked"] == "EQ-01" and view["epoch"] == first["epoch"]
     assert not app.button(key=SHOW_ALL_KEY).disabled
     # 설비명은 마크다운 글자 그대로다(`-` 앞에 `\\`).
-    assert any("**EQ\\-01** 의 RawData 1줄" in element.value for element in app.markdown)
+    assert any("**EQ\\-01** 의 설비 마스터 1줄" in element.value for element in app.markdown)
     # 층 CSV 는 표가 좁혀져도 층 전체·모든 칸이다.
     header, *lines = downloads[-1].decode("utf-8-sig").splitlines()
     assert "X좌표" in header.split(",") and len(lines) == len(_FLOOR)

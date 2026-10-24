@@ -235,7 +235,7 @@ SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
     "저장할 수 있습니다."
 )
-# 배치 저장의 저장 칸(저장자·함께 넣기·공식 발행 — `equipment_save_fields`). 가용설비 RawData 의
+# 배치 저장의 저장 칸(저장자·함께 넣기·공식 발행 — `equipment_save_fields`). 가용설비 설비 마스터의
 # 칸과 key 를 가른다.
 SPACE_SAVE_FIELDS_PREFIX = "space_layout_save_fields"
 # 배치 편집이 잠긴 동안(세션이 공식 발행 쌍이 아님)의 「공식으로 바꾸기」.
@@ -441,9 +441,10 @@ locked_by_scenario = (
     not using_sample_equipment and latest_snapshot is not None and not space_editing
 )
 if editable:
-    # 가용설비 RawData 와 **같은 편집본**이다. 어느 페이지를 먼저 열어도 같은 저장본 토큰으로 선다.
+    # 가용설비 설비 마스터와 **같은 편집본**이다. 어느 페이지를 먼저 열어도 같은 저장본 토큰으로
+    # 선다.
     buffer_frames: Frames = ensure_equipment_drafts(latest_snapshot)
-    # 이 화면에는 RawData 제출이 없지만 표시를 여기서 읽어 버린다 — 남기면 가용설비 현황의 다음
+    # 이 화면에는 설비 마스터 제출이 없지만 표시를 여기서 읽어 버린다 — 남기면 가용설비 현황의 다음
     # 회차가 정상 제출까지 막는다.
     pop_drafts_replaced()
     discarded_notice = pop_discarded_notice()
@@ -658,7 +659,7 @@ def _today_status() -> pd.DataFrame:
 
 def _unconfirmed_count() -> int:
     """FAB 도구 줄의 「미확인 N대」 — 오늘 기준 미확인 설비 수(설비키, 공정소분류 필터 안). 기준일·
-    도면 이탈과 무관하다(가용설비 현황 RawData 의 미확인과 같은 셈)."""
+    도면 이탈과 무관하다(가용설비 현황 설비 마스터의 미확인과 같은 셈)."""
     if no_fleet:
         return 0
     issues = get_schedule_confirmation_issues(equipment, today=today)
@@ -773,9 +774,10 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
     """저장 안 한 배치 변경(호기 배치·편집 영역·도면 요소·FAB 전체 배치)과 저장·버리기. 어느 단계
     화면에서나 뜬다.
 
-    저장은 가용설비 RawData 와 같은 `save_equipment_buffer` 다 — 편집본 전체를 저장하므로 RawData
-    의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비 리비전과
-    무관한 별도 쓰기라 `frames` 가 None(설비 저장본이 없는 화면)이어도 상자가 서고 FAB 만 저장한다.
+    저장은 가용설비 설비 마스터와 같은 `save_equipment_buffer` 다 — 편집본 전체를 저장하므로 설비
+    마스터의 저장 안 한 다른 편집도 함께 들어간다. 그 사실을 건수로 말한다. FAB 전체 배치는 설비
+    리비전과 무관한 별도 쓰기라 `frames` 가 None(설비 저장본이 없는 화면)이어도 상자가 서고 FAB 만
+    저장한다.
 
     편집본은 늘 세션 스냅샷에서 섰다 — 견주기도 그것과 한다. 배치 편집이 잠긴 회차(세션이 공식 발행
     쌍에서 밀려남)에도 잠기기 전에 적용한 변경이 있으면 상자가 서고, 세션 설비 시나리오에 저장하거나
@@ -818,13 +820,13 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if isinstance(error, str):
             st.error(f"배치를 저장하지 못했습니다: {error}")
         return
-    # RawData 의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
+    # 설비 마스터의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
     others, side_tables = 0, []
     if frames is not None and not unchanged:
         assert saved_snapshot is not None
         others = other_change_count(saved_snapshot.equipment, frames[1], renames)
-        # 저장은 세 표를 다 견준다. 설비 마스터 밖의 편집도 리비전을 만드니 따로 말한다.
-        # 비가동 일정은 저장본에 이름 바꿈을 얹어 견준다 — 따라간 설비명은 RawData 편집이 아니다.
+        # 저장은 세 표를 다 견준다. 설비 마스터 밖의 편집도 리비전을 만드니 따로 말한다. 비가동
+        # 일정은 저장본에 이름 바꿈을 얹어 견준다 — 따라간 설비명은 설비 마스터 편집이 아니다.
         renamed_downtime = downtime_with_renames(
             saved_snapshot.downtime, renames, saved=saved_snapshot.equipment, buffer=frames[1]
         )
@@ -853,12 +855,14 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 도면·요약과 다른 사람 화면에 "
             "반영됩니다."
             + (
-                f" 가용설비 현황 RawData 의 저장 안 한 다른 편집 {others}건도 함께 저장됩니다."
+                f" 가용설비 현황 설비 마스터 탭의 저장 안 한 다른 편집 {others}건도 함께 "
+                "저장됩니다."
                 if others
                 else ""
             )
             + (
-                f" 가용설비 현황 RawData 의 {'·'.join(side_tables)} 표 편집도 함께 저장됩니다."
+                f" 가용설비 현황 설비 마스터 탭의 {'·'.join(side_tables)} 표 편집도 함께 "
+                "저장됩니다."
                 if side_tables
                 else ""
             )
@@ -881,7 +885,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if not names.empty:
             # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
             # 결정). 같은 호기라 모든 설비 시나리오의 일정·비가동이 따라가고(G4·R2), 진척 비교
-            # 기준선·바깥 Excel 은 따라가지 않는다(Guide). RawData 와 같은 목록 꼴이다.
+            # 기준선·바깥 Excel 은 따라가지 않는다(Guide). 설비 마스터 탭과 같은 목록 꼴이다.
             render_name_changes(names)
         if fab_pending is not None and fab_pending.marks is not None:
             for label in duplicate_block_links(fab_pending.marks):
@@ -912,8 +916,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 st.text_input(
                     "변경 메모", key=note_key, placeholder="예: C1 1F 반입구 앞 정리", width=360
                 )
-                # 저장자·함께 넣기·공식 발행 칸(RawData 저장과 같은 부품). 수는 적지 않는다 — 실제로
-                # 퍼진 목록은 저장 결과 알림이 적는다.
+                # 저장자·함께 넣기·공식 발행 칸(설비 마스터 저장과 같은 부품). 수는 적지 않는다 —
+                # 실제로 퍼진 목록은 저장 결과 알림이 적는다.
                 with st.popover("저장 칸", icon=":material/tune:"):
                     render_equipment_save_fields(
                         SPACE_SAVE_FIELDS_PREFIX,
@@ -934,7 +938,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             with st.popover("버리기", icon=":material/undo:"):
                 st.caption(
                     "저장 안 한 설비 편집을 모두 버리고 최신 저장본으로 돌아갑니다. 가용설비 "
-                    "RawData 의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다."
+                    "설비 마스터 탭의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다."
                     if frames is not None
                     else "저장 안 한 S.PKG FAB 전체 배치를 버리고 저장본(없으면 기본 배치)으로 "
                     "돌아갑니다."
@@ -960,14 +964,14 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
 def _render_layout_warnings(
     frames: Frames, marks: dict[FloorKey, tuple[FloorLayoutMark, ...]]
 ) -> None:
-    """편집본의 겹침·가림 경고. RawData 의 검증 실패 편집이 남아 있으면 경고만 건너뛴다."""
+    """편집본의 겹침·가림 경고. 설비 마스터의 검증 실패 편집이 남아 있으면 경고만 건너뛴다."""
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
         # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다).
         st.caption(
-            ":material/error: 가용설비 현황 RawData 에 검증을 통과하지 못한 저장 안 한 편집이 "
-            f"있어 겹침 경고를 계산하지 못했습니다: {exc}"
+            ":material/error: 가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 "
+            f"편집이 있어 겹침 경고를 계산하지 못했습니다: {exc}"
         )
         return
     for warning in layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks}):
@@ -1046,8 +1050,8 @@ def _render_layout_editor(
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
         st.error(
-            "가용설비 현황 RawData 에 검증을 통과하지 못한 저장 안 한 편집이 있어 배치 편집기를 "
-            f"열 수 없습니다. RawData 에서 고치거나 버린 뒤 여세요: {exc}"
+            "가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 편집이 있어 배치 "
+            f"편집기를 열 수 없습니다. 설비 마스터 탭에서 고치거나 버린 뒤 여세요: {exc}"
         )
         return
     renames = pending_unit_renames()
@@ -1137,8 +1141,8 @@ def _render_layout_editor(
             # 숨은 모듈은 그 칸을 차지하고 묶음과 함께 옮겨진다.
             editor_items=inputs.items,
             editor_ghosts=inputs.ghosts,
-            # 편집본에 없지만 새 설비명으로 쓸 수 없는 이름 — RawData 에서 지우고 저장 안 한 저장본
-            # 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정.
+            # 편집본에 없지만 새 설비명으로 쓸 수 없는 이름 — 설비 마스터에서 지우고 저장 안 한
+            # 저장본 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정.
             reserved=reserved_names(
                 latest_snapshot.equipment, frames[1], frames[2], pending_unit_renames()
             ),
@@ -1171,7 +1175,7 @@ def _render_layout_editor(
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
     replace_equipment_buffer((frames[0], master, downtime))
     # 이 적용이 옮기거나 빼거나 보낸 모듈 묶음의 적용 뒤 모양 — 저장 검사가 그 모양 그대로인 묶음을
-    # 편집기 결과로 보고 통과시킨다(RawData 의 모듈 좌표·크기 막기, `saved_master_violations`).
+    # 편집기 결과로 보고 통과시킨다(설비 마스터의 모듈 좌표·크기 막기, `saved_master_violations`).
     touched = {change.unit_id for change in (*applied.changes, *applied.hidden_moves)}
     moved_groups = {
         applied.group_renames.get(str(row["group"]), str(row["group"]))
@@ -1677,7 +1681,7 @@ else:
     ):
         if picked_rows is not None:
             st.markdown(
-                f"**{_markdown_text(str(picked_unit))}** 의 RawData {len(picked_rows)}줄"
+                f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"
                 + (" (같은 Main 설비 모듈)" if len(picked_rows) > 1 else ""),
                 width="content",
             )

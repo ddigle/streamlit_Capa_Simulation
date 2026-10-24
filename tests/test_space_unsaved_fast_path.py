@@ -298,7 +298,7 @@ def _shown_panel(app: AppTest) -> Any:
     assert len(heads) == 1, heads
     caption = next(item.value for item in app.caption if "적용한 변경은 이 화면" in item.value)
     others = re.search(r"다른 편집 (\d+)건", caption)
-    side = re.search(r"RawData 의 ([^.]+?) 표 편집도", caption)
+    side = re.search(r"설비 마스터 탭의 ([^.]+?) 표 편집도", caption)
     return (
         heads[0].split(" — ", 1)[1].split(" · "),
         int(others.group(1)) if others else 0,

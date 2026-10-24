@@ -31,7 +31,12 @@ from test_shortening_view_fragment import _fragment_of, _install, _open, _run, _
 import capa_simulation.components.shortening_progress_panel as progress
 from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
-from capa_simulation.navigation import EQUIPMENT_MAIN_TAB, EQUIPMENT_TAB_KEY
+from capa_simulation.navigation import (
+    EQUIPMENT_MAIN_TAB,
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_SUMMARY_TAB_KEY,
+    EQUIPMENT_TAB_KEY,
+)
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 
@@ -162,7 +167,8 @@ def test_a_full_run_with_the_tab_hidden_still_fills_the_notice_slots(
     slots = set(_event_slots(runner.messages, _view(runner)))
     assert len(slots) == progress._NOTICE_SLOTS
 
-    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MAIN_TAB
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = EQUIPMENT_MAIN_TAB
     _run(app, world)
     assert runner.started == [[]]
     assert slots <= _written_event_slots(runner.messages)

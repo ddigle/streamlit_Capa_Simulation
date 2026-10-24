@@ -1,6 +1,10 @@
-# Purpose: 가용설비 현황 「Qual 마감 계산기」 탭의 입력 칸·12개월 편집표와 계산 결과를 그린다.
+# Purpose: 필요 단축 일정 「Qual 마감 계산기」 팝업의 입력 칸·12개월 편집표와 계산 결과를 그린다.
 
-"""Qual 마감 계산기 탭(2026-10-22 사용자 요청 — 10-07 의 계산기 한 장을 앱에 내장).
+"""Qual 마감 계산기 팝업(2026-10-22 사용자 요청 — 10-07 의 계산기 한 장을 앱에 내장).
+
+자리는 필요 단축 일정 머리의 「Qual 마감 계산기」 단추가 여는 큰 팝업이다(2026-10-24 사용자
+결정 — 가용설비 현황 두 탭 개편, 그 전에는 가용설비 현황의 탭이었다). 데이터와 잇지 않는 도구라 화면
+조건·호기 유무와 엮이지 않는다 — 호기가 없어도 열린다.
 
 **다른 데이터와 잇지 않는다.** 설비 DB·시나리오·Cut-off 프로필을 읽지 않고 어디에도 쓰지 않는다 —
 사람이 적은 Cut-off·목표·호기만으로 계산한다. 입력은 이 세션에만 남는다(새로 고치거나 다른 사람이
@@ -8,10 +12,15 @@
 `docs/TODO.md` 3장 결정 기록 「화면」). 계산·글자는 `services/qual_deadline.py` 가 원본과 같게 내고,
 이 파일은 칸을 받아 넘기고 결과를 그리기만 한다. 계산이 가벼워(12개월·호기 수십) 캐시하지 않는다.
 
-**닫힌 탭에서는 그리지 않는다**(페이지가 `tab_is_hidden` 으로 건너뛴다). 그래도 입력은 남는다 —
-숫자·날짜 칸은 `persist_state="session"` 이 지키고, 편집표는 고칠 때마다 `on_change` 콜백이 편집을
-원본 표(`MONTHS_KEY`, 위젯 아닌 칸)에 옮겨 둔다. 콜백은 본문보다 먼저 돌므로, 칸을 고치고 바로 다른
-탭을 눌러 두 조작이 한 회차에 와도(그 회차에는 편집표를 그리지 않는다) 고친 값이 남는다.
+**닫힌 팝업에서는 그리지 않는다.** 그래도 입력은 남는다 — 숫자·날짜 칸은
+`persist_state="session"` 이 지키고, 편집표는 고칠 때마다 `on_change` 콜백이 편집을 원본 표
+(`MONTHS_KEY`, 위젯 아닌 칸)에 옮겨 둔다. 콜백은 본문보다 먼저 돌므로, 칸을 고치고 바로 팝업을
+닫아 두 조작이 한 회차에 와도(그 회차에는 편집표를 그리지 않는다) 고친 값이 남는다.
+
+**이벤트 칸에 아무것도 쓰지 않는다**(AGENTS 9장 「팝업 본문은 이벤트 칸에 갈래와 상관없이 같은
+수만」). 팝업을 연 회차와 닫은 회차의 이벤트 칸 자리 수가 다르면 그 뒤 필요 단축 일정의 기준선
+알림 토스트 자리가 밀려 지난 알림이 다시 뜬다. 그래서 두 칸 배치·지표 줄·상태색 띠의 서식은 맨 위
+안내 한 줄과 한 `st.html` 에 실어 본문 칸으로 보낸다(`calculator_style_markup`).
 
 엑셀 여러 칸은 원본처럼 「엑셀에서 한 번에 붙여넣기」 칸(글 칸 + 「표에 넣기」)으로 받는다 — 규칙은
 `parse_pasted_months`. 편집표에 바로 붙여 넣는 길은 덤이다: 표의 붙여넣기는 브라우저 클립보드 읽기라
@@ -20,18 +29,20 @@
 **잘라** 저장해(19.3456 → 19.34) 원본과 다른 마감을 낸다. 원본의 「복사」 두 단추는 같은 표를 CSV 로
 내려받는 단추다(`table_toolbar` 관례 — 결과 표도 칸을 골라 Ctrl+C 로 복사된다).
 
-**배치는 원본과 같다** — 넓으면 입력 칸(고정 폭) 옆에 결과 칸, 좁으면 위아래로 쌓는다(원본
-`.cols`). 원본은 창 폭으로 갈랐지만 앱은 사이드바가 본문 폭을 바꾸므로 두 칸을 담은 줄의 폭으로
-가른다(CSS 컨테이너 질의 — `intro_summary` 의 사이드바 머리칸과 같은 길). 가르는 폭은 결과 칸이
-호기별 표를 가로 넘김 없이 담는 폭에서 나온다(`_STACK_BELOW_PX`). Streamlit 편집 격자는 칸 폭의
-합이 표보다 좁으면 남는 폭을 붙박지 않은 칸에 고루 나눠 늘리고, 넓으면 표 안에서 가로로 넘긴다 —
-그래서 편집표 칸 폭의 합은 입력 칸 안에 들게 두고(넘치면 「신규 호기」 칸을 고칠 때 표가 넘어가
-「월」 칸이 가려진다), 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면
-머리 글 폭에 고른 몫만 붙어 90px 안팎으로 잘렸다).
+**배치는 원본과 같다** — 넓으면 입력 칸(고정 폭) 옆에 결과 칸, 좁으면 위아래로 쌓는다(원본 `.cols`).
+원본은 창 폭으로 갈랐지만 앱은 사이드바가 본문 폭을 바꾸므로 두 칸을 담은 줄의 폭으로 가른다(CSS
+컨테이너 질의 — `intro_summary` 의 사이드바 머리칸과 같은 길). 가르는 폭은 결과 칸이 호기별 표를
+가로 넘김 없이 담는 폭에서 나온다(`_STACK_BELOW_PX`) — 큰 팝업(`width="large"`, 창 폭을 따라 최대
+1280px)에서는 창이 아주 넓을 때만 나란히 서고 대개 위아래다. Streamlit 편집 격자는 칸 폭의 합이
+표보다 좁으면 남는 폭을 붙박지 않은 칸에 고루 나눠 늘리고, 넓으면 표 안에서 가로로 넘긴다 — 그래서
+편집표 칸 폭의 합은 입력 칸 안에 들게 두고(넘치면 「신규 호기」 칸을 고칠 때 표가 넘어가 「월」 칸이
+가려진다), 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면 머리 글 폭에
+고른 몫만 붙어 90px 안팎으로 잘렸다).
 """
 
 from __future__ import annotations
 
+import html
 from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Literal, cast
@@ -42,7 +53,12 @@ from pandas.io.formats.style import Styler
 from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
-from capa_simulation.components.status_metric import metric_row, render_status_metric
+from capa_simulation.components.status_metric import (
+    metric_row,
+    metric_row_style,
+    render_status_metric,
+    status_metric_style,
+)
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.services.qual_deadline import (
@@ -78,6 +94,7 @@ __all__ = [
     "BASE_KEY",
     "CUTOFF_KEY",
     "EDITOR_KEY",
+    "INTRO_TEXT",
     "MONTHS_KEY",
     "MONTH_COLUMN",
     "PASTE_APPLY_KEY",
@@ -87,6 +104,7 @@ __all__ = [
     "TODAY_KEY",
     "UNITS_COLUMN",
     "YEAR_KEY",
+    "calculator_style_markup",
     "months_frame",
     "render_qual_deadline_calculator",
 ]
@@ -110,6 +128,16 @@ PASTE_TEXT_KEY = "equipment_qualcalc_paste_text_v1"
 PASTE_APPLY_KEY = "equipment_qualcalc_paste_apply_v1"
 PASTE_NOTICE_KEY = "equipment_qualcalc_paste_notice_v1"
 _KPI_ROW_KEY = "equipment_qualcalc_kpis"
+# 색이 바뀔 수 있는 지표(지난 마감·부족 달). 띠 서식은 늘 미리 싣는다 — 평상이면 key 칸이 없어 닿지
+# 않는다(`status_metric_style`).
+_KPI_PAST_KEY = "equipment_qualcalc_kpi_past"
+_KPI_SHORT_KEY = "equipment_qualcalc_kpi_short"
+# 맨 위 안내 한 줄(서식과 한 `st.html` 에 싣는 보이는 글).
+_INTRO_CLASS = "capa-qualcalc-intro"
+INTRO_TEXT = (
+    "Cut-off · 월별 목표 가용대수 · 신규 호기를 넣으면 호기마다 Qual 완료 마감을 냅니다. "
+    "설비 DB 와 잇지 않은 계산기라 적은 값은 이 세션에만 남습니다."
+)
 # 두 칸 배치 — 줄(컨테이너 질의의 기준)·입력 칸·결과 칸.
 _LAYOUT_KEY = "equipment_qualcalc_layout"
 _INPUTS_BOX_KEY = "equipment_qualcalc_inputs_box"
@@ -155,6 +183,12 @@ _LAYOUT_GAP_PX = 28
 _RESULTS_MIN_PX = sum(_UNIT_COLUMN_PX.values()) + _BOX_CHROME_PX
 # 두 칸을 담은 줄이 이보다 좁으면 위아래로 쌓는다 — 옆에 두면 결과 칸이 호기별 표를 다 담지 못한다.
 _STACK_BELOW_PX = _INPUTS_BOX_PX + _LAYOUT_GAP_PX + _RESULTS_MIN_PX
+# 팝업 폭. Streamlit 1.63 큰 팝업(`width="large"`)은 1120px 에서 멈춰(1280~1920 창 실측) 두 칸이 늘
+# 위아래로 쌓였다 — 이 계산기 팝업만 창 폭을 따라 이만큼까지 넓혀 넓은 창에서는 옆에 결과가 서게
+# 한다(창 양쪽 여백은 `_DIALOG_VIEWPORT_GUTTER_PX`). 팝업 안쪽 여백을 빼도 `_STACK_BELOW_PX` 보다
+# 넓다.
+_DIALOG_MAX_PX = 1400
+_DIALOG_VIEWPORT_GUTTER_PX = 48
 # 판정 칩·지난 마감 칸의 옅은 면 — 상태색을 표 면(`SURFACE`)에 섞은 불투명 색이라 그 위 본문 글자가
 # 라이트·다크 모두 읽힌다. 짙기는 확보율 표의 부족 띠(0.12~0.3)보다 한 단 진하게 둔다 — 칸 하나다.
 _TINT_ALPHA: dict[VerdictTone, float] = {"ok": 0.16, "warn": 0.28, "bad": 0.26}
@@ -471,8 +505,10 @@ def _text_column(
 
 
 def _render_kpis(result: QualDeadlineResult) -> None:
+    """지표 넷. 서식(지표 줄·상태색 띠)은 `calculator_style_markup` 이 맨 위 안내 줄과 함께 미리
+    실었다 — 여기서는 그리지 않는다(이벤트 칸에 쓰지 않는다)."""
     kpis = result.kpis
-    with metric_row(key=_KPI_ROW_KEY):
+    with metric_row(key=_KPI_ROW_KEY, emit_style=False):
         render_status_metric(
             "마감 낸 호기",
             f"{kpis.unit_count}대",
@@ -488,16 +524,18 @@ def _render_kpis(result: QualDeadlineResult) -> None:
         render_status_metric(
             "이미 지난 마감",
             f"{kpis.past_count}대",
-            key="equipment_qualcalc_kpi_past",
+            key=_KPI_PAST_KEY,
             tone="critical" if kpis.past_count else "neutral",
             help="마감이 「오늘」보다 앞선 호기 수입니다. 오늘을 비우면 세지 않습니다.",
+            emit_style=False,
         )
         render_status_metric(
             "목표 대비 부족 달",
             f"{kpis.short_months}개월",
-            key="equipment_qualcalc_kpi_short",
+            key=_KPI_SHORT_KEY,
             tone="critical" if kpis.short_months else "neutral",
             help="적은 호기를 다 써도 목표에 모자라는 달 수입니다.",
+            emit_style=False,
         )
 
 
@@ -614,15 +652,46 @@ def layout_style() -> str:
     )
 
 
-def render_qual_deadline_calculator(*, today: date) -> None:
-    """탭 본문 하나. `today` 는 「오늘」 칸의 처음 값이자 예시 표지가 견주는 날이다."""
-    _seed_defaults(today)
-    st.markdown("#### :material/calculate: Qual 마감 계산기")
-    st.caption(
-        "Cut-off · 월별 목표 가용대수 · 신규 호기를 넣으면 호기마다 Qual 완료 마감을 냅니다. "
-        "설비 DB 와 잇지 않은 계산기라 적은 값은 이 화면에만 남습니다."
+def calculator_style_markup() -> str:
+    """맨 위 안내 한 줄과 계산기 서식(두 칸 배치·지표 줄·상태색 띠)을 한 덩이로.
+
+    팝업 폭도 여기서 넓힌다(`_DIALOG_MAX_PX` — 이 계산기를 든 팝업 상자만 `:has` 로 고른다.
+    Streamlit 의 팝업 DOM(`stDialog` › 상자 › `role="dialog"`)이 바뀌면 넓히지 못할 뿐 위아래로 쌓여
+    그대로 쓴다). 보이는 글이 함께라 본문 칸으로 간다 — 스타일만 든 `st.html` 은 이벤트 칸으로 가
+    팝업을 연 회차와 닫은 회차의 자리 수를 가른다(모듈 설명). 띠 서식은 색이 바뀔 수 있는 두 지표에
+    늘 싣는다.
+    """
+    intro = (
+        f"<style>.{_INTRO_CLASS} {{ margin: 0; font-size: 0.875rem; "
+        f"color: {tokens.TEXT_MUTED}; }}</style>"
+        f'<p class="{_INTRO_CLASS}">{html.escape(INTRO_TEXT)}</p>'
     )
-    st.html(layout_style())
+    # 폭은 `role="dialog"` 의 부모(팝업 상자)가 쥔다 — 그 상자를 고른다. 상자의 `max-width`(창 안
+    # 여백)는 그대로 둔다.
+    dialog = (
+        f'<style>[data-testid="stDialog"] div:has(> [role="dialog"] .st-key-{_LAYOUT_KEY}) {{ '
+        f"width: min({_DIALOG_MAX_PX}px, calc(100vw - {_DIALOG_VIEWPORT_GUTTER_PX}px)) !important; "
+        "}</style>"
+    )
+    return "\n".join(
+        [
+            layout_style(),
+            dialog,
+            metric_row_style(_KPI_ROW_KEY),
+            status_metric_style(_KPI_PAST_KEY, "critical"),
+            status_metric_style(_KPI_SHORT_KEY, "critical"),
+            intro,
+        ]
+    )
+
+
+def render_qual_deadline_calculator(*, today: date) -> None:
+    """팝업 본문 하나. `today` 는 「오늘」 칸의 처음 값이자 예시 표지가 견주는 날이다.
+
+    제목은 팝업 머리(「Qual 마감 계산기」)가 말한다 — 본문에 다시 적지 않는다.
+    """
+    _seed_defaults(today)
+    st.html(calculator_style_markup())
     with st.container(horizontal=True, gap="medium", key=_LAYOUT_KEY):
         with st.container(border=True, key=_INPUTS_BOX_KEY):
             inputs = _render_inputs(today)

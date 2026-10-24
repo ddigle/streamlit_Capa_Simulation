@@ -249,16 +249,16 @@ PENDING_FAB_KEY = "equipment_pending_fab_layout_v1"
 # 함께 버려진다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을 바꾼 호기가 「지운 호기 +
 # 새 호기」로 읽힌다(`services/space_layout_edit.PendingRenames`).
 PENDING_RENAMES_KEY = "equipment_pending_unit_renames_v1"
-# 이름 바꿈을 따라갈 RawData 목록 필터(칸 이름 → {옛 값: 새 값}). 이름은 그 필터가 그려지기
+# 이름 바꿈을 따라갈 설비 마스터 탭 목록 필터(칸 이름 → {옛 값: 새 값}). 이름은 그 필터가 그려지기
 # **전**에만 고칠 수 있어(위젯 key) 여기 모았다가 `_render_editors` 가 필터를 그리기 전에 얹는다.
 FOLLOWED_FILTERS_KEY = "equipment_workspace_followed_filters_v1"
 # 설비 마스터·비가동 일정 편집표 보기 설정의 key 접두어(`render_table_view_controls`).
 MASTER_VIEW_PREFIX = "equipment_master_view"
 DOWNTIME_VIEW_PREFIX = "equipment_downtime_view"
-# 「이름 바꿈」 목록 펼침(RawData 알림 칸).
+# 「이름 바꿈」 목록 펼침(설비 마스터 탭 알림 칸).
 NAME_CHANGES_EXPANDER_KEY = "equipment_workspace_name_changes_v1"
-# 이름 바꿈 목록 아래 한 줄 — Space 편집기 상자와 RawData 가 같이 쓴다(G4·R2 — 이름 바꾸기는 같은
-# 호기다).
+# 이름 바꿈 목록 아래 한 줄 — Space 편집기 상자와 설비 마스터 탭이 같이 쓴다(G4·R2 — 이름
+# 바꾸기는 같은 호기다).
 NAME_CHANGES_CAPTION = (
     "이름 바꾸기는 같은 호기입니다 — 저장하면 새 리비전부터 새 이름이고, 모든 설비 시나리오의 "
     "일정·비가동이 새 이름을 따라갑니다. 지난 리비전과 필요 단축 일정 진척 비교 기준선은 옛 이름 "
@@ -572,7 +572,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             st.session_state[DISCARDED_NOTICE_KEY] = (
                 f"다른 사용자가 {number}{object_particle(number)} 저장해, 이 화면에서 "
                 "저장하지 않은 설비 편집"
-                "(RawData·Space 배치)을 버리고 최신 저장본으로 다시 열었습니다."
+                "(설비 마스터·Space 배치)을 버리고 최신 저장본으로 다시 열었습니다."
             )
         _clear_editors()
         st.session_state[BUFFER_KEY] = _copy_frames(
@@ -757,7 +757,7 @@ class RemovalElsewhere:
 
     def refusal(self) -> str:
         return (
-            f"{self.message()} 저장하려면 가용설비 현황 RawData 저장 칸의 "
+            f"{self.message()} 저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의 "
             f"「{self.confirm_label()}」 를 켜고 다시 저장하세요."
         )
 
@@ -864,8 +864,8 @@ def assumption_paste_refusal(
 
 
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
-    """이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을 기억한 RawData
-    칸을 따라 옮긴다 — Space 편집기와 설비 마스터 호기 상세(개편)가 같이 부른다.
+    """이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을 기억한
+    설비 마스터 탭 칸을 따라 옮긴다 — Space 편집기와 설비 마스터 호기 상세(개편)가 같이 부른다.
 
     - 설비 마스터·비가동 일정의 **선택**과 **삭제 확인 대기**(`PENDING_DELETE_KEY`)의 키는 새
       설비명으로 옮긴다 — 옛 이름에 매달린 확인이 엉뚱한 행을 지우거나 비게 되지 않게.
@@ -939,7 +939,7 @@ def _apply_followed_filters() -> None:
 
 def render_name_changes(names: pd.DataFrame, *, key: str | None = None) -> None:
     """저장 안 한 이름 바꿈 목록(`space_layout_edit.name_changes`) — 접힌 「이름 바꿈 n건」 과 그
-    뜻. Space 편집기 상자와 RawData 가 같은 꼴로 그린다."""
+    뜻. Space 편집기 상자와 설비 마스터 탭이 같은 꼴로 그린다."""
     with st.expander(f"이름 바꿈 {len(names)}건", key=key):
         st.dataframe(names, hide_index=True, width="stretch")
         st.caption(NAME_CHANGES_CAPTION)
@@ -1162,8 +1162,8 @@ def save_equipment_buffer(
     저장) 설비 저장은 그대로 하고, FAB 대기분은 남긴 채 두 결과를 함께 적은 `ValueError` 를 낸다.
     `frames` 가 None 이면(설비 저장본이 없어 대조할 출발 리비전이 없는 화면) FAB 대기분만 쓴다.
 
-    `removal_confirmed` 는 RawData 저장 칸의 확인 체크로 「다른 설비 시나리오에서도 일정이 빠지는
-    것을 알고 지운다」 고 확인한 그 글의 재료다(`RemovalElsewhere` — 호기와 그 일정이 빠질
+    `removal_confirmed` 는 설비 마스터 탭 저장 칸의 확인 체크로 「다른 설비 시나리오에서도 일정이
+    빠지는 것을 알고 지운다」 고 확인한 그 글의 재료다(`RemovalElsewhere` — 호기와 그 일정이 빠질
     시나리오). 저장 때 다시 센 삭제가 그것으로 덮이지 않으면(확인하지 않은 호기, 본 뒤 그 호기
     일정이 든 시나리오가 늘어남) 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의 저장도 같은
     까닭으로 막힌다.
@@ -1295,10 +1295,10 @@ def _save_equipment_frames(
     clear_equipment_snapshot_cache()
     if floor_layouts:
         clear_floor_layout_cache()
-    # 저장한 이름 바꿈은 이제 저장본 이름이다 — RawData 를 그리지 않은 채(Space 에서) 저장했으면
-    # 목록 필터가 따라갈 지도가 아직 남아 있으니 편집본과 함께 버리지 않는다(버리면 다음 RawData
-    # 회차에 옛 이름이 선택지 밖이라 필터가 「전체」 로 돌아간다). 버리기·남의 저장은 이름이
-    # 돌아가므로 버린다.
+    # 저장한 이름 바꿈은 이제 저장본 이름이다 — 설비 마스터 탭을 그리지 않은 채(Space 에서)
+    # 저장했으면 목록 필터가 따라갈 지도가 아직 남아 있으니 편집본과 함께 버리지 않는다(버리면
+    # 다음 설비 마스터 탭 회차에 옛 이름이 선택지 밖이라 필터가 「전체」 로 돌아간다).
+    # 버리기·남의 저장은 이름이 돌아가므로 버린다.
     followed = st.session_state.get(FOLLOWED_FILTERS_KEY)
     reset_equipment_drafts()
     if followed:
@@ -1363,13 +1363,13 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
     elif result.release_withheld:
         sentences.append(
             "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
-            "공식 발행은 가용설비 현황 「설비 시나리오」 탭에서 하세요."
+            "공식 발행은 시나리오 관리 › 설비 시나리오에서 하세요."
         )
     if result.removed_units:
         removed = f"지운 호기 {len(result.removed_units):,}대는 모든 설비 시나리오에서 빠졌습니다."
         if result.new_units:
-            # 붙여넣기·CSV·RawData 설비명 칸 고침은 설비명이 키라 이름 바꾸기가 아니다(지운 + 새
-            # 호기).
+            # 붙여넣기·CSV·설비 마스터 탭 설비명 칸 고침은 설비명이 키라 이름 바꾸기가 아니다
+            # (지운 + 새 호기).
             removed += f" {RENAME_INSTEAD_HINT}"
         sentences.append(removed)
     sentences.append("가용설비와 필요 단축 일정에 반영되고, Space 현황은 공식 기준입니다.")

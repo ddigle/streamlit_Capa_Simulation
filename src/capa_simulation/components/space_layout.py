@@ -522,7 +522,7 @@ def picked_unit_rows(rows: pd.DataFrame, unit_id: str) -> pd.DataFrame:
     """층 상세 도면에서 누른 호기의 줄(2026-10-23 사용자 결정 — 누른 설비 줄만).
 
     Main 설비 모듈이면 그 Main 설비의 줄 전부이고 누른 모듈이 첫 줄, 나머지는 설비명 자연 정렬이다
-    (`rows` 는 그 층의 행 — 좌표 없는 형제·레이아웃표시 N 모듈도 그 설비의 RawData 라
+    (`rows` 는 그 층의 행 — 좌표 없는 형제·레이아웃표시 N 모듈도 그 설비의 설비 마스터 행이라
     든다). 설비명은 앞뒤 공백을 걷고 견준다. 누른 호기가 없으면 빈 표다."""
     names = rows[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
     hit = names.eq(unit_id).fillna(False).astype(bool)

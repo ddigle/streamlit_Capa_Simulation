@@ -35,7 +35,7 @@ from test_equipment_bulk_delete_page import (
 )
 from test_equipment_bulk_delete_page import _page_script as _bulk_page_script
 from test_equipment_bulk_delete_page import _seeded as _bulk_seeded
-from test_equipment_pages import _open_tab, _page_script
+from test_equipment_pages import _open_settings, _page_script
 from test_shortening_baseline import _bundle_plan
 from test_standard_target_capa_page import TEST_SCRIPT as STANDARD_TARGET_SCRIPT
 from test_wip_status_page import TEST_SCRIPT as WIP_STATUS_SCRIPT
@@ -48,6 +48,7 @@ from capa_simulation.components.equipment_data_workspace import (
     EDIT_SAVE_BUTTON_KEY,
     EQUIPMENT_DRAFT_KEY,
 )
+from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.persistence import equipment_cache
 from capa_simulation.persistence._sql_helpers import DUCKDB_CONNECT_CONFIG
 from capa_simulation.persistence.equipment_cache import (
@@ -407,7 +408,7 @@ def test_floor_states_follow_the_stat_the_clearing_and_a_read_in_flight(
 def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """화면: Preference 에서 Cut-off 를 저장하면 다음 회차가 그 값을 쓴다 — stat 을 고정해도.
+    """화면: 「설정」 팝업에서 Cut-off 를 저장하면 다음 회차가 그 값을 쓴다 — stat 을 고정해도.
 
     샘플 fleet 의 공정 전부에 Cut-off 를 적으면 「적지 않은 공정」 경고가 사라진다(저장 전에는
     선다).
@@ -415,7 +416,7 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     database = tmp_path / "availability.duckdb"
     monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
     app = AppTest.from_string(_page_script(PAGE, database), default_timeout=120).run()
-    app = _open_tab(app, "Preference")
+    app = _open_settings(app)
     assert not app.exception
     assert any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.warning)
 
@@ -428,6 +429,11 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     assert not app.exception
     assert not any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.warning)
     assert any("모두 채워졌습니다" in str(item.value) for item in app.caption)
+    # 저장 뒤에도 팝업은 열린 채 저장 알림이 누른 단추 아래에 선다(팝업 칸이 남는다).
+    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
+    assert any(
+        "Cut-off" in str(item.value) and "저장했습니다" in str(item.value) for item in app.success
+    )
     saved = DuckDBEquipmentRepository(database).load_process_cutoff()
     assert sorted(saved["공정"]) == sorted(processes)
     clear_equipment_repository()

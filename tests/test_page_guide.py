@@ -1,4 +1,4 @@
-# Purpose: Guide 버튼의 가이드 고르는 차례 · 옆 창 · 설정 사전 · 가이드 자리 위생을 잰다.
+# Purpose: Guide 버튼의 가이드 고르는 차례 · 옆 창 · 설정 사전 · 가이드 자리와 md 글 위생을 잰다.
 
 """Guide 버튼의 따라하기 가이드(`components/page_guide.py`).
 
@@ -11,6 +11,9 @@
   누른다.
 - 자리 위생: 사내 자리(`static/guides/local/` · `review/guide/`)는 추적하지 않고 무시되며,
   추적하는 가이드 HTML 은 `static/guides/howto/` 아래 뼈대 이름으로만 있다.
+- md 글 위생: 탭 이름을 일괄로 바꿀 때 떨어져 남은 조사(「… 탭 와」)가 Guide·문서에 없고, 같은
+  낱말이 두 곳을 가리키는 자리(가용설비 현황 `Summary` 탭과 입장 화면 Summary)에 가르는 한 줄이
+  있다.
 """
 
 from __future__ import annotations
@@ -36,7 +39,8 @@ from capa_simulation.components.page_guide import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-HOWTO = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "howto"
+GUIDES = PROJECT_ROOT / "src" / "capa_simulation" / "guides"
+HOWTO = GUIDES / "howto"
 TEMPLATE = HOWTO / "template.html"
 
 
@@ -282,3 +286,39 @@ def test_the_committed_example_shots_cover_the_states_internal_runs_skip() -> No
     assert sorted(path.name for path in folder.glob("*.webp")) == sorted(
         f"{state_id}.webp" for state_id in skipped
     )
+
+
+# ------------------------------------------------------------------------------ md 글 위생
+
+# 「탭」 은 받침이 있어 조사가 붙어 「탭과·탭의·탭에서」 가 된다. 띄어 쓴 조사(「탭 와」)는
+# 「RawData 와」 를 「설비 마스터 탭 와」 로 일괄로 바꾼 흔적이다(2026-10-25 리뷰 — Space Guide
+# 여섯 줄).
+_DETACHED_TAB_PARTICLE = re.compile(r"탭 (와|과|의|에서|에|을|를|은|는|이|가)(?![가-힣])")
+
+
+def test_guides_and_docs_keep_particles_attached_to_tab() -> None:
+    documents = [
+        *sorted(GUIDES.glob("*.md")),
+        *sorted((PROJECT_ROOT / "docs").rglob("*.md")),
+        PROJECT_ROOT / "README.md",
+        PROJECT_ROOT / "AGENTS.md",
+        PROJECT_ROOT / "CLAUDE.md",
+    ]
+    found = [
+        f"{path.relative_to(PROJECT_ROOT)}:{number}: {line.strip()}"
+        for path in documents
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if _DETACHED_TAB_PARTICLE.search(line)
+    ]
+    assert not found, "탭 뒤 조사를 붙여 씁니다(「탭과」·「탭의」·「탭에서」):\n" + "\n".join(found)
+
+
+def test_the_equipment_guide_tells_its_summary_tab_from_the_intro_summary() -> None:
+    """가용설비 현황 ② 「Summary」 는 입장 화면·사이드바 앱 이름 라벨이 여는 Summary 와 낱말이
+    같다 — 아이콘으로 가르고 Guide 에 한 줄을 둔다(가용설비 현황 개편 사양 R18)."""
+    from capa_simulation.navigation import EQUIPMENT_SUMMARY_TAB
+
+    guide = " ".join((GUIDES / "available_equipment_status.md").read_text(encoding="utf-8").split())
+    assert EQUIPMENT_SUMMARY_TAB.startswith(":material/")
+    assert "입장 화면이나 사이드바 맨 위 앱 이름 라벨이 여는 **Summary**" in guide
+    assert "다른 것입니다" in guide

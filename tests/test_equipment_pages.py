@@ -12,7 +12,17 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 from test_floor_layout_profile import _png
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.components.equipment_settings_dialog import (
+    EQUIPMENT_DIALOG_KEY,
+    SETTINGS_BUTTON_KEY,
+)
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.navigation import (
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_SUMMARY_TAB_KEY,
+    EQUIPMENT_SUMMARY_TABS,
+    EQUIPMENT_TAB_KEY,
+)
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
@@ -26,9 +36,20 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _open_tab(app: AppTest, name: str) -> AppTest:
+    """가용설비 현황의 탭 하나를 연다. Summary 의 안쪽 탭(Main·Static 대비 일정)은 바깥 Summary 와
+    함께 연다 — 안쪽만 고르면 바깥이 숨은 채라 그 본문이 돌지 않는다."""
     label = next(tab.label for tab in app.tabs if tab.label.endswith(f" {name}"))
-    app.session_state["equipment_active_tab"] = label
+    if label in EQUIPMENT_SUMMARY_TABS:
+        app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+        app.session_state[EQUIPMENT_SUMMARY_TAB_KEY] = label
+    else:
+        app.session_state[EQUIPMENT_TAB_KEY] = label
     return app.run()
+
+
+def _open_settings(app: AppTest) -> AppTest:
+    """머리 「설정」 단추로 공정별 Cut-off 팝업을 연다(개편 전 `Preference` 탭)."""
+    return app.button(key=SETTINGS_BUTTON_KEY).click().run()
 
 
 def _page_script(page_path: Path, database_path: Path) -> str:
@@ -60,15 +81,18 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 운영 화면이라 상태 접미도 본문 배지도 없다(2026-10-19 사용자 요청).
     assert app.title[0].value == "가용설비 현황"
     assert not any("Data확보중" in element.value for element in app.markdown)
-    # Cut-off는 Preference에서 입력한다. RawData 안의 입력표 탭은 최상위 목록과 별개다. Qual 마감
-    # 계산기(2026-10-22)는 보는 탭 뒤·입력 폼 앞이다.
-    assert [tab.label for tab in app.tabs[:5]] == [
+    # 탭 둘(2026-10-24): ① 설비 마스터(처음 여는 탭) ② Summary(안쪽 Main·Static 대비 일정). Cut-off
+    # 는 머리 「설정」 팝업, Qual 마감 계산기는 필요 단축 일정 팝업, 설비 시나리오는 시나리오
+    # 관리다. 설비 마스터 안의 입력표 탭은 최상위 목록과 별개다.
+    labels = [tab.label for tab in app.tabs]
+    assert [label for label in labels if label.startswith(":material/")] == [
+        ":material/table_rows: 설비 마스터",
+        ":material/insights: Summary",
         ":material/dashboard: Main",
         ":material/compare_arrows: Static 대비 일정",
-        ":material/calculate: Qual 마감 계산기",
-        ":material/tune: Preference",
-        ":material/table_rows: RawData",
     ]
+    assert any(button.key == SETTINGS_BUTTON_KEY for button in app.button)
+    _open_tab(app, "Main")
     filter_labels = {
         widget.label
         for widget in app.multiselect
@@ -103,7 +127,7 @@ def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -
         _page_script(page_path, database_path),
         default_timeout=60,
     ).run()
-    _open_tab(app, "RawData")
+    _open_tab(app, "설비 마스터")
     app.selectbox("equipment_import_target_v1").set_value("기존 보유대수").run()
     app.text_area("equipment_import_clipboard_v1").set_value(
         "공정\t분류\t기존보유대수\t비고\nProcess-X\t전체\t7\t증설"
@@ -442,13 +466,13 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
         _page_script(page_path, database_path),
         default_timeout=60,
     ).run()
-    _open_tab(app, "RawData")
+    _open_tab(app, "설비 마스터")
     picker = app.multiselect("equipment_baseline_view_columns")
     remaining = [column for column in picker.value if column != "비고"]
     picker.set_value(remaining)
     app.button("equipment_view_apply_v1").click().run()
     _open_tab(app, "Main")
-    _open_tab(app, "RawData")
+    _open_tab(app, "설비 마스터")
     assert app.multiselect("equipment_baseline_view_columns").value == remaining
     app.button("equipment_edit_save_v1").click().run()
 
@@ -478,6 +502,9 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
     clear_equipment_repository()
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
     app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+    # 첫 데이터 안내는 Summary › Main 에 선다(처음 여는 탭은 설비 마스터).
+    assert not any("**설비 마스터** 0건" in element.value for element in app.markdown)
+    _open_tab(app, "Main")
 
     assert not app.exception
     rendered = [element.value for element in app.markdown]
@@ -488,7 +515,101 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
     app.button("equipment_first_data_cut_v1").click().run()
 
     assert not app.exception
-    assert app.session_state["equipment_active_tab"] == ":material/tune: Preference"
+    # 「설정에서 보기」 는 「설정」 팝업(공정별 Cut-off)을 연다.
+    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
+    assert any(button.label == "Cut-off 저장" for button in app.button)
+    # 「설비 마스터 탭에서 붙여넣기」 는 탭 ① 을 연다.
+    del app.session_state[EQUIPMENT_DIALOG_KEY]
+    _open_tab(app, "Main")
+    app.button("equipment_first_data_master_v1").click().run()
+    assert not app.exception
+    assert app.session_state[EQUIPMENT_TAB_KEY] == ":material/table_rows: 설비 마스터"
+    clear_equipment_repository()
+
+
+def _recording_page_script(page_path: Path, database_path: Path) -> str:
+    """`_page_script` 에 Summary 의 두 본문(Main 탐색·Static 대비 일정 구간 계산)을 부른 기록을
+    단다."""
+    simulation_database_path = database_path.with_name(f"{database_path.stem}_simulation.duckdb")
+    return f"""
+from pathlib import Path
+import streamlit as st
+import capa_simulation.settings as settings
+import capa_simulation.components.equipment_explorer as explorer
+import capa_simulation.services.simulation_cache as simulation_cache
+
+settings.EQUIPMENT_DUCKDB_PATH = Path({str(database_path)!r})
+settings.DUCKDB_PATH = Path({str(simulation_database_path)!r})
+calls = st.session_state.setdefault("summary_calls", [])
+original_explorer = explorer.render_equipment_explorer
+original_spans = simulation_cache.get_equipment_lifecycle_spans
+
+
+def recording_explorer(*args, **kwargs):
+    calls.append("explorer")
+    return original_explorer(*args, **kwargs)
+
+
+def recording_spans(*args, **kwargs):
+    calls.append("spans")
+    return original_spans(*args, **kwargs)
+
+
+explorer.render_equipment_explorer = recording_explorer
+simulation_cache.get_equipment_lifecycle_spans = recording_spans
+try:
+    page_source = Path({str(page_path)!r}).read_text(encoding="utf-8")
+    exec(compile(page_source, {str(page_path)!r}, "exec"), {{"__name__": "__main__"}})
+finally:
+    explorer.render_equipment_explorer = original_explorer
+    simulation_cache.get_equipment_lifecycle_spans = original_spans
+"""
+
+
+def test_the_master_tab_run_skips_the_summary_work(tmp_path: Path) -> None:
+    """Summary 의 안쪽 탭은 바깥 Summary 안에서 늘 부르므로 바깥이 숨어도 안쪽 고른 탭의 `open` 은
+    참이다 — 본문 갈래는 둘을 합친 판정(`NestedTab`)이라 ① 을 보는 회차에 Main 탐색·Static 대비 일정
+    구간 계산을 부르지 않는다(사양 R23)."""
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _recording_page_script(page_path, tmp_path / "skip.duckdb"), default_timeout=60
+    ).run()
+    assert not app.exception
+    assert app.session_state["summary_calls"] == []
+
+    _open_tab(app, "Static 대비 일정")
+    assert "spans" in app.session_state["summary_calls"]
+    _open_tab(app, "Main")
+    assert "explorer" in app.session_state["summary_calls"]
+
+    # ① 로 돌아오면(안쪽은 Main 을 고른 채) 다시 부르지 않는다.
+    app.session_state["summary_calls"] = []
+    _open_tab(app, "설비 마스터")
+    assert not app.exception
+    assert app.session_state["summary_calls"] == []
+    clear_equipment_repository()
+
+
+def test_unsaved_equipment_edits_put_a_dot_on_the_master_tab(tmp_path: Path) -> None:
+    """저장하지 않은 설비 편집이 있으면 ① 탭 이름 옆에 점 — 라벨 글자는 그대로(탭 위젯 id), CSS 로
+    찍는다(`tab_marks`). 판정은 화면 탭 줄의 점과 같다(편집본 세대가 씨앗보다 앞섬)."""
+    from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+    from capa_simulation.components.tab_marks import pending_tabs_style
+    from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TABS
+
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(
+        _page_script(page_path, tmp_path / "dot.duckdb"), default_timeout=60
+    ).run()
+    dot = pending_tabs_style(EQUIPMENT_TAB_KEY, EQUIPMENT_TABS, {EQUIPMENT_MASTER_TAB}).strip()
+    bodies = [str(element.proto.body).strip() for element in app.get("html")]
+    assert dot not in bodies
+
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.run()
+    assert not app.exception
+    assert dot in [str(element.proto.body).strip() for element in app.get("html")]
+    assert app.tabs[0].label == EQUIPMENT_MASTER_TAB
     clear_equipment_repository()
 
 
@@ -498,10 +619,11 @@ def test_the_first_data_checklist_disappears_once_a_revision_exists(tmp_path: Pa
     _seeded_equipment(database_path)
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
     app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+    _open_tab(app, "Main")
 
     assert not app.exception
     labels = [button.label for button in app.button]
     assert "설비 데이터 입력" not in labels
-    assert "RawData 에서 붙여넣기" not in labels
-    assert "Preference 에서 보기" not in labels
+    assert "설비 마스터 탭에서 붙여넣기" not in labels
+    assert "설정에서 보기" not in labels
     clear_equipment_repository()

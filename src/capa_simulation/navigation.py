@@ -8,10 +8,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import streamlit as st
+
+from capa_simulation.components.tab_state import remembered_tab_key
 
 # 실적 DB 연결과 운영 기준 확정 전인 화면에 붙인다. 이전에는 사이드바에만
 # `(구현중)`·`(구현 중)`·`(DB 셋팅중)` 세 표기가 섞여 있었고 페이지 본문 제목과도
@@ -23,12 +26,47 @@ def _implementing(title: str) -> str:
     return f"{title} {IMPLEMENTING_SUFFIX}"
 
 
+def opening_tab(state: Mapping[Any, Any], key: str, first: str, tabs: tuple[str, ...]) -> str:
+    """탭 묶음 하나가 이번 회차에 열 라벨 — 위젯 값, 없으면 기억 칸, 둘 다 없으면 첫 탭.
+
+    `state` 는 `st.session_state` 다. 먼저 찾은 값이 라벨 목록(`tabs`, 비면 거르지 않음) 밖이면
+    `stateful_tabs` 처럼 첫 탭으로 본다 — 개편 전 라벨(「RawData」 등)이 남은 세션에서 사이드바와
+    본문이 한 회차 어긋나지 않게.
+    """
+    for value in (state.get(key), state.get(remembered_tab_key(key))):
+        if isinstance(value, str):
+            return value if not tabs or value in tabs else first
+    return first
+
+
+@dataclass(frozen=True)
+class SubTabs:
+    """바깥 탭 하나가 품은 안쪽 탭 묶음(가용설비 현황 「Summary」 › Main·Static 대비 일정).
+
+    사이드바(`app.active_condition_tab`)는 바깥 탭이 `parent` 면 안쪽 탭 라벨을 본다 — 공통
+    조건·조건 카드·설비 시나리오 줄은 **가장 안쪽 라벨**로 가른다.
+    """
+
+    # 안쪽 탭을 품은 바깥 탭 라벨.
+    parent: str
+    # 안쪽 `stateful_tabs` 의 key.
+    key: str
+    # 기억이 없을 때 열리는 안쪽 탭 라벨.
+    first: str
+    # 안쪽 탭 라벨 목록(페이지가 이 차례로 그린다). 세션·기억 값이 이 밖이면 `first` 로 본다 — 옛
+    # 라벨이 남은 세션에서 `stateful_tabs` 는 첫 탭을 여는데 사이드바가 옛 글자를 그대로 보면 한
+    # 회차 어긋난다.
+    tabs: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class ConditionTabs:
     """공통 조건(시나리오·조회기간)을 **탭 몇 개에서만** 읽는 화면의 선언.
 
-    예: 가용설비 현황은 설비 DB 만 보는데, `Static 대비 일정` 탭만 활성 시나리오와 조회기간으로
-    확보율을 맞대어 본다. 그 탭이 열렸을 때만 조건 패널의 공통 줄을 세운다.
+    예: 가용설비 현황은 설비 DB 만 보는데, `Summary` › `Static 대비 일정` 탭만 활성 시나리오와
+    조회기간으로 확보율을 맞대어 본다. 그 탭이 열렸을 때만 조건 패널의 공통 줄을 세운다. 안쪽 탭을
+    가진 바깥 탭(`sub`)은 `labels`·`card_labels` 에 안쪽 라벨로 적는다 — 사이드바가 보는 것이 가장
+    안쪽 라벨 하나다.
     """
 
     # 그 화면 `stateful_tabs` 의 key. 열린 탭 라벨이 세션의 이 칸에 있다.
@@ -39,6 +77,19 @@ class ConditionTabs:
     labels: frozenset[str]
     # 조건 카드를 세우는 탭 라벨. 비워 두면(`None`) 카드가 있는 화면의 모든 탭이다.
     card_labels: frozenset[str] | None = None
+    # 바깥 탭 라벨 목록(페이지가 이 차례로 그린다). 세션·기억 값이 이 밖이면 `first` 로
+    # 본다(`SubTabs`). 비워 두면 거르지 않는다.
+    tabs: tuple[str, ...] = ()
+    # 안쪽 탭을 품은 바깥 탭 하나(없으면 None).
+    sub: SubTabs | None = None
+
+    def active_label(self, state: Mapping[Any, Any]) -> str:
+        """이번 회차에 열릴 **가장 안쪽** 탭 라벨(`opening_tab`). 바깥 탭이 `sub.parent` 면 안쪽
+        탭을 같은 길로 정한다 — 선언(`labels`·`card_labels`)은 가장 안쪽 라벨로 적는다."""
+        outer = opening_tab(state, self.key, self.first, self.tabs)
+        if self.sub is not None and outer == self.sub.parent:
+            return opening_tab(state, self.sub.key, self.sub.first, self.sub.tabs)
+        return outer
 
 
 @dataclass(frozen=True)
@@ -73,8 +124,8 @@ class PageSpec:
     # 읽는 화면에서는 조건 패널에 「설비 시나리오」 칸이 서고, **그 줄은 페이지가**
     # `resolve_equipment_session` 뒤에 그 칸에 그린다 — `app.py` 는 설비 DB 를 열지 않는다.
     equipment_scenario: Literal["session", "official"] | None = None
-    # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(가용설비 현황은 Qual 마감 계산기 탭을
-    # 뺀다 — 그 탭은 설비 데이터를 읽지 않는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
+    # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(설비 데이터를 읽지 않는 탭이 있는
+    # 화면만 적는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
     equipment_scenario_tabs: frozenset[str] | None = None
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
@@ -121,10 +172,16 @@ CAPA_CHATBOT = PageSpec(
     reads_scenario=False,
     reads_period=False,
 )
-# 시나리오 관리는 활성 시나리오를 불러오고 저장하며, 복제·리비전 저장이 지금 조회기간을
-# 프리셋으로 함께 담는다 — 저장되는 값이 보여야 하므로 두 줄을 다 세운다.
+# 시나리오 관리는 활성 시나리오를 불러오고 저장하며, 복제·리비전 저장이 지금 조회기간을 프리셋으로
+# 함께 담는다 — 저장되는 값이 보여야 하므로 두 줄을 다 세운다. 「설비 시나리오」 구획(가용설비
+# 현황의 탭이던 것, 2026-10-24)이 한 회차에 설비 시나리오 목록·리비전·공통 최신을 따로 읽어 설비 DB
+# 핀을 선언한다 — 게으른 핀이라 시뮬레이션 구획만 그린 회차에는 설비 DB 를 열지 않는다. 사이드바
+# 설비 시나리오 줄은 세우지 않는다(구획 머리에 「이 세션: …」 — D4).
 SCENARIO_MANAGEMENT = PageSpec(
-    "app_pages/scenario_management.py", "시나리오 관리", ":material/database:"
+    "app_pages/scenario_management.py",
+    "시나리오 관리",
+    ":material/database:",
+    uses_equipment_db=True,
 )
 
 # 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정): **Static Capa** 는 약속(기술팀이 정한 Capa
@@ -211,30 +268,39 @@ REQUIRED_SHORTENING = PageSpec(
     uses_equipment_db=True,
     equipment_scenario="session",
 )
-# 가용설비 현황의 탭. 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
-# 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다.
+# 가용설비 현황의 탭(2026-10-24 사용자 결정 — 두 탭 개편). 바깥은 ① 「설비 마스터」(설비
+# 입력·편집·저장 이력 — 처음 여는 탭) ② 「Summary」(안쪽 탭 「Main」·「Static 대비 일정」 — 라벨
+# 글자는 개편 전 그대로). 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
+# 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다. 바깥 key 는 개편 전 그대로라 옛 기억
+# 값(「RawData」 등)은 라벨에 없어 `stateful_tabs` 가 무시하고 첫 탭을 연다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
+EQUIPMENT_MASTER_TAB = ":material/table_rows: 설비 마스터"
+EQUIPMENT_SUMMARY_TAB = ":material/insights: Summary"
+EQUIPMENT_TABS = (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB)
+EQUIPMENT_SUMMARY_TAB_KEY = "equipment_summary_tab"
 EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 # 기준정보(Static) 가용대수와 설비 마스터 일정으로 낸 **설비 일정 기준** 가용대수를 맞대는 탭이다.
 EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static 대비 일정"
-# 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22 사용자 요청). 설비 시나리오 줄도 세우지
-# 않는다.
-EQUIPMENT_QUAL_CALCULATOR_TAB = ":material/calculate: Qual 마감 계산기"
-EQUIPMENT_PREFERENCE_TAB = ":material/tune: Preference"
-EQUIPMENT_RAWDATA_TAB = ":material/table_rows: RawData"
-# 설비 시나리오 목록·리비전·복제·이름·공식 발행(E8). 탭 차례 맨 끝이다.
-EQUIPMENT_SCENARIO_TAB = ":material/account_tree: 설비 시나리오"
-# 설비 DB 만 본다. `Static 대비 일정` 탭만 활성 시나리오·조회기간으로 소요대수를 맞대어 본다.
+EQUIPMENT_SUMMARY_TABS = (EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB)
+# 설비 DB 만 본다. `Summary` › `Static 대비 일정` 탭만 활성 시나리오·조회기간으로 소요대수를 맞대어
+# 본다.
 AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     "app_pages/available_equipment_status.py",
     "가용설비 현황",
     ":material/precision_manufacturing:",
     condition_tabs=ConditionTabs(
         EQUIPMENT_TAB_KEY,
-        first=EQUIPMENT_MAIN_TAB,
+        first=EQUIPMENT_MASTER_TAB,
         labels=frozenset({EQUIPMENT_GAP_TAB}),
-        # `설비 조회 조건` 카드는 Main·Static 대비 일정에만 선다.
+        # `설비 조회 조건` 카드는 Summary › Main·Static 대비 일정에만 선다.
         card_labels=frozenset({EQUIPMENT_MAIN_TAB, EQUIPMENT_GAP_TAB}),
+        tabs=EQUIPMENT_TABS,
+        sub=SubTabs(
+            EQUIPMENT_SUMMARY_TAB,
+            EQUIPMENT_SUMMARY_TAB_KEY,
+            first=EQUIPMENT_MAIN_TAB,
+            tabs=EQUIPMENT_SUMMARY_TABS,
+        ),
     ),
     has_condition_cards=True,
     # 바뀐 것이 없는 회차는 최신 리비전 id·Cut-off 를 캐시(키 = DB·WAL stat)에서 받아 설비 DB 를
@@ -242,16 +308,8 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     # 리비전 목록·도면·조회 조건 프로필·기준선을 따로 읽어 한 회차에 여러 번 연다 — 그 회차를
     # 위한 핀이다.
     uses_equipment_db=True,
+    # 두 탭 모두 설비 시나리오를 읽는다(Qual 마감 계산기는 필요 단축 일정의 팝업으로 옮겼다).
     equipment_scenario="session",
-    equipment_scenario_tabs=frozenset(
-        {
-            EQUIPMENT_MAIN_TAB,
-            EQUIPMENT_GAP_TAB,
-            EQUIPMENT_PREFERENCE_TAB,
-            EQUIPMENT_RAWDATA_TAB,
-            EQUIPMENT_SCENARIO_TAB,
-        }
-    ),
 )
 # 설비 DB 만 본다. 공정소분류·색 기준은 자기 조건 카드(`Space 조건`), 기준일은 층 상세 도면 위
 # 페이더다. 보기는 늘 **공식** 설비 시나리오다(E5 — 좌표는 공통, 상태 색은 공식 일정). 한 회차에

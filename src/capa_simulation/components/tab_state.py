@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Protocol
 
@@ -89,6 +90,41 @@ def stateful_tabs(labels: Sequence[str], *, key: str) -> Sequence[OpenTab]:
             st.session_state[memory] = label
             break
     return tabs
+
+
+@dataclass(frozen=True, eq=False)
+class NestedTab:
+    """안쪽 탭 하나를 바깥 탭과 합친 열림 판정(가용설비 현황 「Summary」 › Main·Static 대비 일정).
+
+    안쪽 `stateful_tabs` 는 바깥 탭 본문 안에서 **늘** 부르므로(위젯 값이 남아 사이드바가 읽는다)
+    바깥 탭이 숨어 있어도 안쪽 고른 탭의 `open` 은 참이다. 그 탭만 보면 바깥 다른 탭을 보는 회차에도
+    안쪽 본문의 계산·그림이 돈다 — 둘 다 열렸을 때만 열린 것으로 본다. 하나라도 「모른다」(`None`)면
+    모른다(`tab_is_hidden` 이 보이는 쪽으로 판단한다). `with` 는 안쪽 탭으로 들어간다.
+    """
+
+    outer: OpenTab
+    inner: OpenTab
+
+    @property
+    def open(self) -> bool | None:
+        states = (self.outer.open, self.inner.open)
+        if False in states:
+            return False
+        if None in states:
+            return None
+        return True
+
+    def __enter__(self) -> OpenTab:
+        self.inner.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        return self.inner.__exit__(exc_type, exc_value, traceback)
 
 
 def tab_is_hidden(tab: OpenTab | None) -> bool:

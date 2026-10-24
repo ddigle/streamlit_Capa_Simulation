@@ -218,7 +218,7 @@ def latest_equipment_revision_id(database_path: str) -> str | None:
     """가장 최근 **공통 대장** 리비전 id(없으면 None).
 
     가용설비 현황·Space 는 위젯 하나에도 페이지 전체가 다시 돌아, 캐시가 없으면 이 읽기 하나 때문에
-    회차마다 설비 DB 를 연다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(RawData
+    회차마다 설비 DB 를 연다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(설비 마스터
     저장·입력 저장·일괄 삭제 저장·Space 배치 저장·설비 시나리오 팝업 저장)는 `save_equipment_buffer`
     를 지나 `clear_equipment_snapshot_cache` 로 이 캐시를 비우고 쓰기 세대를 올린다(같은 프로세스의
     다른 세션 저장도 그렇다). 세대가 키에 있어 저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛
@@ -280,8 +280,8 @@ def _load_legacy_trace_review_payload(
 def load_legacy_trace_review(database_path: str) -> LegacyTraceReview:
     """「이대로 이어 쓰기」 확인 재료(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭).
 
-    흔적이 있을 때 설비 시나리오 탭이 그리는 회차에만 부른다. 시나리오마다 합쳐 읽어 보므로 목록과
-    같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다.
+    흔적이 있을 때 시나리오 관리 「설비 시나리오」 구획이 그리는 회차에만 부른다. 시나리오마다 합쳐
+    읽어 보므로 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다.
     """
     return LegacyTraceReview(
         **_load_legacy_trace_review_payload(
@@ -305,7 +305,7 @@ def load_units_scheduled_elsewhere(
     database_path: str, equipment_scenario_id: str | None
 ) -> dict[str, tuple[str, ...]]:
     """다른 ACTIVE 설비 시나리오 최신에 일정이 있는 호기 키 → 그 시나리오 이름들(설계 7-2·11-2 6단계
-    — RawData 에서 호기를 지우는 저장의 확인 재료).
+    — 설비 마스터 탭에서 호기를 지우는 저장의 확인 재료).
 
     남의 저장·복제·되돌리기로 바뀌므로 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로
     지킨다. 지운 호기가 있는 회차에만 부른다.
@@ -320,7 +320,7 @@ def load_units_scheduled_elsewhere(
     )
 
 
-# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·설비 시나리오 탭 표).
+# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
 
@@ -437,10 +437,10 @@ def _load_process_cutoff(
 def load_process_cutoff(database_path: str) -> pd.DataFrame:
     """저장된 공정별 Cut-off(`0009`, 리비전 없는 현행값).
 
-    Preference 탭이 숨어 있어도 회차마다 읽어 Static 대비 일정·필요 단축 일정에 넘긴다. 최신 리비전
-    id 와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한 직후
-    `clear_process_cutoff_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의
-    쓰기를 맡는다.
+    가용설비 현황 Static 대비 일정·필요 단축 일정이 회차마다 읽는다(고치는 곳은 가용설비 현황
+    「설정」 팝업). 최신 리비전 id 와 같은 방식이다 — 이 앱의 저장(`cutoff_management`)이 성공한
+    직후 `clear_process_cutoff_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스
+    밖의 쓰기를 맡는다.
     """
     return _load_process_cutoff(
         database_path, database_stamp(database_path), _write_generation("cutoff")
@@ -495,7 +495,7 @@ def load_equipment_revision_summaries(
     database_path: str,
     latest_revision_id: str | None,
 ) -> tuple[EquipmentRevisionSummary, ...]:
-    """RawData `저장 이력` 의 리비전 목록(최신 50개). 저장본이 없으면 빈 튜플.
+    """설비 마스터 탭 `저장 이력` 의 리비전 목록(최신 50개). 저장본이 없으면 빈 튜플.
 
     가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고 이 탭은 숨어 있어도 그려지므로, DB 를
     rerun 마다 읽고 있었다. **리비전은 고치지 않고 덧붙이기만 한다** — 그래서 최신 리비전 id 가
@@ -516,7 +516,7 @@ def load_equipment_csv_payloads(
 ) -> tuple[bytes, bytes, bytes]:
     """저장된 (공통, 일정) 쌍 하나의 세 표 CSV 바이트(설비 마스터·기존 보유대수·비가동 일정 차례).
 
-    RawData 「현재 데이터」 내려받기는 편집본이 저장본과 같을 때 이 바이트를 그대로 쓴다 — 두
+    설비 마스터 탭 「현재 데이터」 내려받기는 편집본이 저장본과 같을 때 이 바이트를 그대로 쓴다 — 두
     리비전은 고칠 수 없고 직렬화는 결정적이라 같은 쌍이면 같은 파일이다. 그래서 rerun 마다 세 표(와
     저장본과 견주려는 세 표)를 다시 직렬화하지 않는다. 본문은 합친 본문 캐시에서 받는다.
     """
@@ -762,11 +762,11 @@ def _load_floor_states_payload(
 def load_floor_states(database_path: str) -> FloorStates:
     """Space 동·층 사용 상태(`0029`, 리비전 없는 공용 현행값).
 
-    Space(회차마다)와 가용설비 현황 RawData(편집표를 그리는 회차마다)가 읽는다. Cut-off 와 같은
-    방식이다 — 이 앱의 저장(`space_floor_list` 의 저장 콜백)이 성공한 직후
+    Space(회차마다)와 가용설비 현황 설비 마스터 탭(편집표를 그리는 회차마다)이 읽는다. Cut-off 와
+    같은 방식이다 — 이 앱의 저장(`space_floor_list` 의 저장 콜백)이 성공한 직후
     `clear_floor_state_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의
-    쓰기(다른 PC·동기화로 받은 DB)를 맡는다. 도면 캐시(`floor_layout` 세대)와 묶지 않는다 — 층
-    사용 저장이 배경 도면까지 비울 까닭이 없다.
+    쓰기(다른 PC·동기화로 받은 DB)를 맡는다. 도면 캐시(`floor_layout` 세대)와 묶지 않는다 — 층 사용
+    저장이 배경 도면까지 비울 까닭이 없다.
     """
     return FloorStates(
         **_load_floor_states_payload(

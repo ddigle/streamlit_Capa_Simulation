@@ -46,10 +46,10 @@
 (「공식 n」), ③ 카드의 회색 「공식: …」 한 줄에만 둔다. 그림 캐시 키에 가정 토큰이 든다.
 
 **부족 원인의 다음 화면** — 보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과, 가용 불일치 →
-가용설비 현황 `Static 대비 일정`, 일정 → 필요 단축 일정 이 공정 카드 강조(`open_shortening_page` —
-공정 필터를 심지 않고 강조 칸만 적는다). 화면을 옮기는
-단추는 콜백이 아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의
-`st.switch_page` 가 서버 로그 경고를 남긴다(`process_detail_state.open_process_detail`).
+가용설비 현황 `Summary` › `Static 대비 일정`, 일정 → 필요 단축 일정 이 공정 카드
+강조(`open_shortening_page` — 공정 필터를 심지 않고 강조 칸만 적는다). 화면을 옮기는 단추는 콜백이
+아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의 `st.switch_page` 가
+서버 로그 경고를 남긴다(`process_detail_state.open_process_detail`).
 """
 
 from __future__ import annotations
@@ -104,6 +104,8 @@ from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     EQUIPMENT_GAP_TAB,
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_SUMMARY_TAB_KEY,
     EQUIPMENT_TAB_KEY,
     REQUIRED_SHORTENING,
 )
@@ -805,7 +807,7 @@ def _render_dynamic_absent(view: ProcessDetailView) -> None:
             )
         render_page_link(
             AVAILABLE_EQUIPMENT_PAGE,
-            label="가용설비 현황에서 설비·Cut-off 보기",
+            label="가용설비 현황에서 설비·설정(Cut-off) 보기",
             icon=":material/precision_manufacturing:",
         )
 
@@ -1494,7 +1496,8 @@ def open_shortening_page(process: str) -> None:
 
 
 def open_availability_gap() -> None:
-    """가용설비 현황 `Static 대비 일정` 탭으로 옮긴다 — 그 화면의 탭 기억 칸만 적는다.
+    """가용설비 현황 `Summary` › `Static 대비 일정` 탭으로 옮긴다 — 그 화면의 바깥·안쪽 탭 기억
+    칸만 적는다.
 
     그 탭의 공정·호기 필터는 심지 않는다(그 탭의 조건은 그 탭이 정한다). 갈 곳이 없으면(단독
     실행) 옮기지 않는다. 콜백이 아니라 본문에서 부른다 — 프래그먼트 콜백 안의 `st.switch_page` 는
@@ -1502,7 +1505,8 @@ def open_availability_gap() -> None:
     """
     if refused_at_tab_limit(AVAILABLE_EQUIPMENT_PAGE):
         return
-    remember_open_tab(EQUIPMENT_TAB_KEY, EQUIPMENT_GAP_TAB)
+    remember_open_tab(EQUIPMENT_TAB_KEY, EQUIPMENT_SUMMARY_TAB)
+    remember_open_tab(EQUIPMENT_SUMMARY_TAB_KEY, EQUIPMENT_GAP_TAB)
     try:
         st.switch_page(AVAILABLE_EQUIPMENT_PAGE)
     except StreamlitPageNotFoundError:
