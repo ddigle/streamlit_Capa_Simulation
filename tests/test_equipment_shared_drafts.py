@@ -95,7 +95,7 @@ def _save_with_pending_layout(database: str, revision_optional: bool) -> None:
     )
     st.session_state["staged"] = pending_floor_canvases()
     st.session_state["message"] = save_equipment_buffer(
-        repository, (frames[0], master, frames[2]), "배치", revision_optional=revision_optional
+        repository, (frames[0], master, frames[2]), "배치"
     )
     st.session_state["cleared"] = (
         PENDING_CANVASES_KEY not in st.session_state and PENDING_MARKS_KEY not in st.session_state
@@ -164,9 +164,7 @@ def _edit_then_someone_saves(database: str) -> None:
         return
     st.session_state["notice"] = pop_discarded_notice()
     st.session_state["pending"] = pending_floor_marks()
-    st.session_state["message"] = save_equipment_buffer(
-        repository, frames, "", revision_optional=True
-    )
+    st.session_state["message"] = save_equipment_buffer(repository, frames, "")
 
 
 def test_someone_elses_save_discards_pending_layouts_and_says_so(tmp_path: Path) -> None:
@@ -178,7 +176,9 @@ def test_someone_elses_save_discards_pending_layouts_and_says_so(tmp_path: Path)
     app.run()
 
     assert not app.exception
-    assert "r2" in app.session_state["notice"] and "버리고" in app.session_state["notice"]
+    # 남이 공통 대장을 저장했다 — 어느 쪽인지 문구가 말한다.
+    notice = app.session_state["notice"]
+    assert "다른 사용자가 공통 대장 r2" in notice and "버리고" in notice
     assert app.session_state["pending"] == {}
     # 대기분이 버려진 뒤의 저장은 쓴 것이 없다고 말한다(「저장했습니다」가 아니다).
     assert app.session_state["message"] == "바뀐 내용이 없어 저장하지 않았습니다."
@@ -247,9 +247,7 @@ def _popup_after_staging(database: str) -> None:
     repository.save_floor_layout_canvas(*key, 120, 60)
     rebase_floor_canvas(key, (120.0, 60.0))
     stage_floor_canvas(key, None)
-    st.session_state["message"] = save_equipment_buffer(
-        repository, frames, "", revision_optional=True
-    )
+    st.session_state["message"] = save_equipment_buffer(repository, frames, "")
 
 
 def test_a_popup_canvas_save_does_not_lock_out_the_pending_marks(tmp_path: Path) -> None:
@@ -302,3 +300,105 @@ def test_the_run_that_reseeds_after_someone_elses_save_is_flagged_once(tmp_path:
     assert app.session_state["bumped"] is False
     # 다른 사람의 저장을 본 회차에만 참이다 — RawData 는 그 회차의 제출을 반영하지 않는다.
     assert app.session_state["flags"] == [False, True, False]
+
+
+def _calculation_view(database: str, scenario_name: str) -> None:
+    """설비 시나리오 하나를 든 세션의 저장본 사본 — 편집용 39칸 전체와 계산용(일정 없음 제외)."""
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        EQUIPMENT_DRAFT_KEY,
+        calculation_drafts,
+        draft_unscheduled_units,
+        ensure_equipment_drafts,
+    )
+    from capa_simulation.equipment_scenario_activation import (
+        SELECTION_KEY,
+        resolve_equipment_session,
+    )
+    from capa_simulation.persistence.equipment_cache import load_equipment_scenario_catalog
+
+    target = next(
+        item
+        for item in load_equipment_scenario_catalog(database).scenarios
+        if item.scenario_name == scenario_name
+    )
+    st.session_state[SELECTION_KEY] = {
+        "scenario_id": target.equipment_scenario_id,
+        "schedule_revision_id": target.latest_schedule_revision_id,
+    }
+    session = resolve_equipment_session(database)
+    ensure_equipment_drafts(session.snapshot)
+    _, equipment, downtime = calculation_drafts()
+    st.session_state["draft_units"] = sorted(st.session_state[EQUIPMENT_DRAFT_KEY]["설비명"])
+    st.session_state["calculation_units"] = sorted(equipment["설비명"])
+    st.session_state["calculation_downtime_units"] = sorted(set(downtime["설비명"]))
+    st.session_state["unscheduled"] = sorted(draft_unscheduled_units())
+
+
+def test_calculation_drafts_leave_out_the_units_unscheduled_in_this_scenario(
+    tmp_path: Path,
+) -> None:
+    """함께 넣기를 끄고 「운영 일정」 에 넣은 새 호기는 「셋업 실무」 에서 일정 없음이다(F4). 편집용
+    사본(39칸)에는 남고, 계산 사본(`calculation_drafts`)에서는 그 호기와 그 비가동이 빠진다."""
+    import pandas as pd
+
+    from capa_simulation.persistence.equipment_repository import EquipmentSaveRequest
+
+    database = tmp_path / "equipment.duckdb"
+    _seeded(database)
+    repository = DuckDBEquipmentRepository(database)
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.clone_equipment_scenario(
+        release.schedule_revision_id, name="셋업 실무", created_by=None
+    )
+    session = repository.load_official_snapshot()
+    assert session is not None and session.schedule is not None
+    records = session.equipment.to_dict("records")
+    new_unit = {**records[0], "설비명": "EQ-NEW", "X좌표": 80.0}
+    equipment = pd.DataFrame([*records, new_unit], columns=session.equipment.columns)
+    downtime = pd.concat(
+        [
+            session.downtime,
+            pd.DataFrame(
+                {
+                    "설비명": ["EQ-NEW"],
+                    "비가동유형": ["고장"],
+                    "시작일": [pd.Timestamp("2026-09-01")],
+                    "종료일": [pd.Timestamp("2026-09-03")],
+                    "상세사유": [None],
+                    "비고": [None],
+                }
+            ),
+        ],
+        ignore_index=True,
+    )
+    repository.save_equipment(
+        EquipmentSaveRequest(
+            baseline=session.baseline,
+            equipment=equipment,
+            downtime=downtime,
+            equipment_scenario_id="operations",
+            base_common_revision_id=session.revision.revision_id,
+            base_schedule_revision_id=session.schedule.schedule_revision_id,
+            propagate_new_units=False,
+        )
+    )
+
+    app = AppTest.from_function(
+        _calculation_view, args=(str(database), "셋업 실무"), default_timeout=30
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert "EQ-NEW" in app.session_state["draft_units"]
+    assert app.session_state["unscheduled"] == ["EQ-NEW"]
+    assert "EQ-NEW" not in app.session_state["calculation_units"]
+    assert "EQ-NEW" not in app.session_state["calculation_downtime_units"]
+
+    official = AppTest.from_function(
+        _calculation_view, args=(str(database), "운영 일정"), default_timeout=30
+    ).run()
+    assert not official.exception, [item.message for item in official.exception]
+    assert "EQ-NEW" in official.session_state["calculation_units"]
+    assert official.session_state["unscheduled"] == []

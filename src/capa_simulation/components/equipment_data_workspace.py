@@ -1,8 +1,8 @@
-# Purpose: 설비 세 입력의 검토·편집·이력 조회를 한 작업 공간에서 연결하고 전체 리비전을 저장한다.
+# Purpose: 설비 세 입력의 검토·편집·이력 조회를 한 작업 공간에서 잇고 바뀐 쪽만 저장한다.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -11,6 +11,11 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
+from capa_simulation.components.equipment_save_fields import (
+    EquipmentSaveBasis,
+    EquipmentSaveFields,
+    render_equipment_save_fields,
+)
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     TableView,
@@ -22,19 +27,27 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     date_range_value,
     page_visit,
+    prune_choice,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     clear_floor_layout_cache,
+    latest_equipment_revision_id,
     load_equipment_csv_payloads,
     load_equipment_revision_summaries,
-    load_equipment_snapshot,
+    load_equipment_scenario_catalog,
+    load_equipment_schedule_revisions,
+    load_merged_equipment_snapshot,
 )
 from capa_simulation.persistence.equipment_repository import (
     EMPTY_REVISION_TOKEN,
     DuckDBEquipmentRepository,
+    EquipmentSaveRequest,
+    EquipmentSaveResult,
+    EquipmentScheduleRevisionSummary,
     EquipmentSnapshot,
     FloorLayoutBase,
+    PropagatedRevision,
 )
 from capa_simulation.services.equipment_bulk_delete import (
     BASELINE_TARGET,
@@ -61,6 +74,7 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
     QUAL_CONFIRMATION_STATUSES,
     QUAL_STATUS_COLUMN,
+    SCENARIO_SCHEDULE_COLUMNS,
     STORAGE_FLAG_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
@@ -91,6 +105,7 @@ from capa_simulation.services.equipment_csv import (
     untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
+from capa_simulation.services.equipment_scenario import calculation_frames
 from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
@@ -103,7 +118,7 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
-from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.korean_particle import object_particle, with_direction_particle
 from capa_simulation.services.schedule_confirmation import (
     ACTUAL_COLUMN,
     CONFIRMATION_KIND_COLUMN,
@@ -132,6 +147,18 @@ BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
 DOWNTIME_DRAFT_KEY = "equipment_downtime_draft_v3"
 DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
+# 저장본 사본(draft)이 나온 설비 시나리오 일정 리비전에 일정 행이 없는 설비명(F4). 계산 화면은 이
+# 호기와 그 비가동을 뺀 사본을 읽는다(`calculation_drafts`). 편집·RawData·CSV 는 39칸 전체다.
+DRAFT_UNSCHEDULED_KEY = "equipment_draft_unscheduled_v1"
+# 편집본(buffer)이 나온 출발점 — {"common": 공통 id 또는 EMPTY_REVISION_TOKEN, "schedule": 일정 id
+# 또는 None, "scenario": 시나리오 id 또는 None, "common_no", "schedule_no"}. 기본형만 담는다.
+# 저장 요청의 두 대조 값이 여기서 나온다.
+_BASE_KEY = "equipment_workspace_base_v1"
+# 이 세션의 저장이 설비 시나리오 일정 리비전을 새로 만들었다는 표지 —
+# {"scenario_id", "schedule_revision_id"}.
+# 다음 회차의 `equipment_scenario_activation.resolve_equipment_session` 이 읽어 세션 선택을 그
+# 리비전으로 옮긴다(공통만 쓴 저장은 선택이 그대로다).
+SAVED_SCHEDULE_KEY = "equipment_workspace_saved_schedule_v1"
 BASELINE_IMPORT_KEY = "baseline_import_preview_rows_v3"
 EQUIPMENT_IMPORT_KEY = "equipment_import_preview_rows_v3"
 DOWNTIME_IMPORT_KEY = "downtime_import_preview_rows_v3"
@@ -263,14 +290,20 @@ def _clear_editors() -> None:
         st.session_state.pop(f"{key}_applied_view", None)
 
 
-def reset_equipment_drafts() -> None:
-    """새 저장본으로 돌아갈 때 페이지 draft와 작업 공간의 입력·delta를 함께 비운다."""
+def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
+    """새 저장본으로 돌아갈 때 페이지 draft와 작업 공간의 입력·delta를 함께 비운다.
+
+    `keep_fab` 이면 미저장 FAB 전체 배치는 남긴다 — 설비 시나리오와 무관한 현행값이라 시나리오를
+    바꿔 불러와도 버릴 까닭이 없다.
+    """
     _clear_editors()
     for key in (
         BASELINE_DRAFT_KEY,
         EQUIPMENT_DRAFT_KEY,
         DOWNTIME_DRAFT_KEY,
         DRAFT_REVISION_KEY,
+        DRAFT_UNSCHEDULED_KEY,
+        _BASE_KEY,
         BASELINE_IMPORT_KEY,
         EQUIPMENT_IMPORT_KEY,
         DOWNTIME_IMPORT_KEY,
@@ -288,7 +321,7 @@ def reset_equipment_drafts() -> None:
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
         PENDING_BASES_KEY,
-        PENDING_FAB_KEY,
+        *(() if keep_fab else (PENDING_FAB_KEY,)),
         PENDING_RENAMES_KEY,
         EDITOR_MODULE_LAYOUTS_KEY,
         _SEEDED_GENERATION_KEY,
@@ -337,10 +370,91 @@ def equipment_buffer_generation() -> int:
 
 
 def revision_token(latest_snapshot: EquipmentSnapshot | None) -> str:
-    """편집본이 어느 저장본에서 나왔는지 가르는 값. 저장본이 없으면 `EMPTY_REVISION_TOKEN`."""
+    """편집본이 어느 저장본에서 나왔는지 가르는 값 — (공통 대장, 설비 시나리오 일정) 쌍 토큰
+    (`EquipmentSnapshot.token`). 저장본이 없으면 `EMPTY_REVISION_TOKEN`.
+
+    두 리비전 내용은 불변이라 토큰이 같으면 저장본이 같다. 남이 공통 대장을 저장하면 앞쪽이 바뀌어
+    편집본을 다시 세운다. 남이 내 시나리오에 일정을 저장해도 세션은 고른 일정 리비전을 그대로 들고
+    있어 토큰이 그대로다 — 그때는 화면이 「낡음」 으로 일정 칸을 잠근다(설계 4-2).
+    """
     if latest_snapshot is None:
         return EMPTY_REVISION_TOKEN
-    return latest_snapshot.revision.revision_id
+    return latest_snapshot.token
+
+
+def _base_of(latest_snapshot: EquipmentSnapshot | None) -> dict[str, object]:
+    """편집본 출발점(`_BASE_KEY`) — 기본형만."""
+    if latest_snapshot is None:
+        return {
+            "common": EMPTY_REVISION_TOKEN,
+            "schedule": None,
+            "scenario": None,
+            "common_no": None,
+            "schedule_no": None,
+        }
+    schedule = latest_snapshot.schedule
+    return {
+        "common": latest_snapshot.revision.revision_id,
+        "schedule": schedule.schedule_revision_id if schedule is not None else None,
+        "scenario": schedule.equipment_scenario_id if schedule is not None else None,
+        "common_no": latest_snapshot.revision.revision_no,
+        "schedule_no": schedule.revision_no if schedule is not None else None,
+    }
+
+
+def _token_parts(token: object) -> tuple[str, str]:
+    """쌍 토큰을 (공통, 일정) 으로 가른다. 옛 꼴·빈 저장소 토큰은 일정이 「-」다."""
+    text = str(token)
+    common, _, schedule = text.partition("|")
+    return common, schedule or "-"
+
+
+def _replaced_by_words(previous: object, latest_snapshot: EquipmentSnapshot | None) -> str:
+    """남의 저장으로 편집본을 다시 세운 까닭 — 「공통 대장 r16」 또는 「설비 시나리오 일정 r4」."""
+    if latest_snapshot is None:
+        return "새 저장"
+    before_common, before_schedule = _token_parts(previous)
+    after_common, after_schedule = _token_parts(latest_snapshot.token)
+    schedule = latest_snapshot.schedule
+    if before_common == after_common and before_schedule != after_schedule and schedule:
+        return f"설비 시나리오 일정 r{schedule.revision_no}"
+    return f"공통 대장 r{latest_snapshot.revision.revision_no}"
+
+
+def calculation_drafts() -> Frames:
+    """계산 화면이 읽는 저장본 사본 — 이 설비 시나리오에 일정이 없는 호기와 그 비가동을 뺀 사본.
+
+    `ensure_equipment_drafts` 뒤에 부른다(사본이 아직 없으면 빈 표). 돌려준 표는 사본의 복사라
+    고쳐도 세션 칸이 바뀌지 않는다.
+    """
+    baseline = st.session_state.get(BASELINE_DRAFT_KEY)
+    equipment = st.session_state.get(EQUIPMENT_DRAFT_KEY)
+    downtime = st.session_state.get(DOWNTIME_DRAFT_KEY)
+    unscheduled = st.session_state.get(DRAFT_UNSCHEDULED_KEY)
+    frames = calculation_frames(
+        baseline.copy() if isinstance(baseline, pd.DataFrame) else empty_equipment_baseline(),
+        equipment.copy() if isinstance(equipment, pd.DataFrame) else empty_equipment_master(),
+        downtime.copy() if isinstance(downtime, pd.DataFrame) else empty_downtime_schedule(),
+        unscheduled if isinstance(unscheduled, frozenset) else frozenset(),
+    )
+    return frames
+
+
+def draft_unscheduled_units() -> frozenset[str]:
+    """저장본 사본의 일정 없음 설비명(F4 — 「일정 없음 n대」 알림 재료)."""
+    value = st.session_state.get(DRAFT_UNSCHEDULED_KEY)
+    return value if isinstance(value, frozenset) else frozenset()
+
+
+def pop_saved_schedule() -> tuple[str, str] | None:
+    """이 세션의 저장이 만든 (시나리오 id, 일정 리비전 id). 한 번 읽으면 지운다."""
+    value = st.session_state.pop(SAVED_SCHEDULE_KEY, None)
+    if isinstance(value, dict):
+        scenario = value.get("scenario_id")
+        schedule = value.get("schedule_revision_id")
+        if isinstance(scenario, str) and isinstance(schedule, str):
+            return scenario, schedule
+    return None
 
 
 def has_unsaved_equipment_edits() -> bool:
@@ -382,6 +496,11 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         st.session_state[BASELINE_DRAFT_KEY] = saved[0].copy()
         st.session_state[EQUIPMENT_DRAFT_KEY] = saved[1].copy()
         st.session_state[DOWNTIME_DRAFT_KEY] = saved[2].copy()
+        st.session_state[DRAFT_UNSCHEDULED_KEY] = (
+            frozenset(latest_snapshot.unscheduled_units)
+            if latest_snapshot is not None
+            else frozenset()
+        )
         st.session_state[DRAFT_REVISION_KEY] = token
         for preview_key in (BASELINE_IMPORT_KEY, EQUIPMENT_IMPORT_KEY, DOWNTIME_IMPORT_KEY):
             st.session_state.pop(preview_key, None)
@@ -392,10 +511,10 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         if replaced:
             st.session_state[DRAFTS_REPLACED_KEY] = True
         if replaced and has_unsaved_equipment_edits():
-            number = f"r{latest_snapshot.revision.revision_no}" if latest_snapshot else "새 저장"
+            number = _replaced_by_words(previous, latest_snapshot)
             st.session_state[DISCARDED_NOTICE_KEY] = (
-                f"다른 사용자가 {number}{object_particle(number)} 저장해, 이 화면에서 저장하지 "
-                "않은 설비 편집"
+                f"다른 사용자가 {number}{object_particle(number)} 저장해, 이 화면에서 "
+                "저장하지 않은 설비 편집"
                 "(RawData·Space 배치)을 버리고 최신 저장본으로 다시 열었습니다."
             )
         _clear_editors()
@@ -407,6 +526,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             )
         )
         st.session_state[_REVISION_KEY] = token
+        st.session_state[_BASE_KEY] = _base_of(latest_snapshot)
         # 선택·삭제 대기·되돌리기·이름 바꿈·미저장 층 배치는 옛 편집본의 것이다. 새 저장본 위에서
         # 쓰이면 안 된다.
         stale = [
@@ -728,13 +848,17 @@ def save_equipment_buffer(
     frames: Frames | None,
     note: str,
     *,
-    revision_optional: bool = False,
+    basis: EquipmentSaveBasis | None = None,
+    fields: EquipmentSaveFields | None = None,
 ) -> str:
     """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
 
-    RawData 저장과 Space 저장이 이 한 곳을 탄다. `revision_optional` 이면 세 표가 최신
-    리비전과 같을 때 리비전 없이 캔버스·요소만 쓴다(Space 에서 요소만 고친 저장). 예시 행 가드는
-    repository 에 없으므로 여기서 건다. 성공하면 두 캐시와 편집본을 모두 비운다.
+    RawData 저장·Space 저장·사이드바 설비 시나리오 팝업 저장이 이 한 곳을 탄다(저장소
+    `save_equipment` — 공통 대장·설비 시나리오 일정 가운데 **바뀐 쪽만** 쓴다. 둘 다 그대로면 층
+    값만 쓰거나 아무것도 쓰지 않는다). `basis` 는 저장할 설비 시나리오와 화면이 본 공식
+    번호(페이지가 세션에서 만든다 — 없으면 편집본이 나온 시나리오, 그것도 없으면 공식
+    시나리오), `fields` 는 저장 칸 값(없으면 기본값)이다. 예시 행 가드는 repository 에 없으므로
+    여기서 건다. 성공하면 캐시와 편집본을 모두 비운다.
 
     미저장 **FAB 전체 배치**는 설비 리비전과 무관한 별도 쓰기다(`save_pending_fab_layout`). 설비
     편집보다 **먼저** 쓴다 — 설비 저장이 막혀도 FAB 는 저장된 채 남고(그 사실을 오류 문구에 적는다),
@@ -760,7 +884,7 @@ def save_equipment_buffer(
         fab_saved, fab_error = False, str(exc)
     try:
         message = _save_equipment_frames(
-            repository, frames, note, revision_optional=revision_optional, fab_saved=fab_saved
+            repository, frames, note, basis=basis, fields=fields, fab_saved=fab_saved
         )
     except BOOTSTRAP_ERRORS as exc:
         if not (fab_saved or fab_error):
@@ -792,54 +916,137 @@ def _save_equipment_frames(
     frames: Frames,
     note: str,
     *,
-    revision_optional: bool,
+    basis: EquipmentSaveBasis | None,
+    fields: EquipmentSaveFields | None,
     fab_saved: bool,
 ) -> str:
-    """`save_equipment_buffer` 의 설비 쪽(세 표 + 층 캔버스·요소 한 트랜잭션).
+    """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션).
 
-    설비 마스터를 쓰는 모든 저장(RawData 직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장)이 이
-    한 곳을 지나므로 모듈 묶음 좌표·크기 검사(`saved_master_violations` — 바뀐 묶음은 묶음 범위의
-    바둑판이어야 한다, 2026-10-23 사용자 답 「막자」)도 여기서 한다."""
+    설비 마스터를 쓰는 모든 저장(RawData 직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장·팝업
+    저장)이 이 한 곳을 지나므로 모듈 묶음 좌표·크기 검사(`saved_master_violations` — 바뀐 묶음은
+    묶음 범위의 바둑판이어야 한다, 2026-10-23 사용자 답 「막자」)도 여기서 한다."""
     violations = saved_master_violations(frames[1])
     if violations:
         raise ValueError(module_layout_message(violations))
+    base = st.session_state.get(_BASE_KEY)
+    if not isinstance(base, dict):
+        raise ValueError("편집본이 아직 서지 않아 저장하지 않았습니다. 화면을 다시 불러오세요.")
     canvases = pending_floor_canvases()
     marks = {
         key: [mark.editor_payload() for mark in staged]
         for key, staged in pending_floor_marks().items()
     }
     labels = pending_floor_group_labels()
-    # 편집본이 나온 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
+    chosen = fields if fields is not None else EquipmentSaveFields()
+    scenario_id = (
+        basis.equipment_scenario_id
+        if basis is not None
+        else (
+            str(base["scenario"])
+            if isinstance(base.get("scenario"), str)
+            else repository.official_scenario_id()
+        )
+    )
+    if scenario_id is None:
+        raise ValueError("설비 시나리오가 없어 설비 마스터를 저장하지 않았습니다.")
+    schedule_id = base.get("schedule")
+    # 편집본이 나온 두 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
     # 저장소가 쓰기 잠금 안에서 거부한다 — 옛 편집이 남의 저장을 조용히 되돌리지 않게.
-    options: dict[str, Any] = {
-        "note": note,
-        "floor_canvases": canvases,
-        "floor_marks": marks,
-        "base_revision_id": st.session_state.get(_REVISION_KEY),
-        "floor_layout_bases": pending_floor_bases(),
-        "floor_group_labels": labels,
-    }
-    if revision_optional:
-        saved = repository.save_space_layout(*frames, **options)
-    else:
-        saved = repository.save_snapshot(*frames, **options)
+    request = EquipmentSaveRequest(
+        baseline=frames[0],
+        equipment=frames[1],
+        downtime=frames[2],
+        equipment_scenario_id=scenario_id,
+        base_common_revision_id=str(base["common"]),
+        base_schedule_revision_id=schedule_id if isinstance(schedule_id, str) else None,
+        renames=dict(pending_unit_renames().units),
+        note=note,
+        saved_by=chosen.saved_by,
+        propagate_new_units=chosen.propagate_new_units,
+        propagate_new_downtime=chosen.propagate_new_downtime,
+        publish_official=chosen.publish_official,
+        expected_release_no=basis.release_no if basis is not None else None,
+        floor_canvases=canvases,
+        floor_marks=marks,
+        floor_layout_bases=pending_floor_bases(),
+        floor_group_labels=labels,
+    )
+    result = repository.save_equipment(request)
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
     floor_layouts = floor_layout_words(canvases, marks, labels)
-    if saved is None and not floor_layouts:
+    if not result.wrote_revision and not floor_layouts and result.release_no is None:
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
         return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
     clear_equipment_snapshot_cache()
     if floor_layouts:
         clear_floor_layout_cache()
     reset_equipment_drafts()
+    if result.schedule is not None:
+        st.session_state[SAVED_SCHEDULE_KEY] = {
+            "scenario_id": result.schedule.equipment_scenario_id,
+            "schedule_revision_id": result.schedule.schedule_revision_id,
+        }
     layouts = f" {floor_layouts}도 함께 저장했습니다." if floor_layouts else ""
-    if saved is None:
+    if not result.wrote_revision:
         return f"설비 마스터가 바뀌지 않아 새 리비전 없이 {floor_layouts}만 저장했습니다.{fab}"
-    return (
-        f"설비 운영 데이터 r{saved.revision.revision_no}"
-        f"{object_particle(str(saved.revision.revision_no))} 저장했습니다. "
-        f"가용설비와 Space 현황에 반영됩니다.{layouts}{fab}"
-    )
+    name = basis.scenario_name if basis is not None else None
+    return save_result_message(result, scenario_name=name) + layouts + fab
+
+
+def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | None) -> str:
+    """저장 결과 알림 — 공통 rN · 시나리오 rN · 함께 넣은 목록 · 발행 · 지운 호기(설계 6-3·6-4)."""
+    written: list[str] = []
+    if result.common is not None:
+        written.append(f"공통 대장 r{result.common.revision_no}")
+    if result.schedule is not None:
+        label = f"「{scenario_name}」 " if scenario_name else "설비 시나리오 일정 "
+        written.append(f"{label}r{result.schedule.revision_no}")
+    sentences = [
+        f"설비 데이터를 저장했습니다 — {' · '.join(written)}."
+        if written
+        else "설비 데이터를 저장했습니다."
+    ]
+    if result.forced_common:
+        sentences.append(
+            "설비 시나리오로 옮긴 뒤 첫 저장이라 공통 대장도 새 리비전으로 함께 저장했습니다."
+        )
+    propagated = [item for item in result.propagated if item.revision_no is not None]
+    if propagated:
+        sentences.append(
+            "함께 넣음: " + ", ".join(_propagated_words(item) for item in propagated) + "."
+        )
+    skipped = sum(item.skipped for item in result.propagated)
+    if skipped:
+        sentences.append(
+            f"비가동 {skipped:,}건은 받는 시나리오에 그 호기 일정이 없거나 이미 같은 비가동이 있어 "
+            "넣지 않았습니다."
+        )
+    if result.release_no is not None:
+        released = f"공식 v{result.release_no}"
+        sentences.append(f"{with_direction_particle(released)} 발행했습니다.")
+    elif result.release_withheld:
+        sentences.append(
+            "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
+            "공식 발행은 가용설비 현황 「설비 시나리오」 탭에서 하세요."
+        )
+    if result.removed_units:
+        removed = f"지운 호기 {len(result.removed_units):,}대는 모든 설비 시나리오에서 빠졌습니다."
+        if result.new_units:
+            removed += " 이름만 바꾸려면 Space 편집기 「이름 바꾸기」 를 쓰세요."
+        sentences.append(removed)
+    sentences.append("가용설비와 필요 단축 일정에 반영되고, Space 현황은 공식 기준입니다.")
+    return " ".join(sentences)
+
+
+def _propagated_words(item: PropagatedRevision) -> str:
+    """함께 넣은 시나리오 한 줄 — 「셋업 실무」 r4(호기 2대 · 비가동 1건)."""
+    parts = []
+    if item.unit_count:
+        parts.append(f"호기 {item.unit_count:,}대")
+    if item.downtime:
+        parts.append(f"비가동 {len(item.downtime):,}건")
+    detail = f"({' · '.join(parts)})" if parts else ""
+    return f"「{item.scenario_name}」 r{item.revision_no}{detail}"
 
 
 def floor_layout_words(canvases: object, marks: object, labels: object) -> str:
@@ -855,17 +1062,41 @@ def current_data_file_name(
     latest_snapshot: EquipmentSnapshot | None,
     edited: bool,
     today: date,
+    scenario_name: str | None = None,
 ) -> str:
-    """`equipment_master_r3_20260924.csv` 꼴. 무엇을 기준으로 한 파일인지 이름이 말한다.
+    """`equipment_master_운영_일정_r3_c5_20260924.csv` 꼴. 무엇을 기준으로 한 파일인지 이름이
+    말한다.
 
     월 범위가 없는 표라 기준 정보 쪽(`RQ_UPEH_<시작>_<끝>.csv`)처럼 범위를 담을 수 없다.
-    대신 **어느 저장본에서 출발했는지**(`r3`, 저장본이 없으면 `r0`)와 **언제 받았는지**를
-    담고, 저장하지 않은 변경이 섞여 있으면 `_edited` 를 붙인다 — 같은 날 받은 두 파일이
-    저장본인지 편집본인지 이름만 보고 갈리게 하기 위해서다.
+    대신 **어느 저장본에서 출발했는지**(설비 시나리오 이름 · 그 일정 리비전 `r3` · 공통 대장
+    `c5`, 저장본이 없으면 `r0`)와 **언제 받았는지**를 담고, 저장하지 않은 변경이 섞여 있으면
+    `_edited` 를 붙인다 — 같은 날 받은 두 파일이 어느 시나리오·저장본인지, 편집본인지 이름만 보고
+    갈리게 하기 위해서다. 시나리오 이름의 파일 이름에 못 쓰는 글자·빈칸은 `_` 로 바꾼다.
     """
-    revision_no = latest_snapshot.revision.revision_no if latest_snapshot is not None else 0
     suffix = "_edited" if edited else ""
-    return f"{table_slug}_r{revision_no}{suffix}_{today:%Y%m%d}.csv"
+    if latest_snapshot is None:
+        return f"{table_slug}_r0{suffix}_{today:%Y%m%d}.csv"
+    scenario = f"_{_file_name_part(scenario_name)}" if scenario_name else ""
+    schedule = latest_snapshot.schedule
+    schedule_no = schedule.revision_no if schedule is not None else 0
+    common_no = latest_snapshot.revision.revision_no
+    return f"{table_slug}{scenario}_r{schedule_no}_c{common_no}{suffix}_{today:%Y%m%d}.csv"
+
+
+def _file_name_part(text: str) -> str:
+    """파일 이름 한 토막 — 경로·예약 글자와 빈칸을 `_` 로, 겹친 `_` 는 하나로."""
+    cleaned = "".join("_" if char in '\\/:*?"<>|' or char.isspace() else char for char in text)
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned.strip("_") or "scenario"
+
+
+def _saved_basis_words(snapshot: EquipmentSnapshot, scenario_name: str | None) -> str:
+    """「저장본 r3 · 「운영 일정」 · 공통 대장 r5」 — 편집본이 나온 저장본 쌍."""
+    schedule = snapshot.schedule
+    head = f"저장본 r{schedule.revision_no}" if schedule is not None else "저장본 일정 없음"
+    name = f" · 「{scenario_name}」" if scenario_name else ""
+    return f"{head}{name} · 공통 대장 r{snapshot.revision.revision_no}"
 
 
 def _render_current_data_downloads(
@@ -874,6 +1105,7 @@ def _render_current_data_downloads(
     saved: Frames,
     latest_snapshot: EquipmentSnapshot | None,
     database_path: str,
+    scenario_name: str | None = None,
 ) -> None:
     """세 표의 **현재 데이터**를 내려받는 버튼 셋. 양식 버튼 아래에 같은 차례로 선다.
 
@@ -900,7 +1132,11 @@ def _render_current_data_downloads(
     if latest_snapshot is not None:
         stored = (latest_snapshot.equipment, latest_snapshot.baseline, latest_snapshot.downtime)
         stored_bytes = load_equipment_csv_payloads(
-            database_path, latest_snapshot.revision.revision_id
+            database_path,
+            latest_snapshot.revision.revision_id,
+            latest_snapshot.schedule.schedule_revision_id
+            if latest_snapshot.schedule is not None
+            else None,
         )
 
     def table_bytes(position: int, frame: pd.DataFrame) -> bytes:
@@ -916,11 +1152,7 @@ def _render_current_data_downloads(
         table_bytes(position, frame)
         for position, frame in enumerate((saved_equipment, saved_baseline, saved_downtime))
     )
-    basis = (
-        f"저장본 r{latest_snapshot.revision.revision_no}"
-        if latest_snapshot is not None
-        else "저장본 없음"
-    )
+    basis = _saved_basis_words(latest_snapshot, scenario_name) if latest_snapshot else "저장본 없음"
     state = "저장하지 않은 변경 포함" if edited else "저장본과 같음"
     st.caption(
         f"현재 데이터 · {basis} · {state}. 「직접 편집」 표에 보이는 편집본을 그대로 "
@@ -947,7 +1179,11 @@ def _render_current_data_downloads(
             render_csv_download(
                 data=payload,
                 file_name=current_data_file_name(
-                    slug, latest_snapshot=latest_snapshot, edited=edited, today=today
+                    slug,
+                    latest_snapshot=latest_snapshot,
+                    edited=edited,
+                    today=today,
+                    scenario_name=scenario_name,
                 ),
                 key=key,
                 label=f"{label} 현재 데이터 · {len(frame):,}행",
@@ -1155,8 +1391,17 @@ def _equipment_names(frame: pd.DataFrame) -> set[str]:
     return set(names.loc[names.ne("")])
 
 
-def _save_snapshot(repository: DuckDBEquipmentRepository, frames: Frames, note: str) -> None:
-    st.session_state[FLASH_KEY] = save_equipment_buffer(repository, frames, note)
+def _save_snapshot(
+    repository: DuckDBEquipmentRepository,
+    frames: Frames,
+    note: str,
+    *,
+    basis: EquipmentSaveBasis | None,
+    fields: EquipmentSaveFields,
+) -> None:
+    st.session_state[FLASH_KEY] = save_equipment_buffer(
+        repository, frames, note, basis=basis, fields=fields
+    )
 
 
 def _editor_view(
@@ -1224,14 +1469,21 @@ def _selectable_editor(
     target: str,
     column_config: Mapping[str, Any],
     selection: frozenset[RowKey],
+    locked_columns: Sequence[str] = (),
+    fixed_rows: bool = False,
 ) -> tuple[pd.DataFrame, frozenset[RowKey]]:
-    """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다."""
+    """맨 앞에 선택 칸을 붙여 편집표를 그리고, 선택 칸을 뗀 편집 결과와 고른 키를 돌려준다.
+
+    `locked_columns` 는 고칠 수 없게 잠글 칸, `fixed_rows` 는 행 추가·삭제를 막는다(낡은 설비
+    시나리오 세션 — 설계 4-2). 선택 칸은 늘 고칠 수 있다(일괄 삭제는 공통 대장 변경이다).
+    """
     display = view.frame.copy()
     display.insert(0, SELECT_COLUMN, _selection_flags(display, target, selection))
     result = st.data_editor(
         display,
         key=editor_widget_key(key),
-        num_rows=view.row_mode,
+        num_rows="fixed" if fixed_rows else view.row_mode,
+        disabled=[column for column in locked_columns if column in display.columns],
         hide_index=True,
         width="stretch",
         # 빈 칸은 빈칸으로 보인다. 주지 않으면 Streamlit 이 결측값을 회색 "None" 글자로 그려
@@ -1300,9 +1552,10 @@ def _deletion_message(plan: DeletionPlan) -> str:
         head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"
     else:
         head = f"비가동 일정 {count:,}건을 편집본에서 지웁니다"
+    scope = f" {UNIT_DELETE_SCOPE_NOTE}" if plan.target == EQUIPMENT_TARGET else ""
     return (
         f"{head}. 대상: {samples}{more}. 확정해도 ‘설비 데이터 저장’을 눌러야 새 리비전에 "
-        "반영됩니다."
+        f"반영됩니다.{scope}"
     )
 
 
@@ -1390,10 +1643,128 @@ def _apply_bulk_actions(
     st.session_state[SELECTION_KEY] = selection
 
 
+# 편집표 위 한 줄 범례(설계 6-3). 칸 이름은 계약 그대로 두고 도움말 첫 마디로 어느 쪽인지 말한다.
+SCENARIO_COLUMN_LEGEND = (
+    ":material/info: 칸은 두 갈래입니다 — **공통**(호기 정보·Space 실물·실적·상태·이력·메모)은 "
+    "모든 설비 시나리오에 같은 값이고, **시나리오**(일정 여섯·시나리오 메모·비가동 일정 표)는 "
+    "지금 설비 시나리오에만 저장됩니다. 칸 머리에 마우스를 올리면 어느 쪽인지 보입니다."
+)
+# 상태 두 칸은 공통이지만 「확정」 은 공식 일정이 확정됐다는 뜻이다(결정 모음 — 칸 머리).
+_STATUS_COLUMNS = (ARRIVAL_STATUS_COLUMN, QUAL_STATUS_COLUMN)
+COMMON_COLUMN_HELP = "공통 — 모든 설비 시나리오에 같은 값"
+STATUS_COLUMN_HELP = "공통 — 공식 일정 기준"
+# 일괄 삭제·행 지우기 확인 문구에 붙인다(F6 — 호기 목록은 공통 하나).
+UNIT_DELETE_SCOPE_NOTE = (
+    "호기를 지우면 **모든 설비 시나리오**에서 사라집니다 — 이 시나리오에서만 빼려면 "
+    "정지·반출/이설일정을 적으세요."
+)
+# RawData 폼 안 저장 칸 key 접두어(`equipment_save_fields`).
+SAVE_FIELDS_PREFIX = "equipment_workspace_save"
+
+
+def scenario_column_help(column: str, scenario_name: str | None) -> str:
+    """칸 도움말 첫 마디 — 공통·상태·시나리오 가운데 어느 쪽인지."""
+    if column in SCENARIO_SCHEDULE_COLUMNS:
+        where = f"「{scenario_name}」 에만" if scenario_name else "지금 설비 시나리오에만"
+        return f"시나리오 — {where} 저장"
+    if column in _STATUS_COLUMNS:
+        return STATUS_COLUMN_HELP
+    return COMMON_COLUMN_HELP
+
+
+def _with_scope_help(
+    config: dict[str, Any], columns: Sequence[str], scenario_name: str | None
+) -> dict[str, Any]:
+    """칸 설정마다 도움말 첫 마디(공통·시나리오)를 얹는다. 설정이 없는 칸은 글 칸 설정을 새로 둔다.
+
+    이미 도움말이 있는 칸은 그 앞에 붙인다. 날짜 칸 형식 같은 다른 설정은 그대로다.
+    """
+    result = dict(config)
+    for column in columns:
+        scope = scenario_column_help(column, scenario_name)
+        existing = result.get(column)
+        if existing is None:
+            result[column] = st.column_config.Column(help=scope)
+            continue
+        current = existing.get("help") if isinstance(existing, dict) else None
+        merged = dict(existing)
+        merged["help"] = f"{scope}. {current}" if current else scope
+        result[column] = merged
+    return result
+
+
+def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
+    """낡은 세션의 잠금 알림 — 무엇이 잠겼고 어떻게 풀리는지."""
+    latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
+    return (
+        f"「{basis.scenario_name}」 {latest} 가 더 새롭습니다 — 지금 보는 r{basis.revision_no} "
+        "에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가를 잠갔습니다. 일정을 "
+        f"고치려면 사이드바 「설비 시나리오」 에서 최신 {latest} 를 불러오세요. 공통 칸은 그대로 "
+        "고쳐 저장됩니다."
+    )
+
+
+def stale_paste_refusal(
+    review: ImportReview, current: Frames, basis: EquipmentSaveBasis
+) -> str | None:
+    """낡은 세션에서 일정 쪽을 바꾸는 붙여넣기를 미리보기 전에 막는다. 막을 것이 없으면 None.
+
+    비가동 일정은 표 전체가 시나리오 쪽이라 늘 막고, 설비 마스터는 새 호기 행이나 일정 일곱 칸이
+    바뀌는 행이 있으면 막는다(공통 칸만 바꾸는 붙여넣기는 통과).
+    """
+    latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
+    way_out = f" 사이드바 「설비 시나리오」 에서 최신 {latest} 를 불러온 뒤 다시 미리보세요."
+    if review.target == "비가동 일정":
+        if not review.candidate[2].equals(current[2]):
+            refusal = "비가동 일정은 설비 시나리오 쪽이라 지금 보는 낡은 리비전에 넣지 않습니다."
+            return refusal + way_out
+        return None
+    if review.target != "설비 마스터":
+        return None
+    before = current[1].set_index(EQUIPMENT_ID_COLUMN, drop=False)
+    after = review.candidate[1].set_index(EQUIPMENT_ID_COLUMN, drop=False)
+    added = [name for name in after.index if name not in before.index]
+    if added:
+        return (
+            f"새 호기 {len(added):,}행은 설비 시나리오 일정과 함께 들어가 낡은 리비전에 넣지 "
+            f"않습니다.{way_out}"
+        )
+    columns = [column for column in SCENARIO_SCHEDULE_COLUMNS if column in after.columns]
+    left = before.loc[list(after.index), columns].reset_index(drop=True)
+    right = after.loc[:, columns].reset_index(drop=True)
+    same = (left == right) | (left.isna() & right.isna())
+    changed = int((~same.all(axis=1)).sum())
+    if changed:
+        return (
+            f"일정·시나리오 메모 칸이 바뀌는 호기 {changed:,}대가 있어 낡은 리비전에 넣지 "
+            f"않습니다.{way_out}"
+        )
+    return None
+
+
+def _history_scenario(
+    repository: DuckDBEquipmentRepository,
+    basis: EquipmentSaveBasis | None,
+    snapshot: EquipmentSnapshot | None,
+) -> str | None:
+    """저장 이력이 보일 설비 시나리오 — 세션 것, 없으면 편집본이 나온 것, 그것도 없으면 공식."""
+    if basis is not None:
+        return basis.equipment_scenario_id
+    if snapshot is not None and snapshot.schedule is not None:
+        return snapshot.schedule.equipment_scenario_id
+    catalog = load_equipment_scenario_catalog(str(repository.database_path))
+    if catalog.official_scenario_id is not None:
+        return catalog.official_scenario_id
+    return catalog.scenarios[0].equipment_scenario_id if catalog.scenarios else None
+
+
 def _render_editors(
     frames: Frames,
     max_extent: CanvasSize,
     selection: Mapping[str, frozenset[RowKey]],
+    *,
+    stale: bool = False,
+    scenario_name: str | None = None,
 ) -> EditorResult:
     baseline, equipment, downtime = frames
     # 위에 삭제 확인이 서거나 사라지면 이 탭의 자리가 밀린다 — key 가 고른 표를 지킨다.
@@ -1473,6 +1844,7 @@ def _render_editors(
         config.update(
             {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
         )
+        config = _with_scope_help(config, list(equipment.columns), scenario_name)
         equipment_action = _selection_buttons("master")
         st.caption(f":material/grid_view: {MODULE_LAYOUT_HELP}")
         edited_equipment, equipment_checked = _selectable_editor(
@@ -1482,6 +1854,8 @@ def _render_editors(
             target=EQUIPMENT_TARGET,
             column_config=config,
             selection=selection.get(EQUIPMENT_TARGET, frozenset()),
+            locked_columns=SCENARIO_SCHEDULE_COLUMNS if stale else (),
+            fixed_rows=stale,
         )
     with baseline_tab:
         baseline_view, baseline_requested = _editor_view(
@@ -1538,6 +1912,9 @@ def _render_editors(
                 "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
             },
             selection=selection.get(DOWNTIME_TARGET, frozenset()),
+            # 비가동 일정 표 전체가 설비 시나리오 쪽이다(F2) — 낡은 세션에서는 통째로 잠근다.
+            locked_columns=tuple(downtime.columns) if stale else (),
+            fixed_rows=stale,
         )
     action = next(
         (
@@ -1567,20 +1944,55 @@ def _render_editors(
     )
 
 
-def _render_history(repository: DuckDBEquipmentRepository, latest_revision_id: str | None) -> None:
-    # 리비전은 덧붙이기만 하므로 최신 id 가 목록을 정한다 — rerun 마다 DB 를 읽지 않는다.
-    revisions = load_equipment_revision_summaries(str(repository.database_path), latest_revision_id)
+# 일정 리비전 출처(`origin`) 화면 글자.
+ORIGIN_WORDS = {
+    "legacy": "이관",
+    "save": "저장",
+    "clone": "복제",
+    "propagate": "함께 넣기",
+    "restore": "되돌리기",
+}
+
+
+def _render_history(
+    repository: DuckDBEquipmentRepository,
+    *,
+    scenario_id: str | None,
+    scenario_name: str | None,
+) -> None:
+    """고른 설비 시나리오의 일정 리비전 이력과 그 리비전 하나의 「그때 그대로」 조회.
+
+    목록은 설비 시나리오 리비전 목록 캐시(세대·stat·TTL), 조회는 그 리비전과 그 저장이 함께 본
+    공통 리비전 쌍의 합친 본문 캐시다(`load_saved_pair` 와 같은 쌍). 공통 대장 번호는 공통 이력
+    목록(최신 공통 id 키)에서 붙인다.
+    """
+    database_path = str(repository.database_path)
+    if scenario_id is None:
+        st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
+        return
+    revisions = load_equipment_schedule_revisions(database_path, scenario_id)
     if not revisions:
         st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
         return
+    latest_common = latest_equipment_revision_id(database_path)
+    common_numbers = {
+        item.revision_id: item.revision_no
+        for item in load_equipment_revision_summaries(database_path, latest_common)
+    }
+    if scenario_name:
+        st.caption(
+            f"「{scenario_name}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 리비전입니다."
+        )
     st.dataframe(
         pd.DataFrame(
             [
                 {
                     "리비전": f"r{item.revision_no}",
                     "저장시각": item.created_at,
-                    "기존대수행": item.baseline_row_count,
-                    "호기행": item.equipment_row_count,
+                    "저장자": item.saved_by,
+                    "출처": ORIGIN_WORDS.get(item.origin, item.origin),
+                    "공통": _common_words(item, common_numbers),
+                    "호기행": item.unit_row_count,
                     "비가동행": item.downtime_row_count,
                     "변경메모": item.note,
                 }
@@ -1589,19 +2001,27 @@ def _render_history(repository: DuckDBEquipmentRepository, latest_revision_id: s
         ),
         hide_index=True,
         width="stretch",
-        placeholder="메모 없음",
+        placeholder="",
         column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
     )
-    by_id = {item.revision_id: item for item in revisions}
-    selected_id = st.selectbox(
+    by_id = {item.schedule_revision_id: item for item in revisions}
+    selected_id = prune_choice(
+        "equipment_history_revision_id_v4", list(by_id), default=next(iter(by_id))
+    )
+    st.selectbox(
         "조회 리비전",
         options=list(by_id),
-        key="equipment_history_revision_id_v3",
+        key="equipment_history_revision_id_v4",
         format_func=lambda value: (
             f"r{by_id[value].revision_no} · {by_id[value].note or '메모 없음'}"
         ),
     )
-    historical = load_equipment_snapshot(str(repository.database_path), selected_id)
+    chosen = by_id[selected_id]
+    common_id = chosen.common_revision_id or latest_common
+    if common_id is None:
+        st.info("공통 대장 리비전이 없어 조회할 수 없습니다.")
+        return
+    historical = load_merged_equipment_snapshot(database_path, common_id, selected_id)
     equipment = historical.equipment
     downtime = historical.downtime
     filters: dict[str, list[str]] = {}
@@ -1661,6 +2081,14 @@ def _render_history(repository: DuckDBEquipmentRepository, latest_revision_id: s
             st.dataframe(frame, hide_index=True, width="stretch")
 
 
+def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, int]) -> str:
+    """이력 표의 「공통」 칸 — 그 저장이 함께 본 공통 대장 번호(목록 밖이면 빈칸)."""
+    if item.common_revision_id is None:
+        return ""
+    number = numbers.get(item.common_revision_id)
+    return f"r{number}" if number is not None else ""
+
+
 def _render_schedule_confirmation(master: pd.DataFrame, *, today: date) -> None:
     """반입·Qual 의 일정·실적·상태가 맞지 않는 호기 — 경고 한 줄과 접힌 목록. 셋 다 없으면 그리지
     않는다. 저장은 막지 않는다.
@@ -1718,8 +2146,15 @@ def render_equipment_data_workspace(
     max_extent: CanvasSize,
     drafts_replaced: bool = False,
     today: date | None = None,
+    basis: EquipmentSaveBasis | None = None,
 ) -> None:
-    """입력·직접 편집·조회 중 한 작업을 표시하고 세 표를 한 리비전으로 저장한다.
+    """입력·직접 편집·조회 중 한 작업을 표시하고 편집본을 저장한다(바뀐 쪽만 — 공통 대장·설비
+    시나리오 일정).
+
+    `basis` 는 세션의 설비 시나리오(저장할 곳·화면이 본 공식 번호·낡음)다. 낡았으면(세션 리비전이
+    그 시나리오 최신이 아님) 일정 일곱 칸과 비가동 표·행 추가를 잠그고, 일정이 바뀌는 붙여넣기
+    미리보기를 거부한다 — 막힌 뒤에 버리는 일이 없게 편집하기 전에 막는다(설계 4-2). 공통 칸은
+    그대로 편집·저장된다.
 
     `drafts_replaced` 는 이번 회차 맨 위에서 다른 사람의 저장으로 편집본을 새로 세웠다는 뜻이다
     (`pop_drafts_replaced`). 그 회차의 제출은 반영하지 않는다 — 옛 편집본 위의 제출을 새 저장본에
@@ -1729,6 +2164,8 @@ def render_equipment_data_workspace(
     `today` 는 일정 확인 경고의 「오늘」이다. 페이지는 Main 과 같은 날을 넘긴다(주지 않으면
     오늘)."""
     frames = ensure_equipment_drafts(latest_snapshot)
+    scenario_name = basis.scenario_name if basis is not None else None
+    stale = basis is not None and basis.stale
     if latest_snapshot is None:
         st.info(
             "아직 저장된 설비 데이터가 없습니다. 설비 마스터를 붙여넣고 "
@@ -1736,9 +2173,13 @@ def render_equipment_data_workspace(
         )
     else:
         st.caption(
-            f"최근 저장본 r{latest_snapshot.revision.revision_no} · "
-            "저장할 때 세 표 전체가 새 리비전으로 보관됩니다."
+            f"최근 {_saved_basis_words(latest_snapshot, scenario_name)} · 저장하면 바뀐 쪽만 새 "
+            "리비전으로 보관됩니다(공통 칸 → 공통 대장, 일정·시나리오 메모·비가동 → 이 설비 "
+            "시나리오)."
         )
+    st.caption(SCENARIO_COLUMN_LEGEND)
+    if stale and basis is not None:
+        st.warning(_stale_lock_message(basis), icon=":material/lock_clock:")
     # 미리보기는 등록할 표·붙여넣기·업로드에서 나온 위젯 아닌 칸이라 그 입력보다 오래 산다.
     # 다른 화면을 다녀오면 입력 칸은 비어 돌아오는데 「저장할 변경」과 저장 단추만 남아, 누르면
     # 입력이 없다는 오류로 막힌다. 페이지에 새로 들어온 회차에는 미리보기도 거둔다. 같은 페이지
@@ -1822,6 +2263,7 @@ def render_equipment_data_workspace(
             saved=(baseline, equipment, downtime),
             latest_snapshot=latest_snapshot,
             database_path=str(repository.database_path),
+            scenario_name=scenario_name,
         )
     with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
         # 두 저장(입력·직접 편집)이 같이 쓰는 메모라 탭 **위**에 둔다 — 저장 버튼이 표 위로
@@ -1830,6 +2272,9 @@ def render_equipment_data_workspace(
         if clear_inputs:
             st.session_state[_NOTE_KEY] = ""
         note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
+        # 저장자·함께 넣기·공식 발행 칸. 폼 안이라 늘 세우고 수를 적지 않는다 — 이 회차의 편집본에는
+        # 같은 제출의 새 호기가 아직 없다. 실제로 퍼진 목록은 저장 결과 알림이 적는다(설계 6-4).
+        save_fields = render_equipment_save_fields(SAVE_FIELDS_PREFIX)
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장
         # 완료)이 생기거나 사라지는 제출마다 이 탭의 자리가 한 칸 밀려 새로 마운트되고,
@@ -1904,13 +2349,16 @@ def render_equipment_data_workspace(
                 )
                 view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
             confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
-            editor = _render_editors(frames, max_extent, _current_selection())
+            editor = _render_editors(
+                frames, max_extent, _current_selection(), stale=stale, scenario_name=scenario_name
+            )
             edited = editor.frames
         with history_tab:
             try:
                 _render_history(
                     repository,
-                    latest_snapshot.revision.revision_id if latest_snapshot is not None else None,
+                    scenario_id=_history_scenario(repository, basis, latest_snapshot),
+                    scenario_name=scenario_name,
                 )
             except BOOTSTRAP_ERRORS as exc:
                 st.error(
@@ -1963,22 +2411,27 @@ def render_equipment_data_workspace(
                 and isinstance(pending, ImportReview)
                 and pending.matches(target, content, edited)
             ):
-                _save_snapshot(repository, pending.candidate, note)
+                _save_snapshot(repository, pending.candidate, note, basis=basis, fields=save_fields)
             else:
-                st.session_state[PREVIEW_KEY] = build_import_review(
+                review = build_import_review(
                     target,
                     content,
                     edited,
                     floor_canvases=floor_canvases,
                     drop_examples=bool(st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False)),
                 )
+                if stale and basis is not None:
+                    refusal = stale_paste_refusal(review, edited, basis)
+                    if refusal is not None:
+                        raise ValueError(refusal)
+                st.session_state[PREVIEW_KEY] = review
                 if import_save_clicked:
                     st.session_state[_NOTICE_KEY] = (
                         "입력 또는 편집본이 바뀌어 미리보기를 갱신했습니다. "
                         "변경 내용을 확인한 뒤 다시 저장하세요."
                     )
         elif edit_save_clicked:
-            _save_snapshot(repository, edited, note)
+            _save_snapshot(repository, edited, note, basis=basis, fields=save_fields)
     except BOOTSTRAP_ERRORS as exc:
         if preview_clicked or import_save_clicked:
             st.session_state.pop(PREVIEW_KEY, None)

@@ -18,8 +18,8 @@ from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_snapshot_cache,
     get_equipment_repository,
-    load_equipment_snapshot,
-    load_latest_equipment_snapshot,
+    load_merged_equipment_snapshot,
+    load_official_equipment_snapshot,
 )
 from capa_simulation.persistence.equipment_migration_runner import (
     load_equipment_migrations,
@@ -112,21 +112,27 @@ def test_equipment_snapshot_cache_reuses_immutable_revision(
     repository = get_equipment_repository(database_path)
     saved = repository.save_snapshot(_baseline(), _equipment(), _downtime())
     clear_equipment_snapshot_cache()
-    original_load = DuckDBEquipmentRepository.load_snapshot
+    original_load = DuckDBEquipmentRepository.load_merged_snapshot
     load_calls = 0
 
-    def counted_load(instance: DuckDBEquipmentRepository, revision_id: str) -> EquipmentSnapshot:
+    def counted_load(
+        instance: DuckDBEquipmentRepository, common_id: str, schedule_id: str | None
+    ) -> EquipmentSnapshot:
         nonlocal load_calls
         load_calls += 1
-        return original_load(instance, revision_id)
+        return original_load(instance, common_id, schedule_id)
 
-    monkeypatch.setattr(DuckDBEquipmentRepository, "load_snapshot", counted_load)
+    monkeypatch.setattr(DuckDBEquipmentRepository, "load_merged_snapshot", counted_load)
 
-    latest = load_latest_equipment_snapshot(database_path)
-    loaded_again = load_equipment_snapshot(database_path, saved.revision.revision_id)
+    # 공식 스냅샷과 같은 쌍을 직접 꺼내도 본문은 한 번만 읽는다(쌍 키 본문 캐시).
+    latest = load_official_equipment_snapshot(database_path)
+    assert saved.schedule is not None
+    loaded_again = load_merged_equipment_snapshot(
+        database_path, saved.revision.revision_id, saved.schedule.schedule_revision_id
+    )
 
     assert latest is not None
-    assert latest.revision.revision_id == loaded_again.revision.revision_id
+    assert latest.token == loaded_again.token == saved.token
     assert load_calls == 1
     clear_equipment_repository()
 

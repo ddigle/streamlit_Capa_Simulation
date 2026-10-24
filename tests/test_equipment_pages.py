@@ -455,7 +455,9 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
     assert not app.error
     repository = DuckDBEquipmentRepository(database_path)
     revisions = repository.list_revisions()
-    assert len(revisions) == 2
+    # 감춘 칸 값이 빠져 나갔다면 「바뀐 것」 으로 보여 새 리비전이 생긴다 — 값이 그대로라 저장할
+    # 것이 없다(빈 리비전을 만들지 않는다).
+    assert len(revisions) == 1
     saved = repository.load_snapshot(revisions[0].revision_id)
     assert saved.baseline["비고"].tolist() == ["숨겨도 유지할 값"]
     assert saved.equipment["담당자"].tolist() == ["숨김 컬럼 보존"]

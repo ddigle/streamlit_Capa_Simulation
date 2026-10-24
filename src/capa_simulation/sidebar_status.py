@@ -401,6 +401,30 @@ def page_condition_slot(index: int) -> DeltaGenerator:
     return st.sidebar
 
 
+# 패널의 설비 시나리오 칸. `app.py` 가 패널 안 조회기간 다음·페이지 칸 앞에 블록 하나를 세워 적고,
+# 그 화면이 설비 시나리오 줄을 세우지 않는 회차(다른 화면·가용설비 현황 Qual 마감 계산기 탭)에는
+# None 을 적는다. 칸이 아예 없으면(`app.py` 없이 페이지만 띄운 하네스) 줄은 사이드바 맨 아래에 선다.
+EQUIPMENT_SCENARIO_SLOT_KEY = "sidebar_equipment_scenario_slot"
+
+
+def register_equipment_scenario_slot(slot: DeltaGenerator | None) -> None:
+    """이번 회차의 설비 시나리오 칸(세우지 않는 회차는 None). `app.py` 만 부른다."""
+    st.session_state[EQUIPMENT_SCENARIO_SLOT_KEY] = slot
+
+
+def equipment_scenario_slot() -> DeltaGenerator | None:
+    """페이지가 `resolve_equipment_session` 뒤에 설비 시나리오 줄을 그릴 칸(None 이면 그리지
+    않는다).
+
+    페이지 칸과 같은 블록이라(`st.container(gap=None)`) 다시 도는 동안 앞 회차의 줄이 그 자리에
+    남고, 쓰지 않은 칸은 그려지지 않는다. 한 회차에 한 번만 채운다.
+    """
+    if EQUIPMENT_SCENARIO_SLOT_KEY not in st.session_state:
+        return st.sidebar
+    registered = st.session_state.get(EQUIPMENT_SCENARIO_SLOT_KEY)
+    return registered if isinstance(registered, DeltaGenerator) else None
+
+
 def register_month_range_placeholder(placeholder: DeltaGenerator) -> None:
     st.session_state[PLACEHOLDER_STATE_KEY] = placeholder
 

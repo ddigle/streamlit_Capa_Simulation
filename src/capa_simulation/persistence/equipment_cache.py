@@ -1,6 +1,15 @@
-# Purpose: Streamlit cache boundary for the standalone equipment repository.
+# Purpose: 설비 DB 저장소의 Streamlit 캐시 경계 — 불변 리비전 쌍 본문·바뀔 수 있는 목록·현행값 읽기.
 
-"""Streamlit cache boundary for the standalone equipment repository."""
+"""설비 DB 저장소의 Streamlit 캐시 경계.
+
+- **리비전 내용은 불변이다.** 화면이 쓰는 한 벌은 (공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍을
+  합친 것이고 그 본문은 쌍 키로만 캐시한다(`load_merged_equipment_snapshot`) — 쓰기 세대가 없다.
+- **바뀔 수 있는 것**(시나리오 이름·공식 발행·각 시나리오 최신·옛 배포 흔적, 공통 최신 id, 현행값)은
+  DB·WAL stat·쓰기 세대·TTL 을 키에 둔 목록 캐시로 뺀다.
+- **어느 캐시도 저장소의 호환 래퍼(`save_snapshot`·`save_space_layout`·`load_snapshot`)를 부르지
+  않는다.** 래퍼 `load_snapshot` 은 공식 발행에 따라 값이 바뀌는 뜻이라 공통 id 하나를 키로 실으면
+  발행 뒤 낡은 값을 낸다(시험이 이 파일을 훑는다).
+"""
 
 import threading
 from dataclasses import fields
@@ -13,7 +22,11 @@ import streamlit as st
 
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
+    EquipmentRelease,
     EquipmentRevisionSummary,
+    EquipmentScenarioCatalog,
+    EquipmentScenarioSummary,
+    EquipmentScheduleRevisionSummary,
     EquipmentSnapshot,
 )
 from capa_simulation.services.equipment_csv import (
@@ -34,11 +47,23 @@ from capa_simulation.services.shortening_baseline import (
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 
-class _EquipmentSnapshotPayload(TypedDict):
+class _MergedSnapshotPayload(TypedDict):
+    """합친 본문 한 벌 — 평범한 dict·DataFrame·쌍 튜플·frozenset 만 싣는다(pickle 이 된다)."""
+
     revision: dict[str, Any]
     baseline: pd.DataFrame
     equipment: pd.DataFrame
     downtime: pd.DataFrame
+    schedule: dict[str, Any] | None
+    unit_key_pairs: tuple[tuple[str, str], ...]
+    unscheduled_units: frozenset[str]
+    orphan_rows: int
+
+
+class _CatalogPayload(TypedDict):
+    scenarios: list[dict[str, Any]]
+    latest_release: dict[str, Any] | None
+    legacy_trace_count: int
 
 
 def _payload(model: object, cls: type[Any]) -> dict[str, Any]:
@@ -59,28 +84,59 @@ def get_equipment_repository(database_path: str) -> DuckDBEquipmentRepository:
     return repository
 
 
-@st.cache_data(show_spinner=False, max_entries=16)
-def _load_equipment_snapshot_payload(
+# 합친 본문 칸 수. 세션 하나가 보는 쌍은 공식(= 공통 최신 + 공식 발행)과 고른 시나리오 하나라
+# 둘이고, 이력 「그때 그대로」 조회가 한 칸 더 쓴다. 두 시나리오 × 두 세션 측정(설계 4-1)으로
+# 다시 본다.
+MERGED_SNAPSHOT_CACHE_ENTRIES = 16
+
+
+@st.cache_data(show_spinner=False, max_entries=MERGED_SNAPSHOT_CACHE_ENTRIES)
+def _load_merged_payload(
     database_path: str,
-    revision_id: str,
-) -> _EquipmentSnapshotPayload:
-    snapshot = get_equipment_repository(database_path).load_snapshot(revision_id)
+    common_revision_id: str,
+    schedule_revision_id: str | None,
+) -> _MergedSnapshotPayload:
+    """(공통, 일정) 쌍 하나의 합친 본문. 두 리비전 내용은 불변이라 쓰기 세대를 두지 않는다.
+
+    합칠 수 없는 쌍(`EquipmentScenarioIncompatible`)은 예외라 캐시에 남지 않는다.
+    """
+    snapshot = get_equipment_repository(database_path).load_merged_snapshot(
+        common_revision_id, schedule_revision_id
+    )
     return {
         "revision": _payload(snapshot.revision, EquipmentRevisionSummary),
         "baseline": snapshot.baseline,
         "equipment": snapshot.equipment,
         "downtime": snapshot.downtime,
+        "schedule": (
+            _payload(snapshot.schedule, EquipmentScheduleRevisionSummary)
+            if snapshot.schedule is not None
+            else None
+        ),
+        "unit_key_pairs": tuple(snapshot.unit_key_pairs),
+        "unscheduled_units": frozenset(snapshot.unscheduled_units),
+        "orphan_rows": int(snapshot.orphan_rows),
     }
 
 
-def load_equipment_snapshot(database_path: str, revision_id: str) -> EquipmentSnapshot:
-    """Load one immutable revision through a hot-reload-safe payload cache."""
-    payload = _load_equipment_snapshot_payload(database_path, revision_id)
+def load_merged_equipment_snapshot(
+    database_path: str, common_revision_id: str, schedule_revision_id: str | None
+) -> EquipmentSnapshot:
+    """(공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍의 합친 스냅샷 — 쌍 키 본문 캐시.
+
+    모델은 꺼낼 때 **지금 import 한 클래스**로 다시 만든다(핫리로드 뒤 옛 클래스가 실리지 않게).
+    """
+    payload = _load_merged_payload(database_path, common_revision_id, schedule_revision_id)
+    schedule = payload["schedule"]
     return EquipmentSnapshot(
         revision=EquipmentRevisionSummary(**payload["revision"]),
         baseline=payload["baseline"],
         equipment=payload["equipment"],
         downtime=payload["downtime"],
+        schedule=EquipmentScheduleRevisionSummary(**schedule) if schedule is not None else None,
+        unit_key_pairs=payload["unit_key_pairs"],
+        unscheduled_units=payload["unscheduled_units"],
+        orphan_rows=payload["orphan_rows"],
     )
 
 
@@ -90,14 +146,15 @@ DatabaseStamp = tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
 # 읽는 간격(초).
 CURRENT_READ_TTL_SECONDS = 15
 # 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 비운 횟수). 비울 때마다 오른다. 덮어쓰거나 지울 수
-# 있는 값을 담는 캐시(최신 리비전 id·Cut-off·주차별 가용대수·층/FAB 도면·필요 단축 일정 조건·
-# 기준선)는 모두 이 세대를 키에 둔다. 고칠 수도 지울 수도 없는 설비 리비전 id 키의 캐시(스냅샷·
-# 이력·CSV)는 겹쳐도 같은 값이라 두지 않는다.
+# 있는 값을 담는 캐시(공통 최신 id·설비 시나리오 목록·시나리오 리비전 목록·Cut-off·주차별
+# 가용대수·층/FAB 도면·필요 단축 일정 조건·기준선)는 모두 이 세대를 키에 둔다. 고칠 수도 지울 수도
+# 없는 리비전 id 키의 캐시(합친 본문·공통 이력·CSV)는 겹쳐도 같은 값이라 두지 않는다.
 WriteGeneration = tuple[str, int]
 _MODULE_EPOCH = uuid4().hex
 _GENERATION_LOCK = threading.Lock()
 _write_generations = {
     "revision": 0,
+    "equipment_scenario": 0,
     "cutoff": 0,
     "standard_target": 0,
     "floor_layout": 0,
@@ -147,29 +204,120 @@ def _latest_revision_id(
 
 
 def latest_equipment_revision_id(database_path: str) -> str | None:
-    """가장 최근 설비 리비전 id(없으면 None).
+    """가장 최근 **공통 대장** 리비전 id(없으면 None).
 
     가용설비 현황·Space 는 위젯 하나에도 페이지 전체가 다시 돌아, 캐시가 없으면 이 읽기 하나 때문에
     회차마다 설비 DB 를 연다. **비우는 것이 1차 장치다** — 이 앱의 모든 리비전 쓰기(RawData
-    저장·입력 저장·일괄 삭제 저장·Space 배치 저장)는 `save_equipment_buffer` 를 지나
-    `clear_equipment_snapshot_cache` 로 이 캐시를 비우고 쓰기 세대를 올린다(같은 프로세스의 다른
-    세션 저장도 그렇다). 세대가 키에 있어 저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛 id 를
-    심어도 비운 뒤의 읽기에는 닿지 않는다. 키의 DB·WAL stat 은 이 프로세스 밖의 쓰기를 알아채는 2차
-    장치이고, `CURRENT_READ_TTL_SECONDS` 가 stat 이 못 잡은 경우의 한도다(같은 DB 를 두 앱
-    프로세스가 함께 여는 배치에서는 남의 저장을 그만큼 늦게 볼 수 있다). 저장 충돌
-    검사(`base_revision_id`)는 저장소가 쓰기 잠금 안에서 그대로 한다.
+    저장·입력 저장·일괄 삭제 저장·Space 배치 저장·설비 시나리오 팝업 저장)는 `save_equipment_buffer`
+    를 지나 `clear_equipment_snapshot_cache` 로 이 캐시를 비우고 쓰기 세대를 올린다(같은 프로세스의
+    다른 세션 저장도 그렇다). 세대가 키에 있어 저장 직전에 시작된 다른 세션의 읽기가 비운 뒤에 옛
+    id 를 심어도 비운 뒤의 읽기에는 닿지 않는다. 키의 DB·WAL stat 은 이 프로세스 밖의 쓰기를
+    알아채는 2차 장치이고, `CURRENT_READ_TTL_SECONDS` 가 stat 이 못 잡은 경우의 한도다(같은 DB 를
+    두 앱 프로세스가 함께 여는 배치에서는 남의 저장을 그만큼 늦게 볼 수 있다). 저장 충돌 검사(출발
+    공통·일정 리비전)는 저장소가 쓰기 잠금 안에서 그대로 한다.
     """
     return _latest_revision_id(
         database_path, database_stamp(database_path), _write_generation("revision")
     )
 
 
-def load_latest_equipment_snapshot(database_path: str) -> EquipmentSnapshot | None:
-    """Resolve the current id cheaply and cache only the immutable snapshot body."""
-    revision_id = latest_equipment_revision_id(database_path)
-    if revision_id is None:
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_scenario_catalog_payload(
+    database_path: str, stamp: DatabaseStamp, generation: WriteGeneration
+) -> _CatalogPayload:
+    del stamp, generation
+    catalog = get_equipment_repository(database_path).load_scenario_catalog()
+    return {
+        "scenarios": [_payload(summary, EquipmentScenarioSummary) for summary in catalog.scenarios],
+        "latest_release": (
+            _payload(catalog.latest_release, EquipmentRelease)
+            if catalog.latest_release is not None
+            else None
+        ),
+        "legacy_trace_count": int(catalog.legacy_trace_count),
+    }
+
+
+def load_equipment_scenario_catalog(database_path: str) -> EquipmentScenarioCatalog:
+    """설비 시나리오 목록(이름·상태·각 최신 id·번호·리비전 수)·최신 공식 발행·옛 배포 흔적 수.
+
+    바뀔 수 있는 값이라 공통 최신 id 와 같은 세 장치로 지킨다 — 이 앱의 쓰기(저장·복제·이름·발행·
+    이어 쓰기)가 비우고 세대(`"equipment_scenario"`)를 올리는 것이 1차, DB·WAL stat 이 2차,
+    `CURRENT_READ_TTL_SECONDS` 가 한도다. 발행만 바뀌어도 여기서 새 쌍이 나와 다른 본문 키로 간다.
+    """
+    payload = _load_scenario_catalog_payload(
+        database_path, database_stamp(database_path), _write_generation("equipment_scenario")
+    )
+    release = payload["latest_release"]
+    return EquipmentScenarioCatalog(
+        scenarios=tuple(EquipmentScenarioSummary(**item) for item in payload["scenarios"]),
+        latest_release=EquipmentRelease(**release) if release is not None else None,
+        legacy_trace_count=payload["legacy_trace_count"],
+    )
+
+
+# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·설비 시나리오 탭 표).
+SCHEDULE_REVISION_LIST_LIMIT = 50
+
+
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_schedule_revisions_payload(
+    database_path: str,
+    equipment_scenario_id: str,
+    stamp: DatabaseStamp,
+    generation: WriteGeneration,
+) -> list[dict[str, Any]]:
+    del stamp, generation
+    return [
+        _payload(summary, EquipmentScheduleRevisionSummary)
+        for summary in get_equipment_repository(database_path).list_schedule_revisions(
+            equipment_scenario_id, limit=SCHEDULE_REVISION_LIST_LIMIT
+        )
+    ]
+
+
+def load_equipment_schedule_revisions(
+    database_path: str, equipment_scenario_id: str
+) -> tuple[EquipmentScheduleRevisionSummary, ...]:
+    """한 설비 시나리오의 일정 리비전(번호 큰 것부터, 최근 `SCHEDULE_REVISION_LIST_LIMIT` 개).
+
+    남의 저장(함께 넣기 포함)으로 늘 수 있어 목록과 같은 세대·stat·TTL 로 지킨다.
+    """
+    return tuple(
+        EquipmentScheduleRevisionSummary(**item)
+        for item in _load_schedule_revisions_payload(
+            database_path,
+            equipment_scenario_id,
+            database_stamp(database_path),
+            _write_generation("equipment_scenario"),
+        )
+    )
+
+
+def load_official_equipment_snapshot(database_path: str) -> EquipmentSnapshot | None:
+    """공식 스냅샷 = 공통 최신 + 최신 공식 발행 일정 리비전(발행이 없으면 일정 없음).
+
+    두 값은 각자의 목록 캐시에서 받고 본문은 쌍 키 캐시에서 꺼낸다 — 세션이 공식 발행 쌍이면 같은
+    칸을 쓴다. 공통 리비전이 없으면 None.
+    """
+    common_id = latest_equipment_revision_id(database_path)
+    if common_id is None:
         return None
-    return load_equipment_snapshot(database_path, revision_id)
+    release = load_equipment_scenario_catalog(database_path).latest_release
+    return load_merged_equipment_snapshot(
+        database_path, common_id, release.schedule_revision_id if release is not None else None
+    )
+
+
+def clear_equipment_scenario_cache() -> None:
+    """설비 시나리오 목록·시나리오 리비전 목록을 비우고 세대를 올린다.
+
+    이름·발행·복제·이어 쓰기 뒤에는 이것만 부르면 된다(리비전 본문은 불변이다). 설비 마스터 저장은
+    `clear_equipment_snapshot_cache` 가 이것까지 부른다 — 저장마다 일정 리비전·발행이 생길 수 있다.
+    """
+    _bump_write_generation("equipment_scenario")
+    _load_scenario_catalog_payload.clear()
+    _load_schedule_revisions_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
@@ -257,14 +405,18 @@ def load_equipment_revision_summaries(
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def load_equipment_csv_payloads(database_path: str, revision_id: str) -> tuple[bytes, bytes, bytes]:
-    """저장 리비전 하나의 세 표 CSV 바이트(설비 마스터·기존 보유대수·비가동 일정 차례).
+def load_equipment_csv_payloads(
+    database_path: str, common_revision_id: str, schedule_revision_id: str | None
+) -> tuple[bytes, bytes, bytes]:
+    """저장된 (공통, 일정) 쌍 하나의 세 표 CSV 바이트(설비 마스터·기존 보유대수·비가동 일정 차례).
 
-    RawData 「현재 데이터」 내려받기는 편집본이 저장본과 같을 때 이 바이트를 그대로 쓴다 — 리비전은
-    고칠 수 없고 직렬화는 결정적이라 같은 리비전이면 같은 파일이다. 그래서 rerun 마다 세 표(와
-    저장본과 견주려는 세 표)를 다시 직렬화하지 않는다.
+    RawData 「현재 데이터」 내려받기는 편집본이 저장본과 같을 때 이 바이트를 그대로 쓴다 — 두
+    리비전은 고칠 수 없고 직렬화는 결정적이라 같은 쌍이면 같은 파일이다. 그래서 rerun 마다 세 표(와
+    저장본과 견주려는 세 표)를 다시 직렬화하지 않는다. 본문은 합친 본문 캐시에서 받는다.
     """
-    snapshot = load_equipment_snapshot(database_path, revision_id)
+    snapshot = load_merged_equipment_snapshot(
+        database_path, common_revision_id, schedule_revision_id
+    )
     return (
         equipment_csv_bytes(snapshot.equipment),
         baseline_csv_bytes(snapshot.baseline),
@@ -506,13 +658,15 @@ def clear_floor_layout_cache() -> None:
 
 
 def clear_equipment_snapshot_cache() -> None:
-    """리비전을 쓴 뒤 부른다 — 최신 리비전 id 도 함께 비우고(쓰기 세대도 올린다) 다음 회차가 새
-    리비전을 읽는다."""
+    """설비 마스터를 저장한 뒤 부른다 — 공통 최신 id·설비 시나리오 목록도 함께 비우고(두 쓰기 세대를
+    올린다) 다음 회차가 새 리비전·새 발행을 읽는다. 합친 본문·CSV 는 쌍 키라 겹쳐도 같은 값이지만
+    지난 쌍이 칸을 차지하지 않게 함께 비운다."""
     _bump_write_generation("revision")
     _latest_revision_id.clear()
-    _load_equipment_snapshot_payload.clear()
+    _load_merged_payload.clear()
     _load_revision_summaries_payload.clear()
     load_equipment_csv_payloads.clear()
+    clear_equipment_scenario_cache()
 
 
 def clear_equipment_repository() -> None:

@@ -35,6 +35,8 @@ from capa_simulation.components.equipment_data_workspace import (
     stage_floor_marks,
     stage_unit_renames,
 )
+from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
+from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.floor_layout_upload import (
     render_fab_layout_drawing_editor,
@@ -69,6 +71,11 @@ from capa_simulation.components.space_layout_editor import (
     render_space_layout_viewer,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.equipment_scenario_activation import (
+    official_session,
+    resolve_equipment_session,
+    space_editing_allowed,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -82,7 +89,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_marks,
     load_floor_layout_profile,
     load_floor_layout_summaries,
-    load_latest_equipment_snapshot,
+    load_official_equipment_snapshot,
 )
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
@@ -332,7 +339,13 @@ SPACE_CARD_NAME = "space"
 today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
-    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
+    # 보기는 늘 공식(E5 — 공통 최신 + 최신 공식 발행). 배치 편집은 세션이 공식 발행 쌍일 때만 연다
+    # (질문 3) — 그때 세션 스냅샷이 곧 공식 스냅샷이라 편집본을 세션 토큰 그대로 세운다. 아니면 이
+    # 화면은 편집본을 건드리지 않는다(다른 토큰으로 세우면 세션 편집을 버린다).
+    equipment_session = resolve_equipment_session(equipment_database_path)
+    official_snapshot = load_official_equipment_snapshot(equipment_database_path)
+    space_editing = space_editing_allowed(equipment_session)
+    latest_snapshot = equipment_session.snapshot if space_editing else official_snapshot
     floor_canvases = load_floor_layout_canvases(equipment_database_path)
     floors_with_layout_image = {
         (summary.building, summary.floor)
@@ -392,8 +405,13 @@ with notices:
     render_flash(SPACE_FLASH_KEY)
     # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 경고 한 줄. 막지 않는다.
     render_schema_ahead_warning(get_equipment_repository(equipment_database_path).schema_ahead)
+# 사이드바 「설비 시나리오」 줄 — 잠근 꼴(팝업 없음). 이 화면은 늘 공식이다.
+render_equipment_scenario_row(
+    official_session(equipment_session, official_snapshot), locked_reason="(고정)"
+)
 # 배치 편집은 실제 저장본이 있을 때만 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이 막힌다.
-editable = not using_sample_equipment and latest_snapshot is not None
+# 세션이 공식 발행 쌍이 아니면(가정 설비 시나리오) 잠근다.
+editable = not using_sample_equipment and latest_snapshot is not None and space_editing
 if editable:
     # 가용설비 RawData 와 **같은 편집본**이다. 어느 페이지를 먼저 열어도 같은 저장본 토큰으로 선다.
     buffer_frames: Frames = ensure_equipment_drafts(latest_snapshot)
@@ -746,7 +764,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 icon=":material/save:",
                 key=SAVE_BUTTON_KEY,
                 on_click=_save_space_layout,
-                args=(frames, note_key, equipment_database_path),
+                args=(frames, note_key, equipment_database_path, equipment_session.save_basis()),
                 disabled=not fab_editable,
                 help=None if fab_editable else SAMPLE_SAVE_BLOCKED,
             )
@@ -804,16 +822,23 @@ def _discard_space_layout(with_equipment: bool) -> None:
         stage_fab_layout(None, None, base=(None, ""))
 
 
-def _save_space_layout(frames: Frames | None, note_key: str, database_path: str) -> None:
+def _save_space_layout(
+    frames: Frames | None,
+    note_key: str,
+    database_path: str,
+    basis: EquipmentSaveBasis | None = None,
+) -> None:
     """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다. FAB 전체
-    배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다."""
+    배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다. 저장은 바뀐 쪽만
+    — 세 표가 그대로면 층 값만 쓴다. `basis` 는 세션의 설비 시나리오(배치 편집은 공식 발행 쌍일
+    때만 열리므로 늘 공식)다."""
     note = st.session_state.get(note_key)
     try:
         message = save_equipment_buffer(
             get_equipment_repository(database_path),
             frames,
             note if isinstance(note, str) else "",
-            revision_optional=True,
+            basis=basis,
         )
     except BOOTSTRAP_ERRORS as exc:
         # 검증·충돌(ValueError)만이 아니라 DuckDB 잠금 같은 저장 실패도 문구로 남긴다 — 콜백에서

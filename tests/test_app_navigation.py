@@ -18,6 +18,7 @@ from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.equipment_data_workspace import PENDING_FAB_KEY
+from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
@@ -1724,6 +1725,7 @@ def _common_boxes(app: AppTest) -> set[str]:
             ("heading", CONDITIONS_SECTION.key in keys),
             ("scenario", SCENARIO_FIELD_KEY in fields),
             ("period", PERIOD_FIELD_KEY in fields),
+            ("equipment", EQUIPMENT_SCENARIO_FIELD_KEY in fields),
         )
         if present
     }
@@ -1922,21 +1924,26 @@ def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTe
     app = _app.run()
     app.switch_page(equipment.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    # Main 은 공통 조건을 읽지 않지만 자기 조건 카드(`설비 조회 조건`)가 있어 제목은 선다.
-    assert _common_boxes(app) == {"heading"}
+    # Main 은 공통 조건을 읽지 않지만 자기 조건 카드(`설비 조회 조건`)가 있어 제목은 서고, 설비
+    # 시나리오 줄이 패널에 선다.
+    assert _common_boxes(app) == {"heading", "equipment"}
 
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_GAP_TAB
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert _common_boxes(app) == {"heading", "scenario", "period"}
+    assert _common_boxes(app) == {"heading", "scenario", "period", "equipment"}
 
-    # RawData 는 카드도 공통 조건도 없다 — 제목만 남는 빈 구역을 세우지 않는다. 다른 데이터와 잇지
-    # 않는 Qual 마감 계산기(2026-10-22)도 같다.
-    for label in (":material/table_rows: RawData", ":material/calculate: Qual 마감 계산기"):
-        app.session_state[EQUIPMENT_TAB_KEY] = label
-        app.run()
-        assert not list(app.exception), [element.message for element in app.exception]
-        assert _common_boxes(app) == set(), label
+    # RawData 는 카드도 공통 조건도 없지만 설비 시나리오를 편집·저장하는 탭이라 그 줄만 선다.
+    app.session_state[EQUIPMENT_TAB_KEY] = ":material/table_rows: RawData"
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "equipment"}
+    # 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22)는 설비 시나리오 줄도 없다 — 제목만 남는
+    # 빈 구역을 세우지 않는다.
+    app.session_state[EQUIPMENT_TAB_KEY] = ":material/calculate: Qual 마감 계산기"
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == set()
 
 
 def test_every_declared_condition_tab_is_a_real_label() -> None:
@@ -1952,13 +1959,15 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 
 
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
-    """가용설비 현황·필요 단축 일정과 공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러
-    번 연다)다."""
+    """가용설비 현황·필요 단축 일정·공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러
+    번 연다)와 Space 현황(공식 스냅샷·설비 시나리오 목록·공통 최신·도면을 한 회차에 따로
+    읽는다)이다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
     assert declared == {
         AVAILABLE_EQUIPMENT_STATUS.path,
         REQUIRED_SHORTENING.path,
         PROCESS_CAPA_DETAIL.path,
+        SPACE_STATUS.path,
     }
 
 
@@ -2040,12 +2049,15 @@ def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
     assert not list(app.exception), [element.message for element in app.exception]
     assert pinned == [(settings.DUCKDB_PATH,), (equipment_db,)]
 
-    # 설비 DB 를 한 번만 여는 화면(Space 현황)과 HOME 으로 가면 다시 걸지 않는다.
-    for path in (SPACE_STATUS.path, HOME.path):
-        pinned.clear()
-        app.switch_page(path).run()
-        assert not list(app.exception), [element.message for element in app.exception]
-        assert pinned == [(settings.DUCKDB_PATH,)], path
+    # 설비 시나리오를 공식으로 보는 Space 현황도 핀을 건다. HOME 으로 가면 다시 걸지 않는다.
+    pinned.clear()
+    app.switch_page(SPACE_STATUS.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert pinned == [(settings.DUCKDB_PATH,), (equipment_db,)]
+    pinned.clear()
+    app.switch_page(HOME.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert pinned == [(settings.DUCKDB_PATH,)]
 
 
 def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(

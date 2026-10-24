@@ -1612,9 +1612,11 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
         ("src/capa_simulation/components/shortening_progress_panel.py", '"진척 비교",'),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"비교 안 함"'),
         ("src/capa_simulation/components/required_shortening_panel.py", '"목표 확보율",'),
+        # 가용설비 현황 탭 라벨은 사이드바(설비 시나리오 줄을 세우는 탭)와 함께 `navigation` 에
+        # 있다.
         (
-            "app_pages/available_equipment_status.py",
-            'TAB_RAWDATA = ":material/table_rows: RawData"',
+            "src/capa_simulation/navigation.py",
+            'EQUIPMENT_RAWDATA_TAB = ":material/table_rows: RawData"',
         ),
         # 필요 단축 일정은 별도 화면이다(2026-10-18) — 사이드바 링크 주소로 간다(`SHORTENING_PAGE`).
         ("src/capa_simulation/navigation.py", '"app_pages/required_shortening.py",'),

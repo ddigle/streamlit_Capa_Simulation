@@ -26,6 +26,7 @@ from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
 )
+from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
@@ -101,6 +102,20 @@ def _shift_quals(database_path: Path, master: pd.DataFrame, moves: dict[str, int
     return changed
 
 
+def _follow_official(app: AppTest, database_path: Path) -> None:
+    """세션을 지금 공식 발행으로 옮긴다(사이드바 「설비 시나리오」 에서 최신을 불러온 것과 같다).
+
+    세션은 고른 일정 리비전을 고정해 든다(E5) — 앱 밖의 저장(다른 사용자)은 그 세션 화면을 바꾸지
+    않으므로 시험이 「불러오기」 를 대신한다.
+    """
+    release = DuckDBEquipmentRepository(database_path).latest_equipment_release()
+    assert release is not None
+    app.session_state[SELECTION_KEY] = {
+        "scenario_id": release.equipment_scenario_id,
+        "schedule_revision_id": release.schedule_revision_id,
+    }
+
+
 def test_without_a_baseline_the_tab_is_the_plain_view_with_a_save_entry(tmp_path: Path) -> None:
     """「비교 안 함」 이 기본이고 그때는 진척 비교를 하나도 그리지 않는다 — 기존 화면 그대로."""
     database_path, _ = _saved_database(tmp_path)
@@ -149,6 +164,7 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     assert picker.value == NO_COMPARISON
 
     _shift_quals(database_path, master, {faster: -5, slower: 7})
+    _follow_official(app, database_path)
     app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
 
     assert not app.exception, [element.message for element in app.exception]
@@ -235,6 +251,7 @@ def test_a_unit_renamed_after_the_baseline_is_flagged_as_a_possible_rename(
     DuckDBEquipmentRepository(database_path).save_snapshot(
         empty_equipment_baseline(), renamed, empty_downtime_schedule(), note="이름 바꿈"
     )
+    _follow_official(app, database_path)
     app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
 
     assert not app.exception, [element.message for element in app.exception]

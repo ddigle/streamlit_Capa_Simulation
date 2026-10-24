@@ -300,7 +300,14 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def downloads(monkeypatch: pytest.MonkeyPatch) -> list[bytes]:
-    """층 CSV 내려받기 대역 — 받은 바이트를 적는다(페이지는 회차마다 이 모듈에서 import 한다)."""
+    """층 CSV 내려받기 대역 — 받은 바이트를 적는다(페이지는 회차마다 이 모듈에서 import 한다).
+
+    `from … import render_csv_download` 로 이름을 잡는 모듈(설비 작업 공간)이 이 대역이 걸린 동안
+    처음 import 되면 대역을 영영 붙든다 — 같은 프로세스의 뒤 시험에서 내려받기 단추가 사라진다.
+    대역을 걸기 전에 그 모듈을 먼저 불러 둔다.
+    """
+    import capa_simulation.components.equipment_data_workspace  # noqa: F401
+
     got: list[bytes] = []
 
     def _record(*, data: bytes, **_: Any) -> None:

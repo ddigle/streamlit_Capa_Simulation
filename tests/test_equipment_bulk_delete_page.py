@@ -223,7 +223,7 @@ def test_a_confirmed_deletion_alone_counts_as_an_unsaved_edit(tmp_path: Path) ->
 
     assert not app.exception, [item.message for item in app.exception]
     warning = " ".join(item.value for item in app.warning)
-    assert "다른 사용자가 r2" in warning and "버리고" in warning
+    assert "다른 사용자가 공통 대장 r2" in warning and "버리고" in warning
     assert _machines(app) == sorted(seed.machines)
 
 

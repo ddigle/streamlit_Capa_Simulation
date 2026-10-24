@@ -1,4 +1,4 @@
-# Purpose: 설비 DB 현행값 읽기 캐시(최신 id·Cut-off·가용대수·조건·기준선·도면)의 저장 반영을 본다.
+# Purpose: 설비 DB 현행값·설비 시나리오 목록·합친 본문 캐시의 저장·발행 반영과 래퍼 미사용을 본다.
 
 """「지금 무엇이 저장돼 있나」 읽기 캐시(`persistence/equipment_cache.py`).
 
@@ -52,6 +52,7 @@ from capa_simulation.persistence import equipment_cache
 from capa_simulation.persistence._sql_helpers import DUCKDB_CONNECT_CONFIG
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
+    clear_equipment_scenario_cache,
     clear_equipment_snapshot_cache,
     clear_floor_layout_cache,
     clear_process_cutoff_cache,
@@ -59,14 +60,21 @@ from capa_simulation.persistence.equipment_cache import (
     clear_shortening_filter_cache,
     clear_standard_target_availability_cache,
     latest_equipment_revision_id,
+    load_equipment_scenario_catalog,
+    load_equipment_schedule_revisions,
     load_floor_layout_canvases,
-    load_latest_equipment_snapshot,
+    load_merged_equipment_snapshot,
+    load_official_equipment_snapshot,
     load_process_cutoff,
     load_shortening_baselines,
     load_shortening_filter_profile,
     load_standard_target_availability,
 )
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentSaveRequest,
+    EquipmentSnapshot,
+)
 from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
@@ -172,7 +180,7 @@ def test_a_write_outside_the_app_is_seen_through_the_file_stat(
 
     assert saved is not None
     assert latest_equipment_revision_id(database) == saved.revision.revision_id != first
-    snapshot = load_latest_equipment_snapshot(database)
+    snapshot = load_official_equipment_snapshot(database)
     assert snapshot is not None and snapshot.revision.revision_no == 2
     assert load_process_cutoff(database)["Cutoff일수"].tolist() == [20.0]
     assert load_standard_target_availability(database)["가용대수"].eq(5.0).all()
@@ -473,17 +481,20 @@ def test_a_rawdata_save_on_the_screen_rebuilds_the_draft_from_the_new_revision(
     stat 을 고정해도.
 
     비우기가 빠지면 최신 id 캐시가 옛 리비전을 내 편집본이 옛 저장본으로 다시 세워진다(지운 호기가
-    되살아난다). 그 편집본에서 다시 저장하면 `base_revision_id` 충돌로 막힌다 — 그래서 두 번째
-    저장까지 돈다. 편집은 칸을 누르지 않는 길(동 필터 → 맞는 행 모두 선택 → 삭제 확정)로 한다.
+    되살아난다). 그 편집본에서 다시 저장하면 출발 공통 대조로 막힌다 — 그래서 두 번째 저장까지
+    돈다(바뀐 것이 없어 리비전은 생기지 않지만 대조는 쓰기 잠금 안에서 먼저 한다). 편집은 칸을
+    누르지 않는 길(동 필터 → 맞는 행 모두 선택 → 삭제 확정)로 한다. 편집본 토큰은 (공통, 일정)
+    쌍이다.
     """
     seed = _bulk_seeded(tmp_path)
     repository = DuckDBEquipmentRepository(seed.database)
     first = repository.latest_revision_id()
+    assert first is not None
     clear_equipment_repository()
     monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
     app = AppTest.from_string(_bulk_page_script(seed.database), default_timeout=120).run()
     assert not app.exception
-    assert app.session_state[DRAFT_REVISION_KEY] == first
+    assert app.session_state[DRAFT_REVISION_KEY] == repository.load_snapshot(first).token
 
     app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
     app.button(key=SELECT_MATCHING_KEY).click().run()
@@ -498,14 +509,15 @@ def test_a_rawdata_save_on_the_screen_rebuilds_the_draft_from_the_new_revision(
 
     app.run()  # 저장 다음의 아무 회차(위젯 하나)
     assert not app.exception
-    assert app.session_state[DRAFT_REVISION_KEY] == second
+    assert app.session_state[DRAFT_REVISION_KEY] == repository.load_snapshot(second).token
     assert len(app.session_state[EQUIPMENT_DRAFT_KEY]) == kept
 
     app.button(key=EDIT_SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [item.value for item in app.error]
     latest = repository.list_revisions()[0]
-    assert latest.revision_no == 3
+    # 바뀐 것 없는 저장은 빈 리비전을 만들지 않는다(결정 모음 「묻지 않고 하기로 한 것」).
+    assert latest.revision_no == 2
     assert len(repository.load_snapshot(latest.revision_id).equipment) == kept
     clear_equipment_repository()
 
@@ -558,8 +570,170 @@ def test_a_space_layout_save_rebuilds_the_draft_from_the_new_revision(
 
     app.run()
     assert not app.exception
-    assert app.session_state[DRAFT_REVISION_KEY] == second
+    # 좌표만 고친 저장은 공통 대장만 새로 쓴다 — 편집본 토큰의 공통 쪽이 새 리비전이다.
+    assert app.session_state[DRAFT_REVISION_KEY] == outsider.load_snapshot(second).token
     assert space_editor_calls[-1]["epoch"].split("|")[2] == second
     moved = app.session_state[EQUIPMENT_DRAFT_KEY].set_index("설비명").loc["EQ-01", "X좌표"]
     assert moved == 40.0
     clear_equipment_repository()
+
+
+# ── 설비 시나리오 캐시(설계 4-1) ──────────────────────────────────────────────────────
+
+
+def _scenario_seeded(tmp_path: Path) -> tuple[str, DuckDBEquipmentRepository, str]:
+    """래퍼로 r1 을 넣고 「셋업 실무」 를 복제한 DB. (DB, 앱 밖 저장소, 복제 시나리오 id)."""
+    database, outsider = _seeded(tmp_path)
+    release = outsider.latest_equipment_release()
+    assert release is not None
+    clone = outsider.clone_equipment_scenario(
+        release.schedule_revision_id, name="셋업 실무", created_by=None
+    )
+    clear_equipment_repository()
+    return database, outsider, clone.equipment_scenario_id
+
+
+def test_the_scenario_catalog_sees_renames_releases_and_saves_after_a_clear_or_a_stat_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목록 캐시는 공통 최신 id 와 같은 세 장치다 — 앱의 비우기(세대 `equipment_scenario`)가 1차,
+    파일 stat 이 2차. 리비전 내용 캐시와 달리 이름·발행·각 최신은 바뀔 수 있다."""
+    database, outsider, clone_id = _scenario_seeded(tmp_path)
+    first = load_equipment_scenario_catalog(database)
+    assert [item.scenario_name for item in first.scenarios] == ["운영 일정", "셋업 실무"]
+    assert first.release_no == 1
+
+    # stat 이 바뀌면(앱 밖의 쓰기) 비우지 않아도 다시 읽는다.
+    outsider.rename_equipment_scenario(clone_id, name="셋업 실무 2차", expected_name="셋업 실무")
+    assert load_equipment_scenario_catalog(database).scenarios[1].scenario_name == "셋업 실무 2차"
+
+    # stat 을 고정하면 비우기 전까지 옛 값이다 — 그래서 앱의 쓰기는 반드시 비운다.
+    monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
+    before = load_equipment_scenario_catalog(database)
+    clone_latest = before.scenarios[1].latest_schedule_revision_id
+    assert clone_latest is not None
+    outsider.publish_equipment_release(
+        clone_latest, released_by=None, note=None, expected_latest_release_no=1
+    )
+    assert load_equipment_scenario_catalog(database).release_no == 1
+    clear_equipment_scenario_cache()
+    after = load_equipment_scenario_catalog(database)
+    assert after.release_no == 2 and after.official_scenario_id == clone_id
+    assert load_equipment_schedule_revisions(database, clone_id)[0].revision_no == 1
+    clear_equipment_repository()
+
+
+def test_publishing_alone_changes_what_the_official_snapshot_shows(tmp_path: Path) -> None:
+    """공식 스냅샷 = 공통 최신 + 목록의 최신 발행 → 쌍 키 본문. 공통이 그대로여도 발행만 바꾸면 다른
+    쌍 키로 가 결과가 바뀐다(래퍼 `load_snapshot` 을 공통 id 하나 키로 캐시하면 놓친다)."""
+    database, outsider, clone_id = _scenario_seeded(tmp_path)
+    clone_session = outsider.load_merged_snapshot(
+        str(outsider.latest_revision_id()),
+        next(
+            item.latest_schedule_revision_id
+            for item in outsider.list_equipment_scenarios()
+            if item.equipment_scenario_id == clone_id
+        ),
+    )
+    edited = clone_session.equipment.copy()
+    edited.loc[edited["설비명"].eq("EQ-02"), "Qual일정"] = pd.Timestamp("2026-09-30")
+    assert clone_session.schedule is not None
+    saved = outsider.save_equipment(
+        EquipmentSaveRequest(
+            baseline=clone_session.baseline,
+            equipment=edited,
+            downtime=clone_session.downtime,
+            equipment_scenario_id=clone_id,
+            base_common_revision_id=clone_session.revision.revision_id,
+            base_schedule_revision_id=clone_session.schedule.schedule_revision_id,
+        )
+    )
+    assert saved.schedule is not None and saved.common is None
+    before = load_official_equipment_snapshot(database)
+    assert before is not None
+
+    outsider.publish_equipment_release(
+        saved.schedule.schedule_revision_id,
+        released_by=None,
+        note=None,
+        expected_latest_release_no=1,
+    )
+    clear_equipment_scenario_cache()  # 이름·발행·복제·이어 쓰기 뒤에는 이것만 부른다
+    after = load_official_equipment_snapshot(database)
+
+    assert after is not None
+    assert before.revision.revision_id == after.revision.revision_id
+    assert before.token != after.token
+    qual = after.equipment.set_index("설비명").loc["EQ-02", "Qual일정"]
+    assert qual == pd.Timestamp("2026-09-30")
+    clear_equipment_repository()
+
+
+def test_the_merged_body_is_shared_by_pair_key_and_pickles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """세션이 공식 발행 쌍이면 공식 스냅샷과 같은 칸을 쓴다(한 번만 꺼냄). 본문 페이로드는 쌍
+    튜플·frozenset 이라 pickle 이 된다 — `MappingProxyType` 을 실으면 캐시가 깨진다(검토 1-12)."""
+    import pickle
+
+    database, outsider, _clone_id = _scenario_seeded(tmp_path)
+    calls: list[tuple[str, str | None]] = []
+    original = DuckDBEquipmentRepository.load_merged_snapshot
+
+    def counted(
+        self: DuckDBEquipmentRepository, common: str, schedule: str | None
+    ) -> EquipmentSnapshot:
+        calls.append((common, schedule))
+        return original(self, common, schedule)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "load_merged_snapshot", counted)
+    official = load_official_equipment_snapshot(database)
+    assert official is not None and official.schedule is not None
+    again = load_merged_equipment_snapshot(
+        database, official.revision.revision_id, official.schedule.schedule_revision_id
+    )
+
+    assert len(calls) == 1
+    assert again.token == official.token
+    assert again.unit_keys == official.unit_keys and official.unit_key_pairs
+    payload = equipment_cache._load_merged_payload(
+        database, official.revision.revision_id, official.schedule.schedule_revision_id
+    )
+    restored = pickle.loads(pickle.dumps(payload))
+    assert restored["unit_key_pairs"] == official.unit_key_pairs
+    assert isinstance(restored["unscheduled_units"], frozenset)
+    clear_equipment_repository()
+
+
+_WRAPPERS = frozenset({"save_snapshot", "save_space_layout", "load_snapshot"})
+
+
+def _wrapper_calls(path: Path) -> list[str]:
+    """한 파일에서 저장소 호환 래퍼를 부르는 자리(`<무엇>.save_snapshot(` 꼴)."""
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [
+        f"{path.relative_to(PROJECT_ROOT)}:{node.lineno} {node.func.attr}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _WRAPPERS
+    ]
+
+
+def test_caches_and_screens_never_call_the_repository_wrappers() -> None:
+    """화면(`app_pages/`·`components/`)·세션(`equipment_scenario_activation.py`)·캐시 경계
+    (`persistence/equipment_cache.py`)는 래퍼를 부르지 않는다(설계 3-5) — 래퍼 `load_snapshot` 은
+    발행에 따라 값이 바뀌는 뜻이고, 래퍼 저장은 늘 두 쪽을 써 공식으로 발행한다. 화면 저장은
+    `save_equipment`(바뀐 쪽만·이 세션의 시나리오)다."""
+    package = PROJECT_ROOT / "src" / "capa_simulation"
+    paths = [
+        *sorted((PROJECT_ROOT / "app_pages").glob("*.py")),
+        *sorted((package / "components").glob("*.py")),
+        package / "persistence" / "equipment_cache.py",
+        package / "equipment_scenario_activation.py",
+        PROJECT_ROOT / "app.py",
+    ]
+    found = [call for path in paths for call in _wrapper_calls(path)]
+    assert found == []

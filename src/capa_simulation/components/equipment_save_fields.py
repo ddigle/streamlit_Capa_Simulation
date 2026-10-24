@@ -1,0 +1,106 @@
+# Purpose: 설비 마스터 저장 칸(저장자·함께 넣기 두 체크·공식 발행)과 저장 출발점 값을 둔다.
+
+"""설비 마스터를 저장하는 네 자리(RawData 「설비 데이터 저장」·「확인 후 리비전 저장」·사이드바 설비
+시나리오 팝업 「저장」·Space 「배치 저장」)가 함께 쓰는 저장 칸(설계 6-4).
+
+- **폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다** — 폼을 그린 회차의 편집본에는 같은 제출의
+  새 호기가 아직 없다. 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다. 미리보기 후보가
+  있는 자리(팝업)만 수를 미리 적는다(`counts`).
+- 기본값 셋은 아래 상수 한 곳이다(질문 1 — 공식 발행 기본 켬, F6·F2 — 함께 넣기 기본 켬). 답이
+  바뀌면 이 상수만 고친다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import streamlit as st
+
+# 질문 1 권장안(설계 9장) — 공식 설비 시나리오에 새 일정 리비전이 생기는 저장은 기본으로 공식 발행.
+DEFAULT_PUBLISH_OFFICIAL = True
+# F6 — 새 호기를 넣을 때 「다른 시나리오에도 같은 일정으로 넣기」 기본 켬.
+DEFAULT_PROPAGATE_NEW_UNITS = True
+# F2 — 비가동을 넣을 때 「모든 시나리오에 넣기」 기본 켬.
+DEFAULT_PROPAGATE_NEW_DOWNTIME = True
+
+PROPAGATE_UNITS_LABEL = "새로 넣은 호기를 다른 설비 시나리오에도 같은 일정으로 넣기"
+PROPAGATE_DOWNTIME_LABEL = "새로 넣은 비가동을 모든 설비 시나리오에 넣기"
+PUBLISH_OFFICIAL_LABEL = "공식 설비 시나리오에 새 일정 리비전이 생기면 공식으로 발행"
+SAVED_BY_LABEL = "저장자(선택)"
+
+
+@dataclass(frozen=True)
+class EquipmentSaveFields:
+    """저장 칸에서 받은 값. 기본값은 위 상수다(칸을 그리지 않는 저장 — 시험·래퍼 대신 쓰는 길)."""
+
+    saved_by: str | None = None
+    propagate_new_units: bool = DEFAULT_PROPAGATE_NEW_UNITS
+    propagate_new_downtime: bool = DEFAULT_PROPAGATE_NEW_DOWNTIME
+    publish_official: bool = DEFAULT_PUBLISH_OFFICIAL
+
+
+@dataclass(frozen=True)
+class EquipmentSaveBasis:
+    """저장이 어느 설비 시나리오에 가는지와 화면이 본 공식 번호 — 페이지가 세션에서 만든다.
+
+    - `release_no` 는 화면이 본 최신 공식 번호(발행이 없었으면 0)다 — 이번 저장이 발행할 때만
+      저장소가 대조한다(`EquipmentSaveRequest.expected_release_no`).
+    - `stale` 은 세션 리비전이 그 시나리오 최신이 아니라는 뜻이다 — 일정 칸·행 추가·일정이 바뀌는
+      붙여넣기를 막는다(설계 4-2). `latest_revision_no` 는 그 최신 번호다.
+    """
+
+    equipment_scenario_id: str
+    scenario_name: str
+    release_no: int = 0
+    stale: bool = False
+    revision_no: int | None = None
+    latest_revision_no: int | None = None
+    official_scenario: bool = True
+
+
+@dataclass(frozen=True)
+class SaveCandidateCounts:
+    """저장 전에 셀 수 있을 때(팝업)만 적는 함께 넣기 후보 수."""
+
+    new_units: int = 0
+    new_downtime: int = 0
+
+
+def render_equipment_save_fields(
+    prefix: str, *, counts: SaveCandidateCounts | None = None, show_publish: bool = True
+) -> EquipmentSaveFields:
+    """저장자 칸과 세 체크를 그리고 지금 값을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
+
+    `prefix` 로 칸 key 를 가른다 — 같은 화면의 두 자리(폼 안·팝업)가 서로의 값을 덮지 않게. 저장자는
+    세션에 남아 다음 저장에 그대로 선다(같은 사람이 이어 저장한다). `show_publish` 가 거짓이면(공식
+    시나리오가 아닌 세션) 발행 체크를 그리지 않고 기본값을 돌려준다 — 그 저장이 공식 시나리오에 새
+    리비전을 만드는 길은 함께 넣기뿐이라 결과 알림이 말한다.
+    """
+    saved_by = st.text_input(
+        SAVED_BY_LABEL,
+        key=f"{prefix}_saved_by",
+        placeholder="예: 홍길동",
+        max_chars=40,
+    )
+    units_label = PROPAGATE_UNITS_LABEL
+    downtime_label = PROPAGATE_DOWNTIME_LABEL
+    if counts is not None:
+        units_label = f"{PROPAGATE_UNITS_LABEL} · 후보 {counts.new_units:,}대"
+        downtime_label = f"{PROPAGATE_DOWNTIME_LABEL} · 후보 {counts.new_downtime:,}건"
+    propagate_units = st.checkbox(
+        units_label, value=DEFAULT_PROPAGATE_NEW_UNITS, key=f"{prefix}_propagate_units"
+    )
+    propagate_downtime = st.checkbox(
+        downtime_label, value=DEFAULT_PROPAGATE_NEW_DOWNTIME, key=f"{prefix}_propagate_downtime"
+    )
+    publish = DEFAULT_PUBLISH_OFFICIAL
+    if show_publish:
+        publish = st.checkbox(
+            PUBLISH_OFFICIAL_LABEL, value=DEFAULT_PUBLISH_OFFICIAL, key=f"{prefix}_publish"
+        )
+    return EquipmentSaveFields(
+        saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
+        propagate_new_units=bool(propagate_units),
+        propagate_new_downtime=bool(propagate_downtime),
+        publish_official=bool(publish),
+    )

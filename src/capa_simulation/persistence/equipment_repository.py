@@ -241,6 +241,41 @@ class EquipmentRelease:
 
 
 @dataclass(frozen=True)
+class EquipmentScenarioCatalog:
+    """설비 시나리오 목록 한 벌 — 바뀔 수 있는 것(이름·발행·각 최신·흔적)만 모은다.
+
+    리비전 내용은 불변이라 본문 캐시는 (공통 id, 일정 id) 쌍 키로 두고, 이 목록은 쓰기 세대·파일
+    stat·TTL 로 따로 캐시한다(`equipment_cache.load_equipment_scenario_catalog`). 캐시에 실리는
+    모델이라 필드에 기본값을 둔다.
+    """
+
+    scenarios: tuple[EquipmentScenarioSummary, ...] = ()
+    latest_release: EquipmentRelease | None = None
+    legacy_trace_count: int = 0
+
+    def scenario(self, equipment_scenario_id: str | None) -> EquipmentScenarioSummary | None:
+        """id 로 시나리오 한 줄. 없으면 None."""
+        return next(
+            (
+                summary
+                for summary in self.scenarios
+                if summary.equipment_scenario_id == equipment_scenario_id
+            ),
+            None,
+        )
+
+    @property
+    def official_scenario_id(self) -> str | None:
+        """최신 공식 발행의 시나리오. 발행이 없으면 None."""
+        return self.latest_release.equipment_scenario_id if self.latest_release else None
+
+    @property
+    def release_no(self) -> int | None:
+        """최신 공식 번호(「공식 vN」). 발행이 없으면 None."""
+        return self.latest_release.release_no if self.latest_release else None
+
+
+@dataclass(frozen=True)
 class EquipmentSnapshot:
     """화면이 쓰는 설비 데이터 한 벌 — 공통 대장 리비전 + 설비 시나리오 일정 리비전을 합친 것.
 
@@ -1209,6 +1244,25 @@ class DuckDBEquipmentRepository:
                 connection, equipment_scenario_id, limit=limit
             )
         return [_schedule_revision_summary(row) for row in rows]
+
+    def load_scenario_catalog(self) -> EquipmentScenarioCatalog:
+        """설비 시나리오 목록·최신 공식 발행·옛 배포 흔적 수를 **연결 하나**로 읽는다(목록
+        캐시용)."""
+        with self._connect() as connection:
+            release = scenario_store.latest_release_row(connection)
+            return EquipmentScenarioCatalog(
+                scenarios=tuple(
+                    _scenario_summary(row) for row in scenario_store.scenario_rows(connection)
+                ),
+                latest_release=_release(release) if release is not None else None,
+                legacy_trace_count=legacy_trace_count(connection),
+            )
+
+    def official_scenario_id(self) -> str | None:
+        """공식 설비 시나리오 — 최신 발행의 시나리오, 발행이 없으면 「운영 일정」(없으면 목록 첫
+        시나리오). 시나리오가 하나도 없으면 None."""
+        with self._connect() as connection:
+            return scenario_store.official_scenario_id(connection)
 
     def latest_equipment_release(self) -> EquipmentRelease | None:
         """최신 공식 발행. 발행이 없으면 None."""

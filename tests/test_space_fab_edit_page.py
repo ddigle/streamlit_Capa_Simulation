@@ -313,8 +313,20 @@ def test_a_fab_save_with_an_unsaved_baseline_or_downtime_edit_keeps_the_memo(
     app.button(key="space_layout_save").click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    revisions = DuckDBEquipmentRepository(database).list_revisions()
-    assert [(item.revision_no, item.note) for item in revisions] == [(2, "FAB 와 함께"), (1, "r1")]
+    repository = DuckDBEquipmentRepository(database)
+    # 저장은 바뀐 쪽만 새 리비전이 된다 — 기존 보유대수는 공통 대장, 비가동 일정은 설비 시나리오
+    # 일정 쪽이다. 메모는 새로 생긴 쪽에 남는다.
+    if label == "비가동 일정":
+        assert [(item.revision_no, item.note) for item in repository.list_revisions()] == [
+            (1, "r1")
+        ]
+        written = [
+            (item.revision_no, item.note)
+            for item in repository.list_schedule_revisions("operations")
+        ]
+    else:
+        written = [(item.revision_no, item.note) for item in repository.list_revisions()]
+    assert written == [(2, "FAB 와 함께"), (1, "r1")]
     clear_equipment_repository()
 
 
@@ -495,7 +507,7 @@ def _fab_saved_even_if_equipment_save_fails(database: str) -> None:
     # 그 사이 남이 새 설비 리비전을 저장했다 — 설비 쪽 저장은 거부된다.
     repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="r2")
     try:
-        save_equipment_buffer(repository, frames, "메모", revision_optional=True)
+        save_equipment_buffer(repository, frames, "메모")
     except ValueError as exc:
         st.session_state["error"] = str(exc)
     st.session_state["pending_left"] = pending_fab_layout() is not None
@@ -539,7 +551,7 @@ def _equipment_saved_even_if_fab_is_refused(database: str) -> None:
     latest = repository.load_snapshot(str(repository.latest_revision_id()))
     baseline, equipment, downtime = ensure_equipment_drafts(latest)
     equipment = equipment.copy()
-    equipment.loc[equipment.index[0], "비고"] = "이 세션의 설비 편집"
+    equipment.loc[equipment.index[0], "담당자"] = "이 세션의 설비 편집"
     replace_equipment_buffer((baseline, equipment, downtime))
     base = (None, fab_marks_fingerprint(()))
     stage_fab_layout(

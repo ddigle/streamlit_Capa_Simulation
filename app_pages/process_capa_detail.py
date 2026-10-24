@@ -59,6 +59,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -81,6 +82,7 @@ from capa_simulation.components.upeh_assumption_controls import (
     render_upeh_assumption_controls,
     upeh_badge,
 )
+from capa_simulation.equipment_scenario_activation import resolve_equipment_session
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
@@ -103,10 +105,7 @@ from capa_simulation.persistence.cache import (
     load_global_past_data,
     load_global_securement_threshold,
 )
-from capa_simulation.persistence.equipment_cache import (
-    load_latest_equipment_snapshot,
-    load_process_cutoff,
-)
+from capa_simulation.persistence.equipment_cache import load_process_cutoff
 from capa_simulation.process_detail_state import (
     ORIGIN_BAND_ICON,
     PROCESS_DETAIL_PROCESS_KEY,
@@ -614,15 +613,19 @@ closing_notices: list[str] = []
 units_csv: bytes | None = None
 try:
     equipment_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
-    snapshot = load_latest_equipment_snapshot(equipment_path)
+    # 사이드바에서 고른 설비 시나리오(새 세션은 공식). HOME 칸으로 들어온 방문의 공식 잠금은 방문
+    # 기준 칸(F)이 맡는다.
+    equipment_session = resolve_equipment_session(equipment_path)
+    snapshot = equipment_session.snapshot
     cutoff = load_process_cutoff(equipment_path)
 except BOOTSTRAP_ERRORS as exc:
     snapshot = None
     cutoff = pd.DataFrame()
     dynamic_error = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
 else:
+    render_equipment_scenario_row(equipment_session)
     readiness = dynamic_readiness(
-        snapshot.equipment if snapshot is not None else None,
+        snapshot.calculation_frames()[1] if snapshot is not None else None,
         snapshot.baseline if snapshot is not None else None,
         cutoff,
         process=process,
@@ -634,7 +637,8 @@ if (
     and readiness.cutoff_days is not None
     and snapshot is not None
 ):
-    equipment, downtime, baseline = snapshot.equipment, snapshot.downtime, snapshot.baseline
+    # 계산은 이 설비 시나리오에 일정이 없는 호기와 그 비가동을 뺀 세 표다(F4).
+    baseline, equipment, downtime = snapshot.calculation_frames()
     # 단축 목표 = HOME Preference 확보기준을 달마다(사용자 결정 2). 계산할 달 밖의 월별 예외는
     # 싣지 않아 키를 가르지 않는다.
     target = target_from_thresholds(thresholds, months)

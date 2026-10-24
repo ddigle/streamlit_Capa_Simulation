@@ -14,6 +14,11 @@ from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     pending_fab_layout,
 )
+from capa_simulation.components.equipment_scenario_status import (
+    close_equipment_scenario_dialog,
+    equipment_scenario_dialog_is_open,
+    show_equipment_scenario_dialog,
+)
 from capa_simulation.components.home_rendering import HOME_CELL_CHART_KEYS
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import (
@@ -73,6 +78,7 @@ from capa_simulation.sidebar_status import (
     forget_month_range_placeholder,
     forget_page_condition_slots,
     on_box_toggle,
+    register_equipment_scenario_slot,
     register_page_condition_slots,
     render_box_toggle_sink,
     render_sidebar_section,
@@ -108,9 +114,12 @@ def active_condition_tab(spec: PageSpec) -> str | None:
 
 @st.fragment(key=CONDITION_DIALOG_FRAGMENT_KEY)
 def render_condition_dialogs(
-    page_file: str | None, shows_scenario: bool, shows_period: bool
+    page_file: str | None,
+    shows_scenario: bool,
+    shows_period: bool,
+    shows_equipment: bool = False,
 ) -> None:
-    """조건 패널의 시나리오·조회기간 팝업을 여닫는 호스트 프래그먼트.
+    """조건 패널의 시나리오·조회기간·설비 시나리오 팝업을 여닫는 호스트 프래그먼트.
 
     키는 `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY` 다. 한 실행에 팝업은 하나뿐이고(여는 콜백이
     다른 칸을 비운다), 이 화면에 그 줄이 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을
@@ -131,9 +140,13 @@ def render_condition_dialogs(
         show_scenario_dialog(page_file)
     elif shows_period and period_dialog_is_open():
         show_period_dialog(page_file)
+    elif shows_equipment and equipment_scenario_dialog_is_open():
+        # 셋째 갈래. 팝업이 설비 DB 를 읽는 것은 연 동안뿐이다 — 이 호스트는 열림 키만 본다.
+        show_equipment_scenario_dialog(page_file)
     else:
         close_scenario_dialog()
         close_period_dialog()
+        close_equipment_scenario_dialog()
         # 스타일만 든 `st.html` 은 이벤트 칸으로 간다 — 본문 자리를 차지하지 않는다.
         st.html("<style></style>")
 
@@ -371,17 +384,24 @@ with pinned_connections(DUCKDB_PATH):
     reads_common_here = current_spec is None or current_spec.reads_common_conditions_on(active_tab)
     shows_scenario = reads_common_here and (current_spec is None or current_spec.reads_scenario)
     shows_period = reads_common_here and (current_spec is None or current_spec.reads_period)
+    # 설비 시나리오 줄은 공통 조건과 따로 선언한다(가용설비 현황은 Qual 마감 계산기 탭에서만 뺀다).
+    # **여기서는 칸만 세운다** — 줄은 페이지가 `resolve_equipment_session` 뒤에 그린다. `app.py` 는
+    # 설비 DB 를 열지 않는다(사이드바가 그리는 동안 저장소 호출 0).
+    shows_equipment = current_spec is not None and current_spec.reads_equipment_scenario_on(
+        active_tab
+    )
     has_cards = current_spec is not None and current_spec.has_cards_on(active_tab)
     # 제목은 **늘 페이지보다 먼저, 같은 자리에** 세운다 — 회차마다 지웠다 다시 세우면 rerun 동안
     # 제목이 사라지고 아래 상자가 한 줄 올라갔다 내려온다. 카드만 세우는 화면이 카드 전에 멈추는
     # 드문 오류 경로(VOC·설비 DB 를 못 읽음)에서 제목만 남는 것은 사이드바 CSS 가 감춘다 — 제목
     # 아래에 설 상자가 사이드바에 하나도 없으면 제목을 숨긴다(`sidebar_style`, 홀로 남은 제목).
-    if shows_scenario or shows_period or has_cards:
+    if shows_scenario or shows_period or shows_equipment or has_cards:
         render_sidebar_section(CONDITIONS_SECTION)
-    if shows_scenario or shows_period:
+    if shows_scenario or shows_period or shows_equipment:
         # **패널은 늘 같은 순번에 선다.** 안의 줄은 한 모양(이름 줄 + 팝업을 여는 값 칸,
         # `components/condition_field.py`)이고 값은 세션만 읽는다 — 저장소는 팝업을 연 동안에만
-        # 읽는다. 패널 안 차례: 적용 전 편집 한 줄 → 시나리오 → 조회기간 → 페이지 칸.
+        # 읽는다. 패널 안 차례: 적용 전 편집 한 줄 → 시나리오 → 조회기간 → 설비 시나리오 칸 →
+        # 페이지 칸.
         with st.sidebar.container(border=True, key=CONDITIONS_BOX_KEY):
             # 적용 전 편집 경고는 시나리오·기간 두 줄이 함께 쓰는 한 줄이다(전에는 두 상자에 각각
             # 적었다). 늘 서 있는 한 칸 안에 그려 생기고 사라질 때 아래 줄의 자리를 밀지 않는다.
@@ -392,6 +412,9 @@ with pinned_connections(DUCKDB_PATH):
                 render_scenario_field()
             if shows_period:
                 render_period_field()
+            # 설비 시나리오 칸 — 페이지 칸과 같은 블록이다(빈 칸은 그려지지 않는다). 페이지가
+            # 그 회차 목록을 읽은 뒤 줄을 그리므로 배지가 한 회차 늦지 않는다.
+            register_equipment_scenario_slot(st.container(gap=None) if shows_equipment else None)
             # 페이지가 계산 뒤에 채우는 칸(HOME 의 공정 필터·주요공정 히트맵). 적용 기간처럼 그
             # 값은 `navigation.run()` 안에서야 정해지고, 페이지가 `st.stop()` 하면 그 뒤 코드는
             # 돌지 않는다 — 칸을 여기서 미리 세워 둔다. **칸은 `st.empty` 가 아니라 블록이다**
@@ -406,6 +429,7 @@ with pinned_connections(DUCKDB_PATH):
             )
     else:
         forget_page_condition_slots()
+        register_equipment_scenario_slot(None)
     if not shows_period:
         # 안 세운 회차에는 적용 기간 자리표시자도 없다. 앞 회차에 등록한 칸을 지워야 이 화면이
         # 사라진 칸에 「✓ 적용」을 쓰지 않는다.
@@ -416,7 +440,7 @@ with pinned_connections(DUCKDB_PATH):
     # 자리표시자는 본문 밖(이벤트 칸)에 서고 이 칸은 늘 비어 있어 CSS 가 숨긴다(상자 여닫기 칸과
     # 같다).
     with st.container(key=CONDITION_DIALOG_SINK_KEY):
-        render_condition_dialogs(page_file, shows_scenario, shows_period)
+        render_condition_dialogs(page_file, shows_scenario, shows_period, shows_equipment)
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

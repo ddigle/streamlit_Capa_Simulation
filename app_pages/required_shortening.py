@@ -22,17 +22,18 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.equipment_data_workspace import (
-    BASELINE_DRAFT_KEY,
-    DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
+    calculation_drafts,
     ensure_equipment_drafts,
     pop_discarded_notice,
 )
+from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
+from capa_simulation.equipment_scenario_activation import resolve_equipment_session
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
@@ -42,7 +43,6 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
-    load_latest_equipment_snapshot,
     load_process_cutoff,
 )
 from capa_simulation.services.equipment_samples import (
@@ -89,7 +89,9 @@ today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
-    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
+    # 세션이 든 설비 시나리오(새 세션은 공식) — 공통 최신 + 고른 일정 리비전의 합친 스냅샷.
+    equipment_session = resolve_equipment_session(equipment_database_path)
+    latest_snapshot = equipment_session.snapshot
     # 저장된 Cut-off. 고치는 곳은 가용설비 현황 Preference 다.
     stored_cutoff = load_process_cutoff(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
@@ -107,10 +109,10 @@ ensure_equipment_drafts(latest_snapshot)
 discarded_notice = pop_discarded_notice()
 if discarded_notice:
     notices.warning(discarded_notice, icon=":material/sync_problem:")
-baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
-equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
-downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
-using_dashboard_sample = equipment.empty
+render_equipment_scenario_row(equipment_session)
+# 계산은 이 설비 시나리오에 일정이 없는 호기와 그 비가동을 뺀 저장본 사본(F4)이다.
+baseline, equipment, downtime = calculation_drafts()
+using_dashboard_sample = st.session_state[EQUIPMENT_DRAFT_KEY].empty
 
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
 if using_dashboard_sample:

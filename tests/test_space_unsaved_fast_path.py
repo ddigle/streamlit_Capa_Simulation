@@ -31,6 +31,7 @@ from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
     PENDING_RENAMES_KEY,
 )
+from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services import space_layout_edit
@@ -479,8 +480,13 @@ def test_restoring_the_only_deletion_returns_to_the_fast_path(
 def test_the_first_run_after_someone_elses_save_compares_against_the_new_revision(
     tmp_path: Path, comparisons: list[str], edited: bool
 ) -> None:
-    """남이 새 리비전을 저장한 직후 회차: 편집본은 새 저장본으로 다시 서고(미저장 편집은 버려짐)
-    상자는 서지 않는다 — 셀 비교를 모두 돌린 결과와 같다."""
+    """남이 새 리비전을 저장한 뒤 이 세션이 공식으로 옮겨 온 첫 회차: 편집본은 새 저장본으로 다시
+    서고(미저장 편집은 버려짐) 상자는 서지 않는다 — 셀 비교를 모두 돌린 결과와 같다.
+
+    세션은 고른 설비 시나리오 리비전을 고정해 든다(E5). 남의 저장(래퍼는 공식으로 발행한다)
+    뒤에는 그 세션이 공식 발행 쌍이 아니라 Space 배치 편집이 잠기고 편집본을 건드리지 않는다 —
+    사이드바에서 최신을 불러온 것(선택을 새 공식으로 옮김)을 시험이 대신한다.
+    """
     app = _open_floor(tmp_path)
     if edited:
         frames = app.session_state[BUFFER_KEY]
@@ -493,6 +499,16 @@ def test_the_first_run_after_someone_elses_save_compares_against_the_new_revisio
         _baseline(), other, _downtime(), note="r2-other"
     )
     clear_equipment_repository()
+    comparisons.clear()
+    app.run()
+    # 고정한 세션은 공식이 아니게 됐다 — 편집이 잠기고 편집본은 그대로다.
+    assert not app.exception, [item.message for item in app.exception]
+    assert _shown_panel(app) is None
+    assert latest.schedule is not None
+    app.session_state[SELECTION_KEY] = {
+        "scenario_id": latest.schedule.equipment_scenario_id,
+        "schedule_revision_id": latest.schedule.schedule_revision_id,
+    }
     comparisons.clear()
     app.run()
 

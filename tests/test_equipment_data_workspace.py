@@ -24,6 +24,7 @@ from capa_simulation.components.equipment_data_workspace import (
     EDITOR_TABS_KEY,
     EQUIPMENT_EDITOR_KEY,
     EXAMPLE_DROP_BUTTON_KEY,
+    FLASH_KEY,
     HISTORY_FILTER_EXPANDER_KEY,
     IMPORT_SAVE_BUTTON_KEY,
     PREVIEW_BUTTON_KEY,
@@ -321,9 +322,9 @@ def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_clic
     assert not app.exception
     assert not app.error
     repository = _repository(path)
-    revisions = repository.list_revisions()
-    assert len(revisions) == 1
-    assert repository.load_snapshot(revisions[0].revision_id).baseline.empty
+    # 예시 행을 빼면 저장할 것이 없다 — 빈 저장소에 빈 리비전을 만들지 않는다(결정 모음).
+    assert repository.list_revisions() == []
+    assert app.session_state[FLASH_KEY] == "바뀐 내용이 없어 저장하지 않았습니다."
 
 
 def test_saving_the_template_example_row_without_dropping_it_is_still_blocked(
@@ -397,7 +398,16 @@ def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     name = current_data_file_name(
         "equipment_master", latest_snapshot=saved, edited=False, today=date(2026, 9, 24)
     )
-    assert name == f"equipment_master_r{saved.revision.revision_no}_20260924.csv"
+    # 일정 리비전 번호(r) · 공통 대장 번호(c). 시나리오 이름을 주면 그 앞에 붙는다(빈칸은 `_`).
+    assert name == "equipment_master_r1_c1_20260924.csv"
+    named = current_data_file_name(
+        "equipment_master",
+        latest_snapshot=saved,
+        edited=False,
+        today=date(2026, 9, 24),
+        scenario_name="셋업 실무/2차",
+    )
+    assert named == "equipment_master_셋업_실무_2차_r1_c1_20260924.csv"
     edited_name = current_data_file_name(
         "equipment_master", latest_snapshot=None, edited=True, today=date(2026, 9, 24)
     )
@@ -436,7 +446,9 @@ def test_pasting_the_exported_current_data_back_round_trips_through_the_workspac
     latest_id = repository.latest_revision_id()
     assert latest_id is not None
     latest = repository.load_snapshot(latest_id)
-    assert latest.revision.revision_no == 2
+    # 그대로 붙여넣으면 바뀐 것이 없다 — 빈 리비전을 만들지 않는다(결정 모음).
+    assert latest.revision.revision_no == 1
+    assert app.session_state[FLASH_KEY] == "바뀐 내용이 없어 저장하지 않았습니다."
     assert_frame_equal(
         latest.equipment.reset_index(drop=True), master.reset_index(drop=True), check_dtype=False
     )
@@ -723,6 +735,8 @@ def test_the_change_memo_is_cleared_after_a_save_and_not_reused(tmp_path: Path) 
         empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
     )
     app = _app(tmp_path / "equipment.duckdb")
+    # 바뀐 것 없는 저장은 리비전을 만들지 않으므로(결정 모음) 저장마다 공통 칸 하나를 고친다.
+    _change_owner(app, "담당 1")
     app.text_input(key=NOTE_KEY).input("M1 메모")
     app.button(EDIT_SAVE_BUTTON_KEY).click().run()
     assert not app.exception
@@ -731,9 +745,24 @@ def test_the_change_memo_is_cleared_after_a_save_and_not_reused(tmp_path: Path) 
     assert (memo.value, memo.proto.set_value) == ("", True)
     assert repository.list_revisions()[0].note == "M1 메모"
 
+    _change_owner(app, "담당 2")
     app.button(EDIT_SAVE_BUTTON_KEY).click().run()
     assert not app.exception
     assert repository.list_revisions()[0].note is None
+
+
+def _change_owner(app: AppTest, owner: str) -> None:
+    """편집본 첫 호기의 담당자(공통 칸)를 고쳐 둔다 — `replace_equipment_buffer` 처럼 편집표의 지난
+    보기 프레임을 버려야 다음 제출이 이 편집을 되돌리지 않는다. 편집표가 새 편집본을 그리게 돈다."""
+    baseline, master, downtime = app.session_state[BUFFER_KEY]
+    changed = master.copy()
+    changed.loc[changed.index[0], "담당자"] = owner
+    app.session_state[BUFFER_KEY] = (baseline, changed, downtime)
+    applied = f"{EQUIPMENT_EDITOR_KEY}_applied_view"
+    if applied in app.session_state:
+        del app.session_state[applied]
+    app.run()
+    assert not app.exception
 
 
 def _upload_widget_id(app: AppTest) -> str:
@@ -765,7 +794,8 @@ def test_a_save_clears_the_paste_and_the_upload_in_the_browser_too(tmp_path: Pat
     upload_after = _upload_widget_id(app)
     assert upload_after != upload_before
 
-    # 직접 편집 저장도 같은 길로 입력 탭에 남은 붙여넣기를 비운다.
+    # 직접 편집 저장도 같은 길로 입력 탭에 남은 붙여넣기를 비운다(바뀐 것이 있어야 저장한다).
+    _change_owner(app, "담당 3")
     app.text_area(CLIPBOARD_KEY).set_value(_master(["NOT-PREVIEWED"]).to_csv(index=False))
     app.button(EDIT_SAVE_BUTTON_KEY).click().run()
     assert not app.exception

@@ -18,6 +18,7 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
     FLASH_KEY,
+    calculation_drafts,
     effective_floor_canvases,
     ensure_equipment_drafts,
     pop_discarded_notice,
@@ -28,14 +29,19 @@ from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
     render_equipment_period,
 )
+from capa_simulation.components.equipment_scenario_status import render_equipment_scenario_row
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.equipment_scenario_activation import resolve_equipment_session
 from capa_simulation.navigation import (
     EQUIPMENT_GAP_TAB,
     EQUIPMENT_MAIN_TAB,
+    EQUIPMENT_PREFERENCE_TAB,
+    EQUIPMENT_QUAL_CALCULATOR_TAB,
+    EQUIPMENT_RAWDATA_TAB,
     EQUIPMENT_TAB_KEY,
 )
 from capa_simulation.page_bootstrap import (
@@ -48,7 +54,6 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_floor_layout_canvases,
-    load_latest_equipment_snapshot,
     load_process_cutoff,
 )
 from capa_simulation.services.equipment_contract import (
@@ -73,9 +78,10 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
 # 다른 데이터와 잇지 않는 Qual 마감 계산기(2026-10-22 사용자 요청 — 10-07 계산기 한 장을 내장).
-TAB_QUAL_CALCULATOR = ":material/calculate: Qual 마감 계산기"
-TAB_PREFERENCE = ":material/tune: Preference"
-TAB_RAWDATA = ":material/table_rows: RawData"
+# 탭 라벨은 사이드바(설비 시나리오 줄을 세우는 탭)가 함께 보므로 `navigation` 한 곳에 둔다.
+TAB_QUAL_CALCULATOR = EQUIPMENT_QUAL_CALCULATOR_TAB
+TAB_PREFERENCE = EQUIPMENT_PREFERENCE_TAB
+TAB_RAWDATA = EQUIPMENT_RAWDATA_TAB
 
 
 def _months_between(start: date, end: date) -> list[int]:
@@ -130,7 +136,9 @@ today = date.today()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
-    latest_snapshot = load_latest_equipment_snapshot(equipment_database_path)
+    # 세션이 든 설비 시나리오(새 세션은 공식) — 공통 최신 + 고른 일정 리비전의 합친 스냅샷.
+    equipment_session = resolve_equipment_session(equipment_database_path)
+    latest_snapshot = equipment_session.snapshot
     stored_floor_canvases = load_floor_layout_canvases(equipment_database_path)
 except BOOTSTRAP_ERRORS as exc:
     st.error(
@@ -152,10 +160,15 @@ if discarded_notice:
 # 캔버스에 놓은 호기를 「밖」으로 막지 않게. 새 리비전이 생겨 대기분이 버려진 뒤에 읽는다.
 floor_canvases = effective_floor_canvases(stored_floor_canvases)
 max_extent = max_canvas_extent(floor_canvases)
+# 사이드바 「설비 시나리오」 줄 — 이 회차 목록으로 그린다(칸이 없는 탭·회차는 그리지 않는다).
+render_equipment_scenario_row(equipment_session)
+# 저장본 사본 그대로(편집·RawData·CSV 견주기 — 39칸 전체)와 계산에 넘길 사본(이 설비 시나리오에
+# 일정이 없는 호기와 그 비가동을 뺀 것 — F4).
 baseline = st.session_state[BASELINE_DRAFT_KEY].copy()
-equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
-downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
-using_dashboard_sample = equipment.empty
+saved_equipment = st.session_state[EQUIPMENT_DRAFT_KEY].copy()
+saved_downtime = st.session_state[DOWNTIME_DRAFT_KEY].copy()
+_, equipment, downtime = calculation_drafts()
+using_dashboard_sample = saved_equipment.empty
 # 공정 표시명(Admin Area `Proc Rename`)은 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정 — Main·
 # Static 대비 일정·Preference). 선택값·저장값·CSV·RawData 입력은 원본이다. 표시명은
 # 시뮬레이션 DB 의 공용 프로필이라 그 DB 를 연다(앱에서는 부트스트랩이 이미 열어 둔 캐시다). 못
@@ -404,10 +417,11 @@ with rawdata_tab:
         repository=repository,
         latest_snapshot=latest_snapshot,
         baseline=baseline,
-        equipment=equipment,
-        downtime=downtime,
+        equipment=saved_equipment,
+        downtime=saved_downtime,
         floor_canvases=floor_canvases,
         max_extent=max_extent,
         drafts_replaced=drafts_replaced,
         today=today,
+        basis=equipment_session.save_basis(),
     )
