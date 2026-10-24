@@ -97,10 +97,10 @@ def _incoming_baseline(process: str, category: str, count: float, note: str) -> 
     )
 
 
-def test_equipment_csv_template_round_trips_with_38_columns() -> None:
+def test_equipment_csv_template_round_trips_with_39_columns() -> None:
     result = _read_whole_master(equipment_csv_template())
 
-    assert len(result.columns) == 38
+    assert len(result.columns) == 39
     assert "사업부" not in result.columns
     assert "투자기준" not in result.columns
     assert "설비가동현황" not in result.columns

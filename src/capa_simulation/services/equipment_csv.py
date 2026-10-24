@@ -44,6 +44,7 @@ from capa_simulation.services.equipment_contract import (
     QUAL_DATE_COLUMN,
     QUAL_STATUS_COLUMN,
     RELOCATION_DATE_COLUMN,
+    SCENARIO_MEMO_COLUMN,
     STOP_DATE_COLUMN,
     compact_header,
     rename_legacy_headers,
@@ -157,6 +158,8 @@ def equipment_csv_template() -> bytes:
                     QUAL_STATUS_COLUMN: "완료",
                     STOP_DATE_COLUMN: "",
                     RELOCATION_DATE_COLUMN: "",
+                    # 설비 시나리오마다 따로 저장하는 메모다(공통 메모1~3 과 다르다).
+                    SCENARIO_MEMO_COLUMN: "",
                     "반입/Qual 이력": "",
                     "호기이력": "호기 변동 이력 기록",
                     "설비이력": SAMPLE_EQUIPMENT_NOTE,
@@ -325,7 +328,7 @@ def untouched_template_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
 class EquipmentPaste:
     """편집본에 맞춰 채운 설비 마스터 붙여넣기(또는 CSV) 한 건.
 
-    - `rows` — 검증을 마친 38컬럼 표. 붙여넣지 않은 열은 편집본의 그 호기 값이고, 새 호기는
+    - `rows` — 검증을 마친 39컬럼 표. 붙여넣지 않은 열은 편집본의 그 호기 값이고, 새 호기는
       빈 칸이다. `merge_equipment_rows` 에 그대로 넘긴다.
     - `columns` — 붙여넣은 계약 컬럼(설비명 포함, 계약 차례).
     - `cleared_cells` — 기존 호기의 값이 있던 칸을 붙여넣은 빈 칸이 지우는 수. 검증을 거친 값으로
@@ -577,6 +580,10 @@ class _TableHeaders:
 # 표」처럼 보고 모르는 열을 알림 한 줄로 넘긴다 — 사내의 옛 양식 엑셀에는 「No.」 같은
 # 보조 열이 붙어 있다.
 _COLUMNS_ADDED_AFTER_OLD36 = (ARRIVAL_ACTUAL_COLUMN, ARRIVAL_STATUS_COLUMN, QUAL_ACTUAL_COLUMN)
+# 옛 38열 양식(설비 시나리오 전)에 없던 열 — 39열의 시나리오 메모 하나. 옛 38열 표도 같은 까닭으로
+# 「모든 열이 있는 표」처럼 본다(옛 36열 표는 두 묶음이 함께 빠진다).
+_COLUMNS_ADDED_AFTER_OLD38 = (SCENARIO_MEMO_COLUMN,)
+_COLUMNS_ADDED_AFTER_OLD_FORMS = (*_COLUMNS_ADDED_AFTER_OLD36, *_COLUMNS_ADDED_AFTER_OLD38)
 
 _EQUIPMENT_HEADERS = _TableHeaders(
     "설비 마스터",
@@ -695,8 +702,9 @@ def _select_update_columns(
 
     - `설비명` 하나만 꼭 있어야 하고, 나머지는 있는 열만 계약 차례로 고른다(빈 칸을 채우지 않는다).
     - 설비명 말고 고를 열이 없으면 막는다 — 아무것도 바꾸지 않는 붙여넣기다.
-    - **모르는 머리글**: 계약 38열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 옛
-      36열 양식처럼 실적·상태 셋(`_COLUMNS_ADDED_AFTER_OLD36`)**만** 빠진 표도 같다 — 그 표는 옛
+    - **모르는 머리글**: 계약 39열이 **모두** 있으면 읽지 않고 넘기되 알림 한 줄을 남긴다. 옛
+      36열 양식처럼 실적·상태 셋(`_COLUMNS_ADDED_AFTER_OLD36`)과 시나리오 메모, 옛 38열 양식처럼
+      시나리오 메모(`_COLUMNS_ADDED_AFTER_OLD38`)**만** 빠진 표도 같다 — 그 표는 옛
       양식을 통째로 붙여넣은 것이고, 실적 셋과 닮은 이름은 `_reject_lookalike_headers` 가 이미
       막았으며, 알림이 모르는 열마다 가장 닮은 빠진 열 이름을 붙인다. 그 밖의 열이 하나라도
       빠졌으면(선택 컬럼 포함) 막는다 — 붙여넣지 않은 열은 기존 값을 그대로 두므로, 그 모르는 열이
@@ -722,7 +730,7 @@ def _select_update_columns(
     unknown = [str(header) for header in frame.columns if header not in contract]
     # 옛 36열 꼴이어도 모르는 열이 빠진 실적·상태 열과 닮았으면(「반입싫적」) 그 열의
     # 오타다 — 막는다.
-    uncovered = [column for column in missing if column not in _COLUMNS_ADDED_AFTER_OLD36]
+    uncovered = [column for column in missing if column not in _COLUMNS_ADDED_AFTER_OLD_FORMS]
     misspelled = any(_closest_missing(header, missing) for header in unknown)
     if unknown and (uncovered or misspelled):
         raise ValueError(
@@ -730,7 +738,8 @@ def _select_update_columns(
             "붙여넣지 않은 열은 기존 값을 그대로 두므로 이름이 틀린 열을 빼고 읽으면 바꾸려던 열이 "
             "그대로 남습니다 — 머리글을 설비 마스터 열 이름으로 고치거나 그 열을 빼고 다시 "
             f"붙여넣으세요(설비 마스터 {len(contract)}개 열이 모두 있거나, 옛 36열 양식처럼 "
-            f"{' · '.join(_COLUMNS_ADDED_AFTER_OLD36)}만 빠졌을 때만 모르는 열을 읽지 않고 "
+            f"{' · '.join(_COLUMNS_ADDED_AFTER_OLD_FORMS)}만, 옛 38열 양식처럼 "
+            f"{' · '.join(_COLUMNS_ADDED_AFTER_OLD38)}만 빠졌을 때만 모르는 열을 읽지 않고 "
             "넘깁니다)."
         )
     if unknown and notices is not None:

@@ -44,6 +44,7 @@ EQUIPMENT_COLUMNS = (
     "Qual상태",
     "정지일정",
     "반출/이설일정",
+    "시나리오 메모",
     "반입/Qual 이력",
     "호기이력",
     "설비이력",
@@ -93,6 +94,10 @@ RELOCATION_DATE_COLUMN = "반출/이설일정"
 # 설비가 나가는 날 둘. 하나라도 있으면 나갈 호기다(필요 단축 일정 후보 제외·일정 미정 알림 제외 …).
 EXIT_SCHEDULE_COLUMNS = (STOP_DATE_COLUMN, RELOCATION_DATE_COLUMN)
 
+# 설비 시나리오마다 따로 두는 메모 한 칸(2026-10-24 사용자 결정 F1). 일정 여섯과 함께 시나리오 쪽에
+# 저장되고, 공통 호기 대장의 메모1~3 과 다르다. 선택 칸이다(`OPTIONAL_EQUIPMENT_COLUMNS`).
+SCENARIO_MEMO_COLUMN = "시나리오 메모"
+
 # 단계마다 실제로 끝난 날과 그 단계의 상태. 실적은 **Space 실물 판정과 알림에만** 쓴다 —
 # 설비 일정 기준 가용·필요 단축 일정·공정 Capa 상세 집계는 일정 기준 그대로다(2026-10-16 사용자
 # 결정).
@@ -111,6 +116,25 @@ DATE_COLUMNS = (
     QUAL_ACTUAL_COLUMN,
     STOP_DATE_COLUMN,
     RELOCATION_DATE_COLUMN,
+)
+
+# ------------------------------------------------------------------ 설비 시나리오
+# 설비 마스터 39칸은 **공통 호기 대장**(모든 설비 시나리오가 같은 값)과 **설비 시나리오
+# 일정**(시나리오마다 다른 값)으로 나뉜다(2026-10-24 사용자 결정). 시나리오 쪽은 날짜 여섯과
+# 시나리오 메모 하나다 — 실적·상태(반입실적·Qual실적·반입상태·Qual상태)는 시나리오가 나뉘어도
+# 같은 사실이라 공통이다. 비가동 일정 표는 통째로 시나리오 쪽, 기존 보유대수 표는 통째로 공통이다.
+# 나누기·합치기는 `services/equipment_scenario.py`.
+SCENARIO_SCHEDULE_DATE_COLUMNS = (
+    "제진대일정",
+    "물류일정",
+    ARRIVAL_DATE_COLUMN,
+    QUAL_DATE_COLUMN,
+    STOP_DATE_COLUMN,
+    RELOCATION_DATE_COLUMN,
+)
+SCENARIO_SCHEDULE_COLUMNS = (*SCENARIO_SCHEDULE_DATE_COLUMNS, SCENARIO_MEMO_COLUMN)
+COMMON_MASTER_COLUMNS = tuple(
+    column for column in EQUIPMENT_COLUMNS if column not in SCENARIO_SCHEDULE_COLUMNS
 )
 
 # 단계 전환의 단계 이름. 정지·반출/이설은 컬럼 이름을 따른다(그날 그 이름의 상태가 된다). 실적은
@@ -268,6 +292,7 @@ REFERENCE_TEXT_COLUMNS = (
     "메모1",
     "메모2",
     "메모3",
+    SCENARIO_MEMO_COLUMN,
 )
 
 COORDINATE_COLUMNS = ("X좌표", "Y좌표", "Xsize", "Ysize")
@@ -319,6 +344,7 @@ OPTIONAL_EQUIPMENT_COLUMNS = (
     "반입/Qual 이력",
     PARENT_EQUIPMENT_COLUMN,
     *MEMO_COLUMNS,
+    SCENARIO_MEMO_COLUMN,
 )
 
 # 한 설비의 모듈 행끼리 같아야 하는 컬럼. 화면 필터가 이 값들로 행을 거르므로, 다르면

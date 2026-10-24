@@ -103,7 +103,7 @@ def prepare_equipment_master(
     floor_canvases: FloorCanvasMap | None = None,
     today: date | None = None,
 ) -> pd.DataFrame:
-    """설비 마스터 38컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
+    """설비 마스터 39컬럼 계약을 정규화하고 검증한다. 선택 컬럼은 없으면 빈 칸이다
     (`OPTIONAL_EQUIPMENT_COLUMNS`).
 
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지

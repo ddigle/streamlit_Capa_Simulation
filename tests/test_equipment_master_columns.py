@@ -1,4 +1,4 @@
-# Purpose: 설비 마스터 38컬럼 계약·저장 매핑·0015·0023 마이그레이션·옛 머리 변환을 검증한다.
+# Purpose: 설비 마스터 39컬럼 계약·저장 매핑·0015·0023 마이그레이션·옛 머리 변환을 검증한다.
 
 from pathlib import Path
 
@@ -79,6 +79,7 @@ SPEC_ORDER = (
     "Qual상태",
     "정지일정",
     "반출/이설일정",
+    "시나리오 메모",
     "반입/Qual 이력",
     "호기이력",
     "설비이력",
@@ -222,7 +223,7 @@ def _text_columns(frame: pd.DataFrame) -> pd.DataFrame:
 
 def test_equipment_contract_follows_the_decided_order() -> None:
     assert EQUIPMENT_COLUMNS == SPEC_ORDER
-    assert len(set(EQUIPMENT_COLUMNS)) == 38
+    assert len(set(EQUIPMENT_COLUMNS)) == 39
     assert "투자기준" not in EQUIPMENT_COLUMNS
     assert "설비가동현황" not in EQUIPMENT_COLUMNS
     assert OBSOLETE_EQUIPMENT_COLUMNS == ("투자기준", "설비가동현황", "분류3")
@@ -265,7 +266,12 @@ def test_derived_constants_use_the_new_names() -> None:
     )
     # Area Code 는 모듈 일치 컬럼이 아니다 — 넣으면 모듈 행끼리 값이 다른 옛 리비전이 열리지 않는다.
     assert AREA_CODE_COLUMN not in UNIT_CONSISTENT_COLUMNS
-    assert set(OPTIONAL_EQUIPMENT_COLUMNS) == {*NEW_COLUMNS, *ACTUAL_COLUMNS, "Main 설비"}
+    assert set(OPTIONAL_EQUIPMENT_COLUMNS) == {
+        *NEW_COLUMNS,
+        *ACTUAL_COLUMNS,
+        "Main 설비",
+        "시나리오 메모",
+    }
     assert set(NEW_COLUMNS) <= set(REFERENCE_TEXT_COLUMNS)
     assert AREA_CODE_COLUMN in REFERENCE_TEXT_COLUMNS
     contract_columns = {*EQUIPMENT_COLUMNS, *DOWNTIME_COLUMNS}
@@ -573,8 +579,10 @@ def test_export_uses_the_new_header_and_round_trips_new_values() -> None:
 
 
 def test_repository_mapping_covers_the_contract_one_to_one() -> None:
-    assert tuple(EQUIPMENT_MASTER_DB_COLUMNS) == EQUIPMENT_COLUMNS
-    assert len(set(EQUIPMENT_MASTER_DB_COLUMNS.values())) == len(EQUIPMENT_COLUMNS)
+    # 시나리오 메모는 설비 마스터 표가 아니라 설비 시나리오 일정 표의 칸이다(설비 DB 0027).
+    master_columns = tuple(column for column in EQUIPMENT_COLUMNS if column != "시나리오 메모")
+    assert tuple(EQUIPMENT_MASTER_DB_COLUMNS) == master_columns
+    assert len(set(EQUIPMENT_MASTER_DB_COLUMNS.values())) == len(master_columns)
     # 빠진 컬럼의 DB 칸은 남겨 두되 읽지도 쓰지도 않는다.
     assert "investment_basis" not in EQUIPMENT_MASTER_DB_COLUMNS.values()
     assert "classification_3" not in EQUIPMENT_MASTER_DB_COLUMNS.values()
@@ -694,7 +702,7 @@ def test_migration_0015_adds_nullable_columns_and_keeps_investment_basis(tmp_pat
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (15, 17, 19, 21, 23, 25)
+    assert repository.initialize() == (15, 17, 19, 21, 23, 25, 27)
     old = repository.load_snapshot("r-old").equipment
 
     assert old.loc[0, "설비명"] == "EQ-OLD"
@@ -797,7 +805,7 @@ def test_migration_0023_adds_actual_columns_and_keeps_the_dropped_status_column(
         )
 
     repository = DuckDBEquipmentRepository(database_path)
-    assert repository.initialize() == (23, 25)
+    assert repository.initialize() == (23, 25, 27)
     columns = _nullable_columns(database_path)
     for column in ("arrival_actual_date", "arrival_status", "qual_actual_date"):
         assert columns[column] == "YES", column
@@ -856,10 +864,10 @@ def test_import_review_carries_the_dropped_column_notice() -> None:
     old32 = _old_layout(equipment)
     old36 = _old36_layout(equipment)
     reviews = {
-        "32 파일": (review(old32.to_csv(index=False).encode("utf-8-sig")), 8),
-        "32 붙여넣기": (review(old32.to_csv(index=False, sep="\t")), 8),
-        "36 파일": (review(old36.to_csv(index=False).encode("utf-8-sig")), 3),
-        "36 붙여넣기": (review(old36.to_csv(index=False, sep="\t")), 3),
+        "32 파일": (review(old32.to_csv(index=False).encode("utf-8-sig")), 9),
+        "32 붙여넣기": (review(old32.to_csv(index=False, sep="\t")), 9),
+        "36 파일": (review(old36.to_csv(index=False).encode("utf-8-sig")), 4),
+        "36 붙여넣기": (review(old36.to_csv(index=False, sep="\t")), 4),
     }
     fresh = review(equipment_csv_bytes(equipment))
 

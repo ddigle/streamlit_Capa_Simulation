@@ -1819,12 +1819,15 @@ def _insert_equipment(
     revision_id: str,
     frame: pd.DataFrame,
 ) -> None:
+    # 마스터 표에 칸이 있는 계약 칸만 싣는다 — 시나리오 메모는 설비 시나리오 일정 표의 칸이다.
     _insert_snapshot(
         connection,
         schema="equipment_ops",
         table_name="equipment_master_snapshot",
         revision_id=revision_id,
-        frame=frame.rename(columns=dict(EQUIPMENT_MASTER_DB_COLUMNS)),
+        frame=frame.loc[:, list(EQUIPMENT_MASTER_DB_COLUMNS)].rename(
+            columns=dict(EQUIPMENT_MASTER_DB_COLUMNS)
+        ),
     )
 
 

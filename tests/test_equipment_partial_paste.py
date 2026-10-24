@@ -79,7 +79,7 @@ def _tab(*rows: tuple[str, ...]) -> str:
 
 
 def _exported(equipment: pd.DataFrame) -> pd.DataFrame:
-    """현재 데이터 내려받기를 Excel 에서 연 것과 같은 글자 표(전체 38열)."""
+    """현재 데이터 내려받기를 Excel 에서 연 것과 같은 글자 표(전체 39열)."""
     return pd.read_csv(
         BytesIO(equipment_csv_bytes(equipment)), dtype="object", keep_default_na=False
     )
@@ -96,7 +96,7 @@ def test_pasting_one_column_changes_only_that_column_of_existing_units() -> None
     saved = review.candidate[1]
     assert saved["설비명"].tolist() == ["EQ-02", "EQ-01"]
     assert _row(saved, "EQ-01")["담당자"] == "담당B"
-    # 붙여넣지 않은 열 36개는 한 칸도 바뀌지 않는다(값과 dtype 모두).
+    # 붙여넣지 않은 열 37개는 한 칸도 바뀌지 않는다(값과 dtype 모두).
     others = [column for column in EQUIPMENT_COLUMNS if column not in ("설비명", "담당자")]
     assert_frame_equal(
         saved.set_index("설비명").loc[["EQ-01", "EQ-02"], others],
@@ -108,7 +108,7 @@ def test_pasting_one_column_changes_only_that_column_of_existing_units() -> None
     assert review.changes["변경컬럼"].tolist() == ["담당자"]
     assert review.changes["변경내용"].tolist() == ["담당자: 담당A → 담당B"]
     assert review.notices == (
-        "붙여넣은 열 1개(담당자)만 바꿉니다 — 나머지 36개 열은 기존 호기의 값을 그대로 둡니다.",
+        "붙여넣은 열 1개(담당자)만 바꿉니다 — 나머지 37개 열은 기존 호기의 값을 그대로 둡니다.",
     )
     assert review.cautions == ()
 
@@ -307,7 +307,7 @@ def test_an_unrelated_extra_column_blocks_when_any_contract_column_is_missing() 
     full = _exported(_current()).drop(columns=["메모3"])
     full["확인"] = "o"
 
-    with pytest.raises(ValueError, match="38개 열이 모두 있거나, 옛 36열 양식처럼"):
+    with pytest.raises(ValueError, match="39개 열이 모두 있거나, 옛 36열 양식처럼"):
         _review(full.to_csv(sep="\t", index=False))
 
 
@@ -322,6 +322,21 @@ def test_an_extra_column_on_the_whole_old_36_column_form_is_skipped_with_a_notic
     assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
     assert review.changes["Import구분"].tolist() == ["대체", "대체"]
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
+
+
+def test_an_extra_column_on_the_whole_old_38_column_form_is_skipped_and_keeps_the_memo() -> None:
+    """설비 시나리오 전의 38열 표(시나리오 메모 없음)도 옛 36열 표처럼 보조 열을 알림으로 넘기고,
+    붙여넣지 않은 시나리오 메모는 편집본 값 그대로다."""
+    current = _current()
+    current.loc[0, "시나리오 메모"] = "셋업 메모"
+    old = _exported(current).drop(columns=["시나리오 메모"])
+    old.insert(0, "No.", ["1", "2"])
+
+    review = _review(old.to_csv(sep="\t", index=False), current)
+
+    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
+    assert review.candidate[1].set_index("설비명").loc["EQ-01", "시나리오 메모"] == "셋업 메모"
 
 
 @pytest.mark.parametrize(("header", "column"), [("반입싫적", "반입실적"), ("Qual실젹", "Qual실적")])

@@ -114,3 +114,23 @@ def test_the_screen_message_names_the_database_and_both_versions() -> None:
 
     assert message.startswith("설비 DB 가 이 코드보다 새 버전입니다(DB 13 · 코드 11).")
     assert "예전 배포로 되돌린 상태일 수 있습니다" in message
+
+
+def test_a_0027_equipment_database_only_warns_the_0025_code(tmp_path: Path) -> None:
+    """설비 시나리오 이관(0027)을 건 DB 를 0025 까지만 아는 옛 배포가 열어도 막지 않는다 — 경고만
+    한다. 되돌림은 백업 복원으로 하고(런북 4-2), 그 사이 옛 판의 저장은 새 판이 흔적으로 막는다."""
+    database_path = tmp_path / "equipment.duckdb"
+    DuckDBEquipmentRepository(database_path).initialize()
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        applied = [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT version FROM equipment_meta.schema_migration"
+            ).fetchall()
+        ]
+    old_code = [migration for migration in load_equipment_migrations() if migration.version <= 25]
+
+    assert 27 in applied
+    assert find_schema_ahead(applied, old_code, database_name="설비 DB") == SchemaAheadOfCode(
+        database_name="설비 DB", database_version=max(applied), code_version=25
+    )
