@@ -415,8 +415,9 @@ class EquipmentReleaseMoved(ValueError):
 class EquipmentLegacyTraceError(ValueError):
     """이관 경계 뒤에 옛 배포가 저장한 계약 v3 공통 리비전이 있다 — 설비 마스터 저장을 막는다.
 
-    그 위로 저장이 쌓이면 나머지 호기가 모든 시나리오에서 고아가 된다. 빠져나가는 길은 런북 4-2
-    의 백업 복원, 또는 설비 시나리오 탭의 「이대로 이어 쓰기」(`acknowledge_legacy_trace`).
+    그 위로 저장이 쌓이면 나머지 호기가 모든 시나리오에서 고아가 된다. 빠져나가는 길은 런북 4-2 의
+    백업 복원, 또는 시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」
+    (`acknowledge_legacy_trace`).
     """
 
     def __init__(self, count: int) -> None:
@@ -452,7 +453,7 @@ def legacy_trace_message(count: int) -> str:
     """옛 배포 흔적 경고 문구 — 저장 거부와 화면 맨 위 경고가 같은 글자를 쓴다."""
     return (
         f"옛 배포로 저장한 설비 리비전 {count}개가 있어 설비 저장을 막았습니다 — 런북 4-2 대로 "
-        "백업을 복원하거나, 가용설비 현황 「설비 시나리오」 탭의 「이대로 이어 쓰기」 를 쓰세요."
+        "백업을 복원하거나, 시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」 를 쓰세요."
     )
 
 
@@ -551,7 +552,7 @@ class EquipmentSaveResult:
       시나리오도 `revision_no=None` 으로 적는다.
     - `release_no` 는 이번 저장이 낸 공식 발행 번호, `release_withheld` 는 공식 시나리오에 새
       리비전이 생겼지만 그 전에 발행 안 한 더 새 리비전이 있어 발행하지 않았다는 뜻이다(「공식
-      발행은 설비 시나리오 탭에서」).
+      발행은 시나리오 관리 › 설비 시나리오에서」).
     - `forced_common` 은 0027 뒤 첫 저장이라 공통이 그대로여도 v4 공통을 함께 썼다는 뜻이다.
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
       빠진다 — RawData 설비명 고침도 지운 + 새 호기다).

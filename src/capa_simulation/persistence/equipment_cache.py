@@ -280,8 +280,8 @@ def _load_legacy_trace_review_payload(
 def load_legacy_trace_review(database_path: str) -> LegacyTraceReview:
     """「이대로 이어 쓰기」 확인 재료(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭).
 
-    흔적이 있을 때 설비 시나리오 탭이 그리는 회차에만 부른다. 시나리오마다 합쳐 읽어 보므로 목록과
-    같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다.
+    흔적이 있을 때 시나리오 관리 「설비 시나리오」 구획이 그리는 회차에만 부른다. 시나리오마다 합쳐
+    읽어 보므로 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다.
     """
     return LegacyTraceReview(
         **_load_legacy_trace_review_payload(
@@ -290,7 +290,7 @@ def load_legacy_trace_review(database_path: str) -> LegacyTraceReview:
     )
 
 
-# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·설비 시나리오 탭 표).
+# 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
 

@@ -1045,7 +1045,7 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
     elif result.release_withheld:
         sentences.append(
             "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
-            "공식 발행은 가용설비 현황 「설비 시나리오」 탭에서 하세요."
+            "공식 발행은 시나리오 관리 › 설비 시나리오에서 하세요."
         )
     if result.removed_units:
         removed = f"지운 호기 {len(result.removed_units):,}대는 모든 설비 시나리오에서 빠졌습니다."

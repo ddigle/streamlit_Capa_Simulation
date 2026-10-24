@@ -1,6 +1,12 @@
-# Purpose: 가용설비 현황 「설비 시나리오」 탭의 표와 불러오기·되돌리기·복제·이름·발행을 그린다.
+# Purpose: 시나리오 관리 「설비 시나리오」 구획의 표와 불러오기·되돌리기·복제·이름·발행을 그린다.
 
-"""가용설비 현황 「설비 시나리오」 탭(E8 — 1단계 몫, 설계 6-2, E7 리비전 도구).
+"""시나리오 관리 「설비 시나리오」 구획(E8 — 1단계 몫, 설계 6-2, E7 리비전 도구).
+
+자리는 시나리오 관리 화면 「시나리오 관리」 탭 맨 위 「관리할 시나리오」 전환의 「설비 시나리오」
+쪽이다(2026-10-24 사용자 결정 — 가용설비 현황 두 탭 개편. 그 전에는 가용설비 현황의 탭이었다). 그
+화면에는 사이드바 설비 시나리오 줄이 서지 않아 구획 머리에 「이 세션: …」 한 줄과 세션 알림을 그린다
+(`render_equipment_scenario_section`). 다른 설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서
+이어 쓰기」 는 이 구획으로 옮긴다(`open_equipment_scenario_management`).
 
 - **시나리오 표**: 이름·상태(공식 vN / 활성)·최신 rN·리비전 수·올라와 있음. 고른 시나리오에
   「시나리오 이름 바꾸기」.
@@ -15,11 +21,12 @@
   체크(빠지는 호기 수)를 켜야 단추가 서고, 옛 배포 리비전이 일정과 합쳐지지 않으면 단추 대신 백업
   복원 안내만 선다.
 
-이 탭은 따로 선다(뒤에 시나리오 관리 화면으로 옮길 수 있게) — 페이지에서 받는 것은 DB 경로와 그 회차
-설비 시나리오 세션뿐이다. 목록·리비전은 설비 시나리오 목록 캐시(세대·stat·TTL), 되돌리기 확인 재료는
-불변 리비전 id 키 캐시에서 받는다 — 이 탭을 그리는 회차에만 읽는다. 쓰기(복제·이름·리비전명·
-되돌리기·발행·이어 쓰기)는 저장소가 하고 그 뒤 `clear_equipment_scenario_cache()` 를 부른다(저장소는
-캐시 경계를 모른다). 2단계(보관·삭제·순서·공통 이력·비교)는 짓지 않는다.
+구획 본문(`render_equipment_scenario_management`)이 받는 것은 DB 경로와 그 회차 설비 시나리오
+세션뿐이다. 목록·리비전은 설비 시나리오 목록 캐시(세대·stat·TTL), 되돌리기 확인 재료는 불변 리비전
+id 키 캐시에서 받는다 — 이 구획을 그리는 회차에만 읽는다(「시뮬레이션 시나리오」 쪽을 고른 회차에는
+설비 DB 를 열지 않는다). 쓰기(복제·이름·리비전명·되돌리기·발행·이어 쓰기)는 저장소가 하고 그 뒤
+`clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 모른다). 2단계(보관·삭제·순서·공통
+이력·비교)는 짓지 않는다.
 """
 
 from __future__ import annotations
@@ -28,7 +35,10 @@ from collections.abc import Sequence
 
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitPageNotFoundError
 
+# 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
+import capa_simulation.settings as settings
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
     has_unsaved_equipment_edits,
@@ -40,11 +50,20 @@ from capa_simulation.components.equipment_save_fields import (
     SAVED_BY_LABEL,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.tab_state import remember_open_tab
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
+    resolve_equipment_session,
     select_equipment_scenario,
 )
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message, prune_choice
+from capa_simulation.navigation import SCENARIO_MANAGEMENT
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    bootstrap_error_message,
+    prune_choice,
+    render_schema_ahead_warning,
+)
+from capa_simulation.page_tabs_state import refused_at_tab_limit
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_scenario_cache,
     clear_equipment_snapshot_cache,
@@ -75,7 +94,31 @@ from capa_simulation.services.korean_particle import (
     with_topic_particle,
 )
 
-__all__ = ["render_equipment_scenario_management"]
+__all__ = [
+    "EQUIPMENT_KIND",
+    "SCENARIO_KINDS",
+    "SCENARIO_KIND_KEY",
+    "SCENARIO_MANAGEMENT_TAB",
+    "SCENARIO_MANAGEMENT_TABS_KEY",
+    "SIMULATION_KIND",
+    "open_equipment_scenario_management",
+    "render_equipment_scenario_management",
+    "render_equipment_scenario_section",
+]
+
+# 시나리오 관리 화면의 탭 묶음(`stateful_tabs`) key 와 첫 탭 라벨 — 다른 화면에서 이 구획으로 보낼
+# 때 그 탭 기억 칸을 적는다. 화면(`app_pages/scenario_management.py`)도 이 이름을 읽는다.
+SCENARIO_MANAGEMENT_TABS_KEY = "scenario_management_tabs"
+SCENARIO_MANAGEMENT_TAB = ":material/database: 시나리오 관리"
+# 「시나리오 관리」 탭 맨 위 「관리할 시나리오」 전환(2026-10-24 사용자 결정 D4). 보기 조건이라
+# `persist_state="session"` 이고, 다른 화면(옛 배포 흔적 경고의 단추)이 값을 적으므로 `default=` 를
+# 주지 않고 위젯 앞에서 칸이 없을 때만 심는다(AGENTS 9장).
+SCENARIO_KIND_KEY = "scenario_management_kind_v1"
+SIMULATION_KIND = "시뮬레이션 시나리오"
+EQUIPMENT_KIND = "설비 시나리오"
+SCENARIO_KINDS = (SIMULATION_KIND, EQUIPMENT_KIND)
+# 「시나리오 관리에서 이어 쓰기」 단추(설비 화면 맨 위 옛 배포 흔적 경고 옆).
+LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
@@ -107,10 +150,10 @@ PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
 PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
 CONTINUE_CONFIRM_KEY = "equipment_scenario_manage_continue_confirm_v1"
-# 이 탭 작업 알림 — 다음 회차에 한 번, 탭 맨 위.
+# 이 구획 작업 알림 — 다음 회차에 한 번, 구획 맨 위.
 FLASH_KEY = "equipment_scenario_manage_flash_v1"
-# 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 탭 맨 위(확인 체크·입력
-# 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
+# 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 구획 맨 위(확인
+# 체크·입력 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
 REFUSED_KEY = "equipment_scenario_manage_refused_v1"
 # 되돌리기가 만든 리비전 — 다음 회차 리비전 상자를 그리기 전에 그 리비전으로 옮긴다(위젯을 그린
 # 뒤에는 그 칸을 고칠 수 없다).
@@ -208,8 +251,85 @@ def revision_rows(
     )
 
 
+def open_equipment_scenario_management() -> None:
+    """시나리오 관리 「설비 시나리오」 구획으로 옮긴다 — 그 화면의 탭 기억 칸과 전환 칸만 적는다.
+
+    위젯 콜백이 아니라 회차 본문에서 부른다(AGENTS 9장 — 콜백 안 `st.switch_page` 금지). 화면 탭
+    상한에 걸리면 아무것도 적지 않는다(`refused_at_tab_limit`). 갈 곳이 없으면(내비게이션 없는 단독
+    실행) 칸만 적고 옮기지 않는다.
+    """
+    if refused_at_tab_limit(SCENARIO_MANAGEMENT.path):
+        return
+    st.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
+    remember_open_tab(SCENARIO_MANAGEMENT_TABS_KEY, SCENARIO_MANAGEMENT_TAB)
+    try:
+        st.switch_page(SCENARIO_MANAGEMENT.path)
+    except StreamlitPageNotFoundError:
+        return
+
+
+def render_legacy_trace_goto() -> None:
+    """설비 화면 맨 위 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어 쓰기」 단추."""
+    if st.button(
+        "시나리오 관리에서 이어 쓰기",
+        icon=":material/arrow_forward:",
+        key=LEGACY_TRACE_GOTO_KEY,
+        type="tertiary",
+    ):
+        open_equipment_scenario_management()
+
+
+def session_heading(session: EquipmentSession) -> str:
+    """구획 머리 한 줄 — 「이 세션: 운영 일정 · r12 · 공식 v3」.
+
+    이 화면에는 사이드바 설비 시나리오 줄이 서지 않아(D4) 세션이 든 쌍을 여기 적는다. 일정 없이 연
+    세션(`unmerged`)이면 그 말을 적는다.
+    """
+    if session.scenario_name is None:
+        return "이 세션: 설비 시나리오 없음"
+    name = literal_markdown(session.scenario_name)
+    if session.unmerged:
+        return f"이 세션: {name} · 일정 없이 엶(옛 배포 흔적이 일정과 합쳐지지 않음)"
+    parts = [name]
+    if session.revision_no is not None:
+        parts.append(f"r{session.revision_no}")
+    if session.is_official_pair and session.release_no is not None:
+        parts.append(f"공식 v{session.release_no}")
+    elif session.stale and session.latest_revision_no is not None:
+        parts.append(f"최신 r{session.latest_revision_no} 있음")
+    return "이 세션: " + " · ".join(parts)
+
+
+def render_equipment_scenario_section() -> None:
+    """시나리오 관리 「설비 시나리오」 구획 — 설비 DB 를 이 구획 안에서만 연다.
+
+    설비 DB 를 읽지 못하면 그 까닭을 이 구획 안에서만 알린다(「시뮬레이션 시나리오」 쪽은 막지
+    않는다). 옛 배포 흔적 경고는 구획 본문이 「이대로 이어 쓰기」 와 함께 그린다 — 머리에 따로
+    세우지 않는다.
+    """
+    try:
+        database_path = str(settings.EQUIPMENT_DUCKDB_PATH.resolve())
+        repository = get_equipment_repository(database_path)
+        session = resolve_equipment_session(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(
+            "설비 시나리오를 준비하지 못했습니다. "
+            + bootstrap_error_message(exc, database_paths=(settings.EQUIPMENT_DUCKDB_PATH,))
+        )
+        return
+    render_schema_ahead_warning(repository.schema_ahead)
+    st.markdown(f"**{session_heading(session)}**")
+    st.caption(
+        "설비 시나리오 불러오기·저장은 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세) "
+        "사이드바 설비 시나리오 줄에서도 합니다. 이 세션이 든 쌍은 그 화면들과 같습니다."
+    )
+    if session.notice:
+        st.warning(session.notice, icon=":material/sync_problem:")
+    render_equipment_scenario_management(database_path, session)
+
+
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:
-    """탭 본문. 숨은 탭이면 부르지 않는다(페이지가 가린다) — 입력은 위젯이 세션에 지킨다."""
+    """구획 본문. 「설비 시나리오」 쪽을 고른 회차에만 부른다 — 입력은 위젯이 세션에 지킨다."""
     flash = st.session_state.pop(FLASH_KEY, None)
     if isinstance(flash, str):
         st.success(flash)
@@ -221,8 +341,8 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     scenarios = {item.equipment_scenario_id: item for item in session.catalog.scenarios}
     if not scenarios:
         st.info(
-            "설비 시나리오가 없습니다. RawData 에서 첫 설비 데이터를 저장하면 「운영 일정」이 "
-            "섭니다."
+            "설비 시나리오가 없습니다. 가용설비 현황 「설비 마스터」 탭에서 첫 설비 데이터를 "
+            "저장하면 「운영 일정」이 섭니다."
         )
         return
     st.caption(
@@ -504,7 +624,7 @@ def restore_result_message(
     elif result.release_withheld:
         sentences.append(
             "공식 설비 시나리오에 발행하지 않은 더 새 리비전이 있어 공식 발행은 하지 않았습니다 — "
-            "이 탭의 「공식으로 발행」 으로 냅니다."
+            "이 구획의 「공식으로 발행」 으로 냅니다."
         )
     if moved:
         sentences.append(f"이 세션을 {with_direction_particle(created)} 옮겼습니다.")
@@ -699,8 +819,8 @@ def _render_branch(
             return
         _written(
             f"「{name}」 {title}에서 설비 시나리오 「{literal_markdown(created.scenario_name)}」 "
-            "r1 을 만들었습니다 — 사이드바 설비 시나리오 줄이나 이 탭의 「이 리비전 불러오기」로 "
-            "올립니다."
+            "r1 을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
+            "불러오기」로 올립니다."
         )
 
 

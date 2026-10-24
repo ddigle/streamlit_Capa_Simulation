@@ -272,7 +272,8 @@ def resolve_equipment_session(database_path: str) -> EquipmentSession:
 
     예외 하나 — **옛 배포 흔적**(경계 뒤 계약 v3 공통)은 교차 검증 없이 공통 최신이 된다. 그것이
     공식과도 합쳐지지 않으면 공통만 읽어 **일정 없이** 연다(`unmerged`, 선택 칸은 그대로). 멈추면
-    설비 화면 어디에서도 흔적 경고와 설비 시나리오 탭(백업 복원 안내)에 닿을 수 없다.
+    설비 화면 어디에서도 흔적 경고와 시나리오 관리 「설비 시나리오」 구획(백업 복원 안내)에 닿을 수
+    없다.
     """
     catalog = load_equipment_scenario_catalog(database_path)
     selection = _settled_selection(catalog)

@@ -1955,13 +1955,15 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
     """가용설비 현황·필요 단축 일정·공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러
     번 연다)와 Space 현황(공식 스냅샷·설비 시나리오 목록·공통 최신·도면을 한 회차에 따로
-    읽는다)이다."""
+    읽는다), 시나리오 관리(「설비 시나리오」 구획이 목록·리비전·공통 최신을 따로 읽는다 —
+    2026-10-24)다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
     assert declared == {
         AVAILABLE_EQUIPMENT_STATUS.path,
         REQUIRED_SHORTENING.path,
         PROCESS_CAPA_DETAIL.path,
         SPACE_STATUS.path,
+        SCENARIO_MANAGEMENT.path,
     }
 
 
@@ -2052,6 +2054,12 @@ def test_the_equipment_db_is_pinned_only_on_the_screen_that_declares_it(
     app.switch_page(HOME.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert pinned == [(settings.DUCKDB_PATH,)]
+    # 시나리오 관리도 설비 DB 를 핀 대상에 적는다(「설비 시나리오」 구획). 게으른 핀이라 시뮬레이션
+    # 구획만 그린 회차에는 설비 DB 를 열지 않는다 — 아래 시험이 연결 수로 본다.
+    pinned.clear()
+    app.switch_page(SCENARIO_MANAGEMENT.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert pinned == [(settings.DUCKDB_PATH,), (equipment_db,)]
 
 
 def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
@@ -2120,8 +2128,10 @@ def test_the_run_pin_opens_a_database_only_on_a_rerun_that_reads_it(
         scenario_reads[path] = read_counts[scenario_db]
         expected = read_counts[scenario_db] + (1 if read_counts[scenario_db] else 0)
         assert opens[scenario_db] == expected, (path, opens, read_counts)
-        if path == EXECUTION_MANAGEMENT.path:
-            # 실행 관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다.
+        if path in (EXECUTION_MANAGEMENT.path, SCENARIO_MANAGEMENT.path):
+            # 실행 관리 머리는 데이터를 읽지 않는다 — 설비 DB 도 열지 않는다. 시나리오 관리는 설비
+            # DB 핀을 선언했지만 「시뮬레이션 시나리오」 쪽(처음 값)만 그린 회차에는 설비 DB 를
+            # 열지 않는다(게으른 핀).
             assert opens[equipment_db] == read_counts[equipment_db] == 0, (opens, read_counts)
     # Chatbot·실행 관리 머리는 시나리오 DB 를 읽지 않아 열지도 않는다. 시나리오 관리는 회차마다
     # 목록을 읽으므로 핀이 실제로 잡히는 길도 지난다.

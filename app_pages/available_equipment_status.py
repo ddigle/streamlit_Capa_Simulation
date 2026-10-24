@@ -30,9 +30,6 @@ from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
     render_equipment_period,
 )
-from capa_simulation.components.equipment_scenario_management import (
-    render_equipment_scenario_management,
-)
 from capa_simulation.components.equipment_scenario_status import (
     PREFERENCE_LOCK_MESSAGE,
     render_equipment_scenario_row,
@@ -52,7 +49,6 @@ from capa_simulation.navigation import (
     EQUIPMENT_MAIN_TAB,
     EQUIPMENT_PREFERENCE_TAB,
     EQUIPMENT_RAWDATA_TAB,
-    EQUIPMENT_SCENARIO_TAB,
     EQUIPMENT_TAB_KEY,
 )
 from capa_simulation.page_bootstrap import (
@@ -91,7 +87,6 @@ from capa_simulation.sidebar_status import condition_card
 # 탭 라벨은 사이드바(공통 조건·조건 카드를 세우는 탭)가 함께 보므로 `navigation` 한 곳에 둔다.
 TAB_PREFERENCE = EQUIPMENT_PREFERENCE_TAB
 TAB_RAWDATA = EQUIPMENT_RAWDATA_TAB
-TAB_SCENARIO = EQUIPMENT_SCENARIO_TAB
 # 가정 설비 시나리오의 미확인 알림 꼬리표 — 미확인은 공식 시나리오 일정 기준이다(결정).
 OFFICIAL_CONFIRMATION_BASIS = "공식 일정 기준"
 
@@ -207,13 +202,12 @@ sample_notice = st.empty()
 # 필요 단축 일정은 탭이던 것을 실행 관리 아래 별도 페이지로 뗐다(2026-10-18 사용자 결정 —
 # `app_pages/required_shortening.py`). Cut-off 는 여기 Preference 에서 고친다. Qual 마감 계산기는
 # 필요 단축 일정 머리 단추의 팝업이다(2026-10-24 사용자 결정).
-main_tab, gap_tab, preference_tab, rawdata_tab, scenario_tab = stateful_tabs(
+main_tab, gap_tab, preference_tab, rawdata_tab = stateful_tabs(
     [
         EQUIPMENT_MAIN_TAB,
         EQUIPMENT_GAP_TAB,
         TAB_PREFERENCE,
         TAB_RAWDATA,
-        TAB_SCENARIO,
     ],
     key=EQUIPMENT_TAB_KEY,
 )
@@ -456,8 +450,3 @@ with rawdata_tab:
         basis=equipment_session.save_basis(),
         confirmation_official=official_snapshot,
     )
-
-with scenario_tab:
-    # 시나리오·리비전 표와 불러오기·복제·이름·발행·이어 쓰기. 열린 회차에만 목록을 읽는다.
-    if not tab_is_hidden(scenario_tab):
-        render_equipment_scenario_management(equipment_database_path, equipment_session)

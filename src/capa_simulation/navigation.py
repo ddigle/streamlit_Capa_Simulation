@@ -121,10 +121,16 @@ CAPA_CHATBOT = PageSpec(
     reads_scenario=False,
     reads_period=False,
 )
-# 시나리오 관리는 활성 시나리오를 불러오고 저장하며, 복제·리비전 저장이 지금 조회기간을
-# 프리셋으로 함께 담는다 — 저장되는 값이 보여야 하므로 두 줄을 다 세운다.
+# 시나리오 관리는 활성 시나리오를 불러오고 저장하며, 복제·리비전 저장이 지금 조회기간을 프리셋으로
+# 함께 담는다 — 저장되는 값이 보여야 하므로 두 줄을 다 세운다. 「설비 시나리오」 구획(가용설비
+# 현황의 탭이던 것, 2026-10-24)이 한 회차에 설비 시나리오 목록·리비전·공통 최신을 따로 읽어 설비 DB
+# 핀을 선언한다 — 게으른 핀이라 시뮬레이션 구획만 그린 회차에는 설비 DB 를 열지 않는다. 사이드바
+# 설비 시나리오 줄은 세우지 않는다(구획 머리에 「이 세션: …」 — D4).
 SCENARIO_MANAGEMENT = PageSpec(
-    "app_pages/scenario_management.py", "시나리오 관리", ":material/database:"
+    "app_pages/scenario_management.py",
+    "시나리오 관리",
+    ":material/database:",
+    uses_equipment_db=True,
 )
 
 # 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정): **Static Capa** 는 약속(기술팀이 정한 Capa
@@ -219,8 +225,6 @@ EQUIPMENT_MAIN_TAB = ":material/dashboard: Main"
 EQUIPMENT_GAP_TAB = ":material/compare_arrows: Static 대비 일정"
 EQUIPMENT_PREFERENCE_TAB = ":material/tune: Preference"
 EQUIPMENT_RAWDATA_TAB = ":material/table_rows: RawData"
-# 설비 시나리오 목록·리비전·복제·이름·공식 발행(E8). 탭 차례 맨 끝이다.
-EQUIPMENT_SCENARIO_TAB = ":material/account_tree: 설비 시나리오"
 # 설비 DB 만 본다. `Static 대비 일정` 탭만 활성 시나리오·조회기간으로 소요대수를 맞대어 본다.
 AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     "app_pages/available_equipment_status.py",

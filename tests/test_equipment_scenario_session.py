@@ -575,7 +575,8 @@ def test_the_save_result_names_both_sides_the_propagation_the_release_and_remove
         EquipmentSaveResult(common=None, schedule=schedule, release_withheld=True),
         scenario_name="운영 일정",
     )
-    assert "공식 발행은 하지 않았습니다" in withheld and "「설비 시나리오」 탭" in withheld
+    assert "공식 발행은 하지 않았습니다" in withheld
+    assert "시나리오 관리 › 설비 시나리오" in withheld
 
 
 def test_column_help_says_common_status_or_scenario() -> None:
