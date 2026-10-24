@@ -329,9 +329,9 @@ def new_downtime_rows(
 
     `exclude_keys`(보통 새 호기)의 비가동은 고르지 않는다 — 새 호기 비가동은 새 호기 넣기를 따른다.
     """
-    base_ids = _downtime_identities(base_downtime)
+    base_ids = downtime_identities(base_downtime)
     frame = downtime.reset_index(drop=True)
-    ids = _downtime_identities(frame)
+    ids = downtime_identities(frame)
     removed = set(base_ids) - set(ids)
     removed_groups = {(key, kind) for key, kind, _ in removed}
     removed_starts = {(key, start) for key, _, start in removed}
@@ -347,8 +347,9 @@ def new_downtime_rows(
     return frame.loc[wanted].reset_index(drop=True)
 
 
-def _downtime_identities(frame: pd.DataFrame) -> list[tuple[str, str, str]]:
-    """비가동 행마다 (호기 키, 유형, 시작일 `YYYY-MM-DD`). 날짜 단위(ns·us)와 무관하게 견준다."""
+def downtime_identities(frame: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """비가동 행(키 + 다섯 칸)마다 (호기 키, 유형, 시작일 `YYYY-MM-DD`). 날짜 단위(ns·us)와
+    무관하게 견준다."""
     return [
         (str(key), str(kind), pd.Timestamp(start).strftime("%Y-%m-%d"))
         for key, kind, start in zip(

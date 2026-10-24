@@ -7,6 +7,12 @@ import duckdb
 import pandas as pd
 import pytest
 from test_equipment_availability import _baseline, _downtime, _equipment
+from test_equipment_migration_0027_scenarios import (
+    _MASTER_COLUMNS,
+    _database_before,
+    _master_row,
+)
+from test_equipment_migration_0027_scenarios import _insert_revision as _insert_legacy_revision
 
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
@@ -368,24 +374,39 @@ def test_legacy_revision_without_production_date_keeps_qual_blank(tmp_path: Path
 
 
 def test_a_stored_legacy_qual_placeholder_reads_as_a_blank_qual(tmp_path: Path) -> None:
-    """옛 변환이 빈 Qual 에 채운 2262-04-11 을 다시 저장한 리비전이 있다. 그 날만 빈 Qual 로 읽고
-    (상태는 같은 셋업 진행중), 손대지 않은 저장은 새 리비전을 만들지 않는다."""
-    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    """옛 변환이 빈 Qual 에 채운 2262-04-11 을 옛 판이 다시 저장한 계약 v3 리비전이 있다. 그 날만
+    빈 Qual 로 읽고(상태는 같은 셋업 진행중), 손대지 않은 저장은 새 리비전을 만들지 않는다.
+
+    0027 뒤의 저장은 계약 v4 라 마스터 표에 일정 칸을 쓰지 않으므로, 그런 리비전은 0027 전에 옛
+    꼴 그대로 넣는다(그 뒤 「운영 일정」 r1 이 그 행을 가리킨다)."""
+    path = tmp_path / "equipment.duckdb"
+    _database_before(path, 25)
+    with duckdb.connect(str(path)) as connection:
+        _insert_legacy_revision(
+            connection, "r1", 1, contract=3, note="자리표", created_at="2026-02-05 09:00:00"
+        )
+        connection.executemany(
+            f"INSERT INTO equipment_ops.equipment_master_snapshot ({', '.join(_MASTER_COLUMNS)}) "
+            f"VALUES ({', '.join('?' for _ in _MASTER_COLUMNS)})",
+            [
+                list(_master_row("r1", 1, "EQ-01", qual="2026-08-09")),
+                list(_master_row("r1", 2, "EQ-02", qual="2262-04-11", status="계획")),
+            ],
+        )
+    repository = DuckDBEquipmentRepository(path)
     repository.initialize()
-    equipment = _equipment()
-    equipment.loc[1, "Qual일정"] = "2262-04-11"
-    repository.save_snapshot(_baseline(), equipment, _downtime())
-    with duckdb.connect(str(tmp_path / "equipment.duckdb")) as connection:
+    with duckdb.connect(str(path)) as connection:
         stored = connection.execute(
             "SELECT qual_date FROM equipment_ops.equipment_master_snapshot ORDER BY source_row_no"
         ).fetchall()
     assert str(stored[1][0]) == "2262-04-11"
 
-    loaded = repository.load_snapshot(repository.latest_revision_id() or "").equipment
+    snapshot = repository.load_snapshot(repository.latest_revision_id() or "")
+    loaded = snapshot.equipment
 
     assert loaded.loc[0, "Qual일정"] == pd.Timestamp("2026-08-09")
     assert pd.isna(loaded.loc[1, "Qual일정"])
-    assert repository.save_space_layout(_baseline(), loaded, _downtime()) is None
+    assert repository.save_space_layout(snapshot.baseline, loaded, snapshot.downtime) is None
     assert len(repository.list_revisions()) == 1
 
 

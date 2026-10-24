@@ -14,10 +14,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
+from uuid import uuid4
 
 import duckdb
 import pandas as pd
 
+from capa_simulation.persistence._sql_helpers import insert_by_name
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
     QUAL_DATE_COLUMN,
@@ -213,6 +215,209 @@ def legacy_trace_count(connection: duckdb.DuckDBPyConnection) -> int:
         """
     ).fetchone()
     return int(row[0]) if row is not None else 0
+
+
+def official_scenario_id(connection: duckdb.DuckDBPyConnection) -> str | None:
+    """공식 설비 시나리오 — 최신 발행의 시나리오. 발행이 없으면 「운영 일정」(있으면), 그것도
+    없으면 목록 첫 시나리오. 시나리오가 하나도 없으면 None."""
+    release = latest_release_row(connection)
+    if release is not None:
+        return str(release["equipment_scenario_id"])
+    rows = scenario_rows(connection)
+    ids = [str(row["equipment_scenario_id"]) for row in rows]
+    if OPERATIONS_SCENARIO_ID in ids:
+        return OPERATIONS_SCENARIO_ID
+    return ids[0] if ids else None
+
+
+def paired_schedule_revision_id(
+    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str, common_revision_id: str
+) -> str | None:
+    """그 시나리오에서 저장 때 이 공통 리비전을 함께 본 일정 리비전 가운데 번호가 가장 큰 것."""
+    row = connection.execute(
+        """
+        SELECT schedule_revision_id
+        FROM equipment_ops.equipment_schedule_revision
+        WHERE equipment_scenario_id = ? AND common_revision_id = ?
+        ORDER BY revision_no DESC
+        LIMIT 1
+        """,
+        [equipment_scenario_id, common_revision_id],
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
+def scenario_name_taken(
+    connection: duckdb.DuckDBPyConnection, name: str, *, except_scenario_id: str | None = None
+) -> bool:
+    """같은 이름의 설비 시나리오가 있는가(보관본까지 — 앞뒤 공백을 뗀 값의 완전 일치)."""
+    row = connection.execute(
+        """
+        SELECT 1 FROM equipment_ops.equipment_scenario
+        WHERE scenario_name = ? AND equipment_scenario_id IS DISTINCT FROM ?
+        LIMIT 1
+        """,
+        [name, except_scenario_id],
+    ).fetchone()
+    return row is not None
+
+
+def insert_scenario(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    equipment_scenario_id: str,
+    name: str,
+    source_schedule_revision_id: str | None,
+    created_by: str | None,
+) -> None:
+    """설비 시나리오 한 행 — 목록 차례는 지금 끝 다음."""
+    connection.execute(
+        """
+        INSERT INTO equipment_ops.equipment_scenario (
+            equipment_scenario_id, scenario_name, list_order, source_schedule_revision_id,
+            created_by
+        )
+        SELECT ?, ?, COALESCE(MAX(list_order), -1) + 1, ?, ?
+        FROM equipment_ops.equipment_scenario
+        """,
+        [equipment_scenario_id, name, source_schedule_revision_id, created_by],
+    )
+
+
+def rename_scenario(
+    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str, name: str
+) -> None:
+    connection.execute(
+        """
+        UPDATE equipment_ops.equipment_scenario
+        SET scenario_name = ?, updated_at = current_timestamp
+        WHERE equipment_scenario_id = ?
+        """,
+        [name, equipment_scenario_id],
+    )
+
+
+def insert_schedule_revision(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    equipment_scenario_id: str,
+    origin: str,
+    common_revision_id: str | None,
+    note: str | None,
+    saved_by: str | None,
+    schedule: pd.DataFrame,
+    downtime: pd.DataFrame,
+    schedule_hash: str,
+    downtime_hash: str,
+) -> str:
+    """일정 리비전 하나(머리 + 키별 일곱 칸 + 비가동)를 넣고 id 를 돌려준다.
+
+    번호는 그 시나리오의 `MAX(revision_no) + 1` 이다(E6 — 시나리오마다 r1 부터). `schedule` 은
+    키 + 일곱 칸(`SCHEDULE_FRAME_COLUMNS`), `downtime` 은 키 + 다섯 칸이고 검증을 마친 값이다.
+    """
+    schedule_revision_id = uuid4().hex
+    connection.execute(
+        """
+        INSERT INTO equipment_ops.equipment_schedule_revision (
+            schedule_revision_id, equipment_scenario_id, revision_no, note, saved_by, origin,
+            common_revision_id, schedule_hash, downtime_hash
+        )
+        SELECT ?, ?, COALESCE(MAX(revision_no), 0) + 1, ?, ?, ?, ?, ?, ?
+        FROM equipment_ops.equipment_schedule_revision
+        WHERE equipment_scenario_id = ?
+        """,
+        [
+            schedule_revision_id,
+            equipment_scenario_id,
+            note,
+            saved_by,
+            origin,
+            common_revision_id,
+            schedule_hash,
+            downtime_hash,
+            equipment_scenario_id,
+        ],
+    )
+    if not schedule.empty:
+        rows = schedule.loc[:, list(SCHEDULE_FRAME_COLUMNS)].rename(
+            columns={
+                UNIT_KEY_COLUMN: "unit_key",
+                **dict(SCENARIO_SCHEDULE_DB_COLUMNS),
+            }
+        )
+        rows.insert(0, "schedule_revision_id", schedule_revision_id)
+        insert_by_name(
+            connection,
+            schema="equipment_ops",
+            table_name="equipment_schedule_snapshot",
+            frame=rows,
+        )
+    if not downtime.empty:
+        events = downtime.loc[:, list(SCHEDULE_DOWNTIME_COLUMNS)].rename(
+            columns={
+                UNIT_KEY_COLUMN: "unit_key",
+                **dict(SCHEDULE_DOWNTIME_DB_COLUMNS),
+            }
+        )
+        events.insert(0, "source_row_no", range(1, len(events) + 1))
+        events.insert(0, "schedule_revision_id", schedule_revision_id)
+        insert_by_name(
+            connection,
+            schema="equipment_ops",
+            table_name="equipment_schedule_downtime_snapshot",
+            frame=events,
+        )
+    return schedule_revision_id
+
+
+def insert_release(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    equipment_scenario_id: str,
+    schedule_revision_id: str,
+    released_by: str | None,
+    note: str | None,
+) -> int:
+    """공식 발행 한 행(append-only)을 넣고 그 번호(`MAX(release_no) + 1`)를 돌려준다."""
+    row = connection.execute(
+        "SELECT COALESCE(MAX(release_no), 0) + 1 FROM equipment_ops.equipment_official_release"
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("공식 발행 번호를 만들지 못했습니다.")
+    release_no = int(row[0])
+    connection.execute(
+        """
+        INSERT INTO equipment_ops.equipment_official_release (
+            release_id, release_no, equipment_scenario_id, schedule_revision_id, released_by,
+            note
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [uuid4().hex, release_no, equipment_scenario_id, schedule_revision_id, released_by, note],
+    )
+    return release_no
+
+
+def latest_boundary_no(connection: duckdb.DuckDBPyConnection) -> int:
+    row = connection.execute(
+        "SELECT COALESCE(MAX(boundary_no), 0) FROM equipment_ops.equipment_legacy_boundary"
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def insert_boundary(
+    connection: duckdb.DuckDBPyConnection, *, through_revision_no: int, note: str | None
+) -> int:
+    """이관 경계 한 행을 덧붙이고 그 번호를 돌려준다."""
+    boundary_no = latest_boundary_no(connection) + 1
+    connection.execute(
+        """
+        INSERT INTO equipment_ops.equipment_legacy_boundary (
+            boundary_no, through_revision_no, note
+        ) VALUES (?, ?, ?)
+        """,
+        [boundary_no, through_revision_no, note],
+    )
+    return boundary_no
 
 
 def schedule_frame(

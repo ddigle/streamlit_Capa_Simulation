@@ -7,18 +7,23 @@
 합친 `EquipmentSnapshot` 이다(`read_merged`). 계약 v3 이하 리비전은 마스터에 일정이 함께 든 옛
 꼴이라 `_read_legacy_snapshot` 으로 읽고, 0027 이관 리비전의 일정 원천이 된다. 층·FAB 도면, 공정별
 Cut-off, 주차별 가용대수, 필요 단축 일정 조건·기준선은 리비전이 아닌 현행값이다.
+
+쓰기는 `save_equipment`(바뀐 쪽만 · 대조 · 함께 넣기 · 교차 검증 · 공식 발행 — 한 트랜잭션)와
+설비 시나리오 복제·이름·발행·옛 배포 흔적 이어 쓰기다. `save_snapshot`·`save_space_layout`·
+`load_snapshot` 은 시험·스크립트용 호환 래퍼다 — 화면·캐시는 부르지 않는다.
 """
 
 from __future__ import annotations
 
 import hashlib
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from types import MappingProxyType
+from typing import Literal
 from uuid import uuid4
 
 import duckdb
@@ -72,10 +77,15 @@ from capa_simulation.services.equipment_scenario import (
     SCHEDULE_DOWNTIME_COLUMNS,
     SCHEDULE_FRAME_COLUMNS,
     UNIT_KEY_COLUMN,
+    assign_unit_keys,
+    downtime_identities,
     legacy_unit_key,
     merge_equipment,
+    new_downtime_rows,
+    new_unit_keys,
     normalize_schedule_downtime,
     normalize_schedule_frame,
+    select_schedule_rows,
     split_downtime,
     split_equipment,
 )
@@ -121,7 +131,11 @@ from capa_simulation.services.floor_layout_profile import (
     require_total_layout_budget,
     to_data_uri,
 )
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import (
+    object_particle,
+    with_object_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
     prepare_process_cutoff,
@@ -302,6 +316,165 @@ class EquipmentScenarioIncompatible(ValueError):
         self.reason = reason
 
 
+class EquipmentRevisionConflict(ValueError):
+    """편집을 시작한 뒤 다른 사용자가 먼저 공통 대장이나 이 설비 시나리오에 저장했다. 아무것도
+    쓰지 않았다. `side` 는 "common"(공통 대장) 또는 "schedule"(설비 시나리오 일정)이다."""
+
+    def __init__(self, side: str, newest: str) -> None:
+        super().__init__(
+            f"다른 사용자가 먼저 {with_object_particle(newest)} 저장해 저장하지 않았습니다. 화면을 "
+            "다시 불러와 최신 저장본 위에서 고친 뒤 저장하세요."
+        )
+        self.side = side
+        self.newest = newest
+
+
+class EquipmentScenarioGuardError(ValueError):
+    """이번 저장 결과를 어느 설비 시나리오 리비전과 합치면 설비 마스터 검증을 통과하지 못한다.
+
+    공통 대장은 모든 시나리오가 함께 쓰므로 공통 칸 하나가 다른 시나리오의 일정과 부딪칠 수
+    있다(예: 다른 시나리오에 Qual일정이 있는 호기의 Qual상태를 비움). 아무것도 쓰지 않았다 —
+    문구에 어느 시나리오·리비전인지와 빠져나갈 길을 적는다.
+    """
+
+    def __init__(self, scenario_name: str, revision_no: int, reason: str, escape: str) -> None:
+        subject = f"「{scenario_name}」 r{revision_no}"
+        super().__init__(
+            f"이번 저장 결과를 {subject}에 합치면 설비 마스터 검증을 통과하지 못해 저장하지 "
+            f"않았습니다 — {reason} {escape}"
+        )
+        self.scenario_name = scenario_name
+        self.revision_no = revision_no
+        self.reason = reason
+        self.escape = escape
+
+
+class EquipmentReleaseMoved(ValueError):
+    """발행하려는 사이 최신 공식 발행이 바뀌었다. 아무것도 쓰지 않았다(없던 것은 0)."""
+
+    def __init__(self, expected: int, current: int) -> None:
+        super().__init__(
+            f"그 사이 다른 공식 발행(지금 공식 v{current}, 본 것은 v{expected})이 있어 발행하지 "
+            "않았습니다 — 설비 시나리오 목록을 다시 보고 발행하세요."
+        )
+        self.expected = expected
+        self.current = current
+
+
+class EquipmentLegacyTraceError(ValueError):
+    """이관 경계 뒤에 옛 배포가 저장한 계약 v3 공통 리비전이 있다 — 설비 마스터 저장을 막는다.
+
+    그 위로 저장이 쌓이면 나머지 호기가 모든 시나리오에서 고아가 된다. 빠져나가는 길은 런북 4-2
+    의 백업 복원, 또는 설비 시나리오 탭의 「이대로 이어 쓰기」(`acknowledge_legacy_trace`).
+    """
+
+    def __init__(self, count: int) -> None:
+        super().__init__(legacy_trace_message(count))
+        self.count = count
+
+
+def legacy_trace_message(count: int) -> str:
+    """옛 배포 흔적 경고 문구 — 저장 거부와 화면 맨 위 경고가 같은 글자를 쓴다."""
+    return (
+        f"옛 배포로 저장한 설비 리비전 {count}개가 있어 설비 저장을 막았습니다 — 런북 4-2 대로 "
+        "백업을 복원하거나, 가용설비 현황 「설비 시나리오」 탭의 「이대로 이어 쓰기」 를 쓰세요."
+    )
+
+
+class EquipmentScenarioNameMoved(ValueError):
+    """설비 시나리오 이름을 바꾸려는 사이 다른 사용자가 먼저 바꿨다. 아무것도 쓰지 않았다."""
+
+    def __init__(self, current: str) -> None:
+        super().__init__(f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current}).")
+        self.current = current
+
+
+@dataclass(frozen=True)
+class EquipmentSaveRequest:
+    """설비 마스터 저장 한 번(`save_equipment`) — 편집본 세 표와 그 출발점.
+
+    - `base_common_revision_id` 는 편집본이 나온 공통 대장 리비전(저장본이 없었으면
+      `EMPTY_REVISION_TOKEN`), `base_schedule_revision_id` 는 편집본이 나온 이 시나리오의 일정
+      리비전(없었으면 None)이다. 저장소는 이 두 리비전을 쓰기 잠금 안에서 다시 읽어 호기 키·일정
+      없음·편집 전 비가동을 낸다 — 두 리비전은 불변이고 공통 대조가 잠금 안이라 화면이 든 값과
+      같다.
+    - `renames` 는 지금 이름 → 저장본 이름(Space 편집기의 이름 바꾸기). 이 지도로 이은 호기는
+      다른 시나리오에서도 같은 호기다(`assign_unit_keys`).
+    - `expected_release_no` 는 화면이 본 최신 공식 번호(발행이 없었으면 0)다. None 이면 대조하지
+      않는다. 이번 저장이 공식 발행을 할 때만 대조한다.
+    - 층 값(`floor_*`)은 지금 그대로 같은 트랜잭션에 쓰는 층 현행값이다.
+    """
+
+    baseline: pd.DataFrame
+    equipment: pd.DataFrame
+    downtime: pd.DataFrame
+    equipment_scenario_id: str
+    base_common_revision_id: str
+    base_schedule_revision_id: str | None
+    renames: Mapping[str, str] = MappingProxyType({})
+    note: str | None = None
+    saved_by: str | None = None
+    propagate_new_units: bool = True
+    propagate_new_downtime: bool = True
+    publish_official: bool = True
+    expected_release_no: int | None = None
+    floor_canvases: Mapping[FloorKey, CanvasSize] | None = None
+    floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None
+    floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None
+    floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None
+
+
+@dataclass(frozen=True)
+class PropagatedRevision:
+    """함께 넣기로 다른 설비 시나리오에 생긴 일정 리비전 한 줄(결과 알림 재료).
+
+    `downtime` 은 넣은 비가동 (설비명, 유형, 시작일 `YYYY-MM-DD`), `skipped` 는 건너뛴 비가동 수
+    (그 시나리오에 그 호기 일정이 없거나 같은 비가동이 이미 있음)다.
+    """
+
+    equipment_scenario_id: str
+    scenario_name: str
+    revision_no: int | None
+    unit_count: int
+    downtime: tuple[tuple[str, str, str], ...] = ()
+    skipped: int = 0
+
+
+@dataclass(frozen=True)
+class EquipmentSaveResult:
+    """`save_equipment` 가 실제로 쓴 것.
+
+    - `common`·`schedule` 은 새로 만든 공통 대장·이 시나리오 일정 리비전(안 만들었으면 None).
+    - `propagated` 는 함께 넣기를 받은 다른 시나리오마다 한 줄 — 건너뛰기만 해 리비전이 없는
+      시나리오도 `revision_no=None` 으로 적는다.
+    - `release_no` 는 이번 저장이 낸 공식 발행 번호, `release_withheld` 는 공식 시나리오에 새
+      리비전이 생겼지만 그 전에 발행 안 한 더 새 리비전이 있어 발행하지 않았다는 뜻이다(「공식
+      발행은 설비 시나리오 탭에서」).
+    - `forced_common` 은 0027 뒤 첫 저장이라 공통이 그대로여도 v4 공통을 함께 썼다는 뜻이다.
+    - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
+      빠진다 — RawData 설비명 고침도 지운 + 새 호기다).
+    """
+
+    common: EquipmentRevisionSummary | None
+    schedule: EquipmentScheduleRevisionSummary | None
+    propagated: tuple[PropagatedRevision, ...] = ()
+    release_no: int | None = None
+    release_withheld: bool = False
+    forced_common: bool = False
+    floor_values_written: bool = False
+    new_units: tuple[str, ...] = ()
+    removed_units: tuple[str, ...] = ()
+
+    @property
+    def wrote_revision(self) -> bool:
+        """공통·일정 리비전을 하나라도 새로 만들었는가(층 값만 쓴 저장은 False)."""
+        return (
+            self.common is not None
+            or self.schedule is not None
+            or any(item.revision_no is not None for item in self.propagated)
+        )
+
+
 # 리비전 요약 한 줄을 만드는 투영. 계약 버전에 따라 표가 갈려 CASE 가 길고, 두 조회
 # (스냅샷 하나 · 목록)가 **같은 열 순서**로 읽어야 모델 생성이 맞는다. 계약 v4(설비 시나리오 뒤의
 # 공통 대장)는 마스터 표의 행을 세고 비가동은 0 이다 — 비가동은 설비 시나리오 일정 리비전에 있다.
@@ -455,6 +628,34 @@ class DuckDBEquipmentRepository:
         self._schema_ahead = outcome.schema_ahead
         return outcome.applied
 
+    def save_equipment(self, request: EquipmentSaveRequest) -> EquipmentSaveResult:
+        """설비 마스터 편집본을 공통 대장·이 설비 시나리오 일정으로 나눠 **바뀐 쪽만** 저장한다.
+
+        연결 하나·트랜잭션 하나에서 하고, 계산·검증을 모두 메모리에서 끝낸 뒤 쓴다.
+
+        1. 막기 — 옛 배포 흔적(`EquipmentLegacyTraceError`), 공통 최신 ≠ 출발 공통
+           (`EquipmentRevisionConflict`), 일정을 쓰는데 이 시나리오 최신 ≠ 출발 일정(같은 예외),
+           층 값 대조.
+        2. 편집본 전체 검증(층 캔버스·오늘 기준 실적 검사 포함).
+        3. 호기 키(`assign_unit_keys`) → 공통 32칸 + 키와 일정 일곱 칸 + 비가동으로 나눠 저장본과
+           내용 해시로 견준다. 0027 뒤 첫 저장(공통 최신이 계약 v3 이하)에 일정이 바뀌었으면 공통도
+           v4 한 벌을 함께 쓴다(`forced_common`). 둘 다 그대로이고 층 값도 없으면 아무것도 쓰지
+           않는다.
+        4. 함께 넣기 — 새 호기(`propagate_new_units`)·새 비가동(`propagate_new_downtime`)을 다른
+           ACTIVE 시나리오의 최신 위에 새 리비전(`origin='propagate'`)으로. 고친 비가동은 퍼지지
+           않는다(`new_downtime_rows`).
+        5. 교차 검증 — 공통을 쓰거나 함께 넣기가 있으면 모든 시나리오(자기 포함)의 이번 저장 뒤
+           최신과 최신 공식 발행을 새 공통과 합쳐 읽기 검증한다(`EquipmentScenarioGuardError`).
+        6. 쓰기 — 공통(v4) → 이 시나리오 일정 → 함께 넣은 리비전 → 공식 발행 → 층 값.
+
+        공식 발행은 이번 저장이 공식 시나리오에 새 일정 리비전을 만들었고 저장 전 최신 발행이 그
+        시나리오의 최신이었을 때만 한다(`publish_official`). 발행이 하나도 없으면 이 저장의 일정
+        리비전이 공식 v1 이다.
+        """
+        return self._save_equipment(
+            request, mode="changed", official_target=False, check_common=True, force_publish=False
+        ).result
+
     def save_snapshot(
         self,
         baseline: pd.DataFrame,
@@ -468,31 +669,33 @@ class DuckDBEquipmentRepository:
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
         floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None,
     ) -> EquipmentSnapshot:
-        """세 표를 새 리비전으로 저장한다.
+        """호환 래퍼(시험·스크립트용 — 화면·캐시는 `save_equipment` 를 쓴다).
 
-        미저장 층 캔버스·도면 요소·Main 설비명 위치(`floor_group_labels` — 층마다 Main 설비 → 위치,
-        그 층 전체)가 있으면 **같은 트랜잭션**에 함께 쓴다(호기는 넓힌 캔버스 기준으로 검증된다).
-        캔버스·요소·위치는 리비전이 아니라 층 현행값이다.
-
-        `base_revision_id` 는 편집본이 나온 리비전(저장본이 없었으면 `EMPTY_REVISION_TOKEN`)이다.
-        주면 쓰기 잠금 안에서 최신 리비전과 견줘, 그 사이 다른 사람이 저장했으면 거부한다 —
-        옛 편집본이 남의 리비전을 조용히 되돌리지 않게. `floor_layout_bases` 는 층마다 편집을
-        시작할 때 본 캔버스·요소·위치 지문이고, 저장 직전 값과 다르면 같은 이유로 거부한다.
+        공식 설비 시나리오(발행이 없으면 「운영 일정」)의 최신 위에 **늘 공통 v4 와 일정 리비전을
+        함께** 쓰고(바뀐 것이 없어도) 같은 트랜잭션에서 공식으로 발행한다. 래퍼만 쓰면 공통 rN 과
+        그 시나리오 rN 이 같은 번호로 함께 오른다. 함께 넣기·교차 검증은 `save_equipment` 기본값
+        그대로다. `base_revision_id` 는 공통 대조(None 이면 대조하지 않는다)이고 이름 지도는 없다 —
+        설비명이 같은 호기만 키를 잇는다. 돌려주는 값은 그 쌍의 합친 스냅샷이다.
         """
-        revision_id = self._save(
-            baseline,
-            equipment,
-            downtime,
-            note=note,
-            floor_canvases=floor_canvases,
-            floor_marks=floor_marks,
-            base_revision_id=base_revision_id,
-            floor_layout_bases=floor_layout_bases,
-            floor_group_labels=floor_group_labels,
-            skip_unchanged=False,
+        saved = self._save_equipment(
+            _wrapper_request(
+                baseline,
+                equipment,
+                downtime,
+                note=note,
+                floor_canvases=floor_canvases,
+                floor_marks=floor_marks,
+                base_revision_id=base_revision_id,
+                floor_layout_bases=floor_layout_bases,
+                floor_group_labels=floor_group_labels,
+            ),
+            mode="always",
+            official_target=True,
+            check_common=base_revision_id is not None,
+            force_publish=True,
         )
-        assert revision_id is not None
-        return self.load_snapshot(revision_id)
+        assert saved.common_revision_id is not None
+        return self.load_merged_snapshot(saved.common_revision_id, saved.schedule_revision_id)
 
     def save_space_layout(
         self,
@@ -507,143 +710,270 @@ class DuckDBEquipmentRepository:
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
         floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None,
     ) -> EquipmentSnapshot | None:
-        """`save_snapshot` 과 같되, 세 표가 최신 리비전과 같으면 **리비전을 만들지 않고**
-        캔버스·도면 요소·Main 설비명 위치만 쓴다(Space 에서 요소만 고친 저장이 설비 마스터를
-        복제하지 않게). 새 리비전을 만들었으면 그 스냅샷, 아니면 None."""
-        revision_id = self._save(
-            baseline,
-            equipment,
-            downtime,
-            note=note,
-            floor_canvases=floor_canvases,
-            floor_marks=floor_marks,
-            base_revision_id=base_revision_id,
-            floor_layout_bases=floor_layout_bases,
-            floor_group_labels=floor_group_labels,
-            skip_unchanged=True,
+        """`save_snapshot` 과 같되, 세 표가 공식 시나리오 최신 쌍과 같으면 **리비전을 만들지 않고**
+        캔버스·도면 요소·Main 설비명 위치만 쓴다. 하나라도 바뀌면 두 쪽을 함께 쓰고 발행한다.
+        새 리비전을 만들었으면 그 쌍의 합친 스냅샷, 아니면 None."""
+        saved = self._save_equipment(
+            _wrapper_request(
+                baseline,
+                equipment,
+                downtime,
+                note=note,
+                floor_canvases=floor_canvases,
+                floor_marks=floor_marks,
+                base_revision_id=base_revision_id,
+                floor_layout_bases=floor_layout_bases,
+                floor_group_labels=floor_group_labels,
+            ),
+            mode="if_any",
+            official_target=True,
+            check_common=base_revision_id is not None,
+            force_publish=True,
         )
-        return self.load_snapshot(revision_id) if revision_id is not None else None
+        if not saved.result.wrote_revision or saved.common_revision_id is None:
+            return None
+        return self.load_merged_snapshot(saved.common_revision_id, saved.schedule_revision_id)
 
-    def _save(
+    def _save_equipment(
         self,
-        baseline: pd.DataFrame,
-        equipment: pd.DataFrame,
-        downtime: pd.DataFrame,
+        request: EquipmentSaveRequest,
         *,
-        note: str | None,
-        floor_canvases: Mapping[FloorKey, CanvasSize] | None,
-        floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None,
-        base_revision_id: str | None,
-        floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None,
-        floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None,
-        skip_unchanged: bool,
-    ) -> str | None:
-        """검증·리비전·캔버스·요소를 **연결 하나, 트랜잭션 하나**에서 한다.
+        mode: _SaveMode,
+        official_target: bool,
+        check_common: bool,
+        force_publish: bool,
+    ) -> _SaveOutcome:
+        """`save_equipment` 와 두 래퍼의 한 길.
 
-        캔버스를 따로 저장(`save_floor_layout_canvas`)한 뒤 `save_snapshot` 을 부르면 트랜잭션이
-        둘로 갈려, 호기 검증이 실패해도 캔버스만 바뀐 채 남는다. 저장된 캔버스도 이 연결 안에서
-        읽는다 — 밖에서 읽으면 그 사이에 다른 사람이 줄인 캔버스를 놓친다.
+        `mode` — "changed" 는 바뀐 쪽만, "if_any" 는 하나라도 바뀌면 두 쪽 다, "always" 는 늘 두 쪽
+        다. `official_target` 이면 저장할 시나리오와 출발 일정을 쓰기 잠금 안에서 공식 시나리오의
+        최신으로 정한다(래퍼). `force_publish` 면 공식 시나리오에 새 리비전이 생길 때 늘 발행한다.
         """
         canvases: dict[FloorKey, CanvasSize] = {}
-        for (building, floor), size in (floor_canvases or {}).items():
+        for (building, floor), size in (request.floor_canvases or {}).items():
             _require_floor_key(building, floor)
             canvases[(building, floor)] = normalize_canvas_size(*size)
-        for building, floor in floor_marks or {}:
+        for building, floor in request.floor_marks or {}:
             _require_floor_key(building, floor)
         prepared_labels: dict[FloorKey, dict[str, str]] = {}
-        for (building, floor), labels in (floor_group_labels or {}).items():
+        for (building, floor), labels in (request.floor_group_labels or {}).items():
             _require_floor_key(building, floor)
             prepared_labels[(building, floor)] = prepare_group_labels(labels)
-        prepared_baseline = prepare_equipment_baseline(baseline)
-        normalized_note = note.strip() if note and note.strip() else None
-        outcome = _WriteOutcome()
+        prepared_baseline = prepare_equipment_baseline(request.baseline)
+        note = _clean_text(request.note)
+        saved_by = _clean_text(request.saved_by)
+        outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:
-            # 최신 리비전·저장된 캔버스·요소는 모두 **쓰기 잠금 안에서** 읽는다. 밖에서 읽으면
-            # 그 사이 다른 세션의 저장을 놓쳐 옛 편집본이 그것을 되돌린다.
+            # 막기 — 모두 쓰기 잠금 안에서 읽는다. 밖에서 읽으면 그 사이 다른 세션의 저장을
+            # 놓쳐 옛 편집본이 그것을 되돌린다.
+            traces = legacy_trace_count(connection)
+            if traces:
+                raise EquipmentLegacyTraceError(traces)
             latest = _latest_revision(connection)
-            if base_revision_id is not None:
+            if check_common:
                 current = latest[0] if latest is not None else EMPTY_REVISION_TOKEN
-                if current != base_revision_id:
-                    newest = f"r{latest[1]}" if latest is not None else "다른 저장"
+                if current != request.base_common_revision_id:
+                    newest = f"공통 대장 r{latest[1]}" if latest is not None else "다른 저장"
+                    raise EquipmentRevisionConflict("common", newest)
+            scenarios = {
+                summary.equipment_scenario_id: summary
+                for summary in map(_scenario_summary, scenario_store.scenario_rows(connection))
+            }
+            if official_target:
+                target_id = scenario_store.official_scenario_id(connection)
+                if target_id is None:
+                    raise ValueError("설비 시나리오가 없어 설비 마스터를 저장할 수 없습니다.")
+                base_schedule_id = scenarios[target_id].latest_schedule_revision_id
+            else:
+                target_id = request.equipment_scenario_id
+                base_schedule_id = request.base_schedule_revision_id
+            scenario = _require_active_scenario(scenarios, target_id)
+            if base_schedule_id is not None:
+                base_summary = _require_schedule_revision(connection, base_schedule_id)
+                if base_summary.equipment_scenario_id != target_id:
                     raise ValueError(
-                        f"다른 사용자가 먼저 {with_object_particle(newest)} 저장해 저장하지 "
-                        "않았습니다. 화면을 다시 불러와 최신 저장본 위에서 고친 뒤 저장하세요."
+                        f"출발 일정 리비전이 「{scenario.scenario_name}」 의 것이 아닙니다: "
+                        f"{base_schedule_id}"
                     )
+            release_row = scenario_store.latest_release_row(connection)
+            release = _release(release_row) if release_row is not None else None
             stored_canvases = _stored_floor_canvases(connection)
             _require_floor_layout_bases(
                 connection,
                 stored_canvases,
-                floor_layout_bases or {},
-                changed={*canvases, *(floor_marks or {}), *prepared_labels},
+                request.floor_layout_bases or {},
+                changed={*canvases, *(request.floor_marks or {}), *prepared_labels},
             )
             # 저장 시점에만 층 캔버스 상한과 실적 날짜(오늘보다 늦음·반입실적 > Qual실적)를
-            # 강제한다. 과거 리비전을 다시 읽을 때는 둘 다 넘기지 않아, 도면 비율을 줄이거나 날이
-            # 지나도 이미 저장된 리비전이 계속 열린다.
-            merged = {**stored_canvases, **canvases}
+            # 강제한다. 다시 읽을 때는 둘 다 넘기지 않아 이미 저장된 리비전이 계속 열린다.
+            merged_canvases = {**stored_canvases, **canvases}
             prepared_equipment = prepare_equipment_master(
-                equipment, floor_canvases=merged, today=date.today()
+                request.equipment, floor_canvases=merged_canvases, today=date.today()
             )
             prepared_downtime = prepare_downtime_for_prepared_equipment(
-                downtime, prepared_equipment
+                request.downtime, prepared_equipment
             )
             default_canvas = (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
             prepared_marks = {
-                key: prepare_floor_layout_marks(marks, merged.get(key, default_canvas))
-                for key, marks in (floor_marks or {}).items()
+                key: prepare_floor_layout_marks(marks, merged_canvases.get(key, default_canvas))
+                for key, marks in (request.floor_marks or {}).items()
             }
             # 캔버스만 바꾸는 층의 **저장된** 요소도 새 캔버스 안이어야 한다.
             for key, size in canvases.items():
                 if key not in prepared_marks:
                     _require_marks_fit(connection, key, size)
-            hashes = (
-                hash_frame(prepared_baseline),
-                hash_frame(prepared_equipment),
-                hash_frame(prepared_downtime),
+
+            base = _read_base_state(
+                connection, latest[0] if latest is not None else None, base_schedule_id
             )
-            content = (
-                _content_hash(prepared_baseline),
-                _content_hash(prepared_equipment),
-                _content_hash(prepared_downtime),
+            edit = _split_edit(prepared_equipment, prepared_downtime, base, request.renames)
+            common_changed = _common_digest(prepared_baseline, edit.common) != _common_digest(
+                base.baseline, base.common
             )
-            # 「세 표가 그대로인가」는 저장 당시 감사 해시가 아니라 **최신 리비전을 다시 정규화한
-            # 값**과 내용 해시(`_content_hash`)로 견준다. 감사 해시는 입력의 형(정수 좌표 …)까지
-            # 타서, 읽어 온 편집본을 다시 정규화한 값과 늘 달라 「바뀌었다」가 된다. 저장본이
-            # 없으면 빈 세 표가 「그대로」다(요소만 저장하면서 빈 r1 을 만들지 않게).
-            unchanged = False
-            if skip_unchanged:
-                if latest is None:
-                    unchanged = all(
-                        frame.empty
-                        for frame in (prepared_baseline, prepared_equipment, prepared_downtime)
-                    )
-                else:
-                    unchanged = (
-                        _content_hashes(_read_legacy_snapshot(connection, latest[0])) == content
-                    )
-            revision_id: str | None = None
-            if not unchanged:
-                revision_id = _insert_revision(
-                    connection,
-                    note=normalized_note,
-                    hashes=hashes,
-                    frames=(prepared_baseline, prepared_equipment, prepared_downtime),
+            schedule_changed = _schedule_digest(edit.schedule, edit.downtime) != (
+                _schedule_digest(base.schedule, base.downtime)
+            )
+            forced_common = (
+                mode == "changed"
+                and schedule_changed
+                and not common_changed
+                and base.contract_version is not None
+                and base.contract_version < 4
+            )
+            if mode == "changed":
+                write_common = common_changed or forced_common
+                write_schedule = schedule_changed
+            elif mode == "if_any":
+                write_common = write_schedule = common_changed or schedule_changed
+            else:
+                write_common = write_schedule = True
+            if write_schedule and scenario.latest_schedule_revision_id != base_schedule_id:
+                raise EquipmentRevisionConflict(
+                    "schedule", f"「{scenario.scenario_name}」 r{scenario.latest_revision_no}"
                 )
+
+            propagations = (
+                _plan_propagations(
+                    connection,
+                    request,
+                    scenarios,
+                    target=scenario,
+                    base=base,
+                    edit=edit,
+                )
+                if write_schedule
+                else []
+            )
+            publish = _plan_publish(
+                request,
+                scenarios,
+                release,
+                target=scenario,
+                write_schedule=write_schedule,
+                propagated_ids={
+                    plan.scenario.equipment_scenario_id for plan in propagations if plan.writes
+                },
+                force_publish=force_publish,
+            )
+            if write_common or any(plan.writes for plan in propagations):
+                _cross_validate(
+                    connection,
+                    scenarios,
+                    release,
+                    common=edit.common if write_common else base.common,
+                    target=scenario,
+                    base_schedule_id=base_schedule_id,
+                    write_schedule=write_schedule,
+                    propagations=propagations,
+                    publishing=publish.scenario_id is not None,
+                )
+
+            common_id = latest[0] if latest is not None else None
+            if write_common:
+                common_id = _insert_common_revision(
+                    connection,
+                    note=note,
+                    saved_by=saved_by,
+                    baseline=prepared_baseline,
+                    common=edit.common,
+                )
+            schedule_id = base_schedule_id
+            if write_schedule:
+                schedule_id = _insert_schedule(
+                    connection,
+                    equipment_scenario_id=scenario.equipment_scenario_id,
+                    origin="save",
+                    common_revision_id=common_id,
+                    note=note,
+                    saved_by=saved_by,
+                    schedule=edit.schedule,
+                    downtime=edit.downtime,
+                )
+            propagated: list[PropagatedRevision] = []
+            created = {scenario.equipment_scenario_id: schedule_id} if write_schedule else {}
+            for plan in propagations:
+                revision_no: int | None = None
+                if plan.writes:
+                    plan_id = _insert_schedule(
+                        connection,
+                        equipment_scenario_id=plan.scenario.equipment_scenario_id,
+                        origin="propagate",
+                        common_revision_id=common_id,
+                        note=_propagation_note(scenario.scenario_name, plan),
+                        saved_by=saved_by,
+                        schedule=plan.schedule,
+                        downtime=plan.downtime,
+                    )
+                    created[plan.scenario.equipment_scenario_id] = plan_id
+                    revision_no = _require_schedule_revision(connection, plan_id).revision_no
+                propagated.append(
+                    PropagatedRevision(
+                        equipment_scenario_id=plan.scenario.equipment_scenario_id,
+                        scenario_name=plan.scenario.scenario_name,
+                        revision_no=revision_no,
+                        unit_count=plan.unit_count,
+                        downtime=plan.downtime_added,
+                        skipped=plan.skipped,
+                    )
+                )
+            release_no: int | None = None
+            if publish.scenario_id is not None:
+                released = created.get(publish.scenario_id)
+                if released is not None:
+                    release_no = scenario_store.insert_release(
+                        connection,
+                        equipment_scenario_id=publish.scenario_id,
+                        schedule_revision_id=released,
+                        released_by=saved_by,
+                        note="설비 마스터 저장과 함께 발행",
+                    )
             for (building, floor), (width, height) in canvases.items():
                 _upsert_floor_canvas(connection, building, floor, width, height)
             for (building, floor), marks in prepared_marks.items():
                 _replace_floor_marks(connection, building, floor, marks)
             for (building, floor), labels in prepared_labels.items():
                 _replace_group_labels(connection, building, floor, labels)
-            outcome.wrote = (
-                revision_id is not None
-                or bool(canvases)
-                or bool(prepared_marks)
-                or bool(prepared_labels)
+            floors_written = bool(canvases) or bool(prepared_marks) or bool(prepared_labels)
+            result = EquipmentSaveResult(
+                common=_revision_row(connection, common_id)[0]
+                if write_common and common_id is not None
+                else None,
+                schedule=_require_schedule_revision(connection, schedule_id)
+                if write_schedule and schedule_id is not None
+                else None,
+                propagated=tuple(propagated),
+                release_no=release_no,
+                release_withheld=publish.withheld,
+                forced_common=forced_common,
+                floor_values_written=floors_written,
+                new_units=edit.new_units,
+                removed_units=edit.removed_units,
             )
-        return revision_id
+            outcome.wrote = result.wrote_revision or floors_written or release_no is not None
+        return _SaveOutcome(result, common_id, schedule_id)
 
     def latest_revision_id(self) -> str | None:
-        """Return the newest immutable revision id without loading its frames."""
+        """공통 대장 최신 리비전 id(프레임은 읽지 않는다). 없으면 None."""
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT revision_id FROM equipment_ops.revision ORDER BY revision_no DESC LIMIT 1"
@@ -653,8 +983,185 @@ class DuckDBEquipmentRepository:
         return str(row[0])
 
     def load_snapshot(self, revision_id: str) -> EquipmentSnapshot:
+        """호환 래퍼(시험·스크립트용 — 화면·캐시는 부르지 않는다): 공통 리비전 하나와 그 짝.
+
+        짝은 공식 설비 시나리오에서 저장 때 이 공통을 함께 본 일정 리비전 가운데 마지막 것이다
+        (이관 리비전·래퍼 저장은 늘 짝이 있다 — 옛 리비전의 일정이 그대로 나온다). 짝이 없으면
+        계약 v3 이하는 그 리비전에 든 일정 그대로, v4(화면 저장이 공통만 바꾼 리비전)는 최신 공식
+        발행 일정과 합친다. 발행에 따라 값이 바뀔 수 있는 뜻이라 공통 id 하나를 키로 캐시하지
+        않는다.
+        """
         with self._connect() as connection:
-            return _read_legacy_snapshot(connection, revision_id)
+            return _paired_snapshot(connection, revision_id)
+
+    def clone_equipment_scenario(
+        self, source_schedule_revision_id: str, *, name: str, created_by: str | None
+    ) -> EquipmentScenarioSummary:
+        """설비 시나리오를 복제로 만든다(E8 — 만들기는 복제로만). 새 시나리오 한 줄(최신 = r1)을
+        돌려준다.
+
+        출처는 그 시나리오의 최신 또는 최신 공식 발행 리비전이다. 새 r1 은 SQL 사본이 아니라
+        `read_merged` 로 읽은 출처(지금 공통 대장과 합친 것)의 일정 일곱 칸·비가동이다 — 이관
+        리비전의 Qual 자리표·계약 v2 변환·레거시 비가동 중복 제거가 원본과 같게 걸린다. 출처의 일정
+        없음 호기는 복제본에서도 일정 없음이다. 이름은 보관본까지 겹칠 수 없다.
+        """
+        clean_name = _required_scenario_name(name)
+        creator = _clean_text(created_by)
+        outcome = _WriteOutcome(wrote=False)
+        new_id = uuid4().hex
+        with self._write_transaction(outcome) as connection:
+            if scenario_store.scenario_name_taken(connection, clean_name):
+                raise ValueError(DUPLICATE_EQUIPMENT_SCENARIO_NAME_MESSAGE)
+            source = _require_schedule_revision(connection, source_schedule_revision_id)
+            scenarios = {
+                summary.equipment_scenario_id: summary
+                for summary in map(_scenario_summary, scenario_store.scenario_rows(connection))
+            }
+            origin = scenarios.get(source.equipment_scenario_id)
+            if origin is None:
+                raise ValueError(
+                    "출처 리비전의 설비 시나리오를 찾을 수 없습니다: "
+                    f"{source.equipment_scenario_id}"
+                )
+            release_row = scenario_store.latest_release_row(connection)
+            allowed = {origin.latest_schedule_revision_id}
+            if release_row is not None:
+                allowed.add(str(release_row["schedule_revision_id"]))
+            if source.schedule_revision_id not in allowed:
+                subject = with_topic_particle(f"「{origin.scenario_name}」 r{source.revision_no}")
+                raise ValueError(
+                    f"{subject} 최신도 공식 발행도 아니라 복제할 수 없습니다 — 최신 리비전이나 "
+                    "공식 발행 리비전에서 복제하세요."
+                )
+            latest = _latest_revision(connection)
+            if latest is None:
+                raise ValueError("공통 대장 리비전이 없어 설비 시나리오를 복제할 수 없습니다.")
+            snapshot = read_merged(connection, latest[0], source.schedule_revision_id)
+            schedule, downtime = _scheduled_frames(snapshot)
+            scenario_store.insert_scenario(
+                connection,
+                equipment_scenario_id=new_id,
+                name=clean_name,
+                source_schedule_revision_id=source.schedule_revision_id,
+                created_by=creator,
+            )
+            _insert_schedule(
+                connection,
+                equipment_scenario_id=new_id,
+                origin="clone",
+                common_revision_id=latest[0],
+                note=f"「{origin.scenario_name}」 r{source.revision_no}에서 복제",
+                saved_by=creator,
+                schedule=schedule,
+                downtime=downtime,
+            )
+            outcome.wrote = True
+            created = _require_scenario_summary(connection, new_id)
+        return created
+
+    def rename_equipment_scenario(
+        self, equipment_scenario_id: str, *, name: str, expected_name: str
+    ) -> EquipmentScenarioSummary:
+        """설비 시나리오 이름을 바꾼다. 고치기 시작할 때 본 이름(`expected_name`)과 쓰기 잠금 안에서
+        견줘 다르면 `EquipmentScenarioNameMoved`. 보관본까지 겹칠 수 없다. 같은 이름이면 쓰지
+        않는다."""
+        clean_name = _required_scenario_name(name)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            current = scenario_store.scenario_name(connection, equipment_scenario_id)
+            if current is None:
+                raise ValueError(f"설비 시나리오를 찾을 수 없습니다: {equipment_scenario_id}")
+            if current != expected_name:
+                raise EquipmentScenarioNameMoved(current)
+            if clean_name != current:
+                if scenario_store.scenario_name_taken(
+                    connection, clean_name, except_scenario_id=equipment_scenario_id
+                ):
+                    raise ValueError(DUPLICATE_EQUIPMENT_SCENARIO_NAME_MESSAGE)
+                scenario_store.rename_scenario(connection, equipment_scenario_id, clean_name)
+                outcome.wrote = True
+            renamed = _require_scenario_summary(connection, equipment_scenario_id)
+        return renamed
+
+    def publish_equipment_release(
+        self,
+        schedule_revision_id: str,
+        *,
+        released_by: str | None,
+        note: str | None,
+        expected_latest_release_no: int | None,
+    ) -> EquipmentRelease:
+        """일정 리비전 하나를 공식으로 발행한다(append-only — 발행 행은 고치지 않는다).
+
+        `expected_latest_release_no` 는 화면이 본 최신 공식 번호(발행이 없었으면 None)다. 쓰기
+        잠금 안의 지금 번호와 다르면 `EquipmentReleaseMoved`. ACTIVE 시나리오의 리비전만, 지금
+        공통 대장과 합쳐 읽기 검증을 통과해야 한다(`EquipmentScenarioIncompatible`). 이미 최신
+        공식인 리비전이면 쓰지 않고 그 발행을 돌려준다.
+        """
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            release_row = scenario_store.latest_release_row(connection)
+            current_no = (
+                as_int(release_row["release_no"], "공식 발행 번호")
+                if release_row is not None
+                else 0
+            )
+            expected_no = expected_latest_release_no or 0
+            if expected_no != current_no:
+                raise EquipmentReleaseMoved(expected_no, current_no)
+            target = _require_schedule_revision(connection, schedule_revision_id)
+            scenarios = {
+                summary.equipment_scenario_id: summary
+                for summary in map(_scenario_summary, scenario_store.scenario_rows(connection))
+            }
+            _require_active_scenario(scenarios, target.equipment_scenario_id)
+            if release_row is not None and (
+                str(release_row["schedule_revision_id"]) == schedule_revision_id
+            ):
+                return _release(release_row)
+            latest = _latest_revision(connection)
+            if latest is None:
+                raise ValueError("공통 대장 리비전이 없어 발행할 수 없습니다.")
+            read_merged(connection, latest[0], schedule_revision_id)
+            scenario_store.insert_release(
+                connection,
+                equipment_scenario_id=target.equipment_scenario_id,
+                schedule_revision_id=schedule_revision_id,
+                released_by=_clean_text(released_by),
+                note=_clean_text(note),
+            )
+            outcome.wrote = True
+            published = scenario_store.latest_release_row(connection)
+            assert published is not None
+        return _release(published)
+
+    def acknowledge_legacy_trace(self, *, expected_trace_count: int, note: str | None) -> int:
+        """옛 배포 흔적을 확인하고 이어 쓴다 — 이관 경계 행 하나를 덧붙이고 그 번호를 돌려준다.
+
+        흔적 수가 쓰기 잠금 안에서 `expected_trace_count` 와 같을 때만 `through_revision_no = 지금
+        공통 최신 번호` 로 덧붙인다(다르면 `ValueError`). 흔적이 없으면 쓰지 않고 지금 마지막 경계
+        번호를 돌려준다. 옛 판에서 고친 일정은 들어오지 않는다 — 계약 v3 공통의 일정 칸은 공통
+        읽기가 버린다.
+        """
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            count = legacy_trace_count(connection)
+            if count != expected_trace_count:
+                raise ValueError(
+                    f"그 사이 옛 배포 흔적 수가 바뀌었습니다(본 것 {expected_trace_count}개 · 지금 "
+                    f"{count}개) — 다시 확인한 뒤 이어 쓰세요."
+                )
+            if count == 0:
+                return scenario_store.latest_boundary_no(connection)
+            latest = _latest_revision(connection)
+            assert latest is not None
+            boundary_no = scenario_store.insert_boundary(
+                connection,
+                through_revision_no=latest[1],
+                note=_clean_text(note) or "이대로 이어 쓰기",
+            )
+            outcome.wrote = True
+        return boundary_no
 
     def load_merged_snapshot(
         self, common_revision_id: str, schedule_revision_id: str | None
@@ -1631,6 +2138,557 @@ def legacy_trace_count(connection: duckdb.DuckDBPyConnection) -> int:
     return scenario_store.legacy_trace_count(connection)
 
 
+# 설비 마스터 저장의 세 갈래 — `save_equipment` 는 바뀐 쪽만, 래퍼 `save_space_layout` 은 하나라도
+# 바뀌면 두 쪽 다, 래퍼 `save_snapshot` 은 늘 두 쪽 다.
+_SaveMode = Literal["changed", "if_any", "always"]
+
+DUPLICATE_EQUIPMENT_SCENARIO_NAME_MESSAGE = (
+    "같은 이름의 설비 시나리오가 이미 있습니다(보관본 포함). 이름을 바꿔 저장하세요."
+)
+
+
+@dataclass(frozen=True)
+class _SaveOutcome:
+    """저장 한 번의 결과와 저장 뒤 (공통 최신, 이 시나리오 일정) 쌍 — 래퍼가 그 합친 스냅샷을
+    읽는다."""
+
+    result: EquipmentSaveResult
+    common_revision_id: str | None
+    schedule_revision_id: str | None
+
+
+@dataclass(frozen=True)
+class _BaseState:
+    """저장 전 저장본 — 공통 최신과 출발 일정 리비전을 합쳐 **다시 정규화한** 것(편집본과 같은 꼴).
+
+    `schedule` 은 일정 행이 있던 호기만(키 + 일곱 칸), `downtime` 은 키 + 다섯 칸이다.
+    `contract_version` 이 None 이면 저장본이 없다.
+    """
+
+    contract_version: int | None
+    unit_keys: dict[str, str]
+    scheduled_keys: frozenset[str]
+    baseline: pd.DataFrame
+    common: pd.DataFrame
+    schedule: pd.DataFrame
+    downtime: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class _EditFrames:
+    """검증을 마친 편집본을 키로 나눈 것. `schedule` 은 이번 리비전에 쓸 일정 행이다."""
+
+    unit_keys: dict[str, str]
+    new_keys: frozenset[str]
+    common: pd.DataFrame
+    schedule: pd.DataFrame
+    downtime: pd.DataFrame
+    new_units: tuple[str, ...]
+    removed_units: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _PropagationPlan:
+    """함께 넣기를 받을 시나리오 하나 — 그 최신 위에 새 호기·새 비가동을 더한 일정."""
+
+    scenario: EquipmentScenarioSummary
+    schedule: pd.DataFrame
+    downtime: pd.DataFrame
+    unit_count: int
+    downtime_added: tuple[tuple[str, str, str], ...]
+    skipped: int
+
+    @property
+    def writes(self) -> bool:
+        return self.unit_count > 0 or bool(self.downtime_added)
+
+
+@dataclass(frozen=True)
+class _PublishPlan:
+    """이번 저장이 발행할 시나리오(없으면 None)와 발행을 미룬 사실."""
+
+    scenario_id: str | None = None
+    withheld: bool = False
+
+
+def _wrapper_request(
+    baseline: pd.DataFrame,
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    note: str | None,
+    floor_canvases: Mapping[FloorKey, CanvasSize] | None,
+    floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None,
+    base_revision_id: str | None,
+    floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None,
+    floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None,
+) -> EquipmentSaveRequest:
+    """호환 래퍼의 저장 요청 — 시나리오와 출발 일정은 쓰기 잠금 안에서 공식으로 정한다."""
+    return EquipmentSaveRequest(
+        baseline=baseline,
+        equipment=equipment,
+        downtime=downtime,
+        equipment_scenario_id="",
+        base_common_revision_id=base_revision_id or EMPTY_REVISION_TOKEN,
+        base_schedule_revision_id=None,
+        note=note,
+        floor_canvases=floor_canvases,
+        floor_marks=floor_marks,
+        floor_layout_bases=floor_layout_bases,
+        floor_group_labels=floor_group_labels,
+    )
+
+
+def _clean_text(value: str | None) -> str | None:
+    """앞뒤 공백을 뗀 글자. 비면 None."""
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _required_scenario_name(name: str) -> str:
+    text = name.strip()
+    if not text:
+        raise ValueError("설비 시나리오 이름을 적으세요.")
+    return text
+
+
+def _require_active_scenario(
+    scenarios: Mapping[str, EquipmentScenarioSummary], equipment_scenario_id: str
+) -> EquipmentScenarioSummary:
+    scenario = scenarios.get(equipment_scenario_id)
+    if scenario is None:
+        raise ValueError(f"설비 시나리오를 찾을 수 없습니다: {equipment_scenario_id}")
+    if scenario.status != "ACTIVE":
+        raise ValueError(
+            f"「{scenario.scenario_name}」 은(는) 보관한 설비 시나리오라 저장·발행할 수 없습니다."
+        )
+    return scenario
+
+
+def _require_scenario_summary(
+    connection: duckdb.DuckDBPyConnection, equipment_scenario_id: str
+) -> EquipmentScenarioSummary:
+    for row in scenario_store.scenario_rows(connection):
+        if str(row["equipment_scenario_id"]) == equipment_scenario_id:
+            return _scenario_summary(row)
+    raise ValueError(f"설비 시나리오를 찾을 수 없습니다: {equipment_scenario_id}")
+
+
+def _rows_for(frame: pd.DataFrame, keys: Iterable[str]) -> pd.DataFrame:
+    """키 칸이 `keys` 에 드는 행만(차례 그대로)."""
+    wanted = frame[UNIT_KEY_COLUMN].astype("string").isin(list(keys)).fillna(False)
+    return frame.loc[wanted.to_numpy(dtype=bool)].reset_index(drop=True)
+
+
+def _stack(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:
+    """행을 이어 붙인다. 빈 표는 건너뛴다(빈 표가 칸 형을 흔들지 않게)."""
+    filled = [frame for frame in frames if not frame.empty]
+    if not filled:
+        return frames[0].iloc[0:0].reset_index(drop=True)
+    if len(filled) == 1:
+        return filled[0].reset_index(drop=True)
+    return pd.concat(filled, ignore_index=True)
+
+
+def _scheduled_frames(snapshot: EquipmentSnapshot) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """합친 스냅샷을 다시 (일정 행이 있던 호기의 키 + 일곱 칸, 키 + 비가동) 로 나눈다."""
+    keys = snapshot.unit_keys
+    _, schedule = split_equipment(snapshot.equipment, keys)
+    scheduled = {
+        key for name, key in snapshot.unit_key_pairs if name not in snapshot.unscheduled_units
+    }
+    return _rows_for(schedule, scheduled), split_downtime(snapshot.downtime, keys)
+
+
+def _read_base_state(
+    connection: duckdb.DuckDBPyConnection,
+    common_revision_id: str | None,
+    schedule_revision_id: str | None,
+) -> _BaseState:
+    """저장 전 저장본(쓰기 잠금 안). 읽은 합친 스냅샷을 편집본과 같은 정규화에 다시 태운다 —
+    저장 당시 감사 해시가 아니라 이 값과 내용 해시로 「그대로인가」 를 견준다."""
+    if common_revision_id is None:
+        common, schedule = split_equipment(empty_equipment_master(), {})
+        return _BaseState(
+            contract_version=None,
+            unit_keys={},
+            scheduled_keys=frozenset(),
+            baseline=pd.DataFrame(columns=list(BASELINE_COLUMNS)),
+            common=common,
+            schedule=schedule,
+            downtime=normalize_schedule_downtime(
+                pd.DataFrame(columns=list(SCHEDULE_DOWNTIME_COLUMNS))
+            ),
+        )
+    contract_version = _revision_row(connection, common_revision_id)[1]
+    snapshot = read_merged(connection, common_revision_id, schedule_revision_id)
+    equipment = prepare_equipment_master(snapshot.equipment)
+    downtime = prepare_downtime_for_prepared_equipment(snapshot.downtime, equipment)
+    renormalized = replace(snapshot, equipment=equipment, downtime=downtime)
+    schedule, events = _scheduled_frames(renormalized)
+    common, _ = split_equipment(equipment, snapshot.unit_keys)
+    return _BaseState(
+        contract_version=contract_version,
+        unit_keys=snapshot.unit_keys,
+        scheduled_keys=frozenset(
+            key for name, key in snapshot.unit_key_pairs if name not in snapshot.unscheduled_units
+        ),
+        baseline=prepare_equipment_baseline(snapshot.baseline),
+        common=common,
+        schedule=schedule,
+        downtime=events,
+    )
+
+
+def _split_edit(
+    equipment: pd.DataFrame,
+    downtime: pd.DataFrame,
+    base: _BaseState,
+    renames: Mapping[str, str],
+) -> _EditFrames:
+    """검증한 편집본에 호기 키를 정하고(`assign_unit_keys`) 공통·일정·비가동으로 나눈다."""
+    names = [str(name) for name in equipment[EQUIPMENT_ID_COLUMN]]
+    keys = assign_unit_keys(names, base.unit_keys, renames)
+    common, schedule_all = split_equipment(equipment, keys)
+    events = split_downtime(downtime, keys)
+    new_keys = new_unit_keys(keys.values(), base.unit_keys.values())
+    schedule = select_schedule_rows(
+        schedule_all,
+        previously_scheduled=base.scheduled_keys,
+        downtime_keys={str(key) for key in events[UNIT_KEY_COLUMN]},
+        new_keys=new_keys,
+    )
+    kept = set(keys.values())
+    return _EditFrames(
+        unit_keys=keys,
+        new_keys=new_keys,
+        common=common,
+        schedule=schedule,
+        downtime=events,
+        new_units=tuple(name for name in names if keys[name] in new_keys),
+        removed_units=tuple(name for name, key in base.unit_keys.items() if key not in kept),
+    )
+
+
+def _common_digest(baseline: pd.DataFrame, common: pd.DataFrame) -> tuple[str, str]:
+    """공통 쪽 내용 해시 — 기존 보유대수 + 공통 32칸·키(행 차례 그대로 — 차례도 공통 내용이다)."""
+    return (
+        _content_hash(baseline.reindex(columns=list(BASELINE_COLUMNS)).reset_index(drop=True)),
+        _content_hash(common.reindex(columns=list(COMMON_FRAME_COLUMNS)).reset_index(drop=True)),
+    )
+
+
+def _schedule_digest(schedule: pd.DataFrame, downtime: pd.DataFrame) -> tuple[str, str]:
+    """일정 쪽 내용 해시 — 키 차례로 정렬한 일정 행 + 비가동. 공통에서 행 차례만 바꾸거나 이름만
+    바꾼 저장은 일정이 그대로다."""
+    rows = (
+        schedule.reindex(columns=list(SCHEDULE_FRAME_COLUMNS))
+        .sort_values(UNIT_KEY_COLUMN, kind="stable")
+        .reset_index(drop=True)
+    )
+    events = downtime.reindex(columns=list(SCHEDULE_DOWNTIME_COLUMNS)).reset_index(drop=True)
+    return _content_hash(rows), _content_hash(events)
+
+
+def _plan_propagations(
+    connection: duckdb.DuckDBPyConnection,
+    request: EquipmentSaveRequest,
+    scenarios: Mapping[str, EquipmentScenarioSummary],
+    *,
+    target: EquipmentScenarioSummary,
+    base: _BaseState,
+    edit: _EditFrames,
+) -> list[_PropagationPlan]:
+    """함께 넣기(F6·F2 — 「넣을 때」 만) — 다른 ACTIVE 시나리오마다 그 최신 위에 더할 것.
+
+    - 새 호기(키가 저장본 공통에 없던 호기)는 이 시나리오와 같은 일정 행·비가동으로 들어간다.
+    - 새 비가동(`new_downtime_rows` — 고친 것은 빠진다)은 받는 시나리오에 그 호기 일정 행이 없거나
+      같은 (호기, 유형, 시작일) 이 이미 있으면 건너뛴다(비가동만 들어가 호기가 들어가지 않게).
+    - 받는 시나리오의 고아 행(지금 공통에 없는 키)은 새 리비전에 옮기지 않는다.
+    더할 것도 건너뛴 것도 없는 시나리오는 계획에 없다.
+    """
+    unit_keys = edit.new_keys if request.propagate_new_units else frozenset()
+    fresh = (
+        new_downtime_rows(base.downtime, edit.downtime, exclude_keys=edit.new_keys)
+        if request.propagate_new_downtime
+        else edit.downtime.iloc[0:0]
+    )
+    if not unit_keys and fresh.empty:
+        return []
+    unit_rows = _rows_for(edit.schedule, unit_keys)
+    unit_events = _rows_for(edit.downtime, unit_keys)
+    known = set(edit.unit_keys.values())
+    name_by_key = {key: name for name, key in edit.unit_keys.items()}
+    fresh_ids = downtime_identities(fresh)
+    plans: list[_PropagationPlan] = []
+    for other in scenarios.values():
+        if other.equipment_scenario_id == target.equipment_scenario_id or other.status != "ACTIVE":
+            continue
+        if other.latest_schedule_revision_id is not None:
+            frames = read_schedule(connection, other.latest_schedule_revision_id)
+            schedule, downtime = frames.schedule, frames.downtime
+        else:
+            schedule = normalize_schedule_frame(pd.DataFrame(columns=list(SCHEDULE_FRAME_COLUMNS)))
+            downtime = normalize_schedule_downtime(
+                pd.DataFrame(columns=list(SCHEDULE_DOWNTIME_COLUMNS))
+            )
+        schedule = _rows_for(schedule, known)
+        downtime = _rows_for(downtime, known)
+        present = {str(key) for key in schedule[UNIT_KEY_COLUMN]}
+        added_rows = unit_rows.loc[
+            ~unit_rows[UNIT_KEY_COLUMN].astype("string").isin(list(present)).to_numpy(dtype=bool)
+        ]
+        added_keys = {str(key) for key in added_rows[UNIT_KEY_COLUMN]}
+        receiving = present | added_keys
+        taken = set(downtime_identities(downtime))
+        accepted: list[int] = []
+        listed: list[tuple[str, str, str]] = []
+        skipped = 0
+        for position, identity in enumerate(fresh_ids):
+            if identity[0] not in receiving or identity in taken:
+                skipped += 1
+                continue
+            accepted.append(position)
+            taken.add(identity)
+            listed.append((name_by_key[identity[0]], identity[1], identity[2]))
+        if added_rows.empty and not listed and not skipped:
+            continue
+        plans.append(
+            _PropagationPlan(
+                scenario=other,
+                schedule=_stack([schedule, added_rows]),
+                downtime=_stack(
+                    [
+                        downtime,
+                        _rows_for(unit_events, added_keys),
+                        fresh.iloc[accepted].reset_index(drop=True),
+                    ]
+                ),
+                unit_count=len(added_rows),
+                downtime_added=tuple(listed),
+                skipped=skipped,
+            )
+        )
+    return plans
+
+
+def _propagation_note(source_name: str, plan: _PropagationPlan) -> str:
+    """함께 넣은 리비전의 메모 — 「「운영 일정」 저장에서 새 호기 2대·비가동 1건 함께 넣음」."""
+    parts = []
+    if plan.unit_count:
+        parts.append(f"새 호기 {plan.unit_count}대")
+    if plan.downtime_added:
+        parts.append(f"비가동 {len(plan.downtime_added)}건")
+    return f"「{source_name}」 저장에서 {'·'.join(parts)} 함께 넣음"
+
+
+def _plan_publish(
+    request: EquipmentSaveRequest,
+    scenarios: Mapping[str, EquipmentScenarioSummary],
+    release: EquipmentRelease | None,
+    *,
+    target: EquipmentScenarioSummary,
+    write_schedule: bool,
+    propagated_ids: Collection[str],
+    force_publish: bool,
+) -> _PublishPlan:
+    """이번 저장이 공식 발행을 하는가(쓰기 전에 정한다).
+
+    공식 시나리오에 새 일정 리비전이 생기고(이 저장이든 함께 넣기든) 저장 전 최신 발행이 그
+    시나리오의 최신이었을 때만 발행한다 — 남이 발행하지 않은 더 새 리비전을 함께 내지 않게. 그런
+    리비전이 있으면 발행을 미룬다(`withheld`). 발행이 하나도 없으면 이 저장의 일정 리비전이 v1
+    이다. 발행할 때만 `expected_release_no` 를 대조한다.
+    """
+    wanted = request.publish_official or force_publish
+    plan = _PublishPlan()
+    if release is None:
+        if write_schedule and wanted:
+            plan = _PublishPlan(target.equipment_scenario_id)
+    else:
+        official = release.equipment_scenario_id
+        creates = (
+            official == target.equipment_scenario_id and write_schedule
+        ) or official in propagated_ids
+        if creates:
+            official_scenario = scenarios.get(official)
+            before = (
+                official_scenario.latest_schedule_revision_id
+                if official_scenario is not None
+                else None
+            )
+            if force_publish or (
+                request.publish_official and release.schedule_revision_id == before
+            ):
+                plan = _PublishPlan(official)
+            elif request.publish_official:
+                plan = _PublishPlan(withheld=True)
+    if plan.scenario_id is not None and request.expected_release_no is not None:
+        current = release.release_no if release is not None else 0
+        if request.expected_release_no != current:
+            raise EquipmentReleaseMoved(request.expected_release_no, current)
+    return plan
+
+
+def _cross_validate(
+    connection: duckdb.DuckDBPyConnection,
+    scenarios: Mapping[str, EquipmentScenarioSummary],
+    release: EquipmentRelease | None,
+    *,
+    common: pd.DataFrame,
+    target: EquipmentScenarioSummary,
+    base_schedule_id: str | None,
+    write_schedule: bool,
+    propagations: Sequence[_PropagationPlan],
+    publishing: bool,
+) -> None:
+    """이번 저장 뒤의 공통을 모든 시나리오(자기 포함)의 이번 저장 뒤 최신과, 거기에 없으면 최신
+    공식 발행 리비전과 합쳐 읽기 검증한다. 하나라도 실패하면 `EquipmentScenarioGuardError`.
+
+    이 시나리오가 일정도 쓰면 그 짝은 편집본 검증이 이미 본 것이라 건너뛴다. 낡은 세션(rJ 를 보며
+    공통만 저장)도 자기 시나리오의 최신 rM 을 지킨다. 이번 저장이 발행하면 옛 공식은 더 이상
+    공식이 아니라 보지 않는다.
+    """
+    planned = {plan.scenario.equipment_scenario_id: plan for plan in propagations if plan.writes}
+    checked: set[str] = set()
+    for scenario in scenarios.values():
+        if scenario.status != "ACTIVE":
+            continue
+        latest_id = scenario.latest_schedule_revision_id
+        subject = with_object_particle(f"「{scenario.scenario_name}」")
+        if scenario.equipment_scenario_id == target.equipment_scenario_id:
+            if write_schedule or latest_id is None:
+                continue
+            checked.add(latest_id)
+            frames = read_schedule(connection, latest_id)
+            escape = (
+                f"최신 r{scenario.latest_revision_no}"
+                f"{object_particle(str(scenario.latest_revision_no))} 불러와 그 일정을 맞춘 뒤 "
+                "저장하거나, 바꾼 공통 칸을 되돌리세요."
+                if latest_id != base_schedule_id
+                else "그 호기의 일정을 고치거나, 바꾼 공통 칸을 되돌리세요."
+            )
+            _require_mergeable(
+                common,
+                frames.schedule,
+                frames.downtime,
+                scenario_name=scenario.scenario_name,
+                revision_no=scenario.latest_revision_no or 0,
+                escape=escape,
+            )
+        elif scenario.equipment_scenario_id in planned:
+            plan = planned[scenario.equipment_scenario_id]
+            _require_mergeable(
+                common,
+                plan.schedule,
+                plan.downtime,
+                scenario_name=scenario.scenario_name,
+                revision_no=(scenario.latest_revision_no or 0) + 1,
+                escape=f"{subject} 불러와 그 일정을 고친 뒤 저장하거나, 함께 넣기를 끄거나, "
+                "바꾼 공통 칸을 되돌리세요.",
+            )
+        elif latest_id is not None:
+            checked.add(latest_id)
+            frames = read_schedule(connection, latest_id)
+            _require_mergeable(
+                common,
+                frames.schedule,
+                frames.downtime,
+                scenario_name=scenario.scenario_name,
+                revision_no=scenario.latest_revision_no or 0,
+                escape=f"{subject} 불러와 그 일정을 고친 뒤 저장하거나, 바꾼 공통 칸을 되돌리세요.",
+            )
+    if release is None or publishing or release.schedule_revision_id in checked:
+        return
+    official = read_schedule(connection, release.schedule_revision_id)
+    owner = scenarios.get(release.equipment_scenario_id)
+    _require_mergeable(
+        common,
+        official.schedule,
+        official.downtime,
+        scenario_name=owner.scenario_name if owner is not None else release.equipment_scenario_id,
+        revision_no=official.revision.revision_no,
+        escape="그 리비전은 공식 발행이라 지켜야 합니다 — 다른 리비전을 공식으로 발행한 뒤 "
+        "저장하거나, 바꾼 공통 칸을 되돌리세요.",
+    )
+
+
+def _require_mergeable(
+    common: pd.DataFrame,
+    schedule: pd.DataFrame,
+    downtime: pd.DataFrame,
+    *,
+    scenario_name: str,
+    revision_no: int,
+    escape: str,
+) -> None:
+    """공통 + 일정 한 벌이 읽기 검증(캔버스·오늘 없이)을 통과하는가."""
+    merged = merge_equipment(common, schedule, downtime)
+    try:
+        equipment = prepare_equipment_master(merged.equipment)
+        prepare_downtime_for_prepared_equipment(merged.downtime, equipment)
+    except ValueError as error:
+        raise EquipmentScenarioGuardError(scenario_name, revision_no, str(error), escape) from error
+
+
+def _insert_schedule(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    equipment_scenario_id: str,
+    origin: str,
+    common_revision_id: str | None,
+    note: str | None,
+    saved_by: str | None,
+    schedule: pd.DataFrame,
+    downtime: pd.DataFrame,
+) -> str:
+    """일정 리비전 하나를 넣는다 — 일정 행은 키 차례, 감사 해시는 넣는 값 그대로."""
+    rows = normalize_schedule_frame(
+        schedule.reindex(columns=list(SCHEDULE_FRAME_COLUMNS)).sort_values(
+            UNIT_KEY_COLUMN, kind="stable"
+        )
+    )
+    events = normalize_schedule_downtime(downtime)
+    return scenario_store.insert_schedule_revision(
+        connection,
+        equipment_scenario_id=equipment_scenario_id,
+        origin=origin,
+        common_revision_id=common_revision_id,
+        note=note,
+        saved_by=saved_by,
+        schedule=rows,
+        downtime=events,
+        schedule_hash=hash_frame(rows),
+        downtime_hash=hash_frame(events),
+    )
+
+
+def _paired_snapshot(
+    connection: duckdb.DuckDBPyConnection, common_revision_id: str
+) -> EquipmentSnapshot:
+    """호환 래퍼 `load_snapshot` 의 뜻 — 공통 하나와, 공식 시나리오에서 그 공통을 함께 본 마지막
+    일정 리비전."""
+    summary, contract_version = _revision_row(connection, common_revision_id)
+    official = scenario_store.official_scenario_id(connection)
+    paired = (
+        scenario_store.paired_schedule_revision_id(connection, official, common_revision_id)
+        if official is not None
+        else None
+    )
+    if paired is not None:
+        return read_merged(connection, common_revision_id, paired)
+    if contract_version < 4:
+        legacy = _legacy_snapshot(connection, common_revision_id, summary, contract_version)
+        return replace(legacy, unit_key_pairs=tuple(_legacy_unit_keys(legacy.equipment).items()))
+    release = scenario_store.latest_release_row(connection)
+    return read_merged(
+        connection,
+        common_revision_id,
+        str(release["schedule_revision_id"]) if release is not None else None,
+    )
+
+
 def _schedule_revision_summary(row: Mapping[str, object]) -> EquipmentScheduleRevisionSummary:
     return EquipmentScheduleRevisionSummary(
         schedule_revision_id=str(row["schedule_revision_id"]),
@@ -1675,16 +2733,6 @@ def _release(row: Mapping[str, object]) -> EquipmentRelease:
 
 def _optional_str(value: object) -> str | None:
     return None if value is None else str(value)
-
-
-def _content_hashes(snapshot: EquipmentSnapshot) -> tuple[str, str, str]:
-    """저장본을 다시 정규화한 세 표의 내용 해시. 저장 후보의 `_content_hash` 와 견준다."""
-    equipment = prepare_equipment_master(snapshot.equipment)
-    return (
-        _content_hash(prepare_equipment_baseline(snapshot.baseline)),
-        _content_hash(equipment),
-        _content_hash(prepare_downtime_for_prepared_equipment(snapshot.downtime, equipment)),
-    )
 
 
 def _require_floor_layout_bases(
@@ -1766,41 +2814,55 @@ def _content_hash(frame: pd.DataFrame) -> str:
     return hash_frame(canonical)
 
 
-def _insert_revision(
+def _insert_common_revision(
     connection: duckdb.DuckDBPyConnection,
     *,
     note: str | None,
-    hashes: tuple[str, str, str],
-    frames: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame],
+    saved_by: str | None,
+    baseline: pd.DataFrame,
+    common: pd.DataFrame,
 ) -> str:
-    """검증을 마친 세 표를 새 리비전 하나로 넣고 그 id 를 돌려준다."""
-    baseline_hash, equipment_hash, downtime_hash = hashes
+    """검증을 마친 공통 대장(기존 보유대수 + 공통 32칸 + 호기 키)을 계약 v4 리비전으로 넣는다.
+
+    마스터 표의 일정 칸은 NULL 이고 비가동 행은 없다 — 일정·비가동은 설비 시나리오 일정 리비전에
+    있다. 번호는 전역 `MAX + 1` 이다(「공통 rN」).
+    """
     revision_id = str(uuid4())
     row = connection.execute(
         "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM equipment_ops.revision"
     ).fetchone()
     if row is None:
         raise RuntimeError("설비 이력 번호를 생성하지 못했습니다.")
+    master = common.loc[:, list(COMMON_MASTER_COLUMNS)].rename(
+        columns={column: EQUIPMENT_MASTER_DB_COLUMNS[column] for column in COMMON_MASTER_COLUMNS}
+    )
+    master["unit_key"] = common[UNIT_KEY_COLUMN].astype("string").to_numpy()
+    common_hash = hash_frame(common.loc[:, list(COMMON_FRAME_COLUMNS)].reset_index(drop=True))
     connection.execute(
         """
         INSERT INTO equipment_ops.revision (
             revision_id, revision_no, note, baseline_hash, schedule_hash,
-            equipment_hash, downtime_hash, equipment_contract_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 3)
+            equipment_hash, downtime_hash, equipment_contract_version, saved_by
+        ) VALUES (?, ?, ?, ?, ?, ?, NULL, 4, ?)
         """,
         [
             revision_id,
             int(row[0]),
             note,
-            baseline_hash,
-            equipment_hash,
-            equipment_hash,
-            downtime_hash,
+            hash_frame(baseline),
+            common_hash,
+            common_hash,
+            saved_by,
         ],
     )
-    _insert_baseline(connection, revision_id, frames[0])
-    _insert_equipment(connection, revision_id, frames[1])
-    _insert_downtime(connection, revision_id, frames[2])
+    _insert_baseline(connection, revision_id, baseline)
+    _insert_snapshot(
+        connection,
+        schema="equipment_ops",
+        table_name="equipment_master_snapshot",
+        revision_id=revision_id,
+        frame=master.reset_index(drop=True),
+    )
     return revision_id
 
 
@@ -2303,37 +3365,6 @@ def _insert_baseline(
         table_name="baseline_snapshot",
         revision_id=revision_id,
         frame=incoming,
-    )
-
-
-def _insert_equipment(
-    connection: duckdb.DuckDBPyConnection,
-    revision_id: str,
-    frame: pd.DataFrame,
-) -> None:
-    # 마스터 표에 칸이 있는 계약 칸만 싣는다 — 시나리오 메모는 설비 시나리오 일정 표의 칸이다.
-    _insert_snapshot(
-        connection,
-        schema="equipment_ops",
-        table_name="equipment_master_snapshot",
-        revision_id=revision_id,
-        frame=frame.loc[:, list(EQUIPMENT_MASTER_DB_COLUMNS)].rename(
-            columns=dict(EQUIPMENT_MASTER_DB_COLUMNS)
-        ),
-    )
-
-
-def _insert_downtime(
-    connection: duckdb.DuckDBPyConnection,
-    revision_id: str,
-    frame: pd.DataFrame,
-) -> None:
-    _insert_snapshot(
-        connection,
-        schema="equipment_ops",
-        table_name="downtime_schedule_snapshot",
-        revision_id=revision_id,
-        frame=frame.rename(columns=dict(DOWNTIME_DB_COLUMNS)),
     )
 
 
