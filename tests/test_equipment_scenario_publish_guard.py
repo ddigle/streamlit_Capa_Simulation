@@ -19,13 +19,22 @@ from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import _clone, _request, _seeded, _session, _set
 
 from capa_simulation.components.equipment_scenario_management import (
+    CONTINUE_BUTTON_KEY,
     PUBLISH_BUTTON_KEY,
     SCENARIO_KEY,
     continue_confirm_key,
     publish_seen_refusal,
+    release_words,
 )
-from capa_simulation.persistence.equipment_cache import clear_equipment_repository
-from capa_simulation.persistence.equipment_repository import LegacyTraceReview
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_equipment_scenario_cache,
+)
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentReleaseMoved,
+    LegacyTraceReview,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -124,3 +133,67 @@ def test_the_continue_confirm_key_changes_with_any_number_in_its_label() -> None
         ),
     }
     assert same not in others and len(others) == 4
+
+
+def test_a_release_moved_under_a_stale_list_says_no_release_instead_of_v0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목록 캐시가 늦어 화면 대조를 지난 발행을 저장소가 거절하면 같은 꼴로 알린다 — 발행이 없던
+    번호는 「v0」 이 아니라 「발행 없음」 이다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+
+    def moved(*args: object, **kwargs: object) -> None:
+        raise EquipmentReleaseMoved(0, 1)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "publish_equipment_release", moved)
+    app = _ok(_tab(tmp_path / "equipment.duckdb").run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
+    _ok(app.run())
+    app.button(key=PUBLISH_BUTTON_KEY).click()
+    _ok(app.run())
+
+    errors = [str(item.value) for item in app.error]
+    assert any("확인 글을 본 뒤 공식이 바뀌어(발행 없음 → 지금 v1)" in text for text in errors)
+    assert not any("v0" in text for text in errors)
+    assert release_words(0) == "발행 없음" and release_words(3) == "v3"
+
+
+def _add_trace(path: Path, revision_id: str, revision_no: int) -> None:
+    """0027 경계 뒤에 옛 배포(계약 v3)가 남긴 빈 공통 리비전."""
+    import duckdb
+
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            """
+            INSERT INTO equipment_ops.revision (
+                revision_id, revision_no, note, baseline_hash, schedule_hash, equipment_hash,
+                downtime_hash, equipment_contract_version
+            ) VALUES (?, ?, '옛 배포', 'b', 's', 'e', 'd', 3)
+            """,
+            [revision_id, revision_no],
+        )
+
+
+def test_the_continue_check_resets_when_its_words_change_on_screen(tmp_path: Path) -> None:
+    """확인 체크를 켠 뒤 옛 배포 흔적이 하나 더 생기면(체크 글의 리비전 번호가 r2 → r3) 체크가 풀린
+    새 칸으로 서고 단추가 꺼진다 — 본 적 없는 글로 이어 쓰지 않게(E7 리뷰 권고 (b))."""
+    repository = _seeded(tmp_path)
+    path = repository.database_path
+    _add_trace(path, "old-deploy", 2)
+    app = _ok(_tab(path).run())
+    confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
+    assert "옛 배포 리비전 r2" in str(confirm.label)
+    confirm.check()
+    _ok(app.run())
+    assert not app.button(key=CONTINUE_BUTTON_KEY).disabled
+
+    _add_trace(path, "old-deploy-2", 3)
+    clear_equipment_scenario_cache()
+    _ok(app.run())
+
+    confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
+    assert "옛 배포 리비전 r3" in str(confirm.label)
+    assert not confirm.value
+    assert app.button(key=CONTINUE_BUTTON_KEY).disabled
+    assert repository.legacy_trace_count() == 2

@@ -840,13 +840,18 @@ def publish_seen_refusal(seen: object, *, schedule_revision_id: str, release_no:
     before = seen.get("release_no")
     if before == release_no:
         return None
-    was = f"v{before}" if isinstance(before, int) and before > 0 else "발행 없음"
-    now = f"v{release_no}" if release_no > 0 else "발행 없음"
+    was = release_words(before if isinstance(before, int) else 0)
+    now = release_words(release_no)
     return (
         f"확인 글을 본 뒤 공식이 바뀌어({was} → 지금 {now}) 발행하지 않았습니다 — 다른 사용자가 "
         f"그 사이 발행했습니다. 바뀐 확인 글(지금 공식 {now} → 새 공식 v{release_no + 1})을 다시 "
         "보고 발행하세요."
     )
+
+
+def release_words(release_no: int) -> str:
+    """공식 발행 번호 한 마디 — 「v3」, 발행이 없던 0 은 「발행 없음」(「v0」 이라 적지 않는다)."""
+    return f"v{release_no}" if release_no > 0 else "발행 없음"
 
 
 def _render_publish(
@@ -888,8 +893,9 @@ def _render_publish(
             )
         except EquipmentReleaseMoved as exc:
             _refused(
-                f"확인 글을 본 뒤 공식이 바뀌어(v{exc.expected} → 지금 v{exc.current}) 발행하지 "
-                "않았습니다 — 바뀐 확인 글을 다시 보고 발행하세요."
+                f"확인 글을 본 뒤 공식이 바뀌어({release_words(exc.expected)} → 지금 "
+                f"{release_words(exc.current)}) 발행하지 않았습니다 — 바뀐 확인 글을 다시 보고 "
+                "발행하세요."
             )
             return
         except BOOTSTRAP_ERRORS as exc:
