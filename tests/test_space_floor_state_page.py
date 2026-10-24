@@ -218,6 +218,51 @@ def test_a_cell_edit_turns_the_building_head_to_mixed_on_the_next_run(tmp_path: 
     clear_equipment_repository()
 
 
+def test_cell_edits_keep_the_same_editor_widget_so_the_view_stays_put(tmp_path: Path) -> None:
+    """끄기·켜기·사용 층의 사유 고르기는 편집표를 새 위젯으로 세우지 않는다 — 보던 스크롤·초점이
+    남는다(리뷰 결함 1). 위젯 id 가 바뀌면 `BrowserTables` 가 든 편집도 사라진다(브라우저와
+    같다)."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    key = _editor_key(app)
+    widget = tables.widget_id(key)
+    last = _position("C5", "6F")
+
+    # 모든 층이 사용인 데서 맨 아래 줄을 끈다 — `사유` 칸이 처음 찬다(모두 비었던 칸).
+    tables.edit(key, last, "사용", False)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C5 6F": "UNUSED"}
+    assert _editor_key(app) == key and tables.widget_id(key) == widget
+    editor = next(table for table in app.dataframe if "호기" in table.value.columns).value
+    assert editor["사유"].tolist()[last] == "사용 안 함"
+
+    # 사용 층에서 사유를 고르면 그 사유로 끈다 — 이것도 같은 위젯.
+    tables.edit(key, _position("C2", "3F"), "사유", "생산라인 아님(사무·창고 등)")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": "NOT_LINE", "C5 6F": "UNUSED"}
+    assert _editor_key(app) == key and tables.widget_id(key) == widget
+
+    # 다시 켠다 — 같은 위젯이고 남은 편집을 다시 접어도 같다.
+    tables.edit(key, last, "사용", True)
+    tables.run()
+    _ok(app)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": "NOT_LINE"}
+    assert _editor_key(app) == key and tables.widget_id(key) == widget
+    assert any("바뀐 층 1개" in caption.value for caption in app.caption)
+
+    # 비활성 층의 사유를 지우면 보이는 칸(빈 사유)이 접은 값(사용 안 함)과 달라 그때만 다시 세운다.
+    tables.edit(key, _position("C2", "3F"), "사유", None)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": "UNUSED"}
+    assert _editor_key(app) != key
+    clear_equipment_repository()
+
+
 def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
     """C1 1F 에는 단일 둘 + 모듈 묶음 넷 = 설비 3대. 막지 않고 확인한다(S4)."""
     database = _database(tmp_path)
@@ -447,6 +492,42 @@ def test_the_fab_summary_tells_how_many_units_sit_on_inactive_floors(
     fab = [data for data in _stub_editor if data.get("scope") == "fab"][-1]
     assert str(fab["summary"]).endswith(" · 비활성 층 3대")
     assert fab["linkStats"]["C1 1F"]["inactive"] == "사용 안 함"
+    clear_equipment_repository()
+
+
+def _marker_first_script(database: Path) -> str:
+    """`app.py` 처럼 테마 표지를 페이지보다 **먼저** 세어 세션에 적고 페이지를 돌린다."""
+    return (
+        "import streamlit as st\n"
+        "from capa_simulation.components.space_floor_list import floor_state_draft_pending\n"
+        "st.session_state['marker_before_page'] = floor_state_draft_pending()\n"
+    ) + _page_script(PAGE, database)
+
+
+def test_the_theme_marker_sees_a_cell_edit_on_its_own_run(tmp_path: Path) -> None:
+    """`app.py` 의 표지는 페이지(초안 접기)보다 먼저 돈다 — 칸 하나를 고친 그 회차에 벌써 서야 첫
+    편집 직후 테마를 바꿔도 묻는다(리뷰 결함 2). 끈 칸을 다시 켜 저장본과 같아지면 내린다."""
+    database = _database(tmp_path)
+    app = AppTest.from_string(_marker_first_script(database), default_timeout=90)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    tables = BrowserTables(app)
+    tables.run()
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    tables.run()
+    _ok(app)
+    assert app.session_state["marker_before_page"] is False
+
+    tables.edit(_editor_key(app), _position("C1", "3F"), "사용", False)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C1 3F": "UNUSED"}
+    assert app.session_state["marker_before_page"] is True
+
+    tables.edit(_editor_key(app), _position("C1", "3F"), "사용", True)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {}
+    assert app.session_state["marker_before_page"] is False
     clear_equipment_repository()
 
 

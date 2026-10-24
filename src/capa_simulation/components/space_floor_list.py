@@ -8,6 +8,10 @@
   초안은 세션(층 이름 → 사유 코드, 비활성 층만)이고 편집을 시작할 때 본 저장본 `(version, rows)` 를
   함께 둔다 — 저장은 그 version 으로 대조한다(`ProfileVersionConflict`). 편집표의 칸 편집은
   회차마다(그리고 단추 콜백 첫머리에서) 초안에 **접는다** — 편집표는 늘 접은 초안을 그린다.
+- 칸 편집은 위젯에 남은 채(같은 위젯 — 보던 스크롤·초점이 남는다) 접은 초안 위에 다시 얹혀
+  보인다. 새 위젯으로 세우는 것은 그렇게 보일 값이 접은 값과 다를 때뿐이다(비활성 층의 사유를
+  지움 등). `사유` 칸은 `string` 으로 고정한다 — 모두 비어도 Arrow 타입이 같아야 첫 끄기에 위젯
+  서명(Streamlit 1.63 은 칸 타입을 넣는다)이 바뀌지 않는다.
 - 동 머리(`st.segmented_control`)는 key 위젯이라 처음 만든 뒤 `default=` 를 보지 않는다(정체가
   key + `click_mode` 뿐). 그래서 그리기 전에 **회차마다** 초안의 그 동 상태를 세션에 적는다 —
   세대를 올리지 않는 칸 편집 뒤에도 머리가 맞는다.
@@ -204,11 +208,18 @@ def _forget() -> None:
 
 def floor_state_draft_pending() -> bool:
     """`사용 편집` 이 켜져 있고 초안이 편집을 시작할 때 본 저장본과 다른가 — 세션만 읽는다(테마 전환
-    미저장 표지, AGENTS 5장 23). 토글이 꺼진 세션의 남은 초안은 세지 않는다."""
+    미저장 표지, AGENTS 5장 23). 토글이 꺼진 세션의 남은 초안은 세지 않는다.
+
+    `app.py` 는 페이지보다 먼저 돌아 이 회차의 칸 편집이 아직 초안에 접히지 않았다 — 위젯 상태의
+    칸 편집까지 (적지 않고) 접어 본다. 끈 칸을 다시 켜 저장본과 같아졌으면 남은 편집이 있어도
+    거짓이다."""
     if not st.session_state.get(EDIT_TOGGLE_KEY):
         return False
     draft, base = _stored_draft(), _stored_base()
-    return draft is not None and base is not None and draft != _base_draft(base)
+    if draft is None or base is None:
+        return False
+    folded, _ = _folded(draft, _widget_edits())
+    return folded != _base_draft(base)
 
 
 # ---------------------------------------------------------------- 편집표 접기
@@ -232,12 +243,14 @@ def _widget_edits() -> dict[int, Mapping[str, object]]:
 
 
 def _folded_row(base: str | None, change: Mapping[str, object]) -> str | None:
-    """편집표 한 줄의 칸 편집을 접은 사유(None = 사용). `base` 는 그 편집이 붙은 위젯이 그린 값이다.
+    """편집표 한 줄의 칸 편집을 접은 사유(None = 사용). `base` 는 지난 회차 위젯이 그린 값(접은
+    초안)이다 — 칸 편집은 다시 세우기 전까지 위젯에 남아 회차마다 다시 접히므로, 그린 값과 같은 칸은
+    바뀌지 않은 것으로 본다.
 
     - `사용` 을 켰으면 사용(사유 없음).
     - 사용 층의 `사유` 를 골랐으면 그 사유로 끈다 — 사유를 고른 뜻이 끄기다.
     - `사용` 을 껐는데 사유가 비었으면 「사용 안 함」(비활성에는 늘 사유가 있다 — S1).
-    두 칸이 한 회차에 함께 바뀌었으면(드묾) 켜기가 먼저다."""
+    두 칸이 그린 값과 함께 달라졌으면 켜기가 먼저다."""
     use_value = change.get(_USE_COLUMN)
     use_changed = _USE_COLUMN in change and bool(use_value) != (base is None)
     reason = _reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else base
@@ -254,34 +267,45 @@ def _folded_row(base: str | None, change: Mapping[str, object]) -> str | None:
     return base
 
 
-def _shown_row(base: str | None, change: Mapping[str, object]) -> tuple[bool, str | None]:
-    """위젯이 지금 보이는 (사용, 사유 코드) — 그린 값에 칸 편집을 얹은 것."""
-    use = bool(change[_USE_COLUMN]) if _USE_COLUMN in change else base is None
-    reason = _reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else base
+def _shown_after_fold(after: str | None, change: Mapping[str, object]) -> tuple[bool, str | None]:
+    """다음 회차 위젯이 보일 (사용, 사유 코드) — 접은 값 `after` 를 그린 위에 남은 칸 편집을
+    얹은 것. 다시 세우지 않으면 칸 편집은 위젯에 그대로 남아 접은 초안을 그린 데이터 위에 얹혀
+    보인다."""
+    use = bool(change[_USE_COLUMN]) if _USE_COLUMN in change else after is None
+    reason = _reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else after
     return use, reason
 
 
-def _fold() -> Draft:
-    """편집표의 칸 편집을 초안에 접어 적는다. 접은 값이 위젯이 보이는 값과 다르면(빈 사유를 기본으로
-    채움·사유를 고른 사용 층 등) 새 위젯으로 세운다. 같은 편집을 두 번 접어도 같다."""
-    draft = _stored_draft() or {}
-    edits = _widget_edits()
-    if not edits:
-        return draft
+def _folded(draft: Draft, edits: Mapping[int, Mapping[str, object]]) -> tuple[Draft, bool]:
+    """초안에 칸 편집을 접은 값과, 새 위젯으로 세워야 하는가 — 세션을 고치지 않는다.
+
+    다시 세우는 것은 다음 회차에 보일 값(접은 값 + 남은 편집)이 접은 값과 다를 때뿐이다 — 비활성
+    층의 사유를 지움(보이는 빈 사유 ≠ 「사용 안 함」), 사유를 고른 줄을 다시 켬 등. 끄기(빈 사유는
+    그린 데이터가 채운다)·켜기·사용 층의 사유 고르기는 같은 위젯이라 보던 스크롤·초점이 남는다.
+    같은 편집을 두 번 접어도 같다(남은 편집은 회차마다 다시 접힌다)."""
     folded = dict(draft)
     remount = False
     for position, change in edits.items():
         if not 0 <= position < len(FLOOR_KEYS):
             continue
         key = FLOOR_KEYS[position]
-        before = draft.get(key)
-        after = _folded_row(before, change)
+        after = _folded_row(draft.get(key), change)
         if after is None:
             folded.pop(key, None)
         else:
             folded[key] = after
-        if _shown_row(before, change) != (after is None, after):
+        if _shown_after_fold(after, change) != (after is None, after):
             remount = True
+    return folded, remount
+
+
+def _fold() -> Draft:
+    """편집표의 칸 편집을 초안에 접어 적고, 보일 값이 접은 값과 다르면 새 위젯으로 세운다."""
+    draft = _stored_draft() or {}
+    edits = _widget_edits()
+    if not edits:
+        return draft
+    folded, remount = _folded(draft, edits)
     _store_draft(folded)
     if remount:
         _remount()
@@ -607,7 +631,9 @@ def _render_editor(
     counts: Mapping[FloorKey, int],
     placements: Mapping[FloorKey, FloorPlacement],
 ) -> None:
-    """30줄 편집표. 줄 차례는 `FLOOR_KEYS` 고정이고 늘 접은 초안을 그린다."""
+    """30줄 편집표. 줄 차례는 `FLOOR_KEYS` 고정이고 늘 접은 초안을 그린다. `사유` 칸은 `string` 으로
+    고정한다 — 모든 층이 사용이면 None 뿐이라 Arrow `null` 이 되고, 첫 끄기에 `string` 으로 바뀌면
+    위젯 서명이 달라져 새 위젯이 선다(보던 스크롤·초점이 사라진다)."""
     frame = pd.DataFrame(
         [
             {
@@ -625,7 +651,7 @@ def _render_editor(
             }
             for key in FLOOR_KEYS
         ]
-    )
+    ).astype({_REASON_COLUMN: "string"})
     st.data_editor(
         frame,
         key=editor_widget_key(EDITOR_KEY),

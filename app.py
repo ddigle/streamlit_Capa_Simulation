@@ -281,7 +281,8 @@ with pinned_connections(DUCKDB_PATH):
         # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다. Space FAB 전체
         # 배치 대기분은 설비 편집본 세대를 올리지 않으므로 따로 본다. 적용 전 편집(편집표·붙여넣기
         # 대기)도 시나리오에 들어 있지 않아 미저장 판정에 잡히지 않고, 새 세션에는 남지 않는다.
-        # Space 층 사용 편집 초안도 세션만 읽는다(`사용 편집` 이 켜져 있고 저장본과 다를 때).
+        # Space 층 사용 편집 초안도 세션만 읽는다(`사용 편집` 이 켜져 있고 저장본과 다를 때 —
+        # 칸 편집은 페이지 본문이 접으므로 이 회차의 편집표 위젯 상태까지 접어 본다).
         + unsaved_edits_marker(
             has_unsaved_scenario_changes()
             or has_unsaved_equipment_edits()
