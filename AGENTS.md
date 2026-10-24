@@ -79,7 +79,7 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
 | 그룹(상자 이름) | 뜻 | 화면 |
 |---|---|---|
 | **Static Capa** | **약속.** 기술팀이 공정별 설비 셋업 시점·성능(UPEH·효율·수율)을 기준정보에 정하고, 그 기준정보와 생산계획으로 미래 Capa 를 낸다. 자원운영팀(옛 Guide 의 「GO팀」과 같은 팀)이 그 부족대수로 투자한다. | 현황 요약 · 생산 계획 · 기준 정보 · 산출 결과 · 표준 목표 |
-| **실행 관리** | **이행.** 제조팀이 약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 이행 요청하고, 지킬 수 없으면 Static 반영까지 추적한다. | 현황 요약(머리, `execution_management.py`) · 공정 Capa 상세 · 필요 단축 일정(2026-10-18 가용설비 현황 탭에서 뗀 별도 화면) · 가용설비 현황 · Space 현황 · 효율·UPEH·수율 실적 |
+| **실행 관리** | **이행.** 제조팀이 약속된 Capa 가 실제로 확보되는지 공정·기간·호기로 재고, 어긋난 곳을 유관부서에 이행 요청하고, 지킬 수 없으면 Static 반영까지 추적한다. | 현황 요약(머리, `execution_management.py`) · 공정 Capa 상세 · 필요 단축 일정(2026-10-18 가용설비 현황 탭에서 뗀 별도 화면) · 제약 시뮬레이션(2026-10-24, 저장하지 않는 미래 가정) · 가용설비 현황 · Space 현황 · 효율·UPEH·수율 실적 |
 | **Dynamic Capa** | **실적.** 실행 관리가 모은 실적으로 Capa 를 다시 내고 그 Capa 로 단기 운영(재공·Rundown·병목)을 한다. | 현황 요약(머리, `reference_integrity.py`, 주소 `dynamic_capa`) · 표준 대비 재공 현황 |
 
 - **경계 규칙**: 약속 이행을 **재고·비교·요청·추적**하는 일은 실행 관리, 그 실적으로 **Capa 를 다시
@@ -260,6 +260,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
     줄과 KPI 회색 줄 「공식 n」 에만. 머리 배지·효과 한 줄(그 화면의 목표·기간)·카드의 역산 둘(「이 값으로」)·호기 CSV
     표지가 선다. 기본 공정·달·◀▶·HOME 표시 확보율은 공식이다.
+  - 진입(판정 기준·공통 진입·유효 기간·시나리오 키·확보율·공정 선택지)은 `page_bootstrap.process_page_inputs` 로 제약
+    시뮬레이션과 나눈다 — 두 화면이 같은 계획 칸을 같은 키로 받는다. 머리 ◀▶ 뒤 「이 공정 제약 시뮬레이션」
+    (`st.page_link` + 주소 `?process=`)은 늘 보이고 설비 일정이 서지 않는 공정이면 꺼진 채 풍선이 까닭을 말한다(D11).
+    HOME 칸 방문(공식 잠금)이고 세션이 공식 발행 쌍이 아니면 링크 판정만 세션 스냅샷으로 한 번 더 낸다(제약
+    시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
   대본으로 보여 준다.
   - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 세션에 한 번만 만든다.
@@ -295,6 +300,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「가정 설비 시나리오」·「발행하지 않은 리비전」 둘), 기준선에는 공통 rN + 설비 시나리오·rN·공식 vN 출처가 실린다. 진척
     비교는 늘 보이고, 세션이 공식 발행 쌍이 아니면 머리에 「지금 = 셋업 실무 r4 · 기준선 = 공식」 을 적는다. 카드 링크는
     표시용 `eq`(그 카드가 본 설비 시나리오)를 싣는다.
+- `app_pages/constraint_simulation.py` — `제약 시뮬레이션`(실행 관리 셋째 화면, 2026-10-24 사용자 결정). 정체성은 **공정
+  하나에 미래 제약(제약 제품 전용 설비)이 생기면 제약 제품에 먼저 떼어 준 뒤 기존 제품 확보율이 언제부터 얼마나 떨어지는가**
+  다. **저장하지 않는다** — 조건은 세션에만 있고 어느 DB 에도 쓰지 않는다. 계산은 `services/constraint_simulation.py`, 본문은
+  `components/constraint_simulation_view.py`, 설명은 `guides/constraint_simulation.md`.
+  - 입력은 새 무거운 계산이 없다 — 공통 진입은 공정 Capa 상세와 같은 `page_bootstrap.process_page_inputs`, 소요는 계획의
+    `소요대수`(공정 합)와 `get_process_product_demand(split="제품정보", limit=CONSTRAINT_PRODUCT_LIMIT)`(제품별 — 「그 밖」 이
+    생기지 않는 상한), 가용은 공정 Capa 상세 ② 와 **같은 계획 칸·같은 키**(`load_required_shortening_for_target` 공식 칸,
+    목표는 키 맞춤용 HOME 확보기준)의 단축 전 `가용대수` 다. 설비는 늘 **세션 설비 시나리오**(HOME 칸 방문 공식 잠금을
+    잇지 않는다 — D6)이고, 필요 단축 일정의 공용 조회 조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH
+    가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 출처 띠 끝 한 줄).
+  - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 공정
+    선택지는 공정 Capa 상세와 같은 전 공정이고(D12) 설비 일정이 서지 않으면 까닭 카드 한 장(`readiness.badge`·`detail`, 판정을
+    지나도 계획에 없는 공정은 「계획에 공정 없음」·「Cut-off 미기재」)으로 멈춘다.
+  - 오류는 셋으로 가른다 — 공통 진입(카드 캡션), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
+    `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」). `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError`
+    가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로 둔갑한다.
+  - 조건 카드 「제약 시뮬레이션 조건」 은 대상(공정·제약 제품·제약 시작·제약 끝 상자 둘)과 「이 세션만」 의 확보율(제약 확보율·
+    기준 확보율)·개조(토글·개조 기간·Cut-off 읽기만) 세 묶음이다(D2). 버튼 + 직접 입력은 `preset_number_field.py`(D10 —
+    기준 확보율은 0.5% 단위, D18). 「소요 비중대로 나눴을 때 함께 보기」 는 보기 전환이라 본문 프래그먼트 안이다. 머리 한 줄
+    오른쪽 끝 「← 공정 Capa 상세」 는 같은 공정으로 돌아간다.
 - `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 조회·Static 비교·Cut-off·입력·설비 시나리오를
   `Main`·`Static 대비 일정`·`Qual 마감 계산기`·`Preference`·`RawData`·`설비 시나리오` 여섯 탭으로 다룬다. 설명은
   `guides/available_equipment_status.md`.
@@ -742,6 +767,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만들었으면 다음 회차 선택이 그 리비전으로 옮긴다(작업 공간 표지 칸 — 거꾸로 import 하면 순환이다).
   - 머리 띠·사이드바 줄 글자 재료는 라벨 칸(`equipment_scenario_label_v1`)에 페이지가 그 회차 목록을 읽은 뒤 적는다(5장 23).
 - `src/capa_simulation/shared_widget_state.py` — 여러 페이지가 같은 key 로 그리는 위젯 값을 첫 회차에도 다시 알린다(9장).
+- `src/capa_simulation/constraint_simulation_state.py` — 제약 시뮬레이션의 세션 키(모두 `constraint_sim_` 접두)·버튼 값·기본값
+  (D8 — 제약 120% · 기준 HOME · 개조 켬 30일 · 비중대로 켬)·주소 인자 계약(`constraint_query_params`·
+  `take_constraint_process_request`)과 칸 선택 그림 key 둘(`app.py` `CELL_SELECT_CHART_KEYS`)을 UI 없이 선언한다. 공정 Capa
+  상세 머리 링크와 `app.py` 가 import 한다.
+  - 제약 시작·끝 상자는 정수 달 선택지라 `prune_choice`(글자 선택지 전용)가 아니라 `settle_period` 가 위젯 앞에서 매 회차
+    잡는다 — 칸이 없으면 기본값(그 제품의 첫 소요 달 ~ 보이는 마지막 달), 보이는 달 밖이면 가장 가까운 달을 **다를 때만**
+    적는다. 엇갈림은 `on_change` 콜백 둘(`follow_period_start`·`follow_period_end`)이 다른 상자 칸을 맞춘다(승인 초안 그대로).
+    범위 `st.select_slider` 는 쓰지 않는다 — 1.63 은 `value=` 없이는 범위로 서지 않아 손잡이를 움직이면 첫 달 하나로 떨어진다.
+  - 시나리오를 바꿔도 조건은 남는다(`scenario_activation._STALE_UI_KEYS` 에 넣지 않는다 — 값이 아니라 가정이다). 공정·제품은
+    `prune_choice`, 기간은 `settle_period` 가 맞춘다.
 - `src/capa_simulation/upeh_assumption_state.py` — UPEH 가정 세 칸(%·적용 시작·끝)의 세션 키와 기본값. UI 를 import 하지
   않아 시나리오 전환 초기화(`scenario_activation`)가 읽는다.
 - `src/capa_simulation/sync_boot.py` — managed 모드일 때만 `sync_state` 에 두 DB 경로를 등록한다(설정을 못 읽으면 조용히 끈다).
@@ -977,7 +1012,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     없다」를 아는 자리(필요 단축 일정, Static 대비 일정의 확보율 교차검증)의 안내다 — 다른 계산 화면과 같은 문구에
     활성 시나리오 `RQ_REQB` 의 데이터 범위를 붙인다. 소요대수를 읽지 못한 갈래의 문구와 섞지 않는다.
   - `date_range_value`·`prune_list_selection`·`prune_choice` 가 위젯 값 정리다. 뒤의 둘은 위젯 앞에서 매 회차
-    세션에 되쓴다(`pop` 하지 않는다). `render_schema_ahead_warning` 은 DB 가 코드보다 새 버전일 때 경고한다.
+    세션에 되쓴다(`pop` 하지 않는다). `prune_choice` 는 글자 선택지 전용이다(`str(saved) in options`) — 정수 달 상자는
+    제 화면이 잡는다(`constraint_simulation_state.settle_period`). `render_schema_ahead_warning` 은 DB 가 코드보다 새
+    버전일 때 경고한다.
+  - `process_page_inputs(database_path)` 는 공정 하나를 보는 두 화면(공정 Capa 상세·제약 시뮬레이션)의 공통 진입이다 —
+    판정 기준 → 공통 진입 → 유효 기간(`RQ_REQB`) → 시나리오 키 → 확보율(멈추면 「계산 멈춤」) → 달·공정 선택지를 **같은
+    차례**로 내 두 화면의 계획 캐시 키가 같다. 카드 캡션·`st.error`·`st.stop` 은 페이지가 쥐고, DB 경로는 페이지가 그 회차의
+    `settings` 에서 읽어 넘긴다(시험이 설정을 바꾼다).
   - `forget_page_dialogs`·`count_page_visit` 은 `app.py` 가 페이지가 바뀐 회차에 부른다(팝업 열림 칸 버림·방문
     차례 올림). 앞의 것은 팝업 여는 콜백도 부르지만 뒤의 것은 그 회차에만 부른다 — `page_visit` 으로 「다시
     들어왔다」를 아는 화면이 같은 페이지의 rerun 에서 위젯 아닌 칸을 거두지 않게.
@@ -1165,7 +1206,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/roadmap_panel.py` — 업무 활용 목적·부서별 Action Item·로드맵을 기본 닫힌
   상자로 그린다(지금은 실행 관리 머리).
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
-  실행(테스트)에서는 문구로 물러선다.
+  실행(테스트)에서는 문구로 물러선다. `disabled`·`help` 는 `st.page_link` 그대로다 — 꺼진 링크가 자리를 지키고 풍선이
+  까닭을 말한다(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」).
 - `src/capa_simulation/services/product_type.py` — 제품타입(HBM·EDP-TSV)이 가르는 `WF 구분` 규칙의 단일 근거다.
   두 값 집합을 일부러 따로 선언하고 EDP-TSV 의 `Top` 을 `Top_e` 로 가르는 `apply_edp_wf_division` 을 갖는다.
   - 변환 지점은 `core_data_derivation.build_q_core_data` 한 곳이다 — 두 층에서 바꾸면 조인 한쪽만 바뀐다.
@@ -1512,6 +1554,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. 구간 선택지는
   `assumption_month_options`(조회기간 ∩ 이번 달 이후) 하나이고, 세 칸 모두 위젯 앞에서 `carry_shared_widget_value` 를
   부른다(`tests/test_upeh_assumption_controls.py` — 앱 전체로 페이지를 옮긴 첫 회차까지).
+- `src/capa_simulation/components/preset_number_field.py` — 미리 정한 값 버튼(`st.pills`, `required=True`)과 늘 지금 값을
+  보이는 직접 입력 숫자 칸을 **정본 한 칸**(위젯 아닌 세션 칸)으로 묶는다(제약 시뮬레이션 D10). 두 위젯 칸은 위젯 앞에서 매
+  회차 정본에서 다시 서되 **다를 때만** 적고(같은 값을 적으면 `set_value` 가 회차마다 가서 치다 만 숫자를 덮는다), 콜백이 정본을
+  적는다. `None` 버튼(「HOME 기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다.
+- `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
+  비가동 막대를 W/D 구간 날짜 비례로 놓는다, 표적 막대가 달 누름을 받는다)와 월별 계산표(`month_sheet_canvas` 엔진)를 계산
+  결과에서 만드는 순수 함수. 새 색 토큰 없이 기존 토큰에 도형 `opacity` 를 준다(제약 기간 칠·고른 달 띠). 그림 모양을 바꾸면
+  `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
+- `src/capa_simulation/components/constraint_simulation_view.py` — 제약 시뮬레이션 본문 프래그먼트(`constraint_sim_view` —
+  비중 토글·그래프·계산표·고른 달 계산 다섯 단계·개조 일정·가용이 모자란 달)와 요약 넷. 달 누름은 두 그림의 `on_select`
+  **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 그림은 세션 memo(4칸 —
+  키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 이벤트 칸은 스타일만 든 `st.html` 셋(공정 Capa 상세와 같은 틀)이다.
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
   - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
@@ -1542,7 +1596,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace)다. 긴
     제품명·거래선은 제 칸 경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
 - `src/capa_simulation/components/month_sheet_canvas.py` — 월 시트 캔버스 엔진(라벨·월 Figure 한 쌍의 `Row`·
-  `Cell`·글자·표적·서식·`canvas_point`). 공정 Capa 상세와 비교 시트가 훅(`row_hook` 등)으로 쓰는 순수 함수다.
+  `Cell`·글자·표적·서식·`canvas_point`). 공정 Capa 상세·비교 시트·제약 시뮬레이션 계산표 셋이 훅(`row_hook` 등)으로 쓰는
+  순수 함수다.
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
@@ -1892,10 +1947,14 @@ RQ_MODULE
    필요 단축 일정 화면의 공용 조회 조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다 — 필요 단축 일정 카드에서
    들어온 방문은 **주소 인자로 받은 출처 값만 적는다**(그 카드의 목표·기간·대수). 거꾸로 공정 Capa 상세가 필요 단축
    일정으로 옮길 때 적는 것은 그 화면의 「강조 공정」 세션 칸 하나다 — 공정 필터 칸(0019 세션 값)을 심으면 사용자가 그
-   [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). 설비 DB 를 여는
-   시뮬레이션 쪽 페이지는 셋이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행 관리,
-   읽기만), 표준 대비 재공 현황(Dynamic, 표준 목표의 주차별 가용대수를 읽기만). 실행 관리 머리는 첫 판에서
-   어느 DB 도 열지 않는다. **Space 층 사용 상태**(설비 `0029`)는 설비 시나리오·설비 리비전과 무관한 공용 현행값이다 —
+   [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). `제약 시뮬레이션` 도 같은 예외다 — 설비 DB 의
+   설비 시나리오 스냅샷(늘 세션 설비 시나리오 — HOME 방문 잠금 없음)·Cut-off 를 **읽기만** 해 공정 하나의 소요대수(제품정보로
+   나눔)와 맞댄다. 계획은 공정 Capa 상세와 같은 칸(`get_required_shortening_for_target` — **공식 칸만**, UPEH 가정 토큰
+   없음)으로만 부르고, `0019`·`0021`·세션 칸은 읽지도 쓰지도 않으며 **어느 DB 에도 쓰지 않는다**(시뮬레이션·설비 둘 다 —
+   `tests/test_constraint_simulation_page.py` 가 두 저장소의 쓰기를 터지는 대역으로 바꿔 본다). 설비 DB 를 여는
+   시뮬레이션 쪽 페이지는 넷이다 — 표준 목표(Static, 주차별 가용대수 입력)와 공정 Capa 상세(실행 관리,
+   읽기만), 제약 시뮬레이션(실행 관리, 읽기만 — 공정 Capa 상세와 같은 계획 칸, 쓰기 없음), 표준 대비 재공 현황(Dynamic,
+   표준 목표의 주차별 가용대수를 읽기만). 실행 관리 머리는 첫 판에서 어느 DB 도 열지 않는다. **Space 층 사용 상태**(설비 `0029`)는 설비 시나리오·설비 리비전과 무관한 공용 현행값이다 —
    소유 칸이 없어 복제·보관·영구 삭제가 건드리지 않고, 설비 마스터의 동·층 값과 저장 검사(C1~C5·1F~6F)는 그대로다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
@@ -2919,7 +2978,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **칸 선택(`on_select`)을 켠 Plotly 그림**은 모든 trace 에 `unselected` 불투명도 1 을 주고
   (`home_figure_common.keep_unselected_opaque`) 차트 key 를 `app.py` 의 `CELL_SELECT_CHART_KEYS` 에 더한다 — Streamlit 이
   `dragmode=False` 를 `pan` 으로 덮어 그 위 터치 스크롤이 막히므로 `components/plotly_touch_scroll.py` 가 그 묶음만 풀어
-  준다. `go.Table`·`go.Heatmap` 은 점 선택이 없어 칸은 `base` 막대 + 표적 막대(`HIT_TARGET`)로 그린다.
+  준다. `go.Table`·`go.Heatmap` 은 점 선택이 없어 칸은 `base` 막대 + 표적 막대(`HIT_TARGET`)로 그린다. 그런 그림은 HOME 두
+  월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트·제약 시뮬레이션 그래프와 계산표(`constraint_simulation_state` 의
+  key 둘 — 앱 진입점이 컴포넌트를 부르지 않게 상태 모듈에 둔다)다. **두 그림이 한 「고른 달」 을 나눠 쓰면** 회차마다 두
+  그림의 선택 상태를 읽지 말고 `on_select` 콜백이 그 칸을 적는다 — 브라우저에 남은 다른 그림의 옛 선택이 마지막 누름을 덮는다.
+  세대 번호도 한 칸을 나눠 써 어느 쪽을 눌러도 두 그림이 함께 새 요소가 된다(제약 시뮬레이션).
 - Streamlit 1.63 의 키 붙은 `plotly_chart` 도 요소 id 를 그림 spec 으로 만든다 — 고른 칸 테두리로 그림이 바뀌면 새 요소가
   되어 같은 칸을 다시 눌러도 빈 선택이 아니라 같은 점이 오고, 같은 그림으로 돌아오면 브라우저에 남은 선택이 첫 클릭을
   삼킨다. 누를 때마다 세대 번호를 그림 `layout.meta` 에 실어 늘 새 요소로 만든다(`availability_gap_panel`).
@@ -2938,12 +3001,17 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   예외로 본문 표 도구 줄이다.
 - **계산 가정 칸(세션 전용)은 조건 카드 끝 「이 세션만」 묶음이다** — 거르는 조건이 아니지만 계산 입력이라 카드에 둔다
   (예외). UPEH 가정이 그렇다(2026-10-22). 묶음 앞에 `:material/person:` 「이 세션만」 캡션을 두어 카드 머리의 「공용 설정」
-  안내와 가르고, 켜진 동안은 카드가 접혀 있어도 보이게 머리 배지·효과 한 줄·CSV 표지로 알린다.
+  안내와 가르고, 켜진 동안은 카드가 접혀 있어도 보이게 머리 배지·효과 한 줄·CSV 표지로 알린다. 제약 시뮬레이션의
+  확보율·개조 묶음도 이 꼴이다(조건 전체가 저장하지 않는 가정이라 머리 한 줄이 늘 조건을 말한다).
+- **버튼 + 직접 입력은 정본 한 칸 + 매 회차 다시 서는 위젯 둘이다**(`components/preset_number_field.py`). 정본은 위젯 아닌
+  세션 칸이고 버튼(`st.pills`, `required=True` — 고른 버튼을 다시 눌러도 풀리지 않는다)·숫자 칸 key 는 위젯 앞에서 정본에서
+  내되 **다를 때만** 적는다. 콜백이 정본을 적는다. 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
+  써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
   그대로 남는다.
 - **설비 시나리오 줄은 페이지가 그린다.** `PageSpec.equipment_scenario`(`"session"` — 가용설비 현황·필요 단축 일정·공정 Capa
-  상세, `"official"` — Space 현황)와 `equipment_scenario_tabs`(가용설비 현황은 Qual 마감 계산기 탭을 뺀다)를 선언하면
+  상세·제약 시뮬레이션, `"official"` — Space 현황)와 `equipment_scenario_tabs`(가용설비 현황은 Qual 마감 계산기 탭을 뺀다)를 선언하면
   `app.py` 조건 패널이 「적용 전 편집 → 시나리오 → 조회기간 → **설비 시나리오 칸** → 페이지 칸」 차례로 빈 블록 칸
   (`sidebar_status` 에 등록 · 꺼내기 함수)을 세우고, 페이지가 `resolve_equipment_session` 뒤에 그 칸에 줄을 그린다 — 부트스트랩
   오류는 페이지의 오류 처리 안에서 나고, 배지는 그 회차 목록으로 맞으며(한 회차 늦지 않음), `app.py` 는 설비 DB 를 읽지 않는다.
