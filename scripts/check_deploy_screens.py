@@ -228,6 +228,21 @@ PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
 # 한 줄 14 + 여백 4) + 값 27 × 3 + 반 줄. 확보율 줄의 가운데다(새 세션의 기본 — ① 은 펼치고 제품
 # 행은 펼치지 않은 그림. 제목 끝 ▾/▸ 는 제목 줄 높이를 바꾸지 않는다).
 PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 44 + 27 * 3 + 13
+# 제약 시뮬레이션(`app_pages/constraint_simulation.py`)과 그 화면의 컨테이너 key
+# (`constraint_simulation_state`·`constraint_simulation_view`·페이지 까닭 카드). 값만 옮기고
+# 테스트가 같은지 본다. 공정 Capa 상세 머리의 「이 공정 제약 시뮬레이션」 링크 글도 같다.
+CONSTRAINT_PAGE: Final = "constraint_simulation"
+CONSTRAINT_LINK_LABEL: Final = "이 공정 제약 시뮬레이션"
+CONSTRAINT_KEYS: Final[dict[str, str]] = {
+    "kpi": "constraint_sim_kpis",
+    "chart": "constraint_sim_rate_chart",
+    "sheet": "constraint_sim_sheet_chart",
+    "steps": "constraint_sim_steps",
+    "schedule": "constraint_sim_schedule",
+    "absent": "constraint_sim_absent",
+    "process": "constraint_sim_process",
+    "detailProcess": "process_detail_process",
+}
 # HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
 # 못 고른다.
 HOME_LINK_KEY: Final = "home_navigation"
@@ -289,7 +304,7 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
 # 확인이라 선언에서 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 선언과 같은지 본다.
 SIDEBAR_GROUP_BOXES: Final[tuple[tuple[str, str, int], ...]] = (
     ("static_capa", "Static Capa", 4),
-    ("execution_management", "실행 관리", 7),
+    ("execution_management", "실행 관리", 8),
     ("dynamic_capa", "Dynamic Capa", 1),
 )
 # 좁게 끈 사이드바 폭(px). Streamlit 1.63 이 끌어 주는 가장 좁은 폭이다(200~600px) — 이 폭에서도
@@ -2739,6 +2754,144 @@ def check_process_detail(screen: Screen) -> str:
     return summarize_process_detail(before, after)
 
 
+_CONSTRAINT_LINK_JS = """(keys) => {
+  const links = Array.from(document.querySelectorAll('[data-testid="stMain"] a'));
+  const link = links.find((item) => item.innerText.includes(keys.label));
+  const box = document.querySelector(`.st-key-${keys.detailProcess}`);
+  const process = box ? box.innerText : null;
+  const kpis = document.querySelectorAll(
+    '.st-key-process_detail_kpis [data-testid="stMetric"]'
+  ).length;
+  if (!link) return {found: false, ready: kpis > 0, process};
+  const disabled =
+    link.getAttribute('aria-disabled') === 'true' ||
+    link.hasAttribute('disabled') ||
+    getComputedStyle(link).pointerEvents === 'none';
+  return {found: true, disabled, ready: kpis > 0, process};
+}"""
+
+_CONSTRAINT_JS = """(keys) => {
+  const q = (selector) => document.querySelector(selector);
+  const steps = q(`.st-key-${keys.steps}`);
+  const month = steps ? (steps.innerText.match(/(\\d\\d\\.\\d\\d) · /) || [])[1] : null;
+  const blocks = (root) =>
+    root ? Array.from(root.querySelectorAll('[data-testid="stMarkdownContainer"]')) : [];
+  const stepCount = blocks(steps).filter((item) => /^\\d · /.test(item.innerText.trim())).length;
+  const lines = blocks(q(`.st-key-${keys.schedule}`)).filter(
+    (item) => item.innerText.includes(' 몫 · ')
+  ).length;
+  const chart = q(`.st-key-${keys.chart} .js-plotly-plot`);
+  let point = null;
+  if (chart && month) {
+    const ticks = Array.from(chart.querySelectorAll('.xtick text')).map(
+      (item) => item.textContent
+    );
+    const drag =
+      chart.querySelector('.nsewdrag[data-subplot="xy"]') || chart.querySelector('.nsewdrag');
+    const index = ticks.findIndex((text) => text !== month);
+    if (drag && index >= 0) {
+      const box = drag.getBoundingClientRect();
+      point = {
+        x: box.left + (box.width * (index + 0.5)) / ticks.length,
+        y: box.top + box.height / 2,
+      };
+    }
+  }
+  const process = q(`.st-key-${keys.process}`);
+  return {
+    kpis: document.querySelectorAll(`.st-key-${keys.kpi} [data-testid="stMetric"]`).length,
+    chart: !!chart,
+    sheet: !!q(`.st-key-${keys.sheet} .js-plotly-plot`),
+    steps: stepCount,
+    schedule: lines,
+    month: month || null,
+    absent: !!q(`.st-key-${keys.absent}`),
+    process: process ? process.innerText : null,
+    point,
+  };
+}"""
+
+
+def summarize_constraint_simulation(
+    link: Mapping[str, Any] | None,
+    before: Mapping[str, Any],
+    after: Mapping[str, Any] | None,
+    same_process: bool | None,
+) -> str:
+    """제약 시뮬레이션 한 줄 — 공정 Capa 상세 머리 링크(켜짐·꺼짐), 넘어온 공정이 같은가,
+    KPI·그림·표·계산 단계·개조 일정 줄 수, 그래프 칸을 누른 뒤 고른 달이 바뀌었는가. 공정·제품·달
+    글자는 찍지 않는다."""
+    if link is None or not link.get("found"):
+        head = "링크 없음"
+    elif link.get("disabled"):
+        head = "링크 꺼짐(까닭)"
+    else:
+        head = "링크 켜짐"
+    if same_process is not None:
+        head += f" · 공정 {'같음' if same_process else '다름'}"
+    if before.get("absent"):
+        return f"{head} · 설비 일정 없음(까닭 카드)"
+    if after is None:
+        clicked = "못 누름"
+    else:
+        clicked = "바뀜" if after.get("month") != before.get("month") else "그대로"
+    chart = "있음" if before.get("chart") else "없음"
+    sheet = "있음" if before.get("sheet") else "없음"
+    return (
+        f"{head} · KPI {before.get('kpis', 0)}개 · 그림 {chart} · 표 {sheet} · "
+        f"계산 {before.get('steps', 0)}단계 · 개조 일정 {before.get('schedule', 0)}줄 · "
+        f"칸 누름 뒤 고른 달 {clicked}"
+    )
+
+
+def check_constraint_simulation(screen: Screen) -> str:
+    """`제약 시뮬레이션` — 공정 Capa 상세(기본 공정) 머리 「이 공정 제약 시뮬레이션」 을 눌러 같은
+    공정으로 열리는지 보고(링크가 꺼졌으면 사이드바로 연다), KPI·그래프·계산표·고른 달 계산·개조
+    일정을 센 뒤 그래프의 다른 달 칸을 한 번 눌러 고른 달이 바뀌는지 본다. 저장하지 않는 화면이라 DB
+    에 쓰지 않는다."""
+    screen.open_page(PROCESS_DETAIL_PAGE)
+    arg = {**CONSTRAINT_KEYS, "label": CONSTRAINT_LINK_LABEL}
+    link = screen.wait_for(
+        lambda: screen.js(_CONSTRAINT_LINK_JS, arg), timeout=120, accept=lambda v: bool(v["ready"])
+    )
+    same_process: bool | None = None
+    if link.get("found") and not link.get("disabled"):
+
+        def arrived() -> bool:
+            return screen.path().rstrip("/").endswith(CONSTRAINT_PAGE)
+
+        screen.page.locator(
+            '[data-testid="stMain"] a', has_text=CONSTRAINT_LINK_LABEL
+        ).first.click()
+        screen.wait_for(arrived, timeout=30)
+        screen.wait_idle()
+    else:
+        screen.open_page(CONSTRAINT_PAGE)
+    before = screen.wait_for(
+        lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
+        timeout=120,
+        accept=lambda value: (
+            bool(value)
+            and (bool(value["absent"]) or (bool(value["chart"]) and value["month"] is not None))
+        ),
+    )
+    if link.get("found") and not link.get("disabled"):
+        detail = str(link.get("process") or "").replace("공정", "", 1).strip()
+        here = str(before.get("process") or "").replace("공정", "", 1).strip()
+        same_process = bool(detail) and detail == here
+    after: Mapping[str, Any] | None = None
+    point = before.get("point")
+    if point is not None and not before.get("absent"):
+        screen.page.mouse.click(float(point["x"]), float(point["y"]))
+        screen.wait_idle()
+        after = screen.poll(
+            lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
+            timeout=30,
+            accept=lambda value: bool(value) and value["month"] != before["month"],
+        )
+    return summarize_constraint_simulation(link, before, after, same_process)
+
+
 def summarize_page_tabs(
     opened: Sequence[Mapping[str, Any]],
     back_home: bool,
@@ -3404,6 +3557,7 @@ ITEMS: tuple[Item, ...] = (
     Item("equipment_scenario_line", "설비 시나리오 줄·팝업", check_equipment_scenario_line),
     Item("space_floor_state", "Space 층 사용 칸", check_space_floor_state),
     Item("page_tabs", "화면 탭 줄", check_page_tabs),
+    Item("constraint_sim", "제약 시뮬레이션", check_constraint_simulation),
 )
 
 

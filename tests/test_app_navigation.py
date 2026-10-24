@@ -37,6 +37,7 @@ from capa_simulation.components.scenario_status import (
     save_field_key,
 )
 from capa_simulation.components.theme_toggle import UNSAVED_EDITS_CSS_VARIABLE
+from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
 from capa_simulation.navigation import (
     ADMIN_AREA,
     ADMIN_BOX_PAGES,
@@ -44,6 +45,7 @@ from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     CAPA_CHATBOT,
     CONDITIONS_SECTION,
+    CONSTRAINT_SIMULATION,
     DYNAMIC_CAPA,
     DYNAMIC_CAPA_SUBPAGES,
     EQUIPMENT_GAP_TAB,
@@ -110,6 +112,7 @@ EXPECTED_PAGES = [
         ":material/event_upcoming:",
         False,
     ),
+    ("app_pages/constraint_simulation.py", "제약 시뮬레이션", ":material/call_split:", False),
     (
         "app_pages/available_equipment_status.py",
         "가용설비 현황",
@@ -168,16 +171,18 @@ def test_group_membership_matches_the_sidebar_sections() -> None:
         "app_pages/calculation_result.py",
         STANDARD_TARGET_CAPA.path,
     ]
-    # 실행 관리 하위 일곱 — 공정 하나의 대책 → 전체 공정의 단축 계획(필요 단축 일정, 2026-10-18
-    # 가용설비 현황 탭에서 뗐다) → 설비 일정 → 현장 → 성능 실적 셋.
+    # 실행 관리 하위 여덟 — 공정 하나의 대책 → 전체 공정의 단축 계획(필요 단축 일정, 2026-10-18
+    # 가용설비 현황 탭에서 뗐다) → 공정 하나의 미래 제약(제약 시뮬레이션, 2026-10-24) → 설비 일정 →
+    # 현장 → 성능 실적 셋.
     assert EXECUTION_MANAGEMENT.path == "app_pages/execution_management.py"
-    assert list(EXECUTION_MANAGEMENT_SUBPAGES[:4]) == [
+    assert list(EXECUTION_MANAGEMENT_SUBPAGES[:5]) == [
         PROCESS_CAPA_DETAIL,
         REQUIRED_SHORTENING,
+        CONSTRAINT_SIMULATION,
         AVAILABLE_EQUIPMENT_STATUS,
         SPACE_STATUS,
     ]
-    assert [spec.path for spec in EXECUTION_MANAGEMENT_SUBPAGES[4:]] == [
+    assert [spec.path for spec in EXECUTION_MANAGEMENT_SUBPAGES[5:]] == [
         "app_pages/actual_efficiency.py",
         "app_pages/actual_upeh.py",
         "app_pages/yield_actual.py",
@@ -206,7 +211,12 @@ def test_unimplemented_pages_use_one_suffix_matching_their_body_title() -> None:
     `(Data확보중)` 은 걷었다(2026-10-19 사용자 요청).
     """
     # 운영 화면은 표기가 없다. 공정 Capa 상세는 본문 머리가 공정 이름이라 제목 대조에서도 뺀다.
-    operating = (REQUIRED_SHORTENING, AVAILABLE_EQUIPMENT_STATUS, SPACE_STATUS)
+    operating = (
+        REQUIRED_SHORTENING,
+        CONSTRAINT_SIMULATION,
+        AVAILABLE_EQUIPMENT_STATUS,
+        SPACE_STATUS,
+    )
     for spec in (PROCESS_CAPA_DETAIL, *operating):
         assert "(" not in spec.title, spec.path
     unfinished = [
@@ -1259,17 +1269,26 @@ def test_an_ignored_home_cell_click_reruns_the_figures_in_their_own_event_slots(
 def test_the_toolbar_iframe_carries_the_touch_scroll_guard_for_home_cell_charts(
     _app: AppTest,
 ) -> None:
-    """칸 선택을 켠 그림(HOME 두 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트) 위에서
-    시작한 터치가 화면을 스크롤하게 하는 막이는 테마 버튼 iframe 에 한 번 실린다
-    (`components/plotly_touch_scroll.py`). 빠지면 그 그림 위 터치 스크롤이 다시 막힌다."""
+    """칸 선택을 켠 그림(HOME 두 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트·제약
+    시뮬레이션 그래프와 계산표) 위에서 시작한 터치가 화면을 스크롤하게 하는 막이는 테마 버튼 iframe
+    에 한 번 실린다(`components/plotly_touch_scroll.py`). 빠지면 그 그림 위 터치 스크롤이 다시
+    막힌다."""
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
     guard = plotly_touch_scroll_script(
-        (*HOME_CELL_CHART_KEYS, PROCESS_DETAIL_CANVAS_CHART_KEY, GAP_SHEET_CHART_KEY)
+        (
+            *HOME_CELL_CHART_KEYS,
+            PROCESS_DETAIL_CANVAS_CHART_KEY,
+            GAP_SHEET_CHART_KEY,
+            CONSTRAINT_CHART_KEY,
+            CONSTRAINT_SHEET_KEY,
+        )
     )
     assert f".st-key-{PROCESS_DETAIL_CANVAS_CHART_KEY} .js-plotly-plot" in guard
     assert f".st-key-{GAP_SHEET_CHART_KEY} .js-plotly-plot" in guard
+    assert f".st-key-{CONSTRAINT_CHART_KEY} .js-plotly-plot" in guard
+    assert f".st-key-{CONSTRAINT_SHEET_KEY} .js-plotly-plot" in guard
     frames = [str(element.proto.srcdoc) for element in app.get("iframe")]
     assert sum(frame.count(guard) for frame in frames) == 1
 
@@ -1959,14 +1978,15 @@ def test_every_declared_condition_tab_is_a_real_label() -> None:
 
 
 def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None:
-    """가용설비 현황·필요 단축 일정·공정 Capa 상세(설비 운영 스냅샷을 읽기만 하되 한 회차에 여러
-    번 연다)와 Space 현황(공식 스냅샷·설비 시나리오 목록·공통 최신·도면을 한 회차에 따로
-    읽는다)이다."""
+    """가용설비 현황·필요 단축 일정·공정 Capa 상세·제약 시뮬레이션(설비 운영 스냅샷을 읽기만 하되 한
+    회차에 여러 번 연다)과 Space 현황(공식 스냅샷·설비 시나리오 목록·공통 최신·도면을 한 회차에
+    따로 읽는다)이다."""
     declared = {spec.path for spec in ALL_SPECS if spec.uses_equipment_db}
     assert declared == {
         AVAILABLE_EQUIPMENT_STATUS.path,
         REQUIRED_SHORTENING.path,
         PROCESS_CAPA_DETAIL.path,
+        CONSTRAINT_SIMULATION.path,
         SPACE_STATUS.path,
     }
 
@@ -2193,13 +2213,15 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
         f"시뮬레이션 DB 가 이 코드보다 새 버전입니다(DB {newer} · 코드"
     )
 
-    # 설비 DB 를 여는 여섯 화면 모두를 돈다(공정 Capa 상세는 설비 시나리오를 읽으며 경고를 세운다).
+    # 설비 DB 를 여는 일곱 화면 모두를 돈다(공정 Capa 상세·제약 시뮬레이션은 설비 시나리오를 읽으며
+    # 경고를 세운다).
     # 페이지 소스에서 경고 호출을 찾아 대조해 두어, 호출을 지우거나 새 화면에 더하면 이 목록도 같이
     # 고치게 한다.
     equipment_pages = (
         AVAILABLE_EQUIPMENT_STATUS.path,
         REQUIRED_SHORTENING.path,
         PROCESS_CAPA_DETAIL.path,
+        CONSTRAINT_SIMULATION.path,
         SPACE_STATUS.path,
         STANDARD_TARGET_CAPA.path,
         WIP_STATUS.path,

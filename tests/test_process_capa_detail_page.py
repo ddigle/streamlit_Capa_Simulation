@@ -51,7 +51,7 @@ from capa_simulation.components.shortening_board import (
     SHORTENING_HIGHLIGHT_KEY,
 )
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
-from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
 from capa_simulation.persistence.cache import (
     clear_global_execution_capacity_cache,
     clear_global_securement_threshold_cache,
@@ -93,6 +93,8 @@ def _page_script(database_path: Path, equipment_path: Path, *, fail_bootstrap: b
     """`fail_bootstrap` 이면 공통 진입(`load_page_context`)이 오류를 내는 회차를 흉내 낸다.
 
     내려받기 단추는 받은 바이트를 세션 `captured_downloads` 에 적어 둔다(시험이 CSV 를 읽는다).
+    페이지 링크(`st.page_link`)는 인자를 세션 `captured_page_links` 에 적은 뒤 원본을 부른다 — 단독
+    실행의 물러섬 캡션(「사이드바에서 …」)은 그대로 선다.
     """
     return f"""
 from datetime import date
@@ -112,6 +114,7 @@ original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
 original_month_picker = month_range_picker.render_month_range_apply
 original_load_page_context = page_bootstrap.load_page_context
 original_download_button = st.download_button
+original_page_link = st.page_link
 original_upeh_options = upeh_controls.assumption_month_options
 
 settings.DUCKDB_PATH = Path({str(database_path)!r})
@@ -139,9 +142,16 @@ def _recording_download_button(label, *args, **kwargs):
     return original_download_button(label, *args, **kwargs)
 
 
+def _recording_page_link(page, *args, **kwargs):
+    st.session_state.setdefault("captured_page_links", []).append({{"page": str(page), **kwargs}})
+    return original_page_link(page, *args, **kwargs)
+
+
 if {fail_bootstrap!r}:
     page_bootstrap.load_page_context = _failing_page_context
 st.download_button = _recording_download_button
+st.page_link = _recording_page_link
+st.session_state["captured_page_links"] = []
 
 try:
     from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
@@ -162,6 +172,7 @@ finally:
     month_range_picker.render_month_range_apply = original_month_picker
     page_bootstrap.load_page_context = original_load_page_context
     st.download_button = original_download_button
+    st.page_link = original_page_link
     upeh_controls.assumption_month_options = original_upeh_options
 """
 
@@ -1051,3 +1062,47 @@ def test_without_a_finished_app_run_a_month_step_escalates_to_the_whole_page(
     assert browser.started[-1] == []
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[1]
     assert month_label(months[1]) in _panel_head(app)
+
+
+# ------------------------------------------------------------------ 제약 시뮬레이션 링크
+
+
+def _constraint_links(app: AppTest) -> list[dict[str, Any]]:
+    return [
+        link
+        for link in app.session_state["captured_page_links"]
+        if link["page"] == CONSTRAINT_SIMULATION.path
+    ]
+
+
+def test_the_header_links_this_process_to_the_constraint_simulation(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """머리 「이 공정 제약 시뮬레이션」 — 주소 인자는 원본 공정명(+ 테마)뿐, 설비 일정이 서므로 켜져
+    있다."""
+    app = _app(dynamic_databases)
+    app.query_params["process"] = DYNAMIC_PROCESS
+    app.query_params["theme"] = "dark"
+    _ok(app.run())
+    (link,) = _constraint_links(app)
+    assert link["label"] == "이 공정 제약 시뮬레이션"
+    assert link["query_params"] == {"process": DYNAMIC_PROCESS, "theme": "dark"}
+    assert link["disabled"] is False
+    assert link["help"] is None
+
+
+def test_the_constraint_link_is_disabled_with_its_reason_without_equipment(
+    databases: tuple[Path, Path], dynamic_databases: tuple[Path, Path]
+) -> None:
+    """설비 일정이 서지 않는 공정이면 링크는 자리를 지킨 채 꺼지고 풍선이 까닭을 말한다(D11)."""
+    empty = _ok(_app(databases).run())
+    (link,) = _constraint_links(empty)
+    assert link["disabled"] is True
+    assert link["help"] == "설비 일정이 서야 엽니다 — 저장본 없음"
+
+    other = _app(dynamic_databases)
+    other.query_params["process"] = "DEMO_Final_Test"
+    _ok(other.run())
+    (link,) = _constraint_links(other)
+    assert link["disabled"] is True
+    assert link["help"] == "설비 일정이 서야 엽니다 — 설비 없음"

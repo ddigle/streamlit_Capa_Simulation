@@ -25,12 +25,25 @@ def render_page_link(
     label: str,
     icon: str | None = None,
     query_params: Mapping[str, str] | None = None,
+    disabled: bool = False,
+    help: str | None = None,
 ) -> None:
-    """`query_params` 를 주면 그 인자를 실은 주소로 연다 — 받는 페이지가 그 인자만 읽는다."""
+    """`query_params` 를 주면 그 인자를 실은 주소로 연다 — 받는 페이지가 그 인자만 읽는다.
+
+    `disabled` 면 링크가 꺼진 채 자리를 지키고(생겼다 사라지지 않는다), `help` 가 그 까닭을 풍선으로
+    말한다(`st.page_link` 가 받는 인자 그대로).
+    """
     try:
         if query_params is None:
-            st.page_link(page_path, label=label, icon=icon)
+            st.page_link(page_path, label=label, icon=icon, disabled=disabled, help=help)
         else:
-            st.page_link(page_path, label=label, icon=icon, query_params=dict(query_params))
+            st.page_link(
+                page_path,
+                label=label,
+                icon=icon,
+                query_params=dict(query_params),
+                disabled=disabled,
+                help=help,
+            )
     except StreamlitPageNotFoundError:
         st.caption(f"사이드바에서 {label}")

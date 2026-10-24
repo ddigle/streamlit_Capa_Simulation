@@ -1647,6 +1647,7 @@ def test_the_labels_the_items_look_for_exist_in_the_app(path: str, label: str) -
         screens.SCENARIO_MANAGEMENT_PAGE,
         screens.ADMIN_AREA_PAGE,
         screens.PROCESS_DETAIL_PAGE,
+        screens.CONSTRAINT_PAGE,
     ],
 )
 def test_the_pages_the_items_open_exist(page: str) -> None:
@@ -1669,6 +1670,7 @@ NEW_ITEM_KEYS = [
     "equipment_scenario_line",
     "space_floor_state",
     "page_tabs",
+    "constraint_sim",
 ]
 
 
@@ -2173,7 +2175,7 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     every = [_box(slug, title, count) for slug, title, count in screens.SIDEBAR_GROUP_BOXES]
 
     assert screens.summarize_sidebar_groups(every) == (
-        "Static Capa 머리 + 4 · 실행 관리 머리 + 7 · Dynamic Capa 머리 + 1 — "
+        "Static Capa 머리 + 4 · 실행 관리 머리 + 8 · Dynamic Capa 머리 + 1 — "
         "정한 차례·수와 같음 · 상자 제목 한 줄 · 잘림 없음"
     )
     # 차례가 바뀌거나 하나가 빠지거나 하위 수가 다르면 「다름」, 줄바꿈·말줄임은 그 상자 이름만
@@ -2182,7 +2184,7 @@ def test_the_sidebar_groups_summary_counts_and_names_only_fixed_titles() -> None
     swapped[0] = {**swapped[0], "lines": 2}
     line = screens.summarize_sidebar_groups(swapped)
     assert line == (
-        "실행 관리 머리 + 7 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
+        "실행 관리 머리 + 8 · Static Capa 머리 + 4 · Dynamic Capa 머리 + 2 — "
         "정한 차례·수와 다름 · 줄바꿈: 실행 관리"
     )
     missing = screens.summarize_sidebar_groups([every[0], {**every[2], "clipped": True}])
@@ -2880,3 +2882,87 @@ def test_the_page_tab_line_counts_only(
     opened: list[dict[str, bool]], back_home: bool, closed: list[dict[str, bool]], verdict: str
 ) -> None:
     assert screens.summarize_page_tabs(opened, back_home, closed) == verdict
+
+
+# ------------------------------------------------------------------ 제약 시뮬레이션
+
+
+def test_the_constraint_simulation_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 key 값만 옮긴다 — 앱과 같은지 여기서 본다. 두 그림은 칸
+    선택을 켠 그림이라 앱의 터치 스크롤 막이 묶음(`CELL_SELECT_CHART_KEYS`)에 든다."""
+    import capa_simulation.constraint_simulation_state as state
+    from capa_simulation.components import constraint_simulation_view as view
+    from capa_simulation.navigation import CONSTRAINT_SIMULATION
+    from capa_simulation.process_detail_state import PROCESS_DETAIL_PROCESS_KEY
+
+    assert CONSTRAINT_SIMULATION.path == f"app_pages/{screens.CONSTRAINT_PAGE}.py"
+    assert screens.CONSTRAINT_KEYS == {
+        "kpi": view.KPI_ROW_KEY,
+        "chart": state.CONSTRAINT_CHART_KEY,
+        "sheet": state.CONSTRAINT_SHEET_KEY,
+        "steps": view.STEPS_CARD_KEY,
+        "schedule": view.SCHEDULE_CARD_KEY,
+        "absent": state.CONSTRAINT_ABSENT_KEY,
+        "process": state.CONSTRAINT_PROCESS_KEY,
+        "detailProcess": PROCESS_DETAIL_PROCESS_KEY,
+    }
+    detail = _text(PROJECT_ROOT / "app_pages" / "process_capa_detail.py")
+    assert f'label="{screens.CONSTRAINT_LINK_LABEL}"' in detail
+    tree = ast.parse(_text(PROJECT_ROOT / "app.py"))
+    members = [
+        element.id
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and [getattr(target, "id", None) for target in node.targets] == ["CELL_SELECT_CHART_KEYS"]
+        and isinstance(node.value, ast.Tuple)
+        for element in node.value.elts
+        if isinstance(element, ast.Name)
+    ]
+    assert {"CONSTRAINT_CHART_KEY", "CONSTRAINT_SHEET_KEY"} <= set(members)
+    assert any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == state.__name__
+        and {alias.name for alias in node.names} >= {"CONSTRAINT_CHART_KEY", "CONSTRAINT_SHEET_KEY"}
+        for node in tree.body
+    )
+
+
+@pytest.mark.parametrize(
+    ("link", "before", "after", "same", "expected"),
+    [
+        (
+            {"found": True, "disabled": False},
+            {"kpis": 4, "chart": True, "sheet": True, "steps": 5, "schedule": 3, "month": "27.05"},
+            {"month": "27.01"},
+            True,
+            "링크 켜짐 · 공정 같음 · KPI 4개 · 그림 있음 · 표 있음 · 계산 5단계 · 개조 일정 3줄 · "
+            "칸 누름 뒤 고른 달 바뀜",
+        ),
+        (
+            {"found": True, "disabled": True},
+            {"absent": True},
+            None,
+            None,
+            "링크 꺼짐(까닭) · 설비 일정 없음(까닭 카드)",
+        ),
+        (
+            None,
+            {"kpis": 4, "chart": True, "sheet": False, "steps": 5, "schedule": 0, "month": "27.05"},
+            None,
+            None,
+            "링크 없음 · KPI 4개 · 그림 있음 · 표 없음 · 계산 5단계 · 개조 일정 0줄 · "
+            "칸 누름 뒤 고른 달 못 누름",
+        ),
+    ],
+)
+def test_the_constraint_simulation_summary_counts_without_screen_text(
+    link: dict[str, Any] | None,
+    before: dict[str, Any],
+    after: dict[str, Any] | None,
+    same: bool | None,
+    expected: str,
+) -> None:
+    line = screens.summarize_constraint_simulation(link, before, after, same)
+    assert line == expected
+    # 달·공정 글자는 찍지 않는다.
+    assert "27." not in line

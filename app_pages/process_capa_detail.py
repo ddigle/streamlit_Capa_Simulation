@@ -87,6 +87,8 @@ from capa_simulation.components.upeh_assumption_controls import (
     render_upeh_assumption_controls,
     upeh_badge,
 )
+from capa_simulation.constraint_simulation_state import constraint_query_params
+from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     official_session,
@@ -100,21 +102,18 @@ from capa_simulation.home_state import (
     HOME_TOGGLE_DEFAULTS,
     PAST_DATA_TOGGLE_KEY,
 )
-from capa_simulation.navigation import HOME
+from capa_simulation.navigation import CONSTRAINT_SIMULATION, HOME
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
-    load_page_context,
+    process_page_inputs,
     prune_list_selection,
     render_schema_ahead_warning,
-    resolve_effective_months,
-    stop_calculation_on_error,
 )
 from capa_simulation.persistence.cache import (
     load_global_advance_load,
     load_global_execution_capacity,
     load_global_past_data,
-    load_global_securement_threshold,
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
@@ -137,12 +136,10 @@ from capa_simulation.process_detail_state import (
     shortening_band_text,
     take_process_detail_request,
 )
-from capa_simulation.scenario_state import scenario_month_table
 from capa_simulation.services.advance_load import build_advance_load_ratio
 from capa_simulation.services.display_order_scopes import (
     PAGE_CALCULATION,
     TAB_REQUIRED,
-    TAB_SECUREMENT,
 )
 from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.frame_contracts import normalize_demand_basis
@@ -179,23 +176,19 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
-    check_scenario_capacity,
     csv_export_key,
-    display_order_digest,
     get_display_ordered_values,
     get_export_csv,
     get_home_lob_without_edp,
     get_home_simulation,
     get_process_calculation_rows,
     get_process_equipment_timeline,
-    get_scenario_securement_rate,
     get_undated_equipment,
     get_usage_excluded_equipment,
     load_required_shortening_for_target,
     process_timeline_key_from_shortening,
     required_shortening_cache_key,
     required_shortening_target_cache_key,
-    scenario_cache_key,
     scenario_required_equipment,
     with_upeh_token,
 )
@@ -252,51 +245,11 @@ process_labels = get_process_labels()
 today = date.today()
 
 try:
-    # 판정 기준은 HOME → Preference 의 공용 프로필이다(기본값 + 월별 예외). 기본 공정·기본 달을
-    # 정할 때도 HOME·Static Capa 와 같은 판정(`thresholds.status`)을 쓴다.
-    thresholds = load_global_securement_threshold(str(DUCKDB_PATH.resolve())).thresholds
-    context = load_page_context()
-    active_scenario = context.active_scenario
-    reference_tables = context.reference_tables
-    # 유효 기간은 산출 결과와 같이 RQ_REQB 원천에서 잡는다 — 같은 시나리오 키를 나눠 쓴다.
-    effective_start, effective_end = resolve_effective_months(
-        context,
-        active_scenario["tables"]["RQ_REQB"],
-        "RQ_REQB",
-        empty_message="선택 범위에 소요대수 산출 기준이 없습니다.",
-    )
-    capacity_cache_key = scenario_cache_key(
-        context.reference_version, active_scenario, effective_start, effective_end
-    )
-    try:
-        securement_rate = get_scenario_securement_rate(
-            capacity_cache_key,
-            _scenario_tables=active_scenario["tables"],
-            _reference_tables=reference_tables,
-            _available_equipment=scenario_month_table(
-                active_scenario, "RQ_EQP_AVBL", effective_start, effective_end
-            ),
-        )
-    except BOOTSTRAP_ERRORS:
-        # 대당 Capa·소요대수 계산이 멈춘 것이면 「계산 멈춤」과 함께 그 오류를 먼저 낸다. 계산은
-        # 섰는데 가용대수·확보율에서 난 오류면 그 오류를 그대로 낸다(Static Capa 와 같은 길).
-        stop_calculation_on_error(
-            check_scenario_capacity,
-            capacity_cache_key,
-            _scenario_tables=active_scenario["tables"],
-            _reference_tables=reference_tables,
-        )
-        raise
-    process_column = securement_rate["공정"].astype("string").str.strip()
-    order_key = display_order_digest(reference_tables["RQ_DISPLAY_ORDER"])
-    # 공정 차례는 산출 결과 확보율 탭·HOME 공정 필터와 같은 공용 표시순서 범위다.
-    process_options = get_display_ordered_values(
-        pd.DataFrame({"공정": sorted(process_column.dropna().unique().tolist())}),
-        order_key,
-        PAGE_CALCULATION,
-        TAB_SECUREMENT,
-        _display_order=context.display_order,
-    )
+    # 판정 기준(HOME → Preference 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
+    # 키·확보율·공정 선택지를 제약 시뮬레이션과 **같은 차례**로
+    # 낸다(`page_bootstrap.process_page_inputs`) — 두 화면이 같은 계획 칸을 같은 키로 받는다. 기본
+    # 공정·기본 달을 정할 때도 HOME·Static Capa 와 같은 판정 (`thresholds.status`)을 쓴다.
+    page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
@@ -304,13 +257,17 @@ except BOOTSTRAP_ERRORS as exc:
     st.error(bootstrap_error_message(exc))
     st.stop()
 
-months = sorted(
-    {
-        int(month)
-        for month in securement_rate["생산계획년월"]
-        if effective_start <= int(month) <= effective_end
-    }
-)
+thresholds = page_inputs.thresholds
+context = page_inputs.context
+active_scenario = context.active_scenario
+reference_tables = context.reference_tables
+effective_start, effective_end = page_inputs.effective_start, page_inputs.effective_end
+capacity_cache_key = page_inputs.capacity_cache_key
+securement_rate = page_inputs.securement_rate
+process_column = securement_rate["공정"].astype("string").str.strip()
+order_key = page_inputs.order_key
+process_options = page_inputs.process_options
+months = list(page_inputs.months)
 
 
 def picker_items() -> tuple[ProcessPickerItem, ...]:
@@ -849,6 +806,47 @@ except BOOTSTRAP_ERRORS:
     # ◀▶ 는 곁 기능이다 — 공정별 요약을 못 내면 단추만 두지 않는다.
     steps = ProcessSteps(previous=None, following=None, position=None, total=0)
 assumption_badge = upeh_badge(upeh_token)
+
+
+def constraint_link_readiness() -> DynamicReadiness | None:
+    """「이 공정 제약 시뮬레이션」 을 여닫는 판정 — 그 화면(세션 설비 시나리오)과 같은 기준이다.
+
+    HOME 칸 방문(공식 잠금)이고 세션이 공식 발행 쌍이 아니면 이 화면의 `readiness` 는 공식
+    스냅샷으로 낸 것이라 링크 판정만 세션 스냅샷으로 한 번 더 낸다(캐시된 스냅샷의 거르기뿐 — DB 를
+    열지 않는다).
+    """
+    if (
+        entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL
+        and equipment_session is not None
+        and not equipment_session.is_official_pair
+        and not equipment_error
+    ):
+        session_snapshot = equipment_session.snapshot
+        return dynamic_readiness(
+            session_snapshot.calculation_frames()[1] if session_snapshot is not None else None,
+            session_snapshot.baseline if session_snapshot is not None else None,
+            cutoff,
+            process=process,
+        )
+    return readiness
+
+
+link_readiness = constraint_link_readiness()
+constraint_link_ready = link_readiness is not None and link_readiness.ready
+constraint_link_help: str | None = (
+    None
+    if constraint_link_ready
+    else "설비 일정이 서야 엽니다 — "
+    + (link_readiness.reason if link_readiness is not None else "설비 DB 오류")
+)
+if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
+    # HOME 칸 방문은 이 화면만 공식으로 잠근다 — 제약 시뮬레이션은 늘 사이드바 설비 시나리오다(D6).
+    official_note = "사이드바 설비 시나리오 기준으로 엽니다."
+    constraint_link_help = (
+        official_note
+        if constraint_link_help is None
+        else f"{constraint_link_help} · {official_note}"
+    )
 with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
     st.markdown(
         f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}"
@@ -857,6 +855,17 @@ with header_marks.container(horizontal=True, vertical_alignment="center", gap="s
     )
     render_process_steps(steps, label_of=process_labels.label)
     st.space("stretch")
+    # 늘 보이고, 설비 일정이 서지 않는 공정이면 꺼진 링크 + 풍선 까닭(D11). 주소만 싣는다 — 콜백·
+    # `st.switch_page` 가 없어 프래그먼트 콜백 경고가 날 자리가 없고, 화면 탭 상한은 탭 줄 JS 가
+    # 막는다.
+    render_page_link(
+        CONSTRAINT_SIMULATION.path,
+        label="이 공정 제약 시뮬레이션",
+        icon=":material/call_split:",
+        query_params=constraint_query_params(process, theme=st.query_params.get(THEME_QUERY_PARAM)),
+        disabled=not constraint_link_ready,
+        help=constraint_link_help,
+    )
     render_page_link(HOME.path, label="HOME", icon=":material/arrow_back:")
 
 

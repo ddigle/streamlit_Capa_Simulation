@@ -36,6 +36,9 @@ SUBPAGE_SUMMARIES: dict[str, str] = {
     "app_pages/required_shortening.py": (
         "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 진척 보드 · 기한 임박 · 이행 지연"
     ),
+    "app_pages/constraint_simulation.py": (
+        "공정 하나에 미래 제약이 생기면 — 제약 제품 먼저, 기존 제품 확보율 영향과 개조 비가동"
+    ),
     "app_pages/available_equipment_status.py": (
         "설비 일정 기준 가용대수 · Static 대비 일정 · Cut-off"
     ),
@@ -66,7 +69,7 @@ AREAS: tuple[tuple[PageSpec, str, str], ...] = (
         "단기 병목을 운영합니다.",
     ),
 )
-# 목차 한 줄에 놓는 카드 수. 일곱 화면이 세 줄로 선다.
+# 목차 한 줄에 놓는 카드 수. 여덟 화면이 세 줄로 선다.
 COLUMNS_PER_ROW = 3
 
 

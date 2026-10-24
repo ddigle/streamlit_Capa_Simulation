@@ -68,8 +68,8 @@ class PageSpec:
     # 설비 DB 를 한 회차에 여러 번 여는 화면을 적는 자리다.
     uses_equipment_db: bool = False
     # 이 화면이 설비 시나리오를 읽는가 — "session" 은 사이드바에서 고른 설비 시나리오(가용설비 현황·
-    # 필요 단축 일정·공정 Capa 상세), "official" 은 늘 공식 발행(Space 현황 — 줄을 잠근 꼴로
-    # 세운다).
+    # 필요 단축 일정·공정 Capa 상세·제약 시뮬레이션), "official" 은 늘 공식 발행(Space 현황 — 줄을
+    # 잠근 꼴로 세운다).
     # 읽는 화면에서는 조건 패널에 「설비 시나리오」 칸이 서고, **그 줄은 페이지가**
     # `resolve_equipment_session` 뒤에 그 칸에 그린다 — `app.py` 는 설비 DB 를 열지 않는다.
     equipment_scenario: Literal["session", "official"] | None = None
@@ -211,6 +211,20 @@ REQUIRED_SHORTENING = PageSpec(
     uses_equipment_db=True,
     equipment_scenario="session",
 )
+# 공정 하나에 미래 제약(제약 제품 전용 설비)이 생기면 기존 제품 확보율이 언제부터 얼마나 줄어드는지
+# 그때그때 보는 화면(2026-10-24 사용자 결정). 활성 시나리오 소요대수를 제품정보로 나누고 설비 일정
+# 기준 가용(설비 DB 스냅샷·Cut-off 를 읽기만)과 맞댄다 — 공정 Capa 상세와 같은 계획 칸을 같은 키로
+# 받고, 한 회차에 설비 DB 를 여러 번 열 수 있어 핀을 선언한다. 저장하지 않는다. 공정 Capa 상세 머리
+# 「이 공정 제약 시뮬레이션」 이 이 경로로 연다.
+CONSTRAINT_SIMULATION = PageSpec(
+    "app_pages/constraint_simulation.py",
+    "제약 시뮬레이션",
+    ":material/call_split:",
+    has_condition_cards=True,
+    uses_equipment_db=True,
+    # 늘 사이드바에서 고른 설비 시나리오다(HOME 칸 방문의 공식 잠금을 잇지 않는다 — D6).
+    equipment_scenario="session",
+)
 # 가용설비 현황의 탭. 공통 조건을 읽는 탭이 일부뿐이라 사이드바(`app.py`)가 열린 탭을 봐야 하고,
 # 그래서 라벨을 여기 한 곳에 둔다 — 페이지도 이 이름을 읽는다.
 EQUIPMENT_TAB_KEY = "equipment_active_tab"
@@ -266,12 +280,13 @@ SPACE_STATUS = PageSpec(
     uses_equipment_db=True,
     equipment_scenario="official",
 )
-# 순서는 공정 하나의 대책(공정 Capa 상세) → 전체 공정의 단축 계획(필요 단축 일정) → 설비
-# 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 — 약속에 가장 가까운 설비 이행부터 보고,
-# 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
+# 순서는 공정 하나의 대책(공정 Capa 상세) → 전체 공정의 단축 계획(필요 단축 일정) → 공정 하나의
+# 미래 제약(제약 시뮬레이션) → 설비 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 — 약속에 가장
+# 가까운 설비 이행부터 보고, 효율·UPEH·수율 실적의 기준 대비 Gap 으로 끝난다.
 EXECUTION_MANAGEMENT_SUBPAGES = (
     PROCESS_CAPA_DETAIL,
     REQUIRED_SHORTENING,
+    CONSTRAINT_SIMULATION,
     AVAILABLE_EQUIPMENT_STATUS,
     SPACE_STATUS,
     *(
