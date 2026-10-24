@@ -822,21 +822,29 @@ def _row_ticks(frame: pd.DataFrame) -> dict[str, _RowTicks]:
     return out
 
 
-def _module_rows_by_group(
-    master: pd.DataFrame, ticks: Mapping[str, _RowTicks] | None = None
-) -> dict[str, list[tuple[str, _RowTicks]]]:
-    """Main 설비 모듈 묶음(Main 설비 행 둘 이상) → 그 행들의 (설비명, 좌표·크기 눈금). `ticks` 는
-    이미 구한 `_row_ticks(master)` 다."""
+def _equipment_names(frame: pd.DataFrame) -> pd.Series:
+    """행마다 설비명(앞뒤 공백 제거)."""
+    return frame[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+
+
+def _module_rows_by_group(master: pd.DataFrame) -> dict[str, list[tuple[str, _RowTicks]]]:
+    """Main 설비 모듈 묶음(Main 설비 행 둘 이상) → 그 행들의 (설비명, 좌표·크기 눈금). 눈금은
+    묶음 행만 읽는다 — 저장 전 검사가 회차마다 돌아 마스터 전체를 훑지 않는다."""
     if master.empty or EQUIPMENT_ID_COLUMN not in master.columns:
         return {}
-    ticks = _row_ticks(master) if ticks is None else ticks
-    names = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    parents = _parents(master)
+    counts = parents.value_counts()
+    member = parents.isin(counts.index[counts >= 2]).to_numpy(dtype=bool)
+    if not member.any():
+        return {}
+    rows = master[member]
+    ticks = _row_ticks(rows)
     groups: dict[str, list[tuple[str, _RowTicks]]] = {}
-    for name, parent in zip(names, _parents(master), strict=True):
-        if pd.isna(parent) or pd.isna(name) or str(name) not in ticks:
+    for name, parent in zip(_equipment_names(rows), parents[member], strict=True):
+        if pd.isna(name) or str(name) not in ticks:
             continue
         groups.setdefault(str(parent), []).append((str(name), ticks[str(name)]))
-    return {group: rows for group, rows in groups.items() if len(rows) >= 2}
+    return {group: items for group, items in groups.items() if len(items) >= 2}
 
 
 def _layout_of(rows: Sequence[tuple[str, _RowTicks]]) -> ModuleLayout:
@@ -853,6 +861,21 @@ def module_layouts(master: pd.DataFrame, groups: Collection[str]) -> dict[str, M
 
 def _placed_ticks(row: _RowTicks) -> bool:
     return row[0] is not None and row[1] is not None
+
+
+def _vanished_rows(
+    saved: pd.DataFrame, saved_names: pd.Series, candidate: pd.DataFrame, renames: Mapping[str, str]
+) -> dict[_RowTicks, int]:
+    """저장본에 있었는데 후보에 없는 행의 좌표·크기 눈금 → 행 수. RawData 에서 이름만 바꾼 행이
+    바뀐 행으로 읽히지 않게 같은 값과 한 번씩 짝짓는다 — 저장본에 없는 묶음 행이 있을 때만
+    구한다."""
+    present = {renames.get(str(name), str(name)) for name in _equipment_names(candidate).dropna()}
+    gone = saved[(~saved_names.isin(present) & saved_names.notna()).to_numpy(dtype=bool)]
+    counts: dict[_RowTicks, int] = {}
+    for row in _row_ticks(gone).values():
+        if any(value is not None for value in row):
+            counts[row] = counts.get(row, 0) + 1
+    return counts
 
 
 def module_layout_violations(
@@ -877,30 +900,34 @@ def module_layout_violations(
       (`assign_module_cells` 배정)과 모두 한 눈금(`_TILE_TOLERANCE`) 안이어야 한다 — 배치 편집기
       적용의 서버 판정과 같다. 좌표 없는 형제는 칸 수에 넣지 않는다(편집기가 묶음을 처음 옮길 때
       놓는다)."""
-    after = _row_ticks(candidate)
-    groups = _module_rows_by_group(candidate, after)
+    accepted = approved or {}
+    groups = {
+        group: rows
+        for group, rows in _module_rows_by_group(candidate).items()
+        if accepted.get(group) != _layout_of(rows)
+    }
     if not groups:
         return []
     mapping = renames or {}
-    accepted = approved or {}
-    before = _row_ticks(saved)
-    present = {mapping.get(name, name) for name in after}
-    # 저장본에 있었는데 후보에 없는 행의 값 — RawData 에서 이름만 바꾼 행이 바뀐 행으로 읽히지 않게
-    # 같은 값과 한 번씩 짝짓는다.
-    vanished: dict[_RowTicks, int] = {}
-    for name, row in before.items():
-        if name not in present and any(value is not None for value in row):
-            vanished[row] = vanished.get(row, 0) + 1
+    # 저장본은 묶음 행의 옛 이름만 읽는다.
+    saved_names = (
+        _equipment_names(saved)
+        if EQUIPMENT_ID_COLUMN in saved.columns
+        else pd.Series(dtype="string", index=saved.index)
+    )
+    wanted = {mapping.get(name, name) for rows in groups.values() for name, _ in rows}
+    before = _row_ticks(saved[saved_names.isin(wanted).to_numpy(dtype=bool)])
+    vanished: dict[_RowTicks, int] | None = None
     violations: list[str] = []
     for group, rows in groups.items():
-        if accepted.get(group) == _layout_of(rows):
-            continue
         changed = lost = False
         for name, row in rows:
             old = before.get(mapping.get(name, name))
             if old is None:
                 if all(value is None for value in row):
                     continue
+                if vanished is None:
+                    vanished = _vanished_rows(saved, saved_names, candidate, mapping)
                 if vanished.get(row, 0) > 0:
                     vanished[row] -= 1
                     continue
