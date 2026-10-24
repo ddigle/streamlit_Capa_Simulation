@@ -73,7 +73,8 @@ def assign_unit_keys(
     """편집본 설비명마다 호기 키를 정한다(저장 때).
 
     1. 이름 지도(`renames` — 지금 이름 → 저장본 이름)로 이어받는 키가 먼저 차지한다.
-    2. 남은 호기는 그 이름이 저장본에 있고 그 키가 아직 쓰이지 않았을 때만 그 키를 잇는다.
+    2. 남은 호기는 그 이름이 저장본에 있고 그 키가 아직 쓰이지 않았을 때만 그 키를 잇는다(1·2 는
+       `inherited_unit_names`).
     3. 그 밖은 새 키다. 「A→B 이름 바꿈 + 새 A」 에서 B 가 A 의 키를 잇고 새 A 는 새 키를 받는다.
        RawData 에서 설비명을 고친 호기도 지도가 없으므로 새 키다(지운 호기 + 새 호기).
     4. 결과 키가 겹치면(두 호기가 한 저장본 이름을 이었다) `ValueError` — 한 호기의 일정이 두 호기로
@@ -83,19 +84,10 @@ def assign_unit_keys(
     repeated = sorted({name for name in ordered if ordered.count(name) > 1})
     if repeated:
         raise ValueError(f"설비명이 겹쳐 호기 키를 정할 수 없습니다: {repeated[:5]}")
-    keys: dict[str, str] = {}
-    for name in ordered:
-        saved = renames.get(name)
-        if saved is not None and saved in base_unit_keys:
-            keys[name] = base_unit_keys[saved]
-    used = set(keys.values())
-    for name in ordered:
-        if name in keys:
-            continue
-        inherited = base_unit_keys.get(name)
-        if inherited is not None and inherited not in used:
-            keys[name] = inherited
-            used.add(inherited)
+    keys = {
+        name: base_unit_keys[origin]
+        for name, origin in inherited_unit_names(ordered, base_unit_keys, renames).items()
+    }
     for name in ordered:
         if name not in keys:
             keys[name] = new_key()
@@ -110,6 +102,32 @@ def assign_unit_keys(
             "그 이름을 잇게 하세요."
         )
     return {name: keys[name] for name in ordered}
+
+
+def inherited_unit_names(
+    names: Sequence[str], saved_names: Collection[str], renames: Mapping[str, str]
+) -> dict[str, str]:
+    """편집본 설비명 → 저장하면 그 호기 키를 이어받을 저장본 설비명(`assign_unit_keys` 의 1·2 규칙
+    그대로). 새 키를 받을 이름(새 호기)은 빠진다.
+
+    1. 이름 지도(`renames` — 지금 이름 → 저장본 이름)가 먼저 잇는다.
+    2. 남은 이름은 저장본에 같은 이름이 있고 그 호기를 아직 아무도 잇지 않았을 때 잇는다.
+
+    키 정하기(저장)와 가정 설비 시나리오의 배치 칸 임시 잠금(어느 행이 「있던 호기」인가)이 같은
+    규칙을 쓴다 — 둘이 갈리면 잠금이 새 호기로 본 행이 저장에서 있던 호기의 공통 칸을 고친다. 같은
+    설비명이 여럿이면 첫 것만 잇는다(저장은 겹침으로 거부된다)."""
+    saved = set(saved_names)
+    inherited: dict[str, str] = {}
+    for name in names:
+        origin = renames.get(name)
+        if origin is not None and origin in saved:
+            inherited.setdefault(name, origin)
+    used = set(inherited.values())
+    for name in names:
+        if name not in inherited and name in saved and name not in used:
+            inherited[name] = name
+            used.add(name)
+    return inherited
 
 
 def split_equipment(

@@ -115,6 +115,7 @@ class BrowserTables:
     def __init__(self, app: AppTest) -> None:
         self.app = app
         self.edits: dict[str, dict[int, dict[str, object]]] = {}
+        self.added: dict[str, list[dict[str, object]]] = {}
 
     def widget_id(self, widget_key: str) -> str:
         """그 위젯 key 로 그려진 편집표의 위젯 id(「$$ID-…-<key>」)."""
@@ -129,12 +130,17 @@ class BrowserTables:
         rows = self.edits.setdefault(self.widget_id(widget_key), {})
         rows.setdefault(position, {})[column] = value
 
+    def add(self, widget_key: str, row: dict[str, object]) -> None:
+        """그 편집표 끝에 행 하나를 더한다(칸 이름 → 값, 다음 `run()` 에 보낸다) — 브라우저의
+        행 추가 「+」."""
+        self.added.setdefault(self.widget_id(widget_key), []).append(row)
+
     def _states(self) -> WidgetStates:
         states = WidgetStates()
         mounted: set[str] = set()
         for node in self.app._tree:
             proto_id = getattr(getattr(node, "proto", None), "id", "")
-            if isinstance(proto_id, str) and proto_id in self.edits:
+            if isinstance(proto_id, str) and (proto_id in self.edits or proto_id in self.added):
                 mounted.add(proto_id)
                 state = states.widgets.add()
                 state.id = proto_id
@@ -142,9 +148,9 @@ class BrowserTables:
                     {
                         "edited_rows": {
                             str(position): change
-                            for position, change in self.edits[proto_id].items()
+                            for position, change in self.edits.get(proto_id, {}).items()
                         },
-                        "added_rows": [],
+                        "added_rows": self.added.get(proto_id, []),
                         "deleted_rows": [],
                     }
                 )
@@ -164,5 +170,8 @@ class BrowserTables:
         }
         self.edits = {
             widget_id: rows for widget_id, rows in self.edits.items() if widget_id in present
+        }
+        self.added = {
+            widget_id: rows for widget_id, rows in self.added.items() if widget_id in present
         }
         return self.app
