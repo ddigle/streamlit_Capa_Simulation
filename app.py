@@ -14,10 +14,6 @@ from capa_simulation.components.app_header import (
     render_shell_style,
 )
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
-from capa_simulation.components.equipment_data_workspace import (
-    has_unsaved_equipment_edits,
-    pending_fab_layout,
-)
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
     equipment_scenario_dialog_is_open,
@@ -31,6 +27,12 @@ from capa_simulation.components.intro_summary import (
     warm_intro_summary,
 )
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
+from capa_simulation.components.page_tabs import (
+    leave_notice,
+    page_unsaved_marks,
+    render_page_tabs,
+    route_page_tabs,
+)
 from capa_simulation.components.period_field import (
     close_period_dialog,
     period_dialog_is_open,
@@ -47,7 +49,6 @@ from capa_simulation.components.scenario_status import (
     show_scenario_dialog,
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
-from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
@@ -59,6 +60,7 @@ from capa_simulation.page_bootstrap import (
     forget_page_dialogs,
     render_schema_ahead_warning,
 )
+from capa_simulation.page_tabs_state import note_current_page
 from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
@@ -266,10 +268,18 @@ with pinned_connections(DUCKDB_PATH):
     active_href = navigation.url_path
     current_spec = pages.spec_for(navigation.url_path)
     page_file = None if current_spec is None else Path(current_spec.path).name
+    # 탭 줄 콜백이 적어 둔 이동(다른 탭 고르기·지금 탭 닫기)과 탭 상한(10개). 상한은 옮기기 전에
+    # 막고(탭 줄 JS·`refused_at_tab_limit`), 그래도 들어온 화면(뒤로가기로 닫은 탭의 기록)만 여기서
+    # 직전 화면으로 되돌린다. 사이드바·머리 띠를 보내기 전에 끊는다. 직전 화면 주소는 아래에서
+    # 이번 화면으로 바뀐다.
+    route_page_tabs(current_spec, pages=pages, previous_url=st.session_state.get(SIDEBAR_PAGE_KEY))
     # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —
     # 적용하지 않은 편집은 시나리오에 들어 있지 않다(`scenario_edit_bar.register_pending_edits`).
-    # 세션만 읽는다. 아래 테마 표지와 조건 패널 맨 위 줄이 같은 값을 쓴다.
+    # 세션만 읽는다. 조건 패널 맨 위 줄이 이 값을 쓴다.
     pending_edits = pending_edit_labels(page_file)
+    # 탭에 점을 찍을 화면(저장·적용하지 않은 편집)과 지금 화면을 떠나면 사라지는 편집표 편집. 세션만
+    # 읽는다. 아래 테마 표지와 탭 줄이 같은 값을 쓴다(`components/page_tabs.py`).
+    unsaved_marks = page_unsaved_marks(page_file)
 
     st.html(
         build_sidebar_stylesheet(
@@ -277,19 +287,11 @@ with pinned_connections(DUCKDB_PATH):
             active_href,
             admin_box_key=ADMIN_BOX_KEY,
         )
-        # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오·설비 편집이
-        # 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은 표지를 본다. Space FAB 전체
-        # 배치 대기분은 설비 편집본 세대를 올리지 않으므로 따로 본다. 적용 전 편집(편집표·붙여넣기
-        # 대기)도 시나리오에 들어 있지 않아 미저장 판정에 잡히지 않고, 새 세션에는 남지 않는다.
-        # Space 층 사용 편집 초안도 세션만 읽는다(`사용 편집` 이 켜져 있고 저장본과 다를 때 —
-        # 칸 편집은 페이지 본문이 접으므로 이 회차의 편집표 위젯 상태까지 접어 본다).
-        + unsaved_edits_marker(
-            has_unsaved_scenario_changes()
-            or has_unsaved_equipment_edits()
-            or pending_fab_layout() is not None
-            or floor_state_draft_pending()
-            or bool(pending_edits)
-        )
+        # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
+        # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
+        # Data 초안·시나리오 관리 표 초안)이 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은
+        # 표지를 본다. 판정은 탭 점과 한 벌이다.
+        + unsaved_edits_marker(has_unsaved_scenario_changes() or bool(unsaved_marks))
     )
     # 머리 띠의 「공식 vN」은 위 요약이 이 회차에 확인한 값을 읽는다 — 요약보다 뒤여야 한다.
     # 설비 시나리오를 읽는 화면은 아래 줄 끝에 설비 시나리오 꼬리를 단다 — 그 글은 페이지가 지난
@@ -317,6 +319,11 @@ with pinned_connections(DUCKDB_PATH):
     # 것은 그대로 남는다 — 매 회차 덮어쓰면 방금 누른 클릭을 지운다.
     page_changed = st.session_state.get(SIDEBAR_PAGE_KEY) != navigation.url_path
     st.session_state[SIDEBAR_PAGE_KEY] = navigation.url_path
+    # 지금 화면을 탭 목록에 더한다(이미 있으면 차례 그대로). 사이드바·HOME 칸·카드 링크·뒤로가기·
+    # 주소, 어느 길로 들어왔든 이 한 줄로 탭이 된다. 페이지보다 앞이라 「이미 연 탭으로 들어옴」
+    # 표지가 그 화면 본문보다 먼저 선다(`page_tabs_state.reentered_open_tab`).
+    if current_spec is not None:
+        note_current_page(current_spec.path, page_changed=page_changed)
     if page_changed:
         # 떠난 페이지의 팝업 열림 상태를 버린다. 닫지 않고 떠나면 돌아왔을 때 팝업이 저절로 뜬다.
         forget_page_dialogs()
@@ -457,6 +464,10 @@ with pinned_connections(DUCKDB_PATH):
     # 같다).
     with st.container(key=CONDITION_DIALOG_SINK_KEY):
         render_condition_dialogs(page_file, shows_scenario, shows_period, shows_equipment)
+    # 머리 띠 아래 화면 탭 줄(`components/page_tabs.py`). **이 앞의 본문 칸은 모두 늘 서는
+    # 칸이다** — 순번이 회차마다 같아야 컴포넌트가 다시 마운트되지 않는다. 생겼다 사라지는 것
+    # (스키마 경고)은 뒤에 둔다.
+    render_page_tabs(current_spec, pages=pages, marks=unsaved_marks, leave=leave_notice(page_file))
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

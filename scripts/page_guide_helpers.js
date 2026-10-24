@@ -92,7 +92,11 @@ g.gridColumn = (el, title)=>{ const c=g.colIndex(el, title); if(c<0) return null
 // 화면 고유 표적(시안 capture.mjs 에서 옮김)
 g.grid = ()=> [...document.querySelectorAll('[data-testid="stDataFrame"]')].filter(g.vis)[0] || null;
 g.lastGrid = ()=> [...document.querySelectorAll('[data-testid="stMain"] [data-testid="stDataFrame"]')].filter(g.vis).pop() || null;
-g.pageTitle = ()=> [...document.querySelectorAll('[data-testid="stMain"] h1')].filter(g.vis)[0] || null;
+// 지금 화면의 이름 — 화면 탭 줄(그림자 DOM)의 지금 탭. 큰 제목(h1)은 화면에서 숨어(sr-only) 1px 칸이라 표적이 못 된다 —
+// 탭 줄이 없을 때만 잘리지 않은 h1 으로 물러선다
+g.pageTitle = ()=>{ const host=g.key('page_tabs_strip'); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot); const tab=sh && sh.shadowRoot.querySelector('button[aria-current="page"]'); if(tab && g.vis(tab)) return tab.closest('li') || tab;
+  const shown=(h)=>{ const w=h.closest('[data-testid="stLayoutWrapper"]'); return !w || getComputedStyle(w).clipPath==='none'; };
+  return [...document.querySelectorAll('[data-testid="stMain"] h1')].filter(h=>g.vis(h) && shown(h))[0] || null; };
 g.mainLink = (t)=> [...document.querySelectorAll('[data-testid="stMain"] a[data-testid="stPageLink-NavLink"]')].find(a=>g.vis(a)&&g.txt(a)===t) || null;
 g.mainAlert = (t)=> [...document.querySelectorAll('[data-testid="stMain"] [data-testid="stAlert"]')].filter(e=>g.vis(e)&&g.txt(e).includes(t))[0] || null;
 g.expander = (k)=>{ const e=g.key(k); if(!e) return null; return g.up(e, x=>TID(x)==='stExpander') || e.querySelector('[data-testid="stExpander"]') || e; };

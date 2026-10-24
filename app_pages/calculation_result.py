@@ -233,13 +233,15 @@ else:
                     )
             # 표시 방식은 이 탭 안의 하위 보기라 카드가 아니라 본문 표 위다(2026-09-29 사용자
             # 결정). 탭 이름이 이미 `대당 Capa` 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계
-            # 단위가 다른 것이지 다른 지표가 아니다.
+            # 단위가 다른 것이지 다른 지표가 아니다. 같은 카드의 「집계 수준」·「공정 필터」처럼
+            # 다른 화면(탭)에 갔다 와도 남는다 — 하위 보기 전환도 보기 조건이다(2026-10-24 사용자
+            # 결정).
             capacity_view = st.segmented_control(
                 "표시 방식",
                 options=["공정별", "STEP별"],
                 default="공정별",
                 key="unit_capacity_view_mode",
-                persist_state="page",
+                persist_state="session",
             )
         with table_card(CARD_NAME):
             selected_level_label = st.selectbox(

@@ -6,7 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.loading_progress import LoadingProgress, LoadingStage
-from capa_simulation.components.page_header import STATUS_SLOT_KEY
+from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
 
 STAGES = (
     LoadingStage("첫 단계", 20),
@@ -97,14 +97,16 @@ slot.progress(0.05, text="Capa 를 계산하는 중 · 5%")
 def test_the_header_slot_is_a_keyed_container_right_after_a_plain_title() -> None:
     """막대 자리는 제목 줄 컬럼이 아니라 키를 단 컨테이너다(2026-10-08 사용자 결정 — 머리 띠로).
     머리 띠 CSS(`app_header.STATUS_SLOT_SELECTOR`)가 그 키로 자리를 찾아 띠 안에 고정한다. 제목은
-    다른 페이지와 같은 `st.title` 이고, 막대는 Streamlit 의 `st.progress` 그대로다 — 입장 화면이
-    그 요소의 퍼센트를 읽는다.
+    다른 페이지와 같은 `st.title` 이고(화면에서 숨기는 키 칸 `PAGE_TITLE_KEY` 안에 하나), 막대는
+    Streamlit 의 `st.progress` 그대로다 — 입장 화면이 그 요소의 퍼센트를 읽는다.
     """
     app = AppTest.from_string(_HEADER_SLOT_SCRIPT).run()
 
     assert not app.exception
-    title, slot, caption = app.main.children.values()
-    assert title.type == "title"
+    title_box, slot, caption = app.main.children.values()
+    assert title_box.type == "flex_container"
+    assert str(title_box.proto.id).endswith(f"-{PAGE_TITLE_KEY}")
+    assert [child.type for child in title_box.children.values()] == ["title"]
     assert [element.value for element in app.title] == ["Capa LOB Summary"]
     assert slot.type == "flex_container"
     assert str(slot.proto.id).endswith(f"-{STATUS_SLOT_KEY}")

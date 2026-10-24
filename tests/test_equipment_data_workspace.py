@@ -1084,3 +1084,46 @@ def test_location_choices_hold_while_the_master_editor_has_edits(tmp_path: Path)
     tables.run()
     assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4"]
     clear_equipment_repository()
+
+
+def test_history_filters_survive_a_visit_to_another_page(tmp_path: Path) -> None:
+    """저장 이력의 조회 조건(공정소분류·비가동유형·기간)은 보기 조건이다 — 화면 탭으로 다른 화면에
+    갔다 와도 마지막으로 제출한 값이 남는다(`persist_state="session"`)."""
+    path = tmp_path / "equipment.duckdb"
+    equipment = _master(["EQ-A", "EQ-B"])
+    downtime = prepare_downtime_schedule(
+        pd.DataFrame(
+            {
+                "설비명": ["EQ-A"],
+                "비가동유형": ["고장"],
+                "시작일": [date(2026, 3, 2)],
+                "종료일": [date(2026, 3, 9)],
+            }
+        ).reindex(columns=DOWNTIME_COLUMNS),
+        equipment=equipment,
+    )
+    _repository(path).save_snapshot(empty_equipment_baseline(), equipment, downtime)
+    app = _app_between_pages(path)
+    assert not app.exception
+    app.multiselect("equipment_history_process_filter_v3").set_value(["Die Attach"])
+    app.multiselect("equipment_history_downtime_type_filter_v3").set_value(["고장"])
+    app.date_input("equipment_history_event_range_v3").set_value(
+        (date(2026, 3, 1), date(2026, 3, 31))
+    )
+    app.button("equipment_history_apply_v1").click().run()
+    assert not app.exception
+    revision = app.selectbox("equipment_history_revision_id_v4").value
+
+    app.session_state[_OTHER_PAGE_FLAG] = True
+    app.run()
+    app.session_state[_OTHER_PAGE_FLAG] = False
+    app.run()
+
+    assert not app.exception
+    assert app.multiselect("equipment_history_process_filter_v3").value == ["Die Attach"]
+    assert app.multiselect("equipment_history_downtime_type_filter_v3").value == ["고장"]
+    assert app.date_input("equipment_history_event_range_v3").value == (
+        date(2026, 3, 1),
+        date(2026, 3, 31),
+    )
+    assert app.selectbox("equipment_history_revision_id_v4").value == revision

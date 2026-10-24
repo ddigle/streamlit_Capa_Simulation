@@ -121,6 +121,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
                 default="reject",
                 format_func=OVERLAP_LABELS.__getitem__,
                 key=f"merge_overlap_{base.revision.revision_id}_{owner}_{start}_{end}",
+                persist_state="session",
                 help=(
                     "선택한 쪽의 월 전체를 12개 월표에 동일하게 적용합니다. "
                     "서로의 행을 섞지 않습니다."

@@ -130,8 +130,25 @@ def register_pending_edits(
     st.session_state[_PENDING_REGISTRY_KEY] = registry
 
 
-def pending_edit_labels(current_page: str | None) -> list[str]:
-    """적용하지 않은 편집이 남은 곳 — 「기준 정보 · UPEH」. 없으면 빈 목록이다.
+@dataclass(frozen=True)
+class PageEdits:
+    """한 화면의 적용 전 편집. 값은 「제목 · 이름」 글이다.
+
+    `editors` 는 편집표 몫(위젯 상태 — 화면을 떠나면 Streamlit 이 버리므로 지금 화면일 때만 든다),
+    `staged` 는 붙여넣기 대기 몫(세션 칸 — 어느 화면에서나 든다)이다.
+    """
+
+    title: str
+    editors: tuple[str, ...] = ()
+    staged: tuple[str, ...] = ()
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return (*self.editors, *self.staged)
+
+
+def pending_edit_pages(current_page: str | None) -> dict[str, PageEdits]:
+    """적용하지 않은 편집이 남은 화면(파일 이름 → `PageEdits`). 등록부 차례이고 빈 화면은 없다.
 
     **방금 적용한 표는 세지 않는다.** 적용한 회차는 `st.rerun()` 으로 끝나고, 다음 회차에는 이
     함수(사이드바)가 페이지보다 먼저 돈다. 그 편집표를 버리는 일(`reset_editors_on_source_change`)
@@ -139,29 +156,43 @@ def pending_edit_labels(current_page: str | None) -> list[str]:
     세면 사이드바와 저장 팝업이 방금 적용한 표를 「적용 전 편집」으로 띄우고, 버릴 것도 없는 확인
     체크를 요구하며 「신규 리비전 저장」을 잠갔다(2026-10-01 브라우저 E2E 에서 재현). 페이지가
     `mark_own_change` 로 적어 둔 표·붙여넣기 대기는 그 적용이 버릴 것이므로 뺀다.
+
+    편집표 몫은 지금 화면(`current_page`)의 것만 센다. 화면 탭 줄이 이것으로 탭마다 점을 찍고
+    지금 화면을 떠날 때 물을 것(`PageEdits.editors`)을 정한다(`components/page_tabs.py`).
     """
     registry = st.session_state.get(_PENDING_REGISTRY_KEY)
     if not isinstance(registry, dict):
-        return []
-    labels: list[str] = []
+        return {}
+    pages: dict[str, PageEdits] = {}
     for page, (title, editors, staged, *rest) in registry.items():
         # 서버를 띄운 채 코드를 바꾸면 세션에 `own_change_key` 가 없는 세 칸짜리 기록이 남아 있다.
         # 여기서 풀다 멈추면 페이지가 새로 적기 전에 사이드바가 매 회차 멈춘다.
         own_change_key = rest[0] if rest else None
         just_applied = st.session_state.get(own_change_key) if own_change_key else None
         skipped = set(just_applied) if isinstance(just_applied, list) else set()
+        edited: tuple[str, ...] = ()
         if page == current_page:
-            labels += [
+            edited = tuple(
                 f"{title} · {name}"
                 for key, name in editors.items()
                 if key not in skipped and editor_has_edits(key)
-            ]
-        labels += [
+            )
+        waiting = tuple(
             f"{title} · {name}"
             for key, name in staged.items()
             if key not in skipped and st.session_state.get(key) is not None
-        ]
-    return labels
+        )
+        if edited or waiting:
+            pages[page] = PageEdits(title, edited, waiting)
+    return pages
+
+
+def pending_edit_labels(current_page: str | None) -> list[str]:
+    """적용하지 않은 편집이 남은 곳 — 「기준 정보 · UPEH」. 없으면 빈 목록이다.
+
+    등록부 차례로, 화면마다 편집표 다음 붙여넣기 대기다. 세는 규칙은 `pending_edit_pages` 다.
+    """
+    return [label for edits in pending_edit_pages(current_page).values() for label in edits.labels]
 
 
 def forget_pending_edits() -> None:

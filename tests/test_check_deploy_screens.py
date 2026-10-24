@@ -1505,6 +1505,9 @@ class _StaleUrlPage:
             return self.location
         if script == screens._RUNNING_JS:
             return False
+        if script == screens._PAGE_TABS_JS:
+            # 탭 줄이 아직 없다 — 자리 비우기(`make_tab_room`)가 아무것도 하지 않는다.
+            return None
         raise AssertionError(script)
 
 
@@ -1665,6 +1668,7 @@ NEW_ITEM_KEYS = [
     "gap_sheet",
     "equipment_scenario_line",
     "space_floor_state",
+    "page_tabs",
 ]
 
 
@@ -2843,3 +2847,36 @@ def test_the_space_floor_state_summary_carries_counts_only(
     args: tuple[int | None, int, int | None, int, bool | None], expected: str
 ) -> None:
     assert screens.summarize_space_floor_state(*args) == expected
+
+
+def test_the_page_tab_constants_match_the_app() -> None:
+    from capa_simulation.page_tabs_state import MAX_TABS, PAGE_TABS_COMPONENT_KEY
+
+    assert screens.PAGE_TABS_KEY == PAGE_TABS_COMPONENT_KEY
+    assert screens.PAGE_TABS_MAX == MAX_TABS
+
+
+@pytest.mark.parametrize(
+    ("opened", "back_home", "closed", "verdict"),
+    [
+        (
+            [
+                {"active": False, "closable": False, "pinned": True},
+                {"active": True, "closable": True},
+            ],
+            True,
+            [{"active": True, "closable": False, "pinned": True}],
+            "연 뒤 탭 2 · HOME 고정 있음 · 탭으로 HOME 옮김 · 닫은 뒤 탭 1 — 정한 동작과 같음",
+        ),
+        (
+            [{"active": True, "closable": True}],
+            False,
+            [{"active": True}],
+            "연 뒤 탭 1 · HOME 고정 없음 · 탭으로 HOME 못 옮김 · 닫은 뒤 탭 1 — 정한 동작과 다름",
+        ),
+    ],
+)
+def test_the_page_tab_line_counts_only(
+    opened: list[dict[str, bool]], back_home: bool, closed: list[dict[str, bool]], verdict: str
+) -> None:
+    assert screens.summarize_page_tabs(opened, back_home, closed) == verdict

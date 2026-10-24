@@ -89,6 +89,16 @@ def load_draft(key: str) -> TableDraft:
     return held if isinstance(held, TableDraft) else TableDraft()
 
 
+def table_has_edits(key: str) -> bool:
+    """저장하지 않은 이름·순서 편집이 초안에 남았는가. 세션만 읽는다(화면 탭 줄의 점).
+
+    `fold_edits` 가 저장 이름과 같아진 이름을 빼고, 저장 차례면 `order=None` 으로 두므로 거의
+    정확하다. 다른 세션이 이름을 같은 값으로 바꾼 꼴만 남는다(받아들인다).
+    """
+    draft = load_draft(key)
+    return bool(draft.names) or draft.order is not None
+
+
 def store_draft(key: str, draft: TableDraft) -> None:
     st.session_state[draft_session_key(key)] = draft
 

@@ -47,6 +47,7 @@ def _render_shift(repository: DuckDBScenarioRepository, database_path: str) -> N
         step=1,
         help="양수는 이후 연도, 음수는 이전 연도로 이동합니다. 예: 2는 2년 뒤, -2는 2년 전.",
         key="scenario_shift_years",
+        persist_state="session",
     )
     original = copy_scenario_tables(source.tables)
     shifted = shift_scenario_years(original, years)

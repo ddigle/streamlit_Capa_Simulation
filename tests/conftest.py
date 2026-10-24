@@ -1,4 +1,4 @@
-# Purpose: 모든 테스트가 공유하는 자동 복원 장치와 Space 편집기 컴포넌트 대역을 한 곳에 둔다.
+# Purpose: 모든 테스트가 공유하는 자동 복원 장치와 Space 편집기·탭 줄 컴포넌트 대역을 둔다.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -17,7 +17,7 @@ from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
-from capa_simulation.components import space_layout_editor
+from capa_simulation.components import page_tabs, space_layout_editor
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -143,3 +143,17 @@ def _stub_space_layout_editor(monkeypatch: pytest.MonkeyPatch) -> None:
         return SimpleNamespace(apply=None, navigate=None)
 
     monkeypatch.setattr(space_layout_editor, "_EDITOR", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _stub_page_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """화면 탭 줄 컴포넌트(`page_tabs._PAGE_TABS`)를 아무것도 보내지 않는 대역으로 바꾼다.
+
+    `app.py` 가 매 회차 그린다. Space 편집기와 같은 까닭이다 — AppTest 는 JS 를 못 돌리고, 한
+    프로세스의 두 번째 AppTest 에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다. 받은 값을
+    보는 시험(`tests/test_page_tabs.py`)은 제 `monkeypatch.setattr` 로 이 위에 다시 덮는다."""
+
+    def _silent(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(select=None, close=None, pin=None)
+
+    monkeypatch.setattr(page_tabs, "_PAGE_TABS", _silent)

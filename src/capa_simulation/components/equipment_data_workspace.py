@@ -2149,10 +2149,12 @@ def _render_history(
     selected_id = prune_choice(
         "equipment_history_revision_id_v4", list(by_id), default=next(iter(by_id))
     )
+    # 보기 조건은 다른 화면(탭)에 갔다 와도 남는다(`persist_state="session"`, AGENTS 9장).
     st.selectbox(
         "조회 리비전",
         options=list(by_id),
         key="equipment_history_revision_id_v4",
+        persist_state="session",
         format_func=lambda value: (
             f"{schedule_revision_title(by_id[value])} · {by_id[value].note or '메모 없음'}"
         ),
@@ -2178,11 +2180,13 @@ def _render_history(
                     column,
                     equipment[column].dropna().drop_duplicates().tolist(),
                     key=f"equipment_history_{suffix}_filter_v3",
+                    persist_state="session",
                 )
             downtime_types = st.multiselect(
                 "비가동유형",
                 downtime["비가동유형"].dropna().drop_duplicates().tolist(),
                 key="equipment_history_downtime_type_filter_v3",
+                persist_state="session",
             )
         today = date.today()
         event_start = downtime["시작일"].min()
@@ -2194,6 +2198,7 @@ def _render_history(
             "비가동 일정 기간",
             value=default_range,
             key="equipment_history_event_range_v3",
+            persist_state="session",
         )
     for column, selected in filters.items():
         if selected:

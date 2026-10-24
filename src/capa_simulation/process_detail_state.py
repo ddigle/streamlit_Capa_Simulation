@@ -55,6 +55,7 @@ from capa_simulation.home_state import (
 )
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import prune_choice
+from capa_simulation.page_tabs_state import reentered_open_tab, refused_at_tab_limit
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_picker import ProcessPickerItem
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -451,7 +452,12 @@ def open_process_detail(request: ProcessDetailRequest) -> None:
     본문에서 부르면 그 `st.empty()` 는 보내지기 전에 이동 요청이 회차를 끊는다. 갈 곳이
     없으면(내비게이션이 없는 단독 실행 — AppTest 는 등록된 페이지가 없다) 옮기지 않고 적은 전달 칸도
     거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
+
+    화면 탭이 상한이고 공정 Capa 상세 탭이 없으면 전달 칸을 적지 않고 옮기지도 않는다 — 탭 줄에
+    알리고 앱 전체를 다시 돌린다(`page_tabs_state.refused_at_tab_limit`).
     """
+    if refused_at_tab_limit(PROCESS_CAPA_DETAIL.path):
+        return
     st.session_state[PROCESS_DETAIL_REQUEST_KEY] = request
     theme = st.query_params.get(THEME_QUERY_PARAM)
     try:
@@ -542,12 +548,19 @@ def _read_detail_query() -> tuple[tuple[str, str], ...]:
 
 
 def _continues_this_page() -> bool:
-    """직전에 끝까지 돈 실행도 이 페이지였나. 판정하지 못하면 False — 새 방문으로 본다.
+    """이 방문을 이어 보는가 — 직전에 끝까지 돈 실행도 이 페이지였거나, 이미 연 탭으로 돌아왔다.
 
     `app.py` 맨 위의 실행 표지(`sidebar_status.begin_app_run`)는 실행이 끝까지 돌았을 때 그 페이지를
     적는다. 이번 실행 도중에 읽으면 직전에 끝까지 돈 실행의 페이지다(`complete` 는 이번 실행이 이미
     내려 두었으므로 보지 않는다). 표지가 없는 단독 실행(페이지만 띄운 시험)은 늘 새 방문이다.
+
+    **화면 탭 줄의 이미 열린 탭으로 돌아온 회차도 이어 본다**(2026-10-24 사용자 결정 — 탭 줄이든
+    사이드바든, `page_tabs_state.reentered_open_tab`). 탭을 한 번 오갔다고 HOME·카드 출처 띠와 결합
+    캔버스 가로 위치·설비 방문 기준을 걷지 않는다. 탭을 닫았다가 다시 열면 지금처럼 새 방문이다.
+    밖에서 새 길로 들어온 회차(`entered` — 전달 칸·주소)는 이것과 상관없이 새로 적는다.
     """
+    if reentered_open_tab(PROCESS_CAPA_DETAIL.path):
+        return True
     state = st.session_state.get(APP_RUN_STATE_KEY)
     ctx = get_script_run_ctx(suppress_warning=True)
     return isinstance(state, dict) and ctx is not None and state.get("page") == ctx.page_script_hash

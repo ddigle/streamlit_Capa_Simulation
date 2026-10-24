@@ -231,6 +231,11 @@ PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 44 + 27 * 3 + 13
 # HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
 # 못 고른다.
 HOME_LINK_KEY: Final = "home_navigation"
+# 머리 띠 아래 화면 탭 줄(`page_tabs_state.PAGE_TABS_COMPONENT_KEY`·`MAX_TABS`). 값만 옮기고
+# 테스트가 같은지 본다. 탭은 그림자 DOM 안의 목록 단추다 — 탭 역할을 쓰지 않아 `open_tab` 이 잡지
+# 않는다.
+PAGE_TABS_KEY: Final = "page_tabs_strip"
+PAGE_TABS_MAX: Final = 10
 HOME_MAIN_TAB: Final = "Main"
 # 사이드바 「조회 조건」 통합 패널. 앱 모듈(`sidebar_status`·`condition_field`·`scenario_status`·
 # `period_field`·`home_preference`)을 부르면 Streamlit 캐시 경고가 찍혀 값만 옮기고 테스트가 같은지
@@ -1040,6 +1045,18 @@ class StreamlitApp:
 # ---------------------------------------------------------------------------------- 공통 뼈대
 
 _RUNNING_JS = """() => !!document.querySelector('[data-testid="stStatusWidget"]')"""
+# 화면 탭 줄의 보이는 탭 — 지금 탭인가·닫기 단추가 있는가·고정인가. 이름은 찍지 않는다.
+_PAGE_TABS_JS = """(key) => {
+  const host = document.querySelector('.st-key-' + key);
+  const holder = host && [...host.querySelectorAll('*')].find((e) => e.shadowRoot);
+  const root = holder && holder.shadowRoot;
+  if (!root) return null;
+  return [...root.querySelectorAll('.capa-tabs-item')].filter((li) => !li.hidden).map((li) => ({
+    active: li.querySelector('.capa-tabs-tab').getAttribute('aria-current') === 'page',
+    closable: !li.querySelector('.capa-tabs-x').hidden,
+    pinned: li.classList.contains('is-pinned'),
+  }));
+}"""
 _PATH_JS = "() => location.pathname"
 _INTRO_STATE_JS = """(id) => {
   const host = document.getElementById(id);
@@ -1311,8 +1328,37 @@ class Screen:
         때까지 10초씩 기다렸다(사내 리뷰 202610182227, 링크마다 약 72초). 페이지에 물어 읽는다."""
         return str(self.js(_PATH_JS))
 
+    def page_tabs(self) -> list[dict[str, bool]]:
+        """화면 탭 줄의 보이는 탭(`_PAGE_TABS_JS`). 탭 줄이 없으면 빈 목록."""
+        return list(self.js(_PAGE_TABS_JS, PAGE_TABS_KEY) or [])
+
+    def tab_item(self, index: int) -> Any:
+        """화면 탭 줄의 `index` 번째 탭(그림자 DOM — Playwright CSS 가 뚫는다)."""
+        return self.page.locator(f".st-key-{PAGE_TABS_KEY} .capa-tabs-item").nth(index)
+
+    def make_tab_room(self) -> None:
+        """탭이 상한(`PAGE_TABS_MAX`)이면 지금 탭이 아닌 닫을 수 있는 탭 하나를 닫는다.
+
+        탭 줄은 상한을 넘는 화면을 열지 않는다(사이드바 링크 누름을 막고 알린다) — 항목들이 한
+        세션에서 화면을 열 개 넘게 옮겨 다니므로 사이드바 링크를 누르기 전에 자리를 비운다. 닫아도
+        그 화면의 보기 조건은 남는다(탭 줄 규칙)."""
+        tabs = self.page_tabs()
+        if len(tabs) < PAGE_TABS_MAX:
+            return
+        index = next(
+            (i for i, tab in enumerate(tabs) if tab["closable"] and not tab["active"]), None
+        )
+        if index is None:
+            return
+        item = self.tab_item(index)
+        item.hover()
+        item.locator(".capa-tabs-x").click()
+        self.poll(lambda: len(self.page_tabs()), timeout=10, accept=lambda n: n < len(tabs))
+        self.wait_idle()
+
     def open_page(self, href_suffix: str) -> None:
         """사이드바 링크로 간다. 접힌 묶음(`details`) 안이면 묶음 머리부터 편다."""
+        self.make_tab_room()
         link = self.page.locator(f'[data-testid="stSidebar"] a[href$="{href_suffix}"]').first
 
         def arrived() -> bool:
@@ -2693,6 +2739,59 @@ def check_process_detail(screen: Screen) -> str:
     return summarize_process_detail(before, after)
 
 
+def summarize_page_tabs(
+    opened: Sequence[Mapping[str, Any]],
+    back_home: bool,
+    closed: Sequence[Mapping[str, Any]],
+) -> str:
+    """화면 탭 줄 한 줄 — 사이드바로 한 화면을 연 뒤의 탭 수, 탭으로 HOME 에 돌아갔는가, × 로
+    닫은 뒤 탭 수. 정한 동작은 「HOME(고정) + 연 화면 = 2 → HOME 탭으로 돌아감 → 닫으면 1」 이다."""
+    active = sum(1 for tab in opened if tab.get("active"))
+    pinned_home = bool(opened) and bool(opened[0].get("pinned")) and not opened[0].get("closable")
+    same = len(opened) == 2 and active == 1 and pinned_home and back_home and len(closed) == 1
+    return (
+        f"연 뒤 탭 {len(opened)} · HOME 고정 {'있음' if pinned_home else '없음'} · "
+        f"탭으로 HOME {'옮김' if back_home else '못 옮김'} · 닫은 뒤 탭 {len(closed)} — "
+        f"정한 동작과 {'같음' if same else '다름'}"
+    )
+
+
+def _close_first_closable_tab(screen: Screen) -> bool:
+    """닫을 수 있는 첫 탭을 × 로 닫는다. 닫을 탭이 없으면 False."""
+    before = len(screen.page_tabs())
+    index = next((i for i, tab in enumerate(screen.page_tabs()) if tab["closable"]), None)
+    if index is None:
+        return False
+    item = screen.tab_item(index)
+    item.hover()
+    item.locator(".capa-tabs-x").click()
+    screen.poll(lambda: len(screen.page_tabs()), timeout=10, accept=lambda n: n < before)
+    screen.wait_idle()
+    return True
+
+
+def check_page_tabs(screen: Screen) -> str:
+    """머리 띠 아래 화면 탭 줄 — HOME 에서 다른 탭을 모두 닫고, 사이드바로 한 화면을 연 뒤 탭 수,
+    탭으로 HOME 에 돌아가는가, 그 화면 탭을 × 로 닫은 뒤 탭 수를 센다. 개수와 있음/없음만
+    찍는다. 보는 조작이라 DB 에 쓰지 않는다."""
+    screen.open_home()
+    # 상한 자리 비우기(`make_tab_room`)와 같은 길로 닫을 수 있는 탭을 모두 닫는다.
+    for _ in range(PAGE_TABS_MAX):
+        if not _close_first_closable_tab(screen):
+            break
+    screen.open_page(SCENARIO_MANAGEMENT_PAGE)
+    opened = screen.page_tabs()
+    screen.tab_item(0).locator(".capa-tabs-tab").click()
+    back_home = bool(screen.poll(lambda: screen.path() in ("", "/"), timeout=20, accept=bool))
+    screen.wait_idle()
+    other = screen.tab_item(1)
+    other.hover()
+    other.locator(".capa-tabs-x").click()
+    closed = screen.poll(lambda: screen.page_tabs(), timeout=10, accept=lambda tabs: len(tabs) < 2)
+    screen.wait_idle()
+    return summarize_page_tabs(opened, back_home, closed)
+
+
 def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
     """사이드바 그룹 상자 한 줄 — 상자마다 「제목 머리 + 하위 수」, 정한 차례·수와 같은지, 상자
     제목이 한 줄로 다 보이는지. 제목은 고정 어휘(`SIDEBAR_GROUP_BOXES`)에서 적고 화면 글자는
@@ -3304,6 +3403,7 @@ ITEMS: tuple[Item, ...] = (
     Item("gap_sheet", "Static 대비 일정 비교 시트", check_gap_sheet),
     Item("equipment_scenario_line", "설비 시나리오 줄·팝업", check_equipment_scenario_line),
     Item("space_floor_state", "Space 층 사용 칸", check_space_floor_state),
+    Item("page_tabs", "화면 탭 줄", check_page_tabs),
 )
 
 
