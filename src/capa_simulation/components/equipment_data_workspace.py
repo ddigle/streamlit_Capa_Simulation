@@ -2026,6 +2026,18 @@ ORIGIN_WORDS = {
 }
 
 
+def schedule_revision_title(revision: EquipmentScheduleRevisionSummary) -> str:
+    """일정 리비전의 짧은 이름 — 「r3」, 리비전명이 있으면 「r3 · 셋업 반영본」(E7).
+
+    리비전명은 이름표라 고칠 수 있다 — 리비전 목록(`load_equipment_schedule_revisions`)에서 받은
+    요약으로만 부른다. 합친 본문의 `schedule` 은 이름을 싣지 않는다(늘 None). 선택지·표 칸처럼
+    글자 그대로 그리는 자리용이다 — Markdown 에 넣을 때는 부르는 쪽이 `literal_markdown` 으로
+    감싼다.
+    """
+    name = (revision.revision_name or "").strip()
+    return f"r{revision.revision_no} · {name}" if name else f"r{revision.revision_no}"
+
+
 def _render_history(
     repository: DuckDBEquipmentRepository,
     *,
@@ -2060,6 +2072,7 @@ def _render_history(
             [
                 {
                     "리비전": f"r{item.revision_no}",
+                    "리비전명": item.revision_name,
                     "저장시각": item.created_at,
                     "저장자": item.saved_by,
                     "출처": ORIGIN_WORDS.get(item.origin, item.origin),
@@ -2085,7 +2098,7 @@ def _render_history(
         options=list(by_id),
         key="equipment_history_revision_id_v4",
         format_func=lambda value: (
-            f"r{by_id[value].revision_no} · {by_id[value].note or '메모 없음'}"
+            f"{schedule_revision_title(by_id[value])} · {by_id[value].note or '메모 없음'}"
         ),
     )
     chosen = by_id[selected_id]
