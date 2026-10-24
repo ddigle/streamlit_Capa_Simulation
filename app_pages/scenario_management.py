@@ -20,7 +20,7 @@ from capa_simulation.components.equipment_scenario_management import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.scenario_management import render_scenario_management
-from capa_simulation.components.tab_state import stateful_tabs
+from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.settings import DUCKDB_PATH
@@ -47,6 +47,12 @@ except BOOTSTRAP_ERRORS as exc:
 # 와도 보던 탭이 열린다. 대가로 탭을 누를 때마다 rerun 이 한 번 돈다. 세 탭을 다 그리므로 그
 # rerun 에도 폼 위젯은 같은 자리에 남는다.
 # 탭 이름 앞 아이콘은 그 탭이 하는 일이다(탭 목록 개선안 B).
+#
+# 탭 묶음 위 자리 하나 — 설비 시나리오 세션을 다른 리비전으로 옮겼다는 한 번뿐인 알림(미저장
+# 설비 편집을 버렸다는 말이 든다)을 「시나리오 관리」 탭이 숨은 회차에 여기 그린다. 세 탭을 늘
+# 다 그리므로 다른 탭을 보는 회차에도 설비 시나리오 구획이 세션을 풀고, 숨은 패널에 그린 알림은
+# 보지 못한 채 다음 회차에 사라진다(이 화면에는 사이드바 설비 시나리오 줄이 없다).
+equipment_notice_slot = st.empty()
 management_tab, query_tab, auto_update_tab = stateful_tabs(
     [
         SCENARIO_MANAGEMENT_TAB,
@@ -73,7 +79,9 @@ with management_tab:
         required=True,
     )
     if kind == EQUIPMENT_KIND:
-        render_equipment_scenario_section()
+        render_equipment_scenario_section(
+            notice_slot=equipment_notice_slot if tab_is_hidden(management_tab) else None
+        )
     else:
         render_scenario_management(repository, database_path)
 with query_tab:

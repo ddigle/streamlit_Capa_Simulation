@@ -5,8 +5,9 @@
 자리는 시나리오 관리 화면 「시나리오 관리」 탭 맨 위 「관리할 시나리오」 전환의 「설비 시나리오」
 쪽이다(2026-10-24 사용자 결정 — 가용설비 현황 두 탭 개편. 그 전에는 가용설비 현황의 탭이었다). 그
 화면에는 사이드바 설비 시나리오 줄이 서지 않아 구획 머리에 「이 세션: …」 한 줄과 세션 알림을 그린다
-(`render_equipment_scenario_section`). 다른 설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서
-이어 쓰기」 는 이 구획으로 옮긴다(`open_equipment_scenario_management`).
+(`render_equipment_scenario_section` — 탭이 숨은 회차의 이동 알림만 화면이 넘긴 탭 묶음 위
+자리). 다른 설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 구획으로
+옮긴다(`open_equipment_scenario_management`).
 
 - **시나리오 표**: 이름·상태(공식 vN / 활성)·최신 rN·리비전 수·올라와 있음. 고른 시나리오에
   「시나리오 이름 바꾸기」.
@@ -35,6 +36,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 from streamlit.errors import StreamlitPageNotFoundError
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
@@ -300,12 +302,17 @@ def session_heading(session: EquipmentSession) -> str:
     return "이 세션: " + " · ".join(parts)
 
 
-def render_equipment_scenario_section() -> None:
+def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = None) -> None:
     """시나리오 관리 「설비 시나리오」 구획 — 설비 DB 를 이 구획 안에서만 연다.
 
     설비 DB 를 읽지 못하면 그 까닭을 이 구획 안에서만 알린다(「시뮬레이션 시나리오」 쪽은 막지
     않는다). 옛 배포 흔적 경고는 구획 본문이 「이대로 이어 쓰기」 와 함께 그린다 — 머리에 따로
     세우지 않는다.
+
+    `notice_slot` 은 이 구획이 든 탭이 숨은 회차에 화면이 넘기는 늘 보이는 자리(탭 묶음 위
+    `st.empty`)다. 세션을 다른 리비전으로 옮겼다는 알림은 그 회차 한 번뿐이라(미저장 설비 편집을
+    버렸다는 말이 든다) 숨은 패널에 그리면 보지 못한 채 사라진다 — 그 알림만 그 자리에 그린다. 일정
+    없이 연 회차(`unmerged`)의 알림은 회차마다 다시 나오므로 구획 안 그대로다.
     """
     try:
         database_path = str(settings.EQUIPMENT_DUCKDB_PATH.resolve())
@@ -324,7 +331,10 @@ def render_equipment_scenario_section() -> None:
         "사이드바 설비 시나리오 줄에서도 합니다. 이 세션이 든 쌍은 그 화면들과 같습니다."
     )
     if session.notice:
-        st.warning(session.notice, icon=":material/sync_problem:")
+        if notice_slot is not None and not session.unmerged:
+            notice_slot.warning(session.notice, icon=":material/sync_problem:")
+        else:
+            st.warning(session.notice, icon=":material/sync_problem:")
     render_equipment_scenario_management(database_path, session)
 
 

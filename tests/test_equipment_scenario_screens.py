@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,12 @@ from capa_simulation.components.equipment_scenario_status import (
     unscheduled_notice,
 )
 from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON_KEY
+from capa_simulation.components.pick_edit_table import (
+    TableDraft,
+    draft_session_key,
+    shown_session_key,
+)
+from capa_simulation.components.scenario_management import LIST_EDITOR_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.navigation import (
@@ -487,6 +494,63 @@ def test_an_equipment_db_error_stays_inside_the_equipment_section(
     # 「관리할 시나리오」 전환과 다른 탭은 그대로다.
     assert app.segmented_control(key=SCENARIO_KIND_KEY).value == EQUIPMENT_KIND
     assert len(app.tabs) >= 3
+
+
+def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hidden(
+    _shell: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """세션을 다른 리비전으로 옮겼다는 알림(미저장 설비 편집을 버렸다는 말)은 그 회차 한 번뿐이다.
+    세 탭을 늘 그려 다른 탭을 보는 회차에도 구획이 세션을 풀므로, 그때는 숨은 패널이 아니라 탭 묶음
+    위에 선다(2026-10-25 리뷰). 「시나리오 관리」 탭이 보이면 구획 안 그대로다."""
+    from capa_simulation.components import equipment_scenario_management as section
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    notice = (
+        "「운영 일정」 r1 을 지금 공통 대장과 합칠 수 없어 「운영 일정」 r2 로 열었습니다 — "
+        "저장하지 않은 설비 편집은 버렸습니다."
+    )
+    monkeypatch.setattr(
+        section,
+        "resolve_equipment_session",
+        lambda path: replace(resolve_equipment_session(path), notice=notice),
+    )
+    app = _ok(_shell.run())
+    app.switch_page(SCENARIO_MANAGEMENT.path)
+    app.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: BigDataQuery 등록"
+    _ok(app.run())
+    assert notice in [str(item.value) for item in app.main.warning]
+    assert notice not in [str(item.value) for tab in app.main.tabs for item in tab.warning]
+
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = SCENARIO_MANAGEMENT_TAB
+    _ok(app.run())
+    assert [str(item.value) for item in app.main.warning].count(notice) == 1
+    assert notice in [str(item.value) for item in app.main.tabs[0].warning]
+
+
+def test_switching_the_managed_kind_keeps_unsaved_list_edits(_shell: AppTest) -> None:
+    """「관리할 시나리오」 를 오가도 목록 표에서 고치고 저장하지 않은 이름은 남는다 — 위젯이
+    아니라 행 id 초안이라 돌아오면 그대로이고 화면 탭 줄의 점도 남는다(다음 「변경 저장」 에
+    실린다). Guide 가 「사라집니다」 라고 적었던 것을 바로잡았다(2026-10-25 리뷰) — 사라지는
+    것은 입력 칸에 적던 글뿐이다."""
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SCENARIO_MANAGEMENT.path).run())
+    shown = app.session_state[shown_session_key(LIST_EDITOR_KEY)]
+    row = shown.rows[0]
+    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(
+        names={row: "PROBE-이름"}, name_base={row: shown.names[row]}
+    )
+    _ok(app.run())
+    app.segmented_control(key=SCENARIO_KIND_KEY).set_value(EQUIPMENT_KIND)
+    _ok(app.run())
+    app.segmented_control(key=SCENARIO_KIND_KEY).set_value(SIMULATION_KIND)
+    _ok(app.run())
+    assert app.session_state[draft_session_key(LIST_EDITOR_KEY)].names == {row: "PROBE-이름"}
+
+    guide_path = PROJECT_ROOT / "src" / "capa_simulation" / "guides" / "scenario_management.md"
+    guide = " ".join(guide_path.read_text(encoding="utf-8").split())
+    assert "저장하지 않은 표 편집은 사라집니다" not in guide
+    assert "표에서 고치고 저장하지 않은 이름·순서는 남아" in guide
 
 
 def test_the_section_heading_names_the_sessions_pair() -> None:
