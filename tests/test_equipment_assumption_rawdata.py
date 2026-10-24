@@ -4,21 +4,26 @@
 
 - **가정 세션의 있던 호기 배치 칸 고침은 되돌린다**(설계 10장 「S1 부터 임시 잠금」). 이 판에서 배치
   일곱 칸은 공통이라 가정 세션에서 고치면 공식 배치가 바뀐다. 칸을 잠그지 않고 제출 검사·붙여넣기
-  미리보기에서 막는다 — 같은 제출의 다른 편집과 새 호기의 배치 값은 받는다.
+  미리보기에서 막는다 — 같은 제출의 다른 편집과 새 호기의 배치 값은 받는다. 「있던 호기」 는
+  저장하면 저장본 호기 키를 잇는 행이고 견주는 값은 **저장본**이다(S1 리뷰) — 지운 뒤 같은 이름으로
+  다시 넣기·설비명을 바꿨다 되돌리기도 막힌다.
 - **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장은 확인 체크 뒤에**(11-2 6단계). 호기 목록은
-  공통 하나라 지우면 그 시나리오들의 일정도 빠진다.
+  공통 하나라 지우면 그 시나리오들의 일정도 빠진다. 체크는 본 글(호기·그 일정이 든 시나리오)에
+  묶이고, 체크가 없는 Space 「배치 저장」·사이드바 팝업 저장도 같은 판정으로 막힌다.
 - **공식 판정 대체 규칙**(검토 L13) — 발행이 없을 때 화면도 저장소처럼 「운영 일정」 → 목록 첫
   시나리오로 본다.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+from streamlit.proto.Dataframe_pb2 import Dataframe as DataframeProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import _clone, _seeded, _session, _with_unit
 from widget_browser import BrowserTables
@@ -36,17 +41,25 @@ from capa_simulation.components.equipment_data_workspace import (
     TARGET_KEY,
     VIEW_APPLY_BUTTON_KEY,
     ImportReview,
+    RemovalElsewhere,
     assumption_paste_refusal,
 )
 from capa_simulation.equipment_scenario_activation import EquipmentSession, _default_selection
-from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_equipment_scenario_cache,
+)
 from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentRelease,
     EquipmentScenarioCatalog,
     EquipmentScenarioSummary,
 )
-from capa_simulation.services.space_layout_edit import existing_layout_edits, keep_layout_cells
+from capa_simulation.services.space_layout_edit import (
+    PLACE_COLUMNS,
+    restore_saved_layout,
+    saved_layout_drift,
+)
 
 OPERATIONS = "operations"
 
@@ -145,11 +158,14 @@ def test_an_assumption_reverts_layout_edits_of_saved_units_and_keeps_the_rest(
 
     assert _buffer_value(app, "EQ-01", "X좌표") == 10
     assert _buffer_value(app, "EQ-01", "설비이력") == "고치는 중"
+    errors = _texts(app, "error")
     assert any(
-        "「셋업 실무」 은 가정 설비 시나리오라 있던 호기 1대(EQ-01)의 배치 칸 고침은 되돌리고 "
-        "나머지 편집은 반영했습니다" in text
-        for text in _texts(app, "error")
+        "「셋업 실무」는 가정 설비 시나리오라 있던 호기 1대(EQ-01)의 배치 칸 고침은 저장본 값으로 "
+        "되돌리고 나머지 편집은 편집본에 반영했습니다" in text
+        for text in errors
     )
+    # 보기 적용이라 「저장·미리보기를 하지 않았다」 는 말은 없다.
+    assert not any("저장·미리보기는 하지 않았습니다" in text for text in errors)
 
 
 def test_an_assumption_save_with_a_layout_edit_saves_nothing(tmp_path: Path) -> None:
@@ -162,7 +178,10 @@ def test_an_assumption_save_with_a_layout_edit_saves_nothing(tmp_path: Path) -> 
 
     assert len(repository.list_revisions()) == 1
     assert _buffer_value(app, "EQ-02", "층") == "1F"
-    assert any("있던 호기 1대(EQ-02)" in text for text in _texts(app, "error"))
+    assert any(
+        "있던 호기 1대(EQ-02)" in text and "이번에 누른 저장·미리보기는 하지 않았습니다" in text
+        for text in _texts(app, "error")
+    )
 
 
 def test_a_new_unit_keeps_its_layout_cells_in_an_assumption(tmp_path: Path) -> None:
@@ -216,53 +235,195 @@ def test_an_assumption_paste_that_moves_a_saved_unit_is_refused_before_preview(
     assert not app.error
 
 
+def _row_of(app: AppTest, name: str) -> pd.DataFrame:
+    equipment: pd.DataFrame = app.session_state[BUFFER_KEY][1]
+    return equipment.loc[equipment["설비명"].eq(name)].reset_index(drop=True)
+
+
+def _official(repository: DuckDBEquipmentRepository, name: str, column: str) -> Any:
+    """공식 설비 시나리오(「운영 일정」 최신 + 공통 최신)가 보는 그 호기 칸."""
+    return _session(repository).equipment.set_index("설비명").loc[name, column]
+
+
+def test_a_removed_unit_pasted_back_with_a_moved_layout_is_refused(tmp_path: Path) -> None:
+    """앞 제출에서 지운 저장본 호기를 같은 설비명 한 줄 전체로 다시 붙여넣으면 저장할 때 그 호기
+    키를 이어 공통 배치를 고친다 — 제출 전 편집본에 없던 이름이어도 막는다(S1 리뷰 재현: 고치기
+    전에는 미리보기가 서고 「확인 후 리비전 저장」 으로 공식 X좌표가 10 → 55 가 됐다)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    row = _row_of(app, "EQ-01").assign(X좌표=55.0)
+    _without(app, "EQ-01")
+    _ok(app.run())
+    app.selectbox(TARGET_KEY).set_value("설비 마스터")
+    app.text_area(CLIPBOARD_KEY).set_value(
+        row.to_csv(sep="\t", index=False, date_format="%Y-%m-%d")
+    )
+    app.button(PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert PREVIEW_KEY not in app.session_state
+    assert any(
+        "붙여넣기가 있던 호기 1대(EQ-01)의 배치 칸을 바꿉니다" in text
+        for text in _texts(app, "error")
+    )
+    assert len(repository.list_revisions()) == 1
+    assert _official(repository, "EQ-01", "X좌표") == 10
+
+
+def test_a_row_added_back_under_a_removed_name_gets_the_saved_layout(tmp_path: Path) -> None:
+    """지운 호기를 편집표 「+」 로 같은 설비명 다시 넣고 배치를 적어 저장을 눌러도, 같은 호기라 배치
+    일곱 칸은 저장본 값으로 되돌리고 그 회차 저장은 하지 않는다."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    _without(app, "EQ-01")
+    _ok(app.run())
+    tables = BrowserTables(app)
+    tables.add(_editor_key(app), {"설비명": "EQ-01", "공정소분류": "Process-A", "X좌표": 77.0})
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert len(repository.list_revisions()) == 1
+    assert _buffer_value(app, "EQ-01", "X좌표") == 10
+    assert _buffer_value(app, "EQ-01", "층") == "1F"
+    assert any(
+        "있던 호기 1대(EQ-01)" in text and "이번에 누른 저장·미리보기는 하지 않았습니다" in text
+        for text in _texts(app, "error")
+    )
+    assert _official(repository, "EQ-01", "X좌표") == 10
+
+
+def test_renaming_away_and_back_does_not_move_the_saved_layout(tmp_path: Path) -> None:
+    """설비명 칸 EQ-01 → EQ-01-TMP 와 X좌표를 한 제출에 고치면 새 호기라 받는다(저장하면 새 키).
+    다음 제출에서 이름을 EQ-01 로 되돌리면 저장본 EQ-01 을 잇는 행이 되므로 배치 칸이 저장본으로
+    돌아가고 저장되지 않는다(고치기 전에는 공식 X좌표가 10 → 77 이 됐다)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    tables = BrowserTables(app)
+    tables.edit(_editor_key(app), 0, "설비명", "EQ-01-TMP")
+    tables.edit(_editor_key(app), 0, "X좌표", 77.0)
+    app.button(key=VIEW_APPLY_BUTTON_KEY).click()
+    _ok(tables.run())
+    assert _buffer_value(app, "EQ-01-TMP", "X좌표") == 77.0
+    assert not app.error
+
+    names = app.session_state[BUFFER_KEY][1]["설비명"].tolist()
+    tables = BrowserTables(app)
+    tables.edit(_editor_key(app), names.index("EQ-01-TMP"), "설비명", "EQ-01")
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert len(repository.list_revisions()) == 1
+    assert _buffer_value(app, "EQ-01", "X좌표") == 10
+    assert any("있던 호기 1대(EQ-01)" in text for text in _texts(app, "error"))
+    assert _official(repository, "EQ-01", "X좌표") == 10
+
+
+def _master_editor(app: AppTest) -> Any:
+    """설비 마스터 편집표 proto(칸 설정 JSON·편집 꼴)."""
+    stack = list(app.main.children.values())
+    while stack:
+        node = stack.pop()
+        stack.extend(getattr(node, "children", {}).values())
+        proto = getattr(node, "proto", None)
+        if getattr(node, "type", None) != "dataframe" or proto is None:
+            continue
+        if "Qual일정" in json.loads(proto.columns or "{}"):
+            return proto
+    raise AssertionError("설비 마스터 편집표가 없습니다")
+
+
+def test_the_lock_keeps_the_layout_cells_open_for_a_new_unit_row(tmp_path: Path) -> None:
+    """임시 잠금은 칸을 `disabled` 로 두지 않는다(검토 F12) — 레이아웃표시는 기본값 없는 필수 고르기
+    칸이라 잠그면 새 호기 행을 넣을 수 없다. 편집표 「+」 로 넣은 새 호기의 배치 값은 그대로
+    받는다."""
+    _, setup = _two_scenarios(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    proto = _master_editor(app)
+    columns = json.loads(proto.columns)
+    assert not any(columns.get(column, {}).get("disabled") for column in PLACE_COLUMNS)
+    assert proto.editing_mode == DataframeProto.EditingMode.DYNAMIC
+
+    tables = BrowserTables(app)
+    tables.add(
+        _editor_key(app),
+        {
+            "설비명": "EQ-NEW",
+            "공정소분류": "Process-A",
+            "동": "C1",
+            "층": "2F",
+            "X좌표": 80.0,
+            "Y좌표": 5.0,
+            "Xsize": 12.0,
+            "Ysize": 6.0,
+            "레이아웃표시": "Y",
+        },
+    )
+    app.button(key=VIEW_APPLY_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert _buffer_value(app, "EQ-NEW", "X좌표") == 80.0
+    assert _buffer_value(app, "EQ-NEW", "층") == "2F"
+    assert _buffer_value(app, "EQ-NEW", "레이아웃표시") == "Y"
+    assert not app.error
+
+
 def test_the_paste_check_takes_new_units_and_unchanged_layout_cells(tmp_path: Path) -> None:
     repository = _seeded(tmp_path)
     current = _session(repository)
+    saved = current.equipment
     frames = (current.baseline, current.equipment, current.downtime)
-    existing = frozenset({"EQ-01", "EQ-02"})
 
     def review(master: pd.DataFrame) -> ImportReview:
         candidate = (current.baseline, master, current.downtime)
         return ImportReview("설비 마스터", "붙여넣기", frames, candidate, pd.DataFrame())
 
-    added = _with_unit(current.equipment, "EQ-NEW", 70.0, 층="2F")
-    assert (
-        assumption_paste_refusal(
-            review(added), frames, existing=existing, scenario_name="셋업 실무"
+    def refusal(master: pd.DataFrame, renames: dict[str, str] | None = None) -> str | None:
+        return assumption_paste_refusal(
+            review(master), saved=saved, renames=renames or {}, scenario_name="셋업 실무"
         )
-        is None
+
+    assert refusal(_with_unit(current.equipment, "EQ-NEW", 70.0, 층="2F")) is None
+    assert refusal(current.equipment.copy()) is None
+    shown = refusal(current.equipment.assign(레이아웃표시=["N", "Y"]))
+    assert shown is not None and "있던 호기 1대(EQ-01)" in shown
+    # 저장본 이름 그대로 들어온 행은 지운 뒤 다시 넣은 것이어도 같은 호기다(저장하면 그 키를
+    # 잇는다).
+    readded = _with_unit(
+        current.equipment.loc[current.equipment["설비명"].ne("EQ-01")], "EQ-01", 55.0
     )
-    same = current.equipment.copy()
-    assert (
-        assumption_paste_refusal(review(same), frames, existing=existing, scenario_name="셋업 실무")
-        is None
-    )
-    shown = current.equipment.assign(레이아웃표시=["N", "Y"])
-    refusal = assumption_paste_refusal(
-        review(shown), frames, existing=existing, scenario_name="셋업 실무"
-    )
-    assert refusal is not None and "있던 호기 1대(EQ-01)" in refusal
+    moved = refusal(readded)
+    assert moved is not None and "있던 호기 1대(EQ-01)" in moved
+    # 저장 안 한 이름 바꿈(지금 이름 → 저장본 이름)을 이은 행은 그 저장본 호기와 견준다.
+    renamed = current.equipment.assign(설비명=["EQ-101", "EQ-02"])
+    assert refusal(renamed, {"EQ-101": "EQ-01"}) is None
+    renamed.loc[0, "Y좌표"] = 33.0
+    assert "있던 호기 1대(EQ-101)" in str(refusal(renamed, {"EQ-101": "EQ-01"}))
     # 다른 표의 붙여넣기는 보지 않는다.
     downtime = ImportReview("비가동 일정", "붙여넣기", frames, frames, pd.DataFrame())
-    assert assumption_paste_refusal(downtime, frames, existing=existing, scenario_name=None) is None
+    assert assumption_paste_refusal(downtime, saved=saved, renames={}, scenario_name=None) is None
 
 
-def test_layout_edits_are_read_by_name_and_kept_cells_come_from_before() -> None:
+def test_layout_drift_is_read_against_the_saved_unit_and_restores_its_cells() -> None:
     from test_equipment_availability import _equipment
 
-    before = _equipment()
-    after = before.assign(설비이력=["a", "b"])
-    after.loc[1, "Xsize"] = 20
-    after.loc[0, "동"] = "C2"
+    saved = _equipment()
+    buffer = saved.assign(설비이력=["a", "b"])
+    buffer.loc[1, "Xsize"] = 20
+    buffer.loc[0, "동"] = "C2"
+    origins = {"EQ-01": "EQ-01", "EQ-02": "EQ-02"}
 
-    touched = existing_layout_edits(before, after, existing={"EQ-01", "EQ-02"})
-    kept = keep_layout_cells(after, before, touched)
+    drift = saved_layout_drift(saved, buffer, origins)
+    restored = restore_saved_layout(buffer, saved, {name: origins[name] for name in drift})
 
-    assert touched == ["EQ-01", "EQ-02"]
-    assert existing_layout_edits(before, after, existing={"EQ-02"}) == ["EQ-02"]
-    assert kept["동"].tolist() == ["C1", "C1"] and kept["Xsize"].tolist() == [12, 12]
-    assert kept["설비이력"].tolist() == ["a", "b"]
+    assert drift == ["EQ-01", "EQ-02"]
+    # 새 호기(`origins` 밖)는 보지 않는다.
+    assert saved_layout_drift(saved, buffer, {"EQ-02": "EQ-02"}) == ["EQ-02"]
+    assert restored["동"].tolist() == ["C1", "C1"] and restored["Xsize"].tolist() == [12, 12]
+    assert restored["설비이력"].tolist() == ["a", "b"]
+    # 이름을 바꾼 행은 저장본 옛 이름 행의 값으로 되돌린다.
+    renamed = buffer.assign(설비명=["EQ-101", "EQ-02"])
+    back = restore_saved_layout(renamed, saved, {"EQ-101": "EQ-01"})
+    assert back.loc[0, "동"] == "C1" and back.loc[1, "Xsize"] == 20
 
 
 # ------------------------------------------------------------------ 다른 시나리오 일정 호기 삭제
@@ -311,6 +472,100 @@ def test_removing_a_unit_scheduled_in_another_scenario_needs_the_confirm(tmp_pat
     assert "EQ-02" not in set(_session(repository).equipment["설비명"])
     assert "EQ-02" not in set(_session(repository, setup).equipment["설비명"])
     assert not app.error
+
+
+def test_the_removal_check_is_for_the_scenarios_its_words_named(tmp_path: Path) -> None:
+    """체크를 켠 뒤 남이 그 호기 일정이 든 시나리오를 하나 더 만들면(복제) 경고·체크 글이 「2개」 로
+    바뀐다 — 켜 둔 체크로 본 적 없는 글의 저장이 가지 않게 새 칸(풀림)으로 서고 저장을 거부한다(S1
+    리뷰: 고치기 전에는 key 꼬리가 호기 이름만이라 체크가 남아 두 시나리오에서 일정이 빠졌다)."""
+    repository, _ = _two_scenarios(tmp_path)
+    path = tmp_path / "equipment.duckdb"
+    app = _ok(_workspace(path, OPERATIONS).run())
+    _without(app, "EQ-02")
+    _ok(app.run())
+    box = _removal_box(app)
+    assert box is not None and "1개" in str(box.label)
+    box.check()
+
+    _clone(repository, "두 번째 가정")
+    clear_equipment_scenario_cache()  # 화면에서 복제하면 부르는 것
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert len(repository.list_revisions()) == 1
+    assert any("다른 설비 시나리오 2개" in text for text in _texts(app, "error"))
+    box = _removal_box(app)
+    assert box is not None and "2개" in str(box.label) and not box.value
+    box.check()
+    app.button(key=EDIT_SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+    assert len(repository.list_revisions()) == 2
+    assert not app.error
+
+
+def test_the_removal_check_covers_what_it_saw() -> None:
+    one = RemovalElsewhere((("EQ-02", ("셋업 실무",)),))
+    two = RemovalElsewhere((("EQ-02", ("셋업 실무", "두 번째 가정")),))
+    more = RemovalElsewhere((("EQ-01", ("셋업 실무",)), ("EQ-02", ("셋업 실무",))))
+
+    assert one.covered_by(one) and one.covered_by(two) and one.covered_by(more)
+    assert not two.covered_by(one) and not more.covered_by(one) and not one.covered_by(None)
+    assert len({one.token, two.token, more.token}) == 3
+    # 시나리오 차례는 지문을 바꾸지 않는다.
+    assert two.token == RemovalElsewhere((("EQ-02", ("두 번째 가정", "셋업 실무")),)).token
+
+
+def _popup_without_eq02(database: str, page_file: str) -> None:
+    """설비 화면 한 회차 + 사이드바 팝업 본문 — 처음 한 번 편집본에서 EQ-02 를 지운다."""
+    from pathlib import Path
+
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        ensure_equipment_drafts,
+        replace_equipment_buffer,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+    )
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    session = resolve_equipment_session(database)
+    frames = ensure_equipment_drafts(session.snapshot)
+    if not st.session_state.get("removed"):
+        kept = frames[1].loc[frames[1]["설비명"].ne("EQ-02")].reset_index(drop=True)
+        replace_equipment_buffer((frames[0], kept, frames[2]))
+        st.session_state["removed"] = True
+    render_equipment_scenario_dialog_body(Path(database), page_file=page_file)
+
+
+def test_the_popup_save_has_no_check_and_is_refused_the_same_way(tmp_path: Path) -> None:
+    """확인 체크가 없는 사이드바 팝업 저장도 같은 판정으로 막힌다 — RawData 저장 칸에서 확인하라고
+    알린다(밤사이 결정 「체크 칸이 없는 자리도 막는다」)."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_BUTTON_KEY,
+        SAVE_MODE,
+    )
+    from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+
+    repository, _ = _two_scenarios(tmp_path)
+    app = AppTest.from_function(
+        _popup_without_eq02,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    _ok(app.run())
+    app.button(key=SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert len(repository.list_revisions()) == 1
+    assert any(
+        "지우는 호기 1대(EQ-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다" in text
+        and "저장하려면 가용설비 현황 RawData 저장 칸의" in text
+        for text in _texts(app, "error")
+    )
 
 
 def test_removing_a_unit_only_this_scenario_schedules_needs_no_confirm(tmp_path: Path) -> None:

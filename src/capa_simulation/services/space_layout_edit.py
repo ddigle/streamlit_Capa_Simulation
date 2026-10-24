@@ -2148,39 +2148,44 @@ def _rows_by_name(frame: pd.DataFrame) -> dict[str, Mapping[Any, Any]]:
     return rows
 
 
-def existing_layout_edits(
-    before: pd.DataFrame, after: pd.DataFrame, *, existing: Collection[str]
+def saved_layout_drift(
+    saved: pd.DataFrame, buffer: pd.DataFrame, origins: Mapping[str, str]
 ) -> list[str]:
-    """`before`(제출 전 편집본) → `after`(제출 뒤)에서 배치 일곱 칸(`PLACE_COLUMNS`)이 바뀐 **있던
-    호기**의 설비명(`after` 차례). 있던 호기는 설비명이 `existing`(저장본에서 온 호기 — 이름 바꿈을
-    거친 지금 이름)에 드는 행이다. 이 세션에 새로 넣은 호기·두 쪽 어디에 없는 이름은 보지 않는다.
+    """`buffer` 에서 저장본 호기를 잇는 행 가운데 배치 일곱 칸(`PLACE_COLUMNS`)이 저장본 그 호기와
+    다른 행의 설비명(`buffer` 차례). `origins` 는 지금 설비명 → 저장하면 이어받을 저장본 설비명
+    (`equipment_scenario.inherited_unit_names` — 저장의 호기 키 규칙 그대로)이고, 그 밖의 행(새
+    호기)은 보지 않는다.
 
     가정 설비 시나리오의 배치 칸 임시 잠금(설비 시나리오 2단계 S1 — 이 판에서 배치 칸은 공통이라
-    고치면 공식 배치가 바뀐다)이 RawData 제출·붙여넣기 미리보기에서 쓴다."""
-    before_rows = _rows_by_name(before)
-    touched: list[str] = []
-    for row in after.to_dict(orient="records"):
+    고치면 공식 배치가 바뀐다)이 RawData 제출·붙여넣기 미리보기에서 쓴다. 제출 전 편집본이 아니라
+    **저장본**과 견준다 — 앞 제출에서 지우거나 설비명을 바꿔 둔 호기를 같은 이름으로 다시 넣어도
+    저장하면 그 호기 키를 이어 공통 배치를 고치기 때문이다."""
+    saved_rows = _rows_by_name(saved)
+    drift: list[str] = []
+    for row in buffer.to_dict(orient="records"):
         name = _text(row.get(EQUIPMENT_ID_COLUMN)).strip()
-        previous = before_rows.get(name)
-        if previous is None or name not in existing or name in touched:
+        origin = origins.get(name)
+        previous = saved_rows.get(origin) if origin is not None else None
+        if previous is None or name in drift:
             continue
         if any(_comparable(previous.get(c)) != _comparable(row.get(c)) for c in PLACE_COLUMNS):
-            touched.append(name)
-    return touched
+            drift.append(name)
+    return drift
 
 
-def keep_layout_cells(
-    after: pd.DataFrame, before: pd.DataFrame, names: Collection[str]
+def restore_saved_layout(
+    buffer: pd.DataFrame, saved: pd.DataFrame, origins: Mapping[str, str]
 ) -> pd.DataFrame:
-    """`names` 호기의 배치 일곱 칸을 `before` 값으로 되돌린 `after` 사본(나머지 칸·행은 그대로)."""
-    if not names:
-        return after
-    result = after.copy()
-    before_rows = _rows_by_name(before)
+    """`origins`(지금 설비명 → 저장본 설비명) 행의 배치 일곱 칸을 저장본 그 호기 값으로 되돌린
+    `buffer` 사본(나머지 칸·행은 그대로)."""
+    if not origins:
+        return buffer
+    result = buffer.copy()
+    saved_rows = _rows_by_name(saved)
     columns = [column for column in PLACE_COLUMNS if column in result.columns]
     ids = result[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
-    for name in names:
-        previous = before_rows.get(name)
+    for name, origin in origins.items():
+        previous = saved_rows.get(origin)
         if previous is None:
             continue
         mask = ids.eq(name).fillna(False).astype(bool)

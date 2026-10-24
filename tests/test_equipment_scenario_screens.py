@@ -537,6 +537,40 @@ def test_space_keeps_unsaved_layout_edits_savable_when_a_new_official_locks_edit
     assert saved.schedule is not None and saved.schedule.revision_no == 2
 
 
+def test_space_layout_save_refuses_removing_a_unit_another_scenario_schedules(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """확인 체크가 없는 Space 「배치 저장」 도 다른 설비 시나리오에 일정이 있는 호기를 지우는 저장은
+    막는다(설계 11-2 6단계) — RawData 저장 칸에서 확인하라고 알린다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        BUFFER_GENERATION_KEY,
+        BUFFER_KEY,
+    )
+
+    repository = _repository(tmp_path)
+    _clone(repository)
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    moved = equipment.loc[equipment["설비명"].ne("EQ-02")].reset_index(drop=True)
+    first = moved.index[moved["설비명"].eq("EQ-01")][0]
+    moved.loc[first, "X좌표"] = float(moved.loc[first, "X좌표"]) + 1
+    app.session_state[BUFFER_KEY] = (baseline, moved, downtime)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    _ok(app.run())
+    save = app.button(key="space_layout_save")
+    assert not save.disabled
+    save.click()
+    _ok(app.run())
+
+    assert len(repository.list_revisions()) == 1
+    assert any(
+        "지우는 호기 1대(EQ-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다" in text
+        and "저장하려면 가용설비 현황 RawData 저장 칸의" in text
+        for text in _texts(app)
+    )
+
+
 def _value_of(snapshot: Any, name: str, column: str) -> Any:
     return snapshot.equipment.set_index("설비명").loc[name, column]
 

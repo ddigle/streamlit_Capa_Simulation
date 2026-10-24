@@ -115,7 +115,11 @@ from capa_simulation.services.equipment_csv import (
     untouched_template_baseline_rows,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
-from capa_simulation.services.equipment_scenario import calculation_frames, legacy_unit_key
+from capa_simulation.services.equipment_scenario import (
+    calculation_frames,
+    inherited_unit_names,
+    legacy_unit_key,
+)
 from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
@@ -135,7 +139,11 @@ from capa_simulation.services.floor_state import (
     master_location_options,
     present_location_values,
 )
-from capa_simulation.services.korean_particle import object_particle, with_direction_particle
+from capa_simulation.services.korean_particle import (
+    object_particle,
+    topic_particle,
+    with_direction_particle,
+)
 from capa_simulation.services.schedule_confirmation import (
     ACTUAL_COLUMN,
     CONFIRMATION_KIND_COLUMN,
@@ -152,14 +160,13 @@ from capa_simulation.services.simulation_cache import get_schedule_confirmation_
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     PendingRenames,
-    existing_layout_edits,
-    keep_layout_cells,
-    live_renames,
     module_layout_message,
     module_layout_violations,
     name_changes,
     natural_name_key,
     reserved_names,
+    restore_saved_layout,
+    saved_layout_drift,
 )
 
 FLASH_KEY = "equipment_status_flash"
@@ -716,9 +723,22 @@ class RemovalElsewhere:
 
     @property
     def token(self) -> str:
-        """확인 체크 key 꼬리 — 호기 목록의 지문(목록이 바뀌면 체크가 풀린 새 칸)."""
-        text = "\n".join(sorted(self.names))
+        """확인 체크 key 꼬리 — 호기마다 (설비명, 일정이 있는 시나리오들)의 지문. 경고·체크 글의
+        수와 이름(호기·시나리오)이 이것으로 정해지므로, 남이 복제·되돌리기로 그 호기 일정이 든
+        시나리오를 바꾸거나 같은 제출에서 더 지우면 체크가 풀린 새 칸으로 선다."""
+        text = "\n".join(
+            "\t".join((name, *sorted(scenarios))) for name, scenarios in sorted(self.units)
+        )
         return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+    def covered_by(self, confirmed: RemovalElsewhere | None) -> bool:
+        """확인 체크로 본 것(`confirmed`)이 이 삭제를 덮는가 — 호기마다 본 글에 있었고 그 호기
+        일정이 빠질 시나리오가 본 글의 것 안이다. 본 뒤 남이 그 호기 일정이 든 시나리오를 늘렸으면
+        거짓."""
+        if confirmed is None:
+            return False
+        seen = {name: set(scenarios) for name, scenarios in confirmed.units}
+        return all(name in seen and set(scenarios) <= seen[name] for name, scenarios in self.units)
 
     def message(self) -> str:
         scenarios = "·".join(f"「{literal_markdown(name)}」" for name in self.scenarios)
@@ -774,46 +794,73 @@ def _target_scenario_id(basis: EquipmentSaveBasis | None) -> str | None:
     return scenario if isinstance(scenario, str) else None
 
 
-def existing_unit_names(buffer: pd.DataFrame) -> frozenset[str]:
-    """편집본에서 저장본에서 온 호기의 지금 설비명(저장 안 한 이름 바꿈을 거친 이름 포함). 이 세션에
-    새로 넣은 호기는 빠진다."""
-    saved = _saved_master()
-    saved_names = set(saved[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip())
-    origins = live_renames(pending_unit_renames(), saved, buffer).units
-    names = buffer[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip()
-    return frozenset(name for name in names if origins.get(name, name) in saved_names)
+def layout_lock_origins(
+    buffer: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]
+) -> dict[str, str]:
+    """편집본 설비명 → 저장하면 그 호기 키를 이어받을 저장본 설비명(`inherited_unit_names` —
+    저장이 호기 키를 정하는 규칙 그대로, `renames` 도 저장이 넘기는 저장 안 한 이름 지도). 새
+    호기는 빠진다.
+
+    가정 설비 시나리오의 배치 칸 임시 잠금이 「있던 호기」를 이 지도로 고른다 — 제출 전 편집본에 그
+    이름이 있었는지가 아니라 저장했을 때 같은 호기인지로 보아야, 지운 뒤 다시 넣거나 설비명을 바꿨다
+    되돌린 행도 막힌다."""
+    names = [name for name in buffer[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip() if name]
+    saved_names = saved[EQUIPMENT_ID_COLUMN].dropna().astype(str).str.strip()
+    return inherited_unit_names(names, set(saved_names) - {""}, renames)
+
+
+def assumption_layout_drift(
+    buffer: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]
+) -> dict[str, str]:
+    """편집본에서 배치 일곱 칸이 저장본 그 호기와 달라진 있던 호기 — 지금 설비명 → 저장본 설비명
+    (`buffer` 차례). 가정 설비 시나리오에서는 비어 있어야 한다(S1 임시 잠금)."""
+    origins = layout_lock_origins(buffer, saved, renames)
+    return {name: origins[name] for name in saved_layout_drift(saved, buffer, origins)}
 
 
 def assumption_layout_refusal(
-    names: Sequence[str], *, scenario_name: str | None, pasted: bool
+    names: Sequence[str], *, scenario_name: str | None, pasted: bool, held: bool = False
 ) -> str:
-    """가정 설비 시나리오에서 있던 호기의 배치 칸을 고친 제출·붙여넣기를 막는 글."""
-    where = f"「{literal_markdown(scenario_name)}」 은" if scenario_name else "지금 설비 시나리오는"
+    """가정 설비 시나리오에서 있던 호기의 배치 칸을 고친 제출·붙여넣기를 막는 글. `held` 는 그
+    제출이 저장·미리보기 단추였다는 뜻이다 — 되돌린 칸을 보게 그 회차 저장·미리보기는 하지
+    않는다."""
+    if scenario_name:
+        quoted = f"「{scenario_name}」"
+        where = f"「{literal_markdown(scenario_name)}」{topic_particle(quoted)}"
+    else:
+        where = "지금 설비 시나리오는"
     units = f"있던 호기 {len(names):,}대({_sample_names(names)})"
     if pasted:
         head = (
             f"붙여넣기가 {units}의 배치 칸을 바꿉니다 — {where} 가정 설비 시나리오라 미리보지 "
-            "않았습니다. 배치 칸을 빼거나 지금 값 그대로 다시 붙여넣으세요."
+            "않았습니다. 배치 칸을 빼거나 저장본 값 그대로 다시 붙여넣으세요."
         )
     else:
         head = (
-            f"{where} 가정 설비 시나리오라 {units}의 배치 칸 고침은 되돌리고 나머지 편집은 "
-            "반영했습니다."
+            f"{where} 가정 설비 시나리오라 {units}의 배치 칸 고침은 저장본 값으로 되돌리고 나머지 "
+            "편집은 편집본에 반영했습니다."
         )
+        if held:
+            head += " 이번에 누른 저장·미리보기는 하지 않았습니다 — 되돌린 칸을 보고 다시 누르세요."
     return f"{head} {ASSUMPTION_LAYOUT_LOCK}"
 
 
 def assumption_paste_refusal(
-    review: ImportReview, current: Frames, *, existing: frozenset[str], scenario_name: str | None
+    review: ImportReview,
+    *,
+    saved: pd.DataFrame,
+    renames: Mapping[str, str],
+    scenario_name: str | None,
 ) -> str | None:
-    """가정 설비 시나리오에서 있던 호기의 배치 칸을 바꾸는 설비 마스터 붙여넣기를 미리보기 전에
-    막는다(S1 임시 잠금). 새 호기 행의 배치 칸은 받는다. 막을 것이 없으면 None."""
+    """가정 설비 시나리오에서 있던 호기의 배치 칸을 저장본과 다르게 만드는 설비 마스터 붙여넣기를
+    미리보기 전에 막는다(S1 임시 잠금 — `saved` 는 세션 저장본, `renames` 는 저장 안 한 이름 지도).
+    새 호기 행의 배치 칸은 받는다. 막을 것이 없으면 None."""
     if review.target != "설비 마스터":
         return None
-    names = existing_layout_edits(current[1], review.candidate[1], existing=existing)
-    if not names:
+    drift = assumption_layout_drift(review.candidate[1], saved, renames)
+    if not drift:
         return None
-    return assumption_layout_refusal(names, scenario_name=scenario_name, pasted=True)
+    return assumption_layout_refusal(list(drift), scenario_name=scenario_name, pasted=True)
 
 
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
@@ -1098,7 +1145,7 @@ def save_equipment_buffer(
     *,
     basis: EquipmentSaveBasis | None = None,
     fields: EquipmentSaveFields | None = None,
-    removal_confirmed: frozenset[str] = frozenset(),
+    removal_confirmed: RemovalElsewhere | None = None,
 ) -> str:
     """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
 
@@ -1116,9 +1163,10 @@ def save_equipment_buffer(
     `frames` 가 None 이면(설비 저장본이 없어 대조할 출발 리비전이 없는 화면) FAB 대기분만 쓴다.
 
     `removal_confirmed` 는 RawData 저장 칸의 확인 체크로 「다른 설비 시나리오에서도 일정이 빠지는
-    것을 알고 지운다」 고 확인한 설비명이다(`RemovalElsewhere`). 지운 호기 가운데 다른 시나리오에
-    일정이 있는데 확인하지 않은 호기가 있으면 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의
-    저장도 같은 까닭으로 막힌다.
+    것을 알고 지운다」 고 확인한 그 글의 재료다(`RemovalElsewhere` — 호기와 그 일정이 빠질
+    시나리오). 저장 때 다시 센 삭제가 그것으로 덮이지 않으면(확인하지 않은 호기, 본 뒤 그 호기
+    일정이 든 시나리오가 늘어남) 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의 저장도 같은
+    까닭으로 막힌다.
     """
     if frames is None:
         return FAB_SAVED_MESSAGE if save_pending_fab_layout(repository) else NOTHING_SAVED_MESSAGE
@@ -1179,7 +1227,7 @@ def _save_equipment_frames(
     basis: EquipmentSaveBasis | None,
     fields: EquipmentSaveFields | None,
     fab_saved: bool,
-    removal_confirmed: frozenset[str] = frozenset(),
+    removal_confirmed: RemovalElsewhere | None = None,
 ) -> str:
     """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션).
 
@@ -1214,7 +1262,7 @@ def _save_equipment_frames(
     removal = removals_elsewhere(
         frames, database_path=str(repository.database_path), scenario_id=scenario_id
     )
-    if removal is not None and not removal.names <= removal_confirmed:
+    if removal is not None and not removal.covered_by(removal_confirmed):
         raise ValueError(removal.refusal())
     schedule_id = base.get("schedule")
     # 편집본이 나온 두 리비전과 층마다 본 저장값을 함께 넘긴다. 그 사이 다른 사람이 저장했으면
@@ -1688,7 +1736,7 @@ def _save_snapshot(
     *,
     basis: EquipmentSaveBasis | None,
     fields: EquipmentSaveFields,
-    removal_confirmed: frozenset[str] = frozenset(),
+    removal_confirmed: RemovalElsewhere | None = None,
 ) -> None:
     st.session_state[FLASH_KEY] = save_equipment_buffer(
         repository,
@@ -1962,17 +2010,20 @@ UNIT_DELETE_SCOPE_NOTE = (
 )
 # RawData 폼 안 저장 칸 key 접두어(`equipment_save_fields`).
 SAVE_FIELDS_PREFIX = "equipment_workspace_save"
-# 지우는 호기가 다른 설비 시나리오에 일정이 있을 때의 확인 체크(설계 11-2 6단계). key 꼬리는 그 호기
-# 목록의 지문이라 목록이 바뀌면 체크가 풀린 새 칸으로 선다.
+# 지우는 호기가 다른 설비 시나리오에 일정이 있을 때의 확인 체크(설계 11-2 6단계). key 꼬리는
+# (호기, 그 일정이 든 시나리오들)의 지문(`RemovalElsewhere.token`)이라 글이 바뀌면 체크가 풀린 새
+# 칸으로 선다.
 REMOVAL_CONFIRM_KEY = "equipment_workspace_removal_confirm_v1"
 # 가정 설비 시나리오의 배치 칸 임시 잠금(설비 시나리오 2단계 S1). 이 판에서 배치 일곱 칸은 공통
 # 칸이라 가정 세션에서 고치면 **공식 배치**가 바뀐다(LY4 에 어긋남). 칸을 잠그지(`disabled`) 않고
-# 제출·붙여넣기 미리보기에서 있던 호기의 고침만 되돌린다 — `레이아웃표시` 는 기본값 없는 필수 고르기
-# 칸이라 잠그면 새 호기 행을 넣을 수 없다. 새 호기의 배치 값은 받는다.
+# 제출·붙여넣기 미리보기에서 저장본 호기를 잇는 행의 일곱 칸이 저장본과 다르면 저장본 값으로
+# 되돌린다(`assumption_layout_drift`) — `레이아웃표시` 는 기본값 없는 필수 고르기 칸이라 잠그면 새
+# 호기 행을 넣을 수 없다. 저장본에 없는 설비명의 새 호기 배치 값은 받는다.
 ASSUMPTION_LAYOUT_LOCK = (
     "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 Space 현황에서 "
     "고칩니다 — 다음 판에서 열립니다. 지금은 공식 설비 시나리오에서 고치세요(이 판에서는 배치 칸이 "
-    "공통이라 여기서 고치면 공식 배치가 바뀝니다). 새로 넣는 호기의 배치 칸은 받습니다."
+    "공통이라 여기서 고치면 공식 배치가 바뀝니다). 저장본에 없는 설비명으로 새로 넣는 호기의 배치 "
+    "칸은 받습니다 — 지운 호기를 같은 설비명으로 다시 넣으면 같은 호기라 저장본 배치 그대로입니다."
 )
 
 
@@ -2816,9 +2867,7 @@ def render_equipment_data_workspace(
             removal_agreed = st.checkbox(
                 removal.confirm_label(), key=f"{REMOVAL_CONFIRM_KEY}__{removal.token}"
             )
-        removal_confirmed: frozenset[str] = (
-            removal.names if removal is not None and removal_agreed else frozenset()
-        )
+        removal_confirmed = removal if removal_agreed else None
         # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
         # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장
         # 완료)이 생기거나 사라지는 제출마다 이 탭의 자리가 한 칸 밀려 새로 마운트되고,
@@ -2950,16 +2999,22 @@ def render_equipment_data_workspace(
         return
     layout_refusal: str | None = None
     if assumption:
-        # 가정 설비 시나리오의 있던 호기 배치 칸 고침은 그 칸만 제출 전 값으로 되돌리고 나머지
-        # 편집은 반영한다(막고 위젯 delta 에만 남기면 남의 저장·화면 이동 때 같은 제출의 다른 편집도
-        # 잃는다).
-        touched = existing_layout_edits(
-            frames[1], edited[1], existing=existing_unit_names(frames[1])
-        )
-        if touched:
-            edited = (edited[0], keep_layout_cells(edited[1], frames[1], touched), edited[2])
+        # 가정 설비 시나리오의 있던 호기 배치 칸은 저장본 값으로 되돌리고 나머지 편집은
+        # 반영한다(막고 위젯 delta 에만 남기면 남의 저장·화면 이동 때 같은 제출의 다른 편집도
+        # 잃는다). 「있던 호기」 는 저장했을 때 저장본 호기 키를 잇는 행이다 — 앞 제출에서 지우거나
+        # 설비명을 바꿔 둔 호기를 같은 이름으로 다시 넣는 길도 여기서 막힌다.
+        drift = assumption_layout_drift(edited[1], _saved_master(), pending_unit_renames().units)
+        if drift:
+            edited = (
+                edited[0],
+                restore_saved_layout(edited[1], _saved_master(), drift),
+                edited[2],
+            )
             layout_refusal = assumption_layout_refusal(
-                touched, scenario_name=scenario_name, pasted=False
+                list(drift),
+                scenario_name=scenario_name,
+                pasted=False,
+                held=preview_clicked or import_save_clicked or edit_save_clicked,
             )
     _remember_edits(edited)
     _apply_bulk_actions(
@@ -3010,8 +3065,8 @@ def render_equipment_data_workspace(
                 if assumption:
                     refusal = assumption_paste_refusal(
                         review,
-                        edited,
-                        existing=existing_unit_names(edited[1]),
+                        saved=_saved_master(),
+                        renames=pending_unit_renames().units,
                         scenario_name=scenario_name,
                     )
                     if refusal is not None:
