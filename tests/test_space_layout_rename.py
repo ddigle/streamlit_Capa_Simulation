@@ -460,7 +460,7 @@ def test_a_name_deleted_in_rawdata_and_not_saved_cannot_be_taken() -> None:
     reserved = reserved_names(saved, buffer, _downtime(), None)
 
     assert reserved.deleted == {"EQ-02"} and not reserved.orphan_downtime
-    with pytest.raises(ValueError, match="저장본의 EQ-02를 RawData 에서 지우고 아직 저장하지"):
+    with pytest.raises(ValueError, match="저장본의 EQ-02를 설비 마스터에서 지우고 아직 저장하지"):
         _parse(_rename(("unit", "EQ-01", "eq-02")), buffer, reserved=reserved)
     with pytest.raises(ValueError, match="새 호기 이름 EQ-02는 쓸 수 없습니다"):
         _parse({"changes": [_created("EQ-02")]}, buffer, reserved=reserved)

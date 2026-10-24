@@ -81,8 +81,8 @@ def _baseline_refusal(*, sample: bool, session: EquipmentSession | None = None) 
     """「기준선 저장」 을 막을 까닭. 기준선은 모든 사용자가 보는 고칠 수 없는 기록이라 합성 샘플에서
     만들지 않고, 설비는 **공식 발행 쌍**에서만 얼린다(E5 — 진척 비교 기준선은 공식에서만 저장).
 
-    공식 발행 쌍이 아닌 까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지
-    않은 리비전. 미저장 설비 편집(RawData 제출·Space 배치)은 막지 않는다 — 그 편집은 편집본(buffer)
+    공식 발행 쌍이 아닌 까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지 않은
+    리비전. 미저장 설비 편집(설비 마스터 제출·Space 배치)은 막지 않는다 — 그 편집은 편집본(buffer)
     에만 있고 계산은 저장본 사본(draft)만 읽으므로, 화면의 계획은 늘 저장 리비전 그대로다.
     """
     if sample:
@@ -198,11 +198,11 @@ conditions_card = condition_card("필요 단축 일정 조건", name="shortening
 if using_dashboard_sample and not show_sample_fleet:
     with conditions_card:
         st.caption(
-            "조회할 호기가 없습니다. 가용설비 현황 RawData 에서 입력하거나 샘플 데이터를 켜세요."
+            "조회할 호기가 없습니다. 가용설비 현황 설비 마스터에서 입력하거나 샘플 데이터를 켜세요."
         )
     st.info(
-        "등록된 호기가 없습니다. 가용설비 현황 RawData 에서 설비 마스터를 입력하거나 샘플 데이터를 "
-        "켜서 화면을 살펴보세요."
+        "등록된 호기가 없습니다. 가용설비 현황 설비 마스터 탭에서 설비 마스터를 입력하거나 샘플 "
+        "데이터를 켜서 화면을 살펴보세요."
     )
     reserve_baseline_notice_slots()
     st.stop()

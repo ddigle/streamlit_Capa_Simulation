@@ -389,7 +389,7 @@ def _prepare(
         return _Stop(
             "info",
             "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 "
-            "있습니다 (Preference › Cut-off).",
+            "있습니다 (가용설비 현황 › 설정 › Cut-off).",
         )
     try:
         demand_months = simulation_cache.get_required_month_span(

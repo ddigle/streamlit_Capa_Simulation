@@ -1444,13 +1444,13 @@ def _cached_schedule_confirmation_issues(
 def get_schedule_confirmation_issues(equipment: pd.DataFrame, *, today: date) -> pd.DataFrame:
     """일정 확인 알림 행(`services/schedule_confirmation.schedule_confirmation_issues`)을 다시 쓴다.
 
-    가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고 RawData 는 숨은 탭에서도
+    가용설비 현황은 위젯 하나에도 페이지 전체가 다시 돌고 설비 마스터 탭은 숨은 탭에서도
     그려진다. 고르기는 날짜 칸을 단계마다 읽어 3천 행에 40ms 남짓 들고 키 지문은 그
     10분의 1쯤이다(합성 표본을 3천 행으로 늘려 잰 샘플 관측).
 
     키는 설비 마스터 내용 지문 + 오늘이다. 미확인이 오늘에 따라 바뀌고, 표는 저장 안 한
     편집본일 수 있어 리비전·편집본 세대가 아니라 내용 지문이다(`space_status_cache_key` 와
-    같은 까닭). 그래서 Main 호기 현황(저장본)과 RawData 경고(편집본·미리보기 후보)가 이 한
+    같은 까닭). 그래서 Main 호기 현황(저장본)과 설비 마스터 경고(편집본·미리보기 후보)가 이 한
     길을 쓰고, 아직 고치지 않은 편집본은 저장본 사본이라 한 벌을 나눈다. 프레임은 해시하지
     않는다. 범위(공정·설비명)는 받은 쪽이 좁힌다.
     """

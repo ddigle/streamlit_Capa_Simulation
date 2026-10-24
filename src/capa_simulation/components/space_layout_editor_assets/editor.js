@@ -3099,7 +3099,7 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 이름 바꾸기
   // 표시 별칭이 아니라 설비 마스터의 설비명을 바꾼다(2026-10-08 사용자 결정). 모듈 묶음(Main 설비가 자기 설비명이
-  // 아닌 호기)은 묶음 이름(Main 설비)을 바꾼다 — 모듈 행 하나의 설비명은 RawData 에서 고친다. 자기 설비명을 Main
+  // 아닌 호기)은 묶음 이름(Main 설비)을 바꾼다 — 모듈 행 하나의 설비명은 설비 마스터에서 고친다. 자기 설비명을 Main
   // 설비로 적은 한 행짜리 묶음은 설비명을 바꾸고 Main 설비가 따라간다. 적용 전까지는 이 편집기 안에만 있고 파이썬이
   // 적용 때 다시 검사한다(겹침 규칙이 같다).
   const renameTarget = (item) => {
@@ -4243,7 +4243,7 @@ export default function (component) {
     flagNote.hidden = flagged === 0
     setText(flagCount, `${flagged.toLocaleString('ko-KR')}대`)
     setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
-      + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 RawData 에서 고칩니다.')
+      + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 설비 마스터에서 고칩니다.')
   }
   // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit5`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
   // 준다. 회차의 글자를 쓴 뒤와 크기가 바뀔 때(`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.

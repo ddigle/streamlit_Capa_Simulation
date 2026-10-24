@@ -69,7 +69,7 @@ from capa_simulation.services.korean_particle import (
 
 POSITION_COLUMNS: Final = ("X좌표", "Y좌표")
 SIZE_COLUMNS: Final = ("Xsize", "Ysize")
-# 편집기가 바꾸는 칸. 나머지 칸이 다르면 RawData 의 다른 편집이다. 이름 바꿈(설비명·Main 설비)은
+# 편집기가 바꾸는 칸. 나머지 칸이 다르면 설비 마스터의 다른 편집이다. 이름 바꿈(설비명·Main 설비)은
 # 이 칸이 아니라 `PendingRenames` 가 가른다.
 PLACE_COLUMNS: Final = ("동", "층", "X좌표", "Y좌표", "Xsize", "Ysize", "레이아웃표시")
 UNIT_ID_MAX: Final = 40
@@ -151,7 +151,7 @@ class PendingRenames:
     """저장 안 한 이름 바꿈 — **지금 이름 → 저장본 이름**. 설비명(`units`)과 Main 설비(`groups`).
 
     호기는 설비명으로만 짝지어지므로, 이것 없이는 이름을 바꾼 호기가 저장본과 견줄 때 「지운 호기 +
-    새 호기」로 읽힌다(변경 목록에서 빠지고 RawData 의 다른 편집 2건으로 세어진다)."""
+    새 호기」로 읽힌다(변경 목록에서 빠지고 설비 마스터의 다른 편집 2건으로 세어진다)."""
 
     units: Mapping[str, str] = field(default_factory=dict)
     groups: Mapping[str, str] = field(default_factory=dict)
@@ -165,7 +165,7 @@ class ReservedNames:
     """편집본 설비 마스터에 없지만 새 설비명(새 호기·이름 바꿈)으로 쓸 수 없는 이름
     (`reserved_names`).
 
-    - `deleted`: 저장본에 있는데 RawData 에서 지우고 아직 저장하지 않은 설비명. 다른 호기가 그
+    - `deleted`: 저장본에 있는데 설비 마스터에서 지우고 아직 저장하지 않은 설비명. 다른 호기가 그
       이름을 이으면 저장 뒤 같은 이름의 다른 설비가 되어 옛 이력(진척 비교 기준선 등)과 섞인다.
       Space 에서 이름을 바꿔 비운 이름은 아니다 — 그것은 다시 써도 된다.
     - `orphan_downtime`: 설비 마스터에 없는 설비명을 가리키는 비가동 일정(보통 저장이 막는다). 그
@@ -787,12 +787,12 @@ def _parse_ghost_moves(
 # ------------------------------------------------------------------ 마스터 저장의 묶음 좌표·크기
 
 # 모듈 묶음의 좌표·크기는 Space 배치 편집기에서 묶음 범위로만 고친다(2026-10-23 사용자 답 「막자」).
-# 설비 마스터를 저장하는 길(RawData 직접 편집·붙여넣기·CSV 업로드·일괄 삭제·Space 배치 저장 — 모두
-# `components/equipment_data_workspace.save_equipment_buffer`)은 저장 직전에
+# 설비 마스터를 저장하는 길(설비 마스터 직접 편집·붙여넣기·CSV 업로드·일괄 삭제·Space 배치 저장 —
+# 모두 `components/equipment_data_workspace.save_equipment_buffer`)은 저장 직전에
 # `module_layout_violations` 로 저장본과 견줘, 모듈 좌표·크기가 바뀌었는데 바둑판이 아닌 묶음이
 # 있으면 저장을 거부한다. 배치 편집기가 적용한 묶음은 적용 뒤 모양(`module_layouts`)을 세션에 두고
-# 그 모양 그대로면 통과시킨다 — 편집기 결과는 `parse_editor_apply` 가 이미 같은 규칙으로 봤고,
-# 숨은 모듈이 있는 묶음을 빼거나 다른 층으로 보낸 결과처럼 바둑판 칸이 비는 모양도 있다.
+# 그 모양 그대로면 통과시킨다 — 편집기 결과는 `parse_editor_apply` 가 이미 같은 규칙으로 봤고, 숨은
+# 모듈이 있는 묶음을 빼거나 다른 층으로 보낸 결과처럼 바둑판 칸이 비는 모양도 있다.
 _COORDINATE_COLUMNS: Final = (*POSITION_COLUMNS, *SIZE_COLUMNS)
 # 한 행의 좌표·크기 눈금(X좌표·Y좌표·Xsize·Ysize, 빈 칸·못 읽는 값은 None).
 _RowTicks = tuple[int | None, int | None, int | None, int | None]
@@ -866,7 +866,7 @@ def _placed_ticks(row: _RowTicks) -> bool:
 def _vanished_rows(
     saved: pd.DataFrame, saved_names: pd.Series, candidate: pd.DataFrame, renames: Mapping[str, str]
 ) -> dict[_RowTicks, int]:
-    """저장본에 있었는데 후보에 없는 행의 좌표·크기 눈금 → 행 수. RawData 에서 이름만 바꾼 행이
+    """저장본에 있었는데 후보에 없는 행의 좌표·크기 눈금 → 행 수. 설비 마스터에서 이름만 바꾼 행이
     바뀐 행으로 읽히지 않게 같은 값과 한 번씩 짝짓는다 — 저장본에 없는 묶음 행이 있을 때만
     구한다."""
     present = {renames.get(str(name), str(name)) for name in _equipment_names(candidate).dropna()}
@@ -890,9 +890,9 @@ def module_layout_violations(
 
     - **바뀐 묶음**: 묶음 행 하나라도 X좌표·Y좌표·Xsize·Ysize 가 저장본의 같은 설비명(`renames` —
       지금 이름 → 저장본 이름, Space 에서 바꾼 저장 안 한 이름)과 다르다. 저장본에 없는 설비명은
-      좌표·크기가 하나라도 있으면 바뀐 것이다 — 다만 저장본에서 사라진 행과 값이 같으면 RawData 에서
-      이름만 바꾼 행으로 보고 바뀌지 않은 것이다. 행을 묶음에 넣거나 빼는 편집(Main 설비 칸)만으로는
-      바뀌지 않는다(그 행의 좌표·크기가 그대로면).
+      좌표·크기가 하나라도 있으면 바뀐 것이다 — 다만 저장본에서 사라진 행과 값이 같으면 설비
+      마스터에서 이름만 바꾼 행으로 보고 바뀌지 않은 것이다. 행을 묶음에 넣거나 빼는 편집(Main 설비
+      칸)만으로는 바뀌지 않는다(그 행의 좌표·크기가 그대로면).
     - 바뀌지 않은 묶음(바둑판이 아닌 옛 묶음 포함)은 보지 않는다. `approved`(배치 편집기가 적용한
       묶음 → 적용 뒤 모양, `module_layouts`)와 모양이 같은 묶음도 보지 않는다.
     - 바뀐 묶음은 좌표가 있는 행이 하나도 없거나(묶음째 미배치), 좌표가 있던 행이 좌표를 잃지
@@ -954,9 +954,9 @@ def module_layout_message(groups: Sequence[str]) -> str:
     shown = ", ".join(groups[:3]) + (f" 외 {len(groups) - 3}개" if len(groups) > 3 else "")
     return (
         f"Main 설비 {shown} 의 모듈 좌표·크기는 Space 배치 편집기에서 묶음 범위로 고칩니다 — "
-        "RawData·붙여넣기·CSV 로 바꾼 X좌표·Y좌표·Xsize·Ysize 가 묶음 범위를 바둑판으로 나눈 칸이 "
-        "아니어서 저장할 수 없습니다. 그 값을 저장본대로 되돌리거나, Space 현황 층 상세의 "
-        "`배치 편집` 에서 그 묶음을 옮기거나 키워 다시 놓은 뒤 저장하세요."
+        "설비 마스터 표·붙여넣기·CSV 로 바꾼 X좌표·Y좌표·Xsize·Ysize 가 묶음 범위를 바둑판으로 "
+        "나눈 칸이 아니어서 저장할 수 없습니다. 그 값을 저장본대로 되돌리거나, Space 현황 층 "
+        "상세의 `배치 편집` 에서 그 묶음을 옮기거나 키워 다시 놓은 뒤 저장하세요."
     )
 
 
@@ -988,14 +988,14 @@ def _reserved_reasons(reserved: ReservedNames) -> dict[str, str]:
     for name in sorted(reserved.orphan_downtime):
         reasons[scalar_match_key(name)] = (
             f"설비 마스터에 없는 설비명 {with_object_particle(name)} 가리키는 비가동 일정이 "
-            "RawData 편집본에 남아 있어 그 일정이 이 호기에 붙습니다 — 그 비가동 일정을 먼저 "
+            "설비 마스터 편집본에 남아 있어 그 일정이 이 호기에 붙습니다 — 그 비가동 일정을 먼저 "
             "고치거나 지우세요"
         )
     for name in sorted(reserved.deleted):
         reasons[scalar_match_key(name)] = (
-            f"저장본의 {with_object_particle(name)} RawData 에서 지우고 아직 저장하지 않았습니다 "
-            "— 그 이름을 이으면 저장 뒤 옛 호기의 이력과 섞이니, 지운 것을 먼저 저장하거나 "
-            "되돌리세요"
+            f"저장본의 {with_object_particle(name)} 설비 마스터에서 지우고 아직 저장하지 "
+            "않았습니다 — 그 이름을 이으면 저장 뒤 옛 호기의 이력과 섞이니, 지운 것을 먼저 "
+            "저장하거나 되돌리세요"
         )
     return reasons
 
@@ -1118,8 +1118,8 @@ def _require_distinct_names(
       이름과 겹칠 수 없다. 자기 대소문자만 바꾸는 것은 된다. 자기 설비명을 Main 설비로 적은 한
       행짜리 묶음은 Main 설비가 따라가므로 그 묶음과는 겹치지 않는다.
     - Main 설비 이름을 바꾸면: 어떤 설비명과도, 다른 Main 설비 이름과도 겹칠 수 없다.
-    - 설비명은 편집본에 호기가 없어도 `reserved`(`_reserved_reasons` — RawData 에서 지우고 저장 안
-      한 저장본 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정)와도 겹칠 수 없다.
+    - 설비명은 편집본에 호기가 없어도 `reserved`(`_reserved_reasons` — 설비 마스터에서 지우고 저장
+      안 한 저장본 이름, 설비 마스터에 없는 설비명을 가리키는 비가동 일정)와도 겹칠 수 없다.
     """
     units = {change.old: change.new for change in renames if change.kind == "unit"}
     groups = {change.old: change.new for change in renames if change.kind == "group"}
@@ -1655,7 +1655,7 @@ def live_renames(
 ) -> PendingRenames:
     """지금도 맞는 항목만 남긴다 — 지금 이름이 편집본에 있고 저장본 이름이 저장본에 있으며, 저장본
     이름이 편집본에 없거나 **그 이름을 이 지도의 다른 살아 있는 항목이 이어받았을 때**(맞바꿈 A↔B,
-    A→X 뒤 B→A). RawData 에서 그 사이 되돌린 이름(지금 이름이 편집본에 없음)과 옛 이름을 새로 쓴
+    A→X 뒤 B→A). 설비 마스터에서 그 사이 되돌린 이름(지금 이름이 편집본에 없음)과 옛 이름을 새로 쓴
     행(옛 이름이 편집본에 있는데 이어받은 항목이 없음)은 이름 바꿈으로 읽지 않는다."""
     if not pending:
         return PendingRenames()
@@ -1735,7 +1735,7 @@ def downtime_with_renames(
     buffer: pd.DataFrame,
 ) -> pd.DataFrame:
     """저장본 비가동 일정에 저장 안 한 설비명 바꿈(저장본 이름 → 지금 이름)을 얹은 사본. 편집본과
-    견줄 때 이름 바꿈을 따라간 설비명을 「RawData 의 비가동 일정 편집」으로 세지 않게 한다."""
+    견줄 때 이름 바꿈을 따라간 설비명을 「설비 마스터의 비가동 일정 편집」으로 세지 않게 한다."""
     live = live_renames(renames, saved, buffer)
     return _renamed_downtime(downtime, {origin: now for now, origin in live.units.items()})
 
@@ -1937,7 +1937,7 @@ def _parent_follows(
 def other_change_count(
     saved: pd.DataFrame, buffer: pd.DataFrame, renames: PendingRenames | None = None
 ) -> int:
-    """배치 칸이 아닌 차이가 있는 호기 수(RawData 의 저장 안 한 다른 편집). 지운 호기도 센다.
+    """배치 칸이 아닌 차이가 있는 호기 수(설비 마스터의 저장 안 한 다른 편집). 지운 호기도 센다.
     이름 바꿈(`renames`)으로 설명되는 설비명·Main 설비 차이는 세지 않는다."""
     saved_rows = {
         str(row[EQUIPMENT_ID_COLUMN]).strip(): row for row in saved.to_dict(orient="records")
@@ -1970,8 +1970,9 @@ def other_change_count(
 
 
 def table_changed(saved: pd.DataFrame, buffer: pd.DataFrame) -> bool:
-    """두 표의 내용이 다른가(값의 형 차이는 무시). 설비 마스터 밖의 RawData 편집(기존 보유대수·
-    비가동 일정)을 알린다. 「다르다」로 잘못 보면 메모 칸이 더 뜰 뿐이라 행 순서도 견준다."""
+    """두 표의 내용이 다른가(값의 형 차이는 무시). 설비 마스터 표 밖의 설비 마스터 탭 편집(기존
+    보유대수· 비가동 일정)을 알린다. 「다르다」로 잘못 보면 메모 칸이 더 뜰 뿐이라 행 순서도
+    견준다."""
     if list(saved.columns) != list(buffer.columns) or len(saved) != len(buffer):
         return True
     rows = [
