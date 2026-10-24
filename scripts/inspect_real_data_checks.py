@@ -630,9 +630,23 @@ class OfficialEquipment:
     failure: str | None = None
 
 
+# 가정 배치 차이(설비 0031) — 앱의 리비전 읽기(투영의 배치 차이 셈·지문 칸)가 이 번호의 표·칸에
+# 기댄다. 0027 뒤 이 번호 전의 사본은 「설비 0031 전」 으로 따로 적고 공식 설비 읽기를 건너뛴다(지금
+# 까닭 「0027 전」 으로 잘못 찍히지 않게 — 설계 7-1).
+_LAYOUT_OVERLAY_MIGRATION = 31
+_SCENARIO_MIGRATION = 27
+
+
 def _read_official_equipment(connection: duckdb.DuckDBPyConnection) -> OfficialEquipment | str:
-    """공식 설비 시나리오를 읽는다. 리비전이 없거나 설비 시나리오 표가 없으면(0027 전) 그 까닭
-    글."""
+    """공식 설비 시나리오를 읽는다. 리비전이 없거나 설비 시나리오 표가 없거나(0027 전) 가정 배치
+    차이 표가 없으면(0031 전) 그 까닭 글."""
+    versions = _versions(connection, "equipment_meta.schema_migration")
+    if (
+        versions is not None
+        and _SCENARIO_MIGRATION in versions
+        and _LAYOUT_OVERLAY_MIGRATION not in versions
+    ):
+        return "설비 0031 전(가정 배치 차이 표 없음) — 앱을 띄워 마이그레이션을 건 뒤 다시"
     try:
         pair = read_official_pair(connection)
         if pair is None:

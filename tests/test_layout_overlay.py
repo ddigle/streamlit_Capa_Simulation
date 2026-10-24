@@ -316,8 +316,7 @@ def test_an_official_split_writes_only_moved_units_to_the_common_ledger() -> Non
     edited.loc[0, "X좌표"] = 40.0
     official = layout_base(master, _keys(master))
     split = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=official.places,
         role="official",
@@ -336,8 +335,7 @@ def test_an_official_split_from_a_revision_with_differences_refuses_layout_edits
     edited = master.copy()
     _set(edited, 0, 동="C2", 층="2F", X좌표=5.0, Y좌표=5.0)
     same = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=started,
         role="official",
@@ -349,8 +347,7 @@ def test_an_official_split_from_a_revision_with_differences_refuses_layout_edits
 
     edited.loc[0, "X좌표"] = 7.0
     moved = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=started,
         role="official",
@@ -368,8 +365,7 @@ def test_an_overlay_split_keeps_the_common_ledger_and_records_the_difference() -
     edited = master.copy()
     _set(edited, 0, 동="C3", 층="4F", X좌표=9.0)
     split = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=official.places,
         role="overlay",
@@ -388,8 +384,7 @@ def test_a_new_unit_in_an_overlay_split_has_no_official_place_but_keeps_its_size
         {"설비명": "NEW", "동": "C2", "층": "2F", "X좌표": 3.0, "Y좌표": 3.0, "Xsize": 5.0},
     )
     split = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=official.places,
         role="overlay",
@@ -406,8 +401,7 @@ def test_a_new_module_in_an_existing_group_takes_the_groups_official_floor() -> 
     official = layout_base(master, _keys(master))
     edited = _master(*_group("M1", "M2", "M3", spot=("C1", "1F")))
     split = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=official.places,
         role="overlay",
@@ -429,8 +423,7 @@ def test_an_overlay_split_refuses_grouping_units_on_different_official_floors() 
     _set(edited, 2, 동="C1", 층="1F", X좌표=None, Y좌표=None)
     edited.loc[2, "Main 설비"] = "G"
     split = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=official.places,
         role="overlay",
@@ -447,8 +440,7 @@ def test_grouping_units_on_the_same_official_floor_is_accepted_in_an_overlay_spl
     edited = master.copy()
     edited.loc[2, "Main 설비"] = "G"
     split = split_layout(
-        edited,
-        _keys(edited),
+        layout_base(edited, _keys(edited)),
         official=official,
         started=official.places,
         role="overlay",
@@ -513,8 +505,7 @@ def test_splitting_then_applying_gives_back_the_edited_places() -> None:
         edited = prepare_equipment_master(edited)
         keys = _keys(edited)
         split = split_layout(
-            edited,
-            keys,
+            layout_base(edited, keys),
             official=official,
             started=official.places,
             role="overlay",

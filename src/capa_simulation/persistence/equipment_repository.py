@@ -69,6 +69,7 @@ from capa_simulation.services.equipment_contract import (
     DOWNTIME_KEY_COLUMNS,
     EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
+    PARENT_EQUIPMENT_COLUMN,
     QUAL_ACTUAL_COLUMN,
     QUAL_DATE_COLUMN,
     QUAL_STATUS_COLUMN,
@@ -146,6 +147,29 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_topic_particle,
 )
+from capa_simulation.services.layout_overlay import (
+    EMPTY_LAYOUT_DIGEST,
+    LAYOUT_ROLES,
+    SCHEDULE_REVISION_ORIGINS,
+    LayoutBase,
+    LayoutOverlay,
+    LayoutRole,
+    MarkChange,
+    OfficialFloor,
+    Place,
+    apply_unit_overlay,
+    common_with_places,
+    effective_floor_marks,
+    effective_group_labels,
+    label_changes,
+    layout_base,
+    layout_counts_words,
+    make_layout_overlay,
+    mark_changes,
+    normalize_layout_overlay,
+    overlay_unit_count,
+    split_layout,
+)
 from capa_simulation.services.process_cutoff import (
     empty_process_cutoff,
     prepare_process_cutoff,
@@ -215,6 +239,11 @@ class EquipmentScheduleRevisionSummary:
     `revision_name`(리비전명)은 **이름표**라 나중에 고칠 수 있다(E7 — 내용은 그대로). 그래서 불변
     본문을 쌍 키로 싣는 합친 본문 캐시에는 싣지 않는다(`equipment_cache` — 늘 None 으로 꺼낸다).
     이름표는 리비전 목록(쓰기 세대·stat·TTL 로 지키는 캐시)에서 읽는다.
+
+    배치 차이(설비 0031 — 가정 설비 시나리오의 Space 배치 중 공식과 다른 것)는 원시 행 수 셋과 지문
+    `layout_hash`(0031 뒤 코드가 늘 적는다 — NULL 은 이관·옛 코드 리비전)로 싣는다. 실효(공식과
+    실제로 다른 것)는 그 리비전을 지금 공식과 견줘야 알 수 있어 여기 없다. `origin` 에는
+    `layout_clear`(「배치 차이 모두 지우기」·공식 발행 정리)가 더해진다.
     """
 
     schedule_revision_id: str
@@ -229,11 +258,25 @@ class EquipmentScheduleRevisionSummary:
     legacy_revision_id: str | None = None
     unit_row_count: int = 0
     downtime_row_count: int = 0
+    layout_hash: str | None = None
+    layout_unit_count: int = 0
+    layout_mark_count: int = 0
+    layout_label_count: int = 0
+
+    @property
+    def layout_digest(self) -> str:
+        """배치 차이 지문 — NULL(이관·옛 코드 리비전)은 빈 차이로 읽는다."""
+        return self.layout_hash or EMPTY_LAYOUT_DIGEST
 
 
 @dataclass(frozen=True)
 class EquipmentScenarioSummary:
-    """설비 시나리오 한 줄 — 각 최신은 칸이 아니라 `MAX(revision_no)` 로 낸다."""
+    """설비 시나리오 한 줄 — 각 최신은 칸이 아니라 `MAX(revision_no)` 로 낸다.
+
+    배치 차이(0031): `latest_layout_unit_count` 는 최신의 **저장된** 호기 차이 행 수(실효 아님 —
+    목록 표의 「저장된 배치 차이」), `latest_layout_hash` 는 최신의 배치 지문(배치 빨리 감기 판정),
+    `layout_trace_count` 는 옛 코드 흔적(차이가 있는 리비전 뒤에 지문 없이 저장된 리비전 수)이다.
+    """
 
     equipment_scenario_id: str
     scenario_name: str
@@ -242,6 +285,9 @@ class EquipmentScenarioSummary:
     latest_schedule_revision_id: str | None = None
     latest_revision_no: int | None = None
     revision_count: int = 0
+    latest_layout_unit_count: int = 0
+    latest_layout_hash: str | None = None
+    layout_trace_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -315,6 +361,11 @@ class EquipmentSnapshot:
     - 호기 키는 (설비명, 키) 쌍 튜플로 든다 — 캐시 본문에 실리는 모델이라 `MappingProxyType` 처럼
       pickle 이 안 되는 값을 두지 않는다. 꺼낼 때 `unit_keys` 가 dict 를 만든다.
     - 시나리오명·공식 번호 같은 라벨은 싣지 않는다 — 바뀔 수 있는 값이라 목록에서 읽는다.
+    - 가정 설비 시나리오면 `equipment` 의 배치 일곱 칸은 공식에 그 리비전의 **호기 배치 차이**를
+      얹은 것이다(설비 0031). `layout_official_places` 는 얹은 값이 공식과 실제로 다른 호기의 공식
+      일곱 칸(「공식과 견주기」 재료), `layout_orphans` 는 공통에서 지운 호기라 버린 차이 수,
+      `layout_regrouped` 는 공식에서 모듈 구성이 바뀌어 가정 자리를 다시 맞춘 묶음이다. 도면 요소·
+      Main 설비명 위치 차이는 층마다 따로 읽는다(`equipment_cache.load_schedule_layout_overlay`).
     """
 
     revision: EquipmentRevisionSummary
@@ -325,6 +376,9 @@ class EquipmentSnapshot:
     unit_key_pairs: tuple[tuple[str, str], ...] = ()
     unscheduled_units: frozenset[str] = frozenset()
     orphan_rows: int = 0
+    layout_official_places: tuple[tuple[str, Place], ...] = ()
+    layout_orphans: int = 0
+    layout_regrouped: tuple[str, ...] = ()
 
     @property
     def token(self) -> str:
@@ -336,6 +390,11 @@ class EquipmentSnapshot:
     def unit_keys(self) -> dict[str, str]:
         """설비명 → 호기 키."""
         return dict(self.unit_key_pairs)
+
+    @property
+    def layout_overridden_keys(self) -> frozenset[str]:
+        """얹은 배치가 공식과 실제로 다른 호기 키(실효)."""
+        return frozenset(key for key, _ in self.layout_official_places)
 
     def calculation_frames(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """계산에 넘길 (기존 보유대수, 설비 마스터, 비가동) — 일정 없음 호기와 그 비가동을 뺀다."""
@@ -477,6 +536,65 @@ class EquipmentScenarioNameMoved(ValueError):
         self.current = current
 
 
+class EquipmentLayoutRoleChanged(ValueError):
+    """배치 편집을 시작한 뒤(화면 판정과 저장 사이에) 공식 설비 시나리오가 바뀌어, 그 편집이 들어갈
+    자리(공식 배치 ↔ 이 시나리오의 배치 차이)가 달라졌다. 아무것도 쓰지 않았다(설계 6-2)."""
+
+    def __init__(self, expected: str, current: str) -> None:
+        def words(role: str) -> str:
+            return "공식 배치" if role == "official" else "이 설비 시나리오의 가정 배치"
+
+        super().__init__(
+            "그 사이 공식 설비 시나리오가 바뀌어 이 배치 변경"
+            f"({words(expected)}에 들어갈 편집이었음)을 저장하지 않았습니다 — 지금은 "
+            f"{words(current)}에 들어갑니다. 배치 변경만 버리고 다시 고치세요."
+        )
+        self.expected = expected
+        self.current = current
+
+
+class EquipmentLayoutScopeError(ValueError):
+    """이 저장 역할로는 고칠 수 없는 배치다 — 가정 설비 시나리오의 층 캔버스(공통), 가정 역할에서
+    공식 층이 다른 호기를 한 묶음으로 묶기, 가정이던 때의 배치 차이가 있는 옛 리비전에서 공식 배치
+    고치기. 아무것도 쓰지 않았다(설계 6-7)."""
+
+
+class EquipmentLayoutOverflow(ValueError):
+    """층 캔버스를 줄이면 어느 설비 시나리오(각 최신·최신 공식 발행)의 가정 배치 도면 요소가 캔버스
+    밖에 남는다. 아무것도 쓰지 않았다(설계 6-4 — 가정 차이 호기는 막지 않는다)."""
+
+    def __init__(self, scenario_name: str, key: FloorKey, count: int) -> None:
+        super().__init__(
+            f"「{scenario_name}」 의 가정 배치에서 {key[0]} {key[1]} 요소 {count}개가 새 캔버스 "
+            "밖입니다 — 그 설비 시나리오에서 요소를 옮기거나 캔버스를 덜 줄이세요."
+        )
+        self.scenario_name = scenario_name
+        self.key = key
+        self.count = count
+
+
+class EquipmentLayoutPublishBlocked(ValueError):
+    """공식과 다른 배치(배치 차이)가 있는 리비전·시나리오는 공식으로 발행하지 않는다(LY5 「공식으로
+    올리기」 전까지 — Q4). 수는 지금 공식과 견준 실효다. 아무것도 쓰지 않았다."""
+
+    def __init__(
+        self, scenario_name: str, revision_no: int, units: int, marks: int, labels: int
+    ) -> None:
+        counts = layout_counts_words(units, marks, labels) or "저장된 차이"
+        super().__init__(
+            f"「{scenario_name}」 r{revision_no} 에는 공식과 다른 배치({counts})가 있어 공식으로 "
+            "발행하지 않았습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
+            "시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 로 이 시나리오를 "
+            "공식 배치로 돌린 뒤 발행하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "
+            "두세요."
+        )
+        self.scenario_name = scenario_name
+        self.revision_no = revision_no
+        self.units = units
+        self.marks = marks
+        self.labels = labels
+
+
 class EquipmentScheduleRevisionNameMoved(ValueError):
     """일정 리비전의 리비전명을 바꾸려는 사이 다른 사용자가 먼저 바꿨다(비교 후 쓰기). 아무것도 쓰지
     않았다. `current` 는 쓰기 잠금 안에서 읽은 지금 이름(없으면 None)이다."""
@@ -514,7 +632,12 @@ class EquipmentSaveRequest:
       없음·편집 전 비가동을 낸다 — 두 리비전은 불변이고 공통 대조가 잠금 안이라 화면이 든 값과
       같다.
     - `renames` 는 지금 이름 → 저장본 이름(Space 편집기의 이름 바꾸기). 이 지도로 이은 호기는
-      다른 시나리오에서도 같은 호기다(`assign_unit_keys`).
+      다른 시나리오에서도 같은 호기다(`assign_unit_keys`). `group_renames` 는 Main 설비 쪽 같은
+      지도다 — 저장이 층 현행값의 공식 Main 설비명 위치 행을 새 이름으로 옮긴다(설계 5-4, 어느
+      역할이든).
+    - `expected_layout_role` 은 배치 편집을 적용할 때 찍은 역할("official"·"overlay")이다. None 이면
+      배치를 건드리지 않은 저장이라 대조하지 않는다. 쓰기 잠금 안의 역할과 다르면
+      `EquipmentLayoutRoleChanged`(설계 6-2).
     - `expected_release_no` 는 화면이 본 최신 공식 번호(발행이 없었으면 0)다. None 이면 대조하지
       않는다. 이번 저장이 공식 발행을 할 때만 대조한다.
     - 층 값(`floor_*`)은 지금 그대로 같은 트랜잭션에 쓰는 층 현행값이다.
@@ -537,6 +660,8 @@ class EquipmentSaveRequest:
     floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None
     floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None
     floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None
+    group_renames: Mapping[str, str] = MappingProxyType({})
+    expected_layout_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -568,6 +693,10 @@ class EquipmentSaveResult:
     - `forced_common` 은 0027 뒤 첫 저장이라 공통이 그대로여도 v4 공통을 함께 썼다는 뜻이다.
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
       빠진다 — RawData 설비명 고침도 지운 + 새 호기다).
+    - `layout_overlay_written` 은 이 저장이 가정 설비 시나리오의 배치 차이를 바꾼 새 리비전을
+      만들었는가, `layout_overlay_units` 는 그 리비전의 공식과 다른 호기 수(설비 단위)다.
+      `floor_values_written` 은 층 현행값(공식 캔버스·요소·Main 설비명 위치)을 실제로 썼는가다 —
+      가정 역할의 층 편집은 층 현행값이 아니라 배치 차이로 간다.
     """
 
     common: EquipmentRevisionSummary | None
@@ -579,6 +708,8 @@ class EquipmentSaveResult:
     floor_values_written: bool = False
     new_units: tuple[str, ...] = ()
     removed_units: tuple[str, ...] = ()
+    layout_overlay_written: bool = False
+    layout_overlay_units: int = 0
 
     @property
     def wrote_revision(self) -> bool:
@@ -863,6 +994,12 @@ class DuckDBEquipmentRepository:
         `mode` — "changed" 는 바뀐 쪽만, "if_any" 는 하나라도 바뀌면 두 쪽 다, "always" 는 늘 두 쪽
         다. `official_target` 이면 저장할 시나리오와 출발 일정을 쓰기 잠금 안에서 공식 시나리오의
         최신으로 정한다(래퍼). `force_publish` 면 공식 시나리오에 새 리비전이 생길 때 늘 발행한다.
+
+        **배치는 역할로 가른다**(설계 6-1 — 설비 0031). 대상 시나리오가 공식이면 위치는 공통 대장에,
+        도면 요소·Main 설비명 위치는 층 현행값에 쓴다(지금 그대로). 가정이면 셋 다 그 시나리오의 새
+        일정 리비전의 배치 차이로 쓰고 공통·층 현행값의 배치는 건드리지 않는다(새 호기는 자리 없이
+        — Q1). 가정 배치만 바꾼 저장은 그 시나리오 최신의 배치 지문이 출발과 같으면 낡아도 받는다
+        (배치 빨리 감기), 가정 리비전을 쓴 저장은 커밋 전에 그 쌍을 다시 읽어 확인한다.
         """
         canvases: dict[FloorKey, CanvasSize] = {}
         for (building, floor), size in (request.floor_canvases or {}).items():
@@ -874,6 +1011,11 @@ class DuckDBEquipmentRepository:
         for (building, floor), labels in (request.floor_group_labels or {}).items():
             _require_floor_key(building, floor)
             prepared_labels[(building, floor)] = prepare_group_labels(labels)
+        if (
+            request.expected_layout_role is not None
+            and request.expected_layout_role not in LAYOUT_ROLES
+        ):
+            raise ValueError(f"배치 역할을 알 수 없습니다: {request.expected_layout_role!r}")
         prepared_baseline = prepare_equipment_baseline(request.baseline)
         note = _clean_text(request.note)
         saved_by = _clean_text(request.saved_by)
@@ -903,6 +1045,7 @@ class DuckDBEquipmentRepository:
                 target_id = request.equipment_scenario_id
                 base_schedule_id = request.base_schedule_revision_id
             scenario = _require_active_scenario(scenarios, target_id)
+            base_summary: EquipmentScheduleRevisionSummary | None = None
             if base_schedule_id is not None:
                 base_summary = _require_schedule_revision(connection, base_schedule_id)
                 if base_summary.equipment_scenario_id != target_id:
@@ -912,13 +1055,39 @@ class DuckDBEquipmentRepository:
                     )
             release_row = scenario_store.latest_release_row(connection)
             release = _release(release_row) if release_row is not None else None
+            # 역할 — 공식 설비 시나리오면 공식 배치(공통·층 현행값)를, 가정이면 그 시나리오의 배치
+            # 차이를 쓴다. 화면이 배치 편집에 찍은 역할과 다르면(사이에 발행이 끼어듦) 쓰지 않는다.
+            role: LayoutRole = (
+                "official"
+                if official_target or target_id == scenario_store.official_scenario_id(connection)
+                else "overlay"
+            )
+            if request.expected_layout_role is not None and request.expected_layout_role != role:
+                raise EquipmentLayoutRoleChanged(request.expected_layout_role, role)
+            if role == "overlay" and canvases:
+                raise EquipmentLayoutScopeError(
+                    "층 캔버스·배경 도면은 공식 설비 시나리오에서 고칩니다 — "
+                    f"「{scenario.scenario_name}」 은 가정 설비 시나리오라 층 캔버스를 바꾸지 "
+                    "않았습니다."
+                )
+            base_overlay = read_layout_overlay(connection, base_summary)
             stored_canvases = _stored_floor_canvases(connection)
             _require_floor_layout_bases(
                 connection,
                 stored_canvases,
                 request.floor_layout_bases or {},
                 changed={*canvases, *(request.floor_marks or {}), *prepared_labels},
+                overlay=base_overlay,
             )
+            if role == "official" and base_overlay:
+                touched = {*(request.floor_marks or {}), *prepared_labels} & set(
+                    base_overlay.floors
+                )
+                if touched:
+                    raise EquipmentLayoutScopeError(
+                        "이 리비전에는 이 설비 시나리오가 가정이던 때의 배치 차이가 있어 도면 요소·"
+                        "Main 설비명 위치를 고치지 않았습니다 — 최신 리비전을 불러와 고치세요."
+                    )
             # 저장 시점에만 층 캔버스 상한과 실적 날짜(오늘보다 늦음·반입실적 > Qual실적)를
             # 강제한다. 다시 읽을 때는 둘 다 넘기지 않아 이미 저장된 리비전이 계속 열린다.
             merged_canvases = {**stored_canvases, **canvases}
@@ -933,17 +1102,54 @@ class DuckDBEquipmentRepository:
                 key: prepare_floor_layout_marks(marks, merged_canvases.get(key, default_canvas))
                 for key, marks in (request.floor_marks or {}).items()
             }
-            # 캔버스만 바꾸는 층의 **저장된** 요소도 새 캔버스 안이어야 한다.
+            # 캔버스만 바꾸는 층의 **저장된** 요소도 새 캔버스 안이어야 한다. 가정 배치의 요소
+            # (각 시나리오 최신·최신 공식 발행)도 본다 — 가정 차이 호기는 막지 않는다(설계 6-4).
             for key, size in canvases.items():
                 if key not in prepared_marks:
                     _require_marks_fit(connection, key, size)
+                _require_overlay_marks_fit(connection, key, size)
 
             base = _read_base_state(
                 connection, latest[0] if latest is not None else None, base_schedule_id
             )
             edit = _split_edit(prepared_equipment, prepared_downtime, base, request.renames)
+            edit_keys = [str(key) for key in edit.common[UNIT_KEY_COLUMN]]
+            edited_base = layout_base(edit.common, edit_keys)
+            split = split_layout(
+                edited_base,
+                official=base.layout,
+                started=base.started_places,
+                role=role,
+                overlay_present=bool(base_overlay.units),
+            )
+            if split.refusal is not None:
+                raise EquipmentLayoutScopeError(split.refusal)
+            edit = replace(
+                edit,
+                common=common_with_places(
+                    edit.common, edit_keys, split.common_places, current=edited_base.places
+                ),
+            )
+            label_moves = _group_label_moves(request.group_renames, base.common, edit.common)
+            official_floors = _OfficialFloors(
+                connection,
+                marks=prepared_marks if role == "official" else {},
+                labels=prepared_labels if role == "official" else {},
+                moves=label_moves,
+            )
+            after_base = edited_base.with_places(split.common_places)
+            layout = LayoutOverlay()
+            layout_changed = False
+            if role == "overlay":
+                layout = _overlay_after_edit(
+                    base_overlay, split.units, prepared_marks, prepared_labels, official_floors
+                )
+                started_layout = normalize_layout_overlay(
+                    base_overlay, after_base, official_floors.for_overlay(base_overlay)
+                )
+                layout_changed = layout.digest() != started_layout.digest()
             common_changed = _common_digest(prepared_baseline, edit.common) != _common_digest(
-                base.baseline, base.common
+                base.baseline, base.official_common
             )
             schedule_changed = _schedule_digest(edit.schedule, edit.downtime) != (
                 _schedule_digest(base.schedule, base.downtime)
@@ -957,15 +1163,37 @@ class DuckDBEquipmentRepository:
             )
             if mode == "changed":
                 write_common = common_changed or forced_common
-                write_schedule = schedule_changed
+                write_schedule = schedule_changed or layout_changed
             elif mode == "if_any":
                 write_common = write_schedule = common_changed or schedule_changed
             else:
                 write_common = write_schedule = True
+            schedule_rows, downtime_rows = edit.schedule, edit.downtime
             if write_schedule and scenario.latest_schedule_revision_id != base_schedule_id:
-                raise EquipmentRevisionConflict(
-                    "schedule", f"「{scenario.scenario_name}」 r{scenario.latest_revision_no}"
+                # 배치 빨리 감기(설계 6-1) — 가정 배치만 바꾼 저장은 그 시나리오 최신의 배치 지문이
+                # 출발과 같으면(남이 일정만 저장했거나 함께 넣기가 새 리비전을 만들었음) 최신의
+                # 일정·비가동 위에 새 배치 차이로 받는다. 남이 배치를 바꿨으면 지금처럼 거부한다.
+                newest_summary = (
+                    _require_schedule_revision(connection, scenario.latest_schedule_revision_id)
+                    if scenario.latest_schedule_revision_id is not None
+                    else None
                 )
+                started_digest = (
+                    base_summary.layout_digest if base_summary is not None else EMPTY_LAYOUT_DIGEST
+                )
+                if (
+                    role != "overlay"
+                    or schedule_changed
+                    or newest_summary is None
+                    or newest_summary.layout_digest != started_digest
+                ):
+                    raise EquipmentRevisionConflict(
+                        "schedule", f"「{scenario.scenario_name}」 r{scenario.latest_revision_no}"
+                    )
+                frames = read_schedule(connection, newest_summary.schedule_revision_id)
+                known = set(edit.unit_keys.values())
+                schedule_rows = _rows_for(frames.schedule, known)
+                downtime_rows = _rows_for(frames.downtime, known)
 
             propagations = (
                 _plan_propagations(
@@ -975,6 +1203,8 @@ class DuckDBEquipmentRepository:
                     target=scenario,
                     base=base,
                     edit=edit,
+                    layout_base=after_base,
+                    official_floors=official_floors,
                 )
                 if write_schedule
                 else []
@@ -991,12 +1221,36 @@ class DuckDBEquipmentRepository:
                 expected_release_no=request.expected_release_no,
                 force_publish=force_publish,
             )
+            if publish.scenario_id is not None:
+                # 배치 차이가 있는 리비전은 공식으로 발행하지 않는다(Q4). 저장의 자동 발행은 공식
+                # 시나리오에서만 일어나 실제로 걸리지 않는다 — 발행이 없는 DB 의 첫 저장을 지킨다.
+                published = (
+                    layout
+                    if publish.scenario_id == scenario.equipment_scenario_id
+                    else next(
+                        (
+                            plan.layout
+                            for plan in propagations
+                            if plan.scenario.equipment_scenario_id == publish.scenario_id
+                        ),
+                        LayoutOverlay(),
+                    )
+                )
+                if published:
+                    owner = scenarios[publish.scenario_id]
+                    raise EquipmentLayoutPublishBlocked(
+                        owner.scenario_name,
+                        (owner.latest_revision_no or 0) + 1,
+                        overlay_unit_count(published, after_base),
+                        published.mark_count,
+                        published.label_count,
+                    )
             if write_common or any(plan.writes for plan in propagations):
                 _cross_validate(
                     connection,
                     scenarios,
                     release,
-                    common=edit.common if write_common else base.common,
+                    common=edit.common if write_common else base.official_common,
                     target=scenario,
                     base_schedule_id=base_schedule_id,
                     write_schedule=write_schedule,
@@ -1013,6 +1267,7 @@ class DuckDBEquipmentRepository:
                     baseline=prepared_baseline,
                     common=edit.common,
                 )
+            labels_moved = _move_group_labels(connection, label_moves)
             schedule_id = base_schedule_id
             if write_schedule:
                 schedule_id = _insert_schedule(
@@ -1022,8 +1277,9 @@ class DuckDBEquipmentRepository:
                     common_revision_id=common_id,
                     note=note,
                     saved_by=saved_by,
-                    schedule=edit.schedule,
-                    downtime=edit.downtime,
+                    schedule=schedule_rows,
+                    downtime=downtime_rows,
+                    layout=layout,
                 )
             propagated: list[PropagatedRevision] = []
             created = {scenario.equipment_scenario_id: schedule_id} if write_schedule else {}
@@ -1039,6 +1295,7 @@ class DuckDBEquipmentRepository:
                         saved_by=saved_by,
                         schedule=plan.schedule,
                         downtime=plan.downtime,
+                        layout=plan.layout,
                     )
                     created[plan.scenario.equipment_scenario_id] = plan_id
                     revision_no = _require_schedule_revision(connection, plan_id).revision_no
@@ -1063,13 +1320,24 @@ class DuckDBEquipmentRepository:
                         released_by=saved_by,
                         note="설비 마스터 저장과 함께 발행",
                     )
-            for (building, floor), (width, height) in canvases.items():
-                _upsert_floor_canvas(connection, building, floor, width, height)
-            for (building, floor), marks in prepared_marks.items():
-                _replace_floor_marks(connection, building, floor, marks)
-            for (building, floor), labels in prepared_labels.items():
-                _replace_group_labels(connection, building, floor, labels)
-            floors_written = bool(canvases) or bool(prepared_marks) or bool(prepared_labels)
+            floors_written = labels_moved
+            if role == "official":
+                for (building, floor), (width, height) in canvases.items():
+                    _upsert_floor_canvas(connection, building, floor, width, height)
+                for (building, floor), marks in prepared_marks.items():
+                    _replace_floor_marks(connection, building, floor, marks)
+                for (building, floor), labels in prepared_labels.items():
+                    _replace_group_labels(connection, building, floor, labels)
+                floors_written = (
+                    floors_written
+                    or bool(canvases)
+                    or bool(prepared_marks)
+                    or bool(prepared_labels)
+                )
+            if role == "overlay" and write_schedule and schedule_id is not None:
+                # 끝 확인(I4) — 깨진 가정 리비전이 남아 그 세션이 공식으로 밀리지 않게 커밋 전에
+                # 다시 읽는다. 실패하면 이 트랜잭션 전체가 되돌아간다.
+                _require_final_read(connection, scenario, common_id, schedule_id)
             result = EquipmentSaveResult(
                 common=_revision_row(connection, common_id)[0]
                 if write_common and common_id is not None
@@ -1084,6 +1352,8 @@ class DuckDBEquipmentRepository:
                 floor_values_written=floors_written,
                 new_units=edit.new_units,
                 removed_units=edit.removed_units,
+                layout_overlay_written=role == "overlay" and write_schedule and layout_changed,
+                layout_overlay_units=overlay_unit_count(layout, after_base),
             )
             outcome.wrote = result.wrote_revision or floors_written or release_no is not None
         return _SaveOutcome(result, common_id, schedule_id)
@@ -1120,9 +1390,10 @@ class DuckDBEquipmentRepository:
         사본이 아니라 `read_merged` 로 읽은 출처(지금 공통 대장과 합친 것)의 일정 일곱
         칸·비가동이다 — 이관 리비전의 Qual 자리표·계약 v2 변환·레거시 비가동 중복 제거가 원본과
         같게 걸린다. 출처의 일정 없음 호기(그 리비전 뒤에 공통 대장에 든 호기 포함)는 복제본에서도
-        일정 없음이다. 지금 공통 대장과 합칠 수 없는 옛 리비전은
-        `EquipmentScenarioIncompatible` 로 막는다 — 최신·공식 발행은 저장 때 교차 검증이 늘 합쳐지게
-        지키지만 그 밖은 아니다. 이름은 보관본까지 겹칠 수 없다.
+        일정 없음이다. 출처 리비전의 **배치 차이**(가정 배치안)도 지금 공식으로 정규화해 옮긴다
+        (설계 6-6 — 그 사이 공통에서 지운 호기의 차이는 빠진다). 지금 공통 대장과 합칠 수 없는 옛
+        리비전은 `EquipmentScenarioIncompatible` 로 막는다 — 최신·공식 발행은 저장 때 교차 검증이 늘
+        합쳐지게 지키지만 그 밖은 아니다. 이름은 보관본까지 겹칠 수 없다.
         """
         clean_name = _required_scenario_name(name)
         creator = _clean_text(created_by)
@@ -1147,6 +1418,10 @@ class DuckDBEquipmentRepository:
                 raise ValueError("공통 대장 리비전이 없어 설비 시나리오를 복제할 수 없습니다.")
             snapshot = read_merged(connection, latest[0], source.schedule_revision_id)
             schedule, downtime = _scheduled_frames(snapshot)
+            overlay = read_layout_overlay(connection, source)
+            layout = normalize_layout_overlay(
+                overlay, _official_layout(snapshot), _stored_floors(connection, overlay.floors)
+            )
             scenario_store.insert_scenario(
                 connection,
                 equipment_scenario_id=new_id,
@@ -1163,6 +1438,7 @@ class DuckDBEquipmentRepository:
                 saved_by=creator,
                 schedule=schedule,
                 downtime=downtime,
+                layout=layout,
             )
             outcome.wrote = True
             created = _require_scenario_summary(connection, new_id)
@@ -1206,6 +1482,14 @@ class DuckDBEquipmentRepository:
         잠금 안의 지금 번호와 다르면 `EquipmentReleaseMoved`. ACTIVE 시나리오의 리비전만, 지금
         공통 대장과 합쳐 읽기 검증을 통과해야 한다(`EquipmentScenarioIncompatible`). 이미 최신
         공식인 리비전이면 쓰지 않고 그 발행을 돌려준다.
+
+        **배치 차이가 있으면 발행하지 않는다**(LY5 「공식으로 올리기」 전까지 — Q4, 불변식 I2 는
+        저장된 행 기준). 발행할 리비전과 그 시나리오 최신의 차이를 지금 공식으로 정규화해:
+        - 저장된 행이 둘 다 없으면 지금처럼 발행한다.
+        - 행은 있지만 정규화하면 비고(공식이 그 사이 같은 자리로 옮김) 발행할 리비전이 그 시나리오
+          최신이면, 같은 트랜잭션에서 일정은 그대로·차이를 비운 새 리비전(`origin='layout_clear'`)을
+          쓰고 **그것을** 발행한다(돌려준 발행의 `schedule_revision_id` 가 그 새 리비전이다).
+        - 그 밖은 `EquipmentLayoutPublishBlocked`(수는 실효).
         """
         outcome = _WriteOutcome(wrote=False)
         with self._write_transaction(outcome) as connection:
@@ -1231,11 +1515,19 @@ class DuckDBEquipmentRepository:
             latest = _latest_revision(connection)
             if latest is None:
                 raise ValueError("공통 대장 리비전이 없어 발행할 수 없습니다.")
-            read_merged(connection, latest[0], schedule_revision_id)
+            snapshot = read_merged(connection, latest[0], schedule_revision_id)
+            publish_id = _layout_publishable(
+                connection,
+                scenarios[target.equipment_scenario_id],
+                target,
+                snapshot,
+                common_revision_id=latest[0],
+                saved_by=_clean_text(released_by),
+            )
             scenario_store.insert_release(
                 connection,
                 equipment_scenario_id=target.equipment_scenario_id,
-                schedule_revision_id=schedule_revision_id,
+                schedule_revision_id=publish_id,
                 released_by=_clean_text(released_by),
                 note=_clean_text(note),
             )
@@ -1313,6 +1605,7 @@ class DuckDBEquipmentRepository:
         revision_name: str | None = None,
         publish_official: bool = True,
         expected_release_no: int | None = None,
+        expected_layout_role: str | None = None,
     ) -> ScheduleRestoreResult:
         """「이 리비전으로 되돌리기」(E7) — 고른 일정 리비전의 일정을 **같은 시나리오의 새 리비전**
         (`origin='restore'`)으로 다시 저장한다. 옛 리비전·사이 리비전·공통 대장은 그대로다.
@@ -1324,9 +1617,13 @@ class DuckDBEquipmentRepository:
            합친 것(복제와 같은 길 — `read_merged`). 그 리비전 뒤에 공통 대장에 든 호기는 그 리비전에
            일정 행이 없어 「일정 없음」 이 된다(F4). 그 뒤 지운 호기의 옛 일정은 합칠 때 버려진다.
            합칠 수 없으면 `EquipmentScenarioIncompatible`.
-        3. 지금 최신과 모든 호기의 일정·비가동이 같으면 쓰지 않는다(`schedule=None`) — 빈 리비전을
-           만들지 않는다.
-        4. 공식 발행은 설비 마스터 저장과 같은 규칙(`_plan_publish`)이다 — 공식 시나리오에서
+        3. 새 리비전의 **배치 차이** = 고른 리비전의 차이를 지금 공통·층 현행값으로 정규화한 것
+           (가정 배치안을 되살린다 — 설계 6-6). 그 시나리오가 공식이면 차이를 버린다(I2).
+           `expected_layout_role`(확인 글을 보인 때의 역할 "official"·"overlay")이 쓰기 잠금 안의
+           역할과 다르면 `EquipmentLayoutRoleChanged` — 확인 글과 실제 쓰기가 갈리지 않게.
+        4. 지금 최신과 모든 호기의 일정·비가동이 같고 배치 차이도 같으면 쓰지 않는다
+           (`schedule=None`) — 빈 리비전을 만들지 않는다.
+        5. 공식 발행은 설비 마스터 저장과 같은 규칙(`_plan_publish`)이다 — 공식 시나리오에서
            되돌렸고 `publish_official` 이며 저장 전 최신 발행이 그 시나리오 최신이었을 때만 새
            리비전을 발행한다(발행 안 한 더 새 리비전이 있었으면 `release_withheld`). 발행할 때만
            `expected_release_no` 를 대조한다.
@@ -1358,10 +1655,27 @@ class DuckDBEquipmentRepository:
                 raise EquipmentRevisionConflict(
                     "schedule", f"「{scenario.scenario_name}」 r{scenario.latest_revision_no}"
                 )
+            role: LayoutRole = (
+                "official"
+                if scenario.equipment_scenario_id == scenario_store.official_scenario_id(connection)
+                else "overlay"
+            )
+            if expected_layout_role is not None and expected_layout_role != role:
+                raise EquipmentLayoutRoleChanged(expected_layout_role, role)
             preview, restored = _restore_preview(
                 connection, latest[0], scenario.latest_schedule_revision_id, target
             )
-            if preview.identical:
+            selected = read_layout_overlay(connection, target)
+            current = read_layout_overlay(connection, scenario.latest_schedule_revision_id)
+            official_layout = _official_layout(restored)
+            floors = _stored_floors(connection, {*selected.floors, *current.floors})
+            layout = (
+                LayoutOverlay()
+                if role == "official"
+                else normalize_layout_overlay(selected, official_layout, floors)
+            )
+            current_layout = normalize_layout_overlay(current, official_layout, floors)
+            if preview.changed_units == 0 and layout.digest() == current_layout.digest():
                 return ScheduleRestoreResult(schedule=None, preview=preview)
             release_row = scenario_store.latest_release_row(connection)
             publish = _plan_publish(
@@ -1374,6 +1688,14 @@ class DuckDBEquipmentRepository:
                 expected_release_no=expected_release_no,
                 force_publish=False,
             )
+            if publish.scenario_id is not None and layout:
+                raise EquipmentLayoutPublishBlocked(
+                    scenario.scenario_name,
+                    (scenario.latest_revision_no or 0) + 1,
+                    overlay_unit_count(layout, official_layout),
+                    layout.mark_count,
+                    layout.label_count,
+                )
             schedule, downtime = _scheduled_frames(restored)
             system_note = f"r{target.revision_no} 일정으로 되돌림"
             new_id = _insert_schedule(
@@ -1385,6 +1707,7 @@ class DuckDBEquipmentRepository:
                 saved_by=author,
                 schedule=schedule,
                 downtime=downtime,
+                layout=layout,
                 revision_name=label,
             )
             release_no: int | None = None
@@ -1404,6 +1727,63 @@ class DuckDBEquipmentRepository:
             release_no=release_no,
             release_withheld=publish.withheld,
         )
+
+    def clear_layout_overlay(
+        self,
+        equipment_scenario_id: str,
+        *,
+        expected_latest_schedule_revision_id: str | None,
+        saved_by: str | None = None,
+        note: str | None = None,
+    ) -> EquipmentScheduleRevisionSummary | None:
+        """「배치 차이 모두 지우기」(설계 6-6) — 그 시나리오 최신의 일정·비가동을 그대로 두고 배치
+        차이만 비운 새 리비전(`origin='layout_clear'`, 메모 「배치 차이 모두 지움 — 공식 배치로」)을
+        쓴다. 지울 차이가 없으면(공식 시나리오 포함) 쓰지 않고 None.
+
+        막기는 저장과 같다 — 옛 배포 흔적, 보관한 시나리오, 확인을 보인 뒤 그 시나리오 최신이 바뀜
+        (`EquipmentRevisionConflict`). 공통·층 현행값·발행은 건드리지 않는다. 캐시는 호출부가
+        `clear_equipment_snapshot_cache()` 로 비운다.
+        """
+        author = _clean_text(saved_by)
+        user_note = _clean_text(note)
+        outcome = _WriteOutcome(wrote=False)
+        with self._write_transaction(outcome) as connection:
+            traces = legacy_trace_count(connection)
+            if traces:
+                raise EquipmentLegacyTraceError(traces)
+            scenario = _require_active_scenario(
+                _scenario_map(connection), equipment_scenario_id, verb="배치 차이를 지울"
+            )
+            if scenario.latest_schedule_revision_id != expected_latest_schedule_revision_id:
+                raise EquipmentRevisionConflict(
+                    "schedule", f"「{scenario.scenario_name}」 r{scenario.latest_revision_no}"
+                )
+            if scenario.latest_schedule_revision_id is None:
+                return None
+            newest = _require_schedule_revision(connection, scenario.latest_schedule_revision_id)
+            if not read_layout_overlay(connection, newest):
+                return None
+            latest = _latest_revision(connection)
+            if latest is None:
+                raise ValueError("공통 대장 리비전이 없어 배치 차이를 지울 수 없습니다.")
+            snapshot = read_merged(connection, latest[0], newest.schedule_revision_id)
+            schedule, downtime = _scheduled_frames(snapshot)
+            system_note = "배치 차이 모두 지움 — 공식 배치로"
+            new_id = _insert_schedule(
+                connection,
+                equipment_scenario_id=scenario.equipment_scenario_id,
+                origin="layout_clear",
+                common_revision_id=latest[0],
+                note=f"{system_note} — {user_note}" if user_note else system_note,
+                saved_by=author,
+                schedule=schedule,
+                downtime=downtime,
+                layout=LayoutOverlay(),
+            )
+            _require_final_read(connection, scenario, latest[0], new_id)
+            outcome.wrote = True
+            created = _require_schedule_revision(connection, new_id)
+        return created
 
     def legacy_trace_review(self) -> LegacyTraceReview:
         """「이대로 이어 쓰기」 확인 재료 — 흔적 수, 빠지는 호기 수, 합쳐지지 않는 까닭(읽기만)."""
@@ -1451,6 +1831,11 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return read_merged(connection, common_revision_id, schedule_revision_id)
 
+    def load_layout_overlay(self, schedule_revision_id: str | None) -> LayoutOverlay:
+        """일정 리비전 하나의 배치 차이(설비 0031 — 차이가 없으면 질의 없이 빈 값)."""
+        with self._connect() as connection:
+            return read_layout_overlay(connection, schedule_revision_id)
+
     def load_official_snapshot(self) -> EquipmentSnapshot | None:
         """공통 최신 + 최신 공식 발행 일정 리비전. 공통 리비전이 없으면 None."""
         with self._connect() as connection:
@@ -1479,9 +1864,9 @@ class DuckDBEquipmentRepository:
     ) -> tuple[tuple[str, tuple[str, ...]], ...]:
         """다른 ACTIVE 설비 시나리오의 **최신** 리비전에 일정 행이 있는 호기 — (호기 키, 그 시나리오
         이름들) 키 차례. RawData 에서 호기를 지우는 저장의 확인 재료다(지우면 공통 대장에서 빠져 그
-        시나리오들의 일정도 빠진다 — 설계 11-2 6단계). `equipment_scenario_id` 가 None 이면 모든
-        ACTIVE 시나리오를 본다. 이관 리비전은 그 리비전의 모든 호기에 일정 행이
-        있다(`read_schedule`)."""
+        시나리오들의 일정도 빠진다 — 설계 11-2 6단계). 배치 차이 행(설비 0031 — 가정 배치)만 있는
+        호기도 든다. `equipment_scenario_id` 가 None 이면 모든 ACTIVE 시나리오를 본다. 이관 리비전은
+        그 리비전의 모든 호기에 일정 행이 있다(`read_schedule`)."""
         found: dict[str, list[str]] = {}
         with self._connect() as connection:
             for summary in map(_scenario_summary, scenario_store.scenario_rows(connection)):
@@ -1492,7 +1877,9 @@ class DuckDBEquipmentRepository:
                 ):
                     continue
                 frames = read_schedule(connection, summary.latest_schedule_revision_id)
-                for key in frames.schedule[UNIT_KEY_COLUMN].dropna().astype(str):
+                keys = set(frames.schedule[UNIT_KEY_COLUMN].dropna().astype(str))
+                keys |= read_layout_overlay(connection, frames.revision).unit_keys
+                for key in sorted(keys):
                     found.setdefault(key, []).append(summary.scenario_name)
         return tuple((key, tuple(names)) for key, names in sorted(found.items()))
 
@@ -1834,6 +2221,7 @@ class DuckDBEquipmentRepository:
             width, height = normalize_canvas_size(canvas_width, canvas_height)
         with self._write_transaction() as connection:
             _require_marks_fit(connection, (building, floor), (width, height))
+            _require_overlay_marks_fit(connection, (building, floor), (width, height))
             require_total_layout_budget(
                 _floor_layout_bytes(connection, excluding=(building, floor))
                 + _fab_layout_bytes(connection),
@@ -1880,6 +2268,7 @@ class DuckDBEquipmentRepository:
         width, height = normalize_canvas_size(canvas_width, canvas_height)
         with self._write_transaction() as connection:
             _require_marks_fit(connection, (building, floor), (width, height))
+            _require_overlay_marks_fit(connection, (building, floor), (width, height))
             _upsert_floor_canvas(connection, building, floor, width, height)
         return self._require_floor_layout_profile(building, floor)
 
@@ -1917,6 +2306,9 @@ class DuckDBEquipmentRepository:
         _require_floor_key(building, floor)
         with self._write_transaction() as connection:
             _require_marks_fit(
+                connection, (building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+            )
+            _require_overlay_marks_fit(
                 connection, (building, floor), (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
             )
             connection.execute(
@@ -2402,6 +2794,25 @@ def _schedule_frames(
     )
 
 
+def read_layout_overlay(
+    connection: duckdb.DuckDBPyConnection,
+    schedule_revision: EquipmentScheduleRevisionSummary | str | None,
+) -> LayoutOverlay:
+    """일정 리비전 하나의 배치 차이(설비 0031). 리비전이 None·이관 리비전·지문이 NULL(0031 을 모르는
+    코드가 쓴 리비전)이거나 빈 차이 지문이면 **질의 없이** 빈 차이다 — 흔한 경우(공식·이관)에 조회가
+    하나 줄고, 옛 코드 리비전에 남의 행이 섞일 일이 없다. 사내 확인 스크립트도 이 함수를 쓴다."""
+    if schedule_revision is None:
+        return LayoutOverlay()
+    summary = (
+        _require_schedule_revision(connection, schedule_revision)
+        if isinstance(schedule_revision, str)
+        else schedule_revision
+    )
+    if summary.legacy_revision_id is not None or summary.layout_digest == EMPTY_LAYOUT_DIGEST:
+        return LayoutOverlay()
+    return scenario_store.layout_overlay(connection, summary.schedule_revision_id)
+
+
 def read_merged(
     connection: duckdb.DuckDBPyConnection,
     common_revision_id: str,
@@ -2414,6 +2825,8 @@ def read_merged(
     - 그 밖은 공통 행 차례대로 키로 붙인다(`merge_equipment`). 일정 행이 없는 호기는 일정 칸이 비고
       `unscheduled_units` 에 든다. 공통에 없는 키의 일정·비가동 행은 버리고 `orphan_rows` 에 센다.
       비가동의 설비명은 키로 지금 공통 이름을 붙인다.
+    - 합친 **뒤, 읽기 검증 앞**에 그 리비전의 호기 배치 차이를 얹는다(`apply_unit_overlay` — 설비
+      0031, 예외 없음). 이관 리비전은 차이가 없어 레거시 빠른 길 그대로다.
     - 끝에 읽기 검증(`prepare_equipment_master`·`prepare_downtime_for_prepared_equipment` —
       캔버스·오늘 없이)을 한다. 실패하면 `EquipmentScenarioIncompatible(시나리오명, rN, 까닭)`.
     - `schedule_revision_id` 가 None 이면 일정 리비전이 없는 것이다 — 모든 호기가 일정 없음이다.
@@ -2447,7 +2860,8 @@ def _merge_read(
     common: CommonFrames,
     schedule: ScheduleFrames | None,
 ) -> EquipmentSnapshot:
-    """읽어 둔 공통·일정을 합치고 읽기 검증을 한다(`read_merged` 의 일반 길)."""
+    """읽어 둔 공통·일정을 합치고 그 리비전의 호기 배치 차이를 얹은 뒤 읽기 검증을 한다
+    (`read_merged` 의 일반 길)."""
     merged = merge_equipment(
         common.equipment,
         schedule.schedule if schedule is not None else pd.DataFrame(columns=SCHEDULE_FRAME_COLUMNS),
@@ -2455,16 +2869,19 @@ def _merge_read(
         if schedule is not None
         else pd.DataFrame(columns=SCHEDULE_DOWNTIME_COLUMNS),
     )
+    overlay = read_layout_overlay(connection, schedule.revision if schedule is not None else None)
+    applied = apply_unit_overlay(merged.equipment, merged.unit_key_pairs, overlay.units)
     try:
-        equipment = prepare_equipment_master(merged.equipment)
+        equipment = prepare_equipment_master(applied.equipment)
         downtime = prepare_downtime_for_prepared_equipment(merged.downtime, equipment)
     except ValueError as error:
         if schedule is None:
             raise
         revision = schedule.revision
         name = scenario_store.scenario_name(connection, revision.equipment_scenario_id)
+        reason = f"{error} (배치 차이를 얹은 뒤)" if overlay.units else str(error)
         raise EquipmentScenarioIncompatible(
-            name or revision.equipment_scenario_id, revision.revision_no, str(error)
+            name or revision.equipment_scenario_id, revision.revision_no, reason
         ) from error
     return EquipmentSnapshot(
         revision=common.revision,
@@ -2475,6 +2892,9 @@ def _merge_read(
         unit_key_pairs=merged.unit_key_pairs,
         unscheduled_units=merged.unscheduled_units,
         orphan_rows=merged.orphan_rows,
+        layout_official_places=applied.official_places,
+        layout_orphans=applied.orphans,
+        layout_regrouped=applied.regrouped,
     )
 
 
@@ -2595,7 +3015,11 @@ class _BaseState:
     """저장 전 저장본 — 공통 최신과 출발 일정 리비전을 합쳐 **다시 정규화한** 것(편집본과 같은 꼴).
 
     `schedule` 은 일정 행이 있던 호기만(키 + 일곱 칸), `downtime` 은 키 + 다섯 칸이다.
-    `contract_version` 이 None 이면 저장본이 없다.
+    `contract_version` 이 None 이면 저장본이 없다. `common` 의 배치 일곱 칸은 출발 리비전의 배치
+    차이를 얹은 **편집을 시작한 값**(설계 6-1 의 E0)이고, `official_common` 은 같은 행에 공통 최신의
+    **공식 배치**(C)를 둔 것이다 — 공통이 바뀌었는지는 늘 공식 쪽과 견준다. `layout` 은 공식 배치
+    (키·일곱 칸·Main 설비·묶음), `started_places` 는 E0 일곱 칸, `overlay` 는 출발 리비전의 배치
+    차이(원시)다.
     """
 
     contract_version: int | None
@@ -2605,6 +3029,10 @@ class _BaseState:
     common: pd.DataFrame
     schedule: pd.DataFrame
     downtime: pd.DataFrame
+    official_common: pd.DataFrame
+    layout: LayoutBase
+    started_places: Mapping[str, Place]
+    overlay: LayoutOverlay
 
 
 @dataclass(frozen=True)
@@ -2630,6 +3058,8 @@ class _PropagationPlan:
     unit_count: int
     downtime_added: tuple[tuple[str, str, str], ...]
     skipped: int
+    # 받는 시나리오 최신의 배치 차이를 이 저장 뒤의 공식으로 정규화한 것(새 리비전이 그대로 옮긴다).
+    layout: LayoutOverlay = LayoutOverlay()
 
     @property
     def writes(self) -> bool:
@@ -2783,9 +3213,95 @@ def _restore_preview(
         source_keys = {key for _, key in restored.unit_key_pairs}
     else:
         source_keys = _common_keys(connection, target.common_revision_id)
+    preview = schedule_restore_preview(current, restored, source_unit_keys=source_keys)
+    current_summary = current.schedule
+    selected = read_layout_overlay(connection, target)
+    moved = 0
+    if selected.units and target.common_revision_id not in (None, common_revision_id):
+        assert target.common_revision_id is not None
+        then = _common_places(connection, target.common_revision_id)
+        now = _official_layout(restored).places
+        moved = sum(
+            1
+            for key, place in now.items()
+            if key in then and key not in selected.unit_keys and then[key] != place
+        )
+
+    def digest(summary: EquipmentScheduleRevisionSummary | None) -> str | None:
+        value = summary.layout_digest if summary is not None else EMPTY_LAYOUT_DIGEST
+        return None if value == EMPTY_LAYOUT_DIGEST else value
+
     return (
-        schedule_restore_preview(current, restored, source_unit_keys=source_keys),
+        replace(
+            preview,
+            layout_unit_rows=target.layout_unit_count,
+            layout_mark_rows=target.layout_mark_count,
+            layout_label_rows=target.layout_label_count,
+            current_layout_unit_rows=current_summary.layout_unit_count if current_summary else 0,
+            current_layout_mark_rows=current_summary.layout_mark_count if current_summary else 0,
+            current_layout_label_rows=current_summary.layout_label_count if current_summary else 0,
+            layout_digest=digest(target),
+            current_layout_digest=digest(current_summary),
+            layout_moved_since=moved,
+        ),
         restored,
+    )
+
+
+def _common_places(connection: duckdb.DuckDBPyConnection, revision_id: str) -> dict[str, Place]:
+    """공통 리비전 하나의 배치 일곱 칸(호기 키마다) — 불변 리비전이라 확인 재료 캐시에 실을 수
+    있다."""
+    summary, contract_version = _revision_row(connection, revision_id)
+    common = _common_frames(connection, revision_id, summary, contract_version, checked=False)
+    keys = [str(key) for key in common.equipment[UNIT_KEY_COLUMN]]
+    return dict(layout_base(common.equipment, keys).places)
+
+
+def _layout_publishable(
+    connection: duckdb.DuckDBPyConnection,
+    scenario: EquipmentScenarioSummary,
+    target: EquipmentScheduleRevisionSummary,
+    snapshot: EquipmentSnapshot,
+    *,
+    common_revision_id: str,
+    saved_by: str | None,
+) -> str:
+    """공식 발행 막기·정리(설계 6-5) — 발행할 일정 리비전 id 를 돌려준다(정리 리비전을 썼으면
+    그 id).
+
+    발행할 리비전과 그 시나리오 최신의 배치 차이를 지금 공식으로 정규화해, 저장된 행이 둘 다 없으면
+    그대로, 행은 있지만 정규화하면 비고 발행할 리비전이 최신이면 차이를 비운 `layout_clear` 리비전을
+    써서 그것을, 그 밖은 `EquipmentLayoutPublishBlocked`(실효 수)다.
+    """
+    selected = read_layout_overlay(connection, target)
+    newest_id = scenario.latest_schedule_revision_id
+    is_newest = newest_id == target.schedule_revision_id
+    newest = selected if is_newest else read_layout_overlay(connection, newest_id)
+    if not selected and not newest:
+        return target.schedule_revision_id
+    official = _official_layout(snapshot)
+    floors = _stored_floors(connection, {*selected.floors, *newest.floors})
+    normalized = normalize_layout_overlay(selected, official, floors)
+    if is_newest and not normalized:
+        schedule, downtime = _scheduled_frames(snapshot)
+        return _insert_schedule(
+            connection,
+            equipment_scenario_id=scenario.equipment_scenario_id,
+            origin="layout_clear",
+            common_revision_id=common_revision_id,
+            note="공식과 같아진 배치 차이 정리",
+            saved_by=saved_by,
+            schedule=schedule,
+            downtime=downtime,
+            layout=LayoutOverlay(),
+        )
+    blocked = normalized or normalize_layout_overlay(newest, official, floors)
+    raise EquipmentLayoutPublishBlocked(
+        scenario.scenario_name,
+        target.revision_no,
+        overlay_unit_count(blocked, official),
+        blocked.mark_count,
+        blocked.label_count,
     )
 
 
@@ -2798,6 +3314,7 @@ def _read_base_state(
     저장 당시 감사 해시가 아니라 이 값과 내용 해시로 「그대로인가」 를 견준다."""
     if common_revision_id is None:
         common, schedule = split_equipment(empty_equipment_master(), {})
+        empty = layout_base(common, [])
         return _BaseState(
             contract_version=None,
             unit_keys={},
@@ -2808,6 +3325,10 @@ def _read_base_state(
             downtime=normalize_schedule_downtime(
                 pd.DataFrame(columns=list(SCHEDULE_DOWNTIME_COLUMNS))
             ),
+            official_common=common,
+            layout=empty,
+            started_places={},
+            overlay=LayoutOverlay(),
         )
     contract_version = _revision_row(connection, common_revision_id)[1]
     snapshot = read_merged(connection, common_revision_id, schedule_revision_id)
@@ -2816,6 +3337,9 @@ def _read_base_state(
     renormalized = replace(snapshot, equipment=equipment, downtime=downtime)
     schedule, events = _scheduled_frames(renormalized)
     common, _ = split_equipment(equipment, snapshot.unit_keys)
+    keys = [str(key) for key in common[UNIT_KEY_COLUMN]]
+    started = layout_base(common, keys)
+    official = started.with_places(dict(snapshot.layout_official_places))
     return _BaseState(
         contract_version=contract_version,
         unit_keys=snapshot.unit_keys,
@@ -2826,7 +3350,80 @@ def _read_base_state(
         common=common,
         schedule=schedule,
         downtime=events,
+        official_common=common_with_places(common, keys, official.places, current=started.places)
+        if snapshot.layout_official_places
+        else common,
+        layout=official,
+        started_places=started.places,
+        overlay=read_layout_overlay(connection, snapshot.schedule),
     )
+
+
+def _official_layout(snapshot: EquipmentSnapshot) -> LayoutBase:
+    """합친 스냅샷의 공통에 깔린 **공식** 배치(얹은 차이를 공식 일곱 칸으로 되돌린 것)."""
+    keys = snapshot.unit_keys
+    names = [str(name) for name in snapshot.equipment[EQUIPMENT_ID_COLUMN]]
+    started = layout_base(snapshot.equipment, [keys[name] for name in names])
+    return started.with_places(dict(snapshot.layout_official_places))
+
+
+def _stored_floors(
+    connection: duckdb.DuckDBPyConnection, floors: Iterable[FloorKey]
+) -> dict[FloorKey, OfficialFloor]:
+    """층마다 저장된 공식 값(도면 요소, Main 설비명 위치)."""
+    return {
+        key: (_stored_floor_marks(connection, *key), _stored_group_labels(connection, *key))
+        for key in sorted(set(floors))
+    }
+
+
+def _moved_labels(labels: Mapping[str, str], moves: Mapping[str, str]) -> dict[str, str]:
+    """Main 설비 이름 바꿈(옛 → 새)을 따라간 이름표. 새 이름에 이미 행이 있으면 그 행이 남는다."""
+    if not moves:
+        return dict(labels)
+    result = {name: spot for name, spot in labels.items() if name not in moves}
+    for name, spot in labels.items():
+        if name in moves:
+            result.setdefault(moves[name], spot)
+    return dict(sorted(result.items()))
+
+
+class _OfficialFloors:
+    """이 저장 뒤의 층 공식 값(요소·Main 설비명 위치) — 쓰기 전에 메모리에서 낸다. 공식 역할이면
+    이 저장이 갈아 끼울 층은 그 값, 나머지는 저장값이고, Main 설비 이름 바꿈의 공식 이름표 키 옮기기
+    (`moves` — 옛 → 새)를 따라간다. 가정 시나리오 배치 차이를 정규화하는 기준이다(설계 5-6)."""
+
+    def __init__(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        marks: Mapping[FloorKey, tuple[FloorLayoutMark, ...]],
+        labels: Mapping[FloorKey, Mapping[str, str]],
+        moves: Mapping[str, str],
+    ) -> None:
+        self._connection = connection
+        self._marks = marks
+        self._labels = labels
+        self._moves = moves
+        self._floors: dict[FloorKey, OfficialFloor] = {}
+
+    def floor(self, key: FloorKey) -> OfficialFloor:
+        if key not in self._floors:
+            marks = (
+                self._marks[key]
+                if key in self._marks
+                else _stored_floor_marks(self._connection, *key)
+            )
+            labels = (
+                dict(self._labels[key])
+                if key in self._labels
+                else _moved_labels(_stored_group_labels(self._connection, *key), self._moves)
+            )
+            self._floors[key] = (marks, labels)
+        return self._floors[key]
+
+    def for_overlay(self, overlay: LayoutOverlay) -> dict[FloorKey, OfficialFloor]:
+        return {key: self.floor(key) for key in overlay.floors}
 
 
 def _split_edit(
@@ -2887,6 +3484,8 @@ def _plan_propagations(
     target: EquipmentScenarioSummary,
     base: _BaseState,
     edit: _EditFrames,
+    layout_base: LayoutBase,
+    official_floors: _OfficialFloors,
 ) -> list[_PropagationPlan]:
     """함께 넣기(F6·F2 — 「넣을 때」 만) — 다른 ACTIVE 시나리오마다 그 최신 위에 더할 것.
 
@@ -2894,6 +3493,9 @@ def _plan_propagations(
     - 새 비가동(`new_downtime_rows` — 고친 것은 빠진다)은 받는 시나리오에 그 호기 일정 행이 없거나
       같은 (호기, 유형, 시작일) 이 이미 있으면 건너뛴다(비가동만 들어가 호기가 들어가지 않게).
     - 받는 시나리오의 고아 행(지금 공통에 없는 키)은 새 리비전에 옮기지 않는다.
+    - 받는 시나리오 최신의 배치 차이는 이 저장 뒤의 공식(`layout_base`·`official_floors`)으로
+      정규화해 그대로 옮긴다(설계 6-4). 새 호기는 차이가 없다 — 공통의 자리(가정 대상에서 넣은 새
+      호기는 자리 없음)로 들어간다.
     더할 것도 건너뛴 것도 없는 시나리오는 계획에 없다.
     """
     unit_keys = edit.new_keys if request.propagate_new_units else frozenset()
@@ -2918,9 +3520,11 @@ def _plan_propagations(
     for other in scenarios.values():
         if other.equipment_scenario_id == target.equipment_scenario_id or other.status != "ACTIVE":
             continue
+        overlay = LayoutOverlay()
         if other.latest_schedule_revision_id is not None:
             frames = read_schedule(connection, other.latest_schedule_revision_id)
             schedule, downtime = frames.schedule, frames.downtime
+            overlay = read_layout_overlay(connection, frames.revision)
         else:
             schedule = normalize_schedule_frame(pd.DataFrame(columns=list(SCHEDULE_FRAME_COLUMNS)))
             downtime = normalize_schedule_downtime(
@@ -2961,6 +3565,9 @@ def _plan_propagations(
                 unit_count=len(added_rows),
                 downtime_added=tuple(listed),
                 skipped=skipped,
+                layout=normalize_layout_overlay(
+                    overlay, layout_base, official_floors.for_overlay(overlay)
+                ),
             )
         )
     return plans
@@ -3042,6 +3649,9 @@ def _cross_validate(
     이 시나리오가 일정도 쓰면 그 짝은 편집본 검증이 이미 본 것이라 건너뛴다. 낡은 세션(rJ 를 보며
     공통만 저장)도 자기 시나리오의 최신 rM 을 지킨다. 이번 저장이 발행하면 옛 공식은 더 이상
     공식이 아니라 보지 않는다.
+
+    합칠 때 각 리비전의 배치 차이(함께 넣기는 계획이 옮길 정규화한 차이)를 얹은 **뒤** 검증한다 —
+    공통에서 지운 호기의 차이는 버려질 뿐 막지 않는다(설계 6-4).
     """
     planned = {plan.scenario.equipment_scenario_id: plan for plan in propagations if plan.writes}
     checked: set[str] = set()
@@ -3055,6 +3665,7 @@ def _cross_validate(
                 continue
             checked.add(latest_id)
             frames = read_schedule(connection, latest_id)
+            overlay = read_layout_overlay(connection, frames.revision)
             escape = (
                 f"최신 r{scenario.latest_revision_no}"
                 f"{object_particle(str(scenario.latest_revision_no))} 불러와 그 일정을 맞춘 뒤 "
@@ -3066,6 +3677,7 @@ def _cross_validate(
                 common,
                 frames.schedule,
                 frames.downtime,
+                overlay=overlay,
                 scenario_name=scenario.scenario_name,
                 revision_no=scenario.latest_revision_no or 0,
                 escape=escape,
@@ -3076,6 +3688,7 @@ def _cross_validate(
                 common,
                 plan.schedule,
                 plan.downtime,
+                overlay=plan.layout,
                 scenario_name=scenario.scenario_name,
                 revision_no=(scenario.latest_revision_no or 0) + 1,
                 escape=f"{subject} 불러와 그 일정을 고친 뒤 저장하거나, 함께 넣기를 끄거나, "
@@ -3088,6 +3701,7 @@ def _cross_validate(
                 common,
                 frames.schedule,
                 frames.downtime,
+                overlay=read_layout_overlay(connection, frames.revision),
                 scenario_name=scenario.scenario_name,
                 revision_no=scenario.latest_revision_no or 0,
                 escape=f"{subject} 불러와 그 일정을 고친 뒤 저장하거나, 바꾼 공통 칸을 되돌리세요.",
@@ -3100,6 +3714,7 @@ def _cross_validate(
         common,
         official.schedule,
         official.downtime,
+        overlay=read_layout_overlay(connection, official.revision),
         scenario_name=owner.scenario_name if owner is not None else release.equipment_scenario_id,
         revision_no=official.revision.revision_no,
         escape="그 리비전은 공식 발행이라 지켜야 합니다 — 다른 리비전을 공식으로 발행한 뒤 "
@@ -3112,17 +3727,112 @@ def _require_mergeable(
     schedule: pd.DataFrame,
     downtime: pd.DataFrame,
     *,
+    overlay: LayoutOverlay,
     scenario_name: str,
     revision_no: int,
     escape: str,
 ) -> None:
-    """공통 + 일정 한 벌이 읽기 검증(캔버스·오늘 없이)을 통과하는가."""
+    """공통 + 일정 한 벌에 배치 차이(호기)를 얹은 것이 읽기 검증(캔버스·오늘 없이)을 통과하는가 —
+    `read_merged` 와 같은 차례(합치기 → 배치 차이 → 검증)다."""
     merged = merge_equipment(common, schedule, downtime)
+    applied = apply_unit_overlay(merged.equipment, merged.unit_key_pairs, overlay.units)
     try:
-        equipment = prepare_equipment_master(merged.equipment)
+        equipment = prepare_equipment_master(applied.equipment)
         prepare_downtime_for_prepared_equipment(merged.downtime, equipment)
     except ValueError as error:
-        raise EquipmentScenarioGuardError(scenario_name, revision_no, str(error), escape) from error
+        reason = f"{error} (배치 차이를 얹은 뒤)" if overlay.units else str(error)
+        raise EquipmentScenarioGuardError(scenario_name, revision_no, reason, escape) from error
+
+
+def _require_final_read(
+    connection: duckdb.DuckDBPyConnection,
+    scenario: EquipmentScenarioSummary,
+    common_id: str | None,
+    schedule_id: str,
+) -> None:
+    """가정 리비전을 쓴 저장의 끝 확인(I4) — 같은 연결에서 새 쌍을 `read_merged` 로 다시 읽는다.
+    실패하면 `EquipmentScenarioGuardError`(트랜잭션째 되돌아간다)."""
+    if common_id is None:
+        return
+    try:
+        read_merged(connection, common_id, schedule_id)
+    except EquipmentScenarioIncompatible as error:
+        raise EquipmentScenarioGuardError(
+            scenario.scenario_name,
+            error.revision_no,
+            f"배치 차이를 얹으면 {error.reason}",
+            "그 배치 편집을 되돌리거나 최신을 불러와 다시 고치세요.",
+        ) from error
+
+
+def _overlay_after_edit(
+    started: LayoutOverlay,
+    units: Sequence[tuple[str, str | None, Place]],
+    prepared_marks: Mapping[FloorKey, Sequence[FloorLayoutMark]],
+    prepared_labels: Mapping[FloorKey, Mapping[str, str]],
+    official_floors: _OfficialFloors,
+) -> LayoutOverlay:
+    """가정 역할 저장의 새 배치 차이 — 호기는 `split_layout` 결과, 층은 편집기가 낸 **합친** 전체를
+    그 층 공식과 견준 차이(바꾸지 않은 층은 출발 리비전의 차이를 지금 공식으로 정규화)."""
+    marks: dict[FloorKey, tuple[MarkChange, ...]] = {}
+    labels: dict[FloorKey, tuple[tuple[str, str | None], ...]] = {}
+    for key in sorted({*started.floors, *prepared_marks, *prepared_labels}):
+        official_marks, official_labels = official_floors.floor(key)
+        if key in prepared_marks:
+            marks[key] = mark_changes(prepared_marks[key], official_marks)
+        elif started.marks_for(key):
+            marks[key] = mark_changes(
+                effective_floor_marks(official_marks, started.marks_for(key)), official_marks
+            )
+        if key in prepared_labels:
+            labels[key] = label_changes(prepared_labels[key], official_labels)
+        elif started.labels_for(key):
+            labels[key] = label_changes(
+                effective_group_labels(official_labels, started.labels_for(key)), official_labels
+            )
+    return make_layout_overlay(units, marks, labels)
+
+
+def _parent_names(common: pd.DataFrame) -> set[str]:
+    values = common[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+    return {str(value) for value in values.dropna() if str(value)}
+
+
+def _group_label_moves(
+    group_renames: Mapping[str, str], before: pd.DataFrame, after: pd.DataFrame
+) -> dict[str, str]:
+    """이 저장의 Main 설비 이름 바꿈(저장본 이름 → 새 이름) — 저장본에 있던 이름이 편집본에서
+    사라지고 새 이름이 들어선 것만. `group_renames` 는 지금 이름 → 저장본 이름이다."""
+    saved = _parent_names(before)
+    edited = _parent_names(after)
+    return {
+        origin: now
+        for now, origin in group_renames.items()
+        if now != origin and origin in saved and origin not in edited and now in edited
+    }
+
+
+def _move_group_labels(connection: duckdb.DuckDBPyConnection, moves: Mapping[str, str]) -> bool:
+    """공식 Main 설비명 위치(층 현행값)의 옛 이름 행을 새 이름으로 옮긴다 — 배치를 바꾸는 것이
+    아니라 정체성을 따라가는 것이라 어느 역할이든 한다(설계 5-4, 그러지 않으면 공식 위치가 처음
+    위치로 돌아간다). 옮긴 행이 있으면 True."""
+    if not moves:
+        return False
+    placeholders = ", ".join(["?"] * len(moves))
+    rows = connection.execute(
+        f"""
+        SELECT DISTINCT building, floor_name
+        FROM equipment_ops.floor_layout_group_label
+        WHERE parent_equipment_id IN ({placeholders})
+        """,
+        list(moves),
+    ).fetchall()
+    for building, floor in rows:
+        key = (str(building), str(floor))
+        _replace_group_labels(
+            connection, *key, _moved_labels(_stored_group_labels(connection, *key), moves)
+        )
+    return bool(rows)
 
 
 def _insert_schedule(
@@ -3135,9 +3845,16 @@ def _insert_schedule(
     saved_by: str | None,
     schedule: pd.DataFrame,
     downtime: pd.DataFrame,
+    layout: LayoutOverlay,
     revision_name: str | None = None,
 ) -> str:
-    """일정 리비전 하나를 넣는다 — 일정 행은 키 차례, 감사 해시는 넣는 값 그대로."""
+    """일정 리비전 하나를 넣는다 — 일정 행은 키 차례, 감사 해시는 넣는 값 그대로.
+
+    `layout` 은 **기본값 없는** 키워드다 — 빠뜨린 호출이 배치안을 말없이 버리지 않게 mypy 가 잡는다
+    (설계 6-6). 부르는 곳은 모두 정규화한 값을 넘기고(공식 시나리오는 빈 것), 지문은 늘 적힌다.
+    `origin` 은 `SCHEDULE_REVISION_ORIGINS` 가운데 하나여야 한다."""
+    if origin not in SCHEDULE_REVISION_ORIGINS:
+        raise ValueError(f"일정 리비전 출처를 알 수 없습니다: {origin!r}")
     rows = normalize_schedule_frame(
         schedule.reindex(columns=list(SCHEDULE_FRAME_COLUMNS)).sort_values(
             UNIT_KEY_COLUMN, kind="stable"
@@ -3155,6 +3872,7 @@ def _insert_schedule(
         downtime=events,
         schedule_hash=hash_frame(rows),
         downtime_hash=hash_frame(events),
+        layout=layout,
         revision_name=revision_name,
     )
 
@@ -3198,6 +3916,10 @@ def _schedule_revision_summary(row: Mapping[str, object]) -> EquipmentScheduleRe
         legacy_revision_id=_optional_str(row["legacy_revision_id"]),
         unit_row_count=as_int(row["unit_row_count"], "일정 행 수"),
         downtime_row_count=as_int(row["downtime_row_count"], "비가동 일정 행 수"),
+        layout_hash=_optional_str(row["layout_hash"]),
+        layout_unit_count=as_int(row["layout_unit_count"], "배치 차이 호기 행 수"),
+        layout_mark_count=as_int(row["layout_mark_count"], "배치 차이 요소 행 수"),
+        layout_label_count=as_int(row["layout_label_count"], "배치 차이 이름표 행 수"),
     )
 
 
@@ -3212,6 +3934,9 @@ def _scenario_summary(row: Mapping[str, object]) -> EquipmentScenarioSummary:
         if row["latest_revision_no"] is None
         else as_int(row["latest_revision_no"], "최신 리비전 번호"),
         revision_count=as_int(row["revision_count"], "리비전 수"),
+        latest_layout_unit_count=as_int(row["latest_layout_unit_count"], "최신 배치 차이 행 수"),
+        latest_layout_hash=_optional_str(row["latest_layout_hash"]),
+        layout_trace_count=as_int(row["layout_trace_count"], "배치 옛 코드 흔적 수"),
     )
 
 
@@ -3236,10 +3961,12 @@ def _require_floor_layout_bases(
     bases: Mapping[FloorKey, FloorLayoutBase],
     *,
     changed: set[FloorKey],
+    overlay: LayoutOverlay,
 ) -> None:
     """바꾸려는 층의 캔버스·요소·Main 설비명 위치가 편집을 시작할 때 본 값 그대로인가. 아니면
     다른 사람이 먼저 저장한 것이다 — 요소·위치는 층 전체 교체라 옛 목록으로 덮으면 그 사람의 것이
-    지워진다."""
+    지워진다. 기대 지문은 편집을 시작할 때 본 **합친** 값(공식 현행 ⊕ 출발 리비전의 배치 차이
+    `overlay`)이다 — 공식 대상은 차이가 비어 지금과 같다(설계 6-1)."""
     for key in sorted(changed & set(bases)):
         expected_canvas, expected_marks = bases[key]
         stored_canvas = stored_canvases.get(key)
@@ -3251,7 +3978,12 @@ def _require_floor_layout_bases(
             )
         same_marks = (
             floor_layout_fingerprint(
-                _stored_floor_marks(connection, *key), _stored_group_labels(connection, *key)
+                effective_floor_marks(
+                    _stored_floor_marks(connection, *key), overlay.marks_for(key)
+                ),
+                effective_group_labels(
+                    _stored_group_labels(connection, *key), overlay.labels_for(key)
+                ),
             )
             == expected_marks
         )
@@ -3289,6 +4021,33 @@ def _require_marks_fit(
             f"{key[0]} {key[1]} 캔버스 {width:g} × {height:g} 밖에 도면 요소가 있습니다(필요한 "
             f"크기 {right:g} × {top:g}). Space 편집기에서 요소를 옮기거나 캔버스를 넓히세요."
         )
+
+
+def _require_overlay_marks_fit(
+    connection: duckdb.DuckDBPyConnection, key: FloorKey, canvas: CanvasSize
+) -> None:
+    """그 층의 **가정 배치 요소**(각 ACTIVE 설비 시나리오 최신과 최신 공식 발행 리비전의 `set`)가 새
+    캔버스 안인가. 밖이면 `EquipmentLayoutOverflow`. 캔버스를 바꾸는 네 진입점(설비 저장의 캔버스·
+    캔버스 저장·도면 올리기·도면 지우기)이 공식 요소 검사(`_require_marks_fit`) 옆에서 부른다. 가정
+    차이 호기는 막지 않는다 — 공식 호기처럼 그 시나리오의 다음 저장만 막힌다(설계 6-4). 옛
+    리비전(최신·발행이 아닌)의 차이는 보지 않는다."""
+    targets: dict[str, str] = {}
+    for summary in _scenario_map(connection).values():
+        if (
+            summary.status == "ACTIVE"
+            and summary.latest_schedule_revision_id is not None
+            and (summary.latest_layout_hash or EMPTY_LAYOUT_DIGEST) != EMPTY_LAYOUT_DIGEST
+        ):
+            targets[summary.latest_schedule_revision_id] = summary.scenario_name
+    release = scenario_store.latest_release_row(connection)
+    if release is not None:
+        released = str(release["schedule_revision_id"])
+        owner = scenario_store.scenario_name(connection, str(release["equipment_scenario_id"]))
+        targets.setdefault(released, owner or str(release["equipment_scenario_id"]))
+    outside = scenario_store.layout_marks_outside(connection, list(targets), *key, *canvas)
+    if outside:
+        revision_id = min(outside)
+        raise EquipmentLayoutOverflow(targets[revision_id], key, outside[revision_id])
 
 
 def _content_hash(frame: pd.DataFrame) -> str:

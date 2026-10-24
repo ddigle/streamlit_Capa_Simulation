@@ -1275,6 +1275,7 @@ def _save_equipment_frames(
         base_common_revision_id=str(base["common"]),
         base_schedule_revision_id=schedule_id if isinstance(schedule_id, str) else None,
         renames=dict(pending_unit_renames().units),
+        group_renames=dict(pending_unit_renames().groups),
         note=note,
         saved_by=chosen.saved_by,
         propagate_new_units=chosen.propagate_new_units,
@@ -2420,6 +2421,7 @@ ORIGIN_WORDS = {
     "clone": "복제",
     "propagate": "함께 넣기",
     "restore": "되돌리기",
+    "layout_clear": "배치 차이 정리",
 }
 
 

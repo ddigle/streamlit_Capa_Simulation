@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from dataclasses import fields as dataclass_fields
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -68,6 +69,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_merged_equipment_snapshot,
     load_official_equipment_snapshot,
     load_process_cutoff,
+    load_schedule_layout_overlay,
     load_shortening_baselines,
     load_shortening_filter_profile,
     load_standard_target_availability,
@@ -81,7 +83,9 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.floor_layout_mark import FloorLayoutMark, floor_layout_fingerprint
 from capa_simulation.services.floor_state import FloorStates
+from capa_simulation.services.layout_overlay import LayoutOverlay
 from capa_simulation.services.monthly_equipment_availability import processes_in
 from capa_simulation.services.shortening_baseline import freeze_plan
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
@@ -802,3 +806,107 @@ def test_caches_and_screens_never_call_the_repository_wrappers() -> None:
     ]
     found = [call for path in paths for call in _wrapper_calls(path)]
     assert found == []
+
+
+# ── 가정 배치 차이 캐시(설비 0031 — 설계 7-2) ─────────────────────────────────────────
+
+
+def _hypothetical_layout_saved(tmp_path: Path) -> tuple[str, DuckDBEquipmentRepository, str]:
+    """「셋업 실무」 에서 EQ-01 을 옮기고 그 층 요소 하나·Main 설비명 위치 하나를 가정 배치로 저장한
+    DB. (DB, 앱 밖 저장소, 그 리비전 id)."""
+    database, outsider, clone_id = _scenario_seeded(tmp_path)
+    common = outsider.latest_revision_id()
+    clone = next(
+        item
+        for item in outsider.list_equipment_scenarios()
+        if item.equipment_scenario_id == clone_id
+    )
+    assert common is not None and clone.latest_schedule_revision_id is not None
+    session = outsider.load_merged_snapshot(common, clone.latest_schedule_revision_id)
+    moved = session.equipment.copy()
+    moved.loc[moved["설비명"].eq("EQ-01"), "X좌표"] = 55.0
+    mark = FloorLayoutMark(
+        mark_id="MK-1",
+        kind="column",
+        x=1.0,
+        y=1.0,
+        w=2.0,
+        h=2.0,
+        rotation=0,
+        label="",
+        color="",
+        hatch=False,
+        keep_out=False,
+    )
+    saved = outsider.save_equipment(
+        EquipmentSaveRequest(
+            baseline=session.baseline,
+            equipment=moved,
+            downtime=session.downtime,
+            equipment_scenario_id=clone_id,
+            base_common_revision_id=common,
+            base_schedule_revision_id=clone.latest_schedule_revision_id,
+            floor_marks={("C1", "1F"): [mark.editor_payload()]},
+            floor_group_labels={("C1", "1F"): {"APW1": "top"}},
+            floor_layout_bases={("C1", "1F"): (None, floor_layout_fingerprint((), {}))},
+        )
+    )
+    assert saved.schedule is not None and saved.layout_overlay_written
+    clear_equipment_repository()
+    return database, outsider, saved.schedule.schedule_revision_id
+
+
+def test_every_snapshot_field_round_trips_through_the_merged_body_payload(tmp_path: Path) -> None:
+    """검토 F16 — 새 필드를 payload 에 빠뜨리면 기본값으로 말없이 꺼내 「공식과 견주기」 가 빈다."""
+    import pickle
+
+    database, outsider, schedule_id = _hypothetical_layout_saved(tmp_path)
+    common = outsider.latest_revision_id()
+    assert common is not None
+    direct = outsider.load_merged_snapshot(common, schedule_id)
+    cached = load_merged_equipment_snapshot(database, common, schedule_id)
+
+    assert set(equipment_cache._MergedSnapshotPayload.__annotations__) == {
+        item.name for item in dataclass_fields(EquipmentSnapshot)
+    }
+    for item in dataclass_fields(EquipmentSnapshot):
+        mine, theirs = getattr(cached, item.name), getattr(direct, item.name)
+        if isinstance(mine, pd.DataFrame):
+            pd.testing.assert_frame_equal(mine, theirs)
+        elif item.name == "schedule":
+            assert mine is not None and theirs is not None
+            assert mine.layout_hash == theirs.layout_hash and mine.revision_name is None
+        else:
+            assert mine == theirs, item.name
+    assert cached.layout_official_places and cached.layout_overridden_keys
+    payload = equipment_cache._load_merged_payload(database, common, schedule_id)
+    assert pickle.loads(pickle.dumps(payload))["layout_official_places"] == (
+        direct.layout_official_places
+    )
+    clear_equipment_repository()
+
+
+def test_the_mark_and_label_differences_are_cached_by_one_schedule_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, _outsider, schedule_id = _hypothetical_layout_saved(tmp_path)
+    calls: list[str | None] = []
+    original = DuckDBEquipmentRepository.load_layout_overlay
+
+    def counting(self: DuckDBEquipmentRepository, revision_id: str | None) -> LayoutOverlay:
+        calls.append(revision_id)
+        return original(self, revision_id)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "load_layout_overlay", counting)
+    first = load_schedule_layout_overlay(database, schedule_id)
+    again = load_schedule_layout_overlay(database, schedule_id)
+
+    assert calls == [schedule_id]
+    assert first == again and type(first) is LayoutOverlay
+    # 호기 차이는 합친 본문에 이미 얹혀 있어 싣지 않는다.
+    assert first.units == () and first.marks_for(("C1", "1F")) and first.labels_for(("C1", "1F"))
+    assert load_schedule_layout_overlay(database, None) == LayoutOverlay()
+    clear_equipment_snapshot_cache()
+    load_schedule_layout_overlay(database, schedule_id)
+    assert calls == [schedule_id, schedule_id]
+    clear_equipment_repository()

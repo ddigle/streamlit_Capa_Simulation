@@ -418,6 +418,12 @@ class ScheduleRestorePreview:
     - `newly_unscheduled` — 지금은 일정이 있다가 되돌리면 일정 없음이 되는 호기 수.
     - `added_since` — 그 리비전을 저장한 뒤 공통 대장에 든 호기 수. 그 리비전은 그 호기를 몰라
       일정 행이 없으므로 늘 일정 없음이 된다(F4 — 그 시나리오 계산·Space 에서 빠진다).
+
+    가정 배치(설비 0031)는 **불변 값만** 싣는다(확인 재료 캐시 키가 불변 리비전 id 셋이라 —
+    설계 6-6): 고른 리비전·지금 최신의 저장된 배치 차이 행 수(호기·요소·이름표), 두 리비전의 배치
+    지문(빈 차이는 None), 「그때와 자리가 다른 손대지 않은 호기」 수(`layout_moved_since` — 고른
+    리비전을 저장할 때 본 공통과 지금 공통의 배치 일곱 칸을 차이 없는 호기만 견줌). 지금 층 현행값
+    기준 정규화와 「공식 시나리오라 배치 차이를 버림」 은 바뀌는 입력이라 캐시 밖에서 붙인다.
     """
 
     changed_units: int = 0
@@ -426,11 +432,26 @@ class ScheduleRestorePreview:
     unscheduled_after: int = 0
     newly_unscheduled: int = 0
     added_since: int = 0
+    layout_unit_rows: int = 0
+    layout_mark_rows: int = 0
+    layout_label_rows: int = 0
+    current_layout_unit_rows: int = 0
+    current_layout_mark_rows: int = 0
+    current_layout_label_rows: int = 0
+    layout_digest: str | None = None
+    current_layout_digest: str | None = None
+    layout_moved_since: int = 0
+
+    @property
+    def layout_identical(self) -> bool:
+        """두 리비전의 저장된 배치 차이가 같다(지문 — 원시)."""
+        return self.layout_digest == self.current_layout_digest
 
     @property
     def identical(self) -> bool:
-        """일정·비가동이 모든 호기에서 같다 — 되돌려도 새 리비전을 만들지 않는다."""
-        return self.changed_units == 0
+        """일정·비가동이 모든 호기에서 같고 배치 차이도 같다 — 되돌려도 새 리비전을 만들지
+        않는다."""
+        return self.changed_units == 0 and self.layout_identical
 
 
 def schedule_restore_preview(

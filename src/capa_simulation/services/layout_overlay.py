@@ -561,15 +561,15 @@ class LayoutSplit:
 
 
 def split_layout(
-    edited: pd.DataFrame,
-    edited_keys: Sequence[str],
+    edited_base: LayoutBase,
     *,
     official: LayoutBase,
     started: Mapping[str, Place],
     role: LayoutRole,
     overlay_present: bool,
 ) -> LayoutSplit:
-    """검증을 마친 편집본(행 차례 = `edited_keys`)의 배치를 공통 쪽과 배치 차이로 나눈다(설계 6-1).
+    """검증을 마친 편집본(`edited_base` — `layout_base(편집본, 키)`)의 배치를 공통 쪽과 배치 차이로
+    나눈다(설계 6-1).
 
     `official` 은 공통 최신(공식 배치), `started` 는 편집을 시작한 합친 배치(키 → 일곱 칸 —
     공통 ⊕ 출발 리비전의 차이), `overlay_present` 는 출발 리비전에 호기 차이가 있었는가다.
@@ -581,7 +581,6 @@ def split_layout(
       편집본 값(Q1 — 있는 묶음에 드는 새 모듈은 그 묶음의 공식 동·층). 공식 동·층이 다른 호기를 한
       묶음으로 묶는 고침은 거부한다(묶음 구성은 공통이다). 차이 = 편집본 ≠ 공통 쪽(묶음 통째).
     """
-    edited_base = layout_base(edited, edited_keys)
     keys = edited_base.keys
     if role == "official":
         changed = [
@@ -665,16 +664,20 @@ def _mixed_group_refusal(
 
 
 def common_with_places(
-    common: pd.DataFrame, keys: Sequence[str], places: Mapping[str, Place]
+    common: pd.DataFrame,
+    keys: Sequence[str],
+    places: Mapping[str, Place],
+    *,
+    current: Mapping[str, Place] | None = None,
 ) -> pd.DataFrame:
     """공통 프레임(행 차례 = `keys`)의 배치 일곱 칸을 `places` 값으로 바꾼 사본(값이 같은 행은
-    그대로)."""
+    그대로). `current` 는 그 프레임의 지금 일곱 칸(이미 잰 것이 있으면 다시 재지 않는다)."""
     result = common.reset_index(drop=True).copy()
-    current = _places(result)
+    now = dict(current) if current is not None else dict(zip(keys, _places(result), strict=True))
     columns = _layout_column_positions(result)
     for row, key in enumerate(keys):
         place = places.get(key)
-        if place is None or place == current[row]:
+        if place is None or place == now.get(key):
             continue
         _set_place(result, row, columns, place)
     return result

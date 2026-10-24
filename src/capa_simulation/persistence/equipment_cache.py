@@ -4,7 +4,11 @@
 
 - **리비전 내용은 불변이다.** 화면이 쓰는 한 벌은 (공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍을
   합친 것이고 그 본문은 쌍 키로만 캐시한다(`load_merged_equipment_snapshot`) — 쓰기 세대가 없다.
-  되돌리기 확인 재료(`load_schedule_restore_preview`)도 불변 리비전 id 셋이 키다.
+  되돌리기 확인 재료(`load_schedule_restore_preview`)도 불변 리비전 id 셋이 키다. 가정 설비
+  시나리오의 배치 차이(설비 0031)도 일정 리비전 내용이라 불변이다 — 호기 차이는 합친 본문에 이미
+  얹혀 있고, 도면 요소·Main 설비명 위치 차이는 일정 id 하나를 키로 한 칸
+  (`load_schedule_layout_overlay`)이 든다. 실제 그림은 「공식 층 현행값(쓰기 세대) ⊕ 그 차이」 를
+  회차마다 합친다(이 모듈 밖 — 쓰기 세대 종류는 늘지 않는다).
 - **바뀔 수 있는 것**(시나리오 이름·일정 리비전의 리비전명·공식 발행·각 시나리오 최신·옛 배포 흔적,
   공통 최신 id, 현행값 — Cut-off·주차별 가용대수·층 사용 상태 등)은 DB·WAL stat·쓰기 세대·TTL 을
   키에 둔 목록 캐시로 뺀다. 리비전명은 이름표라 고칠 수 있어(E7) 불변 본문에 싣지 않는다 — 본문의
@@ -47,6 +51,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorLayoutProfile,
 )
 from capa_simulation.services.floor_state import FloorStates
+from capa_simulation.services.layout_overlay import LayoutOverlay, Place
 from capa_simulation.services.shortening_baseline import (
     ShorteningBaseline,
     ShorteningBaselineSummary,
@@ -65,6 +70,9 @@ class _MergedSnapshotPayload(TypedDict):
     unit_key_pairs: tuple[tuple[str, str], ...]
     unscheduled_units: frozenset[str]
     orphan_rows: int
+    layout_official_places: tuple[tuple[str, Place], ...]
+    layout_orphans: int
+    layout_regrouped: tuple[str, ...]
 
 
 class _CatalogPayload(TypedDict):
@@ -125,6 +133,11 @@ def _load_merged_payload(
         "unit_key_pairs": tuple(snapshot.unit_key_pairs),
         "unscheduled_units": frozenset(snapshot.unscheduled_units),
         "orphan_rows": int(snapshot.orphan_rows),
+        "layout_official_places": tuple(
+            (str(key), place) for key, place in snapshot.layout_official_places
+        ),
+        "layout_orphans": int(snapshot.layout_orphans),
+        "layout_regrouped": tuple(snapshot.layout_regrouped),
     }
 
 
@@ -147,6 +160,37 @@ def load_merged_equipment_snapshot(
         unit_key_pairs=payload["unit_key_pairs"],
         unscheduled_units=payload["unscheduled_units"],
         orphan_rows=payload["orphan_rows"],
+        layout_official_places=payload["layout_official_places"],
+        layout_orphans=payload["layout_orphans"],
+        layout_regrouped=payload["layout_regrouped"],
+    )
+
+
+# 요소·이름표 배치 차이 칸 수. 세션 하나는 그리는 쌍 하나의 일정 id 만 보고, 공식 쌍은 차이가 없어
+# 질의 없이 빈 값이 든다(지문 — `read_layout_overlay`) — 합친 본문(16칸)보다 적어도 넉넉하다.
+SCHEDULE_LAYOUT_CACHE_ENTRIES = 16
+
+
+@st.cache_data(show_spinner=False, max_entries=SCHEDULE_LAYOUT_CACHE_ENTRIES)
+def _load_schedule_layout_payload(
+    database_path: str, schedule_revision_id: str
+) -> dict[str, object]:
+    """일정 리비전 하나의 도면 요소·Main 설비명 위치 차이 — 리비전 내용은 불변이라 쓰기 세대가
+    없다. 기본형 payload(`LayoutOverlay.to_payload`)만 싣는다(AGENTS 5장 21). 호기 차이는 합친
+    본문에 이미 얹혀 있어 싣지 않는다."""
+    repository = get_equipment_repository(database_path)
+    return repository.load_layout_overlay(schedule_revision_id).without_units().to_payload()
+
+
+def load_schedule_layout_overlay(
+    database_path: str, schedule_revision_id: str | None
+) -> LayoutOverlay:
+    """그 일정 리비전의 도면 요소·Main 설비명 위치 차이(설비 0031 — 호기 칸은 비어 있다). None 이면
+    빈 차이다. 꺼낼 때 `from_payload` 로 **지금 클래스**를 다시 만든다."""
+    if schedule_revision_id is None:
+        return LayoutOverlay()
+    return LayoutOverlay.from_payload(
+        _load_schedule_layout_payload(database_path, schedule_revision_id)
     )
 
 
@@ -794,11 +838,12 @@ def clear_floor_layout_cache() -> None:
 
 def clear_equipment_snapshot_cache() -> None:
     """설비 마스터를 저장한 뒤 부른다 — 공통 최신 id·설비 시나리오 목록도 함께 비우고(두 쓰기 세대를
-    올린다) 다음 회차가 새 리비전·새 발행을 읽는다. 합친 본문·CSV 는 쌍 키라 겹쳐도 같은 값이지만
-    지난 쌍이 칸을 차지하지 않게 함께 비운다."""
+    올린다) 다음 회차가 새 리비전·새 발행을 읽는다. 합친 본문·요소·이름표 배치 차이·CSV 는 불변
+    키라 겹쳐도 같은 값이지만 지난 칸이 자리를 차지하지 않게 함께 비운다."""
     _bump_write_generation("revision")
     _latest_revision_id.clear()
     _load_merged_payload.clear()
+    _load_schedule_layout_payload.clear()
     _load_revision_summaries_payload.clear()
     load_equipment_csv_payloads.clear()
     _load_schedule_restore_preview_payload.clear()
