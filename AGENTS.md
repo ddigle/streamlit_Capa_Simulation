@@ -1505,6 +1505,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **이벤트 칸에 아무것도 쓰지 않는다** — 두 칸 배치·지표 줄·상태색 띠의 서식은 맨 위 안내 한 줄과 한 `st.html`
     (`calculator_style_markup`)에 싣는다(9장 「팝업 본문은 이벤트 칸에 같은 수만」). 그래서 `status_metric` 의 `metric_row`·
     `render_status_metric` 을 `emit_style=False` 로 부른다. 팝업 머리가 제목이라 본문에 제목을 다시 적지 않는다.
+  - 팝업 폭은 이 팝업만 넓힌다 — Streamlit 1.63 큰 팝업은 1120px 에서 멈춰 두 칸이 늘 위아래로 쌓였다(1280·1600·1920 창
+    실측). 같은 서식 덩이에 팝업 상자(`stDialog` 안 `div:has(> [role="dialog"] .st-key-<배치 key>)` — 폭은 `role="dialog"`
+    의 부모가 쥔다) 폭을 창 폭 − 48px, 최대 1400px 로 싣는다(`_DIALOG_MAX_PX`) — 1280px 창부터 개편 전 탭처럼 입력 칸 옆에 결과가
+    선다(호기별 표 가로 넘김 없음). 팝업 DOM 이 바뀌면 넓히지 못할 뿐 쌓여 그대로 쓴다.
   - 입력은 세션에만 둔다 — 숫자·날짜 칸은 `persist_state`, 편집표는 `on_change` 콜백이 원본 표(`MONTHS_KEY`)에 옮긴다
     (팝업을 닫았다 열어도 남는다). 「예시로 되돌리기」·「모두 비우기」 는 콜백이 칸을 적고 `discard_editor` 한다.
   - 엑셀 여러 칸은 원본처럼 「엑셀에서 한 번에 붙여넣기」(`remembered_expander` 안 폼의 글 칸 + 「표에 넣기」 콜백,

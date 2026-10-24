@@ -29,14 +29,15 @@
 **잘라** 저장해(19.3456 → 19.34) 원본과 다른 마감을 낸다. 원본의 「복사」 두 단추는 같은 표를 CSV 로
 내려받는 단추다(`table_toolbar` 관례 — 결과 표도 칸을 골라 Ctrl+C 로 복사된다).
 
-**배치는 원본과 같다** — 넓으면 입력 칸(고정 폭) 옆에 결과 칸, 좁으면 위아래로 쌓는다(원본
-`.cols`). 원본은 창 폭으로 갈랐지만 앱은 사이드바가 본문 폭을 바꾸므로 두 칸을 담은 줄의 폭으로
-가른다(CSS 컨테이너 질의 — `intro_summary` 의 사이드바 머리칸과 같은 길). 가르는 폭은 결과 칸이
-호기별 표를 가로 넘김 없이 담는 폭에서 나온다(`_STACK_BELOW_PX`). Streamlit 편집 격자는 칸 폭의
-합이 표보다 좁으면 남는 폭을 붙박지 않은 칸에 고루 나눠 늘리고, 넓으면 표 안에서 가로로 넘긴다 —
-그래서 편집표 칸 폭의 합은 입력 칸 안에 들게 두고(넘치면 「신규 호기」 칸을 고칠 때 표가 넘어가
-「월」 칸이 가려진다), 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면
-머리 글 폭에 고른 몫만 붙어 90px 안팎으로 잘렸다).
+**배치는 원본과 같다** — 넓으면 입력 칸(고정 폭) 옆에 결과 칸, 좁으면 위아래로 쌓는다(원본 `.cols`).
+원본은 창 폭으로 갈랐지만 앱은 사이드바가 본문 폭을 바꾸므로 두 칸을 담은 줄의 폭으로 가른다(CSS
+컨테이너 질의 — `intro_summary` 의 사이드바 머리칸과 같은 길). 가르는 폭은 결과 칸이 호기별 표를
+가로 넘김 없이 담는 폭에서 나온다(`_STACK_BELOW_PX`) — 큰 팝업(`width="large"`, 창 폭을 따라 최대
+1280px)에서는 창이 아주 넓을 때만 나란히 서고 대개 위아래다. Streamlit 편집 격자는 칸 폭의 합이
+표보다 좁으면 남는 폭을 붙박지 않은 칸에 고루 나눠 늘리고, 넓으면 표 안에서 가로로 넘긴다 — 그래서
+편집표 칸 폭의 합은 입력 칸 안에 들게 두고(넘치면 「신규 호기」 칸을 고칠 때 표가 넘어가 「월」 칸이
+가려진다), 호기별 표 `메모` 칸에는 원본 메모 한 가지가 다 보이는 폭을 준다(주지 않으면 머리 글 폭에
+고른 몫만 붙어 90px 안팎으로 잘렸다).
 """
 
 from __future__ import annotations
@@ -182,6 +183,12 @@ _LAYOUT_GAP_PX = 28
 _RESULTS_MIN_PX = sum(_UNIT_COLUMN_PX.values()) + _BOX_CHROME_PX
 # 두 칸을 담은 줄이 이보다 좁으면 위아래로 쌓는다 — 옆에 두면 결과 칸이 호기별 표를 다 담지 못한다.
 _STACK_BELOW_PX = _INPUTS_BOX_PX + _LAYOUT_GAP_PX + _RESULTS_MIN_PX
+# 팝업 폭. Streamlit 1.63 큰 팝업(`width="large"`)은 1120px 에서 멈춰(1280~1920 창 실측) 두 칸이 늘
+# 위아래로 쌓였다 — 이 계산기 팝업만 창 폭을 따라 이만큼까지 넓혀 넓은 창에서는 옆에 결과가 서게
+# 한다(창 양쪽 여백은 `_DIALOG_VIEWPORT_GUTTER_PX`). 팝업 안쪽 여백을 빼도 `_STACK_BELOW_PX` 보다
+# 넓다.
+_DIALOG_MAX_PX = 1400
+_DIALOG_VIEWPORT_GUTTER_PX = 48
 # 판정 칩·지난 마감 칸의 옅은 면 — 상태색을 표 면(`SURFACE`)에 섞은 불투명 색이라 그 위 본문 글자가
 # 라이트·다크 모두 읽힌다. 짙기는 확보율 표의 부족 띠(0.12~0.3)보다 한 단 진하게 둔다 — 칸 하나다.
 _TINT_ALPHA: dict[VerdictTone, float] = {"ok": 0.16, "warn": 0.28, "bad": 0.26}
@@ -648,17 +655,28 @@ def layout_style() -> str:
 def calculator_style_markup() -> str:
     """맨 위 안내 한 줄과 계산기 서식(두 칸 배치·지표 줄·상태색 띠)을 한 덩이로.
 
-    보이는 글이 함께라 본문 칸으로 간다 — 스타일만 든 `st.html` 은 이벤트 칸으로 가 팝업을 연 회차와
-    닫은 회차의 자리 수를 가른다(모듈 설명). 띠 서식은 색이 바뀔 수 있는 두 지표에 늘 싣는다.
+    팝업 폭도 여기서 넓힌다(`_DIALOG_MAX_PX` — 이 계산기를 든 팝업 상자만 `:has` 로 고른다.
+    Streamlit 의 팝업 DOM(`stDialog` › 상자 › `role="dialog"`)이 바뀌면 넓히지 못할 뿐 위아래로 쌓여
+    그대로 쓴다). 보이는 글이 함께라 본문 칸으로 간다 — 스타일만 든 `st.html` 은 이벤트 칸으로 가
+    팝업을 연 회차와 닫은 회차의 자리 수를 가른다(모듈 설명). 띠 서식은 색이 바뀔 수 있는 두 지표에
+    늘 싣는다.
     """
     intro = (
         f"<style>.{_INTRO_CLASS} {{ margin: 0; font-size: 0.875rem; "
         f"color: {tokens.TEXT_MUTED}; }}</style>"
         f'<p class="{_INTRO_CLASS}">{html.escape(INTRO_TEXT)}</p>'
     )
+    # 폭은 `role="dialog"` 의 부모(팝업 상자)가 쥔다 — 그 상자를 고른다. 상자의 `max-width`(창 안
+    # 여백)는 그대로 둔다.
+    dialog = (
+        f'<style>[data-testid="stDialog"] div:has(> [role="dialog"] .st-key-{_LAYOUT_KEY}) {{ '
+        f"width: min({_DIALOG_MAX_PX}px, calc(100vw - {_DIALOG_VIEWPORT_GUTTER_PX}px)) !important; "
+        "}</style>"
+    )
     return "\n".join(
         [
             layout_style(),
+            dialog,
             metric_row_style(_KPI_ROW_KEY),
             status_metric_style(_KPI_PAST_KEY, "critical"),
             status_metric_style(_KPI_SHORT_KEY, "critical"),
