@@ -675,10 +675,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/page_tabs_state.py` — 머리 띠 아래 화면 탭 줄의 상태다(2026-10-24 사용자 결정). 이 접속에서 연 탭
   (`PageSpec.path`, 보이는 차례)·고정한 탭·이동 대기 칸·「이미 연 탭으로 들어옴」 표지(`reentered_open_tab`)를 세션에 두고,
   열기(끝에 붙임)·닫기(지금 탭이면 오른쪽, 없으면 왼쪽 이웃)·고정(고정 탭은 왼쪽, 닫기 없음, 마지막 하나는 닫지 않음)·
-  상한(`MAX_TABS` 10 — 넘는 화면은 직전 화면으로 되돌리고 탭 줄에 알림)을 순수 함수로 정한다. UI 가 없어
+  상한(`MAX_TABS` 10 — 넘는 화면은 열지 않고 탭 줄에 알림)을 순수 함수로 정한다. UI 가 없어
   `process_detail_state` 가 불러온다. 탭 줄 컴포넌트 key(`PAGE_TABS_COMPONENT_KEY`)도 여기다 — 껍데기 CSS 가 그 key 를 고른다.
   - 옮기는 것은 `app.py` 의 `st.navigation()` 바로 뒤 본문(`switch_to_queued_tab` — 테마 인자를 싣는 `st.switch_page`)이다.
     콜백은 칸만 적는다(9장 「팝업과 콜백」). 목록은 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME 하나로 돌아간다.
+  - 상한은 **옮기기 전에** 막는다 — 화면을 옮기는 파이썬 도우미(HOME 칸 `open_process_detail`, 공정 Capa 상세의
+    `open_shortening_page`·`open_availability_gap`)는 전달 칸을 적기 전에 `refused_at_tab_limit` 을 부른다(걸리면 알림을
+    남기고 `st.rerun()`). `st.switch_page` 로 옮긴 뒤 `app.py` 가 되돌리면 Streamlit 프런트가 두 화면을 `pushState` 로
+    쌓아 뒤로가기가 그 화면에 갇히고, 넘기던 칸이 실패한 클릭인데도 남는다. 새 이동 도우미도 같은 줄을 둔다.
+  - 「이미 연 탭으로 들어옴」 표지는 화면이 바뀐 회차에 정하고 **같은 화면에 머무는 동안 그대로 둔다** — 다시 들어온 첫
+    회차가 끊기면 실행 표지가 앞 화면 그대로라, 다음 회차에 표지를 지우면 새 방문으로 보았다(2026-10-25 리뷰).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
@@ -966,8 +972,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     관리 표 초안은 어느 화면에서나, 편집표의 적용 전 편집은 지금 탭에만 찍는다. 지금 화면의 편집표 편집이 있으면 다른 탭
     누름·지금 탭 × 에서 `confirm` 으로 묻는다(`leave_notice`). 사이드바 링크·뒤로가기에는 묻지 않는다. 시나리오 미저장·
     Cut-off 초안·Qual 계산기는 점 대상이 아니다. 테마 단추의 「저장 안 함」 표지도 이 판정 하나를 쓴다.
-  - 상한(10개)에 걸린 이동은 `route_page_tabs` 가 직전 화면으로 되돌리고 HOME 칸 전달 칸을 버린 뒤 탭 줄 아래에 알린다.
-    탭 데이터에는 2단계(떠 있는 창) 대비로 화면 주소(`href`)를 싣는다.
+  - 상한(10개) — JS 가 사이드바·본문 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 먼저 받아, 열린 탭이
+    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 그래도 들어온 이동(뒤로·
+    앞으로가기 — Streamlit 의 `popstate` 처리기가 먼저 돌아 막지 못한다)은 `route_page_tabs` 가 직전 화면으로 되돌리고
+    HOME 칸 전달 칸을 버린 뒤 탭 줄 아래에 알린다. 이 되돌림은 기록을 쌓으므로 정상 길로 쓰지 않는다. 탭 데이터에는
+    2단계(떠 있는 창) 대비로 화면 주소(`href`)를 싣는다.
+  - 핀 단추 이름은 고정 여부와 상관없이 「… 고정」 하나이고 상태는 `aria-pressed` 가 말한다. 지금 탭이 아닌 고정 안 한 탭의
+    핀은 가리킬 때만 보이고 숨은 동안 누름을 받지 않는다(`pointer-events: none` — 터치로 탭 이름 오른쪽을 누르면 고정이
+    됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
@@ -2886,6 +2898,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `app.py` 의 `st.navigation()` 바로 뒤 본문이 옮긴다(`page_tabs_state.switch_to_queued_tab`). AppTest 에는 등록된 페이지가
   없어 `st.switch_page` 대역으로 시험한다(이동이 콜백 밖인지는 `tests/fragment_browser.py` 로 본다). `app.py` 를 연
   AppTest 는 진짜로 옮기지만 회차 안의 이동을 다음 `run()` 의 화면으로 기억하지 않는다(`tests/test_page_tabs.py`).
+  다른 화면으로 옮기는 도우미는 전달 칸을 적고 `st.switch_page` 하기 **전에** `page_tabs_state.refused_at_tab_limit(대상)`
+  을 부른다 — 화면 탭 10개에서 그 화면 탭이 없으면 알림을 남기고 앱 전체를 다시 돌린다. 옮긴 뒤 되돌리면 브라우저 기록에
+  두 화면이 쌓여 뒤로가기가 갇힌다(3장 `page_tabs_state.py`).
 
 ### 편집표와 내려받기
 
@@ -3251,7 +3266,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
    `st.rerun()` 이 페이지 본문을 건너뛰므로 `persist_state` 가 없는 위젯은 값을 잃는다
 7. **새 보기 위젯은 다른 화면에 갔다가 화면 탭으로 돌아와도 남는가**(`persist_state="session"`) — 확인 체크·초안은
    남기지 않는다
-8. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
+8. **다른 화면으로 옮기는 새 단추·도우미는 전달 칸을 적기 전에 `refused_at_tab_limit` 을 부르는가**(9장 「팝업과
+   콜백」) — 화면 링크는 `st.page_link` 로 두면 탭 줄 JS 가 막는다
+9. 서버 재시작 후 유지 여부를 사용자 기대와 구분해 설명
 
 ## 13. 문서 우선순위
 

@@ -36,8 +36,10 @@ from capa_simulation.page_tabs_state import (
     pinned_to,
     pop_fresh_notice,
     reentered_open_tab,
+    refused_at_tab_limit,
     store_strip,
     switch_to_queued_tab,
+    tab_label,
 )
 
 H, A, B, C = HOME.path, LOAD_CONVERSION.path, SCENARIO_MANAGEMENT.path, CAPA_CHATBOT.path
@@ -125,15 +127,19 @@ def test_a_blocked_move_returns_to_the_previous_tab_or_the_first() -> None:
 
 @pytest.fixture
 def session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """가짜 `st` — 세션·주소 인자와 `st.switch_page` 기록."""
-    fake = SimpleNamespace(session_state={}, query_params={}, switched=[], missing=False)
+    """가짜 `st` — 세션·주소 인자와 `st.switch_page`·`st.rerun` 기록."""
+    fake = SimpleNamespace(session_state={}, query_params={}, switched=[], reruns=0, missing=False)
 
     def switch_page(page: str, *, query_params: dict[str, str] | None = None) -> None:
         if fake.missing:
             raise StreamlitPageNotFoundError(page, "", False)
         fake.switched.append((page, query_params))
 
+    def rerun() -> None:
+        fake.reruns += 1
+
     fake.switch_page = switch_page
+    fake.rerun = rerun
     monkeypatch.setattr(page_tabs_state, "st", fake)
     return fake
 
@@ -160,8 +166,31 @@ def test_noting_pages_marks_reentry_only_for_an_already_open_tab(session: Simple
     note_current_page(H, page_changed=True)
     assert reentered_open_tab(H)
 
+    # 같은 화면에 머무는 동안 표지는 그대로다 — 다시 들어온 첫 회차가 끊겨도 다음 회차가 이어 본다.
     note_current_page(H, page_changed=False)
-    assert not reentered_open_tab(H)
+    assert reentered_open_tab(H)
+
+    note_current_page(A, page_changed=True)
+    assert reentered_open_tab(A) and not reentered_open_tab(H)
+
+
+def test_a_reentry_survives_an_interrupted_first_run_until_the_page_changes(
+    session: SimpleNamespace,
+) -> None:
+    """이미 연 탭으로 돌아온 첫 회차가 끊기면 다음 회차는 같은 화면(`page_changed=False`)이다. 그
+    회차에서 표지를 지우면 공정 Capa 상세가 새 방문으로 보고 출처 띠·설비 방문 기준을 걷는다."""
+    store_strip(_strip(H, A, B))
+    note_current_page(A, page_changed=True)
+    assert reentered_open_tab(A)
+    note_current_page(A, page_changed=False)
+    note_current_page(A, page_changed=False)
+    assert reentered_open_tab(A)
+
+    # 새로 연 화면은 머무는 동안에도 표지가 없다.
+    note_current_page(C, page_changed=True)
+    note_current_page(C, page_changed=False)
+    assert not reentered_open_tab(C)
+    assert session.session_state[PAGE_TABS_REENTRY_KEY] is None
 
 
 def test_a_queued_tab_is_switched_to_with_the_theme_kept(session: SimpleNamespace) -> None:
@@ -225,3 +254,30 @@ def test_an_open_page_or_a_free_slot_is_never_sent_back(session: SimpleNamespace
     switch_to_queued_tab(B, previous_path=A)
     switch_to_queued_tab(A, previous_path=H)
     assert session.switched == []
+
+
+def test_a_page_helper_is_refused_before_moving_when_the_strip_is_full(
+    session: SimpleNamespace,
+) -> None:
+    """화면을 옮기는 도우미는 옮기기 전에 상한을 본다 — 걸리면 알림을 남기고 앱 전체를 다시
+    돌린다(옮긴 뒤 되돌리면 브라우저 기록에 두 화면이 쌓여 뒤로가기가 갇힌다)."""
+    detail = PROCESS_CAPA_DETAIL.path
+    # 아직 목록이 없는 회차(첫 회차·단독 실행)는 막지 않는다.
+    assert not refused_at_tab_limit(detail)
+
+    paths = tuple(spec.path for spec in ALL_SPECS if spec.path != detail)[:MAX_TABS]
+    store_strip(_strip(*paths))
+    assert not refused_at_tab_limit(paths[4])
+    assert session.reruns == 0 and PAGE_TABS_NOTICE_KEY not in session.session_state
+
+    assert refused_at_tab_limit(detail)
+    assert session.reruns == 1
+    assert session.switched == []
+    notice = pop_fresh_notice()
+    assert notice is not None
+    assert f"「{tab_label(PROCESS_CAPA_DETAIL)}」" in notice[1]
+    assert "안 쓰는 탭을 닫아 주세요" in notice[1]
+
+    store_strip(_strip(*paths[:-1]))
+    assert not refused_at_tab_limit(detail)
+    assert session.reruns == 1

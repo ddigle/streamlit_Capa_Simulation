@@ -170,16 +170,27 @@
   display: none;
 }
 
+/* 지금 탭이 아닌 고정 안 한 탭의 핀은 가리킬 때만 이름 위에 겹쳐 보인다. 숨은 동안은 누름도 받지 않는다 — 터치로 탭
+   이름 오른쪽을 누르면 보이지 않는 핀이 받아 이동 대신 고정이 됐다. */
 .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin {
   position: absolute;
   right: 1.75rem;
   background: color-mix(in srgb, var(--st-text-color) 6%, var(--st-background-color));
   opacity: 0;
+  pointer-events: none;
 }
 
 .capa-tabs-item:not(.is-pinned):not(.is-active):hover .capa-tabs-pin,
 .capa-tabs-item:not(.is-pinned):not(.is-active):focus-within .capa-tabs-pin {
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* 가리킬 수 없는 기기(터치)에서는 그 핀을 아예 두지 않는다 — 고정은 지금 탭에서 한다. */
+@media (hover: none) {
+  .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin {
+    display: none;
+  }
 }
 
 .capa-tabs-item.is-pinned .capa-tabs-pin {

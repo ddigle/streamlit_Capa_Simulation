@@ -3,7 +3,12 @@
 // 이 함수는 data·테마가 바뀔 때마다 다시 불린다. 뼈대는 처음 한 번 세우고, 다시 불리면 탭 id 로 맞춰 고친다.
 // 탭은 `<nav>` 안의 목록과 단추다. 탭 패널이 없는 이동 목록이라 탭 역할(ARIA)을 쓰지 않는다 — 배포 화면 확인
 // 스크립트가 그 역할로 본문 탭을 찾는다.
+// 탭이 상한이면 사이드바·본문 화면 링크로 열린 탭이 아닌 화면에 가는 누름을 옮기기 전에 막는다 — 이 모듈은 iframe 이
+// 아니라 본 문서에서 돌아 문서 capture 단계에서 Streamlit(React 뿌리)보다 먼저 받는다. 서버가 옮긴 뒤 되돌리면 두
+// 화면이 브라우저 기록에 쌓여 뒤로가기가 그 화면에 갇힌다(`page_tabs_state.switch_to_queued_tab` 은 마지막 안전망이다).
+// 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
 const ICON_FONT = 'Material Symbols Rounded'
+const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
 const BUSY_MS = 10000
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -62,6 +67,7 @@ export default function (component) {
   const notice = nav.querySelector('.capa-tabs-notice')
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
+    onLink: null,
   })
   // 처리기는 처음 한 번 단다. 지금 data·트리거 함수는 S 에서 읽는다 — 다시 불릴 때마다 새 값으로 바뀐다.
   S.data = data
@@ -118,6 +124,7 @@ export default function (component) {
     const label = String(tab.label || '')
     const active = tab.id === data.active
     item.hidden = false
+    item.__href = String(tab.href || '')
     setText(P.label, label)
     setText(P.glyph, String(tab.icon || ''))
     setAttr(P.tab, 'title', String(tab.title || label))
@@ -127,9 +134,10 @@ export default function (component) {
     setText(P.sr, tab.dirty ? ' ' + String(text.dirty || '') : '')
     const pinned = Boolean(tab.pinned)
     item.classList.toggle('is-pinned', pinned)
+    // 이름은 하나(「… 고정」)이고 고정 여부는 `aria-pressed` 만 말한다 — 이름까지 바꾸면 읽기 도구가 상태를 두 번 읽는다.
     setAttr(P.pin, 'aria-pressed', pinned ? 'true' : 'false')
-    setAttr(P.pin, 'aria-label', fill(pinned ? text.unpin : text.pin, { label }))
-    setAttr(P.pin, 'title', fill(pinned ? text.unpin : text.pin, { label }))
+    setAttr(P.pin, 'aria-label', fill(text.pin, { label }))
+    setAttr(P.pin, 'title', fill(text.pin, { label }))
     P.close.hidden = !tab.closable
     setAttr(P.close, 'aria-label', fill(text.close, { label }))
     setAttr(P.close, 'title', fill(text.close, { label }))
@@ -210,14 +218,49 @@ export default function (component) {
     close(item)
   }
 
-  // 상한 알림은 새 일련번호가 올 때 한 번 띄우고 잠시 뒤 걷는다.
-  const message = data.notice
-  if (message && typeof message.id === 'number' && message.id !== S.noticeId) {
-    S.noticeId = message.id
-    setText(notice, String(message.text || ''))
+  const flash = (message) => {
+    setText(notice, String(message || ''))
     notice.hidden = false
     clearTimeout(S.noticeTimer)
     S.noticeTimer = setTimeout(() => { notice.hidden = true }, NOTICE_MS)
+  }
+  // 서버가 남긴 상한 알림은 새 일련번호가 올 때 한 번 띄우고 잠시 뒤 걷는다.
+  const message = data.notice
+  if (message && typeof message.id === 'number' && message.id !== S.noticeId) {
+    S.noticeId = message.id
+    flash(message.text)
+  }
+
+  // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)에
+  // 없고, 열린 탭이 이미 상한이다. 걸리면 알림 글을, 아니면 빈 글자를 돌려준다.
+  const refusal = (href) => {
+    const D = S.data
+    const pages = (D && D.pages) || {}
+    if (!Object.prototype.hasOwnProperty.call(pages, href)) return ''
+    let open = 0
+    for (const item of S.items.values()) {
+      if (item.hidden) continue
+      if (item.__href === href) return ''
+      open += 1
+    }
+    if (open < Number(D.max)) return ''
+    // 글 틀은 파이썬 상수(`TEXT`)라 처리기를 단 회차의 것을 그대로 쓴다.
+    return fill(text.limit, { max: D.max, label: pages[href] })
+  }
+  if (!S.onLink) {
+    // 왼쪽 단추 누름만 본다 — Streamlit 은 보조 키를 눌러도 같은 창에서 옮긴다. 가운데 단추(새 브라우저 탭)는
+    // 새 접속이라 막지 않는다. 새 창으로 여는 바깥 링크도 그대로다.
+    S.onLink = (event) => {
+      if (event.defaultPrevented || event.button !== 0) return
+      const link = event.target && event.target.closest ? event.target.closest(PAGE_LINK) : null
+      if (!link || link.target === '_blank') return
+      const why = refusal((link.getAttribute('href') || '').split(/[?#]/)[0])
+      if (!why) return
+      event.preventDefault()
+      event.stopPropagation()
+      flash(why)
+    }
+    document.addEventListener('click', S.onLink, true)
   }
 
   return () => {
@@ -227,5 +270,7 @@ export default function (component) {
       document.fonts.removeEventListener('loadingdone', S.onFonts)
     }
     S.onFonts = null
+    if (S.onLink) document.removeEventListener('click', S.onLink, true)
+    S.onLink = null
   }
 }

@@ -107,6 +107,7 @@ from capa_simulation.navigation import (
     EQUIPMENT_TAB_KEY,
     REQUIRED_SHORTENING,
 )
+from capa_simulation.page_tabs_state import refused_at_tab_limit
 from capa_simulation.process_detail_state import (
     FROM_GAP,
     FROM_HOME,
@@ -1477,8 +1478,11 @@ def open_shortening_page(process: str) -> None:
     그 카드가 맨 위에 테두리·「공정 Capa 상세에서 연 공정」 배지로 선다. **공정 필터는 심지
     않는다**: 필터 칸은 공용 조회 조건(설비 DB `0019`)의 세션 칸이라, 심은 [공정] 을 사용자가 지우면
     빈 선택이 공용 프로필에 저장됐다(2026-10-22 결함). 기준선(`0021`)도 읽지도 쓰지도 않는다. 갈
-    곳이 없으면(내비게이션이 없는 단독 실행) 옮기지 않는다.
+    곳이 없으면(내비게이션이 없는 단독 실행) 옮기지 않는다. 화면 탭 상한에 걸리면 강조 칸을 적지
+    않는다 — 실패한 클릭의 강조가 나중에 사이드바로 연 그 화면에 서지 않게(`refused_at_tab_limit`).
     """
+    if refused_at_tab_limit(REQUIRED_SHORTENING.path):
+        return
     highlight_shortening_process(str(process), source=HIGHLIGHT_FROM_DETAIL)
     try:
         st.switch_page(REQUIRED_SHORTENING.path)
@@ -1494,8 +1498,10 @@ def open_availability_gap() -> None:
 
     그 탭의 공정·호기 필터는 심지 않는다(그 탭의 조건은 그 탭이 정한다). 갈 곳이 없으면(단독
     실행) 옮기지 않는다. 콜백이 아니라 본문에서 부른다 — 프래그먼트 콜백 안의 `st.switch_page` 는
-    서버 로그 경고를 남긴다.
+    서버 로그 경고를 남긴다. 화면 탭 상한에 걸리면 탭 기억 칸도 적지 않는다(`refused_at_tab_limit`).
     """
+    if refused_at_tab_limit(AVAILABLE_EQUIPMENT_PAGE):
+        return
     remember_open_tab(EQUIPMENT_TAB_KEY, EQUIPMENT_GAP_TAB)
     try:
         st.switch_page(AVAILABLE_EQUIPMENT_PAGE)

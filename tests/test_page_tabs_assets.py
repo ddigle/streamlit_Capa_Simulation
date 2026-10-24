@@ -70,3 +70,46 @@ def test_the_data_carries_the_pending_colour_and_every_text_the_script_reads() -
     assert set(data["palette"]) == {"pending"}
     read = set(re.findall(r"text\.([a-z]+)", JS))
     assert read <= set(data["text"]), read - set(data["text"])
+
+
+def _rule(selector: str) -> str:
+    """`selector` 로 시작하는 CSS 규칙 하나의 몸통."""
+    match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", CSS)
+    assert match is not None, selector
+    return match.group(1)
+
+
+def test_a_hidden_pin_takes_no_taps_and_touch_devices_pin_only_the_current_tab() -> None:
+    """숨은 핀(opacity 0)이 누름을 받으면 터치로 탭 이름 오른쪽을 누를 때 이동 대신 고정이 된다
+    (서피스). 숨은 동안은 `pointer-events: none`, 가리키거나 포커스가 들 때만 받는다. 가리킬 수 없는
+    기기에서는 지금 탭이 아닌 탭의 핀을 아예 두지 않는다."""
+    hidden = ".capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin"
+    assert "opacity: 0" in _rule(hidden) and "pointer-events: none" in _rule(hidden)
+    shown = ".capa-tabs-item:not(.is-pinned):not(.is-active):focus-within .capa-tabs-pin"
+    assert "opacity: 1" in _rule(shown) and "pointer-events: auto" in _rule(shown)
+    touch = re.search(r"@media \(hover: none\)\s*\{(.*?)\n\}", CSS, re.S)
+    assert touch is not None
+    assert hidden in touch.group(1) and "display: none" in touch.group(1)
+
+
+def test_the_pin_keeps_one_name_and_tells_its_state_with_aria_pressed() -> None:
+    """이름까지 「고정 풀기」로 바꾸면 읽기 도구가 상태를 두 번 말한다."""
+    assert "text.unpin" not in JS and "unpin" not in page_tabs.TEXT
+    assert "setAttr(P.pin, 'aria-label', fill(text.pin, { label }))" in JS
+    assert "setAttr(P.pin, 'aria-pressed'" in JS
+
+
+def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> None:
+    """상한에서 열린 탭이 아닌 화면으로 가는 링크 누름은 옮기기 전에 막는다 — 서버가 옮긴 뒤
+    되돌리면 두 화면이 브라우저 기록에 쌓여 뒤로가기가 갇힌다. 문서 capture 단계에서 Streamlit(React
+    뿌리)보다 먼저 받고, 걸어 둔 처리기는 컴포넌트가 내려갈 때 걷는다. 기록은 쌓지 않는다."""
+    assert 'a[data-testid="stPageLink-NavLink"]' in JS
+    assert "document.addEventListener('click', S.onLink, true)" in JS
+    assert "document.removeEventListener('click', S.onLink, true)" in JS
+    assert "event.preventDefault()" in JS and "event.stopPropagation()" in JS
+    assert "pushState(" not in JS and "replaceState(" not in JS
+    # 같은 알림 글을 서버(되돌림 안전망·파이썬 도우미)와 JS 가 함께 쓴다.
+    from capa_simulation.page_tabs_state import LIMIT_NOTICE, limit_notice
+
+    assert page_tabs.TEXT["limit"] == LIMIT_NOTICE
+    assert limit_notice("생산 계획") == LIMIT_NOTICE.format(max=10, label="생산 계획")

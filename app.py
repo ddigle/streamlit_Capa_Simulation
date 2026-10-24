@@ -268,8 +268,9 @@ with pinned_connections(DUCKDB_PATH):
     active_href = navigation.url_path
     current_spec = pages.spec_for(navigation.url_path)
     page_file = None if current_spec is None else Path(current_spec.path).name
-    # 탭 줄 콜백이 적어 둔 이동(다른 탭 고르기·지금 탭 닫기)과 탭 상한(10개 — 넘는 화면은
-    # 직전 화면으로 되돌린다). 사이드바·머리 띠를 보내기 전에 끊는다. 직전 화면 주소는 아래에서
+    # 탭 줄 콜백이 적어 둔 이동(다른 탭 고르기·지금 탭 닫기)과 탭 상한(10개). 상한은 옮기기 전에
+    # 막고(탭 줄 JS·`refused_at_tab_limit`), 그래도 들어온 화면(뒤로가기로 닫은 탭의 기록)만 여기서
+    # 직전 화면으로 되돌린다. 사이드바·머리 띠를 보내기 전에 끊는다. 직전 화면 주소는 아래에서
     # 이번 화면으로 바뀐다.
     route_page_tabs(current_spec, pages=pages, previous_url=st.session_state.get(SIDEBAR_PAGE_KEY))
     # 이 화면에 적용하지 않은 편집이 남았는가. 저장·불러오기·기간 변경은 그 편집을 버린다 —

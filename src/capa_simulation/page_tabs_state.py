@@ -11,8 +11,12 @@
   끝에 붙는다.
 - **고정.** HOME 은 고정 탭으로 시작한다. 어느 탭이든 고정·고정 풀기가 되고, 고정 탭은 왼쪽에
   모이며 닫기가 없다. 고정을 풀면 닫을 수 있다. 마지막 남은 탭 하나는 닫지 않는다.
-- **상한 10개.** 열린 탭이 10개일 때 목록에 없는 화면으로 가면 열지 않고 직전 화면으로 되돌린
-  뒤 탭 줄에 「안 쓰는 탭을 닫아 주세요」를 띄운다(`switch_to_queued_tab`).
+- **상한 10개.** 열린 탭이 10개일 때 목록에 없는 화면은 열지 않고 탭 줄에 「안 쓰는 탭을 닫아
+  주세요」를 띄운다. 막는 자리는 옮기기 **전**이다 — 사이드바·본문 화면 링크는 탭 줄 JS 가,
+  화면을 옮기는 파이썬 도우미(HOME 칸·공정 Capa 상세의 다음 화면 단추)는 `refused_at_tab_limit`
+  이 거른다. 옮긴 뒤 되돌리면 브라우저 기록에 열지 못한 화면이 쌓여 뒤로가기가 그 화면에 갇힌다.
+  그래도 들어온 회차(뒤로·앞으로가기로 닫은 탭의 기록에 닿은 때 — JS 가 막지 못한다)는 직전
+  화면으로 되돌린다(`switch_to_queued_tab`).
 - **목록은 이 접속에만 산다.** 새로고침·테마 바꾸기(새로고침과 같다)는 새 세션이라 HOME
   하나로 돌아간다.
 - **탭은 화면을 살려 두지 않는다.** 탭을 누르는 것은 사이드바 링크와 같은 페이지 바꾸기다.
@@ -33,7 +37,7 @@ import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 
 from capa_simulation.design.theme import THEME_QUERY_PARAM
-from capa_simulation.navigation import ALL_SPECS, HOME
+from capa_simulation.navigation import ALL_SPECS, HOME, IMPLEMENTING_SUFFIX, PageSpec
 
 # 연 탭(보이는 차례, `PageSpec.path`)과 그 가운데 고정한 탭. 둘 다 글자 튜플이다 — 코드를 다시 읽은
 # 서버에서도 세션 값이 그대로 읽히게 클래스를 세션에 두지 않는다.
@@ -43,8 +47,8 @@ PAGE_TABS_PINNED_KEY = "page_tabs_pinned"
 PAGE_TABS_EPOCH_KEY = "page_tabs_epoch"
 # 콜백이 적은 이동 대상 path. `app.py` 가 `st.navigation()` 바로 뒤에서 꺼낸다.
 PAGE_TABS_QUEUED_KEY = "page_tabs_queued_switch"
-# 이번 앱 전체 회차가 **이미 열린 탭**의 화면으로 들어온 것이면 그 path, 아니면 None. 회차마다 새로
-# 적는다.
+# 지금 방문이 **이미 열린 탭**의 화면으로 들어온 것이면 그 path, 아니면 None. 화면이 바뀐 회차에
+# 새로 정하고 같은 화면의 다음 회차에는 그대로 둔다(`note_current_page`).
 PAGE_TABS_REENTRY_KEY = "page_tabs_reentry"
 # 상한에 걸려 열지 못한 화면의 알림 (일련번호, 글, 아직 탭 줄에 싣지 않았나). 탭 줄은 새 일련번호를
 # 한 번 띄운다.
@@ -58,6 +62,10 @@ PAGE_TABS_COMPONENT_KEY = "page_tabs_strip"
 HOME_TAB: Final = HOME.path
 MAX_TABS: Final = 10
 VALID_TABS: Final = frozenset(spec.path for spec in ALL_SPECS)
+_SPECS: Final = {spec.path: spec for spec in ALL_SPECS}
+_IMPLEMENTING: Final = f" {IMPLEMENTING_SUFFIX}"
+# 상한 알림 글. 탭 줄 JS 도 같은 틀로 그 자리에서 알린다(`components/page_tabs.TEXT["limit"]`).
+LIMIT_NOTICE: Final = "탭은 {max}개까지 엽니다 — 「{label}」을(를) 열려면 안 쓰는 탭을 닫아 주세요."
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,11 @@ class TabStrip:
 
 
 INITIAL_STRIP: Final = TabStrip((HOME_TAB,), frozenset({HOME_TAB}))
+
+
+def tab_label(spec: PageSpec) -> str:
+    """탭 이름 — 사이드바 라벨에서 「(구현중)」만 뗀 글. 배지는 본문 머리말에 남는다."""
+    return spec.title.removesuffix(_IMPLEMENTING)
 
 
 def normalized(strip: TabStrip, valid: Collection[str] = VALID_TABS) -> TabStrip:
@@ -178,13 +191,18 @@ def store_strip(strip: TabStrip) -> None:
 def note_current_page(path: str, *, page_changed: bool) -> None:
     """이번 앱 전체 회차의 화면을 목록에 더하고 「이미 연 탭으로 들어옴」 표지를 적는다.
 
-    매 회차 멱등이다. 표지는 화면이 바뀐 회차에 그 화면이 **이미 목록에 있었을 때만** 선다
-    (공정 Capa 상세가 `reentered_open_tab` 으로 읽는다). 같은 화면의 다음 회차·처음 연 화면은
-    None 이다.
+    매 회차 멱등이다. 표지는 화면이 바뀐 회차에 그 화면이 **이미 목록에 있었을 때만** 서고(공정
+    Capa 상세가 `reentered_open_tab` 으로 읽는다), 같은 화면에 머무는 동안은 그대로 둔다. 처음 연
+    화면은 None 이다.
+
+    머무는 동안 지우면, 다시 들어온 첫 회차가 사용자 조작으로 끊겼을 때 어긋난다 — 끊긴 회차는
+    실행 표지(`sidebar_status`)를 이 화면으로 고치지 못해, 다음 회차가 표지도 실행 표지도 없이 새
+    방문으로 보고 출처 띠·설비 방문 기준을 걷는다.
     """
     strip = load_strip()
-    was_open = path in strip.paths and PAGE_TABS_OPEN_KEY in st.session_state
-    st.session_state[PAGE_TABS_REENTRY_KEY] = path if page_changed and was_open else None
+    if page_changed or st.session_state.get(PAGE_TABS_REENTRY_KEY) != path:
+        was_open = path in strip.paths and PAGE_TABS_OPEN_KEY in st.session_state
+        st.session_state[PAGE_TABS_REENTRY_KEY] = path if page_changed and was_open else None
     store_strip(opened(strip, path))
 
 
@@ -223,7 +241,37 @@ def pop_fresh_notice() -> tuple[int, str] | None:
 
 
 def limit_notice(title: str) -> str:
-    return f"탭은 {MAX_TABS}개까지 엽니다 — 「{title}」을(를) 열려면 안 쓰는 탭을 닫아 주세요."
+    return LIMIT_NOTICE.format(max=MAX_TABS, label=title)
+
+
+def _post_notice(text: str) -> None:
+    """탭 줄이 다음 회차에 한 번 띄울 알림을 새 일련번호로 남긴다."""
+    serial = (_notice() or (0, "", False))[0] + 1
+    st.session_state[PAGE_TABS_NOTICE_KEY] = (serial, text, True)
+
+
+def _at_limit(strip: TabStrip, path: str) -> bool:
+    """`path` 가 탭이 될 수 없는가. 아직 목록이 없는 회차(첫 회차·단독 실행)는 막지 않는다."""
+    return PAGE_TABS_OPEN_KEY in st.session_state and not can_open(strip, path)
+
+
+def refused_at_tab_limit(path: str) -> bool:
+    """화면을 옮기는 도우미가 전달 칸을 적고 `st.switch_page` 하기 **전에** 부른다.
+
+    `path` 가 탭 상한에 걸리면 탭 줄 알림을 남기고 앱 전체를 다시 돌려(`st.rerun` — 프래그먼트
+    본문·콜백 어디서든 앱 전체 회차다) 그 알림을 띄운다. 그 호출은 돌아오지 않는다 — 참은 `st` 를
+    바꾼 시험에서만 돌아온다. 걸리지 않으면 거짓이다.
+
+    옮긴 뒤 `app.py` 가 되돌리면(`switch_to_queued_tab`) 열지 못한 화면과 되돌린 화면이 브라우저
+    기록에 쌓여 뒤로가기가 그 화면에 갇히고, 그 화면에 넘기려던 칸(공정 Capa 상세의 HOME 칸 전달·
+    필요 단축 일정 강조 공정 등)이 실패한 클릭인데도 남는다.
+    """
+    if not _at_limit(load_strip(), path):
+        return False
+    spec = _SPECS.get(path)
+    _post_notice(limit_notice(path if spec is None else tab_label(spec)))
+    st.rerun()
+    return True
 
 
 def _switch(target: str) -> None:
@@ -258,6 +306,10 @@ def switch_to_queued_tab(
       `handoff_keys`(그 화면으로 넘기던 세션 전달 칸 — 공정 Capa 상세의 HOME 칸 전달 등)를 버린 뒤
       직전 화면(`previous_path`)으로 되돌린다. 남겨 두면 나중에 다른 길로 그 화면에 들어온 방문이 이
       클릭을 이어받는다.
+
+    되돌림은 **마지막 안전망**이다 — 이 이동은 브라우저 기록을 쌓아 뒤로가기를 그 화면에 가둔다.
+    정상 길은 옮기기 전에 막는다(탭 줄 JS 의 화면 링크 거름, `refused_at_tab_limit`). 여기 닿는 것은
+    뒤로·앞으로가기로 닫은 탭의 기록에 닿은 회차다.
     """
     target = st.session_state.pop(PAGE_TABS_QUEUED_KEY, None)
     if current_path is None:
@@ -266,14 +318,9 @@ def switch_to_queued_tab(
         _switch(target)
         return
     strip = load_strip()
-    if PAGE_TABS_OPEN_KEY not in st.session_state or can_open(strip, current_path):
+    if not _at_limit(strip, current_path):
         return
-    serial = (_notice() or (0, "", False))[0] + 1
-    st.session_state[PAGE_TABS_NOTICE_KEY] = (
-        serial,
-        limit_notice(current_title or current_path),
-        True,
-    )
+    _post_notice(limit_notice(current_title or current_path))
     for key in handoff_keys:
         st.session_state.pop(key, None)
     _switch(fallback_tab(strip, previous_path))

@@ -776,6 +776,78 @@ def test_reentering_the_open_detail_tab_keeps_the_origin_bands_and_scroll_anchor
     assert entry.equipment_basis is None
 
 
+def _detail_tab_entry_app() -> None:
+    import streamlit as st
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+    from capa_simulation.page_tabs_state import note_current_page
+    from capa_simulation.process_detail_state import (
+        PROCESS_DETAIL_PROCESS_KEY,
+        resolve_process_and_month,
+        take_process_detail_request,
+    )
+
+    # `app.py` 꼴 — 페이지 본문보다 먼저 지금 화면을 탭 목록에 더하고 「이미 연 탭」 표지를 정한다.
+    note_current_page(
+        PROCESS_CAPA_DETAIL.path,
+        page_changed=bool(st.session_state.pop("test_page_changed", False)),
+    )
+    entry = resolve_process_and_month(
+        ["DEMO-A", "DEMO-B", "DEMO-C"],
+        [202601, 202602, 202603],
+        request=take_process_detail_request(),
+        default_process=lambda: "DEMO-B",
+        default_month=lambda process: {"DEMO-A": 202602, "DEMO-C": 202603}.get(process or ""),
+    )
+    st.session_state["test_entry"] = entry
+    ctx = get_script_run_ctx()
+    st.session_state["test_page_hash"] = None if ctx is None else ctx.page_script_hash
+    st.selectbox(
+        "공정",
+        ["DEMO-A", "DEMO-B", "DEMO-C"],
+        key=PROCESS_DETAIL_PROCESS_KEY,
+        persist_state="session",
+    )
+
+
+def test_an_interrupted_return_to_the_open_detail_tab_still_continues_the_visit() -> None:
+    """열린 탭으로 돌아온 첫 회차가 사용자 조작으로 끊기면 실행 표지는 앞 화면 그대로이고, 다음
+    회차는 같은 화면이다(`page_changed=False`). 그 회차도 이어 봐야 한다 — 출처 띠·가로 시작 달·
+    HOME 방문의 공식 설비 기준이 말없이 걷히면 안 된다. 탭을 닫았다 다시 열면 새 방문이다."""
+    from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY
+
+    app = AppTest.from_function(_detail_tab_entry_app).run()
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-C", month=202603
+    )
+    app.run()
+    assert _entry(app).origin is not None
+
+    # 다른 화면을 끝까지 보고(실행 표지 = 그 화면) 열린 탭으로 돌아온 회차.
+    app.session_state[APP_RUN_STATE_KEY] = {"page": "다른 화면"}
+    app.session_state["test_page_changed"] = True
+    app.run()
+    assert app.session_state[PAGE_TABS_REENTRY_KEY] == PROCESS_CAPA_DETAIL.path
+    assert _entry(app).origin is not None
+
+    # 그 회차가 끊겼다 — 실행 표지는 그대로 「다른 화면」이고 다음 회차는 같은 화면이다.
+    app.run()
+    entry = _entry(app)
+    assert entry.origin is not None
+    assert entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL
+    assert (entry.month, entry.scroll_month) == (202603, 202603)
+
+    # 탭을 닫았다 다시 열었다 — 새 방문.
+    app.session_state[PAGE_TABS_OPEN_KEY] = tuple(
+        path for path in app.session_state[PAGE_TABS_OPEN_KEY] if path != PROCESS_CAPA_DETAIL.path
+    )
+    app.session_state["test_page_changed"] = True
+    app.run()
+    entry = _entry(app)
+    assert entry.origin is None and entry.equipment_basis is None
+
+
 # ------------------------------------------------------------------ 들어온 길·공정 넘기기
 
 

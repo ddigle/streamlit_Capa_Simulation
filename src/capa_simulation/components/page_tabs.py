@@ -16,6 +16,13 @@
 - **콜백은 칸만 적는다.** 고르기는 이동 대기 칸, 닫기·고정은 목록 칸(지금 탭을 닫으면 이웃을
   대기 칸에도). `st.switch_page` 는 `app.py` 본문이 부른다(`page_tabs_state.switch_to_queued_tab`).
   콜백에서 토스트를 내지 않는다(토스트 자리 규칙, AGENTS 9장).
+- **탭 상한은 옮기기 전에 막는다.** JS 는 본 문서에서 돈다(iframe 이 아니다). 탭이 상한이면
+  사이드바·본문의 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 Streamlit 보다
+  먼저 받아, 열린 탭이 아닌 화면이면 이동을 막고 그 자리에서 알린다. 서버가 옮긴 뒤
+  되돌리면(`switch_to_queued_tab`) Streamlit 프런트가 두 화면을 `pushState` 로 쌓아 뒤로가기가 그
+  화면에 갇힌다. 그래서 data 에 상한과 모든 화면의 주소·이름을 싣는다. 뒤로·앞으로가기는 막지
+  못한다 — Streamlit 의 `popstate` 처리기가 먼저 돈다. 탭 10개에서 닫은 탭의 기록으로 뒤로가면
+  서버가 되돌리고, 탭 하나를 닫을 때까지 그 기록 앞으로 가지 못한다(README·런북 7-7).
 - **그림자 DOM**(`isolate_styles` 기본값). 팝업 안이 아니라 포커스 순서 의무가 걸리지 않고, 따라하기
   가이드의 `document.querySelectorAll` 에도 걸리지 않는다. 색은 등록 CSS 의 `--st-*` 변수와 data 의
   팔레트로만 쓴다.
@@ -43,13 +50,14 @@ from capa_simulation.navigation import (
     ALL_SPECS,
     AVAILABLE_EQUIPMENT_STATUS,
     HOME,
-    IMPLEMENTING_SUFFIX,
     SCENARIO_MANAGEMENT,
     SPACE_STATUS,
     NavigationPages,
     PageSpec,
 )
 from capa_simulation.page_tabs_state import (
+    LIMIT_NOTICE,
+    MAX_TABS,
     PAGE_TABS_COMPONENT_KEY,
     TabStrip,
     closed,
@@ -59,6 +67,7 @@ from capa_simulation.page_tabs_state import (
     queue_switch,
     store_strip,
     switch_to_queued_tab,
+    tab_label,
     tabs_epoch,
 )
 from capa_simulation.process_detail_state import PROCESS_DETAIL_REQUEST_KEY
@@ -72,22 +81,18 @@ _PAGE_TABS = st.components.v2.component(
     js=(_ASSETS / "page_tabs.js").read_text(encoding="utf-8"),
 )
 
-# 탭 줄이 쓰는 글. `{label}`·`{list}` 는 JS 가 채운다.
+# 탭 줄이 쓰는 글. `{label}`·`{list}`·`{max}` 는 JS 가 채운다. 핀 단추 이름은 고정 여부와 상관없이
+# 「{label} 고정」 하나다 — 상태는 `aria-pressed` 가 말한다(이름까지 바꾸면 읽기 도구가 두 번
+# 말한다).
 TEXT = {
     "nav": "열린 화면",
     "close": "{label} 닫기",
     "pin": "{label} 고정",
-    "unpin": "{label} 고정 풀기",
     "dirty": "저장·적용하지 않은 것이 있습니다",
     "leave": "적용하지 않은 편집이 사라집니다 — {list}\n이 화면을 떠날까요?",
+    "limit": LIMIT_NOTICE,
 }
 _SPECS: dict[str, PageSpec] = {spec.path: spec for spec in ALL_SPECS}
-_IMPLEMENTING = f" {IMPLEMENTING_SUFFIX}"
-
-
-def tab_label(spec: PageSpec) -> str:
-    """사이드바 라벨에서 「(구현중)」만 뗀 글. 배지는 본문 머리말에 남는다."""
-    return spec.title.removesuffix(_IMPLEMENTING)
 
 
 def tab_icon(spec: PageSpec) -> str:
@@ -158,7 +163,11 @@ def tabs_data(
     epoch: int,
     notice: tuple[int, str] | None,
 ) -> dict[str, Any]:
-    """탭 줄 data. 같은 목록·점이면 회차마다 같은 값이다(시각·카운터를 싣지 않는다)."""
+    """탭 줄 data. 같은 목록·점이면 회차마다 같은 값이다(시각·카운터를 싣지 않는다).
+
+    `pages` 는 등록된 모든 화면의 주소(`url_path` — HOME 은 빈 글자) → 탭 이름이다. JS 가 상한에서
+    화면 링크 누름을 거를 때 아는 화면인지와 알림에 쓸 이름을 여기서 읽는다(모듈 설명).
+    """
     tabs = []
     for path in strip.paths:
         spec = _SPECS.get(path)
@@ -184,6 +193,8 @@ def tabs_data(
         "epoch": epoch,
         "leave": leave,
         "notice": None if notice is None else {"id": notice[0], "text": notice[1]},
+        "max": MAX_TABS,
+        "pages": {hrefs[path]: tab_label(spec) for path, spec in _SPECS.items() if path in hrefs},
         "palette": {"pending": tokens.PENDING_MARK},
         "text": TEXT,
     }

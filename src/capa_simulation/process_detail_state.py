@@ -55,7 +55,7 @@ from capa_simulation.home_state import (
 )
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import prune_choice
-from capa_simulation.page_tabs_state import reentered_open_tab
+from capa_simulation.page_tabs_state import reentered_open_tab, refused_at_tab_limit
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_picker import ProcessPickerItem
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -452,7 +452,12 @@ def open_process_detail(request: ProcessDetailRequest) -> None:
     본문에서 부르면 그 `st.empty()` 는 보내지기 전에 이동 요청이 회차를 끊는다. 갈 곳이
     없으면(내비게이션이 없는 단독 실행 — AppTest 는 등록된 페이지가 없다) 옮기지 않고 적은 전달 칸도
     거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
+
+    화면 탭이 상한이고 공정 Capa 상세 탭이 없으면 전달 칸을 적지 않고 옮기지도 않는다 — 탭 줄에
+    알리고 앱 전체를 다시 돌린다(`page_tabs_state.refused_at_tab_limit`).
     """
+    if refused_at_tab_limit(PROCESS_CAPA_DETAIL.path):
+        return
     st.session_state[PROCESS_DETAIL_REQUEST_KEY] = request
     theme = st.query_params.get(THEME_QUERY_PARAM)
     try:

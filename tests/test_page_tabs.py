@@ -7,6 +7,7 @@ data 를 보고, 누름은 두 겹으로 잰다 — 콜백 함수는 가짜 세�
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -18,6 +19,7 @@ from streamlit.testing.v1 import AppTest
 from capa_simulation import page_tabs_state
 from capa_simulation.components import page_tabs
 from capa_simulation.navigation import (
+    ALL_SPECS,
     CAPA_CHATBOT,
     HOME,
     LOAD_CONVERSION,
@@ -26,7 +28,10 @@ from capa_simulation.navigation import (
     WIP_STATUS,
 )
 from capa_simulation.page_tabs_state import (
+    MAX_TABS,
     PAGE_TABS_COMPONENT_KEY,
+    PAGE_TABS_EPOCH_KEY,
+    PAGE_TABS_NOTICE_KEY,
     PAGE_TABS_OPEN_KEY,
     PAGE_TABS_PINNED_KEY,
     PAGE_TABS_QUEUED_KEY,
@@ -118,6 +123,11 @@ def test_opening_two_pages_lists_both_with_home_pinned_first(
     )
     assert plan["href"] == "load_conversion" and home["href"] == ""
     assert sent[-1]["key"] == PAGE_TABS_COMPONENT_KEY
+    # JS 가 상한에서 화면 링크 누름을 거를 때 읽는 것 — 상한, 모든 화면의 주소 → 탭 이름.
+    data = _data(sent)
+    assert data["max"] == MAX_TABS
+    assert len(data["pages"]) == len(ALL_SPECS)
+    assert data["pages"][""] == "HOME" and data["pages"]["load_conversion"] == "생산 계획"
 
 
 def test_a_tab_label_drops_only_the_implementing_suffix(
@@ -175,16 +185,17 @@ def test_reentering_an_open_tab_marks_reentry_but_a_new_page_does_not(
 
     assert app.session_state[PAGE_TABS_REENTRY_KEY] == A
     # AppTest 는 회차 안의 `st.switch_page` 를 다음 `run()` 의 화면으로 기억하지 않는다 — 브라우저는
-    # 주소가 바뀌어 그 화면에 머문다. 같은 화면의 다음 회차를 그렇게 흉내 낸다.
+    # 주소가 바뀌어 그 화면에 머문다. 같은 화면의 다음 회차를 그렇게 흉내 낸다. 머무는 동안 표지는
+    # 그대로다(다시 들어온 첫 회차가 끊겨도 이어 본다).
     _ok(app.switch_page(A).run())
+    assert app.session_state[PAGE_TABS_REENTRY_KEY] == A
+    _ok(app.switch_page(B).run())
     assert app.session_state[PAGE_TABS_REENTRY_KEY] is None
 
 
 def test_an_eleventh_page_is_refused_and_the_previous_page_stays(
     _app: AppTest, sent: list[dict[str, Any]]
 ) -> None:
-    from capa_simulation.navigation import ALL_SPECS
-
     app = _ok(_app.run())
     others = [spec.path for spec in ALL_SPECS if spec.path not in {H, CAPA_CHATBOT.path}]
     full = (H, *others[:9])
@@ -205,10 +216,113 @@ def test_an_eleventh_page_is_refused_and_the_previous_page_stays(
     assert tuple(_ids(sent)) == full
 
 
-def test_the_tab_strip_stands_at_a_fixed_place_before_the_page(
-    _app: AppTest, sent: list[dict[str, Any]]
+def _full_strip_without(*paths: str) -> tuple[str, ...]:
+    """HOME 을 맨 앞에 둔 10개 탭 — `paths` 는 넣지 않는다."""
+    others = [spec.path for spec in ALL_SPECS if spec.path not in {H, *paths}]
+    return (H, *others[: MAX_TABS - 1])
+
+
+def test_a_home_cell_at_the_limit_is_refused_before_moving(
+    _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """탭 줄 앞 본문 칸은 늘 서는 칸뿐이다 — 화면마다·경고가 서는 회차에도 순번이 같다."""
+    """HOME 칸은 옮기기 **전에** 상한을 본다 — 공정 Capa 상세로 옮겼다가 `app.py` 가 되돌리면
+    브라우저 기록에 두 화면이 쌓여 뒤로가기가 그 화면에 갇힌다. 전달 칸도 적지 않는다."""
+    from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+    from capa_simulation.process_detail_state import (
+        PROCESS_DETAIL_QUEUED_KEY,
+        PROCESS_DETAIL_REQUEST_KEY,
+        ProcessDetailRequest,
+    )
+
+    sent_back: list[str] = []
+    original = page_tabs_state._switch
+
+    def recorded(target: str) -> None:
+        sent_back.append(target)
+        original(target)
+
+    monkeypatch.setattr(page_tabs_state, "_switch", recorded)
+    app = _ok(_app.run())
+    full = _full_strip_without(PROCESS_CAPA_DETAIL.path)
+    app.session_state[PAGE_TABS_OPEN_KEY] = full
+    app.session_state[PAGE_TABS_PINNED_KEY] = (H,)
+    _ok(app.run())
+
+    app.session_state[PROCESS_DETAIL_QUEUED_KEY] = ProcessDetailRequest(process="DEMO", month=None)
+    _ok(app.run())
+
+    assert sent_back == []
+    assert _data(sent)["active"] == H
+    assert tuple(_ids(sent)) == full
+    notice = _data(sent)["notice"]
+    assert notice is not None and "「공정 Capa 상세」" in notice["text"]
+    assert PROCESS_DETAIL_QUEUED_KEY not in app.session_state
+    assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+
+
+def _detail_next_screen_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.process_capa_view import (
+        open_availability_gap,
+        open_shortening_page,
+    )
+
+    call = st.session_state.pop("test_call", None)
+    if call == "shortening":
+        open_shortening_page("DEMO-A")
+    elif call == "gap":
+        open_availability_gap()
+
+
+def test_detail_next_screen_buttons_write_nothing_at_the_limit() -> None:
+    """공정 Capa 상세의 다음 화면 단추도 옮기기 전에 상한을 본다 — 실패한 클릭의 강조 공정·탭
+    기억이 남으면 나중에 사이드바로 연 그 화면이 「공정 Capa 상세에서 연 공정」 강조를 단다."""
+    from capa_simulation.components.shortening_board import SHORTENING_HIGHLIGHT_KEY
+    from capa_simulation.components.tab_state import remembered_tab_key
+    from capa_simulation.navigation import (
+        AVAILABLE_EQUIPMENT_STATUS,
+        EQUIPMENT_TAB_KEY,
+        REQUIRED_SHORTENING,
+    )
+
+    app = AppTest.from_function(_detail_next_screen_app, default_timeout=60).run()
+    full = _full_strip_without(REQUIRED_SHORTENING.path, AVAILABLE_EQUIPMENT_STATUS.path)
+    app.session_state[PAGE_TABS_OPEN_KEY] = full
+    app.session_state[PAGE_TABS_PINNED_KEY] = (H,)
+
+    app.session_state["test_call"] = "shortening"
+    _ok(app.run())
+    assert SHORTENING_HIGHLIGHT_KEY not in app.session_state
+    notice = app.session_state[PAGE_TABS_NOTICE_KEY]
+    assert notice[2] is True and "「필요 단축 일정」" in notice[1]
+
+    app.session_state["test_call"] = "gap"
+    _ok(app.run())
+    assert remembered_tab_key(EQUIPMENT_TAB_KEY) not in app.session_state
+    assert "「가용설비 현황」" in app.session_state[PAGE_TABS_NOTICE_KEY][1]
+
+    # 자리가 있으면 지금처럼 칸을 적는다(단독 실행이라 옮기지는 못한다).
+    app.session_state[PAGE_TABS_OPEN_KEY] = full[:-1]
+    app.session_state["test_call"] = "shortening"
+    _ok(app.run())
+    assert SHORTENING_HIGHLIGHT_KEY in app.session_state
+
+
+def test_the_tab_strip_stands_at_a_fixed_place_before_the_page(
+    _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """탭 줄 앞 본문 칸은 늘 서는 칸뿐이다 — 화면마다·경고가 서는 회차에도 순번이 같다. 생겼다
+    사라지는 스키마 경고는 탭 줄 **뒤**에 선다."""
+    import capa_simulation.page_bootstrap as page_bootstrap
+
+    warn: list[int] = []
+
+    def schema_warning(notice: object) -> None:
+        if warn:
+            st.warning("schema-ahead-probe")
+
+    monkeypatch.setattr(page_bootstrap, "render_schema_ahead_warning", schema_warning)
 
     def probe_place(app: AppTest) -> int:
         children = list(app.main.children.values())
@@ -222,11 +336,25 @@ def test_the_tab_strip_stands_at_a_fixed_place_before_the_page(
         assert str(before.proto.id).endswith(CONDITION_DIALOG_SINK_KEY)
         return probes[0]
 
+    def warning_place(app: AppTest) -> int:
+        children = list(app.main.children.values())
+        return next(
+            index
+            for index, child in enumerate(children)
+            if getattr(child, "type", "") == "warning"
+            and getattr(child, "value", "") == "schema-ahead-probe"
+        )
+
     app = _ok(_app.run())
     places = {probe_place(app)}
     for path in (A, SPACE_STATUS.path, H):
         _ok(app.switch_page(path).run())
         places.add(probe_place(app))
+    warn.append(1)
+    for path in (H, A):
+        _ok(app.switch_page(path).run())
+        places.add(probe_place(app))
+        assert warning_place(app) > probe_place(app)
     assert len(places) == 1
 
 
@@ -296,24 +424,83 @@ def test_the_tab_strip_reads_no_database_on_a_rerun(
         return original_connect(*args, **kwargs)
 
     monkeypatch.setattr(sql_helpers, "connect", counted_connect)
-    original = page_tabs.render_page_tabs
-    rendered: list[int] = []
+    # `app.py` 가 따로 부르는 점 판정·떠나기 글도 탭 줄 몫이다 — 셋 다 감싼다.
+    rendered: list[str] = []
+    for name in ("render_page_tabs", "page_unsaved_marks", "leave_notice"):
+        original = getattr(page_tabs, name)
 
-    def watched(*args: Any, **kwargs: Any) -> None:
-        inside.append(1)
-        try:
-            original(*args, **kwargs)
-        finally:
-            inside.pop()
-        rendered.append(1)
+        def watched(*args: Any, __name: str = name, __func: Any = original, **kwargs: Any) -> Any:
+            inside.append(1)
+            try:
+                return __func(*args, **kwargs)
+            finally:
+                inside.pop()
+                rendered.append(__name)
 
-    monkeypatch.setattr(page_tabs, "render_page_tabs", watched)
+        monkeypatch.setattr(page_tabs, name, watched)
 
     app = _ok(_app.run())
     _ok(app.switch_page(A).run())
 
-    assert len(rendered) == 2
+    assert sorted(rendered) == sorted(
+        ["render_page_tabs", "page_unsaved_marks", "leave_notice"] * 2
+    )
     assert calls == []
+
+
+def _press(
+    app: AppTest, monkeypatch: pytest.MonkeyPatch, callback: Any, payload: dict[str, Any]
+) -> None:
+    """탭 줄 콜백 하나를 AppTest 세션의 탭 칸으로 돌리고 그 결과를 세션에 옮겨 적는다 — AppTest 는
+    컴포넌트 트리거를 보내지 못한다. 다음 `run()` 이 `app.py` 로 그 결과를 그린다."""
+    keys = (PAGE_TABS_OPEN_KEY, PAGE_TABS_PINNED_KEY, PAGE_TABS_EPOCH_KEY, PAGE_TABS_QUEUED_KEY)
+    fake = SimpleNamespace(
+        session_state={key: app.session_state[key] for key in keys if key in app.session_state}
+    )
+    fake.session_state[PAGE_TABS_COMPONENT_KEY] = payload
+    with monkeypatch.context() as patch:
+        patch.setattr(page_tabs, "st", fake)
+        patch.setattr(page_tabs_state, "st", fake)
+        callback()
+    for key in keys:
+        if key in fake.session_state:
+            app.session_state[key] = fake.session_state[key]
+
+
+def test_pinning_and_unpinning_through_the_app_keep_pinned_tabs_left(
+    _app: AppTest, sent: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """고정한 탭은 왼쪽으로 가고 × 가 없다. HOME 도 고정을 풀면 닫힌다. 다른 화면으로 옮겨도 고정은
+    남고, 닫은 HOME 을 사이드바로 다시 열면 끝에 고정 없이 붙는다."""
+    app = _ok(_app.run())
+    _ok(app.switch_page(A).run())
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [H, A, B]
+
+    _press(app, monkeypatch, page_tabs._on_pin, {"pin": {"id": B, "pinned": True, "epoch": 1}})
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [H, B, A]
+    assert (_tab(sent, B)["pinned"], _tab(sent, B)["closable"]) == (True, False)
+
+    # 고정 탭은 × 가 와도 닫지 않는다.
+    _press(app, monkeypatch, partial(page_tabs._on_close, B), {"close": {"id": B, "epoch": 2}})
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [H, B, A] and _data(sent)["active"] == B
+
+    _press(app, monkeypatch, page_tabs._on_pin, {"pin": {"id": H, "pinned": False, "epoch": 3}})
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [B, H, A]
+    assert (_tab(sent, H)["pinned"], _tab(sent, H)["closable"]) == (False, True)
+
+    _press(app, monkeypatch, partial(page_tabs._on_close, B), {"close": {"id": H, "epoch": 4}})
+    _ok(app.switch_page(B).run())
+    assert _ids(sent) == [B, A] and _data(sent)["active"] == B
+
+    _ok(app.switch_page(A).run())
+    assert _ids(sent) == [B, A] and _tab(sent, B)["pinned"] is True
+    _ok(app.switch_page(H).run())
+    assert _ids(sent) == [B, A, H]
+    assert (_tab(sent, H)["pinned"], _tab(sent, H)["closable"]) == (False, True)
 
 
 # ------------------------------------------------------------------ 점·떠나기 확인
@@ -363,6 +550,33 @@ def test_unsaved_equipment_edits_mark_both_equipment_tabs(
     assert _tab(sent, AVAILABLE_EQUIPMENT_STATUS.path)["dirty"] is True
     assert _tab(sent, SPACE_STATUS.path)["dirty"] is True
     assert _tab(sent, H)["dirty"] is False
+
+
+def test_an_equipment_buffer_ahead_of_its_seed_marks_both_equipment_tabs(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """설비 편집본 세대가 세운 세대보다 앞서면(RawData 제출·Space 적용) 두 탭에 점 — FAB 대기 칸
+    없이 세대 길만으로도 찍는다. 세대가 같아지면(저장) 점이 걷힌다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        _SEEDED_GENERATION_KEY,
+        BUFFER_GENERATION_KEY,
+    )
+    from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+
+    app = _ok(_app.run())
+    app.session_state[PAGE_TABS_OPEN_KEY] = (H, AVAILABLE_EQUIPMENT_STATUS.path, SPACE_STATUS.path)
+    app.session_state[_SEEDED_GENERATION_KEY] = 3
+    app.session_state[BUFFER_GENERATION_KEY] = 4
+    _ok(app.run())
+    assert _tab(sent, AVAILABLE_EQUIPMENT_STATUS.path)["dirty"] is True
+    assert _tab(sent, SPACE_STATUS.path)["dirty"] is True
+    assert "저장하지 않은 설비 편집" in _tab(sent, SPACE_STATUS.path)["title"]
+    assert _tab(sent, H)["dirty"] is False
+
+    app.session_state[_SEEDED_GENERATION_KEY] = 4
+    _ok(app.run())
+    assert _tab(sent, AVAILABLE_EQUIPMENT_STATUS.path)["dirty"] is False
+    assert _tab(sent, SPACE_STATUS.path)["dirty"] is False
 
 
 def test_past_data_and_scenario_table_drafts_mark_their_tabs_and_the_theme_button(
