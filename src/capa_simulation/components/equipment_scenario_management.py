@@ -106,6 +106,9 @@ FLASH_KEY = "equipment_scenario_manage_flash_v1"
 # 그 사이 남의 저장·발행·이름 변경으로 거절한 작업 알림 — 다음 회차에 한 번, 탭 맨 위(확인 체크·입력
 # 칸을 새로 세운 뒤라 옛 확인으로 다시 누르지 않게).
 REFUSED_KEY = "equipment_scenario_manage_refused_v1"
+# 되돌리기가 만든 리비전 — 다음 회차 리비전 상자를 그리기 전에 그 리비전으로 옮긴다(위젯을 그린
+# 뒤에는 그 칸을 고칠 수 없다).
+PENDING_REVISION_KEY = "equipment_scenario_manage_pending_revision_v1"
 # 입력 칸 세대 — 쓰기에 성공한 회차에 올라 다음 회차에 빈 칸으로 선다(옛 값을 되보내지 않게).
 GENERATION_KEY = "equipment_scenario_manage_generation_v1"
 
@@ -267,6 +270,9 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         if scenario.latest_schedule_revision_id in by_id
         else next(iter(by_id))
     )
+    pending = st.session_state.pop(PENDING_REVISION_KEY, None)
+    if isinstance(pending, str) and pending in by_id:
+        st.session_state[REVISION_KEY] = pending
     chosen_id = prune_choice(REVISION_KEY, list(by_id), default=default_revision)
     st.selectbox(
         "리비전",
@@ -537,6 +543,8 @@ def _render_restore(
         return
     moved = False
     kept_unsaved = False
+    if result.schedule is not None:
+        st.session_state[PENDING_REVISION_KEY] = result.schedule.schedule_revision_id
     if result.schedule is not None and session.scenario_id == scenario.equipment_scenario_id:
         if has_unsaved_equipment_edits():
             kept_unsaved = True

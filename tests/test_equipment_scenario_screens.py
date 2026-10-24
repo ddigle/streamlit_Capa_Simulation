@@ -703,6 +703,8 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     assert "공식 v3으로 발행했습니다." in message and "이 세션을 r3으로 옮겼습니다." in message
     third = _revision_id(repository, 3)
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == third
+    # 리비전 상자도 새 리비전으로 옮긴다 — 옛 r1 에 머물면 「같아 되돌릴 것이 없습니다」 만 보인다.
+    assert app.selectbox(key=REVISION_KEY).value == third
     assert repository.latest_revision_id() == common_before
     official = repository.load_official_snapshot()
     assert official is not None and official.schedule is not None
