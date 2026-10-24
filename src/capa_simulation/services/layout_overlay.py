@@ -25,7 +25,7 @@ import math
 from collections import Counter
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, cast
 
 import pandas as pd
 
@@ -41,6 +41,9 @@ from capa_simulation.services.space_layout_edit import module_group_rows, natura
 # 호기 하나의 배치 일곱 칸 — (동, 층, X좌표, Y좌표, Xsize, Ysize, 레이아웃표시). 동·층은 앞뒤 공백을
 # 걷은 글자(빈 글은 None), 숫자는 `CANVAS_DECIMALS` 로 반올림(빈 값은 None), 레이아웃표시는 대문자.
 Place = tuple[str | None, str | None, float | None, float | None, float | None, float | None, str]
+# 호기 하나의 배치 일곱 칸 **원래 값**(표 칸 그대로 — 반올림 없음). 공통 프레임에 공식 값을 다시
+# 적을 때 쓴다 — `Place` 는 견줄 꼴이라 그대로 적으면 좌표가 반올림된다.
+LayoutCells = tuple[object, ...]
 # 호기 차이 한 행 — (호기 키, 저장 당시 Main 설비, 일곱 칸).
 UnitChange = tuple[str, str | None, Place]
 # Main 설비명 위치 차이 한 행 — (Main 설비, 위치 또는 None = 공식 행을 지움).
@@ -496,9 +499,27 @@ def _layout_column_positions(frame: pd.DataFrame) -> list[int]:
     return [int(position) for position in positions]
 
 
-def _set_place(frame: pd.DataFrame, row: int, columns: Sequence[int], place: Place) -> None:
+def _set_place(
+    frame: pd.DataFrame, row: int, columns: Sequence[int], place: Sequence[object]
+) -> None:
     for column, value in zip(columns, place, strict=True):
-        frame.iat[row, column] = value
+        frame.iat[row, column] = cast(Any, value)
+
+
+def layout_cells(frame: pd.DataFrame, keys: Sequence[str]) -> dict[str, LayoutCells]:
+    """행 차례 = `keys` 인 표의 호기 키 → 배치 일곱 칸 원래 값(반올림 없음)."""
+    rows = frame.reset_index(drop=True)
+    if len(rows) != len(keys):
+        raise ValueError("배치 행 수와 호기 키 수가 다릅니다.")
+    columns = [rows[column].tolist() for column in SCENARIO_LAYOUT_COLUMNS]
+    return {
+        str(key): tuple(values)
+        for key, values in zip(keys, zip(*columns, strict=True), strict=True)
+    }
+
+
+def _cells_place(cells: LayoutCells) -> Place:
+    return place_of(dict(zip(SCENARIO_LAYOUT_COLUMNS, cells, strict=True)))
 
 
 @dataclass(frozen=True)
@@ -577,9 +598,10 @@ def split_layout(
     - **공식 역할**: 편집에서 바뀐 호기(편집본 ≠ 시작)만 공통에 편집본 값을, 나머지는 공식 값을
       쓴다 — 새 호기는 편집본 값. 차이는 비운다. 출발 리비전에 차이가 있으면(그 시나리오가 가정이던
       때의 리비전) 배치를 바꾼 저장은 거부한다 — 묶음 일부만 공통으로 가 공식 묶음이 갈리지 않게.
-    - **가정 역할**: 있던 호기는 공식 값 그대로, 새 호기는 동·층·X·Y 를 비우고 크기·레이아웃표시만
-      편집본 값(Q1 — 있는 묶음에 드는 새 모듈은 그 묶음의 공식 동·층). 공식 동·층이 다른 호기를 한
-      묶음으로 묶는 고침은 거부한다(묶음 구성은 공통이다). 차이 = 편집본 ≠ 공통 쪽(묶음 통째).
+    - **가정 역할**: 공통 쪽은 `hypothetical_common_places` — 있던 호기는 공식 값 그대로, 새 호기는
+      동·층·X·Y 를 비우고 크기·레이아웃표시만 편집본 값(Q1 — 있는 묶음에 드는 새 모듈과 공식 자리가
+      미정인 호기는 그 묶음의 공식 동·층). 공식 동·층이 다른 호기를 한 묶음으로 묶는 고침은 거부한다
+      (묶음 구성은 공통이다). 차이 = 편집본 ≠ 공통 쪽(묶음 통째).
     """
     keys = edited_base.keys
     if role == "official":
@@ -603,28 +625,113 @@ def split_layout(
             for key in keys
         }
         return LayoutSplit(common_places=common)
-    common = {}
-    for key in keys:
-        place = edited_base.places[key]
-        if key in official.places:
-            common[key] = official.places[key]
-        else:
-            common[key] = (None, None, None, None, place[4], place[5], place[6])
+    common = hypothetical_common_places(edited_base, official)
     groups = edited_base.members()
-    for members in groups.values():
-        known = [key for key in members if key in official.places]
-        if not known:
-            continue
-        spot = _majority_spot(known, official.places, edited_base.names)
-        for key in members:
-            if key not in official.places:
-                common[key] = _unplaced(common[key], spot)
     refusal = _mixed_group_refusal(groups, common, edited_base, official)
     if refusal is not None:
         return LayoutSplit(common_places=common, refusal=refusal)
     split_base = edited_base.with_places(common)
     units = _unit_changes(edited_base.places, split_base, candidates=keys)
     return LayoutSplit(common_places=common, units=units)
+
+
+def _undecided(place: Place) -> bool:
+    """공식 동·층이 둘 다 비었다(「동·층 미정」 — 가정 시나리오에서 자리 없이 넣은 호기 등)."""
+    return _spot(place) == (None, None)
+
+
+def hypothetical_common_places(edited_base: LayoutBase, official: LayoutBase) -> dict[str, Place]:
+    """가정 역할 저장이 공통 대장에 쓸 일곱 칸(편집본의 모든 키 — `split_layout` 의 공통 쪽).
+
+    - 있던 호기는 공식 값 그대로(I7 — 가정 편집이 공식 배치를 옮기지 않는다).
+    - 새 호기(공식에 없는 키)는 동·층·X·Y 를 비우고 크기·레이아웃표시만 편집본 값(Q1).
+    - 모듈 묶음에 드는 새 호기와 **공식 동·층이 미정인** 있던 호기는 그 묶음의 공식 동·층(자리가
+      정해진 구성원의 많은 쪽)에 X·Y 를 비운다 — 공통의 묶음이 동·층으로 갈리지 않게(검토 F2a).
+      미정 호기도 새 모듈처럼 맞춰야 가정에서 자리 없이 넣은 호기를 나중에 그 시나리오의 묶음에
+      넣을 수 있다(공식 배치를 가르지 않는다).
+
+    S2 화면 잠금(RawData 제출·붙여넣기)도 이 값으로 편집본을 맞춘다 — 그러면 저장이 배치 차이를
+    만들지 않는다(화면이 차이를 보이기 전에는 만들지 않게)."""
+    common: dict[str, Place] = {}
+    for key in edited_base.keys:
+        place = edited_base.places[key]
+        if key in official.places:
+            common[key] = official.places[key]
+        else:
+            common[key] = (None, None, None, None, place[4], place[5], place[6])
+    for members in edited_base.members().values():
+        known = [
+            key
+            for key in members
+            if key in official.places and not _undecided(official.places[key])
+        ]
+        if not known:
+            continue
+        spot = _majority_spot(known, official.places, edited_base.names)
+        for key in members:
+            if key not in official.places or _undecided(official.places[key]):
+                common[key] = _unplaced(common[key], spot)
+    return common
+
+
+def _named_rows(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """설비명이 있는 행만(같은 이름은 첫 행) — 검증 전 편집본에도 `layout_base` 를 세울 수 있게."""
+    names = frame[EQUIPMENT_ID_COLUMN].map(_text)
+    keep = names.notna() & ~names.duplicated()
+    return frame.loc[keep.to_numpy(dtype=bool)].reset_index(drop=True), [
+        str(name) for name in names.loc[keep]
+    ]
+
+
+def assumption_common_places(
+    buffer: pd.DataFrame, saved: pd.DataFrame, origins: Mapping[str, str]
+) -> dict[str, Place]:
+    """가정 설비 시나리오 편집본에서 저장본 값이 아니라 **공통 쪽 규칙**으로 자리가 정해지는 행 —
+    지금 설비명 → 가정 역할 저장이 공통 대장에 쓸 일곱 칸(`hypothetical_common_places`).
+
+    새 호기(자리 없음 — 있는 묶음에 드는 모듈은 그 묶음의 공식 동·층)와, 공식 동·층이 미정인데
+    묶음에 든 있던 호기(그 묶음의 공식 동·층)다. 그 밖의 있던 호기는 들지 않는다 — 공식(저장본)
+    값 그대로라 저장본 값으로 되돌린다(`space_layout_edit.saved_layout_drift`).
+
+    `origins` 는 지금 설비명 → 저장하면 이어받을 저장본 설비명(`inherited_unit_names`)이다. 설비
+    시나리오 2단계 S2 화면 잠금(RawData 제출·붙여넣기 미리보기)이 편집본을 이 자리로 맞춰, 가정
+    세션의 저장이 화면이 아직 보이지 않는 배치 차이를 만들지 않게 한다(S3 가 가정 배치 편집을 연다).
+    """
+    rows, names = _named_rows(buffer)
+    saved_rows, saved_names = _named_rows(saved)
+    keys = [f"저장본:{origins[name]}" if name in origins else f"새:{name}" for name in names]
+    edited_base = layout_base(rows, keys)
+    official = layout_base(saved_rows, [f"저장본:{name}" for name in saved_names])
+    allowed = hypothetical_common_places(edited_base, official)
+    return {
+        name: allowed[key]
+        for name, key in zip(names, keys, strict=True)
+        if key not in official.places or allowed[key] != official.places[key]
+    }
+
+
+def misplaced_rows(buffer: pd.DataFrame, places: Mapping[str, Place]) -> dict[str, Place]:
+    """`places`(설비명 → 일곱 칸) 가운데 편집본 그 행의 자리가 다른 것만."""
+    rows, names = _named_rows(buffer)
+    current = dict(zip(names, _places(rows), strict=True))
+    return {name: place for name, place in places.items() if current.get(name, place) != place}
+
+
+def place_rows(buffer: pd.DataFrame, targets: Mapping[str, Place]) -> pd.DataFrame:
+    """`targets`(설비명 → 일곱 칸) 행의 배치 칸을 그 자리로 맞춘 `buffer` 사본 — 견줄 값이 다른 칸만
+    바꾼다(크기·레이아웃표시처럼 같은 칸은 편집본 값 그대로). 나머지 칸·행은 그대로다."""
+    if not targets:
+        return buffer
+    result = buffer.copy()
+    names = result[EQUIPMENT_ID_COLUMN].map(_text)
+    for name, target in targets.items():
+        mask = names.eq(name).fillna(False).to_numpy(dtype=bool)
+        for row in mask.nonzero()[0]:
+            here = place_of(result.iloc[int(row)])
+            for column, now, value in zip(SCENARIO_LAYOUT_COLUMNS, here, target, strict=True):
+                if now != value:
+                    result.loc[result.index[int(row)], column] = value
+    return result
 
 
 def _spot_words(spot: tuple[str | None, str | None]) -> str:
@@ -669,17 +776,30 @@ def common_with_places(
     places: Mapping[str, Place],
     *,
     current: Mapping[str, Place] | None = None,
+    official: Mapping[str, LayoutCells] | None = None,
 ) -> pd.DataFrame:
-    """공통 프레임(행 차례 = `keys`)의 배치 일곱 칸을 `places` 값으로 바꾼 사본(값이 같은 행은
-    그대로). `current` 는 그 프레임의 지금 일곱 칸(이미 잰 것이 있으면 다시 재지 않는다)."""
+    """공통 프레임(행 차례 = `keys`)의 배치 일곱 칸을 `places` 자리로 바꾼 사본(자리가 같은 행은
+    그대로). `current` 는 그 프레임의 지금 일곱 칸(이미 잰 것이 있으면 다시 재지 않는다).
+
+    `places` 는 견줄 꼴(반올림)이라 그대로 적지 않는다 — 바꿀 자리가 `official`(키 → 공통 대장 그
+    호기의 원래 일곱 칸)과 같으면 그 **원래 값**을 옮기고(가정 역할 저장이 공식 좌표 10.25 를
+    10.2 로 적어 공통 리비전을 만들지 않게), 그 밖은 지금 값과 다른 칸만 바꾼다(새 호기의 자리를
+    비울 때 크기·레이아웃표시는 편집본 값 그대로)."""
     result = common.reset_index(drop=True).copy()
     now = dict(current) if current is not None else dict(zip(keys, _places(result), strict=True))
     columns = _layout_column_positions(result)
     for row, key in enumerate(keys):
         place = places.get(key)
-        if place is None or place == now.get(key):
+        here = now.get(key)
+        if place is None or place == here:
             continue
-        _set_place(result, row, columns, place)
+        cells = official.get(key) if official is not None else None
+        if cells is not None and _cells_place(cells) == place:
+            _set_place(result, row, columns, cells)
+            continue
+        for index, (column, value) in enumerate(zip(columns, place, strict=True)):
+            if here is None or here[index] != value:
+                result.iat[row, column] = value
     return result
 
 
@@ -713,17 +833,30 @@ def effective_floor_marks(
 def mark_changes(
     effective: Sequence[FloorLayoutMark], official: Sequence[FloorLayoutMark]
 ) -> tuple[MarkChange, ...]:
-    """한 층의 합친 요소 목록에서 공식과 다른 것만 — 공식에만 있는 id 는 `drop`(공식 차례), 공식과
-    내용이 다르거나 공식에 없는 요소는 `set`(합친 차례). 차례만 바꾼 요소는 차이로 적지 않는다."""
-    by_id = {mark.mark_id: mark for mark in official}
-    kept = {mark.mark_id for mark in effective}
-    drops = [MarkChange(mark.mark_id, "drop") for mark in official if mark.mark_id not in kept]
-    sets = [
-        MarkChange(mark.mark_id, "set", mark)
-        for mark in effective
-        if by_id.get(mark.mark_id) != mark
-    ]
-    return (*drops, *sets)
+    """한 층의 합친 요소 목록에서 공식과 다른 것만 — 공식에만 있는 id 는 `drop`, 공식과 내용이
+    다른 요소는 `set`, 공식에 없는 요소는 `set`. 차례만 바꾼 요소는 차이로 적지 않는다.
+
+    차례는 **정해져 있다**: 공식에 있는 id 는 공식 차례로, 그 뒤 공식에 없는 id 를 합친 차례로.
+    편집기가 낸 목록(새 요소를 더한 뒤 공식 요소를 지웠다 되살리면 그 요소가 끝으로 감)과 차이를
+    다시 합친 목록(`effective_floor_marks` — 공식 차례 → 새 요소)이 같은 차이·같은 지문을 내야 남의
+    일정 저장 뒤 배치 빨리 감기가 서기 때문이다(설계 6-1·15장 「결과 지문 결정적」)."""
+    by_id: dict[str, FloorLayoutMark] = {}
+    for mark in effective:
+        by_id.setdefault(mark.mark_id, mark)
+    official_ids = {mark.mark_id for mark in official}
+    changes: list[MarkChange] = []
+    for mark in official:
+        now = by_id.get(mark.mark_id)
+        if now is None:
+            changes.append(MarkChange(mark.mark_id, "drop"))
+        elif now != mark:
+            changes.append(MarkChange(mark.mark_id, "set", now))
+    added: set[str] = set()
+    for mark in effective:
+        if mark.mark_id not in official_ids and mark.mark_id not in added:
+            added.add(mark.mark_id)
+            changes.append(MarkChange(mark.mark_id, "set", mark))
+    return tuple(changes)
 
 
 def effective_group_labels(
@@ -797,6 +930,73 @@ def overlay_unit_count(overlay: LayoutOverlay, base: LayoutBase) -> int:
             seen.add(group)
             count += 1
     return count
+
+
+@dataclass(frozen=True)
+class LayoutDifference:
+    """그리는 한 벌의 가정 배치가 공식과 얼마나 다른가(머리 알림·견주기 재료 — 설계 8-2).
+
+    - `units` — 일곱 칸이 공식과 실제로 다른 **설비 단위** 수(Main 설비 묶음은 1대). 그 시나리오에
+      일정이 없는 호기(G2 — 계산·도면에서 빠짐)는 세지 않고 `unscheduled` 에 센다.
+    - `display_only` — `units` 가운데 레이아웃표시만 다른 설비 수(자리·크기는 공식 그대로).
+    - `stored_units`·`marks`·`labels` — 그 리비전에 **저장된** 차이 행 수(원시 — 공식과 같아진 행은
+      다음 쓰기 때 지워진다). 요소·이름표의 실효 수는 층 현행값으로 정규화한 차이를 넘겨 센다.
+    """
+
+    units: int = 0
+    display_only: int = 0
+    unscheduled: int = 0
+    stored_units: int = 0
+    marks: int = 0
+    labels: int = 0
+
+    def __bool__(self) -> bool:
+        return bool(self.units or self.marks or self.labels)
+
+
+def layout_difference(
+    effective: pd.DataFrame,
+    unit_key_pairs: Sequence[tuple[str, str]],
+    official_places: Iterable[tuple[str, Place]],
+    unscheduled: Collection[str],
+    overlay: LayoutOverlay,
+) -> LayoutDifference:
+    """차이를 얹은 마스터(`effective` — 행 차례 = `unit_key_pairs`)와 그 얹기 전 공식 일곱 칸
+    (`official_places` — 실제로 다른 호기만, `EquipmentSnapshot.layout_official_places`)으로 실효
+    셈을, `overlay`(그 리비전의 차이)로 저장된 행 수를 낸다. `unscheduled` 는 일정 없는 설비명이다.
+    """
+    official = dict(official_places)
+    if not official:
+        return LayoutDifference(
+            stored_units=len(overlay.units),
+            marks=overlay.mark_count,
+            labels=overlay.label_count,
+        )
+    keys = [key for _, key in unit_key_pairs]
+    base = layout_base(effective, keys)
+    names = {key: name for name, key in unit_key_pairs}
+    # 설비 단위 — 묶음은 ("묶음", Main 설비), 단독 호기는 ("호기", 키).
+    counted: dict[tuple[str, str], bool] = {}
+    skipped: set[tuple[str, str]] = set()
+    for key, before in official.items():
+        if key not in base.places:
+            continue
+        group = base.groups.get(key)
+        unit = ("묶음", group) if group is not None else ("호기", key)
+        if names.get(key) in unscheduled:
+            skipped.add(unit)
+            continue
+        after = base.places[key]
+        only_display = after[:6] == before[:6] and after[6] != before[6]
+        counted[unit] = counted.get(unit, True) and only_display
+    return LayoutDifference(
+        units=len(counted),
+        display_only=sum(1 for only in counted.values() if only),
+        unscheduled=len(skipped - set(counted)),
+        stored_units=len(overlay.units),
+        marks=overlay.mark_count,
+        labels=overlay.label_count,
+    )
 
 
 def layout_counts_words(units: int, marks: int, labels: int) -> str:

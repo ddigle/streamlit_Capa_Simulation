@@ -29,9 +29,12 @@ from capa_simulation.services.layout_overlay import (
     common_with_places,
     effective_floor_marks,
     effective_group_labels,
+    hypothetical_common_places,
     label_changes,
     layout_base,
+    layout_cells,
     layout_counts_words,
+    layout_difference,
     make_layout_overlay,
     mark_changes,
     normalize_layout_overlay,
@@ -450,6 +453,64 @@ def test_grouping_units_on_the_same_official_floor_is_accepted_in_an_overlay_spl
     assert split.refusal is None
 
 
+def test_a_unit_with_no_official_floor_joins_a_group_like_a_new_module() -> None:
+    """S2 리뷰 — 가정에서 자리 없이 넣은 호기(공식 동·층 미정)를 그 시나리오의 묶음에 넣으면 새
+    모듈처럼 묶음의 공식 동·층에 X·Y 를 비운다(공식 배치를 가르지 않는다 — 거부하지 않는다)."""
+    master = _master(
+        *_group("M1", "M2"),
+        {"설비명": "N", "동": None, "층": None, "X좌표": None, "Y좌표": None},
+    )
+    official = layout_base(master, _keys(master))
+    edited = master.copy()
+    _set(edited, 2, 동="C1", 층="1F", X좌표=70.0, Y좌표=0.0)
+    edited.loc[2, "Main 설비"] = "G"
+    edited_base = layout_base(edited, _keys(edited))
+    split = split_layout(
+        edited_base,
+        official=official,
+        started=official.places,
+        role="overlay",
+        overlay_present=False,
+    )
+
+    assert split.refusal is None
+    assert split.common_places["k-N"] == _place("C1", "1F", None, None)
+    assert split.common_places["k-M1"] == official.places["k-M1"]
+    assert {key for key, _, _ in split.units} == {"k-M1", "k-M2", "k-N"}
+    assert hypothetical_common_places(edited_base, official) == split.common_places
+
+
+def test_writing_the_common_side_copies_official_cells_instead_of_rounded_places() -> None:
+    """S2 리뷰 — `Place` 는 견줄 꼴(소수 첫째 자리)이라 공식 값을 다시 적을 때는 원래 칸 값을
+    옮긴다. 새 호기 자리를 비울 때는 다른 칸만 바꿔 크기는 편집본 값 그대로다."""
+    master = _master(
+        {"설비명": "A", "X좌표": 10.25, "Y좌표": 1.0},
+        {"설비명": "B", "X좌표": 20.0, "Y좌표": 1.0},
+    )
+    keys = _keys(master)
+    official = layout_base(master, keys)
+    edited = master.copy()
+    edited.loc[0, "X좌표"] = 50.0
+    edited.loc[1, "Xsize"] = 12.34
+    edited_base = layout_base(edited, keys)
+    places = {
+        "k-A": official.places["k-A"],
+        "k-B": (None, None, None, None, *edited_base.places["k-B"][4:]),
+    }
+
+    written = common_with_places(
+        edited, keys, places, current=edited_base.places, official=layout_cells(master, keys)
+    )
+
+    assert written.loc[0, "X좌표"] == 10.25
+    assert written.loc[1, "Xsize"] == 12.34
+    assert pd.isna(written.loc[1, "동"]) and pd.isna(written.loc[1, "층"])
+    # 원래 값이 없으면 견줄 값을 적는다(지금까지의 길 — 새 호기 등).
+    assert common_with_places(edited, keys, places, current=edited_base.places).loc[
+        0, "X좌표"
+    ] == pytest.approx(10.2)
+
+
 def test_splitting_then_applying_gives_back_the_edited_places() -> None:
     """왕복 성질(검토 F20) — 무작위 편집본을 가정 역할로 나눈 뒤 공통 쪽에 차이를 얹으면 편집본의
     일곱 칸이 그대로 돌아오고, 공통 쪽은 늘 읽기 검증을 지난다(I7)."""
@@ -588,9 +649,32 @@ def test_marks_merge_drops_and_replacements_in_official_order_then_new_marks() -
 
     assert [(mark.mark_id, mark.x) for mark in merged] == [("A", 5.0), ("C", 1.0), ("NEW", 9.0)]
     assert mark_changes(merged, official) == (
-        MarkChange("B", "drop"),
         MarkChange("A", "set", _mark("A", x=5.0)),
+        MarkChange("B", "drop"),
         MarkChange("NEW", "set", _mark("NEW", x=9.0)),
+    )
+
+
+def test_mark_changes_have_one_order_whatever_order_the_editor_sent() -> None:
+    """S2 리뷰 — 편집기 차례(새 요소를 더한 뒤 공식 요소를 지웠다 되살리면 그 요소가 끝으로 감)와
+    차이를 다시 합친 차례가 같은 차이·같은 지문을 낸다(공식 id 는 공식 차례 → 새 요소)."""
+    official = (_mark("A"), _mark("B"))
+    editor = (_mark("NEW", x=9.0), _mark("B"), _mark("A", x=5.0))
+    first = mark_changes(editor, official)
+    again = mark_changes(effective_floor_marks(official, first), official)
+
+    assert (
+        first
+        == again
+        == (
+            MarkChange("A", "set", _mark("A", x=5.0)),
+            MarkChange("NEW", "set", _mark("NEW", x=9.0)),
+        )
+    )
+    floor = ("C1", "1F")
+    assert (
+        make_layout_overlay(marks={floor: first}).digest()
+        == make_layout_overlay(marks={floor: again}).digest()
     )
 
 
@@ -685,6 +769,36 @@ def test_unit_counts_treat_a_module_group_as_one_unit() -> None:
     assert overlay_unit_count(overlay, base) == 2
     assert layout_counts_words(2, 1, 0) == "호기 2대·요소 1개"
     assert layout_counts_words(0, 0, 0) == ""
+
+
+def test_layout_difference_counts_units_not_rows_and_skips_unscheduled_ones() -> None:
+    """설계 15장 — 설비 단위 셈(묶음 1대), 일정 없음 제외, 레이아웃표시만 다른 설비 셈."""
+    master = _master(
+        *_group("M1", "M2"),
+        {"설비명": "S", "X좌표": 50.0, "Y좌표": 1.0},
+        {"설비명": "T", "X좌표": 70.0, "Y좌표": 1.0},
+        {"설비명": "U", "X좌표": 90.0, "Y좌표": 1.0},
+    )
+    official = _places(master)
+    units = (
+        ("k-M1", "G", _place("C2", "2F", 1.0, 1.0, 10.0, 7.0)),
+        ("k-M2", "G", _place("C2", "2F", 11.0, 1.0, 10.0, 7.0)),
+        ("k-S", None, _place("C1", "1F", 50.0, 1.0, flag="N")),
+        ("k-T", None, _place("C3", "3F", 5.0, 5.0)),
+        ("k-U", None, official["k-U"]),
+    )
+    applied = apply_unit_overlay(master, _pairs(master), units)
+    overlay = make_layout_overlay(units, {("C1", "1F"): (MarkChange("X", "drop"),)})
+
+    difference = layout_difference(
+        applied.equipment, _pairs(master), applied.official_places, {"T"}, overlay
+    )
+
+    assert (difference.units, difference.display_only, difference.unscheduled) == (2, 1, 1)
+    assert (difference.stored_units, difference.marks, difference.labels) == (5, 1, 0)
+    assert difference
+    plain = layout_difference(master, _pairs(master), (), set(), LayoutOverlay())
+    assert not plain and plain.units == 0
 
 
 @pytest.mark.parametrize("value", [None, float("nan"), pd.NA, "  "])

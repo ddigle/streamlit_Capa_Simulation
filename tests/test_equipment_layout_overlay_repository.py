@@ -42,6 +42,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentSnapshot,
     read_layout_overlay,
 )
+from capa_simulation.services.equipment_scenario import restore_writes_nothing
 from capa_simulation.services.floor_layout_mark import (
     FloorLayoutMark,
     floor_layout_fingerprint,
@@ -227,6 +228,40 @@ def test_moving_a_unit_back_to_the_official_place_clears_its_difference(tmp_path
     assert _session(repository, scenario_id).layout_official_places == ()
 
 
+def _official_cell(repository: DuckDBEquipmentRepository, name: str, column: str) -> Any:
+    official = repository.load_official_snapshot()
+    assert official is not None
+    return official.equipment.set_index("설비명").loc[name, column]
+
+
+def test_a_hypothetical_move_keeps_the_official_coordinates_exact(tmp_path: Path) -> None:
+    """S2 리뷰 — 가정 역할의 공통 쪽은 반올림한 견줄 값(10.2)이 아니라 공통 대장의 원래 값(10.25)을
+    둔다. 그러지 않으면 가정 배치 저장이 공식 좌표를 바꾼 공통 리비전을 만든다(I7·LY4)."""
+    equipment = _equipment().astype({"X좌표": "float64"})
+    equipment.loc[0, "X좌표"] = 10.25
+    repository = _seeded(tmp_path, equipment)
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    before = _counts(repository)
+
+    moved = repository.save_equipment(
+        _request(session, scenario_id, equipment=_moved(session), expected_layout_role="overlay")
+    )
+
+    assert moved.common is None and moved.layout_overlay_written
+    assert _counts(repository) == (before[0], before[1] + 1, before[2])
+    assert _official_cell(repository, "EQ-01", "X좌표") == 10.25
+    # 차이가 있는 호기를 둔 채 다른 까닭(공통 칸 고침)으로 공통을 써도 공식 좌표는 원래 값이다.
+    session = _session(repository, scenario_id)
+    noted = repository.save_equipment(
+        _request(session, scenario_id, equipment=_set(session.equipment, "EQ-02", "메모1", "a"))
+    )
+    assert noted.common is not None
+    assert _official_cell(repository, "EQ-01", "X좌표") == 10.25
+    assert _official_cell(repository, "EQ-02", "메모1") == "a"
+    assert _place(_session(repository, scenario_id), "EQ-01")[2] == 50.0
+
+
 def test_marks_and_labels_in_a_hypothetical_scenario_become_its_difference(
     tmp_path: Path,
 ) -> None:
@@ -329,6 +364,53 @@ def test_a_stale_layout_save_fast_forwards_over_someone_elses_schedule_save(
     assert str(qual)[:10] == "2026-08-25"
 
 
+def test_mark_differences_have_one_order_so_a_fast_forward_still_matches(
+    tmp_path: Path,
+) -> None:
+    """S2 리뷰 — 편집기 차례(새 요소가 고친 공식 요소보다 앞)로 적은 요소 차이와, 남의 날짜 저장이
+    다시 합쳐 적은 차이가 같은 지문이라 그 뒤 배치 빨리 감기가 선다."""
+    repository = _seeded(tmp_path)
+    repository.replace_floor_layout_marks(
+        *FLOOR, [_mark("MK-A").editor_payload(), _mark("MK-B", x=10.0).editor_payload()]
+    )
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    assert session.schedule is not None
+    drawn = repository.save_equipment(
+        _request(
+            session,
+            scenario_id,
+            floor_marks={
+                FLOOR: [
+                    _mark("MK-NEW", x=20.0).editor_payload(),
+                    _mark("MK-A", x=5.0).editor_payload(),
+                    _mark("MK-B", x=10.0).editor_payload(),
+                ]
+            },
+            floor_layout_bases={
+                FLOOR: _floor_base(repository, session.schedule.schedule_revision_id)
+            },
+        )
+    )
+    assert drawn.schedule is not None
+    mine = _session(repository, scenario_id)
+    other = _session(repository, scenario_id)
+    dated = repository.save_equipment(
+        _request(
+            other,
+            scenario_id,
+            equipment=_set(other.equipment, "EQ-02", "Qual일정", "2026-08-25"),
+        )
+    )
+
+    assert dated.schedule is not None
+    assert dated.schedule.layout_hash == drawn.schedule.layout_hash
+    moved = repository.save_equipment(_request(mine, scenario_id, equipment=_moved(mine)))
+    assert moved.schedule is not None and moved.schedule.revision_no == 4
+    overlay = repository.load_layout_overlay(moved.schedule.schedule_revision_id)
+    assert [change.mark_id for change in overlay.marks_for(FLOOR)] == ["MK-A", "MK-NEW"]
+
+
 def test_a_stale_layout_save_is_refused_after_someone_elses_layout_save(tmp_path: Path) -> None:
     repository = _seeded(tmp_path)
     scenario_id = _hypothetical(repository)
@@ -422,6 +504,40 @@ def test_grouping_a_unit_from_another_official_floor_is_refused_in_a_hypothetica
         repository.save_equipment(_request(session, scenario_id, equipment=equipment))
 
     assert _counts(repository) == before
+
+
+def test_a_unit_placed_only_in_a_hypothetical_scenario_can_join_a_group_there(
+    tmp_path: Path,
+) -> None:
+    """S2 리뷰 — 가정에서 자리 없이 넣은(공식 동·층 미정) 호기는 새 모듈처럼 묶음의 공식 동·층으로
+    맞춘다. 공식에는 그 호기 일정이 없어(G2) 거부 글이 가리키는 공식 쪽에서도 고칠 길이 없었다."""
+    repository = _seeded(tmp_path, _grouped())
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    repository.save_equipment(
+        _request(
+            session,
+            scenario_id,
+            equipment=_with_unit(session.equipment, "EQ-N", 70.0, **{"Main 설비": None}),
+            propagate_new_units=False,
+        )
+    )
+    assert _place(_session(repository), "EQ-N")[:4] == (None, None, None, None)
+    session = _session(repository, scenario_id)
+
+    joined = repository.save_equipment(
+        _request(
+            session,
+            scenario_id,
+            equipment=_set(session.equipment, "EQ-N", "Main 설비", "APW1"),
+        )
+    )
+
+    assert joined.common is not None and joined.schedule is not None
+    official = _session(repository)
+    assert _place(official, "EQ-N")[:4] == ("C1", "1F", None, None)
+    assert _place(official, "EQ-01")[:4] == ("C1", "1F", 10.0, 10.0)
+    assert _place(_session(repository, scenario_id), "EQ-N")[:4] == ("C1", "1F", 70.0, 10.0)
 
 
 def test_renaming_a_group_moves_the_official_label_key_in_either_role(tmp_path: Path) -> None:
@@ -594,6 +710,32 @@ def test_shrinking_a_canvas_is_refused_when_a_hypothetical_mark_falls_outside(
     assert repository.save_floor_layout_canvas(*FLOOR, 95.0, 60.0).canvas_width == 95.0
 
 
+def test_deleting_a_floor_drawing_is_refused_when_a_hypothetical_mark_needs_its_canvas(
+    tmp_path: Path,
+) -> None:
+    """캔버스 넷째 진입점 — 도면을 지우면 캔버스가 기본 크기(100 × 60)로 돌아가므로 가정 배치 요소가
+    그 밖이면 막는다(설계 6-4)."""
+    repository = _seeded(tmp_path)
+    repository.save_floor_layout_canvas(*FLOOR, 150.0, 60.0)
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    assert session.schedule is not None
+    _, fingerprint = _floor_base(repository, session.schedule.schedule_revision_id)
+    repository.save_equipment(
+        _request(
+            session,
+            scenario_id,
+            floor_marks={FLOOR: [_mark("MK-FAR", x=120.0).editor_payload()]},
+            floor_layout_bases={FLOOR: ((150.0, 60.0), fingerprint)},
+        )
+    )
+
+    with pytest.raises(EquipmentLayoutOverflow, match="「셋업 실무」 .*요소 1개"):
+        repository.delete_floor_layout_profile(*FLOOR)
+
+    assert repository.load_floor_layout_canvases()[FLOOR] == (150.0, 60.0)
+
+
 def _png() -> bytes:
     import struct
     import zlib
@@ -721,6 +863,7 @@ def test_restoring_a_revision_brings_its_layout_difference_back(tmp_path: Path) 
         current_schedule_revision_id=cleared.schedule_revision_id,
     )
     assert preview.changed_units == 0 and not preview.identical
+    assert not restore_writes_nothing(preview, official_scenario=False)
     assert (preview.layout_unit_rows, preview.current_layout_unit_rows) == (1, 0)
     assert preview.current_layout_digest is None
 
@@ -763,10 +906,20 @@ def test_restoring_into_the_official_scenario_drops_the_layout_difference(tmp_pa
     common = repository.latest_revision_id()
     assert common is not None
 
+    preview = repository.preview_schedule_restore(
+        saved.schedule.schedule_revision_id,
+        common_revision_id=common,
+        current_schedule_revision_id=cleared.schedule_revision_id,
+    )
+    # 확인 화면은 저장소와 같은 판정으로 단추를 세우지 않는다(원시 지문은 달라도 — S2 리뷰).
+    assert not preview.identical
+    assert restore_writes_nothing(preview, official_scenario=True)
+
     result = repository.restore_schedule_revision(
         saved.schedule.schedule_revision_id,
         expected_common_revision_id=common,
         expected_latest_schedule_revision_id=cleared.schedule_revision_id,
+        expected_layout_role="official",
     )
 
     # 일정은 같고 배치 차이는 공식이라 버려진다 — 되돌릴 것이 없다.

@@ -449,9 +449,19 @@ class ScheduleRestorePreview:
 
     @property
     def identical(self) -> bool:
-        """일정·비가동이 모든 호기에서 같고 배치 차이도 같다 — 되돌려도 새 리비전을 만들지
-        않는다."""
+        """일정·비가동이 모든 호기에서 같고 배치 차이도 같다(역할을 모르는 값 — 되돌리기가 쓸지는
+        `restore_writes_nothing` 이 역할과 함께 정한다)."""
         return self.changed_units == 0 and self.layout_identical
+
+
+def restore_writes_nothing(preview: ScheduleRestorePreview, *, official_scenario: bool) -> bool:
+    """「이 리비전으로 되돌리기」 가 새 리비전을 만들지 않는가 — 확인 화면(단추를 세울지)과 저장소
+    (쓰기 잠금 안의 판정)가 **같이** 쓴다(설계 6-6 — 확인 글과 실제 쓰기가 갈리지 않게).
+
+    공식 설비 시나리오로 되돌리면 그 리비전의 배치 차이는 버리므로(I2) 일정·비가동만 보고, 가정
+    시나리오면 저장된 배치 차이(원시 지문)까지 같아야 쓸 것이 없다. 역할은 바뀌는 입력이라 확인 재료
+    캐시 밖에서 넘긴다."""
+    return preview.changed_units == 0 and (official_scenario or preview.layout_identical)
 
 
 def schedule_restore_preview(

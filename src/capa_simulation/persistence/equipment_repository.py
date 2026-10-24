@@ -94,6 +94,7 @@ from capa_simulation.services.equipment_scenario import (
     new_unit_keys,
     normalize_schedule_downtime,
     normalize_schedule_frame,
+    restore_writes_nothing,
     schedule_restore_preview,
     select_schedule_rows,
     split_downtime,
@@ -163,6 +164,7 @@ from capa_simulation.services.layout_overlay import (
     effective_group_labels,
     label_changes,
     layout_base,
+    layout_cells,
     layout_counts_words,
     make_layout_overlay,
     mark_changes,
@@ -547,7 +549,7 @@ class EquipmentLayoutRoleChanged(ValueError):
         super().__init__(
             "그 사이 공식 설비 시나리오가 바뀌어 이 배치 변경"
             f"({words(expected)}에 들어갈 편집이었음)을 저장하지 않았습니다 — 지금은 "
-            f"{words(current)}에 들어갑니다. 배치 변경만 버리고 다시 고치세요."
+            f"{words(current)}에 들어갑니다. 저장 안 한 배치 변경을 버리고 다시 고치세요."
         )
         self.expected = expected
         self.current = current
@@ -1124,10 +1126,19 @@ class DuckDBEquipmentRepository:
             )
             if split.refusal is not None:
                 raise EquipmentLayoutScopeError(split.refusal)
+            # 공통 쪽에 공식 값을 둘 때는 반올림한 견줄 값이 아니라 공통 대장의 원래 칸 값을 옮긴다
+            # (가정 저장이 공식 좌표를 반올림해 공통 리비전을 만들지 않게).
             edit = replace(
                 edit,
                 common=common_with_places(
-                    edit.common, edit_keys, split.common_places, current=edited_base.places
+                    edit.common,
+                    edit_keys,
+                    split.common_places,
+                    current=edited_base.places,
+                    official=layout_cells(
+                        base.official_common,
+                        [str(key) for key in base.official_common[UNIT_KEY_COLUMN]],
+                    ),
                 ),
             )
             label_moves = _group_label_moves(request.group_renames, base.common, edit.common)
@@ -1621,8 +1632,9 @@ class DuckDBEquipmentRepository:
            (가정 배치안을 되살린다 — 설계 6-6). 그 시나리오가 공식이면 차이를 버린다(I2).
            `expected_layout_role`(확인 글을 보인 때의 역할 "official"·"overlay")이 쓰기 잠금 안의
            역할과 다르면 `EquipmentLayoutRoleChanged` — 확인 글과 실제 쓰기가 갈리지 않게.
-        4. 지금 최신과 모든 호기의 일정·비가동이 같고 배치 차이도 같으면 쓰지 않는다
-           (`schedule=None`) — 빈 리비전을 만들지 않는다.
+        4. 쓸 것이 없으면 쓰지 않는다(`schedule=None` — 빈 리비전을 만들지 않는다). 판정은 확인
+           화면과 같은 `restore_writes_nothing` 이다 — 공식 시나리오면 일정·비가동이 모두 같을 때,
+           가정이면 저장된 배치 차이(원시 지문)까지 같을 때.
         5. 공식 발행은 설비 마스터 저장과 같은 규칙(`_plan_publish`)이다 — 공식 시나리오에서
            되돌렸고 `publish_official` 이며 저장 전 최신 발행이 그 시나리오 최신이었을 때만 새
            리비전을 발행한다(발행 안 한 더 새 리비전이 있었으면 `release_withheld`). 발행할 때만
@@ -1665,18 +1677,18 @@ class DuckDBEquipmentRepository:
             preview, restored = _restore_preview(
                 connection, latest[0], scenario.latest_schedule_revision_id, target
             )
+            # 「쓸 것 없음」 판정은 확인 화면과 같은 함수다(설계 6-6 — 확인 글과 실제 쓰기가 갈리지
+            # 않게): 공식이면 차이를 버리니 일정·비가동만, 가정이면 저장된 차이 지문까지 본다.
+            if restore_writes_nothing(preview, official_scenario=role == "official"):
+                return ScheduleRestoreResult(schedule=None, preview=preview)
             selected = read_layout_overlay(connection, target)
-            current = read_layout_overlay(connection, scenario.latest_schedule_revision_id)
             official_layout = _official_layout(restored)
-            floors = _stored_floors(connection, {*selected.floors, *current.floors})
+            floors = _stored_floors(connection, selected.floors)
             layout = (
                 LayoutOverlay()
                 if role == "official"
                 else normalize_layout_overlay(selected, official_layout, floors)
             )
-            current_layout = normalize_layout_overlay(current, official_layout, floors)
-            if preview.changed_units == 0 and layout.digest() == current_layout.digest():
-                return ScheduleRestoreResult(schedule=None, preview=preview)
             release_row = scenario_store.latest_release_row(connection)
             publish = _plan_publish(
                 scenarios,
@@ -3340,6 +3352,19 @@ def _read_base_state(
     keys = [str(key) for key in common[UNIT_KEY_COLUMN]]
     started = layout_base(common, keys)
     official = started.with_places(dict(snapshot.layout_official_places))
+    official_common = common
+    if snapshot.layout_official_places:
+        # 차이를 얹은 호기의 공식 칸은 공통 대장 그 리비전의 **원래 값**으로 되돌린다 — 스냅샷이
+        # 든 얹기 전 값(`layout_official_places`)은 견줄 꼴(반올림)이라 그대로 적으면 공통이
+        # 바뀐 것으로 보여 다른 까닭의 공통 저장이 공식 좌표를 반올림해 쓴다.
+        stored = read_common(connection, common_revision_id).equipment
+        official_common = common_with_places(
+            common,
+            keys,
+            official.places,
+            current=started.places,
+            official=layout_cells(stored, [str(key) for key in stored[UNIT_KEY_COLUMN]]),
+        )
     return _BaseState(
         contract_version=contract_version,
         unit_keys=snapshot.unit_keys,
@@ -3350,9 +3375,7 @@ def _read_base_state(
         common=common,
         schedule=schedule,
         downtime=events,
-        official_common=common_with_places(common, keys, official.places, current=started.places)
-        if snapshot.layout_official_places
-        else common,
+        official_common=official_common,
         layout=official,
         started_places=started.places,
         overlay=read_layout_overlay(connection, snapshot.schedule),
