@@ -45,6 +45,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_unit_renames,
     save_equipment_buffer,
     schedule_revision_title,
+    stale_save_refusal,
 )
 from capa_simulation.components.equipment_save_fields import (
     SaveCandidateCounts,
@@ -404,7 +405,9 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_scenario)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            markdown_safe_tildes(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        )
         return
     revision_by_id = {item.schedule_revision_id: item for item in revisions}
     if revision_by_id:
@@ -566,6 +569,11 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
             stale_save_warning(basis.revision_no, basis.latest_revision_no),
             icon=":material/lock_clock:",
         )
+        # 낡기 전에 고친 일정 칸·지운 호기가 있으면 공통 칸까지 거부된다 — 저장 전에 그 칸과 고칠
+        # 길을 알린다(누르면 같은 글로 거부한다 — `save_equipment_buffer`).
+        refusal = stale_save_refusal(buffer, basis)
+        if refusal is not None:
+            st.warning(markdown_safe_tildes(refusal), icon=":material/block:")
     if not has_changes:
         st.caption("저장할 변경이 없습니다.")
     note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")
@@ -598,8 +606,10 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(
-            "저장하지 못했습니다: "
-            + bootstrap_error_message(exc, database_paths=(Path(database_path),))
+            markdown_safe_tildes(
+                "저장하지 못했습니다: "
+                + bootstrap_error_message(exc, database_paths=(Path(database_path),))
+            )
         )
         return
     st.session_state[SAVE_NOTE_GENERATION_KEY] = _note_generation() + 1

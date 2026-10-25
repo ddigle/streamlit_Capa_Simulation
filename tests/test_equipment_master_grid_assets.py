@@ -425,6 +425,33 @@ def test_the_pure_sections_behave_as_specified() -> None:
     assert box[8] == 6
 
 
+_CLIPBOARD_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify(input.texts.map(parseClipboard)))
+"""
+
+
+def test_pasting_excel_quoted_cells_keeps_line_breaks_inside_one_cell() -> None:
+    """엑셀은 줄바꿈(Alt+Enter)·탭이 든 칸을 따옴표로 감싸고 안의 따옴표를 겹쳐 복사한다 — 그
+    칸이 아래 호기 칸으로 쪼개져 들어가지 않고, 「엑셀·CSV로 한꺼번에」 처럼 한 칸으로 읽힌다.
+    닫히지 않거나 닫는 따옴표 뒤에 글이 더 있는 칸은 따옴표 칸이 아니라 글자 그대로다."""
+    texts = [
+        '"줄1\n줄2"\t"따옴표 ""안"""\r\n일반\t값\r\n',
+        '"첫줄\n둘째줄"\r\n',
+        '"A" 형\t나\n다\t"라',
+        'a\t""\n"탭\t안"\tb',
+        'plain "quote"\tx\n',
+        '"한 칸"',
+    ]
+    result = _node({"texts": texts}, _CLIPBOARD_RUNNER)
+    assert result[0] == [["줄1\n줄2", '따옴표 "안"'], ["일반", "값"]]
+    assert result[1] == [["첫줄\n둘째줄"]], "줄바꿈이 든 한 칸은 아래 줄로 넘치지 않는다"
+    assert result[2] == [['"A" 형', "나"], ["다", '"라']], "따옴표 칸이 아니면 글자 그대로"
+    assert result[3] == [["a", ""], ["탭\t안", "b"]]
+    assert result[4] == [['plain "quote"', "x"]]
+    assert result[5] is None, "탭·줄바꿈이 없는 글은 보통 붙여넣기"
+
+
 _NEW_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 const local = { seq: 4, values: ['a', 'b'], propagate: true }
@@ -733,6 +760,24 @@ def _loader_payload() -> dict[str, Any]:
         "newEnabled": False,
         "newRowsLocked": False,
     }
+
+
+_LOADER_INFO_RUNNER = (
+    _FAKE_DOM_RUNNER.split("const toggleOf")[0]
+    + "process.stdout.write(JSON.stringify(host.querySelector('.emg-info').textContent))\n"
+)
+
+
+def test_the_loader_counts_loaded_units_like_the_total() -> None:
+    """정보 줄 「불러온 호기 n대 / 전체 N대」 의 n 은 `loadedCount`(살아 있는 호기)다 — 지울 목록에
+    든 호기 줄이 `loaded` 에 남아도 전체 N 을 넘지 않는다(E2E 「21대 / 전체 20대」)."""
+    assert JS.count(_MOUNT_HEAD) == 1
+    source = JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
+    data = {**_loader_payload(), "loaded": ["s:DEMO-01", "s:DEMO-02", "s:GONE"], "loadedCount": 2}
+
+    text = _node({"data": data}, _LOADER_INFO_RUNNER, source=source)
+
+    assert text.startswith("불러온 호기 2대 / 전체 2대"), text
 
 
 def test_both_loader_popovers_close_on_escape_right_after_opening() -> None:
