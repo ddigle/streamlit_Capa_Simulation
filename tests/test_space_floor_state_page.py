@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import get_widget_state
+from streamlit.testing.v1.element_tree import Block, Dataframe, get_widget_state
 from test_equipment_availability import _baseline, _downtime
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
@@ -39,6 +39,7 @@ from capa_simulation.components.space_floor_list import (
     REVERT_BUTTON_KEY,
     SAVE_BUTTON_KEY,
 )
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.fab_layout import FLOOR_KEYS
@@ -553,6 +554,71 @@ def test_opening_a_floor_drops_the_draft_on_that_run_so_the_marker_is_down(tmp_p
     assert app.session_state["space_status_selected_floor"] == "1F"
     assert app.session_state["marker_before_page"] is False
     assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
+    clear_equipment_repository()
+
+
+def _holds(node: Any, found: Any) -> bool:
+    if found(node):
+        return True
+    return isinstance(node, Block) and any(_holds(child, found) for child in node.children.values())
+
+
+def _siblings_between(app: AppTest, head: Any, table: Any) -> list[Any]:
+    """`head` 를 품은 칸과 `table` 이 형제인 줄에서 둘 사이의 형제들(차례대로)."""
+    stack: list[Any] = [app.main]
+    while stack:
+        block = stack.pop()
+        children = [child for _, child in sorted(block.children.items())]
+        heads = [index for index, child in enumerate(children) if _holds(child, head)]
+        tables = [index for index, child in enumerate(children) if table(child)]
+        if heads and tables and not table(children[heads[0]]):
+            return children[heads[0] + 1 : tables[0]]
+        stack.extend(child for child in children if isinstance(child, Block))
+    raise AssertionError("머리 줄과 표가 형제인 칸이 없다")
+
+
+def _toolbar_clearance_is_last(between: list[Any]) -> None:
+    """표 바로 앞 형제가 띄움 하나다 — 표 도구 막대(표 위 37px 까지 솟는다)가 머리 줄 오른쪽 끝을
+    덮지 않게(AGENTS 9장 「표 도구 막대」)."""
+    spaces = [node for node in between if getattr(node, "type", "") == "space"]
+    assert len(spaces) == 1
+    assert between[-1] is spaces[0]
+    assert TABLE_TOOLBAR_CLEARANCE >= 20
+
+
+def test_the_floor_list_table_keeps_its_toolbar_off_the_edit_switch(tmp_path: Path) -> None:
+    """표에서 머리 줄 오른쪽 끝 `사용 편집` 으로 옮긴 누름을 표 도구 막대가 가로챘다(2026-10-26
+    E2E)."""
+    app = _app(_database(tmp_path)).run()
+    _ok(app)
+
+    between = _siblings_between(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "toggle" and getattr(node, "key", None) == EDIT_TOGGLE_KEY
+        ),
+        lambda node: isinstance(node, Dataframe) and "미배치대수" in node.value.columns,
+    )
+    _toolbar_clearance_is_last(between)
+    clear_equipment_repository()
+
+
+def test_the_floor_detail_table_keeps_its_toolbar_off_the_whole_floor_button(
+    tmp_path: Path,
+) -> None:
+    """층 상세 표 머리 줄 오른쪽 끝 「층 전체 보기」 도 같다 — 표에서 옮긴 누름이 막대에 먹혔다."""
+    app = _app(_database(tmp_path), floor="C1-1F").run()
+    _ok(app)
+    assert app.session_state["space_status_selected_floor"] == "1F"
+
+    between = _siblings_between(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "button" and getattr(node, "label", None) == "층 전체 보기"
+        ),
+        lambda node: isinstance(node, Dataframe),
+    )
+    _toolbar_clearance_is_last(between)
     clear_equipment_repository()
 
 

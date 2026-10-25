@@ -31,6 +31,11 @@ CSV_DOWNLOAD_LABEL = "CSV 다운로드"
 
 CSV_TEMPLATE_LABEL = "CSV 양식 다운로드"
 
+# 표 앞 띄움(px, `st.space`) — 표에 마우스를 올리면 오른쪽 위 도구 막대(열 보기·내려받기·찾기·
+# 전체 화면)가 표 머리 위 37px 까지 솟는다. 표 바로 위 줄 오른쪽 끝에 누를 것(토글·단추)이 있으면
+# 그 막대가 그 줄에 닿지 않을 만큼 표 앞에 띄운다(AGENTS 9장 「표 도구 막대」).
+TABLE_TOOLBAR_CLEARANCE = 24
+
 
 def render_csv_download(
     *,
