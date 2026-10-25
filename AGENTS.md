@@ -986,21 +986,37 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면 공통 계층)의 streamlit 을 모르는 부분. 화면에는 아직 잇지 않았다(B1-c 가 탭 본문에서 쓴다).
   - 칸 정의 `GRID_COLUMNS`(계약 39칸 차례 — 브라우저로 가는 자리 번호는 모두 이 차례)·칸 묶음 `COLUMN_SETS`(기본·일정·위치·
     이력·메모·「전체 39칸」 = 엑셀 양식 차례)·상세 묶음 `DETAIL_GROUPS`(39칸이 한 번씩)·잠금 갈래 `LOCK_SETS`(모듈 묶음 좌표·크기 /
-    가정 시나리오의 있던 호기 배치 일곱 칸 / 낡은 세션의 시나리오 일곱 칸, 지운 표시 줄은 모든 칸)와 칸 머리 도움말
-    `scenario_column_help`(옛 RawData 편집표도 이것을 쓴다)가 한 곳이다.
+    가정 시나리오의 있던 호기 배치 일곱 칸 `layout` · 새 호기 자리 넷 `place`(동·층·X좌표·Y좌표) / 낡은 세션의 시나리오 일곱 칸,
+    지운 표시 줄은 모든 칸)와 칸 머리 도움말 `scenario_column_help`(옛 RawData 편집표도 이것을 쓴다)가 한 곳이다.
+  - **가정 설비 시나리오**(`GridContext.layout_lock`)는 설비 시나리오 2단계 S2 규칙 그대로다 — 있던 호기 배치 일곱 칸·새 호기 자리
+    넷을 잠그고, 이름·Main 설비·배치·행을 바꾼 op 뒤마다 `assumption_layout`(작업 공간 `assumption_layout_lock(...).apply` 와 같은
+    판정 — `layout_overlay.assumption_common_places`, 시험이 대조한다)으로 맞춘다: 있는 묶음에 드는 새 호기와 공식 동·층 미정 호기는
+    그 묶음의 공식 동·층에 X·Y 비움. 맞춘 칸은 그 op 의 되돌리기 단계에 든다. 그래야 가정 세션 저장이 이 판의 화면이 보이지도
+    지우지도 못하는 배치 차이를 만들지 않는다(`_layout_role_of` 가 잠금에 걸린 편집본을 공식 역할로 보낸다).
   - 행 id 는 `s:` + 저장본 설비명(이름을 바꿔도 그대로)·`n:` + 지금 이름(새 호기)이고 짝은 저장의 호기 키 규칙
-    `inherited_unit_names` 그대로다(`grid_index`). 칸 글자 `cell_text` 가 화면 글자이자 「바뀐 칸」 견줌 글자다.
+    `inherited_unit_names` 그대로다(`grid_index`). 같은 이름 둘째 줄 꼬리는 설비명에 나올 수 없는 글자(`DUPLICATE_MARK`)로 붙이고
+    겹치면 번호를 올린다. 저장본 호기인지는 **id 글자를 풀지 않고** `GridIndex.saved`·`saved_name`·`is_new` 로 가른다(설비명 규칙은
+    「~」 를 받는다). 칸 글자 `cell_text` 가 화면 글자이자 「바뀐 칸」 견줌 글자다.
   - `build_grid_view` 한 번에서 세 마운트 data(`grid_data`·`loader_data`·`detail_data`·`changes_data`)가 나온다 — 같은 입력이면
-    같은 dict. 불러오기 data 의 조건 칸(옛 표 보기 거르기 13칸, 사용자 R1)은 칸마다 값 번호를 64자 고정 폭 글자로 잇는다
-    (`encode_codes` ↔ JS `decodeCodes`).
+    같은 dict. 칸 초안이 있는 칸에는 편집본 옛 값의 규칙 결과를 싣지 않는다(초안 오류 하나). 출납을 보내는 마운트(표·오른쪽 칸 둘)
+    는 저마다 제 `ack` 와 그 마운트가 보낸 조작의 토스트를 싣는다 — 화면 쪽은 토스트를 그 op 를 보낸 마운트에 싣는다. 토스트 dict 의
+    `undo` 는 단계 표지(`GridApplied.toast_step`)이고 `toast_payload` 가 그 단계가 되돌리기 목록 맨 위(`undo_top`)일 때만 남긴다.
+    `grid_data(open_id=)` 는 상세에 연 줄의 띠다. 불러오기 data 의 조건 칸(옛 표 보기 거르기 13칸, 사용자 R1)은 칸마다 값 번호를
+    64자 고정 폭 글자로 잇는다(`encode_codes` ↔ JS `decodeCodes` — 브라우저는 고른 값을 번호가 아니라 글로 기억한다).
   - 출납: `pending_ops` 가 두 마운트의 상태 값 `outbox` 에서 반영 안 된 op 만 `(at, mount, seq)` 로 고르고, `apply_ops` 가 차례로
     얹는다 — `base` 가 다르면 버림, 잠긴 칸·지운 줄·낡은 세션의 저장본 호기 지우기는 파이썬도 막음, 칸 값은
     `coerce_master_cell`(저장 정규화와 같은 함수)로 다듬고 못 다듬은 글은 칸 초안(`overlay` — 편집본 밖)에 둔다. 설비명 칸
     확정은 이름 바꿈(`check_unit_rename`·`apply_name_changes`·`compose_unit_renames` — Space 와 같은 넷, 사용자 R2·G4)이다.
     지우기는 비가동을 함께 빼고, 되살리기는 **저장본 값**을 **저장본 차례** 자리에 넣는다(차례만 다른 공통 리비전을 만들지 않음).
+    칸·호기 되돌리기(`revert`)는 저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·가정 배치 칸 잠금을 보지 않는다(낡기 전에 고친
+    일정을 되돌려야 저장이 거부되지 않는다) — 모듈 묶음 좌표·크기만 그대로 두고 토스트로 알린다. `base` 가 달라 버린 op 는 까닭을
+    가르지 않는 토스트(`DROPPED_TOAST` — 내 저장·모두 버리기·불러오기·남의 저장)로 센다.
   - 되돌리기 `UndoStep` 은 역 patch(조작 뒤 자리)라 나중 것부터만 맞는다 — 표의 조작만 쌓고 다른 길이 편집본을 바꾸면
-    목록을 비운다(B1-c). 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째 단계는 하나다.
-    세션에는 `undo_to_state` 의 기본형으로 둔다.
+    목록을 비운다(B1-c). 단계마다 표지 `token`(그 op 의 `mount#seq`)이 있고 `undo` op 의 `step` 이 맨 위가 아니면 되돌리지 않고
+    알린다(토스트 「되돌리기」 뒤에 토스트 없는 칸 고침이 쌓인 경합). 불러온 목록은 화면 조작으로도 바뀌므로 사진으로 되돌리지 않고
+    옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 이름 바꿈을
+    되돌리면 `renamed`·`moved` 를 거꾸로 알린다. 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째
+    단계는 하나다. 세션에는 `undo_to_state` 의 기본형으로 둔다.
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다.
@@ -1171,8 +1187,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.
   - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인 필요, 전체), 칸 묶음·정렬·
     고름(브라우저 몫 — 칸 묶음만 localStorage), 가상 스크롤(줄 34px), 칸 고치기 키(Enter·Esc·Tab·↑↓·F2), 엑셀 여러 칸 붙여넣기
-    (`paste` 이벤트의 `clipboardData` 만), 값 넣기·날짜 밀기·지우기·되살리기·되돌리기, 상세 칸·저장 전 변경의 칸/호기 되돌리기.
-    업무 검증은 하지 않는다. 데이터 글은 `textContent` 로만, 처리한 키는 `stopPropagation`(Streamlit 단축키가 글자를 먹는다).
+    (`paste` 이벤트의 `clipboardData` 만 — 설비명 칸에서 붙이면 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터), 값 넣기·날짜 밀기·
+    지우기·되살리기·되돌리기, 상세 칸·저장 전 변경의 칸/호기 되돌리기. 업무 검증은 하지 않는다. 데이터 글은 `textContent` 로만,
+    처리한 키는 `stopPropagation`(Streamlit 단축키가 글자를 먹는다).
+  - 토스트는 표와 오른쪽 칸이 저마다 그린다(`fillToast`) — 「되돌리기」 는 그 토스트의 단계 표지를 실어 보낸다(대상 없는
+    `undo` 는 맨 위 단계를 되돌린다). `moved` 는 목록 지문(`view`)으로 고름·스크롤을 처음으로 돌리기 **전에** 얹는다. 불러오기
+    회차가 돌아와도 초점이 표 등 불러오기 밖에 있으면 찾기 칸으로 가져오지 않는다(`focusIsFree`). 팝오버는 화면 오른쪽 밖으로
+    나가면 왼쪽으로 당긴다(`popoverShift`). 표 본문의 Tab 정지는 초점 칸 하나(체크·「−」 는 `tabIndex -1`, 칸 위 Space = 줄 고르기).
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
