@@ -531,6 +531,31 @@ def test_the_theme_marker_sees_a_cell_edit_on_its_own_run(tmp_path: Path) -> Non
     clear_equipment_repository()
 
 
+def test_opening_a_floor_drops_the_draft_on_that_run_so_the_marker_is_down(tmp_path: Path) -> None:
+    """층을 여는 콜백이 초안과 토글을 함께 버린다 — 페이지보다 먼저 도는 `app.py` 의 탭 점·떠나기
+    확인·테마 단추 확인이 층을 연 그 회차에 벌써 내려가야 한다(이미 버린 초안을 묻지 않는다)."""
+    database = _database(tmp_path)
+    app = AppTest.from_string(_marker_first_script(database), default_timeout=90)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    tables = BrowserTables(app)
+    tables.run()
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    tables.run()
+    tables.edit(_editor_key(app), _position("C3", "1F"), "사용", False)
+    tables.run()
+    _ok(app)
+    assert app.session_state["marker_before_page"] is True
+
+    app.selectbox(key=JUMP_FAB_KEY).set_value("C2 1F")
+    tables.run()
+    _ok(app)
+
+    assert app.session_state["space_status_selected_floor"] == "1F"
+    assert app.session_state["marker_before_page"] is False
+    assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
+    clear_equipment_repository()
+
+
 def _pending_script() -> None:
     import streamlit as st
 

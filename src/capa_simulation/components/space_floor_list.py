@@ -273,9 +273,11 @@ def _forget() -> None:
 
 def discard_floor_state_draft() -> None:
     """`사용 편집` 토글을 끄고 초안·base·확인을 버린다 — 사이드바 팝업이 가정 설비 시나리오를 불러온
-    회차(층 사용은 공식에서만 고친다 — Q3). Space 가 잠그며 버리기(`render_space_floor_list`)를
-    기다리면 그 앞에 `app.py` 가 세는 탭 점·떠나기 확인(`floor_state_draft_pending`)이 버린 초안을
-    한 회차 더 센다. 토글 위젯을 그리기 전(팝업 회차·다음 회차 첫머리)에만 부른다."""
+    회차(층 사용은 공식에서만 고친다 — Q3)와 Space 가 층을 여는 콜백(층 상세는 토글을 그리지
+    않는다). Space 가 잠그며 버리기(`render_space_floor_list`)나 토글 위젯 상태가 걷히기를 기다리면
+    그 앞에 `app.py` 가 세는 탭 점·떠나기 확인(`floor_state_draft_pending`)이 버린 초안을 한 회차 더
+    센다.
+    토글 위젯을 그리기 전(팝업 회차·콜백·다음 회차 첫머리)에만 부른다."""
     st.session_state[EDIT_TOGGLE_KEY] = False
     _forget()
 
