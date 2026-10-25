@@ -202,6 +202,61 @@ def test_the_block_tooltip_names_the_floors_layout_difference_only_when_asked() 
     assert "stats.layout" in JS[JS.index("const blockTip = ") : JS.index("const hasSize = ")]
 
 
+def test_compare_and_shortening_share_the_block_lines_and_the_floor_list_columns() -> None:
+    """「필요 단축」 과 함께 켜면 — 블록 풍선은 단축 줄 뒤에 견주기 줄이 붙고, 층 목록 덧붙임 칸은
+    「공식과 다름」 이 사용·비활성 두 표에, 필요 단축 칸 넷(`layer_columns` — `active_only`)은 사용
+    층 표에만 선다(비활성 층에는 층 대수를 싣지 않는다). 칸 설정도 그 표에 서는 칸만 더한다."""
+    from capa_simulation.components import space_floor_list
+    from capa_simulation.components.space_floor_list import FloorListColumn, layer_columns
+    from capa_simulation.services.floor_state import FloorStates, prepare_floor_states
+
+    active = FloorPlacement(("C1", "1F"), placed=2.0, unplaced=0.0, occupancy=0.1)
+    off = FloorPlacement(("C1", "2F"), placed=1.0, unplaced=0.0, occupancy=0.05)
+    stats = floor_block_stats(
+        [active, off],
+        inactive={("C1", "2F"): "사용 안 함"},
+        layout_differences={("C1", "1F"): 1, ("C1", "2F"): 2},
+        short_lines={("C1", "1F"): "단축 1대 · 최대 −5일", ("C1", "2F"): "단축 1대 · 최대 −2일"},
+    )
+    assert stats["C1 1F"]["short"] == "단축 1대 · 최대 −5일"
+    assert stats["C1 1F"]["layout"] == "가정 배치 1대 다름"
+    assert "short" not in stats["C1 2F"] and stats["C1 2F"]["layout"] == "가정 배치 2대 다름"
+    tip = JS[JS.index("const blockTip = ") : JS.index("const hasSize = ")]
+    assert "stats.occupancy, stats.short, stats.layout" in tip
+
+    compare = FloorListColumn("공식과 다름", {("C1", "1F"): 1, ("C1", "2F"): 2})
+    cells: dict[tuple[str, str], dict[str, object]] = {
+        ("C1", "1F"): {"단축 호기": 1, "최대 단축(일)": 5, "기한 지남": 0, "추가 호기": 0},
+        ("C1", "2F"): {"단축 호기": 1, "최대 단축(일)": 2, "기한 지남": 0, "추가 호기": 0},
+    }
+    extras = (compare, *layer_columns(cells))
+    assert [column.name for column in extras[1:]] == list(space_floor_list._LAYER_COLUMNS)
+    states = FloorStates(rows=prepare_floor_states({("C1", "2F"): "UNUSED"}), version=1)
+
+    def rows(inactive: bool) -> Any:
+        return space_floor_list._table_rows(
+            [active, off],
+            (),
+            lambda _key: "",
+            states,
+            inactive=inactive,
+            extra_columns=extras,
+        )
+
+    used = rows(False)
+    assert list(used.columns)[-5:] == ["공식과 다름", *space_floor_list._LAYER_COLUMNS]
+    assert used.loc[0, "공식과 다름"] == 1 and used.loc[0, "최대 단축(일)"] == 5
+    resting = rows(True)
+    assert resting.loc[0, "공식과 다름"] == 2
+    assert not set(space_floor_list._LAYER_COLUMNS) & set(resting.columns)
+    assert set(space_floor_list._LAYER_COLUMNS) <= set(
+        space_floor_list._column_config(extras, inactive=False)
+    )
+    assert not set(space_floor_list._LAYER_COLUMNS) & set(
+        space_floor_list._column_config(extras, inactive=True)
+    )
+
+
 # ---------------------------------------------------------------- 화면(AppTest)
 
 

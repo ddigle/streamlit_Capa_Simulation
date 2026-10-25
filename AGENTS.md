@@ -598,8 +598,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확인 대상이다(목록 꼬리 「공식 배치 호기 없음(가정 배치에만)」 — 배치안이 빈 층을 쓰는 경우). 초안이 있는데 사이드바 팝업에서
     가정 설비 시나리오를 고르면 「변경을 버리고 불러오기」 를 묻는다(Space 가 편집을 잠그며 버린다 — 설계 9장). 이 모듈에는
     Streamlit 캐시를 두지 않는다.
-  - 색 기준 「필요 단축」 을 켠 동안만 사용 층 표에 칸 넷(`단축 호기`·`최대 단축(일)`·`기한 지남`·`추가 호기` — `extra_columns`)이
-    붙는다. 비활성 층 표에는 붙이지 않는다(층 대수를 싣지 않는다).
+  - 보기 표의 덧붙임 칸은 `extra_columns`(`FloorListColumn` — 칸 이름·층마다 값·칸 설정·`active_only`) 한 인자다. 「공식과
+    견주기」 의 「공식과 다름」 은 사용·비활성 두 표에, 색 기준 「필요 단축」 을 켠 동안의 칸 넷(`단축 호기`·`최대 단축(일)`·
+    `기한 지남`·`추가 호기` — `layer_columns`, `active_only=True`)은 사용 층 표에만 선다(비활성 층에는 층 대수를 싣지 않는다).
+    둘 다 켜면 넘긴 차례(「공식과 다름」 → 칸 넷)로 기본 칸 뒤에 선다.
 - `src/capa_simulation/components/space_floor_layout.py` — Space 가 그리는 층 도면 요소·Main 설비명 위치의 한 곳(설비 시나리오
   2단계 S3). `effective_floor_layout(db, 층, 세션)` = 공식 층 현행값(`load_floor_layout_marks`·`load_floor_group_labels` — 쓰기
   세대 캐시) ⊕ 세션 리비전의 요소·이름표 차이(`load_schedule_layout_overlay` — 일정 id 키 불변 칸, 차이 없으면 질의 없음)를
@@ -621,7 +623,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `shortBadges`(설비키마다 하나 — `ids` 는 그 층에 그린 모듈), `asOfPinned`(고정 줄 뒷글). 팔레트 `short-*` 칸은 늘 싣는다
     (CSS 변수는 모두 팔레트에 — 시험). JS 배지 자리는 `// <short-badge>` 구획의 순수 `badgeSpot`·`settleBadges`(배지끼리
     겹치면 뒤 배지가 한 칸 위로, 그래도 겹치면 그 배율에서 숨음)이다(node 시험). 배지를 다시 그릴 때 초점을 쥔 배지는 같은
-    key(`data-key`)의 새 배지로 돌려준다(키보드로 고를 때 초점이 문서 처음으로 빠지지 않게).
+    key(`data-key`)의 새 배지로 돌려준다(키보드로 고를 때 초점이 문서 처음으로 빠지지 않게). 「공식과 견주기」(`compare`)와
+    함께 켜지면 견주기 층 `sle-compare` 가 흐린 상자·배지 층 `sle-short-badges` 위에 선다(눌림이 없어 배지 누르기는 그대로) —
+    꼬리표와 배지가 서로 비키지는 않는다. FAB 블록 풍선은 단축 줄(`short`) 뒤에 견주기 줄(`layout`)이다.
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
