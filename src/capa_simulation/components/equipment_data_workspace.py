@@ -29,6 +29,14 @@ from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.components.write_guard import (
+    held_notice,
+    is_own_save,
+    note_notice,
+    notice_marks,
+    own_save_marks,
+    remember_own_save,
+)
 from capa_simulation.navigation import (
     EQUIPMENT_MASTER_TAB,
     EQUIPMENT_TAB_KEY,
@@ -44,6 +52,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_snapshot_cache,
     clear_floor_layout_cache,
+    get_equipment_repository,
     latest_equipment_revision_id,
     load_equipment_csv_payloads,
     load_equipment_revision_summaries,
@@ -55,6 +64,7 @@ from capa_simulation.persistence.equipment_cache import (
 from capa_simulation.persistence.equipment_repository import (
     EMPTY_REVISION_TOKEN,
     DuckDBEquipmentRepository,
+    EquipmentRevisionConflict,
     EquipmentSaveRequest,
     EquipmentSaveResult,
     EquipmentScheduleRevisionSummary,
@@ -1749,6 +1759,14 @@ FAB_DISCARD_HINT = (
 )
 
 
+# 설비 저장의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<설비 시나리오 id>`). 짝은
+# (편집본이 나온 공통·일정 리비전 id, 저장 뒤 공통·일정 최신 id) 다.
+EQUIPMENT_SAVE_NAME = "equipment_save"
+# 빠른 두 번 누름의 둘째가 제 저장을 알아봤는데 첫 누름의 알림이 창(`TRAILING_PRESS_SECONDS`)을
+# 지났을 때.
+SAVED_AGAIN_MESSAGE = "설비 데이터를 저장했습니다."
+
+
 def save_equipment_buffer(
     repository: DuckDBEquipmentRepository,
     frames: Frames | None,
@@ -1795,6 +1813,12 @@ def save_equipment_buffer(
             f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
             "실제 값으로 고치거나 지운 뒤 저장하세요."
         )
+    # 낡은 세션의 낡기 전 편집(지운 호기·고친 일정 칸)은 저장소가 공통 칸까지 거부한다 — 세 저장 길
+    # (설비 마스터 탭·사이드바 팝업·Space 배치 저장)이 어느 쓰기보다 먼저 같은 글로 멈춘다. 탭은
+    # 같은 판정을 「저장하기 전에 고칠 것」 줄로도 보인다(`stale_save_reasons`).
+    stale = stale_save_refusal(frames, basis)
+    if stale is not None:
+        raise ValueError(stale)
     # FAB 는 별도 쓰기라 그 거부(남이 먼저 저장·검증 실패)가 설비 저장을 막지 않는다. 거부된 FAB
     # 대기분은 남긴다 — 설비 저장이 편집본을 비우면서 대기분도 지우므로 끝나고 다시 얹는다.
     fab_pending = pending_fab_layout()
@@ -1838,6 +1862,21 @@ def save_equipment_buffer(
     )
 
 
+def equipment_write_token(database_path: str, scenario_id: str) -> tuple[str, str, int] | None:
+    """설비 쓰기의 제 저장 판정 토큰 — (공통 대장 최신 id, 그 설비 시나리오 최신 일정 리비전 id,
+    최신 공식 번호). 캐시가 아니라 저장소에서 바로 읽는다(쓰기 직후·거부 직후에 부른다). 읽지 못하면
+    None(제 저장으로 보지 않는다 — `write_guard.is_own_save`)."""
+    repository = get_equipment_repository(database_path)
+    try:
+        common = repository.latest_revision_id() or ""
+        catalog = repository.load_scenario_catalog()
+    except BOOTSTRAP_ERRORS:
+        return None
+    scenario = catalog.scenario(scenario_id)
+    latest = scenario.latest_schedule_revision_id if scenario is not None else None
+    return common, latest or "", catalog.release_no or 0
+
+
 def unsaved_grid_drafts(frames: Frames) -> int:
     """편집본(`frames`)의 살아 있는 행에 남은 설비 마스터 표 칸 초안 수. 없는 행의 초안(그 사이
     Space 가 호기를 지움·이름을 바꾼 새 호기)은 세지 않는다 — 표가 다음 회차에 걷는다."""
@@ -1867,9 +1906,6 @@ def _save_equipment_frames(
     violations = saved_master_violations(frames[1])
     if violations:
         raise ValueError(module_layout_message(violations))
-    stale = stale_save_refusal(frames, basis)
-    if stale is not None:
-        raise ValueError(stale)
     base = st.session_state.get(_BASE_KEY)
     if not isinstance(base, dict):
         raise ValueError("편집본이 아직 서지 않아 저장하지 않았습니다. 화면을 다시 불러오세요.")
@@ -1927,7 +1963,24 @@ def _save_equipment_frames(
             frames[1], renames.units, floor_values=bool(canvases or marks or labels), basis=basis
         ),
     )
-    result = repository.save_equipment(request)
+    own_name = f"{EQUIPMENT_SAVE_NAME}:{scenario_id}"
+    expected = (request.base_common_revision_id, request.base_schedule_revision_id or "")
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
+    messages = notice_marks()
+    try:
+        result = repository.save_equipment(request)
+    except EquipmentRevisionConflict:
+        current = equipment_write_token(str(repository.database_path), scenario_id)
+        if current is None or not is_own_save(own_name, expected, current[:2], save_marks):
+            raise
+        # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 뒷정리
+        # (편집본 비우기·세션 옮기기)가 끊겼을 수 있어 여기서 다시 하고 그 알림을 다시 낸다.
+        _after_equipment_save(scenario_id, current[1] or None)
+        return held_notice(own_name) or SAVED_AGAIN_MESSAGE
+    stored = equipment_write_token(str(repository.database_path), scenario_id)
+    if result.wrote_revision and stored is not None:
+        remember_own_save(own_name, expected, stored[:2], save_marks)
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
     # 문구는 대기분이 아니라 **저장 결과**로 만든다(검토 F18b) — 가정 역할의 도면 요소·Main 설비명
     # 위치는 층 현행값이 아니라 그 시나리오 새 리비전의 배치 차이로 갔다.
@@ -1937,8 +1990,33 @@ def _save_equipment_frames(
     if not result.wrote_revision and not result.floor_values_written and result.release_no is None:
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
         return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
+    layouts = f" {floor_layouts}도 함께 저장했습니다." if floor_layouts else ""
+    if not result.wrote_revision:
+        message = (
+            f"{NOTHING_SAVED_MESSAGE}{fab}"
+            if not floor_layouts
+            else f"설비 마스터가 바뀌지 않아 새 리비전 없이 {floor_layouts}만 저장했습니다.{fab}"
+        )
+    else:
+        name = basis.scenario_name if basis is not None else None
+        message = save_result_message(result, scenario_name=name) + layouts + fab
+        # 둘째 누름이 제 저장을 알아보면 이 알림을 다시 낸다(`write_guard.held_notice`).
+        note_notice(messages, own_name, message)
+    _after_equipment_save(
+        result.schedule.equipment_scenario_id if result.schedule is not None else scenario_id,
+        result.schedule.schedule_revision_id if result.schedule is not None else None,
+        floor_values_written=result.floor_values_written,
+    )
+    return message
+
+
+def _after_equipment_save(
+    scenario_id: str, schedule_revision_id: str | None, *, floor_values_written: bool = True
+) -> None:
+    """저장 뒤 이 세션의 뒷정리 — 캐시를 비우고 편집본을 저장본으로 다시 세우고, 새 일정 리비전을
+    썼으면 세션을 그 리비전으로 옮긴다(`SAVED_SCHEDULE_KEY`)."""
     clear_equipment_snapshot_cache()
-    if result.floor_values_written:
+    if floor_values_written:
         clear_floor_layout_cache()
     # 저장한 이름 바꿈은 이제 저장본 이름이다 — 설비 마스터 탭을 그리지 않은 채(Space 에서)
     # 저장했으면 목록 필터가 따라갈 지도가 아직 남아 있으니 편집본과 함께 버리지 않는다(버리면
@@ -1948,18 +2026,11 @@ def _save_equipment_frames(
     reset_equipment_drafts()
     if followed:
         st.session_state[FOLLOWED_FILTERS_KEY] = followed
-    if result.schedule is not None:
+    if schedule_revision_id is not None:
         st.session_state[SAVED_SCHEDULE_KEY] = {
-            "scenario_id": result.schedule.equipment_scenario_id,
-            "schedule_revision_id": result.schedule.schedule_revision_id,
+            "scenario_id": scenario_id,
+            "schedule_revision_id": schedule_revision_id,
         }
-    layouts = f" {floor_layouts}도 함께 저장했습니다." if floor_layouts else ""
-    if not result.wrote_revision:
-        if not floor_layouts:
-            return f"{NOTHING_SAVED_MESSAGE}{fab}"
-        return f"설비 마스터가 바뀌지 않아 새 리비전 없이 {floor_layouts}만 저장했습니다.{fab}"
-    name = basis.scenario_name if basis is not None else None
-    return save_result_message(result, scenario_name=name) + layouts + fab
 
 
 def _layout_role_of(
@@ -2782,8 +2853,17 @@ def stale_delete_lock(basis: EquipmentSaveBasis) -> str:
     )
 
 
-# 표 밖 저장 자리(사이드바 설비 시나리오 팝업 「저장」·Space 「배치 저장」)가 낡은 세션에서 알리는
-# 글 — 설비 마스터 탭은 같은 것을 「저장하기 전에 고칠 것」 줄로 막는다(`equipment_master_tab`).
+# 낡은 세션의 저장을 막는 까닭 두 가지 — 고칠 자리만 저장 길마다 다르다. 설비 마스터 탭은 「저장하기
+# 전에 고칠 것」 줄(그 아래 목록이 「저장 전 변경」 이다)로, 표 밖 저장 자리(사이드바 설비 시나리오
+# 팝업 「저장」·Space 「배치 저장」)는 경고·거부 글로 같은 판정(`stale_save_reasons`)을 보인다.
+STALE_DELETED_UNITS_TAB = (
+    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 되살리거나 최신을 불러오세요"
+)
+STALE_SCENARIO_EDITS_TAB = (
+    "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
+    "않습니다 — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 "
+    "불러와 다시 고칩니다"
+)
 STALE_DELETED_UNITS_ELSEWHERE = (
     "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 가용설비 현황 › 설비 마스터에서 "
     "되살리거나 최신을 불러오세요."
@@ -2795,27 +2875,46 @@ STALE_SCENARIO_EDITS_ELSEWHERE = (
 )
 
 
-def stale_save_refusal(frames: Frames, basis: EquipmentSaveBasis | None) -> str | None:
-    """낡은 세션의 저장을 막을 까닭 — 낡기 전에 지운 저장본 호기와 고친 일정·시나리오 메모 칸.
-    없거나 낡은 세션이 아니면 None.
+def stale_save_reasons(
+    master: pd.DataFrame,
+    saved_master: pd.DataFrame,
+    renames: Mapping[str, str],
+    *,
+    in_tab: bool,
+) -> list[str]:
+    """낡은 세션의 저장을 막을 까닭 줄 — 낡기 전에 지운 저장본 호기와 고친 일정·시나리오 메모 칸.
 
-    일정이 바뀐 저장은 저장소가 늘 거부하고(`EquipmentRevisionConflict` — 공통 칸까지) 그 문구는
-    「화면을 다시 불러와」 만 말해 다시 불러오면 공통 편집까지 잃는다. 그래서 저장 전에 그 칸과 고칠
-    길(그 칸을 되돌리면 공통 칸은 저장된다)을 알린다 — 사이드바 팝업 「저장」 은 경고 글에, 저장
-    (`save_equipment_buffer`)은 거부 글에 쓴다. 견줌은 설비 마스터 탭의 고칠 것 줄과 같다
-    (`stale_scenario_edits` — 「바뀐 칸」 표지와 같은 글자 견줌). 비가동 일정 표의 낡기 전 편집은
-    탭처럼 세지 않는다(저장소가 거부한다)."""
+    낡은 세션인지는 부르는 쪽이 본다. 일정이 바뀐 저장은 저장소가 늘 거부하고
+    (`EquipmentRevisionConflict` — 공통 칸까지) 그 문구는 「화면을 다시 불러와」 만 말해 다시
+    불러오면 공통 편집까지 잃는다. 그래서 저장 전에 그 칸과 고칠 길(그 칸을 되돌리면 공통 칸은
+    저장된다)을 알린다. 세 저장 길이 이 한 판정을 쓴다 — 설비 마스터 탭의 고칠 것 줄(`in_tab`),
+    사이드바 팝업 「저장」 의 경고 글, 저장(`save_equipment_buffer`)의 거부 글. 견줌은 「바뀐 칸」
+    표지와 같은 글자 견줌(`stale_scenario_edits`)이다. 비가동 일정 표의 낡기 전 편집은 세지 않는다
+    (저장소가 거부한다)."""
+    deleted_line, edits_line = (
+        (STALE_DELETED_UNITS_TAB, STALE_SCENARIO_EDITS_TAB)
+        if in_tab
+        else (STALE_DELETED_UNITS_ELSEWHERE, STALE_SCENARIO_EDITS_ELSEWHERE)
+    )
+    lines: list[str] = []
+    deleted = len(grid_index(master, saved_master, renames).deleted)
+    if deleted:
+        lines.append(deleted_line.format(units=deleted))
+    cells, units = stale_scenario_edits(master, saved_master, renames)
+    if cells:
+        lines.append(edits_line.format(cells=cells, units=units))
+    return lines
+
+
+def stale_save_refusal(frames: Frames, basis: EquipmentSaveBasis | None) -> str | None:
+    """표 밖 저장 자리가 알릴 낡은 세션 저장 거부 글(`stale_save_reasons`). 없거나 낡은 세션이
+    아니면 None — 사이드바 팝업 「저장」 은 경고 글에, 저장(`save_equipment_buffer`)은 거부 글에
+    쓴다."""
     if basis is None or not basis.stale:
         return None
-    renames = pending_unit_renames().units
-    saved = _saved_master()
-    lines: list[str] = []
-    deleted = len(grid_index(frames[1], saved, renames).deleted)
-    if deleted:
-        lines.append(STALE_DELETED_UNITS_ELSEWHERE.format(units=deleted))
-    cells, units = stale_scenario_edits(frames[1], saved, renames)
-    if cells:
-        lines.append(STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=cells, units=units))
+    lines = stale_save_reasons(
+        frames[1], _saved_master(), pending_unit_renames().units, in_tab=False
+    )
     return " ".join(lines) or None
 
 
