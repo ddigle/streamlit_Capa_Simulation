@@ -755,3 +755,27 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_ta
     assert any("설비 시나리오 ·" in text and escaped in text for text in _texts(app, "markdown")), (
         _texts(app, "markdown")
     )
+
+
+@pytest.mark.parametrize(
+    ("target", "text", "shown"),
+    [
+        (
+            "비가동 일정",
+            "설비명\t비가동유형\t시작일\t종료일\t상세사유\t비고\n없는~호기~X\t고장\t2026-11-01\t\t\t",
+            "없는\\~호기\\~X",
+        ),
+        ("설비 마스터", "설비명\t담당자\nEQ-01\t김담당\nNEW~01~\t새 담당", "NEW\\~01\\~"),
+    ],
+)
+def test_import_refusals_keep_the_tildes_of_a_pasted_name(
+    tmp_path: Path, grid: Calls, target: str, text: str, shown: str
+) -> None:
+    """「엑셀·CSV로 한꺼번에」 거부 문구가 붙여넣은 설비명을 그대로 실어도 물결표가 취소선이 되지
+    않는다(`markdown_safe_tildes`) — 「없는~호기~X」·「NEW~01~」 글자 그대로."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    _preview(app, text, target=target)
+
+    errors = _texts(app, "error")
+    assert any(shown in error for error in errors), errors
