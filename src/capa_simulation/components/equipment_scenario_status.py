@@ -80,6 +80,7 @@ from capa_simulation.persistence.equipment_repository import (
     legacy_trace_message,
 )
 from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
+from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.shortening_baseline import ShorteningEquipmentBasis
 from capa_simulation.sidebar_status import (
     CONDITION_DIALOG_FRAGMENT_KEY,
@@ -475,9 +476,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
             discard_floor_state_draft()
         chosen = revision_by_id[str(st.session_state[DIALOG_REVISION_KEY])]
         name = scenario_by_id[str(st.session_state[DIALOG_SCENARIO_KEY])].scenario_name
-        st.session_state[FLASH_KEY] = (
-            f"설비 시나리오 「{literal_markdown(name)}」 r{chosen.revision_no} 을 불러왔습니다."
-        )
+        st.session_state[FLASH_KEY] = loaded_revision_message(name, chosen.revision_no)
         close_equipment_scenario_dialog()
         st.rerun()
 
@@ -534,6 +533,20 @@ def _downtime_keys(frame: object) -> set[tuple[str, str, str]]:
     }
 
 
+def stale_save_warning(revision_no: int | None, latest_revision_no: int | None) -> str:
+    """팝업 「저장」 구획의 낡은 리비전 경고 — 번호 뒤 조사는 끝소리로 고른다."""
+    return (
+        f"지금 보는 {with_topic_particle(f'r{revision_no}')} 최신(r{latest_revision_no})이 "
+        "아니라 일정이 바뀐 저장은 거부됩니다 — 공통 칸만 저장됩니다."
+    )
+
+
+def loaded_revision_message(scenario_name: str, revision_no: int) -> str:
+    """팝업 「불러오기」 뒤 알림 — 번호 뒤 조사는 끝소리로 고른다."""
+    revision = with_object_particle(f"r{revision_no}")
+    return f"설비 시나리오 「{literal_markdown(scenario_name)}」 {revision} 불러왔습니다."
+
+
 def _render_save(database_path: str, session: EquipmentSession) -> None:
     """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 작은 편집표(기존 보유대수·비가동
     일정)에서 아직 「편집본에 적용」 하지 않은 편집은 편집본에 없어 저장되지 않는다."""
@@ -550,8 +563,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
     )
     if basis.stale:
         st.warning(
-            f"지금 보는 r{basis.revision_no} 는 최신(r{basis.latest_revision_no})이 아니라 일정이 "
-            "바뀐 저장은 거부됩니다 — 공통 칸만 저장됩니다.",
+            stale_save_warning(basis.revision_no, basis.latest_revision_no),
             icon=":material/lock_clock:",
         )
     if not has_changes:
