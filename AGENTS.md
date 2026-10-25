@@ -3864,8 +3864,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   오른쪽 끝에 누를 것을 두면 표 앞에 띄움(`st.space`, 막대가 그 줄에 닿지 않을 만큼 — 설비 시나리오 구획은 24px)을 둔다.
   새 자리는 `table_toolbar.TABLE_TOOLBAR_CLEARANCE`(24px)를 쓴다 — Space 층 목록 머리의 `사용 편집` 토글·층 상세 표 머리의
   「층 전체 보기」 가 그 자리다(2026-10-26 E2E).
-  날짜 칸의 지우기(✕)도 같다 — Qual 마감 계산기 월 편집표 앞 24px(`EDITOR_TOOLBAR_CLEARANCE_PX`, 터치 창은 막대가 늘 떠
-  있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다).
+  날짜 칸의 지우기(✕)도 같다 — Qual 마감 계산기 월 편집표 앞 띄움(`EDITOR_TOOLBAR_CLEARANCE_PX` = 그 공용 값, 터치 창은
+  막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다).
 - **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
   `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
   갈아 끼울 때(Import 저장·편집 버퍼 교체)도 같다 — 옛 delta 가 새 프레임에 얹혀 Import 가 조용히 되돌려진다. 「변경사항

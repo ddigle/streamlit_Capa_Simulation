@@ -59,7 +59,7 @@ from capa_simulation.components.status_metric import (
     render_status_metric,
     status_metric_style,
 )
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE, render_csv_download
 from capa_simulation.design import tokens
 from capa_simulation.services.qual_deadline import (
     CHECK_TABLE_COLUMNS,
@@ -177,8 +177,8 @@ _UNIT_COLUMN_PX = {
 _EDITOR_COLUMN_PX = {MONTH_COLUMN: 75, TARGET_COLUMN: 120, UNITS_COLUMN: 180}
 # 월 편집표 앞 띄움. 표 도구 막대(열 보기·내려받기·찾기)는 표 오른쪽 위에 떠 표 위로 솟는다 — 붙어
 # 있으면 바로 위 「오늘」 날짜 칸의 지우기(✕)를 덮어 누름을 가로챈다(터치 창에서는 막대가 늘 떠 있어
-# ✕ 로 지울 길이 없다). 리비전 표 앞 띄움(`REVISION_TABLE_TOOLBAR_CLEARANCE`)과 같은 값이다.
-EDITOR_TOOLBAR_CLEARANCE_PX = 24
+# ✕ 로 지울 길이 없다). 표 도구 막대 공용 띄움(`table_toolbar.TABLE_TOOLBAR_CLEARANCE`)을 쓴다.
+EDITOR_TOOLBAR_CLEARANCE_PX = TABLE_TOOLBAR_CLEARANCE
 # 두 칸 배치(모듈 설명). 입력 칸은 원본(440px)보다 조금 좁게 둔다 — 편집표 세 칸이 들고 결과
 # 칸이 그만큼 넓다. 상자 안쪽 여백·선과 표 테두리(양쪽 합, 상자 420px → 표 안쪽 390px)와 두 칸
 # 사이 틈(`gap="medium"`)은 1600px 창 실측이다.
