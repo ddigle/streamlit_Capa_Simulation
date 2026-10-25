@@ -37,12 +37,14 @@ from test_equipment_scenario_repository import (
     _set,
 )
 from test_space_floor_state_page import _editor_key as _floor_editor_key
+from test_space_layout_edit import _master as _layout_master
 from test_space_module_group import _js_decl, _node
 from widget_browser import BrowserTables
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.app_header import EQUIPMENT_HEADER_LABEL_KEY
 from capa_simulation.components.equipment_data_workspace import (
+    EDITOR_MODULE_LAYOUTS_KEY,
     LAYOUT_ROLE_KEY,
     _csv_scenario_mismatch,
     official_confirmation_master,
@@ -473,6 +475,58 @@ def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
     assert "가정 배치 편집 1대(호기 위치)" in notice
     assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notice
     assert _buffer_x(app, "EQ-02") == 60.0
+
+
+def test_a_reapplied_editor_group_keeps_its_approval_and_saves(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """숨은 모듈(레이아웃표시 N)이 든 묶음을 가정 세션 편집기로 다른 층에 보낸 뒤 남이 공통을
+    저장하면, 다시 얹은 묶음의 편집기 모양 승인도 남아 그대로 저장된다(S4 리뷰 — 승인을 버리면
+    「설비 마스터 표·붙여넣기로 바꾼 값」 으로 막혔다). 알림의 수는 설비 단위(묶음 1대)다."""
+    module = {"Main 설비": "GRP-1", "Xsize": 10, "Ysize": 7}
+    master = _layout_master(
+        {**module, "설비명": "G1-A", "X좌표": 50.0, "Y좌표": 37.0},
+        {**module, "설비명": "G1-B", "X좌표": 60.0, "Y좌표": 37.0, "레이아웃표시": "N"},
+        {**module, "설비명": "G1-C", "X좌표": 50.0, "Y좌표": 30.0},
+        {**module, "설비명": "G1-D", "X좌표": 60.0, "Y좌표": 30.0},
+    )
+    repository = _seeded(tmp_path, master)
+    setup = _clone(repository).equipment_scenario_id
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [
+            {"id": "G1-A", "placed": True, "x": 50, "y": 37, "w": 10, "h": 7, "moveTo": "C2 2F"},
+            {"id": "G1-C", "placed": True, "x": 50, "y": 30, "w": 10, "h": 7, "moveTo": "C2 2F"},
+            {"id": "G1-D", "placed": True, "x": 60, "y": 30, "w": 10, "h": 7, "moveTo": "C2 2F"},
+        ],
+        "ghosts": [],
+        "canvas": None,
+        "marks": None,
+    }
+    _ok(app.run())
+    assert "GRP-1" in app.session_state[EDITOR_MODULE_LAYOUTS_KEY]
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    notice = next(str(item.value) for item in app.warning if "다시 얹었습니다" in str(item.value))
+    assert "가정 배치 편집 1대(호기 위치)" in notice
+    assert "GRP-1" in app.session_state[EDITOR_MODULE_LAYOUTS_KEY]
+    common_before = repository.latest_revision_id()
+    app.button(key="space_layout_save").click().run()
+
+    _ok(app)
+    assert not app.error, [item.value for item in app.error]
+    assert repository.latest_revision_id() == common_before
+    newest = _scenario(repository, setup)
+    assert newest.latest_layout_unit_count == 4
+    floors = _session(repository, setup).equipment.set_index("설비명").loc[["G1-A", "G1-C"], "층"]
+    assert set(floors) == {"2F"}
 
 
 def test_an_official_layout_edit_is_still_dropped_on_someone_elses_common_save(

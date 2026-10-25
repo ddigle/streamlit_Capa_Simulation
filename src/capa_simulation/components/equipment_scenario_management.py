@@ -107,7 +107,10 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_topic_particle,
 )
-from capa_simulation.services.layout_overlay import EMPTY_LAYOUT_DIGEST, layout_counts_words
+from capa_simulation.services.layout_overlay import (
+    EMPTY_LAYOUT_DIGEST,
+    layout_publish_blocked_words,
+)
 
 __all__ = [
     "EQUIPMENT_KIND",
@@ -1198,22 +1201,10 @@ def _render_clear_layout(
     moved = False
     kept_unsaved = False
     if created is not None:
-        # 그 리비전에서 남은 일을 이어 하게(공식 발행 등) 리비전 상자를 새 리비전에 둔다.
-        st.session_state[PENDING_REVISION_KEY] = created.schedule_revision_id
-        if session.scenario_id == scenario.equipment_scenario_id:
-            if has_unsaved_equipment_edits():
-                kept_unsaved = True
-            else:
-                clear_equipment_snapshot_cache()
-                moved = (
-                    select_equipment_scenario(
-                        database_path,
-                        scenario.equipment_scenario_id,
-                        created.schedule_revision_id,
-                        discard=True,
-                    )
-                    is None
-                )
+        # 그 리비전에서 남은 일을 이어 하게(공식 발행 등) 리비전 상자·세션을 새 리비전에 둔다.
+        moved, kept_unsaved = _follow_new_revision(
+            database_path, session, scenario, created.schedule_revision_id
+        )
     clear_equipment_snapshot_cache()
     _written(
         clear_layout_message(
@@ -1226,11 +1217,16 @@ def publish_layout_lines(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
     preview: LayoutPublishPreview,
+    *,
+    official: bool = False,
 ) -> tuple[list[str], bool]:
     """발행 확인 팝업의 배치 줄 — (줄, 막힘). 발행 쓰기와 같은 판정(`load_layout_publish_preview`)을
     미리 읽어 막히면 그 까닭을(「발행」 단추를 끈다), 공식과 같아진 차이만 남았으면 정리 리비전으로
     발행한다는 것을 적는다(설계 6-5 — 머리 「배치는 공식과 같습니다」 와 발행 거부가 함께 뜨지
-    않게). 셈은 「실효 n대(저장된 차이 m행)」 꼴 하나다(설계 8-2)."""
+    않게). 셈은 「실효 n대(저장된 차이 m행)」 꼴 하나다(설계 8-2). 막힘 글은 발행 쓰기 거부와 같은
+    한 곳(`layout_publish_blocked_words`)이다 — 실제로 공식과 다른 쪽만 「실효」 로 적고, 옛
+    리비전은 그 경우에 서는 길(되돌린 뒤 지우기·최신 발행)을 안내한다. `official` 은 그 시나리오가
+    지금 공식 설비 시나리오인가다."""
     if preview.action == "publish":
         return [], False
     name = literal_markdown(scenario.scenario_name)
@@ -1248,27 +1244,13 @@ def publish_layout_lines(
             ],
             False,
         )
-    counts = layout_counts_words(preview.units, preview.marks, preview.labels)
-    if preview.stored_rows:
-        where = f"r{revision.revision_no}에는"
-        rows = preview.stored_rows
-    else:
-        # 고른 옛 리비전에는 차이가 없지만 그 시나리오 최신에 남아 있다(I2 — 저장된 행 기준).
-        where = (
-            f"r{revision.revision_no}에는 배치 차이가 없지만 최신 r{scenario.latest_revision_no}에"
-        )
-        rows = preview.newest_rows
-    effective = f"실효 {counts} — " if counts else ""
-    return (
-        [
-            f"「{name}」 {where} 공식과 다른 배치({effective}저장된 차이 {rows:,}행)가 있어 "
-            "공식으로 발행하지 않습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
-            "시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 로 이 시나리오를 "
-            "공식 배치로 돌린 뒤 발행하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "
-            "두세요."
-        ],
-        True,
+    block = preview.block(
+        name,
+        revision.revision_no,
+        scenario.latest_revision_no or revision.revision_no,
+        official=official,
     )
+    return [layout_publish_blocked_words(block)], True
 
 
 def publish_preview(
@@ -1365,7 +1347,12 @@ def _render_publish(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}")
         return
-    layout_lines, blocked = publish_layout_lines(scenario, revision, layout)
+    layout_lines, blocked = publish_layout_lines(
+        scenario,
+        revision,
+        layout,
+        official=scenario.equipment_scenario_id == session.official_scenario_id,
+    )
     for line in layout_lines:
         if blocked:
             st.error(line, icon=":material/block:")
@@ -1418,16 +1405,78 @@ def _render_publish(
             st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
             return
         cleaned = published.schedule_revision_id != revision.schedule_revision_id
+        moved = kept_unsaved = False
+        if cleaned:
+            # 정리 리비전 rN+1 로 발행했다 — 「배치 차이 모두 지우기」 처럼 리비전 상자와 (그
+            # 시나리오를 보던) 세션을 새 리비전으로 옮긴다. 남기면 세션이 옛 rN 에 남아 낡음·Space
+            # 배치 잠금·빨간 막힘 글(옛 리비전의 남은 행)이 바로 선다(S4 리뷰).
+            moved, kept_unsaved = _follow_new_revision(
+                database_path, session, scenario, published.schedule_revision_id
+            )
         _written(
-            f"공식 v{published.release_no} 으로 발행했습니다 — 「"
-            f"{literal_markdown(scenario.scenario_name)}」 "
-            + (
-                f"r{revision.revision_no} 의 공식과 같아진 배치 차이를 정리한 "
-                f"r{(scenario.latest_revision_no or 0) + 1}."
-                if cleaned
-                else f"r{revision.revision_no}."
+            publish_result_message(
+                scenario.scenario_name,
+                revision,
+                published.release_no,
+                cleaned_no=(scenario.latest_revision_no or 0) + 1 if cleaned else None,
+                moved=moved,
+                kept_unsaved=kept_unsaved,
             )
         )
+
+
+def publish_result_message(
+    scenario_name: str,
+    revision: EquipmentScheduleRevisionSummary,
+    release_no: int,
+    *,
+    cleaned_no: int | None,
+    moved: bool,
+    kept_unsaved: bool,
+) -> str:
+    """「공식으로 발행」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동."""
+    name = literal_markdown(scenario_name)
+    release = f"v{release_no}"
+    head = f"공식 {with_direction_particle(release)} 발행했습니다 — 「{name}」 "
+    if cleaned_no is None:
+        return head + f"r{revision.revision_no}."
+    title = f"r{cleaned_no}"
+    sentences = [head + f"r{revision.revision_no}의 공식과 같아진 배치 차이를 정리한 {title}."]
+    if moved:
+        sentences.append(f"이 세션을 {with_direction_particle(title)} 옮겼습니다.")
+    elif kept_unsaved:
+        sentences.append(
+            "이 세션에는 저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다 — 사이드바 "
+            f"「설비 시나리오」 에서 최신 {with_object_particle(title)} 불러올 수 있습니다."
+        )
+    return " ".join(sentences)
+
+
+def _follow_new_revision(
+    database_path: str,
+    session: EquipmentSession,
+    scenario: EquipmentScenarioSummary,
+    schedule_revision_id: str,
+) -> tuple[bool, bool]:
+    """쓰기가 그 시나리오의 새 리비전을 만든 뒤 — 리비전 상자를 새 리비전에 두고(남은 일을 이어
+    하게), 이 세션이 그 시나리오를 보고 있으면 세션도 옮긴다. 저장하지 않은 설비 편집이 있으면 보던
+    리비전을 그대로 둔다. (옮김, 편집 때문에 남김)."""
+    st.session_state[PENDING_REVISION_KEY] = schedule_revision_id
+    if session.scenario_id != scenario.equipment_scenario_id:
+        return False, False
+    if has_unsaved_equipment_edits():
+        return False, True
+    clear_equipment_snapshot_cache()
+    moved = (
+        select_equipment_scenario(
+            database_path,
+            scenario.equipment_scenario_id,
+            schedule_revision_id,
+            discard=True,
+        )
+        is None
+    )
+    return moved, False
 
 
 def continue_confirm_label(review: LegacyTraceReview) -> str:

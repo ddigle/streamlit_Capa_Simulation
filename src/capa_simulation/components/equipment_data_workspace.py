@@ -651,13 +651,16 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
         if reapplied is not None and reapplied.reapplied:
-            # 다시 얹은 편집은 저장 안 한 편집이다 — 세운 세대보다 한 칸 올린다.
+            # 다시 얹은 편집은 저장 안 한 편집이다 — 세운 세대보다 한 칸 올린다. 편집기가 적용한
+            # 묶음 모양 승인은 다시 얹은 결과에서도 그 모양인 묶음만 새 이름으로 남긴다(위 stale
+            # 목록이 옛 승인을 지웠다).
             frames_now: Frames = st.session_state[BUFFER_KEY]
             st.session_state[BUFFER_KEY] = (
                 frames_now[0],
                 reapplied.equipment,
                 frames_now[2],
             )
+            stage_editor_module_layouts(reapplied.approved)
             _bump_buffer_generation()
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
@@ -994,6 +997,7 @@ class _ReapplyMaterial:
     buffer: pd.DataFrame
     origins: Mapping[str, str]
     old_keys: Mapping[str, str]
+    approved: Mapping[str, ModuleLayout]
 
 
 def _reapply_material(previous: object, token: str) -> _ReapplyMaterial | None:
@@ -1013,6 +1017,7 @@ def _reapply_material(previous: object, token: str) -> _ReapplyMaterial | None:
         buffer=buffer[1].copy(),
         origins=layout_lock_origins(buffer[1], saved, pending_unit_renames().units),
         old_keys={str(name): str(key) for name, key in pairs},
+        approved=editor_module_layouts(),
     )
 
 
@@ -1020,7 +1025,8 @@ def _reapply_layout(
     material: _ReapplyMaterial, latest_snapshot: EquipmentSnapshot
 ) -> ReappliedLayout:
     """새 저장본 사본 위에 가정 배치 일곱 칸 편집을 다시 얹는다 — 호기 키로 잇고 남이 지운 호기는
-    뺀다(`layout_overlay.reapply_layout_edits`)."""
+    뺀다(`layout_overlay.reapply_layout_edits`). 배치 편집기가 적용한 묶음 모양 승인도 새 저장본
+    이름으로 옮겨 돌려받는다 — 버리면 편집기만 낼 수 있는 묶음이 저장에서 막힌다."""
     return reapply_layout_edits(
         material.old_saved,
         material.buffer,
@@ -1028,6 +1034,7 @@ def _reapply_layout(
         origins=material.origins,
         old_keys=material.old_keys,
         new_names={str(key): str(name) for name, key in latest_snapshot.unit_key_pairs},
+        approved=material.approved,
     )
 
 

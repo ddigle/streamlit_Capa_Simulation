@@ -670,6 +670,26 @@ export default function (component) {
       const now = boxOf(String(arrival.id))
       if (finite(now) && arrival.tag) shapes.push(tagAt(now, arrival.tag))
     }
+    // 이웃한 차이 호기의 꼬리표가 서로 덮지 않게, 앞 꼬리표와 겹치는 꼬리표는 한 줄씩 위로(캔버스 위로 넘치면 아래로) 옮긴다 —
+    // 가까운 줄부터 위·아래 차례로 비는 줄을 찾는다(글자 폭은 어림 — 한글·화살표 1em, 그 밖 0.62em). 못 찾으면 제자리다.
+    const wide = (code) => code >= 0x2190 || (code >= 0x1100 && code <= 0x11ff)
+    const tagWidth = (text) => [...text].reduce((sum, ch) => sum + (wide(ch.codePointAt(0)) ? 1 : 0.62), 0) * fs
+    const lineH = fs * 1.25
+    const placed = []
+    const span = (shape, y) => ({ x0: shape.x, x1: shape.x + tagWidth(shape.text), y0: y - fs, y1: y + fs * 0.25 })
+    const hits = (a) => placed.some((b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1)
+    for (const shape of shapes) {
+      if (shape.kind !== 'tag') continue
+      let y = shape.y
+      if (hits(span(shape, y))) {
+        const tries = []
+        for (let k = 1; k <= 8; k += 1) tries.push(shape.y - k * lineH, shape.y + k * lineH)
+        const free = tries.find((candidate) => candidate - fs >= 0 && candidate <= canvasH && !hits(span(shape, candidate)))
+        if (free !== undefined) y = free
+      }
+      shape.y = y
+      placed.push(span(shape, y))
+    }
     return shapes
   }
   // </view-compare>

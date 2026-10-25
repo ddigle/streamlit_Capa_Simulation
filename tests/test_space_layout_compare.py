@@ -118,6 +118,51 @@ def test_the_compare_layer_draws_boxes_lines_and_tags_in_svg_coordinates() -> No
     ]
 
 
+def test_neighbouring_compare_tags_are_lifted_apart() -> None:
+    """이웃한 차이 호기의 꼬리표가 서로 덮지 않게 겹치는 꼬리표를 한 줄씩 위로 올린다(S4 리뷰 —
+    390px 에서 「도면 제외(가정)」 와 「→ C1 4F」 가 겹쳐 읽히지 않았다). 위에 자리가 없으면 아래로
+    내리고, 겹치지 않는 꼬리표는 그대로다."""
+    shapes = _shapes(
+        {
+            "canvasH": 60,
+            "fs": 2,
+            "compare": {
+                "ghosts": [
+                    {"id": "S1", "x": 33.5, "y": 4.5, "w": 8, "h": 6, "tag": "도면 제외(가정)"},
+                    {"id": "S2", "x": 42.5, "y": 4.5, "w": 8, "h": 6, "tag": "→ C1 4F"},
+                    {"id": "S3", "x": 80, "y": 4.5, "w": 8, "h": 6, "tag": "→ C2 3F"},
+                ],
+                "arrivals": [],
+            },
+            "boxes": {},
+        }
+    )
+    tags = [shape for shape in shapes if shape["kind"] == "tag"]
+    assert [tag["text"] for tag in tags] == ["도면 제외(가정)", "→ C1 4F", "→ C2 3F"]
+    base = 60 - (4.5 + 6) - 2 * 0.35
+    assert tags[0]["y"] == pytest.approx(base)
+    assert tags[1]["y"] == pytest.approx(base - 2 * 1.25)
+    assert tags[2]["y"] == pytest.approx(base)
+    # 캔버스 맨 위 상자(브라우저 확인 — C2 6F 위 끝)는 위로 올릴 자리가 없어 한 줄 아래로 내린다.
+    top = _shapes(
+        {
+            "canvasH": 62,
+            "fs": 3.6,
+            "compare": {
+                "ghosts": [
+                    {"id": "S1", "x": 33.5, "y": 48.5, "w": 8, "h": 6, "tag": "도면 제외(가정)"},
+                    {"id": "S2", "x": 42.5, "y": 48.5, "w": 8, "h": 6, "tag": "→ C1 4F"},
+                ],
+                "arrivals": [],
+            },
+            "boxes": {},
+        }
+    )
+    first, second = (shape for shape in top if shape["kind"] == "tag")
+    assert first["y"] == pytest.approx(62 - 54.5 - 3.6 * 0.35)
+    assert second["y"] == pytest.approx(first["y"] + 3.6 * 1.25)
+
+
 def test_the_compare_layer_sits_above_the_units_and_takes_no_clicks() -> None:
     """견주기 층은 호기·요소·Main 설비명 위, 고르기 덧그림 아래이고 눌림을 받지 않는다. 그리기는
     회차마다와 배율이 바뀌는 길(`drawSelectionBox`)에서 한다."""
@@ -197,6 +242,34 @@ def test_the_compare_toggle_stays_locked_off_where_nothing_differs(
     assert _viewer(editor_calls)["compare"] is None
 
 
+def test_editing_locks_the_compare_toggle_and_keeps_the_value_for_afterwards(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """층 배치 편집 중에는 견주지 않는다 — 켠 견주기는 다른 key 의 끈 채 잠근 토글로 바뀌고
+    편집기에는 재료를 보내지 않는다. 편집을 끄면 켠 값 그대로 돌아와 다시 견준다(검토 L11 — 잠근
+    토글이 켠 값을 덮지 않는다)."""
+    _, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key=COMPARE_KEY).set_value(True).run()
+    assert _viewer(editor_calls)["compare"] is not None
+
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    _ok(app)
+
+    locked = app.toggle(key=COMPARE_LOCKED_KEY)
+    assert locked.disabled and not locked.value
+    assert "배치 편집 중에는 견주지 않습니다" in str(locked.help)
+    assert not [toggle for toggle in app.toggle if toggle.key == COMPARE_KEY]
+    assert "compare" not in editor_calls[-1] or editor_calls[-1]["compare"] is None
+    assert editor_calls[-1].get("mode") != "view"
+
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    _ok(app)
+
+    assert app.toggle(key=COMPARE_KEY).value
+    assert _viewer(editor_calls)["compare"] is not None
+
+
 def test_the_fab_floor_list_adds_the_official_difference_column_when_comparing(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -222,6 +295,41 @@ def test_the_fab_floor_list_adds_the_official_difference_column_when_comparing(
     assert by_floor[("C1", "2F")] == 1
     fab = next(call for call in reversed(editor_calls) if call.get("scope") == "fab")
     assert fab["linkStats"]["C1 2F"]["layout"] == "가정 배치 1대 다름"
+
+
+def test_the_fab_difference_column_follows_the_process_filter(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """FAB 「공식과 다름」 칸·블록 풍선도 층 상세 견주기처럼 그리는 호기(공정소분류 필터를 지난
+    것)만 센다 — 필터 밖 호기가 같은 표의 배치대수와 어긋나게 「다름」 으로 셈되던 결함(S4 리뷰)."""
+    repository, setup = _overlay(tmp_path)
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "공정소분류", "Process-B"))
+    )
+    mine = _session(repository, setup)
+    repository.save_equipment(
+        _request(mine, setup, equipment=_set(mine.equipment, "EQ-01", "층", "2F"))
+    )
+    clear_equipment_repository()
+    app = _ok(_space(tmp_path, setup, floor=False).run())
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
+    app.session_state["space_status_process_filter"] = ["Process-B"]
+    _ok(app.run())
+
+    app.toggle(key=COMPARE_KEY).set_value(True).run()
+
+    table = app.dataframe[0].value
+    by_floor = {(row["동"], row["층"]): row["공식과 다름"] for _, row in table.iterrows()}
+    assert by_floor[("C1", "1F")] == 0
+    assert by_floor[("C1", "2F")] == 0
+    fab = next(call for call in reversed(editor_calls) if call.get("scope") == "fab")
+    assert "layout" not in fab["linkStats"]["C1 2F"]
+    app.session_state["space_status_process_filter"] = ["Process-A"]
+    _ok(app.run())
+    table = app.dataframe[0].value
+    by_floor = {(row["동"], row["층"]): row["공식과 다름"] for _, row in table.iterrows()}
+    assert (by_floor[("C1", "1F")], by_floor[("C1", "2F")]) == (1, 1)
 
 
 @pytest.mark.parametrize("floor", [True, False])

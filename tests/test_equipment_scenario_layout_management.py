@@ -151,14 +151,53 @@ def test_the_publish_confirm_reads_the_same_layout_judgment() -> None:
     older, blocked = publish_layout_lines(
         scenario,
         _revision(3),
-        LayoutPublishPreview(action="blocked", newest_rows=3, units=2),
+        LayoutPublishPreview(action="blocked", newest_rows=3, is_newest=False, newest_units=2),
     )
     assert blocked and "r3에는 배치 차이가 없지만 최신 r5에 공식과 다른 배치" in older[0]
+    assert "(실효 호기 2대 — 저장된 차이 3행)" in older[0]
     clean, blocked = publish_layout_lines(
         scenario, revision, LayoutPublishPreview(action="clean", stored_units=3, newest_rows=3)
     )
     assert not blocked
     assert "공식과 같아진 배치 차이 3행을 정리한 r6으로 발행합니다" in clean[0]
+
+
+def test_an_old_revisions_publish_block_names_only_real_differences_and_working_ways_out() -> None:
+    """S4 리뷰 — 옛 리비전의 막힘 글은 실제로 공식과 다른 쪽만 「실효」 로 적고, 옛 리비전에서는
+    서지 않거나 소용없는 「배치 차이 모두 지우기」 대신 되돌린 뒤 지우기·최신 발행을 안내한다."""
+    scenario = _scenario()
+    # 옛 r2 에 공식과 다른 배치가 있다 — 최신만 비우는 지우기로는 풀리지 않는다.
+    real, blocked = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(action="blocked", stored_units=1, is_newest=False, units=1),
+    )
+    assert blocked
+    assert "r2에는 공식과 다른 배치(실효 호기 1대 — 저장된 차이 1행)가 있어" in real[0]
+    assert "「배치 차이 모두 지우기」(최신만 비웁니다)로는 풀리지 않습니다" in real[0]
+    assert "r2를 고르고 「이 리비전으로 되돌리기」 로 새 최신을 만든 뒤" in real[0]
+    # 옛 r2 에 남은 행이 지금 공식과 같다(정리 발행 뒤의 옛 리비전) — 「공식과 다른 배치」 가
+    # 아니다.
+    same, blocked = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(action="blocked", stored_units=1, is_newest=False),
+        official=True,
+    )
+    assert blocked
+    assert "공식과 다른 배치" not in same[0]
+    assert "r2에 저장된 배치 차이 1행은 지금 공식과 같아졌지만" in same[0]
+    assert "「배치 차이 모두 지우기」" not in same[0]
+    assert "「이 리비전으로 되돌리기」" in same[0]
+    # 고른 r3 에는 없고 최신 r5 에 공식과 같은 행만 남았다.
+    newest_same, blocked = publish_layout_lines(
+        scenario,
+        _revision(3),
+        LayoutPublishPreview(action="blocked", newest_rows=2, is_newest=False),
+    )
+    assert blocked and "공식과 다른 배치" not in newest_same[0]
+    assert "최신 r5에 저장된 배치 차이 2행(지금 공식과 같음)이 남아 있어" in newest_same[0]
+    assert "최신 r5를 발행하세요" in newest_same[0]
 
 
 def test_the_restore_confirm_names_units_whose_place_changed_since_then() -> None:
@@ -267,3 +306,37 @@ def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_pat
             [latest],
         ).fetchone()
     assert rows == (1,)
+
+
+def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revision(
+    tmp_path: Path,
+) -> None:
+    """정리 발행(공식과 같아진 차이만 남은 최신 → rN+1 로 발행) 뒤에는 「배치 차이 모두 지우기」
+    처럼 리비전 상자와 그 시나리오를 보던 세션이 새 리비전으로 옮겨 간다 — 옛 rN 에 남으면
+    낡음·Space 배치 잠금·빨간 막힘 글이 바로 섰다(S4 리뷰)."""
+    repository, setup, latest = _moved_setup(tmp_path)
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    clear_equipment_repository()
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+    assert app.selectbox(key=REVISION_KEY).value == latest
+    assert any("정리한 r3으로 발행합니다" in text for text in _texts(app))
+
+    _ok(app.button(key=PUBLISH_BUTTON_KEY).click().run())
+
+    newest = repository.list_schedule_revisions(setup, limit=1)[0]
+    assert (newest.revision_no, newest.origin) == (3, "layout_clear")
+    release = repository.latest_equipment_release()
+    assert release is not None and release.schedule_revision_id == newest.schedule_revision_id
+    texts = _texts(app)
+    assert any(
+        "공식 v2로 발행했습니다" in text and "이 세션을 r3으로 옮겼습니다." in text
+        for text in texts
+    ), texts
+    assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
+    assert app.selectbox(key=REVISION_KEY).value == newest.schedule_revision_id
+    assert not app.error, [item.value for item in app.error]

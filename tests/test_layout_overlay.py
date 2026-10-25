@@ -894,6 +894,11 @@ def test_the_floor_difference_counts_units_that_left_arrived_or_moved_within() -
 
     assert counts == {("C1", "1F"): 2, ("C2", "2F"): 1}
     assert unit_differences_by_floor(master, _pairs(master), (), set()) == {}
+    # 화면이 그리는 호기(공정 필터를 지난 것)만 센다 — 층 상세 견주기의 `shown` 과 같다(S4 리뷰).
+    shown = unit_differences_by_floor(
+        applied.equipment, _pairs(master), applied.official_places, {"T"}, shown={"S"}
+    )
+    assert shown == {("C1", "1F"): 1}
 
 
 # ------------------------------------------------------------------ 다시 얹기(S4)

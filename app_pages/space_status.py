@@ -1583,7 +1583,15 @@ if selected is None:
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
     fab_background = fab_profile.image_data_uri if fab_profile is not None else None
     # 「공식과 견주기」 를 켜면 층마다 공식과 자리가 다른 설비 수 — 층 목록 칸과 블록 풍선 한 줄.
-    unit_differences = floor_unit_differences(equipment_session) if compare_on else {}
+    # 층 상세 견주기와 같이 그리는 호기(공정 필터를 지난 것)만 센다 — 같은 표의 배치대수와 맞게.
+    unit_differences = (
+        floor_unit_differences(
+            equipment_session,
+            shown=set(space_equipment[EQUIPMENT_ID_COLUMN].dropna().astype(str)),
+        )
+        if compare_on
+        else {}
+    )
     block_stats = floor_block_stats(
         placements,
         inactive={key: inactive_label(reason) for key, reason in inactive_floors.items()},

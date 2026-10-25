@@ -788,7 +788,11 @@ def test_a_scenario_with_a_layout_difference_is_not_published_until_it_is_cleare
     # 차이 없는 옛 리비전(r1)도 최신에 차이가 남아 있으면 막는다(I2 — 저장된 행 기준).
     first = _scenario(repository, scenario_id)
     revisions = repository.list_schedule_revisions(first.equipment_scenario_id)
-    with pytest.raises(EquipmentLayoutPublishBlocked):
+    # 발행 쓰기 거부도 확인 팝업과 같은 막힘 글이다 — 고른 r1 이 아니라 최신 r2 의 실효를 적는다.
+    with pytest.raises(
+        EquipmentLayoutPublishBlocked,
+        match=r"r1에는 배치 차이가 없지만 최신 r2에 공식과 다른 배치\(실효 호기 1대",
+    ):
         repository.publish_equipment_release(
             revisions[-1].schedule_revision_id,
             released_by=None,
@@ -887,6 +891,9 @@ def test_the_publish_preview_reads_the_same_judgment_as_publishing(tmp_path: Pat
         newest_schedule_revision_id=newest,
     )
     assert (old.action, old.stored_rows, old.newest_rows) == ("blocked", 0, 1)
+    # 실효는 고른 리비전과 최신을 따로 센다 — 막힘 글이 실제로 다른 쪽만 「실효」 로 적는다.
+    assert (old.is_newest, old.units, old.newest_units) == (False, 0, 1)
+    assert (blocked.is_newest, blocked.newest_units) == (True, 1)
 
     official = _session(repository)
     repository.save_equipment(_request(official, equipment=_moved(official)))

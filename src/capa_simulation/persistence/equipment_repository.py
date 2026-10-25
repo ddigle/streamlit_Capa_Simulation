@@ -158,6 +158,7 @@ from capa_simulation.services.layout_overlay import (
     MarkChange,
     OfficialFloor,
     Place,
+    PublishBlock,
     apply_unit_overlay,
     common_with_places,
     effective_floor_marks,
@@ -166,6 +167,7 @@ from capa_simulation.services.layout_overlay import (
     layout_base,
     layout_cells,
     layout_counts_words,
+    layout_publish_blocked_words,
     make_layout_overlay,
     mark_changes,
     normalize_layout_overlay,
@@ -594,16 +596,27 @@ class EquipmentLayoutPublishBlocked(ValueError):
     올리기」 전까지 — Q4). 수는 지금 공식과 견준 실효다. 아무것도 쓰지 않았다."""
 
     def __init__(
-        self, scenario_name: str, revision_no: int, units: int, marks: int, labels: int
+        self,
+        scenario_name: str,
+        revision_no: int,
+        units: int,
+        marks: int,
+        labels: int,
+        *,
+        message: str | None = None,
     ) -> None:
+        """`message` 를 주면 그 글이다 — 공식 발행 쓰기는 확인 팝업과 같은 막힘 글
+        (`layout_publish_blocked_words`)을 넘긴다. 저장·되돌리기의 자동 발행(새 최신 리비전)은 그
+        새 리비전의 실효 수로 아래 글을 쓴다."""
         counts = layout_counts_words(units, marks, labels) or "저장된 차이"
-        super().__init__(
+        default = (
             f"「{scenario_name}」 r{revision_no} 에는 공식과 다른 배치({counts})가 있어 공식으로 "
             "발행하지 않았습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
             "시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 로 이 시나리오를 "
             "공식 배치로 돌린 뒤 발행하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "
             "두세요."
         )
+        super().__init__(message or default)
         self.scenario_name = scenario_name
         self.revision_no = revision_no
         self.units = units
@@ -620,7 +633,11 @@ class LayoutPublishPreview:
       같아져 차이를 비운 새 리비전으로 발행), "blocked"(공식과 다른 배치가 있어 발행하지 않음).
     - `stored_units`·`stored_marks`·`stored_labels` — 발행할 리비전의 저장된 차이 행 수(원시).
     - `newest_rows` — 그 시나리오 최신의 저장된 차이 행 수 합(발행할 리비전이 최신이면 같은 값).
-    - `units`·`marks`·`labels` — 막힘 글의 실효 수(지금 공식으로 정규화한 뒤 — 호기는 설비 단위).
+    - `is_newest` — 발행할 리비전이 그 시나리오 최신인가(정리 발행·「배치 차이 모두 지우기」 는
+      최신만이라 막힘 글의 빠져나갈 길이 갈린다).
+    - `units`·`marks`·`labels` — 발행할 리비전의 실효 수(지금 공식으로 정규화한 뒤 — 호기는 설비
+      단위). `newest_units`·`newest_marks`·`newest_labels` — 그 시나리오 최신의 실효 수(발행할
+      리비전이 최신이면 같은 값). 막힘 글은 실제로 공식과 다른 쪽만 「실효」 로 적는다.
     """
 
     action: Literal["publish", "clean", "blocked"] = "publish"
@@ -628,14 +645,34 @@ class LayoutPublishPreview:
     stored_marks: int = 0
     stored_labels: int = 0
     newest_rows: int = 0
+    is_newest: bool = True
     units: int = 0
     marks: int = 0
     labels: int = 0
+    newest_units: int = 0
+    newest_marks: int = 0
+    newest_labels: int = 0
 
     @property
     def stored_rows(self) -> int:
         """발행할 리비전의 저장된 차이 행 수 합."""
         return self.stored_units + self.stored_marks + self.stored_labels
+
+    def block(
+        self, scenario_name: str, revision_no: int, newest_revision_no: int, *, official: bool
+    ) -> PublishBlock:
+        """막힘 글 재료(`layout_publish_blocked_words`) — 확인 팝업과 발행 쓰기 거부가 같은 글을
+        낸다."""
+        return PublishBlock(
+            scenario_name=scenario_name,
+            revision_no=revision_no,
+            newest_revision_no=revision_no if self.is_newest else newest_revision_no,
+            stored_rows=self.stored_rows,
+            newest_rows=self.newest_rows,
+            effective=(self.units, self.marks, self.labels),
+            newest_effective=(self.newest_units, self.newest_marks, self.newest_labels),
+            official=official,
+        )
 
 
 # 층 캔버스 팝업 미리 보임의 한 상자 — (X좌표, Y좌표, Xsize, Ysize).
@@ -3459,6 +3496,7 @@ def _layout_publish_preview(
         stored_marks=selected.mark_count,
         stored_labels=selected.label_count,
         newest_rows=len(newest.units) + newest.mark_count + newest.label_count,
+        is_newest=is_newest,
     )
     if not selected and not newest:
         return stored
@@ -3467,13 +3505,17 @@ def _layout_publish_preview(
     normalized = normalize_layout_overlay(selected, official, floors)
     if is_newest and not normalized:
         return replace(stored, action="clean")
-    blocked = normalized or normalize_layout_overlay(newest, official, floors)
+    # 발행할 리비전과 최신의 실효를 따로 센다 — 막힘 글이 실제로 다른 쪽만 「실효」 로 적는다.
+    latest = normalized if is_newest else normalize_layout_overlay(newest, official, floors)
     return replace(
         stored,
         action="blocked",
-        units=overlay_unit_count(blocked, official),
-        marks=blocked.mark_count,
-        labels=blocked.label_count,
+        units=overlay_unit_count(normalized, official),
+        marks=normalized.mark_count,
+        labels=normalized.label_count,
+        newest_units=overlay_unit_count(latest, official),
+        newest_marks=latest.mark_count,
+        newest_labels=latest.label_count,
     )
 
 
@@ -3511,8 +3553,24 @@ def _layout_publishable(
             downtime=downtime,
             layout=LayoutOverlay(),
         )
+    release = scenario_store.latest_release_row(connection)
+    official = release is not None and (
+        str(release["equipment_scenario_id"]) == scenario.equipment_scenario_id
+    )
     raise EquipmentLayoutPublishBlocked(
-        scenario.scenario_name, target.revision_no, preview.units, preview.marks, preview.labels
+        scenario.scenario_name,
+        target.revision_no,
+        preview.units,
+        preview.marks,
+        preview.labels,
+        message=layout_publish_blocked_words(
+            preview.block(
+                scenario.scenario_name,
+                target.revision_no,
+                scenario.latest_revision_no or target.revision_no,
+                official=official,
+            )
+        ),
     )
 
 

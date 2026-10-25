@@ -2863,10 +2863,36 @@ def test_the_equipment_block_counts_hypothetical_layout_rows_and_old_code_traces
         in output
     )
     assert "| 1 / 1 / 0 / 0 |" in output
-    assert "배치 옛 코드 흔적" in output
+    trace_row = (
+        "| **배치 옛 코드 흔적(차이가 있는 리비전 뒤 지문 없이 저장된 리비전)** — 0 이어야 함 |"
+    )
+    assert f"{trace_row} 0 |" in output
     line = next(item for item in _summary(output) if item.startswith("- 8-4s "))
     assert _uncoded([line])[0].endswith(" · Y1")
     assert checks.check_transcript([line]) == []
+
+    # 0031 을 모르는 옛 판이 차이 있는 리비전 뒤에 저장하면(지문 NULL) 흔적 수가 찍힌다(S4 리뷰 —
+    # 라벨만 보던 시험은 0 을 박아 넣어도 통과했다). 그 최신에는 저장된 차이가 없다.
+    with duckdb.connect(str(copied)) as connection:
+        connection.execute(
+            "INSERT INTO equipment_ops.equipment_schedule_revision (schedule_revision_id, "
+            "equipment_scenario_id, revision_no, origin) VALUES ('old-code', ?, 9, 'save')",
+            [clone.equipment_scenario_id],
+        )
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(copied),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert f"{trace_row} 1 |" in output
+    assert "| 0 / 0 / 0 / 0 |" in output
 
 
 def test_an_old_summary_line_without_the_layout_cell_still_checks() -> None:

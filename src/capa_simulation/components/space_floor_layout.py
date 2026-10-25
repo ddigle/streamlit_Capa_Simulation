@@ -199,9 +199,13 @@ def compare_payload(
     }
 
 
-def floor_unit_differences(session: EquipmentSession) -> dict[FloorKey, int]:
+def floor_unit_differences(
+    session: EquipmentSession, *, shown: Collection[str]
+) -> dict[FloorKey, int]:
     """층마다 공식과 자리가 다른 설비 수(나간·들어온·그 층 안에서 옮긴 호기 — 묶음은 1대, 일정 없는
-    호기 제외). FAB 층 목록 「공식과 다름」 칸·블록 풍선 재료(설계 8-3)."""
+    호기 제외). FAB 층 목록 「공식과 다름」 칸·블록 풍선 재료(설계 8-3). `shown` 은 층 상세
+    견주기(`compare_payload`)와 같은 지금 화면이 그리는 설비명(공정 필터를 지난 것)이다 — 같은 표의
+    배치대수·층 상세 견주기와 다른 호기를 세지 않게."""
     snapshot = session.snapshot
     if snapshot is None or session.unmerged or not snapshot.layout_official_places:
         return {}
@@ -210,4 +214,5 @@ def floor_unit_differences(session: EquipmentSession) -> dict[FloorKey, int]:
         snapshot.unit_key_pairs,
         snapshot.layout_official_places,
         snapshot.unscheduled_units,
+        shown=shown,
     )
