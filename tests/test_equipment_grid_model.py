@@ -299,6 +299,26 @@ def test_save_id_map_follows_renames_new_units_and_deletions() -> None:
     )
 
 
+def test_saved_rename_ids_follow_the_unit_key_across_someone_elses_save() -> None:
+    """남의 저장으로 저장본이 바뀌면 이름 바꾼 저장본 호기의 행 id 를 호기 키로 잇는다(`s:옛` →
+    `s:새`). 이름이 그대로인 호기·지운 호기·새 호기는 싣지 않고, 맞바꾼 이름도 한 번에 옮긴다."""
+    before = [("EQ-01", "k1"), ("EQ-02", "k2"), ("EQ-03", "k3"), ("EQ-04", "k4"), ("EQ-05", "k5")]
+    after = [("EQ-01", "k1"), ("EQ-02R", "k2"), ("EQ-04", "k3"), ("EQ-03", "k4"), ("NEW", "k9")]
+    moved = eg.renamed_saved_ids(before, after)
+    assert moved == {"s:EQ-02": "s:EQ-02R", "s:EQ-03": "s:EQ-04", "s:EQ-04": "s:EQ-03"}
+    loaded = ["s:EQ-03", "s:EQ-02", "s:EQ-01", "s:EQ-04", "s:EQ-05", "n:X"]
+    assert eg.move_ids(loaded, moved) == (
+        "s:EQ-04",
+        "s:EQ-02R",
+        "s:EQ-01",
+        "s:EQ-03",
+        "s:EQ-05",
+        "n:X",
+    )
+    assert eg.renamed_saved_ids([], after) == {}
+    assert eg.renamed_saved_ids(before, []) == {}
+
+
 # ------------------------------------------------------------------ 불러온 목록
 
 

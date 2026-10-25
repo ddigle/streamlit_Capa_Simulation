@@ -1851,7 +1851,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **설비 마스터 표의 세션 칸**(개편 B1): 칸 초안 `GRID_OVERLAY_KEY`(못 읽은 글 — 편집본 밖)·되돌리기 `GRID_UNDO_KEY`(기본형 —
     `equipment_grid.undo_to_state`)·마운트별 토스트 `GRID_TOAST_KEY`(번호 `GRID_TOAST_SEQ_KEY` 는 비우지 않는다)·회차 메모
     `GRID_MEMO_KEY` 는 편집본을 다시 세움(`ensure_equipment_drafts`)·저장·모두 버리기(`reset_equipment_drafts`) 때 함께 비우고,
-    불러온 목록 `GRID_LOADED_KEY`·상세 id `GRID_DETAIL_KEY` 는 남긴다. `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
+    불러온 목록 `GRID_LOADED_KEY`·상세 id `GRID_DETAIL_KEY` 는 남긴다. 남의 저장으로 다시 세울 때 그 저장이 이름을 바꾼 저장본
+    호기는 옛·새 저장본의 호기 키로 이어 두 칸의 id 를 `s:새` 로 옮긴다(`equipment_grid.renamed_saved_ids` — 행 id 가 저장본
+    설비명이라 옮기지 않으면 살아 있는 호기가 말없이 빠졌다, E2E eq-flows). 자기 저장 뒤는 설비 마스터 탭 저장 길이 `save_id_map`
+    으로 옮긴다. `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
     버리고(오른쪽 칸 출납이 작은 편집표의 적용 전 편집을 지우지 않게) 되돌리기 목록은 결과의 것을 쓴다. 표 밖 길
     (`_remember_edits` — Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본 내용을 바꾸면 표 되돌리기를 비우고 토스트로 알린다
     (역 patch 는 그 위에서 맞지 않는다). `follow_unit_renames` 는 행 조각 단계(와 그 앞 단계)를 버린다(`after_row_steps`).
