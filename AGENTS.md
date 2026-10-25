@@ -1054,7 +1054,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/equipment_units.py` — 모듈 행을 설비 한 대로 묶는 `설비키`·`설비지분`과 소수 대수 표기의
   단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다. 모듈 묶음 환산비 경고는 줄 판정(`module_ratio_warning_rows`)과
   문장(`module_group_warnings`)이 같은 판정·같은 문구 조각(`MODULE_RATIO_WARNING`)이다 — 검증 전 편집본도 받고, Main 설비를
-  적은 줄만 묶음으로 센다(설비명이 겹친 줄·설비명이 빈 줄은 묶음이 아니다).
+  적은 줄만 묶음으로 센다(설비명이 겹친 줄·설비명이 빈 줄은 묶음이 아니다). 화면 경고는 줄 판정 쪽(규칙 표 `module_ratio_default`
+  → 설비 마스터 표 칸 경고 표지)이다 — 문장 쪽은 개편 D 뒤 운영 호출자가 없고 시험만 부른다(TODO 2장 「다음 손볼 때」).
 - `src/capa_simulation/services/undated_equipment.py` — 반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비를 지분으로
   세고 「일정 미정 N대」 한 줄을 만든다(화면은 `simulation_cache.get_undated_equipment`).
 - `src/capa_simulation/services/schedule_confirmation.py` — 일정·실적·상태로 미확인·실적 누락·상태 갱신 필요를 고른다.
@@ -1079,7 +1080,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     결과 차례는 규칙 표 → (칸 여럿을 따로 보는 규칙은) 칸 → 줄이고, 막는 결과가 있다 ⇔ 저장이 막힌다(처음 막는 결과가 던질
     규칙·칸). 경고 셋 — Area Code 목록 밖·대소문자만 다른 설비명·모듈 묶음 환산비 모두 1 — 도 표의 줄이고 막는 결과가 있어도 낸다.
     문장 경고와 줄 판정을 나눈다(`area_code_warnings` ↔ `area_code_warning_rows`, `module_group_warnings` ↔
-    `module_ratio_warning_rows`). 대소문자는 붙여넣기 미리보기(새 이름 ↔ 편집본 이름)가 표 안 짝의 일부이고 열쇠가 같다.
+    `module_ratio_warning_rows`) — 화면은 줄 판정을 규칙 표 결과(표 칸 경고 표지)로 쓰고, 문장 둘은 옛 폼이 걷힌 뒤 운영
+    호출자가 없다(시험만 — TODO 2장). 대소문자는 붙여넣기 미리보기(새 이름 ↔ 편집본 이름)가 표 안 짝의 일부이고 열쇠가 같다.
     `coerce_master_cell` 은 칸 하나를 저장 정규화와 같은 함수(`_read_master_dates`·`_read_number`·`_read_ratio`·Y/N·Area Code·
     글·동층/상태 허용값)로 다듬고 못 맞추면 그 규칙 문구의 `CellParseError` 를 준다. 시간대가 붙은 날짜는 세 쓰임 모두 못 읽은
     날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
@@ -1935,8 +1937,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   설비 시나리오에서 발행 체크를 그리지 않는다(`show_publish`). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
-    (질문 1·F6·F2 — 답이 다르면 여기 하나만 바꾼다). 폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다(같은 제출의 새 호기가
-    그 회차 편집본에 아직 없다) — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
+    (질문 1·F6·F2 — 답이 다르면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
+    마스터 탭 저장 구획·Space 「저장 칸」 은 체크만 세운다 — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
   - **가정 세션의 Space 「배치 저장」**(`assumption=True` — 설비 시나리오 2단계 Q1)은 「새 호기를 다른 설비 시나리오에도
     넣기」 가 기본 끔(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`)이고, 켜면 공식 가용대수에 센다는 경고와 그때만 「함께 넣은 공식
     리비전 발행」 체크가 선다(key 꼬리 `_assumption` 으로 공식 자리와 가른다). 설비 마스터 탭 저장 칸은 1단계 F6 그대로 켬이다.
