@@ -87,6 +87,16 @@ from capa_simulation.components.shortening_progress_panel import (
     reserve_baseline_notice_slots,
     scope_note,
 )
+from capa_simulation.components.shortening_source import (
+    SHORTENING_END_KEY,
+    SHORTENING_LEVEL_KEY,
+    SHORTENING_START_KEY,
+    ShorteningDemand,
+    ShorteningStop,
+    load_official_shortening,
+    shortening_filter_profile_or_default,
+    shortening_month_options,
+)
 from capa_simulation.components.shortening_timeline import month_day as _month_day
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
@@ -103,14 +113,11 @@ from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KE
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
-    bootstrap_error_message,
-    no_demand_message,
     prune_list_selection,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_shortening_filter_cache,
     get_equipment_repository,
-    load_shortening_filter_profile,
 )
 from capa_simulation.scenario_activation import (
     active_scenario_label,
@@ -181,9 +188,8 @@ __all__ = [
     "render_required_shortening_tab",
 ]
 
-SHORTENING_LEVEL_KEY = "equipment_shortening_level_v1"
-SHORTENING_START_KEY = "equipment_shortening_start_month_v1"
-SHORTENING_END_KEY = "equipment_shortening_end_month_v1"
+# 목표·시작 월·끝 월 칸은 `shortening_source` 에 있다(Space 「필요 단축」 보기가 같은 칸을 읽는다) —
+# 여기서 다시 내보낸다.
 SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
 # 머리의 「UPEH 가정 비교」 보기(세션 값). 가정이 꺼져 있으면 쓰지 않는다.
 SHORTENING_UPEH_VIEW_KEY = "equipment_shortening_upeh_view_v1"
@@ -261,17 +267,6 @@ class _Plan:
     @property
     def assumption_active(self) -> bool:
         return self.assumption is not None and self.assumption.active
-
-
-@dataclass(frozen=True)
-class _Stop:
-    """계획을 세우지 못한 회차 — 머리 아래에 한 줄 알리고 멈춘다.
-
-    `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `info`, `error` 다.
-    """
-
-    kind: str
-    message: str | None = None
 
 
 def render_required_shortening_tab(
@@ -373,11 +368,12 @@ def _prepare(
     scenario_error: str | None,
     controls: AbstractContextManager[object],
     database_path: str | None,
-) -> _Plan | _Stop:
+) -> _Plan | ShorteningStop:
     """조건 카드(시작 월·끝 월·공정)를 그리고 계획을 세운다 — 앱 전체 회차에서만 돈다.
 
-    본문 자리에는 아무것도 쓰지 않는다(카드 안에만 쓴다). 멈출 까닭은 `_Stop` 으로 돌려주고 머리
-    아래에서 알린다.
+    본문 자리에는 아무것도 쓰지 않는다(카드 안에만 쓴다). 멈출 까닭은 `ShorteningStop` 으로 돌려주고
+    머리 아래에서 알린다. 달·계획은 Space 「필요 단축」 보기와 같은 함수(`shortening_source`)로
+    꺼낸다.
     """
     if (
         scenario_error is not None
@@ -385,29 +381,14 @@ def _prepare(
         or required_equipment is None
         or required_equipment_key is None
     ):
-        return _Stop("scenario", scenario_error)
-    if cutoff.empty:
-        return _Stop(
-            "info",
-            "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 "
-            "있습니다 (가용설비 현황 › 설정 › Cut-off).",
-        )
-    try:
-        demand_months = simulation_cache.get_required_month_span(
-            required_equipment_key, _required_equipment=required_equipment
-        )
-    except BOOTSTRAP_ERRORS as exc:
-        # 페이지의 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 페이지가 잡은
-        # 것과 같은 경고로 알린다.
-        return _Stop("scenario", bootstrap_error_message(exc))
-    if demand_months is None:
-        # 조회기간에 소요대수가 하나도 없다 — 계획을 세우면 맞댈 공정이 비어 이름 불일치 안내로
-        # 떨어진다. 다른 계산 화면(`resolve_effective_months`)과 같은 문구로 멈춘다.
-        return _Stop("error", no_demand_message(context))
-    month_options = _month_options(context, demand_months)
-    if not month_options:
-        return _Stop("info", "조회기간에 월이 없습니다.")
-    profile = _filter_profile(database_path)
+        return ShorteningStop("scenario", scenario_error)
+    demand = ShorteningDemand(
+        context=context, key=required_equipment_key, loader=required_equipment
+    )
+    month_options = shortening_month_options(demand, cutoff)
+    if isinstance(month_options, ShorteningStop):
+        return month_options
+    profile = shortening_filter_profile_or_default(database_path)
     with controls:
         if database_path is not None:
             st.caption(
@@ -416,26 +397,13 @@ def _prepare(
             )
         months = _render_month_range(month_options, profile=profile, database_path=database_path)
 
-    key = simulation_cache.required_shortening_cache_key(
-        required_equipment_key,
-        equipment=equipment,
-        downtime=downtime,
-        baseline=baseline,
-        cutoff=cutoff,
-        months=tuple(months),
-        today=today,
-    )
     try:
-        official = simulation_cache.load_required_shortening(
-            key,
-            equipment,
-            downtime,
-            baseline,
-            cutoff,
-            required_equipment=required_equipment,
+        official = load_official_shortening(
+            demand, (baseline, equipment, downtime), cutoff, tuple(months), today
         )
     except ValueError as exc:
-        return _Stop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+        return ShorteningStop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+    key = official.key
     plan = official.plan
 
     ordered = _ordered_processes(plan, context)
@@ -484,7 +452,7 @@ def _prepare(
 
 @st.fragment
 def _render_view(
-    prepared: _Plan | _Stop,
+    prepared: _Plan | ShorteningStop,
     *,
     equipment: pd.DataFrame,
     today: date,
@@ -510,7 +478,7 @@ def _render_view(
         today, baselines, prepared if isinstance(prepared, _Plan) else None
     )
     render_baseline_notice()
-    if isinstance(prepared, _Stop):
+    if isinstance(prepared, ShorteningStop):
         _render_stop(prepared)
         return
     _render_body(
@@ -528,7 +496,7 @@ def _render_view(
     )
 
 
-def _render_stop(stop: _Stop) -> None:
+def _render_stop(stop: ShorteningStop) -> None:
     if stop.kind == "scenario":
         _render_scenario_error(stop.message)
     elif stop.kind == "error":
@@ -791,16 +759,6 @@ def _render_upeh_view_toggle(prepared: _Plan | None) -> bool:
         ),
     )
     return bool(value) and usable
-
-
-def _filter_profile(database_path: str | None) -> ShorteningFilterProfile:
-    """공용 조회 조건. 경로가 없거나 못 읽으면 빈 프로필(= 코드 기본값)이다 — 화면은 떠야 한다."""
-    if database_path is None:
-        return ShorteningFilterProfile()
-    try:
-        return load_shortening_filter_profile(database_path)
-    except BOOTSTRAP_ERRORS:
-        return ShorteningFilterProfile()
 
 
 def _render_month_range(
@@ -1458,27 +1416,6 @@ def _tiles_markup(tiles: Sequence[tuple[str, str, str]], *, aria: str) -> str:
 
 
 # ------------------------------------------------------------------ 데이터 고르기
-
-
-def _months_between(start: int, end: int) -> list[int]:
-    if start > end:
-        return []
-    months: list[int] = []
-    year, month = divmod(start, 100)
-    while year * 100 + month <= end:
-        months.append(year * 100 + month)
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    return months
-
-
-def _month_options(context: PageContext, demand_months: tuple[int, int]) -> list[int]:
-    """고를 수 있는 달 — 사이드바 조회기간 가운데 소요대수가 있는 범위(HOME 「적용」 범위).
-
-    `demand_months` 는 소요대수가 있는 첫 달·끝 달(`get_required_month_span`)이다.
-    """
-    start = max(context.selected_start_month, demand_months[0])
-    end = min(context.selected_end_month, demand_months[1])
-    return _months_between(start, end)
 
 
 def _ordered_processes(plan: ShorteningPlan, context: PageContext) -> list[str]:
