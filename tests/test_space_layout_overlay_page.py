@@ -876,9 +876,9 @@ def _load_section(database: str) -> None:
 
 
 def test_loading_an_assumption_asks_before_dropping_a_floor_use_draft(tmp_path: Path) -> None:
-    """Space 층 사용 편집 초안은 공식 설비 시나리오에서만 산다(Q3) — 가정 시나리오를 불러오면 Space
-    가 편집을 잠그며 버리므로 「변경을 버리고 불러오기」 를 묻는다. 공식의 다른 리비전은 묻지
-    않는다(설계 9장, S3 리뷰)."""
+    """Space 층 사용 편집 초안은 공식 설비 시나리오에서만 산다(Q3) — 가정 시나리오를 불러오면 그
+    초안을 버리므로 「변경을 버리고 불러오기」 를 묻는다. 공식의 다른 리비전은 묻지 않는다(설계
+    9장, S3 리뷰)."""
     from capa_simulation.components.equipment_scenario_status import (
         DIALOG_SCENARIO_KEY,
         DISCARD_KEY,
@@ -912,6 +912,68 @@ def test_loading_an_assumption_asks_before_dropping_a_floor_use_draft(tmp_path: 
     _ok(official.run())
     assert not official.button(key=LOAD_BUTTON_KEY).disabled
     assert not [box for box in official.checkbox if box.key == DISCARD_KEY]
+
+
+def _marks_then_load_section(database: str) -> None:
+    """`app.py` 처럼 Space 탭 점·떠나기 확인을 팝업·페이지보다 **먼저** 세어 적고 「불러오기」
+    구획을 그린다(`_load_section` 과 같은 한 회차 — 함수 본문만 도므로 이름은 안에서 들인다)."""
+    from pathlib import Path
+
+    import streamlit as st
+
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+    )
+    from capa_simulation.components.page_tabs import leave_notice, page_unsaved_marks
+    from capa_simulation.navigation import SPACE_STATUS
+
+    page = Path(SPACE_STATUS.path).name
+    st.session_state["test_marks"] = page_unsaved_marks(page)
+    st.session_state["test_leave"] = leave_notice(page)
+    render_equipment_scenario_dialog_body(Path(database), page_file=page)
+
+
+@pytest.mark.parametrize("assumption", [True, False], ids=["가정", "공식"])
+def test_loading_an_assumption_drops_the_floor_use_draft_before_the_tab_marks(
+    tmp_path: Path, assumption: bool
+) -> None:
+    """묻고 버린 층 사용 초안은 불러온 회차에 팝업이 버린다 — Space 가 잠그며 버리기(탭 줄 뒤)를
+    기다리면 다음 회차 `app.py` 의 탭 점·떠나기 확인이 버린 초안을 한 회차 더 셌다(E2E — 거짓 「이
+    화면을 떠날까요?」). 공식의 다른 리비전은 초안이 산다(묻지 않고 남긴다)."""
+    from capa_simulation.components.equipment_scenario_status import (
+        DIALOG_SCENARIO_KEY,
+        DISCARD_KEY,
+        LOAD_BUTTON_KEY,
+    )
+    from capa_simulation.components.space_floor_list import BASE_KEY, DRAFT_KEY
+
+    repository, setup = _overlay(tmp_path)
+    app = AppTest.from_function(
+        _marks_then_load_section, args=(str(repository.database_path),), default_timeout=60
+    )
+    app.session_state[EDIT_TOGGLE_KEY] = True
+    app.session_state[DRAFT_KEY] = {"C2 3F": "UNUSED"}
+    app.session_state[BASE_KEY] = (0, ())
+    app.session_state[DIALOG_SCENARIO_KEY] = setup if assumption else OPERATIONS
+    _ok(app.run())
+    dirty = {SPACE_STATUS.path: "저장하지 않은 층 사용 편집"}
+    assert app.session_state["test_marks"] == dirty
+    if assumption:
+        app.checkbox(key=DISCARD_KEY).check()
+        _ok(app.run())
+    app.button(key=LOAD_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert app.session_state[SELECTION_KEY]["scenario_id"] == (setup if assumption else OPERATIONS)
+    if assumption:
+        assert app.session_state[EDIT_TOGGLE_KEY] is False
+        assert DRAFT_KEY not in app.session_state and BASE_KEY not in app.session_state
+        assert app.session_state["test_marks"] == {}
+        assert app.session_state["test_leave"] == ""
+    else:
+        assert app.session_state[EDIT_TOGGLE_KEY] is True
+        assert app.session_state[DRAFT_KEY] == {"C2 3F": "UNUSED"}
+        assert app.session_state["test_marks"] == dirty
 
 
 def test_the_canvas_dialog_previews_the_hypothetical_layout_before_shrinking(
