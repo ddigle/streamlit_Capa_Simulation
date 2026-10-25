@@ -132,7 +132,9 @@ def test_the_storage_key_is_computed_from_the_path_at_the_moment_of_use() -> Non
     assert "capaTheme.sync(parentWindow)" in place
     assert "capaTheme.choose(parentWindow, next)" in place
     # 지금 경로의 Streamlit 키를 고쳐 적었거나 조회 인자가 다르면 **한 번** 새로고침한다.
-    assert "if (state.stale || paramChanged) {" in place
+    assert 'if (reloadOnOpen(dark ? "dark" : "light", state.stale)) return true;' in place
+    reload_on_open = _function_body(theme_toggle._SCRIPT, "reloadOnOpen")
+    assert "if (!changed && !stale) return false;" in reload_on_open
     # 못 적었으면 새로고침하지 않는다 — 쓰기 실패가 새로고침 반복이 되지 않게.
     assert "state.stale = false" in _function_body(rule, "sync")
 
