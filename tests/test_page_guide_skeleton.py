@@ -540,6 +540,21 @@ def test_button_labels_in_the_script_are_app_labels() -> None:
     assert sorted(label for label in labels if label not in _app_strings()) == []
 
 
+def test_the_save_reach_table_names_buttons_the_app_still_has() -> None:
+    """「저장 버튼마다 닿는 곳이 다릅니다」 표(`five_saves`)의 단추 이름은 앱 글자 안에 있다 — 표
+    칸은 [[ ]] 로 감싸지 않아 위 시험이 보지 않는다. 걷은 단추(옛 설비 마스터 폼의 「확인 후 리비전
+    저장」 — 개편 D)를 가리키면 여기서 깨진다(개편 D 리뷰 rs-d)."""
+    (concept,) = [item for item in _content()["concepts"] if item["id"] == "five_saves"]
+    names = [
+        name.strip()
+        for row in concept["rows"]
+        for name in row["btn"].removesuffix(" 등").split(" · ")
+    ]
+
+    assert len(names) >= len(concept["rows"])
+    assert sorted(name for name in names if not _in_app(name)) == []
+
+
 def test_menu_and_badge_chips_in_the_script_appear_in_the_app() -> None:
     """((메뉴)) · {{배지}} 는 앱 글자 안에 있다(아이콘이 붙은 탭 이름 · 번호 자리표시는 뺀다)."""
     chips = set()
