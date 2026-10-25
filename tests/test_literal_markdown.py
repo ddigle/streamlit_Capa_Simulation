@@ -57,7 +57,7 @@ def test_quoted_without_a_name_returns_the_stand_in(missing: str | None) -> None
 
 
 def test_a_particle_picked_from_the_quoted_name_matches_the_raw_name() -> None:
-    """조사는 감싼 글로 골라도 된다 — 끝의 `」` 와 escape 의 `\\` 를 건너뛴다."""
+    """끝이 구두점이 아닌 이름은 감싼 글로 골라도 이름으로 고른 조사와 같다(`」` 를 건너뛴다)."""
     for name in ("E2E~가정~A", "10~12월 증설", "운영 일정", "r3"):
         assert object_particle(quoted(name)) == object_particle(name), name
 

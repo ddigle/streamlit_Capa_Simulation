@@ -136,7 +136,8 @@ def space_layout_notices(
         lines.append(
             (
                 f"이 리비전은 공식과 다른 배치({' · '.join(parts) or '저장된 차이'})를 담고 "
-                f"있습니다 — {name}{subject_particle(name)} 가정이던 때의 배치안입니다.{tail}",
+                f"있습니다 — {name}{subject_particle(session.scenario_name or name)} 가정이던 때의 "
+                f"배치안입니다.{tail}",
                 "info",
             )
         )
