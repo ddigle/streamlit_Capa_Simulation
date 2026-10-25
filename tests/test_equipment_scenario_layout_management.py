@@ -387,6 +387,27 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
     assert any("공식과 다른 배치(실효 호기 1대 — 저장된 차이 1행)가 있어" in t for t in _texts(app))
 
 
+def test_the_section_caption_names_the_assumption_layout_as_held_per_scenario(
+    tmp_path: Path,
+) -> None:
+    """E2E r3 — 구획 캡션이 설비 시나리오가 따로 드는 것에 가정 배치를 넣는다(같은 구획에 「저장된
+    배치 차이」·「배치 차이 모두 지우기」 가 있다). 「일정 여섯·시나리오 메모·비가동만」 이라 하지
+    않는다."""
+    _, setup, _ = _moved_setup(tmp_path)
+    app = _ok(_section(tmp_path, setup).run())
+
+    caption = next(
+        str(item.value)
+        for item in app.caption
+        if "모든 설비 시나리오가 함께 씁니다" in str(item.value)
+    )
+    assert "비가동만" not in caption
+    assert (
+        "일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 요소·Main 설비명 "
+        "위치)를 따로 듭니다" in caption
+    ), caption
+
+
 def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_path: Path) -> None:
     repository, setup, latest = _moved_setup(tmp_path)
     app = _ok(_section(tmp_path, setup).run())

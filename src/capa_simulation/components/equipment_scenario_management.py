@@ -511,9 +511,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             "저장하면 「운영 일정」이 섭니다."
         )
         return
+    # 설비 시나리오가 따로 드는 것 — 일정·메모·비가동과 가정 배치(설비 0031 — 공식과 다른 호기
+    # 위치·층 도면 요소·Main 설비명 위치). 아래 「저장된 배치 차이」 칸·「배치 차이 모두 지우기」 가
+    # 그 가정 배치다.
     st.caption(
         "공통 칸(호기 정보·실적·상태·Space 실물)은 모든 설비 시나리오가 함께 씁니다. 설비 "
-        "시나리오는 일정 여섯·시나리오 메모·비가동만 따로 듭니다 — 만들기는 복제로만 합니다."
+        "시나리오는 일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 "
+        "요소·Main 설비명 위치)를 따로 듭니다 — 만들기는 복제로만 합니다."
     )
     st.dataframe(scenario_rows(session), hide_index=True, width="stretch", placeholder="")
     traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
