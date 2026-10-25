@@ -2150,8 +2150,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   보이는 직접 입력 숫자 칸을 **정본 한 칸**(위젯 아닌 세션 칸)으로 묶는다(제약 시뮬레이션 D10). 두 위젯 칸은 위젯 앞에서 매
   회차 정본에서 다시 서되 **다를 때만** 적고(같은 값을 적으면 `set_value` 가 회차마다 가서 치다 만 숫자를 덮는다), 콜백이 정본을
   적는다. 버튼 콜백은 숫자 칸 세대도 올려 칸을 **새 key** 로 다시 세운다 — 1.63 숫자 칸은 범위 밖 글(301)을 확정하지 않은 채
-  쥐고 그동안 서버 값을 무시하므로, 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 표시가 남는다. `None` 버튼(「HOME 기준」)은
-  버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
+  쥐고 그동안 서버 값을 무시하므로, 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 표시가 남는다. 칸에 치고 Enter 없이 버튼을
+  누르면 칸 확정과 버튼 누름이 한 회차에 들어 두 콜백이 함께 도는데, **어느 차례든 버튼이 이긴다** — 숫자 칸 콜백은 자기 key 가
+  지금 세대 key 와 다르면(버튼 콜백이 먼저 세대를 올렸으면) 적지 않는다(1.63 은 버튼 콜백이 먼저라 친 값이 덮었다, 2026-10-26
+  E2E). `None` 버튼(「HOME 기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
   주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
   `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
@@ -3740,7 +3742,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **버튼 + 직접 입력은 정본 한 칸 + 매 회차 다시 서는 위젯 둘이다**(`components/preset_number_field.py`). 정본은 위젯 아닌
   세션 칸이고 버튼(`st.pills`, `required=True` — 고른 버튼을 다시 눌러도 풀리지 않는다)·숫자 칸 key 는 위젯 앞에서 정본에서
   내되 **다를 때만** 적는다. 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
-  값을 무시한다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
+  값을 무시한다). 친 글의 확정과 버튼 누름이 한 회차에 겹치면 버튼이 이긴다(옛 세대 key 의 숫자 칸 콜백은 적지 않는다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
