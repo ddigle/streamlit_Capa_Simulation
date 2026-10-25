@@ -18,6 +18,11 @@
   서버가 보낸 새 값(`set_value`)을 무시한다 — 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 범위 밖
   표시가 남는다. 새 key 면 프런트가 칸을 새로 그려 쥔 글이 사라진다. 숫자 칸 콜백은 세대를 올리지
   않는다(치는 칸이 회차마다 새로 서면 초점이 풀린다).
+- **칸에 치고 Enter 없이 버튼을 누르면 버튼이 이긴다.** 버튼을 누르는 순간 칸을 떠나 친 글이
+  확정되고, 그 확정과 버튼 누름이 한 회차로 합쳐지면 두 콜백이 함께 돈다 — 차례는 프레임워크가
+  정한다(1.63 은 버튼이 먼저라 숫자 칸 콜백이 버튼 값을 덮었다, 2026-10-26 E2E). 숫자 칸 콜백은 자기
+  key 가 지금 세대의 key 와 다르면(같은 회차에 버튼 콜백이 먼저 세대를 올렸으면) 적지 않고, 버튼
+  콜백이 나중이면 그것이 덮으므로 어느 차례든 마지막에 누른 버튼이 정본이 된다.
 - `persist_state` 는 주지 않는다 — 정본이 위젯 아닌 칸이라 페이지를 오가도 남고, 위젯 칸은 매 회차
   정본에서 다시 선다.
 
@@ -110,9 +115,15 @@ def _pick_preset(value_key: str, pills_key: str, input_key: str, integer: bool) 
     )
 
 
-def _pick_number(value_key: str, input_key: str, integer: bool) -> None:
-    """숫자 칸 콜백 — 정본을 그 값으로(범위는 위젯이 막는다)."""
-    typed = st.session_state.get(input_key)
+def _pick_number(value_key: str, input_key: str, widget_key: str, integer: bool) -> None:
+    """숫자 칸 콜백 — 정본을 그 값으로(범위는 위젯이 막는다).
+
+    `widget_key` 는 이 칸이 그려질 때의 세대 key 다. 같은 회차에 버튼 콜백이 먼저 돌아 세대를
+    올렸으면 이 칸은 옛 세대라 적지 않는다 — 친 글을 확정하며 누른 버튼이 이긴다(모듈 머리말).
+    """
+    if _input_widget_key(input_key) != widget_key:
+        return
+    typed = st.session_state.get(widget_key)
     if isinstance(typed, (int, float)) and not isinstance(typed, bool):
         st.session_state[value_key] = _number(float(typed), integer)
 
@@ -204,7 +215,7 @@ def render_preset_number_field(
             format=number_format,
             key=widget_key,
             on_change=_pick_number,
-            args=(value_key, widget_key, integer),
+            args=(value_key, input_key, widget_key, integer),
             disabled=disabled,
             label_visibility="collapsed",
             width=132,
