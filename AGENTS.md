@@ -2073,8 +2073,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
   비가동 막대를 W/D 구간 날짜 비례로 놓는다, 표적 막대가 달 누름을 받는다)와 월별 계산표(`month_sheet_canvas` 엔진)를 계산
   결과에서 만드는 순수 함수. 새 색 토큰 없이 기존 토큰에 도형 `opacity` 를 준다(제약 기간 칠·고른 달 띠). 주의 색
-  (`STATUS_WARNING`)은 면색이라 글자에 쓰지 않는다 — 오른쪽 끝 「제약 n%」 는 `TEXT`, 제약 제품 점은 `LINE` 테두리. 그림 모양을
-  바꾸면 `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
+  (`STATUS_WARNING`)은 면색이라 글자에 쓰지 않는다 — 오른쪽 끝 「제약 n%」 는 `TEXT`, 제약 제품 점은 `LINE` 테두리. 오른쪽
+  끝 두 글(「기준 …」 · 「제약 n%」)은 같은 x 라, 그림 칸이 가장 낮을 때(`END_LABEL_MIN_PLOT_PX` — 범례 줄 수로 칸 높이가
+  바뀐다) 두 선이 글 한 줄보다 가까우면 큰 값은 선 위·작은 값은 선 아래로 비킨다(`end_label_anchors` — 같으면 「제약」 이
+  위, 2026-10-25 E2E 에서 7px 포개짐·한 글 숨음). 그림 모양을 바꾸면 `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/constraint_simulation_view.py` — 제약 시뮬레이션 본문 프래그먼트(`constraint_sim_view` —
   비중 토글·그래프·계산표·고른 달 계산 다섯 단계·개조 일정·가용이 모자란 달)와 요약 넷. 달 누름은 두 그림의 `on_select`
   **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 그림은 세션 memo(4칸 —

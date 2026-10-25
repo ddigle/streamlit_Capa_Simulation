@@ -8,7 +8,7 @@
 
 - 그래프: 선 넷(비중 토글 끄면 셋)·기준선(달마다 다르면 `hv` 계단)·개조 막대 다섯(W/D 비례 — 202706
   몫은 202705 칸 안)·표적 `customdata` = 달·`layout.meta` 세대·`HIT_TARGET`·모든 trace `unselected`
-  불투명 1.
+  불투명 1·오른쪽 끝 두 글이 가까우면 비켜 서로 덮지 않음.
 - 계산표: 행 차례·기간 밖 제약 칸 빈칸·미달 칸 글자색·고른 달 열 테두리.
 - 고른 달 계산 다섯 줄(202705·202706·202801)·개조 일정 줄·모자란 달 줄.
 - 정규형 spec — 검증을 켠 길과 끈 길의 Figure JSON 이 같다(`tests/test_plotly_fast_path.py` 규칙).
@@ -26,11 +26,13 @@ import pytest
 from test_constraint_simulation import CONDITIONS, _run
 
 from capa_simulation.components.constraint_simulation_figures import (
+    END_LABEL_MIN_PLOT_PX,
     ROW_IDS,
     ConstraintLabels,
     build_sheet_canvas,
     chart_point_month,
     day_position,
+    end_label_anchors,
     general_label,
     rate_figure,
     rate_text,
@@ -149,6 +151,88 @@ def test_the_end_labels_use_text_colours_and_the_constrained_points_get_an_outli
         assert contrast_ratio(palette["LINE"], palette["SURFACE"]) >= 3
     finally:
         theme._LOCAL.mode = "light"
+
+
+# 오른쪽 끝 글 한 줄 높이(px) — 사본 앱에서 15~16px 였다(2026-10-25 E2E).
+_END_LABEL_PX = 16
+
+
+def _end_label_boxes(
+    y_values: dict[str, tuple[float, str]], *, low: float, high: float, plot_px: float
+) -> dict[str, tuple[float, float]]:
+    """끝 글마다 (위, 아래) 화면 px — 그림 칸 높이 `plot_px`, 위가 0."""
+    boxes: dict[str, tuple[float, float]] = {}
+    for name, (value, anchor) in y_values.items():
+        line = (high - value) / (high - low) * plot_px
+        top = {"middle": line - _END_LABEL_PX / 2, "bottom": line - _END_LABEL_PX, "top": line}[
+            anchor
+        ]
+        boxes[name] = (top, top + _END_LABEL_PX)
+    return boxes
+
+
+def _covers(boxes: dict[str, tuple[float, float]]) -> float:
+    (top_a, bottom_a), (top_b, bottom_b) = boxes.values()
+    return max(0.0, min(bottom_a, bottom_b) - max(top_a, top_b))
+
+
+@pytest.mark.parametrize(
+    ("general", "target", "low", "high"),
+    [
+        (109.5, 120.0, -10.0, 200.0),  # 사본 앱 Die Attach 기본 — 세로 7px 겹침
+        (110.00000000000001, 110.0, 60.0, 4040.0),  # DAF Attach 110 · 110 — 한 자리
+        (110.0, 120.0, 60.0, 4040.0),  # DAF Attach 기본 — 0.5px 차이
+        (120.0, 110.0, 90.0, 140.0),
+        (110.0, 120.0, 90.0, 140.0),  # 손계산 하네스 — 멀어 가운데 그대로
+        (100.0, 300.0, 0.0, 310.0),
+    ],
+)
+@pytest.mark.parametrize("plot_px", [END_LABEL_MIN_PLOT_PX, 130, 160, 221, 400])
+def test_the_end_labels_never_cover_each_other(
+    general: float, target: float, low: float, high: float, plot_px: int
+) -> None:
+    """오른쪽 끝 「기준 …」 · 「제약 n%」 는 같은 x 에 선다 — 두 선이 가까우면 서로 덮었다(사본
+    앱 1440px Die Attach 7px, DAF Attach 는 기준 글이 통째로 숨음, 110 · 110 은 한 글로만 보임 —
+    2026-10-25 E2E). 그림 칸이 `END_LABEL_MIN_PLOT_PX` 이상이면 어떤 두 값에서도 덮지 않는다."""
+    general_anchor, target_anchor = end_label_anchors(general, target, low=low, high=high)
+    boxes = _end_label_boxes(
+        {"기준": (general, general_anchor), "제약": (target, target_anchor)},
+        low=low,
+        high=high,
+        plot_px=plot_px,
+    )
+    assert _covers(boxes) == 0
+
+
+def test_far_end_labels_stay_centred_on_their_lines_and_a_tie_puts_the_target_on_top() -> None:
+    assert end_label_anchors(110.0, 120.0, low=90.0, high=140.0) == ("middle", "middle")
+    assert end_label_anchors(100.0, 300.0, low=0.0, high=310.0) == ("middle", "middle")
+    # 가까우면 큰 값이 선 위(bottom), 작은 값이 선 아래(top). 같으면 「제약」 이 위다.
+    assert end_label_anchors(109.5, 120.0, low=-10.0, high=200.0) == ("top", "bottom")
+    assert end_label_anchors(120.0, 110.0, low=60.0, high=4040.0) == ("bottom", "top")
+    assert end_label_anchors(110.00000000000001, 110.0, low=60.0, high=4040.0) == (
+        "top",
+        "bottom",
+    )
+
+
+def test_the_rate_figure_moves_close_end_labels_apart() -> None:
+    """같은 값(제약 110% · 기준 110%)의 두 끝 글이 한 자리에 포개지던 그림 — 「제약」 은 선 위,
+    「기준」 은 선 아래에 선다. 먼 값(손계산 하네스 제약 120% · 기준 110%)은 둘 다 선 가운데
+    그대로다."""
+
+    def anchors(labels: ConstraintLabels) -> dict[str, tuple[float, str]]:
+        spec = _spec(rate_figure(_run(), labels, selected_month=None, show_proportional=True))
+        return {
+            item["text"].split()[0]: (item["y"], item["yanchor"])
+            for item in spec["layout"]["annotations"]
+        }
+
+    tie = anchors(replace(LABELS, target_percent=110))
+    assert tie["제약"][1] == "bottom" and tie["기준"][1] == "top"
+    assert tie["제약"][0] == pytest.approx(tie["기준"][0])
+    far = anchors(LABELS)
+    assert far["제약"] == (120.0, "middle") and far["기준"][1] == "middle"
 
 
 def test_the_constrained_and_proportional_lines_stay_inside_the_period() -> None:
