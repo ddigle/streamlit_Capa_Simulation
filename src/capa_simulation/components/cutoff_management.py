@@ -27,6 +27,13 @@ from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.components.write_guard import (
+    is_own_save,
+    own_save_marks,
+    remember_own_save,
+    remember_seen,
+    seen,
+)
 from capa_simulation.persistence.equipment_cache import (
     clear_process_cutoff_cache,
     load_process_cutoff,
@@ -46,8 +53,11 @@ from capa_simulation.services.process_cutoff import (
 __all__ = ["CUTOFF_BASE_KEY", "CUTOFF_DRAFT_KEY", "render_cutoff_management"]
 
 CUTOFF_DRAFT_KEY = "equipment_cutoff_draft_v1"
-# 초안이 출발한 저장본의 지문(`process_cutoff_fingerprint`). 저장 회차에 저장소가 대조한다.
+# 초안이 출발한 저장본의 지문(`process_cutoff_fingerprint`). 저장 회차에 저장소가 대조한다. 초안을
+# 세우는 자리에서만 적는다(`write_guard.remember_seen`).
 CUTOFF_BASE_KEY = "equipment_cutoff_base_v1"
+# 이 세션이 한 Cut-off 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
+CUTOFF_SAVE_NAME = "equipment_process_cutoff"
 _EDITOR_KEY = "equipment_cutoff_editor_v1"
 _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
@@ -113,11 +123,13 @@ def render_cutoff_management(
         return stored
 
     draft = st.session_state.get(CUTOFF_DRAFT_KEY)
-    if not isinstance(draft, pd.DataFrame) or CUTOFF_BASE_KEY not in st.session_state:
+    if not isinstance(draft, pd.DataFrame) or seen(CUTOFF_BASE_KEY) is None:
         # 초안이 출발한 저장본의 지문. 저장은 표 전체 교체라, 저장 회차에 저장본이 이 지문과 다르면
         # 다른 사람이 그 사이 저장한 것이다 — 옛 초안으로 덮지 않는다(`ProcessCutoffConflict`).
-        # 초안만 있고 지문이 없는 세션(이 키가 생기기 전 세션)은 지금 저장본을 출발점으로 본다.
-        st.session_state[CUTOFF_BASE_KEY] = process_cutoff_fingerprint(stored)
+        # 초안만 있고 지문이 없는 세션(이 키가 생기기 전 세션)은 지금 저장본을 출발점으로 본다 —
+        # 일부러 정한 결정이다 — 본 값이 없다고 저장을 거부하지 않는다(시험
+        # `tests/test_write_guard_cas.py`).
+        remember_seen(CUTOFF_BASE_KEY, process_cutoff_fingerprint(stored))
     if not isinstance(draft, pd.DataFrame):
         draft = stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS].copy() if not stored.empty else None
     if draft is None:
@@ -190,15 +202,24 @@ def render_cutoff_management(
     st.session_state[CUTOFF_DRAFT_KEY] = merged
 
     if submitted:
+        expected = str(seen(CUTOFF_BASE_KEY))
+        # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = own_save_marks()
         try:
-            saved = repository.save_process_cutoff(
-                merged, expected_fingerprint=str(st.session_state[CUTOFF_BASE_KEY])
-            )
+            saved = repository.save_process_cutoff(merged, expected_fingerprint=expected)
         except ProcessCutoffConflict as exc:
+            clear_process_cutoff_cache()
+            latest = load_process_cutoff(str(repository.database_path))
+            if is_own_save(
+                CUTOFF_SAVE_NAME, expected, process_cutoff_fingerprint(latest), save_marks
+            ):
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                _reset_draft(latest)
+                queue_flash(_FLASH_KEY, _saved_message(latest))
+                st.rerun()
             # 최신 저장본으로 다시 연다. 옛 초안을 남기면 다음 저장도 같은 충돌이거나(지문 그대로),
             # 지문만 고치면 그 사람이 넣은 행을 지운다.
-            clear_process_cutoff_cache()
-            _reset_draft(load_process_cutoff(str(repository.database_path)))
+            _reset_draft(latest)
             st.session_state[_CONFLICT_KEY] = (
                 f"{exc} 최신 저장본으로 다시 열었으니 확인한 뒤 다시 고치세요."
             )
@@ -206,13 +227,20 @@ def render_cutoff_management(
         except ValueError as exc:
             st.error(str(exc))
         else:
+            remember_own_save(
+                CUTOFF_SAVE_NAME, expected, process_cutoff_fingerprint(saved), save_marks
+            )
             # 다음 회차가 저장된 값을 읽는다 — Static 대비 일정·필요 단축 일정이 이 값으로 센다.
             clear_process_cutoff_cache()
             _reset_draft(saved)
-            queue_flash(_FLASH_KEY, f"공정별 Cut-off {len(saved)}건을 저장했습니다.")
+            queue_flash(_FLASH_KEY, _saved_message(saved))
             st.rerun()
 
     return stored
+
+
+def _saved_message(saved: pd.DataFrame) -> str:
+    return f"공정별 Cut-off {len(saved)}건을 저장했습니다."
 
 
 def _reset_draft(stored: pd.DataFrame) -> None:
@@ -223,5 +251,5 @@ def _reset_draft(stored: pd.DataFrame) -> None:
         if not stored.empty
         else build_process_cutoff_template([]).loc[:, PROCESS_CUTOFF_EDIT_COLUMNS]
     )
-    st.session_state[CUTOFF_BASE_KEY] = process_cutoff_fingerprint(stored)
+    remember_seen(CUTOFF_BASE_KEY, process_cutoff_fingerprint(stored))
     discard_editor(_EDITOR_KEY)

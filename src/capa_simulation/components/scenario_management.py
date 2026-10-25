@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import NoReturn, cast
 
 import pandas as pd
 import streamlit as st
@@ -58,6 +58,17 @@ from capa_simulation.components.scenario_transform import forget_derived_sources
 from capa_simulation.components.scenario_year_shift import (
     SHIFT_SOURCE_ROLES,
     render_scenario_year_shift,
+)
+from capa_simulation.components.write_guard import (
+    SEEN_MISSING_MESSAGE,
+    SeenToken,
+    is_own_save,
+    own_save_marks,
+    queue_refusal,
+    remember_own_save,
+    remember_seen,
+    seen,
+    take_refusal,
 )
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
@@ -182,6 +193,14 @@ REVISION_SEED_KEY = "scenario_list_revision_seed"
 # 공식버전 지정 확인 팝업의 열림 칸 — (시나리오 id, 리비전 id). `PAGE_DIALOG_SUFFIX` 로 끝나
 # 페이지를 떠나면 비워지고, 여는 콜백이 다른 팝업 칸부터 비운다(한 실행에 팝업 하나).
 OFFICIAL_DIALOG_KEY = f"scenario_official{PAGE_DIALOG_SUFFIX}"
+# 공식버전 지정 팝업이 지정 단추를 누르지 않은 회차에 보인 「지금 공식」 번호(없으면 0) — 지정이
+# 저장소에 넘기는 대조 값이다(`write_guard.remember_seen`). 제출 회차에 다시 읽은 번호를 넘기면 첫
+# 지정 뒤의 빠른 둘째 누름이 그 번호로 대조를 지나 공식을 한 번 더 세운다.
+OFFICIAL_SEEN_KEY = "scenario_official_seen_release_no"
+# 공식 지정·리비전명 저장의 제 저장 표지 이름(`write_guard.own_save_marks`). 리비전명은 리비전마다
+# `REVISION_NAME_SAVE_NAME:<리비전 id>` 다.
+OFFICIAL_SAVE_NAME = "scenario_official_release"
+REVISION_NAME_SAVE_NAME = "scenario_revision_name"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
 NAME_COLUMN = "시나리오명"
@@ -1008,9 +1027,32 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
     if not renames:
         st.session_state[CARD_NOTICE_KEY] = ("info", "고친 리비전명이 없습니다.")
         return
+    # 표지 dict 는 저장 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
     try:
-        saved = save_revision_names(database_path, renames)
+        saved = save_revision_names(database_path, renames, save_marks)
     except BatchEditRefused as exc:
+        if exc.moved_names and all(
+            revision_id in exc.moved_names
+            and revision_id in renames
+            and is_own_save(
+                _revision_name_save_name(revision_id),
+                renames[revision_id][0],
+                exc.moved_names[revision_id],
+                save_marks,
+            )
+            for revision_id, _ in exc.problems
+        ):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 모두 이미 바꿨다(write_guard). 첫 누름의
+            # 뒷정리가 끊겼을 수 있어 여기서 다시 한다.
+            renamed = [
+                replace(by_id[revision_id], revision_name=name)
+                for revision_id, name in exc.moved_names.items()
+                if revision_id in by_id
+            ]
+            _after_revision_rename(renamed)
+            _revision_names_saved(renamed)
+            return
         st.session_state[CARD_NOTICE_KEY] = (
             "error",
             refused_edits_message(
@@ -1038,12 +1080,20 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
         st.session_state[CARD_NOTICE_KEY] = ("error", bootstrap_error_message(exc))
         store_draft(REVISION_EDITOR_KEY, draft)
         return
+    _revision_names_saved(saved)
+
+
+def _revision_names_saved(saved: Sequence[RevisionSummary]) -> None:
     forget_table_edits(REVISION_EDITOR_KEY)
     st.session_state[CARD_NOTICE_KEY] = (
         "success",
         "리비전명을 저장했습니다: "
         + ", ".join(literal_markdown(revision_label(revision)) for revision in saved),
     )
+
+
+def _revision_name_save_name(revision_id: str) -> str:
+    return f"{REVISION_NAME_SAVE_NAME}:{revision_id}"
 
 
 def save_revision_name(
@@ -1059,16 +1109,25 @@ def save_revision_name(
     """
     if revision_name.strip() == revision.revision_name:
         return None
+    save_marks = own_save_marks()
     with pinned_connections(Path(database_path)):
         renamed = get_scenario_repository(database_path).rename_revision(
             revision.revision_id, revision_name, expected_name=revision.revision_name
         )
+    remember_own_save(
+        _revision_name_save_name(renamed.revision_id),
+        revision.revision_name,
+        renamed.revision_name,
+        save_marks,
+    )
     _after_revision_rename([renamed])
     return renamed
 
 
 def save_revision_names(
-    database_path: str, renames: Mapping[str, tuple[str, str]]
+    database_path: str,
+    renames: Mapping[str, tuple[str, str]],
+    save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> list[RevisionSummary]:
     """리비전 여러 개의 이름표를 한 트랜잭션으로 바꾸고 이 세션의 후속 처리를 한다.
 
@@ -1087,8 +1146,19 @@ def save_revision_names(
     """
     if not renames:
         return []
+    marks = own_save_marks() if save_marks is None else save_marks
     with pinned_connections(Path(database_path)):
         renamed = get_scenario_repository(database_path).rename_revisions(renames)
+    for revision in renamed:
+        if revision.revision_id in renames:
+            # 빠른 두 번 누름의 둘째가 받는 「다른 사용자가 먼저」 를 제 저장으로 알아보게
+            # 적는다(write_guard).
+            remember_own_save(
+                _revision_name_save_name(revision.revision_id),
+                renames[revision.revision_id][0],
+                revision.revision_name,
+                marks,
+            )
     _after_revision_rename(renamed)
     return renamed
 
@@ -1184,12 +1254,25 @@ def _render_official(
             disabled=not confirmed,
             width="stretch",
         )
+    refused = take_refusal(OFFICIAL_SAVE_NAME)
+    if refused is not None:
+        st.error(refused)
     if official_submitted and not confirmed:
         # 버튼 잠금은 화면의 약속일 뿐이다. 제출 회차에도 확인을 다시 본다.
         st.error("가상 제품이 포함된 것을 확인해야 공식버전으로 지정할 수 있습니다.")
         return
     if not official_submitted:
+        # 이 회차가 보인 「지금 공식」 이 지정의 대조 값이다 — 제출 회차에는 적지 않는다
+        # (write_guard).
+        remember_seen(OFFICIAL_SEEN_KEY, latest.release_no if latest is not None else 0)
         return
+    expected_no = seen(OFFICIAL_SEEN_KEY)
+    if not isinstance(expected_no, int):
+        # 팝업이 보인 번호를 모른다 — 지금 번호로 대체하면 남의 지정을 모르는 채 그 위에 세운다.
+        queue_refusal(OFFICIAL_SAVE_NAME, SEEN_MISSING_MESSAGE)
+        st.rerun()
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
     try:
         # 공식버전은 모두의 첫 화면이다. 계산이 안 되는 리비전을 지정하면 모두의 HOME 이
         # 멈춘다. 검사는 HOME 과 같은 캐시 칸을 써서, 통과하면 HOME 이 이미 데워져 있다.
@@ -1203,22 +1286,41 @@ def _render_official(
             revision_id,
             release_name=release_name,
             note=release_note,
-            expected_latest_release_no=latest.release_no if latest is not None else 0,
+            expected_latest_release_no=expected_no,
         )
     except OfficialReleaseMoved as exc:
-        # 저장소 문구는 배경 회차(자동 갱신) 말투라 팝업에서는 무엇을 하면 되는지로 바꿔 적는다.
-        st.error(official_moved_message(exc.current))
-        return
+        current = None
+        if is_own_save(OFFICIAL_SAVE_NAME, exc.expected, exc.current, save_marks):
+            try:
+                current = repository.latest_official_release()
+            except BOOTSTRAP_ERRORS:
+                current = None
+        if current is None or current.release_no != exc.current:
+            # 저장소 문구는 배경 회차(자동 갱신) 말투라 팝업에서는 무엇을 하면 되는지로 바꿔 적는다.
+            st.error(official_moved_message(exc.current))
+            return
+        # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 지정했다(write_guard). 첫 누름의 뒷정리가
+        # 끊겼을 수 있어 여기서 다시 한다(경고 글은 첫 누름의 회차가 냈다).
+        _official_published(current, revision_id, warning=None)
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
+    _official_published(release, revision_id, warning=verdict.message or None)
+
+
+def _official_published(
+    release: OfficialReleaseSummary, revision_id: str, *, warning: str | None
+) -> NoReturn:
+    """공식 지정 뒤 이 세션의 뒷정리 — 알림을 담고 팝업을 닫고 다음 회차가 새 공식을 싣게 한 뒤 앱을
+    다시 돌린다."""
     st.session_state[FLASH_KEY] = (
         f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
         f"{object_particle(release.release_name)} 지정했습니다."
     )
     # 허락하면서 하는 경고(소요대수에 들지 않은 수요 건수)는 지정한 사람이 그 자리에서 본다.
-    if verdict.message:
-        st.session_state[FLASH_WARNING_KEY] = verdict.message
+    if warning:
+        st.session_state[FLASH_WARNING_KEY] = warning
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
     # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다

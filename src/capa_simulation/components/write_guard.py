@@ -22,21 +22,32 @@
 `write` 는 잠금 안에서 표지를 적기 전에 돈다. 그 안에서 세션 칸을 읽지 않는다 — 세션 칸
 접근도 끊기는 자리라, 입력은 부르기 전에 읽어 둔다.
 
-**버전 대조 저장**(공용 프로필 — 공정 표시명·판정 기준·확보율 보정)은 본문에서 저장하고
-`st.rerun()` 한다. 둘째 누름의 회차가 그 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라
-저장소가 `ProfileVersionConflict` 로 거부했고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」
-이라 알렸다(2026-10-26 E2E). 저장 전에 `profile_save_marks` 로 받아 둔 dict 에 저장에 성공한
-`(편집 시작, 저장된)` version 짝을 적고, 거부가 그 짝이면(`is_own_profile_save`) 오류 대신 성공을
-다시 알린다 — 그 사이 남이 저장했으면 지금 version 이 짝과 달라 그대로 거부를 알린다.
+**비교 후 쓰기**(CAS — 공용 프로필 version·Cut-off 지문·리비전명·공식 번호·설비 리비전 짝)는 세
+가지를 이 모듈 한 길로 한다.
 
-거꾸로 **남이 먼저 저장해 거부된** 누름의 둘째 누름도 거른다. 거부한 회차는 최신 저장본을 그리며
-편집 시작 version 을 그 version 으로 올린다(다음 저장은 그 화면에서 출발한다). 사용자가 그 화면을
-보기도 전에 닿은 둘째 누름은 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이
-「저장했습니다」로 바뀌고 입력은 말없이 버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E — 판정
-기준·공정 표시명·확보율 보정). 거부를 받으면 `profile_conflict_marks` 로 미리 받아 둔 dict 에 그
-알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은
-저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른
-저장이라 평소대로 대조한다.
+- **본 값**(`remember_seen`·`seen`·`forget_seen`). 저장소에 넘길 대조 값은 사용자가 **본** 화면의
+  값이다. 본문에서 저장하는 폼은 폼을 제출하지 않은 회차(그린 화면이 곧 본 화면)에만 그 회차가 그린
+  저장본의 토큰을 적고, 제출 회차는 적은 값을 그대로 넘긴다 — 칸이 없다고 지금 값으로 대체하지
+  않는다(대체하면 남의 저장 뒤 한 회차만 돌아도 대조가 지나 그 저장을 모르는 채 덮는다). 칸이 없으면
+  저장하지 않고 「다시 불러와」 를 알린다(`SEEN_MISSING_MESSAGE`). 충돌·실패 회차에도 올리지 않는다
+  — 충돌을 받은 회차는 거부를 담아(`queue_refusal`) 앱을 다시 돌리고, 그 다음 회차(제출 아님)가
+  최신을 그리며 적는다. 초안을 세울 때 출발점을 함께 두는 편집(Cut-off·층 사용·설비 편집본)은 초안을
+  세우는 자리에서 적는다. 콜백 쓰기는 그린 회차의 값을 콜백 인자로 받으므로 따로 적지 않는다. 토큰은
+  `int`·`str`·`tuple` 어느 것이든 된다.
+- **제 저장 판정**(`own_save_marks`·`remember_own_save`·`is_own_save`). 둘째 누름의 회차가 첫 저장의
+  rerun 회차(또는 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가 거부하고, 화면은 방금
+  한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E). 저장 전에 `own_save_marks`
+  로 받아 둔 dict 에 성공한 `(본 값, 저장된 값)` 짝을 적고, 거부의 `(본 값, 지금 값)` 이 **정확히**
+  그 짝이면 오류 대신 성공을 다시 알린다 — 그 사이 남이 저장했으면 지금 값이 짝과 달라 그대로 거부를
+  알린다. 짝은 저장 성공 때만 바꾼다. 옛 이름 `profile_save_marks`·`is_own_profile_save` 는 얇은
+  별칭이다.
+- **남의 저장에 거부된 누름의 둘째 누름.** 사용자가 거부 뒤 화면을 보기도 전에 닿은 둘째 누름은 옛
+  화면의 입력을 든다. 거부 회차가 본 값을 올리지 않으므로 그 누름은 다시 거부되고, 거부 뒤 다음
+  회차가 최신을 그린 직후에 닿은 누름은 `profile_conflict_marks` 로 받아 둔 dict 의 거부 표지가
+  거른다 — 거부를 받으면 그 알림과 시각을 곧바로 적고(`note_profile_conflict`),
+  `TRAILING_PRESS_SECONDS` 안의 다음 제출은 저장하지 않고 그 거부를 다시
+  알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
+  대조한다(2026-10-26 E2E — 판정 기준·공정 표시명·확보율 보정).
 
 **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿는다. 그 회차는
 쓰지 않고(지나간 세대·이미 지운 글·잠긴 단추) 끝나는데, 첫 쓰기의 성공 알림은 앞 회차가 이미 꺼내
@@ -52,8 +63,12 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Mapping
+from typing import TypeAlias
 
 import streamlit as st
+
+# 본 값·제 저장 짝의 토큰 — 프로필 version(int)·지문·이름(str)·여러 값의 짝(tuple).
+SeenToken: TypeAlias = int | str | tuple[object, ...]
 
 # 쓰기를 마친 세대의 표지(세대 칸 이름 → 그 세대). 세션마다 하나이고 처음 쓰는 콜백이
 # 잠금 안에서 건다.
@@ -65,8 +80,21 @@ RECENT_WRITES_KEY = "write_guard_recent_writes"
 # 간격(Windows 기본 0.5초)에 회차 한 번의 여유를 더한 값이다.
 TRAILING_PRESS_SECONDS = 1.0
 
-# 이 세션이 마지막으로 한 버전 대조 저장(저장 이름 → (편집 시작 version, 저장된 version)).
+# 이 세션이 마지막으로 한 비교 후 쓰기(저장 이름 → (본 값, 저장된 값)). 옛 이름이 버전 대조라 칸
+# 이름이 `profile_saves` 다.
 PROFILE_SAVES_KEY = "write_guard_profile_saves"
+
+# 충돌·본 값 없음으로 거부한 회차가 다음 회차에 그릴 거부 알림(저장 이름 → 알림 글). 거부 회차는
+# 본 값을 올리지 않고 앱을 다시 돌린다 — 그 회차(제출 아님)가 최신을 그리며 본 값을 적고 이 글을
+# 그린다.
+REFUSALS_KEY = "write_guard_refusals"
+
+# 본 값 칸이 없어(편집을 시작한 저장본을 모른다 — 이 칸이 생기기 전에 열린 창 등) 저장하지
+# 않았을 때의 알림.
+SEEN_MISSING_MESSAGE = (
+    "편집을 시작한 저장본을 알 수 없어 저장하지 않았습니다 — 화면을 다시 불러왔으니 최신 값을 "
+    "확인한 뒤 다시 저장하세요."
+)
 
 # 이 세션이 마지막으로 받은 버전 충돌 거부(저장 이름 → (거부 알림 글, 받은 시각)). 시각은
 # `time.monotonic()` 이다.
@@ -130,12 +158,40 @@ def just_written(counter_key: str) -> bool:
     return isinstance(moment, float) and time.monotonic() - moment < TRAILING_PRESS_SECONDS
 
 
-def profile_save_marks() -> dict[str, tuple[int, int]]:
-    """버전 대조 저장의 표지 dict(저장 이름 → (편집 시작 version, 저장된 version)).
+def remember_seen(name: str, token: SeenToken) -> None:
+    """`name` 의 본 값을 `token` 으로 적는다(세션 칸 `name`).
 
-    저장 **전에** 받아 두고 저장에 성공하면 이 dict 칸에 적는다. 세션 칸 쓰기는 둘째 누름의
-    회차가 멈춤을 건 자리에서 끊기지만 dict 칸 쓰기는 끊기지 않는다(위 `write_once` 의 표지와
-    같은 까닭).
+    본문에서 저장하는 폼은 **폼을 제출하지 않은 회차에만** 부른다 — 그 회차가 그린 저장본이 사용자가
+    본 화면이다. 제출 회차·충돌 회차·실패 회차에는 부르지 않는다(저장에 성공한 rerun 회차가 새 값을
+    적는다). 초안과 출발점을 함께 세우는 편집은 초안을 세우는 자리에서 부른다.
+    """
+    st.session_state[name] = token
+
+
+def seen(name: str) -> SeenToken | None:
+    """`name` 의 본 값. 적은 적이 없거나 토큰 꼴이 아니면 None 이다 — 지금 값으로 대체하지 않는다.
+
+    부르는 쪽은 None 이면 저장하지 않고 `SEEN_MISSING_MESSAGE` 를 알린다(`queue_refusal` 뒤 rerun —
+    그 회차가 본 값을 적는다).
+    """
+    value = st.session_state.get(name)
+    if isinstance(value, bool) or not isinstance(value, int | str | tuple):
+        return None
+    return value
+
+
+def forget_seen(name: str) -> None:
+    """`name` 의 본 값을 지운다 — 초안을 버리는 자리(편집을 끈 회차 등)."""
+    st.session_state.pop(name, None)
+
+
+def own_save_marks() -> dict[str, tuple[SeenToken, SeenToken]]:
+    """비교 후 쓰기의 제 저장 표지 dict(저장 이름 → (본 값, 저장된 값)).
+
+    저장 **전에** 받아 두고 저장에 성공하면 `remember_own_save` 로 이 dict 칸에 적는다. 세션 칸
+    쓰기는
+    둘째 누름의 회차가 멈춤을 건 자리에서 끊기지만 dict 칸 쓰기는 끊기지 않는다(위 `write_once` 의
+    표지와 같은 까닭).
     """
     with _WRITE_LOCK:
         marks = st.session_state.get(PROFILE_SAVES_KEY)
@@ -145,22 +201,63 @@ def profile_save_marks() -> dict[str, tuple[int, int]]:
         return marks
 
 
-def is_own_profile_save(
+def remember_own_save(
     name: str,
-    expected: int | None,
-    stored: int | None,
-    marks: Mapping[str, tuple[int, int]] | None = None,
+    expected: SeenToken,
+    stored: SeenToken,
+    marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
+) -> None:
+    """`name` 저장이 본 값 `expected` 에서 `stored` 를 썼다고 적는다 — 저장에 **성공한** 뒤에만
+    부른다.
+
+    저장 전에 받아 둔 `marks` 를 주면 세션 칸을 읽지 않는다(저장 직후는 끊길 수 있는 자리다).
+    """
+    target = own_save_marks() if marks is None else marks
+    target[name] = (expected, stored)
+
+
+def is_own_save(
+    name: str,
+    expected: SeenToken | None,
+    stored: SeenToken | None,
+    marks: Mapping[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> bool:
-    """버전 충돌 `(편집 시작 expected, 지금 stored)` 가 이 세션이 방금 한 `name` 저장 그것인가.
+    """대조 거부 `(본 값 expected, 지금 값 stored)` 가 이 세션이 방금 한 `name` 저장 그것인가.
 
     그렇다면 같은 단추를 빠르게 두 번 누른 것이다 — 첫 누름이 이미 저장했고 그 뒤 아무도 저장하지
-    않았다. 부르는 쪽은 거부 대신 저장 성공을 알린다. 저장 전에 받아 둔 표지 dict(`marks`)를 주면
-    세션 칸을 읽지 않는다 — 거부 직후는 둘째 누름의 회차에 끊길 수 있는 자리다.
+    않았다. 부르는 쪽은 거부 대신 저장 성공을 알린다. 짝이 **정확히** 같을 때만 참이다 — 넓게 잡으면
+    남의 저장 뒤 충돌을 성공으로 알린다. 저장 전에 받아 둔 표지 dict(`marks`)를 주면 세션 칸을 읽지
+    않는다 — 거부 직후는 둘째 누름의 회차에 끊길 수 있는 자리다.
     """
     if expected is None or stored is None:
         return False
     found = st.session_state.get(PROFILE_SAVES_KEY) if marks is None else marks
-    return isinstance(found, Mapping) and found.get(name) == (int(expected), int(stored))
+    return isinstance(found, Mapping) and found.get(name) == (expected, stored)
+
+
+# 옛 이름(버전 대조 저장만 쓰던 때). 새 자리는 위 이름을 쓴다.
+profile_save_marks = own_save_marks
+is_own_profile_save = is_own_save
+
+
+def queue_refusal(name: str, message: str) -> None:
+    """`name` 저장의 거부 알림(`message`)을 다음 회차에 그리게 담는다 — 충돌·본 값 없음으로 거부한
+    회차가 본 값을 올리지 않고 `st.rerun()` 하기 직전에 부른다. dict 칸 쓰기라 끊기지 않는다."""
+    with _WRITE_LOCK:
+        refusals = st.session_state.get(REFUSALS_KEY)
+        if not isinstance(refusals, dict):
+            refusals = {}
+            st.session_state[REFUSALS_KEY] = refusals
+    refusals[name] = message
+
+
+def take_refusal(name: str) -> str | None:
+    """담아 둔 `name` 의 거부 알림을 꺼낸다(한 번만 그린다). 없으면 None."""
+    refusals = st.session_state.get(REFUSALS_KEY)
+    if not isinstance(refusals, dict):
+        return None
+    message = refusals.pop(name, None)
+    return message if isinstance(message, str) and message else None
 
 
 def profile_conflict_marks() -> dict[str, tuple[str, float]]:

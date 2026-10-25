@@ -43,6 +43,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.components.write_guard import is_own_save, own_save_marks, remember_own_save
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
 from capa_simulation.persistence.cache import (
@@ -69,6 +70,8 @@ MAIN_CASE_SOURCE = "HOME 주요 Case 선택"
 MAIN_CASE_FILL_SOURCE = "HOME 주요 Case 리비전 메움"
 # 콜백이 저장하지 못했을 때 남기는 한 줄. 다음 보이는 회차의 상자 안 알림 칸이 꺼내 보인다.
 MAIN_CASE_NOTICE_KEY = "home_preference_main_case_notice"
+# Case 지정 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<Case 번호>`).
+MAIN_CASE_SAVE_NAME = "home_main_case"
 # 마지막으로 보인 상자의 재료(`_PickerView`). 숨은 Preference 회차가 DB 없이 다시 그린다.
 MAIN_CASE_VIEW_KEY = "home_preference_main_case_view"
 OFFICIAL_POINTER = "공식 지정은 시나리오 관리"
@@ -428,6 +431,10 @@ def _replace_case(
     쓴다(같은 쓰기 트랜잭션에서 대조). 저장하지 못하면 다음 회차 상자 안에 한 줄 남긴다(상자는
     프로필 값으로 돌아간다).
     """
+    name = f"{MAIN_CASE_SAVE_NAME}:{case_no}"
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 콜백의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
+    expected = ""
     with pinned_connections(Path(database_path)):
         try:
             repository = get_scenario_repository(database_path)
@@ -436,13 +443,25 @@ def _replace_case(
                 return
             if repository.load_global_main_cases().case(case_no) == chosen:
                 return
+            # 대조한 시나리오(리비전만 고른 쓰기)와 쓴 짝이 제 저장의 짝이다.
+            expected = (chosen[0] or "") if keep_scenario else ""
             repository.replace_global_main_case(
                 case_no,
                 *chosen,
                 source=MAIN_CASE_SOURCE,
                 expected_scenario_id=chosen[0] if keep_scenario else None,
             )
+            remember_own_save(name, expected, chosen, save_marks)
         except ProfileVersionConflict as exc:
+            try:
+                current: tuple[str | None, str | None] | None = (
+                    repository.load_global_main_cases().case(case_no)
+                )
+            except BOOTSTRAP_ERRORS:
+                current = None
+            if is_own_save(name, expected, current, save_marks):
+                # 같은 콜백이 겹쳐 온 둘째다 — 첫 쓰기가 이미 그 짝을 적었다(write_guard).
+                return
             st.session_state[MAIN_CASE_NOTICE_KEY] = str(exc)
             return
         except BOOTSTRAP_ERRORS as exc:

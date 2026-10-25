@@ -34,7 +34,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Final
 from uuid import uuid4
@@ -61,9 +61,18 @@ from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.write_guard import (
+    SEEN_MISSING_MESSAGE,
+    SeenToken,
     held_profile_conflict,
+    is_own_save,
     note_profile_conflict,
+    own_save_marks,
     profile_conflict_marks,
+    queue_refusal,
+    remember_own_save,
+    remember_seen,
+    seen,
+    take_refusal,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.auto_official_update_store import (
@@ -111,10 +120,12 @@ from capa_simulation.services.auto_official_update import (
 )
 
 SETTINGS_FLASH_KEY = "auto_official_update_settings_flash"
-# 설정 폼을 그린 회차에 본 저장본 version. 제출 회차에는 이것이 「편집을 시작할 때 본 version」이다.
+# 설정 폼을 제출하지 않은 회차에 본 저장본 version(`write_guard.remember_seen`). 제출 회차에는
+# 이것이 「편집을 시작할 때 본 version」이다.
 SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
-# 설정 저장의 버전 충돌 표지 이름(`write_guard.profile_conflict_marks`).
+# 설정 저장의 제 저장·충돌·거부 표지 이름(`write_guard`).
 SETTINGS_SAVE_NAME = "auto_official_update_settings"
+SETTINGS_SAVED_PREFIX: Final = "자동 갱신 설정을 저장했습니다"
 # 「지금 실행」 결과(상태, 글, 발행한 회차의 소요대수에 들지 않은 수요 경고). rerun 을 건너 그
 # 자리에 한 번 그린다.
 RUN_RESULT_KEY = "auto_official_update_run_result"
@@ -313,7 +324,7 @@ def scheduler_stall_message(status: SchedulerStatus, now: datetime) -> str | Non
 def _render_settings_form(
     repository: DuckDBScenarioRepository, settings: AutoOfficialUpdateSettings
 ) -> None:
-    submitted_base = st.session_state.get(SETTINGS_BASE_VERSION_KEY)
+    submitted_base = seen(SETTINGS_BASE_VERSION_KEY)
     config = settings.config
     with st.container(border=True):
         st.markdown("#### :material/tune: 설정")
@@ -377,20 +388,29 @@ def _render_settings_form(
         notice = st.container()
         with notice:
             render_flash(SETTINGS_FLASH_KEY)
+            refused = take_refusal(SETTINGS_SAVE_NAME)
+            if refused is not None:
+                st.error(refused)
     if not submitted:
-        st.session_state[SETTINGS_BASE_VERSION_KEY] = settings.version
+        # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
+        # (write_guard).
+        remember_seen(SETTINGS_BASE_VERSION_KEY, settings.version)
         return
-    expected_version = submitted_base if isinstance(submitted_base, int) else settings.version
     # 표지 dict 는 저장 전에 받아 둔다 — 거부 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
     conflict_marks = profile_conflict_marks()
     held = held_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME)
-    # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-    st.session_state[SETTINGS_BASE_VERSION_KEY] = settings.version
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
         # 알린다(write_guard). 「바뀐 값이 없습니다」로도 바꾸지 않는다.
         notice.error(held)
         return
+    if not isinstance(submitted_base, int):
+        # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하면 남의 저장을 모르는 채 덮는다.
+        # 다음 회차(제출 아님)가 최신을 그리며 본 version 을 적는다.
+        queue_refusal(SETTINGS_SAVE_NAME, SEEN_MISSING_MESSAGE)
+        st.rerun()
+    expected_version = submitted_base
     try:
         updated = AutoUpdateConfig(
             enabled=bool(enabled),
@@ -415,23 +435,50 @@ def _render_settings_form(
             notice.error(bootstrap_error_message(exc))
             return
     try:
-        repository.replace_auto_official_update_settings(
+        saved = repository.replace_auto_official_update_settings(
             updated,
             expected_version=expected_version,
             changed_by=str(changed_by),
             source=SETTINGS_SOURCE,
         )
+    except AutoOfficialUpdateSettingsConflict as exc:
+        _settings_conflict(repository, exc, expected_version, save_marks, conflict_marks)
     except BOOTSTRAP_ERRORS as exc:
-        # 버전 충돌과 검증 실패는 ValueError 이고 원문이 무엇을 할지 말한다.
-        message = str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc)
-        if isinstance(exc, AutoOfficialUpdateSettingsConflict):
-            note_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME, message)
-        notice.error(message)
+        # 검증 실패는 ValueError 이고 원문이 무엇을 할지 말한다. 본 version 은 그대로 둔다.
+        notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
         return
-    queue_flash(
-        SETTINGS_FLASH_KEY,
-        f"자동 갱신 설정을 저장했습니다 — {describe_config_change(config, updated)}",
-    )
+    else:
+        remember_own_save(SETTINGS_SAVE_NAME, expected_version, saved.version, save_marks)
+        queue_flash(
+            SETTINGS_FLASH_KEY,
+            f"{SETTINGS_SAVED_PREFIX} — {describe_config_change(config, updated)}",
+        )
+        st.rerun()
+
+
+def _settings_conflict(
+    repository: DuckDBScenarioRepository,
+    exc: AutoOfficialUpdateSettingsConflict,
+    expected_version: int,
+    save_marks: Mapping[str, tuple[SeenToken, SeenToken]],
+    conflict_marks: dict[str, tuple[str, float]],
+) -> None:
+    """설정 저장의 버전 충돌. 제 저장(빠른 두 번 누름의 둘째)이면 성공을, 아니면 거부를 다음
+    회차에 그린다.
+
+    충돌 예외는 지금 version 을 싣지 않아 저장본을 다시 읽어 짝을 맞춘다. 어느 쪽이든 이 회차는 본
+    version 을 올리지 않고 앱을 다시 돌린다 — 다음 회차(제출 아님)가 최신을 그리며 적는다.
+    """
+    try:
+        stored: int | None = repository.load_auto_official_update_settings().version
+    except BOOTSTRAP_ERRORS:
+        stored = None
+    if is_own_save(SETTINGS_SAVE_NAME, expected_version, stored, save_marks):
+        # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+        queue_flash(SETTINGS_FLASH_KEY, f"{SETTINGS_SAVED_PREFIX}.")
+    else:
+        note_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME, str(exc))
+        queue_refusal(SETTINGS_SAVE_NAME, str(exc))
     st.rerun()
 
 
