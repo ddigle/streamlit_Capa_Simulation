@@ -1678,8 +1678,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
   `emit_style=False` 로 부르고 `metric_row_style`·`status_metric_style` 을 보이는 HTML 과 한 `st.html` 에 싣는다.
-- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄이다.
-  `st.download_button` 은 여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다).
+- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄과 표 도구 막대 앞 띄움
+  (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭)이다. `st.download_button` 은
+  여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)이다. 행 모델·면색만 표마다 다르다.
   - 머리글 글자는 `go.Table` 밖 글자 trace(data[1], `plotly_layout.table_text_layer`)이고 띠는 `table_header_band`
@@ -1875,8 +1876,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
-- `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
-  그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
+- `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 그리기 한 길. `queue_flash(key, 글, *, kind,
+  icon)`(kind 는 success·info·warning·error, 아이콘 없는 성공은 글만 담는다)로 세션에 담고, 다음 실행에서
+  `render_flash(*keys)` 가 알림이 있든 없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 한 번 그리고 그 칸을
+  돌려준다 — 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의 실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤
+  `st.rerun()` 이면 문구가 그려지지 않는다). 이름에 FLASH·NOTICE 가 든 칸을 이 모듈 밖에서 꺼내는 꼴은
+  `tests/test_flash_messages.py` 의 AST 그물이 막고, 수명이 다른 칸만 까닭과 함께 허용 목록에 둔다(9장 「조건부 알림」).
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
   온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
@@ -3631,6 +3636,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     key 없는 팝오버도 같다 — 알림이 빠지는 다음 회차에 한 칸 당겨져 다시 서며 닫히므로, 알림 뒤 처음 누른 팝오버 안
     확인 체크·Enter 가 팝오버를 닫았다(2026-10-25 E2E, 설비 시나리오 구획). 알림은 늘 서 있는 칸에 두고, 작업을 마친
     팝오버를 닫으려면 key 꼬리에 세대를 붙여 그 알림을 그리는 회차에만 바꾼다(3장 `equipment_scenario_management.py`).
+    **모든 팝오버는 key 를 받고, 라벨이 글자 그대로가 아닌(개수·이름이 드는) 확장 패널도 key 를 받는다** — Space 저장 안
+    한 배치 상자의 「저장 칸」·「버리기」 팝오버가 상자 안 저장 오류 한 줄에 밀려 닫히던 자리를 이것으로 막았다
+    (`tests/test_popover_keys.py` 가 소스를 훑고, 오류가 서는 회차에도 블록 id 가 같은지 본다).
+  - **알림 칸은 `components/flash.py` 한 길이다.** 콜백·본문의 결과는 `queue_flash` 로 담고 그 칸은 `render_flash` 로
+    그린다 — 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
+    칸에만 가지 않는다(2026-10-26 리팩토링 — 칸 열여섯을 옮겼다). `render_flash` 는 알림이 없어도 칸 하나를 세워
+    이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패 문구를 쓴다. 다음 동작까지 남아야 하는 칸(VOC
+    지운 글의 적어 둔 답변, 필요 단축 일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP),
+    페이지가 같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표)은 `tests/test_flash_messages.py` 의 허용 목록에
+    까닭과 함께 둔다.
   - **key 가 있어도 자리는 고정한다(2026-10-05 E2E).** 저장 회차(알림 없음)를 `st.rerun()` 으로
     끊고 다음 회차(알림 있음)에서 key 있는 탭 묶음이 한 칸 밀리면, 옛 자리에 회색 사본이 남아
     새로고침 전까지 다른 페이지까지 따라왔다(설비 마스터 탭(옛 RawData) 두 번째 저장). 수가 바뀌는 알림은
@@ -3884,10 +3899,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   내려받기·찾기·전체 화면, 1500px 창에서 92×41px)가 표 머리 위 37px 까지 떠, 표에 바로 붙은 위 줄 오른쪽 끝의 단추·팝오버를
   덮고 표에서 그 단추로 옮긴 누름을 가로챈다(2026-10-25 E2E — 설비 시나리오 구획 「시나리오 이름 바꾸기」). 표 바로 위 줄
   오른쪽 끝에 누를 것을 두면 표 앞에 띄움(`st.space`, 막대가 그 줄에 닿지 않을 만큼 — 설비 시나리오 구획은 24px)을 둔다.
-  새 자리는 `table_toolbar.TABLE_TOOLBAR_CLEARANCE`(24px)를 쓴다 — Space 층 목록 머리의 `사용 편집` 토글·층 상세 표 머리의
-  「층 전체 보기」 가 그 자리다(2026-10-26 E2E).
-  날짜 칸의 지우기(✕)도 같다 — Qual 마감 계산기 월 편집표 앞 띄움(`EDITOR_TOOLBAR_CLEARANCE_PX` = 그 공용 값, 터치 창은
-  막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다).
+  띄움은 `table_toolbar.toolbar_clearance()`(`TABLE_TOOLBAR_CLEARANCE` 24px — 숫자는 이 하나, 설비 시나리오
+  `REVISION_TABLE_TOOLBAR_CLEARANCE`·Qual 계산기 `EDITOR_TOOLBAR_CLEARANCE_PX` 는 그 별칭)로 둔다 — Space 층 목록 머리의
+  `사용 편집` 토글·층 상세 표 머리의 「층 전체 보기」 가 그 자리다(2026-10-26 E2E). 날짜 칸의 지우기(✕)도 같다 — Qual
+  마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다). 오른쪽 끝까지
+  늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」)과 바로 위 CSV 단추(Cut-off 잠긴 보기·제외 목록)도
+  같은 띄움을 둔다. `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
+  대입은 건너뛴다)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고, 띄움 숫자 정의가 이 모듈 하나인지 본다.
 - **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
   `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
   갈아 끼울 때(Import 저장·편집 버퍼 교체)도 같다 — 옛 delta 가 새 프레임에 얹혀 Import 가 조용히 되돌려진다. 「변경사항

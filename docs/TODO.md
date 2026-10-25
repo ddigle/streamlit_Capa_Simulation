@@ -648,6 +648,21 @@
 
 ### 코드 정리(리팩토링 잔여)
 
+- [ ] **알림 칸 flash 한 길 — 남은 칸(2026-10-26 리팩토링 `notice-slot-toolbar` 후속)** — 칸 열여섯을 `components/flash.py`
+  (`queue_flash`·`render_flash`)로 옮겼다. 다른 갈래가 같은 파일을 고치는 중이라 이번에 두고 `tests/test_flash_messages.py`
+  `FLASH_POP_ALLOWED` 에 까닭과 함께 남긴 것: VOC 머리 알림(`voc.FLASH_KEY` — 3회차 빠른 두 번 누름 고침과 위젯 세대 갈래 뒤),
+  설비 시나리오 줄 사이드바 알림(`equipment_scenario_status.FLASH_KEY`), 설비 시나리오 구획 알림(`equipment_scenario_management`
+  — 그린 회차에 팝오버 세대를 올리므로 `pending_flash` 로 먼저 보고 옮긴다), 환산 화면 작업 줄 알림(`load_conversion._render_flashes`
+  — 그리는 자리가 아이콘을 정한다. `queue_reference_import_flash` 가 아이콘을 받게 한 뒤 옮긴다). 수명이 달라 그대로 두는 것:
+  VOC 지운 글 칸·기준선 shown 칸·STEP 탭 알림·월 편집표 `st.empty` 자리. 화면 탭 상한 알림(`page_tabs_state`)은 탭 줄 JS 가
+  일련번호로 띄우는 컴포넌트 data 라 `st` 알림 길이 아니다(옮기지 않음). `equipment_data_workspace.FLASH_KEY`
+  (「equipment_status_flash」)는 쓰는 곳이 없는 죽은 칸이다(D 걷기에서 쓰는 쪽만 걷혔다) — 가용설비 현황이 `render_flash` 로
+  읽기만 한다. 지울지는 다음 정리 때.
+- [ ] **다음 배포 — 알림 칸·팝오버 key·표 앞 띄움(2026-10-26 리팩토링)** — 배포 직후 열려 있던 팝오버 넷(Space 저장 칸·버리기·
+  시나리오 바꾸기, 필요 단축 일정 「기준선 지우기」)과 라벨이 바뀌는 확장 패널 여덟은 새 key 로 한 번 닫히고 접힌다. 설비 설정
+  Cut-off 잠긴 보기·제외 목록·Admin 공용 표시순서·Proc Rename 표가 표 도구 막대 띄움(24px)만큼 내려간다. 사내 화면 확인 항목은
+  늘지 않는다.
+
 - [~] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없는 순수 유지보수 비용이라 다른 일 뒤로 둔다.
   분류 컬럼 폭 계산과 `go.Table` 두 벌 조립은 `monthly_table_base` 로 올렸다. **남은 것**: 격자 머리 여섯 호출과 반복 접두
   생략 루프 — 두 모듈의 `_add_table_grid` 머리, `grouped_monthly_table._grouped_values`·
