@@ -45,6 +45,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_unit_renames,
     save_equipment_buffer,
     schedule_revision_title,
+    stale_save_refusal,
 )
 from capa_simulation.components.equipment_save_fields import (
     SaveCandidateCounts,
@@ -566,6 +567,11 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
             stale_save_warning(basis.revision_no, basis.latest_revision_no),
             icon=":material/lock_clock:",
         )
+        # 낡기 전에 고친 일정 칸·지운 호기가 있으면 공통 칸까지 거부된다 — 저장 전에 그 칸과 고칠
+        # 길을 알린다(누르면 같은 글로 거부한다 — `save_equipment_buffer`).
+        refusal = stale_save_refusal(buffer, basis)
+        if refusal is not None:
+            st.warning(markdown_safe_tildes(refusal), icon=":material/block:")
     if not has_changes:
         st.caption("저장할 변경이 없습니다.")
     note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")

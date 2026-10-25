@@ -111,6 +111,7 @@ from capa_simulation.services.equipment_grid import (
     move_ids,
     prune_overlay,
     renamed_saved_ids,
+    stale_scenario_edits,
     undo_from_state,
     undo_to_state,
 )
@@ -1845,6 +1846,9 @@ def _save_equipment_frames(
     violations = saved_master_violations(frames[1])
     if violations:
         raise ValueError(module_layout_message(violations))
+    stale = stale_save_refusal(frames, basis)
+    if stale is not None:
+        raise ValueError(stale)
     base = st.session_state.get(_BASE_KEY)
     if not isinstance(base, dict):
         raise ValueError("편집본이 아직 서지 않아 저장하지 않았습니다. 화면을 다시 불러오세요.")
@@ -2755,6 +2759,43 @@ def stale_delete_lock(basis: EquipmentSaveBasis) -> str:
         "최신이 아니라 지울 수 없습니다 — 호기·비가동을 지우면 이 설비 시나리오의 일정도 바뀝니다. "
         f"최신 {with_object_particle(latest)} 불러온 뒤 지우세요."
     )
+
+
+# 표 밖 저장 자리(사이드바 설비 시나리오 팝업 「저장」·Space 「배치 저장」)가 낡은 세션에서 알리는
+# 글 — 설비 마스터 탭은 같은 것을 「저장하기 전에 고칠 것」 줄로 막는다(`equipment_master_tab`).
+STALE_DELETED_UNITS_ELSEWHERE = (
+    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 가용설비 현황 › 설비 마스터에서 "
+    "되살리거나 최신을 불러오세요."
+)
+STALE_SCENARIO_EDITS_ELSEWHERE = (
+    "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
+    "않습니다 — 가용설비 현황 › 설비 마스터 「저장 전 변경」 에서 그 칸을 되돌리면(↶) 공통 칸은 "
+    "저장됩니다. 일정을 살리려면 최신을 불러와 다시 고칩니다."
+)
+
+
+def stale_save_refusal(frames: Frames, basis: EquipmentSaveBasis | None) -> str | None:
+    """낡은 세션의 저장을 막을 까닭 — 낡기 전에 지운 저장본 호기와 고친 일정·시나리오 메모 칸.
+    없거나 낡은 세션이 아니면 None.
+
+    일정이 바뀐 저장은 저장소가 늘 거부하고(`EquipmentRevisionConflict` — 공통 칸까지) 그 문구는
+    「화면을 다시 불러와」 만 말해 다시 불러오면 공통 편집까지 잃는다. 그래서 저장 전에 그 칸과 고칠
+    길(그 칸을 되돌리면 공통 칸은 저장된다)을 알린다 — 사이드바 팝업 「저장」 은 경고 글에, 저장
+    (`save_equipment_buffer`)은 거부 글에 쓴다. 견줌은 설비 마스터 탭의 고칠 것 줄과 같다
+    (`stale_scenario_edits` — 「바뀐 칸」 표지와 같은 글자 견줌). 비가동 일정 표의 낡기 전 편집은
+    탭처럼 세지 않는다(저장소가 거부한다)."""
+    if basis is None or not basis.stale:
+        return None
+    renames = pending_unit_renames().units
+    saved = _saved_master()
+    lines: list[str] = []
+    deleted = len(grid_index(frames[1], saved, renames).deleted)
+    if deleted:
+        lines.append(STALE_DELETED_UNITS_ELSEWHERE.format(units=deleted))
+    cells, units = stale_scenario_edits(frames[1], saved, renames)
+    if cells:
+        lines.append(STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=cells, units=units))
+    return " ".join(lines) or None
 
 
 def stale_paste_refusal(
