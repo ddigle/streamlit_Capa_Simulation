@@ -122,7 +122,8 @@
   - ~~B0~~ 같은 규칙 칸 검증 — 2026-10-25 들어갔다(서비스만, 화면 그대로 — 결정 기록 「데이터·DB」 2026-10-25).
   - **B1-a·b** 들어갔다(2026-10-25 — 화면에는 아직 잇지 않음): 순수 서비스 `services/equipment_grid.py`(칸 정의·묶음·상세 묶음·
     행 id·칸 글자·세 마운트 data·출납 반영·차이·되돌리기)와 표 컴포넌트 `components/equipment_master_grid.py`(+ 자산 셋 — 불러오기
-    ·표·오른쪽 칸 호기 상세/저장 전 변경), 새 토큰 `GRID_*` 아홉, conftest 대역. 사본 화면(저장소 밖)에서 브라우저로 돌려 봤다
+    ·표·오른쪽 칸 호기 상세/저장 전 변경), 새 토큰 `GRID_*` 열(배치 머리 포함), conftest 대역. 설비 시나리오 2단계 S3 와 합칠 때
+    (integ/1025) 표를 S3 판정에 맞췄다 — 칸 갈래 「배치」, `layout_lock` = `space_edit_mode` 잠긴 회차, `locked_layout`. 사본 화면(저장소 밖)에서 브라우저로 돌려 봤다
     (결정 기록 「화면」 2026-10-25 B1-a·b). 남은 B1: **c** 탭 본문(`equipment_master_tab.py` — 열렸을 때만 그림, 출납 처리·저장 구획·
     저장 이력·`apply_master_grid_result`)·**d**·**e**.
   - **B1** 설비 마스터 표(CCv2)·오른쪽 칸(호기 상세·저장 전 변경·저장 이력)·엑셀·CSV 팝업(열림 칸 `"import"` 를 여기서 더한다)·
@@ -818,9 +819,18 @@
     갈래를 같이 더한다. S3 는 `assumption_layout_lock` 을 `layout_edits` 로 바꾸고 배치 잠금을 `space_edit_mode` 판정으로 옮긴다 —
     표의 `GridContext.layout_lock`(가정이면 잠금)과 `assumption_layout`, 그 대조 시험
     (`test_joining_a_group_in_an_assumption_session_takes_the_groups_official_spot`)을 그 판정·이름으로 함께 고친다.
+    → **합쳤다(integ/1025, 2026-10-25 밤사이)**: `LAYOUT_COLUMN_HELP` 와 배치 갈래는 서비스 `scenario_column_help` 에, 칸 `scope`·
+    상세 묶음 「위치」 는 `layout`(배치 — 머리 꼬리표·값 넣기 칸·변경 줄 「배」·범례 셋째 칸, 머리 면 `GRID_LAYOUT_HEAD`)이다.
+    `GridContext.layout_lock` 은 「가정이면」 이 아니라 `space_edit_mode(...).layout == "locked"` 인 회차의 까닭이고(공식·가정
+    편집 회차는 None — 가정 세션 배치 칸은 그 시나리오의 배치 차이로 고친다), `assumption_layout` 은 `locked_layout`(작업 공간
+    `layout_edits(...).apply` 와 대조 — 시험 `test_joining_a_group_in_a_locked_layout_takes_the_groups_spot`), 가정 편집 회차 시험
+    `test_an_overlay_session_edits_the_layout_of_saved_and_new_units` 를 더했다. 밤사이 권장대로 정한 것(대안): 범례·꼬리표 글은
+    `official` 하나로 가른다(대안: `GridContext` 에 `layout_mode` 칸을 더함 — 잠긴 회차는 이미 `layout_lock` 이 말한다), 배치 머리 면은
+    옅은 남색 새 토큰(대안: 머리 면 그대로 꼬리표 글자만 — 시나리오 칸과 한눈에 갈리지 않는다).
   - 열린 것: 사양 6-4 의 새 호기 초안 상태 값 `draft` 와 「새 호기」 칸은 단계 C 라 JS 에 없다(상태 값은 `outbox` 하나). 가정 설비
-    시나리오의 배치는 S3 전이라 S2 규칙(있던 호기 잠금 + 새 호기 자리 없이 — 리뷰 rs-b1x 고침)으로 두었다 — S3 가 들어오면
-    「시나리오(배치)」 묶음 칸으로 바꾼다(eqscn2 설계 13-1).
+    시나리오의 배치 칸은 S3 판정으로 맞췄다(위) — 가정 편집 회차에 공식 층이 다른 호기를 한 묶음으로 묶는 Main 설비 고침은 표가
+    미리 막지 않고 저장이 막는다(`layout_overlay.assumption_group_refusal` — 탭 제출·붙여넣기는 미리 막는다). B1-c 가 같은 판정을
+    출납 반영 뒤 칸 오류로 싣는다.
   - (리뷰 rs-b1x 고침, 2026-10-25) 리뷰 두 벌의 22건을 대조했다 — 고친 것: 가정 세션 새 호기 자리 잠금과 S2 판정 맞춤, 토스트
     「되돌리기」 단계 표지(맨 위가 아니면 거두고 파이썬도 거절 — 같은 출납 안 경합 포함), 낡은 세션 칸·호기 되돌리기, 오른쪽 칸
     `ack`·토스트, 새 호기 이름 바꿈 되돌리기의 초안 열쇠·옮김, 되돌리기의 불러온 목록 사진, 「~」 든 저장본 설비명, 버림 토스트
@@ -844,7 +854,9 @@
     - 체크 칸·「−」 는 Tab 정지에서 빼고 칸 위 Space(Shift+Space 범위)로 고른다 — 「−」(목록에서 빼기)는 마우스 몫으로 남겼다.
       대안: 줄 끝 칸까지 ←→ 로 닿게 함.
     - B1-c 몫(약속): 화면 쪽은 `apply_ops` 결과 토스트를 그 op 를 보낸 마운트에 싣고(`undo` = `toast_step`), 세 마운트 data 에
-      `undo_top`·제 `ack` 를, 표 data 에 `open_id`(상세 id)·`moved` 를 넘긴다.
+      `undo_top`·제 `ack` 를, 표 data 에 `open_id`(상세 id)·`moved` 를 넘긴다. S3 와 합친 뒤로는 `GridContext.layout_lock` 에
+      `space_edit_mode(...)` 가 잠긴 회차의 `master_tab_lock_reason` 을 넘기고, op 를 얹은 뒤 `layout_edits` 가 비지 않으면
+      `stamp_layout_role` 로 그때의 역할을 찍는다(탭 제출과 같다).
 
 - (2026-10-25) **가용설비 현황 두 탭 개편 단계 A**(사용자 2026-10-24 「탭 둘」 결정, 사양 D1~D19 모두 권장대로 — 밤사이 장부) —
   바깥 탭 ① `설비 마스터`(처음 여는 탭 — 지금 RawData 작업 공간 그대로, 숨은 회차에도 그림, 코드 차례는 Summary 뒤) ② `Summary`

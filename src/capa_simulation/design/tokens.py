@@ -334,6 +334,9 @@ _LIGHT: Final[dict[str, Any]] = {
     "GRID_WARN_LINE": "#B45309",
     "GRID_LOCK_FILL": "#F1F2F4",
     "GRID_SCENARIO_HEAD": "#DFF1EE",
+    # 배치 칸 머리(설비 시나리오 2단계 S3 — 공식은 공식 배치, 가정은 그 시나리오에만). 시나리오
+    # 머리(청록)와 갈리는 옅은 남색이고 「배치」 꼬리표 글자가 함께 간다.
+    "GRID_LAYOUT_HEAD": "#EEF0FA",
     "GRID_SELECTED_FILL": "#E6F4F2",
     "GRID_NEW_FILL": "#F0FDFA",
     # ------------------------------------------------------------------ 스크롤바 색
@@ -530,6 +533,7 @@ _DARK: Final[dict[str, Any]] = {
     "GRID_WARN_LINE": "#FBBF24",
     "GRID_LOCK_FILL": "#26262D",
     "GRID_SCENARIO_HEAD": "#173A35",
+    "GRID_LAYOUT_HEAD": "#262A3D",
     "GRID_SELECTED_FILL": "#16332F",
     "GRID_NEW_FILL": "#132B28",
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
@@ -637,6 +641,7 @@ if TYPE_CHECKING:
     GRID_CHANGED_MARK: Final[str] = ""
     GRID_ERROR_FILL: Final[str] = ""
     GRID_ERROR_LINE: Final[str] = ""
+    GRID_LAYOUT_HEAD: Final[str] = ""
     GRID_LOCK_FILL: Final[str] = ""
     GRID_NEW_FILL: Final[str] = ""
     GRID_SCENARIO_HEAD: Final[str] = ""

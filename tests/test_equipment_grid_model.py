@@ -108,6 +108,7 @@ def test_scopes_split_the_columns_as_the_scenario_contract_does() -> None:
     for column in eg.GRID_COLUMNS:
         by_scope.setdefault(column.scope, set()).add(column.name)
     assert by_scope["scenario"] == set(SCENARIO_SCHEDULE_COLUMNS)
+    assert by_scope["layout"] == set(SCENARIO_LAYOUT_COLUMNS), "배치 일곱 칸(설비 시나리오 S3)"
     assert by_scope["status"] == {"반입상태", "Qual상태"}
 
 
@@ -161,6 +162,8 @@ def test_detail_groups_cover_every_column_exactly_once() -> None:
     assert len(seen) == len(set(seen)) == 39
     scenario = next(group for group in eg.DETAIL_GROUPS if group.scope == "scenario")
     assert set(scenario.columns) == set(SCENARIO_SCHEDULE_COLUMNS)
+    layout = next(group for group in eg.DETAIL_GROUPS if group.scope == "layout")
+    assert set(layout.columns) == set(SCENARIO_LAYOUT_COLUMNS)
 
 
 def test_lock_sets_name_contract_columns() -> None:
@@ -173,6 +176,8 @@ def test_scenario_column_help_keeps_its_words() -> None:
     assert eg.scenario_column_help("Qual일정", "셋업 실무") == "시나리오 — 「셋업 실무」 에만 저장"
     assert eg.scenario_column_help("반입상태", None) == eg.STATUS_COLUMN_HELP
     assert eg.scenario_column_help("Maker", None) == eg.COMMON_COLUMN_HELP
+    for column in SCENARIO_LAYOUT_COLUMNS:
+        assert eg.scenario_column_help(column, "셋업 실무") == eg.LAYOUT_COLUMN_HELP, column
 
 
 # ------------------------------------------------------------------ 칸 글자
@@ -413,7 +418,7 @@ def test_a_cell_draft_hides_the_rule_result_of_the_old_value_in_that_cell() -> N
     )
 
 
-def test_locks_follow_module_groups_stale_sessions_and_assumption_layout() -> None:
+def test_locks_follow_module_groups_stale_sessions_and_a_locked_layout() -> None:
     saved = _saved()
     frames = _copy(saved)
     master = frames[1]
@@ -421,12 +426,12 @@ def test_locks_follow_module_groups_stale_sessions_and_assumption_layout() -> No
     master.loc[1, "공정소분류"] = master.loc[0, "공정소분류"]
     extra = master.iloc[[5]].assign(설비명="NEW-1")
     frames = (frames[0], pd.concat([master, extra], ignore_index=True), frames[2])
-    context = eg.GridContext(base="t", stale_lock="낡음", layout_lock="가정 배치")
+    context = eg.GridContext(base="t", stale_lock="낡음", layout_lock="배치 잠금")
     view = _view(frames, saved, context=context)
     module_row, plain_row = view.index.ids[0], view.index.ids[3]
     assert view.locks[module_row] == ("stale", "layout", "module")
     assert view.locks[plain_row] == ("stale", "layout")
-    assert view.locks["n:NEW-1"] == ("stale", "place"), "새 호기는 자리 없이(S2)"
+    assert view.locks["n:NEW-1"] == ("stale", "place"), "새 호기는 자리 없이(탭 제출과 같은 판정)"
     assert eg.lock_of(view, module_row, "X좌표") == "layout"
     assert eg.lock_of(view, plain_row, "반입일정") == "stale"
     for column in ("동", "층", "X좌표", "Y좌표"):
@@ -434,7 +439,13 @@ def test_locks_follow_module_groups_stale_sessions_and_assumption_layout() -> No
     for column in ("Xsize", "Ysize", "레이아웃표시"):
         assert eg.lock_of(view, "n:NEW-1", column) is None, "크기·레이아웃표시는 받는다"
     assert context.lock_reasons()["stale"] == "낡음"
-    assert context.lock_reasons()["place"] == context.lock_reasons()["layout"] == "가정 배치"
+    assert context.lock_reasons()["place"] == context.lock_reasons()["layout"] == "배치 잠금"
+    overlay = eg.GridContext(base="t", scenario_name="셋업 실무", official=False)
+    opened = _view(frames, saved, context=overlay)
+    assert plain_row not in opened.locks, (
+        "가정 설비 시나리오도 잠기지 않은 회차면 배치 칸을 고친다(S3 — 그 시나리오의 배치 차이)"
+    )
+    assert opened.locks[module_row] == ("module",)
 
 
 def test_grid_data_is_plain_json_in_loaded_order() -> None:

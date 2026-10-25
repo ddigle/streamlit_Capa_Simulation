@@ -1025,13 +1025,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면 공통 계층)의 streamlit 을 모르는 부분. 화면에는 아직 잇지 않았다(B1-c 가 탭 본문에서 쓴다).
   - 칸 정의 `GRID_COLUMNS`(계약 39칸 차례 — 브라우저로 가는 자리 번호는 모두 이 차례)·칸 묶음 `COLUMN_SETS`(기본·일정·위치·
     이력·메모·「전체 39칸」 = 엑셀 양식 차례)·상세 묶음 `DETAIL_GROUPS`(39칸이 한 번씩)·잠금 갈래 `LOCK_SETS`(모듈 묶음 좌표·크기 /
-    가정 시나리오의 있던 호기 배치 일곱 칸 `layout` · 새 호기 자리 넷 `place`(동·층·X좌표·Y좌표) / 낡은 세션의 시나리오 일곱 칸,
-    지운 표시 줄은 모든 칸)와 칸 머리 도움말 `scenario_column_help`(옛 RawData 편집표도 이것을 쓴다)가 한 곳이다.
-  - **가정 설비 시나리오**(`GridContext.layout_lock`)는 설비 시나리오 2단계 S2 규칙 그대로다 — 있던 호기 배치 일곱 칸·새 호기 자리
-    넷을 잠그고, 이름·Main 설비·배치·행을 바꾼 op 뒤마다 `assumption_layout`(작업 공간 `layout_edits(...).apply` 와 같은
-    판정 — `layout_overlay.assumption_common_places`, 시험이 대조한다)으로 맞춘다: 있는 묶음에 드는 새 호기와 공식 동·층 미정 호기는
-    그 묶음의 공식 동·층에 X·Y 비움. 맞춘 칸은 그 op 의 되돌리기 단계에 든다. 그래야 가정 세션 저장이 이 판의 화면이 보이지도
-    지우지도 못하는 배치 차이를 만들지 않는다(`_layout_role_of` 가 잠금에 걸린 편집본을 공식 역할로 보낸다).
+    배치 편집이 잠긴 회차의 있던 호기 배치 일곱 칸 `layout` · 새 호기 자리 넷 `place`(동·층·X좌표·Y좌표) / 낡은 세션의 시나리오 일곱
+    칸, 지운 표시 줄은 모든 칸)와 칸 머리 도움말 `scenario_column_help`(공통·상태·배치 `LAYOUT_COLUMN_HELP`·시나리오 — 옛 RawData
+    편집표도 이것을 쓴다)가 한 곳이다. 칸 저장 갈래 `scope` 는 공통·배치(`layout` — 배치 일곱 칸, 설비 시나리오 2단계 S3)·시나리오·
+    상태 넷이고 표 머리·상세 묶음(「위치」 는 배치)·값 넣기 칸·변경 줄·범례(공식이면 「공식 배치에 저장」, 가정이면 「그 시나리오에만
+    저장(공식과 다른 것만)」)가 같은 꼬리표다.
+  - **배치 편집이 잠긴 회차**(`GridContext.layout_lock` — 설비 시나리오 2단계 S3, 화면 쪽이 `space_edit_mode(...).layout ==
+    "locked"` 일 때 `master_tab_lock_reason` 을 넘긴다)는 있던 호기 배치 일곱 칸·새 호기 자리 넷을 잠그고, 이름·Main 설비·배치·행을
+    바꾼 op 뒤마다 `locked_layout`(작업 공간 `layout_edits(...).apply` 와 같은 판정 — `layout_overlay.assumption_common_places`,
+    시험이 대조한다)으로 맞춘다: 있는 묶음에 드는 새 호기와 동·층 미정 호기는 그 묶음의 동·층에 X·Y 비움. 맞춘 칸은 그 op 의
+    되돌리기 단계에 든다. 공식(`"official"`)·가정(`"overlay"`) 편집이면 `layout_lock` 은 None 이고 배치 칸은 잠기지 않는다 — 가정
+    세션의 배치 칸 고침은 그 시나리오의 배치 차이로 저장된다. 화면 쪽(B1-c)은 op 를 얹은 뒤 `layout_edits` 가 비지 않으면 그때의
+    역할을 찍는다(`stamp_layout_role` — 탭 제출과 같다).
   - 행 id 는 `s:` + 저장본 설비명(이름을 바꿔도 그대로)·`n:` + 지금 이름(새 호기)이고 짝은 저장의 호기 키 규칙
     `inherited_unit_names` 그대로다(`grid_index`). 같은 이름 둘째 줄 꼬리는 설비명에 나올 수 없는 글자(`DUPLICATE_MARK`)로 붙이고
     겹치면 번호를 올린다. 저장본 호기인지는 **id 글자를 풀지 않고** `GridIndex.saved`·`saved_name`·`is_new` 로 가른다(설비명 규칙은
@@ -1224,7 +1229,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·저장
     전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
     잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
-  - data 는 `services/equipment_grid` 의 dict + 팔레트(`_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 아홉 —
+  - data 는 `services/equipment_grid` 의 dict + 팔레트(`_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
     대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」), 트리거는
     불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·`goto` 이다. 받기 콜백이 꼴을 거르고(표 트리거는
     그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.

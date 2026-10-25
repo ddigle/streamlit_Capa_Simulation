@@ -249,6 +249,9 @@ const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
 const COLSET_KEY = 'capa.equipmentGrid.colSet'
+// 저장 갈래 꼬리표(칸 머리·상세 묶음·값 넣기 칸·변경 줄). 공통·상태 칸은 꼬리표 없이 「공통」 이다.
+const SCOPE_LABELS = { scenario: '시나리오', layout: '배치' }
+const SCOPE_SHORT = { scenario: '시', layout: '배' }
 const ICONS = {
   search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>',
   close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>',
@@ -989,14 +992,20 @@ function paintBar(S) {
   }
   bar.appendChild(seg)
   const legend = el('div', 'emg-legend')
-  const scenario = ((S.data.scenario || {}).name) || '지금 설비 시나리오'
+  const scenarioData = S.data.scenario || {}
+  const scenario = scenarioData.name || '지금 설비 시나리오'
   const left = el('span')
   left.appendChild(el('span', 'emg-scope is-scenario', '시나리오'))
   left.appendChild(el('span', null, ' ' + scenario + '에만 저장'))
+  // 배치 칸은 공식 설비 시나리오면 공식 배치, 가정이면 그 시나리오의 배치 차이로 간다(설비 시나리오 2단계 S3).
+  const middle = el('span')
+  middle.appendChild(el('span', 'emg-scope is-layout', '배치'))
+  middle.appendChild(el('span', null, scenarioData.official === false ? ' ' + scenario + '에만 저장(공식과 다른 것만)' : ' 공식 배치에 저장'))
   const right = el('span')
   right.appendChild(el('span', 'emg-scope', '공통'))
   right.appendChild(el('span', null, ' 모든 설비 시나리오에 함께 저장'))
   legend.appendChild(left)
+  legend.appendChild(middle)
   legend.appendChild(right)
   bar.appendChild(legend)
 }
@@ -1057,7 +1066,7 @@ function buildSelection(S, bar) {
   pick.setAttribute('aria-label', '값을 넣을 칸')
   columns.forEach((column, k) => {
     if (column.kind === 'name') return
-    const option = el('option', null, column.name + (column.scope === 'scenario' ? ' (시나리오)' : ''))
+    const option = el('option', null, column.name + (SCOPE_LABELS[column.scope] ? ' (' + SCOPE_LABELS[column.scope] + ')' : ''))
     option.value = column.name
     option.selected = column.name === S.bulkCol
     pick.appendChild(option)
@@ -1172,13 +1181,13 @@ function buildSelection(S, bar) {
 
 function headCell(S, k) {
   const column = S.model.columns[k]
-  const cell = el('div', 'emg-c emg-w-' + column.width + (column.scope === 'scenario' ? ' is-scenario' : ''))
+  const cell = el('div', 'emg-c emg-w-' + column.width + (SCOPE_LABELS[column.scope] ? ' is-' + column.scope : ''))
   cell.setAttribute('role', 'columnheader')
   cell.setAttribute('aria-colindex', String(k + 1))
   const sort = S.sort && S.sort.col === k ? (S.sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
   const press = button('emg-hb', null, () => toggleSort(S, k))
   press.appendChild(el('span', null, column.name + sort))
-  if (column.scope === 'scenario') press.appendChild(el('small', null, '시나리오'))
+  if (SCOPE_LABELS[column.scope]) press.appendChild(el('small', null, SCOPE_LABELS[column.scope]))
   press.title = (column.help || '') + ' · 눌러서 정렬'
   if (S.sort && S.sort.col === k) cell.setAttribute('aria-sort', S.sort.dir === 'asc' ? 'ascending' : 'descending')
   cell.appendChild(press)
@@ -1713,7 +1722,7 @@ function drawDetail(S, root, data) {
     const box = el('div', 'emg-side-group')
     const title = el('h4')
     title.appendChild(el('span', null, group[1]))
-    title.appendChild(el('span', 'emg-scope' + (group[2] === 'scenario' ? ' is-scenario' : ''), group[2] === 'scenario' ? '시나리오' : '공통'))
+    title.appendChild(el('span', 'emg-scope' + (SCOPE_LABELS[group[2]] ? ' is-' + group[2] : ''), SCOPE_LABELS[group[2]] || '공통'))
     if (group[3]) title.appendChild(el('span', null, group[3]))
     box.appendChild(title)
     const fields = el('div', 'emg-fields')
@@ -1882,7 +1891,7 @@ function drawChanges(S, root, data) {
     for (const [col, scope, before, after] of unit.lines || []) {
       const line = el('div', 'emg-line')
       const label = el('span', 'emg-muted', col)
-      if (scope === 'scenario') label.appendChild(el('span', 'emg-scope is-scenario', '시'))
+      if (SCOPE_SHORT[scope]) label.appendChild(el('span', 'emg-scope is-' + scope, SCOPE_SHORT[scope]))
       line.appendChild(label)
       const value = el('span', 'emg-value')
       value.appendChild(el('span', 'emg-from', before || '(빈칸)'))

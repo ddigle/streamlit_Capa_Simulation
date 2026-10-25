@@ -27,9 +27,12 @@ from capa_simulation.services.space_layout_edit import PendingRenames, buffer_ma
 ANCHOR = date(2026, 10, 1)
 BASE = "tok#1"
 CONTEXT = eg.GridContext(base=BASE, scenario_name="운영")
-ASSUME = eg.GridContext(
-    base=BASE, scenario_name="가정", official=False, layout_lock="가정 배치 잠금"
+# 배치 편집이 잠긴 가정 세션(설비 시나리오 2단계 S3 — `space_edit_mode(...).layout == "locked"`)과
+# 잠기지 않은 가정 세션(`"overlay"` — 그 시나리오의 배치 차이를 고친다).
+LOCKED = eg.GridContext(
+    base=BASE, scenario_name="가정", official=False, layout_lock="배치 편집 잠금"
 )
+OVERLAY = eg.GridContext(base=BASE, scenario_name="가정", official=False)
 STALE = eg.GridContext(base=BASE, stale_lock="낡음", delete_lock="낡음 — 지우기 잠금")
 PLACE = ("동", "층", "X좌표", "Y좌표")
 
@@ -243,38 +246,38 @@ def test_locked_cells_are_refused_by_python_too() -> None:
     assert allowed.changed, "공통 칸은 낡은 세션에서도 고친다"
 
 
-# ------------------------------------------------------------------ 가정 설비 시나리오 배치(S2)
+# ------------------------------------------------------------------ 배치 편집이 잠긴 회차(S3)
 
 
-def test_an_assumption_session_keeps_a_new_units_place_empty() -> None:
-    """S2 규칙 — 새 호기는 자리 없이. 동·층·X좌표·Y좌표는 어느 길(칸·붙여넣기·값 넣기)로도
-    막는다."""
+def test_a_locked_layout_keeps_a_new_units_place_empty() -> None:
+    """배치 편집이 잠긴 회차 — 새 호기는 자리 없이. 동·층·X좌표·Y좌표는 어느 길(칸·붙여넣기·값
+    넣기)로도 막는다."""
     saved = _saved()
     state = _unplaced(_state(saved), "NEWX-01")
     new = "n:NEWX-01"
     texts = {"동": "C2", "층": "3F", "X좌표": "10", "Y좌표": "20"}
     cells = [_op("cell", k + 1, id=new, col=c, text=t) for k, (c, t) in enumerate(texts.items())]
-    result = _apply(state, *cells, context=ASSUME)
+    result = _apply(state, *cells, context=LOCKED)
     assert result.refused == 4 and not result.changed
     pasted = _apply(
         state,
         _op("paste", 1, ids=[new], cols=list(texts), rows=[list(texts.values())]),
         _op("set", 2, ids=[new], col="동", text="C2"),
-        context=ASSUME,
+        context=LOCKED,
     )
     assert not pasted.changed and pasted.refused == 1
     row = pasted.state.frames[1].iloc[-1]
     assert [eg.cell_text(row[c]) for c in PLACE] == ["", "", "", ""]
-    sized = _apply(state, _op("cell", 1, id=new, col="Xsize", text="9"), context=ASSUME)
+    sized = _apply(state, _op("cell", 1, id=new, col="Xsize", text="9"), context=LOCKED)
     assert sized.changed and sized.state.frames[1].iloc[-1]["Xsize"] == 9.0, "크기는 받는다"
     saved_row = _id(state, 2)
-    blocked = _apply(state, _op("cell", 1, id=saved_row, col="Xsize", text="9"), context=ASSUME)
+    blocked = _apply(state, _op("cell", 1, id=saved_row, col="Xsize", text="9"), context=LOCKED)
     assert blocked.refused == 1, "있던 호기는 배치 일곱 칸 모두"
 
 
-def test_joining_a_group_in_an_assumption_session_takes_the_groups_official_spot() -> None:
-    """새 호기·공식 동·층 미정 호기가 있는 묶음에 들면 그 묶음의 공식 동·층(X·Y 비움) — 설비 마스터
-    탭 제출과 같은 판정(`layout_edits(...).apply`)이고, 되돌리면 함께 돌아간다."""
+def test_joining_a_group_in_a_locked_layout_takes_the_groups_spot() -> None:
+    """배치 편집이 잠긴 회차에 새 호기·동·층 미정 호기가 있는 묶음에 들면 그 묶음의 동·층(X·Y 비움)
+    — 설비 마스터 탭 제출과 같은 판정(`layout_edits(...).apply`)이고, 되돌리면 함께 돌아간다."""
     from capa_simulation.components.equipment_data_workspace import layout_edits
 
     saved = _grouped(_saved())
@@ -289,12 +292,12 @@ def test_joining_a_group_in_an_assumption_session_takes_the_groups_official_spot
         _op("cell", 1, id="n:NEWX-01", col="Main 설비", text="GRP-1"),
         _op("cell", 2, id=joiner, col="Main 설비", text="GRP-1"),
     )
-    result = _apply(state, *ops, context=ASSUME)
+    result = _apply(state, *ops, context=LOCKED)
     frame = result.state.frames[1]
     group_spot = [eg.cell_text(saved[1].iloc[0][c]) for c in ("동", "층")]
     for position in (undecided, len(frame) - 1):
         assert [eg.cell_text(frame.iloc[position][c]) for c in PLACE] == [*group_spot, "", ""]
-    assert result.toast is not None and result.toast.startswith("가정 설비 시나리오라 1대의 자리")
+    assert result.toast is not None and result.toast.startswith("배치 편집이 잠겨 있어 1대의 자리")
     assert result.toast_step == eg.undo_top(result.state.undo)
     assert list(frame.dtypes) == list(state.frames[1].dtypes)
     edited = state.frames[1].copy()
@@ -302,12 +305,36 @@ def test_joining_a_group_in_an_assumption_session_takes_the_groups_official_spot
     edited.loc[undecided, "Main 설비"] = "GRP-1"
     expected = layout_edits(edited, saved[1], {}).apply(edited, saved[1])
     assert _place_texts(frame) == _place_texts(expected), "탭 제출과 같은 판정"
-    official = _apply(state, *ops)
-    assert eg.cell_text(official.state.frames[1].iloc[-1]["동"]) == "", "공식 세션은 맞추지 않는다"
+    for context in (CONTEXT, OVERLAY):
+        opened = _apply(state, *ops, context=context)
+        assert eg.cell_text(opened.state.frames[1].iloc[-1]["동"]) == "", (
+            "잠기지 않은 회차(공식·가정)는 맞추지 않는다"
+        )
     back = result.state
     for seq in (3, 4):
-        back = _apply(back, _op("undo", seq), context=ASSUME).state
+        back = _apply(back, _op("undo", seq), context=LOCKED).state
     assert back.frames[1].equals(state.frames[1])
+
+
+def test_an_overlay_session_edits_the_layout_of_saved_and_new_units() -> None:
+    """가정 설비 시나리오도 배치 편집이 잠기지 않은 회차(`"overlay"`)면 있던 호기의 배치 칸과 새
+    호기의 자리를 고친다(설비 시나리오 2단계 S3 — 그 시나리오의 배치 차이로 저장된다)."""
+    saved = _saved()
+    state = _unplaced(_state(saved), "NEWX-01")
+    saved_row = _id(state, 2)
+    shown = eg.cell_text(state.frames[1].iloc[2]["레이아웃표시"])
+    flipped = "N" if shown == "Y" else "Y"
+    result = _apply(
+        state,
+        _op("cell", 1, id="n:NEWX-01", col="X좌표", text="10"),
+        _op("cell", 2, id=saved_row, col="레이아웃표시", text=flipped),
+        context=OVERLAY,
+    )
+    assert result.changed and result.refused == 0
+    frame = result.state.frames[1]
+    assert frame.iloc[-1]["X좌표"] == 10.0
+    assert eg.cell_text(frame.iloc[2]["레이아웃표시"]) == flipped
+    assert result.toast is None or "자리를 맞췄습니다" not in result.toast
 
 
 # ------------------------------------------------------------------ 붙여넣기·한꺼번에

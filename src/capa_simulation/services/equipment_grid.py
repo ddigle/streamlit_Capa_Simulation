@@ -3,7 +3,7 @@
 """가용설비 현황 「설비 마스터」 탭 표의 streamlit 을 모르는 부분(개편 명세 4~7장).
 
 - **칸 정의**(`GRID_COLUMNS`) — 계약 39칸 차례(`EQUIPMENT_COLUMNS`) 그대로, 칸마다 글
-  꼴(`kind`)·저장 갈래(`scope` — 공통·시나리오·상태)·폭·고를 값. 칸 묶음(`COLUMN_SETS`)과 상세
+  꼴(`kind`)·저장 갈래(`scope` — 공통·배치·시나리오·상태)·폭·고를 값. 칸 묶음(`COLUMN_SETS`)과 상세
   묶음(`DETAIL_GROUPS`)도 여기 한 곳이다. 브라우저로 가는 자리 번호는 모두 이 차례다.
 - **행 id**(`grid_index`) — 저장본 호기는 `s:` + 저장본 설비명(이름을 바꿔도 그대로), 이 세션 새
   호기는 `n:` + 지금 이름이다. 짝은 저장의 호기 키
@@ -24,10 +24,13 @@
   것부터(LIFO) 되돌리면 자리가 늘 맞는다. 행 조각을 든 단계를 버릴 때는 그보다 앞 단계도 함께
   버린다(뒤 단계만 남는다). 단계마다 표지(`token` — 그 op 의 `mount#seq`)가 있어 토스트 「되돌리기」
   는 제 단계가 맨 위일 때만 되돌린다(`undo` op 의 `step`).
-- **가정 설비 시나리오 배치**(`assumption_layout`) — 설비 시나리오 2단계 S2 규칙
-  그대로(`GridContext.layout_lock`): 있던 호기의 배치 일곱 칸은 잠그고, 새 호기는 자리
-  없이(동·층·X좌표·Y좌표 잠금 — 있는 묶음에 드는 모듈은 그 묶음의 공식 동·층) 둔다. 이름·묶음·
-  배치·행을 바꾼 조작 뒤마다 같은 판정(`layout_overlay.assumption_common_places`)으로 맞춘다.
+- **배치 칸**(`scope` 「배치」) — 공식 설비 시나리오에서는 공식 배치(공통 대장), 가정 설비
+  시나리오에서는 그 시나리오의 배치 차이로 저장된다(설비 시나리오 2단계 S3 — 어디에 고치나는
+  Space 와 같은 판정 `equipment_scenario_activation.space_edit_mode(...).layout`). 그 판정이
+  잠금(`"locked"`)이면(`GridContext.layout_lock`) 있던 호기의 배치 일곱 칸은 잠그고, 새 호기는
+  자리 없이(동·층·X좌표·Y좌표 잠금 — 있는 묶음에 드는 모듈은 그 묶음의 동·층) 둔다. 이름·묶음·
+  배치·행을 바꾼 조작 뒤마다 설비 마스터 탭 제출과 같은
+  판정(`equipment_data_workspace.layout_edits(...).apply` — `locked_layout`)으로 맞춘다.
 
 업무 검증은 여기와 `equipment_validation` 이 한다 — 브라우저는 data 가 준 잠금·고를 값·자리 계산만
 안다.
@@ -152,7 +155,7 @@ def scenario_column_help(column: str, scenario_name: str | None) -> str:
 # ------------------------------------------------------------------ 칸 정의
 
 ColumnKind = Literal["name", "text", "memo", "date", "number", "choice"]
-ColumnScope = Literal["common", "scenario", "status"]
+ColumnScope = Literal["common", "layout", "scenario", "status"]
 # 칸 폭 갈래(브라우저 CSS `.emg-w-<폭>`) — 시안 2차의 폭 그대로다.
 ColumnWidth = Literal["name", "short", "status", "date", "num", "text", "memo"]
 
@@ -191,6 +194,8 @@ def _column(name: str) -> GridColumn:
     scope: ColumnScope = (
         "scenario"
         if name in SCENARIO_SCHEDULE_COLUMNS
+        else "layout"
+        if name in SCENARIO_LAYOUT_COLUMNS
         else "status"
         if name in _STATUS_COLUMNS
         else "common"
@@ -270,7 +275,7 @@ COLUMN_SETS: Final[tuple[ColumnSet, ...]] = (
     ColumnSet(
         "place",
         "위치",
-        "Space 실물 칸(공통)",
+        "배치 일곱 칸(배치) + 공정·Main 설비·환산비(공통)",
         (
             "공정소분류",
             "동",
@@ -309,11 +314,11 @@ COLUMN_SETS: Final[tuple[ColumnSet, ...]] = (
 
 @dataclass(frozen=True)
 class DetailGroup:
-    """오른쪽 「호기 상세」 의 칸 묶음 하나 — 범위 꼬리표(공통·시나리오)와 한 줄 설명."""
+    """오른쪽 「호기 상세」 의 칸 묶음 하나 — 범위 꼬리표(공통·배치·시나리오)와 한 줄 설명."""
 
     key: str
     title: str
-    scope: Literal["common", "scenario"]
+    scope: Literal["common", "layout", "scenario"]
     note: str
     columns: tuple[str, ...]
 
@@ -368,8 +373,8 @@ DETAIL_GROUPS: Final[tuple[DetailGroup, ...]] = (
     DetailGroup(
         "place",
         "위치",
-        "common",
-        "Space 실물 — 좌표·크기는 배치 편집기에서",
+        "layout",
+        "가정 시나리오는 그 시나리오에만 — 좌표·크기는 배치 편집기에서",
         ("동", "층", "X좌표", "Y좌표", "Xsize", "Ysize", "레이아웃표시"),
     ),
     DetailGroup(
@@ -383,9 +388,10 @@ DETAIL_GROUPS: Final[tuple[DetailGroup, ...]] = (
 
 # ------------------------------------------------------------------ 잠금
 
-# 잠금 갈래 → 칸. 모듈 묶음(Main 설비 모듈 둘 이상)의 좌표·크기, 가정 설비 시나리오(설비 시나리오
-# 2단계 S2 규칙 — S3 전)의 있던 호기 배치 일곱 칸(`layout`)과 새 호기 자리 넷(`place` — 새 호기는
-# 자리 없이 넣는다), 낡은 세션의 시나리오 일곱 칸. 지운 표시 줄은 모든 칸이 잠긴다(`deleted`).
+# 잠금 갈래 → 칸. 모듈 묶음(Main 설비 모듈 둘 이상)의 좌표·크기, 배치 편집이 잠긴 회차(설비
+# 시나리오 2단계 S3 — `space_edit_mode(...).layout == "locked"`)의 있던 호기 배치 일곱
+# 칸(`layout`)과 새 호기 자리 넷(`place` — 새 호기는 자리 없이 넣는다), 낡은 세션의 시나리오 일곱
+# 칸. 지운 표시 줄은 모든 칸이 잠긴다(`deleted`).
 PLACE_LOCK_COLUMNS: Final = ("동", "층", "X좌표", "Y좌표")
 LOCK_SETS: Final[Mapping[str, tuple[str, ...]]] = {
     "module": tuple(COORDINATE_COLUMNS),
@@ -404,9 +410,11 @@ class GridContext:
     - `base` — 편집본이 나온 저장본 쌍 토큰 + 씨뿌린 세대. 출납 op 의 `base` 가 다르면 버린다.
     - `stale_lock` — 낡은 세션(또는 일정 없이 엶)이면 시나리오 일곱 칸 잠금 까닭.
     - `delete_lock` — 낡은 세션이면 저장본 호기 지우기 잠금 까닭(`stale_delete_lock`).
-    - `layout_lock` — 가정 설비 시나리오(설비 시나리오 2단계 S3 전)면 배치 잠금 까닭. 있던 호기는
-      배치 일곱 칸(`layout`), 새 호기는 자리 넷(`place`)이 잠기고, 조작 뒤마다 S2 판정으로 자리를
-      맞춘다(`assumption_layout`).
+    - `layout_lock` — 배치 편집이 잠긴 회차면 그 까닭(설비 시나리오 2단계 S3 — Space 와 같은 판정
+      `space_edit_mode(...)` 의 `layout == "locked"` 일 때 `master_tab_lock_reason`). 있던 호기는
+      배치 일곱 칸(`layout`), 새 호기는 자리 넷(`place`)이 잠기고, 조작 뒤마다 탭 제출과 같은
+      판정으로 자리를 맞춘다(`locked_layout`). 공식(`"official"`)·가정(`"overlay"`) 편집이면 None
+      이다 — 배치 칸은 `official` 에 따라 공식 배치 또는 그 가정 시나리오의 배치 차이로 저장된다.
     - `location_options` — 동·층 고를 값(Space 층 사용 상태로 좁힌 것). 없으면 유효 동·층 전부.
     """
 
@@ -1527,7 +1535,7 @@ def _locked(work: _Work, index: GridIndex, row_id: str, column: str, modules: li
 
 
 def _layout_kind(index: GridIndex, row_id: str) -> str:
-    """가정 설비 시나리오 배치 잠금 갈래 — 있던 호기 `layout`(일곱 칸), 새 호기 `place`(자리 넷)."""
+    """배치 편집 잠금 갈래 — 있던 호기 `layout`(일곱 칸), 새 호기 `place`(자리 넷)."""
     return "layout" if row_id in index.saved else "place"
 
 
@@ -1815,7 +1823,7 @@ class _Reverted:
 def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Reverted:
     """칸·호기 되돌리기 — 저장본 값으로. 호기 통째면 지운 호기는 되살리고 새 호기는 뺀다.
 
-    저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·가정 설비 시나리오의 배치 칸 잠금은 막지
+    저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·배치 편집이 잠긴 회차의 배치 칸 잠금은 막지
     않는다 — 낡기 전에 고친 시나리오 칸을 저장본 값으로 돌려야 저장이 거부되지 않는다. 모듈 묶음
     좌표·크기만 그대로 둔다(한 모듈만 저장본 자리로 가면 묶음 모양이 갈린다 — Space 배치
     편집기 몫)."""
@@ -1962,7 +1970,7 @@ def _apply_inverse(work: _Work, step: UndoStep) -> None:
             work.loaded.insert(min(position, len(work.loaded)), row_id)
 
 
-# ------------------------------------------------------------------ 가정 설비 시나리오 배치
+# ------------------------------------------------------------------ 배치 편집이 잠긴 회차
 
 # 조작이 이 칸(또는 행 차례)을 바꿨을 때만 배치를 다시 맞춘다 — 3천 대에서 한 번 0.1초 남짓이라 칸
 # 고침마다 돌리지 않는다.
@@ -1971,21 +1979,22 @@ _PLACEMENT_TRIGGERS: Final = frozenset(
     {EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN, *SCENARIO_LAYOUT_COLUMNS, _ROWS}
 )
 PLACED_TOAST: Final = (
-    "가정 설비 시나리오라 {count:,}대의 자리를 맞췄습니다(새 호기는 자리 없이 — 있는 묶음에 드는 "
-    "모듈은 그 묶음의 공식 동·층)"
+    "배치 편집이 잠겨 있어 {count:,}대의 자리를 맞췄습니다(새 호기는 자리 없이 — 있는 묶음에 드는 "
+    "모듈은 그 묶음의 동·층)"
 )
 
 
-def assumption_layout(
+def locked_layout(
     master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]
 ) -> pd.DataFrame:
-    """가정 설비 시나리오 편집본(`master`)을 설비 시나리오 2단계 S2 규칙으로 맞춘 사본 — 설비 마스터
-    탭 제출·붙여넣기 미리보기의 `equipment_data_workspace.layout_edits(...).apply` 와 같은
-    판정이다(시험이 대조한다). 있던 호기(저장의 호기 키 규칙 `inherited_unit_names` — `renames` 는
-    저장 안 한 이름 지도)의 배치 일곱 칸은 저장본 값으로, 새 호기는 동·층·X좌표·Y좌표를 비우고,
-    있는 묶음에 드는 모듈과 묶음에 든 공식 동·층 미정 호기는 그 묶음의 공식 동·층으로
-    (`layout_overlay.assumption_common_places`). 그러면 가정 세션의 저장이 이 판의 화면이 보이지도
-    지우지도 못하는 배치 차이를 만들지 않는다."""
+    """배치 편집이 잠긴 회차(설비 시나리오 2단계 S3 — `space_edit_mode(...).layout ==
+    "locked"`)의 편집본(`master`)을 세션 저장본(`saved`) 배치로 맞춘 사본 — 설비 마스터 탭 제출·
+    붙여넣기 미리보기의 `equipment_data_workspace.layout_edits(...).apply` 와 같은 판정이다(시험이
+    대조한다). 있던 호기(저장의 호기 키 규칙 `inherited_unit_names` — `renames` 는 저장 안 한 이름
+    지도)의 배치 일곱 칸은 저장본 값으로, 새 호기는 동·층·X좌표·Y좌표를 비우고, 있는 묶음에 드는
+    모듈과 묶음에 든 동·층 미정 호기는 그 묶음의
+    동·층으로(`layout_overlay.assumption_common_places`). 그러면 잠긴 회차의 저장이 배치 차이를
+    만들지 않는다."""
     names = [name for name in _names(master) if name]
     saved_names = set(_names(saved)) - {""}
     origins = inherited_unit_names(names, saved_names, renames)
@@ -2001,11 +2010,11 @@ def assumption_layout(
 
 
 def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
-    """가정 설비 시나리오면 조작 뒤 배치를 S2 규칙으로 맞추고 그 칸을 그 조작의 역 patch 에 더한다 —
-    되돌리면 조작과 함께 돌아간다."""
+    """배치 편집이 잠긴 회차면 조작 뒤 배치를 탭 제출과 같은 판정으로 맞추고 그 칸을 그 조작의 역
+    patch 에 더한다 — 되돌리면 조작과 함께 돌아간다."""
     if not work.context.layout_lock or not (work.touched & _PLACEMENT_TRIGGERS):
         return step
-    after = assumption_layout(work.master, work.saved[1], work.renames.units)
+    after = locked_layout(work.master, work.saved[1], work.renames.units)
     changes: list[tuple[int, str, Any, Any]] = []
     for column in SCENARIO_LAYOUT_COLUMNS:
         if column not in work.master.columns or column not in after.columns:
@@ -2235,9 +2244,9 @@ def apply_ops(
 
     `base` 가 지금 편집본의 `context.base` 와 다른 op 는 반영하지 않고 버린다 — 다시 세운 편집본
     위에 옛 편집을 얹지 않는다(그 수는 토스트 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
-    지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 가정 설비 시나리오(`context.layout_lock`)면
-    이름·묶음·배치·행을 바꾼 op 뒤마다 배치를 S2 규칙으로 맞춘다(`assumption_layout`). 내용이
-    그대로면 `changed` 가 거짓이다(세대를 올리지 않는다).
+    지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 배치 편집이 잠긴
+    회차(`context.layout_lock`)면 이름·묶음·배치·행을 바꾼 op 뒤마다 배치를 탭 제출과 같은 판정으로
+    맞춘다(`locked_layout`). 내용이 그대로면 `changed` 가 거짓이다(세대를 올리지 않는다).
     """
     work = _Work(
         baseline=state.frames[0],

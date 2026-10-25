@@ -90,6 +90,7 @@ def _palette() -> dict[str, str]:
         "warn-line": tokens.GRID_WARN_LINE,
         "lock-fill": tokens.GRID_LOCK_FILL,
         "scenario-head": tokens.GRID_SCENARIO_HEAD,
+        "layout-head": tokens.GRID_LAYOUT_HEAD,
         "selected-fill": tokens.GRID_SELECTED_FILL,
         "new-fill": tokens.GRID_NEW_FILL,
     }

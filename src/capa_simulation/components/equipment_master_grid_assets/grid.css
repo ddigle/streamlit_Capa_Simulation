@@ -160,6 +160,11 @@
   border-color: var(--emg-accent);
 }
 
+.emg-scope.is-layout {
+  background: var(--emg-layout-head);
+  border-color: var(--emg-border-strong);
+}
+
 .emg-loader {
   display: flex;
   flex-direction: column;
@@ -574,6 +579,11 @@
 .emg-head .emg-c.is-scenario {
   background: var(--emg-scenario-head);
   box-shadow: inset 0 3px 0 var(--emg-accent);
+}
+
+.emg-head .emg-c.is-layout {
+  background: var(--emg-layout-head);
+  box-shadow: inset 0 3px 0 var(--emg-border-strong);
 }
 
 .emg-hb {
