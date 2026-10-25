@@ -1,10 +1,11 @@
-# Purpose: 일정 확인 알림이 RawData 경고 줄·목록과 캐시에 편집본·오늘 기준으로 잇는지 본다.
+# Purpose: 일정 확인 알림이 설비 마스터 탭 불러오기 줄·표 풍선·캐시에 편집본·오늘로 잇는지 본다.
 
 """일정 확인 알림의 화면 연결(2026-10-16 사용자 결정 3 — 저장은 막지 않는다).
 
-- **RawData** — 편집표 위 늘 서 있는 알림 칸에 「미확인 N대 · 실적 누락 N대 · 상태 갱신 필요
-  N대」 한 줄과 접힌 목록. 편집본(미리보기 중이면 저장될 후보) 기준이라 저장하지 않은 편집이
-  바로 보인다. 0 이면 줄도 목록도 없다.
+- **설비 마스터 탭**(가용설비 현황 ①, 개편 명세 4-1·4-4) — 불러오기 줄 「일정 확인 필요 n대」 가
+  그 호기를 세고(누르면 그 호기를 불러온다) 표 줄 설비명 풍선이 「반입 미확인」 같은 단계·갈래를
+  말한다. 편집본 기준이라 표에서 고친 저장 전 실적·넣은 행이 바로 보인다. 0 이면 단추가 꺼진다.
+  AppTest 는 표 JS 를 못 돌려 대역(`tests/grid_fake.py`)이 받은 data 를 본다.
 - **캐시** — `simulation_cache.get_schedule_confirmation_issues` 는 내용 지문 + 오늘이 키다. 같은
   표·같은 날이면 다시 고르지 않고, 칸 하나나 날짜가 바뀌면 새로 고른다.
 
@@ -20,19 +21,21 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
+from test_equipment_pages import PROJECT_ROOT, _page_script
 
+from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
-    BUFFER_KEY,
     CLIPBOARD_KEY,
-    CONFIRMATION_EXPANDER_KEY,
-    DOWNLOADS_EXPANDER_KEY,
-    EQUIPMENT_EDITOR_KEY,
     PREVIEW_BUTTON_KEY,
-    TARGET_KEY,
-    WORKSPACE_TABS_KEY,
 )
+from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
+from capa_simulation.components.equipment_master_tab import SIDE_CHANGES, SIDE_KEY
+from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
+from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services import simulation_cache
 from capa_simulation.services.equipment_contract import (
@@ -49,6 +52,19 @@ from capa_simulation.services.schedule_confirmation import (
 )
 
 TODAY = date.today()
+PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+
+
+@pytest.fixture(autouse=True)
+def _release_repository() -> Any:
+    clear_equipment_repository()
+    yield
+    clear_equipment_repository()
+
+
+@pytest.fixture
+def grid(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    return install_fake_grid(monkeypatch)
 
 
 def _unit(name: str, **overrides: Any) -> dict[str, Any]:
@@ -114,36 +130,23 @@ def _saved(path: Path, *rows: dict[str, Any]) -> None:
 
 
 def _app(path: Path) -> AppTest:
-    # 실제 페이지처럼 최신 리비전만 읽고 페이지와 같은 「오늘」을 넘긴다.
-    return AppTest.from_string(
-        f"""
-from datetime import date
-from pathlib import Path
-from capa_simulation.components.equipment_data_workspace import render_equipment_data_workspace
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-repository = DuckDBEquipmentRepository(Path({str(path)!r}))
-repository.initialize()
-snapshot = repository.load_snapshot(repository.latest_revision_id())
-render_equipment_data_workspace(
-    repository=repository, latest_snapshot=snapshot,
-    baseline=snapshot.baseline, equipment=snapshot.equipment, downtime=snapshot.downtime,
-    floor_canvases={{}}, max_extent=(100.0, 60.0), today=date.fromisoformat({TODAY.isoformat()!r}),
-)
-""",
-        default_timeout=30,
-    ).run()
+    """실제 가용설비 현황 페이지의 탭 ① 「설비 마스터」(표 대역) — 페이지는 Main 과 같은 「오늘」을
+    넘긴다."""
+    app = AppTest.from_string(_page_script(PAGE, path), default_timeout=60)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    return app
 
 
-def _confirmation_lines(app: AppTest) -> list[str]:
-    return [
-        item.value
-        for item in app.warning
-        if any(kind in item.value for kind in (UNCONFIRMED, MISSING_ACTUAL, STATUS_UPDATE_NEEDED))
-    ]
+def _alert_ids(grid: Calls) -> list[str]:
+    """불러오기 줄 「일정 확인 필요 n대」 의 호기(행 id)."""
+    return list(last(grid, emg.LOADER_KEY)["alertIds"])
 
 
-def _confirmation_list(app: AppTest) -> Any:
-    return app.get_by_key(CONFIRMATION_EXPANDER_KEY)
+def _row_alerts(grid: Calls) -> dict[str, str]:
+    """불러온 표 줄의 설비명 풍선 갈래 글(「반입 미확인」 등) — 있는 줄만."""
+    return {row["id"]: row["alert"] for row in last(grid, emg.GRID_KEY)["rows"] if row.get("alert")}
 
 
 # ------------------------------------------------------------------ 한 줄
@@ -221,110 +224,62 @@ def test_the_cached_issues_follow_the_content_and_the_day(
     assert list(moved["확인구분"]) == [UNCONFIRMED]
 
 
-# ------------------------------------------------------------------ RawData
+# ------------------------------------------------------------------ 설비 마스터 탭
 
 
-def test_rawdata_warns_in_one_line_and_lists_each_unit_and_stage(tmp_path: Path) -> None:
+def test_the_master_tab_marks_each_unit_and_stage_to_check(tmp_path: Path, grid: Calls) -> None:
+    """불러오기 줄 「일정 확인 필요 n대」 가 그 호기를 세고, 표 줄 설비명 풍선이 단계·갈래를
+    말한다(개편 명세 4-1·4-4). 저장은 막지 않는다 — 고칠 것(오류)이 없다."""
     path = tmp_path / "equipment.duckdb"
     _saved(path, _late(), _done_without_actual(), _actual_but_open(), _unit("EQ-OK"))
 
     app = _app(path)
-
+    assert sorted(_alert_ids(grid)) == ["s:EQ-DONE", "s:EQ-LATE", "s:EQ-MOVED"]
+    # 「일정 확인 필요」 단추 — 브라우저가 그 호기 id 를 보낸다.
+    load(app, _alert_ids(grid), kind="alerts")
+    assert _row_alerts(grid) == {
+        "s:EQ-LATE": f"반입 {UNCONFIRMED}",
+        "s:EQ-DONE": f"Qual {MISSING_ACTUAL}",
+        "s:EQ-MOVED": f"반입 {STATUS_UPDATE_NEEDED}",
+    }
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
     assert not app.exception
-    (line,) = _confirmation_lines(app)
-    assert line.startswith(
-        f"{UNCONFIRMED} 1대 · {MISSING_ACTUAL} 1대 · {STATUS_UPDATE_NEEDED} 1대 — "
-    )
-    listing = _confirmation_list(app)
-    assert listing.label == "일정 확인 목록 · 3건"
-    # 편집표는 폼 안이다 — 목록에서 빠지는 때는 저장이 아니라 보기 적용·변경 미리보기다.
-    assert "보기 적용" in listing.caption[0].value
-    # 빈 일정·실적은 빈칸이다 — 자리표시 글자를 비워 두지 않으면 브라우저가 "None" 을 그린다.
-    proto = listing.dataframe[0].proto
-    assert proto.HasField("placeholder") and proto.placeholder == ""
-    table = listing.dataframe[0].value
-    assert list(table.columns) == [
-        "확인구분",
-        "설비명",
-        "공정소분류",
-        "단계",
-        "일정",
-        "실적",
-        "상태",
-    ]
-    assert list(zip(table["확인구분"], table["설비명"], table["단계"], strict=True)) == [
-        (UNCONFIRMED, "EQ-LATE", "반입"),
-        (MISSING_ACTUAL, "EQ-DONE", "Qual"),
-        (STATUS_UPDATE_NEEDED, "EQ-MOVED", "반입"),
-    ]
-    # 저장을 막지 않는다 — 오류가 없다.
+    assert last(grid, emg.side_key("changes"))["counts"]["errors"] == 0
     assert not app.error
 
 
-def test_rawdata_shows_nothing_when_every_stage_is_consistent(tmp_path: Path) -> None:
+def test_the_master_tab_shows_nothing_when_every_stage_is_consistent(
+    tmp_path: Path, grid: Calls
+) -> None:
     path = tmp_path / "equipment.duckdb"
     _saved(path, _unit("EQ-OK"), _unit("EQ-PLAN", Qual일정=_day(3), Qual상태="계획"))
 
     app = _app(path)
-
-    assert not app.exception
-    assert _confirmation_lines(app) == []
-    with pytest.raises(KeyError):
-        _confirmation_list(app)
+    assert _alert_ids(grid) == []
+    load(app, [], kind="all")
+    assert _row_alerts(grid) == {}
 
 
-def test_rawdata_follows_unsaved_edits_and_the_preview_candidate(tmp_path: Path) -> None:
-    """편집본 기준이다 — 제출(보기 적용 등)로 편집본에 들어간 저장 전 고침이 줄에서 빠지고,
-    미리보기 중이면 저장될 후보를 본다."""
+def test_the_master_tab_follows_unsaved_edits_and_the_put_rows(tmp_path: Path, grid: Calls) -> None:
+    """편집본 기준이다 — 표에서 고친 저장 전 실적이 곧바로 그 호기를 빼고, 「엑셀·CSV로 한꺼번에」
+    로 편집본에 넣은 행도 그렇다."""
     path = tmp_path / "equipment.duckdb"
     _saved(path, _late(), _done_without_actual())
     app = _app(path)
-    assert [line.split(" — ")[0] for line in _confirmation_lines(app)] == [
-        f"{UNCONFIRMED} 1대 · {MISSING_ACTUAL} 1대"
-    ]
+    assert sorted(_alert_ids(grid)) == ["s:EQ-DONE", "s:EQ-LATE"]
 
-    # EQ-DONE 의 Qual실적을 채운 편집본(저장 안 함). 편집본을 바꾸는 공용 길
-    # (`replace_equipment_buffer`)처럼 편집표의 적용된 보기도 함께 버린다 — 남기면 다음 제출이 옛
-    # 보기로 그 편집을 되돌린다.
-    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
-    edited = equipment.copy()
-    edited.loc[edited["설비명"].eq("EQ-DONE"), "Qual실적"] = pd.Timestamp(_day(-100))
-    app.session_state[BUFFER_KEY] = (baseline, edited, downtime)
-    del app.session_state[f"{EQUIPMENT_EDITOR_KEY}_applied_view"]
+    load(app, [], kind="all")
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-DONE", "col": "Qual실적", "text": _day(-100)})
+    assert _alert_ids(grid) == ["s:EQ-LATE"]
+
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
     app.run()
-    assert not app.exception
-    assert [line.split(" — ")[0] for line in _confirmation_lines(app)] == [f"{UNCONFIRMED} 1대"]
-    assert _confirmation_list(app).label == "일정 확인 목록 · 1건"
-
-    # 붙여넣기 미리보기가 EQ-LATE 의 반입실적·반입상태를 채운다 — 저장될 후보에는 남은 것이 없다.
-    app.selectbox(TARGET_KEY).set_value("설비 마스터")
-    app.text_area(CLIPBOARD_KEY).set_value(
+    app.text_area(key=CLIPBOARD_KEY).set_value(
         f"설비명\t반입실적\t반입상태\nEQ-LATE\t{_day(-29)}\t완료"
     )
-    app.button(PREVIEW_BUTTON_KEY).click().run()
+    app.button(key=PREVIEW_BUTTON_KEY).click().run()
+    assert not app.exception and not app.error
+    app.button(key=IMPORT_APPLY_BUTTON_KEY).click().run()
     assert not app.exception
-    assert not app.error
-    assert _confirmation_lines(app) == []
-
-
-def test_the_confirmation_list_does_not_shift_the_keyed_blocks_below(tmp_path: Path) -> None:
-    """목록은 늘 서 있는 알림 칸 안이다 — 생기고 사라져도 아래 내려받기·작업 탭의 자리가
-    그대로다."""
-    quiet_path = tmp_path / "quiet.duckdb"
-    noisy_path = tmp_path / "noisy.duckdb"
-    _saved(quiet_path, _unit("EQ-OK"))
-    _saved(noisy_path, _late(), _done_without_actual())
-
-    def slots(app: AppTest) -> dict[str, int]:
-        found: dict[str, int] = {}
-        for index, node in app.main.children.items():
-            for key in (DOWNLOADS_EXPANDER_KEY, WORKSPACE_TABS_KEY):
-                if any(getattr(inner, "key", None) == key for inner in node):
-                    found[key] = int(index)
-        return found
-
-    quiet, noisy = _app(quiet_path), _app(noisy_path)
-
-    assert _confirmation_lines(quiet) == [] and _confirmation_lines(noisy)
-    assert slots(noisy) == slots(quiet)
-    assert set(slots(quiet)) == {DOWNLOADS_EXPANDER_KEY, WORKSPACE_TABS_KEY}
+    assert _alert_ids(grid) == []

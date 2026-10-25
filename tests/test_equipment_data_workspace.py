@@ -1,39 +1,63 @@
-# Purpose: 설비 입력의 두 단계 저장과 재검토·오류 복구·다른 표 보존을 실제 임시 리비전으로 검사한다.
+# Purpose: 설비 마스터 탭의 넣기·저장 두 단계와 재검토·오류 복구·다른 표 보존을 임시 DB 로 본다.
+
+"""가용설비 현황 탭 ① 「설비 마스터」 — 「엑셀·CSV로 한꺼번에」 팝업 → 「편집본에 넣기」 → 「저장 전
+변경」 「리비전 저장」 두 단계(개편 명세 4-6 다·4-8).
+
+옛 설비 마스터 탭 폼(입력·직접 편집·저장 이력 — 개편 D 에서 걷음)을 몰던 시험을 새 길로 옮겼다:
+붙여넣기 미리보기가 입력·표·편집본이 바뀌면 다시 확인받는지, 막힌 입력이 칸에 남는지, 넣은 것만
+저장되고 다른 두 표는 그대로인지, 예시 행 가드, 현재 데이터 내려받기, 저장 이력, 작은 편집표,
+Space 층 사용 상태가 동·층 고르는 값을 좁히는지. AppTest 는 표 컴포넌트 JS 를 못 돌려 대역
+(`tests/grid_fake.py`)이 표 출납을 보낸다. 설비 DB 는 시험마다 `tmp_path` 의 새 파일이다.
+"""
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import pytest
+from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
+from test_equipment_master_tab import _TAIL, FAKE_SAVE_KEY, FAKE_SAVE_RESULT_KEY
+from test_equipment_pages import PROJECT_ROOT, _page_script
 from widget_browser import BrowserTables
 
+from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
 )
 from capa_simulation.components.equipment_data_workspace import (
-    _NOTICE_KEY,
     BASELINE_EDITOR_KEY,
     BUFFER_KEY,
     CLIPBOARD_KEY,
-    DOWNLOADS_EXPANDER_KEY,
     DOWNTIME_EDITOR_KEY,
     DROP_EXAMPLE_ROWS_KEY,
-    EDIT_SAVE_BUTTON_KEY,
-    EDITOR_TABS_KEY,
-    EQUIPMENT_EDITOR_KEY,
     EXAMPLE_DROP_BUTTON_KEY,
-    FLASH_KEY,
-    HISTORY_FILTER_EXPANDER_KEY,
-    IMPORT_SAVE_BUTTON_KEY,
+    NOTHING_SAVED_MESSAGE,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
     TARGET_KEY,
-    WORKSPACE_TABS_KEY,
     build_import_review,
 )
+from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
+from capa_simulation.components.equipment_master_tab import (
+    NOTHING_TO_SAVE,
+    SAVE_BUTTON_KEY,
+    SIDE_CHANGES,
+    SIDE_HISTORY,
+    SIDE_KEY,
+    TABLE_KEY,
+)
+from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.navigation import (
+    EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_TAB_KEY,
+)
+from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import (
     BASELINE_COLUMNS,
@@ -57,6 +81,20 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_master,
 )
 
+PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+
+
+@pytest.fixture(autouse=True)
+def _release_repository() -> Any:
+    clear_equipment_repository()
+    yield
+    clear_equipment_repository()
+
+
+@pytest.fixture
+def grid(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    return install_fake_grid(monkeypatch)
+
 
 def _master(ids: list[str]) -> pd.DataFrame:
     return prepare_equipment_master(
@@ -79,43 +117,55 @@ def _repository(path: Path) -> DuckDBEquipmentRepository:
 
 
 def _app(path: Path) -> AppTest:
-    # 실제 페이지와 동일하게 최신 리비전만 읽는다. 운영 DB와 전역 settings를 변경하지 않는다.
-    return AppTest.from_string(
-        f"""
-from pathlib import Path
-import streamlit as st
-from capa_simulation.components.equipment_data_workspace import render_equipment_data_workspace
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services.equipment_contract import (
-    empty_equipment_baseline, empty_equipment_master, empty_downtime_schedule,
-)
-repository = DuckDBEquipmentRepository(Path({str(path)!r}))
-repository.initialize()
-revision_id = repository.latest_revision_id()
-snapshot = repository.load_snapshot(revision_id) if revision_id else None
-render_equipment_data_workspace(
-    repository=repository, latest_snapshot=snapshot,
-    baseline=snapshot.baseline if snapshot else empty_equipment_baseline(),
-    equipment=snapshot.equipment if snapshot else empty_equipment_master(),
-    downtime=snapshot.downtime if snapshot else empty_downtime_schedule(),
-    floor_canvases={{}}, max_extent=(100.0, 60.0),
-)
-""",
-        default_timeout=20,
-    ).run()
+    """실제 가용설비 현황 페이지의 탭 ① — 운영 DB 와 전역 settings 를 바꾸지 않는다(두 DB 는
+    `path` 곁). 꼬리는 사이드바 팝업·Space 와 같은 저장 길(`save_equipment_buffer`)을 부른다
+    (`FAKE_SAVE_KEY`)."""
+    app = AppTest.from_string(_page_script(PAGE, path) + _TAIL, default_timeout=60)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    return _ok(app.run())
 
 
-def _preview(app: AppTest, text: str, target: str = "설비 마스터") -> None:
-    app.selectbox(TARGET_KEY).set_value(target)
-    app.text_area(CLIPBOARD_KEY).set_value(text)
-    app.button(PREVIEW_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert not app.error
+def _ok(app: AppTest) -> AppTest:
+    assert not app.exception, [item.message for item in app.exception]
+    return app
 
 
-def test_thirty_rows_are_reviewed_then_saved_once_with_other_tables_preserved(
-    tmp_path: Path,
-) -> None:
+def _texts(app: AppTest, kind: str) -> list[str]:
+    return [str(item.value) for item in getattr(app, kind)]
+
+
+def _open_import(app: AppTest) -> AppTest:
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
+    return _ok(app.run())
+
+
+def _preview(app: AppTest, text: str, target: str = "설비 마스터") -> AppTest:
+    """「엑셀·CSV로 한꺼번에」 팝업을 (닫혀 있으면) 열고 붙여넣은 뒤 「변경 미리보기」."""
+    if EQUIPMENT_DIALOG_KEY not in app.session_state:
+        _open_import(app)
+    app.selectbox(key=TARGET_KEY).set_value(target)
+    app.text_area(key=CLIPBOARD_KEY).set_value(text)
+    app.button(key=PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+    assert not app.error, _texts(app, "error")
+    return app
+
+
+def _put(app: AppTest) -> AppTest:
+    """미리본 후보를 「편집본에 넣기」(저장하지 않는다)."""
+    app.button(key=IMPORT_APPLY_BUTTON_KEY).click()
+    return _ok(app.run())
+
+
+def _save(app: AppTest) -> AppTest:
+    """「저장 전 변경」 의 「리비전 저장」."""
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    app.button(key=SAVE_BUTTON_KEY).click()
+    return _ok(app.run())
+
+
+def test_thirty_rows_are_put_then_saved_once_with_other_tables_preserved(tmp_path: Path) -> None:
     path = tmp_path / "equipment.duckdb"
     repository = _repository(path)
     baseline = prepare_equipment_baseline(
@@ -143,14 +193,15 @@ def test_thirty_rows_are_reviewed_then_saved_once_with_other_tables_preserved(
     )
     original = repository.save_snapshot(baseline, equipment, downtime)
     app = _app(path)
-    assert not app.exception
     incoming = _master([f"NEW-{index:03}" for index in range(30)])
     _preview(app, incoming.to_csv(index=False, sep="\t"))
-    assert len(repository.list_revisions()) == 1
     assert len(app.session_state[PREVIEW_KEY].changes) == 30
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert not app.error
+    _put(app)
+    # 넣기는 편집본만 바꾼다 — 리비전은 「리비전 저장」 에서 한 번.
+    assert len(repository.list_revisions()) == 1
+    assert len(app.session_state[BUFFER_KEY][1]) == 31
+    _save(app)
+    assert not app.error, _texts(app, "error")
     revisions = repository.list_revisions()
     assert len(revisions) == 2
     saved = repository.load_snapshot(revisions[0].revision_id)
@@ -162,23 +213,29 @@ def test_thirty_rows_are_reviewed_then_saved_once_with_other_tables_preserved(
     )
 
 
-def test_changed_input_and_target_cannot_save_the_previous_review(tmp_path: Path) -> None:
+def test_changed_input_and_target_cannot_put_the_previous_review(tmp_path: Path) -> None:
+    """미리본 뒤 붙여넣기나 등록할 표를 바꾸고 「편집본에 넣기」 를 누르면 넣지 않고 미리보기를
+    새 입력으로 갱신한다(`ImportReview.matches`). 다시 누르면 그때 넣는다."""
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     _preview(app, _master(["FIRST"]).to_csv(index=False, sep="\t"))
-    app.text_area(CLIPBOARD_KEY).set_value(_master(["SECOND"]).to_csv(index=False, sep="\t"))
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    repository = _repository(path)
-    assert not repository.list_revisions()
+    app.text_area(key=CLIPBOARD_KEY).set_value(_master(["SECOND"]).to_csv(index=False, sep="\t"))
+    _put(app)
+    assert app.session_state[BUFFER_KEY][1].empty
     assert app.session_state[PREVIEW_KEY].candidate[1]["설비명"].tolist() == ["SECOND"]
-    assert any("미리보기를 갱신" in info.value for info in app.info)
-    app.selectbox(TARGET_KEY).set_value("기존 보유대수")
-    app.text_area(CLIPBOARD_KEY).set_value("공정\t분류\t기존보유대수\t비고\nP\t전체\t7\t사용자 값")
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not repository.list_revisions()
+    assert any("미리보기를 갱신" in text for text in _texts(app, "info"))
+    app.selectbox(key=TARGET_KEY).set_value("기존 보유대수")
+    app.text_area(key=CLIPBOARD_KEY).set_value(
+        "공정\t분류\t기존보유대수\t비고\nP\t전체\t7\t사용자 값"
+    )
+    _put(app)
+    assert app.session_state[BUFFER_KEY][0].empty
     assert app.session_state[PREVIEW_KEY].target == "기존 보유대수"
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
+    _put(app)
+    assert EQUIPMENT_DIALOG_KEY not in app.session_state
+    assert app.session_state[BUFFER_KEY][0]["기존보유대수"].tolist() == [7.0]
+    _save(app)
+    repository = _repository(path)
     saved = repository.load_snapshot(repository.list_revisions()[0].revision_id)
     assert saved.equipment.empty
     assert saved.baseline["기존보유대수"].tolist() == [7.0]
@@ -189,22 +246,26 @@ def test_invalid_input_remains_editable_and_successful_retry_creates_one_revisio
 ) -> None:
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
+    _open_import(app)
     malformed = "호기\t공정소분류\nEQ-BAD\tDie Attach"
-    app.text_area(CLIPBOARD_KEY).set_value(malformed)
-    app.button(PREVIEW_BUTTON_KEY).click().run()
+    app.text_area(key=CLIPBOARD_KEY).set_value(malformed)
+    app.button(key=PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
     assert app.error
-    assert not app.exception
-    assert app.text_area(CLIPBOARD_KEY).value == malformed
+    assert app.text_area(key=CLIPBOARD_KEY).value == malformed
+    assert PREVIEW_KEY not in app.session_state
     repository = _repository(path)
     assert not repository.list_revisions()
     _preview(app, _master(["CORRECTED"]).to_csv(index=False, sep="\t"))
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert not app.error
+    _put(app)
+    _save(app)
+    assert not app.error, _texts(app, "error")
     assert len(repository.list_revisions()) == 1
 
 
-def test_editor_change_after_review_requires_review_again(tmp_path: Path) -> None:
+def test_a_grid_edit_after_review_requires_review_again(tmp_path: Path, grid: Calls) -> None:
+    """미리본 뒤 표에서 편집본을 고치면 옛 미리보기는 거둔다 — 「편집본에 넣기」 가 꺼지고, 다시
+    미리보면 그 고침 위에 붙여넣기가 얹힌다(옛 후보가 표 고침을 지우지 않는다)."""
     path = tmp_path / "equipment.duckdb"
     repository = _repository(path)
     repository.save_snapshot(
@@ -212,22 +273,17 @@ def test_editor_change_after_review_requires_review_again(tmp_path: Path) -> Non
     )
     app = _app(path)
     _preview(app, _master(["NEW"]).to_csv(index=False, sep="\t"))
-    # 편집표는 저장본을 처음 읽은 회차에 새 세대로 섰다(`editor_state.discard_editor`). 브라우저가
-    # 그 키로 편집을 보내므로 테스트도 지금 세대의 키에 넣는다.
-    generation_key = f"{EQUIPMENT_EDITOR_KEY}__generation"
-    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
-    widget_key = f"{EQUIPMENT_EDITOR_KEY}__g{generation}" if generation else EQUIPMENT_EDITOR_KEY
-    app.session_state[widget_key] = {
-        "edited_rows": {0: {"설비이력": "검토 뒤 수정"}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert len(repository.list_revisions()) == 1
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    load(app, [], kind="all")
+    send_ops(app, grid, {"op": "cell", "id": "s:EXISTING", "col": "설비이력", "text": "검토 뒤"})
+    assert PREVIEW_KEY not in app.session_state
+    assert app.button(key=IMPORT_APPLY_BUTTON_KEY).disabled
+    app.button(key=PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+    _put(app)
+    _save(app)
     saved = repository.load_snapshot(repository.list_revisions()[0].revision_id)
-    assert saved.equipment.set_index("설비명").loc["EXISTING", "설비이력"] == "검토 뒤 수정"
+    assert saved.equipment.set_index("설비명").loc["EXISTING", "설비이력"] == "검토 뒤"
+    assert "NEW" in set(saved.equipment["설비명"])
 
 
 def test_an_old_header_paste_is_renamed_and_the_dropped_column_is_announced(
@@ -244,12 +300,12 @@ def test_an_old_header_paste_is_renamed_and_the_dropped_column_is_announced(
     )
     app = _app(path)
 
-    _preview(app, legacy.to_csv(index=False, sep="	"))
+    _preview(app, legacy.to_csv(index=False, sep="\t"))
 
-    assert any("투자기준" in item.value for item in app.info)
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert not app.error
+    assert any("투자기준" in text for text in _texts(app, "info"))
+    _put(app)
+    _save(app)
+    assert not app.error, _texts(app, "error")
     saved = repository.load_snapshot(repository.list_revisions()[0].revision_id)
     assert saved.equipment["설비명"].tolist() == ["OLD-HEADER"]
     assert list(saved.equipment.columns) == list(EQUIPMENT_COLUMNS)
@@ -278,9 +334,10 @@ def test_csv_review_and_future_open_downtime_history(tmp_path: Path) -> None:
     repository = _repository(path)
     repository.save_snapshot(*review.candidate)
     app = _app(path)
-    assert not app.exception
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    _ok(app.run())
     assert not app.error
-    picked = app.date_input("equipment_history_event_range_v3").value
+    picked = app.date_input(key="equipment_history_event_range_v3").value
     assert isinstance(picked, tuple) and len(picked) == 2
     start, end = picked
     assert start == future
@@ -298,47 +355,58 @@ def _baseline_template_text() -> str:
     return "\t".join(BASELINE_COLUMNS) + "\n" + "\t".join(row)
 
 
-def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_click(
-    tmp_path: Path,
-) -> None:
-    """저장을 누르기 전에 알리고, 한 번 눌러 지우면 그대로 저장까지 간다.
+def _example_lines(grid: Calls) -> list[str]:
+    """「저장 전 변경」 고칠 것 가운데 예시 행 줄(표 단위 줄은 마지막 칸이 글이다)."""
+    errors = last(grid, emg.side_key("changes"))["errors"]
+    return [str(line[3]) for line in errors if "예시 행" in str(line[3])]
 
-    **지운 것이 되돌아오면 안 된다.** 후보에서만 빼면 재검토가 원문을 다시 읽어 예시 줄을
-    또 넣는다. 세션 플래그가 `build_import_review` 를 merge 전에 거르게 만든다.
-    """
+
+def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_click(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """저장을 누르기 전에 알리고(「저장 전 변경」 고칠 것 한 줄 · 기존 보유대수 표 위 경고), 한 번
+    눌러 지우면 그대로 저장까지 간다. 지운 표지(`DROP_EXAMPLE_ROWS_KEY`)가 남아 다시 미리볼 때도
+    예시 줄을 merge 전에 거른다."""
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     _preview(app, _baseline_template_text(), target="기존 보유대수")
+    _put(app)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    assert _example_lines(grid) and "예시 행 1건" in _example_lines(grid)[0]
 
-    assert any("예시 행 1건" in warning.value for warning in app.warning)
-    assert app.button(EXAMPLE_DROP_BUTTON_KEY).label == "예시 행 1건 지우기"
-    app.button(EXAMPLE_DROP_BUTTON_KEY).click().run()
+    app.session_state[TABLE_KEY] = "기존 보유대수"
+    _ok(app.run())
+    assert any("예시 행 1건" in text for text in _texts(app, "warning"))
+    assert app.button(key=EXAMPLE_DROP_BUTTON_KEY).label == "예시 행 1건 지우기"
+    app.button(key=EXAMPLE_DROP_BUTTON_KEY).click()
+    _ok(app.run())
 
-    assert not app.exception
-    assert not any("예시 행" in warning.value for warning in app.warning)
-    assert any("예시 행 1건을 빼고" in info.value for info in app.info)
-    assert app.session_state[PREVIEW_KEY].candidate[0].empty
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-
-    assert not app.exception
-    assert not app.error
-    repository = _repository(path)
+    assert not any("예시 행" in text for text in _texts(app, "warning"))
+    assert any("예시 행 1건을 빼고" in text for text in _texts(app, "info"))
+    assert app.session_state[BUFFER_KEY][0].empty
+    assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True
+    assert not _example_lines(grid)
+    _save(app)
     # 예시 행을 빼면 저장할 것이 없다 — 빈 저장소에 빈 리비전을 만들지 않는다(결정 모음).
-    assert repository.list_revisions() == []
-    assert app.session_state[FLASH_KEY] == "바뀐 내용이 없어 저장하지 않았습니다."
+    assert _repository(path).list_revisions() == []
+    assert any(NOTHING_TO_SAVE in text for text in _texts(app, "info"))
 
 
 def test_saving_the_template_example_row_without_dropping_it_is_still_blocked(
     tmp_path: Path,
 ) -> None:
-    """예방형 안내를 더해도 **저장 검증은 그대로다.** 지우지 않고 저장하면 막힌다."""
+    """예방형 안내를 더해도 **저장 검증은 그대로다.** 지우지 않고 「리비전 저장」 하면 고칠 것으로
+    막히고, 그 줄을 모르는 다른 저장 길(사이드바 팝업·Space — `save_equipment_buffer`)도 막힌다."""
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     _preview(app, _baseline_template_text(), target="기존 보유대수")
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-
-    assert not app.exception
-    assert any("예시 행이 1건" in error.value for error in app.error)
+    _put(app)
+    _save(app)
+    assert any("오류 1개를 고쳐야 저장됩니다" in text for text in _texts(app, "error"))
+    app.session_state[FAKE_SAVE_KEY] = True
+    _ok(app.run())
+    assert "예시 행이 1건" in str(app.session_state[FAKE_SAVE_RESULT_KEY])
     assert not _repository(path).list_revisions()
 
 
@@ -352,14 +420,14 @@ def test_a_sample_row_left_in_the_edit_buffer_is_flagged_and_cleared(tmp_path: P
     _, equipment, downtime = app.session_state[BUFFER_KEY]
     sample = sample_equipment_baseline()
     app.session_state[BUFFER_KEY] = (sample, equipment, downtime)
-    app.run()
+    app.session_state[TABLE_KEY] = "기존 보유대수"
+    _ok(app.run())
 
-    assert not app.exception
-    assert any(f"예시 행 {len(sample):,}건" in warning.value for warning in app.warning)
-    app.button(EXAMPLE_DROP_BUTTON_KEY).click().run()
+    assert any(f"예시 행 {len(sample):,}건" in text for text in _texts(app, "warning"))
+    app.button(key=EXAMPLE_DROP_BUTTON_KEY).click()
+    _ok(app.run())
 
-    assert not app.exception
-    assert not any("예시 행" in warning.value for warning in app.warning)
+    assert not any("예시 행" in text for text in _texts(app, "warning"))
     assert app.session_state[BUFFER_KEY][0].empty
     assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True
 
@@ -367,10 +435,15 @@ def test_a_sample_row_left_in_the_edit_buffer_is_flagged_and_cleared(tmp_path: P
 # ------------------------------------------------------------- 현재 데이터 내려받기
 
 
+def _download_labels(app: AppTest) -> list[str]:
+    return [str(button.proto.label) for button in app.get("download_button")]
+
+
 def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     tmp_path: Path,
 ) -> None:
-    """세 표의 「현재 데이터」 버튼이 양식 옆에 서고, 파일 이름이 저장본 번호를 말한다.
+    """「내려받기」 팝오버 — 세 표의 「현재 데이터」 단추가 양식 셋 곁에 서고, 캡션과 파일 이름이
+    저장본 번호를 말한다.
 
     저장본과 같은 편집본이면 캡션이 「저장본과 같음」이고 이름에 `_edited` 가 없다. 빈 표도
     막지 않는다 — 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이다.
@@ -386,15 +459,16 @@ def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     )
     app = _app(tmp_path / "equipment.duckdb")
 
-    labels = [button.label for button in app.download_button]
+    labels = _download_labels(app)
     assert "설비 마스터 현재 데이터 · 2행" in labels
     assert "기존 보유대수 현재 데이터 · 0행" in labels
     assert "비가동 일정 현재 데이터 · 0행" in labels
-    # 양식 버튼 셋은 그대로 남는다.
+    # 양식 단추 셋은 그대로 남는다.
     assert sum(label.endswith("양식") for label in labels) == 3
-    captions = " ".join(str(item.value) for item in app.caption)
+    captions = " ".join(_texts(app, "caption"))
     assert f"저장본 r{saved.revision.revision_no}" in captions
     assert "저장본과 같음" in captions
+    assert "표에서 고친 값은" in captions
 
     name = current_data_file_name(
         "equipment_master", latest_snapshot=saved, edited=False, today=date(2026, 9, 24)
@@ -415,13 +489,14 @@ def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     assert edited_name == "equipment_master_r0_edited_20260924.csv"
 
 
-def test_pasting_the_exported_current_data_back_round_trips_through_the_workspace(
+def test_pasting_the_exported_current_data_back_round_trips_through_the_tab(
     tmp_path: Path,
 ) -> None:
     """내려받은 것을 고치지 않고 그대로 붙여넣어도 통과한다 — 이 기능의 합격선이다.
 
     내보낸 CSV 를 탭 구분 글로 바꿔(Excel 에서 복사하면 그 모양이다) 미리보기까지 돌리면
-    「기존 대체」만 나오고 신규가 없다. 저장 후 표도 그대로다.
+    「기존 대체」만 나오고 신규가 없다. 넣고 저장해도 저장소가 바뀐 것이 없다고 리비전을 만들지
+    않는다.
     """
     import csv
     import io
@@ -442,50 +517,47 @@ def test_pasting_the_exported_current_data_back_round_trips_through_the_workspac
     assert review.changes["Import구분"].eq("대체").sum() == 3
     assert review.changes["Import구분"].eq("신규").sum() == 0
 
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
+    _put(app)
+    _save(app)
     latest_id = repository.latest_revision_id()
     assert latest_id is not None
     latest = repository.load_snapshot(latest_id)
     # 그대로 붙여넣으면 바뀐 것이 없다 — 빈 리비전을 만들지 않는다(결정 모음).
     assert latest.revision.revision_no == 1
-    assert app.session_state[FLASH_KEY] == "바뀐 내용이 없어 저장하지 않았습니다."
+    assert NOTHING_SAVED_MESSAGE in _texts(app, "info")
     assert_frame_equal(
         latest.equipment.reset_index(drop=True), master.reset_index(drop=True), check_dtype=False
     )
 
 
 def test_current_data_downloads_say_when_the_buffer_differs_from_the_saved_revision(
-    tmp_path: Path,
+    tmp_path: Path, grid: Calls
 ) -> None:
-    """편집 버퍼가 저장본과 다르면 캡션이 「저장하지 않은 변경 포함」으로 바뀌고 버튼 행 수도
+    """편집 버퍼가 저장본과 다르면 캡션이 「저장하지 않은 변경 포함」으로 바뀌고 단추 행 수도
     버퍼를 따른다. 내보내는 것이 저장본이 아니라 **지금 보는 편집본**임을 화면이 말한다."""
     repository = _repository(tmp_path / "equipment.duckdb")
     repository.save_snapshot(
         empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
     )
     app = _app(tmp_path / "equipment.duckdb")
-    assert "저장본과 같음" in " ".join(str(item.value) for item in app.caption)
+    assert "저장본과 같음" in " ".join(_texts(app, "caption"))
 
-    baseline, _equipment_frame, downtime = app.session_state[BUFFER_KEY]
-    app.session_state[BUFFER_KEY] = (baseline, _master(["EQ-01", "EQ-99"]), downtime)
-    app.run()
-    assert not app.exception
+    _preview(app, _master(["EQ-99"]).to_csv(index=False, sep="\t"))
+    _put(app)
 
-    captions = " ".join(str(item.value) for item in app.caption)
-    assert "저장하지 않은 변경 포함" in captions
-    assert "설비 마스터 현재 데이터 · 2행" in [button.label for button in app.download_button]
+    assert "저장하지 않은 변경 포함" in " ".join(_texts(app, "caption"))
+    assert "설비 마스터 현재 데이터 · 2행" in _download_labels(app)
 
 
-def test_current_data_downloads_reuse_the_revision_bytes_until_the_buffer_changes(
-    tmp_path: Path,
+def test_current_data_downloads_reuse_the_bytes_until_the_buffer_changes(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """고친 것이 없으면 rerun 마다 CSV 를 다시 만들지 않는다(점검 A9) — 바이트는 그대로다.
-
-    작업 공간은 숨은 탭에서도 rerun 마다 그려진다. 예전에는 내보낼 셋과 저장본과 견줄 셋, 여섯 번을
-    매번 직렬화했다. 이제 저장본과 같은 표는 리비전 캐시의 바이트를 쓰고, 고친 표만 직렬화한다.
-    """
-    from capa_simulation.services.equipment_csv import equipment_csv_bytes
+    """고친 것이 없으면 회차마다 CSV 를 다시 만들지 않는다(점검 A9·개편 명세 8장) — 저장본과 같은
+    표는 리비전 캐시의 바이트를 쓰고, 편집본 세대가 같은 동안은 세션 메모다. 고친 표만 한 번
+    직렬화한다."""
+    from capa_simulation.components import equipment_data_workspace as workspace
+    from capa_simulation.components.table_toolbar import render_csv_download as original_download
+    from capa_simulation.services.equipment_csv import equipment_csv_bytes as original_bytes
 
     path = tmp_path / "equipment.duckdb"
     repository = _repository(path)
@@ -493,60 +565,36 @@ def test_current_data_downloads_reuse_the_revision_bytes_until_the_buffer_change
     repository.save_snapshot(
         empty_equipment_baseline(), saved_master, empty_downtime_schedule(), note="원본"
     )
-    app = AppTest.from_string(
-        f"""
-from pathlib import Path
-import streamlit as st
-import capa_simulation.components.equipment_data_workspace as workspace
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+    serialized: list[int] = []
+    captured: dict[str, bytes] = {}
 
-calls = st.session_state.setdefault("serialized", [])
-captured = st.session_state.setdefault("captured", {{}})
-originals = (workspace.equipment_csv_bytes, workspace.render_csv_download)
+    def counting(frame: pd.DataFrame) -> bytes:
+        serialized.append(len(frame))
+        return original_bytes(frame)
 
-def counting(frame):
-    calls.append(len(frame))
-    return originals[0](frame)
+    def capturing(*, data: bytes, file_name: str, key: str | None = None, label: str = "") -> None:
+        if key is not None:
+            captured[key] = data
+        original_download(data=data, file_name=file_name, key=key, label=label)
 
-def capturing(*, data, file_name, key=None, label=""):
-    captured[key] = data
-    return originals[1](data=data, file_name=file_name, key=key, label=label)
-
-repository = DuckDBEquipmentRepository(Path({str(path)!r}))
-repository.initialize()
-snapshot = repository.load_snapshot(repository.latest_revision_id())
-try:
-    workspace.equipment_csv_bytes = counting
-    workspace.render_csv_download = capturing
-    workspace.render_equipment_data_workspace(
-        repository=repository, latest_snapshot=snapshot,
-        baseline=snapshot.baseline, equipment=snapshot.equipment, downtime=snapshot.downtime,
-        floor_canvases={{}}, max_extent=(100.0, 60.0),
-    )
-finally:
-    workspace.equipment_csv_bytes, workspace.render_csv_download = originals
-""",
-        default_timeout=20,
-    ).run()
+    monkeypatch.setattr(workspace, "equipment_csv_bytes", counting)
+    monkeypatch.setattr(workspace, "render_csv_download", capturing)
+    app = _app(path)
     key = "equipment_master_current_download_v1"
 
-    assert not app.exception
-    assert app.session_state["serialized"] == []
-    assert app.session_state["captured"][key] == equipment_csv_bytes(saved_master)
-    assert "저장본과 같음" in " ".join(str(item.value) for item in app.caption)
-    app.run()
-    assert app.session_state["serialized"] == []
+    assert serialized == []
+    assert captured[key] == original_bytes(saved_master)
+    _ok(app.run())
+    assert serialized == []
 
-    edited_master = _master(["EQ-01", "EQ-02", "EQ-03"])
-    baseline, _equipment, downtime = app.session_state[BUFFER_KEY]
-    app.session_state[BUFFER_KEY] = (baseline, edited_master, downtime)
-    app.run()
-
-    assert not app.exception
-    # 고친 표(편집본 설비 마스터) 하나만 직렬화한다. 견줄 저장본 쪽은 리비전 캐시다.
-    assert app.session_state["serialized"] == [3]
-    assert app.session_state["captured"][key] == equipment_csv_bytes(edited_master)
-    assert "저장하지 않은 변경 포함" in " ".join(str(item.value) for item in app.caption)
+    load(app, [], kind="all")
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당B"})
+    # 고친 표(편집본 설비 마스터) 하나만 한 번 직렬화한다. 견줄 저장본 쪽은 리비전 캐시다.
+    assert serialized == [2]
+    assert captured[key] == original_bytes(app.session_state[BUFFER_KEY][1])
+    assert "저장하지 않은 변경 포함" in " ".join(_texts(app, "caption"))
+    _ok(app.run())
+    assert serialized == [2]
 
 
 def test_the_history_list_follows_the_latest_revision_without_rereading(tmp_path: Path) -> None:
@@ -579,8 +627,8 @@ def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
     """저장본에 모듈 행 12A·12B(Main 설비 12)가 있을 때 설비 행 12 를 붙여넣고 미리본다(점검 A3).
 
     오류는 붙여넣은 설비 행과 저장된 모듈 행을 **출처와 함께** 적고, 붙여넣기로는 저장된 행을 지울
-    수 없으니 직접 편집에서 지우라고 말한다 — 예전 문구는 「설비 행을 지우고 모듈 행만 남기세요:
-    ['SMP-DAF-12']」라 붙여넣은 바로 그 행을 가리켰다.
+    수 없다고 말한다 — 예전 문구는 「설비 행을 지우고 모듈 행만 남기세요: ['SMP-DAF-12']」라
+    붙여넣은 바로 그 행을 가리켰다.
     """
     import csv
     import io
@@ -594,29 +642,23 @@ def test_pasting_a_unit_row_over_saved_modules_names_both_sides_and_the_way_out(
     repository.save_snapshot(
         empty_equipment_baseline(), modules, empty_downtime_schedule(), note="모듈 행"
     )
-    app = _app(tmp_path / "equipment.duckdb")
+    app = _open_import(_app(tmp_path / "equipment.duckdb"))
     rows = csv.reader(io.StringIO(equipment_csv_bytes(_master(["SMP-DAF-12"])).decode("utf-8-sig")))
-    app.selectbox(TARGET_KEY).set_value("설비 마스터")
-    app.text_area(CLIPBOARD_KEY).set_value("\n".join("\t".join(row) for row in rows))
-    app.button(PREVIEW_BUTTON_KEY).click().run()
+    app.text_area(key=CLIPBOARD_KEY).set_value("\n".join("\t".join(row) for row in rows))
+    app.button(key=PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
 
-    assert not app.exception
-    errors = [str(item.value) for item in app.error]
+    errors = _texts(app, "error")
     assert len(errors) == 1, errors
     assert "설비 행 SMP-DAF-12(붙여넣기) · 모듈 행 SMP-DAF-12A, SMP-DAF-12B(편집본)" in errors[0], (
         errors[0]
     )
-    assert (
-        "붙여넣기는 이미 있는(편집본의) 행을 지우지 않습니다 — 편집본 쪽 행을 없애려면 "
-        "직접 편집에서 지운 뒤 다시 미리보세요." in errors[0]
-    )
+    assert "붙여넣기는 이미 있는(편집본의) 행을 지우지 않습니다" in errors[0]
     assert PREVIEW_KEY not in app.session_state
 
 
 def _collision_review(buffer: pd.DataFrame, pasted: pd.DataFrame) -> str:
     """붙여넣기 미리보기가 낸 충돌 문구(설비 마스터). 충돌이 없으면 실패한다."""
-    import pytest
-
     from capa_simulation.services.equipment_csv import equipment_csv_bytes
 
     with pytest.raises(ValueError, match="Main 설비") as raised:
@@ -635,7 +677,7 @@ def test_paste_review_marks_names_by_where_they_already_are() -> None:
     - 편집본에 설비 행 X 와 모듈 행 X-A 가 함께 있고(검증 전 편집본) X 를 다시 붙여넣으면 X 는
       「붙여넣기·편집본」이다 — 붙여넣을 표에서만 빼면 다시 막힌다.
     - 같은 편집본에 무관한 호기만 붙여넣으면 충돌은 편집본 안의 것이다 — 붙여넣기 안내를 붙이지
-      않고 직접 편집에서 고치라고만 한다.
+      않고 편집본에서 고치라고만 한다.
     """
     from capa_simulation.services.equipment_contract import PARENT_EQUIPMENT_COLUMN
 
@@ -655,336 +697,106 @@ def test_paste_review_marks_names_by_where_they_already_are() -> None:
     assert "붙여넣기는" not in unrelated
 
 
-def _keyed_blocks(app: AppTest) -> dict[str | None, str]:
-    """이 회차의 탭 묶음·접힘 칸을 (key → 브라우저가 상태를 기억하는 블록 id)로."""
-    return {
-        node.key: node._block_id
-        for node in app.main
-        if getattr(node, "type", None) in {"tab_container", "expander"} and node.key
-    }
-
-
-def test_inner_tabs_keep_their_identity_when_a_notice_appears_above_the_form(
-    tmp_path: Path,
+def test_the_change_memo_is_cleared_after_a_save_and_not_reused(
+    tmp_path: Path, grid: Calls
 ) -> None:
-    """폼 위 알림이 생겨 자리가 밀려도 안쪽 탭·접힘 칸이 같은 블록 id 를 가진다.
-
-    key 없는 탭은 자리가 한 칸 밀리는 회차에 새로 마운트되어 「입력」·「설비 마스터」로
-    돌아갔다(삭제 확정·저장 직후 이력 조회, 2026-10-01 브라우저 실측). 브라우저는 고른 탭·
-    펼침을 **블록 id** 로 기억하므로, 알림이 있든 없든 id 가 같고 비어 있지 않아야 한다.
-    """
-    repository = _repository(tmp_path / "equipment.duckdb")
-    repository.save_snapshot(
-        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
-    )
-    app = _app(tmp_path / "equipment.duckdb")
-    assert not app.exception
-    quiet = _keyed_blocks(app)
-    assert {
-        WORKSPACE_TABS_KEY,
-        EDITOR_TABS_KEY,
-        DOWNLOADS_EXPANDER_KEY,
-        HISTORY_FILTER_EXPANDER_KEY,
-    } <= set(quiet)
-    assert all(quiet.values())
-
-    app.session_state[_NOTICE_KEY] = "선택한 행이 없습니다."
-    app.run()
-    assert not app.exception
-    assert any("선택한 행이 없습니다" in item.value for item in app.info)
-    assert _keyed_blocks(app) == quiet
-
-
-def _top_level_slot(app: AppTest, key: str) -> int:
-    """`key` 블록을 품은 최상위 칸의 자리(델타 경로의 첫 번호)."""
-    for index, node in app.main.children.items():
-        if any(getattr(inner, "key", None) == key for inner in node):
-            return int(index)
-    raise AssertionError(f"{key} 블록이 없다")
-
-
-def test_notices_above_the_form_do_not_shift_the_keyed_blocks_below(tmp_path: Path) -> None:
-    """알림 수가 달라도 아래 key 있는 펼침·탭 묶음의 **자리**가 그대로다.
-
-    자리가 한 칸 밀리면 `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 있는 탭
-    묶음이 옛 자리에 회색 사본으로 남아 다른 페이지까지 따라왔다(2026-10-05 E2E — 두 번째
-    RawData 저장마다). 알림은 늘 서 있는 한 칸 안에 그린다.
-    """
-    repository = _repository(tmp_path / "equipment.duckdb")
-    repository.save_snapshot(
-        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
-    )
-    app = _app(tmp_path / "equipment.duckdb")
-    quiet = {key: _top_level_slot(app, key) for key in (DOWNLOADS_EXPANDER_KEY, WORKSPACE_TABS_KEY)}
-
-    app.session_state[_NOTICE_KEY] = "선택한 행이 없습니다."
-    app.session_state["equipment_workspace_error_v1"] = "오류 한 줄"
-    app.run()
-    assert not app.exception
-    assert any("선택한 행이 없습니다" in item.value for item in app.info)
-    noisy = {key: _top_level_slot(app, key) for key in quiet}
-    assert noisy == quiet
-
-
-def test_the_change_memo_is_cleared_after_a_save_and_not_reused(tmp_path: Path) -> None:
     """저장한 메모는 칸에서 비워진다. 그대로 남으면 다음 리비전에 말없이 다시 실렸다
-    (2026-10-05 E2E — r4 와 r5 가 같은 메모). 칸을 지우기만 하면 브라우저가 옛 값을 다시
-    보내므로 다음 회차 칸 앞에서 빈 값을 적어 브라우저에도 알린다.
-    """
+    (2026-10-05 E2E — r4 와 r5 가 같은 메모). 저장 콜백이 다음 회차 칸 앞에서 빈 값을 적는다."""
     repository = _repository(tmp_path / "equipment.duckdb")
     repository.save_snapshot(
         empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
     )
     app = _app(tmp_path / "equipment.duckdb")
+    load(app, [], kind="all")
     # 바뀐 것 없는 저장은 리비전을 만들지 않으므로(결정 모음) 저장마다 공통 칸 하나를 고친다.
-    _change_owner(app, "담당 1")
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당 1"})
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
     app.text_input(key=NOTE_KEY).input("M1 메모")
-    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
+    _save(app)
+    assert not app.error, _texts(app, "error")
 
     memo = app.text_input(key=NOTE_KEY)
-    assert (memo.value, memo.proto.set_value) == ("", True)
+    assert memo.value == ""
     assert repository.list_revisions()[0].note == "M1 메모"
 
-    _change_owner(app, "담당 2")
-    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당 2"})
+    _save(app)
+    assert not app.error, _texts(app, "error")
     assert repository.list_revisions()[0].note is None
 
 
-def _change_owner(app: AppTest, owner: str) -> None:
-    """편집본 첫 호기의 담당자(공통 칸)를 고쳐 둔다 — `replace_equipment_buffer` 처럼 편집표의 지난
-    보기 프레임을 버려야 다음 제출이 이 편집을 되돌리지 않는다. 편집표가 새 편집본을 그리게 돈다."""
-    baseline, master, downtime = app.session_state[BUFFER_KEY]
-    changed = master.copy()
-    changed.loc[changed.index[0], "담당자"] = owner
-    app.session_state[BUFFER_KEY] = (baseline, changed, downtime)
-    applied = f"{EQUIPMENT_EDITOR_KEY}_applied_view"
-    if applied in app.session_state:
-        del app.session_state[applied]
-    app.run()
-    assert not app.exception
+def _small_editor_key(app: AppTest, key: str) -> str:
+    generation_key = f"{key}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    return f"{key}__g{generation}" if generation else key
 
 
-def _upload_widget_id(app: AppTest) -> str:
-    uploaders = app.get("file_uploader")
-    assert len(uploaders) == 1
-    return str(uploaders[0].proto.id)
-
-
-def test_a_save_clears_the_paste_and_the_upload_in_the_browser_too(tmp_path: Path) -> None:
-    """저장한 붙여넣기·업로드는 다음 회차에 칸에서 비워진다. 칸을 지우기만 하면 브라우저가 옛
-    입력을 그대로 보여 주다 다음 「변경 미리보기」에 다시 보내, 이미 저장한 입력을 새 저장본
-    위에서 또 검토하게 된다. 붙여넣기는 칸 앞에서 빈 값을 적어 브라우저에도 알리고, 세션으로
-    값을 적을 수 없는 업로드는 key 세대를 올려 새 칸으로 세운다. 미리보기만 한 회차는 둔다.
-    """
-    path = tmp_path / "equipment.duckdb"
-    app = _app(path)
-    paste = _master(["PASTED-01"]).to_csv(index=False, sep="\t")
-    _preview(app, paste)
-    clip = app.text_area(CLIPBOARD_KEY)
-    assert (clip.value, clip.proto.set_value) == (paste, False)
-    upload_before = _upload_widget_id(app)
-
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert not app.error
-    assert len(_repository(path).list_revisions()) == 1
-    clip = app.text_area(CLIPBOARD_KEY)
-    assert (clip.value, clip.proto.set_value) == ("", True)
-    upload_after = _upload_widget_id(app)
-    assert upload_after != upload_before
-
-    # 직접 편집 저장도 같은 길로 입력 탭에 남은 붙여넣기를 비운다(바뀐 것이 있어야 저장한다).
-    _change_owner(app, "담당 3")
-    app.text_area(CLIPBOARD_KEY).set_value(_master(["NOT-PREVIEWED"]).to_csv(index=False))
-    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert len(_repository(path).list_revisions()) == 2
-    clip = app.text_area(CLIPBOARD_KEY)
-    assert (clip.value, clip.proto.set_value) == ("", True)
-    assert _upload_widget_id(app) not in {upload_before, upload_after}
-
-
-def test_blank_cells_in_the_direct_editors_render_empty_not_none(tmp_path: Path) -> None:
+def test_blank_cells_in_the_small_editors_render_empty_not_none(tmp_path: Path) -> None:
     """결측 칸은 빈칸이다. 기본값(`placeholder=None`)이면 Streamlit 이 "None" 글자를 그린다."""
     repository = _repository(tmp_path / "equipment.duckdb")
     repository.save_snapshot(
         empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
     )
     app = _app(tmp_path / "equipment.duckdb")
-    assert not app.exception
-    editors = [
-        node
-        for node in app.main
-        if getattr(node, "type", None) == "dataframe"
-        and str(getattr(node, "key", "") or "").startswith(
-            (EQUIPMENT_EDITOR_KEY, BASELINE_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
-        )
-    ]
-    assert len(editors) == 3
-    for editor in editors:
-        assert editor.proto.HasField("placeholder")
-        assert editor.proto.placeholder == ""
+    for table, key in (
+        ("기존 보유대수", BASELINE_EDITOR_KEY),
+        ("비가동 일정", DOWNTIME_EDITOR_KEY),
+    ):
+        app.session_state[TABLE_KEY] = table
+        _ok(app.run())
+        widget = _small_editor_key(app, key)
+        protos = [
+            node.proto
+            for node in app._tree
+            if str(getattr(getattr(node, "proto", None), "id", "")).endswith(f"-{widget}")
+        ]
+        assert protos, widget
+        for proto in protos:
+            assert proto.HasField("placeholder")
+            assert proto.placeholder == ""
 
 
-def test_a_rawdata_save_on_the_run_that_saw_someone_elses_save_is_not_applied(
+def test_a_small_editor_apply_on_the_run_that_saw_someone_elses_save_is_not_applied(
     tmp_path: Path,
 ) -> None:
-    """다른 사람이 저장한 직후의 제출은 옛 편집본 위의 것이다. 새 저장본에 얹어 저장하면 남의
-    리비전과 같은 리비전이 「저장했습니다」로 생기고 버림 알림도 사라진다 — 반영하지 않는다."""
+    """다른 사람이 저장한 직후의 작은 편집표 제출은 옛 편집본 위의 것이다 — 새 저장본에 얹지 않고
+    그 사실을 알린다(표 출납은 `base` 대조로 같은 규칙 — `test_equipment_master_tab_scenarios`)."""
     path = tmp_path / "equipment.duckdb"
     repository = _repository(path)
     repository.save_snapshot(
         empty_equipment_baseline(), _master(["OLD-001"]), empty_downtime_schedule()
     )
-    app = AppTest.from_string(
-        f"""
-from pathlib import Path
-from capa_simulation.components.equipment_data_workspace import (
-    ensure_equipment_drafts, pop_drafts_replaced, render_equipment_data_workspace,
-)
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-repository = DuckDBEquipmentRepository(Path({str(path)!r}))
-snapshot = repository.load_snapshot(repository.latest_revision_id())
-ensure_equipment_drafts(snapshot)
-replaced = pop_drafts_replaced()
-render_equipment_data_workspace(
-    repository=repository, latest_snapshot=snapshot,
-    baseline=snapshot.baseline, equipment=snapshot.equipment, downtime=snapshot.downtime,
-    floor_canvases={{}}, max_extent=(100.0, 60.0), drafts_replaced=replaced,
-)
-""",
-        default_timeout=20,
-    ).run()
+    app = _app(path)
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    _ok(app.run())
+    tables = BrowserTables(app, forms=True)
+    tables.add(
+        _small_editor_key(app, DOWNTIME_EDITOR_KEY),
+        {"설비명": "OLD-001", "비가동유형": "PM", "시작일": "2026-11-03"},
+    )
+    _ok(tables.run())
     repository.save_snapshot(
         empty_equipment_baseline(),
         _master(["OLD-001", "NEW-002"]),
         empty_downtime_schedule(),
         note="남",
     )
+    clear_equipment_repository()
 
-    app.button("equipment_edit_save_v1").click().run()
+    app.button(key="equipment_downtime_apply_v1").click()
+    _ok(tables.run())
 
-    assert not app.exception
-    assert any("반영하지 않았습니다" in item.value for item in app.warning)
+    assert any("반영하지 않았습니다" in text for text in _texts(app, "error"))
+    assert app.session_state[BUFFER_KEY][2].empty
+    assert app.session_state[BUFFER_KEY][1]["설비명"].tolist() == ["OLD-001", "NEW-002"]
     assert len(repository.list_revisions()) == 2
 
 
-# 페이지 왕복과 같은 페이지 안의 `st.rerun()`. `app.py` 처럼 페이지가 바뀐 회차에만 방문 차례를
-# 올리고(`count_page_visit`), 「다른 화면」 회차에는 작업 공간을 그리지 않는다. 작업 공간 앞의
-# 단추는 앞 탭(Preference 의 Cut-off 저장 등)의 `st.rerun()` 을 흉내 낸다.
-_OTHER_PAGE_FLAG = "test_other_page"
-_RERUN_BUTTON_KEY = "test_rerun_before_workspace"
-
-
-def _app_between_pages(path: Path) -> AppTest:
-    return AppTest.from_string(
-        f"""
-from pathlib import Path
-import streamlit as st
-from capa_simulation.components.equipment_data_workspace import render_equipment_data_workspace
-from capa_simulation.page_bootstrap import count_page_visit
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services.equipment_contract import (
-    empty_equipment_baseline, empty_equipment_master, empty_downtime_schedule,
-)
-page = "other" if st.session_state.get({_OTHER_PAGE_FLAG!r}) else "equipment"
-if st.session_state.get("test_last_page") != page:
-    count_page_visit()
-st.session_state["test_last_page"] = page
-if page == "other":
-    st.write("다른 화면")
-    st.stop()
-if st.button("앞 탭 저장", key={_RERUN_BUTTON_KEY!r}):
-    st.rerun()
-repository = DuckDBEquipmentRepository(Path({str(path)!r}))
-repository.initialize()
-revision_id = repository.latest_revision_id()
-snapshot = repository.load_snapshot(revision_id) if revision_id else None
-render_equipment_data_workspace(
-    repository=repository, latest_snapshot=snapshot,
-    baseline=snapshot.baseline if snapshot else empty_equipment_baseline(),
-    equipment=snapshot.equipment if snapshot else empty_equipment_master(),
-    downtime=snapshot.downtime if snapshot else empty_downtime_schedule(),
-    floor_canvases={{}}, max_extent=(100.0, 60.0),
-)
-""",
-        default_timeout=20,
-    ).run()
-
-
-_BASELINE_PASTE = "공정\t분류\t기존보유대수\t비고\nP\t전체\t7\t사용자 값"
-
-
-def _review_headings(app: AppTest) -> list[str]:
-    return [item.value for item in app.markdown if "저장할 변경" in item.value]
-
-
-def test_a_review_is_dropped_with_its_inputs_after_visiting_another_page(tmp_path: Path) -> None:
-    """다른 화면을 다녀오면 등록할 표·붙여넣기는 첫 값으로 돌아온다(그리지 않은 위젯의 값을
-    Streamlit 이 버린다). 미리보기만 남으면 「저장할 변경」과 켜진 저장 단추가 보이는데 눌러도
-    입력이 없다며 막힌다 — 입력과 함께 거둔다."""
-    path = tmp_path / "equipment.duckdb"
-    app = _app_between_pages(path)
-    _preview(app, _BASELINE_PASTE, target="기존 보유대수")
-    assert _review_headings(app) == ["**기존 보유대수 · 저장할 변경 1행**"]
-    assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is False
-
-    app.session_state[_OTHER_PAGE_FLAG] = True
-    app.run()
-    app.session_state[_OTHER_PAGE_FLAG] = False
-    app.run()
-
-    assert not app.exception
-    assert not app.error
-    assert app.text_area(CLIPBOARD_KEY).value == ""
-    assert PREVIEW_KEY not in app.session_state
-    assert _review_headings(app) == []
-    assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is True
-
-    _preview(app, _BASELINE_PASTE, target="기존 보유대수")
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception
-    assert not app.error
-    revisions = _repository(path).list_revisions()
-    assert len(revisions) == 1
-
-
-def test_a_rerun_on_the_same_page_keeps_the_review(tmp_path: Path) -> None:
-    """같은 페이지 안의 `st.rerun()` 은 작업 공간을 건너뛰어 서버의 입력 칸이 비지만, 브라우저는
-    입력을 그대로 들고 있다가 다음 제출에 다시 보낸다. 그 회차에 미리보기를 거두면 보이는 입력을
-    두고 미리보기만 다시 하게 된다 — 페이지가 바뀐 회차에만 거둔다."""
-    path = tmp_path / "equipment.duckdb"
-    app = _app_between_pages(path)
-    _preview(app, _BASELINE_PASTE, target="기존 보유대수")
-
-    app.button(_RERUN_BUTTON_KEY).click().run()
-
-    assert not app.exception
-    assert PREVIEW_KEY in app.session_state
-    assert _review_headings(app) == ["**기존 보유대수 · 저장할 변경 1행**"]
-    assert app.button(IMPORT_SAVE_BUTTON_KEY).disabled is False
-
-
-def _master_location_choices(app: AppTest) -> tuple[list[str], list[str]]:
-    """설비 마스터 편집표 `동`·`층` 칸의 선택지."""
-    import json
-
-    stack = list(app.main.children.values())
-    while stack:
-        node = stack.pop()
-        stack.extend(getattr(node, "children", {}).values())
-        proto = getattr(node, "proto", None)
-        if getattr(node, "type", None) != "dataframe" or proto is None:
-            continue
-        columns = json.loads(proto.columns or "{}")
-        if "Qual일정" in columns and "동" in columns:
-            return (
-                list(columns["동"]["type_config"]["options"]),
-                list(columns["층"]["type_config"]["options"]),
-            )
-    raise AssertionError("설비 마스터 편집표가 없습니다")
+def _location_choices(grid: Calls) -> tuple[list[str], list[str]]:
+    """표 data 의 `동`·`층` 칸 고르는 값."""
+    columns = {column["name"]: column for column in last(grid, emg.GRID_KEY)["columns"]}
+    return list(columns["동"]["options"]), list(columns["층"]["options"])
 
 
 def _located_master(rows: list[tuple[str, str | None, str | None]]) -> pd.DataFrame:
@@ -995,13 +807,11 @@ def _located_master(rows: list[tuple[str, str | None, str | None]]) -> pd.DataFr
 
 
 def test_inactive_floors_leave_the_location_choices_but_present_values_stay(
-    tmp_path: Path,
+    tmp_path: Path, grid: Calls
 ) -> None:
-    """Space 에서 끈 층은 RawData `동`·`층` 칸 선택지에서 칸 단위로 빠진다 — 6개 층을 다 끈 동, 다섯
-    동 모두에서 끈 층. 표에 이미 있는 값은 남는다(선택지 밖이면 칸 오류). 짝(C1 3F)만 끈 층은 거르지
-    못한다. 비활성 층으로 옮긴 호기는 미리보기 경고만 서고 저장은 된다(저장 검사 그대로, S5)."""
-    from capa_simulation.persistence.equipment_cache import clear_equipment_repository
-
+    """Space 에서 끈 층은 표 `동`·`층` 칸 고르는 값에서 칸 단위로 빠진다 — 6개 층을 다 끈 동, 다섯
+    동 모두에서 끈 층. 표에 이미 있는 값은 남는다. 비활성 층으로 옮긴 호기는 탭 머리 경고만 서고
+    저장은 된다(저장 검사 그대로, S5)."""
     path = tmp_path / "equipment.duckdb"
     repository = _repository(path)
     repository.save_snapshot(
@@ -1015,80 +825,34 @@ def test_inactive_floors_leave_the_location_choices_but_present_values_stay(
     repository.save_floor_states(inactive, expected_version=0, source="test")
     clear_equipment_repository()
     app = _app(path)
-    assert not app.exception
 
-    buildings, floors = _master_location_choices(app)
+    buildings, floors = _location_choices(grid)
     assert buildings == ["C1", "C2", "C3", "C4"]
     assert floors == ["1F", "2F", "3F", "4F", "5F"]
-    assert any("비활성 층: C1 3F·6F(사용 안 함)" in item.value for item in app.caption)
-    assert any("C5 1F~6F(생산라인 아님)" in item.value for item in app.caption)
 
-    # 표에 C5 6F 호기가 있으면 그 값은 남는다. 저장은 되고(검사 그대로) 미리보기 경고가 선다.
+    # 붙여넣기로 C5 6F 에 둔 호기 — 그 값은 고르는 값에 남고, 경고가 서고, 저장은 된다.
     _preview(
         app,
         _located_master([("EQ-C4", "C4", "1F"), ("EQ-NONE", "C5", "6F")]).to_csv(
             index=False, sep="\t"
         ),
     )
+    _put(app)
     assert any(
-        "비활성 층으로 옮긴 호기 1대" in item.value and "C5 6F 생산라인 아님" in item.value
-        for item in app.warning
+        "비활성 층으로 옮긴 호기 1대" in text and "C5 6F 생산라인 아님" in text
+        for text in _texts(app, "warning")
     )
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-    assert not app.exception and not app.error
-    assert len(repository.list_revisions()) == 2
-    buildings, floors = _master_location_choices(app)
+    buildings, floors = _location_choices(grid)
     assert "C5" in buildings and "6F" in floors
-    clear_equipment_repository()
+    _save(app)
+    assert not app.error, _texts(app, "error")
+    assert len(repository.list_revisions()) == 2
 
 
-def test_location_choices_hold_while_the_master_editor_has_edits(tmp_path: Path) -> None:
-    """적용 전 칸 편집이 있는 동안 남이 층을 꺼도 `동`·`층` 선택지는 지난 회차 그대로다 — 거름 없는
-    편집표는 dynamic 이라 선택지가 바뀌면 새 위젯이 되어 편집이 사라진다(D19)."""
-    from capa_simulation.persistence.equipment_cache import (
-        clear_equipment_repository,
-        clear_floor_state_cache,
-    )
-
-    path = tmp_path / "equipment.duckdb"
-    repository = _repository(path)
-    repository.save_snapshot(
-        empty_equipment_baseline(),
-        _located_master([("EQ-C1", "C1", "1F")]),
-        empty_downtime_schedule(),
-    )
-    clear_equipment_repository()
-    app = _app(path)
-    assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4", "C5"]
-    tables = BrowserTables(app)
-    generation_key = f"{EQUIPMENT_EDITOR_KEY}__generation"
-    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
-    widget_key = f"{EQUIPMENT_EDITOR_KEY}__g{generation}" if generation else EQUIPMENT_EDITOR_KEY
-    tables.edit(widget_key, 0, "설비이력", "고치는 중")
-    tables.run()
-    assert not app.exception
-
-    repository.save_floor_states(
-        {("C5", floor): "NOT_LINE" for floor in ("1F", "2F", "3F", "4F", "5F", "6F")},
-        expected_version=0,
-        source="남",
-    )
-    clear_floor_state_cache()
-    tables.run()
-
-    assert not app.exception
-    assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4", "C5"]
-    assert app.session_state[widget_key]["edited_rows"]
-    # 편집이 없어지면(버림·저장) 새 선택지다.
-    tables.edits.clear()
-    tables.run()
-    assert _master_location_choices(app)[0] == ["C1", "C2", "C3", "C4"]
-    clear_equipment_repository()
-
-
-def test_history_filters_survive_a_visit_to_another_page(tmp_path: Path) -> None:
-    """저장 이력의 조회 조건(공정소분류·비가동유형·기간)은 보기 조건이다 — 화면 탭으로 다른 화면에
-    갔다 와도 마지막으로 제출한 값이 남는다(`persist_state="session"`)."""
+def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:
+    """저장 이력의 조회 조건(공정소분류·비가동유형·기간)과 조회 리비전은 보기 조건이다 — 탭 ① 은
+    숨은 회차에 그리지 않으므로(개편 명세 2-3) Summary 에 갔다 와도 남는 것은
+    `persist_state="session"` 덕이다."""
     path = tmp_path / "equipment.duckdb"
     equipment = _master(["EQ-A", "EQ-B"])
     downtime = prepare_downtime_schedule(
@@ -1103,27 +867,26 @@ def test_history_filters_survive_a_visit_to_another_page(tmp_path: Path) -> None
         equipment=equipment,
     )
     _repository(path).save_snapshot(empty_equipment_baseline(), equipment, downtime)
-    app = _app_between_pages(path)
-    assert not app.exception
-    app.multiselect("equipment_history_process_filter_v3").set_value(["Die Attach"])
-    app.multiselect("equipment_history_downtime_type_filter_v3").set_value(["고장"])
-    app.date_input("equipment_history_event_range_v3").set_value(
+    app = _app(path)
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    _ok(app.run())
+    app.multiselect(key="equipment_history_process_filter_v3").set_value(["Die Attach"])
+    app.multiselect(key="equipment_history_downtime_type_filter_v3").set_value(["고장"])
+    app.date_input(key="equipment_history_event_range_v3").set_value(
         (date(2026, 3, 1), date(2026, 3, 31))
     )
-    app.button("equipment_history_apply_v1").click().run()
-    assert not app.exception
-    revision = app.selectbox("equipment_history_revision_id_v4").value
+    _ok(app.run())
+    revision = app.selectbox(key="equipment_history_revision_id_v4").value
 
-    app.session_state[_OTHER_PAGE_FLAG] = True
-    app.run()
-    app.session_state[_OTHER_PAGE_FLAG] = False
-    app.run()
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    _ok(app.run())
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    _ok(app.run())
 
-    assert not app.exception
-    assert app.multiselect("equipment_history_process_filter_v3").value == ["Die Attach"]
-    assert app.multiselect("equipment_history_downtime_type_filter_v3").value == ["고장"]
-    assert app.date_input("equipment_history_event_range_v3").value == (
+    assert app.multiselect(key="equipment_history_process_filter_v3").value == ["Die Attach"]
+    assert app.multiselect(key="equipment_history_downtime_type_filter_v3").value == ["고장"]
+    assert app.date_input(key="equipment_history_event_range_v3").value == (
         date(2026, 3, 1),
         date(2026, 3, 31),
     )
-    assert app.selectbox("equipment_history_revision_id_v4").value == revision
+    assert app.selectbox(key="equipment_history_revision_id_v4").value == revision

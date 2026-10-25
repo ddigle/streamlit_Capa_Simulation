@@ -4,10 +4,9 @@
 
 Space 편집기·설비 마스터 호기 상세(개편)가 같은 함수 넷을 쓴다: `check_unit_rename`(Space 거부
 문구 그대로), `compose_unit_renames`(저장 안 한 이름 지도), `rename_followers`(비가동 설비명·자기
-이름 한 행 묶음의 Main 설비), `follow_unit_renames`(RawData 선택·삭제 대기·목록 필터·되돌리기
-기억). RawData 는
-Space 에서 바꾼 저장 안 한 이름을 같은 목록 꼴로 보이고, 지운 + 새 호기 저장 결과는 이름 바꾸기 길을
-알린다.
+이름 한 행 묶음의 Main 설비), `follow_unit_renames`(비가동 일정 작은 편집표의 선택·삭제 대기·목록
+필터, 되돌리기 기억). 설비 마스터 탭은 Space 에서 바꾼 저장 안 한 이름을 같은 목록 꼴로 보이고,
+지운 + 새 호기 저장 결과는 이름 바꾸기 길을 알린다.
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
     DOWNTIME_VIEW_PREFIX,
     LAST_REMOVED_KEY,
-    MASTER_VIEW_PREFIX,
     NAME_CHANGES_CAPTION,
     PENDING_DELETE_KEY,
     PENDING_RENAMES_KEY,
@@ -39,11 +37,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentRevisionSummary,
     EquipmentSaveResult,
 )
-from capa_simulation.services.equipment_bulk_delete import (
-    BASELINE_TARGET,
-    DOWNTIME_TARGET,
-    EQUIPMENT_TARGET,
-)
+from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.space_layout_edit import (
     NameChange,
     PendingRenames,
@@ -315,34 +309,37 @@ def _follow_app() -> None:
     st.session_state["test_step"] = None
 
 
-MASTER_FILTER = filter_widget_key(MASTER_VIEW_PREFIX, "Main 설비")
 DOWNTIME_FILTER = filter_widget_key(DOWNTIME_VIEW_PREFIX, "설비명")
 
 
 def test_follow_moves_the_selection_the_pending_delete_and_the_list_filters() -> None:
-    """선택·삭제 확인 대기의 키와 목록 필터의 고른 값이 새 이름으로 옮겨 가고, 되돌리기 기억은
-    버린다. 필터는 그 위젯을 그리기 전에만 고칠 수 있어 다음 그리기에서 얹힌다."""
+    """비가동 일정 작은 편집표의 선택·삭제 확인 대기의 키와 목록 필터의 고른 값이 새 이름으로 옮겨
+    가고, 되돌리기 기억은 버린다(Main 설비 이름만 바꿔도). 필터는 그 위젯을 그리기 전에만 고칠 수
+    있어 다음 그리기에서 얹힌다."""
     app = AppTest.from_function(_follow_app)
     app.session_state[SELECTION_KEY] = {
-        EQUIPMENT_TARGET: frozenset({("EQ-01",), ("EQ-02",)}),
         DOWNTIME_TARGET: frozenset({("EQ-01", "고장", "2026-08-10")}),
         BASELINE_TARGET: frozenset({("EQ-01", "양산")}),
     }
-    app.session_state[PENDING_DELETE_KEY] = (EQUIPMENT_TARGET, frozenset({("EQ-01",)}))
+    app.session_state[PENDING_DELETE_KEY] = (
+        DOWNTIME_TARGET,
+        frozenset({("EQ-01", "고장", "2026-08-10")}),
+    )
     app.session_state[LAST_REMOVED_KEY] = ("anything",)
-    app.session_state[MASTER_FILTER] = ["BIG", "SMALL"]
     app.session_state[DOWNTIME_FILTER] = ["EQ-01", "EQ-02"]
     app.session_state["test_step"] = "rename"
     app.run()
 
     assert not app.exception
     assert app.session_state[SELECTION_KEY] == {
-        EQUIPMENT_TARGET: frozenset({("EQ-201",), ("EQ-02",)}),
         DOWNTIME_TARGET: frozenset({("EQ-201", "고장", "2026-08-10")}),
         # 기존 보유대수 키의 첫 칸은 공정이다 — 건드리지 않는다.
         BASELINE_TARGET: frozenset({("EQ-01", "양산")}),
     }
-    assert app.session_state[PENDING_DELETE_KEY] == (EQUIPMENT_TARGET, frozenset({("EQ-201",)}))
+    assert app.session_state[PENDING_DELETE_KEY] == (
+        DOWNTIME_TARGET,
+        frozenset({("EQ-201", "고장", "2026-08-10")}),
+    )
     assert LAST_REMOVED_KEY not in app.session_state
     # 아직 그리기 전 — 필터 값은 그대로다.
     assert app.session_state[DOWNTIME_FILTER] == ["EQ-01", "EQ-02"]
@@ -350,43 +347,48 @@ def test_follow_moves_the_selection_the_pending_delete_and_the_list_filters() ->
     app.session_state["test_step"] = "draw"
     app.run()
 
-    assert app.session_state[MASTER_FILTER] == ["BIG-2", "SMALL"]
     assert app.session_state[DOWNTIME_FILTER] == ["EQ-201", "EQ-02"]
 
 
-# ------------------------------------------------------------------ RawData 목록·결과 꼬리
+def _groups_only_app() -> None:
+    from capa_simulation.components.equipment_data_workspace import follow_unit_renames
+
+    follow_unit_renames({}, {"BIG": "BIG-2"})
 
 
-def _workspace_app(path: Path) -> AppTest:
-    return AppTest.from_string(
-        f"""
-from pathlib import Path
-from capa_simulation.components.equipment_data_workspace import render_equipment_data_workspace
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-repository = DuckDBEquipmentRepository(Path({str(path)!r}))
-repository.initialize()
-snapshot = repository.load_snapshot(repository.latest_revision_id())
-render_equipment_data_workspace(
-    repository=repository, latest_snapshot=snapshot, baseline=snapshot.baseline,
-    equipment=snapshot.equipment, downtime=snapshot.downtime,
-    floor_canvases={{}}, max_extent=(100.0, 60.0),
-)
-""",
-        default_timeout=30,
-    )
+def test_a_group_rename_alone_also_drops_the_delete_undo() -> None:
+    """Main 설비 이름만 바꿔도 「방금 삭제 되돌리기」 는 버린다 — 지운 모듈 행이 옛 묶음 이름으로
+    돌아와 한 설비가 둘로 갈린다."""
+    app = AppTest.from_function(_groups_only_app)
+    app.session_state[LAST_REMOVED_KEY] = ("anything",)
+    app.run()
+    assert not app.exception
+    assert LAST_REMOVED_KEY not in app.session_state
 
 
-def test_rawdata_lists_the_unsaved_renames_made_in_space(tmp_path: Path) -> None:
+# ------------------------------------------------------------------ 설비 마스터 탭 목록·결과 꼬리
+
+
+def test_the_master_tab_lists_the_unsaved_renames_made_in_space(tmp_path: Path) -> None:
+    """Space 편집기에서 바꾼 저장 안 한 이름 — 설비 마스터 탭 알림 칸이 Space 상자와 같은 꼴
+    (「이름 바꿈 n건」 · 표 · `NAME_CHANGES_CAPTION`)으로 보인다."""
     from test_equipment_availability import _baseline, _equipment
+    from test_equipment_pages import PROJECT_ROOT, _page_script
 
+    from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
+    from capa_simulation.persistence.equipment_cache import clear_equipment_repository
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 
     path = tmp_path / "rename.duckdb"
     repository = DuckDBEquipmentRepository(path)
     repository.initialize()
     repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="r1")
-    app = _workspace_app(path).run()
-    assert not app.exception
+    clear_equipment_repository()
+    page = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page, path), default_timeout=60)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
     assert not any(item.label.startswith("이름 바꿈") for item in app.expander)
 
     baseline, equipment, downtime = app.session_state[BUFFER_KEY]
@@ -396,6 +398,7 @@ def test_rawdata_lists_the_unsaved_renames_made_in_space(tmp_path: Path) -> None
     app.session_state[BUFFER_KEY] = (baseline, renamed, followed)
     app.session_state[PENDING_RENAMES_KEY] = {"units": {"EQ-101": "EQ-01"}, "groups": {}}
     app.run()
+    clear_equipment_repository()
 
     assert not app.exception, [item.message for item in app.exception]
     assert [item.label for item in app.expander].count("이름 바꿈 1건") == 1
