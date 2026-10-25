@@ -355,19 +355,25 @@ def test_a_cell_draft_blocks_every_save_path(tmp_path: Path, grid: Calls) -> Non
     assert GRID_OVERLAY_KEY not in app.session_state
 
 
+def _small_key(app: AppTest, key: str) -> str:
+    generation_key = f"{key}__generation"
+    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    return f"{key}__g{generation}" if generation else key
+
+
 def test_small_editor_edits_mark_the_tab_and_the_leave_question(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """작은 편집표의 적용 전 편집 — 탭 ① 점, 화면 탭 줄 떠나기 확인(`page_tabs.leave_notice`)."""
+    """작은 편집표의 적용 전 편집 — 탭 ① 점, 화면 탭 줄 떠나기 확인(`page_tabs.leave_notice`).
+    대역은 브라우저처럼 폼 안 편집을 제출 전에는 보내지 않는다(`forms=True`) — 편집표가 폼 안이면
+    적용 전 편집이 서버에 오지 않아 점도 확인도 서지 않는다(리뷰 rs-b1y 재현)."""
     app = _app(tmp_path / "equipment.duckdb")
     _import(app, _rows("DA-01"))
     app.session_state[TABLE_KEY] = "비가동 일정"
     app.run()
-    tables = BrowserTables(app)
-    generation_key = f"{DOWNTIME_EDITOR_KEY}__generation"
-    generation = app.session_state[generation_key] if generation_key in app.session_state else 0
+    tables = BrowserTables(app, forms=True)
     tables.add(
-        f"{DOWNTIME_EDITOR_KEY}__g{generation}" if generation else DOWNTIME_EDITOR_KEY,
+        _small_key(app, DOWNTIME_EDITOR_KEY),
         {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"},
     )
     tables.run()
@@ -375,3 +381,82 @@ def test_small_editor_edits_mark_the_tab_and_the_leave_question(
     dot = pending_tabs_style(EQUIPMENT_TAB_KEY, EQUIPMENT_TABS, {EQUIPMENT_MASTER_TAB}).strip()
     assert dot in [str(element.proto.body).strip() for element in app.get("html")]
     assert app.session_state[LEAVE_NOTICE_KEY] == "가용설비 현황 · 비가동 일정"
+    # 다른 위젯 회차(오른쪽 칸 고르기)에도 편집은 남는다.
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    tables.run()
+    assert app.session_state[LEAVE_NOTICE_KEY] == "가용설비 현황 · 비가동 일정"
+    # 「편집본에 적용」 — 편집본에 들고 편집표가 비어 떠나기 확인이 걷힌다.
+    app.button(key="equipment_downtime_apply_v1").click()
+    tables.run()
+    assert not app.exception, app.exception
+    assert app.session_state[BUFFER_KEY][2]["설비명"].tolist() == ["DA-01"]
+    tables.run()
+    assert app.session_state[LEAVE_NOTICE_KEY] == ""
+
+
+def test_the_small_editors_are_not_inside_a_form(tmp_path: Path, grid: Calls) -> None:
+    """작은 편집표 둘은 폼 밖이다(D11 — 적용 전 편집이 회차마다 서버에 와야 점·떠나기 확인이
+    선다)."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
+    for table, key in (
+        ("기존 보유대수", "equipment_baseline_editor_v3"),
+        ("비가동 일정", DOWNTIME_EDITOR_KEY),
+    ):
+        app.session_state[TABLE_KEY] = table
+        app.run()
+        assert not app.exception, app.exception
+        widget = _small_key(app, key)
+        nodes = [
+            node
+            for node in app._tree
+            if str(getattr(getattr(node, "proto", None), "id", "")).endswith(f"-{widget}")
+        ]
+        assert nodes, widget
+        assert all(not getattr(node.proto, "form_id", "") for node in nodes)
+        assert not app.get("form")
+
+
+def test_a_delivered_toast_does_not_come_back_when_its_mount_returns(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """토스트는 마운트에 실어 보낸 뒤 그 마운트가 사라지면 거둔다 — 브라우저의 닫은 번호는
+    마운트마다 새로 시작해 표 고르기·바깥 탭을 다녀오면 닫은 토스트가 되살아났다(리뷰 rs-b1y).
+    마운트가 숨은 동안 쌓인 토스트(작은 편집표 적용이 비운 되돌리기 알림)는 처음 마운트할 때
+    보인다."""
+    from capa_simulation.navigation import EQUIPMENT_SUMMARY_TAB
+
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
+    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("붙여넣기로 1행을")
+    app.session_state[TABLE_KEY] = "기존 보유대수"
+    app.run()
+    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.run()
+    assert not app.exception, app.exception
+    assert last(grid, emg.GRID_KEY)["toast"] is None
+
+    send(app, emg.LOADER_KEY, "clear", {})
+    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("목록을 비웠습니다")
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    app.run()
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.run()
+    assert last(grid, emg.GRID_KEY)["toast"] is None
+
+    # 넣기가 남긴 되돌리기 단계 — 작은 편집표 적용(표 밖 길)이 비우며 표 토스트를 둔다. 표가 숨은
+    # 동안 쌓였으므로 돌아온 첫 마운트에 보인다.
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.run()
+    tables = BrowserTables(app, forms=True)
+    tables.add(
+        _small_key(app, DOWNTIME_EDITOR_KEY),
+        {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"},
+    )
+    tables.run()
+    app.button(key="equipment_downtime_apply_v1").click()
+    tables.run()
+    assert not app.exception, app.exception
+    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.run()
+    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("표 밖에서 편집본을 바꿔")

@@ -46,6 +46,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     pop_discarded_notice,
     pop_drafts_replaced,
+    settle_grid_toasts,
     small_editor_edits,
 )
 from capa_simulation.components.equipment_explorer import (
@@ -518,3 +519,7 @@ with master_tab:
             confirmation_official=official_snapshot,
             drafts_replaced=drafts_replaced,
         )
+    else:
+        # 표 마운트가 사라진 회차 — 실어 보낸 토스트를 거둔다(돌아왔을 때 닫은 토스트가 되살아나지
+        # 않게, `settle_grid_toasts`).
+        settle_grid_toasts(())

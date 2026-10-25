@@ -238,7 +238,8 @@ def _infos(app: AppTest) -> list[str]:
 
 
 def _cross_check(app: AppTest) -> pd.DataFrame | None:
-    """확보율 교차검증 표. 숨은 설비 마스터 편집표도 있어 칸 이름으로 고른다."""
+    """확보율 교차검증 표 — 화면의 다른 표(일정 확인 목록 등)와 가르려 칸 이름으로 고른다(탭 ① 은
+    숨은 회차에 그리지 않아 숨은 설비 마스터 편집표는 없다 — 개편 B1)."""
     for element in app.dataframe:
         value = element.value
         if isinstance(value, pd.DataFrame) and "Static확보율" in value.columns:

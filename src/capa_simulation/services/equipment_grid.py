@@ -89,6 +89,7 @@ from capa_simulation.services.layout_overlay import (
     Place,
     assumption_common_places,
     misplaced_rows,
+    place_of,
     place_rows,
 )
 from capa_simulation.services.space_layout_edit import (
@@ -421,6 +422,10 @@ class GridContext:
       칸(그 시나리오 배치가 공식과 다른 호기만 — `EquipmentSnapshot.layout_official_places`). 「호기
       상세」 위치 묶음의 「공식: …」 한 줄과 「공식 자리로 되돌리기」(`official` op)가 쓴다(설비
       시나리오 2단계 설계 13-1). 공식·잠긴 회차는 빈 dict 다.
+    - `official_cells` — 같은 호기의 공식 일곱 칸 **원래 값**(공통 대장 칸 그대로 — 반올림 없음).
+      `official_places` 는 견줄 꼴(`CANVAS_DECIMALS` 반올림)이라 그대로 적으면 공식 좌표 10.25 가
+      10.2 로 들어가 모듈 묶음 바둑판이 어긋난다. 「공식 자리로 되돌리기」 는 원래 값이 그 견줄 꼴과
+      맞을 때 원래 값을 적고, 없거나 다르면(낡은 세션 등) 견줄 꼴을 적는다.
     """
 
     base: str
@@ -432,6 +437,7 @@ class GridContext:
     new_rows_locked: bool = False
     location_options: tuple[tuple[str, ...], tuple[str, ...]] | None = None
     official_places: Mapping[str, Place] = field(default_factory=dict)
+    official_cells: Mapping[str, tuple[object, ...]] = field(default_factory=dict)
 
     def lock_reasons(self) -> dict[str, str]:
         reasons = {"module": MODULE_LOCK_REASON, "deleted": DELETED_LOCK_REASON}
@@ -649,7 +655,8 @@ class GridSource:
     `issues` 는 편집본 설비 마스터에 규칙 표를 돌린 결과(`equipment_master_issues`, 저장과 같은
     인자), `alerts` 는 설비명 → 일정 확인 갈래 글(「Qual 미확인」 등), `table_errors` 는 표 단위
     오류 줄(기존 보유대수·비가동 일정·예시 행·모듈 묶음 바둑판), `others` 는 「저장 전 변경」 의
-    다른 것 한 줄이다."""
+    다른 것 한 줄이다. `texts` 는 (편집본, 저장본) 설비 마스터의 `text_matrix` 를 미리 낸 것 —
+    화면이 편집본 세대·저장본 토큰 열쇠로 메모해 넘긴다(없으면 여기서 낸다, 개편 명세 8장)."""
 
     frames: Frames
     saved: Frames
@@ -659,6 +666,7 @@ class GridSource:
     alerts: Mapping[str, str] = field(default_factory=dict)
     table_errors: Sequence[str] = ()
     others: str = ""
+    texts: tuple[Sequence[Sequence[str]], Sequence[Sequence[str]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -710,8 +718,9 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
     master = source.frames[1].reset_index(drop=True)
     saved = source.saved[1].reset_index(drop=True)
     index = grid_index(master, saved, source.renames.units)
-    buffer_texts = text_matrix(master)
-    saved_texts = text_matrix(saved)
+    buffer_texts, saved_texts = (
+        source.texts if source.texts is not None else (text_matrix(master), text_matrix(saved))
+    )
     values: dict[str, list[str]] = {}
     marks: dict[str, RowMarks] = {}
     names: dict[str, str] = {}
@@ -2287,7 +2296,9 @@ def _official_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             continue
         position = index.live[target]
         changed = False
-        for column, value in zip(SCENARIO_LAYOUT_COLUMNS, places[name], strict=True):
+        for column, value in zip(
+            SCENARIO_LAYOUT_COLUMNS, _official_values(work, name), strict=True
+        ):
             if column not in work.master.columns:
                 continue
             _set_overlay(work, patch, overlay_key(target, column), None)
@@ -2295,6 +2306,17 @@ def _official_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         moved += int(changed)
     work.say(OFFICIAL_TOAST.format(count=moved), undo=moved > 0)
     return patch.step("공식 자리로 되돌리기")
+
+
+def _official_values(work: _Work, name: str) -> tuple[object, ...]:
+    """그 호기의 공식 일곱 칸 — 원래 값(`official_cells`)이 견줄 꼴(`official_places`)과 맞으면
+    원래 값, 아니면 견줄 꼴(GridContext 설명)."""
+    place = work.context.official_places[name]
+    cells = work.context.official_cells.get(name)
+    if cells is not None and len(cells) == len(SCENARIO_LAYOUT_COLUMNS):
+        if place_of(dict(zip(SCENARIO_LAYOUT_COLUMNS, cells, strict=True))) == place:
+            return tuple(cells)
+    return tuple(place)
 
 
 def _undo_op(work: _Work, op: Mapping[str, Any]) -> None:

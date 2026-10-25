@@ -110,10 +110,16 @@ class BrowserTables:
     그 편집은 사라진다. 일반 `AppTest.run()` 은 편집표 상태를 보내지 않으므로 `on_change`·초안
     접기를 잴 수 없다. 이 대역은 `edit` 로 칸을 고치고 `run()` 마다 편집표 상태를 JSON 글로 끼워
     보낸다(Streamlit 1.63 프런트엔드와 같은 `string_value`). 다른 위젯은 `AppTest` 와 같이 보낸다.
+
+    `forms=True` 면 브라우저처럼 **폼 안 편집표**(`form_id` 가 있는 것)의 편집은 그 폼을
+    제출하는 회차(`run(submit=폼 id)`)에만 보낸다 — 폼 안 편집이 제출 전에는 서버에 오지 않는 것을
+    잰다. 기본은 옛 시험과 같이 폼을 보지 않고 늘 보낸다.
     """
 
-    def __init__(self, app: AppTest) -> None:
+    def __init__(self, app: AppTest, *, forms: bool = False) -> None:
         self.app = app
+        self.forms = forms
+        self.submit: str | None = None
         self.edits: dict[str, dict[int, dict[str, object]]] = {}
         self.added: dict[str, list[dict[str, object]]] = {}
 
@@ -140,7 +146,13 @@ class BrowserTables:
         mounted: set[str] = set()
         for node in self.app._tree:
             proto_id = getattr(getattr(node, "proto", None), "id", "")
-            if isinstance(proto_id, str) and (proto_id in self.edits or proto_id in self.added):
+            form_id = getattr(getattr(node, "proto", None), "form_id", "")
+            held = self.forms and bool(form_id) and form_id != self.submit
+            if (
+                isinstance(proto_id, str)
+                and not held
+                and (proto_id in self.edits or proto_id in self.added)
+            ):
                 mounted.add(proto_id)
                 state = states.widgets.add()
                 state.id = proto_id
@@ -160,9 +172,14 @@ class BrowserTables:
                 states.widgets.append(other)
         return states
 
-    def run(self) -> AppTest:
-        """브라우저 조작 하나로 생기는 회차. 그 뒤 화면에 없는 편집표의 편집은 버린다(새 위젯)."""
-        self.app._run(self._states())
+    def run(self, *, submit: str | None = None) -> AppTest:
+        """브라우저 조작 하나로 생기는 회차. 그 뒤 화면에 없는 편집표의 편집은 버린다(새 위젯).
+        `submit` 은 이 회차에 제출하는 폼 id 다(`forms=True` 일 때만 뜻이 있다)."""
+        self.submit = submit
+        try:
+            self.app._run(self._states())
+        finally:
+            self.submit = None
         present = {
             proto_id
             for node in self.app._tree

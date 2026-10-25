@@ -49,6 +49,7 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_DRAFT_KEY,
     DOWNTIME_EDITOR_KEY,
     DOWNTIME_VIEW_PREFIX,
+    DRAFT_REVISION_KEY,
     EQUIPMENT_DRAFT_KEY,
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
@@ -66,13 +67,16 @@ from capa_simulation.components.equipment_data_workspace import (
     _stale_lock_message,
     apply_master_grid_result,
     buffer_base,
+    buffer_has_layout_edits,
+    carry_layout_memo,
     equipment_buffer_generation,
     floor_layout_words,
     grid_overlay,
     grid_toasts,
     grid_undo_steps,
-    layout_edits,
     layout_lock_origins,
+    layout_memo_mark,
+    official_layout_cells,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
@@ -85,6 +89,7 @@ from capa_simulation.components.equipment_data_workspace import (
     reset_equipment_drafts,
     save_equipment_buffer,
     saved_master_violations,
+    settle_grid_toasts,
     stale_delete_lock,
     stamp_layout_role,
 )
@@ -94,12 +99,16 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.components.equipment_data_workspace import (
     _confirmation_master as confirmation_master,
 )
+from capa_simulation.components.equipment_import_dialog import open_equipment_import
 from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     render_equipment_save_fields,
     save_fields_from_state,
 )
-from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.components.equipment_settings_dialog import (
+    EQUIPMENT_DIALOG_KEY,
+    IMPORT_DIALOG,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
@@ -154,6 +163,7 @@ from capa_simulation.services.equipment_grid import (
     pending_ops,
     prune_loaded,
     save_id_map,
+    text_matrix,
     undo_top,
 )
 from capa_simulation.services.equipment_validation import (
@@ -268,9 +278,11 @@ def grid_context(
     latest_snapshot: EquipmentSnapshot | None,
     floor_states: FloorStates | None,
     master: pd.DataFrame,
+    official_snapshot: EquipmentSnapshot | None = None,
 ) -> GridContext:
     """한 회차의 표 조건 — 잠금 글은 세션에서(낡음·일정 없이 엶·배치 잠금), `base` 는 편집본
-    출발점."""
+    출발점. `official_snapshot` 은 가정 세션의 공식 스냅샷이다 — 「공식 자리로 되돌리기」 가 공식
+    일곱 칸 원래 값을 적는다(`official_layout_cells`)."""
     stale = basis is not None and basis.stale
     stale_lock: str | None = None
     if stale and basis is not None:
@@ -291,6 +303,11 @@ def grid_context(
         location_options=(tuple(location[0]), tuple(location[1])) if location else None,
         official_places=(
             _official_places_by_name(latest_snapshot) if layout_mode.layout == "overlay" else {}
+        ),
+        official_cells=(
+            official_layout_cells(latest_snapshot, official_snapshot)
+            if layout_mode.layout == "overlay"
+            else {}
         ),
     )
 
@@ -322,6 +339,29 @@ def _issues(master: pd.DataFrame, canvases: FloorCanvasMap, today: date) -> tupl
     memo["issues"] = tuple(astuple(issue) for issue in issues)
     st.session_state[GRID_MEMO_KEY] = memo
     return issues
+
+
+def _texts(buffer: pd.DataFrame, saved: pd.DataFrame) -> tuple[list[list[str]], list[list[str]]]:
+    """(편집본, 저장본) 설비 마스터의 화면 글자(`text_matrix` — 3천 대 × 39칸). 편집본은 편집본
+    세대·출발점, 저장본은 저장본 사본 토큰 열쇠로 세션 메모(`GRID_MEMO_KEY` — 글 목록만)에 한 번 —
+    바뀐 것 없는 회차·편집본만 바뀐 회차가 둘 다 다시 내지 않게(개편 명세 8장 「payload 메모」)."""
+    memo = st.session_state.get(GRID_MEMO_KEY)
+    memo = dict(memo) if isinstance(memo, dict) else {}
+    keys = {
+        "buffer": (equipment_buffer_generation(), buffer_base(), len(buffer)),
+        "saved": (st.session_state.get(DRAFT_REVISION_KEY), buffer_base(), len(saved)),
+    }
+    result: dict[str, list[list[str]]] = {}
+    for name, frame in (("buffer", buffer), ("saved", saved)):
+        cached = memo.get(f"{name}_texts")
+        if memo.get(f"{name}_texts_key") == keys[name] and isinstance(cached, list):
+            result[name] = cached
+            continue
+        result[name] = text_matrix(frame.reset_index(drop=True))
+        memo[f"{name}_texts_key"] = keys[name]
+        memo[f"{name}_texts"] = result[name]
+    st.session_state[GRID_MEMO_KEY] = memo
+    return result["buffer"], result["saved"]
 
 
 def _changed_rows(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
@@ -370,7 +410,9 @@ def _table_errors(
     if violations:
         errors.append(module_layout_message(violations))
     renames = pending_unit_renames().units
-    if layout == "overlay" and context.official_places:
+    # 배치 차이가 아직 없는 가정 시나리오(갓 복제한 것)는 `official_places` 가 비어도 판정한다 —
+    # 그때 공식 = 저장본이다(저장소 `split_layout` 와 같은 판정, 옛 탭 제출·팝업과 같은 조건).
+    if layout == "overlay":
         found = assumption_group_refusal(
             frames[1],
             saved[1],
@@ -450,6 +492,7 @@ def build_view(
         alerts=_alerts(frames[1], confirmation_official, today),
         table_errors=tuple(_table_errors(frames, saved, context, layout=layout)),
         others=_others(frames, saved),
+        texts=_texts(frames[1], saved[1]),
     )
     return build_grid_view(source, context)
 
@@ -490,6 +533,7 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     st.session_state[APPLIED_KEY] = applied
     if not ops:
         return
+    before = layout_memo_mark()
     result = apply_ops(_grid_state(), ops, context)
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
@@ -499,13 +543,30 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     if result.toast:
         target = targets.get(str(ops[-1].get("mount")), "grid")
         queue_grid_toast(target, result.toast, undo=result.toast_step)
-    if result.frames_changed[1] and layout != "locked" and _touches_layout(ops):
-        saved = st.session_state[EQUIPMENT_DRAFT_KEY]
-        master = st.session_state[BUFFER_KEY][1]
-        if layout_edits(master, saved, pending_unit_renames().units):
-            # 배치 칸을 고친 출납 — 그때의 역할을 찍는다(저장 때 쓰기 잠금 안의 역할과 대조, 설계
-            # 6-2).
-            stamp_layout_role(layout)
+    if result.frames_changed[1] and not _layout_neutral(ops):
+        _stamp_if_layout_edited(ops, layout)
+    else:
+        # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
+        # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
+        carry_layout_memo(before)
+
+
+def _stamp_if_layout_edited(ops: Sequence[Mapping[str, Any]], layout: LayoutMode) -> None:
+    """배치를 바꿀 수 있는 op 뒤 편집본에 배치 편집이 있으면 그때의 역할을 찍는다(저장 때 쓰기 잠금
+    안의 역할과 대조, 설계 6-2 — 탭 제출·Space 적용과 같다). 잠긴 회차는 찍지 않는다."""
+    if layout == "locked" or not _touches_layout(ops):
+        return
+    if buffer_has_layout_edits():
+        stamp_layout_role(layout)
+
+
+# 배치 편집 판정에 닿지 않는 op — 칸 고침·값 넣기·붙여넣기·날짜 밀기(배치·설비명·Main 설비 칸이 아닐
+# 때). 지우기·되살리기·되돌리기는 행이나 배치를 저장본 쪽으로 옮겨 판정이 바뀔 수 있다.
+_NEUTRAL_OPS: Final = frozenset({"cell", "set", "paste", "shift"})
+
+
+def _layout_neutral(ops: Sequence[Mapping[str, Any]]) -> bool:
+    return all(op.get("op") in _NEUTRAL_OPS for op in ops) and not _touches_layout(ops)
 
 
 # 배치를 바꿀 수 있는 칸 — 배치 일곱 칸과 새 호기 자리를 정하는 설비명·Main 설비.
@@ -516,11 +577,13 @@ _LAYOUT_TRIGGERS: Final = frozenset(
 
 def _touches_layout(ops: Sequence[Mapping[str, Any]]) -> bool:
     """배치 칸을 바꿀 수 있는 op 가 있는가 — 역할 찍기 판정(`layout_edits`, 합성 3천 대에 0.17 s
-    남짓 — 샘플 관측)을 칸 고침마다 돌리지 않는다. 되돌리기·지우기·되살리기는 저장본 쪽으로 가는
-    길이라 새 배치 편집을 만들지 않는다."""
+    남짓 — 샘플 관측)을 칸 고침마다 돌리지 않는다. 지우기·되살리기·칸 되돌리기는 저장본 쪽으로 가는
+    길이라 새 배치 편집을 만들지 않는다. **한 단계 되돌리기(`undo`)는 넣는다** — 찍힘이 걷힌 뒤
+    (`live_layout_role` — 배치 편집이 사라짐) 되돌리기가 배치 편집을 되살릴 수 있다(칸
+    되돌리기·지우기·엑셀·CSV 넣기를 되돌림)."""
     for op in ops:
         name = op.get("op")
-        if name == "official":
+        if name in ("official", "undo"):
             return True
         columns: list[object] = []
         if name in ("cell", "set"):
@@ -599,6 +662,9 @@ def _on_goto(table: str, unit: str) -> None:
 
 
 def _on_dialog(name: str) -> None:
+    if name == IMPORT_DIALOG:
+        open_equipment_import()
+        return
     forget_page_dialogs()
     st.session_state[EQUIPMENT_DIALOG_KEY] = name
 
@@ -608,11 +674,17 @@ def _on_dialog(name: str) -> None:
 
 def _undo_step(context: GridContext, layout: LayoutMode) -> None:
     apply_outbox(context, layout)
-    result = apply_ops(_grid_state(), [{"op": "undo", "base": context.base}], context)
+    ops = [{"op": "undo", "base": context.base}]
+    before = layout_memo_mark()
+    result = apply_ops(_grid_state(), ops, context)
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
     if result.toast:
         queue_grid_toast("changes", result.toast)
+    if result.frames_changed[1]:
+        _stamp_if_layout_edited(ops, layout)
+    else:
+        carry_layout_memo(before)
 
 
 def _discard_all() -> None:
@@ -855,6 +927,12 @@ def _render_downloads(
             database_path=str(repository.database_path),
             scenario_name=scenario_name,
             edit_note=DOWNLOAD_NOTE,
+            memo_key=(
+                equipment_buffer_generation(),
+                buffer_base(),
+                st.session_state.get(DRAFT_REVISION_KEY),
+                latest_snapshot.revision.revision_id if latest_snapshot is not None else None,
+            ),
         )
 
 
@@ -1034,6 +1112,7 @@ def render_equipment_master_tab(
         latest_snapshot=latest_snapshot,
         floor_states=floor_states,
         master=frames[1],
+        official_snapshot=confirmation_official,
     )
     view = build_view(
         context,
@@ -1129,6 +1208,14 @@ def render_equipment_master_tab(
                 on_open=_on_side_open,
                 on_goto=_on_goto,
             )
+    # 그린 마운트의 토스트는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 토스트는 거둔다(닫은
+    # 토스트가 다시 마운트할 때 되살아나지 않게).
+    drawn = {"grid"} if table == TABLE_MASTER else set()
+    if side == SIDE_DETAIL:
+        drawn.add("detail")
+    elif side == SIDE_CHANGES:
+        drawn.add("changes")
+    settle_grid_toasts(drawn)
     # 작은 편집표 제출은 화면의 모든 위젯을 그린 뒤 처리한다(`st.rerun()` 으로 끝난다).
     if submit is not None:
         submit()

@@ -168,3 +168,48 @@ def test_a_held_filter_value_keeps_its_value_when_its_text_changes_in_the_browse
         assert app.session_state["labelled_view_filter_공정"] == ["DA2"]
         assert app.session_state["visible_processes"] == ["DA2"]
     assert browser.wire == ["DA (DA2)"]
+
+
+def _many_values_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.table_view_controls import (
+        MAX_FILTER_OPTIONS,
+        render_table_view_controls,
+    )
+
+    names = [f"EQ-{index:03d}" for index in range(MAX_FILTER_OPTIONS + 1)]
+    data = pd.DataFrame({"설비명": names, "비가동유형": ["PM"] * len(names)})
+    view = render_table_view_controls(
+        data,
+        key_prefix="many_view",
+        editor_key="many_view_editor",
+        filter_columns=["설비명", "비가동유형"],
+        locked_columns=["설비명"],
+    )
+    st.session_state["visible_names"] = list(view.frame["설비명"])
+
+
+def test_a_preset_filter_on_a_column_over_the_option_limit_still_filters() -> None:
+    """선택지가 상한(`MAX_FILTER_OPTIONS`)을 넘는 칸은 다중선택을 세우지 않는다 — 그래도 다른 자리가
+    적어 둔 값(「비가동 일정 표에서 고치기」 의 설비명)은 그 값만으로 세워 거른다(리뷰 rs-b1y —
+    전에는 조용히 빠져 전체 표가 섰다). 지우면 칸이 사라진다."""
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_many_values_app).run()
+    assert not app.exception
+    assert len(app.session_state["visible_names"]) == 201
+    assert not [item for item in app.multiselect if item.key == "many_view_filter_설비명"]
+
+    app.session_state["many_view_filter_설비명"] = ["EQ-007"]
+    app.run()
+    assert not app.exception
+    assert app.session_state["visible_names"] == ["EQ-007"]
+    picker = app.multiselect(key="many_view_filter_설비명")
+    assert picker.options == ["EQ-007"]
+
+    picker.set_value([]).run()
+    assert len(app.session_state["visible_names"]) == 201
+    app.run()
+    assert not [item for item in app.multiselect if item.key == "many_view_filter_설비명"]

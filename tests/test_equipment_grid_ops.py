@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation.services import equipment_grid as eg
+from capa_simulation.services.equipment_contract import SCENARIO_LAYOUT_COLUMNS
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_baseline,
@@ -877,3 +878,77 @@ def test_official_place_revert_is_refused_without_official_places() -> None:
     assert result.refused == 1
     view = eg.build_grid_view(eg.GridSource(frames=state.frames, saved=state.saved), OVERLAY)
     assert "official" not in eg.detail_data(view, _id(state, 0))["unit"]
+
+
+def _module_group_overlay(
+    saved: eg.Frames,
+) -> tuple[eg.GridContext, eg.Frames, list[str], list[tuple[object, ...]]]:
+    """첫 층의 세 호기를 Main 설비 MOD-G 한 묶음(공식 X 0·12.25·24.5, Xsize 12.25 — 소수 둘째
+    자리)으로 두고, 가정 배치는 셋 다 X 를 50 옮긴 것. 공식 일곱 칸 원래 값과 견줄 꼴을 함께
+    준다."""
+    from capa_simulation.services.layout_overlay import place_of
+
+    master = saved[1].copy()
+    positions = [0, 1, 2]
+    floor = master.iloc[0][["동", "층"]].tolist()
+    names = [str(master.iloc[k]["설비명"]).strip() for k in positions]
+    official_cells: list[tuple[object, ...]] = []
+    for step, position in enumerate(positions):
+        index = master.index[position]
+        master.loc[index, ["동", "층"]] = floor
+        master.loc[index, "Main 설비"] = "MOD-G"
+        master.loc[index, ["X좌표", "Y좌표", "Xsize", "Ysize"]] = [step * 12.25, 5.0, 12.25, 8.0]
+        row = master.iloc[position]
+        official_cells.append(tuple(row[column] for column in SCENARIO_LAYOUT_COLUMNS))
+    official_frames = (saved[0], master.copy(), saved[2])
+    moved = master.copy()
+    for position in positions:
+        moved.loc[moved.index[position], "X좌표"] += 50.0
+    context = eg.GridContext(
+        base=BASE,
+        scenario_name="가정",
+        official=False,
+        official_places={
+            name: place_of(official_frames[1].iloc[position])
+            for name, position in zip(names, positions, strict=True)
+        },
+        official_cells=dict(zip(names, official_cells, strict=True)),
+    )
+    return context, (saved[0], moved, saved[2]), names, official_cells
+
+
+def test_official_place_revert_writes_the_original_cells_not_the_rounded_place() -> None:
+    """견줄 꼴(`official_places`)은 소수 첫째 자리 반올림이다 — 「공식 자리로 되돌리기」 는 공식
+    원래 값(12.25)을 적어 모듈 묶음 바둑판이 어긋나지 않게 한다(리뷰 rs-b1y)."""
+    context, overlay_saved, names, cells = _module_group_overlay(_saved())
+    state = _state(overlay_saved)
+    result = _apply(state, _op("official", id=_id(state, 1)), context=context)
+    assert result.changed
+    for position, official in enumerate(cells):
+        assert _value(result.state, position, "X좌표") == official[2]
+    assert _value(result.state, 1, "X좌표") == 12.25
+    assert _value(result.state, 1, "Xsize") == 12.25
+    # 원래 값이 없으면(낡은 세션 등) 견줄 꼴을 적는다.
+    rounded = eg.GridContext(
+        base=BASE, official=False, official_places=dict(context.official_places)
+    )
+    fallback = _apply(state, _op("official", id=_id(state, 1)), context=rounded)
+    assert _value(fallback.state, 1, "X좌표") == context.official_places[names[1]][2]
+
+
+def test_official_place_revert_moves_the_whole_module_group() -> None:
+    """모듈이면 Main 설비 묶음 통째로 돌린다(하나만 돌리면 바둑판 검사에 걸린다 — 설계 13-1 검토
+    L10). 상세의 「공식: …」 줄이 묶음 수를 알린다."""
+    context, overlay_saved, names, _ = _module_group_overlay(_saved())
+    state = _state(overlay_saved)
+    view = eg.build_grid_view(eg.GridSource(frames=state.frames, saved=state.saved), context)
+    unit = eg.detail_data(view, _id(state, 0))["unit"]
+    assert unit["official"]["count"] == 3
+    result = _apply(state, _op("official", id=_id(state, 0)), context=context)
+    assert result.toast is not None and result.toast.startswith("공식 자리로 되돌렸습니다 — 3대")
+    assert [_value(result.state, k, "X좌표") for k in range(3)] == [0.0, 12.25, 24.5]
+    # 묶음 밖 호기는 그대로다.
+    assert _value(result.state, 3, "X좌표") == _value(state, 3, "X좌표")
+    # 되돌리기 한 단계로 셋이 함께 가정 자리로 돌아온다.
+    undone = _apply(result.state, _op("undo", seq=2), context=context)
+    assert [_value(undone.state, k, "X좌표") for k in range(3)] == [50.0, 62.25, 74.5]

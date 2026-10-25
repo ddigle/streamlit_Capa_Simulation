@@ -51,6 +51,7 @@ from capa_simulation.components.equipment_data_workspace import (
     _saved_master,
     _upload_widget_key,
     assumption_group_paste_refusal,
+    buffer_has_layout_edits,
     build_import_review,
     grid_overlay,
     layout_paste_refusal,
@@ -59,6 +60,7 @@ from capa_simulation.components.equipment_data_workspace import (
     queue_grid_toast,
     replace_equipment_buffer,
     stale_paste_refusal,
+    stamp_layout_role,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
 from capa_simulation.components.equipment_settings_dialog import (
@@ -108,13 +110,20 @@ class ImportContext:
 
 
 def open_equipment_import() -> None:
-    """「엑셀·CSV로 한꺼번에」 를 여는 콜백 — 다른 팝업 칸부터 비운다(한 실행에 팝업 하나)."""
+    """「엑셀·CSV로 한꺼번에」 를 여는 콜백 — 다른 팝업 칸부터 비운다(한 실행에 팝업 하나). 남은
+    미리보기도 거둔다 — 팝업이 닫혀 있던 회차에 입력 칸은 버려져 늘 빈 칸으로 열린다
+    (`_close_dialog`)."""
     forget_page_dialogs()
+    st.session_state.pop(PREVIEW_KEY, None)
     st.session_state[EQUIPMENT_DIALOG_KEY] = IMPORT_DIALOG
 
 
 def _close_dialog() -> None:
+    """팝업을 닫는다(넣은 뒤·Esc·바깥 누름). 미리보기도 거둔다 — 닫힌 회차에 붙여넣기 칸·업로드는
+    그리지 않아 버려지므로, 다시 열면 빈 입력에 옛 미리보기와 켜진 「편집본에 넣기」 만 남아 누를 때
+    입력이 없다는 오류로 막힌다(옛 입력 탭은 늘 그려 둘이 함께 살았다)."""
     st.session_state.pop(EQUIPMENT_DIALOG_KEY, None)
+    st.session_state.pop(PREVIEW_KEY, None)
 
 
 def withdraw_preview_on_new_visit() -> None:
@@ -214,9 +223,15 @@ def _loaded() -> tuple[str, ...]:
     return tuple(str(item) for item in value) if isinstance(value, (list, tuple)) else ()
 
 
-def apply_import_review(review: ImportReview) -> str:
+def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "official") -> str:
     """미리본 후보를 편집본에 넣는다(저장하지 않는다) — 편집본 세 표 통째 바꿈, 새로 든 설비명은 표
-    목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움. 돌려주는 글은 표 토스트다."""
+    목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움. 돌려주는 글은 표 토스트다.
+
+    넣은 편집본에 배치 편집(있던 호기 배치 칸·새 호기 자리)이 있으면 그때의 역할(`layout_mode`)을
+    찍는다 — 넣고 나중에 「리비전 저장」 하므로, 그 사이 역할이 바뀌면(남이 그 가정 시나리오를
+    공식으로 발행) 저장소가 쓰기 잠금 안에서 대조해 막고 Space·이 탭이 그 회차를 잠근다(설계 6-2,
+    표 출납·Space 적용과 같다). 잠긴 회차는 미리보기가 배치를 바꾸는 붙여넣기를 막아 찍을 것이
+    없다."""
     frames: Frames = st.session_state[BUFFER_KEY]
     saved = st.session_state[EQUIPMENT_DRAFT_KEY]
     renames = pending_unit_renames()
@@ -230,6 +245,8 @@ def apply_import_review(review: ImportReview) -> str:
     replace_equipment_buffer(review.candidate)
     st.session_state.pop(GRID_OVERLAY_KEY, None)
     st.session_state[GRID_UNDO_KEY] = undo_to_state((step,))
+    if layout_mode != "locked" and buffer_has_layout_edits():
+        stamp_layout_role(layout_mode)
     after = grid_index(review.candidate[1], saved, renames.units)
     fresh = [row_id for row_id in after.ids if row_id not in before]
     st.session_state[GRID_LOADED_KEY] = load_ids(loaded, fresh).loaded
@@ -323,7 +340,7 @@ def _render_body(context: ImportContext) -> None:
             and isinstance(pending, ImportReview)
             and pending.matches(target, content, frames, layout_pasted=layout_pasted)
         ):
-            apply_import_review(pending)
+            apply_import_review(pending, layout_mode=context.layout_mode)
             _close_dialog()
             st.rerun()
         st.session_state[PREVIEW_KEY] = _review(
