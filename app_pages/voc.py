@@ -26,7 +26,7 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.write_guard import current_generation, write_once
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
-from capa_simulation.services.voc_board import VOC_CATEGORIES
+from capa_simulation.services.voc_board import VOC_CATEGORIES, VocPostGoneError
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card, remembered_expander
 
@@ -50,6 +50,9 @@ POST_CATEGORY_KEY = "voc_post_category"
 POST_TITLE_KEY = "voc_post_title"
 POST_BODY_KEY = "voc_post_body"
 POST_FORM_ERROR_KEY = "voc_post_form_error"
+# 그 사이 다른 세션이 지운 글에 답변·답변 완료 표시를 하려던 거절 `(문구, 적어 둔 답변)`. 지운 글의
+# 상자는 다시 그리지 않으므로 글 상자가 아니라 머리 알림 칸에 그린다.
+GONE_NOTICE_KEY = "voc_gone_notice"
 # 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
 # 답변 폼과 답변 완료 단추는 글마다 하나다. 비교와 쓰기는 `write_guard.write_once` 가
 # 한다 — 더블클릭은 두 회차의 콜백이 겹쳐 와 세션 칸 비교만으로는 둘 다 지났다. 지운 글은
@@ -70,6 +73,14 @@ notices = st.container()
 flash = st.session_state.pop(FLASH_KEY, None)
 if isinstance(flash, str):
     notices.success(flash)
+gone = st.session_state.pop(GONE_NOTICE_KEY, None)
+if isinstance(gone, tuple) and len(gone) == 2:
+    gone_message, kept_reply = gone
+    notices.warning(str(gone_message), icon=":material/delete_forever:")
+    # 적어 둔 답변은 버리지 않는다 — 답변 칸은 글과 함께 사라지므로 여기서 복사해 갈 수 있게 둔다.
+    if str(kept_reply).strip():
+        notices.caption("적어 둔 답변")
+        notices.code(str(kept_reply), language=None, wrap_lines=True)
 
 database_path = str(DUCKDB_PATH.resolve())
 try:
@@ -168,6 +179,9 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
             generation,
             lambda: repository.create_voc_reply(post_id=post_id, body=body, author=author),
         )
+    except VocPostGoneError as exc:
+        st.session_state[GONE_NOTICE_KEY] = (str(exc), body)
+        return
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
         return
@@ -189,6 +203,9 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
             generation,
             lambda: repository.set_voc_post_resolved(post_id, resolved=resolved),
         )
+    except VocPostGoneError as exc:
+        st.session_state[GONE_NOTICE_KEY] = (str(exc), "")
+        return
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
         return

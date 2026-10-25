@@ -35,6 +35,14 @@ def load_voc_replies(connection: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     ).fetchdf()
 
 
+def voc_post_exists(connection: duckdb.DuckDBPyConnection, *, post_id: str) -> bool:
+    """그 글이 아직 있는지. 답글·답변 완료 표시는 같은 쓰기 트랜잭션에서 먼저 묻는다."""
+    found = connection.execute(
+        "SELECT 1 FROM app_meta.voc_post WHERE post_id = ? LIMIT 1", [post_id]
+    ).fetchone()
+    return found is not None
+
+
 def insert_voc_post(
     connection: duckdb.DuckDBPyConnection,
     *,

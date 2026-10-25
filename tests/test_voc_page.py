@@ -537,3 +537,46 @@ def test_a_double_click_of_a_reply_on_two_runs_replies_once(
     assert replies["body"].tolist() == ["확인했습니다."]
     assert "답변을 남겼습니다." in [message.value for message in app.success]
     assert app.text_area(key=f"voc_reply_body_{post_id}").value == ""
+
+
+def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
+    tmp_path: Path,
+) -> None:
+    """다른 세션이 그 사이 지운 글에 답변을 남기면 거짓 성공 대신 거절을 알린다(2026-10-26 E2E).
+
+    「답변을 남겼습니다.」가 뜨고 답변은 주인 없는 행으로 DB 에 남아 아무도 볼 수 없었다. 지운 글의
+    상자는 다시 그리지 않으므로 거절과 적어 둔 답변은 머리 알림 칸에 선다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.text_area(key=f"voc_reply_body_{post_id}").input("지워진 글에 적은 답변")
+    DuckDBScenarioRepository(database_path).remove_voc_post(post_id)
+
+    _reply_button(app, post_id).click().run()
+
+    assert not app.exception
+    assert not app.success
+    assert [message.value for message in app.warning] == [
+        "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
+    ]
+    assert [block.value for block in app.code] == ["지워진 글에 적은 답변"]
+    assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
+
+
+def test_resolving_a_post_deleted_by_another_session_is_refused(tmp_path: Path) -> None:
+    """다른 세션이 지운 글의 「답변 완료로 표시」는 알림 없이 글만 사라지지 않고 거절을 알린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    DuckDBScenarioRepository(database_path).remove_voc_post(post_id)
+
+    app.button(key=f"voc_resolve_{post_id}").click().run()
+
+    assert not app.exception
+    assert [message.value for message in app.warning] == [
+        "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
+    ]
+    assert not app.code
+    assert DuckDBScenarioRepository(database_path).list_voc_posts().empty

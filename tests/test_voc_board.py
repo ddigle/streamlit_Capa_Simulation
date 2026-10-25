@@ -9,6 +9,7 @@ import pytest
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.voc_board import (
     VOC_CATEGORIES,
+    VocPostGoneError,
     normalize_post,
     normalize_reply,
 )
@@ -71,6 +72,26 @@ def test_resolving_and_deleting_a_post(tmp_path: Path) -> None:
     repository.remove_voc_post(post_id)
     assert repository.list_voc_posts().empty
     assert repository.list_voc_replies().empty
+
+
+def test_a_deleted_post_takes_no_reply_and_no_resolve(tmp_path: Path) -> None:
+    """그 사이 지운 글에 답글·답변 완료 표시를 하면 거절한다(2026-10-26 E2E).
+
+    `voc_reply.post_id` 에는 외래 키가 없어, 막지 않으면 답글이 주인 없는 행으로 남아 영영 보이지
+    않고 0행 UPDATE 는 아무 말 없이 성공으로 지나갔다.
+    """
+    repository = _repository(tmp_path)
+    post_id = repository.create_voc_post(
+        category="질문", title="제목", body="내용", author="홍길동"
+    )
+    repository.remove_voc_post(post_id)
+
+    with pytest.raises(VocPostGoneError, match="그 사이 지운 글입니다"):
+        repository.create_voc_reply(post_id=post_id, body="늦은 답변", author="담당자")
+    with pytest.raises(VocPostGoneError, match="그 사이 지운 글입니다"):
+        repository.set_voc_post_resolved(post_id, resolved=True)
+    assert repository.list_voc_replies().empty
+    assert repository.list_voc_posts().empty
 
 
 def test_migration_is_registered() -> None:
