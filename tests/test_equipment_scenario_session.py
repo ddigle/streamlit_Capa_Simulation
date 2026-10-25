@@ -878,3 +878,34 @@ def test_the_popup_save_writes_the_edit_into_the_session_scenario(tmp_path: Path
     assert not app.exception, [item.message for item in app.exception]
     assert "공통 대장 r2" in app.session_state[FLASH_KEY]
     assert repository.list_revisions()[0].revision_no == 2
+
+
+def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path) -> None:
+    """「저장」 구획 안내는 지금 꼴을 가리킨다 — 편집본에 없어 저장되지 않는 것은 작은 편집표(기존
+    보유대수·비가동 일정)에서 「편집본에 적용」 하지 않은 편집이다. 걷힌 옛 폼의 「보기 적용」 을
+    가리키지 않는다(E2E — 칸을 고친 뒤 팝업 「저장」 을 연 꼴)."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_MODE,
+        UNAPPLIED_SMALL_EDITS_NOTE,
+    )
+
+    repository = _seeded(tmp_path)
+    app = AppTest.from_function(
+        _popup,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    app.session_state["edit"] = True
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    captions = [str(item.value) for item in app.caption]
+    note = next(caption for caption in captions if "에 저장합니다 — 공통 칸은 공통 대장" in caption)
+    assert note.endswith(
+        "바뀐 쪽만 새 리비전이 됩니다. 기존 보유대수·비가동 일정 표에서 아직 「편집본에 "
+        "적용」 하지 않은 편집은 저장되지 않습니다."
+    )
+    assert note.endswith(UNAPPLIED_SMALL_EDITS_NOTE)
+    assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
