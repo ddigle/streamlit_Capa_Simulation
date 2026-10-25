@@ -78,8 +78,8 @@ _LIGHT: Final[dict[str, Any]] = {
     "TEXT_MUTED": "#646973",  # grayColor
     "LINE": "#3F3F46",  # 표 격자·계열선. 강조색과 역할이 다르다
     "ACCENT": "#0F766E",  # primaryColor. 버튼·포커스 등 상호작용 표시
-    # 강조색으로 칠한 면 위의 글자(HOME 주요 Case 칩의 칠한 칩). 밝은 쪽은 Streamlit primary 단추의
-    # 흰 글자 그대로다(5.5:1).
+    # 강조색으로 칠한 면 위의 글자(primary 단추 전체 — `accent_button_style`, HOME 주요 Case 의
+    # 칠한 칩). 밝은 쪽은 Streamlit primary 단추의 흰 글자 그대로다(5.5:1).
     "ACCENT_TEXT": "#FFFFFF",
     # 적용하지 않은 편집이 남은 탭 옆의 점. 사이드바 `미저장 변경` 배지(`:orange-badge[]`)와
     # 같은 뜻이라 `.streamlit/config.toml` 의 `orangeColor` 와 같은 값이다.

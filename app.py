@@ -7,6 +7,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
+from capa_simulation.components.accent_button_style import render_accent_button_style
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import (
     remembered_equipment_suffix,
@@ -211,6 +212,9 @@ render_shell_style()
 # 페이지 제목·상자 제목·큰 숫자의 Archivo 부분 글꼴(정적 서빙)과 그 자리 규칙. 색이 없는 고정
 # 문자열이라 테마와 무관하고, 부트스트랩 오류 화면의 제목도 같은 서체로 서도록 여기서 보낸다.
 render_typography_style()
+# 강조색으로 칠한 단추(primary)의 글자색 — 어두운 테마의 밝은 강조색 위 흰 글자는 읽히지 않는다.
+# 테마 토큰이라 `theme.begin_run()` 뒤이고, 부트스트랩 오류 화면의 단추도 같은 색이게 그 앞이다.
+render_accent_button_style()
 render_guide_base_style()
 render_theme_toggle(
     extra_scripts=(

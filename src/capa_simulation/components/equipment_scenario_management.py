@@ -190,6 +190,23 @@ REFUSED_KEY = "equipment_scenario_manage_refused_v1"
 PENDING_REVISION_KEY = "equipment_scenario_manage_pending_revision_v1"
 # 입력 칸 세대 — 쓰기에 성공한 회차에 올라 다음 회차에 빈 칸으로 선다(옛 값을 되보내지 않게).
 GENERATION_KEY = "equipment_scenario_manage_generation_v1"
+# 구획의 팝오버 일곱(시나리오 줄 둘·리비전 줄 다섯). key 꼬리는 팝오버 세대
+# (`POPOVER_GENERATION_KEY`)다 — 한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는
+# 회차에만 올라 그 회차에 팝오버가 닫힌 채 다시 선다(작업을 마친 팝오버를 닫는다). 그 밖의 회차에는
+# key 도 자리도 그대로라 열린 팝오버가 확인 체크·글자 칸·Enter 로 닫히지 않는다 — 알림은 늘 서 있는
+# 칸 안에 그려, 빠지는 회차에 팝오버 줄이 한 칸 당겨져 다시 서지 않게 한다(9장 「key 가 있어도
+# 자리는 고정한다」).
+RENAME_POPOVER_KEY = "equipment_scenario_manage_rename_popover_v1"
+CLEAR_LAYOUT_POPOVER_KEY = "equipment_scenario_manage_clear_layout_popover_v1"
+LOAD_POPOVER_KEY = "equipment_scenario_manage_load_popover_v1"
+RESTORE_POPOVER_KEY = "equipment_scenario_manage_restore_popover_v1"
+CLONE_POPOVER_KEY = "equipment_scenario_manage_clone_popover_v1"
+REVISION_NAME_POPOVER_KEY = "equipment_scenario_manage_revision_name_popover_v1"
+PUBLISH_POPOVER_KEY = "equipment_scenario_manage_publish_popover_v1"
+POPOVER_GENERATION_KEY = "equipment_scenario_manage_popover_generation_v1"
+# 리비전 표 위 띄움(px, `st.space`) — 표 도구 막대가 바로 위 줄 팝오버 단추에 닿지 않을 만큼(그리는
+# 자리의 설명).
+REVISION_TABLE_TOOLBAR_CLEARANCE = 24
 
 # 리비전명 칸 글자 수 한도 — 저장소도 같은 한도로 거절한다.
 REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS
@@ -203,6 +220,16 @@ def _generation() -> int:
 def _keyed(base: str) -> str:
     generation = _generation()
     return base if generation == 0 else f"{base}__g{generation}"
+
+
+def _popover_generation() -> int:
+    value = st.session_state.get(POPOVER_GENERATION_KEY, 0)
+    return value if isinstance(value, int) else 0
+
+
+def _popover_key(base: str) -> str:
+    """팝오버 key — 팝오버 세대 꼬리를 늘 붙인다(`POPOVER_GENERATION_KEY`)."""
+    return f"{base}__p{_popover_generation()}"
 
 
 def _written(message: str) -> None:
@@ -440,24 +467,40 @@ def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = No
         "설비 시나리오 불러오기·저장은 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세) "
         "사이드바 설비 시나리오 줄에서도 합니다. 이 세션이 든 쌍은 그 화면들과 같습니다."
     )
-    if session.notice:
-        if notice_slot is not None and not session.unmerged:
-            notice_slot.warning(session.notice, icon=":material/sync_problem:")
-        else:
-            st.warning(session.notice, icon=":material/sync_problem:")
+    # 세션 이동 알림은 한 회차뿐이다 — 늘 서 있는 칸 안에 그려 빠지는 회차에 구획 본문(팝오버 줄)이
+    # 한 칸 당겨지지 않게 한다(`POPOVER_GENERATION_KEY`).
+    with st.container():
+        if session.notice:
+            if notice_slot is not None and not session.unmerged:
+                notice_slot.warning(session.notice, icon=":material/sync_problem:")
+            else:
+                st.warning(session.notice, icon=":material/sync_problem:")
     render_equipment_scenario_management(database_path, session)
 
 
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:
-    """구획 본문. 「설비 시나리오」 쪽을 고른 회차에만 부른다 — 입력은 위젯이 세션에 지킨다."""
+    """구획 본문. 「설비 시나리오」 쪽을 고른 회차에만 부른다 — 입력은 위젯이 세션에 지킨다.
+
+    한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는 회차에 팝오버 세대를 올려 팝오버를
+    닫힌 채 세우고, 알림·옛 배포 흔적·옛 판 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게
+    늘 서 있는 칸 안에 그린다(`POPOVER_GENERATION_KEY`).
+    """
     flash = st.session_state.pop(FLASH_KEY, None)
-    if isinstance(flash, str):
-        st.success(flash)
     refused = st.session_state.pop(REFUSED_KEY, None)
-    if isinstance(refused, str):
-        st.error(refused)
-    if session.legacy_trace_count:
-        _render_legacy_trace(database_path, session.legacy_trace_count)
+    if (
+        isinstance(flash, str)
+        or isinstance(refused, str)
+        or (bool(session.notice) and not session.unmerged)
+    ):
+        st.session_state[POPOVER_GENERATION_KEY] = _popover_generation() + 1
+    with st.container():
+        if isinstance(flash, str):
+            st.success(flash)
+        if isinstance(refused, str):
+            st.error(refused)
+    with st.container():
+        if session.legacy_trace_count:
+            _render_legacy_trace(database_path, session.legacy_trace_count)
     scenarios = {item.equipment_scenario_id: item for item in session.catalog.scenarios}
     if not scenarios:
         st.info(
@@ -471,16 +514,17 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     )
     st.dataframe(scenario_rows(session), hide_index=True, width="stretch", placeholder="")
     traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
-    if traced:
-        st.caption(
-            ":material/history: 옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 "
-            "있는 설비 시나리오 — "
-            + ", ".join(
-                f"「{literal_markdown(item.scenario_name)}」 {item.layout_trace_count:,}개"
-                for item in traced
+    with st.container():
+        if traced:
+            st.caption(
+                ":material/history: 옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 "
+                "리비전이 있는 설비 시나리오 — "
+                + ", ".join(
+                    f"「{literal_markdown(item.scenario_name)}」 {item.layout_trace_count:,}개"
+                    for item in traced
+                )
+                + ". 그 시나리오를 고르면 리비전 표 「배치」 칸이 빠진 자리를 가리킵니다."
             )
-            + ". 그 시나리오를 고르면 리비전 표 「배치」 칸이 빠진 자리를 가리킵니다."
-        )
     default_scenario = (
         session.scenario_id if session.scenario_id in scenarios else next(iter(scenarios))
     )
@@ -492,11 +536,17 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             format_func=lambda value: scenarios[value].scenario_name,
             key=SCENARIO_KEY,
         )
-        with st.popover("시나리오 이름 바꾸기", icon=":material/edit:"):
+        with st.popover(
+            "시나리오 이름 바꾸기", icon=":material/edit:", key=_popover_key(RENAME_POPOVER_KEY)
+        ):
             _render_rename(database_path, scenarios[selected_id])
         # 가정 설비 시나리오 최신에 배치 차이가 있을 때만(공식 시나리오에는 지울 것이 없다 — I2).
         if clearable_layout(session, scenarios[selected_id]):
-            with st.popover("배치 차이 모두 지우기", icon=":material/layers_clear:"):
+            with st.popover(
+                "배치 차이 모두 지우기",
+                icon=":material/layers_clear:",
+                key=_popover_key(CLEAR_LAYOUT_POPOVER_KEY),
+            ):
                 _render_clear_layout(database_path, session, scenarios[selected_id])
     scenario = scenarios[selected_id]
     try:
@@ -516,8 +566,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         st.info("이 설비 시나리오에 저장된 리비전이 없습니다.")
         return
     trace = layout_trace_sentence(scenario, revisions)
-    if trace is not None:
-        st.warning(trace, icon=":material/history:")
+    with st.container():
+        if trace is not None:
+            st.warning(trace, icon=":material/history:")
+    # 표 도구 막대(열 보기·내려받기·찾기·전체 화면)는 표 오른쪽 위에 떠 표 위로 솟는다 — 붙어 있으면
+    # 바로 위 줄 맨 오른쪽 팝오버 단추(「시나리오 이름 바꾸기」·「배치 차이 모두 지우기」)를 덮어
+    # 표에서 단추로 옮긴 누름을 가로챈다. 그 막대가 위 줄에 닿지 않을 만큼 띄운다.
+    st.space(REVISION_TABLE_TOOLBAR_CLEARANCE)
     st.dataframe(
         revision_rows(
             revisions,
@@ -550,15 +605,27 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     )
     chosen = by_id[chosen_id]
     with st.container(horizontal=True, gap="small"):
-        with st.popover("이 리비전 불러오기", icon=":material/download:"):
+        with st.popover(
+            "이 리비전 불러오기", icon=":material/download:", key=_popover_key(LOAD_POPOVER_KEY)
+        ):
             _render_load(database_path, scenario, chosen)
-        with st.popover("이 리비전으로 되돌리기", icon=":material/history:"):
+        with st.popover(
+            "이 리비전으로 되돌리기",
+            icon=":material/history:",
+            key=_popover_key(RESTORE_POPOVER_KEY),
+        ):
             _render_restore(database_path, session, scenario, chosen)
-        with st.popover("여기서 새 시나리오", icon=":material/call_split:"):
+        with st.popover(
+            "여기서 새 시나리오", icon=":material/call_split:", key=_popover_key(CLONE_POPOVER_KEY)
+        ):
             _render_branch(database_path, scenario, chosen)
-        with st.popover("리비전명", icon=":material/label:"):
+        with st.popover(
+            "리비전명", icon=":material/label:", key=_popover_key(REVISION_NAME_POPOVER_KEY)
+        ):
             _render_revision_name(database_path, scenario, chosen)
-        with st.popover("공식으로 발행", icon=":material/verified:"):
+        with st.popover(
+            "공식으로 발행", icon=":material/verified:", key=_popover_key(PUBLISH_POPOVER_KEY)
+        ):
             _render_publish(database_path, session, scenario, chosen)
 
 
@@ -579,7 +646,8 @@ def _render_load(
     revision: EquipmentScheduleRevisionSummary,
 ) -> None:
     name = literal_markdown(scenario.scenario_name)
-    st.caption(f"「{name}」 r{revision.revision_no} 을 이 세션의 설비 시나리오로 올립니다.")
+    title = f"r{revision.revision_no}"
+    st.caption(f"「{name}」 {with_object_particle(title)} 이 세션의 설비 시나리오로 올립니다.")
     discard = True
     if has_unsaved_equipment_edits():
         discard = st.checkbox("변경을 버리고 불러오기", key=DISCARD_KEY)
@@ -596,7 +664,7 @@ def _render_load(
             st.error(failure)
             return
         st.session_state[FLASH_KEY] = (
-            f"설비 시나리오 「{name}」 r{revision.revision_no} 을 불러왔습니다."
+            f"설비 시나리오 「{name}」 {with_object_particle(title)} 불러왔습니다."
         )
         st.rerun()
 
@@ -1092,9 +1160,8 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        _written(
-            f"설비 시나리오 이름을 「{literal_markdown(renamed.scenario_name)}」 으로 했습니다."
-        )
+        quoted = f"「{literal_markdown(renamed.scenario_name)}」"
+        _written(f"설비 시나리오 이름을 {with_direction_particle(quoted)} 했습니다.")
 
 
 def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSummary) -> bool:
@@ -1275,7 +1342,8 @@ def publish_preview(
     ]
     if revision.schedule_revision_id != scenario.latest_schedule_revision_id:
         lines.append(
-            f"r{revision.revision_no} 은 「{literal_markdown(scenario.scenario_name)}」 의 최신"
+            f"{with_topic_particle(f'r{revision.revision_no}')} "
+            f"「{literal_markdown(scenario.scenario_name)}」 의 최신"
             f"(r{scenario.latest_revision_no})이 아닙니다."
         )
     if release is not None and release.schedule_revision_id == revision.schedule_revision_id:
