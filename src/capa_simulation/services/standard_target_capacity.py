@@ -45,6 +45,15 @@ PKG_PLAN_KEYS = [
 ]
 
 
+_EMPTY_AVAILABILITY = pd.DataFrame(
+    {
+        "공정": pd.Series(dtype="string"),
+        "Weeknum": pd.Series(dtype="string"),
+        "가용대수": pd.Series(dtype="float64"),
+    }
+)
+
+
 def build_weekly_standard_target_capacity(
     required_equipment: pd.DataFrame,
     run_day: pd.DataFrame,
@@ -100,7 +109,13 @@ def build_weekly_standard_target_capacity(
     calendar = build_iso_week_calendar(start_date, end_date)
     # This is an intentional month-to-week expansion, not an accidental many-to-many join.
     weekly = monthly_capacity.merge(calendar, on="생산계획년월", validate="many_to_many")
-    prepared_availability = prepare_weekly_availability(weekly_availability)
+    # 저장된 가용설비가 0건이면 가용대수만 빈칸이다 — 대당 일 Capa 는 가용대수 이전 단계라 입력
+    # 없이도 다 나온다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫이다).
+    prepared_availability = (
+        _EMPTY_AVAILABILITY.copy()
+        if weekly_availability.empty
+        else prepare_weekly_availability(weekly_availability)
+    )
     weekly = weekly.merge(
         prepared_availability,
         on=["공정", "Weeknum"],

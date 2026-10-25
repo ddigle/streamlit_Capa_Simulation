@@ -77,6 +77,7 @@ from capa_simulation.services.display_order_scopes import (
 )
 from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.iso_week_calendar import build_iso_week_calendar
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.simulation_cache import (
     csv_export_key,
     display_order_digest,
@@ -896,10 +897,16 @@ elif st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
 
 _render_standard_target_exceptions(standard_target_exception_rows, process_labels)
 
-if availability.empty:
+# 가용대수를 곱해 구하는 지표만 입력이 없으면 볼 것이 없다. 대당 일 Capa 는 가용대수 이전 단계라
+# 입력 없이도 값이 다 나오고, 로직 분석은 그 근거(부하량·소요대수·대당 일 Capa)를 가용대수 빈칸으로
+# 보인다 — 0건에서 이 둘까지 막으면 한 줄만 넣었을 때와 어긋난다.
+if availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
     with weekly_output_container:
-        st.subheader("주차별 일 표준 가능량")
-        st.info("주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요.")
+        st.subheader(f"주차별 {output_metric}")
+        st.info(
+            f"주차별 {with_object_particle(output_metric)} 보려면 위 「가용설비 붙여넣기」로 "
+            "가용설비를 입력하세요."
+        )
     st.stop()
 
 if output_metric == "로직 분석":

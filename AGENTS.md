@@ -543,6 +543,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 공정 필터는 전체 공정 결과(`get_standard_target_weekly_result`)를 거르고, 전체 계산 실패·공백 공정명·빈 결과일
     때만 고른 공정만 계산한다. 결과와 무관한 조작은 소요대수를 다시 풀지 않는다(`get_standard_target_split`).
   - 이 캐시들은 프로세스 전역이라 화면 테스트가 테스트마다 비운다(`tests/test_standard_target_capa_page.py`).
+  - 저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 표시 항목(`AVAILABILITY_BASED_METRICS` — 일 표준 가능량·가용대수)만
+    입력 안내로 멈춘다. 대당 일 Capa·로직 분석은 그대로 선다 — 계산(`build_weekly_standard_target_capacity`)은 빈
+    가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
   붙여넣기 팝업 폼·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 양식과 붙여넣기 칸만 그린다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
