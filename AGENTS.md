@@ -1881,7 +1881,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
   온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
   버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
-  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
+  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다. 거꾸로 남의 저장에 거부된
+  누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
+  알린다 — 위 셋과 자동 갱신 설정(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3847,6 +3849,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
     (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
     그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
+  - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부한 회차는 최신 저장본을 그리며 편집 시작 version 을 그
+    version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
+    둘째 누름이 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이 「저장했습니다」로 바뀌고 입력은 말없이
+    버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E). 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 에
+    거부 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은 저장하지 않고 그
+    거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로 대조한다 —
+    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 세 시험·`tests/test_auto_official_update_tab.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

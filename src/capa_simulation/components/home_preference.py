@@ -35,7 +35,13 @@ from capa_simulation.components.profile_caption import (
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
-from capa_simulation.components.write_guard import is_own_profile_save, profile_save_marks
+from capa_simulation.components.write_guard import (
+    held_profile_conflict,
+    is_own_profile_save,
+    note_profile_conflict,
+    profile_conflict_marks,
+    profile_save_marks,
+)
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY as ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -886,10 +892,17 @@ def render_threshold_editor(
         expected_version = (
             submitted_base if isinstance(submitted_base, int) else threshold_profile.version
         )
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME)
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
+            # 다시 알린다(write_guard).
+            notice.error(held)
+            return
         try:
             saved = _save_thresholds(
                 database_path,
@@ -904,17 +917,21 @@ def render_threshold_editor(
                 clear_outside=clear_outside,
             )
         except BOOTSTRAP_ERRORS as exc:
+            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
+            message = str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc)
+            own = isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
+                THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks
+            )
+            if isinstance(exc, ProfileVersionConflict) and not own:
+                note_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME, message)
             # 충돌이면 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신
             # 저장본을 그리게 캐시를 비운다.
             clear_global_securement_threshold_cache()
-            if isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
-                THRESHOLD_SAVE_NAME, exc.expected, exc.stored
-            ):
+            if own:
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
                 st.rerun(scope="app")
-            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
-            notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
+            notice.error(message)
         else:
             save_marks[THRESHOLD_SAVE_NAME] = (expected_version, saved.version)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
@@ -1797,10 +1814,17 @@ def _render_execution_editor(
         expected_version = (
             submitted_base if isinstance(submitted_base, int) else execution_profile.version
         )
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME)
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
+            # 다시 알린다(write_guard).
+            notice.error(held)
+            return
         try:
             saved = _save_execution_capacity(
                 database_path,
@@ -1809,11 +1833,14 @@ def _render_execution_editor(
                 expected_version=expected_version,
             )
         except ProfileVersionConflict as exc:
+            own = is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks)
+            if not own:
+                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, str(exc))
             # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
             # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
             clear_global_execution_capacity_cache()
             st.session_state.pop(EXECUTION_BASE_VERSION_KEY, None)
-            if is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored):
+            if own:
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
                 st.rerun(scope="app")

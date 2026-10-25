@@ -1,4 +1,4 @@
-# Purpose: 쓰기 단추의 빠른 두 번 누름이 한 번만 쓰고 제 저장을 남의 저장으로 알리지 않게 한다.
+# Purpose: 쓰기 단추의 빠른 두 번 누름이 한 번만 쓰고 저장과 거부를 뒤바꿔 알리지 않게 한다.
 
 """빠른 두 번 누름이 **겹쳐** 올 때의 거름.
 
@@ -28,13 +28,22 @@
 이라 알렸다(2026-10-26 E2E). 저장 전에 `profile_save_marks` 로 받아 둔 dict 에 저장에 성공한
 `(편집 시작, 저장된)` version 짝을 적고, 거부가 그 짝이면(`is_own_profile_save`) 오류 대신 성공을
 다시 알린다 — 그 사이 남이 저장했으면 지금 version 이 짝과 달라 그대로 거부를 알린다.
+
+거꾸로 **남이 먼저 저장해 거부된** 누름의 둘째 누름도 거른다. 거부한 회차는 최신 저장본을 그리며
+편집 시작 version 을 그 version 으로 올린다(다음 저장은 그 화면에서 출발한다). 사용자가 그 화면을
+보기도 전에 닿은 둘째 누름은 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이
+「저장했습니다」로 바뀌고 입력은 말없이 버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E — 판정
+기준·공정 표시명·확보율 보정). 거부를 받으면 `profile_conflict_marks` 로 미리 받아 둔 dict 에 그
+알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은
+저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른
+저장이라 평소대로 대조한다.
 """
 
 from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import streamlit as st
 
@@ -50,6 +59,10 @@ TRAILING_PRESS_SECONDS = 1.0
 
 # 이 세션이 마지막으로 한 버전 대조 저장(저장 이름 → (편집 시작 version, 저장된 version)).
 PROFILE_SAVES_KEY = "write_guard_profile_saves"
+
+# 이 세션이 마지막으로 받은 버전 충돌 거부(저장 이름 → (거부 알림 글, 받은 시각)). 시각은
+# `time.monotonic()` 이다.
+PROFILE_CONFLICTS_KEY = "write_guard_profile_conflicts"
 
 # 세션을 가리지 않는 잠금 하나다. 두 회차의 세션 칸 잠금이 따로라 세션 안에 둘 자리가
 # 없고, 잠그는 동안 하는 일은 기록 한 줄 쓰기다.
@@ -121,13 +134,54 @@ def profile_save_marks() -> dict[str, tuple[int, int]]:
         return marks
 
 
-def is_own_profile_save(name: str, expected: int | None, stored: int | None) -> bool:
+def is_own_profile_save(
+    name: str,
+    expected: int | None,
+    stored: int | None,
+    marks: Mapping[str, tuple[int, int]] | None = None,
+) -> bool:
     """버전 충돌 `(편집 시작 expected, 지금 stored)` 가 이 세션이 방금 한 `name` 저장 그것인가.
 
     그렇다면 같은 단추를 빠르게 두 번 누른 것이다 — 첫 누름이 이미 저장했고 그 뒤 아무도 저장하지
-    않았다. 부르는 쪽은 거부 대신 저장 성공을 알린다.
+    않았다. 부르는 쪽은 거부 대신 저장 성공을 알린다. 저장 전에 받아 둔 표지 dict(`marks`)를 주면
+    세션 칸을 읽지 않는다 — 거부 직후는 둘째 누름의 회차에 끊길 수 있는 자리다.
     """
     if expected is None or stored is None:
         return False
-    marks = st.session_state.get(PROFILE_SAVES_KEY)
-    return isinstance(marks, dict) and marks.get(name) == (int(expected), int(stored))
+    found = st.session_state.get(PROFILE_SAVES_KEY) if marks is None else marks
+    return isinstance(found, Mapping) and found.get(name) == (int(expected), int(stored))
+
+
+def profile_conflict_marks() -> dict[str, tuple[str, float]]:
+    """버전 대조 저장의 충돌 표지 dict(저장 이름 → (거부 알림 글, 받은 시각)).
+
+    `profile_save_marks` 와 같이 저장 **전에** 받아 두고, 남의 저장 때문에 거부되면 곧바로
+    `note_profile_conflict` 로 적는다(dict 칸 쓰기는 끊기지 않는다).
+    """
+    with _WRITE_LOCK:
+        marks = st.session_state.get(PROFILE_CONFLICTS_KEY)
+        if not isinstance(marks, dict):
+            marks = {}
+            st.session_state[PROFILE_CONFLICTS_KEY] = marks
+        return marks
+
+
+def note_profile_conflict(marks: dict[str, tuple[str, float]], name: str, message: str) -> None:
+    """`name` 저장이 남의 저장 때문에 거부됐다고 적는다 — 그 거부 알림 글(`message`)과 지금 시각."""
+    marks[name] = (message, time.monotonic())
+
+
+def held_profile_conflict(marks: Mapping[str, tuple[str, float]], name: str) -> str | None:
+    """`name` 저장이 `TRAILING_PRESS_SECONDS` 안에 남의 저장 때문에 거부됐으면 그 거부 알림 글.
+
+    그렇다면 이번 제출은 거부된 누름과 같은 단추의 둘째 누름이다 — 옛 화면의 입력을 들었고, 거부한
+    회차가 올려 둔 편집 시작 version 으로는 대조를 지난다. 부르는 쪽은 저장하지 않고 이 글을 다시
+    알린다. 창이 지난 제출은 새 화면을 보고 다시 누른 저장이라 `None` 이다.
+    """
+    entry = marks.get(name)
+    if not isinstance(entry, tuple) or len(entry) != 2:
+        return None
+    message, moment = entry
+    if not isinstance(message, str) or not isinstance(moment, float):
+        return None
+    return message if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
