@@ -408,6 +408,33 @@ def test_the_section_caption_names_the_assumption_layout_as_held_per_scenario(
     ), caption
 
 
+def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E2E r3 같은 꼴 — 세션을 다른 리비전으로 옮겼다는 알림은 설비 시나리오 이름을 두 번 싣는다.
+    막지 않으면 물결표 하나짜리 이름(「10~12월 증설」)도 두 이름 사이가 지움선 짝이 된다."""
+    from dataclasses import replace
+
+    from capa_simulation.components import equipment_scenario_management as section
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    _, setup, _ = _moved_setup(tmp_path)
+    notice = (
+        "「10~12월 증설」 r1 을 지금 공통 대장과 합칠 수 없어 「10~12월 증설」 r2 로 열었습니다 — "
+        "저장하지 않은 설비 편집은 버렸습니다."
+    )
+    monkeypatch.setattr(
+        section,
+        "resolve_equipment_session",
+        lambda path: replace(resolve_equipment_session(path), notice=notice),
+    )
+    app = _ok(_section(tmp_path, setup).run())
+
+    warnings = [str(item.value) for item in app.warning]
+    assert notice.replace("~", "\\~") in warnings, warnings
+    assert notice not in warnings
+
+
 def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_path: Path) -> None:
     repository, setup, latest = _moved_setup(tmp_path)
     app = _ok(_section(tmp_path, setup).run())

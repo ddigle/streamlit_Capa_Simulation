@@ -56,7 +56,7 @@ from capa_simulation.components.equipment_save_fields import (
     PUBLISH_OFFICIAL_LABEL,
     SAVED_BY_LABEL,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.tab_state import remember_open_tab
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
@@ -474,10 +474,13 @@ def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = No
     # 한 칸 당겨지지 않게 한다(`POPOVER_GENERATION_KEY`).
     with st.container():
         if session.notice:
+            # 알림은 설비 시나리오 이름을 두 번 싣는다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
+            # 물결표를 막는다(지움선 짝이 되지 않게).
+            notice = markdown_safe_tildes(session.notice)
             if notice_slot is not None and not session.unmerged:
-                notice_slot.warning(session.notice, icon=":material/sync_problem:")
+                notice_slot.warning(notice, icon=":material/sync_problem:")
             else:
-                st.warning(session.notice, icon=":material/sync_problem:")
+                st.warning(notice, icon=":material/sync_problem:")
     render_equipment_scenario_management(database_path, session)
 
 

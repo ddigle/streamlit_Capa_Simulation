@@ -820,9 +820,14 @@
   「최신 rM 불러오기」 팝오버 글, 편집기 위 「새 호기를 넣지 않습니다」 줄, 머리 알림(옛 공식 리비전의 「…가정이던 때의
   배치안」 포함)에서 지움선이 되던 것(한 글에 이름이 두 번 나오면 물결표 하나짜리 이름도 짝이 맞는다). 그리는 자리에서
   `markdown_safe_tildes` 로 막고, rerun 건너 그리는 성공 글은 Space 가 담을 때 막는다(`_queue_space_flash`). 같은 화면의 층
-  캔버스 팝업 경고(가정 배치 시나리오 이름 · 이탈 호기 설비명)와 배치 겹침 경고(설비명)도 같이 막았다. 대안: 공용
+  캔버스 팝업 경고(가정 배치 시나리오 이름 · 이탈 호기 설비명)와 배치 겹침 경고(설비명)도 같이 막았다. 같은 꼴로 Space 층 끄기
+  확인의 가정 배치 덧줄, 사이드바 설비 시나리오 줄의 팝업 저장 알림(가정 배치 저장은 이름이 두 번)·세션 이동 알림(「…」 r1 을
+  … 「…」 r2 로 열었습니다), 시나리오 관리 구획의 세션 이동 알림도 그리는 자리에서 막았다. 대안: 공용
   `render_flash` 가 늘 막기 — 다른 화면 성공 글까지 바뀌어 이 고침 밖이다. 관련: `app_pages/space_status.py`·
-  `components/floor_layout_upload.py`·`tests/test_space_layout_overlay_page.py`
+  `components/floor_layout_upload.py`·`components/space_floor_list.py`·`components/equipment_scenario_status.py`·
+  `components/equipment_scenario_management.py`·`tests/test_space_layout_overlay_page.py`·
+  `tests/test_equipment_scenario_layout_management.py`. 남은 같은 꼴(이 영역 밖): 필요 단축 일정 기준선 저장 거부 글
+  (`baseline_equipment_refusal` — 이름 한 번이라 물결표 둘 이상인 이름만)
 - (2026-10-26) **시나리오 관리 설비 시나리오 구획 캡션에 가정 배치를 넣는다**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 캡션이
   「설비 시나리오는 일정 여섯·시나리오 메모·비가동만 따로 듭니다」 라 해 같은 구획의 「저장된 배치 차이」 칸·「배치 차이 모두 지우기」·
   발행 막힘과 어긋나던 것(2단계 `0031` 뒤 고치지 않은 글): 「…일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층
