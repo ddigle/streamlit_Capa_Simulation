@@ -1967,7 +1967,13 @@ function drawNew(S, root, data) {
     enqueue(S, { op: 'add', draftSeq: S.nd.seq, draft: S.nd.values.slice(), propagate: Boolean(S.nd.propagate) }, [])
     send(S)
   })
-  add.disabled = !canAdd(values, required, Boolean(data.blocked), fresh && !S.ndDirty.size, locked)
+  // 친 글이 보낸 초안과 다르면(아직 확정 전) 판정은 옛 것이다 — 필수 칸이 찼는지만 보고 켠다(누르면 칸이 먼저 확정되고
+  // 「호기 추가」 가 그 초안 전부를 싣는다).
+  S.refreshAdd = () => {
+    const typed = S.nd.values.some((value, k) => value !== S.ndSent[k])
+    add.disabled = !canAdd(S.nd.values, required, Boolean(data.blocked), fresh && !S.ndDirty.size && !typed, locked)
+  }
+  S.refreshAdd()
   buttons.appendChild(add)
   foot.appendChild(buttons)
   const hint = fresh && !S.ndDirty.size ? String(data.hint || '') : '고친 칸을 확인하는 중입니다'
@@ -2060,6 +2066,7 @@ function newField(S, column, k, mark) {
     if (column.kind === 'name') input.placeholder = '예: WBA-11'
     input.addEventListener('input', () => {
       S.nd.values[k] = input.value
+      if (S.refreshAdd) S.refreshAdd()
     })
     input.addEventListener('keydown', (event) => {
       stopKeys(event)
@@ -2071,6 +2078,7 @@ function newField(S, column, k, mark) {
         const sent = String(S.ndSent[k] || '')
         input.value = sent
         S.nd.values[k] = sent
+        if (S.refreshAdd) S.refreshAdd()
       }
     })
     input.addEventListener('blur', () => {
