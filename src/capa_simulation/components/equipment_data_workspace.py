@@ -116,6 +116,7 @@ from capa_simulation.services.equipment_csv import (
     read_equipment_update,
     untouched_template_baseline_rows,
 )
+from capa_simulation.services.equipment_grid import scenario_column_help
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
 from capa_simulation.services.equipment_scenario import (
     calculation_frames,
@@ -2439,16 +2440,6 @@ SCENARIO_COLUMN_LEGEND = (
     "저장되며, **시나리오**(일정 여섯·시나리오 메모·비가동 일정 표)는 지금 설비 시나리오에만 "
     "저장됩니다. 칸 머리에 마우스를 올리면 어느 쪽인지 보입니다."
 )
-# 상태 두 칸은 공통이지만 「확정」 은 공식 일정이 확정됐다는 뜻이다(결정 모음 — 칸 머리).
-_STATUS_COLUMNS = (ARRIVAL_STATUS_COLUMN, QUAL_STATUS_COLUMN)
-COMMON_COLUMN_HELP = "공통 — 모든 설비 시나리오에 같은 값"
-STATUS_COLUMN_HELP = "공통 — 공식 일정 기준"
-# 배치 일곱 칸(설비 시나리오 2단계 S3 — LY1). 공식 설비 시나리오에서는 공통 대장(공식 배치)에, 가정
-# 설비 시나리오에서는 그 시나리오의 배치 차이로 저장된다.
-LAYOUT_COLUMN_HELP = (
-    "배치 — 공식 설비 시나리오에서는 공식 배치(공통 대장), 가정 시나리오에서는 이 시나리오에만"
-    "(공식과 다른 것만 저장)"
-)
 # 일괄 삭제·행 지우기 확인 문구에 붙인다(F6 — 호기 목록은 공통 하나).
 UNIT_DELETE_SCOPE_NOTE = (
     "호기를 지우면 **모든 설비 시나리오**에서 사라집니다 — 이 시나리오에서만 빼려면 "
@@ -2469,18 +2460,6 @@ PASTE_LAYOUT_HELP = (
     "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 이 시나리오에만 "
     "저장됩니다. 끄면 있던 호기의 배치 칸은 지금 값 그대로 두고 새 호기의 배치 칸만 받습니다."
 )
-
-
-def scenario_column_help(column: str, scenario_name: str | None) -> str:
-    """칸 도움말 첫 마디 — 공통·상태·배치·시나리오 가운데 어느 쪽인지."""
-    if column in SCENARIO_SCHEDULE_COLUMNS:
-        where = f"「{scenario_name}」 에만" if scenario_name else "지금 설비 시나리오에만"
-        return f"시나리오 — {where} 저장"
-    if column in SCENARIO_LAYOUT_COLUMNS:
-        return LAYOUT_COLUMN_HELP
-    if column in _STATUS_COLUMNS:
-        return STATUS_COLUMN_HELP
-    return COMMON_COLUMN_HELP
 
 
 def _with_scope_help(

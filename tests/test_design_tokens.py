@@ -642,6 +642,40 @@ def test_space_unit_rings_stand_out_from_the_canvas() -> None:
     assert dark["SPACE_RING_EXIT_OUTLINE"] == dark["SPACE_CANVAS"]
 
 
+def test_equipment_grid_marks_read_on_their_fills_in_both_themes() -> None:
+    """설비 마스터 표 칸 표지 — 면 위 본문 글자(TEXT)·흐린 글자(TEXT_MUTED)는 4.5:1(배치 머리 면도),
+    바뀐 칸 삼각·오류 테두리는 그 면과, 경고 밑줄은 표 면(SURFACE)과 3:1 이상이다. 시나리오 머리의
+    강조색 작은 글자도 4.5:1 이다(색만으로 뜻을 싣지 않는다 — 삼각·테두리·밑줄이 함께 간다)."""
+    weak: list[str] = []
+    fills = (
+        "GRID_CHANGED_FILL",
+        "GRID_ERROR_FILL",
+        "GRID_LOCK_FILL",
+        "GRID_SCENARIO_HEAD",
+        "GRID_LAYOUT_HEAD",
+        "GRID_SELECTED_FILL",
+        "GRID_NEW_FILL",
+    )
+    for mode, palette in tokens._PALETTES.items():
+        for fill in fills:
+            for ink in ("TEXT", "TEXT_MUTED"):
+                ratio = contrast_ratio(palette[ink], palette[fill])
+                if ratio < 4.5:
+                    weak.append(f"{mode}.{ink} on {fill}: {ratio:.2f}")
+        for mark, fill in (
+            ("GRID_CHANGED_MARK", "GRID_CHANGED_FILL"),
+            ("GRID_ERROR_LINE", "GRID_ERROR_FILL"),
+            ("GRID_WARN_LINE", "SURFACE"),
+        ):
+            ratio = contrast_ratio(palette[mark], palette[fill])
+            if ratio < 3:
+                weak.append(f"{mode}.{mark} on {fill}: {ratio:.2f}")
+        ratio = contrast_ratio(palette["ACCENT"], palette["GRID_SCENARIO_HEAD"])
+        if ratio < 4.5:
+            weak.append(f"{mode}.ACCENT on GRID_SCENARIO_HEAD: {ratio:.2f}")
+    assert not weak, "\n".join(weak)
+
+
 LINE_TYPE_FLOOR = 15.0  # 정상 시야 OKLab ΔE — TEST 면이 다른 면과 갈리는 바닥
 
 

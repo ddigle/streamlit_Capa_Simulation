@@ -332,6 +332,22 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_SHORT_INKS": {"s": "#111111", "m": "#FFFFFF", "l": "#FFFFFF", "x": "#FFFFFF"},
     "SPACE_SHORT_IMMINENT": "#0F172A",
     "SPACE_SHORT_DIM_OPACITY": "0.32",
+    # ------------------------------------------------------------- 설비 마스터 표
+    # 가용설비 현황 설비 마스터 탭 표(Components v2)의 칸 표지. 색만으로 뜻을 싣지 않는다 — 바뀐
+    # 칸은 오른쪽 위 삼각(MARK), 오류는 안쪽 테(LINE), 경고는 밑줄(WARN_LINE), 잠긴 칸은 커서·풍선이
+    # 함께 간다. 면 위 본문 글자(TEXT)는 4.5:1, 표지 선은 그 면과 3:1 이상이다(대비 시험).
+    "GRID_CHANGED_FILL": "#FEF3C7",
+    "GRID_CHANGED_MARK": "#B45309",
+    "GRID_ERROR_FILL": "#FFE4E6",
+    "GRID_ERROR_LINE": "#E11D48",
+    "GRID_WARN_LINE": "#B45309",
+    "GRID_LOCK_FILL": "#F1F2F4",
+    "GRID_SCENARIO_HEAD": "#DFF1EE",
+    # 배치 칸 머리(설비 시나리오 2단계 S3 — 공식은 공식 배치, 가정은 그 시나리오에만). 시나리오
+    # 머리(청록)와 갈리는 옅은 남색이고 「배치」 꼬리표 글자가 함께 간다.
+    "GRID_LAYOUT_HEAD": "#EEF0FA",
+    "GRID_SELECTED_FILL": "#E6F4F2",
+    "GRID_NEW_FILL": "#F0FDFA",
     # ------------------------------------------------------------------ 스크롤바 색
     "SCROLLBAR_TRACK": "#ECEEF1",
     "SCROLLBAR_THUMB": "#8F9399",
@@ -523,6 +539,17 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_SHORT_INKS": {"s": "#111111", "m": "#111111", "l": "#FFFFFF", "x": "#111111"},
     "SPACE_SHORT_IMMINENT": "#F8FAFC",
     "SPACE_SHORT_DIM_OPACITY": "0.3",
+    # 설비 마스터 표 칸 표지 — 어두운 면 위에서 같은 뜻(면은 낮은 밝기, 표지 선은 밝게).
+    "GRID_CHANGED_FILL": "#3A2F12",
+    "GRID_CHANGED_MARK": "#F0B37A",
+    "GRID_ERROR_FILL": "#3D1A22",
+    "GRID_ERROR_LINE": "#FB7185",
+    "GRID_WARN_LINE": "#FBBF24",
+    "GRID_LOCK_FILL": "#26262D",
+    "GRID_SCENARIO_HEAD": "#173A35",
+    "GRID_LAYOUT_HEAD": "#262A3D",
+    "GRID_SELECTED_FILL": "#16332F",
+    "GRID_NEW_FILL": "#132B28",
     # 손잡이는 누를수록 또렷해진다 — 다크에서는 밝아지는 쪽이다.
     "SCROLLBAR_TRACK": "#22222A",
     "SCROLLBAR_THUMB": "#55555F",
@@ -624,6 +651,16 @@ if TYPE_CHECKING:
     EQUIPMENT_STAGE_COLORS: Final[dict[str, str]] = {}
     GAP_AREA_SHORTFALL: Final[str] = ""
     GAP_AREA_SURPLUS: Final[str] = ""
+    GRID_CHANGED_FILL: Final[str] = ""
+    GRID_CHANGED_MARK: Final[str] = ""
+    GRID_ERROR_FILL: Final[str] = ""
+    GRID_ERROR_LINE: Final[str] = ""
+    GRID_LAYOUT_HEAD: Final[str] = ""
+    GRID_LOCK_FILL: Final[str] = ""
+    GRID_NEW_FILL: Final[str] = ""
+    GRID_SCENARIO_HEAD: Final[str] = ""
+    GRID_SELECTED_FILL: Final[str] = ""
+    GRID_WARN_LINE: Final[str] = ""
     HEADER_BACKGROUND: Final[str] = ""
     HEADER_BAR: Final[str] = ""
     LINE: Final[str] = ""
