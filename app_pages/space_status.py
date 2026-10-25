@@ -2063,9 +2063,11 @@ else:
                 background_image=(
                     layout_profile.image_data_uri if layout_profile is not None else None
                 ),
-                # 필요 단축 보기 — 배지와 기준일 고정 줄(epoch 밖, 켠 동안만 키가 실린다).
+                # 필요 단축 보기 — 배지와 기준일 고정 줄(epoch 밖, 켠 동안만 키가 실린다). 계획을 못
+                # 읽은 회차도 켠 동안이면 고정 줄이다 — 기준일이 오늘로 고정이라 페이더가 움직이지
+                # 않는다(상자는 모두 기본 회색 — R5).
                 badges=shown_layer.badges if shown_layer is not None else None,
-                as_of_pinned=PINNED_NOTE if shown_layer is not None else None,
+                as_of_pinned=PINNED_NOTE if layer_active else None,
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
     # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다). 아래 key 있는 호기 표의 자리가 밀리지

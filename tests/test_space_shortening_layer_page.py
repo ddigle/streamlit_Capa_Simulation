@@ -394,6 +394,13 @@ def test_a_missing_scenario_warns_once_and_keeps_space_as_it_is(
     fab = _views(editor_calls, "fab")[-1]
     assert all("short" not in stats for stats in fab["linkStats"].values())
     assert app.dataframe, "층 목록 표는 그대로 선다"
+    # 층 상세 — 배지 없이 기본 회색, 기준일은 켠 동안 오늘 고정(페이더가 움직이지 않게 고정 줄).
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    _ok(app.run())
+    view = _views(editor_calls, "floor")[-1]
+    assert "shortBadges" not in view and view.get("asOfPinned") == PINNED_NOTE
+    assert not [item for item in view["items"] if "layer" in item]
 
 
 def test_an_empty_cutoff_stops_with_the_cutoff_first_line(
