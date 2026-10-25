@@ -674,7 +674,11 @@ def render_floor_layer_panel(
     level = space_layer.layer.level
     with st.container(border=True, key=f"space_shortening_panel_{floor[0]}_{floor[1]}"):
         rows, loose, virtuals = floor_layer.rows, floor_layer.unplaced, floor_layer.virtuals
-        parts = [f"이 층 · 목표 {_percent(level)}", f"단축 {len(rows) + len(loose)}대"]
+        # 공정 칩을 고르면 아래 수·목록은 그 공정만 센다 — 머리 줄과 빈 글도 그 공정을 말한다(층에
+        # 다른 공정의 단축 호기·배지가 남아 있는데 「이 층에는 없다」 고 하지 않게).
+        focus = floor_layer.focus
+        scope = "이 층" if focus is None else f"이 층 · {literal_markdown(focus)}"
+        parts = [f"{scope} · 목표 {_percent(level)}", f"단축 {len(rows) + len(loose)}대"]
         if rows or loose:
             parts.append(f"최대 −{floor_layer.max_days}일")
         if virtuals:
@@ -697,7 +701,12 @@ def render_floor_layer_panel(
         if picked_unit is not None and picked_rows is not None:
             _render_picked(floor, picked_unit, picked_rows, space_layer, key_of)
         if not rows and not loose and not virtuals:
-            st.caption(f"이 층에는 목표 {_percent(level)} 에서 단축할 호기가 없습니다.")
+            st.caption(
+                f"이 층에는 목표 {_percent(level)} 에서 단축할 호기가 없습니다."
+                if focus is None
+                else f"이 층 {literal_markdown(focus)} 공정에는 목표 {_percent(level)} 에서 단축할 "
+                "호기가 없습니다 — 칩을 비우면 이 층 모든 공정을 봅니다."
+            )
             return
         managers = {mark.unit: mark.manager for mark in (*rows, *loose)}
         if rows:

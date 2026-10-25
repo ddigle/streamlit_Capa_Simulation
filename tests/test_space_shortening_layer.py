@@ -445,6 +445,7 @@ def test_a_focus_narrows_the_list_the_loose_units_and_the_virtuals() -> None:
     assert [unit.process for unit in only.virtuals] == ["W/B"]
     assert {badge["key"] for badge in only.badges} == {"WB10", "DA01"}
     assert only.counts == {BUCKET_SMALL: 1}
+    assert both.focus is None and only.focus == "W/B"
 
 
 @pytest.mark.parametrize("level", [0.9, 1.3])
