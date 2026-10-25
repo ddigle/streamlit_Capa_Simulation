@@ -269,6 +269,42 @@ export default function (component) {
   // 가장 작은 크기는 저장 정밀도 한 칸이다. 격자 간격에 묶으면 격자 2 에서 1.5 기둥이 건드리기만 해도 커진다.
   const minSize = () => 1 / SCALE
 
+  // ---------------------------------------------------------------- 값 뒤 조사(순수 함수)
+  // 파이썬 `services/korean_particle.py` 와 같은 표다 — 한글 음절은 종성, 숫자는 한국어로 읽은 끝 글자, `%` 는
+  // 받침 없음, 감싼 따옴표·괄호·굵게·백슬래시는 건너뛰고, 읽지 못하는 끝(영문)은 `을(를)` 꼴이다.
+  // `tests/test_particle_sites.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 파이썬과 대조한다. 한쪽을 고치면 다른 쪽도 고친다.
+  // <josa>
+  const JOSA_KNOWN_FINAL = { 0: 21, 1: 8, 2: 0, 3: 16, 4: 0, 5: 0, 6: 1, 7: 8, 8: 8, 9: 0, '%': 0 }
+  const JOSA_SKIPPED_TAIL = '"\'`)]」』*\\'
+  // 조사 종류 → [받침 있을 때, 없을 때, 읽지 못할 때].
+  const JOSA_FORMS = {
+    을: ['을', '를', '을(를)'],
+    은: ['은', '는', '은(는)'],
+    이: ['이', '가', '이(가)'],
+    으로: ['으로', '로', '(으)로'],
+  }
+  function josaFinal(word) {
+    const chars = Array.from(String(word).trim())
+    for (let i = chars.length - 1; i >= 0; i -= 1) {
+      const char = chars[i]
+      if (/\s/u.test(char) || JOSA_SKIPPED_TAIL.includes(char)) continue
+      const code = char.codePointAt(0)
+      if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28
+      return Object.prototype.hasOwnProperty.call(JOSA_KNOWN_FINAL, char) ? JOSA_KNOWN_FINAL[char] : null
+    }
+    return null
+  }
+  // `word` 와 그 끝소리에 맞는 `kind`(을·은·이·으로) 조사를 붙여 돌려준다. `으로` 는 받침이 없거나 ㄹ 이면 `로` 다.
+  function withJosa(word, kind) {
+    const text = String(word)
+    const final = josaFinal(text)
+    const [closed, open, unknown] = JOSA_FORMS[kind]
+    if (final === null) return text + unknown
+    if (kind === '으로') return text + (final === 0 || final === 8 ? open : closed)
+    return text + (final ? closed : open)
+  }
+  // </josa>
+
   // ---------------------------------------------------------------- 모듈 묶음 바둑판(순수 함수)
   // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`module_cells`·`tile_module_group`·
   // `assign_module_cells`·`module_tile_deviation`·`default_group_label` 과 같은 규칙이다 — `tests/test_space_module_group.py` 가 아래 두 표시 줄
@@ -2560,7 +2596,7 @@ export default function (component) {
           ? '먼저 적용하세요 — 적용하지 않은 FAB 편집이 있습니다'
           : blockOff(mark)
             ? '비활성 층 — 층 목록 표 「비활성 층」에서 엽니다'
-            : `${mark.link || '연결 층'} 을 엽니다`
+            : `${withJosa(mark.link || '연결 층', '을')} 엽니다`
       }
     }
   }
@@ -3255,7 +3291,7 @@ export default function (component) {
   // 가운데를 축으로 90° 돌린다(상자 폭·높이가 바뀐다).
   function rotateMark(item) {
     if (item.h > W() || item.w > H()) {
-      S.note = `돌리면 ${item.h}×${item.w} 이 되어 편집 영역 ${W()}×${H()} 를 넘어 돌리지 않았습니다`
+      S.note = `돌리면 ${item.h}×${withJosa(item.w, '이')} 되어 편집 영역 ${W()}×${withJosa(H(), '을')} 넘어 돌리지 않았습니다`
       updateStatus()
       return
     }
@@ -4168,7 +4204,7 @@ export default function (component) {
     const clash = id ? nameClash(id, { created: true, label: id, group: null }, false) : null
     let error = ''
     if (!id) error = '설비명을 적어 주세요.'
-    else if (clash) error = `${id} 는 이미 있는 이름입니다(${clash}).`
+    else if (clash) error = `${withJosa(id, '은')} 이미 있는 이름입니다(${clash}).`
     else if (!newProcess.value) error = '공정을 골라 주세요.'
     else if (!(w > 0 && h > 0 && w <= MAX_EXTENT && h <= MAX_EXTENT)) error = `크기는 0 보다 크고 ${MAX_EXTENT} 이하여야 합니다.`
     const existing = newKind.value === 'existing'
