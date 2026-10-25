@@ -1676,10 +1676,10 @@ def _render_key_process_preset_actions(
             *(entry for entry in profile.presets if entry[0] == target),
             *(entry for entry in profile.presets if entry[0] != target),
         ]
-        message = f"「{target}」을 기본 프리셋으로 옮겼습니다."
+        message = f"「{target}」{object_particle(target)} 기본 프리셋으로 옮겼습니다."
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
-        message = f"프리셋 「{target}」을 지웠습니다."
+        message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
     try:
         get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집"
