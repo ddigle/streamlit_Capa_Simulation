@@ -1608,12 +1608,8 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
 @pytest.mark.parametrize(
     ("path", "label"),
     [
-        ("src/capa_simulation/components/equipment_data_workspace.py", 'st.selectbox("등록할 표"'),
+        ("src/capa_simulation/components/equipment_import_dialog.py", 'st.selectbox("등록할 표"'),
         ("src/capa_simulation/components/equipment_data_workspace.py", '_TARGETS = ("설비 마스터"'),
-        (
-            "src/capa_simulation/components/equipment_data_workspace.py",
-            '["입력", "직접 편집", "저장 이력"]',
-        ),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"진척 비교",'),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"비교 안 함"'),
         ("src/capa_simulation/components/required_shortening_panel.py", '"목표 확보율",'),
@@ -1675,13 +1671,14 @@ NEW_ITEM_KEYS = [
     "equipment_moves",
     "constraint_sim",
     "space_scenario_row",
+    "equipment_grid",
 ]
 
 
 def test_this_deploys_items_follow_the_five_pilot_items_and_do_not_write() -> None:
     keys = [item.key for item in ITEMS]
 
-    assert keys[:5] == ["toolbar", "symbol", "rawdata_target", "progress_box", "space_drawer"]
+    assert keys[:5] == ["toolbar", "symbol", "bulk_import_target", "progress_box", "space_drawer"]
     assert keys[5:] == NEW_ITEM_KEYS
     assert not any(item.writes for item in ITEMS if item.key in NEW_ITEM_KEYS)
 
@@ -2202,7 +2199,56 @@ def test_the_equipment_header_names_match_the_contract() -> None:
     assert set(screens.EQUIPMENT_NEW_HEADERS) <= set(EQUIPMENT_COLUMNS)
     assert screens.EQUIPMENT_DROPPED_HEADER in OBSOLETE_EQUIPMENT_COLUMNS
     assert screens.EQUIPMENT_DROPPED_HEADER not in EQUIPMENT_COLUMNS
-    assert screens.EQUIPMENT_EDITOR_ANCHOR in EQUIPMENT_COLUMNS
+
+
+def test_the_equipment_grid_contract_matches_the_app() -> None:
+    """설비 마스터 표 확인(`bulk_import_target`·`equipment_headers`·`equipment_grid`)이 옮겨 둔
+    값 — 마운트 key·단추 글·칸 묶음·머리 칸 수·시나리오 칸 수·넣어 볼 칸 — 이 앱과 같다."""
+    from capa_simulation.components import equipment_master_grid as emg
+    from capa_simulation.components import equipment_master_tab as tab
+    from capa_simulation.components.equipment_import_dialog import IMPORT_DIALOG_TITLE
+    from capa_simulation.services import equipment_grid as eg
+    from capa_simulation.services.equipment_contract import (
+        DATE_COLUMNS,
+        EQUIPMENT_COLUMNS,
+        SCENARIO_SCHEDULE_COLUMNS,
+    )
+
+    assert screens.EQUIPMENT_GRID_KEY == emg.GRID_KEY
+    assert screens.EQUIPMENT_LOADER_KEY == emg.LOADER_KEY
+    assert screens.BULK_IMPORT_TITLE == IMPORT_DIALOG_TITLE
+    js = _text(COMPONENTS / "equipment_master_grid_assets" / "grid.js")
+    assert f"'{screens.BULK_IMPORT_BUTTON}'" in js
+    assert "'전체 ' + total.toLocaleString() + '대 불러오기'" in js
+    assert len(eg.COLUMN_SETS) == screens.GRID_COLUMN_SETS
+    assert any(item.label == screens.GRID_ALL_COLUMNS_SET for item in eg.COLUMN_SETS)
+    assert len(EQUIPMENT_COLUMNS) == screens.GRID_ALL_COLUMNS
+    assert len(SCENARIO_SCHEDULE_COLUMNS) == screens.GRID_SCENARIO_HEADERS
+    assert screens.GRID_TEXT_COLUMN in EQUIPMENT_COLUMNS
+    assert screens.GRID_TEXT_COLUMN not in SCENARIO_SCHEDULE_COLUMNS
+    assert screens.GRID_DATE_COLUMN in DATE_COLUMNS
+    assert eg.GRID_COLUMNS[eg.NAME_INDEX].name == "설비명" and eg.NAME_INDEX == 5
+    assert tab.SIDE_CHANGES == screens.EQUIPMENT_SIDE_CHANGES
+    assert tab.SIDE_KEY == screens.EQUIPMENT_SIDE_KEY
+    assert tab.DISCARD_POPOVER_KEY == screens.EQUIPMENT_DISCARD_KEY
+    master = _text(COMPONENTS / "equipment_master_tab.py")
+    assert f'"{screens.GRID_DISCARD_CONFIRM}"' in master
+    # 「전체 39칸」 머리 차례(설비명 맨 앞 + 나머지 계약 차례) → 계약 자리 번호.
+    headers = ["설비명", *[name for name in EQUIPMENT_COLUMNS if name != "설비명"]]
+    for name in (screens.GRID_TEXT_COLUMN, screens.GRID_DATE_COLUMN, "Area Code", "Model"):
+        assert screens._contract_index(headers, name) == EQUIPMENT_COLUMNS.index(name)
+
+
+def test_the_equipment_grid_summary_is_counts_and_marks_only() -> None:
+    assert screens.summarize_equipment_grid(5, 12, True, True, True) == (
+        "칸 묶음 5/5 · 줄 있음 · 고친 칸 표지 있음 · 틀린 날짜 오류 있음 · 모두 버리기 됨"
+    )
+    assert screens.summarize_equipment_grid(5, 3, True, None, True) == (
+        "칸 묶음 5/5 · 줄 있음 · 고친 칸 표지 있음 · 틀린 날짜 칸 잠김 · 모두 버리기 됨"
+    )
+    assert screens.summarize_equipment_grid(5, 0, None, None, False) == (
+        "칸 묶음 5/5 · 줄 없음 · 모두 버리기 안 됨"
+    )
 
 
 def test_the_equipment_header_summary_counts_and_names_only_missing_contract_names() -> None:

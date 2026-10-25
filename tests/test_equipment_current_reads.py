@@ -27,13 +27,10 @@ from typing import Any, cast
 import duckdb
 import pandas as pd
 import pytest
+from grid_fake import install_fake_grid
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
-from test_equipment_bulk_delete_page import (
-    BUILDING_FILTER_KEY,
-    DELETE_SELECTED_KEY,
-    SELECT_MATCHING_KEY,
-)
+from test_equipment_bulk_delete_page import _delete_building
 from test_equipment_bulk_delete_page import _page_script as _bulk_page_script
 from test_equipment_bulk_delete_page import _seeded as _bulk_seeded
 from test_equipment_pages import _open_settings, _page_script
@@ -44,12 +41,12 @@ from test_wip_status_page import TEST_SCRIPT as WIP_STATUS_SCRIPT
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
 from capa_simulation.components.equipment_data_workspace import (
-    CONFIRM_DELETE_BUTTON_KEY,
     DRAFT_REVISION_KEY,
-    EDIT_SAVE_BUTTON_KEY,
     EQUIPMENT_DRAFT_KEY,
 )
+from capa_simulation.components.equipment_master_tab import SAVE_BUTTON_KEY, SIDE_CHANGES, SIDE_KEY
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence import equipment_cache
 from capa_simulation.persistence._sql_helpers import DUCKDB_CONNECT_CONFIG
 from capa_simulation.persistence.equipment_cache import (
@@ -549,33 +546,33 @@ def test_availability_pasted_or_cleared_on_the_screen_is_what_the_next_run_count
     clear_equipment_repository()
 
 
-def test_a_rawdata_save_on_the_screen_rebuilds_the_draft_from_the_new_revision(
+def test_a_master_tab_save_on_the_screen_rebuilds_the_draft_from_the_new_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """화면: RawData 에서 리비전을 저장하면 다음 회차의 편집본은 **방금 저장한 리비전**에서 선다 —
-    stat 을 고정해도.
+    """화면: 설비 마스터 탭에서 리비전을 저장하면 다음 회차의 편집본은 **방금 저장한 리비전**에서
+    선다 — stat 을 고정해도.
 
     비우기가 빠지면 최신 id 캐시가 옛 리비전을 내 편집본이 옛 저장본으로 다시 세워진다(지운 호기가
     되살아난다). 그 편집본에서 다시 저장하면 출발 공통 대조로 막힌다 — 그래서 두 번째 저장까지
-    돈다(바뀐 것이 없어 리비전은 생기지 않지만 대조는 쓰기 잠금 안에서 먼저 한다). 편집은 칸을
-    누르지 않는 길(동 필터 → 맞는 행 모두 선택 → 삭제 확정)로 한다. 편집본 토큰은 (공통, 일정)
-    쌍이다.
+    돈다(바뀐 것이 없으면 「고친 것이 없습니다」 로 저장하지 않는다). 편집은 표 대역 출납(동 호기를
+    불러와 지우기)으로 한다. 편집본 토큰은 (공통, 일정) 쌍이다.
     """
+    calls = install_fake_grid(monkeypatch)
     seed = _bulk_seeded(tmp_path)
     repository = DuckDBEquipmentRepository(seed.database)
     first = repository.latest_revision_id()
     assert first is not None
     clear_equipment_repository()
     monkeypatch.setattr(equipment_cache, "database_stamp", lambda _path: (None, None))
-    app = AppTest.from_string(_bulk_page_script(seed.database), default_timeout=120).run()
+    app = AppTest.from_string(_bulk_page_script(seed.database), default_timeout=120)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
     assert not app.exception
     assert app.session_state[DRAFT_REVISION_KEY] == repository.load_snapshot(first).token
 
-    app.multiselect(key=BUILDING_FILTER_KEY).set_value([seed.building])
-    app.button(key=SELECT_MATCHING_KEY).click().run()
-    app.button(key=DELETE_SELECTED_KEY).click().run()
-    app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
-    app.button(key=EDIT_SAVE_BUTTON_KEY).click().run()
+    _delete_building(app, calls, seed)
+    app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [item.value for item in app.error]
     second = repository.latest_revision_id()
@@ -587,13 +584,14 @@ def test_a_rawdata_save_on_the_screen_rebuilds_the_draft_from_the_new_revision(
     assert app.session_state[DRAFT_REVISION_KEY] == repository.load_snapshot(second).token
     assert len(app.session_state[EQUIPMENT_DRAFT_KEY]) == kept
 
-    app.button(key=EDIT_SAVE_BUTTON_KEY).click().run()
+    app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [item.value for item in app.error]
     latest = repository.list_revisions()[0]
     # 바뀐 것 없는 저장은 빈 리비전을 만들지 않는다(결정 모음 「묻지 않고 하기로 한 것」).
     assert latest.revision_no == 2
     assert len(repository.load_snapshot(latest.revision_id).equipment) == kept
+    assert any("고친 것이 없습니다" in item.value for item in app.info)
     clear_equipment_repository()
 
 

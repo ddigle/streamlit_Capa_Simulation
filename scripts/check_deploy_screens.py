@@ -62,7 +62,11 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
     def check_new_thing(screen: Screen) -> str:
         screen.open_page(EQUIPMENT_PAGE)
         screen.open_tab("설비 마스터")
-        return "있음" if screen.selectbox_value("등록할 표") is not None else "없음"
+        open_bulk_import(screen)  # 「엑셀·CSV로 한꺼번에」 팝업
+        try:
+            return "있음" if screen.selectbox_value("등록할 표") is not None else "없음"
+        finally:
+            screen.close_dialog()
 
     ITEMS = (..., Item("new_thing", "새 확인", check_new_thing),)
 
@@ -185,9 +189,9 @@ SPACE_PAGE: Final = "space_status"
 # `Space 현황` 경로 줄 첫 칸 `S.PKG FAB 전체` 단추의 위젯 키. FAB 전체면 주 단추, 층을 열었으면 보조
 # 단추이고 누르면 FAB 로 돌아간다(콜백 — 세션의 연 층을 지운다).
 SPACE_FAB_CRUMB_KEY: Final = "space_status_fab_breadcrumb"
-# 설비 마스터 RawData `직접 편집` 머리 칸 — 38열 개편(설비 마이그레이션 0023)의 새 이름 일곱과
-# 설비 시나리오(0027)의 39번째 칸 「시나리오 메모」, 그리고 지운 컬럼 하나. 앱 모듈
-# (`equipment_contract`)을 부르지 않고 값만 옮긴다 — 화면이 계약과 같은지 따로 보는 확인이라
+# 설비 마스터 표(가용설비 현황 탭 ① — 개편 B1)의 「전체 39칸」 머리 칸 — 38열 개편(설비 마이그레이션
+# 0023)의 새 이름 일곱과 설비 시나리오(0027)의 39번째 칸 「시나리오 메모」, 그리고 지운 컬럼 하나.
+# 앱 모듈(`equipment_contract`)을 부르지 않고 값만 옮긴다 — 화면이 계약과 같은지 따로 보는 확인이라
 # 계약에서 이름을 꺼내면 둘이 함께 틀려도 「같음」이다. 테스트가 계약과 같은지 본다.
 EQUIPMENT_NEW_HEADERS: Final = (
     "Area Code",
@@ -200,10 +204,28 @@ EQUIPMENT_NEW_HEADERS: Final = (
     "시나리오 메모",
 )
 EQUIPMENT_DROPPED_HEADER: Final = "설비가동현황"
-# 설비 마스터 편집표에만 있는 머리 칸 — 그 표를 고르는 데만 쓴다(일정 확인 목록 표에도 `설비명`이
-# 있다). 개편과 상관없이 늘 있는 칸이라 새 이름이 빠져도 표는 찾는다.
-EQUIPMENT_EDITOR_ANCHOR: Final = "X좌표"
-EQUIPMENT_EDIT_TAB: Final = "직접 편집"
+# 설비 마스터 표 컴포넌트(Components v2 — 열린 그림자 DOM, Playwright 로케이터가 뚫는다)의 마운트
+# key(`st-key-<key>` 칸)·단추 글·칸 묶음. 앱 모듈을 부르지 않고 값만 옮긴다(테스트가 앱과 같은지
+# 본다). 시나리오 칸은 머리 둘째 줄 「시나리오」 표지로 센다.
+EQUIPMENT_GRID_KEY: Final = "equipment_grid_table"
+EQUIPMENT_LOADER_KEY: Final = "equipment_grid_loader"
+BULK_IMPORT_BUTTON: Final = "엑셀·CSV로 한꺼번에"
+BULK_IMPORT_TITLE: Final = "엑셀·CSV로 한꺼번에"
+GRID_ALL_COLUMNS_SET: Final = "전체 39칸"
+GRID_COLUMN_SETS: Final = 5
+GRID_ALL_COLUMNS: Final = 39
+GRID_SCENARIO_HEADERS: Final = 7
+GRID_SCENARIO_MARK: Final = "시나리오"
+# 칸 하나 고침·틀린 날짜를 넣어 볼 칸(공통 글 칸 · 시나리오 날짜 칸)과 넣을 글. 넣은 것은 끝에
+# 「모두 버리기」 로 편집본째 버린다 — DB 에 쓰지 않는다.
+GRID_TEXT_COLUMN: Final = "메모3"
+GRID_DATE_COLUMN: Final = "반입일정"
+GRID_TEXT_PROBE: Final = "화면 확인"
+GRID_BAD_DATE: Final = "2026-13-45"
+GRID_DISCARD_CONFIRM: Final = "모두 버리기 확인"
+EQUIPMENT_SIDE_CHANGES: Final = "저장 전 변경"
+EQUIPMENT_SIDE_KEY: Final = "equipment_master_side_v1"
+EQUIPMENT_DISCARD_KEY: Final = "equipment_master_discard_v1"
 TOOLBAR_LABELS: Final[dict[str, str]] = {
     GUIDE_BUTTON_ID: "Guide",
     PRINT_BUTTON_ID: "Print",
@@ -2087,19 +2109,84 @@ def open_equipment_tab(screen: Screen, name: str) -> None:
     screen.open_tab(name)
 
 
-def check_rawdata_target(screen: Screen) -> str:
-    """`가용설비 현황` 설비 마스터 탭(개편 전 RawData)의 `등록할 표` 기본값이 「설비 마스터」인가,
-    옛 이름이 남았는가."""
+def open_bulk_import(screen: Screen) -> None:
+    """탭 ① 불러오기 줄의 「엑셀·CSV로 한꺼번에」(표 컴포넌트 단추 — 그림자 DOM)를 눌러 팝업이 보일
+    때까지 기다린다."""
+    loader = screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_LOADER_KEY}')
+    loader.get_by_role("button", name=BULK_IMPORT_BUTTON).first.click()
+    screen.wait_for(screen.dialog_count, timeout=30, accept=lambda count: count > 0)
+
+
+def check_bulk_import_target(screen: Screen) -> str:
+    """`가용설비 현황` 설비 마스터 탭 「엑셀·CSV로 한꺼번에」 팝업의 `등록할 표` 기본값이 「설비
+    마스터」인가, 옛 이름이 남았는가. 팝업은 `Esc` 로 닫는다(미리보기·넣기는 누르지 않는다)."""
     screen.open_page(EQUIPMENT_PAGE)
     open_equipment_tab(screen, EQUIPMENT_MASTER_TAB)
-    box = screen.selectbox("등록할 표")
-    screen.poll(box.count, timeout=30, accept=lambda count: count > 0)
-    value = screen.selectbox_value("등록할 표")
+    open_bulk_import(screen)
+    try:
+        title = screen.dialog_title()
+        box = screen.selectbox("등록할 표")
+        screen.poll(box.count, timeout=30, accept=lambda count: count > 0)
+        value = screen.selectbox_value("등록할 표")
+        old_names = int(
+            screen.dialog_read("(box) => (box.innerText.match(/호기 마스터/g) || []).length") or 0
+        )
+    finally:
+        closed = screen.close_dialog()
     if value is None:
         return "`등록할 표` 상자 없음"
-    old_names = screen.main_text().count("호기 마스터")
     shown = "있음" if value == "설비 마스터" else "없음(다른 값)"
-    return f"「등록할 표: 설비 마스터」 {shown} · 옛 이름 「호기 마스터」 {old_names}곳"
+    return (
+        f"{_title_text(title, BULK_IMPORT_TITLE)} · 「등록할 표: 설비 마스터」 {shown} · 옛 이름 "
+        f"「호기 마스터」 {old_names}곳 · {_closed_text(closed)}"
+    )
+
+
+def _grid(screen: Screen) -> Any:
+    return screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_GRID_KEY}')
+
+
+def _grid_rows(screen: Screen) -> int:
+    return int(_grid(screen).locator('.emg-body [role="row"]').count())
+
+
+def _ensure_grid_rows(screen: Screen) -> int:
+    """표에 불러온 줄 수 — 없으면 불러오기 「전체 N대 불러오기」(화면 조작 — DB 에 쓰지 않는다)."""
+    grid = _grid(screen)
+    grid.locator(".emg-grid").first.wait_for(state="attached", timeout=ACTION_TIMEOUT_MS)
+    if _grid_rows(screen):
+        return _grid_rows(screen)
+    loader = screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_LOADER_KEY}')
+    whole = loader.get_by_role("button", name=re.compile(r"^전체 [\d,]+대 불러오기$"))
+    if not whole.count():
+        return 0
+    whole.first.click()
+    screen.wait_idle()
+    return int(screen.poll(lambda: _grid_rows(screen), timeout=60, accept=bool) or 0)
+
+
+def _press_column_set(screen: Screen, label: str) -> str | None:
+    """표 칸 묶음 단추를 누르고 그 전에 눌려 있던 묶음 글을 돌려준다(브라우저 몫 — 회차 없음)."""
+    seg = _grid(screen).locator(".emg-seg button")
+    before = None
+    for index in range(seg.count()):
+        if seg.nth(index).get_attribute("aria-pressed") == "true":
+            before = seg.nth(index).inner_text().strip()
+    seg.filter(has_text=label).first.click()
+    return before
+
+
+def _grid_headers(screen: Screen) -> list[tuple[str, bool]]:
+    """머리 칸 (이름, 시나리오 표지 있음) — 체크·빼기 칸은 이름이 없어 빠진다."""
+    heads = _grid(screen).locator('.emg-head [role="columnheader"] .emg-hb')
+    result: list[tuple[str, bool]] = []
+    for index in range(heads.count()):
+        head = heads.nth(index)
+        name = head.locator("span").first.inner_text().strip()
+        mark = head.locator("small")
+        scenario = mark.count() > 0 and mark.first.inner_text().strip() == GRID_SCENARIO_MARK
+        result.append((name, scenario))
+    return result
 
 
 def summarize_equipment_headers(found: Mapping[str, bool], dropped: bool) -> str:
@@ -2113,17 +2200,135 @@ def summarize_equipment_headers(found: Mapping[str, bool], dropped: bool) -> str
 
 
 def check_equipment_headers(screen: Screen) -> str:
-    """`가용설비 현황` 설비 마스터 탭 `직접 편집` 의 설비 마스터 표 머리 — 38열 개편의 새 이름
-    일곱과 설비 시나리오의 「시나리오 메모」(39열)가 있고 지운 「설비가동현황」이 없는가. 표 보기
-    설정은 바꾸지 않는다(기본은 모든 칸이 보인다). 편집표는 가로로 그린 칸만 DOM 에 있어 칸마다
-    가로로 굴려 찾는다(`Screen.column_index`)."""
+    """`가용설비 현황` 설비 마스터 탭 표(개편 B1 — 표 컴포넌트)의 「전체 39칸」 머리 — 38열 개편의
+    새 이름 일곱과 설비 시나리오의 「시나리오 메모」(39열)가 있고 지운 「설비가동현황」이 없는가,
+    머리 칸 수와 시나리오 표지 수. 줄이 없으면 「전체 N대 불러오기」 로 불러오고(화면 조작), 칸
+    묶음은 처음 것으로 되돌린다."""
     screen.open_page(EQUIPMENT_PAGE)
     open_equipment_tab(screen, EQUIPMENT_MASTER_TAB)
-    screen.open_tab(EQUIPMENT_EDIT_TAB)
-    grid, _ = screen.grid_with_column(EQUIPMENT_EDITOR_ANCHOR, timeout=60)
-    found = {name: screen.column_index(grid, name) is not None for name in EQUIPMENT_NEW_HEADERS}
-    dropped = screen.column_index(grid, EQUIPMENT_DROPPED_HEADER) is not None
-    return summarize_equipment_headers(found, dropped)
+    if not _ensure_grid_rows(screen):
+        return "불러올 호기 없음(설비 마스터 비어 있음)"
+    before = _press_column_set(screen, GRID_ALL_COLUMNS_SET)
+    try:
+        headers = screen.poll(
+            lambda: _grid_headers(screen),
+            timeout=20,
+            accept=lambda value: len(value) >= GRID_ALL_COLUMNS,
+        )
+    finally:
+        if before and before != GRID_ALL_COLUMNS_SET:
+            _press_column_set(screen, before)
+    names = [name for name, _ in headers or []]
+    found = {name: name in names for name in EQUIPMENT_NEW_HEADERS}
+    dropped = EQUIPMENT_DROPPED_HEADER in names
+    scenario = sum(1 for _, marked in headers or [] if marked)
+    return (
+        f"{summarize_equipment_headers(found, dropped)} · 머리 {len(names)}칸 · 시나리오 표지 "
+        f"{scenario}칸"
+    )
+
+
+def _cell(screen: Screen, column: int) -> Any:
+    """첫 줄의 그 칸(계약 자리 번호)."""
+    return _grid(screen).locator(f'.emg-body .emg-c[data-col="{column}"]').first
+
+
+def _cell_has(screen: Screen, column: int, name: str) -> bool:
+    classes = _cell(screen, column).get_attribute("class") or ""
+    return name in classes.split()
+
+
+def _type_into(screen: Screen, column: int, text: str) -> None:
+    """칸을 눌러 고치기 시작하고 글을 쳐 Enter 로 확정한다(출납 — 300ms 뒤 보낸다)."""
+    _cell(screen, column).click()
+    editor = _grid(screen).locator(".emg-ed").first
+    editor.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+    editor.fill(text)
+    editor.press("Enter")
+    screen.wait_idle()
+
+
+def summarize_equipment_grid(
+    sets: int, rows: int, changed: bool | None, error: bool | None, discarded: bool
+) -> str:
+    """표 확인 결과 — 칸 묶음 수·불러온 줄 있음·고친 칸 표지·오류 칸 표지·모두 버리기(수와
+    있음/없음만)."""
+    parts = [f"칸 묶음 {sets}/{GRID_COLUMN_SETS}", f"줄 {'있음' if rows else '없음'}"]
+    if changed is not None:
+        parts.append(f"고친 칸 표지 {'있음' if changed else '없음'}")
+    if error is not None:
+        parts.append(f"틀린 날짜 오류 {'있음' if error else '없음'}")
+    elif rows:
+        parts.append("틀린 날짜 칸 잠김")
+    parts.append(f"모두 버리기 {'됨' if discarded else '안 됨'}")
+    return " · ".join(parts)
+
+
+def check_equipment_grid(screen: Screen) -> str:
+    """`가용설비 현황` 설비 마스터 표 — 칸 묶음 다섯, 줄을 불러와 공통 글 칸 하나를 고쳐 「고친
+    칸」 표지, 시나리오 날짜 칸에 틀린 날짜를 넣어 「오류」 표지(낡은 세션이면 잠김), 끝에 「저장
+    전 변경」 의 「모두 버리기」 로 편집본째 버린다. **저장하지 않는다**(DB 에 쓰지 않는다).
+    값·이름은 찍지 않는다."""
+    screen.open_page(EQUIPMENT_PAGE)
+    open_equipment_tab(screen, EQUIPMENT_MASTER_TAB)
+    rows = _ensure_grid_rows(screen)
+    sets = int(_grid(screen).locator(".emg-seg button").count())
+    if not rows:
+        return summarize_equipment_grid(sets, 0, None, None, False)
+    before = _press_column_set(screen, GRID_ALL_COLUMNS_SET)
+    changed: bool | None = None
+    error: bool | None = None
+    discarded = False
+    try:
+        headers = [name for name, _ in _grid_headers(screen)]
+        text_column = _contract_index(headers, GRID_TEXT_COLUMN)
+        date_column = _contract_index(headers, GRID_DATE_COLUMN)
+        if text_column is not None and not _cell_has(screen, text_column, "is-locked"):
+            _type_into(screen, text_column, GRID_TEXT_PROBE)
+            changed = bool(
+                screen.poll(lambda: _cell_has(screen, text_column, "is-changed"), timeout=20)
+            )
+        if date_column is not None and not _cell_has(screen, date_column, "is-locked"):
+            _type_into(screen, date_column, GRID_BAD_DATE)
+            error = bool(
+                screen.poll(lambda: _cell_has(screen, date_column, "is-error"), timeout=20)
+            )
+    finally:
+        if before and before != GRID_ALL_COLUMNS_SET:
+            _press_column_set(screen, before)
+        discarded = _discard_all(screen)
+    return summarize_equipment_grid(sets, rows, changed, error, discarded)
+
+
+def _contract_index(headers: Sequence[str], name: str) -> int | None:
+    """「전체 39칸」 머리 차례(설비명 맨 앞 + 나머지 계약 차례)에서 계약 자리 번호를 낸다 — 표가
+    칸 자리(`data-col`)를 계약 차례로 단다. 설비명은 계약 여섯째(자리 5)다."""
+    if name not in headers:
+        return None
+    position = headers.index(name)
+    name_spot = 5
+    return position - 1 if position <= name_spot else position
+
+
+def _discard_all(screen: Screen) -> bool:
+    """오른쪽 칸을 「저장 전 변경」 으로 바꿔 「모두 버리기」 → 「모두 버리기 확인」, 오른쪽 칸
+    고르기는 처음 것으로 되돌린다. 고친 것이 없어도 누른다(편집본을 저장본으로 다시 세울
+    뿐이다)."""
+    before = _choose_segment(screen, EQUIPMENT_SIDE_KEY, EQUIPMENT_SIDE_CHANGES)
+    try:
+        popover = screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_DISCARD_KEY}')
+        if not popover.count():
+            return False
+        popover.locator("button").first.click()
+        confirm = screen.page.get_by_role("button", name=GRID_DISCARD_CONFIRM)
+        confirm.first.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+        confirm.first.click()
+        screen.wait_idle()
+        marked = ".emg-body .emg-c.is-changed, .emg-body .emg-c.is-error"
+        return bool(screen.poll(lambda: not _grid(screen).locator(marked).count(), timeout=30))
+    finally:
+        if before and before != EQUIPMENT_SIDE_CHANGES:
+            _choose_segment(screen, EQUIPMENT_SIDE_KEY, before)
 
 
 def check_progress_box(screen: Screen) -> str:
@@ -3861,7 +4066,7 @@ def check_equipment_moves(screen: Screen) -> str:
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
-    Item("rawdata_target", "설비 마스터 등록할 표", check_rawdata_target),
+    Item("bulk_import_target", "설비 마스터 엑셀·CSV 등록할 표", check_bulk_import_target),
     Item("progress_box", "필요 단축 일정 진척 비교 상자", check_progress_box),
     Item("space_drawer", "Space 미배치 서랍", check_space_drawer),
     Item("sidebar_panel", "HOME 조회 조건 패널", check_sidebar_panel),
@@ -3880,6 +4085,7 @@ ITEMS: tuple[Item, ...] = (
     Item("equipment_moves", "가용설비 현황 탭 둘·옮긴 자리", check_equipment_moves),
     Item("constraint_sim", "제약 시뮬레이션", check_constraint_simulation),
     Item("space_scenario_row", "Space 설비 시나리오 줄·팝업", check_space_scenario_row),
+    Item("equipment_grid", "설비 마스터 표 칸 고치기", check_equipment_grid),
 )
 
 

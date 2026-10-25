@@ -66,6 +66,17 @@ def _options(data: pd.DataFrame, column: str) -> list[str]:
     return sorted(value for value in values.unique().tolist() if value)
 
 
+def _preset_options(filter_key: str, options: Sequence[str]) -> list[str]:
+    """선택지가 상한을 넘는 칸에 세션이 미리 든 값 가운데 지금 표에 있는 것(차례는 선택지 차례).
+    없으면 빈 목록이고 남은 값은 버린다(그 칸 위젯은 이 회차에 그리지 않는다)."""
+    preset = st.session_state.get(filter_key)
+    wanted = {str(value) for value in preset} if isinstance(preset, (list, tuple)) else set()
+    chosen = [value for value in options if value in wanted]
+    if not chosen:
+        st.session_state.pop(filter_key, None)
+    return chosen
+
+
 def render_table_view_controls(
     data: pd.DataFrame,
     *,
@@ -108,9 +119,15 @@ def render_table_view_controls(
             with st.container(horizontal=True, gap="small"):
                 for column in available:
                     options = _options(data, column)
-                    # 값이 수백 가지인 컬럼(호기 등)은 다중선택이 오히려 못 쓴다.
-                    if not options or len(options) > MAX_FILTER_OPTIONS:
+                    if not options:
                         continue
+                    if len(options) > MAX_FILTER_OPTIONS:
+                        # 값이 수백 가지인 컬럼(호기 등)은 다중선택이 오히려 못 쓴다 — 다른 자리가
+                        # 이 칸에 값을 적어 둔 때(「비가동 일정 표에서 고치기」)만 그 값만으로
+                        # 세운다(지우면 다음 회차에 칸이 사라진다).
+                        options = _preset_options(filter_widget_key(key_prefix, column), options)
+                        if not options:
+                            continue
                     labels = (value_labels or {}).get(column)
                     # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과
                     # 다른 값이 돌아온다. 차례는 보이는 글자순(표시명이 없으면 지금처럼 원본 순서).
