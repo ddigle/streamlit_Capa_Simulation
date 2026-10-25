@@ -4383,7 +4383,11 @@ export default function (component) {
       const node = document.createElement('span')
       node.className = className
       node.style.left = along(n)
-      if (text) node.textContent = text
+      if (text) {
+        node.textContent = text
+        // 글자를 트랙 폭에 맞춰 솎을 때(`fitFaderTicks`) 그 자리를 다시 셈한다.
+        node.dataset.day = String(n)
+      }
       nodes.push(node)
     }
     const start = new Date(lo * DAY_MS)
@@ -4399,6 +4403,51 @@ export default function (component) {
     mark('sle-tick is-today', today)
     mark('sle-tick-label is-today', today, '오늘')
     faderTicks.replaceChildren(...nodes)
+  }
+
+  // 눈금 글자 솎기(순수 함수). `tests/test_space_fader_ticks_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥
+  // 이름을 쓰지 않는다.
+  // <fader-ticks>
+  // 숨길 눈금 글자(`spots` 차례의 참·거짓). 글자마다 {at: 트랙 위 가운데(px), w: 글자 폭(px), today: 「오늘」 글자인가},
+  // width 는 트랙 폭(px), gap 은 글자 사이 최소 틈(px)이다. 「오늘」 을 먼저 세우고, 나머지는 왼쪽부터 트랙 안(양 끝)에 들고
+  // 이미 세운 글자와 gap 안으로 붙지 않을 때만 세운다. 좁은 트랙(390px 창)에서 분기 글자가 서로 겹쳐 「26.0126.04…」 로
+  // 뭉개졌다(E2E 결함). 넓은 트랙에서는 날짜 거리로 이미 뺀 글자(`buildFader`)뿐이라 하나도 숨기지 않는다.
+  function crowdedTicks(spots, width, gap) {
+    const hidden = spots.map(() => true)
+    const kept = []
+    const apart = (a, b) => a.at + a.w / 2 + gap <= b.at - b.w / 2 || b.at + b.w / 2 + gap <= a.at - a.w / 2
+    const inside = (s) => s.at - s.w / 2 >= 0 && s.at + s.w / 2 <= width
+    const order = spots.map((_, index) => index)
+      .sort((a, b) => Number(Boolean(spots[b].today)) - Number(Boolean(spots[a].today)) || spots[a].at - spots[b].at)
+    for (const index of order) {
+      const spot = spots[index]
+      if (!spot.today && !(inside(spot) && kept.every((other) => apart(spot, other)))) continue
+      kept.push(spot)
+      hidden[index] = false
+    }
+    return hidden
+  }
+  // </fader-ticks>
+
+  // 눈금 글자 사이 최소 틈(px).
+  const FADER_TICK_GAP_PX = 2
+  // 눈금 글자를 지금 트랙 폭에 맞춰 솎는다(`crowdedTicks` — 숨긴 글자는 자리를 지킨 채 `is-crowded`). 회차마다 페이더를 그린
+  // 뒤와 크기가 바뀔 때(`S.onResize`) 다시 잰다. 트랙이 그려지지 않았으면(고정 줄·편집) 그대로 둔다.
+  function fitFaderTicks() {
+    if (!FADER) return
+    const width = faderTicks.clientWidth
+    if (!width) return
+    const labels = [...faderTicks.querySelectorAll('.sle-tick-label')]
+    const lo = lowDay()
+    const span = Math.max(highDay() - lo, 1)
+    const spots = labels.map((node) => ({
+      at: THUMB_PX / 2 + ((Number(node.dataset.day) - lo) / span) * (width - THUMB_PX),
+      w: node.offsetWidth,
+      today: node.classList.contains('is-today'),
+    }))
+    crowdedTicks(spots, width, FADER_TICK_GAP_PX).forEach((hide, index) => {
+      labels[index].classList.toggle('is-crowded', hide)
+    })
   }
 
   // 페이더 줄을 칠한 날에 맞춘다 — 손잡이 자리·오늘과 사이 구간·날짜 칩, 그리고 범례·요약이 아직 이전 날 값이면 그 날.
@@ -4499,6 +4548,7 @@ export default function (component) {
       S.commitTimer = setTimeout(commitAsOf, KEY_COMMIT_MS)
     }
     showFader()
+    fitFaderTicks()
   }
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
   if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault)
@@ -4583,6 +4633,7 @@ export default function (component) {
     const changed = S.heightDrag ? measurePort() : fitStage()
     if (changed) applyView()
     fitFabBar()
+    fitFaderTicks()
   }
   if (!S.ro && typeof ResizeObserver === 'function') {
     const schedule = () => {
