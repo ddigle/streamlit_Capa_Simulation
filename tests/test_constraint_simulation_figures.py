@@ -565,6 +565,74 @@ def test_the_existing_rate_step_recomputes_from_the_written_numbers(
     assert f"{available / demand * 100:.1f}" == f"{written_rate:.1f}"
 
 
+@pytest.mark.parametrize(
+    ("existing", "constrained"),
+    [(141.2649, 1.3649), (38.0, 5.0), (41.996, 0.0), (2.0041, 0.0049), (12.3333, 4.6667)],
+)
+def test_the_demand_split_step_recomputes_from_the_written_numbers(
+    existing: float, constrained: float
+) -> None:
+    """1단계 「소요 = 기존 + 제약」 도 적힌 두 수를 더하면 적힌 소요다 — 「142.63 = 141.26 + 1.36」
+    이 아니다(적힌 수의 합은 142.62, 2026-10-26 E2E). 회색 줄은 「합하면 원래 소요와 같습니다」."""
+    result = _run()
+    row = replace(
+        result.month(202706),
+        required=existing + constrained,
+        existing_demand=existing,
+        constrained_demand=constrained,
+    )
+    step = month_steps(row, result, LABELS, show_proportional=False).steps[0]
+    assert "≈" not in step.body
+    written_required, written_existing, written_constrained = _written_numbers(step.body)
+    assert units_text(written_existing + written_constrained) == units_text(written_required)
+    assert units_text(existing + constrained) == units_text(written_required)
+    assert step.note == "제약 기간이라 공정 소요를 두 갈래로 나눕니다(합하면 원래 소요와 같습니다)."
+
+
+@pytest.mark.parametrize(
+    ("available", "downtime", "allocated"),
+    [(3.3549, 0.9651, 0), (48.004, 2.006, 6), (48.0, 2.0, 6), (40.0, 0.0, 7), (5.0, 5.806, 0)],
+)
+def test_the_existing_available_step_recomputes_from_the_written_numbers(
+    available: float, downtime: float, allocated: int
+) -> None:
+    """4단계 「공정 가용 − 개조 중 − 제약 배정 = 기존 가용」 도 적힌 수로 다시 셈하면 적힌 기존
+    가용이다 — 「3.35 − 0.97 = 2.39」 가 아니다(적힌 수로는 2.38, 2026-10-26 E2E). 비가동이 가용보다
+    많으면 쓸 수 있는 가용을 0 으로 두는 것까지 같은 셈이다."""
+    result = _run()
+    usable = max(0.0, available - downtime)
+    row = replace(
+        result.month(202706),
+        available=available,
+        downtime=downtime,
+        usable=usable,
+        overdrawn=available - downtime < 0,
+        allocated=allocated,
+        existing_available=usable - allocated,
+    )
+    body = month_steps(row, result, LABELS, show_proportional=False).steps[3].body
+    assert "≈" not in body
+    *operands, written_available = _written_numbers(body)
+    written_usable = max(0.0, operands[0] - (operands[1] if downtime > 0 else 0.0))
+    written_allocated = operands[-1] if allocated > 0 else 0
+    assert units_text(written_usable - written_allocated) == units_text(written_available)
+    assert units_text(usable - allocated) == units_text(written_available)
+
+
+def test_a_step_that_no_digits_can_match_says_approximately() -> None:
+    """어느 자릿수 후보로도 적힌 결과가 안 나오면 둘째 자리로 적고 등호를 「≈」 로 둔다(AGENTS
+    「화면 숫자는 검산되어야 한다」) — 여섯째 자리까지 늘린 「=」 가 아니다."""
+    result = _run()
+    row = replace(
+        result.month(202706),
+        required=100.0,
+        existing_demand=90.123456789,
+        constrained_demand=4.0,
+    )
+    body = month_steps(row, result, LABELS, show_proportional=False).steps[0].body
+    assert body == "소요 **100대** ≈ 기존 90.12 + HBM라E 4"
+
+
 def test_a_dedicated_pool_above_need_says_it_stays() -> None:
     """누적 최대 — 202710 소요가 8 → 7 로 줄어도 전용 10대가 남는다(합성 한 줄)."""
     product = (0, 0, 0, 0, 0, 5, 6, 7, 8, 7, 9, 9, 10, 10, 11)
