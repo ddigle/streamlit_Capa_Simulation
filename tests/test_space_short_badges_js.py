@@ -113,3 +113,67 @@ def test_a_shortening_marked_unit_is_never_hidden_under_a_present_unit() -> None
         },
     )
     assert hidden == [True, False]
+
+
+_SETTLE_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const BADGE_MAIN_PX = %s
+const BADGE_SUB_PX = %s
+const BADGE_PAD_PX = %s
+const BADGE_GAP_PX = %s
+const GROUP_NAME_PX = %s
+%s
+process.stdout.write(JSON.stringify(settleBadges(input.spots, input.upp, input.canvasH)))
+"""
+
+
+def _settled(spots: list[dict[str, float]], upp: float, canvas_h: float) -> list[Any]:
+    source = _SETTLE_RUNNER % (
+        _constant("BADGE_MAIN_PX"),
+        _constant("BADGE_SUB_PX"),
+        _constant("BADGE_PAD_PX"),
+        _constant("BADGE_GAP_PX"),
+        _constant("GROUP_NAME_PX"),
+        _block(_BADGE),
+    )
+    result: Any = _node(source, {"spots": spots, "upp": upp, "canvasH": canvas_h})
+    return list(result)
+
+
+def test_neighbouring_badges_step_aside_instead_of_covering_each_other() -> None:
+    """좁은 화면의 맞춤 배율(390px 리뷰 — 배지 다섯 가운데 겹친 쌍 셋)에서 배지끼리 덮지 않는다. 앞
+    배지(목록 차례)가 제자리를 잡고, 겹친 뒤 배지는 한 칸 위로 비키며, 그래도 겹치면 이 배율에서는
+    숨는다(None — 확대하면 다시 선다). 겹치지 않는 배지는 제자리 그대로다."""
+    first = {"x": 10.0, "y": 20.0, "w": 6.0, "h": 3.0}
+    covering = {"x": 12.0, "y": 20.5, "w": 6.0, "h": 3.0}
+    third = {"x": 11.0, "y": 21.0, "w": 6.0, "h": 3.0}
+    apart = {"x": 40.0, "y": 20.0, "w": 6.0, "h": 3.0}
+    settled = _settled([first, covering, third, apart], upp=0.1, canvas_h=100)
+    assert settled[0]["y"] == first["y"] and settled[3]["y"] == apart["y"]
+    moved = settled[1]
+    assert moved is not None and moved["y"] > covering["y"]
+    assert abs(moved["y"] - first["y"]) >= (moved["h"] + first["h"]) / 2
+    assert settled[2] is None
+    placed = [spot for spot in settled if spot is not None]
+    for index, one in enumerate(placed):
+        for other in placed[index + 1 :]:
+            assert not (
+                abs(one["x"] - other["x"]) < (one["w"] + other["w"]) / 2
+                and abs(one["y"] - other["y"]) < (one["h"] + other["h"]) / 2
+            )
+    # 영역 위 끝을 넘는 「한 칸 위」 는 버린다 — 그 배지는 숨는다.
+    assert _settled([first, covering], upp=0.1, canvas_h=22.0)[1] is None
+
+
+def test_redrawing_the_badges_hands_focus_back_to_the_same_badge() -> None:
+    """키보드로 배지를 고르면 다시 그린 새 배지에 초점을 돌려준다(리뷰 — 초점이 문서 처음으로 빠지면
+    배지마다 처음부터 다시 Tab 해야 한다). 다시 그리기 전에 쥔 배지 key 를 새 노드와 맞춘다."""
+    body = JS[
+        JS.index("  function drawShortBadges() {") : JS.index(
+            "  // ------", JS.index("  function drawBadge(")
+        )
+    ]
+    assert body.index("const focusKey") < body.index("badgesLayer.replaceChildren()")
+    assert "root.activeElement" in body and "badgesLayer.contains(focused)" in body
+    assert "node.dataset.key = String(badge.key || ids[0])" in body
+    assert "node.focus({ preventScroll: true })" in body

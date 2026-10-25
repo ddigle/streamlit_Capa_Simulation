@@ -626,6 +626,25 @@ export default function (component) {
       mainY: pad / 2 + mainSize * 0.6, subY: pad / 2 + mainSize * 1.2 + subSize * 0.6,
     }
   }
+  // 배지끼리 겹치지 않게 자리를 고른다 — 배지는 화면 px 고정이라 좁은 화면의 맞춤 배율에서 이웃 배지를 덮는다(390px 리뷰).
+  // spots 는 목록 차례(기한 지남 → 남은 날 짧은 순)라 앞 배지가 먼저 자리를 잡는다. 후보는 제자리 → 한 칸 위(배지 높이 + 틈)
+  // 이고 영역 위 끝을 넘는 후보는 버린다. 둘 다 겹치면 null — 그 배지는 이 배율에서 숨고(확대하면 다시 선다) 상자 구간 색과
+  // 「이 층에서 단축할 호기」 표가 남는다.
+  function settleBadges(spots, upp, canvasH) {
+    const placed = []
+    const hits = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.y - b.y) < (a.h + b.h) / 2
+    return spots.map((spot) => {
+      for (const dy of [0, spot.h + BADGE_GAP_PX * upp]) {
+        const at = { ...spot, y: spot.y + dy }
+        if (dy && at.y + at.h / 2 > canvasH) continue
+        if (!placed.some((other) => hits(other, at))) {
+          placed.push(at)
+          return at
+        }
+      }
+      return null
+    })
+  }
   // </short-badge>
 
   const isUnit = (m) => m.kind === 'unit'
@@ -1064,10 +1083,16 @@ export default function (component) {
   // 같다(Main 설비 이름표와 같은 방식). 누르면 그 호기를 누른 것과 같다(`pick`). 기준일에 숨은 모듈은 바깥 상자에서 뺀다.
   function drawShortBadges() {
     if (!badgesLayer) return
+    // 다시 그리면 배지 노드가 모두 새로 선다 — 초점을 가진 배지(키보드로 고른 것)는 같은 key 의 새 배지로 돌려준다.
+    // 돌려주지 않으면 Enter 로 고를 때마다 초점이 문서 처음으로 빠져 처음부터 다시 Tab 해야 한다(리뷰).
+    const root = svg.getRootNode()
+    const focused = root && root.activeElement
+    const focusKey = focused && badgesLayer.contains(focused) ? focused.dataset.key : null
     badgesLayer.replaceChildren()
     if (!ASOF_PINNED || !SHORT_BADGES.length) return
     const upp = unitsPerPx()
     const counts = groupCounts()
+    const drawn = []
     for (const badge of SHORT_BADGES) {
       const ids = (Array.isArray(badge.ids) ? badge.ids : []).map(String)
       const mods = ids.map((id) => S.items.get(id)).filter((m) => m && isUnit(m) && onCanvas(m))
@@ -1082,33 +1107,45 @@ export default function (component) {
       const sub = String(badge.sub || '')
       const spot = badgeSpot(seen.map((m) => ({ x: m.x, y: m.y, w: m.w, h: m.h })), upp, above,
         { main: labelEm(main), sub: labelEm(sub) }, H())
-      const bucket = SHORT_LAYERS.has(badge.bucket) ? badge.bucket : 's'
-      const node = el('g', { class: `sle-short-badge is-${bucket}`, tabindex: 0, role: 'button' })
-      node.classList.toggle('is-imminent', Boolean(badge.imminent))
-      node.classList.toggle('is-dim', Boolean(badge.dim))
-      node.dataset.pick = ids[0]
-      node.setAttribute('aria-label', String(badge.aria || `${badge.key || ''} ${main} ${sub}`))
-      const top = H() - (spot.y + spot.h / 2)
-      node.append(el('rect', {
-        class: 'sle-short-badge-pill', x: spot.x - spot.w / 2, y: top, width: spot.w, height: spot.h, rx: spot.h * 0.3,
-      }))
-      const mainText = el('text', { class: 'sle-short-badge-main', x: spot.x, y: top + spot.mainY, 'font-size': spot.mainSize })
-      mainText.textContent = main
-      const subText = el('text', { class: 'sle-short-badge-sub', x: spot.x, y: top + spot.subY, 'font-size': spot.subSize })
-      subText.textContent = sub
-      const tip = el('title')
-      tip.textContent = String(badge.tip || '')
-      node.append(mainText, subText, tip)
-      const pick = ids.find((id) => S.items.has(id)) || ids[0]
-      node.onkeydown = (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
-        event.preventDefault()
-        event.stopPropagation()
-        select(pick)
-        notePick()
-      }
-      badgesLayer.append(node)
+      drawn.push({ badge, ids, main, sub, spot })
     }
+    const settled = settleBadges(drawn.map((entry) => entry.spot), upp, H())
+    drawn.forEach((entry, index) => {
+      const spot = settled[index]
+      if (spot) drawBadge(entry, spot, focusKey)
+    })
+  }
+
+  // 배지 하나를 고른 자리에 그린다. 초점을 쥐었던 배지(같은 key)면 새 노드에 초점을 돌려준다.
+  function drawBadge({ badge, ids, main, sub }, spot, focusKey) {
+    const bucket = SHORT_LAYERS.has(badge.bucket) ? badge.bucket : 's'
+    const node = el('g', { class: `sle-short-badge is-${bucket}`, tabindex: 0, role: 'button' })
+    node.classList.toggle('is-imminent', Boolean(badge.imminent))
+    node.classList.toggle('is-dim', Boolean(badge.dim))
+    node.dataset.pick = ids[0]
+    node.dataset.key = String(badge.key || ids[0])
+    node.setAttribute('aria-label', String(badge.aria || `${badge.key || ''} ${main} ${sub}`))
+    const top = H() - (spot.y + spot.h / 2)
+    node.append(el('rect', {
+      class: 'sle-short-badge-pill', x: spot.x - spot.w / 2, y: top, width: spot.w, height: spot.h, rx: spot.h * 0.3,
+    }))
+    const mainText = el('text', { class: 'sle-short-badge-main', x: spot.x, y: top + spot.mainY, 'font-size': spot.mainSize })
+    mainText.textContent = main
+    const subText = el('text', { class: 'sle-short-badge-sub', x: spot.x, y: top + spot.subY, 'font-size': spot.subSize })
+    subText.textContent = sub
+    const tip = el('title')
+    tip.textContent = String(badge.tip || '')
+    node.append(mainText, subText, tip)
+    const pick = ids.find((id) => S.items.has(id)) || ids[0]
+    node.onkeydown = (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      event.stopPropagation()
+      select(pick)
+      notePick()
+    }
+    badgesLayer.append(node)
+    if (focusKey !== null && node.dataset.key === focusKey) node.focus({ preventScroll: true })
   }
 
   // ---------------------------------------------------------------- 정렬선(편집)
