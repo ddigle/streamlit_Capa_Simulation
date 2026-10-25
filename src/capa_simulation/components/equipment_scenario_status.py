@@ -52,7 +52,10 @@ from capa_simulation.components.equipment_save_fields import (
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.space_floor_list import floor_state_draft_pending
+from capa_simulation.components.space_floor_list import (
+    discard_floor_state_draft,
+    floor_state_draft_pending,
+)
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     current_selection,
@@ -408,8 +411,9 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
             if preferred is not None and preferred in revision_by_id
             else next(iter(revision_by_id)),
         )
-    # Space 층 사용 편집 초안은 공식 설비 시나리오에서만 산다(Q3) — 가정 시나리오를 불러오면 Space
-    # 가 편집을 잠그며 버린다. 그때도 「변경을 버리고 불러오기」 를 묻는다(설계 9장).
+    # Space 층 사용 편집 초안은 공식 설비 시나리오에서만 산다(Q3) — 가정 시나리오를 불러오면 그
+    # 초안을 버린다(불러온 회차에 팝업이 토글·초안을 걷고, Space 는 편집을 잠근다). 그때도 「변경을
+    # 버리고 불러오기」 를 묻는다(설계 9장).
     floor_draft = floor_state_draft_pending() and selected_scenario != session.official_scenario_id
     discard = True
     if unsaved or floor_draft:
@@ -461,6 +465,10 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
         if failure is not None:
             st.error(failure)
             return
+        if selected_scenario != session.official_scenario_id:
+            # 묻고 버린 층 사용 초안은 여기서 버린다 — Space 가 잠그며 버리기를 기다리면 다음
+            # 회차 `app.py` 의 탭 점·떠나기 확인이 버린 초안을 한 회차 더 센다(E2E).
+            discard_floor_state_draft()
         chosen = revision_by_id[str(st.session_state[DIALOG_REVISION_KEY])]
         name = scenario_by_id[str(st.session_state[DIALOG_SCENARIO_KEY])].scenario_name
         st.session_state[FLASH_KEY] = (

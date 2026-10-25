@@ -73,6 +73,7 @@ __all__ = [
     "FLOOR_TABLE_KEY",
     "INACTIVE_TABLE_KEY",
     "FloorListColumn",
+    "discard_floor_state_draft",
     "floor_state_draft_pending",
     "layer_columns",
     "render_space_floor_list",
@@ -267,6 +268,15 @@ def _forget() -> None:
     """초안·base·확인을 지운다(편집을 끈 회차 — 저장하지 않은 변경은 버린다)."""
     for key in (DRAFT_KEY, BASE_KEY, CONFIRM_KEY):
         st.session_state.pop(key, None)
+
+
+def discard_floor_state_draft() -> None:
+    """`사용 편집` 토글을 끄고 초안·base·확인을 버린다 — 사이드바 팝업이 가정 설비 시나리오를 불러온
+    회차(층 사용은 공식에서만 고친다 — Q3). Space 가 잠그며 버리기(`render_space_floor_list`)를
+    기다리면 그 앞에 `app.py` 가 세는 탭 점·떠나기 확인(`floor_state_draft_pending`)이 버린 초안을
+    한 회차 더 센다. 토글 위젯을 그리기 전(팝업 회차·다음 회차 첫머리)에만 부른다."""
+    st.session_state[EDIT_TOGGLE_KEY] = False
+    _forget()
 
 
 def floor_state_draft_pending() -> bool:
