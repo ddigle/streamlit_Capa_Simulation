@@ -517,7 +517,11 @@ def render_fab_layer_summary(
     st.caption(":material/event_upcoming: " + " · ".join(parts), width="stretch")
     if not virtuals:
         return
-    with st.expander(f"도면에 자리가 없는 추가 호기 {len(virtuals)}대", expanded=False):
+    with st.expander(
+        f"도면에 자리가 없는 추가 호기 {len(virtuals)}대",
+        expanded=False,
+        key="space_shortening_unplaced_expander",
+    ):
         st.caption(
             "추가N 은 기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 편집기에서 "
             "자리를 "

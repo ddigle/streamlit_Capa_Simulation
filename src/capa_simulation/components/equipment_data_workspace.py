@@ -3249,12 +3249,14 @@ def _render_history(
     st.caption(
         "조회 조건을 바꾸면 바로 다시 그립니다. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
     )
-    for label, frame in (
-        ("기존 보유대수", historical.baseline),
-        ("설비 마스터", equipment),
-        ("비가동 일정", downtime),
+    for index, (label, frame) in enumerate(
+        (
+            ("기존 보유대수", historical.baseline),
+            ("설비 마스터", equipment),
+            ("비가동 일정", downtime),
+        )
     ):
-        with st.expander(label, expanded=True):
+        with st.expander(label, expanded=True, key=f"equipment_history_view_{index}"):
             st.dataframe(frame, hide_index=True, width="stretch")
 
 

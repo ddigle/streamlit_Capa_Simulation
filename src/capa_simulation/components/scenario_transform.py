@@ -229,7 +229,10 @@ def render_derived_save(
         "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
     )
     if virtual_products:
-        with st.expander(f"함께 저장할 가상제품 복제 이력 · {len(virtual_products)}건"):
+        with st.expander(
+            f"함께 저장할 가상제품 복제 이력 · {len(virtual_products)}건",
+            key=f"{key}_virtual_products_expander",
+        ):
             st.dataframe(records_to_frame(virtual_products), hide_index=True, width="stretch")
     with st.expander("저장될 출처 메모"):
         st.text(provenance)

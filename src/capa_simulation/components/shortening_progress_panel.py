@@ -118,6 +118,8 @@ _BASELINE_SAVED_BY_KEY = "equipment_shortening_baseline_saved_by"
 _BASELINE_FORM_GENERATION_KEY = "equipment_shortening_baseline_form_generation"
 _BASELINE_DELETE_CONFIRM_KEY = "equipment_shortening_baseline_delete_confirm"
 _BASELINE_DELETE_KEY = "equipment_shortening_baseline_delete"
+# 「기준선 지우기」 팝오버. 위 알림이 생기고 사라져도 같은 팝오버로 남게 고정한다(AGENTS 9장).
+_BASELINE_DELETE_POPOVER_KEY = "equipment_shortening_baseline_delete_popover"
 _BASELINE_NOTICE_KEY = "equipment_shortening_baseline_notice"
 _BASELINE_NOTICE_SHOWN_KEY = "equipment_shortening_baseline_notice_shown"
 _NOTICE_SLOTS = 3
@@ -303,7 +305,9 @@ def render_baseline_controls(
     with st.popover("기준선 저장", icon=":material/bookmark_add:", key=_popover_key()):
         _render_save_form(save)
     if selected is not None:
-        with st.popover("기준선 지우기", icon=":material/bookmark_remove:"):
+        with st.popover(
+            "기준선 지우기", icon=":material/bookmark_remove:", key=_BASELINE_DELETE_POPOVER_KEY
+        ):
             _render_delete(save.database_path, selected)
 
 

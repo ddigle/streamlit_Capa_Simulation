@@ -185,7 +185,11 @@ def _render_direct_editor(
     submitted_base = st.session_state.get(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
     if available_processes:
-        with st.expander(f"보유 공정 {len(available_processes):,}개", icon=":material/list:"):
+        with st.expander(
+            f"보유 공정 {len(available_processes):,}개",
+            icon=":material/list:",
+            key="admin_area_process_rename_available_expander",
+        ):
             # 원본 공정명이다. 여기에 표시명을 입히면 붙여넣을 원본을 확인할 수 없다.
             st.dataframe(
                 pd.DataFrame({"공정": available_processes}),
