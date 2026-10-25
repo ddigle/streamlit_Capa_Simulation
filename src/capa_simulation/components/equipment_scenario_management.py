@@ -1374,14 +1374,23 @@ def publish_preview(
     session: EquipmentSession,
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
+    *,
+    official_revisions: Sequence[EquipmentScheduleRevisionSummary] = (),
 ) -> list[str]:
-    """발행 전에 보일 줄 — 지금 공식 → 새 공식, 고른 리비전이 그 시나리오 최신이 아니면 그 사실."""
+    """발행 전에 보일 줄 — 지금 공식 → 새 공식, 고른 리비전이 그 시나리오 최신이 아니면 그 사실.
+
+    지금 공식의 리비전 번호는 그 시나리오 최신·이 세션의 스냅샷·`official_revisions`(공식 시나리오의
+    리비전 목록) 차례로 찾는다 — 공식이 그 시나리오 최신이 아니고 이 세션이 그것을 들고 있지 않으면
+    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다.
+    """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
     if release is not None:
         official = session.catalog.scenario(release.equipment_scenario_id)
         official_name = official.scenario_name if official is not None else "?"
-        official_revision = _revision_no(session, release.schedule_revision_id, official)
+        official_revision = _revision_no(
+            session, release.schedule_revision_id, official, official_revisions
+        )
         current = f"지금 공식 v{release.release_no} · 「{literal_markdown(official_name)}」" + (
             f" r{official_revision}" if official_revision is not None else ""
         )
@@ -1405,6 +1414,7 @@ def _revision_no(
     session: EquipmentSession,
     schedule_revision_id: str,
     scenario: EquipmentScenarioSummary | None,
+    revisions: Sequence[EquipmentScheduleRevisionSummary],
 ) -> int | None:
     if scenario is None:
         return None
@@ -1413,7 +1423,15 @@ def _revision_no(
     if session.snapshot is not None and session.snapshot.schedule is not None:
         if session.snapshot.schedule.schedule_revision_id == schedule_revision_id:
             return session.snapshot.schedule.revision_no
-    return None
+    return next(
+        (
+            item.revision_no
+            for item in revisions
+            if item.schedule_revision_id == schedule_revision_id
+            and item.equipment_scenario_id == scenario.equipment_scenario_id
+        ),
+        None,
+    )
 
 
 def publish_seen_token(
@@ -1481,6 +1499,20 @@ def release_words(release_no: int) -> str:
     return f"v{release_no}" if release_no > 0 else "발행 없음"
 
 
+def _official_revisions(
+    database_path: str, session: EquipmentSession
+) -> tuple[EquipmentScheduleRevisionSummary, ...]:
+    """지금 공식 시나리오의 리비전 목록(캐시 — 고른 시나리오가 공식이면 리비전 표와 같은 칸). 발행이
+    없거나 읽지 못하면 빈 묶음이다(확인 글이 지금 공식 번호만 빼고 선다)."""
+    release = session.catalog.latest_release
+    if release is None:
+        return ()
+    try:
+        return load_equipment_schedule_revisions(database_path, release.equipment_scenario_id)
+    except BOOTSTRAP_ERRORS:
+        return ()
+
+
 def _render_publish(
     database_path: str,
     session: EquipmentSession,
@@ -1490,7 +1522,12 @@ def _render_publish(
     # 앞 회차(누르기 전)에 그린 확인 글의 값 — 이번 회차 값으로 바꿔 두기 전에 꺼낸다.
     seen_before = st.session_state.pop(PUBLISH_SEEN_KEY, None)
     release_no = session.catalog.release_no or 0
-    for line in publish_preview(session, scenario, revision):
+    for line in publish_preview(
+        session,
+        scenario,
+        revision,
+        official_revisions=_official_revisions(database_path, session),
+    ):
         st.caption(line)
     # 배치 차이가 있으면 발행하지 않는다(LY5 「공식으로 올리기」 전까지 — Q4). 발행 쓰기와 같은
     # 판정을 미리 읽어 단추를 끄거나 정리 리비전으로 발행한다는 것을 적는다.
