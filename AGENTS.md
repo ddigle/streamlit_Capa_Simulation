@@ -1858,7 +1858,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
-  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). 지금은 VOC 만 쓴다.
+  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
+  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
+  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3803,6 +3805,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `components/write_guard.write_once` 가 프로세스 잠금 안에서 하고, 「이 세대는 썼다」 는 끊기지 않는 세션 dict 표지에
     적는다. 입력은 부르기 전에 읽고(세션 칸 접근도 끊기는 자리다) 세대 올리기는 뒷정리의 맨 끝에 둔다. 시험은 둘째 회차를
     다른 스레드의 `app._run` 으로 세운다(`tests/test_voc_page.py` 의 `_race`).
+  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
+    회차가 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라 저장소가 거부하고, 방금 한 제 저장을 「다른 사용자가
+    먼저 저장」이라 알렸다(2026-10-26 E2E). 저장 전에 `write_guard.profile_save_marks()` 로 받은 dict 에 성공한
+    `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
+    (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
+    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

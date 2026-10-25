@@ -344,7 +344,19 @@ def load_profile_header(
 
 
 class ProfileVersionConflict(ValueError):
-    """편집을 시작한 뒤 다른 세션이 공용 프로필을 먼저 저장했다. 저장하지 않고 알린다."""
+    """편집을 시작한 뒤 다른 세션이 공용 프로필을 먼저 저장했다. 저장하지 않고 알린다.
+
+    version 대조로 거부했으면 `expected`(편집 시작 version)·`stored`(지금 version)를 함께 든다.
+    화면은 그 짝이 이 세션이 방금 한 저장과 같으면 남의 저장이 아니라 제 단추를 두 번 누른
+    것으로 본다(`components/write_guard.is_own_profile_save`). 그 밖의 거부는 둘 다 `None` 이다.
+    """
+
+    def __init__(
+        self, message: str, *, expected: int | None = None, stored: int | None = None
+    ) -> None:
+        super().__init__(message)
+        self.expected = expected
+        self.stored = stored
 
 
 def require_profile_version(
@@ -373,7 +385,9 @@ def require_profile_version(
         raise ProfileVersionConflict(
             f"다른 사용자가 먼저 {with_object_particle(label)} 저장해 이번 저장은 반영하지 "
             f"않았습니다(편집 시작 v{int(expected_version)} · 지금 v{stored}). 최신 저장본을 "
-            "확인한 뒤 다시 저장하세요."
+            "확인한 뒤 다시 저장하세요.",
+            expected=int(expected_version),
+            stored=stored,
         )
 
 

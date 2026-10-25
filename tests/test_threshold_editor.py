@@ -224,3 +224,42 @@ def test_month_cells_are_float_even_when_no_month_is_filled(database: Path) -> N
     drawn = convert_arrow_bytes_to_pandas_df(editor.proto.arrow_data.data)
 
     assert drawn.loc[:, ["26.01", "26.02", "26.03"]].dtypes.astype(str).tolist() == ["float64"] * 3
+
+
+def test_a_double_press_of_save_reports_the_save_not_a_conflict(database: Path) -> None:
+    """「판정 기준 저장」을 사람 더블클릭 간격으로 두 번 누르면 성공 하나만 알린다(2026-10-26 E2E).
+
+    둘째 누름의 회차가 첫 저장의 rerun 회차를 끊어 편집 시작 version 이 저장 전 그대로 남았고,
+    저장소가 그 누름을 거부해 방금 한 제 저장을 「다른 사용자가 먼저 저장」이라 알렸다. AppTest 는
+    두 요청을 겹칠 수 없어, 누른 화면의 위젯 값과 끊긴 회차가 남긴 편집 시작 version 을 되살려
+    한 번 더 보낸다. 그 뒤 남이 저장했으면 여전히 거부를 알린다.
+    """
+    app = _app(database)
+    app.number_input[0].set_value(110.5)
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 1
+
+    app.session_state[THRESHOLD_BASE_VERSION_KEY] = 0
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not list(app.error), [element.value for element in app.error]
+    assert [element.value for element in app.success] == [
+        "확보율 판정 기준을 공용 설정으로 저장했습니다."
+    ]
+    assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 1
+
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.3, 1.0, empty_securement_threshold_rows(), source="다른 세션", expected_version=1
+    )
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
+    app.session_state[THRESHOLD_BASE_VERSION_KEY] = 0
+    app._run(widget_state=pressed)
+
+    assert any("다른 사용자가 먼저" in element.value for element in app.error)
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "다른 세션")

@@ -21,6 +21,7 @@ from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.write_guard import is_own_profile_save, profile_save_marks
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.cache import (
@@ -46,6 +47,9 @@ CLIPBOARD_CONFIRM_KEY = "admin_area_process_rename_clipboard_confirm"
 EDITOR_KEY = "admin_area_process_rename_editor"
 # 직접 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다.
 BASE_VERSION_KEY = "admin_area_process_rename_base_version"
+# 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+PROCESS_RENAME_SAVE_NAME = "admin_area_process_rename"
+PROCESS_RENAME_SAVED_MESSAGE = "공정 표시명을 공용 설정으로 저장했습니다."
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -225,25 +229,33 @@ def _render_direct_editor(
     expected_version = submitted_base if isinstance(submitted_base, int) else profile.version
     # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
     st.session_state[BASE_VERSION_KEY] = profile.version
+    # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = profile_save_marks()
     try:
         revised = drop_blank_process_rename_rows(
             pd.DataFrame(edited, columns=list(PROCESS_RENAME_COLUMNS))
         )
-        _save_process_rename(
+        saved = _save_process_rename(
             repository,
             revised,
             source=note.strip() or "웹 직접 편집",
             expected_version=expected_version,
         )
+    except ProfileVersionConflict as exc:
+        # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
+        # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
+        clear_global_process_rename_cache()
+        st.session_state.pop(BASE_VERSION_KEY, None)
+        if is_own_profile_save(PROCESS_RENAME_SAVE_NAME, exc.expected, exc.stored):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+            queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
+            st.rerun()
+        st.error(bootstrap_error_message(exc))
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
-        if isinstance(exc, ProfileVersionConflict):
-            # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
-            # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
-            clear_global_process_rename_cache()
-            st.session_state.pop(BASE_VERSION_KEY, None)
     else:
-        queue_flash("process_rename_flash", "공정 표시명을 공용 설정으로 저장했습니다.")
+        save_marks[PROCESS_RENAME_SAVE_NAME] = (expected_version, saved.version)
+        queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
         st.rerun()
 
 
@@ -253,7 +265,7 @@ def _save_process_rename(
     *,
     source: str,
     expected_version: int | None = None,
-) -> None:
+) -> GlobalProcessRename:
     """검증 → 교체 저장 → 캐시 폐기 → 입장 화면 Summary 확인 비우기(그 표시명으로 그린다).
 
     1:1 위반은 반드시 파이썬 `ValueError` 로 먼저 낸다. DB 의 UNIQUE 는 마지막 방어선이고
@@ -261,8 +273,9 @@ def _save_process_rename(
     「현재 전체 교체」를 확인받는 일이라 `expected_version` 없이 부른다(버전 대조는 직접 편집).
     """
     prepared = prepare_process_rename_rules(rules)
-    repository.replace_global_process_rename(
+    saved = repository.replace_global_process_rename(
         prepared, source=source, expected_version=expected_version
     )
     clear_global_process_rename_cache()
     forget_intro_summary_check()
+    return saved
