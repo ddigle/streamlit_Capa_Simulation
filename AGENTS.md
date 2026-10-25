@@ -1159,6 +1159,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS). 화면에서는 제목이 숨어(흐름에서 빠진다) 끝
   칸만 오른쪽 끝에 선다. 제목이 보이는 인쇄에서는 한 줄에 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려가고 제목은 접히지
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
+- `src/capa_simulation/components/equipment_master_grid.py` (+ `equipment_master_grid_assets/` HTML·CSS·JS) — 가용설비 현황
+  「설비 마스터」 탭 표(Components v2, 그림자 DOM, 개편 B1)의 등록·그리기·받기. **화면에는 아직 잇지 않았다**(B1-c 가 탭 본문에서
+  부르고, 그 탭이 열린 회차에만 모듈을 불러온다 — 모듈을 읽을 때 등록한다, `test_benchmark_home.py`).
+  - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·저장
+    전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
+    잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
+  - data 는 `services/equipment_grid` 의 dict + 팔레트(`_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 아홉 —
+    대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」), 트리거는
+    불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·`goto` 이다. 받기 콜백이 꼴을 거르고(표 트리거는
+    그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.
+  - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인 필요, 전체), 칸 묶음·정렬·
+    고름(브라우저 몫 — 칸 묶음만 localStorage), 가상 스크롤(줄 34px), 칸 고치기 키(Enter·Esc·Tab·↑↓·F2), 엑셀 여러 칸 붙여넣기
+    (`paste` 이벤트의 `clipboardData` 만), 값 넣기·날짜 밀기·지우기·되살리기·되돌리기, 상세 칸·저장 전 변경의 칸/호기 되돌리기.
+    업무 검증은 하지 않는다. 데이터 글은 `textContent` 로만, 처리한 키는 `stopPropagation`(Streamlit 단축키가 글자를 먹는다).
+    순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
@@ -3452,6 +3467,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **팝업(`st.dialog`) 안에 마운트하는 Components v2 컴포넌트는 그림자 DOM 에 가두지 않는다**(`isolate_styles=False`) —
   팝업의 포커스 순서가 그림자 DOM 안을 보지 못해 Tab 이 닫기 단추로 가 고친 값을 버린다. 서식은 고유 클래스 접두어로만
   건다(월 입력 컴포넌트는 위 「월 입력」 항목).
+- **편집본을 바꾸는 Components v2 조작은 트리거가 아니라 상태 값 하나(출납 `outbox`)로 보낸다.** 1.63 의 위젯 상태 합치기는
+  단추 트리거만 앞 값을 살리고 CCv2 `json_trigger_value` 는 살리지 않아, 실행 중 회차가 있으면 잇단 트리거가 앞 것을 덮는다.
+  상태 값은 「가장 새 값」 이 이기므로 늘 **반영되지 않은 조작 전부**(마운트 id·seq·브라우저 시각 `at`)를 싣고, 파이썬은 마운트별
+  마지막 seq 기억으로 seq 가 큰 것만 `(at, mount, seq)` 차례로 한 번 반영한 뒤 그 마운트의 `ack` 를 data 에 실어 돌려준다(설비 마스터
+  표 — `services/equipment_grid.pending_ops`·`apply_ops`). 편집본 출발점(`base`)이 달라진 op 는 반영하지 않고 버린다. 브라우저는
+  300ms 조용하면 보내고, 초점이 컴포넌트 밖으로 나가거나 창이 숨으면 바로 보낸다 — 보낼 것이 있을 때만(빈 값을 다시 적으면 회차만
+  는다). 잃어도 되는 화면 조작(열기·목록에서 빼기)만 트리거다.
 - Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
   try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
