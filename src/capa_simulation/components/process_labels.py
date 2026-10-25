@@ -88,7 +88,7 @@ class ProcessLabels:
         받는다(key 없는 상자는 글자가 바뀌면 새 위젯으로 서므로 그럴 칸이 없다). 표시명을 쓰는
         화면의 공정 선택 상자는 모두 이것을 쓴다(AGENTS 8장 ② — Space 현황·설비 마스터 탭은 원본
         이름). 표·그림·버튼은 이 함수를 쓰지 않으므로 겹친 두 공정이 같은 글자로 보인다(Admin `Proc
-        Rename` 이 겹침을 경고한다).
+        Rename` 이 겹침을 경고한다). 그림의 범주 축은 `category_axis` 로 줄을 가른다.
         """
         values = list(dict.fromkeys(_option_text(option) for option in options))
         reserved_texts = {_option_text(item) for item in reserved}
@@ -117,6 +117,22 @@ class ProcessLabels:
             used.add(normalize_process_text(candidate))
             shown[value] = candidate
         return OptionLabelFormatter(shown)
+
+    def category_axis(self, values: Iterable[object]) -> ProcessCategoryAxis:
+        """공정을 범주 축에 늘어놓는 Figure 의 범주 값과 보이는 글자.
+
+        Plotly 범주 축은 **같은 글자를 한 범주로 합친다.** 표시명을 축 값으로 바로 쓰면 표시명이
+        다른 공정의 원본과 같을 때(Mold → 「Pre B/D」, Pre B/D 는 원본) 두 공정의 막대가 한 줄에
+        겹쳐 값 글자가 가려지고 줄 수가 줄어 순위 차례가 틀렸다(2026-10-25 E2E). 그래서 축 값은
+        원본 공정명이고 표시명은 눈금 글자(`ticktext`)로만 싣는다 — 겹친 두 공정은 같은 글자의 두
+        줄로 보인다(표·버튼과 같은 갈래). 넘기는 공정은 그 그림 안에서 서로 달라야 한다(공정으로
+        묶은 표). hover 의 `%{y}` 는 원본이므로 부르는 쪽이 `texts` 를 customdata 로 싣는다.
+        """
+        categories = [_option_text(value) for value in values]
+        return ProcessCategoryAxis(
+            values=tuple(categories),
+            texts=tuple(apply_process_label(value, self.labels) for value in categories),
+        )
 
     def value_labels(self, *columns: str) -> dict[str, Mapping[str, str]]:
         """월별 표의 `value_labels=` 인자. 지정한 분류 컬럼에만 매핑을 건다."""
@@ -202,6 +218,26 @@ class ProcessLabels:
                 and target not in self.labels
             }
         )
+
+
+@dataclass(frozen=True)
+class ProcessCategoryAxis:
+    """`ProcessLabels.category_axis` 의 결과.
+
+    `values` 는 trace 의 범주 값(원본 공정), `texts` 는 같은 차례의 보이는 글자(표시명)다.
+    """
+
+    values: tuple[str, ...]
+    texts: tuple[str, ...]
+
+    def layout(self) -> dict[str, object]:
+        """`update_xaxes`·`update_yaxes` 인자. 범주마다 눈금 하나에 표시명을 단다."""
+        return {
+            "type": "category",
+            "tickmode": "array",
+            "tickvals": list(self.values),
+            "ticktext": list(self.texts),
+        }
 
 
 @dataclass(frozen=True)

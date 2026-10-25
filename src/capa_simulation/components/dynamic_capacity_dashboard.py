@@ -20,10 +20,12 @@ def build_process_comparison_figure(
 ) -> go.Figure:
     """Compare equipment performance and Capa realization for every process.
 
-    `process_labels` 는 y축 카테고리 표기에만 쓴다. 정렬·색·값은 원본 프레임 그대로다.
+    `process_labels` 는 y축 눈금과 hover 의 공정 글자에만 쓴다. 정렬·색·값은 원본 프레임
+    그대로이고, 범주 값은 원본 공정이라 표시명이 다른 공정의 원본과 같아도 두 줄로 갈린다
+    (`ProcessLabels.category_axis`).
     """
     prepared = process_summary.sort_values("Capa 실현률", ascending=True, kind="stable")
-    axis_processes = process_labels.series(prepared["공정"]) if process_labels else prepared["공정"]
+    axis = (process_labels or ProcessLabels()).category_axis(prepared["공정"])
     colors = prepared["상태"].map(
         {
             "정상": tokens.STATUS_SECURE,
@@ -35,7 +37,8 @@ def build_process_comparison_figure(
     figure.add_trace(
         go.Bar(
             name="설비 성능 실현률",
-            y=axis_processes,
+            y=axis.values,
+            customdata=axis.texts,
             x=prepared["설비 성능 실현률"],
             orientation="h",
             # 막대 굵기 25px 라 중간 등급이다. 가로 막대라 값 쪽인 오른쪽 끝이 둥글다.
@@ -47,13 +50,14 @@ def build_process_comparison_figure(
             texttemplate="%{text:.1%}",
             textposition="outside",
             cliponaxis=False,
-            hovertemplate="%{y}<br>설비 성능 실현률 %{x:.1%}<extra></extra>",
+            hovertemplate="%{customdata}<br>설비 성능 실현률 %{x:.1%}<extra></extra>",
         )
     )
     figure.add_trace(
         go.Bar(
             name="Capa 실현률",
-            y=axis_processes,
+            y=axis.values,
+            customdata=axis.texts,
             x=prepared["Capa 실현률"],
             orientation="h",
             marker={
@@ -65,7 +69,7 @@ def build_process_comparison_figure(
             texttemplate="<b>%{text:.1%}</b>",
             textposition="outside",
             cliponaxis=False,
-            hovertemplate="%{y}<br>Capa 실현률 %{x:.1%}<extra></extra>",
+            hovertemplate="%{customdata}<br>Capa 실현률 %{x:.1%}<extra></extra>",
         )
     )
     _apply_common_layout(figure)
@@ -77,7 +81,7 @@ def build_process_comparison_figure(
     )
     upper_bound = max(1.05, float(prepared["설비 성능 실현률"].max()) * 1.12)
     figure.update_xaxes(tickformat=".0%", range=[0, upper_bound], title=None)
-    figure.update_yaxes(title=None, autorange=True)
+    figure.update_yaxes(title=None, autorange=True, **axis.layout())
     return figure
 
 

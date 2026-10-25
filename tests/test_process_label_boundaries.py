@@ -605,6 +605,12 @@ def _process_summary() -> pd.DataFrame:
     )
 
 
+def _axis_texts(figure: go.Figure) -> list[str]:
+    """범주 축 눈금에 보이는 글자(trace 의 범주 값 차례)."""
+    shown = dict(zip(figure.layout.yaxis.tickvals, figure.layout.yaxis.ticktext, strict=True))
+    return [shown[str(value)] for value in figure.data[0].y]
+
+
 def test_dynamic_capacity_comparison_axis_shows_the_display_name() -> None:
     from capa_simulation.components.dynamic_capacity_dashboard import (
         build_process_comparison_figure,
@@ -612,7 +618,10 @@ def test_dynamic_capacity_comparison_axis_shows_the_display_name() -> None:
 
     figure = build_process_comparison_figure(_process_summary(), process_labels=LABELS)
 
-    assert [str(value) for value in figure.data[0].y] == ["MOLD", "절단"]
+    assert _axis_texts(figure) == ["MOLD", "절단"]
+    for trace in figure.data:
+        assert list(trace.customdata) == ["MOLD", "절단"]
+        assert trace.hovertemplate.startswith("%{customdata}<br>")
 
 
 def test_dynamic_capacity_comparison_axis_stays_original_without_labels() -> None:
@@ -623,3 +632,26 @@ def test_dynamic_capacity_comparison_axis_stays_original_without_labels() -> Non
     figure = build_process_comparison_figure(_process_summary())
 
     assert [str(value) for value in figure.data[0].y] == ["MOLD", "SAW"]
+    assert _axis_texts(figure) == ["MOLD", "SAW"]
+
+
+def test_dynamic_capacity_comparison_keeps_two_rows_for_a_colliding_display_name() -> None:
+    """표시명이 다른 공정의 원본과 같아도(SAW → 「MOLD」) 두 줄이다(2026-10-25 E2E).
+
+    Plotly 범주 축은 같은 글자를 한 범주로 합쳐, 표시명을 축 값으로 쓰면 두 공정의 막대가 한
+    줄에 겹쳐 값 글자가 가려지고 순위 차례가 틀렸다. 범주 값은 원본이고 눈금만 같은 글자다.
+    """
+    from capa_simulation.components.dynamic_capacity_dashboard import (
+        build_process_comparison_figure,
+    )
+
+    colliding = process_labels_from_rules(
+        pd.DataFrame([("SAW", "MOLD")], columns=list(PROCESS_RENAME_COLUMNS)), version=4
+    )
+
+    figure = build_process_comparison_figure(_process_summary(), process_labels=colliding)
+
+    for trace in figure.data:
+        assert len(set(trace.y)) == len(_process_summary())
+    assert figure.layout.yaxis.type == "category"
+    assert _axis_texts(figure) == ["MOLD", "MOLD"]

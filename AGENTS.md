@@ -1556,6 +1556,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.frame` 은 화면용 복사본, `series` 는 행마다 바꾼 것과 같은 값·dtype 이다
     (`tests/test_process_label_series.py`). CSV 로 내보낼 프레임에는 쓰지 않는다.
   - `unique_format_func` 는 선택 상자 하나의 `format_func` 로 겹친 글자를 「표시명 (원본)」·「 (2)」로 가른다.
+  - `category_axis` 는 공정을 범주 축에 늘어놓는 그림의 범주 값(원본)과 눈금·hover 글자(표시명)다(8장 ③).
     `ProcessLabelFormatter` 는 값을 글자로 주고받지 않는 자리(버튼·Figure)용이다.
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소이고 계산 캐시 키·`content_token` 에는 넣지 않는다.
 - `src/capa_simulation/components/process_rename_management.py` — Admin Area `Proc Rename` 탭. 공용 공정 표시명의
@@ -3314,7 +3315,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   상자 — 아래 9장), 기준 정보 STEP 복제·삭제 대상(`capacity_step_route` — 글자에 경로 키 전부·MCP/STEP 을
   싣고 공정은 갈라, 같은 글자가 남으면 「 #n」; 값은 행 위치가 아니라 경로 키),
   ③ Figure 라벨(LOB 공정명 annotation·hover, 상세 B/N 이름·hover, 재공 격자 제목,
-  Dynamic Capa 공정 비교 막대의 y축, 가용설비 현황 Main 생애주기 Gantt 의 hover),
+  Dynamic Capa 공정 비교 막대의 y축, 실적 세 화면 공정 우선순위 막대·월 × 공정 Gap 격자의 y축, 가용설비 현황 Main
+  생애주기 Gantt 의 hover). 공정을 **범주 축 값**으로 늘어놓는 그림은 축 값을 원본 공정으로 두고 눈금(`ticktext`)과
+  hover(customdata)만 표시명이다(`ProcessLabels.category_axis`) — Plotly 범주 축은 같은 글자를 한 줄로 합쳐, 표시명을
+  축 값으로 쓰면 표시명이 다른 공정의 원본과 같을 때 두 막대가 한 줄에 겹쳐 값이 가려지고 순위 차례가 틀렸다
+  (2026-10-25 E2E). 겹친 두 공정은 같은 글자의 두 줄로 보인다,
   ④ `st.dataframe` 조회 표(제외·누락 안내 목록, STEP 구성 요약, 설비대수 표시 표,
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위, 가용설비 현황 Main 의 `공정소분류` 칸 — 공정별
   내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static 대비 일정의 칸 호기·호기 목록·
