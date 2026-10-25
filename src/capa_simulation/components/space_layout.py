@@ -427,7 +427,11 @@ def _mark_swatches() -> dict[str, tuple[str, str]]:
 
 
 def space_legend_markup(
-    counts: Mapping[str, float] | None, *, choice: ColorChoice, as_of: date | None = None
+    counts: Mapping[str, float] | None,
+    *,
+    choice: ColorChoice,
+    as_of: date | None = None,
+    fills: bool = True,
 ) -> str:
     """층 상세 머리 줄 오른쪽의 범례. 도면 안이 아니라 머리 줄에 두어 도면이 테두리 안을 다 쓴다.
 
@@ -435,17 +439,21 @@ def space_legend_markup(
     그리고 반입 전(주황 점선)·반출/이설 예정(노랑 두 겹)·정지 중(빗금)·운영 비가동·미확인(「!」) —
     끝에 기준일을 단다. `None`(배치 편집 중)이면 채우기 뜻만(체크한 그룹·그 밖·보관·지연) 보인다 —
     편집 화면은 테·덧표시를 그리지 않고, 편집본은 저장본과 대수가 다르다.
+
+    `fills` 가 거짓이면 채우기 칸(그룹·그 밖·보관·지연)을 싣지 않는다 — 색 기준 「필요 단축」 을
+    켰는데 계획을 못 읽은 회차는 상자가 모두 기본 회색이고 도면이 지연·보관 면을 칠하지 않는다
+    (결정 D12·R5). 그 회차에 「지연 1대」 견본을 세우면 도면에서 찾을 수 없는 빨강이 된다.
     """
-    fills = [(style.label, _fill_swatch(style.fill), "") for style in choice.checked()]
-    fills += [
+    fill_entries = [(style.label, _fill_swatch(style.fill), "") for style in choice.checked()]
+    fill_entries += [
         (LEGEND_DEFAULT, _fill_swatch(tokens.SPACE_UNIT_DEFAULT_FILL), ""),
         (LEGEND_STORAGE, _fill_swatch(tokens.SPACE_UNIT_STORAGE_FILL), ""),
         (LEGEND_DELAY, _fill_swatch(tokens.SPACE_UNIT_DELAY_FILL), ""),
     ]
-    entries = fills
+    entries = fill_entries if fills else []
     if counts is not None:
         marks = [(label, swatch, inner) for label, (swatch, inner) in _mark_swatches().items()]
-        entries = [entry for entry in fills + marks if counts.get(entry[0], 0) > 0]
+        entries = [entry for entry in entries + marks if counts.get(entry[0], 0) > 0]
     chips = []
     for label, swatch, inner in entries:
         text = label if counts is None else f"{label} {format_unit_count(counts[label])}대"

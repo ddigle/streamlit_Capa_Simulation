@@ -114,6 +114,7 @@ __all__ = [
     "render_layer_basis",
     "render_layer_controls",
     "render_layer_stop",
+    "forget_arrival_note",
     "render_arrival_filter_note",
     "switch_to_queued_shortening",
     "unit_keys_by_name",
@@ -126,8 +127,9 @@ SPACE_SHORT_PROCESS_PREFIX: Final = "space_shortening_process"
 SPACE_SHORT_SWITCH_KEY: Final = "space_shortening_switch_v1"
 SPACE_SHORT_TABLE_PREFIX: Final = "space_shortening_table"
 _TABLE_GENERATION_KEY: Final = "space_shortening_table_generation"
-# 「도면에서 보기」 로 온 공정 — 공정소분류 필터에 걸러졌는지 알리는 한 줄(받은 회차부터 다른 링크가
-# 올 때까지).
+# 「도면에서 보기」 로 온 공정 — 공정소분류 필터에 걸러졌는지 알리는 한 줄. (공정, 도착 층, 도착 때
+# 필터)를 쥐고 **그 층·필터가 처음 바뀔 때**(또는 보기를 끌 때) 거둔다 — 알림은 도착한 링크에 대한
+# 것이라 나중에 사용자가 고른 상관없는 필터에 남지 않는다.
 _ARRIVED_PROCESS_KEY: Final = "space_shortening_arrived_process"
 _OPEN_BOARD_PREFIX: Final = "space_shortening_open_board"
 LAYER_PARAM: Final = "layer"
@@ -182,16 +184,19 @@ def consume_layer_link(
     clear_keys: Sequence[str],
     edit_keys: Sequence[str],
     inactive: Collection[FloorKey],
+    filter_key: str,
 ) -> bool:
     """필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=C1-2F&proc=W/B&target=1.1`)를 한 번
     받는다.
 
     색 기준 칸 = 필요 단축, 목표 칸 = `target`(다섯 가운데 하나일 때만), 그 층의 공정 칩 칸 =
     `proc`(선택지 확인은 칩을 그릴 때), `clear_keys`(누른 호기) 비움, `edit_keys`(층·FAB 배치 편집
-    토글) 끔 — 링크로 보러 왔다. `floor` 가 사용 층이면 세션 층을 **덮는다**(지금 규칙은 세션이 먼저
-    — 링크만 예외), 없거나 비활성 층이면(링크 대상이 아니다) 세션 층을 지워 FAB 전체로 연다. 남길
-    인자(`floor`·테마·그 밖)는 `from_dict` **한 번**으로 다시 싣는다(기록이 키 수만큼 쌓이지 않게).
-    받았으면 참이다(받는 쪽이 사이드바를 맞추려고 회차를 한 번 더 돈다).
+    토글) 끔 — 링크로 보러 왔다. `filter_key` 는 Space 공정소분류 필터 칸이다 — 도착 때 값을 알림
+    칸에 함께 적어 그 필터가 바뀌면 알림을 거둔다(필터 자체는 건드리지 않는다). `floor` 가 사용
+    층이면 세션 층을 **덮는다**(지금 규칙은 세션이 먼저 — 링크만 예외), 없거나 비활성 층이면(링크
+    대상이 아니다) 세션 층을 지워 FAB 전체로 연다. 남길 인자(`floor`·테마·그 밖)는 `from_dict` **한
+    번**으로 다시 싣는다(기록이 키 수만큼 쌓이지 않게). 받았으면 참이다(받는 쪽이 사이드바를
+    맞추려고 회차를 한 번 더 돈다).
     """
     params = st.query_params
     if params.get(LAYER_PARAM) != LAYER_SHORT:
@@ -216,7 +221,11 @@ def consume_layer_link(
     process = params.get(PROCESS_PARAM)
     process = process.strip() if isinstance(process, str) else ""
     if process:
-        st.session_state[_ARRIVED_PROCESS_KEY] = process
+        st.session_state[_ARRIVED_PROCESS_KEY] = (
+            process,
+            floor,
+            _filter_values(st.session_state.get(filter_key)),
+        )
         if floor is not None:
             st.session_state[process_chip_key(floor)] = process
     else:
@@ -451,13 +460,32 @@ def render_layer_stop(stop: ShorteningStop) -> None:
     )
 
 
-def render_arrival_filter_note(selected_processes: Sequence[str]) -> None:
+def _filter_values(value: object) -> tuple[str, ...]:
+    """공정소분류 필터 칸 값(목록)을 견줄 수 있는 글자 튜플로."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value)
+
+
+def forget_arrival_note() -> None:
+    """도착 알림 칸을 거둔다 — 보기가 켜지지 않은 회차에 부른다(끈 뒤 다시 켜도 옛 링크 알림이
+    서지 않게)."""
+    st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
+
+
+def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKey | None) -> None:
     """「도면에서 보기」 로 온 공정이 Space 공정소분류 필터에 걸러졌으면 한 줄(필터는 건드리지
-    않는다)."""
-    process = st.session_state.get(_ARRIVED_PROCESS_KEY)
-    if not isinstance(process, str) or not process or not selected_processes:
+    않는다). 도착한 층·필터가 그대로인 동안만 — 층을 옮기거나 필터를 바꾸면 칸을 거두고 다시 서지
+    않는다."""
+    held = st.session_state.get(_ARRIVED_PROCESS_KEY)
+    if not (isinstance(held, tuple) and len(held) == 3 and isinstance(held[0], str)):
+        st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
         return
-    if process in set(selected_processes):
+    process, arrived_floor, arrived_filter = held
+    if arrived_floor != floor or arrived_filter != _filter_values(list(selected_processes)):
+        st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
+        return
+    if not process or not selected_processes or process in set(selected_processes):
         return
     st.caption(
         f":material/filter_alt_off: 공정소분류 필터에 「{literal_markdown(process)}」가 없어 이 "

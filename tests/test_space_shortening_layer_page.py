@@ -18,10 +18,10 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from shortening_script import shortening_script
+from shortening_script import months_from_today, shortening_script
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
-from test_equipment_scenario_repository import _clone
+from test_equipment_scenario_repository import _clone, _request, _set
 
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.io.reference_cache as reference_cache
@@ -29,6 +29,7 @@ import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components import space_layout_editor, space_shortening_view
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_SPACE,
     SHORTENING_HIGHLIGHT_KEY,
@@ -365,6 +366,21 @@ def test_an_assumption_session_shares_the_shortening_key_and_names_its_scenario(
     글은 없다."""
     repository = _saved_database(tmp_path)
     clone = _clone(repository)
+    # 복제만 하면 일정이 공식과 같아 공식 스냅샷으로 계산해도 키가 같다(리뷰 — 그러면 이 시험이 LY6
+    # 를 지키지 못한다). 가정 시나리오의 Qual 일정 하나를 옮겨 저장해 공식 키와 갈라 둔다.
+    common = repository.latest_revision_id()
+    assert common is not None and clone.latest_schedule_revision_id is not None
+    session = repository.load_merged_snapshot(common, clone.latest_schedule_revision_id)
+    qualified = session.equipment.loc[session.equipment["Qual일정"].notna()]
+    name = str(qualified["설비명"].iloc[0])
+    moved = pd.Timestamp(qualified["Qual일정"].iloc[0]) + pd.Timedelta(days=9)
+    repository.save_equipment(
+        _request(
+            session,
+            clone.equipment_scenario_id,
+            equipment=_set(session.equipment, name, "Qual일정", moved),
+        )
+    )
     database = tmp_path / "equipment.duckdb"
     selection = {"scenario_id": clone.equipment_scenario_id, "schedule_revision_id": None}
     board = _app(database, SHORTENING_PAGE)
@@ -376,8 +392,15 @@ def test_an_assumption_session_shares_the_shortening_key_and_names_its_scenario(
     _turn_on(_ok(space.run()))
     assert plan_keys["keys"][-1] == board_key
     texts = _texts(space)
-    assert any("설비 시나리오 「셋업 실무 · r1 · 가정」 기준" in text for text in texts), texts
+    assert any("설비 시나리오 「셋업 실무 · r2 · 가정」 기준" in text for text in texts), texts
     assert not any("다를 수 있습니다" in text for text in texts)
+    # 공식 설비 시나리오 세션의 Space 키와는 다르다 — 설비 마스터 지문이 갈린다(가정 일정으로
+    # 계산한다).
+    official = _app(database)
+    _turn_on(_ok(official.run()))
+    official_key = plan_keys["keys"][-1]
+    assert official_key != board_key
+    assert official_key[1] != board_key[1]
 
 
 # ------------------------------------------------------------------ T-P7·T-P11 못 읽음
@@ -401,6 +424,38 @@ def test_a_missing_scenario_warns_once_and_keeps_space_as_it_is(
     view = _views(editor_calls, "floor")[-1]
     assert "shortBadges" not in view and view.get("asOfPinned") == PINNED_NOTE
     assert not [item for item in view["items"] if "layer" in item]
+
+
+def _legend(app: AppTest) -> str:
+    """층 상세 머리 줄 범례(끝에 「기준 YYYY-MM-DD」)."""
+    found = [str(item.value) for item in app.markdown if "기준 20" in str(item.value)]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def test_a_stopped_layer_legend_shows_no_fill_swatches_the_drawing_does_not_paint(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """R5·D12 — 켠 동안 계획을 못 읽은 회차는 고정 줄이 실려 뷰어가 모든 호기의 지연·보관 면을 끈다.
+    범례도 채우기 칸(그 밖·지연·보관)을 싣지 않고 테·덧표시만이다 — 도면에 없는 빨강·검정 견본을
+    세우지 않는다(리뷰: C1 1F 「지연 1대」). 공정구분이면 그 칸이 그대로 선다(대조)."""
+    app = _app(_empty_database(tmp_path), fail_scenario=True)
+    _ok(app.run())
+    delayed_floors = []
+    for building, floor in (("C1", "1F"), ("C1", "2F"), ("C2", "2F"), ("C2", "3F"), ("C3", "1F")):
+        app.session_state[SPACE_COLOR_BASIS_KEY] = COLOR_BASIS_LINE_TYPE
+        app.session_state["space_status_selected_building"] = building
+        app.session_state["space_status_selected_floor"] = floor
+        _ok(app.run())
+        if any(f"{label} " in _legend(app) for label in ("지연", "보관")):
+            delayed_floors.append((building, floor))
+        app.session_state[SPACE_COLOR_BASIS_KEY] = COLOR_BASIS_SHORTENING
+        _ok(app.run())
+        assert _views(editor_calls, "floor")[-1].get("asOfPinned") == PINNED_NOTE
+        legend = _legend(app)
+        for label in ("그 밖", "지연", "보관"):
+            assert f"{label} " not in legend, (building, floor, legend)
+    assert delayed_floors, "대조 — 합성 fleet 에 지연·보관 호기가 있는 층이 있어야 뜻이 있다"
 
 
 def test_an_empty_cutoff_stops_with_the_cutoff_first_line(
@@ -600,3 +655,341 @@ def test_the_shortening_cards_offer_the_drawing_link_only_for_saved_equipment(
 def test_the_contributing_months_read_as_year_month() -> None:
     assert space_shortening_view._months_text("202611, 202612") == "2026-11, 2026-12"
     assert space_shortening_view._months_text("") == ""
+
+
+# ------------------------------------------------------------------ 리뷰 고침 — 층·도착·표·도움말
+
+
+def _loose_kinds(app: AppTest) -> list[str]:
+    """층 보기 칸 「도면에 자리가 없는 호기」 표의 구분 칸(좌표 없음·추가)."""
+    for table in app.dataframe:
+        frame = table.value
+        if list(frame.columns[:2]) == ["구분", "호기"]:
+            return [str(kind) for kind in frame["구분"]]
+    return []
+
+
+def test_an_inactive_floor_detail_keeps_the_view_but_carries_no_virtual_units(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """층 사용 명세 8-2 — 비활성 층 상세에서도 보기는 배너 아래 그대로 선다(그 층에 남은 호기를 열어
+    보여 준다). 추가N 은 붙이지 않는다(새 호기를 들일 자리가 아니다). 처음 판은 그 층에서 보기를
+    쉬어 페이더·공정구분 색으로 돌아갔다."""
+    repository = _saved_database(tmp_path)
+    database = tmp_path / "equipment.duckdb"
+    app = _app(database)
+    _turn_on(_ok(app.run()))
+    building, floor = _busiest_floor(_views(editor_calls, "fab")[-1])
+    active = _probe_floor(app, editor_calls, building, floor)
+    assert active.get("shortBadges")
+    assert "추가" in _loose_kinds(app), "대조 — 사용 층이면 이 층 공정의 추가N 이 선다"
+
+    assert repository.save_floor_states(
+        {(building, floor): "UNUSED"}, expected_version=0, source="test"
+    )
+    clear_equipment_repository()
+    off = _app(database)
+    off.session_state[SPACE_COLOR_BASIS_KEY] = COLOR_BASIS_SHORTENING
+    off.session_state["space_status_selected_building"] = building
+    off.session_state["space_status_selected_floor"] = floor
+    _ok(off.run())
+    view = _views(editor_calls, "floor")[-1]
+    assert view.get("asOfPinned") == PINNED_NOTE
+    assert [badge["key"] for badge in view["shortBadges"]] == [
+        badge["key"] for badge in active["shortBadges"]
+    ]
+    texts = _texts(off)
+    assert any("이 층은 비활성" in text for text in texts)
+    assert not any("비활성 층에는 필요 단축 보기를 싣지 않습니다" in text for text in texts)
+    assert "추가" not in _loose_kinds(off)
+    assert any(text.startswith("**:material/event_upcoming: 이 층 ·") for text in texts)
+
+
+def test_the_floor_view_counts_only_units_drawn_today_like_the_fab_counts(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """켠 동안 기준일은 오늘이다 — 층 보기 칸(공정 칩·추가N)은 오늘 그려지는 행으로 센다. 뷰어
+    roster (페이더 범위 합집합)로 세면 지난 12개월 안에 나간 호기의 공정이 그 층 칩·추가N 에 서지만
+    FAB 층 대수(오늘 배치 행)에는 없다(리뷰)."""
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+    today = date.today()
+    master = sample_equipment_master(anchor_date=today)
+    # C1 1F 의 Final Test 호기는 하나다 — 20일 전에 반출을 마쳤다(도면 이탈, 범위 안).
+    gone = master["동"].eq("C1") & master["층"].eq("1F") & master["공정소분류"].eq("Final Test")
+    assert int(gone.sum()) == 1
+    master.loc[gone, "반출/이설일정"] = pd.Timestamp(today - timedelta(days=20))
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        master,
+        sample_downtime_schedule(anchor_date=today),
+        note="처음",
+    )
+    _cutoff(repository)
+    app = _app(tmp_path / "equipment.duckdb")
+    _turn_on(_ok(app.run()))
+    _probe_floor(app, editor_calls, "C1", "1F")
+    chips: Any = next(
+        item for item in app.get("button_group") if getattr(item, "label", None) == "이 층 공정"
+    )
+    options = [str(option) for option in chips.options]
+    # 칩 글은 「공정 · n대 …」 꼴이라 앞머리로 가른다. 오늘 그려지는 공정만 선다.
+    heads = {option.split(" · ")[0] for option in options}
+    assert "Final Test" not in heads, options
+    assert {"TC Bonding", "Mold"} <= heads, options
+
+
+def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """T-P9 덧붙임 — 링크 공정이 Space 공정소분류 필터에 걸러졌으면 조작 줄에 알림 한 줄(필터는
+    건드리지 않는다). 알림은 도착한 링크에 대한 것이라 그 필터·층이 처음 바뀌면 거두고, 나중에
+    사용자가 고른 상관없는 필터에 다시 서지 않는다(리뷰)."""
+    database = _empty_database(tmp_path)
+    probe = _app(database)
+    _turn_on(_ok(probe.run()))
+    building, floor = _busiest_floor(_views(editor_calls, "fab")[-1])
+    note = "공정소분류 필터에 「Final Test」가 없어"
+
+    app = _app(database)
+    app.session_state["space_status_process_filter"] = ["Mold"]
+    app.query_params["layer"] = "short"
+    app.query_params["floor"] = f"{building}-{floor}"
+    app.query_params["proc"] = "Final Test"
+    _ok(app.run())
+    assert app.session_state["space_status_process_filter"] == ["Mold"]
+    assert any(note in text for text in _texts(app)), _texts(app)
+    # 같은 층·같은 필터로 한 회차 더(다른 조작) — 그대로 선다.
+    _level(app).set_value(1.2)
+    _ok(app.run())
+    assert any(note in text for text in _texts(app))
+    # 필터를 바꾸면 거둔다 — 그 뒤 다른 필터(여전히 Final Test 없음)에도 다시 서지 않는다.
+    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Mold", "Burn-In"])
+    _ok(app.run())
+    assert not any(note in text for text in _texts(app))
+    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Underfill"])
+    _ok(app.run())
+    assert not any(note in text for text in _texts(app))
+
+    # 층을 옮겨도 거둔다.
+    moved = _app(database)
+    moved.session_state["space_status_process_filter"] = ["Mold"]
+    moved.query_params["layer"] = "short"
+    moved.query_params["floor"] = f"{building}-{floor}"
+    moved.query_params["proc"] = "Final Test"
+    _ok(moved.run())
+    assert any(note in text for text in _texts(moved))
+    other = next(key for key in (("C4", "2F"), ("C1", "2F")) if key != (building, floor))
+    moved.session_state["space_status_selected_building"] = other[0]
+    moved.session_state["space_status_selected_floor"] = other[1]
+    _ok(moved.run())
+    assert not any(note in text for text in _texts(moved))
+    moved.session_state["space_status_selected_building"] = building
+    moved.session_state["space_status_selected_floor"] = floor
+    _ok(moved.run())
+    assert not any(note in text for text in _texts(moved))
+
+
+def test_the_floor_list_leaves_the_max_days_blank_on_floors_without_units(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """층 목록 표 「최대 단축(일)」 은 단축 호기가 없는 층에서 비어 있다 — 리터럴 "None" 대신 빈칸
+    (`placeholder=""`, 자리 없는 호기 표와 같은 꼴)."""
+    app = _app(_empty_database(tmp_path))
+    _turn_on(_ok(app.run()))
+    table = next(item for item in app.dataframe if "최대 단축(일)" in list(item.value.columns))
+    assert table.value["최대 단축(일)"].isna().any()
+    assert table.proto.HasField("placeholder") and table.proto.placeholder == ""
+
+
+def test_both_layout_edit_toggles_say_the_shortening_view_rests_while_editing(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """명세 4-4 — 배치 편집 토글 도움말이 편집 중에는 필요 단축 보기를 쉰다고 켜기 전에
+    말한다(FAB·층)."""
+    _saved_database(tmp_path)
+    app = _app(tmp_path / "equipment.duckdb")
+    _turn_on(_ok(app.run()))
+    fab_help = str(app.toggle(key="space_fab_edit_mode").help)
+    assert "편집하는 동안 그 보기를 쉬고" in fab_help, fab_help
+    _probe_floor(app, editor_calls, "C1", "1F")
+    floor_help = str(app.toggle(key=EDIT_KEY).help)
+    assert "편집하는 동안 그 보기를 쉬고" in floor_help, floor_help
+
+
+def test_a_screen_without_units_drops_a_left_over_shortening_basis(tmp_path: Path) -> None:
+    """호기가 없는 화면(설비 저장본 없음 + 샘플 끔)은 색 기준 라디오를 세우지 않는다 — 세션에 남은
+    「필요 단축」 이면 사이드바 시나리오·조회기간 줄을 끌 길이 없다. 페이지가 기본 값으로 적고 회차
+    끝에 한 번 더 돌아 줄을 걷는다(리뷰)."""
+    app = _app(_empty_database(tmp_path))
+    app.session_state[SPACE_COLOR_BASIS_KEY] = COLOR_BASIS_SHORTENING
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    _ok(app.run())
+    assert app.session_state[SPACE_COLOR_BASIS_KEY] == COLOR_BASIS_LINE_TYPE
+    assert not SPACE_STATUS.reads_common_conditions_on(
+        SPACE_STATUS.condition_tabs.active_label(  # type: ignore[union-attr]
+            {SPACE_COLOR_BASIS_KEY: app.session_state[SPACE_COLOR_BASIS_KEY]}
+        )
+    )
+    assert not app.get("button_group")
+    assert not any("필요 단축을 칠하지 못했습니다" in str(item.value) for item in app.warning)
+
+
+# ------------------------------------------------------------------ 명세 10-2 빠졌던 시험
+
+
+def test_without_session_months_both_screens_read_the_shared_profile_months(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], plan_keys: dict[str, list[Any]]
+) -> None:
+    """T-P5 덧붙임 — 공용 조회 조건(0019)의 달을 바꾸고 세션 기간 칸이 없으면 두 화면 모두 그 프로필
+    달로 계산한다(같은 심기 규칙 — Space 는 읽기만 한다)."""
+    repository = _saved_database(tmp_path)
+    database = tmp_path / "equipment.duckdb"
+    months = months_from_today()
+    assert repository.save_shortening_filter_months(months[2], months[4], source="test")
+    clear_equipment_repository()
+    board = _ok(_app(database, SHORTENING_PAGE).run())
+    board_key = plan_keys["keys"][-1]
+    assert board_key[5] == tuple(months[2:5])
+    assert board.session_state[SHORTENING_START_KEY] == months[2]
+    space = _app(database)
+    _turn_on(_ok(space.run()))
+    assert plan_keys["keys"][-1] == board_key
+    assert SHORTENING_START_KEY not in space.session_state
+
+
+def test_an_unreadable_shared_profile_falls_back_to_the_code_months_on_both_screens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    editor_calls: list[dict[str, Any]],
+    plan_keys: dict[str, list[Any]],
+) -> None:
+    """명세 10-2 — 공용 조회 조건을 못 읽으면(저장소가 `duckdb.Error`) 멈추지 않고 두 화면 모두 코드
+    기본 달로 계속한다(`shortening_filter_profile_or_default` — Space 만 멈추면 두 화면의 달이
+    갈린다)."""
+    import duckdb
+
+    repository = _saved_database(tmp_path)
+    database = tmp_path / "equipment.duckdb"
+    months = months_from_today()
+    repository.save_shortening_filter_months(months[2], months[4], source="test")
+    clear_equipment_repository()
+
+    def broken(_path: str) -> Any:
+        raise duckdb.IOException("잠긴 DB 흉내")
+
+    monkeypatch.setattr(equipment_cache, "load_shortening_filter_profile", broken)
+    board = _ok(_app(database, SHORTENING_PAGE).run())
+    board_key = plan_keys["keys"][-1]
+    assert board_key[5][0] == months[0] and board_key[5][-1] == months[-1]
+    space = _app(database)
+    _turn_on(_ok(space.run()))
+    assert plan_keys["keys"][-1] == board_key
+    assert not [
+        item for item in space.warning if "필요 단축을 칠하지 못했습니다" in str(item.value)
+    ]
+    assert board.session_state is not None
+
+
+def test_a_period_without_demand_stops_with_the_board_reason(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """T-P7 — 조회기간에 소요대수가 없으면 필요 단축 일정과 같은 까닭 글로 멈춘다(경고 한 줄, Space
+    는 그대로)."""
+    database = _empty_database(tmp_path)
+    past: dict[str, Any] = {"sidebar_first": 202001, "sidebar_last": 202003}
+    board = _ok(_app(database, SHORTENING_PAGE, **past).run())
+    reasons = [
+        str(item.value)
+        for kind in ("error", "warning", "info")
+        for item in getattr(board, kind)
+        if "소요대수 산출 기준이 없습니다" in str(item.value)
+    ]
+    assert reasons, _texts(board)
+    space = _app(database, **past)
+    _turn_on(_ok(space.run()))
+    warnings = [str(item.value) for item in space.warning]
+    assert any(
+        "필요 단축을 칠하지 못했습니다" in text and "소요대수 산출 기준이 없습니다" in text
+        for text in warnings
+    ), warnings
+    assert all(
+        "short" not in stats for stats in _views(editor_calls, "fab")[-1]["linkStats"].values()
+    )
+
+
+def test_a_failing_plan_stops_with_the_calculation_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, editor_calls: list[dict[str, Any]]
+) -> None:
+    """T-P7 — 계산이 `ValueError` 로 멈추면 그 까닭을 붙인 한 줄(「필요 단축 일정을 계산하지
+    못했습니다 — …」)이고 Space 는 그대로다."""
+
+    def failing(**_kwargs: Any) -> Any:
+        raise ValueError("계산 실패 흉내")
+
+    monkeypatch.setattr(simulation_cache, "plan_required_shortening", failing)
+    app = _app(_empty_database(tmp_path))
+    _turn_on(_ok(app.run()))
+    warnings = [str(item.value) for item in app.warning]
+    assert any(
+        "필요 단축 일정을 계산하지 못했습니다 — 계산 실패 흉내" in text for text in warnings
+    ), warnings
+    assert app.dataframe, "층 목록 표는 그대로 선다"
+
+
+def test_the_off_payload_carries_no_residue_of_a_layer_round(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, editor_calls: list[dict[str, Any]]
+) -> None:
+    """T-P2 — 끈 동안 payload 는 레이어 코드를 지나지 않는다. 필요 단축 전용 함수(표시 얹기·층
+    칸·FAB 대수·범례·조작 줄)를 부르면 실패하게 갈아 끼운 끈 회차가 그대로 돌고, 켰다 끈 뒤의 FAB·층
+    data 는 처음 끈 회차와 같다(팔레트 `short-*` 칸은 늘 같은 값이라 함께 같다)."""
+    import capa_simulation.components.space_layout as space_layout
+    import capa_simulation.services.space_shortening_layer as space_shortening_layer
+
+    _saved_database(tmp_path)
+    database = tmp_path / "equipment.duckdb"
+    app = _app(database)
+    _ok(app.run())
+    fab_before = _views(editor_calls, "fab")[-1]
+    floor_before = _probe_floor(app, editor_calls, "C1", "1F")
+    # FAB 으로 돌아간다(세션 층과 주소 `floor` 를 함께 걷는다 — 주소가 남으면 그 층이 다시 열린다).
+    del app.session_state["space_status_selected_building"]
+    del app.session_state["space_status_selected_floor"]
+    app.query_params.clear()
+    fab_rounds = len(_views(editor_calls, "fab"))
+    _turn_on(_ok(app.run()))
+    app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).set_value(COLOR_BASIS_LINE_TYPE)
+    _ok(app.run())
+    rounds = _views(editor_calls, "fab")[fab_rounds:]
+    assert len(rounds) >= 2
+    assert any(
+        any(stats.get("short") for stats in view["linkStats"].values()) for view in rounds[:-1]
+    ), "대조 — 켠 회차는 단축 줄이 실린다"
+    assert rounds[-1] == fab_before
+    assert _probe_floor(app, editor_calls, "C1", "1F") == floor_before
+
+    def refuse(name: str) -> Any:
+        def _called(*_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError(f"{name} 를 끈 회차에 불렀습니다")
+
+        return _called
+
+    for module, name in (
+        (space_layout, "apply_layer_looks"),
+        (space_layout, "shortening_legend_markup"),
+        (space_shortening_layer, "floor_layer"),
+        (space_shortening_layer, "fab_floor_counts"),
+        (space_shortening_layer, "fab_layer_summary"),
+        (space_shortening_view, "load_space_layer"),
+        (space_shortening_view, "render_layer_controls"),
+        (space_shortening_view, "render_floor_layer_panel"),
+        (space_shortening_view, "render_fab_layer_summary"),
+        (space_shortening_view, "layer_table_columns"),
+    ):
+        monkeypatch.setattr(module, name, refuse(name))
+    fresh = _app(database)
+    fab_rounds = len(_views(editor_calls, "fab"))
+    _ok(fresh.run())
+    assert len(_views(editor_calls, "fab")) > fab_rounds
+    assert _views(editor_calls, "fab")[-1] == fab_before
+    assert _probe_floor(fresh, editor_calls, "C1", "1F") == floor_before

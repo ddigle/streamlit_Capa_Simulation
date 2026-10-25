@@ -570,6 +570,8 @@ def _render_tables(
         ),
         hide_index=True,
         width="stretch",
+        # 단축 호기가 없는 층의 「최대 단축(일)」 은 비어 있다 — 리터럴 "None" 대신 빈칸.
+        placeholder="",
         column_config={**_TABLE_COLUMNS, **(_LAYER_COLUMNS if extra_columns is not None else {})},
         key=FLOOR_TABLE_KEY,
         on_select=partial(_open_from_table, FLOOR_TABLE_KEY, active_keys, on_open),

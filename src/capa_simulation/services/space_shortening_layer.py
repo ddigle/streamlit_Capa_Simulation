@@ -393,12 +393,15 @@ def floor_layer(
     *,
     focus: str | None,
     dim_others: bool,
+    inactive: bool = False,
 ) -> FloorLayer:
-    """층 상세의 표시. `rows` 는 뷰어에 보내는 그 층 행, `unplaced_rows` 는 그 층 동·층의 좌표 없는
-    행.
+    """층 상세의 표시. `rows` 는 그 층에 **오늘 그려지는** 행(FAB 층 대수가 세는 배치 행과 같은
+    축 — 페이더 범위 합집합이 아니다), `unplaced_rows` 는 그 층 동·층의 좌표 없는 행.
 
     `focus` 는 공정 칩에서 고른 공정(없으면 모든 공정)이다 — 다른 공정의 호기·배지를 흐리고
     목록·자리 없음·추가N 을 그 공정만으로 좁힌다. `dim_others` 면 표시 없는 호기를 흐린다.
+    `inactive`(비활성 층 — 층 사용 0029)면 추가N 을 붙이지 않는다(새 호기를 들일 자리가 아니다 —
+    `fab_floor_counts` 와 같은 규칙). 그 층에 그려진 단축 호기의 표시·배지·목록은 그대로다.
     """
     if rows.empty:
         names = pd.Series(dtype="string")
@@ -447,7 +450,9 @@ def floor_layer(
         (layer.marks[key] for key in unplaced_keys if key in layer.marks),
         key=lambda mark: mark.order,
     )
-    floor_virtuals = [unit for unit in layer.virtuals if unit.process in drawn_processes]
+    floor_virtuals = (
+        [] if inactive else [unit for unit in layer.virtuals if unit.process in drawn_processes]
+    )
     chips = {
         process: _chip_text(
             process,

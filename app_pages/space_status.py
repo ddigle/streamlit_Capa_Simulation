@@ -99,6 +99,7 @@ from capa_simulation.components.space_shortening_view import (
     PINNED_NOTE,
     SpaceLayer,
     consume_layer_link,
+    forget_arrival_note,
     layer_table_columns,
     load_space_layer,
     render_arrival_filter_note,
@@ -390,6 +391,12 @@ def _units(value: float) -> str:
 
 
 SPACE_CARD_LABEL = "Space 조건"
+# 사이드바 `Space 조건` 카드의 공정소분류 필터 칸(세션에 남는 보기 조건).
+PROCESS_FILTER_KEY = "space_status_process_filter"
+# 배치 편집 토글 도움말 끝 — 켜기 전에 필요 단축 보기가 쉰다는 것을 알 수 있게(결정 D7·명세 4-4).
+LAYER_REST_HELP = (
+    "색 기준이 「필요 단축」 이면 편집하는 동안 그 보기를 쉬고, 편집을 끄면 다시 보입니다."
+)
 SPACE_CARD_NAME = "space"
 
 today = date.today()
@@ -453,6 +460,7 @@ if consume_layer_link(
     clear_keys=(SPACE_PICKED_KEY,),
     edit_keys=(EDIT_MODE_KEY, FAB_EDIT_MODE_KEY),
     inactive=frozenset(inactive_floors),
+    filter_key=PROCESS_FILTER_KEY,
 ):
     st.rerun()
 
@@ -566,17 +574,24 @@ fab_editable = not showing_sample and edit_mode.fab
 fab_save_blocked = showing_sample
 
 # 색 기준 「필요 단축」(2026-10-24 결정). 고른 회차(`layer_requested`)라도 배치 편집 중이면
-# 쉰다(결정 D7 — 라디오 값은 그대로, 편집기는 공정구분 기본 색). 비활성 층 상세도 쉰다(층 대수를
-# 싣지 않는다 — 층 사용 0029). 셋 다 위젯보다 먼저 세션에서 읽는다(`editing_requested` 와 같은 꼴).
-# FAB 편집 토글은 `fab_editable` 이 거짓이면 아래가 값을 끄므로 그 조건도 함께 본다.
+# 쉰다(결정 D7 — 라디오 값은 그대로, 편집기는 공정구분 기본 색). 둘 다 위젯보다 먼저 세션에서
+# 읽는다(`editing_requested` 와 같은 꼴). FAB 편집 토글은 `fab_editable` 이 거짓이면 아래가 값을
+# 끄므로 그 조건도 함께 본다. 비활성 층 상세에서도 보기는 선다(층 사용 명세 8-2 — 배너 아래, 그
+# 층에 남은 호기를 열어 보여 준다). 그 층에는 추가N 을 붙이지 않는다(새 호기를 들일 자리가 아니다).
 layer_requested = st.session_state.get(COLOR_BASIS_KEY) == COLOR_BASIS_SHORTENING
+# 호기가 없는 화면은 색 기준 라디오를 세우지 않는다 — 세션에 남은(또는 링크가 적은) 「필요 단축」
+# 이면 사이드바가 시나리오·조회기간 줄을 세우는데 끌 길이 없다. 기본 값으로 적고 회차 끝에 한 번
+# 더 돈다(그 회차의 위젯을 모두 그린 뒤 — `st.rerun()` 규칙).
+sidebar_rows_stale = no_fleet and layer_requested
+if sidebar_rows_stale:
+    st.session_state[COLOR_BASIS_KEY] = COLOR_BASIS_LINE_TYPE
+    layer_requested = False
 layer_editing = (
     bool(st.session_state.get(EDIT_MODE_KEY, False)) and editable
     if selected is not None
     else bool(st.session_state.get(FAB_EDIT_MODE_KEY, False)) and fab_editable
 )
-layer_on_inactive = selected is not None and selected in inactive_floors
-layer_active = layer_requested and not no_fleet and not layer_editing and not layer_on_inactive
+layer_active = layer_requested and not no_fleet and not layer_editing
 
 # 세션 기준일(T)은 페이더 범위(오늘 ±12개월) 안이다. 날이 지나 범위를 벗어난 값은 가까운 끝으로
 # 맞춰 둔다. 값이 없으면(페이더를 아직 건드리지 않은 세션) 오늘이고 세션에 적지 않는다 — 날이
@@ -601,7 +616,7 @@ else:
             "공정소분류",
             options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
             placeholder="전체",
-            key="space_status_process_filter",
+            key=PROCESS_FILTER_KEY,
             persist_state="session",
         )
         # 도면 색 기준은 하나만 고른다(2026-10-16 사용자 결정 — 질문 7). 고른 기준의 그룹마다
@@ -651,7 +666,7 @@ else:
             )
         )
 
-# 그리는 색 기준 하나 — 필요 단축을 골랐는데 쉬는 회차(배치 편집 중·비활성 층)는 공정구분 기본
+# 그리는 색 기준 하나 — 필요 단축을 골랐는데 쉬는 회차(배치 편집 중·호기 없음)는 공정구분 기본
 # 색이다. 편집기 채우기와 머리 줄 범례가 같이 쓴다(범례만 빈 「그 밖」 으로 남지 않게).
 effective_choice = (
     default_color_choice(color_choice.capa)
@@ -1604,7 +1619,7 @@ with st.container(key="space_edit_lock_slot"):
 
 # 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
 # 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
-# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중·비활성 층)는 까닭 한 줄만.
+# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 까닭 한 줄만.
 space_layer: SpaceLayer | None = None
 layer_dim = True
 with st.container(
@@ -1627,12 +1642,6 @@ with st.container(
             render_layer_stop(loaded)
         else:
             space_layer = loaded
-    elif layer_requested and layer_on_inactive:
-        st.caption(
-            ":material/block: 비활성 층에는 필요 단축 보기를 싣지 않습니다 — FAB 전체로 돌아가면 "
-            "다시 보입니다.",
-            width="stretch",
-        )
     elif layer_requested and layer_editing:
         st.caption(
             ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
@@ -1657,7 +1666,9 @@ with st.container(key="space_shortening_basis_slot"):
         render_layer_basis(
             equipment_session, space_layer, sample=showing_sample, summary=layer_summary
         )
-        render_arrival_filter_note(selected_processes)
+        render_arrival_filter_note(selected_processes, selected)
+    elif not layer_active:
+        forget_arrival_note()
 
 if selected is None:
     # FAB 로 돌아오면 층 상세에서 누른 호기는 풀린다(층을 바꾼 것과 같다).
@@ -1754,7 +1765,7 @@ if selected is None:
                         if not fab_editable
                         else "층 블록·영역·글자를 끌어 놓아 자리·크기를 고치고, 층 블록의 "
                         "연결 층과 색을 고릅니다. 적용한 변경은 저장하기 전까지 이 세션에만 "
-                        "있습니다."
+                        "있습니다. " + LAYER_REST_HELP
                     ),
                 )
                 and fab_editable
@@ -1916,11 +1927,16 @@ else:
         floor_boundaries = (
             get_space_unit_boundaries(floor_status, downtime, today=today) if viewing else None
         )
-        # 필요 단축 보기 — 이 층에 그린 행의 표시·배지·목록. 공정 칩 값은 도면을 칠하기 전에
-        # 세션에서 읽는다(칩 위젯은 도면 아래 칸이다). 선택지 밖이면 위젯 전에 None 을 적는다.
+        # 필요 단축 보기 — 이 층에 오늘 그려지는 행의 표시·배지·목록. 페이더 범위 합집합(뷰어
+        # roster)이 아니다 — 켠 동안 기준일은 오늘 고정이라 지난 12개월 안에 나간 호기는 도면에
+        # 없고, FAB 층 대수(오늘 배치 행)와 같은 축이어야 공정 칩·추가N 이 두 화면에서 같다(결정 D8
+        # 「그려진 층」). 공정 칩 값은 도면을 칠하기 전에 세션에서 읽는다(칩 위젯은 도면 아래
+        # 칸이다). 선택지 밖이면 위젯 전에 None 을 적는다.
         shown_layer: FloorLayer | None = None
         if space_layer is not None and floor_boundaries is not None:
-            layer_rows = _roster_rows(floor_status, floor_boundaries)
+            layer_rows = floor_status.loc[
+                drawn_in_range(floor_status, floor_boundaries, start=as_of)
+            ]
             focus = valid_focus(
                 selected,
                 set(layer_rows["공정소분류"].dropna().astype(str).str.strip())
@@ -1936,6 +1952,7 @@ else:
                 ],
                 focus=focus,
                 dim_others=layer_dim,
+                inactive=selected in inactive_floors,
             )
         # 뷰어 payload 는 머리 줄 앞에서 구한다 — 범례와 도면이 한 회차 안에서 붙어 나가야 페이더를
         # 놓은 뒤 브라우저가 둘을 한 번에 맞춘다(그 사이에 payload 를 만들면 범례만 먼저 바뀐다).
@@ -1979,7 +1996,7 @@ else:
                     key=EDIT_MODE_KEY,
                     help=(
                         "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
-                        "저장하기 전까지 이 세션에만 있습니다."
+                        "저장하기 전까지 이 세션에만 있습니다. " + LAYER_REST_HELP
                     ),
                 )
             else:
@@ -2010,12 +2027,16 @@ else:
                     dim=layer_dim,
                 )
             else:
+                # 켠 동안 계획을 못 읽은 회차는 상자가 모두 기본 회색이고 뷰어가 지연·보관 면을
+                # 끈다(고정 줄 회차 — D12) — 채우기 칸 없이 테·덧표시만(도면에 없는 빨강·검정
+                # 견본을 세우지 않는다).
                 legend = space_legend_markup(
                     space_legend_counts(
                         floor_counted, floor_boundaries, choice=effective_choice, as_of=as_of
                     ),
                     choice=effective_choice,
                     as_of=as_of,
+                    fills=not layer_active,
                 )
             st.markdown(legend, unsafe_allow_html=True, width="content")
         if editing and buffer_frames is not None:
@@ -2126,3 +2147,7 @@ else:
         file_name=f"space_{selected_building}_{selected_floor}.csv",
         key=f"space_floor_download_{selected_building}_{selected_floor}",
     )
+# 호기 없는 화면에 남은 「필요 단축」 을 기본 값으로 적은 회차 — 사이드바 줄을 걷으려 한 번 더 돈다
+# (모든 위젯을 그린 뒤라 그 회차의 위젯 값을 잃지 않는다).
+if sidebar_rows_stale:
+    st.rerun()
