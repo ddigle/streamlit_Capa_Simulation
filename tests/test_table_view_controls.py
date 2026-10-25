@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from capa_simulation.components.table_view_controls import TableView, merge_edited_rows
 
@@ -213,3 +214,34 @@ def test_a_preset_filter_on_a_column_over_the_option_limit_still_filters() -> No
     assert len(app.session_state["visible_names"]) == 201
     app.run()
     assert not [item for item in app.multiselect if item.key == "many_view_filter_설비명"]
+
+
+def _all_values_filter_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.table_view_controls import render_table_view_controls
+
+    data = pd.DataFrame({"설비명": ["E1", "E1", "E2"], "비가동유형": ["고장", "PM", "고장"]})
+    view = render_table_view_controls(
+        data, key_prefix="all_view", editor_key="all_view_editor", filter_columns=["설비명"]
+    )
+    st.session_state["view_index"] = type(view.frame.index).__name__
+    st.session_state["view_filtered"] = view.filtered
+
+
+@pytest.mark.parametrize("chosen", [["E1", "E2"], ["E2", "E1"]])
+def test_a_filter_that_keeps_every_row_hands_back_the_original_range_index(
+    chosen: list[str],
+) -> None:
+    """모든 값을 고른 거름(「Select all」)은 행을 하나도 줄이지 않는다 — 원본 RangeIndex 를 그대로
+    돌려준다. `.loc` 로 거른 일반 정수 Index 를 넘기면 행 추가가 열린 편집표가 `hide_index=True` 를
+    무시하고 머리 없는 인덱스 칸(「0」)을 맨 앞에 세웠다(E2E — 비가동 일정 「표에서 고치기」)."""
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_all_values_filter_app)
+    app.session_state["all_view_filter_설비명"] = chosen
+    app.run()
+    assert not app.exception
+    assert app.session_state["view_filtered"] is False
+    assert app.session_state["view_index"] == "RangeIndex"
