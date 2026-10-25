@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from datetime import date
 from typing import Any
@@ -521,6 +522,47 @@ def test_the_month_steps_walk_through_the_five_calculations() -> None:
     assert after.steps[4].body == "기존 확보율 = 54 ÷ 48 = **112.5%**"
     assert after.verdict == "기존 제품이 기준 110% 를 지킵니다"
     assert after.verdict_secure is True
+
+
+def _written_numbers(text: str) -> list[float]:
+    return [float(number.replace(",", "")) for number in re.findall(r"\d[\d,]*(?:\.\d+)?", text)]
+
+
+@pytest.mark.parametrize("demand", [0.0215, 1.5703, 0.0549, 5.0, 2.345])
+def test_the_need_step_recomputes_from_the_written_numbers(demand: float) -> None:
+    """2단계 「소요 × 제약 % = 곱」 은 적힌 소요로 다시 셈해도 적힌 곱이 나온다.
+
+    소요를 둘째 자리로 깎아 적고 곱은 원값으로 내면 「0.02 × 120% = 0.03」 처럼 어긋났다. 그때만
+    소요를 한 자리씩 더 적는다(맞으면 둘째 자리 그대로 — 「5 × 120% = 6.00」).
+    """
+    result = _run()
+    row = replace(result.month(202706), constrained_demand=demand)
+    body = month_steps(row, result, LABELS, show_proportional=False).steps[1].body
+    written_demand, target, written_product = _written_numbers(body.split("→")[0].split("=", 1)[1])
+    assert target == 120
+    assert f"{written_demand * target / 100:.2f}" == f"{written_product:.2f}"
+    assert f"{demand * target / 100:.2f}" == f"{written_product:.2f}"
+
+
+@pytest.mark.parametrize(
+    ("available", "demand"), [(2.0, 1.9375), (40.0, 38.0), (42.1935, 42.0), (3.3349, 2.8751)]
+)
+def test_the_existing_rate_step_recomputes_from_the_written_numbers(
+    available: float, demand: float
+) -> None:
+    """5단계 「가용 ÷ 소요 = 확보율」 도 적힌 수로 다시 셈하면 적힌 확보율이다(「2 ÷ 1.94 = 103.2%」
+    가 아니다 — 적힌 수로는 103.1%)."""
+    result = _run()
+    row = replace(
+        result.month(202706),
+        existing_available=available,
+        existing_demand=demand,
+        existing_rate=available / demand,
+    )
+    body = month_steps(row, result, LABELS, show_proportional=False).steps[4].body
+    written_available, written_demand, written_rate = _written_numbers(body.split("=", 1)[1])
+    assert f"{written_available / written_demand * 100:.1f}" == f"{written_rate:.1f}"
+    assert f"{available / demand * 100:.1f}" == f"{written_rate:.1f}"
 
 
 def test_a_dedicated_pool_above_need_says_it_stays() -> None:

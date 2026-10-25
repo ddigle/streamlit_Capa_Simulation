@@ -2135,7 +2135,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   위, 2026-10-25 E2E 에서 7px 포개짐·한 글 숨음). 그림 모양을 바꾸면 `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/constraint_simulation_view.py` — 제약 시뮬레이션 본문 프래그먼트(`constraint_sim_view` —
   비중 토글·그래프·계산표·고른 달 계산 다섯 단계·개조 일정·가용이 모자란 달)와 요약 넷. 달 누름은 두 그림의 `on_select`
-  **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 그림은 세션 memo(4칸 —
+  **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 다섯 단계의 식(2단계
+  「소요 × % = 곱」·5단계 「가용 ÷ 소요 = 확보율」)은 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다 — 둘째 자리로 깎은
+  인수로 어긋나면 그 식의 인수만 한 자리씩 더 적는다(`_consistent_digits`). 그림은 세션 memo(4칸 —
   키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 위 줄(그래프 카드 + 고른 달 계산 카드)은 가로 컨테이너 하나(3 : 2)이고
   줄이 `TOP_ROW_STACK_BELOW_PX`(900px)보다 좁으면 컨테이너 질의로 위아래로 쌓는다(`top_row_style` — 사이드바를 편 900px 창에서
   3 : 2 그대로면 그래프 그림 칸이 169px 로 줄어 달 누름이 어려웠다). 그래프는 카드 안 스크롤 상자 → 캔버스에 서고 캔버스는
