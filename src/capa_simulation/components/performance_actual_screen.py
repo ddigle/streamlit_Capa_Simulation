@@ -443,13 +443,17 @@ def _priority_figure(
     metric: MetricSpec,
     labels: ProcessLabels,
 ) -> go.Figure:
-    """공정별 Gap 가로 막대. 색은 상태고 길이는 미달폭이다."""
+    """공정별 Gap 가로 막대. 색은 상태고 길이는 미달폭이다.
+
+    범주 값은 원본 공정이고 표시명은 눈금·hover 글자다(`ProcessLabels.category_axis`) — 표시명이
+    다른 공정의 원본과 같아도 두 막대가 한 줄에 겹치지 않는다.
+    """
     ordered = priority.iloc[::-1]
-    names = [labels.label(value) for value in ordered["공정"]]
+    axis = labels.category_axis(ordered["공정"])
     figure = go.Figure(
         go.Bar(
             x=ordered["Gap"],
-            y=names,
+            y=axis.values,
             orientation="h",
             marker={
                 "color": [
@@ -465,10 +469,15 @@ def _priority_figure(
             # 막대가 0 에서 **왼쪽으로** 뻗으므로 바깥 라벨도 왼쪽으로 나간다. 축 밖으로
             # 나갈 수 있게 열어 두지 않으면 가장 긴 막대의 숫자가 잘린다.
             cliponaxis=False,
-            customdata=ordered[["상태", "연속 미달"]],
+            customdata=[
+                [text, status, months]
+                for text, status, months in zip(
+                    axis.texts, ordered["상태"], ordered["연속 미달"], strict=True
+                )
+            ],
             hovertemplate=(
-                "%{y}<br>Gap %{x:.2%}<br>%{customdata[0]} · "
-                "연속 미달 %{customdata[1]}개월<extra></extra>"
+                "%{customdata[0]}<br>Gap %{x:.2%}<br>%{customdata[1]} · "
+                "연속 미달 %{customdata[2]}개월<extra></extra>"
             ),
         )
     )
@@ -489,7 +498,7 @@ def _priority_figure(
         tickformat=f".{metric.gap_decimals}%",
         range=_priority_range(ordered["Gap"]),
     )
-    figure.update_yaxes(type="category", title=None, showgrid=False)
+    figure.update_yaxes(title=None, showgrid=False, **axis.layout())
     return figure
 
 
@@ -507,15 +516,21 @@ def _gap_matrix_figure(
     metric: MetricSpec,
     labels: ProcessLabels,
 ) -> go.Figure:
-    """월 × 공정 Gap 격자. 미달과 초과가 한 눈금의 양끝이라 발산 색을 쓴다."""
+    """월 × 공정 Gap 격자. 미달과 초과가 한 눈금의 양끝이라 발산 색을 쓴다.
+
+    행의 범주 값은 원본 공정이고 표시명은 눈금·hover 글자다(`ProcessLabels.category_axis`) —
+    표시명이 다른 공정의 원본과 같아도 두 행이 한 줄로 합쳐지지 않는다.
+    """
     matrix = build_gap_table(view, metric, ["공정", "생산계획년월"])
     pivot = matrix.pivot(index="공정", columns="생산계획년월", values="Gap").sort_index()
     limit = float(pivot.abs().to_numpy().max() or 0.01)
+    axis = labels.category_axis(pivot.index)
     figure = go.Figure(
         go.Heatmap(
             z=pivot.to_numpy(),
             x=[month_label(int(value)) for value in pivot.columns],
-            y=[labels.label(value) for value in pivot.index],
+            y=axis.values,
+            customdata=[[text] * len(pivot.columns) for text in axis.texts],
             # `zmin=-limit`·`zmax=+limit` 이라 정규화 0.0 은 **가장 음수인 Gap**,
             # 1.0 은 가장 양수인 Gap 이다. 양끝을 반대로 두면 미달 칸이 증가색으로
             # 칠해져, 같은 앱의 `plotly_layout.delta_color()` 와 정반대를 말하게 된다.
@@ -535,7 +550,7 @@ def _gap_matrix_figure(
                 "tickformat": f".{metric.gap_decimals}%",
             },
             hovertemplate=(
-                f"%{{y}} · %{{x}}<br>Gap %{{z:.{metric.gap_decimals + 1}%}}<extra></extra>"
+                f"%{{customdata}} · %{{x}}<br>Gap %{{z:.{metric.gap_decimals + 1}%}}<extra></extra>"
             ),
         )
     )
@@ -545,5 +560,5 @@ def _gap_matrix_figure(
         **chart_canvas_layout(font_size=12),
     )
     figure.update_xaxes(type="category", title=None, side="top")
-    figure.update_yaxes(type="category", autorange="reversed", title=None)
+    figure.update_yaxes(autorange="reversed", title=None, **axis.layout())
     return figure

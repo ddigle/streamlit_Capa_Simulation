@@ -23,6 +23,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.write_guard import current_generation, write_once
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.services.voc_board import VOC_CATEGORIES
@@ -50,8 +51,9 @@ POST_TITLE_KEY = "voc_post_title"
 POST_BODY_KEY = "voc_post_body"
 POST_FORM_ERROR_KEY = "voc_post_form_error"
 # 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
-# 답변 폼과 답변 완료 단추는 글마다 하나다. 지운 글은 다시 그리지 않으므로 세대 대신 지운 글 id 를
-# 적는다.
+# 답변 폼과 답변 완료 단추는 글마다 하나다. 비교와 쓰기는 `write_guard.write_once` 가
+# 한다 — 더블클릭은 두 회차의 콜백이 겹쳐 와 세션 칸 비교만으로는 둘 다 지났다. 지운 글은
+# 다시 그리지 않으므로 세대 대신 지운 글 id 를 적는다.
 POST_FORM_GENERATION_KEY = "voc_post_form_generation"
 REPLY_GENERATION_KEY = "voc_reply_generation"
 RESOLVE_GENERATION_KEY = "voc_resolve_generation"
@@ -103,11 +105,6 @@ def _text(key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _generation(counter_key: str) -> int:
-    value = st.session_state.get(counter_key, 0)
-    return value if isinstance(value, int) else 0
-
-
 def _with_generation(key: str, generation: int) -> str:
     """세대 0 은 원래 key 그대로다 — 처음 그린 화면의 key 는 바뀌지 않는다."""
     return key if generation == 0 else f"{key}__g{generation}"
@@ -120,7 +117,10 @@ def _with_generation(key: str, generation: int) -> str:
 #
 # 단추를 그린 회차의 세대를 인자로 받아 지금 세대와 다르면 쓰지도 알리지도 않는다. 옛 화면의 누름도
 # 콜백에 닿고(Streamlit 은 지나간 위젯의 콜백 정보를 지우지 않는다), key 가 같으면 새로 그린 단추의
-# 인자로 불려 방금 남긴 글을 또 남기거나 방금 바꾼 답변 완료를 되돌린다.
+# 인자로 불려 방금 남긴 글을 또 남기거나 방금 바꾼 답변 완료를 되돌린다. 같은 세대의
+# 누름이 두 회차에 겹쳐 오는 더블클릭은 `write_once` 가 세대마다 한 번만 쓴다 — 입력은
+# 그 앞에서 읽어 두고, 세대 올리기는 뒷정리의 맨 끝이다(그 앞에서 끊긴 콜백의 뒷정리를
+# 겹쳐 온 콜백이 잇는다).
 
 
 def _submit_post(database_path: str, generation: int) -> None:
@@ -129,19 +129,25 @@ def _submit_post(database_path: str, generation: int) -> None:
     세대가 다르면 이미 올린 폼의 제출이 한 번 더 들어온 것(빠른 두 번 누름)이다. 옛 화면이 함께
     보낸 제목·내용은 이미 올린 글이라 다시 비우기만 한다.
     """
-    if generation != _generation(POST_FORM_GENERATION_KEY):
-        st.session_state[POST_TITLE_KEY] = ""
-        st.session_state[POST_BODY_KEY] = ""
-        return
+    category = _text(POST_CATEGORY_KEY)
+    title = _text(POST_TITLE_KEY)
+    body = _text(POST_BODY_KEY)
+    author = _author_value()
     try:
-        get_scenario_repository(database_path).create_voc_post(
-            category=_text(POST_CATEGORY_KEY),
-            title=_text(POST_TITLE_KEY),
-            body=_text(POST_BODY_KEY),
-            author=_author_value(),
+        repository = get_scenario_repository(database_path)
+        written = write_once(
+            POST_FORM_GENERATION_KEY,
+            generation,
+            lambda: repository.create_voc_post(
+                category=category, title=title, body=body, author=author
+            ),
         )
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[POST_FORM_ERROR_KEY] = bootstrap_error_message(exc)
+        return
+    if not written:
+        st.session_state[POST_TITLE_KEY] = ""
+        st.session_state[POST_BODY_KEY] = ""
         return
     st.session_state[FLASH_KEY] = "글을 올렸습니다."
     st.session_state[POST_TITLE_KEY] = ""
@@ -153,15 +159,20 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
     """「답변 남기기」 콜백. 새 글 폼과 같이 거절되면 적은 답변을 두고, 남기면 비운다."""
     reply_key = f"{REPLY_BODY_KEY}_{post_id}"
     generation_key = f"{REPLY_GENERATION_KEY}_{post_id}"
-    if generation != _generation(generation_key):
-        st.session_state[reply_key] = ""
-        return
+    body = _text(reply_key)
+    author = _author_value()
     try:
-        get_scenario_repository(database_path).create_voc_reply(
-            post_id=post_id, body=_text(reply_key), author=_author_value()
+        repository = get_scenario_repository(database_path)
+        written = write_once(
+            generation_key,
+            generation,
+            lambda: repository.create_voc_reply(post_id=post_id, body=body, author=author),
         )
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        return
+    if not written:
+        st.session_state[reply_key] = ""
         return
     st.session_state[FLASH_KEY] = "답변을 남겼습니다."
     st.session_state[reply_key] = ""
@@ -171,14 +182,18 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
 def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: int) -> None:
     """「답변 완료로 표시」·「미답변으로 되돌리기」 콜백."""
     generation_key = f"{RESOLVE_GENERATION_KEY}_{post_id}"
-    if generation != _generation(generation_key):
-        return
     try:
-        get_scenario_repository(database_path).set_voc_post_resolved(post_id, resolved=resolved)
+        repository = get_scenario_repository(database_path)
+        written = write_once(
+            generation_key,
+            generation,
+            lambda: repository.set_voc_post_resolved(post_id, resolved=resolved),
+        )
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
         return
-    st.session_state[generation_key] = generation + 1
+    if written:
+        st.session_state[generation_key] = generation + 1
 
 
 def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
@@ -218,7 +233,7 @@ with st.container(border=True):
     # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 제출**(작성자 빈칸 등)에도 제목·내용을
     # 지워, 4000자까지 적은 글이 되돌릴 길 없이 사라졌다(2026-10-05 E2E). 콜백이 올리기에 성공한
     # 때만 비운다.
-    post_generation = _generation(POST_FORM_GENERATION_KEY)
+    post_generation = current_generation(POST_FORM_GENERATION_KEY)
     with st.form(_with_generation(POST_FORM_KEY, post_generation)):
         category_column, title_column = st.columns([1, 3])
         with category_column:
@@ -326,7 +341,7 @@ def _render_post(row: Any) -> None:
                         st.text(str(reply["body"]))
         # 새 글 폼과 같이 콜백이 남기기에 성공한 때만 비운다 — 거절된 답변이 지워지면 다시 적어야
         # 한다.
-        reply_generation = _generation(f"{REPLY_GENERATION_KEY}_{post_id}")
+        reply_generation = current_generation(f"{REPLY_GENERATION_KEY}_{post_id}")
         with st.form(_with_generation(f"{REPLY_FORM_KEY}_{post_id}", reply_generation)):
             st.text_area(
                 "답변",
@@ -345,7 +360,7 @@ def _render_post(row: Any) -> None:
         failure = st.session_state.pop(f"{POST_ERROR_KEY}_{post_id}", None)
         if isinstance(failure, str):
             st.error(failure)
-        resolve_generation = _generation(f"{RESOLVE_GENERATION_KEY}_{post_id}")
+        resolve_generation = current_generation(f"{RESOLVE_GENERATION_KEY}_{post_id}")
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             st.button(
                 "답변 완료로 표시" if not answered else "미답변으로 되돌리기",

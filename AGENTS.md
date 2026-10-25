@@ -267,7 +267,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
   대본으로 보여 준다.
-  - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 세션에 한 번만 만든다.
+  - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 공정 표시명 프로필 버전마다 세션에
+    한 번 만든다 — 결론·질문·조건의 공정 이름은 대본이 페이지가 넘긴 `ProcessLabels.label` 로 적고(조사도 그 글자로
+    고른다), 근거 표는 화면 복사본에 표시명을 입힌다(8장 ④). 대화 기록은 답 이름(`SampleAnswer.key`)이다 — 질문
+    글자는 표시명을 따라 바뀐다.
   - 추천 질문·`대화 비우기` 는 `on_click` 콜백이다. LLM API·권한·대화 이력은 연결하지 않는다.
 - `app_pages/static_capa.py` — `Static Capa` 머리. 확보·경고 기준별 월간 설비 부족대수와 추가 필요대수(산식 6장)를 보인다.
   - 하위 화면은 사이드바로만 간다. 판정 기준은 HOME Preference 공용 프로필이고 카드는 읽기 전용이며, 판정 적용은
@@ -493,7 +496,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     때만 비우고 작성자 이름은 폼 밖이다. 필터는 조건 카드 `VOC 필터`, 설명은 `guides/voc.md`.
   - 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 콜백이고 본문 `st.rerun()` 이 없다 — 끊긴 회차가 아래 글의
     「삭제 확인」 값을 버려 단추가 사라졌다. 새 글·답변 폼과 답변 완료 단추는 key 세대, 글 삭제는 지운 글 id 로
-    빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`).
+    빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`). 세대 비교와 쓰기는 `components/write_guard.write_once` 라
+    두 회차에 겹쳐 오는 더블클릭도 한 번만 쓴다 — 입력은 그 앞에서 읽고 세대 올리기는 뒷정리의 맨 끝이다.
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
 - `app_pages/scenario_management.py` — `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭(늘 그린다 — form 입력
@@ -1155,7 +1159,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸 data 는 `new_unit_data`(칸 자리 번호의 오류·경고·잠금·체크 줄·초안 번호 `seq`·`checked`).
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
-- `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다.
+- `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
+  원본 공정명으로 셈하고 결론·질문·조건의 공정 이름만 부르는 쪽이 넘긴 글자 함수(`process_name`)로 적는다 — 표시명
+  모듈은 import 하지 않는다(8장).
 - `src/capa_simulation/services/floor_layout_mark.py` — 층 도면 비설비 요소의 계약·검증(`prepare_floor_layout_marks`)이다.
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
@@ -1559,6 +1565,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.frame` 은 화면용 복사본, `series` 는 행마다 바꾼 것과 같은 값·dtype 이다
     (`tests/test_process_label_series.py`). CSV 로 내보낼 프레임에는 쓰지 않는다.
   - `unique_format_func` 는 선택 상자 하나의 `format_func` 로 겹친 글자를 「표시명 (원본)」·「 (2)」로 가른다.
+  - `category_axis` 는 공정을 범주 축에 늘어놓는 그림의 범주 값(원본)과 눈금·hover 글자(표시명)다(8장 ③).
     `ProcessLabelFormatter` 는 값을 글자로 주고받지 않는 자리(버튼·Figure)용이다.
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소이고 계산 캐시 키·`content_token` 에는 넣지 않는다.
 - `src/capa_simulation/components/process_rename_management.py` — Admin Area `Proc Rename` 탭. 공용 공정 표시명의
@@ -1816,6 +1823,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
+- `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
+  쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
+  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). 지금은 VOC 만 쓴다.
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3314,11 +3324,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   상자 — 아래 9장), 기준 정보 STEP 복제·삭제 대상(`capacity_step_route` — 글자에 경로 키 전부·MCP/STEP 을
   싣고 공정은 갈라, 같은 글자가 남으면 「 #n」; 값은 행 위치가 아니라 경로 키),
   ③ Figure 라벨(LOB 공정명 annotation·hover, 상세 B/N 이름·hover, 재공 격자 제목,
-  Dynamic Capa 공정 비교 막대의 y축, 가용설비 현황 Main 생애주기 Gantt 의 hover),
+  Dynamic Capa 공정 비교 막대의 y축, 실적 세 화면 공정 우선순위 막대·월 × 공정 Gap 격자의 y축, 가용설비 현황 Main
+  생애주기 Gantt 의 hover). 공정을 **범주 축 값**으로 늘어놓는 그림은 축 값을 원본 공정으로 두고 눈금(`ticktext`)과
+  hover(customdata)만 표시명이다(`ProcessLabels.category_axis`) — Plotly 범주 축은 같은 글자를 한 줄로 합쳐, 표시명을
+  축 값으로 쓰면 표시명이 다른 공정의 원본과 같을 때 두 막대가 한 줄에 겹쳐 값이 가려지고 순위 차례가 틀렸다
+  (2026-10-25 E2E). 겹친 두 공정은 같은 글자의 두 줄로 보인다,
   ④ `st.dataframe` 조회 표(제외·누락 안내 목록, STEP 구성 요약, 설비대수 표시 표,
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위, 가용설비 현황 Main 의 `공정소분류` 칸 — 공정별
   내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static 대비 일정의 칸 호기·호기 목록·
-  확보율 교차검증 표)와 화면용 안내 문구(Main 의 걸린 조건 줄),
+  확보율 교차검증 표, Capa Chatbot 근거 표)와 화면용 안내 문구(Main 의 걸린 조건 줄, Capa Chatbot 대본의 결론·질문·
+  조건 — 대본 함수가 페이지가 넘긴 `ProcessLabels.label` 로 적는다),
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
   월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다. 편집표는 ② 의 「같은
   글자면 다른 값」 결함이 없다 — 칸은 옵션 `value` 로 찾아 `label` 을 그리고, 고르기·붙여넣기·복사가 모두
@@ -3730,6 +3745,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **쓰기 콜백은 빠른 두 번 누름을 거른다.** Streamlit 1.63 은 지나간 위젯의 콜백 정보를 지우지 않아 옛 화면의 누름도
   콜백에 닿는다. 공용 기록을 쓰는 단추는 그린 회차의 key 세대를 콜백 인자로 받아 지금 세대와 다르면 쓰지도 알리지도
   않고, 폼·팝오버 key 에도 같은 세대를 붙인다(같은 key 면 옛 누름이 새 폼의 인자로 콜백된다).
+  - 세션 칸 비교만으로는 **겹쳐 오는** 두 누름을 막지 못한다. 브라우저 더블클릭은 둘째 누름이 닿는 순간
+    `runner.fastReruns`(기본 켜짐)가 돌던 회차에 멈춤을 걸고 새 회차를 세워, 두 콜백이 다른 스레드에서 수 ms 차이로 같은
+    세대를 보고 둘 다 쓴다 — 세션 칸 잠금(`SafeSessionState`)이 회차마다 따로다. 멈춤을 받은 첫 콜백은 쓴 뒤 다음 세션 칸
+    접근에서 `StopException` 으로 끊겨 세대도 못 올린다(2026-10-25 E2E, VOC 글·답변 두 건). 그래서 비교와 쓰기는
+    `components/write_guard.write_once` 가 프로세스 잠금 안에서 하고, 「이 세대는 썼다」 는 끊기지 않는 세션 dict 표지에
+    적는다. 입력은 부르기 전에 읽고(세션 칸 접근도 끊기는 자리다) 세대 올리기는 뒷정리의 맨 끝에 둔다. 시험은 둘째 회차를
+    다른 스레드의 `app._run` 으로 세운다(`tests/test_voc_page.py` 의 `_race`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).
@@ -4045,7 +4067,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   기다리는지만 남는다. 세션 키 하나(`dynamic_capa_sample_data`)를 그룹 전체가 공유한다.
   **새 미연결 화면을 만들면 이 스위치를 붙인다** — 빈 껍데기는 만들 가치를 설명하지 못하고,
   표식 없는 합성 표본은 실적처럼 읽힌다. 입력이 없는 결정론적 데모(Dynamic Capa 데모 행·Chatbot 대본)는 세션에 한
-  번만 만들고 사본을 쓰며, 실DB 를 붙이면 그 세션 칸의 키에 원천 적재 시각 같은 입력을 넣는다.
+  번만 만들고 사본을 쓰며(Chatbot 대본은 공정 표시명을 글자에 담아 그 프로필 버전마다), 실DB 를 붙이면 그 세션 칸의
+  키에 원천 적재 시각 같은 입력을 넣는다.
 - 표준 대비 재공 현황은 결정론적 샘플을 사용하며 실제 재공 DB의 보유 재공·유입·Flow
   시점 정의, 공정·STEP·제품 매핑, 미래 3일의 계획/전망 데이터 공급 규칙은 미확정이다.
 - DuckDB 쓰기 직렬화는 단일 Streamlit 서버 프로세스 범위다. 다중 서버 프로세스로
