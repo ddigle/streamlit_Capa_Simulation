@@ -27,6 +27,7 @@ from capa_simulation.scenario_activation import (
     active_persisted_revision_id,
     active_persisted_scenario_id,
 )
+from capa_simulation.services.korean_particle import object_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_transform import (
     MONTHLY_TABLES,
@@ -216,8 +217,10 @@ def render_derived_save(
     saved = st.session_state.get(saved_key)
     already_saved = isinstance(saved, dict) and saved.get("request") == request
     if already_saved and isinstance(saved, dict):
+        saved_name = str(saved["name"])
         st.success(
-            f"새 시나리오 ‘{saved['name']}’를 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+            f"새 시나리오 ‘{saved_name}’{object_particle(saved_name)} 저장했습니다. 목록 관리에서 "
+            "불러올 수 있습니다."
         )
         if isinstance(saved.get("warning"), str):
             st.warning(saved["warning"], icon=":material/warning:")
