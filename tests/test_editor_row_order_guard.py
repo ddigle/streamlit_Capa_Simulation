@@ -33,7 +33,13 @@ from test_reference_data_page import (
     editor_widget_key_in,
 )
 
-from capa_simulation.components import editor_state, month_editor, scenario_edit_bar
+from capa_simulation.components import (
+    editor_state,
+    month_editor,
+    scenario_edit_bar,
+    widget_generation,
+    write_guard,
+)
 from capa_simulation.scenario_state import ActiveScenario
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +68,9 @@ def session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     fake = SimpleNamespace(session_state={})
     monkeypatch.setattr(scenario_edit_bar, "st", fake)
     monkeypatch.setattr(editor_state, "st", fake)
+    # 편집표 key 세대는 `widget_generation`(세대 읽기는 `write_guard`)이 짓는다.
+    monkeypatch.setattr(widget_generation, "st", fake)
+    monkeypatch.setattr(write_guard, "st", fake)
     return fake
 
 

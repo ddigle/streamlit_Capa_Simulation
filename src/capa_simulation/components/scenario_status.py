@@ -49,6 +49,12 @@ from capa_simulation.components.scenario_management import (
     revision_virtual_product_rows,
     virtual_product_save_notice,
 )
+from capa_simulation.components.widget_generation import (
+    bump,
+    generation,
+    widget_key,
+    write_once_value,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -583,7 +589,8 @@ def _render_revision_save(
         )
     # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 저장**에도 리비전명·메모를 지워, 막힌
     # 까닭을 고친 뒤 처음부터 다시 적어야 했다. 성공한 회차에만 칸의 key 세대를 올려 새 빈
-    # 위젯으로 세운다(`save_field_key`).
+    # 위젯으로 세운다(`save_field_key`). 그 세대가 저장 쓰기의 세대이기도 하다(`write_once_value`).
+    save_generation = save_form_generation()
     with st.form("sidebar_revision_save_form"):
         revision_name = st.text_input(
             "새 리비전명",
@@ -626,36 +633,52 @@ def _render_revision_save(
             virtual_products = revision_virtual_product_rows(
                 repository, active_revision_id, revision_tables
             )
-            snapshot = repository.save_revision(
-                active_scenario_id,
-                revision_tables,
-                capture_scenario_preset(
-                    {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
-                ),
-                revision_name=revision_name,
-                parent_revision_id=active_revision_id,
-                note=note.strip() or None,
-                virtual_products=virtual_products,
+            preset = capture_scenario_preset(
+                {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
             )
-            # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
-            activate_saved_revision(snapshot)
+            note_text = note.strip() or None
+            # 같은 세대의 저장은 한 번만 쓴다 — 스피너 도는 동안 한 번 더 누른 둘째 회차는 쓰지
+            # 않고, 첫 회차가 쓴 리비전으로 끊긴 뒷정리(활성화·알림·세대)를 잇는다. 입력은 모두
+            # 위에서 읽었다.
+            written = write_once_value(
+                SAVE_FORM_GENERATION_KEY,
+                save_generation,
+                lambda: repository.save_revision(
+                    active_scenario_id,
+                    revision_tables,
+                    preset,
+                    revision_name=revision_name,
+                    parent_revision_id=active_revision_id,
+                    note=note_text,
+                    virtual_products=virtual_products,
+                ),
+            )
+            if written is None:
+                return
+            snapshot = written.value
+            if snapshot is not None:
+                # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
+                activate_saved_revision(snapshot)
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     if verdict.message:
         st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
-    st.session_state[SAVE_FORM_GENERATION_KEY] = save_form_generation() + 1
-    _finish(
-        f"신규 리비전 r{snapshot.revision.revision_no}"
+    _settle(
+        "신규 리비전을 저장했습니다."
+        if snapshot is None
+        else f"신규 리비전 r{snapshot.revision.revision_no}"
         f"{object_particle(str(snapshot.revision.revision_no))} 저장했습니다."
         + virtual_product_save_notice(len(virtual_products))
     )
+    bump(SAVE_FORM_GENERATION_KEY)
+    written.release()
+    st.rerun()
 
 
 def save_form_generation() -> int:
     """저장 구획 두 칸의 key 세대. 저장에 성공할 때마다 하나씩 오른다."""
-    value = st.session_state.get(SAVE_FORM_GENERATION_KEY, 0)
-    return value if isinstance(value, int) else 0
+    return generation(SAVE_FORM_GENERATION_KEY)
 
 
 def save_field_key(base: str) -> str:
@@ -667,8 +690,7 @@ def save_field_key(base: str) -> str:
     보는 위젯이라 빈 칸으로 서고, 옛 key 의 값은 다음 회차에 그려지지 않아 버려진다(시나리오
     관리 복제 폼의 `clone_field_key` 와 같은 방식). 첫 세대는 바탕 key 그대로다.
     """
-    generation = save_form_generation()
-    return base if generation == 0 else f"{base}__g{generation}"
+    return widget_key(base, SAVE_FORM_GENERATION_KEY)
 
 
 def _ensure_revision_selection(

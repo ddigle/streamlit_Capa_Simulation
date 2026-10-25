@@ -21,6 +21,8 @@ import pytest
 from test_design_tokens import contrast_ratio
 
 import capa_simulation.components.preset_number_field as preset_number_field
+import capa_simulation.components.widget_generation as widget_generation
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.preset_number_field import (
     ACTIVE_PILL_SELECTOR,
     _pick_number,
@@ -60,6 +62,13 @@ def test_the_warning_pill_puts_readable_text_on_the_warning_face(mode: str) -> N
     assert contrast_ratio(palette["TEXT"], palette["STATUS_WARNING"]) >= 4.5
 
 
+def _fake_session(monkeypatch: pytest.MonkeyPatch, state: dict[str, object]) -> None:
+    # 숫자 칸 key 세대는 `widget_generation`(세대 읽기는 `write_guard`)이 짓는다.
+    fake = SimpleNamespace(session_state=state)
+    for module in (preset_number_field, widget_generation, write_guard):
+        monkeypatch.setattr(module, "st", fake)
+
+
 _VALUE = "value"
 _PILLS = "value_pills"
 _INPUT = "value_input"
@@ -76,7 +85,7 @@ def test_a_button_and_a_typed_value_in_one_rerun_leave_the_button_value_either_o
     state: dict[str, object] = {_VALUE: 120, _PILLS: 140, widget_key: 175}
     if generation:
         state[f"{_INPUT}__generation"] = generation
-    monkeypatch.setattr(preset_number_field, "st", SimpleNamespace(session_state=state))
+    _fake_session(monkeypatch, state)
 
     def press() -> None:
         _pick_preset(_VALUE, _PILLS, _INPUT, True)
@@ -94,7 +103,7 @@ def test_a_typed_value_alone_still_becomes_the_value(monkeypatch: pytest.MonkeyP
     """버튼을 누르지 않은 회차의 숫자 칸 콜백은 그대로 정본을 적는다(세대는 그대로)."""
     state: dict[str, object] = {_VALUE: 120, _PILLS: 120, f"{_INPUT}__2": 175.4}
     state[f"{_INPUT}__generation"] = 2
-    monkeypatch.setattr(preset_number_field, "st", SimpleNamespace(session_state=state))
+    _fake_session(monkeypatch, state)
     _pick_number(_VALUE, _INPUT, f"{_INPUT}__2", True)
     assert state[_VALUE] == 175
     assert state[f"{_INPUT}__generation"] == 2

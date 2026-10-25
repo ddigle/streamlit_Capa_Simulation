@@ -59,6 +59,12 @@ from capa_simulation.components.scenario_year_shift import (
     SHIFT_SOURCE_ROLES,
     render_scenario_year_shift,
 )
+from capa_simulation.components.widget_generation import (
+    bump,
+    generation,
+    widget_key,
+    write_once_value,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -1477,10 +1483,11 @@ def clone_field_key(field: str) -> str:
     **저장한 값이 폼에 남으면 한 번 더 눌러 같은 시나리오가 또 생긴다**(2026-10-01 브라우저
     재현). `clear_on_submit` 은 이름 중복 같은 **실패**에도 입력을 지워 쓰지 않는다. 세션 칸만
     지우면 브라우저가 옛 값을 다시 보내므로(`components/editor_state.py` 와 같은 사정) 성공한
-    회차에만 키를 바꿔 새 빈 칸으로 세운다.
+    회차에만 키를 바꿔 새 빈 칸으로 세운다. 첫 세대도 꼬리를 단다(`scenario_create_name_g0`).
     """
-    generation = int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0))
-    return f"scenario_create_{field}_g{generation}"
+    return widget_key(
+        f"scenario_create_{field}", CLONE_FORM_GENERATION_KEY, style="_g", bare_zero=False
+    )
 
 
 def _render_clone(repository: DuckDBScenarioRepository) -> None:
@@ -1495,6 +1502,8 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
     # 공식버전 자동 갱신이 주차(W##)를 읽는 두 번째 근거라, 복제본이 원본의 이름을 물려받으면 그
     # 복제를 공식으로 지정했을 때 기준 주차가 달라진다.
     st.caption(clone_target_caption())
+    # 칸 key 의 세대가 저장 쓰기의 세대이기도 하다(`write_once_value`).
+    create_generation = generation(CLONE_FORM_GENERATION_KEY)
     with st.form("scenario_create_form"):
         # 이름은 보관본을 포함해 겹칠 수 없다 — 검사는 저장소가 한다(`create_scenario`).
         scenario_name = st.text_input("시나리오명", key=clone_field_key("name"))
@@ -1542,39 +1551,53 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             virtual_products = revision_virtual_product_rows(
                 repository, active_persisted_revision_id(), revision_source
             )
-            snapshot = repository.create_scenario(
-                ScenarioCreate(
-                    scenario_name=scenario_name,
-                    source_simulation_code=source_code,
-                    source_simulation_name=source_name,
-                    source_type="DUCKDB_SCENARIO_CLONE",
-                    pipeline_version=CLONE_PIPELINE_VERSION,
-                    source_registered_at=None,
+            request = ScenarioCreate(
+                scenario_name=scenario_name,
+                source_simulation_code=source_code,
+                source_simulation_name=source_name,
+                source_type="DUCKDB_SCENARIO_CLONE",
+                pipeline_version=CLONE_PIPELINE_VERSION,
+                source_registered_at=None,
+            )
+            note_text = note.strip() or None
+            # 같은 세대의 저장은 한 번만 쓴다 — 스피너 도는 동안 한 번 더 누른 둘째 회차는 쓰지
+            # 않고(같은 이름이라 「이미 있는 이름」 으로 거절됐다), 첫 회차가 만든 시나리오로 끊긴
+            # 뒷정리를 잇는다. 입력은 모두 위에서 읽었다.
+            written = write_once_value(
+                CLONE_FORM_GENERATION_KEY,
+                create_generation,
+                lambda: repository.create_scenario(
+                    request,
+                    reference_tables,
+                    preset,
+                    source_data=None,
+                    revision_tables=revision_source,
+                    revision_name=revision_name,
+                    note=note_text,
+                    virtual_products=virtual_products,
                 ),
-                reference_tables,
-                preset,
-                source_data=None,
-                revision_tables=revision_source,
-                revision_name=revision_name,
-                note=note.strip() or None,
-                virtual_products=virtual_products,
             )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        # 내용은 지금 편집본 그대로지만 **다른 시나리오**가 된다 — 시나리오를 바꾸는 경로처럼
-        # HOME 토글을 푼다.
-        activate_persisted_snapshot(snapshot)
-        st.session_state[FLASH_KEY] = (
-            f"{literal_markdown(snapshot.scenario.scenario_name)}"
-            f"{object_particle(snapshot.scenario.scenario_name)} 저장했습니다."
-            + virtual_product_save_notice(len(virtual_products))
-        )
+        if written is None:
+            return
+        snapshot = written.value
+        if snapshot is None:
+            st.session_state[FLASH_KEY] = "신규 시나리오를 저장했습니다."
+        else:
+            # 내용은 지금 편집본 그대로지만 **다른 시나리오**가 된다 — 시나리오를 바꾸는 경로처럼
+            # HOME 토글을 푼다.
+            activate_persisted_snapshot(snapshot)
+            st.session_state[FLASH_KEY] = (
+                f"{literal_markdown(snapshot.scenario.scenario_name)}"
+                f"{object_particle(snapshot.scenario.scenario_name)} 저장했습니다."
+                + virtual_product_save_notice(len(virtual_products))
+            )
         if verdict.message:
             st.session_state[FLASH_WARNING_KEY] = verdict.message
-        st.session_state[CLONE_FORM_GENERATION_KEY] = (
-            int(st.session_state.get(CLONE_FORM_GENERATION_KEY, 0)) + 1
-        )
+        bump(CLONE_FORM_GENERATION_KEY)
+        written.release()
         st.rerun()
 
 

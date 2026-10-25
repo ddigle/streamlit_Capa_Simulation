@@ -47,6 +47,12 @@ from capa_simulation.components.shortening_timeline import (
     timeline_position,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.widget_generation import (
+    bump,
+    generation,
+    widget_key,
+    write_once_value,
+)
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
 from capa_simulation.persistence.equipment_cache import (
@@ -322,7 +328,7 @@ def _render_save_form(save: BaselineSaveContext) -> None:
     # 폼 key 에도 세대를 붙인다 — 옛 화면에 남은 제출 단추는 제 세대를 콜백 인자로 든 채
     # 남아(Streamlit 은 지나간 위젯의 콜백 정보를 지우지 않는다) `_save_baseline` 이 거른다.
     # key 가 같으면 새 폼의 인자로 덮여, 옛 화면의 누름이 새 칸의 기본 이름을 저장한다.
-    with st.form(_form_key(generation), border=False):
+    with st.form(_form_key(), border=False):
         st.text_input(
             "기준선 이름",
             value=default_baseline_name(save.today),
@@ -366,21 +372,20 @@ def _render_delete(database_path: str, selected: ShorteningBaselineSummary) -> N
 
 
 def _generation() -> int:
-    value = st.session_state.get(_BASELINE_FORM_GENERATION_KEY, 0)
-    return value if isinstance(value, int) else 0
+    return generation(_BASELINE_FORM_GENERATION_KEY)
 
 
 def _name_key() -> str:
-    generation = _generation()
-    return _BASELINE_NAME_KEY if generation == 0 else f"{_BASELINE_NAME_KEY}__g{generation}"
+    return widget_key(_BASELINE_NAME_KEY, _BASELINE_FORM_GENERATION_KEY)
 
 
-def _form_key(generation: int) -> str:
-    return _BASELINE_FORM_KEY if generation == 0 else f"{_BASELINE_FORM_KEY}__g{generation}"
+def _form_key() -> str:
+    return widget_key(_BASELINE_FORM_KEY, _BASELINE_FORM_GENERATION_KEY)
 
 
 def _popover_key() -> str:
-    return f"{_BASELINE_POPOVER_KEY}__g{_generation()}"
+    """팝오버 key — 첫 세대도 꼬리를 단다(`…_popover__g0`)."""
+    return widget_key(_BASELINE_POPOVER_KEY, _BASELINE_FORM_GENERATION_KEY, bare_zero=False)
 
 
 def _confirm_key(baseline_id: str) -> str:
@@ -415,30 +420,45 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
 
     `generation` 은 단추를 그린 회차의 폼 세대다. 지금 세대와 다르면 이미 저장에 쓰인 폼의
     제출이 한 번 더 들어온 것(빠른 두 번 누름)이라 쓰지도 알리지도 않는다 — 알리면 앞 저장의
-    성공 알림을 「같은 이름」 거절로 덮는다.
+    성공 알림을 「같은 이름」 거절로 덮는다. 그 거름과 겹쳐 온 같은 세대의 두 누름은
+    `write_once_value` 가 한다(얼리기·이름 검사도 그 안이라 지나간 누름은 거절도 알리지 않는다).
     """
-    if generation != _generation():
-        return
     if save.refusal is not None:
+        # 거절할 계획이면 폼을 그리지 않는다 — 이 누름은 늘 지금 세대의 것이다.
         _notice("warning", save.refusal)
         return
+    name = st.session_state.get(name_key)
     provenance = replace(
         save.provenance, saved_by=normalize_saved_by(st.session_state.get(_BASELINE_SAVED_BY_KEY))
     )
+    repository = get_equipment_repository(save.database_path)
     try:
-        draft = freeze_plan(save.plan, name=st.session_state.get(name_key), provenance=provenance)
-        summary = get_equipment_repository(save.database_path).save_shortening_baseline(draft)
+        written = write_once_value(
+            _BASELINE_FORM_GENERATION_KEY,
+            generation,
+            lambda: repository.save_shortening_baseline(
+                freeze_plan(save.plan, name=name, provenance=provenance)
+            ),
+        )
     except BOOTSTRAP_ERRORS as exc:
         _notice("warning", f"기준선을 저장하지 않았습니다 — {exc}")
         return
+    if written is None:
+        return
     clear_shortening_baseline_cache()
     st.session_state[_BASELINE_WRITTEN_KEY] = True
-    st.session_state[_BASELINE_FORM_GENERATION_KEY] = _generation() + 1
+    summary = written.value
     _notice(
         "success",
-        f"기준선을 저장했습니다 — 「{summary.name}」. 「진척 비교」에서 고르면 지금 결과와 "
-        "견줍니다.",
+        (
+            "기준선을 저장했습니다."
+            if summary is None
+            else f"기준선을 저장했습니다 — 「{summary.name}」."
+        )
+        + " 「진척 비교」에서 고르면 지금 결과와 견줍니다.",
     )
+    bump(_BASELINE_FORM_GENERATION_KEY)
+    written.release()
 
 
 def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:

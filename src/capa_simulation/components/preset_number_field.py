@@ -40,6 +40,7 @@ from typing import Final, Literal
 
 import streamlit as st
 
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.design import tokens
 
 __all__ = ["NONE_OPTION", "render_preset_number_field"]
@@ -81,11 +82,8 @@ def _generation_key(input_key: str) -> str:
 
 
 def _input_widget_key(input_key: str) -> str:
-    """숫자 칸이 지금 서는 위젯 key — 버튼을 누를 때마다 세대가 올라 새 key 가 된다."""
-    generation = st.session_state.get(_generation_key(input_key), 0)
-    if not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0:
-        return input_key
-    return f"{input_key}__{generation}"
+    """숫자 칸이 지금 서는 위젯 key — 버튼을 누를 때마다 세대가 올라 새 key 가 된다(`x__1` 꼴)."""
+    return widget_key(input_key, _generation_key(input_key), style="__")
 
 
 def _write_if_changed(key: str, value: object) -> None:
@@ -108,11 +106,7 @@ def _pick_preset(value_key: str, pills_key: str, input_key: str, integer: bool) 
         st.session_state[value_key] = _number(float(picked), integer)
     else:
         return
-    generation_key = _generation_key(input_key)
-    generation = st.session_state.get(generation_key, 0)
-    st.session_state[generation_key] = (
-        generation + 1 if isinstance(generation, int) and not isinstance(generation, bool) else 1
-    )
+    bump(_generation_key(input_key))
 
 
 def _pick_number(value_key: str, input_key: str, widget_key: str, integer: bool) -> None:

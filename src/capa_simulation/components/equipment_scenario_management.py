@@ -37,7 +37,7 @@ id 키 캐시에서 받는다 — 이 구획을 그리는 회차에만 읽는다
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pandas as pd
 import streamlit as st
@@ -58,6 +58,12 @@ from capa_simulation.components.equipment_save_fields import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.tab_state import remember_open_tab
+from capa_simulation.components.widget_generation import (
+    bump,
+    generation,
+    widget_key,
+    write_once_value,
+)
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     resolve_equipment_session,
@@ -214,31 +220,34 @@ REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS
 
 
 def _generation() -> int:
-    value = st.session_state.get(GENERATION_KEY, 0)
-    return value if isinstance(value, int) else 0
+    return generation(GENERATION_KEY)
 
 
 def _keyed(base: str) -> str:
-    generation = _generation()
-    return base if generation == 0 else f"{base}__g{generation}"
+    return widget_key(base, GENERATION_KEY)
 
 
 def _popover_generation() -> int:
-    value = st.session_state.get(POPOVER_GENERATION_KEY, 0)
-    return value if isinstance(value, int) else 0
+    return generation(POPOVER_GENERATION_KEY)
 
 
 def _popover_key(base: str) -> str:
     """팝오버 key — 팝오버 세대 꼬리를 늘 붙인다(`POPOVER_GENERATION_KEY`)."""
-    return f"{base}__p{_popover_generation()}"
+    return widget_key(base, POPOVER_GENERATION_KEY, style="__p", bare_zero=False)
 
 
-def _written(message: str) -> None:
-    """쓰기 뒤 — 목록 캐시를 비우고 알림을 남기고 입력 칸을 새로 세운 뒤 다시 돈다."""
+def _written(message: str, *, release: Callable[[], None] | None = None) -> None:
+    """쓰기 뒤 — 목록 캐시를 비우고 알림을 남기고 입력 칸을 새로 세운 뒤 다시 돈다.
+
+    세대 올리기는 맨 끝이다 — 그 앞에서 끊기면 겹쳐 온 같은 세대의 누름이 뒷정리를 잇는다
+    (`write_once_value`). `release` 는 그 쓰기가 든 결과를 놓는 것으로, 세대를 올린 뒤에 부른다.
+    """
     clear_equipment_scenario_cache()
     st.session_state[FLASH_KEY] = message
-    st.session_state[GENERATION_KEY] = _generation() + 1
     st.session_state.pop(RESTORE_AGREED_KEY, None)
+    bump(GENERATION_KEY)
+    if release is not None:
+        release()
     st.rerun()
 
 
@@ -1096,6 +1105,8 @@ def _render_branch(
         st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
         return
     st.caption(branch_unscheduled_sentence(revision, preview))
+    # 칸 key 의 세대가 만들기 쓰기의 세대이기도 하다(`write_once_value`).
+    branch_generation = _generation()
     new_name = st.text_input(
         "새 설비 시나리오 이름", key=_keyed(CLONE_NAME_KEY), placeholder="예: 셋업 실무"
     )
@@ -1107,17 +1118,29 @@ def _render_branch(
         key=CLONE_BUTTON_KEY,
         width="stretch",
     ):
+        repository = get_equipment_repository(database_path)
         try:
-            created = get_equipment_repository(database_path).clone_equipment_scenario(
-                revision.schedule_revision_id, name=new_name, created_by=created_by or None
+            # 같은 세대의 누름은 한 번만 만든다 — 겹쳐 온 둘째 회차는 쓰지 않고(같은 이름이라
+            # 거절됐다) 첫 회차가 만든 시나리오로 끊긴 뒷정리를 잇는다.
+            written = write_once_value(
+                GENERATION_KEY,
+                branch_generation,
+                lambda: repository.clone_equipment_scenario(
+                    revision.schedule_revision_id, name=new_name, created_by=created_by or None
+                ),
             )
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"새 시나리오를 만들지 못했습니다: {bootstrap_error_message(exc)}")
             return
+        if written is None:
+            return
+        created = written.value
+        made = new_name if created is None else created.scenario_name
         _written(
-            f"「{name}」 {title}에서 설비 시나리오 「{literal_markdown(created.scenario_name)}」 "
+            f"「{name}」 {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
             "r1 을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
-            "불러오기」로 올립니다."
+            "불러오기」로 올립니다.",
+            release=written.release,
         )
 
 

@@ -38,6 +38,7 @@ from capa_simulation.components.table_toolbar import (
     render_csv_download,
     render_table_heading,
 )
+from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -121,6 +122,8 @@ DIALOG_KEY = f"standard_target{PAGE_DIALOG_SUFFIX}"
 PASTE_DIALOG = "availability_paste"
 CLEAR_DIALOG = "availability_clear"
 AVAILABILITY_FLASH_KEY = "standard_target_availability_flash"
+# 「붙여넣기 적용」 쓰기의 세대 — 저장에 성공한 회차에 오른다. 같은 세대의 누름은 한 번만 쓴다.
+AVAILABILITY_SAVE_GENERATION_KEY = "standard_target_availability_save_generation"
 
 DETAIL_LEVEL_LABELS = {
     "제품정보": "제품",
@@ -793,6 +796,7 @@ def _paste_dialog() -> None:
         "0 을 적으면 「0 대」로 저장됩니다. 설비 DB 에 최신본 하나만 남아 이전 값으로 되돌릴 수 "
         "없습니다."
     )
+    paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
     with st.form("standard_target_availability_clipboard", border=False):
         clipboard_text = st.text_area(
             "가용설비 표 붙여넣기",
@@ -811,14 +815,22 @@ def _paste_dialog() -> None:
         st.error("적용할 가용설비 표를 Excel에서 복사해 붙여넣으세요.")
         return
     try:
-        equipment_repository.save_standard_target_availability(
-            # 보유 공정 목록은 이 화면이 소유한다. 표시명을 그대로 적어 붙여넣거나 오타가 난
-            # 공정은 여기서 막지 않으면 아무 계산에도 붙지 않는 행으로 조용히 저장된다. 필터와
-            # 무관하게 전체 공정을 허용한다.
-            parse_weekly_availability_clipboard(clipboard_text, known_processes=process_options)
+        # 보유 공정 목록은 이 화면이 소유한다. 표시명을 그대로 적어 붙여넣거나 오타가 난
+        # 공정은 여기서 막지 않으면 아무 계산에도 붙지 않는 행으로 조용히 저장된다. 필터와
+        # 무관하게 전체 공정을 허용한다.
+        pasted = parse_weekly_availability_clipboard(
+            clipboard_text, known_processes=process_options
+        )
+        # 같은 세대의 누름은 한 번만 쓴다 — 겹쳐 온 둘째 회차는 쓰지 않고 뒷정리만 잇는다.
+        written = write_once_value(
+            AVAILABILITY_SAVE_GENERATION_KEY,
+            paste_generation,
+            lambda: equipment_repository.save_standard_target_availability(pasted),
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        return
+    if written is None:
         return
     # 다음 회차(와 같은 프로세스의 다른 세션)가 저장한 값을 읽는다.
     clear_standard_target_availability_cache()
@@ -827,6 +839,8 @@ def _paste_dialog() -> None:
         "주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.",
     )
     _close_dialog()
+    bump(AVAILABILITY_SAVE_GENERATION_KEY)
+    written.release()
     st.rerun()
 
 

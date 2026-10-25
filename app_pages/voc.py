@@ -23,6 +23,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import current_generation, just_written, write_once
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -116,11 +117,6 @@ def _text(key: str) -> str:
     """콜백이 읽는 입력 칸 값. 아직 한 번도 그리지 않은 칸은 빈 글로 본다."""
     value = st.session_state.get(key)
     return value if isinstance(value, str) else ""
-
-
-def _with_generation(key: str, generation: int) -> str:
-    """세대 0 은 원래 key 그대로다 — 처음 그린 화면의 key 는 바뀌지 않는다."""
-    return key if generation == 0 else f"{key}__g{generation}"
 
 
 # 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 **콜백**이다. 본문에서 쓰고 `st.rerun()` 하면
@@ -261,7 +257,8 @@ with st.container(border=True):
     # 지워, 4000자까지 적은 글이 되돌릴 길 없이 사라졌다(2026-10-05 E2E). 콜백이 올리기에 성공한
     # 때만 비운다.
     post_generation = current_generation(POST_FORM_GENERATION_KEY)
-    with st.form(_with_generation(POST_FORM_KEY, post_generation)):
+    # 세대 0 은 원래 key 그대로다 — 처음 그린 화면의 key 는 바뀌지 않는다.
+    with st.form(widget_key(POST_FORM_KEY, POST_FORM_GENERATION_KEY)):
         category_column, title_column = st.columns([1, 3])
         with category_column:
             st.selectbox("분류", options=VOC_CATEGORIES, key=POST_CATEGORY_KEY)
@@ -369,7 +366,9 @@ def _render_post(row: Any) -> None:
         # 새 글 폼과 같이 콜백이 남기기에 성공한 때만 비운다 — 거절된 답변이 지워지면 다시 적어야
         # 한다.
         reply_generation = current_generation(f"{REPLY_GENERATION_KEY}_{post_id}")
-        with st.form(_with_generation(f"{REPLY_FORM_KEY}_{post_id}", reply_generation)):
+        with st.form(
+            widget_key(f"{REPLY_FORM_KEY}_{post_id}", f"{REPLY_GENERATION_KEY}_{post_id}")
+        ):
             st.text_area(
                 "답변",
                 height=100,
@@ -391,7 +390,7 @@ def _render_post(row: Any) -> None:
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             st.button(
                 "답변 완료로 표시" if not answered else "미답변으로 되돌리기",
-                key=_with_generation(f"{RESOLVE_KEY}_{post_id}", resolve_generation),
+                key=widget_key(f"{RESOLVE_KEY}_{post_id}", f"{RESOLVE_GENERATION_KEY}_{post_id}"),
                 icon=":material/task_alt:",
                 on_click=_set_resolved,
                 args=(database_path, post_id, not answered, resolve_generation),
