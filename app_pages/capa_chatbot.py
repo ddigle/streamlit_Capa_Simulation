@@ -8,6 +8,9 @@ LLM 을 붙이기 전에 정할 것은 모델이 아니라 **답변의 모양**�
 
 그래서 대본을 그린다. 추천 질문을 누르면 실제 데이터로 만든 답이 네 칸에 들어찬다.
 연결할 때 바꾸는 것은 대본을 만드는 자리 하나뿐이고 화면은 그대로다.
+
+공정 이름은 옆 화면(효율 실적)과 같은 공용 표시명이다 — 결론·질문·조건은 대본이 표시명으로
+적고, 근거 표는 화면 복사본에 입힌다(AGENTS 8장 「화면은 표시명, 파일은 원본」).
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from capa_simulation.components.page_header import (
     pending_badge,
     render_page_header,
 )
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
@@ -29,37 +33,46 @@ from capa_simulation.components.sample_data import (
 from capa_simulation.services.chatbot_samples import SampleAnswer, build_sample_answers
 
 SOURCE = "LLM API · Capa 데이터"
+# 대화 기록 — 물은 답의 `SampleAnswer.key` 차례. 질문 글자는 공정 표시명을 따라 바뀌어 적지 않는다.
 TRANSCRIPT_KEY = "capa_chatbot_transcript"
 # 추천 질문 버튼은 개수만큼 생긴다. 접두를 상수로 두어야 겹침 검사가 기준 키를 본다.
 EXAMPLE_KEY = "capa_chatbot_example"
-# 대본 답(세션 칸). `_sample_answers`.
+# 대본 답(세션 칸, `(표시명 프로필 버전, 답 목록)`). `_sample_answers`.
 ANSWERS_MEMO_KEY = "capa_chatbot_sample_answers"
 
 
-def _sample_answers() -> list[SampleAnswer]:
+def _sample_answers(process_labels: ProcessLabels) -> list[SampleAnswer]:
     """대본 답 네 개. 날짜·난수를 읽지 않는 결정적 데모(`build_monthly_actual_demo`)에서 나오므로
-    세션에 한 번만 만든다. 근거 표는 사본을 준다 — 받은 쪽이 고쳐도 기억한 답이 바뀌지 않는다.
-    연결 뒤 실제 질의로 바꾸면 이 칸은 버린다."""
+    표시명 프로필 버전마다 세션에 한 번만 만든다 — 결론·질문 글자가 표시명을 담아, Admin 에서
+    표시명을 바꾸면 새로 만든다. 근거 표는 표시명을 입힌 사본을 준다 — 받은 쪽이 고쳐도 기억한
+    답이 바뀌지 않는다. 연결 뒤 실제 질의로 바꾸면 이 칸은 버린다."""
     memo = st.session_state.get(ANSWERS_MEMO_KEY)
     if not (
-        isinstance(memo, list) and memo and all(isinstance(answer, SampleAnswer) for answer in memo)
+        isinstance(memo, tuple)
+        and len(memo) == 2
+        and memo[0] == process_labels.version
+        and isinstance(memo[1], list)
+        and memo[1]
+        and all(isinstance(answer, SampleAnswer) for answer in memo[1])
     ):
-        memo = build_sample_answers()
+        memo = (process_labels.version, build_sample_answers(process_labels.label))
         st.session_state[ANSWERS_MEMO_KEY] = memo
-    return [replace(answer, evidence=answer.evidence.copy()) for answer in memo]
+    return [
+        replace(answer, evidence=process_labels.frame(answer.evidence).copy()) for answer in memo[1]
+    ]
 
 
-def _ask(question: str) -> None:
+def _ask(key: str) -> None:
     """추천 질문 단추 콜백. 본문보다 먼저 돌아 그 회차에 답과 꺼진 단추가 함께 선다 — 본문에서
     덧붙이고 `st.rerun()` 하면 한 번 누를 때 화면이 두 번 돈다."""
     transcript = list(st.session_state.get(TRANSCRIPT_KEY) or [])
-    if question not in transcript:
-        st.session_state[TRANSCRIPT_KEY] = [*transcript, question]
+    if key not in transcript:
+        st.session_state[TRANSCRIPT_KEY] = [*transcript, key]
 
 
-def _reset_transcript(first_question: str) -> None:
+def _reset_transcript(first_key: str) -> None:
     """`대화 비우기` 콜백. 첫 답 하나만 남긴다."""
-    st.session_state[TRANSCRIPT_KEY] = [first_question]
+    st.session_state[TRANSCRIPT_KEY] = [first_key]
 
 
 def _render_answer(answer: SampleAnswer) -> None:
@@ -103,11 +116,15 @@ if not render_sample_switch(key="capa_chatbot_sample_switch", source=SOURCE):
     )
     st.stop()
 
-answers = _sample_answers()
-questions = [answer.question for answer in answers]
-if TRANSCRIPT_KEY not in st.session_state:
-    # 처음 들어온 사람에게 빈 대화창을 보이지 않는다. 첫 답이 이 화면의 설명이다.
-    st.session_state[TRANSCRIPT_KEY] = [questions[0]]
+# 공정 표시명은 화면 글자 전용이다. 순위·Gap 은 대본이 원본 공정명으로 셈한다.
+answers = _sample_answers(get_process_labels())
+answers_by_key = {answer.key: answer for answer in answers}
+# 처음 들어온 사람에게 빈 대화창을 보이지 않는다. 첫 답이 이 화면의 설명이다. 모르는 칸(옛 꼴의
+# 질문 글자 등)은 걸러 낸다.
+transcript = [
+    key for key in list(st.session_state.get(TRANSCRIPT_KEY) or []) if key in answers_by_key
+] or [answers[0].key]
+st.session_state[TRANSCRIPT_KEY] = transcript
 
 chat_column, guide_column = st.columns([3, 1], gap="medium")
 
@@ -118,8 +135,8 @@ with chat_column:
             "답은 네 칸으로 옵니다 — 결론 · 근거 표 · 사용한 조건과 산식 · 한계. "
             "연결 뒤에도 이 네 칸은 그대로입니다."
         )
-        for question in st.session_state[TRANSCRIPT_KEY]:
-            _render_answer(next(answer for answer in answers if answer.question == question))
+        for key in transcript:
+            _render_answer(answers_by_key[key])
         st.chat_input(
             "연결 전에는 아래 추천 질문으로만 답합니다.",
             key="capa_chatbot_prompt",
@@ -130,21 +147,21 @@ with chat_column:
         st.markdown("#### :material/lightbulb: 추천 질문")
         st.caption("무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 더 내려가면 어디인가.")
         with st.container(horizontal=True, gap="small", horizontal_alignment="left"):
-            for index, question in enumerate(questions):
+            for index, answer in enumerate(answers):
                 st.button(
-                    question,
+                    answer.question,
                     key=f"{EXAMPLE_KEY}_{index}",
-                    disabled=question in st.session_state[TRANSCRIPT_KEY],
+                    disabled=answer.key in transcript,
                     on_click=_ask,
-                    args=(question,),
+                    args=(answer.key,),
                 )
-        if len(st.session_state[TRANSCRIPT_KEY]) > 1:
+        if len(transcript) > 1:
             st.button(
                 "대화 비우기",
                 key="capa_chatbot_reset",
                 icon=":material/restart_alt:",
                 on_click=_reset_transcript,
-                args=(questions[0],),
+                args=(answers[0].key,),
             )
 
 with guide_column:

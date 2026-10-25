@@ -267,7 +267,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
   대본으로 보여 준다.
-  - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 세션에 한 번만 만든다.
+  - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 공정 표시명 프로필 버전마다 세션에
+    한 번 만든다 — 결론·질문·조건의 공정 이름은 대본이 페이지가 넘긴 `ProcessLabels.label` 로 적고(조사도 그 글자로
+    고른다), 근거 표는 화면 복사본에 표시명을 입힌다(8장 ④). 대화 기록은 답 이름(`SampleAnswer.key`)이다 — 질문
+    글자는 표시명을 따라 바뀐다.
   - 추천 질문·`대화 비우기` 는 `on_click` 콜백이다. LLM API·권한·대화 이력은 연결하지 않는다.
 - `app_pages/static_capa.py` — `Static Capa` 머리. 확보·경고 기준별 월간 설비 부족대수와 추가 필요대수(산식 6장)를 보인다.
   - 하위 화면은 사이드바로만 간다. 판정 기준은 HOME Preference 공용 프로필이고 카드는 읽기 전용이며, 판정 적용은
@@ -1154,7 +1157,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸 data 는 `new_unit_data`(칸 자리 번호의 오류·경고·잠금·체크 줄·초안 번호 `seq`·`checked`).
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
-- `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다.
+- `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
+  원본 공정명으로 셈하고 결론·질문·조건의 공정 이름만 부르는 쪽이 넘긴 글자 함수(`process_name`)로 적는다 — 표시명
+  모듈은 import 하지 않는다(8장).
 - `src/capa_simulation/services/floor_layout_mark.py` — 층 도면 비설비 요소의 계약·검증(`prepare_floor_layout_marks`)이다.
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —
@@ -3323,7 +3328,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   ④ `st.dataframe` 조회 표(제외·누락 안내 목록, STEP 구성 요약, 설비대수 표시 표,
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위, 가용설비 현황 Main 의 `공정소분류` 칸 — 공정별
   내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static 대비 일정의 칸 호기·호기 목록·
-  확보율 교차검증 표)와 화면용 안내 문구(Main 의 걸린 조건 줄),
+  확보율 교차검증 표, Capa Chatbot 근거 표)와 화면용 안내 문구(Main 의 걸린 조건 줄, Capa Chatbot 대본의 결론·질문·
+  조건 — 대본 함수가 페이지가 넘긴 `ProcessLabels.label` 로 적는다),
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
   월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다. 편집표는 ② 의 「같은
   글자면 다른 값」 결함이 없다 — 칸은 옵션 `value` 로 찾아 `label` 을 그리고, 고르기·붙여넣기·복사가 모두
@@ -4057,7 +4063,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   기다리는지만 남는다. 세션 키 하나(`dynamic_capa_sample_data`)를 그룹 전체가 공유한다.
   **새 미연결 화면을 만들면 이 스위치를 붙인다** — 빈 껍데기는 만들 가치를 설명하지 못하고,
   표식 없는 합성 표본은 실적처럼 읽힌다. 입력이 없는 결정론적 데모(Dynamic Capa 데모 행·Chatbot 대본)는 세션에 한
-  번만 만들고 사본을 쓰며, 실DB 를 붙이면 그 세션 칸의 키에 원천 적재 시각 같은 입력을 넣는다.
+  번만 만들고 사본을 쓰며(Chatbot 대본은 공정 표시명을 글자에 담아 그 프로필 버전마다), 실DB 를 붙이면 그 세션 칸의
+  키에 원천 적재 시각 같은 입력을 넣는다.
 - 표준 대비 재공 현황은 결정론적 샘플을 사용하며 실제 재공 DB의 보유 재공·유입·Flow
   시점 정의, 공정·STEP·제품 매핑, 미래 3일의 계획/전망 데이터 공급 규칙은 미확정이다.
 - DuckDB 쓰기 직렬화는 단일 Streamlit 서버 프로세스 범위다. 다중 서버 프로세스로

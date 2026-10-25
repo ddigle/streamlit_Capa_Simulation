@@ -9,11 +9,15 @@ LLM 을 붙이기 전에 정해야 할 것은 모델이 아니라 **답변의 �
 LLM 응답으로 채우면 된다 — 화면을 다시 뜯지 않는다.
 
 숫자는 `performance_actuals` 의 데모에서 나온다. Chatbot 만 다른 세계를 말하면 옆 화면과
-대조해 보는 순간 신뢰를 잃는다.
+대조해 보는 순간 신뢰를 잃는다. 같은 까닭으로 결론·질문·조건에 적는 공정 이름은 옆 화면과
+같은 글자(공용 표시명)여야 한다. 표시명 치환은 화면 계층에만 있으므로(AGENTS 8장) 부르는
+쪽이 공정 이름을 글자로 적는 함수(`process_name`)를 넘긴다 — 순위·Gap 은 원본 공정명으로
+셈하고 글자에만 쓴다. 근거 표의 `공정` 칸은 원본 그대로이고 화면이 복사본에 표시명을 입힌다.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -31,11 +35,19 @@ from capa_simulation.services.performance_actuals import (
     build_priority_table,
 )
 
+# 공정 이름을 화면 글자로 적는 함수. 받는 값은 원본 공정명이다.
+ProcessName = Callable[[str], str]
+
 
 @dataclass(frozen=True)
 class SampleAnswer:
-    """답변 한 개. 네 칸이 모두 차야 답으로 친다."""
+    """답변 한 개. 네 칸이 모두 차야 답으로 친다.
 
+    `key` 는 답의 고정 이름이다. 질문 글자는 공정 표시명을 따라 바뀌므로 대화 기록은 이 이름을
+    적는다.
+    """
+
+    key: str
     question: str
     conclusion: str
     evidence: pd.DataFrame
@@ -44,38 +56,43 @@ class SampleAnswer:
     limits: tuple[str, ...] = field(default_factory=tuple)
 
 
-def build_sample_answers() -> list[SampleAnswer]:
+def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
     """추천 질문 네 개와 그 답. 순서는 실제로 묻게 되는 차례다.
 
-    무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 데이터는 믿을 만한가.
+    무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 데이터는 믿을 만한가. `process_name` 은
+    결론·질문·조건에 공정 이름을 적는 함수다(화면은 공용 표시명 — 조사도 그 글자로 고른다).
     """
     monthly = build_monthly_actual_demo()
     months = sorted(int(value) for value in monthly["생산계획년월"].unique())
     window = f"{months[0] // 100 % 100:02d}.{months[0] % 100:02d}~{months[-1] % 100:02d}월"
     return [
-        _shortfall_answer(monthly, window),
-        _cause_answer(monthly, window),
-        _priority_answer(monthly, window),
+        _shortfall_answer(monthly, window, process_name),
+        _cause_answer(monthly, window, process_name),
+        _priority_answer(monthly, window, process_name),
         _reference_answer(monthly, window),
     ]
 
 
-def _shortfall_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
+def _shortfall_answer(
+    monthly: pd.DataFrame, window: str, process_name: ProcessName
+) -> SampleAnswer:
     priority = build_priority_table(monthly, EFFICIENCY_METRIC, ["공정"])
     trouble = priority.loc[priority["상태"].ne("정상")]
     evidence = trouble[["공정", "기준 효율", "실적 효율", "Gap", "연속 미달", "상태"]].reset_index(
         drop=True
     )
     worst = trouble.iloc[0] if not trouble.empty else None
+    worst_name = process_name(str(worst["공정"])) if worst is not None else ""
     conclusion = (
         f"{window} 기준으로 효율이 기준에 못 미치는 공정은 {len(trouble):,}개입니다. "
-        f"가장 나쁜 곳은 **{worst['공정']}** {direction_particle(str(worst['공정']))} "
+        f"가장 나쁜 곳은 **{worst_name}** {direction_particle(worst_name)} "
         f"기간 평균 {float(worst['Gap']):.1%}p, "
         f"{int(worst['연속 미달'])}개월 연속 미달입니다."
         if worst is not None
         else f"{window} 기준으로 효율이 기준에 못 미치는 공정이 없습니다."
     )
     return SampleAnswer(
+        key="shortfall",
         question="이번 기간에 기준 미달인 공정 알려줘",
         conclusion=conclusion,
         evidence=evidence,
@@ -89,7 +106,7 @@ def _shortfall_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
     )
 
 
-def _cause_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
+def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName) -> SampleAnswer:
     rows: list[dict[str, object]] = []
     for metric in ALL_METRICS:
         priority = build_priority_table(monthly, metric, ["공정"])
@@ -105,8 +122,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
             }
         )
     evidence = pd.DataFrame(rows)
-    target = str(evidence["공정"].iloc[0])
+    target = process_name(str(evidence["공정"].iloc[0]))
     return SampleAnswer(
+        key="cause",
         question=f"{with_topic_particle(target)} 왜 부족해?",
         conclusion=(
             f"**{target}** {topic_particle(target)} 효율·UPEH·수율 세 지표가 모두 기준을 밑돕니다. "
@@ -127,13 +145,15 @@ def _cause_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
     )
 
 
-def _priority_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
+def _priority_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName) -> SampleAnswer:
     priority = build_priority_table(monthly, EFFICIENCY_METRIC, ["공정"])
     evidence = priority[["우선순위", "공정", "Gap", "영향 비중", "연속 미달", "점수"]].head(5)
+    first = process_name(str(priority["공정"].iloc[0]))
     return SampleAnswer(
+        key="priority",
         question="무엇부터 개선해야 해?",
         conclusion=(
-            f"**{priority['공정'].iloc[0]}** 부터입니다. 미달폭만 보면 다른 공정이 더 "
+            f"**{first}** 부터입니다. 미달폭만 보면 다른 공정이 더 "
             "나쁠 수 있지만, 영향 물량과 연속 미달 개월을 함께 곱하면 순서가 바뀝니다."
         ),
         evidence=evidence.reset_index(drop=True),
@@ -153,6 +173,7 @@ def _reference_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
         ["공정", "제품정보", "기준 효율", "실적 효율", "Gap", "영향 비중"]
     ]
     return SampleAnswer(
+        key="reference",
         question="제품까지 내려가면 어디가 문제야?",
         conclusion=(
             "제품 단위로 내리면 같은 공정 안에서도 갈립니다. 아래 다섯 줄이 미달폭이 "
