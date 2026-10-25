@@ -19,6 +19,18 @@ BODY_MAX_LENGTH = 4000
 AUTHOR_MAX_LENGTH = 40
 
 
+class VocPostGoneError(ValueError):
+    """답변·답변 완료 표시를 하려던 글이 그 사이 지워졌다(다른 세션의 「글 삭제」).
+
+    글 없는 답글은 목록에 영영 보이지 않으므로 저장소가 쓰기 전에 막는다 — `voc_reply.post_id`
+    에는 외래 키가 없다. 화면은 이 거절을 글 상자가 아니라 머리 알림 칸에 그린다(지운 글의
+    상자는 다시 그리지 않는다).
+    """
+
+    def __init__(self) -> None:
+        super().__init__("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.")
+
+
 def normalize_author(value: str) -> str:
     """작성자 이름. 빈 이름은 막는다 — 누가 물었는지 모르면 답을 돌려줄 곳이 없다."""
     author = str(value).strip()

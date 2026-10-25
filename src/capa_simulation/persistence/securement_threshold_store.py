@@ -17,7 +17,12 @@ from datetime import datetime
 import duckdb
 import pandas as pd
 
-from capa_simulation.persistence._sql_helpers import insert_by_name, quote, reset_profile
+from capa_simulation.persistence._sql_helpers import (
+    ProfileVersionConflict,
+    insert_by_name,
+    quote,
+    reset_profile,
+)
 from capa_simulation.services.securement_threshold import (
     SECUREMENT_THRESHOLD_COLUMNS,
     prepare_securement_threshold_rows,
@@ -27,8 +32,11 @@ _HEADER_TABLE = "global_securement_threshold"
 _MONTH_TABLE = "global_securement_threshold_month"
 
 
-class SecurementThresholdConflict(ValueError):
-    """편집을 시작한 뒤 다른 세션이 판정 기준을 먼저 저장했다. 저장하지 않고 알린다."""
+class SecurementThresholdConflict(ProfileVersionConflict):
+    """편집을 시작한 뒤 다른 세션이 판정 기준을 먼저 저장했다. 저장하지 않고 알린다.
+
+    다른 공용 프로필의 version 거부와 같은 꼴이다 — `expected`·`stored` 를 함께 든다.
+    """
 
 
 def load_securement_threshold_header(
@@ -87,7 +95,9 @@ def replace_global_securement_threshold(
         raise SecurementThresholdConflict(
             "다른 사용자가 먼저 판정 기준을 저장해 이번 저장은 반영하지 않았습니다"
             f"(편집 시작 v{int(expected_version)} · 지금 v{stored}). 최신 저장본을 확인한 뒤 다시 "
-            "저장하세요."
+            "저장하세요.",
+            expected=int(expected_version),
+            stored=stored,
         )
     version = reset_profile(connection, _HEADER_TABLE, _MONTH_TABLE)
     connection.execute(

@@ -299,6 +299,27 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: 
     clear_global_process_rename_cache()
 
 
+def test_a_double_press_of_the_direct_edit_save_reports_no_conflict(tmp_path: Path) -> None:
+    """「공용 공정 표시명 저장」 빠른 두 번 누름 — 둘째 누름이 첫 저장 전의 편집 시작 version 을
+    들고 와도 방금 한 제 저장을 「다른 사용자가 먼저 저장」이라 알리지 않는다(2026-10-26 E2E)."""
+    database_path = tmp_path / "rename-double.duckdb"
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v0|"
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert app.text[-1].value == "v1|"
+
+    app.session_state["admin_area_process_rename_base_version"] = 0
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not list(app.error), [str(error.value) for error in app.error]
+    assert app.text[-1].value == "v1|"
+    clear_global_process_rename_cache()
+
+
 def test_proc_rename_tab_shows_the_saved_shared_profile(tmp_path: Path) -> None:
     database_path = tmp_path / "rename.duckdb"
     script = f'''

@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.components.home_preference import EXECUTION_BASE_VERSION_KEY
 from capa_simulation.persistence import DuckDBScenarioRepository
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.cache import clear_global_execution_capacity_cache
@@ -214,4 +215,52 @@ _render_execution_editor(
     assert not app.exception
     assert not app.error, [str(item.value) for item in app.error]
     assert repository.load_global_execution_capacity().version == 3
+    clear_global_execution_capacity_cache()
+
+
+def test_a_double_press_of_the_execution_save_reports_the_save_not_a_conflict(
+    tmp_path: Path,
+) -> None:
+    """「확보율 보정 저장」 빠른 두 번 누름 — 둘째 누름이 남은 편집 시작 version 으로 와도
+    방금 한 제 저장을 「다른 사용자가 먼저 저장」이라 알리지 않는다(2026-10-26 E2E)."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _scenario_repository(database_path)
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, "")]), source="A 가 본 것"
+    )
+    script = f"""
+import pandas as pd
+
+from capa_simulation.components.flash import render_flash
+from capa_simulation.components.home_preference import _render_execution_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.persistence.cache import load_global_execution_capacity
+
+database_path = {str(database_path)!r}
+render_flash("home_execution_flash")
+_render_execution_editor(
+    months=[202607, 202608],
+    execution_profile=load_global_execution_capacity(database_path),
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    unmatched=pd.DataFrame(),
+    clamped=pd.DataFrame(),
+    database_path=database_path,
+)
+"""
+    clear_global_execution_capacity_cache()
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert not app.exception
+    next(button for button in app.button if button.label == "확보율 보정 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert repository.load_global_execution_capacity().version == 2
+
+    app.session_state[EXECUTION_BASE_VERSION_KEY] = 1
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert not app.error, [str(item.value) for item in app.error]
+    assert "확보율 보정을 저장했습니다." in [str(item.value) for item in app.success]
+    assert repository.load_global_execution_capacity().version == 2
     clear_global_execution_capacity_cache()

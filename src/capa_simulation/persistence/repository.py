@@ -103,6 +103,7 @@ from capa_simulation.persistence.voc_store import (
     load_voc_posts,
     load_voc_replies,
     update_voc_post_resolved,
+    voc_post_exists,
 )
 from capa_simulation.services.advance_load import prepare_advance_load
 from capa_simulation.services.advance_shipment import prepare_advance_shipment
@@ -123,7 +124,7 @@ from capa_simulation.services.securement_threshold import (
     validate_securement_thresholds,
 )
 from capa_simulation.services.top5_band import validate_top5_band
-from capa_simulation.services.voc_board import normalize_post, normalize_reply
+from capa_simulation.services.voc_board import VocPostGoneError, normalize_post, normalize_reply
 
 REFERENCE_TABLES: dict[str, str] = {
     "RQ_PKG_PLAN": "rq_pkg_plan",
@@ -605,16 +606,26 @@ class DuckDBScenarioRepository:
         return post_id
 
     def create_voc_reply(self, *, post_id: str, body: str, author: str) -> str:
-        """답글 하나를 남기고 그 id 를 돌려준다."""
+        """답글 하나를 남기고 그 id 를 돌려준다.
+
+        그 사이 지운 글이면 `VocPostGoneError` 로 거절한다 — 주인 없는 답글은 영영 보이지 않는다.
+        """
         prepared = normalize_reply(body=body, author=author)
         reply_id = uuid4().hex
         with self._write_transaction() as connection:
+            if not voc_post_exists(connection, post_id=post_id):
+                raise VocPostGoneError()
             insert_voc_reply(connection, reply_id=reply_id, post_id=post_id, **prepared)
         return reply_id
 
     def set_voc_post_resolved(self, post_id: str, *, resolved: bool) -> None:
-        """답변 완료 표시. 게시판에서 「아직 답이 없는 질문」을 걸러 보게 한다."""
+        """답변 완료 표시. 게시판에서 「아직 답이 없는 질문」을 걸러 보게 한다.
+
+        그 사이 지운 글이면 `VocPostGoneError` 로 거절한다 — 0행 UPDATE 를 성공으로 넘기지 않는다.
+        """
         with self._write_transaction() as connection:
+            if not voc_post_exists(connection, post_id=post_id):
+                raise VocPostGoneError()
             update_voc_post_resolved(connection, post_id=post_id, resolved=resolved)
 
     def remove_voc_post(self, post_id: str) -> None:

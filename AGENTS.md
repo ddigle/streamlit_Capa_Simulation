@@ -498,7 +498,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 콜백이고 본문 `st.rerun()` 이 없다 — 끊긴 회차가 아래 글의
     「삭제 확인」 값을 버려 단추가 사라졌다. 새 글·답변 폼과 답변 완료 단추는 key 세대, 글 삭제는 지운 글 id 로
     빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`). 세대 비교와 쓰기는 `components/write_guard.write_once` 라
-    두 회차에 겹쳐 오는 더블클릭도 한 번만 쓴다 — 입력은 그 앞에서 읽고 세대 올리기는 뒷정리의 맨 끝이다.
+    두 회차에 겹쳐 오는 더블클릭도 한 번만 쓴다 — 입력은 그 앞에서 읽고 세대 올리기는 뒷정리의 맨 끝이다. 느린 두 번
+    누름이 방금 비운 새 폼에 닿은 빈 제출은 `write_guard.just_written` 으로 걸러 성공을 다시 알린다(9장).
+  - 그 사이 다른 세션이 지운 글의 답변·답변 완료 표시는 저장소가 같은 쓰기 잠금 안에서 글을 확인해
+    `VocPostGoneError` 로 거절한다(`voc_reply.post_id` 에 외래 키가 없어 막지 않으면 주인 없는 답글이 남는다).
+    화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`).
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
 - `app_pages/scenario_management.py` — `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭(늘 그린다 — form 입력
@@ -1875,7 +1879,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
-  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). 지금은 VOC 만 쓴다.
+  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
+  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
+  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3831,6 +3837,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `components/write_guard.write_once` 가 프로세스 잠금 안에서 하고, 「이 세대는 썼다」 는 끊기지 않는 세션 dict 표지에
     적는다. 입력은 부르기 전에 읽고(세션 칸 접근도 끊기는 자리다) 세대 올리기는 뒷정리의 맨 끝에 둔다. 시험은 둘째 회차를
     다른 스레드의 `app._run` 으로 세운다(`tests/test_voc_page.py` 의 `_race`).
+  - **느린** 두 번 누름(0.15~0.3초)은 둘째 누름이 첫 쓰기 뒤 새로 그린 **빈** 폼의 단추에 닿아 세대가 같다 — 정상 제출로
+    보면 빈 입력 거절(「제목을 입력하세요.」)이 방금 성공한 자리에 남았다(2026-10-26 E2E). `write_once` 는 쓴 시각도 적고,
+    입력이 모두 빈 제출이 `write_guard.TRAILING_PRESS_SECONDS`(1초) 안에 오면(`just_written`) 쓰지 않고 방금 성공을 다시
+    알린다. 적은 것이 하나라도 있거나 창이 지나면 정상 제출이다(VOC 새 글·답변, `tests/test_voc_page.py`).
+  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
+    회차가 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라 저장소가 거부하고, 방금 한 제 저장을 「다른 사용자가
+    먼저 저장」이라 알렸다(2026-10-26 E2E). 저장 전에 `write_guard.profile_save_marks()` 로 받은 dict 에 성공한
+    `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
+    (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
+    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

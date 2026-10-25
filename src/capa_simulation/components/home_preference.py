@@ -35,6 +35,7 @@ from capa_simulation.components.profile_caption import (
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
+from capa_simulation.components.write_guard import is_own_profile_save, profile_save_marks
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY as ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -135,6 +136,9 @@ EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
 # 확보율 보정 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다(판정 기준과 같다).
 EXECUTION_BASE_VERSION_KEY = "home_preference_execution_base_version"
+# 이 세션이 한 확보율 보정 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+EXECUTION_SAVE_NAME = "home_preference_execution"
+EXECUTION_SAVED_MESSAGE = "확보율 보정을 저장했습니다."
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
@@ -149,6 +153,9 @@ THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
 # **앞 회차(사용자가 보고 고친 화면)** 의 version 을 대조해야 다른 세션의 먼저 저장을 잡는다.
 THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
 THRESHOLD_FLASH_KEY = "home_threshold_flash"
+# 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+THRESHOLD_SAVE_NAME = "home_preference_threshold"
+THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장했습니다."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
@@ -881,8 +888,10 @@ def render_threshold_editor(
         )
         # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
         st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
+        # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = profile_save_marks()
         try:
-            _save_thresholds(
+            saved = _save_thresholds(
                 database_path,
                 months=months,
                 month_labels=month_labels,
@@ -895,13 +904,20 @@ def render_threshold_editor(
                 clear_outside=clear_outside,
             )
         except BOOTSTRAP_ERRORS as exc:
-            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
-            notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
             # 충돌이면 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신
             # 저장본을 그리게 캐시를 비운다.
             clear_global_securement_threshold_cache()
+            if isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
+                THRESHOLD_SAVE_NAME, exc.expected, exc.stored
+            ):
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
+                st.rerun(scope="app")
+            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
+            notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
         else:
-            queue_flash(THRESHOLD_FLASH_KEY, "확보율 판정 기준을 공용 설정으로 저장했습니다.")
+            save_marks[THRESHOLD_SAVE_NAME] = (expected_version, saved.version)
+            queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             st.rerun(scope="app")
 
 
@@ -917,7 +933,7 @@ def _save_thresholds(
     expected_version: int,
     source: str,
     clear_outside: bool = False,
-) -> None:
+) -> GlobalSecurementThreshold:
     """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와 같은 규칙).
 
     `clear_outside` 면 조회기간 밖 월별 기준을 지운 뒤 합친다.
@@ -935,7 +951,7 @@ def _save_thresholds(
             [_ratio_or_none(warning_row[label]) for label in month_labels],
         )
     _reject_hidden_reversed_months(months, default_secure / 100.0, default_warning / 100.0, rows)
-    get_scenario_repository(database_path).replace_global_securement_threshold(
+    saved = get_scenario_repository(database_path).replace_global_securement_threshold(
         default_secure / 100.0,
         default_warning / 100.0,
         rows,
@@ -945,6 +961,7 @@ def _save_thresholds(
     clear_global_securement_threshold_cache()
     # 입장 화면 Summary 도 같은 기준으로 판정한다(새 기준의 지문으로 새로 만든다).
     _recheck_intro_summary()
+    return saved
 
 
 def _reject_hidden_reversed_months(
@@ -1659,10 +1676,10 @@ def _render_key_process_preset_actions(
             *(entry for entry in profile.presets if entry[0] == target),
             *(entry for entry in profile.presets if entry[0] != target),
         ]
-        message = f"「{target}」을 기본 프리셋으로 옮겼습니다."
+        message = f"「{target}」{object_particle(target)} 기본 프리셋으로 옮겼습니다."
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
-        message = f"프리셋 「{target}」을 지웠습니다."
+        message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
     try:
         get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집"
@@ -1782,19 +1799,25 @@ def _render_execution_editor(
         )
         # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
         st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
+        # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = profile_save_marks()
         try:
-            _save_execution_capacity(
+            saved = _save_execution_capacity(
                 database_path,
                 edited=edited,
                 source=note.strip() or "웹 직접 편집",
                 expected_version=expected_version,
             )
         except ProfileVersionConflict as exc:
-            notice.error(str(exc))
             # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
             # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
             clear_global_execution_capacity_cache()
             st.session_state.pop(EXECUTION_BASE_VERSION_KEY, None)
+            if is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored):
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
+                st.rerun(scope="app")
+            notice.error(str(exc))
             return
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
@@ -1802,7 +1825,8 @@ def _render_execution_editor(
         except ValueError as exc:
             notice.error(str(exc))
             return
-        queue_flash("home_execution_flash", "확보율 보정을 저장했습니다.")
+        save_marks[EXECUTION_SAVE_NAME] = (expected_version, saved.version)
+        queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
         st.rerun(scope="app")
 
 
@@ -1825,14 +1849,15 @@ def _save_execution_capacity(
     edited: pd.DataFrame,
     source: str,
     expected_version: int,
-) -> None:
+) -> GlobalExecutionCapacity:
     frame = edited.loc[:, list(EXECUTION_CAPACITY_COLUMNS)].copy()
-    get_scenario_repository(database_path).replace_global_execution_capacity(
+    saved = get_scenario_repository(database_path).replace_global_execution_capacity(
         prepare_execution_capacity(frame),
         source=source,
         expected_version=expected_version,
     )
     clear_global_execution_capacity_cache()
+    return saved
 
 
 def _render_execution_notices(

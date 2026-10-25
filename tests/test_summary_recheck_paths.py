@@ -207,7 +207,7 @@ class _FailingRepo:
 
 
 @pytest.fixture
-def admin_profile_savers(monkeypatch: pytest.MonkeyPatch) -> dict[str, Callable[[Any], None]]:
+def admin_profile_savers(monkeypatch: pytest.MonkeyPatch) -> dict[str, Callable[[Any], object]]:
     """Admin Area 의 표시순서·공정 표시명 저장 함수. 검증·캐시·적용은 비워 저장 사슬만 남긴다."""
     monkeypatch.setattr(
         display_order_management, "validate_display_order", lambda frame, **kwargs: frame
@@ -235,7 +235,7 @@ ADMIN_PROFILE_STORES = ["replace_global_display_order", "replace_global_process_
 
 @pytest.mark.parametrize("store", ADMIN_PROFILE_STORES)
 def test_saving_display_order_or_process_names_rechecks_the_summary(
-    session: dict[str, Any], admin_profile_savers: dict[str, Callable[[Any], None]], store: str
+    session: dict[str, Any], admin_profile_savers: dict[str, Callable[[Any], object]], store: str
 ) -> None:
     """Summary 는 표시순서·공정 표시명 version 을 요약 키에 넣고 그 차례·표시명으로 그린다."""
     repo = _DisplayOrderRepo()
@@ -245,7 +245,7 @@ def test_saving_display_order_or_process_names_rechecks_the_summary(
 
 @pytest.mark.parametrize("store", ADMIN_PROFILE_STORES)
 def test_a_failed_display_order_or_process_name_save_keeps_the_summary_check(
-    session: dict[str, Any], admin_profile_savers: dict[str, Callable[[Any], None]], store: str
+    session: dict[str, Any], admin_profile_savers: dict[str, Callable[[Any], object]], store: str
 ) -> None:
     """저장이 실패하면 바뀐 것이 없으니 들고 있는 요약을 그대로 둔다."""
     with pytest.raises(ValueError, match="저장 실패"):

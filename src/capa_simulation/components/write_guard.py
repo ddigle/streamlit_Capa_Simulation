@@ -1,4 +1,4 @@
-# Purpose: 쓰기 콜백이 같은 세대의 겹친 두 누름에도 공용 기록을 세대마다 한 번만 쓰게 한다.
+# Purpose: 쓰기 단추의 빠른 두 번 누름이 한 번만 쓰고 제 저장을 남의 저장으로 알리지 않게 한다.
 
 """빠른 두 번 누름이 **겹쳐** 올 때의 거름.
 
@@ -21,11 +21,19 @@
 
 `write` 는 잠금 안에서 표지를 적기 전에 돈다. 그 안에서 세션 칸을 읽지 않는다 — 세션 칸
 접근도 끊기는 자리라, 입력은 부르기 전에 읽어 둔다.
+
+**버전 대조 저장**(공용 프로필 — 공정 표시명·판정 기준·확보율 보정)은 본문에서 저장하고
+`st.rerun()` 한다. 둘째 누름의 회차가 그 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라
+저장소가 `ProfileVersionConflict` 로 거부했고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」
+이라 알렸다(2026-10-26 E2E). 저장 전에 `profile_save_marks` 로 받아 둔 dict 에 저장에 성공한
+`(편집 시작, 저장된)` version 짝을 적고, 거부가 그 짝이면(`is_own_profile_save`) 오류 대신 성공을
+다시 알린다 — 그 사이 남이 저장했으면 지금 version 이 짝과 달라 그대로 거부를 알린다.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 
 import streamlit as st
@@ -33,6 +41,15 @@ import streamlit as st
 # 쓰기를 마친 세대의 표지(세대 칸 이름 → 그 세대). 세션마다 하나이고 처음 쓰는 콜백이
 # 잠금 안에서 건다.
 WRITE_MARKS_KEY = "write_guard_marks"
+
+# 세대를 쓴 시각(세대 칸 이름 → `time.monotonic()`). `write_once` 가 표지와 함께 적는다.
+RECENT_WRITES_KEY = "write_guard_recent_writes"
+# 쓰기 직후 이 안에 들어온 **빈** 제출은 같은 단추의 느린 두 번 누름의 꼬리로 본다. 사람 더블클릭
+# 간격(Windows 기본 0.5초)에 회차 한 번의 여유를 더한 값이다.
+TRAILING_PRESS_SECONDS = 1.0
+
+# 이 세션이 마지막으로 한 버전 대조 저장(저장 이름 → (편집 시작 version, 저장된 version)).
+PROFILE_SAVES_KEY = "write_guard_profile_saves"
 
 # 세션을 가리지 않는 잠금 하나다. 두 회차의 세션 칸 잠금이 따로라 세션 안에 둘 자리가
 # 없고, 잠그는 동안 하는 일은 기록 한 줄 쓰기다.
@@ -63,7 +80,54 @@ def write_once(counter_key: str, generation: int, write: Callable[[], object]) -
         if not isinstance(marks, dict):
             marks = {}
             st.session_state[WRITE_MARKS_KEY] = marks
+        recent = st.session_state.get(RECENT_WRITES_KEY)
+        if not isinstance(recent, dict):
+            recent = {}
+            st.session_state[RECENT_WRITES_KEY] = recent
         if marks.get(counter_key) != generation:
             write()
             marks[counter_key] = generation
+            recent[counter_key] = time.monotonic()
     return True
+
+
+def just_written(counter_key: str) -> bool:
+    """`counter_key` 의 쓰기가 `TRAILING_PRESS_SECONDS` 안에 있었는가.
+
+    느린 두 번 누름(0.15~0.3초)은 둘째 누름이 첫 쓰기 뒤 **새로 그린 빈 폼**의 단추에 닿는다. 세대가
+    같아 `write_once` 는 정상 제출로 보고, 빈 입력이 거절되어 방금 성공한 쓰기 자리에 「제목을
+    입력하세요.」가 남았다(2026-10-26 E2E). 부르는 쪽은 입력이 **모두 빈** 제출이 이 안에 오면 쓰지
+    않고 방금 성공을 다시 알린다 — 적은 것이 하나라도 있으면 정상 제출이다.
+    """
+    recent = st.session_state.get(RECENT_WRITES_KEY)
+    if not isinstance(recent, dict):
+        return False
+    moment = recent.get(counter_key)
+    return isinstance(moment, float) and time.monotonic() - moment < TRAILING_PRESS_SECONDS
+
+
+def profile_save_marks() -> dict[str, tuple[int, int]]:
+    """버전 대조 저장의 표지 dict(저장 이름 → (편집 시작 version, 저장된 version)).
+
+    저장 **전에** 받아 두고 저장에 성공하면 이 dict 칸에 적는다. 세션 칸 쓰기는 둘째 누름의
+    회차가 멈춤을 건 자리에서 끊기지만 dict 칸 쓰기는 끊기지 않는다(위 `write_once` 의 표지와
+    같은 까닭).
+    """
+    with _WRITE_LOCK:
+        marks = st.session_state.get(PROFILE_SAVES_KEY)
+        if not isinstance(marks, dict):
+            marks = {}
+            st.session_state[PROFILE_SAVES_KEY] = marks
+        return marks
+
+
+def is_own_profile_save(name: str, expected: int | None, stored: int | None) -> bool:
+    """버전 충돌 `(편집 시작 expected, 지금 stored)` 가 이 세션이 방금 한 `name` 저장 그것인가.
+
+    그렇다면 같은 단추를 빠르게 두 번 누른 것이다 — 첫 누름이 이미 저장했고 그 뒤 아무도 저장하지
+    않았다. 부르는 쪽은 거부 대신 저장 성공을 알린다.
+    """
+    if expected is None or stored is None:
+        return False
+    marks = st.session_state.get(PROFILE_SAVES_KEY)
+    return isinstance(marks, dict) and marks.get(name) == (int(expected), int(stored))
