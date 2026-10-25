@@ -3776,6 +3776,8 @@ def check_equipment_moves(screen: Screen) -> str:
 SPACE_COLOR_BASIS_KEY: Final = "space_color_basis"
 SPACE_SHORTENING_BASIS: Final = "필요 단축"
 SPACE_DEFAULT_BASIS: Final = "공정구분"
+# Space 조건 카드 이름(`sidebar_status.condition_card(name=)` — 앱 `space_status.SPACE_CARD_NAME`).
+SPACE_CARD_NAME: Final = "space"
 # FAB 블록 풍선(`blockTip`)에 단축 줄(「단축 3대 · 최대 −18일」)이 실린 블록 수.
 _SHORT_BLOCKS_JS = """(svg) => [...svg.querySelectorAll(".sle-mark title")]
   .filter((tip) => /단축 \\d+대/.test(tip.textContent || "")).length"""
@@ -3823,8 +3825,16 @@ def summarize_space_shortening(
 
 
 def _choose_color_basis(screen: Screen, value: str) -> None:
-    box = screen.page.locator(f".st-key-{SPACE_COLOR_BASIS_KEY}").first
-    box.get_by_text(value, exact=True).first.click()
+    """사이드바 `Space 조건` 카드의 `색 기준` 라디오를 그 값으로. 카드는 기본 접힘이라 접혀 있으면
+    먼저 편다."""
+    option = screen.page.locator(f".st-key-{SPACE_COLOR_BASIS_KEY}").first.get_by_text(
+        value, exact=True
+    )
+    if not option.first.is_visible():
+        card = screen.page.locator(f".st-key-{CONDITION_CARD_PREFIX}{SPACE_CARD_NAME}").first
+        card.locator("summary").first.click()
+        option.first.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+    option.first.click()
     screen.wait_idle()
 
 

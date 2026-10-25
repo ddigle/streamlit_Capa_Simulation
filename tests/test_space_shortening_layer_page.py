@@ -588,3 +588,8 @@ def test_the_shortening_cards_offer_the_drawing_link_only_for_saved_equipment(
     sample_dir.mkdir()
     sample = _ok(_app(_empty_database(sample_dir), SHORTENING_PAGE).run())
     assert not any(fallback in str(item.value) for item in sample.caption)
+
+
+def test_the_contributing_months_read_as_year_month() -> None:
+    assert space_shortening_view._months_text("202611, 202612") == "2026-11, 2026-12"
+    assert space_shortening_view._months_text("") == ""

@@ -3259,6 +3259,8 @@ def test_the_space_shortening_item_reads_what_the_app_draws() -> None:
     assert screens.SPACE_COLOR_BASIS_KEY == navigation.SPACE_COLOR_BASIS_KEY
     assert screens.SPACE_SHORTENING_BASIS == navigation.SPACE_SHORTENING_BASIS
     assert screens.SPACE_DEFAULT_BASIS == navigation.SPACE_DEFAULT_BASIS
+    page = _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+    assert f'SPACE_CARD_NAME = "{screens.SPACE_CARD_NAME}"' in page
     assert '"단축 호기":' in _text(COMPONENTS / "space_floor_list.py")
     assert "단축 호기" in space_floor_list._LAYER_COLUMNS
     editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")

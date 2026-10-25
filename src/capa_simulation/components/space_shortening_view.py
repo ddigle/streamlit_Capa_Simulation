@@ -88,6 +88,7 @@ from capa_simulation.services.space_shortening_layer import (
     ShorteningMark,
     VirtualUnit,
     build_shortening_layer,
+    day_text,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
@@ -146,6 +147,14 @@ def _percent(level: float) -> str:
 
 def _month_text(month: int) -> str:
     return f"{month // 100}-{month % 100:02d}"
+
+
+def _months_text(months: str) -> str:
+    """계획의 「해소 기여 월」 글(「202611, 202612」)을 「2026-11, 2026-12」 로."""
+    parts = [part.strip() for part in months.split(",") if part.strip()]
+    return ", ".join(
+        _month_text(int(part)) if part.isdigit() and len(part) == 6 else part for part in parts
+    )
 
 
 def _target_level(value: object) -> float | None:
@@ -596,7 +605,7 @@ def _render_picked(
         st.markdown(f"### {mark.main_text} {_tag(mark)}")
         month = (
             f"{_month_text(mark.month)} 부족을 메웁니다" if mark.month is not None else "—"
-        ) + (f" (해소 기여 월 {mark.contributes})" if mark.contributes else "")
+        ) + (f" (해소 기여 월 {_months_text(mark.contributes)})" if mark.contributes else "")
         lines = [
             f"Qual 일정 ~~{mark.original_qual.isoformat()}~~ → **{mark.target_qual.isoformat()}**",
             f"목표까지 {mark.sub_text}",
@@ -681,10 +690,9 @@ def render_floor_layer_panel(
             st.markdown("**도면에 자리가 없는 호기**")
             st.caption(
                 "좌표가 없어 그리지 못한 단축 호기와, 이 층에 호기가 그려진 공정의 추가N 입니다. "
-                "추가N 은 기존 "
-                "호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 편집기에서 자리를 "
-                "잡으면 도면에 "
-                "나타납니다."
+                "추가N 은 기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 "
+                "편집기에서 "
+                "자리를 잡으면 도면에 나타납니다."
             )
             frame = pd.concat(
                 [
@@ -693,7 +701,10 @@ def render_floor_layer_panel(
                         {
                             "호기": [unit.name for unit in virtuals],
                             "공정": [unit.process for unit in virtuals],
+                            "단축(일)": [None] * len(virtuals),
                             "목표 Qual": [unit.target_qual.isoformat() for unit in virtuals],
+                            "D-n/기한": [day_text(unit.left) for unit in virtuals],
+                            "담당자": [""] * len(virtuals),
                             "구분": ["추가"] * len(virtuals),
                         }
                     ),
@@ -706,6 +717,8 @@ def render_floor_layer_panel(
                 ],
                 hide_index=True,
                 width="stretch",
+                # 추가N 의 단축(일)은 없다 — 리터럴 "None" 대신 비운다.
+                placeholder="",
                 key=f"space_shortening_loose_{floor[0]}_{floor[1]}",
             )
 
