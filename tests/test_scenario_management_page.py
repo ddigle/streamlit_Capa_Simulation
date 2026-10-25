@@ -1,5 +1,6 @@
 # Purpose: 시나리오 관리 페이지의 목록·리비전 편집표·공식 지정 팝업·보관함·복제를 AppTest 로 잰다.
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
 from uuid import uuid4
@@ -37,6 +38,7 @@ from capa_simulation.components.scenario_management import (
     OFFICIAL_DIALOG_KEY,
     REVISION_EDITOR_KEY,
     REVISION_SAVE_GUIDE,
+    _official_rename_notes,
     official_confirm_key,
 )
 from capa_simulation.persistence.cache import (
@@ -46,9 +48,15 @@ from capa_simulation.persistence.cache import (
     load_global_main_cases,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.models import ScenarioCreate, ScenarioSnapshot
+from capa_simulation.persistence.models import (
+    OfficialReleaseSummary,
+    RevisionSummary,
+    ScenarioCreate,
+    ScenarioSnapshot,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY, VIRTUAL_PRODUCTS_KEY
+from capa_simulation.services.korean_particle import with_direction_particle
 from capa_simulation.services.virtual_product import (
     VirtualProductRecord,
     VirtualProductRequest,
@@ -1743,8 +1751,8 @@ def test_revision_names_are_saved_from_the_card_table(tmp_path: Path) -> None:
     tables.run()
     assert app.button(key="scenario_card_save_names").label == "이름 저장 (2)"
     assert any(
-        f"r1: 공식 v{release.release_no} 으로 지정된 리비전입니다 — 공식버전명은 바뀌지 않습니다."
-        in item.value
+        f"r1: {with_direction_particle(f'공식 v{release.release_no}')} 지정된 리비전입니다 — "
+        "공식버전명은 바뀌지 않습니다." in item.value
         for item in app.caption
     )
     app.button(key="scenario_card_save_names").click()
@@ -1765,6 +1773,37 @@ def test_revision_names_are_saved_from_the_card_table(tmp_path: Path) -> None:
     assert after.updated_at == before.updated_at
     assert app.session_state[ACTIVE_SCENARIO_LABEL_KEY]["revision_name"] == "공식 리비전 새 이름"
     assert app.button(key="scenario_card_save_names").label == "이름 저장"
+
+
+def test_the_official_rename_note_picks_the_direction_particle_by_the_release_number() -> None:
+    """「공식 vN」 뒤 조사는 번호 끝소리로 고른다 — v4 는 「로」, v3 은 「으로」."""
+    when = datetime(2026, 10, 26)
+    revisions = {
+        f"rev{no}": RevisionSummary(f"rev{no}", "s1", no, f"이름{no}", None, None, "h", when)
+        for no in (1, 2)
+    }
+    releases = [
+        OfficialReleaseSummary(
+            f"rel{release_no}",
+            release_no,
+            "s1",
+            revision_id,
+            f"v{release_no}",
+            None,
+            "S",
+            "",
+            1,
+            "",
+            when,
+        )
+        for release_no, revision_id in ((4, "rev1"), (3, "rev2"))
+    ]
+    renames = {"rev1": ("이름1", "새 이름"), "rev2": ("이름2", "또 새 이름")}
+
+    assert _official_rename_notes(renames, revisions, releases).split("  \n") == [
+        "r1: 공식 v4로 지정된 리비전입니다 — 공식버전명은 바뀌지 않습니다.",
+        "r2: 공식 v3으로 지정된 리비전입니다 — 공식버전명은 바뀌지 않습니다.",
+    ]
 
 
 def test_a_revision_name_changed_elsewhere_refuses_the_whole_name_save(tmp_path: Path) -> None:

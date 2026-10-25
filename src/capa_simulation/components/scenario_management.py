@@ -109,7 +109,7 @@ from capa_simulation.scenario_state import (
     session_virtual_products,
 )
 from capa_simulation.services.builtin_seed import BUILTIN_SEED_SOURCE_CODE
-from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.korean_particle import object_particle, with_direction_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_virtual_products import (
     inherit_virtual_product_records,
@@ -947,8 +947,9 @@ def _official_rename_notes(
     for release in releases:
         release_by_revision.setdefault(release.revision_id, release.release_no)
     return "  \n".join(
-        f"r{revision_by_id[revision_id].revision_no}: 공식 v{release_by_revision[revision_id]} "
-        "으로 지정된 리비전입니다 — 공식버전명은 바뀌지 않습니다."
+        f"r{revision_by_id[revision_id].revision_no}: "
+        f"{with_direction_particle(f'공식 v{release_by_revision[revision_id]}')} "
+        "지정된 리비전입니다 — 공식버전명은 바뀌지 않습니다."
         for revision_id in renames
         if revision_id in release_by_revision and revision_id in revision_by_id
     )
