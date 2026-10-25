@@ -730,7 +730,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
   원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「설정」 팝업 Cut-off 표).
   - 행 필터 중에는 `num_rows="fixed"` 다 — 이 표들은 편집 결과가 곧 다음 리비전 전부다. 거른 편집인지는 호출자가
-    `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`).
+    `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`). 모든 행이 남는 거름(「Select
+    all」·한 호기뿐인 표의 「표에서 고치기」)은 원본(RangeIndex)을 그대로 돌려준다 — `.loc` 의 일반 정수 Index 를
+    행 추가가 열린 편집표에 넘기면 Streamlit 1.63 이 `hide_index=True` 를 무시하고 머리 없는 인덱스 칸을 세운다.
   - 보이는 행이 바뀌면 `discard_editor` 로 새 위젯을 세운다. 보기 설정 위젯은 `st.form` 밖이고 `value_labels` 는
     보이는 글자만 바꾼다.
 - `src/capa_simulation/components/securement_heatmap.py` — `산출 결과` 의 공정 × 월 확보율 상태 3색 격자다(범례 없이
@@ -1371,7 +1373,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
-    낡은 세션의 지운 호기)은 「저장하기 전에 고칠 것」 줄이다. 일정 확인 갈래는 내용 지문 캐시(`get_schedule_confirmation_issues`).
+    낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edits`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
+    고칠 것」 줄이다. 일정 확인 갈래는 내용 지문 캐시(`get_schedule_confirmation_issues`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 토스트는 마지막 op 를 보낸
     마운트에(「호기 추가」 가 넣은 회차만 상세 칸에), 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와

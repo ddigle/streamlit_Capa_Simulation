@@ -188,6 +188,7 @@ from capa_simulation.services.equipment_grid import (
     pending_ops,
     prune_loaded,
     save_id_map,
+    stale_scenario_edits,
     text_matrix,
     undo_top,
     unit_texts,
@@ -452,6 +453,15 @@ def _changed_rows(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
     return max(sum((after - before).values()), sum((before - after).values()))
 
 
+# 낡기 전에 고친 시나리오 칸 — 일정이 바뀐 저장은 저장소가 늘 거부하므로 저장 전에 그 칸을 알린다.
+# 칸을 되돌리면 공통 칸은 저장된다(칸 되돌리기는 낡은 세션의 잠금을 보지 않는다).
+STALE_SCENARIO_EDITS: Final = (
+    "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
+    "않습니다 — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 "
+    "불러와 다시 고칩니다"
+)
+
+
 def _table_errors(
     frames: Frames,
     saved: Frames,
@@ -503,6 +513,9 @@ def _table_errors(
                 "되살리거나 "
                 "최신을 불러오세요"
             )
+        cells, units = stale_scenario_edits(frames[1], saved[1], renames)
+        if cells:
+            errors.append(STALE_SCENARIO_EDITS.format(cells=cells, units=units))
     return errors
 
 
@@ -972,7 +985,7 @@ def _render_head(
             else " 배치 칸은 지금 잠겨 있습니다."
         )
         st.badge(
-            f"설비 시나리오 · {name}{tail}",
+            f"설비 시나리오 · {literal_markdown(name)}{tail}",
             icon=":material/layers:",
             color="primary" if official else "violet",
             help=(
@@ -1005,7 +1018,9 @@ def _render_notices(
     """알림 — 늘 서 있는 한 칸 안에(아래 컴포넌트 마운트의 자리를 고정한다, 개편 명세 2-3)."""
     with st.container():
         if basis is not None and basis.stale:
-            st.warning(_stale_lock_message(basis), icon=":material/lock_clock:")
+            st.warning(
+                markdown_safe_tildes(_stale_lock_message(basis)), icon=":material/lock_clock:"
+            )
         layout = layout_mode.layout
         scenario_name = basis.scenario_name if basis is not None else None
         if layout == "locked":
@@ -1013,7 +1028,7 @@ def _render_notices(
             st.caption(
                 ":material/lock: 배치 편집이 잠겨 있어 있던 호기의 배치 칸은 고칠 수 없고 새 "
                 "호기는 "
-                "자리 없이 들어갑니다" + (f" — {reason}" if reason else ".")
+                "자리 없이 들어갑니다" + (f" — {markdown_safe_tildes(reason)}" if reason else ".")
             )
         elif layout == "overlay":
             where = (

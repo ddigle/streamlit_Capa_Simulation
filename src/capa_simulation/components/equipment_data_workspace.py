@@ -2094,7 +2094,7 @@ def _saved_basis_words(snapshot: EquipmentSnapshot, scenario_name: str | None) -
     """「저장본 r3 · 「운영 일정」 · 공통 대장 r5」 — 편집본이 나온 저장본 쌍."""
     schedule = snapshot.schedule
     head = f"저장본 r{schedule.revision_no}" if schedule is not None else "저장본 일정 없음"
-    name = f" · 「{scenario_name}」" if scenario_name else ""
+    name = f" · 「{literal_markdown(scenario_name)}」" if scenario_name else ""
     return f"{head}{name} · 공통 대장 r{snapshot.revision.revision_no}"
 
 
@@ -2602,7 +2602,7 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
             key=f"equipment_{slug}_delete_selected_v1",
             icon=":material/delete:",
             disabled=delete_locked is not None,
-            help=delete_locked,
+            help=markdown_safe_tildes(delete_locked) if delete_locked is not None else None,
         )
     if matching:
         return SELECT_MATCHING
@@ -2740,7 +2740,8 @@ def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
         f"r{basis.revision_no} 에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가, "
         "호기·비가동 지우기를 잠갔습니다. 일정을 고치거나 호기를 지우려면 사이드바 "
         f"「설비 시나리오」 에서 최신 {with_object_particle(latest)} 불러오세요. 공통 칸(기존 "
-        "보유대수 지우기 포함)은 그대로 고쳐 저장됩니다."
+        "보유대수 지우기 포함)은 그대로 고쳐 저장됩니다 — 낡기 전에 고친 일정·시나리오 메모 칸은 "
+        "「저장 전 변경」 에서 되돌려야 저장됩니다."
     )
 
 
@@ -3142,7 +3143,8 @@ def _render_history(
     }
     if scenario_name:
         st.caption(
-            f"「{scenario_name}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 리비전입니다."
+            f"「{literal_markdown(scenario_name)}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 "
+            "리비전입니다."
         )
     st.dataframe(
         pd.DataFrame(

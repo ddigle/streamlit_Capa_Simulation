@@ -153,6 +153,12 @@ def render_table_view_controls(
         if chosen:
             visible = visible.loc[visible[column].astype(str).str.strip().isin(chosen)]
     filtered = len(visible) != len(data)
+    if not filtered:
+        # 모든 행이 남은 거름(「Select all」·한 호기뿐인 표의 「표에서 고치기」)은 원본을 그대로
+        # 쓴다 — `.loc` 가 RangeIndex 를 일반 정수 Index 로 바꾸면 Streamlit 1.63 은 행 추가가
+        # 열린(`num_rows="dynamic"`) 편집표에서 `hide_index=True` 를 무시하고 인덱스를 머리 없는
+        # 필수 칸으로 세운다. 보이는 행이 같아 행 지문(아래)도 그대로다.
+        visible = data
     # `st.data_editor` 의 편집 델타는 행 **위치** 기반이다. 보이는 행 집합이 바뀌면 남아
     # 있던 편집이 다른 행에 붙는다. 위젯을 만들기 전에 버려야 그 오염이 저장까지 가지
     # 않는다. `month_editor` 가 같은 이유로 같은 일을 한다. 세션 칸만 지우면 브라우저가 옛
