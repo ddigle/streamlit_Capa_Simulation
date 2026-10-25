@@ -271,10 +271,12 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 값 뒤 조사(순수 함수)
   // 파이썬 `services/korean_particle.py` 와 같은 표다 — 한글 음절은 종성, 숫자는 한국어로 읽은 끝 글자, `%` 는
-  // 받침 없음, 감싼 따옴표·괄호·굵게·백슬래시는 건너뛰고, 읽지 못하는 끝(영문)은 `을(를)` 꼴이다.
+  // 받침 없음, 고정 어휘의 영문 끝(층 이름의 F·DB·size·Capa)은 읽기 표, 감싼 따옴표·괄호·굵게·백슬래시는
+  // 건너뛰고, 읽지 못하는 끝(그 밖의 영문)은 `을(를)` 꼴이다.
   // `tests/test_particle_sites.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 파이썬과 대조한다. 한쪽을 고치면 다른 쪽도 고친다.
   // <josa>
   const JOSA_KNOWN_FINAL = { 0: 21, 1: 8, 2: 0, 3: 16, 4: 0, 5: 0, 6: 1, 7: 8, 8: 8, 9: 0, '%': 0 }
+  const JOSA_LATIN_TAIL_FINAL = [['F', 0], ['DB', 0], ['size', 0], ['Capa', 0]]
   const JOSA_SKIPPED_TAIL = '"\'`)]」』*\\'
   // 조사 종류 → [받침 있을 때, 없을 때, 읽지 못할 때].
   const JOSA_FORMS = {
@@ -285,14 +287,16 @@ export default function (component) {
   }
   function josaFinal(word) {
     const chars = Array.from(String(word).trim())
-    for (let i = chars.length - 1; i >= 0; i -= 1) {
-      const char = chars[i]
-      if (/\s/u.test(char) || JOSA_SKIPPED_TAIL.includes(char)) continue
-      const code = char.codePointAt(0)
-      if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28
-      return Object.prototype.hasOwnProperty.call(JOSA_KNOWN_FINAL, char) ? JOSA_KNOWN_FINAL[char] : null
-    }
-    return null
+    let end = chars.length
+    while (end && (/\s/u.test(chars[end - 1]) || JOSA_SKIPPED_TAIL.includes(chars[end - 1]))) end -= 1
+    if (!end) return null
+    const char = chars[end - 1]
+    const code = char.codePointAt(0)
+    if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28
+    if (Object.prototype.hasOwnProperty.call(JOSA_KNOWN_FINAL, char)) return JOSA_KNOWN_FINAL[char]
+    const head = chars.slice(0, end).join('')
+    const known = JOSA_LATIN_TAIL_FINAL.find(([tail]) => head.endsWith(tail))
+    return known ? known[1] : null
   }
   // `word` 와 그 끝소리에 맞는 `kind`(을·은·이·으로) 조사를 붙여 돌려준다. `으로` 는 받침이 없거나 ㄹ 이면 `로` 다.
   function withJosa(word, kind) {

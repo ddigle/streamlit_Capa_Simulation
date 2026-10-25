@@ -90,7 +90,7 @@ def test_the_direction_particle_treats_rieul_like_no_final(word: str, particle: 
         ("4", "가"),
         ("27-06", "이"),
         ("`numpy`", "이(가)"),
-        ("시뮬레이션 DB", "이(가)"),
+        ("시뮬레이션 DB", "가"),
         ("**공정 A1**", "이"),
         ("", "이(가)"),
     ],
@@ -106,6 +106,25 @@ def test_escaped_markdown_reads_the_same_final_as_the_plain_name() -> None:
         escaped = literal_markdown(name)
         assert topic_particle(escaped) == topic_particle(name), (name, escaped)
         assert object_particle(f"「{escaped}」") == object_particle(name), (name, escaped)
+
+
+@pytest.mark.parametrize(
+    ("word", "topic", "direction"),
+    [
+        ("C2 2F", "는", "로"),
+        ("Xsize", "는", "로"),
+        ("「투자Capa」", "는", "로"),
+        ("DuckDB", "는", "로"),
+        ("Staff", "은(는)", "(으)로"),
+        ("EQ-X", "은(는)", "(으)로"),
+        ("셋업 B", "은(는)", "(으)로"),
+    ],
+)
+def test_fixed_vocabulary_latin_tails_are_read(word: str, topic: str, direction: str) -> None:
+    """층 이름의 `F`·`DB`·`size`·`Capa` 는 읽는다(「C2 2F는」·「Xsize를」). 그 밖의 영문 끝(사람이 붙인
+    이름)은 약어인지 낱말인지 갈리지 않아 갈래 꼴 그대로다 — 대소문자도 그대로 견준다(「Staff」)."""
+    assert topic_particle(word) == topic
+    assert direction_particle(word) == direction
 
 
 def test_percent_has_no_final_consonant() -> None:

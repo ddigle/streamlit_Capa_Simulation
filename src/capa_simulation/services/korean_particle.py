@@ -5,7 +5,9 @@
 「`E2E 동시 시나리오`을 저장했습니다」·「r2을 저장했습니다」처럼 이름 뒤에 조사를 못박아 둔
 문구는 끝소리가 다른 이름에서 틀린다(2026-10-05 E2E). 한글 음절과 숫자·`%`(퍼센트)는 끝소리를
 정확히 안다. 영문 등 읽는 법을 알 수 없는 끝은 `을(를)`·`은(는)`·`이(가)`·`(으)로` 로 둔다 — 틀린
-조사보다 낫다.
+조사보다 낫다. 다만 이 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름 「C1 1F」의 `F`·「설비 DB」의
+`DB`·「Xsize」의 `size`·「투자Capa」의 `Capa`)은 읽기를 표(`_LATIN_TAIL_FINAL`)로 둔다 — 그
+어휘가 들어가는 자리가 갈래 꼴로 떨어지지 않게.
 
 `으로/로` 는 받침 유무만으로 갈리지 않는다. 받침이 없거나 ㄹ 이면 `로`(서울로·r1로), 그 밖의
 받침이면 `으로`(부산으로·r3으로)다.
@@ -34,6 +36,14 @@ _KNOWN_FINAL = {
     "9": 0,
     "%": 0,
 }
+# 고정 어휘의 영문 끝 → 종성 번호(대소문자 그대로 견준다). 에프·디비·사이즈·카파 모두 받침이 없다.
+# 사람이 붙인 이름(「셋업 B」·「EQ-X」)은 약어인지 낱말인지 갈리지 않아 넣지 않는다.
+_LATIN_TAIL_FINAL = {
+    "F": 0,
+    "DB": 0,
+    "size": 0,
+    "Capa": 0,
+}
 _HANGUL_FIRST = 0xAC00
 _HANGUL_LAST = 0xD7A3
 _FINALS = 28
@@ -46,13 +56,19 @@ _SKIPPED_TAIL = "\"'`)]」』*\\"
 
 def _final_consonant(word: str) -> int | None:
     """끝소리의 종성 번호. 받침이 없으면 0, 읽는 법을 알 수 없으면 `None` 이다."""
-    for char in reversed(word.strip()):
-        if char.isspace() or char in _SKIPPED_TAIL:
-            continue
-        if _HANGUL_FIRST <= ord(char) <= _HANGUL_LAST:
-            return (ord(char) - _HANGUL_FIRST) % _FINALS
-        return _KNOWN_FINAL.get(char)
-    return None
+    text = word.strip()
+    end = len(text)
+    while end and (text[end - 1].isspace() or text[end - 1] in _SKIPPED_TAIL):
+        end -= 1
+    if not end:
+        return None
+    char = text[end - 1]
+    if _HANGUL_FIRST <= ord(char) <= _HANGUL_LAST:
+        return (ord(char) - _HANGUL_FIRST) % _FINALS
+    if char in _KNOWN_FINAL:
+        return _KNOWN_FINAL[char]
+    head = text[:end]
+    return next((final for tail, final in _LATIN_TAIL_FINAL.items() if head.endswith(tail)), None)
 
 
 def object_particle(word: str) -> str:
