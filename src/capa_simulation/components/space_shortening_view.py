@@ -426,7 +426,9 @@ def render_layer_basis(
     months = space_layer.months
     span = f"{_month_text(months[0])}~{_month_text(months[-1])}" if months else "달 없음"
     equipment = (
-        "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
+        "설비 샘플(데모)"
+        if sample
+        else f"설비 시나리오 「{literal_markdown(_equipment_basis_text(session))}」"
     )
     st.caption(
         f":material/grid_view: 필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario} · {span} · "

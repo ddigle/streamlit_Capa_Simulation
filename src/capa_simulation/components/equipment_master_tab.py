@@ -124,7 +124,11 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
 )
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.equipment_scenario_activation import (
@@ -1188,18 +1192,17 @@ def _render_save_section(
             st.checkbox(removal.confirm_label(), key=f"{REMOVAL_CONFIRM_KEY}__{removal.token}")
     counts = change_counts(view)
     errors = counts.errors
-    scenario = literal_markdown(basis.scenario_name) if basis is not None else "이 설비 시나리오"
+    scenario = quoted(basis.scenario_name) if basis is not None else "이 설비 시나리오"
     if session.legacy_trace_count:
         hint = legacy_trace_message(session.legacy_trace_count)
     elif errors:
         hint = f"오류 {errors:,}개를 고쳐야 저장됩니다"
     elif _has_changes(frames):
         hint = (
-            f"공통 칸은 모든 설비 시나리오에, 시나리오 칸은 「{scenario}」 에 새 리비전으로 "
-            "저장됩니다"
+            f"공통 칸은 모든 설비 시나리오에, 시나리오 칸은 {scenario} 에 새 리비전으로 저장됩니다"
         )
         if layout == "overlay":
-            hint += f" — 배치 칸은 「{scenario}」 에만(공식과 다른 것만)"
+            hint += f" — 배치 칸은 {scenario} 에만(공식과 다른 것만)"
     else:
         hint = NOTHING_TO_SAVE
     st.caption(hint)

@@ -436,7 +436,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
 if entry.missing_process is not None:
     # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
     missing_label = process_labels.label(entry.missing_process)
-    missing = f"「{literal_markdown(missing_label)}」{topic_particle(f'「{missing_label}」')}"
+    missing = f"「{literal_markdown(missing_label)}」{topic_particle(missing_label)}"
     st.warning(f"넘겨받은 공정 {missing} 이 시나리오·조회기간에 없어 기본 공정을 엽니다.")
 if entry.month_outside is not None and entry.month is not None:
     outside = with_topic_particle(month_label(entry.month_outside))
@@ -849,7 +849,7 @@ if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
     )
 with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
     st.markdown(
-        f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}"
+        f"**{literal_markdown(process_label)}** {OFFICIAL_BADGE} {dynamic_badge}"
         + (f" {assumption_badge}" if assumption_badge else ""),
         width="content",
     )

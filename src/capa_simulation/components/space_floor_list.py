@@ -42,7 +42,7 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -753,8 +753,8 @@ def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list
             continue
         for name, count in counts:
             lines.append(
-                f"가정 설비 시나리오 「{name}」 의 배치에서 {label} 에 놓인 호기 {count}대도 그 "
-                "시나리오 목록·도면에서 숨습니다."
+                f"가정 설비 시나리오 {quoted(name)} 의 배치에서 {label} 에 놓인 호기 {count}대도 "
+                "그 시나리오 목록·도면에서 숨습니다."
             )
     return lines
 

@@ -72,6 +72,7 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLLBAR_KEY,
 )
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.literal_markdown import quoted
 from capa_simulation.components.month_sheet_canvas import EMPTY, canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
@@ -1276,12 +1277,12 @@ def _one_sided_reason(
     if process is None:
         return None
     if static_missing:
-        return f"Static 을 읽지 못해 「{process}」 공정의 GAP 을 내지 않습니다."
+        return f"Static 을 읽지 못해 {quoted(process)} 공정의 GAP 을 내지 않습니다."
     if process in comparison.dynamic_only:
-        return f"「{process}」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다."
+        return f"{quoted(process)} 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다."
     if process in comparison.static_only:
         return (
-            f"「{process}」 공정은 설비 일정 기준이 나오지 않아(Cut-off·설비 없음) GAP 을 내지 "
+            f"{quoted(process)} 공정은 설비 일정 기준이 나오지 않아(Cut-off·설비 없음) GAP 을 내지 "
             "않습니다."
         )
     return None
@@ -1430,7 +1431,7 @@ def _render_securement_cross_check(
             "Static 가용대수가 없어 맞대지 않았습니다 — 공정명은 위 경고를 봅니다."
         )
     if process is not None and process in check.dynamic_only_processes:
-        st.info(f"「{process}」 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다.")
+        st.info(f"{quoted(process)} 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다.")
         return
 
     rows = check.rows

@@ -51,7 +51,11 @@ from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
@@ -199,12 +203,12 @@ def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
     official = f"공식 v{session.release_no}" if session.release_no is not None else "공식"
     if session.is_assumption:
         return (
-            f"가정 설비 시나리오(「{session.scenario_name}」 r{session.revision_no})를 보는 중이라 "
-            f"기준선을 저장하지 않습니다 — 진척 비교 기준선은 공식 설비 시나리오({official})에서만 "
-            "저장합니다. 사이드바 설비 시나리오에서 공식을 불러온 뒤 저장하세요."
+            f"가정 설비 시나리오({quoted(session.scenario_name)} r{session.revision_no})를 보는 "
+            f"중이라 기준선을 저장하지 않습니다 — 진척 비교 기준선은 공식 설비 시나리오({official})"
+            "에서만 저장합니다. 사이드바 설비 시나리오에서 공식을 불러온 뒤 저장하세요."
         )
     return (
-        f"발행하지 않은 리비전(「{session.scenario_name}」 r{session.revision_no} — 공식은 "
+        f"발행하지 않은 리비전({quoted(session.scenario_name)} r{session.revision_no} — 공식은 "
         f"{official})을 보는 중이라 기준선을 저장하지 않습니다 — 공식으로 발행하거나 공식 "
         "리비전을 불러온 뒤 저장하세요."
     )
@@ -301,7 +305,8 @@ def render_equipment_scenario_row(
             if isinstance(flash, str):
                 st.success(flash)
             if session.notice:
-                st.warning(session.notice, icon=":material/sync_problem:")
+                # 설비 마스터 표(평문)에도 가는 글이라 날 이름을 담는다 — 여기서 막는다.
+                st.warning(markdown_safe_tildes(session.notice), icon=":material/sync_problem:")
 
 
 def open_equipment_scenario_dialog() -> None:

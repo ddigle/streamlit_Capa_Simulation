@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Any
 
+from capa_simulation.components.literal_markdown import quoted
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
     load_floor_group_labels,
@@ -129,7 +130,7 @@ def space_layout_notices(
         stored = layout_counts_words(stored_units, stored_marks, stored_labels)
         tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)"
     lines: list[tuple[str, str]] = []
-    name = f"「{session.scenario_name}」" if session.scenario_name else "이 설비 시나리오"
+    name = quoted(session.scenario_name, empty="이 설비 시나리오")
     if not session.is_assumption:
         # 공식 설비 시나리오의 옛 리비전 — 그 시나리오가 가정이던 때 저장한 배치안이다.
         lines.append(
