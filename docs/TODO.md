@@ -875,7 +875,10 @@
     - B1-c 몫(약속): 화면 쪽은 `apply_ops` 결과 토스트를 그 op 를 보낸 마운트에 싣고(`undo` = `toast_step`), 세 마운트 data 에
       `undo_top`·제 `ack` 를, 표 data 에 `open_id`(상세 id)·`moved` 를 넘긴다. S3 와 합친 뒤로는 `GridContext.layout_lock` 에
       `space_edit_mode(...)` 가 잠긴 회차의 `master_tab_lock_reason` 을 넘기고, op 를 얹은 뒤 `layout_edits` 가 비지 않으면
-      `stamp_layout_role` 로 그때의 역할을 찍는다(탭 제출과 같다).
+      `stamp_layout_role` 로 그때의 역할을 찍는다(탭 제출과 같다). S4 와 합친 뒤로는(integ/1025) 남의 **공통** 저장으로
+      편집본을 다시 세운 회차에 `ensure_equipment_drafts` 가 가정 역할로 찍힌 배치 일곱 칸을 새 저장본 위에 다시 얹고 찍힌 역할·
+      편집기 묶음 승인을 남긴 채 세대를 한 칸 더 올린다 — 표는 그 회차의 편집본을 새 `base` 로 다시 받아 다시 얹은 호기를 「저장 전
+      변경」 으로 보이고(옛 `base` op 는 `DROPPED_TOAST` 로 버림), 다시 세운 까닭·다시 얹은 수는 작업 공간 `discarded_notice` 가 말한다.
 
 - (2026-10-25) **가용설비 현황 두 탭 개편 단계 A**(사용자 2026-10-24 「탭 둘」 결정, 사양 D1~D19 모두 권장대로 — 밤사이 장부) —
   바깥 탭 ① `설비 마스터`(처음 여는 탭 — 지금 RawData 작업 공간 그대로, 숨은 회차에도 그림, 코드 차례는 Summary 뒤) ② `Summary`
