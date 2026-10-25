@@ -1118,9 +1118,16 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 )
             )
         if layout_locked:
+            # 잠금 까닭은 바로 아래 잠금 줄(`_render_edit_lock_line` — 「최신 rM 불러오기」 곁)이
+            # 한 번 적는다. 상자는 저장하지 않는다는 것과 「배치 변경만 버리기」 만(한 화면에
+            # 한 번).
             st.caption(
-                f":material/lock: 배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
-                f"{edit_mode.lock_reason or '최신을 불러온 뒤 다시 고치세요.'}"
+                ":material/lock: 배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
+                + (
+                    "까닭은 아래 잠금 줄에 있습니다."
+                    if edit_mode.lock_reason
+                    else "최신을 불러온 뒤 다시 고치세요."
+                )
             )
             st.button(
                 "배치 변경만 버리기",

@@ -745,9 +745,15 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     clear_equipment_scenario_cache()
     _ok(app.run())
     texts = _texts(app)
-    assert any(
+    reason = (
         "그 사이 공식 설비 시나리오가 「셋업 실무」로 바뀌어 이 배치 변경(공식 배치에 들어갈 "
-        "편집이었음)을 저장할 수 없습니다" in text
+        "편집이었음)을 저장할 수 없습니다"
+    )
+    # 까닭은 잠금 줄에 한 번만 — 저장 안 한 배치 상자는 저장하지 않는다는 것만 적는다(E2E r2).
+    assert sum(reason in text for text in texts) == 1
+    assert any(
+        "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — 까닭은 아래 잠금 줄에 있습니다."
+        in text
         for text in texts
     )
     assert app.button(key="space_layout_save").disabled
