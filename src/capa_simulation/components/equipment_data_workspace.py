@@ -1,11 +1,11 @@
-# Purpose: 설비 마스터 탭의 편집본 경계·작은 편집표·세 표 리비전 저장(옛 폼은 D 까지)을 둔다.
+# Purpose: 설비 마스터 탭의 편집본 경계·작은 편집표·저장 이력·세 표 리비전 저장을 둔다.
 
 from __future__ import annotations
 
 import hashlib
 import re
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
@@ -20,7 +20,6 @@ from capa_simulation.components.editor_state import (
 from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
-    render_equipment_save_fields,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -34,7 +33,6 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     date_range_value,
-    page_visit,
     prune_choice,
 )
 from capa_simulation.persistence.equipment_cache import (
@@ -45,7 +43,6 @@ from capa_simulation.persistence.equipment_cache import (
     load_equipment_revision_summaries,
     load_equipment_scenario_catalog,
     load_equipment_schedule_revisions,
-    load_floor_states,
     load_merged_equipment_snapshot,
     load_units_scheduled_elsewhere,
 )
@@ -62,7 +59,6 @@ from capa_simulation.persistence.equipment_repository import (
 from capa_simulation.services.equipment_bulk_delete import (
     BASELINE_TARGET,
     DOWNTIME_TARGET,
-    EQUIPMENT_TARGET,
     TARGET_LAYOUT,
     DeletionPlan,
     RowKey,
@@ -74,22 +70,11 @@ from capa_simulation.services.equipment_bulk_delete import (
     row_keys,
 )
 from capa_simulation.services.equipment_contract import (
-    AREA_CODE_COLUMN,
-    AREA_CODES,
-    ARRIVAL_STATUS_COLUMN,
-    ARRIVAL_STATUSES,
     COMMON_MASTER_COLUMNS,
-    DATE_COLUMNS,
     DOWNTIME_TYPES,
     EQUIPMENT_ID_COLUMN,
-    PARENT_EQUIPMENT_COLUMN,
-    QUAL_CONFIRMATION_STATUSES,
-    QUAL_STATUS_COLUMN,
     SCENARIO_LAYOUT_COLUMNS,
     SCENARIO_SCHEDULE_COLUMNS,
-    STORAGE_FLAG_COLUMN,
-    VALID_BUILDINGS,
-    VALID_FLOORS,
     empty_downtime_schedule,
     empty_equipment_baseline,
     empty_equipment_master,
@@ -97,15 +82,12 @@ from capa_simulation.services.equipment_contract import (
 from capa_simulation.services.equipment_csv import (
     EquipmentPaste,
     baseline_csv_bytes,
-    baseline_csv_template,
     build_baseline_import_preview,
     build_downtime_import_preview,
     build_equipment_import_preview,
     describe_case_variants,
     downtime_csv_bytes,
-    downtime_csv_template,
     equipment_csv_bytes,
-    equipment_csv_template,
     merge_baseline_rows,
     merge_downtime_rows,
     merge_equipment_rows,
@@ -121,7 +103,6 @@ from capa_simulation.services.equipment_grid import (
     after_row_steps,
     grid_index,
     prune_overlay,
-    scenario_column_help,
     undo_from_state,
     undo_to_state,
 )
@@ -131,10 +112,8 @@ from capa_simulation.services.equipment_scenario import (
     inherited_unit_names,
     legacy_unit_key,
 )
-from capa_simulation.services.equipment_units import module_group_warnings
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
-    area_code_warnings,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
@@ -143,13 +122,6 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
-from capa_simulation.services.floor_state import (
-    FloorStates,
-    inactive_floor_summary,
-    inactive_floor_warnings,
-    master_location_options,
-    present_location_values,
-)
 from capa_simulation.services.korean_particle import (
     object_particle,
     with_direction_particle,
@@ -164,25 +136,11 @@ from capa_simulation.services.layout_overlay import (
     place_rows,
     reapply_layout_edits,
 )
-from capa_simulation.services.schedule_confirmation import (
-    ACTUAL_COLUMN,
-    CONFIRMATION_KIND_COLUMN,
-    MISSING_ACTUAL,
-    PROCESS_COLUMN,
-    SCHEDULE_COLUMN,
-    STAGE_COLUMN,
-    STATUS_COLUMN,
-    STATUS_UPDATE_NEEDED,
-    UNCONFIRMED,
-    schedule_confirmation_summary,
-)
-from capa_simulation.services.simulation_cache import get_schedule_confirmation_issues
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     PendingRenames,
     module_layout_message,
     module_layout_violations,
-    name_changes,
     natural_name_key,
     reserved_names,
     restore_saved_layout,
@@ -190,13 +148,8 @@ from capa_simulation.services.space_layout_edit import (
 )
 
 FLASH_KEY = "equipment_status_flash"
+# 설비 마스터 탭 표 고르기의 작은 편집표 둘(기존 보유대수·비가동 일정 — `render_small_editor`).
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
-EQUIPMENT_EDITOR_KEY = "equipment_master_editor_v3"
-# 설비 마스터 편집표 `동`·`층` 칸의 지난 회차 선택지 (동 목록, 층 목록). 거름이 없는 편집표는
-# `num_rows="dynamic"` 이라 Streamlit 1.63 이 `column_config` 를 위젯 정체에 넣는다 — 남이 Space
-# 에서 층을 끄면 선택지가 바뀌어 적용 전 칸 편집이 사라진다. 그래서 칸 편집이 있는 동안은 이
-# 선택지를 그대로 쓴다(Space 층 사용 상태, 설비 0029).
-LOCATION_OPTIONS_KEY = "equipment_master_location_options_v1"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
 # 설비 마스터 표(가용설비 현황 탭 ① — `components/equipment_master_tab.py`, 개편 B1)의 세션 칸
 # 가운데 편집본과 함께 사는 것. 편집본을 다시 세우면(`ensure_equipment_drafts`)·저장하거나 모두
@@ -241,7 +194,8 @@ EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
 DOWNTIME_DRAFT_KEY = "equipment_downtime_draft_v3"
 DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
 # 저장본 사본(draft)이 나온 설비 시나리오 일정 리비전에 일정 행이 없는 설비명(F4). 계산 화면은 이
-# 호기와 그 비가동을 뺀 사본을 읽는다(`calculation_drafts`). 편집·RawData·CSV 는 39칸 전체다.
+# 호기와 그 비가동을 뺀 사본을 읽는다(`calculation_drafts`). 편집·설비 마스터 탭·CSV 는 39칸
+# 전체다.
 DRAFT_UNSCHEDULED_KEY = "equipment_draft_unscheduled_v1"
 # 저장본 사본의 (설비명, 호기 키) 쌍 — 지우는 호기가 다른 설비 시나리오에 일정이 있는지 키로 본다.
 DRAFT_UNIT_KEYS_KEY = "equipment_draft_unit_keys_v1"
@@ -257,14 +211,10 @@ SAVED_SCHEDULE_KEY = "equipment_workspace_saved_schedule_v1"
 BASELINE_IMPORT_KEY = "baseline_import_preview_rows_v3"
 EQUIPMENT_IMPORT_KEY = "equipment_import_preview_rows_v3"
 DOWNTIME_IMPORT_KEY = "downtime_import_preview_rows_v3"
-WORKSPACE_FORM_KEY = "equipment_data_workspace_form_v1"
 TARGET_KEY = "equipment_import_target_v1"
 CLIPBOARD_KEY = "equipment_import_clipboard_v1"
 UPLOAD_KEY = "equipment_import_upload_v1"
 PREVIEW_BUTTON_KEY = "equipment_import_preview_v1"
-IMPORT_SAVE_BUTTON_KEY = "equipment_import_save_v1"
-EDIT_SAVE_BUTTON_KEY = "equipment_edit_save_v1"
-VIEW_APPLY_BUTTON_KEY = "equipment_view_apply_v1"
 PREVIEW_KEY = "equipment_workspace_preview_v1"
 # 미리보기를 마지막으로 그린 페이지 방문 차례(`page_bootstrap.page_visit`).
 _PREVIEW_VISIT_KEY = "equipment_workspace_preview_visit_v1"
@@ -275,14 +225,15 @@ _REVISION_KEY = "equipment_workspace_revision_v1"
 _ERROR_KEY = "equipment_workspace_error_v1"
 _NOTICE_KEY = "equipment_workspace_notice_v1"
 _NOTE_KEY = "equipment_workspace_note_v1"
-# 변경 메모·붙여넣기 칸을 다음 회차에 비우라는 표지. 저장은 두 칸을 그린 **뒤**에 일어나 그
-# 회차에는 칸을 바꿀 수 없고, 칸을 지우기만 하면 브라우저가 옛 값을 다음 제출에 다시 보낸다
-# (2026-10-05 E2E — r4 의 메모가 r5 에 그대로 실렸다). 다음 회차 각 칸 앞에서 빈 값을 적는다.
+# 「저장 전 변경」 의 변경 메모 칸을 다음 회차에 비우라는 표지. 칸을 지우기만 하면 브라우저가 옛
+# 값을 다음 회차에 다시 보낸다(2026-10-05 E2E — r4 의 메모가 r5 에 그대로 실렸다). 다음 회차 칸
+# 앞에서 빈 값을 적는다(설비 마스터 탭 저장 구획).
 _NOTE_CLEAR_KEY = "equipment_workspace_note_clear_v1"
 # CSV 업로드 칸의 key 세대. 업로드는 세션으로 값을 적을 수 없어 저장 뒤 비울 때 세대를 올려
 # 새 칸으로 세운다(`_upload_widget_key`).
 _UPLOAD_GENERATION_KEY = "equipment_import_upload_generation_v1"
-# 일괄 삭제. 선택은 행 번호가 아니라 업무 키로 기억한다(`services/equipment_bulk_delete`).
+# 작은 편집표의 일괄 삭제. 선택은 행 번호가 아니라 업무 키로 기억한다
+# (`services/equipment_bulk_delete`).
 SELECT_COLUMN = "선택"
 SELECTION_KEY = "equipment_workspace_selection_v1"
 PENDING_DELETE_KEY = "equipment_workspace_pending_delete_v1"
@@ -307,11 +258,11 @@ PENDING_FAB_KEY = "equipment_pending_fab_layout_v1"
 # 함께 버려진다. 호기는 설비명으로만 짝지어지므로 이것이 없으면 이름을 바꾼 호기가 「지운 호기 +
 # 새 호기」로 읽힌다(`services/space_layout_edit.PendingRenames`).
 PENDING_RENAMES_KEY = "equipment_pending_unit_renames_v1"
-# 이름 바꿈을 따라갈 설비 마스터 탭 목록 필터(칸 이름 → {옛 값: 새 값}). 이름은 그 필터가 그려지기
-# **전**에만 고칠 수 있어(위젯 key) 여기 모았다가 `_render_editors` 가 필터를 그리기 전에 얹는다.
+# 이름 바꿈을 따라갈 비가동 일정 작은 편집표 목록 필터(칸 이름 → {옛 값: 새 값}). 이름은 그 필터가
+# 그려지기 **전**에만 고칠 수 있어(위젯 key) 여기 모았다가 `render_small_editor` 가 필터를 그리기
+# 전에 얹는다.
 FOLLOWED_FILTERS_KEY = "equipment_workspace_followed_filters_v1"
-# 설비 마스터·비가동 일정 편집표 보기 설정의 key 접두어(`render_table_view_controls`).
-MASTER_VIEW_PREFIX = "equipment_master_view"
+# 비가동 일정 작은 편집표 보기 설정의 key 접두어(`render_table_view_controls`).
 DOWNTIME_VIEW_PREFIX = "equipment_downtime_view"
 # 「이름 바꿈」 목록 펼침(설비 마스터 탭 알림 칸).
 NAME_CHANGES_EXPANDER_KEY = "equipment_workspace_name_changes_v1"
@@ -323,8 +274,9 @@ NAME_CHANGES_CAPTION = (
     "그대로이고, 설비 마스터를 바깥 Excel 에서 붙여넣어 관리하면 그 Excel 의 이름도 바꿔야 합니다."
 )
 # Space 배치 편집기가 적용한 모듈 묶음의 적용 뒤 모양(Main 설비 → `ModuleLayout`). 저장 검사
-# (`module_layout_violations`)가 이 모양 그대로인 묶음을 편집기 결과로 보고 통과시킨다 — RawData 가
-# 그 뒤에 그 묶음 좌표·크기를 고치면 모양이 달라져 다시 검사받는다. 편집본과 함께 버려진다.
+# (`module_layout_violations`)가 이 모양 그대로인 묶음을 편집기 결과로 보고 통과시킨다 — 그 뒤에
+# 붙여넣기 등으로 그 묶음 좌표·크기를 고치면 모양이 달라져 다시 검사받는다. 편집본과 함께
+# 버려진다.
 EDITOR_MODULE_LAYOUTS_KEY = "equipment_editor_module_layouts_v1"
 # 이 편집본에 쌓인 배치 편집을 적용할 때의 역할("official"·"overlay" — 설계 6-2). 배치를 바꾸는
 # 적용마다(Space 편집기 적용·설비 마스터 탭 배치 칸·붙여넣기 배치 칸) 찍고, 편집본을 다시 세우거나
@@ -333,52 +285,34 @@ EDITOR_MODULE_LAYOUTS_KEY = "equipment_editor_module_layouts_v1"
 LAYOUT_ROLE_KEY = "equipment_layout_role_v1"
 # 편집본 배치 편집 판정 메모 — (열쇠, 있음). `buffer_has_layout_edits`.
 LAYOUT_EDITS_MEMO_KEY = "equipment_layout_edits_memo_v1"
-# 설비 마스터 편집표 위 한 줄과 좌표·크기 칸 머리 도움말.
-MODULE_LAYOUT_HELP = (
-    "Main 설비 모듈 묶음(모듈 둘 이상)의 X좌표·Y좌표·Xsize·Ysize 는 Space 현황 배치 편집기에서 "
-    "묶음 범위로 고칩니다 — 여기서 고쳐 묶음 범위의 바둑판이 아니게 되면 저장이 막힙니다."
-)
 # 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
 DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
-# 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 RawData 제출은 옛
-# 편집본 위의 것이라 반영하지 않는다 — 페이지가 `pop_drafts_replaced` 로 한 번 읽는다.
+# 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 작은 편집표 제출은 옛
+# 편집본 위의 것이라 반영하지 않는다 — 페이지가 `pop_drafts_replaced` 로 한 번 읽는다(표 출납은
+# `base` 대조로 같은 규칙).
 DRAFTS_REPLACED_KEY = "equipment_workspace_drafts_replaced_v1"
 # 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
-# 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 RawData 편집을 놓치지 않게 한다.
+# 편집본을 바꿀 때마다 오르는 세대. Space 편집기 epoch 에 넣어 설비 마스터 탭 편집을 놓치지 않게
+# 한다.
 BUFFER_GENERATION_KEY = "equipment_workspace_buffer_generation_v1"
 CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
 UNDO_DELETE_BUTTON_KEY = "equipment_delete_undo_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
 DELETE_SELECTED = "delete_selected"
-# 안쪽 탭·접힘 칸의 key. 위젯이 아니라 **브라우저가 고른 탭·펼침을 기억하는 이름**이다
-# (`render_equipment_data_workspace` 의 탭 주석).
-WORKSPACE_TABS_KEY = "equipment_workspace_tabs_v1"
-EDITOR_TABS_KEY = "equipment_workspace_editor_tabs_v1"
-DOWNLOADS_EXPANDER_KEY = "equipment_workspace_downloads_v1"
+# 저장 이력 「조회 조건」 펼침의 key — 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다.
 HISTORY_FILTER_EXPANDER_KEY = "equipment_history_filters_v1"
-# 일정 확인(미확인·실적 누락·상태 갱신 필요) 목록. 건수가 바뀌어 제목 글자가 달라져도 key 가 펼침을
-# 지킨다 — key 가 있으면 블록 id 가 제목과 상관없이 정해진다.
-CONFIRMATION_EXPANDER_KEY = "equipment_schedule_confirmation_list_v1"
-# 목록에 보이는 칸과 차례. `설비키` 는 대수를 세는 데만 쓴다(Main 설비는 편집표에 있다).
-_CONFIRMATION_LIST_COLUMNS = (
-    CONFIRMATION_KIND_COLUMN,
-    EQUIPMENT_ID_COLUMN,
-    PROCESS_COLUMN,
-    STAGE_COLUMN,
-    SCHEDULE_COLUMN,
-    ACTUAL_COLUMN,
-    STATUS_COLUMN,
-)
-_EDITOR_KEYS = (BASELINE_EDITOR_KEY, EQUIPMENT_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
+_EDITOR_KEYS = (BASELINE_EDITOR_KEY, DOWNTIME_EDITOR_KEY)
+# 「엑셀·CSV로 한꺼번에」 등록할 표·내려받기 단추 차례.
 _TARGETS = ("설비 마스터", "기존 보유대수", "비가동 일정")
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
 
 
 @dataclass(frozen=True)
 class ImportReview:
-    """검토 화면이 사용한 원문과 세 편집본을 최종 저장 후보에 묶는다."""
+    """「엑셀·CSV로 한꺼번에」 미리보기가 쓴 원문·출발 편집본과 넣을 후보 세 표를 묶는다 — 넣기
+    직전에 입력·표·편집본이 그대로인지(`matches`) 다시 본다."""
 
     target: str
     payload: str | bytes
@@ -419,7 +353,7 @@ def _clear_editors() -> None:
 
 
 def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
-    """새 저장본으로 돌아갈 때 페이지 draft와 작업 공간의 입력·delta를 함께 비운다.
+    """새 저장본으로 돌아갈 때 페이지 draft와 설비 마스터 탭의 입력·편집표 delta를 함께 비운다.
 
     `keep_fab` 이면 미저장 FAB 전체 배치는 남긴다 — 설비 시나리오와 무관한 현행값이라 시나리오를
     바꿔 불러와도 버릴 까닭이 없다.
@@ -460,8 +394,8 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         *_GRID_SESSION_KEYS,
     ):
         st.session_state.pop(key, None)
-    # 입력 칸(메모·붙여넣기·업로드)은 지우기만 하면 브라우저가 옛 값을 다시 보낸다. 메모·붙여넣기는
-    # 표지로 다음 회차 칸 앞에서 빈 값을 적고, 업로드는 key 세대를 올린다.
+    # 입력 칸(메모·업로드)은 지우기만 하면 브라우저가 옛 값을 다시 보낸다. 메모는 표지로 다음 회차
+    # 칸 앞에서 빈 값을 적고, 업로드는 key 세대를 올린다.
     st.session_state[_NOTE_CLEAR_KEY] = True
     st.session_state[_UPLOAD_GENERATION_KEY] = _upload_generation() + 1
 
@@ -497,7 +431,7 @@ def _store_changed_buffer(frames: Frames) -> None:
 
 
 def equipment_buffer_generation() -> int:
-    """편집본 세대. 편집본이 바뀔 때마다(RawData 제출·Space 적용·새 리비전) 오른다."""
+    """편집본 세대. 편집본이 바뀔 때마다(설비 마스터 탭 고침·Space 적용·새 리비전) 오른다."""
     value = st.session_state.get(BUFFER_GENERATION_KEY, 0)
     return int(value) if isinstance(value, int) else 0
 
@@ -591,7 +525,8 @@ def pop_saved_schedule() -> tuple[str, str] | None:
 
 
 def has_unsaved_equipment_edits() -> bool:
-    """편집본을 저장본에서 세운 뒤 바뀐 것이 있는가(RawData 제출·Space 호기 적용·미저장 층 배치).
+    """편집본을 저장본에서 세운 뒤 바뀐 것이 있는가(설비 마스터 탭 고침·Space 호기 적용·미저장 층
+    배치).
 
     Space FAB 전체 배치 대기분은 세대를 올리지 않아 여기 들지 않는다(`pending_fab_layout`)."""
     seeded = st.session_state.get(_SEEDED_GENERATION_KEY)
@@ -726,8 +661,8 @@ def _remember_edits(frames: Frames) -> None:
     )
     st.session_state[BUFFER_KEY] = _copy_frames(frames)
     _clear_editors()
-    # 내용이 그대로인 제출(보기 적용·이력 조회)은 세대를 올리지 않는다 — 올리면 「저장 안 한 편집이
-    # 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
+    # 내용이 그대로인 제출(작은 편집표 보기 적용 등)은 세대를 올리지 않는다 — 올리면 「저장 안 한
+    # 편집이 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
     if not unchanged:
         _bump_buffer_generation()
         _forget_grid_undo()
@@ -925,11 +860,10 @@ def apply_master_grid_result(applied: GridApplied) -> None:
         if any(applied.frames_changed):
             st.session_state[BUFFER_KEY] = state.frames
             pending = st.session_state.get(PENDING_DELETE_KEY)
-            for changed, key, target in zip(
-                applied.frames_changed,
-                _EDITOR_KEYS,
-                (BASELINE_TARGET, EQUIPMENT_TARGET, DOWNTIME_TARGET),
-                strict=True,
+            baseline_changed, _, downtime_changed = applied.frames_changed
+            for changed, key, target in (
+                (baseline_changed, BASELINE_EDITOR_KEY, BASELINE_TARGET),
+                (downtime_changed, DOWNTIME_EDITOR_KEY, DOWNTIME_TARGET),
             ):
                 if not changed:
                     continue
@@ -1167,16 +1101,6 @@ def _csv_scenario_mismatch(file_name: str | None, scenario_name: str | None) -> 
 
 # 「현재 데이터」 설비 마스터 내보내기 이름(`current_data_file_name`)에서 시나리오 몫을 꺼낸다.
 _CURRENT_DATA_NAME = re.compile(r"equipment_master_(.+)_r\d+_c\d+(?:_edited)?_\d{8}\.csv")
-
-
-def _target_scenario_id(basis: EquipmentSaveBasis | None) -> str | None:
-    """저장이 갈 설비 시나리오 — 세션 것, 없으면 편집본이 나온 것(`_save_equipment_frames` 와 같은
-    차례, 끝의 공식 조회만 뺀다)."""
-    if basis is not None:
-        return basis.equipment_scenario_id
-    base = st.session_state.get(_BASE_KEY)
-    scenario = base.get("scenario") if isinstance(base, dict) else None
-    return scenario if isinstance(scenario, str) else None
 
 
 def layout_lock_origins(
@@ -1510,100 +1434,15 @@ def assumption_group_paste_refusal(
     return found[0] if found is not None else None
 
 
-def _parent_text(value: Any) -> str | None:
-    if value is None or (not isinstance(value, str) and bool(pd.isna(value))):
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _restore_parents(
-    master: pd.DataFrame, before: pd.DataFrame, names: Collection[str] | None
-) -> pd.DataFrame | None:
-    """`master` 에서 제출 전(`before`)과 Main 설비가 다른 행(설비명이 `names` 에 든 것만 — None 이면
-    모두)의 Main 설비를 제출 전 값으로 되돌린 사본. 되돌린 행이 없으면 None."""
-    if (
-        PARENT_EQUIPMENT_COLUMN not in master.columns
-        or PARENT_EQUIPMENT_COLUMN not in before.columns
-    ):
-        return None
-    previous: dict[str, Any] = {}
-    for name, parent in zip(
-        before[EQUIPMENT_ID_COLUMN].map(_parent_text),
-        before[PARENT_EQUIPMENT_COLUMN],
-        strict=True,
-    ):
-        if name is not None and name not in previous:
-            previous[name] = parent
-    result = master.copy()
-    changed = False
-    for position, (name, parent) in enumerate(
-        zip(
-            result[EQUIPMENT_ID_COLUMN].map(_parent_text),
-            result[PARENT_EQUIPMENT_COLUMN],
-            strict=True,
-        )
-    ):
-        if name is None or name not in previous or (names is not None and name not in names):
-            continue
-        if _parent_text(parent) == _parent_text(previous[name]):
-            continue
-        result.loc[result.index[position], PARENT_EQUIPMENT_COLUMN] = previous[name]
-        changed = True
-    return result if changed else None
-
-
-def refuse_mixed_groups(
-    master: pd.DataFrame,
-    before: pd.DataFrame,
-    *,
-    saved: pd.DataFrame,
-    renames: Mapping[str, str],
-    official_places: Mapping[str, Place],
-) -> tuple[pd.DataFrame, str | None]:
-    """가정 세션 설비 마스터 탭 제출이 공식 동·층이 다른 호기를 한 묶음으로 묶으면(저장소가 같은
-    글로 거부한다 — 설계 10장·6-1·Q1(c)) 그 Main 설비 칸 고침을 제출 전(`before`) 값으로 되돌린
-    편집본과 거부 글. 묶지 않으면 그대로와 None.
-
-    먼저 거부 글이 가리킨 호기의 Main 설비 고침만 되돌리고 다시 본다. 그 호기의 Main 설비가 이
-    제출에서 바뀌지 않았으면 이 제출이 바꾼 Main 설비 칸을 모두 되돌린다. 나머지 편집은 반영한다
-    (배치 칸 잠금과 같은 꼴 — 막고 위젯 delta 에만 남기면 같은 제출의 다른 편집도 잃는다). 제출 전
-    편집본이 이미 그렇게 묶였으면 막지 않는다(저장이 같은 글로 거부한다)."""
-
-    def check(frame: pd.DataFrame) -> tuple[str, str] | None:
-        return assumption_group_refusal(
-            frame, saved, layout_lock_origins(frame, saved, renames), official_places
-        )
-
-    found = check(master)
-    if found is None or check(before) is not None:
-        # 제출 전 편집본이 이미 그렇게 묶였으면 이 제출 탓이 아니다 — 막지 않고 저장이 같은 글로
-        # 거부한다(되돌릴 이 제출의 고침이 없는데 막으면 저장까지 못 간다).
-        return master, None
-    message = found[0]
-    result = master
-    while found is not None:
-        restored = _restore_parents(result, before, {found[1]})
-        if restored is None:
-            restored = _restore_parents(result, before, None)
-            if restored is not None:
-                result = restored
-            break
-        result = restored
-        found = check(result)
-    return result, f"{message} 이 제출의 그 Main 설비 칸 고침은 제출 전 값으로 되돌렸습니다."
-
-
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
     """이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을 기억한
     설비 마스터 탭 칸을 따라 옮긴다 — Space 편집기와 설비 마스터 호기 상세(개편)가 같이 부른다.
 
-    - 설비 마스터·비가동 일정의 **선택**과 **삭제 확인 대기**(`PENDING_DELETE_KEY`)의 키는 새
+    - 비가동 일정 작은 편집표의 **선택**과 **삭제 확인 대기**(`PENDING_DELETE_KEY`)의 키는 새
       설비명으로 옮긴다 — 옛 이름에 매달린 확인이 엉뚱한 행을 지우거나 비게 되지 않게.
-    - 목록 필터의 고른 값(설비 마스터 `Main 설비`, 비가동 일정 `설비명`)도 새 이름으로 옮긴다
-      — 그대로 두면 다음 회차에 선택지에 없는 값이라 지워져 필터가 「전체」 로 돌아간다. 필터
-      위젯이 그려지기 전에만 고칠 수 있어 `FOLLOWED_FILTERS_KEY` 에 모았다가 `_render_editors` 가
-      얹는다.
+    - 그 표 목록 필터의 고른 값(`설비명`)도 새 이름으로 옮긴다 — 그대로 두면 다음 회차에 선택지에
+      없는 값이라 지워져 필터가 「전체」 로 돌아간다. 필터 위젯이 그려지기 전에만 고칠 수 있어
+      `FOLLOWED_FILTERS_KEY` 에 모았다가 `render_small_editor` 가 얹는다.
     - `방금 삭제 되돌리기` 는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을 지니므로 되살리면
       비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
       한 설비가 둘로 갈린다(검증은 통과해 그대로 저장된다).
@@ -1623,11 +1462,6 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
         target, keys = pending
         if target in _NAMED_TARGETS and isinstance(keys, frozenset):
             st.session_state[PENDING_DELETE_KEY] = (target, _renamed_keys(keys, renames))
-    # Main 설비 칸에는 묶음 이름과, 자기 설비명을 Main 설비로 적은 한 행 묶음의 설비명이 든다(그
-    # 설비명은 다른 Main 설비 이름과 겹칠 수 없어 두 지도가 부딪치지 않는다).
-    _stage_followed_filter(
-        filter_widget_key(MASTER_VIEW_PREFIX, PARENT_EQUIPMENT_COLUMN), {**renames, **groups}
-    )
     _stage_followed_filter(filter_widget_key(DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN), renames)
     st.session_state.pop(LAST_REMOVED_KEY, None)
     # 「새 호기」 칸에서 고른 함께 넣기는 새 호기 이름에 매달려 있다 — 이름을 따라간다(맞바꿈도).
@@ -1647,8 +1481,8 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
             st.session_state.pop(GRID_UNDO_KEY, None)
 
 
-# 선택·삭제 대기 키의 첫 칸이 설비명인 표.
-_NAMED_TARGETS = (EQUIPMENT_TARGET, DOWNTIME_TARGET)
+# 선택·삭제 대기 키의 첫 칸이 설비명인 작은 편집표(기존 보유대수 키의 첫 칸은 공정이다).
+_NAMED_TARGETS = (DOWNTIME_TARGET,)
 
 
 def _renamed_keys(keys: frozenset[RowKey], renames: Mapping[str, str]) -> frozenset[RowKey]:
@@ -1798,7 +1632,7 @@ def rebase_floor_canvas(key: FloorKey, canvas: CanvasSize | None) -> None:
 
 def effective_floor_canvases(stored: FloorCanvasMap) -> dict[FloorKey, CanvasSize]:
     """저장된 캔버스에 미저장 캔버스를 덮은 값. 저장·미리보기 검증과 편집표 상한이 이것을 본다 —
-    Space 에서 넓힌 캔버스에 놓은 호기가 RawData 저장에서 「캔버스 밖」으로 막히지 않게."""
+    Space 에서 넓힌 캔버스에 놓은 호기가 설비 마스터 탭 저장에서 「캔버스 밖」으로 막히지 않게."""
     return {**stored, **pending_floor_canvases()}
 
 
@@ -1876,8 +1710,8 @@ def save_pending_fab_layout(repository: DuckDBEquipmentRepository) -> bool:
 
 FAB_SAVED_MESSAGE = "S.PKG FAB 전체 배치를 저장했습니다. 설비 리비전과 무관한 현행값입니다."
 NOTHING_SAVED_MESSAGE = "바뀐 내용이 없어 저장하지 않았습니다."
-# FAB 저장이 거부됐을 때 빠져나갈 곳. 가용설비 RawData 저장도 FAB 대기분을 쓰므로 그 화면에서도
-# 이 문구가 뜬다 — FAB 대기분만 버리는 단추는 Space 현황에 있다.
+# FAB 저장이 거부됐을 때 빠져나갈 곳. 가용설비 현황 설비 마스터 탭 저장도 FAB 대기분을 쓰므로 그
+# 화면에서도 이 문구가 뜬다 — FAB 대기분만 버리는 단추는 Space 현황에 있다.
 FAB_DISCARD_HINT = (
     " FAB 대기분만 버리려면 Space 현황의 `저장 안 한 배치 변경` › `버리기` › "
     "`FAB 배치만 버리기` 를 누르세요."
@@ -1895,10 +1729,10 @@ def save_equipment_buffer(
 ) -> str:
     """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
 
-    RawData 저장·Space 저장·사이드바 설비 시나리오 팝업 저장이 이 한 곳을 탄다(저장소
-    `save_equipment` — 공통 대장·설비 시나리오 일정 가운데 **바뀐 쪽만** 쓴다. 둘 다 그대로면 층
-    값만 쓰거나 아무것도 쓰지 않는다). `basis` 는 저장할 설비 시나리오와 화면이 본 공식
-    번호(페이지가 세션에서 만든다 — 없으면 편집본이 나온 시나리오, 그것도 없으면 공식
+    설비 마스터 탭 「리비전 저장」·Space 저장·사이드바 설비 시나리오 팝업 저장이 이 한 곳을
+    탄다(저장소 `save_equipment` — 공통 대장·설비 시나리오 일정 가운데 **바뀐 쪽만** 쓴다. 둘 다
+    그대로면 층 값만 쓰거나 아무것도 쓰지 않는다). `basis` 는 저장할 설비 시나리오와 화면이 본
+    공식 번호(페이지가 세션에서 만든다 — 없으면 편집본이 나온 시나리오, 그것도 없으면 공식
     시나리오), `fields` 는 저장 칸 값(없으면 기본값)이다. 예시 행 가드는 repository 에 없으므로
     여기서 건다. 성공하면 캐시와 편집본을 모두 비운다.
 
@@ -1995,9 +1829,10 @@ def _save_equipment_frames(
 ) -> str:
     """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션).
 
-    설비 마스터를 쓰는 모든 저장(RawData 직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장·팝업
-    저장)이 이 한 곳을 지나므로 모듈 묶음 좌표·크기 검사(`saved_master_violations` — 바뀐 묶음은
-    묶음 범위의 바둑판이어야 한다, 2026-10-23 사용자 답 「막자」)도 여기서 한다."""
+    설비 마스터를 쓰는 모든 저장(설비 마스터 탭 「리비전 저장」 — 표·붙여넣기·CSV·작은 편집표 —,
+    Space 배치 저장, 팝업 저장)이 이 한 곳을 지나므로 모듈 묶음 좌표·크기
+    검사(`saved_master_violations` — 바뀐 묶음은 묶음 범위의 바둑판이어야 한다, 2026-10-23 사용자 답
+    「막자」)도 여기서 한다."""
     violations = saved_master_violations(frames[1])
     if violations:
         raise ValueError(module_layout_message(violations))
@@ -2116,13 +1951,6 @@ def _layout_role_of(
     return None
 
 
-# 설비 마스터 편집표 설비명 칸 도움말. 이 표의 설비명은 키라 고치면 「지운 호기 + 새 호기」 다 —
-# 이름 바꾸기(같은 호기, G4·R2)는 Space 편집기와 개편 뒤 설비 마스터 호기 상세에서 한다.
-RENAME_CELL_HELP = (
-    "설비명은 호기를 가르는 키입니다 — 여기서 고치면 저장할 때 옛 호기를 지우고 새 호기로 넣어 "
-    "다른 설비 시나리오의 그 호기 일정이 빠집니다. 이름만 바꾸려면 Space 편집기 「이름 바꾸기」 "
-    "를 쓰세요."
-)
 # 지운 호기와 새 호기가 한 저장에 함께 있을 때 결과 알림 꼬리(설계 11-4).
 RENAME_INSTEAD_HINT = (
     "이름만 바꾸려면 설비 마스터 호기 상세의 설비명 칸이나 Space 편집기 「이름 바꾸기」 를 쓰세요 "
@@ -2267,27 +2095,26 @@ def _render_current_data_downloads(
     saved: Frames,
     latest_snapshot: EquipmentSnapshot | None,
     database_path: str,
-    scenario_name: str | None = None,
-    edit_note: str | None = None,
-    memo_key: tuple[object, ...] | None = None,
+    scenario_name: str | None,
+    edit_note: str,
+    memo_key: tuple[object, ...],
 ) -> None:
-    """세 표의 **현재 데이터**를 내려받는 버튼 셋. 양식 버튼 아래에 같은 차례로 선다.
-    `edit_note` 는 편집본이 언제 이 파일에 드는지 말하는 캡션 글(주지 않으면 옛 「직접 편집」 글).
-    `memo_key` 를 주면(설비 마스터 탭 — 편집본 세대·출발점·저장본 토큰) 내보낼 바이트와 「편집본」
-    판정을 그 열쇠로 세션 메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해
-    합성 3천 대에 수십 ms 가 들었다(개편 명세 8장).
+    """세 표의 **현재 데이터**를 내려받는 단추 셋 — 설비 마스터 탭 「내려받기」 팝오버의 양식 단추
+    아래에 같은 차례로 선다. `edit_note` 는 편집본이 언제 이 파일에 드는지 말하는 캡션 글이다.
+    내보낼 바이트와 「편집본」 판정은 `memo_key`(편집본 세대·출발점·저장본 토큰) 열쇠로 세션
+    메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms 가
+    들었다(개편 명세 8장).
 
-    내보내는 것은 **편집 버퍼**(「직접 편집」 표가 보여 주는 편집본)이지 저장된 리비전이
-    아니다. 사용자가 「지금 보는 것」을 받아야 Excel 에서 고쳐 되돌리는 왕복이 맞아떨어지고,
-    저장본과 같을 때는 둘이 같은 파일이다. 다만 표 안에서 고치는 중인 값은 「보기 적용」·
-    「변경 미리보기」·저장 중 하나를 눌러야 버퍼에 들어오므로, 그 사실을 캡션이 말한다.
-    저장본과 다른지는 **내보낼 바이트를 비교**해 판단한다 — 파일이 달라질 때만 「편집본」이다.
+    내보내는 것은 **편집 버퍼**(설비 마스터 표가 보여 주는 편집본)이지 저장된 리비전이 아니다.
+    사용자가 「지금 보는 것」을 받아야 Excel 에서 고쳐 되돌리는 왕복이 맞아떨어지고, 저장본과 같을
+    때는 둘이 같은 파일이다. 저장본과 다른지는 **내보낼 바이트를 비교**해 판단한다 — 파일이 달라질
+    때만 「편집본」이다.
 
     바이트는 표마다 **저장 리비전과 같은 표면 리비전 캐시**(`load_equipment_csv_payloads`)에서
-    꺼낸다. 이 작업 공간은 숨은 탭에서도 rerun 마다 그려지므로, 고친 것이 없을 때 여섯 번의
-    직렬화(내보낼 셋 + 견줄 셋)를 매번 치르고 있었다. 같은지는 `DataFrame.equals`(값·dtype·차례)로
-    가르고, 다르면 지금처럼 직렬화해 바이트로 견준다 — dtype 만 달라 같은 파일이 되는 경우도
-    「편집본」으로 잘못 적지 않는다. 지연 생성(콜러블)은 쓰지 않는다(TODO 결정 기록).
+    꺼낸다 — 고친 것이 없을 때 여섯 번의 직렬화(내보낼 셋 + 견줄 셋)를 치르지 않는다. 같은지는
+    `DataFrame.equals`(값·dtype·차례)로 가르고, 다르면 직렬화해 바이트로 견준다 — dtype 만 달라 같은
+    파일이 되는 경우도 「편집본」으로 잘못 적지 않는다. 지연 생성(콜러블)은 쓰지 않는다(TODO 결정
+    기록).
 
     내보내기는 읽기만 한다. 버퍼·미리보기·저장 상태를 건드리지 않고, 파일은 브라우저
     다운로드로만 나간다(저장소 안에 쓰지 않는다).
@@ -2312,7 +2139,7 @@ def _render_current_data_downloads(
             return stored_bytes[position]
         return serializers[position](frame)
 
-    memo = st.session_state.get(GRID_MEMO_KEY) if memo_key is not None else None
+    memo = st.session_state.get(GRID_MEMO_KEY)
     cached = memo.get("downloads") if isinstance(memo, dict) else None
     if (
         isinstance(memo, dict)
@@ -2332,18 +2159,15 @@ def _render_current_data_downloads(
             table_bytes(position, frame)
             for position, frame in enumerate((saved_equipment, saved_baseline, saved_downtime))
         )
-        if memo_key is not None:
-            stored_memo = dict(memo) if isinstance(memo, dict) else {}
-            stored_memo["downloads_key"] = memo_key
-            stored_memo["downloads"] = (payloads, edited)
-            st.session_state[GRID_MEMO_KEY] = stored_memo
+        stored_memo = dict(memo) if isinstance(memo, dict) else {}
+        stored_memo["downloads_key"] = memo_key
+        stored_memo["downloads"] = (payloads, edited)
+        st.session_state[GRID_MEMO_KEY] = stored_memo
     basis = _saved_basis_words(latest_snapshot, scenario_name) if latest_snapshot else "저장본 없음"
     state = "저장하지 않은 변경 포함" if edited else "저장본과 같음"
-    note = edit_note or (
-        "「직접 편집」 표에 보이는 편집본을 그대로 내려받습니다. 표 안에서 고치는 중인 값은 "
-        "「보기 적용」을 누른 뒤에 들어갑니다."
+    st.caption(
+        f"현재 데이터 · {basis} · {state}. {edit_note} 고치지 않고 그대로 붙여넣어도 통과합니다."
     )
-    st.caption(f"현재 데이터 · {basis} · {state}. {note} 고치지 않고 그대로 붙여넣어도 통과합니다.")
     today = date.today()
     for column, label, payload, slug, key, frame in zip(
         st.columns(3),
@@ -2659,25 +2483,6 @@ def _equipment_names(frame: pd.DataFrame) -> set[str]:
     return set(names.loc[names.ne("")])
 
 
-def _save_snapshot(
-    repository: DuckDBEquipmentRepository,
-    frames: Frames,
-    note: str,
-    *,
-    basis: EquipmentSaveBasis | None,
-    fields: EquipmentSaveFields,
-    removal_confirmed: RemovalElsewhere | None = None,
-) -> None:
-    st.session_state[FLASH_KEY] = save_equipment_buffer(
-        repository,
-        frames,
-        note,
-        basis=basis,
-        fields=fields,
-        removal_confirmed=removal_confirmed,
-    )
-
-
 def _editor_view(
     data: pd.DataFrame,
     *,
@@ -2707,7 +2512,7 @@ def _editor_view(
 
 @dataclass(frozen=True)
 class EditorResult:
-    """직접 편집 탭이 한 번 제출될 때 돌려주는 것.
+    """작은 편집표 하나가 한 번 제출될 때의 것(`render_small_editor` → `_apply_bulk_actions`).
 
     `frames` 에는 **선택 칸이 없다.** 편집본·저장·미리보기 대조가 모두 이 세 표를 그대로
     쓰므로, 화면에만 있는 칸이 섞이면 대조(`ImportReview.matches`)가 조용히 어긋난다.
@@ -2724,8 +2529,8 @@ def _selection_flags(frame: pd.DataFrame, target: str, selection: frozenset[RowK
 
     **선택이 비면 키를 만들지 않는다.** 빈 선택에는 어떤 키도 들지 않으니 답은 모두 거짓이고, 키를
     만들려면 행마다 값을 글자로 맞추며 비가동 `시작일` 은 날짜 형식을 추정해 읽는다(사내 규모 합성
-    사본 비가동 300건에서 40ms 남짓 — 샘플 관측, 행 수에 비례). RawData 는 어느 탭에서나 그려지므로
-    키를 만들면 그 비용이 가용설비 현황의 모든 rerun 에 붙는다. dtype 은 못박는다 — 빈 표에서
+    사본 비가동 300건에서 40ms 남짓 — 샘플 관측, 행 수에 비례). 작은 편집표는 폼 밖이라 칸을 고칠
+    때마다 회차가 돌므로 키를 만들면 그 비용이 그 회차마다 붙는다. dtype 은 못박는다 — 빈 표에서
     목록으로 넣으면 float 칸이 되어 체크박스와 맞지 않는다.
     """
     if selection:
@@ -2782,39 +2587,25 @@ def _selectable_editor(
     return edited, checked
 
 
-def _action_button(label: str, *, in_form: bool, **kwargs: Any) -> bool:
-    """폼 안이면 제출 단추, 폼 밖(설비 마스터 탭 작은 편집표)이면 보통 단추. 누른 회차에만 참이고
-    인자는 같다 — 두 자리가 같은 key·글자로 그린다."""
-    if in_form:
-        return st.form_submit_button(label, **kwargs)
-    return st.button(label, **kwargs)
-
-
-def _selection_buttons(
-    slug: str, *, delete_locked: str | None = None, in_form: bool = True
-) -> str | None:
-    """표 **위** 세 버튼(2026-09-29 — 작업 버튼은 표 위). 누른 것의 이름을 돌려준다. 폼 안이면
-    제출 버튼이고(옛 작업 공간), 폼 밖이면 보통 버튼이다(작은 편집표 — `in_form=False`). 버튼 값은
-    표보다 먼저 만들어도 같은 회차의 편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는 가용설비
-    현황 Guide 가 말한다. `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을 풍선으로
-    보인다(낡은 세션의 설비 마스터·비가동 일정).
+def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | None:
+    """작은 편집표 **위** 세 단추(2026-09-29 — 작업 단추는 표 위). 누른 것의 이름을 돌려준다. 단추
+    값은 표보다 먼저 만들어도 같은 회차의 편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는
+    가용설비 현황 Guide 가 말한다. `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을
+    풍선으로 보인다(낡은 세션의 비가동 일정).
     """
     with st.container(horizontal=True, gap="small"):
-        matching = _action_button(
+        matching = st.button(
             "필터에 맞는 행 모두 선택",
-            in_form=in_form,
             key=f"equipment_{slug}_select_matching_v1",
             icon=":material/checklist:",
         )
-        clear = _action_button(
+        clear = st.button(
             "선택 해제",
-            in_form=in_form,
             key=f"equipment_{slug}_select_clear_v1",
             icon=":material/deselect:",
         )
-        delete = _action_button(
+        delete = st.button(
             "선택 행 삭제",
-            in_form=in_form,
             key=f"equipment_{slug}_delete_selected_v1",
             icon=":material/delete:",
             disabled=delete_locked is not None,
@@ -2835,29 +2626,23 @@ def _current_selection() -> dict[str, frozenset[RowKey]]:
 
 
 def _deletion_message(plan: DeletionPlan) -> str:
-    """무엇이 얼마나 빠지는지. 호기를 지우면 딸려 빠지는 비가동 일정 수를 반드시 말한다."""
+    """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠지는지. 호기 지우기는 설비 마스터
+    표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
     count = plan.target_count
     samples = ", ".join(plan.sample_keys())
     more = " 외" if count > len(plan.sample_keys()) else ""
-    if plan.target == EQUIPMENT_TARGET:
-        # 행 수다. 모듈 설비는 한 대가 여러 행이라 「대」로 적으면 넷이 네 대로 읽힌다.
-        head = f"호기 {count:,}행을 편집본에서 지웁니다"
-        if plan.cascaded_downtime_count:
-            head += f" — 이 호기의 비가동 일정 {plan.cascaded_downtime_count:,}건도 함께 지웁니다"
-    elif plan.target == BASELINE_TARGET:
+    if plan.target == BASELINE_TARGET:
         head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"
     else:
         head = f"비가동 일정 {count:,}건을 편집본에서 지웁니다"
-    scope = f" {UNIT_DELETE_SCOPE_NOTE}" if plan.target == EQUIPMENT_TARGET else ""
     return (
-        f"{head}. 대상: {samples}{more}. 확정해도 ‘설비 데이터 저장’을 눌러야 새 리비전에 "
-        f"반영됩니다.{scope}"
+        f"{head}. 대상: {samples}{more}. 확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 "
+        "리비전에 반영됩니다."
     )
 
 
-def _render_bulk_delete_status(frames: Frames, *, in_form: bool = True) -> tuple[bool, bool, bool]:
-    """확인 대기 중인 삭제와 방금 한 삭제를 편집표 위에 말한다. (확정, 취소, 되돌리기). 단추는
-    `_selection_buttons` 와 같이 폼 안이면 제출 단추, 밖이면 보통 단추다."""
+def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
+    """확인 대기 중인 삭제와 방금 한 삭제를 작은 편집표 위에 말한다. (확정, 취소, 되돌리기)."""
     confirm = cancel = undo = False
     pending = st.session_state.get(PENDING_DELETE_KEY)
     if isinstance(pending, tuple) and len(pending) == 2:
@@ -2867,16 +2652,13 @@ def _render_bulk_delete_status(frames: Frames, *, in_form: bool = True) -> tuple
         if plan.target_count:
             st.warning(_deletion_message(plan), icon=":material/delete:")
             with st.container(horizontal=True, gap="small"):
-                confirm = _action_button(
+                confirm = st.button(
                     "삭제 확정",
-                    in_form=in_form,
                     key=CONFIRM_DELETE_BUTTON_KEY,
                     type="primary",
                     icon=":material/delete_forever:",
                 )
-                cancel = _action_button(
-                    "취소", in_form=in_form, key=CANCEL_DELETE_BUTTON_KEY, icon=":material/close:"
-                )
+                cancel = st.button("취소", key=CANCEL_DELETE_BUTTON_KEY, icon=":material/close:")
     removed = st.session_state.get(LAST_REMOVED_KEY)
     if isinstance(removed, tuple):
         count = sum(len(frame) for frame in removed)
@@ -2884,12 +2666,7 @@ def _render_bulk_delete_status(frames: Frames, *, in_form: bool = True) -> tuple
             f"방금 편집본에서 {count:,}행을 지웠습니다. 저장하기 전까지 되돌릴 수 있습니다.",
             icon=":material/undo:",
         )
-        undo = _action_button(
-            "방금 삭제 되돌리기",
-            in_form=in_form,
-            key=UNDO_DELETE_BUTTON_KEY,
-            icon=":material/undo:",
-        )
+        undo = st.button("방금 삭제 되돌리기", key=UNDO_DELETE_BUTTON_KEY, icon=":material/undo:")
     return confirm, cancel, undo
 
 
@@ -2944,20 +2721,8 @@ def _apply_bulk_actions(
     st.session_state[SELECTION_KEY] = selection
 
 
-# 편집표 위 한 줄 범례(설계 6-3). 칸 이름은 계약 그대로 두고 도움말 첫 마디로 어느 쪽인지 말한다.
-SCENARIO_COLUMN_LEGEND = (
-    ":material/info: 칸은 세 갈래입니다 — **공통**(호기 정보·실적·상태·이력·메모)은 모든 설비 "
-    "시나리오에 같은 값이고, **배치**(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 공식 설비 "
-    "시나리오에서는 공식 배치, 가정 설비 시나리오에서는 그 시나리오에만(공식과 다른 것만) "
-    "저장되며, **시나리오**(일정 여섯·시나리오 메모·비가동 일정 표)는 지금 설비 시나리오에만 "
-    "저장됩니다. 칸 머리에 마우스를 올리면 어느 쪽인지 보입니다."
-)
-# 일괄 삭제·행 지우기 확인 문구에 붙인다(F6 — 호기 목록은 공통 하나).
-UNIT_DELETE_SCOPE_NOTE = (
-    "호기를 지우면 **모든 설비 시나리오**에서 사라집니다 — 이 시나리오에서만 빼려면 "
-    "정지·반출/이설일정을 적으세요."
-)
-# RawData 폼 안 저장 칸 key 접두어(`equipment_save_fields`).
+# 설비 마스터 탭 「저장 전 변경」 저장 칸 key 접두어(`equipment_save_fields`) — 옛 설비 마스터 탭
+# 폼과 같은 글자라 저장자 칸이 배포를 건너 이어진다.
 SAVE_FIELDS_PREFIX = "equipment_workspace_save"
 # 지우는 호기가 다른 설비 시나리오에 일정이 있을 때의 확인 체크(설계 11-2 6단계). key 꼬리는
 # (호기, 그 일정이 든 시나리오들)의 지문(`RemovalElsewhere.token`)이라 글이 바뀌면 체크가 풀린 새
@@ -2972,27 +2737,6 @@ PASTE_LAYOUT_HELP = (
     "가정 설비 시나리오의 배치(동·층·X좌표·Y좌표·Xsize·Ysize·레이아웃표시)는 이 시나리오에만 "
     "저장됩니다. 끄면 있던 호기의 배치 칸은 지금 값 그대로 두고 새 호기의 배치 칸만 받습니다."
 )
-
-
-def _with_scope_help(
-    config: dict[str, Any], columns: Sequence[str], scenario_name: str | None
-) -> dict[str, Any]:
-    """칸 설정마다 도움말 첫 마디(공통·시나리오)를 얹는다. 설정이 없는 칸은 글 칸 설정을 새로 둔다.
-
-    이미 도움말이 있는 칸은 그 앞에 붙인다. 날짜 칸 형식 같은 다른 설정은 그대로다.
-    """
-    result = dict(config)
-    for column in columns:
-        scope = scenario_column_help(column, scenario_name)
-        existing = result.get(column)
-        if existing is None:
-            result[column] = st.column_config.Column(help=scope)
-            continue
-        current = existing.get("help") if isinstance(existing, dict) else None
-        merged = dict(existing)
-        merged["help"] = f"{scope}. {current}" if current else scope
-        result[column] = merged
-    return result
 
 
 def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
@@ -3147,238 +2891,6 @@ def _history_scenario(
     return catalog.effective_official_scenario_id
 
 
-def _location_options(
-    floor_states: FloorStates | None, equipment: pd.DataFrame
-) -> tuple[list[str], list[str]]:
-    """설비 마스터 `동`·`층` 칸의 선택지. 적용 전 칸 편집이 있는 동안은 지난 회차 선택지를 그대로
-    쓴다(`LOCATION_OPTIONS_KEY`) — 단, 표에 있는 유효 값이 그 선택지 밖이면(붙여넣기로 바뀐 편집본)
-    새로 낸다(선택지 밖 값은 칸 오류로 그려진다)."""
-    if floor_states is None:
-        return list(VALID_BUILDINGS), list(VALID_FLOORS)
-    held = st.session_state.get(LOCATION_OPTIONS_KEY)
-    if (
-        editor_has_edits(EQUIPMENT_EDITOR_KEY)
-        and isinstance(held, tuple)
-        and len(held) == 2
-        and all(isinstance(part, tuple) for part in held)
-    ):
-        present_buildings, present_floors = present_location_values(equipment)
-        if present_buildings <= set(held[0]) and present_floors <= set(held[1]):
-            return list(held[0]), list(held[1])
-    buildings, floors = master_location_options(floor_states, equipment)
-    st.session_state[LOCATION_OPTIONS_KEY] = (tuple(buildings), tuple(floors))
-    return buildings, floors
-
-
-def _render_editors(
-    frames: Frames,
-    max_extent: CanvasSize,
-    selection: Mapping[str, frozenset[RowKey]],
-    *,
-    stale: bool = False,
-    scenario_name: str | None = None,
-    delete_locked: str | None = None,
-    floor_states: FloorStates | None = None,
-) -> EditorResult:
-    """직접 편집 세 표. `stale` 이면 일정 칸·비가동 표·행 추가를 잠그고, `delete_locked`(그 까닭)를
-    주면 설비 마스터·비가동 일정의 「선택 행 삭제」 를 끈다 — 기존 보유대수는 공통이라 그대로다.
-
-    `floor_states`(Space 층 사용 상태)를 주면 설비 마스터 `동`·`층` 칸의 선택지에서 쓰지 않는
-    값을 칸 단위로 뺀다(`master_location_options` — 표에 이미 있는 값은 남긴다). 저장 검사는
-    그대로다(S5)."""
-    baseline, equipment, downtime = frames
-    # 이름 바꿈이 남긴 필터 지도를 필터를 그리기 전에 얹는다(`follow_unit_renames`).
-    _apply_followed_filters()
-    buildings, floors = _location_options(floor_states, equipment)
-    # 위에 삭제 확인이 서거나 사라지면 이 탭의 자리가 밀린다 — key 가 고른 표를 지킨다.
-    master_tab, baseline_tab, downtime_tab = st.tabs(list(_TARGETS), key=EDITOR_TABS_KEY)
-    with master_tab:
-        equipment_view, equipment_requested = _editor_view(
-            equipment,
-            key=EQUIPMENT_EDITOR_KEY,
-            prefix=MASTER_VIEW_PREFIX,
-            filters=(
-                "공정소분류",
-                "공정구분",
-                "투자구분",
-                "공정대분류",
-                "동",
-                "층",
-                AREA_CODE_COLUMN,
-                ARRIVAL_STATUS_COLUMN,
-                QUAL_STATUS_COLUMN,
-                STORAGE_FLAG_COLUMN,
-                "기존설비여부",
-                "레이아웃표시",
-                PARENT_EQUIPMENT_COLUMN,
-            ),
-            locked=(
-                EQUIPMENT_ID_COLUMN,
-                "공정소분류",
-                STORAGE_FLAG_COLUMN,
-                "기존설비여부",
-                "레이아웃표시",
-            ),
-            label="설비 마스터 · 표 보기 설정",
-        )
-        # 설비명은 고정하지 않는다. 고정 열은 Streamlit 이 맨 앞으로 옮겨 계약 차례(6번째)가 깨진다.
-        config: dict[str, Any] = {
-            EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True, help=RENAME_CELL_HELP),
-            "공정소분류": st.column_config.TextColumn(required=True),
-            "동": st.column_config.SelectboxColumn(options=buildings),
-            "층": st.column_config.SelectboxColumn(options=floors),
-            "X좌표": st.column_config.NumberColumn(
-                min_value=0.0, max_value=max_extent[0], step=1.0, help=MODULE_LAYOUT_HELP
-            ),
-            "Y좌표": st.column_config.NumberColumn(
-                min_value=0.0, max_value=max_extent[1], step=1.0, help=MODULE_LAYOUT_HELP
-            ),
-            "Xsize": st.column_config.NumberColumn(
-                min_value=0.1, max_value=max_extent[0], step=1.0, help=MODULE_LAYOUT_HELP
-            ),
-            "Ysize": st.column_config.NumberColumn(
-                min_value=0.1, max_value=max_extent[1], step=1.0, help=MODULE_LAYOUT_HELP
-            ),
-            # 목록 밖 값도 받는다(저장 미리보기에서 경고만) — 고르는 칸으로 묶지 않는다.
-            AREA_CODE_COLUMN: st.column_config.TextColumn(
-                help=(
-                    f"{'·'.join(AREA_CODES)} 가운데 하나를 적습니다(대소문자는 저장할 때 맞춥니다)."
-                )
-            ),
-            ARRIVAL_STATUS_COLUMN: st.column_config.SelectboxColumn(options=list(ARRIVAL_STATUSES)),
-            QUAL_STATUS_COLUMN: st.column_config.SelectboxColumn(
-                options=list(QUAL_CONFIRMATION_STATUSES)
-            ),
-            STORAGE_FLAG_COLUMN: st.column_config.SelectboxColumn(
-                options=["N", "Y"], required=True
-            ),
-            "기존설비여부": st.column_config.SelectboxColumn(options=["N", "Y"], required=True),
-            "레이아웃표시": st.column_config.SelectboxColumn(options=["Y", "N"], required=True),
-            # `step` 을 주지 않는다. Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라** 저장한다
-            # (step=0.1 이면 0.25 → 0.2). 모듈 행의 0.25·0.125 가 그대로 들어가야 한다.
-            "환산비": st.column_config.NumberColumn(min_value=0.01),
-            PARENT_EQUIPMENT_COLUMN: st.column_config.TextColumn(
-                help=(
-                    "모듈 행을 설비 한 대로 묶는 설비 ID 입니다(APW01A~D → APW01). "
-                    "비모듈 설비는 비웁니다."
-                )
-            ),
-        }
-        config.update(
-            {column: st.column_config.DateColumn(format="YYYY-MM-DD") for column in DATE_COLUMNS}
-        )
-        config = _with_scope_help(config, list(equipment.columns), scenario_name)
-        equipment_action = _selection_buttons("master", delete_locked=delete_locked)
-        st.caption(f":material/grid_view: {MODULE_LAYOUT_HELP}")
-        # 비활성 층 안내 — 자리는 늘 선다(생기고 사라질 때 아래 편집표가 밀리지 않게).
-        with st.container(key="equipment_master_floor_state_note"):
-            inactive_summary = (
-                inactive_floor_summary(floor_states) if floor_states is not None else ""
-            )
-            if inactive_summary:
-                st.caption(
-                    f":material/block: 비활성 층: {inactive_summary} — 동·층 칸은 따로 골라 그 "
-                    "짝을 다 거르지 못합니다. 골라도 저장은 되고 Space 목록·도면에서 숨습니다."
-                )
-        edited_equipment, equipment_checked = _selectable_editor(
-            equipment,
-            equipment_view,
-            key=EQUIPMENT_EDITOR_KEY,
-            target=EQUIPMENT_TARGET,
-            column_config=config,
-            selection=selection.get(EQUIPMENT_TARGET, frozenset()),
-            locked_columns=SCENARIO_SCHEDULE_COLUMNS if stale else (),
-            fixed_rows=stale,
-        )
-    with baseline_tab:
-        baseline_view, baseline_requested = _editor_view(
-            baseline,
-            key=BASELINE_EDITOR_KEY,
-            prefix="equipment_baseline_view",
-            filters=("공정", "분류"),
-            locked=("공정", "분류", "기존보유대수"),
-            label="기존 보유대수 · 표 보기 설정",
-        )
-        baseline_action = _selection_buttons("baseline")
-        edited_baseline, baseline_checked = _selectable_editor(
-            baseline,
-            baseline_view,
-            key=BASELINE_EDITOR_KEY,
-            target=BASELINE_TARGET,
-            column_config={
-                "공정": st.column_config.TextColumn(required=True, pinned=True),
-                "분류": st.column_config.TextColumn(required=True),
-                # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
-                # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
-                # 자리만 형식이 소수 둘째 자리로 반올림한다. 칸은 늘 실수다
-                # (`prepare_equipment_baseline`).
-                "기존보유대수": st.column_config.NumberColumn(
-                    "기존 보유대수",
-                    min_value=0,
-                    format="%.2f 대",
-                    required=True,
-                ),
-                "비고": st.column_config.TextColumn(),
-            },
-            selection=selection.get(BASELINE_TARGET, frozenset()),
-        )
-    with downtime_tab:
-        downtime_view, downtime_requested = _editor_view(
-            downtime,
-            key=DOWNTIME_EDITOR_KEY,
-            prefix=DOWNTIME_VIEW_PREFIX,
-            filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
-            locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
-            label="운영 비가동 일정 · 표 보기 설정",
-        )
-        types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
-        downtime_action = _selection_buttons("downtime", delete_locked=delete_locked)
-        edited_downtime, downtime_checked = _selectable_editor(
-            downtime,
-            downtime_view,
-            key=DOWNTIME_EDITOR_KEY,
-            target=DOWNTIME_TARGET,
-            column_config={
-                EQUIPMENT_ID_COLUMN: st.column_config.TextColumn(required=True, pinned=True),
-                "비가동유형": st.column_config.SelectboxColumn(options=types, required=True),
-                "시작일": st.column_config.DateColumn(format="YYYY-MM-DD", required=True),
-                "종료일": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            },
-            selection=selection.get(DOWNTIME_TARGET, frozenset()),
-            # 비가동 일정 표 전체가 설비 시나리오 쪽이다(F2) — 낡은 세션에서는 통째로 잠근다.
-            locked_columns=tuple(downtime.columns) if stale else (),
-            fixed_rows=stale,
-        )
-    action = next(
-        (
-            (name, target)
-            for name, target in (
-                (equipment_action, EQUIPMENT_TARGET),
-                (baseline_action, BASELINE_TARGET),
-                (downtime_action, DOWNTIME_TARGET),
-            )
-            if name is not None
-        ),
-        None,
-    )
-    return EditorResult(
-        frames=(edited_baseline, edited_equipment, edited_downtime),
-        checked={
-            EQUIPMENT_TARGET: equipment_checked,
-            BASELINE_TARGET: baseline_checked,
-            DOWNTIME_TARGET: downtime_checked,
-        },
-        filters={
-            EQUIPMENT_TARGET: equipment_requested.filters,
-            BASELINE_TARGET: baseline_requested.filters,
-            DOWNTIME_TARGET: downtime_requested.filters,
-        },
-        action=action,
-    )
-
-
-# 설비 마스터 탭의 작은 편집표 둘(개편 명세 4-7) — 표 고르기 「기존 보유대수」·「비가동 일정」.
-SMALL_EDITOR_TARGETS = (BASELINE_TARGET, DOWNTIME_TARGET)
 SMALL_EDITOR_NAMES = {BASELINE_EDITOR_KEY: BASELINE_TARGET, DOWNTIME_EDITOR_KEY: DOWNTIME_TARGET}
 SMALL_EDITOR_NOTE = (
     "적용하지 않은 편집은 탭이나 화면을 옮기면 사라집니다(탭 이름 옆 점이 알리고, 화면 탭을 "
@@ -3413,8 +2925,9 @@ def render_small_editor(
     floor_canvases: FloorCanvasMap,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
-    그린다. 「편집본에 적용」·「보기 적용」·일괄 삭제는 옛 직접 편집 탭 그대로의 길이다
-    (`_editor_view`·`_selectable_editor`·`_apply_bulk_actions` — 적용은 `_remember_edits`).
+    그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
+    (`_selectable_editor`)로 그리고, 「편집본에 적용」 은 `_remember_edits`, 일괄 삭제는
+    `_apply_bulk_actions` 다.
 
     **폼으로 묶지 않는다**(명세 4-7 「작은 폼」 에서 바꿈 — D11). 폼 안 편집은 제출 전까지
     서버에 오지 않아 적용 전 편집을 탭 ① 점·화면 탭 줄 떠나기 확인(`small_editor_edits`)이 볼 수
@@ -3459,7 +2972,7 @@ def render_small_editor(
                     kwargs={"floor_canvases": floor_canvases},
                 )
     selection = _current_selection()
-    # 폼이 아니라 key 있는 칸 하나다(자리·여백은 옛 폼과 같다 — 단추·보기·표가 한 칸에 선다).
+    # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
     with st.container(key=f"equipment_small_{slug}_editor_v1"):
         with st.container(horizontal=True, gap="small"):
             apply_clicked = st.button(
@@ -3469,9 +2982,7 @@ def render_small_editor(
                 icon=":material/check:",
             )
             view_clicked = st.button("보기 적용", key=f"equipment_{slug}_view_apply_v1")
-        confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(
-            frames, in_form=False
-        )
+        confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
         if baseline_table:
             view, requested = _editor_view(
                 frames[0],
@@ -3481,7 +2992,7 @@ def render_small_editor(
                 locked=("공정", "분류", "기존보유대수"),
                 label="기존 보유대수 · 표 보기 설정",
             )
-            action = _selection_buttons("baseline", in_form=False)
+            action = _selection_buttons("baseline")
             edited, checked = _selectable_editor(
                 frames[0],
                 view,
@@ -3490,8 +3001,9 @@ def render_small_editor(
                 column_config={
                     "공정": st.column_config.TextColumn(required=True, pinned=True),
                     "분류": st.column_config.TextColumn(required=True),
-                    # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 잘라
-                    # 저장한다(옛 직접 편집 탭과 같은 까닭).
+                    # `step` 을 주지 않는다 — Streamlit 은 step 의 소수 자릿수만큼 입력을 **잘라**
+                    # 저장한다(0.01 이면 1/3 모듈 0.333… → 0.33). 적은 값이 그대로 들어가고 보이는
+                    # 자리만 형식이 소수 둘째 자리로 반올림한다(`prepare_equipment_baseline`).
                     "기존보유대수": st.column_config.NumberColumn(
                         "기존 보유대수", min_value=0, format="%.2f 대", required=True
                     ),
@@ -3510,7 +3022,7 @@ def render_small_editor(
                 label="운영 비가동 일정 · 표 보기 설정",
             )
             types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
-            action = _selection_buttons("downtime", delete_locked=delete_locked, in_form=False)
+            action = _selection_buttons("downtime", delete_locked=delete_locked)
             edited, checked = _selectable_editor(
                 downtime,
                 view,
@@ -3595,12 +3107,9 @@ def _render_history(
     *,
     scenario_id: str | None,
     scenario_name: str | None,
-    in_form: bool = True,
 ) -> None:
-    """고른 설비 시나리오의 일정 리비전 이력과 그 리비전 하나의 「그때 그대로」 조회.
-
-    `in_form` 이 거짓이면(설비 마스터 탭 오른쪽 칸 「저장 이력」) 폼 밖이라 조건을 바꾸면 바로 다시
-    그린다 — 안내 한 줄만 다르다.
+    """고른 설비 시나리오의 일정 리비전 이력과 그 리비전 하나의 「그때 그대로」 조회 — 설비 마스터
+    탭 오른쪽 칸 「저장 이력」. 폼 밖이라 조건을 바꾸면 바로 다시 그린다.
 
     목록은 설비 시나리오 리비전 목록 캐시(세대·stat·TTL), 조회는 그 리비전과 그 저장이 함께 본
     공통 리비전 쌍의 합친 본문 캐시다(`load_saved_pair` 와 같은 쌍). 공통 대장 번호는 공통 이력
@@ -3716,9 +3225,7 @@ def _render_history(
             & (downtime["종료일"].isna() | downtime["종료일"].ge(pd.Timestamp(start)))
         ]
     st.caption(
-        "조회 조건을 바꾼 뒤 ‘이력 조회’를 누르세요. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
-        if in_form
-        else "조회 조건을 바꾸면 바로 다시 그립니다. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
+        "조회 조건을 바꾸면 바로 다시 그립니다. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
     )
     for label, frame in (
         ("기존 보유대수", historical.baseline),
@@ -3737,12 +3244,14 @@ def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, 
     return f"r{number}" if number is not None else ""
 
 
-# 가정 설비 시나리오의 일정 확인 목록이 볼 마스터 한 벌 — ((공식 토큰, 편집본 세대, 미리보기), 표).
+# 가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인 필요」·표 풍선)이 볼 마스터 한 벌 —
+# ((공식 토큰, 편집본 세대, 미리보기), 표).
 _CONFIRMATION_OFFICIAL_KEY = "equipment_schedule_confirmation_official_v1"
 
 
 def official_confirmation_master(master: pd.DataFrame, official: EquipmentSnapshot) -> pd.DataFrame:
-    """가정 설비 시나리오의 일정 확인 목록이 볼 마스터 — 편집본의 공통 칸 + 공식 일정 일곱 칸.
+    """가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인 필요」·표 풍선)이 볼 마스터 —
+    편집본의 공통 칸 + 공식 일정 일곱 칸.
 
     미확인은 공식 시나리오 일정 기준이다(결정). 공통 칸(실적·상태)은 편집본 그대로라 실적·상태를
     고치면 목록에서 빠지고, 이 시나리오에서 고친 일정은 목록을 바꾸지 않는다. 공식에 없는 호기(새
@@ -3767,8 +3276,7 @@ def _confirmation_master(
     master: pd.DataFrame, official: EquipmentSnapshot | None, preview: object
 ) -> pd.DataFrame:
     """일정 확인 목록이 볼 마스터. 공식 기준이면 세션 칸에 한 벌(공식 토큰·편집본 세대·미리보기로
-    키) — 이 작업 공간은 숨은 탭에서도 회차마다 그려지므로 바뀐 것이 없는 회차에 다시 짓지
-    않는다."""
+    키) — 설비 마스터 탭은 표 출납마다 회차가 돌므로 바뀐 것이 없는 회차에 다시 짓지 않는다."""
     if official is None:
         return master
     key = (official.token, equipment_buffer_generation(), id(preview) if preview else None)
@@ -3782,535 +3290,9 @@ def _confirmation_master(
     return built
 
 
-def _render_schedule_confirmation(
-    master: pd.DataFrame, *, today: date, official_basis: bool = False
-) -> None:
-    """반입·Qual 의 일정·실적·상태가 맞지 않는 호기 — 경고 한 줄과 접힌 목록. 셋 다 없으면 그리지
-    않는다. 저장은 막지 않는다. `official_basis` 면 `master` 의 일정은 공식 설비 시나리오의 것이다
-    (가정 설비 시나리오 — 그 사실을 한 줄 더 적는다).
-
-    `master` 는 편집본(미리보기 중이면 저장될 후보)이다. 편집표가 폼 안이라 칸만 고쳐서는 바뀌지
-    않고, 저장하지 않은 편집도 제출(보기 적용·저장·변경 미리보기 등) 뒤 회차에 보인다.
-    판정은 내용 지문 + 오늘 캐시(`get_schedule_confirmation_issues`)로 받는다 — 이 작업 공간은
-    숨은 탭에서도 회차마다 그려지므로, 고친 것이 없는 회차는 지문만 잰다. 미확인은
-    오늘(`today`) 기준이고, 일정 당일은 아직 미확인이 아니다.
-    """
-    issues = get_schedule_confirmation_issues(master, today=today)
-    summary = schedule_confirmation_summary(issues)
-    if summary is None:
-        return
-    st.warning(summary, icon=":material/fact_check:")
-    with st.expander(
-        f"일정 확인 목록 · {len(issues):,}건", expanded=False, key=CONFIRMATION_EXPANDER_KEY
-    ):
-        if official_basis:
-            st.caption(
-                "가정 설비 시나리오라 일정은 **공식 설비 시나리오 기준**입니다 — 이 시나리오에서 "
-                "고친 일정은 이 목록을 바꾸지 않고, 실적·상태(공통)를 고치면 빠집니다."
-            )
-        st.caption(
-            f"**{UNCONFIRMED}** — 일정이 지났는데({today:%Y-%m-%d} 기준, 당일은 빼고) 실적이 "
-            f"비고 상태가 계획·확정 · **{MISSING_ACTUAL}** — 상태가 완료인데 실적이 빔 · "
-            f"**{STATUS_UPDATE_NEEDED}** — 실적이 있는데 상태가 계획·확정. 한 행이 한 (호기, "
-            "단계)입니다. 직접 편집에서 그 단계의 실적·상태를 고친 뒤 보기 적용(붙여넣기는 "
-            "변경 미리보기)을 누르면 이 목록에서 빠지고, 저장해야 Main 화면에도 반영됩니다."
-        )
-        st.dataframe(
-            issues.loc[:, list(_CONFIRMATION_LIST_COLUMNS)],
-            hide_index=True,
-            width="stretch",
-            # 빈 일정·실적은 빈칸이다 — 기본값이면 회색 "None" 글자가 값처럼 읽힌다.
-            placeholder="",
-            column_config={
-                column: st.column_config.DateColumn(format="YYYY-MM-DD")
-                for column in (SCHEDULE_COLUMN, ACTUAL_COLUMN)
-            },
-        )
-
-
 # CSV 업로드 칸 하나만의 상한(MB). 빼면 서버 전체 상한(`.streamlit/config.toml` 의
 # `maxUploadSize`, 1GB)을 물려받는데, CSV 파싱은 파일 크기의 몇 배 메모리를 써 잘못 고른 큰 파일
 # 하나가 공용 앱 프로세스를 몰 수 있다. 칸 안내(「50MB per file」)와 브라우저가 올리기 전에 막는
 # 크기(「File must be 50.0MB or smaller.」)가 이 값이다 — 서버 전체 상한은 그대로라 다른 올리기
 # 칸은 묶지 않는다.
 CSV_UPLOAD_LIMIT_MB = 50
-
-
-def render_equipment_data_workspace(
-    *,
-    repository: DuckDBEquipmentRepository,
-    latest_snapshot: EquipmentSnapshot | None,
-    baseline: pd.DataFrame,
-    equipment: pd.DataFrame,
-    downtime: pd.DataFrame,
-    floor_canvases: FloorCanvasMap,
-    max_extent: CanvasSize,
-    drafts_replaced: bool = False,
-    today: date | None = None,
-    basis: EquipmentSaveBasis | None = None,
-    confirmation_official: EquipmentSnapshot | None = None,
-    layout_mode: LayoutMode | None = None,
-    layout_lock_reason: str | None = None,
-) -> None:
-    """입력·직접 편집·조회 중 한 작업을 표시하고 편집본을 저장한다(바뀐 쪽만 — 공통 대장·설비
-    시나리오 일정).
-
-    `layout_mode` 는 배치 일곱 칸을 어디에 고치나다 — Space 와 같은 판정
-    (`equipment_scenario_activation.space_edit_mode(...).layout`, 설계 8-4·10장). "official" 은 공식
-    배치(공통 대장), "overlay" 는 그 가정 설비 시나리오의 배치 차이(공식과 다른 것만 — 공식은 바뀌지
-    않는다), "locked" 는 잠금(`layout_lock_reason` — 있던 호기의 배치 칸 고침을 저장본 값으로
-    되돌리고 배치를 바꾸는 붙여넣기를 미리보지 않는다). 주지 않으면 `basis` 의 역할(공식 시나리오 →
-    official, 가정 → overlay)이다. 배치 칸을 고친 제출은 그때의 역할을 찍는다(`stamp_layout_role`).
-
-    `confirmation_official` 을 주면(가정 설비 시나리오) 일정 확인 목록은 공식 일정 + 편집본 공통
-    칸으로 본다 — 미확인은 공식 시나리오 일정 기준이다(결정).
-
-    `basis` 는 세션의 설비 시나리오(저장할 곳·화면이 본 공식 번호·낡음)다. 낡았으면(세션 리비전이
-    그 시나리오 최신이 아님) 일정 일곱 칸과 비가동 표·행 추가를 잠그고, 일정이 바뀌는 붙여넣기
-    미리보기를 거부한다 — 막힌 뒤에 버리는 일이 없게 편집하기 전에 막는다(설계 4-2). 공통 칸은
-    그대로 편집·저장된다.
-
-    `drafts_replaced` 는 이번 회차 맨 위에서 다른 사람의 저장으로 편집본을 새로 세웠다는 뜻이다
-    (`pop_drafts_replaced`). 그 회차의 제출은 반영하지 않는다 — 옛 편집본 위의 제출을 새 저장본에
-    얹어 저장하면 남의 리비전과 같은 리비전이 「저장했습니다」로 생기고, 다시 그리면서 버림 알림도
-    사라진다.
-
-    `today` 는 일정 확인 경고의 「오늘」이다. 페이지는 Main 과 같은 날을 넘긴다(주지 않으면
-    오늘)."""
-    frames = ensure_equipment_drafts(latest_snapshot)
-    scenario_name = basis.scenario_name if basis is not None else None
-    stale = basis is not None and basis.stale
-    mode: LayoutMode = (
-        layout_mode
-        if layout_mode is not None
-        else ("overlay" if basis is not None and not basis.official_scenario else "official")
-    )
-    # 가정 배치 붙여넣기의 「공식 자리로 돌아가 차이가 지워짐」 셈 재료(설비명 → 공식 일곱 칸).
-    official_places = _official_places_by_name(latest_snapshot) if mode == "overlay" else {}
-    # Space 층 사용 상태(설비 0029, 공용 현행값) — 동·층 칸 선택지와 저장 미리보기 경고에 쓴다.
-    # 못 읽으면 지금처럼 30개 층 그대로다(RawData 를 막지 않는다).
-    floor_states: FloorStates | None
-    try:
-        floor_states = load_floor_states(str(repository.database_path))
-    except BOOTSTRAP_ERRORS:
-        floor_states = None
-    if latest_snapshot is None:
-        st.info(
-            "아직 저장된 설비 데이터가 없습니다. 설비 마스터를 붙여넣고 "
-            "변경 내용을 확인해 첫 리비전을 저장하세요."
-        )
-    else:
-        st.caption(
-            f"최근 {_saved_basis_words(latest_snapshot, scenario_name)} · 저장하면 바뀐 쪽만 새 "
-            "리비전으로 보관됩니다(공통 칸 → 공통 대장, 일정·시나리오 메모·비가동 → 이 설비 "
-            "시나리오)."
-        )
-    st.caption(SCENARIO_COLUMN_LEGEND)
-    if mode == "locked":
-        st.caption(
-            ":material/lock: 배치 편집이 잠겨 있어 있던 호기의 배치 칸 고침은 저장본 값으로 "
-            "되돌립니다" + (f" — {layout_lock_reason}" if layout_lock_reason else ".")
-        )
-    elif mode == "overlay":
-        where = f"「{literal_markdown(scenario_name)}」" if scenario_name else "이 설비 시나리오"
-        st.caption(
-            f":material/layers: 가정 설비 시나리오 — 배치 칸 고침은 {where}에만(공식과 다른 것만) "
-            "저장되고 공식 배치는 바뀌지 않습니다. Space 현황이 이 배치를 그립니다."
-        )
-    if stale and basis is not None:
-        st.warning(_stale_lock_message(basis), icon=":material/lock_clock:")
-    # 미리보기는 등록할 표·붙여넣기·업로드에서 나온 위젯 아닌 칸이라 그 입력보다 오래 산다.
-    # 다른 화면을 다녀오면 입력 칸은 비어 돌아오는데 「저장할 변경」과 저장 단추만 남아, 누르면
-    # 입력이 없다는 오류로 막힌다. 페이지에 새로 들어온 회차에는 미리보기도 거둔다. 같은 페이지
-    # 안의 `st.rerun()`(앞 탭의 Cut-off 저장 등)은 브라우저가 입력을 다시 보내므로 남긴다.
-    visit = page_visit()
-    if st.session_state.get(_PREVIEW_VISIT_KEY) != visit:
-        st.session_state.pop(PREVIEW_KEY, None)
-    st.session_state[_PREVIEW_VISIT_KEY] = visit
-    pending = st.session_state.get(PREVIEW_KEY)
-    # 알림(오류·안내·예시 행·Main 설비 묶음)은 수가 회차마다 다르다. **늘 서 있는 한 칸** 안에
-    # 그려 아래 key 있는 펼침·탭의 자리를 고정한다 — 자리가 밀리면 `st.rerun()` 으로 끊긴
-    # 저장 회차의 사본이 화면에 남는다(2026-10-05 E2E).
-    with st.container():
-        error = st.session_state.pop(_ERROR_KEY, None)
-        if isinstance(error, str):
-            st.error(error)
-        notice = st.session_state.pop(_NOTICE_KEY, None)
-        if isinstance(notice, str):
-            st.info(notice)
-        # Space 편집기에서 바꾼 저장 안 한 이름 — 여기서 저장해도 함께 저장되고 같은 호기로 이어진다
-        # (G4·R2). Space 상자와 같은 목록 꼴이다.
-        renames = pending_unit_renames()
-        names = name_changes(_saved_master(), frames[1], renames) if renames else pd.DataFrame()
-        if not names.empty:
-            render_name_changes(names, key=NAME_CHANGES_EXPANDER_KEY)
-        # **저장을 누르기 전에 말한다.** 30행을 다 붙여넣고 저장에서 막히는 것과, 들어오자마자
-        # 아는 것은 다르다. 폼 밖이라 일반 버튼이 되고 콜백이 그 자리에서 지운다.
-        example_rows = _example_row_count(frames, pending)
-        if example_rows:
-            st.warning(
-                f"기존 보유대수에 손대지 않은 예시 행 {example_rows:,}건 — 저장이 막힙니다"
-                "(양식의 예시 줄이거나 개발용 샘플입니다)."
-            )
-            st.button(
-                f"예시 행 {example_rows:,}건 지우기",
-                icon=":material/delete_sweep:",
-                key=EXAMPLE_DROP_BUTTON_KEY,
-                on_click=_drop_example_rows,
-                kwargs={"floor_canvases": floor_canvases},
-            )
-        # 저장은 막지 않는다. 묶음의 환산비가 모두 1 이면 능력이 모듈 수만큼 부풀려진다.
-        # 미리보기 중이면 **저장될 후보**를 본다 — 편집본만 보면 저장한 뒤에야 경고가 뜬다.
-        master = pending.candidate[1] if isinstance(pending, ImportReview) else frames[1]
-        for message in module_group_warnings(master):
-            st.warning(message, icon=":material/view_module:")
-        # 모듈 묶음 좌표·크기를 바둑판이 아니게 고친 편집은 저장이 막힌다 — 저장 전에 같은 문구로
-        # 알린다. 방금 그 문구로 거부된 회차는 위 오류가 이미 말하므로 경고를 거듭 세우지 않는다
-        # (다음 회차부터 오류는 사라지고 이 경고가 남는다).
-        violations = saved_master_violations(master)
-        if violations:
-            layout_message = module_layout_message(violations)
-            if layout_message != error:
-                st.warning(layout_message, icon=":material/grid_view:")
-        # Area Code 목록 밖과 일정 확인(미확인·실적 누락·상태 갱신 필요)도 같은 자리에서
-        # 알리고 막지 않는다. 일정 확인은 한 줄 + 접힌 목록이라 이 칸 안에 둔다 — 칸 밖이면 그
-        # 목록이 생기고 사라질 때마다 아래 key 있는 펼침·탭이 밀린다.
-        for message in area_code_warnings(master):
-            st.warning(message, icon=":material/rule:")
-        # 비활성 층으로 옮기거나 새로 넣은 호기 — 저장은 되고 Space 목록·도면에서 숨는다(막지
-        # 않는다).
-        if floor_states is not None:
-            saved_master = (
-                latest_snapshot.equipment if latest_snapshot is not None else master.iloc[0:0]
-            )
-            for message in inactive_floor_warnings(master, saved_master, floor_states):
-                st.warning(message, icon=":material/block:")
-        _render_schedule_confirmation(
-            _confirmation_master(master, confirmation_official, pending),
-            today=today or date.today(),
-            official_basis=confirmation_official is not None,
-        )
-    # 표마다 무엇을 키로 대체하는지·Main 설비·환산비 같은 작성 기준은 Guide 가 말한다. 여기는
-    # 내려받기만 남긴다.
-    with st.expander(
-        "입력 양식 · 현재 데이터 내려받기", expanded=False, key=DOWNLOADS_EXPANDER_KEY
-    ):
-        for column, label, payload, filename, key in zip(
-            st.columns(3),
-            _TARGETS,
-            (equipment_csv_template(), baseline_csv_template(), downtime_csv_template()),
-            (
-                "equipment_master_template.csv",
-                "equipment_baseline_template.csv",
-                "equipment_downtime_template.csv",
-            ),
-            (
-                "equipment_master_template_download_v3",
-                "equipment_baseline_template_download_v3",
-                "equipment_downtime_template_download_v3",
-            ),
-            strict=True,
-        ):
-            with column:
-                render_csv_download(
-                    data=payload, file_name=filename, key=key, label=f"{label} 양식"
-                )
-        _render_current_data_downloads(
-            frames,
-            saved=(baseline, equipment, downtime),
-            latest_snapshot=latest_snapshot,
-            database_path=str(repository.database_path),
-            scenario_name=scenario_name,
-        )
-    with st.form(WORKSPACE_FORM_KEY, border=False, enter_to_submit=False):
-        # 두 저장(입력·직접 편집)이 같이 쓰는 메모라 탭 **위**에 둔다 — 저장 버튼이 표 위로
-        # 올라가면서 메모만 폼 맨 아래에 남으면 적지 않고 저장하기 쉽다.
-        clear_inputs = bool(st.session_state.pop(_NOTE_CLEAR_KEY, False))
-        if clear_inputs:
-            st.session_state[_NOTE_KEY] = ""
-        note = st.text_input("변경 메모", key=_NOTE_KEY, placeholder="예: 10월 신규 호기 30대 등록")
-        # 저장자·함께 넣기·공식 발행 칸. 폼 안이라 늘 세우고 수를 적지 않는다 — 이 회차의 편집본에는
-        # 같은 제출의 새 호기가 아직 없다. 실제로 퍼진 목록은 저장 결과 알림이 적는다(설계 6-4).
-        save_fields = render_equipment_save_fields(
-            SAVE_FIELDS_PREFIX, release_exists=basis is None or basis.release_no > 0
-        )
-        # 지운 호기가 다른 설비 시나리오에도 일정이 있으면 저장 전에 확인한다(설계 11-2 6단계). 같은
-        # 제출에서 더 지우면 목록이 달라져 저장이 거부되고 다음 회차에 새 체크가 선다.
-        try:
-            removal = removals_elsewhere(
-                frames,
-                database_path=str(repository.database_path),
-                scenario_id=_target_scenario_id(basis),
-            )
-        except BOOTSTRAP_ERRORS:
-            removal = None
-        removal_agreed = False
-        if removal is not None:
-            st.warning(removal.message(), icon=":material/group_remove:")
-            removal_agreed = st.checkbox(
-                removal.confirm_label(), key=f"{REMOVAL_CONFIRM_KEY}__{removal.token}"
-            )
-        removal_confirmed = removal if removal_agreed else None
-        # 전환은 브라우저에서만 한다. 폼의 다른 탭도 계속 생성해 미제출 delta를 유지한다.
-        # **key 는 고른 탭을 지키려고 준다**(2026-10-01). 폼 위 알림(오류·안내·예시 행·저장
-        # 완료)이 생기거나 사라지는 제출마다 이 탭의 자리가 한 칸 밀려 새로 마운트되고,
-        # key 가 없으면 「입력」으로 돌아갔다(삭제 확정·저장 직후 이력 조회, 브라우저 실측).
-        # `on_change` 를 주지 않은 key 는 위젯이 아니다 — 브라우저가 고른 탭을 그 이름으로
-        # 기억했다 다시 세울 때 되돌릴 뿐이고, 탭을 눌러도 rerun 이 돌지 않는다.
-        input_tab, edit_tab, history_tab = st.tabs(
-            ["입력", "직접 편집", "저장 이력"], key=WORKSPACE_TABS_KEY
-        )
-        with input_tab:
-            target = st.selectbox("등록할 표", _TARGETS, key=TARGET_KEY)
-            paste_column, upload_column = st.columns([3, 2])
-            paste_layout = False
-            if mode == "overlay":
-                # 가정 세션만 — 기본 끔(Q2). 폼 안이라 늘 세운다(등록할 표가 설비 마스터일 때만
-                # 쓴다).
-                paste_layout = st.checkbox(
-                    PASTE_LAYOUT_LABEL, value=False, key=PASTE_LAYOUT_KEY, help=PASTE_LAYOUT_HELP
-                )
-            with paste_column:
-                if clear_inputs:
-                    st.session_state[CLIPBOARD_KEY] = ""
-                clipboard = st.text_area(
-                    "Excel 표 붙여넣기",
-                    key=CLIPBOARD_KEY,
-                    height=200,
-                    placeholder=(
-                        "헤더를 포함해 Ctrl+V로 붙여넣으세요. 설비 마스터는 설비명과 바꿀 열만 "
-                        "넣어도 됩니다."
-                    ),
-                )
-            with upload_column:
-                uploaded = st.file_uploader(
-                    "또는 CSV 파일 업로드",
-                    type=["csv"],
-                    key=_upload_widget_key(),
-                    max_upload_size=CSV_UPLOAD_LIMIT_MB,
-                )
-            # 작업 줄은 미리보기 표 **위**다 — 저장 버튼이 긴 변경 표 아래로 밀리지 않게 한다.
-            with st.container(horizontal=True, gap="small"):
-                preview_clicked = st.form_submit_button(
-                    "변경 미리보기",
-                    key=PREVIEW_BUTTON_KEY,
-                    icon=":material/preview:",
-                )
-                import_save_clicked = st.form_submit_button(
-                    "확인 후 리비전 저장",
-                    key=IMPORT_SAVE_BUTTON_KEY,
-                    type="primary",
-                    disabled=not isinstance(pending, ImportReview),
-                    icon=":material/save:",
-                )
-            if isinstance(pending, ImportReview):
-                st.markdown(f"**{pending.target} · 저장할 변경 {len(pending.changes):,}행**")
-                split = paste_split_summary(pending.source, pending.candidate)
-                if split is not None:
-                    st.caption(f":material/call_split: {split}")
-                for message in pending.notices:
-                    st.info(message, icon=":material/info:")
-                for message in pending.cautions:
-                    st.warning(message, icon=":material/ink_eraser:")
-                with st.container(horizontal=True):
-                    st.metric("신규", f"{int(pending.changes['Import구분'].eq('신규').sum()):,}건")
-                    st.metric(
-                        "기존 대체", f"{int(pending.changes['Import구분'].eq('대체').sum()):,}건"
-                    )
-                st.dataframe(pending.changes, hide_index=True, width="stretch")
-                st.caption(
-                    f"저장 후: 기존 보유대수 {len(pending.candidate[0]):,}행 · "
-                    f"호기 {len(pending.candidate[1]):,}행 · 비가동 {len(pending.candidate[2]):,}행"
-                )
-                if st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False):
-                    st.caption("예시 행은 빼고 검토했습니다.")
-        with edit_tab:
-            # 작업 줄은 세 표 **위**다(2026-09-29). 아래 두면 고친 뒤 버튼이 화면 밖이었다.
-            with st.container(horizontal=True, gap="small"):
-                edit_save_clicked = st.form_submit_button(
-                    "설비 데이터 저장",
-                    key=EDIT_SAVE_BUTTON_KEY,
-                    type="primary",
-                    icon=":material/save:",
-                )
-                view_clicked = st.form_submit_button("보기 적용", key=VIEW_APPLY_BUTTON_KEY)
-            delete_locked = stale_delete_lock(basis) if stale and basis is not None else None
-            if delete_locked is not None:
-                # 낡기 전에 눌러 둔 호기·비가동 삭제 확인도 버린다 — 확정하면 저장이 늘 거부된다.
-                pending = st.session_state.get(PENDING_DELETE_KEY)
-                if isinstance(pending, tuple) and pending[0] in (EQUIPMENT_TARGET, DOWNTIME_TARGET):
-                    st.session_state.pop(PENDING_DELETE_KEY, None)
-            confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
-            editor = _render_editors(
-                frames,
-                max_extent,
-                _current_selection(),
-                stale=stale,
-                scenario_name=scenario_name,
-                delete_locked=delete_locked,
-                floor_states=floor_states,
-            )
-            edited = editor.frames
-        with history_tab:
-            try:
-                _render_history(
-                    repository,
-                    scenario_id=_history_scenario(repository, basis, latest_snapshot),
-                    scenario_name=scenario_name,
-                )
-            except BOOTSTRAP_ERRORS as exc:
-                st.error(
-                    "저장 이력을 읽지 못했습니다: "
-                    + bootstrap_error_message(exc, database_paths=(repository.database_path,))
-                )
-            history_clicked = st.form_submit_button("이력 조회", key="equipment_history_apply_v1")
-    # 폼 안의 새 제출 단추는 반드시 이 목록에 더한다 — 빠지면 그 단추를 눌러도 아무 일도 하지
-    # 않는다.
-    if not any(
-        (
-            preview_clicked,
-            import_save_clicked,
-            edit_save_clicked,
-            view_clicked,
-            history_clicked,
-            editor.action is not None,
-            confirm_delete,
-            cancel_delete,
-            undo_delete,
-        )
-    ):
-        return
-    if drafts_replaced:
-        st.warning(
-            "다른 사용자가 먼저 저장해 이번 제출은 반영하지 않았습니다. 최신 저장본으로 다시 "
-            "열었으니 확인한 뒤 다시 고치세요.",
-            icon=":material/sync_problem:",
-        )
-        return
-    layout_refusal: str | None = None
-    if mode == "overlay":
-        # 가정 세션 — 공식 동·층이 다른 호기를 한 묶음으로 묶는 Main 설비 고침은 저장소가 거부한다.
-        # 제출에서 먼저 되돌리고 같은 글로 알린다(설계 10장·Q1(c)).
-        grouped, layout_refusal = refuse_mixed_groups(
-            edited[1],
-            frames[1],
-            saved=_saved_master(),
-            renames=pending_unit_renames().units,
-            official_places=official_places,
-        )
-        edited = (edited[0], grouped, edited[2])
-    edits = layout_edits(edited[1], _saved_master(), pending_unit_renames().units)
-    if mode == "locked" and edits:
-        # 배치 편집이 잠긴 회차 — 있던 호기 배치 칸은 저장본 값으로 되돌리고(새 호기는 자리 없이)
-        # 나머지 편집은 반영한다(막고 위젯 delta 에만 남기면 남의 저장·화면 이동 때 같은 제출의 다른
-        # 편집도 잃는다). 「있던 호기」 는 저장했을 때 저장본 호기 키를 잇는 행이다.
-        edited = (edited[0], edits.apply(edited[1], _saved_master()), edited[2])
-        layout_refusal = layout_lock_refusal(
-            list(edits.restore),
-            reason=layout_lock_reason,
-            pasted=False,
-            held=preview_clicked or import_save_clicked or edit_save_clicked,
-            placed=list(edits.place),
-        )
-    elif edits:
-        # 배치 칸을 고친 제출 — 그때의 역할을 찍는다(저장 때 쓰기 잠금 안의 역할과 대조, 설계 6-2).
-        stamp_layout_role(mode)
-    _remember_edits(edited)
-    _apply_bulk_actions(
-        editor,
-        confirm=confirm_delete,
-        undo=undo_delete,
-        view_applied=view_clicked,
-    )
-    if layout_refusal is not None:
-        # 저장·미리보기는 하지 않는다 — 되돌린 칸을 보고 다시 누르게.
-        st.session_state[_ERROR_KEY] = layout_refusal
-        st.rerun()
-    try:
-        if preview_clicked or import_save_clicked:
-            if clipboard.strip() and uploaded is not None:
-                raise ValueError(
-                    "붙여넣기와 CSV 파일이 함께 있습니다. "
-                    "사용할 입력 하나만 남기고 다시 미리보세요."
-                )
-            content: str | bytes = uploaded.getvalue() if uploaded is not None else clipboard
-            if not content.strip():
-                raise ValueError("Excel 표를 붙여넣거나 CSV 파일을 올린 뒤 미리보세요.")
-            if (
-                import_save_clicked
-                and isinstance(pending, ImportReview)
-                and pending.matches(
-                    target, content, edited, layout_pasted=paste_layout or mode != "overlay"
-                )
-            ):
-                _save_snapshot(
-                    repository,
-                    pending.candidate,
-                    note,
-                    basis=basis,
-                    fields=save_fields,
-                    removal_confirmed=removal_confirmed,
-                )
-            else:
-                review = build_import_review(
-                    target,
-                    content,
-                    edited,
-                    floor_canvases=floor_canvases,
-                    drop_examples=bool(st.session_state.get(DROP_EXAMPLE_ROWS_KEY, False)),
-                    layout_role=None if mode == "locked" else mode,
-                    paste_layout=paste_layout,
-                    official_places=official_places,
-                )
-                if stale and basis is not None:
-                    refusal = stale_paste_refusal(review, edited, basis)
-                    if refusal is not None:
-                        raise ValueError(refusal)
-                if mode == "locked":
-                    refusal = layout_paste_refusal(
-                        review,
-                        saved=_saved_master(),
-                        renames=pending_unit_renames().units,
-                        reason=layout_lock_reason,
-                    )
-                    if refusal is not None:
-                        raise ValueError(refusal)
-                elif mode == "overlay":
-                    refusal = assumption_group_paste_refusal(
-                        review,
-                        saved=_saved_master(),
-                        renames=pending_unit_renames().units,
-                        official_places=official_places,
-                    )
-                    if refusal is not None:
-                        raise ValueError(refusal)
-                mismatch = _csv_scenario_mismatch(
-                    uploaded.name if uploaded is not None else None, scenario_name
-                )
-                review = replace(
-                    review,
-                    cautions=(*review.cautions, *((mismatch,) if mismatch is not None else ())),
-                    layout_pasted=paste_layout or mode != "overlay",
-                )
-                st.session_state[PREVIEW_KEY] = review
-                if import_save_clicked:
-                    st.session_state[_NOTICE_KEY] = (
-                        "입력 또는 편집본이 바뀌어 미리보기를 갱신했습니다. "
-                        "변경 내용을 확인한 뒤 다시 저장하세요."
-                    )
-        elif edit_save_clicked:
-            _save_snapshot(
-                repository,
-                edited,
-                note,
-                basis=basis,
-                fields=save_fields,
-                removal_confirmed=removal_confirmed,
-            )
-    except BOOTSTRAP_ERRORS as exc:
-        if preview_clicked or import_save_clicked:
-            st.session_state.pop(PREVIEW_KEY, None)
-        st.session_state[_ERROR_KEY] = bootstrap_error_message(
-            exc, database_paths=(repository.database_path,)
-        )
-    st.rerun()

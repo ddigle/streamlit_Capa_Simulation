@@ -1376,7 +1376,6 @@ def render_equipment_master_tab(
                     repository,
                     scenario_id=_history_scenario(repository, basis, latest_snapshot),
                     scenario_name=basis.scenario_name if basis is not None else None,
-                    in_form=False,
                 )
             except BOOTSTRAP_ERRORS as exc:
                 st.error(

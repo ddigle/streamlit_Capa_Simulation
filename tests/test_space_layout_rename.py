@@ -31,7 +31,7 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-from capa_simulation.services.equipment_bulk_delete import DOWNTIME_TARGET, EQUIPMENT_TARGET
+from capa_simulation.services.equipment_bulk_delete import DOWNTIME_TARGET
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
@@ -558,13 +558,12 @@ def test_a_rename_is_applied_to_the_draft_and_saved_as_a_new_revision(
 ) -> None:
     app, database = _open_editor(tmp_path, _equipment())
     epoch = editor_calls[-1]["epoch"]
-    # RawData 에서 골라 둔 행(호기·비가동)과 방금 지운 행이 있는 세션.
+    # 설비 마스터 탭 비가동 일정 작은 편집표에서 골라 둔 행과 방금 지운 행이 있는 세션.
     app.session_state[SELECTION_KEY] = {
-        EQUIPMENT_TARGET: frozenset({("EQ-01",), ("EQ-02",)}),
         DOWNTIME_TARGET: frozenset({("EQ-01", "고장", "2026-08-10")}),
     }
     app.session_state[LAST_REMOVED_KEY] = (_baseline().iloc[:0], _equipment().iloc[:0], _downtime())
-    # RawData 비가동 일정 표에서 고른 설비명 필터(이 화면에서는 그리지 않는다).
+    # 비가동 일정 작은 편집표에서 고른 설비명 필터(이 화면에서는 그리지 않는다).
     downtime_filter = filter_widget_key(DOWNTIME_VIEW_PREFIX, "설비명")
     app.session_state[downtime_filter] = ["EQ-01"]
 
@@ -587,7 +586,6 @@ def test_a_rename_is_applied_to_the_draft_and_saved_as_a_new_revision(
     assert not any("표 편집도" in item.value for item in app.caption)
     assert app.session_state[PENDING_RENAMES_KEY] == {"units": {"EQ-101": "EQ-01"}, "groups": {}}
     assert app.session_state[SELECTION_KEY] == {
-        EQUIPMENT_TARGET: frozenset({("EQ-101",), ("EQ-02",)}),
         DOWNTIME_TARGET: frozenset({("EQ-101", "고장", "2026-08-10")}),
     }
     assert LAST_REMOVED_KEY not in app.session_state
