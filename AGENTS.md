@@ -2017,7 +2017,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 알림으로 까닭이 보인다. 단추 처리도 체크를 다시 본다(`not clicked or not agreed`). 값이 그대로인데 캐시가
     늦어 저장소가 그 사이 쓰기를 보면 `EquipmentRevisionConflict`·`EquipmentReleaseMoved` 로 거절한다(`_refused`).
   - **여기서 새 시나리오**는 1단계 복제(만들기는 복제로만)의 출처를 고른 리비전으로 넓힌 것이다 — 안내가 새 시나리오의 일정
-    없음 수와 그 리비전 뒤에 든 호기 수를 적는다. 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 키) 한 칸.
+    없음 수와 그 리비전 뒤에 든 호기 수를 적는다. 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 + 층 현행값
+    쓰기 세대 키) 한 칸.
   - **리비전명**은 칸을 세울 때 본 이름을 따로 들고(`…__seen`) 그 이름으로 비교 후 쓰기를 한다 — 칸이 고치지 않은 채면 남이
     바꾼 이름으로 다시 선다. 비우면 지운다.
   - **공식으로 발행**은 확인 글을 그린 회차의 {고른 리비전, 공식 번호}를 `PUBLISH_SEEN_KEY` 에 남기고, 단추를 누른 회차에 그
@@ -2318,7 +2319,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **리비전명은 바뀔 수 있는 이름표라 불변 본문에 싣지 않는다**(E7 — 5장 8). 합친 본문의 `schedule.revision_name` 은 늘 None
     으로 꺼내고, 이름은 리비전 목록 캐시(쓰기 세대 `"equipment_scenario"`·stat·TTL)에서만 읽는다(글자는
     `equipment_data_workspace.schedule_revision_title`). 되돌리기 확인 재료(`load_schedule_restore_preview`)는 (DB, 공통 id, 그 시나리오 최신 id, 고른 id)
-    키에 세대가 없다 — 셋 다 내용이 불변이고 누가 저장하면 화면이 새 id 로 부른다.
+    에 층 현행값 쓰기 세대 `"floor_layout"` 만 더한다 — 셋 다 내용이 불변이고 누가 저장하면 화면이 새 id 로 부르며, 되돌리기가 쓸
+    배치 차이의 정규화만 층 현행값을 본다(공식 발행 확인 `load_layout_publish_preview` 와 같다).
   - **어느 캐시도 저장소의 호환 래퍼(`save_snapshot`·`save_space_layout`·`load_snapshot`)를 부르지 않는다** — 래퍼
     `load_snapshot` 은 발행에 따라 값이 바뀌는 뜻이라 공통 id 하나 키에 실으면 발행 뒤 낡은 값을 낸다. 시험이
     `app_pages/`·`components/`·이 파일을 훑는다(`tests/test_equipment_current_reads.py`).
@@ -2391,9 +2393,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `EquipmentRevisionConflict`, 지금 최신과 같으면 쓰지 않음(`schedule=None`), 발행은 저장과 같은 `_plan_publish`, 공통을 쓰지
     않아 교차 검증 없음). 되돌리기는 그 리비전의 **배치 차이**도 지금 공통·층 현행값으로 정규화해 되살린다 — 대상이 공식
     시나리오면 차이를 버린다(I2). 「쓸 것 없음」 은 확인 화면과 같은 `restore_writes_nothing(preview, official_scenario=)` —
-    공식이면 일정·비가동만, 가정이면 저장된 차이(원시 지문)까지 같을 때다. 확인 화면은 그 판정으로 단추를 세우고 확인 글을 정한
+    공식이면 일정·비가동만, 가정이면 **쓸 차이**(고른 리비전 차이를 지금 공통·층 현행값으로 정규화 — 그 뒤 지운 호기·공식과
+    같아진 행이 빠진다)가 지금 최신 차이(같은 기준 정규화)와도 같을 때다(`restored_layout_same` — 원시 지문만 보면 지운 호기의
+    차이를 「되살립니다」 라 하고 바뀐 것이 없는 리비전을 만들었다, E2E r2). 쓰기는 확인 재료와 같은 `_restore_preview` 가 낸
+    정규화 차이를 그대로 쓴다. 확인 화면은 그 판정으로 단추를 세우고 확인 글을 정한
     역할을 `expected_layout_role` 로 넘긴다 — 잠금 안의 역할과 다르면 `EquipmentLayoutRoleChanged`(확인 글과 실제 쓰기가 갈리지
-    않게). 확인 글·결과 글은 배치 차이를 되살리는지·버리는지를 한 줄로 적는다(`restore_layout_sentence`). 리비전명은 둘 다 앞뒤 공백을 뗀 뒤 `SCHEDULE_REVISION_NAME_MAX_CHARS`(40)자까지이고 넘으면 쓰기 전에
+    않게). 확인 글·결과 글은 배치 차이를 되살리는지·버리는지를 한 줄로 적는다(`restore_layout_sentence` — 되살릴 수는 쓸 차이로, 빠지는 행이 있으면 그것도). 리비전명은 둘 다 앞뒤 공백을 뗀 뒤 `SCHEDULE_REVISION_NAME_MAX_CHARS`(40)자까지이고 넘으면 쓰기 전에
     `ValueError` 다(자르지 않는다 — 화면 칸 `max_chars` 도 이 수). 확인 재료는 `preview_schedule_restore`(읽기만 — 쓰기도 잠금
     안에서 같은 `_restore_preview` 로 다시 잰다). 「그 리비전 뒤에 공통 대장에 든 호기」 는 그 리비전이 함께 본
     공통(`common_revision_id`)에 키가 없는 호기다.

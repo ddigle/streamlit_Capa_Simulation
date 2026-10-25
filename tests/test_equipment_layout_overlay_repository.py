@@ -1007,6 +1007,54 @@ def test_restoring_a_revision_brings_its_layout_difference_back(tmp_path: Path) 
     assert _place(_session(repository, scenario_id), "EQ-01")[2] == 50.0
 
 
+def test_restoring_a_layout_difference_of_a_deleted_unit_writes_nothing(tmp_path: Path) -> None:
+    """고른 리비전의 차이가 그 뒤 지운 호기뿐이면 되살릴 것이 없다 — 확인 판정과 쓰기가 그
+    정규화를 보고, 바뀐 것이 없는 리비전을 만들지 않는다(E2E r2 eq-flows)."""
+    repository = _seeded(tmp_path)
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    saved = repository.save_equipment(_request(session, scenario_id, equipment=_moved(session)))
+    assert saved.schedule is not None
+    cleared = repository.clear_layout_overlay(
+        scenario_id, expected_latest_schedule_revision_id=saved.schedule.schedule_revision_id
+    )
+    assert cleared is not None
+    official = _session(repository)
+    kept = official.equipment["설비명"].ne("EQ-01").to_numpy(dtype=bool)
+    kept_downtime = official.downtime["설비명"].ne("EQ-01").to_numpy(dtype=bool)
+    repository.save_equipment(
+        _request(
+            official,
+            equipment=official.equipment.loc[kept].reset_index(drop=True),
+            downtime=official.downtime.loc[kept_downtime].reset_index(drop=True),
+        )
+    )
+    common = repository.latest_revision_id()
+    assert common is not None
+    latest = _scenario(repository, scenario_id).latest_schedule_revision_id
+    assert latest == cleared.schedule_revision_id
+
+    preview = repository.preview_schedule_restore(
+        saved.schedule.schedule_revision_id,
+        common_revision_id=common,
+        current_schedule_revision_id=latest,
+    )
+
+    # 원시 지문은 다르지만(r2 에 지운 호기 1행) 되살릴 차이는 없다.
+    assert not preview.layout_identical
+    assert restore_writes_nothing(preview, official_scenario=False)
+    assert (preview.layout_unit_rows, preview.restored_layout_unit_rows) == (1, 0)
+    assert preview.restored_layout_digest is None
+    result = repository.restore_schedule_revision(
+        saved.schedule.schedule_revision_id,
+        expected_common_revision_id=common,
+        expected_latest_schedule_revision_id=latest,
+        expected_layout_role="overlay",
+    )
+    assert result.schedule is None
+    assert _scenario(repository, scenario_id).latest_schedule_revision_id == latest
+
+
 def test_restoring_into_the_official_scenario_drops_the_layout_difference(tmp_path: Path) -> None:
     repository = _seeded(tmp_path)
     scenario_id = _hypothetical(repository)

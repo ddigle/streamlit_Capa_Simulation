@@ -1736,7 +1736,7 @@ class DuckDBEquipmentRepository:
         """
         with self._connect() as connection:
             target = _require_schedule_revision(connection, schedule_revision_id)
-            preview, _ = _restore_preview(
+            preview, _, _ = _restore_preview(
                 connection, common_revision_id, current_schedule_revision_id, target
             )
         return preview
@@ -1810,21 +1810,15 @@ class DuckDBEquipmentRepository:
             )
             if expected_layout_role is not None and expected_layout_role != role:
                 raise EquipmentLayoutRoleChanged(expected_layout_role, role)
-            preview, restored = _restore_preview(
+            preview, restored, restored_layout = _restore_preview(
                 connection, latest[0], scenario.latest_schedule_revision_id, target
             )
             # 「쓸 것 없음」 판정은 확인 화면과 같은 함수다(설계 6-6 — 확인 글과 실제 쓰기가 갈리지
-            # 않게): 공식이면 차이를 버리니 일정·비가동만, 가정이면 저장된 차이 지문까지 본다.
+            # 않게): 공식이면 차이를 버리니 일정·비가동만, 가정이면 쓸 차이(정규화)까지 본다.
             if restore_writes_nothing(preview, official_scenario=role == "official"):
                 return ScheduleRestoreResult(schedule=None, preview=preview)
-            selected = read_layout_overlay(connection, target)
             official_layout = _official_layout(restored)
-            floors = _stored_floors(connection, selected.floors)
-            layout = (
-                LayoutOverlay()
-                if role == "official"
-                else normalize_layout_overlay(selected, official_layout, floors)
-            )
+            layout = LayoutOverlay() if role == "official" else restored_layout
             release_row = scenario_store.latest_release_row(connection)
             publish = _plan_publish(
                 scenarios,
@@ -3415,12 +3409,18 @@ def _restore_preview(
     common_revision_id: str,
     current_schedule_revision_id: str | None,
     target: EquipmentScheduleRevisionSummary,
-) -> tuple[ScheduleRestorePreview, EquipmentSnapshot]:
-    """(되돌리기 차이, 고른 리비전을 그 공통과 합친 한 벌). 확인 글과 되돌리기 쓰기가 같이 쓴다.
+) -> tuple[ScheduleRestorePreview, EquipmentSnapshot, LayoutOverlay]:
+    """(되돌리기 차이, 고른 리비전을 그 공통과 합친 한 벌, 가정 시나리오로 되돌릴 때 쓸 배치 차이).
+    확인 글과 되돌리기 쓰기가 같이 쓴다.
 
     「그 리비전 뒤에 공통 대장에 든 호기」 는 그 리비전을 저장할 때 함께 본 공통
     대장(`common_revision_id`)에 키가 없는 호기다. 함께 본 공통이 비어 있으면(그런 저장은 없다) 그
     리비전에 일정이 있는 호기를 그때의 호기로 본다.
+
+    쓸 배치 차이는 고른 리비전의 차이를 지금 공통·층 현행값으로 정규화한 것이다(그 뒤 지운 호기·
+    공식과 같아진 행이 빠진다). 지금 최신의 차이도 같은 기준으로 정규화해 지문을 싣는다 —
+    「쓸 것 없음」(`restore_writes_nothing`)과 확인 글이 실제로 쓸 차이를 보게(원시 지문만 보면 지운
+    호기의 차이를 「되살립니다」 라 하고 바뀐 것이 없는 리비전을 만든다).
     """
     restored = read_merged(connection, common_revision_id, target.schedule_revision_id)
     current = (
@@ -3454,6 +3454,15 @@ def _restore_preview(
         value = summary.layout_digest if summary is not None else EMPTY_LAYOUT_DIGEST
         return None if value == EMPTY_LAYOUT_DIGEST else value
 
+    def effective(overlay: LayoutOverlay) -> str | None:
+        value = overlay.digest()
+        return None if value == EMPTY_LAYOUT_DIGEST else value
+
+    stored_now = read_layout_overlay(connection, current_summary)
+    official_layout = _official_layout(restored)
+    floors = _stored_floors(connection, (*selected.floors, *stored_now.floors))
+    layout = normalize_layout_overlay(selected, official_layout, floors)
+    effective_now = normalize_layout_overlay(stored_now, official_layout, floors)
     return (
         replace(
             preview,
@@ -3466,8 +3475,14 @@ def _restore_preview(
             layout_digest=digest(target),
             current_layout_digest=digest(current_summary),
             layout_moved_since=moved,
+            restored_layout_unit_rows=len(layout.units),
+            restored_layout_mark_rows=layout.mark_count,
+            restored_layout_label_rows=layout.label_count,
+            restored_layout_digest=effective(layout),
+            current_effective_layout_digest=effective(effective_now),
         ),
         restored,
+        layout,
     )
 
 

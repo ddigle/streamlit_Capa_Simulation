@@ -4,8 +4,8 @@
 
 - **리비전 내용은 불변이다.** 화면이 쓰는 한 벌은 (공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍을
   합친 것이고 그 본문은 쌍 키로만 캐시한다(`load_merged_equipment_snapshot`) — 쓰기 세대가 없다.
-  되돌리기 확인 재료(`load_schedule_restore_preview`)도 불변 리비전 id 셋이 키다. 공식 발행 확인의
-  배치 판정(`load_layout_publish_preview`)은 불변 리비전 id 셋에 층 현행값 쓰기 세대를 더한다. 가정
+  되돌리기 확인 재료(`load_schedule_restore_preview`)와 공식 발행 확인의 배치 판정
+  (`load_layout_publish_preview`)은 불변 리비전 id 셋에 층 현행값 쓰기 세대를 더한다. 가정
   설비 시나리오의 배치 차이(설비 0031)도 일정 리비전 내용이라 불변이다 — 호기 차이는 합친 본문에
   이미 얹혀 있고, 도면 요소·Main 설비명 위치 차이는 일정 id 하나를 키로 한 칸
   (`load_schedule_layout_overlay`)이 든다. 실제 그림은 「공식 층 현행값(쓰기 세대) ⊕ 그 차이」 를
@@ -514,7 +514,9 @@ def _load_schedule_restore_preview_payload(
     common_revision_id: str,
     current_schedule_revision_id: str | None,
     schedule_revision_id: str,
+    floor_generation: WriteGeneration,
 ) -> dict[str, Any]:
+    del floor_generation
     return _payload(
         get_equipment_repository(database_path).preview_schedule_restore(
             schedule_revision_id,
@@ -533,9 +535,11 @@ def load_schedule_restore_preview(
 ) -> ScheduleRestorePreview:
     """「이 리비전으로 되돌리기」·「여기서 새 시나리오」 확인 재료(E7) — 바뀌는 호기 수·일정 없음.
 
-    결과는 세 리비전(지금 공통 대장·그 시나리오 지금 최신·고른 리비전)의 **내용**만으로 정해지고 셋
-    다 불변이라 쓰기 세대 없이 id 셋을 키로 둔다. 누가 저장해 최신이 바뀌면 화면이 새 id 로 부르므로
-    다른 칸으로 간다. 고른 리비전을 지금 공통 대장과 합칠 수 없으면 예외라 캐시에 남지 않는다.
+    결과는 세 리비전(지금 공통 대장·그 시나리오 지금 최신·고른 리비전)의 **내용**과 층 현행값으로
+    정해진다 — 리비전 id 셋은 불변이라 그대로 키이고, 되돌리기가 쓸 배치 차이의 정규화가 보는 층
+    현행값은 쓰기 세대 `"floor_layout"` 으로 지킨다(공식 발행 확인과 같다). 누가 저장해 최신이
+    바뀌면 화면이 새 id 로 부르므로 다른 칸으로 간다. 고른 리비전을 지금 공통 대장과 합칠 수 없으면
+    예외라 캐시에 남지 않는다.
     """
     return ScheduleRestorePreview(
         **_load_schedule_restore_preview_payload(
@@ -543,6 +547,7 @@ def load_schedule_restore_preview(
             common_revision_id,
             current_schedule_revision_id,
             schedule_revision_id,
+            _write_generation("floor_layout"),
         )
     )
 

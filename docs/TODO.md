@@ -814,6 +814,22 @@
 
 ### 화면
 
+- (2026-10-26) **「이 리비전으로 되돌리기」 확인 글·「쓸 것 없음」 은 실제로 쓸 배치 차이를 본다**(브라우저 E2E r2 eq-flows,
+  밤사이 권장대로) — 가정 시나리오의 옛 리비전에 저장된 배치 차이가 그 뒤 지운 호기뿐이면 확인 글은 「…가정 배치(저장된 차이
+  호기 1행)도 되살립니다」 라 하고, 쓰기는 정규화(공통에 없는 호기 키를 뺌)로 빈 차이가 되어 바뀐 것이 없는 새 리비전을 만들던
+  것(원시 지문만 견줌). 확인 재료(`_restore_preview`)가 고른 리비전 차이를 지금 공통·층 현행값으로 정규화한 **쓸 차이**의 행 수·
+  지문과, 지금 최신 차이를 같은 기준으로 정규화한 지문을 싣고(`restored_layout_*`·`current_effective_layout_digest`),
+  `restore_writes_nothing` 은 가정이면 그 둘이 같을 때(`restored_layout_same`) 쓸 것이 없다고 본다 — 확인 단추가 서지 않고
+  저장소도 쓰지 않는다. 쓰기는 같은 함수가 낸 정규화 차이를 그대로 쓴다. 확인 글은 되살릴 수를 쓸 차이로 적고 빠지는 행(그 뒤
+  지운 호기·지금 공식과 같아진 것)이 있으면 그 사실을 적는다. 확인 재료 캐시는 층 현행값을 보게 되어 키에 쓰기 세대
+  `"floor_layout"` 을 더했다(공식 발행 확인과 같은 꼴). 밤사이 권장대로 정한 것(대안):
+  - 「같음」 은 정규화끼리 견준다(지금 최신에 공식과 같아진 낡은 행만 남은 경우도 쓰지 않음). 대안: 쓸 차이를 지금 최신의 원시
+    지문과 견줌 — 낡은 행을 지우기만 하는, 보이는 것이 같은 리비전이 생긴다.
+  - 쓸 것이 없을 때 알림은 가정이면 「일정·비가동·가정 배치와 모두 같아」 로 적는다(공식은 그대로 「일정·비가동과」). 대안: 글은
+    그대로 두기.
+  관련: `services/equipment_scenario.py`·`persistence/equipment_repository.py`·`persistence/equipment_cache.py`·
+  `components/equipment_scenario_management.py`·`tests/test_equipment_layout_overlay_repository.py`·
+  `tests/test_equipment_scenario_layout_management.py`
 - (2026-10-25) **설비 마스터 표 `층` 칸은 그 줄의 동으로 좁힌다**(Space 층 비활성 명세 D6·R2·8-3 — 개편 B1·D 에서 빠졌던 것,
   밤사이 권장대로) — 층 칸 정의에 `optionsBy: {"동": floors_by_building(states)}` 를 싣고(`GridContext.floors_by_building`),
   `grid.js` 순수 구획 `choiceOptions` 가 표 칸 고르기·호기 상세 「위치」·새 호기 칸에서 그 줄의 동(보내는 중인 값 먼저)으로 칸 단위

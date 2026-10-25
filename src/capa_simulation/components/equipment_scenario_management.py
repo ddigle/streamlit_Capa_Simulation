@@ -799,8 +799,10 @@ def restore_layout_sentence(
     official_scenario: bool,
 ) -> str:
     """되돌리기가 배치 차이(설비 0031)에 하는 일 한 문장 — 고른 리비전과 지금 최신의 저장된 차이가
-    같으면 빈 글. 공식 설비 시나리오면 차이를 버린다(I2), 가정이면 고른 리비전의 차이를 되살린다.
-    판정은 저장소와 같은 `restore_writes_nothing` 의 몫과 맞는다(설계 6-6).
+    같으면 빈 글. 공식 설비 시나리오면 차이를 버린다(I2), 가정이면 고른 리비전의 차이를 지금 공통·층
+    현행값으로 정규화해 되살린다 — 글은 **실제로 쓸** 차이(`restored_layout_*_rows`)로 적고, 그 뒤
+    지운 호기·공식과 같아진 행이 빠지면 그 사실을 적는다. 판정은 저장소와 같은
+    `restore_writes_nothing` 의 몫과 맞는다(설계 6-6 — 확인 글과 실제 쓰기가 갈리지 않게).
 
     가정 배치를 되살릴 때 그때 손대지 않은 호기는 지금 공식 자리를 따른다 — 그 리비전을 저장할 때
     본 공통과 자리가 달라진 호기(`layout_moved_since`)가 있으면 그 수를 덧붙인다(이력 「그때
@@ -818,14 +820,40 @@ def restore_layout_sentence(
             f"{title}에 저장된 배치 차이({stored})는 공식 설비 시나리오라 따라오지 않습니다 — "
             "일정·비가동만 되돌립니다."
         )
-    if stored:
+    restored = stored_layout_words(
+        preview.restored_layout_unit_rows,
+        preview.restored_layout_mark_rows,
+        preview.restored_layout_label_rows,
+    )
+    dropped = (
+        f"{title}에 저장된 차이({stored}) 가운데 그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다."
+        if stored and stored != restored
+        else ""
+    )
+    if preview.restored_layout_same:
+        if not stored:
+            return ""
+        return (
+            f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 "
+            "되살릴 것이 없습니다 — 가정 배치는 지금 최신 그대로입니다."
+            if not restored
+            else f"{title}의 가정 배치는 지금 최신과 같습니다 — 배치는 바뀌지 않습니다."
+        )
+    if restored:
         moved = (
             " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
             f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
             if preview.layout_moved_since
             else ""
         )
+        if dropped:
+            return f"{title}의 가정 배치(되살릴 차이 {restored})도 되살립니다 — {dropped}{moved}"
         return f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다.{moved}"
+    if stored:
+        return (
+            f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 "
+            "되살릴 것이 없습니다 — 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다."
+        )
     return (
         f"{title}에는 배치 차이가 없어 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다."
     )
@@ -867,7 +895,7 @@ def restore_result_message(
         f"{with_object_particle(created)} 저장했습니다(일정이 바뀐 호기 "
         f"{result.preview.changed_units:,}대)."
     ]
-    if not result.preview.layout_identical:
+    if not result.preview.restored_layout_same:
         stored = stored_layout_words(
             result.schedule.layout_unit_count,
             result.schedule.layout_mark_count,
@@ -940,9 +968,8 @@ def _render_restore(
     # 단추를 세울지는 저장소의 「쓸 것 없음」 판정과 같은 함수다 — 공식 시나리오는 배치 차이를
     # 버리므로 일정·비가동만 본다(확인 글과 실제 쓰기가 갈리지 않게, 설계 6-6).
     if restore_writes_nothing(preview, official_scenario=official_scenario):
-        st.info(
-            f"최신 r{scenario.latest_revision_no} 의 일정·비가동과 모두 같아 되돌릴 것이 없습니다."
-        )
+        same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
+        st.info(f"최신 r{scenario.latest_revision_no} 의 {same} 모두 같아 되돌릴 것이 없습니다.")
         return
     chosen = revision.schedule_revision_id
     revision_name = st.text_input(

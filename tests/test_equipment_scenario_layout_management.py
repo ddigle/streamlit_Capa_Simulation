@@ -56,7 +56,10 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScheduleRevisionSummary,
     LayoutPublishPreview,
 )
-from capa_simulation.services.equipment_scenario import ScheduleRestorePreview
+from capa_simulation.services.equipment_scenario import (
+    ScheduleRestorePreview,
+    restore_writes_nothing,
+)
 from capa_simulation.services.layout_overlay import EMPTY_LAYOUT_DIGEST
 
 
@@ -203,12 +206,53 @@ def test_an_old_revisions_publish_block_names_only_real_differences_and_working_
 def test_the_restore_confirm_names_units_whose_place_changed_since_then() -> None:
     """검토 F21 — 되살리는 가정 배치에서 그때 손대지 않은 호기는 지금 공식 자리를 따른다."""
     chosen = _revision(2, "d2", layout_unit_count=1)
-    moved = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d", layout_moved_since=4)
+    moved = ScheduleRestorePreview(
+        layout_unit_rows=1,
+        layout_digest="d",
+        layout_moved_since=4,
+        restored_layout_unit_rows=1,
+        restored_layout_digest="d",
+    )
     sentence = restore_layout_sentence(chosen, moved, official_scenario=False)
     assert sentence.startswith("r2의 가정 배치(저장된 차이 호기 1행)도 되살립니다.")
     assert "그때와 자리가 다른 호기 4대가 있습니다(이력 「그때 그대로」 와 다름)" in sentence
-    same = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d")
+    same = ScheduleRestorePreview(
+        layout_unit_rows=1,
+        layout_digest="d",
+        restored_layout_unit_rows=1,
+        restored_layout_digest="d",
+    )
     assert "그때와" not in restore_layout_sentence(chosen, same, official_scenario=False)
+
+
+def test_the_restore_confirm_does_not_promise_a_layout_it_will_not_write() -> None:
+    """E2E r2 eq-flows — 고른 리비전의 차이가 그 뒤 지운 호기뿐이면(정규화하면 빈다) 「되살립니다」
+    라 하지 않는다. 지금 최신도 차이가 없으면 배치는 그대로라 하고, 있으면 지워진다고 적는다."""
+    chosen = _revision(2, "d2", layout_unit_count=1)
+    gone = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d")
+    sentence = restore_layout_sentence(chosen, gone, official_scenario=False)
+    assert "되살립니다" not in sentence
+    assert "되살릴 것이 없습니다" in sentence and "지금 최신 그대로" in sentence
+    assert restore_writes_nothing(gone, official_scenario=False)
+    current = ScheduleRestorePreview(
+        layout_unit_rows=1,
+        layout_digest="d",
+        current_layout_unit_rows=2,
+        current_layout_digest="c",
+        current_effective_layout_digest="c",
+    )
+    sentence = restore_layout_sentence(chosen, current, official_scenario=False)
+    assert "되살릴 것이 없습니다" in sentence and "공식 배치를 따릅니다" in sentence
+    assert not restore_writes_nothing(current, official_scenario=False)
+    partly = ScheduleRestorePreview(
+        layout_unit_rows=2,
+        layout_digest="d",
+        restored_layout_unit_rows=1,
+        restored_layout_digest="n",
+    )
+    sentence = restore_layout_sentence(chosen, partly, official_scenario=False)
+    assert sentence.startswith("r2의 가정 배치(되살릴 차이 호기 1행)도 되살립니다 — ")
+    assert "그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다" in sentence
 
 
 # ---------------------------------------------------------------- 구획(AppTest)

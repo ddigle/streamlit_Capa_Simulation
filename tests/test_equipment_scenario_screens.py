@@ -1175,7 +1175,12 @@ def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
     """가정 시나리오의 배치만 다른 리비전을 되돌리면 확인 글·결과 글이 배치 차이를 말한다(「일정이
     바뀐 호기 0대」 만 적지 않게)."""
     chosen = _summary(2)
-    preview = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d")
+    preview = ScheduleRestorePreview(
+        layout_unit_rows=1,
+        layout_digest="d",
+        restored_layout_unit_rows=1,
+        restored_layout_digest="d",
+    )
     assert restore_layout_sentence(chosen, preview, official_scenario=False) == (
         "r2의 가정 배치(저장된 차이 호기 1행)도 되살립니다."
     )
