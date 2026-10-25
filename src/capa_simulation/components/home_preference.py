@@ -26,7 +26,7 @@ import streamlit as st
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_main_cases import render_main_case_picker
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
@@ -914,7 +914,7 @@ def render_threshold_editor(
                 queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
                 st.rerun(scope="app")
             # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
-            notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
+            notice.error(bootstrap_error_message(exc))
         else:
             save_marks[THRESHOLD_SAVE_NAME] = (expected_version, saved.version)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
@@ -1315,7 +1315,7 @@ def _render_summary_note_editor(
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         clear_global_summary_note_cache()
         queue_flash(
@@ -1384,7 +1384,7 @@ def _render_top5_band_editor(
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         clear_global_top5_band_cache()
         queue_flash("home_top5_band_flash", "B/N Top5 확보율 구간을 저장했습니다.")
@@ -1567,7 +1567,7 @@ def _render_key_process_editor(
             persist_state="session",
         )
         if names:
-            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 「{names[0]}」입니다.")
+            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 {quoted(names[0])}입니다.")
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         known_options = set(process_options)
@@ -1635,7 +1635,7 @@ def _render_key_process_editor(
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         clear_global_key_process_cache()
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
@@ -1643,7 +1643,7 @@ def _render_key_process_editor(
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(
             "home_key_process_flash",
-            f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",
+            f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
 
@@ -1662,7 +1662,7 @@ def _render_key_process_preset_actions(
             help="맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다.",
         )
         # 라벨에 이름을 넣어 프리셋마다 다른 칸이 되게 한다 — 다른 프리셋으로 옮기면 체크가 풀린다.
-        confirmed = st.checkbox(f"「{target}」 삭제 확인")
+        confirmed = st.checkbox(f"{quoted(target)} 삭제 확인")
         delete = st.button(
             "프리셋 삭제",
             icon=":material/delete:",
@@ -1676,10 +1676,10 @@ def _render_key_process_preset_actions(
             *(entry for entry in profile.presets if entry[0] == target),
             *(entry for entry in profile.presets if entry[0] != target),
         ]
-        message = f"「{target}」{object_particle(target)} 기본 프리셋으로 옮겼습니다."
+        message = f"{quoted(target)}{object_particle(target)} 기본 프리셋으로 옮겼습니다."
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
-        message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
+        message = f"프리셋 {quoted(target)}{object_particle(target)} 지웠습니다."
     try:
         get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집"
@@ -1688,7 +1688,7 @@ def _render_key_process_preset_actions(
         st.error(bootstrap_error_message(exc))
         return
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
     clear_global_key_process_cache()
     queue_flash("home_key_process_flash", message)
@@ -1817,13 +1817,13 @@ def _render_execution_editor(
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
                 st.rerun(scope="app")
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         save_marks[EXECUTION_SAVE_NAME] = (expected_version, saved.version)
         queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)

@@ -45,6 +45,7 @@ from typing import NamedTuple
 
 import pandas as pd
 
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     required_exclusion_message,
@@ -65,7 +66,12 @@ from capa_simulation.services.simulation_cache import (
 
 
 class GateVerdict(NamedTuple):
-    """막을지와 그 이유. 허락하면서 경고할 때도 `message` 가 있다."""
+    """막을지와 그 이유. 허락하면서 경고할 때도 `message` 가 있다.
+
+    `message` 는 알림 상자(마크다운)로 간다 — 계산 오류 글은 걸린 칸의 예시 키(제품·공정 이름)를,
+    파생 저장 경고는 원본 시나리오 이름을 날로 담으므로 끼울 때 막는다(물결표가 지움선이 되지
+    않게). `density_error` 는 막지 않는다 — 자동 갱신 기록(표 칸)에도 그대로 남는다.
+    """
 
     allowed: bool
     message: str | None = None
@@ -139,11 +145,12 @@ def revision_save_verdict(
         if active_scenario["content_token"] == base_token
         else _gate_check((reference_version, base_token), reference_tables, reference_tables)[1]
     )
+    shown = markdown_safe_tildes(edited)
     if base is None:
         return GateVerdict(
             False,
             "이 편집으로 Capa 계산이 실패해 저장하지 않았습니다. 편집 전 리비전은 계산되므로 "
-            f"이번 편집이 깨뜨린 것입니다 — 고친 뒤 다시 저장하세요. 오류: {edited}",
+            f"이번 편집이 깨뜨린 것입니다 — 고친 뒤 다시 저장하세요. 오류: {shown}",
         )
     if base != edited and _error_kind(base) == _error_kind(edited):
         return GateVerdict(
@@ -151,7 +158,8 @@ def revision_save_verdict(
             "편집 전과 같은 종류의 Capa 계산 오류가 걸린 칸의 건수·예시만 달라진 채 남아 "
             "있습니다 — 일부를 고쳤거나 이번 편집이 같은 오류를 더 만든 것입니다. 이 리비전은 "
             "공식버전으로 지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. "
-            f"편집 뒤 오류: {edited} / 편집 전 오류: {base}" + module_fix_hint(edited),
+            f"편집 뒤 오류: {shown} / 편집 전 오류: {markdown_safe_tildes(base)}"
+            + module_fix_hint(edited),
         )
     if base != edited:
         return GateVerdict(
@@ -159,12 +167,13 @@ def revision_save_verdict(
             "편집 전과 다른 Capa 계산 오류가 납니다 — 이번 편집이 새로 깨뜨렸거나, 편집 전 오류를 "
             "고쳐 그 뒤에 가려져 있던 오류가 드러난 것입니다(계산은 첫 오류에서 멈춥니다). 이 "
             "리비전은 공식버전으로 지정할 수 없습니다 — 오류를 고쳐 다시 저장하세요. "
-            f"편집 뒤 오류: {edited} / 편집 전 오류: {base}" + module_fix_hint(edited),
+            f"편집 뒤 오류: {shown} / 편집 전 오류: {markdown_safe_tildes(base)}"
+            + module_fix_hint(edited),
         )
     return GateVerdict(
         True,
         "편집 전부터 있던 Capa 계산 오류가 아직 남아 있습니다. 이 리비전은 공식버전으로 "
-        f"지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. 오류: {edited}"
+        f"지정할 수 없습니다 — 남은 오류를 고쳐 다시 저장하세요. 오류: {shown}"
         + module_fix_hint(edited),
     )
 
@@ -194,8 +203,8 @@ def official_publish_verdict(database_path: str, revision_id: str) -> GateVerdic
         False,
         "이 리비전은 Capa 계산이 실패해 공식버전으로 지정할 수 없습니다. 공식버전은 모든 "
         "사용자가 처음 여는 화면이라, 지정하면 모두의 HOME 이 멈춥니다. 기준 정보 페이지에서 "
-        f"고친 뒤 새 리비전으로 저장하고 그 리비전을 지정하세요. 오류: {error}"
-        + module_fix_hint(error),
+        "고친 뒤 새 리비전으로 저장하고 그 리비전을 지정하세요. "
+        f"오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
     )
 
 
@@ -218,14 +227,14 @@ def derived_save_verdict(
             False,
             "이 결과는 Capa 계산이 실패해 저장하지 않았습니다. 원본 리비전은 모두 계산되므로 "
             "이번 머지·연도 이동이 깨뜨린 것입니다 — 원본이나 월 범위를 바꿔 다시 만드세요. "
-            f"오류: {error}",
+            f"오류: {markdown_safe_tildes(error)}",
         )
-    names = ", ".join(source.scenario.scenario_name for source in broken)
+    names = ", ".join(literal_markdown(source.scenario.scenario_name) for source in broken)
     return GateVerdict(
         True,
         f"원본({names})부터 있던 Capa 계산 오류가 결과에도 남아 있습니다. 이 시나리오는 "
         "공식버전으로 지정할 수 없습니다 — 남은 오류를 고쳐 새 리비전으로 저장하세요. "
-        f"오류: {error}" + module_fix_hint(error),
+        f"오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
     )
 
 

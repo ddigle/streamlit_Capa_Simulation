@@ -356,7 +356,7 @@ def _render_logic_analysis(
             demand_basis=selected_basis,
         )
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
 
     selected_mask = (
@@ -957,7 +957,7 @@ else:
             _weekly_availability=availability,
         )
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         st.stop()
 
     missing_availability = (
@@ -1007,7 +1007,7 @@ else:
                 _weekly_availability=availability,
             )
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(bootstrap_error_message(exc))
             st.stop()
         output_value_column = PKG_EQUIVALENT_COLUMN
         output_title = "일 표준 가능량 (PKG Kea)"

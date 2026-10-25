@@ -190,7 +190,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
             lambda: repository.create_voc_reply(post_id=post_id, body=body, author=author),
         )
     except VocPostGoneError as exc:
-        st.session_state[GONE_NOTICE_KEY] = (str(exc), body)
+        st.session_state[GONE_NOTICE_KEY] = (bootstrap_error_message(exc), body)
         return
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
@@ -214,7 +214,7 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
             lambda: repository.set_voc_post_resolved(post_id, resolved=resolved),
         )
     except VocPostGoneError as exc:
-        st.session_state[GONE_NOTICE_KEY] = (str(exc), "")
+        st.session_state[GONE_NOTICE_KEY] = (bootstrap_error_message(exc), "")
         return
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)

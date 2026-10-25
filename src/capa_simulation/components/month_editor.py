@@ -45,6 +45,7 @@ from capa_simulation.components.process_labels import ProcessLabelFormatter
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.sidebar_status import table_card
 
 # 필터는 본문이 아니라 사이드바 조건 카드 `표 조건`(`sidebar_status.table_card`)에 선다
@@ -391,7 +392,7 @@ def _paste_dialog(
         try:
             on_paste(imported)
         except (KeyError, ValueError) as exc:
-            st.error(str(exc))
+            st.error(bootstrap_error_message(exc))
             return
         _close()
         st.rerun()

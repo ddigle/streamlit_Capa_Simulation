@@ -676,7 +676,7 @@ def main(argv: list[str] | None = None) -> int:
     except BOOTSTRAP_ERRORS as exc:
         # `duckdb.Error` 는 RuntimeError 가 아니다. 이걸 잡지 않으면 앱을 켜 둔 채 돌렸을 때
         # 원문 트레이스백이 나오고 Windows 로캘에서는 한글까지 깨진다.
-        print(f"[중단] {bootstrap_error_message(exc)}")
+        print(f"[중단] {bootstrap_error_message(exc, markdown=False)}")
         return 1
 
 

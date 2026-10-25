@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
+from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.services.reference_csv import (
     parse_reference_edit_clipboard,
     reference_edit_csv_bytes,
@@ -64,7 +65,7 @@ def render_reference_clipboard_form(
             max_value=max_value,
         )
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return None
 
 

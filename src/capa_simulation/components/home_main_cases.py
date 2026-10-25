@@ -443,7 +443,7 @@ def _replace_case(
                 expected_scenario_id=chosen[0] if keep_scenario else None,
             )
         except ProfileVersionConflict as exc:
-            st.session_state[MAIN_CASE_NOTICE_KEY] = str(exc)
+            st.session_state[MAIN_CASE_NOTICE_KEY] = bootstrap_error_message(exc)
             return
         except BOOTSTRAP_ERRORS as exc:
             st.session_state[MAIN_CASE_NOTICE_KEY] = (

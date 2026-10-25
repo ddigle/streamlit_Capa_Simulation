@@ -150,7 +150,7 @@ try:
         _display_order=prepared_display_order,
     )
 except ValueError as exc:
-    st.error(str(exc))
+    st.error(bootstrap_error_message(exc))
     st.stop()
 
 # 수율 표는 따로 세운다. 예전에는 위 `try` 에 함께 있어 RQ_YLD 한 행의 값이 비었거나 0 이면
@@ -175,7 +175,7 @@ try:
         [column for column in default_yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS],
     )
 except ValueError as exc:
-    yield_build_error = str(exc)
+    yield_build_error = bootstrap_error_message(exc)
 
 PLAN_EDITOR_KEY = "pkg_plan_editor"
 YIELD_EDITOR_KEY = "yield_editor"
@@ -340,7 +340,7 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     try:
         plan_from_edit_table(imported)
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
     st.session_state[PLAN_STAGED_KEY] = imported
     # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 브라우저까지 비운다.
@@ -413,7 +413,7 @@ def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     try:
         _apply_yield(imported, "붙여넣기 데이터를", note=_removed_yield_note(source, imported))
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
     _close_dialog()
     st.rerun()
@@ -485,7 +485,7 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
         )
         updates = clone_product(scenario["tables"], request)
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
     apply_table_updates(scenario, updates)
     remember_virtual_product(VirtualProductRecord.from_request(request))
@@ -729,7 +729,7 @@ with yield_tab:
                     note=_removed_yield_note(default_yield_table, edited_yield_table),
                 )
             except ValueError as exc:
-                yield_notice.error(str(exc))
+                yield_notice.error(bootstrap_error_message(exc))
             else:
                 st.rerun()
 
@@ -752,7 +752,7 @@ if apply_plan:
             effective_end_month,
         )
     except ValueError as exc:
-        plan_notice.error(str(exc))
+        plan_notice.error(bootstrap_error_message(exc))
     else:
         st.session_state.pop(PLAN_STAGED_KEY, None)
         st.session_state[PLAN_APPLIED_FLASH_KEY] = (
@@ -804,7 +804,7 @@ if not tab_is_hidden(conversion_tab):
                 display_order=reference_tables["RQ_DISPLAY_ORDER"],
             )
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(bootstrap_error_message(exc))
             st.stop()
 
         # 기준정보가 없어 계산에서 빠진 계획 행은 조용히 사라지면 안 된다. 예전에는 여기서

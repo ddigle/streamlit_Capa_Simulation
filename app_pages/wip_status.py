@@ -281,7 +281,7 @@ try:
         process_labels=process_labels,
     )
 except ValueError as exc:
-    st.error(str(exc))
+    st.error(bootstrap_error_message(exc))
     st.stop()
 
 today_rows = wip_history.loc[wip_history["일자"].eq(today)]
