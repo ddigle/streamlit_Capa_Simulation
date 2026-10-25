@@ -294,7 +294,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`qual_deadline_calculator.calculator_style_markup`). 그 뒤 기준선 알림 토스트 자리가 팝업을 여닫을 때 밀리지 않는다
     (`test_qual_deadline_calculator.py` 가 연 회차·닫은 회차의 이벤트 칸 자리 수를 견준다).
   - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py`)이 서고 카드마다 「공정 Capa
-    상세에서 근거 보기」(주소 인자, 샘플 fleet 이면 숨김)다. 카드 차례·기한 임박 날수·강조 공정은 세션 값이고 DB 에 쓰지
+    상세에서 근거 보기」 와 그 옆 「도면에서 보기」(Space 현황 필요 단축 보기 — 그 공정의 층·같은 목표, 층은 본문이 공정 전부를
+    한 번에 고른다 `shortening_space_floors`, 비활성 층 뺌 — 그래서 페이지가 층 사용 상태 `load_floor_states` 를 읽는다)다(주소
+    인자, 샘플 fleet 이면 둘 다 숨김). 수요·달·계획 꺼내기는 Space 보기와 같은 `components/shortening_source.py` 다. 카드 차례·기한 임박 날수·강조 공정은 세션 값이고 DB 에 쓰지
     않는다.
   - 저장본·미저장 편집은 `equipment_data_workspace.py` 세션 칸(가용설비·Space 와 같은 토큰)에서, Cut-off 는 저장된
     값만 읽는다(고치는 곳은 가용설비 현황 「설정」 팝업). 조건 카드는 `shortening` 이다.
@@ -376,6 +378,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   뷰어)에서 셋업 이행을 공간·호기로 본다. 상태별 대수·단계 전환은 가용설비 현황 몫이다(`guides/space_status.md`).
   - 연 층은 세션 키 `space_status_selected_building`·`_floor` 가 먼저이고 주소 `?floor=` 는 `floor` 만 넣고
     지운다(`st.query_params.clear()` 금지). 자리 이동은 모두 콜백이다. 브라우저 뒤로/앞으로는 층 이동이 아니다.
+    **예외 하나** — 필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=…&proc=…&target=…`)는 페이지 맨 앞에서 한 번 받아
+    (`space_shortening_view.consume_layer_link`) 그 층이 세션 층을 **덮고**(`floor` 가 없거나 비활성 층이면 세션 층을 지워 FAB
+    전체), 색 기준·목표·그 층 공정 칩을 적고 배치 편집 토글을 끈 뒤 남길 인자만 `from_dict` 한 번으로 다시 싣고 회차를 한 번 더
+    돈다(사이드바 줄을 맞추려고 — 아직 그린 편집기가 없는 자리).
+  - **색 기준 「필요 단축」**(2026-10-24 결정 — 라디오 셋째 값, `services/space_shortening_layer.py`·
+    `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
+    꺼내고(5장 9), **본문 조작 줄**(늘 서는 `space_shortening_toolbar` — 목표 확보율 `st.segmented_control(required=True)`·
+    「단축 없는 호기 흐리게」·기준 캡션·못 읽음 알림)·FAB 블록 셋째 줄·층 목록 칸 넷·요약·추가 호기 상자(늘 서는
+    `space_shortening_fab_slot`)·층 보기 칸(늘 서는 테두리 없는 `space_shortening_slot` 안 — 공정 칩·「이 층에서 단축할 호기」·
+    도면에 자리가 없는 호기·누른 호기 상세)을 그린다. 켠 회차의 기준일은 오늘로 고정이다(세션 기준일은 지우지도 쓰지도 않는다 —
+    뷰어 `asOfPinned` 고정 줄). 배치 편집 중·비활성 층 상세는 쉰다(라디오 값 그대로, 그리는 색은 공정구분 기본 —
+    `effective_choice` 를 편집기·범례가 같이 쓴다). 상세 단추 「필요 단축 일정에서 이 공정 보기」 는 대기 칸만 적고 다음 회차
+    본문 맨 앞(`switch_to_queued_shortening`)이 옮긴다. epoch 는 바뀌지 않는다(레이어·목표·칩·흐림은 epoch 밖). 사이드바
+    시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다).
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
   - 보기는 **사이드바에서 고른 설비 시나리오**의 배치다(설비 시나리오 2단계 S3 — LY3, `PageSpec.equipment_scenario="session"`·
@@ -528,7 +544,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     거치는 길).
 - `src/capa_simulation/components/space_layout.py` — Space 배치 집계(대수·점유율·층별 배치 `floor_placements`), 호기
   상자 면·글자(`unit_appearance`), 층 상세 범례(`space_legend_counts`), 층 상세 호기 표(`floor_table`·
-  `picked_unit_rows`)와 영역·금지 색을 만든다.
+  `picked_unit_rows`)와 영역·금지 색을 만든다. 색 기준 「필요 단축」 은 블록 셋째 줄(`floor_block_stats(short_lines=)` — 비활성
+  층에는 싣지 않음)·구간 얹기(`apply_layer_looks` — 표시 호기 면을 비워 브라우저가 구간 변수로 칠함)·범례
+  (`shortening_legend_markup` — 구간 넷·임박 테·흐림 + 테·덧표시 칸, 채우기 칸 없음)다.
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
     블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
@@ -556,6 +574,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확인 대상이다(목록 꼬리 「공식 배치 호기 없음(가정 배치에만)」 — 배치안이 빈 층을 쓰는 경우). 초안이 있는데 사이드바 팝업에서
     가정 설비 시나리오를 고르면 「변경을 버리고 불러오기」 를 묻는다(Space 가 편집을 잠그며 버린다 — 설계 9장). 이 모듈에는
     Streamlit 캐시를 두지 않는다.
+  - 색 기준 「필요 단축」 을 켠 동안만 사용 층 표에 칸 넷(`단축 호기`·`최대 단축(일)`·`기한 지남`·`추가 호기` — `extra_columns`)이
+    붙는다. 비활성 층 표에는 붙이지 않는다(층 대수를 싣지 않는다).
 - `src/capa_simulation/components/space_floor_layout.py` — Space 가 그리는 층 도면 요소·Main 설비명 위치의 한 곳(설비 시나리오
   2단계 S3). `effective_floor_layout(db, 층, 세션)` = 공식 층 현행값(`load_floor_layout_marks`·`load_floor_group_labels` — 쓰기
   세대 캐시) ⊕ 세션 리비전의 요소·이름표 차이(`load_schedule_layout_overlay` — 일정 id 키 불변 칸, 차이 없으면 질의 없음)를
@@ -567,6 +587,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     도면 요소 이탈은 저장소가 거부하므로 단추를 막는다. 저장·삭제 뒤 그 층의 미저장 캔버스를 버린다.
 - `src/capa_simulation/components/space_layout_editor.py` — Space 층·FAB 도면의 Components v2 편집기와 보기 전용 뷰어
   (`render_space_layout_viewer`·`render_fab_layout_viewer`·`render_fab_layout_editor`)다.
+  - 「필요 단축」 payload(층 보기만, 값이 있을 때만 키 — 끈 동안 payload 그대로): 호기 `layer`(`s|m|l|x`)·`dim`,
+    `shortBadges`(설비키마다 하나 — `ids` 는 그 층에 그린 모듈), `asOfPinned`(고정 줄 뒷글). 팔레트 `short-*` 칸은 늘 싣는다
+    (CSS 변수는 모두 팔레트에 — 시험). JS 배지 자리는 `// <short-badge>` 구획의 순수 `badgeSpot` 이다(node 시험).
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
@@ -1001,7 +1024,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `simulation_cache.get_schedule_confirmation_issues`(마스터 지문 + 오늘)로 읽는다.
 - `src/capa_simulation/services/space_unit_state.py` — Space 호기 경계 날짜(`unit_boundaries`)·기준일 판정의 한 곳이다.
   - 실적은 여기서만 쓴다(6장). 편집기 JS 가 같은 판정을 하므로 `tests/test_space_unit_state.py` 가 둘을 대조한다.
-- `src/capa_simulation/services/space_color_basis.py` — Space 「색 기준」 그룹(공정구분·투자Capa)을 정한다. 색 값은 모른다.
+- `src/capa_simulation/services/space_color_basis.py` — Space 「색 기준」 그룹(공정구분·투자Capa·필요 단축 — 셋째 값은 그룹이
+  없다)을 정한다. 색 값은 모른다.
+- `src/capa_simulation/services/space_shortening_layer.py` — Space 「필요 단축」 보기의 순수 규칙 — 계획의 단축 호기를 구간
+  (1–7일·8–14일·15일 이상·기한 지남)·D-n·임박(필요 단축 일정 「기한 임박」 날수)으로 나누고, 층 행의 「설비키」 로 붙여 배지(설비키마다
+  하나)·흐림·「이 층에서 단축할 호기」·자리 없는 호기·추가N(그 공정 호기가 그려진 사용 층마다, FAB 합계 한 번)·층 대수·FAB
+  요약을 낸다. 「도면에서 보기」 층(`shortening_space_floors` — 공정 전부 한 번, 단축 호기 다수 사용 층 → 추가N 만이면 그려지는
+  설비키 다수 사용 층, 비활성 층은 대상 아님)도 여기다. Streamlit·DB·색·공정 표시명을 모른다.
 - `src/capa_simulation/services/usage_basis.py` — 사용기준이 HBM·EDP 가 아니어서 일정 기준 가용대수에 세지 않는 설비를
   고정 지분으로 세고 알림 한 줄을 만든다(`simulation_cache.get_usage_excluded_equipment`).
 - `src/capa_simulation/services/equipment_bulk_delete.py` — 일괄 삭제·되돌리기를 업무 키로 한다(9장, 비가동 일정도 뺀다).
@@ -1340,8 +1369,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/roadmap_panel.py` — 업무 활용 목적·부서별 Action Item·로드맵을 기본 닫힌
   상자로 그린다(지금은 실행 관리 머리).
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
-  실행(테스트)에서는 문구로 물러선다. `disabled`·`help` 는 `st.page_link` 그대로다 — 꺼진 링크가 자리를 지키고 풍선이
-  까닭을 말한다(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」).
+  실행(테스트)에서는 문구로 물러선다(`fallback` 으로 그 글을 줄 수 있다 — 「도면에서 보기」). `disabled`·`help` 는
+  `st.page_link` 그대로다 — 꺼진 링크가 자리를 지키고 풍선이 까닭을 말한다(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」).
 - `src/capa_simulation/services/product_type.py` — 제품타입(HBM·EDP-TSV)이 가르는 `WF 구분` 규칙의 단일 근거다.
   두 값 집합을 일부러 따로 선언하고 EDP-TSV 의 `Top` 을 `Top_e` 로 가르는 `apply_edp_wf_division` 을 갖는다.
   - 변환 지점은 `core_data_derivation.build_q_core_data` 한 곳이다 — 두 층에서 바꾸면 조인 한쪽만 바뀐다.
@@ -1516,6 +1545,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_qual_deadline.py` 가 원본 스크립트를 node 로 돌린 값과 칸 글자까지 맞댄다(시험은 node 없이 돈다).
 - `src/capa_simulation/services/shortening_filter_profile.py` — 필요 단축 일정 공용 조회 조건(설비 DB `0019`) 모델
   `ShorteningFilterProfile` 과 정규화·심기·`merge_filter_processes` 규칙. Streamlit·DB 를 모르고 값은 원본 공정명이다.
+  `effective_filter_months`·`filter_month_window` 는 필요 단축 일정 시작·끝 월 칸의 심기를 **읽기만** 해 같은 달을 낸다(Space
+  필요 단축 보기 — 세션 값은 인자로 받는다).
 - `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
   `FloorStates`(비활성 층만의 (동, 층, 사유 코드) 행 — `UNUSED` 사용 안 함·`NOT_LINE` 생산라인 아님)와 규칙. 저장 입구
   `prepare_floor_states`(30개 층·사유 둘만, 빈 값 = 사용)만 엄격하고 읽기는 관용이다(모르는 사유는 `inactive_label` 이
@@ -1736,7 +1767,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `layout.meta` 에 싣는다. 시트·근거 카드는 키 붙은 프래그먼트다(`tests/test_availability_sheet_panel.py`).
   - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다.
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드, 머리 `목표 확보율`·
-  `진척 비교`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌).
+  `진척 비교`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
+  `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
+  UPEH 가정 몫은 패널에 남는다.
+- `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
+  캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
+  `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
+  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다.
+- `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 본문 조작 줄(목표·흐리게)·
+  기준 캡션·못 읽음 알림·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link`)과 상세 단추 이동
+  (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.
@@ -1748,8 +1788,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     밖이면 「KPI·CSV 에 들지 않음」 을 적고, 맞대지 못한 공정이면 카드 대신 그 말이다. 카드 class 는 그대로 `shk-card` 다.
 - `src/capa_simulation/components/shortening_board.py` — 필요 단축 일정의 공정 진척 보드(`st.dataframe` 한 줄 고르기 →
   그 카드 강조, 표 key 세대를 올려 고른 줄을 남기지 않는다)·카드 차례·기한 임박 날수(세션 값, 선택지 고정)·기한 임박/이행
-  지연 상자·강조 공정 칸·카드의 상세 근거 링크(`st.page_link` + 주소 인자).
-  - 강조 공정 칸은 `(원본 공정명, 출처)` 튜플이다 — 공정 Capa 상세 이동(`detail`)과 보드 줄 고르기(`board`)만 적는다.
+  지연 상자·강조 공정 칸·카드의 상세 근거 링크(`st.page_link` + 주소 인자)·「도면에서 보기」(`space_link_params` 순수 +
+  `render_space_link`).
+  - 강조 공정 칸은 `(원본 공정명, 출처)` 튜플이다 — 공정 Capa 상세 이동(`detail`)·보드 줄 고르기(`board`)·Space 필요 단축 보기의
+  「필요 단축 일정에서 이 공정 보기」(`space`)만 적는다(출처마다 배지 글이 있어야 `current_highlight` 가 받는다).
     공정 필터·공용 프로필(0019)·기준선(0021)에는 닿지 않는다(`tests/test_required_shortening_tab.py`).
 - `src/capa_simulation/components/upeh_assumption_controls.py` — 두 화면 조건 카드 끝 「이 세션만」 UPEH 가정 묶음(% 칸
   80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. 구간 선택지는
@@ -2187,7 +2229,8 @@ RQ_MODULE
 9. **설비 운영 이력은 시나리오와 물리적으로 분리한다.** 가용설비 현황은 전용 DuckDB,
    전용 마이그레이션·Repository·캐시와 페이지 전용 조회기간을 사용하고 저장마다 바뀐 쪽(공통 대장·설비 시나리오 일정)의
    새 전체 스냅샷을 만든다. 설비 시나리오는 설비 DB 안의 독립 시나리오이고 시뮬레이션 시나리오와 짝짓지 않는다(E1 — HOME·
-   Static 확보율 `RQ_EQP_AVBL` 계산에 들지 않는다). `Summary` › `Static 대비 일정` 탭과 `필요 단축 일정` 화면만 시뮬레이션 기준정보·소요대수를 읽어
+   Static 확보율 `RQ_EQP_AVBL` 계산에 들지 않는다). `Summary` › `Static 대비 일정` 탭과 `필요 단축 일정` 화면과 **`Space 현황` 의
+   색 기준 `필요 단축` 을 켠 동안**만 시뮬레이션 기준정보·소요대수를 읽어
    비교하며(공용 조회 조건 프로필은 설비 DB `0019`, 진척 비교 기준선은 설비 DB `0021` 이다) 설비 운영
    저장과 Main·설정·입력 화면은 시뮬레이션 DB 의 계산 데이터에 의존하지 않는다. 예외는 화면 라벨인
    공용 공정 표시명 하나다(2026-10-10 사용자 결정 — 설비 마스터 탭을 뺀 탭과 「설정」 팝업 표 보기 필터의 보이는 글자).
@@ -2220,6 +2263,16 @@ RQ_MODULE
    「설비 시나리오」 구획을 고른 회차에만 — 설비 시나리오 목록·리비전·복제·이름·발행·이어 쓰기, 2026-10-24). 실행 관리 머리는 첫 판에서
    어느 DB 도 열지 않는다. **Space 층 사용 상태**(설비 `0029`)는 설비 시나리오·설비 리비전과 무관한 공용 현행값이다 —
    소유 칸이 없어 복제·보관·영구 삭제가 건드리지 않고, 설비 마스터의 동·층 값과 저장 검사(C1~C5·1F~6F)는 그대로다.
+   **Space 현황 「필요 단축」 보기**(2026-10-24 사용자 결정)는 설비 화면이 시뮬레이션을 읽는 셋째 자리다 — **켠 동안만** 읽는다
+   (끈 회차는 시뮬레이션 쪽을 한 번도 부르지 않는다 — `tests/test_space_shortening_layer_page.py` T-P1 이 모듈 속성 자리에서 센다).
+   계획은 `components/shortening_source.load_official_shortening` 한 길(필요 단축 일정과 **같은 함수·같은 공식 칸·같은 키**)이고,
+   설비 쪽은 Space 가 그리는 세션 설비 시나리오의 계산 세 표(설비 시나리오 2단계 LY6 — 두 화면이 늘 같은 시나리오를 따라 같은
+   칸을 쓴다), 시뮬레이션 쪽은 세션 활성 시나리오·사이드바 조회기간(켠 동안 사이드바에 그 두 줄이 선다)이다. 못 읽으면 보기 안
+   알림 한 줄이고 Space(도면·배치 편집·다른 색 기준)는 그대로다. 공정 표시명은 쓰지 않는다(원본 공정소분류). 필요 단축 일정
+   세션 칸을 **읽고 적는 것**이 공정 Capa 상세와 다르다 — Space 는 그 화면의 시작·끝 월·목표·기한 임박 날수 칸을 **읽고**(달은
+   세션 칸 → 공용 프로필 `0019` 심기를 읽기만), 「필요 단축 일정에서 이 공정 보기」 에서 강조 공정 칸과 목표 칸 **둘을 적는다**
+   (공정 필터 칸·`0019`·`0021` 은 읽지도 쓰지도 않는다). 공정 Capa 상세는 위 문장대로 그 칸들을 읽지도 쓰지 않고 강조 칸 하나만
+   적는다 — 둘을 서로에게 맞추지 않는다.
 10. **실적 이력을 시나리오에 복제하지 않는다.** 표준 Capa는 시나리오·리비전별로 보존하고,
     실적 효율과 생산실적은 원천 갱신 주기별 배치와 등록시각을 가진 누적 이력으로 관리한다.
     분석 시 선택한 표준 리비전과 조회 시점의 실적 이력을 연결한다.
@@ -3289,7 +3342,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라
   본문에 두고, 카드에는 거르는 조건(공정·기간·기준일·분류·호기 필터)만 둔다. 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」·「구획」(①~④ 접기, 2026-10-22 「소요대수처럼」)만 사용자 요청에 따른
-  예외로 본문 표 도구 줄이다.
+  예외로 본문 표 도구 줄이다. Space 「필요 단축」 보기의 목표 확보율·「단축 없는 호기 흐리게」 도 이 규칙대로 도면 위 본문 조작
+  줄이다(2026-10-24 결정 D6 — 「색 기준」 라디오만 사이드바 카드).
 - **계산 가정 칸(세션 전용)은 조건 카드 끝 「이 세션만」 묶음이다** — 거르는 조건이 아니지만 계산 입력이라 카드에 둔다
   (예외). UPEH 가정이 그렇다(2026-10-22). 묶음 앞에 `:material/person:` 「이 세션만」 캡션을 두어 카드 머리의 「공용 설정」
   안내와 가르고, 켜진 동안은 카드가 접혀 있어도 보이게 머리 배지·효과 한 줄·CSV 표지로 알린다. 제약 시뮬레이션의
@@ -3300,9 +3354,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
-  그대로 남는다.
+  그대로 남는다. `ConditionTabs` 는 탭 말고 **보기 값**으로도 가른다 — Space 현황은 색 기준 라디오(`space_color_basis`)가
+  `필요 단축` 일 때만 시나리오·조회기간 줄이 선다(2026-10-24 결정 D4 — 그 보기만 시뮬레이션을 읽는다). 링크로 도착한 회차는
+  페이지가 그 값을 적고 한 번 더 돌아 사이드바를 맞춘다.
 - **설비 시나리오 줄은 페이지가 그린다.** `PageSpec.equipment_scenario`(`"session"` — 가용설비 현황·필요 단축 일정·공정 Capa
-  상세·제약 시뮬레이션, `"official"` — Space 현황)와 `equipment_scenario_tabs`(설비 데이터를 읽지 않는 탭이 있는 화면만 — 지금은 없다)를 선언하면
+  상세·제약 시뮬레이션·Space 현황)와 `equipment_scenario_tabs`(설비 데이터를 읽지 않는 탭이 있는 화면만 — 지금은 없다)를 선언하면
   `app.py` 조건 패널이 「적용 전 편집 → 시나리오 → 조회기간 → **설비 시나리오 칸** → 페이지 칸」 차례로 빈 블록 칸
   (`sidebar_status` 에 등록 · 꺼내기 함수)을 세우고, 페이지가 `resolve_equipment_session` 뒤에 그 칸에 줄을 그린다 — 부트스트랩
   오류는 페이지의 오류 처리 안에서 나고, 배지는 그 회차 목록으로 맞으며(한 회차 늦지 않음), `app.py` 는 설비 DB 를 읽지 않는다.
@@ -3491,6 +3547,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **팝업(`st.dialog`) 안에 마운트하는 Components v2 컴포넌트는 그림자 DOM 에 가두지 않는다**(`isolate_styles=False`) —
   팝업의 포커스 순서가 그림자 DOM 안을 보지 못해 Tab 이 닫기 단추로 가 고친 값을 버린다. 서식은 고유 클래스 접두어로만
   건다(월 입력 컴포넌트는 위 「월 입력」 항목).
+- **Space 층 뷰어의 기준일 고정**(`asOfPinned` — 「필요 단축」 보기): data 에 그 칸이 실린 회차만 페이더 대신 같은 높이의 고정
+  줄이 서고(`is-pinned`, 같은 `!important` + 더 높은 선택자로 보기의 편집 전용 숨김을 이긴다) 기준일은 받은 날(오늘)이다. 그 보기에
+  표시된 호기(`layer`)는 겹친 반입 예정으로 숨기지 않는다(`coveredBy` — 단축 후보는 대개 기존 자리에 들어올 반입 전 호기다). 배지만
+  바뀐 같은 epoch 회차는 호기 값이 그대로라 배지 지문(`S.badgeKey`)으로 다시 그린다.
 - Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
   try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를

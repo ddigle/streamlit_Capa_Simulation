@@ -1674,6 +1674,7 @@ NEW_ITEM_KEYS = [
     "page_tabs",
     "equipment_moves",
     "constraint_sim",
+    "space_shortening",
 ]
 
 
@@ -3237,4 +3238,56 @@ def test_the_constraint_process_match_is_none_without_a_followed_link() -> None:
             {"found": True, "disabled": False, "process": None}, {"process": None}
         )
         is False
+    )
+
+
+# ------------------------------------------------------------------ Space 필요 단축 보기
+
+
+@pytest.mark.parametrize("class_name", ["sle-short-badges", "sle-pinned", "sle-fader"])
+def test_the_space_shortening_selectors_exist_in_the_editor(class_name: str) -> None:
+    html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
+    assert f'class="{class_name}' in html
+
+
+def test_the_space_shortening_item_reads_what_the_app_draws() -> None:
+    """항목이 읽는 것 — 색 기준 라디오 칸·값(navigation 과 같은 글자), FAB 블록 풍선의 단축 줄, 층
+    목록 표 `단축 호기` 칸, 배지 `data-pick`·모듈 상자 `is-module`, 고정 줄."""
+    from capa_simulation import navigation
+    from capa_simulation.components import space_floor_list
+
+    assert screens.SPACE_COLOR_BASIS_KEY == navigation.SPACE_COLOR_BASIS_KEY
+    assert screens.SPACE_SHORTENING_BASIS == navigation.SPACE_SHORTENING_BASIS
+    assert screens.SPACE_DEFAULT_BASIS == navigation.SPACE_DEFAULT_BASIS
+    assert '"단축 호기":' in _text(COMPONENTS / "space_floor_list.py")
+    assert "단축 호기" in space_floor_list._LAYER_COLUMNS
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    assert "node.dataset.pick = ids[0]" in editor
+    assert "group.classList.toggle('is-module'" in editor
+    assert "stats.occupancy, stats.short" in editor
+    layer = _text(
+        PROJECT_ROOT / "src" / "capa_simulation" / "services" / "space_shortening_layer.py"
+    )
+    assert 'f"단축 {count.units}대 · 최대 −{count.max_days}일"' in layer
+    source = inspect.getsource(screens.check_space_shortening)
+    assert "_choose_color_basis(screen, SPACE_DEFAULT_BASIS)" in source
+    assert source.index("finally:") < source.index(
+        "_choose_color_basis(screen, SPACE_DEFAULT_BASIS)"
+    )
+
+
+def test_the_space_shortening_summary_carries_counts_only() -> None:
+    line = screens.summarize_space_shortening(
+        6, {"badges": 4, "modules": 1, "pinned": True, "fader": False}, True
+    )
+    assert line == (
+        "단축 줄 블록 6개 · 최다 층 배지 4개(모듈 묶음 1) · 고정 줄 있음 · 페이더 숨음 · "
+        "되돌린 뒤 페이더 있음"
+    )
+    assert "|" not in line
+    assert screens.summarize_space_shortening(0, None, True).startswith(
+        "단축 줄 블록 0개 · 단축 층 없음"
+    )
+    assert screens.summarize_space_shortening(0, None, True, stopped="Cut-off 먼저 알림") == (
+        "Cut-off 먼저 알림 · 되돌린 뒤 페이더 있음"
     )

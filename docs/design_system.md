@@ -395,6 +395,11 @@ data URI 로 스타일에 싣는 길과 비교했다(내장 시드, AppTest HOME
   - 비활성 층 블록(사용 안 함·생산라인 아님, 설비 `0029`)은 `SPACE_BLOCK_OFF_FILL`(밝게는 기본 블록 면보다 옅은 회색,
     어둡게는 캔버스에 가까운 어두운 회색) 면에 영역 빗금 무늬 `#sle-hatch` 와 `TEXT_MUTED` 사유 글자다. 사유·머리
     글자(`TEXT_MUTED`·`SPACE_TEXT`)는 두 테마의 그 면 위 4.5:1 이상이고 고른 블록 색·「글자 색」 은 달지 않는다.
+  - 색 기준 「필요 단축」(2026-10-24)의 단축 일수 구간 넷은 `SPACE_SHORT_FILLS`·`SPACE_SHORT_INKS`(키 `s` 1–7일 · `m` 8–14일 ·
+    `l` 15일 이상 · `x` 기한 지남)다 — 밝게는 호박 → 녹 → 짙은 갈색 + 자주, 어둡게는 모래 → 황갈 → 녹갈 + 연보라. 글자 4.5:1·
+    캔버스 대비 3:1(도면 위 배지)이고 구간끼리 정상 시야 ΔE 12·색각이상 ΔE 6, 반입 전 주황 테·반출 노랑 테·지연 빨강과 ΔE 10
+    이상 떨어진다(그 테마의 값과 — `tests/test_design_tokens.py`). 켠 동안 지연·보관 면은 칠하지 않는다. 임박 테는
+    `SPACE_SHORT_IMMINENT`(캔버스 대비 3:1), 단축 없는 호기의 흐림은 `SPACE_SHORT_DIM_OPACITY`(불투명도 글자)다.
 - **첫 접속 입장 화면과 Summary 요약 화면**(`components/intro_overlay.py`)은 앱 테마와 무관한
   어두운 한 벌(`tokens.INTRO_PALETTE`)이고, 워드마크·타이틀·`Detail`·`Summary`·시트의 달만 Archivo
   800·폭 75%, 요약 차트의 숫자만 Archivo 700 을 쓴다. 사내망에 외부 글꼴이 없어 이 화면이 쓰는 글자만
