@@ -279,13 +279,15 @@ def test_copying_takes_unit_info_and_place_but_not_name_dates_or_coordinates() -
 
 
 def test_the_copy_source_is_the_same_name_then_the_first_prefix() -> None:
-    view = eg.build_grid_view(_source(), CONTEXT)
-    names = list(view.names.values())
+    names = ["WBA-01", "WBA-10", "wba-1", "DAA-05"]
 
-    assert view.names[eg.copy_source(view, names[3].lower()) or ""] == names[3]
-    assert eg.copy_source(view, "sample-c1") is not None
-    assert eg.copy_source(view, "없는-호기") is None
-    assert eg.copy_source(view, "  ") is None
+    assert eg.copy_source(names, "WBA-1") == 2
+    assert eg.copy_source(names, "wba") == 0
+    assert eg.copy_source(names, " daa ") == 3
+    assert eg.copy_source(names, "없는-호기") is None
+    assert eg.copy_source(names, "  ") is None
+    master = _saved()[1]
+    assert eg.unit_texts(master, 0)[eg.NAME_INDEX] == str(master["설비명"].iloc[0])
 
 
 def test_after_adding_only_process_building_and_floor_stay() -> None:

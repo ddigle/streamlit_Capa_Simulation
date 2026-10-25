@@ -1011,9 +1011,11 @@ def loader_data(
     missing: Sequence[str] = (),
     alert_ids: Sequence[str] = (),
     first_data: bool = False,
+    new_enabled: bool = False,
 ) -> dict[str, Any]:
-    """불러오기 마운트(`loader`)의 data. 살아 있는 호기 전부(편집본 차례)의 설비명과 조건 칸 값을
-    싣는다 — 이름·조건 칸이 바뀔 때만 바뀌어, 다른 칸만 고친 회차에는 같은 메시지다.
+    """불러오기 마운트(`loader`)의 data. `new_enabled` 면 「+ 새 호기」 단추가 선다(개편 단계 C —
+    누르면 오른쪽 칸 「새 호기」, 낡은 세션이면 꺼진다). 살아 있는 호기 전부(편집본 차례)의 설비명과
+    조건 칸 값을 싣는다 — 이름·조건 칸이 바뀔 때만 바뀌어, 다른 칸만 고친 회차에는 같은 메시지다.
 
     - `names` — 설비명. 행 id 는 `s:` + 설비명이 아닌 자리만 `ids`(자리 → id)에 싣는다(새 호기·이름
       바꾼 호기).
@@ -1064,6 +1066,7 @@ def loader_data(
         "limit": GRID_ROW_LIMIT,
         "missing": list(missing),
         "firstData": first_data,
+        "newEnabled": new_enabled,
         "newRowsLocked": view.context.new_rows_locked,
     }
 
@@ -1325,20 +1328,25 @@ def copied_draft(source: Sequence[str], base: Sequence[str] | None = None) -> li
     return values
 
 
-def copy_source(view: GridView, query: str) -> str | None:
-    """가져올 호기 — 설비명이 같은(대소문자·앞뒤 공백 무시) 첫 호기, 없으면 앞부분이 맞는 첫
-    호기(편집본 차례). 못 찾으면 None."""
+def copy_source(names: Sequence[str], query: str) -> int | None:
+    """가져올 호기의 자리 — `names`(편집본 설비 마스터 줄 차례의 설비명) 가운데 설비명이
+    같은(대소문자·앞뒤 공백 무시) 첫 줄, 없으면 앞부분이 맞는 첫 줄. 못 찾으면 None."""
     wanted = scalar_match_key(query)
     if not wanted:
         return None
-    live = list(view.index.live)
-    for row_id in live:
-        if scalar_match_key(view.names[row_id]) == wanted:
-            return row_id
-    for row_id in live:
-        if scalar_match_key(view.names[row_id]).startswith(wanted):
-            return row_id
+    keys = [scalar_match_key(name) for name in names]
+    for position, key in enumerate(keys):
+        if key == wanted:
+            return position
+    for position, key in enumerate(keys):
+        if key and key.startswith(wanted):
+            return position
     return None
+
+
+def unit_texts(master: pd.DataFrame, position: int) -> list[str]:
+    """편집본 설비 마스터 한 줄의 39칸 화면 글자(가져오기 재료)."""
+    return text_matrix(master.iloc[[position]].reset_index(drop=True))[0]
 
 
 @dataclass(frozen=True)
@@ -1556,6 +1564,7 @@ def new_unit_data(
     *,
     seq: int,
     propagate: bool,
+    propagate_default: bool = True,
     ack: Mapping[str, Any] | None = None,
     toast: Mapping[str, Any] | None = None,
     undo_top: str | None = None,
@@ -1573,6 +1582,8 @@ def new_unit_data(
     - `notes` — 칸 위 안내(가정 설비 시나리오·배치 잠금 — 새 호기의 자리), `propagateWarning` 은
       함께 넣기를 켰을 때 그 아래 한 줄(가정 세션 — 공식 가용대수에 셈).
     - `locked` — 이 세션이 새 호기를 막으면 그 까닭(칸 전체를 끈다).
+    - `blank`·`propagateDefault` — 「양식 비우기」 가 브라우저에서 바로 세우는 빈 초안과 함께 넣기
+      기본값.
     """
 
     def tier(items: Sequence[tuple[str, bool]]) -> list[list[Any]]:
@@ -1603,6 +1614,8 @@ def new_unit_data(
         "hint": check.hint,
         "notes": list(notes),
         "propagateWarning": propagate_warning,
+        "blank": blank_draft(),
+        "propagateDefault": propagate_default,
         "locked": (view.context.stale_lock or NEW_ROWS_LOCK_REASON)
         if view.context.new_rows_locked
         else None,

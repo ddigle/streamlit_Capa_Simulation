@@ -3,17 +3,21 @@
 """가용설비 현황 「설비 마스터」 탭 표의 그리기와 받기(개편 명세 6장).
 
 **한 번 등록하고 세 자리에 다른 key 로 마운트한다** — 불러오기(`LOADER_KEY`)·표(`GRID_KEY`)·오른쪽
-칸 (`side_key(panel)` — 호기 상세·저장 전 변경, 한 회차에 하나). key 가 요소의 정체라 data 가
-바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의 순번이 밀리면 다시 마운트되어 보내지 않은
+칸 (`side_key(panel)` — 호기 상세·새 호기·저장 전 변경, 한 회차에 하나). key 가 요소의 정체라
+data 가 바뀌어도 다시 마운트되지 않는다. 다만 그 앞 형제의 순번이 밀리면 다시 마운트되어 보내지 않은
 출납·고름을 잃으므로, 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 그린다(명세
 2-3).
 
 - **data** 는 `services/equipment_grid` 가 만든 dict 에 팔레트(`_palette`)만 더한다. 색은 등록 CSS
   에 적지 않고 회차마다 토큰으로 넘긴다 — 등록 CSS 는 테마를 따라오지 않는다.
 - **편집본을 바꾸는 조작은 상태 값 `outbox`** 다(``{"mount", "ops": [...]}`` — 반영되지 않은 조작
-  전부). 트리거는 다음 트리거에 덮여 잃을 수 있어(1.63 의 위젯 상태 합치기는 CCv2 트리거의 앞 값을
-  살리지 않는다) 잃어도 되는 화면 조작만 트리거로 둔다: 불러오기 `load`·`clear`·`new`·`dialog`, 표
-  `open`·`unload`, 오른쪽 칸 `open`·`goto`.
+  전부 — 「새 호기」 칸의 「호기 추가」 도 `add` op 다). 트리거는 다음 트리거에 덮여 잃을 수
+  있어(1.63 의 위젯 상태 합치기는 CCv2 트리거의 앞 값을 살리지 않는다) 잃어도 되는 화면 조작만
+  트리거로 둔다: 불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·
+  `goto`·`copy`(가져오기·「이 호기로 새 호기 만들기」).
+- **「새 호기」 초안은 상태 값 `draft`** 다(``{"seq", "values": 39칸 글, "propagate"}`` — 칸을
+  확정할 때마다 전부). 파이썬이 세션 초안으로 적고 그 초안으로 체크 상자·칸 오류를 다시 낸다.
+  편집본을 바꾸지 않으므로 잃어도 다음 확정이 덮는다.
 - **받기** 는 `on_<이름>_change` 콜백이다(본문보다 먼저 돈다). 콜백은 그 key 의 세션 값을 읽어 꼴을
   거른 뒤 화면 쪽이 넘긴 처리 함수를 부른다. 표가 그린 회차의 `view` 와 다른 트리거(목록이 다시 선
   뒤 누른 옛 줄)는 버린다. 출납은 두 마운트(표·오른쪽 칸)가 함께 보낼 수 있어 처리 함수가
@@ -44,8 +48,8 @@ LOADER_KEY: Final = "equipment_grid_loader"
 GRID_KEY: Final = "equipment_grid_table"
 SIDE_KEY_PREFIX: Final = "equipment_grid_side"
 
-SidePanel = Literal["detail", "changes"]
-SIDE_PANELS: Final[tuple[SidePanel, ...]] = ("detail", "changes")
+SidePanel = Literal["detail", "new", "changes"]
+SIDE_PANELS: Final[tuple[SidePanel, ...]] = ("detail", "new", "changes")
 
 # 불러오기 트리거의 갈래(설비명·공정·조건·일정 확인·전체). 「전체」 는 id 를 싣지 않는다 — 파이썬이
 # 상한과 설비명 자연 차례로 고른다(`equipment_grid.all_load_ids`).
@@ -192,6 +196,66 @@ def _dispatch_unload(key: str, view: str, handler: Callable[[list[str]], None]) 
             handler(ids)
 
 
+@dataclass(frozen=True)
+class DraftValue:
+    """「새 호기」 칸이 보낸 초안 — 번호(브라우저가 확정마다 올린다), 39칸 글, 함께 넣기."""
+
+    seq: int
+    values: tuple[str, ...]
+    propagate: bool
+
+
+def draft_value(payload: object, size: int) -> DraftValue | None:
+    """`draft` 상태 값(``{"seq", "values", "propagate"}``)을 거른다 — 꼴이 다르면 None."""
+    if not isinstance(payload, Mapping):
+        return None
+    seq, values = payload.get("seq"), payload.get("values")
+    if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+        return None
+    if not isinstance(values, list) or len(values) != size:
+        return None
+    if not all(isinstance(item, str) for item in values):
+        return None
+    return DraftValue(seq, tuple(values), payload.get("propagate") is True)
+
+
+@dataclass(frozen=True)
+class CopyRequest:
+    """가져오기 한 번 — 「이 호기로 새 호기 만들기」(`row_id`) 또는 「비슷한 호기에서 값
+    가져오기」(`query` — 그때 브라우저 초안 `draft` 위에 얹는다)."""
+
+    row_id: str | None = None
+    query: str = ""
+    draft: DraftValue | None = None
+
+
+def copy_request(payload: object, size: int) -> CopyRequest | None:
+    """`copy` 트리거 값을 거른다(``{"id"}`` 또는 ``{"query", "draft": {...}}``)."""
+    if not isinstance(payload, Mapping):
+        return None
+    row_id = payload.get("id")
+    if isinstance(row_id, str) and row_id.strip():
+        return CopyRequest(row_id=row_id.strip())
+    query = payload.get("query")
+    if isinstance(query, str) and query.strip():
+        return CopyRequest(
+            query=query.strip()[:_LABEL_LIMIT], draft=draft_value(payload.get("draft"), size)
+        )
+    return None
+
+
+def _dispatch_draft(key: str, size: int, handler: Callable[[DraftValue], None] | None) -> None:
+    value = draft_value(_state_value(key, "draft"), size)
+    if handler is not None and value is not None:
+        handler(value)
+
+
+def _dispatch_copy(key: str, size: int, handler: Callable[[CopyRequest], None] | None) -> None:
+    request = copy_request(_state_value(key, "copy"), size)
+    if handler is not None and request is not None:
+        handler(request)
+
+
 def _dispatch_goto(key: str, handler: Callable[[str, str], None]) -> None:
     """`goto`(``{"table", "unit"}``) — 표 고르기를 그 표로, 그 표 설비명 거르기를 그 이름으로."""
     payload = _state_value(key, "goto")
@@ -255,10 +319,15 @@ def render_grid_side(
     on_outbox: Callable[[], None],
     on_open: Callable[[str], None],
     on_goto: Callable[[str, str], None],
+    on_draft: Callable[[DraftValue], None] | None = None,
+    on_copy: Callable[[CopyRequest], None] | None = None,
+    columns: int = 39,
 ) -> None:
-    """오른쪽 칸 — 「호기 상세」(묶음 다섯·그 호기 비가동·지우기/되살리기) 또는 「저장 전 변경」(수
-    넷·고칠 것·호기별 변경과 칸/호기 되돌리기). 고침은 표와 같은 출납이고, 고칠 것 줄·호기 이름
-    누름은 `open`, 「비가동 일정 표에서 고치기」 는 `goto` 다."""
+    """오른쪽 칸 — 「호기 상세」(묶음 다섯·그 호기 비가동·지우기/되살리기·「이 호기로 새 호기
+    만들기」), 「새 호기」(체크 상자·가져오기·한 장 칸·「호기 추가」) 또는 「저장 전 변경」(수 넷·
+    고칠 것·호기별 변경과 칸/호기 되돌리기). 고침·「호기 추가」 는 표와 같은 출납이고, 고칠 것 줄·
+    호기 이름 누름은 `open`, 「비가동 일정 표에서 고치기」 는 `goto`, 가져오기는 `copy`, 새 호기
+    초안은 상태 값 `draft` 다(`columns` 는 초안 칸 수 — 계약 39칸)."""
     key = side_key(panel)
     _GRID(
         key=key,
@@ -266,10 +335,14 @@ def render_grid_side(
         on_outbox_change=on_outbox,
         on_open_change=partial(_dispatch_open, key, None, on_open),
         on_goto_change=partial(_dispatch_goto, key, on_goto),
+        on_draft_change=partial(_dispatch_draft, key, columns, on_draft),
+        on_copy_change=partial(_dispatch_copy, key, columns, on_copy),
         width="stretch",
     )
 
 
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
-STATE_NAMES: Final = frozenset({"outbox"})
-TRIGGER_NAMES: Final = frozenset({"load", "clear", "new", "dialog", "open", "unload", "goto"})
+STATE_NAMES: Final = frozenset({"outbox", "draft"})
+TRIGGER_NAMES: Final = frozenset(
+    {"load", "clear", "new", "dialog", "open", "unload", "goto", "copy"}
+)

@@ -28,8 +28,9 @@ SOURCE = Path(emg.__file__).read_text(encoding="utf-8")
 
 def test_the_editing_channel_is_one_state_value_and_triggers_are_the_declared_set() -> None:
     """편집본을 바꾸는 조작은 상태 값 `outbox` 하나로만 — 트리거는 다음 트리거에 덮여 잃을 수
-    있다."""
-    assert set(re.findall(r"setState\('([a-z]+)'", JS)) == set(emg.STATE_NAMES) == {"outbox"}
+    있다. 상태 값은 그 밖에 「새 호기」 초안 `draft` 하나다(편집본을 바꾸지 않는다)."""
+    assert set(re.findall(r"setState\('([a-z]+)'", JS)) == set(emg.STATE_NAMES)
+    assert set(emg.STATE_NAMES) == {"outbox", "draft"}
     assert "setStateValue(" not in JS.replace("setStateValue, setTriggerValue", "")
     sent = set(re.findall(r"setTrigger\('([a-z]+)'", JS)) | {"load"}
     assert sent == set(emg.TRIGGER_NAMES)
@@ -82,7 +83,7 @@ def test_data_text_goes_in_with_text_content_only() -> None:
 def test_handled_keys_stop_at_the_component() -> None:
     """칸·찾기 칸의 키가 문서로 올라가면 Streamlit 단축키(r 다시 실행·c 캐시)가 글자를 먹는다."""
     assert "event.stopPropagation()" in JS
-    for name in ("onBodyKey", "searchBox", "detailField", "popover"):
+    for name in ("onBodyKey", "searchBox", "detailField", "popover", "newField", "copyRow"):
         body = JS[JS.index(f"function {name}(") :]
         body = body[: body.index("\nfunction ")]
         assert "stopKeys(event)" in body, name
@@ -202,6 +203,7 @@ _SECTIONS = (
     "grid-sort",
     "grid-codes",
     "grid-place",
+    "grid-new",
 )
 _RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
@@ -259,14 +261,14 @@ def _sections() -> str:
     return "\n".join(parts)
 
 
-def _node(payload: dict[str, Any]) -> dict[str, Any]:
+def _node(payload: dict[str, Any], runner: str = _RUNNER) -> dict[str, Any]:
     runtime = _runtime()
     if runtime is None:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             pytest.fail("CI 러너에 node 가 없다 — 설비 마스터 표 JS 대조를 건너뛸 수 없다")
         pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     completed = subprocess.run(
-        [runtime, "-e", _sections() + _RUNNER],
+        [runtime, "-e", _sections() + runner],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -416,3 +418,45 @@ def test_the_pure_sections_behave_as_specified() -> None:
     assert box[2] == 1 and box[3] == [2]
     assert box[4:8] == [False, True, 0, "b2"]
     assert box[8] == 6
+
+
+_NEW_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const local = { seq: 4, values: ['a', 'b'], propagate: true }
+const results = {
+  first: adoptDraft(null, { seq: 0, values: ['', 'N'], propagate: true }),
+  keep: adoptDraft(local, { seq: 4, values: ['x', 'y'], propagate: false }) === local,
+  older: adoptDraft(local, { seq: 3, values: ['x', 'y'], propagate: false }) === local,
+  newer: adoptDraft(local, { seq: 6, values: ['c', 'd'], propagate: false }),
+  bump: [bumpDraft(local, 2).seq, bumpDraft(local, 9).seq],
+  tier: [
+    tierDone(true, '', true),
+    tierDone(false, 'x', true),
+    tierDone(false, 'x', false),
+    tierDone(true, ' ', false),
+  ],
+  add: [
+    canAdd(['A', 'B'], [0, 1], false, true, null),
+    canAdd(['A', ''], [0, 1], false, true, null),
+    canAdd(['A', 'B'], [0, 1], true, true, null),
+    canAdd(['A', 'B'], [0, 1], true, false, null),
+    canAdd(['A', 'B'], [0, 1], false, true, '잠김'),
+  ],
+}
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_the_new_unit_draft_section_adopts_newer_drafts_and_gates_the_add_button() -> None:
+    """「새 호기」 초안(`// <grid-new>`) — 파이썬 초안은 번호가 클 때만 받고(가져오기·「호기
+    추가」 뒤), 확정마다 번호를 올리며, 체크 상자 칸은 판정 전이면 칸이 찼는지만 보고, 「호기 추가」
+    는 필수 칸이 찼고 지금 초안의 판정이 막지 않을 때 켠다(판정 전이면 켜 두고 파이썬이 다시
+    본다)."""
+    result = _node({}, _NEW_RUNNER)
+
+    assert result["first"] == {"seq": 0, "values": ["", "N"], "propagate": True}
+    assert result["keep"] is True and result["older"] is True
+    assert result["newer"] == {"seq": 6, "values": ["c", "d"], "propagate": False}
+    assert result["bump"] == [5, 10]
+    assert result["tier"] == [True, False, True, False]
+    assert result["add"] == [True, False, False, True, False]
