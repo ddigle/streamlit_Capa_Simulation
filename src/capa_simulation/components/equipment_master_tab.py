@@ -188,6 +188,7 @@ from capa_simulation.services.equipment_grid import (
     pending_ops,
     prune_loaded,
     save_id_map,
+    stale_scenario_edits,
     text_matrix,
     undo_top,
     unit_texts,
@@ -452,6 +453,15 @@ def _changed_rows(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
     return max(sum((after - before).values()), sum((before - after).values()))
 
 
+# 낡기 전에 고친 시나리오 칸 — 일정이 바뀐 저장은 저장소가 늘 거부하므로 저장 전에 그 칸을 알린다.
+# 칸을 되돌리면 공통 칸은 저장된다(칸 되돌리기는 낡은 세션의 잠금을 보지 않는다).
+STALE_SCENARIO_EDITS: Final = (
+    "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
+    "않습니다 — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 "
+    "불러와 다시 고칩니다"
+)
+
+
 def _table_errors(
     frames: Frames,
     saved: Frames,
@@ -503,6 +513,9 @@ def _table_errors(
                 "되살리거나 "
                 "최신을 불러오세요"
             )
+        cells, units = stale_scenario_edits(frames[1], saved[1], renames)
+        if cells:
+            errors.append(STALE_SCENARIO_EDITS.format(cells=cells, units=units))
     return errors
 
 

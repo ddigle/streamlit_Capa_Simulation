@@ -670,3 +670,46 @@ def test_an_assumption_counts_schedule_alerts_by_the_official_schedule(
     grid.clear()
     _page(repository, setup)
     assert list(last(grid, emg.LOADER_KEY)["alertIds"]) == official_alerts
+
+
+def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with_a_way_out(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """가정 세션에서 시나리오 칸과 공통 칸을 고친 뒤 남이 그 시나리오에 저장해 낡은 세션이 됐다 —
+    일정이 바뀐 저장은 저장소가 늘 거부하므로 「저장하기 전에 고칠 것」 에 그 칸 수와 되돌리는 길을
+    싣고 저장을 막는다(예전에는 저장을 눌러야 「다른 사용자가 먼저 …」 로 공통 칸까지 거부되고 고칠
+    것 표시가 없었다). 시나리오 칸을 되돌리면 공통 칸은 저장된다."""
+    from capa_simulation.components.equipment_master_tab import STALE_SCENARIO_EDITS
+
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    _load_all(app, grid)
+    send_ops(
+        app,
+        grid,
+        {"op": "cell", "id": "s:EQ-01", "col": "시나리오 메모", "text": "낡기 전 메모"},
+        {"op": "cell", "id": "s:EQ-01", "col": "설비이력", "text": "공통 이력"},
+    )
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+
+    line = STALE_SCENARIO_EDITS.format(cells=1, units=1)
+    changes = last(grid, emg.side_key("changes"))
+    assert any(line in " ".join(map(str, item)) for item in changes["errors"])
+    assert any("「저장 전 변경」 에서 되돌려야" in text for text in _texts(app, "warning"))
+    before = len(repository.list_revisions())
+    app.button(key=SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+    assert len(repository.list_revisions()) == before
+    assert any("고쳐야 저장됩니다" in text for text in _texts(app, "error"))
+
+    send_ops(app, grid, {"op": "revert", "id": "s:EQ-01", "col": "시나리오 메모"})
+    changes = last(grid, emg.side_key("changes"))
+    assert not any(line in " ".join(map(str, item)) for item in changes["errors"])
+    _save(app)
+    assert len(repository.list_revisions()) == before + 1
+    assert _buffer_value(app, "EQ-01", "설비이력") == "공통 이력"
