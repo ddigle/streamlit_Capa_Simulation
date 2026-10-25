@@ -3954,7 +3954,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 앱이 지은 거부·안내 문구를 알림 상자(`st.error`·`st.warning`·`st.info`·`st.success`)에 넣을 때 그 문구가 범위 물결표(「동은
   C1~C5, 층은 1F~6F」)를 품을 수 있으면 `literal_markdown.markdown_safe_tildes` 로 감싼다 — 물결표 둘이면 가운데가 지움선이 된다.
   구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다
-  (`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
+  (`tests/test_equipment_master_tab.py`). 설비 시나리오 이름을 싣는 잠금·빨리 감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도
+  그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가 담을 때 막는다(`_queue_space_flash` —
+  `tests/test_space_layout_overlay_page.py`, E2E r3). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
   (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
 ### 스크립트와 컴포넌트
