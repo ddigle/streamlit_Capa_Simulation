@@ -77,7 +77,8 @@ QUAL_DATE_COLUMN = "Qual일정"
 # Main·MI·부대 가운데 하나를 적는 글자 칸(옛 이름 「구분」·「분류1」). 계산에 쓰지 않는다 —
 # 시뮬레이션의 `Area_Name`(Main·MI)과 같은 어휘이지만 「부대」가 더 있어 `normalize_area_name`
 # 에 넣지 않는다. 세 값은 대소문자·앞뒤 공백을 맞춰 저장하고(`normalize_area_code`), 그 밖의
-# 값은 막지 않고 저장 미리보기에서 경고만 한다(`equipment_validation.area_code_warnings`).
+# 값은 막지 않고 경고만 한다 — 설비 마스터 표의 칸 경고 표지(`equipment_validation` 규칙 표의
+# `area_code_unknown`, 막지 않음).
 AREA_CODE_COLUMN = "Area Code"
 
 AREA_CODES = ("Main", "MI", "부대")

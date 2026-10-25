@@ -4,7 +4,8 @@
 
 `설비명` 은 꼭 있고 나머지 열은 바꿀 것만 넣는다. 기존 호기는 붙여넣은 열만 바뀌고, 새 호기는
 지금 필요한 열이 다 있어야 하며, 검증은 병합된 전체 표에서 그대로 돈다. 미리보기 경계
-(`build_import_review`)와 실제 화면 왕복(AppTest) 양쪽에서 본다.
+(`build_import_review`)와 실제 화면 왕복(AppTest — 설비 마스터 탭 「엑셀·CSV로 한꺼번에」 →
+「편집본에 넣기」 → 「리비전 저장」) 양쪽에서 본다.
 """
 
 from __future__ import annotations
@@ -17,15 +18,11 @@ import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 from test_equipment_availability import _downtime, _equipment
-from test_equipment_data_workspace import _app, _repository
+from test_equipment_data_workspace import _app, _preview, _put, _repository, _save
 from test_equipment_master_columns import _old36_layout
 
 from capa_simulation.components.equipment_data_workspace import (
-    CLIPBOARD_KEY,
-    IMPORT_SAVE_BUTTON_KEY,
-    PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
-    TARGET_KEY,
     ImportReview,
     build_import_review,
 )
@@ -401,7 +398,7 @@ def test_a_column_with_values_but_no_header_is_rejected() -> None:
 
 
 def _duplicated_buffer() -> pd.DataFrame:
-    """EQ-01 이 두 행인 편집본(저장 전 직접 편집). 둘째 행은 담당자가 다르다."""
+    """EQ-01 이 두 행인 편집본(저장 전 편집). 둘째 행은 담당자가 다르다."""
     current = _current()
     second = current.loc[current["설비명"].eq("EQ-01")].copy()
     second["담당자"] = pd.Series("편집 중", index=second.index, dtype="string")
@@ -416,7 +413,7 @@ def test_a_partial_paste_onto_a_duplicated_name_in_the_buffer_is_rejected() -> N
 
     message = str(raised.value)
     assert "편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: EQ-01" in message
-    assert "직접 편집에서 중복된 행을 먼저 정리한 뒤" in message
+    assert "설비 마스터 표에서 중복된 행을 먼저 정리한 뒤" in message
 
 
 def test_a_duplicate_that_the_paste_does_not_touch_still_fails_the_merged_validation() -> None:
@@ -504,20 +501,15 @@ def test_a_partial_paste_is_previewed_and_saved_leaving_the_other_columns_alone(
         note="원본",
     )
     app = _app(path)
-    app.selectbox(TARGET_KEY).set_value("설비 마스터")
-    app.text_area(CLIPBOARD_KEY).set_value(
-        _tab(("설비명", "설비이력"), ("EQ-01", "10월 점검"), ("EQ-02", "셋업 완료"))
-    )
-    app.button(PREVIEW_BUTTON_KEY).click().run()
+    _preview(app, _tab(("설비명", "설비이력"), ("EQ-01", "10월 점검"), ("EQ-02", "셋업 완료")))
 
-    assert not app.exception
-    assert not app.error
     review = app.session_state[PREVIEW_KEY]
     assert review.changes["변경컬럼"].tolist() == ["설비이력", "설비이력"]
     infos = [str(item.value) for item in app.info]
     assert any("붙여넣은 열 1개(설비이력)만 바꿉니다" in text for text in infos), infos
 
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    _put(app)
+    _save(app)
 
     assert not app.exception
     assert not app.error

@@ -2,12 +2,14 @@
 
 """Space 모듈 묶음 좌표·크기는 배치 편집기에서 묶음 범위로만 고친다(2026-10-23 사용자 답 「막자」).
 
-설비 마스터를 쓰는 길은 RawData 직접 편집·붙여넣기·CSV 업로드·일괄 삭제·Space 배치 저장이고 모두
+설비 마스터를 쓰는 길은 설비 마스터 표·「엑셀·CSV로 한꺼번에」·일괄 삭제·Space 배치 저장이고 모두
 `equipment_data_workspace.save_equipment_buffer` → `_save_equipment_frames` 한 곳을 지난다. 그
 자리의 `saved_master_violations`(`space_layout_edit.module_layout_violations`)가 저장본과 견줘 모듈
 좌표·크기가 바뀐 묶음은 묶음 범위의 바둑판(한 눈금 허용 — 편집기 적용의 서버 판정과 같다)이어야
 저장한다. 안 바뀐 옛 묶음과 Main 설비 칸만 고친 편집(묶음에 넣기·빼기)은 막지 않고, 배치 편집기가
-적용한 묶음은 적용 뒤 모양(`module_layouts`)이 그대로면 통과한다.
+적용한 묶음은 적용 뒤 모양(`module_layouts`)이 그대로면 통과한다. 설비 마스터 탭은 같은 판정을
+「저장 전 변경」 고칠 것 한 줄로 저장 전에 보이고 「리비전 저장」 을 막는다(표의 모듈 묶음 좌표·크기
+칸은 잠겨 있어 — D9 — 그런 편집은 붙여넣기·Space 밖 길로만 든다).
 """
 
 from __future__ import annotations
@@ -19,27 +21,26 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from grid_fake import Calls, install_fake_grid, last
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime
 from test_equipment_data_workspace import _app as _workspace_app
+from test_equipment_data_workspace import _preview, _put, _save
 from test_space_layout_edit import CANVAS, FLOOR, _master, _parse
 from test_space_layout_editor_page import FAKE_APPLY_KEY, _open_editor
 from test_space_module_group import GROUP_ROWS, _ghost_payload, _hidden_inputs, _relaid, _shape
 
+from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_GENERATION_KEY,
     BUFFER_KEY,
-    CLIPBOARD_KEY,
-    EDIT_SAVE_BUTTON_KEY,
     EDITOR_MODULE_LAYOUTS_KEY,
-    EQUIPMENT_EDITOR_KEY,
-    IMPORT_SAVE_BUTTON_KEY,
-    MODULE_LAYOUT_HELP,
-    PREVIEW_BUTTON_KEY,
-    TARGET_KEY,
 )
+from capa_simulation.components.equipment_master_tab import UNDO_BUTTON_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.equipment_grid import MODULE_LOCK_REASON
 from capa_simulation.services.layout_overlay import reapply_layout_edits
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
@@ -376,81 +377,84 @@ def _seed(path: Path, master: pd.DataFrame) -> DuckDBEquipmentRepository:
 
 
 def _edit_rawdata(app: AppTest, master: pd.DataFrame) -> None:
-    """RawData 편집표에서 고친 것처럼 편집본 설비 마스터를 갈고 다시 그린다. 편집표가 쥔 옛 보기
-    (`{key}_applied_view`)도 버린다 — `replace_equipment_buffer` 처럼(남기면 다음 제출이 옛 값으로
-    되돌린다)."""
+    """표 밖 길(붙여넣기 등)로 바꾼 것처럼 편집본 설비 마스터를 갈고 세대를 올려 다시 그린다
+    (`replace_equipment_buffer` 와 같은 뜻)."""
     baseline, _, downtime = app.session_state[BUFFER_KEY]
     app.session_state[BUFFER_KEY] = (baseline, master, downtime)
-    view = f"{EQUIPMENT_EDITOR_KEY}_applied_view"
-    if view in app.session_state:
-        del app.session_state[view]
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
     app.run()
 
 
-def test_the_rawdata_save_refuses_a_module_edit_and_takes_a_whole_group_move(
-    tmp_path: Path,
+@pytest.fixture
+def grid(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    return install_fake_grid(monkeypatch)
+
+
+def _fix_first(grid: Calls) -> list[str]:
+    """「저장 전 변경」 고칠 것의 글(표 단위 줄은 마지막 칸)."""
+    return [str(line[3]) for line in last(grid, emg.side_key("changes"))["errors"]]
+
+
+def test_the_master_tab_refuses_a_module_edit_and_takes_a_whole_group_move(
+    tmp_path: Path, grid: Calls
 ) -> None:
-    """RawData 직접 편집 저장: 모듈 하나를 옮긴 편집본은 저장 전 경고와 저장 거부(어느 묶음인지)로
-    막히고 리비전이 생기지 않는다 — 거부된 회차는 그 문구를 오류 하나로만 보이고 다음 회차에 경고가
-    돌아온다. 묶음째 옮긴 편집본은 저장된다. 편집표 위에 안내 한 줄이 늘 선다."""
+    """설비 마스터 탭: 모듈 하나를 옮긴 편집본은 「저장 전 변경」 고칠 것(어느 묶음인지)으로 저장
+    전에 알리고 「리비전 저장」 을 막아 리비전이 생기지 않는다. 묶음째 옮긴 편집본은 저장된다. 표의
+    모듈 묶음 좌표·크기 칸은 잠겨 그 까닭이 「배치 편집기에서」 다(D9)."""
     path = tmp_path / "equipment.duckdb"
     repository = _seed(path, _saved())
     app = _workspace_app(path)
-    assert any(MODULE_LAYOUT_HELP in item.value for item in app.caption)
+    assert "배치 편집기" in last(grid, emg.GRID_KEY)["lockReasons"]["module"]
+    assert last(grid, emg.GRID_KEY)["lockReasons"]["module"] == MODULE_LOCK_REASON
     equipment = app.session_state[BUFFER_KEY][1]
     _edit_rawdata(app, _edited(equipment, {"G1-A": {"X좌표": 52.0}}))
 
     message = module_layout_message(["GRP-1"])
-    assert any(message == item.value for item in app.warning), [w.value for w in app.warning]
-    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
-
-    assert not app.exception, [item.message for item in app.exception]
-    assert any(message in str(item.value) for item in app.error), [e.value for e in app.error]
+    _save(app)
+    assert message in _fix_first(grid)
+    assert any("고쳐야 저장됩니다" in str(item.value) for item in app.error), [
+        e.value for e in app.error
+    ]
     assert len(repository.list_revisions()) == 1
-    # 거부된 회차는 같은 긴 문구를 빨간 오류 하나로만 보인다 — 주황 경고를 거듭 세우지 않는다.
-    shown = [item.value for item in (*app.error, *app.warning)]
-    assert sum(message in str(value) for value in shown) == 1, shown
-    # 다음 회차에는 오류가 사라지고 저장 전 경고가 남는다(편집본은 아직 바둑판이 아니다).
-    app.run()
-    assert not any(message in str(item.value) for item in app.error), [e.value for e in app.error]
-    assert [item.value for item in app.warning].count(message) == 1, [w.value for w in app.warning]
 
     equipment = app.session_state[BUFFER_KEY][1]
     assert equipment.set_index("설비명").loc["G1-A", "X좌표"] == 52.0
     fixed = _edited(equipment, {"G1-A": {"X좌표": 50.0}})
     _edit_rawdata(app, _shifted(fixed, G1, 5.0))
-    assert not any(message == item.value for item in app.warning)
-    app.button(EDIT_SAVE_BUTTON_KEY).click().run()
+    _save(app)
 
+    assert message not in _fix_first(grid)
     assert not app.exception and not app.error, [e.value for e in app.error]
     assert len(repository.list_revisions()) == 2
     saved = repository.load_snapshot(str(repository.latest_revision_id())).equipment
     assert saved.set_index("설비명").loc[G1, "X좌표"].tolist() == [55.0, 65.0, 55.0, 65.0]
 
 
-def test_a_paste_that_moves_one_module_is_flagged_in_review_and_refused_on_save(
-    tmp_path: Path,
+def test_a_paste_that_moves_one_module_is_flagged_after_putting_and_refused_on_save(
+    tmp_path: Path, grid: Calls
 ) -> None:
-    """붙여넣기(설비명과 바꿀 열만): 미리보기에서 저장이 막힌다고 알리고, 「확인 후 리비전 저장」은
-    거부한다. 안 바뀐 옛 묶음만 있는 붙여넣기는 저장된다."""
+    """붙여넣기(설비명과 바꿀 열만)로 모듈 하나를 옮기면 넣은 뒤 「저장 전 변경」 고칠 것이 되고
+    「리비전 저장」 이 막힌다. 한 단계 되돌리기로 넣기를 거둔 뒤 안 바뀐 옛 묶음만 있는 붙여넣기는
+    저장된다."""
     path = tmp_path / "equipment.duckdb"
     repository = _seed(path, _saved())
     app = _workspace_app(path)
-    app.selectbox(TARGET_KEY).set_value("설비 마스터")
-    app.text_area(CLIPBOARD_KEY).set_value("설비명\tX좌표\nG1-B\t61\n")
-    app.button(PREVIEW_BUTTON_KEY).click().run()
+    _preview(app, "설비명\tX좌표\nG1-B\t61\n")
+    _put(app)
 
     message = module_layout_message(["GRP-1"])
-    assert not app.exception and not app.error, [e.value for e in app.error]
-    assert any(message == item.value for item in app.warning)
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
-
-    assert any(message in str(item.value) for item in app.error)
+    _save(app)
+    assert message in _fix_first(grid)
+    assert any("고쳐야 저장됩니다" in str(item.value) for item in app.error)
     assert len(repository.list_revisions()) == 1
 
-    app.text_area(CLIPBOARD_KEY).set_value("설비명\t담당자\nG2-A\t담당B\n")
-    app.button(PREVIEW_BUTTON_KEY).click().run()
-    app.button(IMPORT_SAVE_BUTTON_KEY).click().run()
+    app.button(key=UNDO_BUTTON_KEY).click()
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[BUFFER_KEY][1].set_index("설비명").loc["G1-B", "X좌표"] != 61
+    _preview(app, "설비명\t담당자\nG2-A\t담당B\n")
+    _put(app)
+    _save(app)
 
     assert not app.exception and not app.error, [e.value for e in app.error]
     assert len(repository.list_revisions()) == 2

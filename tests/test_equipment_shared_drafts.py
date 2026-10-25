@@ -1,4 +1,4 @@
-# Purpose: RawData 와 Space 편집기가 같은 편집본·미저장 층 배치를 한 저장으로 끝내는지 검사한다.
+# Purpose: 설비 마스터 탭과 Space 편집기가 같은 편집본·미저장 층 배치를 한 저장으로 끝내는지 본다.
 
 from __future__ import annotations
 
@@ -17,12 +17,13 @@ def _seeded(path: Path) -> None:
 
 
 def _space_first(database: str) -> None:
-    """Space 가 먼저 열려 편집본을 세우고 호기 하나를 옮긴 뒤 RawData 가 열리는 회차를 흉내 낸다."""
+    """Space 가 먼저 열려 편집본을 세우고 호기 하나를 옮긴 뒤 설비 마스터 탭이 열리는 회차를 흉내
+    낸다."""
     import streamlit as st
 
     from capa_simulation.components.equipment_data_workspace import (
         BUFFER_KEY,
-        EQUIPMENT_EDITOR_KEY,
+        DOWNTIME_EDITOR_KEY,
         ensure_equipment_drafts,
         equipment_buffer_generation,
         replace_equipment_buffer,
@@ -37,16 +38,16 @@ def _space_first(database: str) -> None:
     st.session_state["step"] = step + 1
     frames = ensure_equipment_drafts(latest)
     if step == 0:
-        st.session_state[f"{EQUIPMENT_EDITOR_KEY}_applied_view"] = "옛 보기"
+        st.session_state[f"{DOWNTIME_EDITOR_KEY}_applied_view"] = "옛 보기"
         before = equipment_buffer_generation()
         moved = frames[1].copy()
         moved.loc[moved["설비명"].eq("EQ-01"), "X좌표"] = 55.0
         replace_equipment_buffer((frames[0], moved, frames[2]))
         st.session_state["generation_bumped"] = equipment_buffer_generation() > before
         st.session_state["applied_view_dropped"] = (
-            f"{EQUIPMENT_EDITOR_KEY}_applied_view" not in st.session_state
+            f"{DOWNTIME_EDITOR_KEY}_applied_view" not in st.session_state
         )
-    # 다음 회차에 RawData 쪽이 같은 helper 로 다시 세워도 Space 편집이 남아야 한다.
+    # 다음 회차에 설비 마스터 탭이 같은 helper 로 다시 세워도 Space 편집이 남아야 한다.
     buffer = st.session_state[BUFFER_KEY][1]
     st.session_state["x"] = float(buffer.loc[buffer["설비명"].eq("EQ-01"), "X좌표"].iloc[0])
 
@@ -59,7 +60,7 @@ def test_an_edit_made_in_space_first_survives_when_rawdata_seeds_later(tmp_path:
 
     assert not app.exception
     assert app.session_state["generation_bumped"] is True
-    # 편집표가 옛 보기 프레임을 그리다 Space 편집을 되돌리지 않게 보기 칸을 버린다.
+    # 작은 편집표가 옛 보기 프레임을 그리다 Space 편집을 되돌리지 않게 보기 칸을 버린다.
     assert app.session_state["applied_view_dropped"] is True
     assert app.session_state["x"] == 55.0
 

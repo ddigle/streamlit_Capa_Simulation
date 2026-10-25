@@ -399,8 +399,8 @@ def read_equipment_update(
         more = f" 외 {len(ambiguous) - 5}건" if len(ambiguous) > 5 else ""
         raise ValueError(
             f"편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: {', '.join(ambiguous[:5])}"
-            f"{more} — 붙여넣지 않은 열을 어느 행의 값으로 둘지 알 수 없습니다. 직접 편집에서 "
-            "중복된 행을 먼저 정리한 뒤 다시 미리보세요."
+            f"{more} — 붙여넣지 않은 열을 어느 행의 값으로 둘지 알 수 없습니다. 설비 마스터 "
+            "표에서 중복된 행을 먼저 정리한 뒤 다시 미리보세요."
         )
     matched = pasted[EQUIPMENT_ID_COLUMN].isin(base.index)
     new_names = pasted.loc[~matched, EQUIPMENT_ID_COLUMN].tolist()
@@ -846,7 +846,7 @@ def _merge_by_keys(
 def _comparable_keys(frame: pd.DataFrame, keys: Sequence[str]) -> pd.MultiIndex:
     """병합·미리보기가 행을 맞대는 키. 글자 키는 앞뒤 공백을 떼고 견준다.
 
-    편집본은 검증 전일 수 있다(직접 편집에 남은 「 EQ-01 」). 검증이 공백을 떼므로 글자 그대로
+    편집본은 검증 전일 수 있다(앞뒤 공백이 남은 「 EQ-01 」). 검증이 공백을 떼므로 글자 그대로
     견주면 붙여넣은 「EQ-01」과 다른 행으로 남았다가 검증에서 같은 이름이 되어 엉뚱한 「설비명
     중복」으로 막힌다. 대소문자는 가린다 — 설비명 계약이 그렇다(다르면 `case_variants` 가 경고).
     """

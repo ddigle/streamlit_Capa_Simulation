@@ -27,10 +27,7 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
-from capa_simulation.components.equipment_data_workspace import (
-    SCENARIO_COLUMN_LEGEND,
-    save_result_message,
-)
+from capa_simulation.components.equipment_data_workspace import save_result_message
 from capa_simulation.components.equipment_save_fields import (
     DEFAULT_PROPAGATE_NEW_DOWNTIME,
     DEFAULT_PROPAGATE_NEW_UNITS,
@@ -67,7 +64,6 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScheduleRevisionSummary,
     PropagatedRevision,
 )
-from capa_simulation.services.equipment_contract import SCENARIO_SCHEDULE_COLUMNS
 from capa_simulation.services.equipment_grid import scenario_column_help
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -377,31 +373,6 @@ def test_an_own_schedule_save_moves_the_selection_and_a_common_save_keeps_it(
         assert "공통 대장 r2" in message and "「운영 일정」" not in message
 
 
-def _stale_workspace(database: str) -> None:
-    """낡은 세션의 RawData — 일정 일곱 칸·비가동 표 잠김, 행 추가 막음, 잠금 알림."""
-    from capa_simulation.components.equipment_data_workspace import (
-        ensure_equipment_drafts,
-        render_equipment_data_workspace,
-    )
-    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
-    from capa_simulation.persistence.equipment_cache import get_equipment_repository
-
-    session = resolve_equipment_session(database)
-    ensure_equipment_drafts(session.snapshot)
-    snapshot = session.snapshot
-    assert snapshot is not None
-    render_equipment_data_workspace(
-        repository=get_equipment_repository(database),
-        latest_snapshot=snapshot,
-        baseline=snapshot.baseline,
-        equipment=snapshot.equipment,
-        downtime=snapshot.downtime,
-        floor_canvases={},
-        max_extent=(100.0, 60.0),
-        basis=session.save_basis(),
-    )
-
-
 def _all_nodes(app: AppTest) -> list[Any]:
     stack = list(app.main.children.values())
     nodes: list[Any] = []
@@ -416,10 +387,38 @@ def _dataframes(app: AppTest) -> list[Any]:
     return [node.proto for node in _all_nodes(app) if getattr(node, "type", None) == "dataframe"]
 
 
+def _master_tab(repository: DuckDBEquipmentRepository) -> AppTest:
+    """새 세션으로 연 가용설비 현황 탭 ① 「설비 마스터」(표 대역)."""
+    from test_equipment_pages import _page_script
+
+    from capa_simulation.navigation import EQUIPMENT_MASTER_TAB
+
+    page = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page, repository.database_path), default_timeout=90)
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    return app
+
+
 @pytest.mark.parametrize("stale", [False, True])
 def test_a_stale_session_locks_the_schedule_cells_and_row_adds_but_not_common_cells(
-    tmp_path: Path, stale: bool
+    tmp_path: Path, stale: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """낡은 세션의 설비 마스터 탭 — 표 data 가 시나리오 일곱 칸을 잠그고(`stale`) 새 행·저장본 호기
+    지우기를 막으며 맨 위에 그 알림이 선다. 비가동 일정 작은 편집표는 통째로 잠기고 「선택 행 삭제」
+    가 꺼진다 — 기존 보유대수는 공통이라 그대로 지운다. 칸 머리 풍선 첫 마디가 어느 쪽인지
+    말한다."""
+    from grid_fake import install_fake_grid, last, load
+
+    from capa_simulation.components import equipment_master_grid as emg
+    from capa_simulation.components.equipment_master_tab import TABLE_KEY
+    from capa_simulation.services.equipment_contract import (
+        EQUIPMENT_COLUMNS,
+        SCENARIO_SCHEDULE_COLUMNS,
+    )
+
+    grid = install_fake_grid(monkeypatch)
     repository = _seeded(tmp_path)
     if stale:
         session = _session(repository)
@@ -430,40 +429,57 @@ def test_a_stale_session_locks_the_schedule_cells_and_row_adds_but_not_common_ce
                 publish_official=False,
             )
         )
-    app = AppTest.from_function(
-        _stale_workspace, args=(str(repository.database_path),), default_timeout=60
-    ).run()
+    app = _master_tab(repository)
+    load(app, [], kind="all")
 
-    assert not app.exception, [item.message for item in app.exception]
-    editors = [proto for proto in _dataframes(app) if proto.editing_mode != Dataframe.READ_ONLY]
-    master = next(proto for proto in editors if "Qual일정" in json.loads(proto.columns or "{}"))
-    columns = json.loads(master.columns)
-    locked = {name for name, config in columns.items() if config.get("disabled")}
+    table = last(grid, emg.GRID_KEY)
+    assert ("stale" in table["lockReasons"]) is stale
+    # 잠금 갈래 `stale` 은 시나리오 일곱 칸이고, 낡은 회차에는 모든 줄이 그 갈래를 든다.
+    assert sorted(table["lockSets"]["stale"]) == sorted(
+        EQUIPMENT_COLUMNS.index(column) for column in SCENARIO_SCHEDULE_COLUMNS
+    )
+    assert table["rows"]
+    assert all(("stale" in row.get("locks", ())) is stale for row in table["rows"])
+    assert table["newRowsLocked"] is stale
     if stale:
-        assert locked == set(SCENARIO_SCHEDULE_COLUMNS)
-        assert master.editing_mode == Dataframe.FIXED
+        assert "최신 r2 를 불러온 뒤 지우세요" in str(table["deleteLock"])
         assert any("가 더 새롭습니다" in item.value for item in app.warning)
     else:
-        assert not locked
-        assert master.editing_mode == Dataframe.DYNAMIC
+        assert table["deleteLock"] is None
         assert not any("가 더 새롭습니다" in item.value for item in app.warning)
-    # 낡은 세션에서 호기·비가동을 지우면 그 시나리오 일정도 바뀌어 저장이 늘 거부된다 — 「선택 행
-    # 삭제」 를 끄고 까닭을 풍선으로 보인다. 기존 보유대수는 공통이라 그대로 지운다.
-    deletes = {
-        slug: next(
-            button for button in app.button if button.key == f"equipment_{slug}_delete_selected_v1"
-        )
-        for slug in ("master", "baseline", "downtime")
-    }
-    assert deletes["master"].disabled is stale and deletes["downtime"].disabled is stale
-    assert not deletes["baseline"].disabled
-    if stale:
-        assert "최신 r2 를 불러온 뒤 지우세요" in str(deletes["master"].help)
-    # 칸 도움말 첫 마디가 어느 쪽인지 말한다.
+    columns = {column["name"]: column for column in table["columns"]}
     assert columns["Qual일정"]["help"].startswith("시나리오 — 「운영 일정」 에만 저장")
     assert columns["담당자"]["help"].startswith("공통 — 모든 설비 시나리오에 같은 값")
     assert columns["Qual상태"]["help"].startswith("공통 — 공식 일정 기준")
-    assert any(SCENARIO_COLUMN_LEGEND == item.value for item in app.caption)
+    assert [column["name"] for column in table["columns"]] == list(EQUIPMENT_COLUMNS)
+
+    deletes = {}
+    for name in ("기존 보유대수", "비가동 일정"):
+        app.session_state[TABLE_KEY] = name
+        app.run()
+        assert not app.exception, [item.message for item in app.exception]
+        slug = "baseline" if name == "기존 보유대수" else "downtime"
+        deletes[slug] = next(
+            button for button in app.button if button.key == f"equipment_{slug}_delete_selected_v1"
+        )
+        if slug == "downtime":
+            downtime = next(
+                proto
+                for proto in _dataframes(app)
+                if proto.editing_mode != Dataframe.READ_ONLY
+                and "비가동유형" in json.loads(proto.columns or "{}")
+            )
+            locked = {
+                name
+                for name, config in json.loads(downtime.columns).items()
+                if config.get("disabled")
+            }
+            assert bool(locked) is stale
+            assert (downtime.editing_mode == Dataframe.FIXED) is stale
+    assert deletes["downtime"].disabled is stale
+    assert not deletes["baseline"].disabled
+    if stale:
+        assert "최신 r2 를 불러온 뒤 지우세요" in str(deletes["downtime"].help)
 
 
 def test_a_stale_common_save_goes_through_and_a_schedule_save_is_refused(tmp_path: Path) -> None:

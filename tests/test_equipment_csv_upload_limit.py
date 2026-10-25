@@ -1,11 +1,11 @@
-# Purpose: 설비 RawData 의 CSV 업로드 칸이 서버 전체 상한이 아니라 칸 고유의 상한을 쓰는지 검사한다.
+# Purpose: 설비 마스터 엑셀·CSV 팝업의 CSV 칸이 서버 전체보다 낮은 칸 고유 상한을 쓰는지 본다.
 
 from __future__ import annotations
 
 import importlib
 from pathlib import Path
 
-from test_equipment_data_workspace import _app
+from test_equipment_data_workspace import _app, _open_import
 
 from capa_simulation.components.equipment_data_workspace import CSV_UPLOAD_LIMIT_MB
 from capa_simulation.settings import PROJECT_ROOT
@@ -30,7 +30,7 @@ def test_the_equipment_csv_upload_box_has_its_own_limit_below_the_server_limit(
     CSV 파싱은 파일 크기의 몇 배 메모리를 쓰므로 잘못 고른 큰 파일 하나가 공용 앱 프로세스를 몰 수
     있다. 칸 안내(「50MB per file」)와 브라우저가 올리기 전에 막는 크기가 이 값이다.
     """
-    app = _app(tmp_path / "equipment.duckdb")
+    app = _open_import(_app(tmp_path / "equipment.duckdb"))
 
     assert not app.exception
     uploaders = app.get("file_uploader")
