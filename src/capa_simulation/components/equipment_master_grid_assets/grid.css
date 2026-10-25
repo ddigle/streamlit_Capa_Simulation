@@ -445,6 +445,7 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  scroll-margin-top: 80px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--emg-border);
   background: var(--emg-new-fill);
@@ -1017,8 +1018,12 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .emg-check-head {
-    flex-basis: 100%;
+  .emg-check-row .emg-check-head {
+    flex: 0 0 100%;
+  }
+
+  .emg-check-row .emg-check-head:empty {
+    display: none;
   }
 }
 .emg-official {

@@ -78,7 +78,6 @@ from capa_simulation.components.equipment_data_workspace import (
     buffer_base,
     buffer_has_layout_edits,
     carry_layout_memo,
-    chosen_new_unit_counts,
     equipment_buffer_generation,
     floor_layout_words,
     grid_overlay,
@@ -86,12 +85,14 @@ from capa_simulation.components.equipment_data_workspace import (
     grid_undo_steps,
     layout_lock_origins,
     layout_memo_mark,
+    new_unit_choice_line,
     official_layout_cells,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
+    prune_new_unit_propagation,
     queue_grid_toast,
     remember_new_unit_propagation,
     removals_elsewhere,
@@ -173,6 +174,7 @@ from capa_simulation.services.equipment_grid import (
     copied_draft,
     copy_source,
     detail_data,
+    draft_seq_of,
     draft_texts,
     grid_data,
     grid_index,
@@ -201,6 +203,7 @@ from capa_simulation.services.floor_state import (
     inactive_floor_warnings,
     master_location_options,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.layout_overlay import assumption_group_refusal
 from capa_simulation.services.schedule_confirmation import (
     CONFIRMATION_KIND_COLUMN,
@@ -295,6 +298,7 @@ def _grid_state() -> GridState:
         overlay=grid_overlay(),
         undo=grid_undo_steps(),
         loaded=loaded_ids(),
+        draft_seq=_new_draft()[0],
     )
 
 
@@ -320,11 +324,6 @@ def _store_new_draft(seq: int, values: Sequence[str], propagate: bool) -> None:
         "values": list(values),
         "propagate": propagate,
     }
-
-
-def _op_seq(op: Mapping[str, Any]) -> int:
-    seq = op.get("draftSeq")
-    return seq if isinstance(seq, int) and not isinstance(seq, bool) else 0
 
 
 def _result(kind: str, text: str) -> None:
@@ -611,6 +610,9 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     if detail is not None and detail in result.moved:
         st.session_state[GRID_DETAIL_KEY] = result.moved[detail]
     _follow_added(ops, result)
+    if result.frames_changed[1]:
+        # 되돌리기·지우기로 빠진 새 호기의 함께 넣기 고름을 걷는다(이름 바꿈은 위에서 따라갔다).
+        prune_new_unit_propagation()
     if result.toast:
         # 「호기 추가」 는 그 호기를 상세로 연다 — 토스트(되돌리기)도 상세 칸에.
         target = "detail" if result.added else targets.get(str(ops[-1].get("mount")), "grid")
@@ -626,12 +628,14 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
 def _follow_added(ops: Sequence[Mapping[str, Any]], result: Any) -> None:
     """「호기 추가」 op 뒤 — 넣은 호기마다 함께 넣기 고름을 적고 마지막 호기를 상세로 열며 초안은
     공정소분류·동·층만 남긴다(번호를 올려 브라우저가 바꾼다). 막혔으면 받은 초안을 세션 초안으로
-    둔다(그 초안의 칸 오류가 다음 회차에 선다)."""
-    adds = [op for op in ops if op.get("op") == "add"]
+    둔다(그 초안의 칸 오류가 다음 회차에 선다). 세션 초안보다 번호가 작은 op(서비스가 말없이 버린
+    두 번 누름·옛 초안)는 보지 않는다 — 다음 회차에 따로 온 둘째 누름이 넣은 뒤 초안을 옛 초안으로
+    덮지 않게."""
+    seq, values, propagate = _new_draft()
+    adds = [op for op in ops if op.get("op") == "add" and draft_seq_of(op) >= seq]
     if not adds:
         return
-    seq, values, propagate = _new_draft()
-    top = max([seq, *(_op_seq(op) for op in adds)])
+    top = max([seq, *(draft_seq_of(op) for op in adds)])
     last = draft_texts(adds[-1].get("draft"))
     if result.added:
         for _row_id, name, chosen in result.added:
@@ -673,10 +677,12 @@ def _touches_layout(ops: Sequence[Mapping[str, Any]]) -> bool:
     남짓 — 샘플 관측)을 칸 고침마다 돌리지 않는다. 지우기·되살리기·칸 되돌리기는 저장본 쪽으로 가는
     길이라 새 배치 편집을 만들지 않는다. **한 단계 되돌리기(`undo`)는 넣는다** — 찍힘이 걷힌 뒤
     (`live_layout_role` — 배치 편집이 사라짐) 되돌리기가 배치 편집을 되살릴 수 있다(칸
-    되돌리기·지우기·엑셀·CSV 넣기를 되돌림)."""
+    되돌리기·지우기·엑셀·CSV 넣기를 되돌림). **「호기 추가」(`add`)도 넣는다** — 새 호기 자리(동·층·
+    레이아웃표시)는 배치 편집이라(붙여넣기 새 행·엑셀·CSV 넣기와 같다) 넣은 뒤 저장 전에 공식 설비
+    시나리오가 바뀌면 찍힌 역할로 막는다(설계 6-2·Q1)."""
     for op in ops:
         name = op.get("op")
-        if name in ("official", "undo"):
+        if name in ("official", "undo", "add"):
             return True
         columns: list[object] = []
         if name in ("cell", "set"):
@@ -763,7 +769,9 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
         if request.draft is not None:
             _store_new_draft(seq, values, propagate)
         what = f"「{request.query}」 설비명" if request.query else "그 호기"
-        queue_grid_toast("new" if request.query else "detail", f"{what}을 찾지 못했습니다")
+        queue_grid_toast(
+            "new" if request.query else "detail", f"{with_object_particle(what)} 찾지 못했습니다"
+        )
         return
     source = unit_texts(master, position)
     _store_new_draft(seq + 1, copied_draft(source, base), propagate)
@@ -1143,13 +1151,11 @@ def _render_save_section(
     )
     with st.container():
         # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 함께 넣기 체크보다 이긴다(D8).
-        spread, alone = chosen_new_unit_counts(frames)
-        if spread or alone:
-            st.caption(
-                f":material/library_add: 「새 호기」 칸에서 넣은 {spread + alone:,}대는 그 칸의 "
-                f"체크를 따릅니다 — 다른 설비 시나리오에 같은 일정으로 {spread:,}대 · 일정 없음 "
-                f"{alone:,}대"
-            )
+        line = new_unit_choice_line(
+            frames, assumption=basis is not None and not basis.official_scenario
+        )
+        if line is not None:
+            st.caption(line)
     with st.container():
         try:
             removal = removals_elsewhere(

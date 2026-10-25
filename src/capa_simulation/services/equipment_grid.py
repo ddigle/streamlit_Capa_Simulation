@@ -1262,9 +1262,9 @@ NEW_UNIT_DEFAULTS: Final[Mapping[str, str]] = {
     "레이아웃표시": "Y",
 }
 # 체크 상자 세 줄(개편 명세 4-6 나). 「에러 없이 추가하려면」 은 설비명·공정소분류와 필수 Y/N
-# 셋, 「가용대수에 세려면」 은 반입·Qual 일정과 사용기준(HBM·EDP — `counts_for_capacity`, 13장
-# D13) 그리고 Qual일정이 있는 신규 호기면 Qual상태(저장 규칙 — 보관·기존설비 제외), 「도면에
-# 놓으려면」 은 동·층.
+# 셋 — 그리고 다른 칸 값 때문에 막는 칸(Qual일정이 있는 신규 호기의 Qual상태 — 저장 규칙, 보관·
+# 기존설비 제외 — 와 비어서 막는 칸, `new_unit_check`), 「가용대수에 세려면」 은 반입·Qual 일정과
+# 사용기준(HBM·EDP — `counts_for_capacity`, 13장 D13), 「도면에 놓으려면」 은 동·층.
 NEW_UNIT_REQUIRED: Final = (EQUIPMENT_ID_COLUMN, "공정소분류")
 NEW_UNIT_FLAGS: Final = tuple(FLAG_COLUMNS)
 NEW_UNIT_CALC: Final = (ARRIVAL_DATE_COLUMN, QUAL_DATE_COLUMN, USAGE_BASIS_COLUMN)
@@ -1354,8 +1354,11 @@ class NewUnitCheck:
     """「새 호기」 초안 한 벌의 판정 — 체크 상자·칸 오류·「호기 추가」 가 모두 여기서 나온다.
 
     - `values` — 잠긴 칸을 비운 초안 글(넣을 값). `errors`·`warns`·`locks` 는 칸 이름 → 글.
-    - `required`·`flags`·`calc`·`map` — 체크 상자 줄마다 (칸, 됨). `flags` 는 필수 Y/N 셋, `calc`
-      에는 Qual일정이 있는 신규 호기면 Qual상태가 붙는다. `map` 은 레이아웃표시가 N 이면 비었다.
+    - `required`·`flags`·`calc`·`map` — 체크 상자 줄마다 (칸, 됨). `required` 는 설비명·공정소분류
+      뒤에 다른 칸 값 때문에 막는 칸이 붙는다 — Qual일정이 있는 신규 호기면 Qual상태(찼어도 남는다),
+      그리고 비어서 막는 오류가 걸린 칸(좌표가 있는데 빈 크기 등, 잠긴 칸 빼고). 「에러 없이
+      추가하려면」 이 막는 빈 칸을 모두 보이게(사용자 요구). `flags` 는 필수 Y/N 셋, `map` 은
+      레이아웃표시가 N 이면 비었다.
     - `blocked` — 「호기 추가」 를 받지 않는다(오류가 있거나 이 세션이 새 호기를 막음). `hint` 는 그
       까닭 또는 「추가할 수 있습니다」.
     - `name` — 넣을 설비명, `row` — 넣을 한 줄(계약 dtype). 막혔으면 None.
@@ -1510,14 +1513,25 @@ def new_unit_check(
 
     storage = values[COLUMN_INDEX[STORAGE_FLAG_COLUMN]].strip().upper()
     existing = values[COLUMN_INDEX["기존설비여부"]].strip().upper()
-    calc_columns: list[str] = list(NEW_UNIT_CALC)
+    # 「에러 없이 추가하려면」 — 다른 칸 값 때문에 필수가 된 칸도 이 줄에 둔다(막대가 다 찼는데
+    # 「호기 추가」 가 막히지 않게).
+    required_columns: list[str] = list(NEW_UNIT_REQUIRED)
     if _filled(values, QUAL_DATE_COLUMN) and storage == "N" and existing == "N":
-        calc_columns.append(QUAL_STATUS_COLUMN)
+        required_columns.append(QUAL_STATUS_COLUMN)
+    required_columns.extend(
+        column
+        for column in EQUIPMENT_COLUMNS
+        if column in errors
+        and not _filled(values, column)
+        and column not in required_columns
+        and column not in NEW_UNIT_FLAGS
+        and column not in locks
+    )
     usage = pd.DataFrame({USAGE_BASIS_COLUMN: [values[COLUMN_INDEX[USAGE_BASIS_COLUMN]]]})
     counted = bool(counts_for_capacity(usage).iloc[0])
     calc = tuple(
         (column, ok(column) and (column != USAGE_BASIS_COLUMN or counted))
-        for column in calc_columns
+        for column in NEW_UNIT_CALC
     )
     layout_flag = values[COLUMN_INDEX["레이아웃표시"]].strip().upper()
     blocked = bool(errors) or context.new_rows_locked
@@ -1538,7 +1552,7 @@ def new_unit_check(
         errors=errors,
         warns=warns,
         locks=locks,
-        required=tuple((column, ok(column)) for column in NEW_UNIT_REQUIRED),
+        required=tuple((column, ok(column)) for column in required_columns),
         flags=tuple(
             (column, values[COLUMN_INDEX[column]].strip().upper() in FLAG_VALUES and ok(column))
             for column in NEW_UNIT_FLAGS
@@ -1579,6 +1593,9 @@ def new_unit_data(
     - `errors`·`warns`·`locks` — 칸 자리 번호(계약 차례) → 글. 오류는 브라우저가 그 칸을 만졌거나
       값이 있을 때만 보인다(필수 칸은 처음부터 굵은 테).
     - `tiers` — 체크 상자 줄마다 [(자리 번호, 됨)]. `blocked`·`hint` 는 「호기 추가」 판정.
+      `required` 는 늘 필수인 칸(설비명·공정소분류·Y/N 셋)의 자리 — 브라우저가 「호기 추가」 를
+      켜고 누를 때 만진 표지를 준다. 다른 칸 값 때문에 필수가 된 칸(`tiers.required` 에만 있는 칸)의
+      오류는 만지지 않아도 보인다.
     - `notes` — 칸 위 안내(가정 설비 시나리오·배치 잠금 — 새 호기의 자리), `propagateWarning` 은
       함께 넣기를 켰을 때 그 아래 한 줄(가정 세션 — 공식 가용대수에 셈).
     - `locked` — 이 세션이 새 호기를 막으면 그 까닭(칸 전체를 끈다).
@@ -1804,6 +1821,9 @@ class GridState:
     overlay: Mapping[str, str] = field(default_factory=dict)
     undo: tuple[UndoStep, ...] = ()
     loaded: tuple[str, ...] = ()
+    # 「새 호기」 칸 세션 초안 번호 — 그보다 작은 `draftSeq` 의 「호기 추가」 는 이미 넣었거나(두 번
+    # 누름) 가져오기·「호기 추가」 뒤 바뀐 초안의 것이라 버린다(개편 명세 6-4).
+    draft_seq: int = 0
 
 
 @dataclass(frozen=True)
@@ -1896,6 +1916,7 @@ class _Work:
     dropped: int = 0
     refused: int = 0
     added: list[tuple[str, str, bool]] = field(default_factory=list)
+    draft_seq: int = 0
 
     def index(self) -> GridIndex:
         return grid_index(self.master, self.saved[1], self.renames.units)
@@ -2717,14 +2738,27 @@ ADDED_OVERLAY_NOTE: Final = (
 )
 
 
+def draft_seq_of(op: Mapping[str, Any]) -> int:
+    """「호기 추가」 op 의 초안 번호(`draftSeq` — 없거나 꼴이 다르면 0)."""
+    seq = op.get("draftSeq")
+    return seq if isinstance(seq, int) and not isinstance(seq, bool) and seq > 0 else 0
+
+
 def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     """「호기 추가」(`{"op": "add", "draftSeq", "draft": [39칸 글], "propagate"}` — 개편 명세 4-6
     나). 받은 초안을 `new_unit_check` 로 다시 보고(업무 검증은 늘 파이썬) 막히면 넣지 않고 그 까닭을
     토스트로, 아니면 편집본 설비 마스터 **끝**에 한 줄을 잇고(행 차례는 공통 대장 내용 —
-    `_common_digest`) 불러온 목록 맨 위에 둔다."""
+    `_common_digest`) 불러온 목록 맨 위에 둔다.
+
+    `draftSeq` 가 세션 초안 번호(`GridState.draft_seq` — 넣을 때마다 그 번호 + 1 로 오른다)보다
+    작으면 말없이 버린다(개편 명세 6-4): 같은 초안을 두 번 누른 둘째 op 가 이름 겹침으로 거부되어
+    첫 op 의 성공 토스트·되돌리기를 덮지 않게, 가져오기 뒤 옛 초안이 들어가지 않게."""
     texts = draft_texts(op.get("draft"))
     if texts is None:
         work.refused += 1
+        return None
+    seq = draft_seq_of(op)
+    if seq < work.draft_seq:
         return None
     check = new_unit_check(
         texts,
@@ -2745,6 +2779,7 @@ def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     work.loaded = [row_id, *(item for item in work.loaded if item != row_id)]
     propagate = op.get("propagate") is True
     work.added.append((row_id, check.name, propagate))
+    work.draft_seq = max(work.draft_seq, seq + 1)
     text = ADDED_TOAST.format(
         name=with_object_particle(check.name), where=ADDED_SPREAD if propagate else ADDED_ALONE
     )
@@ -2814,6 +2849,7 @@ def apply_ops(
         undo=list(state.undo),
         loaded=list(state.loaded),
         context=context,
+        draft_seq=state.draft_seq,
     )
     for op in ops:
         if op.get("base") != context.base:

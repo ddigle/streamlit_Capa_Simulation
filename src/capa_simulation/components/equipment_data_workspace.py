@@ -847,6 +847,54 @@ def chosen_new_unit_counts(frames: Frames) -> tuple[int, int]:
     return sum(picked), len(picked) - sum(picked)
 
 
+# 가정 세션 저장 칸 아래 한 줄 꼬리(Q1 — Space 저장 상자 경고
+# `ASSUMPTION_PROPAGATE_WARNING` 과 같은 뜻).
+NEW_UNIT_OFFICIAL_COUNT_NOTE = (
+    "같은 일정으로 넣는 {count:,}대는 공식 설비 시나리오에 자리 없는 새 호기로 들어가 "
+    "공식 가용대수에 셉니다"
+)
+
+
+def new_unit_choice_line(frames: Frames, *, assumption: bool = False) -> str | None:
+    """저장 칸 아래 한 줄 — 「새 호기」 칸에서 넣은 호기 수와 그 고름(그 칸의 체크가 저장
+    칸 체크보다 이긴다, D8). 세 저장 자리(설비 마스터 탭 저장 구획·사이드바 설비 시나리오
+    팝업·Space 「저장 칸」)가 같은 글을 쓴다 — 저장 칸 체크를 끈 채 저장해도 그 칸에서 켠
+    호기는 다른 설비 시나리오에 들어가므로 어느 저장 자리에서나 미리 보인다. 가정
+    세션(`assumption`)이면 같은 일정으로 넣는 호기가 공식 가용대수에 센다는 꼬리를 붙인다
+    (Q1). 그 칸에서 넣은 호기가 편집본에 없으면 None."""
+    spread, alone = chosen_new_unit_counts(frames)
+    if not spread and not alone:
+        return None
+    text = (
+        f":material/library_add: 「새 호기」 칸에서 넣은 {spread + alone:,}대는 그 칸의 체크를 "
+        f"따릅니다 — 다른 설비 시나리오에 같은 일정으로 {spread:,}대 · 일정 없음 {alone:,}대"
+    )
+    if assumption and spread:
+        text += f" · {NEW_UNIT_OFFICIAL_COUNT_NOTE.format(count=spread)}"
+    return text
+
+
+def prune_new_unit_propagation() -> None:
+    """「새 호기」 칸에서 고른 함께 넣기 가운데 편집본에 그 새 호기가 더는 없는 이름을
+    걷는다 — 토스트 「되돌리기」·한 단계 되돌리기·지우기·호기 되돌리기·엑셀·CSV 넣기·Space
+    적용으로 그 호기가 빠지면 고름도 빠진다. 같은 이름이 다른 길(붙여넣기·엑셀·CSV·Space)로
+    다시 들면 저장 칸 체크를 따른다(D8). 다시 되돌려 그 호기가 돌아와도 고름은 돌아오지
+    않는다(저장 칸 체크 — 저장 구획 한 줄이 그 수를 적어 보인다). 이름 바꿈을 따라간
+    **뒤**에 부른다(`follow_unit_renames` — 먼저 부르면 옛 이름의 고름이 걷힌다)."""
+    choices = new_unit_propagation()
+    if not choices:
+        return
+    buffer = st.session_state.get(BUFFER_KEY)
+    fresh = set(_new_unit_names(buffer[1])) if isinstance(buffer, tuple) else set()
+    kept = {name: flag for name, flag in choices.items() if name in fresh}
+    if kept == choices:
+        return
+    if kept:
+        st.session_state[NEW_UNIT_PROPAGATE_KEY] = kept
+    else:
+        st.session_state.pop(NEW_UNIT_PROPAGATE_KEY, None)
+
+
 def _new_unit_names(master: pd.DataFrame) -> list[str]:
     """편집본 설비 마스터의 새 호기 이름(저장의 호기 키 규칙으로 저장본 호기를 잇지 않는 것)."""
     if EQUIPMENT_ID_COLUMN not in master.columns:

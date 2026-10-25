@@ -57,6 +57,7 @@ from capa_simulation.components.equipment_data_workspace import (
     layout_paste_refusal,
     paste_split_summary,
     pending_unit_renames,
+    prune_new_unit_propagation,
     queue_grid_toast,
     replace_equipment_buffer,
     stale_paste_refusal,
@@ -225,7 +226,8 @@ def _loaded() -> tuple[str, ...]:
 
 def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "official") -> str:
     """미리본 후보를 편집본에 넣는다(저장하지 않는다) — 편집본 세 표 통째 바꿈, 새로 든 설비명은 표
-    목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움. 돌려주는 글은 표 토스트다.
+    목록 맨 위(상한 안), 되돌리기 통째 단계 하나, 칸 초안 비움, 빠진 「새 호기」 칸 호기의 함께 넣기
+    고름 걷기. 돌려주는 글은 표 토스트다.
 
     넣은 편집본에 배치 편집(있던 호기 배치 칸·새 호기 자리)이 있으면 그때의 역할(`layout_mode`)을
     찍는다 — 넣고 나중에 「리비전 저장」 하므로, 그 사이 역할이 바뀌면(남이 그 가정 시나리오를
@@ -243,6 +245,9 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     )
     before = set(grid_index(frames[1], saved, renames.units).ids)
     replace_equipment_buffer(review.candidate)
+    # 넣은 편집본에서 빠진 「새 호기」 칸 호기의 함께 넣기 고름을 걷는다(같은 이름이 이 넣기로 다시
+    # 들면 저장 칸 체크를 따른다 — D8).
+    prune_new_unit_propagation()
     st.session_state.pop(GRID_OVERLAY_KEY, None)
     st.session_state[GRID_UNDO_KEY] = undo_to_state((step,))
     if layout_mode != "locked" and buffer_has_layout_edits():

@@ -17,15 +17,17 @@ import pandas as pd
 import pytest
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
-from test_equipment_assumption_rawdata import _two_scenarios
+from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_equipment_scenario_repository import _request, _scenario, _session, _set
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_GENERATION_KEY,
     BUFFER_KEY,
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
+    LAYOUT_ROLE_KEY,
     NEW_UNIT_DRAFT_KEY,
     NEW_UNIT_PROPAGATE_KEY,
     SAVE_FIELDS_PREFIX,
@@ -44,6 +46,7 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 from capa_simulation.services import equipment_grid as eg
 
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+SPACE_PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
 OPERATIONS = "operations"
 NEW_KEY = emg.side_key("new")
 
@@ -104,15 +107,58 @@ def _send_draft(app: AppTest, values: list[str], *, seq: int, propagate: bool = 
     return _ok(send(app, NEW_KEY, "draft", {"seq": seq, "values": values, "propagate": propagate}))
 
 
-def _add(app: AppTest, grid: Calls, values: list[str], *, propagate: bool = True) -> AppTest:
+def _add(
+    app: AppTest,
+    grid: Calls,
+    values: list[str],
+    *,
+    propagate: bool = True,
+    draft_seq: int | None = None,
+) -> AppTest:
+    """「호기 추가」 op — 초안 번호는 브라우저처럼 세션 초안 번호를 따른다(처음은 5, 넣은 뒤에는
+    파이썬이 올린 번호). `draft_seq` 를 주면 그 번호(두 번 누름처럼 옛 번호)."""
+    if draft_seq is None:
+        session = (
+            app.session_state[NEW_UNIT_DRAFT_KEY] if NEW_UNIT_DRAFT_KEY in app.session_state else {}
+        )
+        draft_seq = max(5, int(session.get("seq", 0)))
     return _ok(
         send_ops(
             app,
             grid,
-            {"op": "add", "draftSeq": 5, "draft": values, "propagate": propagate},
+            {"op": "add", "draftSeq": draft_seq, "draft": values, "propagate": propagate},
             key=NEW_KEY,
         )
     )
+
+
+def _enter_elsewhere(app: AppTest, name: str, *, move: str | None = None) -> None:
+    """설비 마스터 탭 밖의 길(엑셀·CSV 넣기·Space 새 호기)로 든 새 호기 — 첫 호기를 본뜬 한 줄을
+    자리 없이 편집본에 잇고 편집본 세대를 올린다(`replace_equipment_buffer` 와 같은 세대 규칙).
+    `move` 를 주면 그 있던 호기의 X좌표도 옮긴다(Space 저장 상자가 서는 배치 변경)."""
+    frames = app.session_state[BUFFER_KEY]
+    master = _with_copy_of_first(frames[1], name)
+    if move is not None:
+        master.loc[master["설비명"].eq(move), "X좌표"] = 70.0
+    app.session_state[BUFFER_KEY] = (frames[0], master, frames[2])
+    generation = (
+        app.session_state[BUFFER_GENERATION_KEY]
+        if BUFFER_GENERATION_KEY in app.session_state
+        else 0
+    )
+    app.session_state[BUFFER_GENERATION_KEY] = int(generation) + 1
+
+
+def _with_copy_of_first(master: pd.DataFrame, name: str) -> pd.DataFrame:
+    """첫 호기를 본뜬 새 호기 한 줄(자리 없이)을 끝에 이은 사본 — 칸 dtype 그대로."""
+    grown = master.reindex(range(len(master) + 1))
+    end = len(master)
+    for column in master.columns:
+        grown.at[end, column] = master.iloc[0][column]
+    grown.at[end, "설비명"] = name
+    for column in ("동", "층", "X좌표", "Y좌표"):
+        grown.at[end, column] = None
+    return grown.astype(master.dtypes.to_dict())
 
 
 def _save(app: AppTest, *, spread: bool | None = None) -> AppTest:
@@ -349,3 +395,234 @@ def test_a_new_unit_saved_in_an_assumption_session_has_no_official_place(
     mine = _session(repository, setup).equipment.set_index("설비명")
     assert pd.isna(official.loc["EQ-09", "동"]) and pd.isna(official.loc["EQ-09", "층"])
     assert (mine.loc["EQ-09", "동"], mine.loc["EQ-09", "층"]) == ("C2", "3F")
+
+
+def test_adding_a_unit_stamps_the_layout_role_of_the_session(tmp_path: Path, grid: Calls) -> None:
+    """새 호기 자리(동·층·레이아웃표시)는 배치 편집이다 — 「호기 추가」 도 붙여넣기 새 행·엑셀·CSV
+    넣기처럼 그때의 역할을 찍는다(설계 6-2). 그래야 넣은 뒤 저장 전에 공식 설비 시나리오가 바뀌면
+    화면 잠금·저장소 대조가 선다(가정 세션의 자리가 공식 대장으로 새지 않게 — Q1)."""
+    repository, setup = _two_scenarios(tmp_path)
+    mine = _page(repository, setup)
+    mine.session_state[SIDE_KEY] = SIDE_NEW
+    _ok(mine.run())
+    assert LAYOUT_ROLE_KEY not in mine.session_state
+
+    _add(mine, grid, _draft(설비명="EQ-09", 공정소분류="Process-A", 동="C2", 층="3F"))
+
+    assert mine.session_state[LAYOUT_ROLE_KEY] == "overlay"
+    official = _page(repository, OPERATIONS)
+    _open_new(official)
+    _add(official, grid, _draft(설비명="EQ-09", 공정소분류="Process-A", 동="C2", 층="3F"))
+    assert official.session_state[LAYOUT_ROLE_KEY] == "official"
+
+
+def test_a_second_add_in_a_later_run_is_dropped_and_keeps_the_kept_draft(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """두 번 누른 「호기 추가」 의 둘째 op 가 다음 회차에 따로 와도(같은 `draftSeq`, 「새 호기」
+    칸이 아직 서 있음) 말없이 버린다 — 「아직 추가할 수 없습니다」 토스트도, 넣은 뒤 남긴
+    초안(공정·동·층)을 옛 초안 전부로 같은 번호에 덮는 것도 없다(다시 열면 「이미 있는 호기」
+    오류가 서던 길)."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _open_new(app)
+    values = _draft(설비명="EQ-09", 공정소분류="Process-A", 동="C2", 층="3F")
+    _add(app, grid, values, draft_seq=5)
+    assert last(grid, emg.side_key("detail"))["toast"]["undo"]
+    kept = dict(app.session_state[NEW_UNIT_DRAFT_KEY])
+    before = len(app.session_state[BUFFER_KEY][1])
+    app.session_state[SIDE_KEY] = SIDE_NEW
+    _ok(app.run())
+
+    _add(app, grid, values, draft_seq=5)
+
+    assert len(app.session_state[BUFFER_KEY][1]) == before
+    assert app.session_state[NEW_UNIT_DRAFT_KEY] == kept
+    panel = _panel(grid)
+    assert panel["toast"] is None
+    assert panel["draft"]["values"][eg.NAME_INDEX] == ""
+    assert str(eg.NAME_INDEX) not in panel["errors"] or "이미 있는" not in str(panel["errors"])
+
+
+def test_an_undone_panel_unit_drops_its_choice_and_a_unit_entered_elsewhere_follows_the_box(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """토스트 「되돌리기」 로 뺀 새 호기의 함께 넣기 고름은 걷힌다 — 같은 이름이 다른 길로 다시
+    들면 저장 칸 체크를 따른다(사양 「붙여넣기·Space 로 든 새 호기는 저장 칸 체크」)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _open_new(app)
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=False)
+    step = last(grid, emg.side_key("detail"))["toast"]["undo"]
+
+    send_ops(app, grid, {"op": "undo", "step": step}, key=emg.side_key("detail"))
+
+    assert "EQ-09" not in app.session_state[BUFFER_KEY][1]["설비명"].tolist()
+    assert NEW_UNIT_PROPAGATE_KEY not in app.session_state
+    _enter_elsewhere(app, "EQ-09")
+    _save(app, spread=True)
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    other = _session(repository, setup)
+    assert "EQ-09" in other.equipment["설비명"].tolist()
+    assert "EQ-09" not in other.unscheduled_units
+
+
+def test_the_panel_choice_wins_over_the_box_and_other_new_units_follow_the_box(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """저장 칸 함께 넣기를 켠 채 — 「새 호기」 칸에서 끈 호기는 일정 없음(칸이 이김), 그 칸
+    밖에서 든 새 호기는 저장 칸 체크대로 같은 일정으로 들어간다(D8 섞임, 탭 단)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _open_new(app)
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=False)
+    _enter_elsewhere(app, "EQ-08")
+
+    _save(app, spread=True)
+
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    other = _session(repository, setup)
+    assert other.unscheduled_units == frozenset({"EQ-09"})
+    assert "EQ-08" in other.equipment["설비명"].tolist()
+
+
+def test_a_module_added_in_an_assumption_session_takes_its_groups_floor_officially(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """설계 Q1 — 가정 설비 시나리오의 「새 호기」 칸으로 있는 묶음에 드는 모듈을 넣으면 공식
+    배치(공통 대장)에는 좌표 없이 그 묶음의 동·층으로 들어간다(비모듈 새 호기는 자리 없이 — 위
+    시험). 좌표·크기는 묶음 몫이라 칸에서 잠긴다."""
+    repository, setup = _grouped_fleet(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[GRID_DETAIL_KEY] = "s:MOD-1A"
+    _ok(app.run())
+    _ok(send(app, emg.side_key("detail"), "copy", {"id": "s:MOD-1A"}))
+    values = list(_panel(grid)["draft"]["values"])
+    values[eg.NAME_INDEX] = "MOD-1E"
+    values[eg.COLUMN_INDEX["Main 설비"]] = "MOD-1"
+    _send_draft(app, values, seq=_panel(grid)["draft"]["seq"] + 1)
+    panel = _panel(grid)
+    assert not panel["blocked"], panel["errors"]
+    assert {eg.COLUMN_INDEX[c] for c in ("X좌표", "Y좌표", "Xsize", "Ysize")} <= {
+        int(k) for k in panel["locks"]
+    }
+
+    _add(app, grid, values)
+    _save(app)
+
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    official = _session(repository, OPERATIONS).equipment.set_index("설비명")
+    mine = _session(repository, setup).equipment.set_index("설비명")
+    group = (official.loc["MOD-1A", "동"], official.loc["MOD-1A", "층"])
+    assert (official.loc["MOD-1E", "동"], official.loc["MOD-1E", "층"]) == group
+    assert pd.isna(official.loc["MOD-1E", "X좌표"]) and pd.isna(official.loc["MOD-1E", "Y좌표"])
+    assert (mine.loc["MOD-1E", "동"], mine.loc["MOD-1E", "층"]) == group
+
+
+def test_making_a_unit_from_a_vanished_detail_says_so_with_the_right_particle(
+    tmp_path: Path, grid: Calls
+) -> None:
+    repository, _ = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    app.session_state[GRID_DETAIL_KEY] = "s:EQ-01"
+    _ok(app.run())
+
+    _ok(send(app, emg.side_key("detail"), "copy", {"id": "s:EQ-99"}))
+
+    assert last(grid, emg.side_key("detail"))["toast"]["text"] == "그 호기를 찾지 못했습니다"
+
+
+def test_the_assumption_save_section_says_panel_spread_units_count_officially(
+    tmp_path: Path, grid: Calls
+) -> None:
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[SIDE_KEY] = SIDE_NEW
+    _ok(app.run())
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=True)
+
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+
+    assert any(
+        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다 — 다른 설비 시나리오에 같은 "
+        "일정으로 1대 · 일정 없음 0대 · 같은 일정으로 넣는 1대는 공식 설비 시나리오에"
+        in str(item.value)
+        for item in app.caption
+    )
+
+
+def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:
+    """Space 「저장 칸」 도 같은 한 줄 — 가정 세션은 저장 칸 함께 넣기가 기본 끔이라(Q1) 「새 호기」
+    칸에서 켠 호기가 공식에 든다는 것을 저장 전에 보인다."""
+    repository, setup = _two_scenarios(tmp_path)
+    clear_equipment_repository()
+    app = AppTest.from_string(
+        _page_script(SPACE_PAGE, repository.database_path), default_timeout=90
+    )
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    _ok(app.run())
+    _enter_elsewhere(app, "EQ-09", move="EQ-02")
+    app.session_state[NEW_UNIT_PROPAGATE_KEY] = {"EQ-09": True}
+
+    _ok(app.run())
+
+    captions = [str(item.value) for item in app.caption]
+    assert any(
+        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다" in text
+        and "공식 가용대수에 셉니다" in text
+        for text in captions
+    ), captions
+
+
+def _popup_with_panel_unit(database: str) -> None:
+    """설비 화면 한 회차 + 사이드바 설비 시나리오 팝업 본문 — 처음 한 번 「새 호기」 칸에서 넣은
+    것처럼 새 호기 하나와 그 고름(끔)을 둔다."""
+    from pathlib import Path
+
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        ensure_equipment_drafts,
+        remember_new_unit_propagation,
+        replace_equipment_buffer,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+    )
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    session = resolve_equipment_session(database)
+    frames = ensure_equipment_drafts(session.snapshot)
+    if not st.session_state.get("added"):
+        master = frames[1].reindex(range(len(frames[1]) + 1))
+        for column in frames[1].columns:
+            master.at[len(frames[1]), column] = frames[1].iloc[0][column]
+        master.at[len(frames[1]), "설비명"] = "EQ-09"
+        master = master.astype(frames[1].dtypes.to_dict())
+        replace_equipment_buffer((frames[0], master, frames[2]))
+        remember_new_unit_propagation("EQ-09", False)
+        st.session_state["added"] = True
+    render_equipment_scenario_dialog_body(Path(database), page_file="available_equipment_status.py")
+
+
+def test_the_sidebar_popup_save_shows_the_panel_choice_line(tmp_path: Path) -> None:
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_MODE,
+    )
+
+    repository, _ = _two_scenarios(tmp_path)
+    app = AppTest.from_function(
+        _popup_with_panel_unit, args=(str(repository.database_path),), default_timeout=60
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    _ok(app.run())
+
+    assert any(
+        "「새 호기」 칸에서 넣은 1대는 그 칸의 체크를 따릅니다 — 다른 설비 시나리오에 같은 "
+        "일정으로 0대 · 일정 없음 1대" == str(item.value).split(":material/library_add: ")[-1]
+        for item in app.caption
+    ), [str(item.value) for item in app.caption]

@@ -120,17 +120,10 @@ def test_name_and_process_are_enough_to_add_without_errors() -> None:
     assert check.hint.startswith("추가할 수 있습니다 — 반입일정·Qual일정·사용기준 칸이")
 
 
-def test_the_capacity_tier_needs_dates_usage_hbm_or_edp_and_qual_status_when_dated() -> None:
+def test_the_capacity_tier_needs_dates_and_usage_hbm_or_edp() -> None:
     check = _check(_valid(반입일정="2026-11-02", Qual일정="2026-11-20", 사용기준="hbm"))
 
-    assert check.calc == (
-        ("반입일정", True),
-        ("Qual일정", True),
-        ("사용기준", True),
-        ("Qual상태", False),
-    )
-    # Qual일정이 있는 신규 호기는 Qual상태가 필수(저장 규칙 그대로) — 그래서 막힌다.
-    assert check.blocked and "Qual상태" in check.errors
+    assert check.calc == (("반입일정", True), ("Qual일정", True), ("사용기준", True))
     done = _check(
         _valid(반입일정="2026-11-02", Qual일정="2026-11-20", 사용기준="EDP", Qual상태="계획")
     )
@@ -138,10 +131,38 @@ def test_the_capacity_tier_needs_dates_usage_hbm_or_edp_and_qual_status_when_dat
     assert done.hint == "추가할 수 있습니다"
     other = _check(_valid(반입일정="2026-11-02", 사용기준="HBM3E"))
     assert dict(other.calc)["사용기준"] is False
+
+
+def test_a_qual_date_makes_qual_status_required_to_add_without_errors() -> None:
+    """Qual일정이 있는 신규 호기(보관 N·기존설비 N)는 Qual상태가 필수다(저장 규칙 그대로) — 「에러
+    없이 추가하려면」 줄에 서야 막대가 다 찬 채 「호기 추가」 가 막히지 않는다(사용자 요구)."""
+    check = _check(_valid(Qual일정="2026-11-20"))
+
+    assert check.blocked and "Qual상태" in check.errors
+    assert check.required == (("설비명", True), ("공정소분류", True), ("Qual상태", False))
+    assert "Qual상태" not in dict(check.calc)
+    # 채워도 그 줄에 남아 ✓ 로 선다.
+    filled = _check(_valid(Qual일정="2026-11-20", Qual상태="계획"))
+    assert filled.required[-1] == ("Qual상태", True) and not filled.blocked
     # 기존설비는 Qual상태가 필수가 아니다(저장 규칙의 신규 호기만).
     existing = _check(_valid(Qual일정="2026-11-20", 기존설비여부="Y"))
-    assert [column for column, _ in existing.calc] == ["반입일정", "Qual일정", "사용기준"]
+    assert [column for column, _ in existing.required] == ["설비명", "공정소분류"]
     assert not existing.blocked
+
+
+def test_an_empty_cell_that_other_values_block_joins_the_required_line() -> None:
+    """좌표를 넣었는데 크기가 비면 저장 규칙이 그 빈 칸에 오류를 건다 — 그 칸도 「에러 없이
+    추가하려면」 줄에 선다(막는 오류가 숨은 빈 칸에 남지 않게)."""
+    check = _check(_valid(동="C1", 층="1F", X좌표="3", Y좌표="4"))
+
+    assert check.blocked and "Xsize" in check.errors
+    assert ("Xsize", False) in check.required
+    sized = _check(_valid(동="C1", 층="1F", X좌표="3", Y좌표="4", Xsize="12", Ysize="7"))
+    assert not sized.blocked
+    assert [column for column, _ in sized.required] == ["설비명", "공정소분류"]
+    # 값이 있는 칸의 오류(날짜 꼴)는 그 칸에서 보인다 — 줄에 올리지 않는다.
+    bad = _check(_valid(반입일정="2026-13-45"))
+    assert "반입일정" in bad.errors and "반입일정" not in dict(bad.required)
 
 
 def test_the_map_tier_is_floor_and_building_and_goes_away_when_not_drawn() -> None:
@@ -169,6 +190,20 @@ def test_cell_errors_come_from_the_same_rules_as_saving() -> None:
         pass
     else:  # pragma: no cover - 저장이 받으면 규칙이 갈린 것이다
         raise AssertionError("저장이 받은 초안을 칸 판정이 막았다")
+
+
+def test_a_name_left_only_in_downtime_cannot_be_a_new_unit_name() -> None:
+    """고아 비가동(설비 마스터에 없는 이름의 비가동 줄 — `reserved_names`)의 이름은 새 호기로 쓸 수
+    없다(Space 새 호기와 같은 규칙)."""
+    state = _state()
+    downtime = state.frames[2].copy()
+    downtime.loc[0, "설비명"] = "ORPHAN-01"
+    orphan = eg.GridState(frames=(state.frames[0], state.frames[1], downtime), saved=state.saved)
+
+    check = _check(_draft(설비명="ORPHAN-01", 공정소분류="TC Bonding"), orphan)
+
+    assert check.blocked and "ORPHAN-01" in check.errors["설비명"]
+    assert "비가동" in check.errors["설비명"]
 
 
 def test_name_rules_follow_space_new_units() -> None:
@@ -365,7 +400,42 @@ def test_an_add_from_an_old_base_is_dropped() -> None:
     op: dict[str, Any] = {"seq": 1, "base": "old#0", "op": "add", "draft": _valid()}
     result = eg.apply_ops(_state(), [op], CONTEXT)
 
-    assert result.dropped == 1 and not result.changed
+    assert result.dropped == 1 and not result.changed and result.added == ()
+    # 같은 op 가 지금 base 면 들어간다 — 버린 것은 base 때문이다.
+    fresh = eg.apply_ops(_state(), [{**op, "base": BASE}], CONTEXT)
+    assert fresh.dropped == 0 and fresh.added == (("n:NEW-01", "NEW-01", False),)
+
+
+def test_pressing_add_twice_keeps_the_first_success_toast_and_its_undo() -> None:
+    """같은 초안·같은 `draftSeq` 의 「호기 추가」 둘(두 번 누름 — 브라우저 단추는 회차가 돌아올
+    때까지 켜져 있다)은 한 번 넣고 둘째는 말없이 버린다(개편 명세 6-4) — 둘째가 이름 겹침으로
+    거부되어 성공 토스트·되돌리기를 덮지 않는다."""
+    draft = _valid()
+    ops = [
+        {"seq": seq, "mount": "m", "base": BASE, "op": "add", "draftSeq": 5, "draft": draft}
+        for seq in (1, 2)
+    ]
+
+    result = eg.apply_ops(_state(), ops, CONTEXT)
+
+    assert result.added == (("n:NEW-01", "NEW-01", False),) and result.refused == 0
+    assert result.toast is not None and result.toast.startswith("NEW-01을 표 맨 위에 넣었습니다")
+    assert result.toast_step == "m#1"
+
+
+def test_an_add_behind_the_session_draft_is_dropped_quietly() -> None:
+    """세션 초안 번호(`GridState.draft_seq` — 넣은 뒤·가져오기 뒤 오른다)보다 작은 `draftSeq` 의
+    「호기 추가」 는 다음 회차에 따로 와도 넣지 않고 알리지도 않는다. 같거나 크면(브라우저가 앞선
+    초안) 받는다."""
+    state = _state()
+    behind = eg.GridState(frames=state.frames, saved=state.saved, draft_seq=6)
+    op: dict[str, Any] = {"seq": 1, "base": BASE, "op": "add", "draftSeq": 5, "draft": _valid()}
+
+    dropped = eg.apply_ops(behind, [op], CONTEXT)
+    taken = eg.apply_ops(behind, [{**op, "draftSeq": 6}], CONTEXT)
+
+    assert not dropped.changed and dropped.refused == 0 and dropped.toast is None
+    assert taken.added == (("n:NEW-01", "NEW-01", False),)
 
 
 def test_adding_in_an_assumption_session_says_the_official_layout_stays_empty() -> None:
@@ -416,8 +486,15 @@ def test_the_panel_payload_carries_tiers_errors_and_locks_by_contract_position()
     assert payload["tiers"]["required"] == [
         [eg.COLUMN_INDEX["설비명"], True],
         [eg.COLUMN_INDEX["공정소분류"], True],
+        [eg.COLUMN_INDEX["Qual상태"], False],
     ]
-    assert [k for k, _ in payload["tiers"]["calc"]][-1] == eg.COLUMN_INDEX["Qual상태"]
+    # 늘 필수인 칸(브라우저가 「호기 추가」 를 켜고 만진 표지를 주는 칸)은 그대로다 — 조건부 필수
+    # 칸의 오류는 만지지 않아도 보인다.
+    assert payload["required"] == [
+        eg.COLUMN_INDEX[c]
+        for c in ("설비명", "공정소분류", "보관유무", "기존설비여부", "레이아웃표시")
+    ]
+    assert [k for k, _ in payload["tiers"]["calc"]][-1] == eg.COLUMN_INDEX["사용기준"]
     assert payload["blocked"] is True and payload["locked"] is None
     assert payload["notes"] == ["메모"] and payload["propagateWarning"] == "경고"
     assert len(payload["draft"]["values"]) == len(EQUIPMENT_COLUMNS)

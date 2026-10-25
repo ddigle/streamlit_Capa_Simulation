@@ -40,6 +40,7 @@ from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     Frames,
     has_unsaved_equipment_edits,
+    new_unit_choice_line,
     pending_fab_layout,
     pending_unit_renames,
     save_equipment_buffer,
@@ -549,6 +550,11 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         counts=save_candidate_counts(buffer, st.session_state.get(EQUIPMENT_DRAFT_KEY)),
         release_exists=basis.release_no > 0,
     )
+    with st.container():
+        # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8).
+        line = new_unit_choice_line(buffer, assumption=not basis.official_scenario)
+        if line is not None:
+            st.caption(line)
     clicked = st.button(
         "설비 데이터 저장",
         icon=":material/save:",

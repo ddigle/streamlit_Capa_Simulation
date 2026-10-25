@@ -442,6 +442,15 @@ const results = {
     canAdd(['A', 'B'], [0, 1], true, false, null),
     canAdd(['A', 'B'], [0, 1], false, true, '잠김'),
   ],
+  error: [
+    showsError(true, true, '', false, true),
+    showsError(true, true, 'x', false, true),
+    showsError(true, true, '', true, true),
+    showsError(true, true, '', false, false),
+    showsError(true, false, 'x', true, false),
+    showsError(false, true, 'x', true, false),
+  ],
+  reveal: [needsReveal(-1104, 72), needsReveal(40, 72), needsReveal(300, 72)],
 }
 process.stdout.write(JSON.stringify(results))
 """
@@ -460,3 +469,35 @@ def test_the_new_unit_draft_section_adopts_newer_drafts_and_gates_the_add_button
     assert result["bump"] == [5, 10]
     assert result["tier"] == [True, False, True, False]
     assert result["add"] == [True, False, False, True, False]
+
+
+def test_new_unit_errors_on_cells_other_values_require_show_before_touching() -> None:
+    """칸 오류는 판정이 지금 초안의 것일 때만, 값이 있거나 만졌을 때 — 다만 늘 필수인
+    칸(설비명·공정소분류·Y/N 셋)이 아니면(Qual일정이 있는 신규 호기의 Qual상태, 좌표가 있는데
+    빈 크기) 만지지 않아도 보인다(막는 오류가 빈 칸에 숨어 꺼진 「호기 추가」 의 까닭을 못 찾던
+    길). 화면 위로 나간 토스트는 칸 머리를 보인다(`needsReveal` — 머리 띠 높이 아래면 그대로)."""
+    result = _node({}, _NEW_RUNNER)
+
+    assert result["error"] == [False, True, True, True, False, False]
+    assert result["reveal"] == [True, True, False]
+
+
+def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed() -> None:
+    """칩·함께 넣기 체크·「양식 비우기」 는 칸을 다시 그려도 초점이 돌아온다(data-fk — 키보드로
+    채우다 칸 처음으로 가지 않게). 상세 칩도 회차가 돌아와 다시 그려도 같다. 오른쪽 칸 새 토스트가
+    화면 위로 나갔으면 칸 머리를 보인다(「호기 추가」 뒤 상세·가져오기 뒤 새 호기 칸)."""
+    assert "chip.dataset.fk = 'n' + k + '=' + option" in JS
+    assert "chip.dataset.fk = 'f' + k + '=' + value" in JS
+    assert "box.dataset.fk = 'propagate'" in JS
+    assert "reset.dataset.fk = 'reset'" in JS
+    assert "if (fresh) revealToast(toast)" in JS
+    assert "(first || Boolean(data.toast.undo))" in JS
+    assert re.search(r"\.emg-toast\s*\{[^}]*scroll-margin-top:\s*80px", CSS)
+
+
+def test_the_narrow_check_head_rule_outranks_the_wide_one() -> None:
+    """좁은 화면 체크 줄 머리(한 줄 차지)는 넓은 규칙(116px)보다 특정도가 높아야 한다 — 미디어
+    규칙이 파일 앞에 있어 같은 선택자면 뒤의 넓은 규칙이 이긴다."""
+    narrow = CSS.split("@media (max-width: 640px)", 1)[1].split("\n}\n", 1)[0]
+    assert re.search(r"\.emg-check-row \.emg-check-head\s*\{\s*flex:\s*0 0 100%", narrow)
+    assert re.search(r"\n\.emg-check-head\s*\{\s*flex:\s*0 0 116px", CSS)

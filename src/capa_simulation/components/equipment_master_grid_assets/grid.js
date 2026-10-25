@@ -1,8 +1,10 @@
 // 설비 마스터 표 — 가용설비 현황 「설비 마스터」 탭의 Components v2. 한 등록을 세 자리(data.mode)에 마운트한다:
-// loader(불러오기) · grid(표) · side(오른쪽 칸 — 호기 상세 / 저장 전 변경).
-// 편집본을 바꾸는 조작은 모두 상태 값 `outbox` 로 보낸다(반영되지 않은 조작 전부, mount·seq). 잃어도 되는 화면 조작만
-// 트리거다. 업무 검증은 파이썬이 한다 — 여기는 data 가 준 잠금·고를 값·자리 계산만 안다. 데이터 글은 textContent 로만
-// 넣고 innerHTML 은 고정 아이콘에만 쓴다. 아래 `// <grid-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다.
+// loader(불러오기) · grid(표) · side(오른쪽 칸 — data.panel 로 호기 상세 / 새 호기 / 저장 전 변경).
+// 편집본을 바꾸는 조작은 모두 상태 값 `outbox` 로 보낸다(반영되지 않은 조작 전부, mount·seq — 「호기 추가」 도 `add`
+// op). 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — 확정마다 번호를 올려 39칸 전부) 하나다.
+// 잃어도 되는 화면 조작만 트리거다(불러오기 load·clear·new·dialog, 표 open·unload, 오른쪽 칸 open·goto·copy). 업무
+// 검증은 파이썬이 한다 — 여기는 data 가 준 잠금·고를 값·자리 계산만 안다. 데이터 글은 textContent 로만 넣고
+// innerHTML 은 고정 아이콘에만 쓴다. 아래 `// <grid-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다.
 
 // <grid-paste>
 // 붙인 글을 칸 판으로. 끝 줄바꿈 하나는 떼고 \r 은 버린다. 탭·줄바꿈이 없으면(한 칸) null — 보통 붙여넣기다.
@@ -262,6 +264,19 @@ function canAdd(values, required, blocked, fresh, locked) {
   if (locked) return false
   if (!required.every((k) => String(values[k] || '').trim() !== '')) return false
   return !(fresh && blocked)
+}
+
+// 새 호기 칸 오류를 보일까 — 판정이 지금 초안의 것이고, 값이 있거나 만졌거나, 늘 필수인 칸(설비명·공정소분류·Y/N 셋 —
+// 처음 연 빈 양식을 빨갛게 칠하지 않게 만지기 전에는 굵은 테만)이 아니면. 다른 칸 값 때문에 막는 칸(Qual일정이 있는
+// 신규 호기의 Qual상태, 좌표가 있는데 빈 크기 등)은 만지지 않아도 까닭을 보인다.
+function showsError(hasError, fresh, value, touched, base) {
+  if (!hasError || !fresh) return false
+  return String(value || '').trim() !== '' || touched || !base
+}
+
+// 토스트 머리가 화면 위로 나갔는가(`top` — getBoundingClientRect, `margin` — 앱 머리 띠가 가리는 높이).
+function needsReveal(top, margin) {
+  return Number(top) < Number(margin || 0)
 }
 // </grid-new>
 
@@ -1720,16 +1735,33 @@ function drawSide(host, S, data) {
   toast.setAttribute('role', 'status')
   root.appendChild(toast)
   S.repaintToast = () => fillToast(S, toast, S.data && S.data.toast)
+  const seen = S.lastToast
+  const first = !S.sideDrawn
+  S.sideDrawn = true
   S.repaintToast()
+  // 새 토스트 가운데 이 칸이 처음 선 회차(「호기 추가」 → 상세, 가져오기 → 새 호기 칸)의 것과 「되돌리기」 가 달린 것(지우기 등)만 —
+  // 칸 안에서 고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게.
+  const fresh = Boolean(data.toast) && data.toast.id !== seen && !toast.hidden && (first || Boolean(data.toast.undo))
   if (data.panel === 'changes') drawChanges(S, root, data)
   else if (data.panel === 'new') drawNew(S, root, data)
   else drawDetail(S, root, data)
   S.painting = false
   restoreFocus(host, saved)
+  // 칸 아래쪽에서 누른 조작(「호기 추가」 → 상세, 「이 호기로 새 호기 만들기」 → 새 호기 칸, 「이 호기 지우기」)의 새
+  // 토스트가 화면 위로 나가 있으면 칸 머리를 보인다 — 알림·되돌리기가 보이지 않으면 아무 일도 없었던 것으로 읽힌다.
+  if (fresh) revealToast(toast)
   if (!S.sideBound) {
     S.sideBound = true
     listen(S, host, 'keydown', stopKeys)
   }
+}
+
+function revealToast(toast) {
+  const frame = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (fn) => setTimeout(fn, 0)
+  frame(() => {
+    if (!toast.isConnected || toast.hidden) return
+    if (needsReveal(toast.getBoundingClientRect().top, TOAST_REVEAL_MARGIN)) toast.scrollIntoView({ block: 'start' })
+  })
 }
 
 function drawDetail(S, root, data) {
@@ -1829,6 +1861,8 @@ function drawDetail(S, root, data) {
 // ---------------------------------------------------------------- side — 새 호기
 
 const NEW_TIERS = [['required', '에러 없이 추가하려면'], ['calc', '가용대수에 세려면'], ['map', '도면에 놓으려면']]
+// 화면 위 머리 띠(Streamlit 머리·화면 탭 줄)가 가리는 높이 — 이보다 위에 있는 토스트는 보이지 않는 것으로 친다.
+const TOAST_REVEAL_MARGIN = 72
 const TIER_TAGS = { required: '필수', calc: '가용대수', map: '도면' }
 
 function drawNew(S, root, data) {
@@ -1856,6 +1890,7 @@ function drawNew(S, root, data) {
   const warns = data.warns || {}
   const tiers = data.tiers || {}
   const required = (Array.isArray(data.required) ? data.required : []).map(Number)
+  const base = new Set(required)
   // 칸 자리 → (체크 상자 줄, 파이썬 판정). Y/N 셋은 「필수」 표지로 그린다.
   const tierOf = new Map()
   for (const [name] of NEW_TIERS) for (const [k, ok] of tiers[name] || []) if (!tierOf.has(Number(k))) tierOf.set(Number(k), [name, ok])
@@ -1929,7 +1964,7 @@ function drawNew(S, root, data) {
         tier: tier ? tier[0] : null,
         ok: tier ? done([k, tier[1]]) : false,
         error: errors[k], warn: warns[k], lock: locks[k],
-        fresh: fresh && !S.ndDirty.has(k),
+        fresh: fresh && !S.ndDirty.has(k), base: base.has(k),
       }))
     }
     box.appendChild(fields)
@@ -1939,6 +1974,7 @@ function drawNew(S, root, data) {
   const spread = el('label', 'emg-checkline')
   const box = el('input')
   box.type = 'checkbox'
+  box.dataset.fk = 'propagate'
   box.checked = Boolean(S.nd.propagate)
   box.addEventListener('change', () => {
     S.nd.propagate = box.checked
@@ -1950,14 +1986,17 @@ function drawNew(S, root, data) {
   foot.appendChild(spread)
   if (S.nd.propagate && data.propagateWarning) foot.appendChild(el('div', 'emg-field-warn', data.propagateWarning))
   const buttons = el('div', 'emg-row-buttons')
-  buttons.appendChild(button('emg-btn', '양식 비우기', () => {
+  const reset = button('emg-btn', '양식 비우기', () => {
     const blank = Array.isArray(data.blank) ? data.blank : S.nd.values.map(() => '')
     S.nd = { seq: S.nd.seq, values: blank.slice(), propagate: data.propagateDefault !== false }
     S.ndTouched.clear()
     S.ndDirty.clear()
     commitDraft(S)
     drawSide(S.host, S, S.data)
-  }))
+  })
+  // 다시 그려도 초점이 이 단추로 돌아온다(data-fk — 칩·함께 넣기 체크도 같다). 키보드로 채우는 동안 칸 처음으로 가지 않게.
+  reset.dataset.fk = 'reset'
+  buttons.appendChild(reset)
   const add = button('emg-btn is-primary', '호기 추가', () => {
     for (const k of required) S.ndTouched.add(k)
     if (!canAdd(S.nd.values, required, Boolean(data.blocked), fresh && !S.ndDirty.size, locked)) {
@@ -2023,7 +2062,7 @@ function copyRow(S) {
 function newField(S, column, k, mark) {
   const field = el('div', 'emg-field' + (column.kind === 'memo' ? ' is-wide' : ''))
   const value = String(S.nd.values[k] || '')
-  const showError = mark.error !== undefined && mark.fresh && (value.trim() !== '' || S.ndTouched.has(k))
+  const showError = showsError(mark.error !== undefined, mark.fresh, value, S.ndTouched.has(k), mark.base)
   if (showError) field.classList.add('is-error')
   if (mark.tier === 'required' && !mark.ok && !showError) field.classList.add('is-need')
   if (S.ndDirty.has(k)) field.classList.add('is-pending')
@@ -2052,6 +2091,7 @@ function newField(S, column, k, mark) {
         commit(option)
         drawSide(S.host, S, S.data)
       })
+      chip.dataset.fk = 'n' + k + '=' + option
       chip.setAttribute('aria-pressed', option === value ? 'true' : 'false')
       chips.appendChild(chip)
     }
@@ -2130,6 +2170,8 @@ function detailField(S, unit, column, k, sets, reasons) {
         S.drafts.delete(k)
         send(S)
       })
+      // 회차가 돌아와 칸을 다시 그려도 초점이 같은 칩으로 돌아온다(data-fk).
+      chip.dataset.fk = 'f' + k + '=' + value
       chip.setAttribute('aria-pressed', value === shown ? 'true' : 'false')
       chips.appendChild(chip)
     }
