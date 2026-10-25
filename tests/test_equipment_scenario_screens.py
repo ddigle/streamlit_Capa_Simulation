@@ -747,9 +747,15 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     clear_equipment_scenario_cache()
     _ok(app.run())
     texts = _texts(app)
-    assert any(
+    reason = (
         "그 사이 공식 설비 시나리오가 「셋업 실무」로 바뀌어 이 배치 변경(공식 배치에 들어갈 "
-        "편집이었음)을 저장할 수 없습니다" in text
+        "편집이었음)을 저장할 수 없습니다"
+    )
+    # 까닭은 잠금 줄에 한 번만 — 저장 안 한 배치 상자는 저장하지 않는다는 것만 적는다(E2E r2).
+    assert sum(reason in text for text in texts) == 1
+    assert any(
+        "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — 까닭은 아래 잠금 줄에 있습니다."
+        in text
         for text in texts
     )
     assert app.button(key="space_layout_save").disabled
@@ -1209,7 +1215,12 @@ def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
     """가정 시나리오의 배치만 다른 리비전을 되돌리면 확인 글·결과 글이 배치 차이를 말한다(「일정이
     바뀐 호기 0대」 만 적지 않게)."""
     chosen = _summary(2)
-    preview = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d")
+    preview = ScheduleRestorePreview(
+        layout_unit_rows=1,
+        layout_digest="d",
+        restored_layout_unit_rows=1,
+        restored_layout_digest="d",
+    )
     assert restore_layout_sentence(chosen, preview, official_scenario=False) == (
         "r2의 가정 배치(저장된 차이 호기 1행)도 되살립니다."
     )

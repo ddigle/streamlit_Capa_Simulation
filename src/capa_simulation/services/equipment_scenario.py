@@ -419,11 +419,15 @@ class ScheduleRestorePreview:
     - `added_since` — 그 리비전을 저장한 뒤 공통 대장에 든 호기 수. 그 리비전은 그 호기를 몰라
       일정 행이 없으므로 늘 일정 없음이 된다(F4 — 그 시나리오 계산·Space 에서 빠진다).
 
-    가정 배치(설비 0031)는 **불변 값만** 싣는다(확인 재료 캐시 키가 불변 리비전 id 셋이라 —
-    설계 6-6): 고른 리비전·지금 최신의 저장된 배치 차이 행 수(호기·요소·이름표), 두 리비전의 배치
-    지문(빈 차이는 None), 「그때와 자리가 다른 손대지 않은 호기」 수(`layout_moved_since` — 고른
-    리비전을 저장할 때 본 공통과 지금 공통의 배치 일곱 칸을 차이 없는 호기만 견줌). 지금 층 현행값
-    기준 정규화와 「공식 시나리오라 배치 차이를 버림」 은 바뀌는 입력이라 캐시 밖에서 붙인다.
+    가정 배치(설비 0031): 고른 리비전·지금 최신의 저장된 배치 차이 행 수(호기·요소·이름표 — 원시),
+    두 리비전의 배치 지문(원시 — 빈 차이는 None), 「그때와 자리가 다른 손대지 않은 호기」 수
+    (`layout_moved_since` — 고른 리비전을 저장할 때 본 공통과 지금 공통의 배치 일곱 칸을 차이 없는
+    호기만 견줌). 그리고 되돌리기가 **실제로 쓸** 차이 — 고른 리비전의 차이를 지금 공통·층
+    현행값으로 정규화한 행 수(`restored_layout_*_rows` — 그 뒤 지운 호기·공식과 같아진 행이
+    빠진다)와 그 지문, 지금 최신의 차이를 같은 기준으로 정규화한 지문(`restored_layout_digest`·
+    `current_effective_layout_digest` — 빈 차이는 None). 정규화는 층 현행값을 보므로 확인 재료
+    캐시는 불변 리비전 id 셋에 층 현행값 쓰기 세대를 더한다(공식 발행 확인과 같다). 「공식
+    시나리오라 배치 차이를 버림」 은 바뀌는 입력이라 캐시 밖에서 붙인다(`restore_writes_nothing`).
     """
 
     changed_units: int = 0
@@ -441,11 +445,24 @@ class ScheduleRestorePreview:
     layout_digest: str | None = None
     current_layout_digest: str | None = None
     layout_moved_since: int = 0
+    restored_layout_unit_rows: int = 0
+    restored_layout_mark_rows: int = 0
+    restored_layout_label_rows: int = 0
+    restored_layout_digest: str | None = None
+    current_effective_layout_digest: str | None = None
 
     @property
     def layout_identical(self) -> bool:
         """두 리비전의 저장된 배치 차이가 같다(지문 — 원시)."""
         return self.layout_digest == self.current_layout_digest
+
+    @property
+    def restored_layout_same(self) -> bool:
+        """되돌리기가 쓸 차이(고른 리비전 — 정규화)가 지금 최신의 차이(같은 기준으로 정규화)와 같다
+        — 가정 시나리오로 되돌려도 배치는 지금 그대로다. 원시 지문이 같으면 늘 같다."""
+        return self.layout_identical or (
+            self.restored_layout_digest == self.current_effective_layout_digest
+        )
 
     @property
     def identical(self) -> bool:
@@ -459,9 +476,10 @@ def restore_writes_nothing(preview: ScheduleRestorePreview, *, official_scenario
     (쓰기 잠금 안의 판정)가 **같이** 쓴다(설계 6-6 — 확인 글과 실제 쓰기가 갈리지 않게).
 
     공식 설비 시나리오로 되돌리면 그 리비전의 배치 차이는 버리므로(I2) 일정·비가동만 보고, 가정
-    시나리오면 저장된 배치 차이(원시 지문)까지 같아야 쓸 것이 없다. 역할은 바뀌는 입력이라 확인 재료
-    캐시 밖에서 넘긴다."""
-    return preview.changed_units == 0 and (official_scenario or preview.layout_identical)
+    시나리오면 되돌리기가 쓸 차이(정규화 — 그 뒤 지운 호기·공식과 같아진 행이 빠진다)가 지금 최신의
+    차이와 같아야 쓸 것이 없다(`restored_layout_same` — 원시 지문만 보면 지운 호기의 차이 때문에
+    바뀐 것이 없는 리비전을 만든다). 역할은 바뀌는 입력이라 확인 재료 캐시 밖에서 넘긴다."""
+    return preview.changed_units == 0 and (official_scenario or preview.restored_layout_same)
 
 
 def schedule_restore_preview(
