@@ -181,6 +181,10 @@ def test_display_order_and_equipment_paths_never_see_display_names() -> None:
         "src/capa_simulation/persistence/equipment_repository.py",
         "src/capa_simulation/components/equipment_data_workspace.py",
         "app_pages/space_status.py",
+        # Space 「필요 단축」 보기가 지나는 길 — 원본 공정소분류만 쓴다(결정 D10, 표시명 몫은 패널).
+        "src/capa_simulation/components/space_shortening_view.py",
+        "src/capa_simulation/services/space_shortening_layer.py",
+        "src/capa_simulation/components/shortening_source.py",
         "src/capa_simulation/components/reference_csv_tools.py",
         "src/capa_simulation/components/display_order_management.py",
     ]

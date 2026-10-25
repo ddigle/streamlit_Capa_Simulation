@@ -61,7 +61,10 @@ class SubTabs:
 
 @dataclass(frozen=True)
 class ConditionTabs:
-    """공통 조건(시나리오·조회기간)을 **탭 몇 개에서만** 읽는 화면의 선언.
+    """공통 조건(시나리오·조회기간)을 **탭이나 보기 값 몇 개에서만** 읽는 화면의 선언.
+
+    보기 값의 예: Space 현황은 색 기준 라디오가 `필요 단축` 일 때만 활성 시나리오·조회기간을 읽는다
+    — `key` 가 그 라디오 칸이고 `labels` 가 그 값이다(탭 기억 칸은 없어 위젯 값 → 첫 값 차례다).
 
     예: 가용설비 현황은 설비 DB 만 보는데, `Summary` › `Static 대비 일정` 탭만 활성 시나리오와
     조회기간으로 확보율을 맞대어 본다. 그 탭이 열렸을 때만 조건 패널의 공통 줄을 세운다. 안쪽 탭을
@@ -325,17 +328,30 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     # 두 탭 모두 설비 시나리오를 읽는다(Qual 마감 계산기는 필요 단축 일정의 팝업으로 옮겼다).
     equipment_scenario="session",
 )
-# 설비 DB 만 본다. 공정소분류·색 기준은 자기 조건 카드(`Space 조건`), 기준일은 층 상세 도면 위
+# Space 현황의 「색 기준」 라디오 칸과 그 값 둘(공정구분 기본·필요 단축). 사이드바(`app.py`)가
+# 페이지보다 먼저 그 칸을 읽어야 해서 여기 둔다 — 페이지가 이 이름을 쓴다. 글자는
+# `space_color_basis` 의 상수와 같다(이 모듈은 서비스를 import 하지 않는다 — 시험이 두 글자를
+# 묶는다).
+SPACE_COLOR_BASIS_KEY = "space_color_basis"
+SPACE_DEFAULT_BASIS = "공정구분"
+SPACE_SHORTENING_BASIS = "필요 단축"
+# 설비 DB 를 본다. 공정소분류·색 기준은 자기 조건 카드(`Space 조건`), 기준일은 층 상세 도면 위
 # 페이더다. 보기는 사이드바에서 고른 설비 시나리오의 배치다(설비 시나리오 2단계 LY3 — 가정이면 그
 # 시나리오의 배치 차이를 얹는다). 한 회차에 설비 시나리오 목록·공통 최신·합친 본문·도면을 따로 읽어
-# 설비 DB 핀을 선언한다.
+# 설비 DB 핀을 선언한다. 색 기준 `필요 단축` 을 켠 동안만 활성 시나리오·조회기간·필요 단축 일정
+# 계획을 읽는다(AGENTS 5장 9) — 그래서 공통 줄(시나리오·조회기간)은 그 보기 값일 때만
+# 선다(`ConditionTabs` 를 탭이 아니라 보기 값으로 쓴다 — 라디오 값은 `persist_state="session"` 이라
+# 다른 화면을 거쳐도 남는다).
 SPACE_STATUS = PageSpec(
     "app_pages/space_status.py",
     "Space 현황",
     ":material/grid_view:",
-    reads_scenario=False,
-    reads_period=False,
     has_condition_cards=True,
+    condition_tabs=ConditionTabs(
+        SPACE_COLOR_BASIS_KEY,
+        first=SPACE_DEFAULT_BASIS,
+        labels=frozenset({SPACE_SHORTENING_BASIS}),
+    ),
     uses_equipment_db=True,
     equipment_scenario="session",
 )

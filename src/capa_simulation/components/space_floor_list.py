@@ -137,6 +137,25 @@ _TABLE_COLUMNS = {
     "배치 도면": st.column_config.TextColumn(help=_DRAWING_HELP),
 }
 
+# 색 기준 「필요 단축」 을 켠 동안만 사용 층 표에 붙는 칸 넷(설비 대수 — 모듈 묶음 한 대). 비활성 층
+# 표에는 붙이지 않는다(층 대수를 싣지 않는다 — 층 사용 0029 규칙).
+_LAYER_COLUMNS = {
+    "단축 호기": st.column_config.NumberColumn(
+        format="localized",
+        help="고른 목표에서 Qual 을 당겨야 하는 호기(필요 단축 일정과 같은 계획).",
+    ),
+    "최대 단축(일)": st.column_config.NumberColumn(
+        format="localized", help="이 층 단축 호기 가운데 가장 많이 당기는 일수."
+    ),
+    "기한 지남": st.column_config.NumberColumn(
+        format="localized", help="목표 Qual 이 오늘 앞인 단축 호기."
+    ),
+    "추가 호기": st.column_config.NumberColumn(
+        format="localized",
+        help="기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수(그 공정 호기가 그려진 층마다).",
+    ),
+}
+
 Draft = dict[FloorKey, str]
 Base = tuple[int, tuple[tuple[str, str, str], ...]]
 # 끄기 확인 목록에서 공식 배치에는 호기가 없고 가정 설비 시나리오 배치에만 호기가 있는 층의 꼬리.
@@ -499,6 +518,7 @@ def _table_rows(
     states: FloorStates,
     *,
     inactive: bool,
+    extra_columns: Mapping[FloorKey, Mapping[str, object]] | None = None,
 ) -> pd.DataFrame:
     rows = []
     for placement in placements:
@@ -521,6 +541,8 @@ def _table_rows(
                 "캔버스": canvas_text(placement.key),
             }
         )
+        if extra_columns is not None and not inactive:
+            row.update(extra_columns.get(placement.key, {}))
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -531,15 +553,24 @@ def _render_tables(
     canvas_text: Callable[[FloorKey], str],
     states: FloorStates,
     on_open: Callable[[FloorKey], None],
+    extra_columns: Mapping[FloorKey, Mapping[str, object]] | None = None,
 ) -> None:
-    """보기 — 사용 층 표와 접힌 「비활성 층 n개」(늘 서는 자리 칸 안)."""
+    """보기 — 사용 층 표와 접힌 「비활성 층 n개」(늘 서는 자리 칸 안). `extra_columns` 는 사용 층
+    표에만 붙는다."""
     active = [placement for placement in placements if states.is_active(placement.key)]
     active_keys = tuple(placement.key for placement in active)
     st.dataframe(
-        _table_rows(placements, floors_with_image, canvas_text, states, inactive=False),
+        _table_rows(
+            placements,
+            floors_with_image,
+            canvas_text,
+            states,
+            inactive=False,
+            extra_columns=extra_columns,
+        ),
         hide_index=True,
         width="stretch",
-        column_config=_TABLE_COLUMNS,
+        column_config={**_TABLE_COLUMNS, **(_LAYER_COLUMNS if extra_columns is not None else {})},
         key=FLOOR_TABLE_KEY,
         on_select=partial(_open_from_table, FLOOR_TABLE_KEY, active_keys, on_open),
         selection_mode="single-row",
@@ -790,11 +821,13 @@ def render_space_floor_list(
     editable: bool,
     on_open: Callable[[FloorKey], None],
     locked_reason: str | None = None,
+    extra_columns: Mapping[FloorKey, Mapping[str, object]] | None = None,
 ) -> None:
     """FAB 전체 아래 층 목록. `states` 는 이 회차에 읽은 층 사용 상태(보기 표·도면과 같은 값)이고,
     `unit_counts` 는 편집 모드 본문에서만 부른다(층별 설비 대수 — 공식 배치 기준, 끄기 확인의 n).
     `editable` 이 거짓이면(샘플 fleet·가정 설비 시나리오) `사용 편집` 을 잠그고 값도 끈다 —
-    `locked_reason` 이 풍선이다(없으면 샘플 문구)."""
+    `locked_reason` 이 풍선이다(없으면 샘플 문구). `extra_columns` 는 색 기준 「필요 단축」 을 켠
+    동안만 사용 층 표에 붙는 칸 넷(층 → 칸 → 값)이다 — 끈 동안 None 이라 표가 그대로다."""
     with st.container(
         horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
     ):
@@ -824,4 +857,6 @@ def render_space_floor_list(
     # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
     with st.container(key="space_floor_state_notices"):
         _render_notices()
-    _render_tables(placements, floors_with_image, canvas_text, states, on_open)
+    _render_tables(
+        placements, floors_with_image, canvas_text, states, on_open, extra_columns=extra_columns
+    )

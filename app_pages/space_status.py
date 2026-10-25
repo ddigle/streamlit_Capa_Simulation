@@ -1,4 +1,4 @@
-# Purpose: S.PKG FAB 전체 도면에서 층 상세 배치로 이어지는 Space 현황 2단 탐색 화면을 렌더링한다.
+# Purpose: S.PKG FAB 전체에서 층 상세로 이어지는 Space 현황 2단 화면과 필요 단축 보기를 렌더링한다.
 
 from __future__ import annotations
 
@@ -64,6 +64,7 @@ from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
 )
+from capa_simulation.components.shortening_source import ShorteningStop
 from capa_simulation.components.space_floor_layout import (
     effective_floor_layout,
     floor_layout_differences,
@@ -72,6 +73,7 @@ from capa_simulation.components.space_floor_layout import (
 from capa_simulation.components.space_floor_list import render_space_floor_list
 from capa_simulation.components.space_layout import (
     ColorChoice,
+    apply_layer_looks,
     color_check_style,
     default_color_choice,
     equipment_unit_total,
@@ -82,6 +84,7 @@ from capa_simulation.components.space_layout import (
     occupancy_ratio,
     picked_unit_rows,
     row_unit_shares,
+    shortening_legend_markup,
     space_legend_counts,
     space_legend_markup,
     unit_appearance,
@@ -91,6 +94,22 @@ from capa_simulation.components.space_layout_editor import (
     render_fab_layout_viewer,
     render_space_layout_editor,
     render_space_layout_viewer,
+)
+from capa_simulation.components.space_shortening_view import (
+    PINNED_NOTE,
+    SpaceLayer,
+    consume_layer_link,
+    layer_table_columns,
+    load_space_layer,
+    render_arrival_filter_note,
+    render_fab_layer_summary,
+    render_floor_layer_panel,
+    render_layer_basis,
+    render_layer_controls,
+    render_layer_stop,
+    switch_to_queued_shortening,
+    unit_keys_by_name,
+    valid_focus,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.equipment_scenario_activation import (
@@ -103,6 +122,7 @@ from capa_simulation.equipment_scenario_activation import (
     select_equipment_scenario,
     space_edit_mode,
 )
+from capa_simulation.navigation import SPACE_COLOR_BASIS_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -124,6 +144,7 @@ from capa_simulation.services.equipment_contract import (
     LAYOUT_EXITED_COLUMN,
     LAYOUT_REFLECTED_COLUMN,
     empty_downtime_schedule,
+    empty_equipment_baseline,
     empty_equipment_master,
 )
 from capa_simulation.services.equipment_samples import (
@@ -182,6 +203,7 @@ from capa_simulation.services.space_color_basis import (
     COLOR_BASES,
     COLOR_BASIS_CAPA,
     COLOR_BASIS_LINE_TYPE,
+    COLOR_BASIS_SHORTENING,
     capa_groups,
     color_basis_groups,
 )
@@ -205,6 +227,14 @@ from capa_simulation.services.space_layout_edit import (
     table_changed,
     unsaved_unit_ids,
     viewer_items,
+)
+from capa_simulation.services.space_shortening_layer import (
+    FabSummary,
+    FloorLayer,
+    fab_floor_counts,
+    fab_layer_summary,
+    floor_layer,
+    floor_short_line,
 )
 from capa_simulation.services.space_unit_state import (
     as_of_range,
@@ -258,9 +288,11 @@ SWITCH_TO_OFFICIAL_KEY = "space_switch_to_official"
 LOAD_LATEST_KEY = "space_load_latest"
 LOCKED_EDIT_TOGGLE_KEY = "space_layout_edit_mode_locked"
 DISCARD_LAYOUT_BUTTON_KEY = "space_layout_discard_layout"
-# 도면 「색 기준」(공정구분 | 투자Capa)과 그 기준의 그룹 체크(2026-10-16 사용자 결정). 체크 key 는
-# `space_color_<line|capa>_<그룹>` 이다 — 기준마다 따로라 기준을 바꿔도 다른 쪽 체크가 남는다.
-COLOR_BASIS_KEY = "space_color_basis"
+# 도면 「색 기준」(공정구분 | 투자Capa | 필요 단축)과 그 기준의 그룹 체크(2026-10-16 사용자 결정).
+# 체크 key 는 `space_color_<line|capa>_<그룹>` 이다 — 기준마다 따로라 기준을 바꿔도 다른 쪽 체크가
+# 남는다. 필요 단축은 그룹이 없다(2026-10-24 — 색은 단축 일수 구간). 칸 이름은 사이드바가 먼저 읽어
+# `navigation` 에 있다(그 값이 필요 단축일 때만 시나리오·조회기간 줄이 선다).
+COLOR_BASIS_KEY = SPACE_COLOR_BASIS_KEY
 _COLOR_KEY_PARTS = {COLOR_BASIS_LINE_TYPE: "line", COLOR_BASIS_CAPA: "capa"}
 # 세션 기준일(T). 층 상세 도면 맨 위의 페이더를 놓을 때·FAB 의 「오늘로」가 바꾼다(2026-10-16
 # 사용자 결정). 세션에 든 날짜는 범위 안으로 맞춰 쓰고, 값이 없는 세션은 늘 오늘이다.
@@ -361,6 +393,9 @@ SPACE_CARD_LABEL = "Space 조건"
 SPACE_CARD_NAME = "space"
 
 today = date.today()
+# 필요 단축 보기의 「필요 단축 일정에서 이 공정 보기」 대기 — 본문 맨 앞에서 옮긴다(콜백 안
+# switch_page 금지).
+switch_to_queued_shortening()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     # 사이드바에서 고른 설비 시나리오(새 세션은 공식)의 배치를 그린다(설비 시나리오 2단계 LY3) —
@@ -383,6 +418,13 @@ try:
     inactive_floors = floor_states.inactive
     # 이 설비 시나리오에 일정이 없는 호기는 그리지 않는다(G2 — 계산 프레임).
     unscheduled_count = 0
+    # 필요 단축 보기가 계획에 넘길 계산 세 표 — 샘플로 덮기 **전**의 것이다(필요 단축 일정과 같은
+    # 길로 `shortening_frames` 가 샘플 세 표를 다시 낸다 — 같은 계획 키).
+    shortening_saved: Frames = (
+        latest_snapshot.calculation_frames()
+        if latest_snapshot is not None
+        else (empty_equipment_baseline(), empty_equipment_master(), empty_downtime_schedule())
+    )
     if latest_snapshot is None or latest_snapshot.equipment.empty:
         equipment = sample_equipment_master(anchor_date=today)
         downtime = sample_downtime_schedule(anchor_date=today)
@@ -399,6 +441,20 @@ except BOOTSTRAP_ERRORS as exc:
         + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
     )
     st.stop()
+
+# 필요 단축 일정 「도면에서 보기」 로 온 회차 — 색 기준·목표·공정 칩·층을 한 번 받고 주소 인자를
+# 거둔다. 그 층은 세션 층을 덮는다(링크만 예외). 받았으면 회차를 한 번 더 돈다 —
+# 사이드바(시나리오·조회기간 줄)는 페이지보다 먼저 그려져 이 회차에는 옛 색 기준으로 섰다. 아직 그린
+# 편집기가 없는 자리다.
+if consume_layer_link(
+    basis_key=COLOR_BASIS_KEY,
+    location_keys=(SELECTED_BUILDING_KEY, SELECTED_FLOOR_KEY),
+    floor_param_name=FLOOR_PARAM,
+    clear_keys=(SPACE_PICKED_KEY,),
+    edit_keys=(EDIT_MODE_KEY, FAB_EDIT_MODE_KEY),
+    inactive=frozenset(inactive_floors),
+):
+    st.rerun()
 
 valid_location_pairs = set(FLOOR_KEYS)
 # 연 층: 세션이 먼저다. 세션에 층이 없을 때만 주소(`?floor=`)를 읽는다 — 새로고침·주소로 들어온 첫
@@ -509,13 +565,27 @@ if using_sample_equipment:
 fab_editable = not showing_sample and edit_mode.fab
 fab_save_blocked = showing_sample
 
+# 색 기준 「필요 단축」(2026-10-24 결정). 고른 회차(`layer_requested`)라도 배치 편집 중이면
+# 쉰다(결정 D7 — 라디오 값은 그대로, 편집기는 공정구분 기본 색). 비활성 층 상세도 쉰다(층 대수를
+# 싣지 않는다 — 층 사용 0029). 셋 다 위젯보다 먼저 세션에서 읽는다(`editing_requested` 와 같은 꼴).
+# FAB 편집 토글은 `fab_editable` 이 거짓이면 아래가 값을 끄므로 그 조건도 함께 본다.
+layer_requested = st.session_state.get(COLOR_BASIS_KEY) == COLOR_BASIS_SHORTENING
+layer_editing = (
+    bool(st.session_state.get(EDIT_MODE_KEY, False)) and editable
+    if selected is not None
+    else bool(st.session_state.get(FAB_EDIT_MODE_KEY, False)) and fab_editable
+)
+layer_on_inactive = selected is not None and selected in inactive_floors
+layer_active = layer_requested and not no_fleet and not layer_editing and not layer_on_inactive
+
 # 세션 기준일(T)은 페이더 범위(오늘 ±12개월) 안이다. 날이 지나 범위를 벗어난 값은 가까운 끝으로
 # 맞춰 둔다. 값이 없으면(페이더를 아직 건드리지 않은 세션) 오늘이고 세션에 적지 않는다 — 날이
-# 바뀌면 새 오늘을 따른다.
+# 바뀌면 새 오늘을 따른다. 필요 단축 보기가 켠 회차는 오늘로 고정한다(결정 D2 — 계획이 오늘
+# 기준이다). 세션 기준일은 지우지도 쓰지도 않는다 — 색 기준을 되돌리면 보던 날로 돌아온다.
 as_of_bounds = as_of_range(today)
 stored_as_of = st.session_state.get(SPACE_AS_OF_KEY)
-as_of = clamp_as_of(stored_as_of, today)
-if stored_as_of is not None and stored_as_of != as_of:
+as_of = today if layer_active else clamp_as_of(stored_as_of, today)
+if not layer_active and stored_as_of is not None and stored_as_of != as_of:
     st.session_state[SPACE_AS_OF_KEY] = as_of
 all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
 if no_fleet:
@@ -545,7 +615,11 @@ else:
             persist_state="session",
             help=(
                 "도면 상자를 무엇으로 칠할지 고릅니다. 체크한 그룹만 그 색이고 나머지는 "
-                "회색입니다. 보관(검정)·지연(빨강)은 체크와 상관없이 칠합니다."
+                "회색입니다. 보관(검정)·지연(빨강)은 체크와 상관없이 칠합니다(필요 단축에서는 "
+                "칠하지 않습니다). 「필요 단축」 은 필요 단축 일정과 같은 계산 · 이 화면의 설비 "
+                "시나리오 · 오늘 기준으로 Qual 을 당길 호기를 단축 일수 구간 색과 배지로 보입니다 "
+                "— "
+                "켠 동안 사이드바에 시나리오·조회기간 줄이 섭니다."
             ),
         )
         capa = (
@@ -555,7 +629,7 @@ else:
         )
         basis_groups = color_basis_groups(basis, capa)
         enabled: set[str] = set()
-        if not basis_groups:
+        if basis == COLOR_BASIS_CAPA and not basis_groups:
             st.caption("숫자로 읽히는 투자Capa 값이 없어 모든 상자가 회색입니다.")
         with st.container(horizontal=True, gap="small", key="space_color_groups"):
             for group in basis_groups:
@@ -576,6 +650,14 @@ else:
                 ]
             )
         )
+
+# 그리는 색 기준 하나 — 필요 단축을 골랐는데 쉬는 회차(배치 편집 중·비활성 층)는 공정구분 기본
+# 색이다. 편집기 채우기와 머리 줄 범례가 같이 쓴다(범례만 빈 「그 밖」 으로 남지 않게).
+effective_choice = (
+    default_color_choice(color_choice.capa)
+    if color_choice.basis == COLOR_BASIS_SHORTENING and not layer_active
+    else color_choice
+)
 
 space_equipment = all_status.copy()
 if selected_processes:
@@ -629,20 +711,32 @@ def _canvas_text(key: FloorKey) -> str:
     return f"{width:g} × {height:g}"
 
 
+def _roster_rows(floor_status: pd.DataFrame, boundaries: pd.DataFrame) -> pd.DataFrame:
+    """층 상세 뷰어가 그리는 행 — 페이더 범위 전체의 합집합(`drawn_in_range`)."""
+    return floor_status.loc[drawn_in_range(floor_status, boundaries, start=as_of_bounds[0])]
+
+
 def _floor_viewer_inputs(
-    key: FloorKey, floor_status: pd.DataFrame, boundaries: pd.DataFrame
+    key: FloorKey,
+    floor_status: pd.DataFrame,
+    boundaries: pd.DataFrame,
+    layer_looks: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[tuple[FloorLayoutMark, ...], dict[str, str], list[dict[str, Any]], str]:
     """층 상세 뷰어의 도면 요소·Main 설비명 위치·호기 payload·그리는 호기 지문. 요소·위치는 세션
     설비 시나리오의 합친 값이다(`effective_floor_layout` — 공식 층 현행값 ⊕ 그 리비전의 배치 차이).
 
     그리는 호기는 기준일 하나의 행이 아니라 **페이더 범위 전체의 합집합**이다(레이아웃표시 Y ·
     좌표 · 범위 시작 뒤까지 도면에 남음, `drawn_in_range`). 기준일에 안 보이는 호기는 브라우저가
-    숨긴다 — 끄는 동안 도면 이탈일을 넘어도 목록·epoch 가 그대로라 다시 서며 배율을 잃지 않는다."""
+    숨긴다 — 끄는 동안 도면 이탈일을 넘어도 목록·epoch 가 그대로라 다시 서며 배율을 잃지 않는다.
+
+    `layer_looks` 는 색 기준 「필요 단축」 을 켠 회차의 설비명 → 구간·흐림(`floor_layer.looks`)이다
+    — 기본 면 위에 얹는다(`apply_layer_looks`). epoch 는 바뀌지 않는다(호기마다의 칸만 바뀐다)."""
     marks, labels = effective_floor_layout(equipment_database_path, key, equipment_session)
-    roster_rows = floor_status.loc[drawn_in_range(floor_status, boundaries, start=as_of_bounds[0])]
-    items = viewer_items(
-        roster_rows, looks=unit_appearance(roster_rows, boundaries, choice=color_choice)
-    )
+    roster_rows = _roster_rows(floor_status, boundaries)
+    looks = unit_appearance(roster_rows, boundaries, choice=effective_choice)
+    if layer_looks is not None:
+        looks = apply_layer_looks(looks, layer_looks)
+    items = viewer_items(roster_rows, looks=looks)
     # 설비지분(기준일 보유 지분 — 모듈 넷이 모두 반입했으면 0.25씩, 둘만 반입했으면 그
     # 둘이 0.5씩이고 반입 전 둘은 0) — 뷰어 요약의 「겹쳐 숨긴 반입 예정 n대」를 범례·배치
     # 대수와 같은 축으로 센다. 일부 모듈만 반입한 Main 설비의 반입 전 모듈은 범례의 반입 전
@@ -1182,7 +1276,7 @@ def _render_layout_editor(
         new_ids=new_ids,
         arrived_ids=arrived_ids,
         appearance=lambda rows: unit_appearance(
-            rows, unit_boundaries(rows, frames[2], today=today), choice=color_choice
+            rows, unit_boundaries(rows, frames[2], today=today), choice=effective_choice
         ),
     )
     options = new_unit_options(frames[1])
@@ -1194,6 +1288,13 @@ def _render_layout_editor(
         options = {**options, "disabled": new_unit_reason or "새 호기를 넣지 않습니다."}
         if new_unit_reason:
             st.caption(f":material/lock_clock: {new_unit_reason}")
+    if layer_requested:
+        # 필요 단축 보기는 편집 중 쉰다(결정 D7) — 편집기는 공정구분 기본 색이고 배지·흐림·고정 줄이
+        # 없다.
+        st.caption(
+            ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
+            "보입니다" + (" (필요 단축 보기는 오늘 기준이었습니다)." if as_of != today else ".")
+        )
     st.caption(
         "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
         "조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
@@ -1501,6 +1602,63 @@ with st.container(key="space_edit_lock_slot"):
     if buffer_frames is not None:
         _render_edit_lock_line()
 
+# 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
+# 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
+# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중·비활성 층)는 까닭 한 줄만.
+space_layer: SpaceLayer | None = None
+layer_dim = True
+with st.container(
+    horizontal=True, vertical_alignment="center", gap="small", key="space_shortening_toolbar"
+):
+    if layer_active:
+        controls = render_layer_controls()
+        layer_dim = controls.dim_others
+        loaded = load_space_layer(
+            saved=shortening_saved,
+            sample=using_sample_equipment,
+            show_sample=showing_sample,
+            has_snapshot=latest_snapshot is not None,
+            database_path=equipment_database_path,
+            today=today,
+            level=controls.level,
+            unmerged=equipment_session.unmerged,
+        )
+        if isinstance(loaded, ShorteningStop):
+            render_layer_stop(loaded)
+        else:
+            space_layer = loaded
+    elif layer_requested and layer_on_inactive:
+        st.caption(
+            ":material/block: 비활성 층에는 필요 단축 보기를 싣지 않습니다 — FAB 전체로 돌아가면 "
+            "다시 보입니다.",
+            width="stretch",
+        )
+    elif layer_requested and layer_editing:
+        st.caption(
+            ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
+            "보입니다.",
+            width="stretch",
+        )
+# 필요 단축 FAB 요약(공정소분류 필터를 따름 — 결정 D11). 비활성 층은 층 대수를 싣지 않는다.
+layer_scope = frozenset(selected_processes) if selected_processes else None
+layer_summary: FabSummary | None = (
+    fab_layer_summary(
+        space_layer.layer,
+        counted_equipment,
+        processes=layer_scope,
+        inactive=frozenset(inactive_floors),
+    )
+    if space_layer is not None
+    else None
+)
+# 기준 캡션과 링크 공정 알림 — 자리는 늘 선다(켜고 끌 때 아래가 밀리지 않게).
+with st.container(key="space_shortening_basis_slot"):
+    if space_layer is not None:
+        render_layer_basis(
+            equipment_session, space_layer, sample=showing_sample, summary=layer_summary
+        )
+        render_arrival_filter_note(selected_processes)
+
 if selected is None:
     # FAB 로 돌아오면 층 상세에서 누른 호기는 풀린다(층을 바꾼 것과 같다).
     st.session_state.pop(SPACE_PICKED_KEY, None)
@@ -1533,9 +1691,32 @@ if selected is None:
     # 말한다.
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
     fab_background = fab_profile.image_data_uri if fab_profile is not None else None
+    # 필요 단축 보기를 켠 동안 층 블록 셋째 줄과 층 목록 표 칸 넷(비활성 층에는 싣지 않는다). epoch
+    # 밖이라 목표·필터를 바꿔도 배율이 그대로다.
+    layer_counts = (
+        fab_floor_counts(
+            space_layer.layer,
+            counted_equipment,
+            not_placed,
+            processes=layer_scope,
+            inactive=frozenset(inactive_floors),
+        )
+        if space_layer is not None
+        else None
+    )
+    short_lines = (
+        {
+            key: short_line
+            for key, count in layer_counts.items()
+            if (short_line := floor_short_line(count)) is not None
+        }
+        if layer_counts is not None
+        else None
+    )
     block_stats = floor_block_stats(
         placements,
         inactive={key: inactive_label(reason) for key, reason in inactive_floors.items()},
+        short_lines=short_lines,
     )
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
     open_active_floor = partial(_open_unless_inactive, frozenset(inactive_floors))
@@ -1611,6 +1792,19 @@ if selected is None:
                 on_as_of=_set_space_as_of,
                 background_image=fab_background,
             )
+    # 필요 단축 요약·추가 호기 상자 — 자리는 늘 선다(켜고 끌 때 아래 key 있는 층 목록 표가 밀리지
+    # 않게).
+    with st.container(key="space_shortening_fab_slot"):
+        if space_layer is not None and layer_summary is not None:
+            render_fab_layer_summary(
+                space_layer,
+                layer_summary,
+                [
+                    unit
+                    for unit in space_layer.layer.virtuals
+                    if layer_scope is None or unit.process in layer_scope
+                ],
+            )
     if exited_count > 0:
         st.caption(
             f"기준일 {as_of.isoformat()}에 반출/이설(없으면 정지)을 마친 "
@@ -1631,6 +1825,7 @@ if selected is None:
         editable=not showing_sample and edit_mode.floor_state,
         on_open=_open_floor,
         locked_reason=None if showing_sample else FLOOR_STATE_LOCK_REASON,
+        extra_columns=layer_table_columns(layer_counts) if layer_counts is not None else None,
     )
 
 else:
@@ -1721,10 +1916,36 @@ else:
         floor_boundaries = (
             get_space_unit_boundaries(floor_status, downtime, today=today) if viewing else None
         )
+        # 필요 단축 보기 — 이 층에 그린 행의 표시·배지·목록. 공정 칩 값은 도면을 칠하기 전에
+        # 세션에서 읽는다(칩 위젯은 도면 아래 칸이다). 선택지 밖이면 위젯 전에 None 을 적는다.
+        shown_layer: FloorLayer | None = None
+        if space_layer is not None and floor_boundaries is not None:
+            layer_rows = _roster_rows(floor_status, floor_boundaries)
+            focus = valid_focus(
+                selected,
+                set(layer_rows["공정소분류"].dropna().astype(str).str.strip())
+                if "공정소분류" in layer_rows.columns
+                else set(),
+            )
+            shown_layer = floor_layer(
+                space_layer.layer,
+                layer_rows,
+                not_placed.loc[
+                    not_placed["동"].eq(selected_building).fillna(False).astype(bool)
+                    & not_placed["층"].eq(selected_floor).fillna(False).astype(bool)
+                ],
+                focus=focus,
+                dim_others=layer_dim,
+            )
         # 뷰어 payload 는 머리 줄 앞에서 구한다 — 범례와 도면이 한 회차 안에서 붙어 나가야 페이더를
         # 놓은 뒤 브라우저가 둘을 한 번에 맞춘다(그 사이에 payload 를 만들면 범례만 먼저 바뀐다).
         viewer_inputs = (
-            _floor_viewer_inputs(selected, floor_status, floor_boundaries)
+            _floor_viewer_inputs(
+                selected,
+                floor_status,
+                floor_boundaries,
+                shown_layer.looks if shown_layer is not None else None,
+            )
             if floor_boundaries is not None
             else None
         )
@@ -1776,19 +1997,27 @@ else:
             # 보기는 기준일의 색·테·덧표시별 대수(미확인은 오늘 기준 설비 수)다. 편집 중에는
             # 편집본을 그리므로 저장본의 대수를 달지 않고 채우기 뜻만 보인다(편집 화면은 테·덧표시를
             # 그리지 않는다).
-            st.markdown(
-                space_legend_markup(None, choice=color_choice)
-                if floor_boundaries is None
-                else space_legend_markup(
+            if floor_boundaries is None:
+                legend = space_legend_markup(None, choice=effective_choice)
+            elif shown_layer is not None:
+                # 필요 단축 — 구간 대수(목록 줄과 같은 축)·임박 테·흐림과 지금의 테·덧표시 칸.
+                legend = shortening_legend_markup(
+                    shown_layer.counts,
                     space_legend_counts(
-                        floor_counted, floor_boundaries, choice=color_choice, as_of=as_of
+                        floor_counted, floor_boundaries, choice=effective_choice, as_of=as_of
                     ),
-                    choice=color_choice,
                     as_of=as_of,
-                ),
-                unsafe_allow_html=True,
-                width="content",
-            )
+                    dim=layer_dim,
+                )
+            else:
+                legend = space_legend_markup(
+                    space_legend_counts(
+                        floor_counted, floor_boundaries, choice=effective_choice, as_of=as_of
+                    ),
+                    choice=effective_choice,
+                    as_of=as_of,
+                )
+            st.markdown(legend, unsafe_allow_html=True, width="content")
         if editing and buffer_frames is not None:
             _render_layout_editor(buffer_frames, selected_building, selected_floor, layout_profile)
         else:
@@ -1834,6 +2063,23 @@ else:
                 background_image=(
                     layout_profile.image_data_uri if layout_profile is not None else None
                 ),
+                # 필요 단축 보기 — 배지와 기준일 고정 줄(epoch 밖, 켠 동안만 키가 실린다).
+                badges=shown_layer.badges if shown_layer is not None else None,
+                as_of_pinned=PINNED_NOTE if shown_layer is not None else None,
+            )
+    # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
+    # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다). 아래 key 있는 호기 표의 자리가 밀리지
+    # 않는다.
+    with st.container(key="space_shortening_slot"):
+        if space_layer is not None and shown_layer is not None:
+            render_floor_layer_panel(
+                selected,
+                shown_layer,
+                space_layer,
+                picked_unit=picked_unit,
+                picked_rows=picked_rows,
+                key_of=unit_keys_by_name(floor_status),
+                picked_key=SPACE_PICKED_KEY,
             )
     # 아래 호기 표는 요청한 21칸이다(`FLOOR_TABLE_COLUMNS`). 도면에서 호기를 누르면 그 설비
     # 줄만(모듈이면 그 Main 설비 줄 전부, 누른 모듈이 첫 줄), 「층 전체 보기」 로 층 전체로

@@ -2050,16 +2050,20 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
     specs = {Path(spec.path).stem: spec for spec in ALL_SPECS}
     for page, _title, expected in screens.OTHER_PAGE_PANELS:
         spec = specs[page]
-        # 탭으로 가르지 않고, 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다).
-        assert spec.condition_tabs is None and spec.url_path is None
+        # 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다). 탭으로 가르지 않는다 — Space
+        # 현황만 보기 값(색 기준)으로 가르고, 화면 확인은 기본 색 기준(첫 값)에서 돈다.
+        assert spec.url_path is None
+        assert spec.condition_tabs is None or page == screens.SPACE_PAGE
+        active = spec.condition_tabs.first if spec.condition_tabs is not None else None
+        common = spec.reads_common_conditions_on(active)
         # 설비 시나리오 줄(`equipment_scenario`·`reads_equipment_scenario_on`)도 선언에서 읽는다 —
         # Space 현황은 설비 시나리오 줄 하나다(세션 시나리오를 고르는 줄 — 설비 시나리오 2단계 S3).
         rows = tuple(
             name
             for name, shown in (
-                ("시나리오", spec.reads_scenario),
-                ("조회기간", spec.reads_period),
-                ("설비 시나리오", spec.reads_equipment_scenario_on(None)),
+                ("시나리오", common and spec.reads_scenario),
+                ("조회기간", common and spec.reads_period),
+                ("설비 시나리오", spec.reads_equipment_scenario_on(active)),
             )
             if shown
         )

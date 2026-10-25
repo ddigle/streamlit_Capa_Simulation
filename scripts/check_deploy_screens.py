@@ -304,8 +304,8 @@ THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합�
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
     (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
-    # Space 현황은 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를 수 있는 줄 — 그 시나리오의
-    # 배치를 그린다)만 선다.
+    # Space 현황은 색 기준이 필요 단축이 아니면 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를
+    # 수 있는 줄 — 그 시나리오의 배치를 그린다)만 선다(이 항목은 기본 색 기준에서 돈다).
     (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
 )
 # 사이드바 계산 그룹 셋(2026-10-17 사용자 결정 — 약속 · 이행 · 실적) — (상자 slug, 상자 제목,

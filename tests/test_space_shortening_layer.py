@@ -36,7 +36,7 @@ from capa_simulation.services.space_shortening_layer import (
     build_shortening_layer,
     day_text,
     fab_floor_counts,
-    fab_summary,
+    fab_layer_summary,
     floor_layer,
     floor_short_line,
     shortening_space_floors,
@@ -270,7 +270,7 @@ def test_virtual_units_show_on_every_drawn_floor_and_count_once_in_the_fab_summa
     assert counts[("C1", "2F")].virtual == 2 and counts[("C1", "3F")].virtual == 2
     second = floor_layer(layer, counted.iloc[[0]], EMPTY_ROWS, focus=None, dim_others=True)
     assert [unit.name for unit in second.virtuals] == ["추가1", "추가2"]
-    summary = fab_summary(layer, counted)
+    summary = fab_layer_summary(layer, counted)
     assert summary.virtual == 3 and summary.total == 0
     # 그 공정 호기가 도면에 없으면(D/A) 층에는 없고 FAB 요약에만 든다.
     assert all(unit.process == "W/B" for unit in second.virtuals)
@@ -294,7 +294,7 @@ def test_a_shortened_unit_without_coordinates_is_listed_on_its_floor_or_only_in_
     assert [mark.unit for mark in here.unplaced] == ["WB05"] and not here.badges
     counts = fab_floor_counts(layer, drawn, loose)
     assert counts[("C1", "2F")].units == 1 and counts[("C1", "2F")].unplaced == 1
-    summary = fab_summary(layer, drawn)
+    summary = fab_layer_summary(layer, drawn)
     assert (summary.total, summary.drawn, summary.unplaced) == (2, 0, 2)
 
 
@@ -321,7 +321,7 @@ def test_an_expired_target_is_the_expired_bucket_and_late_months_are_counted() -
     drawn = _rows([("WB07", None, "W/B", "C1", "2F")])
     result = floor_layer(layer, drawn, EMPTY_ROWS, focus=None, dim_others=True)
     assert "기한 지남 달 2" in result.chips["W/B"]
-    summary = fab_summary(layer, drawn)
+    summary = fab_layer_summary(layer, drawn)
     assert (summary.expired, summary.expired_months) == (1, 2)
 
 
@@ -346,11 +346,11 @@ def test_floor_counts_follow_the_process_filter_and_skip_inactive_floors() -> No
     assert floor_short_line(None) is None
     filtered = fab_floor_counts(layer, counted, EMPTY_ROWS, processes={"W/B"})
     assert filtered[("C1", "2F")].units == 2 and filtered[("C1", "2F")].max_days == 9
-    summary = fab_summary(layer, counted, processes={"W/B"})
+    summary = fab_layer_summary(layer, counted, processes={"W/B"})
     assert (summary.total, summary.filtered_out) == (3, 1)
     off = fab_floor_counts(layer, counted, EMPTY_ROWS, inactive={("C1", "3F")})
     assert ("C1", "3F") not in off
-    assert fab_summary(layer, counted, inactive={("C1", "3F")}).inactive == 1
+    assert fab_layer_summary(layer, counted, inactive={("C1", "3F")}).inactive == 1
 
 
 # ------------------------------------------------------------------ T-U9 링크 층

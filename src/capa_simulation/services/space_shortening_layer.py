@@ -64,7 +64,7 @@ __all__ = [
     "build_shortening_layer",
     "day_text",
     "fab_floor_counts",
-    "fab_summary",
+    "fab_layer_summary",
     "floor_layer",
     "floor_short_line",
     "shortening_space_floors",
@@ -588,7 +588,7 @@ class FabSummary:
     inactive: int
 
 
-def fab_summary(
+def fab_layer_summary(
     layer: ShorteningLayer,
     counted: pd.DataFrame,
     *,
