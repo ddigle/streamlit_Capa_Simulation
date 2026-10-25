@@ -368,7 +368,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     대수 축은 `equipment_units.py`, 월별 안분은 `wd_window.py`(규칙은 6장). Cut-off 는 리비전 없이 표를 통째 갈아 끼운다.
   - 편집본은 `ensure_equipment_drafts` 한 곳이 씨뿌린다(Space 와 버퍼 공유). 입력 표를 더하면 draft 키 이름을 올리고
     Import·버퍼 교체 때 그 편집표를 `discard_editor` 로 버린다(9장). ① 본문은 `equipment_master_tab.py`, 편집본 경계·작은 편집표·
-    저장은 `equipment_data_workspace.py` 다(옛 `render_equipment_data_workspace` 폼은 화면에서 빠졌고 D 단계에서 걷는다).
+    저장은 `equipment_data_workspace.py` 다(옛 입력·직접 편집·저장 이력 폼은 개편 D 에서 걷었다).
 
 - `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`, `app_pages/yield_actual.py` — 실행 관리의 효율·UPEH·
   수율 실적 비교·개선관리 하위 페이지 셋이다.
@@ -1093,8 +1093,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 칸 정의 `GRID_COLUMNS`(계약 39칸 차례 — 브라우저로 가는 자리 번호는 모두 이 차례)·칸 묶음 `COLUMN_SETS`(기본·일정·위치·
     이력·메모·「전체 39칸」 = 엑셀 양식 차례)·상세 묶음 `DETAIL_GROUPS`(39칸이 한 번씩)·잠금 갈래 `LOCK_SETS`(모듈 묶음 좌표·크기 /
     배치 편집이 잠긴 회차의 있던 호기 배치 일곱 칸 `layout` · 새 호기 자리 넷 `place`(동·층·X좌표·Y좌표) / 낡은 세션의 시나리오 일곱
-    칸, 지운 표시 줄은 모든 칸)와 칸 머리 도움말 `scenario_column_help`(공통·상태·배치 `LAYOUT_COLUMN_HELP`·시나리오 — 옛 RawData
-    편집표도 이것을 쓴다)가 한 곳이다. 칸 저장 갈래 `scope` 는 공통·배치(`layout` — 배치 일곱 칸, 설비 시나리오 2단계 S3)·시나리오·
+    칸, 지운 표시 줄은 모든 칸)와 칸 머리 도움말 `scenario_column_help`(공통·상태·배치 `LAYOUT_COLUMN_HELP`·시나리오)가 한
+    곳이다. 칸 저장 갈래 `scope` 는 공통·배치(`layout` — 배치 일곱 칸, 설비 시나리오 2단계 S3)·시나리오·
     상태 넷이고 표 머리·상세 묶음(「위치」 는 배치)·값 넣기 칸·변경 줄·범례(공식이면 「공식 배치에 저장」, 가정이면 「그 시나리오에만
     저장(공식과 다른 것만)」)가 같은 꼬리표다.
   - **배치 편집이 잠긴 회차**(`GridContext.layout_lock` — 설비 시나리오 2단계 S3, 화면 쪽이 `space_edit_mode(...).layout ==
@@ -1176,8 +1176,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     layout_cells(...))` 가 공식과 같은 자리를 원래 칸 값으로 옮기고 그 밖은 다른 칸만 바꾼다(`Place` 는 견줄 꼴 — 반올림).
     S2 화면 잠금 재료 `assumption_common_places`·`misplaced_rows`·`place_rows` 가 같은 규칙으로 편집본을 맞춘다.
     `assumption_group_refusal(편집본, 세션 저장본, origins, 공식 일곱 칸)` 은 그 묶음 거부를 저장소와 같은 글로 미리 낸다 — 설비
-    마스터 탭 가정 세션 제출은 그 Main 설비 칸 고침을 제출 전 값으로 되돌리고 알리며(`refuse_mixed_groups`), 붙여넣기는
-    미리보기 전에 거부한다(`assumption_group_paste_refusal` — 설계 10장·Q1(c)).
+    마스터 탭 가정 세션은 그 묶음 고침을 「저장 전 변경」 고칠 것 한 줄로 올려 「리비전 저장」 을 막고
+    (`equipment_master_tab._table_errors` — 배치 차이가 아직 없는 갓 복제 시나리오도), 붙여넣기는 미리보기 전에 거부한다
+    (`assumption_group_paste_refusal` — 설계 10장·Q1(c)).
   - 정규화 `normalize_layout_overlay(overlay, base, official_floors)` — 그 쓰기의 공통·층 값과 같아진 차이를 지운다. 요소·이름표
     합치기·차이(`effective_floor_marks`·`mark_changes` — 차이 차례는 공식 id 의 공식 차례 → 새 요소라 지문이 편집기 차례에
     흔들리지 않는다·`effective_group_labels`·`label_changes`), 설비 단위 셈 `overlay_unit_count`(묶음은 1대)·머리 알림 재료
@@ -1817,8 +1818,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `표현`(차트·표)과 결과 상자는 「본문 프래그먼트」다(`tests/test_explorer_expression_fragment.py`).
     `render_equipment_period` 는 숨은 `owner_tab` 이면 조회를 건너뛴다.
 - `src/capa_simulation/components/equipment_data_workspace.py` — 가용설비 현황 ① 「설비 마스터」 탭의 편집본 경계·작은 편집표
-  둘·저장(세 표 리비전 저장). 옛 폼(`render_equipment_data_workspace` — 입력·직접 편집·저장 이력)은 개편 B1 로 화면에서
-  빠졌고(시험만 부른다) 단계 D 에서 걷는다. 탭 본문은 `equipment_master_tab.py`, 엑셀·CSV 팝업은 `equipment_import_dialog.py`.
+  둘(`render_small_editor`)·저장 이력(`_render_history`)·현재 데이터 내려받기 단추·붙여넣기 미리보기 재료(`build_import_review`·
+  `ImportReview`)·저장(세 표 리비전 저장 `save_equipment_buffer`). 옛 폼(입력·직접 편집·저장 이력 — 설비 마스터 편집표·안쪽 탭·
+  폼 제출 단추·칸 설정 도움말)은 개편 B1 로 화면에서 빠졌고 개편 D 에서 걷었다 — 파일은 쪼개지 않았다(사양 D16). 탭 본문은
+  `equipment_master_tab.py`, 엑셀·CSV 팝업은 `equipment_import_dialog.py`.
   - Space 편집기와 함께 쓰는 편집본 경계다 — 버퍼는 `replace_equipment_buffer` 또는 설비 마스터 표 전용
     `apply_master_grid_result`(같은 세대 규칙 — 내용이 그대로면 세대를 올리지 않는다)로만 갈고 `BUFFER_GENERATION_KEY` 세대를
     올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다.
@@ -1833,9 +1836,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     초안만 센다). 초안은 편집본 밖이라 사이드바 팝업·Space 「배치 저장」 이 모른 채 저장하면 저장 성공이 초안을 지워 친 글이
     사라진다. FAB 대기분만 쓰는 길(`frames is None`)은 막지 않는다.
   - 작은 편집표(`render_small_editor` — 기존 보유대수·비가동 일정, 개편 명세 4-7)는 **폼 밖**이고(명세의 「작은 폼」 에서 바꿈 —
-    폼 안 편집은 제출 전까지 서버에 오지 않아 탭 점·떠나기 확인이 볼 수 없었다, 리뷰 rs-b1y) 옛 직접 편집 탭의 보기 설정·고르기
-    칸·일괄 삭제·「편집본에 적용」(`_remember_edits`) 길 그대로다 — 단추는 보통 단추(`_selection_buttons`·
-    `_render_bulk_delete_status` 의 `in_form=False`, 옛 작업 공간은 폼 안 그대로). 칸을 고칠 때마다 회차가 돌지만 편집표는 「보기
+    폼 안 편집은 제출 전까지 서버에 오지 않아 탭 점·떠나기 확인이 볼 수 없었다, 리뷰 rs-b1y) 보기 설정·고르기 칸·일괄 삭제·
+    「편집본에 적용」(`_remember_edits`)이고 단추는 보통 단추다(`_selection_buttons`·`_render_bulk_delete_status`). 일괄 삭제
+    확인 글(`_deletion_message`)은 기존 보유대수·비가동 일정 둘만이다 — 호기 지우기는 표 출납(`delete`)이다. 칸을 고칠 때마다
+    회차가 돌지만 편집표는 「보기
     적용」 으로 확정한 보기를 그려 편집이 남는다. 제출 처리는 돌려준 함수로 화면이 모든 위젯을 그린 뒤 부른다(`st.rerun()` 으로
     끝난다). `small_editor_edits` 가 적용 전 편집을 알린다(탭 ① 점·화면 탭 줄 떠나기 확인). 시험 대역 `BrowserTables(forms=True)`
     는 브라우저처럼 폼 안 편집을 제출 전에 보내지 않는다.
@@ -1845,13 +1849,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     Main 설비 칸이 아닐 때)만이면 얹기 전 판정을 새 세대로 옮긴다(`layout_memo_mark`·`carry_layout_memo`).
     `buffer_base` 는 편집본 출발점 표지(저장본 쌍 토큰 + 씨뿌린 세대 — 표 출납 `base` 와 「리비전 저장」 두 번 누름 잣대). 층 대기분은 캔버스·요소·Main
     설비명 위치(`PENDING_GROUP_LABELS_KEY`) 셋이고 첫 대기분이 본 저장값(`PENDING_BASES_KEY`)을 함께 쓴다.
-  - 설비 마스터를 쓰는 모든 저장(직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장)은 `_save_equipment_frames` 에서
-    모듈 묶음 좌표·크기 검사(`saved_master_violations` — 저장본 사본 `EQUIPMENT_DRAFT_KEY` 와 견준다)를 지나고, 걸리면
-    `ValueError` 로 거부한다. 배치 편집기가 적용한 묶음의 모양은 `EDITOR_MODULE_LAYOUTS_KEY`(편집본과 함께 버려짐)에
-    두어 통과시킨다. 같은 판정을 폼 위 알림 칸이 저장 전에 경고로 보이고(그 문구로 거부된 회차에는 오류만 — 겹쳐
-    세우지 않는다), 설비 마스터 편집표 위 한 줄·좌표·크기 칸 머리 도움말(`MODULE_LAYOUT_HELP`)이 「모듈 묶음 좌표·크기는 Space 배치 편집기에서」를 말한다.
-  - `ImportReview` 는 최종 저장 때 입력이 달라졌으면 다시 확인받는다(마스터 입력 `read_equipment_update`,
-    `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
+  - 설비 마스터를 쓰는 모든 저장(설비 마스터 탭 「리비전 저장」 — 표·붙여넣기·CSV·작은 편집표 —, Space 배치 저장, 사이드바
+    팝업 저장)은 `_save_equipment_frames` 에서 모듈 묶음 좌표·크기 검사(`saved_master_violations` — 저장본 사본
+    `EQUIPMENT_DRAFT_KEY` 와 견준다)를 지나고, 걸리면 `ValueError` 로 거부한다. 배치 편집기가 적용한 묶음의 모양은
+    `EDITOR_MODULE_LAYOUTS_KEY`(편집본과 함께 버려짐)에 두어 통과시킨다. 같은 판정을 설비 마스터 탭 「저장 전 변경」 고칠 것 한
+    줄(`equipment_master_tab._table_errors`)이 저장 전에 보이고 「리비전 저장」 을 막는다. 표의 모듈 묶음(모듈 둘 이상) 좌표·크기
+    칸은 잠기고 그 까닭(`equipment_grid.MODULE_LOCK_REASON`)이 「Space 배치 편집기에서」 를 말한다(사양 D9) — 그런 편집은 붙여넣기
+    같은 표 밖 길로만 든다.
+  - `ImportReview` 는 「편집본에 넣기」 때 입력·등록할 표·편집본이 달라졌으면 넣지 않고 미리보기를 다시 만든다(마스터 입력
+    `read_equipment_update`, `equipment_csv.py`). 일괄 삭제의 `선택` 칸은 편집기 밖으로 나가지 않는다.
   - CSV 업로드 칸은 칸 고유 상한 `CSV_UPLOAD_LIMIT_MB`(50MB — 칸 안내 「50MB per file」, 넘는 파일은 브라우저가
     올리기 전에 막는다)를 쓴다. 서버 전체 상한(`config.toml` `maxUploadSize`)을 낮추지 않는다 — 다른 올리기 칸까지 묶인다.
   - 편집본은 세션의 **설비 시나리오 한 벌**이다(5장 32). `revision_token` 은 (공통, 일정) 쌍 토큰이고 저장본 사본과 함께
@@ -1859,30 +1865,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     셋)를 읽고, 편집 대조·`_saved_master()` 는 39칸 전부를 본다. 저장은 `save_equipment(EquipmentSaveRequest)` 로 간다 —
     출발점 칸(`_BASE_KEY` — 공통·일정·시나리오 id)과 이름 지도(`PendingRenames.units`)·저장 칸 값(`equipment_save_fields.py`).
     결과 알림은 공통 rN·시나리오 rN·함께 넣은 목록·발행·「지운 호기 n대는 모든 설비 시나리오에서 빠졌습니다」 를 적는다.
-  - **이름 바꾸기는 같은 호기다**(G4·R2). `follow_unit_renames` 가 이름을 기억한 설비 마스터 탭 칸 — 선택·삭제 확인 대기의 키, 목록
-    필터(설비 마스터 `Main 설비`·비가동 `설비명`, 위젯을 그리기 전에만 고칠 수 있어 `FOLLOWED_FILTERS_KEY` 에 모았다가
-    `_render_editors` 가 얹는다 — 자기 저장 뒤에도 남기고 버리기·남의 저장에는 버린다) — 를 새 이름으로 옮기고 `방금 삭제
-    되돌리기` 는 버린다. 저장 안 한 이름 바꿈은 Space 상자와
+  - **이름 바꾸기는 같은 호기다**(G4·R2). `follow_unit_renames` 가 이름을 기억한 설비 마스터 탭 칸 — 비가동 일정 작은 편집표의
+    선택·삭제 확인 대기의 키, 그 표 목록 필터(`설비명`, 위젯을 그리기 전에만 고칠 수 있어 `FOLLOWED_FILTERS_KEY` 에 모았다가
+    `render_small_editor` 가 얹는다 — 자기 저장 뒤에도 남기고 버리기·남의 저장에는 버린다), 「새 호기」 칸 함께 넣기 고름 — 를 새
+    이름으로 옮기고 `방금 삭제 되돌리기` 와 표 되돌리기의 행 조각 단계는 버린다(Main 설비 이름만 바꿔도). 저장 안 한 이름 바꿈은 Space 상자와
     설비 마스터 탭 알림 칸이 같은 `render_name_changes`(「이름 바꿈 n건」·`NAME_CHANGES_CAPTION`)로 보인다. 설비 마스터 표 호기
     상세의 설비명 칸 확정이 같은 호기 이름 바꿈이다(행 id 로 짝을 알아 공용 넷 — `equipment_grid._rename`). 붙여넣기·CSV 는
     설비명으로 맞대므로 바꾼 이름은 새 호기다(지운 + 새 호기 저장 결과 꼬리 `RENAME_INSTEAD_HINT` — 「설비 마스터 호기 상세의
-    설비명 칸이나 Space 편집기 「이름 바꾸기」」). 옛 편집표의 칸 도움말 `RENAME_CELL_HELP` 는 D 에서 걷는다.
+    설비명 칸이나 Space 편집기 「이름 바꾸기」」).
   - **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장**(설계 11-2 6단계)은 확인 체크 뒤에만 간다. `removals_elsewhere`
     (저장본 이름 − 편집본 − 이름 바꿈으로 비운 이름 → 호기 키 `DRAFT_UNIT_KEYS_KEY` → `load_units_scheduled_elsewhere`)가
     설비 마스터 탭 저장 칸 아래 경고·체크(`REMOVAL_CONFIRM_KEY` — 꼬리 `RemovalElsewhere.token` 은 (호기, 그 일정이 든 시나리오들)의
     지문이라 글이 바뀌면 체크가 풀린 새 칸)를 세우고, `_save_equipment_frames` 가 다시 센 삭제를 체크로 본 것
     (`removal_confirmed` — 그 글의 `RemovalElsewhere`)이 덮지 않으면(`covered_by` — 확인 안 한 호기, 본 뒤 그 호기 일정이 든
     시나리오가 늚) 거부한다 — 체크가 없는 자리(Space 「배치 저장」·팝업)도 같은 판정으로 막힌다.
-  - **배치 일곱 칸은 Space 와 같은 판정**(설비 시나리오 2단계 S3 — `render_equipment_data_workspace(layout_mode=,
-    layout_lock_reason=)`, 페이지가 `space_edit_mode(...).layout` 을 넘긴다. 주지 않으면 `basis` 역할). "official" 은 공식
-    배치(공통 대장), "overlay" 는 그 가정 설비 시나리오의 배치 차이다(공식은 바뀌지 않는다 — 새 호기는 공통에 자리 없이,
-    Q1·Q2, 캡션 한 줄). 배치 칸을 고친 제출은 그때의 역할을 찍는다(`stamp_layout_role` — `layout_edits` 가 비지 않을 때).
-    "locked"(잠긴 회차)는 S1·S2 임시 잠금 꼴 그대로다 — 저장하면 저장본 호기 키를 잇는 행(`layout_lock_origins` —
-    `inherited_unit_names`)의 배치 일곱 칸이 **저장본**과 다르면 저장본 값으로 되돌리고(`LayoutLock.restore`) 새 호기는 자리
-    없이 맞춘다(`place` — `layout_overlay.hypothetical_common_places` 한 규칙). 제출은 그 칸만 고치고(나머지 편집은 반영, 그
-    회차 저장·미리보기는 하지 않는다) 붙여넣기는 미리보기 전에 막는다(`layout_paste_refusal`). 칸을 `disabled` 로 두지
-    않는다 — `레이아웃표시` 는 기본값 없는 필수 고르기 칸이라 잠그면 새 호기 행을 넣을 수 없다. 칸 머리 도움말 셋째 묶음
-    「배치 — …」(`services/equipment_grid.LAYOUT_COLUMN_HELP`)와 범례가 같은 뜻이다.
+  - **배치 일곱 칸은 Space 와 같은 판정**(설비 시나리오 2단계 S3 — 페이지가 `space_edit_mode(...)` 를 설비 마스터 탭
+    `render_equipment_master_tab(layout_mode=)` 에 넘긴다). "official" 은 공식 배치(공통 대장), "overlay" 는 그 가정 설비
+    시나리오의 배치 차이다(공식은 바뀌지 않는다 — 새 호기는 공통에 자리 없이, Q1·Q2, 캡션 한 줄). 배치 칸을 바꾼 적용(표 출납·
+    「편집본에 넣기」·「호기 추가」)은 그때의 역할을 찍는다(`stamp_layout_role`). "locked"(잠긴 회차)는 저장하면 저장본 호기
+    키를 잇는 행(`layout_lock_origins` — `inherited_unit_names`)의 배치 일곱 칸을 표가 잠그고(`GridContext.layout_lock` — 출납도
+    파이썬이 버린다) 새 호기는 자리 없이 맞추며(`LayoutLock.place` — `layout_overlay.hypothetical_common_places` 한 규칙),
+    붙여넣기는 미리보기 전에 막는다(`layout_paste_refusal`). 저장본과 달라진 칸 판정·되돌림 재료는 `layout_edits`(`LayoutLock.
+    restore`)다. 칸 머리 도움말 셋째 묶음 「배치 — …」(`services/equipment_grid.LAYOUT_COLUMN_HELP`)와 범례가 같은 뜻이다.
   - **붙여넣기·CSV 의 배치 칸**(Q2): 가정 세션은 「배치 칸도 붙여넣기」(`PASTE_LAYOUT_KEY`, 기본 끔 — 「현재 데이터」 CSV 는
     합친 값이라 공식 CSV 를 올리면 배치안이 공식 자리로 돌아간다)를 두고, 끄면 있던 호기의 배치 칸은 지금 값을 둔다(새 호기의
     배치 칸은 받는다). 켜면 「가정 배치 n대가 바뀝니다(그 가운데 m대는 공식 자리로 돌아가 차이가 지워집니다)」, 공식 세션은
@@ -1904,12 +1908,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     리뷰). 공통·일정 칸 편집·새 호기·층 요소·이름표 대기분은 지금처럼 버리고, 공식 역할 편집·다른 리비전(일정 쪽이 바뀜)은 다시
     얹지 않는다. 알림(`discarded_notice`)이 다시 얹은 설비 수(묶음 1대)와 버린 것을 따로 적는다. 모양 검사·끝 확인은 저장이 다시
     본다.
-  - 세션이 **낡음**이면 설비 마스터 탭 맨 위에 그 알림을 세우고 시나리오 일곱 칸·비가동 일정 표를 `disabled` 로, 행 추가를 막으며,
-    붙여넣기 미리보기는 일정 칸 변경·새 행·비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 도움말 첫 마디가 「공통 — …」/「공통 — 공식 일정
-    기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」 이고 편집표 위 한 줄 범례(`SCENARIO_COLUMN_LEGEND`)가 같은 뜻이다.
+  - 세션이 **낡음**이면 설비 마스터 탭 맨 위에 그 알림을 세우고 표의 시나리오 일곱 칸(잠금 갈래 `stale`)·비가동 일정 작은
+    편집표를 잠그며 새 호기·저장본 호기 지우기를 막고(`newRowsLocked`·`deleteLock`), 붙여넣기 미리보기는 일정 칸 변경·새 행·
+    비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 풍선 첫 마디가 「공통 — …」/
+    「공통 — 공식 일정 기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」(`equipment_grid.scenario_column_help`)이고 표 범례가
+    같은 뜻이다.
   - 저장 이력은 고른 설비 시나리오의 일정 리비전(번호·저장자·출처·공통 rN)이고 조회는 `load_saved_pair`(저장 때의 짝)다.
-    「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인 목록은
-    공식 일정 + 편집본 공통 칸이다(세션 칸 한 벌).
+    「현재 데이터」 CSV 이름은 `equipment_master_<시나리오>_r{no}_c{공통no}_<날짜>.csv` 다. 가정 시나리오의 일정 확인(「일정 확인
+    필요」·표 풍선)은 공식 일정 + 편집본 공통 칸이다(`official_confirmation_master` — 세션 칸 한 벌).
 - `src/capa_simulation/components/equipment_scenario_status.py` — 사이드바 조건 패널의 「설비 시나리오」 줄과 팝업, 그리고 설비
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
   - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
