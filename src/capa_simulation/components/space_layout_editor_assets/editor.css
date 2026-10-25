@@ -426,6 +426,16 @@
   color: var(--sle-muted); white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .sle-tick-label.is-today { color: var(--sle-accent); font-weight: 700; }
+/* 트랙이 좁아 이웃 글자와 붙는 분기 글자는 숨긴다(JS `fitFaderTicks` — 「오늘」 은 늘 선다). 자리는 그대로라 다시 재기 쉽다. */
+.sle-tick-label.is-crowded { visibility: hidden; }
+/* 좁은 창(기준일 줄 폭 560px 아래 — 390px 휴대폰 폭이면 327px)에서는 날짜 칩을 줄여 트랙에 자리를 준다. 13.5rem 칩과 「오늘」
+   단추가 줄을 거의 다 먹어 트랙이 68px 로 줄고 1px 이 열흘쯤이었다(E2E 결함). 칩 폭은 여기서도 고정이다(창 폭으로만 바뀐다 —
+   끄는 동안 트랙이 밀리지 않는다). 날짜는 다 보이고 긴 상대 날짜(「+11개월 4주 6일」)만 말줄임이다 — 온 글은 페이더의 낭독 값. */
+.sle-daterow { container: sle-daterow / inline-size; }
+@container sle-daterow (width < 560px) {
+  .sle-fader { gap: 8px; }
+  .sle-fader-chip { width: 8.5rem; }
+}
 .sle-pinned {
   display: flex; align-items: center; gap: 6px; width: 100%; height: 100%; box-sizing: border-box; padding: 0 10px;
   border: 1px dashed var(--sle-border-strong); border-radius: 8px; font-size: 0.85rem; white-space: nowrap;
