@@ -445,6 +445,7 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  scroll-margin-top: 80px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--emg-border);
   background: var(--emg-new-fill);
@@ -1016,6 +1017,14 @@
   .emg-sum {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .emg-check-row .emg-check-head {
+    flex: 0 0 100%;
+  }
+
+  .emg-check-row .emg-check-head:empty {
+    display: none;
+  }
 }
 .emg-official {
   display: flex;
@@ -1024,4 +1033,131 @@
   gap: 4px 10px;
   margin-top: 6px;
   font-size: 12px;
+}
+
+.emg-check {
+  padding: 12px;
+  border-bottom: 1px solid var(--emg-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--emg-subtle);
+}
+
+.emg-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--emg-border);
+  overflow: hidden;
+}
+
+.emg-progress span {
+  display: block;
+  height: 100%;
+  background: var(--emg-accent);
+}
+
+.emg-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 12.5px;
+}
+
+.emg-check-head {
+  flex: 0 0 116px;
+  font-weight: 700;
+}
+
+.emg-check-item {
+  white-space: nowrap;
+}
+
+.emg-check-item.is-ok {
+  color: var(--emg-accent);
+  font-weight: 700;
+}
+
+.emg-check-item.is-no {
+  color: var(--emg-error-line);
+  font-weight: 700;
+}
+
+.emg-check-item.is-opt {
+  color: var(--emg-muted);
+}
+
+.emg-tier {
+  margin-left: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 15px;
+  border: 1px solid var(--emg-border-strong);
+  background: var(--emg-surface);
+}
+
+.emg-tier.is-required {
+  color: var(--emg-error-line);
+  border-color: var(--emg-error-line);
+}
+
+.emg-tier.is-required.is-done {
+  color: var(--emg-accent);
+  border-color: var(--emg-accent);
+}
+
+.emg-tier.is-calc {
+  background: var(--emg-layout-head);
+}
+
+.emg-tier.is-map {
+  border-style: dashed;
+  background: var(--emg-header);
+}
+
+.emg-field.is-need .emg-input {
+  border-color: var(--emg-error-line);
+  border-width: 2px;
+}
+
+.emg-field-lock {
+  font-size: 11.5px;
+}
+
+.emg-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 12.5px;
+}
+
+.emg-copy .emg-input {
+  flex: 1 1 140px;
+  height: 30px;
+}
+
+.emg-new-foot {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.emg-new-foot .emg-row-buttons {
+  justify-content: flex-end;
+}
+
+.emg-checkline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.emg-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--emg-muted);
 }

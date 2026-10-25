@@ -12,8 +12,16 @@
   표 컴포넌트 모듈이 읽힐 때 등록한다.
 - **자리**: 맨 위 줄(표 고르기 · 설비 시나리오 알약 · 저장 전 변경 수) → 알림 칸(늘 서 있는 칸 —
   CCv2 마운트 앞에 생겼다 사라지는 요소를 모두 그 안에 둔다, 명세 2-3) → 넓은 화면 두 칸(7:3).
-  왼쪽은 표 카드(내려받기 · 불러오기 · 표) 또는 작은 편집표, 오른쪽은 「호기 상세 · 저장 전 변경 ·
-  저장 이력」 고르기와 그 칸.
+  왼쪽은 표 카드(내려받기 · 불러오기 · 표) 또는 작은 편집표, 오른쪽은 「호기 상세 · 새 호기 · 저장
+  전 변경 · 저장 이력」 고르기와 그 칸.
+- **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸 — 초안(세션 `NEW_UNIT_DRAFT_KEY`, 브라우저가
+  칸을 확정할 때마다 상태 값 `draft` 로 보낸다)을 `equipment_grid.new_unit_check` 로 보고 체크 상자
+  셋(에러 없이 추가 · 가용대수 · 도면)과 칸 오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
+  초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 그 칸에서
+  고른 「다른 설비 시나리오에도 같은 일정으로 넣기」 는 호기마다 저장 요청에 실린다
+  (`propagate_units`, D8). 불러오기 「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한
+  호기에서 값 가져오기」 가 이 칸을 연다. 오른쪽 칸 고르기는 받기 콜백이 바로 적지 않고 다음
+  고르기 앞에서 적는다(`_SIDE_NEXT_KEY` — 그 고르기 뒤에 그린 마운트의 콜백도 같은 길).
 - **출납**: 표·오른쪽 칸이 보낸 상태 값 `outbox` 를 받기 콜백(본문보다 먼저 돈다)이 두 마운트를 함께
   읽어 반영한다(`equipment_grid.pending_ops`·`apply_ops` → `apply_master_grid_result`). 반영한
   마지막
@@ -54,6 +62,7 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_MEMO_KEY,
+    NEW_UNIT_DRAFT_KEY,
     NOTHING_SAVED_MESSAGE,
     REMOVAL_CONFIRM_KEY,
     SAVE_FIELDS_PREFIX,
@@ -76,13 +85,16 @@ from capa_simulation.components.equipment_data_workspace import (
     grid_undo_steps,
     layout_lock_origins,
     layout_memo_mark,
+    new_unit_choice_line,
     official_layout_cells,
     pending_fab_layout,
     pending_floor_canvases,
     pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
+    prune_new_unit_propagation,
     queue_grid_toast,
+    remember_new_unit_propagation,
     removals_elsewhere,
     render_name_changes,
     render_small_editor,
@@ -101,6 +113,8 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_import_dialog import open_equipment_import
 from capa_simulation.components.equipment_save_fields import (
+    ASSUMPTION_PROPAGATE_WARNING,
+    DEFAULT_PROPAGATE_NEW_UNITS,
     EquipmentSaveBasis,
     render_equipment_save_fields,
     save_fields_from_state,
@@ -133,6 +147,7 @@ from capa_simulation.services.equipment_bulk_delete import (
     DOWNTIME_TARGET,
 )
 from capa_simulation.services.equipment_contract import (
+    EQUIPMENT_COLUMNS,
     EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
     SCENARIO_LAYOUT_COLUMNS,
@@ -144,27 +159,37 @@ from capa_simulation.services.equipment_csv import (
 )
 from capa_simulation.services.equipment_grid import (
     GRID_ROW_LIMIT,
+    NAME_INDEX,
     GridContext,
     GridSource,
     GridState,
     GridView,
     all_load_ids,
     apply_ops,
+    blank_draft,
     build_grid_view,
     cell_text,
     change_counts,
     changes_data,
+    copied_draft,
+    copy_source,
     detail_data,
+    draft_seq_of,
+    draft_texts,
     grid_data,
     grid_index,
+    kept_draft,
     load_ids,
     loader_data,
     move_ids,
+    new_unit_check,
+    new_unit_data,
     pending_ops,
     prune_loaded,
     save_id_map,
     text_matrix,
     undo_top,
+    unit_texts,
 )
 from capa_simulation.services.equipment_validation import (
     MasterIssue,
@@ -178,6 +203,7 @@ from capa_simulation.services.floor_state import (
     inactive_floor_warnings,
     master_location_options,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.layout_overlay import assumption_group_refusal
 from capa_simulation.services.schedule_confirmation import (
     CONFIRMATION_KIND_COLUMN,
@@ -196,9 +222,13 @@ SIDE_KEY: Final = "equipment_master_side_v1"
 TABLE_MASTER: Final = "설비 마스터"
 TABLES: Final = (TABLE_MASTER, BASELINE_TARGET, DOWNTIME_TARGET)
 SIDE_DETAIL: Final = "호기 상세"
+SIDE_NEW: Final = "새 호기"
 SIDE_CHANGES: Final = "저장 전 변경"
 SIDE_HISTORY: Final = "저장 이력"
-SIDES: Final = (SIDE_DETAIL, SIDE_CHANGES, SIDE_HISTORY)
+SIDES: Final = (SIDE_DETAIL, SIDE_NEW, SIDE_CHANGES, SIDE_HISTORY)
+# 받기 콜백이 고른 오른쪽 칸 — 다음 그리기에서 고르기 위젯 **앞**에 적는다(진짜 콜백은 회차 맨
+# 앞이라 같은 회차, 시험 대역은 그 고르기 뒤 마운트에서 부르므로 다음 회차).
+_SIDE_NEXT_KEY: Final = "equipment_master_side_next_v1"
 # 못 찾은 설비명(다음 불러오기까지)·마운트별 마지막으로 반영한 출납 seq.
 MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
@@ -221,8 +251,17 @@ NOTHING_TO_SAVE: Final = "고친 것이 없습니다"
 _MOUNT_KEYS: Final = {
     "grid": grid_component.GRID_KEY,
     "detail": grid_component.side_key("detail"),
+    "new": grid_component.side_key("new"),
     "changes": grid_component.side_key("changes"),
 }
+# 「새 호기」 칸 안내(가정 설비 시나리오·배치 잠금 — 설계 Q1).
+NEW_UNIT_OVERLAY_NOTE: Final = (
+    "가정 설비 시나리오 — 새 호기의 동·층은 이 시나리오의 배치로만 저장되고, 공식 배치에는 자리 "
+    "없이 들어갑니다(있는 묶음에 드는 모듈은 그 묶음의 동·층)."
+)
+NEW_UNIT_LOCKED_NOTE: Final = (
+    "배치 편집이 잠겨 새 호기는 자리 없이 들어갑니다(있는 묶음에 드는 모듈은 그 묶음의 동·층)"
+)
 
 
 # ------------------------------------------------------------------ 세션 칸
@@ -259,7 +298,32 @@ def _grid_state() -> GridState:
         overlay=grid_overlay(),
         undo=grid_undo_steps(),
         loaded=loaded_ids(),
+        draft_seq=_new_draft()[0],
     )
+
+
+def _switch_side(side: str) -> None:
+    """오른쪽 칸을 바꾼다 — 다음 고르기 위젯 앞에서 적는다(`_SIDE_NEXT_KEY`)."""
+    st.session_state[_SIDE_NEXT_KEY] = side
+
+
+def _new_draft() -> tuple[int, list[str], bool]:
+    """「새 호기」 칸 세션 초안 (번호, 39칸 글, 함께 넣기) — 없거나 꼴이 다르면 빈 초안."""
+    value = st.session_state.get(NEW_UNIT_DRAFT_KEY)
+    if isinstance(value, dict):
+        seq, values = value.get("seq"), draft_texts(value.get("values"))
+        propagate = value.get("propagate")
+        if isinstance(seq, int) and values is not None and isinstance(propagate, bool):
+            return seq, values, propagate
+    return 0, blank_draft(), DEFAULT_PROPAGATE_NEW_UNITS
+
+
+def _store_new_draft(seq: int, values: Sequence[str], propagate: bool) -> None:
+    st.session_state[NEW_UNIT_DRAFT_KEY] = {
+        "seq": seq,
+        "values": list(values),
+        "propagate": propagate,
+    }
 
 
 def _result(kind: str, text: str) -> None:
@@ -279,10 +343,13 @@ def grid_context(
     floor_states: FloorStates | None,
     master: pd.DataFrame,
     official_snapshot: EquipmentSnapshot | None = None,
+    floor_canvases: FloorCanvasMap | None = None,
+    today: date | None = None,
 ) -> GridContext:
     """한 회차의 표 조건 — 잠금 글은 세션에서(낡음·일정 없이 엶·배치 잠금), `base` 는 편집본
     출발점. `official_snapshot` 은 가정 세션의 공식 스냅샷이다 — 「공식 자리로 되돌리기」 가 공식
-    일곱 칸 원래 값을 적는다(`official_layout_cells`)."""
+    일곱 칸 원래 값을 적는다(`official_layout_cells`). `floor_canvases`·`today` 는 저장 검증과 같은
+    인자다(「새 호기」 칸 체크·`add` op)."""
     stale = basis is not None and basis.stale
     stale_lock: str | None = None
     if stale and basis is not None:
@@ -309,6 +376,8 @@ def grid_context(
             if layout_mode.layout == "overlay"
             else {}
         ),
+        floor_canvases=dict(floor_canvases or {}),
+        today=today,
     )
 
 
@@ -540,8 +609,13 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     detail = _detail_id()
     if detail is not None and detail in result.moved:
         st.session_state[GRID_DETAIL_KEY] = result.moved[detail]
+    _follow_added(ops, result)
+    if result.frames_changed[1]:
+        # 되돌리기·지우기로 빠진 새 호기의 함께 넣기 고름을 걷는다(이름 바꿈은 위에서 따라갔다).
+        prune_new_unit_propagation()
     if result.toast:
-        target = targets.get(str(ops[-1].get("mount")), "grid")
+        # 「호기 추가」 는 그 호기를 상세로 연다 — 토스트(되돌리기)도 상세 칸에.
+        target = "detail" if result.added else targets.get(str(ops[-1].get("mount")), "grid")
         queue_grid_toast(target, result.toast, undo=result.toast_step)
     if result.frames_changed[1] and not _layout_neutral(ops):
         _stamp_if_layout_edited(ops, layout)
@@ -549,6 +623,29 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
         # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
         # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
         carry_layout_memo(before)
+
+
+def _follow_added(ops: Sequence[Mapping[str, Any]], result: Any) -> None:
+    """「호기 추가」 op 뒤 — 넣은 호기마다 함께 넣기 고름을 적고 마지막 호기를 상세로 열며 초안은
+    공정소분류·동·층만 남긴다(번호를 올려 브라우저가 바꾼다). 막혔으면 받은 초안을 세션 초안으로
+    둔다(그 초안의 칸 오류가 다음 회차에 선다). 세션 초안보다 번호가 작은 op(서비스가 말없이 버린
+    두 번 누름·옛 초안)는 보지 않는다 — 다음 회차에 따로 온 둘째 누름이 넣은 뒤 초안을 옛 초안으로
+    덮지 않게."""
+    seq, values, propagate = _new_draft()
+    adds = [op for op in ops if op.get("op") == "add" and draft_seq_of(op) >= seq]
+    if not adds:
+        return
+    top = max([seq, *(draft_seq_of(op) for op in adds)])
+    last = draft_texts(adds[-1].get("draft"))
+    if result.added:
+        for _row_id, name, chosen in result.added:
+            remember_new_unit_propagation(name, chosen)
+        row_id, _name, chosen = result.added[-1]
+        _store_new_draft(top + 1, kept_draft(last if last is not None else values), chosen)
+        st.session_state[GRID_DETAIL_KEY] = row_id
+        _switch_side(SIDE_DETAIL)
+    elif last is not None:
+        _store_new_draft(top, last, adds[-1].get("propagate") is True)
 
 
 def _stamp_if_layout_edited(ops: Sequence[Mapping[str, Any]], layout: LayoutMode) -> None:
@@ -580,10 +677,12 @@ def _touches_layout(ops: Sequence[Mapping[str, Any]]) -> bool:
     남짓 — 샘플 관측)을 칸 고침마다 돌리지 않는다. 지우기·되살리기·칸 되돌리기는 저장본 쪽으로 가는
     길이라 새 배치 편집을 만들지 않는다. **한 단계 되돌리기(`undo`)는 넣는다** — 찍힘이 걷힌 뒤
     (`live_layout_role` — 배치 편집이 사라짐) 되돌리기가 배치 편집을 되살릴 수 있다(칸
-    되돌리기·지우기·엑셀·CSV 넣기를 되돌림)."""
+    되돌리기·지우기·엑셀·CSV 넣기를 되돌림). **「호기 추가」(`add`)도 넣는다** — 새 호기 자리(동·층·
+    레이아웃표시)는 배치 편집이라(붙여넣기 새 행·엑셀·CSV 넣기와 같다) 넣은 뒤 저장 전에 공식 설비
+    시나리오가 바뀌면 찍힌 역할로 막는다(설계 6-2·Q1)."""
     for op in ops:
         name = op.get("op")
-        if name in ("official", "undo"):
+        if name in ("official", "undo", "add"):
             return True
         columns: list[object] = []
         if name in ("cell", "set"):
@@ -632,7 +731,53 @@ def _on_clear() -> None:
 
 def _open_detail(row_id: str) -> None:
     st.session_state[GRID_DETAIL_KEY] = row_id
-    st.session_state[SIDE_KEY] = SIDE_DETAIL
+    _switch_side(SIDE_DETAIL)
+
+
+def _on_new() -> None:
+    """불러오기 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로."""
+    _switch_side(SIDE_NEW)
+
+
+def _on_draft(value: grid_component.DraftValue) -> None:
+    """「새 호기」 칸이 보낸 초안 — 번호가 세션 초안보다 작지 않을 때만 적는다(늦게 온 옛 초안이
+    가져오기·「호기 추가」 뒤 초안을 덮지 않게)."""
+    seq, _values, _propagate = _new_draft()
+    if value.seq >= seq:
+        _store_new_draft(value.seq, value.values, value.propagate)
+
+
+def _on_copy(request: grid_component.CopyRequest) -> None:
+    """가져오기 — 상세 「이 호기로 새 호기 만들기」(빈 초안에 그 호기 값) 또는 「비슷한 호기에서
+    값 가져오기」(브라우저 초안 위에 설비명이 같거나 앞부분이 맞는 첫 호기 값). 「새 호기」 칸을
+    연다."""
+    frames: Frames = st.session_state[BUFFER_KEY]
+    master = frames[1].reset_index(drop=True)
+    seq, values, propagate = _new_draft()
+    if request.draft is not None:
+        seq = max(seq, request.draft.seq)
+        values, propagate = list(request.draft.values), request.draft.propagate
+    if request.row_id is not None:
+        live = grid_index(master, _saved_frames()[1], pending_unit_renames().units).live
+        position = live.get(request.row_id)
+        base: list[str] | None = None
+    else:
+        names = [cell_text(value) for value in master[EQUIPMENT_ID_COLUMN].tolist()]
+        position = copy_source(names, request.query)
+        base = values
+    if position is None:
+        if request.draft is not None:
+            _store_new_draft(seq, values, propagate)
+        what = f"「{request.query}」 설비명" if request.query else "그 호기"
+        queue_grid_toast(
+            "new" if request.query else "detail", f"{with_object_particle(what)} 찾지 못했습니다"
+        )
+        return
+    source = unit_texts(master, position)
+    _store_new_draft(seq + 1, copied_draft(source, base), propagate)
+    name = source[NAME_INDEX]
+    queue_grid_toast("new", f"{name} 의 호기 정보·위치를 가져왔습니다 — 설비명과 일정을 채웁니다")
+    _switch_side(SIDE_NEW)
 
 
 def _on_grid_open(row_id: str) -> None:
@@ -960,10 +1105,12 @@ def _render_grid_card(
                 missing=tuple(missing) if isinstance(missing, tuple) else (),
                 alert_ids=alert_ids,
                 first_data=latest_snapshot is None and not view.index.live,
+                new_enabled=True,
             ),
             on_load=_on_load,
             on_clear=_on_clear,
             on_dialog=_on_dialog,
+            on_new=_on_new,
         )
         grid_component.render_grid_table(
             grid_data(
@@ -1002,6 +1149,13 @@ def _render_save_section(
         release_exists=basis is None or basis.release_no > 0,
         persist_saved_by=True,
     )
+    with st.container():
+        # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 함께 넣기 체크보다 이긴다(D8).
+        line = new_unit_choice_line(
+            frames, assumption=basis is not None and not basis.official_scenario
+        )
+        if line is not None:
+            st.caption(line)
     with st.container():
         try:
             removal = removals_elsewhere(
@@ -1085,6 +1239,56 @@ def _render_save_section(
                 st.info(text)
 
 
+def _render_new_unit(
+    view: GridView,
+    context: GridContext,
+    layout_mode: SpaceEditMode,
+    *,
+    basis: EquipmentSaveBasis | None,
+    ack: Mapping[str, Any] | None,
+    toast: Mapping[str, Any] | None,
+    top: str | None,
+) -> None:
+    """오른쪽 「새 호기」 칸(개편 명세 4-6 나) — 세션 초안을 이 회차 편집본 위에서 보고(체크 상자·칸
+    오류·잠금) 그린다. 가정 설비 시나리오면 새 호기 자리 안내와 함께 넣기 경고(공식 가용대수에 셈 —
+    Space 저장 상자와 같은 글)를 싣는다."""
+    seq, values, propagate = _new_draft()
+    check = new_unit_check(
+        values,
+        frames=st.session_state[BUFFER_KEY],
+        saved_master=_saved_frames()[1],
+        renames=pending_unit_renames(),
+        context=context,
+    )
+    notes: list[str] = []
+    if layout_mode.layout == "overlay":
+        notes.append(NEW_UNIT_OVERLAY_NOTE)
+    elif layout_mode.layout == "locked" and context.layout_lock:
+        notes.append(f"{NEW_UNIT_LOCKED_NOTE} — {context.layout_lock}")
+    official = basis is None or basis.official_scenario
+    grid_component.render_grid_side(
+        "new",
+        new_unit_data(
+            view,
+            check,
+            seq=seq,
+            propagate=propagate,
+            propagate_default=DEFAULT_PROPAGATE_NEW_UNITS,
+            ack=ack,
+            toast=toast,
+            undo_top=top,
+            notes=notes,
+            propagate_warning=None if official else ASSUMPTION_PROPAGATE_WARNING,
+        ),
+        on_outbox=partial(_on_outbox, context, layout_mode.layout),
+        on_open=_on_side_open,
+        on_goto=_on_goto,
+        on_draft=_on_draft,
+        on_copy=_on_copy,
+        columns=len(EQUIPMENT_COLUMNS),
+    )
+
+
 def render_equipment_master_tab(
     *,
     repository: DuckDBEquipmentRepository,
@@ -1113,6 +1317,8 @@ def render_equipment_master_tab(
         floor_states=floor_states,
         master=frames[1],
         official_snapshot=confirmation_official,
+        floor_canvases=floor_canvases,
+        today=today,
     )
     view = build_view(
         context,
@@ -1152,6 +1358,9 @@ def render_equipment_master_tab(
                 floor_canvases=floor_canvases,
             )
     with right:
+        chosen_side = st.session_state.pop(_SIDE_NEXT_KEY, None)
+        if chosen_side in SIDES:
+            st.session_state[SIDE_KEY] = chosen_side
         _seed(SIDE_KEY, SIDE_DETAIL, SIDES)
         side = st.segmented_control(
             "오른쪽 칸",
@@ -1194,6 +1403,16 @@ def render_equipment_master_tab(
                 floor_canvases=floor_canvases,
                 today=today,
             )
+        elif side == SIDE_NEW:
+            _render_new_unit(
+                view,
+                context,
+                layout_mode,
+                basis=basis,
+                ack=acks.get("new"),
+                toast=toasts.get("new"),
+                top=top,
+            )
         else:
             grid_component.render_grid_side(
                 "detail",
@@ -1207,12 +1426,15 @@ def render_equipment_master_tab(
                 on_outbox=partial(_on_outbox, context, layout),
                 on_open=_on_side_open,
                 on_goto=_on_goto,
+                on_copy=_on_copy,
             )
     # 그린 마운트의 토스트는 실어 보냈다고 적고, 사라진 마운트의 실어 보낸 토스트는 거둔다(닫은
     # 토스트가 다시 마운트할 때 되살아나지 않게).
     drawn = {"grid"} if table == TABLE_MASTER else set()
     if side == SIDE_DETAIL:
         drawn.add("detail")
+    elif side == SIDE_NEW:
+        drawn.add("new")
     elif side == SIDE_CHANGES:
         drawn.add("changes")
     settle_grid_toasts(drawn)

@@ -333,7 +333,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     오른쪽 끝 「← 공정 Capa 상세」 는 같은 공정으로 돌아간다.
 - `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 입력·조회·Static 비교를 **탭 둘**로 다룬다
   (2026-10-24 사용자 결정 — 두 탭 개편): ① `설비 마스터`(처음 여는 탭 — 설비 마스터 표·작은 편집표 둘·오른쪽 칸 호기 상세/
-  저장 전 변경/저장 이력, 개편 B1 — `components/equipment_master_tab.py`, 개편 전 `RawData`) ②
+  새 호기/저장 전 변경/저장 이력, 개편 B1·C — `components/equipment_master_tab.py`, 개편 전 `RawData`) ②
   `Summary`(안쪽 탭 `Main`·`Static 대비 일정` — 라벨 글자는 개편 전 그대로). 공정별 Cut-off 는 제목 줄 끝 「설정」 팝업
   (`equipment_settings_dialog.py`, 개편 전 `Preference` 탭), Qual 마감 계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·
   리비전·발행은 시나리오 관리 › 설비 시나리오다. 설명은 `guides/available_equipment_status.md`.
@@ -1045,7 +1045,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     없는 호기)를 낸다. 가정 배치(설비 0031)는 **불변 값만** 더한다 — 고른·지금 최신 리비전의 저장된 배치 차이 행 수·지문(빈
     차이는 None)·「그때와 자리가 다른 손대지 않은 호기 수」(`layout_moved_since`). 일정이 같고 배치 지문도 같아야 `identical` —
     되돌려도 리비전을 만들지 않는다(층 현행값 기준 정규화·공식 시나리오라 차이를 버림은 캐시 밖 쓰기 길이 본다).
-  - 함께 넣기 후보: 새 호기 = 저장본 공통에 없던 키(`new_unit_keys`). 새 비가동(`new_downtime_rows`)은 같은 (키, 유형)
+  - 함께 넣기 후보: 새 호기 = 저장본 공통에 없던 키(`new_unit_keys`). 넣을 새 호기는 저장 요청이 새 호기마다 고른 이름
+    (`EquipmentSaveRequest.propagate_units` — 설비 마스터 「새 호기」 칸, 개편 D8)이 있으면 그 이름의 새 호기만, 없으면
+    `propagate_new_units` 하나로 모두 또는 아무것도다(`_propagated_unit_keys`). 새 비가동(`new_downtime_rows`)은 같은 (키, 유형)
     묶음에 저장본에 없던 시작일이 생겼고 그 묶음에서 사라진 행이 없을 때만이다 — 같은 (키, 시작일) 행이 다른 유형으로
     사라졌어도 고침으로 본다(시작일·유형만 고친 비가동은 퍼지지 않는다). 쓸 일정 행은 「저장본에 일정 행이 있던 호기 ∪
     일곱 칸에 값이 있는 호기 ∪ 비가동이 있는 호기 ∪ 새 호기」 다(`select_schedule_rows`).
@@ -1108,7 +1110,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「~」 를 받는다). 칸 글자 `cell_text` 가 화면 글자이자 「바뀐 칸」 견줌 글자다.
   - `build_grid_view` 한 번에서 세 마운트 data(`grid_data`·`loader_data`·`detail_data`·`changes_data`)가 나온다 — 같은 입력이면
     같은 dict. 칸 초안이 있는 칸에는 편집본 옛 값의 규칙 결과를 싣지 않는다(초안 오류 하나). 출납을 보내는 마운트(표·오른쪽 칸 둘)
-    는 저마다 제 `ack` 와 그 마운트가 보낸 조작의 토스트를 싣는다 — 화면 쪽은 토스트를 그 op 를 보낸 마운트에 싣는다. 토스트 dict 의
+    는 저마다 제 `ack` 와 그 마운트가 보낸 조작의 토스트를 싣는다 — 화면 쪽은 토스트를 그 op 를 보낸 마운트에 싣는다(예외 하나:
+    「호기 추가」 가 넣은 회차는 그 호기를 「호기 상세」 로 열므로 토스트·「되돌리기」 도 상세 칸에 — `GridApplied.added`). 토스트 dict 의
     `undo` 는 단계 표지(`GridApplied.toast_step`)이고 `toast_payload` 가 그 단계가 되돌리기 목록 맨 위(`undo_top`)일 때만 남긴다.
     `grid_data(open_id=)` 는 상세에 연 줄의 띠다. 불러오기 data 의 조건 칸(옛 표 보기 거르기 13칸, 사용자 R1)은 칸마다 값 번호를
     64자 고정 폭 글자로 잇는다(`encode_codes` ↔ JS `decodeCodes` — 브라우저는 고른 값을 번호가 아니라 글로 기억한다).
@@ -1126,6 +1129,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 이름 바꿈을
     되돌리면 `renamed`·`moved` 를 거꾸로 알린다. 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째
     단계는 하나다. 세션에는 `undo_to_state` 의 기본형으로 둔다.
+  - **새 호기**(개편 단계 C — 오른쪽 「새 호기」 칸): `new_unit_check(초안 39칸 글, frames, saved_master, renames, context)` 한
+    판정이 체크 상자 셋(「에러 없이 추가하려면」 설비명·공정소분류 + 필수 Y/N 셋 — 빈 초안 `blank_draft` 가 보관 N·기존설비 N·
+    레이아웃표시 Y 로 채운다 — 과 **다른 칸 값 때문에 막는 칸**: Qual일정이 있는 신규 호기의 Qual상태(찼어도 그 줄에 남음)와 비어서
+    막는 오류가 걸린 칸(좌표가 있는데 빈 크기 등, 잠긴 칸 빼고). 막대가 다 찼는데 「호기 추가」 가 막히지 않게 — 사용자 요구 「에러
+    없이 추가하는 최소 칸」 / 「가용대수에 세려면」 반입·Qual 일정·사용기준 HBM·EDP(`counts_for_capacity` — D13) / 「도면에
+    놓으려면」 동·층, 레이아웃표시 N 이면 없음)·칸 오류·잠금·「호기 추가」 막힘을 낸다. 칸 data 의 `required` 는 늘 필수인 칸(설비명·
+    공정소분류·Y/N 셋)만이다(브라우저가 「호기 추가」 를 켜고 누를 때 만진 표지를 줌). 칸 오류는 칸
+    다듬기(`coerce_master_cell`) + 설비명 규칙 `space_layout_edit.check_new_unit_name`(Space 새 호기와 같은 규칙 — 대소문자만 다른
+    이름·Main 설비 이름·지운 채 저장 안 한 이름 막음, D12) + **저장 규칙 표**(`equipment_master_issues` — 저장과 같은 인자
+    `GridContext.floor_canvases`·`today`)를 편집본의 관련 행(설비명·Main 설비가 초안의 설비명·Main 설비와 같은 행 —
+    `_related_rows`)과 초안 한 줄에 돌린 결과 가운데 초안 줄의 것이다(설비명이 비거나 걸리면 자리 이름으로 돌린다 — 빈 이름 줄은 저장
+    정규화가 조용히 뺀다). 잠금은 낡은 세션 통째(`new_rows_locked`), 배치 잠금 회차의 자리 넷(묶음에 드는 모듈은 그 묶음 동·층),
+    있는 모듈 묶음에 드는 초안의 좌표·크기 넷(D9)이다. 「호기 추가」 는 출납 op `add`(`{"draftSeq", "draft", "propagate"}`) — 그
+    `draftSeq` 가 세션 초안 번호(`GridState.draft_seq` — 넣으면 그 번호 + 1 로 오른다)보다 작으면 **말없이 버린다**(개편 명세 6-4 —
+    두 번 누른 둘째 op 가 이름 겹침으로 거부되어 첫 op 의 성공 토스트·되돌리기를 덮지 않게, 가져오기 뒤 옛 초안이 들지 않게). 받은
+    초안을 다시 보고 막히면 넣지 않고 그 까닭을 토스트로, 아니면 편집본 설비 마스터 **끝**(행 차례는 공통 대장 내용)에 한 줄을 잇고
+    불러온 목록 맨 위에 두며 되돌리기 한 단계, `GridApplied.added` 에 (행 id, 설비명, 함께 넣기)를 싣는다. 가정 편집 회차면 토스트에
+    「공식 배치에는 자리 없이」(설계 Q1). 가져오기는 `copied_draft`(호기 정보 묶음 — 설비명·Main 설비 뺌 — 와 동·층·레이아웃표시,
+    기존설비여부 N, 투자구분 기존 → 신규)·`copy_source`(같은 이름 → 앞부분 첫 줄)이고, 추가 뒤 초안은 `kept_draft`(공정소분류·동·층).
+    칸 data 는 `new_unit_data`(칸 자리 번호의 오류·경고·잠금·체크 줄·초안 번호 `seq`·`checked`).
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다.
@@ -1172,6 +1195,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
     이름은 못 쓴다(`reserved_names`). 가림·겹침은 경고만 한다.
+  - 새 호기 이름 규칙은 `_require_new_unit_name` 한 곳이다 — Space 편집기 새 호기(`_parse_created`)와 설비 마스터 「새 호기」
+    칸(`check_new_unit_name(name, *, master, reserved)` — 걸리면 까닭, 받으면 None, 개편 단계 C)이 같은 글로 막는다.
   - **이름 바꾸기 공용 넷**(G4·R2 — 이름 바꾸기는 같은 호기, 설비 시나리오 2단계 S1). 이름 바꾸는 자리(Space 편집기·개편
     뒤 설비 마스터 호기 상세)는 모두 이것을 쓴다 — 새 자리가 규칙을 따로 짜지 않는다.
     `check_unit_rename(old, new, *, master, reserved, renaming, group_renaming, created)` 는 한 바꿈을 보고 거부 까닭(Space
@@ -1296,8 +1321,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/equipment_master_tab.py` — 가용설비 현황 탭 ① 「설비 마스터」 본문(개편 B1-c·d — 옛 RawData
   폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` · 설비 시나리오 알약 · 리비전 · 「저장 전 변경 n건」) → 알림 칸 →
-  두 칸(7:3 — 표 카드 또는 작은 편집표 · 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 저장 전 변경 · 저장 이력」). 두
-  고르기는 `persist_state="session"` 이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다(`required=True`).
+  두 칸(7:3 — 표 카드 또는 작은 편집표 · 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
+  이력」). 두 고르기는 `persist_state="session"` 이고 콜백이 값을 적으므로 `default=` 없이 위젯 앞에서 칸이 없을 때만 심는다
+  (`required=True`). 받기 콜백이 오른쪽 칸을 바꿀 때는 그 칸을 바로 적지 않고 `_SIDE_NEXT_KEY` 에 두어 다음 고르기 **앞**에서
+  적는다(진짜 콜백은 회차 맨 앞이라 같은 회차 — 시험 대역은 고르기 뒤 마운트에서 부르므로 위젯을 만든 뒤 적는 오류를 피한다).
+  - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸은 세션 초안(`NEW_UNIT_DRAFT_KEY` — {번호, 39칸 글, 함께 넣기}, 저장해도
+    남는다)을 그 회차 편집본 위에서 `new_unit_check` 로 보고 그린다(합성 3천 대 한 번 약 0.05 s — 샘플 관측, 칸 결과처럼
+    메모하지 않는다). 브라우저는 칸을 확정할 때마다 상태 값 `draft`(번호를 올림)를 보내고 받기 콜백은 번호가 세션 초안보다 작지
+    않을 때만 적는다. 출납을 얹을 때 세션 초안 번호를 `GridState.draft_seq` 로 넘긴다(옛 번호의 `add` 는 서비스가 버림). 「호기
+    추가」(`add` op) 뒤에는 넣은 호기마다 함께 넣기 고름을 적고(`remember_new_unit_propagation` → `NEW_UNIT_PROPAGATE_KEY`), 마지막
+    호기를 「호기 상세」 로 열며(토스트 「되돌리기」 도 상세 칸), 초안은 번호를 올려 공정소분류·동·층만 남긴다. 막히면 받은 초안을
+    세션 초안으로 둔다 — 세션 초안보다 번호가 작은 `add`(버린 두 번 누름)는 보지 않는다(다음 회차에 따로 온 둘째 누름이 넣은 뒤
+    초안을 옛 초안으로 덮지 않게). 「새 호기」 칸 고름은 그 호기가 편집본에서 빠지면 걷는다(`prune_new_unit_propagation` — 표 출납
+    뒤·Space 적용 뒤·엑셀·CSV 넣기 뒤, **이름 바꿈을 따라간 뒤**에 부른다) — 같은 이름이 다른 길로 다시 들면 저장 칸 체크를 따르고,
+    되돌려 되살린 호기도 저장 칸 체크다. 가져오기(`copy` 트리거 — 상세 「이 호기로 새 호기 만들기」 는 빈 초안에,
+    「비슷한 호기에서 값 가져오기」 는 브라우저 초안 위에)와 불러오기 「+ 새 호기」(`new`)가 이 칸을 연다. 가정 설비 시나리오면 칸
+    위에 새 호기 자리 안내(공식 배치에는 자리 없이 — Q1)와, 함께 넣기를 켰을 때 공식 가용대수 경고(Space 저장 상자와 같은 글)를
+    싣는다. 함께 넣기 기본값은 저장 칸과 같은 F6(켬)이다. 저장 구획은 그 칸에서 넣은 호기 수와 그 고름(같은 일정 n대 · 일정 없음
+    m대)을 한 줄로 적는다(`new_unit_choice_line` — 사이드바 설비 시나리오 팝업 「저장」 과 Space 「저장 칸」 도 같은 줄, 가정 세션이면
+    같은 일정으로 넣는 호기가 공식 가용대수에 센다는 꼬리 — 그 칸 고름이 세 저장 길 모두에서 저장 칸 체크를 이기므로).
   - **CCv2 마운트 앞의 자리는 고정한다** — 낡음 경고·잠금 줄·이름 바꿈 목록·비활성 층 경고는 늘 서 있는 칸 안, 알약 「저장 전
     변경」 도 늘 서 있는 칸 안이다(순번이 밀리면 표가 다시 마운트되어 보내지 않은 출납·고름을 잃는다 — 9장).
   - 한 회차에 표 모양(`build_view` → `equipment_grid.build_grid_view`)을 한 번 내고 세 마운트 data 를 그것에서 낸다. 칸 결과
@@ -1310,9 +1352,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     낡은 세션의 지운 호기)은 「저장하기 전에 고칠 것」 줄이다. 일정 확인 갈래는 내용 지문 캐시(`get_schedule_confirmation_issues`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 토스트는 마지막 op 를 보낸
-    마운트에, 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와 `official`·`undo`(되돌리기가 걷힌
-    배치 편집을 되살릴 수 있다 — 「한 단계 되돌리기」 단추도) 뒤에만 배치 편집 판정(`buffer_has_layout_edits` 메모)으로 역할을
-    찍는다(`stamp_layout_role`). 트리거(불러오기·목록 비우기·열기·빼기·goto·팝업)는 목록·상세 id·표 고르기 칸만 적는다. 콜백 안에서
+    마운트에(「호기 추가」 가 넣은 회차만 상세 칸에), 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와
+    `official`·`undo`(되돌리기가 걷힌 배치 편집을 되살릴 수 있다 — 「한 단계 되돌리기」 단추도)·`add`(새 호기 자리는 배치 편집 —
+    붙여넣기 새 행·엑셀·CSV 넣기와 같다) 뒤에만 배치 편집 판정(`buffer_has_layout_edits` 메모)으로 역할을 찍는다
+    (`stamp_layout_role`). 트리거(불러오기·목록 비우기·열기·빼기·goto·팝업)는 목록·상세 id·표 고르기 칸만 적는다. 콜백 안에서
     `st.rerun()` 을 부르지 않는다.
   - **토스트는 실어 보낸 마운트가 사라지면 거둔다**(`settle_grid_toasts` — 탭 끝에 그린 마운트 이름으로, 탭이 숨은 회차에는 빈 것으로
     부른다). 브라우저의 닫은 토스트 번호는 마운트마다 새로 시작해 표 고르기·탭·오른쪽 칸 왕복에 닫은 토스트가 되살아났다. 아직 실어
@@ -1344,12 +1387,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_master_grid.py` (+ `equipment_master_grid_assets/` HTML·CSS·JS) — 가용설비 현황
   「설비 마스터」 탭 표(Components v2, 그림자 DOM, 개편 B1)의 등록·그리기·받기. 탭 본문(`equipment_master_tab`)이 부르고, 페이지는
   그 탭이 열린 회차에만 그 모듈을 불러온다 — 모듈을 읽을 때 등록한다(`test_benchmark_home.py`).
-  - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·저장
-    전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
+  - 한 등록을 세 자리에 다른 key 로 마운트한다 — 불러오기 `LOADER_KEY`·표 `GRID_KEY`·오른쪽 칸 `side_key(panel)`(호기 상세·새
+    호기·저장 전 변경). key 가 정체라 data 가 바뀌어도 다시 마운트되지 않지만 앞 형제 순번이 밀리면 다시 마운트되어 보내지 않은 출납을
     잃는다 — 탭 본문은 마운트 앞의 생겼다 사라지는 칸을 늘 서 있는 칸 안에 둔다(9장 「key 가 있어도 자리는 고정한다」).
   - data 는 `services/equipment_grid` 의 dict + 팔레트(`_palette` — CSS 의 `--emg-*` 는 모두 여기, 새 토큰 `GRID_*` 열(배치 머리 `GRID_LAYOUT_HEAD` 포함) —
-    대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」), 트리거는
-    불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·`goto` 이다. 받기 콜백이 꼴을 거르고(표 트리거는
+    대비는 `test_design_tokens`)다. 편집본을 바꾸는 조작은 상태 값 `outbox` 하나(9장 「스크립트와 컴포넌트」 — 「호기 추가」 도
+    `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는
+    불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·`goto`·`copy`(`copy_request`) 이다. 받기 콜백이 꼴을 거르고(표 트리거는
     그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.
   - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인 필요, 전체), 칸 묶음·정렬·
     고름(브라우저 몫 — 칸 묶음만 localStorage), 가상 스크롤(줄 34px), 칸 고치기 키(Enter·Esc·Tab·↑↓·F2), 엑셀 여러 칸 붙여넣기
@@ -1360,6 +1404,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `undo` 는 맨 위 단계를 되돌린다). `moved` 는 목록 지문(`view`)으로 고름·스크롤을 처음으로 돌리기 **전에** 얹는다. 불러오기
     회차가 돌아와도 초점이 표 등 불러오기 밖에 있으면 찾기 칸으로 가져오지 않는다(`focusIsFree`). 팝오버는 화면 오른쪽 밖으로
     나가면 왼쪽으로 당긴다(`popoverShift`). 표 본문의 Tab 정지는 초점 칸 하나(체크·「−」 는 `tabIndex -1`, 칸 위 Space = 줄 고르기).
+    「새 호기」 칸(`drawNew`)은 브라우저 초안을 들고(받은 초안은 번호가 클 때만 — `adoptDraft`), 체크 상자 칸은 판정이 지금 초안의
+    것이면 그 판정, 아니면 칸이 찼는지만 보이고(`tierDone`), 칸 오류는 그 칸을 만졌거나 값이 있을 때만 — 다만 늘 필수인 칸이
+    아니면(다른 칸 값 때문에 막는 칸) 만지지 않아도 보이고(`showsError`), 「호기 추가」 는 필수 칸이 찼고 지금 초안의 판정이 막지
+    않을 때 켠다(`canAdd` — 판정 전이면 켜 두고 파이썬이 `add` op 를 다시 본다). 칸을 통째로 다시 그리는 칩·함께 넣기 체크·「양식
+    비우기」(상세 칩도)는 `data-fk` 를 달아 초점이 돌아온다(키보드로 채우는 동안 칸 처음으로 가지 않게). 오른쪽 칸의 새 토스트가 화면
+    위로 나가 있으면(칸 아래쪽에서 누른 「호기 추가」·「이 호기로 새 호기 만들기」·「이 호기 지우기」) 칸 머리를 보인다(`revealToast`·
+    `needsReveal`, 토스트 `scroll-margin-top` 이 머리 띠를 비킨다) — 그 칸이 처음 선 회차이거나 「되돌리기」 가 달린 토스트만(칸 안에서
+    고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게). 표지 색은 새 토큰 없이 팔레트(오류 선·강조·배치 머리 면·머리
+    면)이고 글자(필수·가용대수·도면)가 함께 간다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
@@ -1873,7 +1926,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
   `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭은 가정
-  설비 시나리오에서 발행 체크를 그리지 않는다(`show_publish`).
+  설비 시나리오에서 발행 체크를 그리지 않는다(`show_publish`). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
+  (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (질문 1·F6·F2 — 답이 다르면 여기 하나만 바꾼다). 폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다(같은 제출의 새 호기가
     그 회차 편집본에 아직 없다) — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
@@ -3784,7 +3838,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   마지막 seq 기억으로 seq 가 큰 것만 `(at, mount, seq)` 차례로 한 번 반영한 뒤 그 마운트의 `ack` 를 data 에 실어 돌려준다(설비 마스터
   표 — `services/equipment_grid.pending_ops`·`apply_ops`). 편집본 출발점(`base`)이 달라진 op 는 반영하지 않고 버린다. 브라우저는
   300ms 조용하면 보내고, 초점이 컴포넌트 밖으로 나가거나 창이 숨으면 바로 보낸다 — 보낼 것이 있을 때만(빈 값을 다시 적으면 회차만
-  는다). 잃어도 되는 화면 조작(열기·목록에서 빼기)만 트리거다.
+  는다). 잃어도 되는 화면 조작(열기·목록에서 빼기)만 트리거다. 편집본을 **바꾸지 않는** 둘째 상태 값은 이 규약 밖이다 — 설비 마스터
+  「새 호기」 초안 `draft` 는 확정마다 번호를 올린 초안 전부를 보내(앱 회차 하나) 늦게 온 옛 값을 번호로 거르고, 그 초안을 넣는
+  「호기 추가」 는 출납 op `add`(번호 `draftSeq` 가 세션 초안보다 작으면 버림)다.
 - Components v2 의 브라우저 전용 보기 상태(높이·배율·서랍 열림)는 컴포넌트 안이나 localStorage(읽기·쓰기 모두
   try/catch)에 두고 `setStateValue`·Streamlit 위젯으로 보내지 않는다 — 보내면 앱 전체가 다시 돈다. 브라우저 안에서 끝낼
   수 있는 일(페이더를 끄는 동안 칠하기)은 컴포넌트 안에서 끝낸다 — 놓은 뒤 한 회차 시간은 대부분 프런트엔드가 페이지를
@@ -4026,8 +4082,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - **설비 시나리오 2단계는 아직 없다**(1단계 = 구조·이관·고르기·두 쪽 저장·발행·복제·이름·화면 최소·사내 이관 확인, 그 위에
   E7 리비전명·되돌리기·여기서 새 시나리오):
   시나리오끼리 일정 비교(F7), 보관·되살리기·영구 삭제·순서·공통 대장 이력 표(E8 나머지), 남의 공통 저장 때 일정 편집 다시 얹기(rebase),
-  함께 넣기 행 단위 고르기(개편 C), 일정 없음
-  호기를 「이 시나리오에 넣기」, 운영 변경 끌어오기. 스키마는 1단계 그대로 받는다. 지금은 단일 사용자 전제라 여러 세션이
+  일정 없음
+  호기를 「이 시나리오에 넣기」, 운영 변경 끌어오기(함께 넣기 행 단위 고르기는 개편 C 의 「새 호기」 칸 — 그 칸에서 넣은 호기만). 스키마는 1단계 그대로 받는다. 지금은 단일 사용자 전제라 여러 세션이
   함께 쓰면 함께 넣기·남의 공통 저장이 낡음·버림을 자주 만든다.
 - 시나리오 보관은 파일 크기를 줄이지 않는다 — DuckDB 용량 회수는 영구 삭제 뒤 `scripts/compact_duckdb.py` 재구축뿐이다.
 - 브라우저 뒤로/앞으로는 페이지 안 상태 이동이 아니다 — Streamlit 1.63 은 그 재실행에 브라우저 주소가 아니라 파이썬이

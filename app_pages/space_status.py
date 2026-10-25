@@ -21,6 +21,7 @@ from capa_simulation.components.equipment_data_workspace import (
     follow_unit_renames,
     has_unsaved_equipment_edits,
     live_layout_role,
+    new_unit_choice_line,
     official_confirmation_master,
     pending_fab_layout,
     pending_floor_canvases,
@@ -29,6 +30,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_unit_renames,
     pop_discarded_notice,
     pop_drafts_replaced,
+    prune_new_unit_propagation,
     render_name_changes,
     replace_equipment_buffer,
     reset_equipment_drafts,
@@ -1155,6 +1157,15 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                         release_exists=equipment_session.release_no is not None,
                         assumption=equipment_session.is_assumption,
                     )
+                    # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 위 체크보다 이긴다(D8) — 끈
+                    # 채 저장해도 그 칸에서 켠 호기는 다른 설비 시나리오에 든다.
+                    line = (
+                        new_unit_choice_line(frames, assumption=equipment_session.is_assumption)
+                        if frames is not None
+                        else None
+                    )
+                    if line is not None:
+                        st.caption(line)
             # 설비 샘플 화면에서는 FAB 편집이 꺼진다(결정 2). 그 전에 적용한 FAB 대기분도 저장하지
             # 않는다 — 대기분은 두고, 스위치를 끄면 저장할 수 있다. 버리기는 그대로 된다.
             st.button(
@@ -1465,6 +1476,8 @@ def _render_layout_editor(
             compose_renames(pending_unit_renames(), applied, saved=latest_snapshot.equipment)
         )
         follow_unit_renames(applied.unit_renames, applied.group_renames)
+    # 이 적용이 지운 「새 호기」 칸 호기의 함께 넣기 고름을 걷는다 — 이름 바꿈을 따라간 뒤에(D8).
+    prune_new_unit_propagation()
     if applied.canvas is not None:
         unchanged = applied.canvas == (
             stored_canvas or (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
