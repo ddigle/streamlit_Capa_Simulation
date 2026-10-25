@@ -1900,7 +1900,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `equipment_master_tab.py`, 엑셀·CSV 팝업은 `equipment_import_dialog.py`.
   - Space 편집기와 함께 쓰는 편집본 경계다 — 버퍼는 `replace_equipment_buffer` 또는 설비 마스터 표 전용
     `apply_master_grid_result`(같은 세대 규칙 — 내용이 그대로면 세대를 올리지 않는다)로만 갈고 `BUFFER_GENERATION_KEY` 세대를
-    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다.
+    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 「내용이 그대로」 는 `same_frame_content` 로 본다 — 저장본 사본(DuckDB)의 날짜 칸은
+    `datetime64[us]`, 엑셀·CSV 넣기의 병합 결과는 `[ns]` 라 `DataFrame.equals` 만으로는 바뀐 것 없는 넣기가 「미저장 변경」 을
+    남긴다(낡은 세션의 비가동 붙여넣기 거절 `stale_paste_refusal` 도 같은 견줌). 저장은 `save_equipment_buffer` 한 곳이다.
   - **설비 마스터 표의 세션 칸**(개편 B1): 칸 초안 `GRID_OVERLAY_KEY`(못 읽은 글 — 편집본 밖)·되돌리기 `GRID_UNDO_KEY`(기본형 —
     `equipment_grid.undo_to_state`)·마운트별 토스트 `GRID_TOAST_KEY`(번호 `GRID_TOAST_SEQ_KEY` 는 비우지 않는다)·회차 메모
     `GRID_MEMO_KEY` 는 편집본을 다시 세움(`ensure_equipment_drafts`)·저장·모두 버리기(`reset_equipment_drafts`) 때 함께 비우고,

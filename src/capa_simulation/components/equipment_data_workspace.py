@@ -689,11 +689,32 @@ def _follow_saved_unit_renames(moved: Mapping[str, str]) -> None:
         st.session_state[GRID_DETAIL_KEY] = moved[detail]
 
 
+def same_frame_content(left: pd.DataFrame, right: pd.DataFrame) -> bool:
+    """두 표의 내용이 같은가 — `DataFrame.equals` 에 날짜 칸의 시각 단위만 맞춰 본다.
+
+    저장본 사본(DuckDB 에서 읽음)의 날짜 칸은 `datetime64[us]`, 엑셀·CSV 넣기의 병합 결과는
+    `datetime64[ns]` 다. 단위만 다른 같은 표를 「바뀜」 으로 보면 바뀐 것 없는 넣기(내려받은 현재
+    데이터를 그대로 올림)가 세대를 올려 「저장 전 변경」 0건인데 「미저장 변경」·탭 점·떠나기 확인이
+    남는다. 시간대가 있는 날짜 칸과 다른 형은 그대로 견준다."""
+    if left.equals(right):
+        return True
+    if list(left.columns) != list(right.columns) or len(left) != len(right):
+        return False
+    units = {
+        column: "datetime64[ns]"
+        for column in left.columns
+        if left[column].dtype != right[column].dtype
+        and pd.api.types.is_datetime64_dtype(left[column])
+        and pd.api.types.is_datetime64_dtype(right[column])
+    }
+    return bool(units) and left.astype(units).equals(right.astype(units))
+
+
 def _remember_edits(frames: Frames) -> None:
     # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
     current = st.session_state.get(BUFFER_KEY)
     unchanged = isinstance(current, tuple) and all(
-        left.equals(right) for left, right in zip(current, frames, strict=True)
+        same_frame_content(left, right) for left, right in zip(current, frames, strict=True)
     )
     st.session_state[BUFFER_KEY] = _copy_frames(frames)
     _clear_editors()
@@ -2812,7 +2833,7 @@ def stale_paste_refusal(
         "미리보세요."
     )
     if review.target == "비가동 일정":
-        if not review.candidate[2].equals(current[2]):
+        if not same_frame_content(review.candidate[2], current[2]):
             refusal = "비가동 일정은 설비 시나리오 쪽이라 지금 보는 낡은 리비전에 넣지 않습니다."
             return refusal + way_out
         return None
