@@ -579,10 +579,12 @@ function drawLoader(host, S, data) {
   bar.appendChild(button('emg-btn', '엑셀·CSV로 한꺼번에', () => S.setTrigger('dialog', { name: 'import' })))
   const loaded = Array.isArray(data.loaded) ? data.loaded.length : 0
   const total = Number(data.total) || 0
+  // 불러온 수는 전체(살아 있는 호기)와 같은 기준 — 지울 목록에 든 호기는 표에 남아도 세지 않는다.
+  const shown = Number.isFinite(data.loadedCount) ? data.loadedCount : loaded
   const info = el('div', 'emg-info')
   const count = el('span')
   count.appendChild(el('span', null, '불러온 호기 '))
-  count.appendChild(el('b', null, loaded.toLocaleString()))
+  count.appendChild(el('b', null, shown.toLocaleString()))
   count.appendChild(el('span', 'emg-muted', '대 / 전체 ' + total.toLocaleString() + '대'))
   info.appendChild(count)
   if (loaded) info.appendChild(button('emg-link', '목록 비우기', () => S.setTrigger('clear', {})))

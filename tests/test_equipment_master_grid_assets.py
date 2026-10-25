@@ -762,6 +762,24 @@ def _loader_payload() -> dict[str, Any]:
     }
 
 
+_LOADER_INFO_RUNNER = (
+    _FAKE_DOM_RUNNER.split("const toggleOf")[0]
+    + "process.stdout.write(JSON.stringify(host.querySelector('.emg-info').textContent))\n"
+)
+
+
+def test_the_loader_counts_loaded_units_like_the_total() -> None:
+    """정보 줄 「불러온 호기 n대 / 전체 N대」 의 n 은 `loadedCount`(살아 있는 호기)다 — 지울 목록에
+    든 호기 줄이 `loaded` 에 남아도 전체 N 을 넘지 않는다(E2E 「21대 / 전체 20대」)."""
+    assert JS.count(_MOUNT_HEAD) == 1
+    source = JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
+    data = {**_loader_payload(), "loaded": ["s:DEMO-01", "s:DEMO-02", "s:GONE"], "loadedCount": 2}
+
+    text = _node({"data": data}, _LOADER_INFO_RUNNER, source=source)
+
+    assert text.startswith("불러온 호기 2대 / 전체 2대"), text
+
+
 def test_both_loader_popovers_close_on_escape_right_after_opening() -> None:
     """「조건으로 불러오기 ▾」 를 열자마자 누른 Esc 로도 닫힌다 — 「공정으로 불러오기 ▾」 처럼 열면
     초점이 패널 안 첫 칸으로 가고(Esc 는 패널이 받는다), 열린 채 여는 단추로 돌아와도 Esc 로 닫는다.
