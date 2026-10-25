@@ -280,6 +280,25 @@ function needsReveal(top, margin) {
 }
 // </grid-new>
 
+// <grid-choice>
+// 고르는 칸의 선택지 — 칸 단위 `options`(+ 비움)에서, 칸 정의에 `optionsBy` 가 있으면 그 줄의 기준 칸 값으로 좁힌다
+// (층 칸 `{"동": {"C1": ["1F", …]}}` — 그 동의 사용 층만, Space 층 비활성의 짝 단위 거름). 기준 칸이 비었거나 표에
+// 없는 값이면 칸 단위 그대로다. 지금 값(`current`)은 늘 남긴다 — 비활성 층에 이미 있는 호기도 제 값을 고른 채 보인다.
+function choiceOptions(columns, column, valueAt, current) {
+  let options = column.options || []
+  const by = column.optionsBy || {}
+  for (const name of Object.keys(by)) {
+    const k = columns.findIndex((item) => item && item.name === name)
+    const key = k < 0 ? '' : String(valueAt(k) || '').trim()
+    const table = by[name] || {}
+    if (!key || !Object.prototype.hasOwnProperty.call(table, key)) continue
+    const allowed = new Set(table[key] || [])
+    options = options.filter((option) => allowed.has(option) || option === current)
+  }
+  return options.concat(column.blank ? [''] : [])
+}
+// </grid-choice>
+
 // <grid-place>
 // 팝오버를 단추 왼쪽에서 얼마나 당길지(px, 0 이하) — 화면 오른쪽 밖으로 나가면 왼쪽으로, 왼쪽 끝 `margin` 은 남긴다.
 function popoverShift(left, width, viewport, margin) {
@@ -452,6 +471,14 @@ function showNote(S, text) {
 function pendingText(S, id, col) {
   const item = S.pending.get(id + '\t' + col)
   return item ? item.text : null
+}
+
+// 그 줄의 칸 값(보내는 중인 값 먼저) — 고르는 칸이 그 줄의 동으로 층 선택지를 좁힐 때(`choiceOptions`) 쓴다.
+function rowValueAt(S, row) {
+  return (k) => {
+    const pending = pendingText(S, row.id, k)
+    return pending !== null ? pending : String((row.values || [])[k] || '')
+  }
 }
 
 // ---------------------------------------------------------------- 칸 공용
@@ -1169,6 +1196,7 @@ function buildSelection(S, bar) {
   }
   if (column.kind === 'choice') {
     const chips = el('div', 'emg-chips')
+    // 여러 줄에 한 값을 넣으니 줄마다 다른 동으로 좁히지 않는다 — 칸 단위 선택지 그대로(`choiceOptions` 를 거치지 않음).
     const options = (column.options || []).concat(column.blank ? [''] : [])
     for (const value of options) {
       const chip = button('emg-chip', value || '(비움)', () => {
@@ -1467,7 +1495,7 @@ function cellElement(S, row, k) {
     cell.classList.add('is-editing')
     const list = el('div', 'emg-dd')
     list.setAttribute('role', 'listbox')
-    const options = (column.options || []).concat(column.blank ? [''] : [])
+    const options = choiceOptions(model.columns, column, rowValueAt(S, row), value)
     options.forEach((option, index) => {
       const item = button(index === S.edit.active ? 'is-active' : null, option || '(비움)')
       item.dataset.pick = option
@@ -1496,7 +1524,7 @@ function startEdit(S, id, col, initial) {
   const column = S.model.columns[col]
   const pending = pendingText(S, id, col)
   const current = pending !== null ? pending : String((row.values || [])[col] || '')
-  const options = (column.options || []).concat(column.blank ? [''] : [])
+  const options = choiceOptions(S.model.columns, column, rowValueAt(S, row), current)
   S.edit = { id, col, draft: initial !== undefined ? initial : current, original: current, selectAll: initial === undefined, active: Math.max(options.indexOf(current), 0) }
   S.focus = { id, col }
   S.wantFocus = true
@@ -1631,7 +1659,8 @@ function onBodyKey(S, event) {
   }
   if (S.edit && target.closest('.emg-dd')) {
     const column = S.model.columns[S.edit.col]
-    const options = (column.options || []).concat(column.blank ? [''] : [])
+    const editRow = S.model.rows.find((item) => item.id === S.edit.id) || { id: S.edit.id, values: [] }
+    const options = choiceOptions(S.model.columns, column, rowValueAt(S, editRow), S.edit.original)
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       S.edit.active = (S.edit.active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
@@ -2101,7 +2130,8 @@ function newField(S, column, k, mark) {
     const chips = el('div', 'emg-chips')
     chips.setAttribute('role', 'group')
     chips.setAttribute('aria-label', column.name)
-    const options = (column.options || []).concat(column.blank ? [''] : [])
+    const columns = (S.data && Array.isArray(S.data.columns)) ? S.data.columns : []
+    const options = choiceOptions(columns, column, (j) => S.nd.values[j], value)
     for (const option of options) {
       const chip = button('emg-chip', option || '(비움)', () => {
         commit(option)
@@ -2179,7 +2209,8 @@ function detailField(S, unit, column, k, sets, reasons) {
     const chips = el('div', 'emg-chips')
     chips.setAttribute('role', 'group')
     chips.setAttribute('aria-label', column.name)
-    const options = (column.options || []).concat(column.blank ? [''] : [])
+    const columns = (S.data && Array.isArray(S.data.columns)) ? S.data.columns : []
+    const options = choiceOptions(columns, column, rowValueAt(S, unit), shown)
     for (const value of options) {
       const chip = button('emg-chip', value || '(비움)', () => {
         commit(value)

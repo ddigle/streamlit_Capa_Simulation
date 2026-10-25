@@ -8,6 +8,7 @@ AppTest 는 표 컴포넌트 JS 를 못 돌린다 — 대역(`tests/grid_fake.py
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import Any
 
@@ -525,3 +526,41 @@ def test_a_delivered_toast_does_not_come_back_when_its_mount_returns(
     app.session_state[TABLE_KEY] = "설비 마스터"
     app.run()
     assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("표 밖에서 편집본을 바꿔")
+
+
+def test_an_out_of_range_location_rejection_keeps_its_tildes(tmp_path: Path, grid: Calls) -> None:
+    """범위 밖 동·층 거부 문구는 `st.error` 가 마크다운으로 그린다 — 물결표 둘이 취소선이 되지
+    않게 `\\~` 로 막혀 그려진다(문구 바이트 자체는 규칙 시험이 고정한다)."""
+    app = _app(tmp_path / "equipment.duckdb")
+    frame = pd.read_csv(io.StringIO(_rows("DA-01")), sep="\t", dtype=str, keep_default_na=False)
+    frame["동"] = "C9"
+    frame["층"] = "1F"
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
+    app.run()
+    app.text_area(key=CLIPBOARD_KEY).set_value(frame.to_csv(sep="\t", index=False))
+    app.button(key=PREVIEW_BUTTON_KEY).click().run()
+
+    assert not app.exception, app.exception
+    assert app.error
+    assert "동은 C1\\~C5, 층은 1F\\~6F 범위여야 합니다" in app.error[0].value
+
+
+def test_the_floor_column_narrows_by_building_where_only_the_pair_is_inactive(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """Space 층 비활성의 짝 단위 거름(D6·R2) — 「C1 3F」 만 꺼지면 층 칸 단위 선택지에는 3F 가 남고
+    (다른 동은 사용), 층 칸 정의의 `optionsBy` 가 C1 에서 3F 를 뺀다. JS 가 그 줄의 동으로
+    고른다."""
+    database = tmp_path / "equipment.duckdb"
+    repository = DuckDBEquipmentRepository(database)
+    repository.initialize()
+    assert repository.save_floor_states({("C1", "3F"): "UNUSED"}, expected_version=0, source="t")
+    app = _app(database)
+    _import(app, _rows("DA-01"))
+
+    columns = {column["name"]: column for column in last(grid, emg.GRID_KEY)["columns"]}
+    assert "3F" in columns["층"]["options"]
+    by_building = columns["층"]["optionsBy"]["동"]
+    assert by_building["C1"] == ["1F", "2F", "4F", "5F", "6F"]
+    assert by_building["C2"] == ["1F", "2F", "3F", "4F", "5F", "6F"]
+    assert "optionsBy" not in columns["동"]

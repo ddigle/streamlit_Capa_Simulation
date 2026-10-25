@@ -70,6 +70,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     render_equipment_dialog_host,
     render_equipment_settings_button,
 )
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
@@ -448,7 +449,7 @@ with gap_tab:
                 _downtime=dashboard_downtime,
             )
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(markdown_safe_tildes(exc))
         else:
             # 비교 시트의 반사실 — 같은 마스터·같은 범위에서 비가동만 비운 구간. 같은 구간 캐시에
             # 빈 비가동으로 받는다(새 캐시 경계 없음). 시트를 그리는 회차에만 패널이 부른다.

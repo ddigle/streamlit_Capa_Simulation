@@ -21,7 +21,7 @@ from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     TableView,
@@ -2960,7 +2960,7 @@ def render_small_editor(
     with st.container():
         error = st.session_state.pop(_ERROR_KEY, None)
         if isinstance(error, str):
-            st.error(error)
+            st.error(markdown_safe_tildes(error))
         notice = st.session_state.pop(_NOTICE_KEY, None)
         if isinstance(notice, str):
             st.info(notice)

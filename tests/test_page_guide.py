@@ -350,7 +350,7 @@ def test_the_tilde_check_tells_a_range_from_a_spaced_or_escaped_tilde() -> None:
     assert _tilde_lines("코드 `A~B~C` 는 글 그대로") == []
 
 
-@pytest.mark.parametrize("page", ["constraint_simulation"])
+@pytest.mark.parametrize("page", sorted(path.stem for path in GUIDES.glob("*.md")))
 def test_guide_ranges_escape_the_tilde(page: str) -> None:
     """Guide 대화상자는 md 원문을 그대로 `st.markdown` 에 넘긴다(`page_guide._open_guide`) — 범위
     글의 물결표는 원문에서 `\\~` 로 막는다(같은 화면의 `schedule_lines` 와 같은 꼴)."""

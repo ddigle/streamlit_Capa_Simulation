@@ -51,7 +51,7 @@ from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
@@ -467,7 +467,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
             discard=discard,
         )
         if failure is not None:
-            st.error(failure)
+            st.error(markdown_safe_tildes(failure))
             return
         if selected_scenario != session.official_scenario_id:
             # 묻고 버린 층 사용 초안은 여기서 버린다 — Space 가 잠그며 버리기를 기다리면 다음

@@ -42,6 +42,7 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
@@ -679,11 +680,11 @@ def _render_notices() -> None:
         return
     kind, text = held
     if kind == "warning":
-        st.warning(str(text), icon=":material/sync_problem:")
+        st.warning(markdown_safe_tildes(text), icon=":material/sync_problem:")
     elif kind == "error":
-        st.error(str(text))
+        st.error(markdown_safe_tildes(text))
     else:
-        st.info(str(text))
+        st.info(markdown_safe_tildes(text))
 
 
 def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:

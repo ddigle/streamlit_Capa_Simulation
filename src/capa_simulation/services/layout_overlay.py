@@ -1348,8 +1348,8 @@ def reapply_layout_edits(
     `stage_editor_module_layouts`)이다. 모양의 설비명을 같은 호기 키 규칙으로 새 저장본 이름으로
     옮겨, 다시 얹은 결과에서 그 모양 그대로인 묶음만 새 Main 설비 이름으로 돌려준다 — 버리면
     편집기만 낼 수 있는 묶음(숨은 모듈이 있는 묶음 보내기 등)이 저장에서 「설비 마스터 표로 바꾼
-    값」 으로 막힌다. 그 사이 남이 묶음 행을 바꿨거나 승인 뒤 RawData 로 고친 묶음은 모양이 달라
-    승인을 잃는다(저장 검사가 다시 본다)."""
+    값」 으로 막힌다. 그 사이 남이 묶음 행을 바꿨거나 승인 뒤 설비 마스터 탭으로 고친 묶음은 모양이
+    달라 승인을 잃는다(저장 검사가 다시 본다)."""
     old_rows: dict[str, dict[str, object]] = {}
     for record in old_saved.to_dict(orient="records"):
         saved_row = {str(column): value for column, value in record.items()}

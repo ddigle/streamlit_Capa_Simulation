@@ -205,6 +205,7 @@ _SECTIONS = (
     "grid-codes",
     "grid-place",
     "grid-new",
+    "grid-choice",
 )
 _RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
@@ -484,6 +485,47 @@ def test_new_unit_errors_on_cells_other_values_require_show_before_touching() ->
 
     assert result["error"] == [False, True, True, True, False, False]
     assert result["reveal"] == [True, True, False]
+
+
+_CHOICE_RUNNER = """
+const columns = [{ name: '동' }, { name: '층' }]
+const floor = {
+  name: '층',
+  options: ['1F', '2F', '3F'],
+  blank: true,
+  optionsBy: { '동': { C1: ['1F', '2F'], C2: ['1F', '2F', '3F'], C5: [] } },
+}
+const at = (building) => (k) => (k === 0 ? building : '')
+const results = {
+  c1: choiceOptions(columns, floor, at('C1'), ''),
+  c2: choiceOptions(columns, floor, at(' C2 '), ''),
+  keep: choiceOptions(columns, floor, at('C1'), '3F'),
+  none: choiceOptions(columns, floor, at('C5'), ''),
+  blank: choiceOptions(columns, floor, at(''), ''),
+  unknown: choiceOptions(columns, floor, at('C9'), ''),
+  plain: choiceOptions(columns, { name: '동', options: ['C1', 'C2'], blank: false }, at('C1'), ''),
+}
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_the_floor_choice_narrows_by_the_rows_building_and_keeps_the_current_value() -> None:
+    """고르는 칸 선택지(`// <grid-choice>`) — 층 칸은 그 줄의 동으로 좁히고(짝만 꺼진 「C1 3F」),
+    지금 값은 비활성 층이어도 남긴다. 동이 비었거나 모르는 값이면 칸 단위 그대로, `optionsBy` 가
+    없는 칸도 그대로다. 표 칸·호기 상세 「위치」·새 호기 초안이 같은 함수를 지난다."""
+    result = _node({}, _CHOICE_RUNNER)
+
+    assert result["c1"] == ["1F", "2F", ""]
+    assert result["c2"] == ["1F", "2F", "3F", ""]
+    assert result["keep"] == ["1F", "2F", "3F", ""]
+    assert result["none"] == [""]
+    assert result["blank"] == ["1F", "2F", "3F", ""]
+    assert result["unknown"] == ["1F", "2F", "3F", ""]
+    assert result["plain"] == ["C1", "C2"]
+    # 정의 하나 + 표 칸 셋(그리기·편집 시작·키) + 새 호기 + 상세. 여러 줄 넣기만 칸 단위 그대로다.
+    assert JS.count("choiceOptions(") == 6
+    assert "choiceOptions(columns, column, (j) => S.nd.values[j], value)" in JS
+    assert "choiceOptions(columns, column, rowValueAt(S, unit), shown)" in JS
 
 
 def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed() -> None:
