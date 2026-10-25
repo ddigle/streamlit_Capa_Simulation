@@ -127,7 +127,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-queue")
+_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue")
 
 
 def _sections() -> str:
@@ -263,6 +263,62 @@ def test_taps_while_a_tab_move_is_in_flight_wait_and_only_the_last_is_sent() -> 
     assert out["timeout"] == [None, "ref"]
     assert out["late"] == "send"
     assert out["closed"] is None
+
+
+_HOLD_RUNNER = """
+const out = {}
+// 편집표에서 막 손을 뗀 누름인가 — 누를 때 포커스가 편집표였거나 마지막 편집표 입력이 5초 안이다.
+out.pending = [
+  editPending(1000, -Infinity, true, 5000),
+  editPending(1000, 900, false, 5000),
+  editPending(9000, 900, false, 5000),
+]
+// 칸을 쓰는 중에 탭을 누름 — 편집기가 바깥 누름에 편집을 적용해 회차를 청한다.
+// 서버가 답하기 전(돌지 않음·data 그대로)에는 기다리고, 회차가 도는 동안도 기다리며,
+// 새 data(편집 회차의 탭 줄 — leave 가 찼다)가 오고 회차가 끝나면 그때 묻고 보낸다.
+const before = { leave: '' }
+const after = { leave: '기준 정보 · UPEH' }
+const hold = { at: 0, data: before }
+out.flow = [
+  holdVerdict(hold, 100, false, before, 400, 10000),
+  holdVerdict(hold, 200, true, before, 400, 10000),
+  holdVerdict(hold, 300, true, after, 400, 10000),
+  holdVerdict(hold, 350, false, after, 400, 10000),
+]
+// 편집이 회차를 청하지 않았으면(값이 같다) 최소 기다림 뒤 보낸다.
+// 회차가 끝없이 돌면 최대 기다림 뒤 보낸다.
+out.noRun = [
+  holdVerdict(hold, 399, false, before, 400, 10000),
+  holdVerdict(hold, 400, false, before, 400, 10000),
+]
+out.cap = holdVerdict(hold, 10000, true, before, 400, 10000)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_press_right_after_a_table_edit_waits_for_that_edit_before_asking_to_leave() -> None:
+    """떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 Enter 직후 0.2초
+    안에 다른 탭을 누르면 그 편집을 실은 회차가 아직 돌아오지 않아 확인 없이 옮기고 편집이 말없이
+    사라졌다(E2E 결함 — 기준 정보 UPEH). 편집표에서 막 손을 뗀 누름은 그 회차가 돌아올 때까지
+    붙들었다가 새 data 로 묻는다."""
+    out = _node(_HOLD_RUNNER)
+
+    assert out["pending"] == [True, True, False]
+    assert out["flow"] == ["wait", "wait", "wait", "go"]
+    assert out["noRun"] == ["wait", "go"]
+    assert out["cap"] == "go"
+
+
+def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
+    """다른 탭 고르기와 지금 탭 × 는 묻기(`leaveOk`) 전에 편집표에서 막 손을 뗀 누름인지
+    본다. 누르는 순간의 편집표 포커스는 `pointerdown`(포커스가 탭으로 옮기기 전)에서 적는다."""
+    select = JS[JS.index("const select = (item) => {") :]
+    assert select.index("if (fresh())") < select.index("holding(item")
+    close = JS[JS.index("const close = (item) => {") :]
+    assert close.index("!fresh()") < close.index("closeNow(item)")
+    assert "S.pressFromGrid = S.gridFocused" in JS
+    assert "document.addEventListener(type, S.onEdit, true)" in JS
+    assert "document.removeEventListener(type, S.onEdit, true)" in JS
 
 
 def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_document() -> None:
