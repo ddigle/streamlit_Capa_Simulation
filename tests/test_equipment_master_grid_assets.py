@@ -136,6 +136,61 @@ def test_the_code_alphabet_matches_python() -> None:
     assert f"const CODE_ALPHABET = '{eg.CODE_ALPHABET}'" in JS
 
 
+def _function(name: str) -> str:
+    body = JS[JS.index(f"function {name}(") :]
+    return body[: body.index("\nfunction ")]
+
+
+def test_a_toast_undo_names_its_step_and_side_mounts_draw_their_toast() -> None:
+    """토스트 「되돌리기」 는 그 토스트가 가리킨 단계를 싣는다 — 대상 없는 undo 는 맨 위 단계(그
+    뒤 칸 고침)를 되돌린다. 오른쪽 칸도 제 토스트(상세 「이 호기 지우기」)를 그린다."""
+    toast = _function("fillToast")
+    assert "{ op: 'undo', step: toast.undo }" in toast and "typeof toast.undo === 'string'" in toast
+    assert "{ op: 'undo' }" not in JS
+    assert "fillToast(S, toast, S.data && S.data.toast)" in _function("drawSide")
+    assert "fillToast(S, S.toastBar" in _function("paintToast")
+
+
+def test_the_grid_body_has_one_tab_stop_and_space_picks_a_row() -> None:
+    row = _function("rowElement")
+    for name in ("box", "back", "unload"):
+        assert f"{name}.tabIndex = -1" in row, name
+    key = _function("onBodyKey")
+    assert "event.key === ' '" in key and "toggleRow(S, id, event.shiftKey)" in key
+    assert key.index("event.key === ' '") < key.index("event.key.length === 1")
+
+
+def test_a_returning_load_does_not_steal_focus_from_the_table() -> None:
+    assert "focusIsFree(host)" in _function("drawLoader")
+    assert "S.refocus = null" in JS[JS.index("listen(S, host, 'focusout'") :]
+    load = _function("loadQuery")
+    assert "clearSearch(S)" in load and "S.searchInput.value = ''" in _function("clearSearch")
+
+
+def test_moved_ids_are_applied_before_the_list_fingerprint_resets_the_view() -> None:
+    draw = _function("drawGrid")
+    assert draw.index("data.moved") < draw.index("S.view !== view")
+    assert "if (!moved.length)" in draw and "S.openId = typeof data.open === 'string'" in draw
+    click = _function("onBodyClick")
+    assert "classList.add('is-open')" in click
+
+
+def test_the_condition_popover_keeps_values_by_text_and_focus_across_repaints() -> None:
+    conditions = _function("conditionPopover")
+    assert "resolvePicks(S.conds, values)" in conditions and "pick.value = " not in conditions
+    assert "line.addEventListener('keydown', stopKeys)" not in conditions, "Esc 가 패널에 닿는다"
+    assert "cond-col-" in conditions and "cond-val-" in conditions
+    paint = _function("popover")
+    assert "captureFocus(panel)" in paint and "restoreFocus(panel, saved)" in paint
+    assert "popoverShift(" in paint
+    assert re.search(r"\.emg-pop\.is-wide\s*\{\s*width:\s*min\(420px, calc\(100vw - 16px\)\)", CSS)
+
+
+def test_pasting_on_the_name_column_spreads_from_the_next_column_or_says_why() -> None:
+    paste = _function("onPaste")
+    assert "NAME_PASTE_NOTE" in paste and "[model.nameCol].concat(model.visible)" in paste
+
+
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
 _SECTIONS = (
@@ -146,6 +201,7 @@ _SECTIONS = (
     "grid-plan",
     "grid-sort",
     "grid-codes",
+    "grid-place",
 )
 _RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
@@ -184,6 +240,8 @@ results.plan = {
 results.sort = (input.sort || []).map((c) => sortOrder(c.values, c.dir, c.kind))
 results.codes = (input.codes || []).map((c) => decodeCodes(c.text, c.width))
 results.conditions = matchConditions(input.columns, input.picks, input.count)
+results.resolved = resolvePicks(input.pickTexts, input.pickValues)
+results.shifts = (input.shifts || []).map((c) => popoverShift(c[0], c[1], c[2], c[3]))
 process.stdout.write(JSON.stringify(results))
 """
 
@@ -253,6 +311,15 @@ def test_the_pure_sections_behave_as_specified() -> None:
                     "cols": ["A", "B"],
                     "limit": 3,
                 },
+                {
+                    "text": "X\t담당Z\nY\t담당Z",
+                    "row": 0,
+                    "col": 0,
+                    "ids": ["r0", "r1"],
+                    "cols": ["설비명", "담당자"],
+                    "locked": ["r0|설비명", "r1|설비명"],
+                    "limit": 5000,
+                },
             ],
             "nav": [
                 {
@@ -301,9 +368,21 @@ def test_the_pure_sections_behave_as_specified() -> None:
             "columns": [[0, 1, 0, 1], [2, 2, 3, 2]],
             "picks": [{"col": 0, "value": 1}, {"col": 1, "value": 2}, {"col": 1, "value": None}],
             "count": 4,
+            "pickTexts": [
+                {"col": 0, "text": "Die Attach"},
+                {"col": 1, "text": "사라진 값"},
+                {"col": 0, "text": None},
+            ],
+            "pickValues": [["Burn-In", "Die Attach"], ["a"]],
+            "shifts": [
+                [169, 374, 390, 8],
+                [100, 300, 1500, 8],
+                [1300, 400, 1500, 8],
+                [5, 400, 300, 8],
+            ],
         }
     )
-    first, single, too_many = result["paste"]
+    first, single, too_many, from_name = result["paste"]
     assert first["ids"] == ["r1", "r2"] and first["cols"] == ["A", "B"]
     assert first["rows"] == [["a", None], ["d", "e"]]
     assert first["cut"] == 1, "표 끝을 넘은 줄"
@@ -311,6 +390,13 @@ def test_the_pure_sections_behave_as_specified() -> None:
     assert first["count"] == 3 and not first["tooMany"]
     assert single is None, "한 칸이면 보통 붙여넣기"
     assert too_many["tooMany"] is True
+    assert from_name["rows"] == [[None, "담당Z"], [None, "담당Z"]] and from_name["skipped"] == 2
+    assert result["resolved"] == [
+        {"col": 0, "value": 1},
+        {"col": 1, "value": None},
+        {"col": 0, "value": None},
+    ], "값은 글로 기억하고, 목록에서 사라지면 비운다"
+    assert result["shifts"] == [-161, 0, -208, 0], "화면 오른쪽 밖이면 왼쪽으로(왼쪽 끝 8px)"
     assert result["nav"] == [{"row": 0, "col": 2}, None, None, {"row": 0, "col": 1}]
     assert result["match"][0] == {"found": [0, 1, 2], "missing": [], "list": False}
     assert result["match"][1] == {"found": [0, 1, 3], "missing": ["ABC-99"], "list": True}

@@ -223,8 +223,28 @@ function matchConditions(columns, picks, count) {
   }
   return found
 }
+
+// 조건이 기억한 값 **글**을 이 회차 값 번호로 푼다 — 값 목록은 회차마다 다시 만들어져 번호가 밀린다. 그 값이 목록에서
+// 사라졌으면 null(값 고르기로 돌아간다).
+function resolvePicks(picks, values) {
+  return picks.map((pick) => {
+    if (typeof pick.text !== 'string') return { col: pick.col, value: null }
+    const code = (values[pick.col] || []).indexOf(pick.text)
+    return { col: pick.col, value: code < 0 ? null : code }
+  })
+}
 // </grid-codes>
 
+// <grid-place>
+// 팝오버를 단추 왼쪽에서 얼마나 당길지(px, 0 이하) — 화면 오른쪽 밖으로 나가면 왼쪽으로, 왼쪽 끝 `margin` 은 남긴다.
+function popoverShift(left, width, viewport, margin) {
+  const over = left + width - (viewport - margin)
+  if (over <= 0) return 0
+  return -Math.min(over, Math.max(left - margin, 0))
+}
+// </grid-place>
+
+const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
 const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
@@ -283,7 +303,7 @@ function freshState() {
   return {
     mount: newMount(), box: createBox(), pending: new Map(), timer: 0, base: null, view: null,
     selected: new Set(), anchor: null, sort: null, colSet: null, edit: null, focus: null, toastClosed: null,
-    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, procQuery: '', conds: [{ col: 4, value: null }],
+    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
   }
 }
@@ -467,10 +487,33 @@ function drawLoader(host, S, data) {
   S.painting = false
   const focus = S.refocus
   S.refocus = null
-  if (focus === 'search' && S.searchInput) {
+  if (focus === 'search' && S.searchInput && focusIsFree(host)) {
     S.searchInput.focus()
     S.searchInput.setSelectionRange(S.query.length, S.query.length)
   } else restoreFocus(host, saved)
+}
+
+// 불러오기 회차가 돌아와 찾기 칸에 초점을 돌려줘도 되는가 — 초점이 아무 데도 없거나(다시 그리며 지운 칸) 이 불러오기
+// 안일 때만. 그 사이 표 칸을 눌러 치고 있으면 빼앗지 않는다(남은 글자가 찾기 칸으로 가 불러오기가 된다).
+function focusIsFree(host) {
+  const root = host.getRootNode ? host.getRootNode() : document
+  const inner = root !== document ? root.activeElement : null
+  if (inner) return host.contains(inner)
+  const outer = document.activeElement
+  return !outer || outer === document.body || outer === document.documentElement || (root !== document && outer === root.host)
+}
+
+// 찾기 칸을 바로 비운다 — 이미 불러온 이름을 다시 찾으면 data 가 같아 다시 그려지지 않으므로 기다리지 않는다.
+function clearSearch(S) {
+  S.query = ''
+  S.pop = null
+  S.suggest = -1
+  if (S.searchInput) S.searchInput.value = ''
+  if (S.searchList) {
+    S.searchList.textContent = ''
+    S.searchList.hidden = true
+  }
+  if (S.searchGo) S.searchGo.disabled = true
 }
 
 function emptyState(S, data, alertIds, total) {
@@ -515,7 +558,9 @@ function searchBox(S, model) {
   box.appendChild(input)
   const go = button('emg-btn is-small is-primary', '불러오기', () => loadQuery(S, model))
   go.disabled = !S.query.trim()
+  S.searchGo = go
   const list = el('div', 'emg-pop is-full')
+  S.searchList = list
   list.setAttribute('role', 'listbox')
   list.setAttribute('aria-label', '맞는 설비명')
   const paintSuggestions = () => {
@@ -541,8 +586,7 @@ function searchBox(S, model) {
       if (loaded.has(model.ids[index])) option.appendChild(el('span', 'emg-tail', '불러옴'))
       option.addEventListener('mousedown', (event) => event.preventDefault())
       option.addEventListener('click', () => {
-        S.query = ''
-        S.pop = null
+        clearSearch(S)
         load(S, 'names', [model.ids[index]], [], model.names[index])
       })
       list.appendChild(option)
@@ -621,8 +665,7 @@ function loadQuery(S, model) {
   if (!query) return
   const matched = matchNames(query, model.names)
   const label = matched.list ? '설비명 목록' : '「' + query + '」'
-  S.query = ''
-  S.pop = null
+  clearSearch(S)
   S.refocus = 'search'
   load(S, 'names', matched.found.map((index) => model.ids[index]), matched.missing, label)
 }
@@ -650,10 +693,18 @@ function popover(S, name, label, build, wide) {
   })
   const paint = () => {
     const open = S.pop === name
+    // 고르는 칸을 바꾸면 패널을 다시 짓는다 — 쓰던 칸(data-fk)에 초점을 돌려줘 키보드로 이어 쓴다.
+    const saved = captureFocus(panel)
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
     panel.hidden = !open
     panel.textContent = ''
-    if (open) build(panel, paint)
+    panel.style.left = ''
+    if (!open) return
+    build(panel, paint)
+    const rect = panel.getBoundingClientRect()
+    const shift = popoverShift(rect.left, rect.width, document.documentElement.clientWidth, 8)
+    if (shift) panel.style.left = shift + 'px'
+    restoreFocus(panel, saved)
   }
   wrap.appendChild(toggle)
   wrap.appendChild(panel)
@@ -704,11 +755,15 @@ function conditionPopover(S, model) {
   return popover(S, 'conditions', '조건으로 불러오기', (panel, repaint) => {
     panel.appendChild(el('span', 'emg-muted', '칸과 값을 골라 모두 맞는 호기를 불러옵니다.'))
     S.conds = S.conds.filter((pick) => pick.col >= 0 && pick.col < columns.length)
-    if (!S.conds.length) S.conds = [{ col: Math.max(columns.indexOf('동'), 0), value: null }]
+    if (!S.conds.length) S.conds = [{ col: Math.max(columns.indexOf('동'), 0), text: null }]
+    // 값은 글로 기억한다 — 목록에서 사라진 값은 비운다(번호로 기억하면 다른 값을 가리킨다).
+    const resolved = resolvePicks(S.conds, values)
+    resolved.forEach((pick, index) => { if (pick.value === null) S.conds[index].text = null })
     S.conds.forEach((pick, index) => {
       const line = el('div', 'emg-cond')
       const colSelect = el('select')
       colSelect.setAttribute('aria-label', '조건 칸 ' + (index + 1))
+      colSelect.dataset.fk = 'cond-col-' + index
       columns.forEach((name, k) => {
         const option = el('option', null, name)
         option.value = String(k)
@@ -717,10 +772,10 @@ function conditionPopover(S, model) {
       })
       colSelect.addEventListener('change', () => {
         pick.col = Number(colSelect.value)
-        pick.value = null
+        pick.text = null
         repaint()
       })
-      const before = matchConditions(model.columns, S.conds.slice(0, index), model.names.length)
+      const before = matchConditions(model.columns, resolved.slice(0, index), model.names.length)
       const counts = new Map()
       for (const row of before) {
         const code = model.columns[pick.col][row]
@@ -728,6 +783,7 @@ function conditionPopover(S, model) {
       }
       const valueSelect = el('select')
       valueSelect.setAttribute('aria-label', '조건 값 ' + (index + 1))
+      valueSelect.dataset.fk = 'cond-val-' + index
       const none = el('option', null, '값 고르기')
       none.value = ''
       valueSelect.appendChild(none)
@@ -735,38 +791,42 @@ function conditionPopover(S, model) {
         if (!counts.has(code)) return
         const option = el('option', null, (value || '(빈칸)') + ' (' + counts.get(code).toLocaleString() + ')')
         option.value = String(code)
-        option.selected = pick.value === code
+        option.selected = resolved[index].value === code
         valueSelect.appendChild(option)
       })
       valueSelect.addEventListener('change', () => {
-        pick.value = valueSelect.value === '' ? null : Number(valueSelect.value)
+        pick.text = valueSelect.value === '' ? null : String((values[pick.col] || [])[Number(valueSelect.value)])
         repaint()
       })
       line.appendChild(colSelect)
       line.appendChild(valueSelect)
       if (S.conds.length > 1) {
-        line.appendChild(icon('close', '조건 빼기', () => {
+        const drop = icon('close', '조건 빼기', () => {
           S.conds.splice(index, 1)
           repaint()
-        }))
+        })
+        drop.dataset.fk = 'cond-rm-' + index
+        line.appendChild(drop)
       }
-      line.addEventListener('keydown', stopKeys)
       panel.appendChild(line)
     })
     const actions = el('div', 'emg-row-buttons')
     if (S.conds.length < 4) {
-      actions.appendChild(button('emg-btn is-small', '+ 조건 더하기', () => {
-        S.conds.push({ col: Math.max(columns.indexOf('Qual상태'), 0), value: null })
+      const more = button('emg-btn is-small', '+ 조건 더하기', () => {
+        S.conds.push({ col: Math.max(columns.indexOf('Qual상태'), 0), text: null })
         repaint()
-      }))
+      })
+      more.dataset.fk = 'cond-add'
+      actions.appendChild(more)
     }
-    const picked = S.conds.filter((pick) => pick.value !== null)
+    const picked = resolvePicks(S.conds, values).filter((pick) => pick.value !== null)
     const rows = picked.length ? matchConditions(model.columns, picked, model.names.length) : []
     const go = button('emg-btn is-small is-primary', '맞는 ' + rows.length.toLocaleString() + '대 불러오기', () => {
       const label = picked.map((pick) => columns[pick.col] + ' ' + ((values[pick.col] || [])[pick.value] || '(빈칸)')).join(' · ')
       S.pop = null
       load(S, 'conditions', rows.map((row) => model.ids[row]), [], '조건 「' + label + '」')
     })
+    go.dataset.fk = 'cond-go'
     go.disabled = !rows.length
     actions.appendChild(go)
     panel.appendChild(actions)
@@ -806,18 +866,27 @@ function editableIn(S, row, col) {
 function drawGrid(host, S, data) {
   receive(S, data)
   S.data = data
-  const view = String(data.view || '')
-  if (S.view !== view) {
-    S.view = view
-    S.selected = new Set()
-    S.anchor = null
-    S.resetScroll = true
-  }
-  for (const [from, to] of Object.entries(data.moved || {})) {
+  // 새 호기 이름 바꿈(과 그 되돌리기)은 행 id 를 바꿔 목록 지문도 바꾼다 — 옮김을 먼저 얹고, 그 회차에는 고름·스크롤을
+  // 처음으로 돌리지 않는다(옮길 고름이 사라진다).
+  const moved = Object.entries(data.moved || {})
+  for (const [from, to] of moved) {
     if (S.selected.delete(from)) S.selected.add(to)
+    if (S.anchor === from) S.anchor = to
+    if (S.openId === from) S.openId = to
     if (S.edit && S.edit.id === from) S.edit.id = to
     if (S.focus && S.focus.id === from) S.focus.id = to
   }
+  const view = String(data.view || '')
+  if (S.view !== view) {
+    S.view = view
+    if (!moved.length) {
+      S.selected = new Set()
+      S.anchor = null
+      S.resetScroll = true
+    }
+  }
+  // 상세에 연 줄의 띠는 파이썬이 아는 상세 id 를 따른다(「저장 전 변경」·고칠 것 줄로 연 호기도).
+  if (Object.prototype.hasOwnProperty.call(data, 'open')) S.openId = typeof data.open === 'string' ? data.open : null
   S.model = gridModel(S, data)
   const known = new Set(S.model.live.map((row) => row.id))
   for (const id of Array.from(S.selected)) if (!known.has(id)) S.selected.delete(id)
@@ -850,7 +919,7 @@ function buildGridSkeleton(host, S) {
   table.appendChild(body)
   box.appendChild(table)
   const foot = el('div', 'emg-foot')
-  const keys = el('span', 'emg-muted', '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기')
+  const keys = el('span', 'emg-muted', '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기')
   const legend = el('span', 'emg-legend')
   for (const [kind, label] of [['is-changed', '고친 칸'], ['is-error', '오류'], ['is-locked', '잠긴 칸(모듈 좌표 등)']]) {
     const item = el('span')
@@ -933,9 +1002,13 @@ function paintBar(S) {
 }
 
 function paintToast(S) {
-  const bar = S.toastBar
+  fillToast(S, S.toastBar, S.data && S.data.toast)
+}
+
+// 토스트 한 줄(표·오른쪽 칸 공용). 「되돌리기」 는 그 토스트가 가리킨 단계(toast.undo — 파이썬이 맨 위일 때만 싣는다)를
+// 보낸다 — 파이썬도 그 단계가 맨 위가 아니면 되돌리지 않는다(그 사이 칸 고침이 쌓인 경합).
+function fillToast(S, bar, toast) {
   bar.textContent = ''
-  const toast = S.data && S.data.toast
   if (toast && toast.id !== S.lastToast) {
     // 파이썬이 새 토스트를 보냈다 — 브라우저 한 줄(붙여넣는 중 등)은 거둔다.
     S.lastToast = toast.id
@@ -945,18 +1018,18 @@ function paintToast(S) {
   bar.hidden = !text
   if (!text) return
   bar.appendChild(el('span', null, text))
-  if (!S.note && toast.undo) {
+  if (!S.note && typeof toast.undo === 'string' && toast.undo) {
     bar.appendChild(button('emg-link', '되돌리기', () => {
       S.toastClosed = toast.id
-      enqueue(S, { op: 'undo' }, [])
+      enqueue(S, { op: 'undo', step: toast.undo }, [])
       send(S)
-      paintToast(S)
+      fillToast(S, bar, toast)
     }))
   }
   bar.appendChild(icon('close', '알림 닫기', () => {
     if (S.note) S.note = ''
     else S.toastClosed = toast.id
-    paintToast(S)
+    fillToast(S, bar, toast)
   }))
 }
 
@@ -1079,7 +1152,7 @@ function buildSelection(S, bar) {
   bar.appendChild(shift)
   bar.appendChild(el('span', 'emg-vsep'))
   const lock = S.data.deleteLock
-  const deletable = rows.filter((row) => !(lock && row.id.startsWith('s:')))
+  const deletable = rows.filter((row) => !(lock && row.tag !== 'new'))
   const remove = button('emg-btn is-small is-danger', '선택 ' + rows.length.toLocaleString() + '대 지우기', () => {
     enqueue(S, { op: 'delete', ids: rows.map((row) => row.id) }, [])
     S.selected = new Set()
@@ -1234,6 +1307,7 @@ function rowElement(S, row, index) {
       send(S)
     })
     back.title = '되살리기'
+    back.tabIndex = -1
     check.appendChild(back)
   } else {
     const box = el('input')
@@ -1241,6 +1315,8 @@ function rowElement(S, row, index) {
     box.checked = S.selected.has(row.id)
     box.setAttribute('aria-label', (name || '새 호기') + ' 고르기')
     box.dataset.check = row.id
+    // 표 본문의 Tab 정지는 초점 칸 하나다(로빙) — 줄 고르기는 칸 위 Space 로 닿는다.
+    box.tabIndex = -1
     check.appendChild(box)
   }
   node.appendChild(check)
@@ -1269,10 +1345,12 @@ function rowElement(S, row, index) {
   node.appendChild(nameCell)
   model.visible.forEach((k) => node.appendChild(cellElement(S, row, k)))
   const rm = el('div', 'emg-c emg-w-rm')
-  rm.appendChild(icon('minus', '목록에서 빼기 (지우는 것이 아닙니다)', () => {
+  const unload = icon('minus', '목록에서 빼기 (지우는 것이 아닙니다)', () => {
     S.selected.delete(row.id)
     S.setTrigger('unload', { view: S.view, ids: [row.id] })
-  }))
+  })
+  unload.tabIndex = -1
+  rm.appendChild(unload)
   node.appendChild(rm)
   return node
 }
@@ -1410,6 +1488,10 @@ function onBodyClick(S, event) {
   const open = target.closest('[data-open]')
   if (open) {
     S.openId = open.dataset.open
+    // 띠는 누른 회차에 바로 — 상세를 여는 회차는 표 data 가 같을 수 있어 다시 그려지기를 기다리지 않는다.
+    for (const row of S.body.querySelectorAll('.emg-row.is-open')) row.classList.remove('is-open')
+    const line = open.closest('.emg-row')
+    if (line) line.classList.add('is-open')
     S.setTrigger('open', { view: S.view, id: open.dataset.open })
     return
   }
@@ -1495,10 +1577,10 @@ function onBodyKey(S, event) {
   const id = cell.dataset.id
   const col = Number(cell.dataset.col)
   const model = S.model
+  const live = model.live
   const moves = { ArrowRight: 'right', ArrowLeft: 'left', ArrowDown: 'down', ArrowUp: 'up' }
   if (moves[event.key]) {
     event.preventDefault()
-    const live = model.live
     const columns = [model.nameCol].concat(model.visible)
     const from = { row: live.findIndex((row) => row.id === id), col: columns.indexOf(col) }
     const next = nextCell(live.length, columns.length, from, moves[event.key], () => true, 1)
@@ -1508,6 +1590,12 @@ function onBodyKey(S, event) {
       S.wantFocus = true
       paintWindow(S)
     }
+    return
+  }
+  if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    // Space = 그 줄 고르기(Shift+Space 는 기준 줄부터 범위) — 체크 칸은 Tab 정지가 아니다.
+    event.preventDefault()
+    if (live.some((row) => row.id === id)) toggleRow(S, id, event.shiftKey)
     return
   }
   if (col === model.nameCol) return
@@ -1530,9 +1618,14 @@ function onPaste(S, event) {
   const id = cell.dataset.id
   const col = Number(cell.dataset.col)
   const model = S.model
+  const onName = col === model.nameCol
   if (!cells) {
     if (event.target.classList.contains('emg-ed')) return
     event.preventDefault()
+    if (onName) {
+      showNote(S, NAME_PASTE_NOTE)
+      return
+    }
     const row = model.rows.find((item) => item.id === id)
     if (!row || !editableIn(S, row, col)) return
     enqueue(S, { op: 'cell', id, col: model.columns[col].name, text: text.replace(/\r?\n$/, '') }, [[id, col, text]])
@@ -1542,10 +1635,12 @@ function onPaste(S, event) {
   }
   event.preventDefault()
   const live = model.live
-  const start = cellAt(S, id, col)
+  // 설비명 칸에서 붙이면(엑셀에서 설비명 열부터 잡은 흔한 꼴) 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터 편다.
+  const order = onName ? [model.nameCol].concat(model.visible) : model.visible
+  const start = { row: live.findIndex((row) => row.id === id), col: order.indexOf(col) }
   if (start.row < 0 || start.col < 0) return
-  const names = model.visible.map((k) => model.columns[k].name)
-  const byName = new Map(model.visible.map((k) => [model.columns[k].name, k]))
+  const names = order.map((k) => model.columns[k].name)
+  const byName = new Map(order.map((k) => [model.columns[k].name, k]))
   const byId = new Map(live.map((row) => [row.id, row]))
   const plan = planPaste(cells, start.row, start.col, live.map((row) => row.id), names, (rowId, name) => editableIn(S, byId.get(rowId), byName.get(name)), Number((S.data.limits || {}).pasteCells) || 5000)
   if (plan.tooMany) {
@@ -1574,6 +1669,12 @@ function drawSide(host, S, data) {
   host.textContent = ''
   const root = el('div', 'emg-side')
   host.appendChild(root)
+  // 이 마운트가 보낸 조작(상세 「이 호기 지우기」·칸·호기 되돌리기)의 토스트는 이 마운트가 그린다.
+  const toast = el('div', 'emg-toast')
+  toast.setAttribute('role', 'status')
+  root.appendChild(toast)
+  S.repaintToast = () => fillToast(S, toast, S.data && S.data.toast)
+  S.repaintToast()
   if (data.panel === 'changes') drawChanges(S, root, data)
   else drawDetail(S, root, data)
   S.painting = false
@@ -1822,6 +1923,8 @@ export default function (component) {
     // 표 밖으로 초점이 나가거나(「리비전 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다 — 보낼 것이 있을 때만.
     listen(S, host, 'focusout', (event) => {
       if (!event.relatedTarget || !host.contains(event.relatedTarget)) send(S)
+      // 불러오기 밖(표 칸 등)으로 초점을 옮겼다 — 돌아온 불러오기 회차가 찾기 칸으로 초점을 빼앗지 않는다.
+      if (!S.painting && event.relatedTarget && !host.contains(event.relatedTarget)) S.refocus = null
     })
     listen(S, document, 'visibilitychange', () => send(S))
     listen(S, document, 'mousedown', (event) => {

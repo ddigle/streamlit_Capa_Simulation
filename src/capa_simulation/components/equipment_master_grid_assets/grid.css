@@ -218,12 +218,13 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 260px;
-  max-width: min(92vw, 420px);
+  min-width: min(260px, calc(100vw - 16px));
+  max-width: min(420px, calc(100vw - 16px));
+  box-sizing: border-box;
 }
 
 .emg-pop.is-wide {
-  width: min(92vw, 420px);
+  width: min(420px, calc(100vw - 16px));
 }
 
 .emg-pop.is-full {
