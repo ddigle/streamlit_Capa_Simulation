@@ -94,6 +94,7 @@ __all__ = [
     "BASE_KEY",
     "CUTOFF_KEY",
     "EDITOR_KEY",
+    "EDITOR_TOOLBAR_CLEARANCE_PX",
     "INTRO_TEXT",
     "MONTHS_KEY",
     "MONTH_COLUMN",
@@ -174,6 +175,10 @@ _UNIT_COLUMN_PX = {
 # 편집표 칸 폭 — 셋의 합이 입력 칸 안(`_INPUTS_BOX_PX - _BOX_CHROME_PX`)에 들어야 표가 가로로 넘지
 # 않는다. 「월」 은 Streamlit `small`(75px)과 같은 폭이다.
 _EDITOR_COLUMN_PX = {MONTH_COLUMN: 75, TARGET_COLUMN: 120, UNITS_COLUMN: 180}
+# 월 편집표 앞 띄움. 표 도구 막대(열 보기·내려받기·찾기)는 표 오른쪽 위에 떠 표 위로 솟는다 — 붙어
+# 있으면 바로 위 「오늘」 날짜 칸의 지우기(✕)를 덮어 누름을 가로챈다(터치 창에서는 막대가 늘 떠 있어
+# ✕ 로 지울 길이 없다). 리비전 표 앞 띄움(`REVISION_TABLE_TOOLBAR_CLEARANCE`)과 같은 값이다.
+EDITOR_TOOLBAR_CLEARANCE_PX = 24
 # 두 칸 배치(모듈 설명). 입력 칸은 원본(440px)보다 조금 좁게 둔다 — 편집표 세 칸이 들고 결과
 # 칸이 그만큼 넓다. 상자 안쪽 여백·선과 표 테두리(양쪽 합, 상자 420px → 표 안쪽 390px)와 두 칸
 # 사이 틈(`gap="medium"`)은 1600px 창 실측이다.
@@ -381,6 +386,7 @@ def _render_inputs(today: date) -> QualDeadlineInput:
             key=TODAY_KEY,
             persist_state="session",
         )
+    st.space(EDITOR_TOOLBAR_CLEARANCE_PX)
     widget_key = editor_widget_key(EDITOR_KEY)
     edited = st.data_editor(
         st.session_state[MONTHS_KEY],

@@ -33,6 +33,7 @@ from capa_simulation.components.qual_deadline_calculator import (
     BASE_KEY,
     CUTOFF_KEY,
     EDITOR_KEY,
+    EDITOR_TOOLBAR_CLEARANCE_PX,
     MONTH_COLUMN,
     MONTHS_KEY,
     PASTE_APPLY_KEY,
@@ -284,6 +285,29 @@ def test_the_unit_table_gives_the_memo_room_and_fits_the_side_by_side_results_bo
     assert int(str(widths["메모"])) >= 240
     total = sum(int(str(width)) for width in widths.values())
     assert calculator._RESULTS_MIN_PX == total + calculator._BOX_CHROME_PX
+
+
+def _element_types_in_order(node: object) -> list[str]:
+    """그려지는 차례대로 요소 종류(블록은 펼친다)."""
+    children = getattr(node, "children", None)
+    if isinstance(children, dict):
+        return [
+            kind for _, child in sorted(children.items()) for kind in _element_types_in_order(child)
+        ]
+    return [str(getattr(node, "type", ""))]
+
+
+def test_the_month_editor_keeps_room_for_its_toolbar_below_the_today_field() -> None:
+    """월 편집표 바로 앞에 띄움이 있다 — 표 위로 솟는 도구 막대가 「오늘」 칸 지우기(✕)를 덮지 않게.
+
+    붙어 있으면 1440 창에서 표에 마우스를 올린 동안, 터치 창에서는 늘 막대가 ✕ 를 덮어 날짜를 지울
+    수 없었다(리비전 표 앞 띄움과 같은 갈래).
+    """
+    kinds = _element_types_in_order(_component().main)
+    editor = kinds.index("dataframe")
+    assert kinds[editor - 1] == "space"
+    assert kinds[editor - 2] == "date_input"
+    assert EDITOR_TOOLBAR_CLEARANCE_PX >= 20
 
 
 def test_the_two_boxes_stack_when_the_row_cannot_hold_both() -> None:
