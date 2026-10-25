@@ -68,6 +68,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
 )
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -274,7 +275,7 @@ def _render_body(context: ImportContext) -> None:
     with st.container():
         error = st.session_state.pop(IMPORT_ERROR_KEY, None)
         if isinstance(error, str):
-            st.error(error)
+            st.error(markdown_safe_tildes(error))
         notice = st.session_state.pop(IMPORT_NOTICE_KEY, None)
         if isinstance(notice, str):
             st.info(notice)

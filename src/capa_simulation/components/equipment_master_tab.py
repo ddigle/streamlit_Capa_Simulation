@@ -124,7 +124,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.equipment_scenario_activation import (
@@ -1233,11 +1233,11 @@ def _render_save_section(
         if isinstance(result, tuple) and len(result) == 2:
             kind, text = result
             if kind == "success":
-                st.success(text)
+                st.success(markdown_safe_tildes(text))
             elif kind == "error":
-                st.error(text)
+                st.error(markdown_safe_tildes(text))
             else:
-                st.info(text)
+                st.info(markdown_safe_tildes(text))
 
 
 def _render_new_unit(

@@ -1095,7 +1095,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     호출자가 없다(시험만 — TODO 2장). 대소문자는 붙여넣기 미리보기(새 이름 ↔ 편집본 이름)가 표 안 짝의 일부이고 열쇠가 같다.
     `coerce_master_cell` 은 칸 하나를 저장 정규화와 같은 함수(`_read_master_dates`·`_read_number`·`_read_ratio`·Y/N·Area Code·
     글·동층/상태 허용값)로 다듬고 못 맞추면 그 규칙 문구의 `CellParseError` 를 준다. 시간대가 붙은 날짜는 세 쓰임 모두 못 읽은
-    날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
+    날짜다(계약 칸은 시간대 없는 날짜 — 시간대를 떼고 받지 않는다). 비가동 일정 날짜(`_normalize_date`)도 같은 길로 읽어
+    시간대가 섞인 붙여넣기가 pandas 예외 대신 그 값을 든 날짜 문구로 막힌다. 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
     문구를 글자 그대로(예시·다섯 개 제한까지) 고정한다(`tests/test_equipment_validation_issues.py`).
   - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사는 저장할 때만
     `today=` 로 돈다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
@@ -3898,6 +3899,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 조사는 escape 하기 전의 글로 고른다 — escape 한 글은 `\)` 의 `\` 를
   끝 글자로 읽어 「WB(2)는」이 「WB(2)은(는)」이 된다(`tests/test_process_capa_detail_page.py`).
+- 앱이 지은 거부·안내 문구를 알림 상자(`st.error`·`st.warning`·`st.info`·`st.success`)에 넣을 때 그 문구가 범위 물결표(「동은
+  C1~C5, 층은 1F~6F」)를 품을 수 있으면 `literal_markdown.markdown_safe_tildes` 로 감싼다 — 물결표 둘이면 가운데가 지움선이 된다.
+  구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다
+  (`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
+  (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
 ### 스크립트와 컴포넌트
 

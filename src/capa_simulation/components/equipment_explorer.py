@@ -22,6 +22,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -948,4 +949,4 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                 else:
                     _count_chart(counts, column, colors)
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(markdown_safe_tildes(exc))

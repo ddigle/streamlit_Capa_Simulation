@@ -60,6 +60,7 @@ from capa_simulation.components.floor_layout_upload import (
     render_fab_layout_drawing_editor,
     render_floor_layout_editor,
 )
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
@@ -1040,7 +1041,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         and fab_pending is None
     ):
         if isinstance(error, str):
-            st.error(f"배치를 저장하지 못했습니다: {error}")
+            st.error(markdown_safe_tildes(f"배치를 저장하지 못했습니다: {error}"))
         return
     # 설비 마스터의 다른 편집 건수와 곁표 편집은 상자 안내에만 쓰인다 — 상자를 그릴 때만 센다.
     others, side_tables = 0, []
@@ -1147,7 +1148,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if frames is not None:
             _render_layout_warnings(frames, marks)
         if isinstance(error, str):
-            st.error(f"저장하지 못했습니다: {error}")
+            st.error(markdown_safe_tildes(f"저장하지 못했습니다: {error}"))
         note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
         # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을
         # 만들지 않으니 칸을 두지 않는다.
@@ -1470,7 +1471,7 @@ def _render_layout_editor(
         sizes = module_group_sizes(inputs.items, inputs.ghosts)
         next_labels = next_group_labels(group_labels, applied, sizes)
     except ValueError as exc:
-        st.error(f"적용하지 못했습니다: {exc}")
+        st.error(markdown_safe_tildes(f"적용하지 못했습니다: {exc}"))
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
@@ -1605,7 +1606,7 @@ def _render_fab_editor(
         # 요소를 모두 지웠으면 기본 배치를 그린다 — 그것도 영역 안이어야 한다(저장 때와 같은 검사).
         require_fab_layout_fits(next_canvas, next_marks)
     except ValueError as exc:
-        st.error(f"적용하지 못했습니다: {exc}")
+        st.error(markdown_safe_tildes(f"적용하지 못했습니다: {exc}"))
         return
     # 저장값과 같아진 쪽은 대기분에서 뺀다. 견주는 기준은 그리는 저장값(요소가 없으면 기본
     # 배치)이고, 저장 때 대조할 본 값은 실제 저장 행이다(캔버스 행이 없으면 None, 요소가 없으면 빈
@@ -1689,10 +1690,10 @@ with st.container(key="space_unsaved_layout_slot"):
 with st.container(key="space_edit_lock_slot"):
     switch_error = st.session_state.pop(SWITCH_ERROR_KEY, None)
     if isinstance(switch_error, str):
-        st.error(f"설비 시나리오를 바꾸지 못했습니다: {switch_error}")
+        st.error(markdown_safe_tildes(f"설비 시나리오를 바꾸지 못했습니다: {switch_error}"))
     save_error = None if panel_drawn else st.session_state.pop(SAVE_ERROR_KEY, None)
     if isinstance(save_error, str):
-        st.error(save_error)
+        st.error(markdown_safe_tildes(save_error))
     if buffer_frames is not None:
         _render_edit_lock_line()
 
