@@ -191,9 +191,10 @@ def schedule_revision_rows(
 def scenario_rows(connection: duckdb.DuckDBPyConnection) -> list[dict[str, object]]:
     """설비 시나리오 목록 — 각 최신(`MAX(revision_no)`)·리비전 수와 함께, `list_order`·이름 차례.
 
-    배치 차이(0031)는 셋을 함께 낸다 — 최신의 저장된 호기 차이 행 수(`latest_layout_unit_count`),
-    최신의 배치 지문(`latest_layout_hash`), **옛 코드 흔적**(`layout_trace_count` — 차이가 있는
-    리비전보다 번호가 큰데 지문이 NULL 인 리비전 수: 0031 을 모르는 코드가 저장해 배치안이 빠졌다).
+    배치 차이(0031)는 함께 낸다 — 최신의 저장된 호기·요소·이름표 차이 행 수
+    (`latest_layout_unit_count`·`_mark_count`·`_label_count`), 최신의 배치 지문
+    (`latest_layout_hash`), **옛 코드 흔적**(`layout_trace_count` — 차이가 있는 리비전보다 번호가
+    큰데 지문이 NULL 인 리비전 수: 0031 을 모르는 코드가 저장해 배치안이 빠졌다).
     """
     return _rows(
         connection,
@@ -215,6 +216,10 @@ def scenario_rows(connection: duckdb.DuckDBPyConnection) -> list[dict[str, objec
                 WHERE s.equipment_scenario_id = c.equipment_scenario_id) AS revision_count,
                (SELECT COUNT(*) FROM equipment_ops.equipment_schedule_layout_unit u
                 WHERE u.schedule_revision_id = l.schedule_revision_id) AS latest_layout_unit_count,
+               (SELECT COUNT(*) FROM equipment_ops.equipment_schedule_layout_mark m
+                WHERE m.schedule_revision_id = l.schedule_revision_id) AS latest_layout_mark_count,
+               (SELECT COUNT(*) FROM equipment_ops.equipment_schedule_layout_label g
+                WHERE g.schedule_revision_id = l.schedule_revision_id) AS latest_layout_label_count,
                l.layout_hash AS latest_layout_hash,
                (SELECT COUNT(*) FROM equipment_ops.equipment_schedule_revision t
                 WHERE t.equipment_scenario_id = c.equipment_scenario_id

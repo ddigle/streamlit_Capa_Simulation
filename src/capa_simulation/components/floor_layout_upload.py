@@ -10,6 +10,11 @@
 FAB 표), 기본 캔버스(100 × 60 / `FAB_CANVAS`), 캔버스 밖 검사의 대상(층은 저장된 설비 마스터의
 그 층 호기 전부와 저장된 도면 요소, FAB 는 지금 그리는 요소 — 저장된 것이 없으면 기본 배치)과 저장
 뒤 정리할 대기분이다.
+
+층 캔버스를 줄이는 저장은 가정 설비 시나리오의 배치도 본다(설비 시나리오 2단계 S4 — 설계 6-4).
+캔버스를 바꾸는 저장이 보는 리비전(ACTIVE 시나리오 최신·최신 공식 발행)의 그 층 차이 요소가 밖이면
+저장소가 막으므로 공식 요소처럼 미리 말하고 단추를 끄고, 차이 호기가 밖이면 공식 호기처럼 경고 뒤
+확인 체크로 받는다(그 시나리오의 다음 저장만 막힌다). 재료는 `load_layout_overlay_extent` 하나다.
 """
 
 from __future__ import annotations
@@ -39,7 +44,9 @@ from capa_simulation.persistence.equipment_cache import (
     load_fab_layout,
     load_floor_layout_marks,
     load_floor_layout_profile,
+    load_layout_overlay_extent,
 )
+from capa_simulation.persistence.equipment_repository import LayoutOverlayExtent
 from capa_simulation.services.equipment_validation import floor_equipment_outside_canvas
 from capa_simulation.services.fab_layout import FAB_CANVAS, effective_fab_layout
 from capa_simulation.services.floor_layout_mark import marks_extent
@@ -200,13 +207,30 @@ def _load_profile(database_path: str, target: _DrawingTarget) -> _DrawingProfile
     return load_floor_layout_profile(database_path, *target.floor)
 
 
-def _marks_extent(database_path: str, target: _DrawingTarget) -> CanvasSize:
-    """캔버스를 이보다 줄일 수 없는 요소 범위. FAB 는 지금 그리는 요소(저장된 것이 없으면 기본
-    배치)."""
+def _marks_extent(
+    database_path: str, target: _DrawingTarget, overlay: LayoutOverlayExtent
+) -> CanvasSize:
+    """캔버스를 이보다 줄일 수 없는 요소 범위 — 층은 공식 요소와 가정 배치 차이 요소(`overlay`) 둘
+    다. FAB 는 지금 그리는 요소(저장된 것이 없으면 기본 배치 — 가정이 없다)."""
     if target.floor is None:
         _, marks = effective_fab_layout(None, load_fab_layout(database_path)[1])
         return marks_extent(marks)
-    return marks_extent(load_floor_layout_marks(database_path, *target.floor))
+    right, top = marks_extent(load_floor_layout_marks(database_path, *target.floor))
+    overlay_right, overlay_top = overlay.mark_extent()
+    return max(right, overlay_right), max(top, overlay_top)
+
+
+def overlay_unit_words(outside: tuple[tuple[str, int], ...]) -> str:
+    """「가정 배치 「셋업 실무」 호기 2대 · 「배치안」 호기 1대」 — 캔버스 밖 가정 차이 호기."""
+    return " · ".join(f"가정 배치 「{name}」 호기 {count:,}대" for name, count in outside)
+
+
+def overlay_mark_words(names: tuple[str, ...]) -> str:
+    """「(가정 배치 「셋업 실무」 의 요소 포함 — 그 설비 시나리오에서 옮기세요)」 — 없으면 빈 글."""
+    if not names:
+        return ""
+    shown = ", ".join(f"「{name}」" for name in names)
+    return f" 가정 배치 {shown} 의 요소도 밖입니다 — 그 설비 시나리오의 Space 에서 옮기세요."
 
 
 @st.dialog("배치 도면·캔버스", width="large", on_dismiss=_close_dialog)
@@ -296,10 +320,17 @@ def _floor_layout_dialog(
     # 본다. 둘 다 확인 후 진행이다(요소 이탈은 저장소가 거부해 불가).
     shrink_confirmed = True
     delete_confirmed = True
+    # 가정 설비 시나리오 배치(설비 0031)의 이 층 차이 요소·호기 — FAB 는 가정이 없다.
+    overlay = (
+        load_layout_overlay_extent(database_path, *target.floor)
+        if target.floor is not None
+        else LayoutOverlayExtent()
+    )
     if target.floor is not None:
         outside_units = floor_equipment_outside_canvas(
             saved_equipment, target.floor, (target_width, target_height)
         )
+        overlay_outside = overlay.units_outside((target_width, target_height))
         if outside_units:
             st.warning(
                 f"이 캔버스에서는 {target.title} 호기 {_unit_names(outside_units)}가 범위를 "
@@ -309,6 +340,15 @@ def _floor_layout_dialog(
                 "셉니다. 가용설비 현황에서 이 층 좌표를 먼저 고치세요.",
                 icon=":material/warning:",
             )
+        if overlay_outside:
+            # 가정 차이 호기는 공식 호기처럼 막지 않는다 — 그 설비 시나리오의 다음 저장만 막힌다.
+            st.warning(
+                f"이 캔버스에서는 {overlay_unit_words(overlay_outside)}가 범위를 벗어납니다 — "
+                "공식 배치는 그대로 저장되지만 그 설비 시나리오의 다음 저장이 막힙니다. 그 "
+                "시나리오의 Space 에서 먼저 옮기세요.",
+                icon=":material/warning:",
+            )
+        if outside_units or overlay_outside:
             shrink_confirmed = st.checkbox(
                 "이탈 호기를 알고도 이 캔버스로 저장",
                 value=False,
@@ -319,14 +359,21 @@ def _floor_layout_dialog(
             if profile is not None
             else []
         )
-        if stranded_units:
+        overlay_stranded = (
+            overlay.units_outside(target.default_canvas) if profile is not None else ()
+        )
+        if stranded_units or overlay_stranded:
             # 지우기는 가끔 하는 일이라 저장 경고보다 한 단 낮춰 캡션으로 둔다(팝업을 열 때마다 노란
             # 상자가 서지 않게). 단추는 확인 전까지 막는다.
+            parts = []
+            if stranded_units:
+                parts.append(f"{target.title} 호기 {_unit_names(stranded_units)}")
+            if overlay_stranded:
+                parts.append(overlay_unit_words(overlay_stranded))
             st.caption(
                 f":material/warning: 지우면 캔버스가 기본 {default_width:g} × "
-                f"{with_direction_particle(f'{default_height:g}')} 돌아가 {target.title} 호기 "
-                f"{_unit_names(stranded_units)}가 범위를 벗어납니다 — 그대로 지우면 설비 마스터 "
-                "저장이 전부 막힙니다."
+                f"{with_direction_particle(f'{default_height:g}')} 돌아가 {' · '.join(parts)}가 "
+                "범위를 벗어납니다 — 그대로 지우면 그 호기가 든 설비 마스터 저장이 막힙니다."
             )
             delete_confirmed = st.checkbox(
                 "이탈 호기를 알고도 도면·캔버스 삭제",
@@ -336,12 +383,13 @@ def _floor_layout_dialog(
 
     # 도면 요소(반입구·문·영역·층 블록 …)는 호기와 달리 캔버스 밖에 둘 수 없다 — 저장소가 거부한다.
     # 누르기 전에 말하고 단추를 막는다. 지우기는 캔버스가 기본 크기로 돌아가므로 그 크기로 본다.
-    mark_right, mark_top = _marks_extent(database_path, target)
+    mark_right, mark_top = _marks_extent(database_path, target, overlay)
     marks_outside = mark_right > target_width + 1e-9 or mark_top > target_height + 1e-9
     if marks_outside:
         st.warning(
             f"이 캔버스에서는 {target.title} 도면 요소가 범위를 벗어나 저장할 수 없습니다"
-            f"(필요한 크기 {mark_right:g} × {mark_top:g}). Space 배치 편집에서 요소를 옮기세요.",
+            f"(필요한 크기 {mark_right:g} × {mark_top:g}). Space 배치 편집에서 요소를 옮기세요."
+            + overlay_mark_words(overlay.marks_outside((target_width, target_height))),
             icon=":material/warning:",
         )
     delete_blocked = mark_right > default_width + 1e-9 or mark_top > default_height + 1e-9

@@ -203,7 +203,10 @@ def test_an_inactive_floor_block_is_grey_hatched_and_never_opens() -> None:
     assert "LINK_STATS[item.link].inactive" in JS
     # 사유 줄이 대수 줄을 대신한다(풍선에는 대수가 남고 「누르면 열기」 는 없다).
     assert "if (blockOff(item)) return [blockHead(item), blockOff(item)]" in JS
-    assert "[blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced]" in JS
+    assert (
+        "[blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced, stats.layout]"
+        in JS
+    )
     # 면·빗금·글자: 인라인 고른 색과 「글자 색」 을 달지 않는다(인라인이 CSS 를 이긴다).
     draw = JS[JS.index("} else if (item.kind === 'block') {") : JS.index("function appendHandles(")]
     assert "group.classList.toggle('is-inactive', Boolean(off))" in draw

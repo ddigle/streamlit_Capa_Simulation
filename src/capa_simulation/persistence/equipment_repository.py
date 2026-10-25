@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime
@@ -158,6 +158,7 @@ from capa_simulation.services.layout_overlay import (
     MarkChange,
     OfficialFloor,
     Place,
+    PublishBlock,
     apply_unit_overlay,
     common_with_places,
     effective_floor_marks,
@@ -166,6 +167,7 @@ from capa_simulation.services.layout_overlay import (
     layout_base,
     layout_cells,
     layout_counts_words,
+    layout_publish_blocked_words,
     make_layout_overlay,
     mark_changes,
     normalize_layout_overlay,
@@ -275,9 +277,11 @@ class EquipmentScheduleRevisionSummary:
 class EquipmentScenarioSummary:
     """설비 시나리오 한 줄 — 각 최신은 칸이 아니라 `MAX(revision_no)` 로 낸다.
 
-    배치 차이(0031): `latest_layout_unit_count` 는 최신의 **저장된** 호기 차이 행 수(실효 아님 —
-    목록 표의 「저장된 배치 차이」), `latest_layout_hash` 는 최신의 배치 지문(배치 빨리 감기 판정),
-    `layout_trace_count` 는 옛 코드 흔적(차이가 있는 리비전 뒤에 지문 없이 저장된 리비전 수)이다.
+    배치 차이(0031):
+    `latest_layout_unit_count`·`latest_layout_mark_count`·`latest_layout_label_count` 는 최신의
+    **저장된** 호기·도면 요소·Main 설비명 위치 차이 행 수(실효 아님 — 목록 표의 「저장된 배치
+    차이」), `latest_layout_hash` 는 최신의 배치 지문(배치 빨리 감기 판정), `layout_trace_count` 는
+    옛 코드 흔적(차이가 있는 리비전 뒤에 지문 없이 저장된 리비전 수)이다.
     """
 
     equipment_scenario_id: str
@@ -290,6 +294,17 @@ class EquipmentScenarioSummary:
     latest_layout_unit_count: int = 0
     latest_layout_hash: str | None = None
     layout_trace_count: int = 0
+    latest_layout_mark_count: int = 0
+    latest_layout_label_count: int = 0
+
+    @property
+    def latest_layout_rows(self) -> tuple[int, int, int]:
+        """최신의 저장된 배치 차이 행 수 — (호기, 도면 요소, Main 설비명 위치)."""
+        return (
+            self.latest_layout_unit_count,
+            self.latest_layout_mark_count,
+            self.latest_layout_label_count,
+        )
 
 
 @dataclass(frozen=True)
@@ -581,21 +596,129 @@ class EquipmentLayoutPublishBlocked(ValueError):
     올리기」 전까지 — Q4). 수는 지금 공식과 견준 실효다. 아무것도 쓰지 않았다."""
 
     def __init__(
-        self, scenario_name: str, revision_no: int, units: int, marks: int, labels: int
+        self,
+        scenario_name: str,
+        revision_no: int,
+        units: int,
+        marks: int,
+        labels: int,
+        *,
+        message: str | None = None,
     ) -> None:
+        """`message` 를 주면 그 글이다 — 공식 발행 쓰기는 확인 팝업과 같은 막힘 글
+        (`layout_publish_blocked_words`)을 넘긴다. 저장·되돌리기의 자동 발행(새 최신 리비전)은 그
+        새 리비전의 실효 수로 아래 글을 쓴다."""
         counts = layout_counts_words(units, marks, labels) or "저장된 차이"
-        super().__init__(
+        default = (
             f"「{scenario_name}」 r{revision_no} 에는 공식과 다른 배치({counts})가 있어 공식으로 "
             "발행하지 않았습니다 — 배치를 공식으로 올리는 기능은 다음 단계입니다. 공식 설비 "
             "시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 로 이 시나리오를 "
             "공식 배치로 돌린 뒤 발행하세요. 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 "
             "두세요."
         )
+        super().__init__(message or default)
         self.scenario_name = scenario_name
         self.revision_no = revision_no
         self.units = units
         self.marks = marks
         self.labels = labels
+
+
+@dataclass(frozen=True)
+class LayoutPublishPreview:
+    """「공식으로 발행」 확인 팝업의 배치 판정(설계 6-5) — 발행 쓰기(`publish_equipment_release`)와
+    **같은 판정**을 쓰지 않고 낸다(`_layout_publish_preview` 한 곳).
+
+    - `action` — "publish"(저장된 차이가 없음 — 지금처럼 발행), "clean"(행은 있지만 지금 공식과
+      같아져 차이를 비운 새 리비전으로 발행), "blocked"(공식과 다른 배치가 있어 발행하지 않음).
+    - `stored_units`·`stored_marks`·`stored_labels` — 발행할 리비전의 저장된 차이 행 수(원시).
+    - `newest_rows` — 그 시나리오 최신의 저장된 차이 행 수 합(발행할 리비전이 최신이면 같은 값).
+    - `is_newest` — 발행할 리비전이 그 시나리오 최신인가(정리 발행·「배치 차이 모두 지우기」 는
+      최신만이라 막힘 글의 빠져나갈 길이 갈린다).
+    - `units`·`marks`·`labels` — 발행할 리비전의 실효 수(지금 공식으로 정규화한 뒤 — 호기는 설비
+      단위). `newest_units`·`newest_marks`·`newest_labels` — 그 시나리오 최신의 실효 수(발행할
+      리비전이 최신이면 같은 값). 막힘 글은 실제로 공식과 다른 쪽만 「실효」 로 적는다.
+    """
+
+    action: Literal["publish", "clean", "blocked"] = "publish"
+    stored_units: int = 0
+    stored_marks: int = 0
+    stored_labels: int = 0
+    newest_rows: int = 0
+    is_newest: bool = True
+    units: int = 0
+    marks: int = 0
+    labels: int = 0
+    newest_units: int = 0
+    newest_marks: int = 0
+    newest_labels: int = 0
+
+    @property
+    def stored_rows(self) -> int:
+        """발행할 리비전의 저장된 차이 행 수 합."""
+        return self.stored_units + self.stored_marks + self.stored_labels
+
+    def block(
+        self, scenario_name: str, revision_no: int, newest_revision_no: int, *, official: bool
+    ) -> PublishBlock:
+        """막힘 글 재료(`layout_publish_blocked_words`) — 확인 팝업과 발행 쓰기 거부가 같은 글을
+        낸다."""
+        return PublishBlock(
+            scenario_name=scenario_name,
+            revision_no=revision_no,
+            newest_revision_no=revision_no if self.is_newest else newest_revision_no,
+            stored_rows=self.stored_rows,
+            newest_rows=self.newest_rows,
+            effective=(self.units, self.marks, self.labels),
+            newest_effective=(self.newest_units, self.newest_marks, self.newest_labels),
+            official=official,
+        )
+
+
+# 층 캔버스 팝업 미리 보임의 한 상자 — (X좌표, Y좌표, Xsize, Ysize).
+UnitBox = tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
+class LayoutOverlayExtent:
+    """층 캔버스 팝업(도면·캔버스 저장·지우기)의 가정 배치 미리 보임(설계 6-4·7-2).
+
+    캔버스를 바꾸는 저장이 보는 것과 같은 리비전 — ACTIVE 설비 시나리오 최신(배치 차이가 있는 것)과
+    최신 공식 발행 — 마다 그 층의 차이 요소 `set` 이 차지한 가장 먼 오른쪽·위(`marks` — (시나리오
+    이름, 오른쪽, 위))와 차이 호기 상자(`units` — (시나리오 이름, 상자들)). 요소는 캔버스 밖이면
+    저장이 막히고(`EquipmentLayoutOverflow`), 호기는 막지 않고 그 시나리오의 다음 저장만 막힌다.
+    """
+
+    marks: tuple[tuple[str, float, float], ...] = ()
+    units: tuple[tuple[str, tuple[UnitBox, ...]], ...] = ()
+
+    def mark_extent(self) -> CanvasSize:
+        """모든 시나리오의 차이 요소가 차지한 가장 먼 오른쪽·위."""
+        return (
+            max((right for _, right, _ in self.marks), default=0.0),
+            max((top for _, _, top in self.marks), default=0.0),
+        )
+
+    def marks_outside(self, canvas: CanvasSize) -> tuple[str, ...]:
+        """캔버스 밖에 차이 요소가 남는 시나리오 이름."""
+        width, height = canvas
+        return tuple(
+            name for name, right, top in self.marks if right > width + 1e-9 or top > height + 1e-9
+        )
+
+    def units_outside(self, canvas: CanvasSize) -> tuple[tuple[str, int], ...]:
+        """시나리오마다 캔버스를 벗어나는 차이 호기 수(0 인 시나리오는 뺀다)."""
+        width, height = canvas
+        result = []
+        for name, boxes in self.units:
+            count = sum(
+                1
+                for x, y, w, h in boxes
+                if x < -1e-9 or y < -1e-9 or x + w > width + 1e-9 or y + h > height + 1e-9
+            )
+            if count:
+                result.append((name, count))
+        return tuple(result)
 
 
 class EquipmentScheduleRevisionNameMoved(ValueError):
@@ -1925,6 +2048,57 @@ class DuckDBEquipmentRepository:
                 if count:
                     found.append((summary.scenario_name, count))
         return tuple(found)
+
+    def preview_layout_publish(
+        self,
+        schedule_revision_id: str,
+        *,
+        common_revision_id: str,
+        newest_schedule_revision_id: str | None,
+    ) -> LayoutPublishPreview:
+        """「공식으로 발행」 확인 팝업의 배치 판정(읽기만 — 설계 6-5). 발행할 리비전을 공통
+        `common_revision_id` 와 합쳐, 그 시나리오 최신 `newest_schedule_revision_id` 와 함께 발행
+        쓰기와 같은 판정(`_layout_publish_preview`)에 태운다. 결과는 두 리비전 id·공통 id 와 층
+        현행값으로만 정해진다(화면 캐시는 층 현행값 쓰기 세대를 키에 둔다)."""
+        with self._connect() as connection:
+            target = _require_schedule_revision(connection, schedule_revision_id)
+            return _layout_publish_preview(
+                connection,
+                target,
+                newest_schedule_revision_id=newest_schedule_revision_id,
+                snapshot=lambda: read_merged(connection, common_revision_id, schedule_revision_id),
+            )
+
+    def layout_overlay_extent(self, building: str, floor: str) -> LayoutOverlayExtent:
+        """층 캔버스 팝업의 가정 배치 미리 보임(설계 6-4) — 캔버스를 바꾸는 저장이 보는
+        리비전(ACTIVE 시나리오 최신 가운데 차이가 있는 것·최신 공식 발행)마다 그 층의 차이 요소
+        범위와 차이 호기 상자. 차이가 없는 리비전은 질의하지 않는다(`read_layout_overlay`)."""
+        key = (building, floor)
+        marks: list[tuple[str, float, float]] = []
+        units: list[tuple[str, tuple[UnitBox, ...]]] = []
+        with self._connect() as connection:
+            for revision_id, name in _overlay_check_targets(connection).items():
+                overlay = read_layout_overlay(connection, revision_id)
+                drawn = [
+                    change.mark
+                    for change in overlay.marks_for(key)
+                    if change.kind == "set" and change.mark is not None
+                ]
+                if drawn:
+                    right, top = marks_extent(drawn)
+                    marks.append((name, right, top))
+                boxes = tuple(
+                    (float(place[2]), float(place[3]), float(place[4]), float(place[5]))
+                    for _, _, place in overlay.units
+                    if (place[0], place[1]) == key
+                    and place[2] is not None
+                    and place[3] is not None
+                    and place[4] is not None
+                    and place[5] is not None
+                )
+                if boxes:
+                    units.append((name, boxes))
+        return LayoutOverlayExtent(marks=tuple(marks), units=tuple(units))
 
     def list_equipment_scenarios(self) -> list[EquipmentScenarioSummary]:
         """설비 시나리오 목록(`list_order` 다음 이름 차례) — 각 최신·리비전 수와 함께."""
@@ -3300,6 +3474,51 @@ def _common_places(connection: duckdb.DuckDBPyConnection, revision_id: str) -> d
     return dict(layout_base(common.equipment, keys).places)
 
 
+def _layout_publish_preview(
+    connection: duckdb.DuckDBPyConnection,
+    target: EquipmentScheduleRevisionSummary,
+    *,
+    newest_schedule_revision_id: str | None,
+    snapshot: Callable[[], EquipmentSnapshot],
+) -> LayoutPublishPreview:
+    """공식 발행의 배치 판정 한 곳(설계 6-5) — 발행 쓰기와 확인 팝업이 같이 쓴다.
+
+    발행할 리비전과 그 시나리오 최신의 배치 차이를 지금 공식(공통 최신 + 층 현행값)으로 정규화해,
+    저장된 행이 둘 다 없으면 "publish", 행은 있지만 정규화하면 비고 발행할 리비전이 최신이면
+    "clean", 그 밖은 "blocked"(실효 수). `snapshot` 은 발행할 리비전을 공통 최신과 합친 한 벌을
+    부를 때 읽는다 — 차이가 없으면 읽지 않는다.
+    """
+    selected = read_layout_overlay(connection, target)
+    is_newest = newest_schedule_revision_id == target.schedule_revision_id
+    newest = selected if is_newest else read_layout_overlay(connection, newest_schedule_revision_id)
+    stored = LayoutPublishPreview(
+        stored_units=len(selected.units),
+        stored_marks=selected.mark_count,
+        stored_labels=selected.label_count,
+        newest_rows=len(newest.units) + newest.mark_count + newest.label_count,
+        is_newest=is_newest,
+    )
+    if not selected and not newest:
+        return stored
+    official = _official_layout(snapshot())
+    floors = _stored_floors(connection, {*selected.floors, *newest.floors})
+    normalized = normalize_layout_overlay(selected, official, floors)
+    if is_newest and not normalized:
+        return replace(stored, action="clean")
+    # 발행할 리비전과 최신의 실효를 따로 센다 — 막힘 글이 실제로 다른 쪽만 「실효」 로 적는다.
+    latest = normalized if is_newest else normalize_layout_overlay(newest, official, floors)
+    return replace(
+        stored,
+        action="blocked",
+        units=overlay_unit_count(normalized, official),
+        marks=normalized.mark_count,
+        labels=normalized.label_count,
+        newest_units=overlay_unit_count(latest, official),
+        newest_marks=latest.mark_count,
+        newest_labels=latest.label_count,
+    )
+
+
 def _layout_publishable(
     connection: duckdb.DuckDBPyConnection,
     scenario: EquipmentScenarioSummary,
@@ -3310,22 +3529,18 @@ def _layout_publishable(
     saved_by: str | None,
 ) -> str:
     """공식 발행 막기·정리(설계 6-5) — 발행할 일정 리비전 id 를 돌려준다(정리 리비전을 썼으면
-    그 id).
-
-    발행할 리비전과 그 시나리오 최신의 배치 차이를 지금 공식으로 정규화해, 저장된 행이 둘 다 없으면
-    그대로, 행은 있지만 정규화하면 비고 발행할 리비전이 최신이면 차이를 비운 `layout_clear` 리비전을
-    써서 그것을, 그 밖은 `EquipmentLayoutPublishBlocked`(실효 수)다.
+    그 id). 판정은 `_layout_publish_preview` 한 곳이다 — "clean" 이면 차이를 비운 `layout_clear`
+    리비전을 써서 그것을, "blocked" 면 `EquipmentLayoutPublishBlocked`(실효 수)다.
     """
-    selected = read_layout_overlay(connection, target)
-    newest_id = scenario.latest_schedule_revision_id
-    is_newest = newest_id == target.schedule_revision_id
-    newest = selected if is_newest else read_layout_overlay(connection, newest_id)
-    if not selected and not newest:
+    preview = _layout_publish_preview(
+        connection,
+        target,
+        newest_schedule_revision_id=scenario.latest_schedule_revision_id,
+        snapshot=lambda: snapshot,
+    )
+    if preview.action == "publish":
         return target.schedule_revision_id
-    official = _official_layout(snapshot)
-    floors = _stored_floors(connection, {*selected.floors, *newest.floors})
-    normalized = normalize_layout_overlay(selected, official, floors)
-    if is_newest and not normalized:
+    if preview.action == "clean":
         schedule, downtime = _scheduled_frames(snapshot)
         return _insert_schedule(
             connection,
@@ -3338,13 +3553,24 @@ def _layout_publishable(
             downtime=downtime,
             layout=LayoutOverlay(),
         )
-    blocked = normalized or normalize_layout_overlay(newest, official, floors)
+    release = scenario_store.latest_release_row(connection)
+    official = release is not None and (
+        str(release["equipment_scenario_id"]) == scenario.equipment_scenario_id
+    )
     raise EquipmentLayoutPublishBlocked(
         scenario.scenario_name,
         target.revision_no,
-        overlay_unit_count(blocked, official),
-        blocked.mark_count,
-        blocked.label_count,
+        preview.units,
+        preview.marks,
+        preview.labels,
+        message=layout_publish_blocked_words(
+            preview.block(
+                scenario.scenario_name,
+                target.revision_no,
+                scenario.latest_revision_no or target.revision_no,
+                official=official,
+            )
+        ),
     )
 
 
@@ -3991,6 +4217,10 @@ def _scenario_summary(row: Mapping[str, object]) -> EquipmentScenarioSummary:
         latest_layout_unit_count=as_int(row["latest_layout_unit_count"], "최신 배치 차이 행 수"),
         latest_layout_hash=_optional_str(row["latest_layout_hash"]),
         layout_trace_count=as_int(row["layout_trace_count"], "배치 옛 코드 흔적 수"),
+        latest_layout_mark_count=as_int(row["latest_layout_mark_count"], "최신 배치 요소 차이 수"),
+        latest_layout_label_count=as_int(
+            row["latest_layout_label_count"], "최신 배치 이름표 차이 수"
+        ),
     )
 
 
@@ -4077,14 +4307,10 @@ def _require_marks_fit(
         )
 
 
-def _require_overlay_marks_fit(
-    connection: duckdb.DuckDBPyConnection, key: FloorKey, canvas: CanvasSize
-) -> None:
-    """그 층의 **가정 배치 요소**(각 ACTIVE 설비 시나리오 최신과 최신 공식 발행 리비전의 `set`)가 새
-    캔버스 안인가. 밖이면 `EquipmentLayoutOverflow`. 캔버스를 바꾸는 네 진입점(설비 저장의 캔버스·
-    캔버스 저장·도면 올리기·도면 지우기)이 공식 요소 검사(`_require_marks_fit`) 옆에서 부른다. 가정
-    차이 호기는 막지 않는다 — 공식 호기처럼 그 시나리오의 다음 저장만 막힌다(설계 6-4). 옛
-    리비전(최신·발행이 아닌)의 차이는 보지 않는다."""
+def _overlay_check_targets(connection: duckdb.DuckDBPyConnection) -> dict[str, str]:
+    """캔버스 검사·미리 보임이 보는 가정 배치 리비전 — 일정 리비전 id → 그 시나리오 이름. ACTIVE
+    설비 시나리오 최신 가운데 배치 차이가 있는 것과 최신 공식 발행(설계 6-4 — 옛 리비전은 보지
+    않는다)."""
     targets: dict[str, str] = {}
     for summary in _scenario_map(connection).values():
         if (
@@ -4098,6 +4324,18 @@ def _require_overlay_marks_fit(
         released = str(release["schedule_revision_id"])
         owner = scenario_store.scenario_name(connection, str(release["equipment_scenario_id"]))
         targets.setdefault(released, owner or str(release["equipment_scenario_id"]))
+    return targets
+
+
+def _require_overlay_marks_fit(
+    connection: duckdb.DuckDBPyConnection, key: FloorKey, canvas: CanvasSize
+) -> None:
+    """그 층의 **가정 배치 요소**(각 ACTIVE 설비 시나리오 최신과 최신 공식 발행 리비전의 `set`)가 새
+    캔버스 안인가. 밖이면 `EquipmentLayoutOverflow`. 캔버스를 바꾸는 네 진입점(설비 저장의 캔버스·
+    캔버스 저장·도면 올리기·도면 지우기)이 공식 요소 검사(`_require_marks_fit`) 옆에서 부른다. 가정
+    차이 호기는 막지 않는다 — 공식 호기처럼 그 시나리오의 다음 저장만 막힌다(설계 6-4). 옛
+    리비전(최신·발행이 아닌)의 차이는 보지 않는다."""
+    targets = _overlay_check_targets(connection)
     outside = scenario_store.layout_marks_outside(connection, list(targets), *key, *canvas)
     if outside:
         revision_id = min(outside)

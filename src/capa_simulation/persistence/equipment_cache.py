@@ -4,9 +4,10 @@
 
 - **리비전 내용은 불변이다.** 화면이 쓰는 한 벌은 (공통 대장 리비전, 설비 시나리오 일정 리비전) 쌍을
   합친 것이고 그 본문은 쌍 키로만 캐시한다(`load_merged_equipment_snapshot`) — 쓰기 세대가 없다.
-  되돌리기 확인 재료(`load_schedule_restore_preview`)도 불변 리비전 id 셋이 키다. 가정 설비
-  시나리오의 배치 차이(설비 0031)도 일정 리비전 내용이라 불변이다 — 호기 차이는 합친 본문에 이미
-  얹혀 있고, 도면 요소·Main 설비명 위치 차이는 일정 id 하나를 키로 한 칸
+  되돌리기 확인 재료(`load_schedule_restore_preview`)도 불변 리비전 id 셋이 키다. 공식 발행 확인의
+  배치 판정(`load_layout_publish_preview`)은 불변 리비전 id 셋에 층 현행값 쓰기 세대를 더한다. 가정
+  설비 시나리오의 배치 차이(설비 0031)도 일정 리비전 내용이라 불변이다 — 호기 차이는 합친 본문에
+  이미 얹혀 있고, 도면 요소·Main 설비명 위치 차이는 일정 id 하나를 키로 한 칸
   (`load_schedule_layout_overlay`)이 든다. 실제 그림은 「공식 층 현행값(쓰기 세대) ⊕ 그 차이」 를
   회차마다 합친다(이 모듈 밖 — 쓰기 세대 종류는 늘지 않는다).
 - **바뀔 수 있는 것**(시나리오 이름·일정 리비전의 리비전명·공식 발행·각 시나리오 최신·옛 배포 흔적,
@@ -36,6 +37,8 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
     EquipmentSnapshot,
+    LayoutOverlayExtent,
+    LayoutPublishPreview,
     LegacyTraceReview,
 )
 from capa_simulation.services.equipment_csv import (
@@ -392,6 +395,81 @@ def load_layout_overlay_floor_counts(
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_layout_overlay_extent_payload(
+    database_path: str,
+    building: str,
+    floor: str,
+    stamp: DatabaseStamp,
+    scenario_generation: WriteGeneration,
+    floor_generation: WriteGeneration,
+) -> dict[str, Any]:
+    del stamp, scenario_generation, floor_generation
+    return _payload(
+        get_equipment_repository(database_path).layout_overlay_extent(building, floor),
+        LayoutOverlayExtent,
+    )
+
+
+def load_layout_overlay_extent(
+    database_path: str, building: str, floor: str
+) -> LayoutOverlayExtent:
+    """층 캔버스 팝업의 가정 배치 미리 보임(설계 6-4·7-2) — ACTIVE 설비 시나리오 최신·최신 공식
+    발행마다 그 층의 차이 요소 범위와 차이 호기 상자. 남의 저장·복제·되돌리기·발행으로 바뀌므로
+    목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)에 층 현행값 세대 `"floor_layout"` 을
+    더해 지킨다. 팝업을 그리는 회차에만 부른다."""
+    return LayoutOverlayExtent(
+        **_load_layout_overlay_extent_payload(
+            database_path,
+            building,
+            floor,
+            database_stamp(database_path),
+            _write_generation("equipment_scenario"),
+            _write_generation("floor_layout"),
+        )
+    )
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_layout_publish_preview_payload(
+    database_path: str,
+    common_revision_id: str,
+    schedule_revision_id: str,
+    newest_schedule_revision_id: str | None,
+    floor_generation: WriteGeneration,
+) -> dict[str, Any]:
+    del floor_generation
+    return _payload(
+        get_equipment_repository(database_path).preview_layout_publish(
+            schedule_revision_id,
+            common_revision_id=common_revision_id,
+            newest_schedule_revision_id=newest_schedule_revision_id,
+        ),
+        LayoutPublishPreview,
+    )
+
+
+def load_layout_publish_preview(
+    database_path: str,
+    common_revision_id: str,
+    schedule_revision_id: str,
+    newest_schedule_revision_id: str | None,
+) -> LayoutPublishPreview:
+    """「공식으로 발행」 확인 팝업의 배치 판정(설계 6-5 — 발행 쓰기와 같은 판정). 결과는 세 리비전
+    (공통 최신·발행할 리비전·그 시나리오 최신) 내용과 층 현행값으로만 정해진다 — 리비전 id 셋은
+    불변이라 그대로 키이고, 층 현행값은 쓰기 세대 `"floor_layout"` 으로 지킨다. 누가 저장해 최신이
+    바뀌면 화면이 새 id 로 부르므로 다른 칸으로 간다."""
+    return LayoutPublishPreview(
+        **_load_layout_publish_preview_payload(
+            database_path,
+            common_revision_id,
+            schedule_revision_id,
+            newest_schedule_revision_id,
+            _write_generation("floor_layout"),
+        )
+    )
+
+
 # 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
@@ -497,6 +575,7 @@ def clear_equipment_scenario_cache() -> None:
     _load_legacy_trace_review_payload.clear()
     _load_units_scheduled_elsewhere_payload.clear()
     _load_layout_overlay_floor_counts_payload.clear()
+    _load_layout_overlay_extent_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
@@ -863,6 +942,7 @@ def clear_floor_layout_cache() -> None:
     _load_floor_layout_marks_payload.clear()
     _load_floor_group_labels_payload.clear()
     _load_fab_layout_payload.clear()
+    _load_layout_publish_preview_payload.clear()
 
 
 def clear_equipment_snapshot_cache() -> None:
@@ -876,6 +956,7 @@ def clear_equipment_snapshot_cache() -> None:
     _load_revision_summaries_payload.clear()
     load_equipment_csv_payloads.clear()
     _load_schedule_restore_preview_payload.clear()
+    _load_layout_publish_preview_payload.clear()
     clear_equipment_scenario_cache()
 
 

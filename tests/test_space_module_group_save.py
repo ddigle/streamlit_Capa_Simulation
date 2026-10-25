@@ -40,6 +40,7 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.layout_overlay import reapply_layout_edits
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
     module_layout_message,
@@ -280,6 +281,77 @@ def test_an_editor_result_passes_as_applied_and_a_later_rawdata_edit_does_not() 
     )
     result = apply_layout_edits(master, moved, floor=FLOOR, canvases={}, default_canvas=CANVAS)
     assert module_layout_violations(master, result) == []
+
+
+def _sent_hidden_group() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """숨은 모듈(G1-B)이 있는 GRP-1 을 편집기에서 C2 2F 로 보낸 (저장본, 편집본, 승인)."""
+    master, after = _hidden_inputs(date(2026, 10, 1))
+    laid = _relaid(_shape(after), (51.0, 30.0, 24.0, 16.0))
+    applied = _parse(
+        {
+            "changes": [
+                {
+                    "id": name,
+                    "placed": True,
+                    "x": laid[name][0],
+                    "y": laid[name][1],
+                    "w": laid[name][2],
+                    "h": laid[name][3],
+                    "moveTo": "C2 2F",
+                }
+                for name in G1
+                if name != "G1-B"
+            ],
+            "ghosts": [],
+        },
+        master,
+        editor_items=after.items,
+        editor_ghosts=after.ghosts,
+    )
+    sent = apply_layout_edits(master, applied, floor=FLOOR, canvases={}, default_canvas=CANVAS)
+    return master, sent, module_layouts(sent, {"GRP-1"})
+
+
+def test_reapplying_an_editor_group_keeps_its_approval_under_the_new_names() -> None:
+    """남의 공통 저장 뒤 다시 얹기(설계 9장) — 편집기가 낸 묶음 모양 승인을 다시 얹은 결과로 옮긴다.
+    버리면 숨은 모듈이 있는 묶음 보내기가 저장에서 「설비 마스터 표로 바꾼 값」 으로 막혔다(S4
+    리뷰). 남이 그 사이 모듈 이름을 바꿨으면 새 이름으로 옮기고, 다시 얹은 수는 설비 단위(묶음
+    1대)다. 승인 뒤 RawData 로 고친 묶음은 모양이 달라 승인을 잃는다."""
+    master, sent, approved = _sent_hidden_group()
+    names = [str(name) for name in master["설비명"]]
+    keys = {name: f"k-{name}" for name in names}
+    new_saved = master.copy()
+    new_saved.loc[new_saved["설비명"].eq("G1-A"), "설비명"] = "G1-A2"
+    new_names = {key: ("G1-A2" if name == "G1-A" else name) for name, key in keys.items()}
+
+    result = reapply_layout_edits(
+        master,
+        sent,
+        new_saved,
+        origins={name: name for name in names},
+        old_keys=keys,
+        new_names=new_names,
+        approved=approved,
+    )
+
+    assert result.reapplied == 1
+    assert list(result.approved) == ["GRP-1"]
+    assert module_layout_violations(new_saved, result.equipment) == ["GRP-1"]
+    assert module_layout_violations(new_saved, result.equipment, approved=result.approved) == []
+    rows = result.equipment.set_index("설비명")
+    assert set(rows.loc[["G1-A2", "G1-C", "G1-D"], "층"]) == {"2F"}
+
+    later = _edited(sent, {"G1-A": {"X좌표": 52.0}})
+    edited = reapply_layout_edits(
+        master,
+        later,
+        new_saved,
+        origins={name: name for name in names},
+        old_keys=keys,
+        new_names=new_names,
+        approved=approved,
+    )
+    assert edited.approved == {}
 
 
 def test_the_message_names_the_groups_and_the_way_out() -> None:

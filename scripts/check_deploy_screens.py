@@ -3533,6 +3533,95 @@ def check_equipment_scenario_line(screen: Screen) -> str:
     return summarize_equipment_scenario_line(row, title, facts, closed)
 
 
+# Space 현황 사이드바의 설비 시나리오 줄(설비 시나리오 2단계 S3·S4) — 고를 수 있는 줄(잠근 꼴의
+# 「(고정)」 없음)이고 팝업은 「불러오기」 구획 하나다(구획 전환이 서지 않는다 — 배치 저장은 본문
+# 상자).
+SPACE_SCENARIO_FIXED_TAIL: Final = "(고정)"
+SPACE_SCENARIO_LOAD_BUTTON: Final = "불러오기"
+_SPACE_SCENARIO_DIALOG_JS = """(box, args) => {
+  const group = box.querySelector('[data-testid="stButtonGroup"] [role="radiogroup"]');
+  const list = [...box.querySelectorAll('[role="radiogroup"]')]
+    .find((g) => g.getAttribute("aria-label") === args.radio);
+  const buttons = [...box.querySelectorAll('[data-testid="stButton"] button')]
+    .map((button) => button.innerText.trim());
+  return {
+    modes: group ? [...group.querySelectorAll('[role="radio"]')].map((b) => b.innerText.trim()) :
+    [], load: buttons.some((text) => text.endsWith(args.load)), revisions: list ?
+    list.querySelectorAll('input[type="radio"]').length : null,
+  };
+}"""
+
+
+def summarize_space_scenario_row(
+    row: Mapping[str, Any] | None,
+    title: str | None,
+    facts: Mapping[str, Any] | None,
+    closed: bool,
+) -> str:
+    """Space 현황 사이드바 설비 시나리오 줄 한 줄 — 줄·고를 수 있음·「(고정)」 없음·배지 종류·팝업
+    「불러오기」 만·리비전 수·Esc. 시나리오 이름·번호는 값이라 찍지 않는다."""
+    if not row or row.get("name") != EQUIPMENT_SCENARIO_ROW_NAME:
+        return f"Space 「{EQUIPMENT_SCENARIO_ROW_NAME}」 줄 없음"
+    value = equipment_field_text(row.get("value"))
+    pickable = "고를 수 없음(잠김)" if row.get("disabled") else "고를 수 있음"
+    fixed = f"「{SPACE_SCENARIO_FIXED_TAIL}」 " + (
+        "있음" if SPACE_SCENARIO_FIXED_TAIL in value else "없음"
+    )
+    badge_text = str(row.get("badge") or "")
+    badge = next((kind for kind in EQUIPMENT_STATUS_BADGES if badge_text.startswith(kind)), None)
+    badge_words = (
+        "배지 없음"
+        if badge is None
+        else f"배지 「{badge}…」"
+        if badge in ("공식 v", "최신 r")
+        else f"배지 「{badge}」"
+    )
+    head = f"Space 「{EQUIPMENT_SCENARIO_ROW_NAME}」 줄 있음 · {pickable} · {fixed} · {badge_words}"
+    if title is None:
+        return f"{head} · 팝업 안 열림"
+    modes = list(facts["modes"]) if facts else []
+    load = bool(facts and facts["load"])
+    only = (
+        "「불러오기」 만" if load and not modes else "구획 다름" if modes else "「불러오기」 없음"
+    )
+    revisions = facts["revisions"] if facts else None
+    listed = "리비전 목록 없음" if revisions is None else f"리비전 {int(revisions)}개"
+    return (
+        f"{head} · {_title_text(title, EQUIPMENT_SCENARIO_DIALOG_TITLE)} · {only} · {listed} · "
+        f"{_closed_text(closed)}"
+    )
+
+
+def check_space_scenario_row(screen: Screen) -> str:
+    """`Space 현황` 사이드바의 설비 시나리오 줄과 팝업 — 고를 수 있는 줄(「(고정)」 없음)·배지 종류,
+    팝업 제목·「불러오기」 구획 하나·리비전 수. 불러오기는 누르지 않고 `Esc` 로 닫는다(DB 쓰기
+    없음)."""
+    screen.open_page(SPACE_PAGE)
+    keys = {
+        "row": f"{CONDITION_NAME_ROW_PREFIX}{EQUIPMENT_SCENARIO_ROW_SLUG}",
+        "field": EQUIPMENT_SCENARIO_FIELD_KEY,
+    }
+    row = screen.poll(
+        lambda: screen.js(_EQUIPMENT_ROW_JS, keys),
+        timeout=60,
+        accept=lambda value: bool(value) and value["name"] is not None and bool(value["value"]),
+    )
+    if not row or row.get("name") is None or row.get("disabled"):
+        return summarize_space_scenario_row(row, None, None, False)
+    screen.open_dialog(_sidebar_button(EQUIPMENT_SCENARIO_FIELD_KEY))
+    args = {"radio": REVISION_RADIO_LABEL, "load": SPACE_SCENARIO_LOAD_BUTTON}
+    try:
+        title = screen.dialog_title()
+        facts = screen.poll(
+            lambda: screen.dialog_read(_SPACE_SCENARIO_DIALOG_JS, args),
+            timeout=30,
+            accept=lambda value: bool(value) and value["revisions"] is not None,
+        )
+    finally:
+        closed = screen.close_dialog()
+    return summarize_space_scenario_row(row, title, facts, closed)
+
+
 # Space 층 사용(2026-10-24 S1~S6) — 층 목록 표의 칸·스위치 이름과 편집표 칸. 머리 글은 완전 일치로
 # 찾으므로 앱의 칸 이름을 바꾸면 여기도 바꾼다(`components/space_floor_list.py`).
 SPACE_FLOOR_STATE_SWITCH: Final = "사용 편집"
@@ -3790,6 +3879,7 @@ ITEMS: tuple[Item, ...] = (
     Item("page_tabs", "화면 탭 줄", check_page_tabs),
     Item("equipment_moves", "가용설비 현황 탭 둘·옮긴 자리", check_equipment_moves),
     Item("constraint_sim", "제약 시뮬레이션", check_constraint_simulation),
+    Item("space_scenario_row", "Space 설비 시나리오 줄·팝업", check_space_scenario_row),
 )
 
 

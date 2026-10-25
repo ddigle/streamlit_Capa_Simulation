@@ -1,4 +1,4 @@
-# Purpose: 가정 설비 시나리오 배치 차이를 공식에 얹고·편집본에서 뽑고·같아진 것을 지운다.
+# Purpose: 가정 설비 시나리오 배치 차이를 얹고·뽑고·지우며 견주기·다시 얹기 재료를 낸다.
 
 """가정 설비 시나리오의 Space 배치 차이(설비 `0031`).
 
@@ -13,8 +13,10 @@ LY1·LY2)을 일정 리비전마다 든다 — 손대지 않은 호기·요소�
 
 얹기(`apply_unit_overlay`)는 예외를 내지 않고 늘 「모듈 행 동·층 같음」 을 지키는 마스터를 낸다 —
 공식에서 묶음 소속이 바뀐 모듈은 그 가정 배치에서 동·층만 묶음에 맞추고 X·Y 를 비운다(설계 5-2).
-쓰기 때 정규화(`normalize_layout_overlay`)는 공식과 같아진 차이를 지운다(설계 5-6). 이 모듈은 DB·
-화면을 모른다 — 읽기·쓰기 차례는 `persistence/equipment_repository.py` 가 정한다.
+쓰기 때 정규화(`normalize_layout_overlay`)는 공식과 같아진 차이를 지운다(설계 5-6). Space 「공식과
+견주기」 재료(`layout_compare`·`unit_differences_by_floor` — 설계 8-3)와 남의 공통 저장 뒤 가정 배치
+편집 다시 얹기(`reapply_layout_edits` — 설계 9장)도 여기 둔다. 이 모듈은 DB·화면을 모른다 —
+읽기·쓰기 차례는 `persistence/equipment_repository.py` 가 정한다.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ import json
 import math
 from collections import Counter
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import Any, Final, Literal, cast
 
 import pandas as pd
@@ -36,7 +38,13 @@ from capa_simulation.services.equipment_contract import (
 )
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, FloorKey
-from capa_simulation.services.space_layout_edit import module_group_rows, natural_name_key
+from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
+from capa_simulation.services.space_layout_edit import (
+    ModuleLayout,
+    module_group_rows,
+    module_layouts,
+    natural_name_key,
+)
 
 # 호기 하나의 배치 일곱 칸 — (동, 층, X좌표, Y좌표, Xsize, Ysize, 레이아웃표시). 동·층은 앞뒤 공백을
 # 걷은 글자(빈 글은 None), 숫자는 `CANVAS_DECIMALS` 로 반올림(빈 값은 None), 레이아웃표시는 대문자.
@@ -1058,3 +1066,371 @@ def layout_counts_words(units: int, marks: int, labels: int) -> str:
     if labels:
         parts.append(f"이름표 {labels}개")
     return "·".join(parts)
+
+
+@dataclass(frozen=True)
+class PublishBlock:
+    """공식 발행 막힘 글의 재료(설계 6-5) — 발행할 리비전(`revision_no`)과 그 시나리오 최신
+    (`newest_revision_no`)의 저장된 차이 행 수(원시)와 지금 공식으로 정규화한 실효 수(호기는 설비
+    단위). `official` 은 그 시나리오가 지금 공식 설비 시나리오인가다(되돌리면 차이를 버린다 —
+    I2)."""
+
+    scenario_name: str
+    revision_no: int
+    newest_revision_no: int
+    stored_rows: int
+    newest_rows: int
+    effective: tuple[int, int, int] = (0, 0, 0)
+    newest_effective: tuple[int, int, int] = (0, 0, 0)
+    official: bool = False
+
+    @property
+    def is_newest(self) -> bool:
+        return self.revision_no == self.newest_revision_no
+
+
+def layout_publish_blocked_words(block: PublishBlock) -> str:
+    """공식 발행 막힘 글 한 곳(확인 팝업 `publish_layout_lines`·발행 쓰기 거부
+    `EquipmentLayoutPublishBlocked`). I2(공식 설비 시나리오의 최신·최신 발행 리비전은 배치 차이 행이
+    0)가 막는 까닭이 셋이라 글도 셋이다 — 고른 리비전에 공식과 다른 배치가 있거나, 옛 리비전에 남은
+    행이 지금 공식과 같아졌지만 정리 발행은 최신만이거나, 고른 리비전에는 없지만 최신에 행이 남았다.
+    「실효」 는 실제로 공식과 다를 때만 적고, 빠져나갈 길은 그 경우에 서는 단추만 안내한다(옛
+    리비전은 「배치 차이 모두 지우기」 로 풀리지 않는다 — 최신만 비운다)."""
+    name = block.scenario_name
+    title = f"r{block.revision_no}"
+    latest = f"r{block.newest_revision_no}"
+    later = "배치를 공식으로 올리는 기능은 다음 단계입니다."
+    keep = " 배치안을 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 두세요."
+    restore = (
+        f"{with_object_particle(title)} 고르고 「이 리비전으로 되돌리기」 로 새 최신을 만든 뒤"
+    )
+    effective = layout_counts_words(*block.effective)
+    if block.stored_rows and effective:
+        head = (
+            f"「{name}」 {title}에는 공식과 다른 배치(실효 {effective} — 저장된 차이 "
+            f"{block.stored_rows:,}행)가 있어 공식으로 발행하지 않습니다 — {later}"
+        )
+        if block.is_newest:
+            return (
+                head
+                + " 공식 설비 시나리오에서 같은 배치를 직접 옮기거나, 「배치 차이 모두 지우기」 "
+                "로 이 시나리오를 공식 배치로 돌린 뒤 발행하세요." + keep
+            )
+        finish = (
+            " 그 최신을 발행하세요(공식 설비 시나리오로 되돌리면 배치 차이는 버립니다)."
+            if block.official
+            else " 그 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 발행하세요."
+        )
+        return (
+            head + f" {with_topic_particle(title)} 최신({latest})이 아니라 「배치 차이 모두 "
+            "지우기」(최신만 비웁니다)로는 풀리지 않습니다 — " + restore + finish + keep
+        )
+    if block.stored_rows:
+        return (
+            f"「{name}」 {title}에 저장된 배치 차이 {block.stored_rows:,}행은 지금 공식과 "
+            f"같아졌지만, 최신({latest})이 아닌 리비전은 정리해 발행하지 않습니다(정리 발행은 최신 "
+            "리비전만 — 공식 설비 시나리오의 리비전에는 배치 차이 행이 남지 않아야 합니다). "
+            + restore
+            + " 그 최신을 발행하세요(되돌리기는 공식과 같아진 차이를 빼고 씁니다)."
+        )
+    newest = layout_counts_words(*block.newest_effective)
+    if newest:
+        return (
+            f"「{name}」 {title}에는 배치 차이가 없지만 최신 {latest}에 공식과 다른 배치(실효 "
+            f"{newest} — 저장된 차이 {block.newest_rows:,}행)가 있어 공식으로 발행하지 않습니다"
+            f"(공식 설비 시나리오의 최신에는 배치 차이가 없어야 합니다) — {later} 「배치 차이 모두 "
+            "지우기」 로 최신을 공식 배치로 돌린 뒤 발행하세요." + keep
+        )
+    return (
+        f"「{name}」 {title}에는 배치 차이가 없지만 최신 {latest}에 저장된 배치 차이 "
+        f"{block.newest_rows:,}행(지금 공식과 같음)이 남아 있어 공식으로 발행하지 않습니다(공식 "
+        "설비 시나리오의 최신에는 배치 차이 행이 없어야 합니다). 「배치 차이 모두 지우기」 로 "
+        f"최신을 비운 뒤 발행하거나, 최신 {with_object_particle(latest)} 발행하세요(공식과 같아진 "
+        "차이는 그때 정리됩니다)."
+    )
+
+
+# ------------------------------------------------------------------ 공식과 견주기·다시 얹기
+
+
+@dataclass(frozen=True)
+class CompareGhost:
+    """견주기 점선 상자 하나 — **기준 쪽**(지금은 공식) 자리가 이 층인 차이 호기의 기준 상자.
+
+    `tag` 가 None 이면 보는 쪽(그리는 가정 배치) 상자도 같은 층이라 두 상자를 가는 선으로 잇는다.
+    그 밖은 상자 옆에 붙는 꼬리표 글(「→ C2 3F」·「도면 제외(가정)」·「미배치(가정)」)이다."""
+
+    name: str
+    x: float
+    y: float
+    w: float
+    h: float
+    tag: str | None = None
+
+
+@dataclass(frozen=True)
+class CompareArrival:
+    """보는 쪽 자리가 이 층이고 기준 쪽 자리가 다른 층(또는 기준 쪽 미배치)인 호기 — 그 상자 위
+    꼬리표 글(「← C1 2F」·「← 공식 미배치」)."""
+
+    name: str
+    tag: str
+
+
+@dataclass(frozen=True)
+class LayoutCompare:
+    """층 하나의 「공식과 견주기」 재료(설계 8-3). 데이터 꼴은 기준 쪽 / 보는 쪽으로 이름 짓는다 —
+    반대 방향(공식 세션에서 고른 가정 시나리오의 자리를 점선으로)도 같은 꼴로 받는다(검토 L14)."""
+
+    ghosts: tuple[CompareGhost, ...] = ()
+    arrivals: tuple[CompareArrival, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.ghosts or self.arrivals)
+
+
+def _drawn(place: Place) -> bool:
+    """도면에 서는 자리인가 — 동·층·좌표·크기가 다 있고 레이아웃표시 Y."""
+    return (
+        place[0] is not None
+        and place[1] is not None
+        and all(value is not None for value in place[2:6])
+        and place[6] == "Y"
+    )
+
+
+def _floor_words(place: Place) -> str:
+    return f"{place[0]} {place[1]}"
+
+
+def _keyed_places(
+    effective: pd.DataFrame, unit_key_pairs: Sequence[tuple[str, str]]
+) -> tuple[dict[str, Place], dict[str, str]]:
+    """(호기 키 → 보는 쪽 일곱 칸, 호기 키 → 설비명). 행 차례 = `unit_key_pairs` 차례."""
+    rows = effective.reset_index(drop=True)
+    if len(rows) != len(unit_key_pairs):
+        raise ValueError("배치 행 수와 호기 키 수가 다릅니다.")
+    keys = [key for _, key in unit_key_pairs]
+    return (
+        dict(zip(keys, _places(rows), strict=True)),
+        {key: name for name, key in unit_key_pairs},
+    )
+
+
+def layout_compare(
+    effective: pd.DataFrame,
+    unit_key_pairs: Sequence[tuple[str, str]],
+    reference_places: Iterable[tuple[str, Place]],
+    floor: FloorKey,
+    *,
+    shown: Collection[str],
+    reference_word: str = "공식",
+    seen_word: str = "가정",
+) -> LayoutCompare:
+    """그리는 한 벌(`effective` — 행 차례 = `unit_key_pairs`)과 기준 쪽 일곱 칸(`reference_places`
+    — 실제로 다른 호기만, `EquipmentSnapshot.layout_official_places`)으로 층 `floor` 의 견주기
+    재료를 낸다. `shown` 은 지금 화면이 그리는 설비명(공정 필터·일정 없음을 지난 것)이다 — 그 밖의
+    호기는 견주기에도 그리지 않는다.
+
+    - 점선 상자(`ghosts`) — 기준 자리가 이 층에 그려지던 호기. 보는 자리도 이 층에 그려지면 선으로
+      잇고, 다른 층이면 「→ 그 층」, 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면
+      「미배치(가정)」.
+    - 들어온 호기(`arrivals`) — 보는 자리가 이 층에 그려지고 기준 자리는 다른 층이거나 그려지지 않던
+      호기 — 「← 그 층」·「← 공식 도면 제외」·「← 공식 미배치」.
+    """
+    seen, names = _keyed_places(effective, unit_key_pairs)
+    visible = {str(name) for name in shown}
+    ghosts: list[CompareGhost] = []
+    arrivals: list[CompareArrival] = []
+    for key, reference in sorted(reference_places):
+        name = names.get(key)
+        place = seen.get(key)
+        if name is None or place is None or name not in visible:
+            continue
+        here_before = _spot(reference) == floor and _drawn(reference)
+        here_now = _spot(place) == floor and _drawn(place)
+        if here_before:
+            x, y, w, h = (float(cast(float, value)) for value in reference[2:6])
+            if here_now:
+                tag = None
+            elif place[6] != "Y":
+                tag = f"도면 제외({seen_word})"
+            elif place[0] is not None and place[1] is not None and _spot(place) != floor:
+                tag = f"→ {_floor_words(place)}"
+            else:
+                tag = f"미배치({seen_word})"
+            ghosts.append(CompareGhost(name, x, y, w, h, tag))
+        elif here_now:
+            if reference[0] is not None and reference[1] is not None and _drawn(reference):
+                origin = f"← {_floor_words(reference)}"
+            elif reference[6] != "Y":
+                origin = f"← {reference_word} 도면 제외"
+            else:
+                origin = f"← {reference_word} 미배치"
+            arrivals.append(CompareArrival(name, origin))
+    order = {name: index for index, name in enumerate(sorted(visible, key=natural_name_key))}
+    return LayoutCompare(
+        ghosts=tuple(sorted(ghosts, key=lambda item: order.get(item.name, len(order)))),
+        arrivals=tuple(sorted(arrivals, key=lambda item: order.get(item.name, len(order)))),
+    )
+
+
+def unit_differences_by_floor(
+    effective: pd.DataFrame,
+    unit_key_pairs: Sequence[tuple[str, str]],
+    reference_places: Iterable[tuple[str, Place]],
+    unscheduled: Collection[str],
+    *,
+    shown: Collection[str] | None = None,
+) -> dict[FloorKey, int]:
+    """층마다 기준 쪽(공식)과 자리가 다른 **설비 단위** 수 — 그 층에서 나갔거나 들어왔거나 그 층
+    안에서 옮긴 호기(Main 설비 묶음은 1대, 일정 없는 호기는 세지 않는다). FAB 층 목록 표 「공식과
+    다름」 칸·FAB 블록 풍선 재료(설계 8-3). `shown` 을 주면 그 설비명(화면이 그리는 호기 — 공정
+    필터를 지난 것)만 센다 — 층 상세 견주기(`layout_compare` 의 `shown`)와 같은 호기를 본다."""
+    reference = dict(reference_places)
+    if not reference:
+        return {}
+    keys = [key for _, key in unit_key_pairs]
+    base = layout_base(effective, keys)
+    skipped = {str(name) for name in unscheduled}
+    visible = None if shown is None else {str(name) for name in shown}
+    touched: dict[FloorKey, set[tuple[str, str]]] = {}
+    for key, before in reference.items():
+        after = base.places.get(key)
+        name = base.names.get(key)
+        if after is None or after == before or name in skipped:
+            continue
+        if visible is not None and name not in visible:
+            continue
+        group = base.groups.get(key)
+        unit = ("묶음", group) if group is not None else ("호기", key)
+        for spot in {_spot(before), _spot(after)}:
+            if spot[0] is not None and spot[1] is not None:
+                touched.setdefault((spot[0], spot[1]), set()).add(unit)
+    return {floor: len(units) for floor, units in sorted(touched.items())}
+
+
+@dataclass(frozen=True)
+class ReappliedLayout:
+    """`reapply_layout_edits` 의 결과 — 새 저장본 위에 다시 얹은 편집본 설비 마스터, 다시 얹은
+    **설비 단위** 수(Main 설비 묶음은 1대 — 새 저장본의 묶음 기준), 새 저장본에 호기 키가 없어 뺀
+    호기(편집본 설비명, 자연 정렬), 다시 얹은 뒤에도 배치 편집기 적용 모양 그대로인 묶음의 승인
+    (새 저장본의 Main 설비 → 새 설비명으로 옮긴 모양 — 저장 검사 `module_layout_violations` 의
+    `approved`)."""
+
+    equipment: pd.DataFrame
+    reapplied: int = 0
+    dropped: tuple[str, ...] = ()
+    approved: Mapping[str, ModuleLayout] = field(default_factory=dict)
+
+
+def reapply_layout_edits(
+    old_saved: pd.DataFrame,
+    buffer: pd.DataFrame,
+    new_saved: pd.DataFrame,
+    *,
+    origins: Mapping[str, str],
+    old_keys: Mapping[str, str],
+    new_names: Mapping[str, str],
+    approved: Mapping[str, ModuleLayout] | None = None,
+) -> ReappliedLayout:
+    """남의 공통 저장 뒤 가정 배치 편집 다시 얹기(설계 9장·검토 M4).
+
+    편집본(`buffer`)에서 옛 저장본(`old_saved`)과 배치 일곱 칸이 다른 **있던 호기**(`origins` —
+    편집본 설비명 → 옛 저장본 설비명, 저장의 호기 키 규칙)의 일곱 칸을 원래 칸 값 그대로 새
+    저장본(`new_saved`)의 같은 호기 키 행에 얹는다. 호기 키는 `old_keys`(옛 저장본 설비명 → 키)와
+    `new_names`(키 → 새 저장본 설비명)로 잇는다 — 남이 그 사이 이름을 바꾼 호기도 따라간다. 새
+    저장본에 키가 없는(남이 지운) 호기는 빼고 이름을 돌려준다. 그 밖의 편집(새 호기·공통·일정 칸)은
+    얹지 않는다 — 가정 역할에서 남의 공통 저장은 가정 값을 바꿀 수 없고 차이는 일곱 칸 절댓값이라
+    다시 얹어도 뜻이 같다. 모양 검사(묶음 바둑판)·끝 확인은 저장이 다시 본다.
+
+    `approved` 는 배치 편집기가 적용한 묶음의 적용 뒤 모양(편집본 Main 설비 → 모양 — 세션의
+    `stage_editor_module_layouts`)이다. 모양의 설비명을 같은 호기 키 규칙으로 새 저장본 이름으로
+    옮겨, 다시 얹은 결과에서 그 모양 그대로인 묶음만 새 Main 설비 이름으로 돌려준다 — 버리면
+    편집기만 낼 수 있는 묶음(숨은 모듈이 있는 묶음 보내기 등)이 저장에서 「설비 마스터 표로 바꾼
+    값」 으로 막힌다. 그 사이 남이 묶음 행을 바꿨거나 승인 뒤 RawData 로 고친 묶음은 모양이 달라
+    승인을 잃는다(저장 검사가 다시 본다)."""
+    old_rows: dict[str, dict[str, object]] = {}
+    for record in old_saved.to_dict(orient="records"):
+        saved_row = {str(column): value for column, value in record.items()}
+        name = _text(saved_row.get(EQUIPMENT_ID_COLUMN))
+        if name is not None:
+            old_rows.setdefault(name, saved_row)
+    targets: dict[str, list[object]] = {}
+    dropped: list[str] = []
+    for record in buffer.to_dict(orient="records"):
+        row = {str(column): value for column, value in record.items()}
+        name = _text(row.get(EQUIPMENT_ID_COLUMN))
+        origin = origins.get(name) if name is not None else None
+        previous = old_rows.get(origin) if origin is not None else None
+        if name is None or origin is None or previous is None:
+            continue
+        if place_of(row) == place_of(previous):
+            continue
+        new_name = new_names.get(old_keys.get(origin, ""))
+        if new_name is None:
+            if name not in dropped:
+                dropped.append(name)
+            continue
+        targets.setdefault(new_name, [row.get(column) for column in SCENARIO_LAYOUT_COLUMNS])
+    result = new_saved.reset_index(drop=True).copy()
+    units: set[tuple[str, str]] = set()
+    if targets:
+        columns = _layout_column_positions(result)
+        ids = result[EQUIPMENT_ID_COLUMN].astype("string").str.strip().tolist()
+        parents = module_group_rows(result).tolist()
+        for position, name in enumerate(ids):
+            values = targets.get(str(name)) if isinstance(name, str) else None
+            if values is None:
+                continue
+            _set_place(result, position, columns, values)
+            parent = parents[position]
+            units.add(("묶음", str(parent)) if isinstance(parent, str) else ("호기", str(name)))
+    return ReappliedLayout(
+        equipment=result,
+        reapplied=len(units),
+        dropped=tuple(sorted(dropped, key=natural_name_key)),
+        approved=(
+            _carried_module_approvals(
+                approved, result, origins=origins, old_keys=old_keys, new_names=new_names
+            )
+            if approved and units
+            else {}
+        ),
+    )
+
+
+def _carried_module_approvals(
+    approved: Mapping[str, ModuleLayout],
+    result: pd.DataFrame,
+    *,
+    origins: Mapping[str, str],
+    old_keys: Mapping[str, str],
+    new_names: Mapping[str, str],
+) -> dict[str, ModuleLayout]:
+    """편집기 묶음 승인(`approved`)을 다시 얹은 결과(`result`)로 옮긴다 — 모양의 편집본 설비명을
+    호기 키로 새 저장본 이름으로 바꾸고, 그 이름들이 든 `result` 의 묶음 모양이 옮긴 모양과 같을
+    때만 그 묶음(새 Main 설비)에 둔다. 이름을 못 옮기는(새 호기·남이 지운 호기) 모양은 버린다."""
+    translated: list[ModuleLayout] = []
+    for shape in approved.values():
+        rows: list[tuple[str, Any]] = []
+        for name, ticks in shape:
+            origin = origins.get(name)
+            new_name = new_names.get(old_keys.get(origin, "")) if origin is not None else None
+            if new_name is None:
+                break
+            rows.append((new_name, ticks))
+        else:
+            translated.append(cast(ModuleLayout, tuple(sorted(rows, key=lambda row: row[0]))))
+    if not translated:
+        return {}
+    parents = module_group_rows(result)
+    names = result[EQUIPMENT_ID_COLUMN].astype("string").str.strip()
+    wanted = {name for shape in translated for name, _ in shape}
+    groups = {
+        str(parent)
+        for name, parent in zip(names, parents, strict=True)
+        if isinstance(parent, str) and isinstance(name, str) and name in wanted
+    }
+    current = module_layouts(result, groups)
+    return {group: shape for group, shape in current.items() if shape in translated}

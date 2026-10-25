@@ -1,4 +1,4 @@
-# Purpose: 가정 설비 시나리오 배치 차이의 얹기·나누기·정규화·요소/이름표 합치기 규칙을 검증한다.
+# Purpose: 가정 설비 시나리오 배치 차이의 얹기·나누기·정규화·견주기·다시 얹기 규칙을 검증한다.
 
 """`services/layout_overlay.py` — 설비 시나리오 2단계 설계 5장·6-1 의 순수 규칙.
 
@@ -33,6 +33,7 @@ from capa_simulation.services.layout_overlay import (
     label_changes,
     layout_base,
     layout_cells,
+    layout_compare,
     layout_counts_words,
     layout_difference,
     make_layout_overlay,
@@ -40,7 +41,9 @@ from capa_simulation.services.layout_overlay import (
     normalize_layout_overlay,
     overlay_unit_count,
     place_of,
+    reapply_layout_edits,
     split_layout,
+    unit_differences_by_floor,
 )
 
 _DEFAULTS: dict[str, object] = {
@@ -805,3 +808,135 @@ def test_layout_difference_counts_units_not_rows_and_skips_unscheduled_ones() ->
 def test_blank_cells_read_as_none(value: object) -> None:
     row = {"동": value, "층": "1F", "X좌표": value, "Y좌표": 2.04, "Xsize": 1, "Ysize": 1}
     assert place_of({**row, "레이아웃표시": " y "}) == (None, "1F", None, 2.0, 1.0, 1.0, "Y")
+
+
+# ------------------------------------------------------------------ 공식과 견주기(S4)
+
+
+def _compare_master() -> tuple[pd.DataFrame, tuple[tuple[str, Place], ...]]:
+    """C1 1F 에서 — A 는 같은 층 안에서 옮김, B 는 C2 3F 로 보냄, C 는 도면 제외(N), D 는 좌표를
+    비움, E 는 공식 C1 2F 에서 이 층으로 옴, F 는 공식 미배치에서 이 층으로 옴, G 는 그대로."""
+    official = _master(
+        {"설비명": "A", "X좌표": 1.0, "Y좌표": 1.0},
+        {"설비명": "B", "X좌표": 20.0, "Y좌표": 1.0},
+        {"설비명": "C", "X좌표": 40.0, "Y좌표": 1.0},
+        {"설비명": "D", "X좌표": 60.0, "Y좌표": 1.0},
+        {"설비명": "E", "층": "2F", "X좌표": 5.0, "Y좌표": 5.0},
+        {"설비명": "F", "X좌표": None, "Y좌표": None},
+        {"설비명": "G", "X좌표": 80.0, "Y좌표": 1.0},
+    )
+    units = (
+        ("k-A", None, _place("C1", "1F", 3.0, 20.0)),
+        ("k-B", None, _place("C2", "3F", 1.0, 1.0)),
+        ("k-C", None, _place("C1", "1F", 40.0, 1.0, flag="N")),
+        ("k-D", None, _place("C1", "1F", None, None)),
+        ("k-E", None, _place("C1", "1F", 30.0, 30.0)),
+        ("k-F", None, _place("C1", "1F", 50.0, 30.0)),
+    )
+    applied = apply_unit_overlay(official, _pairs(official), units)
+    return applied.equipment, applied.official_places
+
+
+def test_the_compare_draws_dashed_official_boxes_and_arrival_tags() -> None:
+    """설계 8-3 — 공식 자리가 이 층인 차이 호기는 점선 상자(같은 층이면 선, 다른 층이면 「→ 층」,
+    레이아웃표시 N 은 「도면 제외(가정)」, 좌표 없음은 「미배치(가정)」), 가정 자리만 이 층인 호기는
+    「← 층」·「← 공식 미배치」."""
+    effective, official = _compare_master()
+    names = set(effective["설비명"])
+
+    compare = layout_compare(effective, _pairs(effective), official, ("C1", "1F"), shown=names)
+
+    assert [(g.name, g.x, g.y, g.tag) for g in compare.ghosts] == [
+        ("A", 1.0, 1.0, None),
+        ("B", 20.0, 1.0, "→ C2 3F"),
+        ("C", 40.0, 1.0, "도면 제외(가정)"),
+        ("D", 60.0, 1.0, "미배치(가정)"),
+    ]
+    assert [(a.name, a.tag) for a in compare.arrivals] == [("E", "← C1 2F"), ("F", "← 공식 미배치")]
+    elsewhere = layout_compare(effective, _pairs(effective), official, ("C2", "3F"), shown=names)
+    assert not elsewhere.ghosts
+    assert [(a.name, a.tag) for a in elsewhere.arrivals] == [("B", "← C1 1F")]
+    upstairs = layout_compare(effective, _pairs(effective), official, ("C1", "2F"), shown=names)
+    assert [(g.name, g.tag) for g in upstairs.ghosts] == [("E", "→ C1 1F")]
+
+
+def test_the_compare_skips_units_the_screen_does_not_draw() -> None:
+    """공정 필터·일정 없음으로 그리지 않는 호기는 견주기에도 없다(`shown`)."""
+    effective, official = _compare_master()
+
+    compare = layout_compare(effective, _pairs(effective), official, ("C1", "1F"), shown={"A", "E"})
+
+    assert [g.name for g in compare.ghosts] == ["A"]
+    assert [a.name for a in compare.arrivals] == ["E"]
+    assert not layout_compare(effective, _pairs(effective), (), ("C1", "1F"), shown={"A"})
+
+
+def test_the_floor_difference_counts_units_that_left_arrived_or_moved_within() -> None:
+    """층 목록 「공식과 다름」 — 나간 층·들어온 층 둘 다에, 같은 층 안 이동은 그 층에 한 번. 묶음은
+    1대, 일정 없는 호기는 세지 않는다."""
+    master = _master(
+        *_group("M1", "M2"),
+        {"설비명": "S", "X좌표": 50.0, "Y좌표": 1.0},
+        {"설비명": "T", "X좌표": 70.0, "Y좌표": 1.0},
+        {"설비명": "U", "X좌표": 90.0, "Y좌표": 1.0},
+    )
+    units = (
+        ("k-M1", "G", _place("C2", "2F", 1.0, 1.0, 10.0, 7.0)),
+        ("k-M2", "G", _place("C2", "2F", 11.0, 1.0, 10.0, 7.0)),
+        ("k-S", None, _place("C1", "1F", 30.0, 20.0)),
+        ("k-T", None, _place("C3", "3F", 5.0, 5.0)),
+    )
+    applied = apply_unit_overlay(master, _pairs(master), units)
+
+    counts = unit_differences_by_floor(
+        applied.equipment, _pairs(master), applied.official_places, {"T"}
+    )
+
+    assert counts == {("C1", "1F"): 2, ("C2", "2F"): 1}
+    assert unit_differences_by_floor(master, _pairs(master), (), set()) == {}
+    # 화면이 그리는 호기(공정 필터를 지난 것)만 센다 — 층 상세 견주기의 `shown` 과 같다(S4 리뷰).
+    shown = unit_differences_by_floor(
+        applied.equipment, _pairs(master), applied.official_places, {"T"}, shown={"S"}
+    )
+    assert shown == {("C1", "1F"): 1}
+
+
+# ------------------------------------------------------------------ 다시 얹기(S4)
+
+
+def test_reapply_moves_the_layout_edits_onto_the_new_saved_copy_by_unit_key() -> None:
+    """설계 9장 — 옛 저장본 대비 일곱 칸이 바뀐 있던 호기만, 키가 남은 호기의 새 이름 행에 원래 칸
+    값으로 얹는다. 남이 지운 호기는 빼고 이름을 돌려준다. 다른 칸 편집·새 호기는 얹지 않는다."""
+    old_saved = _master(
+        {"설비명": "A", "X좌표": 1.0, "Y좌표": 1.0},
+        {"설비명": "B", "X좌표": 20.0, "Y좌표": 1.0},
+        {"설비명": "C", "X좌표": 40.0, "Y좌표": 1.0},
+    )
+    buffer = old_saved.copy()
+    _set(buffer, 0, X좌표=3.25, Y좌표=20.0, 메모1="공통 편집")
+    _set(buffer, 1, 층="2F")
+    _set(buffer, 2, 메모1="배치 아님")
+    buffer = pd.concat(
+        [buffer, _master({"설비명": "N", "X좌표": 5.0, "Y좌표": 5.0})], ignore_index=True
+    )
+    # 남의 공통 저장 — A 를 A2 로 이름 바꿈, B 를 지움, C 를 옮김(손대지 않은 호기는 새 값을 따름).
+    new_saved = _master(
+        {"설비명": "A2", "X좌표": 1.0, "Y좌표": 1.0},
+        {"설비명": "C", "X좌표": 45.0, "Y좌표": 1.0},
+    )
+
+    result = reapply_layout_edits(
+        old_saved,
+        buffer,
+        new_saved,
+        origins={"A": "A", "B": "B", "C": "C"},
+        old_keys={"A": "k-A", "B": "k-B", "C": "k-C"},
+        new_names={"k-A": "A2", "k-C": "C"},
+    )
+
+    rows = result.equipment.set_index("설비명")
+    assert (rows.at["A2", "X좌표"], rows.at["A2", "Y좌표"]) == (3.25, 20.0)
+    assert pd.isna(rows.at["A2", "메모1"])
+    assert rows.at["C", "X좌표"] == 45.0
+    assert list(result.equipment["설비명"]) == ["A2", "C"]
+    assert (result.reapplied, result.dropped) == (1, ("B",))

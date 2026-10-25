@@ -9,15 +9,20 @@
 자리). 다른 설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 구획으로
 옮긴다(`open_equipment_scenario_management`).
 
-- **시나리오 표**: 이름·상태(공식 vN / 활성)·최신 rN·리비전 수·올라와 있음. 고른 시나리오에
-  「시나리오 이름 바꾸기」.
+- **시나리오 표**: 이름·상태(공식 vN / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시 행 —
+  설비 0031)·올라와 있음. 고른 시나리오에 「시나리오 이름 바꾸기」 와, 가정 시나리오 최신에 배치
+  차이가 있으면 「배치 차이 모두 지우기」(차이만 비운 새 리비전 — 설계 6-6). 옛 판(0031 을 모르는
+  배포)이 저장해 가정 배치가 빠진 리비전이 있으면 그 시나리오 이름과 수를 한 줄로(설계 14장).
 - **리비전 표**: 고른 시나리오의 일정 리비전(r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동
-  행·공식·메모).
+  행·배치·공식·메모). 「배치」 는 저장된 배치 차이 행 수, 옛 판 흔적은 「옛 판 저장 — rN 배치 빠짐」
+  이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을 적는다.
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
   불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 바뀌는 호기
   수와 「일정 없음」 이 되는 호기를 보이고 확인 체크 뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을
   r1 로 복제. 만들기는 복제로만), 「리비전명」(E7 — 이름표만 고침), 「공식으로 발행」(지금 공식 → 새
-  공식을 나란히, 최신이 아니면 그 사실도).
+  공식을 나란히, 최신이 아니면 그 사실도. 배치 차이가 있으면 발행 쓰기와 같은 판정을 미리 읽어 막힘
+  까닭과 함께 단추를 끄고, 공식과 같아진 차이만 남았으면 정리 리비전으로 발행한다고 적는다 — 설계
+  6-5). 되돌리기 확인 글은 되살리는 가정 배치에서 그때와 자리가 다른 손대지 않은 호기 수도 적는다.
 - **옛 배포 흔적**이 있을 때만 「이대로 이어 쓰기」(설비 저장 막기를 푼다 — 백업 복원 대신). 확인
   체크(빠지는 호기 수)를 켜야 단추가 서고, 옛 배포 리비전이 일정과 합쳐지지 않으면 단추 대신 백업
   복원 안내만 선다.
@@ -73,17 +78,20 @@ from capa_simulation.persistence.equipment_cache import (
     latest_equipment_revision_id,
     load_equipment_revision_summaries,
     load_equipment_schedule_revisions,
+    load_layout_publish_preview,
     load_legacy_trace_review,
     load_schedule_restore_preview,
 )
 from capa_simulation.persistence.equipment_repository import (
     SCHEDULE_REVISION_NAME_MAX_CHARS,
+    EquipmentLayoutPublishBlocked,
     EquipmentLayoutRoleChanged,
     EquipmentReleaseMoved,
     EquipmentRevisionConflict,
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionNameMoved,
     EquipmentScheduleRevisionSummary,
+    LayoutPublishPreview,
     LegacyTraceReview,
     ScheduleRestoreResult,
     legacy_trace_message,
@@ -98,6 +106,10 @@ from capa_simulation.services.korean_particle import (
     with_direction_particle,
     with_object_particle,
     with_topic_particle,
+)
+from capa_simulation.services.layout_overlay import (
+    EMPTY_LAYOUT_DIGEST,
+    layout_publish_blocked_words,
 )
 
 __all__ = [
@@ -158,6 +170,11 @@ PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 # 글이 이미 새 목록으로 다시 그려지므로, 누르기 **전** 회차에 본 번호를 여기 남겨 누른 회차의 번호와
 # 견준다 — 그 사이 남이 발행했으면 본 적 없는 새 번호(v5 → v6)로 말없이 발행하지 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
+# 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
+CLEAR_LAYOUT_BY_KEY = "equipment_scenario_manage_clear_layout_by_v1"
+CLEAR_LAYOUT_NOTE_KEY = "equipment_scenario_manage_clear_layout_note_v1"
+CLEAR_LAYOUT_CONFIRM_KEY = "equipment_scenario_manage_clear_layout_confirm_v1"
+CLEAR_LAYOUT_BUTTON_KEY = "equipment_scenario_manage_clear_layout_v1"
 CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
 # 「이대로 이어 쓰기」 확인 체크. key 꼬리에 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전
 # 번호·빠지는 호기 수)을 붙인다 — 그 값이 바뀌면 체크가 풀린 새 칸으로 서서 본 적 없는 글로 이어
@@ -208,7 +225,12 @@ def _refused(message: str) -> None:
 
 
 def scenario_rows(session: EquipmentSession) -> pd.DataFrame:
-    """시나리오 표 — 이름·상태·최신·리비전 수. 공식은 「공식 vN」, 그 밖은 「활성」."""
+    """시나리오 표 — 이름·상태·최신·리비전 수·저장된 배치 차이. 공식은 「공식 vN」, 그 밖은
+    「활성」.
+
+    「저장된 배치 차이」 는 최신 리비전에 **저장된** 차이 행 수(원시 — 「호기 3행·요소 1개」)다.
+    목록 표에는 실효(지금 공식과 실제로 다른 것)를 셀 재료가 없어 원시만 적는다(설계 8-2·검토 F4) —
+    공식과 같아진 행은 다음 저장·발행 때 정리된다."""
     official_id = session.catalog.official_scenario_id
     release_no = session.catalog.release_no
     return pd.DataFrame(
@@ -222,6 +244,7 @@ def scenario_rows(session: EquipmentSession) -> pd.DataFrame:
                 ),
                 "최신": f"r{item.latest_revision_no}" if item.latest_revision_no else "",
                 "리비전 수": item.revision_count,
+                "저장된 배치 차이": stored_layout_words(*item.latest_layout_rows),
                 "올라와 있음": "●" if item.equipment_scenario_id == session.scenario_id else "",
             }
             for item in session.catalog.scenarios
@@ -236,7 +259,12 @@ def revision_rows(
     official_id: str | None,
     official_no: int | None,
 ) -> pd.DataFrame:
-    """리비전 표 — r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동 행·공식·메모."""
+    """리비전 표 — r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동 행·배치·공식·메모.
+
+    「배치」 는 그 리비전에 저장된 배치 차이 행 수(원시)다. 옛 판(설비 0031 을 모르는 코드)이 저장해
+    앞 리비전의 가정 배치가 빠진 리비전(옛 코드 흔적 — 설계 14장)은 「옛 판 저장 — rN 배치
+    빠짐」."""
+    traces = layout_trace_sources(revisions)
     return pd.DataFrame(
         [
             {
@@ -252,6 +280,13 @@ def revision_rows(
                 ),
                 "호기행": item.unit_row_count,
                 "비가동행": item.downtime_row_count,
+                "배치": (
+                    f"옛 판 저장 — r{traces[item.revision_no]} 배치 빠짐"
+                    if item.revision_no in traces
+                    else stored_layout_words(
+                        item.layout_unit_count, item.layout_mark_count, item.layout_label_count
+                    )
+                ),
                 "공식": (
                     f"v{official_no}"
                     if official_no is not None and item.schedule_revision_id == official_id
@@ -261,6 +296,70 @@ def revision_rows(
             }
             for item in revisions
         ]
+    )
+
+
+def stored_layout_words(units: int, marks: int, labels: int) -> str:
+    """「호기 1행·요소 2개·이름표 1개」 — 저장된 배치 차이 행 수(0 인 것은 뺀다, 모두 0 이면 빈
+    글)."""
+    parts = [
+        f"{word} {count:,}{unit}"
+        for word, count, unit in (
+            ("호기", units, "행"),
+            ("요소", marks, "개"),
+            ("이름표", labels, "개"),
+        )
+        if count
+    ]
+    return "·".join(parts)
+
+
+def _has_layout(revision: EquipmentScheduleRevisionSummary) -> bool:
+    return revision.layout_hash is not None and revision.layout_hash != EMPTY_LAYOUT_DIGEST
+
+
+def layout_trace_sources(revisions: Sequence[EquipmentScheduleRevisionSummary]) -> dict[int, int]:
+    """옛 코드 흔적 — 배치 차이가 있는 리비전보다 번호가 큰데 지문이 없는(설비 0031 을 모르는 옛
+    판이 저장한) 리비전 번호 → 그 앞에서 가장 가까운 배치 차이가 있는 리비전 번호(설계 14장 — 목록
+    셈 `layout_trace_count` 와 같은 규칙, 읽은 목록 안에서). 그 리비전으로 되돌리면(E7) 배치안이
+    되살아난다."""
+    ordered = sorted(revisions, key=lambda item: item.revision_no)
+    result: dict[int, int] = {}
+    source: int | None = None
+    for revision in ordered:
+        if _has_layout(revision):
+            source = revision.revision_no
+        elif revision.layout_hash is None and source is not None:
+            result[revision.revision_no] = source
+    return result
+
+
+def layout_trace_sentence(
+    scenario: EquipmentScenarioSummary, revisions: Sequence[EquipmentScheduleRevisionSummary]
+) -> str | None:
+    """고른 설비 시나리오의 옛 코드 흔적 경고 한 문장(없으면 None) — 가장 늦은 흔적과 그 앞
+    배치안."""
+    traces = layout_trace_sources(revisions)
+    if not traces and not scenario.layout_trace_count:
+        return None
+    name = literal_markdown(scenario.scenario_name)
+    if not traces:
+        return (
+            f"「{name}」 에 옛 판이 저장해 앞 리비전의 가정 배치가 빠진 리비전이 "
+            f"{scenario.layout_trace_count:,}개 있습니다(아래 표보다 옛 리비전) — 빠지기 전 "
+            "리비전으로 되돌리면(이 리비전으로 되돌리기) 되살아납니다."
+        )
+    latest = max(traces)
+    source = f"r{traces[latest]}"
+    more = (
+        f" 옛 판이 저장한 리비전은 모두 {scenario.layout_trace_count:,}개입니다."
+        if scenario.layout_trace_count > 1
+        else ""
+    )
+    return (
+        f"「{name}」 r{latest}{topic_particle(f'r{latest}')} 옛 판이 저장해 {source}의 가정 배치가 "
+        f"빠졌습니다 — {with_direction_particle(source)} 되돌리기(이 리비전으로 되돌리기)로 "
+        f"되살립니다.{more} 옛 판으로 저장하지 않게 런북 4-2 「되돌림」 을 보세요."
     )
 
 
@@ -371,6 +470,17 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         "시나리오는 일정 여섯·시나리오 메모·비가동만 따로 듭니다 — 만들기는 복제로만 합니다."
     )
     st.dataframe(scenario_rows(session), hide_index=True, width="stretch", placeholder="")
+    traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
+    if traced:
+        st.caption(
+            ":material/history: 옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 "
+            "있는 설비 시나리오 — "
+            + ", ".join(
+                f"「{literal_markdown(item.scenario_name)}」 {item.layout_trace_count:,}개"
+                for item in traced
+            )
+            + ". 그 시나리오를 고르면 리비전 표 「배치」 칸이 빠진 자리를 가리킵니다."
+        )
     default_scenario = (
         session.scenario_id if session.scenario_id in scenarios else next(iter(scenarios))
     )
@@ -384,6 +494,10 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         )
         with st.popover("시나리오 이름 바꾸기", icon=":material/edit:"):
             _render_rename(database_path, scenarios[selected_id])
+        # 가정 설비 시나리오 최신에 배치 차이가 있을 때만(공식 시나리오에는 지울 것이 없다 — I2).
+        if clearable_layout(session, scenarios[selected_id]):
+            with st.popover("배치 차이 모두 지우기", icon=":material/layers_clear:"):
+                _render_clear_layout(database_path, session, scenarios[selected_id])
     scenario = scenarios[selected_id]
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_id)
@@ -401,6 +515,9 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     if not revisions:
         st.info("이 설비 시나리오에 저장된 리비전이 없습니다.")
         return
+    trace = layout_trace_sentence(scenario, revisions)
+    if trace is not None:
+        st.warning(trace, icon=":material/history:")
     st.dataframe(
         revision_rows(
             revisions,
@@ -607,20 +724,6 @@ def restore_preview_lines(
     return lines
 
 
-def _stored_layout_words(units: int, marks: int, labels: int) -> str:
-    """「호기 1행·요소 2개」 — 저장된 배치 차이 행 수(0 인 것은 뺀다)."""
-    parts = [
-        f"{word} {count:,}{unit}"
-        for word, count, unit in (
-            ("호기", units, "행"),
-            ("요소", marks, "개"),
-            ("이름표", labels, "개"),
-        )
-        if count
-    ]
-    return "·".join(parts)
-
-
 def restore_layout_sentence(
     revision: EquipmentScheduleRevisionSummary,
     preview: ScheduleRestorePreview,
@@ -629,11 +732,15 @@ def restore_layout_sentence(
 ) -> str:
     """되돌리기가 배치 차이(설비 0031)에 하는 일 한 문장 — 고른 리비전과 지금 최신의 저장된 차이가
     같으면 빈 글. 공식 설비 시나리오면 차이를 버린다(I2), 가정이면 고른 리비전의 차이를 되살린다.
-    판정은 저장소와 같은 `restore_writes_nothing` 의 몫과 맞는다(설계 6-6)."""
+    판정은 저장소와 같은 `restore_writes_nothing` 의 몫과 맞는다(설계 6-6).
+
+    가정 배치를 되살릴 때 그때 손대지 않은 호기는 지금 공식 자리를 따른다 — 그 리비전을 저장할 때
+    본 공통과 자리가 달라진 호기(`layout_moved_since`)가 있으면 그 수를 덧붙인다(이력 「그때
+    그대로」 와 다르다 — 검토 F21)."""
     if preview.layout_identical:
         return ""
     title = f"r{revision.revision_no}"
-    stored = _stored_layout_words(
+    stored = stored_layout_words(
         preview.layout_unit_rows, preview.layout_mark_rows, preview.layout_label_rows
     )
     if official_scenario:
@@ -644,7 +751,13 @@ def restore_layout_sentence(
             "일정·비가동만 되돌립니다."
         )
     if stored:
-        return f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다."
+        moved = (
+            " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
+            f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
+            if preview.layout_moved_since
+            else ""
+        )
+        return f"{title}의 가정 배치(저장된 차이 {stored})도 되살립니다.{moved}"
     return (
         f"{title}에는 배치 차이가 없어 지금 최신의 가정 배치 차이는 지워지고 공식 배치를 따릅니다."
     )
@@ -687,7 +800,7 @@ def restore_result_message(
         f"{result.preview.changed_units:,}대)."
     ]
     if not result.preview.layout_identical:
-        stored = _stored_layout_words(
+        stored = stored_layout_words(
             result.schedule.layout_unit_count,
             result.schedule.layout_mark_count,
             result.schedule.layout_label_count,
@@ -984,6 +1097,162 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
         )
 
 
+def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSummary) -> bool:
+    """「배치 차이 모두 지우기」 를 세울까 — 가정 설비 시나리오(공식 시나리오에는 지울 것이 없다 —
+    I2)이고 최신에 저장된 배치 차이가 있을 때(행이 있거나 지문이 빈 차이가 아님)."""
+    if scenario.equipment_scenario_id == session.official_scenario_id:
+        return False
+    if scenario.latest_schedule_revision_id is None:
+        return False
+    return any(scenario.latest_layout_rows) or (
+        scenario.latest_layout_hash is not None
+        and scenario.latest_layout_hash != EMPTY_LAYOUT_DIGEST
+    )
+
+
+def clear_layout_lines(scenario: EquipmentScenarioSummary) -> list[str]:
+    """「배치 차이 모두 지우기」 확인 글(Markdown 줄) — 무엇을 비우고 무엇이 그대로인지."""
+    name = literal_markdown(scenario.scenario_name)
+    latest_no = scenario.latest_revision_no or 0
+    latest = f"r{latest_no}"
+    new_title = f"r{latest_no + 1}"
+    stored = stored_layout_words(*scenario.latest_layout_rows) or "저장된 차이"
+    return [
+        f"「{name}」 최신 {latest}의 일정·비가동은 그대로 두고 배치 차이({stored})만 비운 새 "
+        f"리비전 {new_title}{object_particle(new_title)} 저장합니다 — 이 설비 시나리오의 Space "
+        "배치가 공식 배치로 돌아갑니다(공식에서 고친 자리를 다시 따라갑니다).",
+        f"{with_topic_particle(latest)} 그대로 남습니다 — 배치안을 되살리려면 그 리비전을 고르고 "
+        "「이 리비전으로 되돌리기」, 따로 남기려면 먼저 「여기서 새 시나리오」 로 옮겨 두세요.",
+        "공통 대장·층 도면·다른 설비 시나리오는 그대로입니다. 공식 발행은 하지 않습니다.",
+    ]
+
+
+def clear_layout_message(
+    scenario_name: str,
+    created: EquipmentScheduleRevisionSummary | None,
+    *,
+    moved: bool,
+    kept_unsaved: bool,
+) -> str:
+    """「배치 차이 모두 지우기」 뒤 알림 — 새 리비전·세션 이동."""
+    name = literal_markdown(scenario_name)
+    if created is None:
+        return f"「{name}」 최신에 지울 배치 차이가 없어 새 리비전을 만들지 않았습니다."
+    title = f"r{created.revision_no}"
+    sentences = [
+        f"「{name}」 의 배치 차이를 모두 지운 {with_object_particle(title)} 저장했습니다 — 이 "
+        "설비 시나리오의 배치는 이제 공식 배치를 따릅니다."
+    ]
+    if moved:
+        sentences.append(f"이 세션을 {with_direction_particle(title)} 옮겼습니다.")
+    elif kept_unsaved:
+        sentences.append(
+            "이 세션에는 저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다 — 사이드바 "
+            f"「설비 시나리오」 에서 최신 {with_object_particle(title)} 불러올 수 있습니다."
+        )
+    return " ".join(sentences)
+
+
+def _render_clear_layout(
+    database_path: str, session: EquipmentSession, scenario: EquipmentScenarioSummary
+) -> None:
+    """「배치 차이 모두 지우기」(설계 6-6 — 저장소 `clear_layout_overlay`). 확인 체크는 그 시나리오
+    최신 id 에 묶인다 — 그 사이 남이 저장해 최신이 바뀌면 체크가 풀린 새 칸이 서고, 캐시가 늦어 못
+    봤으면 저장소가 낡음으로 거절한다. 이 세션이 그 시나리오를 보고 있고 저장하지 않은 설비 편집이
+    없으면 세션을 새 리비전으로 옮긴다(되돌리기와 같다)."""
+    if session.legacy_trace_count:
+        st.caption(legacy_trace_message(session.legacy_trace_count))
+        return
+    for line in clear_layout_lines(scenario):
+        st.caption(line)
+    latest_id = scenario.latest_schedule_revision_id or ""
+    suffix = f"{scenario.equipment_scenario_id}__{latest_id}"
+    note = st.text_input("변경 메모(선택)", key=f"{_keyed(CLEAR_LAYOUT_NOTE_KEY)}__{suffix}")
+    saved_by = st.text_input(SAVED_BY_LABEL, key=f"{_keyed(CLEAR_LAYOUT_BY_KEY)}__{suffix}")
+    agreed = st.checkbox(
+        "배치 차이를 모두 지우고 공식 배치로 돌립니다",
+        key=f"{_keyed(CLEAR_LAYOUT_CONFIRM_KEY)}__{suffix}",
+    )
+    if not st.button(
+        "배치 차이 모두 지우기",
+        icon=":material/layers_clear:",
+        type="primary",
+        disabled=not agreed,
+        key=CLEAR_LAYOUT_BUTTON_KEY,
+        width="stretch",
+    ):
+        return
+    try:
+        created = get_equipment_repository(database_path).clear_layout_overlay(
+            scenario.equipment_scenario_id,
+            expected_latest_schedule_revision_id=scenario.latest_schedule_revision_id,
+            saved_by=saved_by or None,
+            note=note or None,
+        )
+    except EquipmentRevisionConflict as exc:
+        _refused(
+            f"그 사이 다른 사용자가 {with_object_particle(exc.newest)} 저장해 배치 차이를 지우지 "
+            "않았습니다 — 바뀐 확인 글을 다시 보고 지우세요."
+        )
+        return
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(f"배치 차이를 지우지 못했습니다: {bootstrap_error_message(exc)}")
+        return
+    moved = False
+    kept_unsaved = False
+    if created is not None:
+        # 그 리비전에서 남은 일을 이어 하게(공식 발행 등) 리비전 상자·세션을 새 리비전에 둔다.
+        moved, kept_unsaved = _follow_new_revision(
+            database_path, session, scenario, created.schedule_revision_id
+        )
+    clear_equipment_snapshot_cache()
+    _written(
+        clear_layout_message(
+            scenario.scenario_name, created, moved=moved, kept_unsaved=kept_unsaved
+        )
+    )
+
+
+def publish_layout_lines(
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    preview: LayoutPublishPreview,
+    *,
+    official: bool = False,
+) -> tuple[list[str], bool]:
+    """발행 확인 팝업의 배치 줄 — (줄, 막힘). 발행 쓰기와 같은 판정(`load_layout_publish_preview`)을
+    미리 읽어 막히면 그 까닭을(「발행」 단추를 끈다), 공식과 같아진 차이만 남았으면 정리 리비전으로
+    발행한다는 것을 적는다(설계 6-5 — 머리 「배치는 공식과 같습니다」 와 발행 거부가 함께 뜨지
+    않게). 셈은 「실효 n대(저장된 차이 m행)」 꼴 하나다(설계 8-2). 막힘 글은 발행 쓰기 거부와 같은
+    한 곳(`layout_publish_blocked_words`)이다 — 실제로 공식과 다른 쪽만 「실효」 로 적고, 옛
+    리비전은 그 경우에 서는 길(되돌린 뒤 지우기·최신 발행)을 안내한다. `official` 은 그 시나리오가
+    지금 공식 설비 시나리오인가다."""
+    if preview.action == "publish":
+        return [], False
+    name = literal_markdown(scenario.scenario_name)
+    if preview.action == "clean":
+        new_title = f"r{(scenario.latest_revision_no or 0) + 1}"
+        stored = stored_layout_words(
+            preview.stored_units, preview.stored_marks, preview.stored_labels
+        )
+        return (
+            [
+                f"r{revision.revision_no}의 배치 차이({stored})는 지금 공식과 같아졌습니다 — "
+                f"공식과 같아진 배치 차이 {preview.stored_rows:,}행을 정리한 "
+                f"{with_direction_particle(new_title)} 발행합니다(일정·비가동은 r"
+                f"{revision.revision_no} 그대로)."
+            ],
+            False,
+        )
+    block = preview.block(
+        name,
+        revision.revision_no,
+        scenario.latest_revision_no or revision.revision_no,
+        official=official,
+    )
+    return [layout_publish_blocked_words(block)], True
+
+
 def publish_preview(
     session: EquipmentSession,
     scenario: EquipmentScenarioSummary,
@@ -1066,6 +1335,29 @@ def _render_publish(
     release_no = session.catalog.release_no or 0
     for line in publish_preview(session, scenario, revision):
         st.caption(line)
+    # 배치 차이가 있으면 발행하지 않는다(LY5 「공식으로 올리기」 전까지 — Q4). 발행 쓰기와 같은
+    # 판정을 미리 읽어 단추를 끄거나 정리 리비전으로 발행한다는 것을 적는다.
+    try:
+        layout = load_layout_publish_preview(
+            database_path,
+            _latest_common_id(database_path),
+            revision.schedule_revision_id,
+            scenario.latest_schedule_revision_id,
+        )
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}")
+        return
+    layout_lines, blocked = publish_layout_lines(
+        scenario,
+        revision,
+        layout,
+        official=scenario.equipment_scenario_id == session.official_scenario_id,
+    )
+    for line in layout_lines:
+        if blocked:
+            st.error(line, icon=":material/block:")
+        else:
+            st.caption(f":material/layers: {line}")
     st.session_state[PUBLISH_SEEN_KEY] = {
         "revision": revision.schedule_revision_id,
         "release_no": release_no,
@@ -1076,7 +1368,13 @@ def _render_publish(
     )
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
-    if st.button("공식으로 발행", type="primary", key=PUBLISH_BUTTON_KEY, width="stretch"):
+    if st.button(
+        "공식으로 발행",
+        type="primary",
+        key=PUBLISH_BUTTON_KEY,
+        width="stretch",
+        disabled=blocked,
+    ):
         refusal = publish_seen_refusal(
             seen_before, schedule_revision_id=revision.schedule_revision_id, release_no=release_no
         )
@@ -1099,13 +1397,86 @@ def _render_publish(
                 "발행하세요."
             )
             return
+        except EquipmentLayoutPublishBlocked as exc:
+            # 확인 글을 그린 뒤 남이 배치를 저장했다 — 목록을 다시 읽어 막힘 글을 보인다.
+            _refused(literal_markdown(str(exc)))
+            return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
             return
+        cleaned = published.schedule_revision_id != revision.schedule_revision_id
+        moved = kept_unsaved = False
+        if cleaned:
+            # 정리 리비전 rN+1 로 발행했다 — 「배치 차이 모두 지우기」 처럼 리비전 상자와 (그
+            # 시나리오를 보던) 세션을 새 리비전으로 옮긴다. 남기면 세션이 옛 rN 에 남아 낡음·Space
+            # 배치 잠금·빨간 막힘 글(옛 리비전의 남은 행)이 바로 선다(S4 리뷰).
+            moved, kept_unsaved = _follow_new_revision(
+                database_path, session, scenario, published.schedule_revision_id
+            )
         _written(
-            f"공식 v{published.release_no} 으로 발행했습니다 — 「"
-            f"{literal_markdown(scenario.scenario_name)}」 r{revision.revision_no}."
+            publish_result_message(
+                scenario.scenario_name,
+                revision,
+                published.release_no,
+                cleaned_no=(scenario.latest_revision_no or 0) + 1 if cleaned else None,
+                moved=moved,
+                kept_unsaved=kept_unsaved,
+            )
         )
+
+
+def publish_result_message(
+    scenario_name: str,
+    revision: EquipmentScheduleRevisionSummary,
+    release_no: int,
+    *,
+    cleaned_no: int | None,
+    moved: bool,
+    kept_unsaved: bool,
+) -> str:
+    """「공식으로 발행」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동."""
+    name = literal_markdown(scenario_name)
+    release = f"v{release_no}"
+    head = f"공식 {with_direction_particle(release)} 발행했습니다 — 「{name}」 "
+    if cleaned_no is None:
+        return head + f"r{revision.revision_no}."
+    title = f"r{cleaned_no}"
+    sentences = [head + f"r{revision.revision_no}의 공식과 같아진 배치 차이를 정리한 {title}."]
+    if moved:
+        sentences.append(f"이 세션을 {with_direction_particle(title)} 옮겼습니다.")
+    elif kept_unsaved:
+        sentences.append(
+            "이 세션에는 저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다 — 사이드바 "
+            f"「설비 시나리오」 에서 최신 {with_object_particle(title)} 불러올 수 있습니다."
+        )
+    return " ".join(sentences)
+
+
+def _follow_new_revision(
+    database_path: str,
+    session: EquipmentSession,
+    scenario: EquipmentScenarioSummary,
+    schedule_revision_id: str,
+) -> tuple[bool, bool]:
+    """쓰기가 그 시나리오의 새 리비전을 만든 뒤 — 리비전 상자를 새 리비전에 두고(남은 일을 이어
+    하게), 이 세션이 그 시나리오를 보고 있으면 세션도 옮긴다. 저장하지 않은 설비 편집이 있으면 보던
+    리비전을 그대로 둔다. (옮김, 편집 때문에 남김)."""
+    st.session_state[PENDING_REVISION_KEY] = schedule_revision_id
+    if session.scenario_id != scenario.equipment_scenario_id:
+        return False, False
+    if has_unsaved_equipment_edits():
+        return False, True
+    clear_equipment_snapshot_cache()
+    moved = (
+        select_equipment_scenario(
+            database_path,
+            scenario.equipment_scenario_id,
+            schedule_revision_id,
+            discard=True,
+        )
+        is None
+    )
+    return moved, False
 
 
 def continue_confirm_label(review: LegacyTraceReview) -> str:

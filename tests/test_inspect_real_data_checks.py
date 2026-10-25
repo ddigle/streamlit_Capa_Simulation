@@ -1118,7 +1118,7 @@ def test_a_failing_summary_line_keeps_the_block(
     # 이관 확인 줄(8-4s)은 따로 지어 8-4 줄이 멈춰도 남는다.
     assert _uncoded(_summary(output)) == [
         "- 8-4 요약 실패(KeyError)",
-        "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0",
+        "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0",
     ]
 
 
@@ -2482,7 +2482,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert re.fullmatch(r"- 8-1 S (\d+)/\1 · E (\d+)/\2 · R 1 · O 1", bare[0]), bare[0]
     assert bare[4].startswith("- 8-2R 100.00% · ")
     assert bare[6] == "- 8-2B 0"
-    assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0"
+    assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
     assert bare[10] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
     assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
     assert checks.check_transcript(lines) == []
@@ -2805,3 +2805,98 @@ def test_a_copy_before_equipment_0031_is_named_as_such_and_skips_the_official_re
         found = checks._read_official_equipment(connection)
     assert isinstance(found, str) and found.startswith("설비 0031 전")
     assert "0027 전" not in found
+
+
+def test_the_equipment_block_counts_hypothetical_layout_rows_and_old_code_traces(
+    simulation_db: Path,
+    equipment_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """설비 시나리오 2단계 S4 — 8-4 이관 확인 표에 「가정 배치 차이」(ACTIVE 시나리오 최신의 저장된
+    행: 시나리오 / 호기 / 요소 / 이름표)·「배치 옛 코드 흔적」 줄, 요약 8-4s 끝에 `Y{호기 행}`. 0031
+    직후는 0 이고, 가정 시나리오에서 호기 하나를 옮겨 저장하면 시나리오 1 · 호기 1 · `Y1`. 값·이름은
+    찍지 않는다."""
+    copied = tmp_path / "equipment_availability.duckdb"
+    shutil.copyfile(equipment_db, copied)
+    before = _summary_keys(capsys, simulation_db, copied)
+    assert _uncoded([before["8-4s"]])[0].endswith(" · Y0")
+
+    repository = DuckDBEquipmentRepository(copied)
+    clone = repository.clone_equipment_scenario(
+        repository.list_equipment_scenarios()[0].latest_schedule_revision_id or "",
+        name="가정",
+        created_by=None,
+    )
+    mine = repository.load_merged_snapshot(
+        repository.latest_revision_id() or "", clone.latest_schedule_revision_id
+    )
+    assert mine.schedule is not None
+    equipment = mine.equipment.copy()
+    moved = equipment["설비명"].eq(f"{SENTINEL}EQ-Q")
+    for column, value in (("X좌표", 77.0), ("Y좌표", 5.0), ("Xsize", 4.0), ("Ysize", 3.0)):
+        equipment.loc[moved, column] = value
+    repository.save_equipment(
+        EquipmentSaveRequest(
+            baseline=mine.baseline,
+            equipment=equipment,
+            downtime=mine.downtime,
+            equipment_scenario_id=clone.equipment_scenario_id,
+            base_common_revision_id=mine.revision.revision_id,
+            base_schedule_revision_id=mine.schedule.schedule_revision_id,
+        )
+    )
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(copied),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert (
+        "| 가정 배치 차이(0031 — ACTIVE 시나리오 최신의 저장된 행): 시나리오 / 호기 / 요소 / "
+        in output
+    )
+    assert "| 1 / 1 / 0 / 0 |" in output
+    trace_row = (
+        "| **배치 옛 코드 흔적(차이가 있는 리비전 뒤 지문 없이 저장된 리비전)** — 0 이어야 함 |"
+    )
+    assert f"{trace_row} 0 |" in output
+    line = next(item for item in _summary(output) if item.startswith("- 8-4s "))
+    assert _uncoded([line])[0].endswith(" · Y1")
+    assert checks.check_transcript([line]) == []
+
+    # 0031 을 모르는 옛 판이 차이 있는 리비전 뒤에 저장하면(지문 NULL) 흔적 수가 찍힌다(S4 리뷰 —
+    # 라벨만 보던 시험은 0 을 박아 넣어도 통과했다). 그 최신에는 저장된 차이가 없다.
+    with duckdb.connect(str(copied)) as connection:
+        connection.execute(
+            "INSERT INTO equipment_ops.equipment_schedule_revision (schedule_revision_id, "
+            "equipment_scenario_id, revision_no, origin) VALUES ('old-code', ?, 9, 'save')",
+            [clone.equipment_scenario_id],
+        )
+    code, output = _run(
+        capsys,
+        "--only",
+        "equipment",
+        "--database",
+        str(simulation_db),
+        "--equipment-database",
+        str(copied),
+    )
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert f"{trace_row} 1 |" in output
+    assert "| 0 / 0 / 0 / 0 |" in output
+
+
+def test_an_old_summary_line_without_the_layout_cell_still_checks() -> None:
+    """검토 F19 — 0031 앞 판이 찍은 `Y` 없는 8-4s 줄도 `--check-summary` 가 받는다(수만 셈한다)."""
+    body = "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0"
+    line = f"{body} #{checks.summary_code(body)}"
+    assert checks.check_transcript([line]) == []

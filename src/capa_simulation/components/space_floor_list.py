@@ -33,7 +33,9 @@ Streamlit 캐시는 두지 않는다 — DB 는 `equipment_cache.load_floor_stat
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass
 from functools import partial
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -139,6 +141,21 @@ _TABLE_COLUMNS = {
 
 Draft = dict[FloorKey, str]
 Base = tuple[int, tuple[tuple[str, str, str], ...]]
+
+
+@dataclass(frozen=True)
+class FloorListColumn:
+    """층 목록 표(보기)에 덧붙이는 칸 하나 — 칸 이름, 층마다 값(없는 층은 빈칸), 칸 설정(풍선 등).
+
+    「공식과 견주기」 의 「공식과 다름」(설비 시나리오 2단계 S4)과 Space 필요 단축 레이어의 칸이
+    같은 인자를 나눠 쓴다 — 함께 켜지면 넘긴 차례대로 기본 칸 뒤에 선다. 기본 칸
+    설정(`_TABLE_COLUMNS`)은 그대로다."""
+
+    name: str
+    values: Mapping[FloorKey, object]
+    config: Any = None
+
+
 # 끄기 확인 목록에서 공식 배치에는 호기가 없고 가정 설비 시나리오 배치에만 호기가 있는 층의 꼬리.
 _OVERLAY_ONLY = "공식 배치 호기 없음(가정 배치에만)"
 
@@ -499,6 +516,7 @@ def _table_rows(
     states: FloorStates,
     *,
     inactive: bool,
+    extra_columns: Sequence[FloorListColumn] = (),
 ) -> pd.DataFrame:
     rows = []
     for placement in placements:
@@ -521,8 +539,18 @@ def _table_rows(
                 "캔버스": canvas_text(placement.key),
             }
         )
+        for column in extra_columns:
+            row[column.name] = column.values.get(placement.key)
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _column_config(extra_columns: Sequence[FloorListColumn]) -> dict[str, Any]:
+    """기본 칸 설정에 덧붙인 칸 설정을 더한 것(모듈 상수는 그대로)."""
+    return {
+        **_TABLE_COLUMNS,
+        **{column.name: column.config for column in extra_columns if column.config is not None},
+    }
 
 
 def _render_tables(
@@ -531,15 +559,24 @@ def _render_tables(
     canvas_text: Callable[[FloorKey], str],
     states: FloorStates,
     on_open: Callable[[FloorKey], None],
+    extra_columns: Sequence[FloorListColumn] = (),
 ) -> None:
     """보기 — 사용 층 표와 접힌 「비활성 층 n개」(늘 서는 자리 칸 안)."""
     active = [placement for placement in placements if states.is_active(placement.key)]
     active_keys = tuple(placement.key for placement in active)
+    config = _column_config(extra_columns)
     st.dataframe(
-        _table_rows(placements, floors_with_image, canvas_text, states, inactive=False),
+        _table_rows(
+            placements,
+            floors_with_image,
+            canvas_text,
+            states,
+            inactive=False,
+            extra_columns=extra_columns,
+        ),
         hide_index=True,
         width="stretch",
-        column_config=_TABLE_COLUMNS,
+        column_config=config,
         key=FLOOR_TABLE_KEY,
         on_select=partial(_open_from_table, FLOOR_TABLE_KEY, active_keys, on_open),
         selection_mode="single-row",
@@ -555,10 +592,17 @@ def _render_tables(
         )
         with st.expander(f"비활성 층 {len(inactive)}개", expanded=False, key=INACTIVE_EXPANDER_KEY):
             st.dataframe(
-                _table_rows(placements, floors_with_image, canvas_text, states, inactive=True),
+                _table_rows(
+                    placements,
+                    floors_with_image,
+                    canvas_text,
+                    states,
+                    inactive=True,
+                    extra_columns=extra_columns,
+                ),
                 hide_index=True,
                 width="stretch",
-                column_config=_TABLE_COLUMNS,
+                column_config=config,
                 key=INACTIVE_TABLE_KEY,
                 on_select=partial(
                     _open_from_table,
@@ -790,11 +834,13 @@ def render_space_floor_list(
     editable: bool,
     on_open: Callable[[FloorKey], None],
     locked_reason: str | None = None,
+    extra_columns: Sequence[FloorListColumn] = (),
 ) -> None:
     """FAB 전체 아래 층 목록. `states` 는 이 회차에 읽은 층 사용 상태(보기 표·도면과 같은 값)이고,
     `unit_counts` 는 편집 모드 본문에서만 부른다(층별 설비 대수 — 공식 배치 기준, 끄기 확인의 n).
     `editable` 이 거짓이면(샘플 fleet·가정 설비 시나리오) `사용 편집` 을 잠그고 값도 끈다 —
-    `locked_reason` 이 풍선이다(없으면 샘플 문구)."""
+    `locked_reason` 이 풍선이다(없으면 샘플 문구). `extra_columns` 는 보기 표(사용 층·비활성 층)에
+    덧붙이는 칸이다(`FloorListColumn` — 편집 모드 표에는 붙이지 않는다)."""
     with st.container(
         horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
     ):
@@ -824,4 +870,4 @@ def render_space_floor_list(
     # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
     with st.container(key="space_floor_state_notices"):
         _render_notices()
-    _render_tables(placements, floors_with_image, canvas_text, states, on_open)
+    _render_tables(placements, floors_with_image, canvas_text, states, on_open, extra_columns)

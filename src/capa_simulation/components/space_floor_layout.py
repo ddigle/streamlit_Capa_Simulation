@@ -1,4 +1,4 @@
-# Purpose: Space 가 그리는 층 도면 요소·Main 설비명 위치를 공식 층 현행값과 세션 배치 차이로 합친다.
+# Purpose: Space 층 도면 요소·Main 설비명 위치를 세션 배치 차이로 합치고 견주기 재료를 낸다.
 
 """Space 현황의 층 도면 요소·Main 설비명 위치 한 곳(설비 시나리오 2단계 S3 — 설계 7-2·8-1).
 
@@ -11,9 +11,15 @@
   하나라도 공식 현행값을 직접 읽으면 가정 회차의 경고가 공식 요소로 판정되고 편집 기준 지문이
   어긋난다(검토 F15·M7). `app_pages/space_status.py` 에는 공식 층 요소 직접 읽기가 없다(시험이
   본다).
+- 「공식과 견주기」(S4 — 설계 8-3) 재료도 여기서 낸다 — 층 상세 뷰어 payload(`compare_payload`)와
+  FAB 층 목록 「공식과 다름」 칸·블록 풍선의 층별 셈(`floor_unit_differences`). 둘 다 그리는 세션
+  스냅샷의 합친 본문(`layout_official_places`)과 마스터만 읽는다 — 공식 스냅샷을 따로 읽지 않는다.
 """
 
 from __future__ import annotations
+
+from collections.abc import Collection
+from typing import Any
 
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
@@ -30,9 +36,11 @@ from capa_simulation.services.layout_overlay import (
     effective_floor_marks,
     effective_group_labels,
     label_changes,
+    layout_compare,
     layout_counts_words,
     layout_difference,
     mark_changes,
+    unit_differences_by_floor,
 )
 
 
@@ -154,3 +162,57 @@ def space_layout_notices(
             )
         )
     return lines
+
+
+def compare_payload(
+    session: EquipmentSession, key: FloorKey, *, shown: Collection[str]
+) -> dict[str, Any] | None:
+    """층 상세 뷰어의 「공식과 견주기」 재료(`space_layout_editor.render_space_layout_viewer` 의
+    `compare`) — 공식 자리 점선 상자(`ghosts`)와 다른 층에서 온 호기 꼬리표(`arrivals`). `shown` 은
+    지금 화면이 그리는 설비명(공정 필터·일정 없음을 지난 것)이다. 차이가 없거나 일정 없이 열었으면
+    None."""
+    snapshot = session.snapshot
+    if snapshot is None or session.unmerged or not snapshot.layout_official_places:
+        return None
+    compare = layout_compare(
+        snapshot.equipment,
+        snapshot.unit_key_pairs,
+        snapshot.layout_official_places,
+        key,
+        shown=shown,
+    )
+    if not compare:
+        return None
+    return {
+        "ghosts": [
+            {
+                "id": ghost.name,
+                "x": ghost.x,
+                "y": ghost.y,
+                "w": ghost.w,
+                "h": ghost.h,
+                "tag": ghost.tag,
+            }
+            for ghost in compare.ghosts
+        ],
+        "arrivals": [{"id": arrival.name, "tag": arrival.tag} for arrival in compare.arrivals],
+    }
+
+
+def floor_unit_differences(
+    session: EquipmentSession, *, shown: Collection[str]
+) -> dict[FloorKey, int]:
+    """층마다 공식과 자리가 다른 설비 수(나간·들어온·그 층 안에서 옮긴 호기 — 묶음은 1대, 일정 없는
+    호기 제외). FAB 층 목록 「공식과 다름」 칸·블록 풍선 재료(설계 8-3). `shown` 은 층 상세
+    견주기(`compare_payload`)와 같은 지금 화면이 그리는 설비명(공정 필터를 지난 것)이다 — 같은 표의
+    배치대수·층 상세 견주기와 다른 호기를 세지 않게."""
+    snapshot = session.snapshot
+    if snapshot is None or session.unmerged or not snapshot.layout_official_places:
+        return {}
+    return unit_differences_by_floor(
+        snapshot.equipment,
+        snapshot.unit_key_pairs,
+        snapshot.layout_official_places,
+        snapshot.unscheduled_units,
+        shown=shown,
+    )
