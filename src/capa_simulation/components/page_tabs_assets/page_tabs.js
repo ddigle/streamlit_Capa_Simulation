@@ -28,6 +28,8 @@ const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
 const EDIT_MS = 5000
 // 붙든 누름은 적어도 이만큼은 편집 회차를 기다린다 — 편집이 보낸 회차 요청에 서버가 답해 뿌리 표지가 「돈다」로 바뀌기 전.
 const HOLD_MS = 400
+// `st.switch_page` 가 떠나는 칸에 적은 옮길 화면 인자를 되돌리는 기다림 — 그 바로 뒤 옮긴 화면 쌓기가 이 안에 온다.
+const LEAVE_MS = 1000
 
 // <tabs-history>
 // 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
@@ -38,12 +40,30 @@ const HOLD_MS = 400
 // 앞쪽 기록이 잘려 — 그 화면을 떠나지 못했다(E2E 결함). 지금 경로와 같은 경로로 쌓는 것은 늘 그 칸 바꾸기
 // (`replaceState`)로 돌린다 — 화면을 옮기는 쌓기(다른 경로)만 칸을 더한다. 처리기는 문서에 하나다(`history` 의
 // `pushState` 를 한 번 감싼다).
-function guardHistory(history, href) {
+// `st.switch_page` 의 첫 쌓기는 떠나는 칸 주소를 옮길 화면 인자로 바꾼다(HOME 칸 → `/?process=…&from=home`). 그대로
+// 두면 뒤로가기로 돌아온 그 칸이 남의 인자를 달고, 거기서 사이드바로 옮기면 그 인자가 따라가 링크처럼 적용됐다. 그래서
+// 인자를 지우지 않은(더하거나 바꾸기만 한) 칸 바꾸기 뒤 `ms` 안에 같은 인자로 다른 경로를 쌓으면 — 그 쌓기가
+// `switch_page` 의 옮긴 화면이다 — 떠나는 칸을 원래 주소로 되돌리고 쌓는다. 인자를 지운 칸 바꾸기(링크 인자를 받아
+// 지운 화면)는 되돌리지 않는다.
+function guardHistory(history, href, clock, ms) {
   const push = history.pushState
-  const pathOf = (url) => new URL(String(url), href()).pathname
+  const at = (url) => new URL(String(url), href())
+  let covered = null
   history.pushState = function (state, title, url) {
-    if (url !== undefined && url !== null && pathOf(url) === pathOf(href())) {
+    if (url === undefined || url === null) return push.apply(this, arguments)
+    const here = at(href())
+    const next = at(url)
+    if (next.pathname === here.pathname) {
+      const kept = [...here.searchParams.keys()].every((name) => next.searchParams.has(name))
+      covered = kept
+        ? { url: here.pathname + here.search + here.hash, state: history.state, search: next.search, at: clock() }
+        : null
       return history.replaceState(state, title, url)
+    }
+    const prior = covered
+    covered = null
+    if (prior !== null && clock() - prior.at < ms && next.search === prior.search) {
+      history.replaceState(prior.state, '', prior.url)
     }
     return push.apply(this, arguments)
   }
@@ -167,7 +187,9 @@ export default function (component) {
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 탭 줄은 앱 전체 회차마다
   // 페이지보다 먼저 그리므로 첫 회차 뒤로는 모든 화면의 주소 바꾸기가 이 처리기를 지난다.
-  if (!window.__capaHistoryGuard) window.__capaHistoryGuard = guardHistory(window.history, () => window.location.href)
+  if (!window.__capaHistoryGuard) {
+    window.__capaHistoryGuard = guardHistory(window.history, () => window.location.href, Date.now, LEAVE_MS)
+  }
   // 처리기는 처음 한 번 단다. 지금 data·트리거 함수는 S 에서 읽는다 — 다시 불릴 때마다 새 값으로 바뀐다.
   S.data = data
   S.send = setTriggerValue

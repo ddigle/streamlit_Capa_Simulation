@@ -161,7 +161,9 @@ _HISTORY_RUNNER = """
 // 브라우저 기록 대역 — 칸 목록과 지금 칸. 프런트처럼 `history.pushState` 를 부를 때마다 찾는다.
 const entries = ['http://app.test/calculation_result']
 let index = 0
+let now = 0
 const history = {
+  state: {},
   pushState(state, title, url) {
     entries.splice(index + 1)
     entries.push(new URL(url, entries[index]).href)
@@ -171,7 +173,7 @@ const history = {
     entries[index] = new URL(url, entries[index]).href
   },
 }
-guardHistory(history, () => entries[index])
+guardHistory(history, () => entries[index], () => now, 1000)
 const out = {}
 const here = () => entries[index].replace('http://app.test', '')
 const back = () => { index -= 1 }
@@ -189,6 +191,45 @@ out.linkArrival = [entries.length, here()]
 // 뒤로가기 한 번이면 직전 화면이다 — 인자 달린 칸이 남지 않아 그 화면에 갇히지 않는다.
 back()
 out.back = here()
+process.stdout.write(JSON.stringify(out))
+"""
+
+_LEAVING_RUNNER = """
+const entries = ['http://app.test/']
+let index = 0
+let now = 0
+const history = {
+  state: {},
+  pushState(state, title, url) {
+    entries.splice(index + 1)
+    entries.push(new URL(url, entries[index]).href)
+    index += 1
+  },
+  replaceState(state, title, url) {
+    entries[index] = new URL(url, entries[index]).href
+  },
+}
+guardHistory(history, () => entries[index], () => now, 1000)
+const out = {}
+const all = () => entries.map((url) => url.replace('http://app.test', ''))
+// HOME 칸 — st.switch_page 가 떠나는 HOME 칸에 옮길 화면 인자를 적고(같은 경로)
+// 곧이어 옮긴 화면을 쌓는다. 공정 Capa 상세는 받은 인자를 지운다.
+history.pushState({}, '', '/?process=A&month=202607&from=home')
+now = 60
+history.pushState({}, '', '/process_capa_detail?process=A&month=202607&from=home')
+now = 200
+history.pushState({}, '', '/process_capa_detail')
+out.home = [all(), index]
+// 인자를 지운 직후 다른 화면으로 옮겨도 지운 칸(인자 달린 칸)을 되살리지 않는다.
+now = 300
+history.pushState({}, '', '/required_shortening')
+out.consumed = all()
+// 같은 경로 바꾸기 뒤 늦게 온 다른 경로 쌓기(기다림 밖)는 되돌리지 않는다.
+now = 1000
+history.pushState({}, '', '/required_shortening?k=1')
+now = 2500
+history.pushState({}, '', '/space_status?k=1')
+out.late = all().slice(-2)
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -321,6 +362,19 @@ def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
     assert "document.removeEventListener(type, S.onEdit, true)" in JS
 
 
+def test_a_switch_page_leaves_the_leaving_entry_with_its_own_address() -> None:
+    """`st.switch_page` 의 첫 쌓기는 떠나는 칸 주소를 옮길 화면 인자로 바꾼다 — HOME 칸이면 HOME
+    기록 칸이 `/?process=…&from=home` 이 되어, 뒤로가기로 돌아온 HOME 에서 사이드바로 옮기면 그
+    인자가 따라가 링크처럼 적용됐다(E2E 결함 — HOME 칸 이동이 세 칸을 쌓고 첫 칸이 인자 달린 HOME).
+    옮긴 화면을 곧이어 같은 인자로 쌓으면 떠나는 칸을 원래 주소로 되돌린다. 링크 인자를 받아 지운
+    칸은 되살리지 않는다."""
+    out = _node(_LEAVING_RUNNER)
+
+    assert out["home"] == [["/", "/process_capa_detail"], 1]
+    assert out["consumed"] == ["/", "/process_capa_detail", "/required_shortening"]
+    assert out["late"] == ["/required_shortening?k=1", "/space_status?k=1"]
+
+
 def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_document() -> None:
     """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 누름
     기다림을 건다. 기록 지킴이는 걸고 풀지 않고 늘 걸려 있다 — 문서에 하나다."""
@@ -331,6 +385,7 @@ def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_docume
     send_close = JS.index("S.send('close'")
     assert 0 < JS.rindex("if (leaving) moving(null)", 0, send_close)
     assert "historyGuard" not in JS
-    assert "if (!window.__capaHistoryGuard) window.__capaHistoryGuard = guardHistory(" in JS
+    assert "if (!window.__capaHistoryGuard) {" in JS
+    assert "window.__capaHistoryGuard = guardHistory(window.history" in JS
     # 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다(1.63 프런트 속성).
     assert "data-test-script-state" in JS and "'running'" in JS
