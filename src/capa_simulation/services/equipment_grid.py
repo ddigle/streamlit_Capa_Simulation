@@ -8,7 +8,8 @@
 - **행 id**(`grid_index`) — 저장본 호기는 `s:` + 저장본 설비명(이름을 바꿔도 그대로), 이 세션 새
   호기는 `n:` + 지금 이름이다. 짝은 저장의 호기 키
   규칙(`equipment_scenario.inherited_unit_names`)으로 잇는다 — 둘이 갈리면 표가 「바뀐 칸」 으로
-  보인 호기가 저장에서 새 호기가 된다.
+  보인 호기가 저장에서 새 호기가 된다. 같은 이름의 둘째 줄 꼬리는 설비명에 나올 수 없는 글자
+  (`DUPLICATE_MARK`)로 붙이고, 저장본 호기인지는 id 글자를 풀지 않고 `GridIndex.saved` 로 가른다.
 - **칸 글자**(`cell_text`) — 화면 글자이자 견줌 글자. 「바뀐 칸」 은 저장본 글자와 편집본 글자가
   다른 칸이다(형과 상관없다).
 - **data**(`grid_data`·`loader_data`·`detail_data`·`changes_data`) — 한 회차의 표
@@ -18,9 +19,15 @@
   전부」 에서 아직 반영하지 않은 것만 `(at, mount, seq)` 차례로 골라 편집본 세 표에 얹는다. 칸 값은
   저장 정규화와 같은 함수(`equipment_validation.coerce_master_cell`)로 다듬고, 못 다듬은 글은
   편집본에 넣지 않고 칸 초안(`overlay`)에 둔다 — 편집본 세 표는 늘 계약 dtype 이다.
-- **되돌리기**(`UndoStep`) — 한 조작의 역 patch(칸 자리·옛 값, 뺀 행·넣은 행). 표의 조작만 쌓이고
-  다른 길(Space 적용·작은 편집표 적용)이 편집본을 바꾸면 목록을 비우므로 나중 것부터(LIFO) 되돌리면
-  자리가 늘 맞는다. 행 조각을 든 단계를 버릴 때는 그보다 앞 단계도 함께 버린다(뒤 단계만 남는다).
+- **되돌리기**(`UndoStep`) — 한 조작의 역 patch(칸 자리·옛 값, 뺀 행·넣은 행, 옮긴 행 id). 표의
+  조작만 쌓이고 다른 길(Space 적용·작은 편집표 적용)이 편집본을 바꾸면 목록을 비우므로 나중
+  것부터(LIFO) 되돌리면 자리가 늘 맞는다. 행 조각을 든 단계를 버릴 때는 그보다 앞 단계도 함께
+  버린다(뒤 단계만 남는다). 단계마다 표지(`token` — 그 op 의 `mount#seq`)가 있어 토스트 「되돌리기」
+  는 제 단계가 맨 위일 때만 되돌린다(`undo` op 의 `step`).
+- **가정 설비 시나리오 배치**(`assumption_layout`) — 설비 시나리오 2단계 S2 규칙
+  그대로(`GridContext.layout_lock`): 있던 호기의 배치 일곱 칸은 잠그고, 새 호기는 자리
+  없이(동·층·X좌표·Y좌표 잠금 — 있는 묶음에 드는 모듈은 그 묶음의 공식 동·층) 둔다. 이름·묶음·
+  배치·행을 바꾼 조작 뒤마다 같은 판정(`layout_overlay.assumption_common_places`)으로 맞춘다.
 
 업무 검증은 여기와 `equipment_validation` 이 한다 — 브라우저는 data 가 준 잠금·고를 값·자리 계산만
 안다.
@@ -30,8 +37,9 @@ from __future__ import annotations
 
 import hashlib
 import math
+import uuid
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, Final, Literal
@@ -74,6 +82,11 @@ from capa_simulation.services.equipment_validation import (
     MasterIssue,
     coerce_master_cell,
 )
+from capa_simulation.services.layout_overlay import (
+    assumption_common_places,
+    misplaced_rows,
+    place_rows,
+)
 from capa_simulation.services.space_layout_edit import (
     NameChange,
     PendingRenames,
@@ -83,6 +96,8 @@ from capa_simulation.services.space_layout_edit import (
     module_group_rows,
     natural_name_key,
     reserved_names,
+    restore_saved_layout,
+    saved_layout_drift,
 )
 
 Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
@@ -104,6 +119,9 @@ CHANGE_LINE_LIMIT: Final = 300
 
 SAVED_PREFIX: Final = "s:"
 NEW_PREFIX: Final = "n:"
+# 같은 이름 둘째 줄의 id 꼬리 앞 글자. 설비명 규칙(`space_layout_edit._require_name` — 인쇄 가능한
+# 글자만)이 받지 않는 글자라 저장본 이름(예 `WB~01`)과 겹치지 않는다. 그래도 겹치면 번호를 올린다.
+DUPLICATE_MARK: Final = "\x1f"
 
 # ------------------------------------------------------------------ 칸 도움말(공통·시나리오)
 # 상태 두 칸은 공통이지만 「확정」 은 공식 일정이 확정됐다는 뜻이다(결정 모음 — 칸 머리).
@@ -357,11 +375,14 @@ DETAIL_GROUPS: Final[tuple[DetailGroup, ...]] = (
 
 # ------------------------------------------------------------------ 잠금
 
-# 잠금 갈래 → 칸. 모듈 묶음(Main 설비 모듈 둘 이상)의 좌표·크기, 가정 설비 시나리오(S3 전)의 있던
-# 호기 배치 일곱 칸, 낡은 세션의 시나리오 일곱 칸. 지운 표시 줄은 모든 칸이 잠긴다(`deleted`).
+# 잠금 갈래 → 칸. 모듈 묶음(Main 설비 모듈 둘 이상)의 좌표·크기, 가정 설비 시나리오(설비 시나리오
+# 2단계 S2 규칙 — S3 전)의 있던 호기 배치 일곱 칸(`layout`)과 새 호기 자리 넷(`place` — 새 호기는
+# 자리 없이 넣는다), 낡은 세션의 시나리오 일곱 칸. 지운 표시 줄은 모든 칸이 잠긴다(`deleted`).
+PLACE_LOCK_COLUMNS: Final = ("동", "층", "X좌표", "Y좌표")
 LOCK_SETS: Final[Mapping[str, tuple[str, ...]]] = {
     "module": tuple(COORDINATE_COLUMNS),
     "layout": tuple(SCENARIO_LAYOUT_COLUMNS),
+    "place": PLACE_LOCK_COLUMNS,
     "stale": tuple(SCENARIO_SCHEDULE_COLUMNS),
 }
 MODULE_LOCK_REASON: Final = "모듈 묶음 좌표·크기는 Space 배치 편집기에서 고칩니다"
@@ -375,8 +396,9 @@ class GridContext:
     - `base` — 편집본이 나온 저장본 쌍 토큰 + 씨뿌린 세대. 출납 op 의 `base` 가 다르면 버린다.
     - `stale_lock` — 낡은 세션(또는 일정 없이 엶)이면 시나리오 일곱 칸 잠금 까닭.
     - `delete_lock` — 낡은 세션이면 저장본 호기 지우기 잠금 까닭(`stale_delete_lock`).
-    - `layout_lock` — 가정 설비 시나리오(설비 시나리오 2단계 S3 전)면 있던 호기 배치 일곱 칸 잠금
-      까닭.
+    - `layout_lock` — 가정 설비 시나리오(설비 시나리오 2단계 S3 전)면 배치 잠금 까닭. 있던 호기는
+      배치 일곱 칸(`layout`), 새 호기는 자리 넷(`place`)이 잠기고, 조작 뒤마다 S2 판정으로 자리를
+      맞춘다(`assumption_layout`).
     - `location_options` — 동·층 고를 값(Space 층 사용 상태로 좁힌 것). 없으면 유효 동·층 전부.
     """
 
@@ -395,6 +417,7 @@ class GridContext:
             reasons["stale"] = self.stale_lock
         if self.layout_lock:
             reasons["layout"] = self.layout_lock
+            reasons["place"] = self.layout_lock
         return reasons
 
 
@@ -454,9 +477,11 @@ def _names(master: pd.DataFrame) -> list[str]:
 class GridIndex:
     """편집본 줄 ↔ 행 id.
 
-    - `ids` — 편집본 설비 마스터 줄 차례의 행 id(같은 이름이 둘이면 뒤 줄에 `~2` 꼬리).
+    - `ids` — 편집본 설비 마스터 줄 차례의 행 id(같은 이름이 둘이면 뒤 줄에 `DUPLICATE_MARK` + 번호
+      꼬리 — 그 줄은 저장본 호기를 잇지 않는다).
     - `live` — 행 id → 편집본 줄 자리.
-    - `saved` — `s:` 행 id → 저장본 줄 자리(지운 호기 포함).
+    - `saved` — `s:` 행 id → 저장본 줄 자리(지운 호기 포함). 저장본 호기인지는 이것으로만 가른다 —
+      id 글자를 풀지 않는다(저장본 이름에 어떤 글자가 들어도 맞다).
     - `deleted` — 저장본에 있는데 편집본이 잇지 않는 호기(저장본 차례). 지운 표시 줄이다.
     """
 
@@ -466,7 +491,12 @@ class GridIndex:
     deleted: tuple[str, ...]
 
     def is_new(self, row_id: str) -> bool:
-        return row_id in self.live and not row_id.startswith(SAVED_PREFIX)
+        """편집본에 있고 저장본 호기를 잇지 않는 줄(이 세션 새 호기 · 같은 이름의 둘째 줄)."""
+        return row_id in self.live and row_id not in self.saved
+
+    def saved_name(self, row_id: str) -> str | None:
+        """저장본 호기 줄(지운 표시 포함)의 저장본 설비명, 그 밖이면 None."""
+        return row_id[len(SAVED_PREFIX) :] if row_id in self.saved else None
 
 
 def grid_index(master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]) -> GridIndex:
@@ -477,14 +507,24 @@ def grid_index(master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, 
     saved_set = set(saved_names) - {""}
     inherited = inherited_unit_names(names, saved_set, renames)
     used_origins = set(inherited.values())
+    bases = [
+        SAVED_PREFIX + inherited[name] if name in inherited else NEW_PREFIX + name for name in names
+    ]
+    # 둘째 줄 꼬리가 어떤 줄의 id·저장본 호기 id 와도 겹치지 않게 — 겹치면 번호를 올린다.
+    taken = set(bases) | {SAVED_PREFIX + name for name in saved_set}
     ids: list[str] = []
     seen: dict[str, int] = {}
-    for name in names:
-        origin = inherited.get(name)
-        base = SAVED_PREFIX + origin if origin is not None else NEW_PREFIX + name
+    for base in bases:
         count = seen.get(base, 0) + 1
         seen[base] = count
-        ids.append(base if count == 1 else f"{base}~{count}")
+        row_id = base
+        if count > 1:
+            row_id = f"{base}{DUPLICATE_MARK}{count}"
+            while row_id in taken:
+                count += 1
+                row_id = f"{base}{DUPLICATE_MARK}{count}"
+            taken.add(row_id)
+        ids.append(row_id)
     saved_positions: dict[str, int] = {}
     for position, name in enumerate(saved_names):
         if name:
@@ -500,13 +540,6 @@ def grid_index(master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, 
         saved=saved_positions,
         deleted=deleted,
     )
-
-
-def saved_name_of(row_id: str) -> str | None:
-    """`s:` 행 id 의 저장본 설비명(`~n` 꼬리 뗌), 새 호기면 None."""
-    if not row_id.startswith(SAVED_PREFIX):
-        return None
-    return row_id[len(SAVED_PREFIX) :].split("~", 1)[0] if "~" in row_id else row_id[2:]
 
 
 def save_id_map(index: GridIndex, master: pd.DataFrame) -> dict[str, str | None]:
@@ -666,8 +699,8 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         values[row_id] = list(row)
         names[row_id] = row[NAME_INDEX]
         changed: dict[int, str] = {}
-        saved_position = index.saved.get(row_id) if row_id.startswith(SAVED_PREFIX) else None
-        if saved_position is not None and "~" not in row_id:
+        saved_position = index.saved.get(row_id)
+        if saved_position is not None:
             before = saved_texts[saved_position]
             changed = {j: before[j] for j in range(len(row)) if row[j] != before[j]}
         else:
@@ -680,21 +713,25 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         tags[row_id] = "deleted"
         marks[row_id] = RowMarks()
     errors: list[tuple[str | None, str, str, str]] = []
+    drafts = {
+        overlay_parts(key): text
+        for key, text in prune_overlay(source.overlay, index).items()
+        if overlay_parts(key)[1] in COLUMN_INDEX
+    }
     for issue in source.issues:
         if issue.position >= len(index.ids):
             continue
         row_id = index.ids[issue.position]
         spot = COLUMN_INDEX.get(issue.column)
-        if spot is None:
+        # 칸 초안이 있는 칸은 초안 글이 보인다 — 편집본 옛 값으로 낸 규칙 결과는 그 칸에
+        # 싣지 않는다.
+        if spot is None or (row_id, issue.column) in drafts:
             continue
         target = marks[row_id].errors if issue.blocking else marks[row_id].warns
         target.setdefault(spot, issue.message)
         if issue.blocking:
             errors.append((row_id, names[row_id], issue.column, issue.message))
-    for key, text in prune_overlay(source.overlay, index).items():
-        row_id, column = overlay_parts(key)
-        if column not in COLUMN_INDEX:
-            continue
+    for (row_id, column), text in drafts.items():
         position = COLUMN_INDEX[column]
         message = _overlay_error(row_id, column, text, values[row_id][NAME_INDEX], source)
         values[row_id][position] = text
@@ -708,8 +745,8 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         kinds: list[str] = []
         if context.stale_lock:
             kinds.append("stale")
-        if context.layout_lock and row_id.startswith(SAVED_PREFIX):
-            kinds.append("layout")
+        if context.layout_lock:
+            kinds.append("layout" if row_id in index.saved else "place")
         if module_rows and module_rows[position]:
             kinds.append("module")
         if kinds:
@@ -824,23 +861,39 @@ def _scenario_payload(context: GridContext) -> dict[str, Any]:
     return {"name": context.scenario_name or "", "official": context.official}
 
 
+def toast_payload(toast: Mapping[str, Any] | None, undo_top: str | None) -> dict[str, Any] | None:
+    """토스트(`{"id", "text", "undo"}` — `undo` 는 그 토스트가 되돌릴 단계 표지
+    `GridApplied.toast_step`)를 data 로. 「되돌리기」 단추는 그 단계가 되돌리기 목록 맨
+    위(`undo_top`)일 때만 선다 — 그 뒤에 토스트 없는 조작(칸 고침)이 쌓였으면 단추를 거둔다(누르면
+    다른 단계가 되돌아간다)."""
+    if not toast:
+        return None
+    payload = dict(toast)
+    step = payload.get("undo")
+    payload["undo"] = step if isinstance(step, str) and step and step == undo_top else None
+    return payload
+
+
 def grid_data(
     view: GridView,
     loaded: Sequence[str],
     *,
     toast: Mapping[str, Any] | None = None,
+    undo_top: str | None = None,
     ack: Mapping[str, Any] | None = None,
     moved: Mapping[str, str] | None = None,
+    open_id: str | None = None,
 ) -> dict[str, Any]:
     """표 마운트(`grid`)의 data(팔레트는 화면 쪽이 더한다). 줄은 불러온 목록 차례이고 편집본에 없는
-    id 는 거른다."""
+    id 는 거른다. `undo_top` 은 되돌리기 목록 맨 위 단계 표지(`undo_top`), `open_id` 는 오른쪽
+    「호기 상세」 에 연 행 id(그 줄에 띠)다."""
     rows = [_row_payload(view, row_id) for row_id in loaded if row_id in view.values]
     return {
         "mode": "grid",
         "base": view.context.base,
         "ack": dict(ack or {}),
         "scenario": _scenario_payload(view.context),
-        "toast": dict(toast) if toast else None,
+        "toast": toast_payload(toast, undo_top),
         "view": view_token([row["id"] for row in rows]),
         "columns": columns_payload(view.context),
         "colSets": column_sets_payload(),
@@ -852,6 +905,7 @@ def grid_data(
         "deleteLock": view.context.delete_lock,
         "limits": {"pasteCells": GRID_PASTE_CELLS, "outboxCells": GRID_OUTBOX_CELLS},
         "moved": dict(moved or {}),
+        "open": open_id if open_id is not None and open_id in view.values else None,
     }
 
 
@@ -991,21 +1045,34 @@ def detail_meta(view: GridView, row_id: str) -> str:
     return " · ".join(part for part in parts if part)
 
 
-def detail_data(view: GridView, row_id: str | None) -> dict[str, Any]:
-    """오른쪽 「호기 상세」 마운트의 data. 없는 id 면 `unit` 이 None 이다(빈 상세)."""
+def detail_data(
+    view: GridView,
+    row_id: str | None,
+    *,
+    ack: Mapping[str, Any] | None = None,
+    toast: Mapping[str, Any] | None = None,
+    undo_top: str | None = None,
+) -> dict[str, Any]:
+    """오른쪽 「호기 상세」 마운트의 data. 없는 id 면 `unit` 이 None 이다(빈 상세).
+
+    이 마운트도 출납을 보내므로 `ack`(이 마운트 몫)와, 이 마운트가 보낸 조작의 토스트(「이 호기
+    지우기」 등 — `grid_data` 와 같은 꼴)를 싣는다. `ack` 를 빼면 브라우저가 반영된 op 를 들고
+    있다가 초점이 나갈 때마다 다시 보낸다."""
     unit: dict[str, Any] | None = None
     if row_id is not None and row_id in view.values:
         unit = _row_payload(view, row_id)
         unit["meta"] = detail_meta(view, row_id)
         unit["downtime"] = _downtime_rows(view.downtime, view.names[row_id])
         deleted = view.tags.get(row_id) == "deleted"
-        locked = view.context.delete_lock if row_id.startswith(SAVED_PREFIX) else None
+        locked = view.context.delete_lock if row_id in view.index.saved else None
         unit["deletable"] = not deleted and not locked
         unit["deleteLock"] = locked if not deleted else None
     return {
         "mode": "side",
         "panel": "detail",
         "base": view.context.base,
+        "ack": dict(ack or {}),
+        "toast": toast_payload(toast, undo_top),
         "scenario": _scenario_payload(view.context),
         "columns": columns_payload(view.context),
         "groups": detail_groups_payload(),
@@ -1040,8 +1107,15 @@ def change_counts(view: GridView) -> ChangeCounts:
     return ChangeCounts(cells, new, len(view.index.deleted), len(view.errors))
 
 
-def changes_data(view: GridView) -> dict[str, Any]:
-    """오른쪽 「저장 전 변경」 마운트의 data — 수 넷, 고칠 것(최대 30), 호기별 변경(최대 300줄)."""
+def changes_data(
+    view: GridView,
+    *,
+    ack: Mapping[str, Any] | None = None,
+    toast: Mapping[str, Any] | None = None,
+    undo_top: str | None = None,
+) -> dict[str, Any]:
+    """오른쪽 「저장 전 변경」 마운트의 data — 수 넷, 고칠 것(최대 30), 호기별 변경(최대
+    300줄). `ack`·`toast` 는 `detail_data` 와 같다(칸·호기 되돌리기를 이 마운트가 보낸다)."""
     counts = change_counts(view)
     errors = [list(item) for item in view.errors[:CHANGE_ERROR_LIMIT]]
     units: list[dict[str, Any]] = []
@@ -1068,6 +1142,8 @@ def changes_data(view: GridView) -> dict[str, Any]:
         "mode": "side",
         "panel": "changes",
         "base": view.context.base,
+        "ack": dict(ack or {}),
+        "toast": toast_payload(toast, undo_top),
         "scenario": _scenario_payload(view.context),
         "counts": {
             "cells": counts.cells,
@@ -1139,15 +1215,22 @@ def pending_ops(
 class UndoStep:
     """한 조작의 역 patch. 칸은 (편집본 줄 자리, 칸, 옛 값)이고 조작 **뒤** 자리다.
 
+    - `token` — 단계 표지(그 op 의 `mount#seq`, 통째 단계는 무작위). 토스트 「되돌리기」 가 이
+      단계를 가리켜 보낸다(`undo` op 의 `step`) — 맨 위가 아니면 되돌리지 않는다.
     - `master_removed`·`downtime_removed` — 조작이 뺀 줄(행 이름 = 빼기 전 자리). 되돌리면 그 자리로
       다시 넣는다.
     - `master_added`·`downtime_added` — 조작이 넣은 줄의 조작 뒤 자리. 되돌리면 뺀다.
     - `overlay` — (초안 열쇠, 옛 글 또는 None). `renames` 는 옛 이름 지도(바뀌었을 때만).
-    - `loaded` — 옛 불러온 목록(바뀌었을 때만). `frames` 는 통째 단계의 옛 세 표다.
+    - `moved` — 조작이 바꾼 행 id(옛 → 새 — 새 호기 이름 바꿈). 되돌리면 불러온 목록의 그 id 를
+      옛 id 로 돌리고 브라우저에 거꾸로 알린다. `unloaded` — 조작이 불러온 목록에서 뺀 (자리, id)
+      (지운 새 호기). 되돌리면 그 자리에 다시 넣는다. 불러온 목록은 화면 조작(불러오기·빼기)으로도
+      바뀌므로 사진으로 되돌리지 않는다.
+    - `loaded`·`frames` — 통째 단계의 옛 불러온 목록·세 표(사진 그대로 되돌린다).
     """
 
     label: str
     kind: Literal["cells", "rows", "whole"] = "cells"
+    token: str = ""
     master: tuple[tuple[int, str, Any], ...] = ()
     downtime: tuple[tuple[int, str, Any], ...] = ()
     master_removed: pd.DataFrame | None = None
@@ -1156,8 +1239,15 @@ class UndoStep:
     downtime_added: tuple[int, ...] = ()
     overlay: tuple[tuple[str, str | None], ...] = ()
     renames: PendingRenames | None = None
+    moved: tuple[tuple[str, str], ...] = ()
+    unloaded: tuple[tuple[int, str], ...] = ()
     loaded: tuple[str, ...] | None = None
     frames: Frames | None = None
+
+
+def undo_top(steps: Sequence[UndoStep]) -> str | None:
+    """되돌리기 목록 맨 위 단계의 표지(없으면 None) — 토스트 「되돌리기」 를 세울지 가른다."""
+    return steps[-1].token if steps else None
 
 
 def undo_to_state(steps: Sequence[UndoStep]) -> tuple[dict[str, Any], ...]:
@@ -1167,6 +1257,7 @@ def undo_to_state(steps: Sequence[UndoStep]) -> tuple[dict[str, Any], ...]:
         {
             "label": step.label,
             "kind": step.kind,
+            "token": step.token,
             "master": step.master,
             "downtime": step.downtime,
             "master_removed": step.master_removed,
@@ -1177,6 +1268,8 @@ def undo_to_state(steps: Sequence[UndoStep]) -> tuple[dict[str, Any], ...]:
             "renames": None
             if step.renames is None
             else {"units": dict(step.renames.units), "groups": dict(step.renames.groups)},
+            "moved": step.moved,
+            "unloaded": step.unloaded,
             "loaded": step.loaded,
             "frames": step.frames,
         }
@@ -1198,6 +1291,7 @@ def undo_from_state(value: object) -> tuple[UndoStep, ...]:
             UndoStep(
                 label=item["label"],
                 kind=item.get("kind", "cells"),
+                token=str(item.get("token") or ""),
                 master=tuple(item.get("master") or ()),
                 downtime=tuple(item.get("downtime") or ()),
                 master_removed=item.get("master_removed"),
@@ -1210,6 +1304,8 @@ def undo_from_state(value: object) -> tuple[UndoStep, ...]:
                 )
                 if isinstance(renames, dict)
                 else None,
+                moved=tuple(item.get("moved") or ()),
+                unloaded=tuple(item.get("unloaded") or ()),
                 loaded=tuple(item["loaded"]) if isinstance(item.get("loaded"), tuple) else None,
                 frames=frames if isinstance(frames, tuple) and len(frames) == 3 else None,
             )
@@ -1253,20 +1349,29 @@ class GridApplied:
 
     - `changed` — 편집본·칸 초안·이름 지도 가운데 하나라도 바뀌었다(세대를 올린다).
     - `frames_changed` — 바뀐 표(기존 보유대수, 설비 마스터, 비가동 일정) — 그 표의 편집표만 버린다.
-    - `moved` — 새 호기 이름을 바꿔 바뀐 행 id(옛 → 새). 브라우저가 고름·초점을 옮긴다.
-    - `renamed` — 이번에 반영한 설비명 이름 바꿈(옛 → 새). 화면 쪽이 고름·필터를 따라 옮긴다.
-    - `dropped` — `base` 가 달라 버린 op 수. `refused` — 잠긴 칸·없는 행·잠긴 지우기로 넣지 못한 수.
+    - `toast_step` — 토스트 「되돌리기」 가 되돌릴 단계 표지(없으면 단추 없음). 화면 쪽은 토스트
+      dict 의 `undo` 에 이 값을 둔다(`toast_payload`).
+    - `moved` — 새 호기 이름을 바꿔(또는 그 되돌리기로) 바뀐 행 id(옛 → 새). 브라우저가 고름·초점·
+      상세 id 를 옮긴다.
+    - `renamed` — 이번에 반영한 설비명 이름 바꿈(옛 → 새 — 이름 바꿈을 되돌린 것 포함). 화면 쪽이
+      고름·필터를 따라 옮긴다.
+    - `dropped` — `base` 가 달라 버린 op 수. `refused` — 잠긴 칸·없는 행·잠긴 지우기·맨 위가 아닌
+      되돌리기로 넣지 못한 수.
     """
 
     state: GridState
     changed: bool = False
     frames_changed: tuple[bool, bool, bool] = (False, False, False)
     toast: str | None = None
-    toast_undo: bool = False
+    toast_step: str | None = None
     moved: Mapping[str, str] = field(default_factory=dict)
     renamed: Mapping[str, str] = field(default_factory=dict)
     dropped: int = 0
     refused: int = 0
+
+    @property
+    def toast_undo(self) -> bool:
+        return self.toast_step is not None
 
 
 def _loc(frame: pd.DataFrame, column: str) -> int:
@@ -1319,11 +1424,20 @@ class _Work:
     rename_count: int = 0
     toast: str | None = None
     toast_undo: bool = False
+    toast_fresh: bool = False
+    toast_step: str | None = None
+    touched: set[str] = field(default_factory=set)
     dropped: int = 0
     refused: int = 0
 
     def index(self) -> GridIndex:
         return grid_index(self.master, self.saved[1], self.renames.units)
+
+    def say(self, text: str, *, undo: bool = False) -> None:
+        """이번 op 의 토스트. `undo` 면 그 op 의 단계를 「되돌리기」 가 가리킨다."""
+        self.toast = text
+        self.toast_undo = undo
+        self.toast_fresh = True
 
 
 @dataclass
@@ -1334,7 +1448,7 @@ class _Patch:
     downtime: dict[tuple[int, str], Any] = field(default_factory=dict)
     overlay: dict[str, str | None] = field(default_factory=dict)
     renames: PendingRenames | None = None
-    loaded: tuple[str, ...] | None = None
+    moved: dict[str, str] = field(default_factory=dict)
     cells: int = 0
 
     def step(self, label: str) -> UndoStep | None:
@@ -1346,8 +1460,26 @@ class _Patch:
             downtime=tuple((pos, col, old) for (pos, col), old in self.downtime.items()),
             overlay=tuple(self.overlay.items()),
             renames=self.renames,
-            loaded=self.loaded,
+            moved=tuple(self.moved.items()),
         )
+
+
+def _note_move(moved: dict[str, str], old: str, new: str) -> None:
+    """옮김 지도에 old → new 를 잇는다 — 이미 X → old 가 있으면 X → new 로(제자리로 오면 뺀다)."""
+    for key, value in list(moved.items()):
+        if value == old:
+            if key == new:
+                moved.pop(key)
+            else:
+                moved[key] = new
+            return
+    if old != new:
+        moved[old] = new
+
+
+def _note_rename(renamed: dict[str, str], old: str, new: str) -> None:
+    """이름 바꿈 지도에 old → new 를 잇는다(사슬 A→B·B→C 는 A→C, 제자리로 오면 뺀다)."""
+    _note_move(renamed, old, new)
 
 
 def _set_master(work: _Work, patch: _Patch, position: int, column: str, value: Any) -> bool:
@@ -1358,6 +1490,7 @@ def _set_master(work: _Work, patch: _Patch, position: int, column: str, value: A
     patch.master.setdefault((position, column), current)
     _store(work.master, position, column, value)
     work.changed[1] = True
+    work.touched.add(column)
     return True
 
 
@@ -1380,12 +1513,17 @@ def _locked(work: _Work, index: GridIndex, row_id: str, column: str, modules: li
         return True
     if work.context.stale_lock and column in LOCK_SETS["stale"]:
         return True
-    if (
-        work.context.layout_lock
-        and row_id.startswith(SAVED_PREFIX)
-        and column in LOCK_SETS["layout"]
-    ):
+    if work.context.layout_lock and column in LOCK_SETS[_layout_kind(index, row_id)]:
         return True
+    return _module_locked(index, row_id, column, modules)
+
+
+def _layout_kind(index: GridIndex, row_id: str) -> str:
+    """가정 설비 시나리오 배치 잠금 갈래 — 있던 호기 `layout`(일곱 칸), 새 호기 `place`(자리 넷)."""
+    return "layout" if row_id in index.saved else "place"
+
+
+def _module_locked(index: GridIndex, row_id: str, column: str, modules: list[bool]) -> bool:
     position = index.live[row_id]
     return bool(modules and modules[position] and column in LOCK_SETS["module"])
 
@@ -1450,6 +1588,7 @@ def _rename(work: _Work, patch: _Patch, index: GridIndex, row_id: str, text: str
     _record_differences(patch.downtime, before_downtime, downtime, (EQUIPMENT_ID_COLUMN,))
     work.master, work.downtime = master.reset_index(drop=True), downtime.reset_index(drop=True)
     work.changed[1] = True
+    work.touched.update((EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN))
     if not before_downtime.equals(work.downtime):
         work.changed[2] = True
     if patch.renames is None:
@@ -1458,22 +1597,19 @@ def _rename(work: _Work, patch: _Patch, index: GridIndex, row_id: str, text: str
     work.renames = compose_unit_renames(work.renames, {old: new}, saved_names=saved_names)
     work.renames_changed = True
     # 한 번에 온 사슬(A→B 뒤 B→C)은 A→C 로 잇는다 — 화면 쪽이 한꺼번에 옮긴다.
-    chained = {before: (new if after == old else after) for before, after in work.renamed.items()}
-    if old not in work.renamed.values():
-        chained[old] = new
-    work.renamed = chained
+    _note_rename(work.renamed, old, new)
     work.rename_count += 1
-    if not row_id.startswith(SAVED_PREFIX):
+    if index.is_new(row_id):
+        # 새 호기는 id 가 지금 이름이라 id 가 바뀐다 — 칸 초안 열쇠·불러온 목록·브라우저 고름을
+        # 옮기고, 옮김을 역 patch 에도 남겨 되돌리면 제자리로 온다.
         target = NEW_PREFIX + new
-        work.moved[row_id] = target
-        work.overlay = {
-            (overlay_key(target, overlay_parts(k)[1]) if overlay_parts(k)[0] == row_id else k): v
-            for k, v in work.overlay.items()
-        }
-        if row_id in work.loaded:
-            if patch.loaded is None:
-                patch.loaded = tuple(work.loaded)
-            work.loaded = [target if item == row_id else item for item in work.loaded]
+        for key in [k for k in work.overlay if overlay_parts(k)[0] == row_id]:
+            text_kept = work.overlay[key]
+            _set_overlay(work, patch, key, None)
+            _set_overlay(work, patch, overlay_key(target, overlay_parts(key)[1]), text_kept)
+        _note_move(patch.moved, row_id, target)
+        _note_move(work.moved, row_id, target)
+        work.loaded = [target if item == row_id else item for item in work.loaded]
     return 1
 
 
@@ -1513,7 +1649,7 @@ def _delete(work: _Work, ids: Sequence[str]) -> UndoStep | None:
         if row_id not in index.live:
             work.refused += 1
             continue
-        if row_id.startswith(SAVED_PREFIX) and work.context.delete_lock:
+        if not index.is_new(row_id) and work.context.delete_lock:
             work.refused += 1
             continue
         targets.append(index.live[row_id])
@@ -1524,12 +1660,16 @@ def _delete(work: _Work, ids: Sequence[str]) -> UndoStep | None:
     downtime_flags = _downtime_mask(work.downtime, names)
     downtime_removed = work.downtime.loc[downtime_flags].copy()
     removed_ids = {index.ids[position] for position in targets}
-    loaded_before = tuple(work.loaded)
-    work.loaded = [
-        row_id
-        for row_id in work.loaded
-        if not (row_id in removed_ids and not row_id.startswith(SAVED_PREFIX))
-    ]
+    # 새 호기는 바로 빠져 목록에서도 뺀다(저장본 호기는 지운 표시 줄로 남는다). 뺀 자리를 역
+    # patch 에 남긴다 — 목록 사진으로 되돌리면 그 뒤 불러오기·빼기가 사라진다.
+    unloaded = tuple(
+        (position, row_id)
+        for position, row_id in enumerate(work.loaded)
+        if row_id in removed_ids and index.is_new(row_id)
+    )
+    gone = {row_id for _, row_id in unloaded}
+    work.loaded = [row_id for row_id in work.loaded if row_id not in gone]
+    work.touched.add(_ROWS)
     overlay_before: dict[str, str | None] = {}
     for key in list(work.overlay):
         if overlay_parts(key)[0] in removed_ids:
@@ -1552,7 +1692,7 @@ def _delete(work: _Work, ids: Sequence[str]) -> UndoStep | None:
         downtime_removed=downtime_removed if not downtime_removed.empty else None,
         overlay=tuple(overlay_before.items()),
         renames=renames_before if work.renames is not renames_before else None,
-        loaded=loaded_before if tuple(work.loaded) != loaded_before else None,
+        unloaded=unloaded,
     )
 
 
@@ -1587,10 +1727,10 @@ def _restore(work: _Work, ids: Sequence[str]) -> UndoStep | None:
     group_now = {origin: now for now, origin in work.renames.groups.items()}
     for row_id in dict.fromkeys(ids):
         index = work.index()
-        if row_id not in index.deleted:
+        name = index.saved_name(row_id)
+        if row_id not in index.deleted or name is None:
             work.refused += 1
             continue
-        name = saved_name_of(row_id) or ""
         if name in set(_names(work.master)):
             work.refused += 1
             continue
@@ -1642,6 +1782,7 @@ def _restore(work: _Work, ids: Sequence[str]) -> UndoStep | None:
     if not added_master:
         return None
     work.changed[1] = True
+    work.touched.add(_ROWS)
     if added_downtime:
         work.changed[2] = True
     return UndoStep(
@@ -1652,20 +1793,33 @@ def _restore(work: _Work, ids: Sequence[str]) -> UndoStep | None:
     )
 
 
-def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> UndoStep | None:
-    """칸·호기 되돌리기 — 저장본 값으로. 호기 통째면 지운 호기는 되살리고 새 호기는 뺀다."""
+@dataclass
+class _Reverted:
+    """칸·호기 되돌리기 한 번의 셈 — 되돌린 칸·모듈 잠금으로 남긴 칸, 행을 넣고 뺀 단계."""
+
+    cells: int = 0
+    kept: int = 0
+    step: UndoStep | None = None
+    restored: bool = False
+    dropped: bool = False
+
+
+def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Reverted:
+    """칸·호기 되돌리기 — 저장본 값으로. 호기 통째면 지운 호기는 되살리고 새 호기는 뺀다.
+
+    저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·가정 설비 시나리오의 배치 칸 잠금은 막지
+    않는다 — 낡기 전에 고친 시나리오 칸을 저장본 값으로 돌려야 저장이 거부되지 않는다. 모듈 묶음
+    좌표·크기만 그대로 둔다(한 모듈만 저장본 자리로 가면 묶음 모양이 갈린다 — Space 배치
+    편집기 몫)."""
     index = work.index()
     if column is None and row_id in index.deleted:
-        return _restore(work, [row_id])
+        return _Reverted(step=_restore(work, [row_id]), restored=True)
     if column is None and index.is_new(row_id):
-        return _delete(work, [row_id])
-    if row_id not in index.live or not row_id.startswith(SAVED_PREFIX):
-        work.refused += 1
-        return None
+        return _Reverted(step=_delete(work, [row_id]), dropped=True)
     saved_position = index.saved.get(row_id)
-    if saved_position is None:
+    if row_id not in index.live or saved_position is None:
         work.refused += 1
-        return None
+        return _Reverted()
     saved_row = work.saved[1].reset_index(drop=True).iloc[saved_position]
     columns = (
         [column]
@@ -1674,21 +1828,27 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> Undo
     )
     position = index.live[row_id]
     modules = _module_flags(work.master)
+    result = _Reverted()
     for name in columns:
         if name == EQUIPMENT_ID_COLUMN or name not in work.master.columns:
             continue
-        if _locked(work, index, row_id, name, modules):
-            if column is not None:
-                work.refused += 1
+        cleared = _set_overlay(work, patch, overlay_key(row_id, name), None)
+        changed = cell_text(work.master.iat[position, _loc(work.master, name)]) != cell_text(
+            saved_row.get(name)
+        )
+        if changed and _module_locked(index, row_id, name, modules):
+            result.kept += 1
             continue
-        _set_overlay(work, patch, overlay_key(row_id, name), None)
-        _set_master(work, patch, position, name, saved_row.get(name))
+        if _set_master(work, patch, position, name, saved_row.get(name)) or cleared:
+            result.cells += 1
     if column is None or column == EQUIPMENT_ID_COLUMN:
-        _set_overlay(work, patch, overlay_key(row_id, EQUIPMENT_ID_COLUMN), None)
+        if _set_overlay(work, patch, overlay_key(row_id, EQUIPMENT_ID_COLUMN), None):
+            result.cells += 1
         origin = cell_text(saved_row.get(EQUIPMENT_ID_COLUMN))
         if _unit_name(work, position) != origin:
             _rename(work, patch, work.index(), row_id, origin)
-    return None
+            result.cells += 1
+    return result
 
 
 def _shift_dates(work: _Work, patch: _Patch, ids: Sequence[str], days: int) -> int:
@@ -1733,12 +1893,24 @@ def _texts(value: object) -> list[str] | None:
 
 
 def _apply_inverse(work: _Work, step: UndoStep) -> None:
-    """역 patch 를 얹는다 — 칸 먼저, 넣은 줄 빼기, 뺀 줄 다시 넣기."""
+    """역 patch 를 얹는다 — 칸 먼저, 넣은 줄 빼기, 뺀 줄 다시 넣기, 옮긴 id 돌리기. 통째 단계는 옛
+    세 표·칸 초안·이름 지도·불러온 목록을 사진 그대로 돌린다."""
     if step.kind == "whole" and step.frames is not None:
         work.baseline, work.master, work.downtime = (frame.copy() for frame in step.frames)
         work.changed = [True, True, True]
+        work.overlay = {key: text for key, text in step.overlay if text is not None}
+        work.overlay_changed = True
+        if step.renames is not None:
+            work.renames = step.renames
+            work.renames_changed = True
+        if step.loaded is not None:
+            work.loaded = list(step.loaded)
+        return
     for position, column, old in step.master:
         if position < len(work.master) and column in work.master.columns:
+            if column == EQUIPMENT_ID_COLUMN:
+                # 이름 바꿈을 되돌린다 — 화면 쪽이 고름·필터를 옛 이름으로 따라 옮긴다.
+                _note_rename(work.renamed, _unit_name(work, position), cell_text(old))
             _store(work.master, position, column, old)
             work.changed[1] = True
     for position, column, old in step.downtime:
@@ -1774,17 +1946,100 @@ def _apply_inverse(work: _Work, step: UndoStep) -> None:
     if step.renames is not None:
         work.renames = step.renames
         work.renames_changed = True
-    if step.loaded is not None:
-        work.loaded = list(step.loaded)
+    for old, new in reversed(step.moved):
+        work.loaded = [old if item == new else item for item in work.loaded]
+        _note_move(work.moved, new, old)
+    for position, row_id in sorted(step.unloaded):
+        if row_id not in work.loaded:
+            work.loaded.insert(min(position, len(work.loaded)), row_id)
+
+
+# ------------------------------------------------------------------ 가정 설비 시나리오 배치
+
+# 조작이 이 칸(또는 행 차례)을 바꿨을 때만 배치를 다시 맞춘다 — 3천 대에서 한 번 0.1초 남짓이라 칸
+# 고침마다 돌리지 않는다.
+_ROWS = "\x00rows"
+_PLACEMENT_TRIGGERS: Final = frozenset(
+    {EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN, *SCENARIO_LAYOUT_COLUMNS, _ROWS}
+)
+PLACED_TOAST: Final = (
+    "가정 설비 시나리오라 {count:,}대의 자리를 맞췄습니다(새 호기는 자리 없이 — 있는 묶음에 드는 "
+    "모듈은 그 묶음의 공식 동·층)"
+)
+
+
+def assumption_layout(
+    master: pd.DataFrame, saved: pd.DataFrame, renames: Mapping[str, str]
+) -> pd.DataFrame:
+    """가정 설비 시나리오 편집본(`master`)을 설비 시나리오 2단계 S2 규칙으로 맞춘 사본 — 설비 마스터
+    탭 제출·붙여넣기 미리보기의 `equipment_data_workspace.assumption_layout_lock(...).apply` 와 같은
+    판정이다(시험이 대조한다). 있던 호기(저장의 호기 키 규칙 `inherited_unit_names` — `renames` 는
+    저장 안 한 이름 지도)의 배치 일곱 칸은 저장본 값으로, 새 호기는 동·층·X좌표·Y좌표를 비우고,
+    있는 묶음에 드는 모듈과 묶음에 든 공식 동·층 미정 호기는 그 묶음의 공식 동·층으로
+    (`layout_overlay.assumption_common_places`). 그러면 가정 세션의 저장이 이 판의 화면이 보이지도
+    지우지도 못하는 배치 차이를 만들지 않는다."""
+    names = [name for name in _names(master) if name]
+    saved_names = set(_names(saved)) - {""}
+    origins = inherited_unit_names(names, saved_names, renames)
+    governed = assumption_common_places(master, saved, origins)
+    restore = {
+        name: origins[name]
+        for name in saved_layout_drift(saved, master, origins)
+        if name not in governed
+    }
+    return place_rows(
+        restore_saved_layout(master, saved, restore), misplaced_rows(master, governed)
+    )
+
+
+def _with_placement(work: _Work, step: UndoStep) -> UndoStep:
+    """가정 설비 시나리오면 조작 뒤 배치를 S2 규칙으로 맞추고 그 칸을 그 조작의 역 patch 에 더한다 —
+    되돌리면 조작과 함께 돌아간다."""
+    if not work.context.layout_lock or not (work.touched & _PLACEMENT_TRIGGERS):
+        return step
+    after = assumption_layout(work.master, work.saved[1], work.renames.units)
+    changes: list[tuple[int, str, Any, Any]] = []
+    for column in SCENARIO_LAYOUT_COLUMNS:
+        if column not in work.master.columns or column not in after.columns:
+            continue
+        pairs = zip(work.master[column].tolist(), after[column].tolist(), strict=True)
+        for position, (left, right) in enumerate(pairs):
+            if cell_text(left) != cell_text(right):
+                changes.append((position, column, left, right))
+    if not changes:
+        return step
+    known = {(position, column) for position, column, _ in step.master}
+    extra = tuple(
+        (position, column, left)
+        for position, column, left, _ in changes
+        if (position, column) not in known
+    )
+    for position, column, _, right in changes:
+        _store(work.master, position, column, right)
+    work.changed[1] = True
+    note = PLACED_TOAST.format(count=len({position for position, *_ in changes}))
+    if work.toast_fresh and work.toast:
+        work.toast = f"{work.toast} · {note}"
+    else:
+        work.say(note, undo=True)
+    return replace(step, master=step.master + extra)
 
 
 DELETE_TOAST: Final = (
     "{count}대를 지울 목록에 넣었습니다 — 리비전을 저장해야 실제로 지워집니다. 호기를 지우면 모든 "
     "설비 시나리오에서 사라집니다(이 시나리오에서만 빼려면 정지·반출/이설일정을 적으세요)"
 )
+# base 가 바뀌는 때는 여럿이다(내 리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) —
+# 서비스는 그 까닭을 모르므로 가르지 않고 적는다.
 DROPPED_TOAST: Final = (
-    "다른 사용자의 저장으로 편집본을 다시 세워, 그 전에 보낸 고침 {count}건은 반영하지 않았습니다"
+    "편집본을 다시 세운 뒤라(리비전 저장·모두 버리기·시나리오 불러오기·다른 사용자의 저장) 그 "
+    "전에 보낸 고침 {count}건은 반영하지 않았습니다"
 )
+UNDO_STALE_TOAST: Final = (
+    "그 뒤에 고친 것이 있어 되돌리지 않았습니다 — 마지막 고침부터 되돌리거나 「저장 전 변경」 에서 "
+    "칸·호기마다 저장본 값으로 되돌립니다"
+)
+UNDO_EMPTY_TOAST: Final = "되돌릴 고침이 없습니다"
 
 
 def _paste_toast(lines: int, changed: int, cut: int, skipped: int) -> str:
@@ -1834,8 +2089,7 @@ def _paste_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             else:
                 changed += result
     cut = int(op["cut"]) if isinstance(op.get("cut"), int) else 0
-    work.toast = _paste_toast(len(rows) + cut, changed, cut, skipped)
-    work.toast_undo = changed > 0
+    work.say(_paste_toast(len(rows) + cut, changed, cut, skipped), undo=changed > 0)
     return patch.step("붙여넣기")
 
 
@@ -1854,8 +2108,7 @@ def _set_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             work.refused += 1
         else:
             changed += result
-    work.toast = f"값 넣기 — {changed:,}칸 바뀜"
-    work.toast_undo = changed > 0
+    work.say(f"값 넣기 — {changed:,}칸 바뀜", undo=changed > 0)
     return patch.step("값 넣기")
 
 
@@ -1866,8 +2119,7 @@ def _shift_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         return None
     patch = _Patch()
     changed = _shift_dates(work, patch, ids, days)
-    work.toast = f"날짜 밀기 — {changed:,}칸 바뀜"
-    work.toast_undo = changed > 0
+    work.say(f"날짜 밀기 — {changed:,}칸 바뀜", undo=changed > 0)
     return patch.step("날짜 밀기")
 
 
@@ -1881,10 +2133,10 @@ def _delete_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     refused = work.refused - before
     if step is not None:
         count = len(step.master_removed) if step.master_removed is not None else 0
-        work.toast = DELETE_TOAST.format(count=count)
-        work.toast_undo = True
+        work.say(DELETE_TOAST.format(count=count), undo=True)
     if refused and work.context.delete_lock:
-        work.toast = (work.toast + " · " if work.toast else "") + work.context.delete_lock
+        text = f"{work.toast} · {work.context.delete_lock}" if step is not None else None
+        work.say(text or work.context.delete_lock, undo=step is not None)
     return step
 
 
@@ -1900,8 +2152,7 @@ def _restore_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     text = f"{restored:,}대를 되살렸습니다"
     if skipped:
         text += f" · 같은 설비명이 이미 있어 {skipped:,}대는 건너뜀"
-    work.toast = text
-    work.toast_undo = restored > 0
+    work.say(text, undo=restored > 0)
     return step
 
 
@@ -1911,19 +2162,42 @@ def _revert_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         work.refused += 1
         return None
     patch = _Patch()
-    structural = _revert(work, patch, row_id, column)
-    if structural is not None:
-        return structural
+    name = work.index().live.get(row_id)
+    label = _unit_name(work, name) if name is not None else ""
+    result = _revert(work, patch, row_id, column)
+    if result.restored:
+        restored = len(result.step.master_added) if result.step is not None else 0
+        work.say(f"{restored:,}대를 되살렸습니다", undo=restored > 0)
+        return result.step
+    if result.dropped:
+        if result.step is not None:
+            work.say(f"새 호기 {label}를 뺐습니다", undo=True)
+        return result.step
+    where = f"{label} {column}" if column is not None else label
+    text = f"저장본 값으로 되돌림 — {where} {result.cells:,}칸" if result.cells else ""
+    if result.kept:
+        kept = f"{MODULE_LOCK_REASON} — {result.kept:,}칸은 그대로 둡니다"
+        text = f"{text} · {kept}" if text else kept
+    if text:
+        work.say(text, undo=result.cells > 0)
     return patch.step("되돌림")
 
 
-def _undo_op(work: _Work) -> None:
+def _undo_op(work: _Work, op: Mapping[str, Any]) -> None:
+    """한 단계 되돌리기. `step`(토스트가 가리킨 단계 표지)이 있으면 그 단계가 맨 위일 때만 —
+    토스트 뒤에 토스트 없는 조작(칸 고침)이 쌓였거나 그 단계가 버려졌으면 다른 단계를 되돌리지 않고
+    알린다."""
+    target = op.get("step")
+    if isinstance(target, str) and target and undo_top(work.undo) != target:
+        work.refused += 1
+        work.say(UNDO_STALE_TOAST)
+        return
     if not work.undo:
+        work.say(UNDO_EMPTY_TOAST)
         return
     step = work.undo.pop()
     _apply_inverse(work, step)
-    work.toast = f"되돌림: {step.label}"
-    work.toast_undo = False
+    work.say(f"되돌림: {step.label}")
 
 
 _OPS = {
@@ -1938,15 +2212,24 @@ _OPS = {
 OP_NAMES: Final = frozenset({*_OPS, "undo"})
 
 
+def _op_token(op: Mapping[str, Any]) -> str:
+    """단계 표지 — 출납 op 는 `mount#seq`(마운트 안에서 한 번뿐), 꼴이 다르면 무작위."""
+    mount, seq = op.get("mount"), _seq(op.get("seq"))
+    if isinstance(mount, str) and mount and seq is not None:
+        return f"{mount}#{seq}"
+    return uuid.uuid4().hex[:12]
+
+
 def apply_ops(
     state: GridState, ops: Sequence[Mapping[str, Any]], context: GridContext
 ) -> GridApplied:
     """출납 op 를 차례대로 편집본에 얹는다(`pending_ops` 가 고른 것).
 
-    `base` 가 지금 편집본의 `context.base` 와 다른 op 는 반영하지 않고 버린다 — 남의 저장으로 다시
-    세운 편집본 위에 옛 편집을 얹지 않는다(그 수는 토스트 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의
-    저장본 호기 지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 내용이 그대로면 `changed` 가
-    거짓이다(세대를 올리지 않는다).
+    `base` 가 지금 편집본의 `context.base` 와 다른 op 는 반영하지 않고 버린다 — 다시 세운 편집본
+    위에 옛 편집을 얹지 않는다(그 수는 토스트 한 줄). 잠긴 칸·지운 표시 줄·낡은 세션의 저장본 호기
+    지우기는 브라우저가 막아도 여기서 한 번 더 막는다. 가정 설비 시나리오(`context.layout_lock`)면
+    이름·묶음·배치·행을 바꾼 op 뒤마다 배치를 S2 규칙으로 맞춘다(`assumption_layout`). 내용이
+    그대로면 `changed` 가 거짓이다(세대를 올리지 않는다).
     """
     work = _Work(
         baseline=state.frames[0],
@@ -1964,8 +2247,12 @@ def apply_ops(
             work.dropped += 1
             continue
         name = op.get("op")
+        work.toast_fresh = False
+        work.toast_undo = False
+        work.touched = set()
         if name == "undo":
-            _undo_op(work)
+            _undo_op(work, op)
+            work.toast_step = None
             continue
         handler = _OPS.get(str(name))
         if handler is None:
@@ -1974,7 +2261,10 @@ def apply_ops(
         renamed_before = work.rename_count
         step = handler(work, op)
         if step is not None:
+            step = replace(_with_placement(work, step), token=_op_token(op))
             work.undo = list(push_undo(work.undo, step))
+        if work.toast_fresh:
+            work.toast_step = step.token if step is not None and work.toast_undo else None
         if work.rename_count > renamed_before:
             # 이름을 바꾸면 행 조각을 든 앞 단계는 옛 이름을 지녀 버린다(그 단계까지 함께).
             work.undo = list(after_row_steps(work.undo))
@@ -1996,7 +2286,7 @@ def apply_ops(
         changed=changed,
         frames_changed=(work.changed[0], work.changed[1], work.changed[2]),
         toast=work.toast,
-        toast_undo=work.toast_undo,
+        toast_step=work.toast_step if work.toast_step == undo_top(work.undo) else None,
         moved=dict(work.moved),
         renamed=dict(work.renamed),
         dropped=work.dropped,
@@ -2004,13 +2294,14 @@ def apply_ops(
     )
 
 
-def whole_step(label: str, state: GridState) -> UndoStep:
+def whole_step(label: str, state: GridState, *, token: str | None = None) -> UndoStep:
     """통째 단계(엑셀·CSV 「편집본에 넣기」) — 옛 세 표·칸 초안·이름 지도·불러온 목록을 통째로
-    든다."""
+    든다. `token` 이 없으면 무작위 표지다(토스트 「되돌리기」 가 가리킨다)."""
     baseline, master, downtime = state.frames
     return UndoStep(
         label=label,
         kind="whole",
+        token=token or uuid.uuid4().hex[:12],
         frames=(baseline.copy(), master.copy(), downtime.copy()),
         overlay=tuple((key, text) for key, text in state.overlay.items()),
         renames=state.renames,

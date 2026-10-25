@@ -232,8 +232,9 @@ def test_row_ids_keep_the_saved_name_through_a_rename_and_mark_new_units() -> No
     assert index.deleted == ("s:" + names[2],)
     assert index.saved["s:" + names[2]] == 2
     assert index.is_new("n:NEW-1") and not index.is_new("s:" + names[0])
-    assert eg.saved_name_of("s:" + names[1]) == names[1]
-    assert eg.saved_name_of("n:NEW-1") is None
+    assert index.saved_name("s:" + names[1]) == names[1]
+    assert index.saved_name("s:" + names[2]) == names[2], "지운 표시 호기도"
+    assert index.saved_name("n:NEW-1") is None
 
 
 def test_duplicate_names_get_unique_ids() -> None:
@@ -241,8 +242,38 @@ def test_duplicate_names_get_unique_ids() -> None:
     master = pd.concat([saved, saved.iloc[[0]]], ignore_index=True)
     index = eg.grid_index(master, saved, {})
     first = "s:" + str(saved.loc[0, "설비명"])
-    assert index.ids[0] == first and index.ids[2] == first + "~2"
+    assert index.ids[0] == first and index.ids[2] == first + eg.DUPLICATE_MARK + "2"
     assert len(set(index.ids)) == 3
+    assert index.is_new(index.ids[2]) and index.saved_name(index.ids[2]) is None
+
+
+def test_a_saved_name_with_a_tilde_is_a_saved_unit() -> None:
+    """설비명 규칙은 「~」 를 받는다 — id 꼬리와 헷갈려 저장본 호기를 새 호기로 보지 않는다."""
+    saved = _saved()
+    master = saved[1].copy()
+    master.loc[3, "설비명"] = "WB~01"
+    named = (saved[0], master, saved[2])
+    frames = _copy(named)
+    frames[1].loc[3, "담당자"] = "고침"
+    view = _view(frames, named)
+    row_id = "s:WB~01"
+    assert view.index.saved_name(row_id) == "WB~01" and not view.index.is_new(row_id)
+    assert view.tags.get(row_id) is None
+    assert view.marks[row_id].changed == {eg.COLUMN_INDEX["담당자"]: "샘플 담당자"}
+    counts = eg.change_counts(view)
+    assert (counts.cells, counts.new) == (1, 0)
+
+
+def test_a_duplicate_tail_never_takes_a_saved_units_id() -> None:
+    """겹친 이름의 둘째 줄 id 가 다른 저장본 호기 id(「A~2」 꼴 이름)와 겹쳐 한 줄을 덮지 않는다."""
+    saved = sample_equipment_master(anchor_date=ANCHOR).head(3).reset_index(drop=True)
+    saved.loc[1, "설비명"] = "A"
+    saved.loc[2, "설비명"] = "A" + eg.DUPLICATE_MARK + "2"
+    master = pd.concat([saved, saved.iloc[[1]]], ignore_index=True)
+    index = eg.grid_index(master, saved, {})
+    assert len(set(index.ids)) == len(index.ids) == 4
+    assert index.live["s:A" + eg.DUPLICATE_MARK + "2"] == 2
+    assert index.is_new(index.ids[3])
 
 
 def test_save_id_map_follows_renames_new_units_and_deletions() -> None:
@@ -280,7 +311,7 @@ def test_all_load_ids_take_the_natural_name_order_only_over_the_limit() -> None:
     assert eg.all_load_ids(master, index, limit=10_000) == list(index.live)
     head = eg.all_load_ids(master, index, limit=5)
     names = sorted(master["설비명"].astype(str))[:5]
-    assert [eg.saved_name_of(row_id) for row_id in head] == names
+    assert [index.saved_name(row_id) for row_id in head] == names
 
 
 def test_prune_loaded_keeps_deleted_marks_and_drops_unknown_ids() -> None:
@@ -360,6 +391,28 @@ def test_a_cell_draft_replaces_the_value_and_reports_the_save_rule_message() -> 
     assert eg.change_counts(view).errors == 1
 
 
+def test_a_cell_draft_hides_the_rule_result_of_the_old_value_in_that_cell() -> None:
+    """초안이 있는 칸에는 초안 글이 보인다 — 편집본 옛 값의 규칙 오류를 같은 칸에 두 번 세지
+    않는다."""
+    saved = _saved()
+    frames = _copy(saved)
+    master = frames[1].astype(object)
+    master.loc[0, "Qual상태"] = None
+    frames = (frames[0], master, frames[2])
+    issues = equipment_master_issues(master)
+    row_id = eg.grid_index(master, saved[1], {}).ids[0]
+    assert any(item.position == 0 and item.column == "Qual상태" for item in issues)
+    view = _view(frames, saved, issues=issues, overlay={eg.overlay_key(row_id, "Qual상태"): "모름"})
+    same_cell = [item for item in view.errors if item[0] == row_id and item[2] == "Qual상태"]
+    assert len(same_cell) == 1 and "모름" not in same_cell[0][3]
+    assert view.marks[row_id].errors[eg.COLUMN_INDEX["Qual상태"]] == same_cell[0][3]
+    assert eg.change_counts(view).errors == len(view.errors)
+    plain = _view(frames, saved, issues=issues)
+    assert eg.change_counts(view).errors == eg.change_counts(plain).errors, (
+        "규칙 오류 대신 초안 오류"
+    )
+
+
 def test_locks_follow_module_groups_stale_sessions_and_assumption_layout() -> None:
     saved = _saved()
     frames = _copy(saved)
@@ -373,19 +426,28 @@ def test_locks_follow_module_groups_stale_sessions_and_assumption_layout() -> No
     module_row, plain_row = view.index.ids[0], view.index.ids[3]
     assert view.locks[module_row] == ("stale", "layout", "module")
     assert view.locks[plain_row] == ("stale", "layout")
-    assert view.locks["n:NEW-1"] == ("stale",), "새 호기의 배치는 막지 않는다"
+    assert view.locks["n:NEW-1"] == ("stale", "place"), "새 호기는 자리 없이(S2)"
     assert eg.lock_of(view, module_row, "X좌표") == "layout"
     assert eg.lock_of(view, plain_row, "반입일정") == "stale"
-    assert eg.lock_of(view, "n:NEW-1", "동") is None
+    for column in ("동", "층", "X좌표", "Y좌표"):
+        assert eg.lock_of(view, "n:NEW-1", column) == "place", column
+    for column in ("Xsize", "Ysize", "레이아웃표시"):
+        assert eg.lock_of(view, "n:NEW-1", column) is None, "크기·레이아웃표시는 받는다"
     assert context.lock_reasons()["stale"] == "낡음"
+    assert context.lock_reasons()["place"] == context.lock_reasons()["layout"] == "가정 배치"
 
 
 def test_grid_data_is_plain_json_in_loaded_order() -> None:
     saved = _saved()
     view = _view(_copy(saved), saved, alerts={saved[1].iloc[1]["설비명"]: "Qual 미확인"})
     loaded = list(view.index.ids[:3])[::-1] + ["s:NOPE"]
-    data = eg.grid_data(view, loaded, toast={"id": 1, "text": "t", "undo": True})
+    data = eg.grid_data(
+        view, loaded, toast={"id": 1, "text": "t", "undo": "m#3"}, undo_top="m#3", open_id=loaded[1]
+    )
     json.dumps(data, allow_nan=False)
+    assert data["toast"] == {"id": 1, "text": "t", "undo": "m#3"}
+    assert data["open"] == loaded[1], "상세에 연 줄(띠)"
+    assert eg.grid_data(view, loaded, open_id="s:NOPE")["open"] is None
     assert [row["id"] for row in data["rows"]] == loaded[:3]
     assert data["view"] == eg.view_token(loaded[:3])
     assert data["counts"] == {"loaded": 3, "total": len(saved[1]), "limit": eg.GRID_ROW_LIMIT}
@@ -394,6 +456,17 @@ def test_grid_data_is_plain_json_in_loaded_order() -> None:
     assert all(len(row["values"]) == 39 for row in data["rows"])
     assert data["colSets"][0][3] == [eg.COLUMN_INDEX[c] for c in eg.COLUMN_SETS[0].columns]
     assert eg.grid_data(view, loaded) == eg.grid_data(view, loaded), "같은 입력이면 같은 data"
+
+
+def test_a_toast_keeps_its_undo_only_while_its_step_is_on_top() -> None:
+    """토스트 뒤에 토스트 없는 조작(칸 고침)이 쌓이면 「되돌리기」 를 거둔다 — 누르면 다른 단계가
+    되돌아간다."""
+    toast = {"id": 4, "text": "값 넣기 — 3칸 바뀜", "undo": "m#7"}
+    assert eg.toast_payload(toast, "m#7") == toast
+    assert eg.toast_payload(toast, "m#8") == {**toast, "undo": None}
+    assert eg.toast_payload(toast, None) == {**toast, "undo": None}
+    assert eg.toast_payload({**toast, "undo": True}, "m#7") == {**toast, "undo": None}, "표지만"
+    assert eg.toast_payload(None, "m#7") is None
 
 
 def test_view_token_changes_with_order() -> None:
@@ -455,6 +528,24 @@ def test_detail_data_carries_meta_downtime_and_the_delete_lock() -> None:
     assert unit["deletable"] is False and unit["deleteLock"] == "낡음"
     assert data["groups"][0][4][0] == eg.NAME_INDEX
     assert eg.detail_data(view, "s:NOPE")["unit"] is None
+
+
+def test_side_mounts_carry_their_own_ack_and_toast() -> None:
+    """오른쪽 칸도 출납을 보낸다 — ack 가 없으면 반영된 op 를 들고 있다가 다시 보내고, 상세 「이
+    호기 지우기」 토스트·되돌리기를 그릴 자리가 없다."""
+    saved = _saved()
+    view = _view(_copy(saved), saved)
+    ack = {"mount": "m-side", "seq": 4}
+    toast = {"id": 2, "text": "1대를 지울 목록에 넣었습니다", "undo": "m-side#4"}
+    for data in (
+        eg.detail_data(view, view.index.ids[0], ack=ack, toast=toast, undo_top="m-side#4"),
+        eg.changes_data(view, ack=ack, toast=toast, undo_top="m-side#4"),
+    ):
+        json.dumps(data, allow_nan=False)
+        assert data["ack"] == ack and data["toast"] == toast
+    assert eg.detail_data(view, None)["ack"] == {} and eg.changes_data(view)["toast"] is None
+    stale = eg.changes_data(view, ack=ack, toast=toast, undo_top="other#1")
+    assert stale["toast"]["undo"] is None
 
 
 def test_changes_data_counts_and_caps_lines() -> None:
