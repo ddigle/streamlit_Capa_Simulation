@@ -1034,8 +1034,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   다음 주기에 `frame_contracts.py` 로 합칠 임시 자리라 새 검증을 더 쌓지 않는다.
 - `src/capa_simulation/services/virtual_product.py` — 기준정보를 새 제품 키로 복제해 가상 제품을 만든다(8표, 계획 수량 0).
 - `src/capa_simulation/services/iso_week_calendar.py` — ISO 주차 캘린더와 `YY-W##` 주차 코드 파싱을 제공한다.
-- `src/capa_simulation/services/korean_particle.py` — 이름 뒤 조사를 끝소리로 고른다(8장). 패키지를 import 하지 않는
-  `scripts/apply_deploy_package.py` 는 고정 명사를 사이에 둔다.
+- `src/capa_simulation/services/korean_particle.py` — 값 뒤 조사(을/를·은/는·이/가·으로/로)를 끝소리로 고르는 단일
+  정의다(8장 — `tests/test_particle_sites.py` 가 지킨다). 패키지를 import 하지 않는 `scripts/apply_deploy_package.py` 는 고정
+  명사를 사이에 둔다.
 - `src/capa_simulation/services/weekly_availability_input.py` — 표준 목표 수동 가용대수 입력 표 계약이다(설비 Repository 도
   쓴다). 붙여넣기에서만 빈칸을 「그대로 둠」으로 떨어뜨리고, 보유 공정 밖 이름은 `known_processes` 로 거절한다.
 - `src/capa_simulation/services/standard_target_logic.py` — 공정·주차 하나의 표준 목표를 제품·WF Mix 로 분해한다.
@@ -3501,9 +3502,20 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   숫자는 정의하는 화면 한 곳에만 둔다.
 - 조건부 안내·경고는 건수가 0 이면 아무것도 그리지 않는다 — 없는 날 자리를 차지하면 있는 날에도 읽히지 않는다(자리
   고정이 필요하면 늘 서 있는 빈 `st.container()` 칸만 둔다, 9장).
-- **값이 들어가는 자리 뒤의 조사는 `services/korean_particle.py` 로 고른다**(시나리오명·공식버전명·리비전 번호·공정·
-  호기를 넣는 알림·오류·스크립트 출력). 고르기 어려우면 고정 명사를 사이에 둔다(「「…」 공정은」·「{label} 값은」). 한
-  라벨에만 쓰는 고정 문구는 그 라벨에 맞춘 조사를 그대로 둔다.
+- **값 뒤 조사는 `services/korean_particle.py` 만 — 시험이 지킨다.** f-string·`str.format`·`%s` 틀에 끼운 값(시나리오명·
+  공식버전명·리비전 번호·공정·호기·칸 이름·숫자·날짜를 넣는 알림·오류·로그·스크립트 출력) 바로 뒤에 조사를 못박지 않고
+  `with_object_particle`·`with_topic_particle`·`with_subject_particle`·`with_direction_particle`(조사만 따로 쓸 때
+  `*_particle`)로 붙여 쓴다 — 값과 조사 사이를 띄우지 않는다(「r1을」). 손으로 박은 갈래 꼴(「{x}은(는)」)도 쓰지 않는다 —
+  도우미가 읽지 못하는 끝(영문)에서 같은 꼴을 낸다. 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름의 `F`·`DB`·`size`·`Capa`)은
+  도우미의 읽기 표 `_LATIN_TAIL_FINAL` 이 읽는다 — 새 고정 어휘가 갈래 꼴로 떨어지면 거기에 더하고(JS `withJosa` 표도),
+  사람이 붙인 이름의 영문 끝은 더하지 않는다. `tests/test_particle_sites.py` 가 `app.py`·`app_pages`·`src` 를 AST 로
+  훑어 붙은 꼴·띄운 꼴·갈래 꼴과 `{…}`·`%s` 틀 뒤 고정 조사를 막는다. 배치 편집기 JS 의 `${…}` 뒤는 `editor.js` 의
+  `withJosa`(같은 표 — 같은 시험이 node 로 파이썬과 대조한다)로 고른다. 굵게 감싼 이름은 닫는 `**` 와 조사 사이를 한 칸
+  띄운다(`**{x}** {subject_particle(x)}` — 붙이면 `)` 로 끝나는 이름에서 굵게가 풀린다). ALL_CAPS 상수 뒤에는 고정 조사를
+  둘 수 있고, 시험이 그 상수의 실제 글(서식 지정까지)로 견준다 — 끝이 영문이면 시험의 읽기 표(`_READINGS`)에 읽기를
+  적는다. 괄호 뒤 조사(「최신(r6)이」)는 괄호 앞 낱말에 붙으므로 그대로 둔다. 한 칸 띄운 「이」는 지시어(「{x} 이
+  시나리오」)와 갈리지 않아 시험이 보지 않는다 — 리뷰 몫이다. 고르기 어려우면 고정 명사를 사이에 둔다(「「…」 공정은」·
+  「{label} 값은」). 한 라벨에만 쓰는 고정 문구(값을 끼우지 않는 글)는 그 라벨에 맞춘 조사를 그대로 둔다.
 - **화면 사용 설명은 본문이 아니라 Guide 에 둔다.** 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 이고 화면이
   `page_guide.render_page_guide` 를 진행 막대 자리(`render_page_header_with_status`)보다 먼저 부른다. 옮긴 핵심 문구는 화면
   테스트(`test_*_guide_carries_*`)가 대조한다. 누르기 전에 알아야 하는 경고(되돌릴 수 없는 저장)는 버튼 곁에 남긴다.
@@ -3949,8 +3961,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   뒤 `st.html` 로 넘긴다. 제목·이름처럼 마크다운으로 그려지는 자리(`st.expander` 라벨·`st.caption`·`st.markdown`·
   알림 상자)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
-  보는 사람마다 그 주소를 부르는 이미지가 된다. 조사는 escape 하기 전의 글로 고른다 — escape 한 글은 `\)` 의 `\` 를
-  끝 글자로 읽어 「WB(2)는」이 「WB(2)은(는)」이 된다(`tests/test_process_capa_detail_page.py`).
+  보는 사람마다 그 주소를 부르는 이미지가 된다. 조사 도우미는 escape 의 `\` 를 건너뛰므로 감싼 뒤의 글로 골라도
+  escape 하기 전과 같은 조사다(「WB\(2\)」→「는」, `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다.
 - 앱이 지은 거부·안내 문구를 알림 상자(`st.error`·`st.warning`·`st.info`·`st.success`)에 넣을 때 그 문구가 범위 물결표(「동은
   C1~C5, 층은 1F~6F」)를 품을 수 있으면 `literal_markdown.markdown_safe_tildes` 로 감싼다 — 물결표 둘이면 가운데가 지움선이 된다.
   구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다

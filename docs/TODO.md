@@ -648,6 +648,11 @@
 
 ### 코드 정리(리팩토링 잔여)
 
+- [ ] **값 뒤 조사 그물 밖 두 자리**(2026-10-26 `particle-single-path` 후속) — `page_tabs_state.LIMIT_NOTICE` 의 손으로 박은
+  「「{label}」을(를)」(틀을 넣는 쪽이 `with_object_particle` 로 고르게)과 `bigdataquery_registration` 의 문자열 더하기
+  「" 과 ".join(…) + " 이(가)"」(고정 글 둘이라 틀린 조사는 아니다). 둘 다 다른 갈래가 같은 때 고치던 파일이라 두었다. 그물
+  (`tests/test_particle_sites.py`)은 문자열 더하기·`join` 구분자를 보지 않는다.
+
 - [~] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없는 순수 유지보수 비용이라 다른 일 뒤로 둔다.
   분류 컬럼 폭 계산과 `go.Table` 두 벌 조립은 `monthly_table_base` 로 올렸다. **남은 것**: 격자 머리 여섯 호출과 반복 접두
   생략 루프 — 두 모듈의 `_add_table_grid` 머리, `grouped_monthly_table._grouped_values`·
@@ -815,6 +820,25 @@
 
 ### 화면
 
+- (2026-10-26) **값 뒤 조사는 `korean_particle` 한 길 — 끼운 값 뒤 고정 조사 0곳**(리팩토링 `particle-single-path`, 밤사이
+  권장대로) — E2E 회차마다 고친 자리만 고쳐지고 같은 꼴(「공식 v4 으로」·「4 을」·「27-06 가」)이 다른 파일에서 다시 나오던 것:
+  f-string 에 끼운 런타임 값 뒤 고정 조사(붙은 꼴·한 칸 띄운 꼴·손으로 박은 「은(는)」·「(으)로」 꼴, 진짜 조사였던 띄운 「이」 넷)를
+  모두 `with_*_particle` 로 바꾸고(띄운 꼴은 붙은 꼴 — 「r1을」), `with_subject_particle` 을 더했고, 도우미가 escape 의 `\` 와
+  `%`(받침 없음)를 읽게 했다 — `literal_markdown` 으로 감싼 뒤 골라도 같은 조사다(AGENTS 9장의 차례 제약을 지웠다). 배치
+  편집기 JS 세 자리는 같은 표의 `withJosa`. `tests/test_particle_sites.py` 가 AST 로 f-string·`str.format`·`%s` 틀·JS `${…}`
+  뒤 고정 조사를 막고(허용 목록 없음), ALL_CAPS 상수 뒤 조사는 그 상수의 실제 글로 견준다(영문 끝은 시험의 읽기 표). 정한 것(대안):
+  - 영문 끝은 갈래 꼴이 규칙이지만 이 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름 「C1 1F」의 `F`·「설비 DB」의 `DB`·
+    「Xsize」의 `size`·「투자Capa」의 `Capa`)은 도우미의 읽기 표(`_LATIN_TAIL_FINAL`, JS 같은 표)로 읽는다 — 사람이 고른
+    「C2 2F 는」·「설비 DB 가」·「Xsize를」 이 도우미로 옮기며 갈래 꼴로 떨어지지 않게. 사람이 붙인 이름(「Final Test」·「EQ-X」·
+    「셋업 B」)·CD 환경변수·모듈 이름은 갈래 꼴 그대로다(「「Final Test」이(가) 없어」 — 전에는 「가」). 대안: 표 없이 모두
+    갈래 꼴(명세 그대로 — 「Xsize을(를)」·「설비 DB이(가)」)·영문 자모 읽기 전체(약어와 낱말이 갈리지 않아 「USER」가 「알」).
+  - 굵게 감싼 이름은 닫는 `**` 와 조사 사이를 한 칸 띄운다(`**{x}** {subject_particle(x)}` — 붙이면 `)` 로 끝나는 이름에서
+    굵게가 풀린다). 대안: 붙이기(「**WB(2)**가」 가 굵게 없이 찍힌다).
+  - 시험은 갈래 꼴(「{x}은(는)」)도 막는다(명세는 뺐다 — 모두 고쳤으므로 다시 들지 않게). `str.format` 틀은 고정 조사만 본다 —
+    `page_tabs_state.LIMIT_NOTICE` 의 「「{label}」을(를)」 은 다른 갈래 파일이라 두었다(아래 2장 「코드 정리」).
+  - 상수 뒤 조사는 띄운 꼴도 그대로 두고 검사만 한다(「`CAPA_ARTIFACTORY_USER` 는」). 대안: 붙은 꼴로 맞추기(문구만 바뀐다).
+  관련: `services/korean_particle.py`·`components/space_layout_editor_assets/editor.js`·`tests/test_particle_sites.py`·
+  `tests/test_korean_particle.py`
 - (2026-10-26) **Space 층 배치 잠금 까닭은 잠금 줄에 한 번만**(브라우저 E2E r2 eq-flows, 밤사이 권장대로) — 층 배치가 잠긴
   회차(남이 그 가정 시나리오에 다른 배치를 저장·공식 시나리오가 바뀜)에 저장 안 한 배치 상자의 캡션과 바로 아래 잠금 줄이 같은
   까닭(「「가정 R3」 r10 에 다른 배치가 저장됐습니다 — … 최신 r10을 불러오세요」 등)을 두 번 적던 것: 상자는 「배치 편집이 잠겨
