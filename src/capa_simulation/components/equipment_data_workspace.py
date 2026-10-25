@@ -1121,8 +1121,8 @@ def layout_lock_origins(
 @dataclass(frozen=True)
 class LayoutLock:
     """편집본에서 저장본(세션 저장본 — 가정 세션이면 그 시나리오의 배치)과 다른 배치 — 「배치 변경만
-    버리기」 와 배치 편집이 잠긴 회차(`space_edit_mode(...).layout == "locked"`)의 제출 검사가 이
-    값으로 되돌린다.
+    버리기」 가 이 값으로 되돌리고(`apply`), 배치 편집이 잠긴 회차(`space_edit_mode(...).layout ==
+    "locked"`)의 붙여넣기 거절(`layout_paste_refusal`)이 이 값의 호기를 적는다.
 
     - `restore` — 배치 일곱 칸을 저장본 값으로 되돌릴 있던 호기(지금 설비명 → 저장본 설비명).
     - `place` — 자리 없이 맞출 행(지금 설비명 → 일곱 칸 — 새 호기는 동·층·X좌표·Y좌표를 비우고,
@@ -1350,47 +1350,6 @@ def discard_layout_edits() -> None:
         st.session_state.pop(key, None)
 
 
-def layout_lock_refusal(
-    names: Sequence[str],
-    *,
-    reason: str | None,
-    pasted: bool,
-    held: bool = False,
-    placed: Sequence[str] = (),
-) -> str:
-    """배치 편집이 잠긴 회차(`reason` — `space_edit_mode` 의 잠금 까닭)에 배치 칸을 고친 제출·
-    붙여넣기 글 — `names` 는 배치 칸을 고친 있던 호기, `placed` 는 자리 없이 맞춘(붙여넣기면 맞춰야
-    할) 새 호기다. `held` 는 그 제출이 저장·미리보기 단추였다는 뜻이다 — 고친 칸을 보게 그 회차
-    저장·미리보기는 하지 않는다."""
-    units = f"있던 호기 {len(names):,}대({_sample_names(names)})"
-    news = f"새 호기 {len(placed):,}대({_sample_names(placed)})"
-    why = f" — {reason}" if reason else ""
-    if pasted:
-        moves = f"{units}의 배치 칸을"
-        places = f"{news}에 자리(동·층·X좌표·Y좌표)를"
-        if names and placed:
-            what = f"{moves} 바꾸고 {places} 넣습니다"
-        elif names:
-            what = f"{moves} 바꿉니다"
-        else:
-            what = f"{places} 넣습니다"
-        head = f"붙여넣기가 {what} — 배치 편집이 잠겨 있어 미리보지 않았습니다{why}"
-        if names:
-            head += " 있던 호기의 배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요."
-        if placed:
-            head += " 새 호기는 동·층·X좌표·Y좌표를 비우고 다시 붙여넣으세요."
-        return head
-    parts = []
-    if names:
-        parts.append(f"{units}의 배치 칸 고침은 저장본 값으로 되돌리고")
-    if placed:
-        parts.append(f"{news}는 자리 없이 넣도록 동·층·X좌표·Y좌표를 맞추고")
-    head = f"배치 편집이 잠겨 있어 {' '.join(parts)} 나머지 편집은 편집본에 반영했습니다{why}"
-    if held:
-        head += " 이번에 누른 저장·미리보기는 하지 않았습니다 — 바뀐 칸을 보고 다시 누르세요."
-    return head
-
-
 def layout_paste_refusal(
     review: ImportReview,
     *,
@@ -1398,18 +1357,33 @@ def layout_paste_refusal(
     renames: Mapping[str, str],
     reason: str | None,
 ) -> str | None:
-    """배치 편집이 잠긴 회차에 배치를 바꾸는 설비 마스터 붙여넣기를 미리보기 전에 막는다(`saved` 는
-    세션 저장본, `renames` 는 저장 안 한 이름 지도): 있던 호기의 배치 칸을 저장본과 다르게 하거나,
-    새 호기에 자리(동·층·X좌표·Y좌표)를 넣는 것. 새 호기 행 자체·크기·레이아웃표시는 받는다. 막을
-    것이 없으면 None."""
+    """배치 편집이 잠긴 회차(`reason` — `space_edit_mode` 의 잠금 까닭)에 배치를 바꾸는 설비 마스터
+    붙여넣기를 미리보기 전에 막는 글(`saved` 는 세션 저장본, `renames` 는 저장 안 한 이름 지도):
+    있던 호기의 배치 칸을 저장본과 다르게 하거나, 새 호기에 자리(동·층·X좌표·Y좌표)를 넣는 것. 새
+    호기 행 자체·크기·레이아웃표시는 받는다. 막을 것이 없으면 None. 잠긴 회차의 표는 배치 칸을
+    잠그므로(`render_equipment_master_tab(layout_mode=)`) 이 파일의 잠긴 회차 배치 거절 글은 이것
+    하나다."""
     if review.target != "설비 마스터":
         return None
     lock = layout_edits(review.candidate[1], saved, renames)
     if not lock:
         return None
-    return layout_lock_refusal(
-        list(lock.restore), reason=reason, pasted=True, placed=list(lock.place)
-    )
+    names, placed = list(lock.restore), list(lock.place)
+    moves = f"있던 호기 {len(names):,}대({_sample_names(names)})의 배치 칸을"
+    places = f"새 호기 {len(placed):,}대({_sample_names(placed)})에 자리(동·층·X좌표·Y좌표)를"
+    if names and placed:
+        what = f"{moves} 바꾸고 {places} 넣습니다"
+    elif names:
+        what = f"{moves} 바꿉니다"
+    else:
+        what = f"{places} 넣습니다"
+    why = f" — {reason}" if reason else ""
+    head = f"붙여넣기가 {what} — 배치 편집이 잠겨 있어 미리보지 않았습니다{why}"
+    if names:
+        head += " 있던 호기의 배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요."
+    if placed:
+        head += " 새 호기는 동·층·X좌표·Y좌표를 비우고 다시 붙여넣으세요."
+    return head
 
 
 def assumption_group_paste_refusal(
@@ -2216,47 +2190,31 @@ def _without_example_rows(baseline: pd.DataFrame) -> pd.DataFrame:
     return baseline.loc[~baseline.index.isin(leftovers.index)].reset_index(drop=True)
 
 
-def _example_row_count(frames: Frames, pending: object) -> int:
-    """저장이 막을 예시 행 수.
-
-    검토 후보가 있으면 **그쪽만** 센다. `candidate[0]` 은 버퍼를 merge 한 결과라 버퍼의
-    예시 행을 이미 품고 있어, 둘을 더하면 같은 행을 두 번 세고 지운 뒤에도 수가 남는다.
-    """
-    baseline = pending.candidate[0] if isinstance(pending, ImportReview) else frames[0]
-    return len(_example_baseline_rows(baseline))
+def _example_row_count(frames: Frames) -> int:
+    """편집본에서 저장이 막을 예시 행 수(기존 보유대수 — `_example_baseline_rows`)."""
+    return len(_example_baseline_rows(frames[0]))
 
 
-def _drop_example_rows(*, floor_canvases: FloorCanvasMap) -> None:
-    """예시 행을 편집본과 검토 후보에서 **함께** 뺀다.
+def _drop_example_rows() -> None:
+    """「예시 행 n건 지우기」 — 예시 행을 편집본에서 빼고 세션 표지를 남긴다.
 
-    후보에서만 빼면 되돌아온다 — 원문이 그대로라 재검토(`matches()` 가 깨질 때)가 원문을
-    다시 읽고 예시 줄을 또 넣는다. 그래서 세션 플래그를 남겨 이후의 모든
-    `build_import_review` 가 merge 전에 같은 행을 뺀 채 돌게 한다.
+    표지(`DROP_EXAMPLE_ROWS_KEY`)가 있으면 이후의 모든 `build_import_review` 가 merge 전에 같은
+    행을 뺀다 — 원문이 그대로라 다시 미리보면 예시 줄이 또 들어오기 때문이다. 편집본은 표 밖 길
+    (`replace_equipment_buffer`)로 바꾼다 — 남은 붙여넣기 미리보기·삭제 대기도 다른 길처럼 거둔다
+    (미리보기는 「엑셀·CSV로 한꺼번에」 팝업이 다시 짓는다 — 그 팝업만 배치 역할·「배치 칸도
+    붙여넣기」·공식 자리를 안다).
 
     **저장 검증은 건드리지 않는다.** 이것은 저장을 눌러야 알던 것을 누르기 전에 말하고
     한 번에 지우는 길일 뿐이다. 콜백은 위젯이 만들어지기 전에 돌므로 editor 키를 비우는
     것이 안전하고, `st.rerun` 은 부르지 않는다 — `on_click` 이 이미 한 회차를 돌린다.
     """
     frames: Frames = st.session_state[BUFFER_KEY]
-    pending = st.session_state.get(PREVIEW_KEY)
-    removed = _example_row_count(frames, pending)
+    removed = _example_row_count(frames)
     st.session_state[DROP_EXAMPLE_ROWS_KEY] = True
-    _remember_edits((_without_example_rows(frames[0]), frames[1], frames[2]))
-    if isinstance(pending, ImportReview):
-        try:
-            st.session_state[PREVIEW_KEY] = build_import_review(
-                pending.target,
-                pending.payload,
-                st.session_state[BUFFER_KEY],
-                floor_canvases=floor_canvases,
-                drop_examples=True,
-            )
-        except BOOTSTRAP_ERRORS as exc:
-            st.session_state.pop(PREVIEW_KEY, None)
-            st.session_state[_ERROR_KEY] = str(exc)
-            return
+    replace_equipment_buffer((_without_example_rows(frames[0]), frames[1], frames[2]))
     st.session_state[_NOTICE_KEY] = (
-        f"예시 행 {removed:,}건을 빼고 검토했습니다. 저장 검증은 그대로 돕니다."
+        f"예시 행 {removed:,}건을 편집본에서 뺐습니다. 다음 붙여넣기·CSV 미리보기도 예시 행을 빼고 "
+        "검토합니다 — 저장 검증은 그대로 돕니다."
     )
 
 
@@ -2922,7 +2880,6 @@ def render_small_editor(
     stale: bool,
     delete_locked: str | None,
     drafts_replaced: bool,
-    floor_canvases: FloorCanvasMap,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -2958,7 +2915,7 @@ def render_small_editor(
         if isinstance(notice, str):
             st.info(notice)
         if baseline_table:
-            example_rows = _example_row_count(frames, None)
+            example_rows = _example_row_count(frames)
             if example_rows:
                 st.warning(
                     f"기존 보유대수에 손대지 않은 예시 행 {example_rows:,}건 — 저장이 막힙니다"
@@ -2969,7 +2926,6 @@ def render_small_editor(
                     icon=":material/delete_sweep:",
                     key=EXAMPLE_DROP_BUTTON_KEY,
                     on_click=_drop_example_rows,
-                    kwargs={"floor_canvases": floor_canvases},
                 )
     selection = _current_selection()
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
@@ -3245,7 +3201,7 @@ def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, 
 
 
 # 가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인 필요」·표 풍선)이 볼 마스터 한 벌 —
-# ((공식 토큰, 편집본 세대, 미리보기), 표).
+# ((공식 토큰, 편집본 세대), 표).
 _CONFIRMATION_OFFICIAL_KEY = "equipment_schedule_confirmation_official_v1"
 
 
@@ -3272,14 +3228,13 @@ def official_confirmation_master(master: pd.DataFrame, official: EquipmentSnapsh
     return result
 
 
-def _confirmation_master(
-    master: pd.DataFrame, official: EquipmentSnapshot | None, preview: object
-) -> pd.DataFrame:
-    """일정 확인 목록이 볼 마스터. 공식 기준이면 세션 칸에 한 벌(공식 토큰·편집본 세대·미리보기로
-    키) — 설비 마스터 탭은 표 출납마다 회차가 돌므로 바뀐 것이 없는 회차에 다시 짓지 않는다."""
+def _confirmation_master(master: pd.DataFrame, official: EquipmentSnapshot | None) -> pd.DataFrame:
+    """일정 확인 목록이 볼 마스터(`master` 는 편집본 설비 마스터). 공식 기준이면 세션 칸에 한
+    벌(공식 토큰·편집본 세대로 키) — 설비 마스터 탭은 표 출납마다 회차가 돌므로 바뀐 것이 없는
+    회차에 다시 짓지 않는다."""
     if official is None:
         return master
-    key = (official.token, equipment_buffer_generation(), id(preview) if preview else None)
+    key = (official.token, equipment_buffer_generation())
     memo = st.session_state.get(_CONFIRMATION_OFFICIAL_KEY)
     if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == key:
         cached = memo[1]

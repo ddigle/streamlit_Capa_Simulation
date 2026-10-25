@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
@@ -36,6 +37,7 @@ from test_equipment_scenario_repository import (
     _with_unit,
 )
 
+from capa_simulation.components import equipment_data_workspace as workspace
 from capa_simulation.components.app_header import equipment_header_suffix
 from capa_simulation.components.equipment_data_workspace import official_confirmation_master
 from capa_simulation.components.equipment_scenario_management import (
@@ -307,6 +309,16 @@ def test_an_assumption_sees_unconfirmed_by_the_official_schedule(tmp_path: Path)
     done = _set(mine.equipment, "EQ-01", "Qual실적", "2026-08-09")
     done = _set(done, "EQ-01", "Qual상태", "완료")
     assert _qual_unconfirmed(official_confirmation_master(done, official)) == set()
+
+
+def test_the_confirmation_memo_keys_on_the_official_token_and_buffer_generation() -> None:
+    """설비 마스터 탭의 일정 확인 마스터 메모(`_confirmation_master`)는 공식 토큰 · 편집본 세대로만
+    키를 잡는다 — 옛 폼이 넘기던 붙여넣기 미리보기 후보 칸(`preview`)은 개편 D 리뷰 rs-d 로 걷었다
+    (부르는 곳은 탭 하나이고 늘 없음을 넘겼다)."""
+    parameters = inspect.signature(workspace._confirmation_master).parameters
+
+    assert list(parameters) == ["master", "official"]
+    assert "preview" not in inspect.getsource(workspace._confirmation_master)
 
 
 # ── app.py 와 함께 ─────────────────────────────────────────────────────────────────────

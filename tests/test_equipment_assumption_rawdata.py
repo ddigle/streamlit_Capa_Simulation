@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_equipment_scenario_repository import _clone, _seeded, _session, _with_unit
 
+from capa_simulation.components import equipment_data_workspace as workspace
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
@@ -246,6 +248,32 @@ def test_the_locked_paste_check_takes_new_units_and_unchanged_layout_cells(
     # 다른 표의 붙여넣기는 보지 않는다.
     downtime = ImportReview("비가동 일정", "붙여넣기", frames, frames, pd.DataFrame())
     assert layout_paste_refusal(downtime, saved=saved, renames={}, reason=None) is None
+
+
+def test_the_locked_paste_refusal_is_the_one_lock_text_left(tmp_path: Path) -> None:
+    """잠긴 회차의 배치 거절 글은 붙여넣기 미리보기 앞 하나뿐이다(개편 D 리뷰 rs-d). 옛 폼의 「잠긴
+    회차 제출 되돌림」 글(「… 나머지 편집은 편집본에 반영했습니다」·「이번에 누른 저장·미리보기는
+    하지 않았습니다」)과 그 갈래를 고르던 글 함수(`layout_lock_refusal` — `pasted`·`held`)는 걷었다
+    — 지금은 표가 배치 칸을 잠그고 붙여넣기는 거절만 한다. 있던 호기와 새 호기가 함께 걸린 글 전체를
+    고정한다."""
+    repository = _seeded(tmp_path)
+    current = _session(repository)
+    frames = (current.baseline, current.equipment, current.downtime)
+    master = _with_unit(current.equipment.assign(레이아웃표시=["N", "Y"]), "EQ-NEW", 70.0, 층="2F")
+    review = ImportReview(
+        "설비 마스터", "붙여넣기", frames, (frames[0], master, frames[2]), pd.DataFrame()
+    )
+
+    refusal = layout_paste_refusal(review, saved=current.equipment, renames={}, reason=LOCK_REASON)
+
+    assert refusal == (
+        "붙여넣기가 있던 호기 1대(EQ-01)의 배치 칸을 바꾸고 새 호기 1대(EQ-NEW)에 자리(동·층·X좌표·"
+        "Y좌표)를 넣습니다 — 배치 편집이 잠겨 있어 미리보지 않았습니다 — 시험 잠금 있던 호기의 "
+        "배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요. 새 호기는 동·층·X좌표·Y좌표를 비우고 "
+        "다시 붙여넣으세요."
+    )
+    assert not hasattr(workspace, "layout_lock_refusal")
+    assert "편집본에 반영했습니다" not in inspect.getsource(workspace)
 
 
 def test_the_lock_aligns_new_modules_and_undecided_units_to_their_groups_official_floor() -> None:

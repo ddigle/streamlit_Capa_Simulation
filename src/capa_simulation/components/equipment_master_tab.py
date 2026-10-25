@@ -468,7 +468,7 @@ def _table_errors(
         )
     except ValueError as exc:
         errors.append(f"비가동 일정 — {exc}")
-    examples = _example_row_count(frames, None)
+    examples = _example_row_count(frames)
     if examples:
         errors.append(
             f"기존 보유대수에 손대지 않은 예시 행 {examples:,}건 — 표 고르기 「기존 보유대수」 "
@@ -506,9 +506,7 @@ def _alerts(
 ) -> dict[str, str]:
     """설비명 → 일정 확인 갈래 글(「Qual 미확인 · 반입 실적 누락」) — 저장을 막지 않는다. 가정 설비
     시나리오면 공식 일정 기준이다(`official`)."""
-    issues = get_schedule_confirmation_issues(
-        confirmation_master(master, official, None), today=today
-    )
+    issues = get_schedule_confirmation_issues(confirmation_master(master, official), today=today)
     alerts: dict[str, list[str]] = {}
     for name, stage, kind in zip(
         issues[EQUIPMENT_ID_COLUMN].tolist(),
@@ -1355,7 +1353,6 @@ def render_equipment_master_tab(
                 stale=stale,
                 delete_locked=context.delete_lock,
                 drafts_replaced=drafts_replaced,
-                floor_canvases=floor_canvases,
             )
     with right:
         chosen_side = st.session_state.pop(_SIDE_NEXT_KEY, None)

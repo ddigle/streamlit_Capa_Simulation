@@ -265,7 +265,7 @@ def test_restoring_a_deleted_unit_raises_the_buffer_generation_again(
 
 def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, grid: Calls) -> None:
     """비가동 일정 작은 편집표 — 필터로 고르고 「선택 행 삭제」·「삭제 확정」·「방금 삭제
-    되돌리기」."""
+    되돌리기」. 확인 글과 확정 알림이 무엇을 얼마나 지우는지와 지금 저장 단추를 말한다."""
     seed = _seeded(tmp_path)
     app = _app(seed)
     app.session_state[TABLE_KEY] = DOWNTIME_TARGET
@@ -278,8 +278,16 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert not app.exception, [item.message for item in app.exception]
     assert {key[0] for key in app.session_state[SELECTION_KEY][DOWNTIME_TARGET]} == {machine}
     app.button(key=DOWNTIME_DELETE_SELECTED_KEY).click().run()
+    # 확인 글 끝은 지금 저장 단추를 가리킨다 — 옛 「설비 데이터 저장」(옛 폼 단추)이 아니라 「저장
+    # 전 변경」 의 「리비전 저장」 이다(개편 D — 런북 7-21·Guide 의 글과 같다).
+    tail = "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
+    warning = next(str(item.value) for item in app.warning if "지웁니다" in str(item.value))
+    assert warning.startswith(f"비가동 일정 {count:,}건을 편집본에서 지웁니다. 대상: {machine}")
+    assert warning.endswith(tail) and "설비 데이터 저장" not in warning
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
+    done = next(str(item.value) for item in app.info if "지웠습니다. 대상" in str(item.value))
+    assert done == warning.replace("지웁니다", "지웠습니다", 1)
     assert len(_downtime_machines(app)) == seed.downtime_count - count
     assert _machines(app) == sorted(seed.machines)  # 비가동만 지운다
     app.button(key=UNDO_DELETE_BUTTON_KEY).click().run()

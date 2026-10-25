@@ -12,6 +12,7 @@ Space 층 사용 상태가 동·층 고르는 값을 좁히는지. AppTest 는 �
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -383,7 +384,7 @@ def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_clic
     _ok(app.run())
 
     assert not any("예시 행" in text for text in _texts(app, "warning"))
-    assert any("예시 행 1건을 빼고" in text for text in _texts(app, "info"))
+    assert any("예시 행 1건을 편집본에서 뺐습니다" in text for text in _texts(app, "info"))
     assert app.session_state[BUFFER_KEY][0].empty
     assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True
     assert not _example_lines(grid)
@@ -430,6 +431,44 @@ def test_a_sample_row_left_in_the_edit_buffer_is_flagged_and_cleared(tmp_path: P
     assert not any("예시 행" in text for text in _texts(app, "warning"))
     assert app.session_state[BUFFER_KEY][0].empty
     assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True
+
+
+def test_dropping_example_rows_withdraws_a_lingering_preview(tmp_path: Path) -> None:
+    """「예시 행 n건 지우기」 는 편집본을 바꾸는 표 밖 길이라 다른 길과 같이 남은 붙여넣기
+    미리보기를 거둔다(`replace_equipment_buffer`) — 다시 짓지 않는다(개편 D 리뷰 rs-d). 옛 폼은 입력
+    탭 미리보기와 이 단추가 한 화면에 함께 서서 그 후보를 다시 지었는데, 그때 팝업이 넘기는 배치
+    역할·「배치 칸도 붙여넣기」·공식 자리를 빠뜨려 가정 세션의 「배치 칸 끔」 미리보기가 배치 칸을
+    받는 쪽으로 바뀌었다. 미리보기는 「엑셀·CSV로 한꺼번에」 팝업이 열린 동안에만 살고, 넣기 앞
+    대조(`ImportReview.matches`)가 바뀐 편집본을 다시 미리보게 하며, 그 미리보기는 지운
+    표지(`DROP_EXAMPLE_ROWS_KEY`)로 예시 행을 뺀다."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    frames = app.session_state[BUFFER_KEY]
+    sample = sample_equipment_baseline()
+    app.session_state[BUFFER_KEY] = (sample, frames[1], frames[2])
+    incoming = _master(["NEW-001"])
+    review = build_import_review(
+        "설비 마스터",
+        incoming.to_csv(index=False, sep="\t"),
+        app.session_state[BUFFER_KEY],
+        floor_canvases={},
+        paste_layout=False,
+    )
+    app.session_state[PREVIEW_KEY] = replace(review, layout_pasted=False)
+    app.session_state[TABLE_KEY] = "기존 보유대수"
+    _ok(app.run())
+
+    app.button(key=EXAMPLE_DROP_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert app.session_state[BUFFER_KEY][0].empty
+    assert PREVIEW_KEY not in app.session_state
+    assert app.session_state[DROP_EXAMPLE_ROWS_KEY] is True
+    notice = next(text for text in _texts(app, "info") if "예시 행" in text)
+    assert notice == (
+        f"예시 행 {len(sample):,}건을 편집본에서 뺐습니다. 다음 붙여넣기·CSV 미리보기도 예시 행을 "
+        "빼고 검토합니다 — 저장 검증은 그대로 돕니다."
+    )
 
 
 # ------------------------------------------------------------- 현재 데이터 내려받기
