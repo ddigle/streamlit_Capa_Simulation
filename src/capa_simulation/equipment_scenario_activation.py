@@ -257,6 +257,8 @@ class SpaceEditMode:
     - `fast_forward_from` — 가정·낡음이지만 그 시나리오 최신의 배치 지문이 이 리비전과 같아 배치
       저장을 최신 rM 의 일정 위에 받는다(설계 6-1 배치 빨리 감기). 그 rM 번호.
     - `notice` — 잠금은 아니지만 편집 자리에 둘 한 줄(빨리 감기 캡션).
+    - `master_lock_reason` — 설비 마스터 탭이 쓸 잠금 글(Space 현황에만 있는 단추를 가리키는 글이
+      다를 때만 — 없으면 `lock_reason`). `master_tab_lock_reason` 이 고른다.
     """
 
     layout: Literal["official", "overlay", "locked"]
@@ -269,10 +271,16 @@ class SpaceEditMode:
     floor_state: bool = False
     fast_forward_from: int | None = None
     notice: str | None = None
+    master_lock_reason: str | None = None
 
     @property
     def layout_editable(self) -> bool:
         return self.layout != "locked"
+
+    @property
+    def master_tab_lock_reason(self) -> str | None:
+        """설비 마스터 탭의 배치 칸 잠금 글 — 그 탭에 없는 단추를 가리키지 않는다."""
+        return self.master_lock_reason or self.lock_reason
 
 
 def _quoted(name: str | None) -> str:
@@ -289,8 +297,16 @@ def stale_new_unit_reason(session: EquipmentSession) -> str:
     )
 
 
-def role_changed_reason(session: EquipmentSession, stamped: str) -> str:
-    """찍힌 역할 ≠ 지금 역할(그 사이 남의 발행) — 쌓인 배치 변경을 저장할 수 없는 까닭(설계 6-2)."""
+# 찍힌 역할이 바뀐 잠금에서 빠져나갈 단추의 자리 — Space 현황은 저장 안 한 배치 변경 상자에 그
+# 단추가 서고, 설비 마스터 탭에는 없어 그 자리를 이름으로 가리킨다.
+_DISCARD_HERE = "「배치 변경만 버리기」 로"
+_DISCARD_IN_SPACE = "Space 현황 「저장 안 한 배치 변경」 상자의 「배치 변경만 버리기」 로"
+
+
+def role_changed_reason(session: EquipmentSession, stamped: str, *, in_space: bool = True) -> str:
+    """찍힌 역할 ≠ 지금 역할(그 사이 남의 발행) — 쌓인 배치 변경을 저장할 수 없는 까닭(설계 6-2).
+    `in_space` 가 거짓이면(설비 마스터 탭) 「배치 변경만 버리기」 단추가 Space 현황에 있다고
+    가리킨다 — 그 탭에는 그 단추가 없다."""
     official = session.catalog.scenario(session.official_scenario_id)
     official_name = official.scenario_name if official is not None else None
     if stamped == "official":
@@ -302,9 +318,10 @@ def role_changed_reason(session: EquipmentSession, stamped: str) -> str:
         if official_name
         else "공식 설비 시나리오가 바뀌어"
     )
+    where = _DISCARD_HERE if in_space else _DISCARD_IN_SPACE
     return (
-        f"그 사이 {moved} 이 배치 변경({was})을 저장할 수 없습니다 — 「배치 변경만 버리기」 로 "
-        "버린 뒤 다시 고치세요. 설비 마스터의 다른 편집은 남습니다."
+        f"그 사이 {moved} 이 배치 변경({was})을 저장할 수 없습니다 — {where} 버린 뒤 다시 "
+        "고치세요. 설비 마스터의 다른 편집은 남습니다."
     )
 
 
@@ -327,6 +344,7 @@ def space_edit_mode(session: EquipmentSession, *, stamped_role: str | None) -> S
         return SpaceEditMode(
             layout="locked",
             lock_reason=role_changed_reason(session, stamped_role),
+            master_lock_reason=role_changed_reason(session, stamped_role, in_space=False),
             lock_action="discard_layout",
             new_units=official and not session.stale,
             new_unit_reason=stale_new_unit_reason(session) if session.stale else None,
@@ -408,7 +426,8 @@ def official_snapshot_for(
 def official_session(
     session: EquipmentSession, official_snapshot: EquipmentSnapshot | None
 ) -> EquipmentSession:
-    """같은 회차 목록으로 본 **공식** 쪽 — Space 의 잠근 줄처럼 세션과 무관하게 공식을 보일 때.
+    """같은 회차 목록으로 본 **공식** 쪽 — 공정 Capa 상세 HOME 방문의 잠근 줄처럼 세션과 무관하게
+    공식을 보일 때(Space 는 설비 시나리오 2단계 S3 부터 세션 시나리오를 그려 쓰지 않는다).
 
     `official_snapshot` 은 공식 스냅샷(`load_official_equipment_snapshot`)이다. 세션이 이미 공식
     발행 쌍이면 그대로 돌려준다. 세션 칸은 건드리지 않는다.

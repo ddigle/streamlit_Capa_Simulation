@@ -51,6 +51,7 @@ from capa_simulation.components.equipment_save_fields import (
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.space_floor_list import floor_state_draft_pending
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     current_selection,
@@ -96,6 +97,11 @@ SAVE_MODE = "저장"
 DIALOG_SCENARIO_KEY = "sidebar_equipment_scenario_id"
 DIALOG_REVISION_KEY = "sidebar_equipment_schedule_revision_id"
 DISCARD_KEY = "sidebar_equipment_discard_unsaved"
+# Space 층 사용 편집 초안이 있는데 가정 설비 시나리오를 고른 회차의 한 줄(그 초안은 버려진다 — Q3).
+FLOOR_DRAFT_DISCARD_NOTE = (
+    "저장하지 않은 Space 층 사용 편집이 있습니다 — 층 사용은 공식 설비 시나리오에서만 고쳐, 가정 "
+    "설비 시나리오를 불러오면 버려집니다."
+)
 LOAD_BUTTON_KEY = "sidebar_equipment_load_revision"
 SAVE_BUTTON_KEY = "sidebar_equipment_save"
 SAVE_NOTE_KEY = "sidebar_equipment_save_note"
@@ -232,8 +238,7 @@ def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
     """이름 줄 배지 하나 — 미저장 → 일정 없이 엶 → 공식 vN → 낡음 → 가정 배치 → 저장된 리비전
     차례(공식 쌍은 배치 차이가 없어 「공식 vN」 과 겹치지 않고, 낡음이 더 급하다 — 설계 8-2).
     「가정 배치」 재료는 세션 라벨의 판정(`EquipmentSession.layout_differs`)이라 그리는 동안
-    저장소를
-    부르지 않는다."""
+    저장소를 부르지 않는다."""
     if unsaved:
         return ":orange-badge[미저장 변경]"
     if session.scenario is None:
@@ -402,9 +407,14 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
             if preferred is not None and preferred in revision_by_id
             else next(iter(revision_by_id)),
         )
+    # Space 층 사용 편집 초안은 공식 설비 시나리오에서만 산다(Q3) — 가정 시나리오를 불러오면 Space
+    # 가 편집을 잠그며 버린다. 그때도 「변경을 버리고 불러오기」 를 묻는다(설계 9장).
+    floor_draft = floor_state_draft_pending() and selected_scenario != session.official_scenario_id
     discard = True
-    if unsaved:
+    if unsaved or floor_draft:
         discard = st.checkbox("변경을 버리고 불러오기", key=DISCARD_KEY)
+    if floor_draft:
+        st.caption(FLOOR_DRAFT_DISCARD_NOTE)
     load_clicked = st.button(
         "불러오기",
         icon=":material/download:",

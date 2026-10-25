@@ -237,6 +237,9 @@ FAB_EDIT_MODE_KEY = "space_fab_edit_mode"
 SAVE_NOTE_KEY = "space_layout_save_note"
 SAVE_NOTE_NONCE_KEY = "space_layout_save_note_nonce"
 SAVE_ERROR_KEY = "space_layout_save_error"
+# 「공식으로 바꾸기」·「최신 rM 불러오기」 실패 글 — 저장 오류와 따로 둔다(저장 안 한 상자가
+# 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다.
+SWITCH_ERROR_KEY = "space_scenario_switch_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
 DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
@@ -445,8 +448,6 @@ with notices:
     )
     if unscheduled_line is not None:
         st.caption(f":material/event_busy: {unscheduled_line}")
-# 사이드바 「설비 시나리오」 줄 — 고를 수 있는 줄(팝업은 「불러오기」 만 — 배치 저장은 본문 상자).
-render_equipment_scenario_row(equipment_session)
 # 편집본은 실제 저장본이 있을 때만 세운다 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None
@@ -458,6 +459,10 @@ if not using_sample_equipment and latest_snapshot is not None:
     discarded_notice = pop_discarded_notice()
     if discarded_notice:
         notices.warning(discarded_notice, icon=":material/sync_problem:")
+# 사이드바 「설비 시나리오」 줄 — 고를 수 있는 줄(팝업은 「불러오기」 만 — 배치 저장은 본문 상자).
+# 편집본을 세운 **뒤에** 그린다 — 남의 저장으로 편집본을 버린 회차에 배지·머리 띠 꼬리가 「미저장
+# 변경」 을 한 회차 늦게 말하지 않게(가용설비 현황·필요 단축 일정과 같은 차례).
+render_equipment_scenario_row(equipment_session)
 # 편집 권한(설계 8-4 — 설비 마스터 탭 배치 칸과 같은 판정). 찍힌 역할은 편집본을 세운 뒤에 읽는다
 # (새 토큰이면 지워진다).
 edit_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
@@ -749,7 +754,7 @@ def _switch_scenario(
         database_path, scenario_id, schedule_revision_id, discard=discard
     )
     if failure is not None:
-        st.session_state[SAVE_ERROR_KEY] = failure
+        st.session_state[SWITCH_ERROR_KEY] = failure
         return
     queue_flash(SPACE_FLASH_KEY, done)
 
@@ -1484,12 +1489,15 @@ with st.container(key="space_unsaved_layout_slot"):
     if panel_drawn:
         _render_unsaved_layout_panel(buffer_frames)
 # 층 배치 편집이 잠긴 회차의 까닭 한 줄(「최신 rM 불러오기」)·배치 빨리 감기 캡션. 자리는 늘
-# 선다(잠금이 생기고 풀릴 때 아래 층 상세·FAB 상자가 밀리지 않게). 시나리오 바꾸기 실패는 상자가
-# 없는 회차에도 여기서 한 번 보인다.
+# 선다(잠금이 생기고 풀릴 때 아래 층 상세·FAB 상자가 밀리지 않게). 시나리오 바꾸기 실패는 늘 여기서
+# 한 번 보이고, 저장 오류는 상자가 없는 회차에만 여기서 보인다.
 with st.container(key="space_edit_lock_slot"):
-    switch_error = None if panel_drawn else st.session_state.pop(SAVE_ERROR_KEY, None)
+    switch_error = st.session_state.pop(SWITCH_ERROR_KEY, None)
     if isinstance(switch_error, str):
-        st.error(switch_error)
+        st.error(f"설비 시나리오를 바꾸지 못했습니다: {switch_error}")
+    save_error = None if panel_drawn else st.session_state.pop(SAVE_ERROR_KEY, None)
+    if isinstance(save_error, str):
+        st.error(save_error)
     if buffer_frames is not None:
         _render_edit_lock_line()
 
@@ -1570,8 +1578,10 @@ if selected is None:
                 )
                 and fab_editable
             )
-            if not showing_sample and not edit_mode.fab:
-                # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표).
+            if not showing_sample and not edit_mode.fab and not equipment_session.unmerged:
+                # 가정 설비 시나리오 — FAB 자리의 「공식으로 바꾸기」(설계 8-4 표). 일정 없이
+                # 연 회차(`unmerged` — 옛 배포 흔적)는 세우지 않는다 — 공식으로 옮겨도 같은
+                # 까닭으로 합쳐지지 않는다(1단계 규칙 그대로).
                 _render_switch_to_official(SWITCH_TO_OFFICIAL_KEY)
             st.space("stretch")
         if fab_editing:

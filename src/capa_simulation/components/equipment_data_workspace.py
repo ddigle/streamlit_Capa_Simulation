@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Literal
@@ -148,6 +148,7 @@ from capa_simulation.services.korean_particle import (
 from capa_simulation.services.layout_overlay import (
     Place,
     assumption_common_places,
+    assumption_group_refusal,
     misplaced_rows,
     place_of,
     place_rows,
@@ -1054,6 +1055,112 @@ def layout_paste_refusal(
     )
 
 
+def assumption_group_paste_refusal(
+    review: ImportReview,
+    *,
+    saved: pd.DataFrame,
+    renames: Mapping[str, str],
+    official_places: Mapping[str, Place],
+) -> str | None:
+    """가정 설비 시나리오에서 공식 동·층이 다른 호기를 한 묶음으로 묶는 설비 마스터 붙여넣기를
+    미리보기 전에 막는다 — 저장소가 같은 글로 거부할 것을 먼저 쓴다(설계 10장·Q1(c)). 막을 것이
+    없으면 None."""
+    if review.target != "설비 마스터":
+        return None
+    candidate = review.candidate[1]
+    found = assumption_group_refusal(
+        candidate,
+        saved,
+        layout_lock_origins(candidate, saved, renames),
+        official_places,
+    )
+    return found[0] if found is not None else None
+
+
+def _parent_text(value: Any) -> str | None:
+    if value is None or (not isinstance(value, str) and bool(pd.isna(value))):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _restore_parents(
+    master: pd.DataFrame, before: pd.DataFrame, names: Collection[str] | None
+) -> pd.DataFrame | None:
+    """`master` 에서 제출 전(`before`)과 Main 설비가 다른 행(설비명이 `names` 에 든 것만 — None 이면
+    모두)의 Main 설비를 제출 전 값으로 되돌린 사본. 되돌린 행이 없으면 None."""
+    if (
+        PARENT_EQUIPMENT_COLUMN not in master.columns
+        or PARENT_EQUIPMENT_COLUMN not in before.columns
+    ):
+        return None
+    previous: dict[str, Any] = {}
+    for name, parent in zip(
+        before[EQUIPMENT_ID_COLUMN].map(_parent_text),
+        before[PARENT_EQUIPMENT_COLUMN],
+        strict=True,
+    ):
+        if name is not None and name not in previous:
+            previous[name] = parent
+    result = master.copy()
+    changed = False
+    for position, (name, parent) in enumerate(
+        zip(
+            result[EQUIPMENT_ID_COLUMN].map(_parent_text),
+            result[PARENT_EQUIPMENT_COLUMN],
+            strict=True,
+        )
+    ):
+        if name is None or name not in previous or (names is not None and name not in names):
+            continue
+        if _parent_text(parent) == _parent_text(previous[name]):
+            continue
+        result.loc[result.index[position], PARENT_EQUIPMENT_COLUMN] = previous[name]
+        changed = True
+    return result if changed else None
+
+
+def refuse_mixed_groups(
+    master: pd.DataFrame,
+    before: pd.DataFrame,
+    *,
+    saved: pd.DataFrame,
+    renames: Mapping[str, str],
+    official_places: Mapping[str, Place],
+) -> tuple[pd.DataFrame, str | None]:
+    """가정 세션 설비 마스터 탭 제출이 공식 동·층이 다른 호기를 한 묶음으로 묶으면(저장소가 같은
+    글로 거부한다 — 설계 10장·6-1·Q1(c)) 그 Main 설비 칸 고침을 제출 전(`before`) 값으로 되돌린
+    편집본과 거부 글. 묶지 않으면 그대로와 None.
+
+    먼저 거부 글이 가리킨 호기의 Main 설비 고침만 되돌리고 다시 본다. 그 호기의 Main 설비가 이
+    제출에서 바뀌지 않았으면 이 제출이 바꾼 Main 설비 칸을 모두 되돌린다. 나머지 편집은 반영한다
+    (배치 칸 잠금과 같은 꼴 — 막고 위젯 delta 에만 남기면 같은 제출의 다른 편집도 잃는다). 제출 전
+    편집본이 이미 그렇게 묶였으면 막지 않는다(저장이 같은 글로 거부한다)."""
+
+    def check(frame: pd.DataFrame) -> tuple[str, str] | None:
+        return assumption_group_refusal(
+            frame, saved, layout_lock_origins(frame, saved, renames), official_places
+        )
+
+    found = check(master)
+    if found is None or check(before) is not None:
+        # 제출 전 편집본이 이미 그렇게 묶였으면 이 제출 탓이 아니다 — 막지 않고 저장이 같은 글로
+        # 거부한다(되돌릴 이 제출의 고침이 없는데 막으면 저장까지 못 간다).
+        return master, None
+    message = found[0]
+    result = master
+    while found is not None:
+        restored = _restore_parents(result, before, {found[1]})
+        if restored is None:
+            restored = _restore_parents(result, before, None)
+            if restored is not None:
+                result = restored
+            break
+        result = restored
+        found = check(result)
+    return result, f"{message} 이 제출의 그 Main 설비 칸 고침은 제출 전 값으로 되돌렸습니다."
+
+
 def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -> None:
     """이름을 바꿨다(설비명 `renames`·Main 설비 `groups`, 옛 이름 → 새 이름). 이름을 기억한
     설비 마스터 탭 칸을 따라 옮긴다 — Space 편집기와 설비 마스터 호기 상세(개편)가 같이 부른다.
@@ -1583,11 +1690,7 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
             "넣지 않았습니다."
         )
     if result.layout_overlay_written:
-        place = f"「{scenario_name}」" if scenario_name else "이 설비 시나리오"
-        sentences.append(
-            f"{place}의 가정 배치를 저장했습니다(공식과 다른 호기 "
-            f"{result.layout_overlay_units:,}대) — 공식 배치는 바뀌지 않았습니다."
-        )
+        sentences.append(overlay_saved_sentence(result, scenario_name=scenario_name))
     if result.release_no is not None:
         released = f"공식 v{result.release_no}"
         sentences.append(f"{with_direction_particle(released)} 발행했습니다.")
@@ -1607,6 +1710,25 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
         "가용설비와 필요 단축 일정에 반영되고, Space 현황은 고른 설비 시나리오의 배치입니다."
     )
     return " ".join(sentences)
+
+
+def overlay_saved_sentence(result: EquipmentSaveResult, *, scenario_name: str | None) -> str:
+    """가정 배치를 저장한 한 문장 — 그 리비전의 공식과 다른 호기 · 도면 요소 · Main 설비명 위치 수
+    (0 인 것은 뺀다, Space 머리 알림과 같은 꼴 — 설계 8-2). 요소·이름표만 옮긴 저장도 무엇이
+    저장됐는지 말한다. 모두 0 이면 이제 공식 배치와 같다는 말이다(차이를 모두 걷은 저장)."""
+    place = f"「{scenario_name}」" if scenario_name else "이 설비 시나리오"
+    parts = []
+    if result.layout_overlay_units:
+        parts.append(f"공식과 다른 호기 {result.layout_overlay_units:,}대")
+    if result.layout_overlay_marks:
+        parts.append(f"도면 요소 {result.layout_overlay_marks:,}개")
+    if result.layout_overlay_labels:
+        parts.append(f"Main 설비명 위치 {result.layout_overlay_labels:,}개")
+    if not parts:
+        return f"{place}의 가정 배치를 저장했습니다 — 이제 공식 배치와 같습니다."
+    return (
+        f"{place}의 가정 배치를 저장했습니다({' · '.join(parts)}) — 공식 배치는 바뀌지 않았습니다."
+    )
 
 
 def _propagated_words(item: PropagatedRevision) -> str:
@@ -3375,6 +3497,17 @@ def render_equipment_data_workspace(
         )
         return
     layout_refusal: str | None = None
+    if mode == "overlay":
+        # 가정 세션 — 공식 동·층이 다른 호기를 한 묶음으로 묶는 Main 설비 고침은 저장소가 거부한다.
+        # 제출에서 먼저 되돌리고 같은 글로 알린다(설계 10장·Q1(c)).
+        grouped, layout_refusal = refuse_mixed_groups(
+            edited[1],
+            frames[1],
+            saved=_saved_master(),
+            renames=pending_unit_renames().units,
+            official_places=official_places,
+        )
+        edited = (edited[0], grouped, edited[2])
     edits = layout_edits(edited[1], _saved_master(), pending_unit_renames().units)
     if mode == "locked" and edits:
         # 배치 편집이 잠긴 회차 — 있던 호기 배치 칸은 저장본 값으로 되돌리고(새 호기는 자리 없이)
@@ -3448,6 +3581,15 @@ def render_equipment_data_workspace(
                         saved=_saved_master(),
                         renames=pending_unit_renames().units,
                         reason=layout_lock_reason,
+                    )
+                    if refusal is not None:
+                        raise ValueError(refusal)
+                elif mode == "overlay":
+                    refusal = assumption_group_paste_refusal(
+                        review,
+                        saved=_saved_master(),
+                        renames=pending_unit_renames().units,
+                        official_places=official_places,
                     )
                     if refusal is not None:
                         raise ValueError(refusal)

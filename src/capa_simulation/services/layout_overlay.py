@@ -749,6 +749,17 @@ def _mixed_group_refusal(
     official: LayoutBase,
 ) -> str | None:
     """가정 역할의 공통 쪽에서 공식 동·층이 다른 호기가 한 묶음에 드는가 — 첫 경우의 거부 글."""
+    found = _mixed_group(groups, common, edited, official)
+    return found[0] if found is not None else None
+
+
+def _mixed_group(
+    groups: Mapping[str, Sequence[str]],
+    common: Mapping[str, Place],
+    edited: LayoutBase,
+    official: LayoutBase,
+) -> tuple[str, str] | None:
+    """`_mixed_group_refusal` 의 첫 경우 — (거부 글, 묶음 자리와 공식 동·층이 다른 호기의 키)."""
     for group in sorted(groups, key=natural_name_key):
         members = list(groups[group])
         spots = {_spot(common[key]) for key in members}
@@ -763,12 +774,49 @@ def _mixed_group_refusal(
             if _spot(common[key]) != spot
         )
         return (
-            "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다"
-            f"({edited.names[outsider]} 은 공식 {_spot_words(_spot(common[outsider]))}, "
-            f"묶음 {group} 은 {_spot_words(spot)}) — 묶음 구성은 공통이라 공식 설비 "
-            "시나리오에서 바꾸세요."
+            (
+                "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다"
+                f"({edited.names[outsider]} 은 공식 {_spot_words(_spot(common[outsider]))}, "
+                f"묶음 {group} 은 {_spot_words(spot)}) — 묶음 구성은 공통이라 공식 설비 "
+                "시나리오에서 바꾸세요."
+            ),
+            outsider,
         )
     return None
+
+
+def assumption_group_refusal(
+    buffer: pd.DataFrame,
+    saved: pd.DataFrame,
+    origins: Mapping[str, str],
+    official_places: Mapping[str, Place],
+) -> tuple[str, str] | None:
+    """가정 설비 시나리오 편집본이 공식 동·층이 다른 호기를 한 묶음으로 묶는가 — 저장소
+    (`split_layout`)가 같은 글로 거부할 경우 (거부 글, 그 호기의 지금 설비명), 아니면 None.
+
+    설비 마스터 탭 제출·붙여넣기 미리보기가 저장 전에 같은 판정을 쓴다(설계 10장·6-1·Q1(c)).
+    `saved` 는 세션 저장본(가정 배치를 얹은 것), `origins` 는 지금 설비명 → 이어받을 저장본
+    설비명(`inherited_unit_names`), `official_places` 는 저장본 설비명 → 공식과 다른 호기의 공식
+    일곱 칸(`EquipmentSnapshot.layout_official_places`)이다 — 공식 배치는 저장본에서 그것을 되돌린
+    것이다(Main 설비는 공통 칸이라 저장본 그대로가 공식이다)."""
+    rows, names = _named_rows(buffer)
+    saved_rows, saved_names = _named_rows(saved)
+    keys = [f"저장본:{origins[name]}" if name in origins else f"새:{name}" for name in names]
+    edited_base = layout_base(rows, keys)
+    official = layout_base(saved_rows, [f"저장본:{name}" for name in saved_names])
+    official = official.with_places(
+        {
+            f"저장본:{name}": place
+            for name, place in official_places.items()
+            if f"저장본:{name}" in official.places
+        }
+    )
+    common = hypothetical_common_places(edited_base, official)
+    found = _mixed_group(edited_base.members(), common, edited_base, official)
+    if found is None:
+        return None
+    message, outsider = found
+    return message, edited_base.names[outsider]
 
 
 def common_with_places(

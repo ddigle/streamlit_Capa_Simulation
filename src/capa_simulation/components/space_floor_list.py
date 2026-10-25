@@ -16,7 +16,9 @@
   key + `click_mode` 뿐). 그래서 그리기 전에 **회차마다** 초안의 그 동 상태를 세션에 적는다 —
   세대를 올리지 않는 칸 편집 뒤에도 머리가 맞는다.
 - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(S4). 호기 수는 편집 모드 본문이 센 값을 콜백
-  인자로 받는다 — 콜백은 본문보다 먼저 돌아 그 회차 상태 프레임이 아직 없다.
+  인자로 받는다 — 콜백은 본문보다 먼저 돌아 그 회차 상태 프레임이 아직 없다. 공식 배치에는
+  호기가 없어도 가정 설비 시나리오의 배치가 그 층에 호기를 두었으면 확인한다(그 셈은 저장소
+  캐시 `load_layout_overlay_floor_counts`).
 - 성공 문구는 flash(`st.success`), 충돌·검증 오류·「바뀐 층이 없습니다」 는 같은 상자 안 알림
   칸이다.
 - 설비 시나리오·설비 리비전과 무관한 공용 현행값이다(S6). 그래서 **공식 설비 시나리오에서만**
@@ -137,6 +139,8 @@ _TABLE_COLUMNS = {
 
 Draft = dict[FloorKey, str]
 Base = tuple[int, tuple[tuple[str, str, str], ...]]
+# 끄기 확인 목록에서 공식 배치에는 호기가 없고 가정 설비 시나리오 배치에만 호기가 있는 층의 꼬리.
+_OVERLAY_ONLY = "공식 배치 호기 없음(가정 배치에만)"
 
 
 # ---------------------------------------------------------------- 세션 초안
@@ -354,14 +358,30 @@ def _revert(generation: int) -> None:
     _remount()
 
 
-def _risky(draft: Draft, base: Base, counts: Mapping[str, int]) -> tuple[tuple[str, int], ...]:
-    """새로 끄는 층 가운데 호기가 남은 층 — (「C1 3F」, 호기 수)."""
+def _overlay_units_on(database_path: str, key: FloorKey) -> int:
+    """가정 설비 시나리오들의 배치에서 그 층에 놓인 호기 행 수의 합(덧줄 재료와 같은 셈). 못 읽으면
+    0 이다 — 확인을 막지 않는다(덧줄도 같은 까닭으로 빠진다)."""
+    try:
+        return sum(count for _, count in load_layout_overlay_floor_counts(database_path, *key))
+    except BOOTSTRAP_ERRORS:
+        return 0
+
+
+def _risky(
+    draft: Draft, base: Base, counts: Mapping[str, int], database_path: str
+) -> tuple[tuple[str, int], ...]:
+    """새로 끄는 층 가운데 호기가 남은 층 — (「C1 3F」, 공식 배치의 호기 수).
+
+    공식 배치에는 호기가 없어도 가정 설비 시나리오의 배치가 그 층에 호기를 두었으면 든다(수 0 —
+    확인 상자의 덧줄이 그 시나리오와 대수를 적는다). 층 사용은 공통이라 그 호기도 그 시나리오의
+    목록·도면에서 숨는다 — 배치안이 빈 층을 쓰는 것이 바로 그 경우다(설계 13-2·Q3)."""
     before = FloorStates(rows=base[1], version=base[0])
-    return tuple(
-        (floor_label(key), int(counts.get(floor_label(key), 0)))
-        for key in newly_inactive(before, draft)
-        if int(counts.get(floor_label(key), 0)) > 0
-    )
+    risky: list[tuple[str, int]] = []
+    for key in newly_inactive(before, draft):
+        official = int(counts.get(floor_label(key), 0))
+        if official > 0 or _overlay_units_on(database_path, key) > 0:
+            risky.append((floor_label(key), official))
+    return tuple(risky)
 
 
 def _notice(kind: str, text: str) -> None:
@@ -419,7 +439,7 @@ def _save(database_path: str, generation: int, counts: Mapping[str, int]) -> Non
     base = _stored_base()
     if base is None:
         return
-    risky = _risky(draft, base, counts)
+    risky = _risky(draft, base, counts, database_path)
     if risky:
         st.session_state[CONFIRM_KEY] = (_generation(), risky)
         return
@@ -441,7 +461,7 @@ def _confirm_save(
     base = _stored_base()
     if base is None:
         return
-    risky = _risky(draft, base, counts)
+    risky = _risky(draft, base, counts, database_path)
     if risky and risky != shown:
         st.session_state[CONFIRM_KEY] = (_generation(), risky)
         return
@@ -576,16 +596,28 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
     with st.container(border=True):
         if len(shown) == 1:
             label, count = shown[0]
+            there = (
+                f"이 층에 호기 {count}대가 있습니다"
+                if count
+                else "공식 배치에는 이 층에 호기가 없지만 가정 설비 시나리오의 배치에 호기가 "
+                "있습니다"
+            )
             st.warning(
-                f"**{label}** — 이 층에 호기 {count}대가 있습니다 — 호기는 그대로 남고 "
-                "목록·도면에서만 숨습니다.",
+                f"**{label}** — {there} — 호기는 그대로 남고 목록·도면에서만 숨습니다.",
                 icon=":material/warning:",
             )
         else:
+            head = (
+                f"끄려는 층에 호기 {total}대가 있습니다"
+                if total
+                else "끄려는 층의 가정 설비 시나리오 배치에 호기가 있습니다"
+            )
             st.warning(
-                f"끄려는 층에 호기 {total}대가 있습니다 — 호기는 그대로 남고 목록·도면에서만 "
-                "숨습니다.\n\n"
-                + "\n".join(f"- {label} · 호기 {count}대" for label, count in shown),
+                f"{head} — 호기는 그대로 남고 목록·도면에서만 숨습니다.\n\n"
+                + "\n".join(
+                    f"- {label} · 호기 {count}대" if count else f"- {label} · {_OVERLAY_ONLY}"
+                    for label, count in shown
+                ),
                 icon=":material/warning:",
             )
         for line in _overlay_lines(database_path, shown):

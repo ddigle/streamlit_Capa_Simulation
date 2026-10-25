@@ -697,7 +697,9 @@ class EquipmentSaveResult:
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
       빠진다 — 설비 마스터 탭 설비명 고침도 지운 + 새 호기다).
     - `layout_overlay_written` 은 이 저장이 가정 설비 시나리오의 배치 차이를 바꾼 새 리비전을
-      만들었는가, `layout_overlay_units` 는 그 리비전의 공식과 다른 호기 수(설비 단위)다.
+      만들었는가, `layout_overlay_units` 는 그 리비전의 공식과 다른 호기 수(설비 단위)이고
+      `layout_overlay_marks`·`layout_overlay_labels` 는 그 리비전의 도면 요소·Main 설비명 위치
+      차이 수다(쓰기 때 정규화를 마친 값이라 공식과 실제로 다른 것만이다).
       `floor_values_written` 은 층 현행값(공식 캔버스·요소·Main 설비명 위치)을 실제로 썼는가다 —
       가정 역할의 층 편집은 층 현행값이 아니라 배치 차이로 간다.
     """
@@ -713,6 +715,8 @@ class EquipmentSaveResult:
     removed_units: tuple[str, ...] = ()
     layout_overlay_written: bool = False
     layout_overlay_units: int = 0
+    layout_overlay_marks: int = 0
+    layout_overlay_labels: int = 0
 
     @property
     def wrote_revision(self) -> bool:
@@ -1366,6 +1370,8 @@ class DuckDBEquipmentRepository:
                 removed_units=edit.removed_units,
                 layout_overlay_written=role == "overlay" and write_schedule and layout_changed,
                 layout_overlay_units=overlay_unit_count(layout, after_base),
+                layout_overlay_marks=layout.mark_count,
+                layout_overlay_labels=layout.label_count,
             )
             outcome.wrote = result.wrote_revision or floors_written or release_no is not None
         return _SaveOutcome(result, common_id, schedule_id)

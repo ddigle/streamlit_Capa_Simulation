@@ -594,7 +594,8 @@ def test_an_unscheduled_unit_is_announced_and_left_out_of_the_assumption(
     _shell: AppTest, tmp_path: Path
 ) -> None:
     """함께 넣기를 끄고 공식에 넣은 새 호기는 가정 설비 시나리오에 일정이 없다 — 가용설비 현황이
-    「일정 없음 1대」 를 알리고, Space(공식)는 그 호기를 그린다(공식에는 일정이 있다)."""
+    「일정 없음 1대」 를 알리고, 공식 설비 시나리오로 돌아오면 그 알림이 없다(공식에는 일정이
+    있다)."""
     repository = _repository(tmp_path)
     clone = _clone(repository)
     session = _session(repository)
@@ -1548,7 +1549,9 @@ def test_before_any_release_the_save_fields_say_v1_instead_of_a_publish_checkbox
 
 
 def test_the_layout_editor_turns_off_only_the_new_unit_form_when_asked() -> None:
-    """공식 발행 쌍이지만 낡은 세션 — 새 호기 폼(「+ 호기 추가」)만 끄고 까닭을 풍선으로 보인다."""
+    """공식 발행 쌍이지만 낡은 세션 — 새 호기 폼(「+ 호기 추가」)만 끄고 까닭을 풍선으로 보인다.
+    잠금은 회차마다 받은 값대로 켜고 끈다(`lockNewUnitToggle` — 다시 켜지는지는
+    `test_space_layout_overlay_page.test_the_editor_locks_follow_each_run_and_come_back_off`)."""
     editor = (
         PROJECT_ROOT
         / "src"
@@ -1557,7 +1560,8 @@ def test_the_layout_editor_turns_off_only_the_new_unit_form_when_asked() -> None
         / "space_layout_editor_assets"
         / "editor.js"
     ).read_text(encoding="utf-8")
-    assert "if (NEW_UNIT.disabled) {\n    addToggle.disabled = true" in editor
+    assert "lockNewUnitToggle(addToggle, addForm, NEW_UNIT.disabled)" in editor
+    assert "toggle.disabled = Boolean(reason)" in editor
     assert "if (NEW_UNIT.disabled) return" in editor
 
 

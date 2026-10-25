@@ -783,3 +783,170 @@ def test_the_catalog_rule_matches_the_store_on_a_real_database(tmp_path: Path) -
         == repository.official_scenario_id()
         == OPERATIONS
     )
+
+
+# ------------------------------------------------------------------ S3 리뷰 — 묶음·잠금 글·배선
+
+
+def _grouped_fleet(tmp_path: Path) -> tuple[DuckDBEquipmentRepository, str]:
+    """C1 1F 에 Main 설비 MOD-1 모듈 넷, C1 2F 에 EQ-03 — 「운영 일정」 과 그 복제 「셋업 실무」."""
+    from test_space_floor_state_page import _fleet
+
+    repository = _seeded(tmp_path, _with_unit(_fleet(), "EQ-03", 40, **{"층": "2F"}))
+    return repository, _clone(repository).equipment_scenario_id
+
+
+def test_the_pure_group_check_says_what_the_store_refuses(tmp_path: Path) -> None:
+    """설비 마스터 탭이 미리 쓰는 판정은 저장소(`split_layout`)와 같은 글이다(설계 10장·Q1(c))."""
+    from test_equipment_scenario_repository import _request, _set
+
+    from capa_simulation.components.equipment_data_workspace import layout_lock_origins
+    from capa_simulation.persistence.equipment_repository import EquipmentLayoutScopeError
+    from capa_simulation.services.layout_overlay import assumption_group_refusal
+
+    repository, setup = _grouped_fleet(tmp_path)
+    mine = _session(repository, setup)
+    edited = _set(_set(mine.equipment, "EQ-03", "Main 설비", "MOD-1"), "EQ-03", "층", "1F")
+    found = assumption_group_refusal(
+        edited, mine.equipment, layout_lock_origins(edited, mine.equipment, {}), {}
+    )
+    assert found is not None and found[1] == "EQ-03"
+    with pytest.raises(EquipmentLayoutScopeError) as refused:
+        repository.save_equipment(_request(mine, setup, equipment=edited))
+    assert str(refused.value) == found[0]
+    # 같은 층 호기를 묶는 고침은 묻지 않는다.
+    same_floor = _set(mine.equipment, "EQ-01", "Main 설비", "MOD-1")
+    assert (
+        assumption_group_refusal(
+            same_floor, mine.equipment, layout_lock_origins(same_floor, mine.equipment, {}), {}
+        )
+        is None
+    )
+
+
+def test_an_assumption_submit_reverts_a_main_unit_edit_across_official_floors(
+    tmp_path: Path,
+) -> None:
+    """가정 세션 제출이 공식 동·층이 다른 호기를 한 묶음으로 묶으면 그 Main 설비 칸만 제출 전 값으로
+    되돌리고 같은 글로 알린다 — 나머지 편집은 반영한다(S3 리뷰, 설계 10장)."""
+    _, setup = _grouped_fleet(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    names = list(app.session_state[BUFFER_KEY][1]["설비명"])
+    row = names.index("EQ-03")
+    tables = BrowserTables(app)
+    key = _editor_key(app)
+    tables.edit(key, row, "Main 설비", "MOD-1")
+    tables.edit(key, row, "층", "1F")
+    tables.edit(key, row, "설비이력", "묶는 중")
+    app.button(key=VIEW_APPLY_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert pd.isna(_buffer_value(app, "EQ-03", "Main 설비"))
+    assert _buffer_value(app, "EQ-03", "설비이력") == "묶는 중"
+    assert any(
+        "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다(EQ-03 은 공식 "
+        "C1 2F, 묶음 MOD-1 은 C1 1F)"
+        in text
+        and "제출 전 값으로 되돌렸습니다" in text
+        for text in _texts(app, "error")
+    )
+
+
+def test_the_submit_check_reverts_only_this_submits_main_unit_edit(tmp_path: Path) -> None:
+    """되돌리는 것은 이 제출이 바꾼 Main 설비 칸뿐이다 — 제출 전 편집본이 이미 그렇게 묶였으면 막지
+    않는다(되돌릴 고침이 없는데 막으면 저장까지 못 간다 — 저장이 같은 글로 거부한다)."""
+    from test_equipment_scenario_repository import _set
+
+    from capa_simulation.components.equipment_data_workspace import refuse_mixed_groups
+
+    repository, setup = _grouped_fleet(tmp_path)
+    mine = _session(repository, setup)
+    grouped = _set(_set(mine.equipment, "EQ-03", "Main 설비", "MOD-1"), "EQ-03", "층", "1F")
+    edited = _set(grouped, "EQ-01", "설비이력", "고침")
+
+    reverted, message = refuse_mixed_groups(
+        edited, mine.equipment, saved=mine.equipment, renames={}, official_places={}
+    )
+    assert message is not None
+    rows = reverted.set_index("설비명")
+    assert pd.isna(rows.loc["EQ-03", "Main 설비"]) and rows.loc["EQ-01", "설비이력"] == "고침"
+
+    kept, none = refuse_mixed_groups(
+        edited, grouped, saved=mine.equipment, renames={}, official_places={}
+    )
+    assert none is None and kept is edited
+
+
+def test_an_assumption_paste_grouping_across_official_floors_is_refused_before_preview(
+    tmp_path: Path,
+) -> None:
+    _, setup = _grouped_fleet(tmp_path)
+    app = _ok(_workspace(tmp_path / "equipment.duckdb", setup).run())
+    app.checkbox(key=PASTE_LAYOUT_KEY).check()
+    app.selectbox(TARGET_KEY).set_value("설비 마스터")
+    app.text_area(CLIPBOARD_KEY).set_value("설비명\tMain 설비\t층\nEQ-03\tMOD-1\t1F")
+    app.button(PREVIEW_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert PREVIEW_KEY not in app.session_state
+    assert any(
+        "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다" in text
+        for text in _texts(app, "error")
+    )
+
+
+def _edit_mode_texts(database: str) -> None:
+    """한 회차: 세션을 세우고 찍힌 역할이 바뀐(공식으로 찍힘) 판정의 잠금 글 둘을 적는다."""
+    import streamlit as st
+
+    from capa_simulation.equipment_scenario_activation import (
+        resolve_equipment_session,
+        space_edit_mode,
+    )
+
+    mode = space_edit_mode(resolve_equipment_session(database), stamped_role="official")
+    st.session_state["seen"] = (mode.layout, mode.lock_reason, mode.master_tab_lock_reason)
+
+
+def test_the_role_changed_lock_points_the_master_tab_at_the_space_box(tmp_path: Path) -> None:
+    """찍힌 역할이 바뀐 잠금 글 — Space 현황은 그 자리의 「배치 변경만 버리기」 를, 설비 마스터 탭은
+    그 단추가 없으므로 Space 현황 저장 안 한 배치 변경 상자를 가리킨다(S3 리뷰)."""
+    from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+
+    repository, setup = _two_scenarios(tmp_path)
+    app = AppTest.from_function(
+        _edit_mode_texts, args=(str(repository.database_path),), default_timeout=60
+    )
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
+    _ok(app.run())
+    layout, space, master = app.session_state["seen"]
+    assert layout == "locked"
+    assert "— 「배치 변경만 버리기」 로 버린 뒤" in space
+    assert "Space 현황 「저장 안 한 배치 변경」 상자의 「배치 변경만 버리기」 로" in master
+
+
+def test_the_page_passes_the_space_judgment_to_the_master_tab(tmp_path: Path) -> None:
+    """가용설비 현황이 설비 마스터 탭에 넘기는 배치 칸 판정은 `space_edit_mode` 다 — 남이 그
+    시나리오에 다른 배치를 저장한 낡은 가정 세션은 탭 머리에 잠금 글이 선다(S3 리뷰 — 하네스가 직접
+    넣던 것을 페이지로 본다)."""
+    from test_equipment_pages import PROJECT_ROOT, _page_script
+    from test_equipment_scenario_repository import _request, _set
+
+    from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+
+    repository, setup = _two_scenarios(tmp_path)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    clear_equipment_repository()
+    page = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page, repository.database_path), default_timeout=90)
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": pinned}
+    _ok(app.run())
+
+    assert any(
+        "배치 편집이 잠겨 있어" in text and "r2 에 다른 배치가 저장됐습니다" in text
+        for text in _texts(app, "caption")
+    )

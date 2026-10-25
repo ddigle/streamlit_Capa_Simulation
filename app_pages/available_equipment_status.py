@@ -491,5 +491,5 @@ with master_tab:
         # 배치 일곱 칸은 Space 와 같은 판정이다(설계 8-4·10장) — 공식 시나리오면 공식 배치, 가정이면
         # 그 시나리오의 배치 차이, 잠긴 회차면 있던 호기 배치 칸 고침을 되돌린다.
         layout_mode=layout_mode.layout,
-        layout_lock_reason=layout_mode.lock_reason,
+        layout_lock_reason=layout_mode.master_tab_lock_reason,
     )

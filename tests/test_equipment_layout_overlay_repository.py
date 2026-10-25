@@ -284,6 +284,12 @@ def test_marks_and_labels_in_a_hypothetical_scenario_become_its_difference(
 
     assert result.schedule is not None and not result.floor_values_written
     assert result.layout_overlay_written
+    # 결과가 요소·이름표 차이 수를 싣는다 — 화면 결과 문구가 「호기 0대」 만 적지 않게(S3 리뷰).
+    assert (
+        result.layout_overlay_units,
+        result.layout_overlay_marks,
+        result.layout_overlay_labels,
+    ) == (0, 1, 1)
     overlay = repository.load_layout_overlay(result.schedule.schedule_revision_id)
     assert overlay.marks_for(FLOOR) == (MarkChange("MK-A", "set", _mark("MK-A", x=7.0)),)
     assert overlay.labels_for(FLOOR) == (("APW1", "bottom"),)

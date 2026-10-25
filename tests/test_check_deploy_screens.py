@@ -2012,6 +2012,38 @@ def test_the_month_picker_ids_are_the_ones_the_item_reads() -> None:
     assert f">{screens.MONTH_APPLY_LABEL}</button>" in picker
 
 
+def test_every_equipment_badge_kind_is_known_to_the_screen_check() -> None:
+    """사이드바 설비 시나리오 배지가 낼 수 있는 모든 글이 화면 확인의 배지 종류로 읽힌다 — 빠지면 그
+    회차가 「배지 없음」 으로 찍힌다(설계 8-2 — S3 가 「가정 배치」 를 더했다)."""
+    from capa_simulation.components.equipment_scenario_status import equipment_status_badge
+
+    def badge(**state: object) -> str:
+        session: Any = SimpleNamespace(
+            scenario=object(),
+            unmerged=False,
+            is_official_pair=False,
+            release_no=None,
+            stale=False,
+            latest_revision_no=None,
+            layout_differs=False,
+        )
+        for name, value in state.items():
+            setattr(session, name, value)
+        text = equipment_status_badge(session, unsaved=bool(state.get("unsaved")))
+        return text[text.index("[") + 1 : text.rindex("]")]
+
+    shown = [
+        badge(unsaved=True),
+        badge(unmerged=True),
+        badge(is_official_pair=True, release_no=3),
+        badge(stale=True, latest_revision_no=7),
+        badge(layout_differs=True),
+        badge(),
+    ]
+    for text in shown:
+        assert any(text.startswith(kind) for kind in screens.EQUIPMENT_STATUS_BADGES), text
+
+
 def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
     from capa_simulation.navigation import ALL_SPECS
 
@@ -2021,7 +2053,7 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
         # 탭으로 가르지 않고, 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다).
         assert spec.condition_tabs is None and spec.url_path is None
         # 설비 시나리오 줄(`equipment_scenario`·`reads_equipment_scenario_on`)도 선언에서 읽는다 —
-        # Space 현황은 공식 설비 시나리오 줄만 선다.
+        # Space 현황은 설비 시나리오 줄 하나다(세션 시나리오를 고르는 줄 — 설비 시나리오 2단계 S3).
         rows = tuple(
             name
             for name, shown in (

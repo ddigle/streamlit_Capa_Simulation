@@ -25,29 +25,55 @@ from typing import Any
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_equipment_scenario_repository import (
     OPERATIONS,
+    _add_unmergeable_trace,
     _clone,
     _request,
     _seeded,
     _session,
     _set,
 )
+from test_space_floor_state_page import _editor_key as _floor_editor_key
+from test_space_module_group import _js_decl, _node
+from widget_browser import BrowserTables
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.components.app_header import EQUIPMENT_HEADER_LABEL_KEY
 from capa_simulation.components.equipment_data_workspace import (
     LAYOUT_ROLE_KEY,
     _csv_scenario_mismatch,
+    official_confirmation_master,
+    save_result_message,
 )
 from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveFields,
 )
+from capa_simulation.components.space_floor_list import (
+    CONFIRM_BUTTON_KEY,
+    CONFIRM_KEY,
+    EDIT_TOGGLE_KEY,
+)
+from capa_simulation.components.space_floor_list import (
+    SAVE_BUTTON_KEY as FLOOR_SAVE_BUTTON_KEY,
+)
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import SPACE_STATUS
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentSaveResult,
+    EquipmentScheduleRevisionSummary,
+)
+from capa_simulation.services.fab_layout import FLOOR_KEYS
 from capa_simulation.services.korean_particle import subject_particle
+from capa_simulation.services.schedule_confirmation import (
+    UNCONFIRMED,
+    confirmation_counts,
+    schedule_confirmation_issues,
+)
 
 PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
 FAKE_APPLY_KEY = "test_fake_editor_apply"
@@ -407,20 +433,342 @@ def test_the_subject_particle_reads_the_final_sound() -> None:
     assert subject_particle("ABC") == "이(가)"
 
 
-def test_the_session_snapshot_frames_match_the_drawn_layout(tmp_path: Path) -> None:
-    """계산 프레임은 배치 차이를 얹은 그대로다(설계 7-3 — 단축 레이어·필요 단축 일정 「도면에서
-    보기」 가 Space 가 그리는 층과 같아야 한다)."""
-    repository, setup = _overlay(tmp_path)
-    snapshot = _session(repository, setup)
-    _, frame, _ = snapshot.calculation_frames()
-    assert frame.set_index("설비명").loc["EQ-01", "X좌표"] == 50.0
+def _moved_floor(tmp_path: Path) -> tuple[DuckDBEquipmentRepository, str]:
+    """「셋업 실무」 의 가정 배치에서 EQ-01 만 C1 2F 로 옮겼다(공식 C1 2F 는 비었다)."""
+    repository = _seeded(tmp_path)
+    clone = _clone(repository)
+    mine = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            mine,
+            clone.equipment_scenario_id,
+            equipment=_set(mine.equipment, "EQ-01", "층", "2F"),
+        )
+    )
+    return repository, clone.equipment_scenario_id
+
+
+def _placed_on(app: AppTest, floor: str) -> float:
+    (table,) = [item.value for item in app.dataframe if "미배치대수" in item.value.columns]
+    row = table.loc[table["동"].eq("C1") & table["층"].eq(floor)]
+    return float(row["배치대수"].iloc[0])
+
+
+def test_the_floor_list_counts_the_drawn_scenarios_floors(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """FAB 층 목록의 배치대수는 세션 시나리오의 배치로 센다(S3 — 1단계는 늘 공식). 계산 프레임도
+    배치 차이를 얹은 그대로다(설계 7-3 — 단축 레이어·필요 단축 일정 「도면에서 보기」 가 Space 가
+    그리는 층과 같아야 한다)."""
+    repository, setup = _moved_floor(tmp_path)
+    mine = _ok(_space(tmp_path, setup, floor=False).run())
+    official = _ok(_space(tmp_path, OPERATIONS, floor=False).run())
+
+    assert (_placed_on(mine, "1F"), _placed_on(mine, "2F")) == (1.0, 1.0)
+    assert (_placed_on(official, "1F"), _placed_on(official, "2F")) == (2.0, 0.0)
+    _, frame, _ = _session(repository, setup).calculation_frames()
+    assert frame.set_index("설비명").loc["EQ-01", "층"] == "2F"
     assert isinstance(frame, pd.DataFrame)
+
+
+def test_turning_off_a_floor_only_an_assumption_uses_asks_with_the_overlay_line(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """공식 배치에는 호기가 없어도 가정 배치가 그 층에 호기를 두었으면 끄기 전에 확인하고 그
+    시나리오를 덧줄로 적는다 — 층 사용은 공통이라 그 시나리오 목록·도면에서도 숨는다(설계 13-2·Q3,
+    S3 리뷰)."""
+    repository, _ = _moved_floor(tmp_path)
+    assert repository.layout_overlay_floor_counts("C1", "2F") == (("셋업 실무", 1),)
+    app = _space(tmp_path, OPERATIONS, floor=False)
+    tables = BrowserTables(app)
+    _ok(tables.run())
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    _ok(tables.run())
+    tables.edit(_floor_editor_key(app), FLOOR_KEYS.index(("C1", "2F")), "사용", False)
+    _ok(tables.run())
+    app.button(key=FLOOR_SAVE_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert CONFIRM_KEY in app.session_state
+    assert repository.load_floor_states().inactive == {}
+    assert any("공식 배치에는 이 층에 호기가 없지만" in str(item.value) for item in app.warning)
+    assert any(
+        "가정 설비 시나리오 「셋업 실무」 의 배치에서 C1 2F 에 놓인 호기 1대도" in str(item.value)
+        for item in app.caption
+    )
+    app.button(key=CONFIRM_BUTTON_KEY).click()
+    _ok(tables.run())
+    assert repository.load_floor_states().inactive == {("C1", "2F"): "UNUSED"}
+
+
+def test_an_assumption_save_of_marks_only_names_what_it_saved() -> None:
+    """요소·이름표만 옮긴 가정 배치 저장의 결과 문구가 「호기 0대」 로만 읽히지 않는다 — 설계 8-2 의
+    셈 꼴(0 인 항목은 뺀다). 차이를 모두 걷은 저장은 공식과 같아졌다고 말한다(S3 리뷰)."""
+    from datetime import datetime
+
+    schedule = EquipmentScheduleRevisionSummary("s2", "setup", 2, "save", datetime(2026, 10, 25))
+    marks_only = save_result_message(
+        EquipmentSaveResult(
+            common=None,
+            schedule=schedule,
+            layout_overlay_written=True,
+            layout_overlay_marks=1,
+            layout_overlay_labels=2,
+        ),
+        scenario_name="셋업 실무",
+    )
+    assert (
+        "「셋업 실무」의 가정 배치를 저장했습니다(도면 요소 1개 · Main 설비명 위치 2개)"
+        in marks_only
+    )
+    assert "호기 0대" not in marks_only
+    cleared = save_result_message(
+        EquipmentSaveResult(common=None, schedule=schedule, layout_overlay_written=True),
+        scenario_name="셋업 실무",
+    )
+    assert "「셋업 실무」의 가정 배치를 저장했습니다 — 이제 공식 배치와 같습니다." in cleared
+
+
+def test_an_assumption_canvas_value_from_an_old_browser_is_refused(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """칸을 껐어도 옛 브라우저가 캔버스 값을 보내면 서버가 거부한다(두 겹 — 설계 8-4). 다른 변경도
+    적용하지 않는다."""
+    _, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
+        "canvas": {"width": 130, "height": 60},
+        "marks": None,
+    }
+    _ok(app.run())
+
+    assert any(
+        "적용하지 못했습니다" in str(item.value) and "층 캔버스·배경 도면은" in str(item.value)
+        for item in app.error
+    )
+    assert LAYOUT_ROLE_KEY not in app.session_state
+    assert not any("저장 안 한 배치 변경" in str(item.value) for item in app.markdown)
+
+
+def _unconfirmed_of(master: pd.DataFrame) -> int:
+    from datetime import date
+
+    issues = schedule_confirmation_issues(master, today=date.today())
+    return int(confirmation_counts(issues)[UNCONFIRMED])
+
+
+def test_an_assumption_space_counts_unconfirmed_by_the_official_schedule(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정 세션 FAB 「미확인 N대」 는 공식 시나리오 일정 기준이다(설계 8-1 — 가용설비 Main 과 같은
+    규칙). 가정 일정으로 세면 다른 수가 나오는 DB 로 본다."""
+    repository = _seeded(tmp_path)
+    clone = _clone(repository)
+    mine = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            mine,
+            clone.equipment_scenario_id,
+            equipment=_set(mine.equipment, "EQ-01", "Qual일정", "2027-01-01"),
+        )
+    )
+    session = _session(repository, clone.equipment_scenario_id)
+    official = repository.load_official_snapshot()
+    assert official is not None
+    expected = _unconfirmed_of(official_confirmation_master(session.equipment, official))
+    assert expected != _unconfirmed_of(session.equipment)
+
+    _ok(_space(tmp_path, clone.equipment_scenario_id, floor=False).run())
+    fab = next(
+        call
+        for call in reversed(editor_calls)
+        if call.get("mode") == "view" and call.get("scope") == "fab"
+    )
+    assert fab["unconfirmed"] == expected
+
+
+def test_another_save_does_not_leave_the_badge_one_run_behind(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """남의 공통 저장으로 편집본을 버린 회차에 사이드바 배지·머리 띠 꼬리가 「미저장 변경」 을
+    말하지 않는다 — 줄은 편집본을 세운 뒤 그린다(가용설비 현황과 같은 차례, S3 리뷰)."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    _ok(app.run())
+    assert str(app.session_state[EQUIPMENT_HEADER_LABEL_KEY]["suffix"]).endswith("미저장 변경")
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    assert any("버렸습니다" in str(item.value) for item in app.warning)
+    assert str(app.session_state[EQUIPMENT_HEADER_LABEL_KEY]["suffix"]).endswith("가정 배치")
+    assert not any("미저장 변경" in str(item.value) for item in app.sidebar.caption)
+    assert not any("미저장 변경" in str(item.value) for item in app.sidebar.markdown)
+
+
+def _unmerged_assumption(tmp_path: Path) -> tuple[Path, str]:
+    """옛 배포 흔적이 공식과도 합쳐지지 않는 DB 위의 가정 「셋업 실무」(일정 없이 연다)."""
+    path = tmp_path / "equipment.duckdb"
+    build_legacy_database(path)
+    repository = DuckDBEquipmentRepository(path)
+    repository.initialize()
+    clone = _clone(repository)
+    _add_unmergeable_trace(repository)
+    clear_equipment_repository()
+    return path, clone.equipment_scenario_id
+
+
+def test_an_unmerged_assumption_has_no_switch_to_official(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """일정 없이 연 가정 세션에는 「공식으로 바꾸기」 가 서지 않는다 — 공식으로 옮겨도 같은 까닭으로
+    합쳐지지 않는다(1단계 규칙, S3 리뷰). FAB 편집은 그대로 잠긴다."""
+    _, setup = _unmerged_assumption(tmp_path)
+    app = _ok(_space(tmp_path, setup, floor=False).run())
+
+    assert any("일정 없이 연 상태" in text for text in _texts(app))
+    assert not [button for button in app.button if button.key == "space_switch_to_official"]
+    assert app.toggle(key="space_fab_edit_mode").disabled
+
+
+def test_a_failed_scenario_switch_is_not_called_a_failed_save(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """시나리오 바꾸기 실패 글은 저장 오류와 따로 잠금 줄 자리에 선다 — 저장 안 한 상자가 있는
+    회차에도 「배치를 저장하지 못했습니다」 로 읽히지 않는다(S3 리뷰)."""
+    _, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    _ok(app.run())
+    app.session_state["space_scenario_switch_error"] = "시험 실패"
+    _ok(app.run())
+
+    errors = [str(item.value) for item in app.error]
+    assert "설비 시나리오를 바꾸지 못했습니다: 시험 실패" in errors
+    assert not any("저장하지 못했습니다" in text for text in errors)
 
 
 def test_the_editor_turns_the_canvas_controls_off_when_told() -> None:
     """가정 세션 편집기는 「편집 영역」 칸을 끈다 — JS 가 칸을 끄고 `setCanvas` 도 막는다(옛 단축키·
-    되돌리기 길). 서버도 적용의 캔버스 값을 거부한다(두 겹 — 위 AppTest)."""
+    되돌리기 길). 서버도 적용의 캔버스 값을 거부한다(두 겹 —
+    `test_an_assumption_canvas_value_from_an_old_browser_is_refused`)."""
     script = (space_layout_editor._ASSETS / "editor.js").read_text(encoding="utf-8")
     guard = script.index("function setCanvas(")
     assert "data.canvasEditable === false" in script[guard : guard + 400]
     assert "q('.sle-area').querySelectorAll('input, button')" in script
+
+
+_LOCK_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const control = (title) => ({ disabled: false, title, dataset: {} })
+const controls = [control('놓인 호기·요소가 다 들어가는 가장 작은 크기'), control('')]
+const toggle = { disabled: false, title: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v } }
+const form = { hidden: false }
+const seen = () => ({
+  controls: controls.map((c) => [c.disabled, c.title]),
+  toggle: [toggle.disabled, toggle.title, form.hidden],
+})
+const out = []
+for (const step of input.steps) {
+  lockCanvasControls(controls, step.locked, '잠금 까닭')
+  lockNewUnitToggle(toggle, form, step.newUnit)
+  out.push(seen())
+}
+process.stdout.write(JSON.stringify({ steps: out }))
+"""
+
+
+def test_the_editor_locks_follow_each_run_and_come_back_off() -> None:
+    """편집 영역 칸·새 호기 단추 잠금은 회차마다 받은 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식
+    세션으로 돌아와도(편집기 key·DOM 이 같다) 꺼진 채 남지 않고, 풀면 처음 풍선 글로 돌아간다(S3
+    리뷰)."""
+    source = "\n".join(
+        _js_decl(head) for head in ("function lockCanvasControls(", "function lockNewUnitToggle(")
+    )
+    result = _node(
+        source + _LOCK_RUNNER,
+        {
+            "steps": [
+                {"locked": True, "newUnit": "더 새 리비전이 있어 새 호기를 넣지 않습니다"},
+                {"locked": False, "newUnit": None},
+            ]
+        },
+    )
+    locked, unlocked = result["steps"]
+    assert locked["controls"] == [[True, "잠금 까닭"], [True, "잠금 까닭"]]
+    assert locked["toggle"] == [True, "더 새 리비전이 있어 새 호기를 넣지 않습니다", True]
+    assert unlocked["controls"] == [
+        [False, "놓인 호기·요소가 다 들어가는 가장 작은 크기"],
+        [False, ""],
+    ]
+    assert unlocked["toggle"][:2] == [False, ""]
+
+
+def _load_section(database: str) -> None:
+    """사이드바 설비 시나리오 팝업 「불러오기」 구획 한 회차(Space 화면에서 연 꼴)."""
+    from pathlib import Path
+
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+    )
+    from capa_simulation.navigation import SPACE_STATUS
+
+    render_equipment_scenario_dialog_body(Path(database), page_file=Path(SPACE_STATUS.path).name)
+
+
+def test_loading_an_assumption_asks_before_dropping_a_floor_use_draft(tmp_path: Path) -> None:
+    """Space 층 사용 편집 초안은 공식 설비 시나리오에서만 산다(Q3) — 가정 시나리오를 불러오면 Space
+    가 편집을 잠그며 버리므로 「변경을 버리고 불러오기」 를 묻는다. 공식의 다른 리비전은 묻지
+    않는다(설계 9장, S3 리뷰)."""
+    from capa_simulation.components.equipment_scenario_status import (
+        DIALOG_SCENARIO_KEY,
+        DISCARD_KEY,
+        LOAD_BUTTON_KEY,
+    )
+    from capa_simulation.components.space_floor_list import BASE_KEY, DRAFT_KEY
+
+    repository, setup = _overlay(tmp_path)
+    app = AppTest.from_function(
+        _load_section, args=(str(repository.database_path),), default_timeout=60
+    )
+    app.session_state[EDIT_TOGGLE_KEY] = True
+    app.session_state[DRAFT_KEY] = {"C2 3F": "UNUSED"}
+    app.session_state[BASE_KEY] = (0, ())
+    app.session_state[DIALOG_SCENARIO_KEY] = setup
+    _ok(app.run())
+
+    assert app.button(key=LOAD_BUTTON_KEY).disabled
+    assert any("저장하지 않은 Space 층 사용 편집이 있습니다" in str(c.value) for c in app.caption)
+    app.checkbox(key=DISCARD_KEY).check()
+    _ok(app.run())
+    assert not app.button(key=LOAD_BUTTON_KEY).disabled
+
+    official = AppTest.from_function(
+        _load_section, args=(str(repository.database_path),), default_timeout=60
+    )
+    official.session_state[EDIT_TOGGLE_KEY] = True
+    official.session_state[DRAFT_KEY] = {"C2 3F": "UNUSED"}
+    official.session_state[BASE_KEY] = (0, ())
+    official.session_state[DIALOG_SCENARIO_KEY] = OPERATIONS
+    _ok(official.run())
+    assert not official.button(key=LOAD_BUTTON_KEY).disabled
+    assert not [box for box in official.checkbox if box.key == DISCARD_KEY]
