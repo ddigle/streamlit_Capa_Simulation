@@ -2007,8 +2007,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
-  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭은 가정
-  설비 시나리오에서 발행 체크를 그리지 않는다(`show_publish`). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
+  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭과
+  사이드바 팝업은 가정 설비 시나리오에서도 발행 체크를 그린다 — 가정 세션 저장도 함께 넣기로 공식 시나리오에 새 리비전을 만들면
+  공식 발행까지 가므로 끌 수 있어야 한다(G1). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (G1 — 2026-10-24 결정 판 「권장대로」·F6·F2 — 바꾸려면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
