@@ -330,12 +330,12 @@ def test_the_target_buttons_and_the_typed_value_share_one_value(
     app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).set_value(130)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 130
-    assert app.number_input(key=CONSTRAINT_TARGET_INPUT_KEY).value == 130
+    assert app.number_input(key=_target_input_key(app)).value == 130
     assert "제약 130%" in _header_line(app)
     assert "130% 를 맞춥니다" in _metric_caption(app, "제약 제품 확보율 충족")
 
     # 버튼에 없는 값을 적으면 버튼이 모두 꺼진다.
-    app.number_input(key=CONSTRAINT_TARGET_INPUT_KEY).set_value(125)
+    app.number_input(key=_target_input_key(app)).set_value(125)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 125
     assert app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).value is None
@@ -348,6 +348,45 @@ def test_the_target_buttons_and_the_typed_value_share_one_value(
     _ok(app.run())
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 140
     assert app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).value == 140
+
+
+def _target_input_key(app: AppTest) -> str:
+    """제약 확보율 숫자 칸이 지금 선 key — 버튼을 누를 때마다 새 key 로 선다."""
+    (key,) = _typed_field_keys(app, "제약 확보율 직접 입력")
+    return key
+
+
+def _typed_field_keys(app: AppTest, label: str) -> list[str]:
+    return [str(field.key) for field in app.number_input if field.label == label]
+
+
+def test_a_preset_button_redraws_the_typed_field_under_a_new_key(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """버튼을 누르면 숫자 칸이 새 key 로 선다 — 브라우저 칸이 쥔 범위 밖 글(301)을 버리게.
+
+    1.63 숫자 칸은 범위 밖 글을 확정하지 않은 채 쥐고 그동안 서버가 보낸 새 값을 무시한다. 같은 key
+    로는 버튼 값이 칸에 서지 않으므로 key 가 바뀌어야 한다. 숫자 칸을 직접 칠 때는 key 가 그대로다.
+    """
+    app = _opened(dynamic_databases)
+    before = _typed_field_keys(app, "제약 확보율 직접 입력")
+    assert before == [CONSTRAINT_TARGET_INPUT_KEY]
+
+    app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).set_value(110)
+    _ok(app.run())
+    after = _typed_field_keys(app, "제약 확보율 직접 입력")
+    assert len(after) == 1 and after != before
+    assert app.number_input(key=after[0]).value == 110
+    assert "제약 110%" in _header_line(app)
+
+    app.number_input(key=after[0]).set_value(125)
+    _ok(app.run())
+    assert _typed_field_keys(app, "제약 확보율 직접 입력") == after
+    assert app.session_state[CONSTRAINT_TARGET_KEY] == 125
+
+    app.button_group(key=CONSTRAINT_MOD_DAYS_PILLS_KEY).set_value(90)
+    _ok(app.run())
+    assert _typed_field_keys(app, "개조 기간 직접 입력") != [CONSTRAINT_MOD_DAYS_INPUT_KEY]
 
 
 def test_the_general_target_takes_half_percent_and_home(
