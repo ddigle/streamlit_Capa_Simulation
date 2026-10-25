@@ -30,7 +30,6 @@ from test_equipment_scenario_repository import (
 from capa_simulation.components.equipment_data_workspace import (
     SCENARIO_COLUMN_LEGEND,
     save_result_message,
-    scenario_column_help,
 )
 from capa_simulation.components.equipment_save_fields import (
     DEFAULT_PROPAGATE_NEW_DOWNTIME,
@@ -69,6 +68,7 @@ from capa_simulation.persistence.equipment_repository import (
     PropagatedRevision,
 )
 from capa_simulation.services.equipment_contract import SCENARIO_SCHEDULE_COLUMNS
+from capa_simulation.services.equipment_grid import scenario_column_help
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"

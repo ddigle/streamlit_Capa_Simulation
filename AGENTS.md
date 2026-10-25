@@ -982,6 +982,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `today=` 로 돈다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
   - Space 위치: 레이아웃표시는 도면 대상인지만 가르고 좌표를 강제하지 않는다(없으면 미배치 트레이). X·Y·크기는 짝으로 둔다.
   - Main 설비는 다른 행의 설비명과 같을 수 없다(`UnitGroupCollisionError`, 문구는 `unit_group_collision_message` 한 곳).
+- `src/capa_simulation/services/equipment_grid.py` — 가용설비 현황 「설비 마스터」 탭 표(개편 B1 — 표 컴포넌트는 아래
+  화면 공통 계층)의 streamlit 을 모르는 부분. 화면에는 아직 잇지 않았다(B1-c 가 탭 본문에서 쓴다).
+  - 칸 정의 `GRID_COLUMNS`(계약 39칸 차례 — 브라우저로 가는 자리 번호는 모두 이 차례)·칸 묶음 `COLUMN_SETS`(기본·일정·위치·
+    이력·메모·「전체 39칸」 = 엑셀 양식 차례)·상세 묶음 `DETAIL_GROUPS`(39칸이 한 번씩)·잠금 갈래 `LOCK_SETS`(모듈 묶음 좌표·크기 /
+    가정 시나리오의 있던 호기 배치 일곱 칸 / 낡은 세션의 시나리오 일곱 칸, 지운 표시 줄은 모든 칸)와 칸 머리 도움말
+    `scenario_column_help`(옛 RawData 편집표도 이것을 쓴다)가 한 곳이다.
+  - 행 id 는 `s:` + 저장본 설비명(이름을 바꿔도 그대로)·`n:` + 지금 이름(새 호기)이고 짝은 저장의 호기 키 규칙
+    `inherited_unit_names` 그대로다(`grid_index`). 칸 글자 `cell_text` 가 화면 글자이자 「바뀐 칸」 견줌 글자다.
+  - `build_grid_view` 한 번에서 세 마운트 data(`grid_data`·`loader_data`·`detail_data`·`changes_data`)가 나온다 — 같은 입력이면
+    같은 dict. 불러오기 data 의 조건 칸(옛 표 보기 거르기 13칸, 사용자 R1)은 칸마다 값 번호를 64자 고정 폭 글자로 잇는다
+    (`encode_codes` ↔ JS `decodeCodes`).
+  - 출납: `pending_ops` 가 두 마운트의 상태 값 `outbox` 에서 반영 안 된 op 만 `(at, mount, seq)` 로 고르고, `apply_ops` 가 차례로
+    얹는다 — `base` 가 다르면 버림, 잠긴 칸·지운 줄·낡은 세션의 저장본 호기 지우기는 파이썬도 막음, 칸 값은
+    `coerce_master_cell`(저장 정규화와 같은 함수)로 다듬고 못 다듬은 글은 칸 초안(`overlay` — 편집본 밖)에 둔다. 설비명 칸
+    확정은 이름 바꿈(`check_unit_rename`·`apply_name_changes`·`compose_unit_renames` — Space 와 같은 넷, 사용자 R2·G4)이다.
+    지우기는 비가동을 함께 빼고, 되살리기는 **저장본 값**을 **저장본 차례** 자리에 넣는다(차례만 다른 공통 리비전을 만들지 않음).
+  - 되돌리기 `UndoStep` 은 역 patch(조작 뒤 자리)라 나중 것부터만 맞는다 — 표의 조작만 쌓고 다른 길이 편집본을 바꾸면
+    목록을 비운다(B1-c). 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째 단계는 하나다.
+    세션에는 `undo_to_state` 의 기본형으로 둔다.
 - `src/capa_simulation/services/equipment_samples.py` — 설비 DB 가 빌 때만 쓰는 비영속 샘플 fleet 이다(연결 뒤 지운다).
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다.
