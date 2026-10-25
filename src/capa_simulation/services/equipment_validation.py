@@ -1372,27 +1372,14 @@ def _year_first_text(value: object) -> str | None:
     return f"{match[1]}-{int(match[3]):02d}-{int(match[4]):02d}"
 
 
-@dataclass(frozen=True)
-class _DateFault:
-    """날짜 칸이 한 날짜 dtype 으로 모이지 않았다(시간대가 서로 다른 값이 섞임 등).
-
-    `early` 는 읽기(`to_datetime`)에서 난 예외 — 비가동 일정(`_normalize_date`)은 못 읽은 값
-    검사보다 **앞**에 던진다. 아니면 읽은 뒤 날짜 다듬기(`dt.normalize`)에서 난 예외로, 못 읽은 값
-    검사 **뒤**에 던진다. 설비 마스터는 이 예외를 던지지 않고 시간대 붙은 값을 빼고 다시 읽는다
-    (`_read_master_dates`).
-    """
-
-    error: Exception
-    early: bool
-
-
-def _read_date(series: pd.Series) -> tuple[pd.Series, pd.Series, _DateFault | None]:
-    """날짜 칸을 읽는다 — (날짜, 못 읽은 줄, 한 dtype 으로 모이지 않은 칸의 예외).
+def _read_date(series: pd.Series) -> tuple[pd.Series, pd.Series, bool]:
+    """날짜 칸을 읽는다 — (날짜, 못 읽은 줄, 한 날짜 dtype 으로 모이지 않았는가).
 
     pandas 는 글자 칸의 첫 값으로 날짜 꼴을 정해 칸 전체에 쓰므로, 꼴이 다른 값은 날짜여도
     NaT 가 된다. 그렇게 못 읽은 값 가운데 연도가 앞인 꼴(뜻이 하나다)만 따로 다시 읽는다.
     시간대가 붙은 칸은 다시 읽은 값과 섞을 수 없어 그대로 둔다. 칸이 날짜 dtype 으로 모이지 않으면
-    셋째 값이 그 예외(`_DateFault`)이고 첫째 값은 모두 NaT 다.
+    (시간대가 서로 다른 값이 섞임 등) 셋째 값이 True 이고 첫째 값은 모두 NaT 다 — 부르는 쪽은 이
+    예외를 던지지 않고 시간대 붙은 값을 빼고 다시 읽는다(`_read_master_dates`).
     """
     missing = series.isna() | series.astype("string").str.strip().eq("")
     not_dates = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
@@ -1402,19 +1389,19 @@ def _read_date(series: pd.Series) -> tuple[pd.Series, pd.Series, _DateFault | No
         if retry.any() and is_datetime64_dtype(converted):
             rewritten = series.loc[retry].map(_year_first_text)
             converted.loc[retry] = pd.to_datetime(rewritten, format="%Y-%m-%d", errors="coerce")
-    except Exception as error:  # 그 칸 차례에 그대로 던진다(예전과 같은 예외 형)
-        return not_dates, pd.Series(False, index=series.index, dtype=bool), _DateFault(error, True)
+    except Exception:  # 날짜 dtype 으로 모이지 않은 칸 — 부르는 쪽이 다시 읽는다
+        return not_dates, pd.Series(False, index=series.index, dtype=bool), True
     invalid = ~missing & converted.isna()
     try:
         normalized = converted.dt.normalize()
-    except Exception as error:  # 그 칸 차례에 그대로 던진다(예전과 같은 예외 형)
-        return not_dates, invalid, _DateFault(error, False)
-    return normalized, invalid, None
+    except Exception:  # 날짜 dtype 으로 모이지 않은 칸 — 부르는 쪽이 다시 읽는다
+        return not_dates, invalid, True
+    return normalized, invalid, False
 
 
 def _read_master_dates(entered: pd.Series) -> tuple[pd.Series, pd.Series]:
-    """설비 마스터 날짜 칸을 읽는다 — (시간대 없는 날짜, 못 읽은 줄). 저장·칸 결과·칸 다듬기가
-    함께 쓴다.
+    """설비 마스터·비가동 일정 날짜 칸을 읽는다 — (시간대 없는 날짜, 못 읽은 줄). 저장·칸 결과·칸
+    다듬기·비가동 일정 정규화(`_normalize_date`)가 함께 쓴다.
 
     계약 칸은 시간대 없는 날짜(DB 의 DATE)다. **시간대가 붙은 값(`…T00:00+09:00`)은 못 읽은
     값**으로 보고 나머지 값만 칸으로 다시 읽는다. 그대로 읽으면 칸이 어긋난다 — 시간대 붙은 값이 칸
@@ -1424,14 +1411,14 @@ def _read_master_dates(entered: pd.Series) -> tuple[pd.Series, pd.Series]:
     떼고 받지 않는다(그 날짜가 하루 밀릴 수 있다). 저장본은 시간대가 없으니 다시 읽는 리비전은 이
     길에서 달라지지 않는다.
     """
-    dates, invalid, fault = _read_date(entered)
-    if fault is None and not isinstance(dates.dtype, pd.DatetimeTZDtype):
+    dates, invalid, scattered = _read_date(entered)
+    if not scattered and not isinstance(dates.dtype, pd.DatetimeTZDtype):
         return dates, invalid
     zoned = pd.Series(
         [_zoned_date(value) for value in entered.tolist()], index=entered.index, dtype=bool
     )
-    dates, invalid, fault = _read_date(entered.mask(zoned))
-    if fault is None and not isinstance(dates.dtype, pd.DatetimeTZDtype):
+    dates, invalid, scattered = _read_date(entered.mask(zoned))
+    if not scattered and not isinstance(dates.dtype, pd.DatetimeTZDtype):
         return dates, invalid | zoned
     # 시간대 붙은 값을 빼고도 한 dtype 으로 모이지 않는 칸 — 어느 값 탓인지 칸으로는 알 수 없어 찬
     # 줄 모두를 못 읽은 값으로 본다.
@@ -1441,20 +1428,20 @@ def _read_master_dates(entered: pd.Series) -> tuple[pd.Series, pd.Series]:
 
 def _zoned_date(value: object) -> bool:
     """값 하나를 혼자 읽으면 시간대 꼴 날짜가 되거나 날짜로 모이지 않는가."""
-    dates, _, fault = _read_date(pd.Series([value], dtype="object"))
-    return fault is not None or isinstance(dates.dtype, pd.DatetimeTZDtype)
+    dates, _, scattered = _read_date(pd.Series([value], dtype="object"))
+    return scattered or isinstance(dates.dtype, pd.DatetimeTZDtype)
 
 
 def _normalize_date(series: pd.Series, label: str) -> pd.Series:
-    """날짜 칸을 읽고 못 읽은 값이 있으면 그 값 예시와 함께 막는다(비가동 일정)."""
-    converted, invalid, fault = _read_date(series)
-    if fault is not None and fault.early:
-        raise fault.error
+    """날짜 칸을 읽고 못 읽은 값이 있으면 그 값 예시와 함께 막는다(비가동 일정).
+
+    설비 마스터와 같은 길(`_read_master_dates`)로 읽는다 — 시간대가 붙은 값은 못 읽은 값이고,
+    시간대가 서로 다른 값이 섞여도 pandas 예외(화면이 잡지 못하는 `AttributeError`)로 새지 않고
+    이 문구로 막힌다.
+    """
+    converted, invalid = _read_master_dates(series)
     if invalid.any():
-        examples = series.loc[invalid].head(5).tolist()
-        raise _listed(_date_message(label), examples)
-    if fault is not None:
-        raise fault.error
+        raise _listed(_date_message(label), series.loc[invalid].head(5).tolist())
     return converted
 
 

@@ -514,27 +514,55 @@ def test_downtime_paste_reads_year_first_dates_written_in_mixed_forms() -> None:
 
 
 @pytest.mark.parametrize(
-    ("first", "value"),
+    ("first", "value", "blamed"),
     [
-        ("2026-10-01", "05/10/2026"),
-        ("2026-10-01", "다음 주"),
-        ("2026-10-01", "2026/02/30"),
-        ("2026-10-01", "2026-10/05"),
-        ("2026-10-01", "1000/01/01"),
-        ("2026-10-01", "2026-10-11 25:00"),
-        ("2026-10-01", "2026/10/11 23:75"),
-        ("2026-10-01", "2026-10-11 24:00:00"),
-        ("2026-10-01T00:00:00+09:00", "2026/10/05"),
+        ("2026-10-01", "05/10/2026", "05/10/2026"),
+        ("2026-10-01", "다음 주", "다음 주"),
+        ("2026-10-01", "2026/02/30", "2026/02/30"),
+        ("2026-10-01", "2026-10/05", "2026-10/05"),
+        ("2026-10-01", "1000/01/01", "1000/01/01"),
+        ("2026-10-01", "2026-10-11 25:00", "2026-10-11 25:00"),
+        ("2026-10-01", "2026/10/11 23:75", "2026/10/11 23:75"),
+        ("2026-10-01", "2026-10-11 24:00:00", "2026-10-11 24:00:00"),
+        ("2026-10-01T00:00:00+09:00", "2026/10/05", "2026-10-01T00:00:00+09:00"),
     ],
 )
-def test_downtime_paste_still_rejects_ambiguous_or_impossible_dates(first: str, value: str) -> None:
+def test_downtime_paste_still_rejects_ambiguous_or_impossible_dates(
+    first: str, value: str, blamed: str
+) -> None:
     """연도가 앞이 아닌 꼴(일·월 차례가 갈린다)·날짜가 아닌 글자·없는 날·구분자가 섞인 값·
     없는 시각은 첫 값이 멀쩡해도 지금처럼 막는다. `24:00` 은 다음 날 0시라 같은 날로 읽으면
-    안 된다. 시간대가 붙은 칸도 다른 오류로 새지 않고 같은 문구로 막힌다."""
+    안 된다. 시간대가 붙은 값은 설비 마스터처럼 못 읽은 값이다 — 칸 첫 값이어도 그 값만 탓하고
+    뒤의 멀쩡한 날짜는 탓하지 않는다."""
     equipment = prepare_equipment_master(_equipment())
 
-    with pytest.raises(ValueError, match="시작일은 날짜 형식이어야 합니다"):
+    with pytest.raises(ValueError) as caught:
         read_downtime_clipboard(_downtime_paste([first, value]), equipment=equipment)
+    assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {[blamed]}"
+
+
+def test_downtime_paste_of_differently_zoned_starts_names_them_instead_of_crashing() -> None:
+    """시간대가 서로 다른 시작일 둘 — 예전에는 pandas `AttributeError` 가 그대로 새어 화면
+    (`BOOTSTRAP_ERRORS` 밖)이 Traceback 이었다. 지금은 두 값을 든 ValueError 다."""
+    equipment = prepare_equipment_master(_equipment())
+    starts = ["2026-10-01T00:00+09:00", "2026-10-02T00:00+00:00"]
+
+    with pytest.raises(ValueError) as caught:
+        read_downtime_clipboard(_downtime_paste(starts), equipment=equipment)
+    assert type(caught.value) is ValueError
+    assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {starts}"
+
+
+def test_downtime_paste_blames_only_the_zoned_first_start() -> None:
+    """시간대 붙은 값이 칸 첫 값이어도 pandas 가 칸 전체를 그 꼴로 읽어 멀쩡한 날짜까지 탓하지
+    않는다 — 그 값 하나만 든다."""
+    equipment = prepare_equipment_master(_equipment())
+    starts = ["2026-10-01T00:00+09:00", "2026-10-05", "2026/10/07"]
+
+    with pytest.raises(ValueError) as caught:
+        read_downtime_clipboard(_downtime_paste(starts), equipment=equipment)
+    assert type(caught.value) is ValueError
+    assert str(caught.value) == "시작일은 날짜 형식이어야 합니다: ['2026-10-01T00:00+09:00']"
 
 
 @pytest.mark.parametrize("value", ["2026-10-11 99:99", "2026/10/11 23:75", "2026-10-11 24:00"])
