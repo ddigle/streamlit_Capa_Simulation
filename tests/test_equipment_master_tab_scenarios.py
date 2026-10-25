@@ -24,7 +24,14 @@ from grid_fake import Calls, install_fake_grid, last, load, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
-from test_equipment_scenario_repository import _request, _scenario, _session, _set
+from test_equipment_scenario_repository import (
+    _clone,
+    _request,
+    _scenario,
+    _seeded,
+    _session,
+    _set,
+)
 
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
@@ -44,7 +51,10 @@ from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTT
 from capa_simulation.components.equipment_master_tab import (
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
+    SIDE_HISTORY,
     SIDE_KEY,
+    STALE_SCENARIO_EDITS,
+    TABLE_KEY,
 )
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
@@ -679,8 +689,6 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     일정이 바뀐 저장은 저장소가 늘 거부하므로 「저장하기 전에 고칠 것」 에 그 칸 수와 되돌리는 길을
     싣고 저장을 막는다(예전에는 저장을 눌러야 「다른 사용자가 먼저 …」 로 공통 칸까지 거부되고 고칠
     것 표시가 없었다). 시나리오 칸을 되돌리면 공통 칸은 저장된다."""
-    from capa_simulation.components.equipment_master_tab import STALE_SCENARIO_EDITS
-
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, setup)
     _load_all(app, grid)
@@ -713,3 +721,37 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     _save(app)
     assert len(repository.list_revisions()) == before + 1
     assert _buffer_value(app, "EQ-01", "설비이력") == "공통 이력"
+
+
+def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_tab(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """설비 시나리오 이름 「E2E~가정~A」 — 탭 맨 위 알약·낡은 세션 경고·비가동 「선택 행 삭제」
+    풍선·저장 이력 머리가 물결표를 `\\~` 로 막아 취소선(「E2E<del>가정</del>A」)이 되지 않는다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository, "E2E~가정~A").equipment_scenario_id
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app = _page(repository, setup, pinned)
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    _ok(app.run())
+
+    escaped = "E2E\\~가정\\~A"
+    texts = [
+        *_texts(app, "markdown"),
+        *_texts(app, "caption"),
+        *_texts(app, "warning"),
+        *(str(button.help) for button in app.button if button.help),
+    ]
+    named = [text for text in texts if "가정" in text and "E2E" in text]
+    assert named
+    assert all(escaped in text for text in named), named
+    assert any("가 더 새롭습니다" in text and escaped in text for text in _texts(app, "warning"))
+    assert any("의 일정 리비전" in text and escaped in text for text in _texts(app, "caption"))
+    assert any("설비 시나리오 ·" in text and escaped in text for text in _texts(app, "markdown")), (
+        _texts(app, "markdown")
+    )

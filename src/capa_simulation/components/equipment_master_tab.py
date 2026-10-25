@@ -985,7 +985,7 @@ def _render_head(
             else " 배치 칸은 지금 잠겨 있습니다."
         )
         st.badge(
-            f"설비 시나리오 · {name}{tail}",
+            f"설비 시나리오 · {literal_markdown(name)}{tail}",
             icon=":material/layers:",
             color="primary" if official else "violet",
             help=(
@@ -1018,7 +1018,9 @@ def _render_notices(
     """알림 — 늘 서 있는 한 칸 안에(아래 컴포넌트 마운트의 자리를 고정한다, 개편 명세 2-3)."""
     with st.container():
         if basis is not None and basis.stale:
-            st.warning(_stale_lock_message(basis), icon=":material/lock_clock:")
+            st.warning(
+                markdown_safe_tildes(_stale_lock_message(basis)), icon=":material/lock_clock:"
+            )
         layout = layout_mode.layout
         scenario_name = basis.scenario_name if basis is not None else None
         if layout == "locked":
@@ -1026,7 +1028,7 @@ def _render_notices(
             st.caption(
                 ":material/lock: 배치 편집이 잠겨 있어 있던 호기의 배치 칸은 고칠 수 없고 새 "
                 "호기는 "
-                "자리 없이 들어갑니다" + (f" — {reason}" if reason else ".")
+                "자리 없이 들어갑니다" + (f" — {markdown_safe_tildes(reason)}" if reason else ".")
             )
         elif layout == "overlay":
             where = (

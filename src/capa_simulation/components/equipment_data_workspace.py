@@ -2091,7 +2091,7 @@ def _saved_basis_words(snapshot: EquipmentSnapshot, scenario_name: str | None) -
     """「저장본 r3 · 「운영 일정」 · 공통 대장 r5」 — 편집본이 나온 저장본 쌍."""
     schedule = snapshot.schedule
     head = f"저장본 r{schedule.revision_no}" if schedule is not None else "저장본 일정 없음"
-    name = f" · 「{scenario_name}」" if scenario_name else ""
+    name = f" · 「{literal_markdown(scenario_name)}」" if scenario_name else ""
     return f"{head}{name} · 공통 대장 r{snapshot.revision.revision_no}"
 
 
@@ -2599,7 +2599,7 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
             key=f"equipment_{slug}_delete_selected_v1",
             icon=":material/delete:",
             disabled=delete_locked is not None,
-            help=delete_locked,
+            help=markdown_safe_tildes(delete_locked) if delete_locked is not None else None,
         )
     if matching:
         return SELECT_MATCHING
@@ -3137,7 +3137,8 @@ def _render_history(
     }
     if scenario_name:
         st.caption(
-            f"「{scenario_name}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 리비전입니다."
+            f"「{literal_markdown(scenario_name)}」 의 일정 리비전 — 공통 대장은 저장 때 함께 본 "
+            "리비전입니다."
         )
     st.dataframe(
         pd.DataFrame(

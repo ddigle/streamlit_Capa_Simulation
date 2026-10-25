@@ -145,9 +145,9 @@ def _render_review(review: ImportReview) -> None:
     if split is not None:
         st.caption(f":material/call_split: {split}")
     for message in review.notices:
-        st.info(message, icon=":material/info:")
+        st.info(markdown_safe_tildes(message), icon=":material/info:")
     for message in review.cautions:
-        st.warning(message, icon=":material/ink_eraser:")
+        st.warning(markdown_safe_tildes(message), icon=":material/ink_eraser:")
     with st.container(horizontal=True):
         st.metric("신규", f"{int(review.changes['Import구분'].eq('신규').sum()):,}건")
         st.metric("기존 대체", f"{int(review.changes['Import구분'].eq('대체').sum()):,}건")
