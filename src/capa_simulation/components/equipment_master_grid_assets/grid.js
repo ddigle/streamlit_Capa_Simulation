@@ -8,10 +8,41 @@
 
 // <grid-paste>
 // 붙인 글을 칸 판으로. 끝 줄바꿈 하나는 떼고 \r 은 버린다. 탭·줄바꿈이 없으면(한 칸) null — 보통 붙여넣기다.
+// 엑셀은 줄바꿈·탭이 든 칸을 따옴표로 감싸고 안의 따옴표를 겹쳐(`""`) 복사한다 — `"` 로 시작해 `"` + 탭·줄바꿈·끝으로
+// 닫히는 칸은 그 규칙으로 읽어 한 칸으로 둔다(「엑셀·CSV로 한꺼번에」 의 pandas 읽기와 같은 값). 닫히지 않거나 닫는
+// 따옴표 뒤에 글이 더 있으면 따옴표 칸이 아니다 — 그 칸은 글자 그대로(다음 탭·줄바꿈까지) 읽는다.
 function parseClipboard(text) {
   const body = String(text == null ? '' : text).replace(/\r/g, '').replace(/\n$/, '')
   if (!/[\t\n]/.test(body)) return null
-  return body.split('\n').map((line) => line.split('\t'))
+  const rows = [[]]
+  let at = 0
+  for (;;) {
+    const quoted = body[at] === '"' ? readQuotedCell(body, at) : null
+    let end = at
+    if (quoted) end = quoted.end
+    else while (end < body.length && body[end] !== '\t' && body[end] !== '\n') end += 1
+    rows[rows.length - 1].push(quoted ? quoted.value : body.slice(at, end))
+    if (end >= body.length) return rows
+    if (body[end] === '\n') rows.push([])
+    at = end + 1
+  }
+}
+
+// `start` 의 `"` 로 연 칸을 읽는다 — 값과 닫는 따옴표 다음 자리. 따옴표 칸이 아니면 null.
+function readQuotedCell(body, start) {
+  let value = ''
+  for (let at = start + 1; at < body.length; at += 1) {
+    if (body[at] !== '"') {
+      value += body[at]
+    } else if (body[at + 1] === '"') {
+      value += '"'
+      at += 1
+    } else {
+      const next = at + 1
+      return next === body.length || body[next] === '\t' || body[next] === '\n' ? { value, end: next } : null
+    }
+  }
+  return null
 }
 
 // 붙일 자리: 시작 줄·칸부터 보이는 차례대로. 표 끝을 넘은 줄은 cut, 칸 끝을 넘거나 잠긴 칸은 skipped(그 칸은 null).
