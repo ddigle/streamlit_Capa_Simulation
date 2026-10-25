@@ -13,7 +13,9 @@
 - **위 줄** — 월별 확보율 그래프(`CONSTRAINT_CHART_KEY`)와 그 옆 고른 달의 계산 다섯
   단계(`month_steps` — 순수 함수)·결과 상자. 가로 컨테이너 하나(3 : 2)이고 줄 폭이
   `TOP_ROW_STACK_BELOW_PX` 보다 좁으면 위아래로 쌓는다(`top_row_style` — 컨테이너 질의, 필요
-  단축 일정 「Qual 마감 계산기」 팝업과 같은 꼴). **그 아래 온 폭** — 월별 계산표(라벨
+  단축 일정 「Qual 마감 계산기」 팝업과 같은 꼴). 그래프는 가장 좁은 폭(`chart_min_width_px`)을 받고
+  카드가 그보다 좁으면(390px 창) 카드 안에서 가로로 스크롤한다 — 세운 달 눈금 30개가 포개지지 않게
+  (같은 스타일 칸이라 이벤트 칸이 늘지 않는다). **그 아래 온 폭** — 월별 계산표(라벨
   Figure + 가로로 스크롤되는 월 Figure `CONSTRAINT_SHEET_KEY`). 계산표는 컬럼 안에 넣지
   않는다 — 두 컬럼 폭 규칙(`split_scroll_columns_style` 의 `:has()`)이 바깥 컬럼에도
   걸린다. 칸을 누르면 `on_select` **콜백**이 고른 달을 적는다 — 회차마다 두 그림의 선택
@@ -49,6 +51,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
     SheetCanvas,
     build_sheet_canvas,
+    chart_min_width_px,
     chart_point_month,
     general_label,
     month_name,
@@ -63,6 +66,8 @@ from capa_simulation.components.month_sheet_canvas import canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
+    min_width_scroll_canvas,
+    min_width_scroll_rules,
     split_scroll_columns_style,
 )
 from capa_simulation.components.status_metric import (
@@ -124,6 +129,9 @@ SCHEDULE_CARD_KEY: Final = "constraint_sim_schedule"
 # 위 줄(그래프 카드 + 고른 달 계산 카드) 가로 컨테이너와 그래프 카드.
 TOP_ROW_KEY: Final = "constraint_sim_top_row"
 CHART_CARD_KEY: Final = "constraint_sim_chart_card"
+# 그래프 카드 안의 가로 스크롤 상자(`{접두}_scroll`)와 그 안 캔버스(`{접두}_canvas` — 가장 좁은 폭
+# `chart_min_width_px`). `scroll_shell.min_width_scroll_canvas` 가 이 접두로 key 를 붙인다.
+CHART_SCROLL_PREFIX: Final = "constraint_sim_chart"
 _TOP_ROW_CONTAINER_NAME: Final = "capa-constraint-top"
 # 위 줄이 이보다 좁으면 그래프 위·계산 아래로 쌓는다. 3 : 2 로 두면 사이드바를 편 900px 창에서
 # 그래프 그림 칸이 169 × 130px(달 한 칸 14px)로 줄어 칸 누름(D9)이 어려웠다(2026-10-25 리뷰, 사본
@@ -567,19 +575,22 @@ def render_constraint_view(view: ConstraintView) -> None:
     # 아래 온 폭이다 — 계산표의 두 컬럼 폭 규칙(`split_scroll_columns_style`, `:has()` 선택자)이
     # 바깥 컬럼에도 걸리므로 컬럼 안에 넣지 않는다(2026-10-25 브라우저 — 바깥 왼쪽 컬럼이 260px 로
     # 눌렸다).
-    st.html(top_row_style())
+    st.html(top_row_style(len(months)))
     with st.container(horizontal=True, gap="medium", key=TOP_ROW_KEY):
         with st.container(border=True, key=CHART_CARD_KEY):
             st.markdown("**월별 확보율**")
             st.caption("달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간")
-            st.plotly_chart(
-                chart,
-                width="stretch",
-                key=CONSTRAINT_CHART_KEY,
-                config=hover_chart_config(),
-                on_select=partial(pick_chart_month, months),
-                selection_mode="points",
-            )
+            # 좁은 카드에서는 이 상자 안에서 가로로 스크롤한다(`top_row_style`). 그림 위 터치
+            # 스와이프는 `app.py` 의 터치 스크롤 막이가 브라우저 스크롤로 넘긴다.
+            with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):
+                st.plotly_chart(
+                    chart,
+                    width="stretch",
+                    key=CONSTRAINT_CHART_KEY,
+                    config=hover_chart_config(),
+                    on_select=partial(pick_chart_month, months),
+                    selection_mode="points",
+                )
         _render_month_steps(view, month, show_proportional=bool(show_proportional))
     with st.container(border=True):
         st.markdown("**월별 계산표**")
@@ -605,13 +616,15 @@ def render_constraint_view(view: ConstraintView) -> None:
                         st.caption(f":material/warning: {line}")
 
 
-def top_row_style() -> str:
+def top_row_style(month_count: int) -> str:
     """위 줄 배치 CSS — 넓으면 그래프 카드 3 : 계산 카드 2, 줄이 `TOP_ROW_STACK_BELOW_PX` 보다
-    좁으면 두 카드 모두 한 줄씩(위아래).
+    좁으면 두 카드 모두 한 줄씩(위아래). 그래프는 달 수만큼의 가장 좁은 폭을 받고 카드가 그보다
+    좁으면 스크롤 상자 안에서 가로로 민다.
 
     가로 컨테이너의 flex 항목은 키 붙은 칸이 아니라 그것을 한 번 감싼 `stLayoutWrapper` 다(1.63 —
     `qual_deadline_calculator.layout_style` 와 같은 꼴). 컨테이너 질의라 사이드바를 여닫아 본문 폭만
-    바뀌어도 따라간다.
+    바뀌어도 따라간다. 그래프 캔버스는 폭을 고정하지 않고(`width="stretch"` 가 카드를 채운다) 가장
+    좁은 폭만 건다 — 넓은 창의 그림은 그대로다.
     """
     chart = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{CHART_CARD_KEY})'
     steps = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STEPS_CARD_KEY})'
@@ -624,6 +637,9 @@ def top_row_style() -> str:
             f"@container {_TOP_ROW_CONTAINER_NAME} (width < {TOP_ROW_STACK_BELOW_PX}px) {{",
             f"  {chart}, {steps} {{ flex: 1 1 100% !important; }}",
             "}",
+            min_width_scroll_rules(
+                CHART_SCROLL_PREFIX, min_width_px=chart_min_width_px(month_count)
+            ),
             "</style>",
         ]
     )

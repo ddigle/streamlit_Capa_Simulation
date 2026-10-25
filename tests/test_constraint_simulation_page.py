@@ -838,12 +838,14 @@ def test_the_chart_and_steps_row_stacks_below_the_narrow_width(
     )
 
     assert 550 < TOP_ROW_STACK_BELOW_PX < 930
-    style = top_row_style()
+    app = _opened(dynamic_databases)
+    style = top_row_style(
+        len(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["xaxis"]["tickvals"])
+    )
     assert f".st-key-{TOP_ROW_KEY} {{ container: " in style
     assert f"(width < {TOP_ROW_STACK_BELOW_PX}px)" in style
     for key in (CHART_CARD_KEY, STEPS_CARD_KEY):
         assert f'[data-testid="stLayoutWrapper"]:has(> .st-key-{key})' in style
-    app = _opened(dynamic_databases)
     assert any(str(element.proto.body) == style for element in app.get("html"))
 
     def keyed(node: Any) -> Iterator[Any]:
@@ -857,3 +859,55 @@ def test_the_chart_and_steps_row_stacks_below_the_narrow_width(
     container = row.proto.flex_container
     assert container.direction == container.HORIZONTAL and container.wrap
     assert [child.key for child in row.children.values()] == [CHART_CARD_KEY, STEPS_CARD_KEY]
+
+
+def _keyed(node: Any) -> Iterator[Any]:
+    if getattr(node, "key", None):
+        yield node
+    children = getattr(node, "children", None)
+    for child in children.values() if isinstance(children, dict) else ():
+        yield from _keyed(child)
+
+
+def test_the_rate_chart_keeps_a_minimum_width_and_scrolls_inside_a_narrow_card(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """390px 창에서 그래프 그림 칸이 199px 로 줄어 세운 달 눈금 30개(글자 폭 12px)가 6.6px 간격으로
+    포개져 검은 띠가 됐다(2026-10-25 E2E). 그래프는 카드 안 스크롤 상자 → 캔버스(가장 좁은 폭
+    `chart_min_width_px`) 안에 서고, 카드가 그보다 좁으면 상자가 가로로 스크롤한다. 폭은 고정하지
+    않아 넓은 창에서는 카드를 채운다 — 사본 앱 1280px 창 · 사이드바 펼침의 30개월 그림(522px)은
+    가장 좁은 폭보다 넓어 스크롤이 생기지 않는다."""
+    from capa_simulation.components.constraint_simulation_figures import (
+        MONTH_SLOT_PX,
+        chart_min_width_px,
+    )
+    from capa_simulation.components.constraint_simulation_view import (
+        CHART_CARD_KEY,
+        CHART_SCROLL_PREFIX,
+        top_row_style,
+    )
+    from capa_simulation.components.scroll_shell import min_width_scroll_rules
+
+    # 세운 달 글자 폭(사본 앱 12px)보다 한 칸이 넓다 — 가장 좁은 폭에서도 이웃 글자와 떨어진다.
+    assert MONTH_SLOT_PX > 12
+    assert chart_min_width_px(30) <= 522
+
+    app = _opened(dynamic_databases)
+    spec = _chart_spec(app, CONSTRAINT_CHART_KEY)
+    margin = spec["layout"]["margin"]
+    count = len(spec["layout"]["xaxis"]["tickvals"])
+    assert chart_min_width_px(count) == margin["l"] + margin["r"] + count * MONTH_SLOT_PX
+    style = top_row_style(count)
+    rules = min_width_scroll_rules(CHART_SCROLL_PREFIX, min_width_px=chart_min_width_px(count))
+    assert rules in style
+    assert any(str(element.proto.body) == style for element in app.get("html"))
+
+    (card,) = [node for node in _keyed(app._tree) if node.key == CHART_CARD_KEY]
+    (scroll,) = [node for node in _keyed(card) if node.key == f"{CHART_SCROLL_PREFIX}_scroll"]
+    (canvas,) = [node for node in _keyed(scroll) if node.key == f"{CHART_SCROLL_PREFIX}_canvas"]
+    charts = [
+        node
+        for node in _keyed(canvas)
+        if str(getattr(getattr(node, "proto", None), "id", "")).endswith(f"-{CONSTRAINT_CHART_KEY}")
+    ]
+    assert len(charts) == 1
