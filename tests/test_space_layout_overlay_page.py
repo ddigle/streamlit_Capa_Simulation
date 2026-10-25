@@ -679,7 +679,8 @@ def test_another_save_does_not_leave_the_badge_one_run_behind(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
     """남의 공통 저장으로 편집본을 버린 회차에 사이드바 배지·머리 띠 꼬리가 「미저장 변경」 을
-    말하지 않는다 — 줄은 편집본을 세운 뒤 그린다(가용설비 현황과 같은 차례, S3 리뷰)."""
+    말하지 않는다 — 줄은 편집본을 세운 뒤 그린다(가용설비 현황과 같은 차례, S3 리뷰). S4 부터 가정
+    배치 편집은 다시 얹으므로, 남이 옮긴 호기 자체를 지워 다시 얹을 것이 없게 한다."""
     repository, setup = _overlay(tmp_path)
     app = _ok(_space(tmp_path, setup).run())
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
@@ -692,9 +693,9 @@ def test_another_save_does_not_leave_the_badge_one_run_behind(
     _ok(app.run())
     assert str(app.session_state[EQUIPMENT_HEADER_LABEL_KEY]["suffix"]).endswith("미저장 변경")
     theirs = _session(repository)
-    repository.save_equipment(
-        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
-    )
+    kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-02")].reset_index(drop=True)
+    downtime = theirs.downtime.loc[~theirs.downtime["설비명"].eq("EQ-02")].reset_index(drop=True)
+    repository.save_equipment(_request(theirs, equipment=kept, downtime=downtime))
     clear_equipment_repository()
     _ok(app.run())
 

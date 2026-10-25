@@ -1674,6 +1674,7 @@ NEW_ITEM_KEYS = [
     "page_tabs",
     "equipment_moves",
     "constraint_sim",
+    "space_scenario_row",
 ]
 
 
@@ -1968,6 +1969,56 @@ def test_the_equipment_scenario_line_summary_names_only_shapes_and_badge_kinds()
     )
     assert (
         odd == "「설비 시나리오」 줄 있음 · 값 칸 「이름 · rN」 꼴 다름 · 배지 없음 · 팝업 안 열림"
+    )
+
+
+def test_the_space_scenario_row_summary_names_the_pickable_load_only_row() -> None:
+    """설비 시나리오 2단계 S4 — Space 사이드바 줄은 고를 수 있는 줄(「(고정)」 없음)이고 팝업은
+    「불러오기」 구획 하나다. 이름·번호는 찍지 않는다."""
+    row = {
+        "name": "설비 시나리오",
+        "badge": "가정 배치",
+        "value": "셋업 실무 · r4",
+        "disabled": False,
+    }
+    facts = {"modes": [], "load": True, "revisions": 3}
+
+    line = screens.summarize_space_scenario_row(row, "설비 시나리오", facts, True)
+
+    assert line == (
+        "Space 「설비 시나리오」 줄 있음 · 고를 수 있음 · 「(고정)」 없음 · 배지 「가정 배치」 · "
+        "팝업 제목 「설비 시나리오」 같음 · 「불러오기」 만 · 리비전 3개 · Esc 닫힘"
+    )
+    assert "셋업 실무" not in line and "r4" not in line
+    fixed = screens.summarize_space_scenario_row(
+        {**row, "value": "운영 일정 · r3 (고정)", "disabled": True, "badge": "공식 v2"},
+        None,
+        None,
+        False,
+    )
+    assert fixed == (
+        "Space 「설비 시나리오」 줄 있음 · 고를 수 없음(잠김) · 「(고정)」 있음 · "
+        "배지 「공식 v…」 · 팝업 안 열림"
+    )
+    two = screens.summarize_space_scenario_row(
+        row, "설비 시나리오", {"modes": ["불러오기", "저장"], "load": True, "revisions": 3}, True
+    )
+    assert "구획 다름" in two
+    assert screens.summarize_space_scenario_row(None, None, None, False) == (
+        "Space 「설비 시나리오」 줄 없음"
+    )
+
+
+def test_the_space_scenario_row_contract_matches_the_app() -> None:
+    """Space 의 팝업에는 「저장」 구획이 없다(저장은 편집본을 세우는 화면 둘만) — 스크립트가 찾는
+    「불러오기」 단추 글과 「(고정)」 꼬리가 앱 값과 같다."""
+    from capa_simulation.components import equipment_scenario_status as status
+
+    assert status.SAVE_PAGES and "space_status.py" not in status.SAVE_PAGES
+    assert screens.SPACE_SCENARIO_LOAD_BUTTON == status.LOAD_MODE
+    assert screens.SPACE_SCENARIO_FIXED_TAIL == status.FIXED_LOCK_REASON
+    assert '"불러오기",\n        icon=":material/download:"' in _text(
+        COMPONENTS / "equipment_scenario_status.py"
     )
 
 

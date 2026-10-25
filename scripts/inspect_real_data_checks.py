@@ -114,6 +114,7 @@ from capa_simulation.persistence.equipment_scenario_store import (  # noqa: E402
     OPERATIONS_SCENARIO_ID,
     latest_release_row,
     legacy_trace_count,
+    scenario_rows,
     schedule_revision_row,
 )
 from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
@@ -2705,6 +2706,8 @@ def _scenario_migration_lines(
     snapshot = official.snapshot
     facts["U"] = f"{len(snapshot.unscheduled_units):,}" if snapshot is not None else "-"
     facts["G"] = f"{snapshot.orphan_rows:,}" if snapshot is not None else "-"
+    layout = _layout_overlay_counts(connection)
+    facts["Y"] = layout["units"]
     rows = [
         ["설비 시나리오", facts["S"]],
         [
@@ -2718,13 +2721,53 @@ def _scenario_migration_lines(
             "공식 일정 리비전의 일정 없음 호기 / 고아 일정 행(이관 직후 0)",
             f"{facts['U']} / {facts['G']}",
         ],
+        [
+            "가정 배치 차이(0031 — ACTIVE 시나리오 최신의 저장된 행): 시나리오 / 호기 / 요소 / "
+            "이름표",
+            f"{layout['scenarios']} / {layout['units']} / {layout['marks']} / {layout['labels']}",
+        ],
+        [
+            "**배치 옛 코드 흔적(차이가 있는 리비전 뒤 지문 없이 저장된 리비전)** — 0 이어야 함",
+            layout["traces"],
+        ],
     ]
     return ["- 설비 시나리오 이관 확인(0027)", "", *_table(["항목", "수"], rows), ""]
 
 
+def _layout_overlay_counts(connection: duckdb.DuckDBPyConnection) -> dict[str, str]:
+    """가정 배치 차이(설비 0031) 셈 — ACTIVE 설비 시나리오 최신마다 저장된 호기·요소·이름표 차이 행
+    수의 합과 그런 시나리오 수, 옛 코드 흔적(0031 을 모르는 옛 판이 차이 있는 리비전 뒤에 저장한
+    리비전) 수. 앱의 목록 투영(`scenario_rows`)을 그대로 읽는다 — 값·이름은 찍지 않는다. 0031 직후는
+    모두 0 이다."""
+    try:
+        listed = [row for row in scenario_rows(connection) if row["status"] == "ACTIVE"]
+    except duckdb.Error as exc:
+        failed = _failure(exc)
+        return dict.fromkeys(("scenarios", "units", "marks", "labels", "traces"), failed)
+
+    def total(column: str) -> int:
+        return sum(int(str(row[column] or 0)) for row in listed)
+
+    differing = sum(
+        1
+        for row in listed
+        if int(str(row["latest_layout_unit_count"] or 0))
+        + int(str(row["latest_layout_mark_count"] or 0))
+        + int(str(row["latest_layout_label_count"] or 0))
+    )
+    return {
+        "scenarios": f"{differing:,}",
+        "units": f"{total('latest_layout_unit_count'):,}",
+        "marks": f"{total('latest_layout_mark_count'):,}",
+        "labels": f"{total('latest_layout_label_count'):,}",
+        "traces": f"{total('layout_trace_count'):,}",
+    }
+
+
 def _scenario_migration_note(facts: dict[str, str]) -> str:
-    """요약의 8-4s — 「8-4s S1 · L3/3 · O v1→r3 · X0 · U0 · G0」(시나리오 · 이관 리비전/이관 전
-    리비전 · 공식 · 흔적 · 일정 없음 · 고아)."""
+    """요약의 8-4s — 「8-4s S1 · L3/3 · O v1→r3 · X0 · U0 · G0 · Y0」(시나리오 · 이관 리비전/이관 전
+    리비전 · 공식 · 흔적 · 일정 없음 · 고아 · 가정 배치 차이 호기 행). 끝 `Y` 는 설비 0031 뒤에
+    더했다 — `--check-summary` 는 수만 셈하므로 `Y` 가 없는 옛 요약 줄도 그대로 받는다."""
     if "skip" in facts:
         return _note("8-4s", facts["skip"])
     return _note(
@@ -2735,6 +2778,7 @@ def _scenario_migration_note(facts: dict[str, str]) -> str:
         f"X{facts['X']}",
         f"U{facts['U']}",
         f"G{facts['G']}",
+        f"Y{facts['Y']}",
     )
 
 
