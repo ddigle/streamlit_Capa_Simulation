@@ -1589,9 +1589,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 글꼴(`static/fonts/archivo-700.woff2`·`archivo-800.woff2`)은 정적 서빙(`config.toml`)의 상대 경로로 받는다 —
     `static/` 밖이면 404 다. 색 없는 고정 문자열이라 부트스트랩 앞에서 매 회차 보낸다(`tests/test_typography.py`).
 - `src/capa_simulation/components/accent_button_style.py` — 강조색으로 칠한 Streamlit 단추(`kind="primary"`·
-  `"primaryFormSubmit"`, 잠긴 단추 빼고)의 글자색을 그 회차 테마의 `tokens.ACCENT_TEXT` 로 다시 건다(`docs/design_system.md` 2-2).
-  - Streamlit 1.63 은 칠한 단추 글자를 늘 흰색으로 쓰고 그 색을 정하는 테마 칸이 없다 — 어두운 테마의 밝은 강조색
-    (`#2DD4BF`) 위 흰 글자는 1.86:1 이었다(표준 목표 「가용설비 붙여넣기」, 2026-10-25 E2E). 밝은 테마는 흰 글자 그대로다.
+  `"primaryFormSubmit"`, 잠긴 단추 빼고)와 `st.multiselect` 고른 칩(`[data-tag]`, 잠긴 상자 빼고)의 글자색을 그 회차
+  테마의 `tokens.ACCENT_TEXT` 로 다시 건다(`docs/design_system.md` 2-2).
+  - Streamlit 1.63 은 칠한 단추·칩 글자를 늘 흰색으로 쓰고 그 색을 정하는 테마 칸이 없다 — 어두운 테마의 밝은 강조색
+    (`#2DD4BF`) 위 흰 글자는 1.86:1 이었다(표준 목표 「가용설비 붙여넣기」, 2026-10-25 E2E · 표준 대비 재공 현황 조회
+    조건 칩, 2026-10-26 E2E r3). 밝은 테마는 흰 글자 그대로다. 잠긴 multiselect 는 콤보상자 뿌리(`stMultiSelect`
+    바로 아래 칸)에 `data-disabled` 가 서고 칩이 흐린 바탕·흐린 글자라 고르지 않는다.
   - 테마 토큰이라 `app.py` 가 `theme.begin_run()` 뒤·부트스트랩 앞에서 매 회차 보낸다(`tests/test_accent_button_style.py`·
     `tests/test_app_navigation.py`). HOME 칠한 주요 Case 칩의 같은 색 규칙(`home_main_case_chips.chip_style`)은 칩 모양
     규칙과 함께 그대로 둔다.
