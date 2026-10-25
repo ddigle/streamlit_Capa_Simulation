@@ -1,4 +1,5 @@
-# Purpose: 제약 시뮬레이션 그래프·계산표 그림과 고른 달 계산 글·개조 일정 줄을 손계산 하네스로 본다.
+# Purpose: 제약 시뮬레이션 그래프·계산표 그림과 고른 달 계산 글·개조 일정 줄·요약 넷 글을
+# 손계산 하네스로 본다.
 
 """제약 시뮬레이션 그림(`components/constraint_simulation_figures.py`)과 순수
 글(`constraint_simulation_view`).
@@ -11,6 +12,7 @@
   불투명 1·오른쪽 끝 두 글이 가까우면 비켜 서로 덮지 않음.
 - 계산표: 행 차례·기간 밖 제약 칸 빈칸·미달 칸 글자색·고른 달 열 테두리.
 - 고른 달 계산 다섯 줄(202705·202706·202801)·개조 일정 줄·모자란 달 줄.
+- 요약 넷의 값·회색 줄(`render_constraint_kpis` — 지표 카드 그리기를 바꿔 끼워 글만 받는다).
 - 정규형 spec — 검증을 켠 길과 끈 길의 Figure JSON 이 같다(`tests/test_plotly_fast_path.py` 규칙).
 """
 
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import date
 from typing import Any
@@ -27,6 +30,7 @@ import pytest
 from test_constraint_simulation import CONDITIONS, _run
 
 from capa_simulation.components import constraint_simulation_figures as figures
+from capa_simulation.components import constraint_simulation_view as view_module
 from capa_simulation.components.constraint_simulation_figures import (
     END_LABEL_MIN_PLOT_PX,
     ROW_IDS,
@@ -46,6 +50,7 @@ from capa_simulation.components.constraint_simulation_view import (
     default_month,
     month_steps,
     overdrawn_lines,
+    render_constraint_kpis,
     schedule_lines,
     short_lines,
 )
@@ -54,6 +59,7 @@ from capa_simulation.components.plotly_layout import plotly_validation
 from capa_simulation.design import tokens
 from capa_simulation.services.constraint_simulation import (
     ConstraintMonthInput,
+    ConstraintResult,
     simulate_constraint,
 )
 
@@ -677,3 +683,42 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
     assert short_lines(_run()) == ""
     may = month_steps(result.month(202705), result, LABELS, show_proportional=False)
     assert "0 으로 둡니다" in may.steps[3].note
+
+
+# ------------------------------------------------------------------ 요약 넷
+
+
+def _kpi_cards(
+    monkeypatch: pytest.MonkeyPatch, result: ConstraintResult
+) -> dict[str, tuple[str, str | None]]:
+    """요약 넷을 그려 카드마다 (값, 회색 줄) 을 받는다 — Streamlit 없이(카드 그리기를 바꿔 낀다)."""
+    cards: dict[str, tuple[str, str | None]] = {}
+
+    def capture(label: str, value: str, *, caption: str | None = None, **_: object) -> None:
+        cards[label] = (value, caption)
+
+    monkeypatch.setattr(view_module, "metric_row", lambda **_: nullcontext())
+    monkeypatch.setattr(view_module, "render_status_metric", capture)
+    render_constraint_kpis(result, LABELS)
+    return cards
+
+
+def test_the_modification_kpi_says_there_is_nothing_to_modify_without_demand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """제약 기간(202703)에 제약 제품 소요가 없으면 넷째 칸은 「0대 · 0번에 나눠 개조」 가 아니라
+    「개조할 대수가 없습니다」 다(2026-10-26 E2E). 값 「0대」 는 명세 2-6 「max pool 대」 그대로."""
+    empty = _run(replace(CONDITIONS, period_start=202703, period_end=202703))
+    assert empty.kpis.window_count == 0
+    cards = _kpi_cards(monkeypatch, empty)
+    assert cards["개조 대수"] == ("0대", "개조할 대수가 없습니다")
+    assert cards["제약 제품 확보율 충족"] == ("—", "제약 기간에 제약 제품 소요가 없습니다")
+
+    cards = _kpi_cards(monkeypatch, _run())
+    value, caption = cards["개조 대수"]
+    assert value == "11대"
+    assert caption is not None and caption.startswith("5번에 나눠 개조 · 첫 비가동 ")
+
+    off = _run(replace(CONDITIONS, modification_days=None))
+    cards = _kpi_cards(monkeypatch, off)
+    assert cards["개조 대수"] == ("—", "개조를 끄면 비가동 없이 배정만 바꿉니다")

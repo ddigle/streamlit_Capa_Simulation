@@ -586,6 +586,10 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
 
         if kpis.max_dedicated is None:
             value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
+        elif kpis.window_count == 0:
+            # 제약 기간에 제약 제품 소요가 없으면 떼어 줄 대수도 개조 창도 없다 — 「0번에 나눠
+            # 개조」 가 아니라 그 뜻을 바로 적는다(값 「0대」 는 명세 2-6 「max pool 대」 그대로).
+            value4, caption4 = f"{kpis.max_dedicated}대", "개조할 대수가 없습니다"
         else:
             value4 = f"{kpis.max_dedicated}대"
             caption4 = f"{kpis.window_count}번에 나눠 개조" + (
