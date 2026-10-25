@@ -492,7 +492,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     때만 비우고 작성자 이름은 폼 밖이다. 필터는 조건 카드 `VOC 필터`, 설명은 `guides/voc.md`.
   - 쓰기(새 글·답변·답변 완료 표시·글 삭제)는 모두 콜백이고 본문 `st.rerun()` 이 없다 — 끊긴 회차가 아래 글의
     「삭제 확인」 값을 버려 단추가 사라졌다. 새 글·답변 폼과 답변 완료 단추는 key 세대, 글 삭제는 지운 글 id 로
-    빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`).
+    빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`). 세대 비교와 쓰기는 `components/write_guard.write_once` 라
+    두 회차에 겹쳐 오는 더블클릭도 한 번만 쓴다 — 입력은 그 앞에서 읽고 세대 올리기는 뒷정리의 맨 끝이다.
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
 - `app_pages/scenario_management.py` — `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭(늘 그린다 — form 입력
@@ -1812,6 +1813,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
+- `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
+  쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
+  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). 지금은 VOC 만 쓴다.
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3726,6 +3730,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **쓰기 콜백은 빠른 두 번 누름을 거른다.** Streamlit 1.63 은 지나간 위젯의 콜백 정보를 지우지 않아 옛 화면의 누름도
   콜백에 닿는다. 공용 기록을 쓰는 단추는 그린 회차의 key 세대를 콜백 인자로 받아 지금 세대와 다르면 쓰지도 알리지도
   않고, 폼·팝오버 key 에도 같은 세대를 붙인다(같은 key 면 옛 누름이 새 폼의 인자로 콜백된다).
+  - 세션 칸 비교만으로는 **겹쳐 오는** 두 누름을 막지 못한다. 브라우저 더블클릭은 둘째 누름이 닿는 순간
+    `runner.fastReruns`(기본 켜짐)가 돌던 회차에 멈춤을 걸고 새 회차를 세워, 두 콜백이 다른 스레드에서 수 ms 차이로 같은
+    세대를 보고 둘 다 쓴다 — 세션 칸 잠금(`SafeSessionState`)이 회차마다 따로다. 멈춤을 받은 첫 콜백은 쓴 뒤 다음 세션 칸
+    접근에서 `StopException` 으로 끊겨 세대도 못 올린다(2026-10-25 E2E, VOC 글·답변 두 건). 그래서 비교와 쓰기는
+    `components/write_guard.write_once` 가 프로세스 잠금 안에서 하고, 「이 세대는 썼다」 는 끊기지 않는 세션 dict 표지에
+    적는다. 입력은 부르기 전에 읽고(세션 칸 접근도 끊기는 자리다) 세대 올리기는 뒷정리의 맨 끝에 둔다. 시험은 둘째 회차를
+    다른 스레드의 `app._run` 으로 세운다(`tests/test_voc_page.py` 의 `_race`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

@@ -9,14 +9,20 @@
 - 첫 답변 앞뒤로 글 상자와 답변 칸의 자리가 그대로다. 밀리면 브라우저에 옛 상자의 회색 사본이
   남았다(2026-10-05 E2E).
 - 다른 글을 처리해도 체크해 둔 「삭제 확인」 옆 「글 삭제」 단추가 남고, 빠른 두 번 누름은 같은
-  쓰기를 되풀이하지 않는다(쓰기는 모두 콜백 — AGENTS 9장).
+  쓰기를 되풀이하지 않는다(쓰기는 모두 콜백 — AGENTS 9장). 두 회차에 겹쳐 오는 더블클릭도 한 번만
+  쓴다(2026-10-25 E2E).
 """
 
 import ast
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
+from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+from streamlit.runtime.state import session_state_proxy
+from streamlit.runtime.state.safe_session_state import SafeSessionState
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -421,3 +427,113 @@ def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(
     assert not app.success
     assert _posts(database_path) == [("아래 글", False)]
     assert _delete_ready(app, lower) == (False, 0)
+
+
+def _race(
+    app: AppTest,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    callback: str,
+    write: str,
+) -> None:
+    """누른 화면의 같은 누름 둘이 **두 회차에서 겹쳐** 온다 — 더블클릭(2026-10-25 E2E).
+
+    Streamlit 1.63 은 둘째 누름이 닿으면(`runner.fastReruns`) 돌던 회차에 멈춤을 걸고
+    새 회차를 세운다. 두 회차는 스레드가 다르고 같은 세션 칸을 회차마다 따로 잠근다
+    (`SafeSessionState`). 첫 회차의 콜백(`callback` 이름의 위젯 콜백)은 여기서 그 회차의
+    세션 칸으로 바로 부른다. 그 콜백이 DB 에 쓰려는 순간(`write` 저장소 메서드) 둘째
+    누름이 닿는다 — 첫 회차에 멈춤을 걸고 둘째 회차(`app._run`)를 다른 스레드에서 세워
+    1초 기다린 뒤 쓴다. 멈춤을 받은 첫 콜백은 다음 세션 칸 접근에서 `StopException` 으로
+    끊긴다(브라우저에서 잰 모양 그대로).
+    """
+    pressed = app._tree.get_widget_states()
+    shared = app.session_state._state
+    metadata = next(
+        meta
+        for meta in shared._new_widget_state.widget_metadata.values()
+        if getattr(meta.callback, "__name__", None) == callback
+    )
+    pressed_callback = metadata.callback
+    assert pressed_callback is not None
+    callback_args = metadata.callback_args or ()
+    stopped = threading.Event()
+
+    def first_yield() -> None:
+        if stopped.is_set():
+            raise StopException()
+
+    first_state = SafeSessionState(shared, first_yield)
+    local = threading.local()
+    original_state = session_state_proxy.get_session_state
+
+    def thread_state() -> SafeSessionState:
+        state = getattr(local, "state", None)
+        return state if isinstance(state, SafeSessionState) else original_state()
+
+    monkeypatch.setattr(session_state_proxy, "get_session_state", thread_state)
+    second = threading.Thread(target=lambda: app._run(widget_state=pressed))
+    original_write = getattr(DuckDBScenarioRepository, write)
+    arrived: list[int] = []
+
+    def racing(self: DuckDBScenarioRepository, *args: Any, **kwargs: Any) -> Any:
+        if not arrived:
+            arrived.append(1)
+            stopped.set()
+            second.start()
+            second.join(timeout=1.0)
+        return original_write(self, *args, **kwargs)
+
+    monkeypatch.setattr(DuckDBScenarioRepository, write, racing)
+    local.state = first_state
+    try:
+        pressed_callback(*callback_args)
+    except StopException:
+        pass
+    finally:
+        del local.state
+    second.join(timeout=60)
+    assert arrived and not second.is_alive()
+
+
+def test_a_double_click_on_two_runs_posts_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """더블클릭은 두 회차의 콜백이 수 ms 차이로 같은 세대 0 을 보아 같은 글이 두 건 올랐다.
+
+    세대 비교와 쓰기는 한 잠금 안이고, 끊긴 첫 콜백이 쓴 세대는 둘째 콜백이 쓰지 않고 뒷정리만 한다.
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("검증자A")
+    app.text_input(key="voc_post_title").input("제목 A")
+    app.text_area(key="voc_post_body").input("내용 A")
+    app.run()
+    next(button for button in app.button if button.label == "글 올리기").click()
+
+    _race(app, monkeypatch, callback="_submit_post", write="create_voc_post")
+
+    assert not app.exception
+    assert _posts(database_path) == [("제목 A", False)]
+    assert "글을 올렸습니다." in [message.value for message in app.success]
+    assert app.text_input(key="voc_post_title").value == ""
+    assert app.text_area(key="voc_post_body").value == ""
+
+
+def test_a_double_click_of_a_reply_on_two_runs_replies_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자")
+    app.text_area(key=f"voc_reply_body_{post_id}").input("확인했습니다.")
+    app.run()
+    _reply_button(app, post_id).click()
+
+    _race(app, monkeypatch, callback="_submit_reply", write="create_voc_reply")
+
+    assert not app.exception
+    replies = DuckDBScenarioRepository(database_path).list_voc_replies()
+    assert replies["body"].tolist() == ["확인했습니다."]
+    assert "답변을 남겼습니다." in [message.value for message in app.success]
+    assert app.text_area(key=f"voc_reply_body_{post_id}").value == ""
