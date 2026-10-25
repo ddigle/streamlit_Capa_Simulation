@@ -1,4 +1,4 @@
-# Purpose: 가로로 스크롤하는 영역과 그 안의 고정 폭 캔버스를 만드는 공통 셸을 제공한다.
+# Purpose: 가로 스크롤 상자와 그 안의 고정 폭·가장 좁은 폭 캔버스를 만드는 공통 셸을 제공한다.
 
 """Shared horizontal scroll shell for wide Plotly content.
 
@@ -8,6 +8,10 @@ Streamlit 컬럼 폭보다 넓은 Figure 를 그대로 눕히는 구조다.
 
 네이티브 스크롤바를 숨길지는 호출자가 정한다. 숨기는 화면은 `horizontal_scrollbar`
 컴포넌트로 대체해 표 위쪽에 스크롤바를 올린다.
+
+폭을 못박지 않는 변형(`min_width_scroll_rules` · `min_width_scroll_canvas`)은 캔버스에 가장 좁은
+폭만 건다 — 칸이 넓으면 `width="stretch"` 그림이 칸을 채우고, 좁을 때만 상자가 스크롤한다(제약
+시뮬레이션 월별 확보율 그래프). 규칙은 호출자의 `<style>` 에 섞어 이벤트 칸을 늘리지 않는다.
 """
 
 from __future__ import annotations
@@ -74,6 +78,17 @@ def scroll_shell_style(
     return f"<style>\n{box}\n{_canvas_rules(key, content_width_px)}\n</style>"
 
 
+def min_width_scroll_rules(key: str, *, min_width_px: float) -> str:
+    """`{key}_scroll` 스크롤 상자와 폭을 못박지 않는 `{key}_canvas` 캔버스 규칙(`<style>` 없이).
+
+    캔버스는 가장 좁은 폭만 받는다 — 칸이 그보다 넓으면 칸 폭 그대로, 좁으면 상자가 가로로
+    스크롤한다. 네이티브 스크롤바를 쓰고 아래 여백은 두지 않는다.
+    """
+    box = _scroll_box_rules(key, hide_native_scrollbar=False, padding_bottom=None)
+    canvas = f".st-key-{key}_canvas {{ min-width: {min_width_px}px !important; }}"
+    return f"{box}\n{canvas}"
+
+
 def split_scroll_columns_style(
     *,
     label_key: str,
@@ -107,6 +122,15 @@ def split_scroll_columns_style(
             "</style>",
         ]
     )
+
+
+@contextmanager
+def min_width_scroll_canvas(*, key: str, gap: Gap | None = None) -> Iterator[None]:
+    """`{key}_scroll` 스크롤 상자와 `{key}_canvas` 캔버스를 열기만 한다 — 규칙은 호출자가
+    `min_width_scroll_rules` 로 자기 `<style>` 에 싣는다(스타일 칸을 따로 두지 않는다)."""
+    with st.container(key=f"{key}_scroll", gap=gap):
+        with st.container(key=f"{key}_canvas", gap=gap):
+            yield
 
 
 @contextmanager

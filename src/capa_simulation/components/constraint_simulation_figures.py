@@ -21,6 +21,10 @@
   낮을 때(`END_LABEL_MIN_PLOT_PX`) 두 선이 글 한 줄(`END_LABEL_GAP_PX`)보다 가까우면 위 값의 글은
   선 위로·아래 값의 글은 선 아래로 비켜 서로 덮지 않는다(값이 같으면 「제약」 이 위 —
   `end_label_anchors`).
+- 그림 폭은 브라우저가 정한다(`width="stretch"`). 좁은 창에서 달 눈금이 포개지지 않게 본문이
+  그림에 가장 좁은 폭(`chart_min_width_px` — 세운 달 글자 한 칸 `MONTH_SLOT_PX` × 달 수 + 좌우
+  여백)을 주고 칸이 그보다 좁으면 가로로 스크롤한다(`constraint_simulation_view.top_row_style`).
+  눈금을 솎지 않는다 — 서버는 칸 폭을 모르고, 넓은 창에서는 모든 달이 읽힌다.
 - 아래 띠(y2): 개조 비가동 가로 막대 trace **하나**(`base` = 시작 위치, `x` = 길이). 날 → x 는 그
   날이 든 보이는 달 j 의 **W/D 구간**에서 `j − 0.5 + (날 − 첫날) ÷ 일수` 다 — 가용대수가 일할된 바로
   그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다. 겹치는 창은 아래 줄로 내린다.
@@ -88,10 +92,12 @@ __all__ = [
     "CONSTRAINT_FIGURE_SCHEMA_VERSION",
     "END_LABEL_GAP_PX",
     "END_LABEL_MIN_PLOT_PX",
+    "MONTH_SLOT_PX",
     "ROW_IDS",
     "ConstraintLabels",
     "SheetCanvas",
     "build_sheet_canvas",
+    "chart_min_width_px",
     "chart_point_month",
     "day_position",
     "end_label_anchors",
@@ -106,6 +112,13 @@ __all__ = [
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
 CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 4
 CHART_HEIGHT_PX: Final = 340
+# 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
+_MARGIN_LEFT_PX: Final = 52
+_MARGIN_RIGHT_PX: Final = 76
+# 세운 달 눈금 한 칸(px). 세운 「26.07」(11.5px 글씨)의 폭이 12px 이라 1px 를 띄운다 — 사본 앱
+# 390px 창에서는 칸이 6.6px 로 줄어 30개월 글자가 검은 띠로 포개졌다(2026-10-25 E2E). 1280px 창 ·
+# 사이드바 펼침의 30개월(칸 13.1px)은 이 폭 안이라 스크롤이 생기지 않는다.
+MONTH_SLOT_PX: Final = 13
 # 오른쪽 끝 두 글의 비켜 놓기. 그림 칸(본 y 축) 높이는 범례 줄 수에 따라 바뀐다(사본 앱 1440px ·
 # 1280px 창 160px, 390px 창 130px — 2026-10-25 E2E). 그보다 낮게 잡아 가깝다고 보는 쪽으로 기운다 —
 # 비켜 놓은 두 글은 어떤 높이에서도 겹치지 않는다. 글 한 줄 높이는 15~16px 이다.
@@ -300,6 +313,12 @@ def _hit_hover(row: ConstraintMonth) -> str:
 
 def _percent(value: float | None) -> float | None:
     return None if value is None else value * 100
+
+
+def chart_min_width_px(month_count: int) -> int:
+    """그래프에 주는 가장 좁은 폭(px) — 세운 달 눈금이 이웃과 포개지지 않는 폭(좌우 여백 + 달 수 ×
+    `MONTH_SLOT_PX`). 본문 칸이 이보다 좁으면 가로로 스크롤한다."""
+    return _MARGIN_LEFT_PX + _MARGIN_RIGHT_PX + max(int(month_count), 1) * MONTH_SLOT_PX
 
 
 def end_label_anchors(general: float, target: float, *, low: float, high: float) -> tuple[str, str]:
@@ -507,7 +526,7 @@ def rate_figure(
     ]
     layout: dict[str, Any] = {
         "height": CHART_HEIGHT_PX,
-        "margin": {"l": 52, "r": 76, "t": 36, "b": 28},
+        "margin": {"l": _MARGIN_LEFT_PX, "r": _MARGIN_RIGHT_PX, "t": 36, "b": 28},
         "paper_bgcolor": tokens.CHART_CANVAS,
         "plot_bgcolor": tokens.SURFACE,
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},

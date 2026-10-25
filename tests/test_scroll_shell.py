@@ -1,9 +1,9 @@
-# Purpose: 가로 스크롤 셸이 세 화면의 기존 CSS 규칙을 그대로 만들어내는지 고정한다.
+# Purpose: 가로 스크롤 셸이 기존 세 화면 CSS 와 가장 좁은 폭 변형을 그대로 만드는지 고정한다.
 
 import re
 from pathlib import Path
 
-from capa_simulation.components.scroll_shell import scroll_shell_style
+from capa_simulation.components.scroll_shell import min_width_scroll_rules, scroll_shell_style
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,6 +60,22 @@ def test_native_scrollbar_shell_matches_wip_status() -> None:
             min-width: 430px !important;
             max-width: none !important;
         }
+        """
+    )
+
+
+def test_min_width_shell_only_sets_the_narrowest_canvas_width() -> None:
+    """폭을 못박지 않는 변형 — 캔버스는 가장 좁은 폭만 받아 칸이 넓으면 칸을 채우고 좁을 때만
+    상자가 스크롤한다(제약 시뮬레이션 월별 확보율 그래프). 네이티브 스크롤바 · 아래 여백 없음."""
+    css = min_width_scroll_rules("demo_chart", min_width_px=518)
+    assert "<style>" not in css
+    assert _rules(css) == _rules(
+        """
+        .st-key-demo_chart_scroll {
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+        .st-key-demo_chart_canvas { min-width: 518px !important; }
         """
     )
 

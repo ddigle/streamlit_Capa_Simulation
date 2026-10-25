@@ -1630,7 +1630,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_plotly_fast_path.py`). 격자 도우미는 `append_layout_items` 에 모으기만 하고 표 모듈이
     `flush_layout_items` 한 번으로 반영한다(`tests/test_monthly_table_grid.py`).
 - `src/capa_simulation/components/scroll_shell.py` — 월별 표·HOME·재공 현황이 함께 쓰는 가로 스크롤 상자와 고정 폭
-  캔버스, 분류 칸 폭을 px 로 못박는 `split_scroll_columns_style` 이다. key 를 바꾸면 CSS 가 끊어진다.
+  캔버스, 분류 칸 폭을 px 로 못박는 `split_scroll_columns_style` 이다. key 를 바꾸면 CSS 가 끊어진다. 폭을 못박지 않는
+  변형(`min_width_scroll_rules` · `min_width_scroll_canvas` — 캔버스에 가장 좁은 폭만 걸어 넓으면 칸을 채우고 좁을 때만
+  스크롤, 규칙은 호출자 `<style>` 에 섞는다)은 제약 시뮬레이션 그래프가 쓴다. 셸 CSS(`overflow-x: auto`)를 다른 모듈에
+  손으로 적지 않는다(`tests/test_scroll_shell.py`).
 - `src/capa_simulation/components/month_editor.py` — 월별 Wide 기준정보를 탭 안에서 편집하는 `data_editor` 와 표
   위 작업 줄(적용·Excel 붙여넣기 팝업·편집 취소·변경 개수)이다.
   - 필터(사이드바 `표 조건` 카드)는 보기만 좁히고 저장은 전체다 — 편집값은 `merge_edited_months` 로 전체 표에
@@ -2082,8 +2085,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 그림은 세션 memo(4칸 —
   키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 위 줄(그래프 카드 + 고른 달 계산 카드)은 가로 컨테이너 하나(3 : 2)이고
   줄이 `TOP_ROW_STACK_BELOW_PX`(900px)보다 좁으면 컨테이너 질의로 위아래로 쌓는다(`top_row_style` — 사이드바를 편 900px 창에서
-  3 : 2 그대로면 그래프 그림 칸이 169px 로 줄어 달 누름이 어려웠다). 이벤트 칸은 스타일만 든 `st.html` 넷(위 줄 배치 + 공정
-  Capa 상세와 같은 계산표 틀 셋)이다.
+  3 : 2 그대로면 그래프 그림 칸이 169px 로 줄어 달 누름이 어려웠다). 그래프는 카드 안 스크롤 상자 → 캔버스에 서고 캔버스는
+  폭을 고정하지 않고 가장 좁은 폭만 건다(`chart_min_width_px` — 좌우 여백 + 달 수 × 세운 달 한 칸 `MONTH_SLOT_PX` 13px) —
+  카드가 그보다 좁으면(390px 창) 상자가 가로로 스크롤한다(그림 칸이 199px 로 줄어 세운 달 눈금 30개가 포개졌다, 2026-10-25
+  E2E). 눈금은 솎지 않는다 — 서버는 칸 폭을 모른다. 규칙은 위 줄 배치와 같은 스타일 칸(`top_row_style(달 수)`)이라 이벤트 칸은
+  스타일만 든 `st.html` 넷(위 줄 배치 + 공정 Capa 상세와 같은 계산표 틀 셋) 그대로다.
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
   - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
