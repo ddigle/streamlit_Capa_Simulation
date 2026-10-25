@@ -727,7 +727,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
   원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「설정」 팝업 Cut-off 표).
   - 행 필터 중에는 `num_rows="fixed"` 다 — 이 표들은 편집 결과가 곧 다음 리비전 전부다. 거른 편집인지는 호출자가
-    `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`).
+    `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`). 모든 행이 남는 거름(「Select
+    all」·한 호기뿐인 표의 「표에서 고치기」)은 원본(RangeIndex)을 그대로 돌려준다 — `.loc` 의 일반 정수 Index 를
+    행 추가가 열린 편집표에 넘기면 Streamlit 1.63 이 `hide_index=True` 를 무시하고 머리 없는 인덱스 칸을 세운다.
   - 보이는 행이 바뀌면 `discard_editor` 로 새 위젯을 세운다. 보기 설정 위젯은 `st.form` 밖이고 `value_labels` 는
     보이는 글자만 바꾼다.
 - `src/capa_simulation/components/securement_heatmap.py` — `산출 결과` 의 공정 × 월 확보율 상태 3색 격자다(범례 없이
