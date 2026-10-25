@@ -553,6 +553,26 @@ def test_downtime_paste_of_differently_zoned_starts_names_them_instead_of_crashi
     assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {starts}"
 
 
+@pytest.mark.parametrize("source", ["clipboard", "csv"])
+def test_a_plus_nine_start_beside_a_z_start_is_refused_in_korean_by_both_readers(
+    source: str,
+) -> None:
+    """E2E 로 본 꼴 그대로 — `+09:00` 과 `Z`(UTC) 시작일이 섞인 붙여넣기·CSV 가 「변경 미리보기」 를
+    pandas `AttributeError`(화면의 `BOOTSTRAP_ERRORS` 밖 — Traceback)로 멈추지 않고 두 값을 든
+    한국어 ValueError 로 막힌다."""
+    equipment = prepare_equipment_master(_equipment())
+    starts = ["2026-11-01T00:00:00+09:00", "2026-11-03T00:00:00Z"]
+    text = _downtime_paste(starts)
+
+    with pytest.raises(ValueError) as caught:
+        if source == "clipboard":
+            read_downtime_clipboard(text, equipment=equipment)
+        else:
+            read_downtime_csv(text.replace("\t", ",").encode("utf-8-sig"), equipment=equipment)
+    assert type(caught.value) is ValueError
+    assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {starts}"
+
+
 def test_downtime_paste_blames_only_the_zoned_first_start() -> None:
     """시간대 붙은 값이 칸 첫 값이어도 pandas 가 칸 전체를 그 꼴로 읽어 멀쩡한 날짜까지 탓하지
     않는다 — 그 값 하나만 든다."""
