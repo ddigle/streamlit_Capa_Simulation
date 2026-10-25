@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
@@ -326,3 +327,25 @@ def test_an_assumption_session_warns_that_spreading_counts_in_the_official_scena
 
     assert panel["propagateWarning"] and "공식 가용대수" in panel["propagateWarning"]
     assert any("가정 설비 시나리오" in note for note in panel["notes"])
+
+
+def test_a_new_unit_saved_in_an_assumption_session_has_no_official_place(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """설계 Q1 — 가정 설비 시나리오에서 넣은 새 호기의 동·층은 그 시나리오의 배치 차이로만 저장되고
+    공식 배치(공통 대장)에는 자리 없이 들어간다."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[SIDE_KEY] = SIDE_NEW
+    _ok(app.run())
+
+    _add(
+        app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A", 동="C2", 층="3F"), propagate=False
+    )
+    _save(app)
+
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    official = _session(repository, OPERATIONS).equipment.set_index("설비명")
+    mine = _session(repository, setup).equipment.set_index("설비명")
+    assert pd.isna(official.loc["EQ-09", "동"]) and pd.isna(official.loc["EQ-09", "층"])
+    assert (mine.loc["EQ-09", "동"], mine.loc["EQ-09", "층"]) == ("C2", "3F")
