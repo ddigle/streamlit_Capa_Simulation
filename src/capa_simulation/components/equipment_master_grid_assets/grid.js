@@ -1728,6 +1728,19 @@ function drawDetail(S, root, data) {
     const fields = el('div', 'emg-fields')
     for (const k of group[4] || []) if (columns[k]) fields.appendChild(detailField(S, unit, columns[k], k, sets, reasons))
     box.appendChild(fields)
+    // 가정 설비 시나리오에서 공식과 다른 자리의 호기 — 공식 자리 한 줄과 「공식 자리로 되돌리기」(모듈이면 묶음 통째).
+    if (group[0] === 'place' && unit.official && unit.tag !== 'deleted') {
+      const line = el('div', 'emg-official')
+      line.appendChild(el('span', 'emg-muted', String(unit.official.text || '')))
+      const count = Number(unit.official.count) || 1
+      const back = button('emg-link', '공식 자리로 되돌리기' + (count > 1 ? ' (묶음 ' + count + '대)' : ''), () => {
+        enqueue(S, { op: 'official', id: unit.id }, [])
+        send(S)
+      })
+      back.title = '이 호기의 배치 일곱 칸을 공식 값으로 — 저장하면 이 설비 시나리오의 배치 차이에서 빠집니다'
+      line.appendChild(back)
+      box.appendChild(line)
+    }
     root.appendChild(box)
   }
   const downtime = el('div', 'emg-side-group')

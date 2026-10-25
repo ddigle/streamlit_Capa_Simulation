@@ -120,7 +120,9 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
 
 
 def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -> None:
-    """붙여넣기·미리보기는 저장하지 않고, 확인하면 불변 리비전에 한 번에 저장한다."""
+    """「엑셀·CSV로 한꺼번에」 팝업의 붙여넣기·미리보기·「편집본에 넣기」 는 저장하지 않고,
+    「저장 전 변경」 의 「리비전 저장」 이 불변 리비전에 한 번에 저장한다(개편 B1 — 첫 리비전도 한
+    길)."""
     page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
     database_path = tmp_path / "baseline_import.duckdb"
     app = AppTest.from_string(
@@ -128,6 +130,8 @@ def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -
         default_timeout=60,
     ).run()
     _open_tab(app, "설비 마스터")
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
+    app.run()
     app.selectbox("equipment_import_target_v1").set_value("기존 보유대수").run()
     app.text_area("equipment_import_clipboard_v1").set_value(
         "공정\t분류\t기존보유대수\t비고\nProcess-X\t전체\t7\t증설"
@@ -139,8 +143,15 @@ def test_baseline_paste_import_needs_a_preview_before_it_saves(tmp_path: Path) -
     app.button("equipment_import_preview_v1").click().run()
     assert not app.exception
     assert not repository.list_revisions()
+    app.button("equipment_import_apply_v1").click().run()
+    assert not app.exception
+    # 넣기는 편집본만 바꾼다 — 저장본 사본·리비전은 그대로다.
+    assert not repository.list_revisions()
     assert app.session_state["equipment_baseline_draft_v3"].empty
-    app.button("equipment_import_save_v1").click().run()
+    assert app.session_state["equipment_workspace_buffers_v1"][0]["공정"].tolist() == ["Process-X"]
+    app.session_state["equipment_master_side_v1"] = "저장 전 변경"
+    app.run()
+    app.button("equipment_master_save_v1").click().run()
 
     assert not app.exception
     assert not app.error
@@ -433,8 +444,9 @@ def _seeded_equipment(database_path: Path) -> None:
     clear_equipment_repository()
 
 
-def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> None:
-    """값이 있는 세 표에 각각 컬럼 선택과 행 필터가 붙는다.
+def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
+    """작은 편집표 둘(기존 보유대수·비가동 일정)에 각각 컬럼 선택과 행 필터가 붙는다 — 설비
+    마스터는 표 컴포넌트(칸 묶음·정렬·불러오기)라 보기 설정이 없다(개편 B1).
 
     보기 적용과 리비전 저장은 별개다. 필터 변경만으로 불변 리비전을 만들지 않는다.
     """
@@ -445,19 +457,26 @@ def test_the_view_controls_render_for_each_editable_table(tmp_path: Path) -> Non
 
     assert not app.exception
     labels = [expandable.label for expandable in app.status]
-    for table in ("기존 보유대수", "설비 마스터", "운영 비가동 일정"):
-        assert f"{table} · 표 보기 설정" in labels, table
-    # 다른 탭이 붙어도 각 입력표의 키로 찾는다.
-    for prefix in ("equipment_baseline_view", "equipment_master_view", "equipment_downtime_view"):
+    assert not any(label.endswith("· 표 보기 설정") for label in labels)
+    for table, label, prefix in (
+        ("기존 보유대수", "기존 보유대수 · 표 보기 설정", "equipment_baseline_view"),
+        ("비가동 일정", "운영 비가동 일정 · 표 보기 설정", "equipment_downtime_view"),
+    ):
+        app.session_state["equipment_master_table_v1"] = table
+        app.run()
+        assert not app.exception
+        assert label in [expandable.label for expandable in app.status], table
         assert app.multiselect(f"{prefix}_columns").value
+    assert len(DuckDBEquipmentRepository(database_path).list_revisions()) == 1
     clear_equipment_repository()
 
 
 def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> None:
-    """감춘 컬럼도 저장에는 그대로 들어간다.
+    """감춘 컬럼도 편집본에는 그대로 들어간다.
 
     `st.data_editor` 는 `column_config={컬럼: None}` 으로 감춘 컬럼의 값을 반환 프레임에
-    그대로 돌려준다. 값이 빠져 나가면 저장이 그 컬럼을 통째로 비운다.
+    그대로 돌려준다. 값이 빠져 나가면 적용·저장이 그 컬럼을 통째로 비운다. 보기 설정은 탭을
+    옮겨도 남는다(`persist_state` — 탭 ① 은 숨은 회차에 그리지 않는다).
     """
     database_path = tmp_path / "availability.duckdb"
     _seeded_equipment(database_path)
@@ -467,17 +486,24 @@ def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> 
         default_timeout=60,
     ).run()
     _open_tab(app, "설비 마스터")
+    app.session_state["equipment_master_table_v1"] = "기존 보유대수"
+    app.run()
     picker = app.multiselect("equipment_baseline_view_columns")
     remaining = [column for column in picker.value if column != "비고"]
     picker.set_value(remaining)
-    app.button("equipment_view_apply_v1").click().run()
+    app.button("equipment_baseline_view_apply_v1").click().run()
     _open_tab(app, "Main")
     _open_tab(app, "설비 마스터")
     assert app.multiselect("equipment_baseline_view_columns").value == remaining
-    app.button("equipment_edit_save_v1").click().run()
+    app.button("equipment_baseline_apply_v1").click().run()
+    app.session_state["equipment_master_side_v1"] = "저장 전 변경"
+    app.run()
+    app.button("equipment_master_save_v1").click().run()
 
     assert not app.exception
     assert not app.error
+    buffer = app.session_state["equipment_workspace_buffers_v1"]
+    assert buffer[0]["비고"].tolist() == ["숨겨도 유지할 값"]
     repository = DuckDBEquipmentRepository(database_path)
     revisions = repository.list_revisions()
     # 감춘 칸 값이 빠져 나갔다면 「바뀐 것」 으로 보여 새 리비전이 생긴다 — 값이 그대로라 저장할

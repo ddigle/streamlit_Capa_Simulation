@@ -1,17 +1,20 @@
-# Purpose: 가용설비 현황 두 탭(설비 마스터·Summary)과 「설정」 팝업을 잇고 데모 경계를 관리한다.
+# Purpose: 가용설비 현황 두 탭(설비 마스터·Summary)과 설정·엑셀·CSV 팝업을 잇고 데모 경계를 둔다.
 
 """가용설비 현황 — 탭 둘(2026-10-24 사용자 결정 — 두 탭 개편).
 
-- ① **설비 마스터**(처음 여는 탭) — 설비 입력·직접 편집·저장
-  이력(`render_equipment_data_workspace`). 편집표 델타를 지키려고 **숨은 회차에도 늘 그린다**. 그
-  작업 공간은 제출을 처리한 뒤 본문에서 `st.rerun()` 으로 끝나므로(AGENTS 9장 「`st.rerun()` 은 그
-  화면의 모든 편집표를 그린 뒤에만」) **코드 차례는 Summary 블록 뒤**다 — 화면 차례는
-  `stateful_tabs` 목록이 정해 ① 이 먼저다.
+- ① **설비 마스터**(처음 여는 탭) — 설비 마스터 표(불러오기·칸 고치기·붙여넣기·한꺼번에 고치기)·
+  작은 편집표 둘(기존 보유대수·비가동 일정)·오른쪽 칸(호기 상세·저장 전 변경·저장 이력) —
+  `components/equipment_master_tab.py`. **열린 회차에만 그린다**(개편 B1 — 표 편집은 세션 칸에 산다,
+  AGENTS 9장 「숨은 탭에서도 입력 위젯은 그린다」 의 예외). 그 모듈은 표 컴포넌트를 등록하므로 열린
+  회차에만 불러온다. 작은 편집표 제출은 그 탭의 모든 위젯을 그린 뒤 `st.rerun()` 으로 끝나므로
+  **코드 차례는 Summary 블록 뒤**다 — 화면 차례는 `stateful_tabs` 목록이 정해 ① 이 먼저다.
 - ② **Summary** — 안쪽 탭 「Main」(설비 조회)·「Static 대비 일정」(월별 비교). 안쪽 탭은 바깥
   Summary 블록 안에서 늘 부르고(위젯 값이 남아 사이드바가 읽는다), 본문 갈래는 바깥·안쪽이 함께
   열렸을 때만 돈다(`NestedTab`) — ① 을 보는 회차에 Main 탐색·Static 대비 일정 계산이 돌지 않는다.
-- 머리 끝 「설정」 단추 → 공정별 Cut-off 팝업(`equipment_settings_dialog`). Static 대비 일정은
-  Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접 읽는다.
+- 머리 끝 「설정」 단추 → 공정별 Cut-off 팝업(`equipment_settings_dialog`), 탭 ① 「엑셀·CSV로
+  한꺼번에」 → 붙여넣기·CSV 팝업(`equipment_import_dialog` — 「편집본에 넣기」 까지). 두 팝업은 한
+  열림 칸·한 호스트다. Static 대비 일정은 Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접
+  읽는다.
 - Qual 마감 계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·발행은 시나리오 관리 › 설비
   시나리오다.
 """
@@ -33,6 +36,7 @@ from capa_simulation.components.equipment_data_workspace import (
     DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
     FLASH_KEY,
+    _official_places_by_name,
     calculation_drafts,
     draft_unscheduled_units,
     effective_floor_canvases,
@@ -42,11 +46,17 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     pop_discarded_notice,
     pop_drafts_replaced,
-    render_equipment_data_workspace,
+    small_editor_edits,
 )
 from capa_simulation.components.equipment_explorer import (
     render_equipment_explorer,
     render_equipment_period,
+)
+from capa_simulation.components.equipment_import_dialog import (
+    ImportContext,
+    open_equipment_import,
+    render_import_dialog,
+    withdraw_preview_on_new_visit,
 )
 from capa_simulation.components.equipment_scenario_status import (
     PREFERENCE_LOCK_MESSAGE,
@@ -96,7 +106,6 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
-from capa_simulation.services.floor_layout_profile import max_canvas_extent
 from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
@@ -125,9 +134,10 @@ def _months_between(start: date, end: date) -> list[int]:
 
 
 def _open_master_import() -> None:
-    """설비 입력으로 가는 콜백 — 탭 ① 「설비 마스터」 를 연다(그 안의 「입력」 탭은 key 만 있는
-    `st.tabs` 라 서버가 고를 수 없다 — 개편 전과 같다)."""
+    """설비 입력으로 가는 콜백 — 탭 ① 「설비 마스터」 를 기억하고 「엑셀·CSV로 한꺼번에」 팝업을
+    연다(첫 데이터도 그 팝업으로 넣고 「저장 전 변경」 에서 저장한다 — 한 길)."""
     st.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    open_equipment_import()
 
 
 def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
@@ -197,10 +207,9 @@ drafts_replaced = pop_drafts_replaced()
 discarded_notice = pop_discarded_notice()
 if discarded_notice:
     notices.warning(discarded_notice, icon=":material/sync_problem:")
-# Space 에서 넓혀 두고 아직 저장하지 않은 캔버스도 본다 — 편집표 상한·미리보기 검증이 그
-# 캔버스에 놓은 호기를 「밖」으로 막지 않게. 새 리비전이 생겨 대기분이 버려진 뒤에 읽는다.
+# Space 에서 넓혀 두고 아직 저장하지 않은 캔버스도 본다 — 칸 검증·미리보기 검증이 그 캔버스에
+# 놓은 호기를 「밖」으로 막지 않게. 새 리비전이 생겨 대기분이 버려진 뒤에 읽는다.
 floor_canvases = effective_floor_canvases(stored_floor_canvases)
-max_extent = max_canvas_extent(floor_canvases)
 # 사이드바 「설비 시나리오」 줄 — 이 회차 목록으로 그린다(칸이 없는 탭·회차는 그리지 않는다).
 render_equipment_scenario_row(equipment_session)
 # 저장본 사본 그대로(편집·설비 마스터·CSV 견주기 — 39칸 전체)와 계산에 넘길 사본(이 설비 시나리오에
@@ -238,11 +247,14 @@ main_view = NestedTab(summary_tab, main_tab)
 gap_view = NestedTab(summary_tab, gap_tab)
 # 저장하지 않은 설비 편집(편집본·Space FAB 배치 대기)이 있으면 ① 탭 이름 옆에 점(라벨 글자는 그대로
 # — 탭 위젯 id). 화면 탭 줄의 점과 같은 판정이다. 찍을 것이 없어도 빈 규칙을 매 회차 그린다.
+# 작은 편집표(기존 보유대수·비가동 일정)의 적용 전 편집도 같은 점이다 — 그 편집은 탭을 옮기면
+# 사라진다
+# (화면 탭 줄 떠나기 확인도 이것으로 묻는다 — `page_tabs.leave_notice`).
 mark_pending_tabs(
     EQUIPMENT_TAB_KEY,
     EQUIPMENT_TABS,
     {EQUIPMENT_MASTER_TAB}
-    if has_unsaved_equipment_edits() or pending_fab_layout() is not None
+    if has_unsaved_equipment_edits() or pending_fab_layout() is not None or small_editor_edits()
     else set(),
 )
 # 조회 결과를 그리는 탭(설비 조건 카드·샘플 스위치가 서는 탭) — Summary 의 두 안쪽 탭.
@@ -286,11 +298,26 @@ dashboard_baseline = (
 # 「설정」 팝업(공정별 Cut-off — Preference 탭이던 것). 이벤트 칸에 늘 한 자리를 쓴다. 「Cut-off 를
 # 적지 않은 공정」 경고는 지금처럼 화면 호기의 공정으로 낸다. Cut-off 는 모든 설비 시나리오 공용이라
 # 가정 설비 시나리오에서는 읽기 전용(E3)이고, 공식 시나리오의 발행 안 한 리비전에서는 열린다.
+# 「엑셀·CSV로 한꺼번에」 팝업도 같은 열림 칸·같은 호스트다(한 실행에 팝업 하나). 새 방문 회차에는
+# 미리보기를 거둔다(입력 칸은 비어 돌아온다).
+withdraw_preview_on_new_visit()
 render_equipment_dialog_host(
     repository,
     equipment_processes=processes_in(dashboard_equipment, dashboard_baseline),
     process_labels=process_labels,
     locked_reason=PREFERENCE_LOCK_MESSAGE if equipment_session.is_assumption else None,
+    import_dialog=partial(
+        render_import_dialog,
+        ImportContext(
+            floor_canvases=floor_canvases,
+            basis=equipment_session.save_basis(),
+            layout_mode=layout_mode.layout,
+            layout_lock_reason=layout_mode.master_tab_lock_reason,
+            official_places=(
+                _official_places_by_name(latest_snapshot) if layout_mode.layout == "overlay" else {}
+            ),
+        ),
+    ),
 )
 
 # 조회 조건은 사이드바 조건 카드 `설비 조회 조건` 이다(2026-09-29 사용자 결정). Summary 의 Main·
@@ -474,22 +501,20 @@ with gap_tab:
 
 
 with master_tab:
-    # 입력 위젯은 숨은 탭에서도 유지한다. editor delta가 사라지면 안 된다. 제출을 처리한 뒤 본문에서
-    # `st.rerun()` 으로 끝나므로 코드 차례는 Summary 뒤다(모듈 설명).
-    render_equipment_data_workspace(
-        repository=repository,
-        latest_snapshot=latest_snapshot,
-        baseline=baseline,
-        equipment=saved_equipment,
-        downtime=saved_downtime,
-        floor_canvases=floor_canvases,
-        max_extent=max_extent,
-        drafts_replaced=drafts_replaced,
-        today=today,
-        basis=equipment_session.save_basis(),
-        confirmation_official=official_snapshot,
-        # 배치 일곱 칸은 Space 와 같은 판정이다(설계 8-4·10장) — 공식 시나리오면 공식 배치, 가정이면
-        # 그 시나리오의 배치 차이, 잠긴 회차면 있던 호기 배치 칸 고침을 되돌린다.
-        layout_mode=layout_mode.layout,
-        layout_lock_reason=layout_mode.master_tab_lock_reason,
-    )
+    # 열린 회차에만 그린다(개편 B1 — 표 편집은 세션 칸에 산다). 그 모듈은 표 컴포넌트를 등록하므로
+    # 여기서만 불러온다. 작은 편집표 제출은 그 안에서 모든 위젯을 그린 뒤 `st.rerun()` 으로 끝난다.
+    if not tab_is_hidden(master_tab):
+        from capa_simulation.components.equipment_master_tab import render_equipment_master_tab
+
+        render_equipment_master_tab(
+            repository=repository,
+            session=equipment_session,
+            latest_snapshot=latest_snapshot,
+            floor_canvases=floor_canvases,
+            # 배치 일곱 칸은 Space 와 같은 판정이다(설계 8-4·10장) — 공식 시나리오면 공식 배치,
+            # 가정이면 그 시나리오의 배치 차이, 잠긴 회차면 있던 호기 배치 칸이 잠긴다.
+            layout_mode=layout_mode,
+            today=today,
+            confirmation_official=official_snapshot,
+            drafts_replaced=drafts_replaced,
+        )

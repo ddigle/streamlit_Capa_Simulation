@@ -40,6 +40,7 @@ import streamlit as st
 from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     pending_fab_layout,
+    small_editor_edits,
 )
 from capa_simulation.components.past_data_management import past_data_has_pending
 from capa_simulation.components.pick_edit_table import table_has_edits
@@ -95,6 +96,7 @@ TEXT = {
 }
 _SPECS: dict[str, PageSpec] = {spec.path: spec for spec in ALL_SPECS}
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name
+_EQUIPMENT_PAGE_FILE = Path(AVAILABLE_EQUIPMENT_STATUS.path).name
 # Space 층 사용 편집 초안(`사용 편집` 토글 + 세션 초안)의 떠나기 확인 이름 — 편집표 몫과 같은
 # 「제목 · 이름」 꼴이다.
 FLOOR_STATE_LEAVE_LABEL = f"{SPACE_STATUS.title} · 층 사용 편집"
@@ -128,6 +130,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
     - Space 층 사용 편집 초안(`floor_state_draft_pending`)도 같다 — 초안은 세션 칸이지만 `사용 편집`
       토글이 위젯 상태라 화면을 떠나면 꺼진 채 돌아와 초안을 버린다. Space 가 지금 화면일 때만
       찍고 떠날 때 묻는다(테마 표지도 이 점으로 본다).
+    - 가용설비 현황 설비 마스터 탭의 작은 편집표 둘(`small_editor_edits` — 기존 보유대수·비가동
+      일정)도 편집표라 지금 화면일 때만 찍고 떠날 때 묻는다. 설비 마스터 **표**의 편집은 편집본(세션
+      칸)이라 위 「설비 편집본」 점이다(떠나도 사라지지 않는다).
     - 설비 편집본은 가용설비 현황·Space 현황이 함께 쓰는 한 벌이라 두 탭에 함께 찍는다(세대 기준이라
       되돌린 편집에도 남는다 — 테마 표지와 같은 오탐).
     - 넣지 않는 것: 적용했지만 저장하지 않은 시나리오(머리 띠·사이드바 배지가 말한다. 어느 화면이
@@ -149,7 +154,18 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
         mark(SCENARIO_MANAGEMENT.path, "저장하지 않은 목록 편집")
     if page_file == _SPACE_PAGE_FILE and floor_state_draft_pending():
         mark(SPACE_STATUS.path, "저장하지 않은 층 사용 편집")
+    small = _equipment_small_editors(page_file)
+    if small:
+        mark(AVAILABLE_EQUIPMENT_STATUS.path, "적용 전 편집: " + ", ".join(small))
     return {path: " · ".join(notes) for path, notes in marks.items()}
+
+
+def _equipment_small_editors(page_file: str | None) -> list[str]:
+    """가용설비 현황 설비 마스터 탭 작은 편집표(기존 보유대수·비가동 일정)의 적용 전 편집 — 위젯
+    상태라 화면을 떠나면 사라진다(지금 화면일 때만). 「제목 · 이름」 꼴."""
+    if page_file != _EQUIPMENT_PAGE_FILE:
+        return []
+    return [f"{AVAILABLE_EQUIPMENT_STATUS.title} · {name}" for name in small_editor_edits()]
 
 
 def leave_notice(page_file: str | None) -> str:
@@ -164,6 +180,7 @@ def leave_notice(page_file: str | None) -> str:
     names = [] if edits is None else list(edits.editors)
     if page_file == _SPACE_PAGE_FILE and floor_state_draft_pending():
         names.append(FLOOR_STATE_LEAVE_LABEL)
+    names.extend(_equipment_small_editors(page_file))
     return ", ".join(names)
 
 

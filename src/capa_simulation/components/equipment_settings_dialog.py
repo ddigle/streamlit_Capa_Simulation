@@ -5,9 +5,9 @@
 - **자리**: 제목 줄 끝 칸의 「설정」 단추(`render_page_header(trailing=)`) → 큰 팝업. 안은 묶음 머리
   「공정별 Cut-off」 하나(`render_cutoff_management` 그대로)다 — 나중 설정은 같은 팝업에 묶음 머리로
   붙인다(D14).
-- **열림 칸**: 페이지에 한 칸(`available_equipment_open_dialog`) — 값이 팝업을 가른다(지금은
-  `settings` 하나. 엑셀·CSV 팝업이 들어오면 `import` 를 더한다). 여는 콜백은 `forget_page_dialogs()`
-  부터 부른다(AGENTS 9장 「팝업과 콜백」 — 한 실행에 팝업 하나).
+- **열림 칸**: 페이지에 한 칸(`available_equipment_open_dialog`) — 값이 팝업을 가른다(`settings` ·
+  `import` — 엑셀·CSV 팝업은 `equipment_import_dialog`, 호스트는 여기 하나). 여는 콜백은
+  `forget_page_dialogs()` 부터 부른다(AGENTS 9장 「팝업과 콜백」 — 한 실행에 팝업 하나).
 - **호스트**: 이벤트 칸에 늘 한 자리를 쓴다 — 열렸으면 팝업, 아니면 빈 스타일 자리표시자. 팝업
   본문도 이벤트 칸에 쓰지 않는다(`render_cutoff_management` 는 스타일만 든 `st.html`·토스트를 쓰지
   않는다).
@@ -25,6 +25,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import streamlit as st
 
 from capa_simulation.components.cutoff_management import render_cutoff_management
@@ -34,6 +36,7 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 
 __all__ = [
     "EQUIPMENT_DIALOG_KEY",
+    "IMPORT_DIALOG",
     "SETTINGS_BUTTON_KEY",
     "SETTINGS_DIALOG",
     "SETTINGS_DIALOG_TITLE",
@@ -47,6 +50,9 @@ EQUIPMENT_DIALOG_KEY = f"available_equipment{PAGE_DIALOG_SUFFIX}"
 SETTINGS_DIALOG = "settings"
 SETTINGS_DIALOG_TITLE = "설정"
 SETTINGS_BUTTON_KEY = "equipment_settings_open_v1"
+# 엑셀·CSV 팝업 열림 값(`equipment_import_dialog.IMPORT_DIALOG` 와 같은 글 — 그 모듈이 이 모듈을
+# 불러오므로 거꾸로 부르지 않는다).
+IMPORT_DIALOG = "import"
 
 
 def open_equipment_settings() -> None:
@@ -99,9 +105,14 @@ def render_equipment_dialog_host(
     equipment_processes: list[str],
     process_labels: ProcessLabels | None,
     locked_reason: str | None,
+    import_dialog: Callable[[], None] | None = None,
 ) -> None:
-    """열린 팝업을 그린다 — 이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일 자리표시자)."""
-    if st.session_state.get(EQUIPMENT_DIALOG_KEY) == SETTINGS_DIALOG:
+    """열린 팝업을 그린다 — 이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일 자리표시자).
+    `import_dialog` 는 열림 칸이 `import` 일 때 부를 엑셀·CSV 팝업(없으면 그 칸은 빈 자리)."""
+    opened = st.session_state.get(EQUIPMENT_DIALOG_KEY)
+    if opened == SETTINGS_DIALOG:
         _settings_dialog(repository, equipment_processes, process_labels, locked_reason)
+    elif opened == IMPORT_DIALOG and import_dialog is not None:
+        import_dialog()
     else:
         st.html("<style></style>")

@@ -825,3 +825,55 @@ def test_undo_steps_survive_the_session_round_trip() -> None:
     assert eg.undo_from_state(plain)[1].kind == "rows"
     assert eg.undo_from_state(plain)[0].master == state.undo[0].master
     assert eg.undo_from_state("bad") == () and eg.undo_from_state(({"x": 1},)) == ()
+
+
+# ------------------------------------------------------- 공식 자리로 되돌리기(설계 13-1)
+
+
+def _overlay_with_official(
+    saved: eg.Frames, position: int
+) -> tuple[eg.GridContext, eg.Frames, Any]:
+    """그 줄을 공식과 다른 자리(가정 배치)로 본 가정 편집 회차 — 공식 일곱 칸은 저장본 값을 옮긴
+    것으로 둔다(저장본 = 가정 배치를 얹은 것)."""
+    from capa_simulation.services.layout_overlay import place_of
+
+    row = saved[1].iloc[position]
+    official = place_of(row)
+    moved = (official[0], official[1], 99.0, 77.0, official[4], official[5], official[6])
+    name = str(row["설비명"]).strip()
+    master = saved[1].copy()
+    master.loc[master.index[position], "X좌표"] = 99.0
+    master.loc[master.index[position], "Y좌표"] = 77.0
+    context = eg.GridContext(
+        base=BASE, scenario_name="가정", official=False, official_places={name: official}
+    )
+    return context, (saved[0], master, saved[2]), moved
+
+
+def test_official_place_revert_writes_the_official_seven_cells() -> None:
+    saved = _saved()
+    context, overlay_saved, _ = _overlay_with_official(saved, 2)
+    state = _state(overlay_saved)
+    row_id = _id(state, 2)
+    view = eg.build_grid_view(eg.GridSource(frames=state.frames, saved=state.saved), context)
+    unit = eg.detail_data(view, row_id)["unit"]
+    assert unit["official"]["text"].startswith("공식: ")
+    assert unit["official"]["count"] == 1
+    result = _apply(state, _op("official", id=row_id), context=context)
+    assert result.changed
+    assert _value(result.state, 2, "X좌표") == saved[1].iloc[2]["X좌표"]
+    assert _value(result.state, 2, "Y좌표") == saved[1].iloc[2]["Y좌표"]
+    assert result.toast is not None and result.toast.startswith("공식 자리로 되돌렸습니다 — 1대")
+    assert result.toast_step is not None
+    # 한 단계 되돌리기로 가정 자리가 돌아온다.
+    undone = _apply(result.state, _op("undo", seq=2), context=context)
+    assert _value(undone.state, 2, "X좌표") == 99.0
+
+
+def test_official_place_revert_is_refused_without_official_places() -> None:
+    state = _state()
+    result = _apply(state, _op("official", id=_id(state, 0)), context=OVERLAY)
+    assert not result.changed
+    assert result.refused == 1
+    view = eg.build_grid_view(eg.GridSource(frames=state.frames, saved=state.saved), OVERLAY)
+    assert "official" not in eg.detail_data(view, _id(state, 0))["unit"]

@@ -86,6 +86,7 @@ from capa_simulation.services.equipment_validation import (
     coerce_master_cell,
 )
 from capa_simulation.services.layout_overlay import (
+    Place,
     assumption_common_places,
     misplaced_rows,
     place_rows,
@@ -416,6 +417,10 @@ class GridContext:
       판정으로 자리를 맞춘다(`locked_layout`). 공식(`"official"`)·가정(`"overlay"`) 편집이면 None
       이다 — 배치 칸은 `official` 에 따라 공식 배치 또는 그 가정 시나리오의 배치 차이로 저장된다.
     - `location_options` — 동·층 고를 값(Space 층 사용 상태로 좁힌 것). 없으면 유효 동·층 전부.
+    - `official_places` — 가정 설비 시나리오 편집 회차(`"overlay"`)의 저장본 설비명 → 공식 일곱
+      칸(그 시나리오 배치가 공식과 다른 호기만 — `EquipmentSnapshot.layout_official_places`). 「호기
+      상세」 위치 묶음의 「공식: …」 한 줄과 「공식 자리로 되돌리기」(`official` op)가 쓴다(설비
+      시나리오 2단계 설계 13-1). 공식·잠긴 회차는 빈 dict 다.
     """
 
     base: str
@@ -426,6 +431,7 @@ class GridContext:
     layout_lock: str | None = None
     new_rows_locked: bool = False
     location_options: tuple[tuple[str, ...], tuple[str, ...]] | None = None
+    official_places: Mapping[str, Place] = field(default_factory=dict)
 
     def lock_reasons(self) -> dict[str, str]:
         reasons = {"module": MODULE_LOCK_REASON, "deleted": DELETED_LOCK_REASON}
@@ -1061,6 +1067,46 @@ def detail_meta(view: GridView, row_id: str) -> str:
     return " · ".join(part for part in parts if part)
 
 
+def official_place_words(place: Place) -> str:
+    """공식 일곱 칸을 한 줄로 — 「공식: C1 2F · (12, 30) · 12×7」(빈 칸은 「미정」, 레이아웃표시
+    N 이면 꼬리)."""
+    building, floor, x, y, w, h, flag = place
+    where = f"{building or ''} {floor or ''}".strip() or "동·층 미정"
+    parts = [where]
+    if x is not None or y is not None:
+        parts.append(f"({cell_text(x) or '-'}, {cell_text(y) or '-'})")
+    if w is not None or h is not None:
+        parts.append(f"{cell_text(w) or '-'}×{cell_text(h) or '-'}")
+    if flag == "N":
+        parts.append("도면 표시 N")
+    return "공식: " + " · ".join(parts)
+
+
+def _official_names(
+    index: GridIndex, parents: Sequence[str], places: Mapping[str, Place], row_id: str
+) -> list[str]:
+    """「공식 자리로 되돌리기」 가 돌릴 저장본 설비명 — 모듈이면 Main 설비 묶음 통째(하나만 돌리면
+    바둑판 검사에 걸린다 — 설계 13-1 검토 L10). 공식과 다른 호기만이다. `parents` 는 편집본 줄마다
+    Main 설비 글자다."""
+    saved = index.saved_name(row_id)
+    if not places or saved is None or row_id not in index.live:
+        return []
+    parent = parents[index.live[row_id]]
+    if parent:
+        members = [index.ids[k] for k, other in enumerate(parents) if other == parent]
+        if len(members) >= 2:
+            names = [index.saved_name(member) for member in members]
+            return [name for name in names if name is not None and name in places]
+    return [saved] if saved in places else []
+
+
+def _official_targets(view: GridView, row_id: str) -> list[str]:
+    parents = [""] * len(view.index.ids)
+    for other, position in view.index.live.items():
+        parents[position] = view.values[other][COLUMN_INDEX[PARENT_EQUIPMENT_COLUMN]]
+    return _official_names(view.index, parents, view.context.official_places, row_id)
+
+
 def detail_data(
     view: GridView,
     row_id: str | None,
@@ -1083,6 +1129,14 @@ def detail_data(
         locked = view.context.delete_lock if row_id in view.index.saved else None
         unit["deletable"] = not deleted and not locked
         unit["deleteLock"] = locked if not deleted else None
+        targets = [] if deleted else _official_targets(view, row_id)
+        saved_name = view.index.saved_name(row_id)
+        if targets and saved_name is not None:
+            place = view.context.official_places.get(saved_name)
+            unit["official"] = {
+                "text": official_place_words(place) if place is not None else "공식 자리",
+                "count": len(targets),
+            }
     return {
         "mode": "side",
         "panel": "detail",
@@ -2200,6 +2254,49 @@ def _revert_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     return patch.step("되돌림")
 
 
+OFFICIAL_TOAST: Final = (
+    "공식 자리로 되돌렸습니다 — {count:,}대(저장하면 이 설비 시나리오의 배치 차이에서 빠집니다)"
+)
+
+
+def _official_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
+    """「공식 자리로 되돌리기」(가정 설비 시나리오 — 설계 13-1): 그 호기(모듈이면 Main 설비 묶음
+    통째)의 배치 일곱 칸을 공식 값으로. 모듈 묶음 좌표 잠금은 보지 않는다 — 묶음 통째로 돌리므로
+    바둑판이 공식 그대로다."""
+    row_id = op.get("id")
+    places = work.context.official_places
+    if not isinstance(row_id, str) or not places:
+        work.refused += 1
+        return None
+    index = work.index()
+    parents = (
+        [cell_text(value) for value in work.master[PARENT_EQUIPMENT_COLUMN].tolist()]
+        if PARENT_EQUIPMENT_COLUMN in work.master.columns
+        else [""] * len(work.master)
+    )
+    names = _official_names(index, parents, places, row_id)
+    if not names:
+        work.refused += 1
+        return None
+    patch = _Patch()
+    origins = {index.saved_name(other): other for other in index.live if other in index.saved}
+    moved = 0
+    for name in names:
+        target = origins.get(name)
+        if target is None:
+            continue
+        position = index.live[target]
+        changed = False
+        for column, value in zip(SCENARIO_LAYOUT_COLUMNS, places[name], strict=True):
+            if column not in work.master.columns:
+                continue
+            _set_overlay(work, patch, overlay_key(target, column), None)
+            changed = _set_master(work, patch, position, column, value) or changed
+        moved += int(changed)
+    work.say(OFFICIAL_TOAST.format(count=moved), undo=moved > 0)
+    return patch.step("공식 자리로 되돌리기")
+
+
 def _undo_op(work: _Work, op: Mapping[str, Any]) -> None:
     """한 단계 되돌리기. `step`(토스트가 가리킨 단계 표지)이 있으면 그 단계가 맨 위일 때만 —
     토스트 뒤에 토스트 없는 조작(칸 고침)이 쌓였거나 그 단계가 버려졌으면 다른 단계를 되돌리지 않고
@@ -2225,6 +2322,7 @@ _OPS = {
     "delete": _delete_op,
     "restore": _restore_op,
     "revert": _revert_op,
+    "official": _official_op,
 }
 OP_NAMES: Final = frozenset({*_OPS, "undo"})
 

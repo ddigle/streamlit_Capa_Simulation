@@ -5,8 +5,9 @@
 이 파일은 두 층을 함께 본다.
 
 * **화면 왕복(AppTest)** — 빈 설비 DB 로 `app_pages/available_equipment_status.py` 를 실제로
-  실행해 `양식 → 붙여넣기 → 미리보기 → 확인 후 리비전 저장`을 누른다. 양식의 예시 한 줄을
-  그대로 저장하려 하면 막히고, 값을 고치면 새 리비전이 생긴다.
+  실행해 `양식 → 「엑셀·CSV로 한꺼번에」 붙여넣기 → 미리보기 → 편집본에 넣기 → 「저장 전 변경」 의
+  리비전 저장`을 누른다(개편 B1 — 옛 「확인 후 리비전 저장」 은 넣기와 저장 둘로 갈렸다). 양식의
+  예시 한 줄을 그대로 저장하려 하면 막히고, 값을 고치면 새 리비전이 생긴다.
 * **서비스 계층** — 화면에서 재기 어려운 세 가지를 직접 잰다. 미리보기 비용의 상한,
   인덱스가 0 부터가 아닌 프레임의 판정, 그리고 CSV 와 붙여넣기의 빈 칸 판정 동등성.
 
@@ -59,7 +60,10 @@ EQUIPMENT_PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 IMPORT_TARGET_KEY = "equipment_import_target_v1"
 CLIPBOARD_KEY = "equipment_import_clipboard_v1"
 PREVIEW_KEY = "equipment_import_preview_v1"
-IMPORT_SAVE_KEY = "equipment_import_save_v1"
+IMPORT_APPLY_KEY = "equipment_import_apply_v1"
+SAVE_KEY = "equipment_master_save_v1"
+DIALOG_KEY = "available_equipment_open_dialog"
+SIDE_KEY = "equipment_master_side_v1"
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 MASTER_DRAFT_KEY = "equipment_master_draft_v3"
 DRAFT_REVISION_KEY = "equipment_draft_revision_v4"
@@ -131,17 +135,22 @@ def _preview_import(
     *,
     target: str = "기존 보유대수",
 ) -> None:
-    """입력 대상을 고르고 붙여넣은 뒤 변경 미리보기까지만 진행한다."""
-    app.selectbox(IMPORT_TARGET_KEY).set_value(target).run()
-    app.text_area(CLIPBOARD_KEY).set_value(clipboard)
+    """「엑셀·CSV로 한꺼번에」 팝업을 열어 입력 대상을 고르고 붙여넣은 뒤 변경 미리보기까지만."""
+    app.session_state[DIALOG_KEY] = "import"
     app.run()
+    app.selectbox(IMPORT_TARGET_KEY).set_value(target)
+    app.text_area(CLIPBOARD_KEY).set_value(clipboard)
     app.button(PREVIEW_KEY).click().run()
     assert not app.exception
 
 
 def _save(app: AppTest) -> None:
-    """미리보기를 확인한 사용자가 불변 리비전 저장을 확정한다."""
-    app.button(IMPORT_SAVE_KEY).click().run()
+    """미리본 후보를 편집본에 넣고(「편집본에 넣기」) 「저장 전 변경」 에서 리비전을 저장한다."""
+    app.button(IMPORT_APPLY_KEY).click().run()
+    assert not app.exception
+    app.session_state[SIDE_KEY] = "저장 전 변경"
+    app.run()
+    app.button(SAVE_KEY).click().run()
 
 
 def _template_row(count: str) -> str:
@@ -177,7 +186,7 @@ def test_the_untouched_template_row_can_be_previewed_but_not_saved(
     assert not app.exception
     # 사용자가 실제로 내려받는 버튼이 이 화면에 있다는 것까지 함께 묶어 둔다.
     # 없는 키를 찾으면 `KeyError` 라, 이 한 줄이 곧 존재 검사다.
-    app.selectbox(IMPORT_TARGET_KEY).set_value("기존 보유대수").run()
+    # 양식은 설비 마스터 탭 「내려받기」 팝오버에 있다.
     assert (
         app.download_button("equipment_baseline_template_download_v3").label == "기존 보유대수 양식"
     )
@@ -190,7 +199,8 @@ def test_the_untouched_template_row_can_be_previewed_but_not_saved(
     _save(app)
 
     assert not app.exception
-    assert any("예시 행이 1건" in element.value for element in app.error)
+    # 예시 행은 「저장하기 전에 고칠 것」 한 줄이고 「리비전 저장」 은 오류 수로 막는다.
+    assert any("오류 1개를 고쳐야 저장됩니다" in element.value for element in app.error)
     assert not any("설비 데이터를 저장했습니다" in element.value for element in app.success)
     assert not DuckDBEquipmentRepository(database_path).list_revisions()
 
@@ -208,7 +218,7 @@ def test_an_edited_count_turns_the_template_row_into_a_saved_revision(tmp_path: 
 
     _preview_import(app, _as_clipboard_text(baseline_csv_template()))
     _save(app)
-    assert any("예시 행이" in element.value for element in app.error)
+    assert any("오류 1개를 고쳐야 저장됩니다" in element.value for element in app.error)
 
     # Excel 에서 대수만 고쳐 다시 복사한다. 자연키(공정 + 분류)가 같아 그 행을 대체한다.
     header = "\t".join(BASELINE_COLUMNS)
@@ -284,7 +294,7 @@ def test_the_untouched_master_template_row_is_stopped_at_save(tmp_path: Path) ->
     _save(app)
 
     assert not app.exception
-    assert any("예시 행이" in element.value for element in app.error)
+    assert any("고쳐야 저장됩니다" in element.value for element in app.error)
     assert not any("설비 데이터를 저장했습니다" in element.value for element in app.success)
 
 

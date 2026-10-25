@@ -1,7 +1,9 @@
 # Purpose: 설비 마스터 저장 칸(저장자·함께 넣기 두 체크·공식 발행)과 저장 출발점 값을 둔다.
 
-"""설비 마스터를 저장하는 네 자리(설비 마스터 탭 「설비 데이터 저장」·「확인 후 리비전
-저장」·사이드바 설비 시나리오 팝업 「저장」·Space 「배치 저장」)가 함께 쓰는 저장 칸(설계 6-4).
+"""설비 마스터를 저장하는 세 자리(가용설비 현황 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」·
+사이드바 설비 시나리오 팝업 「저장」·Space 「배치 저장」)가 함께 쓰는 저장 칸(설계 6-4 — 개편 B
+전에는
+옛 설비 마스터 폼의 두 저장까지 네 자리).
 
 - **폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다** — 폼을 그린 회차의 편집본에는 같은 제출의
   새 호기가 아직 없다. 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다. 미리보기 후보가
@@ -87,6 +89,7 @@ def render_equipment_save_fields(
     show_publish: bool = True,
     release_exists: bool = True,
     assumption: bool = False,
+    persist_saved_by: bool = False,
 ) -> EquipmentSaveFields:
     """저장자 칸과 세 체크를 그리고 지금 값을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
 
@@ -99,12 +102,23 @@ def render_equipment_save_fields(
 
     `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 함께 넣기 기본 끔, 발행 체크는 켰을
     때만).
+
+    `persist_saved_by` 면 저장자 칸에 `persist_state="session"` 을 준다 — 그 칸을 그리지 않는 회차가
+    있는 자리(가용설비 현황 탭 ① 은 숨은 회차에 그리지 않는다, 개편 명세 2-3)에서도 위 약속(세션에
+    남음)을 지킨다. 세 체크는 기본값이 늘 같아 그대로 둔다.
     """
-    saved_by = st.text_input(
-        SAVED_BY_LABEL,
-        key=f"{prefix}_saved_by",
-        placeholder="예: 홍길동",
-        max_chars=40,
+    saved_by = (
+        st.text_input(
+            SAVED_BY_LABEL,
+            key=f"{prefix}_saved_by",
+            placeholder="예: 홍길동",
+            max_chars=40,
+            persist_state="session",
+        )
+        if persist_saved_by
+        else st.text_input(
+            SAVED_BY_LABEL, key=f"{prefix}_saved_by", placeholder="예: 홍길동", max_chars=40
+        )
     )
     if assumption:
         propagate_units = st.checkbox(
