@@ -41,7 +41,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
@@ -454,8 +454,14 @@ def _risky(
     return tuple(risky)
 
 
-def _notice(kind: str, text: str) -> None:
-    st.session_state[NOTICE_KEY] = (kind, text)
+def _notice(kind: FlashKind, text: str) -> None:
+    """성공 밖의 알림(충돌·저장 오류·바뀐 층 없음)을 담는다 — 다음 회차 알림 칸이 한 번 그린다."""
+    queue_flash(
+        NOTICE_KEY,
+        markdown_safe_tildes(text),
+        kind=kind,
+        icon=":material/sync_problem:" if kind == "warning" else None,
+    )
 
 
 def _saved_message(draft: Mapping[FloorKey, str]) -> str:
@@ -677,17 +683,7 @@ def _render_tables(
 
 def _render_notices() -> None:
     """성공 flash 와 그 밖의 알림(충돌·검증 오류·바뀐 층 없음). 그린 뒤 지운다."""
-    render_flash(FLASH_KEY)
-    held = st.session_state.pop(NOTICE_KEY, None)
-    if not (isinstance(held, tuple) and len(held) == 2):
-        return
-    kind, text = held
-    if kind == "warning":
-        st.warning(markdown_safe_tildes(text), icon=":material/sync_problem:")
-    elif kind == "error":
-        st.error(markdown_safe_tildes(text))
-    else:
-        st.info(markdown_safe_tildes(text))
+    render_flash(FLASH_KEY, NOTICE_KEY)
 
 
 def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:

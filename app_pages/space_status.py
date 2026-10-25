@@ -28,9 +28,9 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
-    pop_discarded_notice,
     pop_drafts_replaced,
     prune_new_unit_propagation,
+    render_discarded_notice,
     render_name_changes,
     replace_equipment_buffer,
     reset_equipment_drafts,
@@ -579,9 +579,8 @@ if not using_sample_equipment and latest_snapshot is not None:
     # 이 화면에는 설비 마스터 제출이 없지만 표시를 여기서 읽어 버린다 — 남기면 가용설비 현황의 다음
     # 회차가 정상 제출까지 막는다.
     pop_drafts_replaced()
-    discarded_notice = pop_discarded_notice()
-    if discarded_notice:
-        notices.warning(discarded_notice, icon=":material/sync_problem:")
+    with notices:
+        render_discarded_notice()
 # 사이드바 「설비 시나리오」 줄 — 고를 수 있는 줄(팝업은 「불러오기」 만 — 배치 저장은 본문 상자).
 # 편집본을 세운 **뒤에** 그린다 — 남의 저장으로 편집본을 버린 회차에 배지·머리 띠 꼬리가 「미저장
 # 변경」 을 한 회차 늦게 말하지 않게(가용설비 현황·필요 단축 일정과 같은 차례).

@@ -56,6 +56,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_main_cases import UNSET_CHOICE
 from capa_simulation.components.intro_summary import (
     forget_intro_summary_check,
@@ -276,10 +277,12 @@ def render_main_case_chip_notice() -> None:
 
     알림이 생기고 사라질 때 아래 탭의 자리가 밀리지 않게 한다 — 빈 칸은 높이가 없다.
     """
-    notice = st.session_state.pop(CHIP_NOTICE_KEY, None)
-    with st.container():
-        if isinstance(notice, str):
-            st.warning(notice, icon=":material/info:")
+    render_flash(CHIP_NOTICE_KEY)
+
+
+def _notify(text: str) -> None:
+    """칩 콜백의 알림을 담는다 — 다음 회차 제목 줄 밑 칸이 한 번 그린다(`flash`)."""
+    queue_flash(CHIP_NOTICE_KEY, text, kind="warning", icon=":material/info:")
 
 
 def changed_slot_notice(index: int) -> str:
@@ -302,12 +305,10 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
     try:
         chip = _slot_chips_now(database_path, active=_NO_TARGET)[index]
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[CHIP_NOTICE_KEY] = (
-            f"주요 Case 를 읽지 못했습니다: {bootstrap_error_message(exc)}"
-        )
+        _notify(f"주요 Case 를 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
     if chip.disabled or chip.target != drawn:
-        st.session_state[CHIP_NOTICE_KEY] = changed_slot_notice(index)
+        _notify(changed_slot_notice(index))
         return
     if index == _OFFICIAL_SLOT and not _official_still_current(database_path, chip.target):
         return
@@ -326,7 +327,7 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
     with pinned_connections(Path(database_path)):
         failure = load_saved_revision(database_path, revision_id)
     if failure is not None:
-        st.session_state[CHIP_NOTICE_KEY] = failure
+        _notify(failure)
 
 
 def _official_still_current(database_path: str, target: tuple[str | None, str | None]) -> bool:
@@ -342,14 +343,12 @@ def _official_still_current(database_path: str, target: tuple[str | None, str | 
         with pinned_connections(Path(database_path)):
             release = get_scenario_repository(database_path).latest_official_release()
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[CHIP_NOTICE_KEY] = (
-            f"공식버전을 읽지 못했습니다: {bootstrap_error_message(exc)}"
-        )
+        _notify(f"공식버전을 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return False
     if release is not None and (release.scenario_id, release.revision_id) == target:
         return True
     forget_intro_summary_check()
-    st.session_state[CHIP_NOTICE_KEY] = changed_slot_notice(_OFFICIAL_SLOT)
+    _notify(changed_slot_notice(_OFFICIAL_SLOT))
     return False
 
 

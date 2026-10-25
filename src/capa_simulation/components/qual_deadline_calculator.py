@@ -53,6 +53,7 @@ from pandas.io.formats.style import Styler
 from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.status_metric import (
     metric_row,
     metric_row_style,
@@ -291,21 +292,16 @@ def _apply_pasted_months() -> None:
     if pasted.months:
         st.session_state[MONTHS_KEY] = table
         discard_editor(EDITOR_KEY)
-    st.session_state[PASTE_NOTICE_KEY] = (bool(pasted.months), pasted.message)
+    if pasted.months:
+        queue_flash(PASTE_NOTICE_KEY, pasted.message, icon=":material/check_circle:")
+    else:
+        queue_flash(PASTE_NOTICE_KEY, pasted.message, kind="info", icon=":material/info:")
 
 
 def _render_paste_notice() -> None:
     """「표에 넣기」 알림 — 한 번만 그린다. 늘 서 있는 한 칸 안이라 뒤 요소의 자리가 밀리지
-    않는다."""
-    notice = st.session_state.pop(PASTE_NOTICE_KEY, None)
-    with st.container():
-        if not (isinstance(notice, tuple) and len(notice) == 2):
-            return
-        applied, message = notice
-        if applied:
-            st.success(str(message), icon=":material/check_circle:")
-        else:
-            st.info(str(message), icon=":material/info:")
+    않는다(`flash`)."""
+    render_flash(PASTE_NOTICE_KEY)
 
 
 def _render_paste_box() -> None:

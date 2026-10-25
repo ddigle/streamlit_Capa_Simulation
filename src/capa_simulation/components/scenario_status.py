@@ -36,6 +36,7 @@ import streamlit as st
 import capa_simulation.settings as settings
 from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
@@ -129,8 +130,6 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
     여기서는 읽지 않는다 — 팝업이 누른 회차에 다시 센다(`render_scenario_dialog_body`).
     """
     del pending_edits
-    flash = st.session_state.pop(SIDEBAR_FLASH_KEY, None)
-    warning = st.session_state.pop(SIDEBAR_FLASH_WARNING_KEY, None)
     label = active_scenario_label()
     unsaved = has_unsaved_scenario_changes()
     # 값 칸은 버튼 라벨이라 마크다운으로 그려진다 — 사람이 적은 시나리오명은 글자 그대로 싣는다
@@ -156,12 +155,8 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
     )
     # 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기고 사라질 때 아래 줄(조회기간·페이지
     # 칸)의 자리가 밀려 새 요소로 다시 서지 않게 한다(AGENTS 9장 — 수가 바뀌는 알림). 빈 칸은
-    # 높이가 없다.
-    with st.container():
-        if isinstance(flash, str):
-            st.success(flash)
-        if isinstance(warning, str):
-            st.warning(warning, icon=":material/warning:")
+    # 높이가 없다(`flash.render_flash`).
+    render_flash(SIDEBAR_FLASH_KEY, SIDEBAR_FLASH_WARNING_KEY)
 
 
 def scenario_name_label(revision_no: int | None) -> str:
@@ -256,7 +251,7 @@ def _settle(flash: str) -> None:
     적용하지 않은 편집 목록도 비운다 — 다음 회차에 페이지가 그 편집을 버리기 전에 사이드바가 먼저
     「적용 전 편집」으로 세지 않게(`scenario_edit_bar.forget_pending_edits`).
     """
-    st.session_state[SIDEBAR_FLASH_KEY] = flash
+    queue_flash(SIDEBAR_FLASH_KEY, flash)
     forget_pending_edits()
     close_scenario_dialog()
 
@@ -643,7 +638,9 @@ def _render_revision_save(
         st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     if verdict.message:
-        st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
+        queue_flash(
+            SIDEBAR_FLASH_WARNING_KEY, verdict.message, kind="warning", icon=":material/warning:"
+        )
     st.session_state[SAVE_FORM_GENERATION_KEY] = save_form_generation() + 1
     _finish(
         f"신규 리비전 r{snapshot.revision.revision_no}"

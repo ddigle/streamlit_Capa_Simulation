@@ -31,7 +31,7 @@ from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     calculation_drafts,
     ensure_equipment_drafts,
-    pop_discarded_notice,
+    render_discarded_notice,
 )
 from capa_simulation.components.equipment_scenario_status import (
     baseline_equipment_refusal,
@@ -161,9 +161,8 @@ with notices:
 # 저장본 사본과 미저장 편집본 — 가용설비 현황·Space 현황과 같은 세션 칸이라 어디서 먼저 세웠어도
 # 같은 토큰이다. 계산은 저장본 사본만 읽는다.
 ensure_equipment_drafts(latest_snapshot)
-discarded_notice = pop_discarded_notice()
-if discarded_notice:
-    notices.warning(discarded_notice, icon=":material/sync_problem:")
+with notices:
+    render_discarded_notice()
 render_equipment_scenario_row(equipment_session)
 # 계산은 이 설비 시나리오에 일정이 없는 호기와 그 비가동을 뺀 저장본 사본(F4)이다.
 baseline, equipment, downtime = calculation_drafts()

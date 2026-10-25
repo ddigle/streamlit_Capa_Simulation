@@ -16,6 +16,7 @@ import duckdb
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from capa_simulation.components.flash import FlashNote
 from capa_simulation.components.home_main_cases import (
     IDLE_REVISION_CHOICE,
     MAIN_CASE_NOTICE_KEY,
@@ -513,7 +514,9 @@ def test_a_save_failure_notice_waits_for_the_visible_tab(tmp_path: Path) -> None
     app.session_state["database_path"] = str(database)
     _ran(app.run())
 
-    app.session_state[MAIN_CASE_NOTICE_KEY] = "Case1 지정을 저장하지 못했습니다 — 시험"
+    app.session_state[MAIN_CASE_NOTICE_KEY] = FlashNote(
+        "warning", "Case1 지정을 저장하지 못했습니다 — 시험", ":material/info:"
+    )
     _ran(app.run())
     assert not any("저장하지 못했습니다" in text for text in _texts(app))
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash
 from capa_simulation.components.table_toolbar import CSV_TEMPLATE_LABEL, render_csv_download
 from capa_simulation.services.reference_csv import (
     parse_reference_edit_clipboard,
@@ -69,5 +70,8 @@ def render_reference_clipboard_form(
 
 
 def queue_reference_import_flash(key: str, message: str) -> None:
-    """Show a successful clipboard apply message after the page reruns."""
-    st.session_state[f"{key}_flash"] = message
+    """적용 성공 알림을 `f"{key}_flash"` 칸에 담는다 — 페이지가 다시 돈 뒤 그 칸이 한 번 그린다.
+
+    담기·꺼내 그리기는 `components/flash.py` 한 길이다(칸 이름만 이 편집기의 꼴로 짓는다).
+    """
+    queue_flash(f"{key}_flash", message)
