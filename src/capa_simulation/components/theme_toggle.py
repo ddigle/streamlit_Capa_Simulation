@@ -61,6 +61,15 @@ G1-D0). 그 겹침은 `_sql_helpers.connect` 가 기다려 푼다. OS 가 밝을
 생겨(검토 실측) 되돌렸다(2026-10-01). 버려지는 첫 세션이 덜 돌도록 `app.py` 는 이 iframe 을
 입장 화면 바로 뒤, 부트스트랩보다 앞에서 보낸다.
 
+**열릴 때의 새로고침은 이 문서를 연 주소를 다시 연다.** 버려지는 첫 세션도 페이지 본문까지
+돌아, 링크 인자를 받는 화면(Space `?layer=short…`·공정 Capa 상세 `?process=…`·제약
+시뮬레이션 `?process=`)은 그 세션에서 인자를 읽고 주소에서 지운다. 그 지우기가 이 스크립트보다
+먼저 브라우저에 닿으면, 지금 주소에 `?theme` 만 붙여 새로고침한 새 세션은 링크를 받지 못했다 —
+두 번에 한 번꼴로 링크 없이 열렸다(E2E 결함). 그래서 같은 경로면 문서를 연 주소(`performance`
+의 탐색 항목 — `history.replaceState` 로 주소를 고쳐도 그대로다)에 있었는데 지금 빠진 인자를
+되살려 새로고침한다(`<theme-reopen>`). 지금 주소에 있는 인자의 값은 건드리지 않는다. 버튼을
+눌러 바꿀 때는 지금 주소 그대로다(세션 안에서 바뀐 주소가 맞다).
+
 **이 iframe 의 내용은 회차마다 같아야 한다.** 내용이 바뀌면 Streamlit 이 iframe 을 새로
 만들고, 옛 iframe 이 만든 툴바 버튼의 `onclick` 은 떨어져 나간 문서의 함수라 브라우저가 더는
 부르지 않는다 — 버튼이 눌러도 반응이 없어진다(파이썬의 테마를 실어 보내 보다가 실측했다).
@@ -314,6 +323,59 @@ _SCRIPT = """
     } catch (error) { return false; }
   }
 
+  // <theme-reopen>
+  // 열릴 때 새로고침할 주소. `href` 는 지금 주소, `opened` 는 이 문서를 연 주소(없으면
+  // null)다. 같은 출처·경로면 연 주소에 있었는데 지금 빠진 조회 인자를 되살린다 — 버려지는
+  // 첫 세션이 링크 인자를 받아 지운 것(모듈 설명 「열릴 때의 새로고침」). 지금 주소에 있는
+  // 인자의 값은 그대로 두고, 마지막에 `param`(테마 인자)을 `mode` 로 맞춘다.
+  function reopenHref(href, opened, param, mode) {
+    var url = new URL(href);
+    try {
+      var first = opened ? new URL(opened, href) : null;
+      if (first && first.origin === url.origin && first.pathname === url.pathname) {
+        var missing = [];
+        first.searchParams.forEach(function (value, name) {
+          if (!url.searchParams.has(name)) missing.push([name, value]);
+        });
+        missing.forEach(function (pair) { url.searchParams.append(pair[0], pair[1]); });
+      }
+    } catch (error) { /* 연 주소를 못 읽으면 지금 주소 그대로 */ }
+    url.searchParams.set(param, mode);
+    return url.toString();
+  }
+  // </theme-reopen>
+
+  // 이 문서를 연 주소 — 탐색 항목의 이름이다. `history.replaceState` 로 주소를 고쳐도
+  // 바뀌지 않는다. 못 읽으면 null.
+  function openedHref() {
+    try {
+      var entries = parentWindow.performance.getEntriesByType("navigation");
+      return entries.length && typeof entries[0].name === "string" ? entries[0].name : null;
+    } catch (error) { return null; }
+  }
+
+  // 열릴 때: 지금 경로의 Streamlit 키를 고쳐 적었거나(`stale`) 주소의 테마 인자가 `mode` 와
+  // 다르면 **한 번** 새로고침한다. 새로고침할 주소는 `reopenHref` 다 — 첫 세션이 지운 링크
+  // 인자를 되살린다. 주소를 못 고치면 `stale` 일 때만 지금 주소로 새로고침한다(예전 규칙
+  // 그대로). 새로고침했으면 참이다.
+  function reloadOnOpen(mode, stale) {
+    try {
+      var href = parentWindow.location.href;
+      var changed = new parentWindow.URL(href).searchParams.get("%(param)s") !== mode;
+      if (!changed && !stale) return false;
+      parentWindow.history.replaceState(
+        null, "", reopenHref(href, openedHref(), "%(param)s", mode)
+      );
+    } catch (error) {
+      if (!stale) return false;
+    }
+    // 입장 화면 JS 가 이 스크립트보다 늦게 돌면 키가 이미 맞춰져 있어 새로고침을 예측하지 못한다.
+    // 이 표지를 보고 인트로를 아낀다(`intro.js` 의 `themeReloadPending`).
+    parentWindow.__capaThemeReloading = true;
+    parentWindow.location.reload();
+    return true;
+  }
+
   function paint(button, dark) {
     // 버튼이 **가려는 쪽**의 옷을 입는다. 밝은 테마에서는 `Dark` 가 검은 알약에 흰 글자,
     // 어두운 테마에서는 `Light` 가 흰 알약에 검은 글자다. 서로 반대라 어느 쪽에서도
@@ -338,14 +400,7 @@ _SCRIPT = """
     // 맞춘다 — `st.context.theme.type` 은 첫 로드에 틀릴 수 있어 파이썬은 그 인자를 읽는다.
     var state = capaTheme.sync(parentWindow);
     var dark = state.choice === "Dark";
-    var paramChanged = syncParam(dark ? "dark" : "light");
-    if (state.stale || paramChanged) {
-      // 입장 화면 JS 가 이 스크립트보다 늦게 돌면 키가 이미 맞춰져 있어 새로고침을 예측하지 못한다.
-      // 이 표지를 보고 인트로를 아낀다(`intro.js` 의 `themeReloadPending`).
-      parentWindow.__capaThemeReloading = true;
-      parentWindow.location.reload();
-      return true;
-    }
+    if (reloadOnOpen(dark ? "dark" : "light", state.stale)) return true;
 
     var button = doc.createElement("button");
     button.id = "%(id)s";
