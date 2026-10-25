@@ -506,7 +506,7 @@ def test_grouping_a_unit_from_another_official_floor_is_refused_in_a_hypothetica
     equipment = _set(_set(equipment, "EQ-X", "동", "C1"), "EQ-X", "층", "1F")
     before = _counts(repository)
 
-    with pytest.raises(EquipmentLayoutScopeError, match="EQ-X 은 공식 C2 3F"):
+    with pytest.raises(EquipmentLayoutScopeError, match=r"EQ-X은\(는\) 공식 C2 3F"):
         repository.save_equipment(_request(session, scenario_id, equipment=equipment))
 
     assert _counts(repository) == before

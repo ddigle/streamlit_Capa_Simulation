@@ -202,7 +202,12 @@ from capa_simulation.services.floor_state import (
     inactive_label,
     selectable_floor_keys,
 )
-from capa_simulation.services.korean_particle import object_particle, with_direction_particle
+from capa_simulation.services.korean_particle import (
+    object_particle,
+    with_direction_particle,
+    with_object_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.layout_overlay import EMPTY_LAYOUT_DIGEST
 from capa_simulation.services.schedule_confirmation import UNCONFIRMED, confirmation_counts
 from capa_simulation.services.simulation_cache import (
@@ -1156,7 +1161,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if fab_pending is not None and fab_pending.marks is not None:
             for label in duplicate_block_links(fab_pending.marks):
                 st.caption(
-                    f":material/warning: FAB 의 층 블록 둘 이상이 {label} 을 가리킵니다(저장은 됨)."
+                    ":material/warning: FAB 의 층 블록 둘 이상이 "
+                    f"{with_object_particle(label)} 가리킵니다(저장은 됨)."
                 )
         if frames is not None:
             _render_layout_warnings(frames, marks)
@@ -1390,7 +1396,8 @@ def _render_layout_editor(
         "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
         "조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
         "층이 정해지지 않은 미배치 호기는 트레이에 함께 뜹니다. 기준일은 편집하는 동안 "
-        f"{as_of.isoformat()} 로 고정입니다 — 바꾸려면 배치 편집을 끄고 도면 위 페이더를 씁니다."
+        f"{with_direction_particle(as_of.isoformat())} 고정입니다 — 바꾸려면 배치 편집을 끄고 도면 "
+        "위 페이더를 씁니다."
     )
     # epoch: 층·저장본·편집본 세대·이 층 캔버스·요소·Main 설비명 위치·**편집 대상 호기 목록**.
     # 하나라도 바뀌면 브라우저가 새 값으로 다시 선다. 같으면 진행 중인 편집과 확대 배율을 지킨다.
@@ -1542,8 +1549,8 @@ def _render_layout_editor(
     # 목록이 줄기 전에 비활성 층으로 보낸 호기 — 받되(저장 검사 그대로, S5) 알린다.
     sent_to = {change.move_to for change in applied.changes if change.move_to is not None}
     sent_note = "".join(
-        f" 보낸 층 {floor_label(target)} 는 비활성 층입니다 — 호기는 그 층에 들어가고 Space "
-        "목록·도면에서 숨습니다."
+        f" 보낸 층 {with_topic_particle(floor_label(target))} 비활성 층입니다 — 호기는 그 층에 "
+        "들어가고 Space 목록·도면에서 숨습니다."
         for target in FLOOR_KEYS
         if target in sent_to and target in inactive_floors
     )
@@ -1920,7 +1927,7 @@ if selected is None:
     if exited_count > 0:
         st.caption(
             f"기준일 {as_of.isoformat()}에 반출/이설(없으면 정지)을 마친 "
-            f"{_units(exited_count)}는 공간에 없어 세지 않습니다."
+            f"{with_topic_particle(_units(exited_count))} 공간에 없어 세지 않습니다."
         )
 
     # 층 목록 표. 층마다 배치·미배치·점유율을 견주는 자리이고, 층 바로 가기와 함께 키보드로 층을
@@ -1984,8 +1991,8 @@ else:
     with st.container(key="space_floor_canvas_warning_slot"):
         if invalid_rows:
             st.warning(
-                f"캔버스 {canvas_width:g} × {canvas_height:g}를 벗어난 호기가 있습니다: "
-                + ", ".join(map(str, invalid_rows))
+                f"캔버스 {canvas_width:g} × {with_object_particle(f'{canvas_height:g}')} 벗어난 "
+                "호기가 있습니다: " + ", ".join(map(str, invalid_rows))
             )
     # 비활성 층을 연 회차(층 목록 표 「비활성 층」·주소)의 배너. 자리는 늘 선다 — 남이 층을 켜고
     # 끌 때 아래 층 상세가 밀리지 않게.
@@ -2018,8 +2025,8 @@ else:
     if floor_unknown_here.any():
         summary += (
             f" · 층 미정 미배치 "
-            f"{_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here]))}"
-            "는 배치 편집 트레이에"
+            f"{with_topic_particle(_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here])))}"
+            " 배치 편집 트레이에"
         )
 
     with st.container(border=True):

@@ -92,6 +92,7 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintResult,
     ModificationWindow,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.sidebar_status import rerun_app_unless_alone
@@ -433,7 +434,7 @@ def month_steps(
         verdict = ""
     else:
         verdict = (
-            f"기존 제품이 기준 {general_text} 를 지킵니다"
+            f"기존 제품이 기준 {with_object_particle(general_text)} 지킵니다"
             if row.existing_secure
             else f"기존 제품이 기준 {general_text} 에 못 미칩니다"
         )

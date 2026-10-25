@@ -765,6 +765,6 @@ def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_
 
     assert not app.exception, [item.message for item in app.exception]
     (flash,) = [item.value for item in app.success if "편집본에 적용했습니다" in item.value]
-    assert "보낸 층 C2 2F 는 비활성 층입니다" in flash
+    assert "보낸 층 C2 2F는 비활성 층입니다" in flash
     assert "C2 2F" not in editor_calls[-1]["floors"]
     clear_equipment_repository()

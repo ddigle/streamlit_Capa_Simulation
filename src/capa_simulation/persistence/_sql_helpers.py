@@ -19,7 +19,7 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_exact_columns
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.month_filter import valid_month_mask
 
 # DuckDB 기본 블록은 256 KiB 라서 행이 2,767개뿐인 첫 부팅 DB 도 24.5 MiB 를 차지한다.
@@ -548,5 +548,5 @@ def as_int(value: object, label: str) -> int:
 def required_text(value: str, label: str) -> str:
     normalized = value.strip()
     if not normalized:
-        raise ValueError(f"{label}은(는) 비어 있을 수 없습니다.")
+        raise ValueError(f"{with_topic_particle(label)} 비어 있을 수 없습니다.")
     return normalized

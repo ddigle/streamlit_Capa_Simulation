@@ -1203,7 +1203,8 @@ class DuckDBEquipmentRepository:
             if role == "overlay" and canvases:
                 raise EquipmentLayoutScopeError(
                     "층 캔버스·배경 도면은 공식 설비 시나리오에서 고칩니다 — "
-                    f"「{scenario.scenario_name}」 은 가정 설비 시나리오라 층 캔버스를 바꾸지 "
+                    f"{with_topic_particle(f'「{scenario.scenario_name}」')} 가정 설비 시나리오라 "
+                    "층 캔버스를 바꾸지 "
                     "않았습니다."
                 )
             base_overlay = read_layout_overlay(connection, base_summary)
@@ -2889,7 +2890,8 @@ def _legacy_snapshot(
 ) -> EquipmentSnapshot:
     if contract_version >= 4:
         raise ValueError(
-            f"공통 r{summary.revision_no} 은 설비 시나리오 뒤의 공통 대장 리비전(계약 "
+            f"공통 {with_topic_particle(f'r{summary.revision_no}')} 설비 시나리오 뒤의 공통 대장 "
+            "리비전(계약 "
             f"{contract_version})이라 옛 길로 읽지 않습니다 — 일정 리비전과 합쳐 읽으세요."
         )
     baseline = _load_baseline(connection, revision_id)

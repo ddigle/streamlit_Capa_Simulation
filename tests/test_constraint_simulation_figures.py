@@ -520,7 +520,7 @@ def test_the_month_steps_walk_through_the_five_calculations() -> None:
     assert after.steps[2].body == "이 달 개조 비가동 없음"
     assert after.steps[3].body == "기존 가용 = 공정 가용 **54대**"
     assert after.steps[4].body == "기존 확보율 = 54 ÷ 48 = **112.5%**"
-    assert after.verdict == "기존 제품이 기준 110% 를 지킵니다"
+    assert after.verdict == "기존 제품이 기준 110%를 지킵니다"
     assert after.verdict_secure is True
 
 

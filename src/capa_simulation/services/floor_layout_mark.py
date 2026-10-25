@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, CanvasSize
+from capa_simulation.services.korean_particle import with_object_particle
 
 MARK_KINDS: Final = ("zone", "shutter", "door", "column", "text", "arrow")
 MARK_NAMES: Final[Mapping[str, str]] = {
@@ -168,7 +169,8 @@ def mark_box(
     width, height = canvas
     if x + w > width + 1e-9 or y + h > height + 1e-9:
         raise ValueError(
-            f"도면 요소 {mark_id}({name}) 가 캔버스 {width:g} × {height:g} 를 벗어났습니다."
+            f"도면 요소 {mark_id}({name}) 가 캔버스 {width:g} × "
+            f"{with_object_particle(f'{height:g}')} 벗어났습니다."
         )
     return x, y, w, h
 
@@ -226,7 +228,7 @@ def _zone_choice(
         return allowed[0]
     if not isinstance(text, str) or text not in allowed:
         raise ValueError(
-            f"영역 {mark_id} 의 {what}을 알 수 없습니다: {value!r} — "
+            f"영역 {mark_id} 의 {with_object_particle(what)} 알 수 없습니다: {value!r} — "
             f"{'·'.join(allowed)} 중 하나입니다."
         )
     return text

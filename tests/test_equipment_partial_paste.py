@@ -317,7 +317,7 @@ def test_an_extra_column_on_the_whole_old_36_column_form_is_skipped_with_a_notic
 
     review = _review(old.to_csv(sep="\t", index=False))
 
-    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert "설비 마스터에 없는 열 「No.」은(는) 읽지 않았습니다." in review.notices
     assert review.changes["Import구분"].tolist() == ["대체", "대체"]
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
 
@@ -332,7 +332,7 @@ def test_an_extra_column_on_the_whole_old_38_column_form_is_skipped_and_keeps_th
 
     review = _review(old.to_csv(sep="\t", index=False), current)
 
-    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert "설비 마스터에 없는 열 「No.」은(는) 읽지 않았습니다." in review.notices
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
     assert review.candidate[1].set_index("설비명").loc["EQ-01", "시나리오 메모"] == "셋업 메모"
 

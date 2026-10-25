@@ -784,9 +784,10 @@ def _mixed_group(
         return (
             (
                 "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다"
-                f"({edited.names[outsider]} 은 공식 {_spot_words(_spot(common[outsider]))}, "
-                f"묶음 {group} 은 {_spot_words(spot)}) — 묶음 구성은 공통이라 공식 설비 "
-                "시나리오에서 바꾸세요."
+                f"({with_topic_particle(edited.names[outsider])} 공식 "
+                f"{_spot_words(_spot(common[outsider]))}, "
+                f"묶음 {with_topic_particle(group)} {_spot_words(spot)}) — 묶음 구성은 공통이라 "
+                "공식 설비 시나리오에서 바꾸세요."
             ),
             outsider,
         )

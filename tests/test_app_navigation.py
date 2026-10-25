@@ -2435,7 +2435,7 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     home_warnings = ahead_warnings(app)
     assert len(home_warnings) == 1
     assert home_warnings[0].startswith(
-        f"시뮬레이션 DB 가 이 코드보다 새 버전입니다(DB {newer} · 코드"
+        f"시뮬레이션 DB가 이 코드보다 새 버전입니다(DB {newer} · 코드"
     )
 
     # 설비 DB 를 여는 일곱 화면 모두를 돈다(공정 Capa 상세·제약 시뮬레이션은 설비 시나리오를 읽으며
@@ -2460,5 +2460,5 @@ def test_a_database_newer_than_the_code_is_warned_on_the_screens_that_open_it(
     for path in equipment_pages:
         app.switch_page(path).run()
         assert not list(app.exception), [element.message for element in app.exception]
-        names = sorted(warning.split(" 가 ", 1)[0] for warning in ahead_warnings(app))
+        names = sorted(warning.split("가 이 코드보다", 1)[0] for warning in ahead_warnings(app))
         assert names == ["설비 DB", "시뮬레이션 DB"], path
