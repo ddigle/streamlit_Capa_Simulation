@@ -31,6 +31,8 @@ from capa_simulation.components.equipment_data_workspace import (
     BUFFER_KEY,
     CLIPBOARD_KEY,
     CSV_UPLOAD_LIMIT_MB,
+    GRID_DETAIL_KEY,
+    GRID_LOADED_KEY,
     LAYOUT_ROLE_KEY,
     PASTE_LAYOUT_KEY,
     PREVIEW_BUTTON_KEY,
@@ -485,6 +487,47 @@ def test_an_outbox_from_before_another_users_save_is_dropped_and_told(
     send(app, emg.GRID_KEY, "outbox", outbox)
     assert _buffer_value(app, "EQ-01", "담당자") != "옛 고침"
     assert "반영하지 않았습니다" in last(grid, emg.GRID_KEY)["toast"]["text"]
+
+
+@pytest.mark.parametrize("assumption", [False, True], ids=["official", "assumption"])
+def test_a_unit_another_user_renames_stays_loaded_and_open_under_its_new_name(
+    tmp_path: Path, grid: Calls, assumption: bool
+) -> None:
+    """남이 공통을 저장하며 저장본 호기 이름을 바꾸면(공식 세션에서 상세 설비명 고침 → 「리비전
+    저장」) 이 세션의 불러온 목록·열어 둔 상세는 호기 키로 이어 새 이름 id 로 옮는다 — 행 id 가
+    `s:` + 저장본 설비명이라 옮기지 않으면 살아 있는 호기가 목록에서 말없이 빠지고 상세가 빈 안내로
+    돌아갔다(E2E eq-flows — 「불러온 호기 19대 / 전체 20대」). 가정 세션(「셋업 실무」)도 같다."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup if assumption else OPERATIONS)
+    _load_all(app, grid)
+    assert [row["id"] for row in last(grid, emg.GRID_KEY)["rows"]] == ["s:EQ-01", "s:EQ-02"]
+    send(app, emg.GRID_KEY, "open", {"view": last(grid, emg.GRID_KEY)["view"], "id": "s:EQ-02"})
+    assert last(grid, emg.side_key("detail"))["unit"]["id"] == "s:EQ-02"
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(
+            theirs,
+            equipment=_set(theirs.equipment, "EQ-02", "설비명", "EQ-02R"),
+            renames={"EQ-02R": "EQ-02"},
+        )
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+    assert app.session_state[BUFFER_KEY][1]["설비명"].tolist() == ["EQ-01", "EQ-02R"]
+    assert list(app.session_state[GRID_LOADED_KEY]) == ["s:EQ-01", "s:EQ-02R"]
+    assert app.session_state[GRID_DETAIL_KEY] == "s:EQ-02R"
+    table = last(grid, emg.GRID_KEY)
+    assert [row["id"] for row in table["rows"]] == ["s:EQ-01", "s:EQ-02R"]
+    assert table["open"] == "s:EQ-02R"
+    assert last(grid, emg.side_key("detail"))["unit"]["id"] == "s:EQ-02R"
+    # 남이 지운 호기는 지금처럼 거른다(지운 표시 줄은 이 세션이 지운 저장본 호기만).
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=theirs.equipment[theirs.equipment["설비명"].ne("EQ-02R")])
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+    assert [row["id"] for row in last(grid, emg.GRID_KEY)["rows"]] == ["s:EQ-01"]
 
 
 def test_an_outbox_and_the_save_click_in_one_rerun_are_saved_together(

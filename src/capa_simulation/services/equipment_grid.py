@@ -10,6 +10,8 @@
   규칙(`equipment_scenario.inherited_unit_names`)으로 잇는다 — 둘이 갈리면 표가 「바뀐 칸」 으로
   보인 호기가 저장에서 새 호기가 된다. 같은 이름의 둘째 줄 꼬리는 설비명에 나올 수 없는 글자
   (`DUPLICATE_MARK`)로 붙이고, 저장본 호기인지는 id 글자를 풀지 않고 `GridIndex.saved` 로 가른다.
+  저장본 이름이 바뀌면 불러온 목록·상세 id 를 새 id 로 옮긴다 — 자기 저장 뒤는 `save_id_map`, 남의
+  저장 뒤는 호기 키로 잇는 `renamed_saved_ids`.
 - **칸 글자**(`cell_text`) — 화면 글자이자 견줌 글자. 「바뀐 칸」 은 저장본 글자와 편집본 글자가
   다른 칸이다(형과 상관없다).
 - **data**(`grid_data`·`loader_data`·`detail_data`·`changes_data`) — 한 회차의 표
@@ -592,6 +594,23 @@ def save_id_map(index: GridIndex, master: pd.DataFrame) -> dict[str, str | None]
     }
     moved.update({row_id: None for row_id in index.deleted})
     return moved
+
+
+def renamed_saved_ids(
+    before: Iterable[tuple[str, str]], after: Iterable[tuple[str, str]]
+) -> dict[str, str]:
+    """남의 저장으로 저장본이 바뀔 때 이름이 바뀐 저장본 호기의 행 id 옮김 지도(`s:옛` → `s:새`).
+
+    `before`·`after` 는 옛·새 저장본의 (설비명, 호기 키) 쌍이고 짝은 호기 키로 잇는다(저장이
+    이름 지도로 이은 호기는 키가 그대로다). 이름이 그대로인 호기·없어진 호기(남이 지움 — 회차마다
+    거르는 그대로)·새 호기는 싣지 않는다. 행 id 가 저장본 설비명을 담으므로 이것으로 옮기지 않으면
+    살아 있는 호기가 불러온 목록·상세에서 빠진다(자기 저장 뒤는 `save_id_map`)."""
+    names = {key: name for name, key in after if name and key}
+    return {
+        SAVED_PREFIX + name: SAVED_PREFIX + names[key]
+        for name, key in before
+        if name and key in names and names[key] != name
+    }
 
 
 # ------------------------------------------------------------------ 불러온 목록

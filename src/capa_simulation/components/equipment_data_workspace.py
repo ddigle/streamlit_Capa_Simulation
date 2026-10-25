@@ -102,7 +102,9 @@ from capa_simulation.services.equipment_grid import (
     GridApplied,
     after_row_steps,
     grid_index,
+    move_ids,
     prune_overlay,
+    renamed_saved_ids,
     undo_from_state,
     undo_to_state,
 )
@@ -168,8 +170,10 @@ GRID_TOAST_SEQ_KEY = "equipment_grid_toast_seq_v1"
 GRID_TOAST_SHOWN_KEY = "equipment_grid_toast_shown_v1"
 # 회차 메모(칸 결과·표 단위 오류 — 열쇠가 바뀌면 덮는다).
 GRID_MEMO_KEY = "equipment_grid_memo_v1"
-# 표에 불러온 목록(행 id 차례)·상세에 연 행 id — 편집본을 다시 세워도·저장해도 남는다(저장 뒤에는
-# 이름 바꾼 호기를 새 id 로 옮긴다, 개편 명세 7-3). 편집본에 없는 id 는 회차마다 거른다.
+# 표에 불러온 목록(행 id 차례)·상세에 연 행 id — 편집본을 다시 세워도·저장해도 남는다(이름 바꾼
+# 저장본 호기는 새 id 로 옮긴다 — 자기 저장 뒤는 저장 길이, 남의 저장으로 다시 세우면
+# `ensure_equipment_drafts` 가 호기 키로 잇는다, 개편 명세 7-3). 편집본에 없는 id 는 회차마다
+# 거른다.
 GRID_LOADED_KEY = "equipment_grid_loaded_v1"
 GRID_DETAIL_KEY = "equipment_grid_detail_v1"
 # 오른쪽 「새 호기」 칸(개편 단계 C)에서 넣은 호기마다 고른 「다른 설비 시나리오에도 같은
@@ -552,8 +556,10 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     토큰으로 세워야, 나중에 연 쪽이 「토큰이 다르다」며 편집본을 저장본으로 덮어쓰지 않는다.
     새 리비전이 생기면(누가 저장하면) 미저장 편집·캔버스·도면 요소는 버리고 다시 세운다 — 단 가정
     역할로 찍힌 배치 편집은 남이 **공통**을 저장했을 때(일정 쪽 그대로) 그 배치 일곱 칸을 새
-    저장본 위에 다시 얹는다(설계 9장 — 찍힌 역할도 남긴다). 샘플 fleet 은 넣지 않는다 — 합성값이
-    섞이면 첫 실제 저장이 막힌다.
+    저장본 위에 다시 얹는다(설계 9장 — 찍힌 역할도 남긴다). 설비 마스터 표의 불러온 목록·상세 id 는
+    남기고, 남의 저장이 이름을 바꾼 저장본 호기는 호기 키로 이어 새 이름 id 로
+    옮긴다(`_follow_saved_unit_renames`). 샘플 fleet 은 넣지 않는다 — 합성값이 섞이면 첫 실제 저장이
+    막힌다.
     """
     token = revision_token(latest_snapshot)
     previous = st.session_state.get(_REVISION_KEY)
@@ -563,6 +569,8 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     swapped = previous is not None and previous != token
     overlay_dropped = _stamped_overlay_edits() if swapped else 0
     reapply = _reapply_material(previous, token) if swapped else None
+    # 옛 저장본의 (설비명, 호기 키) — 남이 이름을 바꾼 호기의 표 행 id 를 새 이름으로 옮길 재료.
+    old_unit_keys = tuple(draft_unit_keys().items()) if swapped else ()
     if st.session_state.get(DRAFT_REVISION_KEY) != token:
         saved: Frames = (
             (latest_snapshot.baseline, latest_snapshot.equipment, latest_snapshot.downtime)
@@ -635,6 +643,10 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
                 stale.append(LAYOUT_ROLE_KEY)
         for key in stale:
             st.session_state.pop(key, None)
+        if replaced and latest_snapshot is not None:
+            _follow_saved_unit_renames(
+                renamed_saved_ids(old_unit_keys, latest_snapshot.unit_key_pairs)
+            )
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
         if reapplied is not None and reapplied.reapplied:
@@ -651,6 +663,20 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             _bump_buffer_generation()
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
+
+
+def _follow_saved_unit_renames(moved: Mapping[str, str]) -> None:
+    """남의 저장이 이름을 바꾼 저장본 호기(`moved` — `s:옛` → `s:새`, `renamed_saved_ids`)를 설비
+    마스터 표의 불러온 목록·상세에 연 id 에서 새 id 로 옮긴다. 행 id 가 `s:` + 저장본 설비명이라
+    옮기지 않으면 살아 있는 호기가 다음 회차에 목록에서 말없이 빠지고 상세가 빈 안내로 돌아간다."""
+    if not moved:
+        return
+    loaded = st.session_state.get(GRID_LOADED_KEY)
+    if isinstance(loaded, (list, tuple)):
+        st.session_state[GRID_LOADED_KEY] = move_ids([str(item) for item in loaded], moved)
+    detail = st.session_state.get(GRID_DETAIL_KEY)
+    if isinstance(detail, str) and detail in moved:
+        st.session_state[GRID_DETAIL_KEY] = moved[detail]
 
 
 def _remember_edits(frames: Frames) -> None:
