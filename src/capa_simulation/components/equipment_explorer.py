@@ -65,6 +65,12 @@ from capa_simulation.services.undated_equipment import undated_equipment_notice
 from capa_simulation.services.usage_basis import usage_exclusion_notice
 
 QUESTION_KEY = "equipment_explorer_question"
+# 「볼 내용」 다섯 단추는 한 줄(flex-wrap nowrap)이라 좁은 창(390px)에서 「단계 전환」 이 화면
+# 밖으로 잘리고 가로 스크롤도 없었다 — 단추 줄을 접게 한다. 한 줄에 들어가는 넓은 창은 그대로다.
+QUESTION_WRAP_STYLE = (
+    f'<style>.st-key-{QUESTION_KEY} [data-testid="stButtonGroup"] div:has(> button) '
+    "{ flex-wrap: wrap; max-width: 100%; }</style>"
+)
 AS_OF_KEY = "equipment_explorer_as_of"
 INACTIVE_VIEW_KEY = "equipment_explorer_inactive_view"
 START_DATE_KEY = "equipment_dashboard_start_date"
@@ -512,6 +518,7 @@ def render_equipment_explorer(
     in_card = conditions is not None
     # 머리 줄(볼 내용·보기·표현). `표현` 은 결과 프래그먼트가 이 줄 끝에 쓴다
     # (`_render_expressed_result`).
+    st.html(QUESTION_WRAP_STYLE)
     row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
     with row:
         question = st.segmented_control(

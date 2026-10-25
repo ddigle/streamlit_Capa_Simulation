@@ -10,6 +10,7 @@ from capa_simulation.components.equipment_explorer import (
     AS_OF_KEY,
     INACTIVE_VIEW_KEY,
     QUESTION_KEY,
+    QUESTION_WRAP_STYLE,
     SMALL_PROCESS_KEY,
     START_DATE_KEY,
     TRANSITION_CONFIRMATION_KEY,
@@ -563,3 +564,14 @@ def test_a_held_process_keeps_its_value_when_its_text_changes_in_the_browser() -
         assert app.session_state[SMALL_PROCESS_KEY] == ["Other"]
     assert browser.wire == ["Wire Bond (Other)"]
     assert any("공정소분류: Wire Bond (Other)" in item.value for item in app.caption)
+
+
+def test_the_question_buttons_wrap_instead_of_running_off_a_narrow_window() -> None:
+    """「볼 내용」 다섯 단추 줄은 한 줄(nowrap)이라 390px 창에서 「단계 전환」 이 화면 밖으로 잘렸다
+    (E2E) — 그 칸(`st-key-` + `QUESTION_KEY`)의 단추 줄을 접는 스타일을 함께 그린다."""
+    app = _app()
+    assert not app.exception
+    bodies = [str(element.proto.body).strip() for element in app.get("html")]
+    assert QUESTION_WRAP_STYLE in bodies
+    assert f".st-key-{QUESTION_KEY} " in QUESTION_WRAP_STYLE
+    assert "flex-wrap: wrap" in QUESTION_WRAP_STYLE
