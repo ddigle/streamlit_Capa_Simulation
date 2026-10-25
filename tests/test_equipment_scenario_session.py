@@ -442,7 +442,7 @@ def test_a_stale_session_locks_the_schedule_cells_and_row_adds_but_not_common_ce
     assert all(("stale" in row.get("locks", ())) is stale for row in table["rows"])
     assert table["newRowsLocked"] is stale
     if stale:
-        assert "최신 r2 를 불러온 뒤 지우세요" in str(table["deleteLock"])
+        assert "최신 r2를 불러온 뒤 지우세요" in str(table["deleteLock"])
         assert any("가 더 새롭습니다" in item.value for item in app.warning)
     else:
         assert table["deleteLock"] is None
@@ -479,7 +479,7 @@ def test_a_stale_session_locks_the_schedule_cells_and_row_adds_but_not_common_ce
     assert deletes["downtime"].disabled is stale
     assert not deletes["baseline"].disabled
     if stale:
-        assert "최신 r2 를 불러온 뒤 지우세요" in str(deletes["downtime"].help)
+        assert "최신 r2를 불러온 뒤 지우세요" in str(deletes["downtime"].help)
 
 
 def test_a_stale_common_save_goes_through_and_a_schedule_save_is_refused(tmp_path: Path) -> None:
@@ -558,6 +558,44 @@ def test_a_stale_paste_that_changes_the_schedule_side_is_refused_before_preview(
     )
     refusal = stale_paste_refusal(review("비가동 일정", master, downtime), current, basis)
     assert refusal is not None and "비가동 일정" in refusal
+
+
+@pytest.mark.parametrize(
+    ("seen", "latest", "topic", "subject", "object_"),
+    [
+        (1, 7, "r1은", "r7이", "r7을"),
+        (2, 5, "r2는", "r5가", "r5를"),
+        (9, 11, "r9는", "r11이", "r11을"),
+    ],
+)
+def test_the_stale_and_load_words_pick_the_particles_after_the_revision_numbers(
+    seen: int, latest: int, topic: str, subject: str, object_: str
+) -> None:
+    """리비전 번호 뒤 조사는 끝소리로 고른다 — 「r2 을」·「r1 는」·「r7 가」 가 아니다."""
+    from capa_simulation.components.equipment_data_workspace import (
+        _stale_lock_message,
+        stale_delete_lock,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        loaded_revision_message,
+        stale_save_warning,
+    )
+
+    basis = EquipmentSaveBasis(
+        "setup", "셋업", release_no=1, stale=True, revision_no=seen, latest_revision_no=latest
+    )
+    lock = _stale_lock_message(basis)
+    assert lock.startswith(f"「셋업」 {subject} 더 새롭습니다 — 지금 보는 r{seen} 에서는")
+    assert f"최신 {object_} 불러오세요." in lock
+    delete = stale_delete_lock(basis)
+    assert delete.startswith(f"지금 보는 {topic} 「셋업」 최신이 아니라 지울 수 없습니다")
+    assert delete.endswith(f"최신 {object_} 불러온 뒤 지우세요.")
+    assert stale_save_warning(seen, latest).startswith(
+        f"지금 보는 {topic} 최신(r{latest})이 아니라"
+    )
+    assert (
+        loaded_revision_message("셋업", latest) == f"설비 시나리오 「셋업」 {object_} 불러왔습니다."
+    )
 
 
 def test_the_save_fields_defaults_are_the_recommended_answers() -> None:
@@ -819,7 +857,7 @@ def test_the_popup_loads_another_scenario_and_says_so(tmp_path: Path) -> None:
 
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state["now"] == ("셋업 실무", 1)
-    assert app.session_state[FLASH_KEY] == "설비 시나리오 「셋업 실무」 r1 을 불러왔습니다."
+    assert app.session_state[FLASH_KEY] == "설비 시나리오 「셋업 실무」 r1을 불러왔습니다."
 
 
 @pytest.mark.parametrize(

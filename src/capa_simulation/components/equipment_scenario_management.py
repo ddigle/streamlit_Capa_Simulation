@@ -88,6 +88,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentLayoutRoleChanged,
     EquipmentReleaseMoved,
     EquipmentRevisionConflict,
+    EquipmentScenarioNameMoved,
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionNameMoved,
     EquipmentScheduleRevisionSummary,
@@ -1146,17 +1147,29 @@ def _render_revision_name(
 
 
 def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> None:
+    """「시나리오 이름 바꾸기」 — 비교 후 쓰기다. 칸을 세울 때 본 이름을 따로 들고(`__seen`) 그
+    이름과 대조하므로, 그 사이 남이 바꿨으면 덮지 않고 거절해 지금 이름을 알린다. 고치지 않은 칸은
+    남이 바꾼 이름으로 다시 세운다(팝오버 안 칸은 매 회차 그려져 key 가 남는다)."""
     key = f"{_keyed(RENAME_KEY)}__{scenario.equipment_scenario_id}"
-    if key not in st.session_state:
-        st.session_state[key] = scenario.scenario_name
+    seen_key = f"{key}__seen"
+    current = scenario.scenario_name
+    seen = st.session_state.get(seen_key)
+    if key not in st.session_state or (seen != current and st.session_state.get(key) == seen):
+        st.session_state[key] = current
+        st.session_state[seen_key] = current
     name = st.text_input("이름", key=key)
     if st.button("이름 바꾸기", type="primary", key=RENAME_BUTTON_KEY, width="stretch"):
+        seen_name = st.session_state.get(seen_key)
         try:
             renamed = get_equipment_repository(database_path).rename_equipment_scenario(
                 scenario.equipment_scenario_id,
                 name=name,
-                expected_name=scenario.scenario_name,
+                expected_name=seen_name if isinstance(seen_name, str) else current,
             )
+        except EquipmentScenarioNameMoved as exc:
+            # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
+            _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {exc}")
+            return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return

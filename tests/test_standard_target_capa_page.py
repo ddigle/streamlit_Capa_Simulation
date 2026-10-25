@@ -671,3 +671,36 @@ def test_exception_rows_are_shown_even_when_the_availability_is_empty() -> None:
     assert any("가용설비 붙여넣기" in element.value for element in app.info)
     notice = _frame_with_value(app, "공정", "Pre B/D")
     assert notice["현재 조회범위 제외 행"].tolist() == [0]
+
+
+def test_an_empty_availability_stops_only_the_views_that_multiply_by_it() -> None:
+    """저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 「일 표준 가능량」·「가용대수」만 입력
+    안내로 멈춘다. 「대당 일 Capa」 는 가용대수 이전 단계라 표가 서고, 「로직 분석」 은 고르는 칸과
+    근거(가용대수 빈칸)를 보인다 — 한 줄만 넣었을 때와 같은 화면이다."""
+    app = AppTest.from_string(EMPTY_AVAILABILITY_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert [element.value for element in app.info] == [
+        "주차별 일 표준 가능량을 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요."
+    ]
+
+    app = app.segmented_control(key="standard_target_output_metric").set_value("가용대수").run()
+    assert not app.exception
+    assert "주차별 가용대수를 보려면 위 「가용설비 붙여넣기」로 가용설비를 입력하세요." in [
+        element.value for element in app.info
+    ]
+
+    output_selector = app.segmented_control(key="standard_target_output_metric")
+    app = output_selector.set_value("대당 일 Capa").run()
+    assert not app.exception
+    assert not any("가용설비 붙여넣기" in element.value for element in app.info)
+    assert "주차별 대당 일 Capa" in [element.value for element in app.subheader]
+    assert app.session_state["captured_first_week_value"] == pytest.approx(100.0 / 31.0)
+
+    app = app.segmented_control(key="standard_target_output_metric").set_value("로직 분석").run()
+    for key, value in LOGIC_SELECTIONS.items():
+        app = app.selectbox(key=key).set_value(value).run()
+    assert not app.exception
+    assert "일 표준 가능량 로직 분석" in [element.value for element in app.subheader]
+    metrics = {element.label: element.value for element in app.metric}
+    assert metrics["대당 일 Capa"] != "-"
+    assert "일 표준 가능량 (매)" in metrics

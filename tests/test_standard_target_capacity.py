@@ -280,6 +280,24 @@ def test_weekly_target_uses_daily_effective_capacity_and_availability() -> None:
     assert wide.loc[0, "26-W33"] == pytest.approx(3.0)
 
 
+def test_weekly_target_without_any_stored_availability_leaves_only_availability_blank() -> None:
+    """저장된 가용설비가 0건(화면이 읽는 빈 표)이어도 대당 일 Capa 는 다 나온다 — 가용대수와 일 표준
+    가능량만 빈칸이다. 「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫이다."""
+    result = build_weekly_standard_target_capacity(
+        required_equipment=_required_equipment(),
+        run_day=pd.DataFrame({"생산계획년월": [202608], "공정": ["Process-A"], "RUN_DAY": [31.0]}),
+        weekly_availability=pd.DataFrame(columns=["공정", "Weeknum", "가용대수"]),
+        start_date=date(2026, 8, 3),
+        end_date=date(2026, 8, 16),
+        detail_level="제품정보",
+    )
+
+    assert result["Weeknum"].tolist() == ["26-W32", "26-W33"]
+    assert result["대당 일 Capa"].tolist() == pytest.approx([50.0 / 31.0] * 2)
+    assert result["가용대수"].isna().all()
+    assert result["일 표준 가능량"].isna().all()
+
+
 def test_pkg_equivalent_uses_unique_pkg_plan_over_original_demand_load() -> None:
     required_equipment = _required_equipment()
     weekly_target = build_weekly_standard_target_capacity(

@@ -209,6 +209,10 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
     _save_button(app).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
+    # 목적격 조사는 이름 끝소리로 고른다 — 「2028」 은 「팔」 로 끝나 「을」.
+    assert [item.value for item in app.success] == [
+        "새 시나리오 ‘이동 결과 2028’을 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+    ]
     assert app.session_state[ACTIVE_SCENARIO_KEY] == sentinel
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == "별개 활성 리비전"
     assert len(repository.list_scenarios()) == 2
@@ -257,6 +261,9 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
     _save_button(app).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
+    assert [item.value for item in app.success] == [
+        "새 시나리오 ‘이동 결과 2029’를 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+    ]
     assert len(repository.list_scenarios()) == 3
     changed = next(
         item for item in repository.list_scenarios() if item.scenario_name == "이동 결과 2029"

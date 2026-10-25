@@ -132,7 +132,10 @@ from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
 from capa_simulation.services.korean_particle import (
     object_particle,
+    subject_particle,
     with_direction_particle,
+    with_object_particle,
+    with_topic_particle,
 )
 from capa_simulation.services.layout_overlay import (
     Place,
@@ -2733,11 +2736,11 @@ def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
     """낡은 세션의 잠금 알림 — 무엇이 잠겼고 어떻게 풀리는지."""
     latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
     return (
-        f"「{basis.scenario_name}」 {latest} 가 더 새롭습니다 — 지금 보는 r{basis.revision_no} "
-        "에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가, 호기·비가동 지우기를 "
-        "잠갔습니다. 일정을 고치거나 호기를 지우려면 사이드바 「설비 시나리오」 에서 "
-        f"최신 {latest} 를 불러오세요. 공통 칸(기존 보유대수 지우기 포함)은 그대로 고쳐 "
-        "저장됩니다."
+        f"「{basis.scenario_name}」 {latest}{subject_particle(latest)} 더 새롭습니다 — 지금 보는 "
+        f"r{basis.revision_no} 에서는 일정 여섯·시나리오 메모 칸과 비가동 일정 표, 행 추가, "
+        "호기·비가동 지우기를 잠갔습니다. 일정을 고치거나 호기를 지우려면 사이드바 "
+        f"「설비 시나리오」 에서 최신 {with_object_particle(latest)} 불러오세요. 공통 칸(기존 "
+        "보유대수 지우기 포함)은 그대로 고쳐 저장됩니다."
     )
 
 
@@ -2747,9 +2750,9 @@ def stale_delete_lock(basis: EquipmentSaveBasis) -> str:
     저장소가 늘 거부한다 — 지운 편집을 버려야 했다."""
     latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
     return (
-        f"지금 보는 r{basis.revision_no} 는 「{basis.scenario_name}」 최신이 아니라 지울 수 "
-        f"없습니다 — 호기·비가동을 지우면 이 설비 시나리오의 일정도 바뀝니다. 최신 {latest} 를 "
-        "불러온 뒤 지우세요."
+        f"지금 보는 {with_topic_particle(f'r{basis.revision_no}')} 「{basis.scenario_name}」 "
+        "최신이 아니라 지울 수 없습니다 — 호기·비가동을 지우면 이 설비 시나리오의 일정도 바뀝니다. "
+        f"최신 {with_object_particle(latest)} 불러온 뒤 지우세요."
     )
 
 
@@ -2762,7 +2765,10 @@ def stale_paste_refusal(
     바뀌는 행이 있으면 막는다(공통 칸만 바꾸는 붙여넣기는 통과).
     """
     latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
-    way_out = f" 사이드바 「설비 시나리오」 에서 최신 {latest} 를 불러온 뒤 다시 미리보세요."
+    way_out = (
+        f" 사이드바 「설비 시나리오」 에서 최신 {with_object_particle(latest)} 불러온 뒤 다시 "
+        "미리보세요."
+    )
     if review.target == "비가동 일정":
         if not review.candidate[2].equals(current[2]):
             refusal = "비가동 일정은 설비 시나리오 쪽이라 지금 보는 낡은 리비전에 넣지 않습니다."
