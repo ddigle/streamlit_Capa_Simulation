@@ -389,6 +389,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쌍이면 「공식 일정 없음 n대」). 미확인은 가정이면 공식 일정 기준(가용설비 현황과 같은 `official_confirmation_master`),
     층 캔버스 줄이기 검사는 공식 배치 마스터다. 뷰어 epoch 는 편집 가능 여부와 떼어 늘 쌍 토큰을 담는다(샘플만 「sample」 —
     잠긴 두 쌍을 오갈 때 옛 좌표가 남지 않게, 검토 F1).
+  - **「공식과 견주기」**(설계 시나리오 2단계 S4 — 설계 8-3). 경로 줄(`space_path`) 끝에 **늘 서는** 토글
+    (`space_compare_official_v1`, `persist_state="session"`)이고, 해당 없는 회차(공식 배치·호기 차이 없음·층 배치 편집 중·샘플·
+    일정 없이 엶)에는 다른 key(`space_compare_official_locked_v1`)의 끈 채 잠근 토글을 같은 자리에 세운다 — 조건부로 생겼다
+    사라지면 아래 뷰어 순번이 밀려 다시 마운트되고 배율을 잃는다(검토 L11). 견줄 것은 **그리는 스냅샷**의 호기 차이
+    (`layout_official_places` — 머리 알림과 같은 재료, 공식 스냅샷을 따로 읽지 않는다). 켜면 층 상세 뷰어 payload `compare`
+    (`components/space_floor_layout.compare_payload` ← `services/layout_overlay.layout_compare` — **epoch 밖**이라 켜고 꺼도 다시
+    마운트하지 않는다)가 공식 자리가 이 층인 차이 호기의 점선 상자(같은 층으로 옮겼으면 지금 상자와 가는 선, 다른 층이면
+    「→ C2 3F」, 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면 「미배치(가정)」)와 다른 층(또는 공식 미배치)에서 온 호기
+    꼬리표(「← C1 2F」·「← 공식 미배치」)를 싣고 편집기 JS 새 층 `sle-compare`(보기 전용·눌림 없음·겹쳐 숨기기와 무관, 순수
+    `compareShapes` — `// <view-compare>` 구획, node 시험)가 그린다. 공정 필터·일정 없음으로 그리지 않는 호기는 견주지 않는다.
+    편집기에는 보내지 않는다. FAB 전체는 층 목록 표 끝 「공식과 다름」 칸(`space_floor_list.FloorListColumn` — 그 층에서 나갔거나
+    들어왔거나 그 층 안에서 옮긴 설비 수, 묶음은 1대 — `unit_differences_by_floor`)과 층 블록 풍선 한 줄 「가정 배치 n대 다름」
+    (`floor_block_stats(layout_differences=)` → `linkStats.layout`)이다. 도면 요소·Main 설비명 위치 차이는 머리 알림의 수만이다.
+    데이터 꼴은 기준 쪽/보는 쪽 이름이라 반대 방향(공식 세션에서 고른 가정 시나리오를 점선으로)도 받을 수 있다(구현은 범위 밖).
   - **편집 권한은 `equipment_scenario_activation.space_edit_mode(session, stamped_role=)` 한 판정**(설계 8-4 표 — 설비
     마스터 탭 배치 칸·붙여넣기도 같은 `layout`). 공식 시나리오는 공식 배치(낡아도 — 위치는 공통, 새 호기 폼만 꺼짐), 공식
     시나리오의 가정이던 때 리비전은 잠금, 가정 최신은 그 시나리오의 배치 차이(새 호기 폼 켬 — Q1), 가정·낡음은 그 시나리오
@@ -560,11 +574,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   2단계 S3). `effective_floor_layout(db, 층, 세션)` = 공식 층 현행값(`load_floor_layout_marks`·`load_floor_group_labels` — 쓰기
   세대 캐시) ⊕ 세션 리비전의 요소·이름표 차이(`load_schedule_layout_overlay` — 일정 id 키 불변 칸, 차이 없으면 질의 없음)를
   회차마다 합친다(층 하나·수십 요소 — 캐시하지 않는다, 이 모듈에 캐시 데코레이터 없음). `floor_layout_differences` 는 머리
-  알림의 실효 요소·이름표 수, `space_layout_notices` 는 머리 알림 줄(그리는 스냅샷 기준 — 설계 8-2)이다.
+  알림의 실효 요소·이름표 수, `space_layout_notices` 는 머리 알림 줄(그리는 스냅샷 기준 — 설계 8-2)이다. 「공식과 견주기」(S4)
+  재료 `compare_payload`(층 상세 뷰어 `compare`)·`floor_unit_differences`(FAB 층 목록 칸·블록 풍선)도 여기다 — 둘 다 그리는 세션
+  스냅샷의 합친 본문과 마스터만 읽는다.
 - `src/capa_simulation/components/floor_layout_upload.py` — Space 층·FAB 전체의 배경 도면 업로드·삭제와 캔버스 치수
   팝업(`FLOOR_LAYOUT_DIALOG_KEY`)이다. 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
   - 캔버스를 줄여 생기는 호기 이탈은 저장된 설비 마스터의 그 층 호기 전부로 잰다(저장 검증과 같은 행, 확인 체크).
     도면 요소 이탈은 저장소가 거부하므로 단추를 막는다. 저장·삭제 뒤 그 층의 미저장 캔버스를 버린다.
+  - 층이면 가정 설비 시나리오 배치도 미리 본다(S4 — 설계 6-4, `equipment_cache.load_layout_overlay_extent` — 캔버스를 바꾸는
+    저장이 보는 ACTIVE 최신·최신 공식 발행의 그 층 차이). 차이 요소는 저장소가 막으므로 공식 요소처럼 범위에 넣어 단추를 끄고
+    (「가정 배치 「…」 의 요소도 밖입니다」), 차이 호기는 공식 호기처럼 경고(「가정 배치 「…」 호기 n대가 범위를 벗어납니다」) 뒤
+    같은 확인 체크로 받는다(그 시나리오의 다음 저장만 막힌다). 지우기의 기본 캔버스 캡션도 둘을 함께 센다.
 - `src/capa_simulation/components/space_layout_editor.py` — Space 층·FAB 도면의 Components v2 편집기와 보기 전용 뷰어
   (`render_space_layout_viewer`·`render_fab_layout_viewer`·`render_fab_layout_editor`)다.
   - HTML·CSS·JS 는 `space_layout_editor_assets/` 파일이고 모듈을 읽을 때 한 번 등록한다(`_EDITOR` — AppTest 는 JS 를
@@ -1055,6 +1075,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     흔들리지 않는다·`effective_group_labels`·`label_changes`), 설비 단위 셈 `overlay_unit_count`(묶음은 1대)·머리 알림 재료
     `layout_difference`(실효 설비 수·레이아웃표시만 다른 수·일정 없어 뺀 수·저장된 행 수 — S3 가 그린다), 일정 리비전 출처
     허용값 `SCHEDULE_REVISION_ORIGINS`(+ `layout_clear`).
+  - S4: 「공식과 견주기」 재료 `layout_compare`(층 하나 — 기준 쪽 점선 상자 `CompareGhost`·들어온 호기 `CompareArrival`, `shown` 은
+    화면이 그리는 설비명)·`unit_differences_by_floor`(층마다 공식과 자리가 다른 설비 수 — 나간·들어온·안에서 옮긴, 묶음 1대,
+    일정 없음 제외), 남의 공통 저장 뒤 다시 얹기 `reapply_layout_edits(옛 저장본, 편집본, 새 저장본, origins=, old_keys=,
+    new_names=)` → `ReappliedLayout`(다시 얹은 호기 수·빠진 호기 — 있던 호기의 일곱 칸을 원래 칸 값 그대로).
 - `src/capa_simulation/services/fab_layout.py` — FAB 동·층 정의, 층 이름·주소 인자 변환, FAB 전체 도면의 계약·검증
   (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다.
 - `src/capa_simulation/services/space_layout_edit.py` — Space 배치 편집기의 순수 계산(입력, 적용값 검증, 반영, 미저장
@@ -1634,8 +1658,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭 배치 칸)을, 없으면 편집본에 배치 편집이나 층 값 대기분이 있을 때 지금 세션의 역할을 `expected_layout_role` 로 넘긴다.
     그 사이 남의 발행으로 역할이 바뀌었으면 저장소가 `EquipmentLayoutRoleChanged` 로 막는다. 찍힌 역할은 편집본을 다시
     세우거나·저장하거나·「배치 변경만 버리기」 하면 지우고, 남은 배치 편집이 없으면 `live_layout_role` 이 지운다(남은 찍힘이
-    역할이 바뀐 뒤의 새 편집을 잠그지 않게). 편집본을 세울 때는 찍지 않는다(검토 M3). 남의 저장으로 편집본을 다시 세우면
-    버림 알림이 가정 배치 편집 수를 따로 적는다(다시 얹기는 S4).
+    역할이 바뀐 뒤의 새 편집을 잠그지 않게). 편집본을 세울 때는 찍지 않는다(검토 M3).
+  - **남의 공통 저장 뒤 가정 배치 편집 다시 얹기**(S4 — 설계 9장·검토 M4). 남이 공통을 저장해 편집본을 다시 세울 때(토큰의
+    일정 쪽 그대로) 가정 역할로 찍힌 배치 편집이 있으면 옛 저장본 사본이 바뀌기 **전**에 재료(옛 사본·편집본·저장의 호기 키
+    규칙 `layout_lock_origins`·옛 호기 키 쌍)를 들고, 새 저장본 위에 있던 호기의 배치 일곱 칸을 호기 키로 다시 얹는다
+    (`ensure_equipment_drafts` → `layout_overlay.reapply_layout_edits` — 남이 그 사이 이름을 바꾼 호기도 따라가고, 지운 호기는
+    빼고 알림에 이름). 다시 얹었으면 찍힌 역할을 남기고 세대를 한 칸 올린다(저장 안 한 편집). 공통·일정 칸 편집·새 호기·층 요소·
+    이름표 대기분은 지금처럼 버리고, 공식 역할 편집·다른 리비전(일정 쪽이 바뀜)은 다시 얹지 않는다. 알림(`discarded_notice`)이
+    다시 얹은 수와 버린 것을 따로 적는다. 모양 검사·끝 확인은 저장이 다시 본다.
   - 세션이 **낡음**이면 설비 마스터 탭 맨 위에 그 알림을 세우고 시나리오 일곱 칸·비가동 일정 표를 `disabled` 로, 행 추가를 막으며,
     붙여넣기 미리보기는 일정 칸 변경·새 행·비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 도움말 첫 마디가 「공통 — …」/「공통 — 공식 일정
     기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」 이고 편집표 위 한 줄 범례(`SCENARIO_COLUMN_LEGEND`)가 같은 뜻이다.
@@ -1668,8 +1698,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 구획으로 옮기는 길(`open_equipment_scenario_management` — 탭 상한을 먼저
   보고 전환 칸·탭 기억 칸을 적은 뒤 본문에서 `st.switch_page`, 설비 화면 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어
   쓰기」)도 둔다. 시나리오
-  표(공식/활성·최신 rN·리비전 수)와 고른 시나리오의 「시나리오 이름 바꾸기」, 리비전 표(리비전명·출처 `이관/저장/복제/함께
-  넣기/되돌리기`·공통 rN·행 수)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
+  표(공식/활성·최신 rN·리비전 수·저장된 배치 차이)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가
+  있으면 「배치 차이 모두 지우기」 도), 리비전 표(리비전명·출처 `이관/저장/복제/함께 넣기/되돌리기/배치 차이 정리`·공통 rN·행
+  수·배치)와 고른 리비전의 작업 다섯 — 「이 리비전 불러오기」·「이 리비전으로 되돌리기」·「여기서 새
   시나리오」·「리비전명」·「공식으로 발행…」(지금 공식 → 새 공식, 최신이 아니면 그 사실, 발행 번호 대조) — 과 옛 배포 흔적이
   있을 때만 「이대로 이어 쓰기」. 구획 본문은 DB 경로와 그 회차 세션만 받아 따로 선다.
   - 쓰기는 저장소가 하고 그 뒤 이 화면이 `clear_equipment_scenario_cache()` 를 부른다(저장소는 캐시 경계를 import 하지
@@ -1698,6 +1729,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     글이 이미 새 목록으로 다시 그려져, 지금 번호로만 대조하면 「v1 → v2」 를 본 사람이 말없이 v3 을 낸다. 저장소 대조값도 그 번호다.
   - **이대로 이어 쓰기** 확인 체크 key 꼬리는 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전 번호·빠지는 호기 수 —
     `continue_confirm_key`)이다(되돌리기 체크와 같은 까닭). 발행 번호 0 은 「v0」 이 아니라 「발행 없음」(`release_words`)이다.
+  - **배치 차이(설비 0031 — S4)**. 시나리오 표 「저장된 배치 차이」 는 최신의 **저장된** 행(원시 — 「호기 3행·요소 1개」 ·
+    `EquipmentScenarioSummary.latest_layout_rows`), 리비전 표 「배치」 는 그 리비전의 저장된 행이다(목록에는 실효를 셀 재료가 없다
+    — 설계 8-2). 옛 판(0031 을 모르는 배포)이 차이 있는 리비전 뒤에 저장한 리비전(옛 코드 흔적 — 목록 셈 `layout_trace_count` 와
+    같은 규칙 `layout_trace_sources`)은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 「rT 은 옛 판이 저장해 rN 의 가정 배치가
+    빠졌습니다 — rN 으로 되돌리기」 경고, 시나리오 표 아래에 흔적이 있는 시나리오 한 줄. 저장은 막지 않는다(설계 14장).
+    「배치 차이 모두 지우기」(`clearable_layout` — 가정 시나리오 최신에 차이가 있을 때만)는 확인 체크 key 꼬리가 (시나리오, 최신
+    id)라 남의 저장 뒤 체크가 풀리고, `clear_layout_overlay(expected_latest_schedule_revision_id=)` 뒤 이 세션이 그 시나리오를
+    보고 저장 안 한 편집이 없으면 새 리비전으로 옮긴다(되돌리기와 같다). 「공식으로 발행」 은 발행 쓰기와 **같은 판정**
+    (`equipment_repository._layout_publish_preview` → `load_layout_publish_preview` — 불변 id 셋 + 층 현행값 세대 키)을 미리 읽어
+    막히면 「… 공식과 다른 배치(실효 … — 저장된 차이 m행)가 있어 …」 와 빠져나갈 길을 적고 단추를 끄며, 공식과 같아진 차이만
+    남았으면 「… m행을 정리한 rN+1 로 발행합니다」 를 적는다(머리 「배치는 공식과 같습니다」 와 발행 거부가 함께 뜨지 않게 —
+    검토 F4). 되돌리기 확인 글은 되살리는 가정 배치에서 그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since` — 이력
+    「그때 그대로」 와 다름, 검토 F21)를 덧붙인다.
 - `src/capa_simulation/components/qual_deadline_calculator.py` — 필요 단축 일정 머리 「Qual 마감 계산기」 팝업의 본문
   (2026-10-24 — 가용설비 현황의 탭에서 옮김). 숫자 칸 넷·12개월 편집표를 받아 KPI 넷·호기별 표·월 점검 표(판정 칸·지난 마감
   칸은 상태색 면, 고정 uuid Styler)와 CSV 둘을 그린다.
@@ -1937,7 +1981,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다. 「다른 ACTIVE 시나리오 최신에 일정이
     있는 호기 키」(`load_units_scheduled_elsewhere` — 설비 마스터 탭 호기 삭제 확인 재료, 지운 호기가 있는 회차에만 읽는다)도 목록과
     같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)다(배치 차이 행만 있는 호기도 든다). Space 층 사용 끄기 확인의 덧줄
-    재료 `load_layout_overlay_floor_counts`(층마다 — ACTIVE 가정 시나리오 최신의 그 층 차이 호기 행 수)도 같은 세 장치다.
+    재료 `load_layout_overlay_floor_counts`(층마다 — ACTIVE 가정 시나리오 최신의 그 층 차이 호기 행 수)도 같은 세 장치이고, 층
+    캔버스 팝업 미리 보임 `load_layout_overlay_extent`(층마다 — 캔버스 저장이 보는 리비전의 차이 요소 범위·차이 호기 상자,
+    S4)는 그 세 장치에 층 현행값 세대 `"floor_layout"` 을 더한다. 공식 발행 확인의 배치 판정 `load_layout_publish_preview`(S4 —
+    (DB, 공통 최신 id, 발행할 리비전, 그 시나리오 최신) 불변 id 셋 + 층 현행값 세대)는 저장소 `preview_layout_publish` 가
+    발행 쓰기와 같은 판정(`_layout_publish_preview`)을 쓰지 않고 낸 값이다.
   - **가정 배치 차이(설비 0031)도 리비전 내용이라 불변이다.** 호기 차이는 합친 본문이 이미 얹어 싣는다(`_MergedSnapshotPayload`
     에 공식 일곱 칸·버린 차이 수·다시 맞춘 묶음 — 시험이 `EquipmentSnapshot` 모든 필드의 왕복을 본다). 도면 요소·Main 설비명
     위치 차이는 (DB, 일정 id) 하나를 키로 한 칸 `load_schedule_layout_overlay`(`_load_schedule_layout_payload`, 16칸, 세대 없음 —
@@ -2000,7 +2048,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (실효 호기·요소·이름표 수와 빠져나갈 길 — 「배치 차이 모두 지우기」·「여기서 새 시나리오」). 저장·되돌리기의 자동 발행도
     발행할 리비전에 차이가 있으면 막는다(공식 시나리오는 차이가 없어 실제로는 발행이 없는 DB 의 첫 저장만). 「배치 차이 모두
     지우기」 는 `clear_layout_overlay`(그 시나리오 최신의 일정 그대로·차이만 비운 `layout_clear` 리비전, 지울 것이 없으면 None,
-    낡음 대조는 저장과 같다).
+    낡음 대조는 저장과 같다). 판정은 `_layout_publish_preview` **한 곳**이다 — 발행 쓰기(`_layout_publishable`)와 확인 팝업의
+    읽기(`preview_layout_publish(..., common_revision_id=, newest_schedule_revision_id=)` → `LayoutPublishPreview` action
+    `publish`·`clean`·`blocked`, 저장된 행·실효 수 — S4)가 같이 쓴다. 캔버스 검사·미리 보임이 보는 리비전도 한 곳
+    (`_overlay_check_targets` — `_require_overlay_marks_fit`·`layout_overlay_extent` → `LayoutOverlayExtent`)이다. 목록 투영은
+    최신의 저장된 요소·이름표 차이 행 수(`latest_layout_mark_count`·`latest_layout_label_count`)도 싣는다.
   - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 **어느 일정 리비전이든**(E7 「여기서 새 시나리오」), SQL 사본이
     아니라 지금 공통과 합친 읽기 길로 읽은 일곱 칸·비가동을 새 두 표에, `origin='clone'`. 지금 공통과 합쳐지지 않는 옛 리비전은
     `EquipmentScenarioIncompatible`. 출처 리비전의 배치 차이도 지금 공식으로 정규화해 옮긴다)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name` 대조 →
@@ -2363,8 +2415,12 @@ RQ_MODULE
       공식 배치는 공식 설비 시나리오에서만, 가정 배치는 그 시나리오에서만 고치고(`space_edit_mode` 한 판정 — 설비 마스터 탭
       배치 칸·붙여넣기도), FAB 전체·층 캔버스·배경 도면·층 사용은 공식에서만이다(G5·Q3). 배치 편집은 적용할 때 역할을 찍고
       저장소가 쓰기 잠금 안에서 대조한다(6-2). 가정 세션에서 넣은 새 호기는 공통 배치가 비어(Q1) 공식에서 「동·층 미정」 이고
-      자리는 그 시나리오의 배치 차이에 든다 — Space 저장 상자의 「다른 설비 시나리오에도 넣기」 는 기본 끔이다. 차이를
-      지우는 「배치 차이 모두 지우기」 화면은 S4 다(저장소 `clear_layout_overlay` 는 있다).
+      자리는 그 시나리오의 배치 차이에 든다 — Space 저장 상자의 「다른 설비 시나리오에도 넣기」 는 기본 끔이다.
+    - **S4 — 견주기·관리 보강**. 「공식과 견주기」 는 그리는 스냅샷의 호기 차이를 점선으로 보일 뿐 쓰지 않는다(뷰어 payload 는
+      epoch 밖). 차이를 지우는 길은 시나리오 관리 › 설비 시나리오 「배치 차이 모두 지우기」(새 리비전 — 지운 리비전은 남아 되돌리기로
+      되살아난다)이고, 발행 확인 팝업은 발행 쓰기와 같은 판정을 미리 읽는다(판정 한 곳 `_layout_publish_preview`). 남이 공통을
+      저장해 편집본을 다시 세울 때 가정 역할 배치 일곱 칸 편집은 다시 얹는다(일곱 칸 절댓값이라 새 공통 위에서도 뜻이 같다 —
+      설계 9장). 층 캔버스 팝업은 캔버스를 바꾸는 저장이 보는 가정 배치를 미리 말한다.
 33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
     `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만 남긴다. 탭을 누르는 것은
     사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
@@ -3584,8 +3640,11 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   `read_merged` — 3장)로 한 번 읽어 8-1·8-4 가 나눈다. 공통 칸 수는 공통 최신 SQL, 일정 칸 수(Q 자리표·개편 전 두 날짜·일정
   미정·정지+반출·비가동 행)는 공식 일정 리비전으로 센다 — Q 자리표는 레거시 원천 행만 센다(새 일정 표에는 자리표가 없다).
   8-4 요약 키의 `r` 은 공식 일정 리비전 번호라 일정은 그대로 두고 공통만 v4 로 저장해도 8-1·8-4 키가 그대로다(시험). 이관 확인
-  줄(설비 `0027` — 시나리오 수·이관 리비전/이관 전 리비전·공식·옛 배포 흔적·일정 없음·고아 일정 행)은 요약 키 `8-4s` 로 따로
-  지어 8-4 줄이 멈춰도 남는다. 시나리오 이름은 값이라 찍지 않는다.
+  줄(설비 `0027` — 시나리오 수·이관 리비전/이관 전 리비전·공식·옛 배포 흔적·일정 없음·고아 일정 행, 설비 `0031` 뒤 끝에 가정
+  배치 차이 호기 행 `Y` — S4)은 요약 키 `8-4s` 로 따로 지어 8-4 줄이 멈춰도 남는다. 시나리오 이름은 값이라 찍지 않는다. 같은 표의
+  「가정 배치 차이」(ACTIVE 시나리오 최신의 저장된 행: 시나리오 / 호기 / 요소 / 이름표)·「배치 옛 코드 흔적」(0 이어야 함) 두 줄은
+  앱 목록 투영(`equipment_scenario_store.scenario_rows`)을 그대로 읽는다. `--check-summary` 는 수만 셈하므로 `Y` 없는 옛 8-4s 도
+  받는다.
 - **배포마다 바뀌는 사내 화면 확인(런북 7장)은 `scripts/check_deploy_screens.py` 가 맡는다.** 별도 포트에 띄운
   앱을 저장소 밖에 깐 Playwright(깔린 Chrome, headless)로 보고, 결과 칸에는 개수·있음/없음·같음/다름·px 만
   둔다 — 화면에서 읽은 이름은 판정에만 쓰고 옮기지 않는다. 항목은 공통 뼈대(`Screen`)만 쓰는 함수 하나와
