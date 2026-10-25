@@ -833,8 +833,8 @@ def render_threshold_editor(
                         for index, label in enumerate((SECURE_COLUMN, WARNING_COLUMN))
                     ],
                     columns=[DIMENSION_COLUMN, *month_labels],
-                    # 달 칸은 늘 float64 다 — 두 줄 모두 빈 달이 Arrow null 이면 남의 저장으로 첫 값이
-                    # 들어온 회차에 데이터 서명이 바뀌어 폼 안에서 아직 보내지 않은 편집이 사라진다.
+                    # 달 칸은 늘 float64 다 — 두 줄 모두 빈 달이 Arrow null 이면 남의 저장으로 첫
+                    # 값이 들어온 회차에 데이터 서명이 바뀌어 폼 안의 보내지 않은 편집이 사라진다.
                 ).astype({label: "float64" for label in month_labels})
                 edited = st.data_editor(
                     table,
