@@ -697,7 +697,9 @@ class EquipmentSaveResult:
     - `new_units`·`removed_units` 는 공통 대장에 새로 든·빠진 설비명(지운 호기는 모든 시나리오에서
       빠진다 — 설비 마스터 탭 설비명 고침도 지운 + 새 호기다).
     - `layout_overlay_written` 은 이 저장이 가정 설비 시나리오의 배치 차이를 바꾼 새 리비전을
-      만들었는가, `layout_overlay_units` 는 그 리비전의 공식과 다른 호기 수(설비 단위)다.
+      만들었는가, `layout_overlay_units` 는 그 리비전의 공식과 다른 호기 수(설비 단위)이고
+      `layout_overlay_marks`·`layout_overlay_labels` 는 그 리비전의 도면 요소·Main 설비명 위치
+      차이 수다(쓰기 때 정규화를 마친 값이라 공식과 실제로 다른 것만이다).
       `floor_values_written` 은 층 현행값(공식 캔버스·요소·Main 설비명 위치)을 실제로 썼는가다 —
       가정 역할의 층 편집은 층 현행값이 아니라 배치 차이로 간다.
     """
@@ -713,6 +715,8 @@ class EquipmentSaveResult:
     removed_units: tuple[str, ...] = ()
     layout_overlay_written: bool = False
     layout_overlay_units: int = 0
+    layout_overlay_marks: int = 0
+    layout_overlay_labels: int = 0
 
     @property
     def wrote_revision(self) -> bool:
@@ -1366,6 +1370,8 @@ class DuckDBEquipmentRepository:
                 removed_units=edit.removed_units,
                 layout_overlay_written=role == "overlay" and write_schedule and layout_changed,
                 layout_overlay_units=overlay_unit_count(layout, after_base),
+                layout_overlay_marks=layout.mark_count,
+                layout_overlay_labels=layout.label_count,
             )
             outcome.wrote = result.wrote_revision or floors_written or release_no is not None
         return _SaveOutcome(result, common_id, schedule_id)
@@ -1895,6 +1901,30 @@ class DuckDBEquipmentRepository:
                 for key in sorted(keys):
                     found.setdefault(key, []).append(summary.scenario_name)
         return tuple((key, tuple(names)) for key, names in sorted(found.items()))
+
+    def layout_overlay_floor_counts(self, building: str, floor: str) -> tuple[tuple[str, int], ...]:
+        """ACTIVE **가정** 설비 시나리오(공식 시나리오 밖) 최신마다 그 리비전의 호기 배치 차이에서
+        이 층에 놓인 호기 행 수 — (시나리오 이름, 수) 목록 차례, 0 인 시나리오는 뺀다. Space 층
+        사용 끄기 확인의 덧줄 재료다(설계 13-2 — 층 사용은 공통이라 그 시나리오 목록·도면에서도
+        숨는다). 차이가 없는 리비전은 질의하지 않는다(`read_layout_overlay`)."""
+        found: list[tuple[str, int]] = []
+        with self._connect() as connection:
+            official = scenario_store.official_scenario_id(connection)
+            for summary in map(_scenario_summary, scenario_store.scenario_rows(connection)):
+                if (
+                    summary.status != "ACTIVE"
+                    or summary.equipment_scenario_id == official
+                    or summary.latest_schedule_revision_id is None
+                    or summary.latest_layout_unit_count == 0
+                ):
+                    continue
+                overlay = read_layout_overlay(connection, summary.latest_schedule_revision_id)
+                count = sum(
+                    1 for _, _, place in overlay.units if (place[0], place[1]) == (building, floor)
+                )
+                if count:
+                    found.append((summary.scenario_name, count))
+        return tuple(found)
 
     def list_equipment_scenarios(self) -> list[EquipmentScenarioSummary]:
         """설비 시나리오 목록(`list_order` 다음 이름 차례) — 각 최신·리비전 수와 함께."""

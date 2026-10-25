@@ -2459,7 +2459,7 @@ export default function (component) {
     unplaceButton.disabled = !chosen.some((m) => onCanvas(m) || m.created)
     zoomSel.disabled = !chosen.some(onCanvas)
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
-    areaNote.textContent = S.note
+    areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
     syncInspector()
   }
 
@@ -2547,6 +2547,9 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 편집 영역(캔버스) 크기
   function setCanvas(requestedW, requestedH, { record = true } = {}) {
+    // 층 캔버스를 고치지 않는 편집기(가정 설비 시나리오 — 공용 값). 칸은 꺼져 있지만 옛 단축키·되돌리기
+    // 길도 막는다. 서버도 적용의 캔버스 값을 거부한다(두 겹).
+    if (data.canvasEditable === false) { areaW.value = W(); areaH.value = H(); return }
     const ext = extents()
     const minW = Math.max(MIN_EXTENT, ext.right)
     const minH = Math.max(MIN_EXTENT, ext.top)
@@ -3899,13 +3902,10 @@ export default function (component) {
   const showHint = () => { const [w, h] = sizeHint(); newW.placeholder = String(w); newH.placeholder = String(h) }
   showHint()
   newProcess.onchange = showHint
-  // 새 호기 폼을 끈 편집(공식 발행 쌍이지만 그 시나리오에 더 새 리비전이 있는 세션 — 일정이 생기는 새
-  // 호기는 저장에서 막힌다). 단추를 끄고 까닭을 풍선으로 보인다. 다른 편집은 그대로다.
-  if (NEW_UNIT.disabled) {
-    addToggle.disabled = true
-    addToggle.title = String(NEW_UNIT.disabled)
-    addForm.hidden = true
-  }
+  // 새 호기 폼을 끈 편집(그 시나리오에 더 새 리비전이 있는 세션·찍힌 역할이 바뀐 세션 등 — 일정이 생기는
+  // 새 호기는 저장에서 막힌다). 단추를 끄고 까닭을 풍선으로 보인다. 다른 편집은 그대로다. 회차마다 받은 값대로
+  // 다시 켜고 끈다 — 편집기 key 는 설비 시나리오가 바뀌어도 같아 같은 DOM 이 남는다.
+  lockNewUnitToggle(addToggle, addForm, NEW_UNIT.disabled)
   addToggle.onclick = () => {
     if (NEW_UNIT.disabled) return
     addForm.hidden = !addForm.hidden
@@ -3953,6 +3953,25 @@ export default function (component) {
     setSelection([key], key)
   }
 
+  // ---------------------------------------------------------------- 잠금(회차마다)
+  // 칸 잠금은 받은 값대로 켜고 끈다. 처음 본 풍선 글은 `data-base-title` 에 두었다가 풀 때 되돌린다.
+  function lockCanvasControls(controls, locked, reason) {
+    for (const control of controls) {
+      if (control.dataset.baseTitle === undefined) control.dataset.baseTitle = control.title || ''
+      control.disabled = locked
+      control.title = locked ? reason : control.dataset.baseTitle
+    }
+  }
+  // 새 호기 단추 — `reason` 이 있으면 끄고 폼을 닫는다. 없으면 다시 켠다(풍선은 비운다).
+  function lockNewUnitToggle(toggle, form, reason) {
+    toggle.disabled = Boolean(reason)
+    toggle.title = reason ? String(reason) : ''
+    if (reason) {
+      form.hidden = true
+      toggle.setAttribute('aria-expanded', 'false')
+    }
+  }
+
   // ---------------------------------------------------------------- 단추
   moveButton.onclick = () => sendItems(selectedItems(), moveSelect.value)
   moduleTile.onclick = () => {
@@ -3964,6 +3983,16 @@ export default function (component) {
     if (!Number.isFinite(value)) { input.value = current; return null }
     return value
   }
+  // 편집 영역 칸을 끄면 까닭을 풍선·알림 칸에 둔다(보기는 그대로 — 폭·높이 값은 지금 캔버스). 회차마다 받은
+  // 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식 세션으로 돌아와도(편집기 key·DOM 이 같다) 꺼진 채 남지 않게.
+  const canvasLocked = data.canvasEditable === false
+  lockCanvasControls(
+    q('.sle-area').querySelectorAll('input, button'),
+    canvasLocked,
+    data.canvasLock || '이 편집기에서는 편집 영역을 바꾸지 않습니다',
+  )
+  if (canvasLocked) areaNote.textContent = data.canvasLock || ''
+  else if (!S.note) areaNote.textContent = ''
   areaW.onchange = () => { const v = areaValue(areaW, W()); if (v !== null) setCanvas(v, H()) }
   areaH.onchange = () => { const v = areaValue(areaH, H()); if (v !== null) setCanvas(W(), v) }
   // Enter 로 바로 반영한다(숫자 칸은 Enter 만으로는 change 가 안 나는 경우가 있다).

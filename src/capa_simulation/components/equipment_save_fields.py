@@ -8,6 +8,10 @@
   있는 자리(팝업)만 수를 미리 적는다(`counts`).
 - 기본값 셋은 아래 상수 한 곳이다(질문 1 — 공식 발행 기본 켬, F6·F2 — 함께 넣기 기본 켬). 답이
   바뀌면 이 상수만 고친다.
+- **가정 세션의 Space 「배치 저장」**(`assumption=True` — 설비 시나리오 2단계 Q1)은 「새 호기를 다른
+  설비 시나리오에도 넣기」 가 **기본 끔**이다(배치 검토용 가상 호기가 공식 일정·가용대수에 들지
+  않게). 켜면 공식 가용대수에 센다는 경고와, 그때만 「함께 넣은 공식 리비전 발행」 체크가 선다. key
+  는 공식 자리와 가른다(같은 key 의 기본값이 세션 역할로 바뀌지 않게).
 """
 
 from __future__ import annotations
@@ -26,6 +30,14 @@ DEFAULT_PROPAGATE_NEW_DOWNTIME = True
 PROPAGATE_UNITS_LABEL = "새로 넣은 호기를 다른 설비 시나리오에도 같은 일정으로 넣기"
 PROPAGATE_DOWNTIME_LABEL = "새로 넣은 비가동을 모든 설비 시나리오에 넣기"
 PUBLISH_OFFICIAL_LABEL = "공식 설비 시나리오에 새 일정 리비전이 생기면 공식으로 발행"
+# 가정 세션 Space 저장 상자(Q1).
+DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS = False
+ASSUMPTION_PROPAGATE_UNITS_LABEL = "새 호기를 다른 설비 시나리오에도 넣기"
+ASSUMPTION_PROPAGATE_WARNING = (
+    "켜면 새 호기가 공식 설비 시나리오에 자리 없는 새 호기로 들어가 공식 가용대수에 셉니다."
+)
+ASSUMPTION_PUBLISH_LABEL = "함께 넣은 공식 리비전 발행"
+_ASSUMPTION_SUFFIX = "_assumption"
 # 발행이 하나도 없을 때 발행 체크 대신 서는 한 줄 — 저장소가 첫 일정 리비전을 늘 공식 v1 로 낸다.
 FIRST_RELEASE_NOTE = "아직 공식 발행이 없어 이 저장의 일정 리비전이 공식 v1 이 됩니다."
 SAVED_BY_LABEL = "저장자(선택)"
@@ -74,6 +86,7 @@ def render_equipment_save_fields(
     counts: SaveCandidateCounts | None = None,
     show_publish: bool = True,
     release_exists: bool = True,
+    assumption: bool = False,
 ) -> EquipmentSaveFields:
     """저장자 칸과 세 체크를 그리고 지금 값을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
 
@@ -83,6 +96,9 @@ def render_equipment_save_fields(
     리비전을 만드는 길은 함께 넣기뿐이라 결과 알림이 말한다. `release_exists` 가 거짓이면(공식
     발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을 둔다 — 저장소가 첫 일정 리비전을 늘
     공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
+
+    `assumption` 이면 가정 세션 Space 저장 상자다(모듈 설명 — 함께 넣기 기본 끔, 발행 체크는 켰을
+    때만).
     """
     saved_by = st.text_input(
         SAVED_BY_LABEL,
@@ -90,6 +106,35 @@ def render_equipment_save_fields(
         placeholder="예: 홍길동",
         max_chars=40,
     )
+    if assumption:
+        propagate_units = st.checkbox(
+            ASSUMPTION_PROPAGATE_UNITS_LABEL,
+            value=DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS,
+            key=f"{prefix}_propagate_units{_ASSUMPTION_SUFFIX}",
+        )
+        propagate_downtime = st.checkbox(
+            PROPAGATE_DOWNTIME_LABEL,
+            value=DEFAULT_PROPAGATE_NEW_DOWNTIME,
+            key=f"{prefix}_propagate_downtime",
+        )
+        publish = False
+        if propagate_units:
+            st.caption(f":material/warning: {ASSUMPTION_PROPAGATE_WARNING}")
+            if release_exists:
+                publish = st.checkbox(
+                    ASSUMPTION_PUBLISH_LABEL,
+                    value=DEFAULT_PUBLISH_OFFICIAL,
+                    key=f"{prefix}_publish{_ASSUMPTION_SUFFIX}",
+                )
+            else:
+                st.caption(f":material/verified: {FIRST_RELEASE_NOTE}")
+                publish = True
+        return EquipmentSaveFields(
+            saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
+            propagate_new_units=bool(propagate_units),
+            propagate_new_downtime=bool(propagate_downtime),
+            publish_official=bool(publish),
+        )
     units_label = PROPAGATE_UNITS_LABEL
     downtime_label = PROPAGATE_DOWNTIME_LABEL
     if counts is not None:
@@ -116,16 +161,25 @@ def render_equipment_save_fields(
     )
 
 
-def save_fields_from_state(prefix: str) -> EquipmentSaveFields:
+def save_fields_from_state(prefix: str, *, assumption: bool = False) -> EquipmentSaveFields:
     """`render_equipment_save_fields(prefix)` 가 세운 칸의 지금 값을 세션에서 읽는다 — 저장이 단추
     콜백(Space 「배치 저장」)이라 그리는 회차의 돌려준 값을 쓸 수 없을 때. 칸이 아직 없으면
-    기본값."""
+    기본값. `assumption` 이면 가정 세션 칸(함께 넣기 기본 끔, 발행은 함께 넣기를 켰을 때만)."""
 
     def flag(suffix: str, default: bool) -> bool:
         value = st.session_state.get(f"{prefix}_{suffix}", default)
         return value if isinstance(value, bool) else default
 
     saved_by = st.session_state.get(f"{prefix}_saved_by")
+    if assumption:
+        units = flag(f"propagate_units{_ASSUMPTION_SUFFIX}", DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS)
+        return EquipmentSaveFields(
+            saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
+            propagate_new_units=units,
+            propagate_new_downtime=flag("propagate_downtime", DEFAULT_PROPAGATE_NEW_DOWNTIME),
+            publish_official=units
+            and flag(f"publish{_ASSUMPTION_SUFFIX}", DEFAULT_PUBLISH_OFFICIAL),
+        )
     return EquipmentSaveFields(
         saved_by=(saved_by.strip() or None) if isinstance(saved_by, str) else None,
         propagate_new_units=flag("propagate_units", DEFAULT_PROPAGATE_NEW_UNITS),

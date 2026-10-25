@@ -38,6 +38,7 @@ from capa_simulation.components.equipment_data_workspace import (
     effective_floor_canvases,
     ensure_equipment_drafts,
     has_unsaved_equipment_edits,
+    live_layout_role,
     pending_fab_layout,
     pop_discarded_notice,
     pop_drafts_replaced,
@@ -66,6 +67,7 @@ from capa_simulation.components.tab_state import NestedTab, stateful_tabs, tab_i
 from capa_simulation.equipment_scenario_activation import (
     official_snapshot_for,
     resolve_equipment_session,
+    space_edit_mode,
 )
 from capa_simulation.navigation import (
     EQUIPMENT_MASTER_TAB,
@@ -189,6 +191,8 @@ with notices:
 
 # 저장본 사본과 미저장 편집본을 한 곳에서 세운다 — Space 현황이 먼저 세웠어도 같은 토큰이다.
 ensure_equipment_drafts(latest_snapshot)
+# 배치 편집 권한(Space 와 한 판정 — 찍힌 역할은 편집본을 세운 뒤에 읽는다).
+layout_mode = space_edit_mode(equipment_session, stamped_role=live_layout_role())
 drafts_replaced = pop_drafts_replaced()
 discarded_notice = pop_discarded_notice()
 if discarded_notice:
@@ -484,4 +488,8 @@ with master_tab:
         today=today,
         basis=equipment_session.save_basis(),
         confirmation_official=official_snapshot,
+        # 배치 일곱 칸은 Space 와 같은 판정이다(설계 8-4·10장) — 공식 시나리오면 공식 배치, 가정이면
+        # 그 시나리오의 배치 차이, 잠긴 회차면 있던 호기 배치 칸 고침을 되돌린다.
+        layout_mode=layout_mode.layout,
+        layout_lock_reason=layout_mode.master_tab_lock_reason,
     )

@@ -378,17 +378,43 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지운다(`st.query_params.clear()` 금지). 자리 이동은 모두 콜백이다. 브라우저 뒤로/앞으로는 층 이동이 아니다.
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
-  - 보기는 늘 **공식** 설비 시나리오다(E5 — `load_official_equipment_snapshot().calculation_frames()`, 사이드바 줄은 잠근 꼴
-    「… (고정)」, `PageSpec.uses_equipment_db=True`). 공식 일정이 없는 호기는 그리지 않고 「공식 일정 없음 n대」 로 알린다.
-    미확인·캔버스 줄이기 검사도 공식 마스터다(좌표는 공통).
-  - 층 상세 배치 편집은 `space_editing_allowed`(세션이 공식 발행 쌍)일 때만 열린다 — 그때는 편집본 = 공식이라 지금 코드
-    그대로다. 아니면 편집 단추가 꺼지고 본문 위에 「배치 편집은 공식 설비 시나리오(…)에서 — [공식으로 바꾸기]」(미저장
-    편집이 있으면 버림 확인)가 서며, 편집본은 건드리지 않는다(다른 토큰으로 `ensure` 를 부르지 않는다). 공식 발행 쌍이지만
-    낡았으면 새 호기 폼만 꺼진다. FAB 전체 배치 편집은 설비 리비전과 무관한 공통 현행값이라 잠그지 않는다.
+  - 보기는 **사이드바에서 고른 설비 시나리오**의 배치다(설비 시나리오 2단계 S3 — LY3, `PageSpec.equipment_scenario="session"`·
+    `uses_equipment_db=True`). 그리는 한 벌은 세션 스냅샷(`resolve_equipment_session(...).snapshot.calculation_frames()`)
+    하나이고 가정이면 그 리비전의 호기 배치 차이가 얹혀 있다. 층 도면 요소·Main 설비명 위치는 **모두**
+    `components/space_floor_layout.effective_floor_layout`(공식 층 현행값 ⊕ 그 리비전의 요소·이름표 차이)을 지난다 — 뷰어·
+    편집기·「그대로인가」 판정·층 대조 기준 지문·저장 안 한 상자의 겹침 경고(공식 현행값 직접 읽기 0 — 시험이 소스를
+    훑는다). 머리 알림은 **그리는 스냅샷**으로 정한다(`space_layout_notices` — 「가정 배치 · 공식과 다른 호기 n대 · 도면 요소
+    m개 · Main 설비명 위치 k개」, 차이 없는 가정은 「배치는 공식과 같습니다」 캡션, 공식 시나리오의 가정이던 때 리비전도
+    알림, 묶음 다시 맞춤·버린 차이 둘째 줄). 그 시나리오에 일정이 없는 호기는 그리지 않는다(`unscheduled_notice` — 공식 발행
+    쌍이면 「공식 일정 없음 n대」). 미확인은 가정이면 공식 일정 기준(가용설비 현황과 같은 `official_confirmation_master`),
+    층 캔버스 줄이기 검사는 공식 배치 마스터다. 뷰어 epoch 는 편집 가능 여부와 떼어 늘 쌍 토큰을 담는다(샘플만 「sample」 —
+    잠긴 두 쌍을 오갈 때 옛 좌표가 남지 않게, 검토 F1).
+  - **편집 권한은 `equipment_scenario_activation.space_edit_mode(session, stamped_role=)` 한 판정**(설계 8-4 표 — 설비
+    마스터 탭 배치 칸·붙여넣기도 같은 `layout`). 공식 시나리오는 공식 배치(낡아도 — 위치는 공통, 새 호기 폼만 꺼짐), 공식
+    시나리오의 가정이던 때 리비전은 잠금, 가정 최신은 그 시나리오의 배치 차이(새 호기 폼 켬 — Q1), 가정·낡음은 그 시나리오
+    최신의 배치 지문이 이 리비전과 같으면 빨리 감기(캡션 — 저장소가 최신의 일정 위에 받는다) 다르면 잠금(「최신 rM
+    불러오기」), 찍힌 역할 ≠ 지금 역할이면 잠금(「배치 변경만 버리기」), 일정 없이 엶은 잠금이다. FAB 전체·층 캔버스·배경
+    도면·층 사용(0029)은 공식 시나리오에서만 편집한다(G5·Q3 — 꺼진 단추의 풍선이 까닭, FAB 자리에 「공식으로 바꾸기」 — 일정
+    없이 연 세션에는 세우지 않는다, 공식으로 옮겨도 같은 까닭으로 합쳐지지 않는다). 찍힌 역할이 바뀐 잠금 글은 화면이 둘이다 —
+    Space 는 그 자리의 「배치 변경만 버리기」, 설비 마스터 탭(`SpaceEditMode.master_tab_lock_reason`)은 그 단추가 있는 Space
+    현황 저장 안 한 배치 변경 상자를 가리킨다. 「공식으로 바꾸기」·「최신 rM 불러오기」 실패는 저장 오류와 따로
+    (`SWITCH_ERROR_KEY`) 잠금 줄 자리에 「설비 시나리오를 바꾸지 못했습니다」 로 선다. 편집기 「편집 영역」 칸은
+    `canvas_editable=False` 면 JS 가 끄고 서버도 적용의 캔버스 값을 거부한다(두 겹). JS 잠금(편집 영역 칸·새 호기 단추)은
+    회차마다 받은 값대로 켜고 끈다(`lockCanvasControls`·`lockNewUnitToggle` — 편집기 key 는 시나리오가 바뀌어도 같아 같은 DOM
+    이 남는다). 사이드바 설비 시나리오 줄은 편집본을 세운 **뒤에** 그린다(남의 저장 뒤 배지가 한 회차 늦지 않게). FAB 대기분
+    저장은 어느 세션에서나 된다(대기분은 공식 세션에서만 생기고 FAB 은 시나리오 없는 공용 값 — 가정 세션 저장 상자에 한 줄).
+    1단계의 「공식 발행 쌍에서만 편집 — [공식으로 바꾸기]」 잠금과 `space_editing_allowed` 는 걷었다. 편집본은 실제
+    저장본이면 늘 세션 토큰으로 세운다(세션 토큰 하나라 다른 화면 편집을 버리는 갈림이 없다).
+  - 배치를 바꾸는 적용(호기·숨은 모듈·새 호기·캔버스·요소·Main 설비명 위치)은 그때의 역할을 찍는다(`stamp_layout_role` —
+    설계 6-2). 층 배치가 잠긴 회차에 남은 배치 변경은 상자의 「배치 저장」 을 끄고 「배치 변경만 버리기」(`discard_layout_edits`
+    — 배치 일곱 칸·층 대기분·편집기 모듈 모양·찍힌 역할만 버리고 공통·일정 편집·이름 바꿈·FAB 대기분은 남김)를 세운다.
+    가정 세션 상자는 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 않습니다」 이고 저장 칸은
+    `render_equipment_save_fields(..., assumption=True)`(함께 넣기 기본 끔 — Q1) 다. 층 배치 잠금 줄은 늘 서는 칸
+    (`space_edit_lock_slot`)에 그린다.
   - 배치 편집은 설비 마스터 탭과 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer` 로 저장한다(「배치 저장」 확인
     팝오버에 저장 칸 — 공통·일정이 모두 그대로면 층 값만 쓰고 리비전을 만들지 않는다). 도면 상자 앞 칸
     (`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
-  - 층의 Main 설비명 위치(대기분 `pending_floor_group_labels`, 없으면 `load_floor_group_labels`)를 편집기·뷰어에
+  - 층의 Main 설비명 위치(대기분 `pending_floor_group_labels`, 없으면 `effective_floor_layout` 의 합친 값)를 편집기·뷰어에
     넘기고, 적용은 `next_group_labels`(실린 묶음의 모듈 수 `module_group_sizes` 로 처음 위치를 가른다)로 층 위치
     목록을 만들어 저장값과 다르면 `stage_floor_group_labels` 로 둔다. 편집기·뷰어 epoch 와 층 대조
     (`FloorLayoutBase`)는 요소와 위치를 함께 본 `floor_layout_fingerprint` 다.
@@ -523,7 +549,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지운다(층을 열면 토글 위젯 상태가 버려진다). `floor_state_draft_pending()` 은 세션만 읽는 Space 탭 점·떠나기
     확인·테마 전환 표지다(`page_tabs.page_unsaved_marks`·`leave_notice` — Space 가 지금 화면일 때만) — `app.py` 가
     페이지보다 먼저 부르므로 이 회차 편집표 위젯 상태의 칸 편집까지 (적지 않고) 접어 저장본과 견준다.
-  - 설비 시나리오 편집 잠금과 무관하게 열고 샘플 fleet 화면에서만 잠근다(값도 끈다). Streamlit 캐시를 두지 않는다.
+  - **공식 설비 시나리오에서만 연다**(설비 시나리오 2단계 Q3 — 건물·층은 가정 시나리오가 없다, FAB 전체와 같은 까닭). 가정
+    세션과 샘플 fleet 화면에서는 잠근다(값도 끈다 — `locked_reason` 풍선). 끄기 확인은 공식 배치의 호기 수에 더해 가정 설비
+    시나리오의 배치에서 그 층에 놓인 호기 수를 덧줄로 적는다(`equipment_cache.load_layout_overlay_floor_counts` — 층 사용은
+    공통이라 그 시나리오 목록·도면에서도 숨는다, 설계 13-2). 공식 배치에는 호기가 없어도 가정 배치가 그 층에 호기를 두었으면
+    확인 대상이다(목록 꼬리 「공식 배치 호기 없음(가정 배치에만)」 — 배치안이 빈 층을 쓰는 경우). 초안이 있는데 사이드바 팝업에서
+    가정 설비 시나리오를 고르면 「변경을 버리고 불러오기」 를 묻는다(Space 가 편집을 잠그며 버린다 — 설계 9장). 이 모듈에는
+    Streamlit 캐시를 두지 않는다.
+- `src/capa_simulation/components/space_floor_layout.py` — Space 가 그리는 층 도면 요소·Main 설비명 위치의 한 곳(설비 시나리오
+  2단계 S3). `effective_floor_layout(db, 층, 세션)` = 공식 층 현행값(`load_floor_layout_marks`·`load_floor_group_labels` — 쓰기
+  세대 캐시) ⊕ 세션 리비전의 요소·이름표 차이(`load_schedule_layout_overlay` — 일정 id 키 불변 칸, 차이 없으면 질의 없음)를
+  회차마다 합친다(층 하나·수십 요소 — 캐시하지 않는다, 이 모듈에 캐시 데코레이터 없음). `floor_layout_differences` 는 머리
+  알림의 실효 요소·이름표 수, `space_layout_notices` 는 머리 알림 줄(그리는 스냅샷 기준 — 설계 8-2)이다.
 - `src/capa_simulation/components/floor_layout_upload.py` — Space 층·FAB 전체의 배경 도면 업로드·삭제와 캔버스 치수
   팝업(`FLOOR_LAYOUT_DIALOG_KEY`)이다. 성공하면 팝업 칸을 비우고 앱 전체를 다시 돌린다.
   - 캔버스를 줄여 생기는 호기 이탈은 저장된 설비 마스터의 그 층 호기 전부로 잰다(저장 검증과 같은 행, 확인 체크).
@@ -793,9 +830,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오 최신)이다. 고정 쌍을 지금 공통과 합칠 수 없으면(`EquipmentScenarioIncompatible`) 그 시나리오 최신 → 공식으로
     옮기고 편집본을 다시 세운 뒤 그 회차 `EquipmentSession.notice` 로 한 번 알린다.
   - 판정은 셋이다(「공식」 하나로 가르지 않는다) — **공식 시나리오**(세션 시나리오 = 최신 발행의 시나리오: 설정 팝업 Cut-off 편집·
-    미확인은 자기 일정), **공식 발행 쌍**(세션 쌍 = 최신 발행: 기준선 저장·Space 배치 편집 — `space_editing_allowed` 한
-    곳), **가정**(공식 시나리오가 아님: 설정 팝업 Cut-off 읽기 전용·미확인은 공식 기준). 따로 **낡음**(세션 리비전 ≠ 그 시나리오
-    최신)은 일정 칸·행 추가를 잠근다. 발행이 하나도 없으면 공식 시나리오의 최신을 공식 자리로 본다.
+    미확인은 자기 일정·Space 공식 배치 편집), **공식 발행 쌍**(세션 쌍 = 최신 발행: 기준선 저장), **가정**(공식 시나리오가
+    아님: 설정 팝업 Cut-off 읽기 전용·미확인은 공식 기준·Space 는 그 시나리오의 배치 차이). 따로 **낡음**(세션 리비전 ≠ 그
+    시나리오 최신)은 일정 칸·행 추가를 잠근다. 발행이 하나도 없으면 공식 시나리오의 최신을 공식 자리로 본다. Space·설비
+    마스터 탭 배치 칸의 편집 권한은 `space_edit_mode` 한 곳이다(`SpaceEditMode` — 3장 `space_status.py`).
   - `select_equipment_scenario` 는 팝업 「불러오기」 다 — 미저장 설비 편집이 있으면 「변경을 버리고 불러오기」 체크가 있어야
     하고, 합친 스냅샷을 먼저 읽어 검증한 뒤에야 편집본을 비우고(FAB 대기분은 남김) 선택을 적는다. 자기 저장이 일정 리비전을
     만들었으면 다음 회차 선택이 그 리비전으로 옮긴다(작업 공간 표지 칸 — 거꾸로 import 하면 순환이다).
@@ -936,8 +974,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 호기 키: 옛 행은 `legacy_unit_key(설비명)` = `"n" + md5(설비명)`(SQL `'n' || md5(equipment_id)` 와 같아야 한다), 새 호기는
     uuid. `assign_unit_keys` 는 이름 지도(지금 → 저장본)로 이어받은 키가 먼저 차지하고 남은 호기는 같은 이름의 저장본 키를,
     그 밖은 새 키를 받는다 — 「A→B 이름 바꿈 + 새 A」 의 새 A 는 새 키, 결과 키가 겹치면 `ValueError` 다. 앞의 두 규칙(어느
-    편집본 행이 어느 저장본 호기를 잇는가)은 `inherited_unit_names` 하나이고, 가정 설비 시나리오의 배치 칸 임시 잠금도 그것으로
-    「있던 호기」 를 고른다 — 둘이 갈리면 잠금이 새 호기로 본 행이 저장에서 있던 호기의 공통 칸을 고친다.
+    편집본 행이 어느 저장본 호기를 잇는가)은 `inherited_unit_names` 하나이고, 설비 마스터 탭 배치 칸 잠금(잠긴 회차)·「배치
+    변경만 버리기」·배치 편집 판정(`layout_edits`)도 그것으로 「있던 호기」 를 고른다 — 둘이 갈리면 잠금이 새 호기로 본 행이
+    저장에서 있던 호기의 칸을 고친다.
   - 합치기는 공통 행 차례대로 키로 왼쪽 결합(`one_to_one`)이고, 일정 행이 없는 호기는 일정 칸이 비고 **일정 없음**
     (`unscheduled_units`)에 든다. 공통에 없는 키의 일정·비가동은 버리고 `orphan_rows` 로 센다. 계산 프레임은 일정 없음 호기와
     그 비가동을 뺀다(`calculation_frames` — 질문 2 권장안의 한 곳, 기존설비·보관 Y 도 뺀다).
@@ -1008,6 +1047,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     묶음으로 묶으면 거부하고, 차이 = 편집본 ≠ 공통 쪽(묶음 통째). 공통 프레임에 적을 때는 `common_with_places(official=
     layout_cells(...))` 가 공식과 같은 자리를 원래 칸 값으로 옮기고 그 밖은 다른 칸만 바꾼다(`Place` 는 견줄 꼴 — 반올림).
     S2 화면 잠금 재료 `assumption_common_places`·`misplaced_rows`·`place_rows` 가 같은 규칙으로 편집본을 맞춘다.
+    `assumption_group_refusal(편집본, 세션 저장본, origins, 공식 일곱 칸)` 은 그 묶음 거부를 저장소와 같은 글로 미리 낸다 — 설비
+    마스터 탭 가정 세션 제출은 그 Main 설비 칸 고침을 제출 전 값으로 되돌리고 알리며(`refuse_mixed_groups`), 붙여넣기는
+    미리보기 전에 거부한다(`assumption_group_paste_refusal` — 설계 10장·Q1(c)).
   - 정규화 `normalize_layout_overlay(overlay, base, official_floors)` — 그 쓰기의 공통·층 값과 같아진 차이를 지운다. 요소·이름표
     합치기·차이(`effective_floor_marks`·`mark_changes` — 차이 차례는 공식 id 의 공식 차례 → 새 요소라 지문이 편집기 차례에
     흔들리지 않는다·`effective_group_labels`·`label_changes`), 설비 단위 셈 `overlay_unit_count`(묶음은 1대)·머리 알림 재료
@@ -1031,7 +1073,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`PendingRenames.units`)를 잇고 `compose_renames` 가 그것을 부른다. `rename_followers` 는 설비명이 이미 새 이름인 마스터에서
     비가동 설비명과 자기 이름을 Main 설비로 적은 한 행 묶음의 Main 설비를 옮기고(같은 제출에서 사용자가 고친 칸
     `touched_*` 는 두고), `apply_name_changes` 가 그것을 지난다. 세션 쪽 넷째는 `equipment_data_workspace.follow_unit_renames`.
-  - `saved_layout_drift`·`restore_saved_layout` 는 가정 설비 시나리오의 배치 칸 임시 잠금(5장 32) 재료다 — 저장본 호기를
+  - `saved_layout_drift`·`restore_saved_layout` 는 배치 칸 잠금(잠긴 회차)·「배치 변경만 버리기」(3장
+    `equipment_data_workspace.layout_edits`) 재료다 — 저장본 호기를
     잇는 행(지금 설비명 → 저장본 설비명 지도, `equipment_scenario.inherited_unit_names`)의 배치 일곱 칸(`PLACE_COLUMNS`)을
     **저장본** 그 호기와 견주어 다른 행을 찾고 그 칸만 저장본 값으로 되돌린다(제출 전 편집본과 견주면 지운 뒤 다시 넣기·이름을
     바꿨다 되돌리기가 새 호기로 읽혀 지나간다).
@@ -1244,8 +1287,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
     `intro_summary.latest_official_revision` 만 읽는다(`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
-    이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(Space 는 「공식 vN
-    (고정)」)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
+    이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
+    배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 둘이다 — 화면
     탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래)와 큰 제목 칸 sr-only
@@ -1571,20 +1614,28 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지문이라 글이 바뀌면 체크가 풀린 새 칸)를 세우고, `_save_equipment_frames` 가 다시 센 삭제를 체크로 본 것
     (`removal_confirmed` — 그 글의 `RemovalElsewhere`)이 덮지 않으면(`covered_by` — 확인 안 한 호기, 본 뒤 그 호기 일정이 든
     시나리오가 늚) 거부한다 — 체크가 없는 자리(Space 「배치 저장」·팝업)도 같은 판정으로 막힌다.
-  - **가정 설비 시나리오의 배치 칸 임시 잠금**(설비 시나리오 2단계 S1·S2 — `basis.official_scenario` 가 거짓): 저장이 그
-    시나리오의 배치 차이를 만들 칸을 막는다(`assumption_layout_lock` — 이 판의 화면은 차이를 보이지도 지우지도 못하고, 차이가
-    있는 시나리오는 공식으로 발행되지 않는다). 저장하면 저장본 호기 키를 잇는 행(`layout_lock_origins` — 저장이 넘기는 저장 안
-    한 이름 지도까지 `inherited_unit_names` 그대로)의 배치 일곱 칸이 **저장본**과 다르면 저장본 값으로 되돌리고(`restore`),
-    새 호기는 자리 없이 맞춘다(`place` — 동·층·X좌표·Y좌표 비움, 있는 묶음에 드는 모듈과 묶음에 넣은 공식 미정 호기는 그
-    묶음의 공식 동·층. 저장이 공통 대장에 쓰는 자리와 같은 `layout_overlay.hypothetical_common_places` 한 규칙이다 — 크기·
-    레이아웃표시는 편집본 값). 제출은 그 칸만 고치고(나머지 편집은 반영, 그 회차 저장·미리보기는 하지 않고 「하지 않았다」
-    까지 맨 위에) 붙여넣기는 미리보기 전에 막는다(`assumption_paste_refusal`). 지운 뒤 같은 설비명으로 다시 넣기·설비명을
-    바꿨다 되돌리기도 저장하면 같은 호기라 막힌다. 칸을 `disabled` 로 두지 않는다 — `레이아웃표시` 는 기본값 없는 필수 고르기
-    칸이라 잠그면 새 호기 행을 넣을 수 없다. 문구 `ASSUMPTION_LAYOUT_LOCK`.
-  - **저장의 대조 역할**(`_layout_role_of` — 설계 6-2 의 S2 몫): 편집본이 위 잠금에 걸리거나(공식 세션의 배치 고침·자리 있는
-    새 호기) 층 값 대기분이 있으면 `EquipmentSaveRequest.expected_layout_role="official"` 을 넘긴다 — 이 판에서 배치 편집은
-    공식 역할에서만 생기므로. 그 사이 남의 발행으로 세션 시나리오가 가정이 됐으면 저장소가 `EquipmentLayoutRoleChanged` 로
-    막아, Space 잠김 저장 상자가 공식 배치 편집을 가정 배치 차이로 조용히 쓰지 않는다. 적용할 때 역할을 찍는 것은 S3 몫이다.
+  - **배치 일곱 칸은 Space 와 같은 판정**(설비 시나리오 2단계 S3 — `render_equipment_data_workspace(layout_mode=,
+    layout_lock_reason=)`, 페이지가 `space_edit_mode(...).layout` 을 넘긴다. 주지 않으면 `basis` 역할). "official" 은 공식
+    배치(공통 대장), "overlay" 는 그 가정 설비 시나리오의 배치 차이다(공식은 바뀌지 않는다 — 새 호기는 공통에 자리 없이,
+    Q1·Q2, 캡션 한 줄). 배치 칸을 고친 제출은 그때의 역할을 찍는다(`stamp_layout_role` — `layout_edits` 가 비지 않을 때).
+    "locked"(잠긴 회차)는 S1·S2 임시 잠금 꼴 그대로다 — 저장하면 저장본 호기 키를 잇는 행(`layout_lock_origins` —
+    `inherited_unit_names`)의 배치 일곱 칸이 **저장본**과 다르면 저장본 값으로 되돌리고(`LayoutLock.restore`) 새 호기는 자리
+    없이 맞춘다(`place` — `layout_overlay.hypothetical_common_places` 한 규칙). 제출은 그 칸만 고치고(나머지 편집은 반영, 그
+    회차 저장·미리보기는 하지 않는다) 붙여넣기는 미리보기 전에 막는다(`layout_paste_refusal`). 칸을 `disabled` 로 두지
+    않는다 — `레이아웃표시` 는 기본값 없는 필수 고르기 칸이라 잠그면 새 호기 행을 넣을 수 없다. 칸 머리 도움말 셋째 묶음
+    「배치 — …」(`LAYOUT_COLUMN_HELP`)와 범례가 같은 뜻이다.
+  - **붙여넣기·CSV 의 배치 칸**(Q2): 가정 세션은 「배치 칸도 붙여넣기」(`PASTE_LAYOUT_KEY`, 기본 끔 — 「현재 데이터」 CSV 는
+    합친 값이라 공식 CSV 를 올리면 배치안이 공식 자리로 돌아간다)를 두고, 끄면 있던 호기의 배치 칸은 지금 값을 둔다(새 호기의
+    배치 칸은 받는다). 켜면 「가정 배치 n대가 바뀝니다(그 가운데 m대는 공식 자리로 돌아가 차이가 지워집니다)」, 공식 세션은
+    「공식 배치 k칸(호기 n대)이 바뀝니다」 경고. 미리보기 요약은 「배치 칸 k(호기 n대)」 를 따로 센다(`paste_split_summary`).
+    미리본 뒤 체크를 바꾸면 후보를 다시 만든다(`ImportReview.layout_pasted`). 「현재 데이터」 꼴 CSV 이름의 시나리오가 세션과
+    다르면 경고 한 줄(`_csv_scenario_mismatch`).
+  - **저장의 대조 역할**(`_layout_role_of` — 설계 6-2): 찍힌 역할(`LAYOUT_ROLE_KEY`, 배치를 바꾼 적용마다 — Space 적용·이
+    탭 배치 칸)을, 없으면 편집본에 배치 편집이나 층 값 대기분이 있을 때 지금 세션의 역할을 `expected_layout_role` 로 넘긴다.
+    그 사이 남의 발행으로 역할이 바뀌었으면 저장소가 `EquipmentLayoutRoleChanged` 로 막는다. 찍힌 역할은 편집본을 다시
+    세우거나·저장하거나·「배치 변경만 버리기」 하면 지우고, 남은 배치 편집이 없으면 `live_layout_role` 이 지운다(남은 찍힘이
+    역할이 바뀐 뒤의 새 편집을 잠그지 않게). 편집본을 세울 때는 찍지 않는다(검토 M3). 남의 저장으로 편집본을 다시 세우면
+    버림 알림이 가정 배치 편집 수를 따로 적는다(다시 얹기는 S4).
   - 세션이 **낡음**이면 설비 마스터 탭 맨 위에 그 알림을 세우고 시나리오 일곱 칸·비가동 일정 표를 `disabled` 로, 행 추가를 막으며,
     붙여넣기 미리보기는 일정 칸 변경·새 행·비가동을 그 까닭으로 거부한다(`stale_paste_refusal`) — 공통 칸은 그대로 편집·저장된다. 칸 머리 도움말 첫 마디가 「공통 — …」/「공통 — 공식 일정
     기준」(상태 둘)/「시나리오 — 「셋업 실무」 에만 저장」 이고 편집표 위 한 줄 범례(`SCENARIO_COLUMN_LEGEND`)가 같은 뜻이다.
@@ -1595,9 +1646,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면들이 함께 쓰는 설비 시나리오 문구(일정 없음·설정 팝업 Cut-off 잠금·옛 배포 흔적 경고와 그 옆 「시나리오 관리에서 이어 쓰기」 단추·기준선 거부·설비 출처 띠).
   - 줄은 **페이지가** `resolve_equipment_session` 뒤에 `app.py` 가 세운 칸에 그린다(9장 「사이드바·조건 카드·본문」). 값 칸은
     「운영 일정 · r12」(긴 이름은 `app_header.short_scenario_name` 으로 줄여 「 · rN」 이 늘 보인다 — 값 칸은 한 줄
-    말줄임. 머리 띠 꼬리도 같은 이름), 배지는 `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) / `최신 rM 있음` / `저장된
-    리비전` / `미저장 변경` / `일정 없이 엶`(옛 배포 흔적이 공식과도 합쳐지지 않은 회차). 잠근 꼴(팝업 없음)은 값 칸 끝 「(고정)」 — Space, 공정 Capa 상세 HOME 방문(그
-    까닭 `HOME_VISIT_LOCK_REASON` 은 줄 아래 한 줄 — 꺼진 단추라 풍선이 없다).
+    말줄임. 머리 띠 꼬리도 같은 이름), 배지는 `미저장 변경` → `일정 없이 엶`(옛 배포 흔적이 공식과도 합쳐지지 않은 회차) →
+    `공식 vN`(공식 발행 쌍이면 낡아도 이것이 먼저) → `최신 rM 있음` → `가정 배치`(그리는 리비전의 배치가 공식과 다름 —
+    `EquipmentSession.layout_differs`, 라벨 dict 의 기본형이라 그리는 동안 저장소 호출 0) → `저장된 리비전` 차례. 잠근
+    꼴(팝업 없음)은 값 칸 끝 「(고정)」 — 공정 Capa 상세 HOME 방문뿐이다(그 까닭 `HOME_VISIT_LOCK_REASON` 은 줄 아래 한 줄 —
+    꺼진 단추라 풍선이 없다). Space 현황은 고를 수 있는 줄이다(S3).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
     선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23).
@@ -1607,6 +1660,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (질문 1·F6·F2 — 답이 다르면 여기 하나만 바꾼다). 폼 안에서는 세 체크를 늘 세우고 수를 적지 않는다(같은 제출의 새 호기가
     그 회차 편집본에 아직 없다) — 실제로 퍼진 수·목록과 발행 여부는 저장 결과 알림이 적는다.
+  - **가정 세션의 Space 「배치 저장」**(`assumption=True` — 설비 시나리오 2단계 Q1)은 「새 호기를 다른 설비 시나리오에도
+    넣기」 가 기본 끔(`DEFAULT_ASSUMPTION_PROPAGATE_NEW_UNITS`)이고, 켜면 공식 가용대수에 센다는 경고와 그때만 「함께 넣은 공식
+    리비전 발행」 체크가 선다(key 꼬리 `_assumption` 으로 공식 자리와 가른다). 설비 마스터 탭 저장 칸은 1단계 F6 그대로 켬이다.
 - `src/capa_simulation/components/equipment_scenario_management.py` — 시나리오 관리 「설비 시나리오」 구획(1단계 몫 + E7 —
   2026-10-24 가용설비 현황의 탭에서 옮김). 구획 진입(`render_equipment_scenario_section` — 설비 DB 는 이 안에서만 연다, 머리
   「이 세션: …」 한 줄·세션 알림)과 다른 화면에서 이 구획으로 옮기는 길(`open_equipment_scenario_management` — 탭 상한을 먼저
@@ -1880,7 +1936,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CSV 바이트도 쌍 키다. 이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터
     저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다. 「다른 ACTIVE 시나리오 최신에 일정이
     있는 호기 키」(`load_units_scheduled_elsewhere` — 설비 마스터 탭 호기 삭제 확인 재료, 지운 호기가 있는 회차에만 읽는다)도 목록과
-    같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)다(배치 차이 행만 있는 호기도 든다).
+    같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)다(배치 차이 행만 있는 호기도 든다). Space 층 사용 끄기 확인의 덧줄
+    재료 `load_layout_overlay_floor_counts`(층마다 — ACTIVE 가정 시나리오 최신의 그 층 차이 호기 행 수)도 같은 세 장치다.
   - **가정 배치 차이(설비 0031)도 리비전 내용이라 불변이다.** 호기 차이는 합친 본문이 이미 얹어 싣는다(`_MergedSnapshotPayload`
     에 공식 일곱 칸·버린 차이 수·다시 맞춘 묶음 — 시험이 `EquipmentSnapshot` 모든 필드의 왕복을 본다). 도면 요소·Main 설비명
     위치 차이는 (DB, 일정 id) 하나를 키로 한 칸 `load_schedule_layout_overlay`(`_load_schedule_layout_payload`, 16칸, 세대 없음 —
@@ -1966,7 +2023,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오마다의 최신·최신 공식 발행과 합쳐질 때만 쓴다(아니면 `EquipmentLegacyTraceUnmergeable` — 굳히면 그 일정을 다시 못
     읽는다). 탭은 `legacy_trace_review()`(흔적 수·빠지는 호기 수·합쳐지지 않는 까닭)로 확인 체크 글을 쓴다. 흔적이 공식과도
     합쳐지지 않는 동안 `resolve_equipment_session` 은 멈추지 않고 공통만 읽어 일정 없이 연다(`EquipmentSession.unmerged` — 공식
-    발행 쌍이 아니고, 공식을 그리는 화면은 `official_snapshot_for` 로 같은 한 벌을 쓴다).
+    발행 쌍이 아니고, 공식을 따로 읽는 자리(공정 Capa 상세 HOME 방문·가정 세션 미확인)는 `official_snapshot_for` 로 같은 한 벌을
+    쓴다).
   - **비가동 「새 비가동」 판정**(`new_downtime_rows`): 이번 저장에서 같은 호기의 행이 사라졌거나 같은 (유형, 시작일) 이 다른
     호기에서 사라졌으면(지운 호기째 빠진 것은 빼고) 고침이라 퍼뜨리지 않는다 — 유형·시작일을 함께 고치거나 설비명만 옮긴 행이
     다른 시나리오에 겹친 공사로 남지 않게.
@@ -2301,13 +2359,12 @@ RQ_MODULE
       최신·최신 발행에는 차이 행이 없다**(I2) — 배치 차이가 있는 시나리오는 공식으로 발행하지 않는다(Q4). E7 되돌리기·여기서 새
       시나리오는 차이도 옮긴다. 위치는 가용대수·확보율 계산 입력이 아니지만 계산 프레임은 얹은 그대로라 배치만 바꾼 가정
       시나리오도 계산 칸을 따로 쓴다(값은 같다 — LY6, 계산 키 방침 「실제 입력 전부」 그대로).
-    - **가정 설비 시나리오의 배치 칸은 아직 화면에서 잠근다**(S1 의 임시 잠금을 S2 리뷰로 넓힘 — S3 가 같은 판정
-      `space_edit_mode` 로 연다). 설비 마스터 탭 제출·붙여넣기 미리보기가 저장본에서 온 호기의 고침을 되돌리고 **새 호기는 자리 없이**
-      넣으며(3장 `equipment_data_workspace` — 공통 쪽과 같은 자리라 차이가 생기지 않는다), Space 편집은 1단계대로 공식 발행
-      쌍에서만이고, 배치 편집이 든 저장은 대조 역할 "official" 을 넘겨 그 사이 가정이 된 세션의 저장을 막는다. 그래서 이 판에서
-      차이를 만드는 화면 길은 없다 — 모든 리비전의 차이가 0 이라 화면이 그대로다(차이를 지울 「배치 차이 모두 지우기」 화면은
-      S4 라 이 판에 차이가 생기면 그 시나리오는 발행이 막힌다). 가정 세션에서 넣은 새 호기는 공통 배치가 비어(Q1) 공식에서도
-      「동·층 미정」 이다 — 자리는 공식 설비 시나리오에서 놓는다(1단계는 그 자리가 공식에 들어갔다).
+    - **Space 는 세션 설비 시나리오의 배치를 그리고 역할대로 고친다**(S3 — LY3·LY4, 1단계 E5 「Space 는 늘 공식」 을 바꿈).
+      공식 배치는 공식 설비 시나리오에서만, 가정 배치는 그 시나리오에서만 고치고(`space_edit_mode` 한 판정 — 설비 마스터 탭
+      배치 칸·붙여넣기도), FAB 전체·층 캔버스·배경 도면·층 사용은 공식에서만이다(G5·Q3). 배치 편집은 적용할 때 역할을 찍고
+      저장소가 쓰기 잠금 안에서 대조한다(6-2). 가정 세션에서 넣은 새 호기는 공통 배치가 비어(Q1) 공식에서 「동·층 미정」 이고
+      자리는 그 시나리오의 배치 차이에 든다 — Space 저장 상자의 「다른 설비 시나리오에도 넣기」 는 기본 끔이다. 차이를
+      지우는 「배치 차이 모두 지우기」 화면은 S4 다(저장소 `clear_layout_overlay` 는 있다).
 33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
     `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만 남긴다. 탭을 누르는 것은
     사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
@@ -2678,8 +2735,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   공통 칸이고 칸 머리가 「공통 — 공식 일정 기준」 이다.
 - **설비 시나리오에 일정이 없는 호기는 그 시나리오에 없는 호기와 같다**(F4 — 2026-10-24 결정, 질문 2 권장안). 그 시나리오의
   주차·월별 가용·Static 대비 일정·필요 단축 일정·공정 Capa 상세·「일정 미정 N대」 셈에서 빠지고(기존설비 Y·보관 Y 도),
-  화면은 「이 설비 시나리오에 일정이 없는 호기 n대 — …」 한 줄로 알린다. Space(공식)는 공식 일정이 없는 호기를 그리지 않고
-  「공식 일정 없음 n대」 다. 이관·복제로 만든 시나리오는 모든 호기에 일정 행이 있어 해당하는 것은 함께 넣기를 끄고 넣은
+  화면은 「이 설비 시나리오에 일정이 없는 호기 n대 — …」 한 줄로 알린다. Space 도 세션 설비 시나리오를 그려 같은 호기를 그리지
+  않는다 — 알림은 공식 발행 쌍이면 「공식 일정 없음 n대」, 아니면 「이 설비 시나리오에 일정이 없는 호기 n대」 다
+  (`unscheduled_notice(official=…)`). 이관·복제로 만든 시나리오는 모든 호기에 일정 행이 있어 해당하는 것은 함께 넣기를 끄고 넣은
   호기뿐이다.
 - 입고 후 Qual 전인 호기는 셋업중대수와 비가동 호기 목록에 포함한다.
 - Qual 완료 또는 기존설비에 활성화된 개발대여·공사·고장·이설 등의 운영 비가동 일정이 있으면
@@ -3250,7 +3308,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   오류는 페이지의 오류 처리 안에서 나고, 배지는 그 회차 목록으로 맞으며(한 회차 늦지 않음), `app.py` 는 설비 DB 를 읽지 않는다.
   값 칸 단추는 위젯 상태가 없고 값은 세션 칸에만 있어 페이지가 그려도 화면 사이에 잃을 것이 없다. 팝업은
   `render_condition_dialogs` 의 셋째 갈래다(한 실행에 팝업 하나).
-- **머리 띠 끝 「설비 시나리오 · …」** 은 설비 시나리오를 선언한 화면의 아랫줄 끝에 선다(Space 는 「· 공식 vN (고정)」). 머리 띠는
+- **머리 띠 끝 「설비 시나리오 · …」** 은 설비 시나리오를 선언한 화면의 아랫줄 끝에 선다(Space 도 같은 꼬리 — S3). 머리 띠는
   `app.py` 가 페이지보다 먼저 그리므로 라벨 칸만으로는 한 회차 늦다 — 그래서 **설비 화면에서는 페이지가 회차마다 머리 띠를 한
   번 더 보낸다**(`refresh_equipment_header` — 같은 글이어도. 바뀐 회차에만 보내면 이벤트 칸 자리가 회차마다 밀려 그 뒤 알림 칸
   시험이 깨진다. 같은 글은 메시지 캐시로 해시만 간다). 페이지는 그 꼬리를 페이지 몫으로 세션 칸(`app_header_equipment_label_v1`

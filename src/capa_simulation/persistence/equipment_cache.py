@@ -364,6 +364,34 @@ def load_units_scheduled_elsewhere(
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)
+def _load_layout_overlay_floor_counts_payload(
+    database_path: str,
+    building: str,
+    floor: str,
+    stamp: DatabaseStamp,
+    generation: WriteGeneration,
+) -> tuple[tuple[str, int], ...]:
+    del stamp, generation
+    return get_equipment_repository(database_path).layout_overlay_floor_counts(building, floor)
+
+
+def load_layout_overlay_floor_counts(
+    database_path: str, building: str, floor: str
+) -> tuple[tuple[str, int], ...]:
+    """ACTIVE 가정 설비 시나리오 최신마다 그 배치 차이에서 이 층에 놓인 호기 행 수 — (시나리오
+    이름, 수)(설계 7-2·13-2 — Space 층 사용 끄기 확인의 덧줄). 남의 저장·복제·되돌리기·발행으로
+    바뀌므로 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)로 지킨다. 끄기 확인을 그리는
+    회차에만 부른다."""
+    return _load_layout_overlay_floor_counts_payload(
+        database_path,
+        building,
+        floor,
+        database_stamp(database_path),
+        _write_generation("equipment_scenario"),
+    )
+
+
 # 시나리오 리비전 목록 한 번에 읽는 줄 수(팝업 라디오·시나리오 관리 「설비 시나리오」 구획 표).
 SCHEDULE_REVISION_LIST_LIMIT = 50
 
@@ -468,6 +496,7 @@ def clear_equipment_scenario_cache() -> None:
     _load_schedule_revisions_payload.clear()
     _load_legacy_trace_review_payload.clear()
     _load_units_scheduled_elsewhere_payload.clear()
+    _load_layout_overlay_floor_counts_payload.clear()
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=CURRENT_READ_TTL_SECONDS)

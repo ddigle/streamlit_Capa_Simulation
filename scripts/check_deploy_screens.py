@@ -287,14 +287,25 @@ EQUIPMENT_SCENARIO_FIELD_KEY: Final = "sidebar_equipment_scenario_field"
 EQUIPMENT_SCENARIO_ROW_SLUG: Final = "equipment_scenario"
 EQUIPMENT_SCENARIO_DIALOG_TITLE: Final = "설비 시나리오"
 EQUIPMENT_SCENARIO_DIALOG_MODES: Final = ("불러오기", "저장")
-EQUIPMENT_STATUS_BADGES: Final = ("공식 v", "최신 r", "저장된 리비전", "미저장 변경")
+# 사이드바 설비 시나리오 배지 종류(`equipment_status_badge` 가 낼 수 있는 모든 글 — 시험이 대 본다).
+# 「가정 배치」 — 그리는 설비 시나리오 리비전의 배치가 공식과 다름(설비 시나리오 2단계 S3), 「일정
+# 없이 엶」 — 옛 배포 흔적으로 일정 없이 연 세션.
+EQUIPMENT_STATUS_BADGES: Final = (
+    "공식 v",
+    "최신 r",
+    "가정 배치",
+    "저장된 리비전",
+    "미저장 변경",
+    "일정 없이 엶",
+)
 THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합니다."
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
 # 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
     (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
-    # Space 현황은 시나리오·조회기간을 읽지 않고 공식 설비 시나리오 줄(잠근 꼴)만 선다.
+    # Space 현황은 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를 수 있는 줄 — 그 시나리오의
+    # 배치를 그린다)만 선다.
     (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
 )
 # 사이드바 계산 그룹 셋(2026-10-17 사용자 결정 — 약속 · 이행 · 실적) — (상자 slug, 상자 제목,

@@ -66,11 +66,11 @@ localhost 접속(개발 모드)에서만 그것을 세우는데, 누르면 Commu
 
 **설비 시나리오**(설계 6-5). 설비 시나리오를 읽는 화면(가용설비 현황·필요 단축
 일정·공정 Capa 상세·Space 현황)은 아래 줄 **끝**에 `설비 시나리오 · 운영 일정 · r12 ·
-공식 v3`(Space 는 `· 공식 v3 (고정)`)을 단다. 설비 DB 를 읽지 않는다 — 페이지가 그 회차 목록을 읽어
-그린 사이드바 설비 시나리오 줄이 꼬리 글을 정해(`refresh_equipment_header`) 이 페이지 몫으로 세션에
-남기고 같은 회차에 띠 CSS 를 한 번 더 보내 덮는다 — 첫 진입·불러오기·남의 저장 뒤에도 한 회차 늦지
-않는다. `app.py` 는 그 글로 먼저 그려 둔다(페이지가 그리기 전 회차 사이에 꼬리가 사라졌다 서지
-않게).
+공식 v3`(상태는 사이드바 배지 차례 — 「가정 배치」 포함)을 단다. 설비 DB 를 읽지 않는다 — 페이지가
+그 회차 목록을 읽어 그린 사이드바 설비 시나리오 줄이 꼬리 글을 정해(`refresh_equipment_header`) 이
+페이지 몫으로 세션에 남기고 같은 회차에 띠 CSS 를 한 번 더 보내 덮는다 — 첫 진입·불러오기·남의 저장
+뒤에도 한 회차 늦지 않는다. `app.py` 는 그 글로 먼저 그려 둔다(페이지가 그리기 전 회차 사이에 꼬리가
+사라졌다 서지 않게).
 
 `data-testid` 는 emotion 클래스와 달리 판올림 사이에 비교적 안정적이지만 어디까지나
 비공식 경로다. Streamlit 을 올린 뒤에는 글이 헤더에 남아 있는지 눈으로 확인한다.
@@ -110,6 +110,9 @@ _CSV_SOURCE_PREFIX = "CSV_CORE_DATA"
 STATUS_OFFICIAL = "공식 v{release_no}"
 STATUS_SAVED = "저장된 리비전"
 STATUS_UNSAVED = "미저장 변경"
+# 그리는 설비 시나리오 리비전의 배치가 공식과 다르다(가정 배치 — 사이드바 배지 「가정 배치」 와 같은
+# 말).
+STATUS_LAYOUT = "가정 배치"
 EQUIPMENT_HEADER_HEAD = "설비 시나리오"
 # 이 회차에 `app.py` 가 그린 설비 시나리오 꼬리(없으면 None)와, 페이지가 정해 둔 페이지별 꼬리
 # ({"page": 페이지 스크립트 해시, "suffix": 글}). 둘 다 세션 칸이라 DB 를 읽지 않는다.
@@ -701,13 +704,13 @@ UNMERGED_STATUS = "일정 없이 엶"
 
 
 def equipment_header_suffix(
-    label: Mapping[str, object] | None, *, fixed: bool = False, unsaved: bool = False
+    label: Mapping[str, object] | None, *, unsaved: bool = False
 ) -> str | None:
     """아래 줄 끝 설비 시나리오 꼬리 — `설비 시나리오 · 운영 일정 · r12 · 공식 v3`.
 
     `label` 은 `EquipmentSession.label()` 꼴(시나리오명·rN·최신 rM·공식 vN·판정)이다. 상태 차례는
-    사이드바 줄 배지와 같다(미저장 → 공식 vN → 최신 rM 있음 → 저장된 리비전). `fixed` 면 늘 공식을
-    보는 화면(Space)이라 `공식 vN (고정)` 이다. 시나리오가 없으면 None.
+    사이드바 줄 배지와 같다(미저장 → 일정 없이 엶 → 공식 vN → 최신 rM 있음 → 가정 배치 → 저장된
+    리비전). 시나리오가 없으면 None.
     """
     if not label or not label.get("scenario_name"):
         return None
@@ -718,16 +721,16 @@ def equipment_header_suffix(
     release_no = label.get("release_no")
     latest_no = label.get("latest_revision_no")
     if label.get("unmerged"):
-        # 옛 배포 흔적이 공식과도 합쳐지지 않아 일정 없이 연 회차 — 고정 화면도 같은 말이다.
+        # 옛 배포 흔적이 공식과도 합쳐지지 않아 일정 없이 연 회차.
         parts.append(UNMERGED_STATUS)
-    elif fixed:
-        parts.append(f"공식 v{release_no} (고정)" if isinstance(release_no, int) else "공식 (고정)")
     elif unsaved:
         parts.append(STATUS_UNSAVED)
     elif label.get("official_pair") and isinstance(release_no, int):
         parts.append(STATUS_OFFICIAL.format(release_no=release_no))
     elif label.get("stale") and isinstance(latest_no, int):
         parts.append(f"최신 r{latest_no} 있음")
+    elif label.get("layout_differs"):
+        parts.append(STATUS_LAYOUT)
     else:
         parts.append(STATUS_SAVED)
     return " · ".join(parts)

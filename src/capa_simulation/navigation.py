@@ -119,11 +119,11 @@ class PageSpec:
     # 설비 DB 를 한 회차에 여러 번 여는 화면을 적는 자리다.
     uses_equipment_db: bool = False
     # 이 화면이 설비 시나리오를 읽는가 — "session" 은 사이드바에서 고른 설비 시나리오(가용설비 현황·
-    # 필요 단축 일정·공정 Capa 상세·제약 시뮬레이션), "official" 은 늘 공식 발행(Space 현황 — 줄을
-    # 잠근 꼴로 세운다).
+    # 필요 단축 일정·공정 Capa 상세·제약 시뮬레이션·Space 현황 — Space 는 그 시나리오의 배치를
+    # 그린다). 늘 공식만 보는 화면은 지금 없다.
     # 읽는 화면에서는 조건 패널에 「설비 시나리오」 칸이 서고, **그 줄은 페이지가**
     # `resolve_equipment_session` 뒤에 그 칸에 그린다 — `app.py` 는 설비 DB 를 열지 않는다.
-    equipment_scenario: Literal["session", "official"] | None = None
+    equipment_scenario: Literal["session"] | None = None
     # 설비 시나리오 줄을 세우는 탭 라벨. None 이면 화면 전체다(설비 데이터를 읽지 않는 탭이 있는
     # 화면만 적는다). 탭 기억 칸은 `condition_tabs.key` 를 쓴다.
     equipment_scenario_tabs: frozenset[str] | None = None
@@ -326,8 +326,9 @@ AVAILABLE_EQUIPMENT_STATUS = PageSpec(
     equipment_scenario="session",
 )
 # 설비 DB 만 본다. 공정소분류·색 기준은 자기 조건 카드(`Space 조건`), 기준일은 층 상세 도면 위
-# 페이더다. 보기는 늘 **공식** 설비 시나리오다(E5 — 좌표는 공통, 상태 색은 공식 일정). 한 회차에
-# 공식 스냅샷·설비 시나리오 목록·공통 최신·도면을 따로 읽어 설비 DB 핀을 선언한다.
+# 페이더다. 보기는 사이드바에서 고른 설비 시나리오의 배치다(설비 시나리오 2단계 LY3 — 가정이면 그
+# 시나리오의 배치 차이를 얹는다). 한 회차에 설비 시나리오 목록·공통 최신·합친 본문·도면을 따로 읽어
+# 설비 DB 핀을 선언한다.
 SPACE_STATUS = PageSpec(
     "app_pages/space_status.py",
     "Space 현황",
@@ -336,7 +337,7 @@ SPACE_STATUS = PageSpec(
     reads_period=False,
     has_condition_cards=True,
     uses_equipment_db=True,
-    equipment_scenario="official",
+    equipment_scenario="session",
 )
 # 순서는 공정 하나의 대책(공정 Capa 상세) → 전체 공정의 단축 계획(필요 단축 일정) → 공정 하나의
 # 미래 제약(제약 시뮬레이션) → 설비 일정(가용설비) → 현장(Space) → 성능 실적 셋이다 — 약속에 가장

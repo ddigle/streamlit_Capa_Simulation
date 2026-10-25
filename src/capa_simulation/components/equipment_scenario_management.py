@@ -1071,8 +1071,8 @@ def _render_publish(
         "release_no": release_no,
     }
     st.caption(
-        "공식은 Space·새 세션·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 설비 시나리오입니다. "
-        "발행은 append-only 입니다."
+        "공식은 새 세션(Space 포함 — 처음 연 화면)·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 "
+        "설비 시나리오입니다. 발행은 append-only 입니다."
     )
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
