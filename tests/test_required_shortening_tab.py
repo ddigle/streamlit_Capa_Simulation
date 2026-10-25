@@ -831,13 +831,27 @@ def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_default_vi
     app = _assumed(tmp_path)
     assert {"UPEH 적용 시작", "UPEH 적용 끝"} <= {box.label for box in app.sidebar.selectbox}
     assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == 150
-    hint = [str(item.value) for item in app.caption if "가 켜져 있습니다" in str(item.value)]
+    hint = [str(item.value) for item in app.caption if "켜져 있습니다 — 이 보기" in str(item.value)]
     assert hint and "UPEH 가정 150%" in hint[0] and "공식 계획" in hint[0]
     assert not app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert "UPEH 가정" not in units.columns
     captured = app.session_state["captured_downloads"]["equipment_shortening_units_csv"]
     assert "upeh" not in str(captured["file_name"])
+    clear_equipment_repository()
+
+
+def test_the_upeh_assumption_notice_picks_the_particle_by_the_end_month(tmp_path: Path) -> None:
+    """알림의 주격 조사는 구간 끝 달의 끝소리로 고른다 — 「27-06 가」 가 아니라 「27-06이」.
+
+    끝 두 자리를 읽은 끝 글자(영·일·삼·육·칠·팔)에 받침이 있으면 「이」, 없으면 「가」 다.
+    """
+    app = _assumed(tmp_path)
+    end = _months()[-1]
+    span_end = f"{end // 100 % 100:02d}-{end % 100:02d}"
+    particle = "이" if span_end[-1] in "013678" else "가"
+    hint = [str(item.value) for item in app.caption if "켜져 있습니다 — 이 보기" in str(item.value)]
+    assert hint and f"–{span_end}{particle} 켜져 있습니다" in hint[0]
     clear_equipment_repository()
 
 
@@ -944,7 +958,7 @@ def test_an_assumption_outside_the_card_months_says_no_month_applies(tmp_path: P
 def test_at_100_percent_the_comparison_toggle_cannot_be_used(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
     assert app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
-    assert not any("가 켜져 있습니다" in str(item.value) for item in app.caption)
+    assert not any("켜져 있습니다 — 이 보기" in str(item.value) for item in app.caption)
     clear_equipment_repository()
 
 

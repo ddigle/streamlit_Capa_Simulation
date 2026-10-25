@@ -25,6 +25,7 @@ import plotly.io as pio
 import pytest
 from test_constraint_simulation import CONDITIONS, _run
 
+from capa_simulation.components import constraint_simulation_figures as figures
 from capa_simulation.components.constraint_simulation_figures import (
     END_LABEL_MIN_PLOT_PX,
     ROW_IDS,
@@ -92,6 +93,18 @@ def test_unit_and_rate_texts_follow_the_mock_rounding() -> None:
     assert rate_text(None) == "—"
     assert signed_points(-0.13826) == "−13.8%p"
     assert signed_points(0.012) == "+1.2%p"
+
+
+@pytest.mark.parametrize(
+    ("available", "words"), [(4.0, "가용 4를 "), (3.35, "가용 3.35를 "), (4.53, "가용 4.53을 ")]
+)
+def test_the_proportional_hover_picks_the_object_particle_by_the_number(
+    available: float, words: str
+) -> None:
+    """비중 칸 풍선의 목적격 조사는 가용 수의 끝소리로 고른다 — 「가용 4 을」 이 아니다."""
+    row = next(row for row in _run().months if row.in_period)
+    hover = figures._proportional_cell(replace(row, available=available)).hover
+    assert words in hover
 
 
 def test_the_general_label_names_home_and_monthly_exceptions() -> None:

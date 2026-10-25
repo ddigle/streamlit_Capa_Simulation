@@ -127,6 +127,7 @@ from capa_simulation.scenario_activation import (
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.floor_layout_profile import FloorKey
+from capa_simulation.services.korean_particle import subject_particle, with_topic_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
@@ -571,7 +572,7 @@ def _render_body(
         if prepared.assumption_active and prepared.assumption is not None:
             st.caption(
                 f":material/info: 진척 비교는 늘 공식 계획입니다 — "
-                f"{assumption_label(prepared.assumption)} 는 반영하지 않습니다."
+                f"{with_topic_particle(assumption_label(prepared.assumption))} 반영하지 않습니다."
             )
         _render_progress(
             prepared.official,
@@ -603,8 +604,9 @@ def _render_body(
         )
         return
     if prepared.assumption_active and prepared.assumption is not None:
+        label = assumption_label(prepared.assumption)
         st.caption(
-            f":material/science: {assumption_label(prepared.assumption)} 가 켜져 있습니다 — 이 "
+            f":material/science: {label}{subject_particle(label)} 켜져 있습니다 — 이 "
             "보기·CSV·기준선은 공식 계획입니다. 머리의 「UPEH 가정 비교」 를 켜면 공식 대 가정을 "
             "견줍니다."
             if prepared.assumed is not None

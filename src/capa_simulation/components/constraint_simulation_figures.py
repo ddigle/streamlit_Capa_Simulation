@@ -83,6 +83,7 @@ from capa_simulation.services.constraint_simulation import (
     ModificationWindow,
     secure,
 )
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
@@ -971,7 +972,8 @@ def _proportional_cell(row: ConstraintMonth) -> Cell:
         rate_text(rate),
         fill=_shortage_fill(None if rate is None else secure(rate, row.general_target)),
         hover=(
-            f"{_head(row)} · 가용 {units_text(row.available)} 을 소요 비중대로: 제약 "
+            f"{_head(row)} · 가용 {with_object_particle(units_text(row.available))} "
+            "소요 비중대로: 제약 "
             f"{row.proportional_constrained}대 · 기존 {units_text(row.proportional_existing)}대 "
             f"(제약 확보율 {rate_text(row.proportional_constrained_rate)})"
         ),
