@@ -63,6 +63,7 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
+    load_floor_states,
     load_process_cutoff,
 )
 from capa_simulation.services.simulation_cache import ScenarioCacheKey
@@ -145,6 +146,8 @@ try:
     latest_snapshot = equipment_session.snapshot
     # 저장된 Cut-off. 고치는 곳은 가용설비 현황 머리 「설정」 팝업이다.
     stored_cutoff = load_process_cutoff(equipment_database_path)
+    # 카드 「도면에서 보기」 가 열 층에서 뺄 비활성 층(Space 층 사용 0029 — 링크 대상이 아니다).
+    inactive_floors = frozenset(load_floor_states(equipment_database_path).inactive)
 except BOOTSTRAP_ERRORS as exc:
     st.error(
         "설비 일정을 준비하지 못했습니다. "
@@ -243,4 +246,5 @@ render_required_shortening_tab(
     equipment_basis=(
         None if using_dashboard_sample else shortening_equipment_basis(equipment_session)
     ),
+    inactive_floors=inactive_floors,
 )

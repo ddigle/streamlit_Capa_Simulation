@@ -69,6 +69,7 @@ from capa_simulation.components.shortening_board import (
     render_detail_link,
     render_highlight_notice,
     render_progress_board,
+    render_space_link,
 )
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
@@ -125,6 +126,7 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
@@ -159,6 +161,7 @@ from capa_simulation.services.shortening_watch import (
     delayed_units,
     unit_managers,
 )
+from capa_simulation.services.space_shortening_layer import shortening_space_floors
 from capa_simulation.services.undated_equipment import (
     undated_candidate_note,
     undated_equipment_notice,
@@ -288,6 +291,7 @@ def render_required_shortening_tab(
     baseline_refusal: str | None = None,
     link_details: bool = True,
     equipment_basis: ShorteningEquipmentBasis | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """필요 단축 일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
 
@@ -310,7 +314,8 @@ def render_required_shortening_tab(
     `equipment_revision_id`·`equipment_revision_no` 는 화면의 호기가 나온 저장 리비전(기준선 머리에
     남긴다), `baseline_refusal` 은 기준선을 저장하지 않을 까닭(샘플 fleet)이다. `link_details` 가
     거짓이면(샘플 fleet) 공정 카드의 「공정 Capa 상세에서 근거 보기」 를 숨긴다 — 상세는 설비
-    저장본만 본다.
+    저장본만 본다. 그 옆 「도면에서 보기」(Space 현황 필요 단축 보기)도 같이 숨긴다(결정 D13).
+    `inactive_floors` 는 그 링크가 열 층에서 뺄 비활성 층(층 사용 0029)이다.
 
     **둘로 나눠 그린다.** 조건 카드(시작 월·끝 월·공정)와 계획(`get_required_shortening`)은 이
     함수가 앱 전체 회차에서 먼저 끝내고(`_prepare`), 머리(`진척 비교`·`목표 확보율`)와 본문(KPI·LOB·
@@ -352,6 +357,7 @@ def render_required_shortening_tab(
             refusal=baseline_refusal,
             link_details=link_details,
             equipment_basis=equipment_basis,
+            inactive_floors=inactive_floors,
         )
 
 
@@ -461,6 +467,7 @@ def _render_view(
     refusal: str | None,
     link_details: bool = True,
     equipment_basis: ShorteningEquipmentBasis | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """머리(`진척 비교`·`목표 확보율`)와 본문 — 프래그먼트다.
 
@@ -493,6 +500,7 @@ def _render_view(
         refusal=refusal,
         link_details=link_details,
         equipment_basis=equipment_basis,
+        inactive_floors=inactive_floors,
     )
 
 
@@ -518,6 +526,7 @@ def _render_body(
     refusal: str | None,
     link_details: bool = True,
     equipment_basis: ShorteningEquipmentBasis | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교, 또는 UPEH 가정
     비교.
@@ -578,6 +587,7 @@ def _render_body(
             highlight=highlight,
             link_details=link_details,
             equipment_label=link_label,
+            inactive_floors=inactive_floors,
         )
         return
 
@@ -613,6 +623,13 @@ def _render_body(
         extra=lambda: render_baseline_controls(save, None),
     )
     managers = unit_managers(plan.unit_master)
+    # 「도면에서 보기」 가 열 층 — 공정 전부를 한 번에 고른다(카드마다 다시 세지 않는다). 본문은
+    # 프래그먼트라 목표를 바꿀 때마다 돈다.
+    space_floors = (
+        shortening_space_floors(level_plan, plan.unit_master, equipment, inactive=inactive_floors)
+        if link_details
+        else {}
+    )
     order = render_progress_board(
         level_plan,
         shown,
@@ -661,9 +678,11 @@ def _render_body(
                 )
             )
             if link_details:
-                render_detail_link(
-                    level_plan, process, level=level, months=months, equipment=link_label
-                )
+                with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                    render_detail_link(
+                        level_plan, process, level=level, months=months, equipment=link_label
+                    )
+                    render_space_link(process, floors=space_floors, level=level)
 
 
 def _card_order(
@@ -1078,9 +1097,11 @@ def _render_progress(
     highlight: ShorteningHighlight | None = None,
     link_details: bool = True,
     equipment_label: str | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 진척 보드(기준선 대비·이행 지연) →
-    공정 카드(호기마다 두 줄).
+    공정 카드(호기마다 두 줄). 카드 링크는 일반 보기와 같다(「공정 Capa 상세에서 근거
+    보기」·「도면에서 보기」).
 
     짝짓기는 계획 키 + 기준선 id + 목표로 캐시한다(`get_shortening_progress`) — 공정 선택만 바꾼
     rerun 은 다시 짝짓지 않는다. 계획·LOB 요약은 그리지 않는다(`비교 안 함` 으로 돌아가면 그대로다).
@@ -1114,6 +1135,16 @@ def _render_progress(
     )
     delayed = delayed_units(view.rows, status, today=plan.today, processes=scope)
     managers = unit_managers(plan.unit_master, status)
+    space_floors = (
+        shortening_space_floors(
+            level_plan,
+            plan.unit_master,
+            equipment if equipment is not None else pd.DataFrame(),
+            inactive=inactive_floors,
+        )
+        if link_details
+        else {}
+    )
     order = render_progress_board(
         level_plan,
         view.cards,
@@ -1150,9 +1181,11 @@ def _render_progress(
                 )
             )
             if link_details:
-                render_detail_link(
-                    level_plan, process, level=level, months=months, equipment=equipment_label
-                )
+                with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                    render_detail_link(
+                        level_plan, process, level=level, months=months, equipment=equipment_label
+                    )
+                    render_space_link(process, floors=space_floors, level=level)
     for process in view.outside:
         st.html(
             progress_card_markup(
