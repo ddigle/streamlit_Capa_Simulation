@@ -311,6 +311,7 @@ _JS_WORDS = [
     "Xsize",
     "「투자Capa」",
     "설비 DB",
+    "Kea",
     "Staff",
     "연결 층",
     "  공백  ",

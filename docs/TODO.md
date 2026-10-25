@@ -833,7 +833,7 @@
   편집기 JS 세 자리는 같은 표의 `withJosa`. `tests/test_particle_sites.py` 가 AST 로 f-string·`str.format`·`%s` 틀·JS `${…}`
   뒤 고정 조사를 막고(허용 목록 없음), ALL_CAPS 상수 뒤 조사는 그 상수의 실제 글로 견준다(영문 끝은 시험의 읽기 표). 정한 것(대안):
   - 영문 끝은 갈래 꼴이 규칙이지만 이 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름 「C1 1F」의 `F`·「설비 DB」의 `DB`·
-    「Xsize」의 `size`·「투자Capa」의 `Capa`)은 도우미의 읽기 표(`_LATIN_TAIL_FINAL`, JS 같은 표)로 읽는다 — 사람이 고른
+    「Xsize」의 `size`·「투자Capa」의 `Capa`·단위 `Kea`)는 도우미의 읽기 표(`_LATIN_TAIL_FINAL`, JS 같은 표)로 읽는다 — 사람이 고른
     「C2 2F 는」·「설비 DB 가」·「Xsize를」 이 도우미로 옮기며 갈래 꼴로 떨어지지 않게. 사람이 붙인 이름(「Final Test」·「EQ-X」·
     「셋업 B」)·CD 환경변수·모듈 이름은 갈래 꼴 그대로다(「「Final Test」이(가) 없어」 — 전에는 「가」). 대안: 표 없이 모두
     갈래 꼴(명세 그대로 — 「Xsize을(를)」·「설비 DB이(가)」)·영문 자모 읽기 전체(약어와 낱말이 갈리지 않아 「USER」가 「알」).
