@@ -170,6 +170,11 @@ def _texts(app: AppTest) -> list[str]:
     ]
 
 
+def _rest_notes(app: AppTest) -> int:
+    """「배치 편집 중에는 필요 단축 보기를 쉽니다」 줄의 수(결정 D7 — 한 화면에 한 줄)."""
+    return sum("배치 편집 중에는 필요 단축 보기를 쉽니다" in text for text in _texts(app))
+
+
 def _views(calls: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
     return [call for call in calls if call.get("mode") == "view" and call.get("scope") == scope]
 
@@ -507,12 +512,32 @@ def test_layout_editing_rests_the_layer_and_shows_the_default_colours(
     assert editor.get("mode") != "view" and "canvasEditable" in editor
     assert "shortBadges" not in editor and "asOfPinned" not in editor
     assert all("layer" not in item for item in editor["items"])
-    assert any("배치 편집 중에는 필요 단축 보기를 쉽니다" in text for text in _texts(app))
+    # 쉬는 까닭은 편집기 위 한 줄뿐이다 — 본문 조작 줄이 같은 글을 거듭 적지 않는다(E2E).
+    assert _rest_notes(app) == 1, _texts(app)
     # 라디오 값은 그대로다(결정 D7) — 끄면 다시 보인다.
     assert app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).value == COLOR_BASIS_SHORTENING
     app.toggle(key=EDIT_KEY).set_value(False)
     _ok(app.run())
     assert _views(editor_calls, "floor")[-1].get("shortBadges")
+    assert _rest_notes(app) == 0
+
+
+def test_fab_layout_editing_rests_the_layer_with_one_note(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """FAB 전체 배치 편집도 보기를 쉰다 — FAB 편집기에는 캡션이 없어 본문 조작 줄이 까닭 한 줄을
+    맡는다(층 상세 편집기 캡션과 겹치지 않게 FAB 편집에서만)."""
+    _saved_database(tmp_path)
+    app = _app(tmp_path / "equipment.duckdb")
+    _turn_on(_ok(app.run()))
+    assert _rest_notes(app) == 0
+    app.toggle(key="space_fab_edit_mode").set_value(True)
+    _ok(app.run())
+    assert editor_calls[-1].get("scope") == "fab" and editor_calls[-1].get("mode") != "view"
+    assert _rest_notes(app) == 1, _texts(app)
+    app.toggle(key="space_fab_edit_mode").set_value(False)
+    _ok(app.run())
+    assert _rest_notes(app) == 0
 
 
 # ------------------------------------------------------------------ T-P9·T-P12 도착·칩

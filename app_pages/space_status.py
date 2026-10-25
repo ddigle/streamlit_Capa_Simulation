@@ -439,6 +439,18 @@ LAYER_REST_HELP = (
 )
 SPACE_CARD_NAME = "space"
 
+
+def _render_layer_rest_caption(*, pinned_today: bool = False) -> None:
+    """필요 단축 보기가 배치 편집 중 쉰다는 한 줄(결정 D7·명세 4-4). 한 화면에 한 번만 적는다 — 층
+    상세는 편집기 위(`_render_layout_editor`), FAB 편집은 편집기 캡션이 없어 본문 조작 줄이 적는다.
+    `pinned_today` 면 보기는 오늘 기준이었다고 덧붙인다(편집기는 세션 기준일이다)."""
+    st.caption(
+        ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
+        "보입니다" + (" (필요 단축 보기는 오늘 기준이었습니다)." if pinned_today else "."),
+        width="stretch",
+    )
+
+
 today = date.today()
 # 필요 단축 보기의 「필요 단축 일정에서 이 공정 보기」 대기 — 본문 맨 앞에서 옮긴다(콜백 안
 # switch_page 금지).
@@ -1321,6 +1333,10 @@ def _render_layout_editor(
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
+        if layer_requested:
+            # 편집기를 못 연 회차도 보기는 쉰다 — 쉬는 까닭 한 줄은 여기가 맡는다(본문 조작 줄은
+            # FAB 편집만).
+            _render_layer_rest_caption(pinned_today=as_of != today)
         st.error(
             "가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 편집이 있어 배치 "
             f"편집기를 열 수 없습니다. 설비 마스터 탭에서 고치거나 버린 뒤 여세요: {exc}"
@@ -1354,11 +1370,8 @@ def _render_layout_editor(
             st.caption(f":material/lock_clock: {new_unit_reason}")
     if layer_requested:
         # 필요 단축 보기는 편집 중 쉰다(결정 D7) — 편집기는 공정구분 기본 색이고 배지·흐림·고정 줄이
-        # 없다.
-        st.caption(
-            ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
-            "보입니다" + (" (필요 단축 보기는 오늘 기준이었습니다)." if as_of != today else ".")
-        )
+        # 없다. 층 상세의 쉬는 까닭 한 줄은 여기만 적는다(본문 조작 줄은 FAB 편집만).
+        _render_layer_rest_caption(pinned_today=as_of != today)
     st.caption(
         "끌어 놓아 자리·크기를 고치고 **적용**을 누르면 이 세션의 편집본에 들어갑니다(저장 전). "
         "조건 카드의 공정소분류 필터와 상관없이 이 층의 도면 대상 호기를 모두 보입니다. "
@@ -1685,7 +1698,8 @@ with st.container(key="space_edit_lock_slot"):
 
 # 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
 # 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
-# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 까닭 한 줄만.
+# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 FAB 편집이면 까닭 한 줄만 — 층 상세는 편집기 위
+# 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
 space_layer: SpaceLayer | None = None
 layer_dim = True
 with st.container(
@@ -1708,12 +1722,8 @@ with st.container(
             render_layer_stop(loaded)
         else:
             space_layer = loaded
-    elif layer_requested and layer_editing:
-        st.caption(
-            ":material/pause_circle: 배치 편집 중에는 필요 단축 보기를 쉽니다 — 편집을 끄면 다시 "
-            "보입니다.",
-            width="stretch",
-        )
+    elif layer_requested and layer_editing and selected is None:
+        _render_layer_rest_caption()
 # 필요 단축 FAB 요약(공정소분류 필터를 따름 — 결정 D11). 비활성 층은 층 대수를 싣지 않는다.
 layer_scope = frozenset(selected_processes) if selected_processes else None
 layer_summary: FabSummary | None = (
