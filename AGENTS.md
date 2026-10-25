@@ -390,7 +390,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     **예외 하나** — 필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=…&proc=…&target=…`)는 페이지 맨 앞에서 한 번 받아
     (`space_shortening_view.consume_layer_link`) 그 층이 세션 층을 **덮고**(`floor` 가 없거나 비활성 층이면 세션 층을 지워 FAB
     전체), 색 기준·목표·그 층 공정 칩을 적고 배치 편집 토글을 끈 뒤 남길 인자만 `from_dict` 한 번으로 다시 싣고 회차를 한 번 더
-    돈다(사이드바 줄을 맞추려고 — 아직 그린 편집기가 없는 자리).
+    돈다(사이드바 줄을 맞추려고 — 아직 그린 편집기가 없는 자리). 그 주소를 테마 인자 없이(다른 브라우저 등) 처음 열어 테마
+    새로고침이 걸리면, 지운 링크 인자는 테마 스크립트가 문서를 연 주소에서 되살려 새 세션이 다시 받는다(`theme_toggle` 의
+    `<theme-reopen>`).
   - **색 기준 「필요 단축」**(2026-10-24 결정 — 라디오 셋째 값, `services/space_shortening_layer.py`·
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
     꺼내고(5장 9), **본문 조작 줄**(늘 서는 `space_shortening_toolbar` — 목표 확보율 `st.segmented_control(required=True)`·
@@ -406,6 +408,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다).
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
+    분기 눈금 글자는 트랙 폭에 맞춰 솎는다(editor.js 순수 구획 `<fader-ticks>` — 「오늘」 은 늘 서고, 트랙 밖이거나 이웃과
+    2px 안으로 붙는 글자는 `is-crowded` 로 숨김, 회차마다·크기가 바뀔 때 다시 잼, `tests/test_space_fader_ticks_js.py`).
+    기준일 줄 폭 560px 아래(390px 창)에서는 날짜 칩이 13.5rem → 8.5rem 고정 폭이다(CSS 컨테이너 `sle-daterow`) — 390px
+    창에서 트랙이 68px 로 줄어 글자 7쌍이 겹쳤다(E2E 결함, 고친 뒤 146px). 768·1400px 창은 예전 그대로다.
   - 보기는 **사이드바에서 고른 설비 시나리오**의 배치다(설비 시나리오 2단계 S3 — LY3, `PageSpec.equipment_scenario="session"`·
     `uses_equipment_db=True`). 그리는 한 벌은 세션 스냅샷(`resolve_equipment_session(...).snapshot.calculation_frames()`)
     하나이고 가정이면 그 리비전의 호기 배치 차이가 얹혀 있다. 층 도면 요소·Main 설비명 위치는 **모두**
@@ -1494,6 +1500,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
+  - 열릴 때의 새로고침(키를 고쳐 적었거나 `?theme` 이 다를 때 — `reloadOnOpen`)은 **문서를 연 주소**에서 빠진 인자를
+    되살린다(`<theme-reopen>`, 연 주소는 `performance` 탐색 항목 — `history.replaceState` 로 바뀌지 않는다). 버려지는 첫
+    세션도 링크 인자를 받아 주소에서 지우므로(Space `?layer=short…`·공정 Capa 상세 `?process=…`·제약 시뮬레이션), 지금
+    주소에 테마만 붙이면 그 지우기가 먼저 닿은 때 새 세션이 링크 없이 열렸다(E2E 결함 — 사본 CPU 6배 느리게 9번 중 8번).
+    같은 출처·경로일 때 빠진 이름만 싣고 지금 주소의 값은 그대로 둔다. 단추를 눌러 바꿀 때(`syncParam`)는 지금 주소
+    그대로다. node 로 스크립트 셋을 가짜 부모 창에서 돌리는 시험이 `tests/test_theme_reopen_link.py` 다.
   - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌, 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
     `SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳이다. iframe 내용은 회차마다 같아야 한다(`tests/test_theme_toggle.py`).
   - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS`)에 넣고, `app_header`
@@ -2151,8 +2163,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   보이는 직접 입력 숫자 칸을 **정본 한 칸**(위젯 아닌 세션 칸)으로 묶는다(제약 시뮬레이션 D10). 두 위젯 칸은 위젯 앞에서 매
   회차 정본에서 다시 서되 **다를 때만** 적고(같은 값을 적으면 `set_value` 가 회차마다 가서 치다 만 숫자를 덮는다), 콜백이 정본을
   적는다. 버튼 콜백은 숫자 칸 세대도 올려 칸을 **새 key** 로 다시 세운다 — 1.63 숫자 칸은 범위 밖 글(301)을 확정하지 않은 채
-  쥐고 그동안 서버 값을 무시하므로, 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 표시가 남는다. `None` 버튼(「HOME 기준」)은
-  버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
+  쥐고 그동안 서버 값을 무시하므로, 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 표시가 남는다. 칸에 치고 Enter 없이 버튼을
+  누르면 칸 확정과 버튼 누름이 한 회차에 들어 두 콜백이 함께 도는데, **어느 차례든 버튼이 이긴다** — 숫자 칸 콜백은 자기 key 가
+  지금 세대 key 와 다르면(버튼 콜백이 먼저 세대를 올렸으면) 적지 않는다(1.63 은 버튼 콜백이 먼저라 친 값이 덮었다, 2026-10-26
+  E2E). `None` 버튼(「HOME 기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
   주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
   `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
@@ -2164,9 +2178,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   위, 2026-10-25 E2E 에서 7px 포개짐·한 글 숨음). 그림 모양을 바꾸면 `CONSTRAINT_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/constraint_simulation_view.py` — 제약 시뮬레이션 본문 프래그먼트(`constraint_sim_view` —
   비중 토글·그래프·계산표·고른 달 계산 다섯 단계·개조 일정·가용이 모자란 달)와 요약 넷. 달 누름은 두 그림의 `on_select`
-  **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 다섯 단계의 식(2단계
-  「소요 × % = 곱」·5단계 「가용 ÷ 소요 = 확보율」)은 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다 — 둘째 자리로 깎은
-  인수로 어긋나면 그 식의 인수만 한 자리씩 더 적는다(`_consistent_digits`). 그림은 세션 memo(4칸 —
+  **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 다섯 단계의 식(1단계
+  「소요 = 기존 + 제약」·2단계 「소요 × % = 곱」·4단계 「가용 − 개조 중 − 배정 = 기존 가용」·5단계 「가용 ÷ 소요 = 확보율」)은
+  **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다 — 둘째 자리로 깎은 인수로 어긋나면 그 식의 인수만 한 자리씩 더
+  적고(`_consistent_digits`, 여섯째 자리까지), 그래도 못 맞추면 둘째 자리로 적고 등호를 「≈」 로 둔다. 그림은 세션 memo(4칸 —
   키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 위 줄(그래프 카드 + 고른 달 계산 카드)은 가로 컨테이너 하나(3 : 2)이고
   줄이 `TOP_ROW_STACK_BELOW_PX`(900px)보다 좁으면 컨테이너 질의로 위아래로 쌓는다(`top_row_style` — 사이드바를 편 900px 창에서
   3 : 2 그대로면 그래프 그림 칸이 169px 로 줄어 달 누름이 어려웠다). 그래프는 카드 안 스크롤 상자 → 캔버스에 서고 캔버스는
@@ -3249,7 +3264,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   `allocated >= need` **정수 비교**다 — need 가 T 를 맞추는 가장 작은 정수라 「제약 % ≥ T」 와 같은 답이고 잡음이 없다.
 - **요약 넷.** 제약 충족 달 수 / 기간 안 Rc' > 0 달 수, 기존 최저 확보율과 그 달(같으면 이른 달)·그 달 제약 없을 때,
   기준 미달 달·그중 제약 없었다면 기준 이상이던 「새로 미달」·「영향 시작」(기존이 제약 없을 때보다 0.05%p 넘게 낮은 첫
-  달 — 판정이 아니라 표시 문턱 `IMPACT_TOLERANCE`), 개조 대수(가장 큰 pool — 개조 끔이면 없음)·창 수·첫 비가동 날.
+  달 — 판정이 아니라 표시 문턱 `IMPACT_TOLERANCE`), 개조 대수(가장 큰 pool — 개조 끔이면 없음)·창 수·첫 비가동 날. 창이
+  0 이면(기간에 제약 소요가 없어 pool 0) 화면 넷째 칸은 「0대」 에 회색 줄 「개조할 대수가 없습니다」 다(「0번에 나눠 개조」 가 아니다).
 - **「소요 비중대로 나눴을 때」 견주기.** 개조 비가동 없이 기간 안 R > 0 달만 `제약 몫 = floor(A × Rc' ÷ R + 0.5)`(사사오입 —
   파이썬 `round` 의 은행가 반올림이 아니다, D15), 기존 몫 = A − 제약 몫. 제약 몫은 `floor(A + 1e-9)` 를 넘지 않는다 — A 가
   소수(환산 대수)라 Rc' 가 R 에 가까운 달에 사사오입이 A 를 넘어 기존 몫·확보율이 음수가 되지 않게(우선 배정과 같은 내림).
@@ -3752,7 +3768,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **버튼 + 직접 입력은 정본 한 칸 + 매 회차 다시 서는 위젯 둘이다**(`components/preset_number_field.py`). 정본은 위젯 아닌
   세션 칸이고 버튼(`st.pills`, `required=True` — 고른 버튼을 다시 눌러도 풀리지 않는다)·숫자 칸 key 는 위젯 앞에서 정본에서
   내되 **다를 때만** 적는다. 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
-  값을 무시한다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
+  값을 무시한다). 친 글의 확정과 버튼 누름이 한 회차에 겹치면 버튼이 이긴다(옛 세대 key 의 숫자 칸 콜백은 적지 않는다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만
   읽으면 `condition_tabs`)에 코드가 실제로 읽는 것을 선언하고 `app.py` 가 그대로 따른다. 세우지 않은 줄의 값은 세션에
