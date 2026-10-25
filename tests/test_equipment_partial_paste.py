@@ -398,7 +398,7 @@ def test_a_column_with_values_but_no_header_is_rejected() -> None:
 
 
 def _duplicated_buffer() -> pd.DataFrame:
-    """EQ-01 이 두 행인 편집본(저장 전 직접 편집). 둘째 행은 담당자가 다르다."""
+    """EQ-01 이 두 행인 편집본(저장 전 편집). 둘째 행은 담당자가 다르다."""
     current = _current()
     second = current.loc[current["설비명"].eq("EQ-01")].copy()
     second["담당자"] = pd.Series("편집 중", index=second.index, dtype="string")
@@ -413,7 +413,7 @@ def test_a_partial_paste_onto_a_duplicated_name_in_the_buffer_is_rejected() -> N
 
     message = str(raised.value)
     assert "편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: EQ-01" in message
-    assert "직접 편집에서 중복된 행을 먼저 정리한 뒤" in message
+    assert "설비 마스터 표에서 중복된 행을 먼저 정리한 뒤" in message
 
 
 def test_a_duplicate_that_the_paste_does_not_touch_still_fails_the_merged_validation() -> None:

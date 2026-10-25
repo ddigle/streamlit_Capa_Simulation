@@ -3910,8 +3910,8 @@ _MAIN_TAB_NAMES_JS = """() => [...document.querySelectorAll('[data-testid="stMai
   .map((tab) => tab.innerText.replace(/\\s+/g, " ").trim())"""
 # key 를 준 탭 묶음 하나(`st.tabs(key=…)` — `st-key-<key>` 칸)의 제 탭 이름만. 그 칸 안 첫 탭
 # 목록이 제 것이고(안쪽 탭 묶음의 탭 목록은 패널 안이라 뒤에 온다), 숨은 패널 안 탭도 innerText
-# 가 남으므로 본문 전체에서 세면 ① 안 「직접 편집」 의 편집표 탭 「설비 마스터」 가 바깥 탭으로
-# 잘못 셈에 든다.
+# 가 남으므로 본문 전체에서 세면 다른 탭 묶음의 같은 이름(② 안 「Main」·「Static 대비 일정」 이나
+# 다른 자리의 「설비 마스터」 탭)이 제 탭으로 잘못 셈에 든다.
 _KEYED_TAB_NAMES_JS = """(key) => {
   const box = document.querySelector(`[data-testid="stMain"] .st-key-${key}`);
   const list = box ? box.querySelector('[role="tablist"]') : null;
@@ -3940,7 +3940,7 @@ def summarize_equipment_moves(
 ) -> str:
     """개편 확인 결과 — 탭 이름은 정한 어휘(`EQUIPMENT_*`)만 적고, 팝업 제목·지표 라벨은 판정에만
     쓴다. 바깥 둘은 바깥 탭 묶음에서만, 안쪽 둘은 Summary 안쪽 탭 묶음에서만 센다(본문 전체에서
-    세면 안쪽 편집표 탭 「설비 마스터」 가 바깥 탭 대신 셈에 든다). 옛 탭 이름은 본문 어디에서든
+    세면 다른 탭 묶음의 같은 이름이 바깥 탭 대신 셈에 든다). 옛 탭 이름은 본문 어디에서든
     센다."""
 
     def has(names: Sequence[str], label: str) -> bool:

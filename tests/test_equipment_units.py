@@ -204,7 +204,7 @@ def test_a_parent_that_is_also_a_standalone_unit_is_rejected() -> None:
     assert raised.value.collisions == {"APW01": ("APW01A", "APW01B", "APW01C", "APW01D")}
     message = str(raised.value)
     assert "설비 행 APW01 · 모듈 행 APW01A, APW01B, APW01C, APW01D" in message
-    # 직접 편집·저장 경로의 고칠 길: 두 행이 모두 지금 표에 있으니 한쪽을 지운다.
+    # 저장 경로의 고칠 길: 두 행이 모두 지금 편집본에 있으니 한쪽을 지운다.
     assert "한쪽만 남기세요" in message
     assert "붙여넣기" not in message
 
@@ -225,7 +225,8 @@ def test_a_paste_collision_names_where_each_side_came_from() -> None:
     )
     # 편집본은 저장 안 한 편집을 담을 수 있다 — 「저장된」이 아니라 「이미 있는(편집본의)」 행이다.
     assert "붙여넣기는 이미 있는(편집본의) 행을 지우지 않습니다 — " in message
-    assert "직접 편집에서 지운 뒤 다시 미리보세요" in message
+    assert "설비 마스터 표에서 지운 뒤 다시 미리보세요" in message
+    assert "직접 편집" not in message
     assert "두 곳 모두" not in message
     # 양쪽이 모두 붙여넣은 표 안에 있으면 붙여넣을 표를 고친다.
     inside = unit_group_collision_message(
@@ -249,11 +250,12 @@ def test_a_name_pasted_again_over_the_buffer_is_marked_as_both() -> None:
     # 모두 붙여넣었더라도 편집본에 있던 이름이 끼면 붙여넣을 표만 고쳐서는 풀리지 않는다.
     every = unit_group_collision_message(collisions, pasted=existing, existing=existing)
     assert "붙여넣을 표에서 한쪽을 빼고" not in every
-    assert "직접 편집에서 지운 뒤" in every
+    assert "설비 마스터 표에서 지운 뒤" in every
 
 
 def test_a_collision_already_in_the_buffer_is_not_blamed_on_the_paste() -> None:
-    """붙여넣은 이름이 충돌에 하나도 없으면 편집본 안의 충돌이다 — 직접 편집에서 고치라고만 한다."""
+    """붙여넣은 이름이 충돌에 하나도 없으면 편집본 안의 충돌이다 — 설비 마스터 표에서 고치라고만
+    한다(지금 화면에 있는 자리 — 옛 「직접 편집」 은 개편 D 로 없어졌다)."""
     collisions = {"SMP-DAF-12": ("SMP-DAF-12A",)}
 
     message = unit_group_collision_message(
@@ -262,7 +264,8 @@ def test_a_collision_already_in_the_buffer_is_not_blamed_on_the_paste() -> None:
 
     assert "설비 행 SMP-DAF-12(편집본) · 모듈 행 SMP-DAF-12A(편집본)" in message, message
     assert message.endswith(
-        "붙여넣기 전 편집본에 이미 있던 충돌입니다 — 직접 편집에서 한쪽을 지운 뒤 다시 미리보세요."
+        "붙여넣기 전 편집본에 이미 있던 충돌입니다 — 설비 마스터 표에서 한쪽을 지운 뒤 다시 "
+        "미리보세요."
     )
     assert "붙여넣기는" not in message
 

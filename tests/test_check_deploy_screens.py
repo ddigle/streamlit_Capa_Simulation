@@ -2700,9 +2700,10 @@ def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
 
 
 def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_same_name() -> None:
-    """① 안 「직접 편집」 의 편집표 탭 「설비 마스터」 는 바깥 탭이 아니다 — 바깥 ① 이 없어지거나
-    이름이 바뀌어도 그 안쪽 탭으로 「탭 2/2」 가 나오면 안 된다(2026-10-25 리뷰). 셈은 바깥 탭 묶음
-    (`st-key-equipment_active_tab`)·Summary 안쪽 탭 묶음의 제 탭 목록에서만 한다."""
+    """다른 탭 묶음의 같은 이름(개편 D 전 ① 안 「직접 편집」 의 편집표 탭 「설비 마스터」 같은 것)은
+    바깥 탭이 아니다 — 바깥 ① 이 없어지거나 이름이 바뀌어도 그 탭으로 「탭 2/2」 가 나오면 안 된다
+    (2026-10-25 리뷰). 셈은 바깥 탭 묶음(`st-key-equipment_active_tab`)·Summary 안쪽 탭 묶음의 제 탭
+    목록에서만 한다."""
     inner_editor = ["입력", "직접 편집", "저장 이력", "설비 마스터", "비가동 일정"]
     summary = ["dashboard Main", "compare_arrows Static 대비 일정"]
     text = screens.summarize_equipment_moves(

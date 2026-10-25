@@ -796,8 +796,9 @@ def _parse_ghost_moves(
 # ------------------------------------------------------------------ 마스터 저장의 묶음 좌표·크기
 
 # 모듈 묶음의 좌표·크기는 Space 배치 편집기에서 묶음 범위로만 고친다(2026-10-23 사용자 답 「막자」).
-# 설비 마스터를 저장하는 길(설비 마스터 직접 편집·붙여넣기·CSV 업로드·일괄 삭제·Space 배치 저장 —
-# 모두 `components/equipment_data_workspace.save_equipment_buffer`)은 저장 직전에
+# 설비 마스터를 저장하는 길(설비 마스터 탭 「리비전 저장」 — 표 고침·엑셀·CSV 넣기·지우기를 실은
+# 편집본, 사이드바 설비 시나리오 팝업 「저장」, Space 배치 저장 — 모두
+# `components/equipment_data_workspace.save_equipment_buffer`)은 저장 직전에
 # `module_layout_violations` 로 저장본과 견줘, 모듈 좌표·크기가 바뀌었는데 바둑판이 아닌 묶음이
 # 있으면 저장을 거부한다. 배치 편집기가 적용한 묶음은 적용 뒤 모양(`module_layouts`)을 세션에 두고
 # 그 모양 그대로면 통과시킨다 — 편집기 결과는 `parse_editor_apply` 가 이미 같은 규칙으로 봤고, 숨은
