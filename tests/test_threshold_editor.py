@@ -212,3 +212,15 @@ def test_a_hidden_month_that_blocks_a_new_default_can_be_cleared(database: Path)
     assert profile.version == 2
     assert profile.rows.empty
     assert profile.default_warning == pytest.approx(1.05)
+
+
+def test_month_cells_are_float_even_when_no_month_is_filled(database: Path) -> None:
+    """두 줄 모두 빈 달도 float64 칸이다 — Arrow null 칸이면 남의 저장으로 첫 값이 들어온 회차에
+    키 있는 fixed 편집표의 데이터 서명이 바뀌어 폼 안의 보내지 않은 편집이 사라진다."""
+    from streamlit.dataframe_util import convert_arrow_bytes_to_pandas_df
+
+    app = _app(database)
+    (editor,) = app.get("dataframe")
+    drawn = convert_arrow_bytes_to_pandas_df(editor.proto.arrow_data.data)
+
+    assert drawn.loc[:, ["26.01", "26.02", "26.03"]].dtypes.astype(str).tolist() == ["float64"] * 3
