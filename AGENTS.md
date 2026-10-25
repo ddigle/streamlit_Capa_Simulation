@@ -559,9 +559,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
-    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`_formula_operands` — 「54,698.63 ÷ 1.49386
-    = 36,615.63」, 2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다). 그래도 못 맞추면 처음 자리로 적고 등호를 「≈」 로
-    둔다(9장 「화면 숫자는 검산되어야 한다」).
+    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`formula_text.consistent_places` — 「54,698.63
+    ÷ 1.49386 = 36,615.63」, 2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다). 그래도 못 맞추면 처음 자리로 적고 등호를
+    「≈」 로 둔다(8장 「화면 숫자는 검산되어야 한다」). 세 줄 글은 같은 파일의 순수 함수 `logic_formula_text`(줄 하나는
+    `_formula_line`)가 짓고, 인수 글자 꼴(`_operand_text` — `_format_metric` 자리, 늘린 자리의 뒤 0 은 뗀다)과 적힌 글자로
+    다시 셈하기(`_recomputed`, `Decimal`)는 이 화면 것이라 페이지에 둔다.
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
   붙여넣기 팝업 폼·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 양식과 붙여넣기 칸만 그린다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
@@ -2237,7 +2239,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「≈」 길(`equals_mark` — 인수는 화면 자릿수, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 「=」 대신 「≈」, 적힌 글자에서
   수를 읽는 `written_value`)은 공정 Capa 상세 근거 카드·결합 캔버스 풍선, 가용설비 현황 비교 시트 풍선, 제약 시뮬레이션
   계산표 풍선이고, 자릿수 늘리기 길(`consistent_digits`·`operand_text` — 어긋날 때만 그 식의 인수를 모두 한 자리씩, 여섯째
-  자리까지, 끝내 못 맞추면 화면 자릿수와 「≈」)은 제약 시뮬레이션 고른 달 계산이다. 결과 값·판정·올림 규칙은 바꾸지 않는다.
+  자리까지, 끝내 못 맞추면 화면 자릿수와 「≈」)은 제약 시뮬레이션 고른 달 계산이고, 인수마다 따로 늘리는 꼴
+  (`consistent_places` — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다. 인수 글자 꼴은
+  화면마다 다르므로 쓰는 쪽이 넘긴다(`operand_text` 의 `plain`). 결과 값·판정·올림 규칙은 바꾸지 않는다.
   `parse_formula` 는 시험용 읽기다(`tests/test_formula_text.py` — 값 격자로 지은 식 글을 읽어 다시 셈하는 검산 그물과, UI
   모듈에서 식 꼴 f-string 을 짓는 함수가 이 모듈을 부르는지 보는 AST 가드 — 허용·대기 목록은 그 시험 머리에 있다).
 - `src/capa_simulation/components/month_sheet_canvas.py` — 월 시트 캔버스 엔진(라벨·월 Figure 한 쌍의 `Row`·

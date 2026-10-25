@@ -14,7 +14,9 @@
   제약 시뮬레이션 계산표 풍선.
 - **인수 자릿수를 늘려**(`consistent_digits` + `operand_text`) — 어긋날 때만 그 식의 인수를 모두
   같은 자릿수로 한 자리씩(여섯째 자리까지) 더 적고, 그래도 못 맞추면 화면 자릿수와 「≈」. 제약
-  시뮬레이션 고른 달 계산 다섯 단계.
+  시뮬레이션 고른 달 계산 다섯 단계. 인수마다 따로 늘리는 꼴(`consistent_places` — 더 적는 자리
+  수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다(이미 맞는 큰 수까지 길어지지
+  않게).
 
 `parse_formula` 는 식 글 한 줄을 읽어 다시 셈하는 **시험용 읽기**다 — 화면 그리기 길에서
 부르지 않는다. 순수 함수만 둔다(세션·캐시·DB 를 보지 않는다).
@@ -38,6 +40,9 @@ MINUS: Final = "\N{MINUS SIGN}"
 
 OPERAND_DIGITS: Final = (2, 3, 4, 5, 6)
 """자릿수 늘리기 길의 인수 소수 자릿수 후보. 첫 후보가 화면 자릿수다(대수는 둘째 자리)."""
+
+MAX_PLACES: Final = OPERAND_DIGITS[-1]
+"""자릿수 늘리기 길에서 인수를 적을 수 있는 가장 긴 소수 자리(여섯째)."""
 
 
 def equals_mark(result: str, recomputed: str) -> str:
@@ -66,6 +71,35 @@ def consistent_digits(compute: Callable[[int], str], shown: str) -> tuple[int, s
         if compute(digits) == shown:
             return digits, EQUALS
     return OPERAND_DIGITS[0], APPROX
+
+
+def consistent_places(
+    compute: Callable[[tuple[int, ...]], str | None], shown: str, bases: Sequence[int]
+) -> tuple[tuple[int, ...], str]:
+    """인수마다 자릿수를 따로 늘려 `compute(인수별 자릿수)` 가 적힌 결과 `shown` 과 같아지는
+    자릿수와 「=」. 더 적는 자리 수의 합이 가장 작은 것부터, 합이 같으면 뒤 인수에 먼저 더 적는다.
+    인수마다 `MAX_PLACES` 까지다. 끝내 못 맞추면 처음 자리(`bases`)와 「≈」 다."""
+    starts = tuple(bases)
+    most = tuple(max(0, MAX_PLACES - base) for base in starts)
+    for total in range(sum(most) + 1):
+        for extras in _extras(most, total):
+            places = tuple(base + extra for base, extra in zip(starts, extras, strict=True))
+            if compute(places) == shown:
+                return places, EQUALS
+    return starts, APPROX
+
+
+def _extras(most: Sequence[int], total: int) -> list[tuple[int, ...]]:
+    """합이 `total` 이고 i 번째가 `most[i]` 를 넘지 않는 더 적을 자리 수들 — 앞 인수가 작은 차례
+    (곧 뒤 인수에 먼저 더 적는다)."""
+    if not most:
+        return [()] if total == 0 else []
+    rest = most[1:]
+    return [
+        (extra, *tail)
+        for extra in range(max(0, total - sum(rest)), min(total, most[0]) + 1)
+        for tail in _extras(rest, total - extra)
+    ]
 
 
 def operand_text(

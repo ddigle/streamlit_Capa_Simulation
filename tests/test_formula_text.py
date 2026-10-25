@@ -8,7 +8,8 @@
   음수 과부족)로 글을 만들고 `parse_formula` 로 읽어, 적힌 수로 다시 셈한 값이 적힌 결과의
   자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 넷·근거 카드
   (① 가정 소요·② 가용·③ 판정·가정 소요·원인), 제약 시뮬레이션 계산표 풍선 셋·고른 달 계산
-  다섯 단계, 가용설비 현황 비교 시트 풍선 셋.
+  다섯 단계, 가용설비 현황 비교 시트 풍선 셋, 표준 목표 로직 분석 식 세 줄(화면 대본 — 페이지
+  파일은 import 하지 않는다).
 - **AST 가드** — UI 모듈(`app_pages/`·`components/`)에서 두 끼운 값 사이에 연산(` ÷ `·` × `·
   ` − `·` + `)이 있고 등호(또는 등호 자리의 끼운 값)가 값에 붙은 f-string 은 그 함수가
   `formula_text` 를 불러야 한다. 허용 목록은 숫자 없는 식 설명과 인수가 정수라 늘 맞는 식이다.
@@ -27,7 +28,10 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import streamlit as st
+from streamlit.testing.v1 import AppTest
 from test_constraint_simulation import _run
+from test_standard_target_capa_page import LOGIC_SELECTIONS, TEST_SCRIPT
 
 from capa_simulation.components import formula_text
 from capa_simulation.components.availability_sheet_canvas import _hover as sheet_hover
@@ -45,6 +49,7 @@ from capa_simulation.components.formula_text import (
     EQUALS,
     Formula,
     consistent_digits,
+    consistent_places,
     equals_mark,
     operand_text,
     parse_formula,
@@ -144,6 +149,23 @@ def test_consistent_digits_keeps_the_round_two_expectations() -> None:
     assert rate(48 - 5.806451, 42.0) == "42.19 ÷ 42 = 100.5%"
     assert rate(2.0, 1.93889) == "2 ÷ 1.9389 = 103.2%"
     assert consistent_digits(lambda _d: "1", "2") == (2, "≈")
+
+
+def test_consistent_places_widens_the_fewest_digits_right_first() -> None:
+    """인수마다 따로 늘린다 — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저(표준 목표 로직
+    분석 3회차 꼴 「54,698.63 ÷ 1.49386 = 36,615.63」), 끝내 못 맞추면 처음 자리와 「≈」."""
+
+    def recompute(places: tuple[int, ...]) -> str:
+        left, right = round(54698.63, places[0]), round(1.49386, places[1])
+        return f"{Decimal(str(left)) / Decimal(str(right)):,.2f}"
+
+    shown = f"{54698.63 / 1.49386:,.2f}"
+    assert consistent_places(recompute, shown, (2, 2)) == ((2, 5), "=")
+    assert consistent_places(lambda places: "x", "y", (2, 1)) == ((2, 1), "≈")
+    assert consistent_places(lambda places: "y" if places == (3, 1) else "x", "y", (2, 1)) == (
+        (3, 1),
+        "=",
+    )
 
 
 def test_operand_text_trims_but_keeps_the_screen_places() -> None:
@@ -410,6 +432,33 @@ def test_the_sheet_balloons_recompute(value: float, other: float) -> None:
         _assert_checked(sheet_hover(view, gap, 202611, "<b>26.11</b>"), 1)
 
 
+# ================================================================== 검산 그물 — 표준 목표 로직 분석
+
+
+@pytest.mark.parametrize(
+    ("load", "required", "available"),
+    [(54698.63, 1.49386, 40.0), (100.0, 1.005, 2.0), (12.3449, 0.046, 3.0), (2.675, 0.0049, 1.0)],
+)
+def test_the_logic_analysis_lines_recompute(load: float, required: float, available: float) -> None:
+    """로직 분석 식 세 줄(대당 Capa · 대당 일 Capa · 일 표준 가능량)도 적힌 수로 검산되거나 「≈」 다
+    (`standard_target_capa.logic_formula_text` — 화면 대본으로 그린다)."""
+    script = (
+        TEST_SCRIPT.replace('"부하량": [100.0],', f'"부하량": [{load!r}],')
+        .replace('"소요대수": [1.0],', f'"소요대수": [{required!r}],')
+        .replace('"가용대수": [2.0] * 5,', f'"가용대수": [{available!r}] * 5,')
+    )
+    # 화면의 키 전용 캐시는 프로세스 전역이고 대본은 토큰 하나라 앞 값이 적중하지 않게 비운다.
+    st.cache_data.clear()
+    app = AppTest.from_string(script, default_timeout=60).run()
+    app = app.segmented_control(key="standard_target_output_metric").set_value("로직 분석").run()
+    for key, value in LOGIC_SELECTIONS.items():
+        app = app.selectbox(key=key).set_value(value).run()
+    assert not app.exception
+    (code,) = app.code
+    _assert_checked(str(code.value), 3)
+    st.cache_data.clear()
+
+
 # ================================================================== AST 가드
 
 _UI_GLOBS = ("app_pages/*.py", "src/capa_simulation/components/*.py")
@@ -435,9 +484,6 @@ PENDING: dict[tuple[str, str], str] = {
     ),
     ("src/capa_simulation/components/availability_gap_panel.py", "_render_schedule_evidence"): (
         "설비 일정 기준 가용 = 보유 + 대여(비가동)"
-    ),
-    ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (
-        "로직 분석 식 세 줄 — E2E 3회차 static 고침 병합 뒤 순수 함수로 떼어 도우미를 부른다"
     ),
 }
 

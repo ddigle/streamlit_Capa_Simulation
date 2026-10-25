@@ -835,8 +835,12 @@
   올림 규칙은 그대로다. 대안: 처리 없던 자리도 자릿수 늘리기 — 같은 값이 두 줄에서 다른 자리로 적히고(1단계 1.94 · 5단계 1.9389)
   풍선 글이 더 길어진다. 비가동 몫 「n대 × d/w일」 은 인수가 정수라 늘 맞아 손대지 않았다(가드 허용 목록). 시험: 값 격자 검산
   그물과 식 꼴 f-string 을 짓는 함수가 이 모듈을 부르는지 보는 AST 가드(`tests/test_formula_text.py` — 모든 자리가 「=」 이던 때를
-  흉내 내면 열두 묶음이 실패). 관련: `components/formula_text.py`·`process_capa_view.py`·`process_capa_canvas.py`·
-  `constraint_simulation_view.py`·`constraint_simulation_figures.py`·`availability_sheet_canvas.py`·AGENTS 3·6·8장
+  흉내 내면 열세 묶음이 실패). 3회차 표준 목표 로직 분석 고침(아래)의 자릿수 고르기도 옮겼다 — 인수마다 따로 늘리는 꼴은
+  `formula_text.consistent_places`, 세 줄 짓기는 같은 파일의 순수 함수 `logic_formula_text` 이고, 화면 글자 꼴(`_operand_text`)과
+  `Decimal` 다시 셈하기는 페이지에 남겼다(옛 줄 짓기와 무작위 2만 값에서 글자가 같다 — 아래 기록의 「한 모듈로 묶지 않았다」 는
+  글자 꼴만 그대로다). 관련: `components/formula_text.py`·`process_capa_view.py`·`process_capa_canvas.py`·
+  `constraint_simulation_view.py`·`constraint_simulation_figures.py`·`availability_sheet_canvas.py`·
+  `app_pages/standard_target_capa.py`·AGENTS 3·6·8장
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을
