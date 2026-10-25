@@ -127,7 +127,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-queue")
+_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue")
 
 
 def _sections() -> str:
@@ -163,6 +163,7 @@ const entries = ['http://app.test/calculation_result']
 let index = 0
 let now = 0
 const history = {
+  state: {},
   pushState(state, title, url) {
     entries.splice(index + 1)
     entries.push(new URL(url, entries[index]).href)
@@ -172,48 +173,79 @@ const history = {
     entries[index] = new URL(url, entries[index]).href
   },
 }
-const guard = guardHistory(history, () => entries[index], () => now)
+guardHistory(history, () => entries[index], () => now, 1000)
 const out = {}
-const path = () => new URL(entries[index]).pathname
-// 걸지 않은 동안은 그대로 쌓는다(같은 경로라도).
+const here = () => entries[index].replace('http://app.test', '')
+const back = () => { index -= 1 }
+// 같은 화면의 주소 인자 바꾸기(서버의 `st.query_params` 쓰기)는 칸을 더하지 않는다.
 history.pushState({}, '', '/calculation_result?a=1')
-out.plain = entries.length
+out.sameScreen = [entries.length, here()]
 // 탭 이동 — st.switch_page 의 두 번 쌓기: 지금 경로(주소 인자 다시 적기) → 옮긴 경로.
-guard.arm(1000)
 history.pushState({}, '', '/calculation_result?theme=dark')
-out.afterSame = [entries.length, entries[index]]
 history.pushState({}, '', '/load_conversion?theme=dark')
-out.afterMove = [entries.length, path(), guard.armed()]
-// 옮긴 뒤에는 같은 경로라도 다시 쌓는다(거뒀다).
-history.pushState({}, '', '/load_conversion?process=A')
-out.afterDisarm = entries.length
-// 기다림이 지나면 거둔다.
-guard.arm(1000)
-now = 1500
-history.pushState({}, '', '/load_conversion?b=2')
-out.expired = [entries.length, guard.armed()]
-// 건 뒤 다른 길로 화면이 바뀌었으면(사이드바·뒤로가기) 그 화면의 쌓기는 건드리지 않는다.
-guard.arm(1000)
-index = 0
-history.pushState({}, '', '/calculation_result?c=3')
-out.elsewhere = [entries.length, guard.armed()]
+out.tabMove = [entries.length, here()]
+// 링크로 들어와 인자를 지우는 화면 — 인자 달린 칸(다른 경로)을 쌓고, 지우기는 그 칸 바꾸기다.
+history.pushState({}, '', '/process_capa_detail?process=A&month=202610&theme=dark')
+history.pushState({}, '', '/process_capa_detail?theme=dark')
+out.linkArrival = [entries.length, here()]
+// 뒤로가기 한 번이면 직전 화면이다 — 인자 달린 칸이 남지 않아 그 화면에 갇히지 않는다.
+back()
+out.back = here()
+process.stdout.write(JSON.stringify(out))
+"""
+
+_LEAVING_RUNNER = """
+const entries = ['http://app.test/']
+let index = 0
+let now = 0
+const history = {
+  state: {},
+  pushState(state, title, url) {
+    entries.splice(index + 1)
+    entries.push(new URL(url, entries[index]).href)
+    index += 1
+  },
+  replaceState(state, title, url) {
+    entries[index] = new URL(url, entries[index]).href
+  },
+}
+guardHistory(history, () => entries[index], () => now, 1000)
+const out = {}
+const all = () => entries.map((url) => url.replace('http://app.test', ''))
+// HOME 칸 — st.switch_page 가 떠나는 HOME 칸에 옮길 화면 인자를 적고(같은 경로)
+// 곧이어 옮긴 화면을 쌓는다. 공정 Capa 상세는 받은 인자를 지운다.
+history.pushState({}, '', '/?process=A&month=202607&from=home')
+now = 60
+history.pushState({}, '', '/process_capa_detail?process=A&month=202607&from=home')
+now = 200
+history.pushState({}, '', '/process_capa_detail')
+out.home = [all(), index]
+// 인자를 지운 직후 다른 화면으로 옮겨도 지운 칸(인자 달린 칸)을 되살리지 않는다.
+now = 300
+history.pushState({}, '', '/required_shortening')
+out.consumed = all()
+// 같은 경로 바꾸기 뒤 늦게 온 다른 경로 쌓기(기다림 밖)는 되돌리지 않는다.
+now = 1000
+history.pushState({}, '', '/required_shortening?k=1')
+now = 2500
+history.pushState({}, '', '/space_status?k=1')
+out.late = all().slice(-2)
 process.stdout.write(JSON.stringify(out))
 """
 
 
-def test_a_tab_move_stacks_one_history_entry() -> None:
-    """탭으로 화면을 옮길 때 브라우저 기록은 한 칸만 쌓인다 — `st.switch_page` 는 떠나는 화면 주소로
-    한 칸 먼저 쌓아 뒤로가기 한 번이 제자리였다(E2E 결함, 명세 B3 「뒤로가기 → 이전 화면」). 걸어
-    둔 동안 떠나는 경로와 같은 경로의 쌓기만 칸 바꾸기로 돌리고, 옮긴 경로는 그대로 쌓은 뒤
-    거둔다."""
+def test_a_screen_move_stacks_one_history_entry_and_back_leaves_a_link_target() -> None:
+    """화면 이동 한 번은 브라우저 기록 한 칸이다. 서버가 주소 인자를 바꾸면 Streamlit 프런트가 지금
+    경로로 한 칸 쌓는다 — `st.switch_page` 는 떠나는 화면 주소로 먼저 쌓아 뒤로가기 한 번이
+    제자리였고(E2E 결함, 명세 B3 「뒤로가기 → 이전 화면」), 링크 인자를 받아 지우는 화면(공정 Capa
+    상세 `?process=` 등)은 인자 달린 칸 뒤에 또 쌓아 뒤로가기가 그 화면에 갇혔다(E2E 결함). 같은
+    경로의 쌓기는 늘 그 칸 바꾸기로 돌린다."""
     out = _node(_HISTORY_RUNNER)
 
-    assert out["plain"] == 2
-    assert out["afterSame"] == [2, "http://app.test/calculation_result?theme=dark"]
-    assert out["afterMove"] == [3, "/load_conversion", False]
-    assert out["afterDisarm"] == 4
-    assert out["expired"] == [5, False]
-    assert out["elsewhere"] == [2, False]
+    assert out["sameScreen"] == [1, "/calculation_result?a=1"]
+    assert out["tabMove"] == [2, "/load_conversion?theme=dark"]
+    assert out["linkArrival"] == [3, "/process_capa_detail?theme=dark"]
+    assert out["back"] == "/load_conversion?theme=dark"
 
 
 _QUEUE_RUNNER = """
@@ -274,16 +306,86 @@ def test_taps_while_a_tab_move_is_in_flight_wait_and_only_the_last_is_sent() -> 
     assert out["closed"] is None
 
 
-def test_moving_taps_arm_both_guards_before_sending() -> None:
-    """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 기록 한
-    칸·누름 기다림을 건다 — 보낸 뒤에 걸면 빠른 서버의 첫 쌓기를 놓친다. 지킴이는 문서에 하나다."""
+_HOLD_RUNNER = """
+const out = {}
+// 편집표에서 막 손을 뗀 누름인가 — 누를 때 포커스가 편집표였거나 마지막 편집표 입력이 5초 안이다.
+out.pending = [
+  editPending(1000, -Infinity, true, 5000),
+  editPending(1000, 900, false, 5000),
+  editPending(9000, 900, false, 5000),
+]
+// 칸을 쓰는 중에 탭을 누름 — 편집기가 바깥 누름에 편집을 적용해 회차를 청한다.
+// 서버가 답하기 전(돌지 않음·data 그대로)에는 기다리고, 회차가 도는 동안도 기다리며,
+// 새 data(편집 회차의 탭 줄 — leave 가 찼다)가 오고 회차가 끝나면 그때 묻고 보낸다.
+const before = { leave: '' }
+const after = { leave: '기준 정보 · UPEH' }
+const hold = { at: 0, data: before }
+out.flow = [
+  holdVerdict(hold, 100, false, before, 400, 10000),
+  holdVerdict(hold, 200, true, before, 400, 10000),
+  holdVerdict(hold, 300, true, after, 400, 10000),
+  holdVerdict(hold, 350, false, after, 400, 10000),
+]
+// 편집이 회차를 청하지 않았으면(값이 같다) 최소 기다림 뒤 보낸다.
+// 회차가 끝없이 돌면 최대 기다림 뒤 보낸다.
+out.noRun = [
+  holdVerdict(hold, 399, false, before, 400, 10000),
+  holdVerdict(hold, 400, false, before, 400, 10000),
+]
+out.cap = holdVerdict(hold, 10000, true, before, 400, 10000)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_press_right_after_a_table_edit_waits_for_that_edit_before_asking_to_leave() -> None:
+    """떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 Enter 직후 0.2초
+    안에 다른 탭을 누르면 그 편집을 실은 회차가 아직 돌아오지 않아 확인 없이 옮기고 편집이 말없이
+    사라졌다(E2E 결함 — 기준 정보 UPEH). 편집표에서 막 손을 뗀 누름은 그 회차가 돌아올 때까지
+    붙들었다가 새 data 로 묻는다."""
+    out = _node(_HOLD_RUNNER)
+
+    assert out["pending"] == [True, True, False]
+    assert out["flow"] == ["wait", "wait", "wait", "go"]
+    assert out["noRun"] == ["wait", "go"]
+    assert out["cap"] == "go"
+
+
+def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
+    """다른 탭 고르기와 지금 탭 × 는 묻기(`leaveOk`) 전에 편집표에서 막 손을 뗀 누름인지
+    본다. 누르는 순간의 편집표 포커스는 `pointerdown`(포커스가 탭으로 옮기기 전)에서 적는다."""
+    select = JS[JS.index("const select = (item) => {") :]
+    assert select.index("if (fresh())") < select.index("holding(item")
+    close = JS[JS.index("const close = (item) => {") :]
+    assert close.index("!fresh()") < close.index("closeNow(item)")
+    assert "S.pressFromGrid = S.gridFocused" in JS
+    assert "document.addEventListener(type, S.onEdit, true)" in JS
+    assert "document.removeEventListener(type, S.onEdit, true)" in JS
+
+
+def test_a_switch_page_leaves_the_leaving_entry_with_its_own_address() -> None:
+    """`st.switch_page` 의 첫 쌓기는 떠나는 칸 주소를 옮길 화면 인자로 바꾼다 — HOME 칸이면 HOME
+    기록 칸이 `/?process=…&from=home` 이 되어, 뒤로가기로 돌아온 HOME 에서 사이드바로 옮기면 그
+    인자가 따라가 링크처럼 적용됐다(E2E 결함 — HOME 칸 이동이 세 칸을 쌓고 첫 칸이 인자 달린 HOME).
+    옮긴 화면을 곧이어 같은 인자로 쌓으면 떠나는 칸을 원래 주소로 되돌린다. 링크 인자를 받아 지운
+    칸은 되살리지 않는다."""
+    out = _node(_LEAVING_RUNNER)
+
+    assert out["home"] == [["/", "/process_capa_detail"], 1]
+    assert out["consumed"] == ["/", "/process_capa_detail", "/required_shortening"]
+    assert out["late"] == ["/required_shortening?k=1", "/space_status?k=1"]
+
+
+def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_document() -> None:
+    """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 누름
+    기다림을 건다. 기록 지킴이는 걸고 풀지 않고 늘 걸려 있다 — 문서에 하나다."""
     send_select = JS.index("S.send('select'")
     assert JS.rindex("moving(item.dataset.id)", 0, send_select) > JS.rindex(
         "busy(item)", 0, send_select
     )
     send_close = JS.index("S.send('close'")
     assert 0 < JS.rindex("if (leaving) moving(null)", 0, send_close)
-    assert "historyGuard.arm(BUSY_MS)" in JS
-    assert "window.__capaTabsHistory" in JS
+    assert "historyGuard" not in JS
+    assert "if (!window.__capaHistoryGuard) {" in JS
+    assert "window.__capaHistoryGuard = guardHistory(window.history" in JS
     # 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다(1.63 프런트 속성).
     assert "data-test-script-state" in JS and "'running'" in JS

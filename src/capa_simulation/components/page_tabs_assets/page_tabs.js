@@ -7,10 +7,14 @@
 // 아니라 본 문서에서 돌아 문서 capture 단계에서 Streamlit(React 뿌리)보다 먼저 받는다. 서버가 옮긴 뒤 되돌리면 두
 // 화면이 브라우저 기록에 쌓여 뒤로가기가 그 화면에 갇힌다(`page_tabs_state.switch_to_queued_tab` 은 마지막 안전망이다).
 // 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
-// 탭으로 화면을 옮기는 누름(다른 탭 고르기·지금 탭 닫기)은 둘을 더 지킨다. (1) 기록 한 칸 — 서버의 `st.switch_page` 는
-// 주소 인자를 다시 적어 떠나는 화면 주소를 한 칸 먼저 쌓고 옮긴 화면을 또 쌓는다(`<tabs-history>`). (2) 한 번에 하나 —
-// 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 올 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>`
-// 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`).
+// 브라우저 기록은 문서 하나에서 지킨다 — 서버가 주소 인자를 바꿀 때 Streamlit 프런트가 쌓는 칸은 늘 칸 바꾸기다
+// (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
+// 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 올
+// 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이
+// 떼어 돌린다(`tests/test_page_tabs_assets.py`).
+// 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
+// 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
+// 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
@@ -18,44 +22,71 @@ const BUSY_MS = 10000
 // 보낸 이동이 끝났는지 다시 보는 간격 — 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다.
 const SETTLE_POLL_MS = 100
 const APP_ROOT = '[data-testid="stApp"]'
+// 편집표(glide 격자)와 그 칸 편집기. 편집기는 격자 밖 포털에 뜰 수 있어 그 틀(`gdg-clip-region`)도 본다.
+const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"], .gdg-clip-region'
+// 편집표에서 손을 뗀 뒤 이만큼 안의 누름은 붙든다(쓰는 중이면 시간과 상관없이 붙든다).
+const EDIT_MS = 5000
+// 붙든 누름은 적어도 이만큼은 편집 회차를 기다린다 — 편집이 보낸 회차 요청에 서버가 답해 뿌리 표지가 「돈다」로 바뀌기 전.
+const HOLD_MS = 400
+// `st.switch_page` 가 떠나는 칸에 적은 옮길 화면 인자를 되돌리는 기다림 — 그 바로 뒤 옮긴 화면 쌓기가 이 안에 온다.
+const LEAVE_MS = 1000
 
 // <tabs-history>
-// 탭 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 의 `st.switch_page` 는 주소 인자를 다시 적느라
-// (`page_info_changed`) 프런트가 **지금 경로**로 한 칸 쌓고(`pushState`), 옮긴 화면에서 그 경로로 또 한 칸 쌓는다 —
-// 뒤로가기 한 번이 제자리였다. 탭 줄이 이동을 보낼 때 `arm` 하면 그 뒤 잠깐(`ms`) 동안 떠나는 경로와 같은 경로로
-// 쌓는 것을 그 칸 바꾸기(`replaceState`)로 돌린다. 다른 경로로 쌓으면(옮긴 화면) 그대로 쌓고 거둔다. 처리기는
-// 문서에 하나다(`history` 의 `pushState` 를 한 번 감싼다) — 걸지 않은 동안은 그대로 넘긴다.
-function guardHistory(history, href, clock) {
+// 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
+// (`page_info_changed` — `st.query_params` 쓰기·지우기, `st.switch_page` 의 인자 다시 적기) **지금 경로**로 한 칸
+// 쌓는다(`pushState`). 그래서 (1) `st.switch_page` 는 떠나는 화면 경로로 한 칸 먼저 쌓고 옮긴 화면을 또 쌓아 뒤로가기
+// 한 번이 제자리였고, (2) 링크 인자를 받아 지우는 화면(공정 Capa 상세 `?process=`·Space `?layer=`·제약 시뮬레이션)은
+// 인자 달린 칸 뒤에 인자 없는 칸을 또 쌓아, 뒤로가기로 인자 달린 칸에 닿으면 화면이 그 인자를 다시 지우며 또 쌓아 —
+// 앞쪽 기록이 잘려 — 그 화면을 떠나지 못했다(E2E 결함). 지금 경로와 같은 경로로 쌓는 것은 늘 그 칸 바꾸기
+// (`replaceState`)로 돌린다 — 화면을 옮기는 쌓기(다른 경로)만 칸을 더한다. 처리기는 문서에 하나다(`history` 의
+// `pushState` 를 한 번 감싼다).
+// `st.switch_page` 의 첫 쌓기는 떠나는 칸 주소를 옮길 화면 인자로 바꾼다(HOME 칸 → `/?process=…&from=home`). 그대로
+// 두면 뒤로가기로 돌아온 그 칸이 남의 인자를 달고, 거기서 사이드바로 옮기면 그 인자가 따라가 링크처럼 적용됐다. 그래서
+// 인자를 지우지 않은(더하거나 바꾸기만 한) 칸 바꾸기 뒤 `ms` 안에 같은 인자로 다른 경로를 쌓으면 — 그 쌓기가
+// `switch_page` 의 옮긴 화면이다 — 떠나는 칸을 원래 주소로 되돌리고 쌓는다. 인자를 지운 칸 바꾸기(링크 인자를 받아
+// 지운 화면)는 되돌리지 않는다.
+function guardHistory(history, href, clock, ms) {
   const push = history.pushState
-  const armed = { from: null, until: 0 }
-  const pathOf = (url) => new URL(String(url), href()).pathname
+  const at = (url) => new URL(String(url), href())
+  let covered = null
   history.pushState = function (state, title, url) {
-    if (armed.from !== null && url !== undefined && url !== null) {
-      const here = pathOf(href())
-      if (clock() >= armed.until || here !== armed.from) {
-        armed.from = null
-      } else if (pathOf(url) === here) {
-        return history.replaceState(state, title, url)
-      } else {
-        armed.from = null
-      }
+    if (url === undefined || url === null) return push.apply(this, arguments)
+    const here = at(href())
+    const next = at(url)
+    if (next.pathname === here.pathname) {
+      const kept = [...here.searchParams.keys()].every((name) => next.searchParams.has(name))
+      covered = kept
+        ? { url: here.pathname + here.search + here.hash, state: history.state, search: next.search, at: clock() }
+        : null
+      return history.replaceState(state, title, url)
+    }
+    const prior = covered
+    covered = null
+    if (prior !== null && clock() - prior.at < ms && next.search === prior.search) {
+      history.replaceState(prior.state, '', prior.url)
     }
     return push.apply(this, arguments)
   }
-  return {
-    arm(ms) {
-      armed.from = pathOf(href())
-      armed.until = clock() + ms
-    },
-    disarm() {
-      armed.from = null
-    },
-    armed() {
-      return armed.from !== null && clock() < armed.until
-    },
-  }
+  return history
 }
 // </tabs-history>
+
+// <tabs-hold>
+// 편집표에서 막 손을 뗀 누름을 붙든다. `editPending` — 누르는 순간 포커스가 편집표(칸 편집기 포함)에 있었거나 마지막 편집표
+// 입력에서 `ms` 가 지나지 않았다. `holdVerdict` 는 붙든 누름({at, data})을 'wait'(더 기다린다)·'go'(지금 data 로 묻고
+// 보낸다)로 가른다 — 앱 회차가 돌면 기다리고, 돌지 않아도 새 data 가 오지 않았으면 `minMs` 까지는 기다린다(편집 회차
+// 요청이 아직 서버에 닿지 않았을 수 있다). `maxMs` 가 지나면 그대로 보낸다.
+function editPending(now, editAt, focused, ms) {
+  return Boolean(focused) || now - editAt < ms
+}
+function holdVerdict(hold, now, running, data, minMs, maxMs) {
+  const elapsed = now - hold.at
+  if (elapsed >= maxMs) return 'go'
+  if (running) return 'wait'
+  if (elapsed < minMs && data === hold.data) return 'wait'
+  return 'go'
+}
+// </tabs-hold>
 
 // <tabs-queue>
 // 옮기는 동안 누른 탭은 보내지 않고 기다린다 — 마지막 누름 하나만. 보낸 고르기는 옮긴 화면의 탭 줄(지금 탭이 바뀐
@@ -152,10 +183,13 @@ export default function (component) {
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, queue: createSelectQueue(), settleTimer: 0,
+    onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
   })
-  // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다.
-  const historyGuard = window.__capaTabsHistory
-    || (window.__capaTabsHistory = guardHistory(window.history, () => window.location.href, Date.now))
+  // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 탭 줄은 앱 전체 회차마다
+  // 페이지보다 먼저 그리므로 첫 회차 뒤로는 모든 화면의 주소 바꾸기가 이 처리기를 지난다.
+  if (!window.__capaHistoryGuard) {
+    window.__capaHistoryGuard = guardHistory(window.history, () => window.location.href, Date.now, LEAVE_MS)
+  }
   // 처리기는 처음 한 번 단다. 지금 data·트리거 함수는 S 에서 읽는다 — 다시 불릴 때마다 새 값으로 바뀐다.
   S.data = data
   S.send = setTriggerValue
@@ -244,9 +278,11 @@ export default function (component) {
     const at = list.children[index]
     if (at !== item) list.insertBefore(item, at || null)
   })
-  // 새 data 가 왔으면 누른 뒤 기다리던 표지를 걷는다 — 아직 보내지 않고 기다리는 누름(`<tabs-queue>`)의 표지는 둔다.
+  // 새 data 가 왔으면 누른 뒤 기다리던 표지를 걷는다 — 아직 보내지 않고 기다리는 누름(`<tabs-queue>`·`<tabs-hold>`)의
+  // 표지는 둔다.
   for (const [id, item] of S.items) {
-    setAttr(item.__parts.tab, 'aria-busy', id === S.queue.waiting ? 'true' : null)
+    const waiting = id === S.queue.waiting || (S.hold !== null && S.hold.id === id)
+    setAttr(item.__parts.tab, 'aria-busy', waiting ? 'true' : null)
   }
 
   // 지금 탭이 늘 보이게 목록의 가로 위치만 맞춘다 — `scrollIntoView` 는 본문 세로 스크롤까지 움직일 수 있다.
@@ -265,9 +301,8 @@ export default function (component) {
     clearTimeout(S.busyTimer)
     S.busyTimer = setTimeout(() => setAttr(item.__parts.tab, 'aria-busy', null), BUSY_MS)
   }
-  // 화면을 옮기는 누름을 보내기 직전 — 기록 한 칸(`<tabs-history>`)과 한 번에 하나(`<tabs-queue>`)를 건다.
+  // 화면을 옮기는 누름을 보내기 직전 — 한 번에 하나(`<tabs-queue>`)를 건다. 기록 한 칸은 늘 걸린 지킴이가 맡는다.
   const moving = (id) => {
-    historyGuard.arm(BUSY_MS)
     sentSelect(S.queue, id, S.data.active, Date.now())
     clearTimeout(S.settleTimer)
     S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
@@ -296,12 +331,68 @@ export default function (component) {
     const item = next === null ? null : S.items.get(next)
     if (item) sendSelect(item)
   }
+  const appRunning = () => {
+    const root = document.querySelector(APP_ROOT)
+    const run = root ? root.getAttribute('data-test-script-state') : null
+    return run === 'running' || run === 'rerunRequested'
+  }
+  // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다.
+  const holding = (item, go) => {
+    busy(item)
+    S.hold = { id: item.dataset.id, at: Date.now(), data: S.data, go }
+    clearTimeout(S.holdTimer)
+    S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
+  }
+  function release() {
+    clearTimeout(S.holdTimer)
+    const hold = S.hold
+    if (!hold) return
+    if (holdVerdict(hold, Date.now(), appRunning(), S.data, HOLD_MS, BUSY_MS) === 'wait') {
+      S.holdTimer = setTimeout(() => release(), SETTLE_POLL_MS)
+      return
+    }
+    S.hold = null
+    // 붙든 표지는 걷는다 — 보내면 `sendSelect` 가 다시 단다(떠나기를 취소하면 표지 없이 남는다).
+    const held = S.items.get(hold.id)
+    if (held) setAttr(held.__parts.tab, 'aria-busy', null)
+    hold.go()
+  }
+  // 이 누름이 편집표에서 막 손을 뗀 누름이 아닌가 — 아니면 곧바로 묻고 보낸다.
+  const fresh = () => {
+    const pending = editPending(Date.now(), S.editAt, S.pressFromGrid, EDIT_MS)
+    S.pressFromGrid = false
+    return !pending
+  }
   const select = (item) => {
     const verdict = pressSelect(S.queue, item.dataset.id, S.data.active, Date.now(), BUSY_MS)
     if (verdict === 'wait') busy(item)
-    if (verdict === 'send') sendSelect(item)
+    if (verdict !== 'send') return
+    if (fresh()) {
+      S.hold = null
+      sendSelect(item)
+      return
+    }
+    const id = item.dataset.id
+    holding(item, () => {
+      const target = S.items.get(id)
+      if (target && !target.hidden && id !== S.data.active) sendSelect(target)
+      else if (target) setAttr(target.__parts.tab, 'aria-busy', null)
+    })
   }
   const close = (item) => {
+    const id = item.dataset.id
+    if (item.__parts.close.hidden) return
+    if (id === S.data.active && !fresh()) {
+      holding(item, () => {
+        const target = S.items.get(id)
+        if (target && !target.hidden) closeNow(target)
+      })
+      return
+    }
+    S.hold = null
+    closeNow(item)
+  }
+  const closeNow = (item) => {
     const id = item.dataset.id
     if (item.__parts.close.hidden) return
     const leaving = id === S.data.active
@@ -314,7 +405,11 @@ export default function (component) {
   }
   // 2단계(끌어서 떼어 내기·차례 바꾸기)가 포인터 처리를 붙일 자리.
   const startDrag = () => {}
-  list.onpointerdown = startDrag
+  // 누르는 순간(포커스가 탭으로 옮기기 전) 편집표에 포커스가 있었는지 적는다 — 칸 편집기는 바깥 누름에 편집을 적용하고 닫는다.
+  list.onpointerdown = (event) => {
+    S.pressFromGrid = S.gridFocused
+    startDrag(event)
+  }
   list.onclick = (event) => {
     const button = event.target.closest('button')
     const item = button && button.closest('.capa-tabs-item')
@@ -370,6 +465,15 @@ export default function (component) {
     // 글 틀은 파이썬 상수(`TEXT`)라 처리기를 단 회차의 것을 그대로 쓴다.
     return fill(text.limit, { max: D.max, label: pages[href] })
   }
+  if (!S.onEdit) {
+    // 편집표에서 손을 뗀 때와 포커스가 편집표에 있는지를 문서 capture 단계에서 적는다(DOM 이 아니라 시각·참거짓만).
+    const inGrid = (node) => Boolean(node && node.closest && node.closest(GRID))
+    S.onEdit = (event) => {
+      if (event.type === 'focusin') S.gridFocused = inGrid(event.target)
+      if (inGrid(event.target)) S.editAt = Date.now()
+    }
+    for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.addEventListener(type, S.onEdit, true)
+  }
   if (!S.onLink) {
     // 왼쪽 단추 누름만 본다 — Streamlit 은 보조 키를 눌러도 같은 창에서 옮긴다. 가운데 단추(새 브라우저 탭)는
     // 새 접속이라 막지 않는다. 새 창으로 여는 바깥 링크도 그대로다.
@@ -388,12 +492,18 @@ export default function (component) {
 
   // 새 data 가 왔다 — 보낸 이동이 끝났는지 본다(지금 탭이 바뀐 data 와 그 회차의 끝이 표지다).
   if (S.queue.flight !== null) settle()
+  // 붙든 누름이 있으면 새 data 로 다시 본다.
+  if (S.hold) release()
 
   return () => {
     clearTimeout(S.noticeTimer)
     clearTimeout(S.busyTimer)
     clearTimeout(S.settleTimer)
-    historyGuard.disarm()
+    clearTimeout(S.holdTimer)
+    if (S.onEdit) {
+      for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.removeEventListener(type, S.onEdit, true)
+    }
+    S.onEdit = null
     if (S.onFonts && document.fonts && document.fonts.removeEventListener) {
       document.fonts.removeEventListener('loadingdone', S.onFonts)
     }

@@ -644,6 +644,34 @@ def test_the_same_link_applies_again_after_the_address_was_cleared() -> None:
     assert _entry(app).process == "DEMO-C"
 
 
+def test_a_back_step_onto_the_link_entry_does_not_reapply_the_link_while_staying() -> None:
+    """뒤로가기로 인자 달린 기록 칸(`…?process=…`)에 닿으면 프런트가 그 주소로 회차를 청한다. 이
+    화면에 머무는 동안이면 링크를 다시 적용하지 않고 인자만 지운다 — 다시 적용하면 뒤로가기마다
+    링크 공정·달로 되돌아갔다(E2E 결함 — 필요 단축 일정 카드·HOME 칸·제약 시뮬레이션 링크). 다른
+    화면에서 같은 링크로 다시 들어오면 새 방문이라 다시 적용한다."""
+    link = {"process": "DEMO-C", "month": "202602", "from": "shortening"}
+    app = AppTest.from_function(_detail_entry_app)
+    app.query_params.update(link)
+    app.run()
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-C", 202602)
+
+    # 직전에 끝까지 돈 실행이 이 페이지였다 — `app.py` 의 실행 표지를 흉내 낸다. ▶ 로 달을 옮겼다.
+    app.session_state[APP_RUN_STATE_KEY] = {"page": app.session_state["test_page_hash"]}
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
+    app.run()
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-C", 202603)
+
+    app.query_params.update(link)
+    app.run()
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-C", 202603)
+    assert "process" not in _query(app)
+
+    app.session_state[APP_RUN_STATE_KEY] = {"page": "다른 화면"}
+    app.query_params.update(link)
+    app.run()
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-C", 202602)
+
+
 def test_an_address_process_without_a_month_opens_that_process_default_month() -> None:
     app = AppTest.from_function(_detail_entry_app).run()
     app.query_params.update({"process": "DEMO-A"})
