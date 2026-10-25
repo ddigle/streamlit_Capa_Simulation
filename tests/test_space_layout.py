@@ -52,10 +52,15 @@ from capa_simulation.services.floor_layout_profile import (
 )
 from capa_simulation.services.space_color_basis import (
     CAPA_LEVELS,
+    COLOR_BASES,
     COLOR_BASIS_CAPA,
+    COLOR_BASIS_LINE_TYPE,
+    COLOR_BASIS_SHORTENING,
     capa_group_of,
     capa_groups,
     capa_number,
+    color_basis_groups,
+    color_groups,
 )
 from capa_simulation.services.space_unit_state import unit_boundaries
 
@@ -492,6 +497,16 @@ def test_unit_appearance_carries_the_checked_group_colour_and_the_boundary_dates
     assert looks["U5"]["delays"] == [["2026-09-01", None]] and looks["U5"]["realFrom"] is None
     assert looks["U6"]["stopOn"] == "2026-10-01" and looks["U6"]["exitOn"] == "2026-11-01"
     assert looks["U7"]["flag"] is True
+
+
+def test_the_shortening_basis_has_no_groups_and_paints_nothing_by_group() -> None:
+    """셋째 색 기준 「필요 단축」(2026-10-24 결정)은 그룹이 없다 — 체크 칸이 비고 모든 호기가 결측
+    그룹이라 기본 회색에서 단축 구간이 칠한다."""
+    assert COLOR_BASES == (COLOR_BASIS_LINE_TYPE, COLOR_BASIS_CAPA, COLOR_BASIS_SHORTENING)
+    equipment, _ = _legend_floor()
+    assert color_basis_groups(COLOR_BASIS_SHORTENING, capa_groups(equipment["투자Capa"])) == ()
+    assert color_groups(equipment, COLOR_BASIS_SHORTENING, ()).isna().all()
+    assert ColorChoice(COLOR_BASIS_SHORTENING, (), frozenset()).styles() == ()
 
 
 def test_capa_groups_take_the_teal_ramp_by_number() -> None:

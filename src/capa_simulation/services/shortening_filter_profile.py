@@ -25,6 +25,8 @@ from datetime import datetime
 __all__ = [
     "ShorteningFilterProfile",
     "absent_filter_processes",
+    "effective_filter_months",
+    "filter_month_window",
     "merge_filter_processes",
     "normalize_filter_month",
     "normalize_filter_processes",
@@ -72,6 +74,40 @@ def normalize_filter_processes(values: Iterable[object]) -> tuple[str, ...]:
 def seeded_filter_month(stored: int | None, options: Sequence[int], fallback: int) -> int:
     """심을 달. 저장된 달이 지금 고를 수 있는 달이면 그것, 아니면 코드 기본값이다."""
     return stored if stored is not None and stored in options else fallback
+
+
+def filter_month_window(start: int, end: int, options: Sequence[int]) -> list[int]:
+    """시작·끝 달 사이(양 끝 포함)의 고를 수 있는 달. 시작이 끝보다 늦으면 바꿔 읽는다."""
+    first, last = sorted((int(start), int(end)))
+    return [month for month in options if first <= month <= last]
+
+
+def effective_filter_months(
+    options: Sequence[int],
+    profile: ShorteningFilterProfile,
+    session_start: object,
+    session_end: object,
+) -> list[int]:
+    """필요 단축 일정 화면이 지금 쓸 달 — 그 화면 시작·끝 월 칸의 심기를 **읽기만** 한다.
+
+    칸 값(`session_start`·`session_end`)이 None 이면(칸이 없다) 공용 프로필 달로 심은 값
+    (`seeded_filter_month`, 선택지 밖이면 끝값), 칸 값이 선택지 밖이면 끝값, 그 밖은 칸 값이다.
+    Space 「필요 단축」 보기가 이것으로 필요 단축 일정과 같은 달을 낸다. 선택지가 비면 빈 목록이다.
+    """
+    if not options:
+        return []
+    values: list[int] = []
+    for stored, saved, fallback in (
+        (session_start, profile.start_month, options[0]),
+        (session_end, profile.end_month, options[-1]),
+    ):
+        if stored is None:
+            values.append(seeded_filter_month(saved, options, fallback))
+        elif isinstance(stored, int) and stored in options:
+            values.append(stored)
+        else:
+            values.append(fallback)
+    return filter_month_window(values[0], values[1], options)
 
 
 def absent_filter_processes(stored: Sequence[str], visible: Collection[str]) -> list[str]:

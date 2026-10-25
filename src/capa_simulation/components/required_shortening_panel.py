@@ -145,6 +145,7 @@ from capa_simulation.services.shortening_baseline import (
 from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
     absent_filter_processes,
+    filter_month_window,
     seeded_filter_month,
 )
 from capa_simulation.services.shortening_watch import (
@@ -848,10 +849,9 @@ def _render_month_range(
             on_change=on_change,
             args=args,
         )
-    first, last = sorted((int(start), int(end)))
     if int(start) > int(end):
         st.caption("시작 월이 끝 월보다 늦어 바꿔 읽었습니다.")
-    return [month for month in options if first <= month <= last]
+    return filter_month_window(int(start), int(end), options)
 
 
 def _render_process_filter(

@@ -35,6 +35,7 @@ from capa_simulation.services.floor_layout_profile import (
 from capa_simulation.services.space_color_basis import (
     COLOR_BASIS_CAPA,
     COLOR_BASIS_LINE_TYPE,
+    COLOR_BASIS_SHORTENING,
     CapaGroup,
     color_groups,
 )
@@ -230,7 +231,9 @@ class ColorChoice:
     enabled: frozenset[str]
 
     def styles(self) -> tuple[ColorGroupStyle, ...]:
-        """그 기준의 모든 그룹(체크박스 차례)과 색."""
+        """그 기준의 모든 그룹(체크박스 차례)과 색. 필요 단축은 그룹이 없다(색은 단축 구간)."""
+        if self.basis == COLOR_BASIS_SHORTENING:
+            return ()
         if self.basis == COLOR_BASIS_CAPA:
             return tuple(
                 ColorGroupStyle(
