@@ -1008,17 +1008,17 @@ def _reserved_reasons(reserved: ReservedNames) -> dict[str, str]:
     return reasons
 
 
-def _parse_created(
+def _require_new_unit_name(
     unit_id: str,
-    raw: Mapping[str, Any],
-    taken: set[str],
-    options: Mapping[str, Sequence[str]],
+    taken: Collection[str],
+    parent_ids: Collection[str],
     reserved: Mapping[str, str],
-) -> CreatedUnit:
-    """새 호기 하나. 이름은 설비명·Main 설비와 대소문자·앞뒤 공백 무시로도 겹칠 수 없다(이름
-    바꾸기와 같은 규칙)."""
+) -> None:
+    """새 호기 이름 규칙(Space 편집기 새 호기·설비 마스터 「새 호기」 칸 공용): 글자 규칙
+    (`_require_name`), 설비명·Main 설비 이름과 대소문자·앞뒤 공백 무시 겹침, 쓸 수 없는 이름
+    (`_reserved_reasons`)."""
     _require_name(unit_id, "새 호기 이름")
-    parent = _same_name(unit_id, options.get("parentIds", ()))
+    parent = _same_name(unit_id, parent_ids)
     if parent is not None:
         raise ValueError(f"이미 Main 설비로 쓰는 이름입니다: {_named(unit_id, parent)}")
     holder = _same_name(unit_id, taken)
@@ -1029,6 +1029,38 @@ def _parse_created(
             f"새 호기 이름 {with_topic_particle(unit_id)} 쓸 수 없습니다 — "
             f"{reserved[scalar_match_key(unit_id)]}."
         )
+
+
+def check_new_unit_name(
+    name: str, *, master: pd.DataFrame, reserved: ReservedNames | None = None
+) -> str | None:
+    """새 호기 이름 하나를 보고 걸리면 그 까닭, 받으면 None — 설비 마스터 「새 호기」 칸(개편 단계
+    C)이 Space 편집기 새 호기와 **같은 규칙**(`_require_new_unit_name`, 13장 D12 — 대소문자만 다른
+    이름도 막음)으로 본다. `master` 는 편집본 설비 마스터(그 설비명·Main 설비 이름과 겹치지 않아야
+    한다), `reserved` 는 `reserved_names`. 문구는 Space 거부 문구 그대로다."""
+    unit_id = name.strip()
+    try:
+        _require_new_unit_name(
+            unit_id,
+            _name_set(master[EQUIPMENT_ID_COLUMN]) if EQUIPMENT_ID_COLUMN in master.columns else (),
+            set(_parents(master).dropna().astype(str)),
+            _reserved_reasons(reserved or ReservedNames()),
+        )
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _parse_created(
+    unit_id: str,
+    raw: Mapping[str, Any],
+    taken: set[str],
+    options: Mapping[str, Sequence[str]],
+    reserved: Mapping[str, str],
+) -> CreatedUnit:
+    """새 호기 하나. 이름은 설비명·Main 설비와 대소문자·앞뒤 공백 무시로도 겹칠 수 없다(이름
+    바꾸기와 같은 규칙)."""
+    _require_new_unit_name(unit_id, taken, options.get("parentIds", ()), reserved)
     process = _text(raw.get("process")).strip()
     line = _text(raw.get("line")).strip()
     use = _text(raw.get("use")).strip()

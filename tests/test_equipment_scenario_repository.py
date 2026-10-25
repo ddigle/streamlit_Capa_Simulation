@@ -644,6 +644,55 @@ def test_with_unit_propagation_off_a_new_unit_is_unscheduled_elsewhere(tmp_path:
     assert "EQ-03" in other.equipment["설비명"].tolist()
 
 
+def test_new_units_chosen_one_by_one_spread_only_where_chosen(tmp_path: Path) -> None:
+    """새 호기마다 고른 함께 넣기(개편 명세 D8 — `propagate_units`): 고른 이름의 새 호기만 다른
+    시나리오에 같은 일정으로 들어가고 나머지는 그 시나리오에서 일정 없음이다. 이름이 있으면 하나짜리
+    `propagate_new_units` 는 보지 않는다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+    session = _session(repository)
+    edited = _with_unit(
+        session.equipment, "EQ-03", 50.0, 반입일정=pd.Timestamp("2026-09-02"), Qual일정=pd.NaT
+    )
+    edited = _with_unit(edited, "EQ-04", 70.0, 반입일정=pd.Timestamp("2026-09-03"), Qual일정=pd.NaT)
+
+    result = repository.save_equipment(
+        _request(
+            session,
+            equipment=edited,
+            propagate_new_units=False,
+            propagate_units=frozenset({" EQ-04 ", "EQ-01", "없는 이름"}),
+        )
+    )
+    other = _session(repository, setup.equipment_scenario_id)
+
+    assert result.new_units == ("EQ-03", "EQ-04")
+    assert result.propagated == (
+        PropagatedRevision(setup.equipment_scenario_id, "셋업 실무", 2, 1, (), 0),
+    )
+    assert other.unscheduled_units == frozenset({"EQ-03"})
+    assert _value(other, "EQ-04", "반입일정") == pd.Timestamp("2026-09-03")
+
+
+def test_an_empty_choice_of_new_units_spreads_none(tmp_path: Path) -> None:
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+    session = _session(repository)
+
+    result = repository.save_equipment(
+        _request(
+            session,
+            equipment=_with_unit(session.equipment, "EQ-03", 50.0),
+            propagate_units=frozenset(),
+        )
+    )
+
+    assert result.propagated == ()
+    assert _session(repository, setup.equipment_scenario_id).unscheduled_units == frozenset(
+        {"EQ-03"}
+    )
+
+
 def test_a_new_downtime_spreads_but_a_duplicate_or_an_unscheduled_unit_is_skipped(
     tmp_path: Path,
 ) -> None:

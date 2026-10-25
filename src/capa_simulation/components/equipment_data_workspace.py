@@ -219,12 +219,22 @@ GRID_MEMO_KEY = "equipment_grid_memo_v1"
 # 이름 바꾼 호기를 새 id 로 옮긴다, 개편 명세 7-3). 편집본에 없는 id 는 회차마다 거른다.
 GRID_LOADED_KEY = "equipment_grid_loaded_v1"
 GRID_DETAIL_KEY = "equipment_grid_detail_v1"
+# 오른쪽 「새 호기」 칸(개편 단계 C)에서 넣은 호기마다 고른 「다른 설비 시나리오에도 같은
+# 일정으로 넣기」 {지금 이름 → bool}(개편 명세 13장 D8). 저장이 이것으로
+# `EquipmentSaveRequest.propagate_units` 를 만든다 — 그 칸에서 넣지 않은 새 호기(표 붙여넣기·
+# 엑셀·CSV·Space)는 저장 칸 체크를 따른다. 새 호기 이름을 바꾸면 따라간다(`follow_unit_renames`).
+# 편집본과 함께 산다.
+NEW_UNIT_PROPAGATE_KEY = "equipment_new_unit_propagate_v1"
+# 「새 호기」 칸의 초안 {"seq": 번호, "values": 39칸 글, "propagate": bool} — 저장해도 남고(다음
+# 호기를 이어 넣는다) 「호기 추가」 뒤에는 공정소분류·동·층만 남긴다. 편집본과 따로 산다.
+NEW_UNIT_DRAFT_KEY = "equipment_new_unit_draft_v1"
 _GRID_SESSION_KEYS = (
     GRID_OVERLAY_KEY,
     GRID_UNDO_KEY,
     GRID_TOAST_KEY,
     GRID_TOAST_SHOWN_KEY,
     GRID_MEMO_KEY,
+    NEW_UNIT_PROPAGATE_KEY,
 )
 BASELINE_DRAFT_KEY = "equipment_baseline_draft_v3"
 EQUIPMENT_DRAFT_KEY = "equipment_master_draft_v3"
@@ -795,6 +805,59 @@ def grid_overlay() -> dict[str, str]:
 def grid_undo_steps() -> tuple[Any, ...]:
     """설비 마스터 표의 되돌리기 단계(`services/equipment_grid.UndoStep`)."""
     return undo_from_state(st.session_state.get(GRID_UNDO_KEY))
+
+
+def new_unit_propagation() -> dict[str, bool]:
+    """「새 호기」 칸에서 넣은 호기마다 고른 함께 넣기(지금 이름 → bool)."""
+    value = st.session_state.get(NEW_UNIT_PROPAGATE_KEY)
+    return (
+        {str(name): flag for name, flag in value.items() if isinstance(flag, bool)}
+        if isinstance(value, dict)
+        else {}
+    )
+
+
+def remember_new_unit_propagation(name: str, propagate: bool) -> None:
+    """「호기 추가」 가 그 호기의 함께 넣기를 적는다(저장 때 저장 칸 체크보다 이긴다)."""
+    choices = new_unit_propagation()
+    choices[name] = propagate
+    st.session_state[NEW_UNIT_PROPAGATE_KEY] = choices
+
+
+def chosen_new_units(frames: Frames, *, default: bool) -> frozenset[str] | None:
+    """저장 요청의 `propagate_units` — 편집본의 새 호기마다 「새 호기」 칸에서 고른 값, 그 칸에서
+    넣지 않은 새 호기는 저장 칸 체크(`default`). 그 칸에서 넣은 새 호기가 편집본에 없으면 None(저장
+    칸 체크 하나가 모든 새 호기에 — 지금 길)."""
+    choices = new_unit_propagation()
+    if not choices:
+        return None
+    fresh = _new_unit_names(frames[1])
+    if not any(name in choices for name in fresh):
+        return None
+    return frozenset(name for name in fresh if choices.get(name, default))
+
+
+def chosen_new_unit_counts(frames: Frames) -> tuple[int, int]:
+    """편집본 새 호기 가운데 「새 호기」 칸에서 넣은 것의 (같은 일정으로 넣을 수, 일정 없음 수) —
+    저장 칸 아래 한 줄이 쓴다."""
+    choices = new_unit_propagation()
+    if not choices:
+        return 0, 0
+    picked = [choices[name] for name in _new_unit_names(frames[1]) if name in choices]
+    return sum(picked), len(picked) - sum(picked)
+
+
+def _new_unit_names(master: pd.DataFrame) -> list[str]:
+    """편집본 설비 마스터의 새 호기 이름(저장의 호기 키 규칙으로 저장본 호기를 잇지 않는 것)."""
+    if EQUIPMENT_ID_COLUMN not in master.columns:
+        return []
+    names = [
+        str(value).strip()
+        for value in master[EQUIPMENT_ID_COLUMN].tolist()
+        if isinstance(value, str) and value.strip()
+    ]
+    inherited = layout_lock_origins(master, _saved_master(), pending_unit_renames().units)
+    return [name for name in dict.fromkeys(names) if name not in inherited]
 
 
 def apply_master_grid_result(applied: GridApplied) -> None:
@@ -1519,6 +1582,12 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
     )
     _stage_followed_filter(filter_widget_key(DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN), renames)
     st.session_state.pop(LAST_REMOVED_KEY, None)
+    # 「새 호기」 칸에서 고른 함께 넣기는 새 호기 이름에 매달려 있다 — 이름을 따라간다(맞바꿈도).
+    choices = new_unit_propagation()
+    if renames and any(name in choices for name in renames):
+        st.session_state[NEW_UNIT_PROPAGATE_KEY] = {
+            renames.get(name, name): flag for name, flag in choices.items()
+        }
     # 설비 마스터 표의 되돌리기 가운데 행 조각을 든 단계(지우기·되살리기·통째)와 그 앞 단계도 같은
     # 까닭으로 버린다(개편 명세 4-11 셋째 자리 — 역 patch 라 앞 단계는 자리가 맞지 않는다).
     steps = grid_undo_steps()
@@ -1930,6 +1999,9 @@ def _save_equipment_frames(
         propagate_new_downtime=chosen.propagate_new_downtime,
         publish_official=chosen.publish_official,
         expected_release_no=basis.release_no if basis is not None else None,
+        # 「새 호기」 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크보다 이긴다(D8) — 어느 저장
+        # 길(설비 마스터 탭·사이드바 팝업·Space)이든 같은 편집본이라 같다.
+        propagate_units=chosen_new_units(frames, default=chosen.propagate_new_units),
         floor_canvases=canvases,
         floor_marks=marks,
         floor_layout_bases=pending_floor_bases(),

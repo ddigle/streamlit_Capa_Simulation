@@ -76,15 +76,21 @@ from capa_simulation.services.equipment_contract import (
     SCENARIO_SCHEDULE_COLUMNS,
     STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
+    USAGE_BASIS_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
+    counts_for_capacity,
 )
 from capa_simulation.services.equipment_scenario import inherited_unit_names
 from capa_simulation.services.equipment_validation import (
     CellParseError,
     MasterIssue,
     coerce_master_cell,
+    equipment_master_issues,
 )
+from capa_simulation.services.floor_layout_profile import FloorCanvasMap
+from capa_simulation.services.frame_contracts import scalar_match_key
+from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.layout_overlay import (
     Place,
     assumption_common_places,
@@ -96,6 +102,7 @@ from capa_simulation.services.space_layout_edit import (
     NameChange,
     PendingRenames,
     apply_name_changes,
+    check_new_unit_name,
     check_unit_rename,
     compose_unit_renames,
     module_group_rows,
@@ -426,6 +433,9 @@ class GridContext:
       `official_places` 는 견줄 꼴(`CANVAS_DECIMALS` 반올림)이라 그대로 적으면 공식 좌표 10.25 가
       10.2 로 들어가 모듈 묶음 바둑판이 어긋난다. 「공식 자리로 되돌리기」 는 원래 값이 그 견줄 꼴과
       맞을 때 원래 값을 적고, 없거나 다르면(낡은 세션 등) 견줄 꼴을 적는다.
+    - `floor_canvases`·`today` — 저장 검증과 같은 인자(캔버스 밖·실적 > 오늘). 「새 호기」 칸의
+      체크와 `add` op 가 규칙 표를 그 인자로 돌린다(개편 단계 C — 표의 칸 결과는 화면 쪽이 같은
+      인자로 낸다).
     """
 
     base: str
@@ -438,6 +448,8 @@ class GridContext:
     location_options: tuple[tuple[str, ...], tuple[str, ...]] | None = None
     official_places: Mapping[str, Place] = field(default_factory=dict)
     official_cells: Mapping[str, tuple[object, ...]] = field(default_factory=dict)
+    floor_canvases: FloorCanvasMap = field(default_factory=dict)
+    today: date | None = None
 
     def lock_reasons(self) -> dict[str, str]:
         reasons = {"module": MODULE_LOCK_REASON, "deleted": DELETED_LOCK_REASON}
@@ -1238,6 +1250,365 @@ def changes_data(
     }
 
 
+# ------------------------------------------------------------------ 새 호기(개편 단계 C)
+
+# 「새 호기」 칸 초안의 기본값 — 필수 Y/N 셋(빈 값이면 저장이 막는다). 시안 2차 그대로다.
+NEW_UNIT_DEFAULTS: Final[Mapping[str, str]] = {
+    STORAGE_FLAG_COLUMN: "N",
+    "기존설비여부": "N",
+    "레이아웃표시": "Y",
+}
+# 체크 상자 세 줄(개편 명세 4-6 나). 「에러 없이 추가하려면」 은 설비명·공정소분류와 필수 Y/N
+# 셋, 「가용대수에 세려면」 은 반입·Qual 일정과 사용기준(HBM·EDP — `counts_for_capacity`, 13장
+# D13) 그리고 Qual일정이 있는 신규 호기면 Qual상태(저장 규칙 — 보관·기존설비 제외), 「도면에
+# 놓으려면」 은 동·층.
+NEW_UNIT_REQUIRED: Final = (EQUIPMENT_ID_COLUMN, "공정소분류")
+NEW_UNIT_FLAGS: Final = tuple(FLAG_COLUMNS)
+NEW_UNIT_CALC: Final = (ARRIVAL_DATE_COLUMN, QUAL_DATE_COLUMN, USAGE_BASIS_COLUMN)
+NEW_UNIT_MAP: Final = ("동", "층")
+# 「비슷한 호기에서 값 가져오기」·「이 호기로 새 호기 만들기」 가 가져오는 칸 — 호기 정보
+# 묶음(설비명·Main 설비 뺌)과 동·층·레이아웃표시. 기존설비여부는 N, 투자구분 「기존」 은 「신규」
+# 로 바꾼다.
+NEW_UNIT_COPY_COLUMNS: Final = (
+    *(
+        column
+        for column in DETAIL_GROUPS[0].columns
+        if column not in (EQUIPMENT_ID_COLUMN, PARENT_EQUIPMENT_COLUMN)
+    ),
+    "동",
+    "층",
+    "레이아웃표시",
+)
+# 「호기 추가」 뒤 초안에 남기는 칸(같은 공정·층의 호기를 이어 넣는다).
+NEW_UNIT_KEEP_COLUMNS: Final = ("공정소분류", "동", "층")
+NEW_UNIT_NAME_REQUIRED: Final = "설비명은 비울 수 없습니다"
+NEW_ROWS_LOCK_REASON: Final = "이 세션에서는 새 호기를 넣을 수 없습니다"
+# 규칙 표를 돌릴 때 설비명이 비었거나 이름 규칙에 걸린 초안 줄의 자리 이름 — 설비명이 빈 줄은 저장
+# 정규화가 조용히 빼므로 이름 대신 쓴다. 설비명 규칙이 받지 않는 글자(`DUPLICATE_MARK`)라 겹치지
+# 않는다.
+_DRAFT_PLACEHOLDER: Final = f"{DUPLICATE_MARK}새 호기"
+
+
+def blank_draft(keep: Mapping[str, str] | None = None) -> list[str]:
+    """빈 초안(39칸 글, 계약 차례) — Y/N 셋은 기본값, `keep` 의 칸은 그 글."""
+    values = [""] * len(EQUIPMENT_COLUMNS)
+    for column, text in {**NEW_UNIT_DEFAULTS, **(keep or {})}.items():
+        if column in COLUMN_INDEX:
+            values[COLUMN_INDEX[column]] = text
+    return values
+
+
+def draft_texts(value: object) -> list[str] | None:
+    """브라우저가 보낸 초안(39칸 글)을 거른다 — 꼴이 다르면 None."""
+    if not isinstance(value, list) or len(value) != len(EQUIPMENT_COLUMNS):
+        return None
+    if not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
+def kept_draft(values: Sequence[str]) -> list[str]:
+    """「호기 추가」 뒤 초안 — 공정소분류·동·층만 남기고 나머지는 빈 초안."""
+    return blank_draft({column: values[COLUMN_INDEX[column]] for column in NEW_UNIT_KEEP_COLUMNS})
+
+
+def copied_draft(source: Sequence[str], base: Sequence[str] | None = None) -> list[str]:
+    """`source`(호기 하나의 39칸 글)에서 가져오기 칸을 `base`(없으면 빈 초안)에 얹는다. 설비명·
+    일정·실적·좌표·Main 설비는 가져오지 않는다 — `base` 의 값 그대로다."""
+    values = list(base) if base is not None else blank_draft()
+    for column in NEW_UNIT_COPY_COLUMNS:
+        values[COLUMN_INDEX[column]] = source[COLUMN_INDEX[column]]
+    values[COLUMN_INDEX["기존설비여부"]] = "N"
+    use = COLUMN_INDEX["투자구분"]
+    if values[use].strip() == "기존":
+        values[use] = "신규"
+    return values
+
+
+def copy_source(view: GridView, query: str) -> str | None:
+    """가져올 호기 — 설비명이 같은(대소문자·앞뒤 공백 무시) 첫 호기, 없으면 앞부분이 맞는 첫
+    호기(편집본 차례). 못 찾으면 None."""
+    wanted = scalar_match_key(query)
+    if not wanted:
+        return None
+    live = list(view.index.live)
+    for row_id in live:
+        if scalar_match_key(view.names[row_id]) == wanted:
+            return row_id
+    for row_id in live:
+        if scalar_match_key(view.names[row_id]).startswith(wanted):
+            return row_id
+    return None
+
+
+@dataclass(frozen=True)
+class NewUnitCheck:
+    """「새 호기」 초안 한 벌의 판정 — 체크 상자·칸 오류·「호기 추가」 가 모두 여기서 나온다.
+
+    - `values` — 잠긴 칸을 비운 초안 글(넣을 값). `errors`·`warns`·`locks` 는 칸 이름 → 글.
+    - `required`·`flags`·`calc`·`map` — 체크 상자 줄마다 (칸, 됨). `flags` 는 필수 Y/N 셋, `calc`
+      에는 Qual일정이 있는 신규 호기면 Qual상태가 붙는다. `map` 은 레이아웃표시가 N 이면 비었다.
+    - `blocked` — 「호기 추가」 를 받지 않는다(오류가 있거나 이 세션이 새 호기를 막음). `hint` 는 그
+      까닭 또는 「추가할 수 있습니다」.
+    - `name` — 넣을 설비명, `row` — 넣을 한 줄(계약 dtype). 막혔으면 None.
+    """
+
+    values: tuple[str, ...]
+    errors: Mapping[str, str]
+    warns: Mapping[str, str]
+    locks: Mapping[str, str]
+    required: tuple[tuple[str, bool], ...]
+    flags: tuple[tuple[str, bool], ...]
+    calc: tuple[tuple[str, bool], ...]
+    map: tuple[tuple[str, bool], ...]
+    blocked: bool
+    hint: str
+    name: str = ""
+    row: pd.DataFrame | None = None
+
+
+def _draft_locks(
+    values: Sequence[str], master: pd.DataFrame, context: GridContext
+) -> dict[str, str]:
+    """초안 칸 잠금 — 이 세션이 새 호기를 막으면 모든 칸, 배치 편집이 잠긴 회차면 자리
+    넷(`place` — 새 호기는 자리 없이 들어간다), 있는 모듈 묶음(Main 설비가 같은 행이 있음)에 드는
+    초안이면 좌표·크기 넷(`module` — 묶음 좌표는 Space 배치 편집기 몫, D9)."""
+    if context.new_rows_locked:
+        reason = context.stale_lock or NEW_ROWS_LOCK_REASON
+        return dict.fromkeys(EQUIPMENT_COLUMNS, reason)
+    locks: dict[str, str] = {}
+    if context.layout_lock:
+        locks.update(dict.fromkeys(LOCK_SETS["place"], context.layout_lock))
+    parent = values[COLUMN_INDEX[PARENT_EQUIPMENT_COLUMN]].strip()
+    if parent and PARENT_EQUIPMENT_COLUMN in master.columns:
+        parents = master[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+        if bool(parents.eq(parent).fillna(False).any()):
+            for column in LOCK_SETS["module"]:
+                locks.setdefault(column, MODULE_LOCK_REASON)
+    return locks
+
+
+def _group_floor(master: pd.DataFrame, values: Sequence[str]) -> dict[str, str]:
+    """초안이 드는 있는 묶음(Main 설비가 같은 행)의 동·층 — 묶음 행의 첫 값(없으면 빈 dict)."""
+    parent = values[COLUMN_INDEX[PARENT_EQUIPMENT_COLUMN]].strip()
+    if not parent or PARENT_EQUIPMENT_COLUMN not in master.columns:
+        return {}
+    members = master.loc[
+        master[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip().eq(parent).fillna(False)
+    ]
+    found: dict[str, str] = {}
+    for column in ("동", "층"):
+        texts = [cell_text(value) for value in members[column].tolist()] if len(members) else []
+        found[column] = next((text for text in texts if text), "")
+    return found if any(found.values()) else {}
+
+
+def _draft_row(master: pd.DataFrame, cells: Mapping[str, Any]) -> pd.DataFrame:
+    """초안 한 줄을 편집본 설비 마스터와 같은 칸·dtype 의 한 줄 표로(빈 칸은 그 칸 형의 결측)."""
+    row = master.iloc[0:0].reindex(range(1))
+    for column, value in cells.items():
+        if column in row.columns:
+            _store(row, 0, column, value)
+    return row
+
+
+def _related_rows(master: pd.DataFrame, names: Collection[str]) -> pd.DataFrame:
+    """규칙 표가 초안 줄과 함께 봐야 하는 행 — 설비명이나 Main 설비가 초안의 설비명·Main 설비와
+    같은 행(설비명 중복·Main 설비 충돌·모듈 행 칸 불일치·모듈 환산비가 보는 범위). 나머지 규칙은
+    줄 하나만 본다 — 편집본 전체(3천 대)를 회차마다 다시 돌리지 않는다."""
+    wanted = [name for name in names if name]
+    if not wanted or EQUIPMENT_ID_COLUMN not in master.columns:
+        return master.iloc[0:0]
+    mask = master[EQUIPMENT_ID_COLUMN].astype("string").str.strip().isin(wanted)
+    if PARENT_EQUIPMENT_COLUMN in master.columns:
+        mask |= master[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip().isin(wanted)
+    return master.loc[mask.fillna(False).astype(bool)]
+
+
+def _filled(values: Sequence[str], column: str) -> bool:
+    return bool(values[COLUMN_INDEX[column]].strip())
+
+
+def new_unit_check(
+    texts: Sequence[str],
+    *,
+    frames: Frames,
+    saved_master: pd.DataFrame,
+    renames: PendingRenames,
+    context: GridContext,
+) -> NewUnitCheck:
+    """「새 호기」 초안(39칸 글)을 편집본 위에서 본다 — 칸 다듬기(`coerce_master_cell`), 설비명 규칙
+    (`check_new_unit_name` — Space 새 호기와 같은 규칙, 대소문자만 다른 이름도 막음), 그리고 편집본
+    설비 마스터 + 이 초안 한 줄에 돌린 규칙 표(`equipment_master_issues` — 저장과 같은 규칙·같은
+    인자) 가운데 초안 줄의 것. 「호기 추가」(`add` op)도 이 함수로 다시 본다(업무 검증은 늘
+    파이썬)."""
+    master, downtime = frames[1], frames[2]
+    locks = _draft_locks(texts, master, context)
+    values = [
+        "" if column in locks and not context.new_rows_locked else texts[COLUMN_INDEX[column]]
+        for column in EQUIPMENT_COLUMNS
+    ]
+    if context.layout_lock and not context.new_rows_locked:
+        # 배치 편집이 잠긴 회차의 새 호기는 자리 없이 — 있는 묶음에 드는 모듈은 그 묶음의 동·층으로
+        # 들어간다(`locked_layout` 과 같은 판정, 넣은 뒤 `_with_placement` 가 맞춘다).
+        for column, text in _group_floor(master, values).items():
+            values[COLUMN_INDEX[column]] = text
+    errors: dict[str, str] = {}
+    warns: dict[str, str] = {}
+    cells: dict[str, Any] = {}
+    for column in EQUIPMENT_COLUMNS:
+        if column == EQUIPMENT_ID_COLUMN:
+            continue
+        parsed = coerce_master_cell(column, values[COLUMN_INDEX[column]])
+        if isinstance(parsed, CellParseError):
+            errors[column] = parsed.message
+            cells[column] = None
+        else:
+            cells[column] = parsed
+    name = values[NAME_INDEX].strip()
+    if not name:
+        errors[EQUIPMENT_ID_COLUMN] = NEW_UNIT_NAME_REQUIRED
+    else:
+        refusal = check_new_unit_name(
+            name,
+            master=master,
+            reserved=reserved_names(saved_master, master, downtime, renames),
+        )
+        if refusal is not None:
+            errors[EQUIPMENT_ID_COLUMN] = refusal
+    rule_name = name if EQUIPMENT_ID_COLUMN not in errors else _DRAFT_PLACEHOLDER
+    parent = values[COLUMN_INDEX[PARENT_EQUIPMENT_COLUMN]].strip()
+    related = _related_rows(master, {rule_name, parent})
+    probe = _draft_row(master, {**cells, EQUIPMENT_ID_COLUMN: rule_name})
+    subset = pd.concat([related, probe], ignore_index=True)
+    try:
+        issues = equipment_master_issues(
+            subset, floor_canvases=context.floor_canvases or None, today=context.today
+        )
+    except ValueError:
+        issues = ()
+    last = len(subset) - 1
+    for issue in issues:
+        if issue.position != last or issue.column not in COLUMN_INDEX:
+            continue
+        target = errors if issue.blocking else warns
+        target.setdefault(issue.column, issue.message)
+    if context.new_rows_locked:
+        errors.clear()
+        warns.clear()
+
+    def ok(column: str) -> bool:
+        return _filled(values, column) and column not in errors
+
+    storage = values[COLUMN_INDEX[STORAGE_FLAG_COLUMN]].strip().upper()
+    existing = values[COLUMN_INDEX["기존설비여부"]].strip().upper()
+    calc_columns: list[str] = list(NEW_UNIT_CALC)
+    if _filled(values, QUAL_DATE_COLUMN) and storage == "N" and existing == "N":
+        calc_columns.append(QUAL_STATUS_COLUMN)
+    usage = pd.DataFrame({USAGE_BASIS_COLUMN: [values[COLUMN_INDEX[USAGE_BASIS_COLUMN]]]})
+    counted = bool(counts_for_capacity(usage).iloc[0])
+    calc = tuple(
+        (column, ok(column) and (column != USAGE_BASIS_COLUMN or counted))
+        for column in calc_columns
+    )
+    layout_flag = values[COLUMN_INDEX["레이아웃표시"]].strip().upper()
+    blocked = bool(errors) or context.new_rows_locked
+    if context.new_rows_locked:
+        hint = context.stale_lock or NEW_ROWS_LOCK_REASON
+    elif errors:
+        named = " · ".join(column for column in EQUIPMENT_COLUMNS if column in errors)
+        hint = f"아직 추가할 수 없습니다 — {named} 칸을 확인합니다"
+    else:
+        hint = "추가할 수 있습니다"
+        waiting = [column for column, done in calc if not done]
+        if waiting:
+            hint += (
+                f" — {'·'.join(waiting)} 칸이 비거나 맞지 않으면 가용대수에는 아직 들지 않습니다"
+            )
+    return NewUnitCheck(
+        values=tuple(values),
+        errors=errors,
+        warns=warns,
+        locks=locks,
+        required=tuple((column, ok(column)) for column in NEW_UNIT_REQUIRED),
+        flags=tuple(
+            (column, values[COLUMN_INDEX[column]].strip().upper() in FLAG_VALUES and ok(column))
+            for column in NEW_UNIT_FLAGS
+        ),
+        calc=calc,
+        map=() if layout_flag == "N" else tuple((column, ok(column)) for column in NEW_UNIT_MAP),
+        blocked=blocked,
+        hint=hint,
+        name=name if not blocked else "",
+        row=None if blocked else _draft_row(master, {**cells, EQUIPMENT_ID_COLUMN: name}),
+    )
+
+
+def _named_marks(marks: Mapping[str, str]) -> dict[str, str]:
+    return {
+        str(COLUMN_INDEX[column]): text for column, text in marks.items() if column in COLUMN_INDEX
+    }
+
+
+def new_unit_data(
+    view: GridView,
+    check: NewUnitCheck,
+    *,
+    seq: int,
+    propagate: bool,
+    ack: Mapping[str, Any] | None = None,
+    toast: Mapping[str, Any] | None = None,
+    undo_top: str | None = None,
+    notes: Sequence[str] = (),
+    propagate_warning: str | None = None,
+) -> dict[str, Any]:
+    """오른쪽 「새 호기」 마운트의 data(개편 명세 6-3 `panel: "new"`).
+
+    - `draft` — 이 판정을 낸 초안(`seq` 번호 — 브라우저는 제 초안보다 번호가 크면 이것으로 바꾼다:
+      가져오기·「호기 추가」 뒤). `checked` 는 오류·체크를 낸 초안 번호다(브라우저가 그 뒤에 고친
+      칸은 아직 판정 전이다).
+    - `errors`·`warns`·`locks` — 칸 자리 번호(계약 차례) → 글. 오류는 브라우저가 그 칸을 만졌거나
+      값이 있을 때만 보인다(필수 칸은 처음부터 굵은 테).
+    - `tiers` — 체크 상자 줄마다 [(자리 번호, 됨)]. `blocked`·`hint` 는 「호기 추가」 판정.
+    - `notes` — 칸 위 안내(가정 설비 시나리오·배치 잠금 — 새 호기의 자리), `propagateWarning` 은
+      함께 넣기를 켰을 때 그 아래 한 줄(가정 세션 — 공식 가용대수에 셈).
+    - `locked` — 이 세션이 새 호기를 막으면 그 까닭(칸 전체를 끈다).
+    """
+
+    def tier(items: Sequence[tuple[str, bool]]) -> list[list[Any]]:
+        return [[COLUMN_INDEX[column], done] for column, done in items]
+
+    return {
+        "mode": "side",
+        "panel": "new",
+        "base": view.context.base,
+        "ack": dict(ack or {}),
+        "toast": toast_payload(toast, undo_top),
+        "scenario": _scenario_payload(view.context),
+        "columns": columns_payload(view.context),
+        "groups": detail_groups_payload(),
+        "draft": {"seq": seq, "values": list(check.values), "propagate": propagate},
+        "checked": seq,
+        "errors": _named_marks(check.errors),
+        "warns": _named_marks(check.warns),
+        "locks": _named_marks(check.locks),
+        "tiers": {
+            "required": tier(check.required),
+            "flags": tier(check.flags),
+            "calc": tier(check.calc),
+            "map": tier(check.map),
+        },
+        "required": [COLUMN_INDEX[column] for column in (*NEW_UNIT_REQUIRED, *NEW_UNIT_FLAGS)],
+        "blocked": check.blocked,
+        "hint": check.hint,
+        "notes": list(notes),
+        "propagateWarning": propagate_warning,
+        "locked": (view.context.stale_lock or NEW_ROWS_LOCK_REASON)
+        if view.context.new_rows_locked
+        else None,
+    }
+
+
 # ------------------------------------------------------------------ 출납 고르기
 
 
@@ -1435,7 +1806,9 @@ class GridApplied:
     - `renamed` — 이번에 반영한 설비명 이름 바꿈(옛 → 새 — 이름 바꿈을 되돌린 것 포함). 화면 쪽이
       고름·필터를 따라 옮긴다.
     - `dropped` — `base` 가 달라 버린 op 수. `refused` — 잠긴 칸·없는 행·잠긴 지우기·맨 위가 아닌
-      되돌리기로 넣지 못한 수.
+      되돌리기·막힌 「호기 추가」 로 넣지 못한 수.
+    - `added` — 「새 호기」 칸에서 넣은 호기마다 (행 id, 설비명, 다른 설비 시나리오에도 넣기). 화면
+      쪽이 그 호기를 상세로 열고 함께 넣기 고름을 적는다.
     """
 
     state: GridState
@@ -1447,6 +1820,7 @@ class GridApplied:
     renamed: Mapping[str, str] = field(default_factory=dict)
     dropped: int = 0
     refused: int = 0
+    added: tuple[tuple[str, str, bool], ...] = ()
 
     @property
     def toast_undo(self) -> bool:
@@ -1508,6 +1882,7 @@ class _Work:
     touched: set[str] = field(default_factory=set)
     dropped: int = 0
     refused: int = 0
+    added: list[tuple[str, str, bool]] = field(default_factory=list)
 
     def index(self) -> GridIndex:
         return grid_index(self.master, self.saved[1], self.renames.units)
@@ -2319,6 +2694,53 @@ def _official_values(work: _Work, name: str) -> tuple[object, ...]:
     return tuple(place)
 
 
+ADDED_TOAST: Final = "{name} 표 맨 위에 넣었습니다 — {where} (리비전 저장 때 함께 저장)"
+ADDED_SPREAD: Final = "다른 설비 시나리오에도 같은 일정으로 들어갑니다"
+ADDED_ALONE: Final = "다른 설비 시나리오에서는 일정 없음으로 들어갑니다"
+# 가정 설비 시나리오 편집 회차(설계 Q1) — 새 호기의 자리는 그 시나리오의 배치 차이로 가고 공식
+# 배치에서는 자리 없이(있는 묶음에 드는 모듈은 그 묶음의 동·층) 들어간다.
+ADDED_OVERLAY_NOTE: Final = (
+    "공식 배치에는 자리 없이 들어갑니다(있는 묶음에 드는 모듈은 그 묶음의 동·층)"
+)
+
+
+def _add_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
+    """「호기 추가」(`{"op": "add", "draftSeq", "draft": [39칸 글], "propagate"}` — 개편 명세 4-6
+    나). 받은 초안을 `new_unit_check` 로 다시 보고(업무 검증은 늘 파이썬) 막히면 넣지 않고 그 까닭을
+    토스트로, 아니면 편집본 설비 마스터 **끝**에 한 줄을 잇고(행 차례는 공통 대장 내용 —
+    `_common_digest`) 불러온 목록 맨 위에 둔다."""
+    texts = draft_texts(op.get("draft"))
+    if texts is None:
+        work.refused += 1
+        return None
+    check = new_unit_check(
+        texts,
+        frames=(work.baseline, work.master, work.downtime),
+        saved_master=work.saved[1],
+        renames=work.renames,
+        context=work.context,
+    )
+    if check.blocked or check.row is None:
+        work.refused += 1
+        work.say(check.hint)
+        return None
+    position = len(work.master)
+    work.master = _insert_row(work.master, position, check.row.astype(work.master.dtypes.to_dict()))
+    work.changed[1] = True
+    work.touched.add(_ROWS)
+    row_id = work.index().ids[position]
+    work.loaded = [row_id, *(item for item in work.loaded if item != row_id)]
+    propagate = op.get("propagate") is True
+    work.added.append((row_id, check.name, propagate))
+    text = ADDED_TOAST.format(
+        name=with_object_particle(check.name), where=ADDED_SPREAD if propagate else ADDED_ALONE
+    )
+    if not work.context.official and not work.context.layout_lock:
+        text += f" · {ADDED_OVERLAY_NOTE}"
+    work.say(text, undo=True)
+    return UndoStep(label=f"새 호기 {check.name}", kind="rows", master_added=(position,))
+
+
 def _undo_op(work: _Work, op: Mapping[str, Any]) -> None:
     """한 단계 되돌리기. `step`(토스트가 가리킨 단계 표지)이 있으면 그 단계가 맨 위일 때만 —
     토스트 뒤에 토스트 없는 조작(칸 고침)이 쌓였거나 그 단계가 버려졌으면 다른 단계를 되돌리지 않고
@@ -2345,6 +2767,7 @@ _OPS = {
     "restore": _restore_op,
     "revert": _revert_op,
     "official": _official_op,
+    "add": _add_op,
 }
 OP_NAMES: Final = frozenset({*_OPS, "undo"})
 
@@ -2428,6 +2851,7 @@ def apply_ops(
         renamed=dict(work.renamed),
         dropped=work.dropped,
         refused=work.refused,
+        added=tuple(work.added),
     )
 
 

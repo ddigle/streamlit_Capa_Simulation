@@ -766,6 +766,11 @@ class EquipmentSaveRequest:
       `EquipmentLayoutRoleChanged`(설계 6-2).
     - `expected_release_no` 는 화면이 본 최신 공식 번호(발행이 없었으면 0)다. None 이면 대조하지
       않는다. 이번 저장이 공식 발행을 할 때만 대조한다.
+    - `propagate_units` 는 다른 설비 시나리오에도 같은 일정으로 넣을 **새 호기 이름**이다(개편
+      명세 13장 D8 — 새 호기마다 고른다). None 이면 지금처럼 `propagate_new_units` 하나가 모든 새
+      호기에 걸린다. 주면 `propagate_new_units` 는 보지 않고 그 이름의 새 호기만 넣는다(새 호기가
+      아닌 이름은 무시한다 — 빈 집합이면 아무 호기도 넣지 않는다). 새 비가동은 늘
+      `propagate_new_downtime` 이다.
     - 층 값(`floor_*`)은 지금 그대로 같은 트랜잭션에 쓰는 층 현행값이다.
     """
 
@@ -782,6 +787,7 @@ class EquipmentSaveRequest:
     propagate_new_downtime: bool = True
     publish_official: bool = True
     expected_release_no: int | None = None
+    propagate_units: frozenset[str] | None = None
     floor_canvases: Mapping[FloorKey, CanvasSize] | None = None
     floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None
     floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None
@@ -1017,9 +1023,9 @@ class DuckDBEquipmentRepository:
            내용 해시로 견준다. 0027 뒤 첫 저장(공통 최신이 계약 v3 이하)에 일정이 바뀌었으면 공통도
            v4 한 벌을 함께 쓴다(`forced_common`). 둘 다 그대로이고 층 값도 없으면 아무것도 쓰지
            않는다.
-        4. 함께 넣기 — 새 호기(`propagate_new_units`)·새 비가동(`propagate_new_downtime`)을 다른
-           ACTIVE 시나리오의 최신 위에 새 리비전(`origin='propagate'`)으로. 고친 비가동은 퍼지지
-           않는다(`new_downtime_rows`).
+        4. 함께 넣기 — 새 호기(`propagate_new_units`, 또는 새 호기마다 고른 `propagate_units`)·새
+           비가동(`propagate_new_downtime`)을 다른 ACTIVE 시나리오의 최신 위에 새
+           리비전(`origin='propagate'`)으로. 고친 비가동은 퍼지지 않는다(`new_downtime_rows`).
         5. 교차 검증 — 공통을 쓰거나 함께 넣기가 있으면 모든 시나리오(자기 포함)의 이번 저장 뒤
            최신과 최신 공식 발행을 새 공통과 합쳐 읽기 검증한다(`EquipmentScenarioGuardError`).
         6. 쓰기 — 공통(v4) → 이 시나리오 일정 → 함께 넣은 리비전 → 공식 발행 → 층 값.
@@ -3769,7 +3775,9 @@ def _plan_propagations(
 ) -> list[_PropagationPlan]:
     """함께 넣기(F6·F2 — 「넣을 때」 만) — 다른 ACTIVE 시나리오마다 그 최신 위에 더할 것.
 
-    - 새 호기(키가 저장본 공통에 없던 호기)는 이 시나리오와 같은 일정 행·비가동으로 들어간다.
+    - 새 호기(키가 저장본 공통에 없던 호기)는 이 시나리오와 같은 일정 행·비가동으로 들어간다 —
+      `request.propagate_units` 가 있으면 그 이름의 새 호기만(새 호기마다 고름, 개편 명세 D8),
+      없으면 `propagate_new_units` 하나로 모두 또는 아무것도.
     - 새 비가동(`new_downtime_rows` — 고친 것은 빠진다)은 받는 시나리오에 그 호기 일정 행이 없거나
       같은 (호기, 유형, 시작일) 이 이미 있으면 건너뛴다(비가동만 들어가 호기가 들어가지 않게).
     - 받는 시나리오의 고아 행(지금 공통에 없는 키)은 새 리비전에 옮기지 않는다.
@@ -3778,7 +3786,7 @@ def _plan_propagations(
       호기는 자리 없음)로 들어간다.
     더할 것도 건너뛴 것도 없는 시나리오는 계획에 없다.
     """
-    unit_keys = edit.new_keys if request.propagate_new_units else frozenset()
+    unit_keys = _propagated_unit_keys(request, edit)
     fresh = (
         new_downtime_rows(
             base.downtime,
@@ -3851,6 +3859,18 @@ def _plan_propagations(
             )
         )
     return plans
+
+
+def _propagated_unit_keys(request: EquipmentSaveRequest, edit: _EditFrames) -> frozenset[str]:
+    """다른 시나리오에 함께 넣을 새 호기 키 — 새 호기마다 고른 이름(`propagate_units`)이 있으면 그
+    이름의 새 호기만, 없으면 `propagate_new_units` 하나로 모두 또는 아무것도. 이름은 검증을 마친
+    편집본의 설비명(앞뒤 공백 뗀 것)으로 맞댄다."""
+    if request.propagate_units is None:
+        return edit.new_keys if request.propagate_new_units else frozenset()
+    wanted = {name.strip() for name in request.propagate_units}
+    return frozenset(
+        key for name, key in edit.unit_keys.items() if key in edit.new_keys and name in wanted
+    )
 
 
 def _propagation_note(source_name: str, plan: _PropagationPlan) -> str:
