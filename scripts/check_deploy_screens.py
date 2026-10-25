@@ -326,8 +326,8 @@ THRESHOLD_POINTER: Final = "판정 기준은 HOME → Preference 에서 정합�
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
     (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
-    # Space 현황은 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를 수 있는 줄 — 그 시나리오의
-    # 배치를 그린다)만 선다.
+    # Space 현황은 색 기준이 필요 단축이 아니면 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를
+    # 수 있는 줄 — 그 시나리오의 배치를 그린다)만 선다(이 항목은 기본 색 기준에서 돈다).
     (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
 )
 # 사이드바 계산 그룹 셋(2026-10-17 사용자 결정 — 약속 · 이행 · 실적) — (상자 slug, 상자 제목,
@@ -4063,6 +4063,171 @@ def check_equipment_moves(screen: Screen) -> str:
     return summarize_equipment_moves(tabs, settings, calculator, section)
 
 
+# ------------------------------------------------------------------ Space 필요 단축 보기
+
+# 색 기준 라디오 칸(사이드바 `Space 조건`)과 그 셋째 값·기본 값. 앱은 `navigation` 에 같은 글자를
+# 둔다.
+SPACE_COLOR_BASIS_KEY: Final = "space_color_basis"
+SPACE_SHORTENING_BASIS: Final = "필요 단축"
+SPACE_DEFAULT_BASIS: Final = "공정구분"
+# Space 조건 카드 이름(`sidebar_status.condition_card(name=)` — 앱 `space_status.SPACE_CARD_NAME`).
+SPACE_CARD_NAME: Final = "space"
+# FAB 블록 풍선(`blockTip`)에 단축 줄(「단축 3대 · 최대 −18일」)이 실린 블록 수.
+_SHORT_BLOCKS_JS = """(svg) => [...svg.querySelectorAll(".sle-mark title")]
+  .filter((tip) => /단축 \\d+대/.test(tip.textContent || "")).length"""
+# 층 보기의 배지 수, 그 가운데 모듈 묶음(누르는 호기 상자에 `is-module`) 배지 수, 고정 줄이
+# 보이는가.
+_SHORT_FLOOR_JS = """(svg) => {
+  const root = svg.getRootNode();
+  const badges = [...root.querySelectorAll(".sle-short-badge")];
+  const modules = badges.filter((badge) => {
+    const unit = [...root.querySelectorAll(".sle-unit")]
+      .find((node) => node.dataset.id === badge.dataset.pick);
+    return !!unit && unit.classList.contains("is-module");
+  }).length;
+  const pinned = root.querySelector(".sle-pinned");
+  const fader = root.querySelector(".sle-fader");
+  return {
+    badges: badges.length,
+    modules,
+    pinned: !!pinned && getComputedStyle(pinned).display !== "none",
+    fader: !!fader && getComputedStyle(fader).display !== "none",
+  };
+}"""
+
+
+def _fader_back_text(fader_back: bool | None) -> str:
+    """되돌린 뒤 층 도면의 페이더 — `None` 은 층을 열지 못해 보지 않은 것이다(있음으로 적지
+    않는다)."""
+    if fader_back is None:
+        return "되돌린 뒤 페이더 확인 안 함(연 층 없음)"
+    return f"되돌린 뒤 페이더 {'있음' if fader_back else '없음'}"
+
+
+def summarize_space_shortening(
+    blocks: int,
+    floor: Mapping[str, Any] | None,
+    fader_back: bool | None,
+    *,
+    stopped: str | None = None,
+) -> str:
+    """필요 단축 보기 한 줄 — 개수·있음/없음만. 층·호기·공정 이름은 찍지 않는다. `fader_back` 은
+    색 기준을 되돌린 뒤 층 도면에서 본 페이더(층을 열지 못했으면 `None` — 「확인 안 함」)."""
+    if stopped is not None:
+        return f"{stopped} · {_fader_back_text(fader_back)}"
+    if floor is None:
+        head = f"단축 줄 블록 {blocks}개 · 단축 층 없음"
+    else:
+        head = (
+            f"단축 줄 블록 {blocks}개 · 최다 층 배지 {floor.get('badges', 0)}개"
+            f"(모듈 묶음 {floor.get('modules', 0)}) · 고정 줄 "
+            f"{'있음' if floor.get('pinned') else '없음'}"
+            f" · 페이더 {'숨음' if not floor.get('fader') else '보임'}"
+        )
+    return f"{head} · {_fader_back_text(fader_back)}"
+
+
+def _choose_color_basis(screen: Screen, value: str) -> None:
+    """사이드바 `Space 조건` 카드의 `색 기준` 라디오를 그 값으로. 카드는 기본 접힘이라 접혀 있으면
+    먼저 편다."""
+    option = screen.page.locator(f".st-key-{SPACE_COLOR_BASIS_KEY}").first.get_by_text(
+        value, exact=True
+    )
+    if not option.first.is_visible():
+        card = screen.page.locator(f".st-key-{CONDITION_CARD_PREFIX}{SPACE_CARD_NAME}").first
+        card.locator("summary").first.click()
+        option.first.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+    option.first.click()
+    screen.wait_idle()
+
+
+def _open_most_placed_floor(screen: Screen) -> bool:
+    """FAB 층 목록 표의 `배치대수` 가 가장 많은 층을 연다(`space_fader` 와 같은 고르기). 열었으면
+    참."""
+    grid, placed_column = screen.grid_with_column("배치대수")
+    building_column = screen.column_index(grid, "동")
+    floor_column = screen.column_index(grid, "층")
+    if building_column is None or floor_column is None:
+        return False
+    rows = screen.grid_rows(grid, [building_column, floor_column, placed_column])
+    candidates = [(row[0], row[1], _number(row[2])) for row in rows if row[0] and row[1]]
+    candidates = [row for row in candidates if row[2] > 0]
+    if not candidates:
+        return False
+    building, name, _placed = max(candidates, key=lambda row: row[2])
+    screen.choose_by_typing("층 바로 가기", f"{building} {name}")
+    return screen.selectbox_value("층 바로 가기") == f"{building} {name}"
+
+
+def check_space_shortening(screen: Screen) -> str:
+    """Space 「필요 단축」 보기 — FAB 에서 색 기준을 `필요 단축` 으로 골라 단축 줄이 선 블록 수, 층
+    목록 표의 `단축 호기` 가 가장 많은 층을 열어 배지 수·모듈 묶음 배지 수·고정 줄(페이더 숨음),
+    그리고 색 기준을 공정구분으로 **되돌린 뒤** 층 도면에 페이더가 있는가(되돌리지 않으면 같은
+    세션의 다음 실행에서 `space_fader`·`panel_rows_other_pages` 가 고정 줄·늘어난 사이드바 줄을
+    본다). 단축 층을 열지 못한 실행(Cut-off 먼저·못 읽음·단축 층 없음)은 되돌린 뒤 배치가 가장 많은
+    층을 열어 본다 — 연 층이 없으면 「확인 안 함」 이다(본 것만 적는다). 쓰지 않는다(색 기준·목표는
+    세션 값이다). Cut-off 가 비면 「Cut-off 먼저」 알림이 정상이다."""
+    screen.step("페이지 열기")
+    screen.open_space_overview()
+    blocks, floor, stopped = 0, None, None
+    try:
+        screen.step("색 기준 필요 단축")
+        _choose_color_basis(screen, SPACE_SHORTENING_BASIS)
+        text = screen.main_text()
+        if "Cut-off 를 먼저" in text:
+            stopped = "Cut-off 먼저 알림"
+        elif "필요 단축을 칠하지 못했습니다" in text:
+            stopped = "못 읽음 알림"
+        else:
+            screen.step("FAB 블록")
+            canvas = screen.page.locator(".sle-canvas").first
+            blocks = int(
+                screen.poll(
+                    lambda: canvas.evaluate(_SHORT_BLOCKS_JS), timeout=15, accept=lambda v: v > 0
+                )
+                or 0
+            )
+            screen.step("층 목록")
+            grid, short_column = screen.grid_with_column("단축 호기")
+            building_column = screen.column_index(grid, "동")
+            floor_column = screen.column_index(grid, "층")
+            if building_column is not None and floor_column is not None:
+                rows = screen.grid_rows(grid, [building_column, floor_column, short_column])
+                ranked = [(row[0], row[1], _number(row[2])) for row in rows if row[0] and row[1]]
+                ranked = [row for row in ranked if row[2] > 0]
+                if ranked:
+                    building, name, _count = max(ranked, key=lambda row: row[2])
+                    screen.step("층 고르기")
+                    screen.choose_by_typing("층 바로 가기", f"{building} {name}")
+                    floor_canvas = screen.page.locator(".sle-canvas").first
+                    floor = screen.poll(
+                        lambda: floor_canvas.evaluate(_SHORT_FLOOR_JS),
+                        timeout=20,
+                        accept=lambda v: bool(v) and v.get("badges", 0) > 0,
+                    )
+    finally:
+        failed_at = screen.current_step
+        screen.step("공정구분으로 되돌림")
+        _choose_color_basis(screen, SPACE_DEFAULT_BASIS)
+        opened = floor is not None
+        if not opened:
+            screen.step("되돌린 뒤 층 열기")
+            try:
+                opened = _open_most_placed_floor(screen)
+            except Exception:  # noqa: BLE001 — 열지 못했으면 「확인 안 함」 으로 적는다
+                opened = False
+        fader_back: bool | None = None
+        if opened:
+            fader_input = screen.page.locator(".sle-fader-input").first
+            try:
+                fader_input.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+                fader_back = True
+            except Exception:  # noqa: BLE001 — 있음/없음만 적는다
+                fader_back = False
+        screen.current_step = failed_at
+    return summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
@@ -4086,6 +4251,7 @@ ITEMS: tuple[Item, ...] = (
     Item("constraint_sim", "제약 시뮬레이션", check_constraint_simulation),
     Item("space_scenario_row", "Space 설비 시나리오 줄·팝업", check_space_scenario_row),
     Item("equipment_grid", "설비 마스터 표 칸 고치기", check_equipment_grid),
+    Item("space_shortening", "Space 필요 단축 보기", check_space_shortening),
 )
 
 

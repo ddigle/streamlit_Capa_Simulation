@@ -71,6 +71,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
 )
 from capa_simulation.services.space_layout_edit import EditorInputs, finite_or_none
+from capa_simulation.services.space_shortening_layer import BUCKETS
 
 _ASSETS = Path(__file__).with_name("space_layout_editor_assets")
 # FAB 도면의 범위 이름(편집기 `data.floor`). 층 이름과 겹치지 않으면 된다 — 뷰를 처음 크기로 돌릴지
@@ -143,11 +144,20 @@ def _palette() -> dict[str, str]:
         **{f"mark-text-{key}": tokens.SPACE_MARK_TEXT_COLORS[key] for key in MARK_COLOR_KEYS},
         # 색을 고른 FAB 층 블록의 불투명 면. 편집기가 `var(--sle-block-tint-<키>)` 로 쓴다.
         **{f"block-tint-{key}": tint for key, tint in block_tints().items()},
+        # 색 기준 「필요 단축」 의 구간 면·글자(`var(--sle-short-<구간>-fill|ink)`)·임박 테·흐림
+        # 정도. 끈 동안에도 싣는다(작은 값 몇 개) — CSS 의 `--sle-*` 는 모두 이 팔레트에 있어야
+        # 한다.
+        **{f"short-{key}-fill": fill for key, fill in tokens.SPACE_SHORT_FILLS.items()},
+        **{f"short-{key}-ink": ink for key, ink in tokens.SPACE_SHORT_INKS.items()},
+        "short-imminent": tokens.SPACE_SHORT_IMMINENT,
+        "short-dim-opacity": tokens.SPACE_SHORT_DIM_OPACITY,
     }
 
 
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+# 「필요 단축」 구간 이름(`services/space_shortening_layer.BUCKETS`).
+_LAYER_BUCKETS = frozenset(BUCKETS)
 
 
 def _day_or_none(value: object) -> str | None:
@@ -182,41 +192,71 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다. `share` 는 기준일
     설비지분(모듈 행 넷이 모두 반입했으면 0.25, 없으면 1 — 범례와 같은 칸)이고 층 상세 보기
     요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다.
+
+    색 기준 「필요 단축」 을 켠 층 보기는 `layer`(구간 `s|m|l|x` — 표시된 호기)·`dim`(흐릴 호기)을
+    싣는다. **값이 있을 때만 키를 싣는다** — 끈 동안 payload 가 그 전과 같다.
     """
-    return [
-        {
-            "id": str(item["id"]),
-            "label": str(item.get("label", item["id"])),
-            "stage": str(item.get("stage") or ""),
-            "detail": str(item.get("detail") or ""),
-            "x": finite_or_none(item.get("x")),
-            "y": finite_or_none(item.get("y")),
-            "w": finite_or_none(item.get("w")),
-            "h": finite_or_none(item.get("h")),
-            "placed": bool(item.get("placed")),
-            "isNew": bool(item.get("is_new")),
-            "arrived": bool(item.get("arrived")),
-            "floorless": bool(item.get("floorless")),
-            "group": item["group"]
-            if isinstance(item.get("group"), str) and item["group"]
-            else None,
-            "fill": item["fill"]
-            if isinstance(item.get("fill"), str) and _HEX.match(item["fill"])
-            else "",
-            "ink": item["ink"]
-            if isinstance(item.get("ink"), str) and _HEX.match(item["ink"])
-            else "",
-            "storage": bool(item.get("storage")),
-            "realFrom": _day_or_none(item.get("realFrom")),
-            "exitOn": _day_or_none(item.get("exitOn")),
-            "stopOn": _day_or_none(item.get("stopOn")),
-            "delays": _spans(item.get("delays")),
-            "offline": _spans(item.get("offline")),
-            "flag": bool(item.get("flag")),
-            "share": _share_or_one(item.get("share")),
-        }
-        for item in items
-    ]
+    return [_clean_item(item) for item in items]
+
+
+def _clean_item(item: Mapping[str, Any]) -> dict[str, Any]:
+    cleaned = {
+        "id": str(item["id"]),
+        "label": str(item.get("label", item["id"])),
+        "stage": str(item.get("stage") or ""),
+        "detail": str(item.get("detail") or ""),
+        "x": finite_or_none(item.get("x")),
+        "y": finite_or_none(item.get("y")),
+        "w": finite_or_none(item.get("w")),
+        "h": finite_or_none(item.get("h")),
+        "placed": bool(item.get("placed")),
+        "isNew": bool(item.get("is_new")),
+        "arrived": bool(item.get("arrived")),
+        "floorless": bool(item.get("floorless")),
+        "group": item["group"] if isinstance(item.get("group"), str) and item["group"] else None,
+        "fill": item["fill"]
+        if isinstance(item.get("fill"), str) and _HEX.match(item["fill"])
+        else "",
+        "ink": item["ink"] if isinstance(item.get("ink"), str) and _HEX.match(item["ink"]) else "",
+        "storage": bool(item.get("storage")),
+        "realFrom": _day_or_none(item.get("realFrom")),
+        "exitOn": _day_or_none(item.get("exitOn")),
+        "stopOn": _day_or_none(item.get("stopOn")),
+        "delays": _spans(item.get("delays")),
+        "offline": _spans(item.get("offline")),
+        "flag": bool(item.get("flag")),
+        "share": _share_or_one(item.get("share")),
+    }
+    if item.get("layer") in _LAYER_BUCKETS:
+        cleaned["layer"] = str(item["layer"])
+    if item.get("dim") is True:
+        cleaned["dim"] = True
+    return cleaned
+
+
+def _clean_badges(badges: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """브라우저로 보낼 「필요 단축」 배지 — 설비키마다 하나(`space_shortening_layer.floor_layer`).
+    `ids` 는 그 층에 그린 모듈 설비명 글자 목록(빈 배지는 버린다), 구간은 `s|m|l|x` 만."""
+    cleaned: list[dict[str, Any]] = []
+    for badge in badges:
+        ids = [str(value) for value in badge.get("ids") or () if isinstance(value, str) and value]
+        bucket = badge.get("bucket")
+        if not ids or bucket not in _LAYER_BUCKETS:
+            continue
+        cleaned.append(
+            {
+                "key": str(badge.get("key") or ids[0]),
+                "ids": ids,
+                "main": str(badge.get("main") or ""),
+                "sub": str(badge.get("sub") or ""),
+                "bucket": str(bucket),
+                "imminent": bool(badge.get("imminent")),
+                "dim": bool(badge.get("dim")),
+                "tip": str(badge.get("tip") or ""),
+                "aria": str(badge.get("aria") or ""),
+            }
+        )
+    return cleaned
 
 
 def _clean_ghosts(ghosts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -321,6 +361,8 @@ def render_space_layout_viewer(
     picked: str | None = None,
     on_pick: Callable[[str | None], None] | None = None,
     compare: Mapping[str, Any] | None = None,
+    badges: Sequence[Mapping[str, Any]] | None = None,
+    as_of_pinned: str | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -351,7 +393,18 @@ def render_space_layout_viewer(
 
     `compare` 는 「공식과 견주기」 를 켠 회차의 재료다(`space_floor_layout.compare_payload` — 차이
     호기의 공식 자리 점선 상자·선·꼬리표, 설계 8-3). epoch 밖이라 토글로 다시 마운트하지 않고 견주기
-    층만 다시 그린다. None 이면 그 층을 비운다."""
+    층만 다시 그린다. None 이면 그 층을 비운다.
+
+    색 기준 「필요 단축」 을 켠 동안에는 `badges`(설비키마다 하나 — `shortBadges`)와
+    `as_of_pinned`(기준일 고정 줄의 뒷글 — `asOfPinned`)를 싣는다. 고정 줄이 있으면 브라우저는
+    페이더 대신 그 줄을 세우고 (기준일 = 오늘), 겹친 반입 예정 숨기기를 표시된 호기에는 쓰지 않으며
+    모든 호기의 지연·보관 면을 칠하지 않는다(결정 D12). 둘 다 epoch 밖이고 끈 동안에는 키가
+    없다(payload 그대로)."""
+    layer_fields: dict[str, Any] = {}
+    if badges is not None:
+        layer_fields["shortBadges"] = _clean_badges(badges)
+    if isinstance(as_of_pinned, str) and as_of_pinned:
+        layer_fields["asOfPinned"] = as_of_pinned
     _EDITOR(
         key=key,
         data={
@@ -376,6 +429,7 @@ def render_space_layout_viewer(
             "floor": floor_label(floor),
             "floors": [],
             "newUnit": {},
+            **layer_fields,
         },
         on_apply_change=lambda: None,
         on_asOf_change=partial(_dispatch_as_of, key, on_as_of),

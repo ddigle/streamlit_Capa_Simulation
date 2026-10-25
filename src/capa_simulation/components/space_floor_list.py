@@ -72,7 +72,9 @@ __all__ = [
     "EDIT_TOGGLE_KEY",
     "FLOOR_TABLE_KEY",
     "INACTIVE_TABLE_KEY",
+    "FloorListColumn",
     "floor_state_draft_pending",
+    "layer_columns",
     "render_space_floor_list",
 ]
 
@@ -139,6 +141,25 @@ _TABLE_COLUMNS = {
     "배치 도면": st.column_config.TextColumn(help=_DRAWING_HELP),
 }
 
+# 색 기준 「필요 단축」 을 켠 동안만 사용 층 표에 붙는 칸 넷(설비 대수 — 모듈 묶음 한 대). 비활성 층
+# 표에는 붙이지 않는다(층 대수를 싣지 않는다 — 층 사용 0029 규칙).
+_LAYER_COLUMNS = {
+    "단축 호기": st.column_config.NumberColumn(
+        format="localized",
+        help="고른 목표에서 Qual 을 당겨야 하는 호기(필요 단축 일정과 같은 계획).",
+    ),
+    "최대 단축(일)": st.column_config.NumberColumn(
+        format="localized", help="이 층 단축 호기 가운데 가장 많이 당기는 일수."
+    ),
+    "기한 지남": st.column_config.NumberColumn(
+        format="localized", help="목표 Qual 이 오늘 앞인 단축 호기."
+    ),
+    "추가 호기": st.column_config.NumberColumn(
+        format="localized",
+        help="기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수(그 공정 호기가 그려진 층마다).",
+    ),
+}
+
 Draft = dict[FloorKey, str]
 Base = tuple[int, tuple[tuple[str, str, str], ...]]
 
@@ -154,6 +175,24 @@ class FloorListColumn:
     name: str
     values: Mapping[FloorKey, object]
     config: Any = None
+    # 참이면 사용 층 표에만 선다 — 필요 단축 칸 넷은 비활성 층 표에 싣지 않는다(층 대수를 보이지
+    # 않는다 — 층 사용 0029 규칙). 「공식과 다름」 은 두 표에 다 선다.
+    active_only: bool = False
+
+
+def layer_columns(cells: Mapping[FloorKey, Mapping[str, object]]) -> tuple[FloorListColumn, ...]:
+    """색 기준 「필요 단축」 을 켠 동안의 층 → 칸 → 값
+    (`space_shortening_view.layer_table_columns`)을 사용 층 표에만 서는 덧붙임 칸
+    넷(`_LAYER_COLUMNS` 차례·설정)으로 바꾼다."""
+    return tuple(
+        FloorListColumn(
+            name,
+            {key: row.get(name) for key, row in cells.items()},
+            config,
+            active_only=True,
+        )
+        for name, config in _LAYER_COLUMNS.items()
+    )
 
 
 # 끄기 확인 목록에서 공식 배치에는 호기가 없고 가정 설비 시나리오 배치에만 호기가 있는 층의 꼬리.
@@ -540,16 +579,22 @@ def _table_rows(
             }
         )
         for column in extra_columns:
+            if inactive and column.active_only:
+                continue
             row[column.name] = column.values.get(placement.key)
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def _column_config(extra_columns: Sequence[FloorListColumn]) -> dict[str, Any]:
-    """기본 칸 설정에 덧붙인 칸 설정을 더한 것(모듈 상수는 그대로)."""
+def _column_config(extra_columns: Sequence[FloorListColumn], *, inactive: bool) -> dict[str, Any]:
+    """기본 칸 설정에 그 표에 서는 덧붙인 칸 설정을 더한 것(모듈 상수는 그대로)."""
     return {
         **_TABLE_COLUMNS,
-        **{column.name: column.config for column in extra_columns if column.config is not None},
+        **{
+            column.name: column.config
+            for column in extra_columns
+            if column.config is not None and not (inactive and column.active_only)
+        },
     }
 
 
@@ -561,10 +606,10 @@ def _render_tables(
     on_open: Callable[[FloorKey], None],
     extra_columns: Sequence[FloorListColumn] = (),
 ) -> None:
-    """보기 — 사용 층 표와 접힌 「비활성 층 n개」(늘 서는 자리 칸 안)."""
+    """보기 — 사용 층 표와 접힌 「비활성 층 n개」(늘 서는 자리 칸 안). `extra_columns` 가운데
+    `active_only` 칸은 사용 층 표에만 붙는다."""
     active = [placement for placement in placements if states.is_active(placement.key)]
     active_keys = tuple(placement.key for placement in active)
-    config = _column_config(extra_columns)
     st.dataframe(
         _table_rows(
             placements,
@@ -576,7 +621,9 @@ def _render_tables(
         ),
         hide_index=True,
         width="stretch",
-        column_config=config,
+        # 단축 호기가 없는 층의 「최대 단축(일)」 은 비어 있다 — 리터럴 "None" 대신 빈칸.
+        placeholder="",
+        column_config=_column_config(extra_columns, inactive=False),
         key=FLOOR_TABLE_KEY,
         on_select=partial(_open_from_table, FLOOR_TABLE_KEY, active_keys, on_open),
         selection_mode="single-row",
@@ -602,7 +649,7 @@ def _render_tables(
                 ),
                 hide_index=True,
                 width="stretch",
-                column_config=config,
+                column_config=_column_config(extra_columns, inactive=True),
                 key=INACTIVE_TABLE_KEY,
                 on_select=partial(
                     _open_from_table,
@@ -840,7 +887,9 @@ def render_space_floor_list(
     `unit_counts` 는 편집 모드 본문에서만 부른다(층별 설비 대수 — 공식 배치 기준, 끄기 확인의 n).
     `editable` 이 거짓이면(샘플 fleet·가정 설비 시나리오) `사용 편집` 을 잠그고 값도 끈다 —
     `locked_reason` 이 풍선이다(없으면 샘플 문구). `extra_columns` 는 보기 표(사용 층·비활성 층)에
-    덧붙이는 칸이다(`FloorListColumn` — 편집 모드 표에는 붙이지 않는다)."""
+    덧붙이는 칸이다(`FloorListColumn` — 편집 모드 표에는 붙이지 않는다). 「공식과 견주기」 의
+    「공식과 다름」 은 두 표에, 색 기준 「필요 단축」 을 켠 동안의 칸 넷(`layer_columns`)은 사용 층
+    표에만 선다."""
     with st.container(
         horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
     ):

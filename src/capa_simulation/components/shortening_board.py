@@ -21,6 +21,10 @@
   카드는 서되 KPI·CSV 에 들지 않는다고 적는다.
 - **상세 근거 링크** — 카드마다 「공정 Capa 상세에서 근거 보기」(`st.page_link` + 주소 인자 — 그
   카드의 첫 부족 달·목표·기간·단축/신규 대수). 샘플 fleet 이면 숨긴다(상세는 설비 저장본만 본다).
+- **도면 링크** — 그 옆 「도면에서 보기」(2026-10-24 결정 — Space 현황을 그 공정의 층·색 기준 「필요
+  단축」·같은 목표로 연다, `space_link_params`). 층은 본문이 공정 전부를 한 번에 고른 표를 받는다
+  (`space_shortening_layer.shortening_space_floors`). 두 화면이 같은 세션 설비 시나리오를
+  따르므로(LY6) 풍선은 없다.
 """
 
 from __future__ import annotations
@@ -37,8 +41,10 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design.theme import THEME_QUERY_PARAM
-from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import PROCESS_CAPA_DETAIL, SPACE_STATUS
 from capa_simulation.process_detail_state import shortening_card_query_params
+from capa_simulation.services.fab_layout import floor_param
+from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import KIND_NEW, LevelPlan
@@ -60,6 +66,7 @@ __all__ = [
     "DUE_DAYS_KEY",
     "HIGHLIGHT_FROM_BOARD",
     "HIGHLIGHT_FROM_DETAIL",
+    "HIGHLIGHT_FROM_SPACE",
     "HIGHLIGHT_OFF_KEY",
     "SHORTENING_HIGHLIGHT_KEY",
     "ShorteningHighlight",
@@ -72,15 +79,21 @@ __all__ = [
     "render_detail_link",
     "render_highlight_notice",
     "render_progress_board",
+    "render_space_link",
+    "space_link_params",
 ]
 
 # 강조 공정 — (원본 공정명, 출처). 위젯 키가 아니다.
 SHORTENING_HIGHLIGHT_KEY = "equipment_shortening_highlight_v1"
 HIGHLIGHT_FROM_DETAIL = "detail"
 HIGHLIGHT_FROM_BOARD = "board"
+# Space 현황 「필요 단축」 보기의 「필요 단축 일정에서 이 공정 보기」(2026-10-24 결정). 배지 글이
+# 없으면 `current_highlight` 가 그 강조를 말없이 버린다.
+HIGHLIGHT_FROM_SPACE = "space"
 _HIGHLIGHT_BADGES = {
     HIGHLIGHT_FROM_DETAIL: "공정 Capa 상세에서 연 공정",
     HIGHLIGHT_FROM_BOARD: "진척 보드에서 고른 공정",
+    HIGHLIGHT_FROM_SPACE: "Space 도면에서 연 공정",
 }
 HIGHLIGHT_OFF_KEY = "equipment_shortening_highlight_off"
 
@@ -138,7 +151,8 @@ def clear_highlight() -> None:
 
 
 def highlight_badge(highlight: ShorteningHighlight) -> str:
-    """카드 머리 배지 글 — 「공정 Capa 상세에서 연 공정」·「진척 보드에서 고른 공정」."""
+    """카드 머리 배지 글 — 「공정 Capa 상세에서 연 공정」·「진척 보드에서 고른 공정」·「Space
+    도면에서 연 공정」."""
     return _HIGHLIGHT_BADGES[highlight.source]
 
 
@@ -236,6 +250,34 @@ def render_detail_link(
         query_params=detail_link_params(
             level_plan, process, level=level, months=months, theme=theme, equipment=equipment
         ),
+    )
+
+
+def space_link_params(
+    process: str, *, floors: Mapping[str, FloorKey], level: float, theme: str | None
+) -> dict[str, str]:
+    """「도면에서 보기」 주소 인자 — `layer=short` · `proc`(원본 공정) · `target`(`1.1` — 공정 Capa
+    상세 링크의 `target` 과 같은 꼴) · 고른 층이 있으면 `floor`(「C1-2F」), 지금 테마가 있으면
+    그것(`st.page_link` 가 주소를 통째로 바꾼다). 층이 없으면 Space 가 FAB 전체로 연다."""
+    params = {"layer": "short", "proc": str(process), "target": f"{float(level):g}"}
+    floor = floors.get(str(process))
+    if floor is not None:
+        params["floor"] = floor_param(floor)
+    if theme:
+        params[THEME_QUERY_PARAM] = theme
+    return params
+
+
+def render_space_link(process: str, *, floors: Mapping[str, FloorKey], level: float) -> None:
+    """카드 아래 「도면에서 보기」 — Space 현황을 그 공정의 층·필요 단축 보기·같은 목표로 연다."""
+    render_page_link(
+        SPACE_STATUS.path,
+        label="도면에서 보기",
+        icon=":material/grid_view:",
+        query_params=space_link_params(
+            process, floors=floors, level=level, theme=st.query_params.get(THEME_QUERY_PARAM)
+        ),
+        fallback="사이드바 Space 현황에서 색 기준 「필요 단축」",
     )
 
 

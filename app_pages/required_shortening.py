@@ -45,6 +45,10 @@ from capa_simulation.components.qual_deadline_calculator import render_qual_dead
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, render_sample_switch
 from capa_simulation.components.shortening_progress_panel import reserve_baseline_notice_slots
+from capa_simulation.components.shortening_source import (
+    load_shortening_demand,
+    shortening_frames,
+)
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     resolve_equipment_session,
@@ -55,24 +59,14 @@ from capa_simulation.page_bootstrap import (
     PageContext,
     bootstrap_error_message,
     forget_page_dialogs,
-    load_page_context,
     render_schema_ahead_warning,
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
+    load_floor_states,
     load_process_cutoff,
 )
-from capa_simulation.services.equipment_samples import (
-    sample_downtime_schedule,
-    sample_equipment_baseline,
-    sample_equipment_master,
-)
-from capa_simulation.services.simulation_cache import (
-    ScenarioCacheKey,
-    check_scenario_capacity,
-    scenario_cache_key,
-    scenario_required_equipment,
-)
+from capa_simulation.services.simulation_cache import ScenarioCacheKey
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card
 
@@ -152,6 +146,8 @@ try:
     latest_snapshot = equipment_session.snapshot
     # 저장된 Cut-off. 고치는 곳은 가용설비 현황 머리 「설정」 팝업이다.
     stored_cutoff = load_process_cutoff(equipment_database_path)
+    # 카드 「도면에서 보기」 가 열 층에서 뺄 비활성 층(Space 층 사용 0029 — 링크 대상이 아니다).
+    inactive_floors = frozenset(load_floor_states(equipment_database_path).inactive)
 except BOOTSTRAP_ERRORS as exc:
     st.error(
         "설비 일정을 준비하지 못했습니다. "
@@ -176,21 +172,14 @@ using_dashboard_sample = st.session_state[EQUIPMENT_DRAFT_KEY].empty
 show_sample_fleet = bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
 if using_dashboard_sample:
     show_sample_fleet = render_sample_switch(key="shortening_sample_switch", source="설비 운영 DB")
-# 합성값은 조회에만 쓴다(가용설비 현황 Main 과 같은 fleet).
-dashboard_equipment = (
-    sample_equipment_master(anchor_date=today)
-    if using_dashboard_sample and show_sample_fleet
-    else equipment
-)
-dashboard_downtime = (
-    sample_downtime_schedule(anchor_date=today)
-    if using_dashboard_sample and show_sample_fleet
-    else downtime
-)
-dashboard_baseline = (
-    sample_equipment_baseline()
-    if latest_snapshot is None and baseline.empty and using_dashboard_sample and show_sample_fleet
-    else baseline
+# 합성값은 조회에만 쓴다(가용설비 현황 Main 과 같은 fleet). Space 「필요 단축」 보기가 같은 함수로
+# 같은 세 표를 낸다(같은 계획 키).
+dashboard_baseline, dashboard_equipment, dashboard_downtime = shortening_frames(
+    (baseline, equipment, downtime),
+    sample=using_dashboard_sample,
+    show_sample=show_sample_fleet,
+    has_snapshot=latest_snapshot is not None,
+    today=today,
 )
 
 # 거르는 조건(기간·공정)은 사이드바 조건 카드다. 목표 확보율·진척 비교는 본문 맨 위다.
@@ -207,33 +196,21 @@ if using_dashboard_sample and not show_sample_fleet:
     reserve_baseline_notice_slots()
     st.stop()
 
-# 소요대수는 활성 시나리오에 있다. 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다).
-# 패널은 같은 시나리오 키와 로더로 달 범위·계획을 꺼낸다 — 소요대수는 그 캐시가 빗나갈 때만, 한
-# 회차에 한 번만 푼다. 못 읽었거나 계산이 멈췄으면 패널이 본문에 까닭을 알린다.
+# 소요대수는 활성 시나리오에 있다. 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다 —
+# `shortening_source.load_shortening_demand`, Space 「필요 단축」 보기와 같은 길). 패널은 같은
+# 시나리오 키와 로더로 달 범위·계획을 꺼낸다 — 소요대수는 그 캐시가 빗나갈 때만, 한 회차에 한 번만
+# 푼다. 못 읽었거나 계산이 멈췄으면 패널이 본문에 까닭을 알린다.
 shortening_context: PageContext | None = None
 shortening_key: ScenarioCacheKey | None = None
 shortening_demand: Callable[[], pd.DataFrame] | None = None
 shortening_error: str | None = None
 try:
-    shortening_context = load_page_context()
-    candidate_key = scenario_cache_key(
-        shortening_context.reference_version,
-        shortening_context.active_scenario,
-        shortening_context.selected_start_month,
-        shortening_context.selected_end_month,
+    demand = load_shortening_demand()
+    shortening_context, shortening_key, shortening_demand = (
+        demand.context,
+        demand.key,
+        demand.loader,
     )
-    candidate_demand = scenario_required_equipment(
-        candidate_key,
-        scenario_tables=shortening_context.active_scenario["tables"],
-        reference_tables=shortening_context.reference_tables,
-    )
-    check_scenario_capacity(
-        candidate_key,
-        _scenario_tables=shortening_context.active_scenario["tables"],
-        _reference_tables=shortening_context.reference_tables,
-        _required_equipment=candidate_demand,
-    )
-    shortening_key, shortening_demand = candidate_key, candidate_demand
 except BOOTSTRAP_ERRORS as exc:
     shortening_error = bootstrap_error_message(
         exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
@@ -269,4 +246,5 @@ render_required_shortening_tab(
     equipment_basis=(
         None if using_dashboard_sample else shortening_equipment_basis(equipment_session)
     ),
+    inactive_floors=inactive_floors,
 )

@@ -18,6 +18,8 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
     absent_filter_processes,
+    effective_filter_months,
+    filter_month_window,
     merge_filter_processes,
     normalize_filter_month,
     normalize_filter_processes,
@@ -32,6 +34,28 @@ def _repository(tmp_path: Path) -> DuckDBEquipmentRepository:
 
 
 # ------------------------------------------------------- 규칙
+
+
+def test_the_month_window_reads_a_reversed_range_and_keeps_only_options() -> None:
+    options = [202610, 202611, 202612, 202701]
+    assert filter_month_window(202611, 202612, options) == [202611, 202612]
+    assert filter_month_window(202701, 202611, options) == [202611, 202612, 202701]
+    assert filter_month_window(202601, 202612, options) == [202610, 202611, 202612]
+
+
+def test_effective_months_read_the_session_seed_like_the_shortening_screen() -> None:
+    """Space 「필요 단축」 보기는 필요 단축 일정의 시작·끝 월 칸 심기를 읽기만 한다 — 칸이 없으면
+    공용 프로필 달(선택지 밖이면 끝값), 칸 값이 선택지 밖이면 끝값, 시작 > 끝이면 바꿔 읽는다."""
+    options = [202610, 202611, 202612, 202701]
+    profile = ShorteningFilterProfile(start_month=202611, end_month=202612, version=1)
+    assert effective_filter_months(options, profile, None, None) == [202611, 202612]
+    outside = ShorteningFilterProfile(start_month=202601, end_month=202612, version=1)
+    assert effective_filter_months(options, outside, None, None) == [202610, 202611, 202612]
+    assert effective_filter_months(options, profile, 202610, 202701) == options
+    assert effective_filter_months(options, profile, 202509, 202611) == [202610, 202611]
+    assert effective_filter_months(options, profile, 202701, 202611) == [202611, 202612, 202701]
+    assert effective_filter_months(options, ShorteningFilterProfile(), None, None) == options
+    assert effective_filter_months([], profile, None, None) == []
 
 
 def test_a_stored_month_seeds_only_when_it_is_an_option() -> None:

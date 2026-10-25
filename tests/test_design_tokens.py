@@ -1,5 +1,6 @@
 # Purpose: 색·서체가 design/tokens.py 밖으로 새지 않는지 검사한다.
 
+import itertools
 import math
 import re
 from pathlib import Path
@@ -703,3 +704,39 @@ def test_the_test_line_type_is_a_light_navy_apart_from_every_other_face() -> Non
             if cvd < CVD_TARGET:
                 failures.append(f"{mode} TEST↔{name}: 색각이상 ΔE {cvd:.1f}")
     assert not failures, "TEST 면이 다른 면과 갈리지 않습니다:" + _bullets(failures)
+
+
+SHORT_BUCKETS = ("s", "m", "l", "x")
+
+
+def test_the_shortening_buckets_read_on_the_canvas_and_stay_apart_in_both_themes() -> None:
+    """Space 색 기준 「필요 단축」 의 구간 면 넷(2026-10-24 결정 D12) — 두 테마 모두 같은 이름이고,
+    면 위 글자 4.5:1, 캔버스 대비 3:1(도면 위 배지), 임박 테도 캔버스 대비 3:1 이다. 구간끼리 정상
+    시야 ΔE 12·색각이상 ΔE 6 이상 떨어지고, 반입 전 주황 테·반출/이설 노랑 테·지연 빨강과 정상 시야
+    ΔE 10 이상 갈린다(그 테마의 값과 견준다 — 반입 전 테는 두 테마가 다르다). 흐림은 0 과 1 사이의
+    수다."""
+    failures: list[str] = []
+    for mode, palette in tokens._PALETTES.items():
+        fills, inks = palette["SPACE_SHORT_FILLS"], palette["SPACE_SHORT_INKS"]
+        assert tuple(fills) == SHORT_BUCKETS and tuple(inks) == SHORT_BUCKETS, mode
+        canvas = palette["SPACE_CANVAS"]
+        for bucket in SHORT_BUCKETS:
+            fill = fills[bucket]
+            if contrast_ratio(inks[bucket], fill) < TEXT_ON_FILL_MINIMUM:
+                failures.append(f"{mode}.{bucket} 글자 {contrast_ratio(inks[bucket], fill):.2f}")
+            if contrast_ratio(fill, canvas) < 3:
+                failures.append(f"{mode}.{bucket} 캔버스 {contrast_ratio(fill, canvas):.2f}")
+            for name in ("SPACE_RING_PRE_ARRIVAL", "SPACE_RING_EXIT", "SPACE_UNIT_DELAY_FILL"):
+                if _delta_e(fill, palette[name]) < 10:
+                    failures.append(
+                        f"{mode}.{bucket}↔{name}: ΔE {_delta_e(fill, palette[name]):.1f}"
+                    )
+        for one, other in itertools.combinations(SHORT_BUCKETS, 2):
+            normal = _delta_e(fills[one], fills[other])
+            cvd = min(_delta_e(fills[one], fills[other], vision) for vision in CVD_MATRICES)
+            if normal < 12 or cvd < 6:
+                failures.append(f"{mode}.{one}↔{other}: ΔE {normal:.1f} · 색각이상 {cvd:.1f}")
+        if contrast_ratio(palette["SPACE_SHORT_IMMINENT"], canvas) < 3:
+            failures.append(f"{mode} 임박 테")
+        assert 0 < float(palette["SPACE_SHORT_DIM_OPACITY"]) < 1, mode
+    assert not failures, "필요 단축 구간 색:" + _bullets(failures)

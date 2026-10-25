@@ -323,6 +323,15 @@ _LIGHT: Final[dict[str, Any]] = {
     # 배치 편집기 정렬선(끌거나 놓는 것이 다른 호기·요소의 선에 붙을 때). 선택 테(강조색)·
     # 경고(빨강)와 갈리는 자홍이고 캔버스와 3:1 이상이다.
     "SPACE_GUIDE": "#DB2777",
+    # 색 기준 「필요 단축」(2026-10-24 사용자 결정)의 단축 일수 구간 면·글자 — s(1–7일)·m(8–14일)·
+    # l(15일 이상)·x(기한 지남). 시안의 따뜻한 세 단(호박 → 녹 → 짙은 갈색)이고 기한 지남은 자주다.
+    # 글자 4.5:1·캔버스 대비 3:1(배지)이고, 반입 전 주황 테·반출 노랑 테·지연 빨강과 갈린다(결정 D12
+    # — 켠 동안 지연·보관 면은 칠하지 않는다). 임박 테는 짙은 남색, 흐림은 단축 없는 호기의
+    # 불투명도다.
+    "SPACE_SHORT_FILLS": {"s": "#B7791F", "m": "#7C2D12", "l": "#3F1D0B", "x": "#7E22CE"},
+    "SPACE_SHORT_INKS": {"s": "#111111", "m": "#FFFFFF", "l": "#FFFFFF", "x": "#FFFFFF"},
+    "SPACE_SHORT_IMMINENT": "#0F172A",
+    "SPACE_SHORT_DIM_OPACITY": "0.32",
     # ------------------------------------------------------------- 설비 마스터 표
     # 가용설비 현황 설비 마스터 탭 표(Components v2)의 칸 표지. 색만으로 뜻을 싣지 않는다 — 바뀐
     # 칸은 오른쪽 위 삼각(MARK), 오류는 안쪽 테(LINE), 경고는 밑줄(WARN_LINE), 잠긴 칸은 커서·풍선이
@@ -525,6 +534,11 @@ _DARK: Final[dict[str, Any]] = {
     "SPACE_FLAG_INK": "#111111",
     "SPACE_HATCH": "#E5E7EB",
     "SPACE_GUIDE": "#F472B6",
+    # 어두운 캔버스에서는 밝은 쪽이 앞으로 나온다 — 모래 → 황갈 → 녹갈, 기한 지남은 연보라.
+    "SPACE_SHORT_FILLS": {"s": "#E6D4B3", "m": "#B48364", "l": "#915846", "x": "#C4A5F5"},
+    "SPACE_SHORT_INKS": {"s": "#111111", "m": "#111111", "l": "#FFFFFF", "x": "#111111"},
+    "SPACE_SHORT_IMMINENT": "#F8FAFC",
+    "SPACE_SHORT_DIM_OPACITY": "0.3",
     # 설비 마스터 표 칸 표지 — 어두운 면 위에서 같은 뜻(면은 낮은 밝기, 표지 선은 밝게).
     "GRID_CHANGED_FILL": "#3A2F12",
     "GRID_CHANGED_MARK": "#F0B37A",
@@ -690,6 +704,10 @@ if TYPE_CHECKING:
     SPACE_RING_EXIT_OUTLINE: Final[str] = ""
     SPACE_RING_HALO: Final[str] = ""
     SPACE_RING_PRE_ARRIVAL: Final[str] = ""
+    SPACE_SHORT_DIM_OPACITY: Final[str] = ""
+    SPACE_SHORT_FILLS: Final[dict[str, str]] = {}
+    SPACE_SHORT_IMMINENT: Final[str] = ""
+    SPACE_SHORT_INKS: Final[dict[str, str]] = {}
     SPACE_TEXT: Final[str] = ""
     SPACE_UNIT_DEFAULT_FILL: Final[str] = ""
     SPACE_UNIT_DEFAULT_INK: Final[str] = ""

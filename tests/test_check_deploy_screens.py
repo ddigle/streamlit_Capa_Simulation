@@ -1672,6 +1672,7 @@ NEW_ITEM_KEYS = [
     "constraint_sim",
     "space_scenario_row",
     "equipment_grid",
+    "space_shortening",
 ]
 
 
@@ -2098,16 +2099,20 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
     specs = {Path(spec.path).stem: spec for spec in ALL_SPECS}
     for page, _title, expected in screens.OTHER_PAGE_PANELS:
         spec = specs[page]
-        # 탭으로 가르지 않고, 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다).
-        assert spec.condition_tabs is None and spec.url_path is None
+        # 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다). 탭으로 가르지 않는다 — Space
+        # 현황만 보기 값(색 기준)으로 가르고, 화면 확인은 기본 색 기준(첫 값)에서 돈다.
+        assert spec.url_path is None
+        assert spec.condition_tabs is None or page == screens.SPACE_PAGE
+        active = spec.condition_tabs.first if spec.condition_tabs is not None else None
+        common = spec.reads_common_conditions_on(active)
         # 설비 시나리오 줄(`equipment_scenario`·`reads_equipment_scenario_on`)도 선언에서 읽는다 —
         # Space 현황은 설비 시나리오 줄 하나다(세션 시나리오를 고르는 줄 — 설비 시나리오 2단계 S3).
         rows = tuple(
             name
             for name, shown in (
-                ("시나리오", spec.reads_scenario),
-                ("조회기간", spec.reads_period),
-                ("설비 시나리오", spec.reads_equipment_scenario_on(None)),
+                ("시나리오", common and spec.reads_scenario),
+                ("조회기간", common and spec.reads_period),
+                ("설비 시나리오", spec.reads_equipment_scenario_on(active)),
             )
             if shown
         )
@@ -3331,3 +3336,77 @@ def test_the_constraint_process_match_is_none_without_a_followed_link() -> None:
         )
         is False
     )
+
+
+# ------------------------------------------------------------------ Space 필요 단축 보기
+
+
+@pytest.mark.parametrize("class_name", ["sle-short-badges", "sle-pinned", "sle-fader"])
+def test_the_space_shortening_selectors_exist_in_the_editor(class_name: str) -> None:
+    html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
+    assert f'class="{class_name}' in html
+
+
+def test_the_space_shortening_item_reads_what_the_app_draws() -> None:
+    """항목이 읽는 것 — 색 기준 라디오 칸·값(navigation 과 같은 글자), FAB 블록 풍선의 단축 줄, 층
+    목록 표 `단축 호기` 칸, 배지 `data-pick`·모듈 상자 `is-module`, 고정 줄."""
+    from capa_simulation import navigation
+    from capa_simulation.components import space_floor_list
+
+    assert screens.SPACE_COLOR_BASIS_KEY == navigation.SPACE_COLOR_BASIS_KEY
+    assert screens.SPACE_SHORTENING_BASIS == navigation.SPACE_SHORTENING_BASIS
+    assert screens.SPACE_DEFAULT_BASIS == navigation.SPACE_DEFAULT_BASIS
+    page = _text(PROJECT_ROOT / "app_pages" / "space_status.py")
+    assert f'SPACE_CARD_NAME = "{screens.SPACE_CARD_NAME}"' in page
+    assert '"단축 호기":' in _text(COMPONENTS / "space_floor_list.py")
+    assert "단축 호기" in space_floor_list._LAYER_COLUMNS
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    assert "node.dataset.pick = ids[0]" in editor
+    assert "group.classList.toggle('is-module'" in editor
+    assert "stats.occupancy, stats.short" in editor
+    layer = _text(
+        PROJECT_ROOT / "src" / "capa_simulation" / "services" / "space_shortening_layer.py"
+    )
+    assert 'f"단축 {count.units}대 · 최대 −{count.max_days}일"' in layer
+    source = inspect.getsource(screens.check_space_shortening)
+    assert "_choose_color_basis(screen, SPACE_DEFAULT_BASIS)" in source
+    assert source.index("finally:") < source.index(
+        "_choose_color_basis(screen, SPACE_DEFAULT_BASIS)"
+    )
+
+
+def test_the_space_shortening_summary_carries_counts_only() -> None:
+    line = screens.summarize_space_shortening(
+        6, {"badges": 4, "modules": 1, "pinned": True, "fader": False}, True
+    )
+    assert line == (
+        "단축 줄 블록 6개 · 최다 층 배지 4개(모듈 묶음 1) · 고정 줄 있음 · 페이더 숨음 · "
+        "되돌린 뒤 페이더 있음"
+    )
+    assert "|" not in line
+    assert screens.summarize_space_shortening(0, None, True).startswith(
+        "단축 줄 블록 0개 · 단축 층 없음"
+    )
+    assert screens.summarize_space_shortening(0, None, True, stopped="Cut-off 먼저 알림") == (
+        "Cut-off 먼저 알림 · 되돌린 뒤 페이더 있음"
+    )
+    # 층을 열지 못해 보지 않은 것은 「있음」 으로 적지 않는다(리뷰 — 늘 같은 글이면 사내 리뷰에서
+    # 정보가 되지 않는다).
+    assert screens.summarize_space_shortening(0, None, None, stopped="Cut-off 먼저 알림") == (
+        "Cut-off 먼저 알림 · 되돌린 뒤 페이더 확인 안 함(연 층 없음)"
+    )
+    assert screens.summarize_space_shortening(0, None, None).endswith(
+        "되돌린 뒤 페이더 확인 안 함(연 층 없음)"
+    )
+    assert screens.summarize_space_shortening(0, None, False).endswith("되돌린 뒤 페이더 없음")
+
+
+def test_the_space_shortening_item_checks_the_fader_on_a_floor_it_opened() -> None:
+    """단축 층을 열지 못한 실행은 되돌린 뒤 배치 최다 층을 열어 페이더를 본다 — 열지 않은 채
+    「페이더 있음」 으로 적지 않는다(옛 판은 `fader_back or floor is None` 이었다)."""
+    source = inspect.getsource(screens.check_space_shortening)
+    assert "or floor is None" not in source
+    assert source.index("_choose_color_basis(screen, SPACE_DEFAULT_BASIS)") < source.index(
+        "_open_most_placed_floor(screen)"
+    )
+    assert "summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)" in source

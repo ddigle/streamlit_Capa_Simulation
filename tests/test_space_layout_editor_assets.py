@@ -312,7 +312,19 @@ def test_unit_colours_and_boundary_dates_pass_all_three_paths() -> None:
     """호기의 면·글자(`fill`·`ink`)와 경계 날짜는 세 곳을 모두 지나야 도면에 닿는다 — 파이썬
     `_clean_items` 화이트리스트, 첫 회차의 `readUnit`, 같은 epoch 회차의 합치기. 하나라도 빠지면
     체크·기준일을 바꾼 회차에 색이 옛 값으로 남는다. 이름 `group`·`arrived` 는 이미 다른 뜻이다."""
-    fields = ("fill", "ink", "storage", "realFrom", "exitOn", "stopOn", "delays", "offline", "flag")
+    fields = (
+        "fill",
+        "ink",
+        "storage",
+        "realFrom",
+        "exitOn",
+        "stopOn",
+        "delays",
+        "offline",
+        "flag",
+        "layer",
+        "dim",
+    )
     cleaned = space_layout_editor._clean_items(
         [
             {
@@ -330,6 +342,8 @@ def test_unit_colours_and_boundary_dates_pass_all_three_paths() -> None:
                 "delays": [["2026-09-01", None], ["bad", "2026-10-01"], "x"],
                 "offline": (("2026-10-10", "2026-10-20"),),
                 "flag": True,
+                "layer": "m",
+                "dim": True,
             }
         ]
     )[0]
@@ -345,6 +359,14 @@ def test_unit_colours_and_boundary_dates_pass_all_three_paths() -> None:
     assert cleaned["offline"] == [["2026-10-10", "2026-10-20"]]
     blank = space_layout_editor._clean_items([{"id": "U2", "x": 1, "y": 1, "w": 2, "h": 2}])[0]
     assert blank["fill"] == "" and blank["realFrom"] is None and blank["delays"] == []
+    # 「필요 단축」 칸은 값이 있을 때만 실린다(끈 동안 payload 그대로) — 모르는 구간·참이 아닌 dim
+    # 은 버린다.
+    assert cleaned["layer"] == "m" and cleaned["dim"] is True
+    assert "layer" not in blank and "dim" not in blank
+    odd = space_layout_editor._clean_items(
+        [{"id": "U3", "x": 1, "y": 1, "w": 2, "h": 2, "layer": "q", "dim": 1}]
+    )[0]
+    assert "layer" not in odd and "dim" not in odd
 
     look = JS[JS.index("const unitLook = (raw) => ({") : JS.index("const readUnit = (raw)")]
     for field in fields:
@@ -529,7 +551,7 @@ def test_the_date_row_tops_the_floor_drawing_with_one_height_for_view_and_edit()
     assert "window.innerHeight - CHROME_PX" in JS
     assert "gap: 8px" in _rule(".sle")
     assert "if (PINNED) setText(pinnedDate, `기준일 ${S.asOf" in JS
-    assert "const PINNED = !VIEW && !FAB" in JS
+    assert "const PINNED = (!VIEW && !FAB) || ASOF_PINNED" in JS
 
 
 def test_the_fader_spans_the_range_python_sends_with_today_in_bold() -> None:
@@ -703,3 +725,36 @@ def test_the_pre_arrival_ring_is_drawn_thick() -> None:
     ring = _rule(".sle.is-view .sle-unit.is-pre .sle-ring")
     match = re.search(r"stroke-width: ([\d.]+)", ring)
     assert match and float(match.group(1)) >= 3 and "stroke-dasharray" in ring
+
+
+def test_the_shortening_view_pins_the_date_and_draws_badges_only_when_python_says_so() -> None:
+    """색 기준 「필요 단축」(명세 6-7·10-3 T-B4). 파이썬이 `asOfPinned` 를 실은 층 보기만 기준일
+    고정 줄을 세우고(페이더 숨김 — `is-pinned`), 배지(`shortBadges`)를 그리며, 모든 호기의 지연·보관
+    면을 칠하지 않는다(결정 D12). 표시된 호기는 겹쳐 숨기지 않는다(`<view-cover>`). 흐림·고정 규칙은
+    보기 아래에만 있고, `is-dim` 토글은 `if (!VIEW) return` 뒤다. 배지만 바뀐 같은 epoch 회차는 배지
+    지문으로 다시 그린다."""
+    assert "typeof data.asOfPinned === 'string'" in JS
+    assert "host.classList.toggle('is-pinned', ASOF_PINNED)" in JS
+    assert "const FADER = VIEW && !FAB && !ASOF_PINNED" in JS
+    assert "Array.isArray(data.shortBadges)" in JS
+    colours = JS[JS.index("function unitColors(item, st) {") : JS.index("const color = (item)")]
+    assert colours.index("if (item.layer)") < colours.index("st.delay")
+    assert "st.delay && !ASOF_PINNED" in colours and "st.storage && !ASOF_PINNED" in colours
+    cover = JS[JS.index("function coveredBy(") : JS.index("// </view-cover>")]
+    assert "if (item.layer) return false" in cover
+    paint = JS[JS.index("function paintUnit(group, item) {") : JS.index("function buildMark(")]
+    assert paint.index("if (!VIEW) return") < paint.index("group.classList.toggle('is-dim'")
+    assert "JSON.stringify(SHORT_BADGES)" in JS and "S.badgeKey !== badgeKey" in JS
+    assert "drawShortBadges()" in JS[JS.index("function drawGroupNames() {") :]
+    assert "// <short-badge>" in JS and "function badgeSpot(" in JS
+    # 고정 줄 뒷글 — 보기는 data 글, 편집기는 HTML 글 그대로.
+    assert "ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault" in JS
+    assert '<g class="sle-short-badges"></g>' in HTML
+    for rule in (".sle.is-view .sle-unit.is-dim", ".sle.is-view.is-pinned .sle-fader"):
+        assert rule in CSS, rule
+    assert ".sle.is-view.is-pinned .sle-pinned { display: flex !important; }" in CSS
+    dim_rules = [line for line in CSS.splitlines() if ".is-dim" in line]
+    assert dim_rules and all(".sle.is-view" in line for line in dim_rules)
+    # 블록 셋째 줄(단축)은 비활성 블록에 서지 않는다(사유 줄만).
+    lines = JS[JS.index("const blockLines = (item) => {") : JS.index("const opensFloor")]
+    assert lines.index("if (blockOff(item))") < lines.index("stats.short")

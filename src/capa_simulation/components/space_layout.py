@@ -1,4 +1,4 @@
-# Purpose: Space 배치 집계(대수·점유율·층별 배치)·호기 상자 색·층 상세 범례·호기 표를 만든다.
+# Purpose: Space 배치 집계·호기 상자 색·필요 단축 얹기·층 상세 범례·호기 표를 만든다.
 
 from __future__ import annotations
 
@@ -35,10 +35,12 @@ from capa_simulation.services.floor_layout_profile import (
 from capa_simulation.services.space_color_basis import (
     COLOR_BASIS_CAPA,
     COLOR_BASIS_LINE_TYPE,
+    COLOR_BASIS_SHORTENING,
     CapaGroup,
     color_groups,
 )
 from capa_simulation.services.space_layout_edit import natural_name_key
+from capa_simulation.services.space_shortening_layer import BUCKET_LABELS, BUCKETS
 from capa_simulation.services.space_unit_state import (
     DELAYED_STATE,
     EXIT_PLANNED_STATE,
@@ -142,6 +144,7 @@ def floor_block_stats(
     *,
     inactive: Mapping[FloorKey, str] | None = None,
     layout_differences: Mapping[FloorKey, int] | None = None,
+    short_lines: Mapping[FloorKey, str] | None = None,
 ) -> dict[str, dict[str, str | None]]:
     """층 블록 글자(편집기 `data.linkStats`). 키는 블록의 연결(「C1 1F」)이다.
 
@@ -155,7 +158,11 @@ def floor_block_stats(
 
     `layout_differences` 는 「공식과 견주기」 를 켠 회차의 층 → 공식과 자리가 다른 설비 수다
     (`layout_overlay.unit_differences_by_floor`). 0 보다 큰 층 칸에 `"layout"`(「가정 배치 n대
-    다름」)을 싣는다 — 블록 풍선 한 줄이다(설계 8-3)."""
+    다름」)을 싣는다 — 블록 풍선 한 줄이다(설계 8-3).
+
+    `short_lines` 는 색 기준 「필요 단축」 을 켠 동안의 층 → 셋째 줄 글(「단축 3대 · 최대
+    −18일」)이다. 그 층 칸에만 `"short"` 를 싣는다 — 끈 동안 칸이 없다(뷰어 payload 그대로). 비활성
+    층에는 싣지 않는다 (층 대수를 보이지 않는다 — 층 사용 0029 규칙)."""
     stats: dict[str, dict[str, str | None]] = {}
     for placement in placements:
         cell: dict[str, str | None] = {
@@ -169,6 +176,8 @@ def floor_block_stats(
         }
         if inactive and placement.key in inactive:
             cell["inactive"] = inactive[placement.key]
+        elif short_lines and placement.key in short_lines:
+            cell["short"] = short_lines[placement.key]
         differs = (layout_differences or {}).get(placement.key, 0)
         if differs > 0:
             cell["layout"] = f"가정 배치 {differs:,}대 다름"
@@ -238,7 +247,9 @@ class ColorChoice:
     enabled: frozenset[str]
 
     def styles(self) -> tuple[ColorGroupStyle, ...]:
-        """그 기준의 모든 그룹(체크박스 차례)과 색."""
+        """그 기준의 모든 그룹(체크박스 차례)과 색. 필요 단축은 그룹이 없다(색은 단축 구간)."""
+        if self.basis == COLOR_BASIS_SHORTENING:
+            return ()
         if self.basis == COLOR_BASIS_CAPA:
             return tuple(
                 ColorGroupStyle(
@@ -299,6 +310,31 @@ def unit_appearance(
             "ink": style.ink if style is not None else tokens.SPACE_UNIT_DEFAULT_INK,
         }
     return looks
+
+
+def apply_layer_looks(
+    looks: Mapping[str, Mapping[str, Any]], layer_looks: Mapping[str, Mapping[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """`unit_appearance` 결과에 「필요 단축」 표시(`layer` 구간·`dim`)를 얹는다.
+
+    표시된 호기는 면·글자(`fill`·`ink`)를 비운다 — 브라우저가 `var(--sle-short-<구간>-fill|ink)` 로
+    칠해 테마를 따른다. 흐릴 호기에는 `dim` 만 단다. 값이 없는 칸은 싣지 않는다(끈 동안 payload
+    그대로).
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for name, look in looks.items():
+        merged = dict(look)
+        extra = layer_looks.get(name)
+        if extra:
+            bucket = extra.get("layer")
+            if isinstance(bucket, str) and bucket in BUCKETS:
+                merged["layer"] = bucket
+                merged["fill"] = ""
+                merged["ink"] = ""
+            if extra.get("dim"):
+                merged["dim"] = True
+        out[name] = merged
+    return out
 
 
 def fill_kinds(states: pd.DataFrame, groups: pd.Series, enabled: Collection[str]) -> pd.Series:
@@ -399,7 +435,11 @@ def _mark_swatches() -> dict[str, tuple[str, str]]:
 
 
 def space_legend_markup(
-    counts: Mapping[str, float] | None, *, choice: ColorChoice, as_of: date | None = None
+    counts: Mapping[str, float] | None,
+    *,
+    choice: ColorChoice,
+    as_of: date | None = None,
+    fills: bool = True,
 ) -> str:
     """층 상세 머리 줄 오른쪽의 범례. 도면 안이 아니라 머리 줄에 두어 도면이 테두리 안을 다 쓴다.
 
@@ -407,17 +447,21 @@ def space_legend_markup(
     그리고 반입 전(주황 점선)·반출/이설 예정(노랑 두 겹)·정지 중(빗금)·운영 비가동·미확인(「!」) —
     끝에 기준일을 단다. `None`(배치 편집 중)이면 채우기 뜻만(체크한 그룹·그 밖·보관·지연) 보인다 —
     편집 화면은 테·덧표시를 그리지 않고, 편집본은 저장본과 대수가 다르다.
+
+    `fills` 가 거짓이면 채우기 칸(그룹·그 밖·보관·지연)을 싣지 않는다 — 색 기준 「필요 단축」 을
+    켰는데 계획을 못 읽은 회차는 상자가 모두 기본 회색이고 도면이 지연·보관 면을 칠하지 않는다
+    (결정 D12·R5). 그 회차에 「지연 1대」 견본을 세우면 도면에서 찾을 수 없는 빨강이 된다.
     """
-    fills = [(style.label, _fill_swatch(style.fill), "") for style in choice.checked()]
-    fills += [
+    fill_entries = [(style.label, _fill_swatch(style.fill), "") for style in choice.checked()]
+    fill_entries += [
         (LEGEND_DEFAULT, _fill_swatch(tokens.SPACE_UNIT_DEFAULT_FILL), ""),
         (LEGEND_STORAGE, _fill_swatch(tokens.SPACE_UNIT_STORAGE_FILL), ""),
         (LEGEND_DELAY, _fill_swatch(tokens.SPACE_UNIT_DELAY_FILL), ""),
     ]
-    entries = fills
+    entries = fill_entries if fills else []
     if counts is not None:
         marks = [(label, swatch, inner) for label, (swatch, inner) in _mark_swatches().items()]
-        entries = [entry for entry in fills + marks if counts.get(entry[0], 0) > 0]
+        entries = [entry for entry in entries + marks if counts.get(entry[0], 0) > 0]
     chips = []
     for label, swatch, inner in entries:
         text = label if counts is None else f"{label} {format_unit_count(counts[label])}대"
@@ -428,6 +472,66 @@ def space_legend_markup(
         )
     if counts is not None and as_of is not None:
         chips.append(f'<span style="white-space:nowrap">기준 {as_of.isoformat()}</span>')
+    return (
+        '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;'
+        f'gap:4px 14px;font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'
+    )
+
+
+def _legend_chip(swatch: str, inner: str, text: str) -> str:
+    return (
+        '<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap">'
+        f'<span aria-hidden="true" style="{swatch}">{html.escape(inner)}</span>'
+        f"{html.escape(text)}</span>"
+    )
+
+
+def shortening_legend_markup(
+    counts: Mapping[str, int],
+    mark_counts: Mapping[str, float],
+    *,
+    as_of: date,
+    dim: bool = True,
+) -> str:
+    """색 기준 「필요 단축」 을 켠 층 상세 머리 줄 범례 — 구간 넷의 대수(설비 대수 — 모듈 묶음 한
+    대, `counts` 는 「이 층에서 단축할 호기」 목록과 같은 축)·임박 테·「흐림 = 단축 없음」, 그리고
+    지금의 테·덧표시 칸(반입 전·반출/이설 예정·정지 중·운영 비가동·미확인 — `space_legend_counts` 의
+    그 칸)과 기준일. 「흐림」 칸은 `dim`(단축 없는 호기 흐리게)을 켰을 때만 선다. 채우기 칸(그룹·그
+    밖·보관·지연)은 싣지 않는다 — 켠 동안 도면은 지연·보관 면을 칠하지 않는다 (결정 D12 — 풍선
+    글로만)."""
+    chips = [
+        _legend_chip(
+            _fill_swatch(tokens.SPACE_SHORT_FILLS[bucket]),
+            "",
+            f"{BUCKET_LABELS[bucket]} {counts[bucket]}대",
+        )
+        for bucket in BUCKETS
+        if counts.get(bucket, 0) > 0
+    ]
+    chips.append(
+        _legend_chip(
+            f"{_SWATCH}width:14px;height:10px;border-radius:5px;"
+            f"border:2px solid {tokens.SPACE_SHORT_IMMINENT};"
+            f"background:{tokens.SPACE_SHORT_FILLS['s']}",
+            "",
+            "임박 테",
+        )
+    )
+    if dim:
+        chips.append(
+            _legend_chip(
+                _fill_swatch(tokens.SPACE_UNIT_DEFAULT_FILL)
+                + f";opacity:{tokens.SPACE_SHORT_DIM_OPACITY}",
+                "",
+                "흐림 = 단축 없음",
+            )
+        )
+    for label, (swatch, inner) in _mark_swatches().items():
+        if mark_counts.get(label, 0) > 0:
+            chips.append(
+                _legend_chip(swatch, inner, f"{label} {format_unit_count(mark_counts[label])}대")
+            )
+    chips.append(f'<span style="white-space:nowrap">기준 {as_of.isoformat()}</span>')
     return (
         '<div style="display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;'
         f'gap:4px 14px;font-size:0.82rem;color:{tokens.TEXT_MUTED}">{"".join(chips)}</div>'

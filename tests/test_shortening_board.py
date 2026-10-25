@@ -146,3 +146,48 @@ def test_the_imminent_table_draws_empty_cells_as_a_dash_like_the_delayed_table()
     assert len(new) == 1 and pd.isna(new["단축일수"].iloc[0])
     managers = frame.set_index("호기")["담당자"]
     assert managers["DEMO-A2"] == "DEMO 담당" and pd.isna(managers["DEMO-B1"])
+
+
+def test_a_space_highlight_is_kept_with_its_own_badge() -> None:
+    """Space 「필요 단축」 보기의 「필요 단축 일정에서 이 공정 보기」 가 적는 출처(2026-10-24). 배지
+    글이 없으면 `current_highlight` 가 그 강조를 말없이 버린다."""
+    from capa_simulation.components.shortening_board import HIGHLIGHT_FROM_SPACE
+
+    assert highlight_badge(ShorteningHighlight("DEMO_A", HIGHLIGHT_FROM_SPACE)) == (
+        "Space 도면에서 연 공정"
+    )
+
+    def _app() -> None:
+        import streamlit as st
+
+        from capa_simulation.components.shortening_board import (
+            HIGHLIGHT_FROM_SPACE,
+            current_highlight,
+            highlight_shortening_process,
+        )
+
+        highlight_shortening_process("DEMO_A", source=HIGHLIGHT_FROM_SPACE)
+        st.session_state["test_highlight"] = current_highlight()
+
+    app = AppTest.from_function(_app).run()
+    assert not app.exception
+    assert app.session_state["test_highlight"] == ShorteningHighlight("DEMO_A", "space")
+
+
+def test_the_drawing_link_carries_the_layer_the_process_the_target_and_the_floor() -> None:
+    from capa_simulation.components.shortening_board import space_link_params
+
+    floors = {"W/B": ("C1", "2F")}
+    assert space_link_params("W/B", floors=floors, level=1.1, theme="dark") == {
+        "layer": "short",
+        "proc": "W/B",
+        "target": "1.1",
+        "floor": "C1-2F",
+        "theme": "dark",
+    }
+    # 고를 층이 없으면 floor 를 싣지 않는다(Space 가 FAB 전체로 연다). 테마가 없으면 싣지 않는다.
+    assert space_link_params("D/A", floors=floors, level=1.0, theme=None) == {
+        "layer": "short",
+        "proc": "D/A",
+        "target": "1",
+    }

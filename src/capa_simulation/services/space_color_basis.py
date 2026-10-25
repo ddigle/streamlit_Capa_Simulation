@@ -1,4 +1,4 @@
-# Purpose: Space 도면 「색 기준」(공정구분·투자Capa)의 그룹을 정하고 호기마다 그 그룹을 고른다.
+# Purpose: Space 도면 「색 기준」(공정구분·투자Capa·필요 단축)의 그룹을 정하고 호기의 그룹을 고른다.
 
 """Space 층 도면의 색 기준(2026-10-16 사용자 결정 — 질문 7·8 권장안).
 
@@ -14,6 +14,8 @@
   그룹이고 이름은 가장 많이 쓴 글자다. 종류가 7을 넘으면 작은 수부터 차례로 7구간에 고르게 나눠
   묶는다(「280K~319K」). 단(청록 7단의 칸)은 **숫자 차례**다 — 가장 작은 그룹이 가장 옅은 1단이고
   하나씩 짙어진다(시안 `capaLevel` 과 같다). 그룹이 7보다 적으면 짙은 단 쪽이 남는다.
+- **필요 단축**(셋째 값, 2026-10-24 사용자 결정)은 그룹이 없다 — 체크 칸이 비고 모든 호기의 그룹이
+  결측이다. 색은 필요 단축 일정 계획의 단축 일수 구간(`services/space_shortening_layer`)이 정한다.
 """
 
 from __future__ import annotations
@@ -33,10 +35,13 @@ from capa_simulation.services.equipment_contract import (
     line_type_group,
 )
 
-# 화면의 「색 기준」 두 값. 라디오가 이 글자를 보이고 그대로 값으로 쓴다.
+# 화면의 「색 기준」 세 값. 라디오가 이 글자를 보이고 그대로 값으로 쓴다. 셋째 값의 글자는
+# `navigation.SPACE_SHORTENING_BASIS` 와 같다(사이드바가 그 값일 때만 시나리오·조회기간 줄을 세운다
+# — 시험이 두 글자를 묶는다).
 COLOR_BASIS_LINE_TYPE: Final = LINE_TYPE_COLUMN
 COLOR_BASIS_CAPA: Final = INVESTMENT_CAPA_COLUMN
-COLOR_BASES: Final = (COLOR_BASIS_LINE_TYPE, COLOR_BASIS_CAPA)
+COLOR_BASIS_SHORTENING: Final = "필요 단축"
+COLOR_BASES: Final = (COLOR_BASIS_LINE_TYPE, COLOR_BASIS_CAPA, COLOR_BASIS_SHORTENING)
 # 투자Capa 단의 수(청록 7단). 그룹이 이보다 많으면 구간으로 묶는다.
 CAPA_LEVELS: Final = 7
 
@@ -125,14 +130,18 @@ def capa_group_of(values: pd.Series, groups: Sequence[CapaGroup]) -> pd.Series:
 
 
 def color_basis_groups(basis: str, capa: Sequence[CapaGroup]) -> tuple[str, ...]:
-    """그 기준의 그룹 이름(체크박스 차례)."""
+    """그 기준의 그룹 이름(체크박스 차례). 필요 단축은 그룹이 없다."""
     if basis == COLOR_BASIS_CAPA:
         return tuple(group.label for group in capa)
+    if basis == COLOR_BASIS_SHORTENING:
+        return ()
     return LINE_TYPE_GROUPS
 
 
 def color_groups(equipment: pd.DataFrame, basis: str, capa: Sequence[CapaGroup]) -> pd.Series:
-    """행마다 그 기준의 그룹 이름(없으면 결측). 칸이 없는 표는 모두 결측이다."""
+    """행마다 그 기준의 그룹 이름(없으면 결측). 칸이 없는 표와 필요 단축 기준은 모두 결측이다."""
+    if basis == COLOR_BASIS_SHORTENING:
+        return pd.Series(pd.NA, index=equipment.index, dtype="string")
     column = COLOR_BASIS_CAPA if basis == COLOR_BASIS_CAPA else COLOR_BASIS_LINE_TYPE
     if column not in equipment.columns:
         return pd.Series(pd.NA, index=equipment.index, dtype="string")

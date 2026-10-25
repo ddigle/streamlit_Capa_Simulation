@@ -69,6 +69,7 @@ from capa_simulation.components.shortening_board import (
     render_detail_link,
     render_highlight_notice,
     render_progress_board,
+    render_space_link,
 )
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
@@ -87,6 +88,16 @@ from capa_simulation.components.shortening_progress_panel import (
     reserve_baseline_notice_slots,
     scope_note,
 )
+from capa_simulation.components.shortening_source import (
+    SHORTENING_END_KEY,
+    SHORTENING_LEVEL_KEY,
+    SHORTENING_START_KEY,
+    ShorteningDemand,
+    ShorteningStop,
+    load_official_shortening,
+    shortening_filter_profile_or_default,
+    shortening_month_options,
+)
 from capa_simulation.components.shortening_timeline import month_day as _month_day
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
@@ -103,14 +114,11 @@ from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KE
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
-    bootstrap_error_message,
-    no_demand_message,
     prune_list_selection,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_shortening_filter_cache,
     get_equipment_repository,
-    load_shortening_filter_profile,
 )
 from capa_simulation.scenario_activation import (
     active_scenario_label,
@@ -118,6 +126,7 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
@@ -145,12 +154,14 @@ from capa_simulation.services.shortening_baseline import (
 from capa_simulation.services.shortening_filter_profile import (
     ShorteningFilterProfile,
     absent_filter_processes,
+    filter_month_window,
     seeded_filter_month,
 )
 from capa_simulation.services.shortening_watch import (
     delayed_units,
     unit_managers,
 )
+from capa_simulation.services.space_shortening_layer import shortening_space_floors
 from capa_simulation.services.undated_equipment import (
     undated_candidate_note,
     undated_equipment_notice,
@@ -180,9 +191,8 @@ __all__ = [
     "render_required_shortening_tab",
 ]
 
-SHORTENING_LEVEL_KEY = "equipment_shortening_level_v1"
-SHORTENING_START_KEY = "equipment_shortening_start_month_v1"
-SHORTENING_END_KEY = "equipment_shortening_end_month_v1"
+# 목표·시작 월·끝 월 칸은 `shortening_source` 에 있다(Space 「필요 단축」 보기가 같은 칸을 읽는다) —
+# 여기서 다시 내보낸다.
 SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
 # 머리의 「UPEH 가정 비교」 보기(세션 값). 가정이 꺼져 있으면 쓰지 않는다.
 SHORTENING_UPEH_VIEW_KEY = "equipment_shortening_upeh_view_v1"
@@ -262,17 +272,6 @@ class _Plan:
         return self.assumption is not None and self.assumption.active
 
 
-@dataclass(frozen=True)
-class _Stop:
-    """계획을 세우지 못한 회차 — 머리 아래에 한 줄 알리고 멈춘다.
-
-    `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `info`, `error` 다.
-    """
-
-    kind: str
-    message: str | None = None
-
-
 def render_required_shortening_tab(
     *,
     equipment: pd.DataFrame,
@@ -292,6 +291,7 @@ def render_required_shortening_tab(
     baseline_refusal: str | None = None,
     link_details: bool = True,
     equipment_basis: ShorteningEquipmentBasis | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """필요 단축 일정 화면 본문. 숨은 탭이면 기준선 알림 자리만 채운다.
 
@@ -314,7 +314,8 @@ def render_required_shortening_tab(
     `equipment_revision_id`·`equipment_revision_no` 는 화면의 호기가 나온 저장 리비전(기준선 머리에
     남긴다), `baseline_refusal` 은 기준선을 저장하지 않을 까닭(샘플 fleet)이다. `link_details` 가
     거짓이면(샘플 fleet) 공정 카드의 「공정 Capa 상세에서 근거 보기」 를 숨긴다 — 상세는 설비
-    저장본만 본다.
+    저장본만 본다. 그 옆 「도면에서 보기」(Space 현황 필요 단축 보기)도 같이 숨긴다(결정 D13).
+    `inactive_floors` 는 그 링크가 열 층에서 뺄 비활성 층(층 사용 0029)이다.
 
     **둘로 나눠 그린다.** 조건 카드(시작 월·끝 월·공정)와 계획(`get_required_shortening`)은 이
     함수가 앱 전체 회차에서 먼저 끝내고(`_prepare`), 머리(`진척 비교`·`목표 확보율`)와 본문(KPI·LOB·
@@ -356,6 +357,7 @@ def render_required_shortening_tab(
             refusal=baseline_refusal,
             link_details=link_details,
             equipment_basis=equipment_basis,
+            inactive_floors=inactive_floors,
         )
 
 
@@ -372,11 +374,12 @@ def _prepare(
     scenario_error: str | None,
     controls: AbstractContextManager[object],
     database_path: str | None,
-) -> _Plan | _Stop:
+) -> _Plan | ShorteningStop:
     """조건 카드(시작 월·끝 월·공정)를 그리고 계획을 세운다 — 앱 전체 회차에서만 돈다.
 
-    본문 자리에는 아무것도 쓰지 않는다(카드 안에만 쓴다). 멈출 까닭은 `_Stop` 으로 돌려주고 머리
-    아래에서 알린다.
+    본문 자리에는 아무것도 쓰지 않는다(카드 안에만 쓴다). 멈출 까닭은 `ShorteningStop` 으로 돌려주고
+    머리 아래에서 알린다. 달·계획은 Space 「필요 단축」 보기와 같은 함수(`shortening_source`)로
+    꺼낸다.
     """
     if (
         scenario_error is not None
@@ -384,29 +387,14 @@ def _prepare(
         or required_equipment is None
         or required_equipment_key is None
     ):
-        return _Stop("scenario", scenario_error)
-    if cutoff.empty:
-        return _Stop(
-            "info",
-            "공정별 Cut-off 를 먼저 적어야 설비 일정 기준 가용대수와 필요 단축 일정을 낼 수 "
-            "있습니다 (가용설비 현황 › 설정 › Cut-off).",
-        )
-    try:
-        demand_months = simulation_cache.get_required_month_span(
-            required_equipment_key, _required_equipment=required_equipment
-        )
-    except BOOTSTRAP_ERRORS as exc:
-        # 페이지의 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 페이지가 잡은
-        # 것과 같은 경고로 알린다.
-        return _Stop("scenario", bootstrap_error_message(exc))
-    if demand_months is None:
-        # 조회기간에 소요대수가 하나도 없다 — 계획을 세우면 맞댈 공정이 비어 이름 불일치 안내로
-        # 떨어진다. 다른 계산 화면(`resolve_effective_months`)과 같은 문구로 멈춘다.
-        return _Stop("error", no_demand_message(context))
-    month_options = _month_options(context, demand_months)
-    if not month_options:
-        return _Stop("info", "조회기간에 월이 없습니다.")
-    profile = _filter_profile(database_path)
+        return ShorteningStop("scenario", scenario_error)
+    demand = ShorteningDemand(
+        context=context, key=required_equipment_key, loader=required_equipment
+    )
+    month_options = shortening_month_options(demand, cutoff)
+    if isinstance(month_options, ShorteningStop):
+        return month_options
+    profile = shortening_filter_profile_or_default(database_path)
     with controls:
         if database_path is not None:
             st.caption(
@@ -415,26 +403,13 @@ def _prepare(
             )
         months = _render_month_range(month_options, profile=profile, database_path=database_path)
 
-    key = simulation_cache.required_shortening_cache_key(
-        required_equipment_key,
-        equipment=equipment,
-        downtime=downtime,
-        baseline=baseline,
-        cutoff=cutoff,
-        months=tuple(months),
-        today=today,
-    )
     try:
-        official = simulation_cache.load_required_shortening(
-            key,
-            equipment,
-            downtime,
-            baseline,
-            cutoff,
-            required_equipment=required_equipment,
+        official = load_official_shortening(
+            demand, (baseline, equipment, downtime), cutoff, tuple(months), today
         )
     except ValueError as exc:
-        return _Stop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+        return ShorteningStop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+    key = official.key
     plan = official.plan
 
     ordered = _ordered_processes(plan, context)
@@ -483,7 +458,7 @@ def _prepare(
 
 @st.fragment
 def _render_view(
-    prepared: _Plan | _Stop,
+    prepared: _Plan | ShorteningStop,
     *,
     equipment: pd.DataFrame,
     today: date,
@@ -492,6 +467,7 @@ def _render_view(
     refusal: str | None,
     link_details: bool = True,
     equipment_basis: ShorteningEquipmentBasis | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """머리(`진척 비교`·`목표 확보율`)와 본문 — 프래그먼트다.
 
@@ -509,7 +485,7 @@ def _render_view(
         today, baselines, prepared if isinstance(prepared, _Plan) else None
     )
     render_baseline_notice()
-    if isinstance(prepared, _Stop):
+    if isinstance(prepared, ShorteningStop):
         _render_stop(prepared)
         return
     _render_body(
@@ -524,10 +500,11 @@ def _render_view(
         refusal=refusal,
         link_details=link_details,
         equipment_basis=equipment_basis,
+        inactive_floors=inactive_floors,
     )
 
 
-def _render_stop(stop: _Stop) -> None:
+def _render_stop(stop: ShorteningStop) -> None:
     if stop.kind == "scenario":
         _render_scenario_error(stop.message)
     elif stop.kind == "error":
@@ -549,6 +526,7 @@ def _render_body(
     refusal: str | None,
     link_details: bool = True,
     equipment_basis: ShorteningEquipmentBasis | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교, 또는 UPEH 가정
     비교.
@@ -609,6 +587,7 @@ def _render_body(
             highlight=highlight,
             link_details=link_details,
             equipment_label=link_label,
+            inactive_floors=inactive_floors,
         )
         return
 
@@ -644,6 +623,13 @@ def _render_body(
         extra=lambda: render_baseline_controls(save, None),
     )
     managers = unit_managers(plan.unit_master)
+    # 「도면에서 보기」 가 열 층 — 공정 전부를 한 번에 고른다(카드마다 다시 세지 않는다). 본문은
+    # 프래그먼트라 목표를 바꿀 때마다 돈다.
+    space_floors = (
+        shortening_space_floors(level_plan, plan.unit_master, equipment, inactive=inactive_floors)
+        if link_details
+        else {}
+    )
     order = render_progress_board(
         level_plan,
         shown,
@@ -692,9 +678,11 @@ def _render_body(
                 )
             )
             if link_details:
-                render_detail_link(
-                    level_plan, process, level=level, months=months, equipment=link_label
-                )
+                with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                    render_detail_link(
+                        level_plan, process, level=level, months=months, equipment=link_label
+                    )
+                    render_space_link(process, floors=space_floors, level=level)
 
 
 def _card_order(
@@ -792,16 +780,6 @@ def _render_upeh_view_toggle(prepared: _Plan | None) -> bool:
     return bool(value) and usable
 
 
-def _filter_profile(database_path: str | None) -> ShorteningFilterProfile:
-    """공용 조회 조건. 경로가 없거나 못 읽으면 빈 프로필(= 코드 기본값)이다 — 화면은 떠야 한다."""
-    if database_path is None:
-        return ShorteningFilterProfile()
-    try:
-        return load_shortening_filter_profile(database_path)
-    except BOOTSTRAP_ERRORS:
-        return ShorteningFilterProfile()
-
-
 def _render_month_range(
     options: list[int],
     *,
@@ -848,10 +826,9 @@ def _render_month_range(
             on_change=on_change,
             args=args,
         )
-    first, last = sorted((int(start), int(end)))
     if int(start) > int(end):
         st.caption("시작 월이 끝 월보다 늦어 바꿔 읽었습니다.")
-    return [month for month in options if first <= month <= last]
+    return filter_month_window(int(start), int(end), options)
 
 
 def _render_process_filter(
@@ -1120,9 +1097,11 @@ def _render_progress(
     highlight: ShorteningHighlight | None = None,
     link_details: bool = True,
     equipment_label: str | None = None,
+    inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
     """진척 비교 화면 — 요약 → CSV 줄 → 범위 차이 한 줄 → 공정 진척 보드(기준선 대비·이행 지연) →
-    공정 카드(호기마다 두 줄).
+    공정 카드(호기마다 두 줄). 카드 링크는 일반 보기와 같다(「공정 Capa 상세에서 근거
+    보기」·「도면에서 보기」).
 
     짝짓기는 계획 키 + 기준선 id + 목표로 캐시한다(`get_shortening_progress`) — 공정 선택만 바꾼
     rerun 은 다시 짝짓지 않는다. 계획·LOB 요약은 그리지 않는다(`비교 안 함` 으로 돌아가면 그대로다).
@@ -1156,6 +1135,16 @@ def _render_progress(
     )
     delayed = delayed_units(view.rows, status, today=plan.today, processes=scope)
     managers = unit_managers(plan.unit_master, status)
+    space_floors = (
+        shortening_space_floors(
+            level_plan,
+            plan.unit_master,
+            equipment if equipment is not None else pd.DataFrame(),
+            inactive=inactive_floors,
+        )
+        if link_details
+        else {}
+    )
     order = render_progress_board(
         level_plan,
         view.cards,
@@ -1192,9 +1181,11 @@ def _render_progress(
                 )
             )
             if link_details:
-                render_detail_link(
-                    level_plan, process, level=level, months=months, equipment=equipment_label
-                )
+                with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                    render_detail_link(
+                        level_plan, process, level=level, months=months, equipment=equipment_label
+                    )
+                    render_space_link(process, floors=space_floors, level=level)
     for process in view.outside:
         st.html(
             progress_card_markup(
@@ -1458,27 +1449,6 @@ def _tiles_markup(tiles: Sequence[tuple[str, str, str]], *, aria: str) -> str:
 
 
 # ------------------------------------------------------------------ 데이터 고르기
-
-
-def _months_between(start: int, end: int) -> list[int]:
-    if start > end:
-        return []
-    months: list[int] = []
-    year, month = divmod(start, 100)
-    while year * 100 + month <= end:
-        months.append(year * 100 + month)
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    return months
-
-
-def _month_options(context: PageContext, demand_months: tuple[int, int]) -> list[int]:
-    """고를 수 있는 달 — 사이드바 조회기간 가운데 소요대수가 있는 범위(HOME 「적용」 범위).
-
-    `demand_months` 는 소요대수가 있는 첫 달·끝 달(`get_required_month_span`)이다.
-    """
-    start = max(context.selected_start_month, demand_months[0])
-    end = min(context.selected_end_month, demand_months[1])
-    return _months_between(start, end)
 
 
 def _ordered_processes(plan: ShorteningPlan, context: PageContext) -> list[str]:

@@ -152,7 +152,8 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
 
 DB는 두 개이고 물리적으로 분리한다: 시뮬레이션(`data/capa_simulation.duckdb`)과 가용설비
 운영(`data/equipment_availability.duckdb`). 설비 쪽은 전용 마이그레이션·Repository·캐시를 쓰고
-시뮬레이션 DB나 `RQ_*`를 읽지 않는다. 거꾸로 설비 DB 를 여는 시뮬레이션 쪽 화면은 `표준 목표`(Static,
+시뮬레이션 DB나 `RQ_*`를 읽지 않는다(화면 예외는 AGENTS 5장 9 — Static 대비 일정·필요 단축 일정·Space
+「필요 단축」 보기는 켠 동안만). 거꾸로 설비 DB 를 여는 시뮬레이션 쪽 화면은 `표준 목표`(Static,
 주차별 가용대수)와 `공정 Capa 상세`(실행 관리, 설비 운영 스냅샷·Cut-off 를 **읽기만**,
 필요 단축 일정의 공용 조회 조건·기준선은 안 읽음), `제약 시뮬레이션`(실행 관리, 공정 Capa 상세와 같은 계획 칸을
 **읽기만** — 어느 DB 에도 쓰지 않음), `표준 대비 재공 현황`(Dynamic, 표준 목표의 주차별

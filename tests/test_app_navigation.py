@@ -66,6 +66,9 @@ from capa_simulation.navigation import (
     REQUIRED_SHORTENING,
     SCENARIO_MANAGEMENT,
     SIDEBAR_GROUPS,
+    SPACE_COLOR_BASIS_KEY,
+    SPACE_DEFAULT_BASIS,
+    SPACE_SHORTENING_BASIS,
     SPACE_STATUS,
     STANDARD_TARGET_CAPA,
     STATIC_CAPA,
@@ -1975,6 +1978,140 @@ def test_a_tab_scoped_screen_shows_the_common_boxes_only_on_that_tab(_app: AppTe
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "equipment"}
+
+
+@pytest.fixture
+def _fleet_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
+    """`_app` 과 같되 설비 DB 에 오늘에 맞춘 합성 fleet 저장본과 그 공정 Cut-off 를 넣는다 — 필요
+    단축 일정 카드(「도면에서 보기」 는 저장본 fleet 에서만 선다)와 Space 필요 단축 보기가 계획까지
+    돈다."""
+    from datetime import date
+
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.components.month_range_picker as month_range_picker
+    import capa_simulation.components.required_shortening_panel as required_shortening_panel
+    import capa_simulation.settings as settings
+    from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+    from capa_simulation.services.equipment_contract import empty_equipment_baseline
+    from capa_simulation.services.equipment_samples import (
+        sample_downtime_schedule,
+        sample_equipment_master,
+    )
+
+    equipment_path = tmp_path / "equipment.duckdb"
+    repository = DuckDBEquipmentRepository(equipment_path)
+    repository.initialize()
+    today = date.today()
+    # 합성 fleet 의 공정을 내장 시드의 세 공정으로 바꿔 시나리오 소요대수와 맞댄다(이름이 다르면
+    # 「맞댄 공정 없음」 으로 멈춘다).
+    master = sample_equipment_master(anchor_date=today)
+    seed = ("DEMO_Chip_Attach", "DEMO_Wafer_Inspect", "DEMO_Final_Test")
+    names = sorted(set(master["공정소분류"]))
+    master["공정소분류"] = master["공정소분류"].map(
+        {name: seed[index % len(seed)] for index, name in enumerate(names)}
+    )
+    # 지금 가용이 넉넉하면 모자란 달이 없어 카드가 서지 않는다 — Qual 이 아직 오지 않은 호기만 남겨
+    # 그 호기들을 당겨야 하는 계획을 만든다.
+    master = master.loc[
+        master["Qual일정"].isna() | master["Qual일정"].gt(pd.Timestamp(today))
+    ].reset_index(drop=True)
+    downtime = sample_downtime_schedule(anchor_date=today)
+    downtime = downtime.loc[downtime["설비명"].isin(master["설비명"])].reset_index(drop=True)
+    repository.save_snapshot(empty_equipment_baseline(), master, downtime, note="처음")
+    processes = list(seed)
+    repository.save_process_cutoff(
+        pd.DataFrame(
+            {
+                "공정": processes,
+                "Cutoff일수": [10.0] * len(processes),
+                "비고": [None] * len(processes),
+            }
+        )
+    )
+    SENT_SUMMARIES.clear()
+    monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", equipment_path)
+    # 필요 단축 일정 패널은 판정 기준·LOB 줄을 읽을 때 모듈을 읽을 때 받은 `DUCKDB_PATH` 를 쓴다 —
+    # 같은 프로세스에서 먼저 불러온 패널이면 저장소 DB 자리라, 카드까지 그리는 이 시험이 저장소 DB
+    # 를 만든다 (`conftest` 의 저장소 DB 검사). 그 이름도 갈아 끼운다.
+    monkeypatch.setattr(required_shortening_panel, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: SENT_SUMMARIES.append(kwargs))
+    monkeypatch.setattr(
+        month_range_picker, "_MONTH_RANGE_APPLY", lambda **kwargs: SimpleNamespace(apply=None)
+    )
+    clear_equipment_repository()
+    return AppTest.from_file(str(APP_PATH), default_timeout=300)
+
+
+def test_space_shows_the_common_boxes_only_while_the_shortening_basis_is_chosen(
+    _fleet_app: AppTest,
+) -> None:
+    """D4 B — Space 현황은 사이드바 색 기준이 `필요 단축` 인 동안만 활성 시나리오·조회기간을 읽어 그
+    두 줄을 세운다(`ConditionTabs` 를 보기 값으로). 실제 `app.py` 가 라디오 값을 읽고, 페이지는 켠
+    회차에 예외 없이 계획까지 돈다(본문 조작 줄의 목표 확보율이 선다)."""
+    app = _fleet_app.run()
+    app.switch_page(SPACE_STATUS.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "equipment"}
+
+    app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).set_value(SPACE_SHORTENING_BASIS).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "scenario", "period", "equipment"}
+    assert [
+        item
+        for item in app.main.get("button_group")
+        if getattr(item, "label", None) == "목표 확보율"
+    ]
+    assert not [
+        item for item in app.main.warning if "필요 단축을 칠하지 못했습니다" in str(item.value)
+    ], [str(item.value) for item in app.main.warning]
+
+    app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).set_value(SPACE_DEFAULT_BASIS).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "equipment"}
+
+
+def test_the_shortening_card_links_to_space_and_the_arrival_shows_the_rows_at_once(
+    _fleet_app: AppTest,
+) -> None:
+    """필요 단축 일정 카드의 「도면에서 보기」 는 실제 `st.page_link`(Space 경로·`layer=short`
+    주소)로 선다(단독 실행의 물러선 글이 아니다). 그 주소로 Space 에 들어온 회차는 페이지가 색
+    기준을 적고 한 번 더 돌아(`st.rerun`) 사이드바 시나리오·조회기간 줄이 그 회차에 바로 선다 —
+    `app.py` 가 사이드바를 페이지보다 먼저 그리므로 다시 돌지 않으면 한 회차 늦는다."""
+    app = _fleet_app.run()
+    app.switch_page(REQUIRED_SHORTENING.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    links = [
+        link.proto for link in app.main.get("page_link") if link.proto.label == "도면에서 보기"
+    ]
+    assert links, [link.proto.label for link in app.main.get("page_link")]
+    # 실제 내비게이션의 Space 페이지(주소 이름 = 파일 이름)로 간다.
+    assert {link.page for link in links} == {Path(SPACE_STATUS.path).stem}
+    assert all("layer=short" in link.query_string for link in links)
+    assert not [
+        caption
+        for caption in app.main.caption
+        if "사이드바 Space 현황에서 색 기준" in str(caption.value)
+    ]
+    query = links[0].query_string
+
+    app.switch_page(SPACE_STATUS.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading", "equipment"}
+    for name, value in (part.split("=", 1) for part in query.split("&")):
+        from urllib.parse import unquote_plus
+
+        app.query_params[name] = unquote_plus(value)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[SPACE_COLOR_BASIS_KEY] == SPACE_SHORTENING_BASIS
+    assert _common_boxes(app) == {"heading", "scenario", "period", "equipment"}
+    assert "layer" not in app.query_params
 
 
 def test_the_sidebar_reads_the_innermost_tab_and_ignores_old_labels() -> None:
