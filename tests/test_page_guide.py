@@ -13,7 +13,7 @@
   추적하는 가이드 HTML 은 `static/guides/howto/` 아래 뼈대 이름으로만 있다.
 - md 글 위생: 탭 이름을 일괄로 바꿀 때 떨어져 남은 조사(「… 탭 와」)가 Guide·문서에 없고, 같은
   낱말이 두 곳을 가리키는 자리(가용설비 현황 `Summary` 탭과 입장 화면 Summary)에 가르는 한 줄이
-  있다.
+  있고, 범위 글의 물결표(「100~140%」)가 지움선 짝이 되지 않게 `\\~` 로 막혀 있다.
 """
 
 from __future__ import annotations
@@ -322,3 +322,37 @@ def test_the_equipment_guide_tells_its_summary_tab_from_the_intro_summary() -> N
     assert EQUIPMENT_SUMMARY_TAB.startswith(":material/")
     assert "입장 화면이나 사이드바 맨 위 앱 이름 라벨이 여는 **Summary**" in guide
     assert "다른 것입니다" in guide
+
+
+# Streamlit 마크다운(GFM)은 홑물결표 짝도 지움선으로 읽는다 — 「버튼 100~140% 또는 직접 50~300%」 가
+# 「버튼 100<del>140% 또는 직접 50</del>300%」 로 그려졌다(2026-10-25 E2E, 제약 시뮬레이션 Guide).
+# 앞뒤가 모두 빈칸인 `~`(「1일 ~ 말일」)는 짝이 되지 못하고, 코드 칸(`` `…` ``) 안은 글 그대로다.
+_CODE_SPAN = re.compile(r"`[^`]*`")
+_OPEN_TILDE = re.compile(r"(?<!\\)~(?! )|(?<! )(?<!\\)~")
+
+
+def _tilde_lines(text: str) -> list[str]:
+    """지움선 짝이 될 수 있는 물결표가 든 줄 — 코드 칸 밖 · `\\~` 아님 · 한쪽이라도 빈칸이 아닌
+    이웃."""
+    found: list[str] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        bare = _CODE_SPAN.sub("", line)
+        if _OPEN_TILDE.search(f" {bare} "):
+            found.append(f"{number}: {line.strip()}")
+    return found
+
+
+def test_the_tilde_check_tells_a_range_from_a_spaced_or_escaped_tilde() -> None:
+    assert _tilde_lines("버튼 100~140% 또는 직접 50~300%") == ["1: 버튼 100~140% 또는 직접 50~300%"]
+    assert _tilde_lines("~앞에 붙은 것") and _tilde_lines("뒤에 붙은 것~")
+    assert _tilde_lines("첫 소요 달 ~ 보이는 마지막 달") == []
+    assert _tilde_lines("버튼 100\\~140% 또는 직접 50\\~300%") == []
+    assert _tilde_lines("코드 `A~B~C` 는 글 그대로") == []
+
+
+@pytest.mark.parametrize("page", ["constraint_simulation"])
+def test_guide_ranges_escape_the_tilde(page: str) -> None:
+    """Guide 대화상자는 md 원문을 그대로 `st.markdown` 에 넘긴다(`page_guide._open_guide`) — 범위
+    글의 물결표는 원문에서 `\\~` 로 막는다(같은 화면의 `schedule_lines` 와 같은 꼴)."""
+    found = _tilde_lines((GUIDES / f"{page}.md").read_text(encoding="utf-8"))
+    assert not found, "물결표를 \\~ 로 막습니다(지움선이 됩니다):\n" + "\n".join(found)
