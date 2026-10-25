@@ -36,7 +36,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import date
 from functools import partial
 from typing import Final, NamedTuple
@@ -60,9 +60,10 @@ from capa_simulation.components.constraint_simulation_figures import (
     signed_points,
     units_text,
 )
+from capa_simulation.components.formula_text import consistent_digits, operand_text
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.month_sheet_canvas import MINUS, canvas_point
+from capa_simulation.components.month_sheet_canvas import canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
@@ -294,36 +295,6 @@ def _target_percent_text(value: float) -> str:
     return threshold_percent_label(value)
 
 
-# 단계 식의 인수를 적는 소수 자릿수 후보. 대수는 늘 둘째 자리(`units_text`)로 적지만, 그렇게 깎은
-# 인수로 다시 셈하면 적힌 결과와 0.01 대·0.1%p 쯤 어긋날 때가 있다(「0.02 × 120% = 0.03」 — 원값
-# 0.0215 로 낸 곱, 「기존 141.26 + 1.36」 으로 적은 소요 142.63). 그때만 인수를 한 자리씩 더 적어
-# 적힌 수로 셈이 맞게 한다. 어느 후보로도 못 맞추면 둘째 자리로 적고 등호를 「≈」 로 둔다.
-_OPERAND_DIGITS: Final = (2, 3, 4, 5, 6)
-_APPROX: Final = "≈"
-
-
-def _operand_text(value: float, digits: int) -> str:
-    """식의 인수 글자 — 둘째 자리면 `units_text`, 더 적으면 뒤 0 을 떼되 둘째 자리는 둔다."""
-    if digits <= 2:
-        return units_text(value)
-    rounded = round(value, digits)
-    if abs(rounded - round(rounded)) < 0.5 * 10**-digits:
-        return units_text(rounded)
-    text = f"{abs(rounded):,.{digits}f}".rstrip("0")
-    if len(text.rsplit(".", 1)[-1]) < 2:
-        text = f"{abs(rounded):,.2f}"
-    return f"{MINUS}{text}" if rounded < 0 else text
-
-
-def _consistent_digits(compute: Callable[[int], str], shown: str) -> tuple[int, str]:
-    """`compute(자릿수)` 가 적힌 결과 `shown` 과 같아지는 가장 적은 자릿수와 등호 「=」. 어느
-    후보로도 못 맞추면 둘째 자리와 「≈」 다(AGENTS 「화면 숫자는 검산되어야 한다」)."""
-    for digits in _OPERAND_DIGITS:
-        if compute(digits) == shown:
-            return digits, "="
-    return _OPERAND_DIGITS[0], _APPROX
-
-
 def month_steps(
     row: ConstraintMonth,
     result: ConstraintResult,
@@ -331,7 +302,12 @@ def month_steps(
     *,
     show_proportional: bool,
 ) -> MonthSteps:
-    """고른 달의 계산 다섯 단계 — 순수 함수(세션·그림을 보지 않는다)."""
+    """고른 달의 계산 다섯 단계 — 순수 함수(세션·그림을 보지 않는다).
+
+    단계 식(1·2·4·5단계)은 적힌 수로 다시 셈해도 적힌 결과가 나와야 한다 — 대수는 둘째
+    자리(`units_text`)로 적고, 깎은 인수로 어긋날 때만 그 식의 인수를 한 자리씩 더 적는다
+    (`formula_text.consistent_digits`·`operand_text` — 「0.02 × 120% = 0.03」 이 아니라
+    「0.021 × 120% = 0.03」). 어느 자릿수로도 못 맞추면 둘째 자리와 「≈」 다."""
     product = literal_markdown(labels.product)
     process = literal_markdown(labels.process_label)
     modifies = result.conditions.modifies
@@ -339,7 +315,7 @@ def month_steps(
 
     title = f"{month_label(row.month)} · {process}" + (" · 제약 기간" if row.in_period else "")
     required_shown = units_text(row.required)
-    split_digits, split_sign = _consistent_digits(
+    split_digits, split_sign = consistent_digits(
         lambda digits: units_text(
             round(row.existing_demand, digits) + round(row.constrained_demand, digits)
         ),
@@ -347,8 +323,8 @@ def month_steps(
     )
     step1 = MonthStep(
         f"소요 **{required_shown}대** {split_sign} 기존 "
-        f"{_operand_text(row.existing_demand, split_digits)} + "
-        f"{product} {_operand_text(row.constrained_demand, split_digits)}",
+        f"{operand_text(row.existing_demand, split_digits, units_text)} + "
+        f"{product} {operand_text(row.constrained_demand, split_digits, units_text)}",
         "제약 기간이라 공정 소요를 두 갈래로 나눕니다(합하면 원래 소요와 같습니다)."
         if row.in_period
         else f"제약 기간 밖이라 {product} 도 기존 제품에 함께 셉니다.",
@@ -356,13 +332,14 @@ def month_steps(
 
     if row.in_period and row.constrained_demand > 0:
         product_text = f"{row.constrained_demand * target / 100:.2f}"
-        demand_digits, demand_sign = _consistent_digits(
+        demand_digits, demand_sign = consistent_digits(
             lambda digits: f"{round(row.constrained_demand, digits) * target / 100:.2f}",
             product_text,
         )
+        demand_text = operand_text(row.constrained_demand, demand_digits, units_text)
         body2 = (
-            f"{product} 필요 대수 = {_operand_text(row.constrained_demand, demand_digits)} × "
-            f"{target}% {demand_sign} {product_text} → **{row.need}대**"
+            f"{product} 필요 대수 = {demand_text} × {target}% {demand_sign} {product_text} → "
+            f"**{row.need}대**"
         )
     elif row.in_period and row.dedicated > 0:
         body2 = f"{product} 소요 없음 — 전용 **{row.dedicated}대** 유지"
@@ -398,16 +375,16 @@ def month_steps(
     available_shown = units_text(row.existing_available)
     # 적힌 수로 「공정 가용 − 개조 중 − 제약 배정」 을 다시 셈한다 — 비가동이 가용보다 많으면 쓸 수
     # 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은 차례다.
-    available_digits, available_sign = _consistent_digits(
+    available_digits, available_sign = consistent_digits(
         lambda digits: units_text(
             max(0.0, round(row.available, digits) - round(row.downtime, digits)) - row.allocated
         ),
         available_shown,
     )
-    pieces = [_operand_text(row.available, available_digits)]
+    pieces = [operand_text(row.available, available_digits, units_text)]
     note_pieces = ["공정 가용"]
     if row.downtime > 0:
-        pieces.append(_operand_text(row.downtime, available_digits))
+        pieces.append(operand_text(row.downtime, available_digits, units_text))
         note_pieces.append("개조 중")
     if row.allocated > 0:
         pieces.append(str(row.allocated))
@@ -436,10 +413,11 @@ def month_steps(
             demand = round(row.existing_demand, digits)
             return rate_text(round(row.existing_available, digits) / demand) if demand else ""
 
-        rate_digits, rate_sign = _consistent_digits(recomputed, rate_shown)
+        rate_digits, rate_sign = consistent_digits(recomputed, rate_shown)
+        available_text = operand_text(row.existing_available, rate_digits, units_text)
+        demand_text = operand_text(row.existing_demand, rate_digits, units_text)
         step5 = MonthStep(
-            f"기존 확보율 = {_operand_text(row.existing_available, rate_digits)} ÷ "
-            f"{_operand_text(row.existing_demand, rate_digits)} {rate_sign} **{rate_shown}**",
+            f"기존 확보율 = {available_text} ÷ {demand_text} {rate_sign} **{rate_shown}**",
             note5,
         )
 
