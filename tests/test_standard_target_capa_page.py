@@ -1,7 +1,9 @@
 # Purpose: standard target capa page 관련 정상·예외·회귀 동작을 검증한다.
 
+import re
 from collections.abc import Iterator
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
@@ -355,6 +357,48 @@ LOGIC_SELECTIONS = {
     "standard_target_logic_stack": "8H",
     "standard_target_logic_wf_type": "Core",
 }
+
+
+# 소요대수를 둘째 자리로 깎으면 식이 어긋나는 값(2026-10-26 E2E 의 꼴 — 54,698.63 ÷ 1.49386).
+LOGIC_FORMULA_SCRIPT = (
+    TEST_SCRIPT.replace('"부하량": [100.0],', '"부하량": [54698.63],')
+    .replace('"소요대수": [1.0],', '"소요대수": [1.49386],')
+    .replace('"가용대수": [2.0] * 5,', '"가용대수": [40.0] * 5,')
+)
+
+
+def test_logic_analysis_formula_recomputes_to_the_written_results() -> None:
+    """식에 적힌 인수로 다시 셈하면 적힌 결과가 나온다 — 소요대수 1.49386 을 1.49 로, 대당 일
+    Capa 를 둘째 자리로 깎아 적어 「54,698.63 ÷ 1.49 = 36,615.63」·「1,181.15 × 40.0 =
+    47,245.98」 처럼 어긋났다(2026-10-26 E2E). 결과는 위 카드 값 그대로고, 맞는 인수(RUN_DAY
+    31.0)는 늘리지 않는다."""
+    assert LOGIC_FORMULA_SCRIPT.count("54698.63") == 1
+    assert LOGIC_FORMULA_SCRIPT.count("1.49386") == 1
+    assert LOGIC_FORMULA_SCRIPT.count("[40.0] * 5") == 1
+    app = AppTest.from_string(LOGIC_FORMULA_SCRIPT, default_timeout=60).run()
+    app = app.segmented_control(key="standard_target_output_metric").set_value("로직 분석").run()
+    for key, value in LOGIC_SELECTIONS.items():
+        app = app.selectbox(key=key).set_value(value).run()
+    assert not app.exception
+
+    (code,) = app.code
+    lines = [line for line in str(code.value).splitlines() if line.strip().startswith("= ")]
+    assert len(lines) == 3
+    results = []
+    for line in lines:
+        match = re.fullmatch(r"\s*= (\S+) ([÷×]) (\S+) = (\S+)", line)
+        assert match is not None, line
+        left, operator, right, shown = match.groups()
+        a, b = (Decimal(text.replace(",", "")) for text in (left, right))
+        assert f"{(a * b if operator == '×' else a / b):,.2f}" == shown, line
+        results.append(shown)
+    metrics = {str(item.label): str(item.value) for item in app.metric}
+    assert results == [
+        metrics["공정별 대당 Capa"],
+        metrics["대당 일 Capa"],
+        metrics["일 표준 가능량 (매)"],
+    ]
+    assert " ÷ 31.0 = " in lines[1]
 
 
 def test_logic_analysis_selections_survive_switching_the_output_item() -> None:

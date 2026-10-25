@@ -167,9 +167,11 @@ RESTORE_AGREED_KEY = "equipment_scenario_manage_restore_agreed_v1"
 PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
 PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
-# 「공식으로 발행」 확인 글을 그린 회차의 {고른 리비전, 지금 공식 번호}. 단추를 누른 회차에는 확인
-# 글이 이미 새 목록으로 다시 그려지므로, 누르기 **전** 회차에 본 번호를 여기 남겨 누른 회차의 번호와
-# 견준다 — 그 사이 남이 발행했으면 본 적 없는 새 번호(v5 → v6)로 말없이 발행하지 않는다.
+# 「공식으로 발행」 확인 글을 그린 회차의 {고른 리비전, 지금 공식 번호, 그 시나리오 최신}
+# (`publish_seen_token`). 단추를 누른 회차에는 확인 글이 이미 새 목록으로 다시 그려지므로, 누르기
+# **전** 회차에 본 값을 여기 남겨 누른 회차의 값과 견준다 — 그 사이 남이 발행했으면 본 적 없는 새
+# 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신이 아닙니다」 로 말없이 발행하지
+# 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
 CLEAR_LAYOUT_BY_KEY = "equipment_scenario_manage_clear_layout_by_v1"
@@ -1131,6 +1133,24 @@ def _render_branch(
         )
 
 
+def _settle_compare_field(key: str, current: str) -> str:
+    """비교 후 쓰기 이름 칸(리비전명·시나리오 이름)을 위젯 앞에서 세우고 본 이름 칸 key 를 돌려준다.
+
+    칸을 세울 때 본 이름(`…__seen`)이 비교 후 쓰기의 기준이다 — 그 사이 남이 바꿨으면 거절한다.
+    고치지 않은 칸(칸 값 = 본 이름)은 **매 회차** 지금 이름을 다시 적는다. 남이 바꾼 이름으로
+    다시 설 뿐 아니라, 닫힌 팝오버 안 칸은 브라우저에 마운트되지 않아 나중에 열 때 마지막 회차가
+    실어 보낸 값으로만 서기 때문이다 — 처음 적은 회차 뒤 한 회차라도 지나 열면 빈 기본값으로
+    서고, 그대로 누른 「리비전명 저장」 이 그 빈 값을 되보내 이름을 지웠다(2026-10-26 E2E). 고치던
+    칸은 그대로 둔다(본 이름도 그대로 — 그 사이 남의 바꿈을 거절할 기준). 위젯을 그리기 전에
+    부른다.
+    """
+    seen_key = f"{key}__seen"
+    if key not in st.session_state or st.session_state.get(key) == st.session_state.get(seen_key):
+        st.session_state[key] = current
+        st.session_state[seen_key] = current
+    return seen_key
+
+
 def _render_revision_name(
     database_path: str,
     scenario: EquipmentScenarioSummary,
@@ -1142,14 +1162,7 @@ def _render_revision_name(
     싣는다 — 쓰기 뒤 `clear_equipment_scenario_cache()`(쓰기 세대)로 목록이 새 이름을 읽는다.
     """
     key = f"{_keyed(REVISION_NAME_KEY)}__{revision.schedule_revision_id}"
-    # 칸을 세울 때 본 이름 — 비교 후 쓰기의 기준이다(그 사이 남이 바꿨으면 거절). 고치지 않은 칸은
-    # 남이 바꾼 이름으로 다시 세운다(위젯을 그리기 전이라 세션 값을 바꿀 수 있다).
-    seen_key = f"{key}__seen"
-    current = revision.revision_name or ""
-    seen = st.session_state.get(seen_key)
-    if key not in st.session_state or (seen != current and st.session_state.get(key) == seen):
-        st.session_state[key] = current
-        st.session_state[seen_key] = current
+    seen_key = _settle_compare_field(key, revision.revision_name or "")
     st.caption(
         f"r{revision.revision_no} 의 이름표입니다 — 일정·번호·메모는 그대로이고 나중에 다시 "
         "고칠 수 있습니다. 비우고 저장하면 이름이 지워집니다."
@@ -1190,14 +1203,11 @@ def _render_revision_name(
 def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> None:
     """「시나리오 이름 바꾸기」 — 비교 후 쓰기다. 칸을 세울 때 본 이름을 따로 들고(`__seen`) 그
     이름과 대조하므로, 그 사이 남이 바꿨으면 덮지 않고 거절해 지금 이름을 알린다. 고치지 않은 칸은
-    남이 바꾼 이름으로 다시 세운다(팝오버 안 칸은 매 회차 그려져 key 가 남는다)."""
+    매 회차 지금 이름으로 다시 적는다(`_settle_compare_field` — 팝오버 안 칸은 매 회차 그려져 key 가
+    남는다)."""
     key = f"{_keyed(RENAME_KEY)}__{scenario.equipment_scenario_id}"
-    seen_key = f"{key}__seen"
     current = scenario.scenario_name
-    seen = st.session_state.get(seen_key)
-    if key not in st.session_state or (seen != current and st.session_state.get(key) == seen):
-        st.session_state[key] = current
-        st.session_state[seen_key] = current
+    seen_key = _settle_compare_field(key, current)
     name = st.text_input("이름", key=key)
     if st.button("이름 바꾸기", type="primary", key=RENAME_BUTTON_KEY, width="stretch"):
         seen_name = st.session_state.get(seen_key)
@@ -1382,14 +1392,23 @@ def publish_preview(
     session: EquipmentSession,
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
+    *,
+    official_revisions: Sequence[EquipmentScheduleRevisionSummary] = (),
 ) -> list[str]:
-    """발행 전에 보일 줄 — 지금 공식 → 새 공식, 고른 리비전이 그 시나리오 최신이 아니면 그 사실."""
+    """발행 전에 보일 줄 — 지금 공식 → 새 공식, 고른 리비전이 그 시나리오 최신이 아니면 그 사실.
+
+    지금 공식의 리비전 번호는 그 시나리오 최신·이 세션의 스냅샷·`official_revisions`(공식 시나리오의
+    리비전 목록) 차례로 찾는다 — 공식이 그 시나리오 최신이 아니고 이 세션이 그것을 들고 있지 않으면
+    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다.
+    """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
     if release is not None:
         official = session.catalog.scenario(release.equipment_scenario_id)
         official_name = official.scenario_name if official is not None else "?"
-        official_revision = _revision_no(session, release.schedule_revision_id, official)
+        official_revision = _revision_no(
+            session, release.schedule_revision_id, official, official_revisions
+        )
         current = f"지금 공식 v{release.release_no} · 「{literal_markdown(official_name)}」" + (
             f" r{official_revision}" if official_revision is not None else ""
         )
@@ -1413,6 +1432,7 @@ def _revision_no(
     session: EquipmentSession,
     schedule_revision_id: str,
     scenario: EquipmentScenarioSummary | None,
+    revisions: Sequence[EquipmentScheduleRevisionSummary],
 ) -> int | None:
     if scenario is None:
         return None
@@ -1421,33 +1441,94 @@ def _revision_no(
     if session.snapshot is not None and session.snapshot.schedule is not None:
         if session.snapshot.schedule.schedule_revision_id == schedule_revision_id:
             return session.snapshot.schedule.revision_no
-    return None
+    return next(
+        (
+            item.revision_no
+            for item in revisions
+            if item.schedule_revision_id == schedule_revision_id
+            and item.equipment_scenario_id == scenario.equipment_scenario_id
+        ),
+        None,
+    )
 
 
-def publish_seen_refusal(seen: object, *, schedule_revision_id: str, release_no: int) -> str | None:
+def publish_seen_token(
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    release_no: int,
+) -> dict[str, object]:
+    """발행 확인 글을 정하는 값 — 고른 리비전·공식 번호·그 시나리오 최신(id 와 번호).
+
+    확인 글의 「지금 공식 → 새 공식」 은 공식 번호가, 「rN은 … 의 최신(rM)이 아닙니다」 와 배치 줄은
+    그 시나리오 최신이 정한다(되돌리기 `restore_seen_token` 과 같은 꼴). 그린 회차에
+    `PUBLISH_SEEN_KEY` 에 남기고 누른 회차에 `publish_seen_refusal` 이 지금 값과 견준다.
+    """
+    return {
+        "revision": revision.schedule_revision_id,
+        "release_no": release_no,
+        "latest": scenario.latest_schedule_revision_id,
+        "latest_no": scenario.latest_revision_no,
+    }
+
+
+def publish_seen_refusal(
+    seen: object,
+    *,
+    scenario: EquipmentScenarioSummary,
+    schedule_revision_id: str,
+    release_no: int,
+) -> str | None:
     """「공식으로 발행」 을 누른 회차에 거절할 까닭 — 누르기 전 회차의 확인 글(`seen` — 그 회차에
-    남긴 {고른 리비전, 공식 번호})이 지금과 다르면 그 사실을, 같으면 None.
+    남긴 `publish_seen_token`)이 지금과 다르면 그 사실을, 같으면 None.
 
     단추를 누른 회차에는 확인 글이 지금 목록으로 다시 그려진다. 그 사이 남이 발행했으면 지금 번호로
     대조해도 맞아 「지금 공식 v4 → 새 공식 v5」 를 본 사람이 말없이 v6 을 내게 된다(E7 리뷰).
+    그 사이 남이 같은 시나리오에 새 리비전을 저장했으면, 「rN은 최신이 아닙니다」 를 본 적 없는
+    사람이 최신이 아닌 리비전을 말없이 공식으로 낸다(2026-10-26 E2E) — 그것도 거절해 바뀐 확인
+    글을 보게 한다.
     """
     if not isinstance(seen, dict) or seen.get("revision") != schedule_revision_id:
         return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
     before = seen.get("release_no")
-    if before == release_no:
+    if before != release_no:
+        was = release_words(before if isinstance(before, int) else 0)
+        now = release_words(release_no)
+        return (
+            f"확인 글을 본 뒤 공식이 바뀌어({was} → 지금 {now}) 발행하지 않았습니다 — 다른 "
+            f"사용자가 그 사이 발행했습니다. 바뀐 확인 글(지금 공식 {now} → 새 공식 "
+            f"v{release_no + 1})을 다시 보고 발행하세요."
+        )
+    if seen.get("latest") == scenario.latest_schedule_revision_id:
         return None
-    was = release_words(before if isinstance(before, int) else 0)
-    now = release_words(release_no)
+    was_no = seen.get("latest_no")
+    latest = f"r{scenario.latest_revision_no}"
+    if not isinstance(was_no, int) or scenario.latest_revision_no is None:
+        return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
+    name = literal_markdown(scenario.scenario_name)
     return (
-        f"확인 글을 본 뒤 공식이 바뀌어({was} → 지금 {now}) 발행하지 않았습니다 — 다른 사용자가 "
-        f"그 사이 발행했습니다. 바뀐 확인 글(지금 공식 {now} → 새 공식 v{release_no + 1})을 다시 "
-        "보고 발행하세요."
+        f"확인 글을 본 뒤 「{name}」 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "
+        f"않았습니다 — 다른 사용자가 그 사이 {with_object_particle(latest)} 저장했습니다. 바뀐 "
+        "확인 글을 다시 보고 발행하세요."
     )
 
 
 def release_words(release_no: int) -> str:
     """공식 발행 번호 한 마디 — 「v3」, 발행이 없던 0 은 「발행 없음」(「v0」 이라 적지 않는다)."""
     return f"v{release_no}" if release_no > 0 else "발행 없음"
+
+
+def _official_revisions(
+    database_path: str, session: EquipmentSession
+) -> tuple[EquipmentScheduleRevisionSummary, ...]:
+    """지금 공식 시나리오의 리비전 목록(캐시 — 고른 시나리오가 공식이면 리비전 표와 같은 칸). 발행이
+    없거나 읽지 못하면 빈 묶음이다(확인 글이 지금 공식 번호만 빼고 선다)."""
+    release = session.catalog.latest_release
+    if release is None:
+        return ()
+    try:
+        return load_equipment_schedule_revisions(database_path, release.equipment_scenario_id)
+    except BOOTSTRAP_ERRORS:
+        return ()
 
 
 def _render_publish(
@@ -1459,7 +1540,12 @@ def _render_publish(
     # 앞 회차(누르기 전)에 그린 확인 글의 값 — 이번 회차 값으로 바꿔 두기 전에 꺼낸다.
     seen_before = st.session_state.pop(PUBLISH_SEEN_KEY, None)
     release_no = session.catalog.release_no or 0
-    for line in publish_preview(session, scenario, revision):
+    for line in publish_preview(
+        session,
+        scenario,
+        revision,
+        official_revisions=_official_revisions(database_path, session),
+    ):
         st.caption(line)
     # 배치 차이가 있으면 발행하지 않는다(LY5 「공식으로 올리기」 전까지 — Q4). 발행 쓰기와 같은
     # 판정을 미리 읽어 단추를 끄거나 정리 리비전으로 발행한다는 것을 적는다.
@@ -1488,10 +1574,7 @@ def _render_publish(
             st.error(line, icon=":material/block:")
         else:
             st.caption(f":material/layers: {line}")
-    st.session_state[PUBLISH_SEEN_KEY] = {
-        "revision": revision.schedule_revision_id,
-        "release_no": release_no,
-    }
+    st.session_state[PUBLISH_SEEN_KEY] = publish_seen_token(scenario, revision, release_no)
     st.caption(
         "공식은 새 세션(Space 포함 — 처음 연 화면)·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 "
         "설비 시나리오입니다. 발행은 append-only 입니다."
@@ -1506,7 +1589,10 @@ def _render_publish(
         disabled=blocked,
     ):
         refusal = publish_seen_refusal(
-            seen_before, schedule_revision_id=revision.schedule_revision_id, release_no=release_no
+            seen_before,
+            scenario=scenario,
+            schedule_revision_id=revision.schedule_revision_id,
+            release_no=release_no,
         )
         if refusal is not None:
             _refused(refusal)
