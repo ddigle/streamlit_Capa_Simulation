@@ -408,6 +408,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다).
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
+    분기 눈금 글자는 트랙 폭에 맞춰 솎는다(editor.js 순수 구획 `<fader-ticks>` — 「오늘」 은 늘 서고, 트랙 밖이거나 이웃과
+    2px 안으로 붙는 글자는 `is-crowded` 로 숨김, 회차마다·크기가 바뀔 때 다시 잼, `tests/test_space_fader_ticks_js.py`).
+    기준일 줄 폭 560px 아래(390px 창)에서는 날짜 칩이 13.5rem → 8.5rem 고정 폭이다(CSS 컨테이너 `sle-daterow`) — 390px
+    창에서 트랙이 68px 로 줄어 글자 7쌍이 겹쳤다(E2E 결함, 고친 뒤 146px). 768·1400px 창은 예전 그대로다.
   - 보기는 **사이드바에서 고른 설비 시나리오**의 배치다(설비 시나리오 2단계 S3 — LY3, `PageSpec.equipment_scenario="session"`·
     `uses_equipment_db=True`). 그리는 한 벌은 세션 스냅샷(`resolve_equipment_session(...).snapshot.calculation_frames()`)
     하나이고 가정이면 그 리비전의 호기 배치 차이가 얹혀 있다. 층 도면 요소·Main 설비명 위치는 **모두**
