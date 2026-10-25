@@ -3802,16 +3802,25 @@ _SHORT_FLOOR_JS = """(svg) => {
 }"""
 
 
+def _fader_back_text(fader_back: bool | None) -> str:
+    """되돌린 뒤 층 도면의 페이더 — `None` 은 층을 열지 못해 보지 않은 것이다(있음으로 적지
+    않는다)."""
+    if fader_back is None:
+        return "되돌린 뒤 페이더 확인 안 함(연 층 없음)"
+    return f"되돌린 뒤 페이더 {'있음' if fader_back else '없음'}"
+
+
 def summarize_space_shortening(
     blocks: int,
     floor: Mapping[str, Any] | None,
-    fader_back: bool,
+    fader_back: bool | None,
     *,
     stopped: str | None = None,
 ) -> str:
-    """필요 단축 보기 한 줄 — 개수·있음/없음만. 층·호기·공정 이름은 찍지 않는다."""
+    """필요 단축 보기 한 줄 — 개수·있음/없음만. 층·호기·공정 이름은 찍지 않는다. `fader_back` 은
+    색 기준을 되돌린 뒤 층 도면에서 본 페이더(층을 열지 못했으면 `None` — 「확인 안 함」)."""
     if stopped is not None:
-        return f"{stopped} · 되돌린 뒤 페이더 {'있음' if fader_back else '없음'}"
+        return f"{stopped} · {_fader_back_text(fader_back)}"
     if floor is None:
         head = f"단축 줄 블록 {blocks}개 · 단축 층 없음"
     else:
@@ -3821,7 +3830,7 @@ def summarize_space_shortening(
             f"{'있음' if floor.get('pinned') else '없음'}"
             f" · 페이더 {'숨음' if not floor.get('fader') else '보임'}"
         )
-    return f"{head} · 되돌린 뒤 페이더 {'있음' if fader_back else '없음'}"
+    return f"{head} · {_fader_back_text(fader_back)}"
 
 
 def _choose_color_basis(screen: Screen, value: str) -> None:
@@ -3838,12 +3847,32 @@ def _choose_color_basis(screen: Screen, value: str) -> None:
     screen.wait_idle()
 
 
+def _open_most_placed_floor(screen: Screen) -> bool:
+    """FAB 층 목록 표의 `배치대수` 가 가장 많은 층을 연다(`space_fader` 와 같은 고르기). 열었으면
+    참."""
+    grid, placed_column = screen.grid_with_column("배치대수")
+    building_column = screen.column_index(grid, "동")
+    floor_column = screen.column_index(grid, "층")
+    if building_column is None or floor_column is None:
+        return False
+    rows = screen.grid_rows(grid, [building_column, floor_column, placed_column])
+    candidates = [(row[0], row[1], _number(row[2])) for row in rows if row[0] and row[1]]
+    candidates = [row for row in candidates if row[2] > 0]
+    if not candidates:
+        return False
+    building, name, _placed = max(candidates, key=lambda row: row[2])
+    screen.choose_by_typing("층 바로 가기", f"{building} {name}")
+    return screen.selectbox_value("층 바로 가기") == f"{building} {name}"
+
+
 def check_space_shortening(screen: Screen) -> str:
     """Space 「필요 단축」 보기 — FAB 에서 색 기준을 `필요 단축` 으로 골라 단축 줄이 선 블록 수, 층
     목록 표의 `단축 호기` 가 가장 많은 층을 열어 배지 수·모듈 묶음 배지 수·고정 줄(페이더 숨음),
-    그리고 색 기준을 공정구분으로 **되돌린 뒤** 페이더가 있는가(되돌리지 않으면 같은 세션의 다음
-    실행에서 `space_fader`·`panel_rows_other_pages` 가 고정 줄·늘어난 사이드바 줄을 본다). 쓰지
-    않는다(색 기준·목표는 세션 값이다). Cut-off 가 비면 「Cut-off 먼저」 알림이 정상이다."""
+    그리고 색 기준을 공정구분으로 **되돌린 뒤** 층 도면에 페이더가 있는가(되돌리지 않으면 같은
+    세션의 다음 실행에서 `space_fader`·`panel_rows_other_pages` 가 고정 줄·늘어난 사이드바 줄을
+    본다). 단축 층을 열지 못한 실행(Cut-off 먼저·못 읽음·단축 층 없음)은 되돌린 뒤 배치가 가장 많은
+    층을 열어 본다 — 연 층이 없으면 「확인 안 함」 이다(본 것만 적는다). 쓰지 않는다(색 기준·목표는
+    세션 값이다). Cut-off 가 비면 「Cut-off 먼저」 알림이 정상이다."""
     screen.step("페이지 열기")
     screen.open_space_overview()
     blocks, floor, stopped = 0, None, None
@@ -3886,8 +3915,15 @@ def check_space_shortening(screen: Screen) -> str:
         failed_at = screen.current_step
         screen.step("공정구분으로 되돌림")
         _choose_color_basis(screen, SPACE_DEFAULT_BASIS)
-        fader_back = False
-        if floor is not None:
+        opened = floor is not None
+        if not opened:
+            screen.step("되돌린 뒤 층 열기")
+            try:
+                opened = _open_most_placed_floor(screen)
+            except Exception:  # noqa: BLE001 — 열지 못했으면 「확인 안 함」 으로 적는다
+                opened = False
+        fader_back: bool | None = None
+        if opened:
             fader_input = screen.page.locator(".sle-fader-input").first
             try:
                 fader_input.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
@@ -3895,7 +3931,7 @@ def check_space_shortening(screen: Screen) -> str:
             except Exception:  # noqa: BLE001 — 있음/없음만 적는다
                 fader_back = False
         screen.current_step = failed_at
-    return summarize_space_shortening(blocks, floor, fader_back or floor is None, stopped=stopped)
+    return summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)
 
 
 ITEMS: tuple[Item, ...] = (

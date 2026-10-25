@@ -3293,3 +3293,23 @@ def test_the_space_shortening_summary_carries_counts_only() -> None:
     assert screens.summarize_space_shortening(0, None, True, stopped="Cut-off 먼저 알림") == (
         "Cut-off 먼저 알림 · 되돌린 뒤 페이더 있음"
     )
+    # 층을 열지 못해 보지 않은 것은 「있음」 으로 적지 않는다(리뷰 — 늘 같은 글이면 사내 리뷰에서
+    # 정보가 되지 않는다).
+    assert screens.summarize_space_shortening(0, None, None, stopped="Cut-off 먼저 알림") == (
+        "Cut-off 먼저 알림 · 되돌린 뒤 페이더 확인 안 함(연 층 없음)"
+    )
+    assert screens.summarize_space_shortening(0, None, None).endswith(
+        "되돌린 뒤 페이더 확인 안 함(연 층 없음)"
+    )
+    assert screens.summarize_space_shortening(0, None, False).endswith("되돌린 뒤 페이더 없음")
+
+
+def test_the_space_shortening_item_checks_the_fader_on_a_floor_it_opened() -> None:
+    """단축 층을 열지 못한 실행은 되돌린 뒤 배치 최다 층을 열어 페이더를 본다 — 열지 않은 채
+    「페이더 있음」 으로 적지 않는다(옛 판은 `fader_back or floor is None` 이었다)."""
+    source = inspect.getsource(screens.check_space_shortening)
+    assert "or floor is None" not in source
+    assert source.index("_choose_color_basis(screen, SPACE_DEFAULT_BASIS)") < source.index(
+        "_open_most_placed_floor(screen)"
+    )
+    assert "summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)" in source
