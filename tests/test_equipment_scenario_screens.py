@@ -265,7 +265,7 @@ def test_the_publish_preview_puts_the_current_and_the_new_official_side_by_side(
     lines = publish_preview(session, catalog.scenarios[1], revision)
 
     assert lines[0] == "지금 공식 v3 · 「운영 일정」 → 새 공식 v4 · 「셋업 실무」 r3"
-    assert lines[1] == "r3 은 「셋업 실무」 의 최신(r4)이 아닙니다."
+    assert lines[1] == "r3은 「셋업 실무」 의 최신(r4)이 아닙니다."
 
 
 # ── 미확인 = 공식 일정 기준 ───────────────────────────────────────────────────────────
