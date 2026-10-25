@@ -1798,7 +1798,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `prepare_floor_states`(30개 층·사유 둘만, 빈 값 = 사용)만 엄격하고 읽기는 관용이다(모르는 사유는 `inactive_label` 이
   「비활성」). 동 머리(`building_state`·`with_building`), 끄기 확인 대상(`newly_inactive` — 사유만 바꾼 층은 아님)과 층별 설비
   대수(`floor_unit_counts` — 도면 이탈 제외·레이아웃 Y/N 모두·설비키), 층 고르기 거르기(`selectable_floor_keys` — 연 층은
-  남김, 설비 마스터 탭 칸 단위 `master_location_options` — 표에 있는 값은 남김, 짝 단위 `floors_by_building`), 저장 미리보기 경고
+  남김, 설비 마스터 탭 칸 단위 `master_location_options` — 표에 있는 값은 남김, 짝 단위 `floors_by_building` — 표 `층` 칸
+  정의의 `optionsBy` 로 실려 `grid.js` `choiceOptions` 가 그 줄의 동으로 좁힌다), 저장 미리보기 경고
   `inactive_floor_warnings`(막지 않음). Streamlit·DB 를 모른다. **설비 마스터 저장 검사(C1~C5·1F~6F)는 그대로다**(S5).
 - `src/capa_simulation/services/shortening_baseline.py` — 필요 단축 일정 기준선(설비 DB `0021`) 모델과 규칙. 기준선은
   저장한 그때 계획을 얼린 고칠 수 없는 기록이다(`freeze_plan` → `ShorteningBaselineDraft`, `normalize_baseline_name`·

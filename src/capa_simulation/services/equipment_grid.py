@@ -427,6 +427,9 @@ class GridContext:
       판정으로 자리를 맞춘다(`locked_layout`). 공식(`"official"`)·가정(`"overlay"`) 편집이면 None
       이다 — 배치 칸은 `official` 에 따라 공식 배치 또는 그 가정 시나리오의 배치 차이로 저장된다.
     - `location_options` — 동·층 고를 값(Space 층 사용 상태로 좁힌 것). 없으면 유효 동·층 전부.
+    - `floors_by_building` — 동 → 사용 층(`floor_state.floors_by_building`). 있으면 층 칸 정의에
+      `optionsBy` 로 실어 표 칸·호기 상세 「위치」·새 호기 초안이 그 줄의 동으로 층 선택지를 좁힌다
+      (「C1 + 3F」 처럼 짝만 꺼진 층 — 칸 단위 `location_options` 로는 못 거른다). 지금 값은 남는다.
     - `official_places` — 가정 설비 시나리오 편집 회차(`"overlay"`)의 저장본 설비명 → 공식 일곱
       칸(그 시나리오 배치가 공식과 다른 호기만 — `EquipmentSnapshot.layout_official_places`). 「호기
       상세」 위치 묶음의 「공식: …」 한 줄과 「공식 자리로 되돌리기」(`official` op)가 쓴다(설비
@@ -448,6 +451,7 @@ class GridContext:
     layout_lock: str | None = None
     new_rows_locked: bool = False
     location_options: tuple[tuple[str, ...], tuple[str, ...]] | None = None
+    floors_by_building: Mapping[str, tuple[str, ...]] | None = None
     official_places: Mapping[str, Place] = field(default_factory=dict)
     official_cells: Mapping[str, tuple[object, ...]] = field(default_factory=dict)
     floor_canvases: FloorCanvasMap = field(default_factory=dict)
@@ -867,6 +871,14 @@ def columns_payload(context: GridContext) -> list[dict[str, Any]]:
         if column.kind == "choice":
             item["options"] = list(options)
             item["blank"] = column.blank
+        if column.name == "층" and context.floors_by_building is not None:
+            # 짝 단위 거름 — JS `choiceOptions` 가 그 줄의 동으로 칸 단위 선택지를 좁힌다.
+            item["optionsBy"] = {
+                "동": {
+                    building: list(floors)
+                    for building, floors in context.floors_by_building.items()
+                }
+            }
         if column.suggest:
             item["suggest"] = list(column.suggest)
         result.append(item)

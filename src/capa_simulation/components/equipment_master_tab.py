@@ -201,6 +201,7 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.floor_state import (
     FloorStates,
+    floors_by_building,
     inactive_floor_warnings,
     master_location_options,
 )
@@ -371,6 +372,7 @@ def grid_context(
         ),
         new_rows_locked=stale or session.unmerged,
         location_options=(tuple(location[0]), tuple(location[1])) if location else None,
+        floors_by_building=floors_by_building(floor_states) if floor_states is not None else None,
         official_places=(
             _official_places_by_name(latest_snapshot) if layout_mode.layout == "overlay" else {}
         ),

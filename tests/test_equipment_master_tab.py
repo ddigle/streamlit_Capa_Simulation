@@ -543,3 +543,24 @@ def test_an_out_of_range_location_rejection_keeps_its_tildes(tmp_path: Path, gri
     assert not app.exception, app.exception
     assert app.error
     assert "동은 C1\\~C5, 층은 1F\\~6F 범위여야 합니다" in app.error[0].value
+
+
+def test_the_floor_column_narrows_by_building_where_only_the_pair_is_inactive(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """Space 층 비활성의 짝 단위 거름(D6·R2) — 「C1 3F」 만 꺼지면 층 칸 단위 선택지에는 3F 가 남고
+    (다른 동은 사용), 층 칸 정의의 `optionsBy` 가 C1 에서 3F 를 뺀다. JS 가 그 줄의 동으로
+    고른다."""
+    database = tmp_path / "equipment.duckdb"
+    repository = DuckDBEquipmentRepository(database)
+    repository.initialize()
+    assert repository.save_floor_states({("C1", "3F"): "UNUSED"}, expected_version=0, source="t")
+    app = _app(database)
+    _import(app, _rows("DA-01"))
+
+    columns = {column["name"]: column for column in last(grid, emg.GRID_KEY)["columns"]}
+    assert "3F" in columns["층"]["options"]
+    by_building = columns["층"]["optionsBy"]["동"]
+    assert by_building["C1"] == ["1F", "2F", "4F", "5F", "6F"]
+    assert by_building["C2"] == ["1F", "2F", "3F", "4F", "5F", "6F"]
+    assert "optionsBy" not in columns["동"]
