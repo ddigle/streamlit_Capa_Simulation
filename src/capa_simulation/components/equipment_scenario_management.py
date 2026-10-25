@@ -1121,6 +1121,24 @@ def _render_branch(
         )
 
 
+def _settle_compare_field(key: str, current: str) -> str:
+    """비교 후 쓰기 이름 칸(리비전명·시나리오 이름)을 위젯 앞에서 세우고 본 이름 칸 key 를 돌려준다.
+
+    칸을 세울 때 본 이름(`…__seen`)이 비교 후 쓰기의 기준이다 — 그 사이 남이 바꿨으면 거절한다.
+    고치지 않은 칸(칸 값 = 본 이름)은 **매 회차** 지금 이름을 다시 적는다. 남이 바꾼 이름으로
+    다시 설 뿐 아니라, 닫힌 팝오버 안 칸은 브라우저에 마운트되지 않아 나중에 열 때 마지막 회차가
+    실어 보낸 값으로만 서기 때문이다 — 처음 적은 회차 뒤 한 회차라도 지나 열면 빈 기본값으로
+    서고, 그대로 누른 「리비전명 저장」 이 그 빈 값을 되보내 이름을 지웠다(2026-10-26 E2E). 고치던
+    칸은 그대로 둔다(본 이름도 그대로 — 그 사이 남의 바꿈을 거절할 기준). 위젯을 그리기 전에
+    부른다.
+    """
+    seen_key = f"{key}__seen"
+    if key not in st.session_state or st.session_state.get(key) == st.session_state.get(seen_key):
+        st.session_state[key] = current
+        st.session_state[seen_key] = current
+    return seen_key
+
+
 def _render_revision_name(
     database_path: str,
     scenario: EquipmentScenarioSummary,
@@ -1132,14 +1150,7 @@ def _render_revision_name(
     싣는다 — 쓰기 뒤 `clear_equipment_scenario_cache()`(쓰기 세대)로 목록이 새 이름을 읽는다.
     """
     key = f"{_keyed(REVISION_NAME_KEY)}__{revision.schedule_revision_id}"
-    # 칸을 세울 때 본 이름 — 비교 후 쓰기의 기준이다(그 사이 남이 바꿨으면 거절). 고치지 않은 칸은
-    # 남이 바꾼 이름으로 다시 세운다(위젯을 그리기 전이라 세션 값을 바꿀 수 있다).
-    seen_key = f"{key}__seen"
-    current = revision.revision_name or ""
-    seen = st.session_state.get(seen_key)
-    if key not in st.session_state or (seen != current and st.session_state.get(key) == seen):
-        st.session_state[key] = current
-        st.session_state[seen_key] = current
+    seen_key = _settle_compare_field(key, revision.revision_name or "")
     st.caption(
         f"r{revision.revision_no} 의 이름표입니다 — 일정·번호·메모는 그대로이고 나중에 다시 "
         "고칠 수 있습니다. 비우고 저장하면 이름이 지워집니다."
@@ -1176,14 +1187,11 @@ def _render_revision_name(
 def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> None:
     """「시나리오 이름 바꾸기」 — 비교 후 쓰기다. 칸을 세울 때 본 이름을 따로 들고(`__seen`) 그
     이름과 대조하므로, 그 사이 남이 바꿨으면 덮지 않고 거절해 지금 이름을 알린다. 고치지 않은 칸은
-    남이 바꾼 이름으로 다시 세운다(팝오버 안 칸은 매 회차 그려져 key 가 남는다)."""
+    매 회차 지금 이름으로 다시 적는다(`_settle_compare_field` — 팝오버 안 칸은 매 회차 그려져 key 가
+    남는다)."""
     key = f"{_keyed(RENAME_KEY)}__{scenario.equipment_scenario_id}"
-    seen_key = f"{key}__seen"
     current = scenario.scenario_name
-    seen = st.session_state.get(seen_key)
-    if key not in st.session_state or (seen != current and st.session_state.get(key) == seen):
-        st.session_state[key] = current
-        st.session_state[seen_key] = current
+    seen_key = _settle_compare_field(key, current)
     name = st.text_input("이름", key=key)
     if st.button("이름 바꾸기", type="primary", key=RENAME_BUTTON_KEY, width="stretch"):
         seen_name = st.session_state.get(seen_key)
