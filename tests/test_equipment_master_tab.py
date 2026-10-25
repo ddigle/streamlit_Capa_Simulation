@@ -394,6 +394,71 @@ def test_small_editor_edits_mark_the_tab_and_the_leave_question(
     assert app.session_state[LEAVE_NOTICE_KEY] == ""
 
 
+# 페이지 앞에 덧붙이는 시험용 머리 — 화면 탭 줄처럼 **페이지보다 먼저** 떠나기 확인 글·점을 적는다.
+LEAVE_BEFORE_KEY = "test_master_tab_leave_before"
+MARKS_BEFORE_KEY = "test_master_tab_marks_before"
+_HEAD = f"""
+import streamlit as st
+from capa_simulation.components import page_tabs
+
+st.session_state[{LEAVE_BEFORE_KEY!r}] = page_tabs.leave_notice("available_equipment_status.py")
+st.session_state[{MARKS_BEFORE_KEY!r}] = page_tabs.page_unsaved_marks(
+    "available_equipment_status.py"
+)
+"""
+
+
+@pytest.mark.parametrize("away", ["inner", "outer"])
+def test_switching_away_from_a_small_editor_drops_its_marks_in_the_same_run(
+    tmp_path: Path, grid: Calls, away: str
+) -> None:
+    """작은 편집표의 적용 전 편집은 표 고르기(안쪽)·바깥 탭을 바꾸면 묻지 않고 사라진다(그 표를
+    그리지 않는다). 그 회차에 위젯 상태는 회차 끝까지 세션에 남아 — 페이지보다 먼저 그리는 탭 줄 점·
+    떠나기 확인·테마 표지와 탭 ① 점이 이미 사라진 편집을 한 회차 동안 말했다(E2E 결함: 떠나기
+    확인이 「사라집니다 — 떠날까요?」 를 거짓으로 물었다)."""
+    from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, EQUIPMENT_SUMMARY_TAB
+
+    app = AppTest.from_string(
+        _HEAD + _page_script(PAGE, tmp_path / "equipment.duckdb"), default_timeout=60
+    )
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.run()
+    _import(app, _rows("DA-01"))
+    # 편집본을 저장해 둔다 — 설비 편집본 점이 작은 편집표 점을 가리지 않게.
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.run()
+    assert not app.exception, app.exception
+    assert AVAILABLE_EQUIPMENT_STATUS.path not in app.session_state[MARKS_BEFORE_KEY]
+    tables = BrowserTables(app)
+    tables.add(
+        _small_key(app, DOWNTIME_EDITOR_KEY),
+        {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"},
+    )
+    tables.run()
+    assert not app.exception, app.exception
+    tables.run()
+    assert app.session_state[LEAVE_BEFORE_KEY] == "가용설비 현황 · 비가동 일정"
+    marks = app.session_state[MARKS_BEFORE_KEY]
+    assert marks[AVAILABLE_EQUIPMENT_STATUS.path] == "적용 전 편집: 가용설비 현황 · 비가동 일정"
+    dot = pending_tabs_style(EQUIPMENT_TAB_KEY, EQUIPMENT_TABS, {EQUIPMENT_MASTER_TAB}).strip()
+    assert dot in [str(element.proto.body).strip() for element in app.get("html")]
+
+    if away == "inner":
+        app.segmented_control(key=TABLE_KEY).set_value("설비 마스터")
+    else:
+        app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
+    tables.run()
+    assert not app.exception, app.exception
+
+    # 바꾼 그 회차에 걷힌다 — 다음 조작을 기다리지 않는다.
+    assert app.session_state[LEAVE_BEFORE_KEY] == ""
+    assert AVAILABLE_EQUIPMENT_STATUS.path not in app.session_state[MARKS_BEFORE_KEY]
+    assert dot not in [str(element.proto.body).strip() for element in app.get("html")]
+
+
 def test_the_small_editors_are_not_inside_a_form(tmp_path: Path, grid: Calls) -> None:
     """작은 편집표 둘은 폼 밖이다(D11 — 적용 전 편집이 회차마다 서버에 와야 점·떠나기 확인이
     선다)."""

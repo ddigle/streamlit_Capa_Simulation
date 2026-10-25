@@ -29,6 +29,12 @@ from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.navigation import (
+    EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_TAB_KEY,
+    EQUIPMENT_TABS,
+    opening_tab,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -2850,6 +2856,10 @@ def _history_scenario(
 
 
 SMALL_EDITOR_NAMES = {BASELINE_EDITOR_KEY: BASELINE_TARGET, DOWNTIME_EDITOR_KEY: DOWNTIME_TARGET}
+# 탭 ① 맨 위 줄 표 고르기(설비 마스터·기존 보유대수·비가동 일정)의 위젯 key — 값은 표 이름이다.
+# 그리는 쪽은 `equipment_master_tab.TABLE_KEY`(같은 값)이고, 작은 편집표가 이번 회차에 그려지는지
+# (`small_editor_edits`)를 여기서 본다 — 탭 줄은 그 모듈을 부르지 않는다.
+MASTER_TABLE_KEY = "equipment_master_table_v1"
 SMALL_EDITOR_NOTE = (
     "적용하지 않은 편집은 탭이나 화면을 옮기면 사라집니다(탭 이름 옆 점이 알리고, 화면 탭을 "
     "옮길 때는 묻습니다) — 「편집본에 적용」 을 누른 뒤 옮깁니다. 저장은 오른쪽 「저장 전 변경」 "
@@ -2861,8 +2871,22 @@ def small_editor_edits() -> list[str]:
     """적용하지 않은 편집이 남은 작은 편집표의 이름(기존 보유대수·비가동 일정). 그리지 않은 표는
     칸이 없어 빠진다 — 화면 탭 줄 떠나기 확인·탭 ① 점이 이것을 본다. 작은 편집표가 **폼 밖**이라
     칸을 고친 회차마다 서버에 와 이 판정이 선다(폼 안이면 적용을 누르기 전까지 서버에 오지 않는다 —
-    AGENTS 9장 「다른 위젯의 잠금·표시를 바꾸는 위젯은 폼 밖」)."""
-    return [name for key, name in SMALL_EDITOR_NAMES.items() if editor_has_edits(key)]
+    AGENTS 9장 「다른 위젯의 잠금·표시를 바꾸는 위젯은 폼 밖」).
+
+    **이번 회차에 그릴 표만 센다** — 바깥 탭이 ① 이고 표 고르기(`MASTER_TABLE_KEY`)가 그 표일 때.
+    표 고르기나 바깥 탭을 바꾼 회차에는 그 표를 그리지 않아 편집이 회차 끝에 걷히는데(그리지 않은
+    위젯), 위젯 상태는 그때까지 세션에 남는다. 그 상태를 그대로 세면 페이지보다 먼저 그리는 탭 줄
+    점·떠나기 확인·테마 표지와 탭 ① 점이 이미 사라진 편집을 한 회차 동안 말한다. 두 고르기 값은
+    누른 회차 첫머리에 세션에 들어와 있어 페이지보다 먼저 읽어도 맞다(`navigation.opening_tab`)."""
+    if (
+        opening_tab(st.session_state, EQUIPMENT_TAB_KEY, EQUIPMENT_MASTER_TAB, EQUIPMENT_TABS)
+        != EQUIPMENT_MASTER_TAB
+    ):
+        return []
+    table = st.session_state.get(MASTER_TABLE_KEY)
+    return [
+        name for key, name in SMALL_EDITOR_NAMES.items() if name == table and editor_has_edits(key)
+    ]
 
 
 def buffer_base() -> str:
