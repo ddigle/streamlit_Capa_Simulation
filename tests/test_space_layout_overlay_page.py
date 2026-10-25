@@ -285,6 +285,27 @@ def test_a_stale_assumption_with_the_same_layout_fast_forwards(
     assert str(latest.loc["EQ-02", "Qual일정"])[:10] == "2026-09-01"
 
 
+def test_the_fast_forward_line_is_written_once_beside_an_unsaved_layout(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """적용해 둔 배치 변경이 있는 채 그 시나리오에 남의 일정 저장이 들어왔다(빨리 감기) — 저장 안
+    한 배치 상자 캡션과 바로 아래 ▸▸ 줄이 같은 빨리 감기 글을 두 번 적지 않는다(한 화면에 한 번 —
+    E2E r3, 잠금 까닭과 같은 꼴)."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in texts)
+    assert sum(text.count("더 새롭지만 배치는 같습니다") for text in texts) == 1, texts
+
+
 def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

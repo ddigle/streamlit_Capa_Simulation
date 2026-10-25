@@ -1123,16 +1123,13 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             + (f" {SAMPLE_SAVE_BLOCKED}" if fab_save_blocked else "")
         )
         if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
-            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다.
+            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다. 빨리
+            # 감기 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 바로 아래 줄
+            # (`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
             st.caption(
                 markdown_safe_tildes(
                     f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
                     "— 공식 배치는 바뀌지 않습니다."
-                    + (
-                        f" {edit_mode.notice}"
-                        if edit_mode.fast_forward_from is not None and edit_mode.notice
-                        else ""
-                    )
                 )
             )
         if layout_locked:
