@@ -2730,18 +2730,20 @@ def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_sam
     assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY" in script
 
 
-def test_the_next_deploy_draft_names_what_the_app_and_the_script_show() -> None:
-    """런북 7-19 초안(다음 배포 몫)이 가리키는 단추 글·기대 꼴·항목 수가 앱·스크립트와 맞는다
+def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
+    """런북 7장(이번 몫 7-19)이 가리키는 단추 글·기대 꼴·A 표·항목 수가 앱·스크립트와 맞는다
     (2026-10-25 리뷰). 사내 에이전트는 런북 글 그대로 찾는다.
 
     - B 손 확인의 공정 Capa 상세 다음 화면 단추는 앱 글 그대로다(없는 「… 에서 보기」 가 아니다).
-    - 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 이 배포의 39열 기대(`새 이름 8/8`)로
-      읽는다.
+    - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 이 배포의 39열 기대
+      (`새 이름 8/8`)로 읽는다.
     - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
-    - A 항목 수 — 런북 압축본 기대와 TODO 「다음 배포 — 사내 이관 확인」 줄이 `ITEMS` 수와 같다.
+    - 7-19 A 표의 키가 `--list`(`ITEMS`) 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 — 사내
+      이관 확인」 줄의 항목 수가 `ITEMS` 수와 같다.
     """
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
-    draft = runbook.split("### 7-19. ", 1)[1].split("### 7-20. ", 1)[0]
+    chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
+    draft = chapter.split("### 7-19. ", 1)[1].split("### 7-20. ", 1)[0]
     view = _text(COMPONENTS / "process_capa_view.py")
     assert 'f"가용 불일치 {kpis.mismatch_months}개월 — 가용설비 현황"' in view
     assert '"이 달 가용 불일치 — 가용설비 현황"' in view
@@ -2749,15 +2751,20 @@ def test_the_next_deploy_draft_names_what_the_app_and_the_script_show() -> None:
     assert "`이 달 가용 불일치 — 가용설비 현황`" in draft
     assert "에서 보기」 다음 화면 단추" not in draft
 
-    places = draft.split("**7-18 항목의 새 자리**", 1)[1].split("**가용설비 현황 탭 둘**", 1)[0]
+    places = chapter.split("**7-18 항목의 새 자리**", 1)[1].split("**DB 에 쓰지 않는다**", 1)[0]
     headers_row = next(line for line in places.splitlines() if "| A `equipment_headers` |" in line)
     count = len(screens.EQUIPMENT_NEW_HEADERS)
-    assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음`" in headers_row
+    assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음 · 머리 " in headers_row
     assert 'f"**{_markdown_text(str(picked_unit))}** 의 설비 마스터 {len(picked_rows)}줄"' in _text(
         PROJECT_ROOT / "app_pages" / "space_status.py"
     )
     assert "「… 의 **설비 마스터** n줄」" in places
 
+    a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
+    table_keys = re.findall(r"^\| `([a-z_]+)` \| ([^|]+) \|", a_table, re.MULTILINE)
+    assert [(key, title.strip()) for key, title in table_keys] == [
+        (item.key, item.title) for item in screens.ITEMS
+    ]
     items = len(screens.ITEMS)
     assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in draft
     todo = _text(PROJECT_ROOT / "docs" / "TODO.md")
