@@ -454,7 +454,9 @@ def open_process_detail(request: ProcessDetailRequest) -> None:
     거둔다. 남겨 두면 나중에 사이드바로 들어온 방문이 이 클릭의 출처 띠를 단다.
 
     화면 탭이 상한이고 공정 Capa 상세 탭이 없으면 전달 칸을 적지 않고 옮기지도 않는다 — 탭 줄에
-    알리고 앱 전체를 다시 돌린다(`page_tabs_state.refused_at_tab_limit`).
+    알리고 앱 전체를 다시 돌린다(`page_tabs_state.refused_at_tab_limit`). HOME 칸 클릭은 그보다
+    먼저 콜백(`queue_home_cell`)이 거르므로 여기서 걸리는 대기 칸은 없다 — 남은 거름은 마지막
+    안전망이다.
     """
     if refused_at_tab_limit(PROCESS_CAPA_DETAIL.path):
         return
@@ -474,9 +476,18 @@ def queue_home_cell(selection_state: object, *, section: str) -> bool:
 
     열 칸이 없으면(빈 선택·과거 칸) 아무것도 않는다. 옮기는 것은 같은 회차의 HOME 프래그먼트 본문
     첫 줄이다(`switch_to_queued_process_detail`). 토글은 지금 값을 읽어 여기서 굳힌다.
+
+    화면 탭 상한은 **여기(콜백)서** 거른다(`refused_at_tab_limit` — 알림을 남기고 앱 전체를 다시
+    돌린다). 그림 선택은 값이 남는 위젯이다. 본문 첫 줄에서 거르면 그 `st.rerun()` 이 그림을 다시
+    그리기 전에 회차를 끊어 Streamlit 이 그림의 선택 값을 「그리지 않은 위젯」으로 걷는데,
+    브라우저는 그 선택을 그대로 들고 있다가 다음 조작(다른 탭 닫기·고정)마다 바뀐 값으로 되보내 이
+    콜백이 다시 불린다 — 탭을 하나 닫는 순간 거절했던 칸으로 공정 Capa 상세가 열렸다. 콜백 안의
+    `st.rerun()` 은 본문이 돌기 전에 끊어 위젯 값을 걷지 않는다.
     """
     link = first_home_cell_link(selection_state)
     if link is None:
+        return False
+    if refused_at_tab_limit(PROCESS_CAPA_DETAIL.path):
         return False
     st.session_state[PROCESS_DETAIL_QUEUED_KEY] = home_cell_request(link, section=section)
     return True

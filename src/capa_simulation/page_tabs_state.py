@@ -279,7 +279,9 @@ def _switch(target: str) -> None:
     try:
         # 주소를 통째로 바꾼다 — 테마 인자를 싣지 않으면 지워져 다음 로드가 첫 방문이 된다
         # (AGENTS 9장). 떠나는 화면의 다른 주소 인자(공정 Capa 상세의 `process` 등)는 지워지는
-        # 것이 맞다 — 그 화면은 세션으로 다시 선다.
+        # 것이 맞다 — 그 화면은 세션으로 다시 선다. 주소를 다시 적는 메시지에 프런트가 떠나는
+        # 화면 경로로 기록을 한 칸 먼저 쌓는데, 탭 줄로 옮길 때는 탭 줄 JS 가 그 한 칸을 칸
+        # 바꾸기로 돌린다(`components/page_tabs.py` 모듈 설명 — 뒤로가기 한 번이 직전 화면).
         st.switch_page(
             target,
             query_params={THEME_QUERY_PARAM: theme_value} if theme_value else None,

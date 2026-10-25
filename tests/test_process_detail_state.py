@@ -27,8 +27,8 @@ from streamlit.runtime.state.query_params import QueryParams
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.home_state import ADVANCE_TOGGLE_KEY, EXECUTION_TOGGLE_KEY
-from capa_simulation.navigation import PROCESS_CAPA_DETAIL
-from capa_simulation.page_tabs_state import PAGE_TABS_REENTRY_KEY
+from capa_simulation.navigation import ALL_SPECS, HOME, PROCESS_CAPA_DETAIL
+from capa_simulation.page_tabs_state import MAX_TABS, PAGE_TABS_REENTRY_KEY
 from capa_simulation.process_detail_state import (
     EQUIPMENT_BASIS_OFFICIAL,
     EQUIPMENT_PARAM,
@@ -381,6 +381,78 @@ def test_a_cell_click_in_the_home_fragment_switches_outside_the_callback(
     assert in_callback == [False]
     assert PROCESS_DETAIL_QUEUED_KEY not in app.session_state
     assert app.session_state[PROCESS_DETAIL_REQUEST_KEY].process == "DEMO-A"
+
+
+def _home_selection_at_limit_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.home_rendering import open_clicked_home_cell
+    from capa_simulation.process_detail_state import (
+        HOME_KEY_PROCESS_SECTION,
+        switch_to_queued_process_detail,
+    )
+
+    def picked() -> None:
+        # 그림 선택 대역 — 값이 남는 위젯(글 칸)이 바뀌면 HOME 그림 선택 콜백을 부른다. 실제
+        # 그림은 선택 상태를 위젯 칸에 두고 콜백이 그 칸을 읽는다(`open_clicked_home_cell`).
+        if st.session_state.get("test_home_pick"):
+            open_clicked_home_cell("test_home_chart", HOME_KEY_PROCESS_SECTION)
+
+    @st.fragment
+    def figures() -> None:
+        switch_to_queued_process_detail()
+        st.text_input("칸 선택", key="test_home_pick", on_change=picked)
+
+    figures()
+
+
+def test_a_home_cell_refused_at_the_tab_limit_does_not_come_back_on_a_later_run(
+    monkeypatch: pytest.MonkeyPatch, switched: list[tuple[str, dict[str, str]]]
+) -> None:
+    """상한(10개)에서 거절된 HOME 칸 누름은 아무것도 남기지 않는다. 그림 선택은 값이 남는 위젯이고
+    브라우저는 거절된 뒤에도 그 선택을 들고 있다가 다음 조작마다 되보낸다. 상한을 본문에서 거르면
+    그 `st.rerun()` 이 그림을 그리기 전에 끊어 서버가 선택 값을 걷고, 탭 하나를 닫은 다음 회차에
+    되보낸 선택이 「바뀐 값」으로 다시 들어와 거절했던 칸으로 공정 Capa 상세가 열렸다(E2E 결함)."""
+    from capa_simulation.page_tabs_state import (
+        PAGE_TABS_NOTICE_KEY,
+        PAGE_TABS_OPEN_KEY,
+        PAGE_TABS_PINNED_KEY,
+    )
+
+    runner = install_fragment_browser(monkeypatch)
+    home = HOME.path
+    others = (spec.path for spec in ALL_SPECS if spec.path not in {home, PROCESS_CAPA_DETAIL.path})
+    full = (home, *others)[:MAX_TABS]
+    app = AppTest.from_function(_home_selection_at_limit_app)
+    app.session_state[PAGE_TABS_OPEN_KEY] = full
+    app.session_state[PAGE_TABS_PINNED_KEY] = (home,)
+    app.session_state["test_home_chart"] = {"selection": {"points": [{"customdata": _link_row()}]}}
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    # 칸 누름 — 그림 선택이 바뀐 프래그먼트 회차.
+    runner.fragment_queue = [runner.fragment_of("test_home_pick")]
+    app.text_input(key="test_home_pick").input("26.03").run()
+    runner.fragment_queue = []
+    assert not app.exception, [element.message for element in app.exception]
+    assert switched == []
+    assert PROCESS_DETAIL_QUEUED_KEY not in app.session_state
+    assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+    notice = app.session_state[PAGE_TABS_NOTICE_KEY]
+    assert notice[2] is True and "「공정 Capa 상세」" in notice[1]
+    # 서버도 브라우저와 같은 선택을 든다 — 걷히면 다음 회차에 되보낸 선택이 바뀐 값이 된다.
+    assert app.session_state["test_home_pick"] == "26.03"
+
+    # 다른 탭을 닫은 회차 — 브라우저는 들고 있던 선택을 그대로 되보낸다. 칸을 다시 누르지 않았다.
+    app.session_state[PAGE_TABS_OPEN_KEY] = full[:-1]
+    app.text_input(key="test_home_pick").set_value("26.03").run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert switched == []
+    assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+
+    # 자리가 생긴 뒤 칸을 새로 누르면 지금처럼 연다.
+    app.text_input(key="test_home_pick").input("26.04").run()
+    assert [page for page, _ in switched] == [PROCESS_CAPA_DETAIL.path]
 
 
 def _real_home_figures_app() -> None:

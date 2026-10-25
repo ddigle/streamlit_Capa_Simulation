@@ -62,6 +62,7 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_MEMO_KEY,
+    MASTER_TABLE_KEY,
     NEW_UNIT_DRAFT_KEY,
     NOTHING_SAVED_MESSAGE,
     REMOVAL_CONFIRM_KEY,
@@ -216,8 +217,10 @@ from capa_simulation.services.space_layout_edit import (
     name_changes,
 )
 
-# 표 고르기(맨 위 줄)와 오른쪽 칸 고르기 — 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다).
-TABLE_KEY: Final = "equipment_master_table_v1"
+# 표 고르기(맨 위 줄)와 오른쪽 칸 고르기 — 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 표
+# 고르기 key 는 작은 편집표 판정(`small_editor_edits` — 탭 줄이 페이지보다 먼저 읽는다)도 읽어
+# `equipment_data_workspace` 에 둔다.
+TABLE_KEY: Final = MASTER_TABLE_KEY
 SIDE_KEY: Final = "equipment_master_side_v1"
 TABLE_MASTER: Final = "설비 마스터"
 TABLES: Final = (TABLE_MASTER, BASELINE_TARGET, DOWNTIME_TARGET)
