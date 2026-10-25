@@ -432,15 +432,15 @@ process.stdout.write(JSON.stringify(input.texts.map(parseClipboard)))
 
 
 def test_pasting_excel_quoted_cells_keeps_line_breaks_inside_one_cell() -> None:
-    """엑셀은 줄바꿈(Alt+Enter)·탭이 든 칸을 따옴표로 감싸고 안의 따옴표를 겹쳐 복사한다 — 그 칸이
-    아래 호기 칸으로 쪼개져 들어가지 않고, 「엑셀·CSV로 한꺼번에」 처럼 한 칸으로 읽힌다. 닫히지 않거나
-    닫는 따옴표 뒤에 글이 더 있는 칸은 따옴표 칸이 아니라 글자 그대로다."""
+    """엑셀은 줄바꿈(Alt+Enter)·탭이 든 칸을 따옴표로 감싸고 안의 따옴표를 겹쳐 복사한다 — 그
+    칸이 아래 호기 칸으로 쪼개져 들어가지 않고, 「엑셀·CSV로 한꺼번에」 처럼 한 칸으로 읽힌다.
+    닫히지 않거나 닫는 따옴표 뒤에 글이 더 있는 칸은 따옴표 칸이 아니라 글자 그대로다."""
     texts = [
         '"줄1\n줄2"\t"따옴표 ""안"""\r\n일반\t값\r\n',
         '"첫줄\n둘째줄"\r\n',
         '"A" 형\t나\n다\t"라',
         'a\t""\n"탭\t안"\tb',
-        "plain \"quote\"\tx\n",
+        'plain "quote"\tx\n',
         '"한 칸"',
     ]
     result = _node({"texts": texts}, _CLIPBOARD_RUNNER)
