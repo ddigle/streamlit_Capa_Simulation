@@ -110,6 +110,10 @@ SAVE_NOTE_KEY = "sidebar_equipment_save_note"
 # 값을 적어도 브라우저가 옛 값을 되보낸다 — `scenario_status.save_field_key` 와 같은 까닭).
 SAVE_NOTE_GENERATION_KEY = "sidebar_equipment_save_note_generation"
 SAVE_FIELDS_PREFIX = "sidebar_equipment_save"
+# 「저장」 구획 안내 끝 — 설비 마스터 탭 작은 편집표의 적용 전 편집은 위젯 상태라 편집본에 없다.
+UNAPPLIED_SMALL_EDITS_NOTE = (
+    "기존 보유대수·비가동 일정 표에서 아직 「편집본에 적용」 하지 않은 편집은 저장되지 않습니다."
+)
 # 불러오기·저장 알림 — 다음 회차에 한 번, 줄 바로 아래.
 FLASH_KEY = "sidebar_equipment_scenario_flash"
 # 「저장」 구획을 세우는 화면(편집본을 세우는 화면)의 파일 이름.
@@ -523,8 +527,8 @@ def _downtime_keys(frame: object) -> set[tuple[str, str, str]]:
 
 
 def _render_save(database_path: str, session: EquipmentSession) -> None:
-    """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 폼에서 아직 「보기 적용」 하지 않은
-    편집은 편집본에 없어 저장되지 않는다."""
+    """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 작은 편집표(기존 보유대수·비가동
+    일정)에서 아직 「편집본에 적용」 하지 않은 편집은 편집본에 없어 저장되지 않는다."""
     buffer = st.session_state.get(BUFFER_KEY)
     basis = session.save_basis()
     if not isinstance(buffer, tuple) or basis is None:
@@ -533,8 +537,8 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
     has_changes = has_unsaved_equipment_edits() or pending_fab_layout() is not None
     st.caption(
         f"「{literal_markdown(basis.scenario_name)}」 에 저장합니다 — 공통 칸은 공통 대장, 일정·"
-        "시나리오 메모·비가동은 이 설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다. 폼에서 아직 "
-        "「보기 적용」 하지 않은 편집은 저장되지 않습니다."
+        "시나리오 메모·비가동은 이 설비 시나리오로, 바뀐 쪽만 새 리비전이 됩니다. "
+        f"{UNAPPLIED_SMALL_EDITS_NOTE}"
     )
     if basis.stale:
         st.warning(
