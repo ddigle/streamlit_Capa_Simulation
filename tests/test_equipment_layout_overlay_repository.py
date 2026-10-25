@@ -847,6 +847,115 @@ def test_a_difference_the_official_caught_up_with_is_cleaned_into_a_new_revision
     assert (cleanup.origin, cleanup.note) == ("layout_clear", "공식과 같아진 배치 차이 정리")
 
 
+def _latest_common(repository: DuckDBEquipmentRepository) -> str:
+    latest = repository.latest_revision_id()
+    assert latest is not None
+    return latest
+
+
+def test_the_publish_preview_reads_the_same_judgment_as_publishing(tmp_path: Path) -> None:
+    """설계 6-5 — 확인 팝업의 판정(쓰지 않음)이 발행 쓰기와 같다: 차이 없음 → publish, 공식과 다른
+    배치 → blocked(실효 수), 공식이 같은 자리로 따라옴 → clean(정리 리비전으로 발행)."""
+    repository = _seeded(tmp_path)
+    scenario_id = _hypothetical(repository)
+    first = _scenario(repository, scenario_id)
+    assert first.latest_schedule_revision_id is not None
+    plain = repository.preview_layout_publish(
+        first.latest_schedule_revision_id,
+        common_revision_id=_latest_common(repository),
+        newest_schedule_revision_id=first.latest_schedule_revision_id,
+    )
+    assert (plain.action, plain.stored_rows) == ("publish", 0)
+
+    session = _session(repository, scenario_id)
+    saved = repository.save_equipment(_request(session, scenario_id, equipment=_moved(session)))
+    assert saved.schedule is not None
+    newest = saved.schedule.schedule_revision_id
+    blocked = repository.preview_layout_publish(
+        newest, common_revision_id=_latest_common(repository), newest_schedule_revision_id=newest
+    )
+    assert (blocked.action, blocked.units, blocked.stored_units, blocked.newest_rows) == (
+        "blocked",
+        1,
+        1,
+        1,
+    )
+    # 차이 없는 옛 리비전도 그 시나리오 최신에 차이가 남아 있으면 막힌다(I2).
+    old = repository.preview_layout_publish(
+        first.latest_schedule_revision_id,
+        common_revision_id=_latest_common(repository),
+        newest_schedule_revision_id=newest,
+    )
+    assert (old.action, old.stored_rows, old.newest_rows) == ("blocked", 0, 1)
+
+    official = _session(repository)
+    repository.save_equipment(_request(official, equipment=_moved(official)))
+    before = _counts(repository)
+    clean = repository.preview_layout_publish(
+        newest, common_revision_id=_latest_common(repository), newest_schedule_revision_id=newest
+    )
+    assert (clean.action, clean.stored_rows) == ("clean", 1)
+    assert _counts(repository) == before
+
+
+def test_the_canvas_preview_reads_hypothetical_marks_and_units_on_the_floor(
+    tmp_path: Path,
+) -> None:
+    """설계 6-4·7-2 — 캔버스 팝업 미리 보임은 캔버스 저장이 보는 리비전(ACTIVE 최신·최신 공식
+    발행)의 그 층 차이 요소 범위와 차이 호기 상자다."""
+    repository = _seeded(tmp_path)
+    assert repository.layout_overlay_extent(*FLOOR) == equipment_repository.LayoutOverlayExtent()
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    assert session.schedule is not None
+    repository.save_equipment(
+        _request(
+            session,
+            scenario_id,
+            equipment=_moved(session, x=85.0),
+            floor_marks={FLOOR: [_mark("MK-FAR", x=90.0).editor_payload()]},
+            floor_layout_bases={
+                FLOOR: _floor_base(repository, session.schedule.schedule_revision_id)
+            },
+        )
+    )
+
+    extent = repository.layout_overlay_extent(*FLOOR)
+
+    assert extent.marks == (("셋업 실무", 92.0, 3.0),)
+    assert extent.mark_extent() == (92.0, 3.0)
+    assert extent.marks_outside((80.0, 60.0)) == ("셋업 실무",)
+    assert extent.marks_outside((100.0, 60.0)) == ()
+    assert extent.units_outside((90.0, 60.0)) == (("셋업 실무", 1),)
+    assert extent.units_outside((100.0, 60.0)) == ()
+    assert (
+        repository.layout_overlay_extent("C2", "3F") == equipment_repository.LayoutOverlayExtent()
+    )
+
+
+def test_the_scenario_list_counts_the_latest_stored_marks_and_labels(tmp_path: Path) -> None:
+    """시나리오 표 「저장된 배치 차이」 재료 — 최신의 저장된 호기·요소·이름표 행 수(원시)."""
+    repository = _seeded(tmp_path)
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    assert session.schedule is not None
+    repository.save_equipment(
+        _request(
+            session,
+            scenario_id,
+            floor_marks={FLOOR: [_mark("MK-NEW", x=5.0).editor_payload()]},
+            floor_layout_bases={
+                FLOOR: _floor_base(repository, session.schedule.schedule_revision_id)
+            },
+        )
+    )
+
+    summary = _scenario(repository, scenario_id)
+
+    assert summary.latest_layout_rows == (0, 1, 0)
+    assert _scenario(repository, OPERATIONS).latest_layout_rows == (0, 0, 0)
+
+
 # ── E7 되돌리기·여기서 새 시나리오 ────────────────────────────────────────────────────
 
 
