@@ -147,11 +147,13 @@ from capa_simulation.services.korean_particle import (
 )
 from capa_simulation.services.layout_overlay import (
     Place,
+    ReappliedLayout,
     assumption_common_places,
     assumption_group_refusal,
     misplaced_rows,
     place_of,
     place_rows,
+    reapply_layout_edits,
 )
 from capa_simulation.services.schedule_confirmation import (
     ACTUAL_COLUMN,
@@ -562,14 +564,19 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
 
     가용설비 현황과 Space 현황이 같은 편집본을 쓴다. 어느 쪽을 먼저 열어도 같은 저장본
     토큰으로 세워야, 나중에 연 쪽이 「토큰이 다르다」며 편집본을 저장본으로 덮어쓰지 않는다.
-    새 리비전이 생기면(누가 저장하면) 미저장 편집·캔버스·도면 요소는 버리고 다시 세운다.
-    샘플 fleet 은 넣지 않는다 — 합성값이 섞이면 첫 실제 저장이 막힌다.
+    새 리비전이 생기면(누가 저장하면) 미저장 편집·캔버스·도면 요소는 버리고 다시 세운다 — 단 가정
+    역할로 찍힌 배치 편집은 남이 **공통**을 저장했을 때(일정 쪽 그대로) 그 배치 일곱 칸을 새
+    저장본 위에 다시 얹는다(설계 9장 — 찍힌 역할도 남긴다). 샘플 fleet 은 넣지 않는다 — 합성값이
+    섞이면 첫 실제 저장이 막힌다.
     """
     token = revision_token(latest_snapshot)
     previous = st.session_state.get(_REVISION_KEY)
-    # 남의 저장으로 다시 세우면 버리는 가정 배치 편집을 옛 저장본 사본이 바뀌기 **전**에 센다(S3 —
-    # 다시 얹기는 S4).
-    overlay_dropped = _stamped_overlay_edits() if previous is not None and previous != token else 0
+    # 남의 저장으로 다시 세우면 버리는 가정 배치 편집을 옛 저장본 사본이 바뀌기 **전**에 센다. 남의
+    # **공통** 저장(일정 쪽 그대로)이면 그 편집의 배치 일곱 칸은 새 저장본 위에 다시 얹는다(설계
+    # 9장 — 재료도 옛 사본이 바뀌기 전에 든다).
+    swapped = previous is not None and previous != token
+    overlay_dropped = _stamped_overlay_edits() if swapped else 0
+    reapply = _reapply_material(previous, token) if swapped else None
     if st.session_state.get(DRAFT_REVISION_KEY) != token:
         saved: Frames = (
             (latest_snapshot.baseline, latest_snapshot.equipment, latest_snapshot.downtime)
@@ -596,19 +603,6 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         replaced = previous is not None and previous != token
         if replaced:
             st.session_state[DRAFTS_REPLACED_KEY] = True
-        if replaced and has_unsaved_equipment_edits():
-            number = _replaced_by_words(previous, latest_snapshot)
-            st.session_state[DISCARDED_NOTICE_KEY] = (
-                f"다른 사용자가 {number}{object_particle(number)} 저장해, 이 화면에서 "
-                "저장하지 않은 설비 편집"
-                "(설비 마스터·Space 배치)을 버리고 최신 저장본으로 다시 열었습니다."
-                + (
-                    f" 그 가운데 가정 배치 편집 {overlay_dropped:,}대도 버렸습니다 — 최신 위에서 "
-                    "다시 옮기세요."
-                    if overlay_dropped
-                    else ""
-                )
-            )
         _clear_editors()
         st.session_state[BUFFER_KEY] = _copy_frames(
             (
@@ -617,6 +611,16 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
                 st.session_state[DOWNTIME_DRAFT_KEY],
             )
         )
+        reapplied = (
+            _reapply_layout(reapply, latest_snapshot)
+            if reapply is not None and latest_snapshot is not None
+            else None
+        )
+        if replaced and has_unsaved_equipment_edits():
+            number = _replaced_by_words(previous, latest_snapshot)
+            st.session_state[DISCARDED_NOTICE_KEY] = discarded_notice(
+                number, overlay_dropped=overlay_dropped, reapplied=reapplied
+            )
         st.session_state[_REVISION_KEY] = token
         st.session_state[_BASE_KEY] = _base_of(latest_snapshot)
         # 선택·삭제 대기·되돌리기·이름 바꿈·미저장 층 배치는 옛 편집본의 것이다. 새 저장본 위에서
@@ -632,19 +636,29 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         if replaced:
             # 남의 저장으로 다시 세우면 저장 안 한 이름 바꿈이 돌아가므로 필터가 따라갈 지도도
             # 버린다(자기 저장 뒤의 지도는 `_save_equipment_frames` 가 남긴다 — 이름이 저장본이
-            # 됐다).
+            # 됐다). 가정 배치 편집을 다시 얹었으면 그 편집의 찍힌 역할은 남긴다(설계 9장).
             stale += [
                 FOLLOWED_FILTERS_KEY,
                 PENDING_CANVASES_KEY,
                 PENDING_MARKS_KEY,
                 PENDING_GROUP_LABELS_KEY,
                 PENDING_BASES_KEY,
-                LAYOUT_ROLE_KEY,
             ]
+            if reapplied is None or not reapplied.reapplied:
+                stale.append(LAYOUT_ROLE_KEY)
         for key in stale:
             st.session_state.pop(key, None)
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
+        if reapplied is not None and reapplied.reapplied:
+            # 다시 얹은 편집은 저장 안 한 편집이다 — 세운 세대보다 한 칸 올린다.
+            frames_now: Frames = st.session_state[BUFFER_KEY]
+            st.session_state[BUFFER_KEY] = (
+                frames_now[0],
+                reapplied.equipment,
+                frames_now[2],
+            )
+            _bump_buffer_generation()
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
 
@@ -970,6 +984,85 @@ def _stamped_overlay_edits() -> int:
     if stamped_layout_role() != "overlay" or not isinstance(buffer, tuple):
         return 0
     return len(layout_edits(buffer[1], _saved_master(), pending_unit_renames().units).unit_names)
+
+
+@dataclass(frozen=True)
+class _ReapplyMaterial:
+    """남의 공통 저장으로 편집본을 다시 세우기 **전**에 든 다시 얹기 재료(설계 9장)."""
+
+    old_saved: pd.DataFrame
+    buffer: pd.DataFrame
+    origins: Mapping[str, str]
+    old_keys: Mapping[str, str]
+
+
+def _reapply_material(previous: object, token: str) -> _ReapplyMaterial | None:
+    """다시 얹기 재료 — 가정 역할로 찍힌 배치 편집이 있고 토큰의 일정 쪽이 그대로(남의 **공통**
+    저장)일 때만. 일정 쪽이 바뀌었거나(다른 리비전) 공식 역할이면 None(지금처럼 버린다)."""
+    if stamped_layout_role() != "overlay" or _token_parts(previous)[1] != _token_parts(token)[1]:
+        return None
+    buffer = st.session_state.get(BUFFER_KEY)
+    if not isinstance(buffer, tuple):
+        return None
+    saved = _saved_master()
+    pairs = st.session_state.get(DRAFT_UNIT_KEYS_KEY)
+    if not isinstance(pairs, tuple) or not pairs:
+        return None
+    return _ReapplyMaterial(
+        old_saved=saved.copy(),
+        buffer=buffer[1].copy(),
+        origins=layout_lock_origins(buffer[1], saved, pending_unit_renames().units),
+        old_keys={str(name): str(key) for name, key in pairs},
+    )
+
+
+def _reapply_layout(
+    material: _ReapplyMaterial, latest_snapshot: EquipmentSnapshot
+) -> ReappliedLayout:
+    """새 저장본 사본 위에 가정 배치 일곱 칸 편집을 다시 얹는다 — 호기 키로 잇고 남이 지운 호기는
+    뺀다(`layout_overlay.reapply_layout_edits`)."""
+    return reapply_layout_edits(
+        material.old_saved,
+        material.buffer,
+        st.session_state[EQUIPMENT_DRAFT_KEY],
+        origins=material.origins,
+        old_keys=material.old_keys,
+        new_names={str(key): str(name) for name, key in latest_snapshot.unit_key_pairs},
+    )
+
+
+def discarded_notice(
+    number: str, *, overlay_dropped: int, reapplied: ReappliedLayout | None
+) -> str:
+    """남의 저장으로 편집본을 다시 세운 회차의 알림(한 번). 가정 배치 편집을 새 저장본 위에 다시
+    얹었으면 그 수와 빠진 호기를 따로 적는다(설계 9장) — 그 밖의 저장 안 한 편집(설비 마스터 칸·
+    도면 요소·Main 설비명 위치)은 지금처럼 버렸다."""
+    head = f"다른 사용자가 {number}{object_particle(number)} 저장해, "
+    if reapplied is not None and reapplied.reapplied:
+        dropped = (
+            f" 그 사이 공통 대장에서 빠진 호기 {len(reapplied.dropped):,}대"
+            f"({', '.join(reapplied.dropped[:3])}{' 외' if len(reapplied.dropped) > 3 else ''})의 "
+            "편집은 뺐습니다."
+            if reapplied.dropped
+            else ""
+        )
+        return (
+            head + "최신 저장본으로 다시 열고 저장하지 않은 가정 배치 편집 "
+            f"{reapplied.reapplied:,}대(호기 위치)는 그 위에 다시 얹었습니다.{dropped} 그 밖의 "
+            "저장하지 않은 설비 편집(설비 마스터 칸·도면 요소·Main 설비명 위치)은 버렸습니다 — "
+            "배치를 확인하고 저장하세요."
+        )
+    return (
+        head
+        + "이 화면에서 저장하지 않은 설비 편집(설비 마스터·Space 배치)을 버리고 최신 저장본으로 "
+        "다시 열었습니다."
+        + (
+            f" 그 가운데 가정 배치 편집 {overlay_dropped:,}대도 버렸습니다 — 최신 위에서 "
+            "다시 옮기세요."
+            if overlay_dropped
+            else ""
+        )
+    )
 
 
 def discard_layout_edits() -> None:

@@ -389,28 +389,113 @@ st.session_state["read"] = save_fields_from_state("p", assumption=True)
     assert (read.propagate_new_units, read.publish_official) == (False, False)
 
 
-def test_a_common_save_by_someone_else_names_the_dropped_assumption_layout_edits(
-    tmp_path: Path, editor_calls: list[dict[str, Any]]
-) -> None:
-    """남이 공통을 저장하면 편집본을 다시 세운다 — 버림 알림이 가정 배치 편집 수를 따로 적는다(S3 —
-    다시 얹기는 S4, 설계 9장)."""
-    repository, setup = _overlay(tmp_path)
-    app = _ok(_space(tmp_path, setup).run())
+def _apply_eq02(app: AppTest, editor_calls: list[dict[str, Any]], x: float = 60) -> None:
+    """가정 세션 층 상세 편집기에서 EQ-02 를 (x, 20) 으로 옮겨 적용한다."""
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": editor_calls[-1]["epoch"],
-        "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
+        "changes": [{"id": "EQ-02", "placed": True, "x": x, "y": 20, "w": 12, "h": 7}],
         "canvas": None,
         "marks": None,
     }
     _ok(app.run())
+
+
+def _buffer_x(app: AppTest, name: str) -> float:
+    from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
+
+    frame = app.session_state[BUFFER_KEY][1]
+    return float(frame.loc[frame["설비명"].eq(name), "X좌표"].iloc[0])
+
+
+def test_a_common_save_by_someone_else_reapplies_the_assumption_layout_edits(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """남이 공통을 저장하면 편집본을 다시 세우되, 가정 역할로 찍힌 배치 일곱 칸 편집은 새 저장본
+    위에 다시 얹고 찍힌 역할을 남긴다(S4 — 설계 9장·검토 M4). 남의 공통 편집(설비이력)은 새
+    저장본에서 온다. 알림이 다시 얹은 수를 적는다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+    assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
     theirs = _session(repository)
     repository.save_equipment(
         _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
     )
     clear_equipment_repository()
     _ok(app.run())
-    assert any("가정 배치 편집 1대도 버렸습니다" in str(item.value) for item in app.warning)
+
+    assert any(
+        "가정 배치 편집 1대(호기 위치)는 그 위에 다시 얹었습니다" in str(item.value)
+        for item in app.warning
+    )
+    assert _buffer_x(app, "EQ-02") == 60.0
+    assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
+    from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
+
+    frame = app.session_state[BUFFER_KEY][1]
+    assert frame.loc[frame["설비명"].eq("EQ-02"), "설비이력"].iloc[0] == "남의 공통 편집"
+    # 다시 얹은 편집도 저장된다 — 그 시나리오의 새 리비전(가정 배치), 공통 리비전은 남의 것 그대로.
+    common_before = repository.latest_revision_id()
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+    assert repository.latest_revision_id() == common_before
+    newest = _scenario(repository, setup)
+    assert newest.latest_layout_unit_count == 2
+
+
+def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """남이 그 사이 공통 대장에서 지운 호기의 편집은 다시 얹지 않고 알림에 이름을 적는다. 다른
+    호기의 편집은 얹는다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [
+            {"id": "EQ-01", "placed": True, "x": 70, "y": 40, "w": 12, "h": 7},
+            {"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7},
+        ],
+        "canvas": None,
+        "marks": None,
+    }
+    _ok(app.run())
+    theirs = _session(repository)
+    kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = theirs.downtime.loc[~theirs.downtime["설비명"].eq("EQ-01")].reset_index(drop=True)
+    repository.save_equipment(_request(theirs, equipment=kept, downtime=downtime))
+    clear_equipment_repository()
+    _ok(app.run())
+
+    notice = next(str(item.value) for item in app.warning if "다시 얹었습니다" in str(item.value))
+    assert "가정 배치 편집 1대(호기 위치)" in notice
+    assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notice
+    assert _buffer_x(app, "EQ-02") == 60.0
+
+
+def test_an_official_layout_edit_is_still_dropped_on_someone_elses_common_save(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """공식 역할의 배치 편집은 공통 대장에 들어갈 편집이라 다시 얹지 않고 지금처럼 버린다."""
+    repository, _ = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, OPERATIONS).run())
+    _apply_eq02(app, editor_calls)
+    assert app.session_state[LAYOUT_ROLE_KEY] == "official"
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    assert any(
+        "저장하지 않은 설비 편집(설비 마스터·Space 배치)을 버리고" in str(item.value)
+        for item in app.warning
+    )
+    assert _buffer_x(app, "EQ-02") != 60.0
+    assert LAYOUT_ROLE_KEY not in app.session_state
 
 
 def test_a_current_data_csv_from_another_scenario_is_named() -> None:
@@ -772,3 +857,48 @@ def test_loading_an_assumption_asks_before_dropping_a_floor_use_draft(tmp_path: 
     _ok(official.run())
     assert not official.button(key=LOAD_BUTTON_KEY).disabled
     assert not [box for box in official.checkbox if box.key == DISCARD_KEY]
+
+
+def test_the_canvas_dialog_previews_the_hypothetical_layout_before_shrinking(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """S4 — 설계 6-4·7-2. 공식 세션의 층 캔버스 팝업이 가정 설비 시나리오 배치의 이 층 차이
+    요소(밖이면 저장 단추를 끔 — 저장소가 막는다)와 차이 호기(경고 뒤 확인 체크)를 미리 말한다."""
+    from test_equipment_layout_overlay_repository import _floor_base, _mark
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository)
+    mine = _session(repository, clone.equipment_scenario_id)
+    assert mine.schedule is not None
+    repository.save_equipment(
+        _request(
+            mine,
+            clone.equipment_scenario_id,
+            equipment=_set(mine.equipment, "EQ-01", "X좌표", 85.0),
+            floor_marks={("C1", "1F"): [_mark("MK-FAR", x=90.0).editor_payload()]},
+            floor_layout_bases={
+                ("C1", "1F"): _floor_base(repository, mine.schedule.schedule_revision_id)
+            },
+        )
+    )
+    clear_equipment_repository()
+    app = _ok(_space(tmp_path, OPERATIONS).run())
+    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    app.checkbox(key="space_floor_layout_auto_C1_1F").uncheck().run()
+    app.number_input(key="space_floor_layout_width_C1_1F_manual_100x60").set_value(95.0).run()
+    _ok(app)
+
+    warnings = [str(item.value) for item in app.warning]
+    assert any("가정 배치 「셋업 실무」 호기 1대가 범위를 벗어납니다" in text for text in warnings)
+    assert not any("도면 요소가 범위를 벗어나" in text for text in warnings)
+    assert app.button(key="space_floor_layout_save_C1_1F").disabled
+    app.checkbox(key="space_floor_layout_shrink_C1_1F").check().run()
+    assert not app.button(key="space_floor_layout_save_C1_1F").disabled
+
+    app.number_input(key="space_floor_layout_width_C1_1F_manual_100x60").set_value(80.0).run()
+    warnings = [str(item.value) for item in app.warning]
+    assert any(
+        "도면 요소가 범위를 벗어나" in text and "가정 배치 「셋업 실무」 의 요소도 밖입니다" in text
+        for text in warnings
+    )
+    assert app.button(key="space_floor_layout_save_C1_1F").disabled
