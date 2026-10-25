@@ -551,6 +551,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장된 주차별 가용설비가 0건이면 가용대수를 곱하는 표시 항목(`AVAILABILITY_BASED_METRICS` — 일 표준 가능량·가용대수)만
     입력 안내로 멈춘다. 대당 일 Capa·로직 분석은 그대로 선다 — 계산(`build_weekly_standard_target_capacity`)은 빈
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
+  - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
+    시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
+    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩 더 적는다(`_formula_operands` — 「54,698.63 ÷ 1.49386 = 36,615.63」,
+    2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다).
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
   붙여넣기 팝업 폼·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 양식과 붙여넣기 칸만 그린다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
