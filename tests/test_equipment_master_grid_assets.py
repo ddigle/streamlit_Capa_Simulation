@@ -1,8 +1,9 @@
-# Purpose: 설비 마스터 표 자산의 출납·트리거 이름·색 변수·데이터 글·키 계약을 글자·node 로 본다.
+# Purpose: 설비 마스터 표 자산의 출납·트리거·색 변수·데이터 글·키·팝오버 계약을 글자·node 로 본다.
 
 """AppTest 는 표 JS 를 돌리지 못한다. 자산 글자로 드러나는 약속(개편 명세 11장 「자산 글」)은 글자로
 붙잡고, DOM 을 모르는 순수 구획(`// <grid-…>`)은 node(없으면 bun)로 떼어 돌린다 — 없으면 건너뛰고 CI
-에서는 실패다. 화면 동작은 사본 앱 브라우저로 본다."""
+에서는 실패다. 불러오기 팝오버의 초점·Esc 는 파일 전체를 작은 가짜 DOM 에 마운트해 본다. 그 밖의
+화면 동작은 사본 앱 브라우저로 본다."""
 
 from __future__ import annotations
 
@@ -261,14 +262,17 @@ def _sections() -> str:
     return "\n".join(parts)
 
 
-def _node(payload: dict[str, Any], runner: str = _RUNNER) -> dict[str, Any]:
+def _node(
+    payload: dict[str, Any], runner: str = _RUNNER, source: str | None = None
+) -> dict[str, Any]:
+    """`source`(기본은 순수 구획들) 뒤에 `runner` 를 붙여 돌리고 그 출력 JSON 을 돌려준다."""
     runtime = _runtime()
     if runtime is None:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             pytest.fail("CI 러너에 node 가 없다 — 설비 마스터 표 JS 대조를 건너뛸 수 없다")
         pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     completed = subprocess.run(
-        [runtime, "-e", _sections() + runner],
+        [runtime, "-e", (_sections() if source is None else source) + runner],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -501,3 +505,214 @@ def test_the_narrow_check_head_rule_outranks_the_wide_one() -> None:
     narrow = CSS.split("@media (max-width: 640px)", 1)[1].split("\n}\n", 1)[0]
     assert re.search(r"\.emg-check-row \.emg-check-head\s*\{\s*flex:\s*0 0 100%", narrow)
     assert re.search(r"\n\.emg-check-head\s*\{\s*flex:\s*0 0 116px", CSS)
+
+
+# ---------------------------------------------------------------- 불러오기 팝오버(node·가짜 DOM)
+
+_MOUNT_HEAD = "export default function (component) {"
+_FAKE_DOM_RUNNER = """
+class FakeNode {
+  constructor(tag) {
+    this.tagName = String(tag).toUpperCase()
+    this.children = []
+    this.parentNode = null
+    this.attributes = {}
+    this.dataset = {}
+    this.listeners = {}
+    this.style = { setProperty() {} }
+    this.className = ''
+    this.hidden = false
+    this.ownText = ''
+  }
+  appendChild(child) {
+    child.parentNode = this
+    this.children.push(child)
+    return child
+  }
+  get textContent() {
+    return this.ownText + this.children.map((child) => child.textContent).join('')
+  }
+  set textContent(value) {
+    for (const child of this.children) child.parentNode = null
+    this.children = []
+    this.ownText = String(value)
+  }
+  set innerHTML(value) {
+    this.textContent = ''
+  }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value)
+  }
+  getAttribute(name) {
+    return name in this.attributes ? this.attributes[name] : null
+  }
+  addEventListener(type, handler) {
+    ;(this.listeners[type] = this.listeners[type] || []).push(handler)
+  }
+  removeEventListener() {}
+  contains(node) {
+    for (let at = node; at; at = at.parentNode) if (at === this) return true
+    return false
+  }
+  getRootNode() {
+    return document
+  }
+  getBoundingClientRect() {
+    return { left: 0, width: 300 }
+  }
+  focus() {
+    document.activeElement = this
+  }
+  click() {
+    return fire(this, 'click')
+  }
+  matches(selector) {
+    return selector.split(',').some((part) => {
+      const text = part.trim()
+      const data = text.match(/^\\[data-([a-z]+)="(.*)"\\]$/)
+      if (data) return this.dataset[data[1]] === data[2].replace(/\\\\(.)/g, '$1')
+      if (text.startsWith('.')) return this.className.split(/\\s+/).includes(text.slice(1))
+      return this.tagName === text.toUpperCase()
+    })
+  }
+  querySelectorAll(selector) {
+    const found = []
+    const walk = (node) => {
+      for (const child of node.children) {
+        if (child.matches(selector)) found.push(child)
+        walk(child)
+      }
+    }
+    walk(this)
+    return found
+  }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null
+  }
+}
+
+function fire(target, type, extra) {
+  const event = Object.assign({
+    type, target, stopped: false,
+    stopPropagation() { this.stopped = true },
+    preventDefault() {},
+  }, extra || {})
+  for (let at = target; at && !event.stopped; at = at.parentNode) {
+    for (const handler of (at.listeners[type] || []).slice()) handler.call(at, event)
+  }
+  return event
+}
+
+globalThis.document = {
+  activeElement: null,
+  documentElement: { clientWidth: 1200 },
+  body: null,
+  createElement: (tag) => new FakeNode(tag),
+  addEventListener() {},
+  removeEventListener() {},
+}
+
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+globalThis.__mount({
+  data: input.data, parentElement, setStateValue() {}, setTriggerValue() {},
+})
+const toggleOf = (label) => host.querySelectorAll('button').find(
+  (node) => node.getAttribute('aria-haspopup') === 'dialog' && node.textContent.startsWith(label))
+const panelOf = (toggle) => toggle.parentNode.children[1]
+const focusLabel = () => {
+  const active = document.activeElement
+  return active ? active.getAttribute('aria-label') || active.textContent.trim() : null
+}
+const wait = () => new Promise((resolve) => setTimeout(resolve, 5))
+const open = (label) => {
+  const toggle = toggleOf(label)
+  toggle.focus()
+  // 앞 단계에서 열린 채 남았으면(Esc 가 닫지 못함) 한 번 눌러 닫고 다시 연다.
+  if (!panelOf(toggle).hidden) toggle.click()
+  toggle.click()
+  return toggle
+}
+const results = {}
+;(async () => {
+  // 공정 — 열고 잠시 뒤 Esc(비교 기준).
+  let toggle = open('공정으로 불러오기')
+  await wait()
+  results.process = { focus: focusLabel(), open: !panelOf(toggle).hidden }
+  fire(document.activeElement, 'keydown', { key: 'Escape' })
+  results.process.closed = panelOf(toggle).hidden
+  results.process.back = document.activeElement === toggle
+  // 조건 — 열자마자 Esc.
+  toggle = open('조건으로 불러오기')
+  results.conditions = { focus: focusLabel(), open: !panelOf(toggle).hidden }
+  fire(document.activeElement, 'keydown', { key: 'Escape' })
+  results.conditions.closed = panelOf(toggle).hidden
+  results.conditions.back = document.activeElement === toggle
+  // 조건 — 값을 고르면 패널을 다시 지어도 고른 칸에 초점이 남는다.
+  toggle = open('조건으로 불러오기')
+  const value = panelOf(toggle).querySelector('[data-fk="cond-val-0"]')
+  value.focus()
+  value.value = '0'
+  fire(value, 'change')
+  results.repaint = { focus: focusLabel(), open: !panelOf(toggle).hidden }
+  // 열린 채 단추로 돌아와(Shift+Tab) Esc — 닫고 Esc 는 문서로 올리지 않는다.
+  toggle.focus()
+  const onToggle = fire(toggle, 'keydown', { key: 'Escape' })
+  results.toggle = { closed: panelOf(toggle).hidden, stopped: onToggle.stopped }
+  // 닫힌 단추의 Esc 는 막지 않는다.
+  results.closedToggle = { stopped: fire(toggle, 'keydown', { key: 'Escape' }).stopped }
+  process.stdout.write(JSON.stringify(results))
+})()
+"""
+
+
+def _loader_payload() -> dict[str, Any]:
+    """불러오기 마운트 data 의 최소 꼴 — 설비 둘, 조건 칸 둘(공정소분류·동)."""
+    return {
+        "mode": "loader",
+        "base": "b1",
+        "names": ["DEMO-01", "DEMO-02"],
+        "ids": {},
+        "processes": [["DEMO-P1", 1], ["DEMO-P2", 1]],
+        "conditions": {
+            "columns": ["공정소분류", "동"],
+            "values": [["DEMO-P1", "DEMO-P2"], ["D1", "D2"]],
+            "codes": [_python_codes([0, 1], 1), _python_codes([0, 1], 1)],
+            "widths": [1, 1],
+        },
+        "loaded": [],
+        "alertIds": [],
+        "total": 2,
+        "limit": 1000,
+        "missing": [],
+        "firstData": False,
+        "newEnabled": False,
+        "newRowsLocked": False,
+    }
+
+
+def test_both_loader_popovers_close_on_escape_right_after_opening() -> None:
+    """「조건으로 불러오기 ▾」 를 열자마자 누른 Esc 로도 닫힌다 — 「공정으로 불러오기 ▾」 처럼 열면
+    초점이 패널 안 첫 칸으로 가고(Esc 는 패널이 받는다), 열린 채 여는 단추로 돌아와도 Esc 로 닫는다.
+    닫히면 초점은 여는 단추로 돌아온다. 값을 골라 패널을 다시 지어도 고른 칸의 초점은 그대로다."""
+    assert JS.count(_MOUNT_HEAD) == 1
+    source = JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
+    result = _node({"data": _loader_payload()}, _FAKE_DOM_RUNNER, source=source)
+
+    assert result["process"] == {
+        "focus": "공정 이름 찾기",
+        "open": True,
+        "closed": True,
+        "back": True,
+    }
+    assert result["conditions"] == {
+        "focus": "조건 칸 1",
+        "open": True,
+        "closed": True,
+        "back": True,
+    }
+    assert result["repaint"] == {"focus": "조건 값 1", "open": True}
+    assert result["toggle"] == {"closed": True, "stopped": True}
+    assert result["closedToggle"] == {"stopped": False}

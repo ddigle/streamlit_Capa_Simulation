@@ -724,11 +724,20 @@ function loadQuery(S, model) {
   load(S, 'names', matched.found.map((index) => model.ids[index]), matched.missing, label)
 }
 
+// 팝오버를 열면 초점을 패널 안 첫 칸(입력·고르는 칸·단추)으로 — 열자마자 누른 Esc 가 패널에 닿는다. 이미 패널 안이면 그대로.
+function enterPanel(panel) {
+  const active = activeIn(panel)
+  if (active && panel.contains(active)) return
+  const first = panel.querySelector('input, select, button')
+  if (first) first.focus()
+}
+
 function popover(S, name, label, build, wide) {
   const wrap = el('div', 'emg-pop-wrap')
   const toggle = button('emg-btn', label + ' ', () => {
     S.pop = S.pop === name ? null : name
     paint()
+    if (S.pop === name) enterPanel(panel)
   })
   const caret = el('span')
   caret.innerHTML = ICONS.down
@@ -737,13 +746,20 @@ function popover(S, name, label, build, wide) {
   const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', label)
+  const close = () => {
+    S.pop = null
+    paint()
+    toggle.focus()
+  }
   panel.addEventListener('keydown', (event) => {
     stopKeys(event)
-    if (event.key === 'Escape') {
-      S.pop = null
-      paint()
-      toggle.focus()
-    }
+    if (event.key === 'Escape') close()
+  })
+  // 열린 채 여는 단추로 돌아와도(Shift+Tab) Esc 로 닫는다. 닫혀 있으면 Esc 를 막지 않는다.
+  toggle.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || S.pop !== name) return
+    stopKeys(event)
+    close()
   })
   const paint = () => {
     const open = S.pop === name
