@@ -648,6 +648,10 @@
 
 ### 코드 정리(리팩토링 잔여)
 
+- [ ] **가용설비 현황 `Static 대비 일정` 근거 글의 식 셋도 `formula_text` 로**(2026-10-26 formula-operands-consistent 후속) —
+  `availability_gap_panel` 의 「보유 + 대여 = 합」·「GAP = 설비 일정 − Static = 값」·「설비 일정 기준 가용 = 보유 + 대여」 가 아직
+  깎은 인수에 「=」 다. 같은 파일을 markdown-literal-sinks 주제가 고치는 중이라 이번에 두었다 — 그 병합 뒤 비교 시트 풍선과 같은
+  「≈」 길(`equals_mark` + `written_value`)로 고치고 `tests/test_formula_text.py` 의 `PENDING` 에서 뺀다.
 - [~] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없는 순수 유지보수 비용이라 다른 일 뒤로 둔다.
   분류 컬럼 폭 계산과 `go.Table` 두 벌 조립은 `monthly_table_base` 로 올렸다. **남은 것**: 격자 머리 여섯 호출과 반복 접두
   생략 루프 — 두 모듈의 `_add_table_grid` 머리, `grouped_monthly_table._grouped_values`·
@@ -815,6 +819,19 @@
 
 ### 화면
 
+- (2026-10-26) **화면 식 글은 적힌 수로 다시 셈해도 맞게 — 식 글 도우미 `components/formula_text.py` 하나**(리팩토링
+  formula-operands-consistent, 밤사이 권장대로) — 식 글을 짓는 곳마다 인수를 따로 깎고 결과는 깎기 전 값으로 내서, E2E 2·3회차에
+  고친 두 화면(제약 시뮬레이션 고른 달 계산·표준 목표 로직 분석) 밖에도 같은 어긋남이 남았다(「보유 54.0 − 대여 4.1 = 50.0」, 풍선
+  「확보율 105% = 가용 0.5 ÷ 소요 0.4」, 「0.02 × 120% = 0.03」). 검산 길 둘(「≈」 — 공정 Capa 상세 `_equals_mark`, 자릿수 늘리기 —
+  제약 시뮬레이션 `_consistent_digits`·`_operand_text`)을 새 모듈로 옮기고 화면마다 지금 길을 지킨다. 처리 없던 자리는 「≈」 로
+  — 공정 Capa 상세 근거 카드 넷(① 가정 소요·② 보유 − 대여·② 기존보유 + 호기·③ 원인 총보유 ÷ 소요)과 캔버스 풍선 넷(가용·가정
+  소요·확보율·과부족 — 과부족 식 줄은 등호가 없어 어긋날 때만 줄 앞에 「≈」), 제약 시뮬레이션 계산표 풍선 둘(필요·기존 가용),
+  가용설비 현황 비교 시트 풍선 셋(보유·가용·GAP — 「0 이 되는 값은 한 자리 더」 서식이라 적힌 글자에서 수를 읽는다). 결과 값·판정·
+  올림 규칙은 그대로다. 대안: 처리 없던 자리도 자릿수 늘리기 — 같은 값이 두 줄에서 다른 자리로 적히고(1단계 1.94 · 5단계 1.9389)
+  풍선 글이 더 길어진다. 비가동 몫 「n대 × d/w일」 은 인수가 정수라 늘 맞아 손대지 않았다(가드 허용 목록). 시험: 값 격자 검산
+  그물과 식 꼴 f-string 을 짓는 함수가 이 모듈을 부르는지 보는 AST 가드(`tests/test_formula_text.py` — 모든 자리가 「=」 이던 때를
+  흉내 내면 열두 묶음이 실패). 관련: `components/formula_text.py`·`process_capa_view.py`·`process_capa_canvas.py`·
+  `constraint_simulation_view.py`·`constraint_simulation_figures.py`·`availability_sheet_canvas.py`·AGENTS 3·6·8장
 - (2026-10-26) **Space 층 배치 잠금 까닭은 잠금 줄에 한 번만**(브라우저 E2E r2 eq-flows, 밤사이 권장대로) — 층 배치가 잠긴
   회차(남이 그 가정 시나리오에 다른 배치를 저장·공식 시나리오가 바뀜)에 저장 안 한 배치 상자의 캡션과 바로 아래 잠금 줄이 같은
   까닭(「「가정 R3」 r10 에 다른 배치가 저장됐습니다 — … 최신 r10을 불러오세요」 등)을 두 번 적던 것: 상자는 「배치 편집이 잠겨
