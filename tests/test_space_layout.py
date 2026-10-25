@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -20,12 +21,14 @@ from capa_simulation.components.space_layout import (
     LEGEND_UNCONFIRMED,
     ColorChoice,
     FloorPlacement,
+    apply_layer_looks,
     default_color_choice,
     equipment_unit_total,
     floor_block_stats,
     floor_placements,
     invalid_equipment_rows,
     occupancy_ratio,
+    shortening_legend_markup,
     space_legend_counts,
     space_legend_markup,
     unit_appearance,
@@ -209,6 +212,52 @@ def test_an_inactive_floor_block_carries_its_reason_and_keeps_its_counts() -> No
     }
     assert stats["C1 1F"] == floor_block_stats(placements)["C1 1F"]
     assert "inactive" not in stats["C1 1F"]
+
+
+def test_an_inactive_floor_block_hides_the_short_line() -> None:
+    """색 기준 「필요 단축」 을 켠 동안 블록 셋째 줄(`short`)은 그 층 칸에만 실린다 — 끈 동안 키가
+    없고, 비활성 층에는 싣지 않는다(층 대수를 보이지 않는다 — 사유 줄만)."""
+    equipment = _space_equipment()
+    placements = floor_placements(
+        equipment, equipment.iloc[0:0], equipment, lambda key: (100.0, 60.0)
+    )
+    lines = {("C1", "1F"): "단축 2대 · 최대 −9일", ("C1", "2F"): "단축 1대 · 최대 −3일"}
+
+    stats = floor_block_stats(placements, inactive={("C1", "2F"): "사용 안 함"}, short_lines=lines)
+
+    assert stats["C1 1F"]["short"] == "단축 2대 · 최대 −9일"
+    assert "short" not in stats["C1 2F"] and stats["C1 2F"]["inactive"] == "사용 안 함"
+    assert all("short" not in cell for cell in floor_block_stats(placements).values())
+
+
+def test_layer_looks_clear_the_marked_faces_and_dim_only_what_is_asked() -> None:
+    looks: dict[str, dict[str, Any]] = {
+        "A": {"fill": "#D1D5DB", "ink": "#111111", "realFrom": None},
+        "B": {"fill": "#D1D5DB", "ink": "#111111"},
+        "C": {"fill": "#D1D5DB", "ink": "#111111"},
+    }
+    merged = apply_layer_looks(
+        looks, {"A": {"layer": "l", "dim": False}, "B": {"dim": True}, "Z": {"layer": "s"}}
+    )
+    assert merged["A"] == {"fill": "", "ink": "", "realFrom": None, "layer": "l"}
+    assert merged["B"] == {"fill": "#D1D5DB", "ink": "#111111", "dim": True}
+    assert merged["C"] == looks["C"] and "Z" not in merged
+
+
+def test_the_shortening_legend_counts_buckets_and_keeps_the_ring_marks() -> None:
+    """구간 넷의 대수(목록과 같은 축)·임박 테·흐림 견본과 테·덧표시 칸·기준일 — 채우기 칸(그룹·그
+    밖· 보관·지연)은 없다(결정 D12)."""
+    markup = shortening_legend_markup(
+        {"s": 2, "x": 1},
+        {LEGEND_PRE_ARRIVAL: 3.0, LEGEND_DELAY: 1.0, LEGEND_DEFAULT: 5.0},
+        as_of=date(2026, 10, 24),
+    )
+    assert "1–7일 2대" in markup and "기한 지남 1대" in markup and "8–14일" not in markup
+    assert "임박 테" in markup and "흐림 = 단축 없음" in markup
+    assert f"{LEGEND_PRE_ARRIVAL} 3대" in markup and "기준 2026-10-24" in markup
+    assert f"{LEGEND_DELAY} " not in markup and LEGEND_DEFAULT not in markup
+    assert tokens.SPACE_SHORT_FILLS["s"] in markup
+    assert "흐림" not in shortening_legend_markup({}, {}, as_of=date(2026, 10, 24), dim=False)
 
 
 def _floor_placements_one_floor_at_a_time(

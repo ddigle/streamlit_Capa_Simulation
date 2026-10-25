@@ -177,6 +177,26 @@
 .sle-group-names { pointer-events: none; }
 .sle-group-name-pill { fill: var(--sle-surface); fill-opacity: 0.92; stroke: var(--sle-frame); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-group-name-text { fill: var(--sle-text); font-weight: 800; text-anchor: middle; dominant-baseline: central; }
+
+/* ---- 색 기준 「필요 단축」(층 보기, 2026-10-24 사용자 결정) — 구간 면은 JS 가 호기마다 구간의 short 면 변수로
+   칠한다. 단축 없는 호기·고른 공정 밖 호기는 흐리고(`is-dim`), 배지는 화면 px 크기의 말풍선이다(임박은 굵은 테). ---- */
+.sle.is-view .sle-unit.is-dim { opacity: var(--sle-short-dim-opacity); }
+.sle-short-badges { pointer-events: none; }
+.sle.is-view .sle-short-badge { pointer-events: auto; cursor: pointer; outline: none; }
+.sle.is-view .sle-short-badge.is-dim { opacity: var(--sle-short-dim-opacity); }
+.sle-short-badge-pill { stroke: var(--sle-surface); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sle-short-badge.is-imminent .sle-short-badge-pill { stroke: var(--sle-short-imminent); stroke-width: 2.5; }
+.sle-short-badge:focus-visible .sle-short-badge-pill { stroke: var(--sle-accent); stroke-width: 3; }
+.sle-short-badge.is-s .sle-short-badge-pill { fill: var(--sle-short-s-fill); }
+.sle-short-badge.is-m .sle-short-badge-pill { fill: var(--sle-short-m-fill); }
+.sle-short-badge.is-l .sle-short-badge-pill { fill: var(--sle-short-l-fill); }
+.sle-short-badge.is-x .sle-short-badge-pill { fill: var(--sle-short-x-fill); }
+.sle-short-badge.is-s text { fill: var(--sle-short-s-ink); }
+.sle-short-badge.is-m text { fill: var(--sle-short-m-ink); }
+.sle-short-badge.is-l text { fill: var(--sle-short-l-ink); }
+.sle-short-badge.is-x text { fill: var(--sle-short-x-ink); }
+.sle-short-badge-main { font-weight: 800; text-anchor: middle; dominant-baseline: central; }
+.sle-short-badge-sub { font-weight: 600; text-anchor: middle; dominant-baseline: central; }
 /* 숨은 모듈(레이아웃표시 N·도면 이탈)이 차지한 칸 — 그 모듈은 그리지 않고 칸만 점선으로 보인다. */
 .sle-ghost-cell { fill: none; stroke: var(--sle-muted); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* 정렬선 — 끌거나 놓는 것의 변·가운데가 다른 호기·요소(모듈 묶음은 범위)의 같은 선에 붙으면 그 선을 긋는다. 놓을 자리
@@ -404,6 +424,10 @@
   overflow: hidden; font-variant-numeric: tabular-nums;
 }
 .sle-pinned-note { color: var(--sle-muted); overflow: hidden; text-overflow: ellipsis; }
+/* 「필요 단축」 보기는 기준일이 오늘로 고정이다 — 페이더 대신 같은 높이의 고정 줄이 선다(뒷글은 JS 가 `data.asOfPinned`).
+   보기의 편집 전용 숨김(`.sle.is-view .sle-edit-only`)을 이기려면 같은 `!important` + 더 높은 선택자다. */
+.sle.is-view.is-pinned .sle-fader { display: none !important; }
+.sle.is-view.is-pinned .sle-pinned { display: flex !important; }
 
 /* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ----
    요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitFabBar` 가 접는

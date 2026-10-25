@@ -67,8 +67,16 @@ export default function (component) {
   // 선다. FAB 전체에는 페이더가 없고 도구 줄에 기준일·「오늘로」가 선다.
   const TODAY = dayOr(data.today) || ''
   const RANGE = { min: dayOr(data.asOfMin) || '', max: dayOr(data.asOfMax) || '' }
-  const FADER = VIEW && !FAB && Boolean(TODAY && RANGE.min && RANGE.max && RANGE.min <= TODAY && TODAY <= RANGE.max)
-  const PINNED = !VIEW && !FAB
+  // 색 기준 「필요 단축」 을 켠 층 보기 — 파이썬이 `asOfPinned`(고정 줄 뒷글)를 실을 때만이다. 기준일은 오늘로
+  // 고정이라 페이더 자리에 배치 편집과 같은 꼴의 고정 줄이 서고, 표시된 호기(`layer`)는 겹쳐 숨기지 않으며, 모든 호기의
+  // 지연·보관 면을 칠하지 않는다(결정 D12 — 풍선 글로만). 배지(`shortBadges`)도 이때만 그린다. 끈 동안 data 에 두 칸이
+  // 없다. 같은 epoch 안에서 고정 ↔ 페이더가 오가도 `adoptAsOf` 가 받은 날을 따른다(고정 동안 FADER 가 거짓).
+  const ASOF_PINNED = VIEW && !FAB && typeof data.asOfPinned === 'string' && data.asOfPinned !== ''
+  host.classList.toggle('is-pinned', ASOF_PINNED)
+  const SHORT_BADGES = ASOF_PINNED && Array.isArray(data.shortBadges) ? data.shortBadges : []
+  const SHORT_LAYERS = new Set(['s', 'm', 'l', 'x'])
+  const FADER = VIEW && !FAB && !ASOF_PINNED && Boolean(TODAY && RANGE.min && RANGE.max && RANGE.min <= TODAY && TODAY <= RANGE.max)
+  const PINNED = (!VIEW && !FAB) || ASOF_PINNED
   // 키로 옮긴 기준일은 멈춘 뒤 이만큼 지나 한 번 보낸다(누를 때마다 회차를 돌리지 않게).
   const KEY_COMMIT_MS = 400
   // 페이더 손잡이 지름(px, CSS `.sle-fader-input` 의 thumb 와 같다). 눈금 자리를 손잡이 가운데와 맞춘다.
@@ -152,6 +160,11 @@ export default function (component) {
   // Main 설비명 글자의 가장 큰 크기(화면 px). 범위에 맞춰 줄고 UNIT_LABEL_MIN_PX 아래면 숨긴다(모듈 이름표와 같은 규칙 —
   // 다만 모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 그 크기로라도 선다, `groupNameSize`).
   const GROUP_NAME_PX = 12
+  // 「필요 단축」 배지(층 보기)의 화면 px — 윗줄·아랫줄 글자, 안 여백, 상자와의 틈(`badgeSpot`).
+  const BADGE_MAIN_PX = 11
+  const BADGE_SUB_PX = 9.5
+  const BADGE_PAD_PX = 5
+  const BADGE_GAP_PX = 3
   // 호기 이름표의 가장 작은 크기(화면 px) — 이보다 작으면 숨긴다(밀집 층, 확대하면 다시 보인다).
   const UNIT_LABEL_MIN_PX = 7
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
@@ -170,6 +183,7 @@ export default function (component) {
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
   const namesLayer = svg.querySelector('.sle-group-names')
+  const badgesLayer = svg.querySelector('.sle-short-badges')
   const overlay = svg.querySelector('.sle-overlay')
   const guidesLayer = svg.querySelector('.sle-guides')
   const stage = q('.sle-stage')
@@ -589,6 +603,31 @@ export default function (component) {
   }
   // </layout-look>
 
+  // ---------------------------------------------------------------- 「필요 단축」 배지 자리(순수 함수)
+  // `tests/test_space_short_badges_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름은 화면 px 상수 넷만 쓴다.
+  // <short-badge>
+  // 배지 상자 {x(가운데), y(가운데, 데이터 좌표 — Y 위로), w, h, mainSize, subSize, mainY, subY}. rects 는 그 호기의 보이는 모듈
+  // 상자들([{x, y, w, h}]), upp 는 화면 px 당 데이터 단위, labelAbove 면 Main 설비 이름표(위)만큼 더 비킨다. em 은 두 줄 글자
+  // 폭(em), canvasH 는 영역 높이 — 위 끝을 넘으면 묶음 안쪽 위 띠로 뒤집는다. 크기는 화면 px 로 정해 확대해도 같다.
+  function badgeSpot(rects, upp, labelAbove, em, canvasH) {
+    const x0 = Math.min(...rects.map((r) => r.x))
+    const x1 = Math.max(...rects.map((r) => r.x + r.w))
+    const y1 = Math.max(...rects.map((r) => r.y + r.h))
+    const mainSize = BADGE_MAIN_PX * upp
+    const subSize = BADGE_SUB_PX * upp
+    const pad = BADGE_PAD_PX * upp
+    const w = Math.max((em.main || 1) * mainSize, (em.sub || 1) * subSize) + pad * 2
+    const h = mainSize * 1.2 + subSize * 1.2 + pad
+    const lift = BADGE_GAP_PX * upp + (labelAbove ? (GROUP_NAME_PX * 1.6 + 2) * upp : 0)
+    let y = y1 + lift + h / 2
+    if (y + h / 2 > canvasH) y = y1 - BADGE_GAP_PX * upp - h / 2
+    return {
+      x: (x0 + x1) / 2, y, w, h, mainSize, subSize,
+      mainY: pad / 2 + mainSize * 0.6, subY: pad / 2 + mainSize * 1.2 + subSize * 0.6,
+    }
+  }
+  // </short-badge>
+
   const isUnit = (m) => m.kind === 'unit'
   const isMark = (m) => m.kind !== 'unit'
   const blocks = (m) => (m.kind === 'zone' && m.keepOut) || m.kind === 'shutter' || m.kind === 'door' || m.kind === 'column'
@@ -621,6 +660,8 @@ export default function (component) {
   // <view-cover>
   // item 의 판정 st(`unitState`)와 넓이가 겹치는 이웃 호기들 neighbours, 이웃의 판정을 내는 stateOf 로 숨길지 정한다.
   function coveredBy(item, st, neighbours, stateOf) {
+    // 색 기준 「필요 단축」 에 표시된 호기는 숨기지 않는다 — 단축 후보는 대개 기존 설비 자리에 들어올 반입 전 신규 호기다.
+    if (item.layer) return false
     if (st.real || !st.visible) return false
     for (const other of neighbours) {
       if (item.group && other.group === item.group) continue
@@ -635,10 +676,12 @@ export default function (component) {
     return rounded.toLocaleString('ko-KR', { maximumFractionDigits: 2 })
   }
   // </view-cover>
-  // 채우기·글자: 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한 그룹색, 아니면 기본 회색).
+  // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
+  // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
   function unitColors(item, st) {
-    if (st.delay) return { fill: 'var(--sle-unit-delay-fill)', ink: 'var(--sle-unit-delay-ink)' }
-    if (st.storage) return { fill: 'var(--sle-unit-storage-fill)', ink: 'var(--sle-unit-storage-ink)' }
+    if (item.layer) return { fill: `var(--sle-short-${item.layer}-fill)`, ink: `var(--sle-short-${item.layer}-ink)` }
+    if (st.delay && !ASOF_PINNED) return { fill: 'var(--sle-unit-delay-fill)', ink: 'var(--sle-unit-delay-ink)' }
+    if (st.storage && !ASOF_PINNED) return { fill: 'var(--sle-unit-storage-fill)', ink: 'var(--sle-unit-storage-ink)' }
     return { fill: item.fill || 'var(--sle-unit-default-fill)', ink: item.ink || 'var(--sle-unit-default-ink)' }
   }
   const color = (item) => unitColors(item, unitState(item, S.asOf)).fill
@@ -740,15 +783,16 @@ export default function (component) {
   const blockOff = (item) => (item && item.kind === 'block' && item.link && LINK_STATS[item.link] && LINK_STATS[item.link].inactive) || ''
   const blockLines = (item) => {
     const stats = LINK_STATS[item.link] || {}
-    // 비활성 블록은 대수 줄 대신 사유다(대수는 풍선에 남는다).
+    // 비활성 블록은 대수 줄 대신 사유다(대수는 풍선에 남는다). 「필요 단축」 을 켠 동안은 대수 줄 뒤에 단축 줄(`short` —
+    // 「단축 3대 · 최대 −18일」, 비활성 층에는 오지 않는다)이 붙는다.
     if (blockOff(item)) return [blockHead(item), blockOff(item)].map(String)
-    return [blockHead(item), stats.placed, stats.unplaced].filter(Boolean).map(String)
+    return [blockHead(item), stats.placed, stats.unplaced, stats.short].filter(Boolean).map(String)
   }
   const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link && !blockOff(item))
   const blockTip = (item) => {
     const stats = LINK_STATS[item.link] || {}
     if (blockOff(item)) return [blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced].filter(Boolean).join(' · ')
-    const parts = [blockHead(item), stats.placed, stats.unplaced, stats.occupancy].filter(Boolean)
+    const parts = [blockHead(item), stats.placed, stats.unplaced, stats.occupancy, stats.short].filter(Boolean)
     return parts.join(' · ') + (opensFloor(item) ? ' · 누르면 열기' : '')
   }
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
@@ -1009,6 +1053,61 @@ export default function (component) {
       text.textContent = name
       node.append(text)
       namesLayer.append(node)
+    }
+    // 배지는 Main 설비 이름표가 「위」면 그 위로 비킨다 — 이름표가 다시 설 때마다 배지도 다시 선다.
+    drawShortBadges()
+  }
+
+  // ---------------------------------------------------------------- 「필요 단축」 배지(층 보기)
+  // 단축 호기(모듈 묶음은 Main 설비 하나)마다 상자(묶음은 그 층에 그린 모듈 전체의 바깥 상자) 위 가운데에 말풍선 하나 —
+  // 윗줄 「−12일」, 아랫줄 「D-5」·「오늘」·「기한 지남」. 구간 색이고 임박은 굵은 테다. 화면 px 크기라 확대해도 글자 크기가
+  // 같다(Main 설비 이름표와 같은 방식). 누르면 그 호기를 누른 것과 같다(`pick`). 기준일에 숨은 모듈은 바깥 상자에서 뺀다.
+  function drawShortBadges() {
+    if (!badgesLayer) return
+    badgesLayer.replaceChildren()
+    if (!ASOF_PINNED || !SHORT_BADGES.length) return
+    const upp = unitsPerPx()
+    const counts = groupCounts()
+    for (const badge of SHORT_BADGES) {
+      const ids = (Array.isArray(badge.ids) ? badge.ids : []).map(String)
+      const mods = ids.map((id) => S.items.get(id)).filter((m) => m && isUnit(m) && onCanvas(m))
+      const seen = mods.filter((m) => S.groups.get(m.id)?.__visible !== false)
+      if (!seen.length) continue
+      const lead = seen[0]
+      const key = lead.group ? groupKeyOf(lead) : null
+      const size = key ? counts.get(key) || 0 : 0
+      const above = Boolean(key && size >= 2 && groupLabelOf(key, size) === 'top'
+        && namesLayer.querySelector(`.sle-group-name-tag.is-top[data-group="${CSS.escape(key)}"]`))
+      const main = String(badge.main || '')
+      const sub = String(badge.sub || '')
+      const spot = badgeSpot(seen.map((m) => ({ x: m.x, y: m.y, w: m.w, h: m.h })), upp, above,
+        { main: labelEm(main), sub: labelEm(sub) }, H())
+      const bucket = SHORT_LAYERS.has(badge.bucket) ? badge.bucket : 's'
+      const node = el('g', { class: `sle-short-badge is-${bucket}`, tabindex: 0, role: 'button' })
+      node.classList.toggle('is-imminent', Boolean(badge.imminent))
+      node.classList.toggle('is-dim', Boolean(badge.dim))
+      node.dataset.pick = ids[0]
+      node.setAttribute('aria-label', String(badge.aria || `${badge.key || ''} ${main} ${sub}`))
+      const top = H() - (spot.y + spot.h / 2)
+      node.append(el('rect', {
+        class: 'sle-short-badge-pill', x: spot.x - spot.w / 2, y: top, width: spot.w, height: spot.h, rx: spot.h * 0.3,
+      }))
+      const mainText = el('text', { class: 'sle-short-badge-main', x: spot.x, y: top + spot.mainY, 'font-size': spot.mainSize })
+      mainText.textContent = main
+      const subText = el('text', { class: 'sle-short-badge-sub', x: spot.x, y: top + spot.subY, 'font-size': spot.subSize })
+      subText.textContent = sub
+      const tip = el('title')
+      tip.textContent = String(badge.tip || '')
+      node.append(mainText, subText, tip)
+      const pick = ids.find((id) => S.items.has(id)) || ids[0]
+      node.onkeydown = (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        select(pick)
+        notePick()
+      }
+      badgesLayer.append(node)
     }
   }
 
@@ -1581,7 +1680,7 @@ export default function (component) {
     const look = unitColors(item, st)
     // 층 상세 보기에서 그날 보이는 호기와 겹친 반입 예정 호기는 숨긴다(`coveredBy`). 숨긴 호기의 몫은 요약 줄에 센다.
     const covered = VIEW && !FAB && coveredAt(item, st)
-    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}${+covered}`
+    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}${+covered}|${item.layer || ''}${+Boolean(item.dim)}`
     group.__visible = st.visible && !covered
     if (covered) S.covered.set(item.id, item.share)
     else S.covered.delete(item.id)
@@ -1597,6 +1696,9 @@ export default function (component) {
     group.classList.toggle('is-stopped', st.stopped)
     group.classList.toggle('has-flag', st.flag)
     group.classList.toggle('is-offline', st.offline)
+    // 「필요 단축」 — 표시된 호기·흐릴 호기(파이썬이 정해 보낸다 — 공정 칩 논리는 JS 에 없다).
+    group.classList.toggle('is-layer', Boolean(item.layer))
+    group.classList.toggle('is-dim', Boolean(item.dim))
   }
 
   function buildMark(item) {
@@ -1862,6 +1964,7 @@ export default function (component) {
     if (flipped.length) markOverlaps(flipped)
     // 기준일에 묶음이 통째로 보이거나 숨으면 Main 설비명도 따라간다.
     if (flipped.some((id) => S.items.get(id)?.group)) drawGroupNames()
+    else if (flipped.length && ASOF_PINNED) drawShortBadges()
     if (S.selection.size) updateStatus()
     showSummary()
   }
@@ -1888,6 +1991,7 @@ export default function (component) {
   const sameLook = (o, n) => o.stage === n.stage && o.detail === n.detail && o.label === n.label
     && o.fill === n.fill && o.ink === n.ink && Boolean(o.storage) === Boolean(n.storage) && Boolean(o.flag) === Boolean(n.flag)
     && o.realFrom === n.realFrom && o.exitOn === n.exitOn && o.stopOn === n.stopOn && o.share === n.share
+    && (o.layer || '') === (n.layer || '') && Boolean(o.dim) === Boolean(n.dim)
     && sameSpans(o.delays || [], n.delays || []) && sameSpans(o.offline || [], n.offline || [])
 
   // 보기 화면의 같은 epoch 회차 — 받은 값이 바뀐 호기만 고친다. 이름표가 바뀐 호기만 자리·글자 크기를 다시 맞추고, 풍선은
@@ -3260,6 +3364,7 @@ export default function (component) {
     fill: hexOr(raw.fill), ink: hexOr(raw.ink), storage: Boolean(raw.storage), flag: Boolean(raw.flag),
     realFrom: dayOr(raw.realFrom), exitOn: dayOr(raw.exitOn), stopOn: dayOr(raw.stopOn),
     delays: spansOf(raw.delays), offline: spansOf(raw.offline), share: shareOf(raw.share),
+    layer: SHORT_LAYERS.has(raw.layer) ? raw.layer : '', dim: raw.dim === true,
   })
   const readUnit = (raw) => ({
     id: String(raw.id), kind: 'unit', label: String(raw.label ?? raw.id), stage: String(raw.stage || ''),
@@ -3376,7 +3481,9 @@ export default function (component) {
     // 쥔 값과 같은 호기는 건드리지 않는다 — 페이더를 놓은 뒤 돌아온 회차처럼 기준일도 호기 값도 그대로면 아무것도
     // 다시 칠하지 않는다(1,289대 전체 다시 칠하기 `repaint` 는 70~100ms). 적용하지 않은 이름 바꿈은 브라우저가 쥔
     // 편집이다 — 다른 위젯을 건드린 회차가 그것을 옛 이름으로 되돌리지 않게 둔다.
-    const previous = adoptAsOf(AS_OF)
+    let previous = adoptAsOf(AS_OF)
+    // 「필요 단축」 을 켜고 끈 회차는 모든 호기의 지연·보관 면이 바뀐다(결정 D12) — 다 다시 본다(바뀐 상자만 칠한다).
+    if (VIEW && !FAB && S.lastPinned !== undefined && S.lastPinned !== ASOF_PINNED) previous = '*'
     const touched = []
     for (const raw of data.items || []) {
       const item = S.items.get(String(raw.id))
@@ -3399,6 +3506,14 @@ export default function (component) {
     else redrawMarks()
   }
   showSummary()
+  S.lastPinned = ASOF_PINNED
+  // 배지만 바뀐 회차(목표를 바꿔 일수 글만 바뀜·임박 날수만 바뀜)는 호기 값이 그대로라 위 길이 다시 그리지 않는다 — 배지
+  // 지문으로 가른다(팔레트와 같은 꼴).
+  const badgeKey = ASOF_PINNED ? JSON.stringify(SHORT_BADGES) : ''
+  if (S.badgeKey !== badgeKey) {
+    S.badgeKey = badgeKey
+    drawShortBadges()
+  }
 
   // ------------------------------------------------------------- 아래 호기 표에 고른 호기(층 상세 보기)
   // 층 상세 보기에서 호기를 누르면(끌지 않고) 그 호기를 `pick` 으로 알린다(2026-10-23 사용자 요청 3). 받는 쪽 파이썬
@@ -3449,10 +3564,13 @@ export default function (component) {
     svg.focus({ preventScroll: true })
     if (VIEW) {
       // 보기 전용: 끌면 화면 이동(확대했을 때), 끌지 않고 떼면 누른 호기를 고른다.
-      const target = event.target.closest ? event.target.closest('.sle-item') : null
+      // 「필요 단축」 배지를 누르면 그 호기(묶음은 첫 모듈)를 누른 것과 같다.
+      const badge = event.target.closest ? event.target.closest('.sle-short-badge') : null
+      const target = badge || (event.target.closest ? event.target.closest('.sle-item') : null)
       S.drag = {
         mode: 'view', pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY,
-        view: { ...S.view }, upp: unitsPerPx(), id: target ? target.dataset.id : null, moved: false,
+        view: { ...S.view }, upp: unitsPerPx(), id: target ? (badge ? badge.dataset.pick : target.dataset.id) : null,
+        moved: false,
       }
       svg.setPointerCapture(event.pointerId)
       return
@@ -4095,6 +4213,9 @@ export default function (component) {
   const faderNote = q('.sle-fader-note')
   const faderToday = q('.sle-fader-today')
   const pinnedDate = q('.sle-pinned-date')
+  const pinnedNote = q('.sle-pinned-note')
+  // 고정 줄 뒷글 — 편집기는 HTML 글(「· 편집 중 고정 …」) 그대로, 「필요 단축」 보기는 `data.asOfPinned`.
+  if (S.pinnedNoteDefault === undefined) S.pinnedNoteDefault = pinnedNote ? pinnedNote.textContent : ''
   const fabAsOf = q('.sle-asof')
   const fabAsOfDate = q('.sle-asof-date')
   const fabToToday = q('.sle-totoday')
@@ -4254,6 +4375,7 @@ export default function (component) {
     showFader()
   }
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
+  if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault)
   if (VIEW && FAB) {
     // 좁은 도구 줄에서는 「기준일」 말머리를 접고 날짜도 말줄임으로 줄 수 있어(CSS) 풍선에 온 글을 둔다.
     fabAsOf.hidden = !S.asOf
