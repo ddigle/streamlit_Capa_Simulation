@@ -1018,3 +1018,56 @@ def test_the_off_payload_carries_no_residue_of_a_layer_round(
     assert len(_views(editor_calls, "fab")) > fab_rounds
     assert _views(editor_calls, "fab")[-1] == fab_before
     assert _probe_floor(fresh, editor_calls, "C1", "1F") == floor_before
+
+
+def _floor_panel(chips: dict[str, str], focus: str | None, level: float) -> None:
+    """층 보기 칸만 그린다 — 이 층(C1 2F)에 칩 둘, 칩을 고르면 `floor_layer` 가 그 공정으로 좁힌 빈
+    재료를 넘긴다(고른 공정에 단축 호기가 없는 목표)."""
+    from types import SimpleNamespace
+
+    import streamlit as st
+
+    from capa_simulation.components.space_shortening_view import (
+        process_chip_key,
+        render_floor_layer_panel,
+    )
+    from capa_simulation.services.space_shortening_layer import FloorLayer
+
+    st.session_state.setdefault(process_chip_key(("C1", "2F")), focus)
+    space_layer: Any = SimpleNamespace(layer=SimpleNamespace(level=level))
+    render_floor_layer_panel(
+        ("C1", "2F"),
+        FloorLayer(chips=chips, focus=focus),
+        space_layer,
+        picked_unit=None,
+        picked_rows=None,
+        key_of={},
+        picked_key="space_status_picked_unit",
+    )
+
+
+@pytest.mark.parametrize(
+    ("focus", "head", "empty"),
+    [
+        (
+            "Laser Grooving",
+            "이 층 · Laser Grooving · 목표 90% · 단축 0대",
+            "이 층 Laser Grooving 공정에는 목표 90% 에서 단축할 호기가 없습니다",
+        ),
+        (None, "이 층 · 목표 90% · 단축 0대", "이 층에는 목표 90% 에서 단축할 호기가 없습니다."),
+    ],
+    ids=["칩 고름", "칩 없음"],
+)
+def test_the_floor_panel_names_the_chosen_process_when_it_has_nothing_to_shorten(
+    focus: str | None, head: str, empty: str
+) -> None:
+    """칩을 고르면 머리 줄 수와 빈 글은 그 공정만 센다 — 같은 칸의 다른 칩·도면 배지가 이 층 단축
+    호기를 보이는데 「이 층에는 … 없습니다」 라고 하지 않게 고른 공정을 말한다(2026-10-26 E2E)."""
+    chips = {"Die Attach": "Die Attach · 2대 최대 −81일", "Laser Grooving": "Laser Grooving"}
+    app = AppTest.from_function(_floor_panel, args=(chips, focus, 0.9), default_timeout=30).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    texts = [str(item.value) for item in app.markdown]
+    assert f"**:material/event_upcoming: {head}**" in texts
+    captions = [str(item.value) for item in app.caption]
+    assert any(caption.startswith(empty) for caption in captions), captions

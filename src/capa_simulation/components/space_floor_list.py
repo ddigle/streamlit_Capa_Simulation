@@ -44,6 +44,7 @@ from capa_simulation.components.editor_state import discard_editor, editor_widge
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.space_layout import FloorPlacement
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_cache import (
@@ -273,9 +274,11 @@ def _forget() -> None:
 
 def discard_floor_state_draft() -> None:
     """`사용 편집` 토글을 끄고 초안·base·확인을 버린다 — 사이드바 팝업이 가정 설비 시나리오를 불러온
-    회차(층 사용은 공식에서만 고친다 — Q3). Space 가 잠그며 버리기(`render_space_floor_list`)를
-    기다리면 그 앞에 `app.py` 가 세는 탭 점·떠나기 확인(`floor_state_draft_pending`)이 버린 초안을
-    한 회차 더 센다. 토글 위젯을 그리기 전(팝업 회차·다음 회차 첫머리)에만 부른다."""
+    회차(층 사용은 공식에서만 고친다 — Q3)와 Space 가 층을 여는 콜백(층 상세는 토글을 그리지
+    않는다). Space 가 잠그며 버리기(`render_space_floor_list`)나 토글 위젯 상태가 걷히기를 기다리면
+    그 앞에 `app.py` 가 세는 탭 점·떠나기 확인(`floor_state_draft_pending`)이 버린 초안을 한 회차 더
+    센다.
+    토글 위젯을 그리기 전(팝업 회차·콜백·다음 회차 첫머리)에만 부른다."""
     st.session_state[EDIT_TOGGLE_KEY] = False
     _forget()
 
@@ -930,4 +933,7 @@ def render_space_floor_list(
     # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
     with st.container(key="space_floor_state_notices"):
         _render_notices()
+    # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을 가로채지
+    # 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+    st.space(TABLE_TOOLBAR_CLEARANCE)
     _render_tables(placements, floors_with_image, canvas_text, states, on_open, extra_columns)

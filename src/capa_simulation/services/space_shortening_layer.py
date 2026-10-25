@@ -356,6 +356,8 @@ class FloorLayer:
     `ids`), `rows` 는 「이 층에서 단축할 호기」 줄(`pick_ids` 가 같은 차례의 그 설비 이 층 첫 모듈
     설비명), `chips` 는 이 층에 그린 공정 → 칩 글, `unplaced` 는 이 층 동·층인데 좌표가 없는 단축
     호기, `virtuals` 는 이 층에 그린 공정의 추가N, `counts` 는 구간 → 대수(목록 줄과 같은 축)다.
+    `focus` 는 목록·자리 없음·추가N 을 좁힌 공정 칩 값이다(None = 모든 공정) — 칸 머리 줄과 빈 글이
+    좁힌 공정을 말할 때 쓴다.
     """
 
     looks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -367,6 +369,7 @@ class FloorLayer:
     virtuals: tuple[VirtualUnit, ...] = ()
     counts: dict[str, int] = field(default_factory=dict)
     elsewhere: int = 0
+    focus: str | None = None
 
     @property
     def max_days(self) -> int:
@@ -486,6 +489,7 @@ def floor_layer(
         virtuals=tuple(unit for unit in floor_virtuals if keep(unit.process)),
         counts=counts,
         elsewhere=elsewhere,
+        focus=focus,
     )
 
 

@@ -77,6 +77,7 @@ from capa_simulation.components.space_floor_layout import (
 )
 from capa_simulation.components.space_floor_list import (
     FloorListColumn,
+    discard_floor_state_draft,
     layer_columns,
     render_space_floor_list,
 )
@@ -121,7 +122,7 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE, render_csv_download
 from capa_simulation.equipment_scenario_activation import (
     CANVAS_LOCK_REASON,
     FAB_LOCK_REASON,
@@ -389,7 +390,12 @@ def _show_fab_overview() -> None:
 def _open_floor(key: FloorKey) -> None:
     """그 층을 연다. 블록 누르기·층 바로 가기·층 목록 표가 모두 이것을 **콜백**에서 부른다 — 콜백은
     본문보다 먼저 돌아 재실행 한 번으로 층 상세가 서고, 본문에서 `st.rerun()` 할 때처럼 아직 안 그린
-    위젯 상태가 버려지지 않는다. 주소에는 `floor` 인자만 적는다(다른 인자는 그대로)."""
+    위젯 상태가 버려지지 않는다. 주소에는 `floor` 인자만 적는다(다른 인자는 그대로).
+
+    층 목록의 `사용 편집` 초안은 여기서 버린다(「저장하지 않고 층을 열면 고친 것은 버려집니다」) —
+    토글이 위젯 상태로 남은 채 이 회차를 맞으면 페이지보다 먼저 도는 `app.py` 의 탭 점·떠나기
+    확인·테마 단추 확인이 이미 버린 초안을 한 회차 더 센다."""
+    discard_floor_state_draft()
     st.session_state[SELECTED_BUILDING_KEY], st.session_state[SELECTED_FLOOR_KEY] = key
     if st.query_params.get(FLOOR_PARAM) != floor_param(key):
         st.query_params[FLOOR_PARAM] = floor_param(key)
@@ -2247,6 +2253,9 @@ else:
             disabled=picked_rows is None,
             help="도면에서 누른 설비만 보던 아래 표를 층 전체 호기로 돌립니다.",
         )
+    # 표 도구 막대가 바로 위 줄 오른쪽 끝 「층 전체 보기」 를 덮어 표에서 옮긴 누름을 가로채지 않게
+    # 띄운다(AGENTS 9장 「표 도구 막대」).
+    st.space(TABLE_TOOLBAR_CLEARANCE)
     st.dataframe(
         floor_table(floor_equipment if picked_rows is None else picked_rows),
         hide_index=True,
