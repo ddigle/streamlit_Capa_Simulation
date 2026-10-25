@@ -25,6 +25,7 @@ from streamlit.runtime.state import session_state_proxy
 from streamlit.runtime.state.safe_session_state import SafeSessionState
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.voc_board import VOC_CATEGORIES
 
@@ -580,3 +581,59 @@ def test_resolving_a_post_deleted_by_another_session_is_refused(tmp_path: Path) 
     ]
     assert not app.code
     assert DuckDBScenarioRepository(database_path).list_voc_posts().empty
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_slow_second_press_on_the_cleared_post_form_keeps_the_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """「글 올리기」를 0.15~0.3초 간격으로 두 번 누르면 둘째 누름이 방금 비운 새 폼에 닿는다
+    (2026-10-26 E2E). 한 건만 올라가지만 성공 알림 대신 「제목을 입력하세요.」가 남았다. 쓰기 직후
+    (`TRAILING_PRESS_SECONDS`) 의 **빈** 제출은 그 꼬리로 보고 성공을 다시 알린다. 창이 지난 빈
+    제출은 그대로 거절한다. AppTest 의 두 회차 사이 시간이 들쭉날쭉해 창은 시험이 정한다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    database_path = tmp_path / "scenario.duckdb"
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("검증자A")
+    app.text_input(key="voc_post_title").input("제목 A")
+    app.text_area(key="voc_post_body").input("내용 A")
+    _click(app, "글 올리기")
+    assert "글을 올렸습니다." in [message.value for message in app.success]
+
+    _click(app, "글 올리기")
+
+    assert not app.exception
+    assert _posts(database_path) == [("제목 A", False)]
+    if trailing:
+        assert not app.error, [message.value for message in app.error]
+        assert [message.value for message in app.success] == ["글을 올렸습니다."]
+    else:
+        assert [message.value for message in app.error] == ["제목을 입력하세요."]
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_slow_second_press_on_the_cleared_reply_form_keeps_the_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """「답변 남기기」도 같다 — 느린 두 번 누름의 빈 제출이 「답변 내용을 입력하세요.」를
+    남기지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.text_area(key=f"voc_reply_body_{post_id}").input("확인했습니다.")
+    _reply_button(app, post_id).click().run()
+    assert "답변을 남겼습니다." in [message.value for message in app.success]
+
+    _reply_button(app, post_id).click().run()
+
+    assert not app.exception
+    assert len(DuckDBScenarioRepository(database_path).list_voc_replies()) == 1
+    errors = [message.value for message in app.error]
+    if trailing:
+        assert not errors, errors
+        assert [message.value for message in app.success] == ["답변을 남겼습니다."]
+    else:
+        assert errors == ["답변 내용을 입력하세요."]

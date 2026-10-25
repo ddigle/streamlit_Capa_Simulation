@@ -23,7 +23,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.write_guard import current_generation, write_once
+from capa_simulation.components.write_guard import current_generation, just_written, write_once
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.services.voc_board import VOC_CATEGORIES, VocPostGoneError
@@ -61,6 +61,8 @@ POST_FORM_GENERATION_KEY = "voc_post_form_generation"
 REPLY_GENERATION_KEY = "voc_reply_generation"
 RESOLVE_GENERATION_KEY = "voc_resolve_generation"
 DELETE_HANDLED_KEY = "voc_delete_handled"
+POSTED_MESSAGE = "글을 올렸습니다."
+REPLIED_MESSAGE = "답변을 남겼습니다."
 
 render_page_header("VOC")
 render_page_guide("voc", title="VOC")
@@ -144,6 +146,10 @@ def _submit_post(database_path: str, generation: int) -> None:
     title = _text(POST_TITLE_KEY)
     body = _text(POST_BODY_KEY)
     author = _author_value()
+    if not title.strip() and not body.strip() and just_written(POST_FORM_GENERATION_KEY):
+        # 느린 두 번 누름의 꼬리 — 둘째 누름이 방금 비운 새 폼에 닿았다(write_guard.just_written).
+        st.session_state[FLASH_KEY] = POSTED_MESSAGE
+        return
     try:
         repository = get_scenario_repository(database_path)
         written = write_once(
@@ -160,7 +166,7 @@ def _submit_post(database_path: str, generation: int) -> None:
         st.session_state[POST_TITLE_KEY] = ""
         st.session_state[POST_BODY_KEY] = ""
         return
-    st.session_state[FLASH_KEY] = "글을 올렸습니다."
+    st.session_state[FLASH_KEY] = POSTED_MESSAGE
     st.session_state[POST_TITLE_KEY] = ""
     st.session_state[POST_BODY_KEY] = ""
     st.session_state[POST_FORM_GENERATION_KEY] = generation + 1
@@ -172,6 +178,10 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
     generation_key = f"{REPLY_GENERATION_KEY}_{post_id}"
     body = _text(reply_key)
     author = _author_value()
+    if not body.strip() and just_written(generation_key):
+        # 느린 두 번 누름의 꼬리 — 둘째 누름이 방금 비운 새 답변 폼에 닿았다.
+        st.session_state[FLASH_KEY] = REPLIED_MESSAGE
+        return
     try:
         repository = get_scenario_repository(database_path)
         written = write_once(
@@ -188,7 +198,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
     if not written:
         st.session_state[reply_key] = ""
         return
-    st.session_state[FLASH_KEY] = "답변을 남겼습니다."
+    st.session_state[FLASH_KEY] = REPLIED_MESSAGE
     st.session_state[reply_key] = ""
     st.session_state[generation_key] = generation + 1
 

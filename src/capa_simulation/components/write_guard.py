@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 
 import streamlit as st
@@ -40,6 +41,12 @@ import streamlit as st
 # 쓰기를 마친 세대의 표지(세대 칸 이름 → 그 세대). 세션마다 하나이고 처음 쓰는 콜백이
 # 잠금 안에서 건다.
 WRITE_MARKS_KEY = "write_guard_marks"
+
+# 세대를 쓴 시각(세대 칸 이름 → `time.monotonic()`). `write_once` 가 표지와 함께 적는다.
+RECENT_WRITES_KEY = "write_guard_recent_writes"
+# 쓰기 직후 이 안에 들어온 **빈** 제출은 같은 단추의 느린 두 번 누름의 꼬리로 본다. 사람 더블클릭
+# 간격(Windows 기본 0.5초)에 회차 한 번의 여유를 더한 값이다.
+TRAILING_PRESS_SECONDS = 1.0
 
 # 이 세션이 마지막으로 한 버전 대조 저장(저장 이름 → (편집 시작 version, 저장된 version)).
 PROFILE_SAVES_KEY = "write_guard_profile_saves"
@@ -73,10 +80,30 @@ def write_once(counter_key: str, generation: int, write: Callable[[], object]) -
         if not isinstance(marks, dict):
             marks = {}
             st.session_state[WRITE_MARKS_KEY] = marks
+        recent = st.session_state.get(RECENT_WRITES_KEY)
+        if not isinstance(recent, dict):
+            recent = {}
+            st.session_state[RECENT_WRITES_KEY] = recent
         if marks.get(counter_key) != generation:
             write()
             marks[counter_key] = generation
+            recent[counter_key] = time.monotonic()
     return True
+
+
+def just_written(counter_key: str) -> bool:
+    """`counter_key` 의 쓰기가 `TRAILING_PRESS_SECONDS` 안에 있었는가.
+
+    느린 두 번 누름(0.15~0.3초)은 둘째 누름이 첫 쓰기 뒤 **새로 그린 빈 폼**의 단추에 닿는다. 세대가
+    같아 `write_once` 는 정상 제출로 보고, 빈 입력이 거절되어 방금 성공한 쓰기 자리에 「제목을
+    입력하세요.」가 남았다(2026-10-26 E2E). 부르는 쪽은 입력이 **모두 빈** 제출이 이 안에 오면 쓰지
+    않고 방금 성공을 다시 알린다 — 적은 것이 하나라도 있으면 정상 제출이다.
+    """
+    recent = st.session_state.get(RECENT_WRITES_KEY)
+    if not isinstance(recent, dict):
+        return False
+    moment = recent.get(counter_key)
+    return isinstance(moment, float) and time.monotonic() - moment < TRAILING_PRESS_SECONDS
 
 
 def profile_save_marks() -> dict[str, tuple[int, int]]:
