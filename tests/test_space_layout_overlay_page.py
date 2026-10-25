@@ -415,3 +415,12 @@ def test_the_session_snapshot_frames_match_the_drawn_layout(tmp_path: Path) -> N
     _, frame, _ = snapshot.calculation_frames()
     assert frame.set_index("설비명").loc["EQ-01", "X좌표"] == 50.0
     assert isinstance(frame, pd.DataFrame)
+
+
+def test_the_editor_turns_the_canvas_controls_off_when_told() -> None:
+    """가정 세션 편집기는 「편집 영역」 칸을 끈다 — JS 가 칸을 끄고 `setCanvas` 도 막는다(옛 단축키·
+    되돌리기 길). 서버도 적용의 캔버스 값을 거부한다(두 겹 — 위 AppTest)."""
+    script = (space_layout_editor._ASSETS / "editor.js").read_text(encoding="utf-8")
+    guard = script.index("function setCanvas(")
+    assert "data.canvasEditable === false" in script[guard : guard + 400]
+    assert "q('.sle-area').querySelectorAll('input, button')" in script
