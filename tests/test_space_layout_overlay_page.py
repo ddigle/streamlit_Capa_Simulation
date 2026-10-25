@@ -365,6 +365,25 @@ def _assert_tildes_escaped(app: AppTest) -> None:
     assert not bare, bare
 
 
+def test_a_deleted_units_difference_is_named_once_in_the_space_head(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r3 — 가정 배치 차이가 공통 대장에서 지운 호기의 것뿐이면 머리 첫 줄은 「배치는 공식과
+    같습니다」 뿐이고(「공식과 같아진 것은 … 정리됩니다」 꼬리 없음), 그 행은 둘째 줄 「지운 호기의
+    배치 차이 1행은 버렸습니다」 가 한 번 말한다."""
+    repository, setup = _overlay(tmp_path)
+    theirs = _session(repository)
+    kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = theirs.downtime.loc[~theirs.downtime["설비명"].eq("EQ-01")].reset_index(drop=True)
+    repository.save_equipment(_request(theirs, equipment=kept, downtime=downtime))
+    app = _ok(_space(tmp_path, setup).run())
+
+    texts = _texts(app)
+    assert any("가정 설비 시나리오 · 배치는 공식과 같습니다" in text for text in texts), texts
+    assert any("지운 호기의 배치 차이 1행은 버렸습니다" in text for text in texts), texts
+    assert not any("공식과 같아진 것은" in text for text in texts), texts
+
+
 def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notices(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

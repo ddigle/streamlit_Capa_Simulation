@@ -110,7 +110,9 @@ from capa_simulation.services.korean_particle import (
 )
 from capa_simulation.services.layout_overlay import (
     EMPTY_LAYOUT_DIGEST,
+    cleaned_layout_words,
     layout_publish_blocked_words,
+    settled_layout_reason,
 )
 
 __all__ = [
@@ -1342,10 +1344,13 @@ def publish_layout_lines(
         stored = stored_layout_words(
             preview.stored_units, preview.stored_marks, preview.stored_labels
         )
+        # 공통 대장에서 지운 호기의 행은 「공식과 같아진」 행이 아니다 — 따로 센다(E2E r3).
+        reason = settled_layout_reason(preview.stored_rows, preview.orphan_units, ending="습니다")
+        cleaned = cleaned_layout_words(preview.stored_rows, preview.orphan_units)
         return (
             [
-                f"r{revision.revision_no}의 배치 차이({stored})는 지금 공식과 같아졌습니다 — "
-                f"공식과 같아진 배치 차이 {preview.stored_rows:,}행을 정리한 "
+                f"r{revision.revision_no}의 배치 차이({stored})는 {reason} — "
+                f"{with_object_particle(cleaned)} 정리한 "
                 f"{with_direction_particle(new_title)} 발행합니다(일정·비가동은 r"
                 f"{revision.revision_no} 그대로)."
             ],
@@ -1527,6 +1532,7 @@ def _render_publish(
                 revision,
                 published.release_no,
                 cleaned_no=(scenario.latest_revision_no or 0) + 1 if cleaned else None,
+                layout=layout,
                 moved=moved,
                 kept_unsaved=kept_unsaved,
             )
@@ -1541,15 +1547,25 @@ def publish_result_message(
     cleaned_no: int | None,
     moved: bool,
     kept_unsaved: bool,
+    layout: LayoutPublishPreview | None = None,
 ) -> str:
-    """「공식으로 발행」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동."""
+    """「공식으로 발행」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동.
+    `layout` 은 확인 글이 읽은 배치 판정이다 — 정리한 행이 공통 대장에서 지운 호기의 것이면 그렇게
+    말한다(없거나 정리 판정이 아니면 「공식과 같아진 배치 차이」)."""
     name = literal_markdown(scenario_name)
     release = f"v{release_no}"
     head = f"공식 {with_direction_particle(release)} 발행했습니다 — 「{name}」 "
     if cleaned_no is None:
         return head + f"r{revision.revision_no}."
     title = f"r{cleaned_no}"
-    sentences = [head + f"r{revision.revision_no}의 공식과 같아진 배치 차이를 정리한 {title}."]
+    cleaned = (
+        cleaned_layout_words(layout.stored_rows, layout.orphan_units, counts=False)
+        if layout is not None and layout.action == "clean"
+        else "공식과 같아진 배치 차이"
+    )
+    sentences = [
+        head + f"r{revision.revision_no}의 {with_object_particle(cleaned)} 정리한 {title}."
+    ]
     if moved:
         sentences.append(f"이 세션을 {with_direction_particle(title)} 옮겼습니다.")
     elif kept_unsaved:

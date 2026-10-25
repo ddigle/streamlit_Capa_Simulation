@@ -823,6 +823,20 @@
   캔버스 팝업 경고(가정 배치 시나리오 이름 · 이탈 호기 설비명)와 배치 겹침 경고(설비명)도 같이 막았다. 대안: 공용
   `render_flash` 가 늘 막기 — 다른 화면 성공 글까지 바뀌어 이 고침 밖이다. 관련: `app_pages/space_status.py`·
   `components/floor_layout_upload.py`·`tests/test_space_layout_overlay_page.py`
+- (2026-10-26) **지운 호기의 배치 차이를 「공식과 같아진」 차이로 세지 않는다**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 가정
+  설비 시나리오의 저장된 배치 차이가 그 뒤 공통 대장에서 지운 호기의 것이면 Space 머리 첫 줄이 「배치는 공식과 같습니다(저장된
+  차이 호기 1대 — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)」, 둘째 줄이 「지운 호기의 배치 차이 1행은 버렸습니다」 로 같은
+  1행을 두 가지로 말하고, 「공식으로 발행」 확인 글이 「… 공식과 같아졌습니다 — 공식과 같아진 배치 차이 1행을 정리한 r8로
+  발행합니다」 라 하던 것: 머리 꼬리는 지운 호기의 행(`layout_orphans`)을 빼고 세고(그 행은 둘째 줄이 말한다), 발행 판정은 그 행을
+  따로 센다(`LayoutPublishPreview.orphan_units`·`newest_orphan_units` — 정규화 1단계가 버리는 행). 정리 확인 글은 「…는 공통 대장에서
+  지운 호기의 것입니다 — 지운 호기의 배치 차이 1행을 정리한 r8로 발행합니다」(섞이면 「…같아졌거나 … 것입니다 — 공식과 같아진 배치
+  차이 n행과 지운 호기의 배치 차이 k행을 정리한 …」), 같은 꼴이 옛 리비전 막힘 글 두 갈래(「…것이지만」·「(공통 대장에서 지운 호기의
+  것)」)와 발행 뒤 알림(「…의 지운 호기의 배치 차이를 정리한 r8.」)에도 선다(같은 결함의 곁자리라 함께 고쳤다). 지운 호기가 없는
+  글은 바이트 그대로다. 정리 리비전의 DB 메모(「공식과 같아진 배치 차이 정리」)는 저장 값이라 그대로 두었다. 대안: 지운 호기의
+  행도 「공식과 같아진」 행에 묶어 두고 Space 둘째 줄만 지우기 — 지운 호기가 어디에도 말해지지 않는다. 관련:
+  `components/space_floor_layout.py`·`components/equipment_scenario_management.py`·`services/layout_overlay.py`·
+  `persistence/equipment_repository.py`·`tests/test_equipment_scenario_layout_management.py`·
+  `tests/test_equipment_layout_overlay_repository.py`·`tests/test_space_layout_overlay_page.py`
 - (2026-10-26) **Space 배치 빨리 감기 글도 ▸▸ 줄에 한 번만**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 적용해 둔 배치 변경이
   있는 채 그 가정 시나리오에 남의 일정 저장이 들어온 회차(배치 지문 같음 — 빨리 감기)에 저장 안 한 배치 상자 캡션 끝과 바로
   아래 ▸▸ 줄이 「「가정 V19」 r2가 더 새롭지만 배치는 같습니다 — …(일정 칸은 그대로 잠금).」 을 두 번 적던 것: 상자 캡션은

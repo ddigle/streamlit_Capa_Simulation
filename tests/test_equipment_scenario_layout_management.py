@@ -44,6 +44,7 @@ from capa_simulation.components.equipment_scenario_management import (
     layout_trace_sentence,
     layout_trace_sources,
     publish_layout_lines,
+    publish_result_message,
     restore_layout_sentence,
     revision_rows,
     stored_layout_words,
@@ -201,6 +202,69 @@ def test_an_old_revisions_publish_block_names_only_real_differences_and_working_
     assert blocked and "공식과 다른 배치" not in newest_same[0]
     assert "최신 r5에 저장된 배치 차이 2행(지금 공식과 같음)이 남아 있어" in newest_same[0]
     assert "최신 r5를 발행하세요" in newest_same[0]
+
+
+def test_a_deleted_units_difference_is_not_called_one_that_caught_up_with_the_official() -> None:
+    """E2E r3 — 저장된 배치 차이가 공통 대장에서 지운 호기의 것이면 정리 발행 확인 글·옛 리비전
+    막힘 글·발행 뒤 알림이 그 행을 「공식과 같아진」 차이라 하지 않고 「지운 호기의 배치 차이」 로
+    따로 말한다."""
+    scenario = _scenario()
+    revision = _revision(5, "d5", layout_unit_count=1)
+    deleted, blocked = publish_layout_lines(
+        scenario,
+        revision,
+        LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1, orphan_units=1),
+    )
+    assert not blocked
+    assert (
+        "r5의 배치 차이(호기 1행)는 공통 대장에서 지운 호기의 것입니다 — 지운 호기의 배치 차이 "
+        "1행을 정리한 r6으로 발행합니다" in deleted[0]
+    ), deleted
+    assert "공식과 같아" not in deleted[0]
+    mixed, _ = publish_layout_lines(
+        scenario,
+        _revision(5, "d5", layout_unit_count=3),
+        LayoutPublishPreview(action="clean", stored_units=3, newest_rows=3, orphan_units=1),
+    )
+    assert (
+        "는 지금 공식과 같아졌거나 공통 대장에서 지운 호기의 것입니다 — 공식과 같아진 배치 차이 "
+        "2행과 지운 호기의 배치 차이 1행을 정리한 r6으로 발행합니다" in mixed[0]
+    ), mixed
+
+    old, blocked = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(action="blocked", stored_units=1, is_newest=False, orphan_units=1),
+    )
+    assert blocked
+    assert "r2에 저장된 배치 차이 1행은 공통 대장에서 지운 호기의 것이지만, 최신(r5)이" in old[0]
+    assert "(되돌리기는 지운 호기의 배치 차이를 빼고 씁니다)" in old[0]
+    assert "공식과 같아" not in old[0]
+    newest, blocked = publish_layout_lines(
+        scenario,
+        _revision(3),
+        LayoutPublishPreview(
+            action="blocked", newest_rows=2, is_newest=False, newest_orphan_units=2
+        ),
+    )
+    assert blocked
+    assert "최신 r5에 저장된 배치 차이 2행(공통 대장에서 지운 호기의 것)이 남아 있어" in newest[0]
+    assert "(지운 호기의 배치 차이는 그때 정리됩니다)" in newest[0]
+
+    message = publish_result_message(
+        "셋업 실무",
+        revision,
+        2,
+        cleaned_no=6,
+        moved=False,
+        kept_unsaved=False,
+        layout=LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1, orphan_units=1),
+    )
+    assert "「셋업 실무」 r5의 지운 호기의 배치 차이를 정리한 r6." in message, message
+    plain = publish_result_message(
+        "셋업 실무", revision, 2, cleaned_no=6, moved=False, kept_unsaved=False
+    )
+    assert "「셋업 실무」 r5의 공식과 같아진 배치 차이를 정리한 r6." in plain
 
 
 def test_the_restore_confirm_names_units_whose_place_changed_since_then() -> None:
