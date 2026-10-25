@@ -47,6 +47,8 @@ from capa_simulation.components.equipment_scenario_management import (
     EQUIPMENT_KIND,
     LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
+    RENAME_BUTTON_KEY,
+    RENAME_KEY,
     RESTORE_BUTTON_KEY,
     RESTORE_CONFIRM_KEY,
     RESTORE_NAME_KEY,
@@ -1075,6 +1077,38 @@ def test_the_tab_names_a_revision_and_refuses_a_name_someone_changed_meanwhile(
     )
     assert repository.list_schedule_revisions(OPERATIONS)[0].revision_name == "남이 바꿈"
     assert app.text_input(key=f"{REVISION_NAME_KEY}__g2__{first}").value == "남이 바꿈"
+
+
+def test_the_scenario_name_field_follows_a_rename_by_someone_else_and_refuses_over_it(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """「시나리오 이름 바꾸기」 칸은 팝오버 안에서 매 회차 그려져 key 가 남는다 — 고치지 않은 칸은
+    남이 바꾼 이름으로 다시 서고, 고치던 칸은 그 사이 남이 바꿨으면 덮지 않고 거절해 지금 이름을
+    알린다(칸을 세울 때 본 이름과 대조한다)."""
+    repository = _repository(tmp_path)
+    app = _scenario_tab(_shell)
+    field = f"{RENAME_KEY}__{OPERATIONS}"
+    assert app.text_input(key=field).value == "운영 일정"
+
+    # 고치지 않은 칸 — 남이 바꾼 이름으로 다시 선다.
+    repository.rename_equipment_scenario(OPERATIONS, name="셋업 B", expected_name="운영 일정")
+    clear_equipment_scenario_cache()
+    _ok(app.run())
+    assert app.text_input(key=field).value == "셋업 B"
+
+    # 고치던 칸 — 그 사이 남이 또 바꿨으면 덮지 않는다.
+    app.text_input(key=field).input("내 이름")
+    repository.rename_equipment_scenario(OPERATIONS, name="셋업 C", expected_name="셋업 B")
+    clear_equipment_scenario_cache()
+    app.button(key=RENAME_BUTTON_KEY).click()
+    _ok(app.run())
+    assert any(
+        "설비 시나리오 이름을 바꾸지 않았습니다 — 다른 사용자가 먼저 이름을 바꿨습니다"
+        "(지금: 셋업 C)" in text
+        for text in _texts(app)
+    )
+    assert [item.scenario_name for item in repository.list_equipment_scenarios()] == ["셋업 C"]
+    assert app.text_input(key=f"{RENAME_KEY}__g1__{OPERATIONS}").value == "셋업 C"
 
 
 def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes(
