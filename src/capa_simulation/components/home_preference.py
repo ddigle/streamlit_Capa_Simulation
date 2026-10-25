@@ -36,9 +36,12 @@ from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.write_guard import (
+    held_notice,
     held_profile_conflict,
     is_own_profile_save,
+    note_notice,
     note_profile_conflict,
+    notice_marks,
     profile_conflict_marks,
     profile_save_marks,
 )
@@ -161,6 +164,8 @@ THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
 THRESHOLD_FLASH_KEY = "home_threshold_flash"
 # 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
+# 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
+KEY_PROCESS_FLASH_KEY = "home_key_process_flash"
 THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장했습니다."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
@@ -1615,7 +1620,7 @@ def _render_key_process_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
-                render_flash("home_key_process_flash")
+                _render_key_process_flash()
             selected = st.multiselect(
                 "공정",
                 options=[*process_options, *absent],
@@ -1659,10 +1664,26 @@ def _render_key_process_editor(
         if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(
-            "home_key_process_flash",
+            KEY_PROCESS_FLASH_KEY,
             f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
+
+
+def _render_key_process_flash() -> None:
+    """프리셋 카드의 저장 결과 알림. 담아 둔 알림이 없어도 `기본으로`·`삭제` 를 방금 했으면 다시
+    그린다.
+
+    두 단추를 빠르게 두 번 누르면(0.15초) 둘째 누름은 옛 화면의 단추에 닿는데, 그 회차에는 고칠
+    프리셋이 바뀌어 단추가 잠겨 있다 — Streamlit 이 잠긴 단추의 누름을 버려 그 회차는 아무것도 하지
+    않고, 앞 회차가 꺼내 그린 알림만 지웠다(2026-10-26 E2E). 그 꼬리 회차에도 같은 알림을 그린다
+    (`write_guard.held_notice`).
+    """
+    if render_flash(KEY_PROCESS_FLASH_KEY):
+        return
+    held = held_notice(KEY_PROCESS_FLASH_KEY)
+    if held is not None:
+        st.success(held)
 
 
 def _render_key_process_preset_actions(
@@ -1697,6 +1718,8 @@ def _render_key_process_preset_actions(
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
         message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    marks = notice_marks()
     try:
         get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집"
@@ -1707,8 +1730,9 @@ def _render_key_process_preset_actions(
     except ValueError as exc:
         st.error(str(exc))
         return
+    note_notice(marks, KEY_PROCESS_FLASH_KEY, message)
     clear_global_key_process_cache()
-    queue_flash("home_key_process_flash", message)
+    queue_flash(KEY_PROCESS_FLASH_KEY, message)
     st.rerun(scope="app")
 
 

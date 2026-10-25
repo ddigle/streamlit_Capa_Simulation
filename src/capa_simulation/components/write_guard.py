@@ -37,6 +37,14 @@
 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은
 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른
 저장이라 평소대로 대조한다.
+
+**아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿는다. 그 회차는
+쓰지 않고(지나간 세대·이미 지운 글·잠긴 단추) 끝나는데, 첫 쓰기의 성공 알림은 앞 회차가 이미 꺼내
+그렸다 — 둘째 회차가 화면을 다시 그리며 알림이 사라져, 한 건 쓰였는데 아무 알림도 남지 않았다
+(2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 `just_written` 으로 그 꼬리를
+알아보고 성공을 다시 알린다. 누름이 회차에 닿지 않는 단추(잠긴 단추는 Streamlit 이 값을 버린다)는
+쓰기 전에 `notice_marks` 로 받아 둔 dict 에 알림과 시각을 적고(`note_notice`), 그 창 안의 회차가
+`held_notice` 로 다시 그린다.
 """
 
 from __future__ import annotations
@@ -63,6 +71,9 @@ PROFILE_SAVES_KEY = "write_guard_profile_saves"
 # 이 세션이 마지막으로 받은 버전 충돌 거부(저장 이름 → (거부 알림 글, 받은 시각)). 시각은
 # `time.monotonic()` 이다.
 PROFILE_CONFLICTS_KEY = "write_guard_profile_conflicts"
+
+# 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`)).
+RECENT_NOTICES_KEY = "write_guard_recent_notices"
 
 # 세션을 가리지 않는 잠금 하나다. 두 회차의 세션 칸 잠금이 따로라 세션 안에 둘 자리가
 # 없고, 잠그는 동안 하는 일은 기록 한 줄 쓰기다.
@@ -179,6 +190,43 @@ def held_profile_conflict(marks: Mapping[str, tuple[str, float]], name: str) -> 
     알린다. 창이 지난 제출은 새 화면을 보고 다시 누른 저장이라 `None` 이다.
     """
     entry = marks.get(name)
+    if not isinstance(entry, tuple) or len(entry) != 2:
+        return None
+    message, moment = entry
+    if not isinstance(message, str) or not isinstance(moment, float):
+        return None
+    return message if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
+
+
+def notice_marks() -> dict[str, tuple[str, float]]:
+    """쓰기 알림 표지 dict(알림 칸 이름 → (알림 글, 쓴 시각)).
+
+    쓰기 **전에** 받아 두고 쓰기에 성공하면 곧바로 `note_notice` 로 적는다(dict 칸 쓰기는 끊기지
+    않는다 — 그 뒤 `queue_flash` 같은 세션 칸 쓰기는 둘째 누름의 회차에 끊길 수 있다).
+    """
+    with _WRITE_LOCK:
+        marks = st.session_state.get(RECENT_NOTICES_KEY)
+        if not isinstance(marks, dict):
+            marks = {}
+            st.session_state[RECENT_NOTICES_KEY] = marks
+        return marks
+
+
+def note_notice(marks: dict[str, tuple[str, float]], key: str, message: str) -> None:
+    """`key` 칸에 낼 쓰기 알림(`message`)과 지금 시각을 적는다."""
+    marks[key] = (message, time.monotonic())
+
+
+def held_notice(key: str) -> str | None:
+    """`key` 칸의 쓰기 알림이 `TRAILING_PRESS_SECONDS` 안에 났으면 그 글.
+
+    그 창 안의 회차는 같은 단추의 빠른 둘째 누름일 수 있다 — 쓰지 않고 끝나 첫 쓰기의 알림을 지운다.
+    부르는 쪽은 담아 둔 알림(`flash.render_flash`)이 없을 때 이 글을 그 자리에 다시 그린다.
+    """
+    marks = st.session_state.get(RECENT_NOTICES_KEY)
+    if not isinstance(marks, dict):
+        return None
+    entry = marks.get(key)
     if not isinstance(entry, tuple) or len(entry) != 2:
         return None
     message, moment = entry
