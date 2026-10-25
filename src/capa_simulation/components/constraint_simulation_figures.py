@@ -39,7 +39,9 @@
 기존 제품. 기준(제약 칸은 제약 목표) 미달 칸은 부족색 면(`STATUS_SHORTAGE` — 공정 Capa 상세 ① 판정
 칸과 같은 꼴, 글자는 본문색이라 두 테마에서 읽힌다), 줄어든 값(개조 중 비가동 · 제약 없을 때 대비
 −)은 감소 글자색(`DELTA_DECREASE`), 기간 안 달 머리는 옅은 칠(`header_hook`), 고른 달은 열
-테두리(`finish_hook`)다.
+테두리(`finish_hook`)다. 칸 풍선의 식(필요 「소요 × 제약 % = 곱」·기존 가용 「가용 − 개조 중 −
+배정」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다
+(`formula_text.equals_mark`). 비가동 몫 「n대 × d/w일」 은 인수가 정수라 늘 맞는다.
 
 대수는 모두 환산 대수다(가용이 호기별 환산비를 곱한 값 — `services/constraint_simulation.py`).
 """
@@ -55,6 +57,7 @@ from typing import Any, Final, NamedTuple
 
 import plotly.graph_objects as go
 
+from capa_simulation.components.formula_text import equals_mark
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
     EMPTY,
@@ -889,14 +892,17 @@ def _constrained_demand_cell(row: ConstraintMonth) -> Cell:
 
 
 def _need_cell(row: ConstraintMonth, target: int) -> Cell:
+    """제약 필요 대수 칸 — 풍선 「소요 × 제약 % = 곱 → 정수」. 적힌 소요(둘째 자리)로 다시 셈한 곱이
+    적힌 곱과 다르면 「≈」 다(고른 달 계산 2단계는 같은 식의 인수 자릿수를 늘린다)."""
     if not row.in_period:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 기간 밖")
-    product = row.constrained_demand * target / 100
+    product = f"{row.constrained_demand * target / 100:.2f}"
+    mark = equals_mark(product, f"{round(row.constrained_demand, 2) * target / 100:.2f}")
     return Cell(
         str(row.need),
         hover=(
-            f"{_head(row)} · {units_text(row.constrained_demand)} × {target}% = "
-            f"{product:.2f} → {row.need}대"
+            f"{_head(row)} · {units_text(row.constrained_demand)} × {target}% {mark} "
+            f"{product} → {row.need}대"
         ),
     )
 
@@ -939,15 +945,20 @@ def _downtime_cell(row: ConstraintMonth) -> Cell:
 
 
 def _existing_available_cell(row: ConstraintMonth) -> Cell:
+    """기존 가용 칸 — 풍선 「가용 − 개조 중 − 제약 배정 = 기존 가용」. 적힌 수로 다시 셈한 값이
+    적힌 기존 가용과 다르면 「≈」 다 — 비가동이 가용보다 많으면 쓸 수 있는 가용을 0 으로 두는
+    것까지 고른 달 계산 4단계와 같은 차례로 셈한다."""
     text = f"가용 {units_text(row.available)}"
     if row.downtime > 0:
         text += f" − 개조 중 {units_text(row.downtime)}"
     if row.allocated > 0:
         text += f" − 제약 배정 {row.allocated}"
+    shown = units_text(row.existing_available)
+    written = max(0.0, round(row.available, 2) - round(row.downtime, 2)) - row.allocated
     return Cell(
-        units_text(row.existing_available),
+        shown,
         bold=True,
-        hover=f"{_head(row)} · {text} = {units_text(row.existing_available)}",
+        hover=f"{_head(row)} · {text} {equals_mark(shown, units_text(written))} {shown}",
     )
 
 

@@ -11,7 +11,8 @@
   `DELTA_INCREASE`, − 는 `DELTA_DECREASE`, 0 은 흐린 글자(「모자람」이 아니라 「어긋남」이라 판정
   3색을 쓰지 않는다).
 - 값은 소수 2자리(보유·가용), 대여·GAP 은 부호를 붙인다(마이너스는 U+2212). 2자리로 0 이 되는 0 아닌
-  값은 3자리다. 풍선은 3자리와 식이다.
+  값은 3자리다. 풍선은 3자리와 식이다 — 식은 적힌 수로 다시 셈한 값이 결과와 다르면 「=」 대신
+  「≈」 다(`formula_text.equals_mark`, 공정 Capa 상세 풍선과 같은 길).
 - 「—」 칸은 흐린 글자에 풍선으로 까닭을 적는다. 머리 칸은 누를 수 없다.
 - 고른 칸(`selected`)은 `ACCENT` 2px 테두리와 굵은 글자다(지금 보는 달의 열 테두리는 없다).
 - 값 줄 라벨은 구획 제목보다 12px 들인다(글자 크기는 그대로). 구획 제목 세부 글은 한 줄이다.
@@ -31,6 +32,7 @@ from typing import Final, NamedTuple
 
 import plotly.graph_objects as go
 
+from capa_simulation.components.formula_text import equals_mark, written_value
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
     EMPTY,
@@ -273,6 +275,14 @@ def _three(value: float | None, *, signed: bool = False) -> str:
     return signed_one(value, HOVER_DIGITS) if signed else fine_one(value, HOVER_DIGITS)
 
 
+def _written_total(first: str, second: str, *, subtract: bool = False) -> float | None:
+    """적힌 두 항 글자의 합(또는 차) — 다시 셈하는 사람이 얻는 값. 하나라도 「—」 면 없다."""
+    left, right = written_value(first), written_value(second)
+    if left is None or right is None:
+        return None
+    return left - right if subtract else left + right
+
+
 def _hover(view: SheetView, row: str, month: int, head: str) -> str:
     value = view.value(row, month)
     if row == ROW_STATIC_OWNED:
@@ -295,9 +305,11 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
         baseline = view.baseline.get(month)
         base = float(baseline) if baseline is not None and baseline == baseline else 0.0
         units = (value or 0.0) - base
+        base_text, units_text = _three(base), _three(units)
+        mark = equals_mark(_three(value), _three(_written_total(base_text, units_text)))
         return (
             f"{head} · 설비 일정 기준 보유 {_three(value)} (환산대수)"
-            f"<br>= 기존보유 {_three(base)} + 비가동이 없었다면 가용인 호기 {_three(units)}"
+            f"<br>{mark} 기존보유 {base_text} + 비가동이 없었다면 가용인 호기 {units_text}"
             "<br>누르면 호기"
         )
     if row == ROW_SCHEDULE_LENT:
@@ -307,17 +319,24 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
             "<br>누르면 호기"
         )
     if row == ROW_SCHEDULE_AVAILABLE:
+        owned_text = _three(view.value(ROW_SCHEDULE_OWNED, month))
+        lent_text = _three(view.value(ROW_SCHEDULE_LENT, month), signed=True)
+        mark = equals_mark(_three(value), _three(_written_total(owned_text, lent_text)))
         return (
-            f"{head} · 설비 일정 기준 가용 {_three(value)} = 보유 "
-            f"{_three(view.value(ROW_SCHEDULE_OWNED, month))} + 대여(비가동) "
-            f"{_three(view.value(ROW_SCHEDULE_LENT, month), signed=True)}"
+            f"{head} · 설비 일정 기준 가용 {_three(value)} {mark} 보유 {owned_text} + 대여(비가동) "
+            f"{lent_text}"
             "<br>교차검증·필요 단축 일정·공정 Capa 상세 ② 와 같은 값 · 누르면 호기"
         )
     schedule, static = GAP_PAIRS[row]
     signed = schedule == ROW_SCHEDULE_LENT
+    schedule_text = _three(view.value(schedule, month), signed=signed)
+    static_text = _three(view.value(static, month), signed=signed)
+    gap_text = _three(value, signed=True)
+    mark = equals_mark(
+        gap_text, _three(_written_total(schedule_text, static_text, subtract=True), signed=True)
+    )
     return (
-        f"{head} · GAP {ROW_ITEMS[row]} {_three(value, signed=True)} = 설비 일정 "
-        f"{_three(view.value(schedule, month), signed=signed)} − Static "
-        f"{_three(view.value(static, month), signed=signed)}"
+        f"{head} · GAP {ROW_ITEMS[row]} {gap_text} {mark} 설비 일정 {schedule_text} − Static "
+        f"{static_text}"
         "<br>음수 = 기준정보가 많음 · 누르면 짝 호기"
     )
