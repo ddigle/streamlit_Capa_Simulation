@@ -1117,6 +1117,34 @@ def test_the_scenario_name_field_follows_a_rename_by_someone_else_and_refuses_ov
     assert app.text_input(key=f"{RENAME_KEY}__g1__{OPERATIONS}").value == "셋업 C"
 
 
+def test_a_name_refusal_keeps_the_tildes_of_the_name_someone_else_wrote(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """남이 먼저 바꾼 설비 시나리오 이름·리비전명(「E2E~가정~D」·「B~안~2」)은 거절 글에서도 물결표
+    그대로다 — 저장소 예외 글이 날 이름을 담아 마크다운이 「E2E<del>가정</del>D」 로 그렸다."""
+    repository = _repository(tmp_path)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+
+    app.text_input(key=f"{RENAME_KEY}__{OPERATIONS}").input("E2E~가정~C")
+    repository.rename_equipment_scenario(OPERATIONS, name="E2E~가정~D", expected_name="운영 일정")
+    clear_equipment_scenario_cache()
+    app.button(key=RENAME_BUTTON_KEY).click()
+    _ok(app.run())
+    assert any(
+        "먼저 이름을 바꿨습니다(지금: E2E\\~가정\\~D)" in str(item.value) for item in app.error
+    ), [str(item.value) for item in app.error]
+
+    app.text_input(key=f"{REVISION_NAME_KEY}__g1__{first}").input("내 이름")
+    repository.rename_schedule_revision(first, name="B~안~2", expected_name=None)
+    clear_equipment_scenario_cache()
+    app.button(key=REVISION_NAME_BUTTON_KEY).click()
+    _ok(app.run())
+    assert any(
+        "먼저 리비전명을 바꿨습니다(지금: B\\~안\\~2)" in str(item.value) for item in app.error
+    ), [str(item.value) for item in app.error]
+
+
 def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes(
     _shell: AppTest, tmp_path: Path
 ) -> None:
