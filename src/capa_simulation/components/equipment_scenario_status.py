@@ -299,10 +299,12 @@ def render_equipment_scenario_row(
         with st.container():
             if locked_reason is not None and locked_reason != FIXED_LOCK_REASON:
                 st.caption(f":material/lock: {locked_reason}")
+            # 저장 결과 알림(`save_result_message`)·세션 이동 알림은 날 설비 시나리오 이름을
+            # 담는다 — 물결표가 지움선이 되지 않게 막는다(설비 마스터 탭 결과 알림과 같다).
             if isinstance(flash, str):
-                st.success(flash)
+                st.success(markdown_safe_tildes(flash))
             if session.notice:
-                st.warning(session.notice, icon=":material/sync_problem:")
+                st.warning(markdown_safe_tildes(session.notice), icon=":material/sync_problem:")
 
 
 def open_equipment_scenario_dialog() -> None:

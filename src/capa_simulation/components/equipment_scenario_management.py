@@ -470,12 +470,14 @@ def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = No
     )
     # 세션 이동 알림은 한 회차뿐이다 — 늘 서 있는 칸 안에 그려 빠지는 회차에 구획 본문(팝오버 줄)이
     # 한 칸 당겨지지 않게 한다(`POPOVER_GENERATION_KEY`).
+    # 알림은 날 설비 시나리오 이름을 담는다 — 물결표가 지움선이 되지 않게 막는다.
     with st.container():
         if session.notice:
+            notice = markdown_safe_tildes(session.notice)
             if notice_slot is not None and not session.unmerged:
-                notice_slot.warning(session.notice, icon=":material/sync_problem:")
+                notice_slot.warning(notice, icon=":material/sync_problem:")
             else:
-                st.warning(session.notice, icon=":material/sync_problem:")
+                st.warning(notice, icon=":material/sync_problem:")
     render_equipment_scenario_management(database_path, session)
 
 
