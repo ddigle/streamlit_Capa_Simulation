@@ -19,7 +19,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.process_labels import PROCESS_COLUMN, ProcessLabels
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.services.display_order import DisplayOrderInput, reorder_display_columns
 
 
@@ -50,4 +50,6 @@ def render_exclusion_table(
         file_name=file_name,
         key=key,
     )
+    # 표 도구 막대가 바로 위 CSV 단추에 닿지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+    toolbar_clearance()
     st.dataframe(displayed, hide_index=True, width="stretch")

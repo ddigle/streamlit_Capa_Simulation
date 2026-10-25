@@ -18,7 +18,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.profile_caption import profile_version_caption
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.io.reference_cache import apply_global_display_order
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import (
@@ -212,6 +212,9 @@ def _render_direct_editor(
                 placeholder="예: 환산 탭 제품 표시순서 변경",
                 key="display_order_note",
             )
+        # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
+        # 9장 「표 도구 막대」).
+        toolbar_clearance()
         edited = st.data_editor(
             scope_rules,
             hide_index=True,

@@ -122,7 +122,7 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
-from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE, render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.equipment_scenario_activation import (
     CANVAS_LOCK_REASON,
     FAB_LOCK_REASON,
@@ -2271,7 +2271,7 @@ else:
         )
     # 표 도구 막대가 바로 위 줄 오른쪽 끝 「층 전체 보기」 를 덮어 표에서 옮긴 누름을 가로채지 않게
     # 띄운다(AGENTS 9장 「표 도구 막대」).
-    st.space(TABLE_TOOLBAR_CLEARANCE)
+    toolbar_clearance()
     st.dataframe(
         floor_table(floor_equipment if picked_rows is None else picked_rows),
         hide_index=True,

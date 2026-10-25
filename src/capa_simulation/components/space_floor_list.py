@@ -44,7 +44,7 @@ from capa_simulation.components.editor_state import discard_editor, editor_widge
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.space_layout import FloorPlacement
-from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_cache import (
@@ -931,5 +931,5 @@ def render_space_floor_list(
         _render_notices()
     # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을 가로채지
     # 않게 띄운다(AGENTS 9장 「표 도구 막대」).
-    st.space(TABLE_TOOLBAR_CLEARANCE)
+    toolbar_clearance()
     _render_tables(placements, floors_with_image, canvas_text, states, on_open, extra_columns)
