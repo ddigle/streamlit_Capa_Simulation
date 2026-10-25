@@ -69,6 +69,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.formula_text import equals_mark
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
@@ -967,14 +968,17 @@ def demand_card(
 def _assumed_demand_note(
     required: float | None, assumed: Mapping[str, object] | None, token: UpehToken
 ) -> str:
-    """「UPEH 가정 110%: 소요 12.40 ÷ 1.1 = 11.27 (−1.13대)」 — 구간 밖이면 빈 글자."""
+    """「UPEH 가정 110%: 소요 12.40 ÷ 1.1 = 11.27 (−1.13대)」 — 구간 밖이면 빈 글자. 적힌 소요로
+    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 공식 ÷ f」 와 같은 검산)."""
     if assumed is None or required is None:
         return ""
     value = _number(assumed.get("소요대수"))
     if value is None:
         return ""
+    factor = token_factor(token)
+    mark = equals_mark(_two(value), _two(round(required, 2) / factor))
     return (
-        f"UPEH 가정 {token_percent(token)}%: 소요 {_two(required)} ÷ {token_factor(token):g} = "
+        f"UPEH 가정 {token_percent(token)}%: 소요 {_two(required)} ÷ {factor:g} {mark} "
         f"{_two(value)} ({_signed_two(value - required)}대)"
     )
 
@@ -982,13 +986,17 @@ def _assumed_demand_note(
 def availability_card(
     record: Mapping[str, object], bridge: Mapping[str, object] | None
 ) -> EvidenceCard:
-    """② 가용 — 보유 − 대여 = 가용(공식). 설비 일정이 서면 기존보유 + 호기 가용(참고)."""
+    """② 가용 — 보유 − 대여 = 가용(공식). 설비 일정이 서면 기존보유 + 호기 가용(참고). 두 식
+    모두 적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다."""
     owned = _number(record.get(OWNED_COLUMN))
     lent = _number(record.get(LENT_COLUMN))
     available = _number(record.get("가용대수"))
     derived = None if owned is None else owned - (lent or 0.0)
+    derived_mark = equals_mark(
+        _one(derived), _one(None if owned is None else round(owned, 1) - round(lent or 0.0, 1))
+    )
     formula = (
-        f"보유 {_one(owned)} − 대여 {_one(lent)} = {_one(derived)}\n"
+        f"보유 {_one(owned)} − 대여 {_one(lent)} {derived_mark} {_one(derived)}\n"
         f"가용대수 {_one(available)} (공식)"
     )
     notes: list[str] = []
@@ -998,8 +1006,14 @@ def availability_card(
         baseline = _number(bridge.get("기존보유"))
         units = _number(bridge.get("호기 가용"))
         total = _number(bridge.get("가용대수"))
+        total_mark = equals_mark(
+            _one(total),
+            _one(
+                None if baseline is None or units is None else round(baseline, 1) + round(units, 1)
+            ),
+        )
         notes.append(
-            f"설비 일정 기준(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)} = "
+            f"설비 일정 기준(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)} {total_mark} "
             f"{_one(total)} (환산)"
         )
     return EvidenceCard("② 가용", formula, tuple(notes))
@@ -1039,12 +1053,12 @@ def judgement_card(
     # 결과는 반올림 전 값으로 낸다(판정·과부족이 그 값을 쓴다).
     shown_available, shown_required = round(available, 2), round(required, 2)
     rate_text = f"{rate:.1%}"
-    rate_mark = _equals_mark(
+    rate_mark = equals_mark(
         rate_text,
         f"{shown_available / shown_required:.1%}" if shown_required > 0 else "",
     )
     raw_text = _signed_two(raw)
-    raw_mark = _equals_mark(raw_text, _signed_two(shown_available - shown_required * secure))
+    raw_mark = equals_mark(raw_text, _signed_two(shown_available - shown_required * secure))
     lines = [
         f"확보율 = {_two(available)} ÷ {_two(required)} {rate_mark} {rate_text} → {name}",
         f"과부족 = {_two(available)} − {_two(required)}×{secure:g} {raw_mark} {raw_text}"
@@ -1069,7 +1083,7 @@ def _assumed_required_line(official: float | None, assumed: float, token: UpehTo
     factor = token_factor(token)
     if official is None:
         return f"소요 = 공식 ÷ {factor:g} = {_two(assumed)}"
-    mark = _equals_mark(_two(assumed), _two(round(official, 2) / factor))
+    mark = equals_mark(_two(assumed), _two(round(official, 2) / factor))
     return f"소요 = {_two(official)} ÷ {factor:g} {mark} {_two(assumed)}"
 
 
@@ -1078,9 +1092,14 @@ def _cause_note(record: Mapping[str, object], required: float) -> str:
     cause = "" if record.get(CAUSE_COLUMN) is None else str(record.get(CAUSE_COLUMN))
     owned = _number(record.get(OWNED_COLUMN))
     if cause == CAUSE_OWNED_SHORT and owned is not None:
+        shown = f"{owned / required:.1%}"
+        written_required = round(required, 1)
+        mark = equals_mark(
+            shown, f"{round(owned, 1) / written_required:.1%}" if written_required else ""
+        )
         return (
-            f"원인: {cause} — 총보유 {_one(owned)} ÷ 소요 {_one(required)} = "
-            f"{owned / required:.1%} 도 확보기준 미달(투자 검토)"
+            f"원인: {cause} — 총보유 {_one(owned)} ÷ 소요 {_one(required)} {mark} "
+            f"{shown} 도 확보기준 미달(투자 검토)"
         )
     if cause == CAUSE_RENTAL:
         return (
@@ -1127,11 +1146,11 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
     gap_after = _number(record.get("단축후과부족"))
     window = wd_window(month, canvas.cutoff_days)
     floor = max(window.first_day, canvas.today)
-    target_mark = _equals_mark(
+    target_mark = equals_mark(
         _two(target_units),
         _two(round(required, 2) * target) if required is not None else "",
     )
-    gap_mark = _equals_mark(
+    gap_mark = equals_mark(
         _signed_two(gap),
         _signed_two(round(before, 2) - round(target_units, 2))
         if before is not None and target_units is not None
@@ -1758,11 +1777,6 @@ def _signed_two(value: float | None) -> str:
     if rounded < 0:
         return f"{_MINUS}{abs(rounded):,.2f}"
     return "0.00"
-
-
-def _equals_mark(result: str, recomputed: str) -> str:
-    """식의 등호 — 적은(반올림한) 숫자로 다시 셈한 글이 결과 글과 같으면 「=」, 다르면 「≈」."""
-    return "=" if result == recomputed else "≈"
 
 
 def _signed_int(value: int) -> str:

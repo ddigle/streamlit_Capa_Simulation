@@ -59,6 +59,11 @@
 (`CUSTOMDATA_MONTH`·`CUSTOMDATA_ROW`·`CUSTOMDATA_HOVER`). 지금 보는 달의 머리 밑줄과 열 테두리는
 그림에 그린다 — 그래서 그림 캐시 키에 그 달이 든다.
 
+**풍선의 식**(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」, UPEH 가정
+소요 「공식 ÷ f」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한 값이 결과와 다르면 「=」 대신
+「≈」 다(`formula_text.equals_mark` — 근거 패널 ③ 과 같은 길). 과부족 식 줄은 등호가 없어 어긋날
+때만 식 앞에 「≈」 를 둔다.
+
 순수 함수다. 세션·캐시·DB 를 보지 않는다. 그림 캐시·칸 선택 콜백·범례는 페이지가 맡는다.
 """
 
@@ -74,6 +79,7 @@ from typing import Any, Final, NamedTuple, cast
 import pandas as pd
 import plotly.graph_objects as go
 
+from capa_simulation.components.formula_text import APPROX, EQUALS, equals_mark
 from capa_simulation.components.home_figure_common import (
     _text_width_units,
     keep_unselected_opaque,
@@ -594,17 +600,9 @@ def _summary_rows(
         owned.cells[index] = _Cell(
             text=_one(owned_count), hover=f"{head} · 총보유대수 {_one(owned_count)}대"
         )
-        available_hover = (
-            f"{head} · 가용대수 {_one(available_count)}대"
-            f"<br>보유 {_one(owned_count)} {_MINUS} 대여 {_one(lent_count)} = "
-            f"{_one(_difference(owned_count, lent_count))}"
-        )
-        if mismatch:
-            available_hover += (
-                "<br>⚠ 가용대수가 보유 − 대여와 다릅니다(기준정보 표를 따로 고쳤습니다)"
-            )
         available.cells[index] = _Cell(
-            text=f"{_one(available_count)}{' ⚠' if mismatch else ''}", hover=available_hover
+            text=f"{_one(available_count)}{' ⚠' if mismatch else ''}",
+            hover=_available_hover(head, available_count, owned_count, lent_count, mismatch),
         )
         required.cells[index] = _Cell(
             text=_one(demand), bold=True, hover=f"{head} · 소요대수 {_one(demand)}대"
@@ -713,12 +711,7 @@ def _assumption_rows(
         rate_value = _number(record.get("확보율"))
         status = _status(record.get(STATUS_COLUMN))
         secure, warning = thresholds.for_month(month)
-        change = (
-            f"<br>공식 {_two(official_demand)} ÷ {factor:g} = {_two(demand)} "
-            f"({_signed_two((demand or 0.0) - (official_demand or 0.0))}대)"
-            if official_demand is not None and demand is not None
-            else ""
-        )
+        change = _assumed_change(official_demand, demand, factor)
         required.cells[index] = _Cell(
             text=_one(demand),
             bold=True,
@@ -782,6 +775,40 @@ def _product_rows(
     return rows
 
 
+def _available_hover(
+    head: str,
+    available: float | None,
+    owned: float | None,
+    lent: float | None,
+    mismatch: bool,
+) -> str:
+    """가용대수 칸 풍선 — 「보유 − 대여 = 가용」. 적힌 수로 다시 셈한 값이 결과와 다르면 「≈」."""
+    derived = _difference(owned, lent)
+    written = _difference(
+        None if owned is None else round(owned, 1), None if lent is None else round(lent, 1)
+    )
+    text = (
+        f"{head} · 가용대수 {_one(available)}대"
+        f"<br>보유 {_one(owned)} {_MINUS} 대여 {_one(lent)} "
+        f"{equals_mark(_one(derived), _one(written))} {_one(derived)}"
+    )
+    if mismatch:
+        text += "<br>⚠ 가용대수가 보유 − 대여와 다릅니다(기준정보 표를 따로 고쳤습니다)"
+    return text
+
+
+def _assumed_change(official: float | None, demand: float | None, factor: float) -> str:
+    """UPEH 가정 소요 칸 풍선의 둘째 줄 — 「공식 49.80 ÷ 1.5 = 33.20 (−16.60대)」. 적힌 공식
+    소요로 다시 셈한 값이 가정 소요와 다르면 「≈」(근거 패널 ③ 의 「소요 = 공식 ÷ f」 와 같다)."""
+    if official is None or demand is None:
+        return ""
+    mark = equals_mark(_two(demand), _two(round(official, 2) / factor))
+    return (
+        f"<br>공식 {_two(official)} ÷ {factor:g} {mark} {_two(demand)} "
+        f"({_signed_two(demand - official)}대)"
+    )
+
+
 def _rate_hover(
     head: str,
     rate: float | None,
@@ -793,8 +820,16 @@ def _rate_hover(
 ) -> str:
     if status is None or rate is None:
         return f"{head} · 확보율 {_EMPTY} (소요대수 0)"
+    # 적힌 가용·소요(첫째 자리)로 다시 셈한 확보율이 적힌 확보율과 다르면 「≈」.
+    written_demand = None if demand is None else round(demand, 1)
+    mark = equals_mark(
+        _percent(rate),
+        _percent(round(available, 1) / written_demand)
+        if available is not None and written_demand
+        else "",
+    )
     return (
-        f"{head} · 확보율 {_percent(rate)} = 가용 {_one(available)} ÷ 소요 {_one(demand)}"
+        f"{head} · 확보율 {_percent(rate)} {mark} 가용 {_one(available)} ÷ 소요 {_one(demand)}"
         f"<br>판정 {_STATUS_NAMES.get(status, status)} — 확보기준 {threshold_percent_label(secure)}"
         f" · 경고기준 {threshold_percent_label(warning)}"
     )
@@ -810,16 +845,18 @@ def _balance_hover(
 ) -> str:
     if balance is None:
         return f"{head} · 확보기준 과부족 {_EMPTY}"
-    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수 둘째 자리로 단다.
-    unrounded = (
-        f" ({_signed_two(available - demand * secure)})"
-        if available is not None and demand is not None
-        else ""
-    )
+    # 정수 옆에 올림·내림 전 값(가용 − 소요 × 확보기준)을 소수 둘째 자리로 단다. 그 아래 식의
+    # 적힌 가용·소요(첫째 자리)로 다시 셈한 값이 그 값과 다르면 식 앞에 「≈」 를 둔다.
+    unrounded = ""
+    mark = EQUALS
+    if available is not None and demand is not None:
+        raw = _signed_two(available - demand * secure)
+        unrounded = f" ({raw})"
+        mark = equals_mark(raw, _signed_two(round(available, 1) - round(demand, 1) * secure))
     text = (
         f"{head} · 확보기준 과부족 {_signed_int(balance)}대{unrounded}"
-        f"<br>가용 {_one(available)} {_MINUS} 소요 {_one(demand)} × {_ratio(secure)}"
-        f" (부족은 올림, 여유는 내림)"
+        f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
+        f"소요 {_one(demand)} × {_ratio(secure)} (부족은 올림, 여유는 내림)"
     )
     reason = "" if _blank(cause) else str(cause)
     if reason:
