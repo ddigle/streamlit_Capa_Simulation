@@ -1237,13 +1237,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     변경」 도 늘 서 있는 칸 안이다(순번이 밀리면 표가 다시 마운트되어 보내지 않은 출납·고름을 잃는다 — 9장).
   - 한 회차에 표 모양(`build_view` → `equipment_grid.build_grid_view`)을 한 번 내고 세 마운트 data 를 그것에서 낸다. 칸 결과
     (`equipment_master_issues` — 저장과 같은 인자: 캔버스·오늘)는 편집본 세대·`buffer_base`·오늘·캔버스 열쇠로 세션 메모
-    (`GRID_MEMO_KEY`, 튜플로 풂)에 한 번. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
+    (`GRID_MEMO_KEY`, 튜플로 풂)에 한 번. 표 글자(`text_matrix` — 편집본은 편집본 세대·`buffer_base`, 저장본은 저장본 사본 토큰
+    열쇠 → `GridSource.texts`)와 「내려받기」 현재 데이터 바이트(`_render_current_data_downloads(memo_key=)`)도 같은 메모 칸이다 —
+    고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
+    편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
+    그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
     낡은 세션의 지운 호기)은 「저장하기 전에 고칠 것」 줄이다. 일정 확인 갈래는 내용 지문 캐시(`get_schedule_confirmation_issues`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 토스트는 마지막 op 를 보낸
-    마운트에, 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 뒤에만 `layout_edits` 로 역할을 찍는다
-    (`stamp_layout_role` — 칸 고침마다 돌리면 합성 3천 대에 0.17 s, 샘플 관측). 트리거(불러오기·목록 비우기·열기·빼기·goto·팝업)는
-    목록·상세 id·표 고르기 칸만 적는다. 콜백 안에서 `st.rerun()` 을 부르지 않는다.
+    마운트에, 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와 `official`·`undo`(되돌리기가 걷힌
+    배치 편집을 되살릴 수 있다 — 「한 단계 되돌리기」 단추도) 뒤에만 배치 편집 판정(`buffer_has_layout_edits` 메모)으로 역할을
+    찍는다(`stamp_layout_role`). 트리거(불러오기·목록 비우기·열기·빼기·goto·팝업)는 목록·상세 id·표 고르기 칸만 적는다. 콜백 안에서
+    `st.rerun()` 을 부르지 않는다.
+  - **토스트는 실어 보낸 마운트가 사라지면 거둔다**(`settle_grid_toasts` — 탭 끝에 그린 마운트 이름으로, 탭이 숨은 회차에는 빈 것으로
+    부른다). 브라우저의 닫은 토스트 번호는 마운트마다 새로 시작해 표 고르기·탭·오른쪽 칸 왕복에 닫은 토스트가 되살아났다. 아직 실어
+    보내지 않은 토스트(숨은 동안 쌓인 것)는 처음 마운트할 때 보인다(실어 보낸 번호 `GRID_TOAST_SHOWN_KEY`).
   - **저장 구획**(「저장 전 변경」 아래): 변경 메모(옛 `_NOTE_KEY` — 저장 성공의 비움 표지 그대로)·저장 칸·지우는 호기 다른 시나리오
     확인 체크·힌트 한 줄·「한 단계 되돌리기」(`undo` op)·「모두 버리기」(확인 팝오버 — `reset_equipment_drafts(keep_fab=True)`)·
     「리비전 저장」. 「리비전 저장」 은 **잠그지 않는다**(출납은 300ms 묶음 — 마지막 회차의 판정은 브라우저보다 늦다): 콜백이 그린
@@ -1252,13 +1260,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     상세 id 를 옮긴다.
   - 가정 설비 시나리오 편집 회차(`layout == "overlay"`)면 `GridContext.official_places`(`_official_places_by_name` — 공식과 다른
     호기의 공식 일곱 칸)를 넘겨 호기 상세 위치 묶음에 「공식: …」 한 줄과 「공식 자리로 되돌리기」(`official` op — 모듈이면 묶음
-    통째)를 세운다(설비 시나리오 2단계 설계 13-1). 「내려받기」 팝오버는 양식 셋 + 현재 데이터 셋(`_render_current_data_downloads`).
+    통째)를 세운다(설비 시나리오 2단계 설계 13-1). 되돌리기는 **공식 원래 값**(`GridContext.official_cells` —
+    `official_layout_cells`, 공식 스냅샷의 그 호기 칸 그대로)을 적는다 — `official_places` 는 견줄 꼴(`CANVAS_DECIMALS` 반올림)이라
+    그대로 적으면 공식 좌표 12.25 가 12.2 로 들어가 모듈 묶음 바둑판이 어긋나 저장이 막힌다. 원래 값이 견줄 꼴과 맞지 않으면(낡은
+    세션 등) 견줄 꼴을 적는다. 공식 층이 다른 호기를 한 묶음으로 묶는 고침의 「저장하기 전에 고칠 것」 줄은 `official_places` 가
+    비어도(배치 차이가 없는 가정 시나리오) 판정한다. 「내려받기」 팝오버는 양식 셋 + 현재 데이터 셋(`_render_current_data_downloads`).
 - `src/capa_simulation/components/equipment_import_dialog.py` — 가용설비 현황 「엑셀·CSV로 한꺼번에」 팝업(옛 입력 탭을 옮김, 개편
   명세 4-8). 열림 값 `import`(「설정」 과 한 열림 칸·한 호스트 — `render_equipment_dialog_host(import_dialog=)`), 여는 콜백은
   `forget_page_dialogs()` 부터. 미리보기는 옛 입력 탭 그대로(`build_import_review` + 낡은 세션 거절 + 배치 잠금·가정 묶음 거절 +
   CSV 시나리오 주의, 가정 세션 「배치 칸도 붙여넣기」 기본 끔 — Q2). 끝 단추는 **「편집본에 넣기」 하나**(D7 — 사용자 R4):
   `ImportReview.matches` 가 참이면 `apply_import_review` — 통째 되돌리기 단계(`whole_step`) 하나·`replace_equipment_buffer`·칸 초안
-  비움·새로 든 설비명을 목록 맨 위로·표 토스트(되돌리기) — 뒤 열림 칸을 지우고 앱을 다시 돌린다. 팝업 안 폼 제출은 앱 범위
+  비움·새로 든 설비명을 목록 맨 위로·표 토스트(되돌리기)·넣은 편집본에 배치 편집이 있으면 그때의 역할 찍기(`stamp_layout_role` —
+  넣고 나중에 저장하므로 그 사이 역할이 바뀌면 저장소가 막는다, 설계 6-2) — 뒤 열림 칸을 지우고 앱을 다시 돌린다. 팝업을 닫으면
+  (`_close_dialog` — on_dismiss) 미리보기도 거두고, 여는 콜백(`open_equipment_import` — 표 불러오기 줄 `dialog` 트리거도)도 남은
+  미리보기를 거둔다(닫힌 회차에 입력 칸이 버려져 다시 열면 빈 입력에 옛 미리보기만 남는다). 팝업 안 폼 제출은 앱 범위
   `st.rerun()` 이다(앱 회차에서 `scope="fragment"` 는 오류). 팝업 알림은 작은 편집표 알림 칸과 가른 제 칸(`IMPORT_*_KEY`)이다.
   새 방문 회차의 미리보기 거두기는 페이지가 매 회차 부르는 `withdraw_preview_on_new_visit`.
 - `src/capa_simulation/components/equipment_master_grid.py` (+ `equipment_master_grid_assets/` HTML·CSS·JS) — 가용설비 현황
@@ -1697,9 +1712,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **칸 초안이 남으면 어느 저장 길도 저장하지 않는다**(`save_equipment_buffer` 첫머리 — `unsaved_grid_drafts`, 살아 있는 행의
     초안만 센다). 초안은 편집본 밖이라 사이드바 팝업·Space 「배치 저장」 이 모른 채 저장하면 저장 성공이 초안을 지워 친 글이
     사라진다. FAB 대기분만 쓰는 길(`frames is None`)은 막지 않는다.
-  - 작은 편집표(`render_small_editor` — 기존 보유대수·비가동 일정, 개편 명세 4-7)는 표마다 제 폼이고 옛 직접 편집 탭의 보기 설정·
-    고르기 칸·일괄 삭제·「편집본에 적용」(`_remember_edits`) 길 그대로다. 제출 처리는 돌려준 함수로 화면이 모든 위젯을 그린 뒤
-    부른다(`st.rerun()` 으로 끝난다). `small_editor_edits` 가 적용 전 편집을 알린다(탭 ① 점·화면 탭 줄 떠나기 확인).
+  - 작은 편집표(`render_small_editor` — 기존 보유대수·비가동 일정, 개편 명세 4-7)는 **폼 밖**이고(명세의 「작은 폼」 에서 바꿈 —
+    폼 안 편집은 제출 전까지 서버에 오지 않아 탭 점·떠나기 확인이 볼 수 없었다, 리뷰 rs-b1y) 옛 직접 편집 탭의 보기 설정·고르기
+    칸·일괄 삭제·「편집본에 적용」(`_remember_edits`) 길 그대로다 — 단추는 보통 단추(`_selection_buttons`·
+    `_render_bulk_delete_status` 의 `in_form=False`, 옛 작업 공간은 폼 안 그대로). 칸을 고칠 때마다 회차가 돌지만 편집표는 「보기
+    적용」 으로 확정한 보기를 그려 편집이 남는다. 제출 처리는 돌려준 함수로 화면이 모든 위젯을 그린 뒤 부른다(`st.rerun()` 으로
+    끝난다). `small_editor_edits` 가 적용 전 편집을 알린다(탭 ① 점·화면 탭 줄 떠나기 확인). 시험 대역 `BrowserTables(forms=True)`
+    는 브라우저처럼 폼 안 편집을 제출 전에 보내지 않는다.
+  - **배치 편집 판정은 세션 메모다**(`buffer_has_layout_edits` — 열쇠 = 편집본 세대·편집본 출발 토큰·저장본 사본 토큰·이름 지도,
+    `LAYOUT_EDITS_MEMO_KEY`). 역할이 찍힌 세션은 회차마다 `live_layout_role` 이 부르므로 편집본 전체 `layout_edits`(합성 3천 대에
+    0.13~0.17 s)를 회차마다 돌리면 8장 예산을 넘었다. 표 출납이 배치에 닿지 않는 op(칸 고침·값 넣기·붙여넣기·날짜 밀기 — 배치·설비명·
+    Main 설비 칸이 아닐 때)만이면 얹기 전 판정을 새 세대로 옮긴다(`layout_memo_mark`·`carry_layout_memo`).
     `buffer_base` 는 편집본 출발점 표지(저장본 쌍 토큰 + 씨뿌린 세대 — 표 출납 `base` 와 「리비전 저장」 두 번 누름 잣대). 층 대기분은 캔버스·요소·Main
     설비명 위치(`PENDING_GROUP_LABELS_KEY`) 셋이고 첫 대기분이 본 저장값(`PENDING_BASES_KEY`)을 함께 쓴다.
   - 설비 마스터를 쓰는 모든 저장(직접 편집·붙여넣기·CSV·일괄 삭제·Space 배치 저장)은 `_save_equipment_frames` 에서
