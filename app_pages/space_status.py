@@ -170,6 +170,7 @@ from capa_simulation.services.floor_state import (
     inactive_label,
     selectable_floor_keys,
 )
+from capa_simulation.services.korean_particle import object_particle, with_direction_particle
 from capa_simulation.services.layout_overlay import EMPTY_LAYOUT_DIGEST
 from capa_simulation.services.schedule_confirmation import UNCONFIRMED, confirmation_counts
 from capa_simulation.services.simulation_cache import (
@@ -702,8 +703,15 @@ def _saved_frames() -> Frames:
 
 
 def _session_place() -> str:
-    """세션 설비 시나리오 「운영 일정 · r1」(저장할 곳)."""
+    """세션 설비 시나리오 「운영 일정 · r1」(지금 보는 쌍)."""
     return f"「{equipment_value_label(equipment_session)}」"
+
+
+def _scenario_place() -> str:
+    """세션 설비 시나리오 이름 「셋업 실무」(가정 배치가 저장될 곳 — 새 리비전이라 rN 을 적지
+    않는다)."""
+    name = equipment_session.scenario_name
+    return f"「{name}」" if name else "이 설비 시나리오"
 
 
 def _official_target(session: EquipmentSession) -> tuple[str, str | None]:
@@ -797,9 +805,13 @@ def _render_edit_lock_line() -> None:
                     key=LOAD_LATEST_KEY,
                     target=_latest_target(equipment_session),
                     explanation=(
-                        f"세션을 {_session_place()} 에서 그 시나리오의 최신 r{latest} 로 옮깁니다."
+                        f"세션을 {_session_place()} 에서 그 시나리오의 최신 "
+                        f"{with_direction_particle(f'r{latest}')} 옮깁니다."
                     ),
-                    done=f"최신 r{latest} 를 불러왔습니다 — 배치 편집을 할 수 있습니다.",
+                    done=(
+                        f"최신 r{latest}{object_particle(f'r{latest}')} 불러왔습니다 — 배치 편집을 "
+                        "할 수 있습니다."
+                    ),
                 )
     elif edit_mode.notice:
         st.caption(f":material/fast_forward: {edit_mode.notice}")
@@ -930,7 +942,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
         if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
             # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다.
             st.caption(
-                f":material/layers: {_session_place()} 의 새 리비전(가정 배치)으로 저장합니다 — "
+                f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 — "
                 "공식 배치는 바뀌지 않습니다."
                 + (
                     f" {edit_mode.notice}"
@@ -1337,7 +1349,7 @@ def _render_layout_editor(
         if target in sent_to and target in inactive_floors
     )
     overlay_note = (
-        f" 저장하면 {_session_place()} 의 가정 배치로 들어가고 공식 배치는 바뀌지 않습니다."
+        f" 저장하면 {_scenario_place()}의 가정 배치로 들어가고 공식 배치는 바뀌지 않습니다."
         if equipment_session.layout_role == "overlay"
         else ""
     )
