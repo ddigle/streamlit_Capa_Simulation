@@ -1991,6 +1991,7 @@ def _fleet_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     import capa_simulation.components.intro_overlay as intro_overlay
     import capa_simulation.components.intro_summary as intro_summary
     import capa_simulation.components.month_range_picker as month_range_picker
+    import capa_simulation.components.required_shortening_panel as required_shortening_panel
     import capa_simulation.settings as settings
     from capa_simulation.persistence.equipment_cache import clear_equipment_repository
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -2033,6 +2034,10 @@ def _fleet_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     SENT_SUMMARIES.clear()
     monkeypatch.setattr(settings, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
     monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", equipment_path)
+    # 필요 단축 일정 패널은 판정 기준·LOB 줄을 읽을 때 모듈을 읽을 때 받은 `DUCKDB_PATH` 를 쓴다 —
+    # 같은 프로세스에서 먼저 불러온 패널이면 저장소 DB 자리라, 카드까지 그리는 이 시험이 저장소 DB
+    # 를 만든다 (`conftest` 의 저장소 DB 검사). 그 이름도 갈아 끼운다.
+    monkeypatch.setattr(required_shortening_panel, "DUCKDB_PATH", tmp_path / "scenario.duckdb")
     monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
     monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
     monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: SENT_SUMMARIES.append(kwargs))
