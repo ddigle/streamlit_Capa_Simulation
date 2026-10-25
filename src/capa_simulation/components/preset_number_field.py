@@ -13,6 +13,11 @@
 - **세션 칸이 그 값과 다를 때만 적는다** — 같아도 매 회차 적으면 `set_value` 가 회차마다 가서 다른
   위젯이 돌린 앱 전체 회차가 숫자 칸에 치다 만 글을 덮는다. 두 위젯 모두 값으로 주고받아(버튼은 늘
   같은 라벨 글자) 라벨 되보냄 함정이 없다. 위젯에 `default=`·`value=` 를 주지 않는다(AGENTS 9장).
+- **버튼을 누르면 숫자 칸을 새 key 로 다시 세운다**(`_input_widget_key` — 세대 칸을 올린다).
+  1.63 숫자 칸은 범위 밖 글(예: 301)을 치고 칸을 떠나면 그 글을 확정하지 않은 채 쥐고, 쥔 동안은
+  서버가 보낸 새 값(`set_value`)을 무시한다 — 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 범위 밖
+  표시가 남는다. 새 key 면 프런트가 칸을 새로 그려 쥔 글이 사라진다. 숫자 칸 콜백은 세대를 올리지
+  않는다(치는 칸이 회차마다 새로 서면 초점이 풀린다).
 - `persist_state` 는 주지 않는다 — 정본이 위젯 아닌 칸이라 페이지를 오가도 남고, 위젯 칸은 매 회차
   정본에서 다시 선다.
 
@@ -66,14 +71,29 @@ def _option_of(value: float | None, presets: Sequence[float | None]) -> float | 
     return None
 
 
+def _generation_key(input_key: str) -> str:
+    return f"{input_key}__generation"
+
+
+def _input_widget_key(input_key: str) -> str:
+    """숫자 칸이 지금 서는 위젯 key — 버튼을 누를 때마다 세대가 올라 새 key 가 된다."""
+    generation = st.session_state.get(_generation_key(input_key), 0)
+    if not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0:
+        return input_key
+    return f"{input_key}__{generation}"
+
+
 def _write_if_changed(key: str, value: object) -> None:
     """칸이 없거나 그 값과 다를 때만 적는다 — 같은 값을 다시 적으면 `set_value` 가 회차마다 간다."""
     if st.session_state.get(key, _MISSING) != value:
         st.session_state[key] = value
 
 
-def _pick_preset(value_key: str, pills_key: str, integer: bool) -> None:
-    """버튼 콜백 — 고른 버튼이 있을 때만 정본을 그 값으로(`None` 버튼은 `None`)."""
+def _pick_preset(value_key: str, pills_key: str, input_key: str, integer: bool) -> None:
+    """버튼 콜백 — 고른 버튼이 있을 때만 정본을 그 값으로(`None` 버튼은 `None`).
+
+    정본을 적으면 숫자 칸 세대도 올린다 — 칸이 쥐고 있던 범위 밖 글을 버리고 새 값으로 선다.
+    """
     picked = st.session_state.get(pills_key)
     if picked is None:
         return
@@ -81,6 +101,13 @@ def _pick_preset(value_key: str, pills_key: str, integer: bool) -> None:
         st.session_state[value_key] = None
     elif isinstance(picked, (int, float)) and not isinstance(picked, bool):
         st.session_state[value_key] = _number(float(picked), integer)
+    else:
+        return
+    generation_key = _generation_key(input_key)
+    generation = st.session_state.get(generation_key, 0)
+    st.session_state[generation_key] = (
+        generation + 1 if isinstance(generation, int) and not isinstance(generation, bool) else 1
+    )
 
 
 def _pick_number(value_key: str, input_key: str, integer: bool) -> None:
@@ -144,8 +171,9 @@ def render_preset_number_field(
 
     shown = canonical if canonical is not None else float(fallback)
     shown = min(max(shown, float(minimum)), float(maximum))
+    widget_key = _input_widget_key(input_key)
     _write_if_changed(pills_key, _option_of(canonical, presets))
-    _write_if_changed(input_key, _number(shown, integer))
+    _write_if_changed(widget_key, _number(shown, integer))
 
     options: list[float | str] = [NONE_OPTION if preset is None else preset for preset in presets]
 
@@ -163,7 +191,7 @@ def render_preset_number_field(
         format_func=format_option,
         key=pills_key,
         on_change=_pick_preset,
-        args=(value_key, pills_key, integer),
+        args=(value_key, pills_key, input_key, integer),
         disabled=disabled,
         help=help,
     )
@@ -174,9 +202,9 @@ def render_preset_number_field(
             max_value=_number(maximum, integer),
             step=_number(step, integer),
             format=number_format,
-            key=input_key,
+            key=widget_key,
             on_change=_pick_number,
-            args=(value_key, input_key, integer),
+            args=(value_key, widget_key, integer),
             disabled=disabled,
             label_visibility="collapsed",
             width=132,
