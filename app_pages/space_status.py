@@ -65,11 +65,13 @@ from capa_simulation.components.sample_data import (
     render_sample_switch,
 )
 from capa_simulation.components.space_floor_layout import (
+    compare_payload,
     effective_floor_layout,
     floor_layout_differences,
+    floor_unit_differences,
     space_layout_notices,
 )
-from capa_simulation.components.space_floor_list import render_space_floor_list
+from capa_simulation.components.space_floor_list import FloorListColumn, render_space_floor_list
 from capa_simulation.components.space_layout import (
     ColorChoice,
     color_check_style,
@@ -270,6 +272,22 @@ SPACE_AS_OF_KEY = "space_status_as_of"
 # (2026-10-23 사용자 결정). 뷰어의 `on_pick_change` 콜백이 쓰고 「층 전체 보기」 단추가 지운다.
 # 연 층이 바뀌면(다른 층·FAB) 풀린다.
 SPACE_PICKED_KEY = "space_status_picked_unit"
+# 「공식과 견주기」(설계 8-3) — 경로 줄 끝에 늘 선다. 해당 없는 회차(공식 배치·호기 차이 없음·배치
+# 편집 중·샘플)에는 다른 key 의 끈 채 잠근 토글을 같은 자리에 세운다 — 조건부로 생겼다 사라지면 아래
+# 뷰어 순번이 밀려 다시 마운트되고 배율을 잃는다(검토 L11). 켠 값은 세션에 남는다(층·화면을 옮겨도).
+COMPARE_KEY = "space_compare_official_v1"
+COMPARE_LOCKED_KEY = "space_compare_official_locked_v1"
+COMPARE_LABEL = "공식과 견주기"
+COMPARE_HELP = (
+    "옮긴 호기의 공식 자리를 점선으로 그립니다 — 같은 층 안에서 옮겼으면 가는 선으로 잇고, 다른 "
+    "층으로 보냈거나 다른 층에서 왔으면 꼬리표를 답니다. FAB 전체에서는 층 목록에 「공식과 다름」 "
+    "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 머리 알림의 수만 봅니다."
+)
+COMPARE_COLUMN = "공식과 다름"
+COMPARE_COLUMN_HELP = (
+    "이 층에서 나갔거나 들어왔거나 이 층 안에서 옮긴, 공식과 자리가 다른 설비 수입니다(Main 설비로 "
+    "묶은 모듈은 합쳐 1대, 이 설비 시나리오에 일정이 없는 호기는 세지 않음)."
+)
 
 
 def color_group_key(basis: str, group: str) -> str:
@@ -351,6 +369,22 @@ def _jump_to_floor(widget_key: str) -> None:
     key = floor_from_label(st.session_state.get(widget_key))
     if key is not None:
         _open_floor(key)
+
+
+def _compare_lock_reason(editing: bool) -> str | None:
+    """「공식과 견주기」 를 켤 수 없는 까닭(켤 수 있으면 None). 견줄 것은 그리는 스냅샷의 호기
+    차이다(머리 알림과 같은 재료 — 역할이 아니라 그리는 한 벌로 정한다)."""
+    if using_sample_equipment:
+        return "샘플 데이터에는 공식과 견줄 배치가 없습니다."
+    if equipment_session.unmerged or latest_snapshot is None:
+        return "일정 없이 연 세션이라 공식과 견줄 배치가 없습니다."
+    if not latest_snapshot.layout_official_places:
+        if equipment_session.is_assumption:
+            return "이 설비 시나리오의 호기 배치는 공식과 같습니다."
+        return "공식 배치를 보는 중입니다 — 가정 설비 시나리오를 고르면 공식과 견줍니다."
+    if editing:
+        return "배치 편집 중에는 견주지 않습니다 — 편집을 끄면 다시 켤 수 있습니다."
+    return None
 
 
 def _units(value: float) -> str:
@@ -1479,6 +1513,21 @@ with st.container(horizontal=True, gap="small", vertical_alignment="center", key
         width=170,
         disabled=not floor_labels,
     )
+    st.space("stretch")
+    # 층 배치 편집 중에는 견주지 않는다(편집기에는 보내지 않는다). 편집 토글 값은 앞 회차의 것이다 —
+    # 이 줄은 층 상세 머리 줄보다 먼저 선다.
+    compare_lock = _compare_lock_reason(
+        selected is not None and editable and bool(st.session_state.get(EDIT_MODE_KEY, False))
+    )
+    if compare_lock is None:
+        compare_on = st.toggle(
+            COMPARE_LABEL, key=COMPARE_KEY, persist_state="session", help=COMPARE_HELP
+        )
+    else:
+        st.toggle(
+            COMPARE_LABEL, value=False, key=COMPARE_LOCKED_KEY, disabled=True, help=compare_lock
+        )
+        compare_on = False
 
 # 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
 # 서거나 저장·버리기로 사라질 때 아래 층 상세·FAB 상자의 순번이 밀리면, Streamlit 은 요소를
@@ -1533,9 +1582,12 @@ if selected is None:
     # 말한다.
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
     fab_background = fab_profile.image_data_uri if fab_profile is not None else None
+    # 「공식과 견주기」 를 켜면 층마다 공식과 자리가 다른 설비 수 — 층 목록 칸과 블록 풍선 한 줄.
+    unit_differences = floor_unit_differences(equipment_session) if compare_on else {}
     block_stats = floor_block_stats(
         placements,
         inactive={key: inactive_label(reason) for key, reason in inactive_floors.items()},
+        layout_differences=unit_differences,
     )
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
     open_active_floor = partial(_open_unless_inactive, frozenset(inactive_floors))
@@ -1631,6 +1683,20 @@ if selected is None:
         editable=not showing_sample and edit_mode.floor_state,
         on_open=_open_floor,
         locked_reason=None if showing_sample else FLOOR_STATE_LOCK_REASON,
+        extra_columns=(
+            (
+                FloorListColumn(
+                    COMPARE_COLUMN,
+                    {
+                        placement.key: unit_differences.get(placement.key, 0)
+                        for placement in placements
+                    },
+                    st.column_config.NumberColumn(format="localized", help=COMPARE_COLUMN_HELP),
+                ),
+            )
+            if compare_on
+            else ()
+        ),
     )
 
 else:
@@ -1833,6 +1899,17 @@ else:
                 on_pick=partial(_pick_unit, selected),
                 background_image=(
                     layout_profile.image_data_uri if layout_profile is not None else None
+                ),
+                # 「공식과 견주기」 — epoch 밖이라 켜고 꺼도 다시 마운트하지 않는다. 그리는
+                # 호기(공정 필터·일정 없음을 지난 것)만 견준다.
+                compare=(
+                    compare_payload(
+                        equipment_session,
+                        selected,
+                        shown=set(space_equipment[EQUIPMENT_ID_COLUMN].dropna().astype(str)),
+                    )
+                    if compare_on
+                    else None
                 ),
             )
     # 아래 호기 표는 요청한 21칸이다(`FLOOR_TABLE_COLUMNS`). 도면에서 호기를 누르면 그 설비

@@ -177,6 +177,13 @@
 .sle-group-names { pointer-events: none; }
 .sle-group-name-pill { fill: var(--sle-surface); fill-opacity: 0.92; stroke: var(--sle-frame); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-group-name-text { fill: var(--sle-text); font-weight: 800; text-anchor: middle; dominant-baseline: central; }
+/* 공식과 견주기(층 상세 보기 — 설비 시나리오 2단계 S4): 차이 호기의 기준(공식) 자리는 점선 상자, 같은 층으로 옮겼으면 가는
+   선으로 지금 상자와 잇고, 다른 층·도면 제외·미배치면 꼬리표, 다른 층(또는 공식 미배치)에서 온 호기는 상자 위 꼬리표다.
+   보기 전용 층이라 눌림을 받지 않고, 겹쳐 숨기기와 무관하게 늘 그린다. 강조색은 상호작용에만 쓰므로 글자색이다. */
+.sle-compare { pointer-events: none; }
+.sle-compare-box { fill: none; stroke: var(--sle-text); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.sle-compare-line { stroke: var(--sle-text); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+.sle-compare-tag { fill: var(--sle-text); font-weight: 700; paint-order: stroke; stroke: var(--sle-surface); stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 /* 숨은 모듈(레이아웃표시 N·도면 이탈)이 차지한 칸 — 그 모듈은 그리지 않고 칸만 점선으로 보인다. */
 .sle-ghost-cell { fill: none; stroke: var(--sle-muted); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* 정렬선 — 끌거나 놓는 것의 변·가운데가 다른 호기·요소(모듈 묶음은 범위)의 같은 선에 붙으면 그 선을 긋는다. 놓을 자리

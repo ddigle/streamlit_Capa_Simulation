@@ -141,6 +141,7 @@ def floor_block_stats(
     placements: Collection[FloorPlacement],
     *,
     inactive: Mapping[FloorKey, str] | None = None,
+    layout_differences: Mapping[FloorKey, int] | None = None,
 ) -> dict[str, dict[str, str | None]]:
     """층 블록 글자(편집기 `data.linkStats`). 키는 블록의 연결(「C1 1F」)이다.
 
@@ -150,7 +151,11 @@ def floor_block_stats(
 
     `inactive` 는 비활성 층 → 짧은 사유 글(「사용 안 함」)이다. 그 층 칸에만 `"inactive"` 를
     싣는다 — 편집기가 회색 빗금 + 사유 글자로 그리고 보기에서는 열지 않는다. 대수 칸은 그대로
-    싣는다(풍선)."""
+    싣는다(풍선).
+
+    `layout_differences` 는 「공식과 견주기」 를 켠 회차의 층 → 공식과 자리가 다른 설비 수다
+    (`layout_overlay.unit_differences_by_floor`). 0 보다 큰 층 칸에 `"layout"`(「가정 배치 n대
+    다름」)을 싣는다 — 블록 풍선 한 줄이다(설계 8-3)."""
     stats: dict[str, dict[str, str | None]] = {}
     for placement in placements:
         cell: dict[str, str | None] = {
@@ -164,6 +169,9 @@ def floor_block_stats(
         }
         if inactive and placement.key in inactive:
             cell["inactive"] = inactive[placement.key]
+        differs = (layout_differences or {}).get(placement.key, 0)
+        if differs > 0:
+            cell["layout"] = f"가정 배치 {differs:,}대 다름"
         stats[floor_label(placement.key)] = cell
     return stats
 

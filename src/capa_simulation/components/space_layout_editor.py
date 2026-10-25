@@ -233,6 +233,38 @@ def _clean_ghosts(ghosts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return cleaned
 
 
+def _clean_compare(compare: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """브라우저로 보낼 「공식과 견주기」 재료(`space_floor_layout.compare_payload`). 점선 상자는
+    넷이 다 숫자인 것만, 꼬리표는 글자일 때만. 둘 다 비면 None(견주기 층을 비운다)."""
+    if not compare:
+        return None
+    ghosts: list[dict[str, Any]] = []
+    for ghost in compare.get("ghosts") or ():
+        box = [finite_or_none(ghost.get(key)) for key in ("x", "y", "w", "h")]
+        if any(value is None for value in box):
+            continue
+        tag = ghost.get("tag")
+        x, y, w, h = box
+        ghosts.append(
+            {
+                "id": str(ghost["id"]),
+                "x": x,
+                "y": y,
+                "w": w,
+                "h": h,
+                "tag": tag if isinstance(tag, str) and tag else None,
+            }
+        )
+    arrivals = [
+        {"id": str(arrival["id"]), "tag": arrival["tag"]}
+        for arrival in compare.get("arrivals") or ()
+        if isinstance(arrival.get("tag"), str) and arrival["tag"]
+    ]
+    if not ghosts and not arrivals:
+        return None
+    return {"ghosts": ghosts, "arrivals": arrivals}
+
+
 def _clean_group_labels(labels: Mapping[str, str] | None) -> dict[str, str]:
     """브라우저로 보낼 Main 설비명 위치(Main 설비 → 가운데·위·아래). 모르는 값은 뺀다 — 브라우저는
     없는 묶음을 그 모양의 처음 위치(한 줄 묶음은 위, 그 밖은 가운데 — `groupLabelDefault`)로
@@ -288,6 +320,7 @@ def render_space_layout_viewer(
     group_labels: Mapping[str, str] | None = None,
     picked: str | None = None,
     on_pick: Callable[[str | None], None] | None = None,
+    compare: Mapping[str, Any] | None = None,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -314,7 +347,11 @@ def render_space_layout_viewer(
 
     Main 설비 모듈 묶음(모듈 둘 이상)은 묶음 범위에 Main 설비명을 그린다 — 위치는 `group_labels`
     (Main 설비 → 가운데·위·아래, 없으면 한 줄 묶음은 위·그 밖은 가운데)이고, 기준일에 묶음의 모듈이
-    하나도 보이지 않으면 이름도 숨는다."""
+    하나도 보이지 않으면 이름도 숨는다.
+
+    `compare` 는 「공식과 견주기」 를 켠 회차의 재료다(`space_floor_layout.compare_payload` — 차이
+    호기의 공식 자리 점선 상자·선·꼬리표, 설계 8-3). epoch 밖이라 토글로 다시 마운트하지 않고 견주기
+    층만 다시 그린다. None 이면 그 층을 비운다."""
     _EDITOR(
         key=key,
         data={
@@ -328,6 +365,7 @@ def render_space_layout_viewer(
             "marks": [mark.editor_payload() for mark in marks],
             "groupLabels": _clean_group_labels(group_labels),
             "picked": picked if isinstance(picked, str) and picked else None,
+            "compare": _clean_compare(compare),
             "canvas": {"width": canvas[0], "height": canvas[1]},
             "canvasLimits": {"min": MIN_CANVAS_EXTENT, "max": MAX_CANVAS_EXTENT},
             "decimals": CANVAS_DECIMALS,

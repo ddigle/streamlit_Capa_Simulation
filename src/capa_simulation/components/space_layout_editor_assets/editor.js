@@ -170,6 +170,7 @@ export default function (component) {
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
   const namesLayer = svg.querySelector('.sle-group-names')
+  const compareLayer = svg.querySelector('.sle-compare')
   const overlay = svg.querySelector('.sle-overlay')
   const guidesLayer = svg.querySelector('.sle-guides')
   const stage = q('.sle-stage')
@@ -635,6 +636,43 @@ export default function (component) {
     return rounded.toLocaleString('ko-KR', { maximumFractionDigits: 2 })
   }
   // </view-cover>
+
+  // ---------------------------------------------------------------- 공식과 견주기(층 상세 보기, 순수 함수)
+  // 파이썬 `services/layout_overlay.layout_compare` 가 낸 재료(`data.compare` — epoch 밖)를 그릴 꼴로 바꾼다(설계 8-3). 점선 상자
+  // (`ghosts` — 기준 쪽 자리)는 꼬리표가 없으면 지금 상자(boxOf)와 가운데끼리 가는 선으로 잇고, 꼬리표가 있으면 상자 왼쪽 위에
+  // 꼬리표를 단다. 들어온 호기(`arrivals`)는 지금 상자 왼쪽 위에 꼬리표다. 좌표는 데이터(왼쪽 아래 원점) → SVG(위 원점, canvasH)로
+  // 뒤집고, 꼬리표 글자 크기 fs 는 화면 px 를 데이터 단위로 바꾼 값이다. `tests/test_space_layout_compare.py` 가 아래 두 표시 줄
+  // 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <view-compare>
+  function compareShapes(compare, boxOf, canvasH, fs) {
+    const shapes = []
+    // 빈 값(null·빈 글)은 0 이 아니라 숫자 아님이다.
+    const n = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
+    const finite = (b) => Boolean(b) && [b.x, b.y, b.w, b.h].every((v) => typeof v === 'number' && Number.isFinite(v))
+    const tagAt = (b, text) => ({ kind: 'tag', x: b.x, y: canvasH - (b.y + b.h) - fs * 0.35, text: String(text) })
+    for (const ghost of (compare && compare.ghosts) || []) {
+      const box = { x: n(ghost.x), y: n(ghost.y), w: n(ghost.w), h: n(ghost.h) }
+      if (!finite(box)) continue
+      shapes.push({ kind: 'box', x: box.x, y: canvasH - (box.y + box.h), w: box.w, h: box.h })
+      if (ghost.tag) {
+        shapes.push(tagAt(box, ghost.tag))
+        continue
+      }
+      const now = boxOf(String(ghost.id))
+      if (!finite(now)) continue
+      shapes.push({
+        kind: 'line',
+        x1: box.x + box.w / 2, y1: canvasH - (box.y + box.h / 2),
+        x2: now.x + now.w / 2, y2: canvasH - (now.y + now.h / 2),
+      })
+    }
+    for (const arrival of (compare && compare.arrivals) || []) {
+      const now = boxOf(String(arrival.id))
+      if (finite(now) && arrival.tag) shapes.push(tagAt(now, arrival.tag))
+    }
+    return shapes
+  }
+  // </view-compare>
   // 채우기·글자: 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한 그룹색, 아니면 기본 회색).
   function unitColors(item, st) {
     if (st.delay) return { fill: 'var(--sle-unit-delay-fill)', ink: 'var(--sle-unit-delay-ink)' }
@@ -747,8 +785,9 @@ export default function (component) {
   const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link && !blockOff(item))
   const blockTip = (item) => {
     const stats = LINK_STATS[item.link] || {}
-    if (blockOff(item)) return [blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced].filter(Boolean).join(' · ')
-    const parts = [blockHead(item), stats.placed, stats.unplaced, stats.occupancy].filter(Boolean)
+    // 「공식과 견주기」 를 켠 회차에는 공식과 자리가 다른 설비 수 한 줄(`stats.layout` — 「가정 배치 n대 다름」)이 붙는다.
+    if (blockOff(item)) return [blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced, stats.layout].filter(Boolean).join(' · ')
+    const parts = [blockHead(item), stats.placed, stats.unplaced, stats.occupancy, stats.layout].filter(Boolean)
     return parts.join(' · ') + (opensFloor(item) ? ' · 누르면 열기' : '')
   }
   const hasSize = (item) => Number.isFinite(item.w) && item.w > 0 && Number.isFinite(item.h) && item.h > 0
@@ -1009,6 +1048,32 @@ export default function (component) {
       text.textContent = name
       node.append(text)
       namesLayer.append(node)
+    }
+  }
+
+  // 공식과 견주기 그리기(층 상세 보기만 — 편집기·FAB 에는 그리지 않는다). 배율이 바뀌면 꼬리표 글자 크기를 다시 맞추므로
+  // Main 설비명과 같이 `drawSelectionBox` 가 부른다. 재료가 없으면 층을 비운다.
+  const COMPARE_TAG_PX = 11
+  const COMPARE = VIEW && !FAB && data.compare && typeof data.compare === 'object' ? data.compare : null
+  function drawCompare() {
+    if (!compareLayer) return
+    compareLayer.replaceChildren()
+    if (!COMPARE) return
+    const fs = COMPARE_TAG_PX * unitsPerPx()
+    const boxOf = (id) => {
+      const item = S.items.get(id)
+      return item && isUnit(item) && onCanvas(item) && hasSize(item) ? item : null
+    }
+    for (const shape of compareShapes(COMPARE, boxOf, H(), fs)) {
+      if (shape.kind === 'box') {
+        compareLayer.append(el('rect', { class: 'sle-compare-box', x: shape.x, y: shape.y, width: shape.w, height: shape.h }))
+      } else if (shape.kind === 'line') {
+        compareLayer.append(el('line', { class: 'sle-compare-line', x1: shape.x1, y1: shape.y1, x2: shape.x2, y2: shape.y2 }))
+      } else {
+        const text = el('text', { class: 'sle-compare-tag', x: shape.x, y: shape.y, 'font-size': fs })
+        text.textContent = shape.text
+        compareLayer.append(text)
+      }
     }
   }
 
@@ -1973,8 +2038,9 @@ export default function (component) {
 
   // 함께 움직일 범위(모듈 묶음·여러 개 선택)를 점선 상자로 둘러 보인다. 사각형으로 고르는 중이면 그 사각형도.
   function drawSelectionBox() {
-    // Main 설비명도 범위를 따라간다 — 자리·크기·배율이 바뀌는 길이 모두 여기를 지난다.
+    // Main 설비명도 범위를 따라간다 — 자리·크기·배율이 바뀌는 길이 모두 여기를 지난다. 견주기 꼬리표도 같다.
     drawGroupNames()
+    drawCompare()
     overlay.replaceChildren()
     const chosen = selectedItems()
     const list = expanded(chosen)
@@ -3399,6 +3465,8 @@ export default function (component) {
     else redrawMarks()
   }
   showSummary()
+  // 견주기는 epoch 밖이다 — 토글을 켜고 끄거나 기준일·필터만 바뀐 회차에도 다시 마운트하지 않고 이 층만 다시 그린다.
+  drawCompare()
 
   // ------------------------------------------------------------- 아래 호기 표에 고른 호기(층 상세 보기)
   // 층 상세 보기에서 호기를 누르면(끌지 않고) 그 호기를 `pick` 으로 알린다(2026-10-23 사용자 요청 3). 받는 쪽 파이썬
