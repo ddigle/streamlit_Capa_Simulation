@@ -563,6 +563,26 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     assert len(sent) == 1
 
 
+@pytest.mark.parametrize(("mode", "colour"), [("dark", "#131316"), ("light", "#FFFFFF")])
+def test_every_run_paints_the_accent_button_text_for_its_theme(
+    _app: AppTest, mode: str, colour: str
+) -> None:
+    """강조색으로 칠한 단추(primary·primary 폼 제출)의 글자색 스타일을 매 회차 그 회차 테마로
+    보낸다 — 어두운 테마의 밝은 강조색 위 Streamlit 흰 글자는 1.86:1 이었다(표준 목표 「가용설비
+    붙여넣기」). 밝은 테마는 흰 글자 그대로다."""
+    from capa_simulation.components.accent_button_style import ACCENT_BUTTON_SELECTORS
+
+    rule = f"{', '.join(ACCENT_BUTTON_SELECTORS)} {{ color: {colour}; }}"
+    _app.query_params["theme"] = mode
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run()
+
+    sent = [el.proto.body for el in app.get("html") if rule in el.proto.body]
+    assert len(sent) == 1
+    assert 'button[kind="primary"]:not(:disabled)' in sent[0]
+
+
 def test_the_summary_gap_is_warmed_after_a_page_that_stops(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
