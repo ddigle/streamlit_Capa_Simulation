@@ -1,4 +1,4 @@
-# Purpose: 모든 테스트가 공유하는 자동 복원 장치와 Space 편집기·탭 줄 컴포넌트 대역을 둔다.
+# Purpose: 모든 테스트가 공유하는 자동 복원 장치와 Space 편집기·탭 줄·설비 마스터 표 대역을 둔다.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -17,7 +17,7 @@ from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
-from capa_simulation.components import page_tabs, space_layout_editor
+from capa_simulation.components import equipment_master_grid, page_tabs, space_layout_editor
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -157,3 +157,28 @@ def _stub_page_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
         return SimpleNamespace(select=None, close=None, pin=None)
 
     monkeypatch.setattr(page_tabs, "_PAGE_TABS", _silent)
+
+
+@pytest.fixture(autouse=True)
+def _stub_equipment_master_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """설비 마스터 표 컴포넌트(`equipment_master_grid._GRID`)를 아무것도 보내지 않는 대역으로
+    바꾼다.
+
+    Space 편집기 대역과 같은 까닭이다 — AppTest 는 그 JS 를 못 돌리고, 한 프로세스의 두 번째 AppTest
+    에서 진짜 컴포넌트를 부르면 「not registered」로 죽는다. 받은 값을 보는 시험은 제
+    `monkeypatch.setattr` 로 이 위에 다시 덮는다(세션 칸에 넣어 둔 값을 `st.session_state[key]` 에
+    적고 받은 `on_<이름>_change` 콜백을 부르는 꼴 — `tests/test_equipment_master_grid.py`)."""
+
+    def _silent(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            outbox=None,
+            load=None,
+            clear=None,
+            new=None,
+            dialog=None,
+            open=None,
+            unload=None,
+            goto=None,
+        )
+
+    monkeypatch.setattr(equipment_master_grid, "_GRID", _silent)
