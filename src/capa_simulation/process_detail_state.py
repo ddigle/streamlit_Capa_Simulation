@@ -25,9 +25,11 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
   `st.query_params.clear()` 는 테마 인자까지 지워 테마 스크립트가 첫 방문으로 보고 다시 새로고침한다
   (Space `?floor=` 와 같은 규칙). 지우는 것은 한 번의 갱신이다(`from_dict` 에 남길 인자를 다시
   싣는다) — 키마다 지우면 브라우저 기록이 키마다 쌓여 뒤로가 헛돈다. 한 번 적용한 인자 묶음은
-  `PROCESS_DETAIL_QUERY_SEEN_KEY` 에 남겨, 지운 것이 브라우저에 닿기 전에 옛 주소가 되돌아와도
-  사용자가 그 뒤 고른 공정을 덮지 않는다. 인자가 걷힌 회차에 그 칸을 비우므로 같은 링크로 다시
-  들어오면 다시 적용한다.
+  `PROCESS_DETAIL_QUERY_SEEN_KEY` 에 남겨, 이 화면에 머무는 동안 같은 묶음이 다시 와도 — 지운 것이
+  브라우저에 닿기 전에 옛 주소가 되돌아오거나, 뒤로가기로 인자 달린 기록 칸에 닿아도 — 사용자가 그
+  뒤 고른 공정·달을 덮지 않는다(그 칸은 지우기만 한다). 인자가 걷힌 뒤에도 칸을 비우지 않는다 —
+  비우면 뒤로가기마다 링크 공정·달로 되돌아갔다(E2E 결함). 다른 화면에서 같은 링크로 다시 들어오면
+  새 방문이라(직전에 끝까지 돈 실행이 다른 화면) 다시 적용한다.
 
 HOME 그림은 표적 막대(trace 0)의 `customdata` **끝**에 이동 정보 일곱 칸(`HOME_CELL_LINK_FIELDS`)을
 싣는다 — `Capa LOB 현황` 은 값 막대와 그 위 증감 조각이 표적이다. hover 칸 차례는 그대로이고, 과거
@@ -558,6 +560,21 @@ def _read_detail_query() -> tuple[tuple[str, str], ...]:
     return tuple(found)
 
 
+def _previous_run_was_this_page() -> bool | None:
+    """직전에 끝까지 돈 앱 실행도 이 페이지였는가 — `app.py` 맨 위의 실행 표지
+    (`sidebar_status.begin_app_run`)로 본다. 표지가 없는 단독 실행(페이지만 띄운 시험)은
+    모른다(None).
+
+    `_continues_this_page` 와 달리 이미 연 탭으로 돌아온 회차를 이어 보는 것으로 치지 않는다 — 다른
+    화면의 링크로 다시 들어온 회차는 그 링크를 다시 적용해야 한다.
+    """
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    ctx = get_script_run_ctx(suppress_warning=True)
+    if not isinstance(state, dict) or ctx is None:
+        return None
+    return bool(state.get("page") == ctx.page_script_hash)
+
+
 def _continues_this_page() -> bool:
     """이 방문을 이어 보는가 — 직전에 끝까지 돈 실행도 이 페이지였거나, 이미 연 탭으로 돌아왔다.
 
@@ -570,11 +587,7 @@ def _continues_this_page() -> bool:
     캔버스 가로 위치·설비 방문 기준을 걷지 않는다. 탭을 닫았다가 다시 열면 지금처럼 새 방문이다.
     밖에서 새 길로 들어온 회차(`entered` — 전달 칸·주소)는 이것과 상관없이 새로 적는다.
     """
-    if reentered_open_tab(PROCESS_CAPA_DETAIL.path):
-        return True
-    state = st.session_state.get(APP_RUN_STATE_KEY)
-    ctx = get_script_run_ctx(suppress_warning=True)
-    return isinstance(state, dict) and ctx is not None and state.get("page") == ctx.page_script_hash
+    return reentered_open_tab(PROCESS_CAPA_DETAIL.path) or _previous_run_was_this_page() is True
 
 
 def resolve_process_and_month(
@@ -590,8 +603,10 @@ def resolve_process_and_month(
     차례:
     1. 페이지가 맨 앞에서 꺼낸 전달 칸(`request` — `take_process_detail_request`). HOME 이 적은 값이
        있으면 그것이 답이다.
-    2. 없으면 주소 인자가 마지막으로 적용한 묶음(`PROCESS_DETAIL_QUERY_SEEN_KEY`)과 다를 때만
-       적용한다. 읽은 인자는 그 키만 지운다.
+    2. 없으면 주소 인자를 적용한다 — 새 방문이거나 마지막으로 적용한 묶음
+       (`PROCESS_DETAIL_QUERY_SEEN_KEY`)과 다를 때만. 이 화면에 머무는 동안 같은 묶음이 다시 오면
+       (옛 주소가 되돌아옴·뒤로가기로 인자 달린 기록 칸에 닿음) 적용하지 않는다. 읽은 인자는 어느
+       쪽이든 그 키만 지운다.
     3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정을 바꿔도 보던 달은 그대로다.
     4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`. 둘 다 함수일 수
        있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보기준 미달 달 같은 것), 함수는
@@ -610,6 +625,7 @@ def resolve_process_and_month(
     month_options = [int(month) for month in months]
 
     query = _read_detail_query()
+    staying = _previous_run_was_this_page()
     wanted_process: str | None = None
     wanted_month: int | None = None
     entered = False
@@ -618,7 +634,9 @@ def resolve_process_and_month(
     if request is not None:
         wanted_process, wanted_month, entered = request.process, request.month, True
         source = request.source
-    elif query and query != st.session_state.get(PROCESS_DETAIL_QUERY_SEEN_KEY):
+    elif query and (
+        staying is False or query != st.session_state.get(PROCESS_DETAIL_QUERY_SEEN_KEY)
+    ):
         values = dict(query)
         wanted_process = values.get(PROCESS_PARAM, "").strip() or None
         wanted_month = _month(values.get(MONTH_PARAM))
@@ -635,8 +653,10 @@ def resolve_process_and_month(
         st.query_params.from_dict(
             {name: st.query_params.get_all(name) for name in st.query_params if name not in read}
         )
-    else:
-        # 주소에서 인자가 걷힌 뒤의 회차다. 같은 링크로 다시 들어오면 그때는 다시 적용한다.
+    elif staying is not True:
+        # 인자가 없는 새 방문(또는 실행 표지가 없는 단독 실행)이다. 이 화면에 머무는 동안(인자가
+        # 걷힌 뒤)은 칸을 남긴다 — 뒤로가기로 인자 달린 기록 칸에 닿아도 그 링크를 다시 적용하지
+        # 않게. 다른 화면에서 다시 들어오면 새 방문이라 칸과 상관없이 적용한다.
         st.session_state.pop(PROCESS_DETAIL_QUERY_SEEN_KEY, None)
 
     fallback_memo: list[str | None] = []

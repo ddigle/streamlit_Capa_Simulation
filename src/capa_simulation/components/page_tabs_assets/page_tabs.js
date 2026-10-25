@@ -7,10 +7,11 @@
 // 아니라 본 문서에서 돌아 문서 capture 단계에서 Streamlit(React 뿌리)보다 먼저 받는다. 서버가 옮긴 뒤 되돌리면 두
 // 화면이 브라우저 기록에 쌓여 뒤로가기가 그 화면에 갇힌다(`page_tabs_state.switch_to_queued_tab` 은 마지막 안전망이다).
 // 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
-// 탭으로 화면을 옮기는 누름(다른 탭 고르기·지금 탭 닫기)은 둘을 더 지킨다. (1) 기록 한 칸 — 서버의 `st.switch_page` 는
-// 주소 인자를 다시 적어 떠나는 화면 주소를 한 칸 먼저 쌓고 옮긴 화면을 또 쌓는다(`<tabs-history>`). (2) 한 번에 하나 —
-// 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 올 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>`
-// 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`).
+// 브라우저 기록은 문서 하나에서 지킨다 — 서버가 주소 인자를 바꿀 때 Streamlit 프런트가 쌓는 칸은 늘 칸 바꾸기다
+// (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
+// 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 올
+// 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이
+// 떼어 돌린다(`tests/test_page_tabs_assets.py`).
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
@@ -20,40 +21,24 @@ const SETTLE_POLL_MS = 100
 const APP_ROOT = '[data-testid="stApp"]'
 
 // <tabs-history>
-// 탭 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 의 `st.switch_page` 는 주소 인자를 다시 적느라
-// (`page_info_changed`) 프런트가 **지금 경로**로 한 칸 쌓고(`pushState`), 옮긴 화면에서 그 경로로 또 한 칸 쌓는다 —
-// 뒤로가기 한 번이 제자리였다. 탭 줄이 이동을 보낼 때 `arm` 하면 그 뒤 잠깐(`ms`) 동안 떠나는 경로와 같은 경로로
-// 쌓는 것을 그 칸 바꾸기(`replaceState`)로 돌린다. 다른 경로로 쌓으면(옮긴 화면) 그대로 쌓고 거둔다. 처리기는
-// 문서에 하나다(`history` 의 `pushState` 를 한 번 감싼다) — 걸지 않은 동안은 그대로 넘긴다.
-function guardHistory(history, href, clock) {
+// 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
+// (`page_info_changed` — `st.query_params` 쓰기·지우기, `st.switch_page` 의 인자 다시 적기) **지금 경로**로 한 칸
+// 쌓는다(`pushState`). 그래서 (1) `st.switch_page` 는 떠나는 화면 경로로 한 칸 먼저 쌓고 옮긴 화면을 또 쌓아 뒤로가기
+// 한 번이 제자리였고, (2) 링크 인자를 받아 지우는 화면(공정 Capa 상세 `?process=`·Space `?layer=`·제약 시뮬레이션)은
+// 인자 달린 칸 뒤에 인자 없는 칸을 또 쌓아, 뒤로가기로 인자 달린 칸에 닿으면 화면이 그 인자를 다시 지우며 또 쌓아 —
+// 앞쪽 기록이 잘려 — 그 화면을 떠나지 못했다(E2E 결함). 지금 경로와 같은 경로로 쌓는 것은 늘 그 칸 바꾸기
+// (`replaceState`)로 돌린다 — 화면을 옮기는 쌓기(다른 경로)만 칸을 더한다. 처리기는 문서에 하나다(`history` 의
+// `pushState` 를 한 번 감싼다).
+function guardHistory(history, href) {
   const push = history.pushState
-  const armed = { from: null, until: 0 }
   const pathOf = (url) => new URL(String(url), href()).pathname
   history.pushState = function (state, title, url) {
-    if (armed.from !== null && url !== undefined && url !== null) {
-      const here = pathOf(href())
-      if (clock() >= armed.until || here !== armed.from) {
-        armed.from = null
-      } else if (pathOf(url) === here) {
-        return history.replaceState(state, title, url)
-      } else {
-        armed.from = null
-      }
+    if (url !== undefined && url !== null && pathOf(url) === pathOf(href())) {
+      return history.replaceState(state, title, url)
     }
     return push.apply(this, arguments)
   }
-  return {
-    arm(ms) {
-      armed.from = pathOf(href())
-      armed.until = clock() + ms
-    },
-    disarm() {
-      armed.from = null
-    },
-    armed() {
-      return armed.from !== null && clock() < armed.until
-    },
-  }
+  return history
 }
 // </tabs-history>
 
@@ -153,9 +138,9 @@ export default function (component) {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, queue: createSelectQueue(), settleTimer: 0,
   })
-  // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다.
-  const historyGuard = window.__capaTabsHistory
-    || (window.__capaTabsHistory = guardHistory(window.history, () => window.location.href, Date.now))
+  // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 탭 줄은 앱 전체 회차마다
+  // 페이지보다 먼저 그리므로 첫 회차 뒤로는 모든 화면의 주소 바꾸기가 이 처리기를 지난다.
+  if (!window.__capaHistoryGuard) window.__capaHistoryGuard = guardHistory(window.history, () => window.location.href)
   // 처리기는 처음 한 번 단다. 지금 data·트리거 함수는 S 에서 읽는다 — 다시 불릴 때마다 새 값으로 바뀐다.
   S.data = data
   S.send = setTriggerValue
@@ -265,9 +250,8 @@ export default function (component) {
     clearTimeout(S.busyTimer)
     S.busyTimer = setTimeout(() => setAttr(item.__parts.tab, 'aria-busy', null), BUSY_MS)
   }
-  // 화면을 옮기는 누름을 보내기 직전 — 기록 한 칸(`<tabs-history>`)과 한 번에 하나(`<tabs-queue>`)를 건다.
+  // 화면을 옮기는 누름을 보내기 직전 — 한 번에 하나(`<tabs-queue>`)를 건다. 기록 한 칸은 늘 걸린 지킴이가 맡는다.
   const moving = (id) => {
-    historyGuard.arm(BUSY_MS)
     sentSelect(S.queue, id, S.data.active, Date.now())
     clearTimeout(S.settleTimer)
     S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
@@ -393,7 +377,6 @@ export default function (component) {
     clearTimeout(S.noticeTimer)
     clearTimeout(S.busyTimer)
     clearTimeout(S.settleTimer)
-    historyGuard.disarm()
     if (S.onFonts && document.fonts && document.fonts.removeEventListener) {
       document.fonts.removeEventListener('loadingdone', S.onFonts)
     }

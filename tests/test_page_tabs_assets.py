@@ -161,7 +161,6 @@ _HISTORY_RUNNER = """
 // 브라우저 기록 대역 — 칸 목록과 지금 칸. 프런트처럼 `history.pushState` 를 부를 때마다 찾는다.
 const entries = ['http://app.test/calculation_result']
 let index = 0
-let now = 0
 const history = {
   pushState(state, title, url) {
     entries.splice(index + 1)
@@ -172,48 +171,40 @@ const history = {
     entries[index] = new URL(url, entries[index]).href
   },
 }
-const guard = guardHistory(history, () => entries[index], () => now)
+guardHistory(history, () => entries[index])
 const out = {}
-const path = () => new URL(entries[index]).pathname
-// 걸지 않은 동안은 그대로 쌓는다(같은 경로라도).
+const here = () => entries[index].replace('http://app.test', '')
+const back = () => { index -= 1 }
+// 같은 화면의 주소 인자 바꾸기(서버의 `st.query_params` 쓰기)는 칸을 더하지 않는다.
 history.pushState({}, '', '/calculation_result?a=1')
-out.plain = entries.length
+out.sameScreen = [entries.length, here()]
 // 탭 이동 — st.switch_page 의 두 번 쌓기: 지금 경로(주소 인자 다시 적기) → 옮긴 경로.
-guard.arm(1000)
 history.pushState({}, '', '/calculation_result?theme=dark')
-out.afterSame = [entries.length, entries[index]]
 history.pushState({}, '', '/load_conversion?theme=dark')
-out.afterMove = [entries.length, path(), guard.armed()]
-// 옮긴 뒤에는 같은 경로라도 다시 쌓는다(거뒀다).
-history.pushState({}, '', '/load_conversion?process=A')
-out.afterDisarm = entries.length
-// 기다림이 지나면 거둔다.
-guard.arm(1000)
-now = 1500
-history.pushState({}, '', '/load_conversion?b=2')
-out.expired = [entries.length, guard.armed()]
-// 건 뒤 다른 길로 화면이 바뀌었으면(사이드바·뒤로가기) 그 화면의 쌓기는 건드리지 않는다.
-guard.arm(1000)
-index = 0
-history.pushState({}, '', '/calculation_result?c=3')
-out.elsewhere = [entries.length, guard.armed()]
+out.tabMove = [entries.length, here()]
+// 링크로 들어와 인자를 지우는 화면 — 인자 달린 칸(다른 경로)을 쌓고, 지우기는 그 칸 바꾸기다.
+history.pushState({}, '', '/process_capa_detail?process=A&month=202610&theme=dark')
+history.pushState({}, '', '/process_capa_detail?theme=dark')
+out.linkArrival = [entries.length, here()]
+// 뒤로가기 한 번이면 직전 화면이다 — 인자 달린 칸이 남지 않아 그 화면에 갇히지 않는다.
+back()
+out.back = here()
 process.stdout.write(JSON.stringify(out))
 """
 
 
-def test_a_tab_move_stacks_one_history_entry() -> None:
-    """탭으로 화면을 옮길 때 브라우저 기록은 한 칸만 쌓인다 — `st.switch_page` 는 떠나는 화면 주소로
-    한 칸 먼저 쌓아 뒤로가기 한 번이 제자리였다(E2E 결함, 명세 B3 「뒤로가기 → 이전 화면」). 걸어
-    둔 동안 떠나는 경로와 같은 경로의 쌓기만 칸 바꾸기로 돌리고, 옮긴 경로는 그대로 쌓은 뒤
-    거둔다."""
+def test_a_screen_move_stacks_one_history_entry_and_back_leaves_a_link_target() -> None:
+    """화면 이동 한 번은 브라우저 기록 한 칸이다. 서버가 주소 인자를 바꾸면 Streamlit 프런트가 지금
+    경로로 한 칸 쌓는다 — `st.switch_page` 는 떠나는 화면 주소로 먼저 쌓아 뒤로가기 한 번이
+    제자리였고(E2E 결함, 명세 B3 「뒤로가기 → 이전 화면」), 링크 인자를 받아 지우는 화면(공정 Capa
+    상세 `?process=` 등)은 인자 달린 칸 뒤에 또 쌓아 뒤로가기가 그 화면에 갇혔다(E2E 결함). 같은
+    경로의 쌓기는 늘 그 칸 바꾸기로 돌린다."""
     out = _node(_HISTORY_RUNNER)
 
-    assert out["plain"] == 2
-    assert out["afterSame"] == [2, "http://app.test/calculation_result?theme=dark"]
-    assert out["afterMove"] == [3, "/load_conversion", False]
-    assert out["afterDisarm"] == 4
-    assert out["expired"] == [5, False]
-    assert out["elsewhere"] == [2, False]
+    assert out["sameScreen"] == [1, "/calculation_result?a=1"]
+    assert out["tabMove"] == [2, "/load_conversion?theme=dark"]
+    assert out["linkArrival"] == [3, "/process_capa_detail?theme=dark"]
+    assert out["back"] == "/load_conversion?theme=dark"
 
 
 _QUEUE_RUNNER = """
@@ -274,16 +265,16 @@ def test_taps_while_a_tab_move_is_in_flight_wait_and_only_the_last_is_sent() -> 
     assert out["closed"] is None
 
 
-def test_moving_taps_arm_both_guards_before_sending() -> None:
-    """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 기록 한
-    칸·누름 기다림을 건다 — 보낸 뒤에 걸면 빠른 서버의 첫 쌓기를 놓친다. 지킴이는 문서에 하나다."""
+def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_document() -> None:
+    """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 누름
+    기다림을 건다. 기록 지킴이는 걸고 풀지 않고 늘 걸려 있다 — 문서에 하나다."""
     send_select = JS.index("S.send('select'")
     assert JS.rindex("moving(item.dataset.id)", 0, send_select) > JS.rindex(
         "busy(item)", 0, send_select
     )
     send_close = JS.index("S.send('close'")
     assert 0 < JS.rindex("if (leaving) moving(null)", 0, send_close)
-    assert "historyGuard.arm(BUSY_MS)" in JS
-    assert "window.__capaTabsHistory" in JS
+    assert "historyGuard" not in JS
+    assert "if (!window.__capaHistoryGuard) window.__capaHistoryGuard = guardHistory(" in JS
     # 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다(1.63 프런트 속성).
     assert "data-test-script-state" in JS and "'running'" in JS

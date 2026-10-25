@@ -877,9 +877,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     쌓아 뒤로가기가 그 화면에 갇히고, 넘기던 칸이 실패한 클릭인데도 남는다. 새 이동 도우미도 같은 줄을 둔다. HOME 칸은
     그림 선택 **콜백**(`queue_home_cell`)에서 거른다 — 본문에서 거르면 그림 선택 값이 걷혀 브라우저가 되보낸 선택이 다음
     조작에 다시 들어온다(9장 「팝업과 콜백」 끝). `open_process_detail` 의 거름은 마지막 안전망이다.
-  - `_switch`(`st.switch_page`)는 주소 인자를 다시 적느라 프런트가 떠나는 화면 경로로 기록을 한 칸 먼저 쌓는다. 탭 줄로
-    옮길 때는 탭 줄 JS 가 그 한 칸을 칸 바꾸기로 돌려(`page_tabs.js` 의 `<tabs-history>`) 뒤로가기 한 번이 직전 화면이다.
-    HOME 칸·다음 화면 단추처럼 다른 길의 `st.switch_page` 는 그대로 두 칸이다.
+  - `_switch`(`st.switch_page`)는 주소 인자를 다시 적느라 프런트가 떠나는 화면 경로로 기록을 한 칸 먼저 쌓는다. 탭 줄 JS 가
+    문서의 `history.pushState` 를 감싸 같은 경로의 쌓기를 늘 칸 바꾸기로 돌린다(`page_tabs.js` 의 `<tabs-history>`) — 탭
+    줄·HOME 칸·다음 화면 단추 어느 길의 `st.switch_page` 든, 링크 인자를 받아 지우는 화면(`st.query_params.from_dict`·`del`)이든
+    이동 한 번이 기록 한 칸이고 뒤로가기 한 번이 직전 화면이다. 같은 화면의 주소 인자 바꾸기(Space `?floor=` 등)도 칸을
+    더하지 않는다 — 뒤로가기로 층을 거슬러 가지 않는다(세션이 먼저라 어차피 되돌지 못하고 갇혔다).
   - 「이미 연 탭으로 들어옴」 표지는 화면이 바뀐 회차에 정하고 **같은 화면에 머무는 동안 그대로 둔다** — 다시 들어온 첫
     회차가 끊기면 실행 표지가 앞 화면 그대로라, 다음 회차에 표지를 지우면 새 방문으로 보았다(2026-10-25 리뷰).
 - `src/capa_simulation/scenario_state.py` — 세션별 활성 시나리오와 `revision`·`content_token` 을 관리한다(5장 3). 편집
@@ -1448,11 +1450,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       ① 이고 표 고르기(`equipment_data_workspace.MASTER_TABLE_KEY`)가 그 표일 때만 센다. 고르기를 바꾼 회차에는 편집표 위젯
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
       편집표를 숨기는 고르기를 새로 두면 판정에 그 고르기를 같이 넣는다.
-  - 화면을 옮기는 누름(다른 탭 고르기·지금 탭 ×)은 트리거를 보내기 **전에** 두 지킴이를 건다(`page_tabs.js` 의 순수 구획
-    `<tabs-history>`·`<tabs-queue>`, `tests/test_page_tabs_assets.py` 가 node 로 돌린다). (1) 기록 한 칸 — `st.switch_page` 가
-    떠나는 화면 경로로 먼저 쌓는 한 칸을 칸 바꾸기(`replaceState`)로 돌린다. 문서의 `history.pushState` 를 한 번 감싸고
-    (`window.__capaTabsHistory`), 걸어 둔 동안 떠나는 경로와 같은 경로의 쌓기만 돌리며 다른 경로(옮긴 화면)를 쌓으면 거둔다.
-    (2) 한 번에 하나 — 옮긴 화면의 탭 줄(지금 탭이 바뀐 data)이 오고 그 회차가 다 돌기(Streamlit 뿌리 `stApp` 의
+  - 기록 한 칸(`page_tabs.js` 의 순수 구획 `<tabs-history>`, `tests/test_page_tabs_assets.py` 가 node 로 돌린다) — 문서의
+    `history.pushState` 를 한 번 감싸(`window.__capaHistoryGuard`) 지금 경로와 같은 경로의 쌓기를 **늘** 칸
+    바꾸기(`replaceState`)로 돌린다. Streamlit 1.63 프런트는 서버의 주소 인자 바꾸기(`page_info_changed`)마다 지금 경로로
+    한 칸 쌓는다 — `st.switch_page` 가 떠나는 화면 경로로 먼저 쌓는 한 칸, 링크 인자를 받아 지우는 화면이 인자 달린 칸
+    뒤에 또 쌓는 칸(뒤로가기로 인자 달린 칸에 닿으면 다시 지우며 또 쌓아 그 화면을 떠나지 못했다). 걸고 풀지 않는다.
+  - 화면을 옮기는 누름(다른 탭 고르기·지금 탭 ×)은 트리거를 보내기 **전에** 누름 기다림을 건다(순수 구획 `<tabs-queue>`).
+    한 번에 하나 — 옮긴 화면의 탭 줄(지금 탭이 바뀐 data)이 오고 그 회차가 다 돌기(Streamlit 뿌리 `stApp` 의
     `data-test-script-state`) 전에 누른 탭은 보내지 않고 마지막 하나만 기다렸다 보낸다(`BUSY_MS` 가 지나면 그때 보낸다).
     옮기기 전에 보낸 누름은 프런트가 아직 떠나는 화면에 있다고 믿고 그 화면 주소로 회차를 청했고, 옮긴 화면이 도는 동안
     보낸 누름은 그 화면 부품들의 회차 요청과 서버에서 합쳐지며 트리거 값이 떨어졌다(1.63 `_coalesce_widget_states` 는
