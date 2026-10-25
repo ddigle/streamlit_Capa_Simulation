@@ -1,12 +1,20 @@
-# Purpose: 탭 줄 자산의 트리거 이름·접근성 표지·탭 역할 금지·색 변수 계약을 글자로 검사한다.
+# Purpose: 탭 줄 자산의 트리거·접근성·색 계약을 글자로, 기록·누름 기다림 구획을 node 로 검사한다.
 
-"""AppTest 는 탭 줄 JS 를 돌리지 못한다. 자산 글자로 드러나는 약속을 여기서 붙잡고, 동작은
-브라우저로 본다."""
+"""AppTest 는 탭 줄 JS 를 돌리지 못한다. 자산 글자로 드러나는 약속을 여기서 붙잡고, DOM 을 모르는
+순수 구획(`// <tabs-…>`)은 node(없으면 bun)로 떼어 돌린다 — 없으면 건너뛰고 CI 에서는 실패한다.
+나머지 동작은 브라우저로 본다."""
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from capa_simulation.components import page_tabs
 
@@ -107,9 +115,175 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
     assert "document.addEventListener('click', S.onLink, true)" in JS
     assert "document.removeEventListener('click', S.onLink, true)" in JS
     assert "event.preventDefault()" in JS and "event.stopPropagation()" in JS
-    assert "pushState(" not in JS and "replaceState(" not in JS
+    # 기록을 만지는 것은 탭 이동의 기록 한 칸 구획(`// <tabs-history>`)뿐이다.
+    outside = re.sub(r"// <tabs-history>\n.*?\n// </tabs-history>", "", JS, flags=re.S)
+    assert "pushState(" not in outside and "replaceState(" not in outside
     # 같은 알림 글을 서버(되돌림 안전망·파이썬 도우미)와 JS 가 함께 쓴다.
     from capa_simulation.page_tabs_state import LIMIT_NOTICE, limit_notice
 
     assert page_tabs.TEXT["limit"] == LIMIT_NOTICE
     assert limit_notice("생산 계획") == LIMIT_NOTICE.format(max=10, label="생산 계획")
+
+
+# ---------------------------------------------------------------- JS 순수 구획(node)
+
+_SECTIONS = ("tabs-history", "tabs-queue")
+
+
+def _sections() -> str:
+    parts = []
+    for name in _SECTIONS:
+        match = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
+        assert match, f"page_tabs.js 에 // <{name}> 구획이 없습니다"
+        parts.append(match.group("body"))
+    return "\n".join(parts)
+
+
+def _node(runner: str) -> Any:
+    runtime = shutil.which("node") or shutil.which("bun")
+    if runtime is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("CI 러너에 node 가 없다 — 탭 줄 JS 구획 시험을 건너뛸 수 없다")
+        pytest.skip("node·bun 이 없다 — CI 에서 돈다")
+    completed = subprocess.run(
+        [runtime, "-e", _sections() + "\n" + runner],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
+_HISTORY_RUNNER = """
+// 브라우저 기록 대역 — 칸 목록과 지금 칸. 프런트처럼 `history.pushState` 를 부를 때마다 찾는다.
+const entries = ['http://app.test/calculation_result']
+let index = 0
+let now = 0
+const history = {
+  pushState(state, title, url) {
+    entries.splice(index + 1)
+    entries.push(new URL(url, entries[index]).href)
+    index += 1
+  },
+  replaceState(state, title, url) {
+    entries[index] = new URL(url, entries[index]).href
+  },
+}
+const guard = guardHistory(history, () => entries[index], () => now)
+const out = {}
+const path = () => new URL(entries[index]).pathname
+// 걸지 않은 동안은 그대로 쌓는다(같은 경로라도).
+history.pushState({}, '', '/calculation_result?a=1')
+out.plain = entries.length
+// 탭 이동 — st.switch_page 의 두 번 쌓기: 지금 경로(주소 인자 다시 적기) → 옮긴 경로.
+guard.arm(1000)
+history.pushState({}, '', '/calculation_result?theme=dark')
+out.afterSame = [entries.length, entries[index]]
+history.pushState({}, '', '/load_conversion?theme=dark')
+out.afterMove = [entries.length, path(), guard.armed()]
+// 옮긴 뒤에는 같은 경로라도 다시 쌓는다(거뒀다).
+history.pushState({}, '', '/load_conversion?process=A')
+out.afterDisarm = entries.length
+// 기다림이 지나면 거둔다.
+guard.arm(1000)
+now = 1500
+history.pushState({}, '', '/load_conversion?b=2')
+out.expired = [entries.length, guard.armed()]
+// 건 뒤 다른 길로 화면이 바뀌었으면(사이드바·뒤로가기) 그 화면의 쌓기는 건드리지 않는다.
+guard.arm(1000)
+index = 0
+history.pushState({}, '', '/calculation_result?c=3')
+out.elsewhere = [entries.length, guard.armed()]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_tab_move_stacks_one_history_entry() -> None:
+    """탭으로 화면을 옮길 때 브라우저 기록은 한 칸만 쌓인다 — `st.switch_page` 는 떠나는 화면 주소로
+    한 칸 먼저 쌓아 뒤로가기 한 번이 제자리였다(E2E 결함, 명세 B3 「뒤로가기 → 이전 화면」). 걸어
+    둔 동안 떠나는 경로와 같은 경로의 쌓기만 칸 바꾸기로 돌리고, 옮긴 경로는 그대로 쌓은 뒤
+    거둔다."""
+    out = _node(_HISTORY_RUNNER)
+
+    assert out["plain"] == 2
+    assert out["afterSame"] == [2, "http://app.test/calculation_result?theme=dark"]
+    assert out["afterMove"] == [3, "/load_conversion", False]
+    assert out["afterDisarm"] == 4
+    assert out["expired"] == [5, False]
+    assert out["elsewhere"] == [2, False]
+
+
+_QUEUE_RUNNER = """
+const MS = 1000
+const ids = ['home', 'plan', 'ref', 'calc']
+const out = {}
+// 산출 결과(calc)에서 생산 계획 → 곧바로 기준 정보. 둘째 누름은 기다리고 마지막 누름만 남긴다.
+let q = createSelectQueue()
+out.first = pressSelect(q, 'plan', 'calc', 0, MS)
+sentSelect(q, 'plan', 'calc', 0)
+out.second = pressSelect(q, 'home', 'calc', 100, MS)
+out.third = pressSelect(q, 'ref', 'calc', 150, MS)
+// 아직 옮긴 화면의 data 가 오지 않았다(지금 탭 그대로) — 보내지 않는다.
+out.early = settleSelect(q, 'calc', 200, MS, ids, false)
+// 옮긴 화면의 탭 줄이 왔지만 그 회차가 아직 돈다 — 부품 요청과 합쳐져 트리거가 떨어지니 기다린다.
+out.running = settleSelect(q, 'plan', 300, MS, ids, true)
+// 그 회차가 다 돌았다 — 기다리던 마지막 누름.
+out.settled = settleSelect(q, 'plan', 400, MS, ids, false)
+out.idle = [q.flight, q.waiting, pressSelect(q, 'plan', 'plan', 500, MS)]
+// 기다리던 누름이 옮긴 화면 자신이면 할 일이 없다.
+q = createSelectQueue()
+sentSelect(q, 'plan', 'calc', 0)
+pressSelect(q, 'plan', 'calc', 50, MS)
+out.same = settleSelect(q, 'plan', 300, MS, ids, false)
+// 옮긴 화면이 끝내 오지 않거나 회차가 계속 돌면 기다림이 다 된 뒤 보낸다.
+q = createSelectQueue()
+sentSelect(q, 'plan', 'calc', 0)
+pressSelect(q, 'ref', 'calc', 50, MS)
+out.timeout = [
+  settleSelect(q, 'calc', 999, MS, ids, true),
+  settleSelect(q, 'calc', 1000, MS, ids, true),
+]
+out.late = pressSelect(q, 'ref', 'calc', 1200, MS)
+// 그 사이 닫힌 탭은 보내지 않는다. 지금 탭 닫기(옮길 이웃은 서버가 정한다)도 같은 기다림이다.
+q = createSelectQueue()
+sentSelect(q, null, 'calc', 0)
+pressSelect(q, 'ref', 'calc', 50, MS)
+out.closed = settleSelect(q, 'plan', 300, MS, ['home', 'plan'], false)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_taps_while_a_tab_move_is_in_flight_wait_and_only_the_last_is_sent() -> None:
+    """옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 오고 그 회차가 다 돈 뒤에 마지막 누름만 보낸다 —
+    0.1~0.2초 간격으로 두 탭을 누르면 둘째 누름이 떠나는 화면 주소로 회차를 청하거나, 옮긴 화면
+    부품의 회차 요청과 서버에서 합쳐지며 트리거 값을 잃어 둘 다 먹히지 않았다(E2E 결함, `_on_select`
+    「빠른 두 번 누름도 마지막 누름이 맞다」)."""
+    out = _node(_QUEUE_RUNNER)
+
+    assert (out["first"], out["second"], out["third"]) == ("send", "wait", "wait")
+    assert out["early"] is None
+    assert out["running"] is None
+    assert out["settled"] == "ref"
+    assert out["idle"] == [None, None, "none"]
+    assert out["same"] is None
+    assert out["timeout"] == [None, "ref"]
+    assert out["late"] == "send"
+    assert out["closed"] is None
+
+
+def test_moving_taps_arm_both_guards_before_sending() -> None:
+    """다른 탭 고르기와 지금 탭 닫기(서버가 이웃으로 옮긴다)는 트리거를 보내기 **전에** 기록 한
+    칸·누름 기다림을 건다 — 보낸 뒤에 걸면 빠른 서버의 첫 쌓기를 놓친다. 지킴이는 문서에 하나다."""
+    send_select = JS.index("S.send('select'")
+    assert JS.rindex("moving(item.dataset.id)", 0, send_select) > JS.rindex(
+        "busy(item)", 0, send_select
+    )
+    send_close = JS.index("S.send('close'")
+    assert 0 < JS.rindex("if (leaving) moving(null)", 0, send_close)
+    assert "historyGuard.arm(BUSY_MS)" in JS
+    assert "window.__capaTabsHistory" in JS
+    # 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다(1.63 프런트 속성).
+    assert "data-test-script-state" in JS and "'running'" in JS
