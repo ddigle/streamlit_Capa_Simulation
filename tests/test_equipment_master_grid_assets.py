@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components.app_header import PAGE_TABS_SELECTOR
 from capa_simulation.services import equipment_grid as eg
 
 ASSETS = emg._ASSETS
@@ -1224,3 +1225,69 @@ process.stdout.write(JSON.stringify(results))
         "notOpenedHere": None,
         "busy": True,
     }
+
+
+def test_the_downtime_goto_brings_the_two_columns_head_back_into_view() -> None:
+    """긴 호기 상세 맨 아래의 「비가동 일정 표에서 고치기」 를 누르면 화면이 내려간 채라 왼쪽에 선
+    비가동 일정 표가 위로 나가 빈 칸처럼 보였다(2026-10-25 E2E #67). 누를 때 두 칸 줄(Streamlit
+    가로 줄)의 머리가 가린 높이 위로 나가 있으면 머리 띠·화면 탭 줄 아래(+8px)로 올린다 — 보이면
+    그대로 둔다. 화면 탭 줄이 없으면 머리 띠 높이(72px)를 쓴다."""
+    runner = (
+        _FAKE_DOM
+        + """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const row = {
+  top: 0, style: {}, scrolled: null,
+  getBoundingClientRect() { return { top: this.top } },
+  scrollIntoView(options) { this.scrolled = options },
+}
+host.closest = (selector) => (selector === '[data-testid="stHorizontalBlock"]' ? row : null)
+const triggers = []
+let strip = null
+document.querySelector = (selector) => (selector === input.strip ? strip : null)
+globalThis.__mount({
+  data: input.data, parentElement, setStateValue() {},
+  setTriggerValue(name, value) { triggers.push([name, value]) },
+})
+const link = host.querySelectorAll('button').find(
+  (node) => node.textContent === '비가동 일정 표에서 고치기')
+const results = {}
+row.top = 300
+link.click()
+results.visible = { scrolled: row.scrolled, trigger: triggers[0] }
+row.top = -900
+link.click()
+results.hidden = {
+  scrolled: row.scrolled, margin: row.style.scrollMarginTop, sent: triggers.length,
+}
+strip = { getBoundingClientRect() { return { bottom: 94 } } }
+row.scrolled = null
+row.top = 90
+link.click()
+results.underStrip = { scrolled: row.scrolled, margin: row.style.scrollMarginTop }
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    data = {
+        "mode": "side",
+        "panel": "detail",
+        "base": "b1",
+        "columns": [{"name": "설비명", "kind": "name"}],
+        "groups": [],
+        "unit": {"id": "s:DEMO-01", "values": ["DEMO-01"], "downtime": [], "deletable": True},
+    }
+
+    result = _node({"data": data, "strip": PAGE_TABS_SELECTOR}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "visible": {
+            "scrolled": None,
+            "trigger": ["goto", {"table": "비가동 일정", "unit": "DEMO-01"}],
+        },
+        "hidden": {"scrolled": {"block": "start"}, "margin": "80px", "sent": 2},
+        "underStrip": {"scrolled": {"block": "start"}, "margin": "102px"},
+    }
+    assert f"const PAGE_TABS_STRIP = '{PAGE_TABS_SELECTOR}'" in JS

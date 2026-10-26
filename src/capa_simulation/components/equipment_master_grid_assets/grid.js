@@ -361,6 +361,8 @@ const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
 const COLSET_KEY = 'capa.equipmentGrid.colSet'
+// 머리 띠 밑에 붙는 화면 탭 줄(`app_header.PAGE_TABS_SELECTOR` — 시험이 같은지 본다).
+const PAGE_TABS_STRIP = '.st-key-page_tabs_strip'
 // 빈 날짜 칸 자리표시 — 꼴만 적는다. 실제 날짜(「2026-11-09」)를 적으면 어두운 테마에서 값처럼 읽혔다(E2E).
 const DATE_PLACEHOLDER = 'YYYY-MM-DD'
 // 저장 갈래 꼬리표(칸 머리·상세 묶음·값 넣기 칸·변경 줄). 공통·상태 칸은 꼬리표 없이 「공통」 이다.
@@ -1927,6 +1929,29 @@ function revealToast(toast) {
   })
 }
 
+// 화면 위를 가리는 높이 — 머리 띠 밑에 붙는 화면 탭 줄(sticky, `app_header.PAGE_TABS_SELECTOR`)이 있으면 그 아래 끝, 없으면
+// 머리 띠(`TOAST_REVEAL_MARGIN`). 그 아래 조금(8px) 띄운다.
+function coverHeight() {
+  const strip = typeof document !== 'undefined' && document.querySelector ? document.querySelector(PAGE_TABS_STRIP) : null
+  const bottom = strip && strip.getBoundingClientRect ? Number(strip.getBoundingClientRect().bottom) || 0 : 0
+  return Math.round(Math.max(TOAST_REVEAL_MARGIN, bottom)) + 8
+}
+
+// 「비가동 일정 표에서 고치기」 — 그 표는 왼쪽 칸 맨 위에 선다. 긴 호기 상세 맨 아래에서 누르면 화면이 내려간 채라 왼쪽이
+// 빈 칸처럼 보였다(E2E). 누를 때 두 칸 줄(그림자 DOM 밖 Streamlit 가로 줄 — 못 찾으면 이 칸)의 머리가 가린 높이 위로 나가
+// 있으면 그 머리를 머리 띠·화면 탭 줄 아래로 올린다. 다시 그린 회차에도 두 칸 줄의 자리는 같다(위 줄·알림은 그대로).
+function revealColumnsTop(host) {
+  if (!host) return
+  const root = host.getRootNode ? host.getRootNode() : null
+  const outer = root && root.host ? root.host : host
+  const row = (outer.closest && outer.closest('[data-testid="stHorizontalBlock"]')) || host
+  if (!row.getBoundingClientRect || !row.scrollIntoView) return
+  const cover = coverHeight()
+  if (!needsReveal(row.getBoundingClientRect().top, cover)) return
+  row.style.scrollMarginTop = cover + 'px'
+  row.scrollIntoView({ block: 'start' })
+}
+
 function drawDetail(S, root, data) {
   const unit = data.unit
   if (!unit) {
@@ -1993,7 +2018,10 @@ function drawDetail(S, root, data) {
     downtime.appendChild(table)
   }
   if (unit.tag !== 'deleted') {
-    downtime.appendChild(button('emg-link', '비가동 일정 표에서 고치기', () => S.setTrigger('goto', { table: '비가동 일정', unit: values[nameCol] || '' })))
+    downtime.appendChild(button('emg-link', '비가동 일정 표에서 고치기', () => {
+      revealColumnsTop(S.host)
+      S.setTrigger('goto', { table: '비가동 일정', unit: values[nameCol] || '' })
+    }))
   }
   root.appendChild(downtime)
   const actions = el('div', 'emg-side-actions')
