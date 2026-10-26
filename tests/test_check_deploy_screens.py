@@ -1629,6 +1629,11 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
         ("src/capa_simulation/components/space_floor_list.py", '_USE_COLUMN = "사용"'),
         ("src/capa_simulation/components/space_floor_list.py", '_REASON_COLUMN = "사유"'),
         ("src/capa_simulation/components/space_floor_list.py", '_UNITS_COLUMN = "호기"'),
+        # 사유 칸이 직접 입력 칸이라야 `사유 직접 입력` 이다(Glide 글 편집기 — textarea).
+        (
+            "src/capa_simulation/components/space_floor_list.py",
+            "_REASON_COLUMN: st.column_config.TextColumn(",
+        ),
         ("src/capa_simulation/components/space_floor_list.py", '"비활성 층 {len(inactive)}개"'),
         ("src/capa_simulation/components/space_layout_editor_assets/editor.js", "'is-inactive'"),
     ],
@@ -3097,14 +3102,19 @@ def test_the_gap_sheet_item_restores_the_switches_it_changed_even_when_reading_f
     ("args", "expected"),
     [
         (
-            (30, 30, 0, 0, True),
+            (30, 30, 0, 0, True, True),
             "사용 칸 있음 · 목록 30줄(사용 30) · 비활성 층 0개 · 회색 블록 0개 · "
-            "편집 칸 사용·사유·호기 있음",
+            "편집 칸 사용·사유·호기 있음 · 사유 직접 입력",
         ),
         (
-            (23, 23, 7, 7, True),
+            (23, 23, 7, 7, True, False),
             "사용 칸 있음 · 목록 23줄(사용 23) · 비활성 층 7개 · 회색 블록 7개 · "
-            "편집 칸 사용·사유·호기 있음",
+            "편집 칸 사용·사유·호기 있음 · 사유 직접 입력 아님",
+        ),
+        (
+            (30, 30, 0, 0, True, None),
+            "사용 칸 있음 · 목록 30줄(사용 30) · 비활성 층 0개 · 회색 블록 0개 · "
+            "편집 칸 사용·사유·호기 있음 · 사유 칸 열지 못함",
         ),
         (
             (29, 29, 1, 0, False),
@@ -3119,7 +3129,7 @@ def test_the_gap_sheet_item_restores_the_switches_it_changed_even_when_reading_f
     ],
 )
 def test_the_space_floor_state_summary_carries_counts_only(
-    args: tuple[int | None, int, int | None, int, bool | None], expected: str
+    args: tuple[int | None, int, int | None, int, bool | None, bool | None], expected: str
 ) -> None:
     assert screens.summarize_space_floor_state(*args) == expected
 
