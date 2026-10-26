@@ -499,6 +499,22 @@ def test_a_save_with_an_old_error_is_kept_and_warned(sidebar_app: AppTest) -> No
     assert any("공식버전으로 지정할 수 없습니다" in warning.value for warning in app.warning)
 
 
+@pytest.mark.parametrize("allowed", [False, True])
+def test_the_gate_refusal_and_warning_keep_tildes_in_example_keys(
+    sidebar_app: AppTest, allowed: bool
+) -> None:
+    """계산 검사 거절·경고 글은 알림 상자(마크다운)다 — 오류 예시 키 「P~Q~R」 의 물결표 둘이
+    지움선(「P<del>Q</del>R」)이 되지 않는다."""
+    message = "오류: RQ_UPEH 에 없는 공정이 있습니다: 1건, 예시 ['P~Q~R']"
+    app = sidebar_app
+    app.session_state["test_save_verdict"] = GateVerdict(allowed, message)
+    app = _save(_open_save(app.run()), "물결표 저장안")
+
+    assert not app.exception
+    shown = app.warning if allowed else app.error
+    assert message.replace("~", "\\~") in [item.value for item in shown]
+
+
 def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
     """적용하지 않은 편집은 시나리오에 없다 — 저장에 실리지 않고 저장·불러오기에 사라진다.
 

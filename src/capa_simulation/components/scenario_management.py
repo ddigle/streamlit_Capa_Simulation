@@ -30,7 +30,7 @@ import streamlit as st
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor
 from capa_simulation.components.intro_summary import forget_intro_summary_check
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.pick_edit_table import (
     TableColumns,
     TableDraft,
@@ -244,7 +244,9 @@ def _render_store_status(
         notice.success(flash)
     warning = st.session_state.pop(FLASH_WARNING_KEY, None)
     if isinstance(warning, str):
-        notice.warning(warning, icon=":material/warning:")
+        # 계산 검사 경고(`capacity_gate`)는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 알림 상자
+        # (마크다운)에서 물결표가 지움선이 되지 않게 막는다.
+        notice.warning(markdown_safe_tildes(warning), icon=":material/warning:")
     official = repository.latest_official_release()
     with st.container(border=True):
         st.markdown("#### :material/database: 저장소 상태")
@@ -1207,7 +1209,7 @@ def _render_official(
         with st.spinner("공식버전으로 지정할 수 있는지 Capa 계산을 확인하는 중입니다..."):
             verdict = official_publish_verdict(database_path, revision_id)
         if not verdict.allowed:
-            st.error(verdict.message)
+            st.error(markdown_safe_tildes(verdict.message))
             return
         release = repository.publish_official_revision(
             summary.scenario_id,
@@ -1546,7 +1548,7 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 get_effective_reference_version(), active_scenario, reference_tables
             )
             if not verdict.allowed:
-                st.error(verdict.message)
+                st.error(markdown_safe_tildes(verdict.message))
                 return
             revision_source = revision_tables_for_save(active_scenario, reference_tables)
             preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)

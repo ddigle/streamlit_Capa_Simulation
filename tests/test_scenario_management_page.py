@@ -414,6 +414,50 @@ def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> No
     assert _clone_inputs(app)["시나리오명"] == "깨진 편집 복제"
 
 
+def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계산 검사 거절·경고 글은 알림 상자(마크다운)다 — 오류 예시 키(편집한 칸 값)의 물결표 둘이
+    지움선(「P<del>Q</del>R」)이 되지 않는다. 복제 거절·복제 뒤 경고·공식 지정 거절 세 자리."""
+    import capa_simulation.components.scenario_management as scenario_management
+    from capa_simulation.components.capacity_gate import GateVerdict
+
+    message = "오류: RQ_UPEH 에 없는 공정이 있습니다: 1건, 예시 ['P~Q~R']"
+    shown = message.replace("~", "\\~")
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+
+    monkeypatch.setattr(
+        scenario_management, "revision_save_verdict", lambda *args: GateVerdict(False, message)
+    )
+    app = AppTest.from_string(script, default_timeout=120).run()
+    app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
+    _fill_clone(app, "물결표 거절 복제", "CLONE-TILDE-REFUSED")
+    assert [item.value for item in app.error] == [shown]
+
+    monkeypatch.setattr(
+        scenario_management, "revision_save_verdict", lambda *args: GateVerdict(True, message)
+    )
+    _fill_clone(app, "물결표 경고 복제", "CLONE-TILDE-WARNED")
+    assert shown in [item.value for item in app.warning]
+
+    monkeypatch.setattr(
+        scenario_management, "official_publish_verdict", lambda *args: GateVerdict(False, message)
+    )
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, release.scenario_id, release.revision_id)
+    _official_button(app).click()
+    app.run()
+    assert not app.exception
+    assert [item.value for item in app.error] == [shown]
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == release.release_no
+
+
 def _register_virtual(app: AppTest, product: str) -> VirtualProductRecord:
     """등록 팝업이 하는 일을 세션에 그대로 한다 — 복제 행을 활성 표에 넣고 세션 목록에 더한다."""
     active = dict(app.session_state[ACTIVE_SCENARIO_KEY])
