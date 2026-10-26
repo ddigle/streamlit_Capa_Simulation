@@ -183,13 +183,21 @@ ARCHIVE_CONFIRM_KEY = "scenario_list_archive_confirm"
 # (`official_confirm_key`).
 OFFICIAL_CONFIRM_KEY = "scenario_list_official_virtual_confirm"
 ARCHIVED_SELECT_KEY = "scenario_list_archived_id"
-# 보관함 「되돌리기」 의 출발점 대조 저장 이름(`write_guard.save_once` — 출발점은 그 보관본 id).
-# 겹쳐 온 둘째 누름은 저장소에 다시 가지 않고 첫 결과로 뒷정리·알림을 잇는다.
+# 보관함 「되돌리기」·「영구 삭제 실행」 의 출발점 대조 저장 이름(`write_guard.save_once` — 출발점은
+# 그 보관본 id). 겹쳐 온 둘째 누름은 저장소에 다시 가지 않고 첫 결과로 뒷정리·알림을 잇는다.
 ARCHIVED_RESTORE_SAVE_NAME = "scenario_archived_restore"
+ARCHIVED_DELETE_SAVE_NAME = "scenario_archived_delete"
+# 카드 「보관 실행」 의 같은 저장 이름(출발점은 그 시나리오 id).
+ARCHIVE_SAVE_NAME = "scenario_archive"
 # 고른 보관본이 그 사이 보관함에서 빠진 회차의 누름에 내는 알림 — 아무것도 쓰지 않는다.
 ARCHIVED_GONE_MESSAGE = (
     "고른 보관본이 그 사이 보관함에서 빠졌습니다(목록으로 되돌렸거나 영구 삭제했습니다) — 아무것도 "
     "바꾸지 않았습니다. 지금 고른 보관본을 확인한 뒤 다시 누르세요."
+)
+# 고른 시나리오가 그 사이 목록에서 빠진 회차의 「보관 실행」 에 내는 알림 — 아무것도 쓰지 않는다.
+ARCHIVE_GONE_MESSAGE = (
+    "고른 시나리오가 그 사이 목록에서 빠졌습니다(보관했거나 영구 삭제했습니다) — 아무것도 바꾸지 "
+    "않았습니다."
 )
 # 접힘 칸의 key. 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다(`_render_archived_scenarios`).
 ARCHIVED_EXPANDER_KEY = "scenario_list_archived_expander"
@@ -1474,11 +1482,28 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
         width="stretch",
     ):
         return
+    message = (
+        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
+        "보관했습니다."
+    )
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    notices = notice_marks()
     try:
-        repository.archive_scenario(summary.scenario_id)
+        # 보관함 「되돌리기」·「영구 삭제 실행」 과 같다 — 첫 쓰기 전 목록을 그린 겹친 둘째 누름은
+        # 저장소에 다시 가지 않는다(가면 이미 보관한 시나리오라 날 KeyError 가 선다).
+        save_once(
+            ARCHIVE_SAVE_NAME,
+            summary.scenario_id,
+            lambda: repository.archive_scenario(summary.scenario_id),
+            wrote=lambda _: True,
+        )
+    except KeyError:
+        # 그 사이 남이 먼저 보관했거나 지웠다(저장소가 활성 시나리오를 찾지 못했다).
+        _refuse_gone_press(ARCHIVE_GONE_MESSAGE)
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    note_notice(notices, FLASH_KEY, message)
     clear_scenario_snapshot_cache()
     forget_derived_sources()
     # 저장소가 이 시나리오를 가리키던 공용 비교 대상·주요 Case 를 비웠다. 캐시는 경로 키라 따로
@@ -1491,11 +1516,7 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    queue_flash(
-        FLASH_KEY,
-        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
-        "보관했습니다.",
-    )
+    queue_flash(FLASH_KEY, message)
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
         st.session_state.pop(key, None)
@@ -1557,9 +1578,9 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
 def _refuse_gone_press(message: str = ARCHIVED_GONE_MESSAGE) -> NoReturn:
     """고른 시나리오가 그 사이 목록·보관함에서 빠진 회차의 누름 — 쓰지 않고 알린 뒤 다시 돈다.
 
-    이 세션이 방금(`TRAILING_PRESS_SECONDS` 안) 그 단추로 쓴 것이면 같은 단추의 빠른 둘째 누름이라
-    그 성공 알림을 다시 내고, 아니면 남이 먼저 처리한 것이라 그 사실(`message`)을 알린다. 다시 도는
-    회차가 지금 목록·보관함을 그린다.
+    이 세션이 방금(`TRAILING_PRESS_SECONDS` 안) 보관·되돌리기·지우기를 한 것이면 같은 단추의 빠른
+    둘째 누름이라 그 성공 알림을 다시 내고, 아니면 남이 먼저 처리한 것이라 그 사실(`message`)을
+    알린다. 다시 도는 회차가 지금 목록·보관함을 그린다.
     """
     held = held_flash(FLASH_KEY)
     if held is not None:
@@ -1633,11 +1654,31 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
         width="stretch",
     ):
         return
+    message = (
+        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
+        "영구 삭제했습니다."
+    )
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    notices = notice_marks()
     try:
-        repository.delete_scenario(summary.scenario_id)
+        # 「영구 삭제 실행」 을 빠르게 두 번 누르면 둘째 회차가 첫 삭제 전 목록(지울 보관본이 아직
+        # 있다)을 그리고 저장소에 다시 가 날 KeyError(「'시나리오를 찾을 수 없습니다: …'」)를
+        # 세웠고, 그 회차는 지운 보관본을 보관함에 그대로 보였다(2026-10-27 E2E). 같은 보관본의 겹쳐
+        # 온 둘째 누름은 저장소에 가지 않고 첫 삭제의 뒷정리·알림을 잇는다.
+        save_once(
+            ARCHIVED_DELETE_SAVE_NAME,
+            summary.scenario_id,
+            lambda: repository.delete_scenario(summary.scenario_id),
+            wrote=lambda _: True,
+        )
+    except KeyError:
+        # 그 사이 남이 먼저 지웠다(저장소가 시나리오를 찾지 못했다).
+        _refuse_gone_press()
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    # 첫 회차가 쓴 뒤 끊겨 알림을 담지 못해도 그 창 안의 회차가 다시 그린다(`flash.render_flash`).
+    note_notice(notices, FLASH_KEY, message)
     clear_scenario_snapshot_cache()
     forget_derived_sources()
     clear_global_comparison_scenario_cache()
@@ -1648,11 +1689,7 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    queue_flash(
-        FLASH_KEY,
-        f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
-        "영구 삭제했습니다.",
-    )
+    queue_flash(FLASH_KEY, message)
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY):
         st.session_state.pop(key, None)

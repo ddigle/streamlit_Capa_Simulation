@@ -1,4 +1,4 @@
-# Purpose: 보관함 「되돌리기」 의 빠른 두 번 누름과 남이 먼저 되돌린 보관본의 누름을 본다.
+# Purpose: 보관·되돌리기·영구 삭제의 빠른 두 번 누름과 남이 먼저 처리한 시나리오의 누름을 본다.
 
 """시나리오 관리 › 목록 관리 › 「보관된 시나리오」(2026-10-27 E2E r6 static).
 
@@ -6,7 +6,10 @@
   보관본으로 바꾼 채(`prune_choice`) 같은 key 의 단추 누름을 받아 고르지 않은 보관본까지 되돌렸다.
   남이 먼저 되돌린 보관본에서 누른 것도 같았다. 브라우저는 고른 글자를 들고 다니므로 `BrowserChoice`
   로 그 글자를 그대로 보낸다.
-- 겹쳐 온 둘째 회차(첫 쓰기 전 목록)는 그 회차의 목록 읽기를 쓰기 전 목록으로 돌려 만든다.
+- 「영구 삭제 실행」 을 빠르게 두 번 누르면 둘째 회차가 첫 삭제 전 목록을 그리고 저장소에 다시 가 날
+  KeyError(「'시나리오를 찾을 수 없습니다: …'」)를 세웠고, 첫 회차가 쓴 뒤 끊기면 성공 알림이 하나도
+  남지 않았다. 겹쳐 온 둘째 회차(첫 쓰기 전 목록)는 그 회차의 목록 읽기를 쓰기 전 목록으로 돌려
+  만든다. 카드 「보관 실행」 도 같은 꼴이다.
 """
 
 from __future__ import annotations
@@ -16,17 +19,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
 from test_scenario_management_page import PAGE_PATH, _clone_official
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.pick_edit_table import TableDraft, draft_session_key
 from capa_simulation.components.scenario_management import (
+    ACTION_KEY,
+    ARCHIVE_CONFIRM_KEY,
     ARCHIVED_GONE_MESSAGE,
     ARCHIVED_SELECT_KEY,
     DELETE_BUTTON_KEY,
     DELETE_CONFIRM_KEY,
+    LIST_EDITOR_KEY,
 )
 from capa_simulation.persistence.models import ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -170,7 +178,7 @@ def _stale_archive_reads(
     monkeypatch.setattr(DuckDBScenarioRepository, "list_scenarios", listing)
 
 
-@pytest.mark.parametrize("action", ["restore"])
+@pytest.mark.parametrize("action", ["restore", "delete"])
 def test_an_overlapping_second_press_drawn_before_the_first_write_reports_the_first(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str
 ) -> None:
@@ -204,3 +212,88 @@ def test_an_overlapping_second_press_drawn_before_the_first_write_reports_the_fi
         assert sorted(statuses.values()) == ["ARCHIVED", "ARCHIVED"]
     else:
         assert [name for name, status in statuses.items() if status == "ACTIVE"] == [target]
+
+
+def test_a_delete_cut_right_after_writing_still_leaves_its_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """둘째 누름이 첫 회차를 삭제 직후에 끊으면 그 회차는 알림을 담지 못한다. 둘째 회차는 지운
+    보관본이 빠진 목록이라 아무것도 하지 않는데, 옛 코드는 성공 알림이 하나도 남지 않았다 — 쓰기
+    직후 적어 둔 알림 표지로 그 회차가 성공을 다시 그린다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    script, repository = _archives(tmp_path)
+    app, browser, target = _picked(script)
+    original = DuckDBScenarioRepository.delete_scenario
+
+    def cut(self: DuckDBScenarioRepository, scenario_id: str) -> None:
+        original(self, scenario_id)
+        context = get_script_run_ctx()
+        assert context is not None and context.script_requests is not None
+        context.script_requests.request_stop()
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "delete_scenario", cut)
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value(target)
+    _ok(browser.run())
+    app.button(key=DELETE_BUTTON_KEY).click()
+    pressed = browser._states()
+    browser.run()
+
+    app._run(widget_state=pressed)
+    assert not app.exception, [item.message for item in app.exception]
+    assert target not in _statuses(repository)
+    assert any(target in text and "영구 삭제했습니다" in text for text in _texts(app.success))
+
+
+def test_an_overlapping_second_archive_press_reports_the_first_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """카드 「보관 실행」 도 같다 — 둘째 누름이 첫 회차를 보관 직후에 끊고 첫 보관 전 목록(고른
+    시나리오가 아직 활성)을 그리면 옛 코드는 저장소에 다시 가 날 KeyError(「'활성 시나리오를 찾을 수
+    없습니다: …'」)를 세웠다. 같은 시나리오의 둘째 누름은 첫 보관의 뒷정리·성공 알림을 잇는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    _ok(AppTest.from_string(script, default_timeout=120).run())
+    repository = DuckDBScenarioRepository(database_path)
+    target = _clone_official(database_path, "보관할 시나리오", "ARCHIVE-CARD").scenario
+    before = repository.list_scenarios()
+
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state[draft_session_key(LIST_EDITOR_KEY)] = TableDraft(picked=target.scenario_id)
+    _ok(app.run())
+    _ok(app.button(key=f"{ACTION_KEY}_archive").click().run())
+    next(widget for widget in app.checkbox if widget.key == ARCHIVE_CONFIRM_KEY).check()
+    _ok(app.run())
+
+    original = DuckDBScenarioRepository.archive_scenario
+
+    def cut(self: DuckDBScenarioRepository, scenario_id: str) -> None:
+        original(self, scenario_id)
+        context = get_script_run_ctx()
+        assert context is not None and context.script_requests is not None
+        context.script_requests.request_stop()
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "archive_scenario", cut)
+    next(button for button in app.button if button.label == "보관 실행").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert target.scenario_id not in {item.scenario_id for item in repository.list_scenarios()}
+
+    listing = DuckDBScenarioRepository.list_scenarios
+    left = {"reads": 1}
+
+    def stale(self: DuckDBScenarioRepository, *args: Any, **kwargs: Any) -> Any:
+        if left["reads"] and not kwargs.get("include_archived"):
+            left["reads"] -= 1
+            return list(before)
+        return listing(self, *args, **kwargs)
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "list_scenarios", stale)
+    app._run(widget_state=pressed)
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("찾을 수 없습니다" in text for text in _texts(app.error)), _texts(app.error)
+    assert any("보관했습니다" in text for text in _texts(app.success))
+    archived = {
+        item.scenario_id: item.status for item in repository.list_scenarios(include_archived=True)
+    }
+    assert archived[target.scenario_id] == "ARCHIVED"
