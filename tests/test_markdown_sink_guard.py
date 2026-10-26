@@ -89,8 +89,12 @@ APP_LABELS: dict[str, str] = {
 # 함수)로 막아 짓는다. 「」 안에 그대로 끼워도 되고, `literal_markdown`·`quoted` 로 다시 감싸면 막은
 # `\\~` 의 `\\` 가 다시 막혀 글자로 보인다(이 둘 안에 넣으면 `double_findings`).
 ESCAPED_BUILDERS: dict[str, str] = {
-    "equipment_value_label": "설비 시나리오 값 칸 글 「운영 일정 · r12」(equipment_scenario_status)",
-    "equipment_field_label": "사이드바 설비 시나리오 값 칸 글 — 줄인 이름(equipment_scenario_status)",
+    "equipment_value_label": (
+        "설비 시나리오 값 칸 글 「운영 일정 · r12」(equipment_scenario_status)"
+    ),
+    "equipment_field_label": (
+        "사이드바 설비 시나리오 값 칸 글 — 줄인 이름(equipment_scenario_status)"
+    ),
     "_equipment_basis_text": (
         "필요 단축 기준 캡션의 설비 쪽 — equipment_value_label 에 「공식 vN」·「가정」 꼬리"
         "(space_shortening_view)"
@@ -415,8 +419,8 @@ def test_every_plain_text_builder_still_quotes_a_name() -> None:
 
 
 def test_every_escaped_builder_still_blocks_the_name_it_builds_with() -> None:
-    """`ESCAPED_BUILDERS` 가 낡지 않는다 — 함수가 사라졌거나 더는 이름을 막지 않으면(막는 함수·목록의
-    다른 함수를 부르지 않으면) 목록에서 빼고 그 글을 그리는 자리에서 막는다."""
+    """`ESCAPED_BUILDERS` 가 낡지 않는다 — 함수가 사라졌거나 더는 이름을 막지 않으면(막는 함수·
+    목록의 다른 함수를 부르지 않으면) 목록에서 빼고 그 글을 그리는 자리에서 막는다."""
     bodies: dict[str, ast.AST] = {}
     for path in UI_MODULES:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -512,9 +516,10 @@ st.error(f"못 했습니다: {bootstrap_error_message(exc)}")
 
 
 def test_the_guard_catches_an_escaped_builder_blocked_again() -> None:
-    """이미 막은 글을 짓는 함수(`ESCAPED_BUILDERS`)는 「」 안에 그대로 끼워도 되고, `literal_markdown`·
-    `quoted` 로 다시 감싸면 잡는다 — 필요 단축 기준 캡션이 「가정\\~R5\\~X」 로 보였다(2026-10-26 E2E
-    5회차). 물결표만 막는 `markdown_safe_tildes` 는 막힌 물결표를 건드리지 않아 지나간다."""
+    """이미 막은 글을 짓는 함수(`ESCAPED_BUILDERS`)는 「」 안에 그대로 끼워도 되고,
+    `literal_markdown`·`quoted` 로 다시 감싸면 잡는다 — 필요 단축 기준 캡션이 「가정\\~R5\\~X」 로
+    보였다(2026-10-26 E2E 5회차). 물결표만 막는 `markdown_safe_tildes` 는 막힌 물결표를 건드리지
+    않아 지나간다."""
     scanner = _sample_scanner("""
 st.caption(f"설비 시나리오 「{equipment_value_label(session)}」 기준")
 st.caption(f"설비 시나리오 「{literal_markdown(_equipment_basis_text(session))}」 기준")
