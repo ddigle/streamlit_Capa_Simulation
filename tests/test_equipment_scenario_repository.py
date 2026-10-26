@@ -1291,3 +1291,29 @@ def test_scenario_names_are_required_unique_and_checked_against_what_was_seen(
         "운영 일정",
         "현장 일정",
     ]
+
+
+def test_scenario_names_that_differ_only_in_case_are_the_same_name(tmp_path: Path) -> None:
+    """설비 시나리오 이름도 호기 이름처럼 대소문자·앞뒤 공백만 다르면 같은 이름이다 — 선택 상자에
+    「가정 R3」·「가정 r3」 이 함께 서지 않게(E2E r2 eq-flows). 제 이름의 대소문자만 바꾸는 것은
+    된다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository, "가정 R3")
+
+    with pytest.raises(ValueError, match="대소문자·앞뒤 공백만 달라도 같은 이름"):
+        _clone(repository, " 가정 r3 ")
+    other = _clone(repository, "현장 일정")
+    with pytest.raises(ValueError, match="같은 이름의 설비 시나리오"):
+        repository.rename_equipment_scenario(
+            other.equipment_scenario_id, name="가정 r3", expected_name="현장 일정"
+        )
+    lowered = repository.rename_equipment_scenario(
+        setup.equipment_scenario_id, name="가정 r3", expected_name="가정 R3"
+    )
+
+    assert lowered.scenario_name == "가정 r3"
+    assert [item.scenario_name for item in repository.list_equipment_scenarios()] == [
+        "운영 일정",
+        "가정 r3",
+        "현장 일정",
+    ]

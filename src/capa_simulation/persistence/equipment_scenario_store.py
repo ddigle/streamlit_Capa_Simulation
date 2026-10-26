@@ -331,11 +331,15 @@ def paired_schedule_revision_id(
 def scenario_name_taken(
     connection: duckdb.DuckDBPyConnection, name: str, *, except_scenario_id: str | None = None
 ) -> bool:
-    """같은 이름의 설비 시나리오가 있는가(보관본까지 — 앞뒤 공백을 뗀 값의 완전 일치)."""
+    """같은 이름의 설비 시나리오가 있는가(보관본까지 — 앞뒤 공백·대소문자만 다른 이름도 같다).
+
+    호기 이름과 같은 규칙이다 — 선택 상자에 「가정 R3」·「가정 r3」 처럼 헷갈리는 두 이름이 서지
+    않게. 제 이름의 대소문자만 바꾸는 것은 `except_scenario_id` 로 받는다."""
     row = connection.execute(
         """
         SELECT 1 FROM equipment_ops.equipment_scenario
-        WHERE scenario_name = ? AND equipment_scenario_id IS DISTINCT FROM ?
+        WHERE lower(trim(scenario_name)) = lower(trim(?))
+          AND equipment_scenario_id IS DISTINCT FROM ?
         LIMIT 1
         """,
         [name, except_scenario_id],

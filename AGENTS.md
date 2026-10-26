@@ -2861,7 +2861,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     최신의 저장된 요소·이름표 차이 행 수(`latest_layout_mark_count`·`latest_layout_label_count`)도 싣는다.
   - 복제(`clone_equipment_scenario` — 출처는 그 시나리오의 **어느 일정 리비전이든**(E7 「여기서 새 시나리오」), SQL 사본이
     아니라 지금 공통과 합친 읽기 길로 읽은 일곱 칸·비가동을 새 두 표에, `origin='clone'`. 지금 공통과 합쳐지지 않는 옛 리비전은
-    `EquipmentScenarioIncompatible`. 출처 리비전의 배치 차이도 지금 공식으로 정규화해 옮긴다)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지, `expected_name` 대조 →
+    `EquipmentScenarioIncompatible`. 출처 리비전의 배치 차이도 지금 공식으로 정규화해 옮긴다)·이름(`rename_equipment_scenario` — 보관본까지 중복 금지(호기 이름처럼 대소문자·앞뒤 공백만 다른 이름도 같은
+    이름 — `scenario_name_taken`, 복제도 같다. 제 이름의 대소문자만 바꾸기는 된다), `expected_name` 대조 →
     `EquipmentScenarioNameMoved`)·발행(`publish_equipment_release` — append-only)·이어 쓰기(`acknowledge_legacy_trace` — 흔적 수
     대조 뒤 경계 행 하나)가 1단계 관리 쓰기다.
   - **E7 리비전 도구**: 리비전명(`rename_schedule_revision` — 이름표 한 칸만 UPDATE, 비우면 NULL, 비교 후 쓰기 →
