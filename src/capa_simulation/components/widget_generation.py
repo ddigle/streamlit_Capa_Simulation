@@ -50,7 +50,13 @@ from typing import Generic, Literal, TypeVar, cast
 
 import streamlit as st
 
-from capa_simulation.components.write_guard import current_generation, write_once
+from capa_simulation.components.write_guard import (
+    SeenToken,
+    current_generation,
+    remember_seen,
+    seen,
+    write_once,
+)
 
 __all__ = [
     "KeyStyle",
@@ -118,7 +124,7 @@ class SeededField:
 def seed_field(
     counter_key: str,
     base: str,
-    value: object,
+    value: SeenToken,
     *,
     suffix: str = "",
     style: KeyStyle = "__g",
@@ -130,13 +136,15 @@ def seed_field(
     = 본 값) **매 회차** `value` 를 다시 적고 본 값(`seen_key`)도 그 값으로 둔다. 닫힌 칸은
     마지막 회차가 실어 보낸 값으로만 서므로(모듈 머리말) 한 회차라도 빼면 빈 칸으로 선다. 남이
     바꾼 값으로 다시 서는 것도 이 덕이다. 고치던 칸은 그대로 두고 본 값도 그대로다 — 비교 후
-    쓰기는 그 본 값과 대조해 그 사이 남의 바꿈을 거절한다. 위젯을 그리기 **전**에 부른다.
+    쓰기는 그 본 값과 대조해 그 사이 남의 바꿈을 거절한다. 위젯을 그리기 **전**에 부른다. 본 값은
+    `write_guard` 가 적고 읽는다(`remember_seen`·`seen` — 이름에 SEEN 이 든 세션 칸은 그 모듈만
+    적는다).
     """
     key = widget_key(base, counter_key, style=style, bare_zero=bare_zero) + suffix
     seen_key = f"{key}__seen"
-    if key not in st.session_state or st.session_state.get(key) == st.session_state.get(seen_key):
+    if key not in st.session_state or st.session_state.get(key) == seen(seen_key):
         st.session_state[key] = value
-        st.session_state[seen_key] = value
+        remember_seen(seen_key, value)
     return SeededField(key=key, seen_key=seen_key)
 
 
