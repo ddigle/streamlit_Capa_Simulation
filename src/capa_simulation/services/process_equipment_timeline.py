@@ -110,6 +110,8 @@ __all__ = [
     "UNIT_EVENT_COLUMNS",
     "UNIT_MONTH_COLUMNS",
     "DynamicReadiness",
+    "NewUnitAvailability",
+    "NewUnitStart",
     "ProcessEquipmentTimeline",
     "ProductionPosition",
     "availability_bridge",
@@ -120,6 +122,7 @@ __all__ = [
     "exiting_unit_rows",
     "keep_released_units",
     "month_share",
+    "new_unit_availability",
     "new_unit_rows",
     "production_position",
     "unit_events",
@@ -717,6 +720,97 @@ def new_unit_rows(
     frame["모듈 수"] = frame["모듈 수"].astype("int64")
     frame["축 안"] = frame["축 안"].astype("bool")
     return frame
+
+
+class NewUnitStart(NamedTuple):
+    """신규 호기 하나의 기여 시작 · 환산 대수 · 반출 — 제약 시뮬레이션이 호기 단위로 붙이는 재료."""
+
+    unit: str
+    """설비키(③ 의 「호기」)."""
+
+    start: date
+    """기여 시작(Qual 다음 날 — 묶음은 가장 늦은 모듈, ③ 과 같은 날)."""
+
+    units: float
+    """환산 대수 — 묶음이 센 모듈마다의 환산비 합. 축 안에 기여가 없는 모듈은 빠진다."""
+
+    until: date | None
+    """가장 이른 정지·반출/이설일정(그날부터 기여하지 않는다). 없으면 None."""
+
+
+class NewUnitAvailability(NamedTuple):
+    """기준일 이후 기여를 시작하는 신규 호기 — 제약 시뮬레이션 「신규 설비는 개조 없이」.
+
+    호기마다 기여 시작 · 환산 대수 · 반출만 낸다. 어느 증가에 붙일지(개조 일수 안의 증가)는 계산
+    서비스(`constraint_simulation`)가 정한다 — 그래서 제약 기간·개조 일수가 이 값에 들지 않는다.
+    """
+
+    since: date
+    units: tuple[str, ...]
+    """신규로 본 설비키(③ 의 「호기」) — `new_units` 차례(기여 시작 → 호기 번호)."""
+
+    in_axis: int
+    """`units` 가운데 축의 어느 달에 기여가 있는 호기 수(축 뒤 호기·축 앞에 정지·반출된 호기는
+    빠진다) — 화면 글 「조회기간에 가용 n대」 의 n 이다."""
+
+    starts: tuple[NewUnitStart, ...]
+    """`units` 가운데 축 안에 기여가 있는 호기(같은 차례) — 축 밖 호기는 어느 제약 증가에도 닿지
+    않는다."""
+
+
+def new_unit_availability(
+    timeline: ProcessEquipmentTimeline, *, since: date
+) -> NewUnitAvailability:
+    """`new_units` 가운데 기여 시작(Qual 다음 날 — 묶음은 가장 늦은 모듈)이 `since` 이후(그날
+    포함)인 호기와 그 기여 시작 · 환산 대수 · 반출. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ③·④ 와
+    같은 객체)을 거르기만 한다.
+
+    환산 대수는 모듈마다의 환산비를 더한 것이다 — 환산비는 `unit_months` 의 비가동 없음 기여에서
+    되짚는다(환산대수 = 환산비 × 기여일수 ÷ 구간일수). 모듈 이름으로 묶는다 — 묶음 안에 대상이 아닌
+    모듈(보관 Y·사용기준 밖)이 섞여도 `new_units` 가 센 모듈만 든다(이름은 `모듈별 Qual` 튜플에서
+    꺼내 「, 」 로 이은 `설비명` 을 쪼개지 않는다). 운영 비가동은 들어온 날·환산비를 바꾸지 않으므로
+    보지 않는다.
+    """
+    ratios = _module_ratios(timeline.unit_months)
+    units: list[str] = []
+    starts: list[NewUnitStart] = []
+    for row in _records(timeline.new_units):
+        start = _as_date(row["기여 시작"])
+        if start is None or start < since:
+            continue
+        unit = str(row["호기"])
+        units.append(unit)
+        weight = _tidy(sum(ratios.get(name, 0.0) for name in _module_names(row)))
+        if weight > 0:
+            starts.append(NewUnitStart(unit, start, weight, _as_date(row["반출이설일"])))
+    return NewUnitAvailability(
+        since=since, units=tuple(units), in_axis=len(starts), starts=tuple(starts)
+    )
+
+
+def _module_names(row: Mapping[str, object]) -> tuple[str, ...]:
+    """`new_units` 한 행의 모듈 이름(묶음은 `모듈별 Qual` 튜플, 하나면 `설비명`)."""
+    pairs = row["모듈별 Qual"]
+    if isinstance(pairs, tuple) and pairs:
+        return tuple(str(name).strip() for name, _qual in pairs)
+    return (str(row[EQUIPMENT_ID_COLUMN]).strip(),)
+
+
+def _module_ratios(unit_months: pd.DataFrame) -> dict[str, float]:
+    """모듈(설비명) → 환산비. 축 안에 비가동 없음 기여가 있는 첫 행에서 되짚는다."""
+    ratios: dict[str, float] = {}
+    for unit, value, used, span in zip(
+        unit_months[EQUIPMENT_ID_COLUMN].astype(str),
+        unit_months["비가동 없음 환산대수"],
+        unit_months["비가동 없음 기여일수"],
+        unit_months["구간일수"],
+        strict=True,
+    ):
+        name = unit.strip()
+        if name in ratios or int(used) <= 0:
+            continue
+        ratios[name] = float(value) * int(span) / int(used)
+    return ratios
 
 
 def exiting_unit_rows(
