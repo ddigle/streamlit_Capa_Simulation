@@ -1,7 +1,9 @@
 # Purpose: standard target capa page 관련 정상·예외·회귀 동작을 검증한다.
 
+import re
 from collections.abc import Iterator
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
@@ -355,6 +357,75 @@ LOGIC_SELECTIONS = {
     "standard_target_logic_stack": "8H",
     "standard_target_logic_wf_type": "Core",
 }
+
+
+# 소요대수를 둘째 자리로 깎으면 식이 어긋나는 값(2026-10-26 E2E 의 꼴 — 54,698.63 ÷ 1.49386).
+LOGIC_FORMULA_SCRIPT = (
+    TEST_SCRIPT.replace('"부하량": [100.0],', '"부하량": [54698.63],')
+    .replace('"소요대수": [1.0],', '"소요대수": [1.49386],')
+    .replace('"가용대수": [2.0] * 5,', '"가용대수": [40.0] * 5,')
+)
+
+
+# 여섯째 자리로 적어도 0 인 소요대수 — 적힌 수로는 다시 셈할 수 없어 등호가 「≈」 다.
+LOGIC_APPROX_SCRIPT = TEST_SCRIPT.replace('"소요대수": [1.0],', '"소요대수": [0.0000003],')
+
+
+def _logic_formula_lines(script: str) -> tuple[AppTest, list[tuple[str, str, str, str, str]]]:
+    """로직 분석 식 세 줄을 (왼 인수, 연산, 오른 인수, 등호, 결과)로 쪼갠다."""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    app = app.segmented_control(key="standard_target_output_metric").set_value("로직 분석").run()
+    for key, value in LOGIC_SELECTIONS.items():
+        app = app.selectbox(key=key).set_value(value).run()
+    assert not app.exception
+
+    (code,) = app.code
+    lines = [line for line in str(code.value).splitlines() if line.strip().startswith("= ")]
+    assert len(lines) == 3
+    parts = []
+    for line in lines:
+        match = re.fullmatch(r"\s*= (\S+) ([÷×]) (\S+) ([=≈]) (\S+)", line)
+        assert match is not None, line
+        left, operator, right, sign, shown = match.groups()
+        parts.append((left, operator, right, sign, shown))
+    return app, parts
+
+
+def _recompute(left: str, operator: str, right: str) -> str:
+    a, b = (Decimal(text.replace(",", "")) for text in (left, right))
+    return f"{(a * b if operator == '×' else a / b):,.2f}"
+
+
+def test_logic_analysis_formula_recomputes_to_the_written_results() -> None:
+    """식에 적힌 인수로 다시 셈하면 적힌 결과가 나온다 — 소요대수 1.49386 을 1.49 로, 대당 일
+    Capa 를 둘째 자리로 깎아 적어 「54,698.63 ÷ 1.49 = 36,615.63」·「1,181.15 × 40.0 =
+    47,245.98」 처럼 어긋났다(2026-10-26 E2E). 결과는 위 카드 값 그대로고, 맞는 인수(RUN_DAY
+    31.0)는 늘리지 않는다."""
+    assert LOGIC_FORMULA_SCRIPT.count("54698.63") == 1
+    assert LOGIC_FORMULA_SCRIPT.count("1.49386") == 1
+    assert LOGIC_FORMULA_SCRIPT.count("[40.0] * 5") == 1
+    app, parts = _logic_formula_lines(LOGIC_FORMULA_SCRIPT)
+    for left, operator, right, sign, shown in parts:
+        assert sign == "=", (left, operator, right, sign, shown)
+        assert _recompute(left, operator, right) == shown, (left, operator, right, shown)
+    metrics = {str(item.label): str(item.value) for item in app.metric}
+    assert [part[4] for part in parts] == [
+        metrics["공정별 대당 Capa"],
+        metrics["대당 일 Capa"],
+        metrics["일 표준 가능량 (매)"],
+    ]
+    assert parts[1][2] == "31.0"
+
+
+def test_logic_analysis_formula_marks_an_unmatched_line_approximate() -> None:
+    """여섯째 자리까지 더 적어도 다시 셈할 수 없는 줄(소요대수 0.0000003 → 「0.00」)은 처음 자리로
+    적고 등호를 「≈」 로 둔다(9장 「화면 숫자는 검산되어야 한다」) — 맞는 줄은 그대로 「=」 다."""
+    assert LOGIC_APPROX_SCRIPT.count("0.0000003") == 1
+    _app, parts = _logic_formula_lines(LOGIC_APPROX_SCRIPT)
+    assert parts[0][:4] == ("100.00", "÷", "0.00", "≈")
+    for left, operator, right, sign, shown in parts[1:]:
+        if sign == "=":
+            assert _recompute(left, operator, right) == shown, (left, operator, right, shown)
 
 
 def test_logic_analysis_selections_survive_switching_the_output_item() -> None:

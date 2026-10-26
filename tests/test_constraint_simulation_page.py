@@ -40,6 +40,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
     CONSTRAINT_MOD_DAYS_INPUT_KEY,
+    CONSTRAINT_MOD_DAYS_KEY,
     CONSTRAINT_MOD_DAYS_PILLS_KEY,
     CONSTRAINT_MODIFY_KEY,
     CONSTRAINT_MONTH_KEY,
@@ -387,6 +388,78 @@ def test_a_preset_button_redraws_the_typed_field_under_a_new_key(
     app.button_group(key=CONSTRAINT_MOD_DAYS_PILLS_KEY).set_value(90)
     _ok(app.run())
     assert _typed_field_keys(app, "개조 기간 직접 입력") != [CONSTRAINT_MOD_DAYS_INPUT_KEY]
+
+
+@pytest.mark.parametrize(
+    ("label", "pills_key", "value_key", "first", "typed", "pressed", "header"),
+    [
+        (
+            "제약 확보율",
+            CONSTRAINT_TARGET_PILLS_KEY,
+            CONSTRAINT_TARGET_KEY,
+            130,
+            175,
+            140,
+            "제약 140%",
+        ),
+        (
+            "기준 확보율",
+            CONSTRAINT_GENERAL_PILLS_KEY,
+            CONSTRAINT_GENERAL_KEY,
+            100,
+            112.0,
+            105,
+            "기준 105%",
+        ),
+        (
+            "개조 기간",
+            CONSTRAINT_MOD_DAYS_PILLS_KEY,
+            CONSTRAINT_MOD_DAYS_KEY,
+            60,
+            50,
+            45,
+            "개조 45일",
+        ),
+    ],
+)
+def test_a_button_pressed_right_after_typing_wins_over_the_typed_value(
+    dynamic_databases: tuple[Path, Path],
+    label: str,
+    pills_key: str,
+    value_key: str,
+    first: int,
+    typed: float,
+    pressed: int,
+    header: str,
+) -> None:
+    """칸에 치고 Enter 없이 버튼을 누르면 칸 확정과 버튼 누름이 한 회차에 든다 — 마지막에 누른
+    버튼이 정본이고, 버튼이 켜지고, 칸도 그 값을 보인다(2026-10-26 E2E — 친 값이 버튼을 덮었다).
+
+    AppTest 는 바뀐 두 위젯을 한 회차로 보내고 그린 차례(버튼 → 숫자 칸)대로 콜백을 부른다 —
+    브라우저에서 합쳐진 회차와 같은 차례다. 버튼을 한 번 누른 뒤의 세대 key 에서 친다.
+    """
+    app = _opened(dynamic_databases)
+    field = f"{label} 직접 입력"
+    app.button_group(key=pills_key).set_value(first)
+    _ok(app.run())
+    assert app.session_state[value_key] == first
+
+    (typed_key,) = _typed_field_keys(app, field)
+    app.number_input(key=typed_key).set_value(typed)
+    app.button_group(key=pills_key).set_value(pressed)
+    _ok(app.run())
+    assert app.session_state[value_key] == pressed
+    assert app.button_group(key=pills_key).value == pressed
+    (shown_key,) = _typed_field_keys(app, field)
+    assert shown_key != typed_key
+    assert app.number_input(key=shown_key).value == pressed
+    assert header in _header_line(app)
+
+    # 대조 — 친 값만 확정하면(버튼을 누르지 않음) 친 값이 정본이고 버튼이 모두 꺼진다.
+    app.number_input(key=shown_key).set_value(typed)
+    _ok(app.run())
+    assert app.session_state[value_key] == typed
+    assert app.button_group(key=pills_key).value is None
 
 
 def test_the_general_target_takes_half_percent_and_home(
