@@ -91,6 +91,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -98,7 +99,7 @@ from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Final, Protocol
+from typing import IO, Any, Final, Protocol
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -250,6 +251,39 @@ PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
 # 한 줄 14 + 여백 4) + 값 27 × 3 + 반 줄. 확보율 줄의 가운데다(새 세션의 기본 — ① 은 펼치고 제품
 # 행은 펼치지 않은 그림. 제목 끝 ▾/▸ 는 제목 줄 높이를 바꾸지 않는다).
 PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 44 + 27 * 3 + 13
+# 공정 Capa 상세 사이드바 조건 카드(접힘이 기본 — 안의 칸을 쓰려면 편다)와 그 끝 「이 세션만」 UPEH
+# 가정 % 칸, 가정이 켜지면 ① 끝에 서는 세 줄의 라벨(`process_capa_canvas._assumption_rows` —
+# 「UPEH 110% · 소요대수」 꼴)과 머리 배지 앞머리. 값만 옮기고 테스트가 앱과 같은지 본다.
+PROCESS_DETAIL_CARD_KEY: Final = "condition_card_process_capa_detail"
+UPEH_PERCENT_LABEL: Final = "UPEH 가정 (%)"
+UPEH_TRIAL_PERCENT: Final = 110
+UPEH_DEFAULT_PERCENT: Final = 100
+UPEH_ROW_NAMES: Final = ("소요대수", "확보율", "확보기준 과부족")
+# 표 도구 줄의 「구획」 칩(`st.pills` — 누른 칩이 펼친 구획, `aria-pressed`)과 칩 글자 차례. 밖에서
+# 들어온 길이 다시 펴는 구획 — HOME 칸 → ①, 가용설비 현황 근거 카드 링크 → ④.
+PROCESS_DETAIL_SECTIONS_KEY: Final = "process_detail_sections"
+PROCESS_DETAIL_SECTION_LABELS: Final = ("① 공식", "② 일정 가용", "③ 단축", "④ 비가동")
+# HOME `주요공정 확보율` 월 그림(칸을 누르면 그 공정·그 달로 공정 Capa 상세가 열린다). 표적
+# 막대(trace 0) `customdata` 끝 일곱 칸이 이동 정보이고 그 첫 칸이 공정이다 — 과거 실적 칸은 비어
+# 누르지 않는다.
+HOME_KEY_PROCESS_CHART_KEY: Final = "key_process_heatmap_months"
+HOME_CELL_LINK_FIELD_COUNT: Final = 7
+# Streamlit 이 프래그먼트 콜백 안에서 요소를 그리면 콘솔에 남기는 경고의 앞머리(사내 리뷰 2227
+# 후속 — HOME 칸 누름이 이 경고를 남기던 것을 고쳤다). 앱 콘솔 출력에서 이 글이 든 줄 수만 센다.
+FRAGMENT_CALLBACK_WARNING: Final = "A fragment rerun was triggered"
+# 확인용 앱 콘솔에서 줄 수를 세는 글 — 여기 없는 글은 세지 않는다(`ConsoleCounter`).
+CONSOLE_NEEDLES: Final = (FRAGMENT_CALLBACK_WARNING,)
+# 가용설비 현황 Static 대비 일정의 사이드바 `설비 조회 조건` 카드와 그 안의 `공정` 상자(처음 값
+# `전체 합계`), 공정 하나일 때 근거 카드에 붙는 공정 Capa 상세 ④ 링크 글.
+EQUIPMENT_CARD_KEY: Final = "condition_card_equipment"
+GAP_PROCESS_KEY: Final = "equipment_gap_process_filter_v1"
+GAP_ALL_PROCESSES: Final = "전체 합계"
+GAP_DETAIL_LINK_LABEL: Final = "공정 Capa 상세 ④ 에서 비가동 화살표로 보기"
+# 기준 정보(`app_pages/reference_data.py`) 첫 탭 UPEH 편집표의 월 칸 머리 도움말
+# (`EDITOR_VALUE_HELP`)에서 찾는 글 둘. 풍선은 머리 칸 위에 마우스를 올려야 선다(Glide 캔버스 —
+# 머리 칸 DOM 은 크기가 0).
+REFERENCE_PAGE: Final = "reference_data"
+UPEH_HELP_WORDS: Final = ("UPEH", "ST(분)")
 # 제약 시뮬레이션(`app_pages/constraint_simulation.py`)과 그 화면의 컨테이너 key
 # (`constraint_simulation_state`·`constraint_simulation_view`·페이지 까닭 카드). 값만 옮기고
 # 테스트가 같은지 본다. 공정 Capa 상세 머리의 「이 공정 제약 시뮬레이션」 링크 글도 같다.
@@ -790,6 +824,50 @@ class Process(Protocol):
     def send_signal(self, sig: int) -> None: ...
 
 
+class ConsoleCounter:
+    """확인용 앱의 콘솔 출력(stdout · stderr 를 한 파이프로)을 읽으며 정한 글이 든 줄 수만 센다.
+
+    줄은 세고 버린다 — 파일에도 쓰지 않는다. 경고 · 예외 문구에 이름이 실릴 수 있고, 스크립트가
+    강제로 끝나도(사내 백그라운드 30분) 남는 것이 없어야 한다. 파이프를 읽지 않으면 앱이 쓰다가
+    막히므로 읽기는 앱이 끝나 파이프가 닫힐 때까지 이어 간다(배경 스레드 하나 — 데몬)."""
+
+    def __init__(self, needles: Sequence[str]) -> None:
+        self._counts = dict.fromkeys(needles, 0)
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def feed(self, line: bytes) -> None:
+        text = line.decode("utf-8", "replace")
+        with self._lock:
+            for needle in self._counts:
+                if needle in text:
+                    self._counts[needle] += 1
+
+    def count(self, needle: str) -> int | None:
+        """`needle` 이 든 줄 수. 세기로 정하지 않은 글이면 None."""
+        with self._lock:
+            return self._counts.get(needle)
+
+    def attach(self, stream: IO[bytes] | None) -> None:
+        """그 파이프를 끝까지 읽는 스레드를 세운다. 파이프가 없으면(가짜 프로세스) 그냥 둔다."""
+        if stream is None:
+            return
+
+        def drain() -> None:
+            try:
+                for line in iter(stream.readline, b""):
+                    self.feed(line)
+            except (OSError, ValueError):
+                return
+
+        self._thread = threading.Thread(target=drain, name="capa-screens-console", daemon=True)
+        self._thread.start()
+
+    def join(self, timeout: float) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
+
 def app_command(port: int) -> list[str]:
     """확인용 앱 명령. 이 PC 안에서만 듣는다(`--server.address`)."""
     return [
@@ -984,6 +1062,7 @@ class StreamlitApp:
         contain: bool = True,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        console: ConsoleCounter | None = None,
     ) -> None:
         self.port = port
         self.root = root
@@ -1002,6 +1081,7 @@ class StreamlitApp:
         self._job: int | None = None
         self._clock = clock
         self._sleep = sleep
+        self._console = console
 
     def __enter__(self) -> StreamlitApp:
         began = self._clock()
@@ -1021,6 +1101,12 @@ class StreamlitApp:
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
         }
+        if self._console is not None:
+            # 콘솔 출력은 파이프 하나로 받아 줄 수만 센다(`ConsoleCounter`). 버퍼에 머물면 센 때
+            # 아직 안 왔을 수 있다.
+            env["PYTHONUNBUFFERED"] = "1"
+            options["stdout"] = subprocess.PIPE
+            options["stderr"] = subprocess.STDOUT
         if sys.platform == "win32":
             # `CTRL_BREAK` 는 프로세스 묶음 단위로 간다 — 자식을 따로 묶어야 이 스크립트가
             # 받지 않는다.
@@ -1037,6 +1123,8 @@ class StreamlitApp:
         except (OSError, subprocess.SubprocessError) as exc:
             self._release_job()
             raise AppStartError(f"확인용 앱을 띄우지 못했습니다({type(exc).__name__})") from None
+        if self._console is not None:
+            self._console.attach(getattr(self.process, "stdout", None))
         if self._job is not None:
             # 멈춘 채 만든 자식은 잡에 들어가 깨어날 때까지 아무 일도 하지 않는다. 그 사이 무엇이
             # 실패하든 그 자식을 끈다 — 잡 밖에서 앱을 돌리지 않는다.
@@ -1108,6 +1196,9 @@ class StreamlitApp:
         self._release_job()
         if process is None:
             return
+        if self._console is not None:
+            # 앱이 끝나면 파이프가 닫혀 읽기 스레드가 끝난다(데몬 — 남아도 스크립트를 잡지 않는다).
+            self._console.join(timeout=STOP_TIMEOUT_SECONDS)
         # 띄운 쪽이 끝나도 자식이 포트를 잠깐 더 쥘 수 있어, 포트가 비는 것까지 본다.
         began = self._clock()
         while self._port_probe(self.port):
@@ -1260,6 +1351,9 @@ class Screen:
         self.shots = shots
         # 항목이 지금 하는 일(고정 글자). 항목이 예외로 끝나면 미기록 줄에 붙는다 — `step`.
         self.current_step: str | None = None
+        # 확인용 앱의 콘솔 줄 세기(`_check` 가 단다). 항목은 정한 글이 든 줄 수만 본다
+        # (`console_lines`) — 글은 어디에도 남지 않는다.
+        self.console: ConsoleCounter | None = None
 
     def step(self, name: str) -> None:
         """항목 안의 단계 이름을 둔다. 예외로 끝나면 미기록 줄이 어느 기다림에서 멈췄는지 말한다
@@ -4275,6 +4369,497 @@ def check_space_shortening(screen: Screen) -> str:
     return summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)
 
 
+# --------------------------------------------------- 7-18 B 대행이 헤드리스로 못 세던 칸
+#
+# `202610231430` 리뷰 사외 요청 4 의 다섯 칸을 재는 항목들이다. 헤드리스에서 막히는 자리 넷을
+# 피한다 — HOME 칸은 그림을 화면 가운데로 굴린 뒤 화면 안의 칸을 누른다(화면 밖 좌표는 눌리지
+# 않는다). 근거 카드의 ④ 링크는 공정 하나를 골랐을 때만 선다(기본은 `전체 합계`). 영역 요소는
+# 이름표만 눌림을 받는다(안쪽은 비워 둔다). 머리 칸 풍선은 머리 줄 좌표에 마우스를 올려 띄운다
+# (Glide 캔버스라 머리 칸 DOM 은 크기 0). 모두 세션 값만 바꾸고 끝에(깨져도) 되돌린다.
+
+
+# 누른 뒤 콘솔 경고 줄이 파이프로 건너오기를 기다리는 시간(초) — 늘지 않으면 그대로 센다.
+CONSOLE_SETTLE_SECONDS: Final = 3.0
+
+
+def console_lines(screen: Screen, needle: str) -> int | None:
+    """확인용 앱 콘솔에서 `needle` 이 든 줄 수. 세지 않는 실행(`screen.console` 없음)이면 None."""
+    return None if screen.console is None else screen.console.count(needle)
+
+
+def settled_console_lines(screen: Screen, needle: str, before: int | None) -> int | None:
+    """누른 뒤의 줄 수 — 늘 때까지 `CONSOLE_SETTLE_SECONDS` 만큼 기다린다(앱이 쓴 줄을 읽기 스레드가
+    받기까지 틈이 있다). 늘지 않으면 그대로다."""
+    if before is None:
+        return None
+    count: int | None = screen.poll(
+        lambda: console_lines(screen, needle),
+        timeout=CONSOLE_SETTLE_SECONDS,
+        accept=lambda now: now is not None and now > before,
+    )
+    return count
+
+
+@contextmanager
+def opened_card(screen: Screen, key: str) -> Iterator[bool]:
+    """사이드바 조건 카드(`details`)를 편 채로 안을 돌고, 접혀 있었으면 끝에 다시 접는다. 카드가
+    없으면 False 를 내고 아무것도 하지 않는다."""
+    card = screen.page.locator(f'[data-testid="stSidebar"] .st-key-{key} details').first
+    if card.count() == 0:
+        yield False
+        return
+    was_open = card.get_attribute("open") is not None
+    if not was_open:
+        card.locator("summary").first.click()
+        screen.wait_idle()
+    try:
+        yield True
+    finally:
+        if not was_open and card.get_attribute("open") is not None:
+            card.locator("summary").first.click()
+            screen.wait_idle()
+
+
+def _set_number(screen: Screen, field: Any, value: int) -> None:
+    field.fill(str(value))
+    field.press("Enter")
+    screen.wait_idle()
+
+
+# ① 끝 「UPEH n% · …」 라벨(그림 글자) — 라벨 칸 그림과 월 그림의 SVG 글자에서 앞머리로 찾는다.
+_UPEH_ROWS_JS = """(prefix) => [
+  ...document.querySelectorAll('[data-testid="stMain"] .js-plotly-plot text'),
+].map((node) => (node.textContent || "").trim()).filter((text) => text.startsWith(prefix))"""
+_KPI_COUNT_JS = (
+    """(key) => document.querySelectorAll(`.st-key-${key} [data-testid="stMetric"]`).length"""
+)
+
+
+def summarize_upeh_rows(
+    rows: Sequence[str] | None, badge: bool, rows_after: int | None, badge_after: bool
+) -> str:
+    """UPEH 가정 줄 한 줄 — 켠 뒤 ① 끝 가정 줄 수(정한 세 줄과 같은가)·배지, 100 으로 되돌린 뒤."""
+    if rows is None:
+        return "가정 구간 없음(조회기간에 이번 달 이후 달 없음) — 안 켬"
+    prefix = f"UPEH {UPEH_TRIAL_PERCENT}% · "
+    names = tuple(row[len(prefix) :] for row in rows)
+    same = "정한 세 줄과 같음" if names == UPEH_ROW_NAMES else "정한 세 줄과 다름"
+    after = "-" if rows_after is None else str(rows_after)
+    shown = "있음" if badge else "없음"
+    left = "남음" if badge_after else "사라짐"
+    return (
+        f"가정 줄 {len(rows)} — {same} · {UPEH_TRIAL_PERCENT} 배지 {shown} · "
+        f"{UPEH_DEFAULT_PERCENT} 되돌린 뒤 가정 줄 {after} · 배지 {left}"
+    )
+
+
+def check_upeh_rows(screen: Screen) -> str:
+    """공정 Capa 상세 — 조건 카드 「이 세션만」 UPEH 가정 % 를 110 으로 바꿔 ① 끝 가정 세
+    줄(소요대수 · 확보율 · 확보기준 과부족)과 머리 배지를 세고 100 으로 되돌린다(세션 값 — DB 에
+    쓰지 않는다). 세 줄은 그 달이 가정 구간 밖이어도 늘 선다(구간 밖 달은 빈칸) — 근거 카드의 가정
+    한 줄은 고른 달이 구간 안일 때만 서므로 그것으로 세지 않는다."""
+    screen.step("페이지 열기")
+    screen.open_page(PROCESS_DETAIL_PAGE)
+    screen.wait_for(
+        lambda: screen.js(_KPI_COUNT_JS, PROCESS_DETAIL_KEYS["kpi"]), timeout=120, accept=bool
+    )
+    prefix = f"UPEH {UPEH_TRIAL_PERCENT}% · "
+    screen.step("조건 카드")
+    with opened_card(screen, PROCESS_DETAIL_CARD_KEY) as opened:
+        if not opened:
+            return "조건 카드 없음"
+        field = screen.page.locator(
+            f'[data-testid="stSidebar"] input[aria-label={_css_string(UPEH_PERCENT_LABEL)}]'
+        ).first
+        field.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+        if "걸 구간이 없습니다" in screen.sidebar_text():
+            return summarize_upeh_rows(None, False, None, False)
+        start = _number(field.input_value()) or UPEH_DEFAULT_PERCENT
+        try:
+            screen.step(f"{UPEH_TRIAL_PERCENT} 넣기")
+            _set_number(screen, field, UPEH_TRIAL_PERCENT)
+            rows = screen.poll(
+                lambda: screen.js(_UPEH_ROWS_JS, prefix),
+                timeout=60,
+                accept=lambda found: len(found or []) >= len(UPEH_ROW_NAMES),
+            )
+            badge = f"UPEH 가정 {UPEH_TRIAL_PERCENT}%" in screen.main_text()
+        finally:
+            screen.step("되돌리기")
+            _set_number(screen, field, int(start))
+        after = screen.poll(
+            lambda: screen.js(_UPEH_ROWS_JS, "UPEH "), timeout=60, accept=lambda found: not found
+        )
+        badge_after = f"UPEH 가정 {UPEH_TRIAL_PERCENT}%" in screen.main_text()
+    return summarize_upeh_rows(list(rows or []), badge, len(after or []), badge_after)
+
+
+# 「구획」 칩의 (글자, 눌림) 차례.
+_SECTIONS_JS = """(key) => {
+  const box = document.querySelector(`.st-key-${key}`);
+  if (!box) return null;
+  return [...box.querySelectorAll("button[aria-pressed]")].map(
+    (button) => [button.innerText.trim(), button.getAttribute("aria-pressed") === "true"]
+  );
+}"""
+# HOME 주요공정 월 그림에서 누를 칸 — 표적 막대(trace 0) 가운데 공정이 실린 칸의 화면 좌표. 굴리는
+# 칸(가로)과 창(세로) 안에 든 첫 칸이다. 좌표는 Plotly 축 변환(`l2p`)으로 낸다.
+_HOME_CELL_JS = """({key, linkFields}) => {
+  const plot = document.querySelector(`.st-key-${key} .js-plotly-plot`);
+  if (!plot || !plot._fullLayout || !plot.data || !plot.data.length) return null;
+  const trace = plot.data[0];
+  const xa = plot._fullLayout.xaxis;
+  const ya = plot._fullLayout.yaxis;
+  const box = plot.getBoundingClientRect();
+  let left = 0;
+  let right = innerWidth;
+  for (let node = plot.parentElement; node; node = node.parentElement) {
+    if (["auto", "scroll", "hidden"].includes(getComputedStyle(node).overflowX)) {
+      const rect = node.getBoundingClientRect();
+      left = Math.max(left, rect.left);
+      right = Math.min(right, rect.right);
+    }
+  }
+  const custom = trace.customdata || [];
+  let linked = 0;
+  for (let i = 0; i < custom.length; i += 1) {
+    const row = custom[i];
+    if (!row || !row[row.length - linkFields]) continue;
+    linked += 1;
+    const base = Array.isArray(trace.base) ? trace.base[i] : trace.base || 0;
+    const length = Array.isArray(trace.x) ? trace.x[i] : 1;
+    const x = box.left + xa._offset + xa.l2p(base + length / 2);
+    const y = box.top + ya._offset + ya.l2p(trace.y[i]);
+    if (x > left + 2 && x < right - 2 && y > 2 && y < innerHeight - 2) return {linked, x, y};
+  }
+  return {linked, x: null, y: null};
+}"""
+
+
+def _sections(screen: Screen) -> list[bool] | None:
+    found = screen.js(_SECTIONS_JS, PROCESS_DETAIL_SECTIONS_KEY)
+    if not found:
+        return None
+    return [bool(pressed) for _, pressed in found]
+
+
+def _wait_sections(screen: Screen) -> list[bool]:
+    return list(
+        screen.wait_for(lambda: _sections(screen), timeout=120, accept=lambda value: bool(value))
+    )
+
+
+def _set_sections(screen: Screen, wanted: bool | Sequence[bool]) -> bool:
+    """「구획」 칩을 `wanted` 대로 둔다 — True/False 면 모두 펴거나 모두 접고, 목록이면 칩마다 그
+    눌림으로(처음 그림으로 되돌릴 때). 칩 누름은 세션 값이다. 다 됐으면 True."""
+    for _ in range(len(PROCESS_DETAIL_SECTION_LABELS) * 2):
+        state = _wait_sections(screen)
+        target = [wanted] * len(state) if isinstance(wanted, bool) else list(wanted)
+        wrong = [index for index, pressed in enumerate(state) if pressed != target[index]]
+        if not wrong:
+            return True
+        chips = screen.page.locator(f".st-key-{PROCESS_DETAIL_SECTIONS_KEY} button[aria-pressed]")
+        chips.nth(wrong[0]).click()
+        screen.wait_idle()
+    return False
+
+
+def opened_section_text(pressed: Sequence[bool] | None, target: int) -> str:
+    """들어온 뒤 「구획」 칩 — 그 길의 구획만 펴졌는가(다른 구획의 접힘은 둔다)."""
+    if not pressed:
+        return "구획 칩 없음"
+    label = PROCESS_DETAIL_SECTION_LABELS[target]
+    others = sum(1 for index, value in enumerate(pressed) if value and index != target)
+    if not pressed[target]:
+        return f"{label} 접힌 채"
+    return f"{label} 만 펼침" if others == 0 else f"{label} 펼침 · 다른 구획 {others}개도 펼침"
+
+
+def summarize_entry_sections(
+    collapsed: bool,
+    home: str,
+    warnings: int | None,
+    gap: str,
+    restored: bool,
+) -> str:
+    """들어온 길 한 줄 — 모두 접은 뒤 HOME 칸 → ①, 콘솔 경고 줄 수, 근거 카드 링크 → ④, 되돌림."""
+    warned = "콘솔 경고 못 셈" if warnings is None else f"콘솔 경고 {warnings}줄"
+    return (
+        f"구획 {'모두 접음' if collapsed else '못 접음'} · HOME 칸 → {home} · {warned} · "
+        f"근거 카드 링크 → {gap} · 구획 {'되돌림' if restored else '못 되돌림'}"
+    )
+
+
+def _click_home_cell(screen: Screen) -> str | None:
+    """HOME 주요공정 칸 하나를 눌러 공정 Capa 상세로 간다. 못 갔으면 그 까닭(고정 글자)."""
+    screen.open_home()
+    arg = {"key": HOME_KEY_PROCESS_CHART_KEY, "linkFields": HOME_CELL_LINK_FIELD_COUNT}
+    found = screen.poll(lambda: screen.js(_HOME_CELL_JS, arg), timeout=60, accept=bool)
+    if not found:
+        return "주요공정 그림 없음"
+    if not found["linked"]:
+        return "누를 칸 없음(과거 실적 칸뿐)"
+    # 그림이 화면 아래에 있으면 좌표 누름이 화면 밖에 떨어진다 — 가운데로 굴린 뒤 다시 잰다.
+    screen.page.locator(f".st-key-{HOME_KEY_PROCESS_CHART_KEY} .js-plotly-plot").first.evaluate(
+        "(node) => node.scrollIntoView({block: 'center'})"
+    )
+    point = screen.wait_stable(lambda: screen.js(_HOME_CELL_JS, arg), timeout=10)
+    if point.get("x") is None:
+        return "화면 안에 누를 칸 없음"
+    screen.page.mouse.move(float(point["x"]), float(point["y"]))
+    time.sleep(0.3)
+    screen.page.mouse.click(float(point["x"]), float(point["y"]))
+    arrived = screen.poll(
+        lambda: screen.path().rstrip("/").endswith(PROCESS_DETAIL_PAGE), timeout=30, accept=bool
+    )
+    screen.wait_idle()
+    return None if arrived else "공정 Capa 상세로 안 감"
+
+
+def _choose_gap_process(screen: Screen) -> bool:
+    """`설비 조회 조건` 의 `공정` 에서 `전체 합계` 다음 선택지(첫 공정)를 고른다. 골랐으면 True."""
+    field = screen.page.locator(f'[data-testid="stSidebar"] .st-key-{GAP_PROCESS_KEY} input').first
+    field.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+    screen.wait_stable(field.bounding_box, timeout=10)
+    for _ in range(3):
+        field.click()
+        if screen.poll(lambda: screen.js(_LISTBOX_OPEN_JS), timeout=5, accept=bool):
+            break
+    if not screen.js(_LISTBOX_OPEN_JS):
+        return False
+    screen.page.keyboard.press("ArrowDown")
+    screen.page.keyboard.press("Enter")
+    screen.wait_idle()
+    return bool(field.input_value() != GAP_ALL_PROCESSES)
+
+
+def _restore_gap_process(screen: Screen) -> None:
+    field = screen.page.locator(f'[data-testid="stSidebar"] .st-key-{GAP_PROCESS_KEY} input').first
+    if field.count() and field.input_value() != GAP_ALL_PROCESSES:
+        field.click()
+        field.type(GAP_ALL_PROCESSES, delay=20)
+        screen.page.keyboard.press("Enter")
+        screen.wait_idle()
+
+
+def _gap_link_entry(screen: Screen) -> str:
+    """가용설비 현황 → Summary › Static 대비 일정에서 공정 하나를 골라 설비 일정 기준 칸을 누르고
+    근거 카드의 ④ 링크로 공정 Capa 상세에 간다. 들어간 뒤 「구획」 칩 글, 못 갔으면 그 까닭."""
+    screen.open_page(EQUIPMENT_PAGE)
+    open_equipment_tab(screen, GAP_TAB)
+    changed: list[tuple[str, str]] = []
+    try:
+        for key, option in (
+            (GAP_RESULT_VIEW_KEY, GAP_SHEET_VIEW),
+            (GAP_DETAIL_MODE_KEY, GAP_SHEET_MODE),
+        ):
+            before = _choose_segment(screen, key, option)
+            if before is not None and before != option:
+                changed.append((key, before))
+        with opened_card(screen, EQUIPMENT_CARD_KEY) as opened:
+            if not opened:
+                return "설비 조회 조건 카드 없음"
+            try:
+                if not _choose_gap_process(screen):
+                    return "공정 못 고름"
+                sheet = _gap_sheet(screen, timeout=120)
+                cell = gap_sheet_click_target(sheet["cells"])[0] if sheet else None
+                if cell is None or not _click_gap_cell(screen, cell):
+                    return "누를 칸 없음"
+                link = screen.page.locator('[data-testid="stMain"] a').filter(
+                    has_text=GAP_DETAIL_LINK_LABEL
+                )
+                if not screen.poll(link.count, timeout=30, accept=lambda count: count > 0):
+                    return "링크 없음"
+                link.first.click()
+                arrived = screen.poll(
+                    lambda: screen.path().rstrip("/").endswith(PROCESS_DETAIL_PAGE),
+                    timeout=30,
+                    accept=bool,
+                )
+                screen.wait_idle()
+                if not arrived:
+                    return "공정 Capa 상세로 안 감"
+                return opened_section_text(_wait_sections(screen), 3)
+            finally:
+                if not screen.path().rstrip("/").endswith(EQUIPMENT_PAGE):
+                    screen.open_page(EQUIPMENT_PAGE)
+                    open_equipment_tab(screen, GAP_TAB)
+                with opened_card(screen, EQUIPMENT_CARD_KEY):
+                    _restore_gap_process(screen)
+    finally:
+        for key, option in reversed(changed):
+            _choose_segment(screen, key, option)
+
+
+def check_entry_sections(screen: Screen) -> str:
+    """공정 Capa 상세 「구획」 칩을 모두 접은 뒤 밖에서 들어오면 그 길의 구획만 다시 펴지는가 —
+    HOME `주요공정 확보율` 칸 → ①, 가용설비 현황 Static 대비 일정 근거 카드의 ④ 링크 → ④. HOME
+    칸을 누르는 동안 앱 콘솔에 프래그먼트 콜백 경고가 몇 줄 섰는지도 센다(줄 수만). 칩 · 공정 상자 ·
+    전환은 세션 값이고 끝에 되돌린다 — DB 에 쓰지 않는다. 공정 이름은 찍지 않는다."""
+    screen.step("페이지 열기")
+    screen.open_page(PROCESS_DETAIL_PAGE)
+    # 처음 그림(새 세션은 넷 다 펼침)으로 되돌린다 — 칩 수가 다르면 모두 편다.
+    first = _wait_sections(screen)
+    initial: bool | list[bool] = first if len(first) == len(PROCESS_DETAIL_SECTION_LABELS) else True
+    home = gap = "안 해 봄"
+    warnings: int | None = None
+    collapsed = restored = False
+    try:
+        screen.step("구획 모두 접기")
+        collapsed = _set_sections(screen, False)
+        if collapsed:
+            screen.step("HOME 칸 누르기")
+            before = console_lines(screen, FRAGMENT_CALLBACK_WARNING)
+            refused = _click_home_cell(screen)
+            after = settled_console_lines(screen, FRAGMENT_CALLBACK_WARNING, before)
+            if before is not None and after is not None:
+                warnings = after - before
+            home = refused or opened_section_text(_wait_sections(screen), 0)
+            screen.step("구획 다시 접기")
+            if refused is None and _set_sections(screen, False):
+                screen.step("근거 카드 링크")
+                gap = _gap_link_entry(screen)
+    finally:
+        screen.step("구획 되돌리기")
+        if not screen.path().rstrip("/").endswith(PROCESS_DETAIL_PAGE):
+            screen.open_page(PROCESS_DETAIL_PAGE)
+        restored = _set_sections(screen, initial)
+    return summarize_entry_sections(collapsed, home, warnings, gap, restored)
+
+
+# 데이터 편집기(Glide)의 보이는 첫 표 — 그 상자 좌표. 머리 칸 풍선은 머리 줄 위에 마우스가 있을 때만
+# 선다(`stDataFrameTooltipContent`).
+_FIRST_GRID_JS = """() => {
+  const main = document.querySelector('[data-testid="stMain"]');
+  const selector = '[data-testid="stDataFrame"], [data-testid="stDataEditor"]';
+  const grids = [...(main ? main.querySelectorAll(selector) : [])].filter(
+    (grid) => grid.getBoundingClientRect().width > 0
+  );
+  if (!grids.length) return null;
+  const rect = grids[0].getBoundingClientRect();
+  return {left: rect.left, top: rect.top, width: rect.width};
+}"""
+_GRID_TOOLTIP_JS = """() => {
+  const tip = document.querySelector('[data-testid="stDataFrameTooltipContent"]');
+  return tip ? (tip.innerText || "").trim() : "";
+}"""
+# 머리 줄의 세로 자리(표 위 끝부터, px)와 훑는 가로 걸음.
+GRID_HEADER_PROBE_Y_PX: Final = 17
+GRID_HEADER_PROBE_STEP_PX: Final = 60
+
+
+def summarize_upeh_help(text: str | None) -> str:
+    """UPEH 월 칸 머리 풍선 — 섰는가와 정한 낱말(UPEH · ST(분))을 밝히는가. 풍선 글은 찍지
+    않는다."""
+    if text is None:
+        return "UPEH 편집표 없음"
+    if not text:
+        return "월 칸 머리 풍선 없음"
+    missing = [word for word in UPEH_HELP_WORDS if word not in text]
+    if missing:
+        return f"월 칸 머리 풍선 있음 · 없는 낱말 {len(missing)}개"
+    return "월 칸 머리 풍선 있음 · Main UPEH · MI ST(분) 밝힘"
+
+
+def check_upeh_help(screen: Screen) -> str:
+    """기준 정보 → UPEH 편집표의 월 칸 머리에 마우스를 올려 도움말 풍선이 서는지, 그 글이 Main
+    UPEH · MI ST(분)를 밝히는지. 머리 칸 DOM 은 크기가 0 이라(Glide 캔버스) 머리 줄 좌표를 오른쪽
+    끝(월 칸)부터 왼쪽으로 훑는다. 칸은 고치지 않는다."""
+    screen.step("페이지 열기")
+    screen.open_page(REFERENCE_PAGE)
+    screen.open_tab("UPEH")
+    grid = screen.page.locator(
+        '[data-testid="stMain"] [data-testid="stDataFrame"], '
+        '[data-testid="stMain"] [data-testid="stDataEditor"]'
+    )
+    if not screen.poll(grid.count, timeout=120, accept=lambda count: count > 0):
+        return summarize_upeh_help(None)
+    grid.first.scroll_into_view_if_needed()
+    screen.step("머리 줄 훑기")
+    box = screen.wait_stable(lambda: screen.js(_FIRST_GRID_JS), timeout=15)
+    y = float(box["top"]) + GRID_HEADER_PROBE_Y_PX
+    right = float(box["left"]) + float(box["width"]) - 20
+    text = ""
+    x = right
+    while x > float(box["left"]) and not text:
+        screen.page.mouse.move(x, y)
+        text = str(screen.poll(lambda: screen.js(_GRID_TOOLTIP_JS), timeout=1.5, accept=bool))
+        x -= GRID_HEADER_PROBE_STEP_PX
+    screen.page.mouse.move(float(box["left"]), max(y - 60, 1.0))
+    return summarize_upeh_help(text)
+
+
+# 배치 편집기 영역 요소(그림자 DOM — 로케이터가 뚫는다). 영역은 이름표만 눌림을 받는다.
+ZONE_SELECTOR: Final = ".sle-mark.mark-zone"
+ZONE_TAG_SELECTOR: Final = ".sle-mark.mark-zone .sle-zone-tag"
+ZONE_FIELDS: Final = (".sle-mark-border", ".sle-mark-align")
+# 영역 요소가 선 층을 찾을 때 여는 층 수의 상한(층 목록 표 `배치대수` 차례).
+ZONE_FLOOR_LIMIT: Final = 12
+
+
+def summarize_space_zone_fields(
+    looked: int, found_at: int | None, fields: Sequence[bool] | None, switched_off: bool
+) -> str:
+    """영역 칸 한 줄 — 영역이 선 층을 몇째에 찾았나, 고른 영역의 `테두리` · `글자 정렬` 칸."""
+    if found_at is None:
+        return f"영역 없음(층 {looked}개 봄)"
+    if fields is None:
+        return f"영역 있는 층 {found_at}번째 · `배치 편집` 스위치 없음"
+    border, align = fields
+    return (
+        f"영역 있는 층 {found_at}번째 · 테두리 칸 {'있음' if border else '없음'} · 글자 정렬 칸 "
+        f"{'있음' if align else '없음'} · 적용 안 함{'' if switched_off else ' · 편집 못 끔'}"
+    )
+
+
+def check_space_zone_fields(screen: Screen) -> str:
+    """Space 층 상세 배치 편집기에서 영역 요소 하나를 골라 선택 칸에 `테두리` · `글자 정렬` 이
+    서는지. 층 목록 표의 `배치대수` 차례로 층을 열어(상한 `ZONE_FLOOR_LIMIT`) 영역이 선 첫 층에서
+    본다. 영역은 이름표를 눌러 고른다(안쪽은 눌림을 받지 않아 누르면 기다림이 다 된다). 값은
+    바꾸지 않고 `Esc` 로 풀고 `적용` 없이 `배치 편집` 을 끈다 — DB 에 쓰지 않는다. 층 이름은 찍지
+    않는다."""
+    screen.step("페이지 열기")
+    screen.open_space_overview()
+    screen.step("층 목록")
+    grid, placed_column = screen.grid_with_column("배치대수")
+    building_column = screen.column_index(grid, "동")
+    floor_column = screen.column_index(grid, "층")
+    if building_column is None or floor_column is None:
+        return "층 목록 표의 `동`·`층` 칸 없음"
+    rows = screen.grid_rows(grid, [building_column, floor_column, placed_column])
+    floors = sorted(
+        ((row[0], row[1], _number(row[2])) for row in rows if row[0] and row[1]),
+        key=lambda floor: -floor[2],
+    )[:ZONE_FLOOR_LIMIT]
+    zones = screen.page.locator(ZONE_SELECTOR)
+    found_at: int | None = None
+    screen.step("영역 있는 층 찾기")
+    for position, (building, floor, _) in enumerate(floors, start=1):
+        screen.choose_by_typing("층 바로 가기", f"{building} {floor}")
+        if screen.poll(zones.count, timeout=5, accept=lambda count: count > 0):
+            found_at = position
+            break
+    if found_at is None:
+        return summarize_space_zone_fields(len(floors), None, None, True)
+    screen.step("배치 편집")
+    if not screen.switch("배치 편집", True):
+        return summarize_space_zone_fields(len(floors), found_at, None, True)
+    fields: list[bool] = []
+    try:
+        screen.step("영역 고르기")
+        tag = screen.page.locator(ZONE_TAG_SELECTOR).first
+        tag.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
+        tag.click()
+        for selector in ZONE_FIELDS:
+            field = screen.page.locator(selector).first
+            fields.append(bool(screen.poll(field.is_visible, timeout=5, accept=bool)))
+        screen.page.keyboard.press("Escape")
+    finally:
+        switched_off = screen.switch("배치 편집", False)
+    return summarize_space_zone_fields(len(floors), found_at, fields, switched_off)
+
+
 ITEMS: tuple[Item, ...] = (
     Item("toolbar", "툴바 단추 차례", check_toolbar_order),
     Item("symbol", "사이드바 심볼 크기", check_sidebar_symbol),
@@ -4299,6 +4884,10 @@ ITEMS: tuple[Item, ...] = (
     Item("space_scenario_row", "Space 설비 시나리오 줄·팝업", check_space_scenario_row),
     Item("equipment_grid", "설비 마스터 표 칸 고치기", check_equipment_grid),
     Item("space_shortening", "Space 필요 단축 보기", check_space_shortening),
+    Item("upeh_rows", "공정 Capa 상세 UPEH 가정 줄", check_upeh_rows),
+    Item("entry_sections", "공정 Capa 상세 들어온 길 구획", check_entry_sections),
+    Item("upeh_help", "기준 정보 UPEH 월 칸 도움말", check_upeh_help),
+    Item("space_zone_fields", "Space 배치 편집기 영역 칸", check_space_zone_fields),
 )
 
 
@@ -4546,14 +5135,17 @@ def _check(args: argparse.Namespace, items: list[Item], began: float, output: Ou
 
     code = EXIT_OK
     _progress(f"확인용 앱을 {APP_ADDRESS}:{args.port} 에 띄웁니다 …")
+    # 앱 콘솔은 정한 경고 글이 든 줄 수만 센다(`ConsoleCounter` — 글은 파일에도 남기지 않는다).
+    console = ConsoleCounter(CONSOLE_NEEDLES)
     try:
-        with StreamlitApp(args.port, start_timeout=args.start_timeout) as app:
+        with StreamlitApp(args.port, start_timeout=args.start_timeout, console=console) as app:
             facts.started_seconds = app.started_seconds
             _progress(f"앱이 섰습니다({app.started_seconds:.1f}초). 브라우저로 들어갑니다 …")
             emit()
             try:
                 with open_browser(sync_api, args.channel) as page:
                     screen = Screen(page, app.base_url, shots=args.shots)
+                    screen.console = console
                     facts.entered_seconds = screen.enter()
                     facts.app_problem = screen.app_problem()
                     if facts.app_problem is not None:
