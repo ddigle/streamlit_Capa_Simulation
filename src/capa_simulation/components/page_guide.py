@@ -220,11 +220,13 @@ _SCRIPT = """
 # 기본은 감춘다. 가이드를 단 페이지만 `render_page_guide` 가 보이게 한다. 숨은 트리거 버튼은
 # 언제나 감춘다 — 본문에 「Guide」 버튼이 하나 더 보이면 안 된다. 대화상자 본문의 표는 제 칸 폭을
 # 넘으면 그 표만 옆으로 굴린다(넘침이 대화상자를 밀어 오른쪽 열이 잘리고 가로 바퀴로도 못 본다).
+# 마크다운 표 한 벌의 넘침이라 고정 폭 캔버스를 여는 `scroll_shell` 셸이 아니다 — 높이는 내용대로라
+# `overflow: auto` 는 옆으로만 굴린다.
 _BASE_STYLE = f"""
 <style>
 #{BUTTON_ID} {{ display: none !important; }}
 .st-key-{GUIDE_TRIGGER_KEY} {{ display: none !important; }}
-.st-key-{GUIDE_BODY_KEY} table {{ display: block; max-width: 100%; overflow-x: auto; }}
+.st-key-{GUIDE_BODY_KEY} table {{ display: block; max-width: 100%; overflow: auto; }}
 </style>
 """
 _SHOW_STYLE = f"<style>html body #{BUTTON_ID} {{ display: inline-block !important; }}</style>"

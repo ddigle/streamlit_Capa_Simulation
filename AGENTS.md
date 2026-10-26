@@ -1545,8 +1545,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대화상자다. 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 다.
   - 툴바 버튼이 본문의 숨은 버튼(`page_guide_trigger`)을 대신 누르고 파이썬이 `st.dialog` 로 연다.
     `render_page_guide` 를 부른 화면에만 버튼이 보인다. 대화상자 본문은 키 붙은 칸(`GUIDE_BODY_KEY`)에 들고, 기본 규칙
-    (`_BASE_STYLE`)이 그 칸의 표를 제 폭 안에서 옆으로 굴린다 — 좁은 창(390px)에서 넓은 표가 대화상자를 밀어 오른쪽 열이
-    잘리고 가로 바퀴로도 못 보던 것(2026-10-26 E2E).
+    (`_BASE_STYLE`)이 그 칸의 표를 제 폭 안에서 옆으로 굴린다(`display: block`·`overflow: auto` — 고정 폭 캔버스를 여는
+    `scroll_shell` 셸이 아니다) — 좁은 창(390px)에서 넓은 표가 대화상자를 밀어 오른쪽 열이 잘리고 가로 바퀴로도 못 보던
+    것(2026-10-26 E2E).
   - 따라하기 가이드를 단 화면(`render_page_guide(..., howto=<가이드>)` — 지금은 HOME 의 `lob`)은 `find_howto_guide`
     가 사내판 `static/guides/local/<가이드>.html`(git 무시) → 예시판 `static/guides/howto/<가이드>.html`(추적) → md
     대화상자 차례로 고른다. 고른 주소(문서 기준 상대 `app/static/guides/…` — WebIDE `/proxy/<포트>/` 접두에서도 맞다)를

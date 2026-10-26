@@ -851,7 +851,7 @@
     공정 Capa 상세 ② 머리 줄(「생산월(Cut-off 34일)」)은 내림 일수만 적는다.
   - 확보율 교차검증 표는 두 확보율을 %(NumberColumn `percent`), 차이를 보이는 두 확보율의 차로 %p(`%+.1f%%p`, 값은 %p 수 —
     표 내려받기의 그 칸도 %p 수다). 대안: 차이를 비율로 두고 머리에 「(%p)」 + `percent` — 칸이 「−27%」 로 보인다.
-  - Guide 대화상자 표는 제 칸 안에서 옆으로 굴린다(`page_guide_body` 칸의 표 `display:block`·`overflow-x:auto` — 모든 화면 Guide).
+  - Guide 대화상자 표는 제 칸 안에서 옆으로 굴린다(`page_guide_body` 칸의 표 `display:block`·`overflow:auto` — 모든 화면 Guide).
   - 자리표시 글은 TEXT_MUTED(`--emg-muted`·Space 편집기 `--sle-muted`). 모듈 일관성 오류·새 호기 빼기 알림의 조사는 끝소리로
     고른다(「공정소분류가」·「NEW-E2E-01을」). 설비 마스터 탭 시나리오 알약은 `literal_badge`(st.badge 가 `[`·`]` 를 스스로 막는다).
   관련: `components/write_guard.py`·`components/equipment_data_workspace.py`·`equipment_master_grid_assets/`·`components/page_guide.py`·

@@ -366,7 +366,7 @@ def test_a_wide_guide_table_scrolls_inside_its_own_box() -> None:
 
     assert re.search(
         rf"\.st-key-{page_guide.GUIDE_BODY_KEY} table \{{ display: block; max-width: 100%; "
-        r"overflow-x: auto; \}",
+        r"overflow: auto; \}",
         page_guide._BASE_STYLE,
     )
     app = AppTest.from_string(
