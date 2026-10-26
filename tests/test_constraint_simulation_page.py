@@ -59,10 +59,17 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_TARGET_PILLS_KEY,
     CONSTRAINT_VIEW_FRAGMENT_KEY,
 )
+from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+from capa_simulation.modification_schedule_state import CONSTRAINT_MODE_KEY
 from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
+from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.process_detail_state import (
+    EQUIPMENT_BASIS_OFFICIAL,
+    PROCESS_DETAIL_EQUIPMENT_BASIS_KEY,
+)
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.required_shortening import ShorteningPlan, plan_required_shortening
 
@@ -322,6 +329,78 @@ def test_an_unknown_process_param_warns_and_opens_the_first_process(
         app.selectbox(key=CONSTRAINT_PROCESS_KEY).value
         == app.selectbox(key=CONSTRAINT_PROCESS_KEY).options[0]
     )
+
+
+def _assumed_scenario_databases(tmp_path: Path) -> tuple[tuple[Path, Path], dict[str, str]]:
+    """설비 DB 를 한 번 저장하고(공식) 가정 시나리오 「셋업 실무」 를 복제해 그 세션 선택 칸을
+    낸다."""
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    repository = DuckDBEquipmentRepository(databases[1])
+    (official,) = repository.list_equipment_scenarios()
+    assert official.latest_schedule_revision_id is not None
+    clone = repository.clone_equipment_scenario(
+        official.latest_schedule_revision_id, name="셋업 실무", created_by=None
+    )
+    assert clone.latest_schedule_revision_id is not None
+    selection = {
+        "scenario_id": clone.equipment_scenario_id,
+        "schedule_revision_id": clone.latest_schedule_revision_id,
+    }
+    return databases, selection
+
+
+def _infos(app: AppTest) -> str:
+    return " ".join(str(item.value) for item in app.info)
+
+
+def test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_one(
+    tmp_path: Path,
+) -> None:
+    """HOME 칸으로 연 공정 Capa 상세(설비 「공식 고정」)의 머리 링크로 넘어오면 이 화면은 세션의
+    가정 시나리오로 계산한다(D6) — 기준이 말없이 바뀌지 않게 그 공정·그 방문 동안 맨 위에 한 줄을
+    세운다(2026-10-25 E2E #39). 다른 공정을 고르거나 다른 화면에 다녀오면 걷히고, 사이드바로 온
+    방문·공식 세션에는 서지 않는다."""
+    databases, selection = _assumed_scenario_databases(tmp_path)
+    note = "설비는 세션의 「셋업 실무 r1」 기준입니다 — 공정 Capa 상세는 HOME 칸에서 열어 설비가"
+    app = _app(databases)
+    app.session_state[SELECTION_KEY] = selection
+    app.session_state[PROCESS_DETAIL_EQUIPMENT_BASIS_KEY] = EQUIPMENT_BASIS_OFFICIAL
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert note in _infos(app)
+    # 같은 방문의 다른 회차에도 남는다.
+    app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(False)
+    _ok(app.run())
+    assert note in _infos(app)
+    # 「개조 일정」 모드도 같은 세션 설비로 계산한다 — 모드를 바꿔도 남는다.
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
+    _ok(app.run())
+    assert note in _infos(app)
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("constraint")
+    _ok(app.run())
+    # 다른 공정을 고르면 걷힌다 — 돌아와도 다시 서지 않는다.
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(OTHER_PROCESS)
+    _ok(app.run())
+    assert note not in _infos(app)
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(DYNAMIC_PROCESS)
+    _ok(app.run())
+    assert note not in _infos(app)
+
+    # 다른 화면에 다녀오면(페이지 방문 차례가 오름) 걷힌다.
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert note in _infos(app)
+    # 하네스는 `app.py` 를 돌리지 않아 방문 차례가 없다(0) — 페이지가 바뀐 회차처럼 올린다.
+    app.session_state[PAGE_VISIT_KEY] = 1
+    _ok(app.run())
+    assert note not in _infos(app)
+
+    # 사이드바 설비 기준 그대로 연 상세(방문 기준 칸 없음)에서 넘어오면 서지 않는다.
+    plain = _app(databases)
+    plain.session_state[SELECTION_KEY] = selection
+    plain.query_params["process"] = DYNAMIC_PROCESS
+    _ok(plain.run())
+    assert "공정 Capa 상세는 HOME 칸에서" not in _infos(plain)
 
 
 def test_a_process_without_equipment_stops_with_its_reason(

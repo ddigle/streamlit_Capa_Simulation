@@ -47,6 +47,7 @@ __all__ = [
     "CONSTRAINT_GENERAL_INPUT_KEY",
     "CONSTRAINT_GENERAL_KEY",
     "CONSTRAINT_GENERAL_PILLS_KEY",
+    "CONSTRAINT_LOCKED_ARRIVAL_KEY",
     "CONSTRAINT_MODIFY_KEY",
     "CONSTRAINT_MOD_DAYS_INPUT_KEY",
     "CONSTRAINT_MOD_DAYS_KEY",
@@ -168,6 +169,11 @@ PROCESS_PARAM: Final = "process"
 # 회차가 와도 사용자가 그 뒤 고른 공정을 덮지 않는다 — 공정 Capa 상세
 # `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이다. 주소에 인자가 없는 회차에 비운다.
 CONSTRAINT_QUERY_SEEN_KEY: Final = "constraint_sim_query_seen"
+# HOME 칸으로 연 공정 Capa 상세(설비 「공식 고정」)의 머리 링크로 넘어온 방문 — (공정, 페이지 방문
+# 차례)(위젯 아님). 이 화면은 늘 세션 설비 시나리오라(D6) 설비 기준이 공식에서 가정으로 말없이
+# 바뀌지 않게, 그 공정을 보는 그 방문 동안 맨 위에 한 줄을 세운다(2026-10-25 E2E). 다른 공정을
+# 고르거나 다른 화면에 다녀오면 걷는다.
+CONSTRAINT_LOCKED_ARRIVAL_KEY: Final = "constraint_sim_locked_arrival"
 
 
 def constraint_query_params(process: str, *, theme: str | None) -> dict[str, str]:

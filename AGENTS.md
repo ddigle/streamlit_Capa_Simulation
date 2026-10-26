@@ -333,7 +333,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `소요대수`(공정 합)와 `get_process_product_demand(split="제품정보", limit=CONSTRAINT_PRODUCT_LIMIT)`(제품별 — 「그 밖」 이
     생기지 않는 상한), 가용은 공정 Capa 상세 ② 와 **같은 계획 칸·같은 키**(`load_required_shortening_for_target` 공식 칸,
     목표는 키 맞춤용 HOME 확보기준)의 단축 전 `가용대수` 다. 설비는 늘 **세션 설비 시나리오**(HOME 칸 방문 공식 잠금을
-    잇지 않는다 — D6)이고, 필요 단축 일정의 공용 조회 조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH
+    잇지 않는다 — D6. 잠긴 상세의 머리 링크로 넘어온 방문은 `CONSTRAINT_LOCKED_ARRIVAL_KEY`(공정, `page_visit()`)에 적어
+    세션이 공식 발행 쌍이 아니면 그 공정·그 방문 동안 맨 위에 「설비는 세션의 「…」 기준입니다 — 공정 Capa 상세는 HOME 칸에서
+    열어 설비가 공식 고정이었습니다」 한 줄을 세운다 — 모드 분기 앞이라 「개조 일정」 모드에도 서고, 판정은 상세의 방문 기준
+    칸 `PROCESS_DETAIL_EQUIPMENT_BASIS_KEY` 를 읽기만)이고, 필요 단축 일정의 공용 조회 조건(`0019`)·기준선(`0021`)·세션
+    칸은 읽지도 쓰지도 않는다. UPEH
     가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 출처 띠 끝 한 줄).
   - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 한 번
     적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY` 에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
