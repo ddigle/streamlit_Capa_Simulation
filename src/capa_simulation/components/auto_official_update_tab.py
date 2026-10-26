@@ -63,9 +63,12 @@ from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
+    held_notice,
     held_profile_conflict,
     is_own_save,
+    note_notice,
     note_profile_conflict,
+    notice_marks,
     own_save_marks,
     profile_conflict_marks,
     queue_refusal,
@@ -399,6 +402,7 @@ def _render_settings_form(
     # 표지 dict 는 저장 전에 받아 둔다 — 거부 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     conflict_marks = profile_conflict_marks()
+    messages = notice_marks()
     held = held_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
@@ -422,7 +426,13 @@ def _render_settings_form(
         notice.error(str(exc))
         return
     if updated == config and expected_version == settings.version:
-        notice.info("바뀐 값이 없습니다.")
+        # 방금 저장한 같은 값의 둘째 누름(새 화면이 서고 나서 닿은 느린 더블클릭)이면 방금 성공을
+        # 다시 알린다 — 「바뀐 값이 없습니다」 가 성공 알림을 덮지 않게(write_guard.held_notice).
+        just_saved = held_notice(SETTINGS_FLASH_KEY)
+        if just_saved is not None:
+            notice.success(just_saved)
+        else:
+            notice.info("바뀐 값이 없습니다.")
         return
     if updated.enabled and not config.enabled:
         # 켜기 전에 막는다 — 주차 없는 공식버전과는 「더 새 코드」를 견줄 수 없다.
@@ -449,10 +459,10 @@ def _render_settings_form(
         return
     else:
         remember_own_save(SETTINGS_SAVE_NAME, expected_version, saved.version, save_marks)
-        queue_flash(
-            SETTINGS_FLASH_KEY,
-            f"{SETTINGS_SAVED_PREFIX} — {describe_config_change(config, updated)}",
-        )
+        message = f"{SETTINGS_SAVED_PREFIX} — {describe_config_change(config, updated)}"
+        # 빠른 두 번 누름의 둘째가 이 알림을 다시 낸다(write_guard.held_notice).
+        note_notice(messages, SETTINGS_FLASH_KEY, message)
+        queue_flash(SETTINGS_FLASH_KEY, message)
         st.rerun()
 
 
@@ -474,8 +484,11 @@ def _settings_conflict(
     except BOOTSTRAP_ERRORS:
         stored = None
     if is_own_save(SETTINGS_SAVE_NAME, expected_version, stored, save_marks):
-        # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
-        queue_flash(SETTINGS_FLASH_KEY, f"{SETTINGS_SAVED_PREFIX}.")
+        # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 알림을
+        # 다시 낸다(창이 지났으면 짧은 글).
+        queue_flash(
+            SETTINGS_FLASH_KEY, held_notice(SETTINGS_FLASH_KEY) or f"{SETTINGS_SAVED_PREFIX}."
+        )
     else:
         note_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME, str(exc))
         queue_refusal(SETTINGS_SAVE_NAME, str(exc))

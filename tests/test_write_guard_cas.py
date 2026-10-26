@@ -434,10 +434,33 @@ def test_a_double_press_of_the_auto_update_settings_saves_once_and_says_saved(
 
     assert _texts(app, "error") == []
     assert [text for text in _texts(app, "success") if "자동 갱신 설정을" in text] == [
-        "자동 갱신 설정을 저장했습니다."
+        "자동 갱신 설정을 저장했습니다 — 키워드 PSM → PSS"
     ]
     stored = repository.load_auto_official_update_settings()
     assert (stored.version, stored.config.keyword) == (1, "PSS")
+
+
+def test_a_slow_double_press_of_the_auto_update_settings_repeats_the_success(
+    tmp_path: Path,
+) -> None:
+    """느린 더블클릭(0.4초 — 둘째 누름이 첫 저장 뒤 새로 그린 화면에 닿는다)은 같은 값이라
+    「바뀐 값이 없습니다」 가 방금 성공 알림을 덮었다(브라우저 확인 2026-10-26). 창 안이면 방금
+    성공을 다시 알린다."""
+    database = tmp_path / "auto.duckdb"
+    repository = _with_w40(database)
+    app = _tab(database)
+    pressed = _settings_pressed(app, "PSS")
+    app.run()
+    assert any("자동 갱신 설정을 저장했습니다" in text for text in _texts(app, "success"))
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert "바뀐 값이 없습니다." not in _texts(app, "info")
+    assert [text for text in _texts(app, "success") if "자동 갱신 설정을" in text] == [
+        "자동 갱신 설정을 저장했습니다 — 키워드 PSM → PSS"
+    ]
+    assert repository.load_auto_official_update_settings().version == 1
 
 
 def test_an_old_screen_double_press_after_another_save_keeps_the_refusal(
