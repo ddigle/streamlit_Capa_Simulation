@@ -27,7 +27,6 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
     SHORTENING_START_KEY,
-    SHORTENING_UPEH_VIEW_KEY,
     _card_table,
     _unit_row,
 )
@@ -823,17 +822,23 @@ def _assumed(tmp_path: Path, percent: int = 150) -> AppTest:
     return app
 
 
-def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_default_view_official(
+_ASSUMPTION_HINT = "켜져 있습니다 — 이 화면"
+
+
+def test_the_upeh_assumption_sits_in_the_condition_card_and_keeps_the_screen_official(
     tmp_path: Path,
 ) -> None:
-    """가정을 켜도 기본 보기·CSV 세 벌은 공식 계획이다 — 머리 아래 한 줄이 알리고 「UPEH 가정 비교」
-    를 켤 수 있다. 입력은 조건 카드(사이드바) 끝 「이 세션만」 묶음이다."""
+    """가정을 켜도 이 화면(보기·CSV 세 벌·기준선·진척 비교)은 공식 계획이다 — 머리 아래 한 줄이
+    알리고 가정의 효과는 공정 Capa 상세로 보낸다. 공식 대 가정 비교 보기(토글)는 없다. 입력은 조건
+    카드(사이드바) 끝 「이 세션만」 묶음이다(공정 Capa 상세와 같은 세션 칸)."""
     app = _assumed(tmp_path)
     assert {"UPEH 적용 시작", "UPEH 적용 끝"} <= {box.label for box in app.sidebar.selectbox}
     assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == 150
-    hint = [str(item.value) for item in app.caption if "켜져 있습니다 — 이 보기" in str(item.value)]
+    hint = [str(item.value) for item in app.caption if _ASSUMPTION_HINT in str(item.value)]
     assert hint and "UPEH 가정 150%" in hint[0] and "공식 계획" in hint[0]
-    assert not app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
+    assert "공정 Capa 상세" in hint[0]
+    assert not any("UPEH 가정 비교" in str(toggle.label) for toggle in app.toggle)
+    assert "UPEH 가정 비교" not in _html(app)
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert "UPEH 가정" not in units.columns
     captured = app.session_state["captured_downloads"]["equipment_shortening_units_csv"]
@@ -850,52 +855,8 @@ def test_the_upeh_assumption_notice_picks_the_particle_by_the_end_month(tmp_path
     end = _months()[-1]
     span_end = f"{end // 100 % 100:02d}-{end % 100:02d}"
     particle = "이" if span_end[-1] in "013678" else "가"
-    hint = [str(item.value) for item in app.caption if "켜져 있습니다 — 이 보기" in str(item.value)]
+    hint = [str(item.value) for item in app.caption if _ASSUMPTION_HINT in str(item.value)]
     assert hint and f"–{span_end}{particle} 켜져 있습니다" in hint[0]
-    clear_equipment_repository()
-
-
-def test_the_upeh_comparison_view_reads_official_to_assumed(tmp_path: Path) -> None:
-    app = _assumed(tmp_path)
-    app.toggle(key=SHORTENING_UPEH_VIEW_KEY).set_value(True).run()
-    assert not app.exception, [element.message for element in app.exception]
-
-    body = _html(app)
-    assert 'aria-label="UPEH 가정 비교 요약"' in body
-    assert any("소요 −33.3%" in str(item.value) for item in app.caption)
-    assert any("소요대수만 같고" in str(item.value) for item in app.caption)
-    assert any(
-        str(item.value).startswith("보이는 공정 구간 안 단축 0(목표 110%) → ")
-        for item in app.caption
-    )
-    (table,) = app.dataframe
-    assert {"공정", "상태", "단축 호기", "단축일 합계", "신규", "구간 안 단축 0"} <= set(
-        table.value.columns
-    )
-    captured, compare = _csv(app, "equipment_shortening_upeh_compare_csv")
-    assert "upeh150_" in str(captured["file_name"])
-    mark = f"UPEH 가정 150% · {_dash(_months()[0])}–{_dash(_months()[-1])}"
-    assert list(compare.columns)[0] == "UPEH 가정"
-    # 열 이름만이 아니라 모든 행에 표지가 선다 — 빈 칸이면 파일이 공식 숫자로 읽힌다.
-    assert len(compare) > 0 and set(compare["UPEH 가정"]) == {mark}
-    _, units = _csv(app, "equipment_shortening_upeh_units_csv")
-    assert list(units.columns)[0] == "UPEH 가정"
-    assert set(units["UPEH 가정"]) <= {mark}
-    # 목표를 바꿔도 같은 보기다(가정 계획은 다섯 목표를 한 번에 들고 있다).
-    app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
-    assert not app.exception
-    assert 'aria-label="UPEH 가정 비교 요약"' in _html(app)
-    # 역산의 「이 값으로」 는 % 칸에 그 값을 적는다(범위 안이면).
-    inverse = [
-        str(item.value) for item in app.caption if str(item.value).startswith("보이는 공정 구간")
-    ]
-    wanted = re.search(r"UPEH ≥ (\d+)%", inverse[0]) if inverse else None
-    if wanted is not None and int(wanted.group(1)) != 150:
-        app.button(key="equipment_shortening_upeh_inverse").click().run()
-        assert not app.exception, [element.message for element in app.exception]
-        assert app.sidebar.number_input(key=UPEH_ASSUMPTION_PERCENT_KEY).value == int(
-            wanted.group(1)
-        )
     clear_equipment_repository()
 
 
@@ -934,9 +895,9 @@ def test_a_baseline_is_not_saved_while_an_assumption_is_on() -> None:
     assert refusal(100) is None
 
 
-def test_an_assumption_outside_the_card_months_says_no_month_applies(tmp_path: Path) -> None:
-    """적용 구간이 카드 기간(공용 설정)과 겹치지 않으면 비교 보기를 켤 수 없고, 효과 줄과 같은
-    「적용된 달 없음」 으로 알린다 — 「켜면 견줍니다」 라고 하지 않는다."""
+def test_an_assumption_outside_the_card_months_reads_the_same_one_line(tmp_path: Path) -> None:
+    """적용 구간이 카드 기간(공용 설정)과 겹치지 않아도 같은 한 줄이다 — 이 화면은 어느 쪽이든
+    가정을 걸지 않는다."""
     database_path = _database(tmp_path)
     months = _months()
     DuckDBEquipmentRepository(database_path).save_shortening_filter_months(
@@ -948,22 +909,17 @@ def test_an_assumption_outside_the_card_months_says_no_month_applies(tmp_path: P
     app.session_state[UPEH_ASSUMPTION_END_KEY] = months[-1]
     app.run()
     assert not app.exception, [element.message for element in app.exception]
-    assert app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
     captions = [str(item.value) for item in app.caption]
-    assert any("UPEH 가정 120% — 적용된 달 없음" in caption for caption in captions)
-    assert not any("켜면 공식 대 가정을 견줍니다" in caption for caption in captions)
+    assert any(_ASSUMPTION_HINT in caption and "UPEH 가정 120%" in caption for caption in captions)
+    assert not any("적용된 달 없음" in caption for caption in captions)
     clear_equipment_repository()
 
 
-def test_at_100_percent_the_comparison_toggle_cannot_be_used(tmp_path: Path) -> None:
+def test_at_100_percent_there_is_no_assumption_line(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
-    assert app.toggle(key=SHORTENING_UPEH_VIEW_KEY).disabled
-    assert not any("켜져 있습니다 — 이 보기" in str(item.value) for item in app.caption)
+    assert not any(_ASSUMPTION_HINT in str(item.value) for item in app.caption)
+    assert not any("UPEH 가정 비교" in str(toggle.label) for toggle in app.toggle)
     clear_equipment_repository()
-
-
-def _dash(month: int) -> str:
-    return f"{month // 100 % 100:02d}-{month % 100:02d}"
 
 
 # ------------------------------------------------------- 진척 관리 한 페이지(2026-10-22)

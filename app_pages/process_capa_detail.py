@@ -895,7 +895,7 @@ def assumption_effect_line() -> str:
     )
     basis = (
         f"이 화면 단축 목표 = HOME Preference 확보기준(월별) · 기간 {month_label(effective_start)}–"
-        f"{month_label(effective_end)}(RQ_REQB) — 필요 단축 일정과는 소요대수만 같습니다"
+        f"{month_label(effective_end)}(RQ_REQB) — 필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)"
     )
     return f"{effect_text(effect)} · {basis}"
 
