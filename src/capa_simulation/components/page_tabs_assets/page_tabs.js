@@ -15,6 +15,7 @@
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
+// 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
@@ -30,6 +31,10 @@ const EDIT_MS = 5000
 const HOLD_MS = 400
 // `st.switch_page` 가 떠나는 칸에 적은 옮길 화면 인자를 되돌리는 기다림 — 그 바로 뒤 옮긴 화면 쌓기가 이 안에 온다.
 const LEAVE_MS = 1000
+// 닫기·고정 누름 뒤 같은 자리의 둘째 누름을 더블클릭의 꼬리로 보는 창(`<tabs-press>`) — Windows 기본 더블클릭 시간과
+// 손떨림 너비.
+const DOUBLE_PRESS_MS = 500
+const DOUBLE_PRESS_PX = 8
 
 // <tabs-history>
 // 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
@@ -126,6 +131,18 @@ function settleSelect(queue, active, now, ms, ids, busy) {
   return next
 }
 // </tabs-queue>
+
+// <tabs-press>
+// 닫기·고정 누름은 곧 목록을 바꾼다 — 닫은 탭은 누르자마자 숨겨 이웃이 그 자리로 당겨 오고, 고정한 탭은 다음 data 에서
+// 왼쪽으로 옮긴다. 그래서 × 더블클릭(·0.3초 간격 두 번 누름)의 둘째 누름이 포인터 아래로 밀려 온 이웃 탭에 닿아 그 탭을
+// 닫거나 고정했다 — 같은 프레임의 두 'close' 는 마지막 것만 서버에 닿아 누른 탭은 남고 이웃이 닫혔다(E2E 결함).
+// `strayPress` 는 앞 닫기·고정 누름(`last` — {id, at, x, y})에서 `ms` 안에 `px` 안의 같은 자리로 온 누름이 **다른 탭**에
+// 닿았는가다 — 참이면 그 누름은 버린다. 같은 탭의 둘째 누름(핀 두 번 — 고정했다 푼다)과 자리를 옮긴 누름은 그대로다.
+function strayPress(last, id, now, x, y, ms, px) {
+  if (last === null || id === last.id || now - last.at >= ms) return false
+  return Math.abs(x - last.x) <= px && Math.abs(y - last.y) <= px
+}
+// </tabs-press>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -182,7 +199,7 @@ export default function (component) {
   const notice = nav.querySelector('.capa-tabs-notice')
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
-    onLink: null, queue: createSelectQueue(), settleTimer: 0,
+    onLink: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 탭 줄은 앱 전체 회차마다
@@ -410,15 +427,29 @@ export default function (component) {
     S.pressFromGrid = S.gridFocused
     startDrag(event)
   }
+  // 닫기·고정 누름 뒤 포인터 아래로 밀려 온 다른 탭에 닿은 둘째 누름인가(`<tabs-press>`). 포인터 누름(`detail` > 0)만
+  // 본다 — 키보드로 누른 단추는 좌표가 없다.
+  const stray = (event, item) =>
+    event.detail > 0 &&
+    strayPress(S.lastPress, item.dataset.id, Date.now(), event.clientX, event.clientY, DOUBLE_PRESS_MS, DOUBLE_PRESS_PX)
+  const pressed = (event, item) => {
+    S.lastPress = event.detail > 0
+      ? { id: item.dataset.id, at: Date.now(), x: event.clientX, y: event.clientY }
+      : null
+  }
   list.onclick = (event) => {
     const button = event.target.closest('button')
     const item = button && button.closest('.capa-tabs-item')
     if (!item || !list.contains(item)) return
-    if (button.classList.contains('capa-tabs-x')) {
-      event.stopPropagation()
+    const closing = button.classList.contains('capa-tabs-x')
+    const pinning = button.classList.contains('capa-tabs-pin')
+    if (closing || pinning) event.stopPropagation()
+    if (stray(event, item)) return
+    if (closing) {
+      pressed(event, item)
       close(item)
-    } else if (button.classList.contains('capa-tabs-pin')) {
-      event.stopPropagation()
+    } else if (pinning) {
+      pressed(event, item)
       S.send('pin', { id: item.dataset.id, pinned: !item.classList.contains('is-pinned'), epoch: S.data.epoch })
     } else {
       select(item)
@@ -433,6 +464,8 @@ export default function (component) {
     const item = event.target.closest('.capa-tabs-item')
     if (!item || !list.contains(item)) return
     event.preventDefault()
+    if (stray(event, item)) return
+    pressed(event, item)
     close(item)
   }
 
