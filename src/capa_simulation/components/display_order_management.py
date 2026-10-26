@@ -109,8 +109,11 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
     # 편집표)이 밀리면 저장 회차(`st.rerun()` 으로 끊김)의 옛 자리에 흐린 사본이 남는다(AGENTS 9장
     # 「조건부 알림」).
     _render_label_warnings(render_flash("display_order_flash"))
-    if clashes:
-        _render_clash_warning(clashes)
+    # 겹침 경고도 늘 서 있는 칸이다 — 직접 편집으로 마지막 겹침을 고쳐 저장하면 다음 회차에 경고가
+    # 빠지는데, 그때 아래 직접 편집이 한 칸 당겨지면 같은 흐린 사본 꼴이다.
+    with st.container():
+        if clashes:
+            _render_clash_warning(clashes)
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)

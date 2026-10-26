@@ -1659,6 +1659,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다.
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
+  저장 성공과 그 저장의 표시명 경고(성공 칸 안), 저장된 겹침 경고는 각각 늘 서 있는 칸에 서서 저장(`st.rerun()`)
+  뒤 경고가 생기고 빠져도 아래 직접 편집의 자리가 그대로다(9장 「조건부 알림」).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
