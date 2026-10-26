@@ -397,13 +397,14 @@ def _sheet(value: float, first: float, second: float) -> SheetView:
     """한 달 시트 — 설비 일정 보유 = `value`, 기존보유 = `first`, 가용 = 보유 + 대여(`second`),
     GAP 은 설비 일정 − Static(Static 은 `first`)."""
     month = 202611
-    values = pd.DataFrame(0.0, index=list(SHEET_ROWS), columns=[month])
-    values.loc["static:owned", month] = first
-    values.loc["static:lent", month] = -second
-    values.loc["static:available", month] = first - second
-    values.loc[ROW_SCHEDULE_OWNED, month] = value
-    values.loc["sched:lent", month] = -second
-    values.loc[ROW_SCHEDULE_AVAILABLE, month] = value - second
+    cells = {
+        "static:owned": first,
+        "static:lent": -second,
+        "static:available": first - second,
+        ROW_SCHEDULE_OWNED: value,
+        "sched:lent": -second,
+        ROW_SCHEDULE_AVAILABLE: value - second,
+    }
     for gap, (schedule, static) in zip(
         GAP_ROWS,
         (
@@ -413,7 +414,8 @@ def _sheet(value: float, first: float, second: float) -> SheetView:
         ),
         strict=True,
     ):
-        values.loc[gap, month] = values.loc[schedule, month] - values.loc[static, month]
+        cells[gap] = cells[schedule] - cells[static]
+    values = pd.DataFrame({month: [cells[row] for row in SHEET_ROWS]}, index=list(SHEET_ROWS))
     return SheetView(months=(month,), values=values, baseline=pd.Series([first], index=[month]))
 
 
