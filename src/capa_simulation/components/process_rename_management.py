@@ -116,9 +116,13 @@ def render_process_rename_management(
     # 안내에 늘어놓는 공정명·표시명은 사람 글이라 막아 적는다(AGENTS 9장 — 「ZZ~9~9 *q*」).
     unmatched = labels.unmatched(available_processes)
     if unmatched:
+        # 「무시합니다」 가 아니다 — 표시명은 원본이 보유 공정인지 보지 않고 입혀, 시나리오 밖
+        # 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는 그대로 나온다
+        # (AGENTS 8장).
         st.info(
-            "보유하지 않은 공정에 지정된 표시명 "
-            f"{len(unmatched):,}건은 무시합니다: {_listed(unmatched)}"
+            f"보유 공정에 없는 공정에 지정된 표시명 {len(unmatched):,}건: {_listed(unmatched)}. "
+            "이 시나리오의 계산 화면에는 나오지 않지만, 그 공정이 나오는 화면(가용설비·실적·"
+            "Dynamic Capa·Capa Chatbot 등)에서는 그대로 적용됩니다."
         )
     collisions = labels.owned_name_collisions(available_processes)
     if collisions:

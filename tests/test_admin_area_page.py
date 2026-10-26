@@ -445,7 +445,11 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
     assert any("테스트 초기값" in caption.value for caption in app.caption)
 
 
-def test_unowned_display_name_is_reported_as_ignored_not_as_an_error(tmp_path: Path) -> None:
+def test_unowned_display_name_is_reported_as_a_note_not_as_an_error(tmp_path: Path) -> None:
+    """보유 공정에 없는 원본의 표시명은 오류가 아니라 안내다. 「무시합니다」 라고 하지 않는다 —
+    시나리오 밖 공정을 그리는 Dynamic Capa·Chatbot 에는 그 표시명이 나온다(2026-10-26 E2E —
+    「Wafer Sorter → WS 정렬」 을 「무시합니다」 라 하고 Dynamic 축·Chatbot 근거 표에는 「WS 정렬」
+    이 섰다)."""
     database_path = tmp_path / "rename-unowned.duckdb"
     script = f'''
 from pathlib import Path
@@ -468,7 +472,10 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error)
-    assert any("무시합니다" in info.value for info in app.info)
+    notes = [str(info.value) for info in app.info if "보유 공정에 없는 공정" in str(info.value)]
+    assert len(notes) == 1, [str(info.value) for info in app.info]
+    assert "없는공정" in notes[0] and "그대로 적용됩니다" in notes[0], notes
+    assert not [str(info.value) for info in app.info if "무시합니다" in str(info.value)]
 
 
 def _start_check_expanders(app: AppTest) -> list[str]:

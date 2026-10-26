@@ -132,11 +132,13 @@ def test_unmapped_process_keeps_its_original_name() -> None:
     assert labels.label("MOLD") == "MOLD"
 
 
-def test_display_name_for_an_unowned_process_is_ignored_not_an_error() -> None:
+def test_display_name_for_an_unowned_process_is_listed_not_an_error() -> None:
+    """보유 공정에 없는 원본은 안내 목록에 들고, 표시명은 그 공정이 나오는 화면에 그대로 입는다."""
     labels = _labels([("SAW", "절단"), ("없는공정", "유령")])
 
     assert labels.label("SAW") == "절단"
     assert labels.unmatched(["SAW", "MOLD"]) == ["없는공정"]
+    assert labels.label("없는공정") == "유령"
 
 
 def test_display_name_colliding_with_another_owned_process_is_counted() -> None:
@@ -154,10 +156,8 @@ def test_owned_name_collision_skips_self_and_renamed_away_processes() -> None:
 
 
 def test_owned_name_collision_skips_rules_whose_source_is_not_owned() -> None:
-    """보유하지 않은 공정의 규칙은 화면에 나타나지 않아 겹칠 대상이 없다.
-
-    세면 `unmatched()` 의 "무시합니다" 안내와 "같은 이름으로 보입니다" 경고가
-    같은 화면에 함께 떠 서로 모순된다.
+    """보유하지 않은 공정의 규칙은 이 시나리오의 계산 화면에 나타나지 않아 거기서는 겹칠 대상이
+    없다. 시나리오 밖 공정을 그리는 화면의 겹침은 이 검사(시나리오 `RQ_MODULE`)의 범위 밖이다.
     """
     labels = _labels([("없는공정", "MOLD")])
 
