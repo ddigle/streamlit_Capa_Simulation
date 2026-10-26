@@ -176,11 +176,11 @@ const draw = (units, chips) => {
     S.groups.set(id, g)
   }
   trayList.kids = []
-  for (const [id, created, hidden] of chips) {
+  for (const [id, created, hidden, leaving] of chips) {
     const chip = mk('sle-chip', trayList)
     chip.dataset.id = id
     chip.hidden = Boolean(hidden)
-    mk('sle-chip-name', chip, { tabindex: '0' })
+    mk('sle-chip-name', chip, leaving ? {} : { tabindex: '0' })
     if (created) mk('sle-chip-remove', chip)
   }
 }
@@ -303,6 +303,13 @@ def test_cancelling_a_new_chip_names_its_unit_and_keeps_focus_in_the_tray() -> N
             "before": {"units": [], "chips": chips},
             "after": {"units": [], "chips": [chips[0], ["N3", True, True], ["Z", False, False]]},
         },
+        {
+            # 이름 단추가 초점을 받지 않는 칩은 건너뛰고, 뒤에 없으면 앞 칩이다.
+            "name": "leaving_neighbour",
+            "focus": "remove:N3",
+            "before": {"units": [], "chips": chips},
+            "after": {"units": [], "chips": [chips[0], ["L", False, False, True]]},
+        },
     ]
 
     result = _focus_after_redraw(cases)
@@ -312,4 +319,5 @@ def test_cancelling_a_new_chip_names_its_unit_and_keeps_focus_in_the_tray() -> N
         "last": "chip:N2",
         "only": "search",
         "hidden_neighbour": "chip:Z",
+        "leaving_neighbour": "chip:A",
     }

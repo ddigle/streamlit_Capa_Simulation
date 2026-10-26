@@ -2022,11 +2022,15 @@ export default function (component) {
       focus((spot.kind === 'remove' && chip.querySelector('.sle-chip-remove')) || chip.querySelector('.sle-chip-name'))
       return
     }
-    // 그 칩이 서랍에서 사라졌으면(「×」 로 추가를 취소했다) 같은 자리의 이웃 칩, 칩이 없으면 검색 칸에 둔다 — 초점이
-    // BODY 로 빠지면 Tab 이 문서 처음부터 다시 돈다.
-    const next = shown[Math.min(Math.max(spot.index, 0), shown.length - 1)]
-    const name = next && next.querySelector('.sle-chip-name')
-    if (name && name.hasAttribute('tabindex')) focus(name)
+    // 그 칩이 서랍에서 사라졌으면(「×」 로 추가를 취소했다) 같은 자리의 이웃 칩(뒤 칩, 없으면 앞 칩 — 이름 단추가 초점을
+    // 받지 않는 칩은 건너뛴다), 칩이 없으면 검색 칸에 둔다 — 초점이 BODY 로 빠지면 Tab 이 문서 처음부터 다시 돈다.
+    const names = shown.map((c) => c.querySelector('.sle-chip-name'))
+    const at = Math.max(spot.index, 0)
+    const able = (i) => Boolean(names[i] && names[i].hasAttribute('tabindex'))
+    let pick = -1
+    for (let i = at; i < names.length && pick < 0; i += 1) if (able(i)) pick = i
+    for (let i = Math.min(at, names.length) - 1; i >= 0 && pick < 0; i -= 1) if (able(i)) pick = i
+    if (pick >= 0) focus(names[pick])
     else focus(trayBox.hidden ? svg : traySearch)
   }
 
