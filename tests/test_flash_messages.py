@@ -204,10 +204,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str], str] = {
     ("app_pages/voc.py", "GONE_NOTICE_KEY"): (
         "다음 동작까지 남는 꼴 — 지운 글의 거절과 함께 적어 둔 답변을 되살릴 입력으로 든다"
     ),
-    ("app_pages/voc.py", "FLASH_KEY"): (
-        "지운 글 칸(GONE_NOTICE_KEY)과 한 알림 칸·차례이고, 빠른 두 번 누름 알림(3회차)과 위젯 세대"
-        " 갈래가 이 칸을 함께 고친다 — 그 고침이 들어간 뒤 옮긴다"
-    ),
     ("src/capa_simulation/components/shortening_progress_panel.py", "_BASELINE_NOTICE_KEY"): (
         "다음 동작까지 남는 꼴 — 기준선 알림은 이벤트 칸 자리 수를 고정하고 같은 알림을 한 번만"
         " 세는 shown 칸과 짝이다"

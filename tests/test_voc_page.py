@@ -195,15 +195,22 @@ def test_a_rejected_post_keeps_what_was_typed_and_a_saved_one_clears(tmp_path: P
 
 
 def test_a_rejected_reply_keeps_its_text_and_a_saved_one_clears(tmp_path: Path) -> None:
+    """거절 문구는 글 상자 안 늘 서 있는 칸에 선다 — 생기고 빠져도 아래 단추 줄 자리가 그대로다."""
     database_path = tmp_path / "scenario.duckdb"
     post_id = _post(database_path)
     reply_key = f"voc_reply_body_{post_id}"
     app = _app(database_path)
+
+    def resolve_path() -> tuple[int, ...]:
+        return _path_of(app, lambda node: getattr(node, "key", None) == f"voc_resolve_{post_id}")
+
+    before = resolve_path()
     app.text_area(key=reply_key).input("확인했습니다.")
     _click(app, "답변 남기기")
 
     assert "작성자를 입력하세요." in [message.value for message in app.error]
     assert app.text_area(key=reply_key).value == "확인했습니다."
+    assert resolve_path() == before
 
     app.text_input(key=AUTHOR_KEY).input("담당자")
     _click(app, "답변 남기기")

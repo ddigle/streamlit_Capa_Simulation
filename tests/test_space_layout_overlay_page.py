@@ -41,6 +41,7 @@ from test_space_layout_edit import _master as _layout_master
 from test_space_module_group import _js_decl, _node
 from widget_browser import BrowserTables
 
+from capa_simulation import equipment_scenario_activation
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.app_header import EQUIPMENT_HEADER_LABEL_KEY
 from capa_simulation.components.equipment_data_workspace import (
@@ -1023,10 +1024,11 @@ def test_an_unmerged_assumption_has_no_switch_to_official(
 
 
 def test_a_failed_scenario_switch_is_not_called_a_failed_save(
-    tmp_path: Path, editor_calls: list[dict[str, Any]]
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """시나리오 바꾸기 실패 글은 저장 오류와 따로 잠금 줄 자리에 선다 — 저장 안 한 상자가 있는
-    회차에도 「배치를 저장하지 못했습니다」 로 읽히지 않는다(S3 리뷰)."""
+    회차에도 「배치를 저장하지 못했습니다」 로 읽히지 않는다(S3 리뷰). 실패는 콜백이 담고 그 칸이
+    한 번 그린다(`flash`) — 다음 회차에는 없다."""
     _, setup = _overlay(tmp_path)
     app = _ok(_space(tmp_path, setup).run())
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
@@ -1037,12 +1039,23 @@ def test_a_failed_scenario_switch_is_not_called_a_failed_save(
         "marks": None,
     }
     _ok(app.run())
-    app.session_state["space_scenario_switch_error"] = "시험 실패"
-    _ok(app.run())
+    # 페이지는 회차마다 이 이름을 모듈에서 다시 읽는다 — 콜백은 그 회차의 이름을 부른다.
+    monkeypatch.setattr(
+        equipment_scenario_activation,
+        "select_equipment_scenario",
+        lambda *_args, **_kwargs: "시험 실패",
+    )
+    # 「공식으로 바꾸기」 는 FAB 자리에 선다 — 층을 떠나도 저장 안 한 배치 상자는 남는다.
+    _ok(app.button(key="space_status_fab_breadcrumb").click().run())
+    _ok(app.checkbox(key="space_switch_to_official_discard").check().run())
+    _ok(app.button(key="space_switch_to_official").click().run())
 
     errors = [str(item.value) for item in app.error]
     assert "설비 시나리오를 바꾸지 못했습니다: 시험 실패" in errors
     assert not any("저장하지 못했습니다" in text for text in errors)
+
+    _ok(app.run())
+    assert not any("바꾸지 못했습니다" in str(item.value) for item in app.error)
 
 
 def test_the_editor_turns_the_canvas_controls_off_when_told() -> None:

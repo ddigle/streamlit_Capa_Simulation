@@ -279,7 +279,8 @@ SAVE_NOTE_KEY = "space_layout_save_note"
 SAVE_NOTE_NONCE_KEY = "space_layout_save_note_nonce"
 SAVE_ERROR_KEY = "space_layout_save_error"
 # 「공식으로 바꾸기」·「최신 rM 불러오기」 실패 글 — 저장 오류와 따로 둔다(저장 안 한 상자가
-# 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다.
+# 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다
+# (`flash`).
 SWITCH_ERROR_KEY = "space_scenario_switch_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
@@ -935,7 +936,11 @@ def _switch_scenario(
         database_path, scenario_id, schedule_revision_id, discard=discard
     )
     if failure is not None:
-        st.session_state[SWITCH_ERROR_KEY] = failure
+        queue_flash(
+            SWITCH_ERROR_KEY,
+            markdown_safe_tildes(f"설비 시나리오를 바꾸지 못했습니다: {failure}"),
+            kind="error",
+        )
         return
     _queue_space_flash(done)
 
@@ -1720,9 +1725,7 @@ with st.container(key="space_unsaved_layout_slot"):
 # 선다(잠금이 생기고 풀릴 때 아래 층 상세·FAB 상자가 밀리지 않게). 시나리오 바꾸기 실패는 늘 여기서
 # 한 번 보이고, 저장 오류는 상자가 없는 회차에만 여기서 보인다.
 with st.container(key="space_edit_lock_slot"):
-    switch_error = st.session_state.pop(SWITCH_ERROR_KEY, None)
-    if isinstance(switch_error, str):
-        st.error(markdown_safe_tildes(f"설비 시나리오를 바꾸지 못했습니다: {switch_error}"))
+    render_flash(SWITCH_ERROR_KEY)
     save_error = None if panel_drawn else st.session_state.pop(SAVE_ERROR_KEY, None)
     if isinstance(save_error, str):
         st.error(markdown_safe_tildes(save_error))
