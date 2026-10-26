@@ -464,8 +464,9 @@ if entry.shortening_origin is not None:
     card_band = shortening_band_text(entry.shortening_origin)
     card_tail = equipment_band_tail(entry.shortening_origin.equipment, equipment_here)
     if card_tail is not None:
-        # 카드의 설비 시나리오는 주소 인자(`eq`) 글이다 — 앱 글뿐인 조각과 함께 글자 그대로 막는다.
-        card_band = f"{card_band} · {literal_markdown(card_tail)}"
+        # 카드의 설비 시나리오는 주소 인자(`eq`) 글이다 — `equipment_band_tail` 이 지을 때 두 이름을
+        # 막아 돌려주므로 여기서 다시 감싸지 않는다(두 번 막으면 `\~` 가 글자로 보인다).
+        card_band = f"{card_band} · {card_tail}"
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.caption(f"{ORIGIN_BAND_ICON} {card_band}", width="content")
         st.button(
