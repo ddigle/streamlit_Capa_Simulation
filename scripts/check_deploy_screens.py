@@ -1985,17 +1985,36 @@ _SUMMARY_MARK_JS = f"""(id) => {{
 _BOX_LEFT_JS = """(el) => el.getBoundingClientRect().x"""
 # 서랍은 컴포넌트의 shadow root 안이라 `document.querySelector` 로는 닿지 않는다. Playwright
 # 로케이터(`.sle-tray`, shadow 를 뚫는다)로 잡은 서랍 요소를 받아 그 root 에서 찾는다.
+# 칩마다 편집기가 단 `__entry`(대표 호기와 함께 놓일 호기 목록)에서 층 미정 호기(`floorless` — 동이
+# 비었거나 같은 동에 층만 빈 호기, 편집기가 「층 미정」 꼬리표를 다는 그것)와 묶음 모듈(`group`)을
+# 센다. 층 목록 표 `미배치대수` 는 그 층 동·층이 적힌 호기만 설비지분으로 센다 — 서랍 N 에서 층
+# 미정을 빼면 표 N 이고, 묶음 모듈은 서랍이 한 대씩 세어 표보다 클 수 있다. `__entry` 가 없는 칩이
+# 하나라도 있으면(편집기 판이 다르면) 두 수는 null 이다.
 _TRAY_JS = """(tray) => {
   if (tray.hidden) return null;
-  const names = [...tray.querySelectorAll(".sle-tray-list .sle-chip")]
-    .map((chip) => (chip.querySelector(".sle-chip-name") || {}).textContent || "");
+  const chips = [...tray.querySelectorAll(".sle-tray-list .sle-chip")];
+  const names = chips.map((chip) => (chip.querySelector(".sle-chip-name") || {}).textContent || "");
   const order = new Intl.Collator("ko", { numeric: true, sensitivity: "base" });
   let violations = 0;
   for (let i = 1; i < names.length; i += 1) {
     if (order.compare(names[i - 1], names[i]) > 0) violations += 1;
   }
   const count = (tray.querySelector(".sle-tray-count") || {}).textContent || "";
-  return { chips: names.length, violations, count, first: names[0] || "" };
+  let floorless = 0;
+  let modules = 0;
+  let readable = true;
+  for (const chip of chips) {
+    const list = chip.__entry && Array.isArray(chip.__entry.list) ? chip.__entry.list : null;
+    if (!list) { readable = false; continue; }
+    for (const unit of list) {
+      if (unit.floorless) floorless += 1;
+      else if (unit.group) modules += 1;
+    }
+  }
+  return {
+    chips: names.length, violations, count, first: names[0] || "",
+    floorless: readable ? floorless : null, modules: readable ? modules : null,
+  };
 }"""
 _TRAY_STATE_JS = """(tray) => {
   const root = tray.getRootNode();
@@ -2357,7 +2376,8 @@ def _number(text: str | None) -> float:
 
 
 def check_space_drawer(screen: Screen) -> str:
-    """Space 미배치 서랍 — 미배치가 가장 많은 층을 열어 대수·이름 오름차순 위반·검색(빈 알림·`Esc`).
+    """Space 미배치 서랍 — 미배치가 가장 많은 층을 열어 대수(서랍 안 층 미정 따로)·이름 오름차순
+    위반·검색(빈 알림·`Esc`).
 
     호기를 끌어 놓지 않고 `적용` 도 누르지 않는다. 층 이름·호기 이름은 고르는 데만 쓴다.
     """
@@ -2388,6 +2408,33 @@ def check_space_drawer(screen: Screen) -> str:
         _close_drawer(screen)
 
 
+def summarize_drawer_counts(
+    floors: int,
+    table: float,
+    total: int,
+    floorless: int | None,
+    modules: int | None,
+) -> str:
+    """서랍 머리 — 층 수 · 연 층 표 N · 서랍 N 과 그 안의 층 미정 · 이 층 몫을 표와 견준 것.
+
+    서랍은 이 층 동·층의 미배치에 **층 미정 호기**(동이 비었거나 같은 동에 층만 빈 — 모든 층의
+    서랍에 함께 뜬다)를 더해 싣는다. 그래서 기대는 `서랍 N ≥ 표 N` 이고 `서랍 N − 층 미정 = 이 층
+    몫` 이 표 N 과 같다. 묶음 모듈은 서랍이 한 대씩, 표는 설비지분(묶음 하나가 1대)으로 세어 이 층
+    몫이 표보다 클 수 있다 — 그때는 `다름(묶음 모듈 m대)` 로 까닭을 함께 찍는다. 층 미정을 셀 수
+    없으면(편집기 판이 다름) 견주지 않는다."""
+    head = f"미배치 있는 층 {floors}개 · 연 층 표 {table:g}대 · 서랍 {total}대"
+    if floorless is None or modules is None or total < 0:
+        return f"{head}(층 미정 못 셈)"
+    own = total - floorless
+    if abs(own - table) < 0.005:
+        verdict = "표와 같음"
+    elif modules:
+        verdict = f"표와 다름(묶음 모듈 {modules}대)"
+    else:
+        verdict = "표와 다름"
+    return f"{head} = 이 층 {own}대 + 층 미정 {floorless}대 · 이 층 {verdict}"
+
+
 def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
     tab = screen.page.locator(".sle-drawer-tab").first
     tab.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
@@ -2397,8 +2444,8 @@ def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
     total_match = re.fullmatch(r"(\d+)대", str(tray["count"]).strip())
     total = int(total_match.group(1)) if total_match else -1
     head = (
-        f"미배치 있는 층 {floors}개 · 연 층 표 {unplaced:g}대 · 서랍 {total}대 · "
-        f"칩 {tray['chips']}개 오름차순 위반 {tray['violations']}"
+        summarize_drawer_counts(floors, unplaced, total, tray["floorless"], tray["modules"])
+        + f" · 칩 {tray['chips']}개 오름차순 위반 {tray['violations']}"
     )
     first = str(tray["first"])
     if not first:

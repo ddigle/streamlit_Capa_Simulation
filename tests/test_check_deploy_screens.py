@@ -1605,6 +1605,47 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
     assert "new Intl.Collator('ko', { numeric: true, sensitivity: 'base' })" in editor
 
 
+def test_the_drawer_floorless_count_reads_what_the_editor_hangs_on_a_chip() -> None:
+    """서랍 안 층 미정 수는 칩의 `__entry.list` 호기마다 `floorless`·`group` 으로 센다 — 편집기가
+    그 이름으로 달고, 서버가 그 뜻(이 층이 아닌 층 미정 · Main 설비 묶음)으로 보낸다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    assert "chip.__entry = { lead, list }" in editor
+    assert "floorless: Boolean(raw.floorless)" in editor
+    service = _text(PROJECT_ROOT / "src" / "capa_simulation" / "services" / "space_layout_edit.py")
+    assert '"floorless": bool(row["_floorless"]),' in service
+    assert '"group": str(parent) if _present(parent) else None,' in service
+    for name in ("chip.__entry", "unit.floorless", "unit.group"):
+        assert name in screens._TRAY_JS
+
+
+def test_the_drawer_head_splits_the_drawer_into_this_floor_and_floorless_units() -> None:
+    """`202610231430` 리뷰 사외 요청 2 — 서랍이 층 미정 호기까지 실어 서랍 N 이 표 N 보다 큰
+    것이 네 배포 이어 `ng` 였다. 머리가 서랍 N 을 이 층 몫과 층 미정으로 갈라 찍고 이 층 몫을 표와
+    견준다."""
+    line = screens.summarize_drawer_counts(6, 160.0, 549, 389, 0)
+    assert line == (
+        "미배치 있는 층 6개 · 연 층 표 160대 · 서랍 549대 = 이 층 160대 + 층 미정 389대 · "
+        "이 층 표와 같음"
+    )
+    # 층 미정이 없으면 예전처럼 서랍 N 이 표 N 과 같다.
+    assert screens.summarize_drawer_counts(1, 4.0, 4, 0, 0).endswith(
+        "서랍 4대 = 이 층 4대 + 층 미정 0대 · 이 층 표와 같음"
+    )
+    # 묶음 모듈은 서랍이 한 대씩, 표는 설비지분으로 센다 — 다르면 까닭을 함께 찍는다.
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4).endswith(
+        "이 층 6대 + 층 미정 2대 · 이 층 표와 다름(묶음 모듈 4대)"
+    )
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 0).endswith("이 층 표와 다름")
+    # 칩에서 층 미정을 셀 수 없으면 견주지 않는다.
+    assert screens.summarize_drawer_counts(2, 3.0, 8, None, None) == (
+        "미배치 있는 층 2개 · 연 층 표 3대 · 서랍 8대(층 미정 못 셈)"
+    )
+    # 지분 합인 표 N 의 소수도 그대로 견준다.
+    assert screens.summarize_drawer_counts(1, 2.5, 5, 2, 1).endswith(
+        "이 층 3대 + 층 미정 2대 · 이 층 표와 다름(묶음 모듈 1대)"
+    )
+
+
 @pytest.mark.parametrize(
     ("path", "label"),
     [
