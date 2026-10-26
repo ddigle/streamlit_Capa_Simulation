@@ -146,6 +146,26 @@ def test_the_first_data_goes_through_the_import_dialog_and_one_revision_save(
     assert list(app.session_state[GRID_LOADED_KEY]) == ["s:DA-01", "s:DA-02"]
 
 
+def test_the_import_toast_counts_only_the_rows_that_changed(tmp_path: Path, grid: Calls) -> None:
+    """「현재 데이터」 를 받아 한 칸만 고쳐 넣으면 토스트가 맞댄 줄 전부(「675행을 편집본에
+    넣었습니다」)를 셌다 — 「저장 전 변경」 에는 고친 칸 하나뿐이었다(2026-10-27 E2E). 미리보기
+    머리의 「바뀔 행」 처럼 실제로 바뀐 줄만 세고, 바뀐 줄이 없으면 편집본이 그대로라고 말한다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02", "DA-03"))
+    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("붙여넣기로 3행을")
+
+    master = app.session_state[BUFFER_KEY][1]
+    edited = master.copy()
+    edited.loc[edited["설비명"].eq("DA-02"), "메모1"] = "한 칸"
+    _import(app, edited.to_csv(sep="\t", index=False))
+    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("붙여넣기로 1행을 편집본에")
+
+    _import(app, app.session_state[BUFFER_KEY][1].to_csv(sep="\t", index=False))
+    assert last(grid, emg.GRID_KEY)["toast"]["text"] == (
+        "붙여넣기에 바뀌는 값이 없어 편집본은 그대로입니다"
+    )
+
+
 def test_the_loader_learns_each_close_of_the_import_dialog(tmp_path: Path, grid: Calls) -> None:
     """팝업이 닫힐 때마다(넣은 뒤·Esc·바깥 누름 — `_close_dialog`) 표 불러오기 data 의
     `dialogClosed` 가 오른다 — 그 회차에 표가 초점을 여는 단추로 돌린다(그림자 DOM 안 단추라

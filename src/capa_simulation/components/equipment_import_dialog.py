@@ -282,10 +282,14 @@ def apply_import_review(review: ImportReview, *, layout_mode: LayoutMode = "offi
     fresh = [row_id for row_id in after.ids if row_id not in before]
     st.session_state[GRID_LOADED_KEY] = load_ids(loaded, fresh).loaded
     st.session_state.pop(PREVIEW_KEY, None)
+    # 넣은 행은 미리보기 머리의 「바뀔 행」 과 같이 실제로 바뀐 줄만 센다 — 맞댄 줄 전부를 세면
+    # 한 칸 고친 「현재 데이터」 를 「675행을 넣었습니다」 라 했다(2026-10-27 E2E).
+    count = int(import_preview_changed_rows(review.changes).sum())
     text = (
-        f"붙여넣기로 {len(review.changes):,}행을 편집본에 넣었습니다 — 「저장 전 변경」 에서 "
-        "확인하고 "
-        "리비전을 저장하세요"
+        f"붙여넣기로 {count:,}행을 편집본에 넣었습니다 — 「저장 전 변경」 에서 확인하고 리비전을 "
+        "저장하세요"
+        if count
+        else "붙여넣기에 바뀌는 값이 없어 편집본은 그대로입니다"
     )
     if overlay:
         text += f" · 못 읽은 칸 {len(overlay):,}개에 적던 글은 버렸습니다"

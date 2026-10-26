@@ -1450,7 +1450,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_import_dialog.py` — 가용설비 현황 「엑셀·CSV로 한꺼번에」 팝업(옛 입력 탭을 옮김, 개편
   명세 4-8). 열림 값 `import`(「설정」 과 한 열림 칸·한 호스트 — `render_equipment_dialog_host(import_dialog=)`), 여는 콜백은
   `forget_page_dialogs()` 부터. 미리보기는 옛 입력 탭 그대로(`build_import_review` + 낡은 세션 거절 + 배치 잠금·가정 묶음 거절 +
-  CSV 시나리오 주의, 가정 세션 「배치 칸도 붙여넣기」 기본 끔 — Q2). 끝 단추는 **「편집본에 넣기」 하나**(D7 — 사용자 R4):
+  CSV 시나리오 주의, 가정 세션 「배치 칸도 붙여넣기」 기본 끔 — Q2) — 머리 「바뀔 행」·「기존 대체」 와 넣기 토스트의 행 수는 넣으면
+  실제로 바뀌는 줄만 센다(`equipment_csv.import_preview_changed_rows` — 같은 값 그대로인 대체 줄은 「변경 없음」). 끝 단추는
+  **「편집본에 넣기」 하나**(D7 — 사용자 R4):
   `ImportReview.matches` 가 참이면 `apply_import_review` — 통째 되돌리기 단계(`whole_step`) 하나·`replace_equipment_buffer`·칸 초안
   비움·새로 든 설비명을 목록 맨 위로·표 토스트(되돌리기)·넣은 편집본에 배치 편집이 있으면 그때의 역할 찍기(`stamp_layout_role` —
   넣고 나중에 저장하므로 그 사이 역할이 바뀌면 저장소가 막는다, 설계 6-2) — 뒤 열림 칸을 지우고 앱을 다시 돌린다. 팝업을 닫으면
