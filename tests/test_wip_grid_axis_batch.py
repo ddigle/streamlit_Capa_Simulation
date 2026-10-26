@@ -16,10 +16,11 @@ from plotly.subplots import make_subplots
 from capa_simulation.components.plotly_layout import chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.wip_status_dashboard import (
-    WIP_GRID_CELL_HEIGHT_PX,
     WIP_GRID_CELL_WIDTH_PX,
     _add_cell_traces,
     build_wip_status_grid_figure,
+    wip_grid_height_px,
+    wip_grid_vertical_spacing,
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.wip_status import build_wip_history_demo, build_wip_route_scope
@@ -55,7 +56,7 @@ def _per_cell_axis_reference(
         cols=cols,
         subplot_titles=titles,
         horizontal_spacing=min(0.045, 18 / max(cols * WIP_GRID_CELL_WIDTH_PX, 1)),
-        vertical_spacing=min(0.07, 28 / max(rows * WIP_GRID_CELL_HEIGHT_PX, 1)),
+        vertical_spacing=wip_grid_vertical_spacing(rows),
     )
     legend_seen: set[str] = set()
     all_dates = [timestamp.date() for timestamp in pd.date_range(start_date, end_date, freq="D")]
@@ -113,7 +114,7 @@ def _per_cell_axis_reference(
             )
     figure.update_layout(
         width=max(430, cols * WIP_GRID_CELL_WIDTH_PX + 90),
-        height=max(420, rows * WIP_GRID_CELL_HEIGHT_PX + 110),
+        height=wip_grid_height_px(rows),
         barmode="group",
         bargap=0.18,
         bargroupgap=0.05,

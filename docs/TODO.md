@@ -820,6 +820,12 @@
 
 ### 화면
 
+- (2026-10-26) **표준 대비 재공 현황 격자의 줄 사이는 px 고정 80px 다**(브라우저 E2E lens dynamic-admin, 밤사이 권장대로) — 줄
+  사이 비율을 `28 ÷ (줄 수 × 칸 높이)` 로 두어 틈이 약 27px 라, 둘째 줄부터의 두 줄 칸 제목(「STEP · 공정」 / 제품)이 바로 위 칸의
+  -45° 날짜 눈금과 겹쳤다(3줄 × 5칸에서 제목 10개). 그림 높이를 위·아래 여백 + 줄마다 칸 300px + 줄 사이마다 80px 로 셈하고
+  `make_subplots` 의 줄 사이 비율을 그 축 영역에서 낸다(`wip_grid_height_px`·`wip_grid_vertical_spacing`). 64px 는 겹침은
+  없었으나 눈금과 제목 사이가 2px 라 제목이 위 칸 것처럼 읽혀 80px 로 두었다. 대안: 칸 제목을 한 줄로 줄이기 — 제품명이 길면
+  340px 칸을 넘는다. 관련: `components/wip_status_dashboard.py`·`tests/test_wip_status_dashboard.py`.
 - (2026-10-26) **실적 세 화면·Dynamic Capa 그림의 축 눈금 글자는 `TEXT_MUTED` 다**(브라우저 E2E lens dynamic-admin, 밤사이
   권장대로) — 그림이 `layout.font.color` 만 주어 `st.plotly_chart` 기본 테마가 축 눈금을 테마 회색(밝게 `#808495`)으로 채워
   캔버스 위 3.50:1 이었다(효율·UPEH·수율 추이·우선순위·Gap 격자, Dynamic Capa 공정별 실현 수준·손실 구조·일별 추이). 공용

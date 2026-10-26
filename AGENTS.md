@@ -796,6 +796,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   고정 셀 Plotly 재공 격자(재공·유입·Flow 막대와 표준 가능량 기준선)를 만든다.
   - 화면은 `remembered_wip_status_grid_figure` 로 부른다 — 직전 Figure 한 벌을 세션에 두고 입력이 `DataFrame.equals`
     로 같으면 다시 쓴다. Streamlit 캐시가 아니라 캐시 경계 밖이다.
+  - 칸 높이(`WIP_GRID_CELL_HEIGHT_PX`)와 줄 사이(`WIP_GRID_ROW_GAP_PX`)는 px 고정이고 그림 높이·줄 사이 비율은 그 둘에서
+    셈한다(`wip_grid_height_px`·`wip_grid_vertical_spacing`) — 줄 사이는 아래 칸의 두 줄 제목과 위 칸의 -45° 날짜 눈금을 함께
+    담고도 사이가 떠야 한다.
 - `src/capa_simulation/components/grouped_monthly_table.py` — 환산 결과처럼 편집하지 않는 월별 표를 고정 분류 영역 +
   스크롤 월 영역 Plotly 표로 그린다. 계층 그룹·제품/양산구분 Total·전체 합계 행을 넣고 같은 구조의 CSV 프레임을
   만든다. 계산 원본은 바꾸지 않는다.
