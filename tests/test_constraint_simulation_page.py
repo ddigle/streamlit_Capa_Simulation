@@ -674,6 +674,27 @@ def test_a_typed_general_target_folds_to_the_one_decimal_the_field_shows(
     assert f"{typed:g}%" not in _header_line(app) or typed == folded
 
 
+def test_the_general_target_keeps_a_typed_value_off_the_half_steps_as_the_guide_says(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """기준 확보율 칸은 0.5 단위가 아닌 값(107.3)도 그대로 받아 쓴다 — +/− 단추만 0.5% 씩이다.
+    Guide 가 「직접 50~200%(0.5% 단위)」 라고 적어 동작과 어긋났다(2026-10-25 E2E #18·#108) —
+    Guide 는 지금 동작을 적는다."""
+    app = _opened(dynamic_databases)
+    app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107.3)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == pytest.approx(107.3)
+    assert "기준 107.3%" in _header_line(app)
+
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/constraint_simulation.md").read_text(
+        encoding="utf-8"
+    )
+    (row,) = [line for line in guide.splitlines() if line.startswith("| 확보율 | **기준 확보율**")]
+    assert "(0.5% 단위)" not in row
+    assert "+/− 단추는 0.5% 씩" in row and "107.3" in row
+    assert "소수 첫째 자리" in row
+
+
 def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
