@@ -334,6 +334,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준 확보율)·개조(토글·개조 기간·Cut-off 읽기만) 세 묶음이다(D2). 버튼 + 직접 입력은 `preset_number_field.py`(D10 —
     기준 확보율은 0.5% 단위, D18). 「소요 비중대로 나눴을 때 함께 보기」 는 보기 전환이라 본문 프래그먼트 안이다. 머리 한 줄
     오른쪽 끝 「← 공정 Capa 상세」 는 같은 공정으로 돌아간다.
+  - **모드 둘**(2026-10-26 결정 3) — 본문 맨 위 「제약 영향 | 개조 일정」(`components/modification_schedule_view.
+    render_mode_switch`, `segmented_control` · `persist_state` — 하위 보기 전환은 본문, 카드에 무엇이 설지 정하므로 앱 전체
+    회차). 「개조 일정」 이면 공통 진입·설비 세션·공정 칸 정리 뒤 `render_schedule_mode` 하나가 카드·설비 일정 확인·계획·계산·
+    본문을 그리고 페이지는 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다 — 1판은 두 모드를 함께 쓰지 않는다). 머리 한 줄·까닭
+    카드 그리기(`render_header`·`render_reason_card`)는 분기 앞에 두고 컴포넌트에 넘긴다. 두 모드는 공정 칸(`CONSTRAINT_PROCESS_KEY`)
+    ·기준 확보율 정본(`CONSTRAINT_GENERAL_KEY`)을 나누고 계획은 같은 키로 받는다(`tests/test_modification_schedule_page.py`).
 - `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 입력·조회·Static 비교를 **탭 둘**로 다룬다
   (2026-10-24 사용자 결정 — 두 탭 개편): ① `설비 마스터`(처음 여는 탭 — 설비 마스터 표·작은 편집표 둘·오른쪽 칸 호기 상세/
   새 호기/저장 전 변경/저장 이력, 개편 B1·C — `components/equipment_master_tab.py`, 개편 전 `RawData`) ②
@@ -943,6 +949,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     잡는다 — 칸이 없으면 기본값(그 제품의 첫 소요 달 ~ 보이는 마지막 달), 보이는 달 밖이면 가장 가까운 달을 **다를 때만**
     적는다. 엇갈림은 `on_change` 콜백 둘(`follow_period_start`·`follow_period_end`)이 다른 상자 칸을 맞춘다(승인 초안 그대로).
     범위 `st.select_slider` 는 쓰지 않는다 — 1.63 은 `value=` 없이는 범위로 서지 않아 손잡이를 움직이면 첫 달 하나로 떨어진다.
+- `src/capa_simulation/modification_schedule_state.py` — 제약 시뮬레이션 「개조 일정」 모드의 모드 전환 칸(`constraint_sim_mode`)과
+  조건 세션 키(모두 `constraint_sim_sched_` 접두)·기본값(4대 · 30일 · 동시 상한 없음 · 안전 여유 0%p · 내일부터 · 기한 없음 ·
+  가장 빨리)·버튼 값을 UI 없이 선언한다. 시작·기한 상자는 정수 선택지(0 = 「내일」·「없음」)라 `settle_choice` 가 위젯 앞에서
+  선택지 밖 값을 0 으로 **다를 때만** 적고, 목적은 기한이 없으면 `settle_objective` 가 「가장 빨리」 로 적는다. 제약 모드 계약과
+  나눠 둔 것은 두 모드를 병행 가지가 따로 고치기 때문이다.
   - 시나리오를 바꿔도 조건은 남는다(`scenario_activation._STALE_UI_KEYS` 에 넣지 않는다 — 값이 아니라 가정이다). 공정·제품은
     `prune_choice`, 기간은 `settle_period` 가 맞춘다.
 - `src/capa_simulation/upeh_assumption_state.py` — UPEH 가정 세 칸(%·적용 시작·끝)의 세션 키와 기본값. UI 를 import 하지
@@ -987,6 +998,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「그 밖」 이 아닌 한 묶음 행으로 두기 때문이다(제품 선택지도 빈 이름을 뺀다). 식은 6장 「제약 시뮬레이션」.
   - 기준 판정은 `secure()` → `capacity_status` 한 길(허용치 없음), 제약 충족은 `allocated >= need` 정수 비교다 — 이 모듈에
     기준·제약 확보율을 비율과 직접 견주는 식이 없는지 `tests/test_constraint_simulation.py` 가 AST 로 본다.
+- `src/capa_simulation/services/modification_schedule.py` — 제약 시뮬레이션 「개조 일정」 모드(2026-10-26 결정 3)의 순수 계산.
+  N대 × D일 개조를 모든 달 기준 확보율(G + 안전 여유)을 지키며 언제 할지 찾는다(`plan_modification_schedule` — 이른 시작 탐욕 +
+  완료 달 고정 늦은 시작 탐욕 포트폴리오, 「가장 고르게」 는 δ 이분 탐색, 못 맞추면 `ScheduleShortfall` 셋). Streamlit·세션·캐시·DB
+  를 모르고 pandas 는 어댑터 `schedule_month_inputs`(계획의 공정 x 월 표 → 달마다 R·A·G) 하나만 쓴다. 판정은
+  `constraint_simulation.secure` 한 길이고 이 모듈에 기준과 비율을 직접 견주는 식이 없는지·완료 W/D 달이 작은 문제의 완전
+  탐색과 같은지 `tests/test_modification_schedule.py` 가 본다. 식은 6장 「개조 일정」.
 - `src/capa_simulation/services/securement_threshold.py` — 공용 판정 기준(기본 + 월별 예외)의 정규화·검증, 달별 실효 기준
   (`SecurementThresholds`)과 판정 부등호 `capacity_status`(기준 **이상**이면 확보)의 한 곳이다(6장).
 - `src/capa_simulation/services/threshold_label.py` — 판정 기준을 사사오입 정수 퍼센트 글자로 바꾸는 한 곳이다(8장).
@@ -2225,6 +2242,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   카드가 그보다 좁으면(390px 창) 상자가 가로로 스크롤한다(그림 칸이 199px 로 줄어 세운 달 눈금 30개가 포개졌다, 2026-10-25
   E2E). 눈금은 솎지 않는다 — 서버는 칸 폭을 모른다. 규칙은 위 줄 배치와 같은 스타일 칸(`top_row_style(달 수)`)이라 이벤트 칸은
   스타일만 든 `st.html` 넷(위 줄 배치 + 공정 Capa 상세와 같은 계산표 틀 셋) 그대로다.
+- `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
+  올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
+  만드는 순수 함수. 개조 없이도 미달인 달은 옅은 부족색, 넣을 수 없는 달(시작 앞 · 기한 뒤)은 옅은 회색 도형 칠이다(새 색 토큰
+  없음). 필요 완화 글은 0.01%p **올림**(적힌 만큼 낮추면 들어간다). 그림 모양을 바꾸면 `SCHEDULE_FIGURE_SCHEMA_VERSION` 을 올린다.
+- `src/capa_simulation/components/modification_schedule_view.py` — 「개조 일정」 모드 한 회차 — 본문 맨 위 모드 전환
+  (`render_mode_switch`), 조건 카드(대상 / 이 세션만 / 개조 · 일정 · 기준 묶음, 버튼 + 직접 입력은 `preset_number_field`), 설비
+  일정 확인과 까닭 카드, 계획(`_plan` — 공정 Capa 상세 ②·제약 모드와 같은 인자 차례로 같은 키, 계산 함수는 부를 때
+  `simulation_cache` 모듈에서 찾는다), 계산, 본문(머리 한 줄 · 출처 띠 · 「아직 일정에 넣지 않은 개조만」 · 요약 넷 · 대안 셋 ·
+  그래프 · 차수 목록). 결과·그림은 세션 칸 LRU(4칸 — 조건 값·테마 키)다(Streamlit 캐시가 아니다). 프래그먼트가 없다 — 본문에
+  카드 밖 조작 위젯이 없다. 설비 일정 확인·계획 블록은 페이지의 제약 모드 블록과 같은 꼴로 따로 있다(병행 가지와 겹치지 않게 —
+  합치는 것은 `docs/TODO.md`).
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
   - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
@@ -3309,6 +3337,36 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   문턱), `SUM_TOLERANCE` 1e-6 × max(1, R)(어댑터의 제품별 합 대조). 어댑터는 `R < Rc ≤ R + 1e-9` 와 「다른 제품 소요가 0 인
   달」 의 Rc 를 R 로 접는다 — 합하는 차례만 다른 두 근거의 잡음이 Re 에 남아 기존 확보율이 터지지 않게.
 - 어느 호기를 개조하는지 정하지 않는 대수 모델이다 — 실제 호기의 비가동·Qual 일정과 겹치면 이중 차감될 수 있다.
+
+### 개조 일정
+
+제약 시뮬레이션 화면의 둘째 모드(2026-10-26 결정 3 — 검토 C1~C16 권장 기본값)다. 「제약은 없지만 N대 × D일 개조가 생기면 언제
+하면 모든 달 확보율 기준을 지키나」 — 개조 시점이 답인 역방향 계산이고 순수 계산은 `services/modification_schedule.py` 하나다.
+
+- **입력.** 달마다 R(공정 소요)·A(설비 일정 기준 단축 전 가용, 환산 대수)·G(m)(기준 확보율 — 제약 모드와 같은 정본). 제품은
+  나누지 않는다. 조건은 N(대)·D(일, 이어진 날)·동시 상한(없음 가능)·가장 이른 시작(내일 또는 고른 달 W/D 첫날)·끝 날 상한(「X월
+  W/D 첫날 전」 = 그 첫날 − 1일, 없으면 보이는 마지막 달 W/D 끝 날)·안전 여유 δ(%p, 기본 0)·목적·달 맞춤 창.
+- **판정.** 달 j 의 개조 비가동 대·일 합을 u_j 라 하면 `rate_j = (A_j − u_j / W_j) / R_j`(W_j = W/D 구간 일수 — 제약 모드 가정 5 와
+  같은 일할 좌표). 배치 기준은 `secure(rate_j, G_j + δ)` 한 길이고 R 0 달은 `A_j − u_j / W_j ≥ 0` 만 본다. 달 안의 동시성은 확보율과
+  상관없다. u_j 는 늘 정수(대수 × 겹친 일수)로 들고 결과 확보율도 같은 수로 내 배치 판정과 결과가 갈리지 않는다.
+- **넣지 않는 달.** 개조 없이도 G + 사용자 여유에 못 미치는 달은 하루도 넣지 않는다(`blocked`). 가장 이른 시작 앞·끝 날 상한 뒤·
+  보이는 달 사이 빈 날을 지나는 창은 두지 않는다(조회기간 밖은 A 를 모른다).
+- **탐욕 둘(포트폴리오).** 시작 후보(날 단위면 모든 날, 달 맞춤이면 그 달 W/D 끝 날에 끝나는 창 하나)를 차례로 보며 그날 넣을 수
+  있는 가장 큰 k(남은 대수 · 동시 상한 · 겹친 모든 달의 판정)를 넣는다. 이른 시작(EARLY)은 앞에서, 완료 달 L 고정 늦은 시작
+  (LATE)은 L 의 W/D 끝 날(과 상한 중 이른 날)에서 거꾸로 채운다. EARLY 의 완료 달보다 앞 달 L 부터 LATE 가 N 대를 다 넣으면 그 L,
+  아니면 EARLY 가 답이다(다 못 넣으면 가장 많이 넣은 쪽 — 같으면 EARLY). 길이가 모두 D 라 동시 대수는 「시작이 D 일 안쪽인 차수의
+  대수 합」 이다. 완료 **W/D 달**이 작은 무작위 문제의 완전 탐색과 같은지를 시험으로만 확인했다(증명 아님) — 날은 탐욕마다 다를 수
+  있어 「몇 월에 끝나나」 가 답이다.
+- **가장 고르게.** 기한이 있을 때만. 「상한 안에 N 대가 다 드는가(EARLY 또는 LATE(상한))」 를 δ 에 대해 이분 탐색(24번, 위 끝 여유
+  + 100%p)해 가장 큰 δ* 로 푼다 — 개조가 든 달의 최저 확보율을 가장 높게 둔다(개조와 무관한 달은 최저 셈에 들지 않는다). 여유만으로도
+  못 맞추면 여유로 「가장 빨리」 처럼 풀고 대안 셋을 붙인다.
+- **못 맞출 때(대안 셋).** 상한까지 넣을 수 있는 대수(부분 배치가 본문 목록), 기한이 있으면 기한 없이 끝나는 날과 그 W/D 달,
+  상한 안에 다 넣으려면 필요한 기준 완화(같은 이분 탐색을 δ ∈ [−가장 낮은 G, 여유] 에서 — 0 까지 낮춰도 못 넣으면 없음). 화면은
+  완화를 0.01%p 올림으로 적는다.
+- **요약.** 완료 날(마지막 차수 끝 날)·그 W/D 달·차수 수, 최대 동시 대수(날 차례 sweep), 비가동이 든 달 가운데 개조 뒤 확보율이
+  가장 낮은 달·그 확보율 − G.
+- 대수 모델이라 호기·Qual·다른 비가동과의 겹침을 모른다. 설비 DB 비가동에 이미 든 개조를 다시 넣으면 두 번 빠진다(화면 한 줄).
+  저장하지 않고, 제약 영향 모드와 함께 쓰지 않는다.
 
 ### 계산 기간과 멈춤
 
