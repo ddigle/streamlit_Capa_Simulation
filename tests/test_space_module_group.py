@@ -1213,7 +1213,10 @@ def test_a_group_is_picked_and_dropped_whole() -> None:
     assert "onePerGroup(" in select
     assert "S.selection = new Set(onePerGroup(drag.additive" in JS
     down = _between("svg.onpointerdown = (event) => {", "svg.onpointermove = (event) => {")
-    assert "const bundle = (moduleMembers(item) || [item]).map((m) => m.id)" in down
+    assert "toggleSelected(item)" in down
+    # Shift/Ctrl+클릭과 키보드 Ctrl+Enter 가 함께 쓰는 갈래다.
+    toggle = _between("function toggleSelected(item) {", "function canvasItemOf(node) {")
+    assert "const bundle = (moduleMembers(item) || [item]).map((m) => m.id)" in toggle
     remove = _between("function removeItems(list) {", "function sendItems(list, floor) {")
     assert "expanded(list.filter((m) => isUnit(m) && !m.created))" in remove
     send = _between("function sendItems(list, floor) {", "const renameTarget = (item) => {")

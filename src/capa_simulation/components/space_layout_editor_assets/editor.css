@@ -57,6 +57,12 @@
 .sle-grid-major { stroke: var(--sle-grid-major); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-item { cursor: grab; }
 .sle-item:active { cursor: grabbing; }
+/* Tab 으로 초점이 온 호기·요소(편집 — 층 보기는 호기만, JS `buildGroup`·`buildMark`)는 상자 밖으로 띄운 강조색 테다(JS
+   `FOCUS_GAP_PX`). 고른 테(편집 3px 선·보기 후광)와 따로 보인다. outline 은 SVG 안에서 도면 배율로 커져 끈다. 누르기(포인터)는
+   초점을 도면에 둬 이 테가 서지 않는다. */
+.sle-unit:focus, .sle:not(.is-view) .sle-mark:focus { outline: none; }
+.sle-focus-ring { display: none; fill: none; stroke: var(--sle-accent); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.sle-unit:focus-visible > .sle-focus-ring, .sle:not(.is-view) .sle-mark:focus-visible > .sle-focus-ring { display: inline; }
 
 /* ---- 호기 ---- */
 /* 면·글자 색은 JS 가 호기마다 칠한다(색 기준 그룹 면 · 보관 검정 · 지연 빨강, 아니면 기본 회색). 테두리는 기본 1px. */
@@ -256,6 +262,9 @@
 }
 .sle-chip-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
 .sle-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 칩 이름은 키보드 단추다(JS `buildChip` — Enter 놓기·Space 고르기). 초점 테는 이름 둘레이고 고른 칩의 칩 둘레 테와 따로다. */
+.sle-chip-name:focus { outline: none; }
+.sle-chip-name:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 2px; border-radius: 2px; }
 .sle-chip-size { margin-left: auto; color: var(--sle-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; flex: none; }
 .sle-chip-tag { flex: none; font-size: 0.66rem; padding: 0 4px; border-radius: 4px; border: 1px solid var(--sle-border); color: var(--sle-muted); }
 .sle-chip.is-new { border-style: dashed; border-color: var(--sle-accent); }
@@ -451,8 +460,10 @@
    요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitFabBar` 가 접는
    차례를 하나씩 더한다 — ① 선택 안내와 「기준일」·「미확인」 말머리(화면에서만 — 낭독기는 읽는다), ② 미확인 대수
    (「!」만 — 대수는 풍선), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 그래도 넘치면(더 좁은 창) 요약도
-   말줄임(풍선에 온 글) — 화면 밖으로 밀려 안 보이는 것보다 낫다. 대수 글자는 반만 잘리지 않는다 — 잘린 「4」가
-   411대를 4대로 읽히게 한다. */
+   말줄임(풍선에 온 글) — 화면 밖으로 밀려 안 보이는 것보다 낫다. 말줄임은 앞머리가 읽히는 폭(기준일 4em·요약
+   6em)까지만 준다 — 그 아래는 「2」·「배」 같은 조각만 남고 터치 창은 풍선도 못 띄운다(E2E 390px). ⑥ 그래도 넘치면
+   (390px 휴대폰 폭 — 확대 묶음만으로 줄이 거의 찬다) 기준일·「오늘」·미확인·요약을 둘째 줄로 내린다. 두 줄도 창 폭으로만
+   정해져 고를 때 높이가 바뀌지 않는다. 대수 글자는 반만 잘리지 않는다 — 잘린 「4」가 411대를 4대로 읽히게 한다. */
 .sle-asof { font-size: 0.82rem; color: var(--sle-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sle-flagnote {
   display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 0.82rem; white-space: nowrap;
@@ -470,6 +481,11 @@
 }
 .sle-toolbar.is-fit3 .sle-totoday-tail { display: none; }
 .sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary {
-  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis;
 }
+.sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }
+.sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }
+/* ⑥ 둘째 줄 — 보기에서 숨는 빈 칸(`sle-spacer`, 선택 줄 바로 뒤)이 온 폭 줄바꿈이 된다. */
+.sle-toolbar.is-fit6 { flex-wrap: wrap; height: auto; row-gap: 2px; }
+.sle.is-view .sle-toolbar.is-fit6 .sle-spacer { display: block; flex: 0 0 100%; height: 0; }
 .sle-asof[hidden], .sle button.sle-totoday[hidden], .sle-flagnote[hidden] { display: none; }
