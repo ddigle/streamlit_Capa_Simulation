@@ -32,6 +32,7 @@ from capa_simulation.io.container_start_report import (
     start_check_hint,
 )
 from capa_simulation.io.core_data_source import CoreDataBatch
+from capa_simulation.services.korean_particle import with_subject_particle
 
 _SIMULATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 # 목록 조회 모듈이 같은 표식을 봐야 해서 공개 이름이다. 비공개로 두면 다른 모듈이
@@ -620,7 +621,8 @@ def load_bigdataquery_module() -> ModuleType:
                 + _start_check_line(STEP_INSTALL)
             ) from exc
         raise RuntimeError(
-            f"bigdataquery 패키지를 불러오지 못했습니다 — 패키지가 쓰는 모듈 `{exc.name}` 이 "
+            "bigdataquery 패키지를 불러오지 못했습니다 — 패키지가 쓰는 모듈 "
+            f"{with_subject_particle(f'`{exc.name}`')} "
             "없습니다. 사내 환경에서 패키지를 다시 설치한 뒤 실행하세요(README 「초기 설정」 "
             "4단계)."
         ) from exc

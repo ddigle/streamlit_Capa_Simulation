@@ -25,6 +25,7 @@ from typing import Literal
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_exact_columns
+from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.threshold_label import threshold_percent_label
 
@@ -155,7 +156,7 @@ def empty_securement_threshold_rows() -> pd.DataFrame:
 def _require_positive(value: object, label: str) -> float:
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
     if pd.isna(numeric) or not isfinite(float(numeric)) or float(numeric) <= 0:
-        raise ValueError(f"{label}은(는) 0 보다 큰 숫자여야 합니다.")
+        raise ValueError(f"{with_topic_particle(label)} 0 보다 큰 숫자여야 합니다.")
     return float(numeric)
 
 
@@ -189,7 +190,7 @@ def prepare_securement_threshold_rows(frame: pd.DataFrame) -> pd.DataFrame:
         invalid = values.notna() & ~(values.gt(0) & values.abs().lt(float("inf")))
         if invalid.any():
             months = _month_list(prepared.loc[invalid, "생산계획년월"])
-            raise ValueError(f"{column}은(는) 0 보다 큰 숫자여야 합니다: {months}")
+            raise ValueError(f"{with_topic_particle(column)} 0 보다 큰 숫자여야 합니다: {months}")
     prepared[SECURE_COLUMN] = prepared[SECURE_COLUMN].astype("float64")
     prepared[WARNING_COLUMN] = prepared[WARNING_COLUMN].astype("float64")
     return prepared.sort_values("생산계획년월").reset_index(drop=True)

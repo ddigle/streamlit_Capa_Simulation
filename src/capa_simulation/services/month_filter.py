@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from capa_simulation.services.korean_particle import with_topic_particle
+
 MONTH_COLUMN = "생산계획년월"
 
 
@@ -55,4 +57,4 @@ def _validated_months(data: pd.DataFrame, table_name: str) -> pd.Series:
 def _validate_month_value(month: int, label: str) -> None:
     numeric = pd.to_numeric(pd.Series([month]), errors="coerce")
     if not valid_month_mask(numeric).iloc[0]:
-        raise ValueError(f"{label}은 YYYYMM 형식이어야 합니다: {month}")
+        raise ValueError(f"{with_topic_particle(label)} YYYYMM 형식이어야 합니다: {month}")

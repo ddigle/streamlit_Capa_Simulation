@@ -1074,7 +1074,7 @@ class RemovalElsewhere:
     def refusal(self) -> str:
         return (
             f"{self.message()} 저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의 "
-            f"「{self.confirm_label()}」 를 켜고 다시 저장하세요."
+            f"{with_object_particle(f'「{self.confirm_label()}」')} 켜고 다시 저장하세요."
         )
 
 
