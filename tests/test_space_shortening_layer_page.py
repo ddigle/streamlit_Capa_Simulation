@@ -1118,3 +1118,39 @@ def test_the_floor_process_chips_show_process_names_literally() -> None:
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state[process_chip_key(("C1", "2F"))] == "LG*테스트*"
+
+
+FAB_SUMMARY_SCRIPT = """
+from types import SimpleNamespace
+
+from capa_simulation.components.space_shortening_view import render_fab_layer_summary
+from capa_simulation.services.space_shortening_layer import FabSummary
+
+summary = FabSummary(
+    total=5, drawn=5, unplaced=0, max_days=197, expired=0, virtual=0, filtered_out=0,
+    expired_months=0, inactive={inactive},
+)
+render_fab_layer_summary(SimpleNamespace(layer=SimpleNamespace(level=1.1)), summary, ())
+"""
+
+
+@pytest.mark.parametrize(
+    ("inactive", "expected"),
+    [
+        (4, "단축 5대(도면 1 · 비활성 층 4 · 자리 없음 0)"),
+        (0, "단축 5대(도면 5 · 자리 없음 0)"),
+    ],
+)
+def test_the_fab_summary_splits_units_on_inactive_floors_out_of_the_drawn_count(
+    inactive: int, expected: str
+) -> None:
+    """비활성 층 호기는 도면에 그려지지 않는데 「도면 5」 에 들고 끝에 「비활성 층 4대」 가 따로
+    붙어 셈이 맞아 보이지 않았다(E2E r1). 합(모든 층)은 그대로 두고 괄호 안을 도면 · 비활성 층 ·
+    자리 없음으로 나눈다."""
+    app = AppTest.from_string(FAB_SUMMARY_SCRIPT.format(inactive=inactive)).run(timeout=60)
+
+    assert not app.exception, [item.message for item in app.exception]
+    [line] = [str(item.value) for item in app.caption if "단축 5대" in str(item.value)]
+    assert expected in line
+    assert not line.endswith("대 · 비활성 층 4대")
+    assert line.count("비활성 층") == (1 if inactive else 0)

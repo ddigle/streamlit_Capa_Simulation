@@ -514,10 +514,19 @@ def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKe
 def render_fab_layer_summary(
     space_layer: SpaceLayer, summary: FabSummary, virtuals: Sequence[VirtualUnit]
 ) -> None:
-    """FAB 도면 아래 요약 한 줄과 「도면에 자리가 없는 추가 호기」 상자(처음 접힘)."""
+    """FAB 도면 아래 요약 한 줄과 「도면에 자리가 없는 추가 호기」 상자(처음 접힘).
+
+    단축 대수는 모든 층 합이다(결정 그대로). 괄호 안은 도면에 그린 것 · 비활성 층(그려지지 않는다 —
+    있을 때만) · 자리 없음으로 나눈다 — 비활성 층 대수를 「도면」 에 넣고 끝에 따로 적으면 셈이
+    맞아 보이지 않았다(E2E r1)."""
+    shown = summary.drawn - summary.inactive
+    where = [f"도면 {shown}"]
+    if summary.inactive:
+        where.append(f"비활성 층 {summary.inactive}")
+    where.append(f"자리 없음 {summary.unplaced}")
     parts = [
         f"목표 {_percent(space_layer.layer.level)}",
-        f"단축 {summary.total}대(도면 {summary.drawn} · 자리 없음 {summary.unplaced})",
+        f"단축 {summary.total}대({' · '.join(where)})",
     ]
     if summary.total:
         parts.append(f"최대 −{summary.max_days}일")
@@ -525,8 +534,6 @@ def render_fab_layer_summary(
     if summary.expired_months:
         parts.append(f"기한 지남 달 {summary.expired_months}")
     parts.append(f"추가 호기 {summary.virtual}대")
-    if summary.inactive:
-        parts.append(f"비활성 층 {summary.inactive}대")
     st.caption(":material/event_upcoming: " + " · ".join(parts), width="stretch")
     if not virtuals:
         return

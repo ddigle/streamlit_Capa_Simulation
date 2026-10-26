@@ -1244,7 +1244,8 @@ class CompareGhost:
     """견주기 점선 상자 하나 — **기준 쪽**(지금은 공식) 자리가 이 층인 차이 호기의 기준 상자.
 
     `tag` 가 None 이면 보는 쪽(그리는 가정 배치) 상자도 같은 층이라 두 상자를 가는 선으로 잇는다.
-    그 밖은 상자 옆에 붙는 꼬리표 글(「→ C2 3F」·「도면 제외(가정)」·「미배치(가정)」)이다."""
+    그 밖은 상자 옆에 붙는 꼬리표 글(「→ C2 3F」·「→ C2 5F(비활성 층)」·「도면 제외(가정)」·
+    「미배치(가정)」)이다."""
 
     name: str
     x: float
@@ -1312,6 +1313,7 @@ def layout_compare(
     shown: Collection[str],
     reference_word: str = "공식",
     seen_word: str = "가정",
+    inactive: Collection[FloorKey] = (),
 ) -> LayoutCompare:
     """그리는 한 벌(`effective` — 행 차례 = `unit_key_pairs`)과 기준 쪽 일곱 칸(`reference_places`
     — 실제로 다른 호기만, `EquipmentSnapshot.layout_official_places`)으로 층 `floor` 의 견주기
@@ -1320,12 +1322,14 @@ def layout_compare(
 
     - 점선 상자(`ghosts`) — 기준 자리가 이 층에 그려지던 호기. 보는 자리도 이 층에 그려지면 선으로
       잇고, 다른 층이면 「→ 그 층」, 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면
-      「미배치(가정)」.
+      「미배치(가정)」. 그 층이 비활성 층(`inactive` — 층 사용 0029)이면 「→ 그 층(비활성 층)」 —
+      비활성 층은 목록·도면·층 바로 가기에서 빠져 그 호기가 화면 어디에도 없다(E2E r1).
     - 들어온 호기(`arrivals`) — 보는 자리가 이 층에 그려지고 기준 자리는 다른 층이거나 그려지지 않던
       호기 — 「← 그 층」·「← 공식 도면 제외」·「← 공식 미배치」.
     """
     seen, names = _keyed_places(effective, unit_key_pairs)
     visible = {str(name) for name in shown}
+    blocked = set(inactive)
     ghosts: list[CompareGhost] = []
     arrivals: list[CompareArrival] = []
     for key, reference in sorted(reference_places):
@@ -1342,7 +1346,8 @@ def layout_compare(
             elif place[6] != "Y":
                 tag = f"도면 제외({seen_word})"
             elif place[0] is not None and place[1] is not None and _spot(place) != floor:
-                tag = f"→ {_floor_words(place)}"
+                hidden = "(비활성 층)" if _spot(place) in blocked else ""
+                tag = f"→ {_floor_words(place)}{hidden}"
             else:
                 tag = f"미배치({seen_word})"
             ghosts.append(CompareGhost(name, x, y, w, h, tag))

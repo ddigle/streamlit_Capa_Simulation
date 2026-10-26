@@ -194,12 +194,16 @@ def space_layout_notices(
 
 
 def compare_payload(
-    session: EquipmentSession, key: FloorKey, *, shown: Collection[str]
+    session: EquipmentSession,
+    key: FloorKey,
+    *,
+    shown: Collection[str],
+    inactive: Collection[FloorKey] = (),
 ) -> dict[str, Any] | None:
     """층 상세 뷰어의 「공식과 견주기」 재료(`space_layout_editor.render_space_layout_viewer` 의
     `compare`) — 공식 자리 점선 상자(`ghosts`)와 다른 층에서 온 호기 꼬리표(`arrivals`). `shown` 은
-    지금 화면이 그리는 설비명(공정 필터·일정 없음을 지난 것)이다. 차이가 없거나 일정 없이 열었으면
-    None."""
+    지금 화면이 그리는 설비명(공정 필터·일정 없음을 지난 것)이다. `inactive` 는 비활성 층이다 — 그
+    층으로 보낸 호기의 꼬리표에 「(비활성 층)」 을 단다. 차이가 없거나 일정 없이 열었으면 None."""
     snapshot = session.snapshot
     if snapshot is None or session.unmerged or not snapshot.layout_official_places:
         return None
@@ -209,6 +213,7 @@ def compare_payload(
         snapshot.layout_official_places,
         key,
         shown=shown,
+        inactive=inactive,
     )
     if not compare:
         return None

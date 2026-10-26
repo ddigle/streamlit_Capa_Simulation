@@ -468,7 +468,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`layout_official_places` — 머리 알림과 같은 재료, 공식 스냅샷을 따로 읽지 않는다). 켜면 층 상세 뷰어 payload `compare`
     (`components/space_floor_layout.compare_payload` ← `services/layout_overlay.layout_compare` — **epoch 밖**이라 켜고 꺼도 다시
     마운트하지 않는다)가 공식 자리가 이 층인 차이 호기의 점선 상자(같은 층으로 옮겼으면 지금 상자와 가는 선, 다른 층이면
-    「→ C2 3F」, 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면 「미배치(가정)」)와 다른 층(또는 공식 미배치)에서 온 호기
+    「→ C2 3F」 — 비활성 층이면 「→ C2 3F(비활성 층)」(`inactive`), 레이아웃표시 N 이면 「도면 제외(가정)」, 좌표가 없으면
+    「미배치(가정)」)와 다른 층(또는 공식 미배치)에서 온 호기
     꼬리표(「← C1 2F」·「← 공식 미배치」)를 싣고 편집기 JS 새 층 `sle-compare`(보기 전용·눌림 없음·겹쳐 숨기기와 무관, 순수
     `compareShapes` — `// <view-compare>` 구획, node 시험)가 그린다. 이웃한 꼬리표가 겹치면 뒤 꼬리표를 한 줄씩 위로 올린다
     (글자 폭 어림 — 한글·화살표 1em). 공정 필터·일정 없음으로 그리지 않는 호기는 견주지 않는다.

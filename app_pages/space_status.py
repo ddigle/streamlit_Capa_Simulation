@@ -2328,6 +2328,7 @@ else:
                         equipment_session,
                         selected,
                         shown=set(space_equipment[EQUIPMENT_ID_COLUMN].dropna().astype(str)),
+                        inactive=frozenset(inactive_floors),
                     )
                     if compare_on
                     else None
