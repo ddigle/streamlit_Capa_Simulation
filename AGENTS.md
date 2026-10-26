@@ -1872,7 +1872,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
-  만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다.
+  만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
+  「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
     달만 미적용으로 알린다.
@@ -4323,7 +4324,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
   공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
   Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
-  `tests/test_process_label_markdown_sinks.py`).
+  `tests/test_process_label_markdown_sinks.py`). 「변경 메모」 가 출처가 되는 공용 프로필 버전 캡션은
+  `profile_version_caption` 이 출처를 막아 짓는다 — 날로 이으면 판정 기준·선행 B/O·확보율 보정 캡션에 메모의 물결표·
+  별표·`$`·백틱이 꾸밈으로 그려졌다(2026-10-27 E2E, `tests/test_profile_caption.py`).
   `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
   막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
 - **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를

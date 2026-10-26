@@ -14,11 +14,13 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
 import pytest
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
 
 STAMP = datetime(2026, 1, 2, 3, 4)
@@ -126,3 +128,31 @@ def test_caption_reads_updated_at_even_without_a_source_change() -> None:
     )
 
     assert caption == "공용 버전 v7 · 상세 · 붙여넣기 · 2026-01-02 03:04 · 꼬리"
+
+
+@pytest.mark.parametrize(
+    "memo",
+    [
+        "26.07~12 확정 / 27.01~06 잠정 *검토* $1$",
+        "A~B~C *강조* `코드`",
+        "![x](http://example.invalid/a.png) # 제목 _밑줄_",
+    ],
+)
+def test_a_memo_source_is_shown_letter_for_letter_in_markdown(memo: str) -> None:
+    """출처는 사람이 적은 「변경 메모」 다 — 캡션은 `st.caption`(마크다운 자리)으로 그린다.
+
+    날로 이으면 물결표 짝은 지움선, `*…*` 은 기울임, `$…$` 은 수식, 백틱은 코드로 그려져 적은 글자가
+    사라졌다(2026-10-27 E2E — 판정 기준·선행 B/O·확보율 보정 버전 캡션). 막힌 글자 앞의 `\\` 를
+    걷어 내면 적은 메모가 그대로 나와야 하고, 막히지 않은 마크다운 구두점이 남지 않아야 한다.
+    """
+    caption = profile_version_caption(
+        _Profile(4, memo, STAMP), empty="비었습니다", detail="기본 확보 100%", suffix="꼬리"
+    )
+
+    head = "공용 버전 v4 · 기본 확보 100% · "
+    tail = " · 2026-01-02 03:04 · 꼬리"
+    assert caption.startswith(head) and caption.endswith(tail)
+    shown = caption[len(head) : -len(tail)]
+    assert shown == literal_markdown(memo)
+    assert re.sub(r"\\(.)", r"\1", shown) == memo
+    assert not re.search(r"(?<!\\)[~*$`!\[\]()#_]", shown), shown

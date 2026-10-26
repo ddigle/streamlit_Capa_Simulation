@@ -101,6 +101,10 @@ ESCAPED_BUILDERS: dict[str, str] = {
         "필요 단축 기준 캡션의 설비 쪽 — equipment_value_label 에 「공식 vN」·「가정」 꼬리"
         "(space_shortening_view)"
     ),
+    "profile_version_caption": (
+        "공용 프로필 버전 캡션 — 사람이 적은 변경 메모(출처)를 literal_markdown 으로 막아 잇는다"
+        "(profile_caption)"
+    ),
 }
 # 막은 글을 다시 막는 함수 — `markdown_safe_tildes` 는 막힌 `\\~` 를 다시 막지 않아 빠진다.
 REESCAPING_GUARDS = frozenset({"literal_markdown", "quoted"})
