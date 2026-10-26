@@ -30,9 +30,10 @@
 프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 설비」 숫자 칸(환산
-대수, 기본 0)과 「신규 설비는 개조 없이」 토글 + 기준일(기본 오늘). 신규 몫 A_new(m) 은 새 캐시 없이
-공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(`get_process_equipment_timeline` — 같은 키)을 기준일로 거른
-값이고(`new_unit_availability`), 옵션을 켠 회차에만 받는다. 기준일은 어떤 캐시 키에도 들지 않는다.
+대수, 기본 0)과 「신규 설비는 개조 없이」 토글 + 기준일(기본 오늘). 신규 호기(기여 시작 · 환산
+대수 · 반출)는 새 캐시 없이 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(`get_process_equipment_timeline`
+— 같은 키)을 기준일로 거른 값이고(`new_unit_availability`), 옵션을 켠 회차에만 받는다. 어느 증가에
+붙일지(개조 일수 안 — 그 사이 신규 대기)는 서비스가 정한다. 기준일은 어떤 캐시 키에도 들지 않는다.
 """
 
 from datetime import date
@@ -123,8 +124,8 @@ from capa_simulation.services.constraint_simulation import (
     TARGET_RANGE,
     ConstraintConditions,
     ConstraintResult,
+    NewUnit,
     constraint_month_inputs,
-    new_units_usable_from,
     simulate_constraint,
 )
 from capa_simulation.services.korean_particle import topic_particle
@@ -174,9 +175,11 @@ OWNED_HELP = (
 )
 NEW_UNITS_HELP = (
     "기여 시작(Qual 다음 날)이 기준일 이후인 신규 호기(공정 Capa 상세 ③ 과 같은 날짜)는 셋업 때 "
-    "제약 제품으로 Qual 한다고 보고, 들어오는 그 달 제약 몫 증가분까지 개조 없이 씁니다. 그보다 "
-    "많은 신규와 기간 전에 들어온 신규(기여 시작이 제약 기간 첫 달 W/D 첫날보다 앞 — 그 앞 달에 "
-    "며칠만 붙은 호기도)는 기존 제품에 쓰여 그 뒤로는 일반 설비와 같습니다(제약에 쓰려면 개조)."
+    "제약 제품으로 Qual 할 수 있다고 봅니다. 기여 시작에서 개조 기간 안에 제약 몫이 늘어나는 달"
+    "(그 달 W/D 첫날)이 있으면 개조 없이 그 몫에 붙이고, 그 달까지는 기존 제품이 못 쓰는 "
+    "「신규 대기」 로 뺍니다(개조보다 짧습니다). 개조 기간 안에 늘어날 몫이 없으면 기존 제품에 "
+    "쓰여 그 뒤로는 일반 설비와 같습니다(제약에 쓰려면 개조). 제약 기간 전에 들어온 신규도 "
+    "같습니다."
 )
 
 
@@ -579,8 +582,7 @@ try:
             reference_tables=context.reference_tables,
         ),
     )
-    # 신규 몫 — 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른다. 켠 회차에만.
-    # 제약 기간 첫 달 W/D 첫날 전에 기여를 시작한 신규는 몫에서 뺀다(기간 전 신규 — 사용자 답 1-3).
+    # 신규 호기 — 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른다. 켠 회차에만.
     new_shares: NewUnitAvailability | None = None
     if new_unit_since is not None:
         new_shares = new_unit_availability(
@@ -592,7 +594,6 @@ try:
                 cutoff,
             ),
             since=new_unit_since,
-            usable_from=new_units_usable_from(period.start, int(readiness.cutoff_days)),
         )
 except BOOTSTRAP_ERRORS as exc:
     render_header(
@@ -622,20 +623,15 @@ if process not in plan.processes:
 
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
-    """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름, 그중 제약
-    기간 전에 기여를 시작해 일반 설비로 보는 호기 수."""
+    """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름. 어느 호기를
+    붙였는지(전용 · 일반 설비)는 본문 개조 일정 카드가 말한다."""
     if not shares.units:
         return "기준일 이후 기여를 시작하는 신규 설비가 없습니다."
     names = ", ".join(literal_markdown(name) for name in shares.units[:4])
     more = f" 외 {len(shares.units) - 4}대" if len(shares.units) > 4 else ""
-    early = (
-        f" — 그중 제약 기간 전에 기여를 시작한 {len(shares.early)}대는 일반 설비(개조)"
-        if shares.early
-        else ""
-    )
     return (
         f"기준일 이후 기여 시작 신규 설비 {len(shares.units)}대(조회기간에 가용 "
-        f"{shares.in_axis}대) · {names}{more}{early}"
+        f"{shares.in_axis}대) · {names}{more}"
     )
 
 
@@ -671,10 +667,16 @@ try:
         product=product,
         months=months,
         general_target=general_target,
-        new_units=new_shares.by_month() if new_shares is not None else None,
-        new_units_before=new_shares.before if new_shares is not None else 0.0,
     )
-    result: ConstraintResult = simulate_constraint(month_inputs, conditions)
+    new_units = (
+        tuple(
+            NewUnit(name=entry.unit, start=entry.start, units=entry.units, until=entry.until)
+            for entry in new_shares.starts
+        )
+        if new_shares is not None
+        else ()
+    )
+    result: ConstraintResult = simulate_constraint(month_inputs, conditions, new_units)
 except (KeyError, ValueError) as exc:
     message = exc.args[0] if isinstance(exc, KeyError) and exc.args else str(exc)
     render_header(process, f"**{literal_markdown(process_label)}** · {literal_markdown(product)}")

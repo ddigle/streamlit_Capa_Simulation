@@ -27,7 +27,8 @@
   눈금을 솎지 않는다 — 서버는 칸 폭을 모르고, 넓은 창에서는 모든 달이 읽힌다.
 - 아래 띠(y2): 개조 비가동 가로 막대 trace **하나**(`base` = 시작 위치, `x` = 길이). 날 → x 는 그
   날이 든 보이는 달 j 의 **W/D 구간**에서 `j − 0.5 + (날 − 첫날) ÷ 일수` 다 — 가용대수가 일할된 바로
-  그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다. 겹치는 창은 아래 줄로 내린다.
+  그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다. 겹치는 창은 아래 줄로 내린다. 신규
+  대기가 있으면 같은 띠에 빗금 막대 trace(「신규 대기」)가 하나 더 서고 개조 창 뒤 줄 자리를 잇는다.
 - 제약 기간 칠과 고른 달 띠는 도형 둘(`append_layout_items` → `flush_layout_items`) — 새 색 토큰을
   더하지 않고 기존 토큰에 도형 `opacity` 를 준다(14-5).
 - **달 고르기**(D9): 달마다 보이지 않는 표적 막대(`HIT_TARGET`, `customdata = (달, 풍선)`) 하나가
@@ -42,9 +43,10 @@
 테두리(`finish_hook`)다.
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
-대수를 「보유 · 신규 · 개조」 로 나눠 보인다(`dedicated_split_text`) — 계산표 공정 전체 구획에
-「새로 붙는 신규 설비」, 개조 구획에 「늘어난 전용 대수」·「보유 제약 설비로」·「신규 설비로」 행,
-배정 칸·표적 풍선에 구성 한 줄. 걸리지 않으면 1판 그림 그대로다.
+대수를 `FILL_ORDER` 차례(지금 「보유 · 신규 · 개조」)로 나눠 보인다(`dedicated_split_text`) —
+계산표 공정 전체 구획에 「들어오는 신규 설비」, 개조 구획에 「늘어난 전용 대수」·「보유 제약
+설비로」·「신규 설비로」·「신규 대기」 행, 배정 칸·표적 풍선에 구성 한 줄(신규 대기가 있으면 그
+줄도). 걸리지 않으면 1판 그림 그대로다.
 
 대수는 모두 환산 대수다(가용이 호기별 환산비를 곱한 값 — `services/constraint_simulation.py`).
 """
@@ -83,10 +85,14 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.constraint_simulation import (
+    FILL_ORDER,
+    FILL_OWNED,
     ConstraintConditions,
     ConstraintMonth,
     ConstraintResult,
     ModificationWindow,
+    NewUnit,
+    NewUnitAssignment,
     secure,
 )
 from capa_simulation.services.korean_particle import with_object_particle
@@ -109,16 +115,19 @@ __all__ = [
     "day_position",
     "dedicated_split_text",
     "end_label_anchors",
+    "free_parts",
     "general_label",
+    "new_unit_fate",
     "month_name",
     "rate_figure",
     "rate_text",
     "signed_points",
     "units_text",
+    "waiting_text",
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 5
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 6
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -148,7 +157,7 @@ ROW_IDS: Final = (
     "title:process",
     "required",
     "available",
-    "new_arrivals",
+    "new_starts",
     "baseline_rate",
     "title:product",
     "constrained_demand",
@@ -161,6 +170,7 @@ ROW_IDS: Final = (
     "new_increment",
     "increment",
     "downtime",
+    "waiting",
     "title:existing",
     "existing_demand",
     "existing_available",
@@ -168,8 +178,8 @@ ROW_IDS: Final = (
     "rate_delta",
     "proportional_rate",
 )
-"""계산표 행 id 의 차례(개조·비중 행은 켬일 때만, 「새로 붙는 신규」·「늘어난
-전용」·「보유로」·「신규로」 는 그 옵션이 걸릴 때만 선다)."""
+"""계산표 행 id 의 차례(개조·비중 행은 켬일 때만, 「들어오는 신규」·「늘어난
+전용」·「보유로」·「신규로」·「신규 대기」 는 그 옵션이 걸릴 때만 선다)."""
 
 
 @dataclass(frozen=True)
@@ -240,18 +250,35 @@ def month_name(month: int) -> str:
     return f"{month // 100 % 100:02d}년 {month % 100}월"
 
 
+def free_parts(conditions: ConstraintConditions, owned: str, new: str) -> list[str]:
+    """개조 없이 채우는 몫의 글을 `FILL_ORDER` 차례로 — 걸린 옵션의 것만(보유 글 `owned`, 신규 글
+    `new`). 차례를 바꾸면 모든 구성 글이 따라간다."""
+    parts: list[str] = []
+    for source in FILL_ORDER:
+        if source == FILL_OWNED:
+            if conditions.uses_owned_units:
+                parts.append(owned)
+        elif conditions.uses_new_units:
+            parts.append(new)
+    return parts
+
+
 def dedicated_split_text(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
-    """전용 대수의 구성 — 「전용 10대 = 보유 4 · 신규 3 · 개조 3」. 걸린 옵션의 몫만 적는다. 나눠
-    보이지 않는 조건(`splits_dedicated` 거짓)이나 전용 0 이면 빈 글자."""
+    """전용 대수의 구성 — 「전용 10대 = 보유 4 · 신규 3 · 개조 3」(`FILL_ORDER` 차례). 걸린 옵션의
+    몫만 적는다. 나눠 보이지 않는 조건(`splits_dedicated` 거짓)이나 전용 0 이면 빈 글자."""
     if not conditions.splits_dedicated or row.dedicated <= 0:
         return ""
-    parts: list[str] = []
-    if conditions.uses_owned_units:
-        parts.append(f"보유 {row.owned_dedicated}")
-    if conditions.uses_new_units:
-        parts.append(f"신규 {row.new_dedicated}")
+    parts = free_parts(conditions, f"보유 {row.owned_dedicated}", f"신규 {row.new_dedicated}")
     parts.append(f"개조 {row.modified_dedicated}")
     return f"전용 {row.dedicated}대 = {' · '.join(parts)}"
+
+
+def waiting_text(item: NewUnitAssignment) -> str:
+    """신규 대기 날짜 글 — 「2027-06-10 ~ 2027-06-23 대기 14일」, 기여 시작이 곧 그 달 W/D 첫날이면
+    「대기 없음(W/D 첫날 기여 시작)」."""
+    if item.days <= 0:
+        return "대기 없음(W/D 첫날 기여 시작)"
+    return f"{item.start.isoformat()} ~ {item.last_day.isoformat()} 대기 {item.days}일"
 
 
 def general_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
@@ -293,9 +320,12 @@ def day_position(day: date, months: Sequence[int], cutoff_days: int) -> float:
     return len(months) - 0.5
 
 
-def _window_lanes(spans: Sequence[tuple[float, float]]) -> list[int]:
-    """겹치는 막대를 아래 줄로 내린다 — 줄마다 마지막 끝보다 늦게 시작하는 첫 줄."""
-    lanes: list[float] = []
+def _window_lanes(
+    spans: Sequence[tuple[float, float]], lanes: list[float] | None = None
+) -> list[int]:
+    """겹치는 막대를 아래 줄로 내린다 — 줄마다 마지막 끝보다 늦게 시작하는 첫 줄. `lanes` 를 주면 그
+    줄 끝(앞 막대들이 채운 자리)을 이어 쓰고 고친다."""
+    lanes = [] if lanes is None else lanes
     chosen: list[int] = []
     for start, end in spans:
         for lane, last_end in enumerate(lanes):
@@ -324,6 +354,25 @@ def _first_overlapped_month(window: ModificationWindow, result: ConstraintResult
     return window.month
 
 
+def _waiting_hover(item: NewUnitAssignment) -> str:
+    return (
+        f"<b>{html.escape(month_name(item.month))} 몫 · 신규 {html.escape(item.unit)} "
+        f"{units_text(item.units)}대 대기</b><br>{html.escape(waiting_text(item))} — 셋업 때부터 "
+        "제약용이라 기존 제품이 못 씀"
+    )
+
+
+def _first_waiting_month(item: NewUnitAssignment, result: ConstraintResult) -> int:
+    """신규 대기 막대를 누르면 고를 달 — 그 대기가 든 첫 보이는 달(없으면 그 몫의 달)."""
+    for row in result.months:
+        if any(
+            share.source_month == item.month and share.unit == item.unit
+            for share in row.waiting_shares
+        ):
+            return row.month
+    return item.month
+
+
 def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
     parts = [
         f"<b>{html.escape(month_label(row.month))}</b>",
@@ -338,6 +387,8 @@ def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
         text += f"<br>{html.escape(split)}"
     if row.downtime > 0:
         text += f"<br>개조 중 비가동 {MINUS}{units_text(row.downtime)}대"
+    if row.waiting > 0:
+        text += f"<br>신규 대기 {MINUS}{units_text(row.waiting)}대"
     return text + "<br>누르면 이 달 계산"
 
 
@@ -409,14 +460,21 @@ def rate_figure(
     )
 
     windows = result.windows
-    has_band = bool(windows)
+    waits = [item for item in result.assignments if item.days > 0]
+    has_band = bool(windows) or bool(waits)
     main_domain = [_MAIN_BOTTOM, 1.0] if has_band else [0.0, 1.0]
     spans = [
         (day_position(window.start, months, cutoff), day_position(window.end, months, cutoff))
         for window in windows
     ]
-    lanes = _window_lanes(spans)
-    lane_count = max(lanes, default=0) + 1
+    wait_spans = [
+        (day_position(item.start, months, cutoff), day_position(item.end, months, cutoff))
+        for item in waits
+    ]
+    lane_ends: list[float] = []
+    lanes = _window_lanes(spans, lane_ends)
+    wait_lanes = _window_lanes(wait_spans, lane_ends)
+    lane_count = max([*lanes, *wait_lanes], default=0) + 1
 
     data: list[dict[str, Any]] = [
         {
@@ -522,7 +580,7 @@ def rate_figure(
             "name": "기존 제품 — 제약 반영",
         }
     )
-    if has_band:
+    if windows:
         data.append(
             {
                 "type": "bar",
@@ -547,6 +605,34 @@ def rate_figure(
                 ],
                 "hovertemplate": "%{customdata[1]}<extra></extra>",
                 "name": "개조 비가동",
+            }
+        )
+    if waits:
+        # 신규 대기 — 개조 비가동과 같은 띠에 같은 색의 빗금(새 색 토큰을 두지 않는다).
+        data.append(
+            {
+                "type": "bar",
+                "orientation": "h",
+                "x": [end - start for start, end in wait_spans],
+                "base": [start for start, _ in wait_spans],
+                "y": wait_lanes,
+                "width": [0.8] * len(wait_spans),
+                "yaxis": "y2",
+                "marker": {
+                    "color": tokens.SURFACE,
+                    "line": {"color": tokens.STATUS_WARNING, "width": 1},
+                    "pattern": {"shape": "/", "fgcolor": tokens.STATUS_WARNING, "solidity": 0.35},
+                },
+                "text": [f"{units_text(item.units)}대" for item in waits],
+                "textposition": "inside",
+                "insidetextanchor": "middle",
+                "textangle": 0,
+                "textfont": {"color": tokens.TEXT, "size": 11},
+                "customdata": [
+                    [_first_waiting_month(item, result), _waiting_hover(item)] for item in waits
+                ],
+                "hovertemplate": "%{customdata[1]}<extra></extra>",
+                "name": "신규 대기",
             }
         )
 
@@ -745,7 +831,12 @@ def build_sheet_canvas(
     ]
     if conditions.uses_new_units:
         rows.append(
-            _row("new_arrivals", "새로 붙는 신규 설비 (기준일 이후)", rows_in, _arrivals_cell)
+            _row(
+                "new_starts",
+                "들어오는 신규 설비 (기준일 이후)",
+                rows_in,
+                lambda row: _new_starts_cell(row, result),
+            )
         )
     rows += [
         _row(
@@ -825,6 +916,8 @@ def build_sheet_canvas(
             ),
             _row("downtime", "개조 중 비가동 (환산 대수)", rows_in, _downtime_cell),
         ]
+        if conditions.uses_new_units:
+            rows.append(_row("waiting", "신규 대기 (환산 대수)", rows_in, _waiting_cell))
     rows += [
         title_row("existing", "기존 제품", "남는 몫 ÷ 기존 소요"),
         _row(
@@ -1000,23 +1093,61 @@ def _count_cell(value: int, *, bold: bool = False) -> Cell:
     return Cell(str(value) if value > 0 else "", bold=bold and value > 0)
 
 
-def _arrivals_cell(row: ConstraintMonth) -> Cell:
-    """그 달 새로 붙는 신규 설비 — 몫 누적의 내림 차이. 쓰지 않은 몫은 기존 제품 몫이다."""
-    hover = (
-        f"{_head(row)} · 기준일 이후 신규 몫 {units_text(row.new_available)}대"
-        f" → 새로 붙는 {row.new_arrivals}대(누적 내림의 차이)"
-    )
-    if row.new_arrivals > 0:
-        if not row.in_period:
-            hover += "<br>제약 기간 밖이라 기존 제품 몫 — 나중에 제약에 쓰려면 개조"
-        else:
-            hover += f"<br>제약에 개조 없이 {row.new_increment}대"
-            if row.unused_arrivals:
-                hover += f" · 기존 제품 몫 {row.unused_arrivals}대(나중에 제약에 쓰려면 개조)"
+def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
+    """신규 호기 하나가 어떻게 쓰였나 — 「27년 7월 몫 전용(2027-06-10 ~ 2027-06-23 대기 14일)」 ·
+    「일반 설비(개조 30일 안에 늘어날 전용 없음)」. 나눠 붙었으면 몫마다 잇는다."""
+    pieces = [item for item in result.assignments if item.unit == unit.name]
+    parts = [
+        f"{month_name(item.month)} 몫 {units_text(item.units)}대 전용({waiting_text(item)})"
+        if len(pieces) > 1 or abs(item.units - unit.units) > 1e-9
+        else f"{month_name(item.month)} 몫 전용({waiting_text(item)})"
+        for item in pieces
+    ]
+    left = unit.units - sum(item.units for item in pieces)
+    if left > 1e-9:
+        days = result.conditions.modification_days or 0
+        reason = f"개조 {days}일 안에 늘어날 전용 없음"
+        parts.append(
+            f"남는 {units_text(left)}대 일반 설비({reason})" if pieces else f"일반 설비({reason})"
+        )
+    return " · ".join(parts)
+
+
+def _new_starts_cell(row: ConstraintMonth, result: ConstraintResult) -> Cell:
+    """그 달 W/D 구간에 기여를 시작하는 신규 설비(환산 대수)와 호기마다의 쓰임."""
+    units = result.units_starting_in(row.month)
+    total = sum(unit.units for unit in units)
+    if not units:
+        return Cell("", muted=True, hover=f"{_head(row)} · 이 달 기여를 시작하는 신규 설비 없음")
+    lines = [
+        f"{html.escape(unit.name)} · {unit.start.isoformat()} 기여 시작 · "
+        f"{units_text(unit.units)}대 → {html.escape(new_unit_fate(unit, result))}"
+        for unit in units
+    ]
     return Cell(
-        str(row.new_arrivals) if row.new_arrivals > 0 else "",
-        muted=row.new_arrivals == 0,
-        hover=hover,
+        units_text(total),
+        hover=f"{_head(row)} · 들어오는 신규 설비<br>" + "<br>".join(lines),
+    )
+
+
+def _waiting_cell(row: ConstraintMonth) -> Cell:
+    if row.waiting <= 0:
+        return Cell("", muted=True, hover=f"{_head(row)} · 신규 대기 없음")
+    lines = [
+        f"{html.escape(share.unit)} · {html.escape(month_name(share.source_month))} 몫 "
+        f"{units_text(share.units)}대 × {share.days}/{share.window_days}일 = "
+        f"{units_text(share.equivalent)}"
+        for share in row.waiting_shares
+    ]
+    if row.overdrawn:
+        lines.append("비가동이 그 달 가용보다 많아 쓸 수 있는 가용 0")
+    return Cell(
+        f"{MINUS}{units_text(row.waiting)}",
+        text_color=tokens.DELTA_DECREASE,
+        hover=(
+            f"{_head(row)} · 신규 대기(셋업 때부터 제약용 — 기존 제품이 못 씀)<br>"
+            + "<br>".join(lines)
+        ),
     )
 
 
@@ -1041,6 +1172,8 @@ def _existing_available_cell(row: ConstraintMonth) -> Cell:
     text = f"가용 {units_text(row.available)}"
     if row.downtime > 0:
         text += f" − 개조 중 {units_text(row.downtime)}"
+    if row.waiting > 0:
+        text += f" − 신규 대기 {units_text(row.waiting)}"
     if row.allocated > 0:
         text += f" − 제약 배정 {row.allocated}"
     return Cell(

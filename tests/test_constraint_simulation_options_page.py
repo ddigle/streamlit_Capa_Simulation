@@ -4,14 +4,14 @@
 """제약 시뮬레이션 2판 옵션 화면(AppTest — 하네스는 `tests/test_constraint_simulation_page.py`).
 
 설비 DB 는 시드 공정 하나(`DEMO_Chip_Attach`)에 기존보유 4대 + Qual 끝난 기존 신규 8대(2025-01-10)에
-**신규 한 대**를 더한 두 벌이다. Cut-off 7 이면 제약 기간 첫 달(26.01) W/D 는 (2025-12-24,
-2026-01-24] 이고 시드 소요가 작아 제약 몫은 그 달 1대뿐이다.
+**신규 한 대**를 더한 세 벌이다. Cut-off 7 이면 제약 기간 첫 달(26.01) W/D 첫날은 2025-12-25 이고
+시드 소요가 작아 제약 몫은 그 달 1대뿐이다. 개조 기간은 기본 30일이다.
 
-- `CA-N1`(Qual 2025-12-20, 기여 시작 12/21) — 12월 W/D 의 4/31 만 덮고 1월을 다 덮는다. 내림
-  차이로는 1월에 새로 붙는 1대지만 기여 시작이 1월 W/D 첫날(12/25)보다 앞이라 **기간 전 신규**다 —
-  12월에 기존 제품에 쓰였으므로 1월 몫은 개조 창으로 채운다(사용자 답 1-3).
-- `CA-N2`(Qual 2025-12-24, 기여 시작 12/25 = 1월 W/D 첫날) — 1월에 들어오는 신규라 1월 몫 1대를 개조
-  없이 덮는다.
+- `CA-N1`(Qual 2025-12-20, 기여 시작 12/21) — 기간 전이지만 1월 증가(12/25)가 4일 뒤라 셋업
+  때부터 제약용으로 붙인다 — 12/21~12/24 가 「신규 대기」 다(2026-10-26 오후 사용자 결정).
+- `CA-N2`(Qual 2025-12-24, 기여 시작 12/25 = 1월 W/D 첫날) — 대기 없이 1월 몫 1대를 덮는다.
+- `CA-N0`(Qual 2025-11-20, 기여 시작 11/21) — 1월 증가가 34일 뒤라 개조 기간(30일) 밖이다. 기존
+  제품에 쓰인 일반 설비라 1월 몫은 개조 창으로 채운다.
 
 숫자는 손계산 시험(`tests/test_constraint_simulation_options.py`)이 보고, 여기서는 칸·글·캐시·오류
 갈래를 본다. 시험은 오늘에 기대지 않게 기준일 칸을 늘 직접 적는다.
@@ -41,7 +41,7 @@ from test_constraint_simulation_page import (
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.constraint_simulation_view import FREE_ONLY_TEXT
+from capa_simulation.components.constraint_simulation_view import FREE_ONLY_TEXT, WAIT_LATE_SUFFIX
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MODIFY_KEY,
     CONSTRAINT_NEW_SINCE_KEY,
@@ -53,11 +53,14 @@ from capa_simulation.services.process_equipment_timeline import build_process_eq
 
 EARLY_UNIT = "CA-N1"
 NEW_UNIT = "CA-N2"
+FAR_UNIT = "CA-N0"
 BEFORE_NEW_UNIT = date(2025, 12, 1)
 AFTER_NEW_UNIT = date(2026, 2, 1)
 
 
-def _options_database(path: Path, *, new_unit: str, qual: date) -> Path:
+def _options_database(
+    path: Path, *, new_unit: str, qual: date, arrival: date = date(2025, 12, 1)
+) -> Path:
     repository = DuckDBEquipmentRepository(path)
     repository.initialize()
     units = [
@@ -66,7 +69,7 @@ def _options_database(path: Path, *, new_unit: str, qual: date) -> Path:
         )
         for index in range(1, 9)
     ]
-    units.append(_unit(new_unit, qual, process=DYNAMIC_PROCESS, arrival=date(2025, 12, 1)))
+    units.append(_unit(new_unit, qual, process=DYNAMIC_PROCESS, arrival=arrival))
     baseline = pd.DataFrame(
         {"공정": [DYNAMIC_PROCESS], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
     )
@@ -90,6 +93,18 @@ def arriving_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, 
     root = tmp_path_factory.mktemp("constraint_simulation_options_arriving")
     return root / "scenario.duckdb", _options_database(
         root / "equipment.duckdb", new_unit=NEW_UNIT, qual=date(2025, 12, 24)
+    )
+
+
+@pytest.fixture(scope="module")
+def far_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """신규가 기간 첫 달 W/D 첫날보다 개조 기간(30일)을 넘게 앞서 들어온 벌(`CA-N0`)."""
+    root = tmp_path_factory.mktemp("constraint_simulation_options_far")
+    return root / "scenario.duckdb", _options_database(
+        root / "equipment.duckdb",
+        new_unit=FAR_UNIT,
+        qual=date(2025, 11, 20),
+        arrival=date(2025, 11, 1),
     )
 
 
@@ -191,7 +206,13 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert "신규 개조 없이(2025-12-01~)" in _header_line(app)
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"
-    assert "신규 설비 1대(기준일 2025-12-01 이후 기여 시작 · 들어온 달 몫만)" in captions
+    assert (
+        "신규 설비 1대(기준일 2025-12-01 이후 기여 시작 · 개조 30일 안에 늘어날 전용에 붙임)"
+        in captions
+    )
+    assert "**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비" in captions
+    lines = [_plain(text) for text in _markdown(app)]
+    assert f"26년 1월 몫 · 신규 {NEW_UNIT} · 대기 없음(W/D 첫날 기여 시작) · **1대**" in lines
     assert timeline_builds == [DYNAMIC_PROCESS]
 
     app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).set_value(AFTER_NEW_UNIT)
@@ -201,21 +222,42 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert timeline_builds == [DYNAMIC_PROCESS]
 
 
-def test_a_new_unit_that_started_in_the_month_before_the_period_is_ordinary(
+def test_a_new_unit_four_days_before_the_period_waits_instead_of_a_modification(
     option_databases: tuple[Path, Path],
 ) -> None:
-    """CA-N1 은 기준일(12/1) 뒤 신규지만 제약 기간 첫 달 W/D 첫날(12/25) 전인 12/21 부터 기여해
-    12월에 기존 제품에 쓰였다 — 1월 몫 1대는 개조 창이다(사용자 답 1-3). 내림 차이만 보면 1월에
-    새로 붙는 1대라 개조 0대로 셌다."""
+    """CA-N1 은 제약 기간 첫 달 W/D 첫날(12/25) 나흘 전인 12/21 부터 기여한다 — 1월 증가가 개조
+    기간(30일) 안이라 셋업 때부터 붙이고 12/21~12/24 를 신규 대기로 뺀다(옛 규칙은 기간 전 신규라
+    개조 1대였다)."""
     app = _with_new_units(_opened(option_databases), BEFORE_NEW_UNIT)
     captions = _plain(_captions(app))
-    assert (
-        f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {EARLY_UNIT} — 그중 제약 기간 "
-        "전에 기여를 시작한 1대는 일반 설비(개조)"
-    ) in captions
+    assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {EARLY_UNIT}" in captions
+    assert "제약 기간 전에 기여를 시작한" not in captions
+    assert _metric(app, "개조 대수") == "0대"
+    assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"
+    lines = [_plain(text) for text in _markdown(app)]
+    waiting = [line for line in lines if line.startswith("26년 1월 몫 · 신규 ")]
+    assert waiting == [
+        f"26년 1월 몫 · 신규 {EARLY_UNIT} · 2025-12-21 ~ 2025-12-24 대기 4일 · **1대**"
+        + WAIT_LATE_SUFFIX
+    ]
+    assert "일반 설비가 된 신규" not in captions
+
+
+def test_a_new_unit_more_than_the_modification_days_early_is_ordinary(
+    far_databases: tuple[Path, Path],
+) -> None:
+    """CA-N0(11/21)은 1월 증가(12/25)가 34일 뒤라 개조 기간 밖이다 — 일반 설비가 되어 1월 몫은
+    개조 창이다(답 1-3 의 좁혀진 뜻)."""
+    app = _with_new_units(_opened(far_databases), date(2025, 11, 1))
+    captions = _plain(_captions(app))
+    assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {FAR_UNIT}" in captions
     assert _metric(app, "개조 대수") == "1대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 0 · 개조 1"
-    assert "신규 설비 0대(기준일 2025-12-01 이후 기여 시작 · 들어온 달 몫만)" in captions
+    assert (
+        f"일반 설비가 된 신규 1대 — {FAR_UNIT} · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫"
+        in captions
+    )
+    assert "**신규 대기**" not in captions
 
 
 def test_the_detail_page_and_this_page_share_one_timeline(

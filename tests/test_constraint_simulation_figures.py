@@ -28,7 +28,7 @@ from typing import Any
 import plotly.io as pio
 import pytest
 from test_constraint_simulation import CONDITIONS, _inputs, _run
-from test_constraint_simulation_options import SINCE, _with_arrivals
+from test_constraint_simulation_options import NEW_ON, SINCE, _unit
 
 from capa_simulation.components import constraint_simulation_figures as figures
 from capa_simulation.components import constraint_simulation_view as view_module
@@ -51,18 +51,23 @@ from capa_simulation.components.constraint_simulation_figures import (
 from capa_simulation.components.constraint_simulation_view import (
     FREE_ONLY_TEXT,
     LATE_SUFFIX,
+    WAIT_LATE_SUFFIX,
     default_month,
     free_units_line,
     month_steps,
+    ordinary_line,
     overdrawn_lines,
     render_constraint_kpis,
     schedule_lines,
     short_lines,
+    waiting_lines,
 )
-from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_MONTH, CUSTOMDATA_ROW
+from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_MONTH, CUSTOMDATA_ROW, MINUS
 from capa_simulation.components.plotly_layout import plotly_validation
 from capa_simulation.design import tokens
 from capa_simulation.services.constraint_simulation import (
+    FILL_NEW,
+    FILL_OWNED,
     ConstraintMonthInput,
     ConstraintResult,
     simulate_constraint,
@@ -409,7 +414,7 @@ def _texts(canvas: Any) -> list[tuple[str, str]]:
     return pairs
 
 
-OPTION_ROWS = ("new_arrivals", "growth", "owned_increment", "new_increment")
+OPTION_ROWS = ("new_starts", "growth", "owned_increment", "new_increment", "waiting")
 
 
 def test_the_sheet_rows_follow_the_mock_order() -> None:
@@ -741,44 +746,50 @@ def test_the_modification_kpi_says_there_is_nothing_to_modify_without_demand(
 
 
 # ------------------------------------------------------------------ 2판 옵션 — 보유 · 신규 · 개조로
-# 나눠 보이기
+# 나눠 보이기 · 신규 대기
 
-# 보유 4(서비스 시험 ①)와 보유 3 + 신규 06 4 · 07 2 · 08 1 · 09 1 · 11 1(무개조), 신규 05 3 · 06 4 ·
-# 07 1 · 09 3(그 달만 · 남는 신규) — `tests/test_constraint_simulation_options.py` 와 같은
-# 손계산이다.
-NEW_ARRIVALS = {202705: 3, 202706: 4, 202707: 1, 202709: 3}
-FREE_ARRIVALS = {202706: 4, 202707: 2, 202708: 1, 202709: 1, 202711: 1}
+# 보유 4(서비스 시험 ①)와 신규 다섯 대(2026-10-26 오후 결정 — 개조 일수 30 안의 증가에 미리 붙임,
+# `tests/test_constraint_simulation_options.py` 와 같은 손계산):
+# N01 5/10 → 6월 몫(대기 15일, 5월 W/D) · N02 5/25 → 6월 몫(대기 0) · N03 6/10 → 7월 몫(대기 14일,
+# 6월 W/D) · N04 8/1 → 9월 몫(대기 24일, 8월 W/D 7/25~8/24) · N05 9/1 → 일반 설비(11월 증가 10/25
+# 는 54일 뒤). 증가 06 6 = 신규 2 + 개조 4 · 07 2 = 신규 1 + 개조 1 · 08 1 = 개조 · 09 1 = 신규 1 ·
+# 11 1 = 개조 → 개조 7 · 신규 4.
+NEW_UNITS = (
+    _unit("N01", date(2027, 5, 10)),
+    _unit("N02", date(2027, 5, 25)),
+    _unit("N03", date(2027, 6, 10)),
+    _unit("N04", date(2027, 8, 1)),
+    _unit("N05", date(2027, 9, 1)),
+)
 
 
 def _owned(owned: int = 4) -> ConstraintResult:
     return simulate_constraint(_inputs(), replace(CONDITIONS, owned_units=owned))
 
 
-def _new(arrivals: dict[int, int], *, owned: int = 0) -> ConstraintResult:
-    return simulate_constraint(
-        _with_arrivals(arrivals), replace(CONDITIONS, owned_units=owned, new_unit_since=SINCE)
-    )
+def _new(*, owned: int = 0) -> ConstraintResult:
+    return simulate_constraint(_inputs(), replace(NEW_ON, owned_units=owned), NEW_UNITS)
 
 
 def test_the_schema_version_moved_with_the_new_rows() -> None:
-    """계산표 행이 늘었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장 16)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 5
+    """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
+    16)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 6
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
     owned = build_sheet_canvas(_owned(), LABELS, selected_month=None, show_proportional=False)
     assert {"growth", "owned_increment"} <= set(owned.row_ids)
-    assert not {"new_arrivals", "new_increment"} & set(owned.row_ids)
-    new = build_sheet_canvas(
-        _new(NEW_ARRIVALS), LABELS, selected_month=None, show_proportional=False
-    )
-    assert {"new_arrivals", "growth", "new_increment"} <= set(new.row_ids)
+    assert not {"new_starts", "new_increment", "waiting"} & set(owned.row_ids)
+    new = build_sheet_canvas(_new(), LABELS, selected_month=None, show_proportional=False)
+    assert {"new_starts", "growth", "new_increment", "waiting"} <= set(new.row_ids)
     assert "owned_increment" not in new.row_ids
     # 개조 끔이면 옵션이 걸리지 않아 행도 없다.
     off = build_sheet_canvas(
         simulate_constraint(
-            _with_arrivals(NEW_ARRIVALS),
-            replace(CONDITIONS, modification_days=None, owned_units=4, new_unit_since=SINCE),
+            _inputs(),
+            replace(NEW_ON, modification_days=None, owned_units=4),
+            NEW_UNITS,
         ),
         LABELS,
         selected_month=None,
@@ -787,20 +798,36 @@ def test_each_option_row_stands_only_with_its_option() -> None:
     assert not set(OPTION_ROWS) & set(off.row_ids)
 
 
-def test_the_sheet_splits_the_growth_into_owned_new_and_modification() -> None:
-    result = _new(NEW_ARRIVALS, owned=2)
+def test_the_sheet_splits_the_growth_and_shows_the_wait() -> None:
+    result = _new(owned=2)
     canvas = build_sheet_canvas(result, LABELS, selected_month=None, show_proportional=False)
-    texts = [text for _, text in _texts(canvas)]
-    # 06: 증가 6 = 보유 2 + 신규 4 + 개조 0 · 07: 증가 2 = 신규 1 + 개조 1.
+    # 06: 증가 6 = 보유 2 + 신규 2 + 개조 2 · 07: 증가 2 = 신규 1 + 개조 1 · 09: 증가 1 = 신규 1.
     june, july = result.month(202706), result.month(202707)
-    assert (june.growth, june.owned_increment, june.new_increment, june.increment) == (6, 2, 4, 0)
+    assert (june.growth, june.owned_increment, june.new_increment, june.increment) == (6, 2, 2, 2)
     assert (july.growth, july.new_increment, july.increment) == (2, 1, 1)
-    assert "6" in texts and "4" in texts
-    arrivals = _cells(canvas, "new_arrivals")
-    assert "제약 기간 밖이라 기존 제품 몫" in arrivals[202705]
-    assert "제약에 개조 없이 1대 · 기존 제품 몫 2대" in arrivals[202709]
+    assert result.month(202709).new_increment == 1
+    starts = _cells(canvas, "new_starts")
+    first = "N01 · 2027-05-10 기여 시작 · 1대 → 27년 6월 몫 전용"
+    assert f"{first}(2027-05-10 ~ 2027-05-24 대기 15일)" in starts[202705]
+    assert (
+        "N02 · 2027-05-25 기여 시작 · 1대 → 27년 6월 몫 전용(대기 없음(W/D 첫날 기여 시작))"
+        in (starts[202706])
+    )
+    assert (
+        "N05 · 2027-09-01 기여 시작 · 1대 → 일반 설비(개조 30일 안에 늘어날 전용 없음)"
+        in (starts[202709])
+    )
+    waiting = _cells(canvas, "waiting")
+    assert "N01 · 27년 6월 몫 1대 × 15/31일 = 0.48" in waiting[202705]
+    assert "N03 · 27년 7월 몫 1대 × 14/30일 = 0.47" in waiting[202706]
+    assert "N04 · 27년 9월 몫 1대 × 24/31일 = 0.77" in waiting[202708]
+    assert "신규 대기 없음" in waiting[202707]
+    texts = [text for _, text in _texts(canvas)]
+    assert f"{MINUS}0.48" in texts and f"{MINUS}0.77" in texts
     allocated = _cells(canvas, "allocated")
-    assert "전용 6대 = 보유 2 · 신규 4 · 개조 0" in allocated[202706]
+    assert "전용 6대 = 보유 2 · 신규 2 · 개조 2" in allocated[202706]
+    available = _cells(canvas, "existing_available")
+    assert "− 신규 대기 0.48" in available[202705]
 
 
 def test_the_split_text_names_only_the_options_in_use() -> None:
@@ -809,13 +836,25 @@ def test_the_split_text_names_only_the_options_in_use() -> None:
         dedicated_split_text(owned.month(202706), owned.conditions) == "전용 6대 = 보유 4 · 개조 2"
     )
     assert dedicated_split_text(owned.month(202705), owned.conditions) == ""
-    new = _new(NEW_ARRIVALS)
-    assert dedicated_split_text(new.month(202707), new.conditions) == "전용 8대 = 신규 5 · 개조 3"
+    new = _new()
+    assert dedicated_split_text(new.month(202707), new.conditions) == "전용 8대 = 신규 3 · 개조 5"
     plain = _run()
     assert dedicated_split_text(plain.month(202706), plain.conditions) == ""
 
 
-def test_the_hit_target_hover_carries_the_split() -> None:
+def test_the_split_text_follows_the_fill_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """구성 글은 `FILL_ORDER` 차례다 — 차례를 바꾸면 글도 따라간다(값은 서비스가 다시 센다)."""
+    both = _new(owned=2)
+    assert dedicated_split_text(both.month(202706), both.conditions).startswith(
+        "전용 6대 = 보유 2 · 신규 2"
+    )
+    monkeypatch.setattr(figures, "FILL_ORDER", (FILL_NEW, FILL_OWNED))
+    assert dedicated_split_text(both.month(202706), both.conditions).startswith(
+        "전용 6대 = 신규 2 · 보유 2"
+    )
+
+
+def test_the_hit_target_hover_carries_the_split_and_the_wait() -> None:
     result = _owned()
     hit = _spec(rate_figure(result, LABELS, selected_month=None, show_proportional=False))["data"][
         0
@@ -825,14 +864,37 @@ def test_the_hit_target_hover_carries_the_split() -> None:
     assert "전용" not in hovers[202705]
     plain = _spec(rate_figure(_run(), LABELS, selected_month=None, show_proportional=False))
     assert all("전용" not in item[1] for item in plain["data"][0]["customdata"])
+    assert all("신규 대기" not in item[1] for item in plain["data"][0]["customdata"])
+    new = _spec(rate_figure(_new(), LABELS, selected_month=None, show_proportional=False))
+    new_hovers = {item[0]: item[1] for item in new["data"][0]["customdata"]}
+    assert f"신규 대기 {MINUS}0.48대" in new_hovers[202705]
 
 
 def test_the_downtime_bars_shrink_to_the_modified_units() -> None:
-    """보유 4 — 06 몫 막대가 2대로 준다(창이 개조 몫만 내므로 그림 코드는 그대로)."""
-    bars = _traces(
-        rate_figure(_owned(), LABELS, selected_month=None, show_proportional=False), "개조 비가동"
-    )
+    """보유 4 — 06 몫 막대가 2대로 준다(창이 개조 몫만 내므로 그림 코드는 그대로). 신규가 없으면
+    「신규 대기」 막대가 없다."""
+    figure = rate_figure(_owned(), LABELS, selected_month=None, show_proportional=False)
+    bars = _traces(figure, "개조 비가동")
     assert bars[0]["text"] == ["2대", "2대", "1대", "1대", "1대"]
+    assert _traces(figure, "신규 대기") == []
+
+
+def test_the_waiting_bars_share_the_band_with_the_modification() -> None:
+    """신규 대기 막대(빗금)는 대기가 0일인 몫(N02)을 빼고 셋 — 개조 막대와 겹치는 줄은 아래로
+    내린다. 누르면 그 대기가 든 첫 보이는 달을 고른다."""
+    result = _new()
+    spec = _spec(rate_figure(result, LABELS, selected_month=None, show_proportional=False))
+    waits = [trace for trace in spec["data"] if trace.get("name") == "신규 대기"]
+    assert len(waits) == 1
+    bar = waits[0]
+    assert bar["text"] == ["1대", "1대", "1대"]
+    assert [item[0] for item in bar["customdata"]] == [202705, 202706, 202708]
+    assert "27년 6월 몫 · 신규 N01 1대 대기" in bar["customdata"][0][1]
+    assert bar["marker"]["pattern"]["shape"] == "/"
+    modification = next(trace for trace in spec["data"] if trace.get("name") == "개조 비가동")
+    # 6월 몫 개조(4/25~5/24)와 N01 대기(5/10~5/24)가 겹쳐 대기는 다른 줄이다.
+    assert bar["y"][0] != modification["y"][0]
+    assert spec["layout"]["yaxis2"]["range"][0] >= 1 - 0.5
 
 
 def test_the_steps_split_the_dedicated_units_and_the_growth() -> None:
@@ -846,18 +908,37 @@ def test_the_steps_split_the_dedicated_units_and_the_growth() -> None:
     assert june.steps[2].note.startswith(
         "이 달 늘어난 전용 6대 — 보유 제약 설비 4대는 개조 없이, 개조 2대"
     )
-    new = _new(NEW_ARRIVALS)
-    september = month_steps(new.month(202709), new, LABELS, show_proportional=False)
-    assert september.steps[2].note == (
-        "이 달 늘어난 전용 1대 — 신규 설비 1대는 개조 없이, 개조 0대 · 새로 붙은 신규 3대 중 2대는 "
-        "기존 제품 몫입니다(나중에 제약에 쓰려면 개조)."
-    )
+    new = _new()
     october = month_steps(new.month(202710), new, LABELS, show_proportional=False)
-    assert october.steps[1].note.startswith("전용 10대 = 신규 6 · 개조 4")
+    assert october.steps[1].note.startswith("전용 10대 = 신규 4 · 개조 6")
     # 기간 밖 달은 구성 글이 없다.
     may = month_steps(new.month(202705), new, LABELS, show_proportional=False)
     assert may.steps[1].note == ""
-    assert "기존 제품 몫" in may.steps[2].note
+
+
+def test_the_steps_show_the_wait_beside_the_modification() -> None:
+    """6월 — 3단계 본문에 개조 중 비가동과 신규 대기가 나란히, 회색 줄에 N03 대기·이 달 몫 신규의
+    대기 날짜, 4단계 식에 「신규 대기」 가 끼고 적힌 수로 셈이 맞는다."""
+    result = _new()
+    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
+    assert june.steps[2].body == "개조 중 비가동 **−1대** · 신규 대기 **−0.47대**"
+    note = june.steps[2].note
+    assert note.startswith("이 달 늘어난 전용 6대 — 신규 설비 2대는 개조 없이, 개조 4대")
+    assert "신규 N03 1대가 이 달 14일 대기(27년 7월 몫) → 0.47대" in note
+    assert "이 달 몫 신규 N01 1대 — 2027-05-10 \\~ 2027-05-24 대기 15일" in note
+    assert "이 달 몫 신규 N02 1대 — 대기 없음(W/D 첫날 기여 시작)" in note
+    row = result.month(202706)
+    assert june.steps[3].body == (
+        f"기존 가용 = 48 − 1 − 0.47 − 6 = **{units_text(row.existing_available)}대**"
+    )
+    assert june.steps[3].note.startswith("공정 가용 − 개조 중 − 신규 대기 − 제약 배정")
+    september = month_steps(result.month(202709), result, LABELS, show_proportional=False)
+    assert "이 달 들어온 신규 N05 — 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫" in (
+        september.steps[2].note
+    )
+    # 신규만 켜고 이 달 비가동·대기가 없으면 본문이 둘을 함께 말한다.
+    december = month_steps(result.month(202712), result, LABELS, show_proportional=False)
+    assert december.steps[2].body == "이 달 개조 비가동·신규 대기 없음"
 
 
 def test_a_kept_pool_with_options_says_dedicated_instead_of_modified() -> None:
@@ -878,12 +959,32 @@ def test_a_kept_pool_with_options_says_dedicated_instead_of_modified() -> None:
 def test_the_schedule_card_names_the_units_used_without_modification() -> None:
     assert free_units_line(_run()) == ""
     assert free_units_line(_owned()) == "개조 없이 쓰는 전용 — 보유 제약 설비 4대(입력 4대 중)"
-    line = free_units_line(_new(FREE_ARRIVALS, owned=3))
+    line = free_units_line(_new(owned=3))
     assert line == (
-        "개조 없이 쓰는 전용 — 보유 제약 설비 3대(입력 3대 중) · 신규 설비 8대(기준일 2026-10-26 "
-        "이후 기여 시작 · 들어온 달 몫만)"
+        "개조 없이 쓰는 전용 — 보유 제약 설비 3대(입력 3대 중) · 신규 설비 4대(기준일 2026-10-26 "
+        "이후 기여 시작 · 개조 30일 안에 늘어날 전용에 붙임)"
     )
     assert FREE_ONLY_TEXT.startswith("늘어난 전용 대수를 모두 보유·신규 설비로 채워")
+
+
+def test_the_schedule_card_lists_the_waits_and_the_ordinary_units() -> None:
+    result = _new()
+    lines = waiting_lines(result.assignments, today=date(2026, 10, 26))
+    assert lines == [
+        "27년 6월 몫 · 신규 N01 · 2027-05-10 \\~ 2027-05-24 대기 15일 · **1대**",
+        "27년 6월 몫 · 신규 N02 · 대기 없음(W/D 첫날 기여 시작) · **1대**",
+        "27년 7월 몫 · 신규 N03 · 2027-06-10 \\~ 2027-06-23 대기 14일 · **1대**",
+        "27년 9월 몫 · 신규 N04 · 2027-08-01 \\~ 2027-08-24 대기 24일 · **1대**",
+    ]
+    late = waiting_lines(result.assignments, today=date(2027, 6, 1))
+    assert late[0].endswith(WAIT_LATE_SUFFIX)
+    assert not late[1].endswith(WAIT_LATE_SUFFIX)
+    assert ordinary_line(result) == (
+        "일반 설비가 된 신규 1대 — N05 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
+        "쓰려면 개조)"
+    )
+    assert ordinary_line(_owned()) == ""
+    assert waiting_lines(_run().assignments, today=date(2026, 10, 26)) == []
 
 
 def test_the_modification_kpi_counts_only_the_modified_units(
@@ -893,7 +994,7 @@ def test_the_modification_kpi_counts_only_the_modified_units(
     카드 넷이 한 줄에 서게 짧다 — 창 수·첫 비가동은 개조 일정 카드가 말한다."""
     cards = _kpi_cards(monkeypatch, _owned())
     assert cards["개조 대수"] == ("7대", "전용 최대 11대 = 보유 4 · 개조 7")
-    cards = _kpi_cards(monkeypatch, _new(FREE_ARRIVALS, owned=3))
-    assert cards["개조 대수"] == ("0대", "전용 최대 11대 = 보유 3 · 신규 8 · 개조 0")
-    cards = _kpi_cards(monkeypatch, _new(NEW_ARRIVALS))
-    assert cards["개조 대수"] == ("5대", "전용 최대 11대 = 신규 6 · 개조 5")
+    cards = _kpi_cards(monkeypatch, _new(owned=3))
+    assert cards["개조 대수"] == ("4대", "전용 최대 11대 = 보유 3 · 신규 4 · 개조 4")
+    cards = _kpi_cards(monkeypatch, _new())
+    assert cards["개조 대수"] == ("7대", "전용 최대 11대 = 신규 4 · 개조 7")

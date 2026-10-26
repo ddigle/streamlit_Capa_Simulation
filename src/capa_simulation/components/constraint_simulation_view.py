@@ -34,9 +34,11 @@
 요약 넷(`render_constraint_kpis`)은 고른 달·보기와 무관해 프래그먼트 밖에서 페이지가 그린다.
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
-대수를 「보유 · 신규 · 개조」 로 나눠 적는다 — 2·3단계 회색 줄, 요약 넷 「개조 대수」(값 = 실제로
-개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 일정 카드 머리 한 줄(`free_units_line`). 걸리지
-않으면 1판 글 그대로다.
+대수를 `FILL_ORDER` 차례(지금 「보유 · 신규 · 개조」)로 나눠 적는다 — 2·3단계 회색 줄, 요약 넷
+「개조 대수」(값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 일정 카드 머리 한
+줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 일정 카드의 「신규 대기」
+줄(`waiting_lines`)과 일반 설비가 된 신규 한 줄(`ordinary_line`)에 선다. 걸리지 않으면 1판 글
+그대로다.
 """
 
 from __future__ import annotations
@@ -59,15 +61,17 @@ from capa_simulation.components.constraint_simulation_figures import (
     chart_min_width_px,
     chart_point_month,
     dedicated_split_text,
+    free_parts,
     general_label,
     month_name,
     rate_figure,
     rate_text,
     signed_points,
     units_text,
+    waiting_text,
 )
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.month_sheet_canvas import MINUS, canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.scroll_shell import (
@@ -98,6 +102,7 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintMonth,
     ConstraintResult,
     ModificationWindow,
+    NewUnitAssignment,
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.threshold_label import threshold_percent_label
@@ -113,6 +118,7 @@ __all__ = [
     "default_month",
     "free_units_line",
     "month_steps",
+    "ordinary_line",
     "overdrawn_lines",
     "pick_chart_month",
     "pick_sheet_month",
@@ -123,6 +129,7 @@ __all__ = [
     "settle_selected_month",
     "short_lines",
     "top_row_style",
+    "waiting_lines",
 ]
 
 KPI_ROW_KEY: Final = "constraint_sim_kpis"
@@ -157,7 +164,15 @@ MODIFY_OFF_TEXT: Final = "개조를 켜면 제약 제품에 떼어 줄 대수만
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
 )
+WAIT_BEFORE_RANGE_TEXT: Final = (
+    "첫 신규 대기가 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
+)
+WAITING_DEFINITION: Final = (
+    "신규 대기는 셋업 때부터 제약용으로 붙인 신규 설비가 그 달 W/D 첫날까지 기다리는 동안입니다 — "
+    "기존 제품이 못 써 개조 비가동처럼 공정 전체 가용대수에서 빠집니다(개조 기간보다 짧습니다)."
+)
 LATE_SUFFIX: Final = " — 이미 지난 날짜(개조를 이미 시작했어야 합니다)"
+WAIT_LATE_SUFFIX: Final = " — 이미 지난 날짜(셋업 때 이미 제약용으로 붙였어야 합니다)"
 
 
 class ConstraintView(NamedTuple):
@@ -397,36 +412,20 @@ def month_steps(
     if not modifies:
         step3 = MonthStep("개조 없음 — 비가동 없이 나누기만 합니다", "")
     else:
-        body3 = (
-            f"개조 중 비가동 **−{units_text(row.downtime)}대**"
-            if row.downtime > 0
-            else "이 달 개조 비가동 없음"
-        )
-        notes = [
-            f"{month_name(share.source_month)} 몫 {share.units}대가 이 달 {share.days}일 개조 중 "
-            f"→ {units_text(share.equivalent)}대"
-            for share in row.downtime_shares
-        ]
-        if not notes and row.increment > 0:
-            notes.append(f"이 달 몫 {row.increment}대는 앞 달에 개조를 마칩니다.")
-        if row.overdrawn:
-            notes.append("비가동이 가용보다 많아 쓸 수 있는 가용은 0 입니다.")
-        growth_note = _growth_note(row, conditions)
-        if growth_note:
-            notes.insert(0, growth_note)
-        if conditions.uses_new_units and row.unused_arrivals > 0:
-            notes.append(
-                f"새로 붙은 신규 {row.new_arrivals}대 중 {row.unused_arrivals}대는 기존 제품 몫"
-                "입니다(나중에 제약에 쓰려면 개조)."
-            )
-        step3 = MonthStep(body3, " · ".join(notes))
+        step3 = _modification_step(row, result)
 
     available_shown = units_text(row.existing_available)
-    # 적힌 수로 「공정 가용 − 개조 중 − 제약 배정」 을 다시 셈한다 — 비가동이 가용보다 많으면 쓸 수
-    # 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은 차례다.
+    # 적힌 수로 「공정 가용 − 개조 중 − 신규 대기 − 제약 배정」 을 다시 셈한다 — 비가동이 가용보다
+    # 많으면 쓸 수 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은 차례다.
     available_digits, available_sign = _consistent_digits(
         lambda digits: units_text(
-            max(0.0, round(row.available, digits) - round(row.downtime, digits)) - row.allocated
+            max(
+                0.0,
+                round(row.available, digits)
+                - round(row.downtime, digits)
+                - round(row.waiting, digits),
+            )
+            - row.allocated
         ),
         available_shown,
     )
@@ -435,6 +434,9 @@ def month_steps(
     if row.downtime > 0:
         pieces.append(_operand_text(row.downtime, available_digits))
         note_pieces.append("개조 중")
+    if row.waiting > 0:
+        pieces.append(_operand_text(row.waiting, available_digits))
+        note_pieces.append("신규 대기")
     if row.allocated > 0:
         pieces.append(str(row.allocated))
         note_pieces.append("제약 배정")
@@ -503,36 +505,117 @@ def month_steps(
     )
 
 
+def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthStep:
+    """3단계(개조 켬) — 개조 중 비가동과 신규 대기, 회색 줄은 그 몫들과 늘어난 전용의 갈림."""
+    conditions = result.conditions
+    takes_new = conditions.uses_new_units
+    shown = [
+        f"{label} **−{units_text(value)}대**"
+        for label, value in (("개조 중 비가동", row.downtime), ("신규 대기", row.waiting))
+        if value > 0
+    ]
+    if shown:
+        body = " · ".join(shown)
+    else:
+        body = "이 달 개조 비가동·신규 대기 없음" if takes_new else "이 달 개조 비가동 없음"
+    notes = [
+        f"{month_name(share.source_month)} 몫 {share.units}대가 이 달 {share.days}일 개조 중 "
+        f"→ {units_text(share.equivalent)}대"
+        for share in row.downtime_shares
+    ]
+    if not notes and row.increment > 0:
+        notes.append(f"이 달 몫 {row.increment}대는 앞 달에 개조를 마칩니다.")
+    notes += [
+        f"신규 {literal_markdown(share.unit)} {units_text(share.units)}대가 이 달 {share.days}일 "
+        f"대기({month_name(share.source_month)} 몫) → {units_text(share.equivalent)}대"
+        for share in row.waiting_shares
+    ]
+    notes += [
+        f"이 달 몫 신규 {literal_markdown(item.unit)} {units_text(item.units)}대 — "
+        f"{_markdown_waiting(item)}"
+        for item in result.assignments
+        if item.month == row.month
+    ]
+    if row.overdrawn:
+        notes.append("비가동이 가용보다 많아 쓸 수 있는 가용은 0 입니다.")
+    growth_note = _growth_note(row, conditions)
+    if growth_note:
+        notes.insert(0, growth_note)
+    if takes_new:
+        left = set(result.ordinary_units)
+        ordinary = [unit for unit in result.units_starting_in(row.month) if unit in left]
+        if ordinary:
+            names = ", ".join(literal_markdown(unit.name) for unit in ordinary)
+            notes.append(
+                f"이 달 들어온 신규 {names} — 개조 {conditions.modification_days}일 안에 늘어날 "
+                "전용이 없어 기존 제품 몫입니다(나중에 제약에 쓰려면 개조)."
+            )
+    return MonthStep(body, " · ".join(notes))
+
+
 def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
     """3단계 회색 줄 머리 — 「이 달 늘어난 전용 6대 — 보유 제약 설비 4대 · 신규 설비 0대는 개조
-    없이, 개조 2대」. 나눠 보이지 않거나 늘어난 대수가 없으면 빈 글자."""
+    없이, 개조 2대」(`FILL_ORDER` 차례). 나눠 보이지 않거나 늘어난 대수가 없으면 빈 글자."""
     if not conditions.splits_dedicated or row.growth <= 0:
         return ""
-    free: list[str] = []
-    if conditions.uses_owned_units:
-        free.append(f"보유 제약 설비 {row.owned_increment}대")
-    if conditions.uses_new_units:
-        free.append(f"신규 설비 {row.new_increment}대")
+    free = free_parts(
+        conditions, f"보유 제약 설비 {row.owned_increment}대", f"신규 설비 {row.new_increment}대"
+    )
     return (
         f"이 달 늘어난 전용 {row.growth}대 — {' · '.join(free)}는 개조 없이, 개조 {row.increment}대"
     )
 
 
 def free_units_line(result: ConstraintResult) -> str:
-    """개조 일정 카드 머리 한 줄 — 개조 없이 쓰는 전용(보유·신규). 나눠 보이지 않으면 빈 글자."""
+    """개조 일정 카드 머리 한 줄 — 개조 없이 쓰는 전용(`FILL_ORDER` 차례). 나눠 보이지 않으면 빈
+    글자."""
     conditions = result.conditions
     if not conditions.splits_dedicated:
         return ""
     kpis = result.kpis
-    parts: list[str] = []
-    if conditions.uses_owned_units:
-        parts.append(f"보유 제약 설비 {kpis.owned_used}대(입력 {conditions.owned_units}대 중)")
-    if conditions.uses_new_units and conditions.new_unit_since is not None:
-        parts.append(
-            f"신규 설비 {kpis.new_used}대(기준일 {conditions.new_unit_since.isoformat()} 이후 기여 "
-            "시작 · 들어온 달 몫만)"
-        )
+    since = conditions.new_unit_since.isoformat() if conditions.new_unit_since else "—"
+    parts = free_parts(
+        conditions,
+        f"보유 제약 설비 {kpis.owned_used}대(입력 {conditions.owned_units}대 중)",
+        f"신규 설비 {kpis.new_used}대(기준일 {since} 이후 기여 시작 · 개조 "
+        f"{conditions.modification_days}일 안에 늘어날 전용에 붙임)",
+    )
     return "개조 없이 쓰는 전용 — " + " · ".join(parts)
+
+
+def waiting_lines(assignments: Sequence[NewUnitAssignment], *, today: date) -> list[str]:
+    """신규 대기 줄 — 「27년 7월 몫 · 신규 HB-07 · 2027-06-10 ~ 2027-06-23 대기 14일 · **1대**」.
+    대기 첫날이 오늘보다 앞이면 꼬리."""
+    lines: list[str] = []
+    for item in assignments:
+        line = (
+            f"{month_name(item.month)} 몫 · 신규 {literal_markdown(item.unit)} · "
+            f"{_markdown_waiting(item)} · **{units_text(item.units)}대**"
+        )
+        if item.days > 0 and item.start < today:
+            line += WAIT_LATE_SUFFIX
+        lines.append(line)
+    return lines
+
+
+def _markdown_waiting(item: NewUnitAssignment) -> str:
+    """마크다운에 싣는 대기 날짜 글 — 물결표만 막는다(두 줄의 「~」 가 취소선이 되지 않게)."""
+    return markdown_safe_tildes(waiting_text(item))
+
+
+def ordinary_line(result: ConstraintResult) -> str:
+    """일반 설비가 된 신규 한 줄 — 개조 일수 안에 늘어날 전용이 없어 기존 제품 몫. 없으면 빈
+    글자."""
+    units = result.ordinary_units
+    if not units:
+        return ""
+    names = ", ".join(literal_markdown(unit.name) for unit in units[:4])
+    more = f" 외 {len(units) - 4}대" if len(units) > 4 else ""
+    return (
+        f"일반 설비가 된 신규 {len(units)}대 — {names}{more} · 개조 "
+        f"{result.conditions.modification_days}일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
+        "쓰려면 개조)"
+    )
 
 
 def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> list[str]:
@@ -650,11 +733,9 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창 수·첫 비가동은 개조 일정 카드가
             # 말한다(2026-10-26 사본 앱 1440px: 긴 줄이면 넷째 카드가 아래 줄로 내려갔다).
             modified = kpis.modified_units or 0
-            pieces = []
-            if result.conditions.uses_owned_units:
-                pieces.append(f"보유 {kpis.owned_used}")
-            if result.conditions.uses_new_units:
-                pieces.append(f"신규 {kpis.new_used}")
+            pieces = free_parts(
+                result.conditions, f"보유 {kpis.owned_used}", f"신규 {kpis.new_used}"
+            )
             pieces.append(f"개조 {modified}")
             value4 = f"{modified}대"
             caption4 = f"전용 최대 {kpis.max_dedicated}대 = {' · '.join(pieces)}"
@@ -679,8 +760,9 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
                 "늘어나는 달마다 늘어난 대수만 그 달 앞에 새로 개조하고, 기간 안에서는 줄이지 "
                 "않습니다."
                 + (
-                    " 보유 제약 설비·그 달 들어온 신규 설비는 개조 없이 먼저 쓰고 남는 몫만 "
-                    "개조합니다 — 값은 실제로 개조하는 대수, 회색 줄은 전용 최대의 구성입니다."
+                    " 보유 제약 설비와, 늘어날 전용이 개조 기간 안에 오는 신규 설비는 개조 "
+                    "없이 먼저 쓰고(신규는 그 사이 「신규 대기」) 남는 몫만 개조합니다 — 값은 "
+                    "실제로 개조하는 대수, 회색 줄은 전용 최대의 구성입니다."
                     if splits
                     else ""
                 )
@@ -875,4 +957,15 @@ def _render_schedule(view: ConstraintView) -> None:
                 st.markdown(line)
             if result.starts_before_range:
                 st.caption(f":material/info: {BEFORE_RANGE_TEXT}")
+            if result.assignments:
+                st.caption("**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비")
+                for line in waiting_lines(result.assignments, today=view.today):
+                    st.markdown(line)
+                if result.waits_before_range:
+                    st.caption(f":material/info: {WAIT_BEFORE_RANGE_TEXT}")
+            ordinary = ordinary_line(result)
+            if ordinary:
+                st.caption(ordinary)
         st.caption(SCHEDULE_DEFINITION)
+        if result.conditions.uses_new_units:
+            st.caption(WAITING_DEFINITION)
