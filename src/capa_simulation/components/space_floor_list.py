@@ -859,7 +859,7 @@ def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list
             continue
         for name, count in counts:
             lines.append(
-                f"가정 설비 시나리오 {quoted(name)} 의 배치에서 {label} 에 놓인 호기 {count}대도 "
+                f"가정 설비 시나리오 {quoted(name)}의 배치에서 {label} 에 놓인 호기 {count}대도 "
                 "그 시나리오 목록·도면에서 숨습니다."
             )
     return lines
