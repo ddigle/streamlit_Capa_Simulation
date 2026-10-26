@@ -35,9 +35,12 @@ from test_equipment_scenario_repository import (
 from capa_simulation.components.equipment_scenario_management import (
     CLEAR_LAYOUT_BUTTON_KEY,
     CLEAR_LAYOUT_CONFIRM_KEY,
+    CLONE_BUTTON_KEY,
+    CLONE_NAME_KEY,
     PUBLISH_BUTTON_KEY,
     REVISION_KEY,
     SCENARIO_KEY,
+    branch_layout_sentence,
     clear_layout_lines,
     clear_layout_message,
     clearable_layout,
@@ -496,3 +499,56 @@ def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revisi
     assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
     assert app.selectbox(key=REVISION_KEY).value == newest.schedule_revision_id
     assert not app.error, [item.value for item in app.error]
+
+
+def test_the_branch_confirm_names_the_layout_it_copies() -> None:
+    """「여기서 새 시나리오」 확인 글도 함께 옮기는 가정 배치를 적는다 — 실제로 옮길
+    차이(정규화)로, 빠지는 행·그때와 자리가 다른 호기까지(되돌리기 확인 글과 같은 재료). 차이가
+    없으면 적지 않는다."""
+    chosen = _revision(2, "d2", layout_unit_count=1)
+    assert branch_layout_sentence(chosen, ScheduleRestorePreview()) == ""
+    whole = ScheduleRestorePreview(
+        layout_unit_rows=1, layout_digest="d", restored_layout_unit_rows=1, layout_moved_since=3
+    )
+    assert branch_layout_sentence(chosen, whole) == (
+        "r2의 가정 배치(저장된 차이 호기 1행)도 새 시나리오로 옮깁니다. 그때 손대지 않은 호기는 "
+        "지금 공식 자리를 따르므로 그때와 자리가 다른 호기 3대가 있습니다(이력 「그때 그대로」 와 "
+        "다름)."
+    )
+    partly = ScheduleRestorePreview(
+        layout_unit_rows=2, layout_mark_rows=1, restored_layout_unit_rows=1
+    )
+    assert branch_layout_sentence(chosen, partly) == (
+        "r2의 가정 배치(옮길 차이 호기 1행)도 새 시나리오로 옮깁니다 — r2에 저장된 차이(호기 "
+        "2행·요소 1개) 가운데 그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다."
+    )
+    gone = ScheduleRestorePreview(layout_unit_rows=1, layout_digest="d")
+    assert branch_layout_sentence(chosen, gone) == (
+        "r2에 저장된 배치 차이(호기 1행)는 그 뒤 지운 호기이거나 지금 공식과 같아져 옮길 것이 "
+        "없습니다 — 새 시나리오는 공식 배치를 따릅니다."
+    )
+
+
+def test_the_branch_popover_says_it_copies_the_layout_and_the_new_r1_has_it(
+    tmp_path: Path,
+) -> None:
+    """E2E — 배치 차이 호기 1행이 있는 r2 의 「여기서 새 시나리오」 확인 글이 「일정·시나리오 메모·
+    비가동을 … 옮깁니다」 만 말했는데 만든 r1 에는 그 차이가 들어 있었다. 확인 글이 그 차이를
+    적고, 만든 r1 의 배치 차이와 맞는다."""
+    repository, setup, latest = _moved_setup(tmp_path)
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+    assert app.selectbox(key=REVISION_KEY).value == latest
+    assert "r2의 가정 배치(저장된 차이 호기 1행)도 새 시나리오로 옮깁니다." in _texts(app)
+
+    app.text_input(key=CLONE_NAME_KEY).input("배치안 복제")
+    _ok(app.button(key=CLONE_BUTTON_KEY).click().run())
+
+    branch = next(
+        item
+        for item in repository.list_equipment_scenarios()
+        if item.scenario_name == "배치안 복제"
+    )
+    (first,) = repository.list_schedule_revisions(branch.equipment_scenario_id)
+    assert (first.revision_no, first.layout_unit_count) == (1, 1)

@@ -905,6 +905,49 @@ def branch_unscheduled_sentence(
     )
 
 
+def branch_layout_sentence(
+    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
+) -> str:
+    """「여기서 새 시나리오」 가 배치 차이(설비 0031)에 하는 일 한 문장 — 그 리비전에 저장된 차이가
+    없으면 빈 글.
+
+    새 r1 은 그 리비전의 일정과 함께 **배치 차이도** 지금 공통·층 현행값으로 정규화해 든다(저장소
+    `clone_equipment_scenario` — 설계 6-6). 글은 되돌리기 확인 글처럼 실제로 옮길 차이
+    (`restored_layout_*` — 같은 정규화)로 적고, 그 뒤 지운 호기·공식과 같아진 행이 빠지면 그 사실과
+    그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since`)를 적는다(`restore_layout_sentence`
+    와 같은 재료 — 확인 글과 실제 쓰기가 갈리지 않게). 2026-10-26 E2E — 확인 글이 일정·메모·비가동만
+    말해 함께 옮겨지는 가정 배치를 빠뜨렸다.
+    """
+    title = f"r{revision.revision_no}"
+    stored = stored_layout_words(
+        preview.layout_unit_rows, preview.layout_mark_rows, preview.layout_label_rows
+    )
+    if not stored:
+        return ""
+    copied = stored_layout_words(
+        preview.restored_layout_unit_rows,
+        preview.restored_layout_mark_rows,
+        preview.restored_layout_label_rows,
+    )
+    if not copied:
+        return (
+            f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 옮길 "
+            "것이 없습니다 — 새 시나리오는 공식 배치를 따릅니다."
+        )
+    moved = (
+        " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
+        f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
+        if preview.layout_moved_since
+        else ""
+    )
+    if stored != copied:
+        return (
+            f"{title}의 가정 배치(옮길 차이 {copied})도 새 시나리오로 옮깁니다 — {title}에 저장된 "
+            f"차이({stored}) 가운데 그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다.{moved}"
+        )
+    return f"{title}의 가정 배치(저장된 차이 {stored})도 새 시나리오로 옮깁니다.{moved}"
+
+
 def restore_preview_lines(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
@@ -1261,7 +1304,8 @@ def _render_branch(
     """「여기서 새 시나리오」(E7) — 고른 리비전의 일정을 r1 로 든 새 설비 시나리오(복제로만 만든다).
 
     출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
-    대장에 든 호기는 일정 없음이다.
+    대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 확인 글이
+    그것도 적는다(`branch_layout_sentence`).
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1275,6 +1319,9 @@ def _render_branch(
         st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
         return
     st.caption(branch_unscheduled_sentence(revision, preview))
+    layout = branch_layout_sentence(revision, preview)
+    if layout:
+        st.caption(layout)
     # 칸 key 의 세대가 만들기 쓰기의 세대이기도 하다(`write_once_value`).
     branch_generation = _generation()
     new_name = st.text_input(

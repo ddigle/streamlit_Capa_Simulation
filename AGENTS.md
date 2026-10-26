@@ -2170,7 +2170,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 알림으로 까닭이 보인다. 단추 처리도 체크를 다시 본다(`not clicked or not agreed`). 값이 그대로인데 캐시가
     늦어 저장소가 그 사이 쓰기를 보면 `EquipmentRevisionConflict`·`EquipmentReleaseMoved` 로 거절한다(`_refused`).
   - **여기서 새 시나리오**는 1단계 복제(만들기는 복제로만)의 출처를 고른 리비전으로 넓힌 것이다 — 안내가 새 시나리오의 일정
-    없음 수와 그 리비전 뒤에 든 호기 수를 적는다. 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 + 층 현행값
+    없음 수와 그 리비전 뒤에 든 호기 수를 적고, 그 리비전에 배치 차이가 있으면 새 r1 로 함께 옮기는 차이(정규화 — 되돌리기와
+    같은 `restored_layout_*`, 빠지는 행·그때와 자리가 다른 호기 수 포함)도 적는다(`branch_layout_sentence` — 2026-10-26 E2E,
+    확인 글이 일정·메모·비가동만 말했다). 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 + 층 현행값
     쓰기 세대 키) 한 칸.
   - **리비전명**은 칸을 세울 때 본 이름을 따로 들고(`…__seen`) 그 이름으로 비교 후 쓰기를 한다 — 칸이 고치지 않은 채면 남이
     바꾼 이름으로 다시 선다. 비우면 지운다. **시나리오 이름 바꾸기**도 같은 꼴이다 — 팝오버 안 칸은 매 회차 그려져 key 가
