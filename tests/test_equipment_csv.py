@@ -55,6 +55,8 @@ from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 
 BASELINE_HEADER = "\t".join(BASELINE_COLUMNS)
+# 시간대 붙은 시작일의 거부 머리(설비 마스터 날짜 칸과 같은 문구).
+ZONED_START = "시작일에 붙은 시간대(+09:00·Z)는 받지 않습니다 — 날짜만 적으세요"
 
 
 def _read_whole_master(
@@ -538,7 +540,8 @@ def test_downtime_paste_still_rejects_ambiguous_or_impossible_dates(
 
     with pytest.raises(ValueError) as caught:
         read_downtime_clipboard(_downtime_paste([first, value]), equipment=equipment)
-    assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {[blamed]}"
+    head = ZONED_START if blamed.endswith("+09:00") else "시작일은 날짜 형식이어야 합니다"
+    assert str(caught.value) == f"{head}: {[blamed]}"
 
 
 def test_downtime_paste_of_differently_zoned_starts_names_them_instead_of_crashing() -> None:
@@ -550,7 +553,7 @@ def test_downtime_paste_of_differently_zoned_starts_names_them_instead_of_crashi
     with pytest.raises(ValueError) as caught:
         read_downtime_clipboard(_downtime_paste(starts), equipment=equipment)
     assert type(caught.value) is ValueError
-    assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {starts}"
+    assert str(caught.value) == f"{ZONED_START}: {starts}"
 
 
 @pytest.mark.parametrize("source", ["clipboard", "csv"])
@@ -570,7 +573,7 @@ def test_a_plus_nine_start_beside_a_z_start_is_refused_in_korean_by_both_readers
         else:
             read_downtime_csv(text.replace("\t", ",").encode("utf-8-sig"), equipment=equipment)
     assert type(caught.value) is ValueError
-    assert str(caught.value) == f"시작일은 날짜 형식이어야 합니다: {starts}"
+    assert str(caught.value) == f"{ZONED_START}: {starts}"
 
 
 def test_downtime_paste_blames_only_the_zoned_first_start() -> None:
@@ -582,7 +585,18 @@ def test_downtime_paste_blames_only_the_zoned_first_start() -> None:
     with pytest.raises(ValueError) as caught:
         read_downtime_clipboard(_downtime_paste(starts), equipment=equipment)
     assert type(caught.value) is ValueError
-    assert str(caught.value) == "시작일은 날짜 형식이어야 합니다: ['2026-10-01T00:00+09:00']"
+    assert str(caught.value) == f"{ZONED_START}: ['2026-10-01T00:00+09:00']"
+
+
+def test_downtime_paste_names_the_time_zone_before_other_unreadable_starts() -> None:
+    """시간대 붙은 값과 날짜가 아닌 글자가 한 칸에 섞이면 시간대부터 그 까닭으로 말한다(그 값만
+    예시로) — 사내 시스템 CSV 를 그대로 올린 사람이 「날짜 형식」 만 보고 헤매지 않게."""
+    equipment = prepare_equipment_master(_equipment())
+    starts = ["다음 주", "2026-11-01T00:00:00Z"]
+
+    with pytest.raises(ValueError) as caught:
+        read_downtime_clipboard(_downtime_paste(starts), equipment=equipment)
+    assert str(caught.value) == f"{ZONED_START}: ['2026-11-01T00:00:00Z']"
 
 
 @pytest.mark.parametrize("value", ["2026-10-11 99:99", "2026/10/11 23:75", "2026-10-11 24:00"])
