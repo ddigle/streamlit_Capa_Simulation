@@ -39,6 +39,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
@@ -131,12 +132,9 @@ def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = N
         except BOOTSTRAP_ERRORS as exc:
             st.error(bootstrap_error_message(exc))
             return
-        # 콜백 실패 알림은 상자가 서는 회차에만 꺼낸다 — 읽기가 실패한 회차에 버리지 않는다.
-        callback_notice = st.session_state.pop(MAIN_CASE_NOTICE_KEY, None)
-        if isinstance(callback_notice, str):
-            notices.insert(0, callback_notice)
         st.session_state[MAIN_CASE_VIEW_KEY] = view
-        _draw(database_path, view, notices)
+        # 콜백 실패 알림은 상자가 서는 회차에만 꺼낸다 — 읽기가 실패한 회차에 버리지 않는다.
+        _draw(database_path, view, notices, callback_notice=True)
 
 
 def _render_hidden(database_path: str) -> None:
@@ -153,7 +151,7 @@ def _render_hidden(database_path: str) -> None:
             # 보이는 회차가 같은 오류를 알린다.
             return
         st.session_state[MAIN_CASE_VIEW_KEY] = view
-    _draw(database_path, view, [])
+    _draw(database_path, view, [], callback_notice=False)
 
 
 def _read_view(database_path: str, *, notices: list[str] | None) -> _PickerView:
@@ -180,12 +178,18 @@ def _read_view(database_path: str, *, notices: list[str] | None) -> _PickerView:
     return _PickerView(official, scenarios, (plans[0], plans[1]), profile)
 
 
-def _draw(database_path: str, view: _PickerView, notices: list[str]) -> None:
-    """상자 본문 — 공식버전 줄, 알림 칸, Case 두 칸, 겹침 캡션, 버전 캡션."""
+def _draw(
+    database_path: str, view: _PickerView, notices: list[str], *, callback_notice: bool
+) -> None:
+    """상자 본문 — 공식버전 줄, 알림 칸, Case 두 칸, 겹침 캡션, 버전 캡션.
+
+    `callback_notice` 면 콜백이 담은 실패 알림(`MAIN_CASE_NOTICE_KEY`)을 알림 칸 맨 앞에 한 번
+    그린다. 숨은 회차는 꺼내지 않는다 — 보이는 회차가 그린다.
+    """
     st.markdown(_official_line(view.official))
     # 알림은 생겼다 사라진다 — 늘 서 있는 한 칸 안에 그려 아래 상자의 자리를 고정한다(AGENTS
     # 9장).
-    with st.container():
+    with render_flash(MAIN_CASE_NOTICE_KEY) if callback_notice else st.container():
         for notice in notices:
             st.warning(notice, icon=":material/info:")
     scenario_by_id = {scenario.scenario_id: scenario for scenario in view.scenarios}
@@ -203,6 +207,11 @@ def _draw(database_path: str, view: _PickerView, notices: list[str]) -> None:
         for note in notes:
             st.caption(note)
     st.caption(profile_version_caption(view.profile, empty="아직 지정한 주요 Case 가 없습니다."))
+
+
+def _notify(text: str) -> None:
+    """콜백의 저장 실패 알림을 담는다 — 다음 보이는 회차의 알림 칸이 한 번 그린다(`flash`)."""
+    queue_flash(MAIN_CASE_NOTICE_KEY, text, kind="warning", icon=":material/info:")
 
 
 def unset_choice_label(scenario_names: Iterable[str]) -> str:
@@ -443,10 +452,10 @@ def _replace_case(
                 expected_scenario_id=chosen[0] if keep_scenario else None,
             )
         except ProfileVersionConflict as exc:
-            st.session_state[MAIN_CASE_NOTICE_KEY] = bootstrap_error_message(exc)
+            _notify(bootstrap_error_message(exc))
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.session_state[MAIN_CASE_NOTICE_KEY] = (
+            _notify(
                 f"{case_title(case_no)} 지정을 저장하지 못했습니다 — {bootstrap_error_message(exc)}"
             )
             return

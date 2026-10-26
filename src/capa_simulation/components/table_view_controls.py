@@ -104,7 +104,9 @@ def render_table_view_controls(
     hideable = [column for column in columns if column not in locked]
     shown_key = f"{key_prefix}_columns"
 
-    with st.expander(label, icon=":material/view_column:", expanded=False):
+    with st.expander(
+        label, icon=":material/view_column:", expanded=False, key=f"{key_prefix}_view_expander"
+    ):
         shown = st.multiselect(
             "볼 컬럼",
             options=hideable,

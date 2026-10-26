@@ -53,13 +53,18 @@ from pandas.io.formats.style import Styler
 from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.status_metric import (
     metric_row,
     metric_row_style,
     render_status_metric,
     status_metric_style,
 )
-from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE, render_csv_download
+from capa_simulation.components.table_toolbar import (
+    TABLE_TOOLBAR_CLEARANCE,
+    render_csv_download,
+    toolbar_clearance,
+)
 from capa_simulation.design import tokens
 from capa_simulation.services.qual_deadline import (
     CHECK_TABLE_COLUMNS,
@@ -177,7 +182,8 @@ _UNIT_COLUMN_PX = {
 _EDITOR_COLUMN_PX = {MONTH_COLUMN: 75, TARGET_COLUMN: 120, UNITS_COLUMN: 180}
 # 월 편집표 앞 띄움. 표 도구 막대(열 보기·내려받기·찾기)는 표 오른쪽 위에 떠 표 위로 솟는다 — 붙어
 # 있으면 바로 위 「오늘」 날짜 칸의 지우기(✕)를 덮어 누름을 가로챈다(터치 창에서는 막대가 늘 떠 있어
-# ✕ 로 지울 길이 없다). 표 도구 막대 공용 띄움(`table_toolbar.TABLE_TOOLBAR_CLEARANCE`)을 쓴다.
+# ✕ 로 지울 길이 없다). 띄움은 표 도구 막대 공용 띄움(`table_toolbar.toolbar_clearance`)이
+# 그리고, 이 이름은 그 값(`TABLE_TOOLBAR_CLEARANCE`)을 가리키는 별칭이다(시험이 부른다).
 EDITOR_TOOLBAR_CLEARANCE_PX = TABLE_TOOLBAR_CLEARANCE
 # 두 칸 배치(모듈 설명). 입력 칸은 원본(440px)보다 조금 좁게 둔다 — 편집표 세 칸이 들고 결과
 # 칸이 그만큼 넓다. 상자 안쪽 여백·선과 표 테두리(양쪽 합, 상자 420px → 표 안쪽 390px)와 두 칸
@@ -291,21 +297,16 @@ def _apply_pasted_months() -> None:
     if pasted.months:
         st.session_state[MONTHS_KEY] = table
         discard_editor(EDITOR_KEY)
-    st.session_state[PASTE_NOTICE_KEY] = (bool(pasted.months), pasted.message)
+    if pasted.months:
+        queue_flash(PASTE_NOTICE_KEY, pasted.message, icon=":material/check_circle:")
+    else:
+        queue_flash(PASTE_NOTICE_KEY, pasted.message, kind="info", icon=":material/info:")
 
 
 def _render_paste_notice() -> None:
     """「표에 넣기」 알림 — 한 번만 그린다. 늘 서 있는 한 칸 안이라 뒤 요소의 자리가 밀리지
-    않는다."""
-    notice = st.session_state.pop(PASTE_NOTICE_KEY, None)
-    with st.container():
-        if not (isinstance(notice, tuple) and len(notice) == 2):
-            return
-        applied, message = notice
-        if applied:
-            st.success(str(message), icon=":material/check_circle:")
-        else:
-            st.info(str(message), icon=":material/info:")
+    않는다(`flash`)."""
+    render_flash(PASTE_NOTICE_KEY)
 
 
 def _render_paste_box() -> None:
@@ -386,7 +387,7 @@ def _render_inputs(today: date) -> QualDeadlineInput:
             key=TODAY_KEY,
             persist_state="session",
         )
-    st.space(EDITOR_TOOLBAR_CLEARANCE_PX)
+    toolbar_clearance()
     widget_key = editor_widget_key(EDITOR_KEY)
     edited = st.data_editor(
         st.session_state[MONTHS_KEY],

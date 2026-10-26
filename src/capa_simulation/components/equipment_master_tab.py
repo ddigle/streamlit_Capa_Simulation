@@ -129,6 +129,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
 )
+from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_badge,
     literal_markdown,
@@ -340,9 +341,12 @@ def _store_new_draft(seq: int, values: Sequence[str], propagate: bool) -> None:
     }
 
 
-def _result(kind: str, text: str) -> None:
-    """저장 구획 단추 아래 한 줄(성공·오류·안내) — 다음 회차에 한 번 그린다."""
-    st.session_state[SAVE_RESULT_KEY] = (kind, text)
+def _result(kind: FlashKind, text: str) -> None:
+    """저장 구획 단추 아래 한 줄(성공·오류·안내) — 다음 회차에 그 칸이 한 번 그린다(`flash`).
+
+    글에 설비 시나리오·호기 이름이 들어 물결표를 막는다(「NEW~01~」 가 지움선이 되지 않게).
+    """
+    queue_flash(SAVE_RESULT_KEY, markdown_safe_tildes(text), kind=kind)
 
 
 # ------------------------------------------------------------------ 표 조건·모양
@@ -1247,16 +1251,7 @@ def _render_save_section(
                 "drawn_base": context.base,
             },
         )
-    with st.container():
-        result = st.session_state.pop(SAVE_RESULT_KEY, None)
-        if isinstance(result, tuple) and len(result) == 2:
-            kind, text = result
-            if kind == "success":
-                st.success(markdown_safe_tildes(text))
-            elif kind == "error":
-                st.error(markdown_safe_tildes(text))
-            else:
-                st.info(markdown_safe_tildes(text))
+    render_flash(SAVE_RESULT_KEY)
 
 
 def _render_new_unit(

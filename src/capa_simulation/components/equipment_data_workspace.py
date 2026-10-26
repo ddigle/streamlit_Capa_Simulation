@@ -21,6 +21,7 @@ from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
 )
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -575,10 +576,12 @@ def pop_drafts_replaced() -> bool:
     return st.session_state.pop(DRAFTS_REPLACED_KEY, False) is True
 
 
-def pop_discarded_notice() -> str | None:
-    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림. 한 번 읽으면 지운다."""
-    value = st.session_state.pop(DISCARDED_NOTICE_KEY, None)
-    return value if isinstance(value, str) else None
+def render_discarded_notice() -> None:
+    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림을 한 번 그린다(`flash` 한 칸).
+
+    편집본을 세운(`ensure_equipment_drafts`) 뒤 페이지 머리 알림 칸 안에서 부른다.
+    """
+    render_flash(DISCARDED_NOTICE_KEY)
 
 
 def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames:
@@ -644,8 +647,11 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
         )
         if replaced and has_unsaved_equipment_edits():
             number = _replaced_by_words(previous, latest_snapshot)
-            st.session_state[DISCARDED_NOTICE_KEY] = discarded_notice(
-                number, overlay_dropped=overlay_dropped, reapplied=reapplied
+            queue_flash(
+                DISCARDED_NOTICE_KEY,
+                discarded_notice(number, overlay_dropped=overlay_dropped, reapplied=reapplied),
+                kind="warning",
+                icon=":material/sync_problem:",
             )
         st.session_state[_REVISION_KEY] = token
         # 편집본이 나온 저장본 — 저장이 대조하는 본 값이다(write_guard). 편집본을 세울 때만 적는다.
@@ -2383,9 +2389,11 @@ def _drop_example_rows() -> None:
     removed = _example_row_count(frames)
     st.session_state[DROP_EXAMPLE_ROWS_KEY] = True
     replace_equipment_buffer((_without_example_rows(frames[0]), frames[1], frames[2]))
-    st.session_state[_NOTICE_KEY] = (
+    queue_flash(
+        _NOTICE_KEY,
         f"예시 행 {removed:,}건을 편집본에서 뺐습니다. 다음 붙여넣기·CSV 미리보기도 예시 행을 빼고 "
-        "검토합니다 — 저장 검증은 그대로 돕니다."
+        "검토합니다 — 저장 검증은 그대로 돕니다.",
+        kind="info",
     )
 
 
@@ -2827,9 +2835,11 @@ def _apply_bulk_actions(
             if keys:
                 st.session_state[PENDING_DELETE_KEY] = (target, keys)
             else:
-                st.session_state[_NOTICE_KEY] = (
+                queue_flash(
+                    _NOTICE_KEY,
                     "선택한 행이 없습니다. 표의 ‘선택’ 칸을 켜거나 "
-                    "‘필터에 맞는 행 모두 선택’을 누른 뒤 지우세요."
+                    "‘필터에 맞는 행 모두 선택’을 누른 뒤 지우세요.",
+                    kind="info",
                 )
     elif confirm and isinstance(pending, tuple):
         target, keys = pending
@@ -2837,7 +2847,9 @@ def _apply_bulk_actions(
         _store_changed_buffer(apply_deletion(frames, plan))
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
-        st.session_state[_NOTICE_KEY] = _deletion_message(plan).replace("지웁니다", "지웠습니다", 1)
+        queue_flash(
+            _NOTICE_KEY, _deletion_message(plan).replace("지웁니다", "지웠습니다", 1), kind="info"
+        )
     elif undo:
         removed = st.session_state.pop(LAST_REMOVED_KEY, None)
         if isinstance(removed, tuple):
@@ -2846,7 +2858,7 @@ def _apply_bulk_actions(
             message = "방금 지운 행을 편집본에 되살렸습니다."
             if skipped:
                 message += f" 그 사이 같은 키가 다시 생긴 {skipped:,}행은 건너뛰었습니다."
-            st.session_state[_NOTICE_KEY] = message
+            queue_flash(_NOTICE_KEY, message, kind="info")
     st.session_state[SELECTION_KEY] = selection
 
 
@@ -3165,13 +3177,7 @@ def render_small_editor(
         if isinstance(waiting, tuple) and waiting and waiting[0] == DOWNTIME_TARGET:
             st.session_state.pop(PENDING_DELETE_KEY, None)
     # 알림은 늘 서 있는 한 칸 안에 그린다(아래 편집표 칸의 자리를 고정한다).
-    with st.container():
-        error = st.session_state.pop(_ERROR_KEY, None)
-        if isinstance(error, str):
-            st.error(markdown_safe_tildes(error))
-        notice = st.session_state.pop(_NOTICE_KEY, None)
-        if isinstance(notice, str):
-            st.info(notice)
+    with render_flash(_ERROR_KEY, _NOTICE_KEY):
         if baseline_table:
             example_rows = _example_row_count(frames)
             if example_rows:
@@ -3268,9 +3274,11 @@ def render_small_editor(
 
     def submit() -> None:
         if drafts_replaced:
-            st.session_state[_ERROR_KEY] = (
+            queue_flash(
+                _ERROR_KEY,
                 "다른 사용자가 먼저 저장해 이번 제출은 반영하지 않았습니다. 최신 저장본으로 다시 "
-                "열었으니 확인한 뒤 다시 고치세요."
+                "열었으니 확인한 뒤 다시 고치세요.",
+                kind="error",
             )
             st.rerun()
         current: Frames = st.session_state[BUFFER_KEY]
@@ -3442,12 +3450,14 @@ def _render_history(
     st.caption(
         "조회 조건을 바꾸면 바로 다시 그립니다. 조회는 편집본과 저장 이력을 바꾸지 않습니다."
     )
-    for label, frame in (
-        ("기존 보유대수", historical.baseline),
-        ("설비 마스터", equipment),
-        ("비가동 일정", downtime),
+    for index, (label, frame) in enumerate(
+        (
+            ("기존 보유대수", historical.baseline),
+            ("설비 마스터", equipment),
+            ("비가동 일정", downtime),
+        )
     ):
-        with st.expander(label, expanded=True):
+        with st.expander(label, expanded=True, key=f"equipment_history_view_{index}"):
             st.dataframe(frame, hide_index=True, width="stretch")
 
 

@@ -20,7 +20,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     held_profile_conflict,
@@ -197,7 +197,11 @@ def _render_direct_editor(
     submitted_base = seen(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
     if available_processes:
-        with st.expander(f"보유 공정 {len(available_processes):,}개", icon=":material/list:"):
+        with st.expander(
+            f"보유 공정 {len(available_processes):,}개",
+            icon=":material/list:",
+            key="admin_area_process_rename_available_expander",
+        ):
             # 원본 공정명이다. 여기에 표시명을 입히면 붙여넣을 원본을 확인할 수 없다.
             st.dataframe(
                 pd.DataFrame({"공정": available_processes}),
@@ -221,6 +225,9 @@ def _render_direct_editor(
                 placeholder="예: LOB 차트 공정명 축약",
                 key="admin_area_process_rename_note",
             )
+        # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
+        # 9장 「표 도구 막대」).
+        toolbar_clearance()
         edited = st.data_editor(
             editable,
             hide_index=True,

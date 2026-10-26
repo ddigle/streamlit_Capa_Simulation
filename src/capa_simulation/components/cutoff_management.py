@@ -22,7 +22,7 @@ import streamlit as st
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
@@ -118,6 +118,8 @@ def render_cutoff_management(
             file_name="process_cutoff.csv",
             key="equipment_cutoff_csv_v1",
         )
+        # 표 도구 막대가 바로 위 CSV 단추에 닿지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+        toolbar_clearance()
         st.dataframe(
             stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS] if not stored.empty else stored,
             hide_index=True,

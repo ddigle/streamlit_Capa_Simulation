@@ -28,9 +28,9 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_group_labels,
     pending_floor_marks,
     pending_unit_renames,
-    pop_discarded_notice,
     pop_drafts_replaced,
     prune_new_unit_propagation,
+    render_discarded_notice,
     render_name_changes,
     replace_equipment_buffer,
     reset_equipment_drafts,
@@ -122,7 +122,7 @@ from capa_simulation.components.space_shortening_view import (
     unit_keys_by_name,
     valid_focus,
 )
-from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE, render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.equipment_scenario_activation import (
     CANVAS_LOCK_REASON,
     FAB_LOCK_REASON,
@@ -284,11 +284,18 @@ SAVE_NOTE_KEY = "space_layout_save_note"
 SAVE_NOTE_NONCE_KEY = "space_layout_save_note_nonce"
 SAVE_ERROR_KEY = "space_layout_save_error"
 # 「공식으로 바꾸기」·「최신 rM 불러오기」 실패 글 — 저장 오류와 따로 둔다(저장 안 한 상자가
-# 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다.
+# 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다
+# (`flash`).
 SWITCH_ERROR_KEY = "space_scenario_switch_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
 DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
+# 저장 안 한 배치 상자의 팝오버 둘(저장 칸·버리기)과 「바뀐 호기 n건」 펼침. 위 Space 알림·저장
+# 오류가 생기고 사라지거나 라벨의 건수가 바뀌어도 같은 블록으로 남게 key 로 고정한다(AGENTS 9장
+# 「조건부 알림」 — 알림 다음 회차에 key 없는 팝오버가 저절로 닫혔다).
+SAVE_FIELDS_POPOVER_KEY = "space_layout_fields_popover"
+DISCARD_POPOVER_KEY = "space_layout_discard_popover"
+CHANGES_EXPANDER_KEY = "space_layout_changes_expander"
 # 설비 샘플 화면에서 FAB 대기분 저장을 막은 까닭(상자 안내와 단추 풍선).
 SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
@@ -585,9 +592,8 @@ if not using_sample_equipment and latest_snapshot is not None:
     # 이 화면에는 설비 마스터 제출이 없지만 표시를 여기서 읽어 버린다 — 남기면 가용설비 현황의 다음
     # 회차가 정상 제출까지 막는다.
     pop_drafts_replaced()
-    discarded_notice = pop_discarded_notice()
-    if discarded_notice:
-        notices.warning(discarded_notice, icon=":material/sync_problem:")
+    with notices:
+        render_discarded_notice()
 # 사이드바 「설비 시나리오」 줄 — 고를 수 있는 줄(팝업은 「불러오기」 만 — 배치 저장은 본문 상자).
 # 편집본을 세운 **뒤에** 그린다 — 남의 저장으로 편집본을 버린 회차에 배지·머리 띠 꼬리가 「미저장
 # 변경」 을 한 회차 늦게 말하지 않게(가용설비 현황·필요 단축 일정과 같은 차례).
@@ -935,7 +941,11 @@ def _switch_scenario(
         database_path, scenario_id, schedule_revision_id, discard=discard
     )
     if failure is not None:
-        st.session_state[SWITCH_ERROR_KEY] = failure
+        queue_flash(
+            SWITCH_ERROR_KEY,
+            markdown_safe_tildes(f"설비 시나리오를 바꾸지 못했습니다: {failure}"),
+            kind="error",
+        )
         return
     _queue_space_flash(done)
 
@@ -948,8 +958,12 @@ def _render_switch_popover(
     explanation: str,
     done: str,
 ) -> None:
-    """설비 시나리오를 옮기는 팝오버 하나 — 미저장 편집이면 「변경을 버리고 불러오기」 체크 뒤."""
-    with st.popover(label, icon=":material/swap_horiz:"):
+    """설비 시나리오를 옮기는 팝오버 하나 — 미저장 편집이면 「변경을 버리고 불러오기」 체크 뒤.
+
+    팝오버는 단추 key 로 고정한다 — 라벨(「최신 rN 불러오기」)이 바뀌거나 위 알림이 생기고 사라져도
+    같은 팝오버로 남는다(AGENTS 9장 「조건부 알림」).
+    """
+    with st.popover(label, icon=":material/swap_horiz:", key=f"{key}_popover"):
         st.caption(markdown_safe_tildes(explanation))
         discard = True
         if has_unsaved_equipment_edits():
@@ -1160,7 +1174,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 ),
             )
         if not changes.empty:
-            with st.expander(f"바뀐 호기 {len(changes)}건"):
+            with st.expander(f"바뀐 호기 {len(changes)}건", key=CHANGES_EXPANDER_KEY):
                 st.dataframe(changes, hide_index=True, width="stretch")
         if not names.empty:
             # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
@@ -1191,7 +1205,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 )
                 # 저장자·함께 넣기·공식 발행 칸(설비 마스터 저장과 같은 부품). 수는 적지 않는다 —
                 # 실제로 퍼진 목록은 저장 결과 알림이 적는다.
-                with st.popover("저장 칸", icon=":material/tune:"):
+                with st.popover("저장 칸", icon=":material/tune:", key=SAVE_FIELDS_POPOVER_KEY):
                     # 가정 세션은 「새 호기를 다른 설비 시나리오에도 넣기」 기본 끔(Q1).
                     render_equipment_save_fields(
                         SPACE_SAVE_FIELDS_PREFIX,
@@ -1228,7 +1242,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                     )
                 ),
             )
-            with st.popover("버리기", icon=":material/undo:"):
+            with st.popover("버리기", icon=":material/undo:", key=DISCARD_POPOVER_KEY):
                 st.caption(
                     "저장 안 한 설비 편집을 모두 버리고 최신 저장본으로 돌아갑니다. 가용설비 "
                     "설비 마스터 탭의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다."
@@ -1716,9 +1730,7 @@ with st.container(key="space_unsaved_layout_slot"):
 # 선다(잠금이 생기고 풀릴 때 아래 층 상세·FAB 상자가 밀리지 않게). 시나리오 바꾸기 실패는 늘 여기서
 # 한 번 보이고, 저장 오류는 상자가 없는 회차에만 여기서 보인다.
 with st.container(key="space_edit_lock_slot"):
-    switch_error = st.session_state.pop(SWITCH_ERROR_KEY, None)
-    if isinstance(switch_error, str):
-        st.error(markdown_safe_tildes(f"설비 시나리오를 바꾸지 못했습니다: {switch_error}"))
+    render_flash(SWITCH_ERROR_KEY)
     save_error = None if panel_drawn else st.session_state.pop(SAVE_ERROR_KEY, None)
     if isinstance(save_error, str):
         st.error(markdown_safe_tildes(save_error))
@@ -2281,7 +2293,7 @@ else:
         )
     # 표 도구 막대가 바로 위 줄 오른쪽 끝 「층 전체 보기」 를 덮어 표에서 옮긴 누름을 가로채지 않게
     # 띄운다(AGENTS 9장 「표 도구 막대」).
-    st.space(TABLE_TOOLBAR_CLEARANCE)
+    toolbar_clearance()
     st.dataframe(
         floor_table(floor_equipment if picked_rows is None else picked_rows),
         hide_index=True,

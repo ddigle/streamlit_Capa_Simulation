@@ -20,13 +20,13 @@ from typing import Any, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import (
     current_generation,
-    held_notice,
     just_written,
     note_notice,
     notice_marks,
@@ -47,7 +47,8 @@ REPLY_BODY_KEY = "voc_reply_body"
 RESOLVE_KEY = "voc_resolve"
 DELETE_CONFIRM_KEY = "voc_delete_confirm"
 DELETE_KEY = "voc_delete"
-# 글 하나의 처리(답변·답변 완료 표시·지우기)가 실패한 문구. 다음 회차에 그 글 상자 안에 그린다.
+# 글 하나의 처리(답변·답변 완료 표시·지우기)가 실패한 문구. 다음 회차에 그 글 상자 안 칸이
+# 그린다(`flash`).
 POST_ERROR_KEY = "voc_post_error"
 CATEGORY_FILTER_KEY = "voc_category_filter"
 OPEN_ONLY_KEY = "voc_open_only"
@@ -75,14 +76,11 @@ REPLIED_MESSAGE = "답변을 남겼습니다."
 render_page_header("VOC")
 render_page_guide("voc", title="VOC")
 
-# 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 형제가 한 칸 밀리면,
-# 알림 없는 회차와 알림 있는 회차 사이에서 key 있는 글 상자가 옛 자리에 회색 사본으로 남아 — 적은
-# 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도 따라왔다(2026-10-05 E2E, 답변 0 인 글에 첫
-# 답변을 남길 때). 가용설비 현황과 같은 까닭이다.
-notices = st.container()
-flash = st.session_state.pop(FLASH_KEY, None)
-if isinstance(flash, str):
-    notices.success(flash)
+# 알림은 **늘 서 있는 한 칸** 안에 그린다(`render_flash` 가 세운다). 알림이 생기거나 사라질 때 아래
+# 형제가 한 칸 밀리면, 알림 없는 회차와 알림 있는 회차 사이에서 key 있는 글 상자가 옛 자리에 회색
+# 사본으로 남아 — 적은 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도 따라왔다(2026-10-05 E2E,
+# 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다. 지운 글 칸도 같은 칸에 그린다.
+notices = render_flash(FLASH_KEY)
 gone = st.session_state.pop(GONE_NOTICE_KEY, None)
 if isinstance(gone, tuple) and len(gone) == 2:
     gone_message, kept_reply = gone
@@ -152,7 +150,7 @@ def _submit_post(database_path: str, generation: int) -> None:
     author = _author_value()
     if not title.strip() and not body.strip() and just_written(POST_FORM_GENERATION_KEY):
         # 느린 두 번 누름의 꼬리 — 둘째 누름이 방금 비운 새 폼에 닿았다(write_guard.just_written).
-        st.session_state[FLASH_KEY] = POSTED_MESSAGE
+        queue_flash(FLASH_KEY, POSTED_MESSAGE)
         return
     try:
         repository = get_scenario_repository(database_path)
@@ -165,16 +163,16 @@ def _submit_post(database_path: str, generation: int) -> None:
             fingerprint=(category, title, body, author),
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[POST_FORM_ERROR_KEY] = bootstrap_error_message(exc)
+        queue_flash(POST_FORM_ERROR_KEY, bootstrap_error_message(exc), kind="error")
         return
     if not written:
         st.session_state[POST_TITLE_KEY] = ""
         st.session_state[POST_BODY_KEY] = ""
         if just_written(POST_FORM_GENERATION_KEY):
             # 아주 빠른 두 번 누름의 둘째 — 옛 화면의 단추가 닿았다(write_guard).
-            st.session_state[FLASH_KEY] = POSTED_MESSAGE
+            queue_flash(FLASH_KEY, POSTED_MESSAGE)
         return
-    st.session_state[FLASH_KEY] = POSTED_MESSAGE
+    queue_flash(FLASH_KEY, POSTED_MESSAGE)
     st.session_state[POST_TITLE_KEY] = ""
     st.session_state[POST_BODY_KEY] = ""
     st.session_state[POST_FORM_GENERATION_KEY] = generation + 1
@@ -188,7 +186,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
     author = _author_value()
     if not body.strip() and just_written(generation_key):
         # 느린 두 번 누름의 꼬리 — 둘째 누름이 방금 비운 새 답변 폼에 닿았다.
-        st.session_state[FLASH_KEY] = REPLIED_MESSAGE
+        queue_flash(FLASH_KEY, REPLIED_MESSAGE)
         return
     try:
         repository = get_scenario_repository(database_path)
@@ -202,15 +200,15 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
         st.session_state[GONE_NOTICE_KEY] = (bootstrap_error_message(exc), body)
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
         return
     if not written:
         st.session_state[reply_key] = ""
         if just_written(generation_key):
             # 아주 빠른 두 번 누름의 둘째 — 옛 화면의 단추가 닿았다(write_guard).
-            st.session_state[FLASH_KEY] = REPLIED_MESSAGE
+            queue_flash(FLASH_KEY, REPLIED_MESSAGE)
         return
-    st.session_state[FLASH_KEY] = REPLIED_MESSAGE
+    queue_flash(FLASH_KEY, REPLIED_MESSAGE)
     st.session_state[reply_key] = ""
     st.session_state[generation_key] = generation + 1
 
@@ -230,7 +228,7 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
         st.session_state[GONE_NOTICE_KEY] = (bootstrap_error_message(exc), "")
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
         return
     if written:
         st.session_state[generation_key] = generation + 1
@@ -240,14 +238,11 @@ def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     """「글 삭제」 콜백. `reply_count` 는 단추를 그린 회차에 센 답글 수다 — 지운 뒤에는 셀 수 없다.
 
     이 세션이 이미 지운 글의 누름이 한 번 더 들어오면 쓰지 않는다. 지운 글 id 는 위젯이 아닌 세션
-    칸에 적는다 — 옛 화면은 체크한 확인 칸 값을 함께 보낸다. 방금(`write_guard.held_notice`) 지운
-    뒤의 누름이면 지웠다는 알림만 다시 낸다 — 앞 회차가 꺼내 그린 알림을 이 회차가 지운다.
+    칸에 적는다 — 옛 화면은 체크한 확인 칸 값을 함께 보낸다. 방금 지운 뒤의 누름(아주 빠른 두 번
+    누름의 둘째)이면 머리 알림 칸이 쓰기 직후 적어 둔 알림을 다시 그린다(`flash.render_flash` —
+    `write_guard.note_notice`) — 앞 회차가 꺼내 그린 알림을 이 회차가 지우지 않는다.
     """
     if st.session_state.get(DELETE_HANDLED_KEY) == post_id:
-        held = held_notice(FLASH_KEY)
-        if held is not None:
-            # 아주 빠른 두 번 누름의 둘째 — 옛 화면의 단추가 닿았다(write_guard).
-            st.session_state[FLASH_KEY] = held
         return
     if not st.session_state.get(f"{DELETE_CONFIRM_KEY}_{post_id}"):
         return
@@ -257,11 +252,11 @@ def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     try:
         get_scenario_repository(database_path).remove_voc_post(post_id)
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
+        queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
         return
     note_notice(marks, FLASH_KEY, message)
     st.session_state[DELETE_HANDLED_KEY] = post_id
-    st.session_state[FLASH_KEY] = message
+    queue_flash(FLASH_KEY, message)
 
 
 with st.container(border=True):
@@ -305,9 +300,7 @@ with st.container(border=True):
             on_click=_submit_post,
             args=(database_path, post_generation),
         )
-    post_failure = st.session_state.pop(POST_FORM_ERROR_KEY, None)
-    if isinstance(post_failure, str):
-        st.error(post_failure)
+    render_flash(POST_FORM_ERROR_KEY)
 
 st.divider()
 
@@ -407,9 +400,8 @@ def _render_post(row: Any) -> None:
                 on_click=_submit_reply,
                 args=(database_path, post_id, reply_generation),
             )
-        failure = st.session_state.pop(f"{POST_ERROR_KEY}_{post_id}", None)
-        if isinstance(failure, str):
-            st.error(failure)
+        # 실패 문구 칸은 늘 선다 — 생기고 빠져도 아래 단추 줄의 자리가 그대로다.
+        render_flash(f"{POST_ERROR_KEY}_{post_id}")
         resolve_generation = current_generation(f"{RESOLVE_GENERATION_KEY}_{post_id}")
         with st.container(horizontal=True, gap="small", vertical_alignment="center"):
             st.button(

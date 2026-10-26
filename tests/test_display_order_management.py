@@ -1,11 +1,14 @@
 # Purpose: display order management 관련 정상·예외·회귀 동작을 검증한다.
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.display_order_management import DISPLAY_ORDER_EDITOR_KEY
 
 
 def test_display_order_management_renders_global_profile(tmp_path: Path) -> None:
@@ -51,11 +54,9 @@ render_display_order_management(repository)
     assert any("공용 버전 v1" in caption.value for caption in app.caption)
 
 
-def test_display_label_warning_survives_the_rerun_after_saving(tmp_path: Path) -> None:
-    """저장 성공은 곧바로 `st.rerun()` 한다. 그 회차에 그린 경고는 화면에 닿지 않으므로
-    다음 회차에 성공 문구와 함께 한 번 그리고, 그다음 회차에는 지운다."""
-    database_path = tmp_path / "display-order-label.duckdb"
-    script = f'''
+def _label_script(database_path: Path) -> str:
+    """표시명(`거래선`)을 분류컬럼에 적은 프로필 — 저장하면 표시명 경고 한 줄이 남는다."""
+    return f'''
 from pathlib import Path
 
 import pandas as pd
@@ -82,7 +83,27 @@ repository.initialize_global_display_order(
 render_display_order_management(repository)
 '''
 
-    app = AppTest.from_string(script).run(timeout=30)
+
+def _path_of(app: AppTest, matches: Callable[[Any], bool]) -> tuple[int, ...]:
+    """`matches` 에 맞는 노드 하나의 델타 경로(본문 기준 자식 번호 차례)."""
+    found: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        if matches(node):
+            found.append(path)
+        for index, child in getattr(node, "children", {}).items():
+            walk(child, (*path, index))
+
+    walk(app.main, ())
+    assert len(found) == 1, found
+    return found[0]
+
+
+def test_display_label_warning_survives_the_rerun_after_saving(tmp_path: Path) -> None:
+    """저장 성공은 곧바로 `st.rerun()` 한다. 그 회차에 그린 경고는 화면에 닿지 않으므로
+    다음 회차에 성공 문구와 함께 한 번 그리고, 그다음 회차에는 지운다."""
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-label.duckdb"))
+    app.run(timeout=30)
     assert not app.exception
     assert not app.warning
 
@@ -104,6 +125,46 @@ render_display_order_management(repository)
     assert not app.exception
     assert not app.success
     assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+
+
+def test_the_label_warning_stands_in_the_flash_slot_and_moves_no_editor(tmp_path: Path) -> None:
+    """표시명 경고는 저장 성공 칸 안에 선다 — 경고가 생기고 빠져도 아래 직접 편집의 자리가 그대로다.
+
+    저장 회차는 `st.rerun()` 으로 끊기고 다음 회차에 경고가 생긴다. 그 사이 key 있는 편집표·저장
+    단추가 경고 수만큼 밀리면 브라우저에 옛 자리의 흐린 사본이 남는다(AGENTS 9장 「조건부 알림」).
+    회색 사본은 여기서 볼 수 없으므로 그 원인인 **자리 밀림**을 잰다.
+    """
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-slot.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    def places() -> tuple[tuple[int, ...], tuple[int, ...]]:
+        return (
+            _path_of(
+                app,
+                lambda node: (
+                    getattr(node, "type", "") == "button"
+                    and getattr(node, "label", "") == "공용 표시순서 저장"
+                ),
+            ),
+            _path_of(
+                app,
+                lambda node: str(getattr(node, "key", "") or "").startswith(
+                    f"{DISPLAY_ORDER_EDITOR_KEY}::"
+                ),
+            ),
+        )
+
+    before = places()
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+    assert not app.exception
+    assert any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+    assert places() == before
+
+    app.run(timeout=30)
+    assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)
+    assert places() == before
 
 
 def test_a_rejected_save_is_reported_above_the_editor(tmp_path: Path) -> None:
@@ -301,6 +362,98 @@ finally:
     # 고친 범위는 사라지고 남은 범위만 경고한다.
     warning = " ".join(element.value for element in app.warning)
     assert "부하량 › 환산" in warning and "부하량 › 계획" not in warning
+
+
+def test_fixing_the_last_clash_moves_no_editor(tmp_path: Path) -> None:
+    """겹침 경고는 늘 서 있는 칸에 선다 — 직접 편집으로 마지막 겹침을 고쳐 저장하면 다음 회차에
+    경고가 빠져도 아래 저장 단추·편집표의 자리가 그대로다.
+
+    저장 회차는 `st.rerun()` 으로 끊기고 다음 회차에 경고가 빠진다. 그 사이 key 있는 편집표가 한 칸
+    당겨지면 브라우저에 옛 자리의 흐린 사본이 남는다(AGENTS 9장 「조건부 알림」). 편집표 칸은
+    AppTest 가 고칠 수 없어 이 스크립트 안에서만 `st.data_editor` 가 고른 범위의 첫 줄만 남긴 표를
+    돌려준다.
+    """
+    database_path = tmp_path / "display-order-last-clash.duckdb"
+    script = f'''
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from capa_simulation.components.display_order_management import render_display_order_management
+from capa_simulation.persistence import display_order_store
+from capa_simulation.persistence._sql_helpers import connect
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+database = Path(r"{database_path}")
+repository = DuckDBScenarioRepository(database)
+repository.initialize()
+if not database.with_suffix(".seeded").exists():
+    with connect(database) as connection:
+        display_order_store.insert_global_display_order(
+            connection,
+            pd.DataFrame(
+                {{
+                    "페이지 구분": ["부하량", "부하량"],
+                    "탭 구분": ["계획", "계획"],
+                    "정렬우선순위": [1, 1],
+                    "분류컬럼": ["WF 구분", "WF 구분"],
+                    "정렬방식": ["사용자지정", "사용자지정"],
+                    "분류값": ["Top", "TOP"],
+                    "값표시순서": [1, 2],
+                    "활성여부": ["Y", "Y"],
+                }}
+            ),
+            version=1,
+            source="검사 전 저장본",
+        )
+    database.with_suffix(".seeded").write_text("1")
+
+original_editor = st.data_editor
+
+
+def _fixed_editor(frame, **kwargs):
+    original_editor(frame, **kwargs)
+    return frame.iloc[[0]].reset_index(drop=True)
+
+
+st.data_editor = _fixed_editor
+try:
+    render_display_order_management(repository)
+finally:
+    st.data_editor = original_editor
+'''
+    app = AppTest.from_string(script).run(timeout=30)
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key="display_order_tab").value == "계획"
+    assert any("범위마다 따로 고칠 수 있습니다" in element.value for element in app.warning)
+
+    def places() -> tuple[tuple[int, ...], tuple[int, ...]]:
+        return (
+            _path_of(
+                app,
+                lambda node: (
+                    getattr(node, "type", "") == "button"
+                    and getattr(node, "label", "") == "공용 표시순서 저장"
+                ),
+            ),
+            _path_of(
+                app,
+                lambda node: str(getattr(node, "key", "") or "").startswith(
+                    f"{DISPLAY_ORDER_EDITOR_KEY}::"
+                ),
+            ),
+        )
+
+    before = places()
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=30)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [element.value for element in app.error]
+    assert any("공용 설정으로 저장했습니다" in element.value for element in app.success)
+    assert not any("범위마다 따로 고칠 수 있습니다" in element.value for element in app.warning)
+    assert places() == before
 
 
 def _version_check_script(database_path: Path) -> str:

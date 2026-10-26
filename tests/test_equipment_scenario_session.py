@@ -241,8 +241,8 @@ def _switching(database: str) -> None:
         BUFFER_KEY,
         ensure_equipment_drafts,
         pending_fab_layout,
-        pop_discarded_notice,
         pop_drafts_replaced,
+        render_discarded_notice,
         replace_equipment_buffer,
         stage_fab_layout,
     )
@@ -293,7 +293,7 @@ def _switching(database: str) -> None:
         st.session_state["fab_kept"] = pending_fab_layout() is not None
     else:
         st.session_state["replaced"] = pop_drafts_replaced()
-        st.session_state["discarded"] = pop_discarded_notice()
+        render_discarded_notice()
         st.session_state["now"] = (session.scenario_name, session.revision_no)
 
 
@@ -317,7 +317,7 @@ def test_switching_with_unsaved_edits_needs_the_discard_check_and_keeps_the_fab(
     assert app.session_state["fab_kept"] is True
     # 고르기는 편집본을 비운 뒤라 「처음 세움」 이다 — 「다른 사용자가 저장」 알림이 없다.
     assert app.session_state["replaced"] is False
-    assert app.session_state["discarded"] is None
+    assert not [element for element in app.warning if "버리고" in str(element.value)]
     assert app.session_state["now"] == ("셋업 실무", 1)
 
 

@@ -56,7 +56,7 @@ from capa_simulation.auto_update_scheduler import (
     running_scheduler,
     scheduler_opted_in,
 )
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -134,9 +134,10 @@ SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
 # 설정 저장의 제 저장·충돌·거부 표지 이름(`write_guard`).
 SETTINGS_SAVE_NAME = "auto_official_update_settings"
 SETTINGS_SAVED_PREFIX: Final = "자동 갱신 설정을 저장했습니다"
-# 「지금 실행」 결과(상태, 글, 발행한 회차의 소요대수에 들지 않은 수요 경고). rerun 을 건너 그
-# 자리에 한 번 그린다.
+# 「지금 실행」 결과 알림과, 발행한 회차의 소요대수에 들지 않은 수요 경고(성공 알림 밑에 따로).
+# rerun 을 건너 그 자리에 한 번 그린다(`flash`).
 RUN_RESULT_KEY = "auto_official_update_run_result"
+RUN_WARNING_KEY = "auto_official_update_run_warning"
 # 「지금 실행」 회차의 표(회차 키 끝). 회차 전에 적고 결과를 보이면 지운다 — 도는 사이 다른 칸을
 # 눌러 새 실행이 서면 결과 알림을 그릴 실행이 끊기므로, 새 실행이 이 표로 실행 기록을 찾는다.
 PENDING_RUN_TOKEN_KEY = "auto_official_update_pending_run_token"
@@ -146,6 +147,13 @@ RUN_POLL_INTERVAL: Final = timedelta(seconds=3)
 RUNNING_MESSAGE: Final = (
     "「지금 실행」 회차가 아직 도는 중입니다 — 끝나면 결과가 여기에 저절로 뜹니다."
 )
+# 끝난 「지금 실행」 회차의 상태별 알림 종류·아이콘. 표에 없는 상태는 아이콘 없는 안내다.
+_RUN_RESULT_STYLES: Final[dict[str, tuple[FlashKind, str | None]]] = {
+    STATUS_PUBLISHED: ("success", ":material/publish:"),
+    STATUS_SKIPPED: ("info", ":material/skip_next:"),
+    STATUS_PUBLISH_SKIPPED: ("warning", ":material/warning:"),
+    STATUS_ERROR: ("error", ":material/error:"),
+}
 RUN_NOW_BUTTON_KEY = "auto_official_update_run_now"
 OFF_LIST_EXPANDER_KEY = "auto_official_update_off_list_expander"
 RUN_HISTORY_LIMIT: Final = 30
@@ -393,12 +401,10 @@ def _render_settings_form(
                     placeholder="이름을 적으면 설정 변경 기록에 남습니다",
                     width=280,
                 )
-        notice = st.container()
-        with notice:
-            render_flash(SETTINGS_FLASH_KEY)
-            refused = take_refusal(SETTINGS_SAVE_NAME)
-            if refused is not None:
-                st.error(refused)
+        notice = render_flash(SETTINGS_FLASH_KEY)
+        refused = take_refusal(SETTINGS_SAVE_NAME)
+        if refused is not None:
+            notice.error(refused)
     if not submitted:
         # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
         # (write_guard).
@@ -431,12 +437,10 @@ def _render_settings_form(
         notice.error(bootstrap_error_message(exc))
         return
     if updated == config and expected_version == settings.version:
-        # 방금 저장한 같은 값의 둘째 누름(새 화면이 서고 나서 닿은 느린 더블클릭)이면 방금 성공을
-        # 다시 알린다 — 「바뀐 값이 없습니다」 가 성공 알림을 덮지 않게(write_guard.held_notice).
-        just_saved = held_notice(SETTINGS_FLASH_KEY)
-        if just_saved is not None:
-            notice.success(just_saved)
-        else:
+        # 방금 저장한 같은 값의 둘째 누름(새 화면이 서고 나서 닿은 느린 더블클릭)이면 알림 칸
+        # (`render_flash`)이 방금 성공을 이미 다시 그렸다 — 「바뀐 값이 없습니다」 로 그 알림을
+        # 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+        if held_notice(SETTINGS_FLASH_KEY) is None:
             notice.info("바뀐 값이 없습니다.")
         return
     if updated.enabled and not config.enabled:
@@ -579,30 +583,44 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
         # 이 세션의 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣는다.
         forget_intro_summary_check()
         reason, warning = split_published_reason(reason)
-    st.session_state[RUN_RESULT_KEY] = {
-        "status": run.status,
-        "message": _run_result_text(run, reason),
-        "warning": warning,
-    }
+    kind, icon = _RUN_RESULT_STYLES.get(run.status, ("info", None))
+    # 사유는 회차 기록(표 칸 — 평문)과 같은 글이라 짓는 곳(`_RunLog.finish`)이 아니라 알림 칸에
+    # 담는 여기서 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다.
+    queue_flash(
+        RUN_RESULT_KEY,
+        markdown_safe_tildes(_run_result_text(run, reason)),
+        kind=kind,
+        icon=icon,
+    )
+    if warning:
+        # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
+        queue_flash(
+            RUN_WARNING_KEY,
+            markdown_safe_tildes(warning),
+            kind="warning",
+            icon=":material/warning:",
+        )
 
 
-def _recover_run_result(repository: DuckDBScenarioRepository) -> dict[str, str] | None:
-    """결과 알림이 rerun 에 끊긴 「지금 실행」 회차를 표로 찾아 결과를 돌려준다. 없으면 None."""
+def _recover_run_result(repository: DuckDBScenarioRepository) -> bool:
+    """결과 알림이 rerun 에 끊긴 「지금 실행」 회차를 표로 찾는다. 아직 도는 중이면 True.
+
+    끝난 회차면 표를 지우고 그 결과를 알림 칸에 담는다(`_hold_run_result`) — 부르는 쪽이 같은 회차에
+    그린다.
+    """
     token = st.session_state.get(PENDING_RUN_TOKEN_KEY)
     if not isinstance(token, str):
-        return None
+        return False
     try:
         run = repository.find_manual_auto_official_update_run(token)
     except BOOTSTRAP_ERRORS:
-        return None
+        return False
     if run is not None and run.status == STATUS_RUNNING:
-        return {"status": STATUS_RUNNING, "message": RUNNING_MESSAGE}
+        return True
     st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
-    if run is None:
-        return None
-    _hold_run_result(run)
-    held = st.session_state.pop(RUN_RESULT_KEY, None)
-    return held if isinstance(held, dict) else None
+    if run is not None:
+        _hold_run_result(run)
+    return False
 
 
 def _run_result_text(run: AutoOfficialUpdateRun, reason: str) -> str:
@@ -611,32 +629,12 @@ def _run_result_text(run: AutoOfficialUpdateRun, reason: str) -> str:
 
 
 def _render_run_result(repository: DuckDBScenarioRepository) -> None:
-    held = st.session_state.pop(RUN_RESULT_KEY, None)
-    if not isinstance(held, dict):
-        held = _recover_run_result(repository)
-    if not isinstance(held, dict):
-        return
-    status = held.get("status")
-    # 사유는 회차 기록(표 칸 — 평문)과 같은 글이라 짓는 곳(`_RunLog.finish`)이 아니라 여기서
-    # 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다.
-    message = markdown_safe_tildes(held.get("message") or "")
-    if status == STATUS_RUNNING:
+    """「지금 실행」 결과 알림 한 칸. 담아 둔 결과가 없으면 끊긴 회차를 기록에서 찾는다 — 아직 도는
+    중이면 결과 대신 「도는 중」 안내를 두고 기록을 다시 본다(`_poll_running_round`)."""
+    if pending_flash(RUN_RESULT_KEY) is None and _recover_run_result(repository):
         _poll_running_round(repository)
         return
-    if status == STATUS_PUBLISHED:
-        st.success(message, icon=":material/publish:")
-        # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
-        warning = markdown_safe_tildes(held.get("warning") or "")
-        if warning:
-            st.warning(warning, icon=":material/warning:")
-    elif status == STATUS_SKIPPED:
-        st.info(message, icon=":material/skip_next:")
-    elif status == STATUS_PUBLISH_SKIPPED:
-        st.warning(message, icon=":material/warning:")
-    elif status == STATUS_ERROR:
-        st.error(message, icon=":material/error:")
-    else:
-        st.info(message)
+    render_flash(RUN_RESULT_KEY, RUN_WARNING_KEY)
 
 
 @st.fragment(run_every=RUN_POLL_INTERVAL, key=RUN_POLL_FRAGMENT_KEY)

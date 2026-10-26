@@ -68,6 +68,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
 )
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -283,13 +284,7 @@ def _render_body(context: ImportContext) -> None:
     frames: Frames = st.session_state[BUFFER_KEY]
     pending = st.session_state.get(PREVIEW_KEY)
     # 알림은 늘 서 있는 한 칸 안에 그린다(아래 폼의 자리를 고정한다).
-    with st.container():
-        error = st.session_state.pop(IMPORT_ERROR_KEY, None)
-        if isinstance(error, str):
-            st.error(markdown_safe_tildes(error))
-        notice = st.session_state.pop(IMPORT_NOTICE_KEY, None)
-        if isinstance(notice, str):
-            st.info(notice)
+    render_flash(IMPORT_ERROR_KEY, IMPORT_NOTICE_KEY)
     st.caption(
         "엑셀에서 복사한 표(머리 줄 포함)를 붙이거나 CSV 를 올린 뒤 「변경 미리보기」 → 「편집본에 "
         "넣기」. "
@@ -369,16 +364,18 @@ def _render_body(context: ImportContext) -> None:
             file_name=uploaded.name if uploaded is not None else None,
         )
         if apply_clicked:
-            st.session_state[IMPORT_NOTICE_KEY] = (
+            queue_flash(
+                IMPORT_NOTICE_KEY,
                 "입력 또는 편집본이 바뀌어 미리보기를 갱신했습니다. 변경 내용을 확인한 뒤 다시 "
-                "넣으세요."
+                "넣으세요.",
+                kind="info",
             )
     except BOOTSTRAP_ERRORS as exc:
         st.session_state.pop(PREVIEW_KEY, None)
         message = bootstrap_error_message(exc)
         if _master_has_errors(frames, context.floor_canvases):
             message = f"{message}\n\n{FIX_FIRST_HINT}"
-        st.session_state[IMPORT_ERROR_KEY] = message
+        queue_flash(IMPORT_ERROR_KEY, markdown_safe_tildes(message), kind="error")
     # 앱 범위로 다시 돈다 — 팝업 안 폼 제출이 늘 프래그먼트 회차는 아니다(앱 회차에서
     # `scope="fragment"` 는 오류). 열림 칸이 남아 팝업은 열린 채 미리보기·오류를 그린다.
     st.rerun()

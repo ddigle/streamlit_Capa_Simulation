@@ -66,6 +66,7 @@ from capa_simulation.components.literal_markdown import (
     quoted,
 )
 from capa_simulation.components.tab_state import remember_open_tab
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.components.widget_generation import (
     bump,
     generation,
@@ -245,8 +246,8 @@ REVISION_NAME_POPOVER_KEY = "equipment_scenario_manage_revision_name_popover_v1"
 PUBLISH_POPOVER_KEY = "equipment_scenario_manage_publish_popover_v1"
 POPOVER_GENERATION_KEY = "equipment_scenario_manage_popover_generation_v1"
 # 리비전 표 위 띄움(px, `st.space`) — 표 도구 막대가 바로 위 줄 팝오버 단추에 닿지 않을 만큼(그리는
-# 자리의 설명).
-REVISION_TABLE_TOOLBAR_CLEARANCE = 24
+# 자리의 설명). 숫자는 표 도구 막대 공용 띄움 하나다(`table_toolbar.TABLE_TOOLBAR_CLEARANCE`).
+REVISION_TABLE_TOOLBAR_CLEARANCE = TABLE_TOOLBAR_CLEARANCE
 
 # 리비전명 칸 글자 수 한도 — 저장소도 같은 한도로 거절한다.
 REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS

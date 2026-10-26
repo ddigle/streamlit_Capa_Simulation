@@ -140,7 +140,7 @@ def _edit_then_someone_saves(database: str) -> None:
     from capa_simulation.components.equipment_data_workspace import (
         ensure_equipment_drafts,
         pending_floor_marks,
-        pop_discarded_notice,
+        render_discarded_notice,
         save_equipment_buffer,
         stage_floor_marks,
     )
@@ -163,7 +163,7 @@ def _edit_then_someone_saves(database: str) -> None:
         other.loc[other["설비명"].eq("EQ-02"), "담당자"] = "담당B"
         repository.save_snapshot(frames[0], other, frames[2], note="다른 사람")
         return
-    st.session_state["notice"] = pop_discarded_notice()
+    render_discarded_notice()
     st.session_state["pending"] = pending_floor_marks()
     st.session_state["message"] = save_equipment_buffer(repository, frames, "")
 
@@ -178,8 +178,9 @@ def test_someone_elses_save_discards_pending_layouts_and_says_so(tmp_path: Path)
 
     assert not app.exception
     # 남이 공통 대장을 저장했다 — 어느 쪽인지 문구가 말한다.
-    notice = app.session_state["notice"]
-    assert "다른 사용자가 공통 대장 r2" in notice and "버리고" in notice
+    (notice,) = [element for element in app.warning if "버리고" in str(element.value)]
+    assert "다른 사용자가 공통 대장 r2" in str(notice.value)
+    assert notice.proto.icon == ":material/sync_problem:"
     assert app.session_state["pending"] == {}
     # 대기분이 버려진 뒤의 저장은 쓴 것이 없다고 말한다(「저장했습니다」가 아니다).
     assert app.session_state["message"] == "바뀐 내용이 없어 저장하지 않았습니다."

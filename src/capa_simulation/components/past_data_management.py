@@ -206,7 +206,11 @@ def _render_table_editor(
             )
         render_flash(f"past_data_read_flash_{spec.name}")
         if not current.empty:
-            with st.expander(f"현재 {len(current):,}행 확인", icon=":material/preview:"):
+            with st.expander(
+                f"현재 {len(current):,}행 확인",
+                icon=":material/preview:",
+                key=f"past_data_current_expander_{spec.name}",
+            ):
                 st.dataframe(current, hide_index=True, width="stretch", height=240)
 
 

@@ -1681,6 +1681,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다.
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
+  저장 성공과 그 저장의 표시명 경고(성공 칸 안), 저장된 겹침 경고는 각각 늘 서 있는 칸에 서서 저장(`st.rerun()`)
+  뒤 경고가 생기고 빠져도 아래 직접 편집의 자리가 그대로다(9장 「조건부 알림」).
   - 직접 편집 저장은 Proc Rename 과 같은 버전 대조(`BASE_VERSION_KEY` → `expected_version`)다. 범위 하나만 고쳐도
     프로필 전체 version 을 본다 — 편집표가 `num_rows="dynamic"` 이라 데이터가 신원에 들어가, 남의 저장으로 범위 줄이
     바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을 버린다. 대조가 없으면 지금 저장본을 다시 쓰며 version 만 올리고
@@ -1742,8 +1744,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
   `emit_style=False` 로 부르고 `metric_row_style`·`status_metric_style` 을 보이는 HTML 과 한 `st.html` 에 싣는다.
-- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄이다.
-  `st.download_button` 은 여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다).
+- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄과 표 도구 막대 앞 띄움
+  (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭)이다. `st.download_button` 은
+  여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)이다. 행 모델·면색만 표마다 다르다.
   - 머리글 글자는 `go.Table` 밖 글자 trace(data[1], `plotly_layout.table_text_layer`)이고 띠는 `table_header_band`
@@ -1803,7 +1806,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
-    (`write_guard.held_notice`, `tests/test_key_process_preset_messages.py`).
+    (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
 - `src/capa_simulation/components/home_main_cases.py` — HOME `Preference` 의 「주요 Case」 상자(2026-10-23 사용자 요청).
   HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
@@ -1944,8 +1947,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
-- `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
-  그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
+- `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 그리기 한 길. `queue_flash(key, 글, *, kind,
+  icon)`(kind 는 success·info·warning·error, 아이콘 없는 성공은 글만 담는다)로 세션에 담고, 다음 실행에서
+  `render_flash(*keys)` 가 알림이 있든 없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 한 번 그리고 그 칸을
+  돌려준다 — 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의 실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤
+  `st.rerun()` 이면 문구가 그려지지 않는다). 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
+  AST 그물 둘이 막는다 — 이름에 FLASH·NOTICE 가 든 칸을 비우는(`pop`·`del`) 자리와, 이름과 상관없이 꺼낸 칸(`pop`,
+  같은 블록의 `get`·`[]` 뒤 `del`, 바깥에서 읽어 두고 한 갈래 안에서 비우며 그 갈래에서 그리는 꼴)의 값이 알림
+  요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이 다른 칸만 (파일, 함수, 칸) 으로 까닭과
+  함께 허용 목록에 둔다(9장 「조건부 알림」).
+  담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
+  `write_guard.held_notice` 로 그 글을 성공으로 다시 그린다 — 아주 빠른 둘째 누름의 회차가 앞 회차의 알림을 지우지 않게
+  모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
 - `src/capa_simulation/components/widget_generation.py` — 서버 값을 브라우저가 든 위젯에 닿게 하는 **한 길**(9장 「닫힌
   팝업 안」·「쓰기 콜백」). 세대 칸 읽기(`generation` — `write_guard.current_generation` 과 같은 읽기)·세대 key 짓기
   (`widget_key` — 꼴 `__g`·`_g`·`__`·`__p` 와 `bare_zero` 로 옛 key 글자를 바이트까지 지킨다)·세대 올리기(`bump` — 뒷정리 맨
@@ -1977,8 +1990,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off(충돌 회차가 초안·출발점을 최신으로 다시
   세우는 자리라 표지가 없으면 둘째 누름이 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮는다). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와
-  HOME 주요공정 프리셋 「기본으로」·「삭제」 가 쓰고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
-  설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 대신 방금 성공을 다시 낸다)에도 쓴다(9장).
+  HOME 주요공정 프리셋 「기본으로」·「삭제」 가 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
+  설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
+  쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장).
   출발점 대조 저장의 `save_once` 는 설비 편집본 저장(`equipment_data_workspace._save_equipment_frames` — 설비 마스터
   「리비전 저장」·Space 「배치 저장」·사이드바 팝업 저장)과 FAB 전체 배치 쓰기(`save_pending_fab_layout`)가 쓴다(9장,
   `tests/test_equipment_save_double_press.py`). 설비 편집본 저장은 그 창을 지나 저장소에 거부된 둘째 누름을 위 제 저장 판정으로
@@ -3827,6 +3841,19 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     key 없는 팝오버도 같다 — 알림이 빠지는 다음 회차에 한 칸 당겨져 다시 서며 닫히므로, 알림 뒤 처음 누른 팝오버 안
     확인 체크·Enter 가 팝오버를 닫았다(2026-10-25 E2E, 설비 시나리오 구획). 알림은 늘 서 있는 칸에 두고, 작업을 마친
     팝오버를 닫으려면 key 꼬리에 세대를 붙여 그 알림을 그리는 회차에만 바꾼다(3장 `equipment_scenario_management.py`).
+    **모든 팝오버는 key 를 받고, 라벨이 글자 그대로가 아닌(개수·이름이 드는) 확장 패널도 key 를 받는다** — Space 저장 안
+    한 배치 상자의 「저장 칸」·「버리기」 팝오버가 상자 안 저장 오류 한 줄에 밀려 닫히던 자리를 이것으로 막았다
+    (`tests/test_popover_keys.py` 가 소스를 훑고, 오류가 서는 회차에도 블록 id 가 같은지 본다).
+  - **알림 칸은 `components/flash.py` 한 길이다.** 콜백·본문의 결과는 `queue_flash` 로 담고 그 칸은 `render_flash` 로
+    그린다 — 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
+    칸에만 가지 않는다(2026-10-26 리팩토링 — 칸 열여섯을 옮겼고, 리뷰 뒤 설비 마스터 탭 저장 결과·VOC 머리 알림과 글
+    쓰기·글 상자 실패·Space 설비 시나리오 바꾸기 실패를 더 옮겼다). 실패만 내는 칸도 같다(`kind="error"`).
+    `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
+    문구나 같은 동작의 경고 여러 줄(표시순서 저장의 표시명 경고)을 쓴다. 다음 동작까지 남아야 하는 칸(VOC 지운 글의
+    적어 둔 답변, 필요 단축 일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP), 페이지가
+    같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표), 회차의 상자 유무로 두 자리 가운데 하나에 서는 칸(Space 배치
+    저장 실패)은 `tests/test_flash_messages.py` 의 허용 목록에 까닭과 함께 둔다. 그물은 이름(FLASH·NOTICE)만 보지 않고
+    꺼낸 값이 알림 요소에 드는지를 본다 — ERROR·RESULT·WARNINGS 이름 칸이나 `get` 뒤 `del` 로 되돌린 꼴도 잡는다.
   - **key 가 있어도 자리는 고정한다(2026-10-05 E2E).** 저장 회차(알림 없음)를 `st.rerun()` 으로
     끊고 다음 회차(알림 있음)에서 key 있는 탭 묶음이 한 칸 밀리면, 옛 자리에 회색 사본이 남아
     새로고침 전까지 다른 페이지까지 따라왔다(설비 마스터 탭(옛 RawData) 두 번째 저장). 수가 바뀌는 알림은
@@ -4102,10 +4129,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 지나간 세대의 누름이 `just_written` 창 안이면
     성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
     시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
-    「기본으로」·「삭제」). 창이 지난 옛 화면의 누름은 전처럼 알리지 않는다(`tests/test_voc_page.py`·
-    `tests/test_key_process_preset_messages.py`). 자동 갱신 설정 폼도 저장 성공 알림을 `note_notice` 로 적는다 — 새 화면에 닿은
-    느린 둘째 누름은 같은 값이라 「바뀐 값 없음」 제출인데, 창 안이면 「바뀐 값이 없습니다」 대신 그 성공 알림을 다시 내고, 제
-    저장 갈래도 첫 알림을 다시 낸다(`tests/test_write_guard_cas.py`).
+    「기본으로」·「삭제」). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
+    `held_notice` 를 따로 부르지 않는다(VOC 머리 칸도 `render_flash` 칸이다). 창이 지난 옛 화면의 누름은
+    전처럼 알리지 않는다(`tests/test_voc_page.py`·`tests/test_key_process_preset_messages.py`·
+    `tests/test_flash_messages.py` 의 끊긴 회차 시험). 자동 갱신 설정 폼도 저장 성공 알림을 `note_notice` 로 적는다 — 새
+    화면에 닿은 느린 둘째 누름은 같은 값이라 「바뀐 값 없음」 제출인데, 창 안이면 알림 칸이 다시 그린 그 성공 알림 밑에
+    「바뀐 값이 없습니다」 를 쓰지 않고, 제 저장 갈래도 첫 알림을 다시 낸다(`tests/test_write_guard_cas.py`).
   - 콜백에서 저장하고 뒷정리로 출발점을 옮기는 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치
     저장」·사이드바 팝업 저장, FAB 전체 배치)은 둘째 누름의 회차가 첫 콜백을 DB 쓰기 뒤·`reset_equipment_drafts` 전에 끊으면
     출발점(`buffer_base`)이 그대로라, 둘째 콜백이 옛 출발점으로 다시 저장하다 저장소에 거부되고 「다른 사용자가 먼저 저장해
@@ -4152,10 +4181,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   내려받기·찾기·전체 화면, 1500px 창에서 92×41px)가 표 머리 위 37px 까지 떠, 표에 바로 붙은 위 줄 오른쪽 끝의 단추·팝오버를
   덮고 표에서 그 단추로 옮긴 누름을 가로챈다(2026-10-25 E2E — 설비 시나리오 구획 「시나리오 이름 바꾸기」). 표 바로 위 줄
   오른쪽 끝에 누를 것을 두면 표 앞에 띄움(`st.space`, 막대가 그 줄에 닿지 않을 만큼 — 설비 시나리오 구획은 24px)을 둔다.
-  새 자리는 `table_toolbar.TABLE_TOOLBAR_CLEARANCE`(24px)를 쓴다 — Space 층 목록 머리의 `사용 편집` 토글·층 상세 표 머리의
-  「층 전체 보기」 가 그 자리다(2026-10-26 E2E).
-  날짜 칸의 지우기(✕)도 같다 — Qual 마감 계산기 월 편집표 앞 띄움(`EDITOR_TOOLBAR_CLEARANCE_PX` = 그 공용 값, 터치 창은
-  막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다).
+  띄움은 `table_toolbar.toolbar_clearance()`(`TABLE_TOOLBAR_CLEARANCE` 24px — 숫자는 이 하나, 설비 시나리오
+  `REVISION_TABLE_TOOLBAR_CLEARANCE`·Qual 계산기 `EDITOR_TOOLBAR_CLEARANCE_PX` 는 그 별칭)로 둔다 — Space 층 목록 머리의
+  `사용 편집` 토글·층 상세 표 머리의 「층 전체 보기」 가 그 자리다(2026-10-26 E2E). 날짜 칸의 지우기(✕)도 같다 — Qual
+  마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다). 오른쪽 끝까지
+  늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」)과 바로 위 CSV 단추(Cut-off 잠긴 보기·제외 목록)도
+  같은 띄움을 둔다. `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
+  대입은 건너뛴다)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고, 띄움 숫자 정의가 이 모듈 하나인지 본다.
 - **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
   `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
   갈아 끼울 때(Import 저장·편집 버퍼 교체)도 같다 — 옛 delta 가 새 프레임에 얹혀 Import 가 조용히 되돌려진다. 「변경사항

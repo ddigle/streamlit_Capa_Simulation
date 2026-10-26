@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -761,6 +762,44 @@ def _plan_grid_total(app: AppTest) -> float:
     assert len(grids) == 1, len(grids)
     months = [column for column in grids[0].columns if str(column).isdigit()]
     return float(grids[0][months].apply(pd.to_numeric).sum().sum())
+
+
+def _plan_editor_path(app: AppTest) -> tuple[int, ...]:
+    """PKG PLAN 편집표의 델타 경로(본문 기준 자식 번호 차례). 세대 키가 바뀌어도 같은 표다."""
+    found: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        if isinstance(node, Dataframe) and str(node.key or "").startswith("pkg_plan_editor"):
+            found.append(path)
+        for index, child in getattr(node, "children", {}).items():
+            walk(child, (*path, index))
+
+    walk(app.main, ())
+    assert len(found) == 1, found
+    return found[0]
+
+
+def test_the_plan_notices_stand_in_one_slot_above_the_editor(seeded_database: Path) -> None:
+    """붙여넣기·적용 알림은 작업 줄 아래 늘 서 있는 칸에 선다 — 생기고 빠져도 PKG PLAN 편집표의
+    자리가 그대로다. 두 동작은 `st.rerun()` 으로 끊기고 다음 회차에 알림이 생기므로, 밀리면
+    브라우저에 옛 편집표의 흐린 사본이 남는다(AGENTS 9장 「조건부 알림」). 여기서는 그 원인인 자리
+    밀림을 잰다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    before = _plan_editor_path(app)
+
+    _paste(app, _clipboard_text(app, scale=0.5))
+    assert any("붙여넣기 표를 PKG PLAN 탭에 반영했습니다" in item.value for item in app.success)
+    assert _plan_editor_path(app) == before
+
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    assert any("PKG PLAN을 전역 계획값에 반영했습니다" in item.value for item in app.success)
+    assert _plan_editor_path(app) == before
+
+    app.run()
+    assert not any("반영했습니다" in item.value for item in app.success)
+    assert _plan_editor_path(app) == before
 
 
 def test_the_plan_editor_shows_the_applied_plan_right_after_apply(seeded_database: Path) -> None:

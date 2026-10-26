@@ -37,7 +37,6 @@ from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
-    held_notice,
     held_profile_conflict,
     is_own_save,
     note_notice,
@@ -1692,14 +1691,10 @@ def _render_key_process_flash() -> None:
 
     두 단추를 빠르게 두 번 누르면(0.15초) 둘째 누름은 옛 화면의 단추에 닿는데, 그 회차에는 고칠
     프리셋이 바뀌어 단추가 잠겨 있다 — Streamlit 이 잠긴 단추의 누름을 버려 그 회차는 아무것도 하지
-    않고, 앞 회차가 꺼내 그린 알림만 지웠다(2026-10-26 E2E). 그 꼬리 회차에도 같은 알림을 그린다
-    (`write_guard.held_notice`).
+    않고, 앞 회차가 꺼내 그린 알림만 지웠다(2026-10-26 E2E). 두 동작이 쓰기 직후 적은 알림
+    (`write_guard.note_notice`)을 `flash.render_flash` 가 그 꼬리 회차에도 다시 그린다.
     """
-    if render_flash(KEY_PROCESS_FLASH_KEY):
-        return
-    held = held_notice(KEY_PROCESS_FLASH_KEY)
-    if held is not None:
-        st.success(held)
+    render_flash(KEY_PROCESS_FLASH_KEY)
 
 
 def _render_key_process_preset_actions(

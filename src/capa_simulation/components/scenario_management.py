@@ -29,6 +29,7 @@ import streamlit as st
 
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.editor_state import discard_editor
+from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.pick_edit_table import (
@@ -189,6 +190,8 @@ CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
 REVISION_EDITOR_KEY = "scenario_revision_editor"
 # 카드 작업 줄 아래 결과·오류 칸(종류, 글).
 CARD_NOTICE_KEY = "scenario_card_notice"
+# 목록·카드 결과 칸의 종류별 아이콘(`_notify`). 안내(info)는 아이콘이 없다.
+_NOTICE_ICONS: dict[str, str] = {"success": ":material/check_circle:", "error": ":material/block:"}
 # 미저장 편집이 있을 때 불러오기 전에 받는 「변경을 버리고 불러오기」 체크.
 DISCARD_UNSAVED_KEY = "scenario_discard_unsaved_changes"
 # 리비전 표에 씨앗으로 고른 올라와 있는 리비전 id. 올라와 있는 리비전이 이것과 달라지면(사이드바
@@ -263,13 +266,7 @@ def _render_store_status(
     # 「영구 삭제」는 본문에서 `st.rerun()` 으로 회차를 끊으므로, 끊긴 회차의 key 있는 보관함
     # 상자가 옛 자리에 흐린 사본으로 남아 모드를 바꿔도 새로고침 전까지 따라왔다(2026-10-22 사본
     # 앱 이분 탐색 — 알림을 빼거나 상자 key 를 빼거나 되돌리기를 콜백으로 바꾸면 각각 사라졌다).
-    notice = st.container()
-    flash = st.session_state.pop(FLASH_KEY, None)
-    if isinstance(flash, str):
-        notice.success(flash)
-    warning = st.session_state.pop(FLASH_WARNING_KEY, None)
-    if isinstance(warning, str):
-        notice.warning(warning, icon=":material/warning:")
+    render_flash(FLASH_KEY, FLASH_WARNING_KEY)
     official = repository.latest_official_release()
     with st.container(border=True):
         st.markdown("#### :material/database: 저장소 상태")
@@ -348,7 +345,7 @@ def _render_list_management(
     with st.container():
         if scenarios:
             _render_list_toolbar(database_path, base_ids, base_names, draft)
-    _render_notice(LIST_NOTICE_KEY)
+    render_flash(LIST_NOTICE_KEY)
     if scenarios:
         _render_scenario_list_editor(scenarios, releases, draft, widget_key)
     else:
@@ -369,19 +366,13 @@ def _render_list_management(
     _render_archived_scenarios(repository)
 
 
-def _render_notice(key: str) -> None:
-    """콜백이 남긴 결과·오류(`(종류, 글)`)를 늘 서 있는 한 칸 안에 한 번 그린다."""
-    slot = st.container()
-    notice = st.session_state.pop(key, None)
-    if not (isinstance(notice, tuple) and len(notice) == 2):
-        return
-    kind, text = notice
-    if kind == "success":
-        slot.success(str(text), icon=":material/check_circle:")
-    elif kind == "error":
-        slot.error(str(text), icon=":material/block:")
-    else:
-        slot.info(str(text))
+def _notify(key: str, kind: FlashKind, text: str) -> None:
+    """목록·카드 결과 칸(`LIST_NOTICE_KEY`·`CARD_NOTICE_KEY`)에 콜백의 결과·오류를 담는다.
+
+    다음 회차에 그 칸의 `render_flash` 가 늘 서 있는 한 칸 안에 한 번 그린다. 성공은 체크, 오류는
+    막힘 아이콘이다.
+    """
+    queue_flash(key, text, kind=kind, icon=_NOTICE_ICONS.get(kind))
 
 
 def _render_list_toolbar(
@@ -507,7 +498,7 @@ def _save_list_edits(
     draft = peek_table(LIST_EDITOR_KEY, base_ids, base_names, LIST_COLUMNS)
     renames = changed_names(draft, base_names)
     if not renames and draft.order is None:
-        st.session_state[LIST_NOTICE_KEY] = ("info", "고친 것이 없습니다.")
+        _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
         return
     try:
         with pinned_connections(Path(database_path)):
@@ -516,7 +507,8 @@ def _save_list_edits(
             )
     except BatchEditRefused as exc:
         rows = table_rows(draft, base_ids)
-        st.session_state[LIST_NOTICE_KEY] = (
+        _notify(
+            LIST_NOTICE_KEY,
             "error",
             refused_edits_message(
                 [
@@ -544,7 +536,7 @@ def _save_list_edits(
             store_draft(LIST_EDITOR_KEY, draft)
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[LIST_NOTICE_KEY] = ("error", bootstrap_error_message(exc))
+        _notify(LIST_NOTICE_KEY, "error", bootstrap_error_message(exc))
         store_draft(LIST_EDITOR_KEY, draft)
         return
     if renames:
@@ -561,7 +553,8 @@ def _save_list_edits(
         for scenario_id, (_, renamed) in renames.items():
             rename_active_scenario_label(scenario_id, renamed)
     forget_table_edits(LIST_EDITOR_KEY)
-    st.session_state[LIST_NOTICE_KEY] = (
+    _notify(
+        LIST_NOTICE_KEY,
         "success",
         list_saved_message(len(renames), reordered=draft.order is not None),
     )
@@ -788,7 +781,7 @@ def _render_scenario_actions(
                 on_click=forget_table_edits,
                 args=(REVISION_EDITOR_KEY,),
             )
-        _render_notice(CARD_NOTICE_KEY)
+        render_flash(CARD_NOTICE_KEY)
         _render_revision_editor(repository, revisions, releases, draft, widget_key)
         with st.container():
             st.caption(
@@ -991,11 +984,12 @@ def _load_picked_revision(
     """「선택한 리비전 불러오기」 콜백. 고른 리비전은 누른 회차의 표에서 다시 읽는다."""
     revision_id = _picked_revision(base_ids, base_names)
     if revision_id is None:
-        st.session_state[CARD_NOTICE_KEY] = ("error", "불러올 리비전을 표에서 고르세요.")
+        _notify(CARD_NOTICE_KEY, "error", "불러올 리비전을 표에서 고르세요.")
         return
     # 단추 잠금은 화면의 약속일 뿐이다. 누른 회차에도 미저장 편집을 버린다는 체크를 다시 본다.
     if has_unsaved_scenario_changes() and not st.session_state.get(DISCARD_UNSAVED_KEY):
-        st.session_state[CARD_NOTICE_KEY] = (
+        _notify(
+            CARD_NOTICE_KEY,
             "error",
             "저장하지 않은 편집이 있습니다 — 「변경을 버리고 불러오기」를 체크해야 불러옵니다.",
         )
@@ -1007,15 +1001,16 @@ def _load_picked_revision(
             # 뒤라 화면에서 되돌릴 방법이 없다.
             blocked = revision_block_reason(snapshot.tables)
             if blocked is not None:
-                st.session_state[CARD_NOTICE_KEY] = ("error", blocked)
+                _notify(CARD_NOTICE_KEY, "error", blocked)
                 return
             activate_persisted_snapshot(snapshot)
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[CARD_NOTICE_KEY] = ("error", bootstrap_error_message(exc))
+        _notify(CARD_NOTICE_KEY, "error", bootstrap_error_message(exc))
         return
-    st.session_state[FLASH_KEY] = (
+    queue_flash(
+        FLASH_KEY,
         f"{literal_markdown(snapshot.scenario.scenario_name)} r{snapshot.revision.revision_no}"
-        f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
+        f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다.",
     )
 
 
@@ -1031,7 +1026,7 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
     draft = peek_table(REVISION_EDITOR_KEY, list(by_id), base_names, REVISION_COLUMNS)
     renames = changed_names(draft, base_names)
     if not renames:
-        st.session_state[CARD_NOTICE_KEY] = ("info", "고친 리비전명이 없습니다.")
+        _notify(CARD_NOTICE_KEY, "info", "고친 리비전명이 없습니다.")
         return
     # 표지 dict 는 저장 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
@@ -1059,7 +1054,8 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
             _after_revision_rename(renamed)
             _revision_names_saved(renamed)
             return
-        st.session_state[CARD_NOTICE_KEY] = (
+        _notify(
+            CARD_NOTICE_KEY,
             "error",
             refused_edits_message(
                 [
@@ -1083,7 +1079,7 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
             store_draft(REVISION_EDITOR_KEY, draft)
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.session_state[CARD_NOTICE_KEY] = ("error", bootstrap_error_message(exc))
+        _notify(CARD_NOTICE_KEY, "error", bootstrap_error_message(exc))
         store_draft(REVISION_EDITOR_KEY, draft)
         return
     _revision_names_saved(saved)
@@ -1091,7 +1087,8 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
 
 def _revision_names_saved(saved: Sequence[RevisionSummary]) -> None:
     forget_table_edits(REVISION_EDITOR_KEY)
-    st.session_state[CARD_NOTICE_KEY] = (
+    _notify(
+        CARD_NOTICE_KEY,
         "success",
         "리비전명을 저장했습니다: "
         + ", ".join(literal_markdown(revision_label(revision)) for revision in saved),
@@ -1320,13 +1317,14 @@ def _official_published(
 ) -> NoReturn:
     """공식 지정 뒤 이 세션의 뒷정리 — 알림을 담고 팝업을 닫고 다음 회차가 새 공식을 싣게 한 뒤 앱을
     다시 돌린다."""
-    st.session_state[FLASH_KEY] = (
+    queue_flash(
+        FLASH_KEY,
         f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
-        f"{object_particle(release.release_name)} 지정했습니다."
+        f"{object_particle(release.release_name)} 지정했습니다.",
     )
     # 허락하면서 하는 경고(소요대수에 들지 않은 수요 건수)는 지정한 사람이 그 자리에서 본다.
     if warning:
-        st.session_state[FLASH_WARNING_KEY] = warning
+        queue_flash(FLASH_WARNING_KEY, warning, kind="warning", icon=":material/warning:")
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
     # 입장 화면 Summary 가 새 공식버전을 다음 회차에 곧바로 싣게 한다
@@ -1441,9 +1439,10 @@ def _render_archive(repository: DuckDBScenarioRepository, summary: ScenarioSumma
     clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    st.session_state[FLASH_KEY] = (
+    queue_flash(
+        FLASH_KEY,
         f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
-        "보관했습니다."
+        "보관했습니다.",
     )
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY, ARCHIVE_CONFIRM_KEY):
@@ -1505,9 +1504,10 @@ def _restore_scenario(
         return
     clear_scenario_snapshot_cache()
     forget_derived_sources()
-    st.session_state[FLASH_KEY] = (
+    queue_flash(
+        FLASH_KEY,
         f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
-        "목록으로 되돌렸습니다."
+        "목록으로 되돌렸습니다.",
     )
     discard_editor(LIST_EDITOR_KEY)
     st.rerun()
@@ -1559,9 +1559,10 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     clear_global_securement_threshold_cache()
     if summary.scenario_id == active_persisted_scenario_id():
         clear_persisted_scenario_activation()
-    st.session_state[FLASH_KEY] = (
+    queue_flash(
+        FLASH_KEY,
         f"{literal_markdown(summary.scenario_name)}{object_particle(summary.scenario_name)} "
-        "영구 삭제했습니다."
+        "영구 삭제했습니다.",
     )
     discard_editor(LIST_EDITOR_KEY)
     for key in (ACTION_KEY, ACTION_OWNER_KEY):
@@ -1697,18 +1698,21 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             return
         snapshot = written.value
         if snapshot is None:
-            st.session_state[FLASH_KEY] = "신규 시나리오를 저장했습니다."
+            queue_flash(FLASH_KEY, "신규 시나리오를 저장했습니다.")
         else:
             # 내용은 지금 편집본 그대로지만 **다른 시나리오**가 된다 — 시나리오를 바꾸는 경로처럼
             # HOME 토글을 푼다.
             activate_persisted_snapshot(snapshot)
-            st.session_state[FLASH_KEY] = (
+            queue_flash(
+                FLASH_KEY,
                 f"{literal_markdown(snapshot.scenario.scenario_name)}"
                 f"{object_particle(snapshot.scenario.scenario_name)} 저장했습니다."
-                + virtual_product_save_notice(len(virtual_products))
+                + virtual_product_save_notice(len(virtual_products)),
             )
         if verdict.message:
-            st.session_state[FLASH_WARNING_KEY] = verdict.message
+            queue_flash(
+                FLASH_WARNING_KEY, verdict.message, kind="warning", icon=":material/warning:"
+            )
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()
         st.rerun()

@@ -24,6 +24,7 @@ from typing import Any, Final, cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import PROCESS_COLUMN, get_process_labels
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import tokens
@@ -162,9 +163,8 @@ def render_bigdataquery_registration(
     _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     st.subheader("BigDataQuery 시나리오 등록")
-    flash = st.session_state.pop(REGISTRATION_FLASH_KEY, None)
-    if isinstance(flash, str) and flash:
-        st.success(flash)
+    # 등록 알림은 늘 서 있는 한 칸에 그린다 — 생기고 사라질 때 아래 폼·표의 자리가 밀리지 않게.
+    render_flash(REGISTRATION_FLASH_KEY)
 
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
@@ -638,10 +638,11 @@ def _save_scenario(
     activate_persisted_snapshot(snapshot)
     # 목록은 남긴다. 선택과 폼만 비워 다음 코드를 이어서 등록할 수 있게 한다.
     _request_reset()
-    st.session_state[REGISTRATION_FLASH_KEY] = (
+    queue_flash(
+        REGISTRATION_FLASH_KEY,
         f"{with_object_particle(snapshot.scenario.scenario_name)} 저장하고 "
         f"{with_object_particle(f'r{snapshot.revision.revision_no}')} "
-        "올렸습니다."
+        "올렸습니다.",
     )
     st.rerun()
 

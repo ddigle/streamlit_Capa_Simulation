@@ -969,7 +969,10 @@ def _render_unmatched(plan: ShorteningPlan) -> None:
     parts = [f"{label} {len(names)}개" for label, names in groups if names]
     if plan.missing_cutoff:
         parts.append(f"그 가운데 Cut-off 미기재 {len(plan.missing_cutoff)}개")
-    with st.expander(":material/link_off: 맞대지 못한 공정 — " + " · ".join(parts)):
+    with st.expander(
+        ":material/link_off: 맞대지 못한 공정 — " + " · ".join(parts),
+        key="equipment_shortening_unmatched_expander",
+    ):
         st.caption(
             "설비 마스터 `공정소분류` 와 시나리오 `공정` 이 같은 이름일 때만 맞댑니다. "
             "Cut-off 를 적지 않은 공정은 일정 기준 가용을 낼 수 없어 시나리오 쪽에만 남습니다. "
