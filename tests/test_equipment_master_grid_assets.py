@@ -427,7 +427,7 @@ def test_the_pure_sections_behave_as_specified() -> None:
 
 _CLIPBOARD_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
-process.stdout.write(JSON.stringify(input.texts.map(parseClipboard)))
+process.stdout.write(JSON.stringify({ parsed: input.texts.map(parseClipboard) }))
 """
 
 
@@ -443,7 +443,7 @@ def test_pasting_excel_quoted_cells_keeps_line_breaks_inside_one_cell() -> None:
         'plain "quote"\tx\n',
         '"한 칸"',
     ]
-    result = _node({"texts": texts}, _CLIPBOARD_RUNNER)
+    result = _node({"texts": texts}, _CLIPBOARD_RUNNER)["parsed"]
     assert result[0] == [["줄1\n줄2", '따옴표 "안"'], ["일반", "값"]]
     assert result[1] == [["첫줄\n둘째줄"]], "줄바꿈이 든 한 칸은 아래 줄로 넘치지 않는다"
     assert result[2] == [['"A" 형', "나"], ["다", '"라']], "따옴표 칸이 아니면 글자 그대로"
@@ -764,7 +764,8 @@ def _loader_payload() -> dict[str, Any]:
 
 _LOADER_INFO_RUNNER = (
     _FAKE_DOM_RUNNER.split("const toggleOf")[0]
-    + "process.stdout.write(JSON.stringify(host.querySelector('.emg-info').textContent))\n"
+    + "const info = host.querySelector('.emg-info').textContent\n"
+    + "process.stdout.write(JSON.stringify({ text: info }))\n"
 )
 
 
@@ -775,7 +776,7 @@ def test_the_loader_counts_loaded_units_like_the_total() -> None:
     source = JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
     data = {**_loader_payload(), "loaded": ["s:DEMO-01", "s:DEMO-02", "s:GONE"], "loadedCount": 2}
 
-    text = _node({"data": data}, _LOADER_INFO_RUNNER, source=source)
+    text = str(_node({"data": data}, _LOADER_INFO_RUNNER, source=source)["text"])
 
     assert text.startswith("불러온 호기 2대 / 전체 2대"), text
 
