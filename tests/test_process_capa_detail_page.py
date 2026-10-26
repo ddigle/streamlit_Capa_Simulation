@@ -280,7 +280,7 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
     assert isinstance(month, int)
     header = _header(app)
-    assert header.startswith(f"**{process_box.value}**")
+    assert header.startswith(f"**{literal_markdown(process_box.value)}**")
     # 설비 DB 에 저장본이 없다 — 샘플 fleet 을 쓰지 않는다.
     assert "설비 일정 없음: 저장본 없음" in header
     assert [metric.label for metric in app.metric] == [
@@ -298,7 +298,10 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert "① 공식 기준" in _label_texts(app)
     assert "② 설비 일정 기준 가용" not in _label_texts(app)
     # 산출 근거 패널은 고른 달이고 카드는 ① ~ ③ 셋이다.
-    assert _panel_head(app) == f"**산출 근거 · {month_label(month)} · {process_box.value}**"
+    assert (
+        _panel_head(app)
+        == f"**산출 근거 · {month_label(month)} · {literal_markdown(process_box.value)}**"
+    )
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
     assert "④ 단축 근거" not in cards
@@ -342,7 +345,7 @@ def test_a_chosen_process_survives_reruns_and_keeps_the_month(
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == other
     _ok(app.run())
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == other
-    assert _header(app).startswith(f"**{other}**")
+    assert _header(app).startswith(f"**{literal_markdown(other)}**")
     # 공정을 바꿔도 보던 달은 그대로다.
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[-1]
     assert month_label(months[-1]) in _panel_head(app)
@@ -700,7 +703,7 @@ def test_the_header_steps_through_shortfall_processes(
     second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
     assert second != first
     assert _step_caption(app).startswith("미달 2/")
-    assert _header(app).startswith(f"**{second}**")
+    assert _header(app).startswith(f"**{literal_markdown(second)}**")
     # 모든 달이 미달인 하네스 — 첫 미달 달은 축 첫 달이다.
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[0]
 
