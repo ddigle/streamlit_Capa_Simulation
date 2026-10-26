@@ -147,6 +147,13 @@ FLASH_KEY = "scenario_management_flash"
 FLASH_WARNING_KEY = "scenario_management_flash_warning"
 MODE_KEY = "scenario_page_mode"
 CLONE_MODE = "지금 편집본 복제"
+# 복제 폼 위 둘째 줄 — 원천 코드·원천명 칸이 빈 채로 서는 까닭과 새로 적어야 한다는 것. 원본
+# 값으로 미리 채우지 않는 것은 결정이다(TODO 3장 화면 2026-10-22 — 원천명은 자동 갱신 주차 판정
+# 근거). 이 줄이 없으면 채워질 줄 알고 눌러 「필수 칸이 비어 있습니다」 로 한 번 막혔다(E2E).
+CLONE_SOURCE_NOTE = (
+    "원천 시뮬레이션 코드·원천 시뮬레이션명은 새로 적는 필수 칸입니다 — 원천 시뮬레이션명은 "
+    "공식버전 자동 갱신이 주차(W##)를 읽는 근거라 올라와 있는 시나리오의 값을 물려받지 않습니다."
+)
 MODES = (
     "목록 관리",
     CLONE_MODE,
@@ -1745,8 +1752,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         return
     # 무엇을 복제하는지 폼 위에 적는다. 원천 코드·이름 칸의 기본값은 비워 둔다 — 원천 시뮬레이션명은
     # 공식버전 자동 갱신이 주차(W##)를 읽는 두 번째 근거라, 복제본이 원본의 이름을 물려받으면 그
-    # 복제를 공식으로 지정했을 때 기준 주차가 달라진다.
+    # 복제를 공식으로 지정했을 때 기준 주차가 달라진다. 비워 둔다는 것과 그 까닭도 폼 위에 적는다.
     st.caption(clone_target_caption())
+    st.caption(CLONE_SOURCE_NOTE)
     # 칸 key 의 세대가 저장 쓰기의 세대이기도 하다(`write_once_value`).
     create_generation = generation(CLONE_FORM_GENERATION_KEY)
     with st.form("scenario_create_form"):
