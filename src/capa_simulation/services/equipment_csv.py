@@ -859,6 +859,18 @@ def _key_value(value: object) -> object:
     return value.strip() if isinstance(value, str) else value
 
 
+# 미리보기 표의 대체 줄에 바뀐 칸이 없을 때 「변경컬럼」·「변경내용」 에 적는 글.
+IMPORT_UNCHANGED = "변경 없음"
+
+
+def import_preview_changed_rows(changes: pd.DataFrame) -> pd.Series:
+    """미리보기 표(`build_*_import_preview`)에서 넣으면 실제로 바뀌는 줄 — 신규와 바뀐 칸이 있는
+    대체. 내려받은 「현재 데이터」 를 그대로 다시 올린 대체 줄은 들지 않는다."""
+    if changes.empty:
+        return pd.Series(False, index=changes.index, dtype=bool)
+    return changes["Import구분"].eq("신규") | changes["변경컬럼"].ne(IMPORT_UNCHANGED)
+
+
 def _build_import_preview(
     current: pd.DataFrame,
     incoming: pd.DataFrame,
@@ -898,7 +910,7 @@ def _build_import_preview(
             for column in shown.columns
             if column not in keys and not _same_value(previous.get(column), incoming_row[column])
         ]
-        changed_columns.append(", ".join(changes) if changes else "변경 없음")
+        changed_columns.append(", ".join(changes) if changes else IMPORT_UNCHANGED)
         change_details.append(
             "; ".join(
                 f"{column}: {_format_value(previous.get(column))} → "
@@ -906,7 +918,7 @@ def _build_import_preview(
                 for column in changes
             )
             if changes
-            else "변경 없음"
+            else IMPORT_UNCHANGED
         )
     # **인덱스를 먼저 버린다.** 아래 세 목록은 행 순서대로 쌓았는데, `insert` 는 Series 를
     # **인덱스로 맞춰** 넣는다. `incoming` 의 인덱스가 0 부터가 아니면(필터로 고른 행, 이어

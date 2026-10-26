@@ -7,8 +7,9 @@
   한
   칸이라 한 실행에 팝업 하나)이고 여는 콜백은 `forget_page_dialogs()` 부터 부른다.
 - **안은 옛 입력 탭 그대로**: 등록할 표(기본 설비 마스터) · Excel 표 붙여넣기 · CSV 업로드(50MB) ·
-  「변경 미리보기」 · 미리보기(두 쪽 한 줄 · 알림 · 주의 · 신규/기존 대체 수 · 변경 표 · 저장 후 행
-  수).
+  「변경 미리보기」 · 미리보기(두 쪽 한 줄 · 알림 · 주의 · 신규/기존 대체/변경 없음 수 · 변경 표 ·
+  저장 후 행 수). 「바뀔 행」·「기존 대체」 는 넣으면 실제로 바뀌는 줄만 센다(같은 값 그대로인 대체
+  줄은 「변경 없음」).
   붙여넣은 열만 바꾸는 규칙·옛 머리 이름·대소문자 경고·낡은 세션 거절·가정 세션 「배치 칸도
   붙여넣기」(기본 끔 — 설비 시나리오 2단계 Q2)·새 방문 때 미리보기 거두기는 그대로다.
 - **끝 단추는 「편집본에 넣기」 하나**(D7, 사용자 R4) — 저장은 「저장 전 변경」 한 곳이다. 넣으면
@@ -76,6 +77,7 @@ from capa_simulation.page_bootstrap import (
     forget_page_dialogs,
     page_visit,
 )
+from capa_simulation.services.equipment_csv import import_preview_changed_rows
 from capa_simulation.services.equipment_grid import (
     GridState,
     grid_index,
@@ -152,7 +154,16 @@ def withdraw_preview_on_new_visit() -> None:
 
 
 def _render_review(review: ImportReview) -> None:
-    st.markdown(f"**{review.target} · 바뀔 행 {len(review.changes):,}행**")
+    # 바뀔 행은 넣으면 실제로 바뀌는 줄만 센다 — 내려받은 「현재 데이터」 를 그대로 올리면 「바뀌는
+    # 값 없음 · 바뀔 행 0행」 이다(내려받기 캡션 「그대로 붙여넣어도 통과합니다」 와 어긋나지 않게).
+    changed = import_preview_changed_rows(review.changes)
+    count = int(changed.sum())
+    new_rows = int(review.changes["Import구분"].eq("신규").sum())
+    unchanged = len(review.changes) - count
+    head = f"{review.target} · 바뀔 행 {count:,}행"
+    if not count:
+        head = f"{review.target} · 바뀌는 값 없음 · 바뀔 행 0행"
+    st.markdown(f"**{head}**")
     split = paste_split_summary(review.source, review.candidate)
     if split is not None:
         st.caption(f":material/call_split: {split}")
@@ -161,8 +172,10 @@ def _render_review(review: ImportReview) -> None:
     for message in review.cautions:
         st.warning(markdown_safe_tildes(message), icon=":material/ink_eraser:")
     with st.container(horizontal=True):
-        st.metric("신규", f"{int(review.changes['Import구분'].eq('신규').sum()):,}건")
-        st.metric("기존 대체", f"{int(review.changes['Import구분'].eq('대체').sum()):,}건")
+        st.metric("신규", f"{new_rows:,}건")
+        st.metric("기존 대체", f"{count - new_rows:,}건")
+        if unchanged:
+            st.metric("변경 없음", f"{unchanged:,}건")
     st.dataframe(review.changes, hide_index=True, width="stretch")
     st.caption(
         f"넣은 뒤 편집본: 기존 보유대수 {len(review.candidate[0]):,}행 · "
