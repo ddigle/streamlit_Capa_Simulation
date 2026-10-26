@@ -158,6 +158,20 @@ def test_the_inspector_keeps_its_size_whatever_is_selected() -> None:
     assert re.search(r"flex: 1 1 \d+em", title) and "text-overflow: ellipsis" in title
 
 
+def test_the_inspector_wraps_inside_its_panel_on_a_narrow_window() -> None:
+    """390px 창에서 층 배치 편집을 켜면 층 보내기 칸(이름·보낼 층·보내기, 숨은 「범위에 맞춰
+    n등분」·「Main 설비명」)이 한 줄로 553px 을 차지해 선택 칸 밖으로 넘치고 본문이 596px 로
+    넓어졌다(2026-10-26 E2E). 겹친 칸은 선택 칸 폭을 넘지 않고, 층 보내기 칸은 그 안에서 줄을
+    바꾼다."""
+    ext = _rule(".sle-inspector-ext, .sle-markprops-kind")
+    assert "display: inline-grid" in ext and "max-width: 100%" in ext
+    sendto = _rule(".sle-sendto")
+    assert "flex-wrap: wrap" in sendto
+    # 다른 번갈아 보이는 칸(도면 요소·영역·층 블록 속성)은 이미 줄을 바꾼다.
+    for selector in (".sle-markprops", ".sle-zone-props", ".sle-block-props"):
+        assert "flex-wrap: wrap" in _rule(selector), selector
+
+
 def test_only_a_floor_block_in_the_fab_viewer_opens_a_floor() -> None:
     """누르면 열리는 것은 보기 전용 FAB 의 층 블록뿐이다. 끌었으면 열지 않고, 키보드(Enter·
     Space)로도 연다. 영역·글자는 꾸밈이라 눌림을 받지 않는다. 층 블록은 FAB 범위에서만 그린다."""
