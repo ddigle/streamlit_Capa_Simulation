@@ -382,10 +382,11 @@ def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status(
 
     assert _usage(plain) == []
     assert _usage(app) == [
-        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대(설비 마스터 기준)는 가용대수에서 "
-        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+        ":material/filter_alt_off: 사용기준이 HBM·EDP 가 아닌 1대(설비 마스터 기준)는 "
+        "총대수·가용대수·비가동대수 모두에서 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     ]
-    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다.
+    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다 — 줄이 「총대수 … 모두에서」 라고
+    # 적는 까닭.
     summary = [item.value for item in app.caption if item.value.startswith("마지막 주")]
     assert summary == [item.value for item in plain.caption if item.value.startswith("마지막 주")]
 

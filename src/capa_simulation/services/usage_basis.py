@@ -97,17 +97,22 @@ def usage_exclusion_notice(
     *,
     processes: Collection[str] | None = None,
     unit_ids: Collection[str] | None = None,
+    totals: bool = False,
 ) -> str | None:
     """「사용기준이 HBM·EDP 가 아닌 N대(설비 마스터 기준)는 가용대수에서 뺐습니다 — …」 한 줄.
 
-    0대면 `None`(그리지 않는다).
+    0대면 `None`(그리지 않는다). `totals` 는 바로 위에 총대수·비가동대수를 함께 적는 자리(가용설비
+    현황 Main)다 — 그 대수도 이 N대를 빼고 센다(`build_weekly_equipment_availability`). 「총 19대 ·
+    가용 19대」 바로 밑에 「가용대수에서 뺐습니다」 만 붙으면 총대수에는 드는 것처럼 읽혀 두 수가
+    어긋나 보였다(E2E).
     """
     count = usage_excluded_count(excluded, processes=processes, unit_ids=unit_ids)
     if count <= 0:
         return None
+    where = "총대수·가용대수·비가동대수 모두에서" if totals else "가용대수에서"
     return (
         f"사용기준이 {_COUNTED_BASIS_TEXT} 가 아닌 {format_unit_count(count)}대"
-        "(설비 마스터 기준)는 가용대수에서 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+        "(설비 마스터 기준)는 " + where + " 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     )
 
 

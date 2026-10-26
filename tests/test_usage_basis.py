@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -361,6 +362,25 @@ def test_the_exclusion_notice_counts_units_and_disappears_at_zero() -> None:
     )
     assert usage_exclusion_notice(excluded, unit_ids={"HBM-1"}) is None
     assert usage_exclusion_notice(usage_excluded_equipment(_master(_unit("HBM-1", "HBM")))) is None
+
+
+def test_the_main_notice_says_the_excluded_units_are_out_of_the_total_too() -> None:
+    """가용설비 현황 Main 은 「총 19대 · 가용 19대」 바로 밑에 이 줄을 붙인다 — 「가용대수에서
+    뺐습니다」 만 있으면 총대수에는 드는 것처럼 읽혀 두 수가 어긋나 보였다(E2E). 주차별 집계는 그
+    호기를 총·가용·비가동 모두에서 빼므로(`build_weekly_equipment_availability`) Main 의 줄은
+    셋 모두라고 적는다."""
+    equipment = _master(_unit("HBM-1", "HBM"), _unit("OTH-1", "범용"))
+    excluded = usage_excluded_equipment(equipment)
+
+    assert usage_exclusion_notice(excluded, totals=True) == (
+        "사용기준이 HBM·EDP 가 아닌 1대(설비 마스터 기준)는 총대수·가용대수·비가동대수 모두에서 "
+        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+    )
+    row = _weekly(equipment)
+    assert (row["총대수"], row["가용대수"], row["비가동대수"]) == (1.0, 1.0, 0.0)
+    explorer = Path(__file__).parents[1] / "src/capa_simulation/components/equipment_explorer.py"
+    source = explorer.read_text(encoding="utf-8")
+    assert "usage_exclusion_notice(excluded, unit_ids=unit_ids, totals=True)" in source
 
 
 def test_the_sample_fleet_is_mostly_hbm_with_a_few_exclusions() -> None:
