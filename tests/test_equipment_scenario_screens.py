@@ -956,6 +956,11 @@ def test_a_home_visit_to_the_detail_stays_official_and_locks_the_row(
     # 풍선이 없다 — ◀▶ 뒤에는 출처 띠가 걷혀 이 줄이 기준을 알리는 자리다).
     assert field.label == "운영 일정 · r1 (고정)"
     assert any(HOME_VISIT_LOCK_REASON in str(item.value) for item in app.sidebar.caption)
+    # 까닭 글은 푸는 법도 말한다 — 아래에서 보듯 탭을 닫고 다시 열면 세션 설비 시나리오를 따른다.
+    assert any(
+        "위 탭 줄에서 이 화면 탭을 닫고 다시 여세요." in str(item.value)
+        for item in app.sidebar.caption
+    )
 
     _ok(app.run())
     field = _field(app)
