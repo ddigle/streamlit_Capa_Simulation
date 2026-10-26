@@ -805,6 +805,40 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_ta
     )
 
 
+def test_an_asterisk_scenario_name_stays_literal_in_every_markdown_spot_of_the_tab(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """설비 시나리오 이름 「E2E*가정*A」 — 낡은 세션 경고·배치 잠금 줄·비가동 「선택 행 삭제」
+    풍선이 별표를 `\\*` 로 막는다. 물결표만 막아 「E2E<em>가정</em>A」 로 기울고 별표가
+    사라졌다(2026-10-26 E2E r5 — 이 글들은 표(JS)의 평문 잠금 글에도 가서 그리는 자리에서
+    막는다)."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository, "E2E*가정*A").equipment_scenario_id
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app = _page(repository, setup, pinned)
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    _ok(app.run())
+
+    escaped = "E2E\\*가정\\*A"
+    helps = [str(button.help) for button in app.button if button.help]
+    texts = [
+        *_texts(app, "markdown"),
+        *_texts(app, "caption"),
+        *_texts(app, "warning"),
+        *helps,
+    ]
+    named = [text for text in texts if "가정" in text and "E2E" in text]
+    assert named
+    assert all(escaped in text for text in named), named
+    assert any("가 더 새롭습니다" in text and escaped in text for text in _texts(app, "warning"))
+    assert any("다른 배치가 저장됐습니다" in text and escaped in text for text in named), named
+    assert any("지울 수 없습니다" in text and escaped in text for text in helps), helps
+
+
 @pytest.mark.parametrize(
     ("target", "text", "shown"),
     [

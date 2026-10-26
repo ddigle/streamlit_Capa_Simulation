@@ -285,6 +285,9 @@ class SpaceEditMode:
 
 
 def _quoted(name: str | None) -> str:
+    """잠금·빨리 감기·세션 알림 글에 끼우는 날 이름 — 그 글은 설비 마스터 표(JS)·배치 편집기의 평문
+    자리에도 가서 짓는 곳에서 막지 않는다. 마크다운 자리는 그리는 자리에서 글 통째로
+    `literal_markdown`(앱 꾸밈이 없는 글이다 — 물결표만 막으면 이름의 `*` 가 기울임이 된다)."""
     return f"「{name}」" if name else "이 설비 시나리오"
 
 

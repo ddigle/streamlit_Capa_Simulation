@@ -38,6 +38,7 @@ from capa_simulation.components.equipment_scenario_management import (
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
     PUBLISH_BUTTON_KEY,
+    RESTORE_BUTTON_KEY,
     REVISION_KEY,
     SCENARIO_KEY,
     branch_layout_sentence,
@@ -52,6 +53,7 @@ from capa_simulation.components.equipment_scenario_management import (
     revision_rows,
     stored_layout_words,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import (
@@ -205,6 +207,80 @@ def test_an_old_revisions_publish_block_names_only_real_differences_and_working_
     assert blocked and "공식과 다른 배치" not in newest_same[0]
     assert "최신 r5에 저장된 배치 차이 2행(지금 공식과 같음)이 남아 있어" in newest_same[0]
     assert "최신 r5를 발행하세요" in newest_same[0]
+
+
+def test_an_old_revisions_publish_block_skips_a_restore_that_would_write_nothing() -> None:
+    """E2E r5 — 「이 리비전으로 되돌리기」 가 쓸 것이 없으면(최신이 그 리비전의 일정·비가동
+    그대로 — 가정이면 가정 배치까지, `restore_writes_nothing`) 막힘 글은 그 단추를 안내하지
+    않는다. 그 팝오버에는 단추가 없어 막다른 길이었다. 갈 수 있는 길만 적는다 — 최신이 이미
+    공식이면 따로 발행할 것이 없고, 아니면 최신 발행, 가정 시나리오에 공식과 다른 배치가 남았으면
+    최신을 비운 뒤 발행."""
+    scenario = _scenario()
+    # 옛 r2 의 남은 행은 지금 공식과 같고 일정은 최신 r5 그대로, r5 는 이미 공식 발행이다.
+    released, blocked = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(
+            action="blocked", stored_units=1, is_newest=False, restore_same_schedule=True
+        ),
+        official=True,
+        newest_released=True,
+    )
+    assert blocked
+    assert "r2에 저장된 배치 차이 1행은 지금 공식과 같아졌지만" in released[0]
+    assert "「이 리비전으로 되돌리기」" not in released[0]
+    assert (
+        "최신 r5 의 일정·비가동이 r2 그대로라 되돌릴 것이 없고, 최신 r5는 이미 공식 발행입니다 "
+        "— 따로 발행할 것이 없습니다." in released[0]
+    ), released
+    # 최신 r5 가 아직 공식이 아니면 최신을 발행한다.
+    unreleased, _ = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(
+            action="blocked", stored_units=1, is_newest=False, restore_same_schedule=True
+        ),
+        official=True,
+    )
+    assert "「이 리비전으로 되돌리기」" not in unreleased[0]
+    assert "되돌릴 것이 없습니다 — 최신 r5를 발행하세요." in unreleased[0], unreleased
+    # 가정 시나리오는 가정 배치까지 같아야 쓸 것이 없다 — 배치가 다르면 되돌리기를 그대로 안내한다.
+    moved, _ = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(
+            action="blocked", stored_units=1, is_newest=False, restore_same_schedule=True
+        ),
+    )
+    assert "「이 리비전으로 되돌리기」" in moved[0]
+    # 옛 r2 에 공식과 다른 배치가 있고 최신 r5 가 같은 일정·가정 배치다 — 최신을 비운 뒤 발행.
+    real, _ = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(
+            action="blocked",
+            stored_units=1,
+            is_newest=False,
+            units=1,
+            newest_units=1,
+            restore_same_schedule=True,
+            restore_same_layout=True,
+        ),
+    )
+    assert "「이 리비전으로 되돌리기」" not in real[0]
+    assert (
+        "최신 r5 의 일정·비가동·가정 배치가 r2 그대로라 되돌릴 것이 없습니다 — 최신의 배치 차이를 "
+        "「배치 차이 모두 지우기」 로 지우고 발행하세요." in real[0]
+    ), real
+    # 일정이 다르면(되돌리기가 새 최신을 쓴다) 지금처럼 되돌리기를 안내한다.
+    differs, _ = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(action="blocked", stored_units=1, is_newest=False),
+        official=True,
+        newest_released=True,
+    )
+    assert "r2를 고르고 「이 리비전으로 되돌리기」 로 새 최신을 만든 뒤" in differs[0]
 
 
 def test_a_deleted_units_difference_is_not_called_one_that_caught_up_with_the_official() -> None:
@@ -390,6 +466,39 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
     assert any("공식과 다른 배치(실효 호기 1대 — 저장된 차이 1행)가 있어" in t for t in _texts(app))
 
 
+def test_an_old_revisions_publish_block_points_only_at_ways_the_section_offers(
+    tmp_path: Path,
+) -> None:
+    """E2E r5 — 「셋업 실무」 r2 의 차이를 공식도 같은 자리로 옮긴 뒤 r2 를 발행해 정리 리비전 r3 이
+    공식이 됐다. 옛 r2 를 고르면 「공식으로 발행」 은 막히고, 「이 리비전으로 되돌리기」 팝오버는
+    되돌릴 것이 없다며 단추를 세우지 않는다 — 막힘 글은 그 되돌리기를 안내하지 않는다."""
+    repository, setup, old = _moved_setup(tmp_path)
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.publish_equipment_release(
+        old, released_by=None, note=None, expected_latest_release_no=release.release_no
+    )
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+    app.selectbox(key=REVISION_KEY).set_value(old)
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert any("최신 r3 의 일정·비가동과 모두 같아 되돌릴 것이 없습니다." in t for t in texts)
+    assert not any(button.key == RESTORE_BUTTON_KEY for button in app.button)
+    publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
+    assert publish.disabled
+    (blocked,) = [str(item.value) for item in app.error if "발행하지 않습니다" in str(item.value)]
+    assert "「이 리비전으로 되돌리기」" not in blocked, blocked
+    assert "최신 r3 의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in blocked, blocked
+    assert "따로 발행할 것이 없습니다" in blocked, blocked
+
+
 def test_the_section_caption_names_the_assumption_layout_as_held_per_scenario(
     tmp_path: Path,
 ) -> None:
@@ -434,7 +543,8 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
     app = _ok(_section(tmp_path, setup).run())
 
     warnings = [str(item.value) for item in app.warning]
-    assert notice.replace("~", "\\~") in warnings, warnings
+    # 세션 알림은 표(평문)에도 가는 글이라 그리는 자리에서 글 통째로 막는다(E2E r5 — `*` 까지).
+    assert literal_markdown(notice) in warnings, warnings
     assert notice not in warnings
 
 

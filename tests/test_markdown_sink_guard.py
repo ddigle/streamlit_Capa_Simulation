@@ -23,8 +23,10 @@
   `{quoted(name)}`.
 
 평문 자리(표 칸·JS 격자·편집기·조사 고르기)로도 가는 글은 짓는 곳에서 막으면 `\\~` 가 글자로
-보인다. 그런 글은 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서
-`markdown_safe_tildes` 로 막는다(화면 그물 `tests/test_tilde_names_pages.py`).
+보인다. 그런 글은 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서 막는다
+(화면 그물 `tests/test_tilde_names_pages.py`). 평문 자리에서 `**` 가 글자로 보이므로 그런 글에는
+앱 꾸밈이 없다 — 설비 쪽 글은 글 통째로 `literal_markdown` 으로 막는다(`markdown_safe_tildes` 는
+물결표만 막아 이름의 `*` 가 기울임이 된다 — 2026-10-26 E2E r5).
 
 **이 그물이 보지 못하는 것** — 예외의 속성(`exc.reason`), 서비스 계층이 예외를 받아 지어 돌려준
 글(`CapacityOutcome.error`), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`), 이름을 담은 변수를 거쳐
@@ -127,29 +129,29 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "설비 마스터 표(JS) 토스트 — 평문으로 그린다"
     ),
     ("src/capa_simulation/components/equipment_data_workspace.py", "_stale_lock_message"): (
-        "설비 마스터 표(JS) 잠금 풍선에도 간다 — 경고 상자는 그리는 자리에서 markdown_safe_tildes"
+        "설비 마스터 표(JS) 잠금 풍선에도 간다 — 경고 상자는 그리는 자리에서 글 통째로 "
+        "literal_markdown(앱 꾸밈이 없는 글 — 물결표만 막으면 이름의 * 가 기울임, E2E r5)"
     ),
     ("src/capa_simulation/components/equipment_data_workspace.py", "stale_delete_lock"): (
-        "설비 마스터 표(JS) 삭제 잠금 글에도 간다 — 단추 풍선은 그리는 자리에서 "
-        "markdown_safe_tildes"
+        "설비 마스터 표(JS) 삭제 잠금 글에도 간다 — 단추 풍선은 그리는 자리에서 글 통째로 "
+        "literal_markdown"
     ),
     ("src/capa_simulation/equipment_scenario_activation.py", "_quoted"): (
         "잠금 글·세션 알림 — 설비 마스터 표(JS)·배치 편집기에도 간다. 마크다운 자리(Space 잠금 줄·"
-        "풍선·세션 알림 상자)는 그리는 자리에서 markdown_safe_tildes"
+        "풍선·빨리 감기 줄·새 호기 잠금 줄·설비 마스터 탭 잠금 줄·붙여넣기 거절 글)는 그리는 "
+        "자리에서 글 통째로 literal_markdown"
     ),
     ("src/capa_simulation/equipment_scenario_activation.py", "unmerged_trace_notice"): (
-        "세션 알림 — 설비 마스터 표(JS) 잠금 글에도 간다. 알림 상자는 그리는 자리에서 막는다"
+        "세션 알림 — 설비 마스터 표(JS) 잠금 글에도 간다. 알림 상자는 그리는 자리에서 글 통째로 "
+        "literal_markdown"
     ),
     ("src/capa_simulation/equipment_scenario_activation.py", "_move_after_incompatible"): (
-        "세션 알림 — 설비 마스터 표(JS) 잠금 글에도 간다. 알림 상자는 그리는 자리에서 막는다"
+        "세션 알림 — 설비 마스터 표(JS) 잠금 글에도 간다. 알림 상자는 그리는 자리에서 글 통째로 "
+        "literal_markdown"
     ),
     ("app_pages/space_status.py", "_session_place"): (
-        "Space 팝오버 설명·알림 글 조각 — 그리는 자리(캡션·_queue_space_flash)에서 "
-        "markdown_safe_tildes"
-    ),
-    ("app_pages/space_status.py", "_scenario_place"): (
-        "Space 저장 안내·알림 글 조각 — 그리는 자리(캡션·_queue_space_flash)에서 "
-        "markdown_safe_tildes"
+        "Space 팝오버 설명 글 조각 — 이름은 equipment_value_label 이 이미 literal_markdown 으로 "
+        "막았다(그 함수 이름을 그물이 모른다). 그리는 자리(캡션)는 markdown_safe_tildes"
     ),
 }
 

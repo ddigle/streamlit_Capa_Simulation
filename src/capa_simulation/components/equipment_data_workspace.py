@@ -1471,7 +1471,7 @@ def layout_paste_refusal(
         what = f"{moves} 바꿉니다"
     else:
         what = f"{places} 넣습니다"
-    why = f" — {reason}" if reason else ""
+    why = f" — {literal_markdown(reason)}" if reason else ""
     head = f"붙여넣기가 {what} — 배치 편집이 잠겨 있어 미리보지 않았습니다{why}"
     if names:
         head += " 있던 호기의 배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요."
@@ -2754,7 +2754,7 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
             key=f"equipment_{slug}_delete_selected_v1",
             icon=":material/delete:",
             disabled=delete_locked is not None,
-            help=markdown_safe_tildes(delete_locked) if delete_locked is not None else None,
+            help=literal_markdown(delete_locked) if delete_locked is not None else None,
         )
     if matching:
         return SELECT_MATCHING
@@ -2890,7 +2890,8 @@ PASTE_LAYOUT_HELP = (
 
 
 def _stale_lock_message(basis: EquipmentSaveBasis) -> str:
-    """낡은 세션의 잠금 알림 — 무엇이 잠겼고 어떻게 풀리는지."""
+    """낡은 세션의 잠금 알림 — 무엇이 잠겼고 어떻게 풀리는지. 설비 마스터 표(JS) 잠금 글(평문)에도
+    가는 날 이름 글이라, 경고 상자는 그리는 자리에서 글 통째로 `literal_markdown` 한다."""
     latest = f"r{basis.latest_revision_no}" if basis.latest_revision_no is not None else "최신"
     return (
         f"「{basis.scenario_name}」 {latest}{subject_particle(latest)} 더 새롭습니다 — 지금 보는 "

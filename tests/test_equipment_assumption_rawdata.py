@@ -47,6 +47,7 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_master_tab import SAVE_BUTTON_KEY, SIDE_CHANGES, SIDE_KEY
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.equipment_scenario_activation import (
     SELECTION_KEY,
     EquipmentSession,
@@ -275,6 +276,28 @@ def test_the_locked_paste_refusal_is_the_one_lock_text_left(tmp_path: Path) -> N
     )
     assert not hasattr(workspace, "layout_lock_refusal")
     assert "편집본에 반영했습니다" not in inspect.getsource(workspace)
+
+
+def test_the_locked_paste_refusal_blocks_the_scenario_name_in_its_lock_reason(
+    tmp_path: Path,
+) -> None:
+    """거절 글에 담는 잠금 까닭(`space_edit_mode` 잠금 글 — 평문 표에도 가는 날 이름 글)은 막아
+    담는다 — 거절 글은 예외 글로 가 물결표만 막혀(`bootstrap_error_message`) 「가정*R6*B」 의 별표가
+    기울임이 됐다(E2E r5). 막은 물결표는 다시 막히지 않는다."""
+    repository = _seeded(tmp_path)
+    current = _session(repository)
+    frames = (current.baseline, current.equipment, current.downtime)
+    master = _with_unit(current.equipment, "EQ-NEW", 70.0, 층="2F")
+    review = ImportReview(
+        "설비 마스터", "붙여넣기", frames, (frames[0], master, frames[2]), pd.DataFrame()
+    )
+    reason = "「가정*R6~B~」 r3 에 다른 배치가 저장됐습니다"
+
+    refusal = layout_paste_refusal(review, saved=current.equipment, renames={}, reason=reason)
+
+    assert refusal is not None
+    assert "— 「가정\\*R6\\~B\\~」 r3 에 다른 배치가 저장됐습니다" in refusal
+    assert markdown_safe_tildes(refusal) == refusal
 
 
 def test_the_lock_aligns_new_modules_and_undecided_units_to_their_groups_official_floor() -> None:

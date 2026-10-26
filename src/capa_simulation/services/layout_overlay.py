@@ -38,7 +38,11 @@ from capa_simulation.services.equipment_contract import (
 )
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, FloorKey
-from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
+from capa_simulation.services.korean_particle import (
+    with_object_particle,
+    with_subject_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     module_group_rows,
@@ -1075,7 +1079,11 @@ class PublishBlock:
     (`newest_revision_no`)의 저장된 차이 행 수(원시)와 지금 공식으로 정규화한 실효 수(호기는 설비
     단위). `official` 은 그 시나리오가 지금 공식 설비 시나리오인가다(되돌리면 차이를 버린다 —
     I2). `orphan_rows`·`newest_orphan_rows` 는 저장된 행 가운데 공통 대장에서 지운 호기의 행 수다 —
-    그 행은 「공식과 같아진」 행이 아니라 버린 행이다(설계 5-1)."""
+    그 행은 「공식과 같아진」 행이 아니라 버린 행이다(설계 5-1). `restore_writes_nothing` 은 옛
+    리비전(`revision_no`)으로 「이 리비전으로 되돌리기」 가 쓸 것이 없는가(되돌리기 쓰기와 같은
+    판정 `equipment_scenario.restore_writes_nothing` — 그 팝오버는 단추를 세우지 않는다),
+    `newest_released` 는 그 시나리오 최신이 지금 최신 공식 발행인가다(E2E r5 — 막힘 글이 단추가
+    없는 되돌리기를 안내하지 않게)."""
 
     scenario_name: str
     revision_no: int
@@ -1087,6 +1095,8 @@ class PublishBlock:
     official: bool = False
     orphan_rows: int = 0
     newest_orphan_rows: int = 0
+    restore_writes_nothing: bool = False
+    newest_released: bool = False
 
     @property
     def is_newest(self) -> bool:
@@ -1118,13 +1128,34 @@ def settled_layout_reason(rows: int, orphans: int, *, ending: Literal["습니다
     return f"{head}공통 대장에서 지운 호기의 {'것입니다' if ending == '습니다' else '것이지만'}"
 
 
+def _restore_dead_end(block: PublishBlock, title: str, latest: str, *, clear_first: bool) -> str:
+    """옛 리비전으로 「이 리비전으로 되돌리기」 가 쓸 것이 없을 때(`block.restore_writes_nothing` —
+    최신이 그 리비전의 일정·비가동 그대로, 가정이면 가정 배치까지) 되돌리기 대신 갈 길. 그 팝오버는
+    단추를 세우지 않는다(E2E r5 — 막힘 글이 막다른 길을 안내했다). 최신이 이미 공식이면 따로 발행할
+    것이 없고, 아니면 최신 발행 — `clear_first` 면(가정 시나리오 최신에 같은 공식과 다른 배치가
+    남음) 최신을 비운 뒤."""
+    same = with_subject_particle("일정·비가동" if block.official else "일정·비가동·가정 배치")
+    nothing = f"최신 {latest} 의 {same} {title} 그대로라 되돌릴 것이 없"
+    if block.newest_released:
+        return (
+            f"{nothing}고, 최신 {with_topic_particle(latest)} 이미 공식 발행입니다 — 따로 발행할 "
+            "것이 없습니다."
+        )
+    if clear_first:
+        return (
+            f"{nothing}습니다 — 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 발행하세요."
+        )
+    return f"{nothing}습니다 — 최신 {with_object_particle(latest)} 발행하세요."
+
+
 def layout_publish_blocked_words(block: PublishBlock) -> str:
     """공식 발행 막힘 글 한 곳(확인 팝업 `publish_layout_lines`·발행 쓰기 거부
     `EquipmentLayoutPublishBlocked`). I2(공식 설비 시나리오의 최신·최신 발행 리비전은 배치 차이 행이
     0)가 막는 까닭이 셋이라 글도 셋이다 — 고른 리비전에 공식과 다른 배치가 있거나, 옛 리비전에 남은
     행이 지금 공식과 같아졌지만 정리 발행은 최신만이거나, 고른 리비전에는 없지만 최신에 행이 남았다.
     「실효」 는 실제로 공식과 다를 때만 적고, 빠져나갈 길은 그 경우에 서는 단추만 안내한다(옛
-    리비전은 「배치 차이 모두 지우기」 로 풀리지 않는다 — 최신만 비운다)."""
+    리비전은 「배치 차이 모두 지우기」 로 풀리지 않는다 — 최신만 비운다. 되돌리기가 쓸 것이 없으면
+    그 단추가 서지 않아 되돌리기를 안내하지 않는다 — `_restore_dead_end`)."""
     name = block.scenario_name
     title = f"r{block.revision_no}"
     latest = f"r{block.newest_revision_no}"
@@ -1150,9 +1181,14 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
             if block.official
             else " 그 최신의 배치 차이를 「배치 차이 모두 지우기」 로 지우고 발행하세요."
         )
+        way = (
+            _restore_dead_end(block, title, latest, clear_first=not block.official)
+            if block.restore_writes_nothing
+            else restore + finish
+        )
         return (
             head + f" {with_topic_particle(title)} 최신({latest})이 아니라 「배치 차이 모두 "
-            "지우기」(최신만 비웁니다)로는 풀리지 않습니다 — " + restore + finish + keep
+            "지우기」(최신만 비웁니다)로는 풀리지 않습니다 — " + way + keep
         )
     if block.stored_rows:
         # 지운 호기의 행은 「공식과 같아진」 행이 아니다 — 따로 말한다(E2E r3).
@@ -1162,12 +1198,16 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
             if block.orphan_rows
             else "공식과 같아진 차이"
         )
+        way = (
+            _restore_dead_end(block, title, latest, clear_first=False)
+            if block.restore_writes_nothing
+            else restore
+            + f" 그 최신을 발행하세요(되돌리기는 {with_object_particle(dropped)} 빼고 씁니다)."
+        )
         return (
             f"「{name}」 {title}에 저장된 배치 차이 {block.stored_rows:,}행은 {reason}, "
             f"최신({latest})이 아닌 리비전은 정리해 발행하지 않습니다(정리 발행은 최신 "
-            "리비전만 — 공식 설비 시나리오의 리비전에는 배치 차이 행이 남지 않아야 합니다). "
-            + restore
-            + f" 그 최신을 발행하세요(되돌리기는 {with_object_particle(dropped)} 빼고 씁니다)."
+            "리비전만 — 공식 설비 시나리오의 리비전에는 배치 차이 행이 남지 않아야 합니다). " + way
         )
     newest = layout_counts_words(*block.newest_effective)
     if newest:

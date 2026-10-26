@@ -52,6 +52,7 @@ from capa_simulation.services.layout_overlay import (
     MarkChange,
     effective_floor_marks,
     effective_group_labels,
+    layout_publish_blocked_words,
     place_of,
 )
 
@@ -855,6 +856,58 @@ def _latest_common(repository: DuckDBEquipmentRepository) -> str:
     latest = repository.latest_revision_id()
     assert latest is not None
     return latest
+
+
+def test_an_old_revision_whose_restore_writes_nothing_is_not_sent_to_restore(
+    tmp_path: Path,
+) -> None:
+    """E2E r5 — 정리 발행(r3) 뒤 옛 r2(공식과 같아진 차이 1행, 일정은 r3 과 같음)의 발행 막힘 글이
+    「이 리비전으로 되돌리기」 로 새 최신을 만들라 했지만, 되돌리기는 쓸 것이 없어(그 팝오버는
+    「되돌릴 것이 없습니다」) 막다른 길이었다. 판정은 되돌리기 쓰기와 같은 `restore_writes_nothing`
+    이고, 확인 팝업 재료와 발행 쓰기 거부가 같은 글을 낸다 — 최신이 이미 공식이면 따로 발행할 것이
+    없다고 말한다."""
+    repository = _seeded(tmp_path)
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    saved = repository.save_equipment(_request(session, scenario_id, equipment=_moved(session)))
+    assert saved.schedule is not None
+    old = saved.schedule.schedule_revision_id
+    official = _session(repository)
+    repository.save_equipment(_request(official, equipment=_moved(official)))
+    release = repository.latest_equipment_release()
+    assert release is not None
+    published = repository.publish_equipment_release(
+        old, released_by=None, note=None, expected_latest_release_no=release.release_no
+    )
+    newest = _scenario(repository, scenario_id)
+    assert newest.latest_schedule_revision_id == published.schedule_revision_id
+    common = _latest_common(repository)
+
+    restore = repository.preview_schedule_restore(
+        old,
+        common_revision_id=common,
+        current_schedule_revision_id=newest.latest_schedule_revision_id,
+    )
+    assert restore_writes_nothing(restore, official_scenario=True)
+    preview = repository.preview_layout_publish(
+        old,
+        common_revision_id=common,
+        newest_schedule_revision_id=newest.latest_schedule_revision_id,
+    )
+    assert (preview.action, preview.is_newest, preview.stored_units) == ("blocked", False, 1)
+    assert (preview.restore_same_schedule, preview.restore_same_layout) == (True, True)
+    words = layout_publish_blocked_words(
+        preview.block(newest.scenario_name, 2, 3, official=True, newest_released=True)
+    )
+    assert "「이 리비전으로 되돌리기」" not in words
+    assert "최신 r3 의 일정·비가동이 r2 그대로라 되돌릴 것이 없고" in words
+    assert "따로 발행할 것이 없습니다" in words
+
+    with pytest.raises(EquipmentLayoutPublishBlocked) as refused:
+        repository.publish_equipment_release(
+            old, released_by=None, note=None, expected_latest_release_no=published.release_no
+        )
+    assert str(refused.value) == words
 
 
 def test_the_publish_preview_reads_the_same_judgment_as_publishing(tmp_path: Path) -> None:

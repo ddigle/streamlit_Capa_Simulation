@@ -420,7 +420,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     편집기·「그대로인가」 판정·층 대조 기준 지문·저장 안 한 상자의 겹침 경고(공식 현행값 직접 읽기 0 — 시험이 소스를
     훑는다). 머리 알림은 **그리는 스냅샷**으로 정한다(`space_layout_notices` — 「가정 배치 · 공식과 다른 호기 n대 · 도면 요소
     m개 · Main 설비명 위치 k개」, 차이 없는 가정은 「배치는 공식과 같습니다」 캡션, 공식 시나리오의 가정이던 때 리비전도
-    알림, 묶음 다시 맞춤·버린 차이 둘째 줄). 그 시나리오에 일정이 없는 호기는 그리지 않는다(`unscheduled_notice` — 공식 발행
+    알림 — 실효 차이가 있으면 「이 리비전은 공식과 다른 배치(…)를 담고 있습니다」 info, 저장된 차이가 모두 지금 공식과 같으면
+    「이 리비전에 저장된 배치 차이(…)는 지금 공식과 같습니다」 캡션 하나. 옛 리비전은 불변이고 정리는 최신에서 하므로 그 줄에는
+    「다음 저장·발행 때 정리됩니다」 꼬리를 달지 않는다(E2E r5), 묶음 다시 맞춤·버린 차이 둘째 줄). 그 시나리오에 일정이 없는 호기는 그리지 않는다(`unscheduled_notice` — 공식 발행
     쌍이면 「공식 일정 없음 n대」). 미확인은 가정이면 공식 일정 기준(가용설비 현황과 같은 `official_confirmation_master`),
     층 캔버스 줄이기 검사는 공식 배치 마스터다. 뷰어 epoch 는 편집 가능 여부와 떼어 늘 쌍 토큰을 담는다(샘플만 「sample」 —
     잠긴 두 쌍을 오갈 때 옛 좌표가 남지 않게, 검토 F1).
@@ -2213,7 +2215,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     검토 F4). 막힘 글은 까닭 셋으로 갈린다 — 고른 리비전에 공식과 다른 배치(「실효 … — 저장된 차이 m행」, 최신이면 공식에서
     옮기기·「배치 차이 모두 지우기」, 옛 리비전이면 그것으로는 풀리지 않아 「이 리비전으로 되돌리기」 뒤 지우고 발행), 옛 리비전에
     남은 행이 지금 공식과 같음(「공식과 다른 배치」 라 하지 않고 되돌린 뒤 발행 — 정리 발행은 최신만), 고른 리비전에는 없고 최신에
-    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 공통 대장에서 지운 호기의 저장된 행
+    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 옛 리비전으로 되돌려도 쓸 것이 없으면
+    (`LayoutPublishPreview.restore_same_schedule`·`restore_same_layout` — `_layout_publish_preview` 가 막힌 옛 리비전만
+    `_restore_preview` 로 재고, `block(official=)` 이 `restore_writes_nothing` 과 같은 규칙으로 합친다) 그 팝오버에 단추가
+    없으므로 되돌리기를 안내하지 않고 최신 발행(가정이면 최신을 비운 뒤), 최신이 이미 공식이면(`newest_released`) 「따로 발행할
+    것이 없습니다」 를 적는다(E2E r5). 공통 대장에서 지운 호기의 저장된 행
     (`LayoutPublishPreview.orphan_units`·`newest_orphan_units` → `PublishBlock.orphan_rows`)은 「공식과 같아진」 행이 아니라
     버린 행이라 정리·막힘·발행 뒤 글이 「지운 호기의 배치 차이 n행」 으로 따로 말한다(`layout_overlay.cleaned_layout_words`·
     `settled_layout_reason`, E2E r3) — Space 머리 첫 줄의 「공식과 같아진 것은 … 정리됩니다」 꼬리도 그 행(`layout_orphans`)을
@@ -4308,12 +4314,20 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
     조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
     `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
-    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서
-    `markdown_safe_tildes` 로 막는다 — Space 머리 알림 줄·잠금 줄·꺼진 「배치 편집」 풍선, rerun 건너 그리는 Space 성공 글은
-    담을 때(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`), 사이드바 설비 시나리오 줄의 팝업 저장 알림
-    (`save_result_message`)·저장 실패·세션 이동 알림과 시나리오 관리 구획의 세션 이동 알림·거절 알림(`REFUSED_KEY` — 그리는
-    자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
-    `tests/test_equipment_scenario_screens.py`, E2E r3).
+    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서 막는다.
+    평문 자리에서 `**` 가 글자로 보이므로 그런 글에는 앱 꾸밈이 없다 — **날 이름을 담은 그 글은 글 통째로
+    `literal_markdown`** 으로 막는다(`markdown_safe_tildes` 는 물결표만 막아 「가정*R6*B」 의 별표가 기울임이 되어 사라진다 —
+    2026-10-26 E2E r5): Space 잠금 줄·꺼진 「배치 편집」 풍선·빨리 감기 줄·새 호기 잠금 줄, 설비 마스터 탭의 낡은 세션
+    경고·배치 잠금 줄·「선택 행 삭제」 풍선, 사이드바 설비 시나리오 줄과 시나리오 관리 구획의 세션 이동 알림
+    (`tests/test_space_layout_overlay_page.py`·`tests/test_equipment_master_tab_scenarios.py`). 붙여넣기 거절 글은 잠금
+    까닭을 `literal_markdown` 으로 막아 담는다(예외 글로 가 `bootstrap_error_message` 를 지난다). 이미 막힌 조각(`quoted` 한
+    이름·`bootstrap_error_message` 글)을 담는 글은 물결표만 막는다(`markdown_safe_tildes` — 막은 `\~` 는 다시 막지 않는다):
+    rerun 건너 그리는 Space 성공 글은 담을 때(`_queue_space_flash` — 그 글의 설비 시나리오 이름은 `quoted`), 사이드바
+    설비 시나리오 줄의 팝업 저장 알림(`save_result_message`)·저장 실패와 시나리오 관리 구획의 거절 알림(`REFUSED_KEY` —
+    그리는 자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
+    `tests/test_equipment_scenario_screens.py`, E2E r3). 설비 시나리오 이름·리비전명 바꾸기의 「남이 먼저 바꿨다」 거절 글은
+    예외 글 대신 막은 지금 이름(`exc.current`)으로 같은 글(`scenario_name_moved_message`·
+    `schedule_revision_name_moved_message`)을 짓는다.
   - 설비명·공정명을 「, 」 로 늘어놓은 목록(경고·캡션의 「…: A, B 외 3」, 걸린 조건 줄의 고른 값)은 목록째
     `markdown_safe_tildes` 로 막는다 — 낫표로 감싸는 이름이 아니고, 같은 화면의 붙여넣기 거절·주의 목록과 같은
     길이다. 서비스가 지어 돌려준 글(비활성 층 경고)은 그리는 자리에서 막는다(2026-10-26 E2E r5 — 지우는 호기·
