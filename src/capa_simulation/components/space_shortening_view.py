@@ -383,7 +383,9 @@ def load_space_layer(
             demand, frames, cutoff, tuple(months), today
         )
     except ValueError as exc:
-        return ShorteningStop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+        return ShorteningStop(
+            "error", f"필요 단축 일정을 계산하지 못했습니다 — {bootstrap_error_message(exc)}"
+        )
     if not keyed.plan.processes:
         return ShorteningStop(
             "info",

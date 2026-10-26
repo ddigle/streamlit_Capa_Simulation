@@ -140,9 +140,10 @@ def bootstrap_error_message(
     **나머지 예외 글은 물결표를 막아 돌려준다**(`markdown_safe_tildes`, `markdown=False` 면
     원문). 저장소·서비스 예외 글은 사람이 지은 이름(「E2E~가정~A」·「10~12월 증설」)을 날로 담고,
     돌려준 글은 거의 다 알림 상자·캡션(마크다운)으로 간다 — 그리는 자리마다 막으면 한 자리를
-    고칠 때 옆 자리가 남는다(2026-10-26 E2E). 이미 막힌 `\\~` 는 다시 막지 않으므로 받은 글을
-    `markdown_safe_tildes` 로 한 번 더 감싸도 같다. 마크다운이 아닌 자리(콘솔·JSON·`st.code`·
-    Plotly 풍선·`html.escape` 한 HTML)로 가는 글만 `markdown=False` 로 받는다.
+    고칠 때 옆 자리가 남는다(2026-10-26 E2E). 받은 글을 `markdown_safe_tildes`·`literal_markdown`
+    으로 다시 감싸지 않는다 — DuckDB 글의 코드 칸 경로 물결표나 막은 `\\~` 가 글자로 보인다
+    (`tests/test_markdown_sink_guard.py`). 마크다운이 아닌 자리(콘솔·JSON·`st.code`·Plotly 풍선·
+    `html.escape` 한 HTML)로 가는 글만 `markdown=False` 로 받는다.
 
     잠금을 쥔 것이 **이 앱 자신**이면 닫을 것이 없다(2026-10-01, E2E G1-D0). 한 서버가
     모든 브라우저 창·탭을 받으므로 창을 닫는 것은 조치가 아니다 — 예전 문구가 「다른 창을

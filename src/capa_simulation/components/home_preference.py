@@ -1857,9 +1857,10 @@ def _render_execution_editor(
                 expected_version=expected_version,
             )
         except ProfileVersionConflict as exc:
+            message = bootstrap_error_message(exc)
             own = is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks)
             if not own:
-                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, str(exc))
+                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
             # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
             # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
             clear_global_execution_capacity_cache()
@@ -1868,7 +1869,7 @@ def _render_execution_editor(
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
                 st.rerun(scope="app")
-            notice.error(bootstrap_error_message(exc))
+            notice.error(message)
             return
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))

@@ -480,7 +480,8 @@ def _write(database_path: str, draft: Draft, base: Base) -> None:
         _start(load_floor_states(database_path))
         _notice(
             "warning",
-            f"{exc} 편집표를 최신 저장본으로 다시 세웠습니다 — 다시 고친 뒤 저장하세요.",
+            f"{bootstrap_error_message(exc)} 편집표를 최신 저장본으로 다시 세웠습니다 — 다시 고친 "
+            "뒤 저장하세요.",
         )
         return
     except BOOTSTRAP_ERRORS as exc:

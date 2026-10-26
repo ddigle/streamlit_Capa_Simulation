@@ -4027,12 +4027,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   알림 상자·위젯 라벨·풍선)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
-- **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다 — 시험이 지킨다.** 그리는 자리마다 막을 것을
-  고르면 한 자리를 고칠 때 옆 자리가 남는다(2026-10-26 E2E 1~3회차).
+- **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를
+  고칠 때 옆 자리가 남는다(2026-10-26 E2E 1~3회차). 시험이 지키는 범위는 아래 「지키는 시험」 에 적은 만큼이다.
   - **예외 글은 `bootstrap_error_message(exc)`** — 알림 상자·캡션·토스트에 `str(exc)`·`f"{exc}"` 를 바로 싣지 않는다
     (DuckDB 가 아닌 예외는 물결표를 막은 원문, 3장 `page_bootstrap.py`). 「`str(exc) if isinstance(exc, ValueError) else
-    bootstrap_error_message(exc)`」 도 같은 값이라 쓰지 않는다. 세션 칸에 담아 다음 회차에 그리는 거절 글도 담을 때 이
-    길을 탄다.
+    bootstrap_error_message(exc)`」 도 같은 값이라 쓰지 않는다. 세션 칸에 담아 다음 회차에 그리는 거절 글·도우미에 넘기는
+    글·돌려주는 실패 글도 지을 때 이 길을 탄다. 돌려받은 글을 `markdown_safe_tildes`·`literal_markdown` 으로 다시 감싸지
+    않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의 코드 칸 경로 물결표는 `\~` 로 보인다), 뒤의 것은 막은
+    `\~` 를 다시 막아 글자로 보인다.
   - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
     없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 막기 전의 이름으로 고른다
     (`object_particle(이름)` — `korean_particle` 은 끝의 `」` 를 건너뛰므로 「이름」 으로 골라도 같다).
@@ -4049,9 +4051,20 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
     `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다(`tests/test_page_guide.py` 가 모든 Guide 를 본다).
-  - 지키는 시험: `tests/test_markdown_sink_guard.py`(AST — UI 모듈의 except 안 마크다운 자리 인자와 f-string 「{식}」),
-    `tests/test_tilde_names_pages.py`(물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세·필요 단축
-    일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다), `tests/test_literal_markdown.py`(단위).
+  - 지키는 시험과 그 범위(UI 모듈 = `app.py`·`app_pages/`·`components/`·`src/capa_simulation/` 꼭대기 모듈):
+    - `tests/test_markdown_sink_guard.py`(AST). ① UI 모듈의 `except … as exc` 안에서 예외를 글로 바꾸는 꼴(`str(exc)`·
+      `f"{exc}"`·`.format(exc)`·`%`)은 **어디에 쓰든**(마크다운 자리 인자·대입·도우미 인자·세션 칸·돌려주는 값) 실패하고,
+      마크다운 자리 인자에 `exc` 를 그대로 넘겨도 실패한다. 지나가는 것은 막는 함수 안·`raise`·로그·평문 자리(`st.code`·
+      `st.text`·`st.json`·`html.escape`)·까닭 가르기(`"lock" in str(exc)`)와, 마크다운이 아닌 곳으로만 보내는 함수
+      (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
+      `bootstrap_error_message`(다시 감싸기). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS` 만.
+      **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
+      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글.
+      이것은 이 절의 규칙대로 짓거나 그리는 자리에서 막고 아래 화면 그물·리뷰가 본다.
+    - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
+      (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
+      열린 화면의 기본 상태만 본다 — 탭 안·누른 뒤·거절 뒤의 글은 그 화면 시험이 따로 본다.
+    - `tests/test_literal_markdown.py`(단위).
 
 ### 스크립트와 컴포넌트
 

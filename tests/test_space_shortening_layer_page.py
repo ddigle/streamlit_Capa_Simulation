@@ -947,17 +947,19 @@ def test_a_failing_plan_stops_with_the_calculation_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, editor_calls: list[dict[str, Any]]
 ) -> None:
     """T-P7 — 계산이 `ValueError` 로 멈추면 그 까닭을 붙인 한 줄(「필요 단축 일정을 계산하지
-    못했습니다 — …」)이고 Space 는 그대로다."""
+    못했습니다 — …」)이고 Space 는 그대로다. 까닭은 예외 글이라 담은 이름의 물결표를 막는다(설비
+    검증 오류는 설비명 목록을 담는다)."""
 
     def failing(**_kwargs: Any) -> Any:
-        raise ValueError("계산 실패 흉내")
+        raise ValueError("계산 실패 흉내 「NEW~01~C」")
 
     monkeypatch.setattr(simulation_cache, "plan_required_shortening", failing)
     app = _app(_empty_database(tmp_path))
     _turn_on(_ok(app.run()))
     warnings = [str(item.value) for item in app.warning]
     assert any(
-        "필요 단축 일정을 계산하지 못했습니다 — 계산 실패 흉내" in text for text in warnings
+        "필요 단축 일정을 계산하지 못했습니다 — 계산 실패 흉내 「NEW\\~01\\~C」" in text
+        for text in warnings
     ), warnings
     assert app.dataframe, "층 목록 표는 그대로 선다"
 

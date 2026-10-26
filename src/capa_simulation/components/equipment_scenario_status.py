@@ -418,9 +418,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_scenario)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
-        )
+        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
     revision_by_id = {item.schedule_revision_id: item for item in revisions}
     if revision_by_id:
@@ -619,10 +617,8 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(
-            markdown_safe_tildes(
-                "저장하지 못했습니다: "
-                + bootstrap_error_message(exc, database_paths=(Path(database_path),))
-            )
+            "저장하지 못했습니다: "
+            + bootstrap_error_message(exc, database_paths=(Path(database_path),))
         )
         return
     st.session_state[SAVE_NOTE_GENERATION_KEY] = _note_generation() + 1
