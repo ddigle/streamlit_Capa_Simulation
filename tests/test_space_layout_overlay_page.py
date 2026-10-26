@@ -898,6 +898,35 @@ def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
     assert _buffer_x(app, "EQ-02") == 60.0
 
 
+def test_an_edit_only_of_a_unit_someone_else_deleted_names_it_in_the_notice(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 저장 안 한 가정 배치 편집이 남이 지운 호기(EQ-01) 하나뿐이면 다시 얹은 것이 0대라
+    알림이 일반 꼴로 가 「가정 배치 편집 1대도 버렸습니다 — 최신 위에서 다시 옮기세요」 라고, 이제
+    없는 호기를 다시 옮기라 했다. 빠진 호기와 까닭을 적는다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 70, "y": 40, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    _ok(app.run())
+    theirs = _session(repository)
+    kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = theirs.downtime.loc[~theirs.downtime["설비명"].eq("EQ-01")].reset_index(drop=True)
+    repository.save_equipment(_request(theirs, equipment=kept, downtime=downtime))
+    clear_equipment_repository()
+    _ok(app.run())
+
+    notices = [str(item.value) for item in app.warning if "다시 열었습니다" in str(item.value)]
+    assert len(notices) == 1, [str(item.value) for item in app.warning]
+    assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notices[0], notices
+    assert "다시 옮기세요" not in notices[0], notices
+
+
 def test_a_reapplied_editor_group_keeps_its_approval_and_saves(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -1270,7 +1299,12 @@ def test_another_save_does_not_leave_the_badge_one_run_behind(
     clear_equipment_repository()
     _ok(app.run())
 
-    assert any("버렸습니다" in str(item.value) for item in app.warning)
+    # 다시 얹을 것이 없는 버림 알림 — 빠진 호기와 까닭을 적는다(E2E r6).
+    assert any(
+        "버리고 최신 저장본으로 다시 열었습니다" in str(item.value)
+        and "빠진 호기 1대(EQ-02)의 편집은 뺐습니다" in str(item.value)
+        for item in app.warning
+    ), [str(item.value) for item in app.warning]
     assert str(app.session_state[EQUIPMENT_HEADER_LABEL_KEY]["suffix"]).endswith("가정 배치")
     assert not any("미저장 변경" in str(item.value) for item in app.sidebar.caption)
     assert not any("미저장 변경" in str(item.value) for item in app.sidebar.markdown)

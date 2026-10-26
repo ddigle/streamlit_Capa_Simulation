@@ -1392,32 +1392,36 @@ def discarded_notice(
 ) -> str:
     """남의 저장으로 편집본을 다시 세운 회차의 알림(한 번). 가정 배치 편집을 새 저장본 위에 다시
     얹었으면 그 수와 빠진 호기를 따로 적는다(설계 9장) — 그 밖의 저장 안 한 편집(설비 마스터 칸·
-    도면 요소·Main 설비명 위치)은 지금처럼 버렸다."""
+    도면 요소·Main 설비명 위치)은 지금처럼 버렸다. 다시 얹을 편집이 남이 지운 호기에만 있었으면
+    (다시 얹은 0대) 버렸다는 일반 글에 그 호기와 까닭을 적고, 그 호기는 「최신 위에서 다시
+    옮기세요」 에 세지 않는다(E2E r6 — 이제 없는 호기를 다시 옮기라 했다)."""
     head = f"다른 사용자가 {number}{object_particle(number)} 저장해, "
+    gone = reapplied.dropped if reapplied is not None else ()
+    # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
+    names = markdown_safe_tildes(", ".join(gone[:3])) + (" 외" if len(gone) > 3 else "")
+    dropped = (
+        f" 그 사이 공통 대장에서 빠진 호기 {len(gone):,}대({names})의 편집은 뺐습니다."
+        if gone
+        else ""
+    )
     if reapplied is not None and reapplied.reapplied:
-        # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
-        names = markdown_safe_tildes(", ".join(reapplied.dropped[:3]))
-        dropped = (
-            f" 그 사이 공통 대장에서 빠진 호기 {len(reapplied.dropped):,}대"
-            f"({names}{' 외' if len(reapplied.dropped) > 3 else ''})의 "
-            "편집은 뺐습니다."
-            if reapplied.dropped
-            else ""
-        )
         return (
             head + "최신 저장본으로 다시 열고 저장하지 않은 가정 배치 편집 "
             f"{reapplied.reapplied:,}대(호기 위치)는 그 위에 다시 얹었습니다.{dropped} 그 밖의 "
             "저장하지 않은 설비 편집(설비 마스터 칸·도면 요소·Main 설비명 위치)은 버렸습니다 — "
             "배치를 확인하고 저장하세요."
         )
+    # 남이 지운 호기의 편집은 다시 옮길 수 없다 — 그 밖의 버린 가정 배치 편집만 다시 옮기라 한다.
+    rest = max(overlay_dropped - len(gone), 0)
     return (
         head
         + "이 화면에서 저장하지 않은 설비 편집(설비 마스터·Space 배치)을 버리고 최신 저장본으로 "
         "다시 열었습니다."
+        + (f" 저장하지 않은 가정 배치 편집 가운데{dropped}" if gone else "")
         + (
-            f" 그 가운데 가정 배치 편집 {overlay_dropped:,}대도 버렸습니다 — 최신 위에서 "
-            "다시 옮기세요."
-            if overlay_dropped
+            f" {'그 밖의' if gone else '그 가운데'} 가정 배치 편집 {rest:,}대도 버렸습니다 — 최신 "
+            "위에서 다시 옮기세요."
+            if rest
             else ""
         )
     )
