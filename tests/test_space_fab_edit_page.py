@@ -352,6 +352,33 @@ def test_a_stale_fab_apply_says_the_drawing_was_reloaded(
     clear_equipment_repository()
 
 
+def test_a_second_press_of_the_same_fab_apply_keeps_the_success_without_blaming_others(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FAB 「적용」 을 0.2~0.25초 간격으로 두 번 누르면 둘째 누름이 옛 epoch 의 같은 적용을 보내
+    「그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) … 다시 고친 뒤 적용하세요」 경고가 섰다 — 첫
+    적용은 이미 들어가 있어 경고대로 다시 고치면 이동이 두 번 들어갔다(2026-10-27 E2E). 같은
+    입력이면 경고하지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 30.0)
+    app = _app(tmp_path / "fab_apply_twice.duckdb", saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    payload = {"epoch": data["epoch"], "changes": [], "canvas": None, "marks": _edited_marks(data)}
+    app.session_state[FAKE_APPLY_KEY] = dict(payload)
+    app.run()
+    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    applied = _fab_calls(editor_calls, editing=True)[-1]
+
+    app.session_state[FAKE_APPLY_KEY] = dict(payload)
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("FAB 도면이 바뀌어" in item.value for item in app.warning)
+    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    assert _fab_calls(editor_calls, editing=True)[-1]["epoch"] == applied["epoch"]
+    clear_equipment_repository()
+
+
 def test_a_block_without_a_floor_is_refused(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date
 from functools import partial
 from typing import Any
@@ -127,7 +128,13 @@ from capa_simulation.components.space_shortening_view import (
     valid_focus,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
-from capa_simulation.components.write_guard import note_notice, notice_marks
+from capa_simulation.components.write_guard import (
+    NoticeMark,
+    just_submitted,
+    note_notice,
+    note_submission,
+    notice_marks,
+)
 from capa_simulation.equipment_scenario_activation import (
     CANVAS_LOCK_REASON,
     FAB_LOCK_REASON,
@@ -1463,8 +1470,9 @@ def _render_layout_editor(
             roster,
         )
     )
+    editor_key = f"space_layout_editor_{building}_{floor}"
     submission = render_space_layout_editor(
-        key=f"space_layout_editor_{building}_{floor}",
+        key=editor_key,
         epoch=epoch,
         title=f"{building} {floor}",
         inputs=inputs,
@@ -1485,8 +1493,12 @@ def _render_layout_editor(
     )
     if submission is None:
         return
+    submitted = _submission_print(submission.payload)
     if submission.stale:
-        st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
+        # 방금 받아들인 적용과 같은 입력이면 같은 단추를 한 번 더 누른 꼬리다 — 이미 얹었다(첫
+        # 적용의 성공 알림은 알림 칸이 다시 그린다, `write_guard.just_submitted`).
+        if not just_submitted(editor_key, submitted):
+            st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
         return
     try:
         applied = parse_editor_apply(
@@ -1537,6 +1549,9 @@ def _render_layout_editor(
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
+    # 알림 표지 dict 는 세션에 얹기 전에 받아 둔다 — 그 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수
+    # 있다.
+    notices = notice_marks()
     replace_equipment_buffer((frames[0], master, downtime))
     # 이 적용이 옮기거나 빼거나 보낸 모듈 묶음의 적용 뒤 모양 — 저장 검사가 그 모양 그대로인 묶음을
     # 편집기 결과로 보고 통과시킨다(설비 마스터의 모듈 좌표·크기 막기, `saved_master_violations`).
@@ -1601,13 +1616,35 @@ def _render_layout_editor(
         if equipment_session.layout_role == "overlay"
         else ""
     )
-    _queue_space_flash(
+    _note_applied(
+        notices,
+        editor_key,
+        submitted,
         f"{building} {floor} 배치를 편집본에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
         + overlay_note
         + renamed
         + sent_note,
     )
     st.rerun()
+
+
+def _submission_print(payload: Mapping[str, Any]) -> str:
+    """편집기 적용값의 입력 지문 — 같은 적용을 두 번 보냈는지 가린다(epoch 포함)."""
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()
+    ).hexdigest()
+
+
+def _note_applied(
+    notices: dict[str, NoticeMark], editor_key: str, submitted: str, message: str
+) -> None:
+    """받아들인 편집기 적용을 적고(`note_submission`) 성공 알림을 담는다. 알림은 표지에도 적는다 —
+    브라우저가 새 epoch 를 받기 전에 같은 「적용」 을 한 번 더 누르면 그 회차가 옛 epoch 의 같은
+    적용을 받는다. 그 회차는 경고하지 않고(`just_submitted`) 알림 칸이 이 알림을 다시 그린다
+    (2026-10-27 E2E — 성공 알림이 사라지고 「반영하지 않았습니다」 만 남았다)."""
+    note_submission(editor_key, submitted)
+    note_notice(notices, SPACE_FLASH_KEY, markdown_safe_tildes(message))
+    _queue_space_flash(message)
 
 
 def _render_fab_editor(
@@ -1651,11 +1688,14 @@ def _render_fab_editor(
     )
     if submission is None:
         return
+    submitted = _submission_print(submission.payload)
     if submission.stale:
-        st.warning(
-            "그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) 편집기를 새 값으로 다시 "
-            "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요."
-        )
+        # 방금 받아들인 적용과 같은 입력이면 같은 단추를 한 번 더 누른 꼬리다(층 편집기와 같다).
+        if not just_submitted(FAB_EDITOR_KEY, submitted):
+            st.warning(
+                "그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) 편집기를 새 값으로 다시 "
+                "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요."
+            )
         return
     try:
         applied = parse_fab_editor_apply(submission.payload, canvas)
@@ -1676,6 +1716,7 @@ def _render_fab_editor(
         fab_profile.canvas_size if fab_profile is not None else None,
         fab_marks_fingerprint(fab_stored_marks),
     )
+    notices = notice_marks()
     stage_fab_layout(
         None if next_canvas == stored_canvas else next_canvas,
         None
@@ -1684,7 +1725,10 @@ def _render_fab_editor(
         base=base,
     )
     doubled = duplicate_block_links(next_marks)
-    _queue_space_flash(
+    _note_applied(
+        notices,
+        FAB_EDITOR_KEY,
+        submitted,
         "S.PKG FAB 전체 배치를 이 세션에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
         + (f" 같은 층을 가리키는 블록이 있습니다: {', '.join(doubled)}." if doubled else ""),
     )

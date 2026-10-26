@@ -668,7 +668,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     못 돌려 `tests/conftest.py` 가 말 없는 대역을 깐다).
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
     같으면 편집·배율을 지키고, 옛 epoch 로 온 적용·블록 열기(`on_navigate_change`)·호기 누르기(`on_pick_change`)는
-    버린다.
+    버린다. 옛 epoch 의 적용이 방금 받아들인 적용과 같은 입력이면(새 epoch 를 받기 전 같은 「적용」 의 둘째 누름)
+    경고 없이 버리고 첫 성공 알림이 남는다(`write_guard.just_submitted`).
   - FAB 블록 글자 `linkStats` 의 `inactive`(비활성 층의 짧은 사유)가 있으면 JS 가 그 블록을 `is-inactive` 로 —
     팔레트 `block-off` 면 + `#sle-hatch` 빗금 + `muted` 글자(고른 색·「글자 색」 인라인을 달지 않는다)로 그리고, 보기에서는
     `opensFloor` 가 거짓이라 열지도 고르지도 않으며(누름 갈래는 블록 종류로 `lastViewOnBlock`) 초점·역할을 걷는다. 편집에서는
@@ -2018,7 +2019,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
   글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
   설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
-  쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장).
+  쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장). 본문이 받는 컴포넌트 제출(Space 층·FAB 배치
+  편집기 「적용」)은 받아들인 입력 지문을 적고(`note_submission`), 브라우저가 새 epoch 를 받기 전에 같은 단추를 한 번 더 눌러
+  옛 epoch 로 온 **같은 입력**은 창 안이면 「반영하지 않았습니다」 경고 없이 넘긴다(`just_submitted` — 첫 적용의 성공 알림은
+  `note_notice` 로 다시 그린다, 2026-10-27 E2E, `tests/test_space_layout_editor_page.py`·`tests/test_space_fab_edit_page.py`).
   출발점 대조 저장의 `save_once` 는 설비 편집본 저장(`equipment_data_workspace._save_equipment_frames` — 설비 마스터
   「리비전 저장」·Space 「배치 저장」·사이드바 팝업 저장)과 FAB 전체 배치 쓰기(`save_pending_fab_layout`), 시뮬레이션
   시나리오 목록 「변경 저장」(`scenario_management._save_list_edits` — 출발점은 그 이름·순서 편집)이 쓴다(9장,
