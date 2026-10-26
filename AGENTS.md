@@ -2248,7 +2248,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     설비 마스터 탭 알림 칸이 같은 `render_name_changes`(「이름 바꿈 n건」·`NAME_CHANGES_CAPTION`)로 보인다. 설비 마스터 표 호기
     상세의 설비명 칸 확정이 같은 호기 이름 바꿈이다(행 id 로 짝을 알아 공용 넷 — `equipment_grid._rename`). 붙여넣기·CSV 는
     설비명으로 맞대므로 바꾼 이름은 새 호기다(지운 + 새 호기 저장 결과 꼬리 `RENAME_INSTEAD_HINT` — 「설비 마스터 호기 상세의
-    설비명 칸이나 Space 편집기 「이름 바꾸기」」).
+    설비명 칸이나 Space 편집기 「이름 바꾸기」」). 꼬리는 지운 호기와 **엑셀·CSV 넣기로 든 새 호기**(`PASTED_NEW_UNITS_KEY` —
+    넣기마다 새로 든 새 호기 이름, 이름 바꿈을 따라가고 「새 호기」 칸으로 다시 넣은 이름은 빠지며 편집본과 함께 버려진다)가 한
+    저장에 있을 때만 붙는다 — 「새 호기」 칸·Space 로 든 새 호기와 상관없는 지우기에는 붙이지 않는다.
   - **다른 설비 시나리오에 일정이 있는 호기를 지우는 저장**(설계 11-2 6단계)은 확인 체크 뒤에만 간다. `removals_elsewhere`
     (저장본 이름 − 편집본 − 이름 바꿈으로 비운 이름 → 호기 키 `DRAFT_UNIT_KEYS_KEY` → `load_units_scheduled_elsewhere`)가
     설비 마스터 탭 저장 칸 아래 경고·체크(`REMOVAL_CONFIRM_KEY` — 꼬리 `RemovalElsewhere.token` 은 (호기, 그 일정이 든 시나리오들)의

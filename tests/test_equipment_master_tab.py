@@ -26,6 +26,7 @@ from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
 )
 from capa_simulation.components.equipment_data_workspace import (
+    BUFFER_GENERATION_KEY,
     BUFFER_KEY,
     CLIPBOARD_KEY,
     DOWNTIME_EDITOR_KEY,
@@ -33,8 +34,10 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_LOADED_KEY,
     GRID_OVERLAY_KEY,
     GRID_TOAST_KEY,
+    PASTED_NEW_UNITS_KEY,
     PENDING_RENAMES_KEY,
     PREVIEW_BUTTON_KEY,
+    RENAME_INSTEAD_HINT,
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
 from capa_simulation.components.equipment_master_tab import (
@@ -328,6 +331,49 @@ def test_renaming_in_the_detail_is_the_same_unit_and_follows_the_save(
     assert keys_after["DA-11"] == keys_before["DA-01"]
     assert list(app.session_state[GRID_LOADED_KEY]) == ["s:DA-11", "s:DA-02"]
     assert app.session_state[GRID_DETAIL_KEY] == "s:DA-11"
+
+
+def _save_now(app: AppTest) -> str:
+    """「저장 전 변경」 의 「리비전 저장」 — 저장 결과 알림 글을 돌려준다."""
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, app.exception
+    return next(
+        str(item.value) for item in app.success if "설비 데이터를 저장했습니다" in item.value
+    )
+
+
+def test_the_rename_hint_follows_only_a_pasted_new_unit_saved_with_a_removal(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """「이름만 바꾸려면 …」 꼬리는 붙여넣기(엑셀·CSV 넣기)로 든 새 호기와 지운 호기가 한 저장에
+    있을 때만 붙는다 — 설비명이 키라 이름을 바꿔 붙이면 지움 + 새 호기다. 붙여넣기 밖(「새 호기」
+    칸·Space)으로 든 새 호기와 상관없는 지우기를 함께 저장하면 꼬리가 놀라게 했다(E2E #69)."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02", "DA-03"))
+    _save_now(app)
+
+    # 붙여넣기 밖에서 든 새 호기(편집본에 바로 — Space·「새 호기」 칸 길) + 상관없는 지우기.
+    frames = app.session_state[BUFFER_KEY]
+    master = frames[1]
+    grown = pd.concat([master, master.iloc[[0]].assign(설비명="DA-04")], ignore_index=True)
+    app.session_state[BUFFER_KEY] = (frames[0], grown, frames[2])
+    app.session_state[BUFFER_GENERATION_KEY] = app.session_state[BUFFER_GENERATION_KEY] + 1
+    app.run()
+    send_ops(app, grid, {"op": "delete", "ids": ["s:DA-02"]})
+    entered = _save_now(app)
+    assert "지운 호기 1대는 모든 설비 시나리오에서 빠졌습니다" in entered
+    assert RENAME_INSTEAD_HINT not in entered
+
+    # 붙여넣기로 든 새 호기 + 지우기 — 이름 바꿈일 수 있어 꼬리를 붙인다.
+    _import(app, _rows("DA-11"))
+    assert app.session_state[PASTED_NEW_UNITS_KEY] == ("DA-11",)
+    send_ops(app, grid, {"op": "delete", "ids": ["s:DA-01"]})
+    pasted = _save_now(app)
+    assert RENAME_INSTEAD_HINT in pasted
+    # 표지는 편집본과 함께 산다 — 저장 뒤에는 없다.
+    assert PASTED_NEW_UNITS_KEY not in app.session_state
 
 
 def test_the_saver_survives_a_trip_to_summary_and_the_note_does_not(
