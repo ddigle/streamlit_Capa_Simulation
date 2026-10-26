@@ -1,10 +1,17 @@
-# Purpose: 소요대수와 설비 일정 기준 가용으로 공정 하나의 미래 제약 영향을 보는 화면을 그린다.
+# Purpose: 소요대수와 설비 일정 기준 가용으로 공정 하나의 미래 제약 영향과 개조 일정을 보는 화면을
+# 그린다.
 
 """제약 시뮬레이션 — 실행 관리 셋째 화면(필요 단축 일정 다음, 2026-10-24 사용자 결정).
 
 정체성: 「한 공정에 미래 구간 제약(특정 제품만 쓸 수 있게 개조·전용해야 하는 설비)이 생기면, 제약
 제품에 먼저 떼어 준 뒤 기존 제품의 확보율이 언제부터 얼마나 떨어지는가」 를 그때그때 본다.
 **저장하지 않는다** — 조건은 이 세션에만 있고 시뮬레이션·설비 DB 어디에도 쓰지 않는다.
+
+모드는 둘이다 — 본문 맨 위 「제약 영향 | 개조 일정」(2026-10-26 결정 3). 「개조 일정」 은 「제약
+없이 N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까」 를 찾는 역방향 계산이고, 공통
+진입·설비 세션 뒤에 `components/modification_schedule_view.render_schedule_mode` 하나가
+카드·계획·계산·본문을 그린 뒤 이 화면이 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다). 두 모드는
+공정 칸·기준 확보율 정본을 나눈다.
 
 입력(새 무거운 계산이 없다 — 공정 Capa 상세가 쓰는 캐시 래퍼를 **같은 키로** 다시 받는다):
 
@@ -51,6 +58,11 @@ from capa_simulation.components.equipment_scenario_status import (
     render_legacy_trace_warning,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.modification_schedule_view import (
+    ScheduleModeContext,
+    render_mode_switch,
+    render_schedule_mode,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
@@ -90,6 +102,7 @@ from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     resolve_equipment_session,
 )
+from capa_simulation.modification_schedule_state import SCHEDULE_MODE
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -143,7 +156,8 @@ CARD_ICON = ":material/call_split:"
 PAGE_TITLE = "제약 시뮬레이션"
 PAGE_DESCRIPTION = (
     "공정 하나에 미래 제약(제약 제품 전용 설비)이 생기면 — 제약 제품에 먼저 떼어 준 뒤 기존 제품 "
-    "확보율이 언제부터 얼마나 떨어지는가. 저장하지 않는 그때그때 보기입니다."
+    "확보율이 언제부터 얼마나 떨어지는가. 「개조 일정」 은 N대 × D일 개조를 기준 확보율을 지키며 "
+    "언제 할지 찾습니다. 저장하지 않는 그때그때 보기입니다."
 )
 SESSION_NOTE = (
     "저장하지 않는 시뮬레이션입니다 — 조건은 이 세션에만 남고 다른 사람에게 보이지 않습니다. 공식 "
@@ -180,6 +194,8 @@ context = page_inputs.context
 active_scenario = context.active_scenario
 months = list(page_inputs.months)
 process_options = page_inputs.process_options
+# 본문 맨 위 모드 전환 「제약 영향 | 개조 일정」 — 카드에 무엇이 설지 정하므로 앱 전체 회차로 돈다.
+schedule_mode = render_mode_switch() == SCHEDULE_MODE
 
 # 설비 — 세션 설비 시나리오(새 세션은 공식). 못 읽으면 까닭을 들고 카드는 그대로 세운다.
 equipment_session: EquipmentSession | None = None
@@ -218,6 +234,60 @@ prune_choice(
     process_options,
     default=process_options[0] if process_options else None,
 )
+
+
+def render_reason_card(title: str, detail: str, *, equipment_link: bool) -> None:
+    """설비 일정이 서지 않는 까닭 카드 한 장(+ 다음 화면 링크)."""
+    with st.container(border=True, key=CONSTRAINT_ABSENT_KEY):
+        st.markdown(f":material/event_busy: **{title}**")
+        st.caption(detail)
+        if equipment_link:
+            render_page_link(
+                AVAILABLE_EQUIPMENT_PAGE,
+                label="가용설비 현황에서 설비·Cut-off 보기",
+                icon=":material/precision_manufacturing:",
+            )
+
+
+def render_header(process: str, line: str) -> None:
+    """머리 한 줄(공정·조건)과 오른쪽 끝 「← 공정 Capa 상세」."""
+    with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.markdown(line, width="content")
+        st.space("stretch")
+        theme_value = st.query_params.get(THEME_QUERY_PARAM)
+        params = {DETAIL_PROCESS_PARAM: process}
+        if theme_value:
+            params[THEME_QUERY_PARAM] = str(theme_value)
+        render_page_link(
+            PROCESS_CAPA_DETAIL.path,
+            label="공정 Capa 상세",
+            icon=":material/arrow_back:",
+            query_params=params,
+        )
+
+
+# 「개조 일정」 모드는 카드·계획·계산·본문을 컴포넌트 하나가 그리고 여기서 멈춘다 — 아래 제약 영향
+# 모드의 카드·본문은 서지 않는다(1판은 두 모드를 함께 쓰지 않는다, 2026-10-26 결정 3).
+if schedule_mode:
+    render_schedule_mode(
+        ScheduleModeContext(
+            page_inputs=page_inputs,
+            process_labels=process_labels,
+            equipment_session=equipment_session,
+            snapshot=snapshot,
+            cutoff=cutoff,
+            equipment_error=equipment_error,
+            today=today,
+            card_label=CARD_LABEL,
+            card_name=CARD_NAME,
+            card_icon=CARD_ICON,
+            header_slot=header_marks,
+            session_note=SESSION_NOTE,
+            render_header=render_header,
+            render_reason_card=render_reason_card,
+        )
+    )
+    st.stop()
 
 
 def product_choices(table: pd.DataFrame) -> list[str]:
@@ -404,36 +474,6 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         disabled=not modify,
     )
     cutoff_slot = st.container()
-
-
-def render_reason_card(title: str, detail: str, *, equipment_link: bool) -> None:
-    """설비 일정이 서지 않는 까닭 카드 한 장(+ 다음 화면 링크)."""
-    with st.container(border=True, key=CONSTRAINT_ABSENT_KEY):
-        st.markdown(f":material/event_busy: **{title}**")
-        st.caption(detail)
-        if equipment_link:
-            render_page_link(
-                AVAILABLE_EQUIPMENT_PAGE,
-                label="가용설비 현황에서 설비·Cut-off 보기",
-                icon=":material/precision_manufacturing:",
-            )
-
-
-def render_header(process: str, line: str) -> None:
-    """머리 한 줄(공정·조건)과 오른쪽 끝 「← 공정 Capa 상세」."""
-    with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(line, width="content")
-        st.space("stretch")
-        theme_value = st.query_params.get(THEME_QUERY_PARAM)
-        params = {DETAIL_PROCESS_PARAM: process}
-        if theme_value:
-            params[THEME_QUERY_PARAM] = str(theme_value)
-        render_page_link(
-            PROCESS_CAPA_DETAIL.path,
-            label="공정 Capa 상세",
-            icon=":material/arrow_back:",
-            query_params=params,
-        )
 
 
 if selected_process is None or not months or period is None:
