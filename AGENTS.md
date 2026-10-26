@@ -2259,15 +2259,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`consistent_places` — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다. 인수 글자 꼴은
   화면마다 다르므로 쓰는 쪽이 넘긴다(`operand_text` 의 `plain`). 결과 값·판정·올림 규칙은 바꾸지 않는다.
   `parse_formula` 는 시험용 읽기다(`tests/test_formula_text.py` — 값 격자로 지은 식 글을 읽어 다시 셈하는 검산 그물과, UI
-  모듈에서 식 꼴 f-string 을 짓는 함수가 이 모듈을 부르는지 보는 AST 가드 — 허용·대기 목록은 그 시험 머리에 있다).
+  모듈의 식 꼴 f-string 마다 이 모듈을 거치는지 보는 AST 가드 — 가드가 보는 꼴·보지 못하는 꼴과 허용·대기 목록은 그 시험
+  머리에 있다).
 - `src/capa_simulation/components/month_sheet_canvas.py` — 월 시트 캔버스 엔진(라벨·월 Figure 한 쌍의 `Row`·
   `Cell`·글자·표적·서식·`canvas_point`). 공정 Capa 상세·비교 시트·제약 시뮬레이션 계산표 셋이 훅(`row_hook` 등)으로 쓰는
   순수 함수다.
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
-  함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다. 풍선 식(보유 = 기존보유 +
-  호기 · 가용 = 보유 + 대여 · GAP = 설비 일정 − Static)은 적힌 글자에서 다시 셈해 어긋나면 「≈」 다(`formula_text`).
+  함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다. 풍선 식(Static 가용 = 보유 +
+  대여 · 보유 = 기존보유 + 호기 · 가용 = 보유 + 대여 · GAP = 설비 일정 − Static)은 적힌 글자에서 다시 셈해 어긋나면 「≈」 다
+  (`formula_text`). Static 가용 식 줄은 결과가 앞 줄이라 어긋날 때만 줄 앞에 두고, 원값부터 다른 ⚠ 달은 두지 않는다.
 - `src/capa_simulation/components/availability_sheet_keys.py` — 비교 시트 key(`GAP_SHEET_CHART_KEY` 등)를 가벼운 모듈에
   둔다 — `app.py` 가 패널·서비스를 import 하지 않고 터치 스크롤 막이(`components/plotly_touch_scroll.py`)에 넣게.
 - `src/capa_simulation/components/process_capa_canvas.py` — `공정 Capa 상세` 결합 월 캔버스(① 공식 요약 ② 설비 일정 기준
@@ -2282,14 +2284,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     눈금이 서는 줄(단축 · 추가N)만 적는다. 라벨 Figure 는 그 풍선이 있을 때만 hover 를 켠다(`process_capa_view`).
   - `assumption`(UPEH 가정)이면 ① 끝에 세 줄(구간 달만 값)이 서고 부족 띠·② 판정 대조는 가정 요약의 판정이다. 표지는
     바뀌는 행의 라벨·풍선에만(② 가용·전월 대비·④ 제외, 제목 줄 높이 그대로), 공식에서만 당긴 호기는 ③ 흐린 줄이다.
-  - ① 풍선의 식(가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」·가정 소요 「공식 ÷ f」)은 칸
-    자릿수 인수로 다시 셈해 어긋나면 「≈」 다(`formula_text.equals_mark`). 과부족 식 줄은 등호가 없어 어긋날 때만 줄 앞에 둔다.
+  - 풍선의 식(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」·가정 소요 「공식 ÷ f」, ② 목표
+    과부족 「가용 − 목표대수」)은 칸 자릿수 인수로 다시 셈해 어긋나면 「≈」 다(`formula_text.equals_mark`). 두 과부족 식 줄은
+    결과가 앞 줄이고 등호가 없어 어긋날 때만 줄 앞에 둔다.
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
   - 그림은 세션 칸(`CANVAS_MEMO_KEY`)에 기억한다(새 `st.cache_data` 없음). 근거 카드 식(①~④ 와 원인 줄)은 검산되어야
-    하고(어긋나면 `≈` — `formula_text.equals_mark`)
+    하고(어긋나면 `≈` — `formula_text.equals_mark`, 등호 없는 ① 원수요 부하량 ÷ 실효 대당 Capa 줄은 카드의 소요와 어긋날
+    때만 줄 앞에)
     목표는 `target_label`(「110% (1.095)」)로 적는다.
   - 「구획」 칩(`st.pills`)은 선택지 넷을 늘 고정하고 칸이 없으면 넷 모두로 심는다(`seed_sections`). 접힘은 그림 기억
     키에 들고, 접힌 ③·④ 의 「더 보기」 는 숨는다. 화면을 옮기는 다음 화면 단추는 본문에서 옮긴다(프래그먼트 콜백 금지).
@@ -3562,9 +3566,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **화면 숫자는 검산되어야 한다.** 줄을 더해 칸이 되는 표·CSV 는 값을 반올림하지 않고 표시 서식만 자릿수를 정한다(0 아닌
   값이 0 으로 적히면 자릿수를 늘린다). 식을 적는 근거 카드·풍선·단계 글은 적은 자릿수로 다시 셈한 값이 결과와 다르면 `=`
   대신 `≈` 를 쓰거나(그 화면의 길) 인수 자릿수를 늘린다 — **식의 인수와 등호는 `components/formula_text.py` 로 짓는다**(적힌
-  수로 검산, `tests/test_formula_text.py` 의 AST 가드가 식 꼴 f-string 을 짓는 함수를 본다). 숫자 글자는 말줄임으로 반만
-  자르지 않는다 — 잘린 「4」가 411대를 4대로 읽힌다. 넘치면 숫자 전체를 숨기고
-  풍선에 둔다.
+  수로 검산). 결과가 앞 줄이나 다른 줄에 있어 식 줄에 등호가 없으면 어긋날 때만 식 앞에 `≈` 를 둔다.
+  `tests/test_formula_text.py` 의 AST 가드는 식 꼴 f-string(같은 줄 등호, 결과가 앞 줄인 식 줄, 연산 글자로 잇는 조각)마다
+  이 모듈을 거치는지 보지만, 결과를 다른 글에 둔 식·연산 글자를 끼운 값으로 넣는 식은 보지 못한다 — 그런 식을 새로 지으면
+  그 시험의 검산 그물에 이름을 더한다. 숫자 글자는 말줄임으로 반만 자르지 않는다 — 잘린 「4」가 411대를 4대로 읽힌다.
+  넘치면 숫자 전체를 숨기고 풍선에 둔다.
 - 범위가 다른 같은 이름의 숫자(배치된 설비만 센 「가용」과 설비 마스터 전체의 「가용」)를 두 화면에 세우지 않는다 — 그
   숫자는 정의하는 화면 한 곳에만 둔다.
 - 조건부 안내·경고는 건수가 0 이면 아무것도 그리지 않는다 — 없는 날 자리를 차지하면 있는 날에도 읽히지 않는다(자리

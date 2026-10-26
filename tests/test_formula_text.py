@@ -6,13 +6,21 @@
   「42.19 ÷ 42 = 100.5%」·「2 ÷ 1.9389 = 103.2%」 그대로)·`written_value`·`parse_formula`.
 - **검산 그물** — 식을 내는 함수마다 값 격자(반올림 경계 x.xx5·x.xx49, 큰 수 54,698.63, 0 근처,
   음수 과부족)로 글을 만들고 `parse_formula` 로 읽어, 적힌 수로 다시 셈한 값이 적힌 결과의
-  자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 넷·근거 카드
-  (① 가정 소요·② 가용·③ 판정·가정 소요·원인), 제약 시뮬레이션 계산표 풍선 셋·고른 달 계산
-  다섯 단계, 가용설비 현황 비교 시트 풍선 셋, 표준 목표 로직 분석 식 세 줄(화면 대본 — 페이지
-  파일은 import 하지 않는다).
-- **AST 가드** — UI 모듈(`app_pages/`·`components/`)에서 두 끼운 값 사이에 연산(` ÷ `·` × `·
-  ` − `·` + `)이 있고 등호(또는 등호 자리의 끼운 값)가 값에 붙은 f-string 은 그 함수가
-  `formula_text` 를 불러야 한다. 허용 목록은 숫자 없는 식 설명과 인수가 정수라 늘 맞는 식이다.
+  자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 다섯(① 가용·
+  가정 소요·확보율·과부족, ② 목표 과부족)·근거 카드(① 원수요 부하량 ÷ 실효 대당 Capa·가정 소요,
+  ② 가용, ③ 판정·가정 소요·원인), 제약 시뮬레이션 계산표 풍선 셋·고른 달 계산 다섯 단계, 가용설비
+  현황 비교 시트 풍선 넷(Static 가용·보유·가용·GAP), 표준 목표 로직 분석 식 세 줄(화면 대본 —
+  페이지 파일은 import 하지 않는다). 결과가 앞 줄이나 다른 줄에 있고 식 줄에 등호가 없는 풍선은
+  결과를 붙여 읽는다.
+- **AST 가드** — UI 모듈(`app_pages/`·`components/`)의 식 꼴 f-string 마다 `formula_text` 를
+  거치는지 본다. 식 꼴은 두 끼운 값 사이에 연산(` ÷ `·` × `·` − `·` + `)이 있고 등호(또는 등호
+  자리의 끼운 값)가 값에 붙었거나, 결과가 앞 줄이고 식 줄에 등호가 없는 꼴(「과부족 {}<br>가용 {} −
+  목표대수 {}」)이다. 연산 글자로 잇는 끼운 값(`{' − '.join(pieces)}`)은 연산으로 읽고, 연산으로
+  시작하는 조각(`text += f" − 개조 중 {…}"`)은 그 조각을 받은 이름을 쓰는 식이 거치면 지나간다.
+  **보지 못하는 꼴** — 결과를 다른 글에 둔 등호 없는 식(① 소요 카드의 원수요 부하량 줄), 연산
+  글자를 끼운 값으로 넣는 식(표준 목표 `_formula_line` 의 `{operator}`), f-string 밖에서 연산
+  글자로 잇고 이름으로 넘기는 식 — 은 검산 그물에 이름을 댄다. 허용 목록은 인수가 정수라 늘 맞는
+  식이다.
 
 값 격자는 서식 경계를 찌르는 합성 수다 — 업무 사실이 아니다.
 """
@@ -60,23 +68,32 @@ from capa_simulation.components.process_capa_canvas import (
     _available_hover,
     _balance_hover,
     _rate_hover,
+    _target_balance_cell,
 )
 from capa_simulation.components.process_capa_view import (
     _assumed_demand_note,
     _assumed_required_line,
     _cause_note,
+    _effective_capacity_note,
     availability_card,
+    demand_card,
     judgement_card,
 )
 from capa_simulation.services.availability_sheet import (
     GAP_ROWS,
     ROW_SCHEDULE_AVAILABLE,
     ROW_SCHEDULE_OWNED,
+    ROW_STATIC_AVAILABLE,
     SHEET_ROWS,
     SheetView,
 )
 from capa_simulation.services.constraint_simulation import DowntimeShare
-from capa_simulation.services.process_capa_detail import LENT_COLUMN
+from capa_simulation.services.process_capa_detail import (
+    LENT_COLUMN,
+    CommonFactors,
+    MonthEvidence,
+    ProcessMonthTrace,
+)
 from capa_simulation.services.securement_rate import CAUSE_COLUMN, CAUSE_OWNED_SHORT, OWNED_COLUMN
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
@@ -268,6 +285,99 @@ def test_the_canvas_balance_balloon_recomputes(available: float, demand: float) 
     assert formula.holds(), (text, formula.value())
 
 
+@pytest.mark.parametrize(("available", "target_units"), PAIRS)
+def test_the_canvas_target_balance_balloon_recomputes(
+    available: float, target_units: float
+) -> None:
+    """② 목표 과부족 풍선 — 첫 줄의 과부족을 둘째 줄 식(등호 없음)이 낸다. 적힌 수로 다시 셈해
+    어긋나면 둘째 줄 앞이 「≈」 다."""
+    cell = _target_balance_cell(
+        "<b>26.11</b>",
+        available - target_units,
+        None,
+        target_units,
+        available,
+        "",
+        target=1.095,
+        past=False,
+    )
+    head, formula_line = cell.hover.split("<br>")[:2]
+    result = head.rsplit(" 과부족 ", 1)[1]
+    expression = formula_line.split(" (환산대수)")[0]
+    if expression.startswith(f"{APPROX} "):
+        return
+    formula = parse_formula(f"{expression} = {result}")
+    assert formula.holds(), (cell.hover, formula.value())
+
+
+@pytest.mark.parametrize(
+    ("available", "target_units"),
+    [(48.04, 47.66), (48.04, 47.96), (182.54, 177.05)],
+)
+def test_the_target_balance_balloon_marks_the_review_cases(
+    available: float, target_units: float
+) -> None:
+    """리뷰가 짚은 꼴 — 「+0.4 / 48.0 − 47.7」(적힌 수로 0.3)·「+0.08 / 48.0 − 48.0」·「+5.5 /
+    182.5 − 177.1」(5.4)은 식 앞이 「≈」 다. 셈이 맞으면 앞붙임이 없다."""
+    cell = _target_balance_cell(
+        "<b>26.11</b>",
+        available - target_units,
+        None,
+        target_units,
+        available,
+        "",
+        target=1.1,
+        past=False,
+    )
+    assert f"<br>{APPROX} 가용 " in cell.hover
+    exact = _target_balance_cell("<b>26.11</b>", 0.4, None, 47.6, 48.0, "", target=1.1, past=False)
+    assert f"<br>가용 48.0 {MINUS} 목표대수 47.6 (환산대수)" in exact.hover
+
+
+@pytest.mark.parametrize(("load", "required"), PAIRS)
+def test_the_effective_capacity_note_recomputes(load: float, required: float) -> None:
+    """① 소요 카드 「원수요 부하량 L ÷ 실효 대당 Capa C」 는 카드의 「= 소요 대」 를 낸다
+    (C = L ÷ 소요). 등호가 없어 결과를 붙여 읽고, 어긋나면 줄 앞이 「≈」 다."""
+    text = _effective_capacity_note(load, load / required, required)
+    if text.startswith(f"{APPROX} "):
+        return
+    formula = parse_formula(f"{text} = {required:,.1f}")
+    assert formula.holds(), (text, formula.value())
+
+
+def test_the_demand_card_marks_the_effective_capacity_line() -> None:
+    """합성 예 — L 1000.6 · 소요 12.25 → 「1,001 ÷ 81.7」 은 12.25…(12.3)이라 카드 「= 12.2 대」 와
+    어긋나 「≈」 다. 맞는 값은 앞붙임이 없다."""
+
+    def card_note(load: float, required: float) -> str:
+        evidence = MonthEvidence(
+            route_count=1,
+            excluded_route_count=0,
+            rule_excluded_route_count=0,
+            unique_demand_load=load,
+            required=required,
+            effective_capacity=load / required,
+            product_count=0,
+            top_products=pd.DataFrame(),
+            assumed_ratio_routes=0,
+            blank_ratio_routes=0,
+        )
+        trace = ProcessMonthTrace(
+            process="P",
+            month=202611,
+            routes=pd.DataFrame(),
+            common_factors=CommonFactors(pd.DataFrame(), None, None),
+            excluded=pd.DataFrame(),
+            evidence=evidence,
+        )
+        card = demand_card(trace, {"소요대수": required})
+        assert card.formula.endswith(f"= {required:,.1f} 대  (경로 1 · 제외 0)")
+        return card.notes[0]
+
+    assert card_note(1000.6, 12.25) == f"{APPROX} 원수요 부하량 1,001 ÷ 실효 대당 Capa 81.7"
+    assert card_note(1000.0, 12.5) == "원수요 부하량 1,000 ÷ 실효 대당 Capa 80.0"
+
+
 @pytest.mark.parametrize(("owned", "lent"), PAIRS)
 def test_the_availability_card_recomputes(owned: float, lent: float) -> None:
     record = {OWNED_COLUMN: owned, LENT_COLUMN: lent, "가용대수": owned - lent}
@@ -432,6 +542,27 @@ def test_the_sheet_balloons_recompute(value: float, other: float) -> None:
     _assert_checked(sheet_hover(view, ROW_SCHEDULE_AVAILABLE, 202611, "<b>26.11</b>"), 1)
     for gap in GAP_ROWS:
         _assert_checked(sheet_hover(view, gap, 202611, "<b>26.11</b>"), 1)
+    # 「Static 가용 X대 · RQ_EQP_AVBL 가용대수<br>보유 a + 대여 b」 — 결과가 앞 줄, 식 줄에 등호가
+    # 없다.
+    static = sheet_hover(view, ROW_STATIC_AVAILABLE, 202611, "<b>26.11</b>")
+    first, second = static.split("<br>")[:2]
+    if not second.startswith(f"{APPROX} "):
+        result = first.split(" Static 가용 ")[1].split("대 ")[0]
+        formula = parse_formula(f"{second} = {result}")
+        assert formula.holds(), static
+
+
+def test_the_static_available_balloon_leaves_the_mismatch_to_its_warning() -> None:
+    """원값부터 보유 + 대여 ≠ 가용인 달(⚠)은 「≈」 를 두지 않는다 — 아래 줄이 까닭을 적는다.
+    끝자리만 어긋나는 달은 식 앞이 「≈」 다."""
+    # 보유 1.0004 「1.000」 + 대여 −0.0006 「−0.001」 = 0.999 인데 가용 0.9998 은 「1.000」.
+    rounding = _sheet(10.0, 1.0004, 0.0006)
+    hover = sheet_hover(rounding, ROW_STATIC_AVAILABLE, 202611, "<b>26.11</b>")
+    assert hover.split("<br>")[1] == f"{APPROX} 보유 1.000 + 대여 {MINUS}0.001"
+    flagged = replace(rounding, mismatch=frozenset({202611}))
+    warned = sheet_hover(flagged, ROW_STATIC_AVAILABLE, 202611, "<b>26.11</b>")
+    assert warned.split("<br>")[1].startswith("보유 ")
+    assert "⚠ 가용대수가 보유 + 대여와 다릅니다" in warned
 
 
 # ================================================================== 검산 그물 — 표준 목표 로직 분석
@@ -468,7 +599,11 @@ _UI_GLOBS = ("app_pages/*.py", "src/capa_simulation/components/*.py")
 _OPERATOR = re.compile(r"\{\}[^{}]*?(?: [÷×−+] |×)[^{}]*?\{\}")
 # 값에 붙은 등호 — 「= {}」·「{} =」·「≈」, 또는 등호 자리의 끼운 값(「{} {mark} {}」).
 _RELATION = re.compile(r"[=≈] \{\}|\{\} [=≈]|≈|\{\} \{\} ")
+# 연산으로 시작하는 조각 — `text += f" − 개조 중 {…}"`(식을 조각으로 이어 짓는 꼴).
+_PIECE = re.compile(r"^\s*(?:[÷×−+]) [^{}]*\{\}")
+_LINE_BREAK = re.compile(r"<br>|\n")
 _MINUS_NAMES = frozenset({"MINUS", "_MINUS"})
+_JOIN_OPERATORS = frozenset({MINUS, "+", "×", "÷"})
 
 # (파일, 함수) → 까닭. 식 꼴이지만 검산할 숫자가 없거나 늘 맞는 자리.
 ALLOWED: dict[tuple[str, str], str] = {
@@ -490,8 +625,23 @@ PENDING: dict[tuple[str, str], str] = {
 }
 
 
+def _operator_join(node: ast.expr) -> str | None:
+    """`" − ".join(…)` 꼴이면 그 잇는 글자(「 − 」), 아니면 `None`."""
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "join"
+        and isinstance(node.func.value, ast.Constant)
+        and isinstance(node.func.value.value, str)
+        and node.func.value.value.strip() in _JOIN_OPERATORS
+    ):
+        return node.func.value.value
+    return None
+
+
 def _template(node: ast.JoinedStr) -> str:
-    """f-string 의 꼴 — 끼운 값은 「{}」, 빼기 글자 상수(`MINUS`)는 「−」."""
+    """f-string 의 꼴 — 끼운 값은 「{}」, 빼기 글자 상수(`MINUS`)는 「−」, 연산 글자로 잇는 끼운 값
+    (`{' − '.join(pieces)}`)은 「{} − {}」."""
     parts: list[str] = []
     for value in node.values:
         if isinstance(value, ast.Constant):
@@ -500,9 +650,24 @@ def _template(node: ast.JoinedStr) -> str:
             isinstance(value.value, ast.Name) and value.value.id in _MINUS_NAMES
         ):
             parts.append(MINUS)
+        elif isinstance(value, ast.FormattedValue) and (separator := _operator_join(value.value)):
+            parts.append(f"{{}}{separator}{{}}")
         else:
             parts.append("{}")
     return "".join(parts)
+
+
+def _is_formula(template: str) -> bool:
+    """식 꼴 — 두 끼운 값 사이에 연산이 있고, 등호(또는 등호 자리의 끼운 값)가 값에 붙었거나 그 식
+    줄 앞 줄에 끼운 값이 있다(결과가 앞 줄이고 식 줄에는 등호가 없는 꼴 — 「과부족 {}<br>가용 {} −
+    목표대수 {}」)."""
+    lines = _LINE_BREAK.split(template)
+    for index, line in enumerate(lines):
+        if not _OPERATOR.search(line):
+            continue
+        if _RELATION.search(template) or any("{}" in earlier for earlier in lines[:index]):
+            return True
+    return False
 
 
 def _formula_names(tree: ast.Module) -> frozenset[str]:
@@ -513,20 +678,74 @@ def _formula_names(tree: ast.Module) -> frozenset[str]:
     return frozenset(names)
 
 
-def _calls_helper(function: ast.AST, names: frozenset[str]) -> bool:
-    for node in ast.walk(function):
-        if not isinstance(node, ast.Call):
-            continue
-        if isinstance(node.func, ast.Name) and node.func.id in names:
+def _touches(node: ast.AST, names: frozenset[str] | set[str]) -> bool:
+    """`node` 안에서 `formula_text` 의 이름(또는 그것에서 나온 지역 이름)을 쓴다."""
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name) and child.id in names:
             return True
-        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-            if node.func.value.id == "formula_text":
-                return True
+        if (
+            isinstance(child, ast.Attribute)
+            and isinstance(child.value, ast.Name)
+            and child.value.id == "formula_text"
+        ):
+            return True
     return False
 
 
+def _assigned(node: ast.AST) -> tuple[list[str], ast.AST | None]:
+    """대입 꼴이면 (적는 지역 이름들, 대입한 값), 아니면 ([], None)."""
+    if isinstance(node, ast.Assign):
+        targets: list[ast.expr] = list(node.targets)
+        value: ast.AST | None = node.value
+    elif isinstance(node, ast.AugAssign | ast.AnnAssign | ast.NamedExpr):
+        targets, value = [node.target], node.value
+    else:
+        return [], None
+    names = [
+        child.id for target in targets for child in ast.walk(target) if isinstance(child, ast.Name)
+    ]
+    return names, value
+
+
+def _derived_names(function: ast.AST, names: frozenset[str]) -> set[str]:
+    """`formula_text` 에서 나온 지역 이름 — 그 이름(또는 이미 나온 지역 이름)을 쓴 값을 대입한
+    이름을 끝까지 따라간다(`mark = equals_mark(…)`·`digits, sign = consistent_digits(…)`·
+    `text = operand_text(…)`)."""
+    derived: set[str] = set(names)
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(function):
+            targets, value = _assigned(node)
+            if value is None or not _touches(value, derived):
+                continue
+            for target in targets:
+                if target not in derived:
+                    derived.add(target)
+                    changed = True
+    return derived
+
+
+def _sinks(function: ast.AST, piece: ast.JoinedStr) -> list[str]:
+    """조각 f-string 을 대입한 지역 이름(`text += f" − …"` 의 `text`)."""
+    for node in ast.walk(function):
+        targets, value = _assigned(node)
+        if value is not None and any(child is piece for child in ast.walk(value)):
+            return targets
+    return []
+
+
 def unchecked_formulas(source: str, path: str) -> list[tuple[str, str, int]]:
-    """식 꼴 f-string 이 있는데 `formula_text` 를 부르지 않는 함수 — (파일, 함수, 줄)."""
+    """`formula_text` 를 거치지 않은 식 꼴 f-string — (파일, 함수, 줄).
+
+    f-string 마다 본다(한 함수에서 한 번 불렀다고 그 함수의 다른 식이 지나가지 않는다). 식 꼴
+    f-string 은 제 안에서 `formula_text` 의 이름이나 그것에서 나온 지역 이름(등호·자릿수·인수
+    글자)을 써야 한다. 연산으로 시작하는 조각(`text += f" − 개조 중 {…}"`)은 그 조각을 받은 이름을
+    쓰는 f-string 이 `formula_text` 를 거치면 지나간다.
+
+    **보지 못하는 꼴**(그래서 검산 그물에 이름을 댄다): 결과를 다른 글(카드의 다른 줄·다른 칸)에
+    둔 등호 없는 식, 연산 글자를 끼운 값으로 넣는 식(`{operator}`), f-string 밖에서 연산 글자로
+    잇고(`" − ".join(…)`) 이름으로 넘기는 식."""
     tree = ast.parse(source)
     names = _formula_names(tree)
     found: list[tuple[str, str, int]] = []
@@ -539,14 +758,27 @@ def unchecked_formulas(source: str, path: str) -> list[tuple[str, str, int]]:
             if child is not function and isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
             for node in ast.walk(child)
         }
-        for node in ast.walk(function):
-            if id(node) in inner or not isinstance(node, ast.JoinedStr):
-                continue
+        derived = _derived_names(function, names)
+        strings = [
+            node
+            for node in ast.walk(function)
+            if id(node) not in inner and isinstance(node, ast.JoinedStr)
+        ]
+        for node in strings:
             template = _template(node)
-            if _OPERATOR.search(template) and _RELATION.search(template):
-                if not _calls_helper(function, names):
-                    found.append((path, function.name, node.lineno))
-                break
+            if _is_formula(template):
+                checked = _touches(node, derived)
+            elif _PIECE.match(template):
+                sinks = set(_sinks(function, node))
+                checked = _touches(node, derived) or any(
+                    _touches(other, sinks) and _touches(other, derived - sinks)
+                    for other in strings
+                    if other is not node
+                )
+            else:
+                continue
+            if not checked:
+                found.append((path, function.name, node.lineno))
     return found
 
 
@@ -562,8 +794,7 @@ def _ui_findings() -> list[tuple[str, str, int]]:
 
 
 def test_every_screen_formula_goes_through_formula_text() -> None:
-    """식 글을 짓는 함수는 `formula_text` 로 등호나 인수를 고른다 — 적힌 수로 검산되게
-    (AGENTS 8장)."""
+    """식 글은 `formula_text` 로 등호나 인수를 고른다 — 적힌 수로 검산되게(AGENTS 8장)."""
     findings = [
         finding
         for finding in _ui_findings()
@@ -573,22 +804,52 @@ def test_every_screen_formula_goes_through_formula_text() -> None:
 
 
 def test_the_allow_and_pending_lists_are_not_stale() -> None:
-    """허용·대기 목록의 자리는 아직 식 꼴이고 `formula_text` 를 부르지 않는다 — 고쳤으면 목록에서
+    """허용·대기 목록의 자리는 아직 식 꼴이고 `formula_text` 를 거치지 않는다 — 고쳤으면 목록에서
     뺀다."""
     places = {(path, function) for path, function, _line in _ui_findings()}
     assert set(ALLOWED) <= places
     assert set(PENDING) <= places
 
 
+_GUARD_SOURCE = """\
+from capa_simulation.components.formula_text import APPROX, equals_mark
+def hover(a, b):
+    return f'가용 {a:.1f} ÷ 소요 {b:.1f} = {a / b:.0%}'
+def sized(w, h):
+    return f'캔버스 {w:g} × {h:g}'
+def checked(a, b):
+    mark = equals_mark('x', 'y')
+    return f'가용 {a} − 대여 {b} {mark} {a - b}'
+def front(a, b, gap):
+    return f'과부족 {gap}<br>가용 {a} − 목표대수 {b}'
+def front_checked(a, b, gap):
+    mark = equals_mark('x', 'y')
+    return f'과부족 {gap}<br>{APPROX if mark == APPROX else ""}가용 {a} − 목표대수 {b}'
+def mixed(a, b, c, d):
+    mark = equals_mark('x', 'y')
+    first = f'보유 {a} − 대여 {b} {mark} {a - b}'
+    second = f'기존보유 {c} + 호기 {d} = {c + d}'
+    return first + second
+def pieces(a, b, c):
+    text = f'가용 {a}'
+    text += f' − 개조 중 {b}'
+    return f'{text} = {c}'
+def pieces_checked(a, b, c):
+    text = f'가용 {a}'
+    text += f' − 개조 중 {b}'
+    return f'{text} {equals_mark("x", "y")} {c}'
+def joined(parts, c):
+    return f"기존 가용 = {' − '.join(parts)} = {c}"
+"""
+
+
 def test_the_guard_flags_an_unchecked_formula() -> None:
-    source = (
-        "def hover(a, b):\n"
-        "    return f'가용 {a:.1f} ÷ 소요 {b:.1f} = {a / b:.0%}'\n"
-        "def sized(w, h):\n"
-        "    return f'캔버스 {w:g} × {h:g}'\n"
-        "def checked(a, b):\n"
-        "    mark = equals_mark('x', 'y')\n"
-        "    return f'가용 {a} − 대여 {b} {mark} {a - b}'\n"
-    )
-    source = "from capa_simulation.components.formula_text import equals_mark\n" + source
-    assert unchecked_formulas(source, "x.py") == [("x.py", "hover", 3)]
+    """같은 줄 등호의 식, 결과가 앞 줄인 식 줄, 한 함수의 둘째 식, 조각 잇기, 연산 글자로 잇는 끼운
+    값을 잡는다 — 캔버스 치수 「가로 × 세로」 는 식이 아니다."""
+    assert unchecked_formulas(_GUARD_SOURCE, "x.py") == [
+        ("x.py", "hover", 3),
+        ("x.py", "front", 10),
+        ("x.py", "mixed", 17),
+        ("x.py", "pieces", 21),
+        ("x.py", "joined", 28),
+    ]

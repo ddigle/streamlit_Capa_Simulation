@@ -69,7 +69,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.formula_text import equals_mark
+from capa_simulation.components.formula_text import APPROX, equals_mark, written_value
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
@@ -225,7 +225,7 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 5
+CANVAS_SCHEMA_VERSION: Final = 6
 
 # 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
 SECTION_LABELS: Final[Mapping[str, str]] = {
@@ -943,8 +943,9 @@ def demand_card(
     notes: list[str] = []
     if evidence.effective_capacity is not None:
         notes.append(
-            f"원수요 부하량 {evidence.unique_demand_load:,.0f} ÷ 실효 대당 Capa "
-            f"{evidence.effective_capacity:,.1f}"
+            _effective_capacity_note(
+                evidence.unique_demand_load, evidence.effective_capacity, evidence.required
+            )
         )
     top = evidence.top_products
     if not top.empty:
@@ -963,6 +964,22 @@ def demand_card(
     if assumed_note:
         notes.append(assumed_note)
     return EvidenceCard("① 소요", formula, tuple(notes))
+
+
+def _effective_capacity_note(load: float, capacity: float, required: float) -> str:
+    """① 소요 카드의 「원수요 부하량 L ÷ 실효 대당 Capa C」 — 실효 대당 Capa 는 L ÷ 소요로
+    정의하므로(`services/process_capa_detail._evidence`) 이 나눗셈이 카드의 「= 소요 대」 를 낸다.
+    줄에 등호가 없어, 적힌 L·C 로 다시 셈한 값이 적힌 소요와 다를 때만 식 앞에 「≈」 를 둔다(결합
+    캔버스 과부족 풍선과 같은 길)."""
+    load_text, capacity_text = f"{load:,.0f}", f"{capacity:,.1f}"
+    written_load, written_capacity = written_value(load_text), written_value(capacity_text)
+    recomputed = (
+        _one(written_load / written_capacity)
+        if written_load is not None and written_capacity
+        else ""
+    )
+    prefix = f"{APPROX} " if equals_mark(_one(required), recomputed) == APPROX else ""
+    return f"{prefix}원수요 부하량 {load_text} ÷ 실효 대당 Capa {capacity_text}"
 
 
 def _assumed_demand_note(

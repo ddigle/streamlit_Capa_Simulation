@@ -12,7 +12,8 @@
   3색을 쓰지 않는다).
 - 값은 소수 2자리(보유·가용), 대여·GAP 은 부호를 붙인다(마이너스는 U+2212). 2자리로 0 이 되는 0 아닌
   값은 3자리다. 풍선은 3자리와 식이다 — 식은 적힌 수로 다시 셈한 값이 결과와 다르면 「=」 대신
-  「≈」 다(`formula_text.equals_mark`, 공정 Capa 상세 풍선과 같은 길).
+  「≈」 다(`formula_text.equals_mark`, 공정 Capa 상세 풍선과 같은 길). 결과가 앞 줄이고 식 줄에
+  등호가 없는 Static 가용 풍선은 어긋날 때만 식 앞에 「≈」 를 둔다(원값부터 다른 ⚠ 달은 빼고).
 - 「—」 칸은 흐린 글자에 풍선으로 까닭을 적는다. 머리 칸은 누를 수 없다.
 - 고른 칸(`selected`)은 `ACCENT` 2px 테두리와 굵은 글자다(지금 보는 달의 열 테두리는 없다).
 - 값 줄 라벨은 구획 제목보다 12px 들인다(글자 크기는 그대로). 구획 제목 세부 글은 한 줄이다.
@@ -32,7 +33,7 @@ from typing import Final, NamedTuple
 
 import plotly.graph_objects as go
 
-from capa_simulation.components.formula_text import equals_mark, written_value
+from capa_simulation.components.formula_text import APPROX, EQUALS, equals_mark, written_value
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
     EMPTY,
@@ -293,10 +294,18 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
             "<br>DB 의 양수 값에 − 를 붙여 보입니다"
         )
     if row == ROW_STATIC_AVAILABLE:
+        owned_text = _three(view.value(ROW_STATIC_OWNED, month))
+        lent_text = _three(view.value(ROW_STATIC_LENT, month), signed=True)
+        # 결과가 앞 줄이고 식 줄에 등호가 없다 — 적힌 두 항의 합이 적힌 가용과 다르면 식 앞에
+        # 「≈」. 원값부터 다른 달(⚠)은 아래 줄이 까닭을 적으므로 「≈」 를 두지 않는다.
+        mark = (
+            EQUALS
+            if month in view.mismatch
+            else equals_mark(_three(value), _three(_written_total(owned_text, lent_text)))
+        )
         text = (
             f"{head} · Static 가용 {_three(value)}대 · RQ_EQP_AVBL 가용대수"
-            f"<br>보유 {_three(view.value(ROW_STATIC_OWNED, month))} + 대여 "
-            f"{_three(view.value(ROW_STATIC_LENT, month), signed=True)}"
+            f"<br>{f'{APPROX} ' if mark == APPROX else ''}보유 {owned_text} + 대여 {lent_text}"
         )
         if month in view.mismatch:
             text += "<br>⚠ 가용대수가 보유 + 대여와 다릅니다(기준정보 표를 따로 고쳤습니다)"

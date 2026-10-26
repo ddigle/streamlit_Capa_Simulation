@@ -60,9 +60,9 @@
 그림에 그린다 — 그래서 그림 캐시 키에 그 달이 든다.
 
 **풍선의 식**(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」, UPEH 가정
-소요 「공식 ÷ f」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한 값이 결과와 다르면 「=」 대신
-「≈」 다(`formula_text.equals_mark` — 근거 패널 ③ 과 같은 길). 과부족 식 줄은 등호가 없어 어긋날
-때만 식 앞에 「≈」 를 둔다.
+소요 「공식 ÷ f」, ② 목표 과부족 「가용 − 목표대수」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한
+값이 결과와 다르면 「=」 대신 「≈」 다(`formula_text.equals_mark` — 근거 패널 ③·④ 와 같은 길). 두
+과부족 식 줄은 결과가 앞 줄에 있고 등호가 없어 어긋날 때만 식 앞에 「≈」 를 둔다.
 
 순수 함수다. 세션·캐시·DB 를 보지 않는다. 그림 캐시·칸 선택 콜백·범례는 페이지가 맡는다.
 """
@@ -1068,9 +1068,17 @@ def _target_balance_cell(
         sub = f"→ {_signed_one(gap_after)}"
     else:
         sub = ""
+    # 첫 줄의 과부족을 둘째 줄 식(등호 없음)이 낸다. 적힌 가용·목표대수(첫째 자리)로 다시 셈한
+    # 값이 그 과부족과 다르면 식 앞에 「≈」 를 둔다(① 과부족 풍선과 같은 길).
+    mark = EQUALS
+    if available is not None and target_units is not None:
+        mark = equals_mark(
+            _signed_one(gap), _signed_one(round(available, 1) - round(target_units, 1))
+        )
     hover = (
         f"{head} · 목표 {threshold_percent_label(target)} 과부족 {_signed_one(gap)}"
-        f"<br>가용 {_one(available)} {_MINUS} 목표대수 {_one(target_units)} (환산대수)"
+        f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
+        f"목표대수 {_one(target_units)} (환산대수)"
     )
     if _changed(gap, gap_after):
         hover += f"<br>단축 후 {_signed_one(gap_after)}"

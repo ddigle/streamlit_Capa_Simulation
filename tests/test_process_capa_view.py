@@ -484,12 +484,12 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
 
 
 def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() -> None:
-    """구획 접기·모듈 라벨 제거(4), ③ 세 줄 풍선 · 풍선 없는 칸 trace · 줄 이름 칸 풍선 표적(5)으로
-    그림 모양이 바뀌었다 — 세션에 남은 옛 그림(모든 달 칸 7줄 풍선, trace 없는 `staticPlot` 라벨
-    그림)을 다시 쓰지 않게 모양 버전이 5 다(AGENTS 5장 16)."""
+    """구획 접기·모듈 라벨 제거(4), ③ 세 줄 풍선 · 풍선 없는 칸 trace · 줄 이름 칸 풍선 표적(5),
+    풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글)로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을
+    다시 쓰지 않게 모양 버전이 6 이다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 5
+    assert CANVAS_SCHEMA_VERSION == 6
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
