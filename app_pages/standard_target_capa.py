@@ -988,6 +988,11 @@ _render_standard_target_exceptions(standard_target_exception_rows, process_label
 # 가용대수를 곱해 구하는 지표만 입력이 없으면 볼 것이 없다. 대당 일 Capa 는 가용대수 이전 단계라
 # 입력 없이도 값이 다 나오고, 로직 분석은 그 근거(부하량·소요대수·대당 일 Capa)를 가용대수 빈칸으로
 # 보인다 — 0건에서 이 둘까지 막으면 한 줄만 넣었을 때와 어긋난다.
+# 여기서 `st.stop()` 으로 멈추지 않고 회차를 끝까지 마친다. Streamlit 1.63 은 끝까지 마친 앱 전체
+# 회차에서만 그 회차가 그리지 않은 프래그먼트(닫힌 팝업)를 저장소에서 지운다. 「입력 초기화」 뒤
+# 회차는 늘 이 갈래인데, 멈추면 닫힌 팝업이 저장소에 남아 사람 속도(0.15~0.3초)의 둘째 누름이 청한
+# 그 팝업의 프래그먼트 회차가 브라우저가 이미 걷은 팝업 자리에 요소를 보내 앱 전체가 흰 화면이
+# 됐다(「Cannot set a node at a delta path」, 2026-10-27 E2E).
 if availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
     with weekly_output_container:
         st.subheader(f"주차별 {output_metric}")
@@ -995,9 +1000,7 @@ if availability.empty and output_metric in AVAILABILITY_BASED_METRICS:
             f"주차별 {with_object_particle(output_metric)} 보려면 위 「가용설비 붙여넣기」로 "
             "가용설비를 입력하세요."
         )
-    st.stop()
-
-if output_metric == "로직 분석":
+elif output_metric == "로직 분석":
     # 로직 분석만 소요대수 행이 필요하다. 표준 목표 제외를 거친 프레임(시나리오 키 캐시 — 칸을
     # 고를 때마다 소요대수 언피클·분리를 다시 하지 않는다)을 공정 필터로 거른다.
     try:
