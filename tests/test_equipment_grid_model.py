@@ -349,6 +349,25 @@ def test_prune_loaded_keeps_deleted_marks_and_drops_unknown_ids() -> None:
     assert eg.prune_loaded(loaded, view.index) == loaded[:2]
 
 
+def test_the_loaded_count_uses_the_same_live_units_as_the_total() -> None:
+    """지울 목록에 든 호기는 표에 남아도(`loaded`) 「불러온 호기 n대 / 전체 N대」 의 n 에 세지
+    않는다 — 전체 N 은 살아 있는 호기라, 전부 불러온 뒤 하나 지우면 「21대 / 전체 20대」 처럼 불러온
+    수가 전체를 넘었다(E2E)."""
+    saved = _saved()
+    frames = _copy(saved)
+    gone = frames[1].iloc[0]["설비명"]
+    frames = (frames[0], frames[1].iloc[1:].reset_index(drop=True), frames[2])
+    view = _view(frames, saved)
+    loaded = ["s:" + gone, *view.index.live]
+
+    data = eg.loader_data(view, loaded)
+
+    assert data["loaded"] == loaded, "지운 호기 줄은 표에 남는다"
+    assert data["total"] == len(view.index.live) == len(saved[1]) - 1
+    assert data["loadedCount"] == data["total"]
+    assert eg.loader_data(view, ["s:" + gone])["loadedCount"] == 0
+
+
 # ------------------------------------------------------------------ 표 모양·data
 
 

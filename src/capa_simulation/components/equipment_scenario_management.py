@@ -509,7 +509,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         if isinstance(flash, str):
             st.success(flash)
         if isinstance(refused, str):
-            st.error(refused)
+            st.error(markdown_safe_tildes(refused))
     with st.container():
         if session.legacy_trace_count:
             _render_legacy_trace(database_path, session.legacy_trace_count)
@@ -573,7 +573,9 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             for item in load_equipment_revision_summaries(database_path, latest_common)
         }
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            markdown_safe_tildes(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        )
         return
     release = session.catalog.latest_release
     official_id = release.schedule_revision_id if release is not None else None
@@ -677,7 +679,7 @@ def _render_load(
             discard=discard,
         )
         if failure is not None:
-            st.error(failure)
+            st.error(markdown_safe_tildes(failure))
             return
         st.session_state[FLASH_KEY] = (
             f"설비 시나리오 {name} {with_object_particle(title)} 불러왔습니다."
@@ -972,7 +974,7 @@ def _render_restore(
         common_id = _latest_common_id(database_path)
         preview = _preview_for(database_path, common_id, scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}")
+        st.error(markdown_safe_tildes(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}"))
         return
     release_no = session.catalog.release_no or 0
     seen = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
@@ -1062,7 +1064,7 @@ def _render_restore(
         )
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"되돌리지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(markdown_safe_tildes(f"되돌리지 못했습니다: {bootstrap_error_message(exc)}"))
         return
     moved = False
     kept_unsaved = False
@@ -1108,7 +1110,11 @@ def _render_branch(
     try:
         preview = _preview_for(database_path, _latest_common_id(database_path), scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            markdown_safe_tildes(
+                f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}"
+            )
+        )
         return
     st.caption(branch_unscheduled_sentence(revision, preview))
     new_name = st.text_input(
@@ -1127,7 +1133,11 @@ def _render_branch(
                 revision.schedule_revision_id, name=new_name, created_by=created_by or None
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(f"새 시나리오를 만들지 못했습니다: {bootstrap_error_message(exc)}")
+            st.error(
+                markdown_safe_tildes(
+                    f"새 시나리오를 만들지 못했습니다: {bootstrap_error_message(exc)}"
+                )
+            )
             return
         _written(
             f"{name} {title}에서 설비 시나리오 「{literal_markdown(created.scenario_name)}」 "
@@ -1189,7 +1199,11 @@ def _render_revision_name(
             _refused(f"리비전명을 바꾸지 않았습니다 — {exc}")
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
+            st.error(
+                markdown_safe_tildes(
+                    f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}"
+                )
+            )
             return
         shown = schedule_revision_title(renamed)
         _written(
@@ -1221,7 +1235,9 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
             _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {exc}")
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
+            st.error(
+                markdown_safe_tildes(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
+            )
             return
         quoted = f"「{literal_markdown(renamed.scenario_name)}」"
         _written(f"설비 시나리오 이름을 {with_direction_particle(quoted)} 했습니다.")
@@ -1326,7 +1342,9 @@ def _render_clear_layout(
         )
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"배치 차이를 지우지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            markdown_safe_tildes(f"배치 차이를 지우지 못했습니다: {bootstrap_error_message(exc)}")
+        )
         return
     moved = False
     kept_unsaved = False
@@ -1555,7 +1573,11 @@ def _render_publish(
             scenario.latest_schedule_revision_id,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            markdown_safe_tildes(
+                f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}"
+            )
+        )
         return
     layout_lines, blocked = publish_layout_lines(
         scenario,
@@ -1612,7 +1634,7 @@ def _render_publish(
             _refused(literal_markdown(str(exc)))
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
+            st.error(markdown_safe_tildes(f"발행하지 못했습니다: {bootstrap_error_message(exc)}"))
             return
         cleaned = published.schedule_revision_id != revision.schedule_revision_id
         moved = kept_unsaved = False
@@ -1736,7 +1758,9 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
     try:
         review = load_legacy_trace_review(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(
+            markdown_safe_tildes(f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}")
+        )
         return
     if review.refusal is not None:
         st.error(
@@ -1760,6 +1784,6 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
                 expected_trace_count=count, note="이대로 이어 쓰기"
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(f"이어 쓰지 못했습니다: {bootstrap_error_message(exc)}")
+            st.error(markdown_safe_tildes(f"이어 쓰지 못했습니다: {bootstrap_error_message(exc)}"))
             return
         _written("옛 배포 흔적을 확인했습니다 — 설비 저장을 다시 할 수 있습니다.")

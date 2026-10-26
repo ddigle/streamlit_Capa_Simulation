@@ -1396,7 +1396,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
     낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edits`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
-    고칠 것」 줄이다. 일정 확인 갈래는 내용 지문 캐시(`get_schedule_confirmation_issues`).
+    고칠 것」 줄이다. 낡은 세션의 뒤 둘은 표 밖 저장 자리도 같은 판정으로 막는다 — `equipment_data_workspace.stale_save_refusal`
+    을 사이드바 팝업 「저장」 이 경고 글에, `save_equipment_buffer` 가 거부 글에 쓴다(Space 「배치 저장」 도 — 저장소의
+    「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시 불러오면 공통 편집까지 잃는다). 일정 확인 갈래는 내용 지문
+    캐시(`get_schedule_confirmation_issues`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 토스트는 마지막 op 를 보낸
     마운트에(「호기 추가」 가 넣은 회차만 상세 칸에), 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와
@@ -1444,7 +1447,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.
   - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인 필요, 전체), 칸 묶음·정렬·
     고름(브라우저 몫 — 칸 묶음만 localStorage), 가상 스크롤(줄 34px), 칸 고치기 키(Enter·Esc·Tab·↑↓·F2), 엑셀 여러 칸 붙여넣기
-    (`paste` 이벤트의 `clipboardData` 만 — 설비명 칸에서 붙이면 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터), 값 넣기·날짜 밀기·
+    (`paste` 이벤트의 `clipboardData` 만 — 설비명 칸에서 붙이면 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터, 엑셀이 따옴표로 감싼
+    칸(줄바꿈·탭이 든 칸, 안의 `""`)은 한 칸으로 읽는다 — `parseClipboard`), 값 넣기·날짜 밀기·
     지우기·되살리기·되돌리기, 상세 칸·저장 전 변경의 칸/호기 되돌리기. 업무 검증은 하지 않는다. 데이터 글은 `textContent` 로만,
     처리한 키는 `stopPropagation`(Streamlit 단축키가 글자를 먹는다).
   - 토스트는 표와 오른쪽 칸이 저마다 그린다(`fillToast`) — 「되돌리기」 는 그 토스트의 단계 표지를 실어 보낸다(대상 없는
@@ -1928,7 +1932,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `equipment_master_tab.py`, 엑셀·CSV 팝업은 `equipment_import_dialog.py`.
   - Space 편집기와 함께 쓰는 편집본 경계다 — 버퍼는 `replace_equipment_buffer` 또는 설비 마스터 표 전용
     `apply_master_grid_result`(같은 세대 규칙 — 내용이 그대로면 세대를 올리지 않는다)로만 갈고 `BUFFER_GENERATION_KEY` 세대를
-    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다.
+    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 「내용이 그대로」 는 `same_frame_content` 로 본다 — 저장본 사본(DuckDB)의 날짜 칸은
+    `datetime64[us]`, 엑셀·CSV 넣기의 병합 결과는 `[ns]` 라 `DataFrame.equals` 만으로는 바뀐 것 없는 넣기가 「미저장 변경」 을
+    남긴다(낡은 세션의 비가동 붙여넣기 거절 `stale_paste_refusal` 도 같은 견줌). 저장은 `save_equipment_buffer` 한 곳이다.
   - **설비 마스터 표의 세션 칸**(개편 B1): 칸 초안 `GRID_OVERLAY_KEY`(못 읽은 글 — 편집본 밖)·되돌리기 `GRID_UNDO_KEY`(기본형 —
     `equipment_grid.undo_to_state`)·마운트별 토스트 `GRID_TOAST_KEY`(번호 `GRID_TOAST_SEQ_KEY` 는 비우지 않는다)·회차 메모
     `GRID_MEMO_KEY` 는 편집본을 다시 세움(`ensure_equipment_drafts`)·저장·모두 버리기(`reset_equipment_drafts`) 때 함께 비우고,
@@ -2038,8 +2044,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
-  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭은 가정
-  설비 시나리오에서 발행 체크를 그리지 않는다(`show_publish`). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
+  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭과
+  사이드바 팝업은 가정 설비 시나리오에서도 발행 체크를 그린다 — 가정 세션 저장도 함께 넣기로 공식 시나리오에 새 리비전을 만들면
+  공식 발행까지 가므로 끌 수 있어야 한다(G1). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (G1 — 2026-10-24 결정 판 「권장대로」·F6·F2 — 바꾸려면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
@@ -4034,9 +4041,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
     `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서
     `markdown_safe_tildes` 로 막는다 — Space 머리 알림 줄·잠금 줄·꺼진 「배치 편집」 풍선, rerun 건너 그리는 Space 성공 글은
-    담을 때(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`), 사이드바 설비 시나리오 줄의 팝업 저장 알림·세션
-    이동 알림과 시나리오 관리 구획의 세션 이동 알림, Space 층 끄기 확인의 가정 배치 덧줄
-    (`tests/test_equipment_scenario_layout_management.py`, E2E r3).
+    담을 때(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`), 사이드바 설비 시나리오 줄의 팝업 저장 알림
+    (`save_result_message`)·저장 실패·세션 이동 알림과 시나리오 관리 구획의 세션 이동 알림·거절 알림(`REFUSED_KEY` — 그리는
+    자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
+    `tests/test_equipment_scenario_screens.py`, E2E r3).
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은

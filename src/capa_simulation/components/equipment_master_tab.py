@@ -1167,7 +1167,6 @@ def _render_save_section(
     st.text_input("변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER)
     render_equipment_save_fields(
         SAVE_FIELDS_PREFIX,
-        show_publish=basis is None or basis.official_scenario,
         release_exists=basis is None or basis.release_no > 0,
         persist_saved_by=True,
     )
