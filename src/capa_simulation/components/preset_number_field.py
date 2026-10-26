@@ -21,7 +21,15 @@
   선다.
 - **세션 칸이 그 값과 다를 때만 적는다** — 같아도 매 회차 적으면 `set_value` 가 회차마다 가서 다른
   위젯이 돌린 앱 전체 회차가 숫자 칸에 치다 만 글을 덮는다. 두 위젯 모두 값으로 주고받아(버튼은 늘
-  같은 라벨 글자) 라벨 되보냄 함정이 없다. 위젯에 `default=`·`value=` 를 주지 않는다(AGENTS 9장).
+  같은 라벨 글자) 라벨 되보냄 함정이 없다. 버튼 줄에는 `default=` 를 주지 않는다(AGENTS 9장).
+- **숫자 칸은 적지 않은 회차에만 지금 값을 `value=` 로 싣는다.** 새 key 의 칸은 그 key 를 처음
+  적은 회차가 `set_value` 로 값을 실어 보내는데, 그 회차가 보내기 전에 다음 누름에 끊기면 다음
+  회차는 같은 값이라 적지 않아 `set_value` 없이 칸이 닿는다 — 브라우저는 처음 보는 칸을 기본값
+  (`value=` 가 없으면 최소값 50)으로 세우고 다음 조작에 그 50 을 되보내 정본이 말없이 50 이 됐다
+  (2026-10-27 E2E — 켜진 버튼 빠른 두 번 누름 뒤 더블클릭, 서버가 붐빌 때). 기본값이 지금 값이면
+  `set_value` 없이 닿아도 그 값으로 선다. 적은 회차에는 싣지 않는다 — 둘을 함께 주면 Streamlit 이
+  「기본값과 세션 API 를 함께 썼다」고 경고하고, 그 회차는 `set_value` 가 값을 싣는다. key 가 같은
+  칸의 기본값이 바뀌어도 브라우저는 쥔 값을 그대로 둔다(기본값은 처음 세울 때만 쓴다).
 - **버튼을 누르면 숫자 칸을 새 key 로 다시 세운다**(`_input_widget_key` — 세대 칸을 올린다).
   1.63 숫자 칸은 범위 밖 글(예: 301)을 치고 칸을 떠나면 그 글을 확정하지 않은 채 쥐고, 쥔 동안은
   서버가 보낸 새 값(`set_value`)을 무시한다 — 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 범위 밖
@@ -105,10 +113,13 @@ def _input_widget_key(input_key: str) -> str:
     return widget_key(input_key, _generation_key(input_key), style="__")
 
 
-def _write_if_changed(key: str, value: object) -> None:
-    """칸이 없거나 그 값과 다를 때만 적는다 — 같은 값을 다시 적으면 `set_value` 가 회차마다 간다."""
+def _write_if_changed(key: str, value: object) -> bool:
+    """칸이 없거나 그 값과 다를 때만 적고 적었는지 돌려준다 — 같은 값을 다시 적으면 `set_value` 가
+    회차마다 간다."""
     if st.session_state.get(key, _MISSING) != value:
         st.session_state[key] = value
+        return True
+    return False
 
 
 def _pick_preset(value_key: str, pills_key: str, input_key: str, integer: bool) -> None:
@@ -216,7 +227,12 @@ def render_preset_number_field(
     _write_if_changed(pills_key, lit)
     if lit != CUSTOM_OPTION:
         _write_if_changed(_lit_key(pills_key), lit)
-    _write_if_changed(widget_key, _number(shown, integer))
+    field_value = _number(shown, integer)
+    # 적지 않은 회차에만 지금 값을 기본값으로 싣는다 — 끊긴 회차가 `set_value` 를 보내지 못한 새 key
+    # 칸도 최소값이 아니라 이 값으로 선다(모듈 머리말). 적은 회차에 함께 주면 Streamlit 이 경고한다.
+    field_default: float | int | Literal["min"] = (
+        "min" if _write_if_changed(widget_key, field_value) else field_value
+    )
 
     options: list[float | str] = [
         *(NONE_OPTION if preset is None else preset for preset in presets),
@@ -247,6 +263,7 @@ def render_preset_number_field(
             f"{label} 직접 입력",
             min_value=_number(minimum, integer),
             max_value=_number(maximum, integer),
+            value=field_default,
             step=_number(step, integer),
             format=number_format,
             key=widget_key,

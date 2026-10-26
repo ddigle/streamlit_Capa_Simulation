@@ -2333,7 +2333,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   끝, `[role="radiogroup"] > button:last-child` 를 CSS 로 숨김)이 켜진 꼴이다 — 그래야 풀린 `None` 이 늘 「바뀜」 으로 콜백에
   닿는다(맞춤 값을 `None` 으로 두면 사람 손 빠르기 0.15초 누름에서 칸 확정 회차가 먼저 버튼 칸을 `None` 으로 적고, 그 회차를
   받기 전의 브라우저가 켜진 버튼을 풀어 같은 `None` 을 보내 콜백이 없었다 — 2026-10-26 사본 앱). `None` 버튼(「HOME
-  기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
+  기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 숫자 칸은 **적지 않은 회차에만** 지금
+  값을 `value=` 로 싣는다 — 새 key 를 적은 회차가 보내기 전에 다음 누름에 끊기면 다음 회차는 같은 값이라 적지 않아 칸이
+  `set_value` 없이 브라우저에 처음 닿고, 기본값이 최소값(50)이면 그 50 이 되돌아와 정본이 말없이 50 이 됐다(2026-10-27 E2E —
+  켜진 버튼 빠른 두 번 누름 뒤 더블클릭). 적은 회차에는 싣지 않아 「기본값과 세션 API」 경고가 없다. 켜진 버튼
   주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
   `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
@@ -3830,7 +3833,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **세션에 값을 적는 위젯에는 `value=`(`default=`·`expanded=`) 기본값을 주지 않는다.** 둘을 함께
   주면 Streamlit 이 「기본값과 세션 API 를 함께 썼다」고 경고한다(기본값이 `False`·첫 항목이면
   조용하다). 기본값은 위젯 앞에서 칸이 없을 때만 세션에 심는다(HOME 토글 — `render_home_view_card`,
-  사이드바 상자 — `sidebar_status._remembered_box`).
+  사이드바 상자 — `sidebar_status._remembered_box`). 예외는 **세대 key 로 다시 서는 칸을 값이 같을 때 적지 않는**
+  자리다 — 그 key 를 처음 적은 회차가 끊기면 칸이 `set_value` 없이 브라우저에 처음 닿아 기본값으로 서므로, **적지 않은
+  회차에만** 지금 값을 `value=` 로 싣는다(경고는 그 회차에 세션 칸을 적었을 때만 난다 — 버튼 + 직접 입력 숫자 칸,
+  `preset_number_field`).
 - **조회 조건은 시나리오를 바꿔도 살아남아야 한다 — 데이터만 바뀐다.** 불러오기는
   `st.rerun()` 을 부르고 그 호출이 그 자리에서 실행을 끊는다. 사이드바 시나리오 팝업 안의
   불러오기는 브라우저에서 프래그먼트 실행이라 페이지 위젯을 건드리지 않지만, 시나리오 관리 화면의
@@ -4006,7 +4012,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **버튼 + 직접 입력은 정본 한 칸 + 매 회차 다시 서는 위젯 둘이다**(`components/preset_number_field.py`). 정본은 위젯 아닌
   세션 칸이고 버튼(`st.pills`, `required=False` — 켜진 버튼을 다시 누르면 콜백이 그 버튼으로 되세운다, 맞춤 값은 숨은 맞춤
   버튼)·숫자 칸 key 는 위젯 앞에서 정본에서
-  내되 **다를 때만** 적는다. 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
+  내되 **다를 때만** 적는다(숫자 칸은 적지 않은 회차에만 지금 값을 `value=` 로 실어 끊긴 회차 뒤 새 key 칸도 그 값으로
+  선다). 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
   값을 무시한다). 친 글의 확정과 버튼 누름이 한 회차에 겹치면 버튼이 이긴다(옛 세대 key 의 숫자 칸 콜백은 적지 않는다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
 - **공통 줄은 그 화면이 읽을 때만 선다.** 새 화면은 `navigation.PageSpec` 의 `reads_scenario`·`reads_period`(일부 탭만

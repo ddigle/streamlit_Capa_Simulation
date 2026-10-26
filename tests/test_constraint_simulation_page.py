@@ -583,6 +583,60 @@ def test_the_lit_button_wins_even_when_the_typed_value_ran_its_own_rerun_first(
     assert header in _header_line(app)
 
 
+@pytest.mark.parametrize(
+    ("label", "pills_key", "value_key", "custom", "pressed", "header"),
+    [
+        ("제약 확보율", CONSTRAINT_TARGET_PILLS_KEY, CONSTRAINT_TARGET_KEY, 188, 130, "제약 130%"),
+        (
+            "기준 확보율",
+            CONSTRAINT_GENERAL_PILLS_KEY,
+            CONSTRAINT_GENERAL_KEY,
+            112.5,
+            105,
+            "기준 105%",
+        ),
+        ("개조 기간", CONSTRAINT_MOD_DAYS_PILLS_KEY, CONSTRAINT_MOD_DAYS_KEY, 50, 45, "개조 45일"),
+    ],
+)
+def test_a_new_typed_field_that_reaches_the_browser_without_its_value_stands_at_the_value(
+    dynamic_databases: tuple[Path, Path],
+    label: str,
+    pills_key: str,
+    value_key: str,
+    custom: float,
+    pressed: int,
+    header: str,
+) -> None:
+    """켜진 버튼을 다시 누르면 숫자 칸이 새 key 로 서고, 그 key 를 처음 적은 회차가 `set_value` 로
+    값을 싣는다. 그 회차가 보내기 전에 다음 누름(더블클릭의 둘째)에 끊기면 다음 회차는 같은 값이라
+    적지 않아 칸이 `set_value` 없이 브라우저에 처음 닿는다 — 그때 칸의 기본값이 최소값(50)이면
+    브라우저가 50 으로 세우고 다음 조작에 되보내 정본이 50 이 됐다(2026-10-27 E2E). 적지 않은
+    회차의 칸은 늘 지금 값을 기본값으로 싣는다."""
+    app = _opened(dynamic_databases)
+    field = f"{label} 직접 입력"
+    (typed_key,) = _typed_field_keys(app, field)
+    app.number_input(key=typed_key).set_value(custom)
+    _ok(app.run())
+    app.button_group(key=pills_key).set_value(pressed)
+    _ok(app.run())
+    # 켜진 버튼 다시 누름 — 값은 그대로이고 숫자 칸 세대가 올라 새 key 로 선다(이 회차가 적는다).
+    (before,) = _typed_field_keys(app, field)
+    _press_lit(app, pills_key)
+    _ok(app.run())
+    (fresh,) = _typed_field_keys(app, field)
+    assert fresh != before
+    assert app.number_input(key=fresh).proto.set_value
+
+    # 앞 회차의 칸이 브라우저에 닿지 못했다면 이 회차가 그 key 를 처음 싣는다 — 값을 적지 않는다.
+    _ok(app.run())
+    assert _typed_field_keys(app, field) == [fresh]
+    shown = app.number_input(key=fresh).proto
+    assert not shown.set_value
+    assert shown.default == pytest.approx(pressed)
+    assert app.session_state[value_key] == pressed
+    assert header in _header_line(app)
+
+
 def test_the_general_target_takes_half_percent_and_home(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
