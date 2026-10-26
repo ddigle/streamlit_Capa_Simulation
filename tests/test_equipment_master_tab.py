@@ -17,8 +17,10 @@ import pytest
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
+from test_scenario_save_double_press import _first_callback, _press_again
 from widget_browser import BrowserTables
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
@@ -30,6 +32,7 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_OVERLAY_KEY,
+    GRID_TOAST_KEY,
     PENDING_RENAMES_KEY,
     PREVIEW_BUTTON_KEY,
 )
@@ -40,6 +43,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_HISTORY,
     SIDE_KEY,
     TABLE_KEY,
+    UNDO_BUTTON_KEY,
 )
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.components.tab_marks import pending_tabs_style
@@ -595,3 +599,68 @@ def test_the_floor_column_narrows_by_building_where_only_the_pair_is_inactive(
     assert by_building["C1"] == ["1F", "2F", "4F", "5F", "6F"]
     assert by_building["C2"] == ["1F", "2F", "3F", "4F", "5F", "6F"]
     assert "optionsBy" not in columns["동"]
+
+
+def _memos(app: AppTest, name: str) -> list[str]:
+    master = app.session_state[BUFFER_KEY][1].set_index("설비명")
+    values = [master.loc[name, f"메모{k}"] for k in (1, 2, 3)]
+    return ["" if pd.isna(value) else str(value) for value in values]
+
+
+def _three_memo_edits(tmp_path: Path, grid: Calls) -> AppTest:
+    """새 호기 DA-01 의 메모1·2·3 을 차례로 고치고 「저장 전 변경」 을 연 화면."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
+    for k, text in ((1, "t-1"), (2, "t-2"), (3, "t-3")):
+        send_ops(app, grid, {"op": "cell", "id": "n:DA-01", "col": f"메모{k}", "text": text})
+    assert _memos(app, "DA-01") == ["t-1", "t-2", "t-3"]
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    return app
+
+
+def test_a_double_press_on_one_step_undo_takes_back_only_the_last_step(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """메모1·2·3 을 차례로 고친 뒤 「한 단계 되돌리기」 를 더블클릭(0.15초)하면 메모3·메모2 가 함께
+    돌아가고 알림은 「되돌림: 메모2 고침」 뿐이었다(2026-10-27 E2E 3/3). 둘째 누름이 첫 회차가
+    단추를 다시 그리기 전의 옛 화면에 닿으면 같은 누름 세대를 싣는다 — 되돌리지도 알리지도
+    않는다. 창이 지난 뒤 다시 그린 단추를 누르면 한 단계 더 되돌린다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = _three_memo_edits(tmp_path, grid)
+    app.button(key=UNDO_BUTTON_KEY).click()
+    pressed = app._tree.get_widget_states()
+
+    _first_callback(app, monkeypatch, "_undo_step")
+    _press_again(app, pressed)
+
+    assert _memos(app, "DA-01") == ["t-1", "t-2", ""]
+    assert app.session_state[GRID_TOAST_KEY]["changes"]["text"] == "되돌림: 메모3 고침"
+
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+    assert not app.exception, app.exception
+    assert _memos(app, "DA-01") == ["t-1", "", ""]
+    assert app.session_state[GRID_TOAST_KEY]["changes"]["text"] == "되돌림: 메모2 고침"
+
+
+@pytest.mark.parametrize(
+    ("window", "memos"), [(3600.0, ["t-1", "t-2", ""]), (0.0, ["t-1", "", ""])]
+)
+def test_a_double_press_landing_on_the_redrawn_undo_is_still_one_step(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch, window: float, memos: list[str]
+) -> None:
+    """첫 회차가 단추를 다시 그린 뒤 닿은 둘째 누름은 세대가 같아 세대만으로는 일부러 누른 다음
+    단계와 가를 수 없다 — 브라우저에서 0.15초 더블클릭 셋 중 둘이 이 꼴이었다(2026-10-27 E2E 사본
+    재확인). 첫 되돌리기의 창(`TRAILING_PRESS_SECONDS`) 안 누름은 같은 더블클릭으로 본다 — 창이 0
+    이면 옛 동작(두 단계)이다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    app = _three_memo_edits(tmp_path, grid)
+
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+
+    assert not app.exception, app.exception
+    assert _memos(app, "DA-01") == memos
+    assert app.session_state[GRID_TOAST_KEY]["changes"]["text"] == (
+        "되돌림: 메모3 고침" if window else "되돌림: 메모2 고침"
+    )

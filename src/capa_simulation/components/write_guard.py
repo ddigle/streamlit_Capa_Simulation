@@ -240,6 +240,12 @@ def save_once(
         return outcome
 
 
+def note_written(counter_key: str) -> None:
+    """세대 쓰기 표지 없이 세션만 바꾸는 누름(설비 마스터 「한 단계 되돌리기」)이 지금 한 일을
+    적는다 — `just_written` 이 그 창을 본다. 표지는 끊기지 않는 세션 dict 칸이다."""
+    _session_dict(RECENT_WRITES_KEY)[counter_key] = time.monotonic()
+
+
 def just_written(counter_key: str) -> bool:
     """`counter_key` 의 쓰기가 `TRAILING_PRESS_SECONDS` 안에 있었는가.
 
