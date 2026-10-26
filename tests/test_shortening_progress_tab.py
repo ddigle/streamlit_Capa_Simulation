@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import codecs
 import io
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from streamlit.testing.v1.element_tree import Button, TextInput
 from test_required_shortening_tab import _csv, _database, _html, _run
 
 from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
@@ -228,6 +230,48 @@ def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirm
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     assert "shk-prog" not in _html(app)
+    clear_equipment_repository()
+
+
+def _bare_tildes(text: str) -> int:
+    """마크다운이 지움선으로 읽을 물결표(앞에 `\\` 가 없는 것)의 수."""
+    return len(re.findall(r"(?<!\\)~", text))
+
+
+def test_a_baseline_name_with_tildes_reads_as_written_in_the_notices_and_the_delete_caption(
+    tmp_path: Path,
+) -> None:
+    """기준선 이름은 사람이 적은 글이다 — 저장 알림·같은 이름 거절·「기준선 지우기」 확인 글·지움
+    알림은 마크다운(토스트·캡션)이라 「10/01~10/07 기준~A」 의 물결표 짝이 지움선이 되지 않게
+    막는다(E2E 2026-10-26). 진척 비교 선택 상자 라벨은 글자 그대로라 손대지 않는다."""
+    database_path, _ = _saved_database(tmp_path)
+    name = "10/01~10/07 기준~A"
+    app = _run(database_path)
+    app = _name_input(app).set_value(name).run()
+    app = _save_button(app).click().run()
+    saved = _toasts(app)
+    assert not app.exception
+    assert "기준선을 저장했습니다" in saved and literal_markdown(name) in saved
+    assert _bare_tildes(saved) == 0
+
+    app = _name_input(app).set_value(name).run()
+    app = _save_button(app).click().run()
+    refused = _toasts(app)
+    assert "같은 이름의 기준선이 이미 있습니다" in refused and _bare_tildes(refused) == 0
+
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+    assert stored.name == name
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    (caption,) = [item.value for item in app.caption if "기준선을 지웁니다" in item.value]
+    assert literal_markdown(name) in caption and _bare_tildes(caption) == 0
+
+    confirm = next(box for box in app.checkbox if box.label == "정말 지웁니다")
+    app = confirm.check().run()
+    app = app.button(key="equipment_shortening_baseline_delete").click().run()
+    deleted = _toasts(app)
+    assert not app.exception
+    assert "기준선을 지웠습니다" in deleted and literal_markdown(name) in deleted
+    assert _bare_tildes(deleted) == 0
     clear_equipment_repository()
 
 

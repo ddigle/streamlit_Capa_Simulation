@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ from capa_simulation.components.process_capa_view import (
     NEXT_MONTH_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
+    step_button_label,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
 from capa_simulation.components.shortening_board import (
@@ -54,6 +56,7 @@ from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
 from capa_simulation.persistence.cache import (
     clear_global_execution_capacity_cache,
+    clear_global_process_rename_cache,
     clear_global_securement_threshold_cache,
 )
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -73,6 +76,7 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_SPLIT_KEY,
     PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
     ProcessDetailRequest,
+    ProcessStep,
     shortening_card_query_params,
 )
 from capa_simulation.services.month_columns import month_label
@@ -280,7 +284,7 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
     assert isinstance(month, int)
     header = _header(app)
-    assert header.startswith(f"**{process_box.value}**")
+    assert header.startswith(f"**{literal_markdown(process_box.value)}**")
     # 설비 DB 에 저장본이 없다 — 샘플 fleet 을 쓰지 않는다.
     assert "설비 일정 없음: 저장본 없음" in header
     assert [metric.label for metric in app.metric] == [
@@ -298,7 +302,10 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert "① 공식 기준" in _label_texts(app)
     assert "② 설비 일정 기준 가용" not in _label_texts(app)
     # 산출 근거 패널은 고른 달이고 카드는 ① ~ ③ 셋이다.
-    assert _panel_head(app) == f"**산출 근거 · {month_label(month)} · {process_box.value}**"
+    assert (
+        _panel_head(app)
+        == f"**산출 근거 · {month_label(month)} · {literal_markdown(process_box.value)}**"
+    )
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
     assert "④ 단축 근거" not in cards
@@ -342,7 +349,7 @@ def test_a_chosen_process_survives_reruns_and_keeps_the_month(
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == other
     _ok(app.run())
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == other
-    assert _header(app).startswith(f"**{other}**")
+    assert _header(app).startswith(f"**{literal_markdown(other)}**")
     # 공정을 바꿔도 보던 달은 그대로다.
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[-1]
     assert month_label(months[-1]) in _panel_head(app)
@@ -700,13 +707,45 @@ def test_the_header_steps_through_shortfall_processes(
     second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
     assert second != first
     assert _step_caption(app).startswith("미달 2/")
-    assert _header(app).startswith(f"**{second}**")
+    assert _header(app).startswith(f"**{literal_markdown(second)}**")
     # 모든 달이 미달인 하네스 — 첫 미달 달은 축 첫 달이다.
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[0]
 
     app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).click()
     _ok(app.run())
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == first
+
+
+def test_the_header_step_buttons_are_named_by_where_they_go(
+    strict_databases: tuple[Path, Path],
+) -> None:
+    """머리 ◀ ▶ 는 기호만 보이지만 접근 이름(라벨)은 갈 곳 — 「다음 미달 공정: <공정명> · 최저
+    …」 다(E2E 2026-10-26 — 이름이 「◀」·「▶」 뿐이라 읽기 도구가 갈 곳을 몰랐다). 라벨 글은
+    화면에서 시각적으로만 숨기고 기호를 대체 글 없는 생성 글로 그린다. 풍선은 그대로다."""
+    app = _ok(_app(strict_databases).run())
+    previous = app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY)
+    following = app.button(key=PROCESS_DETAIL_NEXT_PROCESS_KEY)
+
+    assert previous.label == "이전 미달 공정 없음" and previous.proto.disabled
+    assert following.label.startswith("다음 미달 공정: ") and " · 최저 " in following.label
+    help_text = str(following.proto.help)
+    assert following.label == f"다음 미달 공정: {help_text}"
+    style = next(body for body in _html(app) if PROCESS_DETAIL_NEXT_PROCESS_KEY in body)
+    assert 'content:"◀" / ""' in style and 'content:"▶" / ""' in style
+    assert "clip-path:inset(50%)" in style and "display:none" not in style
+
+    following.click()
+    _ok(app.run())
+    second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    assert app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).label.startswith("이전 미달 공정: ")
+    assert second
+
+
+def test_the_step_label_keeps_a_renamed_process_as_written() -> None:
+    step = ProcessStep("DEMO_Chip_Attach", 0.011, 202611)
+    label = step_button_label("▶", step, lambda _: "Chip Attach 1~2차/3~4차")
+    assert label == f"다음 미달 공정: {literal_markdown('Chip Attach 1~2차/3~4차')} · 최저 1.1%"
+    assert step_button_label("◀", None, str) == "이전 미달 공정 없음"
 
 
 def test_the_cause_row_marks_owned_shortfalls_for_investment(
@@ -843,6 +882,64 @@ def test_a_shortening_card_link_shows_its_band_from_the_address_only(
     _ok(app.run())
     assert app.session_state[SHORTENING_HIGHLIGHT_KEY] == (DYNAMIC_PROCESS, HIGHLIGHT_FROM_DETAIL)
     assert SHORTENING_PROCESS_KEY not in app.session_state
+
+
+def test_an_equipment_name_from_the_card_address_reads_as_written_in_the_band(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """카드가 본 설비 시나리오(`eq` 주소 인자)는 누구나 적어 보낼 수 있는 글이다 — 출처 띠(캡션,
+    마크다운)에 실을 때 물결표 짝·링크가 해석되지 않게 막는다(E2E 2026-10-26 같은 갈래)."""
+    app = _dynamic_app(dynamic_databases)
+    equipment = "셋업~실무~A r4 [링크](http://h/q)"
+    app.query_params.update(
+        shortening_card_query_params(
+            process=DYNAMIC_PROCESS,
+            month=None,
+            target=1.1,
+            start_month=202601,
+            end_month=202606,
+            shortened=1,
+            new=0,
+            theme=None,
+            equipment=equipment,
+        )
+    )
+    _ok(app.run())
+
+    (band,) = [str(item.value) for item in app.caption if "필요 단축 일정 카드" in str(item.value)]
+    assert f"카드는 「{literal_markdown(equipment)}」 기준" in band
+    assert not re.search(r"(?<!\\)~", band) and "](http" not in band
+
+
+def test_a_renamed_process_label_reads_as_written_in_the_header_and_the_evidence_head(
+    tmp_path: Path,
+) -> None:
+    """공정 표시명(Admin `Proc Rename`)은 사람이 적은 글이다 — 머리 줄과 「산출 근거」 제목은
+    마크다운이라 「1~2차/3~4차」 의 물결표 짝이 지움선이 되고 `**…**`·`[…](…)` 가 굵게·눌리는
+    링크가 됐다(E2E 2026-10-26). 제약 시뮬레이션 머리처럼 글자 그대로 막는다."""
+    databases = (tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
+    app = _ok(_app(databases).run())
+    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    tilde, link = options[0], options[1]
+    labels = {
+        tilde: "Chip Attach 1~2차/3~4차",
+        link: "**굵게** [링크](https://example.com) Inspect",
+    }
+    DuckDBScenarioRepository(databases[0]).replace_global_process_rename(
+        pd.DataFrame({"공정": list(labels), "표시명": list(labels.values())}),
+        source="표시명 마크다운 시험",
+    )
+    clear_global_process_rename_cache()
+    try:
+        for process, label in labels.items():
+            app.query_params["process"] = process
+            _ok(app.run())
+            for line in (_header(app), _panel_head(app)):
+                assert literal_markdown(label) in line, line
+                assert not re.search(r"(?<!\\)~", line)
+                assert "](https://" not in line and "**굵게**" not in line
+    finally:
+        clear_global_process_rename_cache()
 
 
 def test_the_header_states_the_page_identity(databases: tuple[Path, Path]) -> None:

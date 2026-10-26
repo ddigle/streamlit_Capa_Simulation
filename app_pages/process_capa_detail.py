@@ -452,9 +452,10 @@ if entry.origin is not None:
         entry.origin,
         month_text=month_label(origin_month) if origin_month is not None else "-",
     )
-    # HOME 칸 방문은 공식 설비 시나리오다 — 띠 끝에 그 기준을 적는다.
+    # HOME 칸 방문은 공식 설비 시나리오다 — 띠 끝에 그 기준을 적는다. 설비 시나리오 이름은 사람
+    # 글이라 캡션(마크다운)에 글자 그대로 싣는다.
     if equipment_here is not None:
-        band = f"{band} · 설비는 {equipment_here} 기준"
+        band = f"{band} · 설비는 {literal_markdown(equipment_here)} 기준"
     st.caption(f"{ORIGIN_BAND_ICON} {band}")
 if entry.shortening_origin is not None:
     # 주소 인자로 받은 그 카드의 값만 적는다 — 필요 단축 일정의 세션 칸·공용 프로필은 읽지 않는다.
@@ -462,7 +463,8 @@ if entry.shortening_origin is not None:
     card_band = shortening_band_text(entry.shortening_origin)
     card_tail = equipment_band_tail(entry.shortening_origin.equipment, equipment_here)
     if card_tail is not None:
-        card_band = f"{card_band} · {card_tail}"
+        # 카드의 설비 시나리오는 주소 인자(`eq`) 글이다 — 앱 글뿐인 조각과 함께 글자 그대로 막는다.
+        card_band = f"{card_band} · {literal_markdown(card_tail)}"
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.caption(f"{ORIGIN_BAND_ICON} {card_band}", width="content")
         st.button(
@@ -848,8 +850,9 @@ if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
         else f"{constraint_link_help} · {official_note}"
     )
 with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
+    # 표시명은 Admin `Proc Rename` 에 사람이 적은 글이다 — 마크다운 자리라 글자 그대로 막는다.
     st.markdown(
-        f"**{process_label}** {OFFICIAL_BADGE} {dynamic_badge}"
+        f"**{literal_markdown(process_label)}** {OFFICIAL_BADGE} {dynamic_badge}"
         + (f" {assumption_badge}" if assumption_badge else ""),
         width="content",
     )

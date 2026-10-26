@@ -260,8 +260,9 @@ def test_contributing_units_list_the_shortened_and_new_units_of_that_month() -> 
                 "목표 Qual": date(2027, 2, 8),
                 "단축일수": 18,
                 "늘어난 환산대수": 1.6,
+                "월별 늘어난 환산대수": ((202702, 1.6), (202703, 0.4)),
                 "대상 월": 202702,
-                "해소 기여 월": (202702,),
+                "해소 기여 월": (202702, 202703),
                 "반입 전": False,
             },
             {
@@ -271,6 +272,7 @@ def test_contributing_units_list_the_shortened_and_new_units_of_that_month() -> 
                 "목표 Qual": date(2027, 2, 10),
                 "단축일수": None,
                 "늘어난 환산대수": 0.5,
+                "월별 늘어난 환산대수": ((202702, 0.5), (202703, 1.0)),
                 "대상 월": 202702,
                 "해소 기여 월": (),
                 "반입 전": False,
@@ -282,6 +284,7 @@ def test_contributing_units_list_the_shortened_and_new_units_of_that_month() -> 
                 "목표 Qual": date(2027, 4, 1),
                 "단축일수": 30,
                 "늘어난 환산대수": 1.0,
+                "월별 늘어난 환산대수": ((202704, 1.0),),
                 "대상 월": 202704,
                 "해소 기여 월": (202704,),
                 "반입 전": True,
@@ -294,6 +297,34 @@ def test_contributing_units_list_the_shortened_and_new_units_of_that_month() -> 
         "→ 추가1 신규 필요 Qual 27.02.10 (+0.50)",
     ]
     assert contributing_units(events, 202704, today=date(2027, 1, 1))[0].endswith("· 반입 전")
+    # 대상 월 뒤의 달은 대상 월 몫(+1.60)이 아니라 그 달 몫을 적는다.
+    assert contributing_units(events, 202703, today=TODAY) == [
+        f"→ EQ-23 27.02.26→27.02.08 ({MINUS}18일, +0.40)"
+    ]
+
+
+def test_the_shortening_card_unit_gains_add_up_to_the_month_after_shortening() -> None:
+    """④ 단축 근거의 「가용 → 호기 +x … → 단축 후」 는 그 달 식이다 — 호기 줄 증분의 합이 단축 후 −
+    가용과 맞아야 한다(소수 둘째 자리 반올림 차이만). 앞 달에 당겨 뒤 달을 메운 호기가 대상 월 몫을
+    적으면 어긋난다(E2E 2026-10-26 — 27.01 4.00→5.50 인데 +0.05)."""
+    dynamic = _dynamic_view()
+    months = dynamic.canvas.process_months
+    checked = 0
+    for record in months.to_dict("records"):
+        month = int(record["생산계획년월"])
+        card = shortening_card(dynamic, month)
+        if card is None:
+            continue
+        gains = [
+            float(line.rsplit("+", 1)[1].split(")")[0])
+            for line in card.formula.split("\n")
+            if line.startswith("→ ") and not line.startswith("→ 단축 후")
+        ]
+        before, after = float(record["가용대수"]), float(record["단축후가용대수"])
+        assert gains, month
+        assert sum(gains) == pytest.approx(after - before, abs=0.005 * len(gains) + 1e-9), month
+        checked += 1
+    assert checked >= 3
 
 
 def test_evidence_cards_escape_their_text() -> None:

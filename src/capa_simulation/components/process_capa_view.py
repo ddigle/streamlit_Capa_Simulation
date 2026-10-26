@@ -70,6 +70,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
@@ -142,6 +143,7 @@ from capa_simulation.services.process_equipment_timeline import (
     ROW_SHORTENED,
     ROW_VIRTUAL,
     DynamicReadiness,
+    month_share,
     production_position,
 )
 from capa_simulation.services.required_shortening import (
@@ -843,7 +845,9 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
         trace = None
     with st.container(border=True, key=EVIDENCE_PANEL_KEY):
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.markdown(f"**산출 근거 · {month_label(month)} · {view.process_label}**")
+            st.markdown(
+                f"**산출 근거 · {month_label(month)} · {literal_markdown(view.process_label)}**"
+            )
             st.space("stretch")
             st.button(
                 f"◀ {month_label(previous)}" if previous is not None else "◀ 첫 달",
@@ -1163,7 +1167,12 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
 
 
 def contributing_units(unit_events: pd.DataFrame, month: int, *, today: date) -> list[str]:
-    """그 달을 메운 호기 줄 — 대상 월이 그 달이거나 해소 기여 월에 그 달이 든 단축·추가N."""
+    """그 달을 메운 호기 줄 — 대상 월이 그 달이거나 해소 기여 월에 그 달이 든 단축·추가N.
+
+    괄호의 증분은 **그 달** 몫(`월별 늘어난 환산대수`)이다 — 호기 표의 `늘어난 환산대수` 는 대상 월
+    구간의 몫이라, 앞 달에 당긴 호기를 뒤 달 카드에 적으면 식(가용 + 호기 증분 = 단축 후)이 맞지
+    않는다. 그 달 몫을 모르면 「-」다.
+    """
     if unit_events.empty:
         return []
     lines: list[str] = []
@@ -1176,7 +1185,7 @@ def contributing_units(unit_events: pd.DataFrame, month: int, *, today: date) ->
         if target_month != month and month not in resolved:
             continue
         unit = str(record.get("호기"))
-        gain = _number(record.get("늘어난 환산대수"))
+        gain = month_share(record.get("월별 늘어난 환산대수"), month)
         gain_text = f"+{gain:,.2f}" if gain is not None else _EMPTY
         target = _as_date(record.get("목표 Qual"))
         if kind == ROW_VIRTUAL:
@@ -1646,9 +1655,14 @@ def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str])
 
     미달 공정이 없으면 그리지 않는다. 콜백(`step_to_process`)이 공정 상자 값과 그 공정의 첫 미달
     달을 적고 앱 전체 회차로 다시 돈다 — 머리 줄은 프래그먼트 밖이다.
+
+    단추 라벨은 갈 곳을 말하는 글(「다음 미달 공정: …」)이라 읽기 도구가 그 이름으로 읽고, 화면에는
+    그 글을 시각적으로만 숨기고(sr-only) 기호 ◀ ▶ 를 CSS 생성 글(대체 글 없음)로 보인다
+    (`_STEP_BUTTON_STYLE`). 풍선은 전처럼 공정명 · 최저 확보율이다.
     """
     if steps.total == 0:
         return
+    st.html(_STEP_BUTTON_STYLE)
     _step_button("◀", steps.previous, key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY, label_of=label_of)
     st.caption(
         f"미달 {steps.position}/{steps.total}"
@@ -1663,12 +1677,42 @@ def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str])
     _step_button("▶", steps.following, key=PROCESS_DETAIL_NEXT_PROCESS_KEY, label_of=label_of)
 
 
+# 머리 ◀ ▶ 단추 — 라벨 글은 읽기 도구에만 남기고(1px 상자 밖을 자른다 — `display: none` 이면
+# 접근 이름에서도 빠진다), 기호는 `::before` 생성 글로 그린다. 생성 글의 대체 글을 비워(`/ ""`)
+# 접근 이름에 기호가 끼지 않는다.
+_STEP_BUTTON_MARKS = {
+    PROCESS_DETAIL_PREVIOUS_PROCESS_KEY: "◀",
+    PROCESS_DETAIL_NEXT_PROCESS_KEY: "▶",
+}
+_STEP_BUTTON_STYLE = (
+    "<style>"
+    + "".join(
+        f'.st-key-{key} button [data-testid="stMarkdownContainer"]{{position:absolute!important;'
+        "width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);"
+        "white-space:nowrap}"
+        f'.st-key-{key} button::before{{content:"{mark}" / ""}}'
+        for key, mark in _STEP_BUTTON_MARKS.items()
+    )
+    + "</style>"
+)
+
+
+def step_button_label(mark: str, step: ProcessStep | None, label_of: Callable[[str], str]) -> str:
+    """머리 ◀ ▶ 단추의 라벨(곧 접근 이름) — 「다음 미달 공정: Laser Marking · 최저 1.1%」, 갈
+    곳이 없으면 「다음 미달 공정 없음」. 공정 표시명은 사람 글이라 마크다운 글자 그대로 막는다."""
+    direction = "이전" if mark == "◀" else "다음"
+    if step is None:
+        return f"{direction} 미달 공정 없음"
+    rate = f" · 최저 {step.minimum_rate:.1%}" if step.minimum_rate is not None else ""
+    return f"{direction} 미달 공정: {literal_markdown(label_of(step.process))}{rate}"
+
+
 def _step_button(
     mark: str, step: ProcessStep | None, *, key: str, label_of: Callable[[str], str]
 ) -> None:
     if step is None:
         st.button(
-            mark,
+            step_button_label(mark, step, label_of),
             key=key,
             type="tertiary",
             disabled=True,
@@ -1677,10 +1721,10 @@ def _step_button(
         return
     rate = f" · 최저 {step.minimum_rate:.1%}" if step.minimum_rate is not None else ""
     st.button(
-        mark,
+        step_button_label(mark, step, label_of),
         key=key,
         type="tertiary",
-        help=f"{label_of(step.process)}{rate}",
+        help=f"{literal_markdown(label_of(step.process))}{rate}",
         on_click=step_to_process,
         args=(step.process, step.month),
     )
