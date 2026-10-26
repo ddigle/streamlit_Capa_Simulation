@@ -255,6 +255,61 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     assert LAYOUT_ROLE_KEY not in app.session_state
 
 
+def _apply_rename(app: AppTest, editor_calls: list[dict[str, Any]], *, move: bool = False) -> None:
+    """가정 세션 층 상세 편집기에서 EQ-02 의 이름을 EQ-02R 로 바꿔(`move` 면 (60, 20) 으로도 옮겨)
+    적용한다."""
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": (
+            [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}] if move else []
+        ),
+        "canvas": None,
+        "marks": None,
+        "renames": [{"kind": "unit", "from": "EQ-02", "to": "EQ-02R"}],
+    }
+    _ok(app.run())
+    assert not app.error, [item.value for item in app.error]
+
+
+def test_a_rename_only_apply_in_an_assumption_names_the_common_ledger(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 가정 세션에서 이름만 바꿔 적용하면 적용 알림이 「저장하면 「셋업 실무」의 가정
+    배치로 들어가고」, 상자 캡션이 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다」 라 했지만
+    저장은 공통 대장에만 갔다(이름 바꿈은 어느 시나리오에서나 같은 호기의 이름). 실제 저장 자리를
+    말한다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_rename(app, editor_calls)
+
+    texts = _texts(app)
+    assert not any("가정 배치로 들어가고" in text for text in texts), texts
+    assert not any("새 리비전(가정 배치)으로 저장합니다" in text for text in texts), texts
+    assert any("이름 바꿈은 공통 대장에 저장합니다" in text for text in texts), texts
+
+    common_before = len(repository.list_revisions())
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+    assert len(repository.list_revisions()) == common_before + 1
+    assert _scenario(repository, setup).latest_revision_no == 2
+
+
+def test_a_move_with_a_rename_in_an_assumption_names_both_places(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """옮기기와 이름 바꿈을 함께 적용하면 배치는 그 시나리오의 새 리비전(가정 배치)으로, 이름 바꿈은
+    공통 대장으로 간다고 함께 적는다."""
+    _, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_rename(app, editor_calls, move=True)
+
+    texts = _texts(app)
+    assert any("가정 배치로 들어가고" in text for text in texts), texts
+    caption = next(text for text in texts if "새 리비전(가정 배치)으로 저장합니다" in text)
+    assert "이름 바꿈은 공통 대장에 저장합니다" in caption, caption
+
+
 def test_a_stale_assumption_with_the_same_layout_fast_forwards(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
