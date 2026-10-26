@@ -82,6 +82,11 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
 )
 from capa_simulation.services.frame_contracts import require_columns, scalar_match_key
+from capa_simulation.services.korean_particle import (
+    with_object_particle,
+    with_subject_particle,
+    with_topic_particle,
+)
 
 
 def prepare_equipment_baseline(
@@ -307,32 +312,33 @@ def _missing_text_message(label: str, column: str) -> str:
 
 
 def _unit_group_mixed_message(column: str) -> str:
-    return f"같은 Main 설비의 모듈 행은 {column} 이 같아야 합니다"
+    return f"같은 Main 설비의 모듈 행은 {with_subject_particle(column)} 같아야 합니다"
 
 
 def _flag_message(column: str) -> str:
-    return f"{column}는 Y 또는 N이어야 합니다"
+    return f"{with_topic_particle(column)} Y 또는 N이어야 합니다"
 
 
 def _number_message(column: str) -> str:
-    return f"{column}를 숫자로 읽을 수 없습니다"
+    return f"{with_object_particle(column)} 숫자로 읽을 수 없습니다"
 
 
 def _date_message(label: str) -> str:
-    return f"{label}은 날짜 형식이어야 합니다"
+    return f"{with_topic_particle(label)} 날짜 형식이어야 합니다"
 
 
 def _status_message(column: str, allowed: Sequence[str]) -> str:
-    return f"{column}는 {'·'.join(allowed)} 중 하나여야 합니다"
+    return f"{with_topic_particle(column)} {'·'.join(allowed)} 중 하나여야 합니다"
 
 
 def _exit_before_arrival_message(column: str) -> str:
-    return f"{column}은 반입일정보다 빠를 수 없습니다"
+    return f"{with_topic_particle(column)} 반입일정보다 빠를 수 없습니다"
 
 
 def _actual_future_message(column: str, limit: pd.Timestamp) -> str:
     return (
-        f"{column}은 오늘({limit:%Y-%m-%d})보다 늦을 수 없습니다 — 실적은 이미 끝난 날을 적습니다"
+        f"{with_topic_particle(column)} 오늘({limit:%Y-%m-%d})보다 늦을 수 없습니다 — 실적은 "
+        "이미 끝난 날을 적습니다"
     )
 
 

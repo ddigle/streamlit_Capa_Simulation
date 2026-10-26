@@ -13,6 +13,7 @@ from collections.abc import Iterable, Sequence
 
 import pandas as pd
 
+from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_filter import valid_month_mask
 
 # 소요기준은 공정이 어떤 부하 Unit을 쓰는지 정하며 BOX·PCB는 산식 구현 전까지 제외한다.
@@ -195,7 +196,7 @@ def normalize_month_column(data: pd.DataFrame, label: str, *, column: str = "생
     """월 컬럼을 유효한 정수 `YYYYMM`으로 제자리 정규화한다."""
     numeric = pd.to_numeric(data[column], errors="coerce")
     if not valid_month_mask(numeric).all():
-        raise ValueError(f"{label}의 {column}은 YYYYMM 형식이어야 합니다.")
+        raise ValueError(f"{label}의 {with_topic_particle(column)} YYYYMM 형식이어야 합니다.")
     data[column] = numeric.astype("int64")
 
 
