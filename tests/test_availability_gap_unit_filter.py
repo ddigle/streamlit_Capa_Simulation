@@ -203,3 +203,13 @@ def test_the_filter_caption_blocks_the_tildes_of_the_chosen_values() -> None:
 
     captions = [str(item.value) for item in app.caption if "호기 필터 ·" in str(item.value)]
     assert captions and all("호기 필터 · 공정구분: L\\~A\\~X —" in text for text in captions)
+
+
+def test_the_filter_caption_keeps_the_stars_of_the_chosen_values() -> None:
+    """물결표만 막으면 「L*A*X」 의 별표 짝이 기울임이 되어 「LAX」 로 보인다 — 고른 값은 이름마다
+    막는다(개선 거리 I11)."""
+    app = _run(line_a="L*A*X")
+    _filter(app, "공정구분", ["L*A*X"])
+
+    captions = [str(item.value) for item in app.caption if "호기 필터 ·" in str(item.value)]
+    assert captions and all("호기 필터 · 공정구분: L\\*A\\*X —" in text for text in captions)

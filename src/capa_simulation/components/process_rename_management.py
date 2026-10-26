@@ -18,7 +18,7 @@ from capa_simulation.components.admin_dialog import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -144,7 +144,7 @@ def render_process_rename_management(
 
 def _listed(names: list[str], limit: int = 10) -> str:
     """안내에 늘어놓는 이름 — 앞의 `limit` 개를 막아 쉼표로 잇는다."""
-    return ", ".join(literal_markdown(name) for name in names[:limit])
+    return literal_names(names[:limit])
 
 
 def _save_error_message(exc: BaseException) -> str:

@@ -33,7 +33,7 @@ from capa_simulation.components.equipment_data_workspace import (
     rebase_floor_canvas,
     stage_floor_canvas,
 )
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -465,9 +465,9 @@ def _floor_layout_dialog(
 
 
 def _unit_names(names: list[str], limit: int = 5) -> str:
-    """`DEMO-EQ01, DEMO-EQ02 외 3대(5대)` — 경고 한 줄(마크다운)에 실을 이탈 호기. 설비명의 물결표는
-    막는다(「NEW~01~」 이 지움선이 되지 않게)."""
-    shown = markdown_safe_tildes(", ".join(names[:limit]))
+    """`DEMO-EQ01, DEMO-EQ02 외 3대(5대)` — 경고 한 줄(마크다운)에 실을 이탈 호기. 설비명은 이름마다
+    막는다(「NEW~01~」 이 지움선이, 「DA*31*R」 이 기울임이 되지 않게)."""
+    shown = literal_names(names[:limit])
     more = f" 외 {len(names) - limit}대" if len(names) > limit else ""
     return f"{shown}{more}({len(names)}대)"
 
@@ -529,8 +529,10 @@ def _render_current_state(profile: _DrawingProfile | None, default_canvas: Canva
             icon=":material/grid_on:",
         )
         return
+    # 파일 이름은 사람이 붙인 글이다 — 마크다운 글자 그대로 막는다.
+    image_name = literal_markdown(profile.image_name) if profile.image_name else "이름 없음"
     st.success(
-        f"저장된 도면: {profile.image_name or '이름 없음'} · "
+        f"저장된 도면: {image_name} · "
         f"{format_bytes(profile.image_byte_count)} · 캔버스 "
         f"{profile.canvas_width:g} × {profile.canvas_height:g} · "
         f"{profile.updated_at:%Y-%m-%d %H:%M}",

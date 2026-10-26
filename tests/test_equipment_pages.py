@@ -16,6 +16,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     SETTINGS_BUTTON_KEY,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import (
     EQUIPMENT_SUMMARY_TAB,
@@ -327,7 +328,8 @@ def test_space_floor_detail_offers_the_layout_upload_and_follows_the_drawing_can
     assert not app.exception
     assert len(app.get("file_uploader")) == 1
     assert any("적용될 캔버스: 100 × 37.5" == element.value for element in app.caption)
-    assert any("c1_1f.png" in element.value for element in app.success)
+    # 저장된 도면 파일 이름은 사람이 적은 글이라 막는다(`literal_markdown` — 화면 글은 같다).
+    assert any(literal_markdown("c1_1f.png") in element.value for element in app.success)
     clear_equipment_repository()
 
 
@@ -391,7 +393,11 @@ def test_the_drawing_dialog_checks_hidden_units_before_shrinking_the_canvas(
 
     assert not app.exception
     warnings = [str(item.value) for item in app.warning]
-    assert any("DEMO-EQ01" in text and "DEMO-EQ02" in text for text in warnings), warnings
+    # 호기 이름은 이름마다 막는다(`literal_names` — 「-」 도 「\-」 로 막혀 화면 글은 같다).
+    assert any(
+        literal_markdown("DEMO-EQ01") in text and literal_markdown("DEMO-EQ02") in text
+        for text in warnings
+    ), warnings
     assert app.button(key="space_floor_layout_save_C1_1F").disabled
     clear_equipment_repository()
 
@@ -406,7 +412,9 @@ def test_the_drawing_dialog_checks_hidden_units_before_deleting_the_canvas(
     app = _open_wide_floor_dialog(database_path)
 
     texts = [str(item.value) for item in app.caption]
-    assert any("DEMO-EQ01" in text and "100 × 60" in text for text in texts), texts
+    assert any(literal_markdown("DEMO-EQ01") in text and "100 × 60" in text for text in texts), (
+        texts
+    )
     assert app.button(key="space_floor_layout_delete_C1_1F").disabled
     app.checkbox(key="space_floor_layout_delete_confirm_C1_1F").check().run()
     assert not app.button(key="space_floor_layout_delete_C1_1F").disabled

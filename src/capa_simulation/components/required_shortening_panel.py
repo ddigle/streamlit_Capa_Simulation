@@ -58,7 +58,7 @@ from streamlit.delta_generator import DeltaGenerator
 import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_board import (
     ShorteningHighlight,
@@ -796,7 +796,7 @@ def _render_process_filter(
         # 알 수 없다(HOME 주요공정 프리셋의 「이 화면에 없음」과 같은 까닭).
         st.caption(
             "공용 설정의 공정 가운데 지금 맞댄 공정에 없어 고를 수 없는 것: "
-            + ", ".join(labels.label(process) for process in absent)
+            + literal_names(labels.label(process) for process in absent)
             + " — 공용 설정에는 남습니다."
         )
     return [str(process) for process in selected]

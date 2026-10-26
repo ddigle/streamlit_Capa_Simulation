@@ -640,7 +640,7 @@ def _render_picked(
                 + (f" · Qual 일정 {qual_text}" if qual_text else "")
             )
             return
-        facts = [mark.process]
+        facts = [literal_markdown(mark.process)]
         if mark.model:
             facts.append(literal_markdown(mark.model))
         facts.append(floor_label(floor))

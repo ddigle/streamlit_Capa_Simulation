@@ -631,7 +631,8 @@ def test_a_new_session_opens_with_the_shared_filter_profile(tmp_path: Path) -> N
     assert _cards(app) == [first]
     captions = " ".join(str(item.value) for item in app.sidebar.caption)
     assert "공용 설정" in captions
-    assert "ABSENT-PROC" in captions and "공용 설정에는 남습니다" in captions
+    # 공정 표시명은 사람 글이라 마크다운 글자 그대로 막혀 실린다(`literal_names`).
+    assert r"ABSENT\-PROC" in captions and "공용 설정에는 남습니다" in captions
     stored = _profile(database_path)
     assert stored.version == 2
     assert stored.processes == (first, "ABSENT-PROC")

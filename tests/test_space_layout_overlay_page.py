@@ -756,7 +756,8 @@ def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_loc
 
 
 def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> None:
-    """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명의 물결표를 막는다."""
+    """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명을 막는다. 설비명은
+    이름마다 구두점을 막아 「DA*31*R」 의 별표 짝도 기울임이 되지 않는다(개선 거리 I11)."""
     from capa_simulation.components.floor_layout_upload import (
         _unit_names,
         overlay_mark_words,
@@ -767,7 +768,8 @@ def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> Non
     assert "가정 배치 「10\\~12월 증설」 의 요소도 밖입니다" in overlay_mark_words(
         ("10~12월 증설",)
     )
-    assert _unit_names(["NEW~01~", "EQ-02"]) == "NEW\\~01\\~, EQ-02(2대)"
+    assert _unit_names(["NEW~01~", "EQ-02"]) == "NEW\\~01\\~, EQ\\-02(2대)"
+    assert _unit_names(["DA*31*R"]) == "DA\\*31\\*R(1대)"
 
 
 def test_an_assumption_session_locks_fab_canvas_and_floor_use(

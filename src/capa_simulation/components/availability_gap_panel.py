@@ -78,11 +78,7 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLLBAR_KEY,
 )
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
-from capa_simulation.components.literal_markdown import (
-    literal_markdown,
-    markdown_safe_tildes,
-    quoted,
-)
+from capa_simulation.components.literal_markdown import literal_markdown, literal_names, quoted
 from capa_simulation.components.month_sheet_canvas import EMPTY, canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
@@ -552,10 +548,10 @@ def render_availability_gap_panel(
             chosen_units, applied = _render_unit_filters(units, scope)
         if chosen_units is not None:
             # 무엇으로 걸렀는지는 본문에도 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
-            # 고른 값은 사람이 적은 이름이라 물결표를 막는다.
+            # 고른 값은 사람이 적은 이름이라 `_render_unit_filters` 가 이름마다 막아 담았다.
             st.caption(
                 ":material/filter_alt: 호기 필터 · "
-                + markdown_safe_tildes(" · ".join(applied))
+                + " · ".join(applied)
                 + f" — 호기 {len(chosen_units):,}개만 더합니다. 기존보유·입력 비가동은 호기 "
                 "속성이 없어 빠지고, Static·GAP 은 공정 단위 기준정보라 맞대지 않습니다(—)."
             )
@@ -1020,8 +1016,8 @@ def _render_schedule_evidence(
     notes: list[str] = []
     idle = downtime_without_loss(actual, lines)
     if not idle.empty:
-        # 캡션(마크다운)이라 설비명의 물결표를 막는다.
-        names = markdown_safe_tildes(", ".join(str(name) for name in idle["설비명"].head(6)))
+        # 캡션(마크다운)이라 설비명을 이름마다 막는다(「DA*31*R」 의 별표 짝이 기울임이 되지 않게).
+        names = literal_names(str(name) for name in idle["설비명"].head(6))
         more = " …" if len(idle) > 6 else ""
         notes.append(
             f"참고: 가용을 깎지 않은 비가동 {len(idle)}호기({names}{more} — 셋업 중·보관처럼 "
@@ -1308,7 +1304,7 @@ def _render_unit_filters(
         )
         if selected:
             kept &= present[column].isin(selected).fillna(False).astype(bool)
-            applied.append(f"{column}: {', '.join(selected)}")
+            applied.append(f"{column}: {literal_names(selected)}")
     st.button(
         "호기 필터 초기화",
         icon=":material/filter_alt_off:",
@@ -1609,14 +1605,12 @@ def _render_unmatched(
     if dynamic_only:
         lines.append(
             f"- 설비에는 있는데 기준정보에 없는 공정 {len(dynamic_only)}개: "
-            f"{markdown_safe_tildes(', '.join(dynamic_only[:8]))}"
-            f"{' …' if len(dynamic_only) > 8 else ''}"
+            f"{literal_names(dynamic_only[:8])}{' …' if len(dynamic_only) > 8 else ''}"
         )
     if static_only:
         lines.append(
             f"- 기준정보에는 있는데 설비 일정 기준이 안 나온 공정 {len(static_only)}개: "
-            f"{markdown_safe_tildes(', '.join(static_only[:8]))}"
-            f"{' …' if len(static_only) > 8 else ''}"
+            f"{literal_names(static_only[:8])}{' …' if len(static_only) > 8 else ''}"
         )
     st.warning(
         "두 쪽의 공정명이 맞지 않는 자리가 있습니다. 설비 마스터의 `공정소분류` 와 "

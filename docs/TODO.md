@@ -1577,8 +1577,9 @@
     전과 같다).
   - 쓰기 알림 표지가 종류를 든다(`note_notice(kind=)` — 대안: 성공으로 다시 그리기 — info 알림이 초록으로 바뀌어 깜박인다). 뺄
     예시 행이 없는 「예시 행 지우기」 누름은 아무것도 하지 않는다(단추는 예시 행이 있을 때만 선다).
-  남은 같은 결함류(이번 범위 밖): 공정명 목록(Cut-off 누락·공정명 불일치 경고)·Summary·호기 필터 걸린 조건 줄·Space 도면 올리기 이름
-  목록(`floor_layout_upload`)·호기 묶음 부딪힘 글(`unit_group_collision_message`)은 아직 물결표만 막는다.
+  남은 같은 결함류(이번 범위 밖): 호기 묶음 부딪힘 글(`unit_group_collision_message` — 서비스 예외 글이라 `EquipmentNamesError` 꼴로
+  이름을 속성에 싣고 화면이 다시 지어야 한다)은 아직 물결표만 막는다. 공정명 목록·걸린 조건 줄·Space 도면 올리기 이름 목록은 개선
+  거리 I11(`literal_names`)이 이름마다 막는다.
   관련: `components/equipment_master_tab.py`·`equipment_master_grid_assets/grid.js`·`cutoff_management.py`·
   `equipment_data_workspace.py`·`services/equipment_csv.py`·`write_guard.py`·AGENTS 9장
 - (2026-10-26) **설비 쪽 평문 겸용 글은 그리는 자리에서 글 통째로 `literal_markdown`**(브라우저 E2E r5 eq-flows, 밤사이

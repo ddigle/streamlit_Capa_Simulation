@@ -1116,7 +1116,8 @@ def test_downtime_is_lent_only_where_it_cut_availability() -> None:
     assert units[BREAKDOWN_LENT_COLUMN].sum() == pytest.approx(lent, abs=0.005)
     assert units["손실 기여일수"].tolist() == [5]
     captions = " ".join(item.value for item in app.caption)
-    assert "가용을 깎지 않은 비가동 1호기(EQ-S" in captions
+    # 설비명은 이름마다 막는다(`literal_names` — 「-」 도 「\-」 로 막혀 화면 글은 같다).
+    assert "가용을 깎지 않은 비가동 1호기(EQ\\-S" in captions
 
 
 def test_the_idle_downtime_note_blocks_the_tildes_of_the_unit_names() -> None:
@@ -1131,6 +1132,20 @@ def test_the_idle_downtime_note_blocks_the_tildes_of_the_unit_names() -> None:
 
     notes = [str(item.value) for item in app.caption if "가용을 깎지 않은 비가동" in item.value]
     assert notes and all("1호기(EQ\\~S\\~R —" in note for note in notes), notes
+
+
+def test_the_idle_downtime_note_keeps_the_stars_of_the_unit_names() -> None:
+    """물결표만 막으면 「EQ*S*R」 의 별표 짝이 기울임이 되어 「EQSR」 로 보인다 — 설비명 목록은
+    이름마다 막는다(개선 거리 I11, AGENTS 9장 설비명 목록 규칙)."""
+    app = _run(downtime=True, renames={"EQ-S": "EQ*S*R"})
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    _select_view(app, "분류별 내역")
+    open_cell(app, MONTH, ROW_SCHEDULE_LENT)
+    app.run()
+    assert not app.exception
+
+    notes = [str(item.value) for item in app.caption if "가용을 깎지 않은 비가동" in item.value]
+    assert notes and all("1호기(EQ\\*S\\*R —" in note for note in notes), notes
 
 
 def _detail_link_app() -> None:

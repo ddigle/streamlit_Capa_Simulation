@@ -4825,6 +4825,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다. 필요 단축 일정 기준선 이름(저장·지우기 알림 토스트·
     「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
     (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
+  - **낫표 없이 늘어놓는 이름 목록은 `literal_names(이름들)`**(이름마다 `literal_markdown`, 잇는 글 `, `·` · ` 은 앱 글),
+    낫표 없이 하나 끼우는 사람 글(굵게 감싼 공정 표시명·도면 파일 이름)은 `literal_markdown(이름)` — Cut-off 를 적지 않은
+    공정, Proc Rename 무시·겹침 알림, 설비·기준정보 한쪽에만 있는 공정, 주요공정 프리셋 「이 화면에 없음」·필요 단축 일정 공정
+    필터 밖 공정, 호기·설비 조회 걸린 조건 줄, 근거 카드 「가용을 깎지 않은 비가동」 설비명, Space 도면 올리기의 캔버스 밖 호기,
+    실적 요약·실적 정합성 결론의 공정, Capa Chatbot 질문·결론·조건(페이지가 막는 표시명 함수를 넘긴다), 저장된 도면 파일
+    이름(E2E r2 #71 — `tests/test_markdown_name_lists.py`·`tests/test_capa_chatbot_page.py`). 이름마다 막은 목록을 담은 글을
+    `markdown_safe_tildes` 로 다시 감싸지 않는다.
   - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
     조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
     `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
@@ -4849,8 +4856,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     주의(`describe_case_variants(shown=)`). 서비스가 지어 돌려준 앱 꾸밈 없는 글(비활성 층 경고)은 그리는 자리에서 글
     통째로 `literal_markdown`, 설비명을 날로 담은 서비스 거절(엑셀·CSV 미리보기의 없는 설비명·같은 설비명 둘 —
     `equipment_csv.EquipmentNamesError`)은 화면이 `exc.text(literal_markdown)` 로 이름만 막아 다시 짓는다(예외 글은 날
-    이름 그대로). 공정명 목록(Cut-off 누락·공정명 불일치 경고)과 Summary·호기 필터 걸린 조건 줄은 아직 목록째
-    `markdown_safe_tildes` 다(2026-10-26 E2E r5 — `docs/TODO.md`).
+    이름 그대로). 공정명 목록과 걸린 조건 줄도 위 `literal_names` 길이다. 호기 묶음 부딪힘 글
+    (`unit_group_collision_message`)만 서비스 예외 글이라 아직 `bootstrap_error_message` 의 물결표 막기만 지난다(`docs/TODO.md`).
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
@@ -4873,7 +4880,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
       (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
       열린 화면의 기본 상태만 본다 — 탭 안·누른 뒤·거절 뒤의 글은 그 화면 시험이 따로 본다.
-    - `tests/test_literal_markdown.py`(단위).
+    - `tests/test_literal_markdown.py`(단위)·`tests/test_markdown_name_lists.py`(낫표 없는 이름 목록 — 알림 자리마다 연다).
 
 ### 스크립트와 컴포넌트
 
