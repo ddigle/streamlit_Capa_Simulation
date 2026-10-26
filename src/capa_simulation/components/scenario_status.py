@@ -88,7 +88,7 @@ from capa_simulation.scenario_activation import (
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
-from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.korean_particle import object_particle, with_topic_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.sidebar_status import (
     CONDITION_DIALOG_FRAGMENT_KEY,
@@ -381,6 +381,7 @@ def _render_dialog_body(
             active_scenario_id=active_scenario_id,
             active_revision_id=active_revision_id,
             pending_edits=pending_edits,
+            on_management_page=on_management_page,
         )
         return
     _render_load(
@@ -559,6 +560,39 @@ def _pending_save_refusal(pending_edits: Sequence[str]) -> str:
     )
 
 
+def missing_scenario_notice(name: str | None, status: str | None) -> str:
+    """올라와 있는 시나리오가 목록(보관본 빼고)에 없어 새 리비전을 저장하지 못하는 까닭과 다음
+    길(E2E #55). `status` 는 보관본까지 본 그 시나리오의 상태다 — 「ARCHIVED」(그 사이 보관됨 —
+    목록으로 되돌리면 저장할 수 있다), 「MISSING」(보관본에도 없음 — 영구 삭제됨), None(읽지 못함).
+    이 세션이 보관하면 활성화를 풀므로(`scenario_management._render_archive`) 여기 오는 것은 다른
+    세션의 일이다. 어느 경우든 지금 편집본은 「지금 편집본 복제」 로 새 시나리오에 남길 수 있다."""
+    label = with_topic_particle(f"「{literal_markdown(name)}」" if name else "올라와 있는 시나리오")
+    keep = (
+        "지금 편집본을 따로 남기려면 시나리오 관리 「지금 편집본 복제」 로 새 시나리오를 만들고, "
+        "다른 시나리오는 이 팝업 「불러오기」 에서 불러옵니다."
+    )
+    if status == "ARCHIVED":
+        return (
+            f"{label} 그 사이 다른 사용자가 보관해 새 리비전을 저장할 수 없습니다 — 저장하려면 "
+            "시나리오 관리 「목록 관리」 아래 「보관된 시나리오」 에서 목록으로 되돌린 뒤 다시 "
+            f"저장하세요. {keep}"
+        )
+    if status == "MISSING":
+        return f"{label} 그 사이 다른 사용자가 영구 삭제해 새 리비전을 저장할 수 없습니다 — {keep}"
+    return f"{label} 시나리오 목록에서 찾지 못해 새 리비전을 저장할 수 없습니다 — {keep}"
+
+
+def _missing_scenario_status(repository: DuckDBScenarioRepository, scenario_id: str) -> str | None:
+    """목록(보관본 빼고)에 없는 시나리오의 상태 — 보관본까지 보아 「ARCHIVED」 따위, 보관본에도
+    없으면 「MISSING」, 읽지 못하면 None."""
+    try:
+        listed = repository.list_scenarios(include_archived=True)
+    except BOOTSTRAP_ERRORS:
+        return None
+    found = next((item for item in listed if item.scenario_id == scenario_id), None)
+    return "MISSING" if found is None else found.status
+
+
 def _render_revision_save(
     repository: DuckDBScenarioRepository,
     scenario_by_id: Mapping[str, ScenarioSummary],
@@ -566,18 +600,34 @@ def _render_revision_save(
     active_scenario_id: str | None,
     active_revision_id: str | None,
     pending_edits: Sequence[str] = (),
+    on_management_page: bool = False,
 ) -> None:
     """새 리비전 저장 구획. 저장 대상은 **늘 올라와 있는 시나리오**다.
 
     막힌 저장의 까닭은 이 구획 안에 적는다. 팝업은 프래그먼트 재실행으로 닫히지 않으므로 팝업
-    밖에 한 번 더 적던 장치(접히는 상자 시절의 popover 우회)가 필요 없다.
+    밖에 한 번 더 적던 장치(접히는 상자 시절의 popover 우회)가 필요 없다. 올라와 있는 시나리오가
+    그 사이 보관·삭제돼 목록에 없으면 까닭과 다음 길을 적고 시나리오 관리로 가는 링크를 세운다
+    (`missing_scenario_notice` — 그 화면에서 연 팝업이면 링크 없이 글만).
     """
     if active_scenario_id is None or active_revision_id is None:
         st.info("먼저 저장된 리비전을 불러오세요.")
         return
     active_summary = scenario_by_id.get(active_scenario_id)
     if active_summary is None:
-        st.warning("올라와 있는 시나리오 정보를 찾지 못했습니다.")
+        label = active_scenario_label()
+        st.warning(
+            missing_scenario_notice(
+                label.scenario_name if label is not None else None,
+                _missing_scenario_status(repository, active_scenario_id),
+            ),
+            icon=":material/inventory_2:",
+        )
+        if not on_management_page:
+            render_page_link(
+                SCENARIO_MANAGEMENT.path,
+                label="시나리오 관리로 가기",
+                icon=":material/arrow_forward:",
+            )
         return
     # 공정 필터·조회기간은 리비전 프리셋이 담는다. 편집이 없어도 저장할 것이 있다는 사실을 남긴다.
     st.caption(

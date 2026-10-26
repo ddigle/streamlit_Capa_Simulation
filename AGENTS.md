@@ -636,6 +636,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **적용하지 않은 편집은 시나리오에 없다** — 누른 회차에 `pending_edit_labels` 를 다시 세어 폼 밖 체크를 받는다.
     저장 폼은 성공 회차에만 key 세대(`SAVE_FORM_GENERATION_KEY`)를 올려 비운다.
   - 저장은 부모 리비전의 가상 제품 이력에 세션 등록을 더해 넘긴다(`inherit_virtual_product_records`, 활성화 전에 읽음).
+  - 올라와 있는 시나리오가 목록(보관본 빼고)에 없으면 — 이 세션이 보관하면 활성화를 풀므로 다른 세션이 그 사이 보관·영구
+    삭제한 것이다 — 저장 구획은 보관본까지 읽어(`list_scenarios(include_archived=True)`) 까닭과 길(보관함에서 목록으로
+    되돌리기·「지금 편집본 복제」·다른 시나리오 불러오기)을 적고 시나리오 관리 링크를 세운다(`missing_scenario_notice`, E2E #55).
   - **리비전 불러오기는 `load_saved_revision` 한 길이다** — 팝업 「불러오기」와 HOME 주요 Case 칩이 함께 쓴다(옛 리비전
     호환 검사 → 활성화 → 필드 알림·적용 전 편집 목록 비우기·팝업 닫기, 다시 돌리기는 부르는 쪽 — 팝업은 `st.rerun()`,
     칩은 콜백). `open_scenario_dialog_on` 은 팝업을 불러오기 구획·주어진 짝으로 연다(칩이 편집이 있을 때 같은 확인을
