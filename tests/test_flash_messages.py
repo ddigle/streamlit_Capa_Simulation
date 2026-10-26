@@ -295,3 +295,39 @@ def test_every_allowed_pop_is_still_there() -> None:
     stale = sorted(set(FLASH_POP_ALLOWED) - set(_flash_pops()))
 
     assert not stale, f"사라진 자리입니다 — FLASH_POP_ALLOWED 에서 지우세요: {stale}"
+
+
+def test_the_slot_from_render_flash_is_not_read_as_drew_or_not() -> None:
+    """`render_flash` 는 늘 칸 하나를 돌려준다 — 그 칸은 언제나 참이다.
+
+    예전에는 그렸으면 True 를 돌려줘 `if render_flash(...)` 로 「담아 둔 알림이 없을 때만」 다른
+    글을 그리는 자리가 있을 수 있었다. 지금 그렇게 쓰면 그 갈래가 소리 없이 죽는다. 그렸는지 미리
+    알아야 하면 `pending_flash` 로 먼저 본다.
+    """
+    offenders: list[str] = []
+    for path in [
+        PROJECT_ROOT / "app.py",
+        *sorted((PROJECT_ROOT / "app_pages").glob("*.py")),
+        *sorted((PROJECT_ROOT / "src").rglob("*.py")),
+    ]:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            tests: list[ast.expr] = []
+            if isinstance(node, (ast.If, ast.While, ast.IfExp, ast.Assert)):
+                tests.append(node.test)
+            elif isinstance(node, ast.BoolOp):
+                tests.extend(node.values)
+            elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+                tests.append(node.operand)
+            for test in tests:
+                if (
+                    isinstance(test, ast.Call)
+                    and isinstance(test.func, ast.Name | ast.Attribute)
+                    and ast.unparse(test.func).split(".")[-1] == "render_flash"
+                ):
+                    offenders.append(f"{path.relative_to(PROJECT_ROOT).as_posix()}:{test.lineno}")
+
+    assert not offenders, (
+        "render_flash 의 돌려준 칸은 늘 참입니다 — 그렸는지는 pending_flash 로 먼저 보세요:\n"
+        + "\n".join(offenders)
+    )
