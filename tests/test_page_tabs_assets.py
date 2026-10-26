@@ -139,14 +139,15 @@ def _sections() -> str:
     return "\n".join(parts)
 
 
-def _node(runner: str) -> Any:
+def _node(runner: str, *, prelude: str | None = None) -> Any:
+    """`prelude`(기본은 순수 구획들) 뒤에 `runner` 를 붙여 node 로 돌리고 찍은 JSON 을 읽는다."""
     runtime = shutil.which("node") or shutil.which("bun")
     if runtime is None:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             pytest.fail("CI 러너에 node 가 없다 — 탭 줄 JS 구획 시험을 건너뛸 수 없다")
         pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     completed = subprocess.run(
-        [runtime, "-e", _sections() + "\n" + runner],
+        [runtime, "-e", (_sections() if prelude is None else prelude) + "\n" + runner],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -441,3 +442,60 @@ def test_every_press_on_the_strip_consults_the_double_press_guard_first() -> Non
     assert aux.index("if (stray(event, item)) return") < aux.index("pressed(event, item)")
     assert aux.index("pressed(event, item)") < aux.index("close(item)")
     assert "event.detail > 0" in JS
+
+
+_INSTALL_PRELUDE = """
+const calls = []
+globalThis.window = {
+  location: { href: 'http://app.test/constraint_simulation?process=A&theme=light' },
+  history: {
+    state: {},
+    pushState(state, title, url) { calls.push(['push', String(url)]) },
+    replaceState(state, title, url) { calls.push(['replace', String(url)]) },
+  },
+}
+"""
+
+_INSTALL_RUNNER = """
+const first = window.__capaHistoryGuard
+installHistoryGuard()
+// 첫 회차가 링크 인자를 지운다 — Streamlit 프런트가 지금 경로로 쌓는다.
+window.history.pushState({}, '', '/constraint_simulation?theme=light')
+process.stdout.write(JSON.stringify({
+  installed: first === window.history,
+  once: window.__capaHistoryGuard === first,
+  calls,
+}))
+"""
+
+
+def test_the_intro_overlay_installs_the_history_guard_before_the_first_run_drops_link_args() -> (
+    None
+):
+    """새 브라우저 탭으로 링크 인자 화면(제약 시뮬레이션·공정 Capa 상세 `?process=`)에 들어오면 그
+    화면이 첫 회차에 인자를 지우는 주소 메시지가 탭 줄 JS 가 마운트되기 전에 닿아(탭 줄은 페이지
+    바로 앞이다) 기록이 한 칸 더 쌓였다 — 뒤로가기 첫 번이 화면은 그대로 둔 채 주소의 인자만
+    되살렸다(2026-10-26 E2E). 회차 맨 앞(부트스트랩 전)의 입장 화면 JS 가 모듈을 읽는 순간
+    지킴이를 건다. 글은 탭 줄 자산의 구획 그대로이고 탭 줄도 같은 함수를 안전망으로 부른다."""
+    from capa_simulation.components import intro_overlay
+    from capa_simulation.components.history_guard import history_guard_script
+
+    guard = history_guard_script()
+    registered = intro_overlay._registered_js()
+    assert registered.startswith(guard)
+    assert guard.rstrip().endswith("installHistoryGuard()")
+    assert registered.index("installHistoryGuard()") < registered.index("export default")
+    for name in ("tabs-history", "tabs-history-install"):
+        body = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
+        assert body is not None and body.group("body") in guard
+    strip = JS[JS.index("export default function") :]
+    assert "installHistoryGuard()" in strip
+    assert "guardHistory(" not in strip
+
+    out = _node(_INSTALL_RUNNER, prelude=_INSTALL_PRELUDE + guard)
+
+    assert out == {
+        "installed": True,
+        "once": True,
+        "calls": [["replace", "/constraint_simulation?theme=light"]],
+    }

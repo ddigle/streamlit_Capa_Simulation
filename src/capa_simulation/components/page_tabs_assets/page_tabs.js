@@ -11,7 +11,8 @@
 // (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
 // 누름(다른 탭 고르기·지금 탭 닫기)은 하나를 더 지킨다 — 한 번에 하나. 옮기는 동안 누른 탭은 옮긴 화면의 탭 줄이 올
 // 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이
-// 떼어 돌린다(`tests/test_page_tabs_assets.py`).
+// 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만 창을 만지고, 입장 화면 JS 가
+// `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
@@ -29,8 +30,6 @@ const GRID = '[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
 const EDIT_MS = 5000
 // 붙든 누름은 적어도 이만큼은 편집 회차를 기다린다 — 편집이 보낸 회차 요청에 서버가 답해 뿌리 표지가 「돈다」로 바뀌기 전.
 const HOLD_MS = 400
-// `st.switch_page` 가 떠나는 칸에 적은 옮길 화면 인자를 되돌리는 기다림 — 그 바로 뒤 옮긴 화면 쌓기가 이 안에 온다.
-const LEAVE_MS = 1000
 // 닫기·고정 누름 뒤 같은 자리의 둘째 누름을 더블클릭의 꼬리로 보는 창(`<tabs-press>`) — Windows 기본 더블클릭 시간과
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
@@ -75,6 +74,20 @@ function guardHistory(history, href, clock, ms) {
   return history
 }
 // </tabs-history>
+
+// <tabs-history-install>
+// 기록 지킴이는 문서에 하나다 — 먼저 도는 쪽이 걸고 다른 쪽은 지나간다. 입장 화면 JS(`intro_overlay`)가 모듈을 읽는
+// 순간 이 구획을 부른다 — 회차 맨 앞(부트스트랩 전)에 그리는 요소라 링크 인자를 받는 화면이 첫 회차에 인자를 지우기
+// 전이다. 탭 줄은 페이지 바로 앞에 그려 그 지우기보다 늦게 마운트돼, 새 브라우저 탭으로 연 링크가 지킴이 없이 기록을 한
+// 칸 더 쌓았다(E2E 결함 — 뒤로가기 첫 번이 화면은 그대로 둔 채 주소의 인자만 되살렸다). 탭 줄도 부른다(안전망).
+// `st.switch_page` 가 떠나는 칸에 적은 옮길 화면 인자를 되돌리는 기다림 — 그 바로 뒤 옮긴 화면 쌓기가 이 안에 온다.
+const LEAVE_MS = 1000
+function installHistoryGuard() {
+  if (!window.__capaHistoryGuard) {
+    window.__capaHistoryGuard = guardHistory(window.history, () => window.location.href, Date.now, LEAVE_MS)
+  }
+}
+// </tabs-history-install>
 
 // <tabs-hold>
 // 편집표에서 막 손을 뗀 누름을 붙든다. `editPending` — 누르는 순간 포커스가 편집표(칸 편집기 포함)에 있었거나 마지막 편집표
@@ -202,11 +215,9 @@ export default function (component) {
     onLink: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
   })
-  // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 탭 줄은 앱 전체 회차마다
-  // 페이지보다 먼저 그리므로 첫 회차 뒤로는 모든 화면의 주소 바꾸기가 이 처리기를 지난다.
-  if (!window.__capaHistoryGuard) {
-    window.__capaHistoryGuard = guardHistory(window.history, () => window.location.href, Date.now, LEAVE_MS)
-  }
+  // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
+  // 이미 걸었다(`<tabs-history-install>`). 이것은 그 JS 가 서지 못한 문서의 안전망이다.
+  installHistoryGuard()
   // 처리기는 처음 한 번 단다. 지금 data·트리거 함수는 S 에서 읽는다 — 다시 불릴 때마다 새 값으로 바뀐다.
   S.data = data
   S.send = setTriggerValue

@@ -1517,7 +1517,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       편집표를 숨기는 고르기를 새로 두면 판정에 그 고르기를 같이 넣는다.
   - 기록 한 칸(`page_tabs.js` 의 순수 구획 `<tabs-history>`, `tests/test_page_tabs_assets.py` 가 node 로 돌린다) — 문서의
     `history.pushState` 를 한 번 감싸(`window.__capaHistoryGuard`) 지금 경로와 같은 경로의 쌓기를 **늘** 칸
-    바꾸기(`replaceState`)로 돌린다. Streamlit 1.63 프런트는 서버의 주소 인자 바꾸기(`page_info_changed`)마다 지금 경로로
+    바꾸기(`replaceState`)로 돌린다. 거는 것(`<tabs-history-install>` 의 `installHistoryGuard`)은 회차 맨 앞의 입장 화면
+    JS 가 모듈을 읽는 순간 먼저 하고(`history_guard.py`) 탭 줄은 안전망으로 부른다 — 탭 줄은 페이지 바로 앞이라, 새 브라우저
+    탭으로 링크 인자 화면에 들어오면 첫 회차의 인자 지우기가 탭 줄 JS 보다 먼저 닿아 기록이 한 칸 더 쌓였다(2026-10-26 E2E). Streamlit 1.63 프런트는 서버의 주소 인자 바꾸기(`page_info_changed`)마다 지금 경로로
     한 칸 쌓는다 — `st.switch_page` 가 떠나는 화면 경로로 먼저 쌓는 한 칸, 링크 인자를 받아 지우는 화면이 인자 달린 칸
     뒤에 또 쌓는 칸(뒤로가기로 인자 달린 칸에 닿으면 다시 지우며 또 쌓아 그 화면을 떠나지 못했다). 걸고 풀지 않는다.
     `st.switch_page` 의 첫 쌓기는 떠나는 칸 주소를 옮길 화면 인자로 바꾸므로(HOME 칸 → `/?process=…&from=home`), 인자를
@@ -1613,6 +1615,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `intro_summary` 의 trigger 둘뿐이다 — 「준비 중」 GAP 다시 받기(`refresh`)와 Introduce 티저 받기(`teaser`).
   - 부분 글꼴 둘(`archivo-capa.woff2`·`archivo-capa-number.woff2`, `OFL.txt`)에 없는 글자를 쓰면
     `FONT_SUBSET_TEXT` 를 고치고 다시 만든다. 심볼 넷(`static/icons/capa_mark.svg` 포함)은 `test_intro_overlay` 가 맞춘다.
+  - 등록 JS 맨 앞에 브라우저 기록 지킴이(`history_guard.history_guard_script()`)가 실려 모듈을 읽는 순간 건다 — 회차 맨
+    앞 요소라 링크 인자 화면이 첫 회차에 인자를 지우는 주소 메시지보다 먼저다(3장 `page_tabs.py` 「기록 한 칸」).
+- `src/capa_simulation/components/history_guard.py` — 탭 줄 JS(`page_tabs.js`)의 기록 지킴이 두 구획(`<tabs-history>`·
+  `<tabs-history-install>`)을 떼어 입장 화면 등록 JS 앞에 싣는 글로 낸다. 글은 탭 줄 자산 한 벌이다(옮기지 않는다 — 두 벌이면
+  한쪽만 고쳐 다른 지킴이가 먼저 걸린다). 컴포넌트를 등록하지 않아 `page_tabs` 를 불러오지 않는 모듈이 쓸 수 있다.
 - `src/capa_simulation/components/intro_summary.py` — 입장 화면 Summary 의 값(최신 공식버전 요약 + 토글 셋
   `toggles`)과 Introduce 티저 칸(`teaser`)을 `capa_intro_summary` 로 보내고 사이드바 앱 이름 라벨을 세운다. 계산은
   `services/official_summary.py`.
