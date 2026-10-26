@@ -61,7 +61,15 @@ from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import quoted
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.write_guard import (
+    held_profile_conflict,
+    note_profile_conflict,
+    profile_conflict_marks,
+)
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.persistence.auto_official_update_store import (
+    AutoOfficialUpdateSettingsConflict,
+)
 from capa_simulation.persistence.cache import (
     clear_global_securement_threshold_cache,
     get_scenario_repository,
@@ -106,6 +114,8 @@ from capa_simulation.services.auto_official_update import (
 SETTINGS_FLASH_KEY = "auto_official_update_settings_flash"
 # 설정 폼을 그린 회차에 본 저장본 version. 제출 회차에는 이것이 「편집을 시작할 때 본 version」이다.
 SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
+# 설정 저장의 버전 충돌 표지 이름(`write_guard.profile_conflict_marks`).
+SETTINGS_SAVE_NAME = "auto_official_update_settings"
 # 「지금 실행」 결과(상태, 글, 발행한 회차의 소요대수에 들지 않은 수요 경고). rerun 을 건너 그
 # 자리에 한 번 그린다.
 RUN_RESULT_KEY = "auto_official_update_run_result"
@@ -372,8 +382,16 @@ def _render_settings_form(
         st.session_state[SETTINGS_BASE_VERSION_KEY] = settings.version
         return
     expected_version = submitted_base if isinstance(submitted_base, int) else settings.version
+    # 표지 dict 는 저장 전에 받아 둔다 — 거부 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    conflict_marks = profile_conflict_marks()
+    held = held_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME)
     # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
     st.session_state[SETTINGS_BASE_VERSION_KEY] = settings.version
+    if held is not None:
+        # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
+        # 알린다(write_guard). 「바뀐 값이 없습니다」로도 바꾸지 않는다.
+        notice.error(held)
+        return
     try:
         updated = AutoUpdateConfig(
             enabled=bool(enabled),
@@ -406,7 +424,10 @@ def _render_settings_form(
         )
     except BOOTSTRAP_ERRORS as exc:
         # 버전 충돌과 검증 실패는 ValueError 이고 원문이 무엇을 할지 말한다(물결표만 막아 그대로).
-        notice.error(bootstrap_error_message(exc))
+        message = bootstrap_error_message(exc)
+        if isinstance(exc, AutoOfficialUpdateSettingsConflict):
+            note_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME, message)
+        notice.error(message)
         return
     queue_flash(
         SETTINGS_FLASH_KEY,

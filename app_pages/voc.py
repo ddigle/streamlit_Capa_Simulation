@@ -23,7 +23,14 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.write_guard import current_generation, just_written, write_once
+from capa_simulation.components.write_guard import (
+    current_generation,
+    held_notice,
+    just_written,
+    note_notice,
+    notice_marks,
+    write_once,
+)
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.services.voc_board import VOC_CATEGORIES, VocPostGoneError
@@ -140,7 +147,8 @@ def _submit_post(database_path: str, generation: int) -> None:
     """「글 올리기」 콜백. 거절(작성자 빈칸 등)되면 문구만 남기고 적은 제목·내용은 둔다.
 
     세대가 다르면 이미 올린 폼의 제출이 한 번 더 들어온 것(빠른 두 번 누름)이다. 옛 화면이 함께
-    보낸 제목·내용은 이미 올린 글이라 다시 비우기만 한다.
+    보낸 제목·내용은 이미 올린 글이라 다시 비우기만 한다. 방금(`write_guard.just_written`) 올린
+    뒤라면 성공도 다시 알린다 — 앞 회차가 꺼내 그린 알림을 이 회차가 지운다.
     """
     category = _text(POST_CATEGORY_KEY)
     title = _text(POST_TITLE_KEY)
@@ -165,6 +173,9 @@ def _submit_post(database_path: str, generation: int) -> None:
     if not written:
         st.session_state[POST_TITLE_KEY] = ""
         st.session_state[POST_BODY_KEY] = ""
+        if just_written(POST_FORM_GENERATION_KEY):
+            # 아주 빠른 두 번 누름의 둘째 — 옛 화면의 단추가 닿았다(write_guard).
+            st.session_state[FLASH_KEY] = POSTED_MESSAGE
         return
     st.session_state[FLASH_KEY] = POSTED_MESSAGE
     st.session_state[POST_TITLE_KEY] = ""
@@ -197,6 +208,9 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
         return
     if not written:
         st.session_state[reply_key] = ""
+        if just_written(generation_key):
+            # 아주 빠른 두 번 누름의 둘째 — 옛 화면의 단추가 닿았다(write_guard).
+            st.session_state[FLASH_KEY] = REPLIED_MESSAGE
         return
     st.session_state[FLASH_KEY] = REPLIED_MESSAGE
     st.session_state[reply_key] = ""
@@ -226,22 +240,29 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
 def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     """「글 삭제」 콜백. `reply_count` 는 단추를 그린 회차에 센 답글 수다 — 지운 뒤에는 셀 수 없다.
 
-    이 세션이 이미 지운 글의 누름이 한 번 더 들어오면 쓰지도 알리지도 않는다. 지운 글 id 는 위젯이
-    아닌 세션 칸에 적는다 — 옛 화면은 체크한 확인 칸 값을 함께 보낸다.
+    이 세션이 이미 지운 글의 누름이 한 번 더 들어오면 쓰지 않는다. 지운 글 id 는 위젯이 아닌 세션
+    칸에 적는다 — 옛 화면은 체크한 확인 칸 값을 함께 보낸다. 방금(`write_guard.held_notice`) 지운
+    뒤의 누름이면 지웠다는 알림만 다시 낸다 — 앞 회차가 꺼내 그린 알림을 이 회차가 지운다.
     """
     if st.session_state.get(DELETE_HANDLED_KEY) == post_id:
+        held = held_notice(FLASH_KEY)
+        if held is not None:
+            # 아주 빠른 두 번 누름의 둘째 — 옛 화면의 단추가 닿았다(write_guard).
+            st.session_state[FLASH_KEY] = held
         return
     if not st.session_state.get(f"{DELETE_CONFIRM_KEY}_{post_id}"):
         return
+    message = "글을 지웠습니다." if not reply_count else f"글과 답글 {reply_count}건을 지웠습니다."
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    marks = notice_marks()
     try:
         get_scenario_repository(database_path).remove_voc_post(post_id)
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[f"{POST_ERROR_KEY}_{post_id}"] = bootstrap_error_message(exc)
         return
+    note_notice(marks, FLASH_KEY, message)
     st.session_state[DELETE_HANDLED_KEY] = post_id
-    st.session_state[FLASH_KEY] = (
-        "글을 지웠습니다." if not reply_count else f"글과 답글 {reply_count}건을 지웠습니다."
-    )
+    st.session_state[FLASH_KEY] = message
 
 
 with st.container(border=True):

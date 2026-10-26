@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
     THRESHOLD_BASE_VERSION_KEY,
     THRESHOLD_EDITOR_KEY,
@@ -263,3 +264,45 @@ def test_a_double_press_of_save_reports_the_save_not_a_conflict(database: Path) 
     assert any("다른 사용자가 먼저" in element.value for element in app.error)
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (2, "다른 세션")
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_double_press_after_another_session_saved_keeps_the_refusal(
+    database: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """B 가 먼저 저장한 뒤 A 가 옛 화면에서 「판정 기준 저장」을 빠르게 두 번 누른다
+    (2026-10-26 E2E).
+
+    첫 누름은 거부되지만 그 회차가 편집 시작 version 을 최신으로 올려, 둘째 누름이 대조를 지나
+    저장했다 — A 가 적은 값은 버려지고(키 없는 칸이 새 기본값으로 섰다) 거부 대신 「저장했습니다」만
+    남았다. 거부 직후(`TRAILING_PRESS_SECONDS`)의 둘째 누름은 저장하지 않고 그 거부를 다시 알린다.
+    창이 지난 누름은 새 화면을 보고 다시 누른 저장이라 평소대로 저장한다. AppTest 의 두 회차 사이
+    시간이 들쭉날쭉해 창은 시험이 정한다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    app = _app(database)
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.17, 1.0, empty_securement_threshold_rows(), source="다른 세션", expected_version=0
+    )
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
+    app.number_input[0].set_value(122.0)
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in element.value for element in app.error)
+
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    if trailing:
+        errors = [element.value for element in app.error]
+        assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+        assert not app.success
+        assert (profile.version, profile.source) == (1, "다른 세션")
+    else:
+        assert not list(app.error), [element.value for element in app.error]
+        assert profile.version == 2
+    clear_global_securement_threshold_cache()
