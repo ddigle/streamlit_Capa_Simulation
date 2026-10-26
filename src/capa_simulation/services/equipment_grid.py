@@ -1081,6 +1081,10 @@ def loader_data(
       끝)과 칸마다 줄 차례로 이은 값 번호 글자(`CODE_ALPHABET`, 폭 `widths`). 공정·동층 제안과
       「조건으로 불러오기」(사용자 R1)가 이것을 쓴다.
     - `processes` — 공정소분류와 대수(자연 차례, 「(빈칸)」 맨 끝).
+    - `loaded` 는 표에 든 행 id 전부(지울 목록에 든 호기도 표에 남는다 — 개편 명세 4-5)이고,
+      `loadedCount` 는 그 가운데 살아 있는 호기 수다 — 「불러온 호기 n대 / 전체 N대」 는 둘 다 살아
+      있는 호기로 센다(`total` 은 `live_count`). 지운 호기를 불러온 수에 세면 「21대 / 전체 20대」
+      처럼 불러온 수가 전체를 넘었다(E2E).
     """
     live = list(view.index.live)
     names = [view.names[row_id] for row_id in live]
@@ -1119,6 +1123,7 @@ def loader_data(
             "widths": widths,
         },
         "loaded": [row_id for row_id in loaded if row_id in known],
+        "loadedCount": sum(1 for row_id in loaded if row_id in view.index.live),
         "alertIds": [row_id for row_id in alert_ids if row_id in view.index.live],
         "total": view.live_count,
         "limit": GRID_ROW_LIMIT,
