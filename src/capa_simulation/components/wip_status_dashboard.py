@@ -31,6 +31,12 @@ WIP_GRID_ROW_GAP_PX = 80
 # 위 여백은 범례와 첫 줄 제목, 아래 여백은 마지막 줄 날짜 눈금 자리다.
 _GRID_MARGIN_TOP_PX = 92
 _GRID_MARGIN_BOTTOM_PX = 50
+# 범례 아래 끝을 첫 줄 칸 위 끝에서 띄우는 높이. 첫 줄 칸의 두 줄 제목(12px 서체, 약 33px) 위로 약
+# 16px 떠 범례가 제목과 겹치지 않고, 범례(11px 서체 한 줄, 약 29px)와 plotly 자동 여백의 띄움
+# (12px)이 위 여백 안에 든다 — 넘으면 plotly 가 위 여백을 늘려 칸이 그만큼 낮아진다(1.055 였던 3줄은
+# 58px 라 약 7px 늘었다). 범례 y 는 축 영역 비율이라 비율로 고정하면 떠오르는 높이가 줄 수를 따라
+# 바뀐다 — 1.055 는 1줄이면 약 16px 라 범례가 첫 줄 제목과 겹쳤다(2026-10-27 E2E).
+_GRID_LEGEND_LIFT_PX = 50
 # 직전 회차에 만든 격자 Figure 한 벌과 그 입력 사본(세션 칸). `remembered_wip_status_grid_figure`.
 WIP_GRID_FIGURE_MEMO_KEY = "wip_status_grid_figure_memo"
 
@@ -46,14 +52,24 @@ def wip_grid_height_px(rows: int) -> int:
     )
 
 
+def _grid_plot_height_px(rows: int) -> int:
+    """축 영역 높이 — 그림 높이 − 위·아래 여백. 줄 사이·범례 자리의 비율은 이 높이에 대한 것이다."""
+    return wip_grid_height_px(rows) - _GRID_MARGIN_TOP_PX - _GRID_MARGIN_BOTTOM_PX
+
+
 def wip_grid_vertical_spacing(rows: int) -> float:
     """`make_subplots` 의 줄 사이 비율. 축 영역(그림 높이 − 위·아래 여백)에 대한 줄 사이 틈이다.
 
     비율을 격자 높이에 고정 px 를 나눈 값으로 두면 틈이 약 27px 라, 두 줄 제목과 위 칸의 기울인
     날짜 눈금이 겹쳤다(2026-10-26 E2E — 3줄 × 5칸에서 제목 10개).
     """
-    plot_height = wip_grid_height_px(rows) - _GRID_MARGIN_TOP_PX - _GRID_MARGIN_BOTTOM_PX
-    return WIP_GRID_ROW_GAP_PX / plot_height
+    return WIP_GRID_ROW_GAP_PX / _grid_plot_height_px(rows)
+
+
+def wip_grid_legend_y(rows: int) -> float:
+    """범례 아래 끝의 y(축 영역 비율 — 1 이 첫 줄 칸 위 끝). 줄 수와 상관없이 첫 줄 칸 위로
+    `_GRID_LEGEND_LIFT_PX` 다(2026-10-27 E2E — 1줄 격자에서 범례가 첫 줄 제목과 겹쳤다)."""
+    return 1 + _GRID_LEGEND_LIFT_PX / _grid_plot_height_px(rows)
 
 
 def remembered_wip_status_grid_figure(
@@ -228,7 +244,7 @@ def build_wip_status_grid_figure(
         legend={
             "orientation": "h",
             "x": 0,
-            "y": 1.055,
+            "y": wip_grid_legend_y(rows),
             "xanchor": "left",
             "yanchor": "bottom",
             "font": {"size": 11},

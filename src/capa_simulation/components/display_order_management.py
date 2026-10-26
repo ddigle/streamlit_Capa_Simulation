@@ -292,7 +292,10 @@ def _render_direct_editor(
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 편집이라 저장하지 않고 그 거부를 다시
         # 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한 번만 — 둘째 누름이
-        # 거부 뒤 회차를 글을 꺼내기 전에 끊으면 그 글이 이 회차로 넘어온다(2026-10-26 E2E).
+        # 거부 뒤 회차를 글을 꺼내기 전에 끊으면 그 글이 이 회차로 넘어온다(2026-10-26 E2E). 본
+        # version 은 이 회차가 그린 최신 저장본으로 적는다(Proc Rename 과 같다 — 둘째 누름이 끊은
+        # 거부 뒤 회차 몫).
+        remember_seen(BASE_VERSION_KEY, version)
         if refused != held:
             save_status.error(held)
         return

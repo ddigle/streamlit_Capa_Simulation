@@ -30,6 +30,7 @@ from capa_simulation.components.write_guard import (
     just_written,
     note_notice,
     notice_marks,
+    pressed_on_replacement,
     write_once,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
@@ -216,6 +217,10 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
 def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: int) -> None:
     """「답변 완료로 표시」·「미답변으로 되돌리기」 콜백."""
     generation_key = f"{RESOLVE_GENERATION_KEY}_{post_id}"
+    if pressed_on_replacement(generation_key, generation):
+        # 더블클릭의 둘째 누름이 첫 누름 뒤 같은 자리에 선 반대 단추에 닿았다 — 방금 한 표시를
+        # 되돌리지 않는다(write_guard, 2026-10-27 E2E).
+        return
     try:
         repository = get_scenario_repository(database_path)
         written = write_once(

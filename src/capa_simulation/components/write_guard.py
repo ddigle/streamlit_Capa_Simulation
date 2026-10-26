@@ -59,7 +59,9 @@
   대조한다(2026-10-26 E2E — 판정 기준·공정 표시명·표시순서·확보율 보정). 그 둘째 누름이 거부 뒤
   회차(제출 아님 — 본 값을 적는 자리)를 끊으면 그 회차가 적지 못하므로, 거부를 다시 알리는 회차가
   자기가 그린 최신 저장본의 토큰을 본 값으로 적는다 — 적지 않으면 최신을 보고 창 뒤에 한 번 누른
-  저장이 옛 본 값으로 또 거부됐다(2026-10-26 E2E — 판정 기준·확보율 보정).
+  저장이 옛 본 값으로 또 거부됐다(2026-10-26·27 E2E — 판정 기준·확보율 보정·공정 표시명·표시순서·
+  자동 갱신 설정). 거부 회차가 초안과 출발점을 함께 다시 세우는 편집(Cut-off·층 사용)은 그 회차가
+  이미 적었다.
 
 **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿는다. 그 회차는
 쓰지 않고(지나간 세대·이미 지운 글·잠긴 단추) 끝나는데, 첫 쓰기의 성공 알림은 앞 회차가 이미 꺼내
@@ -68,6 +70,10 @@
 알아보고 성공을 다시 알린다. 누름이 회차에 닿지 않는 단추(잠긴 단추는 Streamlit 이 값을 버린다)는
 쓰기 전에 `notice_marks` 로 받아 둔 dict 에 알림과 시각을 적고(`note_notice`), 그 창 안의 회차가
 `held_notice` 로 다시 그린다.
+
+**토글 단추**(누르면 같은 자리에 반대 동작의 단추가 선다)의 더블클릭은 둘째 누름이 새 세대의 반대
+단추에 닿아 세대 거름을 지나 첫 쓰기를 되돌렸다(2026-10-27 E2E — VOC 답변 완료 표시). 그 콜백은
+바로 앞 세대 쓰기의 창 안에 온 누름(`pressed_on_replacement`)을 쓰지 않는다.
 
 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치 저장」·사이드바
 팝업 저장, FAB 전체 배치)은 콜백에서 저장하고 뒷정리로 편집본을 비워 출발점을 옮긴다. 둘째
@@ -253,6 +259,23 @@ def just_written(counter_key: str) -> bool:
         return False
     moment = recent.get(counter_key)
     return isinstance(moment, float) and time.monotonic() - moment < TRAILING_PRESS_SECONDS
+
+
+def pressed_on_replacement(counter_key: str, generation: int) -> bool:
+    """`generation` 세대 단추의 누름이 바로 앞 세대 쓰기의 `TRAILING_PRESS_SECONDS` 안에 왔는가.
+
+    누르면 같은 자리에 반대 동작의 단추가 서는 토글(VOC 「답변 완료로 표시」 ↔ 「미답변으로
+    되돌리기」)은 첫 쓰기의 회차가 약 0.2초 안에 끝나 새 세대의 단추가 같은 자리에 선다. 0.2~0.45초
+    간격 더블클릭의 둘째 누름은 그 새 단추에 닿아 세대가 맞으므로 `write_once` 가 정상 누름으로 보고
+    첫 쓰기를 되돌렸다(2026-10-27 E2E). 부르는 쪽은 이 창 안의 누름을 쓰지 않는다 — 일부러
+    되돌리려면 창이 지난 뒤 다시 누른다. 첫 콜백이 쓴 뒤 세대를 못 올리고 끊긴 겹친 누름은 표지의
+    세대가 같아 여기 걸리지 않고 `write_once` 가 뒷정리를 잇게 한다.
+    """
+    marks = st.session_state.get(WRITE_MARKS_KEY)
+    if not isinstance(marks, dict) or not just_written(counter_key):
+        return False
+    mark = marks.get(counter_key)
+    return isinstance(mark, tuple) and mark[0] == generation - 1
 
 
 def remember_seen(name: str, token: SeenToken) -> None:

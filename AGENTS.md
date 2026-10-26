@@ -817,7 +817,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     로 같으면 다시 쓴다. Streamlit 캐시가 아니라 캐시 경계 밖이다.
   - 칸 높이(`WIP_GRID_CELL_HEIGHT_PX`)와 줄 사이(`WIP_GRID_ROW_GAP_PX`)는 px 고정이고 그림 높이·줄 사이 비율은 그 둘에서
     셈한다(`wip_grid_height_px`·`wip_grid_vertical_spacing`) — 줄 사이는 아래 칸의 두 줄 제목과 위 칸의 -45° 날짜 눈금을 함께
-    담고도 사이가 떠야 한다.
+    담고도 사이가 떠야 한다. 범례도 첫 줄 칸 위로 px 고정이다(`wip_grid_legend_y`) — 범례 y 를 축 영역 비율로 고정하면 1줄
+    격자에서 첫 줄 제목과 겹치고, 4줄부터는 위 여백을 넘어 plotly 가 여백을 늘린다.
 - `src/capa_simulation/components/grouped_monthly_table.py` — 환산 결과처럼 편집하지 않는 월별 표를 고정 분류 영역 +
   스크롤 월 영역 Plotly 표로 그린다. 계층 그룹·제품/양산구분 Total·전체 합계 행을 넣고 같은 구조의 CSV 프레임을
   만든다. 계산 원본은 바꾸지 않는다.
@@ -4132,6 +4133,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     보면 빈 입력 거절(「제목을 입력하세요.」)이 방금 성공한 자리에 남았다(2026-10-26 E2E). `write_once` 는 쓴 시각도 적고,
     입력이 모두 빈 제출이 `write_guard.TRAILING_PRESS_SECONDS`(1초) 안에 오면(`just_written`) 쓰지 않고 방금 성공을 다시
     알린다. 적은 것이 하나라도 있거나 창이 지나면 정상 제출이다(VOC 새 글·답변, `tests/test_voc_page.py`).
+  - **토글 단추**(누르면 같은 자리에 반대 동작의 단추가 서는 단추 — VOC 「답변 완료로 표시」 ↔ 「미답변으로 되돌리기」)는 첫
+    회차가 약 0.2초 안에 끝나 0.2~0.45초 간격 더블클릭의 둘째 누름이 새 세대의 반대 단추에 닿는다 — 세대가 맞아 첫 표시를
+    알림 없이 되돌렸다(2026-10-27 E2E). 콜백은 바로 앞 세대 쓰기의 `TRAILING_PRESS_SECONDS` 안에 온 새 세대 누름
+    (`write_guard.pressed_on_replacement`)을 쓰지 않는다. 일부러 되돌리려면 창(1초)이 지난 뒤 다시 누른다
+    (`tests/test_voc_page.py`).
   - **비교 후 쓰기의 본 값**(`write_guard.remember_seen`·`seen`). 저장소에 넘기는 대조 값(`expected_*`)은 사용자가 본 화면의 값이다.
     본문에서 저장하는 폼은 폼을 제출하지 않은 회차에만 그 회차가 그린 저장본의 토큰을 적고, 제출 회차는 적은 값을 그대로 넘긴다 —
     「칸이 없으면 지금 값」 대체(`… if isinstance(…) else settings.version`)와 「결과가 무엇이든 이 회차 값으로 올림」 은 남의
@@ -4174,7 +4180,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 그 둘째 누름이 거부 뒤 회차(제출 아님)를 끊으면 본
     값을 적을 회차가 없으므로, 거부를 다시 알리는 회차가 자기가 그린 최신 저장본의 토큰을 적는다(`remember_seen` 의 유일한
     제출 회차 예외 — 적지 않으면 최신을 보고 창 뒤에 한 번 누른 저장이 「편집 시작 v(옛)」 으로 또 거부됐다, 2026-10-26 E2E
-    판정 기준·확보율 보정. 공정 표시명·표시순서·자동 갱신 설정은 아직 — `docs/TODO.md`). 창이 지나면 새 화면을 보고 다시 누른
+    판정 기준·확보율 보정, 2026-10-27 E2E 공정 표시명·표시순서·자동 갱신 설정. Cut-off·층 사용은 거부 회차(층 사용은 거부 표지
+    갈래도)가 초안과 출발점을 함께 다시 세워 이 예외가 필요 없다). 창이 지나면 새 화면을 보고 다시 누른
     저장이라 평소대로 대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
