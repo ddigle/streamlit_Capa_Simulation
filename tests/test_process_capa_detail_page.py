@@ -984,7 +984,7 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     assert "UPEH 가정 110% · 26-01–26-12" in _header(app)
     effect = [str(item.value) for item in app.caption if "소요 −9.1%" in str(item.value)]
     assert len(effect) == 1, [str(item.value) for item in app.caption]
-    assert "필요 단축 일정과는 소요대수만 같습니다" in effect[0]
+    assert "필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)" in effect[0]
     labels = _label_texts(app)
     for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보기준 과부족"):
         assert row in labels

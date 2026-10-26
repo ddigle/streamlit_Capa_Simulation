@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import inspect
+import io
 import json
 import os
 import re
@@ -16,7 +17,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import duckdb
 import pytest
@@ -921,7 +922,7 @@ class _Run:
         calls = self.calls
 
         class FakeApp:
-            def __init__(self, port: int, *, start_timeout: float) -> None:
+            def __init__(self, port: int, *, start_timeout: float, console: Any = None) -> None:
                 self.base_url = "http://127.0.0.1:8559/"
                 self.started_seconds = 1.0
                 self.port_released = True
@@ -1605,6 +1606,59 @@ def test_the_space_chip_names_are_what_the_order_check_reads() -> None:
     assert "new Intl.Collator('ko', { numeric: true, sensitivity: 'base' })" in editor
 
 
+def test_the_drawer_floorless_count_reads_what_the_editor_hangs_on_a_chip() -> None:
+    """서랍 안 층 미정 수는 칩의 `__entry.list` 호기마다 `floorless`·`group` 으로 센다 — 편집기가
+    그 이름으로 달고, 서버가 그 뜻(이 층이 아닌 층 미정 · Main 설비 묶음)으로 보낸다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    assert "chip.__entry = { lead, list }" in editor
+    assert "floorless: Boolean(raw.floorless)" in editor
+    service = _text(PROJECT_ROOT / "src" / "capa_simulation" / "services" / "space_layout_edit.py")
+    assert '"floorless": bool(row["_floorless"]),' in service
+    assert '"group": str(parent) if _present(parent) else None,' in service
+    for name in ("chip.__entry", "unit.floorless", "unit.group", "groups"):
+        assert name in screens._TRAY_JS
+    # 칩 하나가 묶음 하나다 — 묶음 칩 수가 표에서 그 묶음들이 차지하는 대수다.
+    assert "const list = item.group ? members(item).filter(keep) : [item]" in editor
+
+
+def test_the_drawer_head_splits_the_drawer_into_this_floor_and_floorless_units() -> None:
+    """`202610231430` 리뷰 사외 요청 2 — 서랍이 층 미정 호기까지 실어 서랍 N 이 표 N 보다 큰
+    것이 네 배포 이어 `ng` 였다. 머리가 서랍 N 을 이 층 몫과 층 미정으로 갈라 찍고 이 층 몫을 표와
+    견준다."""
+    line = screens.summarize_drawer_counts(6, 160.0, 549, 389, 0, 0)
+    assert line == (
+        "미배치 있는 층 6개 · 연 층 표 160대 · 서랍 549대 = 이 층 160대 + 층 미정 389대 · "
+        "이 층 표와 같음"
+    )
+    # 층 미정이 없으면 예전처럼 서랍 N 이 표 N 과 같다.
+    assert screens.summarize_drawer_counts(1, 4.0, 4, 0, 0, 0).endswith(
+        "서랍 4대 = 이 층 4대 + 층 미정 0대 · 이 층 표와 같음"
+    )
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 0, 0).endswith("이 층 표와 다름")
+    # 칩에서 층 미정 · 묶음을 셀 수 없으면 견주지 않는다.
+    assert screens.summarize_drawer_counts(2, 3.0, 8, None, None, None) == (
+        "미배치 있는 층 2개 · 연 층 표 3대 · 서랍 8대(층 미정 못 셈)"
+    )
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4, None).endswith("(층 미정 못 셈)")
+
+
+def test_the_drawer_head_explains_a_difference_only_by_the_bundle_surplus() -> None:
+    """묶음 모듈은 서랍이 한 대씩, 표는 설비지분(묶음 하나가 1대)으로 센다(2026-10-26 리뷰 — 차이가
+    얼마든 「다름(묶음 모듈 m대)」 으로 넘기면 줄이 스스로 검산되지 않는다). 묶음 g개 · 모듈 m대면
+    넘침이 m − g 대라 `이 층 a = 표 N + 넘침` 이 설 때만 묶음으로 설명된다 — 그 식을 줄에 적는다."""
+    # 4모듈 묶음 하나 — 이 층 6대 = 표 3대 + 넘침 3대.
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4, 1).endswith(
+        "서랍 8대 = 이 층 6대 + 층 미정 2대 · 이 층 표와 다름 · 묶음 1개 모듈 4대 · "
+        "이 층 6대 = 표 3대 + 묶음 넘침 3대"
+    )
+    # 묶음 둘이면 넘침은 2대뿐이라 표 3대를 설명하지 못한다(묶음 밖 차이 1대).
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4, 2).endswith(
+        "이 층 표와 다름 · 묶음 2개 모듈 4대 · 묶음으로 설명 안 됨"
+    )
+    # 지분 합인 표 N 의 소수도 그대로 견준다 — 묶음 넘침은 정수라 설명되지 않는다.
+    assert screens.summarize_drawer_counts(1, 2.5, 5, 2, 1, 1).endswith("묶음으로 설명 안 됨")
+
+
 @pytest.mark.parametrize(
     ("path", "label"),
     [
@@ -1673,6 +1727,11 @@ NEW_ITEM_KEYS = [
     "space_scenario_row",
     "equipment_grid",
     "space_shortening",
+    # 사내 리뷰 202610231430 사외 요청 4 — 7-18 B 대행이 못 센 칸을 옮긴 넷(다음 배포 몫).
+    "upeh_rows",
+    "entry_sections",
+    "upeh_help",
+    "space_zone_fields",
 ]
 
 
@@ -2738,8 +2797,11 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 이 배포의 39열 기대
       (`새 이름 8/8`)로 읽는다.
     - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
-    - 7-19 A 표의 키가 `--list`(`ITEMS`) 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 — 사내
-      이관 확인」 줄의 항목 수가 `ITEMS` 수와 같다.
+    - 7-19 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
+      사내 이관 확인」 줄의 항목 수가 그 표의 수와 같다. 그 배포 뒤에 더한 항목은 TODO 「다음 배포 —
+      화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다). 앞머리만 같아도
+      통과하므로 7장을 고치지 않은 다음 배포는 빌더가 막는다(`build_deploy_package.
+      runbook_screen_count_mismatch` — 아래 시험이 빌더의 셈과 `ITEMS` 를 묶는다).
     """
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
     chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
@@ -2762,14 +2824,31 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
 
     a_table = draft.split("#### A. ", 1)[1].split("#### B. ", 1)[0]
     table_keys = re.findall(r"^\| `([a-z_]+)` \| ([^|]+) \|", a_table, re.MULTILINE)
+    # 7장은 그 배포의 기록이다 — 표는 `ITEMS` 의 앞머리와 같고, 그 뒤에 더한 항목은 다음 배포
+    # 7장이 싣기 전까지 TODO 「다음 배포」 줄이 키와 전체 수를 적는다.
+    recorded = len(table_keys)
     assert [(key, title.strip()) for key, title in table_keys] == [
-        (item.key, item.title) for item in screens.ITEMS
+        (item.key, item.title) for item in screens.ITEMS[:recorded]
     ]
-    items = len(screens.ITEMS)
-    assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in draft
+    assert f"`A {recorded} = 기록 {recorded} + 미기록 0 + 안함 0`" in draft
     todo = _text(PROJECT_ROOT / "docs" / "TODO.md")
     next_deploy = todo.split("**다음 배포 — 사내 이관 확인**", 1)[1].split("\n- [", 1)[0]
-    assert f"`A {items}`" in next_deploy
+    assert f"`A {recorded}`" in next_deploy
+    added = screens.ITEMS[recorded:]
+    if added:
+        later = todo.split("**다음 배포 — 화면 확인 항목", 1)[1].split("\n- [", 1)[0]
+        items = len(screens.ITEMS)
+        assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in later
+        for item in added:
+            assert f"`{item.key}`" in later
+
+
+def test_the_builder_counts_the_same_items_as_the_script_lists() -> None:
+    """빌더는 앱 모듈을 불러오지 않으려고 `ITEMS` 선언을 글로 센다 — 그 셈이 `--list` 와 같아야 7장
+    화면 확인 수 대조가 선다."""
+    import build_deploy_package
+
+    assert build_deploy_package.screen_item_count(PROJECT_ROOT) == len(ITEMS)
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)
@@ -3418,3 +3497,451 @@ def test_the_space_shortening_item_checks_the_fader_on_a_floor_it_opened() -> No
         "_open_most_placed_floor(screen)"
     )
     assert "summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)" in source
+
+
+# ------------------------------------------- 사내 리뷰 202610231430 사외 요청 4 — 대행이 못 센 칸
+
+
+def test_the_console_goes_to_a_pipe_only_when_counted() -> None:
+    """콘솔 출력은 세기(`console`)를 줄 때만 파이프 하나로 받는다 — 버퍼에 머물지 않게
+    `PYTHONUNBUFFERED` 를 켠다. 주지 않으면 예전처럼 버린다. 파일은 어디에도 쓰지 않는다."""
+    seen: dict[str, Any] = {}
+    with _app(_FakeProcess(), seen=seen):
+        pass
+    assert seen["stdout"] is subprocess.DEVNULL and seen["stderr"] is subprocess.DEVNULL
+    assert "PYTHONUNBUFFERED" not in seen["env"]
+
+    clock = _Clock()
+    given: dict[str, Any] = {}
+    output = (
+        f"\n  Warning: {screens.FRAGMENT_CALLBACK_WARNING} with a callback {SENTINEL}\n다른 줄\n"
+    ).encode()
+
+    class PipedProcess(_FakeProcess):
+        def __init__(self) -> None:
+            super().__init__()
+            self.stdout = io.BytesIO(output)
+
+    def popen(command: list[str], **options: Any) -> _FakeProcess:
+        given.update(options)
+        return PipedProcess()
+
+    console = screens.ConsoleCounter(screens.CONSOLE_NEEDLES)
+    app = StreamlitApp(
+        8559,
+        popen=popen,
+        probe=lambda url: True,
+        port_probe=lambda port: False,
+        path_probe=lambda env, root: EXPECTED_PATHS,
+        start_timeout=5,
+        contain=False,
+        clock=clock,
+        sleep=clock.sleep,
+        console=console,
+    )
+    with app:
+        pass
+    assert given["stdout"] is subprocess.PIPE and given["stderr"] is subprocess.STDOUT
+    assert given["env"]["PYTHONUNBUFFERED"] == "1"
+    # 끌 때 읽기 스레드가 파이프 끝까지 읽기를 기다린다.
+    assert console.count(screens.FRAGMENT_CALLBACK_WARNING) == 1
+
+
+def test_console_lines_are_counted_and_never_kept() -> None:
+    console = screens.ConsoleCounter([screens.FRAGMENT_CALLBACK_WARNING])
+    console.attach(
+        io.BytesIO(
+            (
+                f"\n  Warning: {screens.FRAGMENT_CALLBACK_WARNING} with a callback {SENTINEL}\n"
+                "다른 줄\n"
+                f"{screens.FRAGMENT_CALLBACK_WARNING}\n"
+            ).encode()
+            + b"\xff\xfe broken\n"
+        )
+    )
+    console.join(timeout=5)
+    assert console.count(screens.FRAGMENT_CALLBACK_WARNING) == 2
+    # 세기로 정하지 않은 글은 세지 않는다 — 줄 글은 어디에도 남지 않는다.
+    assert console.count("다른 줄") is None
+    assert SENTINEL not in repr(vars(console))
+    # 파이프가 없으면(가짜 프로세스) 아무것도 않는다.
+    idle = screens.ConsoleCounter(["x"])
+    idle.attach(None)
+    idle.join(timeout=1)
+    assert idle.count("x") == 0
+
+
+def test_settled_console_lines_waits_for_a_late_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """누른 뒤 경고 줄은 읽기 스레드를 거쳐 늦게 올 수 있다 — 늘 때까지 잠깐 기다린다."""
+    monkeypatch.setattr(screens, "CONSOLE_SETTLE_SECONDS", 0.3)
+    screen = Screen(SimpleNamespace(), "http://127.0.0.1:8559/")
+    needle = screens.FRAGMENT_CALLBACK_WARNING
+    assert screens.console_lines(screen, needle) is None
+    assert screens.settled_console_lines(screen, needle, None) is None
+    console = screens.ConsoleCounter([needle])
+    screen.console = console
+    assert screens.console_lines(screen, needle) == 0
+    assert screens.settled_console_lines(screen, needle, 0) == 0
+    console.feed(needle.encode())
+    assert screens.settled_console_lines(screen, needle, 0) == 1
+
+
+def test_the_fragment_warning_prefix_is_what_streamlit_prints() -> None:
+    import streamlit.delta_generator as generator
+
+    source = inspect.getsource(generator._maybe_print_fragment_callback_warning)
+    assert screens.FRAGMENT_CALLBACK_WARNING in source
+    assert screens.FRAGMENT_CALLBACK_WARNING in screens.CONSOLE_NEEDLES
+
+
+def test_the_check_hands_the_items_the_console_counter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """항목은 `screen.console` 로 콘솔 줄 수를 센다 — 앱을 띄울 때 준 그 세기다."""
+    seen: list[Any] = []
+    given: list[Any] = []
+
+    def item(screen: Screen) -> str:
+        seen.append(screen.console)
+        return "있음"
+
+    run = _Run(monkeypatch, [Item("log", "콘솔", item)])
+    original = screens.StreamlitApp
+
+    def app_with_console(port: int, *, start_timeout: float, console: Any = None) -> Any:
+        given.append(console)
+        return original(port, start_timeout=start_timeout, console=console)
+
+    monkeypatch.setattr(screens, "StreamlitApp", app_with_console)
+
+    assert screens.main(["--playwright-dir", str(tmp_path)]) == screens.EXIT_OK
+    assert run.calls == ["start", "stop"]
+    assert isinstance(given[0], screens.ConsoleCounter)
+    assert seen == given
+
+
+def test_the_upeh_rows_item_reads_what_the_app_draws() -> None:
+    """가정 % 칸 라벨 · ① 끝 세 줄 라벨 · 조건 카드 key · 구간 없음 안내는 앱과 같다."""
+    controls = _text(COMPONENTS / "upeh_assumption_controls.py")
+    assert f'"{screens.UPEH_PERCENT_LABEL}",' in controls
+    assert "걸 구간이 없습니다" in controls
+    canvas = _text(COMPONENTS / "process_capa_canvas.py")
+    assert 'prefix = f"UPEH {assumption.percent}%"' in canvas
+    for name in screens.UPEH_ROW_NAMES:
+        assert f'label=f"{{prefix}} · {name}",' in canvas
+    from capa_simulation.services.upeh_assumption import PERCENT_DEFAULT
+    from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
+
+    assert screens.UPEH_DEFAULT_PERCENT == PERCENT_DEFAULT
+    page = _text(PROJECT_ROOT / "app_pages" / "process_capa_detail.py")
+    card = screens.PROCESS_DETAIL_CARD_KEY.removeprefix(CONDITION_CARD_PREFIX)
+    assert f'CARD_NAME = "{card}"' in page
+
+
+def test_the_upeh_rows_summary_carries_counts_only() -> None:
+    rows = [f"UPEH 110% · {name}" for name in screens.UPEH_ROW_NAMES]
+    assert screens.summarize_upeh_rows(rows, True, 0, False) == (
+        "가정 줄 3 — 정한 세 줄과 같음 · 110 배지 있음 · 100 되돌린 뒤 가정 줄 0 · 배지 사라짐"
+    )
+    assert "정한 세 줄과 다름" in screens.summarize_upeh_rows(rows[:2], True, 0, False)
+    assert screens.summarize_upeh_rows(rows, False, 3, True).endswith(
+        "110 배지 없음 · 100 되돌린 뒤 가정 줄 3 · 배지 남음"
+    )
+    assert screens.summarize_upeh_rows(None, False, None, False).startswith("가정 구간 없음")
+
+
+def test_the_entry_sections_item_reads_what_the_app_draws() -> None:
+    """구획 칩 key · 칩 글자 차례 · HOME 그림 key · 이동 칸 수 · 근거 카드 링크 · 공정 상자는 앱과
+    같다. 들어온 길마다 다시 펴는 구획(HOME → ①, 가용설비 현황 → ④)도 앱의 표와 같다."""
+    from capa_simulation.components import availability_gap_panel as gap
+    from capa_simulation.components.home_rendering import KEY_PROCESS_MONTHS_CHART_KEY
+    from capa_simulation.components.process_capa_canvas import SECTION_IDS
+    from capa_simulation.components.process_capa_view import ENTRY_SECTIONS, SECTION_LABELS
+    from capa_simulation.process_detail_state import (
+        FROM_GAP,
+        FROM_HOME,
+        HOME_CELL_LINK_FIELDS,
+        PROCESS_DETAIL_SECTIONS_KEY,
+    )
+    from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX
+
+    assert screens.PROCESS_DETAIL_SECTIONS_KEY == PROCESS_DETAIL_SECTIONS_KEY
+    assert screens.PROCESS_DETAIL_SECTION_LABELS == tuple(
+        SECTION_LABELS[section] for section in SECTION_IDS
+    )
+    assert SECTION_IDS.index(ENTRY_SECTIONS[FROM_HOME]) == 0
+    assert SECTION_IDS.index(ENTRY_SECTIONS[FROM_GAP]) == 3
+    assert screens.HOME_KEY_PROCESS_CHART_KEY == KEY_PROCESS_MONTHS_CHART_KEY
+    assert screens.HOME_CELL_LINK_FIELD_COUNT == len(HOME_CELL_LINK_FIELDS)
+    assert HOME_CELL_LINK_FIELDS[0] == "process"
+    assert screens.GAP_PROCESS_KEY == gap.PROCESS_FILTER_KEY
+    assert screens.GAP_ALL_PROCESSES == gap._ALL_PROCESSES
+    assert f'label="{screens.GAP_DETAIL_LINK_LABEL}",' in _text(
+        COMPONENTS / "availability_gap_panel.py"
+    )
+    page = _text(PROJECT_ROOT / "app_pages" / "available_equipment_status.py")
+    card = screens.EQUIPMENT_CARD_KEY.removeprefix(CONDITION_CARD_PREFIX)
+    assert f'condition_card("설비 조회 조건", name="{card}")' in page
+
+
+def test_the_home_cell_link_sits_at_the_end_of_the_key_process_customdata() -> None:
+    """스크립트는 표적 막대 `customdata` 끝 일곱 칸의 첫 칸(공정)으로 누를 칸을 고른다 — 과거 실적
+    칸은 그 자리가 비어 누르지 않는다."""
+    import pandas as pd
+
+    from capa_simulation.components.home_key_process_figures import (
+        build_key_process_heatmap_figures,
+    )
+    from capa_simulation.services.securement_threshold import SecurementThresholds
+
+    rates = pd.DataFrame(
+        {
+            "공정": [SENTINEL, SENTINEL],
+            "생산계획년월": [202601, 202602],
+            "확보율": [0.9, 1.2],
+            "가용대수": [9.0, 12.0],
+            "소요대수": [10.0, 10.0],
+        }
+    )
+    _, months = build_key_process_heatmap_figures(
+        securement_rate=rates,
+        key_processes=[SENTINEL],
+        month_labels=["26.01", "26.02"],
+        thresholds=SecurementThresholds(default_secure=1.0, default_warning=0.95),
+        past_month_labels={"26.01"},
+    )
+    custom = months.data[0].customdata
+    at = -screens.HOME_CELL_LINK_FIELD_COUNT
+    assert [row[at] for row in custom] == [None, SENTINEL]
+
+
+def test_opened_section_text_names_only_the_entry_section() -> None:
+    assert screens.opened_section_text([True, False, False, False], 0) == "① 공식 만 펼침"
+    assert screens.opened_section_text([False, False, False, True], 3) == "④ 비가동 만 펼침"
+    assert screens.opened_section_text([True, True, False, True], 3) == (
+        "④ 비가동 펼침 · 다른 구획 2개도 펼침"
+    )
+    assert screens.opened_section_text([False, False, False, False], 0) == "① 공식 접힌 채"
+    assert screens.opened_section_text(None, 0) == "구획 칩 없음"
+
+
+def test_the_entry_sections_summary_carries_counts_only() -> None:
+    line = screens.summarize_entry_sections(True, "① 공식 만 펼침", 0, "④ 비가동 만 펼침", True)
+    assert line == (
+        "구획 모두 접음 · HOME 칸 → ① 공식 만 펼침 · 콘솔 경고 0줄 · 근거 카드 링크 → ④ 비가동 만 "
+        "펼침 · 구획 되돌림"
+    )
+    assert "콘솔 경고 못 셈" in screens.summarize_entry_sections(True, "x", None, "y", True)
+    assert screens.summarize_entry_sections(False, "안 해 봄", None, "안 해 봄", False).startswith(
+        "구획 못 접음"
+    )
+
+
+def test_the_entry_sections_item_restores_the_chips_even_when_a_path_fails() -> None:
+    """칩을 접은 채 끝나면 같은 세션의 다른 항목(공정 Capa 상세 · 제약 시뮬레이션)이 접힌 그림을
+    본다 — 되돌림은 `finally` 에 있다. 가용설비 현황의 공정 상자 · 전환도 `finally` 로 되돌린다."""
+    source = inspect.getsource(screens.check_entry_sections)
+    assert source.index("finally:") < source.index("_set_sections(screen, initial)")
+    gap_source = inspect.getsource(screens._gap_link_entry)
+    assert gap_source.index("finally:") < gap_source.index("_restore_gap_process(screen)")
+    assert "_choose_segment(screen, key, option)" in gap_source.split("finally:")[-1]
+
+
+class _EntryScreen:
+    """`check_entry_sections` 의 두 길 가름만 보는 가짜 화면 — 연 페이지와 콘솔 줄 수만 든다."""
+
+    def __init__(self, console: list[int] | None = None) -> None:
+        self.where = ""
+        self.opened: list[str] = []
+        self.current_step: str | None = None
+        self._console = iter(console or [])
+        self.console = None if console is None else SimpleNamespace(count=self._count)
+
+    def _count(self, needle: str) -> int:
+        return next(self._console)
+
+    def step(self, name: str) -> None:
+        self.current_step = name
+
+    def open_page(self, suffix: str) -> None:
+        self.where = suffix
+        self.opened.append(suffix)
+
+    def path(self) -> str:
+        return f"/{self.where}"
+
+    def poll(self, read: Callable[[], Any], *, timeout: float, accept: Any = bool) -> Any:
+        return read()
+
+
+def _entry_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    screen: _EntryScreen,
+    *,
+    home: Callable[[], str | None],
+    gap: Callable[[], str],
+) -> list[str]:
+    """두 길을 가짜로 갈아 끼운다. 「구획」 칩 접기는 그 페이지가 열려 있을 때만 된다(아니면 칩이
+    없다) — 돌려주는 목록에 칩을 접은 페이지를 차례로 적는다."""
+    folded: list[str] = []
+
+    def set_sections(_: object, wanted: object) -> bool:
+        folded.append(screen.where)
+        return screen.where == screens.PROCESS_DETAIL_PAGE
+
+    def click_home(_: object) -> str | None:
+        screen.where = "home"
+        return home()
+
+    def gap_entry(_: object) -> str:
+        screen.where = screens.EQUIPMENT_PAGE
+        return gap()
+
+    monkeypatch.setattr(screens, "_wait_sections", lambda _: [True, False, False, False])
+    monkeypatch.setattr(screens, "_set_sections", set_sections)
+    monkeypatch.setattr(screens, "_click_home_cell", click_home)
+    monkeypatch.setattr(screens, "_gap_link_entry", gap_entry)
+    return folded
+
+
+def _raise(exc: BaseException) -> Callable[[], Any]:
+    def run() -> Any:
+        raise exc
+
+    return run
+
+
+def test_a_home_path_that_stops_still_leaves_the_link_path_and_the_warning_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-10-26 리뷰 — ④ 길이 HOME 길에 묶여 HOME 칸 누름이 예외(1430 대행의 `TimeoutError`)로
+    끝나면 대행 칸 셋(들어온 길 1 · 4 · 경고 0줄)을 한꺼번에 잃었다. 이제 HOME 길만 `멈춤(종류)` 로
+    적고, 공정 Capa 상세를 다시 열어 구획을 접은 뒤 ④ 길을 돌며, 경고 줄은 그때까지를 센다."""
+    screen = _EntryScreen(console=[2, 2])
+    folded = _entry_paths(
+        monkeypatch,
+        screen,
+        home=_raise(TimeoutError("화면이 멈추지 않았다")),
+        gap=lambda: "④ 비가동 만 펼침",
+    )
+
+    line = screens.check_entry_sections(cast(Screen, screen))
+
+    assert line == (
+        "구획 모두 접음 · HOME 칸 → 멈춤(TimeoutError) · 콘솔 경고 0줄 · 근거 카드 링크 → "
+        "④ 비가동 만 펼침 · 구획 되돌림"
+    )
+    assert "화면이 멈추지 않았다" not in line
+    # 접기는 늘 공정 Capa 상세에서 — 처음 · HOME 길 뒤(다시 열고) · 끝 되돌림.
+    assert folded == [screens.PROCESS_DETAIL_PAGE] * 3
+    assert screen.opened.count(screens.PROCESS_DETAIL_PAGE) == 3
+
+
+def test_a_home_path_without_a_cell_still_runs_the_link_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HOME 에 누를 칸이 없으면(결함 아님) 예전에는 ④ 칸이 「안 해 봄」 이었다 — 이제 ④ 길은
+    돈다."""
+    screen = _EntryScreen()
+    _entry_paths(
+        monkeypatch, screen, home=lambda: "주요공정 그림 없음", gap=lambda: "④ 비가동 만 펼침"
+    )
+
+    line = screens.check_entry_sections(cast(Screen, screen))
+
+    assert (
+        "HOME 칸 → 주요공정 그림 없음 · 콘솔 경고 못 셈 · 근거 카드 링크 → ④ 비가동 만 펼침" in line
+    )
+
+
+def test_a_link_path_that_stops_keeps_the_home_cell(monkeypatch: pytest.MonkeyPatch) -> None:
+    screen = _EntryScreen(console=[0, 1])
+    _entry_paths(monkeypatch, screen, home=lambda: None, gap=_raise(RuntimeError("공정 ZZ")))
+
+    line = screens.check_entry_sections(cast(Screen, screen))
+
+    assert line == (
+        "구획 모두 접음 · HOME 칸 → ① 공식 만 펼침 · 콘솔 경고 1줄 · 근거 카드 링크 → "
+        "멈춤(RuntimeError) · 구획 되돌림"
+    )
+
+
+def test_the_upeh_help_item_reads_what_the_app_draws() -> None:
+    page = _text(PROJECT_ROOT / "app_pages" / "reference_data.py")
+    help_line = next(line for line in page.splitlines() if line.strip().startswith('"RQ_UPEH": "'))
+    for word in screens.UPEH_HELP_WORDS:
+        assert word in help_line
+    assert '":material/timer: UPEH",' in page
+    assert "help=value_help," in _text(COMPONENTS / "month_editor.py")
+    assert screens.REFERENCE_PAGE == "reference_data"
+    assert '"app_pages/reference_data.py"' in _text(
+        PROJECT_ROOT / "src" / "capa_simulation" / "navigation.py"
+    )
+
+
+def test_the_upeh_help_summary_never_carries_the_balloon_text() -> None:
+    assert screens.summarize_upeh_help(None) == "UPEH 편집표 없음"
+    assert screens.summarize_upeh_help("") == "월 칸 머리 풍선 없음"
+    full = f"Main 행은 UPEH, MI 행은 ST(분) {SENTINEL}"
+    assert screens.summarize_upeh_help(full) == "월 칸 머리 풍선 있음 · Main UPEH · MI ST(분) 밝힘"
+    assert screens.summarize_upeh_help(f"UPEH {SENTINEL}") == (
+        "월 칸 머리 풍선 있음 · 없는 낱말 1개"
+    )
+    assert SENTINEL not in screens.summarize_upeh_help(full)
+
+
+def test_the_zone_selectors_exist_in_the_editor() -> None:
+    """영역은 이름표(`sle-zone-tag`)만 눌림을 받는다 — 스크립트는 그것을 누른다. 선택 칸의 두 칸은
+    영역에만 서는 칸이다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
+    assert "el('g', { class: `sle-item sle-mark mark-${item.kind}` })" in editor
+    assert "el('rect', { class: 'sle-zone-tag'" in editor
+    assert "// 영역은 이름표로도 잡는다(안쪽은 비워 둔다) — 이름표만 눌림을 받게 한다." in editor
+    for selector, name in zip(screens.ZONE_FIELDS, ("테두리", "글자 정렬"), strict=True):
+        assert (
+            '<label class="sle-field sle-zone-only"' in html
+            and f'<span>{name}</span><select class="{selector.lstrip(".")}"' in html
+        )
+
+
+def test_the_zone_summary_carries_counts_only() -> None:
+    assert screens.summarize_space_zone_fields(12, None, None, True) == "영역 없음(층 12개 봄)"
+    assert screens.summarize_space_zone_fields(8, 4, [True, True], True) == (
+        "영역 있는 층 4번째 · 테두리 칸 있음 · 글자 정렬 칸 있음 · 적용 안 함"
+    )
+    assert screens.summarize_space_zone_fields(8, 2, [True, False], False).endswith(
+        "글자 정렬 칸 없음 · 적용 안 함 · 편집 못 끔"
+    )
+    assert "스위치 없음" in screens.summarize_space_zone_fields(8, 1, None, True)
+    # 편집기가 그 층 그림으로 서지 않은 층은 「봄」 에 넣지 않고 따로 센다 — 「영역 없음」 이 결함
+    # 아님으로 읽히는 것은 못 본 층이 없을 때뿐이다.
+    assert screens.summarize_space_zone_fields(12, None, None, True, missed=2) == (
+        "영역 없음(층 12개 봄 · 못 본 층 2개)"
+    )
+
+
+def test_the_zone_count_waits_for_the_editor_of_the_chosen_floor() -> None:
+    """2026-10-26 리뷰 — 층마다 5초만 기다려 무거운 층의 영역을 놓치면 「영역 없음」 이 결함
+    아님으로 읽혔다. 영역 수는 편집기 머리 이름(`.sle-title`)이 고른 층일 때만 내고, 고른 층 값도
+    확인한다. 편집기는 보기 화면에도 그 머리에 층 이름(「동 층」)을 싣는다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
+    view = _text(COMPONENTS / "space_layout_editor.py")
+    assert "setText(q('.sle-title'), data.title || '')" in editor
+    assert "const svg = q('.sle-canvas')" in editor
+    assert '<span class="sle-title sle-edit-only"></span>' in html
+    assert '"title": floor_label(floor),' in view
+    from capa_simulation.services.fab_layout import floor_label
+
+    assert floor_label(("C1", "1F")) == "C1 1F"
+    source = inspect.getsource(screens.check_space_zone_fields)
+    assert 'screen.selectbox_value("층 바로 가기") != label' in source
+    assert "timeout=ZONE_FLOOR_DRAW_SECONDS" in source
+    assert screens.ZONE_SELECTOR in screens._ZONE_COUNT_JS
+
+
+def test_the_new_items_never_write() -> None:
+    added = {"upeh_rows", "entry_sections", "upeh_help", "space_zone_fields"}
+    assert added <= {item.key for item in ITEMS}
+    assert not any(item.writes for item in ITEMS if item.key in added)

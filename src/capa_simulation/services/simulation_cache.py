@@ -117,7 +117,6 @@ from capa_simulation.services.upeh_assumption import (
     NO_ASSUMPTION,
     UpehToken,
     scale_required_equipment,
-    token_label,
 )
 from capa_simulation.services.usage_basis import usage_excluded_equipment
 from capa_simulation.services.weekly_availability_input import (
@@ -1791,9 +1790,10 @@ def get_scenario_capacity_and_demand(
     )
 
 
-# 공식 계획 칸(`get_required_shortening`·`get_required_shortening_for_target`)과 UPEH 가정 계획 칸은
-# 따로다. 가정은 세션마다 %·구간을 이리저리 바꿔 보는 값이라 같은 칸에 두면 프로세스 전역의 공식
-# 계획(모두가 보는 것)을 밀어낸다. 가정 칸은 작게 둔다 — 넘치면 다시 계산할 뿐 틀리지 않는다.
+# 공식 계획 칸(`get_required_shortening`·`get_required_shortening_for_target`)과 UPEH 가정 계획 칸
+# (공정 Capa 상세의 `get_assumed_required_shortening_for_target` 하나)은 따로다. 가정은 세션마다
+# %·구간을 이리저리 바꿔 보는 값이라 같은 칸에 두면 프로세스 전역의 공식 계획(모두가 보는 것)을
+# 밀어낸다. 가정 칸은 작게 둔다 — 넘치면 다시 계산할 뿐 틀리지 않는다.
 ASSUMED_PLAN_MAX_ENTRIES = 6
 
 
@@ -1877,7 +1877,9 @@ def get_required_shortening(
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
     """다섯 목표의 필요 단축 일정(**공식 계획**). 목표·공정 선택은 이 결과를 고르기만 하므로 다시
-    계산하지 않는다. UPEH 가정 토큰이 든 키는 받지 않는다(`get_assumed_required_shortening`).
+    계산하지 않는다. UPEH 가정 토큰이 든 키는 받지 않는다 — 필요 단축 일정 화면은 가정을 계획에
+    걸지 않고, 가정 계획은 공정 Capa 상세의 목표 하나 칸
+    (`get_assumed_required_shortening_for_target`)에만 있다.
 
     결과에는 CSV 가 호기 줄에 붙일 마스터 속성(`ShorteningPlan.unit_master`)도 실린다 — 호기
     마스터에서만 나오므로 키의 마스터 내용 지문이 그것까지 덮는다.
@@ -1898,27 +1900,6 @@ def get_required_shortening(
     )
 
 
-@st.cache_data(show_spinner=False, max_entries=ASSUMED_PLAN_MAX_ENTRIES)
-def get_assumed_required_shortening(
-    cache_key: RequiredShorteningCacheKey,
-    _equipment: pd.DataFrame,
-    _downtime: pd.DataFrame,
-    _baseline: pd.DataFrame,
-    _cutoff: pd.DataFrame,
-    _required_equipment: Callable[[], pd.DataFrame],
-) -> ShorteningPlan:
-    """UPEH 가정 계획(다섯 목표) — 공식 칸과 따로 된 작은 칸(`ASSUMED_PLAN_MAX_ENTRIES`).
-
-    `_required_equipment` 는 **원 로더**(공식과 같은 `scenario_required_equipment`)다. 구간 달 ÷f 는
-    이 안에서 키의 토큰으로 건다(`assumed_required_equipment`) — 밖에서 가정 로더를 만들어 넘기는
-    길이 없어 키와 배수가 어긋날 수 없다. 공식 키(토큰 `()`)는 받지 않는다.
-    """
-    _require_assumed(shortening_key_token(cache_key), "get_assumed_required_shortening")
-    return _shortening_plan(
-        cache_key, _equipment, _downtime, _baseline, _cutoff, _required_equipment
-    )
-
-
 def load_required_shortening(
     key: RequiredShorteningCacheKey,
     equipment: pd.DataFrame,
@@ -1928,11 +1909,8 @@ def load_required_shortening(
     *,
     required_equipment: Callable[[], pd.DataFrame],
 ) -> KeyedShorteningPlan:
-    """키의 토큰으로 공식·가정 칸을 골라 계획을 받고, 키와 한 묶음으로 돌려준다."""
-    wrapper = (
-        get_assumed_required_shortening if shortening_key_token(key) else get_required_shortening
-    )
-    plan = wrapper(
+    """공식 계획을 받아 키와 한 묶음으로 돌려준다. UPEH 가정 토큰이 든 키는 공식 칸이 멈춘다."""
+    plan = get_required_shortening(
         key, equipment, downtime, baseline, cutoff, _required_equipment=required_equipment
     )
     return KeyedShorteningPlan(key, plan)
@@ -1952,13 +1930,15 @@ def get_required_shortening_csvs(
     탭이 열린 rerun 마다(목표만 바꿔도) 세 표를 다시 만들고 직렬화했다(2026-10-08 점검 A10). 계획은
     이미 `get_required_shortening` 이 캐시하므로, 그 키에 화면이 고르는 것(목표·공정 차례·달)만 더한
     키로 바이트를 둔다. `processes` 는 **화면의 차례 그대로**다 — CSV 의 공정 차례가 그것을 따른다.
-    UPEH 가정 계획이면(키의 토큰) 세 표 첫 열에 「UPEH 가정」 표지가 선다. `_keyed` 는 `cache_key`
-    로 받은 계획 묶음이어야 한다 — 묶음의 키가 다르면 멈춘다 (`KeyedShorteningPlan`). 부르는 쪽은
-    `shortening_csvs` 로 묶음 하나만 넘긴다. 지연 생성(콜러블)은 쓰지 않는다(TODO 결정 기록 —
-    콜러블의 예외는 삼켜지고 AppTest 가 바이트를 못 본다).
+    **공식 계획만** 받는다 — UPEH 가정 토큰이 든 키는 멈춘다(가정 숫자가 표지 없는 공식 CSV 로
+    나가지 않게). `_keyed` 는 `cache_key` 로 받은 계획 묶음이어야 한다 — 묶음의 키가 다르면 멈춘다
+    (`KeyedShorteningPlan`). 부르는 쪽은 `shortening_csvs` 로 묶음 하나만 넘긴다. 지연
+    생성(콜러블)은 쓰지 않는다(TODO 결정 기록 — 콜러블의 예외는 삼켜지고 AppTest 가 바이트를 못
+    본다).
 
     바이트는 BOM 이 붙은 UTF-8 이다 — Excel 이 한글을 깨뜨리지 않게(`table_toolbar.CSV_MIME` 과 짝).
     """
+    _require_official(shortening_key_token(cache_key), "get_required_shortening_csvs")
     _require_pair(cache_key, _keyed)
     plan = _keyed.plan
     frames = (
@@ -1966,12 +1946,6 @@ def get_required_shortening_csvs(
         unit_export_frame(plan, TARGET_LEVELS, processes),
         process_month_export_frame(plan, (level,), processes, months),
     )
-    token = shortening_key_token(cache_key)
-    if token:
-        # 가정 계획의 CSV 는 첫 열에 표지를 단다 — 공식 CSV 로 읽히지 않게. 표지는 키의 토큰에서
-        # 낸다.
-        for frame in frames:
-            frame.insert(0, "UPEH 가정", token_label(token))
     units, all_levels, process_months = (
         frame.to_csv(index=False).encode("utf-8-sig") for frame in frames
     )
@@ -2599,8 +2573,13 @@ def get_assumed_required_shortening_for_target(
     _cutoff: pd.DataFrame,
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
-    """달마다 다른 목표 하나의 UPEH 가정 계획 — 공식 칸과 따로 된 작은 칸. `_required_equipment` 는
-    원 로더이고 ÷f 는 키의 토큰으로 안에서 건다(`get_assumed_required_shortening` 과 같다)."""
+    """달마다 다른 목표 하나의 UPEH 가정 계획 — 공식 칸과 따로 된 작은 칸
+    (`ASSUMED_PLAN_MAX_ENTRIES`).
+
+    `_required_equipment` 는 **원 로더**(공식과 같은 `scenario_required_equipment`)다. 구간 달 ÷f 는
+    이 안에서 키의 토큰으로 건다(`assumed_required_equipment`) — 밖에서 가정 로더를 만들어 넘기는
+    길이 없어 키와 배수가 어긋날 수 없다. 공식 키(토큰 `()`)는 받지 않는다.
+    """
     shortening_key, default, monthly = cache_key
     _require_assumed(
         shortening_key_token(shortening_key), "get_assumed_required_shortening_for_target"

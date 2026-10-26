@@ -100,7 +100,7 @@ from capa_simulation.io.core_data_source import (  # noqa: E402
     CoreDataContract,
     load_core_data_contract,
 )
-from capa_simulation.persistence._sql_helpers import load_frame  # noqa: E402
+from capa_simulation.persistence._sql_helpers import load_frame, quote  # noqa: E402
 from capa_simulation.persistence.equipment_migration_runner import (  # noqa: E402
     load_equipment_migrations,
 )
@@ -879,6 +879,7 @@ class SourceData:
     dataset_label: str
     raw: pd.DataFrame
     tables: dict[str, pd.DataFrame] = field(default_factory=dict)
+    revision_id: str = ""
 
 
 _SOURCE_DATASET_FILTER: Final = (
@@ -984,7 +985,9 @@ def load_source(session: Session) -> SourceData | None:
         label += " · **⚠ 원천에서 온 데이터셋이 아니다 — 리비전 1 이 원천 그대로가 아닐 수 있다**"
     else:
         label += "(원천 그대로)"
-    session._source = SourceData(dataset_label=label, raw=raw, tables=tables)
+    session._source = SourceData(
+        dataset_label=label, raw=raw, tables=tables, revision_id=revision_id
+    )
     return session._source
 
 
@@ -1156,12 +1159,14 @@ def _requirement_section(
     tables: dict[str, pd.DataFrame],
     calculated: Required,
     notes: list[str] | None = None,
+    *,
+    st_reference: Callable[[], StReference | str | None] | None = None,
 ) -> list[str]:
     notes = [] if notes is None else notes
     lines = [
         "**소요대수** — 신규는 리비전 1 로 다시 계산한 `RQ_REQB` 행별 소요대수다.",
         "",
-        *_st_definition_lines(tables, notes),
+        *_st_definition_lines(tables, notes, reference=st_reference),
     ]
     contract = load_core_data_contract()
     required = calculated.frame
@@ -1264,8 +1269,83 @@ def _requirement_section(
     return lines
 
 
+@dataclass(frozen=True)
+class StReference:
+    """ST 정의 대조를 대신 본 리비전 — 그 `RQ_UPEH` 와 저장 차례(만든 시각 차례, 1 이 처음 저장한
+    리비전) `order` / 전체 리비전 수 `total`. 이름·번호 대신 차례만 찍는다."""
+
+    upeh: pd.DataFrame
+    order: int
+    total: int
+
+
+# 대신 볼 리비전 후보 — UPEH·ST 가 둘 다 양수이고 Area 가 MI 일 수 있는 행이 하나라도 있는 리비전.
+# Area 맞춤의 끝 판정은 파이썬 `match_key`(앞뒤 공백 · 대소문자)가 한다 — SQL 은 그보다 넓게만
+# 거른다(`mi` 를 품은 값). Main 행만 양수인 리비전마다 `RQ_UPEH` 전체를 읽지 않게 한다.
+_ST_CANDIDATES_SQL: Final = (
+    "SELECT DISTINCT revision_id FROM rev_data.{table} "
+    'WHERE TRY_CAST("UPEH" AS DOUBLE) > 0 AND TRY_CAST("ST" AS DOUBLE) > 0 '
+    """AND lower("Area_Name") LIKE '%mi%'"""
+)
+
+
+def _mi_agreement(upeh: pd.DataFrame) -> tuple[pd.Series, pd.Series] | None:
+    """(UPEH × ST ÷ 60 이 선 행, 그 행의 Area 맞댐 값). 칸이 없으면 None."""
+    if not {"Area_Name", "UPEH", "ST"} <= set(upeh.columns):
+        return None
+    agreement = time_agreement(upeh).dropna()
+    return agreement, match_key(upeh["Area_Name"]).loc[agreement.index]
+
+
+def _mi_rows(upeh: pd.DataFrame) -> int:
+    found = _mi_agreement(upeh)
+    return 0 if found is None else int(found[1].eq("mi").sum())
+
+
+def load_st_reference(session: Session) -> StReference | str | None:
+    """리비전 1 에 UPEH·ST 가 둘 다 양수인 MI 행이 없을 때 ST 정의 대조가 대신 볼 리비전.
+
+    가장 최근에 저장한 리비전부터 거꾸로 보아 그런 MI 행이 있는 첫 리비전이다(리비전 1 은 뺀다).
+    없으면 None, 읽다 멈추면 그 실패 종류 글. 원천에 ST 가 빈 리비전 1 만으로는 정의 대조가 판정
+    불가였다(`202610231430` 리뷰 사외 요청 5).
+    """
+    connection = session.simulation
+    source = session._source
+    if connection is None or source is None:
+        return None
+    table = REVISION_TABLES["RQ_UPEH"]
+    try:
+        ordered = connection.execute(
+            "SELECT revision_id FROM app_meta.scenario_revision ORDER BY created_at, revision_id"
+        ).fetchall()
+        candidates = {
+            str(row[0])
+            for row in connection.execute(_ST_CANDIDATES_SQL.format(table=quote(table))).fetchall()
+        }
+        revisions = [str(row[0]) for row in ordered]
+        for position in range(len(revisions) - 1, -1, -1):
+            revision_id = revisions[position]
+            if revision_id == source.revision_id or revision_id not in candidates:
+                continue
+            upeh = load_frame(
+                connection,
+                schema="rev_data",
+                table_name=table,
+                owner_column="revision_id",
+                owner_id=revision_id,
+            )
+            if _mi_rows(upeh):
+                return StReference(upeh=upeh, order=position + 1, total=len(revisions))
+    except (duckdb.Error, RuntimeError) as exc:
+        return _failure(exc)
+    return None
+
+
 def _st_definition_lines(
-    tables: dict[str, pd.DataFrame], notes: list[str] | None = None
+    tables: dict[str, pd.DataFrame],
+    notes: list[str] | None = None,
+    *,
+    reference: Callable[[], StReference | str | None] | None = None,
 ) -> list[str]:
     """ST 정의 대조(참고) — `RQ_UPEH` 에서 UPEH·ST 가 둘 다 양수인 행의 UPEH × ST ÷ 60 을 MI·Main
     으로 나눠 찍는다.
@@ -1275,33 +1355,77 @@ def _st_definition_lines(
     따로 두고, ST 가 계산에 들지 않는 Main 행은 뒤에 참고로만 둔다 — 한 분포로 섞으면 Main 에 다른
     뜻으로 실린 ST 가 MI 분포를 가린다. 판정하지 않고 행 수와 분포만 찍는다. ≈60 가르기와 달리
     소요대수 대조가 없어도 늘 찍는다.
+
+    리비전 1 에 그런 MI 행이 없으면(원천에 ST 가 빈 리비전) `reference` 가 내는 리비전(가장 최근에
+    저장한 리비전 가운데 그런 MI 행이 있는 것)으로 한 줄을 더 찍는다. 요약은 첫 칸이 늘 리비전 1 의
+    MI 행 수이고, 대신 본 것이 있으면 `대신 k/N` 칸 뒤에 그 리비전의 MI 세 칸이 붙는다.
     """
     head = "- ST 정의 대조(참고) — 리비전 1 `RQ_UPEH` 의 UPEH × ST ÷ 60(ST 는 분 단위라 기대 1)"
     notes = [] if notes is None else notes
     upeh = tables.get("RQ_UPEH")
-    if upeh is None or not {"Area_Name", "UPEH", "ST"} <= set(upeh.columns):
-        notes.append(_note("8-2T", "-"))
-        return [f"{head} — 칸 없음"]
-    agreement = time_agreement(upeh).dropna()
-    if agreement.empty:
-        notes.append(_note("8-2T", "0"))
-        return [f"{head} — UPEH·ST 가 둘 다 양수인 행 0"]
-    area = match_key(upeh["Area_Name"]).loc[agreement.index]
-    mi = agreement.loc[area.eq("mi")]
+    found = None if upeh is None else _mi_agreement(upeh)
+    if upeh is None or found is None:
+        lines = [f"{head} — 칸 없음"]
+        mi_count: int | None = None
+    else:
+        agreement, area = found
+        mi_count = int(area.eq("mi").sum())
+        if agreement.empty:
+            lines = [f"{head} — UPEH·ST 가 둘 다 양수인 행 0"]
+        else:
+            lines = [f"{head} — {' / '.join(_agreement_parts(agreement, area))}"]
+    if mi_count:
+        mi = agreement.loc[area.eq("mi")]
+        near = int(mi.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
+        # 요약 — 「8-2T MI 행 · 중앙 · 1 ±5% 안」.
+        notes.append(_note("8-2T", f"{mi_count:,}", _ratio(float(mi.median())), f"{near:,}"))
+        return lines
+    first = "-" if mi_count is None else "0"
+    picked = reference() if reference is not None else None
+    other = (
+        "- ST 정의 대조(대신) — 리비전 1 에 UPEH·ST 가 둘 다 양수인 MI 행이 없어 가장 최근에 "
+        "저장한 리비전 가운데 그런 MI 행이 있는 것"
+    )
+    if reference is None:
+        notes.append(_note("8-2T", first))
+    elif isinstance(picked, StReference):
+        agreement, area = cast(tuple[pd.Series, pd.Series], _mi_agreement(picked.upeh))
+        mi = agreement.loc[area.eq("mi")]
+        near = int(mi.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
+        lines.append(
+            f"{other}(저장 차례 {picked.order:,}/{picked.total:,})의 `RQ_UPEH` — "
+            + " / ".join(_agreement_parts(agreement, area))
+        )
+        # 요약 — 「8-2T 0 · 대신 k/N · MI 행 · 중앙 · 1 ±5% 안」.
+        notes.append(
+            _note(
+                "8-2T",
+                first,
+                f"대신 {picked.order:,}/{picked.total:,}",
+                f"{len(mi):,}",
+                _ratio(float(mi.median())),
+                f"{near:,}",
+            )
+        )
+    elif picked is None:
+        lines.append(f"{other} — 없음")
+        notes.append(_note("8-2T", first, "대신 없음"))
+    else:
+        lines.append(f"{other} — 찾지 못함 {picked}")
+        notes.append(_note("8-2T", first, f"대신 {picked}"))
+    return lines
+
+
+def _agreement_parts(agreement: pd.Series, area: pd.Series) -> list[str]:
+    """MI · Main(계산에 쓰지 않음) · 그 밖 — 한 리비전의 UPEH × ST ÷ 60 분포 칸들."""
     parts = [
-        _agreement_part("MI", mi),
+        _agreement_part("MI", agreement.loc[area.eq("mi")]),
         _agreement_part("Main(계산에 쓰지 않음)", agreement.loc[area.eq("main")]),
     ]
     others = int((~area.isin(["mi", "main"])).sum())
     if others:
         parts.append(f"그 밖 {others:,}")
-    # 요약 — 「8-2T MI 행 · 중앙 · 1 ±5% 안」.
-    if mi.empty:
-        notes.append(_note("8-2T", "0"))
-    else:
-        near = int(mi.sub(1.0).abs().le(NEAR_TOLERANCE).sum())
-        notes.append(_note("8-2T", f"{len(mi):,}", _ratio(float(mi.median())), f"{near:,}"))
-    return [f"{head} — {' / '.join(parts)}"]
+    return parts
 
 
 def _agreement_part(label: str, values: pd.Series) -> str:
@@ -2050,7 +2174,11 @@ def check_legacy(session: Session) -> list[str]:
         lines.extend([f"- Wafer `WF수(매)` 경로 값 — {_failure(exc)}", ""])
     lines.extend(
         _requirement_section(
-            _with_raw_columns(core, raw, ROUTE_CATEGORIES), tables, required, notes
+            _with_raw_columns(core, raw, ROUTE_CATEGORIES),
+            tables,
+            required,
+            notes,
+            st_reference=partial(load_st_reference, session),
         )
     )
     lines.extend(_pcb_section(raw, core, grain))
@@ -4423,7 +4551,8 @@ def copy_note(index: int, check: CopyCheck) -> str:
     """전송용 요약의 사본 줄 — 「8-5C1 표본 적재일 · 견준 날 · 그날에만 · 기준 날에만 ·
     행이 다른 키 · 그 밖 칸만 · 하루 안 충돌」.
 
-    네 칸(과 기준 날에만)은 견준 날마다 더한 합이다. 판정은 없다.
+    그날에만 ~ 그 밖 칸만 네 칸은 견준 날마다 더한 합이고, 하루 안 충돌은 받은 날 전부(기준 날
+    포함)를 더한 합이다 — 날마다 같은 꼴로 충돌하면 하루 값의 날 수 배다. 판정은 없다.
     """
     key = f"8-5C{index}"
     kind = "더함" if check.extra else "표본"

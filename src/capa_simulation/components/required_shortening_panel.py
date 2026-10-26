@@ -27,12 +27,11 @@
 읽는다. 기준선 저장·지우기 팝오버는 CSV 단추 줄에 선다.
 
 **UPEH 가정**(조건 카드 끝 「이 세션만」 — 공정 Capa 상세와 같은 세션 칸,
-`upeh_assumption_controls`)은 **기본 보기를 바꾸지 않는다** — KPI·LOB·공정 카드·CSV 세
-벌·기준선·진척 비교는 늘 공식 계획이다(모두가 보는 진척 화면이라 가정 숫자가 공식 진척으로 돌지
-않게). 머리의 「UPEH 가정 비교」 를 켜면 그 자리가 공식 대 가정 보기로 바뀐다 — 효과 줄, 공정마다
-공식→가정(「가정으로 해소」), 구간 안 단축 0 역산과 「이 값으로」, 가정 계획 카드. 가정 계획은
-`_Plan.assumed` 로더로 그 보기를 고른 회차에만 꺼낸다(가정 칸 캐시 — 목표만 바꾼 프래그먼트 회차는
-다시 계산하지 않는다). 가정이 켜진 동안 기준선 저장은 거절한다.
+`upeh_assumption_controls`)은 **이 화면에 걸지 않는다** — KPI·LOB·공정 카드·CSV 세 벌·기준선·
+진척 비교는 늘 공식 계획이다(모두가 보는 진척 화면이라 가정 숫자가 공식 진척으로 돌지 않게). 공식
+대 가정 비교 보기는 두지 않는다 — 가정의 효과는 공정 Capa 상세에서 본다(TODO 3장 결정 기록
+「화면」). 칸이 여기에도 서는 것은 두 화면이 같은 세션 값을 나눠 쓰기 때문이다. 가정이 켜지면 머리
+아래 한 줄로 알리고, 그동안 기준선 저장은 거절한다.
 
 **진척 관리**(2026-10-22 「단축이 필요한 공정 전부의 진척 관리 한 페이지」)는 `shortening_board` 다
 — KPI 아래·카드 위의 공정 진척 보드(줄을 고르면 그 카드 강조)·카드 차례·기한 임박·이행 지연,
@@ -51,7 +50,6 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import date, timedelta
-from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -105,10 +103,7 @@ from capa_simulation.components.shortening_timeline import timeline_position as 
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.typography import FIGURE_CLASS
-from capa_simulation.components.upeh_assumption_controls import (
-    render_inverse,
-    render_upeh_assumption_controls,
-)
+from capa_simulation.components.upeh_assumption_controls import render_upeh_assumption_controls
 from capa_simulation.design import tokens
 from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
 from capa_simulation.page_bootstrap import (
@@ -168,19 +163,7 @@ from capa_simulation.services.undated_equipment import (
     undated_candidate_note,
     undated_equipment_notice,
 )
-from capa_simulation.services.upeh_assumption import (
-    NO_ASSUMPTION,
-    AssumptionEffect,
-    UpehAssumption,
-    assumption_label,
-    effect_text,
-    inverse_text,
-    percent_to_clear_target,
-    plan_counts,
-    required_drop,
-    token_label,
-    token_months,
-)
+from capa_simulation.services.upeh_assumption import UpehAssumption, assumption_label
 from capa_simulation.services.usage_basis import usage_exclusion_notice
 from capa_simulation.settings import DUCKDB_PATH
 
@@ -189,19 +172,12 @@ __all__ = [
     "SHORTENING_LEVEL_KEY",
     "SHORTENING_PROCESS_KEY",
     "SHORTENING_START_KEY",
-    "SHORTENING_UPEH_VIEW_KEY",
     "render_required_shortening_tab",
 ]
 
 # 목표·시작 월·끝 월 칸은 `shortening_source` 에 있다(Space 「필요 단축」 보기가 같은 칸을 읽는다) —
 # 여기서 다시 내보낸다.
 SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
-# 머리의 「UPEH 가정 비교」 보기(세션 값). 가정이 꺼져 있으면 쓰지 않는다.
-SHORTENING_UPEH_VIEW_KEY = "equipment_shortening_upeh_view_v1"
-_UPEH_CSV_KEY = "equipment_shortening_upeh_compare_csv"
-_UPEH_UNITS_CSV_KEY = "equipment_shortening_upeh_units_csv"
-_UPEH_INVERSE_KEY = "equipment_shortening_upeh_inverse"
-_UPEH_TABLE_KEY = "equipment_shortening_upeh_table"
 _SHORTENING_OWNER = "required_shortening"
 _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
@@ -258,11 +234,8 @@ class _Plan:
     selected: tuple[str, ...]
     labels: ProcessLabels
     assumption: UpehAssumption | None = None
-    """조건 카드의 UPEH 가정(100% 여도 구간이 있으면 든다 — `active` 가 거짓)."""
-
-    assumed: Callable[[], simulation_cache.KeyedShorteningPlan] | None = None
-    """UPEH 가정 계획을 꺼내는 것 — 가정이 켜지고 구간이 계획 달과 겹칠 때만 있다. 「UPEH 가정
-    비교」 보기를 그리는 회차에만 부른다(가정 칸 캐시라 적중하면 다시 계산하지 않는다)."""
+    """조건 카드의 UPEH 가정(100% 여도 구간이 있으면 든다 — `active` 가 거짓). 계획에는 걸지 않고
+    머리 아래 알림과 기준선 저장 거절에만 쓴다."""
 
     @property
     def plan(self) -> ShorteningPlan:
@@ -413,7 +386,6 @@ def _prepare(
         return ShorteningStop(
             "error", f"필요 단축 일정을 계산하지 못했습니다 — {bootstrap_error_message(exc)}"
         )
-    key = official.key
     plan = official.plan
 
     ordered = _ordered_processes(plan, context)
@@ -432,22 +404,6 @@ def _prepare(
             end_month=context.selected_end_month,
             today=today,
         )
-    token = assumption.token(months) if assumption is not None else NO_ASSUMPTION
-    # 가정 계획은 같은 입력에 토큰만 바꾼 키로, 원 로더를 넘긴다 — ÷f 는 가정 칸이 키의 토큰으로
-    # 건다.
-    assumed = (
-        partial(
-            simulation_cache.load_required_shortening,
-            simulation_cache.with_upeh_token(key, token),
-            equipment,
-            downtime,
-            baseline,
-            cutoff,
-            required_equipment=required_equipment,
-        )
-        if token
-        else None
-    )
     return _Plan(
         official=official,
         context=context,
@@ -456,7 +412,6 @@ def _prepare(
         selected=tuple(selected),
         labels=labels,
         assumption=assumption,
-        assumed=assumed,
     )
 
 
@@ -485,9 +440,7 @@ def _render_view(
     if consume_baseline_write():
         st.rerun(scope="app")
     baselines = load_baseline_options(database_path)
-    level, compare_id, upeh_view = _render_header(
-        today, baselines, prepared if isinstance(prepared, _Plan) else None
-    )
+    level, compare_id = _render_header(today, baselines)
     render_baseline_notice()
     if isinstance(prepared, ShorteningStop):
         _render_stop(prepared)
@@ -496,7 +449,6 @@ def _render_view(
         prepared,
         level=level,
         compare_id=compare_id,
-        upeh_view=upeh_view,
         equipment=equipment,
         today=today,
         database_path=database_path,
@@ -522,7 +474,6 @@ def _render_body(
     *,
     level: float,
     compare_id: str,
-    upeh_view: bool = False,
     equipment: pd.DataFrame,
     today: date,
     database_path: str | None,
@@ -532,11 +483,11 @@ def _render_body(
     equipment_basis: ShorteningEquipmentBasis | None = None,
     inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
-    """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교, 또는 UPEH 가정
-    비교.
+    """고른 목표의 KPI·진척 보드·LOB 요약·공정 카드, 또는 고른 기준선과의 진척 비교. 둘 다 공식
+    계획이다 — UPEH 가정이 켜져 있으면 머리 아래 한 줄로 그것을 알린다.
 
     강조 공정(`shortening_board.current_highlight` — 공정 Capa 상세에서 옮겨 왔거나 보드 줄을
-    골랐다)은 세 보기 모두 카드 맨 앞이다. 공정 필터(조건 카드)는 건드리지 않는다.
+    골랐다)은 두 보기 모두 카드 맨 앞이다. 공정 필터(조건 카드)는 건드리지 않는다.
     """
     plan, months, labels = prepared.plan, list(prepared.months), prepared.labels
     ordered, selected = list(prepared.ordered), list(prepared.selected)
@@ -596,26 +547,12 @@ def _render_body(
         return
 
     thresholds = _thresholds()
-    if upeh_view and prepared.assumed is not None:
-        _render_assumption_compare(
-            prepared,
-            level=level,
-            scope=scope,
-            selected=bool(selected),
-            thresholds=thresholds,
-            highlight=highlight,
-        )
-        return
     if prepared.assumption_active and prepared.assumption is not None:
         label = assumption_label(prepared.assumption)
         st.caption(
             f":material/science: {label}{subject_particle(label)} 켜져 있습니다 — 이 "
-            "보기·CSV·기준선은 공식 계획입니다. 머리의 「UPEH 가정 비교」 를 켜면 공식 대 가정을 "
-            "견줍니다."
-            if prepared.assumed is not None
-            # 구간이 카드 기간과 겹치지 않으면 비교 보기를 켤 수 없다 — 효과 줄과 같은 글로 알린다.
-            else ":material/science: "
-            + effect_text(AssumptionEffect(percent=prepared.assumption.percent, applied=False))
+            "화면(보기·CSV·기준선·진척 비교)은 늘 공식 계획입니다. 가정의 효과는 공정 Capa "
+            "상세에서 봅니다."
         )
     # 서식은 KPI 와 한 `st.html` 에 싣는다. 스타일만 든 `st.html` 은 이벤트 칸(본문 밖 최상위
     # 칸)으로 가는데, 이 본문은 프래그먼트라 갈래(일반·진척 비교)마다 그 칸에 쓰는 수가 달라진다.
@@ -727,8 +664,7 @@ def _render_scenario_error(reason: str | None) -> None:
 def _render_header(
     today: date,
     baselines: Sequence[ShorteningBaselineSummary] | None,
-    prepared: _Plan | None = None,
-) -> tuple[float, str, bool]:
+) -> tuple[float, str]:
     """설명 한 줄과 오른쪽 `진척 비교`·`목표 확보율`. 설명 옆에 두므로 가로 컨테이너가 아니라
     컬럼이다(AGENTS 9장). 둘 다 무엇을 볼지라 본문 머리다 — 거르는 조건(기간·공정)만 조건 카드에
     둔다. `baselines` 가 None 이면(설비 DB 없음) 진척 비교 상자를 세우지 않는다. 제목은 따로 달지
@@ -745,7 +681,6 @@ def _render_header(
             "목표 확보율에 모자란 달을 채우려면 신규 호기 Qual 을 며칠 당겨야 하는지 — "
             f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
         )
-        upeh_view = _render_upeh_view_toggle(prepared)
     with picker:
         level = st.selectbox(
             "목표 확보율",
@@ -758,31 +693,7 @@ def _render_header(
     if compare_column is not None and baselines is not None:
         with compare_column:
             compare = render_compare_select(baselines)
-    return float(level), compare, upeh_view
-
-
-def _render_upeh_view_toggle(prepared: _Plan | None) -> bool:
-    """「UPEH 가정 비교」 보기 — 조건 카드의 UPEH 가정이 켜져 있을 때만 쓸 수 있다(값은 세션에
-    남는다).
-
-    기본 보기는 늘 공식 계획이다. 켜면 KPI·LOB·카드 자리가 공식 대 가정 보기로 바뀐다(진척 비교를
-    고르면 진척 비교가 먼저다 — 진척은 늘 공식 계획이다).
-    """
-    usable = prepared is not None and prepared.assumed is not None
-    value = st.toggle(
-        "UPEH 가정 비교",
-        key=SHORTENING_UPEH_VIEW_KEY,
-        persist_state="session",
-        disabled=not usable,
-        help=(
-            "조건 카드의 「UPEH 가정」(이 세션만)을 100% 가 아닌 값으로 두면 공식 계획과 가정 "
-            "계획을 "
-            "견줍니다 — 공정마다 단축 호기·단축일·신규의 공식→가정, 가정으로 해소된 공정, 단축 "
-            "없이 채우는 "
-            "UPEH 역산. 기본 보기·CSV·기준선·진척 비교는 늘 공식 계획입니다."
-        ),
-    )
-    return bool(value) and usable
+    return float(level), compare
 
 
 def _render_month_range(
@@ -1207,255 +1118,6 @@ def _render_progress(
         )
 
 
-_RESOLVED = "가정으로 해소"
-_NEWLY_SHORT = "가정으로 새로 부족"
-_SMALLER = "줄어듦"
-_LARGER = "늘어남"
-_SAME = "같음"
-
-
-def _render_assumption_compare(
-    prepared: _Plan,
-    *,
-    level: float,
-    scope: Sequence[str],
-    selected: bool,
-    thresholds: SecurementThresholds,
-    highlight: ShorteningHighlight | None = None,
-) -> None:
-    """「UPEH 가정 비교」 보기 — 효과 타일·한 줄, 역산, 공정마다 공식→가정 표·CSV, 가정 계획 카드.
-
-    강조 공정은 카드 맨 앞에 선다(표·CSV 차례는 그대로).
-
-    보이는 공정은 공정을 골랐으면 그 공정, 아니면 **공식 부족 ∪ 가정 부족** 이다 — 가정으로 부족이
-    풀린 공정이 사라지면 효과가 보이지 않는다(「가정으로 해소」 표지). 이 화면의 단축 정의(목표
-    스칼라·조건 카드 기간)는 공정 Capa 상세(확보기준 월별·RQ_REQB 기간)와 다르다 — 같은 % 여도
-    소요대수만 같다.
-    """
-    assumption = prepared.assumption
-    assert assumption is not None and prepared.assumed is not None
-    try:
-        assumed = prepared.assumed()
-    except ValueError as exc:
-        st.error(f"UPEH 가정 계획을 계산하지 못했습니다 — {bootstrap_error_message(exc)}")
-        return
-    months, labels = list(prepared.months), prepared.labels
-    token = simulation_cache.shortening_key_token(assumed.key)
-    window = sorted(token_months(token))
-    official_level = prepared.plan.at(level)
-    assumed_level = assumed.plan.at(level)
-    official_short = _short_processes(official_level)
-    assumed_short = _short_processes(assumed_level)
-    shown = (
-        list(scope)
-        if selected
-        else [process for process in scope if process in official_short | assumed_short]
-    )
-    official_counts = plan_counts(official_level.units, official_level.process_months, scope)
-    assumed_counts = plan_counts(assumed_level.units, assumed_level.process_months, scope)
-    official_months = _scope_rows(official_level.process_months, scope)
-    effect = AssumptionEffect(
-        percent=assumption.percent,
-        applied=True,
-        required_drop=required_drop(
-            official_months, _scope_rows(assumed_level.process_months, scope), window
-        ),
-        official=official_counts,
-        assumed=assumed_counts,
-    )
-    resolved = [
-        process for process in scope if process in official_short and process not in assumed_short
-    ]
-    tiles = (
-        (
-            "부족 공정",
-            f"{sum(1 for p in scope if p in official_short)}→"
-            f"{sum(1 for p in scope if p in assumed_short)}",
-            f"공식 → {assumption_label(assumption)} · 목표 {_percent(level)}",
-        ),
-        (
-            "단축 대상 호기",
-            f"{official_counts.shortened}→{assumed_counts.shortened}대",
-            f"단축일 합계 {official_counts.days}→{assumed_counts.days}일",
-        ),
-        (
-            "신규 필요",
-            f"{official_counts.new}→{assumed_counts.new}대",
-            f"월 최대 환산 부족 {official_counts.max_gap:,.2f}→{assumed_counts.max_gap:,.2f}",
-        ),
-        ("가정으로 해소", f"{len(resolved)}개 공정", "공식으로는 모자라고 가정으로는 채워진 공정"),
-    )
-    # 서식은 타일과 한 `st.html` 에 싣는다(`_render_body` 와 같은 까닭 — 이벤트 칸에 쓰지 않는다).
-    st.html(_style() + _tiles_markup(tiles, aria="UPEH 가정 비교 요약"))
-    st.caption(f":material/science: {effect_text(effect)}")
-    st.caption(
-        "이 세션만입니다 — 기본 보기·CSV 세 벌·기준선·진척 비교는 공식 계획 그대로입니다. 이 화면 "
-        "목표 "
-        f"{_percent(level)}({level:g}) · 기간 "
-        f"{month_label(months[0])}–{month_label(months[-1])}(조건 카드) — "
-        "공정 Capa 상세(확보기준 월별·RQ_REQB 기간)와는 소요대수만 같고 단축 대수는 다를 수 "
-        "있습니다."
-    )
-    render_inverse(
-        percent_to_clear_target(
-            official_months.loc[official_months["공정"].isin(shown).to_numpy()]
-            if shown
-            else official_months,
-            window,
-            skip_states=(STATUS_EXPIRED,),
-        ),
-        goal=f"보이는 공정 구간 안 단축 0(목표 {_percent(level)})",
-        key=_UPEH_INVERSE_KEY,
-        current=assumption.percent,
-        rerun_app=True,
-    )
-    if not shown:
-        st.success(
-            f"목표 {_percent(level)} 에서 공식·가정 모두 모자란 달이 있는 공정이 없습니다.",
-            icon=":material/check_circle:",
-        )
-        return
-    table = _assumption_table(
-        shown,
-        official_level,
-        assumed_level,
-        official_short,
-        assumed_short,
-        window,
-        mark=token_label(token),
-    )
-    view = table.assign(공정=[labels.label(process) for process in table["공정"]])
-    st.dataframe(
-        view.drop(columns=["UPEH 가정"]), hide_index=True, width="stretch", key=_UPEH_TABLE_KEY
-    )
-    span = f"{months[0]}_{months[-1]}" if months else "empty"
-    upeh = f"upeh{assumption.percent}_{window[0]}_{window[-1]}" if window else "upeh"
-    units_csv = simulation_cache.shortening_csvs(
-        assumed, float(level), tuple(shown), tuple(int(month) for month in months)
-    )[0]
-    with st.container(horizontal=True, gap="small"):
-        render_csv_download(
-            data=simulation_cache.get_export_csv(
-                simulation_cache.csv_export_key("shortening_upeh_compare", table, (), "utf-8-sig"),
-                partial(_csv_bytes, table),
-            ),
-            file_name=f"required_shortening_{upeh}_{level_percent(level)}pct_{span}.csv",
-            key=_UPEH_CSV_KEY,
-            label="UPEH 가정 비교 CSV",
-        )
-        render_csv_download(
-            data=units_csv,
-            file_name=f"required_shortening_units_{level_percent(level)}pct_{span}_{upeh}.csv",
-            key=_UPEH_UNITS_CSV_KEY,
-            label="가정 계획 호기별 CSV",
-        )
-    official_units = official_level.units
-    for process in _card_order(shown, highlight, plan=prepared.plan, scope=scope, labels=labels):
-        process_counts = plan_counts(official_units, official_level.process_months, [process])
-        assumed_process = plan_counts(assumed_level.units, assumed_level.process_months, [process])
-        inverse = percent_to_clear_target(
-            official_months.loc[official_months["공정"].eq(process).to_numpy()],
-            window,
-            skip_states=(STATUS_EXPIRED,),
-        )
-        badges: list[tuple[str, str]] = []
-        focus = highlight if highlight is not None and highlight.process == process else None
-        if process in official_short and process not in assumed_short:
-            badges.append((_RESOLVED, tokens.STATUS_SECURE))
-        badges.append(
-            (
-                f"단축 {process_counts.shortened}→{assumed_process.shortened}대 · 신규 "
-                f"{process_counts.new}→{assumed_process.new} · "
-                + inverse_text("단축 없이 채우려면", inverse).replace(" → ", " ", 1),
-                tokens.SURFACE_SUBTLE,
-            )
-        )
-        st.html(
-            _card_markup(
-                process,
-                labels.label(process),
-                prepared.plan.cutoff_days.get(process, 0),
-                assumed_level,
-                months,
-                level,
-                thresholds,
-                prepared.plan.today,
-                extra_badges=tuple(badges),
-                highlight=highlight_badge(focus) if focus is not None else None,
-            )
-        )
-
-
-def _scope_rows(frame: pd.DataFrame, scope: Sequence[str]) -> pd.DataFrame:
-    if frame.empty:
-        return frame
-    return frame.loc[frame["공정"].isin(list(scope)).to_numpy()]
-
-
-def _assumption_table(
-    shown: Sequence[str],
-    official: LevelPlan,
-    assumed: LevelPlan,
-    official_short: set[str],
-    assumed_short: set[str],
-    window: Sequence[int],
-    *,
-    mark: str,
-) -> pd.DataFrame:
-    """공정마다 공식→가정 한 줄(원본 공정명 — 화면은 표시명으로 바꿔 보인다, CSV 는 원본 그대로).
-
-    첫 열 「UPEH 가정」 은 모든 행에 `mark`(가정 계획 키의 토큰 글 — 「가정 계획 호기별 CSV」 와
-    같은 표지)를 싣는다. 파일이 공식 숫자로 읽히지 않게 하는 표지다.
-    """
-    rows: list[dict[str, object]] = []
-    official_months = official.process_months
-    for process in shown:
-        before = plan_counts(official.units, official.process_months, [process])
-        after = plan_counts(assumed.units, assumed.process_months, [process])
-        if process in official_short and process not in assumed_short:
-            state = _RESOLVED
-        elif process in assumed_short and process not in official_short:
-            state = _NEWLY_SHORT
-        elif (after.days, after.new, after.max_gap) < (before.days, before.new, before.max_gap):
-            state = _SMALLER
-        elif (after.days, after.new, after.max_gap) > (before.days, before.new, before.max_gap):
-            state = _LARGER
-        else:
-            state = _SAME
-        inverse = percent_to_clear_target(
-            official_months.loc[official_months["공정"].eq(process).to_numpy()],
-            window,
-            skip_states=(STATUS_EXPIRED,),
-        )
-        rows.append(
-            {
-                "UPEH 가정": mark,
-                "공정": process,
-                "상태": state,
-                "단축 호기": f"{before.shortened}→{after.shortened}",
-                "단축일 합계": f"{before.days}→{after.days}",
-                "신규": f"{before.new}→{after.new}",
-                "월 최대 환산 부족": f"{before.max_gap:,.2f}→{after.max_gap:,.2f}",
-                "구간 안 단축 0": inverse_text("", inverse).removeprefix(" → "),
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def _csv_bytes(frame: pd.DataFrame) -> bytes:
-    return frame.to_csv(index=False).encode("utf-8-sig")
-
-
-def _tiles_markup(tiles: Sequence[tuple[str, str, str]], *, aria: str) -> str:
-    cells = "".join(
-        f'<div class="shk-kpi"><span class="shk-kpi-label">{_escape(label)}</span>'
-        f'<span class="shk-kpi-value">{_escape(value)}</span>'
-        f'<span class="shk-kpi-note">{_escape(note)}</span></div>'
-        for label, value, note in tiles
-    )
-    return f'<div class="shk-kpis" role="group" aria-label="{_escape(aria)}">{cells}</div>'
-
-
 # ------------------------------------------------------------------ 데이터 고르기
 
 
@@ -1819,15 +1481,13 @@ def _card_markup(
     thresholds: SecurementThresholds,
     today: date,
     *,
-    extra_badges: Sequence[tuple[str, str]] = (),
     highlight: str | None = None,
     managers: Mapping[str, str] | None = None,
 ) -> str:
     """공정 카드 하나. 고르기는 원본 `process` 로, 제목·`aria-label` 은 `display_name`(공정
     표시명)으로 한다 — 표시명이 원본과 다르면 제목 풍선에 원본을 남긴다(CSV `공정` 칸은 원본이다).
-    `extra_badges` 는 머리 오른쪽에 더 붙일 (글, 면색) — UPEH 가정 비교의 「가정으로
-    해소」·공식→가정 줄. `highlight` 는 강조 공정 배지 글(테두리를 강조색으로), `managers` 는
-    호기 → 담당자(호기 줄 풍선).
+    `highlight` 는 강조 공정 배지 글(머리 오른쪽 배지 뒤에 붙이고 테두리를 강조색으로), `managers`
+    는 호기 → 담당자(호기 줄 풍선).
     """
     frame = level_plan.process_months
     rows = frame.loc[frame["공정"].eq(process) & frame["생산계획년월"].isin(list(months))]
@@ -1848,18 +1508,12 @@ def _card_markup(
         badge = (
             f'<span class="shk-badge" style="background:{tokens.STATUS_SECURE}">목표 충족</span>'
         )
-    badges = list(extra_badges)
     if highlight is not None:
-        badges.insert(0, (highlight, tokens.SURFACE_SUBTLE))
-    if badges:
         badge = (
             '<span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
             + badge
-            + "".join(
-                f'<span class="shk-badge" style="background:{color}">{_escape(text)}</span>'
-                for text, color in badges
-            )
-            + "</span>"
+            + f'<span class="shk-badge" style="background:{tokens.SURFACE_SUBTLE}">'
+            + f"{_escape(highlight)}</span></span>"
         )
     table = _card_table(by_month, months, level, thresholds)
     timeline = _units_markup(units, months, today=today, short=worst < 0, managers=managers)

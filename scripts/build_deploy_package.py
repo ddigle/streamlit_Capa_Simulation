@@ -20,7 +20,9 @@
 목록은 `git ls-files` 에서 오고 내용은 작업 트리에서 읽는다. 그래서 추적 파일에 커밋하지 않은
 수정이 있거나 HEAD 가 `origin/main` 과 다르면 멈춘다 — 송장의 커밋과 ZIP 내용이 어긋난 채로
 나가지 않게 한다(`--no-tag` 시험 빌드는 알리기만 한다). 같은 stamp 의 태그 `deploy/<stamp>` 가
-이미 있어도 ZIP 을 쓰기 전에 멈춘다 — 확인한 ZIP 을 덮지 않는다.
+이미 있어도 ZIP 을 쓰기 전에 멈춘다 — 확인한 ZIP 을 덮지 않는다. 런북 7장은 그 배포 하나의
+안내라 stamp 선언·자리표·화면 확인 수(압축본 기대 `A n` 과 `check_deploy_screens.py` 항목 수)가
+이번 빌드와 어긋나면 시험 빌드부터 멈춘다.
 
 사외 빌드 자리는 데스크탑 WSL 이다 — 런북 수치 재기부터 ZIP 전달까지는
 `docs/wsl_dev_environment.md` 5장.
@@ -382,6 +384,57 @@ def runbook_placeholders_left() -> bool:
     return True
 
 
+# 7장 압축본 기대의 화면 확인 수(`A n = 기록 n + 미기록 0 + 안함 0`)와 화면 확인 스크립트의 항목
+# 선언(`ITEMS` 의 `Item("키", …)` 줄). 스크립트를 부르지 않고 글로 센다 — 앱 모듈을 불러오지 않는다.
+SCREENS_SCRIPT = Path("scripts/check_deploy_screens.py")
+SCREEN_ITEMS_PATTERN = re.compile(
+    r"^ITEMS: tuple\[Item, \.\.\.\] = \((?P<body>.*?)^\)$", re.S | re.M
+)
+SCREEN_ITEM_PATTERN = re.compile(r'^\s+Item\("[^"]+"', re.M)
+SCREEN_COUNT_PATTERN = re.compile(r"`A (\d+) = 기록 \1 \+ 미기록 0 \+ 안함 0`")
+
+
+def screen_item_count(root: Path) -> int | None:
+    """화면 확인 스크립트가 선언한 항목 수(`--list` 줄 수와 같다). 스크립트나 선언이 없으면 None."""
+    path = root / SCREENS_SCRIPT
+    if not path.exists():
+        return None
+    found = SCREEN_ITEMS_PATTERN.search(path.read_text(encoding="utf-8"))
+    return None if found is None else len(SCREEN_ITEM_PATTERN.findall(found.group("body")))
+
+
+def runbook_screen_count_mismatch() -> bool:
+    """런북 7장의 화면 확인 수 기대가 스크립트 항목 수와 다르면 막는다.
+
+    7장은 그 배포의 기록이라 배포 뒤에 더한 항목은 다음 배포 7장이 싣는다(`docs/TODO.md` 「다음
+    배포 — 화면 확인 항목」). 시험(`tests/test_check_deploy_screens.py`)은 그 사이를 허락해 7장이
+    `ITEMS` 의 앞머리이기만 하면 통과한다 — 그래서 7장을 고치지 않은 채 다음 배포를 빌드해도 관문이
+    막지 않았다(2026-10-26 리뷰). stamp 대조와 같은 자리에서 막는다: 사내는 7장의 `A n` 을 기대로
+    받아 적으므로 수가 어긋난 ZIP 은 「미기록」 이 아닌 칸을 기대 밖으로 센다.
+    """
+    count = screen_item_count(PROJECT_ROOT)
+    path = PROJECT_ROOT / RUNBOOK
+    if count is None or not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    chapter = text.split("\n## 7. ", 1)[-1].split("\n## 8. ", 1)[0]
+    expected = {int(total) for total in SCREEN_COUNT_PATTERN.findall(chapter)}
+    if expected == {count}:
+        return False
+    print(f"{RUNBOOK} 7장의 화면 확인 수가 스크립트와 다릅니다.", file=sys.stderr)
+    shown = ", ".join(str(value) for value in sorted(expected)) or "없음"
+    print(
+        f"  7장 `A n = 기록 n + 미기록 0 + 안함 0` 의 n {shown} · {SCREENS_SCRIPT} {count}개",
+        file=sys.stderr,
+    )
+    print(
+        "  7장 A 표 · 압축본 기대를 `check_deploy_screens.py --list` 와 같게 고친 뒤 빌드합니다"
+        "(배포 뒤 더한 항목은 docs/TODO.md 「다음 배포 — 화면 확인 항목」).",
+        file=sys.stderr,
+    )
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="사내 배포 ZIP 을 만든다.")
     parser.add_argument(
@@ -437,6 +490,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("ZIP 을 만들려면 --out 이 필요합니다(--list-only 는 예외).")
     stamp = args.stamp or datetime.now().strftime("%Y%m%d%H%M")
     if runbook_stamp_mismatch(stamp) or runbook_placeholders_left():
+        return 1
+    if runbook_screen_count_mismatch():
         return 1
     # 시험 빌드(흉내 저장소로 런북 수치를 잴 때)는 커밋·푸시 전이라 늘 걸린다. 보내지 않는
     # ZIP 이므로 알리기만 하고, 태그를 남기는 빌드 — 보낼 ZIP — 만 멈춘다.

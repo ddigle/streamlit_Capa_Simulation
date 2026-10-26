@@ -27,6 +27,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -862,6 +863,147 @@ def test_the_st_definition_line_reads_upeh_times_minutes_st_over_sixty(
         f"{ST_DEFINITION_LINE} — MI {mi} · p5 · 중앙 · p95 1 · 1 · 1 · 1 ±5% 안 {mi} / "
         f"Main(계산에 쓰지 않음) {main} · p5 · 중앙 · p95 60 · 60 · 60 · 1 ±5% 안 0"
     ]
+    # 리비전 1 에 MI 행이 있으면 대신 보지 않고 요약 꼴도 예전 그대로다.
+    assert ST_FALLBACK_LINE not in output
+    assert re.search(rf"^- 8-2T {mi} · 1 · {mi} #\d\d$", output, re.MULTILINE)
+
+
+ST_FALLBACK_LINE = (
+    "- ST 정의 대조(대신) — 리비전 1 에 UPEH·ST 가 둘 다 양수인 MI 행이 없어 가장 최근에 "
+    "저장한 리비전 가운데 그런 MI 행이 있는 것"
+)
+
+
+def _add_upeh_revision(path: Path, *, mi_area: str = "MI") -> int:
+    """리비전 1 은 그대로 두고(내장 시드는 MI 행에 ST 만 적는다) 같은 시나리오에 리비전 하나를
+    더한다 — `RQ_UPEH` 만 싣고 MI 행 UPEH 를 `60 ÷ ST`(정의대로 → 1)로 채운다. `mi_area` 를 바꾸면
+    그 행의 Area 를 그 글로 적는다(MI 행이 없는 리비전). 그 행 수를 낸다.
+
+    대신 볼 리비전은 `RQ_UPEH` 만 읽으므로 나머지 표는 싣지 않는다 — 표지값 이름을 심은 시드는
+    프리셋 공정과 맞지 않아 저장소의 리비전 저장을 지나지 못한다."""
+    table = REVISION_TABLES["RQ_UPEH"]
+    mi = """lower(trim("Area_Name")) = 'mi' AND "ST" > 0"""
+    with duckdb.connect(str(path)) as connection:
+        row = connection.execute(
+            "SELECT scenario_id, min_by(revision_id, revision_no), max(revision_no) "
+            "FROM app_meta.scenario_revision GROUP BY scenario_id"
+        ).fetchone()
+        assert row is not None
+        scenario_id, parent, number = str(row[0]), str(row[1]), int(row[2])
+        revision_id = f"st-{number + 1}"
+        # 만든 시각은 앞 리비전보다 늘 뒤다(같은 시각이면 차례가 id 로 갈린다).
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision (revision_id, scenario_id, revision_no, "
+            "revision_name, parent_revision_id, reference_hash, created_at) "
+            "SELECT ?, ?, ?, ?, ?, reference_hash, created_at + to_seconds(?) "
+            "FROM app_meta.scenario_revision WHERE revision_id = ?",
+            [revision_id, scenario_id, number + 1, f"ST {number + 1}", parent, number, parent],
+        )
+        connection.execute(
+            f"INSERT INTO rev_data.{table} SELECT * REPLACE (? AS revision_id, "
+            f'CASE WHEN {mi} THEN 60.0 / "ST" ELSE "UPEH" END AS "UPEH", '
+            f'CASE WHEN {mi} THEN ? ELSE "Area_Name" END AS "Area_Name") '
+            f"FROM rev_data.{table} WHERE revision_id = ?",
+            [revision_id, mi_area, parent],
+        )
+        count = connection.execute(
+            f"SELECT count(*) FROM rev_data.{table} WHERE revision_id = ? AND {mi}", [parent]
+        ).fetchone()
+        assert count is not None
+        return int(count[0])
+
+
+def test_the_st_definition_falls_back_to_the_latest_revision_with_mi_rows(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`202610231430` 리뷰 사외 요청 5 — 리비전 1 `RQ_UPEH` 에 UPEH·ST 가 둘 다 양수인 MI 행이 없어
+    정의 대조가 판정 불가였다. 가장 최근에 저장한 리비전 가운데 그런 MI 행이 있는 것을 대신 보고
+    그 차례(저장 차례 k/N — 이름·번호는 찍지 않는다)를 함께 찍는다. 요약 첫 칸은 늘 리비전 1 의
+    수다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    mi = _add_upeh_revision(path)
+    assert mi > 0
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert f"{ST_DEFINITION_LINE} — UPEH·ST 가 둘 다 양수인 행 0" in output
+    fallback = [line for line in output.splitlines() if line.startswith(ST_FALLBACK_LINE)]
+    assert fallback == [
+        f"{ST_FALLBACK_LINE}(저장 차례 2/2)의 `RQ_UPEH` — MI {mi} · p5 · 중앙 · p95 1 · 1 · 1 · "
+        f"1 ±5% 안 {mi} / Main(계산에 쓰지 않음) 0"
+    ]
+    summary = next(line for line in _summary(output) if line.startswith("- 8-2T "))
+    assert re.fullmatch(rf"- 8-2T 0 · 대신 2/2 · {mi} · 1 · {mi} #\d\d", summary)
+    # 확인 코드는 그 줄의 수(대신 칸의 k/N 포함)로 다시 셈한다 — 사외 `--check-summary` 가 잡는다.
+    assert checks.check_transcript([summary]) == []
+    assert checks.check_transcript([summary.replace("2/2", "1/2")]) != []
+
+
+def test_the_st_definition_says_when_no_revision_has_mi_rows(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """리비전이 하나뿐이고 그것에 MI 행이 없으면 대신 볼 것이 「없음」 이라고 찍는다."""
+    code, output = _run(capsys, "--only", "legacy", "--database", str(simulation_db))
+
+    assert code == 0
+    assert f"{ST_FALLBACK_LINE} — 없음" in output
+    summary = next(line for line in _summary(output) if line.startswith("- 8-2T "))
+    assert re.fullmatch(r"- 8-2T 0 · 대신 없음 #\d\d", summary)
+
+
+def test_the_st_reference_skips_revisions_without_mi_rows(
+    simulation_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """후보는 UPEH·ST 가 둘 다 양수인 MI 행이 있을 법한 리비전이고, MI 행이 없으면 건너뛴다 — 그보다
+    앞에 저장한 MI 행 리비전을 고른다. 리비전 1 은 고르지 않는다. Main 행만 양수인 리비전은 후보
+    SQL 이 걸러 `RQ_UPEH` 를 읽지도 않는다(사내 리비전 수십 개마다 큰 표를 읽던 비용 — 8장 시간
+    예산)."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _add_upeh_revision(path)
+    _add_upeh_revision(path, mi_area="Main")
+    loaded: list[str] = []
+    from capa_simulation.persistence._sql_helpers import load_frame as real_load_frame
+
+    def counting_load_frame(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        loaded.append(str(kwargs.get("owner_id")))
+        return real_load_frame(*args, **kwargs)
+
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation = duckdb.connect(str(path), read_only=True)
+    try:
+        assert checks.load_source(session) is not None
+        loaded.clear()
+        monkeypatch.setattr(checks, "load_frame", counting_load_frame)
+        picked = checks.load_st_reference(session)
+    finally:
+        session.close()
+    assert isinstance(picked, checks.StReference)
+    assert (picked.order, picked.total) == (2, 3)
+    assert len(loaded) == 1
+
+
+@pytest.mark.parametrize("area", [" mi ", "Mi", "MI"])
+def test_the_st_candidates_keep_every_area_the_python_match_reads_as_mi(
+    simulation_db: Path, tmp_path: Path, area: str
+) -> None:
+    """후보 SQL 의 MI 거름은 파이썬 맞춤(`match_key` — 앞뒤 공백 · 대소문자)보다 넓어야 한다 —
+    좁으면 대신 볼 리비전을 「없음」 으로 놓친다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _add_upeh_revision(path, mi_area=area)
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation = duckdb.connect(str(path), read_only=True)
+    try:
+        assert checks.load_source(session) is not None
+        picked = checks.load_st_reference(session)
+    finally:
+        session.close()
+    assert isinstance(picked, checks.StReference)
+    assert (picked.order, picked.total) == (2, 2)
 
 
 def _plant_route_wafers(path: Path) -> int:
@@ -1895,6 +2037,21 @@ def test_copy_facts_count_each_direction_without_a_verdict(
     assert facts[-1].conflicts == reference_conflicts
 
 
+def test_the_in_day_conflict_cell_of_the_copy_line_sums_every_received_day() -> None:
+    """요약 줄 끝 「하루 안 충돌」 은 받은 날 전부(기준 날 포함)의 합이다 — 날마다 같은 꼴로
+    충돌하면 하루 값의 날 수 배가 찍힌다(사내 2227 「1,597」 과 1430 요약 「6,388 = 1,597 × 4」).
+    앞 네 칸은 견준 날만 더한다."""
+    twice = pd.concat([_day(), _day(bump=9)], ignore_index=True)
+    probe = _DayProbe(dict.fromkeys(DAYS[:4], twice))
+    result = checks.check_copies(
+        probe, VALID_A, QueryWindow(start_date=DAYS[0], end_date=DAYS[3]), extra=False
+    )
+
+    assert [facts.conflicts for facts in result.days] == [12, 12, 12, 12]
+    assert sum(1 for facts in result.days if facts.compared) == 3
+    assert checks.copy_note(1, result) == "- 8-5C1 표본 4일 · 3 · 0 · 0 · 0 · 0 · 48"
+
+
 def test_the_reference_row_carries_its_own_counts() -> None:
     reference = _facts([_day(), _day(lines=(0, 1))])[-1]
 
@@ -2685,6 +2842,29 @@ def test_a_compressed_review_in_the_template_form_checks_clean() -> None:
     assert checks.check_transcript(uncoded) == [
         f"줄 {census + 1} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다"
     ]
+
+
+@pytest.mark.parametrize("separator", [" · ", "; ", ";", ", "])
+def test_the_screen_drawer_line_checks_its_own_sums_in_a_transcript(separator: str) -> None:
+    """화면 확인 `space_drawer` 줄은 손으로 옮긴 압축본의 A 칸에 그대로 실린다 — 그 줄 안의
+    `서랍 M = 이 층 a + 층 미정 f` 와 묶음 설명 식 `이 층 a = 표 N + 묶음 넘침 e` 를
+    `--check-summary` 가 다시 셈한다(TODO 「다음 배포 — 화면 확인 항목」 의 기대 꼴). 칸 가름을 바꿔
+    쓰거나 천 단위 쉼표를 넣어도 맞는 줄은 통과하고 수 하나를 잘못 옮긴 줄은 걸린다."""
+    tail = " · 칩 7개 오름차순 위반 0 · 검색 됨(2/7대) · 빈 알림 있음 · Esc 지움"
+    plain = check_deploy_screens.summarize_drawer_counts(6, 160.0, 549, 389, 0, 0) + tail
+    bundled = check_deploy_screens.summarize_drawer_counts(2, 1340.0, 1549, 200, 12, 3) + tail
+    assert "이 층 1349대 = 표 1340대 + 묶음 넘침 9대" in bundled
+    for line, slip in (
+        (plain, ("이 층 160대", "이 층 150대")),
+        (bundled, ("서랍 1549대", "서랍 1,594대")),
+        (bundled, ("묶음 넘침 9대", "묶음 넘침 8대")),
+    ):
+        typed = f"A ok space_drawer {line.replace(' · ', separator)}"
+        assert checks.check_transcript([typed]) == [], separator
+        assert checks.check_transcript([typed.replace("1549", "1,549")]) == [], separator
+        assert checks.check_transcript([typed.replace(*slip)]) == [
+            "줄 1 — 줄 안 검산 식이 서지 않는다"
+        ], (separator, slip)
 
 
 def test_summary_lines_copied_with_keyboard_separators_still_check() -> None:

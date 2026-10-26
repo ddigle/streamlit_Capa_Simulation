@@ -98,8 +98,10 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   `실행 비고`).
 - **「UPEH 가정」**(2026-10-22 사용자 요청): 공정 Capa 상세·필요 단축 일정 조건 카드 끝 「이 세션만」 % 칸이다. 뜻은 「적용
   구간의 달에 기준정보 계획 UPEH 전체(Main UPEH·MI ST)가 p% 라면」 이고 소요대수에 ÷f 를 사후로 건다(6장 「소요대수와
-  확보율」). 세션 값이라 기준정보·리비전·HOME·공식버전·공용 프로필은 바뀌지 않는다. 「확보율 보정」(공용 손입력 %p
-  덧셈)과 다른 것이라 화면 글자·Guide 에 「보정」이라는 말을 쓰지 않는다. 코드·키 이름은 `upeh_assumption*` 이다.
+  확보율」). 효과는 공정 Capa 상세에서만 보인다 — 필요 단축 일정은 같은 세션 칸을 그릴 뿐 계획에 걸지 않고 공식 대 가정
+  비교 보기를 두지 않는다(2026-10-26 사용자 결정 — 사내 리뷰 202610231430 사외 요청 1). 세션 값이라 기준정보·리비전·
+  HOME·공식버전·공용 프로필은 바뀌지 않는다. 「확보율 보정」(공용 손입력 %p 덧셈)과 다른 것이라 화면 글자·Guide 에
+  「보정」이라는 말을 쓰지 않는다. 코드·키 이름은 `upeh_assumption*` 이다.
 - 파일 이름·페이지 제목·주소는 그룹을 옮겨도 바꾸지 않는다 — 주소는 파일 이름에서 나오고, Static 하위
   네 제목은 표시순서 DB 의 페이지 키다(`services/display_order_scopes.py`). 그룹을 옮긴 화면의 북마크는
   그대로 산다.
@@ -174,7 +176,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - 샌드박스 안에서 `TMPDIR` 이 비면 파이썬 `tempfile` 은 실패하지 않고 저장소 루트로 내려간다 — 오류로 드러나지 않으니
   `echo $TMPDIR` 로 본다(`docs/wsl_dev_environment.md` 2장).
 - UPEH 가정 계획 1회 시간은 `scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더>` 로 잰다(사내 런북 6-3 b — 1초를
-  넘으면 % 입력을 「적용」 단추 폼으로 바꾼다). 합성 시드와 샘플 fleet 은 공정이 겹치지 않아 사외에서는 뜻 있는 값이 없다.
+  넘으면 % 입력을 「적용」 단추 폼으로 바꾼다. 다섯 목표 한 벌로 잰다 — 가정 계획을 세우는 화면은 공정 Capa 상세(목표
+  하나)뿐이다). 합성 시드와 샘플 fleet 은 공정이 겹치지 않아 사외에서는 뜻 있는 값이 없다.
 - HOME 단계별 소요시간은 `scripts/benchmark_home.py` 로 잰다. 화면에서 봐야 할 때만 세션 키 `dashboard_show_performance`
   (`components/home_rendering.HOME_PERFORMANCE_KEY`)를 켠다 — 개발용 계측이 모든 사용자가 늘 보는 자리를 차지하지 않게
   사이드바 토글은 두지 않는다.
@@ -306,8 +309,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     값만 읽는다(고치는 곳은 가용설비 현황 「설정」 팝업). 조건 카드는 `shortening` 이다.
   - 소요대수 프레임은 넘기지 않고 시나리오 키와 로더를 넘긴다. 계산은 DB 에 쓰지 않고 패널이 공용 조회 조건(`0019`)과
     진척 비교 기준선(`0021`)만 쓴다. 알림 자리는 토스트 규칙을 따른다(`test_shortening_baseline_notice.py`).
-  - UPEH 가정은 기본 보기를 바꾸지 않는다 — 머리 「UPEH 가정 비교」 를 켠 회차에만 가정 계획을 꺼내 공식→가정을 보인다.
-    가정이 켜진 동안 기준선 저장은 거절하고 진척 비교는 늘 공식 계획이다.
+  - UPEH 가정은 이 화면에 걸지 않는다 — 조건 카드에 공정 Capa 상세와 같은 세션 칸을 그릴 뿐 가정 계획을 세우지 않고,
+    공식 대 가정 비교 보기도 없다(효과는 공정 Capa 상세). 가정이 켜지면 머리 아래 한 줄로 알리고, 그동안 기준선 저장은
+    거절한다. 보기·CSV·진척 비교는 늘 공식 계획이다.
   - 설비는 **세션 설비 시나리오**다(`resolve_equipment_session`). 기준선 저장은 세션이 공식 발행 쌍일 때만이고(거부 까닭은
     「가정 설비 시나리오」·「발행하지 않은 리비전」 둘), 기준선에는 공통 rN + 설비 시나리오·rN·공식 vN 출처가 실린다. 진척
     비교는 늘 보이고, 세션이 공식 발행 쌍이 아니면 머리에 「지금 = 셋업 실무 r4 · 기준선 = 공식」 을 적는다. 카드 링크는
@@ -984,9 +988,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `full_capacity_outcome` 을 부른다.
   - HOME Figure 는 묶음별 공용 LRU(`shared_home_figure_store`)에 pickle 바이트로 둔다(복원 `components/home_rendering.py`,
     `tests/test_home_figure_cache.py`). 「소요대수만」 돌려주는 래퍼는 두지 않는다.
-  - 필요 단축 일정 계획 키 끝 칸은 UPEH 가정 토큰이다. 공식 칸과 가정 칸(`ASSUMED_PLAN_MAX_ENTRIES`)은 따로이고 서로의
-    키를 받지 않으며, 계획은 키와 한 묶음(`KeyedShorteningPlan`)으로만 CSV·진척 캐시에 간다(5장 31,
-    `tests/test_upeh_assumption_cache.py`).
+  - 필요 단축 일정 계획 키 끝 칸은 UPEH 가정 토큰이다. 공식 칸과 가정 칸(공정 Capa 상세의 목표 하나 칸 하나 —
+    `ASSUMED_PLAN_MAX_ENTRIES`)은 따로이고 서로의 키를 받지 않으며, 계획은 키와 한 묶음(`KeyedShorteningPlan`)으로만
+    CSV·진척 캐시에 간다 — 그 둘은 공식 키만 받는다(5장 31, `tests/test_upeh_assumption_cache.py`).
 
 ### 계산 서비스
 
@@ -2347,7 +2351,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드, 머리 `목표 확보율`·
   `진척 비교`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
-  UPEH 가정 몫은 패널에 남는다.
+  UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다.
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
@@ -2360,10 +2364,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.
   - 머리·본문은 「본문 프래그먼트」다 — 기준선·판정 기준은 회차마다 다시 읽고 기준선 쓰기 표지를 보면
     `st.rerun(scope="app")` 한다(`tests/test_shortening_view_fragment.py`·`tests/fragment_browser.py`).
-  - 계획은 `_Plan.official`(키와 한 묶음)이고, UPEH 가정 계획은 `_Plan.assumed` 로더로 「UPEH 가정 비교」 보기에서만
-    꺼낸다(공식 부족 ∪ 가정 부족, 「가정으로 해소」, 역산 「이 값으로」 — 앱 전체 회차로 올린다, 표·CSV 첫 열 표지).
-  - 강조 공정(`shortening_board.SHORTENING_HIGHLIGHT_KEY`)은 세 보기 모두 카드 맨 앞이다(테두리·배지). 공용 설정 공정
-    밖이면 「KPI·CSV 에 들지 않음」 을 적고, 맞대지 못한 공정이면 카드 대신 그 말이다. 카드 class 는 그대로 `shk-card` 다.
+  - 계획은 `_Plan.official`(키와 한 묶음) 하나다. `_Plan.assumption` 은 조건 카드의 UPEH 가정이고 머리 아래 알림과
+    기준선 저장 거절에만 쓴다(계획에 걸지 않는다).
+  - 강조 공정(`shortening_board.SHORTENING_HIGHLIGHT_KEY`)은 두 보기(기본·진척 비교) 모두 카드 맨 앞이다(테두리·배지).
+    공용 설정 공정 밖이면 「KPI·CSV 에 들지 않음」 을 적고, 맞대지 못한 공정이면 카드 대신 그 말이다. 카드 class 는
+    그대로 `shk-card` 다.
 - `src/capa_simulation/components/shortening_board.py` — 필요 단축 일정의 공정 진척 보드(`st.dataframe` 한 줄 고르기 →
   그 카드 강조, 표 key 세대를 올려 고른 줄을 남기지 않는다)·카드 차례·기한 임박 날수(세션 값, 선택지 고정)·기한 임박/이행
   지연 상자·강조 공정 칸·카드의 상세 근거 링크(`st.page_link` + 주소 인자)·「도면에서 보기」(`space_link_params` 순수 +
@@ -3015,10 +3020,11 @@ RQ_MODULE
     실으면 발행 순간 모든 화면의 기준이 바뀐다).
 31. **UPEH 가정은 계획 키 안의 토큰으로만 계산에 든다.** `RQ_UPEH`·`content_token`·전체 기간 계산 캐시·
     `ScenarioCacheKey` 는 건드리지 않는다. 필요 단축 일정 계획 키(`RequiredShorteningCacheKey`) 끝 칸이 토큰
-    (`(%, 건 달)`, 공식은 `()`)이고, 가정 계획 칸(`get_assumed_required_shortening`·`_for_target`, 작은 LRU)은 **원 로더와
-    그 키**를 받아 안에서 ÷f 로더를 만든다 — 밖에서 만든 가정 로더를 넘기는 길이 없다. 공식 칸은 가정 키를, 가정 칸은
-    공식 키를 받지 않는다(`ValueError`). 키 전용 CSV·진척 캐시는 계획을 키와 한 묶음(`KeyedShorteningPlan`)으로만 받고
-    짝이 다르면 멈추며, 진척 비교는 공식 키만 받는다. 가정을 건 프레임은 시나리오 키 전용 칸
+    (`(%, 건 달)`, 공식은 `()`)이고, 가정 계획 칸(공정 Capa 상세의 `get_assumed_required_shortening_for_target` 하나, 작은
+    LRU)은 **원 로더와 그 키**를 받아 안에서 ÷f 로더를 만든다 — 밖에서 만든 가정 로더를 넘기는 길이 없다. 공식 칸은 가정
+    키를, 가정 칸은 공식 키를 받지 않는다(`ValueError`). 필요 단축 일정은 가정 계획을 세우지 않는다 — 다섯 목표 칸
+    (`get_required_shortening`)·키 전용 CSV·진척 캐시는 공식 키만 받고, CSV·진척은 계획을 키와 한 묶음
+    (`KeyedShorteningPlan`)으로만 받아 짝이 다르면 멈춘다. 가정을 건 프레임은 시나리오 키 전용 칸
     (`get_securement_rate`·`get_scenario_securement_rate` — HOME 과 같은 칸)에 넘기지 않는다 — 공정 Capa 상세는 이미 받은
     작은 확보율 프레임에 캐시 밖에서 건다. 설비 일정 키(`process_timeline_key_from_shortening`)는 토큰을 싣지 않는다.
     `tests/test_upeh_assumption_cache.py` 가 짝 어긋남과 「가정을 돌린 뒤에도 공식 칸·HOME 확보율이 공식 그대로」를 본다.
@@ -4622,7 +4628,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   `MPGA TEST` 의 소수 `모듈수` 는 사내 BigDataQuery 관측이라 근거가 있다.
 - **실데이터로만 답이 나오는 질문은 사내에서 잰다.** `scripts/inspect_real_data_checks.py` 가 두 DB 를
   `read_only` 로 열어(저장소 `initialize()` 는 마이그레이션을 걸어 쓰므로 부르지 않는다) 기존 결과 대조
-  분포(ST 정의 대조 UPEH × ST ÷ 60·소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·
+  분포(ST 정의 대조 UPEH × ST ÷ 60 — 리비전 1 에 그런 MI 행이 없으면 가장 최근에 저장한 리비전 가운데 그런 것을 저장 차례
+  k/N 으로 대신 본다 — ·소요대수 ≈60 배 무리 가르기 포함)·원천 `RQ_REQB` 소요기준·설비 DB·
   BigDataQuery·HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수(8-9 — 2026-10-22 결정 A: 월 축은 그대로 두고 0 이면 그 결정 대기를 닫는다)와
   「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(8-10 센서스 — 기본은 활성·공식버전 대상 리비전, `--census-all-revisions`
   면 전부. 줄마다 근거가 되는 `docs/TODO.md` 결정 번호와 그 가운데 잰 부분을 꼬리표로 단다 — 수는 근거일 뿐이라 0 이어도 결정을
@@ -4673,7 +4680,11 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   꺼질 수 있는 단추(페이더가 오늘일 때의 「오늘」 처럼 `disabled`)는 켜졌을 때만 누른다 — 꺼진 단추를 누르면 Playwright 가
   켜지기를 30초 기다리다 `TimeoutError` 로 끝나 앞의 결과를 가린다. Space 두 항목은 `Screen.open_space_overview` 로
   FAB 전체에서 시작한다 — 연 층은 위젯이 아니라 세션 값이라 앞 항목(`space_drawer`)이 연 층이 페이지를 다시 열어도
-  남고, 그 층 상세에는 층 목록 표가 없다(사내 리뷰 202610200720 발견 1). 확인용 앱은
+  남고, 그 층 상세에는 층 목록 표가 없다(사내 리뷰 202610200720 발견 1). 앱 콘솔 경고를 세는 항목(`entry_sections`)은
+  확인용 앱의 stdout · stderr 를 파이프 하나로 받아 `CONSOLE_NEEDLES` 의 글이 든 줄 수만 본다(`ConsoleCounter` — 줄은 세고
+  버리며 파일에도 쓰지 않는다. 경고 · 예외 문구에 이름이 실릴 수 있고, 사내 백그라운드가 스크립트를 죽여도 남는 것이 없어야
+  한다). 7장 B 대행이 헤드리스로 못 센 칸은 항목으로 옮기고 사람만 볼 수 있는 칸만 사용자 몫으로 둔다. 길 여럿을 재는 항목은
+  길마다 따로 돌려(앞 길이 깨져도 다음 길의 시작 화면을 다시 연다) 한 길이 예외로 멈추면 그 칸만 `멈춤(종류)` 로 적는다. 확인용 앱은
   `127.0.0.1` 에서만 듣고, 자식의
   `PYTHONPATH` 맨 앞에 이 저장소의 `src` 를 두며, 스크립트가 강제로 끝나도 남지 않게 Windows Job Object
   (Linux `PR_SET_PDEATHSIG`)로 묶는다. `tests/test_check_deploy_screens.py` 는 Playwright 없이 뼈대(경로

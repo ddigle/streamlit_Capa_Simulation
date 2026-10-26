@@ -503,6 +503,96 @@ def test_a_second_tagged_build_with_the_same_stamp_stops_before_overwriting(
     assert _git(pushed_repo, "rev-parse", "deploy/202610131200^{commit}") == first_commit
 
 
+def _write_screens(root: Path, count: int) -> None:
+    """항목 `count` 개를 선언한 작은 화면 확인 스크립트 — 빌더는 `ITEMS` 선언 줄만 센다."""
+    path = root / "scripts" / "check_deploy_screens.py"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = "".join(f'    Item("item_{n}", "항목 {n}", check),\n' for n in range(count))
+    path.write_bytes(
+        f'Item("not_an_item", "선언 밖", check)\nITEMS: tuple[Item, ...] = (\n{lines})\n'.encode()
+    )
+
+
+@pytest.mark.parametrize(
+    ("screens", "body", "blocked", "message"),
+    [
+        (None, "추가 13", False, ""),
+        (2, "압축본 `A 2 = 기록 2 + 미기록 0 + 안함 0`", False, ""),
+        (
+            3,
+            "압축본 `A 2 = 기록 2 + 미기록 0 + 안함 0` · 7-0 `A 2 = 기록 2 + 미기록 0 + 안함 0`",
+            True,
+            "의 n 2 · scripts/check_deploy_screens.py 3개",
+        ),
+        (
+            2,
+            "압축본 `A 2 = 기록 2 + 미기록 0 + 안함 0` · `A 3 = 기록 3 + 미기록 0 + 안함 0`",
+            True,
+            "n 2, 3",
+        ),
+        (2, "추가 13", True, "의 n 없음"),
+    ],
+    ids=["스크립트 없음", "같은 수", "7장이 낡음", "7장 안에서 갈림", "기대 없음"],
+)
+def test_the_runbook_screen_count_must_match_the_script(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    screens: int | None,
+    body: str,
+    blocked: bool,
+    message: str,
+) -> None:
+    """7장 A 표 대조 시험은 7장이 `ITEMS` 의 앞머리이기만 하면 통과한다(7장은 그 배포의 기록이다) —
+    그래서 7장을 고치지 않은 채 다음 배포를 빌드해도 관문이 막지 않았다(2026-10-26 리뷰). 빌드가 7장
+    압축본 기대의 `A n` 과 스크립트 항목 수를 견준다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", tmp_path)
+    _write_runbook(tmp_path, "**이 절은 stamp `202610131200` 배포용이다.**", body=body)
+    if screens is not None:
+        _write_screens(tmp_path, screens)
+
+    assert build_deploy_package.runbook_screen_count_mismatch() is blocked
+    err = capsys.readouterr().err
+    if blocked:
+        assert message in err
+    else:
+        assert err == ""
+
+
+def test_a_runbook_with_a_stale_screen_count_stops_the_build(
+    pushed_repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """화면 확인 수가 낡은 7장이면 ZIP 도 태그도 남기지 않는다 — 7장을 고치면 같은 stamp 로
+    빌드된다."""
+    import build_deploy_package
+
+    monkeypatch.setattr(build_deploy_package, "PROJECT_ROOT", pushed_repo)
+    head = "**이 절은 stamp `202610131200` 배포용이다.**"
+    _write_runbook(pushed_repo, head, body="`A 2 = 기록 2 + 미기록 0 + 안함 0`")
+    _write_screens(pushed_repo, 3)
+    _git(pushed_repo, "add", "docs", "scripts")
+    _git(pushed_repo, "commit", "-q", "-m", "옛 7장")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+    out = tmp_path / "out"
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 1
+    assert "화면 확인 수가 스크립트와 다릅니다" in capsys.readouterr().err
+    assert not (out / "202610131200.zip").exists()
+    assert _git(pushed_repo, "tag", "--list") == ""
+
+    _write_runbook(pushed_repo, head, body="`A 3 = 기록 3 + 미기록 0 + 안함 0`")
+    _git(pushed_repo, "commit", "-q", "-am", "이번 배포 7장")
+    _git(pushed_repo, "push", "-q", "origin", "main")
+
+    assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 0
+    assert _git(pushed_repo, "tag", "--list") == "deploy/202610131200"
+
+
 def test_the_previous_deploy_is_the_last_tag_before_this_stamp(
     pushed_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

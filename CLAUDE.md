@@ -85,7 +85,8 @@ HTML 로 묶는다. `--example` 은 `git archive` 사본 + 합성 시드 `script
 `page_guide_capture.py`·`page_guide_helpers.js`), `scripts/check_page_guide.py`(가이드 점검기 — 덮어쓰기·매개값·촬영 결과를
 뼈대에 대 보고 리뷰 한 줄을 낸다. 앱·브라우저 없이 돈다).
 `scripts/build_deploy_package.py`(사내 배포 ZIP — 배포 세트 규칙과 금지 파일 검사를 갖고, 커밋하지 않은 수정이 있거나 HEAD 가
-`origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도 ZIP 을 쓰기 전에 멈춘다).
+`origin/main` 과 다르면 멈춘다 — `--no-tag` 시험 빌드는 알리기만 한다. 같은 stamp 의 태그가 이미 있어도, 런북 7장 압축본 기대의 화면 확인 수가
+`check_deploy_screens.py` 항목 수와 달라도 ZIP 을 쓰기 전에 멈춘다).
 
 `mypy`는 `tests/`·`scripts/`까지 같은 strict 로 검사한다. 테스트에서 끄는 것은 pandas 스칼라
 합집합 마찰인 `operator` 하나뿐이고 모듈 셋으로 좁혀 두었다(`pyproject.toml` 의 overrides).

@@ -146,7 +146,8 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
       런북 7장이 `deploy:` 커밋 파일 수를 물으면(줄끝 확인) 흉내 저장소에서 `git show --stat --format= HEAD` 끝줄로 잰다.
       흉내 저장소를 `git diff` 로 세면 송장과 기준이 달라진다(적용 기록이 없으면 `A .deploy/applied.json` 이 하나 더 나온다).
    5. 런북을 채우고 4관문 → `.venv/bin/python scripts/check_deploy_screens.py --list` 가 런북 7장 A 표와 같은 줄인지 → 커밋 →
-      확인을 받아 `git push origin main`(샌드박스 밖 — 4장).
+      확인을 받아 `git push origin main`(샌드박스 밖 — 4장). 빌더도 7장 압축본 기대 `A n = 기록 n + 미기록 0 + 안함 0` 의 n 과
+      스크립트 항목 수를 견주어 다르면 시험 빌드부터 멈춘다(키 차례는 `--list` 로 사람이 본다).
 2. **깨끗한 트리에서 빌드 → 확인 → 태그 푸시** (WSL Claude)
 
    ```bash
