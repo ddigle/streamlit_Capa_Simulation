@@ -27,6 +27,7 @@ from auto_update_fakes import (
 from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest, element_tree
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.auto_official_update_runner import (
     AutoUpdateSources,
@@ -236,6 +237,44 @@ def test_a_change_saved_elsewhere_meanwhile_is_not_overwritten(database: Path) -
     assert any("다른 사용자가 먼저" in str(element.value) for element in app.error)
     stored = repository.load_auto_official_update_settings()
     assert (stored.version, stored.config.threshold) == (1, 0.9)
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_double_press_after_a_change_saved_elsewhere_keeps_the_refusal(
+    database: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """남이 먼저 저장한 뒤 옛 화면에서 「설정 저장」을 빠르게 두 번 누른다(판정 기준과 같은 결함
+    — 2026-10-26 E2E). 첫 누름은 거부되지만 그 회차가 편집 시작 version 을 최신으로 올려, 둘째
+    누름이 옛 화면의 입력을 든 채 대조를 지나 저장했다. 거부 직후의 둘째 누름은 저장하지 않고 그
+    거부를 다시 알린다. 창이 지난 누름은 새 화면을 보고 다시 누른 저장이다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    repository = _with_w40(database)
+    app = _tab(database)
+    settings = repository.load_auto_official_update_settings()
+    repository.replace_auto_official_update_settings(
+        AutoUpdateConfig(enabled=False, check_time=time(8, 0), keyword="PSM", threshold=0.9),
+        expected_version=settings.version,
+    )
+
+    _field(app.text_input, "시뮬레이션명 키워드").set_value("PSS")  # type: ignore[attr-defined]
+    next(button for button in app.button if button.label == "설정 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in str(element.value) for element in app.error)
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [element.message for element in app.exception]
+    stored = repository.load_auto_official_update_settings()
+    if trailing:
+        errors = [str(element.value) for element in app.error]
+        assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+        assert not app.success
+        assert "바뀐 값이 없습니다." not in [str(element.value) for element in app.info]
+        assert (stored.version, stored.config.keyword) == (1, "PSM")
+    else:
+        assert not app.error, [str(element.value) for element in app.error]
+        assert (stored.version, stored.config.keyword) == (2, "PSS")
 
 
 def test_an_invalid_keyword_is_reported_without_saving(database: Path) -> None:

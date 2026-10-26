@@ -39,6 +39,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
     SIDE_NEW,
 )
+from capa_simulation.components.equipment_save_fields import PUBLISH_OFFICIAL_LABEL
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -550,6 +551,39 @@ def test_the_assumption_save_section_says_panel_spread_units_count_officially(
         in str(item.value)
         for item in app.caption
     )
+
+
+@pytest.mark.parametrize("publish", [True, False], ids=["publish", "leave-official"])
+def test_an_assumption_tab_save_lets_the_user_choose_the_official_release(
+    tmp_path: Path, grid: Calls, publish: bool
+) -> None:
+    """가정 설비 시나리오 세션의 탭 저장 칸에도 「… 공식으로 발행」 체크가 선다(G1 — 저장 칸에서
+    끌 수 있음, 같은 세션의 사이드바 팝업과 같다). 「새 호기」 칸에서 함께 넣기를 켠 호기는 공식
+    설비 시나리오에 새 리비전을 만들고, 체크를 끄면 공식 발행은 그대로다(예전에는 체크가 없어 숨은
+    기본값 켬으로 늘 공식 vN 을 냈다)."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    app.session_state[SIDE_KEY] = SIDE_NEW
+    _ok(app.run())
+    _add(app, grid, _draft(설비명="EQ-09", 공정소분류="Process-A"), propagate=True)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+
+    box = app.checkbox(key=f"{SAVE_FIELDS_PREFIX}_publish")
+    assert box.label == PUBLISH_OFFICIAL_LABEL and box.value is True
+    box.set_value(publish)
+    _ok(app.run())
+    before = repository.latest_equipment_release()
+    assert before is not None
+    app.button(key=SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert any("설비 데이터를 저장했습니다" in str(item.value) for item in app.success)
+    assert "EQ-09" in _session(repository, OPERATIONS).equipment["설비명"].tolist()
+    after = repository.latest_equipment_release()
+    assert after is not None
+    assert after.release_no == (before.release_no + 1 if publish else before.release_no)
+    assert any(("발행했습니다" in str(item.value)) is publish for item in app.success)
 
 
 def test_the_space_save_box_shows_the_panel_choice_line(tmp_path: Path) -> None:

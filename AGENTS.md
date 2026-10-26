@@ -507,7 +507,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「삭제 확인」 값을 버려 단추가 사라졌다. 새 글·답변 폼과 답변 완료 단추는 key 세대, 글 삭제는 지운 글 id 로
     빠른 두 번 누름을 거른다(9장, `tests/test_voc_page.py`). 세대 비교와 쓰기는 `components/write_guard.write_once` 라
     두 회차에 겹쳐 오는 더블클릭도 한 번만 쓴다 — 입력은 그 앞에서 읽고 세대 올리기는 뒷정리의 맨 끝이다. 느린 두 번
-    누름이 방금 비운 새 폼에 닿은 빈 제출은 `write_guard.just_written` 으로 걸러 성공을 다시 알린다(9장).
+    누름이 방금 비운 새 폼에 닿은 빈 제출은 `write_guard.just_written` 으로 걸러 성공을 다시 알린다. 아주 빠른 둘째
+    누름이 옛 화면의 단추에 닿은 회차(지나간 세대·이미 지운 글)도 쓰기 직후면 성공을 다시 알린다(9장).
   - 그 사이 다른 세션이 지운 글의 답변·답변 완료 표시는 저장소가 같은 쓰기 잠금 안에서 글을 확인해
     `VocPostGoneError` 로 거절한다(`voc_reply.post_id` 에 외래 키가 없어 막지 않으면 주인 없는 답글이 남는다).
     화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`).
@@ -1392,7 +1393,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
     낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edits`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
-    고칠 것」 줄이다. 일정 확인 갈래는 내용 지문 캐시(`get_schedule_confirmation_issues`).
+    고칠 것」 줄이다. 낡은 세션의 뒤 둘은 표 밖 저장 자리도 같은 판정으로 막는다 — `equipment_data_workspace.stale_save_refusal`
+    을 사이드바 팝업 「저장」 이 경고 글에, `save_equipment_buffer` 가 거부 글에 쓴다(Space 「배치 저장」 도 — 저장소의
+    「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시 불러오면 공통 편집까지 잃는다). 일정 확인 갈래는 내용 지문
+    캐시(`get_schedule_confirmation_issues`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 토스트는 마지막 op 를 보낸
     마운트에(「호기 추가」 가 넣은 회차만 상세 칸에), 각 마운트 data 에는 제 `ack` 를 싣는다. 배치·설비명·Main 설비 칸을 바꾼 op 와
@@ -1440,7 +1444,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.
   - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인 필요, 전체), 칸 묶음·정렬·
     고름(브라우저 몫 — 칸 묶음만 localStorage), 가상 스크롤(줄 34px), 칸 고치기 키(Enter·Esc·Tab·↑↓·F2), 엑셀 여러 칸 붙여넣기
-    (`paste` 이벤트의 `clipboardData` 만 — 설비명 칸에서 붙이면 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터), 값 넣기·날짜 밀기·
+    (`paste` 이벤트의 `clipboardData` 만 — 설비명 칸에서 붙이면 설비명 열은 넣지 못한 칸으로 세고 옆 칸부터, 엑셀이 따옴표로 감싼
+    칸(줄바꿈·탭이 든 칸, 안의 `""`)은 한 칸으로 읽는다 — `parseClipboard`), 값 넣기·날짜 밀기·
     지우기·되살리기·되돌리기, 상세 칸·저장 전 변경의 칸/호기 되돌리기. 업무 검증은 하지 않는다. 데이터 글은 `textContent` 로만,
     처리한 키는 `stopPropagation`(Streamlit 단축키가 글자를 먹는다).
   - 토스트는 표와 오른쪽 칸이 저마다 그린다(`fillToast`) — 「되돌리기」 는 그 토스트의 단계 표지를 실어 보낸다(대상 없는
@@ -1608,9 +1613,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 글꼴(`static/fonts/archivo-700.woff2`·`archivo-800.woff2`)은 정적 서빙(`config.toml`)의 상대 경로로 받는다 —
     `static/` 밖이면 404 다. 색 없는 고정 문자열이라 부트스트랩 앞에서 매 회차 보낸다(`tests/test_typography.py`).
 - `src/capa_simulation/components/accent_button_style.py` — 강조색으로 칠한 Streamlit 단추(`kind="primary"`·
-  `"primaryFormSubmit"`, 잠긴 단추 빼고)의 글자색을 그 회차 테마의 `tokens.ACCENT_TEXT` 로 다시 건다(`docs/design_system.md` 2-2).
-  - Streamlit 1.63 은 칠한 단추 글자를 늘 흰색으로 쓰고 그 색을 정하는 테마 칸이 없다 — 어두운 테마의 밝은 강조색
-    (`#2DD4BF`) 위 흰 글자는 1.86:1 이었다(표준 목표 「가용설비 붙여넣기」, 2026-10-25 E2E). 밝은 테마는 흰 글자 그대로다.
+  `"primaryFormSubmit"`, 잠긴 단추 빼고)와 `st.multiselect` 고른 칩(`[data-tag]`, 잠긴 상자 빼고)의 글자색을 그 회차
+  테마의 `tokens.ACCENT_TEXT` 로 다시 건다(`docs/design_system.md` 2-2).
+  - Streamlit 1.63 은 칠한 단추·칩 글자를 늘 흰색으로 쓰고 그 색을 정하는 테마 칸이 없다 — 어두운 테마의 밝은 강조색
+    (`#2DD4BF`) 위 흰 글자는 1.86:1 이었다(표준 목표 「가용설비 붙여넣기」, 2026-10-25 E2E · 표준 대비 재공 현황 조회
+    조건 칩, 2026-10-26 E2E r3). 밝은 테마는 흰 글자 그대로다. 잠긴 multiselect 는 콤보상자 뿌리(`stMultiSelect`
+    바로 아래 칸)에 `data-disabled` 가 서고 칩이 흐린 바탕·흐린 글자라 고르지 않는다.
   - 테마 토큰이라 `app.py` 가 `theme.begin_run()` 뒤·부트스트랩 앞에서 매 회차 보낸다(`tests/test_accent_button_style.py`·
     `tests/test_app_navigation.py`). HOME 칠한 주요 Case 칩의 같은 색 규칙(`home_main_case_chips.chip_style`)은 칩 모양
     규칙과 함께 그대로 둔다.
@@ -1758,6 +1766,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 토글은 모두 여기서 `value=` 없이 만들고 기본값은 칸이 없을 때만 심는다(`tests/test_scenario_activation.py`).
   - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
+    프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
+    (`write_guard.held_notice`, `tests/test_key_process_preset_messages.py`).
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
 - `src/capa_simulation/components/home_main_cases.py` — HOME `Preference` 의 「주요 Case」 상자(2026-10-23 사용자 요청).
   HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
@@ -1909,7 +1919,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). VOC 는 `write_once` 를 바로 부르고,
   그 밖의 덧붙이기 쓰기는 `widget_generation.write_once_value` 로 부른다.
   버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
-  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
+  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다. 거꾸로 남의 저장에 거부된
+  누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
+  알린다 — 위 셋과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는
+  알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가
+  쓴다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -1924,7 +1938,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `equipment_master_tab.py`, 엑셀·CSV 팝업은 `equipment_import_dialog.py`.
   - Space 편집기와 함께 쓰는 편집본 경계다 — 버퍼는 `replace_equipment_buffer` 또는 설비 마스터 표 전용
     `apply_master_grid_result`(같은 세대 규칙 — 내용이 그대로면 세대를 올리지 않는다)로만 갈고 `BUFFER_GENERATION_KEY` 세대를
-    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 저장은 `save_equipment_buffer` 한 곳이다.
+    올린다(이름 바꿈 `PENDING_RENAMES_KEY`). 「내용이 그대로」 는 `same_frame_content` 로 본다 — 저장본 사본(DuckDB)의 날짜 칸은
+    `datetime64[us]`, 엑셀·CSV 넣기의 병합 결과는 `[ns]` 라 `DataFrame.equals` 만으로는 바뀐 것 없는 넣기가 「미저장 변경」 을
+    남긴다(낡은 세션의 비가동 붙여넣기 거절 `stale_paste_refusal` 도 같은 견줌). 저장은 `save_equipment_buffer` 한 곳이다.
   - **설비 마스터 표의 세션 칸**(개편 B1): 칸 초안 `GRID_OVERLAY_KEY`(못 읽은 글 — 편집본 밖)·되돌리기 `GRID_UNDO_KEY`(기본형 —
     `equipment_grid.undo_to_state`)·마운트별 토스트 `GRID_TOAST_KEY`(번호 `GRID_TOAST_SEQ_KEY` 는 비우지 않는다)·회차 메모
     `GRID_MEMO_KEY` 는 편집본을 다시 세움(`ensure_equipment_drafts`)·저장·모두 버리기(`reset_equipment_drafts`) 때 함께 비우고,
@@ -2034,8 +2050,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장 칸(변경 메모 옆 저장자·함께 넣기 두 체크·공식 발행
   체크)과 저장 출발점 값(`EquipmentSaveBasis`). 설비 마스터 탭 「저장 전 변경」 의 「리비전 저장」(콜백 — `save_fields_from_state`,
   저장자 칸은 `persist_saved_by` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(팝오버, 콜백이
-  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭은 가정
-  설비 시나리오에서 발행 체크를 그리지 않는다(`show_publish`). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
+  `save_fields_from_state` 로 읽음) 세 자리가 같은 부품을 쓴다(개편 B 전에는 옛 폼 두 저장까지 네 자리). 설비 마스터 탭과
+  사이드바 팝업은 가정 설비 시나리오에서도 발행 체크를 그린다 — 가정 세션 저장도 함께 넣기로 공식 시나리오에 새 리비전을 만들면
+  공식 발행까지 가므로 끌 수 있어야 한다(G1). 세 자리 모두 저장 칸 아래에 「새 호기」 칸 고름 한 줄
   (`equipment_data_workspace.new_unit_choice_line` — 그 칸에서 넣은 호기는 그 칸의 체크가 저장 칸 체크를 이긴다, D8)을 둔다.
   - 기본값 상수 셋(`DEFAULT_PUBLISH_OFFICIAL`·`DEFAULT_PROPAGATE_NEW_UNITS`·`DEFAULT_PROPAGATE_NEW_DOWNTIME`)이 늘 켬이다
     (G1 — 2026-10-24 결정 판 「권장대로」·F6·F2 — 바꾸려면 여기 하나만 바꾼다). 함께 넣을 후보 수(`counts` — 「· 후보 n대」)는 사이드바 팝업만 적고, 설비
@@ -3914,6 +3931,21 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
     (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
     그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
+  - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부한 회차는 최신 저장본을 그리며 편집 시작 version 을 그
+    version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
+    둘째 누름이 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이 「저장했습니다」로 바뀌고 입력은 말없이
+    버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E). 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 에
+    거부 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은 저장하지 않고 그
+    거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로 대조한다 —
+    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 세 시험·`tests/test_auto_official_update_tab.py`).
+  - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
+    세대·이미 지운 글·고칠 대상이 바뀌어 잠긴 단추 — 잠긴 단추의 누름은 Streamlit 이 버린다). 첫 쓰기의 성공 알림은 앞
+    회차가 이미 꺼내 그렸으므로 그 회차가 화면을 다시 그리며 알림을 지워, 한 건 쓰였는데 아무 알림도 남지 않았다
+    (2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 지나간 세대의 누름이 `just_written` 창 안이면
+    성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
+    시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
+    「기본으로」·「삭제」). 창이 지난 옛 화면의 누름은 전처럼 알리지 않는다(`tests/test_voc_page.py`·
+    `tests/test_key_process_preset_messages.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).
@@ -4021,11 +4053,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 앱이 지은 거부·안내 문구를 알림 상자(`st.error`·`st.warning`·`st.info`·`st.success`)에 넣을 때 그 문구가 범위 물결표(「동은
   C1~C5, 층은 1F~6F」)를 품을 수 있으면 `literal_markdown.markdown_safe_tildes` 로 감싼다 — 물결표 둘이면 가운데가 지움선이 된다.
   구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다
-  (`tests/test_equipment_master_tab.py`). 설비 시나리오 이름을 싣는 잠금·빨리 감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도
-  그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가 담을 때 막는다(`_queue_space_flash` —
-  `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄의 팝업 저장 알림·세션 이동 알림
-  (`session.notice`)과 시나리오 관리 구획의 세션 이동 알림, Space 층 끄기 확인의 가정 배치 덧줄도 그리는 자리에서 막는다
-  (`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
+  (`tests/test_equipment_master_tab.py`). 저장소 예외 글(`str(exc)`·`bootstrap_error_message(exc)`)도 같다 — 날 이름(남이 먼저 바꾼
+  설비 시나리오 이름·리비전명, 「「…」 r2를 저장해」)을 담으므로 그 글을 넣는 알림 상자는 감싼다(시나리오 관리 설비 시나리오 구획의
+  거절 알림 `REFUSED_KEY` 는 그리는 자리 한 곳에서, 사이드바 설비 시나리오 팝업 저장 실패도). 설비 시나리오 이름을 싣는 잠금·빨리
+  감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도 그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가
+  담을 때 막는다(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄 아래 팝업
+  저장 알림(`save_result_message`)·세션 이동 알림(`EquipmentSession.notice` — 사이드바 줄·시나리오 관리 구획)과 Space 층 끄기
+  확인의 가정 배치 덧줄도 그리는 자리에서 막는다(`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은
+  `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
   (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
 ### 스크립트와 컴포넌트

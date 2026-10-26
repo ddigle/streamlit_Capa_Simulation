@@ -918,6 +918,263 @@ def test_the_popup_save_writes_the_edit_into_the_session_scenario(tmp_path: Path
     assert repository.list_revisions()[0].revision_no == 2
 
 
+def _popup_with_edits(database: str, page_file: str) -> None:
+    """`_popup` 과 같되 처음 한 번 `edits`((설비명, 칸, 값))를 편집본에 넣고, `downtime`((설비명,
+    유형, 시작일))이 있으면 비가동 한 줄을 더한다."""
+    from pathlib import Path
+
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        ensure_equipment_drafts,
+        replace_equipment_buffer,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+    )
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    session = resolve_equipment_session(database)
+    frames = ensure_equipment_drafts(session.snapshot)
+    edits = st.session_state.get("edits") or []
+    downtime = st.session_state.get("downtime")
+    if (edits or downtime) and not st.session_state.get("edited"):
+        edited = frames[1].copy()
+        for name, column, value in edits:
+            edited.loc[edited["설비명"].eq(name), column] = value
+        stops = frames[2]
+        if downtime:
+            name, kind, start = downtime
+            row = {"설비명": name, "비가동유형": kind, "시작일": pd.Timestamp(start)}
+            stops = pd.concat([stops, pd.DataFrame([row])], ignore_index=True)[stops.columns]
+        replace_equipment_buffer((frames[0], edited, stops))
+        st.session_state["edited"] = True
+    render_equipment_scenario_dialog_body(Path(database), page_file=page_file)
+
+
+def test_a_stale_popup_save_names_the_schedule_cells_to_undo_before_and_after_the_click(
+    tmp_path: Path,
+) -> None:
+    """낡기 전에 일정·시나리오 메모 칸과 공통 칸을 고친 세션 — 팝업 「저장」 은 경고 글에 그 칸 수와
+    고칠 길(되돌리면 공통 칸은 저장된다)을 적고, 누르면 같은 글로 거부한다(예전에는 「공통 칸만
+    저장됩니다」 라더니 「화면을 다시 불러와 …」 로 통째로 거부했다 — 다시 불러오면 공통 편집까지
+    잃는다). 그 칸을 되돌리면 공통 칸이 저장된다(설비 마스터 탭의 고칠 것 줄과 같은 판정)."""
+    from capa_simulation.components.equipment_data_workspace import (
+        BUFFER_KEY,
+        EQUIPMENT_DRAFT_KEY,
+        STALE_SCENARIO_EDITS_ELSEWHERE,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        FLASH_KEY,
+        SAVE_BUTTON_KEY,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "E2E~가정~D")
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["edits"] = [
+        ("EQ-01", "시나리오 메모", "낡기 전 메모"),
+        ("EQ-01", "담당자", "공통 담당"),
+    ]
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    theirs = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            theirs,
+            clone.equipment_scenario_id,
+            equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"),
+        )
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    warnings = [str(item.value) for item in app.warning]
+    assert any("공통 칸만 저장됩니다" in text for text in warnings)
+    assert line in warnings
+    before = len(repository.list_revisions())
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert [str(item.value) for item in app.error] == [f"저장하지 못했습니다: {line}"]
+    assert len(repository.list_revisions()) == before
+
+    frames = app.session_state[BUFFER_KEY]
+    saved = app.session_state[EQUIPMENT_DRAFT_KEY]
+    reverted = frames[1].copy()
+    reverted.loc[reverted["설비명"].eq("EQ-01"), "시나리오 메모"] = saved.loc[
+        saved["설비명"].eq("EQ-01"), "시나리오 메모"
+    ].to_numpy()
+    app.session_state[BUFFER_KEY] = (frames[0], reverted, frames[2])
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert line not in [str(item.value) for item in app.warning]
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert "공통 대장 r2" in app.session_state[FLASH_KEY]
+    assert len(repository.list_revisions()) == before + 1
+
+
+def test_a_popup_save_refusal_keeps_the_tildes_of_the_scenario_name(tmp_path: Path) -> None:
+    """팝업 「저장」 의 거부 글이 담은 설비 시나리오 이름(「E2E~가정~D」)은 물결표 그대로다 — 낡기
+    전에 비가동 한 줄을 더한 세션의 저장은 저장소가 「다른 사용자가 먼저 「…」 r2를 저장해」 로
+    거부하고, 그 글을 마크다운이 「E2E<del>가정</del>D」 로 그렸다."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_BUTTON_KEY,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "E2E~가정~D")
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["downtime"] = ("EQ-01", "공사", "2026-09-05")
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    theirs = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            theirs,
+            clone.equipment_scenario_id,
+            equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"),
+        )
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    errors = [str(item.value) for item in app.error]
+    assert any("다른 사용자가 먼저 「E2E\\~가정\\~D」 r2를 저장해" in text for text in errors), (
+        errors
+    )
+
+
+def _row_and_popup(database: str, page_file: str) -> None:
+    """사이드바 설비 시나리오 줄(저장 결과·세션 이동 알림을 그린다) + 팝업 본문. 처음 한 번
+    `edits`((설비명, 칸, 값))를 편집본에 넣는다."""
+    from pathlib import Path
+
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        ensure_equipment_drafts,
+        replace_equipment_buffer,
+    )
+    from capa_simulation.components.equipment_scenario_status import (
+        render_equipment_scenario_dialog_body,
+        render_equipment_scenario_row,
+    )
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    session = resolve_equipment_session(database)
+    frames = ensure_equipment_drafts(session.snapshot)
+    edits = st.session_state.get("edits") or []
+    if edits and not st.session_state.get("edited"):
+        edited = frames[1].copy()
+        for name, column, value in edits:
+            edited.loc[edited["설비명"].eq(name), column] = value
+        replace_equipment_buffer((frames[0], edited, frames[2]))
+        st.session_state["edited"] = True
+    render_equipment_scenario_row(session)
+    if st.session_state.get("popup", True):
+        render_equipment_scenario_dialog_body(Path(database), page_file=page_file)
+
+
+def test_the_popup_save_result_keeps_the_tildes_of_the_scenario_name(tmp_path: Path) -> None:
+    """팝업 저장 뒤 사이드바 줄 아래 결과 알림(「…「E2E~가정~D」 r2.」)은 물결표 그대로다 —
+    설비 마스터 탭은 같은 `save_result_message` 를 감싸 그리는데 팝업 쪽은 그대로 그려
+    「E2E<del>가정</del>D」 가 됐다."""
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        SAVE_BUTTON_KEY,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "E2E~가정~D")
+    app = AppTest.from_function(
+        _row_and_popup,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["edits"] = [("EQ-01", "시나리오 메모", "팝업 저장")]
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    successes = [str(item.value) for item in app.sidebar.success]
+    assert any("「E2E\\~가정\\~D」 r2" in text for text in successes), successes
+
+
+def test_the_session_move_notice_keeps_the_tildes_of_the_scenario_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """고정 쌍이 합쳐지지 않아 그 시나리오 최신으로 옮긴 알림(「「…」 r1을 … 합칠 수 없어」)은 날
+    설비 시나리오 이름을 담는다 — 사이드바 줄과 시나리오 관리 구획 모두 물결표 그대로 그린다."""
+    import capa_simulation.settings as settings
+
+    repository = _seeded(tmp_path)
+    repository.rename_equipment_scenario(OPERATIONS, name="운영~일정~A", expected_name="운영 일정")
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", repository.database_path)
+
+    def unmergeable() -> None:
+        first = _session(repository)
+        repository.save_equipment(
+            _request(first, equipment=_set(first.equipment, "EQ-02", "Qual일정", None))
+        )
+        second = _session(repository)
+        repository.save_equipment(
+            _request(second, equipment=_set(second.equipment, "EQ-02", "Qual상태", None))
+        )
+
+    row = AppTest.from_function(
+        _row_and_popup,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    row.session_state["popup"] = False
+    row.run()
+    assert not row.exception, [item.message for item in row.exception]
+    unmergeable()
+    row.run()
+    assert not row.exception, [item.message for item in row.exception]
+    warnings = [str(item.value) for item in row.sidebar.warning]
+    assert any("「운영\\~일정\\~A」 r1" in text for text in warnings), warnings
+
+    def section() -> None:
+        from capa_simulation.components.equipment_scenario_management import (
+            render_equipment_scenario_section,
+        )
+
+        render_equipment_scenario_section()
+
+    pinned = repository.list_schedule_revisions(OPERATIONS)[-1]
+    app = AppTest.from_function(section, default_timeout=60)
+    _select(app, OPERATIONS, pinned.schedule_revision_id)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    warnings = [str(item.value) for item in app.warning]
+    assert any(f"「운영\\~일정\\~A」 r{pinned.revision_no}" in text for text in warnings), warnings
+
+
 def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path) -> None:
     """「저장」 구획 안내는 지금 꼴을 가리킨다 — 편집본에 없어 저장되지 않는 것은 작은 편집표(기존
     보유대수·비가동 일정)에서 「편집본에 적용」 하지 않은 편집이다. 걷힌 옛 폼의 「보기 적용」 을
