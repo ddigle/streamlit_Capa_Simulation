@@ -850,6 +850,11 @@
   적는다(`_settle_compare_field` — 비교 후 쓰기의 본 이름도 그대로 함께). 고치던 칸은 그대로 둔다. 대안: 칸 key 에 지금 이름을 실어
   `value=` 기본값으로 세우기 — 남이 이름을 바꾼 회차에 고치던 글자를 말없이 버리고 거절 대신 덮는다. 관련:
   `components/equipment_scenario_management.py`·`tests/test_equipment_scenario_name_fields.py`
+- (2026-10-26) **설비 마스터 머리글 거부 글의 조사를 고칠 이름의 끝소리로 고른다**(브라우저 E2E lens eq-flows, 밤사이 권장대로) —
+  가용설비 현황 「엑셀·CSV로 한꺼번에」·표 붙여넣기 미리보기에서 이름이 닮은 선택 컬럼 머리글(「반입실적(확인)」·「메모 3(비고)」)을
+  막는 글이 「머리글을 「반입실적」로 고치세요」 처럼 「로」 를 못박아, 받침 있는 이름(반입실적·Qual실적·반입/Qual 이력·메모3)에서
+  틀리던 것: `korean_particle.with_direction_particle` 로 고른다(「Main 설비」로 는 그대로, 막는 동작도 그대로). 관련:
+  `services/equipment_csv.py`·`tests/test_equipment_partial_paste.py`
 - (2026-10-26) **Space 현황의 설비 시나리오 이름 물결표를 막는다**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 「10~12월 증설」·
   「가정~R3~X」 같은 이름이 Space 의 저장·적용 알림, 저장 안 한 배치 상자 캡션, 잠금·빨리 감기 줄과 꺼진 「배치 편집」 풍선,
   「최신 rM 불러오기」 팝오버 글, 편집기 위 「새 호기를 넣지 않습니다」 줄, 머리 알림(옛 공식 리비전의 「…가정이던 때의

@@ -267,6 +267,31 @@ def test_a_misspelled_header_in_a_partial_paste_is_rejected_with_a_hint() -> Non
     assert "그 열을 빼고 다시 붙여넣으세요" in message
 
 
+@pytest.mark.parametrize(
+    ("header", "column", "fix"),
+    [
+        ("반입실적(확인)", "반입실적", "「반입실적」으로"),
+        ("Qual실적(확인)", "Qual실적", "「Qual실적」으로"),
+        ("반입/Qual 이력(확인)", "반입/Qual 이력", "「반입/Qual 이력」으로"),
+        ("메모 3(비고)", "메모3", "「메모3」으로"),
+        ("모체호기(선택)", "Main 설비", "「Main 설비」로"),
+    ],
+)
+def test_a_lookalike_optional_header_names_the_fix_with_the_particle_of_that_name(
+    header: str, column: str, fix: str
+) -> None:
+    """이름이 닮은 선택 컬럼 머리글을 막는 글은 고칠 이름 뒤 「으로/로」 를 그 이름의 끝소리로
+    고른다 — 「「반입실적」로 고치세요」 가 아니다(브라우저 E2E)."""
+    full = _exported(_current()).rename(columns={column: header})
+
+    with pytest.raises(ValueError) as raised:
+        _review(full.to_csv(sep="\t", index=False))
+
+    message = str(raised.value)
+    assert message.startswith(f"설비 마스터의 {column} 열 이름이 다릅니다: ['{header}']")
+    assert message.endswith(f" — 머리글을 {fix} 고치세요.")
+
+
 def test_an_unknown_header_in_a_full_paste_is_skipped_with_a_notice() -> None:
     """38열이 모두 있으면 모르는 열은 어느 열의 오타일 수 없다 — 읽지 않고 넘기되 알린다."""
     full = _exported(_current())

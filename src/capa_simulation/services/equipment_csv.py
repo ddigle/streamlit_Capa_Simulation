@@ -57,6 +57,7 @@ from capa_simulation.services.equipment_validation import (
 )
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.frame_contracts import require_columns, scalar_match_key
+from capa_simulation.services.korean_particle import with_direction_particle
 from capa_simulation.services.reference_csv import (
     guard_excel_text,
     strip_excel_text_guard,
@@ -689,7 +690,7 @@ def _reject_lookalike_headers(
         if lookalikes:
             raise ValueError(
                 f"{headers.label}의 {column} 열 이름이 다릅니다: {lookalikes} — 머리글을 "
-                f"「{column}」로 고치세요."
+                f"{with_direction_particle(f'「{column}」')} 고치세요."
             )
 
 
