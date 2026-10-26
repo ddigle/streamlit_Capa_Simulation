@@ -29,6 +29,7 @@ from capa_simulation.components.intro_summary import (
     warm_intro_summary,
 )
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
+from capa_simulation.components.page_link import disabled_link_aria_script
 from capa_simulation.components.page_tabs import (
     leave_notice,
     page_unsaved_marks,
@@ -227,6 +228,7 @@ render_theme_toggle(
         print_toolbar_script(),
         plotly_touch_scroll_script(CELL_SELECT_CHART_KEYS),
         cell_press_guard_script(HOME_CELL_CHART_KEYS),
+        disabled_link_aria_script(),
     )
 )
 

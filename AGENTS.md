@@ -1650,7 +1650,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     핀은 가리킬 때만 보이고 숨은 동안 누름을 받지 않는다(`pointer-events: none` — 터치로 탭 이름 오른쪽을 누르면 고정이
     됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
-  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름)를 같은 iframe 에
+  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름·꺼진 링크 표지)를 같은 iframe 에
   싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
@@ -1833,6 +1833,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
   실행(테스트)에서는 문구로 물러선다(`fallback` 으로 그 글을 줄 수 있다 — 「도면에서 보기」). `disabled`·`help` 는
   `st.page_link` 그대로다 — 꺼진 링크가 자리를 지키고 풍선이 까닭을 말한다(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」).
+  1.63 은 꺼진 링크를 `<a disabled>` 로 그려 읽기 도구가 꺼졌다고 읽지 않으므로, 툴바 iframe 의
+  `disabled_link_aria_script` 가 부모 문서의 화면 링크(`stPageLink-NavLink`)마다 `aria-disabled="true"` 를 달고 다시
+  켜지면 뗀다(`disabled` 속성 바뀜과 새로 붙은 칸만 보고 SVG 안은 건너뛴다 — `tests/test_disabled_link_aria.py`, node).
+  꺼진 Streamlit 단추·입력은 진짜 `disabled` 라 따로 달지 않는다.
 - `src/capa_simulation/services/product_type.py` — 제품타입(HBM·EDP-TSV)이 가르는 `WF 구분` 규칙의 단일 근거다.
   두 값 집합을 일부러 따로 선언하고 EDP-TSV 의 `Top` 을 `Top_e` 로 가르는 `apply_edp_wf_division` 을 갖는다.
   - 변환 지점은 `core_data_derivation.build_q_core_data` 한 곳이다 — 두 층에서 바꾸면 조인 한쪽만 바뀐다.
