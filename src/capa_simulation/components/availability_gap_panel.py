@@ -133,7 +133,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     processes_in,
     span_date_range,
 )
-from capa_simulation.services.process_cutoff import cutoff_lookup
+from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
 from capa_simulation.services.simulation_cache import (
     DynamicMonthlyCacheKey,
     ScenarioCacheKey,
@@ -606,8 +606,9 @@ def _key_digest(key: object) -> str:
 def _schedule_detail(process: str | None, cutoff: pd.DataFrame) -> str:
     """설비 일정 기준 제목의 세부 글 — 출처·축·Cut-off(라벨 칸 한 줄). 「칸을 누르면」 안내는
     시트 위 도구 줄과 풍선이 맡는다."""
-    days = cutoff_lookup(cutoff).get(process) if process is not None else None
-    production = f"Cut-off {days:g}일" if days is not None else "Cut-off 공정별"
+    days = cutoff_setting(cutoff, process) if process is not None else None
+    # 계산(`wd_window`)은 적은 값을 내림해 쓴다 — 다른 화면처럼 그 일수로 적고 내림을 함께 둔다.
+    production = f"Cut-off {cutoff_days_words(days)}" if days is not None else "Cut-off 공정별"
     return f"설비 DB · 환산대수 · {production}"
 
 

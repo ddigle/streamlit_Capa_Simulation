@@ -157,6 +157,7 @@ from capa_simulation.services.process_capa_detail import (
     home_display_rates,
     process_capa_kpis,
 )
+from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
 from capa_simulation.services.process_equipment_timeline import (
     DynamicReadiness,
     dynamic_readiness,
@@ -795,7 +796,9 @@ if (
 if readiness is None:
     dynamic_badge = ":blue-badge[설비 일정 없음: 설비 DB 오류]"
 elif dynamic is not None and readiness.cutoff_days is not None:
-    dynamic_badge = f":gray-badge[{readiness.badge} · Cut-off {readiness.cutoff_days}일]"
+    setting = cutoff_setting(cutoff, process)
+    days_words = cutoff_days_words(setting if setting is not None else readiness.cutoff_days)
+    dynamic_badge = f":gray-badge[{readiness.badge} · Cut-off {days_words}]"
 elif dynamic_error:
     dynamic_badge = ":blue-badge[설비 일정 없음: 계산 오류]"
 else:

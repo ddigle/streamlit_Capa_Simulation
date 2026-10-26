@@ -1850,6 +1850,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`RUN_DAY` 를 쓰면 설비 DB 가 시뮬레이션 DB 를 읽는다).
 - `src/capa_simulation/services/process_cutoff.py` — 공정별 Cut-off 입력 표의 계약·검증과 조회 사전(`cutoff_lookup`).
   없는 공정과 0 은 다르다 — 0 은 달력 월 그대로, 없으면 산출에서 빠지므로 화면이 `missing_cutoff_processes` 로 드러낸다.
+  화면 글은 계산(`wd_window`)이 쓰는 내림 일수로 적고, 적은 값(`cutoff_setting`)에 소수가 있으면 내림을 함께 적는다
+  (`cutoff_days_words` — 「35일(35.8일 내림)」, Static 대비 일정 머리·제약 시뮬레이션 조건 줄·공정 Capa 상세 머리). 「설정」
+  팝업만 적은 값 그대로다(2026-10-26 E2E — 같은 공정이 화면마다 35일·35.8일로 갈렸다).
 - `src/capa_simulation/services/qual_deadline.py` — Qual 마감 계산기(2026-10-22, 10-07 계산기 한 장을 옮김)의 계산과
   화면·복사 글자. Cut-off·연도·직전 달 가용대수·월별 목표·신규 호기로 호기마다 Qual 완료 마감을 낸다. 어느 DB 도 열지 않는다.
   - 구간은 `wd_window` 그대로, 몫은 완료 다음 날부터다. 모자람 ≥ 1 이면 마감 = 구간 앞 경계(몫 1), < 1 이면 모자란 날 수만큼

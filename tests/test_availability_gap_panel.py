@@ -286,6 +286,21 @@ def _units(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.loc[frame[marker].astype(str).ne("합계")]
 
 
+def test_the_schedule_head_names_the_floored_cutoff_days() -> None:
+    """분류별 내역 「설비 일정 기준」 머리가 Cut-off 를 적은 값(35.8일)으로 적었는데 계산은 35일
+    창이고 다른 화면은 35일이었다(2026-10-26 E2E). 계산과 같은 일수로 적고 내림을 함께 둔다."""
+    from capa_simulation.components.availability_gap_panel import _schedule_detail
+    from capa_simulation.services.process_cutoff import prepare_process_cutoff
+
+    cutoff = prepare_process_cutoff(
+        pd.DataFrame({"공정": ["DAF", "DA"], "Cutoff일수": [35.8, 34.0], "비고": [None, None]})
+    )
+
+    assert _schedule_detail("DAF", cutoff) == "설비 DB · 환산대수 · Cut-off 35일(35.8일 내림)"
+    assert _schedule_detail("DA", cutoff) == "설비 DB · 환산대수 · Cut-off 34일"
+    assert _schedule_detail(None, cutoff) == "설비 DB · 환산대수 · Cut-off 공정별"
+
+
 def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
     """세 결과 가운데 고른 것만 그린다. 그림·시트·교차검증의 설비 일정 기준 가용은 같은 환산 값이다
     (EQ-1 환산비 1.5 — 기존보유 3 + 1.5 = 4.5)."""
