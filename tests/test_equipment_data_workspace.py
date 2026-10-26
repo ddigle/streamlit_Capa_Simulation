@@ -36,6 +36,7 @@ from capa_simulation.components.equipment_data_workspace import (
     BASELINE_EDITOR_KEY,
     BUFFER_KEY,
     CLIPBOARD_KEY,
+    COMMON_ONLY_HISTORY_NOTE,
     DOWNTIME_EDITOR_KEY,
     DROP_EXAMPLE_ROWS_KEY,
     EXAMPLE_DROP_BUTTON_KEY,
@@ -792,6 +793,39 @@ def test_the_change_memo_is_cleared_after_a_save_and_not_reused(
     _save(app)
     assert not app.error, _texts(app, "error")
     assert repository.list_revisions()[0].note is None
+
+
+def test_the_history_also_lists_a_common_only_save_with_its_memo(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """공통 칸만 바꾼 저장(담당자)은 일정 리비전을 만들지 않아 저장 이력 일정 표에 없었다 — 방금
+    저장한 사람이 제 저장을 찾지 못했다(E2E). 일정 표 아래 그 사실을 적고 「공통 대장 저장 이력」 에
+    공통 리비전의 저장자·메모와 그 공통을 함께 본 이 시나리오 일정 리비전을 싣는다."""
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    load(app, [], kind="all")
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당 1"})
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    app.text_input(key=NOTE_KEY).input("담당만 바꿈")
+    _save(app)
+    assert not app.error, _texts(app, "error")
+
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    _ok(app.run())
+
+    schedules = app.dataframe[0].value
+    assert "담당만 바꿈" not in schedules["변경메모"].tolist()
+    assert COMMON_ONLY_HISTORY_NOTE in _texts(app, "caption")
+    assert "공통 대장 저장 이력 2건" in [item.label for item in app.expander]
+    commons = app.dataframe[1].value
+    assert commons[["공통", "변경메모", "이 시나리오 일정"]].values.tolist() == [
+        ["r2", "담당만 바꿈", ""],
+        ["r1", "원본", "r1"],
+    ]
 
 
 def _small_editor_key(app: AppTest, key: str) -> str:

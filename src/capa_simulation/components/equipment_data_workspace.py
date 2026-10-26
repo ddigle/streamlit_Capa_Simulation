@@ -73,6 +73,7 @@ from capa_simulation.persistence.equipment_repository import (
     EMPTY_REVISION_TOKEN,
     DuckDBEquipmentRepository,
     EquipmentRevisionConflict,
+    EquipmentRevisionSummary,
     EquipmentSaveRequest,
     EquipmentSaveResult,
     EquipmentScheduleRevisionSummary,
@@ -3541,10 +3542,8 @@ def _render_history(
         st.info("첫 리비전을 저장하면 이곳에서 저장 시점별 데이터를 확인할 수 있습니다.")
         return
     latest_common = latest_equipment_revision_id(database_path)
-    common_numbers = {
-        item.revision_id: item.revision_no
-        for item in load_equipment_revision_summaries(database_path, latest_common)
-    }
+    commons = load_equipment_revision_summaries(database_path, latest_common)
+    common_numbers = {item.revision_id: item.revision_no for item in commons}
     # 목록 한도에 걸렸을 때만 전체 수를 덧붙인다(머리 한 줄 안 — 줄이 생기거나 빠져 아래 칸이 밀리지
     # 않게).
     origins = load_equipment_schedule_revision_counts(database_path, scenario_id)
@@ -3589,6 +3588,7 @@ def _render_history(
         placeholder="",
         column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
     )
+    _render_common_history(commons, revisions)
     by_id = {item.schedule_revision_id: item for item in revisions}
     selected_id = prune_choice(
         "equipment_history_revision_id_v4", list(by_id), default=next(iter(by_id))
@@ -3671,6 +3671,53 @@ def _render_history(
     ):
         with st.expander(label, expanded=True, key=f"equipment_history_view_{index}"):
             st.dataframe(frame, hide_index=True, width="stretch")
+
+
+# 저장 이력 「공통 대장 저장 이력」 펼침의 key — 머리에 건수가 들어 바뀌어도 펼침이 남게.
+COMMON_HISTORY_EXPANDER_KEY = "equipment_common_history_v1"
+COMMON_ONLY_HISTORY_NOTE = (
+    "공통 칸만 바꾼 저장(설비명 바꿈·담당자 등)은 일정 리비전을 만들지 않아 위 목록에 없습니다 — "
+    "아래 「공통 대장 저장 이력」 에 있습니다."
+)
+
+
+def _render_common_history(
+    commons: Sequence[EquipmentRevisionSummary],
+    revisions: Sequence[EquipmentScheduleRevisionSummary],
+) -> None:
+    """저장 이력 일정 표 아래 — 공통 대장 리비전(최신 50개)의 저장자·메모. 공통 칸만 바꾼 저장은
+    일정 리비전을 만들지 않아 일정 표에 없으므로 방금 저장한 사람이 제 저장을 여기서 찾는다(E2E).
+    「이 시나리오 일정」 은 그 공통을 함께 본 이 설비 시나리오 일정 리비전이다(없으면 빈칸 — 공통만
+    바꾼 저장이거나 다른 설비 시나리오의 저장)."""
+    if not commons:
+        return
+    st.caption(COMMON_ONLY_HISTORY_NOTE)
+    paired: dict[str, list[str]] = {}
+    for item in sorted(revisions, key=lambda revision: revision.revision_no):
+        if item.common_revision_id is not None:
+            paired.setdefault(item.common_revision_id, []).append(f"r{item.revision_no}")
+    with st.expander(
+        f"공통 대장 저장 이력 {len(commons):,}건", expanded=False, key=COMMON_HISTORY_EXPANDER_KEY
+    ):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "공통": f"r{item.revision_no}",
+                        "저장시각": item.created_at,
+                        "저장자": item.saved_by,
+                        "변경메모": item.note,
+                        "호기행": item.equipment_row_count,
+                        "이 시나리오 일정": "·".join(paired.get(item.revision_id, [])),
+                    }
+                    for item in commons
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+            placeholder="",
+            column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
+        )
 
 
 def _common_words(item: EquipmentScheduleRevisionSummary, numbers: Mapping[str, int]) -> str:
