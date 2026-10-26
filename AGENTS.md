@@ -557,7 +557,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     누름이 옛 화면의 단추에 닿은 회차(지나간 세대·이미 지운 글)도 쓰기 직후면 성공을 다시 알린다(9장).
   - 그 사이 다른 세션이 지운 글의 답변·답변 완료 표시는 저장소가 같은 쓰기 잠금 안에서 글을 확인해
     `VocPostGoneError` 로 거절한다(`voc_reply.post_id` 에 외래 키가 없어 막지 않으면 주인 없는 답글이 남는다).
-    화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`).
+    화면은 지운 글 상자 대신 머리 알림 칸에 거절과 적어 둔 답변을 그린다(`tests/test_voc_page.py`). 옛 화면의 「글
+    삭제」 도 같다 — 저장소 `remove_voc_post` 가 지울 것이 없었으면 거짓을 돌려주고 화면은 「글을 지웠습니다.」 대신
+    같은 칸에 「그 사이 지운 글입니다」(`VOC_POST_GONE_ON_DELETE`)를 그린다. 쓰기 직후 창 안이면(`held_notice` —
+    겹쳐 온 제 누름이 먼저 지웠다) 그 알림 그대로다.
   - 글 상자 라벨의 제목·작성자와 답글 caption 의 작성자는 마크다운으로 그려지는 자리라
     `components/literal_markdown.py` 로 ASCII 구두점을 escape 해 적은 글자 그대로 싣는다(`tests/test_voc_page.py`).
 - `app_pages/scenario_management.py` — `시나리오 관리`·`BigDataQuery 등록`·`자동 갱신` 세 탭(늘 그린다 — form 입력

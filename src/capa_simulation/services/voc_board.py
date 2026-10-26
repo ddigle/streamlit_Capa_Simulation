@@ -31,6 +31,11 @@ class VocPostGoneError(ValueError):
         super().__init__("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.")
 
 
+# 옛 화면에서 「글 삭제」 를 눌렀는데 그 사이 다른 세션이 이미 지운 글일 때(`remove_voc_post` 가
+# 거짓). 답변·답변 완료 표시의 거절(`VocPostGoneError`)과 같은 머리로 시작한다.
+VOC_POST_GONE_ON_DELETE = "그 사이 지운 글입니다. 다른 사용자가 먼저 지웠습니다."
+
+
 def normalize_author(value: str) -> str:
     """작성자 이름. 빈 이름은 막는다 — 누가 물었는지 모르면 답을 돌려줄 곳이 없다."""
     author = str(value).strip()

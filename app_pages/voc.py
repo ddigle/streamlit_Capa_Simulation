@@ -27,6 +27,7 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import (
     current_generation,
+    held_notice,
     just_written,
     note_notice,
     notice_marks,
@@ -35,7 +36,11 @@ from capa_simulation.components.write_guard import (
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
-from capa_simulation.services.voc_board import VOC_CATEGORIES, VocPostGoneError
+from capa_simulation.services.voc_board import (
+    VOC_CATEGORIES,
+    VOC_POST_GONE_ON_DELETE,
+    VocPostGoneError,
+)
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import condition_card, remembered_expander
 
@@ -246,6 +251,11 @@ def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     칸에 적는다 — 옛 화면은 체크한 확인 칸 값을 함께 보낸다. 방금 지운 뒤의 누름(아주 빠른 두 번
     누름의 둘째)이면 머리 알림 칸이 쓰기 직후 적어 둔 알림을 다시 그린다(`flash.render_flash` —
     `write_guard.note_notice`) — 앞 회차가 꺼내 그린 알림을 이 회차가 지우지 않는다.
+
+    그 사이 다른 세션이 이미 지운 글이면(저장소가 지울 것이 없었다고 알린다) 「글을
+    지웠습니다.」 대신 답변·답변 완료 표시와 같은 「그 사이 지운 글입니다」 를 머리 알림 칸에
+    그린다. 다만 쓰기 직후 적어 둔 알림이 창 안이면(`held_notice` — 겹쳐 온 같은 누름이 먼저
+    지웠다) 제 삭제라 그 알림 그대로다.
     """
     if st.session_state.get(DELETE_HANDLED_KEY) == post_id:
         return
@@ -255,9 +265,14 @@ def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     marks = notice_marks()
     try:
-        get_scenario_repository(database_path).remove_voc_post(post_id)
+        removed = get_scenario_repository(database_path).remove_voc_post(post_id)
     except BOOTSTRAP_ERRORS as exc:
         queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
+        return
+    if not removed:
+        if held_notice(FLASH_KEY) is None:
+            st.session_state[GONE_NOTICE_KEY] = (VOC_POST_GONE_ON_DELETE, "")
+        st.session_state[DELETE_HANDLED_KEY] = post_id
         return
     note_notice(marks, FLASH_KEY, message)
     st.session_state[DELETE_HANDLED_KEY] = post_id
