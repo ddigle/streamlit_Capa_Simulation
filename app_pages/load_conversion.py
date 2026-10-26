@@ -17,13 +17,14 @@ from typing import cast
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.editor_state import (
     discard_editor,
     editor_has_edits,
     editor_widget_key,
 )
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
@@ -38,6 +39,10 @@ from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
+from capa_simulation.components.required_exclusion_notice import (
+    FULL_SCOPE,
+    required_exclusion_message,
+)
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
@@ -48,11 +53,12 @@ from capa_simulation.components.scenario_edit_bar import (
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
-from capa_simulation.components.write_guard import note_notice, notice_marks
+from capa_simulation.components.write_guard import held_flash, note_notice, notice_marks
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
+    PageContext,
     bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
@@ -83,8 +89,10 @@ from capa_simulation.services.load_calculator import (
     yield_from_edit_table,
 )
 from capa_simulation.services.reference_csv import count_removed_values
+from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
+    get_full_capacity_outcome,
     get_monthly_volume,
     get_plan_edit_table,
     get_yield_edit_tables,
@@ -304,6 +312,35 @@ def _queue_done(key: str, message: str) -> None:
     """
     note_notice(notice_marks(), key, message, icon=APPLIED_ICON)
     queue_flash(key, message, icon=APPLIED_ICON)
+
+
+def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenerator) -> None:
+    """PKG PLAN 적용 알림이 서는 회차 — 그 알림 칸(`slot`) 아래에 소요대수에 들지 않은 수요 한
+    문장(있을 때만).
+
+    그 달 `RQ_REQB` 경로가 없는 칸에 넣은 계획은 소요대수에 들지 않아 「다시 계산됩니다」 뒤에도
+    현황 요약 수가 그대로라 「고쳤는데 안 바뀐다」 고 헷갈렸다(E2E r2 static #57, 개선 I38). 셈은
+    저장·발행 검사·Admin 「알림 모음」 과 같은 시나리오 전체 기간 결과(`get_full_capacity_outcome`
+    — 적용으로 내용 토큰이 바뀌어 여기서 처음 계산하면 HOME·산출 결과가 그 결과를 그대로 쓴다)다.
+    계산이 멈추면 그 오류는 계산 화면들이 말하므로 여기서는 말하지 않는다.
+    """
+    scenario = context.active_scenario
+    try:
+        with slot, st.spinner("적용한 계획의 소요대수 반영을 확인하는 중입니다..."):
+            outcome = get_full_capacity_outcome(
+                (context.reference_version, str(scenario["content_token"])),
+                _scenario_tables=scenario["tables"],
+                _reference_tables=context.reference_tables,
+            )
+    except BOOTSTRAP_ERRORS:
+        return
+    if outcome.error is not None or outcome.required_equipment is None:
+        return
+    message = required_exclusion_message(
+        required_exclusion_counts(outcome.required_equipment), scope=FULL_SCOPE
+    )
+    if message:
+        slot.warning(message, icon=":material/link_off:")
 
 
 def _render_locked_yield_rows(locked: pd.DataFrame) -> None:
@@ -591,7 +628,17 @@ with pkg_plan_tab:
             )
     # 적용이 막힌 까닭도 작업 줄 바로 아래다 — 적용 처리는 표 뒤에서 돌지만 알림은 여기 선다.
     plan_notice = st.empty()
-    render_flash(PLAN_APPLIED_FLASH_KEY, PLAN_PASTE_FLASH_KEY, PRODUCT_REGISTERED_FLASH_KEY)
+    # 적용 알림이 서는 회차(담아 둔 알림, 또는 쓰기 직후 창 안에서 다시 그리는 알림)에는 같은 칸
+    # 맨 아래에 소요대수에 들지 않은 수요도 적는다 — 칸 안이라 편집표 자리가 밀리지 않는다.
+    applied_notice_shown = (
+        pending_flash(PLAN_APPLIED_FLASH_KEY) is not None
+        or held_flash(PLAN_APPLIED_FLASH_KEY) is not None
+    )
+    plan_flash_slot = render_flash(
+        PLAN_APPLIED_FLASH_KEY, PLAN_PASTE_FLASH_KEY, PRODUCT_REGISTERED_FLASH_KEY
+    )
+    if applied_notice_shown:
+        _render_uncounted_demand_after_apply(context, plan_flash_slot)
     if _dialog_is_open(PLAN_PASTE_DIALOG):
         _plan_paste_dialog(
             plan_editor_source,

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers  # noqa: F401
+from test_reference_data_page import TEST_SCRIPT
 
 from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
@@ -75,3 +76,42 @@ def test_the_guide_carries_what_left_the_body() -> None:
         "실행 관리",
     ):
         assert text in guide, text
+
+
+def _calculated_script(*, unrouted: bool) -> str:
+    """계산을 실제로 돌리는 작은 시나리오의 Static Capa.
+
+    `unrouted` 면 경로 없는 계획 한 줄을 더한다."""
+    script = (
+        TEST_SCRIPT.replace('PAGE_NAME = "reference_data.py"', 'PAGE_NAME = "static_capa.py"')
+        .replace("STUB_CALCULATIONS = True", "STUB_CALCULATIONS = False")
+        .replace(
+            '"test-capacity-standards-page"',
+            f'"test-static-capa-uncounted-{"unrouted" if unrouted else "clean"}"',
+        )
+    )
+    if unrouted:
+        script = script.replace("ADD_UNROUTED_PLAN = False", "ADD_UNROUTED_PLAN = True")
+    assert 'PAGE_NAME = "static_capa.py"' in script
+    return script
+
+
+def test_the_summary_says_how_much_demand_the_required_count_left_out() -> None:
+    """경로에 닿지 않은 계획 부하는 소요대수에 들지 않아 미달 건수·필요대수가 그만큼 작다 — 산출
+    결과에만 있던 그 건수를 현황 요약 맨 위에도 조회기간으로 적는다(E2E r2 static — PKG PLAN 을
+    고쳤는데 현황 요약 수가 그대로라 헷갈렸다). 들지 않은 수요가 없으면 줄이 없다."""
+    app = AppTest.from_string(_calculated_script(unrouted=True), default_timeout=120).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    warnings = [str(element.value) for element in app.main.warning]
+    assert any(
+        "소요대수에 들지 않은 수요가 있습니다(조회기간)" in text
+        and "RQ_REQB 경로에 닿지 않은 계획 부하 1건" in text
+        and "산출 결과 → 소요대수 탭" in text
+        for text in warnings
+    ), warnings
+
+    clean = AppTest.from_string(_calculated_script(unrouted=False), default_timeout=120).run()
+    assert not list(clean.exception), [element.message for element in clean.exception]
+    assert not any(
+        "소요대수에 들지 않은 수요" in str(element.value) for element in clean.main.warning
+    )

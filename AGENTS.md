@@ -844,7 +844,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/required_exclusion_notice.py` — 소요대수에 들지 않은 수요의 건수 문장
   (`required_exclusion_message`)과 산출 결과 소요대수 탭의 계획 쪽 목록 둘(`render_plan_exclusion_lists`)을 낸다.
   - 문장은 `알림 모음`·`capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
-    않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다.
+    않는다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
+    않게 두 자리에도 같은 문장이다 — 생산 계획 PKG PLAN 적용 알림이 서는 회차(쓰기 알림 표지 창의 다시 그리기 포함)에
+    그 알림 칸(`render_flash` 가 돌려준 칸) 맨 아래(`FULL_SCOPE`, `get_full_capacity_outcome` — HOME·산출 결과가 같은 결과를
+    쓴다)와 Static Capa 현황 요약 맨 위의 늘 서 있는 칸(`PERIOD_SCOPE` — 산출 결과 요약 캐시 `get_scenario_result_summary`
+    의 조회기간 목록을 `count_required_exclusions` 로 센다). 둘 다 칸 안이라 아래 편집표·상자의 자리가 밀리지 않는다.
 - `src/capa_simulation/components/alert_board.py` — Admin Area `알림 모음` 탭. 활성 시나리오의 계산 알림 셋(계산 멈춤 ·
   소요대수에 들지 않은 수요 · 측정률 가정)을 시나리오 전체 기간으로 늘 같은 차례에 둔다(없는 것은 「없음」).
   - 저장·발행 검사와 같은 `get_full_capacity_outcome` 캐시와 `capacity_gate.density_error` 를 읽어 문장도 같다. 고르는
@@ -3479,9 +3483,11 @@ STEP별 소요대수를 합산한다. 소요대수 상세 화면은 STEP·MCP를
 - 부하가 붙었는데 대당 Capa 가 없거나 0 이하라 뺀 경로 — 기존 경로 쪽 제외 목록 가운데 부하 0 초과.
   부하 0 인 경로와 PKG 의 Buffer 외 행은 소요대수를 줄이지 않으므로 세지 않는다.
 
-건수는 `required_equipment.required_exclusion_counts` 하나가 세고, HOME(조회기간 기준 한 줄)·산출
+건수는 `required_equipment.required_exclusion_counts` 하나가 세고(목록만 든 요약은 그 셈
+`count_required_exclusions`), HOME(조회기간 기준 한 줄)·산출
 결과 소요대수 탭(목록·CSV)·리비전 저장·공식 발행 검사(허락하면서 경고, 시나리오 전체 기간)·공식버전
-자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)이 같은 셈을 쓴다(`components/required_exclusion_notice.py`).
+자동 갱신 발행(막지 않고 실행 기록 사유에 붙임)·PKG PLAN 적용 알림(시나리오 전체 기간)·Static Capa 현황
+요약(조회기간)이 같은 셈을 쓴다(`components/required_exclusion_notice.py`).
 
 소요기준은 대소문자를 정규화하며 `WAFER`는 `WF`로 통일한다. 현재 지원 값은 `PKG`,
 `CHIP`, `WF`다. 정규화하면 같아지는 `RQ_REQB` 경로 행(`WF`·`Wafer`, `Main`·`MAIN`, 앞뒤 공백)은

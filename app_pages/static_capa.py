@@ -17,6 +17,10 @@ from capa_simulation.components.home_preference import THRESHOLD_POINTER
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
+from capa_simulation.components.required_exclusion_notice import (
+    PERIOD_SCOPE,
+    required_exclusion_message,
+)
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -36,10 +40,12 @@ from capa_simulation.scenario_state import (
     scenario_month_table,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.required_equipment import count_required_exclusions
 from capa_simulation.services.securement_rate import build_securement_shortfall_tables
 from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import (
     check_scenario_capacity,
+    get_scenario_result_summary,
     get_scenario_securement_rate,
     scenario_cache_key,
 )
@@ -207,6 +213,22 @@ try:
     warning_shortfalls, secure_shortfalls = build_securement_shortfall_tables(
         securement_rate, thresholds=thresholds
     )
+    # 소요대수에 들지 않은 수요(조회기간) — 경로 없는 칸에 넣은 계획 부하처럼 고쳐도 아래 수가
+    # 바뀌지 않는 까닭을 이 화면에서도 말한다. 요약은 산출 결과와 같은 키의 작은 캐시다(적중이면
+    # 소요대수 프레임을 풀지 않는다).
+    result_summary = get_scenario_result_summary(
+        capacity_cache_key,
+        _scenario_tables=active_scenario["tables"],
+        _reference_tables=reference_tables,
+    )
+    uncounted_demand = required_exclusion_message(
+        count_required_exclusions(
+            result_summary.load_exclusions,
+            result_summary.unrouted_loads,
+            result_summary.required_exclusions,
+        ),
+        scope=PERIOD_SCOPE,
+    )
 except BOOTSTRAP_ERRORS as exc:
     threshold_caption_slot.caption(
         securement_threshold_caption(thresholds, start_month=0, end_month=0, with_warning=True)
@@ -218,6 +240,11 @@ else:
             thresholds, start_month=effective_start, end_month=effective_end, with_warning=True
         )
     )
+    # 경고는 늘 서 있는 한 칸 안에 그린다 — 조회기간에 따라 생기고 빠져도 아래 두 상자의 자리가
+    # 밀리지 않게(AGENTS 9장 「조건부 알림」).
+    uncounted_slot = st.container()
+    if uncounted_demand:
+        uncounted_slot.warning(uncounted_demand, icon=":material/link_off:")
     with st.container(border=True):
         st.markdown("#### :material/priority_high: 경고 기준 미달 :red-badge[집중 관리]")
         with metric_row(key="static_capa_warning_metrics"):

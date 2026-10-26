@@ -14,6 +14,10 @@
 갱신의 발행은 막지 않고 실행 기록 사유 끝에 붙인다(`auto_official_update_runner` — 「지금 실행」
 결과는 화면 발행과 같이 성공 알림 밑의 경고로 따로 띄운다). 모두 시나리오 전체 기간이다. 목록은
 산출 결과 → 소요대수 탭에 있다.
+
+계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지 않게 두 자리에도 같은 문장을 띄운다 —
+PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림이 서는 회차)와 Static Capa 현황 요약
+맨 위(그 화면의 조회기간 — 미달 건수·필요대수가 그만큼 작게 나올 수 있다).
 """
 
 from __future__ import annotations
@@ -32,8 +36,10 @@ from capa_simulation.services.required_equipment import (
     counted_unrouted_loads,
 )
 
-# 문장의 범위 말. 저장·발행 검사와 Admin Area 「알림 모음」 은 시나리오 전체 기간으로 본다.
+# 문장의 범위 말. 저장·발행 검사와 Admin Area 「알림 모음」·PKG PLAN 적용 알림은 시나리오 전체 기간,
+# Static Capa 현황 요약은 그 화면이 보는 조회기간으로 본다.
 FULL_SCOPE = "시나리오 전체 기간"
+PERIOD_SCOPE = "조회기간"
 # 문장의 머리. 자동 갱신의 발행 줄 뒤에 이어 적힌 이 경고를 실행 기록 사유에서 다시 가를 때도 쓴다
 # (`auto_official_update_runner.split_published_reason`).
 UNCOUNTED_DEMAND_LEAD = "소요대수에 들지 않은 수요가 있습니다"
