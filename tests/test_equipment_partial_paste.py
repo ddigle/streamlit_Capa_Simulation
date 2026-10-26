@@ -502,7 +502,7 @@ def test_a_new_name_that_differs_from_a_unit_only_in_case_is_flagged() -> None:
     assert sorted(review.candidate[1]["설비명"]) == ["EQ-01", "EQ-02", "eq-01"]
     flagged = [caution for caution in review.cautions if "대소문자" in caution]
     assert len(flagged) == 1, review.cautions
-    assert "eq-01(기존 EQ-01)" in flagged[0]
+    assert "eq\\-01(기존 EQ\\-01)" in flagged[0]
 
 
 def test_a_partial_paste_of_a_case_variant_names_the_existing_unit() -> None:

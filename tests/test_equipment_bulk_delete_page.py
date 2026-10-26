@@ -34,6 +34,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
     TABLE_KEY,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -282,7 +283,9 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     # 전 변경」 의 「리비전 저장」 이다(개편 D — 런북 7-21·Guide 의 글과 같다).
     tail = "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
     warning = next(str(item.value) for item in app.warning if "지웁니다" in str(item.value))
-    assert warning.startswith(f"비가동 일정 {count:,}건을 편집본에서 지웁니다. 대상: {machine}")
+    assert warning.startswith(
+        f"비가동 일정 {count:,}건을 편집본에서 지웁니다. 대상: {literal_markdown(machine)}"
+    )
     assert warning.endswith(tail) and "설비 데이터 저장" not in warning
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]

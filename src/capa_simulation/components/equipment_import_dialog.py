@@ -70,14 +70,17 @@ from capa_simulation.components.equipment_settings_dialog import (
     IMPORT_DIALOG,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     forget_page_dialogs,
     page_visit,
 )
-from capa_simulation.services.equipment_csv import import_preview_changed_rows
+from capa_simulation.services.equipment_csv import (
+    EquipmentNamesError,
+    import_preview_changed_rows,
+)
 from capa_simulation.services.equipment_grid import (
     GridState,
     grid_index,
@@ -389,7 +392,13 @@ def _render_body(context: ImportContext) -> None:
             )
     except BOOTSTRAP_ERRORS as exc:
         st.session_state.pop(PREVIEW_KEY, None)
-        message = bootstrap_error_message(exc)
+        # 설비명을 날로 담은 거절은 이름마다 구두점을 막아 다시 짓는다 — 물결표만 막으면 「NEW*A*1」
+        # 이 기울임 「NEWA1」 로 보였다(2026-10-27 E2E).
+        message = (
+            exc.text(literal_markdown)
+            if isinstance(exc, EquipmentNamesError)
+            else bootstrap_error_message(exc)
+        )
         if _master_has_errors(frames, context.floor_canvases):
             message = f"{message}\n\n{FIX_FIRST_HINT}"
         queue_flash(IMPORT_ERROR_KEY, markdown_safe_tildes(message), kind="error")

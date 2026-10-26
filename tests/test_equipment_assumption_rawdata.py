@@ -186,7 +186,7 @@ def test_an_official_import_warns_it_moves_the_official_layout(tmp_path: Path, g
     review = app.session_state[PREVIEW_KEY]
     assert isinstance(review, ImportReview)
     assert review.candidate[1].set_index("설비명").loc["EQ-01", "X좌표"] == 55
-    assert any("공식 배치 1칸(호기 1대 — EQ-01)이 바뀝니다" in text for text in review.cautions)
+    assert any("공식 배치 1칸(호기 1대 — EQ\\-01)이 바뀝니다" in text for text in review.cautions)
 
 
 def _official(repository: DuckDBEquipmentRepository, name: str, column: str) -> Any:
@@ -231,22 +231,22 @@ def test_the_locked_paste_check_takes_new_units_and_unchanged_layout_cells(
     assert refusal(_with_unit(current.equipment, "EQ-NEW", 70.0, **unplaced)) is None
     placed = refusal(_with_unit(current.equipment, "EQ-NEW", 70.0, 층="2F"))
     assert placed is not None
-    assert "붙여넣기가 새 호기 1대(EQ-NEW)에 자리(동·층·X좌표·Y좌표)를 넣습니다" in placed
+    assert "붙여넣기가 새 호기 1대(EQ\\-NEW)에 자리(동·층·X좌표·Y좌표)를 넣습니다" in placed
     assert refusal(current.equipment.copy()) is None
     shown = refusal(current.equipment.assign(레이아웃표시=["N", "Y"]))
-    assert shown is not None and "있던 호기 1대(EQ-01)" in shown
+    assert shown is not None and "있던 호기 1대(EQ\\-01)" in shown
     # 저장본 이름 그대로 들어온 행은 지운 뒤 다시 넣은 것이어도 같은 호기다(저장하면 그 키를
     # 잇는다).
     readded = _with_unit(
         current.equipment.loc[current.equipment["설비명"].ne("EQ-01")], "EQ-01", 55.0
     )
     moved = refusal(readded)
-    assert moved is not None and "있던 호기 1대(EQ-01)" in moved
+    assert moved is not None and "있던 호기 1대(EQ\\-01)" in moved
     # 저장 안 한 이름 바꿈(지금 이름 → 저장본 이름)을 이은 행은 그 저장본 호기와 견준다.
     renamed = current.equipment.assign(설비명=["EQ-101", "EQ-02"])
     assert refusal(renamed, {"EQ-101": "EQ-01"}) is None
     renamed.loc[0, "Y좌표"] = 33.0
-    assert "있던 호기 1대(EQ-101)" in str(refusal(renamed, {"EQ-101": "EQ-01"}))
+    assert "있던 호기 1대(EQ\\-101)" in str(refusal(renamed, {"EQ-101": "EQ-01"}))
     # 다른 표의 붙여넣기는 보지 않는다.
     downtime = ImportReview("비가동 일정", "붙여넣기", frames, frames, pd.DataFrame())
     assert layout_paste_refusal(downtime, saved=saved, renames={}, reason=None) is None
@@ -269,10 +269,10 @@ def test_the_locked_paste_refusal_is_the_one_lock_text_left(tmp_path: Path) -> N
     refusal = layout_paste_refusal(review, saved=current.equipment, renames={}, reason=LOCK_REASON)
 
     assert refusal == (
-        "붙여넣기가 있던 호기 1대(EQ-01)의 배치 칸을 바꾸고 새 호기 1대(EQ-NEW)에 자리(동·층·X좌표·"
-        "Y좌표)를 넣습니다 — 배치 편집이 잠겨 있어 미리보지 않았습니다 — 시험 잠금 있던 호기의 "
-        "배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요. 새 호기는 동·층·X좌표·Y좌표를 비우고 "
-        "다시 붙여넣으세요."
+        "붙여넣기가 있던 호기 1대(EQ\\-01)의 배치 칸을 바꾸고 새 호기 1대(EQ\\-NEW)에 자리(동·층·"
+        "X좌표·Y좌표)를 넣습니다 — 배치 편집이 잠겨 있어 미리보지 않았습니다 — 시험 잠금 있던 "
+        "호기의 배치 칸은 빼거나 저장본 값 그대로 다시 붙여넣으세요. 새 호기는 동·층·X좌표·"
+        "Y좌표를 비우고 다시 붙여넣으세요."
     )
     assert not hasattr(workspace, "layout_lock_refusal")
     assert "편집본에 반영했습니다" not in inspect.getsource(workspace)
@@ -384,7 +384,8 @@ def test_removing_a_unit_scheduled_in_another_scenario_needs_the_confirm(
     _delete(app, grid, "EQ-02")
 
     assert any(
-        "지우는 호기 1대(EQ-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다" in text
+        "지우는 호기 1대(EQ\\-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 "
+        "있습니다" in text
         for text in _texts(app, "warning")
     )
     box = _removal_box(app)
@@ -454,11 +455,28 @@ def test_the_removal_warning_blocks_the_tildes_of_the_unit_names_too() -> None:
 
     message = removal.message()
 
-    assert "지우는 호기 2대(DA\\~21\\~R, EQ-02)는" in message
+    assert "지우는 호기 2대(DA\\~21\\~R, EQ\\-02)는" in message
     assert "(「E2E\\~가정\\~A」)" in message
     assert "DA~21~R" not in message
     refusal = bootstrap_error_message(ValueError(removal.refusal()))
-    assert "(DA\\~21\\~R, EQ-02)" in refusal and "\\\\~" not in refusal
+    assert "(DA\\~21\\~R, EQ\\-02)" in refusal and "\\\\~" not in refusal
+
+
+def test_the_removal_warning_keeps_the_stars_of_the_unit_names() -> None:
+    """지우는 호기 경고·저장 거절 글(탭·사이드바 팝업 — 마크다운)에서 설비명 「DA*31*R」·
+    「E2E*NEW*01~A~」 의 별표 짝이 기울임이 되어 이름이 깨졌다 — 물결표만 막았다(2026-10-27
+    E2E). 호기 이름도 구두점을 막는다. 막은 글은 거절 글 길(`bootstrap_error_message`)을 지나도
+    그대로다."""
+    removal = RemovalElsewhere(
+        (("DA*31*R", ("가정",)), ("E2E*NEW*01~A~", ("가정",)), ("EQ-02", ("가정",)))
+    )
+
+    message = removal.message()
+
+    assert "(DA\\*31\\*R, E2E\\*NEW\\*01\\~A\\~, EQ\\-02)" in message, message
+    assert "DA*31*R" not in message and "NEW*01" not in message
+    refusal = bootstrap_error_message(ValueError(removal.refusal()))
+    assert "(DA\\*31\\*R, E2E\\*NEW\\*01\\~A\\~, EQ\\-02)" in refusal, refusal
 
 
 def _popup_without_eq02(database: str, page_file: str) -> None:
@@ -508,7 +526,8 @@ def test_the_popup_save_has_no_check_and_is_refused_the_same_way(tmp_path: Path)
 
     assert len(repository.list_revisions()) == 1
     assert any(
-        "지우는 호기 1대(EQ-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다" in text
+        "지우는 호기 1대(EQ\\-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다"
+        in text
         and "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text
         for text in _texts(app, "error")
     )

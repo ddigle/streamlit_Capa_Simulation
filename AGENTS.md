@@ -4363,10 +4363,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_equipment_scenario_screens.py`, E2E r3). 설비 시나리오 이름·리비전명 바꾸기의 「남이 먼저 바꿨다」 거절 글은
     예외 글 대신 막은 지금 이름(`exc.current`)으로 같은 글(`scenario_name_moved_message`·
     `schedule_revision_name_moved_message`)을 짓는다.
-  - 설비명·공정명을 「, 」 로 늘어놓은 목록(경고·캡션의 「…: A, B 외 3」, 걸린 조건 줄의 고른 값)은 목록째
-    `markdown_safe_tildes` 로 막는다 — 낫표로 감싸는 이름이 아니고, 같은 화면의 붙여넣기 거절·주의 목록과 같은
-    길이다. 서비스가 지어 돌려준 글(비활성 층 경고)은 그리는 자리에서 막는다(2026-10-26 E2E r5 — 지우는 호기·
-    비활성 층·Cut-off 누락·공정명 불일치 경고, Summary·호기 필터 걸린 조건 줄, 삭제·다시 세움 알림).
+  - 설비명·공정명을 「, 」 로 늘어놓은 목록(경고·캡션의 「…: A, B 외 3」, 걸린 조건 줄의 고른 값)은 낫표로 감싸는
+    이름이 아니다. **설비명 목록은 이름마다 `literal_markdown`** 으로 막는다 — 물결표만 막으면 「DA*31*R」 의 별표 짝이
+    기울임이 되어 「DA31R」 로 보였다(2026-10-27 E2E r6): 설비 마스터 쪽 `_sample_names`(지우는 호기 경고·저장 거절,
+    붙여넣기 배치 잠금 거절, 미리보기 배치 알림)·다시 세움 알림의 빠진 호기·작은 편집표 삭제 알림의 키·미리보기 대소문자
+    주의(`describe_case_variants(shown=)`). 서비스가 지어 돌려준 앱 꾸밈 없는 글(비활성 층 경고)은 그리는 자리에서 글
+    통째로 `literal_markdown`, 설비명을 날로 담은 서비스 거절(엑셀·CSV 미리보기의 없는 설비명·같은 설비명 둘 —
+    `equipment_csv.EquipmentNamesError`)은 화면이 `exc.text(literal_markdown)` 로 이름만 막아 다시 짓는다(예외 글은 날
+    이름 그대로). 공정명 목록(Cut-off 누락·공정명 불일치 경고)과 Summary·호기 필터 걸린 조건 줄은 아직 목록째
+    `markdown_safe_tildes` 다(2026-10-26 E2E r5 — `docs/TODO.md`).
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은

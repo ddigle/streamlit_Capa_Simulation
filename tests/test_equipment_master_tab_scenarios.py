@@ -202,7 +202,7 @@ def test_an_assumption_import_with_layout_cells_saves_as_that_scenarios_differen
     _ok(app.run())
     review = app.session_state[PREVIEW_KEY]
     assert review.candidate[1].set_index("설비명").loc["EQ-01", "X좌표"] == 55
-    assert any("가정 배치 1대(EQ-01)가 바뀝니다" in text for text in review.cautions)
+    assert any("가정 배치 1대(EQ\\-01)가 바뀝니다" in text for text in review.cautions)
     app.button(key=IMPORT_APPLY_BUTTON_KEY).click()
     _ok(app.run())
     assert _buffer_value(app, "EQ-01", "X좌표") == 55
@@ -394,7 +394,7 @@ def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     _ok(app.run())
     assert PREVIEW_KEY not in app.session_state
     assert any(
-        "붙여넣기가 있던 호기 1대(EQ-01)의 배치 칸을 바꿉니다" in text
+        "붙여넣기가 있던 호기 1대(EQ\\-01)의 배치 칸을 바꿉니다" in text
         for text in _texts(app, "error")
     )
 

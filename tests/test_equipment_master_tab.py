@@ -51,6 +51,7 @@ from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY, 
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_contract import EQUIPMENT_COLUMNS
+from capa_simulation.services.equipment_csv import EquipmentNamesError, read_equipment_update
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
@@ -578,6 +579,29 @@ def test_an_out_of_range_location_rejection_keeps_its_tildes(tmp_path: Path, gri
     assert not app.exception, app.exception
     assert app.error
     assert "동은 C1\\~C5, 층은 1F\\~6F 범위여야 합니다" in app.error[0].value
+
+
+def test_the_import_preview_errors_keep_the_stars_of_unit_names(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """엑셀·CSV 미리보기에 새 설비명 「NEW*A*1」 을 붙이면 「없는 설비명 1건(NEWA1)」 처럼 별표 짝이
+    기울임이 됐다 — 서비스 예외 글이 물결표만 막는 길을 지났다(2026-10-27 E2E). 설비명을 날로 담은
+    거절(`EquipmentNamesError`)은 화면이 이름마다 구두점을 막아 다시 짓는다. 예외 글 자체는 날
+    이름이다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
+    app.session_state[EQUIPMENT_DIALOG_KEY] = "import"
+    app.run()
+    app.text_area(key=CLIPBOARD_KEY).set_value("설비명\t메모1\nNEW*A*1\tx\n")
+    app.button(key=PREVIEW_BUTTON_KEY).click().run()
+
+    assert not app.exception, app.exception
+    (error,) = [str(item.value) for item in app.error]
+    assert "없는 설비명 1건(NEW\\*A\\*1)" in error, error
+    assert "NEW*A*1" not in error
+    with pytest.raises(EquipmentNamesError) as raised:
+        read_equipment_update("설비명\t메모1\nNEW*A*1\tx\n", app.session_state[BUFFER_KEY][1])
+    assert "(NEW*A*1)" in str(raised.value)
 
 
 def test_the_floor_column_narrows_by_building_where_only_the_pair_is_inactive(

@@ -7,7 +7,7 @@ from __future__ import annotations
 import difflib
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from io import BytesIO
@@ -350,6 +350,25 @@ class EquipmentPaste:
         return tuple(column for column in EQUIPMENT_COLUMNS if column not in self.columns)
 
 
+class EquipmentNamesError(ValueError):
+    """설비명을 날로 담은 붙여넣기 거절 — 지금 없는 설비명(새 호기에 필요한 열 없음)·편집본에 둘
+    이상인 설비명.
+
+    예외 글은 이름을 날로 담는다(서비스는 화면의 마크다운 막기를 모른다). 마크다운 자리(알림 상자)에
+    그리는 화면은 `text(막는 함수)` 로 이름만 막은 같은 글을 다시 짓는다 — 물결표만 막는 오류 글 길
+    (`bootstrap_error_message`)로는 「NEW*A*1」 의 별표가 기울임이 되어 「NEWA1」 로
+    보였다(2026-10-27 E2E). `key_process.PresetNameError` 와 같은 꼴이다.
+    """
+
+    def __init__(self, compose: Callable[[Callable[[str], str]], str]) -> None:
+        super().__init__(compose(str))
+        self._compose = compose
+
+    def text(self, shown: Callable[[str], str]) -> str:
+        """이름마다 `shown` 을 지난 같은 글."""
+        return self._compose(shown)
+
+
 def read_equipment_update(
     payload: str | bytes,
     current: pd.DataFrame,
@@ -397,12 +416,7 @@ def read_equipment_update(
     # 붙여넣었으면 채울 것이 없어 붙여넣은 행이 두 행을 대신한다(전체 열 대체).
     ambiguous = sorted(set(pasted[EQUIPMENT_ID_COLUMN]) & duplicated) if kept else []
     if ambiguous:
-        more = f" 외 {len(ambiguous) - 5}건" if len(ambiguous) > 5 else ""
-        raise ValueError(
-            f"편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: {', '.join(ambiguous[:5])}"
-            f"{more} — 붙여넣지 않은 열을 어느 행의 값으로 둘지 알 수 없습니다. 설비 마스터 "
-            "표에서 중복된 행을 먼저 정리한 뒤 다시 미리보세요."
-        )
+        raise EquipmentNamesError(lambda shown: _ambiguous_names_message(ambiguous, shown))
     matched = pasted[EQUIPMENT_ID_COLUMN].isin(base.index)
     new_names = pasted.loc[~matched, EQUIPMENT_ID_COLUMN].tolist()
     variants = _case_variants(new_names, base.index)
@@ -414,7 +428,9 @@ def read_equipment_update(
         if column not in OPTIONAL_EQUIPMENT_COLUMNS and column not in columns
     ]
     if needed and new_names:
-        raise ValueError(_new_units_message(new_names, needed, variants))
+        raise EquipmentNamesError(
+            lambda shown: _new_units_message(new_names, needed, variants, shown=shown)
+        )
     filled = pasted.reindex(columns=list(EQUIPMENT_COLUMNS))
     for column in kept:
         # 새 호기는 비어 있다(위 검사로 선택 컬럼만 남았다).
@@ -423,11 +439,19 @@ def read_equipment_update(
     return EquipmentPaste(rows, columns, _cleared_cells(base, rows, columns), variants)
 
 
-def describe_case_variants(variants: Sequence[tuple[str, str]], limit: int = 5) -> str:
-    """`eq-01(기존 EQ-01), …` — 대소문자만 다른 (붙여넣은 이름, 기존 이름) 짝을 한 줄로."""
-    shown = ", ".join(f"{new}(기존 {existing})" for new, existing in variants[:limit])
+def describe_case_variants(
+    variants: Sequence[tuple[str, str]],
+    limit: int = 5,
+    *,
+    shown: Callable[[str], str] = str,
+) -> str:
+    """`eq-01(기존 EQ-01), …` — 대소문자만 다른 (붙여넣은 이름, 기존 이름) 짝을 한 줄로. 이름은
+    `shown` 을 지나 적는다(마크다운 자리로 가는 글은 화면이 `literal_markdown` 을 넘긴다)."""
+    text = ", ".join(
+        f"{shown(str(new))}(기존 {shown(str(existing))})" for new, existing in variants[:limit]
+    )
     more = f" 외 {len(variants) - limit}건" if len(variants) > limit else ""
-    return f"{shown}{more}"
+    return f"{text}{more}"
 
 
 def _case_variants(names: Sequence[object], existing: pd.Index) -> tuple[tuple[str, str], ...]:
@@ -465,21 +489,33 @@ def _rows_by_equipment_id(current: pd.DataFrame) -> tuple[pd.DataFrame, set[str]
     return unique.set_index(EQUIPMENT_ID_COLUMN), names
 
 
+def _ambiguous_names_message(names: Sequence[str], shown: Callable[[str], str] = str) -> str:
+    more = f" 외 {len(names) - 5}건" if len(names) > 5 else ""
+    return (
+        f"편집본(설비 마스터)에 같은 설비명이 둘 이상 있습니다: "
+        f"{', '.join(shown(str(name)) for name in names[:5])}{more} — 붙여넣지 않은 열을 어느 "
+        "행의 값으로 둘지 알 수 없습니다. 설비 마스터 표에서 중복된 행을 먼저 정리한 뒤 다시 "
+        "미리보세요."
+    )
+
+
 def _new_units_message(
     names: Sequence[object],
     needed: Sequence[str],
     variants: Sequence[tuple[str, str]] = (),
+    *,
+    shown: Callable[[str], str] = str,
 ) -> str:
-    shown = ", ".join(str(name) for name in names[:5])
+    listed = ", ".join(shown(str(name)) for name in names[:5])
     more = f" 외 {len(names) - 5}건" if len(names) > 5 else ""
     hint = (
-        f" 대소문자만 다른 기존 호기: {describe_case_variants(variants)} — 설비명은 대소문자를 "
-        "가려 맞대므로 기존 표기 그대로 적으세요."
+        f" 대소문자만 다른 기존 호기: {describe_case_variants(variants, shown=shown)} — 설비명은 "
+        "대소문자를 가려 맞대므로 기존 표기 그대로 적으세요."
         if variants
         else ""
     )
     return (
-        f"지금 설비 마스터에 없는 설비명 {len(names):,}건({shown}{more})은 새 호기로 추가되는데, "
+        f"지금 설비 마스터에 없는 설비명 {len(names):,}건({listed}{more})은 새 호기로 추가되는데, "
         f"새 호기에 필요한 열 {len(needed)}개가 붙여넣은 표에 없습니다: {' · '.join(needed)}. "
         "새 호기를 넣으려면 이 열도 함께 붙여넣거나, 새 호기만 양식(전체 열)으로 따로 "
         f"붙여넣으세요. 기존 호기만 고치려던 것이면 설비명이 맞는지 확인하세요.{hint}"

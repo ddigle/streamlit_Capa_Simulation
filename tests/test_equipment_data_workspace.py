@@ -932,6 +932,42 @@ def test_the_discarded_notice_blocks_the_tildes_of_the_dropped_units() -> None:
     assert "빠진 호기 1대(DA\\~21\\~R)의 편집은 뺐습니다" in notice, notice
 
 
+def test_the_inactive_floor_warning_and_dropped_notice_keep_the_stars_of_unit_names(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """설비명 「DA*31*R」 의 별표 짝이 비활성 층 경고·다시 세움 알림(마크다운)에서 기울임이 되어
+    「DA31R」 로 보였다 — 물결표만 막았다(2026-10-27 E2E). 서비스가 지은 경고는 글 통째로, 이름
+    목록은 이름마다 구두점을 막는다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _located_master([("EQ-C4", "C4", "1F"), ("DA*31*R", "C4", "2F")]),
+        empty_downtime_schedule(),
+    )
+    repository.save_floor_states({("C5", "6F"): "NOT_LINE"}, expected_version=0, source="test")
+    clear_equipment_repository()
+    app = _app(path)
+
+    _preview(
+        app,
+        _located_master([("EQ-C4", "C4", "1F"), ("DA*31*R", "C5", "6F")]).to_csv(
+            index=False, sep="\t"
+        ),
+    )
+    _put(app)
+
+    warnings = [text for text in _texts(app, "warning") if "비활성 층으로 옮긴 호기" in text]
+    assert warnings, _texts(app, "warning")
+    assert all("DA\\*31\\*R" in text and "DA*31*R" not in text for text in warnings), warnings
+    notice = discarded_notice(
+        "공통 r3",
+        overlay_dropped=0,
+        reapplied=ReappliedLayout(equipment=pd.DataFrame(), reapplied=1, dropped=("DA*31*R",)),
+    )
+    assert "빠진 호기 1대(DA\\*31\\*R)의 편집은 뺐습니다" in notice, notice
+
+
 def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:
     """저장 이력의 조회 조건(공정소분류·비가동유형·기간)과 조회 리비전은 보기 조건이다 — 탭 ① 은
     숨은 회차에 그리지 않으므로(개편 명세 2-3) Summary 에 갔다 와도 남는 것은

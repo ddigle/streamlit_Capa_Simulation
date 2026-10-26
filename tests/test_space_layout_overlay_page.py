@@ -823,7 +823,7 @@ def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
 
     notice = next(str(item.value) for item in app.warning if "다시 얹었습니다" in str(item.value))
     assert "가정 배치 편집 1대(호기 위치)" in notice
-    assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notice
+    assert "빠진 호기 1대(EQ\\-01)의 편집은 뺐습니다" in notice
     assert _buffer_x(app, "EQ-02") == 60.0
 
 
