@@ -717,7 +717,9 @@ LOB_MONTHS_CHART_KEY = "production_lob_months"
 KEY_PROCESS_MONTHS_CHART_KEY = "key_process_heatmap_months"
 BOTTLENECK_MONTHS_CHART_KEY = "bottleneck_detail_months"
 # 칸 선택을 켠 HOME 그림 전부. 선택을 켜면 그림 위 터치 스크롤이 막히므로 `app.py` 가 이 묶음을
-# 터치 스크롤 막이(`plotly_touch_scroll`)에 넘긴다 — 선택을 켠 그림을 더하면 여기에도 더한다.
+# 터치 스크롤 막이(`plotly_touch_scroll`)에 넘긴다 — 선택을 켠 그림을 더하면 여기에도 더한다. 누르면
+# 화면을 옮기는 그림이라 둘째 누름 거름(`cell_press_guard`)에도 넘긴다 — 더블클릭의 둘째 누름이
+# 떠나는 이 프래그먼트의 회차를 청해 옮긴 화면 본문이 빈 채 남았다.
 HOME_CELL_CHART_KEYS = (
     LOB_MONTHS_CHART_KEY,
     KEY_PROCESS_MONTHS_CHART_KEY,

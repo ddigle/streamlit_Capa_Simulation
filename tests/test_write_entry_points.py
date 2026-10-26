@@ -73,7 +73,10 @@ STATE_CHANGE = "대상 하나의 상태 바꾸기 — 지우기·보관·되살�
 NAME_UNIQUE = "이름 유일 — 저장소가 같은 이름을 거절한다"
 BOOTSTRAP = "부트스트랩 — 빈 저장소의 첫 시드·세션 첫 활성화"
 RUN_CLAIM = "실행 잠금 — 저장소가 한 실행만 받는다"
-START_POINT = "출발점 대조 — save_once 가 같은 출발점의 겹친 둘째 누름에 첫 결과를 돌려준다"
+START_POINT = (
+    "출발점 대조 — save_once 가 같은 출발점(설비 편집본)·같은 입력(버전 대조가 없는 공용 저장 "
+    "폼)의 겹친·빠른 둘째 누름에 첫 결과를 돌려준다"
+)
 
 _PAGES = "app_pages"
 _PARTS = "src/capa_simulation/components"
@@ -184,27 +187,29 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/home_preference.py", "_save_thresholds", "replace_global_securement_threshold"): (
         VERSION_CHECK
     ),
+    # 버전 대조가 없는 공용 저장 폼 — 같은 입력의 겹친·빠른 둘째 누름은 `save_once` 가 거른다
+    # (같은 내용인데 공용 버전만 두 번 올랐다 — 2026-10-25 E2E).
     (f"{_PARTS}/home_preference.py", "_render_advance_editor", "replace_global_advance_load"): (
-        SAME_REPLACE
+        START_POINT
     ),
     (
         f"{_PARTS}/home_preference.py",
         "render_advance_shipment_editor",
         "replace_global_advance_shipment",
-    ): SAME_REPLACE,
+    ): START_POINT,
     (
         f"{_PARTS}/home_preference.py",
         "_render_summary_note_editor",
         "replace_global_summary_note",
-    ): SAME_REPLACE,
+    ): START_POINT,
     (f"{_PARTS}/home_preference.py", "_render_top5_band_editor", "replace_global_top5_band"): (
-        SAME_REPLACE
+        START_POINT
     ),
     (
         f"{_PARTS}/home_preference.py",
         "_render_key_process_editor",
         "replace_global_key_process_presets",
-    ): SAME_REPLACE,
+    ): START_POINT,
     (
         f"{_PARTS}/home_preference.py",
         "_render_key_process_preset_actions",

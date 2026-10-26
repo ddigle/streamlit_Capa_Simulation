@@ -49,6 +49,7 @@ from capa_simulation.components.write_guard import (
     queue_refusal,
     remember_own_save,
     remember_seen,
+    save_once,
     seen,
     take_refusal,
 )
@@ -178,6 +179,14 @@ THRESHOLD_FLASH_KEY = "home_threshold_flash"
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
 # 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 KEY_PROCESS_FLASH_KEY = "home_key_process_flash"
+# 버전 대조가 없는 공용 저장 폼의 `write_guard.save_once` 이름. 같은 입력의 겹친·빠른 둘째 누름은
+# 쓰지 않고 첫 저장으로 알린다 — 내용은 같은데 공용 버전만 두 번 올랐다(2026-10-25 E2E — Summary
+# v5→v7·프리셋 v3→v5).
+SUMMARY_NOTE_SAVE_NAME = "home_summary_note"
+TOP5_BAND_SAVE_NAME = "home_top5_band"
+KEY_PROCESS_SAVE_NAME = "home_key_process_preset"
+ADVANCE_LOAD_SAVE_NAME = "home_advance_load"
+ADVANCE_SHIPMENT_SAVE_NAME = "home_advance_shipment"
 THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장했습니다."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
@@ -1178,7 +1187,13 @@ def _render_advance_editor(
 
     def save(values: Sequence[object], source: str) -> None:
         frame = merge_advance_load_edits(advance_profile.rows, list(months), values)
-        get_scenario_repository(database_path).replace_global_advance_load(frame, source=source)
+        repository = get_scenario_repository(database_path)
+        save_once(
+            ADVANCE_LOAD_SAVE_NAME,
+            _amounts_input(months, values, source),
+            lambda: repository.replace_global_advance_load(frame, source=source),
+            wrote=_saved,
+        )
         clear_global_advance_load_cache()
         _recheck_intro_summary()
 
@@ -1210,7 +1225,13 @@ def render_advance_shipment_editor(
 
     def save(values: Sequence[object], source: str) -> None:
         frame = merge_advance_shipment_edits(advance_shipment_profile.rows, list(months), values)
-        get_scenario_repository(database_path).replace_global_advance_shipment(frame, source=source)
+        repository = get_scenario_repository(database_path)
+        save_once(
+            ADVANCE_SHIPMENT_SAVE_NAME,
+            _amounts_input(months, values, source),
+            lambda: repository.replace_global_advance_shipment(frame, source=source),
+            wrote=_saved,
+        )
         clear_global_advance_shipment_cache()
         _recheck_intro_summary()
 
@@ -1222,6 +1243,19 @@ def render_advance_shipment_editor(
         stored=advance_shipment_by_month(advance_shipment_profile.rows),
         save=save,
     )
+
+
+def _saved(_outcome: object) -> bool:
+    """`save_once` 의 `wrote` — 공용 프로필 교체는 예외 없이 돌아오면 늘 쓴 것이다."""
+    return True
+
+
+def _amounts_input(
+    months: Sequence[int], values: Sequence[object], source: str
+) -> tuple[tuple[int, ...], tuple[str, ...], str]:
+    """월별 억Gb 저장의 입력 지문(`save_once` 출발점) — 보이는 달·적은 값·메모. 결측(`NaN`)은
+    자기와도 같지 않아 글자로 견준다."""
+    return tuple(months), tuple(str(value) for value in values), source
 
 
 def _render_monthly_amount_editor(
@@ -1359,10 +1393,15 @@ def _render_summary_note_editor(
             )
         if not submitted:
             return
+        text = str(note)
         try:
-            get_scenario_repository(database_path).replace_global_summary_note(
-                str(note),
-                source="웹 직접 편집",
+            repository = get_scenario_repository(database_path)
+            # 같은 글의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`write_guard.save_once`).
+            save_once(
+                SUMMARY_NOTE_SAVE_NAME,
+                text,
+                lambda: repository.replace_global_summary_note(text, source="웹 직접 편집"),
+                wrote=_saved,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
@@ -1373,7 +1412,7 @@ def _render_summary_note_editor(
         clear_global_summary_note_cache()
         queue_flash(
             "home_summary_note_flash",
-            "Summary 공지를 저장했습니다." if str(note).strip() else "Summary 공지를 내렸습니다.",
+            "Summary 공지를 저장했습니다." if text.strip() else "Summary 공지를 내렸습니다.",
         )
         st.rerun(scope="app")
 
@@ -1427,11 +1466,15 @@ def _render_top5_band_editor(
                 )
         if not submitted:
             return
+        band = (float(minimum) / 100, float(maximum) / 100)
         try:
-            get_scenario_repository(database_path).replace_global_top5_band(
-                float(minimum) / 100,
-                float(maximum) / 100,
-                source="웹 직접 편집",
+            repository = get_scenario_repository(database_path)
+            # 같은 구간의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`save_once`).
+            save_once(
+                TOP5_BAND_SAVE_NAME,
+                band,
+                lambda: repository.replace_global_top5_band(*band, source="웹 직접 편집"),
+                wrote=_saved,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
@@ -1693,8 +1736,18 @@ def _render_key_process_editor(
                     for preset, processes in profile.presets
                 ]
             )
-            get_scenario_repository(database_path).replace_global_key_process_presets(
-                presets, source="웹 직접 편집"
+            repository = get_scenario_repository(database_path)
+            # 같은 이름·공정의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`write_guard.
+            # save_once`). 출발점은 고칠 프리셋이 아니라 저장할 이름·공정이다 — 새 프리셋을 만든
+            # 뒤 둘째 누름은 그 이름을 고칠 프리셋으로 연 화면에 닿거나(느린 누름), 아직 「새
+            # 프리셋」 인 옛 화면의 입력으로 와 같은 이름 거절이 방금 한 저장 자리에 섰다.
+            save_once(
+                KEY_PROCESS_SAVE_NAME,
+                (new_name, tuple(selected)),
+                lambda: repository.replace_global_key_process_presets(
+                    presets, source="웹 직접 편집"
+                ),
+                wrote=_saved,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(_key_process_error_message(exc))

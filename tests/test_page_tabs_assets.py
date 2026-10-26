@@ -127,7 +127,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press")
+_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press", "tabs-links")
 
 
 def _sections() -> str:
@@ -442,6 +442,67 @@ def test_every_press_on_the_strip_consults_the_double_press_guard_first() -> Non
     assert aux.index("if (stray(event, item)) return") < aux.index("pressed(event, item)")
     assert aux.index("pressed(event, item)") < aux.index("close(item)")
     assert "event.detail > 0" in JS
+
+
+_LINKS_RUNNER = """
+const MS = 1000
+const pages = {
+  '': 'HOME', plan: '생산 계획', ref: '기준 정보', calc: '산출 결과',
+  wip_status: '표준 대비 재공 현황', dynamic_capa: '현황 요약',
+  a: 'A', b: 'B', c: 'C', d: 'D', e: 'E',
+}
+const nine = ['', 'plan', 'ref', 'calc', 'a', 'b', 'c', 'd', 'e']
+const verdict = (open, href, flight, epoch, now) =>
+  linkVerdict(pages, open, 10, href, linkOpening(flight, epoch, now, MS))
+const out = {}
+// 탭 9개 — 사이드바 「표준 대비 재공 현황」 링크는 10번째 탭을 여는 누름이라 지나 보내고 적는다.
+out.first = verdict(nine, 'wip_status', null, 5, 0)
+const flight = { href: 'wip_status', at: 0, epoch: 5 }
+// 0.05초 뒤 — 그 탭이 아직 data 에 오지 않았다(같은 epoch). 둘째 화면 링크는 상한이다.
+out.second = verdict(nine, 'dynamic_capa', flight, 5, 50)
+// 같은 링크를 다시 누름·열린 탭·모르는 주소는 그대로 지나간다.
+out.sameLink = verdict(nine, 'wip_status', flight, 5, 60)
+out.openTab = verdict(nine, 'plan', flight, 5, 60)
+out.unknown = verdict(nine, 'https://example.invalid/', flight, 5, 60)
+// 그 탭이 온 data(epoch 가 올랐다) — 이제 열린 탭 10개로 센다.
+const ten = [...nine, 'wip_status']
+out.arrived = [linkOpening(flight, 6, 300, MS), verdict(ten, 'dynamic_capa', flight, 6, 300)]
+// 그 탭이 끝내 오지 않으면(서버가 열지 않았다) 기다림이 다 된 뒤에는 세지 않는다.
+out.expired = [linkOpening(flight, 5, 1000, MS), verdict(nine, 'dynamic_capa', flight, 5, 1000)]
+// 탭 8개면 앞 누름이 여는 탭을 세어도 9개라 둘째 링크도 연다.
+out.room = verdict(nine.slice(1), 'dynamic_capa', flight, 5, 50)
+// 앞 누름의 화면이 이미 열린 탭이면 두 번 세지 않는다(8 + 그 탭 = 9개).
+out.counted = verdict([...nine.slice(1), 'wip_status'], 'dynamic_capa', flight, 5, 50)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_second_page_link_before_the_first_link_tab_arrives_counts_that_tab() -> None:
+    """상한 거름은 앞 회차 data 의 탭 목록으로 센다. 탭 9개에서 사이드바 링크 둘을 0.05~0.1초
+    간격으로 누르면 첫 링크가 연 10번째 탭이 data 에 오기 전에 둘째 누름이 탭 9개로 세어 거름을
+    지났다 — 서버 되돌림(`switch_to_queued_tab`)이 두 화면을 기록에 쌓아 뒤로가기 두 번이 모두 그
+    화면·상한 알림에 갇혔다(2026-10-27 E2E). 지나 보낸 링크가 여는 탭은 그 탭이 data 에 올
+    때까지(같은 epoch) 열린 탭으로 센다."""
+    out = _node(_LINKS_RUNNER)
+
+    assert out["first"] == "open"
+    assert out["second"] == "refuse"
+    assert (out["sameLink"], out["openTab"], out["unknown"]) == ("pass", "pass", "pass")
+    assert out["arrived"] == [None, "refuse"]
+    assert out["expired"] == [None, "open"]
+    assert out["room"] == "open"
+    assert out["counted"] == "open"
+
+
+def test_the_link_guard_counts_and_records_the_link_it_lets_through() -> None:
+    """화면 링크 거름은 `<tabs-links>` 로 정하고, 새 탭을 여는 누름이면 지나 보내며 적는다(다음
+    누름이 함께 센다). 적은 누름은 그 탭이 data 에 오면(epoch) 세지 않는다."""
+    refusal = JS[JS.index("const refusal = (href) => {") :]
+    refusal = refusal[: refusal.index("\n  }\n")]
+    counted = "linkOpening(S.linkFlight, D.epoch, now, BUSY_MS)"
+    assert f"linkVerdict(pages, open, D.max, href, {counted})" in refusal
+    assert "if (verdict === 'open') S.linkFlight = { href, at: now, epoch: D.epoch }" in refusal
+    assert "linkFlight: null" in JS
 
 
 _INSTALL_PRELUDE = """

@@ -6,6 +6,7 @@
 // 탭이 상한이면 사이드바·본문 화면 링크로 열린 탭이 아닌 화면에 가는 누름을 옮기기 전에 막는다 — 이 모듈은 iframe 이
 // 아니라 본 문서에서 돌아 문서 capture 단계에서 Streamlit(React 뿌리)보다 먼저 받는다. 서버가 옮긴 뒤 되돌리면 두
 // 화면이 브라우저 기록에 쌓여 뒤로가기가 그 화면에 갇힌다(`page_tabs_state.switch_to_queued_tab` 은 마지막 안전망이다).
+// 앞서 지나 보낸 링크가 연 탭은 그 탭이 탭 줄 data 에 올 때까지 열린 탭으로 센다(`<tabs-links>`).
 // 뒤로·앞으로가기는 막지 못한다 — Streamlit 의 `popstate` 처리기가 이 모듈보다 먼저 걸려 먼저 돈다(1.63 브라우저 확인).
 // 브라우저 기록은 문서 하나에서 지킨다 — 서버가 주소 인자를 바꿀 때 Streamlit 프런트가 쌓는 칸은 늘 칸 바꾸기다
 // (`<tabs-history>`, 탭 줄 누름뿐 아니라 본문 단추·HOME 칸·링크 인자를 받아 지우는 화면 모두). 탭으로 화면을 옮기는
@@ -156,6 +157,25 @@ function strayPress(last, id, now, x, y, ms, px) {
   return Math.abs(x - last.x) <= px && Math.abs(y - last.y) <= px
 }
 // </tabs-press>
+// <tabs-links>
+// 상한에서 화면 링크 누름을 거른다. `open` 은 열린 탭 주소(닫는 중이라 숨긴 탭은 뺀다), `max` 는 상한, `pages` 는 아는
+// 화면 주소 → 이름이다. 앞서 지나 보낸 링크 누름(`flight` — {href, at, epoch})의 화면은 그 누름이 연 탭이 아직 탭 줄 data
+// 에 오지 않았으면(같은 `epoch` — 탭 목록이 바뀌면 서버가 epoch 를 올린다) `ms` 동안 열린 탭으로 센다(`linkOpening`).
+// 세지 않으면 탭 9개에서 사이드바 링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차 data 의 탭 9개로 세어 거름을
+// 지났고, 서버 되돌림(`switch_to_queued_tab`)이 두 화면을 기록에 쌓아 뒤로가기가 그 화면에 갇혔다(E2E 결함).
+// `linkVerdict` 는 'refuse'(막고 알린다)·'open'(새 탭을 여는 누름 — 부르는 쪽이 `flight` 로 적는다)·'pass'(열린 탭·그
+// 누름이 여는 탭·모르는 주소)를 돌려준다.
+function linkOpening(flight, epoch, now, ms) {
+  if (flight === null || flight.epoch !== epoch || now - flight.at >= ms) return null
+  return flight.href
+}
+function linkVerdict(pages, open, max, href, opening) {
+  if (!Object.prototype.hasOwnProperty.call(pages, href)) return 'pass'
+  if (open.includes(href) || href === opening) return 'pass'
+  const count = open.length + (opening !== null && !open.includes(opening) ? 1 : 0)
+  return count >= Number(max) ? 'refuse' : 'open'
+}
+// </tabs-links>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -212,7 +232,7 @@ export default function (component) {
   const notice = nav.querySelector('.capa-tabs-notice')
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
-    onLink: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
+    onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
@@ -493,19 +513,18 @@ export default function (component) {
     flash(message.text)
   }
 
-  // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)에
-  // 없고, 열린 탭이 이미 상한이다. 걸리면 알림 글을, 아니면 빈 글자를 돌려준다.
+  // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)과
+  // 앞서 지나 보낸 링크가 여는 탭(`<tabs-links>`)에 없고, 그 둘을 합쳐 이미 상한이다. 걸리면 알림 글을, 아니면 빈 글자를
+  // 돌려준다. 새 탭을 여는 누름이면 지나 보내며 그 누름을 적는다 — 그 탭이 data 에 오기 전의 다음 누름이 함께 센다.
   const refusal = (href) => {
     const D = S.data
     const pages = (D && D.pages) || {}
-    if (!Object.prototype.hasOwnProperty.call(pages, href)) return ''
-    let open = 0
-    for (const item of S.items.values()) {
-      if (item.hidden) continue
-      if (item.__href === href) return ''
-      open += 1
-    }
-    if (open < Number(D.max)) return ''
+    const open = []
+    for (const item of S.items.values()) if (!item.hidden) open.push(item.__href)
+    const now = Date.now()
+    const verdict = linkVerdict(pages, open, D.max, href, linkOpening(S.linkFlight, D.epoch, now, BUSY_MS))
+    if (verdict === 'open') S.linkFlight = { href, at: now, epoch: D.epoch }
+    if (verdict !== 'refuse') return ''
     // 글 틀은 파이썬 상수(`TEXT`)라 처리기를 단 회차의 것을 그대로 쓴다.
     return fill(text.limit, { max: D.max, label: pages[href] })
   }

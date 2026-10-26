@@ -1543,7 +1543,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     것만 서버에 닿아 누른 탭은 남았다) 지금 탭을 고정했다(2026-10-26 E2E). 같은 탭의 둘째 누름(핀 두 번)과 키보드 누름
     (`detail` 0 — 좌표가 없다)은 그대로다.
   - 상한(10개) — JS 가 사이드바·본문 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 먼저 받아, 열린 탭이
-    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 그래도 들어온 이동(뒤로·
+    아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 지나 보낸 링크가 여는 탭은
+    그 탭이 data 에 올 때까지(같은 `epoch`, 길어야 `BUSY_MS`) 열린 탭으로 센다(순수 구획 `<tabs-links>`) — 세지 않으면 탭
+    9개에서 링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차 data 의 탭 9개로 세어 거름을 지났고, 서버 되돌림이
+    두 화면을 기록에 쌓아 뒤로가기가 갇혔다(2026-10-27 E2E). 그래도 들어온 이동(뒤로·
     앞으로가기 — Streamlit 의 `popstate` 처리기가 먼저 돌아 막지 못한다)은 `route_page_tabs` 가 직전 화면으로 되돌리고
     HOME 칸 전달 칸을 버린 뒤 탭 줄 아래에 알린다. 이 되돌림은 기록을 쌓으므로 정상 길로 쓰지 않는다. 탭 데이터에는
     2단계(떠 있는 창) 대비로 화면 주소(`href`)를 싣는다.
@@ -1551,7 +1554,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     핀은 가리킬 때만 보이고 숨은 동안 누름을 받지 않는다(`pointer-events: none` — 터치로 탭 이름 오른쪽을 누르면 고정이
     됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
-  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
+  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름)를 같은 iframe 에
+  싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
   - 열릴 때의 새로고침(키를 고쳐 적었거나 `?theme` 이 다를 때 — `reloadOnOpen`)은 **문서를 연 주소**에서 빠진 인자를
@@ -1605,6 +1609,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대신). 실행 중이면 멈출 때까지 기다렸다 인쇄하고, 어두운 테마면 `DARK_PRINT_CONFIRM` 으로 먼저 묻는다.
 - `src/capa_simulation/components/plotly_touch_scroll.py` — 칸 선택(`on_select`)을 켠 Plotly 그림 위에서 시작한
   터치가 화면을 스크롤하게 하는 스크립트다. 대상 key 는 `app.py` 의 `CELL_SELECT_CHART_KEYS` 다.
+- `src/capa_simulation/components/cell_press_guard.py` — 누르면 공정 Capa 상세로 옮기는 HOME 세 월 그림
+  (`HOME_CELL_CHART_KEYS`)의 둘째 누름을 옮기는 동안 거르는 스크립트다(테마 버튼 iframe 의 `extra_scripts`).
+  - 칸 더블클릭(0.08~0.15초)의 둘째 누름은 아직 떠 있는 HOME 그림에 닿아 **떠나는 HOME 프래그먼트의 회차**를 HOME
+    주소로 청했다. 그 회차는 옮긴 화면 회차 뒤에 돌며 화면이 바뀌었다는 새 세션 메시지로 프런트가 본문을 비우고(1.63
+    `clearAppState`), 프래그먼트는 이제 없어(「Couldn't find fragment」) 공정 Capa 상세 본문이 빈 채 남았다(2026-10-27
+    E2E). 프래그먼트 회차에서는 앱 스크립트가 돌지 않아 서버가 거를 자리가 없다.
+  - 부모 문서 캡처 단계에서 그 그림들 위의 `mousedown` 이 창을 열고, 그 뒤 `HOLD_MIN_MS`(0.5초) 안이거나 앱 회차가 도는
+    동안(`stApp` 의 `data-test-script-state`, 길어야 `HOLD_MAX_MS`) 그 그림들 위의 누름(`pointerdown`·`mousedown`·
+    `dblclick`)을 Plotly 까지 내려보내지 않는다. 첫 누름의 `mouseup`·`click` 은 건드리지 않는다. 판정은 순수 구획
+    `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
@@ -1873,7 +1887,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
-  만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다.
+  만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
+  「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
     달만 미적용으로 알린다.
@@ -4224,6 +4239,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     비우기 전에 끊기면 둘째 콜백이 같은 이름 편집을 다시 보내 제 저장을 「다른 사용자가 먼저 이름을 바꿨습니다」 로
     거부했다(출발점은 그 이름·순서 편집, `tests/test_scenario_save_double_press.py`). 창을 지나 저장소에 거부된 둘째 누름은 위 제 저장 판정(설비 리비전 짝 —
     쓰기 결과로 적는다)이 알아본다(`tests/test_write_guard_cas.py` — 창을 0 으로 둔 경합).
+  - **버전 대조가 없는 공용 저장 폼**(Preference Summary 공지·Top5 구간·주요공정 프리셋 저장·선행 B/O·선행 입고 실적)도
+    `save_once` 를 지나고 출발점 자리에 **저장할 입력**을 준다 — 같은 내용을 0.15~0.4초 간격으로 두 번 누르면 공용 버전만
+    두 번 올랐다(2026-10-25 E2E). 창 안의 같은 입력은 쓰지 않고 첫 저장으로 알리고, 다른 입력은 창 안이라도 쓴다
+    (`tests/test_profile_save_double_press.py`). 창을 지난 같은 내용 저장은 지금처럼 새 버전이다 — 바꾼 것 없는 저장을
+    막는 것은 동작이 바뀌는 일이라 따로 정한다.
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).
@@ -4335,7 +4355,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
   공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
   Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
-  `tests/test_process_label_markdown_sinks.py`).
+  `tests/test_process_label_markdown_sinks.py`). 「변경 메모」 가 출처가 되는 공용 프로필 버전 캡션은
+  `profile_version_caption` 이 출처를 막아 짓는다 — 날로 이으면 판정 기준·선행 B/O·확보율 보정 캡션에 메모의 물결표·
+  별표·`$`·백틱이 꾸밈으로 그려졌다(2026-10-27 E2E, `tests/test_profile_caption.py`).
   `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
   막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
 - **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를

@@ -17,6 +17,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Caption, Expander, Status
 
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
+from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.equipment_data_workspace import PENDING_FAB_KEY
 from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
 from capa_simulation.components.home_rendering import (
@@ -550,13 +551,14 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
     app.run()
 
     # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
-    # Guide·Summary·Print 스크립트 셋과 칸 선택 그림의 터치 스크롤 막이를 함께 싣는다. ⋮ 메뉴
+    # Guide·Summary·Print 스크립트 셋과 칸 선택 그림의 터치 스크롤 막이·HOME 칸 둘째 누름 거름을
+    # 함께 싣는다. ⋮ 메뉴
     # 감춤과 인쇄 규칙을 담은 껍데기 스타일도 부트스트랩 앞이다 — 부트스트랩 오류 화면
     # (`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
     # 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다 — 오류
     # 화면의 제목도 같은 서체로 선다.
     # 「준비 중」으로 보낸 Summary GAP 은 페이지를 다 그린 **뒤** 만든다(`warm_intro_summary`).
-    one_run = ["intro", "shell", "type", "toolbar:4", "bootstrap", "summary", "warm"]
+    one_run = ["intro", "shell", "type", "toolbar:5", "bootstrap", "summary", "warm"]
     assert order == one_run * 2
     # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
     sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]
@@ -1323,6 +1325,20 @@ def test_the_toolbar_iframe_carries_the_touch_scroll_guard_for_home_cell_charts(
     assert f".st-key-{GAP_SHEET_CHART_KEY} .js-plotly-plot" in guard
     assert f".st-key-{CONSTRAINT_CHART_KEY} .js-plotly-plot" in guard
     assert f".st-key-{CONSTRAINT_SHEET_KEY} .js-plotly-plot" in guard
+    frames = [str(element.proto.srcdoc) for element in app.get("iframe")]
+    assert sum(frame.count(guard) for frame in frames) == 1
+
+
+def test_the_toolbar_iframe_carries_the_second_press_guard_for_home_cell_charts(
+    _app: AppTest,
+) -> None:
+    """누르면 공정 Capa 상세로 옮기는 HOME 세 월 그림의 둘째 누름 거름은 테마 버튼 iframe 에 한
+    번 실린다(`components/cell_press_guard.py`). 빠지면 칸 더블클릭의 둘째 누름이 떠나는 HOME
+    프래그먼트 회차를 청해 옮긴 화면 본문이 빈 채 남는다(2026-10-27 E2E)."""
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    guard = cell_press_guard_script(HOME_CELL_CHART_KEYS)
     frames = [str(element.proto.srcdoc) for element in app.get("iframe")]
     assert sum(frame.count(guard) for frame in frames) == 1
 
