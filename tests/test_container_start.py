@@ -662,6 +662,43 @@ def test_a_broken_report_file_is_treated_as_absent(
 
 
 @pytest.mark.parametrize(
+    "body",
+    [
+        "",
+        "{깨진 JSON",
+        "[]",
+        json.dumps({"version": 1, "steps": {"install": {"status": "모름", "reason": "x"}}}),
+    ],
+)
+def test_a_broken_report_file_gets_its_own_hint_not_the_missing_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    """파일이 있는데 못 읽으면 스크립트는 돌았다 — 「결과 없음」(돌지 않음·쓰지 못함)이 아니라
+    「결과 파일을 읽지 못했습니다(꼴이 다름)」 다. CD 환경변수가 없어도(개발 PC 에 남은 파일)
+    같다. 점검 스크립트의 갈래 낱말을 섞지 않는다."""
+    path = tmp_path / "container_start.json"
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", path)
+    path.write_text(body, encoding="utf-8")
+
+    assert report_contract.report_file_exists()
+    for environ in ({report_contract.ARTIFACTORY_USER_ENV: FAKE_ART_USER}, {}):
+        hint = report_contract.start_check_hint(report_contract.STEP_INSTALL, environ=environ)
+        assert hint == report_contract.UNREADABLE_REPORT_NOTICE
+    notice = report_contract.UNREADABLE_REPORT_NOTICE
+    assert "읽지 못했습니다(꼴이 다름)" in notice
+    assert "결과 파일이 없습니다" not in notice
+    assert report_contract.BDQ_USER_NAME_ENV not in notice
+    assert "패키지가 없습니다" not in notice and "설정되지 않았습니다" not in notice
+
+
+def test_no_report_file_is_not_an_unreadable_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", tmp_path / "없음.json")
+    assert not report_contract.report_file_exists()
+
+
+@pytest.mark.parametrize(
     ("account", "masked"), [("fakeaccount", "fa***"), ("a", "a***"), ("", "***")]
 )
 def test_an_account_is_kept_only_as_its_first_two_letters(account: str, masked: str) -> None:

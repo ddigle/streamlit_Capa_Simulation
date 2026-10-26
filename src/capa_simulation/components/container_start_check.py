@@ -5,7 +5,9 @@
 CD 서버에는 셸도 로그도 없어(시작 명령도 못 바꾼다) 시작 스크립트(`scripts/container_start.py`)의
 결과를 이 펼침에서 읽는다. 결과 파일이 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. CD 전용
 환경변수가 앱에 들어왔는데 결과 파일이 없으면(스크립트가 돌지 않았거나 결과를 쓰지 못함) 그 사실을
-「결과 없음」 펼침으로 알린다 — 그러지 않으면 화면이 개발 PC 와 같아 막힌 자리를 가를 수 없다.
+「결과 없음」 펼침으로 알린다 — 그러지 않으면 화면이 개발 PC 와 같아 막힌 자리를 가를 수 없다. 파일은
+있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴) 「결과 파일을 읽지 못함」 펼침이다 — 스크립트는 돌았으니
+「결과 없음」 과 가른다.
 
 파일은 작은 JSON 하나라 회차마다 읽고 DB 는 열지 않는다. 비밀값은 파일에 원래 없다(스크립트가
 가렸다). 사람이 넣은 값에서 나온 글(까닭·pip 출력)은 표·코드 칸에 그대로 싣고, 캡션에 넣는 값은
@@ -23,9 +25,11 @@ from capa_simulation.io.container_start_report import (
     STATUS_LABELS,
     STEP_LABELS,
     STEPS,
+    UNREADABLE_REPORT_NOTICE,
     ContainerStartReport,
     missing_report_notice,
     read_container_start_report,
+    report_file_exists,
     report_verdict,
 )
 
@@ -98,12 +102,16 @@ def render_container_start_check() -> None:
 
 
 def _render_missing_report() -> None:
-    notice = missing_report_notice()
-    if notice is None:
-        return
-    with st.expander(
-        "서버 시작 점검 · 결과 없음", icon=":material/rocket_launch:", key=EXPANDER_KEY
-    ):
+    """결과를 못 읽은 회차 — 파일이 있으면 「결과 파일을 읽지 못함」(꼴이 다름), 없으면 CD 서버로
+    보일 때만 「결과 없음」."""
+    if report_file_exists():
+        title, notice = "서버 시작 점검 · 결과 파일을 읽지 못함", UNREADABLE_REPORT_NOTICE
+    else:
+        missing = missing_report_notice()
+        if missing is None:
+            return
+        title, notice = "서버 시작 점검 · 결과 없음", missing
+    with st.expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
         st.warning(notice)
         st.caption(
             f"넣을 환경변수와 이때 볼 것은 `{GUIDE_DOCUMENT}` 의 「C-DEP CD(배포 서버)」 절에 "
