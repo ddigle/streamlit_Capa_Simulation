@@ -655,6 +655,24 @@ def test_the_general_target_takes_half_percent_and_home(
     assert "기준 HOME" in _header_line(app)
 
 
+@pytest.mark.parametrize(("typed", "folded"), [(112.34, 112.3), (112.25, 112.3), (107.3, 107.3)])
+def test_a_typed_general_target_folds_to_the_one_decimal_the_field_shows(
+    dynamic_databases: tuple[Path, Path], typed: float, folded: float
+) -> None:
+    """기준 확보율 칸은 소수 첫째 자리까지 보인다(`%.1f`) — 112.34 를 그대로 정본에 두면 칸은
+    112.3, 머리·판정 글·그래프는 112.34% 로 갈렸다(2026-10-27 E2E). 친 값은 칸이 보이는 자리까지
+    접고(반은 올림 — 브라우저 칸의 `toFixed` 와 같다) 모든 자리가 같은 값을 보인다. 0.5 단위로
+    맞추지는 않는다."""
+    app = _opened(dynamic_databases)
+    (typed_key,) = _typed_field_keys(app, "기준 확보율 직접 입력")
+    app.number_input(key=typed_key).set_value(typed)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_GENERAL_KEY] == folded
+    assert app.number_input(key=typed_key).value == folded
+    assert f"기준 {folded:g}%" in _header_line(app)
+    assert f"{typed:g}%" not in _header_line(app) or typed == folded
+
+
 def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     dynamic_databases: tuple[Path, Path],
 ) -> None:

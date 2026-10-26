@@ -1,4 +1,5 @@
-# Purpose: 버튼 + 직접 입력 칸의 켜진 버튼 주의 색 CSS 와 한 회차에 겹친 두 콜백의 차례를 본다.
+# Purpose: 버튼 + 직접 입력 칸의 켜진 버튼 주의 색 CSS · 한 회차에 겹친 두 콜백의 차례 · 친 값
+# 접기를 본다.
 
 """`components/preset_number_field.py` 의 켜진 버튼 색(`_tone_style`).
 
@@ -28,9 +29,11 @@ from capa_simulation.components.preset_number_field import (
     CUSTOM_OPTION,
     PILL_BUTTONS_SELECTOR,
     _custom_style,
+    _number,
     _option_of,
     _pick_number,
     _pick_preset,
+    _shown_decimals,
     _tone_style,
 )
 from capa_simulation.design import theme, tokens
@@ -183,3 +186,39 @@ def test_the_hidden_custom_button_is_never_taken_as_a_press(
     _pick_preset(_VALUE, _PILLS, _INPUT, True)
     assert state[_VALUE] == 166
     assert f"{_INPUT}__generation" not in state
+
+
+@pytest.mark.parametrize(
+    ("number_format", "decimals"), [("%.1f", 1), ("%0.2f", 2), ("%d", None), ("%f", None)]
+)
+def test_the_shown_decimals_come_from_the_field_format(
+    number_format: str, decimals: int | None
+) -> None:
+    assert _shown_decimals(number_format) == decimals
+
+
+@pytest.mark.parametrize(
+    ("value", "folded"),
+    [(112.34, 112.3), (112.25, 112.3), (112.35, 112.3), (107.3, 107.3), (199.96, 200.0)],
+)
+def test_a_value_folds_half_up_on_its_binary_value_like_the_browser_field(
+    value: float, folded: float
+) -> None:
+    """브라우저 칸은 `toFixed` 로 보인다 — 2진 값 그대로 반 올림이다(112.25 는 정확히 112.25 라
+    112.3, 112.35 는 2진으로 112.3499… 라 112.3). 파이썬 `round` 는 112.25 를 112.2 로 내린다."""
+    assert _number(value, False, 1) == folded
+    assert _number(value, False) == value
+    assert _number(175.4, True, 1) == 175
+
+
+def test_a_typed_value_folds_to_the_digits_the_field_shows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """숫자 칸 콜백은 칸이 보이는 자리까지 접어 적는다 — 칸(112.3)과 머리·판정 글(112.34%)이 갈리지
+    않게(2026-10-27 E2E). 자리를 주지 않으면 그대로다."""
+    state: dict[str, object] = {_VALUE: None, _PILLS: CUSTOM_OPTION, _INPUT: 112.34}
+    _fake_session(monkeypatch, state)
+    _pick_number(_VALUE, _INPUT, _INPUT, False, 1)
+    assert state[_VALUE] == 112.3
+    _pick_number(_VALUE, _INPUT, _INPUT, False)
+    assert state[_VALUE] == 112.34

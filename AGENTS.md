@@ -2337,7 +2337,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 숫자 칸은 **적지 않은 회차에만** 지금
   값을 `value=` 로 싣는다 — 새 key 를 적은 회차가 보내기 전에 다음 누름에 끊기면 다음 회차는 같은 값이라 적지 않아 칸이
   `set_value` 없이 브라우저에 처음 닿고, 기본값이 최소값(50)이면 그 50 이 되돌아와 정본이 말없이 50 이 됐다(2026-10-27 E2E —
-  켜진 버튼 빠른 두 번 누름 뒤 더블클릭). 적은 회차에는 싣지 않아 「기본값과 세션 API」 경고가 없다. 켜진 버튼
+  켜진 버튼 빠른 두 번 누름 뒤 더블클릭). 적은 회차에는 싣지 않아 「기본값과 세션 API」 경고가 없다. 친 값은 칸이 보이는 소수
+  자리(`number_format` — 기준 확보율 `%.1f`)까지 반 올림으로 접는다 — 칸은 112.3 · 머리·판정 글·그래프는 112.34% 로 갈렸다
+  (2026-10-27 E2E). 반 올림은 브라우저 칸의 `toFixed` 와 같은 꼴(2진 값 그대로 — 112.25 → 112.3)이고 0.5 단위로 맞추지는 않는다. 켜진 버튼
   주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
   `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
