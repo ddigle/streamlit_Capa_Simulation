@@ -28,11 +28,16 @@ from capa_simulation.components.table_view_controls import (
     render_table_view_controls,
 )
 from capa_simulation.components.write_guard import (
+    held_profile_conflict,
     is_own_save,
+    note_profile_conflict,
     own_save_marks,
+    profile_conflict_marks,
+    queue_refusal,
     remember_own_save,
     remember_seen,
     seen,
+    take_refusal,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_process_cutoff_cache,
@@ -62,7 +67,6 @@ _EDITOR_KEY = "equipment_cutoff_editor_v1"
 _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
 _FLASH_KEY = "equipment_cutoff_flash_v1"
-_CONFLICT_KEY = "equipment_cutoff_conflict_v1"
 _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 
 
@@ -172,12 +176,16 @@ def render_cutoff_management(
         submitted = st.form_submit_button(
             "Cut-off 저장", icon=":material/save:", type="primary", width="content"
         )
-        # 저장 결과는 누른 버튼 바로 아래다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다 —
-        # `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다.
-        render_flash(_FLASH_KEY)
-        conflict = st.session_state.pop(_CONFLICT_KEY, None)
-        if isinstance(conflict, str) and conflict:
-            st.warning(conflict, icon=":material/sync_problem:")
+        # 저장 결과는 누른 버튼 바로 아래 한 자리다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다
+        # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 충돌 거부도 거부
+        # 회차가 담아 둔 글을 여기서 꺼낸다(`write_guard.queue_refusal` — dict 칸이라 끊기지
+        # 않는다).
+        notice = st.container()
+        with notice:
+            render_flash(_FLASH_KEY)
+            refused = take_refusal(CUTOFF_SAVE_NAME)
+            if refused is not None:
+                st.warning(refused, icon=":material/sync_problem:")
         edited = st.data_editor(
             view.frame,
             key=editor_widget_key(_EDITOR_KEY),
@@ -202,9 +210,20 @@ def render_cutoff_management(
     st.session_state[CUTOFF_DRAFT_KEY] = merged
 
     if submitted:
-        expected = str(seen(CUTOFF_BASE_KEY))
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, CUTOFF_SAVE_NAME)
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다. 거부 회차가 초안·출발점을 최신으로 다시
+            # 세웠으므로 이 누름은 고친 칸 없이 대조를 지난다 — 저장하면 같은 내용을 다시 쓰며
+            # 「저장했습니다」 가 거부 알림을 덮고, 버려진 편집이 말없이 지나간다. 저장하지 않고 그
+            # 거부를 다시 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한
+            # 번만.
+            if refused != held:
+                notice.warning(held, icon=":material/sync_problem:")
+            return stored
+        expected = str(seen(CUTOFF_BASE_KEY))
         try:
             saved = repository.save_process_cutoff(merged, expected_fingerprint=expected)
         except ProcessCutoffConflict as exc:
@@ -217,12 +236,14 @@ def render_cutoff_management(
                 _reset_draft(latest)
                 queue_flash(_FLASH_KEY, _saved_message(latest))
                 st.rerun()
+            message = f"{exc} 최신 저장본으로 다시 열었으니 확인한 뒤 다시 고치세요."
+            # 거부 표지는 초안을 다시 세우기 **전에** 적는다 — 다시 세운 출발점으로는 창 안의 둘째
+            # 누름이 대조를 지난다. 표지·알림 모두 dict 칸이라 끊기지 않는다(write_guard).
+            note_profile_conflict(conflict_marks, CUTOFF_SAVE_NAME, message)
+            queue_refusal(CUTOFF_SAVE_NAME, message)
             # 최신 저장본으로 다시 연다. 옛 초안을 남기면 다음 저장도 같은 충돌이거나(지문 그대로),
             # 지문만 고치면 그 사람이 넣은 행을 지운다.
             _reset_draft(latest)
-            st.session_state[_CONFLICT_KEY] = (
-                f"{exc} 최신 저장본으로 다시 열었으니 확인한 뒤 다시 고치세요."
-            )
             st.rerun()
         except ValueError as exc:
             st.error(str(exc))

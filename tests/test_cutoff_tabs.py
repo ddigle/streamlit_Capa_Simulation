@@ -17,9 +17,11 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
@@ -181,7 +183,9 @@ def test_filling_from_equipment_processes_keeps_the_values_already_written() -> 
     assert add_missing_cutoff_rows(draft, ["Die Attach"]) is draft
 
 
-def test_a_cutoff_saved_by_someone_else_is_not_erased_by_an_older_draft(tmp_path: Path) -> None:
+def test_a_cutoff_saved_by_someone_else_is_not_erased_by_an_older_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A 가 탭을 연 뒤 B 가 Process-B 를 저장했다. A 가 옛 초안의 다른 행을 고쳐 저장하면 막고
     최신 저장본(Process-B 포함)으로 다시 연다 — 저장은 표 전체 교체라 그대로 쓰면 B 의 행이 지워져
     그 공정이 월별 가용대수에서 빠진다."""
@@ -219,7 +223,10 @@ render_cutoff_management(
     assert stored["Cutoff일수"].tolist() == [10.0, 5.0]
     warnings = [str(item.value) for item in app.warning]
     assert any("다른 사용자가 먼저" in text for text in warnings), warnings
-    # 최신 저장본으로 다시 열었다 — 그 위에서 고친 다음 저장은 통과한다.
+    # 최신 저장본으로 다시 열었다 — 그 위에서 고친 다음 저장은 통과한다. 새 화면을 보고 다시 누른
+    # 저장이라 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이 지났다. AppTest 의 회차 사이는
+    # 그 창보다 짧아 창은 시험이 정한다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     reopened = app.session_state[CUTOFF_DRAFT_KEY]
     assert reopened["공정"].tolist() == ["Process-A", "Process-B"]
     edited = reopened.copy()

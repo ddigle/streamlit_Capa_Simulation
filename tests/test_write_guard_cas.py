@@ -3,17 +3,25 @@
 """비교 후 쓰기(CAS)의 세 규칙(`components/write_guard.py`, AGENTS 9장 「쓰기 콜백은 빠른 두 번
 누름을 거른다」).
 
-- **소스 그물(AST).** 화면 모듈에서 충돌 예외 10종을 잡는 자리는 모두 제 저장을 판정한다
-  (`is_own_save`) — 빠뜨리면 더블클릭의 둘째 누름이 방금 한 제 저장을 「다른 사용자가 먼저」 로
-  알린다. 저장소에 넘기는 `expected_*` 대조 값을 `… if … else 지금 값` 꼴로 대체하지 않는다 —
-  대체하면 남의 저장 뒤 한 회차만 돌아도 대조가 지나 그 저장을 덮는다. 이름에 BASE·SEEN 이 든 세션
-  칸(본 값)은 write_guard 만 적는다.
+- **소스 그물(AST).** 화면 모듈에서 충돌 예외 10종을 잡는 자리(그 예외 이름의 `except`, 또는 넓게
+  잡은 뒤 `if isinstance(exc, 충돌 예외)` 로 가르는 갈래)는 모두 제 저장을 판정한다(`is_own_save`) —
+  빠뜨리면 더블클릭의 둘째 누름이 방금 한 제 저장을 「다른 사용자가 먼저」 로 알린다. 본 값을 지금
+  값으로 대체하지 않는다 — `seen(…)`(또는 그것을 받은 이름·BASE·SEEN 칸 읽기)에 상수가 아닌 대체값을
+  다는 `… if … else …`·`… or …` 꼴이다. 대체하면 남의 저장 뒤 한 회차만 돌아도 대조가 지나 그 저장을
+  덮는다(`expected_*` 에 `.version`·`current` 를 대체로 다는 꼴도 따로 본다). 이름 토막에
+  BASE(S)·SEEN 이 든 세션 칸(본 값)은 write_guard 만 적는다 — `[…] =` 대입·`.setdefault(…)`·속성
+  대입 모두.
 - **두 누름 경합.** 브라우저 더블클릭은 둘째 누름이 닿는 순간 돌던 회차에 멈춤을 건다 — 첫 회차는 DB
   에 쓴 뒤 다음 세션 칸 접근에서 끊긴다(`StopException`). 시험은 첫 회차의 쓰기 직후 그 회차에
   멈춤을 걸고(`ScriptRequests.request_stop` — 브라우저와 같은 자리에서 끊긴다), 같은 누른 화면(위젯
   값)으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다(`tests/test_voc_page.py` 의 `_race` 꼴).
   네 자리(리비전명 바꾸기·공식 지정·설비 「리비전 저장」·자동 갱신 설정)에서 더블클릭은 한 번만
-  쓰고 성공 알림만 남기고, 남이 먼저 저장한 뒤의 옛 화면 더블클릭은 둘 다 거절한다.
+  쓰고 성공 알림만 남기고, 남이 먼저 저장한 뒤의 옛 화면 더블클릭은 둘 다 거절한다. 그 옛 화면
+  더블클릭은 버전 대조 폼 넷(자동 갱신 설정·판정 기준·확보율 보정·Proc Rename)에서 모두 거부 표지
+  창을 0 으로 두고 본 값 대조만으로 거절되는지 본다 — 제출 회차에 본 값을 올리면(「결과가 무엇이든
+  올림」) 둘째 누름이 대조를 지나 실패한다.
+- **거부 표지 창.** Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세운다(초안을 세우는 자리).
+  창 안의 둘째 누름은 저장하지 않고 그 거부를 다시 알린다 — 「저장했습니다」 가 거부를 덮지 않는다.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from grid_fake import Calls, install_fake_grid, load, send_ops
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
+from test_admin_area_page import _rename_component_script
 from test_all_pages_render import _page_script as _scenario_page_script
 from test_auto_official_update_tab import _field, _tab, _with_w40
 from test_equipment_master_tab_scenarios import OPERATIONS, _page
@@ -43,6 +52,8 @@ from test_scenario_management_page import (
     _open_official,
     _shown_key,
 )
+from test_threshold_editor import SAVE_LABEL as THRESHOLD_SAVE_LABEL
+from test_threshold_editor import _app as _threshold_app
 from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
@@ -56,10 +67,20 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
 )
 from capa_simulation.components.scenario_management import REVISION_EDITOR_KEY
-from capa_simulation.persistence.equipment_cache import clear_equipment_repository
+from capa_simulation.persistence.cache import (
+    clear_global_execution_capacity_cache,
+    clear_global_process_rename_cache,
+    clear_global_securement_threshold_cache,
+)
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_process_cutoff_cache,
+)
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.auto_official_update import AutoUpdateConfig
+from capa_simulation.services.execution_capacity import EXECUTION_CAPACITY_COLUMNS
+from capa_simulation.services.securement_threshold import empty_securement_threshold_rows
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 UI_FILES = sorted(
@@ -94,10 +115,19 @@ CONFLICTS = frozenset(
     }
 )
 OWN_CHECKS = frozenset({"is_own_save", "is_own_profile_save"})
+# 제 저장일 수 없는 충돌(모듈 파일 이름 → 예외 이름). 판정을 넣으면 실행될 수 없는 갈래만 는다.
+NOT_OWN_SAVE_CONFLICTS = {
+    # HOME 주요 Case — 쓰기는 대조 없이(`expected_version` 없이) 하고, 충돌은 「리비전만 고른 쓰기」
+    # 의 시나리오 대조(그 Case 의 지금 시나리오 ≠ 고른 짝의 시나리오)뿐이라 지금 짝이 고른 짝일 수
+    # 없다. 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금 짝과 같으면 쓰지 않음」 이 거른다.
+    "home_main_cases.py": frozenset({"ProfileVersionConflict"}),
+}
 # 대조 값의 대체로 보는 「지금 값」 — 프로필 version 과 그 회차에 다시 읽은 지금 이름.
 CURRENT_ATTRIBUTES = frozenset({"version"})
 CURRENT_NAMES = frozenset({"current"})
-# 이름에 BASE·SEEN 이 들었지만 대조 값이 아닌 세션 칸(모듈 파일 이름, 칸 이름).
+# 본 값을 이름 토막으로 알아보는 말 — 「bases」 는 여러 층의 본 값 묶음(`PENDING_BASES_KEY`).
+SEEN_PARTS = frozenset({"base", "bases", "seen"})
+# 이름에 BASE·SEEN 이 들었지만 write_guard 밖에서 적는 세션 칸(모듈 파일 이름, 칸 이름).
 NOT_SEEN_TOKENS = {
     # 위젯이 아닌 탐색 표지 — HOME 이 본 공정 목록, 상세·제약 화면이 받은 주소 인자.
     ("home.py", "PROCESS_SEEN_KEY"),
@@ -107,6 +137,9 @@ NOT_SEEN_TOKENS = {
     ("intro_summary.py", "_SEEN_KEY"),
     # Qual 마감 계산기의 「기존 대수」 입력 칸 — 위젯 값이다.
     ("qual_deadline_calculator.py", "BASE_KEY"),
+    # 층 배치 대기분이 본 저장값(층마다 첫 대기분의 것) — 비교 후 쓰기 남은 자리로 docs/TODO.md 에
+    # 적어 두고 그대로 둔 것이다(대기분과 함께 세우고 버린다 — 충돌 예외는 10종 밖).
+    ("equipment_data_workspace.py", "PENDING_BASES_KEY"),
 }
 
 
@@ -136,8 +169,23 @@ def _called(node: ast.AST) -> set[str]:
     return called
 
 
-def unjudged_conflicts(source: str) -> list[int]:
-    """충돌 예외를 잡고도 제 저장을 판정하지 않는 except 줄. 같은 모듈 함수로 넘겨 판정해도 된다."""
+def _conflict_test(node: ast.expr, conflicts: frozenset[str]) -> bool:
+    """`isinstance(…, 충돌 예외)` 를 담은 조건인가."""
+    return any(
+        isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Name)
+        and child.func.id == "isinstance"
+        and len(child.args) == 2
+        and bool(_names(child.args[1]) & conflicts)
+        for child in ast.walk(node)
+    )
+
+
+def unjudged_conflicts(source: str, exempt: frozenset[str] = frozenset()) -> list[int]:
+    """충돌 예외를 잡고도 제 저장을 판정하지 않는 줄 — 그 예외 이름의 except 와, 넓게 잡은 뒤
+    `if isinstance(exc, 충돌 예외)` 로 가르는 if. 같은 모듈 함수로 넘겨 판정해도 된다. `exempt` 는
+    제 저장일 수 없는 충돌 이름이다(`NOT_OWN_SAVE_CONFLICTS`)."""
+    conflicts = CONFLICTS - exempt
     tree = ast.parse(source)
     functions = {
         node.name: node
@@ -155,13 +203,21 @@ def unjudged_conflicts(source: str) -> list[int]:
             if name in functions and name not in seen
         )
 
-    return [
+    found = [
         handler.lineno
         for handler in ast.walk(tree)
         if isinstance(handler, ast.ExceptHandler)
-        and _names(handler.type) & CONFLICTS
+        and _names(handler.type) & conflicts
         and not judges(ast.Module(body=handler.body, type_ignores=[]), frozenset())
     ]
+    found += [
+        branch.lineno
+        for branch in ast.walk(tree)
+        if isinstance(branch, ast.If)
+        and _conflict_test(branch.test, conflicts)
+        and not judges(ast.Module(body=branch.body, type_ignores=[]), frozenset())
+    ]
+    return sorted(found)
 
 
 def _mentions_current(node: ast.AST) -> bool:
@@ -193,6 +249,102 @@ def current_fallbacks(source: str) -> list[int]:
     return found
 
 
+def _seen_word(word: str) -> bool:
+    return bool({part for part in re.split(r"[^a-z0-9]+", word.lower()) if part} & SEEN_PARTS)
+
+
+def _session_state(node: ast.expr) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "session_state"
+
+
+def _seen_read(node: ast.expr, seen_names: set[str]) -> bool:
+    """본 값 읽기 — `seen(…)` 부름, 그것을 받은 이름, BASE·SEEN 세션 칸 읽기(`.get(…)`·`[…]`)."""
+    if isinstance(node, ast.Name):
+        return node.id in seen_names
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id == "seen":
+            return True
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and _session_state(node.func.value)
+            and node.args
+        ):
+            return any(_seen_word(word) for word in _tokens(node.args[0]))
+    if isinstance(node, ast.Subscript) and _session_state(node.value):
+        return any(_seen_word(word) for word in _tokens(node.slice))
+    return False
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+# 「비었음」 을 만드는 부름 — 대체값이 아니라 「없음을 본 것」 이다.
+_EMPTY_MAKERS = frozenset({"frozenset", "dict", "list", "tuple", "set", "str", "int", "float"})
+
+
+def _scope_nodes(scope: ast.AST) -> Iterator[ast.AST]:
+    """한 영역(모듈·함수)의 마디 — 안쪽 함수·클래스로는 내려가지 않는다(이름은 영역마다 따로다)."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, _SCOPES):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _no_value(node: ast.expr) -> bool:
+    """상수·빈 묶음·빈 생성(`frozenset()`) — 지금 값이 아니라 「없음」 이다."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Dict):
+        return not node.keys
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        return not node.elts
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _EMPTY_MAKERS
+        and not node.args
+        and not node.keywords
+    )
+
+
+def seen_fallbacks(source: str) -> list[int]:
+    """본 값에 지금 값 같은 대체값을 다는 줄 — `본 값 if … else 다른 값`(또는 거꾸로)·`본 값 or 다른
+    값`. 상수·빈 묶음(빈 이름 `""`·None·`frozenset()`)은 대체가 아니라 「없음을 본 것」 이라
+    허용한다. 본 값을 받은 이름은 영역(모듈·함수)마다 따로 센다."""
+    tree = ast.parse(source)
+    found: list[int] = []
+    scopes = [tree, *(node for node in ast.walk(tree) if isinstance(node, _SCOPES))]
+    for scope in scopes:
+        found += _scope_seen_fallbacks(list(_scope_nodes(scope)))
+    return sorted(found)
+
+
+def _scope_seen_fallbacks(nodes: list[ast.AST]) -> list[int]:
+    seen_names = {
+        target.id
+        for node in nodes
+        if isinstance(node, ast.Assign) and _seen_read(node.value, set())
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    found: list[int] = []
+    for node in nodes:
+        if isinstance(node, ast.IfExp):
+            pairs = [(node.body, node.orelse), (node.orelse, node.body)]
+        elif isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            pairs = [
+                (value, rest)
+                for index, value in enumerate(node.values)
+                for rest in node.values[index + 1 :]
+            ]
+        else:
+            continue
+        if any(_seen_read(value, seen_names) and not _no_value(other) for value, other in pairs):
+            found.append(node.lineno)
+    return found
+
+
 def _tokens(node: ast.AST) -> list[str]:
     words: list[str] = []
     for child in ast.walk(node):
@@ -206,9 +358,26 @@ def _tokens(node: ast.AST) -> list[str]:
 
 
 def seen_slot_writes(source: str, module: str) -> list[tuple[int, str]]:
-    """`st.session_state[…]` 에 이름(토막)에 BASE·SEEN 이 든 칸을 대입하는 줄과 그 이름."""
+    """세션에 이름(토막)에 BASE(S)·SEEN 이 든 칸을 적는 줄과 그 이름 — `st.session_state[…] =`
+    대입, `st.session_state.setdefault(…)`, `st.session_state.이름 =` 속성 대입."""
     found: list[tuple[int, str]] = []
+
+    def note(line: int, words: list[str]) -> None:
+        for word in words:
+            if _seen_word(word) and (module, word) not in NOT_SEEN_TOKENS:
+                found.append((line, word))
+                return
+
     for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setdefault"
+            and _session_state(node.func.value)
+            and node.args
+        ):
+            note(node.lineno, _tokens(node.args[0]))
+            continue
         if isinstance(node, ast.Assign):
             targets = node.targets
         elif isinstance(node, ast.AugAssign | ast.AnnAssign):
@@ -216,18 +385,11 @@ def seen_slot_writes(source: str, module: str) -> list[tuple[int, str]]:
         else:
             continue
         for target in targets:
-            if not (
-                isinstance(target, ast.Subscript)
-                and isinstance(target.value, ast.Attribute)
-                and target.value.attr == "session_state"
-            ):
-                continue
-            for word in _tokens(target.slice):
-                parts = {part for part in re.split(r"[^a-z0-9]+", word.lower()) if part}
-                if parts & {"base", "seen"} and (module, word) not in NOT_SEEN_TOKENS:
-                    found.append((node.lineno, word))
-                    break
-    return found
+            if isinstance(target, ast.Subscript) and _session_state(target.value):
+                note(node.lineno, _tokens(target.slice))
+            elif isinstance(target, ast.Attribute) and _session_state(target.value):
+                note(node.lineno, [target.attr])
+    return sorted(found)
 
 
 def _relative(path: Path) -> str:
@@ -236,22 +398,36 @@ def _relative(path: Path) -> str:
 
 def test_every_conflict_handler_in_the_screens_judges_an_own_save() -> None:
     """충돌 예외 10종을 잡는 화면 자리는 모두 `is_own_save` 를 부른다(2026-10-26 E2E — 리비전명·
-    공식 지정·설비 이름·Cut-off 저장의 더블클릭이 「다른 사용자가 먼저」 로 끝났다)."""
+    공식 지정·설비 이름·Cut-off 저장의 더블클릭이 「다른 사용자가 먼저」 로 끝났다). 제 저장일 수
+    없는 충돌만 빼 둔다(`NOT_OWN_SAVE_CONFLICTS`)."""
     missing = [
         f"{_relative(path)}:{line}"
         for path in UI_FILES
-        for line in unjudged_conflicts(path.read_text(encoding="utf-8"))
+        for line in unjudged_conflicts(
+            path.read_text(encoding="utf-8"), NOT_OWN_SAVE_CONFLICTS.get(path.name, frozenset())
+        )
     ]
     assert missing == []
+    exempt = [
+        name for name in NOT_OWN_SAVE_CONFLICTS if not any(path.name == name for path in UI_FILES)
+    ]
+    assert exempt == []
 
 
 def test_no_expected_argument_falls_back_to_the_value_read_this_run() -> None:
     """`expected_*=` 대조 값이 「본 값이 없으면 지금 값」 으로 대체되지 않는다 — 본 값은
-    `write_guard.seen` 이 대체값 없이 돌려준다."""
+    `write_guard.seen` 이 대체값 없이 돌려준다. 다른 이름을 거친 대체(`base = 본 값 if … else
+    settings.version`)와 `.version`·`current` 밖의 지금
+    값(`latest.release_no`·`scenario.scenario_name`) 도 본 값 쪽에서 잡는다."""
     found = [
         f"{_relative(path)}:{line}"
         for path in UI_FILES
-        for line in current_fallbacks(path.read_text(encoding="utf-8"))
+        for line in sorted(
+            {
+                *current_fallbacks(path.read_text(encoding="utf-8")),
+                *seen_fallbacks(path.read_text(encoding="utf-8")),
+            }
+        )
     ]
     assert found == []
 
@@ -283,11 +459,52 @@ def form(repository, settings):
         st.error(str(exc))
 """
     assert current_fallbacks(old) == [7, 9]
+    assert seen_fallbacks(old) == [7]
     assert unjudged_conflicts(old) == [10]
     assert seen_slot_writes(old, "auto_official_update_tab.py") == [
         (5, "SETTINGS_BASE_VERSION_KEY")
     ]
     assert seen_slot_writes("st.session_state[f'{key}__seen'] = name", "x.py") == [(1, "__seen")]
+
+
+def test_the_source_checks_catch_the_disguised_shapes() -> None:
+    """2026-10-26 리뷰가 그물 함수에 넣어 본 꼴 — 지금 값이 `.version`·`current` 가 아니거나 다른
+    이름을 거친 대체, 넓게 잡고 `isinstance` 로 가르는 충돌 처리(고치기 전 자동 갱신 설정·판정
+    기준의 꼴), 이름 토막 `bases`·`setdefault`·속성 대입으로 적는 본 값 칸. 상수 대체(「없음을 본
+    것」)는 허용한다."""
+    disguised = """
+def form(repository, settings, scenario, latest):
+    expected_no = seen(K) if isinstance(seen(K), int) else latest.release_no
+    name = seen(NAME_KEY)
+    repository.rename(expected_name=name if isinstance(name, str) else scenario.scenario_name)
+    submitted = st.session_state.get(SETTINGS_BASE_VERSION_KEY)
+    base = submitted if isinstance(submitted, int) else settings.version
+    held = seen(REVISION_KEY)
+    shown = held if isinstance(held, str) else ""
+    fallback = seen(OTHER_KEY) or settings.version
+    try:
+        repository.save(expected_version=base)
+    except BOOTSTRAP_ERRORS as exc:
+        if isinstance(exc, ProfileVersionConflict):
+            st.error(str(exc))
+        else:
+            st.error("x")
+    st.session_state[PENDING_BASES_KEY] = {}
+    st.session_state.setdefault(SETTINGS_BASE_VERSION_KEY, 0)
+    st.session_state.threshold_base_version = 1
+"""
+    assert current_fallbacks(disguised) == []
+    assert seen_fallbacks(disguised) == [3, 5, 7, 10]
+    assert unjudged_conflicts(disguised) == [14]
+    assert seen_slot_writes(disguised, "x.py") == [
+        (18, "PENDING_BASES_KEY"),
+        (19, "SETTINGS_BASE_VERSION_KEY"),
+        (20, "threshold_base_version"),
+    ]
+    assert seen_slot_writes(disguised, "equipment_data_workspace.py")[0] == (
+        19,
+        "SETTINGS_BASE_VERSION_KEY",
+    )
 
 
 # ------------------------------------------------------------------ 도우미
@@ -517,6 +734,194 @@ def test_a_refused_settings_save_draws_the_latest_and_the_next_press_saves(
     assert _texts(app, "error") == []
     stored = repository.load_auto_official_update_settings()
     assert (stored.version, stored.config.keyword) == (2, "PSX")
+
+
+# 판정 기준·확보율 보정·Proc Rename ---------------------------------------------
+
+
+def _pressed(app: AppTest, label: str) -> WidgetStates:
+    next(button for button in app.button if button.label == label).click()
+    return app._tree.get_widget_states()
+
+
+def test_an_old_screen_double_press_after_another_threshold_save_keeps_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_trailing_window: None
+) -> None:
+    """판정 기준 — 남이 먼저 저장한 뒤 옛 화면의 「판정 기준 저장」 두 번. 첫 회차는 거부를 적기
+    전에 끊기고 창도 없으니 둘째 누름은 본 값 대조로만 거절된다. 제출 회차가 본 version 을 그 회차가
+    그린 최신으로 올리면 둘째 누름이 대조를 지나 남의 저장을 덮는다."""
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    app = _threshold_app(database)
+    repository.replace_global_securement_threshold(
+        1.17, 1.0, empty_securement_threshold_rows(), source="다른 세션", expected_version=0
+    )
+    clear_global_securement_threshold_cache()
+    app.number_input[0].set_value(122.0)
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, THRESHOLD_SAVE_LABEL),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_securement_threshold",
+    )
+
+    errors = _texts(app, "error")
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not app.success
+    profile = repository.load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "다른 세션")
+    clear_global_securement_threshold_cache()
+
+
+def _execution_rows(records: list[tuple[int, str, float, str]]) -> pd.DataFrame:
+    return pd.DataFrame(records, columns=list(EXECUTION_CAPACITY_COLUMNS))
+
+
+def test_an_old_screen_double_press_after_another_execution_save_keeps_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_trailing_window: None
+) -> None:
+    """확보율 보정 — 위와 같은 꼴(「확보율 보정 저장」)."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -10.0, "")]), source="A 가 본 것"
+    )
+    clear_global_execution_capacity_cache()
+    app = AppTest.from_string(
+        f"""
+import pandas as pd
+
+from capa_simulation.components.flash import render_flash
+from capa_simulation.components.home_preference import _render_execution_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.persistence.cache import load_global_execution_capacity
+
+database_path = {str(database_path)!r}
+render_flash("home_execution_flash")
+_render_execution_editor(
+    months=[202607, 202608],
+    execution_profile=load_global_execution_capacity(database_path),
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    unmatched=pd.DataFrame(),
+    clamped=pd.DataFrame(),
+    database_path=database_path,
+)
+""",
+        default_timeout=60,
+    ).run()
+    assert not app.exception
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -10.0, ""), (202608, "DEMO_B", -5.0, "B")]),
+        source="B 의 저장",
+    )
+    clear_global_execution_capacity_cache()
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, "확보율 보정 저장"),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_execution_capacity",
+    )
+
+    errors = _texts(app, "error")
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not app.success
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "B 의 저장")
+    clear_global_execution_capacity_cache()
+
+
+def test_an_old_screen_double_press_after_another_process_rename_keeps_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_trailing_window: None
+) -> None:
+    """Proc Rename 직접 편집 — 위와 같은 꼴(「공용 공정 표시명 저장」)."""
+    database_path = tmp_path / "rename.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="A 가 본 것"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path), default_timeout=60).run()
+    assert app.text[-1].value == "v1|SAW>절단"
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단"), ("MOLD", "성형")], columns=["공정", "표시명"]),
+        source="B 의 저장",
+    )
+    clear_global_process_rename_cache()
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, "공용 공정 표시명 저장"),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_process_rename",
+    )
+
+    errors = _texts(app, "error")
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not app.success
+    assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
+    assert repository.load_global_process_rename().source == "B 의 저장"
+    clear_global_process_rename_cache()
+
+
+# Cut-off -----------------------------------------------------------------------
+
+
+def test_an_old_screen_double_press_after_another_cutoff_save_keeps_the_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cut-off — A 가 설정 팝업을 연 뒤 B 가 저장했다. A 가 칸을 고쳐 「Cut-off 저장」 을 0.5초
+    간격으로 두 번 누르면 첫 누름은 거부되고 그 회차가 초안·출발점을 최신으로 다시 세운다(초안을
+    세우는 자리). 둘째 누름은 고친 칸 없이 그 출발점으로 대조를 지나 같은 내용을 다시 썼고, 거부
+    알림 대신 「공정별 Cut-off 1건을 저장했습니다.」 만 남아 고친 칸이 말없이 버려졌다(2026-10-26
+    리뷰 — 사본 앱 두 세션). 창 안의 둘째 누름은 저장하지 않고 그 거부를 다시 알린다. AppTest 의
+    회차 사이 시간이 들쭉날쭉해 창은 시험이 정한다(창이 지난 저장은 `tests/test_cutoff_tabs.py`)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "cutoff.duckdb"
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.initialize()
+    repository.save_process_cutoff(pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [10.0]}))
+    clear_equipment_repository()
+    app = AppTest.from_string(
+        f"""
+from pathlib import Path
+
+from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+render_cutoff_management(
+    DuckDBEquipmentRepository(Path({str(database_path)!r})),
+    equipment_processes=["Process-A"],
+)
+""",
+        default_timeout=60,
+    ).run()
+    assert not app.exception
+    repository.save_process_cutoff(pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [7.0]}))
+    clear_process_cutoff_cache()
+    draft = app.session_state[CUTOFF_DRAFT_KEY].copy()
+    draft["Cutoff일수"] = 12.0
+    app.session_state[CUTOFF_DRAFT_KEY] = draft
+    pressed = _pressed(app, "Cut-off 저장")
+    app.run()
+    assert any("다른 사용자가 먼저" in text for text in _texts(app, "warning"))
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    refusals = [text for text in _texts(app, "warning") if "다른 사용자가 먼저" in text]
+    assert len(refusals) == 1, refusals
+    assert not [text for text in _texts(app, "success") if "저장했습니다" in text]
+    assert repository.load_process_cutoff()["Cutoff일수"].tolist() == [7.0]
+    clear_equipment_repository()
 
 
 # 리비전명 바꾸기 ---------------------------------------------------------------
