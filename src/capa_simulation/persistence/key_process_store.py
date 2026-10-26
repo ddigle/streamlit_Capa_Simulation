@@ -17,6 +17,7 @@ from capa_simulation.persistence._sql_helpers import (
     insert_by_name,
     insert_profile_header,
     load_profile_header,
+    require_profile_version,
     reset_profile,
 )
 from capa_simulation.persistence.models import GlobalKeyProcess
@@ -106,8 +107,19 @@ def load_global_key_process(connection: duckdb.DuckDBPyConnection) -> GlobalKeyP
 
 
 def replace_global_key_process_presets(
-    connection: duckdb.DuckDBPyConnection, normalized: Sequence[Preset], *, source: str
+    connection: duckdb.DuckDBPyConnection,
+    normalized: Sequence[Preset],
+    *,
+    source: str,
+    expected_version: int | None = None,
 ) -> None:
-    """검증된 프리셋 묶음 전체를 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    """검증된 프리셋 묶음 전체를 교체한다. 호출자가 잠금과 트랜잭션을 소유한다.
+
+    `expected_version`(편집을 시작할 때 본 version)이 지금 저장본과 다르면 아무것도 쓰지 않고
+    `ProfileVersionConflict` 를 올린다. None 이면 대조하지 않는다.
+    """
+    require_profile_version(
+        connection, "global_key_process", expected_version, label="주요공정 프리셋"
+    )
     version = reset_profile(connection, "global_key_process", _PRESET_ITEM_TABLE, _PRESET_TABLE)
     insert_global_key_process_presets(connection, normalized, version=version, source=source)
