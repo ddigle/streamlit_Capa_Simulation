@@ -44,6 +44,7 @@ from capa_simulation.components.equipment_scenario_management import (
     layout_trace_sentence,
     layout_trace_sources,
     publish_layout_lines,
+    publish_result_message,
     restore_layout_sentence,
     revision_rows,
     stored_layout_words,
@@ -203,6 +204,69 @@ def test_an_old_revisions_publish_block_names_only_real_differences_and_working_
     assert "최신 r5를 발행하세요" in newest_same[0]
 
 
+def test_a_deleted_units_difference_is_not_called_one_that_caught_up_with_the_official() -> None:
+    """E2E r3 — 저장된 배치 차이가 공통 대장에서 지운 호기의 것이면 정리 발행 확인 글·옛 리비전
+    막힘 글·발행 뒤 알림이 그 행을 「공식과 같아진」 차이라 하지 않고 「지운 호기의 배치 차이」 로
+    따로 말한다."""
+    scenario = _scenario()
+    revision = _revision(5, "d5", layout_unit_count=1)
+    deleted, blocked = publish_layout_lines(
+        scenario,
+        revision,
+        LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1, orphan_units=1),
+    )
+    assert not blocked
+    assert (
+        "r5의 배치 차이(호기 1행)는 공통 대장에서 지운 호기의 것입니다 — 지운 호기의 배치 차이 "
+        "1행을 정리한 r6으로 발행합니다" in deleted[0]
+    ), deleted
+    assert "공식과 같아" not in deleted[0]
+    mixed, _ = publish_layout_lines(
+        scenario,
+        _revision(5, "d5", layout_unit_count=3),
+        LayoutPublishPreview(action="clean", stored_units=3, newest_rows=3, orphan_units=1),
+    )
+    assert (
+        "는 지금 공식과 같아졌거나 공통 대장에서 지운 호기의 것입니다 — 공식과 같아진 배치 차이 "
+        "2행과 지운 호기의 배치 차이 1행을 정리한 r6으로 발행합니다" in mixed[0]
+    ), mixed
+
+    old, blocked = publish_layout_lines(
+        scenario,
+        _revision(2),
+        LayoutPublishPreview(action="blocked", stored_units=1, is_newest=False, orphan_units=1),
+    )
+    assert blocked
+    assert "r2에 저장된 배치 차이 1행은 공통 대장에서 지운 호기의 것이지만, 최신(r5)이" in old[0]
+    assert "(되돌리기는 지운 호기의 배치 차이를 빼고 씁니다)" in old[0]
+    assert "공식과 같아" not in old[0]
+    newest, blocked = publish_layout_lines(
+        scenario,
+        _revision(3),
+        LayoutPublishPreview(
+            action="blocked", newest_rows=2, is_newest=False, newest_orphan_units=2
+        ),
+    )
+    assert blocked
+    assert "최신 r5에 저장된 배치 차이 2행(공통 대장에서 지운 호기의 것)이 남아 있어" in newest[0]
+    assert "(지운 호기의 배치 차이는 그때 정리됩니다)" in newest[0]
+
+    message = publish_result_message(
+        "셋업 실무",
+        revision,
+        2,
+        cleaned_no=6,
+        moved=False,
+        kept_unsaved=False,
+        layout=LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1, orphan_units=1),
+    )
+    assert "「셋업 실무」 r5의 지운 호기의 배치 차이를 정리한 r6." in message, message
+    plain = publish_result_message(
+        "셋업 실무", revision, 2, cleaned_no=6, moved=False, kept_unsaved=False
+    )
+    assert "「셋업 실무」 r5의 공식과 같아진 배치 차이를 정리한 r6." in plain
+
+
 def test_the_restore_confirm_names_units_whose_place_changed_since_then() -> None:
     """검토 F21 — 되살리는 가정 배치에서 그때 손대지 않은 호기는 지금 공식 자리를 따른다."""
     chosen = _revision(2, "d2", layout_unit_count=1)
@@ -321,6 +385,54 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
     assert any("공식과 다른 배치(실효 호기 1대 — 저장된 차이 1행)가 있어" in t for t in _texts(app))
+
+
+def test_the_section_caption_names_the_assumption_layout_as_held_per_scenario(
+    tmp_path: Path,
+) -> None:
+    """E2E r3 — 구획 캡션이 설비 시나리오가 따로 드는 것에 가정 배치를 넣는다(같은 구획에 「저장된
+    배치 차이」·「배치 차이 모두 지우기」 가 있다). 「일정 여섯·시나리오 메모·비가동만」 이라 하지
+    않는다."""
+    _, setup, _ = _moved_setup(tmp_path)
+    app = _ok(_section(tmp_path, setup).run())
+
+    caption = next(
+        str(item.value)
+        for item in app.caption
+        if "모든 설비 시나리오가 함께 씁니다" in str(item.value)
+    )
+    assert "비가동만" not in caption
+    assert (
+        "일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 요소·Main 설비명 "
+        "위치)를 따로 듭니다" in caption
+    ), caption
+
+
+def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E2E r3 같은 꼴 — 세션을 다른 리비전으로 옮겼다는 알림은 설비 시나리오 이름을 두 번 싣는다.
+    막지 않으면 물결표 하나짜리 이름(「10~12월 증설」)도 두 이름 사이가 지움선 짝이 된다."""
+    from dataclasses import replace
+
+    from capa_simulation.components import equipment_scenario_management as section
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    _, setup, _ = _moved_setup(tmp_path)
+    notice = (
+        "「10~12월 증설」 r1 을 지금 공통 대장과 합칠 수 없어 「10~12월 증설」 r2 로 열었습니다 — "
+        "저장하지 않은 설비 편집은 버렸습니다."
+    )
+    monkeypatch.setattr(
+        section,
+        "resolve_equipment_session",
+        lambda path: replace(resolve_equipment_session(path), notice=notice),
+    )
+    app = _ok(_section(tmp_path, setup).run())
+
+    warnings = [str(item.value) for item in app.warning]
+    assert notice.replace("~", "\\~") in warnings, warnings
+    assert notice not in warnings
 
 
 def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_path: Path) -> None:

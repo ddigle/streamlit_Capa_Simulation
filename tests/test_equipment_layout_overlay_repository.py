@@ -903,6 +903,30 @@ def test_the_publish_preview_reads_the_same_judgment_as_publishing(tmp_path: Pat
     )
     assert (clean.action, clean.stored_rows) == ("clean", 1)
     assert _counts(repository) == before
+    assert clean.orphan_units == 0
+
+
+def test_the_publish_preview_counts_a_deleted_units_difference_apart(tmp_path: Path) -> None:
+    """E2E r3 — 저장된 차이가 그 뒤 공통 대장에서 지운 호기의 것뿐이면 정리 발행(clean)이고, 그
+    행을 `orphan_units` 로 따로 센다(확인 글·막힘 글이 「공식과 같아진」 행이라 하지 않게)."""
+    repository = _seeded(tmp_path)
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    repository.save_equipment(_request(session, scenario_id, equipment=_moved(session)))
+    official = _session(repository)
+    kept = official.equipment[official.equipment["설비명"].ne("EQ-01")].reset_index(drop=True)
+    repository.save_equipment(
+        _request(official, equipment=kept, downtime=official.downtime.iloc[0:0])
+    )
+    newest = _scenario(repository, scenario_id).latest_schedule_revision_id
+    assert newest is not None
+
+    clean = repository.preview_layout_publish(
+        newest, common_revision_id=_latest_common(repository), newest_schedule_revision_id=newest
+    )
+    assert (clean.action, clean.stored_rows, clean.orphan_units) == ("clean", 1, 1)
+    block = clean.block("셋업 실무", 2, 2, official=False)
+    assert (block.orphan_rows, block.newest_orphan_rows) == (1, 1)
 
 
 def test_the_canvas_preview_reads_hypothetical_marks_and_units_on_the_floor(

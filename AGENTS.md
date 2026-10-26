@@ -461,7 +461,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가정 세션 상자는 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 않습니다」 이고 저장 칸은
     `render_equipment_save_fields(..., assumption=True)`(함께 넣기 기본 끔 — Q1) 다. 층 배치 잠금 줄은 늘 서는 칸
     (`space_edit_lock_slot`)에 그린다. 잠금 까닭(`lock_reason`)은 그 줄에만 한 번 적는다 — 상자는 「저장하지 않습니다 — 까닭은
-    아래 잠금 줄에 있습니다」 와 「배치 변경만 버리기」 만(까닭이 없을 때만 「최신을 불러온 뒤 다시 고치세요」, E2E r2).
+    아래 잠금 줄에 있습니다」 와 「배치 변경만 버리기」 만(까닭이 없을 때만 「최신을 불러온 뒤 다시 고치세요」, E2E r2). 배치
+    빨리 감기 글(`notice` — 「rM 이 더 새롭지만 배치는 같습니다 — …」)도 같은 칸의 ▸▸ 줄에만 한 번 적고 상자 캡션에 붙이지 않는다
+    (E2E r3).
   - 배치 편집은 설비 마스터 탭과 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer` 로 저장한다(「배치 저장」 확인
     팝오버에 저장 칸 — 공통·일정이 모두 그대로면 층 값만 쓰고 리비전을 만들지 않는다). 도면 상자 앞 칸
     (`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
@@ -2103,7 +2105,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     검토 F4). 막힘 글은 까닭 셋으로 갈린다 — 고른 리비전에 공식과 다른 배치(「실효 … — 저장된 차이 m행」, 최신이면 공식에서
     옮기기·「배치 차이 모두 지우기」, 옛 리비전이면 그것으로는 풀리지 않아 「이 리비전으로 되돌리기」 뒤 지우고 발행), 옛 리비전에
     남은 행이 지금 공식과 같음(「공식과 다른 배치」 라 하지 않고 되돌린 뒤 발행 — 정리 발행은 최신만), 고른 리비전에는 없고 최신에
-    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 정리 발행 뒤에는 「배치 차이 모두 지우기」 처럼 리비전
+    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 공통 대장에서 지운 호기의 저장된 행
+    (`LayoutPublishPreview.orphan_units`·`newest_orphan_units` → `PublishBlock.orphan_rows`)은 「공식과 같아진」 행이 아니라
+    버린 행이라 정리·막힘·발행 뒤 글이 「지운 호기의 배치 차이 n행」 으로 따로 말한다(`layout_overlay.cleaned_layout_words`·
+    `settled_layout_reason`, E2E r3) — Space 머리 첫 줄의 「공식과 같아진 것은 … 정리됩니다」 꼬리도 그 행(`layout_orphans`)을
+    빼고 센다(둘째 줄 「지운 호기의 배치 차이 n행은 버렸습니다」 가 말한다). 정리 발행 뒤에는 「배치 차이 모두 지우기」 처럼 리비전
     상자와 그 시나리오를 보던 세션을 새 리비전으로 옮긴다(`_follow_new_revision` — 저장 안 한 편집이 있으면 남김, S4 리뷰).
     되돌리기 확인 글은 되살리는 가정 배치에서 그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since` — 이력
     「그때 그대로」 와 다름, 검토 F21)를 덧붙인다.
@@ -4000,8 +4006,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (`object_particle(이름)` — `korean_particle` 은 끝의 `」` 를 건너뛰므로 「이름」 으로 골라도 같다).
   - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
     조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
-    `EquipmentSession.notice`·잠금 글·낡은 세션 잠금 글 등)는 `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS`
-    에 까닭과 함께 적고, 마크다운으로 그리는 자리에서 `markdown_safe_tildes` 로 막는다.
+    `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
+    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서
+    `markdown_safe_tildes` 로 막는다 — Space 머리 알림 줄·잠금 줄·꺼진 「배치 편집」 풍선, rerun 건너 그리는 Space 성공 글은
+    담을 때(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`), 사이드바 설비 시나리오 줄의 팝업 저장 알림·세션
+    이동 알림과 시나리오 관리 구획의 세션 이동 알림, Space 층 끄기 확인의 가정 배치 덧줄
+    (`tests/test_equipment_scenario_layout_management.py`, E2E r3).
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
