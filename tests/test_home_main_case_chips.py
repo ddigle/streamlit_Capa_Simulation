@@ -16,6 +16,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as scenario_status
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_main_case_chips import (
     CASE1_CHIP_KEY,
     CASE2_CHIP_KEY,
@@ -291,6 +292,29 @@ def test_the_painted_chip_does_nothing_when_clicked_again(seeded: Seeded) -> Non
     app = _ran(app.button(key=OFFICIAL_CHIP_KEY).click().run())
 
     assert _active(app) == (seeded.official_scenario, seeded.official_revision)
+    assert [item.value for item in app.success] == []
+
+
+def test_a_second_press_on_the_chip_just_loaded_keeps_the_load_notice(
+    seeded: Seeded, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칩을 0.15~0.3초 간격으로 두 번 누르면 둘째 누름은 이미 올린 짝이라 아무것도 하지 않고
+    끝나는데, 첫 회차가 꺼내 그린 「…을 불러왔습니다.」 를 그 회차가 다시 그리며 지웠다
+    (2026-10-26 E2E — 18/18). 올린 알림을 쓰기 알림 표지에 적어 그 창(`TRAILING_PRESS_SECONDS`)
+    안의 회차가 다시 그린다. 창이 지난 누름은 전처럼 아무것도 알리지 않는다. AppTest 의 회차
+    사이는 창보다 짧아 창은 시험이 정한다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = _app(seeded)
+    app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
+    assert [item.value for item in app.success] == ["증설안 r2를 불러왔습니다."]
+
+    app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
+
+    assert _active(app) == (seeded.case_scenario, seeded.newer_revision)
+    assert [item.value for item in app.success] == ["증설안 r2를 불러왔습니다."]
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = _ran(app.button(key=CASE1_CHIP_KEY).click().run())
     assert [item.value for item in app.success] == []
 
 
