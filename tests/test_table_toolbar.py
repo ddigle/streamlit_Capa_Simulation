@@ -114,6 +114,26 @@ CLEARANCE_ALLOWED: dict[tuple[str, str], str] = {
     ),
 }
 
+# 펼침 블록의 첫 표인데 띄움이 없는 다른 영역 자리 (파일, 함수) → 까닭. 그물을 펼침 머리까지 넓힌 날
+# (2026-10-27 E2E 6회차 Space)에 이미 있던 자리다 — 같은 결함(머리 오른쪽 끝을 막대가 덮어 접기
+# 누름이 내려받기에 먹힘)이지만 그 영역의 고침에서 띄움을 두고 여기서 지운다(docs/TODO.md). 새
+# 자리는 받지 않는다.
+EXPANDER_CLEARANCE_PENDING: dict[tuple[str, str], str] = {
+    (path, function): "펼침 첫 표 — 그 영역 고침 대기(2026-10-27 그물 넓힘)"
+    for path, function in (
+        ("app_pages/standard_target_capa.py", "_render_standard_target_exceptions"),
+        ("app_pages/load_conversion.py", "_render_locked_yield_rows"),
+        ("app_pages/load_conversion.py", ""),
+        ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"),
+        ("src/capa_simulation/components/scenario_year_shift.py", "_render_shift"),
+        ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"),
+        ("src/capa_simulation/components/scenario_transform.py", "render_derived_save"),
+        ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"),
+        ("src/capa_simulation/components/past_data_management.py", "_render_table_editor"),
+        ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"),
+    )
+}
+
 
 def _called_names(node: ast.AST) -> set[str]:
     names: set[str] = set()
@@ -243,11 +263,23 @@ def _reach(path: Path, stmt: ast.stmt) -> tuple[set[str], bool]:
     return names, draws
 
 
+def _opens_expander(node: ast.AST) -> bool:
+    """`with st.expander(…):` 블록인가 — 펼침 머리(누르면 접힌다)가 블록 첫 표 바로 위 줄이다."""
+    return isinstance(node, ast.With) and any(
+        isinstance(item.context_expr, ast.Call)
+        and isinstance(item.context_expr.func, ast.Attribute)
+        and item.context_expr.func.attr == "expander"
+        for item in node.items
+    )
+
+
 def _tables_after_pressables() -> tuple[list[tuple[str, str, int]], int]:
     """(위 형제가 누를 것을 품는데 띄움이 없는 표 (파일, 함수, 줄)), 띄움을 둔 표의 수.
 
     위 형제는 그리지 않는 대입을 건너뛴 바로 앞 문장이고, 표가 `if` 의 첫 문장이면 그 `if` 앞
-    문장이다. 형제가 부르는 도우미 함수 안까지 본다(`_reach`).
+    문장이다. 형제가 부르는 도우미 함수 안까지 본다(`_reach`). 표가 `with st.expander(…):` 의 첫
+    문장이면 위 줄은 펼침 머리다 — 머리 오른쪽 끝(펼침 화살표 자리)을 막대가 덮어 접기 누름이
+    「Download as CSV」 에 먹혔다(2026-10-27 E2E — Space 「바뀐 호기 n건」).
     """
     missing: list[tuple[str, str, int]] = []
     cleared = 0
@@ -272,6 +304,14 @@ def _tables_after_pressables() -> tuple[list[tuple[str, str, int]], int]:
                 continue
             previous = _previous_sibling(path, node, places)
             if previous is None:
+                if _first_in_expander(path, node, places):
+                    missing.append(
+                        (
+                            path.relative_to(PROJECT_ROOT).as_posix(),
+                            owners.get(id(node), ""),
+                            node.lineno,
+                        )
+                    )
                 continue
             if _is_clearance(previous):
                 cleared += 1
@@ -310,10 +350,30 @@ def _previous_sibling(
     return None
 
 
+def _first_in_expander(
+    path: Path,
+    stmt: ast.stmt,
+    places: dict[int, tuple[ast.AST, list[ast.stmt], int]],
+) -> bool:
+    """표 앞에 그리는 형제가 없고 그 블록(`if` 를 지나 올라간)이 `with st.expander(…):` 인가."""
+    current: ast.stmt = stmt
+    while id(current) in places:
+        owner, body, index = places[id(current)]
+        if any(_reach(path, earlier)[1] for earlier in body[:index]):
+            return False
+        if _opens_expander(owner):
+            return True
+        if not isinstance(owner, ast.If):
+            return False
+        current = owner
+    return False
+
+
 def test_a_table_under_a_pressable_row_keeps_the_toolbar_clearance() -> None:
     """표 도구 막대(열 보기·내려받기·찾기·전체 화면)는 표 머리 위 37px 까지 솟는다(AGENTS 9장).
 
-    표 바로 위 형제가 입력·단추·팝오버·토글·날짜 칸을 품으면 그 사이에 `toolbar_clearance()` 를
+    표 바로 위 형제가 입력·단추·팝오버·토글·날짜 칸을 품거나 표가 펼침 블록의 첫 요소면(머리가 바로
+    위 줄) 그 사이에 `toolbar_clearance()` 를
     둔다 — 없으면 막대가 위 줄 오른쪽 끝의 단추·지우기(✕)를 덮어 표에서 그리로 옮긴 누름을
     가로챈다(2026-10-25·26 E2E — 설비 시나리오 리비전 표·Qual 마감 계산기 월 편집표·Space).
     """
@@ -322,6 +382,7 @@ def test_a_table_under_a_pressable_row_keeps_the_toolbar_clearance() -> None:
         f"{path}:{line} ({function})"
         for path, function, line in missing
         if (path, function) not in CLEARANCE_ALLOWED
+        and (path, function) not in EXPANDER_CLEARANCE_PENDING
     ]
 
     assert not offenders, (
@@ -334,7 +395,8 @@ def test_a_table_under_a_pressable_row_keeps_the_toolbar_clearance() -> None:
 
 def test_every_allowed_table_still_needs_its_exception() -> None:
     missing, _ = _tables_after_pressables()
-    stale = sorted(set(CLEARANCE_ALLOWED) - {(path, function) for path, function, _ in missing})
+    listed = {*CLEARANCE_ALLOWED, *EXPANDER_CLEARANCE_PENDING}
+    stale = sorted(listed - {(path, function) for path, function, _ in missing})
 
     assert not stale, f"사라진 자리입니다 — CLEARANCE_ALLOWED 에서 지우세요: {stale}"
 

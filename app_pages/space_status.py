@@ -1184,6 +1184,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             )
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건", key=CHANGES_EXPANDER_KEY):
+                # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+                toolbar_clearance()
                 st.dataframe(changes, hide_index=True, width="stretch")
         if not names.empty:
             # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자

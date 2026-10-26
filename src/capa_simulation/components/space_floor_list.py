@@ -715,6 +715,8 @@ def _render_tables(
             "그대로이고 여기서 열어 볼 수 있습니다."
         )
         with st.expander(f"비활성 층 {len(inactive)}개", expanded=False, key=INACTIVE_EXPANDER_KEY):
+            # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+            toolbar_clearance()
             st.dataframe(
                 _table_rows(
                     placements,

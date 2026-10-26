@@ -27,7 +27,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.table_view_controls import (
     TableView,
     filter_widget_key,
@@ -1617,6 +1617,8 @@ def render_name_changes(names: pd.DataFrame, *, key: str | None = None) -> None:
     """저장 안 한 이름 바꿈 목록(`space_layout_edit.name_changes`) — 접힌 「이름 바꿈 n건」 과 그
     뜻. Space 편집기 상자와 설비 마스터 탭이 같은 꼴로 그린다."""
     with st.expander(f"이름 바꿈 {len(names)}건", key=key):
+        # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+        toolbar_clearance()
         st.dataframe(names, hide_index=True, width="stretch")
         st.caption(NAME_CHANGES_CAPTION)
 
