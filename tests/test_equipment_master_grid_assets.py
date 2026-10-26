@@ -1069,6 +1069,62 @@ const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTa
     assert result == {"조건으로 불러오기": expected, "공정으로 불러오기": expected}
 
 
+def test_escape_closes_a_loader_popover_after_a_press_on_its_text_or_margin() -> None:
+    """팝오버 안 안내 글·여백을 누르면 패널은 열린 채 남지만(위 시험) 초점이 본문 stMain 으로
+    빠져, Esc 가 패널의 keydown 에 닿지 않고 두 번 눌러도 열린 채였다(2026-10-27 E2E — 여는
+    단추로만 닫혔다). 패널이 초점을 받아(`tabIndex -1`) 누름 뒤 초점이 패널에 머물고 Esc 가 닫는다 —
+    초점은 여는 단추로 돌아온다. 가짜 DOM 의 누름은 브라우저처럼 초점 받는 가장 가까운 조상(없으면
+    stMain)에 초점을 준다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const main = new FakeNode('section')
+main.appendChild(parentElement)
+const tags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']
+const focusable = (node) => tags.includes(node.tagName) || typeof node.tabIndex === 'number'
+const press = (node) => {
+  fire(node, 'mousedown')
+  let at = node
+  while (at && !focusable(at)) at = at.parentNode
+  const target = at || main
+  const before = document.activeElement
+  if (before && before !== target) fire(before, 'focusout', { relatedTarget: target })
+  target.focus()
+}
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
+;(async () => {
+  mount(input.data)
+  const spots = [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]
+  for (const [label, spot] of spots) {
+    const toggle = buttonOf(label)
+    const panel = toggle.parentNode.children[1]
+    const row = {}
+    const targets = [['text', () => panel.querySelector(spot)], ['margin', () => panel]]
+    for (const [name, target] of targets) {
+      toggle.focus()
+      toggle.click()
+      await tick()
+      press(target())
+      await tick()
+      const open = !panel.hidden
+      fire(document.activeElement, 'keydown', { key: 'Escape' })
+      row[name] = { open, closed: panel.hidden, back: document.activeElement === toggle }
+    }
+    results[label] = row
+  }
+  process.stdout.write(JSON.stringify(results))
+})()
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    expected = {"open": True, "closed": True, "back": True}
+    row = {"text": expected, "margin": expected}
+    assert result == {"조건으로 불러오기": row, "공정으로 불러오기": row}
+    assert re.search(r"\.emg-pop:focus\s*\{\s*outline:\s*none", CSS)
+
+
 def test_closing_the_import_dialog_returns_focus_to_the_button_that_opened_it() -> None:
     """불러오기 줄 「엑셀·CSV로 한꺼번에」 로 연 팝업을 Esc·닫기로 닫으면 초점이 BODY 로 빠지고 다음
     Tab 이 사이드바 머리로 갔다(2026-10-26 E2E — Streamlit 이 그림자 DOM 안 여는 단추로 돌려주지

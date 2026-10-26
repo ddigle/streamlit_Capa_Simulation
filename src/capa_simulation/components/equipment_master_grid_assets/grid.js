@@ -863,6 +863,9 @@ function popover(S, name, label, build, wide) {
   const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', label)
+  // 패널이 초점을 받는다(Tab 정지는 아님) — 안내 글·여백을 누르면 초점이 초점 받는 가장 가까운 조상으로 가는데, 패널이 그
+  // 조상이 아니면 본문 stMain 으로 빠져 Esc 가 패널의 keydown 에 닿지 않고 열린 채 남았다(2026-10-27 E2E).
+  panel.tabIndex = -1
   const close = () => {
     S.pop = null
     paint()

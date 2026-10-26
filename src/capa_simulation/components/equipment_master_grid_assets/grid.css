@@ -243,6 +243,10 @@
   box-sizing: border-box;
 }
 
+.emg-pop:focus {
+  outline: none;
+}
+
 .emg-pop.is-wide {
   width: min(420px, calc(100vw - 16px));
 }
