@@ -14,6 +14,7 @@ from capa_simulation.persistence import DuckDBScenarioRepository
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
+    ProcessRenameDuplicateError,
     drop_blank_process_rename_rows,
     empty_process_rename_rules,
     normalize_process_text,
@@ -63,6 +64,18 @@ def test_duplicate_display_name_is_rejected_at_input() -> None:
 def test_duplicate_source_process_is_rejected_at_input() -> None:
     with pytest.raises(ValueError, match="원본 공정명이 중복"):
         validate_process_rename_frame(_rules([("SAW", "절단"), ("SAW", "쏘잉")]))
+
+
+def test_a_duplicate_error_keeps_plain_text_and_carries_the_names() -> None:
+    """1:1 위반 글은 평문 그대로이고(스크립트·로그), 겹친 이름을 따로 실어 화면이 마크다운 자리에
+    막아 다시 짓게 한다(`process_rename_management._save_error_message`)."""
+    with pytest.raises(ProcessRenameDuplicateError) as raised:
+        prepare_process_rename_rules(_rules([("AAA", "~x~ *y*"), ("BBB", "~x~ *y*")]))
+
+    assert (raised.value.label, raised.value.names) == ("표시명", ("~x~ *y*",))
+    assert str(raised.value) == (
+        "표시명이 중복되었습니다: ~x~ *y*. 원본 공정과 표시명은 항상 1:1이어야 합니다."
+    )
 
 
 def test_duplicate_detection_sees_through_no_break_space() -> None:

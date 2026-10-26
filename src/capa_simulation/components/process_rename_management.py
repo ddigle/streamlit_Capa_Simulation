@@ -18,6 +18,7 @@ from capa_simulation.components.admin_dialog import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -45,9 +46,11 @@ from capa_simulation.persistence.models import GlobalProcessRename
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
+    ProcessRenameDuplicateError,
     drop_blank_process_rename_rows,
     empty_process_rename_rules,
     prepare_process_rename_rules,
+    process_rename_duplicate_message,
     process_rename_from_clipboard,
     process_rename_to_csv,
 )
@@ -110,11 +113,12 @@ def render_process_rename_management(
     render_flash("process_rename_flash")
 
     labels = process_labels_from_rules(profile.rules, profile.version)
+    # 안내에 늘어놓는 공정명·표시명은 사람 글이라 막아 적는다(AGENTS 9장 — 「ZZ~9~9 *q*」).
     unmatched = labels.unmatched(available_processes)
     if unmatched:
         st.info(
             "보유하지 않은 공정에 지정된 표시명 "
-            f"{len(unmatched):,}건은 무시합니다: {', '.join(unmatched[:10])}"
+            f"{len(unmatched):,}건은 무시합니다: {_listed(unmatched)}"
         )
     collisions = labels.owned_name_collisions(available_processes)
     if collisions:
@@ -123,7 +127,7 @@ def render_process_rename_management(
         # 뿐이다 — 설비 마스터까지 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다.
         st.warning(
             f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
-            f"{', '.join(collisions[:10])}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
+            f"{_listed(collisions)}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
             "공정을 고르는 상자에서는 「표시명 (원본)」 으로 갈라 보이지만 표·그림·버튼에서는 "
             "같은 글자로 보입니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. "
             "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다."
@@ -132,6 +136,25 @@ def render_process_rename_management(
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)
     _render_direct_editor(repository, profile, available_processes)
+
+
+def _listed(names: list[str], limit: int = 10) -> str:
+    """안내에 늘어놓는 이름 — 앞의 `limit` 개를 막아 쉼표로 잇는다."""
+    return ", ".join(literal_markdown(name) for name in names[:limit])
+
+
+def _save_error_message(exc: BaseException) -> str:
+    """저장·붙여넣기 실패를 알림 상자(마크다운)에 그릴 글.
+
+    1:1 위반은 겹친 이름(사람 글)을 막아 같은 문장으로 다시 짓는다 — 예외 글 그대로면
+    `bootstrap_error_message` 가 물결표만 막아 「~x~ *y*」 의 별표가 기울임이 된다(2026-10-26 E2E).
+    나머지는 `bootstrap_error_message` 다.
+    """
+    if isinstance(exc, ProcessRenameDuplicateError):
+        return process_rename_duplicate_message(
+            exc.label, [literal_markdown(name) for name in exc.names]
+        )
+    return bootstrap_error_message(exc)
 
 
 @st.dialog("Excel 붙여넣기 · 공정 표시명", width="large", on_dismiss=close_admin_dialog)
@@ -173,7 +196,7 @@ def _clipboard_dialog(
             return
         _save_process_rename(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        st.error(_save_error_message(exc))
     else:
         # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
         # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
@@ -292,7 +315,7 @@ def _render_direct_editor(
             queue_refusal(PROCESS_RENAME_SAVE_NAME, message)
         st.rerun()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        st.error(_save_error_message(exc))
     else:
         queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
         st.rerun()

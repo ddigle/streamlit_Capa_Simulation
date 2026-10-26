@@ -4267,7 +4267,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     bootstrap_error_message(exc)`」 도 같은 값이라 쓰지 않는다. 세션 칸에 담아 다음 회차에 그리는 거절 글·도우미에 넘기는
     글·돌려주는 실패 글도 지을 때 이 길을 탄다. 돌려받은 글을 `markdown_safe_tildes`·`literal_markdown` 으로 다시 감싸지
     않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의 코드 칸 경로 물결표는 `\~` 로 보인다), 뒤의 것은 막은
-    `\~` 를 다시 막아 글자로 보인다.
+    `\~` 를 다시 막아 글자로 보인다. 이 길은 물결표만 막아 예외 글 속 이름의 별표·`$` 는 꾸밈이 된다 — 사람 이름을 늘어놓는
+    예외는 이름을 속성으로도 싣고 화면이 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다(Proc Rename 1:1 위반
+    `ProcessRenameDuplicateError.names` → `process_rename_management._save_error_message`).
   - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
     없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 `korean_particle` 로 고른다 — 끝의
     `」` 와 escape 의 `\` 를 건너뛰므로 막기 전의 이름·「이름」·막은 글 어느 것으로 골라도 같은 조사다(「WB\(2\)」→「는」,

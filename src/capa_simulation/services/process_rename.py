@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
@@ -39,6 +41,36 @@ def normalize_process_text(value: object) -> str:
     return text.replace(_NO_BREAK_SPACE, " ").strip()
 
 
+# 중복 오류문에 적는 이름 수 — 붙여넣은 표 전체가 잘못이면 오류문이 화면을 덮는다.
+DUPLICATE_REPORT_LIMIT = 5
+
+
+def process_rename_duplicate_message(label: str, names: Sequence[str]) -> str:
+    """1:1 위반 오류문. `names` 는 겹친 이름(앞의 `DUPLICATE_REPORT_LIMIT` 개만 적는다).
+
+    예외 글(평문)과 화면 글이 한 문장을 쓴다 — 화면은 마크다운으로 그려 이름을 막아 넘긴다.
+    """
+    shown = ", ".join(names[:DUPLICATE_REPORT_LIMIT])
+    return (
+        f"{with_subject_particle(label)} 중복되었습니다: {shown}. "
+        "원본 공정과 표시명은 항상 1:1이어야 합니다."
+    )
+
+
+class ProcessRenameDuplicateError(ValueError):
+    """원본 공정명이나 표시명이 둘 이상이다(1:1 위반).
+
+    글은 평문이다(스크립트·로그). 겹친 이름은 사람 글이라 `label`·`names` 로도 실어, 마크다운으로
+    그리는 화면이 이름을 글자 그대로 막아 다시 짓게 한다 — 「~x~ *y*」 가 지움선·기울임이 되지
+    않게(`components/process_rename_management.py`, 2026-10-26 E2E).
+    """
+
+    def __init__(self, label: str, names: Sequence[str]) -> None:
+        self.label = label
+        self.names = tuple(names)
+        super().__init__(process_rename_duplicate_message(label, self.names))
+
+
 def empty_process_rename_rules() -> pd.DataFrame:
     """아직 아무것도 지정하지 않은 정상 상태의 빈 규칙 프레임."""
     return pd.DataFrame({column: pd.Series(dtype="object") for column in PROCESS_RENAME_COLUMNS})
@@ -61,10 +93,7 @@ def validate_process_rename_frame(frame: pd.DataFrame) -> None:
             {value for value in normalized[column] if normalized[column].count(value) > 1}
         )
         if duplicates:
-            raise ValueError(
-                f"{with_subject_particle(label)} 중복되었습니다: {', '.join(duplicates[:5])}. "
-                "원본 공정과 표시명은 항상 1:1이어야 합니다."
-            )
+            raise ProcessRenameDuplicateError(label, duplicates)
 
 
 def prepare_process_rename_rules(frame: pd.DataFrame) -> pd.DataFrame:
