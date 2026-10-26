@@ -321,6 +321,45 @@ def test_a_double_press_after_a_change_saved_elsewhere_keeps_the_refusal(
         assert (stored.version, stored.config.keyword) == (2, "PSS")
 
 
+def test_a_single_press_after_a_held_double_press_saves_the_settings(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장 뒤 옛 화면 두 번 누름이 둘 다 거부된 다음, 최신 화면을 보고 한 번 누른 저장은
+    저장된다(2026-10-27 E2E — 판정 기준과 같은 꼴). 둘째 누름이 거부 뒤 회차를 끊고 거부 표지에
+    걸려 끝나도 그 회차가 그린 최신 version 을 본 값으로 적는다 — 적지 않으면 창 뒤의 한 번 누름이
+    「편집 시작 v0 · 지금 v1」 로 또 거부됐다. 끊긴 회차는 본 version 을 옛 값으로 되살려 흉내
+    낸다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository = _with_w40(database)
+    app = _tab(database)
+    settings = repository.load_auto_official_update_settings()
+    repository.replace_auto_official_update_settings(
+        AutoUpdateConfig(enabled=False, check_time=time(8, 0), keyword="PSM", threshold=0.9),
+        expected_version=settings.version,
+    )
+
+    _field(app.text_input, "시뮬레이션명 키워드").set_value("PSS")  # type: ignore[attr-defined]
+    next(button for button in app.button if button.label == "설정 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in str(element.value) for element in app.error)
+
+    app.session_state["auto_official_update_settings_base_version"] = settings.version
+    app._run(widget_state=pressed)
+    assert any("다른 사용자가 먼저" in str(element.value) for element in app.error)
+    assert repository.load_auto_official_update_settings().version == 1
+
+    # 거부 표지의 창이 지났다 — 최신 화면을 보고 다시 누른 저장이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _field(app.text_input, "시뮬레이션명 키워드").set_value("PSX")  # type: ignore[attr-defined]
+    app = _submit_settings(app)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert not app.error, [str(element.value) for element in app.error]
+    stored = repository.load_auto_official_update_settings()
+    assert (stored.version, stored.config.keyword) == (2, "PSX")
+
+
 def test_an_invalid_keyword_is_reported_without_saving(database: Path) -> None:
     repository = _with_w40(database)
     app = _tab(database)

@@ -603,6 +603,44 @@ def test_a_double_press_after_a_newer_shared_profile_keeps_the_refusal(tmp_path:
     clear_global_display_order_cache()
 
 
+def test_a_single_press_after_a_held_double_press_saves_the_display_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장 뒤 옛 화면 두 번 누름이 둘 다 거부된 다음, 최신 화면을 보고 한 번 누른 저장은
+    저장된다(Proc Rename 과 같은 2026-10-27 E2E). 둘째 누름이 거부 뒤 회차를 끊고 거부 표지에 걸려
+    끝나도 그 회차가 그린 최신 version 을 본 값으로 적는다. 끊긴 회차는 본 version 을 옛 값으로
+    되살려 흉내 낸다."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "display-order-conflict-held.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v1|A=1;B=2;C=3"
+
+    _delete_row_as_another_session(database_path, "C")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert any("다른 사용자가 먼저 표시순서를 저장해" in str(error.value) for error in app.error)
+
+    app.session_state["display_order_base_version"] = 1
+    app._run(widget_state=pressed)
+    assert any("다른 사용자가 먼저 표시순서를 저장해" in str(error.value) for error in app.error)
+    assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
+
+    # 거부 표지의 창이 지났다 — 최신 화면을 보고 다시 누른 저장이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=60)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [str(error.value) for error in app.error]
+    assert app.text[-1].value == "v3|A=1;B=99"
+    clear_global_display_order_cache()
+
+
 def test_a_double_press_of_the_display_order_save_reports_no_conflict(tmp_path: Path) -> None:
     """「공용 표시순서 저장」 빠른 두 번 누름 — 둘째 누름이 첫 저장 전의 편집 시작 version 을 들고
     와도 방금 한 제 저장을 「다른 사용자가 먼저 저장」이라 알리지 않는다(Proc Rename 과 같은

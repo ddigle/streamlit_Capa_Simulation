@@ -4174,7 +4174,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 그 둘째 누름이 거부 뒤 회차(제출 아님)를 끊으면 본
     값을 적을 회차가 없으므로, 거부를 다시 알리는 회차가 자기가 그린 최신 저장본의 토큰을 적는다(`remember_seen` 의 유일한
     제출 회차 예외 — 적지 않으면 최신을 보고 창 뒤에 한 번 누른 저장이 「편집 시작 v(옛)」 으로 또 거부됐다, 2026-10-26 E2E
-    판정 기준·확보율 보정. 공정 표시명·표시순서·자동 갱신 설정은 아직 — `docs/TODO.md`). 창이 지나면 새 화면을 보고 다시 누른
+    판정 기준·확보율 보정, 2026-10-27 E2E 공정 표시명·표시순서·자동 갱신 설정. Cut-off·층 사용은 거부 회차(층 사용은 거부 표지
+    갈래도)가 초안과 출발점을 함께 다시 세워 이 예외가 필요 없다). 창이 지나면 새 화면을 보고 다시 누른
     저장이라 평소대로 대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째

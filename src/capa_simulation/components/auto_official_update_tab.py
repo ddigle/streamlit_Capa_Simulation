@@ -418,7 +418,9 @@ def _render_settings_form(
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
         # 알린다(write_guard). 「바뀐 값이 없습니다」로도 바꾸지 않는다. 이 회차가 거부 회차의 글을
-        # 이미 꺼내 그렸으면 한 번만(Proc Rename·표시순서와 같은 꼴).
+        # 이미 꺼내 그렸으면 한 번만(Proc Rename·표시순서와 같은 꼴). 본 version 은 이 회차가 그린
+        # 최신 저장본으로 적는다 — 둘째 누름이 끊은 거부 뒤 회차 몫(2026-10-27 E2E).
+        remember_seen(SETTINGS_BASE_VERSION_KEY, settings.version)
         if refused != held:
             notice.error(held)
         return

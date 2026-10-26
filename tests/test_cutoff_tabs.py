@@ -264,3 +264,59 @@ render_cutoff_management(
     assert not app.exception
     assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0, 5.0]
     clear_equipment_repository()
+
+
+def test_a_single_press_after_a_held_double_press_saves_the_cutoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장 뒤 옛 화면 두 번 누름이 둘 다 거부된 다음, 최신 화면을 보고 한 번 누른 저장은
+    저장된다. Proc Rename·표시순서·자동 갱신 설정은 본 값을 거부 뒤 회차가 적어, 둘째 누름이 그
+    회차를 끊으면 창 뒤의 한 번 누름이 옛 본 값으로 또 거부됐다(2026-10-27 E2E). Cut-off 는 거부
+    회차가 초안과 출발점을 함께 다시 세우므로(`_reset_draft`) 거부 표지 회차가 본 값을 적지 않아도
+    된다 — 그 꼴을 지킨다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "cutoff-held.duckdb"
+    outsider = DuckDBEquipmentRepository(database_path)
+    outsider.initialize()
+    outsider.save_process_cutoff(pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [10.0]}))
+    clear_equipment_repository()
+    script = f"""
+from pathlib import Path
+
+from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+render_cutoff_management(
+    DuckDBEquipmentRepository(Path({str(database_path)!r})),
+    equipment_processes=["Process-A", "Process-B"],
+)
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+    outsider.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A", "Process-B"], "Cutoff일수": [10.0, 5.0]})
+    )
+    clear_process_cutoff_cache()
+    draft = app.session_state[CUTOFF_DRAFT_KEY].copy()
+    draft["Cutoff일수"] = 12.0
+    app.session_state[CUTOFF_DRAFT_KEY] = draft
+    next(button for button in app.button if button.label == "Cut-off 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in str(item.value) for item in app.warning)
+
+    app._run(widget_state=pressed)
+    assert any("다른 사용자가 먼저" in str(item.value) for item in app.warning)
+    assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [10.0, 5.0]
+
+    # 거부 표지의 창이 지났다 — 최신 화면을 보고 다시 누른 저장이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    edited = app.session_state[CUTOFF_DRAFT_KEY].copy()
+    assert edited["공정"].tolist() == ["Process-A", "Process-B"]
+    edited["Cutoff일수"] = [12.0, 5.0]
+    app.session_state[CUTOFF_DRAFT_KEY] = edited
+    next(button for button in app.button if button.label == "Cut-off 저장").click().run()
+
+    assert not app.exception
+    assert not app.warning, [str(item.value) for item in app.warning]
+    assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0, 5.0]
+    clear_equipment_repository()
