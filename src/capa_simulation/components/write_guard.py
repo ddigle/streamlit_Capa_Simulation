@@ -47,7 +47,9 @@
   로 받아 둔 dict 에 성공한 `(본 값, 저장된 값)` 짝을 적고, 거부의 `(본 값, 지금 값)` 이 **정확히**
   그 짝이면 오류 대신 성공을 다시 알린다 — 그 사이 남이 저장했으면 지금 값이 짝과 달라 그대로 거부를
   알린다. 짝은 저장 성공 때만 바꾼다. 옛 이름 `profile_save_marks`·`is_own_profile_save` 는 얇은
-  별칭이다.
+  별칭이다. 겹쳐 도는 둘째 회차가 첫 쓰기 뒤·짝 적기 전의 틈에 거부되지 않게 쓰기와 짝 적기를 그
+  세션의 잠금 안에서 함께 하는 길(`save_remembered`)과 그 잠금을 거쳐 판정하는 길
+  (`is_own_save_settled`)을 둔다.
 - **남의 저장에 거부된 누름의 둘째 누름.** 사용자가 거부 뒤 화면을 보기도 전에 닿은 둘째 누름은 옛
   화면의 입력을 든다. 거부 회차가 본 값을 올리지 않으므로 그 누름은 다시 거부되고, 거부 뒤 다음
   회차가 최신을 그린 직후에 닿은 누름은 `profile_conflict_marks` 로 받아 둔 dict 의 거부 표지가
@@ -320,6 +322,51 @@ def is_own_save(
         return False
     found = st.session_state.get(PROFILE_SAVES_KEY) if marks is None else marks
     return isinstance(found, Mapping) and found.get(name) == (expected, stored)
+
+
+def save_remembered(
+    name: str,
+    expected: SeenToken,
+    save: Callable[[], _Outcome],
+    *,
+    stored: Callable[[_Outcome], SeenToken | None],
+    marks: dict[str, tuple[SeenToken, SeenToken]],
+) -> _Outcome:
+    """비교 후 쓰기 `save` 와 그 제 저장 짝 적기를 그 세션의 잠금 안에서 함께 한다 — 짝은
+    `remember_own_save(name, expected, stored(결과))` 다.
+
+    쓰기와 짝 적기 사이가 비면 겹쳐 온 같은 누름의 둘째 회차가 그 틈에 저장소에 가 첫 쓰기에
+    거부되고, 짝이 아직 없어 제 저장을 「다른 사용자가 먼저」 로 알렸다(2026-10-26 E2E — 설비
+    「공식으로 발행」, 고부하에서 1~2ms 차로 뒤집혔다). 같은 세션의 둘째 회차는 이 잠금을 첫 쓰기와
+    짝 적기가 모두 끝난 뒤에 얻으므로 그 회차의 쓰기가 거부되면 짝이 이미 있다. `stored(결과)` 가
+    None 이면(아무것도 쓰지 않음) 적지 않는다. `marks` 는 쓰기 전에 받아 둔 `own_save_marks()` 다.
+    `save` 안에서 세션 칸을 읽지 않는다(`write_once` 와 같은 까닭). `save` 가 던진 예외는 그대로
+    나가고 짝도 적지 않는다.
+    """
+    with _session_lock():
+        outcome = save()
+        token = stored(outcome)
+        if token is not None:
+            remember_own_save(name, expected, token, marks)
+        return outcome
+
+
+def is_own_save_settled(
+    name: str,
+    expected: SeenToken | None,
+    stored: SeenToken | None,
+    marks: Mapping[str, tuple[SeenToken, SeenToken]],
+) -> bool:
+    """`is_own_save` 를 이 세션에서 돌던 쓰기(`save_remembered`·`save_once`·`write_once`)가
+    끝난 뒤에 본다.
+
+    저장소에 가기 **전에** 첫 쓰기가 낸 새 값을 보고 거절하는 자리(설비 발행의 확인 글 대조 —
+    목록이 첫 커밋 뒤 DB 지문으로 새로 읽힌다)는 첫 회차가 아직 짝을 적기 전일 수 있다. 잠금을
+    거쳐 그 쓰기와 짝 적기가 끝난 뒤에 본다. 저장소 거부를 잡는 자리(`save_remembered` 밖의
+    except)는 이미 그 뒤라 `is_own_save` 로 된다.
+    """
+    with _session_lock():
+        return is_own_save(name, expected, stored, marks)
 
 
 # 옛 이름(버전 대조 저장만 쓰던 때). 새 자리는 위 이름을 쓴다.
