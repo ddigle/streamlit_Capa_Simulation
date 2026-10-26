@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol
 
+from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
 from capa_simulation.settings import PROJECT_ROOT
 
 # ---------------------------------------------------------------------------
@@ -478,9 +479,9 @@ def _read_json(path: Path, *, label: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ObjectStorageError(f"{label}을 읽지 못했습니다: {path}") from exc
+        raise ObjectStorageError(f"{with_object_particle(label)} 읽지 못했습니다: {path}") from exc
     if not isinstance(payload, dict):
-        raise ObjectStorageError(f"{label}이 JSON 객체가 아닙니다: {path}")
+        raise ObjectStorageError(f"{with_subject_particle(label)} JSON 객체가 아닙니다: {path}")
     return payload
 
 

@@ -52,6 +52,7 @@ from typing import Final
 
 import pandas as pd
 
+from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
 from capa_simulation.services.securement_threshold import capacity_status
 from capa_simulation.services.wd_window import WdWindow, wd_window
@@ -648,7 +649,9 @@ def constraint_month_inputs(
     names = process_months["공정"].astype("string").str.strip()
     rows = process_months.loc[names.eq(key).fillna(False).to_numpy()]
     if rows.empty:
-        raise KeyError(f"설비 일정 기준 계획에 공정 「{key}」 이 없습니다.")
+        raise KeyError(
+            f"설비 일정 기준 계획에 공정 {with_subject_particle(f'「{key}」')} 없습니다."
+        )
     by_month: dict[int, tuple[float, float]] = {}
     for month, required, available in zip(
         pd.to_numeric(rows["생산계획년월"], errors="coerce"),
@@ -703,7 +706,7 @@ def constraint_month_inputs(
         if constrained > required + NEED_TOLERANCE:
             raise ValueError(
                 f"제품별 소요 합이 공정 소요와 다릅니다 — {month} 「{wanted}」 소요 "
-                f"{constrained:g} 가 공정 소요 {required:g} 보다 큽니다."
+                f"{with_subject_particle(f'{constrained:g}')} 공정 소요 {required:g} 보다 큽니다."
             )
         if constrained > required or (constrained > 0 and table_total - constrained <= 0):
             constrained = required

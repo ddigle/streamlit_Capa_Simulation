@@ -42,6 +42,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.load_calculator import (
     DemandBasis,
     build_monthly_volume,
@@ -1812,14 +1813,16 @@ class KeyedShorteningPlan(NamedTuple):
 def _require_official(token: UpehToken, name: str) -> None:
     if token:
         raise ValueError(
-            f"{name} 는 공식 계획 칸입니다 — UPEH 가정 토큰이 든 키는 가정 계획 칸으로 부릅니다."
+            f"{with_topic_particle(name)} 공식 계획 칸입니다 — UPEH 가정 토큰이 든 키는 가정 계획 "
+            "칸으로 부릅니다."
         )
 
 
 def _require_assumed(token: UpehToken, name: str) -> None:
     if not token:
         raise ValueError(
-            f"{name} 는 UPEH 가정 계획 칸입니다 — 공식 키는 공식 계획 칸으로 부릅니다."
+            f"{with_topic_particle(name)} UPEH 가정 계획 칸입니다 — 공식 키는 공식 계획 칸으로 "
+            "부릅니다."
         )
 
 

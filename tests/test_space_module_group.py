@@ -436,7 +436,7 @@ def test_coordless_siblings_must_land_in_their_cells_when_the_group_moves() -> N
     rows = result.set_index("설비명").loc[["G3-A", "G3-B", "G3-C", "G3-D"]]
     assert rows["X좌표"].notna().all() and set(rows["동"]) == {"C1"}
     prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
-    with pytest.raises(ValueError, match="G3-B, G3-C, G3-D 가 묶음 범위에 놓이지 않았습니다"):
+    with pytest.raises(ValueError, match=r"G3-B, G3-C, G3-D이\(가\) 묶음 범위에 놓이지 않았습니다"):
         _parse({"changes": [_placed("G3-A", (70.0, 40.0, 20.0, 12.0))]}, master, editor_items=items)
 
 

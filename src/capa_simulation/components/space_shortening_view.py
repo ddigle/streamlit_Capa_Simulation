@@ -71,6 +71,7 @@ from capa_simulation.services.fab_layout import (
     floor_param,
 )
 from capa_simulation.services.floor_layout_profile import FloorKey
+from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.required_shortening import (
     DEFAULT_TARGET_LEVEL,
     TARGET_LEVELS,
@@ -488,7 +489,8 @@ def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKe
     if not process or not selected_processes or process in set(selected_processes):
         return
     st.caption(
-        f":material/filter_alt_off: 공정소분류 필터에 「{literal_markdown(process)}」가 없어 이 "
+        ":material/filter_alt_off: 공정소분류 필터에 "
+        f"{with_subject_particle(f'「{literal_markdown(process)}」')} 없어 이 "
         "공정의 단축 "
         "호기가 보이지 않습니다 — 필터를 비우거나 더하세요",
         width="stretch",

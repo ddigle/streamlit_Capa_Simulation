@@ -1,13 +1,16 @@
-# Purpose: 이름 뒤 조사(을/를·은/는·으로/로)를 끝소리로 고르는 규칙을 고정한다.
+# Purpose: 이름 뒤 조사(을/를·은/는·이/가·으로/로)를 끝소리로 고르는 규칙을 고정한다.
 
 import pytest
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.services.korean_particle import (
     direction_particle,
     object_particle,
+    subject_particle,
     topic_particle,
     with_direction_particle,
     with_object_particle,
+    with_subject_particle,
     with_topic_particle,
 )
 
@@ -23,6 +26,7 @@ from capa_simulation.services.korean_particle import (
         ("7", "을"),
         ("10", "을"),
         ("「주요 공정」", "을"),
+        ("85%", "를"),
         ("Customer", "을(를)"),
         ("", "을(를)"),
     ],
@@ -44,6 +48,9 @@ def test_the_particle_follows_the_final_sound(word: str, particle: str) -> None:
         ("seq 10", "은"),
         ("「Wire Bond」", "은(는)"),
         ("**복제본**", "은"),
+        ("WB\\(2\\)", "는"),
+        ("「WB\\(2\\)」", "는"),
+        ("Wire\\~Bond\\~", "은(는)"),
         ("", "은(는)"),
     ],
 )
@@ -75,7 +82,63 @@ def test_the_direction_particle_treats_rieul_like_no_final(word: str, particle: 
     assert direction_particle(word) == particle
 
 
+@pytest.mark.parametrize(
+    ("word", "particle"),
+    [
+        ("설비 마스터", "가"),
+        ("공정", "이"),
+        ("4", "가"),
+        ("27-06", "이"),
+        ("`numpy`", "이(가)"),
+        ("시뮬레이션 DB", "가"),
+        ("**공정 A1**", "이"),
+        ("", "이(가)"),
+    ],
+)
+def test_the_subject_particle_follows_the_final_sound(word: str, particle: str) -> None:
+    """`이/가` 도 받침 유무로 갈린다(2026-10-25 E2E 「27-06 가」). 읽는 법을 모르면 `이(가)` 다."""
+    assert subject_particle(word) == particle
+
+
+def test_escaped_markdown_reads_the_same_final_as_the_plain_name() -> None:
+    """`literal_markdown` 이 escape 한 이름의 `\\` 도 건너뛴다 — 감싸는 차례와 상관없이 같다."""
+    for name in ("WB(2)", "A~B~C", "$x$", "공정*", "Die Attach_1"):
+        escaped = literal_markdown(name)
+        assert topic_particle(escaped) == topic_particle(name), (name, escaped)
+        assert object_particle(f"「{escaped}」") == object_particle(name), (name, escaped)
+
+
+@pytest.mark.parametrize(
+    ("word", "topic", "direction"),
+    [
+        ("C2 2F", "는", "로"),
+        ("Xsize", "는", "로"),
+        ("「투자Capa」", "는", "로"),
+        ("DuckDB", "는", "로"),
+        ("Kea", "는", "로"),
+        ("Staff", "은(는)", "(으)로"),
+        ("EQ-X", "은(는)", "(으)로"),
+        ("셋업 B", "은(는)", "(으)로"),
+    ],
+)
+def test_fixed_vocabulary_latin_tails_are_read(word: str, topic: str, direction: str) -> None:
+    """층 이름의 `F`·`DB`·`size`·`Capa`·`Kea` 는 읽는다(「C2 2F는」·「Xsize를」). 그 밖의 영문
+    끝(사람이 붙인 이름)은 약어인지 낱말인지 갈리지 않아 갈래 꼴 그대로다 — 대소문자도 그대로
+    견준다(「Staff」)."""
+    assert topic_particle(word) == topic
+    assert direction_particle(word) == direction
+
+
+def test_percent_has_no_final_consonant() -> None:
+    """`%` 는 퍼센트·프로 어느 쪽으로 읽어도 받침이 없다(「85% 로」 → 「85%로」)."""
+    assert with_direction_particle("85%") == "85%로"
+    assert with_object_particle("100%") == "100%를"
+    assert with_topic_particle("0.5%") == "0.5%는"
+    assert with_subject_particle("12%") == "12%가"
+
+
 def test_with_particle_helpers_join_the_word_and_the_particle() -> None:
     assert with_object_particle("r2") == "r2를"
     assert with_topic_particle("가용설비") == "가용설비는"
+    assert with_subject_particle("r3") == "r3이"
     assert with_direction_particle("seq 1") == "seq 1로"

@@ -65,6 +65,7 @@ from capa_simulation.services.frame_contracts import scalar_match_key
 from capa_simulation.services.korean_particle import (
     with_direction_particle,
     with_object_particle,
+    with_subject_particle,
     with_topic_particle,
 )
 
@@ -731,8 +732,8 @@ def _regrid_module_groups(
         if left_out:
             raise ValueError(
                 f"Main 설비 {group} 의 모듈은 묶음째 옮기거나 빼야 합니다 — "
-                f"{', '.join(sorted(left_out, key=natural_name_key))} 가 묶음 범위에 놓이지 "
-                "않았습니다."
+                f"{with_subject_particle(', '.join(sorted(left_out, key=natural_name_key)))} "
+                "묶음 범위에 놓이지 않았습니다."
             )
         for ghost, ghost_id in zip(hidden_rows, ghost_ids, strict=True):
             before[ghost_id] = _sent_box(ghost)
@@ -749,8 +750,8 @@ def _regrid_module_groups(
             x, y, w, h = _value_box(cell)
             if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
                 raise ValueError(
-                    f"Main 설비 {group} 의 묶음 범위가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 "
-                    "벗어났습니다."
+                    f"Main 설비 {group} 의 묶음 범위가 편집 영역 {bounds[0]:g} × "
+                    f"{with_object_particle(f'{bounds[1]:g}')} 벗어났습니다."
                 )
             tile = UnitChange(name, True, x, y, w, h, None)
             if name in by_id:
@@ -787,7 +788,8 @@ def _parse_ghost_moves(
             raise ValueError(f"숨은 모듈 {unit_id} 의 좌표·크기가 맞지 않습니다.")
         if x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9:
             raise ValueError(
-                f"숨은 모듈 {unit_id} 가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 벗어났습니다."
+                f"숨은 모듈 {with_subject_particle(unit_id)} 편집 영역 {bounds[0]:g} × "
+                f"{with_object_particle(f'{bounds[1]:g}')} 벗어났습니다."
             )
         moves[unit_id] = (x, y, w, h)
     return moves
@@ -975,7 +977,7 @@ def module_layout_message(groups: Sequence[str]) -> str:
 def _require_name(name: str, subject: str) -> None:
     """설비명 글자 규칙(새 호기·이름 바꿈 공용): 1~`UNIT_ID_MAX` 자, 탭·줄바꿈·특수 공백 없음."""
     if not name or len(name) > UNIT_ID_MAX:
-        raise ValueError(f"{subject}은 1~{UNIT_ID_MAX}자여야 합니다: {name!r}")
+        raise ValueError(f"{with_topic_particle(subject)} 1~{UNIT_ID_MAX}자여야 합니다: {name!r}")
     if not name.isprintable():
         raise ValueError(f"{subject}에 탭·줄바꿈·특수 공백을 쓸 수 없습니다: {name!r}")
 
@@ -1135,7 +1137,7 @@ def _parse_renames(
             raise ValueError(f"같은 {what}의 이름 바꿈이 두 번 왔습니다: {old}")
         seen.add((kind, old))
         if not new:
-            raise ValueError(f"{subject}을 비울 수 없습니다.")
+            raise ValueError(f"{with_object_particle(subject)} 비울 수 없습니다.")
         _require_name(new, subject)
         if new != old:
             changes.append(NameChange(kind=kind, old=old, new=new))
@@ -1265,7 +1267,7 @@ def check_unit_rename(
         return None
     subject = f"{old_name} 의 새 이름"
     if not new_name:
-        return f"{subject}을 비울 수 없습니다."
+        return f"{with_object_particle(subject)} 비울 수 없습니다."
     change = NameChange(kind="unit", old=old_name, new=new_name)
     others = [
         NameChange(kind="unit", old=other.strip(), new=target.strip())
@@ -1404,7 +1406,10 @@ def parse_editor_apply(
         if raw.get("moveTo") is not None:
             move_to = targets.get(_text(raw.get("moveTo")))
             if move_to is None:
-                raise ValueError(f"{unit_id} 를 보낼 층을 알 수 없습니다: {raw.get('moveTo')!r}")
+                raise ValueError(
+                    f"{with_object_particle(unit_id)} 보낼 층을 알 수 없습니다: "
+                    f"{raw.get('moveTo')!r}"
+                )
         w, h = finite_or_none(raw.get("w")), finite_or_none(raw.get("h"))
         if (w is None) != (h is None) or (w is not None and h is not None and (w <= 0 or h <= 0)):
             raise ValueError(f"{unit_id} 의 크기는 0 보다 큰 폭·높이 둘 다여야 합니다.")
@@ -1415,7 +1420,9 @@ def parse_editor_apply(
         if placed:
             x, y = finite_or_none(raw.get("x")), finite_or_none(raw.get("y"))
             if x is None or y is None or w is None or h is None:
-                raise ValueError(f"{unit_id} 를 놓은 좌표·크기를 읽지 못했습니다.")
+                raise ValueError(
+                    f"{with_object_particle(unit_id)} 놓은 좌표·크기를 읽지 못했습니다."
+                )
             x, y, w, h = (
                 rounded_to_canvas(x),
                 rounded_to_canvas(y),
@@ -1426,7 +1433,8 @@ def parse_editor_apply(
                 raise ValueError(f"{unit_id} 의 좌표는 0 이상이어야 합니다.")
             if move_to is None and (x + w > bounds[0] + 1e-9 or y + h > bounds[1] + 1e-9):
                 raise ValueError(
-                    f"{unit_id} 가 편집 영역 {bounds[0]:g} × {bounds[1]:g} 를 벗어났습니다."
+                    f"{with_subject_particle(unit_id)} 편집 영역 {bounds[0]:g} × "
+                    f"{with_object_particle(f'{bounds[1]:g}')} 벗어났습니다."
                 )
         elif w is not None and h is not None:
             w, h = rounded_to_canvas(w), rounded_to_canvas(h)

@@ -15,6 +15,7 @@ from capa_simulation.persistence.models import (
     DEFAULT_STANDARD_TARGET_OUTPUT_METRIC,
     ScenarioPreset,
 )
+from capa_simulation.services.korean_particle import with_subject_particle
 
 
 def _optional_date(value: object) -> date | None:
@@ -161,4 +162,7 @@ def validate_preset_processes(preset: ScenarioPreset, reqb: pd.DataFrame) -> Non
     ):
         missing = [process for process in processes if process not in allowed]
         if missing:
-            raise ValueError(f"프리셋 {label}이 RQ_REQB에 없습니다: {', '.join(missing[:5])}")
+            raise ValueError(
+                f"프리셋 {with_subject_particle(label)} RQ_REQB에 없습니다: "
+                f"{', '.join(missing[:5])}"
+            )
