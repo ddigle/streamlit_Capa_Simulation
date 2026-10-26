@@ -408,10 +408,17 @@ def test_a_second_press_of_resolve_or_reply_does_not_repeat_it(tmp_path: Path) -
     assert app.text_area(key=f"voc_reply_body_{post_id}").value == ""
 
 
-def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(
-    tmp_path: Path,
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_second_press_of_a_finished_delete_writes_nothing_and_notifies_only_its_tail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
 ) -> None:
-    """지우기를 끝낸 글의 누름이 한 번 더 들어와도 「글을 지웠습니다.」를 다시 알리지 않는다."""
+    """지우기를 끝낸 글의 누름이 한 번 더 들어와도 다시 지우지 않는다.
+
+    아주 빠른 두 번 누름의 둘째(`TRAILING_PRESS_SECONDS` 안)는 앞 회차가 꺼내 그린 「글을
+    지웠습니다.」를 지우므로 그 알림을 다시 낸다(2026-10-26 E2E). 창이 지난 옛 화면의 누름은 알리지
+    않는다. AppTest 의 두 회차 사이 시간이 들쭉날쭉해 창은 시험이 정한다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
     database_path = tmp_path / "scenario.duckdb"
     upper, lower = _two_posts(database_path)
     app = _app(database_path)
@@ -425,7 +432,8 @@ def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(
     app._run(widget_state=pressed)
 
     assert not app.exception
-    assert not app.success
+    shown = [message.value for message in app.success]
+    assert shown == (["글을 지웠습니다."] if trailing else [])
     assert _posts(database_path) == [("아래 글", False)]
     assert _delete_ready(app, lower) == (False, 0)
 
@@ -637,3 +645,59 @@ def test_a_slow_second_press_on_the_cleared_reply_form_keeps_the_success(
         assert [message.value for message in app.success] == ["답변을 남겼습니다."]
     else:
         assert errors == ["답변 내용을 입력하세요."]
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_very_fast_second_press_on_the_old_post_form_keeps_the_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """「글 올리기」를 거의 동시에(0.05초 안) 두 번 누르면 둘째 누름이 아직 옛 화면의 폼에 닿는다
+    (2026-10-26 E2E). 지나간 세대라 쓰지 않고 끝나는데, 앞 회차가 꺼내 그린 「글을 올렸습니다.」를
+    그 회차가 지워 한 건 올라갔는데 알림이 남지 않았다. 쓰기 직후의 그 누름은 성공을 다시 알린다.
+    창이 지난 옛 화면의 누름은 알리지 않는다. AppTest 는 누른 화면의 위젯 값을 붙잡아 한 번 더
+    보낸다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    database_path = tmp_path / "scenario.duckdb"
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("검증자A")
+    app.text_input(key="voc_post_title").input("제목 A")
+    app.text_area(key="voc_post_body").input("내용 A")
+    next(button for button in app.button if button.label == "글 올리기").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert "글을 올렸습니다." in [message.value for message in app.success]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert not app.error, [message.value for message in app.error]
+    assert _posts(database_path) == [("제목 A", False)]
+    shown = [message.value for message in app.success]
+    assert shown == (["글을 올렸습니다."] if trailing else [])
+    assert app.text_input(key="voc_post_title").value == ""
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_very_fast_second_press_on_the_old_reply_form_keeps_the_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """「답변 남기기」도 같다 — 옛 화면의 답변 폼에 닿은 둘째 누름이 「답변을 남겼습니다.」를 지우지
+    않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.text_area(key=f"voc_reply_body_{post_id}").input("확인했습니다.")
+    _reply_button(app, post_id).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert "답변을 남겼습니다." in [message.value for message in app.success]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    assert len(DuckDBScenarioRepository(database_path).list_voc_replies()) == 1
+    shown = [message.value for message in app.success]
+    assert shown == (["답변을 남겼습니다."] if trailing else [])

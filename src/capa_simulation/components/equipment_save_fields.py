@@ -85,7 +85,6 @@ def render_equipment_save_fields(
     prefix: str,
     *,
     counts: SaveCandidateCounts | None = None,
-    show_publish: bool = True,
     release_exists: bool = True,
     assumption: bool = False,
     persist_saved_by: bool = False,
@@ -94,8 +93,8 @@ def render_equipment_save_fields(
 
     `prefix` 로 칸 key 를 가른다 — 세 저장 자리(설비 마스터 탭·사이드바 팝업·Space 저장 칸)가 서로의
     값을 덮지 않게. 저장자는 세션에 남아 다음 저장에 그대로 선다(같은 사람이 이어 저장한다).
-    `show_publish` 가 거짓이면(공식 시나리오가 아닌 세션) 발행 체크를 그리지 않고 기본값을 돌려준다
-    — 그 저장이 공식 시나리오에 새 리비전을 만드는 길은 함께 넣기뿐이라 결과 알림이 말한다.
+    발행 체크는 가정 설비 시나리오 세션에도 선다 — 그 저장이 공식 시나리오에 새 리비전을 만드는
+    길은 함께 넣기뿐이지만, 그때도 공식 발행을 끌 수 있어야 한다(G1 「저장 칸에서 끌 수 있음」).
     `release_exists` 가 거짓이면(공식 발행이 하나도 없음) 체크 대신 「공식 v1 이 됩니다」 한 줄을
     둔다 — 저장소가 첫 일정 리비전을 늘 공식으로 내므로 끌 수 있는 체크를 두면 거짓말이 된다.
 
@@ -160,9 +159,9 @@ def render_equipment_save_fields(
         downtime_label, value=DEFAULT_PROPAGATE_NEW_DOWNTIME, key=f"{prefix}_propagate_downtime"
     )
     publish = DEFAULT_PUBLISH_OFFICIAL
-    if show_publish and not release_exists:
+    if not release_exists:
         st.caption(f":material/verified: {FIRST_RELEASE_NOTE}")
-    elif show_publish:
+    else:
         publish = st.checkbox(
             PUBLISH_OFFICIAL_LABEL, value=DEFAULT_PUBLISH_OFFICIAL, key=f"{prefix}_publish"
         )
