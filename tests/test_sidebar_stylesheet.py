@@ -288,7 +288,10 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
       세로 flex 로 늘린다. 머리칸은 눌리지 않게, 사용자 칸 아래 여백은 걷는다.
     """
     from capa_simulation.components.app_credits import APP_CREDITS_KEY
-    from capa_simulation.components.sidebar_style import APP_CREDITS_ORDER
+    from capa_simulation.components.sidebar_style import (
+        APP_CREDITS_ORDER,
+        APP_CREDITS_SCROLL_ROOM,
+    )
 
     monkeypatch.setattr(theme, "current_mode", lambda: mode)
     block = _style_block()
@@ -312,6 +315,9 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
 
     content = _declarations(block, ['[data-testid="stSidebarContent"]'])
     assert {"display: flex", "flex-direction: column"} <= set(content)
+    # 칸을 보이게 옮기는 스크롤(초점 이동)이 바닥 카드 밑에 칸을 두지 않는다 — 긴 조건 카드의
+    # 마지막 칸이 카드 밑에 들어가 그 자리를 누르면 카드 링크가 눌렸다(E2E r3 static).
+    assert f"scroll-padding-bottom: {APP_CREDITS_SCROLL_ROOM}" in content
     assert "flex-shrink: 0" in _declarations(block, ['[data-testid="stSidebarHeader"]'])
     user = _declarations(block, ['[data-testid="stSidebarUserContent"]'])
     assert {"flex: 1 0 auto", "padding-bottom: 0"} <= set(user)

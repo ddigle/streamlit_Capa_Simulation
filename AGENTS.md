@@ -1790,6 +1790,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/app_credits.py` — 앱 이름·버전·빌드일과 개발 팀·문의처 두 줄을 모든 화면
   사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다.
   - 그리는 것은 캡션뿐이고 자리·바닥 고정·면은 `sidebar_style.py` 가 건다. key 는 조건 카드 접두어를 품지 않는다.
+    바닥에 붙은 카드 밑으로 칸이 들어가지 않게 사이드바 스크롤 칸에 `scroll-padding-bottom`(`APP_CREDITS_SCROLL_ROOM`)을
+    둔다 — 초점 이동·`scrollIntoView` 가 긴 조건 카드의 마지막 칸을 카드 위에 세운다(덮인 자리를 누르면 카드 링크가 눌렸다).
 - `src/capa_simulation/components/sidebar_style.py` — 탐색 그룹·활성 경로·`Support` 상자 key 와 현재 테마로
   사이드바 스타일 문자열을 만든다. 위젯 생성·HTML 주입은 하지 않는다.
   - 접두어·구역 제목 선택자는 선언 모듈(`sidebar_status`·`navigation.SIDEBAR_SECTIONS`)에서 읽는다 — 빌더에 필수
