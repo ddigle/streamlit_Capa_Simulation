@@ -984,7 +984,8 @@ def test_a_double_press_of_the_threshold_save_cut_in_its_cleanup_says_saved(
         THRESHOLD_SAVED_MESSAGE
     ]
     profile = repository.load_global_securement_threshold()
-    assert (profile.version, profile.default_secure) == (1, pytest.approx(1.22))
+    assert profile.version == 1
+    assert profile.default_secure == pytest.approx(1.22)
     clear_global_securement_threshold_cache()
 
 
