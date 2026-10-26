@@ -296,6 +296,10 @@ def remember_own_save(
     부른다.
 
     저장 전에 받아 둔 `marks` 를 주면 세션 칸을 읽지 않는다(저장 직후는 끊길 수 있는 자리다).
+    저장소 쓰기 **바로 뒤**, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기·세션 표시순서 갈아
+    끼우기 등) **앞**에 부른다 — 뒷정리에서 끊기면 짝이 적히지 않아 둘째 누름이 제 저장을 「다른
+    사용자가 먼저 저장」 으로 알린다(2026-10-26 E2E). 저장 도우미가 뒷정리까지 하면 `marks` 를
+    도우미에 넘겨 그 안에서 부른다.
     """
     target = own_save_marks() if marks is None else marks
     target[name] = (expected, stored)
@@ -360,7 +364,9 @@ def held_profile_conflict(marks: Mapping[str, tuple[str, float]], name: str) -> 
 
     그렇다면 이번 제출은 거부된 누름과 같은 단추의 둘째 누름이다 — 옛 화면의 입력을 들었고, 거부한
     회차가 올려 둔 편집 시작 version 으로는 대조를 지난다. 부르는 쪽은 저장하지 않고 이 글을 다시
-    알린다. 창이 지난 제출은 새 화면을 보고 다시 누른 저장이라 `None` 이다.
+    알린다 — 다만 이 회차가 `take_refusal` 로 같은 글을 이미 그렸으면 다시 그리지 않는다(둘째 누름이
+    거부 뒤 회차를 글을 꺼내기 전에 끊으면 그 글이 이 회차로 넘어와, 같은 상자 둘이 겹쳐 섰다 —
+    2026-10-26 E2E). 창이 지난 제출은 새 화면을 보고 다시 누른 저장이라 `None` 이다.
     """
     entry = marks.get(name)
     if not isinstance(entry, tuple) or len(entry) != 2:

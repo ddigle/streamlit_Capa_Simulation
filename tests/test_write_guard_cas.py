@@ -16,10 +16,11 @@
   멈춤을 걸고(`ScriptRequests.request_stop` — 브라우저와 같은 자리에서 끊긴다), 같은 누른 화면(위젯
   값)으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다(`tests/test_voc_page.py` 의 `_race` 꼴).
   네 자리(리비전명 바꾸기·공식 지정·설비 「리비전 저장」·자동 갱신 설정)에서 더블클릭은 한 번만
-  쓰고 성공 알림만 남기고, 남이 먼저 저장한 뒤의 옛 화면 더블클릭은 둘 다 거절한다. 그 옛 화면
-  더블클릭은 버전 대조 폼 넷(자동 갱신 설정·판정 기준·확보율 보정·Proc Rename)에서 모두 거부 표지
-  창을 0 으로 두고 본 값 대조만으로 거절되는지 본다 — 제출 회차에 본 값을 올리면(「결과가 무엇이든
-  올림」) 둘째 누름이 대조를 지나 실패한다.
+  쓰고 성공 알림만 남기고(버전 대조 폼 셋 — 표시순서·Proc Rename·판정 기준 — 은 저장소 쓰기 뒤
+  뒷정리에서 끊겨도 같다: 제 저장 짝은 뒷정리 앞에 적는다), 남이 먼저 저장한 뒤의 옛 화면
+  더블클릭은 둘 다 거절한다. 그 옛 화면 더블클릭은 버전 대조 폼 넷(자동 갱신 설정·판정 기준·확보율
+  보정·Proc Rename)에서 모두 거부 표지 창을 0 으로 두고 본 값 대조만으로 거절되는지 본다 — 제출
+  회차에 본 값을 올리면(「결과가 무엇이든 올림」) 둘째 누름이 대조를 지나 실패한다.
 - **거부 표지 창.** Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세운다(초안을 세우는 자리).
   창 안의 둘째 누름은 저장하지 않고 그 거부를 다시 알린다 — 「저장했습니다」 가 거부를 덮지 않는다.
 """
@@ -43,6 +44,8 @@ from streamlit.testing.v1 import AppTest
 from test_admin_area_page import _rename_component_script
 from test_all_pages_render import _page_script as _scenario_page_script
 from test_auto_official_update_tab import _field, _tab, _with_w40
+from test_display_order_management import _delete_row_as_another_session
+from test_display_order_management import _version_check_script as _display_order_script
 from test_equipment_master_tab_scenarios import OPERATIONS, _page
 from test_equipment_scenario_layout_management import _moved_setup, _section
 from test_equipment_scenario_layout_management import _texts as _section_texts
@@ -62,9 +65,14 @@ from test_threshold_editor import _app as _threshold_app
 from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.auto_official_update_tab import SETTINGS_SAVE_NAME
 from capa_simulation.components.cutoff_management import (
     CUTOFF_BASE_KEY,
     CUTOFF_DRAFT_KEY,
+)
+from capa_simulation.components.display_order_management import (
+    DISPLAY_ORDER_SAVE_NAME,
+    DISPLAY_ORDER_SAVED_MESSAGE,
 )
 from capa_simulation.components.equipment_master_tab import (
     SAVE_BUTTON_KEY,
@@ -80,9 +88,19 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_KEY,
     SCENARIO_KEY,
 )
+from capa_simulation.components.home_preference import (
+    EXECUTION_SAVE_NAME,
+    THRESHOLD_SAVE_NAME,
+    THRESHOLD_SAVED_MESSAGE,
+)
+from capa_simulation.components.process_rename_management import (
+    PROCESS_RENAME_SAVE_NAME,
+    PROCESS_RENAME_SAVED_MESSAGE,
+)
 from capa_simulation.components.scenario_management import REVISION_EDITOR_KEY
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.cache import (
+    clear_global_display_order_cache,
     clear_global_execution_capacity_cache,
     clear_global_process_rename_cache,
     clear_global_securement_threshold_cache,
@@ -885,6 +903,214 @@ def test_an_old_screen_double_press_after_another_process_rename_keeps_the_refus
     assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
     assert repository.load_global_process_rename().source == "B 의 저장"
     clear_global_process_rename_cache()
+
+
+# 제 저장 짝은 뒷정리 앞 ---------------------------------------------------------
+#
+# 첫 회차가 저장소에 쓴 뒤 뒷정리(입장 화면 확인 비우기·세션 표시순서 갈아 끼우기 — 세션 칸
+# 접근)에서 끊기면 제 저장 짝이 적히지 않아, 둘째 누름이 방금 한 제 저장을 「다른 사용자가 먼저
+# 저장」 으로 알렸다(2026-10-26 E2E — 표시순서 6회 중 5회). 짝은 저장소에 쓴 바로 뒤에 적는다.
+
+
+def test_a_double_press_of_the_display_order_save_cut_in_its_cleanup_says_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "display-order.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_display_order_script(database_path), default_timeout=60).run()
+    assert app.text[-1].value == "v1|A=1;B=2;C=3"
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, "공용 표시순서 저장"),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_display_order",
+    )
+
+    assert _texts(app, "error") == []
+    assert [text for text in _texts(app, "success") if "공용 설정으로" in text] == [
+        DISPLAY_ORDER_SAVED_MESSAGE
+    ]
+    assert app.text[-1].value == "v2|A=1;C=3;B=99"
+    clear_global_display_order_cache()
+
+
+def test_a_double_press_of_the_process_rename_save_cut_in_its_cleanup_says_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "rename.duckdb"
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path), default_timeout=60).run()
+    assert app.text[-1].value == "v0|"
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, "공용 공정 표시명 저장"),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_process_rename",
+    )
+
+    assert _texts(app, "error") == []
+    assert [text for text in _texts(app, "success") if "공용 설정으로" in text] == [
+        PROCESS_RENAME_SAVED_MESSAGE
+    ]
+    assert app.text[-1].value == "v1|"
+    clear_global_process_rename_cache()
+
+
+def test_a_double_press_of_the_threshold_save_cut_in_its_cleanup_says_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준도 같은 꼴이다(뒷정리 = 입장 화면 확인 비우기). 브라우저에서는 재현하지 못했지만
+    끊기는 자리가 같다."""
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    app = _threshold_app(database)
+    app.number_input[0].set_value(122.0)
+
+    _press_twice(
+        app,
+        monkeypatch,
+        _pressed(app, THRESHOLD_SAVE_LABEL),
+        cls=DuckDBScenarioRepository,
+        write="replace_global_securement_threshold",
+    )
+
+    assert _texts(app, "error") == []
+    assert [text for text in _texts(app, "success") if "공용 설정으로" in text] == [
+        THRESHOLD_SAVED_MESSAGE
+    ]
+    profile = repository.load_global_securement_threshold()
+    assert profile.version == 1
+    assert profile.default_secure == pytest.approx(1.22)
+    clear_global_securement_threshold_cache()
+
+
+# 거부 글은 한 번 ---------------------------------------------------------------
+#
+# 남의 저장 뒤 옛 화면에서 저장을 150~350ms 간격으로 두 번 누르면, 거부 뒤 회차가 담아 둔 거부 글을
+# 꺼내기 전에 둘째 누름이 그 회차를 끊는다. 둘째 누름의 회차는 넘어온 거부 글(`take_refusal`)을
+# 그리고 이어 거부 표지(`held_profile_conflict`)가 같은 글을 같은 칸에 한 번 더 그려 상자 둘이
+# 겹쳐 섰다(2026-10-26 E2E — 판정 기준·표시순서·확보율 보정·Proc Rename). AppTest 는 그 회차를 끊을
+# 수 없어, 거부 뒤 회차가 꺼낸 글을 거부 칸에 되돌려 넘어온 꼴을 만든다.
+
+
+def _execution_script(database_path: Path) -> str:
+    return f"""
+import pandas as pd
+
+from capa_simulation.components.flash import render_flash
+from capa_simulation.components.home_preference import _render_execution_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.persistence.cache import load_global_execution_capacity
+
+database_path = {str(database_path)!r}
+render_flash("home_execution_flash")
+_render_execution_editor(
+    months=[202607, 202608],
+    execution_profile=load_global_execution_capacity(database_path),
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    unmatched=pd.DataFrame(),
+    clamped=pd.DataFrame(),
+    database_path=database_path,
+)
+"""
+
+
+def _refused_threshold(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    app = _threshold_app(database)
+    repository.replace_global_securement_threshold(
+        1.17, 1.0, empty_securement_threshold_rows(), source="다른 세션", expected_version=0
+    )
+    clear_global_securement_threshold_cache()
+    app.number_input[0].set_value(122.0)
+    return app, _pressed(app, THRESHOLD_SAVE_LABEL), THRESHOLD_SAVE_NAME
+
+
+def _refused_execution(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
+    database_path = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    clear_global_execution_capacity_cache()
+    app = AppTest.from_string(_execution_script(database_path), default_timeout=60).run()
+    assert not app.exception
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202608, "DEMO_B", -5.0, "B")]), source="B 의 저장"
+    )
+    clear_global_execution_capacity_cache()
+    return app, _pressed(app, "확보율 보정 저장"), EXECUTION_SAVE_NAME
+
+
+def _refused_process_rename(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
+    database_path = tmp_path / "rename.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path), default_timeout=60).run()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="B 의 저장"
+    )
+    clear_global_process_rename_cache()
+    return app, _pressed(app, "공용 공정 표시명 저장"), PROCESS_RENAME_SAVE_NAME
+
+
+def _refused_display_order(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
+    database_path = tmp_path / "display-order.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_display_order_script(database_path), default_timeout=60).run()
+    _delete_row_as_another_session(database_path, "C")
+    return app, _pressed(app, "공용 표시순서 저장"), DISPLAY_ORDER_SAVE_NAME
+
+
+def _refused_settings(tmp_path: Path) -> tuple[AppTest, WidgetStates, str]:
+    database = tmp_path / "auto.duckdb"
+    repository = _with_w40(database)
+    app = _tab(database)
+    settings = repository.load_auto_official_update_settings()
+    repository.replace_auto_official_update_settings(
+        AutoUpdateConfig(enabled=False, check_time=time(8, 0), keyword="PSM", threshold=0.9),
+        expected_version=settings.version,
+    )
+    return app, _settings_pressed(app, "PSS"), SETTINGS_SAVE_NAME
+
+
+@pytest.mark.parametrize(
+    "refused_screen",
+    [
+        _refused_threshold,
+        _refused_execution,
+        _refused_process_rename,
+        _refused_display_order,
+        _refused_settings,
+    ],
+    ids=["threshold", "execution", "process_rename", "display_order", "auto_update_settings"],
+)
+def test_a_refusal_carried_into_the_second_press_is_drawn_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused_screen: Any
+) -> None:
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app, pressed, name = refused_screen(tmp_path)
+    app.run()
+    refusals = [text for text in _texts(app, "error") if "다른 사용자가 먼저" in text]
+    assert len(refusals) == 1, _texts(app, "error")
+    # 거부 뒤 회차가 글을 꺼내기 전에 끊겼다 — 담아 둔 글이 둘째 누름의 회차로 넘어온다.
+    app.session_state[write_guard.REFUSALS_KEY] = {name: refusals[0]}
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert _texts(app, "error") == refusals
+    clear_global_securement_threshold_cache()
+    clear_global_execution_capacity_cache()
+    clear_global_process_rename_cache()
+    clear_global_display_order_cache()
 
 
 # Cut-off -----------------------------------------------------------------------

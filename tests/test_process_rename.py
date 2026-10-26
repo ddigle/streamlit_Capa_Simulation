@@ -14,6 +14,7 @@ from capa_simulation.persistence import DuckDBScenarioRepository
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
+    ProcessRenameDuplicateError,
     drop_blank_process_rename_rows,
     empty_process_rename_rules,
     normalize_process_text,
@@ -63,6 +64,18 @@ def test_duplicate_display_name_is_rejected_at_input() -> None:
 def test_duplicate_source_process_is_rejected_at_input() -> None:
     with pytest.raises(ValueError, match="원본 공정명이 중복"):
         validate_process_rename_frame(_rules([("SAW", "절단"), ("SAW", "쏘잉")]))
+
+
+def test_a_duplicate_error_keeps_plain_text_and_carries_the_names() -> None:
+    """1:1 위반 글은 평문 그대로이고(스크립트·로그), 겹친 이름을 따로 실어 화면이 마크다운 자리에
+    막아 다시 짓게 한다(`process_rename_management._save_error_message`)."""
+    with pytest.raises(ProcessRenameDuplicateError) as raised:
+        prepare_process_rename_rules(_rules([("AAA", "~x~ *y*"), ("BBB", "~x~ *y*")]))
+
+    assert (raised.value.label, raised.value.names) == ("표시명", ("~x~ *y*",))
+    assert str(raised.value) == (
+        "표시명이 중복되었습니다: ~x~ *y*. 원본 공정과 표시명은 항상 1:1이어야 합니다."
+    )
 
 
 def test_duplicate_detection_sees_through_no_break_space() -> None:
@@ -119,11 +132,13 @@ def test_unmapped_process_keeps_its_original_name() -> None:
     assert labels.label("MOLD") == "MOLD"
 
 
-def test_display_name_for_an_unowned_process_is_ignored_not_an_error() -> None:
+def test_display_name_for_an_unowned_process_is_listed_not_an_error() -> None:
+    """보유 공정에 없는 원본은 안내 목록에 들고, 표시명은 그 공정이 나오는 화면에 그대로 입는다."""
     labels = _labels([("SAW", "절단"), ("없는공정", "유령")])
 
     assert labels.label("SAW") == "절단"
     assert labels.unmatched(["SAW", "MOLD"]) == ["없는공정"]
+    assert labels.label("없는공정") == "유령"
 
 
 def test_display_name_colliding_with_another_owned_process_is_counted() -> None:
@@ -141,10 +156,8 @@ def test_owned_name_collision_skips_self_and_renamed_away_processes() -> None:
 
 
 def test_owned_name_collision_skips_rules_whose_source_is_not_owned() -> None:
-    """보유하지 않은 공정의 규칙은 화면에 나타나지 않아 겹칠 대상이 없다.
-
-    세면 `unmatched()` 의 "무시합니다" 안내와 "같은 이름으로 보입니다" 경고가
-    같은 화면에 함께 떠 서로 모순된다.
+    """보유하지 않은 공정의 규칙은 이 시나리오의 계산 화면에 나타나지 않아 거기서는 겹칠 대상이
+    없다. 시나리오 밖 공정을 그리는 화면의 겹침은 이 검사(시나리오 `RQ_MODULE`)의 범위 밖이다.
     """
     labels = _labels([("없는공정", "MOLD")])
 

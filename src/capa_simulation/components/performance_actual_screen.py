@@ -22,6 +22,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.plotly_layout import apply_axis_text_color, chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.sample_data import (
@@ -142,10 +143,12 @@ def _render_summary(
     else:
         worst = needs_action.iloc[0]
         # 굵게 닫는 `**` 바로 뒤에 한글이 붙으면 이름이 `)` 로 끝날 때 굵게가 풀린다 — 조사는
-        # 한 칸 띄운다.
+        # 한 칸 띄운다. 공정 표시명은 사람 글이라 막아 끼운다(「TC~B~1 *z*」 가 지움선·기울임이
+        # 되지 않게 — AGENTS 9장).
         worst_name = labels.label(worst["공정"])
         st.warning(
-            f"**{worst_name}** {subject_particle(worst_name)} {int(worst['연속 미달'])}개월 연속 "
+            f"**{literal_markdown(worst_name)}** {subject_particle(worst_name)} "
+            f"{int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
             f"{float(worst['Gap']):.{metric.gap_decimals}%}{metric.gap_suffix}, 영향 물량 비중 "
             f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."

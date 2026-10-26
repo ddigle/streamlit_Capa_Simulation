@@ -8,6 +8,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -239,6 +240,61 @@ def test_proc_rename_tab_reports_a_duplicated_display_name_as_an_error(
     assert app.text[-1].value == "v0|"
 
 
+def test_a_duplicated_display_name_with_markdown_marks_is_shown_literally(
+    tmp_path: Path,
+) -> None:
+    """1:1 위반 오류는 겹친 이름을 글자 그대로 싣는다 — 예외 글 그대로면 물결표만 막혀
+    「~x~ *y*」 의 별표가 기울임이 되었다(2026-10-26 E2E)."""
+    app = AppTest.from_string(_rename_component_script(tmp_path / "rename-marks.duckdb")).run(
+        timeout=60
+    )
+
+    app = _submit_clipboard(app, "공정\t표시명\nAAA\t~x~ *y*\nBBB\t~x~ *y*")
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [str(error.value) for error in app.error]
+    assert errors == [
+        f"표시명이 중복되었습니다: {literal_markdown('~x~ *y*')}. "
+        "원본 공정과 표시명은 항상 1:1이어야 합니다."
+    ], errors
+    assert app.text[-1].value == "v0|"
+
+
+def test_proc_rename_notices_list_the_names_literally(tmp_path: Path) -> None:
+    """「보유하지 않은 공정」 안내와 「원본명과 같은 표시명」 경고가 늘어놓는 이름은 사람 글이라
+    막아 적는다 — 「ZZ~9~9 *q*」 가 「ZZ<del>9</del>9 <em>q</em>」 로 그려졌다(2026-10-26 E2E)."""
+    database_path = tmp_path / "rename-notice-marks.duckdb"
+    unowned = "ZZ~9~9 *q*"
+    owned = "MO~L*D*"
+    script = f'''
+from pathlib import Path
+
+import pandas as pd
+
+from capa_simulation.components.process_rename_management import (
+    render_process_rename_management,
+)
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+repository = DuckDBScenarioRepository(Path(r"{database_path}"))
+repository.initialize()
+repository.replace_global_process_rename(
+    pd.DataFrame([({unowned!r}, "ZQ"), ("SAW", {owned!r})], columns=["공정", "표시명"]),
+    source="테스트",
+)
+render_process_rename_management(repository, ["SAW", {owned!r}])
+'''
+
+    app = AppTest.from_string(script).run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    notices = [str(item.value) for item in app.info] + [str(item.value) for item in app.warning]
+    assert any(literal_markdown(unowned) in text for text in notices), notices
+    assert any(literal_markdown(owned) in text for text in notices), notices
+    assert not [text for text in notices if unowned in text or owned in text], notices
+    clear_global_process_rename_cache()
+
+
 def test_display_name_equal_to_another_owned_process_warns_but_still_saves(
     tmp_path: Path,
 ) -> None:
@@ -389,7 +445,11 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
     assert any("테스트 초기값" in caption.value for caption in app.caption)
 
 
-def test_unowned_display_name_is_reported_as_ignored_not_as_an_error(tmp_path: Path) -> None:
+def test_unowned_display_name_is_reported_as_a_note_not_as_an_error(tmp_path: Path) -> None:
+    """보유 공정에 없는 원본의 표시명은 오류가 아니라 안내다. 「무시합니다」 라고 하지 않는다 —
+    시나리오 밖 공정을 그리는 Dynamic Capa·Chatbot 에는 그 표시명이 나온다(2026-10-26 E2E —
+    「Wafer Sorter → WS 정렬」 을 「무시합니다」 라 하고 Dynamic 축·Chatbot 근거 표에는 「WS 정렬」
+    이 섰다)."""
     database_path = tmp_path / "rename-unowned.duckdb"
     script = f'''
 from pathlib import Path
@@ -412,7 +472,10 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert not list(app.error)
-    assert any("무시합니다" in info.value for info in app.info)
+    notes = [str(info.value) for info in app.info if "보유 공정에 없는 공정" in str(info.value)]
+    assert len(notes) == 1, [str(info.value) for info in app.info]
+    assert "없는공정" in notes[0] and "그대로 적용됩니다" in notes[0], notes
+    assert not [str(info.value) for info in app.info if "무시합니다" in str(info.value)]
 
 
 def _start_check_expanders(app: AppTest) -> list[str]:

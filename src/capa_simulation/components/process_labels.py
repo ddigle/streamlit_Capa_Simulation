@@ -190,7 +190,12 @@ class ProcessLabels:
         return shown
 
     def unmatched(self, available: Iterable[object]) -> list[str]:
-        """보유하지 않은 원본에 지정된 표시명. 오류가 아니라 안내용이다."""
+        """보유하지 않은 원본에 지정된 표시명. 오류가 아니라 안내용이다.
+
+        「무시」 가 아니다 — `label`·`frame`·`category_axis` 는 원본이 보유 공정인지 보지 않고
+        매핑 전체를 입히므로, 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·
+        Capa Chatbot)에는 그 표시명이 나온다. 이 시나리오의 계산 화면에만 나오지 않는다.
+        """
         owned = {normalize_process_text(value) for value in available}
         return sorted(process for process in self.labels if process not in owned)
 
@@ -204,8 +209,10 @@ class ProcessLabels:
         보유 공정 목록은 시나리오마다 달라 저장을 막으면 안 되므로 경고로만 알린다.
         자기 자신과 같은 표시명, 그리고 그 보유 공정이 다시 다른 이름으로 바뀌는
         경우는 화면에서 겹치지 않으므로 세지 않는다. 원본이 보유 공정이 아닌 규칙도
-        세지 않는다 — 그 규칙은 화면에 나타나지 않아 겹칠 대상이 없고, 세면
-        `unmatched()` 의 "무시합니다" 안내와 서로 모순된 문구가 함께 뜬다.
+        세지 않는다 — 그 원본은 이 시나리오의 계산 화면에 나오지 않아 거기서는 겹칠 대상이
+        없다. 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)의
+        겹침은 이 검사의 범위(시나리오 `RQ_MODULE`) 밖이다 — 설비 마스터에만 있는 공정을 보지
+        않는 것과 같은 까닭이고 경고 문구가 그 범위를 적는다.
         """
         owned = {normalize_process_text(value) for value in available}
         return sorted(

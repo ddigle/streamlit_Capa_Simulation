@@ -3598,7 +3598,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위, 가용설비 현황 Main 의 `공정소분류` 칸 — 공정별
   내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static 대비 일정의 칸 호기·호기 목록·
   확보율 교차검증 표, Capa Chatbot 근거 표)와 화면용 안내 문구(Main 의 걸린 조건 줄, Capa Chatbot 대본의 결론·질문·
-  조건 — 대본 함수가 페이지가 넘긴 `ProcessLabels.label` 로 적는다),
+  조건 — 대본 함수가 페이지가 넘긴 함수(`ProcessLabels.label` 을 `literal_markdown` 으로 감싼 것 — 세 칸이
+  마크다운이다, 9장)로 적는다),
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
   월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다. 편집표는 ② 의 「같은
   글자면 다른 값」 결함이 없다 — 칸은 옵션 `value` 로 찾아 `label` 을 그리고, 고르기·붙여넣기·복사가 모두
@@ -3643,7 +3644,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   페이지가 하고 `components/month_editor.py` 는 받은 매핑으로 필터 옵션과 분류 컬럼
   라벨만 만든다.
 - 매핑에 없는 공정은 원본 공정명을 그대로 표시하고, 보유하지 않은 원본에 지정된
-  표시명은 오류가 아니라 무시한다. 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
+  표시명은 오류가 아니다 — 이 시나리오의 계산 화면에는 나오지 않지만 표시명은 원본이 보유 공정인지
+  보지 않고 입혀, 시나리오 밖 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는
+  나온다. Proc Rename 탭은 그 건수를 「무시」 가 아니라 그렇게 안내한다(2026-10-26 E2E). 표시명이 짧아지면 상세 B/N 의 글자 축소·말줄임이
   자연히 걸리지 않는다 — 축소 로직을 새로 넣지 않는다.
 - 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간·시나리오 월 `YYYY-MM` 은
   `settings.format_month`, 표의 월 칸 `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
@@ -4116,16 +4119,20 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     짝을 적고(`remember_own_save`), 충돌 예외의 `(본 값, 지금 값)` 이 **정확히** 그 짝이면(`is_own_save`) 거부 대신 저장 성공을
     다시 알리고 끊겼을 뒷정리(초안 비우기·세션 옮기기)를 잇는다. 예외가 지금 값을 싣지 않으면(자동 갱신 설정·Cut-off·설비 쪽)
     거부 직후 저장소에서 바로 다시 읽는다. 짝의 저장된 값은 쓰기 결과로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에
-    들어간다. 그 사이 남이 저장했으면 지금 값이 짝과 달라 거부를 그대로 알린다. 화면에서 충돌 예외 10종을 잡는 자리는 제 저장일
+    들어간다. **짝은 저장소에 쓴 바로 뒤, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기·세션 표시순서 갈아 끼우기 등) 앞에
+    적는다** — 저장 도우미가 뒷정리까지 하면 받아 둔 표지 dict 를 도우미에 넘겨 그 안에서 적는다. 뒷정리에서 끊기면 짝이 적히지
+    않아 둘째 누름이 제 저장을 「다른 사용자가 먼저」 로 알렸다(2026-10-26 E2E — 표시순서 6회 중 5회, Proc Rename·판정 기준도
+    같은 꼴). 그 사이 남이 저장했으면 지금 값이 짝과 달라 거부를 그대로 알린다. 화면에서 충돌 예외 10종을 잡는 자리는 제 저장일
     수 없는 충돌(HOME 주요 Case 의 시나리오 대조)을 빼고 모두 이 판정을 부른다(같은 그물). 시험은 첫 회차의 쓰기 직후 그 회차에
-    멈춤을 걸고(`ScriptRequests.request_stop`) 같은 위젯 값으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다 — 네
-    자리(리비전명·공식 지정·설비 「리비전 저장」·자동 갱신 설정)에서 더블클릭은 한 번 쓰고 성공만, 남의 저장 뒤 옛 화면 더블클릭은
-    둘 다 거부다. 남의 저장 뒤 옛 화면 더블클릭은 버전 대조 폼 넷(자동 갱신 설정·판정 기준·확보율 보정·Proc Rename) 모두 거부
+    멈춤을 걸고(`ScriptRequests.request_stop`) 같은 위젯 값으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다 — 일곱
+    자리(리비전명·공식 지정·설비 「리비전 저장」·자동 갱신 설정·표시순서·Proc Rename·판정 기준)에서 더블클릭은 한 번 쓰고 성공만,
+    남의 저장 뒤 옛 화면 더블클릭은 둘 다 거부다. 남의 저장 뒤 옛 화면 더블클릭은 버전 대조 폼 넷(자동 갱신 설정·판정 기준·확보율 보정·Proc Rename) 모두 거부
     표지 창을 0 으로 두고 본 값 대조만으로 거부되는지 본다 — 제출 회차에 본 값을 올리면(「결과가 무엇이든 올림」) 실패한다.
   - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부 회차가 본 값을 올리지 않으므로 그 누름은 다시 거부된다. 거부 뒤 다음
     회차가 최신을 그린 직후에 닿은 둘째 누름(옛 화면의 입력)은 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 의
     거부 표지가 거른다 — 거부를 받으면 그 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음
-    제출은 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
+    제출은 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`) — 그 회차가 넘어온 거부 글(`take_refusal`)을 이미
+    그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
     대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
@@ -4261,6 +4268,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   알림 상자·위젯 라벨·풍선)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
+  공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
+  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
+  `tests/test_process_label_markdown_sinks.py`).
   `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
   막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
 - **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를
@@ -4270,7 +4280,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     bootstrap_error_message(exc)`」 도 같은 값이라 쓰지 않는다. 세션 칸에 담아 다음 회차에 그리는 거절 글·도우미에 넘기는
     글·돌려주는 실패 글도 지을 때 이 길을 탄다. 돌려받은 글을 `markdown_safe_tildes`·`literal_markdown` 으로 다시 감싸지
     않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의 코드 칸 경로 물결표는 `\~` 로 보인다), 뒤의 것은 막은
-    `\~` 를 다시 막아 글자로 보인다.
+    `\~` 를 다시 막아 글자로 보인다. 이 길은 물결표만 막아 예외 글 속 이름의 별표·`$` 는 꾸밈이 된다 — 사람 이름을 늘어놓는
+    예외는 이름을 속성으로도 싣고 화면이 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다(Proc Rename 1:1 위반
+    `ProcessRenameDuplicateError.names` → `process_rename_management._save_error_message`).
   - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
     없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 `korean_particle` 로 고른다 — 끝의
     `」` 와 escape 의 `\` 를 건너뛰므로 막기 전의 이름·「이름」·막은 글 어느 것으로 골라도 같은 조사다(「WB\(2\)」→「는」,

@@ -38,6 +38,7 @@ from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    SeenToken,
     held_profile_conflict,
     is_own_save,
     note_notice,
@@ -918,8 +919,10 @@ def render_threshold_editor(
         held = held_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME)
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
-            # 다시 알린다(write_guard).
-            notice.error(held)
+            # 다시 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한 번만
+            # (2026-10-26 E2E — 둘째 누름이 거부 뒤 회차를 글을 꺼내기 전에 끊는다).
+            if refused != held:
+                notice.error(held)
             return
         if not isinstance(submitted_base, int):
             # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
@@ -927,7 +930,7 @@ def render_threshold_editor(
             st.rerun(scope="app")
         expected_version = submitted_base
         try:
-            saved = _save_thresholds(
+            _save_thresholds(
                 database_path,
                 months=months,
                 month_labels=month_labels,
@@ -938,6 +941,7 @@ def render_threshold_editor(
                 expected_version=expected_version,
                 source=note.strip() or "웹 직접 편집",
                 clear_outside=clear_outside,
+                save_marks=save_marks,
             )
         except ProfileVersionConflict as exc:
             # 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신 저장본을 그리게
@@ -957,7 +961,6 @@ def render_threshold_editor(
             # 그대로).
             notice.error(bootstrap_error_message(exc))
         else:
-            remember_own_save(THRESHOLD_SAVE_NAME, expected_version, saved.version, save_marks)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             st.rerun(scope="app")
 
@@ -974,6 +977,7 @@ def _save_thresholds(
     expected_version: int,
     source: str,
     clear_outside: bool = False,
+    save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalSecurementThreshold:
     """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와 같은 규칙).
 
@@ -999,6 +1003,10 @@ def _save_thresholds(
         source=source,
         expected_version=expected_version,
     )
+    # 제 저장 짝은 저장소에 쓴 **바로 뒤**, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기)
+    # **앞**에 적는다 — 뒷정리는 둘째 누름의 회차에 끊길 수 있는 자리다(write_guard).
+    if save_marks is not None:
+        remember_own_save(THRESHOLD_SAVE_NAME, expected_version, saved.version, save_marks)
     clear_global_securement_threshold_cache()
     # 입장 화면 Summary 도 같은 기준으로 판정한다(새 기준의 지문으로 새로 만든다).
     _recheck_intro_summary()
@@ -1495,10 +1503,17 @@ def key_process_preview(
     """프리셋 하나의 공정 미리보기 — 「2공정 · A · B」, 이 화면에 없는 공정은 따로 적는다.
 
     공용 프리셋이라 다른 시나리오에는 있는 공정이다. 세어 넣으면 격자와 수가 맞지 않는다.
+    글은 팝업 라디오의 캡션(마크다운)으로만 가서 공정 표시명을 막아 적는다(AGENTS 9장).
     """
     known = set(process_options)
-    shown = [process_labels.label(process) for process in processes if process in known]
-    absent = [process_labels.label(process) for process in processes if process not in known]
+    shown = [
+        literal_markdown(process_labels.label(process)) for process in processes if process in known
+    ]
+    absent = [
+        literal_markdown(process_labels.label(process))
+        for process in processes
+        if process not in known
+    ]
     text = f"{len(shown)}공정 · " + " · ".join(shown) if shown else "그릴 공정 없음"
     if absent:
         text += " · 이 화면에 없음: " + ", ".join(absent)
@@ -1760,7 +1775,7 @@ def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLab
     """
     if not absent:
         return
-    names = ", ".join(process_labels.label(process) for process in absent)
+    names = ", ".join(literal_markdown(process_labels.label(process)) for process in absent)
     st.caption(
         f":material/info: 이번 시나리오·조회기간에 없어 그리지 않는 공정: {names}. "
         "공용 설정이라 저장해도 프리셋에 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다. "
@@ -1861,8 +1876,10 @@ def _render_execution_editor(
         held = held_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME)
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
-            # 다시 알린다(write_guard).
-            notice.error(held)
+            # 다시 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한 번만
+            # (판정 기준과 같은 꼴).
+            if refused != held:
+                notice.error(held)
             return
         if not isinstance(submitted_base, int):
             # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
@@ -1938,7 +1955,7 @@ def _render_execution_notices(
     """넣었는데 화면이 그대로인 이유와, 0 에서 잘린 행을 알린다."""
     if not unmatched.empty:
         examples = ", ".join(
-            f"{month_label(int(month))}·{process_labels.label(process)}"
+            f"{month_label(int(month))}·{literal_markdown(process_labels.label(process))}"
             for month, process in zip(
                 unmatched["생산계획년월"].head(5),
                 unmatched["공정"].head(5),

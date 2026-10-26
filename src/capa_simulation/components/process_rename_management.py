@@ -18,11 +18,13 @@ from capa_simulation.components.admin_dialog import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    SeenToken,
     held_profile_conflict,
     is_own_save,
     note_profile_conflict,
@@ -44,9 +46,11 @@ from capa_simulation.persistence.models import GlobalProcessRename
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.process_rename import (
     PROCESS_RENAME_COLUMNS,
+    ProcessRenameDuplicateError,
     drop_blank_process_rename_rows,
     empty_process_rename_rules,
     prepare_process_rename_rules,
+    process_rename_duplicate_message,
     process_rename_from_clipboard,
     process_rename_to_csv,
 )
@@ -109,11 +113,16 @@ def render_process_rename_management(
     render_flash("process_rename_flash")
 
     labels = process_labels_from_rules(profile.rules, profile.version)
+    # 안내에 늘어놓는 공정명·표시명은 사람 글이라 막아 적는다(AGENTS 9장 — 「ZZ~9~9 *q*」).
     unmatched = labels.unmatched(available_processes)
     if unmatched:
+        # 「무시합니다」 가 아니다 — 표시명은 원본이 보유 공정인지 보지 않고 입혀, 시나리오 밖
+        # 공정을 그리는 화면(가용설비·실적 데모·Dynamic Capa·Capa Chatbot)에는 그대로 나온다
+        # (AGENTS 8장).
         st.info(
-            "보유하지 않은 공정에 지정된 표시명 "
-            f"{len(unmatched):,}건은 무시합니다: {', '.join(unmatched[:10])}"
+            f"보유 공정에 없는 공정에 지정된 표시명 {len(unmatched):,}건: {_listed(unmatched)}. "
+            "이 시나리오의 계산 화면에는 나오지 않지만, 그 공정이 나오는 화면(가용설비·실적·"
+            "Dynamic Capa·Capa Chatbot 등)에서는 그대로 적용됩니다."
         )
     collisions = labels.owned_name_collisions(available_processes)
     if collisions:
@@ -122,7 +131,7 @@ def render_process_rename_management(
         # 뿐이다 — 설비 마스터까지 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다.
         st.warning(
             f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
-            f"{', '.join(collisions[:10])}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
+            f"{_listed(collisions)}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
             "공정을 고르는 상자에서는 「표시명 (원본)」 으로 갈라 보이지만 표·그림·버튼에서는 "
             "같은 글자로 보입니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. "
             "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다."
@@ -131,6 +140,25 @@ def render_process_rename_management(
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules)
     _render_direct_editor(repository, profile, available_processes)
+
+
+def _listed(names: list[str], limit: int = 10) -> str:
+    """안내에 늘어놓는 이름 — 앞의 `limit` 개를 막아 쉼표로 잇는다."""
+    return ", ".join(literal_markdown(name) for name in names[:limit])
+
+
+def _save_error_message(exc: BaseException) -> str:
+    """저장·붙여넣기 실패를 알림 상자(마크다운)에 그릴 글.
+
+    1:1 위반은 겹친 이름(사람 글)을 막아 같은 문장으로 다시 짓는다 — 예외 글 그대로면
+    `bootstrap_error_message` 가 물결표만 막아 「~x~ *y*」 의 별표가 기울임이 된다(2026-10-26 E2E).
+    나머지는 `bootstrap_error_message` 다.
+    """
+    if isinstance(exc, ProcessRenameDuplicateError):
+        return process_rename_duplicate_message(
+            exc.label, [literal_markdown(name) for name in exc.names]
+        )
+    return bootstrap_error_message(exc)
 
 
 @st.dialog("Excel 붙여넣기 · 공정 표시명", width="large", on_dismiss=close_admin_dialog)
@@ -172,7 +200,7 @@ def _clipboard_dialog(
             return
         _save_process_rename(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        st.error(_save_error_message(exc))
     else:
         # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
         # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
@@ -256,8 +284,10 @@ def _render_direct_editor(
     held = held_profile_conflict(conflict_marks, PROCESS_RENAME_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
-        # 알린다(write_guard).
-        st.error(held)
+        # 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한 번만 — 둘째 누름이
+        # 거부 뒤 회차를 글을 꺼내기 전에 끊으면 그 글이 이 회차로 넘어온다(2026-10-26 E2E).
+        if refused != held:
+            st.error(held)
         return
     if not isinstance(submitted_base, int):
         # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
@@ -268,11 +298,12 @@ def _render_direct_editor(
         revised = drop_blank_process_rename_rows(
             pd.DataFrame(edited, columns=list(PROCESS_RENAME_COLUMNS))
         )
-        saved = _save_process_rename(
+        _save_process_rename(
             repository,
             revised,
             source=note.strip() or "웹 직접 편집",
             expected_version=expected_version,
+            save_marks=save_marks,
         )
     except ProfileVersionConflict as exc:
         # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을 그리게
@@ -288,9 +319,8 @@ def _render_direct_editor(
             queue_refusal(PROCESS_RENAME_SAVE_NAME, message)
         st.rerun()
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        st.error(_save_error_message(exc))
     else:
-        remember_own_save(PROCESS_RENAME_SAVE_NAME, expected_version, saved.version, save_marks)
         queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
         st.rerun()
 
@@ -301,17 +331,24 @@ def _save_process_rename(
     *,
     source: str,
     expected_version: int | None = None,
+    save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalProcessRename:
     """검증 → 교체 저장 → 캐시 폐기 → 입장 화면 Summary 확인 비우기(그 표시명으로 그린다).
 
     1:1 위반은 반드시 파이썬 `ValueError` 로 먼저 낸다. DB 의 UNIQUE 는 마지막 방어선이고
     그 위반은 `duckdb.ConstraintException` 이라 화면 오류 문구로 바뀌지 않는다. 붙여넣기는
     「현재 전체 교체」를 확인받는 일이라 `expected_version` 없이 부른다(버전 대조는 직접 편집).
+
+    직접 편집은 저장 전에 받아 둔 제 저장 표지(`save_marks`)를 넘긴다. 짝은 저장소에 쓴 **바로
+    뒤**, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기) **앞**에 적는다 — 뒷정리는 둘째 누름의
+    회차에 끊길 수 있는 자리다(write_guard, 2026-10-26 E2E).
     """
     prepared = prepare_process_rename_rules(rules)
     saved = repository.replace_global_process_rename(
         prepared, source=source, expected_version=expected_version
     )
+    if expected_version is not None and save_marks is not None:
+        remember_own_save(PROCESS_RENAME_SAVE_NAME, expected_version, saved.version, save_marks)
     clear_global_process_rename_cache()
     forget_intro_summary_check()
     return saved

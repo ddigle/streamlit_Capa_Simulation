@@ -10,7 +10,8 @@ LLM 을 붙이기 전에 정할 것은 모델이 아니라 **답변의 모양**�
 연결할 때 바꾸는 것은 대본을 만드는 자리 하나뿐이고 화면은 그대로다.
 
 공정 이름은 옆 화면(효율 실적)과 같은 공용 표시명이다 — 결론·질문·조건은 대본이 표시명으로
-적고, 근거 표는 화면 복사본에 입힌다(AGENTS 8장 「화면은 표시명, 파일은 원본」).
+적고, 근거 표는 화면 복사본에 입힌다(AGENTS 8장 「화면은 표시명, 파일은 원본」). 결론·질문·조건은
+마크다운으로 그려지므로 대본에는 막은 표시명을 넘긴다(AGENTS 9장).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from dataclasses import replace
 
 import streamlit as st
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -30,7 +32,11 @@ from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
 )
-from capa_simulation.services.chatbot_samples import SampleAnswer, build_sample_answers
+from capa_simulation.services.chatbot_samples import (
+    ProcessName,
+    SampleAnswer,
+    build_sample_answers,
+)
 
 SOURCE = "LLM API · Capa 데이터"
 # 대화 기록 — 물은 답의 `SampleAnswer.key` 차례. 질문 글자는 공정 표시명을 따라 바뀌어 적지 않는다.
@@ -39,6 +45,17 @@ TRANSCRIPT_KEY = "capa_chatbot_transcript"
 EXAMPLE_KEY = "capa_chatbot_example"
 # 대본 답(세션 칸, `(표시명 프로필 버전, 답 목록)`). `_sample_answers`.
 ANSWERS_MEMO_KEY = "capa_chatbot_sample_answers"
+
+
+def _markdown_process_name(process_labels: ProcessLabels) -> ProcessName:
+    """대본이 결론·질문·조건에 공정 이름을 적는 함수 — 공용 표시명을 마크다운 글자 그대로.
+
+    결론·조건 줄은 `st.markdown`, 질문은 대화 말풍선(`st.write`)과 추천 질문 단추 라벨로 가서 셋
+    다 마크다운이다. 표시명은 사람 글이라(「TC~B~1 *z*」) 막지 않으면 조회기간 「26.01~12월」 의
+    물결표와 짝을 지어 문장 대부분이 지움선이 되고 별표가 기울임이 된다(2026-10-26 E2E). 근거 표의
+    `공정` 칸은 평문이라 막지 않은 표시명(`ProcessLabels.frame`)이다.
+    """
+    return lambda process: literal_markdown(process_labels.label(process))
 
 
 def _sample_answers(process_labels: ProcessLabels) -> list[SampleAnswer]:
@@ -55,7 +72,10 @@ def _sample_answers(process_labels: ProcessLabels) -> list[SampleAnswer]:
         and memo[1]
         and all(isinstance(answer, SampleAnswer) for answer in memo[1])
     ):
-        memo = (process_labels.version, build_sample_answers(process_labels.label))
+        memo = (
+            process_labels.version,
+            build_sample_answers(_markdown_process_name(process_labels)),
+        )
         st.session_state[ANSWERS_MEMO_KEY] = memo
     return [
         replace(answer, evidence=process_labels.frame(answer.evidence).copy()) for answer in memo[1]
