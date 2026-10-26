@@ -57,7 +57,7 @@ from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
 )
-from capa_simulation.components.widget_generation import generation, widget_key
+from capa_simulation.components.widget_generation import bump, generation, widget_key
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     current_selection,
@@ -616,7 +616,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
             )
         )
         return
-    st.session_state[SAVE_NOTE_GENERATION_KEY] = _note_generation() + 1
+    bump(SAVE_NOTE_GENERATION_KEY)
     st.session_state[FLASH_KEY] = message
     close_equipment_scenario_dialog()
     st.rerun()

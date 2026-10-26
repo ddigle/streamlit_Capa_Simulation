@@ -7,8 +7,10 @@
 - **닫힌 팝오버 칸** — 브라우저는 닫혀 있던 칸을 나중에 열 때 마지막 회차가 실어 보낸 값으로만
   세운다(`_late_mount`). 처음 회차에 한 번 적는 꼴은 한 회차 뒤 빈 칸으로 섰다(2026-10-26 E2E —
   설비 시나리오 「리비전명」). `seed_field` 는 고치지 않은 동안 매 회차 싣는다.
-- **AST 그물** — 도우미 밖에서 세대 꼬리 글자(`__g{…}`·`_g{…}`·`__p{…}`·`__{…}`)를 짓거나, 팝오버
-  안에 그리는 입력 칸 key 에 그 함수가 세션 대입으로 값을 미리 적으면 실패한다. 다이얼로그는 보지
+- **AST 그물** — 도우미 밖에서 세대 꼬리 글자(`__g{…}`·`_g{…}`·`__p{…}` 뒤 아무 식, `__{…}`·`_{…}`
+  뒤 세대·nonce 식 — f-문자열·`+` 잇기·`.format`)를 짓거나(아직 옮기지 않은 `_{n}` 꼴 다섯 자리는
+  `_REMAINING_HAND_MADE`), 팝오버 안에 그리는 입력 칸 key 에 그 함수가 세션 대입·`setdefault`·같은
+  모듈 도우미로 값을 미리 적으면 실패한다. 다이얼로그는 보지
   않는다 — 다이얼로그 본문은 열린 회차에만 그려져 그 회차의 칸이 마운트된 채라 같은 회차에 적은
   값을 받는다(사이드바 팝업의 「구획」 고르기가 그렇게 선택지 밖 값을 고친다). 다이얼로그가 **닫힌**
   회차에 적은 값이 닿지 않는 것은 key 세대(`bump`)로 막는다.
@@ -265,51 +267,134 @@ def _sources() -> list[Path]:
     return [path for path in paths if path != HELPER]
 
 
-_GENERATION_TAILS = ("__g", "_g", "__p", "__")
+# 세대 꼬리 — 앞 셋은 세대 말고는 쓰지 않는 글자라 뒤에 무엇이 와도 세대 key 로 본다. 뒤
+# 둘(`__`·`_`)은 리비전 id·글 번호 꼬리로도 흔해, 뒤 식에 세대 칸(`generation`·`nonce`)이 들
+# 때만 본다.
+_STRICT_TAILS = ("__g", "_g", "__p")
+_LOOSE_TAILS = ("__", "_")
+_COUNTER_WORDS = ("generation", "nonce")
+
+# 아직 옮기지 않은 세대 key — `docs/TODO.md` 코드 정리 「위젯 세대 한 길 뒤에 남은 것」 ①.
+# 꼬리 `_{n}` 꼴이라 `widget_key` 의 꼴 넷 밖이다. 옮기면 이 목록에서 뺀다(남은 줄이 없으면
+# 시험이 알린다).
+_REMAINING_HAND_MADE = {
+    ("app_pages/space_status.py", "_render_unsaved_layout_panel"),
+    ("src/capa_simulation/components/equipment_data_workspace.py", "_upload_widget_key"),
+    ("src/capa_simulation/components/floor_layout_upload.py", "_floor_layout_dialog"),
+    ("src/capa_simulation/components/shortening_board.py", "render_progress_board"),
+    ("src/capa_simulation/components/space_shortening_view.py", "render_floor_layer_panel"),
+}
+
+
+def _counter_like(node: ast.AST) -> bool:
+    text = ast.unparse(node).lower()
+    return any(word in text for word in _COUNTER_WORDS)
+
+
+def _tail_then_counter(text: str, value: ast.AST) -> bool:
+    return text.endswith(_STRICT_TAILS) or (text.endswith(_LOOSE_TAILS) and _counter_like(value))
+
+
+def _added(node: ast.AST) -> list[ast.AST]:
+    """`a + b + c` 를 펼친 항."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return [*_added(node.left), *_added(node.right)]
+    return [node]
 
 
 def _hand_made_generation_keys(tree: ast.AST) -> list[int]:
-    """f-문자열에서 세대 꼬리 글자 바로 뒤에 세대 번호(이름에 `generation` 이 든 식)를 끼운 줄."""
+    """세대 꼬리 글자 바로 뒤에 세대 번호를 잇는 줄 — f-문자열·`+` 잇기·`.format` 세 꼴."""
     lines: list[int] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.JoinedStr):
-            continue
-        parts = node.values
-        for before, after in zip(parts, parts[1:], strict=False):
-            if not (isinstance(before, ast.Constant) and isinstance(before.value, str)):
-                continue
-            if not isinstance(after, ast.FormattedValue):
-                continue
-            if before.value.endswith(_GENERATION_TAILS) and (
-                "generation" in ast.unparse(after.value).lower()
+        if isinstance(node, ast.JoinedStr):
+            parts = node.values
+            for before, after in zip(parts, parts[1:], strict=False):
+                if (
+                    isinstance(before, ast.Constant)
+                    and isinstance(before.value, str)
+                    and isinstance(after, ast.FormattedValue)
+                    and _tail_then_counter(before.value, after.value)
+                ):
+                    lines.append(node.lineno)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            terms = _added(node)
+            for left, right in zip(terms, terms[1:], strict=False):
+                if (
+                    isinstance(left, ast.Constant)
+                    and isinstance(left.value, str)
+                    and _tail_then_counter(left.value, right)
+                ):
+                    lines.append(node.lineno)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "format"
+            and isinstance(node.func.value, ast.Constant)
+            and isinstance(node.func.value.value, str)
+        ):
+            template = node.func.value.value
+            if any(f"{tail}{{" in template for tail in _STRICT_TAILS) or (
+                any(f"{tail}{{" in template for tail in _LOOSE_TAILS)
+                and any(_counter_like(argument) for argument in node.args)
             ):
                 lines.append(node.lineno)
-    return lines
+    return sorted(set(lines))
+
+
+def _enclosing_function(tree: ast.Module, line: int) -> str:
+    """`line` 을 품은 모듈 단 함수의 이름(모듈 단 줄이면 `<module>`)."""
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.lineno <= line <= (
+            node.end_lineno or node.lineno
+        ):
+            return node.name
+    return "<module>"
+
+
+def _hand_made_sites() -> set[tuple[str, str, int]]:
+    found: set[tuple[str, str, int]] = set()
+    for path in _sources():
+        tree = _parse(path)
+        for line in _hand_made_generation_keys(tree):
+            found.add((str(path.relative_to(ROOT)), _enclosing_function(tree, line), line))
+    return found
 
 
 def test_no_module_builds_a_generation_key_by_hand() -> None:
-    found = [
-        f"{path.relative_to(ROOT)}:{line}"
-        for path in _sources()
-        for line in _hand_made_generation_keys(_parse(path))
-    ]
-    assert not found, (
+    found = _hand_made_sites()
+    new = sorted(site for site in found if site[:2] not in _REMAINING_HAND_MADE)
+    assert not new, (
         "세대 key 는 components/widget_generation.widget_key 로 짓는다(꼴은 style·bare_zero): "
-        f"{found}"
+        f"{new}"
     )
+    moved = sorted(_REMAINING_HAND_MADE - {site[:2] for site in found})
+    assert not moved, f"옮긴 자리는 남은 목록(_REMAINING_HAND_MADE)·TODO ① 에서 뺀다: {moved}"
 
 
 def test_the_hand_made_key_net_catches_the_old_shapes() -> None:
-    """그물이 옛 꼴 넷을 실제로 잡는다 — 잡지 못하는 그물은 아무것도 지키지 않는다."""
+    """그물이 옛 꼴 넷과 그 옆 꼴(아무 식·`.format`·`+` 잇기·nonce)을 실제로 잡는다."""
     samples = [
         'f"{key}__g{generation}"',
         'f"scenario_create_{field}_g{generation}"',
         'f"{base}__p{_popover_generation()}"',
         'f"{input_key}__{generation}"',
+        'f"{key}__g{n}"',
+        'f"{key}__g{gen}"',
+        'f"{key}__g{st.session_state.get(C, 0)}"',
+        '"{}__g{}".format(key, generation)',
+        'key + "__g" + str(generation)',
+        'f"{K}_{nonce}"',
+        '"{}_{}".format(K, nonce)',
     ]
     for sample in samples:
         assert _hand_made_generation_keys(ast.parse(sample)), sample
-    assert not _hand_made_generation_keys(ast.parse('f"{_keyed(KEY)}__{revision_id}"'))
+    for innocent in (
+        'f"{_keyed(KEY)}__{revision_id}"',
+        'f"{REPLY_FORM_KEY}_{post_id}"',
+        'key + "__" + scenario_id',
+        '"{}_{}".format(prefix, post_id)',
+    ):
+        assert not _hand_made_generation_keys(ast.parse(innocent)), innocent
 
 
 _INPUT_WIDGETS = frozenset(
@@ -375,28 +460,82 @@ def _input_keys(statements: list[ast.stmt]) -> dict[str, int]:
     return keys
 
 
+def _is_session_state(node: ast.AST) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "session_state"
+
+
 def _session_writes(function: ast.FunctionDef) -> dict[str, int]:
+    """세션 칸에 값을 적는 key 식 → 줄.
+
+    `X.session_state[k] = …` 대입과 `X.session_state.setdefault(k, …)` 둘이다.
+    """
     writes: dict[str, int] = {}
     for node in ast.walk(function):
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if (
-                isinstance(target, ast.Subscript)
-                and isinstance(target.value, ast.Attribute)
-                and target.value.attr == "session_state"
-            ):
-                writes[ast.dump(target.slice)] = node.lineno
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript) and _is_session_state(target.value):
+                    writes[ast.dump(target.slice)] = node.lineno
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setdefault"
+            and _is_session_state(node.func.value)
+            and node.args
+        ):
+            writes[ast.dump(node.args[0])] = node.lineno
     return writes
 
 
+def _prefill_helpers(functions: dict[str, ast.FunctionDef]) -> dict[str, list[tuple[int, str]]]:
+    """같은 모듈에서 칸 key 를 인자로 받아 그 칸에 적는 함수 → 그 인자의 (자리, 이름).
+
+    `_prefill(key, value)` 처럼 「한 번만 적기」 를 도우미로 빼도 그물이 본다(2026-10-26 리뷰).
+    """
+    helpers: dict[str, list[tuple[int, str]]] = {}
+    for name, function in functions.items():
+        written = _session_writes(function)
+        params = [
+            (position, argument.arg)
+            for position, argument in enumerate(
+                [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
+            )
+            if ast.dump(ast.Name(id=argument.arg, ctx=ast.Load())) in written
+        ]
+        if params:
+            helpers[name] = params
+    return helpers
+
+
+def _helper_prefills(
+    function: ast.FunctionDef,
+    keys: dict[str, int],
+    helpers: dict[str, list[tuple[int, str]]],
+) -> list[int]:
+    """`function` 이 칸 key(`keys`)를 넘겨 부르는 같은 모듈 도우미 호출의 줄."""
+    lines: list[int] = []
+    for call in ast.walk(function):
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
+            continue
+        for position, name in helpers.get(call.func.id, []):
+            given = [
+                *call.args[position : position + 1],
+                *(item.value for item in call.keywords if item.arg == name),
+            ]
+            if any(ast.dump(value) in keys for value in given):
+                lines.append(call.lineno)
+    return lines
+
+
 def _popup_prefills(tree: ast.Module) -> list[int]:
-    """팝오버 안에 그리는 입력 칸 key 에, 그 칸을 그리는 함수가 세션 대입으로 적는 줄.
+    """팝오버 안에 그리는 입력 칸 key 에, 그 칸을 그리는 함수가 세션에 값을 적는 줄.
 
     팝오버 안 함수는 같은 모듈의 `with ….popover(…)` 블록에서 부르는 함수와 그 함수들이 부르는
-    함수다. 그 밖의 함수는 제 `with ….popover(…)` 블록 안 칸만 본다.
+    함수다. 그 밖의 함수는 제 `with ….popover(…)` 블록 안 칸만 본다. 적기는 세션 대입·`setdefault`
+    와, 칸 key 를 인자로 받아 그 칸에 적는 같은 모듈 도우미 한 겹이다. 다른 모듈의 도우미나 여러
+    겹 도우미, 칸 key 를 다른 식으로 바꿔 쓴 적기는 보지 않는다(AGENTS 9장 「닫힌 팝업 안」).
     """
     functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    helpers = _prefill_helpers(functions)
     inside = _called_names(_popover_bodies(tree)) & set(functions)
     frontier = set(inside)
     while frontier:
@@ -410,6 +549,7 @@ def _popup_prefills(tree: ast.Module) -> list[int]:
         region = function.body if name in inside else _popover_bodies(function)
         keys = _input_keys(region)
         lines.extend(line for key, line in _session_writes(function).items() if key in keys)
+        lines.extend(_helper_prefills(function, keys, helpers))
     return sorted(lines)
 
 
@@ -449,6 +589,32 @@ def _toolbar():
         st.text_area("메모", key="memo_text")
 """
     assert len(_popup_prefills(ast.parse(sample))) == 2
+    # 같은 「한 번만 적기」 를 도우미로 빼거나 `setdefault` 로 써도 잡는다(2026-10-26 리뷰).
+    helper = """
+def _prefill(key, value):
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+def _render_rename():
+    key = f"{_keyed(RENAME_KEY)}__{scenario_id}"
+    _prefill(key, current)
+    st.text_input("이름", key=key)
+
+def _section():
+    with st.popover("이름 바꾸기"):
+        _render_rename()
+"""
+    assert _popup_prefills(ast.parse(helper)) == [8]
+    setdefault = """
+def _render_rename(field):
+    st.session_state.setdefault(field.key, current)
+    st.text_input("이름", key=field.key)
+
+def _section():
+    with st.popover("이름 바꾸기"):
+        _render_rename(FIELD)
+"""
+    assert _popup_prefills(ast.parse(setdefault)) == [3]
     seeded = """
 def _render_rename():
     field = seed_field(GENERATION_KEY, RENAME_KEY, current, suffix=suffix)

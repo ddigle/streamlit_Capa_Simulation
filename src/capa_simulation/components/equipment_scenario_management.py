@@ -261,7 +261,7 @@ def _refused(message: str) -> None:
     세운 뒤(옛 확인으로 다시 누르지 않게) 다음 회차 맨 위에 까닭을 알린다."""
     clear_equipment_snapshot_cache()
     st.session_state[REFUSED_KEY] = message
-    st.session_state[GENERATION_KEY] = _generation() + 1
+    bump(GENERATION_KEY)
     st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.rerun()
 
@@ -509,7 +509,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         or isinstance(refused, str)
         or (bool(session.notice) and not session.unmerged)
     ):
-        st.session_state[POPOVER_GENERATION_KEY] = _popover_generation() + 1
+        bump(POPOVER_GENERATION_KEY)
     with st.container():
         if isinstance(flash, str):
             st.success(flash)
