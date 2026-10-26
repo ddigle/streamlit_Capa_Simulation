@@ -169,6 +169,7 @@ from capa_simulation.services.layout_overlay import (
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     PendingRenames,
+    live_renames,
     module_layout_message,
     module_layout_violations,
     natural_name_key,
@@ -604,6 +605,9 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     swapped = previous is not None and previous != token
     overlay_dropped = _stamped_overlay_edits() if swapped else 0
     reapply = _reapply_material(previous, token) if swapped else None
+    # 저장 안 한 이름 바꿈은 다시 얹지 않고 버린다 — 다시 얹은 알림이 그 수를 버린 것에 적는다(같은
+    # 호기의 위치만 다시 얹고 이름은 돌아가 이름도 남았다고 읽혔다, E2E r6).
+    renames_dropped = _live_rename_count() if reapply is not None else 0
     # 옛 저장본의 (설비명, 호기 키) — 남이 이름을 바꾼 호기의 표 행 id 를 새 이름으로 옮길 재료.
     old_unit_keys = tuple(draft_unit_keys().items()) if swapped else ()
     if st.session_state.get(DRAFT_REVISION_KEY) != token:
@@ -649,7 +653,12 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             number = _replaced_by_words(previous, latest_snapshot)
             queue_flash(
                 DISCARDED_NOTICE_KEY,
-                discarded_notice(number, overlay_dropped=overlay_dropped, reapplied=reapplied),
+                discarded_notice(
+                    number,
+                    overlay_dropped=overlay_dropped,
+                    reapplied=reapplied,
+                    renames_dropped=renames_dropped,
+                ),
                 kind="warning",
                 icon=":material/sync_problem:",
             )
@@ -1329,6 +1338,18 @@ def live_layout_role() -> str | None:
     return None
 
 
+def _live_rename_count() -> int:
+    """저장 안 한 이름 바꿈 수 — Space 저장 안 한 배치 상자 「이름 바꿈 n건」 과 같은 셈
+    (`live_renames` — 설비명·Main 설비 바꿈마다 한 건). 편집본을 다시 세우기 **전**(옛 저장본
+    사본)에 센다."""
+    pending = pending_unit_renames()
+    buffer = st.session_state.get(BUFFER_KEY)
+    if not pending or not isinstance(buffer, tuple):
+        return 0
+    live = live_renames(pending, _saved_master(), buffer[1])
+    return len(live.units) + len(live.groups)
+
+
 def _stamped_overlay_edits() -> int:
     """가정 역할로 찍힌 배치 편집의 호기 수(편집본 대 저장본 사본) — 남의 저장으로 편집본을 다시
     세울 때 버림 알림에 따로 적는다. 가정 역할이 아니거나 편집본이 없으면 0."""
@@ -1388,36 +1409,48 @@ def _reapply_layout(
 
 
 def discarded_notice(
-    number: str, *, overlay_dropped: int, reapplied: ReappliedLayout | None
+    number: str,
+    *,
+    overlay_dropped: int,
+    reapplied: ReappliedLayout | None,
+    renames_dropped: int = 0,
 ) -> str:
     """남의 저장으로 편집본을 다시 세운 회차의 알림(한 번). 가정 배치 편집을 새 저장본 위에 다시
     얹었으면 그 수와 빠진 호기를 따로 적는다(설계 9장) — 그 밖의 저장 안 한 편집(설비 마스터 칸·
-    도면 요소·Main 설비명 위치)은 지금처럼 버렸다."""
+    도면 요소·Main 설비명 위치)은 지금처럼 버렸다. 다시 얹을 편집이 남이 지운 호기에만 있었으면
+    (다시 얹은 0대) 버렸다는 일반 글에 그 호기와 까닭을 적고, 그 호기는 「최신 위에서 다시
+    옮기세요」 에 세지 않는다(E2E r6 — 이제 없는 호기를 다시 옮기라 했다). `renames_dropped` 는 버린
+    저장 안 한 이름 바꿈 수다 — 다시 얹은 갈래는 버린 것에 「이름 바꿈 n건」 을 적는다(같은 호기의
+    위치만 다시 얹고 이름은 돌아가, 적지 않으면 이름 바꿈도 남았다고 읽혔다 — E2E r6). 버린 갈래는
+    「설비 편집(설비 마스터·Space 배치)을 버리고」 가 이미 모두 말한다."""
     head = f"다른 사용자가 {number}{object_particle(number)} 저장해, "
+    gone = reapplied.dropped if reapplied is not None else ()
+    # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
+    names = markdown_safe_tildes(", ".join(gone[:3])) + (" 외" if len(gone) > 3 else "")
+    dropped = (
+        f" 그 사이 공통 대장에서 빠진 호기 {len(gone):,}대({names})의 편집은 뺐습니다."
+        if gone
+        else ""
+    )
     if reapplied is not None and reapplied.reapplied:
-        # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
-        names = markdown_safe_tildes(", ".join(reapplied.dropped[:3]))
-        dropped = (
-            f" 그 사이 공통 대장에서 빠진 호기 {len(reapplied.dropped):,}대"
-            f"({names}{' 외' if len(reapplied.dropped) > 3 else ''})의 "
-            "편집은 뺐습니다."
-            if reapplied.dropped
-            else ""
-        )
+        renamed = f"이름 바꿈 {renames_dropped:,}건·" if renames_dropped else ""
         return (
             head + "최신 저장본으로 다시 열고 저장하지 않은 가정 배치 편집 "
             f"{reapplied.reapplied:,}대(호기 위치)는 그 위에 다시 얹었습니다.{dropped} 그 밖의 "
-            "저장하지 않은 설비 편집(설비 마스터 칸·도면 요소·Main 설비명 위치)은 버렸습니다 — "
-            "배치를 확인하고 저장하세요."
+            f"저장하지 않은 설비 편집(설비 마스터 칸·{renamed}도면 요소·Main 설비명 위치)은 "
+            "버렸습니다 — 배치를 확인하고 저장하세요."
         )
+    # 남이 지운 호기의 편집은 다시 옮길 수 없다 — 그 밖의 버린 가정 배치 편집만 다시 옮기라 한다.
+    rest = max(overlay_dropped - len(gone), 0)
     return (
         head
         + "이 화면에서 저장하지 않은 설비 편집(설비 마스터·Space 배치)을 버리고 최신 저장본으로 "
         "다시 열었습니다."
+        + (f" 저장하지 않은 가정 배치 편집 가운데{dropped}" if gone else "")
         + (
-            f" 그 가운데 가정 배치 편집 {overlay_dropped:,}대도 버렸습니다 — 최신 위에서 "
-            "다시 옮기세요."
-            if overlay_dropped
+            f" {'그 밖의' if gone else '그 가운데'} 가정 배치 편집 {rest:,}대도 버렸습니다 — 최신 "
+            "위에서 다시 옮기세요."
+            if rest
             else ""
         )
     )
@@ -1838,6 +1871,19 @@ def _fab_tail() -> str | None:
     return held_notice(FAB_SAVE_NAME) if pending_fab_layout() is None else None
 
 
+def common_conflict_reopened(newest: str) -> str:
+    """편집본을 세우기 **전**(콜백)에 돈 저장이 남의 공통 대장 저장에 거부됐을 때의 글.
+
+    그 회차 본문이 편집본을 그 저장본으로 다시 세우며(`ensure_equipment_drafts`) 머리에 무엇을 다시
+    얹고 버렸는지 알린다(`discarded_notice`). 저장소의 공용 거부 글(「화면을 다시 불러와 …」)을
+    그대로 두면 그 알림과 다른 길을 말해, 안내대로 브라우저를 새로 불러온 사용자가 다시 얹은 가정
+    배치 편집까지 잃었다(2026-10-27 E2E)."""
+    return (
+        f"다른 사용자가 먼저 {with_object_particle(newest)} 저장해 저장하지 않았습니다 — 이 화면을 "
+        "그 저장본으로 다시 열었습니다(위 알림). 남은 편집을 확인한 뒤 다시 저장하세요."
+    )
+
+
 def save_equipment_buffer(
     repository: DuckDBEquipmentRepository,
     frames: Frames | None,
@@ -1846,6 +1892,7 @@ def save_equipment_buffer(
     basis: EquipmentSaveBasis | None = None,
     fields: EquipmentSaveFields | None = None,
     removal_confirmed: RemovalElsewhere | None = None,
+    reopens: bool = False,
 ) -> str:
     """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
 
@@ -1867,6 +1914,10 @@ def save_equipment_buffer(
     시나리오). 저장 때 다시 센 삭제가 그것으로 덮이지 않으면(확인하지 않은 호기, 본 뒤 그 호기
     일정이 든 시나리오가 늘어남) 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의 저장도 같은
     까닭으로 막힌다.
+
+    `reopens` 는 이 저장이 그 회차 편집본을 세우기 전(콜백 — 설비 마스터 「리비전 저장」·Space
+    「배치 저장」)에 돈다는 뜻이다. 남이 먼저 공통 대장을 저장해 거부되면 같은 회차 본문이 편집본을
+    그 저장본으로 다시 세우므로 거부 글도 그 길을 말한다(`common_conflict_reopened`).
     """
     fab_tail = _fab_tail()
     if frames is None:
@@ -1907,6 +1958,7 @@ def save_equipment_buffer(
             fab_saved=fab_saved,
             fab_tail=fab_tail,
             removal_confirmed=removal_confirmed,
+            reopens=reopens,
         )
     except BOOTSTRAP_ERRORS as exc:
         if not (fab_saved or fab_error):
@@ -1969,6 +2021,7 @@ def _save_equipment_frames(
     fab_saved: bool,
     fab_tail: str | None = None,
     removal_confirmed: RemovalElsewhere | None = None,
+    reopens: bool = False,
 ) -> str:
     """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션). `fab_tail` 은
     같은 단추의 첫 누름이 막 낸 FAB 저장 알림이다(`_fab_tail`) — 이 누름이 아무것도 쓰지 않으면 그
@@ -2061,11 +2114,15 @@ def _save_equipment_frames(
             lambda: repository.save_equipment(request),
             wrote=_wrote_anything,
         )
-    except EquipmentRevisionConflict:
+    except EquipmentRevisionConflict as exc:
         # 창(`TRAILING_PRESS_SECONDS`)을 지나 닿은 둘째 누름은 저장소가 거부한다 — 그 거부가 제 저장
         # 짝이면 제 저장으로 알아본다.
         current = equipment_write_token(str(repository.database_path), scenario_id)
         if current is None or not is_own_save(own_name, expected, current[:2], save_marks):
+            if reopens and exc.side == "common":
+                # 같은 회차 본문이 편집본을 남의 저장본으로 다시 세운다 — 그 머리 알림과 같은 길을
+                # 말한다(「화면을 다시 불러와」 를 따르면 다시 얹은 편집을 잃는다).
+                raise ValueError(common_conflict_reopened(exc.newest)) from exc
             raise
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 뒷정리
         # (편집본 비우기·세션 옮기기)가 끊겼을 수 있어 여기서 다시 하고 그 알림을 다시 낸다.

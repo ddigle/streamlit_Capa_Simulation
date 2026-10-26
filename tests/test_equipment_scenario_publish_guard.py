@@ -30,6 +30,7 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
     CONTINUE_BUTTON_KEY,
     PUBLISH_BUTTON_KEY,
@@ -144,7 +145,7 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """「셋업 실무」 r1 을 발행하려고 확인 글(지금 공식 v1 → 새 공식 v2)을 본 사이 남이 「운영
     일정」 을 저장해 v2 를 냈다. 누르면 v3 으로 내지 않고 거절하며, 바뀐 확인 글을 본 뒤 다시 누르면
@@ -174,6 +175,9 @@ def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
     )
     assert any("지금 공식 v2" in str(item.value) for item in app.caption)
 
+    # 바뀐 확인 글을 보고 다시 누른 발행이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
+    # 지났다. AppTest 의 회차 사이는 그 창보다 짧을 수 있어 0 으로 둔다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.button(key=PUBLISH_BUTTON_KEY).click()
     _ok(app.run())
     release = repository.latest_equipment_release()
@@ -181,7 +185,9 @@ def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
     assert release.equipment_scenario_id == setup.equipment_scenario_id
 
 
-def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(tmp_path: Path) -> None:
+def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """「운영 일정」 최신 r2(공식 v1 = r1)를 발행하려고 확인 글(최신이 아니라는 줄 없음)을 본 사이
     남이 r3 을 저장했다. 누르면 r2 를 내지 않고 거절하며, 다시 그린 확인 글이 「r2는 … 의
     최신(r3)이 아닙니다」 를 보인다. 그 글을 본 뒤 다시 누르면 r2 를 낸다(최신이 아닌 리비전 발행은
@@ -221,6 +227,8 @@ def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(tmp_pat
     )
     assert "r2는 「운영 일정」 의 최신(r3)이 아닙니다." in [str(item.value) for item in app.caption]
 
+    # 바뀐 확인 글을 보고 다시 누른 발행이다(창이 지났다 — 위 시험과 같은 까닭).
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.button(key=PUBLISH_BUTTON_KEY).click()
     _ok(app.run())
     release = repository.latest_equipment_release()
@@ -369,3 +377,55 @@ def test_the_continue_check_resets_when_its_words_change_on_screen(tmp_path: Pat
     assert not confirm.value
     assert app.button(key=CONTINUE_BUTTON_KEY).disabled
     assert repository.legacy_trace_count() == 2
+
+
+def test_an_already_official_revision_shows_no_new_release_in_the_preview(tmp_path: Path) -> None:
+    """E2E r6 — 지금 공식(v1 = 「운영 일정」 r1)을 고르면 확인 글 첫 줄이 「→ 새 공식 v2」 를 적지
+    않는다(바로 아래 줄 「발행해도 바뀌지 않습니다」 와 어긋났다)."""
+    repository = _seeded(tmp_path)
+    app = _ok(_tab(repository.database_path).run())
+
+    captions = [str(item.value) for item in app.caption]
+    assert "지금 공식 v1 · 「운영 일정」 r1" in captions, captions
+    assert not any("새 공식 v2" in text for text in captions), captions
+    assert "이미 공식 발행인 리비전입니다 — 발행해도 바뀌지 않습니다." in captions
+
+
+def test_publishing_an_already_official_revision_says_nothing_was_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지금 공식인 리비전에 「공식으로 발행」 을 누르면 저장소는 쓰지 않는다 — 「공식 v1로
+    발행했습니다」 라 새 발행처럼 알리지 않고 이미 공식이라 새로 발행하지 않았다고 알린다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    repository = _seeded(tmp_path)
+    app = _ok(_tab(repository.database_path).run())
+
+    app.button(key=PUBLISH_BUTTON_KEY).click()
+    _ok(app.run())
+
+    written = [str(item.value) for item in app.success]
+    assert written == ["「운영 일정」 r1은 이미 공식 v1입니다 — 새로 발행하지 않았습니다."], written
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 1
+
+
+def test_a_slow_double_press_of_a_fresh_publish_keeps_the_published_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """첫 누름이 「셋업 실무」 r1 을 공식 v2 로 낸 뒤 다시 그린 화면에 닿은 빠른 둘째 누름은 그
+    리비전이 이미 공식이라 쓰지 않는다 — 창(`TRAILING_PRESS_SECONDS`) 안이면 「이미 공식」 으로
+    바꾸지 않고 첫 발행의 알림을 다시 낸다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+    app = _ok(_tab(repository.database_path).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
+    _ok(app.run())
+
+    for _ in range(2):
+        app.button(key=PUBLISH_BUTTON_KEY).click()
+        _ok(app.run())
+        written = [str(item.value) for item in app.success]
+        assert written == ["공식 v2로 발행했습니다 — 「셋업 실무」 r1."], written
+    release = repository.latest_equipment_release()
+    assert release is not None and release.release_no == 2

@@ -77,9 +77,15 @@ from capa_simulation.components.widget_generation import (
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
+    held_notice,
+    held_profile_conflict,
     is_own_save,
     is_own_save_settled,
+    note_notice,
+    note_profile_conflict,
+    notice_marks,
     own_save_marks,
+    profile_conflict_marks,
     remember_seen,
     save_remembered,
     seen,
@@ -392,6 +398,26 @@ def _refused(message: str) -> None:
     bump(GENERATION_KEY)
     st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.rerun()
+
+
+def _refused_noted(conflicts: dict[str, tuple[str, float]], name: str, message: str) -> None:
+    """`_refused` 앞에 거부 표지를 적는다(`write_guard.note_profile_conflict` — dict 칸이라 끊기지
+    않는다). 입력 칸이나 확인 글의 본 값을 거부 뒤 회차가 지금 값으로 새로 세우는 쓰기(이름 바꾸기·
+    리비전명·공식 발행)가 부른다 — 표지가 없으면 옛 화면의 둘째 누름이 그 새 회차에 닿아 지금 값을
+    본 값으로 들고 대조를 지난다(2026-10-27 E2E). `conflicts` 는 쓰기 전에 받아 둔
+    `profile_conflict_marks()` 다."""
+    note_profile_conflict(conflicts, name, message)
+    _refused(message)
+
+
+def _repeat_held_refusal(conflicts: dict[str, tuple[str, float]], name: str) -> None:
+    """`name` 쓰기가 창(`write_guard.TRAILING_PRESS_SECONDS`) 안에 남의 쓰기로 거부됐으면 이번
+    누름은 그 거부된 누름과 같은 단추의 둘째 누름이다 — 옛 화면의 입력이라 쓰지 않고 그 거부를 다시
+    알린다(`_refused` — 다음 회차 맨 위에 한 번). 아니면 아무것도 하지 않는다. 창이 지난 누름은 새
+    화면을 보고 다시 누른 것이라 평소대로 쓴다."""
+    held = held_profile_conflict(conflicts, name)
+    if held is not None:
+        _refused(held)
 
 
 def scenario_rows(session: EquipmentSession) -> pd.DataFrame:
@@ -1398,11 +1424,16 @@ def _render_revision_name(
         key=REVISION_NAME_BUTTON_KEY,
         width="stretch",
     ):
+        own_name = f"{REVISION_NAME_SAVE_NAME}:{revision.schedule_revision_id}"
+        # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        conflicts = profile_conflict_marks()
+        # 남의 리비전명 변경에 거부된 누름의 둘째 누름 — 거부 회차가 칸을 지금 이름으로 새로 세워
+        # 이 누름은 그 이름을 본 값으로 들고 대조를 지난다(같은 이름을 다시 쓰며 「저장했습니다」 로
+        # 거부를 덮었다, 2026-10-27 E2E). 쓰지 않고 거부를 다시 알린다(write_guard).
+        _repeat_held_refusal(conflicts, own_name)
         # 칸을 세울 때 본 이름이다 — 빈 이름은 「이름 없음」 을 본 것이다(대체값이 아니다).
         held = seen(field.seen_key)
         seen_name = held if isinstance(held, str) else ""
-        own_name = f"{REVISION_NAME_SAVE_NAME}:{revision.schedule_revision_id}"
-        # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
         try:
             repository = get_equipment_repository(database_path)
@@ -1427,7 +1458,7 @@ def _render_revision_name(
             moved = schedule_revision_name_moved_message(
                 literal_markdown(exc.current) if exc.current is not None else None
             )
-            _refused(f"리비전명을 바꾸지 않았습니다 — {moved}")
+            _refused_noted(conflicts, own_name, f"리비전명을 바꾸지 않았습니다 — {moved}")
             return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
@@ -1458,13 +1489,19 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
     )
     name = st.text_input("이름", key=field.key)
     if st.button("이름 바꾸기", type="primary", key=RENAME_BUTTON_KEY, width="stretch"):
+        own_name = f"{SCENARIO_NAME_SAVE_NAME}:{scenario.equipment_scenario_id}"
+        # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        conflicts = profile_conflict_marks()
+        # 남의 이름 바꿈에 거부된 누름의 둘째 누름 — 거부 회차가 칸을 지금 이름으로 새로 세워 이
+        # 누름은 그 이름을 본 값으로 들고 대조를 지난다(같은 이름을 다시 쓰며 「…으로 했습니다」 로
+        # 거부를 덮었다, 2026-10-27 E2E). 쓰지 않고 거부를 다시 알린다(write_guard).
+        _repeat_held_refusal(conflicts, own_name)
         seen_name = seen(field.seen_key)
         if not isinstance(seen_name, str):
             # 칸을 세울 때 본 이름을 모른다 — 지금 이름으로 대체하면 남의 바꿈을 모르는 채 덮는다.
-            _refused(SEEN_MISSING_MESSAGE)
+            # 거부 회차가 칸을 새로 세우므로 둘째 누름도 같은 표지로 거른다.
+            _refused_noted(conflicts, own_name, SEEN_MISSING_MESSAGE)
             return
-        own_name = f"{SCENARIO_NAME_SAVE_NAME}:{scenario.equipment_scenario_id}"
-        # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
         try:
             repository = get_equipment_repository(database_path)
@@ -1487,7 +1524,7 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
             # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다. 예외 글은
             # 날 이름이라(물결표만 막힌다) 막은 지금 이름으로 같은 글을 짓는다(E2E r5 — `*`).
             moved = scenario_name_moved_message(literal_markdown(exc.current))
-            _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {moved}")
+            _refused_noted(conflicts, own_name, f"설비 시나리오 이름을 바꾸지 않았습니다 — {moved}")
             return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
@@ -1694,7 +1731,10 @@ def publish_preview(
 
     지금 공식의 리비전 번호는 그 시나리오 최신·이 세션의 스냅샷·`official_revisions`(공식 시나리오의
     리비전 목록) 차례로 찾는다 — 공식이 그 시나리오 최신이 아니고 이 세션이 그것을 들고 있지 않으면
-    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다.
+    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다. 고른 리비전이 이미 지금
+    공식이면 발행해도 쓰지 않으므로(저장소가 그 발행을 돌려준다) 「→ 새 공식」 을 적지 않고 지금
+    공식과 그 사실만 적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도 바뀌지 않습니다」 가
+    섰다).
     """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
@@ -1708,8 +1748,11 @@ def publish_preview(
             f" r{official_revision}" if official_revision is not None else ""
         )
     next_no = (release.release_no if release is not None else 0) + 1
+    released = release is not None and release.schedule_revision_id == revision.schedule_revision_id
     lines = [
-        f"{current} → 새 공식 v{next_no} · 「{literal_markdown(scenario.scenario_name)}」 "
+        current
+        if released
+        else f"{current} → 새 공식 v{next_no} · 「{literal_markdown(scenario.scenario_name)}」 "
         f"r{revision.revision_no}"
     ]
     if revision.schedule_revision_id != scenario.latest_schedule_revision_id:
@@ -1718,7 +1761,7 @@ def publish_preview(
             f"「{literal_markdown(scenario.scenario_name)}」 의 최신"
             f"(r{scenario.latest_revision_no})이 아닙니다."
         )
-    if release is not None and release.schedule_revision_id == revision.schedule_revision_id:
+    if released:
         lines.append("이미 공식 발행인 리비전입니다 — 발행해도 바뀌지 않습니다.")
     return lines
 
@@ -1896,7 +1939,13 @@ def _render_publish(
         return
     seen_release = seen_before.get("release_no") if seen_before is not None else None
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    conflicts = profile_conflict_marks()
+    # 남의 발행·저장에 거부된 누름의 둘째 누름 — 거부 뒤 회차(누르지 않음)가 바뀐 확인 글의 값을 본
+    # 값으로 적어, 옛 화면의 이 누름은 대조를 지나 바뀐 확인 글을 보지 않은 채 새 번호로 발행했다
+    # (2026-10-27 E2E 곁 자리). 쓰지 않고 거부를 다시 알린다(write_guard).
+    _repeat_held_refusal(conflicts, PUBLISH_SAVE_NAME)
     save_marks = own_save_marks()
+    messages = notice_marks()
     follows = _follow_marks()
     refusal = publish_seen_refusal(
         seen_before,
@@ -1915,7 +1964,7 @@ def _render_publish(
             _published_again(
                 database_path, session, scenario, revision, release_no, layout, follows
             )
-        _refused(refusal)
+        _refused_noted(conflicts, PUBLISH_SAVE_NAME, refusal)
         return
     try:
         repository = get_equipment_repository(database_path)
@@ -1933,7 +1982,10 @@ def _render_publish(
                 note=note or None,
                 expected_latest_release_no=release_no or None,
             ),
-            stored=lambda release: release.release_no,
+            # 이미 지금 공식인 리비전이면 저장소가 쓰지 않고 그 발행을 돌려준다 — 쓴 것이 아니라
+            # 제 저장 짝을 적지 않는다(적으면 첫 발행의 짝을 덮어 옛 화면의 누름을 남의 발행으로
+            # 안다).
+            stored=lambda release: release.release_no if release.release_no != release_no else None,
             marks=save_marks,
         )
     except EquipmentReleaseMoved as exc:
@@ -1942,19 +1994,29 @@ def _render_publish(
             _published_again(
                 database_path, session, scenario, revision, exc.current, layout, follows
             )
-        _refused(
+        _refused_noted(
+            conflicts,
+            PUBLISH_SAVE_NAME,
             f"확인 글을 본 뒤 공식이 바뀌어({release_words(exc.expected)} → 지금 "
             f"{release_words(exc.current)}) 발행하지 않았습니다 — 바뀐 확인 글을 다시 보고 "
-            "발행하세요."
+            "발행하세요.",
         )
         return
     except EquipmentLayoutPublishBlocked as exc:
         # 확인 글을 그린 뒤 남이 배치를 저장했다 — 목록을 다시 읽어 막힘 글을 보인다.
-        _refused(literal_markdown(str(exc)))
+        _refused_noted(conflicts, PUBLISH_SAVE_NAME, literal_markdown(str(exc)))
         return
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
         return
+    if release_no and published.release_no == release_no:
+        # 고른 리비전이 이미 지금 공식이라 아무것도 쓰지 않았다 — 새 발행처럼 알리지 않는다. 다만
+        # 방금 이 세션이 발행한 그 리비전에 닿은 빠른 둘째 누름이면(첫 회차가 다시 그린 화면의
+        # 단추) 첫 발행의 알림을 다시 낸다(write_guard.held_notice).
+        _written(
+            held_notice(PUBLISH_SAVE_NAME)
+            or already_released_message(scenario.scenario_name, revision, published.release_no)
+        )
     cleaned = published.schedule_revision_id != revision.schedule_revision_id
 
     def published_message(moved: bool, kept_unsaved: bool) -> str:
@@ -1981,7 +2043,21 @@ def _render_publish(
             name=PUBLISH_SAVE_NAME,
             follows=follows,
         )
+    # 첫 회차가 다시 그린 화면에 닿은 빠른 둘째 누름은 그 리비전이 이미 공식이라 쓰지 않는다 — 이
+    # 알림을 다시 낸다(위 「이미 공식」 갈래). dict 칸이라 끊기지 않는다.
+    note_notice(messages, PUBLISH_SAVE_NAME, published_message(False, False))
     _written(published_message(False, False))
+
+
+def already_released_message(
+    scenario_name: str, revision: EquipmentScheduleRevisionSummary, release_no: int
+) -> str:
+    """「공식으로 발행」 을 누른 리비전이 이미 지금 공식일 때 — 쓰지 않았다는 것을 적는다."""
+    title = f"r{revision.revision_no}"
+    return (
+        f"{quoted(scenario_name)} {with_topic_particle(title)} 이미 공식 v{release_no}입니다 — "
+        "새로 발행하지 않았습니다."
+    )
 
 
 def _published_again(

@@ -255,6 +255,61 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     assert LAYOUT_ROLE_KEY not in app.session_state
 
 
+def _apply_rename(app: AppTest, editor_calls: list[dict[str, Any]], *, move: bool = False) -> None:
+    """가정 세션 층 상세 편집기에서 EQ-02 의 이름을 EQ-02R 로 바꿔(`move` 면 (60, 20) 으로도 옮겨)
+    적용한다."""
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": (
+            [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}] if move else []
+        ),
+        "canvas": None,
+        "marks": None,
+        "renames": [{"kind": "unit", "from": "EQ-02", "to": "EQ-02R"}],
+    }
+    _ok(app.run())
+    assert not app.error, [item.value for item in app.error]
+
+
+def test_a_rename_only_apply_in_an_assumption_names_the_common_ledger(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 가정 세션에서 이름만 바꿔 적용하면 적용 알림이 「저장하면 「셋업 실무」의 가정
+    배치로 들어가고」, 상자 캡션이 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다」 라 했지만
+    저장은 공통 대장에만 갔다(이름 바꿈은 어느 시나리오에서나 같은 호기의 이름). 실제 저장 자리를
+    말한다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_rename(app, editor_calls)
+
+    texts = _texts(app)
+    assert not any("가정 배치로 들어가고" in text for text in texts), texts
+    assert not any("새 리비전(가정 배치)으로 저장합니다" in text for text in texts), texts
+    assert any("이름 바꿈은 공통 대장에 저장합니다" in text for text in texts), texts
+
+    common_before = len(repository.list_revisions())
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+    assert len(repository.list_revisions()) == common_before + 1
+    assert _scenario(repository, setup).latest_revision_no == 2
+
+
+def test_a_move_with_a_rename_in_an_assumption_names_both_places(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """옮기기와 이름 바꿈을 함께 적용하면 배치는 그 시나리오의 새 리비전(가정 배치)으로, 이름 바꿈은
+    공통 대장으로 간다고 함께 적는다."""
+    _, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_rename(app, editor_calls, move=True)
+
+    texts = _texts(app)
+    assert any("가정 배치로 들어가고" in text for text in texts), texts
+    caption = next(text for text in texts if "새 리비전(가정 배치)으로 저장합니다" in text)
+    assert "이름 바꿈은 공통 대장에 저장합니다" in caption, caption
+
+
 def test_a_stale_assumption_with_the_same_layout_fast_forwards(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -413,6 +468,43 @@ def test_an_old_official_revision_tail_does_not_promise_a_cleanup(tmp_path: Path
         line
     )
     assert "정리됩니다" not in line
+
+
+def test_an_old_official_revision_with_only_a_deleted_units_row_says_one_thing(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 「셋업 실무」 가 가정이던 때의 r2(EQ-01 배치 차이 1행)를 두고 차이를 지운 r3 을
+    공식으로 낸 뒤 공통 대장에서 EQ-01 을 지웠다. r2 를 연 Space 머리는 「배치는 공식과 같습니다」,
+    「지운 호기의 배치 차이 1행은 버렸습니다 — 다음 저장 때 빠집니다」, 잠금 줄 「가정이던 때의 배치
+    차이(호기 1대)가 있어 잠갔습니다」 를 함께 세웠다 — 지운 호기의 행을 잠금 까닭으로 세지 않고,
+    불변인 옛 리비전에 정리를 약속하지 않는다. 잠금 자체는 그대로다(저장소가 그 리비전의 차이 행으로
+    공식 배치 고침을 거부한다)."""
+    repository, setup = _overlay(tmp_path)
+    overlaid = _scenario(repository, setup).latest_schedule_revision_id
+    assert overlaid is not None
+    cleared = repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=overlaid)
+    assert cleared is not None
+    repository.publish_equipment_release(
+        cleared.schedule_revision_id, released_by=None, note=None, expected_latest_release_no=1
+    )
+    official = _session(repository, setup)
+    kept = official.equipment.loc[~official.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = official.downtime.loc[~official.downtime["설비명"].eq("EQ-01")].reset_index(
+        drop=True
+    )
+    repository.save_equipment(_request(official, setup, equipment=kept, downtime=downtime))
+
+    app = _ok(_space(tmp_path, setup, overlaid).run())
+
+    texts = _texts(app)
+    assert any("이 리비전의 배치는 공식과 같습니다" in text for text in texts), texts
+    assert any("지운 호기의 배치 차이 1행은 버렸습니다" in text for text in texts), texts
+    assert not any("다음 저장 때 빠집니다" in text for text in texts), texts
+    locks = [text for text in texts if "배치 편집을 잠갔습니다" in text]
+    assert len(locks) == 1, texts
+    assert "호기 1대" not in locks[0] and "배치 차이(" not in locks[0], locks
+    assert "가정이던 때 저장한 리비전이라" in locks[0], locks
+    assert app.toggle(key="space_layout_edit_mode_locked").disabled
 
 
 # 물결표가 둘인 설비 시나리오 이름 — 막지 않으면 「가정<del>R3</del>X」 로 그려진다. 막힌 꼴은
@@ -796,6 +888,40 @@ def test_a_common_save_by_someone_else_reapplies_the_assumption_layout_edits(
     assert newest.latest_layout_unit_count == 2
 
 
+def test_a_save_pressed_right_after_someone_elses_common_save_says_the_reopen_path(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 남이 공통 대장을 저장한 직후(편집본을 다시 세우기 전) 「배치 저장」 을 누르면
+    콜백이 옛 출발점으로 저장하다 거부된다. 같은 회차 본문이 편집본을 다시 세우며 「…다시
+    얹었습니다 … 배치를 확인하고 저장하세요」 를 알리는데, 거부 글은 「화면을 다시 불러와 …」 라
+    서로 다른 길을 말했고 안내대로 새로 불러오면 다시 얹은 편집을 잃었다. 거부 글도 다시 열었다고
+    말하고, 한 번 더 누르면 다시 얹은 편집이 저장된다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+
+    texts = _texts(app)
+    assert any("그 위에 다시 얹었습니다" in str(item.value) for item in app.warning), texts
+    errors = [str(item.value) for item in app.error]
+    assert len(errors) == 1, errors
+    assert "공통 대장 r2" in errors[0] and "이 화면을 그 저장본으로 다시 열었습니다" in errors[0]
+    assert not any("화면을 다시 불러와" in text for text in texts), texts
+    assert _scenario(repository, setup).latest_revision_no == 2
+
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+    assert not app.error, [item.value for item in app.error]
+    assert _scenario(repository, setup).latest_layout_unit_count == 2
+
+
 def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -824,6 +950,66 @@ def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
     notice = next(str(item.value) for item in app.warning if "다시 얹었습니다" in str(item.value))
     assert "가정 배치 편집 1대(호기 위치)" in notice
     assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notice
+    assert _buffer_x(app, "EQ-02") == 60.0
+
+
+def test_an_edit_only_of_a_unit_someone_else_deleted_names_it_in_the_notice(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 저장 안 한 가정 배치 편집이 남이 지운 호기(EQ-01) 하나뿐이면 다시 얹은 것이 0대라
+    알림이 일반 꼴로 가 「가정 배치 편집 1대도 버렸습니다 — 최신 위에서 다시 옮기세요」 라고, 이제
+    없는 호기를 다시 옮기라 했다. 빠진 호기와 까닭을 적는다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 70, "y": 40, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    _ok(app.run())
+    theirs = _session(repository)
+    kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = theirs.downtime.loc[~theirs.downtime["설비명"].eq("EQ-01")].reset_index(drop=True)
+    repository.save_equipment(_request(theirs, equipment=kept, downtime=downtime))
+    clear_equipment_repository()
+    _ok(app.run())
+
+    notices = [str(item.value) for item in app.warning if "다시 열었습니다" in str(item.value)]
+    assert len(notices) == 1, [str(item.value) for item in app.warning]
+    assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notices[0], notices
+    assert "다시 옮기세요" not in notices[0], notices
+
+
+def test_a_rename_dropped_with_a_reapplied_move_is_told(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 가정 세션에서 EQ-02 를 옮기고 이름을 EQ-02T 로 바꿔 적용한 뒤 남이 공통 대장을
+    저장하면 위치는 다시 얹고 이름 바꿈은 버린다(의도). 알림이 버린 것에 이름 바꿈을 적지 않아
+    이름도 남았다고 읽혔다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+        "renames": [{"kind": "unit", "from": "EQ-02", "to": "EQ-02T"}],
+    }
+    _ok(app.run())
+    assert not app.error, [item.value for item in app.error]
+    assert any("이름 바꿈 1건" in text for text in _texts(app)), _texts(app)
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-01", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    notice = next(str(item.value) for item in app.warning if "다시 얹었습니다" in str(item.value))
+    assert "이름 바꿈 1건" in notice, notice
     assert _buffer_x(app, "EQ-02") == 60.0
 
 
@@ -1199,7 +1385,12 @@ def test_another_save_does_not_leave_the_badge_one_run_behind(
     clear_equipment_repository()
     _ok(app.run())
 
-    assert any("버렸습니다" in str(item.value) for item in app.warning)
+    # 다시 얹을 것이 없는 버림 알림 — 빠진 호기와 까닭을 적는다(E2E r6).
+    assert any(
+        "버리고 최신 저장본으로 다시 열었습니다" in str(item.value)
+        and "빠진 호기 1대(EQ-02)의 편집은 뺐습니다" in str(item.value)
+        for item in app.warning
+    ), [str(item.value) for item in app.warning]
     assert str(app.session_state[EQUIPMENT_HEADER_LABEL_KEY]["suffix"]).endswith("가정 배치")
     assert not any("미저장 변경" in str(item.value) for item in app.sidebar.caption)
     assert not any("미저장 변경" in str(item.value) for item in app.sidebar.markdown)

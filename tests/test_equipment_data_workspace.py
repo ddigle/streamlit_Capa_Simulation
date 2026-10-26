@@ -932,6 +932,38 @@ def test_the_discarded_notice_blocks_the_tildes_of_the_dropped_units() -> None:
     assert "빠진 호기 1대(DA\\~21\\~R)의 편집은 뺐습니다" in notice, notice
 
 
+def test_the_reapplied_notice_lists_the_dropped_renames() -> None:
+    """E2E r6 — 위치는 다시 얹고 그 호기의 Space 이름 바꿈은 버렸는데 알림이 버린 것에 이름 바꿈을
+    적지 않아, 이름 바꿈도 남았다고 읽혔다. 버린 편집에 「이름 바꿈 n건」 을 적는다."""
+    moved = ReappliedLayout(equipment=pd.DataFrame(), reapplied=1)
+
+    notice = discarded_notice("공통 대장 r8", overlay_dropped=1, reapplied=moved, renames_dropped=1)
+    plain = discarded_notice("공통 대장 r8", overlay_dropped=1, reapplied=moved)
+
+    assert "그 위에 다시 얹었습니다" in notice, notice
+    assert "(설비 마스터 칸·이름 바꿈 1건·도면 요소·Main 설비명 위치)은 버렸습니다" in notice, (
+        notice
+    )
+    assert "이름 바꿈" not in plain, plain
+
+
+def test_the_discarded_notice_names_the_dropped_units_when_nothing_was_reapplied() -> None:
+    """E2E r6 — 저장 안 한 가정 배치 편집이 남이 지운 호기에만 있었으면 다시 얹은 것은 0대다. 그
+    갈래도 빠진 호기와 그 까닭을 적고, 이제 없는 호기를 「최신 위에서 다시 옮기세요」 라 하지
+    않는다. 그 밖의 버린 가정 배치 편집(새 호기 자리 등)이 있으면 그 수만 다시 옮기라고 한다."""
+    gone = ReappliedLayout(equipment=pd.DataFrame(), reapplied=0, dropped=("샘플1",))
+
+    notice = discarded_notice("공통 대장 r8", overlay_dropped=1, reapplied=gone)
+
+    assert "버리고 최신 저장본으로 다시 열었습니다" in notice, notice
+    assert "그 사이 공통 대장에서 빠진 호기 1대(샘플1)의 편집은 뺐습니다" in notice, notice
+    assert "다시 옮기세요" not in notice and "1대도 버렸습니다" not in notice, notice
+
+    more = discarded_notice("공통 대장 r8", overlay_dropped=3, reapplied=gone)
+    assert "빠진 호기 1대(샘플1)의 편집은 뺐습니다" in more, more
+    assert "그 밖의 가정 배치 편집 2대도 버렸습니다 — 최신 위에서 다시 옮기세요." in more, more
+
+
 def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:
     """저장 이력의 조회 조건(공정소분류·비가동유형·기간)과 조회 리비전은 보기 조건이다 — 탭 ① 은
     숨은 회차에 그리지 않으므로(개편 명세 2-3) Summary 에 갔다 와도 남는 것은

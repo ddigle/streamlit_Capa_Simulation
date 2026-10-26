@@ -547,6 +547,38 @@ def test_an_outbox_from_before_another_users_save_is_dropped_and_told(
     assert "반영하지 않았습니다" in last(grid, emg.GRID_KEY)["toast"]["text"]
 
 
+def test_a_save_pressed_right_after_another_common_save_says_the_reopen_path(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """E2E r6 곁 자리 — 가정 세션에서 배치 칸을 고친 뒤 남이 공통 대장을 저장한 직후 「리비전
+    저장」 을 누르면 콜백이 편집본을 다시 세우기 전에 저장하다 거부된다. 같은 회차 머리 알림은 「…
+    다시 얹었습니다」 인데 거부 글은 「화면을 다시 불러와 …」 라 서로 다른 길을 말했다 — 거부 글도
+    다시 열었다고 말한다."""
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    _load_all(app, grid)
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "X좌표", "text": "55"})
+    assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "담당자", "남의 담당"))
+    )
+    clear_equipment_repository()
+
+    app.button(key=SAVE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert any("그 위에 다시 얹었습니다" in text for text in _texts(app, "warning"))
+    errors = [text for text in _texts(app, "error") if "저장하지 않았습니다" in text]
+    assert len(errors) == 1 and "이 화면을 그 저장본으로 다시 열었습니다" in errors[0], errors
+    every = [*_texts(app, "error"), *_texts(app, "warning"), *_texts(app, "caption")]
+    assert not any("화면을 다시 불러와" in text for text in every), every
+    assert _buffer_value(app, "EQ-01", "X좌표") == 55
+    assert _scenario(repository, setup).latest_revision_no == 1
+
+
 @pytest.mark.parametrize("assumption", [False, True], ids=["official", "assumption"])
 def test_a_unit_another_user_renames_stays_loaded_and_open_under_its_new_name(
     tmp_path: Path, grid: Calls, assumption: bool

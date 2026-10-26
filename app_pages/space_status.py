@@ -1152,14 +1152,24 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             )
             + (f" {SAMPLE_SAVE_BLOCKED}" if fab_save_blocked else "")
         )
+        # 이름 바꿈은 어느 설비 시나리오에서나 같은 호기의 이름이라 공통 대장으로 간다 — 이름만
+        # 바꿨으면 가정 배치 리비전을 만들지 않는다(E2E r6 — 「새 리비전(가정 배치)으로 저장합니다」
+        # 라 했지만 공통 대장에만 저장됐다).
+        renamed_to_common = (
+            "이름 바꿈은 공통 대장에 저장합니다(어느 설비 시나리오에서나 같은 호기의 이름)."
+        )
         if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
             # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다. 빨리
             # 감기 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 바로 아래 줄
             # (`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
-            st.caption(
-                f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
-                "— 공식 배치는 바뀌지 않습니다."
-            )
+            if changes.empty and not canvases and not marks and not group_labels:
+                st.caption(f":material/badge: {renamed_to_common}")
+            else:
+                st.caption(
+                    f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
+                    "— 공식 배치는 바뀌지 않습니다."
+                    + (f" {renamed_to_common}" if not names.empty else "")
+                )
         if layout_locked:
             # 잠금 까닭은 바로 아래 잠금 줄(`_render_edit_lock_line` — 「최신 rM 불러오기」 곁)이
             # 한 번 적는다. 상자는 저장하지 않는다는 것과 「배치 변경만 버리기」 만(한 화면에
@@ -1356,6 +1366,8 @@ def _save_space_layout(
             note if isinstance(note, str) else "",
             basis=basis,
             fields=save_fields_from_state(fields_prefix, assumption=assumption),
+            # 콜백이라 이 회차 편집본을 세우기 전이다 — 남의 공통 저장 거부면 본문이 다시 세운다.
+            reopens=True,
         )
     except BOOTSTRAP_ERRORS as exc:
         # 검증·충돌(ValueError)만이 아니라 DuckDB 잠금 같은 저장 실패도 문구로 남긴다 — 콜백에서
@@ -1591,14 +1603,15 @@ def _render_layout_editor(
         stage_floor_group_labels(
             key, None if next_labels == stored_labels else next_labels, base=base
         )
-    if (
+    moved_layout = bool(
         applied.changes
         or applied.hidden_moves
         or applied.created
         or applied.canvas is not None
         or applied.marks is not None
         or next_labels != group_labels
-    ):
+    )
+    if moved_layout:
         # 배치를 바꾼 적용 — 그때의 역할(공식 배치 · 이 시나리오의 가정 배치)을 찍는다. 저장이 쓰기
         # 잠금 안의 역할과 대조한다(그 사이 남의 발행이면 막힌다 — 설계 6-2).
         stamp_layout_role(equipment_session.layout_role)
@@ -1621,9 +1634,10 @@ def _render_layout_editor(
         for target in FLOOR_KEYS
         if target in sent_to and target in inactive_floors
     )
+    # 가정 배치로 가는 것은 배치를 바꾼 적용뿐이다 — 이름 바꿈만이면 공통 대장으로 간다(E2E r6).
     overlay_note = (
         f" 저장하면 {_scenario_place()}의 가정 배치로 들어가고 공식 배치는 바뀌지 않습니다."
-        if equipment_session.layout_role == "overlay"
+        if equipment_session.layout_role == "overlay" and moved_layout
         else ""
     )
     _note_applied(

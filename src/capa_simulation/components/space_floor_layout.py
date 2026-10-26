@@ -117,6 +117,10 @@ def space_layout_notices(
     )
     marks, labels = floor_differences
     stored_units, stored_marks, stored_labels = session.stored_layout_rows
+    # 공통 대장에서 지운 호기의 행(`layout_orphans`)은 「공식과 같아진」 것이 아니다 — 아래 따로 선
+    # 줄(「지운 호기의 배치 차이 n행은 버렸습니다」)이 말하므로 셈에서 뺀다(E2E r3). 잠금 줄
+    # (`space_edit_mode`)도 같은 셈이다(E2E r6).
+    live_units = session.live_layout_rows[0]
     has_rows = bool(stored_units or stored_marks or stored_labels)
     if not has_rows and not session.is_assumption:
         return []
@@ -128,9 +132,6 @@ def space_layout_notices(
     if labels:
         parts.append(f"Main 설비명 위치 {labels:,}개")
     tail = ""
-    # 공통 대장에서 지운 호기의 행(`layout_orphans`)은 「공식과 같아진」 것이 아니다 — 아래 따로 선
-    # 줄(「지운 호기의 배치 차이 n행은 버렸습니다」)이 말하므로 꼬리에서 뺀다(E2E r3).
-    live_units = max(stored_units - snapshot.layout_orphans, 0)
     settled = bool(
         (live_units and not difference.units) or stored_marks > marks or stored_labels > labels
     )
@@ -178,10 +179,14 @@ def space_layout_notices(
             )
         )
     if snapshot.layout_orphans:
+        # 가정 설비 시나리오는 다음 저장이 그 행을 빼고 쓴다. 공식 시나리오의 옛 리비전은 불변이고
+        # 정리는 최신에서 하므로 「다음 저장 때 빠집니다」 를 적지 않는다(E2E r5 결정과 같은 까닭 —
+        # E2E r6).
+        later = " — 다음 저장 때 빠집니다." if session.is_assumption else "."
         lines.append(
             (
-                f"공통 대장에서 지운 호기의 배치 차이 {snapshot.layout_orphans:,}행은 버렸습니다 "
-                "— 다음 저장 때 빠집니다.",
+                f"공통 대장에서 지운 호기의 배치 차이 {snapshot.layout_orphans:,}행은 "
+                f"버렸습니다{later}",
                 "caption",
             )
         )

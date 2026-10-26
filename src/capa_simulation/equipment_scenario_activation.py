@@ -181,6 +181,16 @@ class EquipmentSession:
         )
 
     @property
+    def live_layout_rows(self) -> tuple[int, int, int]:
+        """`stored_layout_rows` 에서 공통 대장에서 지운 호기의 행(`layout_orphans` — 합칠 때 버린
+        행)을 뺀 수. 그 행은 「공식과 같아진」 차이도 「공식과 다른」 차이도 아니라 버린 것이다 —
+        머리 알림(`space_floor_layout.space_layout_notices`)과 잠금 줄(`space_edit_mode`)이 같은
+        셈으로 말한다(E2E r3·r6)."""
+        units, marks, labels = self.stored_layout_rows
+        orphans = self.snapshot.layout_orphans if self.snapshot is not None else 0
+        return max(units - orphans, 0), marks, labels
+
+    @property
     def layout_differs(self) -> bool:
         """그리는 한 벌의 배치가 공식과 다른가 — 호기는 실효(공식과 실제로 다른 호기), 도면 요소·
         Main 설비명 위치는 저장된 행(실효는 층 현행값과 견줘야 알아 Space 가 따로 센다). 사이드바
@@ -359,21 +369,29 @@ def space_edit_mode(session: EquipmentSession, *, stamped_role: str | None) -> S
     if official:
         if session.layout_digest != EMPTY_LAYOUT_DIGEST:
             # 그 시나리오가 가정이던 때의 리비전 — 합친 본문 캐시는 역할을 키에 못 담아 그 차이가
-            # 그대로 그려진다. 공식 배치를 고치면 손대지 않은 가정 자리가 공식으로 새므로 잠근다.
-            units, marks, labels = session.stored_layout_rows
-            counts = layout_counts_words(units, marks, labels) or "배치 차이"
+            # 그대로 그려진다. 공식 배치를 고치면 손대지 않은 가정 자리가 공식으로 새므로 잠근다
+            # (저장소도 그 리비전의 차이 행으로 공식 배치 고침을 거부한다). 수는 지운 호기의 행을
+            # 빼고 센다 — 그 행은 머리 줄이 「버렸습니다」 로 따로 말하고 그려지지도 않는다(E2E r6
+            # — 「배치는 공식과 같습니다」 옆에 「배치 차이(호기 1대)가 있어 잠갔습니다」 가 섰다).
+            counts = layout_counts_words(*session.live_layout_rows)
             latest = (
                 f"최신 r{session.latest_revision_no}"
                 if session.latest_revision_no is not None
                 else "최신"
             )
             name = _quoted(session.scenario_name)
+            reason = (
+                f"이 리비전에는 {name}{subject_particle(name)} 가정이던 때의 배치 "
+                f"차이({counts})가 있어 배치 편집을 잠갔습니다"
+                if counts
+                else f"이 리비전은 {name}{subject_particle(name)} 가정이던 때 저장한 리비전이라 "
+                "배치 편집을 잠갔습니다"
+            )
             return SpaceEditMode(
                 layout="locked",
                 lock_reason=(
-                    f"이 리비전에는 {name}{subject_particle(name)} 가정이던 때의 배치 "
-                    f"차이({counts})가 있어 배치 편집을 잠갔습니다 — "
-                    f"{latest}{object_particle(latest)} 불러오면 공식 배치를 고칠 수 있습니다."
+                    f"{reason} — {latest}{object_particle(latest)} 불러오면 공식 배치를 고칠 수 "
+                    "있습니다."
                 ),
                 lock_action="latest" if session.stale else None,
                 canvas=True,
