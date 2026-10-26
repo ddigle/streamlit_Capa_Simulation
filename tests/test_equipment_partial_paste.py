@@ -304,6 +304,23 @@ def test_an_unknown_header_in_a_full_paste_is_skipped_with_a_notice() -> None:
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
 
 
+@pytest.mark.parametrize(
+    ("header", "named"),
+    [("확인", "「확인」은"), ("검토", "「검토」는"), ("Note", "「Note」은(는)")],
+)
+def test_the_unknown_header_notice_picks_the_particle_by_the_header(
+    header: str, named: str
+) -> None:
+    """모르는 열 알림의 「은/는」 은 그 머리글의 끝소리로 고른다(「「검토」은」 이 아니다).
+    읽는 법을 모르는 끝(영문)은 「은(는)」 이다."""
+    full = _exported(_current())
+    full[header] = "o"
+
+    review = _review(full.to_csv(sep="\t", index=False))
+
+    assert review.notices == (f"설비 마스터에 없는 열 {named} 읽지 않았습니다.",)
+
+
 @pytest.mark.parametrize("header", ["메모-1", "Memo1", "메모_1", "메모１"])
 def test_a_misspelled_header_is_rejected_even_when_every_other_column_is_pasted(
     header: str,
@@ -342,7 +359,7 @@ def test_an_extra_column_on_the_whole_old_36_column_form_is_skipped_with_a_notic
 
     review = _review(old.to_csv(sep="\t", index=False))
 
-    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert "설비 마스터에 없는 열 「No.」은(는) 읽지 않았습니다." in review.notices
     assert review.changes["Import구분"].tolist() == ["대체", "대체"]
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
 
@@ -357,7 +374,7 @@ def test_an_extra_column_on_the_whole_old_38_column_form_is_skipped_and_keeps_th
 
     review = _review(old.to_csv(sep="\t", index=False), current)
 
-    assert "설비 마스터에 없는 열 「No.」은 읽지 않았습니다." in review.notices
+    assert "설비 마스터에 없는 열 「No.」은(는) 읽지 않았습니다." in review.notices
     assert review.changes["변경컬럼"].tolist() == ["변경 없음", "변경 없음"]
     assert review.candidate[1].set_index("설비명").loc["EQ-01", "시나리오 메모"] == "셋업 메모"
 

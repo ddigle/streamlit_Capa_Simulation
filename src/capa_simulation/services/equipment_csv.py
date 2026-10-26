@@ -57,7 +57,7 @@ from capa_simulation.services.equipment_validation import (
 )
 from capa_simulation.services.floor_layout_profile import FloorCanvasMap
 from capa_simulation.services.frame_contracts import require_columns, scalar_match_key
-from capa_simulation.services.korean_particle import with_direction_particle
+from capa_simulation.services.korean_particle import with_direction_particle, with_topic_particle
 from capa_simulation.services.reference_csv import (
     guard_excel_text,
     strip_excel_text_guard,
@@ -748,9 +748,8 @@ def _select_update_columns(
             "넘깁니다)."
         )
     if unknown and notices is not None:
-        notices.append(
-            f"{label}에 없는 열 {_describe_unknown_headers(unknown, missing)}은 읽지 않았습니다."
-        )
+        described = _describe_unknown_headers(unknown, missing)
+        notices.append(f"{label}에 없는 열 {with_topic_particle(described)} 읽지 않았습니다.")
     present = [column for column in contract if column in frame.columns]
     if present == [EQUIPMENT_ID_COLUMN]:
         raise ValueError(
