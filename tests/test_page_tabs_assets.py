@@ -122,6 +122,14 @@ def test_the_current_tab_keeps_room_for_its_name_when_the_strip_is_crowded() -> 
     assert rule is not None and "display: none" in rule.group(1)
 
 
+def test_the_limit_notice_lets_presses_through_to_what_lies_under_it() -> None:
+    """상한 알림(8초)은 탭 줄 오른쪽 아래에 떠 HOME 주요 Case 칩(공식 vN·Case1·Case2)을 덮었고,
+    그동안 칩을 누를 수 없었다(E2E). 알림은 글뿐이라 누름을 받지 않는다 — 읽기 도구는
+    `role="status"` 로 읽는다."""
+    assert "pointer-events: none" in _rule(".capa-tabs-notice")
+    assert 'class="capa-tabs-notice" role="status"' in HTML
+
+
 def test_the_pin_keeps_one_name_and_tells_its_state_with_aria_pressed() -> None:
     """이름까지 「고정 풀기」로 바꾸면 읽기 도구가 상태를 두 번 말한다."""
     assert "text.unpin" not in JS and "unpin" not in page_tabs.TEXT

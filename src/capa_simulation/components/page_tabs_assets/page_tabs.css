@@ -225,6 +225,7 @@
   opacity: 1;
 }
 
+/* 상한 알림은 글뿐이라 누름을 받지 않는다 — 떠 있는 8초 동안 그 밑의 HOME 주요 Case 칩을 누를 수 없었다. */
 .capa-tabs-notice {
   position: absolute;
   top: calc(100% + 0.375rem);
@@ -238,6 +239,7 @@
   background: var(--st-background-color);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--st-text-color) 14%, transparent);
   font-size: 0.8125rem;
+  pointer-events: none;
 }
 
 .capa-tabs-notice[hidden] {
