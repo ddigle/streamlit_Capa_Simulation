@@ -49,6 +49,7 @@ from capa_simulation.components.equipment_scenario_management import (
     revision_rows,
     stored_layout_words,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import (
@@ -431,7 +432,8 @@ def test_a_session_move_notice_keeps_tildes_in_the_scenario_names(
     app = _ok(_section(tmp_path, setup).run())
 
     warnings = [str(item.value) for item in app.warning]
-    assert notice.replace("~", "\\~") in warnings, warnings
+    # 세션 알림은 표(평문)에도 가는 글이라 그리는 자리에서 글 통째로 막는다(E2E r5 — `*` 까지).
+    assert literal_markdown(notice) in warnings, warnings
     assert notice not in warnings
 
 

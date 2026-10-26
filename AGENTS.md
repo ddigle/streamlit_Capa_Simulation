@@ -4269,12 +4269,20 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
     조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
     `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
-    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서
-    `markdown_safe_tildes` 로 막는다 — Space 머리 알림 줄·잠금 줄·꺼진 「배치 편집」 풍선, rerun 건너 그리는 Space 성공 글은
-    담을 때(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`), 사이드바 설비 시나리오 줄의 팝업 저장 알림
-    (`save_result_message`)·저장 실패·세션 이동 알림과 시나리오 관리 구획의 세션 이동 알림·거절 알림(`REFUSED_KEY` — 그리는
-    자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
-    `tests/test_equipment_scenario_screens.py`, E2E r3).
+    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서 막는다.
+    평문 자리에서 `**` 가 글자로 보이므로 그런 글에는 앱 꾸밈이 없다 — **날 이름을 담은 그 글은 글 통째로
+    `literal_markdown`** 으로 막는다(`markdown_safe_tildes` 는 물결표만 막아 「가정*R6*B」 의 별표가 기울임이 되어 사라진다 —
+    2026-10-26 E2E r5): Space 잠금 줄·꺼진 「배치 편집」 풍선·빨리 감기 줄·새 호기 잠금 줄, 설비 마스터 탭의 낡은 세션
+    경고·배치 잠금 줄·「선택 행 삭제」 풍선, 사이드바 설비 시나리오 줄과 시나리오 관리 구획의 세션 이동 알림
+    (`tests/test_space_layout_overlay_page.py`·`tests/test_equipment_master_tab_scenarios.py`). 붙여넣기 거절 글은 잠금
+    까닭을 `literal_markdown` 으로 막아 담는다(예외 글로 가 `bootstrap_error_message` 를 지난다). 이미 막힌 조각(`quoted` 한
+    이름·`bootstrap_error_message` 글)을 담는 글은 물결표만 막는다(`markdown_safe_tildes` — 막은 `\~` 는 다시 막지 않는다):
+    rerun 건너 그리는 Space 성공 글은 담을 때(`_queue_space_flash` — 그 글의 설비 시나리오 이름은 `quoted`), 사이드바
+    설비 시나리오 줄의 팝업 저장 알림(`save_result_message`)·저장 실패와 시나리오 관리 구획의 거절 알림(`REFUSED_KEY` —
+    그리는 자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
+    `tests/test_equipment_scenario_screens.py`, E2E r3). 설비 시나리오 이름·리비전명 바꾸기의 「남이 먼저 바꿨다」 거절 글은
+    예외 글 대신 막은 지금 이름(`exc.current`)으로 같은 글(`scenario_name_moved_message`·
+    `schedule_revision_name_moved_message`)을 짓는다.
   - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
     `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
     규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은

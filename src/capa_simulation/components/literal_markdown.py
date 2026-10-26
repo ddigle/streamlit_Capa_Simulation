@@ -21,6 +21,11 @@
 문구를 짓는 함수는 이름을 끼울 때 `quoted`·`literal_markdown` 을 쓴다. 그리는 자리마다 고르면 한
 자리를 고칠 때 옆 자리가 남는다(2026-10-26 E2E 1~3회차 — 「E2E~가정~A」 지움선). 지키는 시험은
 `tests/test_markdown_sink_guard.py`(AST)와 `tests/test_tilde_names_pages.py`(화면)다.
+
+평문 자리(설비 마스터 표·배치 편집기)에도 가는 글(잠금 글·세션 알림)은 짓는 곳에서 막지 않고 날
+이름을 담는다. 평문 자리에서 `**` 가 글자로 보이므로 그 글에는 앱 꾸밈이 없다 — 마크다운으로 그리는
+자리에서 글 통째로 `literal_markdown` 으로 막는다. `markdown_safe_tildes` 는 물결표만 막아
+「가정*R6*B」 의 별표가 기울임이 되어 사라진다(2026-10-26 E2E r5).
 """
 
 from __future__ import annotations

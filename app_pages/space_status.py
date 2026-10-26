@@ -60,7 +60,11 @@ from capa_simulation.components.floor_layout_upload import (
     render_fab_layout_drawing_editor,
     render_floor_layout_editor,
 )
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
@@ -895,8 +899,7 @@ def _session_place() -> str:
 def _scenario_place() -> str:
     """세션 설비 시나리오 이름 「셋업 실무」(가정 배치가 저장될 곳 — 새 리비전이라 rN 을 적지
     않는다)."""
-    name = equipment_session.scenario_name
-    return f"「{name}」" if name else "이 설비 시나리오"
+    return quoted(equipment_session.scenario_name, empty="이 설비 시나리오")
 
 
 def _queue_space_flash(message: str) -> None:
@@ -998,7 +1001,7 @@ def _render_edit_lock_line() -> None:
     if not edit_mode.layout_editable and edit_mode.lock_reason:
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.caption(
-                f":material/lock: {markdown_safe_tildes(edit_mode.lock_reason)}", width="content"
+                f":material/lock: {literal_markdown(edit_mode.lock_reason)}", width="content"
             )
             if edit_mode.lock_action == "latest":
                 latest = equipment_session.latest_revision_no
@@ -1016,7 +1019,7 @@ def _render_edit_lock_line() -> None:
                     ),
                 )
     elif edit_mode.notice:
-        st.caption(f":material/fast_forward: {markdown_safe_tildes(edit_mode.notice)}")
+        st.caption(f":material/fast_forward: {literal_markdown(edit_mode.notice)}")
 
 
 def _render_unsaved_layout_panel(frames: Frames | None) -> None:
@@ -1146,10 +1149,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             # 감기 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 바로 아래 줄
             # (`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
             st.caption(
-                markdown_safe_tildes(
-                    f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
-                    "— 공식 배치는 바뀌지 않습니다."
-                )
+                f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
+                "— 공식 배치는 바뀌지 않습니다."
             )
         if layout_locked:
             # 잠금 까닭은 바로 아래 잠금 줄(`_render_edit_lock_line` — 「최신 rM 불러오기」 곁)이
@@ -1411,7 +1412,7 @@ def _render_layout_editor(
     if not edit_mode.new_units:
         options = {**options, "disabled": new_unit_reason or "새 호기를 넣지 않습니다."}
         if new_unit_reason:
-            st.caption(f":material/lock_clock: {markdown_safe_tildes(new_unit_reason)}")
+            st.caption(f":material/lock_clock: {literal_markdown(new_unit_reason)}")
     if layer_requested:
         # 필요 단축 보기는 편집 중 쉰다(결정 D7) — 편집기는 공정구분 기본 색이고 배지·흐림·고정 줄이
         # 없다. 층 상세의 쉬는 까닭 한 줄은 여기만 적는다(본문 조작 줄은 FAB 편집만).
@@ -2155,7 +2156,7 @@ else:
                         key=LOCKED_EDIT_TOGGLE_KEY,
                         disabled=True,
                         help=(
-                            markdown_safe_tildes(edit_mode.lock_reason)
+                            literal_markdown(edit_mode.lock_reason)
                             if edit_mode.lock_reason
                             else None
                         ),

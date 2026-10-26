@@ -601,13 +601,15 @@ def test_a_session_move_notice_stands_above_the_tabs_while_the_section_tab_is_hi
     app.session_state[SCENARIO_KIND_KEY] = EQUIPMENT_KIND
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = ":material/cloud_download: BigDataQuery 등록"
     _ok(app.run())
-    assert notice in [str(item.value) for item in app.main.warning]
-    assert notice not in [str(item.value) for tab in app.main.tabs for item in tab.warning]
+    # 세션 알림은 표(평문)에도 가는 글이라 그리는 자리에서 통째로 막는다(E2E r5).
+    shown = literal_markdown(notice)
+    assert shown in [str(item.value) for item in app.main.warning]
+    assert shown not in [str(item.value) for tab in app.main.tabs for item in tab.warning]
 
     app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = SCENARIO_MANAGEMENT_TAB
     _ok(app.run())
-    assert [str(item.value) for item in app.main.warning].count(notice) == 1
-    assert notice in [str(item.value) for item in app.main.tabs[0].warning]
+    assert [str(item.value) for item in app.main.warning].count(shown) == 1
+    assert shown in [str(item.value) for item in app.main.tabs[0].warning]
 
 
 def test_switching_the_managed_kind_keeps_unsaved_list_edits(_shell: AppTest) -> None:
@@ -813,8 +815,9 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
         "그 사이 공식 설비 시나리오가 「셋업 실무」로 바뀌어 이 배치 변경(공식 배치에 들어갈 "
         "편집이었음)을 저장할 수 없습니다"
     )
-    # 까닭은 잠금 줄에 한 번만 — 저장 안 한 배치 상자는 저장하지 않는다는 것만 적는다(E2E r2).
-    assert sum(reason in text for text in texts) == 1
+    # 까닭은 잠금 줄에 한 번만 — 저장 안 한 배치 상자는 저장하지 않는다는 것만 적는다(E2E r2). 잠금
+    # 줄은 표(평문)에도 가는 글이라 그리는 자리에서 통째로 막는다(E2E r5).
+    assert sum(literal_markdown(reason) in text for text in texts) == 1
     assert any(
         "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — 까닭은 아래 잠금 줄에 있습니다."
         in text
@@ -1205,6 +1208,33 @@ def test_a_name_refusal_keeps_the_tildes_of_the_name_someone_else_wrote(
     assert any(
         "먼저 리비전명을 바꿨습니다(지금: B\\~안\\~2)" in str(item.value) for item in app.error
     ), [str(item.value) for item in app.error]
+
+
+def test_a_name_refusal_keeps_the_asterisks_of_the_name_someone_else_wrote(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """남이 먼저 바꾼 설비 시나리오 이름·리비전명(「E2E*가정*D」·「B*안*2」)은 거절 글에서도 별표
+    그대로다 — 예외 글은 물결표만 막아 「E2E<em>가정</em>D」 로 기울고 별표가 사라졌다(E2E r5).
+    지금 이름을 잘못 읽게 된다."""
+    repository = _repository(tmp_path)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+
+    app.text_input(key=f"{RENAME_KEY}__{OPERATIONS}").input("E2E*가정*C")
+    repository.rename_equipment_scenario(OPERATIONS, name="E2E*가정*D", expected_name="운영 일정")
+    clear_equipment_scenario_cache()
+    app.button(key=RENAME_BUTTON_KEY).click()
+    _ok(app.run())
+    errors = [str(item.value) for item in app.error]
+    assert any("먼저 이름을 바꿨습니다(지금: E2E\\*가정\\*D)" in text for text in errors), errors
+
+    app.text_input(key=f"{REVISION_NAME_KEY}__g1__{first}").input("내 이름")
+    repository.rename_schedule_revision(first, name="B*안*2", expected_name=None)
+    clear_equipment_scenario_cache()
+    app.button(key=REVISION_NAME_BUTTON_KEY).click()
+    _ok(app.run())
+    errors = [str(item.value) for item in app.error]
+    assert any("먼저 리비전명을 바꿨습니다(지금: B\\*안\\*2)" in text for text in errors), errors
 
 
 def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes(

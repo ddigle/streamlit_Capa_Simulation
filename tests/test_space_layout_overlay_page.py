@@ -482,6 +482,116 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_an_old_official_revision_head
     _assert_tildes_escaped(app)
 
 
+# 별표가 둘인 설비 시나리오 이름 — 물결표만 막으면 「가정<em>R6</em>B」 로 기울어 별표가 사라진다
+# (2026-10-26 E2E r5). 막힌 꼴은 `\*` 다.
+STAR_NAME = "가정*R6*B"
+STAR_ESCAPED = "가정\\*R6\\*B"
+
+
+def _assert_stars_escaped(app: AppTest) -> None:
+    """이름이 실린 마크다운 글(본문·풍선) 모두가 별표를 막았다."""
+    texts = [
+        *_texts(app),
+        *(str(item.help) for item in app.toggle if item.help),
+        *(str(item.help) for item in app.button if item.help),
+    ]
+    named = [text for text in texts if "R6" in text]
+    assert named
+    bare = [text for text in named if re.search(r"(?<!\\)\*", text)]
+    assert not bare, bare
+
+
+def test_an_asterisk_scenario_name_stays_literal_in_the_apply_box_and_notice(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 시나리오 이름 「가정*R6*B」 — 적용 알림(「저장하면 「…」의 가정 배치로」)과 저장 안 한
+    배치 상자 캡션이 별표를 막는다(물결표만 막아 기울임이 됐다 — E2E r5)."""
+    _, setup = _overlay(tmp_path, STAR_NAME)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+
+    assert any(
+        f"저장하면 「{STAR_ESCAPED}」의 가정 배치로" in str(item.value) for item in app.success
+    )
+    assert any(
+        f"「{STAR_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_stars_escaped(app)
+
+
+def test_an_asterisk_scenario_name_stays_literal_in_the_fast_forward_and_editor_lines(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """낡은 가정 세션(배치 같음 — 빨리 감기)의 ▸▸ 줄과 편집기 위 「새 호기를 넣지 않습니다」 줄이
+    이름의 별표를 막는다(E2E r5)."""
+    repository, setup = _overlay(tmp_path, STAR_NAME)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
+    )
+    app = _ok(_space(tmp_path, setup, pinned).run())
+    assert any(
+        f"「{STAR_ESCAPED}」 r3" in str(item.value)
+        and "더 새롭지만 배치는 같습니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_stars_escaped(app)
+
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    _ok(app)
+    assert any(
+        f"「{STAR_ESCAPED}」" in str(item.value) and "새 호기를 넣지 않습니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_stars_escaped(app)
+
+
+def test_an_asterisk_scenario_name_stays_literal_in_the_lock_line_and_its_popover(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """낡은 가정 세션(남이 다른 배치를 저장 — 잠금)의 잠금 줄·꺼진 「배치 편집」 풍선·「최신 r3
+    불러오기」 팝오버 글이 이름의 별표를 막는다(E2E r5)."""
+    repository, setup = _overlay(tmp_path, STAR_NAME)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app = _ok(_space(tmp_path, setup, pinned).run())
+
+    assert any(
+        f"「{STAR_ESCAPED}」 r3 에 다른 배치가 저장됐습니다" in str(item.value)
+        for item in app.caption
+    )
+    locked = app.toggle(key="space_layout_edit_mode_locked")
+    assert STAR_ESCAPED in str(locked.help)
+    assert any(f"세션을 「{STAR_ESCAPED} · r2」 에서" in str(item.value) for item in app.caption)
+    _assert_stars_escaped(app)
+
+
+def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_lock(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 머리 알림과 잠금 줄(「이 리비전에는
+    「…」이(가) 가정이던 때의 …」)이 이름의 별표를 막는다(E2E r5)."""
+    repository, setup = _overlay(tmp_path, STAR_NAME)
+    overlaid = _scenario(repository, setup).latest_schedule_revision_id
+    cleared = repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=overlaid)
+    assert cleared is not None
+    repository.publish_equipment_release(
+        cleared.schedule_revision_id, released_by=None, note=None, expected_latest_release_no=1
+    )
+    app = _ok(_space(tmp_path, setup, overlaid).run())
+
+    assert any(
+        f"이 리비전에는 「{STAR_ESCAPED}」" in str(item.value) and "잠갔습니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_stars_escaped(app)
+
+
 def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> None:
     """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명의 물결표를 막는다."""
     from capa_simulation.components.floor_layout_upload import (
@@ -877,6 +987,34 @@ def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
     assert any(text.count(f"「{TILDE_ESCAPED}」") >= 2 for text in flashes), flashes
     assert any(f"「{TILDE_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
     bare = [text for text in [*flashes, *notices] if re.search(r"(?<!\\)~", text)]
+    assert not bare, bare
+
+
+def test_the_sidebar_session_notice_keeps_the_asterisks_of_the_scenario_name(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """세션 이동 알림(평문 표 잠금 글에도 가는 글)이 이름의 별표를 막는다 — 물결표만 막아
+    「가정<em>R6</em>B」 로 기울었다(E2E r5)."""
+    from dataclasses import replace
+
+    import capa_simulation.equipment_scenario_activation as activation
+
+    _, setup = _overlay(tmp_path, STAR_NAME)
+    notice = (
+        f"「{STAR_NAME}」 r1 을 지금 공통 대장과 합칠 수 없어 「{STAR_NAME}」 r2 로 열었습니다 — "
+        "저장하지 않은 설비 편집은 버렸습니다."
+    )
+    resolve = activation.resolve_equipment_session
+    monkeypatch.setattr(
+        activation,
+        "resolve_equipment_session",
+        lambda path: replace(resolve(path), notice=notice),
+    )
+    app = _ok(_space(tmp_path, setup).run())
+
+    notices = [str(item.value) for item in app.sidebar.warning]
+    assert any(f"「{STAR_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
+    bare = [text for text in notices if re.search(r"(?<!\\)\*", text)]
     assert not bare, bare
 
 

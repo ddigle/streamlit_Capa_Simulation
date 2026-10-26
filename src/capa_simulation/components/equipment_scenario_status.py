@@ -318,8 +318,9 @@ def render_equipment_scenario_row(
             if isinstance(flash, str):
                 st.success(markdown_safe_tildes(flash))
             if session.notice:
-                # 세션 알림은 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 막는다.
-                st.warning(markdown_safe_tildes(session.notice), icon=":material/sync_problem:")
+                # 세션 알림은 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 막는다 —
+                # 앱 꾸밈이 없는 글이라 구두점 전부를(이름의 `*` 가 기울임이 되지 않게 — E2E r5).
+                st.warning(literal_markdown(session.notice), icon=":material/sync_problem:")
 
 
 def open_equipment_scenario_dialog() -> None:

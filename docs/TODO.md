@@ -1172,6 +1172,24 @@
   - 그물의 UI 모듈을 `src/capa_simulation/` 꼭대기 모듈 전부로 넓혔다(대안: 세 모듈 이름 적기 — 출처 띠를 짓는
     `process_detail_state` 처럼 새로 글을 짓는 모듈을 놓친다).
   관련: `components/literal_markdown.py`·`page_bootstrap.py`·AGENTS 9장 「편집표와 내려받기」
+- (2026-10-26) **설비 쪽 평문 겸용 글은 그리는 자리에서 글 통째로 `literal_markdown`**(브라우저 E2E r5 eq-flows, 밤사이
+  권장대로) — 설비 시나리오 이름·리비전명의 별표(「가정*R6*B」)가 여섯 자리에서 기울임이 되어 사라졌다(물결표만 막는
+  `markdown_safe_tildes` 를 지났다): 설비 마스터 낡은 세션 경고, Space 빨리 감기 줄·새 호기 잠금 줄, Space 적용 알림·저장 안 한
+  배치 상자 캡션(`_scenario_place`), 시나리오 관리 이름·리비전명 바꾸기 충돌 거절 글. 같은 꼴의 옆자리(Space 잠금 줄·꺼진 「배치
+  편집」 풍선, 설비 마스터 탭 배치 잠금 줄·「선택 행 삭제」 풍선, 사이드바·시나리오 관리 구획의 세션 이동 알림, 붙여넣기 거절 글의
+  잠금 까닭)도 막았다. 권장대로 정한 것(대안):
+  - 표(JS)·배치 편집기에도 가는 글(잠금 글·세션 알림)은 그리는 자리에서 글 통째로 `literal_markdown` — 평문 자리에서 `**` 가
+    글자로 보이므로 그 글에는 앱 꾸밈이 없다(대안: 짓는 함수에 `markdown=` 갈래 — 위 결정이 피한 꼴, 또는 `*`·`_` 만 막는 새
+    함수 — 막는 길이 하나 늘고 `$`·`[` 가 남는다). AppTest 가 읽는 글에는 `\.`·`\(` 가 보여 그 글을 통째로 견주던 시험 셋을
+    `literal_markdown(글)` 로 견주게 고쳤다(화면에 보이는 글은 같다).
+  - 이름 바꾸기 충돌 거절 글은 예외 글 대신 막은 지금 이름(`exc.current`)으로 같은 글을 짓는다 — 글은 저장소의
+    `scenario_name_moved_message`·`schedule_revision_name_moved_message` 한 곳(대안: `bootstrap_error_message` 가 구두점을 모두
+    막기 — 일부러 넣은 코드 표기가 있는 예외 글이 있어 화면 수십 곳이 바뀐다).
+  남은 같은 결함류(이번 범위 밖 — 설비 흐름이 아니다): 자동 갱신 「지금 실행」 결과 알림 사유·계산 멈춤 판정 글(`capacity_gate`·
+  `alert_board`)은 여전히 물결표만 막는다. 시뮬레이션 리비전명 충돌(`RevisionNameMoved`·`BatchEditRefused`)과 이름을 담은 저장소
+  예외 글(`EquipmentLayoutOverflow`·`EquipmentScenarioIncompatible` 등 — `bootstrap_error_message`)도 물결표만 막아 이름의 `*` 가
+  기울어진다. 설비명(호기 이름)의 `*` 도 같다(붙여넣기 거절 글의 호기 예시 등).
+  관련: `components/literal_markdown.py`·`equipment_scenario_activation.py`·`app_pages/space_status.py`·AGENTS 9장
 - (2026-10-26) **빠른 두 번 누름 고침 둘·어두운 칩 글자**(브라우저 E2E r3 dynamic-admin, 밤사이 권장대로, 사본 앱 8564 확인) —
   (1) 남이 먼저 저장한 뒤 옛 화면에서 버전 대조 저장(판정 기준·공용 공정 표시명·확보율 보정·자동 갱신 설정)을 0.15~0.3초 간격으로 두
   번 누르면 둘째 누름이 거부한 회차가 올려(지워) 둔 편집 시작 version 으로 대조를 지나 「저장했습니다」만 남았다(A 의 입력은 버려지거나

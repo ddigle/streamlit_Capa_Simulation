@@ -120,6 +120,8 @@ from capa_simulation.persistence.equipment_repository import (
     LegacyTraceReview,
     ScheduleRestoreResult,
     legacy_trace_message,
+    scenario_name_moved_message,
+    schedule_revision_name_moved_message,
 )
 from capa_simulation.services.equipment_scenario import (
     ScheduleRestorePreview,
@@ -611,8 +613,9 @@ def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = No
     with st.container():
         if session.notice:
             # 알림은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다).
-            # 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 물결표를 막는다.
-            notice = markdown_safe_tildes(session.notice)
+            # 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 막는다 — 앱 꾸밈이 없는
+            # 글이라 구두점 전부를 막는다(물결표만 막으면 이름의 `*` 가 기울임이 된다 — E2E r5).
+            notice = literal_markdown(session.notice)
             if notice_slot is not None and not session.unmerged:
                 notice_slot.warning(notice, icon=":material/sync_problem:")
             else:
@@ -1350,8 +1353,12 @@ def _render_revision_name(
             if is_own_save(own_name, seen_name, exc.current or "", save_marks):
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 바꿨다(write_guard).
                 _written(_revision_name_message(scenario, revision, exc.current))
-            # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
-            _refused(f"리비전명을 바꾸지 않았습니다 — {bootstrap_error_message(exc)}")
+            # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다. 예외 글은
+            # 날 이름이라(물결표만 막힌다) 막은 지금 이름으로 같은 글을 짓는다(E2E r5 — `*`).
+            moved = schedule_revision_name_moved_message(
+                literal_markdown(exc.current) if exc.current is not None else None
+            )
+            _refused(f"리비전명을 바꾸지 않았습니다 — {moved}")
             return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
@@ -1401,8 +1408,10 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
             if is_own_save(own_name, seen_name, exc.current, save_marks):
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 바꿨다(write_guard).
                 _written(_scenario_renamed_message(exc.current))
-            # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
-            _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {bootstrap_error_message(exc)}")
+            # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다. 예외 글은
+            # 날 이름이라(물결표만 막힌다) 막은 지금 이름으로 같은 글을 짓는다(E2E r5 — `*`).
+            moved = scenario_name_moved_message(literal_markdown(exc.current))
+            _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {moved}")
             return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")

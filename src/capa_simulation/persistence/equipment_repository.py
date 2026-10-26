@@ -546,11 +546,18 @@ def legacy_trace_message(count: int) -> str:
     )
 
 
+def scenario_name_moved_message(current: str) -> str:
+    """`EquipmentScenarioNameMoved` 의 글 — 다른 사용자가 먼저 바꾼 지금 이름을 함께 적는다. 화면은
+    마크다운으로 그리므로 막은 이름을 넘겨 같은 글을 짓는다(예외 글은 물결표만 막혀 이름의 `*` 가
+    기울임이 된다 — 2026-10-26 E2E r5)."""
+    return f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current})."
+
+
 class EquipmentScenarioNameMoved(ValueError):
     """설비 시나리오 이름을 바꾸려는 사이 다른 사용자가 먼저 바꿨다. 아무것도 쓰지 않았다."""
 
     def __init__(self, current: str) -> None:
-        super().__init__(f"다른 사용자가 먼저 이름을 바꿨습니다(지금: {current}).")
+        super().__init__(scenario_name_moved_message(current))
         self.current = current
 
 
@@ -727,13 +734,19 @@ class LayoutOverlayExtent:
         return tuple(result)
 
 
+def schedule_revision_name_moved_message(current: str | None) -> str:
+    """`EquipmentScheduleRevisionNameMoved` 의 글 — 지금 리비전명(없으면 「이름 없음」)을 함께
+    적는다. 화면은 막은 이름을 넘겨 같은 글을 짓는다(`scenario_name_moved_message` 와 같은 까닭)."""
+    shown = current if current is not None else "이름 없음"
+    return f"다른 사용자가 먼저 리비전명을 바꿨습니다(지금: {shown})."
+
+
 class EquipmentScheduleRevisionNameMoved(ValueError):
     """일정 리비전의 리비전명을 바꾸려는 사이 다른 사용자가 먼저 바꿨다(비교 후 쓰기). 아무것도 쓰지
     않았다. `current` 는 쓰기 잠금 안에서 읽은 지금 이름(없으면 None)이다."""
 
     def __init__(self, current: str | None) -> None:
-        shown = current if current is not None else "이름 없음"
-        super().__init__(f"다른 사용자가 먼저 리비전명을 바꿨습니다(지금: {shown}).")
+        super().__init__(schedule_revision_name_moved_message(current))
         self.current = current
 
 
