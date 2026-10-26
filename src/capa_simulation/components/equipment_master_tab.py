@@ -127,7 +127,11 @@ from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
 )
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_badge,
+    literal_markdown,
+    markdown_safe_tildes,
+)
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.equipment_scenario_activation import (
@@ -988,7 +992,7 @@ def _render_head(
             else " 배치 칸은 지금 잠겨 있습니다."
         )
         st.badge(
-            f"설비 시나리오 · {literal_markdown(name)}{tail}",
+            f"설비 시나리오 · {literal_badge(name)}{tail}",
             icon=":material/layers:",
             color="primary" if official else "violet",
             help=(

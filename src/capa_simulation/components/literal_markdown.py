@@ -8,6 +8,9 @@
 된다. CommonMark 는 백슬래시 뒤의 ASCII 구두점을 글자 그대로 두므로 구두점마다 `\\` 를
 붙인다. 한글·숫자·공백·`·` 같은 비 ASCII 기호는 그대로다.
 
+`st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아, 그 둘까지
+막으면 역슬래시가 글자로 보인다(「\\[가정\\] 10월 증설안」).
+
 앱이 지은 거부·안내 문구(`st.error`·`st.warning`·`st.info`·`st.success` 인자)는 일부러 넣은
 굵게·코드가 있을 수 있어 구두점 전부를 막지 않고 물결표만 막는다(`markdown_safe_tildes`) —
 「동은 C1~C5, 층은 1F~6F」 처럼 물결표가 둘인 문구가 취소선이 되지 않게.
@@ -24,6 +27,16 @@ _PUNCTUATION = frozenset(string.punctuation)
 def literal_markdown(text: object) -> str:
     """`text` 를 마크다운으로 그려도 적은 글자 그대로 보이게 ASCII 구두점마다 `\\` 를 붙인다."""
     return "".join(f"\\{char}" if char in _PUNCTUATION else char for char in str(text))
+
+
+# `st.badge` 는 라벨의 `[`·`]` 를 스스로 막는다(1.63 `escaped_label` — `:색-badge[…]` 지시문이
+# 깨지지 않게). 그 둘을 한 번 더 막으면 `\\[` 가 되어 역슬래시가 글자로 보인다.
+_BADGE_PUNCTUATION = _PUNCTUATION - {"[", "]"}
+
+
+def literal_badge(text: object) -> str:
+    """`st.badge` 라벨에 싣는 사람 글 — `literal_markdown` 과 같되 `[`·`]` 는 `st.badge` 몫이다."""
+    return "".join(f"\\{char}" if char in _BADGE_PUNCTUATION else char for char in str(text))
 
 
 _BARE_TILDE = re.compile(r"(?<!\\)~")
