@@ -57,6 +57,7 @@ from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
 )
+from capa_simulation.components.widget_generation import bump, generation, widget_key
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     current_selection,
@@ -618,18 +619,16 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
             )
         )
         return
-    st.session_state[SAVE_NOTE_GENERATION_KEY] = _note_generation() + 1
+    bump(SAVE_NOTE_GENERATION_KEY)
     st.session_state[FLASH_KEY] = message
     close_equipment_scenario_dialog()
     st.rerun()
 
 
 def _note_generation() -> int:
-    value = st.session_state.get(SAVE_NOTE_GENERATION_KEY, 0)
-    return value if isinstance(value, int) else 0
+    return generation(SAVE_NOTE_GENERATION_KEY)
 
 
 def save_note_key() -> str:
     """팝업 저장 구획 메모 칸의 지금 key(첫 세대는 바탕 key 그대로)."""
-    generation = _note_generation()
-    return SAVE_NOTE_KEY if generation == 0 else f"{SAVE_NOTE_KEY}__g{generation}"
+    return widget_key(SAVE_NOTE_KEY, SAVE_NOTE_GENERATION_KEY)

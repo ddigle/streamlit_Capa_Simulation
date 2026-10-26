@@ -8,7 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from capa_simulation.components import editor_state, scenario_edit_bar
+from capa_simulation.components import (
+    editor_state,
+    scenario_edit_bar,
+    widget_generation,
+    write_guard,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EDIT = {"edited_rows": {0: {"202608": 1.0}}, "added_rows": [], "deleted_rows": []}
@@ -19,6 +24,9 @@ def session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     fake = SimpleNamespace(session_state={})
     monkeypatch.setattr(scenario_edit_bar, "st", fake)
     monkeypatch.setattr(editor_state, "st", fake)
+    # 편집표 key 세대는 `widget_generation`(세대 읽기는 `write_guard`)이 짓는다.
+    monkeypatch.setattr(widget_generation, "st", fake)
+    monkeypatch.setattr(write_guard, "st", fake)
     return fake
 
 

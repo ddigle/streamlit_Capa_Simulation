@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -245,6 +246,10 @@ def render_derived_save(
     ):
         st.session_state[name_key] = default_name
     st.session_state[seed_key] = default_name
+    # 저장 쓰기의 세대(`write_once_value`). 폼·칸 key 에는 붙이지 않는다 — 저장에 성공하면 같은
+    # 요청의 폼은 잠기고(`already_saved`), 요청이 바뀌면 새 세대로 다시 쓴다.
+    generation_key = f"{key}_save_generation"
+    save_generation = generation(generation_key)
     with st.form(f"{key}_save_form"):
         name = st.text_input("새 시나리오 이름", key=name_key)
         note = st.text_area("추가 메모", key=f"{key}_note", height=80)
@@ -268,27 +273,44 @@ def render_derived_save(
         standard_target_end_date=None,
         standard_target_show_detail=False,
     )
+    created = ScenarioCreate(
+        scenario_name=name,
+        source_simulation_code=f"{operation}-{uuid4().hex[:12]}",
+        source_simulation_name=source.scenario.scenario_name,
+        source_type=operation,
+        pipeline_version="scenario-transform-v1",
+    )
+    full_note = provenance + (f"\n사용자 메모: {note.strip()}" if note.strip() else "")
+    records = [asdict(record) for record in virtual_products]
     try:
-        snapshot = repository.create_scenario(
-            ScenarioCreate(
-                scenario_name=name,
-                source_simulation_code=f"{operation}-{uuid4().hex[:12]}",
-                source_simulation_name=source.scenario.scenario_name,
-                source_type=operation,
-                pipeline_version="scenario-transform-v1",
+        # 같은 세대의 저장은 한 번만 쓴다 — 검사·저장 동안 한 번 더 누른 둘째 회차는 쓰지 않고(같은
+        # 이름이라 「이미 있는 이름」 으로 거절됐다) 첫 회차가 만든 시나리오로 뒷정리를 잇는다.
+        written = write_once_value(
+            generation_key,
+            save_generation,
+            lambda: repository.create_scenario(
+                created,
+                tables,
+                preset,
+                revision_name="초기 리비전",
+                note=full_note,
+                virtual_products=records,
             ),
-            tables,
-            preset,
-            revision_name="초기 리비전",
-            note=provenance + (f"\n사용자 메모: {note.strip()}" if note.strip() else ""),
-            virtual_products=[asdict(record) for record in virtual_products],
+            # 같은 요청의 같은 이름·메모만 한 저장이다 — 끊긴 쓰기 뒤 이름을 바꿔 누른 저장은
+            # 새로 쓴다.
+            fingerprint=(request, name, note),
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
         return
+    if written is None:
+        return
+    snapshot = written.value
     st.session_state[saved_key] = {
         "request": request,
-        "name": snapshot.scenario.scenario_name,
+        "name": name if snapshot is None else snapshot.scenario.scenario_name,
         "warning": verdict.message,
     }
+    bump(generation_key)
+    written.release()
     st.rerun()

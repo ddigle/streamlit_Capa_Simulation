@@ -49,6 +49,13 @@ from capa_simulation.components.scenario_management import (
     revision_virtual_product_rows,
     virtual_product_save_notice,
 )
+from capa_simulation.components.widget_generation import (
+    Written,
+    bump,
+    generation,
+    widget_key,
+    write_once_value,
+)
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -66,7 +73,7 @@ from capa_simulation.persistence.cache import (
     get_scenario_repository,
     load_scenario_snapshot,
 )
-from capa_simulation.persistence.models import RevisionSummary, ScenarioSummary
+from capa_simulation.persistence.models import RevisionSummary, ScenarioSnapshot, ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
     activate_persisted_snapshot,
@@ -583,7 +590,8 @@ def _render_revision_save(
         )
     # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 저장**에도 리비전명·메모를 지워, 막힌
     # 까닭을 고친 뒤 처음부터 다시 적어야 했다. 성공한 회차에만 칸의 key 세대를 올려 새 빈
-    # 위젯으로 세운다(`save_field_key`).
+    # 위젯으로 세운다(`save_field_key`). 그 세대가 저장 쓰기의 세대이기도 하다(`write_once_value`).
+    save_generation = save_form_generation()
     with st.form("sidebar_revision_save_form"):
         revision_name = st.text_input(
             "새 리비전명",
@@ -609,6 +617,7 @@ def _render_revision_save(
         st.warning(_pending_save_refusal(pending_edits), icon=":material/block:")
         return
 
+    written: Written[ScenarioSnapshot] | None = None
     try:
         # `REVISION_TABLES` 14개를 통째로 새 리비전으로 적는다(표시순서·모듈수는
         # 시나리오에 종속되지 않는 공용 프로필이라 빠진다). 표가 크면 몇 초가 걸린다.
@@ -626,36 +635,79 @@ def _render_revision_save(
             virtual_products = revision_virtual_product_rows(
                 repository, active_revision_id, revision_tables
             )
-            snapshot = repository.save_revision(
-                active_scenario_id,
-                revision_tables,
-                capture_scenario_preset(
-                    {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
-                ),
-                revision_name=revision_name,
-                parent_revision_id=active_revision_id,
-                note=note.strip() or None,
-                virtual_products=virtual_products,
+            preset = capture_scenario_preset(
+                {**reference_tables, "RQ_REQB": revision_tables["RQ_REQB"]}
             )
-            # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
-            activate_saved_revision(snapshot)
+            note_text = note.strip() or None
+            # 같은 세대·같은 입력의 저장은 한 번만 쓴다 — 스피너 도는 동안 한 번 더 누른 둘째
+            # 회차는 쓰지 않고, 첫 회차가 쓴 리비전으로 끊긴 뒷정리(활성화·알림·세대)를 잇는다.
+            # 지문은 저장 대상(시나리오·부모 리비전·편집본 토큰)과 적은 이름·메모다 — 끊긴 쓰기
+            # 뒤 이름을 바꾸거나 편집을 적용하고 누른 저장은 새로 쓴다. 입력은 모두 위에서 읽었다.
+            written = write_once_value(
+                SAVE_FORM_GENERATION_KEY,
+                save_generation,
+                lambda: repository.save_revision(
+                    active_scenario_id,
+                    revision_tables,
+                    preset,
+                    revision_name=revision_name,
+                    parent_revision_id=active_revision_id,
+                    note=note_text,
+                    virtual_products=virtual_products,
+                ),
+                fingerprint=(
+                    active_scenario_id,
+                    active_revision_id,
+                    active_scenario["content_token"],
+                    revision_name,
+                    note_text,
+                ),
+            )
+            if written is None:
+                return
+            snapshot = written.value
+            if snapshot is not None:
+                # 방금 보던 내용을 그대로 적은 리비전이라 HOME 토글은 켜 둔 채 둔다.
+                activate_saved_revision(snapshot)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(f"신규 리비전을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
+        st.error(_revision_save_failure(written, bootstrap_error_message(exc)))
         return
     if verdict.message:
         st.session_state[SIDEBAR_FLASH_WARNING_KEY] = verdict.message
-    st.session_state[SAVE_FORM_GENERATION_KEY] = save_form_generation() + 1
-    _finish(
-        f"신규 리비전 r{snapshot.revision.revision_no}"
+    _settle(
+        "신규 리비전을 저장했습니다."
+        if snapshot is None
+        else f"신규 리비전 r{snapshot.revision.revision_no}"
         f"{object_particle(str(snapshot.revision.revision_no))} 저장했습니다."
         + virtual_product_save_notice(len(virtual_products))
+    )
+    bump(SAVE_FORM_GENERATION_KEY)
+    written.release()
+    st.rerun()
+
+
+def _revision_save_failure(written: Written[ScenarioSnapshot] | None, reason: str) -> str:
+    """신규 리비전 저장 구획의 실패 알림 — 쓰기 전에 막혔는지, 쓴 뒤 불러오기만 못 했는지.
+
+    쓴 뒤 활성화가 실패하면 리비전은 이미 DB 에 있다. 「저장하지 못했습니다」 라고 알리면 다시 눌러
+    같은 리비전을 또 세운다. 같은 입력으로 다시 누르면 든 결과로 불러오기만 다시 한다
+    (`write_once_value` — 지문이 같다).
+    """
+    if written is None:
+        return f"신규 리비전을 저장하지 못했습니다: {reason}"
+    saved = written.value
+    if saved is None:
+        return f"신규 리비전을 저장했지만 지금 화면으로 불러오지 못했습니다: {reason}"
+    number = str(saved.revision.revision_no)
+    return (
+        f"신규 리비전 r{number}{object_particle(number)} 저장했지만 지금 화면으로 불러오지 "
+        f"못했습니다: {reason} — 리비전 목록에서 r{number}{object_particle(number)} 불러오세요."
     )
 
 
 def save_form_generation() -> int:
     """저장 구획 두 칸의 key 세대. 저장에 성공할 때마다 하나씩 오른다."""
-    value = st.session_state.get(SAVE_FORM_GENERATION_KEY, 0)
-    return value if isinstance(value, int) else 0
+    return generation(SAVE_FORM_GENERATION_KEY)
 
 
 def save_field_key(base: str) -> str:
@@ -667,8 +719,7 @@ def save_field_key(base: str) -> str:
     보는 위젯이라 빈 칸으로 서고, 옛 key 의 값은 다음 회차에 그려지지 않아 버려진다(시나리오
     관리 복제 폼의 `clone_field_key` 와 같은 방식). 첫 세대는 바탕 key 그대로다.
     """
-    generation = save_form_generation()
-    return base if generation == 0 else f"{base}__g{generation}"
+    return widget_key(base, SAVE_FORM_GENERATION_KEY)
 
 
 def _ensure_revision_selection(

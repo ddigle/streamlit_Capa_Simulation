@@ -164,11 +164,13 @@ if target.scenario_dialog_is_open():
 """
 
 
-@pytest.fixture
-def sidebar_app() -> Iterator[AppTest]:
-    """callback은 스크립트보다 먼저 실행되므로 모든 rerun을 같은 patch로 감싼다."""
+def sidebar_replacements() -> dict[str, Any]:
+    """사이드바 시나리오 팝업을 가짜 저장소·활성화로 돌리는 바꿔치기.
+
+    `tests/test_write_entry_points.py` 의 겹친 저장 시험도 쓴다.
+    """
     # 가짜의 모양이 제각각이라(함수·람다·클래스) 값 타입을 하나로 좁히지 않는다.
-    replacements: dict[str, Any] = {
+    return {
         "get_scenario_repository": lambda _path: FakeRepository(),
         "load_scenario_snapshot": load_snapshot,
         "pinned_connections": lambda *_paths: nullcontext(),
@@ -204,6 +206,12 @@ def sidebar_app() -> Iterator[AppTest]:
         # 옛 리비전 호환 검사는 따로 검증한다(`test_revision_compatibility.py`).
         "revision_block_reason": lambda _tables: st.session_state.get("test_block_reason"),
     }
+
+
+@pytest.fixture
+def sidebar_app() -> Iterator[AppTest]:
+    """callback은 스크립트보다 먼저 실행되므로 모든 rerun을 같은 patch로 감싼다."""
+    replacements = sidebar_replacements()
     originals = {name: getattr(target, name) for name in replacements}
     try:
         with patch.multiple(target, **replacements):

@@ -10,17 +10,24 @@
 차이로 같은 세대를 보고 둘 다 썼다(2026-10-25 E2E — VOC 글·답변이 두 건). 멈춤을 받은
 첫 콜백은 DB 에 쓴 뒤 다음 세션 칸 접근에서 `StopException` 으로 끊겨 세대도 못 올린다.
 
-그래서 `write_once` 는 두 가지를 한다.
+그래서 `write_once` 는 세 가지를 한다.
 
-- 세대 비교와 쓰기를 **프로세스 잠금 하나** 안에서 한다. 둘째 콜백은 첫 쓰기가 끝날
-  때까지 기다린다.
+- 세대 비교와 쓰기를 **그 세션의 잠금** 안에서 한다. 같은 세션의 둘째 콜백은 첫 쓰기가 끝날
+  때까지 기다린다. 막을 것은 같은 세션의 겹친 두 회차뿐이라 잠금도 세션마다 하나다 — 몇 초짜리
+  쓰기(사이드바 리비전 저장·시나리오 복제·기준선 얼리기)가 다른 사용자의 쓰기를 세우지 않는다.
+  세션이 달라도 같은 DB 에 쓰는 일은 저장소의 쓰기 잠금이 따로 줄 세운다.
 - 「이 세대는 썼다」 는 세션 칸이 아니라 **세션에 걸어 둔 dict 하나**에 적는다. 세션 칸
   쓰기는 멈춤을 받은 회차에서 그 자리에서 끊기지만 dict 칸 쓰기는 Streamlit 을 거치지
   않아 끊기지 않는다. 첫 콜백이 세대를 못 올리고 끊겨도 둘째 콜백이 그 표지를 보고 쓰지
   않은 채 뒷정리(알림·비우기·세대 올리기)만 한다.
+- 표지는 세대와 함께 **입력 지문**(`fingerprint` — 쓴 이름·글·대상 리비전·편집본 토큰 같은 그
+  쓰기의 입력)을 든다. 같은 누름이 겹쳐 오면 둘째 회차의 입력도 같아 쓰지 않는다. 쓴 뒤 둘째 누름이
+  아닌 조작(스피너 중 다른 단추·팝업 닫기·페이지 이동)이 회차를 끊으면 표지는 남고 세대는 그대로라,
+  세대만 보면 그 뒤 **다른 내용**을 적어 누른 저장도 「이미 썼다」 로 보고 쓰지 않은 채 옛 결과로
+  성공을 알렸다(2026-10-26 리뷰). 지문이 다르면 새 쓰기다 — 쓰고 표지를 바꾼다.
 
 `write` 는 잠금 안에서 표지를 적기 전에 돈다. 그 안에서 세션 칸을 읽지 않는다 — 세션 칸
-접근도 끊기는 자리라, 입력은 부르기 전에 읽어 둔다.
+접근도 끊기는 자리라, 입력(지문 포함)은 부르기 전에 읽어 둔다.
 
 **버전 대조 저장**(공용 프로필 — 공정 표시명·표시순서·판정 기준·확보율 보정)은 본문에서 저장하고
 `st.rerun()` 한다. 둘째 누름의 회차가 그 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라
@@ -50,7 +57,7 @@
 팝업 저장, FAB 전체 배치)은 콜백에서 저장하고 뒷정리로 편집본을 비워 출발점을 옮긴다. 둘째
 누름의 회차가 첫 콜백을 DB 쓰기 뒤에 끊으면 출발점이 그대로라, 둘째 콜백이 옛 출발점으로 다시
 저장하다 저장소에 거부되고 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E).
-`save_once` 는 저장과 「이 출발점은 저장했다」 표지를 한 잠금 안에서 하고, 같은 출발점의 둘째
+`save_once` 는 저장과 「이 출발점은 저장했다」 표지를 그 세션의 잠금 안에서 하고, 같은 출발점의 둘째
 누름에는 저장하지 않고 첫 저장의 결과를 돌려준다 — 부르는 쪽은 그 결과로 뒷정리·알림을 잇는다.
 """
 
@@ -58,14 +65,17 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable, Mapping
-from typing import TypeVar, cast
+from collections.abc import Callable, Hashable, Mapping
+from typing import Any, TypeVar, cast
 
 import streamlit as st
 
-# 쓰기를 마친 세대의 표지(세대 칸 이름 → 그 세대). 세션마다 하나이고 처음 쓰는 콜백이
-# 잠금 안에서 건다.
+# 쓰기를 마친 세대의 표지(세대 칸 이름 → (그 세대, 입력 지문)). 세션마다 하나이고 처음 쓰는
+# 콜백이 잠금 안에서 건다.
 WRITE_MARKS_KEY = "write_guard_marks"
+
+# 그 세션의 쓰기 잠금(`threading.Lock`). 처음 쓰는 회차가 건다.
+WRITE_LOCK_KEY = "write_guard_lock"
 
 # 세대를 쓴 시각(세대 칸 이름 → `time.monotonic()`). `write_once` 가 표지와 함께 적는다.
 RECENT_WRITES_KEY = "write_guard_recent_writes"
@@ -89,9 +99,12 @@ OWN_SAVES_KEY = "write_guard_own_saves"
 
 _Outcome = TypeVar("_Outcome")
 
-# 세션을 가리지 않는 잠금 하나다. 두 회차의 세션 칸 잠금이 따로라 세션 안에 둘 자리가
-# 없고, 잠그는 동안 하는 일은 기록 한 줄 쓰기다.
-_WRITE_LOCK = threading.Lock()
+# 처음 쓰는 두 회차가 세션의 잠금·표지 dict 를 따로 만들어 한쪽이 지워지지 않게 하는 프로세스
+# 잠금. 두 회차의 세션 칸 잠금(`SafeSessionState`)이 따로라 이 자리는 세션 밖에 둔다. 잠그는
+# 동안 하는 일은 세션 칸 하나를 읽고 (없으면) 적는 것뿐이다 — 쓰기는 이 잠금 밖, 세션의 잠금
+# 안에서 돈다.
+_SLOT_LOCK = threading.Lock()
+_LOCK_TYPE = type(threading.Lock())
 
 
 def current_generation(counter_key: str) -> int:
@@ -100,31 +113,57 @@ def current_generation(counter_key: str) -> int:
     return value if isinstance(value, int) else 0
 
 
-def write_once(counter_key: str, generation: int, write: Callable[[], object]) -> bool:
-    """그린 회차의 세대(`generation`)로 `write` 를 **세대마다 한 번만** 부른다.
+def _session_dict(key: str) -> dict[str, object]:
+    """세션 칸 `key` 의 dict — 없으면 만들어 건다. 겹친 두 회차가 따로 만들지 않게 잠근다."""
+    with _SLOT_LOCK:
+        found = st.session_state.get(key)
+        if not isinstance(found, dict):
+            found = {}
+            st.session_state[key] = found
+        return found
+
+
+def _session_lock() -> threading.Lock:
+    """그 세션의 쓰기 잠금 — 없으면 만들어 건다."""
+    with _SLOT_LOCK:
+        found = st.session_state.get(WRITE_LOCK_KEY)
+        if not isinstance(found, _LOCK_TYPE):
+            found = threading.Lock()
+            st.session_state[WRITE_LOCK_KEY] = found
+        return found
+
+
+def write_once(
+    counter_key: str,
+    generation: int,
+    write: Callable[[], object],
+    *,
+    fingerprint: Hashable,
+) -> bool:
+    """그린 회차의 세대(`generation`)로 `write` 를 **같은 입력마다 한 번만** 부른다.
+
+    `fingerprint` 는 그 쓰기의 입력(적은 글·이름·대상 리비전·편집본 토큰 등 — 다른 내용의 저장이면
+    달라야 하고, 같은 누름이 겹쳐 오면 같아야 한다)이다. 부르기 전에 읽은 값으로 짓는다.
+    시각·난수처럼 회차마다 바뀌는 값은 넣지 않는다 — 겹쳐 온 둘째 누름이 새 쓰기가 된다.
 
     - `False` — 지나간 화면의 누름이다(지금 세대가 다르다). 쓰지 않았다. 부르는 쪽은
       알리지 않고, 옛 화면이 함께 보낸 입력은 이미 쓴 것이라 비우기만 한다.
-    - `True` — 이 세대의 쓰기가 끝났다. 이 누름이 썼거나, 겹쳐 온 같은 세대의 누름이 쓰고
+    - `True` — 이 세대의 이 입력 쓰기가 끝났다. 이 누름이 썼거나, 겹쳐 온 같은 누름이 쓰고
       뒷정리 전에 끊겼다. 부르는 쪽은 뒷정리를 하고 **세대 올리기를 맨 끝에** 둔다 — 그
-      앞에서 끊기면 다음 누름이 표지를 보고 뒷정리를 잇는다.
+      앞에서 끊기면 다음 누름이 표지를 보고 뒷정리를 잇는다. 같은 세대라도 지문이 다른 누름은
+      새로 쓴다(끊긴 쓰기 뒤 다른 내용을 적어 누른 저장).
 
     `write` 가 던진 예외는 그대로 나간다. 표지를 남기지 않으므로 다시 누르면 다시 쓴다.
     """
-    with _WRITE_LOCK:
+    mark = (generation, fingerprint)
+    with _session_lock():
         if generation != current_generation(counter_key):
             return False
-        marks = st.session_state.get(WRITE_MARKS_KEY)
-        if not isinstance(marks, dict):
-            marks = {}
-            st.session_state[WRITE_MARKS_KEY] = marks
-        recent = st.session_state.get(RECENT_WRITES_KEY)
-        if not isinstance(recent, dict):
-            recent = {}
-            st.session_state[RECENT_WRITES_KEY] = recent
-        if marks.get(counter_key) != generation:
+        marks = _session_dict(WRITE_MARKS_KEY)
+        recent = _session_dict(RECENT_WRITES_KEY)
+        if marks.get(counter_key) != mark:
             write()
-            marks[counter_key] = generation
+            marks[counter_key] = mark
             recent[counter_key] = time.monotonic()
     return True
 
@@ -149,11 +188,8 @@ def save_once(
     적용 등)은 표지로 막지 않는다. `save` 가 던진 예외는 그대로 나가고 표지도 남지 않는다.
     `save` 안에서 세션 칸을 읽지 않는다(`write_once` 와 같은 까닭).
     """
-    with _WRITE_LOCK:
-        marks = st.session_state.get(OWN_SAVES_KEY)
-        if not isinstance(marks, dict):
-            marks = {}
-            st.session_state[OWN_SAVES_KEY] = marks
+    with _session_lock():
+        marks = _session_dict(OWN_SAVES_KEY)
         recorded = marks.get(name)
         if (
             isinstance(recorded, tuple)
@@ -190,12 +226,7 @@ def profile_save_marks() -> dict[str, tuple[int, int]]:
     회차가 멈춤을 건 자리에서 끊기지만 dict 칸 쓰기는 끊기지 않는다(위 `write_once` 의 표지와
     같은 까닭).
     """
-    with _WRITE_LOCK:
-        marks = st.session_state.get(PROFILE_SAVES_KEY)
-        if not isinstance(marks, dict):
-            marks = {}
-            st.session_state[PROFILE_SAVES_KEY] = marks
-        return marks
+    return cast("dict[str, Any]", _session_dict(PROFILE_SAVES_KEY))
 
 
 def is_own_profile_save(
@@ -222,12 +253,7 @@ def profile_conflict_marks() -> dict[str, tuple[str, float]]:
     `profile_save_marks` 와 같이 저장 **전에** 받아 두고, 남의 저장 때문에 거부되면 곧바로
     `note_profile_conflict` 로 적는다(dict 칸 쓰기는 끊기지 않는다).
     """
-    with _WRITE_LOCK:
-        marks = st.session_state.get(PROFILE_CONFLICTS_KEY)
-        if not isinstance(marks, dict):
-            marks = {}
-            st.session_state[PROFILE_CONFLICTS_KEY] = marks
-        return marks
+    return cast("dict[str, Any]", _session_dict(PROFILE_CONFLICTS_KEY))
 
 
 def note_profile_conflict(marks: dict[str, tuple[str, float]], name: str, message: str) -> None:
@@ -257,12 +283,7 @@ def notice_marks() -> dict[str, tuple[str, float]]:
     쓰기 **전에** 받아 두고 쓰기에 성공하면 곧바로 `note_notice` 로 적는다(dict 칸 쓰기는 끊기지
     않는다 — 그 뒤 `queue_flash` 같은 세션 칸 쓰기는 둘째 누름의 회차에 끊길 수 있다).
     """
-    with _WRITE_LOCK:
-        marks = st.session_state.get(RECENT_NOTICES_KEY)
-        if not isinstance(marks, dict):
-            marks = {}
-            st.session_state[RECENT_NOTICES_KEY] = marks
-        return marks
+    return cast("dict[str, Any]", _session_dict(RECENT_NOTICES_KEY))
 
 
 def note_notice(marks: dict[str, tuple[str, float]], key: str, message: str) -> None:
