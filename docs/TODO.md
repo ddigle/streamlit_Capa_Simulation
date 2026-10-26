@@ -1062,6 +1062,29 @@
   없다. 배포 때 할 일은 없다(새 세션 칸 하나, 마이그레이션 없음 — 배포 직후 열려 있던 세션의 옛 표지는 지문이 없어 다음 누름이 새로
   쓴다). 관련: `components/write_guard.py`·`components/widget_generation.py`·`tests/test_write_guard.py`·
   `tests/test_write_entry_points.py`·`tests/test_widget_generation.py`·`tests/test_voc_page.py`
+- (2026-10-26) **HOME·사이드바 E2E 고침 여덟**(브라우저 E2E lens tabs-home, 밤사이 권장대로, 사본 앱 8592 확인) — (1) Preference
+  Summary 공지·Top5 구간·주요공정 프리셋 저장이 남의 먼저 저장을 버전만 올려 다시 쓰고 「저장했습니다」 를 띄우던 것을 버전 대조로
+  거부한다(빠른 두 번 누름의 제 저장·거부 뒤 둘째 누름은 판정 기준과 같은 표지). (2) 사이드바 HOME·지금 화면 링크의 키보드 초점에
+  2px `ACCENT` 윤곽. (3) 주요공정 프리셋 이름·(4) 공정 표시명의 물결표가 사이드바 칸·Preference·팝업·Admin 알림에서 지움선이
+  되던 것. (5) 조회기간 한 달이면 월 칸 그림이 100px 상자에 150px 로 그려져 잘리던 것 — 셸 캔버스를 150px 아래로 좁히지 않는다.
+  (6) 사이드바 작은 글의 캡션 흐림(`opacity 0.6`)을 걷어 대비 4.5:1 이상. (7) 접은 툴바 iframe 이 Tab 정지·낭독기 「st.iframe」
+  이던 것. (8) Top5 구간 캡션 「200% 을」 → 「200%를」(시험만 — 고침은 `particle-single-path`). 정한 것(대안):
+  - 충돌로 거부된 Summary 공지·Top5 칸은 최신 저장본으로 다시 서고 옛 화면의 입력은 남지 않는다(거부 알림이 말한다) — 판정 기준과
+    같은 꼴. 대안: 칸에 key 를 달아 입력을 남기기 — 숨은 탭의 첫 값이 세션에 박혀 남의 저장이 화면에 보이지 않는다.
+  - 주요공정 프리셋은 묶음 version 이 아니라 직전 회차가 그린 **고칠 프리셋**(version·이름·공정)을 대조한다 — 다른 프리셋에 대한
+    남의 저장은 막지 않고 다시 읽은 묶음 위에 남긴다. 대안: 묶음 version 대조 — 다른 프리셋을 누가 고쳐도 거부된다.
+  - 한 달 조회의 월 칸은 150px 로 넓어진다(두 달 이상은 그대로). 대안: 월 칸 그림을 `width="content"` 로 — 호출부 여덟을 바꾸고
+    두 달 이상의 그림 폭 규칙도 바뀐다.
+  - 툴바 iframe 은 CSS `visibility: hidden` 으로 숨긴다. 대안: iframe 스크립트가 `tabindex=-1`·`aria-hidden` 을 달기 — iframe
+    내용은 회차마다 같아야 한다.
+  - 공정 표시명의 CSS `content` 풍선·Figure 글은 마크다운이 아니라 막지 않는다.
+  - integ/1026 에 합치며 Summary 공지·Top5 구간은 판정 기준과 같은 본 값 꼴(`write_guard.seen`·`remember_seen` — 제출 회차는
+    올리지 않고, 칸이 없으면 「다시 불러와」, 충돌은 `queue_refusal` 뒤 다음 회차가 그린다)로 옮기고, 같은 입력의 겹친 둘째
+    누름을 쓰지 않는 `save_once` 안에서 대조한다. 주요공정 프리셋의 「본 고칠 프리셋」 칸은 `remember_seen` 으로 적는다(제출
+    회차에도 적는 것은 가지 그대로 — 본 값 꼴로 옮길지는 다음에).
+  다음 배포 런북 7장 HOME 줄 후보: 한 달 조회 월 칸·물결표 프리셋 이름·Summary 공지 두 문맥 거부. 관련: `components/home_preference.py`·
+  `sidebar_style.py`·`scroll_shell.py`·`theme_toggle.py`·`process_picker.py`·`process_rename_management.py`·
+  `tests/test_preference_profile_conflicts.py`·`tests/test_key_process_tilde_names.py`·`tests/test_process_label_tilde_sinks.py`
 - (2026-10-26) **값 뒤 조사는 `korean_particle` 한 길 — 끼운 값 뒤 고정 조사 0곳**(리팩토링 `particle-single-path`, 밤사이
   권장대로) — E2E 회차마다 고친 자리만 고쳐지고 같은 꼴(「공식 v4 으로」·「4 을」·「27-06 가」)이 다른 파일에서 다시 나오던 것:
   f-string 에 끼운 런타임 값 뒤 고정 조사(붙은 꼴·한 칸 띄운 꼴·손으로 박은 「은(는)」·「(으)로」 꼴, 진짜 조사였던 띄운 「이」 넷)를

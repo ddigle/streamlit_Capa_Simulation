@@ -552,12 +552,19 @@ class DuckDBScenarioRepository:
         max_rate: float,
         *,
         source: str,
+        expected_version: int | None = None,
     ) -> GlobalTop5Band:
-        """Atomically replace the shared Top 5 band. 교체마다 version 이 오른다."""
+        """Atomically replace the shared Top 5 band. 교체마다 version 이 오른다.
+
+        화면 편집은 `expected_version` 을 넘겨 판정 기준과 같은 버전 대조를 받는다(다르면
+        `ProfileVersionConflict`).
+        """
         low, high = validate_top5_band(min_rate, max_rate)
         source_label = required_text(source, "Top5 확보율 구간 출처")
         with self._write_transaction() as connection:
-            home_profile_store.replace_global_top5_band(connection, low, high, source=source_label)
+            home_profile_store.replace_global_top5_band(
+                connection, low, high, source=source_label, expected_version=expected_version
+            )
         return self.load_global_top5_band()
 
     def load_global_key_process(self) -> GlobalKeyProcess:
@@ -574,18 +581,20 @@ class DuckDBScenarioRepository:
         presets: Sequence[tuple[str, Sequence[str]]],
         *,
         source: str,
+        expected_version: int | None = None,
     ) -> GlobalKeyProcess:
         """Atomically replace every shared key-process preset.
 
         화면은 프리셋 하나를 고쳐도 **묶음 전체**를 넘긴다 — 차례(첫 프리셋이 기본)와 이름
         중복을 한 자리에서 검사하려면 전체가 있어야 한다. 0개(모두 지움)도 정상 저장이며
-        version 은 올라간다.
+        version 은 올라간다. 화면 편집은 `expected_version` 을 넘겨 버전 대조를 받는다(다르면
+        `ProfileVersionConflict`).
         """
         normalized = normalize_key_process_presets(presets)
         source_label = required_text(source, "주요공정 프리셋 출처")
         with self._write_transaction() as connection:
             key_process_store.replace_global_key_process_presets(
-                connection, normalized, source=source_label
+                connection, normalized, source=source_label, expected_version=expected_version
             )
         return self.load_global_key_process()
 
@@ -648,15 +657,20 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return home_profile_store.load_global_summary_note(connection)
 
-    def replace_global_summary_note(self, note: str, *, source: str) -> GlobalSummaryNote:
+    def replace_global_summary_note(
+        self, note: str, *, source: str, expected_version: int | None = None
+    ) -> GlobalSummaryNote:
         """Atomically replace the shared summary notice. 교체마다 version 이 오른다.
 
         **빈 문구를 막지 않는다.** 공지를 내리는 것도 저장해야 하는 결정이고, 그때도
-        version 이 올라야 다른 세션의 캐시가 풀린다.
+        version 이 올라야 다른 세션의 캐시가 풀린다. 화면 편집은 `expected_version` 을 넘겨
+        버전 대조를 받는다(다르면 `ProfileVersionConflict`).
         """
         source_label = required_text(source, "Summary 공지 출처")
         with self._write_transaction() as connection:
-            home_profile_store.replace_global_summary_note(connection, note, source=source_label)
+            home_profile_store.replace_global_summary_note(
+                connection, note, source=source_label, expected_version=expected_version
+            )
         return self.load_global_summary_note()
 
     def load_global_comparison_scenario(self) -> GlobalComparisonScenario:

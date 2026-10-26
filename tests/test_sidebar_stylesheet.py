@@ -320,11 +320,11 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
         ['[data-testid="stSidebarUserContent"] > div'],
         ['[data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"]'],
     ]
-    # 캡션 칸의 음수 아래 여백을 걷어 글이 카드 밖으로 흐르지 않는다.
+    # 캡션 칸의 음수 아래 여백을 걷어 글이 카드 밖으로 흐르지 않고, 흐림을 걷어 대비를 지킨다.
     caption = _declarations(
         block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"]']
     )
-    assert caption == ["margin-bottom: 0"]
+    assert caption == ["margin-bottom: 0", "opacity: 1"]
     # 글은 작은 보조색, 메일 링크는 두 테마 모두 토큰의 `ACCENT` 다.
     text = _declarations(block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p'])
     assert f"color: {tokens.TEXT_MUTED}" in text
@@ -437,3 +437,62 @@ def test_alerts_in_the_conditions_panel_sit_on_the_surface() -> None:
             f'.st-key-{CONDITIONS_BOX_KEY} [data-testid="stAlert"]',
         ]
     ]
+
+
+_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def _rules(block: str) -> list[tuple[list[str], str]]:
+    """`선택자 묶음 { 본문 }` 들. `@media`·`@keyframes` 안쪽 규칙도 한 겹으로 나온다."""
+    return [
+        ([selector.strip() for selector in selectors.split(",")], body)
+        for selectors, body in _RULE.findall(block)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("active_href", "link"),
+    [
+        ("", '.st-key-home_navigation a[data-testid="stPageLink-NavLink"]'),
+        ("capa_chatbot", '[data-testid="stPageLink-NavLink"][href="capa_chatbot"]'),
+    ],
+)
+def test_home_and_current_page_links_draw_a_keyboard_focus_ring(
+    active_href: str, link: str
+) -> None:
+    """HOME·지금 화면 링크의 `:focus-visible` 은 평소·`:hover` 와 한 묶음(같은 면)이라 Tab 으로
+    초점이 와도 그림이 그대로였다(2026-10-26 E2E). Streamlit 은 `:focus` 윤곽을 지우므로 따로 2px
+    `ACCENT` 윤곽을 둘러야 초점이 보인다(design_system 3-2 의 값 칸과 같다)."""
+    rings = [
+        body
+        for selectors, body in _rules(_style_block(active_href))
+        if all(selector.endswith(":focus-visible") for selector in selectors)
+        and any(link in selector for selector in selectors)
+    ]
+
+    assert any(f"outline: 2px solid {tokens.ACCENT}" in body for body in rings), rings
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_muted_sidebar_captions_drop_the_caption_opacity(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Streamlit 1.63 은 캡션 칸에 `opacity: 0.6` 을 건다. 그 위 글자를 `TEXT_MUTED` 로 덮으면
+    흐림이 겹쳐 구역 제목·조건 이름 줄·앱 정보 작은 글이 2.29~3.08:1 이었다(2026-10-26 E2E).
+    글자를 `TEXT_MUTED` 로 칠하는 캡션은 모두 그 칸의 흐림을 걷는다(`opacity: 1`)."""
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    rules = _rules(_style_block())
+    caption = '[data-testid="stCaptionContainer"]'
+    muted = {
+        selector.removesuffix(" p")
+        for selectors, body in rules
+        if f"color: {tokens.TEXT_MUTED}" in body
+        for selector in selectors
+        if selector.endswith(f"{caption} p")
+    }
+    opaque = {
+        selector for selectors, body in rules if "opacity: 1;" in body for selector in selectors
+    }
+
+    assert muted, "TEXT_MUTED 캡션 규칙을 찾지 못했습니다"
+    assert sorted(muted - opaque) == []

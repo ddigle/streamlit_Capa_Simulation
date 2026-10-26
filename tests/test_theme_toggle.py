@@ -73,6 +73,21 @@ def test_toolbar_iframe_is_collapsed_to_zero_without_the_deprecated_api(
     assert "components" not in vars(theme_toggle)
 
 
+def test_the_collapsed_toolbar_iframe_is_not_a_tab_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """높이 0 으로 접은 iframe 도 Tab 정지(tabIndex 0)이고 낭독기에 「st.iframe」 으로 읽혔다 —
+    툴바 단추 다음 Tab 이 보이지 않는 칸에 한 번 머물렀다(2026-10-26 E2E). 접는 규칙이
+    `visibility: hidden` 을 함께 걸어 초점·접근성 트리에서 빼고, iframe 내용(스크립트)은
+    그대로다."""
+    frames, _heights, styles = _render(monkeypatch)
+
+    theme_toggle.render_theme_toggle()
+
+    rule = styles[0]
+    assert f'iframe[data-testid="stIFrame"][srcdoc*="{theme_toggle.THEME_BUTTON_ID}"]' in rule
+    assert "visibility:hidden !important" in rule
+    assert "tabindex" not in frames[0].lower()
+
+
 def _function_body(js: str, name: str) -> str:
     start = js.index(f"function {name}(")
     end = js.index("\n  }\n", start)

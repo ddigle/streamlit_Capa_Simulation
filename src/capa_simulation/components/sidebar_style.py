@@ -138,6 +138,12 @@ def build_sidebar_stylesheet(
         f'.st-key-{section.key} [data-testid="stCaptionContainer"] p'
         for section in SIDEBAR_SECTIONS
     )
+    # 그 캡션 칸. Streamlit 1.63 은 캡션 칸에 `opacity: 0.6`(theme.opacities.secondary)을 건다 —
+    # 글자를 `TEXT_MUTED` 로 덮은 위에 그 흐림이 겹쳐 작은 글 대비가 2.29~3.08:1 로
+    # 떨어졌다(2026-10-26 E2E). 색이 이미 보조색이라 흐림을 걷는다(`TEXT_MUTED` 만이면 4.5:1 이상).
+    section_caption_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{section.key} [data-testid="stCaptionContainer"]' for section in SIDEBAR_SECTIONS
+    )
     section_title_selectors = _SELECTOR_JOINER.join(
         f'.st-key-{section.key} > [data-testid="stElementContainer"]:first-child'
         ' [data-testid="stCaptionContainer"] p'
@@ -222,6 +228,15 @@ def build_sidebar_stylesheet(
         {active_link} p {{
             color: {tokens.ACCENT};
         }}"""
+        # 키보드 초점은 위 묶음과 **따로** 그린다. 묶음의 `:focus-visible` 은 emotion 의 초점 배경을
+        # 덮으려는 것이라 평소와 같은 그림이고, Streamlit 은 `:focus` 에 `outline: none` 을 둬 대신
+        # 그려지는 윤곽도 없다 — Tab 으로 지금 화면 링크에 와도 그림이 바뀌지 않았다(2026-10-26
+        # E2E). 조건 값 칸과 같은 2px `ACCENT` 윤곽을 2px 띄워 두른다(design_system 3-2).
+        f"""
+        {active_link}:focus-visible {{
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
+        }}"""
         # 헤더 두 글줄이 이미 3px ACCENT 막대를 쓴다. 같은 막대를 지금 있는 자리에도 세우면 헤더와
         # 사이드바가 한 언어를 쓴다. 여백은 **모든 링크**에 주고 막대만 활성에 켠다 — 활성에만 주면
         # 라벨 시작 위치가 들쭉날쭉해진다.
@@ -304,6 +319,13 @@ def build_sidebar_stylesheet(
         {HOME_LINK} p {{
             text-align: center;
             color: {tokens.ACCENT};
+        }}"""
+        # 키보드 초점은 활성 링크와 같은 까닭으로 따로 윤곽을 두른다 — 위 묶음의 `:focus-visible` 은
+        # 평소와 같은 면이라 HOME 링크에 초점이 와도 그림이 그대로였다.
+        f"""
+        {HOME_LINK}:focus-visible {{
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
         }}"""
         # 마우스가 스칠 때 광택 띠가 한 번 지나간다. 평소에는 왼쪽 밖에 세워 두므로 가만히 있는
         # 화면에서는 아무것도 움직이지 않는다.
@@ -405,6 +427,9 @@ def build_sidebar_stylesheet(
             margin-top: 0.55rem;
             margin-bottom: -0.12rem;
             padding: 0 0.3rem;
+        }}
+        {section_caption_selectors} {{
+            opacity: 1;
         }}
         {section_text_selectors} {{
             font-size: 0.75rem;
@@ -640,10 +665,11 @@ def build_sidebar_stylesheet(
         # 작은 글 두 줄 — 크기는 구역 제목의 설명 글(0.75rem)과 같다. 좁은 사이드바에서는 줄이
         # 접히고, 띄어 쓸 곳이 없는 메일 주소도 칸 안에서 끊는다. Streamlit 은 캡션 칸에 아래 음수
         # 여백(-1rem)을 걸어 다음 요소에 붙이는데, 여기서는 그만큼 글이 카드 밖으로 흘러 바닥 아래로
-        # 잘린다(실측 14px) — 걷는다.
+        # 잘린다(실측 14px) — 걷는다. 캡션 흐림(`opacity`)도 구역 제목과 같은 까닭으로 걷는다.
         f"""
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] {{
             margin-bottom: 0;
+            opacity: 1;
         }}
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p {{
             margin: 0;
@@ -726,7 +752,7 @@ def _conditions_panel_style() -> str:
         }}"""
         # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
         # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로
-        # 올라붙는다.
+        # 올라붙는다. 캡션 흐림(`opacity`)도 걷는다 — 패널 면 위 `TEXT_MUTED` 에 겹쳐 2.29:1 이었다.
         f"""
         {name_row} {{
             min-height: 1.15rem;
@@ -734,6 +760,7 @@ def _conditions_panel_style() -> str:
         }}
         {name_row} [data-testid="stCaptionContainer"] {{
             margin-bottom: 0;
+            opacity: 1;
         }}
         {name_row} [data-testid="stCaptionContainer"] p {{
             margin: 0;

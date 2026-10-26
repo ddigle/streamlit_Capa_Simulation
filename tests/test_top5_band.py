@@ -7,11 +7,14 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.design import tokens
+from capa_simulation.persistence.cache import clear_global_top5_band_cache
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.top5_band import (
@@ -336,3 +339,23 @@ def test_threshold_lines_step_with_a_monthly_exception() -> None:
     )
 
     assert threshold_lines == [(0.995, -0.5, 1.5), (1.095, -0.5, 0.5), (1.195, 0.5, 1.5)]
+
+
+def test_the_unsaved_band_caption_picks_the_particle_after_the_percent(tmp_path: Path) -> None:
+    """저장 이력이 없을 때 Preference 캡션이 「기본값 50%~200% 을 씁니다」 였다(2026-10-26 E2E).
+    `%` 는 퍼센트로 읽어 받침이 없으므로 「200%를」 이다 — 조사는 `korean_particle` 이 고른다."""
+    database = tmp_path / "scenario.duckdb"
+    DuckDBScenarioRepository(database).initialize()
+    clear_global_top5_band_cache()
+    script = f"""
+from capa_simulation.components.home_preference import _render_top5_band_editor
+from capa_simulation.persistence.cache import load_global_top5_band
+
+database = {str(database)!r}
+_render_top5_band_editor(top5_band_profile=load_global_top5_band(database), database_path=database)
+"""
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    captions = [str(caption.value) for caption in app.caption]
+    assert any("기본값 50%~200%를 씁니다" in caption for caption in captions), captions

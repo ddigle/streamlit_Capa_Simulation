@@ -19,9 +19,11 @@ import html
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -179,18 +181,34 @@ THRESHOLD_FLASH_KEY = "home_threshold_flash"
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
 # 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 KEY_PROCESS_FLASH_KEY = "home_key_process_flash"
-# 버전 대조가 없는 공용 저장 폼의 `write_guard.save_once` 이름. 같은 입력의 겹친·빠른 둘째 누름은
-# 쓰지 않고 첫 저장으로 알린다 — 내용은 같은데 공용 버전만 두 번 올랐다(2026-10-25 E2E — Summary
-# v5→v7·프리셋 v3→v5).
+# 공용 저장 폼의 `write_guard.save_once` 이름. 같은 입력의 겹친·빠른 둘째 누름은 쓰지 않고 첫
+# 저장으로 알린다 — 내용은 같은데 공용 버전만 두 번 올랐다(2026-10-25 E2E — Summary v5→v7·프리셋
+# v3→v5). Summary 공지·Top5 구간·주요공정 프리셋은 그 위에 버전 대조도 한다(아래 `*_SAVE_NAME`).
 SUMMARY_NOTE_SAVE_NAME = "home_summary_note"
 TOP5_BAND_SAVE_NAME = "home_top5_band"
-KEY_PROCESS_SAVE_NAME = "home_key_process_preset"
+KEY_PROCESS_ONCE_NAME = "home_key_process_preset"
 ADVANCE_LOAD_SAVE_NAME = "home_advance_load"
 ADVANCE_SHIPMENT_SAVE_NAME = "home_advance_shipment"
 THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장했습니다."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
 THRESHOLD_POINTER = "판정 기준은 HOME → Preference 에서 정합니다."
+# Summary 공지·Top5 구간·주요공정 프리셋 편집을 시작한 회차가 본 공용 version 과 제 저장 표지
+# 이름(`write_guard.own_save_marks`). 판정 기준과 같은 버전 대조다 — 칸에 key 가 없어 남이 먼저
+# 저장하면 제출 회차의 칸이 새 저장본으로 서서 이 화면의 입력이 버려지는데, 대조가 없으면 그 값을
+# version 만 올려 다시 쓰고 「저장했습니다」 를 띄웠다(2026-10-26 E2E).
+SUMMARY_BASE_VERSION_KEY = "home_preference_summary_base_version"
+SUMMARY_SAVE_NAME = "home_preference_summary"
+TOP5_BASE_VERSION_KEY = "home_preference_top5_base_version"
+TOP5_SAVE_NAME = "home_preference_top5"
+TOP5_SAVED_MESSAGE = "B/N Top5 확보율 구간을 저장했습니다."
+# 주요공정 프리셋은 version 하나가 아니라 직전 회차가 그린 **고칠 프리셋**(version·이름·공정)을
+# 둔다 — 다른 프리셋을 남이 고친 것은 이 화면의 쓰기가 다시 읽은 묶음 위에 남기므로 막지 않는다.
+KEY_PROCESS_SEEN_KEY = "home_preference_key_process_seen"
+KEY_PROCESS_SAVE_NAME = "home_preference_key_process"
+# 빠른 두 번 누름의 둘째 회차가 다시 알리는 문구. 그 회차는 프리셋 고름이 첫 저장 뒤로 옮겨 가
+# 어느 프리셋을 어떻게 바꿨는지 다시 지을 수 없어 이름 없이 말한다.
+KEY_PROCESS_SAVED_MESSAGE = "주요공정 히트맵 프리셋을 저장했습니다."
 # 주요공정 히트맵 프리셋. 사이드바에서 고른 프리셋(세션의 보는 조건)과 Preference 에서 고치는
 # 프리셋은 다른 칸이다 — 고치려고 고른 것이 보는 화면을 바꾸면 안 된다. **위젯이 아닌 세션 값**이다
 # (2026-10-10 — 사이드바 칸의 팝업이 적는다). 그래서 Preference 에서 이름을 바꿀 때도 곧바로 적는다.
@@ -1360,8 +1378,11 @@ def _render_summary_note_editor(
     `st.rerun` 을 부르지 않아도 되지만, 부르지 않으면 저장한 사람만 옛 문구를 본다.
 
     **빈 문구도 저장한다.** 공지를 내리는 것도 결정이고, 지우고 저장하면 화면에서
-    사라지는 것이 지우기의 뜻이다.
+    사라지는 것이 지우기의 뜻이다. 저장은 **버전 대조**다(판정 기준과 같다) — 편집을 시작한
+    회차의 version 을 세션(`SUMMARY_BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다(`write_guard`
+    본 값). 같은 글의 겹친·빠른 둘째 누름은 `save_once` 가 쓰지 않는다.
     """
+    submitted_base = seen(SUMMARY_BASE_VERSION_KEY)
     with st.container(border=True):
         st.markdown("#### :material/campaign: Summary 공지")
         st.caption(
@@ -1381,6 +1402,9 @@ def _render_summary_note_editor(
             notice = st.container()
             with notice:
                 render_flash("home_summary_note_flash")
+                refused = take_refusal(SUMMARY_SAVE_NAME)
+                if refused is not None:
+                    st.error(refused)
             # **`key` 를 두지 않는다.** 키가 붙은 위젯은 한 번 그려진 뒤 `value` 를 무시하고
             # 세션 값을 쓴다. Preference 는 숨은 탭에서도 위젯을 그리므로 HOME 첫 진입의
             # 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
@@ -1392,28 +1416,57 @@ def _render_summary_note_editor(
                 placeholder="예: 9월 물량 확정 전 잠정 계획입니다. B/N 은 SAM 기준.",
             )
         if not submitted:
+            # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
+            # (write_guard).
+            remember_seen(SUMMARY_BASE_VERSION_KEY, summary_profile.version)
             return
         text = str(note)
+        message = "Summary 공지를 저장했습니다." if text.strip() else "Summary 공지를 내렸습니다."
+        # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = own_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, SUMMARY_SAVE_NAME)
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
+            # 다시 알린다. 이 회차가 그린 최신 저장본을 본 값으로 적는다(판정 기준과 같다).
+            remember_seen(SUMMARY_BASE_VERSION_KEY, summary_profile.version)
+            if refused != held:
+                notice.error(held)
+            return
+        if not isinstance(submitted_base, int):
+            # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
+            queue_refusal(SUMMARY_SAVE_NAME, SEEN_MISSING_MESSAGE)
+            st.rerun(scope="app")
+        expected_version = submitted_base
         try:
             repository = get_scenario_repository(database_path)
             # 같은 글의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`write_guard.save_once`).
-            save_once(
+            saved = save_once(
                 SUMMARY_NOTE_SAVE_NAME,
                 text,
-                lambda: repository.replace_global_summary_note(text, source="웹 직접 편집"),
+                lambda: repository.replace_global_summary_note(
+                    text, source="웹 직접 편집", expected_version=expected_version
+                ),
                 wrote=_saved,
+            )
+            remember_own_save(SUMMARY_SAVE_NAME, expected_version, saved.version, save_marks)
+        except ProfileVersionConflict as exc:
+            # 남이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신 저장본을 그리게 캐시를
+            # 비운다. 이 회차는 본 version 을 올리지 않는다 — 다음 회차(제출 아님)가 적는다.
+            clear_global_summary_note_cache()
+            _refuse_profile_write(
+                exc,
+                SUMMARY_SAVE_NAME,
+                save_marks=save_marks,
+                conflict_marks=conflict_marks,
+                flash_key="home_summary_note_flash",
+                saved_message=message,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
-        except ValueError as exc:
-            notice.error(bootstrap_error_message(exc))
-            return
         clear_global_summary_note_cache()
-        queue_flash(
-            "home_summary_note_flash",
-            "Summary 공지를 저장했습니다." if text.strip() else "Summary 공지를 내렸습니다.",
-        )
+        queue_flash("home_summary_note_flash", message)
         st.rerun(scope="app")
 
 
@@ -1422,7 +1475,8 @@ def _render_top5_band_editor(
     top5_band_profile: GlobalTop5Band,
     database_path: str,
 ) -> None:
-    """B/N Top5 막대가 표현하는 확보율 구간."""
+    """B/N Top5 막대가 표현하는 확보율 구간. 저장은 버전 대조다(Summary 공지와 같다)."""
+    submitted_base = seen(TOP5_BASE_VERSION_KEY)
     with st.container(border=True):
         st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
         st.caption(
@@ -1444,6 +1498,9 @@ def _render_top5_band_editor(
             notice = st.container()
             with notice:
                 render_flash("home_top5_band_flash")
+                refused = take_refusal(TOP5_SAVE_NAME)
+                if refused is not None:
+                    st.error(refused)
             # **`key` 를 두지 않는다.** 바로 위 Summary 공지와 같은 이유다 — 키가 붙은 위젯은
             # 한 번 그려진 뒤 `value` 를 무시하고 세션 값을 쓴다. Preference 는 숨은 탭에서도
             # 그려지므로 HOME 첫 진입의 구간이 세션에 박히고, 그 뒤 다른 사람이 바꾼 구간을
@@ -1465,26 +1522,97 @@ def _render_top5_band_editor(
                     format="%.0f",
                 )
         if not submitted:
+            remember_seen(TOP5_BASE_VERSION_KEY, top5_band_profile.version)
             return
+        # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = own_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, TOP5_SAVE_NAME)
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다(Summary 공지와 같다).
+            remember_seen(TOP5_BASE_VERSION_KEY, top5_band_profile.version)
+            if refused != held:
+                notice.error(held)
+            return
+        if not isinstance(submitted_base, int):
+            queue_refusal(TOP5_SAVE_NAME, SEEN_MISSING_MESSAGE)
+            st.rerun(scope="app")
+        expected_version = submitted_base
         band = (float(minimum) / 100, float(maximum) / 100)
         try:
             repository = get_scenario_repository(database_path)
             # 같은 구간의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`save_once`).
-            save_once(
+            saved = save_once(
                 TOP5_BAND_SAVE_NAME,
                 band,
-                lambda: repository.replace_global_top5_band(*band, source="웹 직접 편집"),
+                lambda: repository.replace_global_top5_band(
+                    *band, source="웹 직접 편집", expected_version=expected_version
+                ),
                 wrote=_saved,
+            )
+            remember_own_save(TOP5_SAVE_NAME, expected_version, saved.version, save_marks)
+        except ProfileVersionConflict as exc:
+            clear_global_top5_band_cache()
+            _refuse_profile_write(
+                exc,
+                TOP5_SAVE_NAME,
+                save_marks=save_marks,
+                conflict_marks=conflict_marks,
+                flash_key="home_top5_band_flash",
+                saved_message=TOP5_SAVED_MESSAGE,
             )
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
-        except ValueError as exc:
-            notice.error(bootstrap_error_message(exc))
-            return
         clear_global_top5_band_cache()
-        queue_flash("home_top5_band_flash", "B/N Top5 확보율 구간을 저장했습니다.")
+        queue_flash("home_top5_band_flash", TOP5_SAVED_MESSAGE)
         st.rerun(scope="app")
+
+
+def _refuse_profile_write(
+    exc: ProfileVersionConflict,
+    name: str,
+    *,
+    save_marks: Mapping[str, tuple[SeenToken, SeenToken]],
+    conflict_marks: dict[str, tuple[str, float]],
+    flash_key: str,
+    saved_message: str,
+) -> NoReturn:
+    """Summary 공지·Top5 구간 저장이 버전 대조에 거부된 뒤(판정 기준과 같은 꼴) — 늘 다시 돈다.
+
+    이 세션의 빠른 두 번 누름(제 저장)이면 거부 대신 저장을 다시 알린다. 남의 저장 때문이면 그
+    알림을 충돌 표지(`held_profile_conflict` 몫)와 다음 회차 거부 칸에 담는다 — 이 회차는 본 version
+    을 올리지 않는다(write_guard). 표지 dict 는 쓰기 전에 받아 둔 것이라 세션 칸을 읽지 않는다.
+    """
+    if is_own_save(name, exc.expected, exc.stored, save_marks):
+        queue_flash(flash_key, saved_message)
+    else:
+        message = bootstrap_error_message(exc)
+        note_profile_conflict(conflict_marks, name, message)
+        queue_refusal(name, message)
+    st.rerun(scope="app")
+
+
+def _note_profile_rejection(
+    exc: BaseException,
+    name: str,
+    message: str,
+    *,
+    save_marks: Mapping[str, tuple[SeenToken, SeenToken]],
+    conflict_marks: dict[str, tuple[str, float]],
+) -> bool:
+    """버전 대조 저장(`name`)이 거부된 뒤의 표지. 이 세션의 빠른 두 번 누름(제 저장)이면 True.
+
+    남의 저장 때문에 거부됐으면 그 알림(`message`)을 충돌 표지에 곧바로 적는다 — 거부한 회차가
+    편집 시작 version 을 최신으로 올리므로, 사용자가 새 화면을 보기 전에 닿은 둘째 누름이 옛 화면의
+    입력으로 대조를 지나 「저장했습니다」 를 띄우지 않게(`write_guard.held_profile_conflict`). 표지
+    dict 는 쓰기 전에 받아 둔 것이라 세션 칸을 읽지 않는다.
+    """
+    if isinstance(exc, ProfileVersionConflict):
+        if is_own_save(name, exc.expected, exc.stored, save_marks):
+            return True
+        note_profile_conflict(conflict_marks, name, message)
+    return False
 
 
 def _apply_pending_selection(key: str) -> None:
@@ -1643,7 +1771,16 @@ def _render_key_process_editor(
     `tests/test_home_key_process_fragment.py`). 공용 캐시라 적중이면 값싸고, 누가 저장하면
     `clear_global_key_process_cache` 가 프로세스 전역으로 비운다. 공정 목록·표시명은 앱 전체
     회차에서만 바뀌므로 인자 그대로 쓴다.
+
+    다시 읽어도 **고칠 프리셋**은 따로 대조한다. 칸에 key 가 없어 남이 먼저 고친 프리셋(공정·이름)은
+    제출 회차에 새 값으로 서서 이 화면의 입력이 버려지고, 이름이 바뀌었으면 「고칠 프리셋」 이 다른
+    프리셋으로 넘어간다. 그대로 쓰면 남의 값이나 다른 프리셋을 「저장했습니다」 로 다시
+    썼다(2026-10-26 E2E). 그래서 직전 회차(사용자가 보고 고친 화면)가 그린 고칠 프리셋을
+    세션(`KEY_PROCESS_SEEN_KEY`)에 두고, 그것이 바뀌었으면 저장·기본으로·삭제를
+    거부한다(`_stale_key_process_target`). 쓰기는 이 회차가 읽은 version 을 넘겨 읽기와 쓰기 사이의
+    남의 저장도 막는다.
     """
+    seen_target = seen(KEY_PROCESS_SEEN_KEY)
     try:
         profile = load_global_key_process(database_path)
     except BOOTSTRAP_ERRORS as exc:
@@ -1678,6 +1815,9 @@ def _render_key_process_editor(
             st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 {quoted(names[0])}입니다.")
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
+        stale = _stale_key_process_target(seen_target, profile, target, current)
+        # 결과가 무엇이든 다음 쓰기는 이 회차가 그린 저장본에서 출발한다.
+        remember_seen(KEY_PROCESS_SEEN_KEY, (profile.version, target, tuple(current)))
         known_options = set(process_options)
         # 이 시나리오·조회기간에 없는 공정도 **선택지에 남긴다**(표시만 「이 화면에 없음」). 빼 두면
         # 저장이 그 공정을 공용 프리셋에서 조용히 지웠고, 공정이 모두 없는 프리셋은 이름조차 못
@@ -1722,8 +1862,20 @@ def _render_key_process_editor(
             )
         if not is_new:
             _render_key_process_notice(absent, process_labels)
-            _render_key_process_preset_actions(profile, target, database_path)
+            _render_key_process_preset_actions(profile, target, database_path, stale=stale)
         if not submitted:
+            return
+        # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = own_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, KEY_PROCESS_SAVE_NAME)
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 거부한 회차가 고칠 프리셋을 새로 적어 두어
+            # 대조를 지나므로, 옛 화면의 입력으로 저장하지 않고 그 거부를 다시 알린다(write_guard).
+            notice.error(held)
+            return
+        if stale is not None:
+            _reject_key_process_write(stale, notice, save_marks, conflict_marks)
             return
         try:
             new_name = normalize_preset_name(name)
@@ -1740,18 +1892,20 @@ def _render_key_process_editor(
             # 같은 이름·공정의 겹친·빠른 둘째 누름은 쓰지 않고 첫 저장으로 알린다(`write_guard.
             # save_once`). 출발점은 고칠 프리셋이 아니라 저장할 이름·공정이다 — 새 프리셋을 만든
             # 뒤 둘째 누름은 그 이름을 고칠 프리셋으로 연 화면에 닿거나(느린 누름), 아직 「새
-            # 프리셋」 인 옛 화면의 입력으로 와 같은 이름 거절이 방금 한 저장 자리에 섰다.
-            save_once(
-                KEY_PROCESS_SAVE_NAME,
+            # 프리셋」 인 옛 화면의 입력으로 와 같은 이름 거절이 방금 한 저장 자리에 섰다. 쓰기는
+            # 이 회차가 읽은 version 과 대조한다(읽기와 쓰기 사이의 남의 저장).
+            saved = save_once(
+                KEY_PROCESS_ONCE_NAME,
                 (new_name, tuple(selected)),
                 lambda: repository.replace_global_key_process_presets(
-                    presets, source="웹 직접 편집"
+                    presets, source="웹 직접 편집", expected_version=profile.version
                 ),
                 wrote=_saved,
             )
         except BOOTSTRAP_ERRORS as exc:
-            notice.error(_key_process_error_message(exc))
+            _reject_key_process_write(exc, notice, save_marks, conflict_marks)
             return
+        remember_own_save(KEY_PROCESS_SAVE_NAME, profile.version, saved.version, save_marks)
         clear_global_key_process_cache()
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
         if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
@@ -1785,9 +1939,17 @@ def _render_key_process_flash() -> None:
 
 
 def _render_key_process_preset_actions(
-    profile: GlobalKeyProcess, target: str, database_path: str
+    profile: GlobalKeyProcess,
+    target: str,
+    database_path: str,
+    *,
+    stale: ProfileVersionConflict | None = None,
 ) -> None:
-    """고르고 있는 프리셋의 `기본으로`·`삭제`. 둘 다 묶음 전체를 다시 쓴다."""
+    """고르고 있는 프리셋의 `기본으로`·`삭제`. 둘 다 묶음 전체를 다시 쓴다.
+
+    `stale` 은 단추를 그린 화면이 본 고칠 프리셋이 그 사이 바뀌었다는 거부다(편집 카드가 넘긴다).
+    있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다.
+    """
     names = list(profile.preset_names)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         make_default = st.button(
@@ -1817,18 +1979,89 @@ def _render_key_process_preset_actions(
         presets = [entry for entry in profile.presets if entry[0] != target]
         message = f"프리셋 {quoted(target)}{object_particle(target)} 지웠습니다."
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
+    conflict_marks = profile_conflict_marks()
     marks = notice_marks()
+    held = held_profile_conflict(conflict_marks, KEY_PROCESS_SAVE_NAME)
+    if held is not None:
+        # 남의 저장에 거부된 쓰기의 둘째 누름이다(편집 카드의 저장과 같다).
+        st.error(held)
+        return
+    if stale is not None:
+        _reject_key_process_write(stale, st.container(), save_marks, conflict_marks)
+        return
     try:
-        get_scenario_repository(database_path).replace_global_key_process_presets(
-            presets, source="웹 직접 편집"
+        saved = get_scenario_repository(database_path).replace_global_key_process_presets(
+            presets, source="웹 직접 편집", expected_version=profile.version
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(_key_process_error_message(exc))
+        _reject_key_process_write(exc, st.container(), save_marks, conflict_marks)
         return
+    remember_own_save(KEY_PROCESS_SAVE_NAME, profile.version, saved.version, save_marks)
     note_notice(marks, KEY_PROCESS_FLASH_KEY, message)
     clear_global_key_process_cache()
     queue_flash(KEY_PROCESS_FLASH_KEY, message)
     st.rerun(scope="app")
+
+
+def _stale_key_process_target(
+    seen: object, profile: GlobalKeyProcess, target: str, current: Sequence[str]
+) -> ProfileVersionConflict | None:
+    """직전 회차가 그린 고칠 프리셋(`seen`)이 그 사이 남의 저장으로 바뀌었으면 그 거부.
+
+    묶음의 **다른** 프리셋이 바뀐 것은 막지 않는다 — 쓰기는 이 회차가 다시 읽은 묶음에 고칠 프리셋만
+    갈아 끼우므로 남의 저장이 남는다(`tests/test_home_key_process_fragment.py`). 고칠 프리셋의
+    공정이 바뀌었거나 그 이름이 없어져 「고칠 프리셋」 이 다른 프리셋으로 넘어갔으면 거부한다. 첫
+    회차(`seen` 없음)와 version 이 그대로인 회차는 대조할 것이 없다.
+    """
+    if not (isinstance(seen, tuple) and len(seen) == 3 and isinstance(seen[0], int)):
+        return None
+    seen_version, seen_target, seen_processes = seen
+    if seen_version == profile.version:
+        return None
+    if seen_target == target and tuple(seen_processes) == tuple(current):
+        return None
+    return ProfileVersionConflict(
+        "다른 사용자가 먼저 주요공정 프리셋을 저장해 이번 저장은 반영하지 않았습니다"
+        f"(편집 시작 v{seen_version} · 지금 v{profile.version}). 최신 저장본을 확인한 뒤 다시 "
+        "저장하세요.",
+        expected=seen_version,
+        stored=profile.version,
+    )
+
+
+def _reject_key_process_write(
+    exc: BaseException,
+    notice: DeltaGenerator,
+    save_marks: Mapping[str, tuple[SeenToken, SeenToken]],
+    conflict_marks: dict[str, tuple[str, float]],
+) -> None:
+    """주요공정 프리셋 쓰기(저장·기본으로·삭제)가 거부된 뒤. 버전 충돌이면 캐시를 비운다.
+
+    충돌이 이 세션의 빠른 두 번 누름이면(`is_own_save`) 거부 대신 저장을 다시 알리고, 남의
+    저장 때문이면 충돌 표지에 적어 그 둘째 누름도 거부한다(`_note_profile_rejection`). 표지 dict 는
+    쓰기 전에 받아 둔 것이다.
+    """
+    if isinstance(exc, ProfileVersionConflict):
+        message = bootstrap_error_message(exc)
+        own = _note_profile_rejection(
+            exc,
+            KEY_PROCESS_SAVE_NAME,
+            message,
+            save_marks=save_marks,
+            conflict_marks=conflict_marks,
+        )
+        # 다음 회차가 최신 저장본을 그리게 비운다 — 앱 밖의 쓰기면 이 회차가 읽은 것도 낡았다.
+        clear_global_key_process_cache()
+        if own:
+            # 첫 누름이 남긴 이름 있는 알림이 아직 그려지지 않았으면 그것을 둔다.
+            if not st.session_state.get(KEY_PROCESS_FLASH_KEY):
+                queue_flash(KEY_PROCESS_FLASH_KEY, KEY_PROCESS_SAVED_MESSAGE)
+            st.rerun(scope="app")
+        notice.error(message)
+        return
+    # 이름에 걸린 거부(「같은 이름의 프리셋이 이미 있습니다: …」)는 막은 이름으로 다시 짓는다.
+    notice.error(_key_process_error_message(exc))
 
 
 def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLabels) -> None:

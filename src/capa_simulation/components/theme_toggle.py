@@ -292,11 +292,16 @@ _FRAME_HEIGHT_PX = 1
 # flex 기본 크기(`flex: 0 0 1px`)에서 나오므로 그것까지 덮어야 본문이 1px 내려가지 않는다
 # (브라우저 실측: 접기 전 본문 맨 위 113px, 접은 뒤 112px — `components.v1.html` 높이 0 과 같다).
 # iframe 은 `srcdoc` 에 든 버튼 id 로 고른다. 스타일만 든 `st.html` 은 본문 자리를 먹지 않는다.
+# **`visibility: hidden` 도 건다.** iframe 은 높이가 0 이어도 Tab 정지(tabIndex 0)이고 낭독기에
+# 「st.iframe」 프레임으로 읽혔다 — 툴바 Dark/Light 단추 다음 Tab 이 보이지 않는 칸에 한 번
+# 머물렀다(2026-10-26 E2E). 숨긴 요소는 초점을 받지 않고 접근성 트리에서도 빠지며, 안의 스크립트는
+# 그대로 돈다. iframe 내용은 회차마다 같아야 해 스크립트로 속성을 달지 않고 CSS 로 막는다.
 _COLLAPSE_STYLE = (
     "<style>"
     f'[data-testid="stElementContainer"]:has(> iframe[srcdoc*="{THEME_BUTTON_ID}"]),'
     f'iframe[data-testid="stIFrame"][srcdoc*="{THEME_BUTTON_ID}"]'
-    "{flex:0 0 0 !important;height:0 !important;min-height:0 !important;}"
+    "{flex:0 0 0 !important;height:0 !important;min-height:0 !important;"
+    "visibility:hidden !important;}"
     "</style>"
 )
 

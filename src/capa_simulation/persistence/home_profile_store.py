@@ -53,9 +53,21 @@ def load_global_top5_band(connection: duckdb.DuckDBPyConnection) -> GlobalTop5Ba
 
 
 def replace_global_top5_band(
-    connection: duckdb.DuckDBPyConnection, min_rate: float, max_rate: float, *, source: str
+    connection: duckdb.DuckDBPyConnection,
+    min_rate: float,
+    max_rate: float,
+    *,
+    source: str,
+    expected_version: int | None = None,
 ) -> None:
-    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다.
+
+    `expected_version`(편집을 시작할 때 본 version)이 지금 저장본과 다르면 아무것도 쓰지 않고
+    `ProfileVersionConflict` 를 올린다. None 이면 대조하지 않는다.
+    """
+    require_profile_version(
+        connection, "global_top5_band", expected_version, label="Top5 확보율 구간"
+    )
     version = reset_profile(connection, "global_top5_band")
     connection.execute(
         """
@@ -87,9 +99,19 @@ def load_global_summary_note(connection: duckdb.DuckDBPyConnection) -> GlobalSum
 
 
 def replace_global_summary_note(
-    connection: duckdb.DuckDBPyConnection, note: str, *, source: str
+    connection: duckdb.DuckDBPyConnection,
+    note: str,
+    *,
+    source: str,
+    expected_version: int | None = None,
 ) -> None:
-    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다."""
+    """검증된 프로필을 교체한다. 호출자가 잠금과 트랜잭션을 소유한다.
+
+    `expected_version` 은 Top5 구간과 같다 — 다르면 쓰지 않고 `ProfileVersionConflict` 다.
+    """
+    require_profile_version(
+        connection, "global_summary_note", expected_version, label="Summary 공지"
+    )
     version = reset_profile(connection, "global_summary_note")
     connection.execute(
         """

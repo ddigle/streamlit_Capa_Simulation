@@ -21,6 +21,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 
 import streamlit as st
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.design import tokens
 from capa_simulation.services.process_picker import ProcessPickerItem
 from capa_simulation.settings import format_month
@@ -141,7 +142,11 @@ def render_process_picker(
 ) -> None:
     """버튼에만 표시명을 쓰고 콜백에는 언제나 원본 공정 키를 넘긴다."""
     marks = marks or {}
-    mark_line = auto_off_mark_line(items, marks, format_func, selected)
+    # 캡션은 마크다운이다 — 공용 표시명 「CoW~검사~A」 의 물결표가 지움선이 되지 않게 공정 글자만
+    # 막는다(표지 「자동 off(…)」 는 앱이 지은 글이라 그대로 둔다).
+    mark_line = auto_off_mark_line(
+        items, marks, lambda process: literal_markdown(format_func(process)), selected
+    )
     if mark_line is not None:
         st.caption(mark_line)
     groups = (
@@ -165,7 +170,9 @@ def render_process_picker(
                     mark = marks.get(item.process)
                     with st.container(key=f"{TILE_WRAPPER_PREFIX}{len(tooltips)}", width="content"):
                         st.button(
-                            label,
+                            # 버튼 라벨은 마크다운이다. 풍선(CSS `content`)은 글자 그대로라
+                            # 막지 않는다.
+                            literal_markdown(label),
                             key=f"home_bn_process_tile_{item.process}",
                             type="primary" if enabled else "secondary",
                             icon=_tile_icon(enabled=enabled, marked=mark is not None),

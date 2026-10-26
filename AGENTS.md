@@ -1807,7 +1807,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_plotly_fast_path.py`). 격자 도우미는 `append_layout_items` 에 모으기만 하고 표 모듈이
     `flush_layout_items` 한 번으로 반영한다(`tests/test_monthly_table_grid.py`).
 - `src/capa_simulation/components/scroll_shell.py` — 월별 표·HOME·재공 현황이 함께 쓰는 가로 스크롤 상자와 고정 폭
-  캔버스, 분류 칸 폭을 px 로 못박는 `split_scroll_columns_style` 이다. key 를 바꾸면 CSS 가 끊어진다. 폭을 못박지 않는
+  캔버스, 분류 칸 폭을 px 로 못박는 `split_scroll_columns_style` 이다. key 를 바꾸면 CSS 가 끊어진다. 캔버스는
+  `PLOTLY_MIN_CHART_WIDTH_PX`(150 — Streamlit 1.63 이 `width="stretch"` 그림을 그 아래로 그리지 않는다)보다 좁히지 않아 한 달
+  조회의 월 칸(100px)에서도 그림이 잘리지 않는다. 폭을 못박지 않는
   변형(`min_width_scroll_rules` · `min_width_scroll_canvas` — 캔버스에 가장 좁은 폭만 걸어 넓으면 칸을 채우고 좁을 때만
   스크롤, 규칙은 호출자 `<style>` 에 섞는다)은 제약 시뮬레이션 그래프가 쓴다. 셸 CSS(`overflow-x: auto`)를 다른 모듈에
   손으로 적지 않는다(`tests/test_scroll_shell.py`).
@@ -2035,8 +2037,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   int·str·tuple·dict; 옛 이름 `profile_save_marks`·`is_own_profile_save` 는 별칭), **거부 넘김**(`queue_refusal`·`take_refusal`
   — 충돌 회차는 본 값을 올리지 않고 거부를 다음 회차에 그린다). 화면에서 충돌 예외 10종을 잡는 자리는 모두 제 저장을 판정해
   빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」 으로 알리지 않는다 — 자동 갱신 설정·Cut-off·리비전명·공식 지정·층
-  사용·판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·설비 시나리오 이름·리비전명·되돌리기·배치 차이 지우기·발행·설비
-  리비전 저장(`tests/test_write_guard_cas.py` 의 AST 그물). HOME 주요 Case 의 시나리오 대조 충돌은 지금 짝이 고른 짝일 수
+  사용·판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME Summary 공지·Top5 구간·주요공정 프리셋·설비 시나리오
+  이름·리비전명·되돌리기·배치 차이 지우기·발행·설비 리비전 저장(`tests/test_write_guard_cas.py` 의 AST 그물). HOME 주요 Case 의 시나리오 대조 충돌은 지금 짝이 고른 짝일 수
   없어(대조 없는 쓰기이고, 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금 짝과 같으면 쓰지 않음」 이 거른다) 판정하지 않는다 —
   그물이 이름으로 빼 둔다(`NOT_OWN_SAVE_CONFLICTS`). 제 저장 짝의 「저장된 값」 은 쓰기 결과(저장소가 돌려준 version·새
   리비전 id)로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어가 남의 저장 뒤 충돌을 제 저장으로 안다. 시나리오 관리
@@ -2044,8 +2046,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   안에서 함께 한다(`save_remembered`) — 겹친 둘째 회차는 그 뒤에야 저장소에 가 짝을 본다. 저장소에 가기 전에 첫 쓰기의 새
   값을 보고 거절하는 발행 확인 글 대조는 그 잠금을 거쳐 판정한다(`is_own_save_settled`). 거꾸로 남의
   저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off·Space 층 사용·설비 시나리오 이름·
-  리비전명·공식 발행(충돌 회차가 초안·출발점·입력 칸·확인 글의 본 값을 최신으로 다시 세우는 자리라 표지가 없으면 둘째 누름이 같은
+  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·HOME Summary 공지·Top5 구간·주요공정 프리셋(저장·
+  기본으로·삭제)·자동 갱신 설정·Cut-off·Space 층 사용·설비 시나리오 이름·리비전명·공식 발행(충돌 회차가 초안·출발점·입력 칸·확인 글의 본 값을 최신으로 다시 세우는 자리라 표지가 없으면 둘째 누름이 같은
   내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을 최신 위에 얹거나, 바뀐 확인 글을 보지 않은 채 새 번호로
   발행한다 — 설비 시나리오 구획은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
@@ -2981,9 +2983,12 @@ RQ_MODULE
     위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
-    표시명·표시순서(직접 편집)·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
+    표시명·표시순서(직접 편집)·확보율 보정·HOME Summary 공지·Top5 구간은 `require_profile_version` →
+    `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
-    이다. Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
+    이다. HOME 주요공정 프리셋은 묶음을 회차마다 다시 읽어 고칠 프리셋만 갈아 끼우므로 직전 회차가 그린 **고칠
+    프리셋**(version·이름·공정)을 대조해 그것이 바뀌었을 때만 저장·「기본으로」·「삭제」 를 거부하고, 쓰기는 그 회차가
+    읽은 version 을 넘긴다(`home_preference._stale_key_process_target`). Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
     확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 숫자 칸에는 key 를 두지 않는다. 넘기는 대조 값은 **본 값**
     (`write_guard.seen`)이다 — 폼을 제출하지 않은 회차·초안을 세운 자리에만 적고(`remember_seen`), 없으면 지금 값으로
@@ -4233,7 +4238,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     가르는 갈래 둘 다 본다. 그물이 못 보는 것(그 밖의 이름으로 든 지금 값 등)은 아래 경합 시험이 행동으로 잡는다.
   - **제 저장 판정.** 둘째 누름의 회차가 첫 저장의 rerun 회차(콜백이면 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가
     거부하고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E — 버전 대조 저장(Proc Rename·표시순서
-    직접 편집·판정 기준·확보율 보정)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
+    직접 편집·판정 기준·확보율 보정·HOME Summary 공지·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
     짝을 적고(`remember_own_save`), 충돌 예외의 `(본 값, 지금 값)` 이 **정확히** 그 짝이면(`is_own_save`) 거부 대신 저장 성공을
     다시 알리고 끊겼을 뒷정리(초안 비우기·세션 옮기기)를 잇는다. 예외가 지금 값을 싣지 않으면(자동 갱신 설정·Cut-off·설비 쪽)
     거부 직후 저장소에서 바로 다시 읽는다. 짝의 저장된 값은 쓰기 결과로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에
@@ -4264,7 +4269,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     저장이라 평소대로 대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`·
-    `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_equipment_scenario_publish_guard.py`·`tests/test_equipment_scenario_refused_press.py`·
+    `tests/test_preference_profile_conflicts.py` — HOME Summary 공지·Top5 구간·주요공정 프리셋(저장·기본으로·삭제)). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
   - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
@@ -4438,6 +4444,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   별표·`$`·백틱이 꾸밈으로 그려졌다(2026-10-27 E2E, `tests/test_profile_caption.py`).
   `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
   막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
+  버튼·체크 상자 라벨과 라디오 선택지(`format_func`)·캡션도 마크다운 자리다 — HOME 주요공정 프리셋 이름은 사이드바 칸·Preference
+  캡션·삭제 확인·알림·팝업 라디오에서 `literal_markdown`·`quoted`(「이름」)로 막는다(`tests/test_key_process_tilde_names.py`).
+  공정 표시명(사람이 Proc Rename 에 적는다)도 같다 — HOME 공정 필터 팝업 단추·자동 갱신 줄, 프리셋 미리보기 캡션, 「그리지 않는
+  공정」·확보율 보정 안내, Admin 없는 공정·겹친 표시명 알림과 이름 중복 거부(이름마다 `literal_markdown`)에서 막는다
+  (`tests/test_process_label_tilde_sinks.py`). CSS `content` 풍선·Figure 글은 마크다운이 아니라 막지 않는다.
 - **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를
   고칠 때 옆 자리가 남는다(2026-10-26 E2E 1~3회차). 시험이 지키는 범위는 아래 「지키는 시험」 에 적은 만큼이다.
   - **예외 글은 `bootstrap_error_message(exc)`** — 알림 상자·캡션·토스트에 `str(exc)`·`f"{exc}"` 를 바로 싣지 않는다
@@ -4512,7 +4523,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸다. 회차마다 달라지는 값(테마 등)은 브라우저 쪽에서 읽는다(`capaTheme.resolve`).
 - 스크립트를 싣는 칸은 `st.iframe` 이다 — `st.html` 은 스크립트를 실행하지 않고 `components.v1.html` 은 회차마다 폐기
   예고를 찍는다. 헤더 툴바·사이드바 머리칸에 단추를 다는 스크립트는 iframe 을 따로 두지 않고 테마 버튼 iframe 의
-  `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다).
+  `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다). 접는 규칙(`theme_toggle._COLLAPSE_STYLE`)은
+  높이 0 과 함께 `visibility: hidden` 을 건다 — 높이 0 이어도 iframe 은 Tab 정지이고 낭독기에 「st.iframe」 으로 읽혔다
+  (`tests/test_theme_toggle.py`).
 - **모든 화면에 걸친 컴포넌트(화면 탭 줄)는 `app.py` 에서 고정 key 로, 앞에 조건부 칸 없이 그린다.**
   `navigation.run()` 밖이라 요소 id 에 주 스크립트 해시가 들어가 화면을 옮겨도 같은 요소다 — 페이지 안에서 그리면
   화면마다 다시 마운트된다. 그 앞 본문에 생겼다 사라지는 칸(스키마 경고 등)을 두면 순번이 밀려 다시 마운트된다
