@@ -227,7 +227,10 @@ def test_an_inactive_floor_block_is_grey_hatched_and_never_opens() -> None:
     시험)."""
     assert "LINK_STATS[item.link].inactive" in JS
     # 사유 줄이 대수 줄을 대신한다(풍선에는 대수가 남고 「누르면 열기」 는 없다).
-    assert "if (blockOff(item)) return [String(blockHead(item)), clipOff(blockOff(item))]" in JS
+    assert (
+        "if (blockOff(item)) return { main: [String(blockHead(item)), "
+        "clipOff(blockOff(item))], short: '' }"
+    ) in JS
     assert (
         "[blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced, stats.layout]"
         in JS
@@ -279,7 +282,8 @@ const LINK_STATS = input.stats
 %s
 const out = {}
 for (const item of input.items) {
-  out[item.link] = { lines: blockLines(item), tip: blockTip(item), opens: opensFloor(item) }
+  const { main, short } = blockLines(item)
+  out[item.link] = { lines: main, short, tip: blockTip(item), opens: opensFloor(item) }
 }
 process.stdout.write(JSON.stringify(out))
 """
@@ -321,8 +325,10 @@ def test_an_inactive_block_shortens_a_long_reason_and_the_tip_keeps_it_whole() -
     for link, reason in reasons.items():
         assert out[link]["tip"] == f"{link} · 비활성 · {reason} · 배치 3대 · 미배치 1대"
         assert out[link]["opens"] is False
+        assert out[link]["short"] == ""
     assert out["C2 2F"] == {
         "lines": ["C2 2F", "배치 2대"],
+        "short": "",
         "tip": "C2 2F · 배치 2대 · 점유율 1.0% · 누르면 열기",
         "opens": True,
     }

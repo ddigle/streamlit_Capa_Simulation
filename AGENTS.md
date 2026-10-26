@@ -653,6 +653,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경계 날짜는 인자로 받는다(층 상세는 `simulation_cache.get_space_unit_boundaries` 로 한 번 구해 나눠 쓴다).
     Plotly 를 쓰지 않고 동·층 정의는 `services/fab_layout.py` 다. 층 블록 글자는 배치·미배치 대수뿐이고, 비활성 층
     블록은 그 대신 사유다(`floor_block_stats(inactive=)` — 그 층 칸에만 `inactive`, 대수 칸은 풍선에 남는다).
+    블록 글자 줄 크기는 편집기 JS `// <block-text>` 구획의 순수 `blockTextLayout`(node 시험 `test_space_block_text_js.py`)
+    이 정한다 — 단축 줄은 이름·대수 줄 크기를 끌어내리지 않고 제 폭으로 따로 작아지며, 많이 줄면 「 · 」 경계에서 두
+    줄로 나뉘고 6px 아래면 그 줄만 숨는다(E2E r1 — 이름이 6~7px 이 되던 것).
   - 층 캔버스는 `equipment_ops.floor_layout_profile` 의 층별 값이고 `invalid_equipment_rows` 도 같은 캔버스로
     판정한다. 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
 - `src/capa_simulation/components/space_floor_list.py` — Space FAB 전체 아래 **층 목록**(2026-10-24 결정 S1~S6). 보기는
