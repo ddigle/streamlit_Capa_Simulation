@@ -125,8 +125,11 @@ def space_layout_notices(
     if labels:
         parts.append(f"Main 설비명 위치 {labels:,}개")
     tail = ""
-    if (stored_units and not difference.units) or stored_marks > marks or stored_labels > labels:
-        stored = layout_counts_words(stored_units, stored_marks, stored_labels)
+    # 공통 대장에서 지운 호기의 행(`layout_orphans`)은 「공식과 같아진」 것이 아니다 — 아래 따로 선
+    # 줄(「지운 호기의 배치 차이 n행은 버렸습니다」)이 말하므로 꼬리에서 뺀다(E2E r3).
+    live_units = max(stored_units - snapshot.layout_orphans, 0)
+    if (live_units and not difference.units) or stored_marks > marks or stored_labels > labels:
+        stored = layout_counts_words(live_units, stored_marks, stored_labels)
         tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)"
     lines: list[tuple[str, str]] = []
     name = f"「{session.scenario_name}」" if session.scenario_name else "이 설비 시나리오"

@@ -212,8 +212,11 @@ def _format_metric(value: object, decimal_places: int = 2) -> str:
     return f"{float(numeric):,.{decimal_places}f}"
 
 
-# 로직 분석 식 인수에 더 적을 수 있는 자릿수(인수마다). 결과(오른쪽)는 둘째 자리 그대로다.
-FORMULA_MAX_EXTRA_DIGITS = 8
+# 로직 분석 식 인수를 적을 수 있는 가장 긴 소수 자리(제약 시뮬레이션 고른 달 계산과 같은 여섯째
+# 자리). 결과(오른쪽)는 둘째 자리 그대로다.
+FORMULA_MAX_PLACES = 6
+# 적은 인수로 다시 셈해도 결과가 끝내 나오지 않을 때의 등호(9장 「화면 숫자는 검산되어야 한다」).
+FORMULA_APPROX = "≈"
 
 
 def _operand_text(value: object, base_places: int, extra: int) -> str:
@@ -234,33 +237,31 @@ def _formula_operands(
     multiply: bool,
     left_places: int = 2,
     right_places: int = 2,
-) -> tuple[str, str]:
-    """식 「왼 ÷(×) 오른 = 결과」 의 두 인수 글자 — **적힌 인수로 다시 셈해도 적힌 결과**가 나오게
-    한다(제약 시뮬레이션 고른 달 계산과 같은 규칙, 2026-10-26 E2E). 결과는 원값을 둘째 자리로
-    적으므로 인수를 깎은 채 적으면 「54,698.63 ÷ 1.49 = 36,615.71」 처럼 어긋난다. 어긋날 때만 더
-    적은 자리 수의 합이 가장 작은 쪽(같으면 오른 인수 먼저)으로 한 자리씩 더 적는다. 끝내 못
-    맞추면 가장 길게 적는다. 값이 없으면(「-」) 그대로 적는다."""
+) -> tuple[str, str, str]:
+    """식 「왼 ÷(×) 오른 = 결과」 의 두 인수 글자와 등호 — **적힌 인수로 다시 셈해도 적힌 결과**가
+    나오게 한다(제약 시뮬레이션 고른 달 계산과 같은 규칙, 2026-10-26 E2E). 결과는 원값을 둘째
+    자리로 적으므로 인수를 깎은 채 적으면 「54,698.63 ÷ 1.49 = 36,615.71」 처럼 어긋난다. 어긋날
+    때만 더 적은 자리 수의 합이 가장 작은 쪽(같으면 오른 인수 먼저)으로 한 자리씩, 여섯째 자리까지
+    더 적는다. 끝내 못 맞추면 처음 자리로 적고 등호를 「≈」 로 둔다. 값이 없으면(「-」) 그대로
+    적는다."""
     shown = _format_metric(result)
     plain = (
         _operand_text(left, left_places, 0),
         _operand_text(right, right_places, 0),
     )
     if "-" in (*plain, shown):
-        return plain
-    for total in range(2 * FORMULA_MAX_EXTRA_DIGITS + 1):
-        for left_extra in range(max(0, total - FORMULA_MAX_EXTRA_DIGITS), total + 1):
-            if left_extra > FORMULA_MAX_EXTRA_DIGITS:
-                break
+        return (*plain, "=")
+    left_most = max(0, FORMULA_MAX_PLACES - left_places)
+    right_most = max(0, FORMULA_MAX_PLACES - right_places)
+    for total in range(left_most + right_most + 1):
+        for left_extra in range(max(0, total - right_most), min(total, left_most) + 1):
             texts = (
                 _operand_text(left, left_places, left_extra),
                 _operand_text(right, right_places, total - left_extra),
             )
             if _recomputed(texts, multiply=multiply) == shown:
-                return texts
-    return (
-        _operand_text(left, left_places, FORMULA_MAX_EXTRA_DIGITS),
-        _operand_text(right, right_places, FORMULA_MAX_EXTRA_DIGITS),
-    )
+                return (*texts, "=")
+    return (*plain, FORMULA_APPROX)
 
 
 def _recomputed(texts: tuple[str, str], *, multiply: bool) -> str | None:
@@ -469,20 +470,20 @@ def _render_logic_analysis(
         )
 
     # 식의 인수는 적힌 대로 다시 셈해도 오른쪽 결과가 나오게 적는다(`_formula_operands`).
-    load_text, required_text = _formula_operands(
+    load_text, required_text, load_sign = _formula_operands(
         target_row["원수요_부하량"],
         target_row["STEP_소요대수"],
         target_row["공정 유효 Capa"],
         multiply=False,
     )
-    capa_text, run_day_text = _formula_operands(
+    capa_text, run_day_text, capa_sign = _formula_operands(
         target_row["공정 유효 Capa"],
         target_row["RUN_DAY"],
         target_row["대당 일 Capa"],
         multiply=False,
         right_places=1,
     )
-    daily_text, available_text = _formula_operands(
+    daily_text, available_text, daily_sign = _formula_operands(
         target_row["대당 일 Capa"],
         target_row["가용대수"],
         target_row["일 표준 가능량"],
@@ -491,13 +492,13 @@ def _render_logic_analysis(
     )
     st.code(
         "공정별 대당 Capa = 원수요 부하량 합 ÷ STEP 소요대수 합\n"
-        f"                 = {load_text} ÷ {required_text} = "
+        f"                 = {load_text} ÷ {required_text} {load_sign} "
         f"{_format_metric(target_row['공정 유효 Capa'])}\n"
         "대당 일 Capa     = 공정별 대당 Capa ÷ RUN_DAY\n"
-        f"                 = {capa_text} ÷ {run_day_text} = "
+        f"                 = {capa_text} ÷ {run_day_text} {capa_sign} "
         f"{_format_metric(target_row['대당 일 Capa'])}\n"
         "일 표준 가능량   = 대당 일 Capa × 가용대수\n"
-        f"                 = {daily_text} × {available_text} = "
+        f"                 = {daily_text} × {available_text} {daily_sign} "
         f"{_format_metric(target_row['일 표준 가능량'])}",
         language=None,
     )

@@ -390,7 +390,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     **예외 하나** — 필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=…&proc=…&target=…`)는 페이지 맨 앞에서 한 번 받아
     (`space_shortening_view.consume_layer_link`) 그 층이 세션 층을 **덮고**(`floor` 가 없거나 비활성 층이면 세션 층을 지워 FAB
     전체), 색 기준·목표·그 층 공정 칩을 적고 배치 편집 토글을 끈 뒤 남길 인자만 `from_dict` 한 번으로 다시 싣고 회차를 한 번 더
-    돈다(사이드바 줄을 맞추려고 — 아직 그린 편집기가 없는 자리).
+    돈다(사이드바 줄을 맞추려고 — 아직 그린 편집기가 없는 자리). 그 주소를 테마 인자 없이(다른 브라우저 등) 처음 열어 테마
+    새로고침이 걸리면, 지운 링크 인자는 테마 스크립트가 문서를 연 주소에서 되살려 새 세션이 다시 받는다(`theme_toggle` 의
+    `<theme-reopen>`).
   - **색 기준 「필요 단축」**(2026-10-24 결정 — 라디오 셋째 값, `services/space_shortening_layer.py`·
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
     꺼내고(5장 9), **본문 조작 줄**(늘 서는 `space_shortening_toolbar` — 목표 확보율 `st.segmented_control(required=True)`·
@@ -406,6 +408,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시나리오·조회기간 줄은 그 값일 때만 선다(`navigation.SPACE_STATUS.condition_tabs` — 보기 값으로 가른다).
   - 기준일(`space_status_as_of`)은 층 도면 위 페이더가 손을 뗄 때 한 번 보내고 끄는 동안은 브라우저가 경계 날짜로
     칠한다(`services/space_unit_state.py` 와 같은 식, 날짜는 epoch 밖, 성능은 `scripts/check_deploy_screens.py`).
+    분기 눈금 글자는 트랙 폭에 맞춰 솎는다(editor.js 순수 구획 `<fader-ticks>` — 「오늘」 은 늘 서고, 트랙 밖이거나 이웃과
+    2px 안으로 붙는 글자는 `is-crowded` 로 숨김, 회차마다·크기가 바뀔 때 다시 잼, `tests/test_space_fader_ticks_js.py`).
+    기준일 줄 폭 560px 아래(390px 창)에서는 날짜 칩이 13.5rem → 8.5rem 고정 폭이다(CSS 컨테이너 `sle-daterow`) — 390px
+    창에서 트랙이 68px 로 줄어 글자 7쌍이 겹쳤다(E2E 결함, 고친 뒤 146px). 768·1400px 창은 예전 그대로다.
   - 보기는 **사이드바에서 고른 설비 시나리오**의 배치다(설비 시나리오 2단계 S3 — LY3, `PageSpec.equipment_scenario="session"`·
     `uses_equipment_db=True`). 그리는 한 벌은 세션 스냅샷(`resolve_equipment_session(...).snapshot.calculation_frames()`)
     하나이고 가정이면 그 리비전의 호기 배치 차이가 얹혀 있다. 층 도면 요소·Main 설비명 위치는 **모두**
@@ -455,7 +461,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가정 세션 상자는 「「셋업 실무」의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 않습니다」 이고 저장 칸은
     `render_equipment_save_fields(..., assumption=True)`(함께 넣기 기본 끔 — Q1) 다. 층 배치 잠금 줄은 늘 서는 칸
     (`space_edit_lock_slot`)에 그린다. 잠금 까닭(`lock_reason`)은 그 줄에만 한 번 적는다 — 상자는 「저장하지 않습니다 — 까닭은
-    아래 잠금 줄에 있습니다」 와 「배치 변경만 버리기」 만(까닭이 없을 때만 「최신을 불러온 뒤 다시 고치세요」, E2E r2).
+    아래 잠금 줄에 있습니다」 와 「배치 변경만 버리기」 만(까닭이 없을 때만 「최신을 불러온 뒤 다시 고치세요」, E2E r2). 배치
+    빨리 감기 글(`notice` — 「rM 이 더 새롭지만 배치는 같습니다 — …」)도 같은 칸의 ▸▸ 줄에만 한 번 적고 상자 캡션에 붙이지 않는다
+    (E2E r3).
   - 배치 편집은 설비 마스터 탭과 같은 편집본에 저장 검사를 거쳐 얹고 `save_equipment_buffer` 로 저장한다(「배치 저장」 확인
     팝오버에 저장 칸 — 공통·일정이 모두 그대로면 층 값만 쓰고 리비전을 만들지 않는다). 도면 상자 앞 칸
     (`space_unsaved_layout_slot`)은 늘 세운다 — 순번이 밀리면 편집기가 다시 마운트된다.
@@ -554,8 +562,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
-    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩 더 적는다(`_formula_operands` — 「54,698.63 ÷ 1.49386 = 36,615.63」,
-    2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다).
+    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`_formula_operands` — 「54,698.63 ÷ 1.49386
+    = 36,615.63」, 2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다). 그래도 못 맞추면 처음 자리로 적고 등호를 「≈」 로
+    둔다(9장 「화면 숫자는 검산되어야 한다」).
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
   붙여넣기 팝업 폼·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 양식과 붙여넣기 칸만 그린다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
@@ -1503,6 +1512,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
+  - 열릴 때의 새로고침(키를 고쳐 적었거나 `?theme` 이 다를 때 — `reloadOnOpen`)은 **문서를 연 주소**에서 빠진 인자를
+    되살린다(`<theme-reopen>`, 연 주소는 `performance` 탐색 항목 — `history.replaceState` 로 바뀌지 않는다). 버려지는 첫
+    세션도 링크 인자를 받아 주소에서 지우므로(Space `?layer=short…`·공정 Capa 상세 `?process=…`·제약 시뮬레이션), 지금
+    주소에 테마만 붙이면 그 지우기가 먼저 닿은 때 새 세션이 링크 없이 열렸다(E2E 결함 — 사본 CPU 6배 느리게 9번 중 8번).
+    같은 출처·경로일 때 빠진 이름만 싣고 지금 주소의 값은 그대로 둔다. 단추를 눌러 바꿀 때(`syncParam`)는 지금 주소
+    그대로다. node 로 스크립트 셋을 가짜 부모 창에서 돌리는 시험이 `tests/test_theme_reopen_link.py` 다.
   - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌, 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
     `SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳이다. iframe 내용은 회차마다 같아야 한다(`tests/test_theme_toggle.py`).
   - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS`)에 넣고, `app_header`
@@ -2114,7 +2129,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     검토 F4). 막힘 글은 까닭 셋으로 갈린다 — 고른 리비전에 공식과 다른 배치(「실효 … — 저장된 차이 m행」, 최신이면 공식에서
     옮기기·「배치 차이 모두 지우기」, 옛 리비전이면 그것으로는 풀리지 않아 「이 리비전으로 되돌리기」 뒤 지우고 발행), 옛 리비전에
     남은 행이 지금 공식과 같음(「공식과 다른 배치」 라 하지 않고 되돌린 뒤 발행 — 정리 발행은 최신만), 고른 리비전에는 없고 최신에
-    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 정리 발행 뒤에는 「배치 차이 모두 지우기」 처럼 리비전
+    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 공통 대장에서 지운 호기의 저장된 행
+    (`LayoutPublishPreview.orphan_units`·`newest_orphan_units` → `PublishBlock.orphan_rows`)은 「공식과 같아진」 행이 아니라
+    버린 행이라 정리·막힘·발행 뒤 글이 「지운 호기의 배치 차이 n행」 으로 따로 말한다(`layout_overlay.cleaned_layout_words`·
+    `settled_layout_reason`, E2E r3) — Space 머리 첫 줄의 「공식과 같아진 것은 … 정리됩니다」 꼬리도 그 행(`layout_orphans`)을
+    빼고 센다(둘째 줄 「지운 호기의 배치 차이 n행은 버렸습니다」 가 말한다). 정리 발행 뒤에는 「배치 차이 모두 지우기」 처럼 리비전
     상자와 그 시나리오를 보던 세션을 새 리비전으로 옮긴다(`_follow_new_revision` — 저장 안 한 편집이 있으면 남김, S4 리뷰).
     되돌리기 확인 글은 되살리는 가정 배치에서 그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since` — 이력
     「그때 그대로」 와 다름, 검토 F21)를 덧붙인다.
@@ -3603,7 +3622,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸 값**(`set_value`)으로 서고, 없으면 빈 기본값으로 선다 — 비우는 칸이 아니라 지금 값으로 세워
   둘 칸(설비 시나리오 구획의 리비전명·시나리오 이름)은 한 회차만 적지 말고 고치지 않은 동안 **매
   회차** 다시 적는다(2026-10-26 E2E — 한 회차 뒤에 연 칸이 빈 칸으로 서 그대로 저장하면 이름이
-  지워졌다, `tests/test_equipment_scenario_name_fields.py`). **세션 키로 여는 팝업의 초안**(사이드바 시나리오
+  지워졌다, `tests/test_equipment_scenario_name_fields.py`). 글 칸은 Enter·포커스 빼기에 확정되어 그 회차의 칸 값이
+  이미 친 글이므로 같은 값을 매 회차 적어도 치던 글을 덮지 않는다 — 범위 밖 글을 확정하지 않고 쥐는 숫자 칸은 **다를 때만**
+  적는다(`preset_number_field`). **세션 키로 여는 팝업의 초안**(사이드바 시나리오
   팝업의 시나리오·리비전 선택)은 여는 콜백이 위젯이 만들어지기 전에 올라와 있는 값으로 **적는다** —
   다시 마운트되는 위젯이라 그 값에서 선다.
 - **선택 상자의 `format_func` 라벨에 회차마다 바뀌는 상태(활성 표시·개수 등)를 넣지 않는다.**
@@ -4037,7 +4058,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다
   (`tests/test_equipment_master_tab.py`). 저장소 예외 글(`str(exc)`·`bootstrap_error_message(exc)`)도 같다 — 날 이름(남이 먼저 바꾼
   설비 시나리오 이름·리비전명, 「「…」 r2를 저장해」)을 담으므로 그 글을 넣는 알림 상자는 감싼다(시나리오 관리 설비 시나리오 구획의
-  거절 알림 `REFUSED_KEY` 는 그리는 자리 한 곳에서, 사이드바 설비 시나리오 팝업 저장 실패도). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
+  거절 알림 `REFUSED_KEY` 는 그리는 자리 한 곳에서, 사이드바 설비 시나리오 팝업 저장 실패도). 설비 시나리오 이름을 싣는 잠금·빨리 감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도
+  그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가 담을 때 막는다(`_queue_space_flash` —
+  `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄의 팝업 저장 알림·세션 이동 알림
+  (`session.notice`)과 시나리오 관리 구획의 세션 이동 알림, Space 층 끄기 확인의 가정 배치 덧줄도 그리는 자리에서 막는다
+  (`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
   (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
 ### 스크립트와 컴포넌트
