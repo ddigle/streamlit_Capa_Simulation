@@ -18,6 +18,7 @@ from capa_simulation.components.admin_dialog import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -101,7 +102,10 @@ def render_process_rename_management(
     if unmatched:
         st.info(
             "보유하지 않은 공정에 지정된 표시명 "
-            f"{len(unmatched):,}건은 무시합니다: {', '.join(unmatched[:10])}"
+            f"{len(unmatched):,}건은 무시합니다: "
+            # 사람이 붙여넣은 원본 공정명이다 — 알림 상자(마크다운)에서 「없는~공정~1」 의 물결표가
+            # 지움선이 되었다(2026-10-26 E2E).
+            + ", ".join(literal_markdown(name) for name in unmatched[:10])
         )
     collisions = labels.owned_name_collisions(available_processes)
     if collisions:
@@ -110,7 +114,8 @@ def render_process_rename_management(
         # 뿐이다 — 설비 마스터까지 보려면 Admin 이 설비 DB 를 읽어야 해서 넓히지 않고 문구에 적는다.
         st.warning(
             f"보유 공정의 원본명과 같은 표시명 {len(collisions):,}건이 있습니다: "
-            f"{', '.join(collisions[:10])}. 서로 다른 두 공정이 같은 글자로 보입니다 — "
+            f"{', '.join(literal_markdown(name) for name in collisions[:10])}. "
+            "서로 다른 두 공정이 같은 글자로 보입니다 — "
             "공정을 고르는 상자에서는 「표시명 (원본)」 으로 갈라 보이지만 표·그림·버튼에서는 "
             "같은 글자로 보입니다. 값은 원본이라 계산·조인은 그대로이며 저장은 막지 않습니다. "
             "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다."
@@ -160,7 +165,7 @@ def _clipboard_dialog(
             return
         _save_process_rename(repository, imported, source="Excel 붙여넣기")
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        st.error(markdown_safe_tildes(bootstrap_error_message(exc)))
     else:
         # 확인 체크는 이번 교체 한 번에만 유효하다. 폼은 제출해도 값을 비우지 않으므로
         # 여기서 버려야 다음 붙여넣기가 확인 관문을 다시 거친다.
@@ -252,7 +257,8 @@ def _render_direct_editor(
             st.rerun()
         st.error(bootstrap_error_message(exc))
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
+        # 이름 중복 거부(「표시명이(가) 중복되었습니다: …」)는 사람이 적은 이름을 싣는다.
+        st.error(markdown_safe_tildes(bootstrap_error_message(exc)))
     else:
         save_marks[PROCESS_RENAME_SAVE_NAME] = (expected_version, saved.version)
         queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)

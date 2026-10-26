@@ -1510,11 +1510,19 @@ def key_process_preview(
 ) -> str:
     """프리셋 하나의 공정 미리보기 — 「2공정 · A · B」, 이 화면에 없는 공정은 따로 적는다.
 
-    공용 프리셋이라 다른 시나리오에는 있는 공정이다. 세어 넣으면 격자와 수가 맞지 않는다.
+    공용 프리셋이라 다른 시나리오에는 있는 공정이다. 세어 넣으면 격자와 수가 맞지 않는다. 글은
+    팝업 라디오 캡션(마크다운)으로 가므로 공정 표시명을 `literal_markdown` 으로 막는다 —
+    「CoW~검사~A」 의 물결표가 지움선이 되었다(2026-10-26 E2E).
     """
     known = set(process_options)
-    shown = [process_labels.label(process) for process in processes if process in known]
-    absent = [process_labels.label(process) for process in processes if process not in known]
+    shown = [
+        literal_markdown(process_labels.label(process)) for process in processes if process in known
+    ]
+    absent = [
+        literal_markdown(process_labels.label(process))
+        for process in processes
+        if process not in known
+    ]
     text = f"{len(shown)}공정 · " + " · ".join(shown) if shown else "그릴 공정 없음"
     if absent:
         text += " · 이 화면에 없음: " + ", ".join(absent)
@@ -1833,7 +1841,7 @@ def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLab
     """
     if not absent:
         return
-    names = ", ".join(process_labels.label(process) for process in absent)
+    names = ", ".join(literal_markdown(process_labels.label(process)) for process in absent)
     st.caption(
         f":material/info: 이번 시나리오·조회기간에 없어 그리지 않는 공정: {names}. "
         "공용 설정이라 저장해도 프리셋에 그대로 남고, 해당 공정이 있는 화면에서는 그려집니다. "
@@ -1997,7 +2005,7 @@ def _render_execution_notices(
     """넣었는데 화면이 그대로인 이유와, 0 에서 잘린 행을 알린다."""
     if not unmatched.empty:
         examples = ", ".join(
-            f"{month_label(int(month))}·{process_labels.label(process)}"
+            f"{month_label(int(month))}·{literal_markdown(process_labels.label(process))}"
             for month, process in zip(
                 unmatched["생산계획년월"].head(5),
                 unmatched["공정"].head(5),
