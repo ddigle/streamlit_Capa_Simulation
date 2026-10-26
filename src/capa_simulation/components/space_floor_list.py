@@ -722,7 +722,8 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
                 icon=":material/warning:",
             )
         for line in _overlay_lines(database_path, shown):
-            st.caption(f":material/layers: {line}")
+            # 줄은 설비 시나리오 이름을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
+            st.caption(f":material/layers: {markdown_safe_tildes(line)}")
         st.caption("설비 마스터의 동·층 값은 바뀌지 않습니다. 다시 켜면 그대로 보입니다.")
         with st.container(horizontal=True, gap="small"):
             st.button(
