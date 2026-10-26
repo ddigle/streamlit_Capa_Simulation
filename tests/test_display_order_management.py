@@ -298,3 +298,138 @@ finally:
     # 고친 범위는 사라지고 남은 범위만 경고한다.
     warning = " ".join(element.value for element in app.warning)
     assert "부하량 › 환산" in warning and "부하량 › 계획" not in warning
+
+
+def _version_check_script(database_path: Path) -> str:
+    """표시순서 탭 한 장을 그리고, 저장본을 다시 읽어 마지막 줄에 적는다.
+
+    마지막 줄은 「v<version>|분류값=값표시순서;…」 다.
+
+    AppTest 는 편집표 칸을 고칠 수 없어 `st.data_editor` 가 「B 줄의 값표시순서를 99 로 고친 표」를
+    돌려주게 한다. 저장 성공은 `st.rerun()` 으로 끝나 success 만으로는 저장 여부를 가릴 수 없다.
+    """
+    return f'''
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from capa_simulation.components.display_order_management import render_display_order_management
+from capa_simulation.persistence.cache import load_global_display_order
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+database = Path(r"{database_path}")
+repository = DuckDBScenarioRepository(database)
+repository.initialize()
+repository.initialize_global_display_order(
+    pd.DataFrame(
+        {{
+            "페이지 구분": ["생산 계획"] * 3,
+            "탭 구분": ["수율"] * 3,
+            "정렬우선순위": [1, 1, 1],
+            "분류컬럼": ["제품정보"] * 3,
+            "정렬방식": ["사용자지정"] * 3,
+            "분류값": ["A", "B", "C"],
+            "값표시순서": [1, 2, 3],
+            "활성여부": ["Y", "Y", "Y"],
+        }}
+    )
+)
+
+original_editor = st.data_editor
+
+
+def _edited_editor(frame, **kwargs):
+    original_editor(frame, **kwargs)
+    edited = frame.copy()
+    edited.loc[edited["분류값"].eq("B"), "값표시순서"] = 99
+    return edited
+
+
+st.data_editor = _edited_editor
+try:
+    render_display_order_management(repository)
+finally:
+    st.data_editor = original_editor
+profile = load_global_display_order(str(database))
+scope = profile.rules.loc[profile.rules["탭 구분"].eq("수율")]
+st.text(
+    "v%d|%s"
+    % (
+        profile.version,
+        ";".join(
+            "%s=%d" % (value, order) for value, order in zip(scope["분류값"], scope["값표시순서"])
+        ),
+    )
+)
+'''
+
+
+def _delete_row_as_another_session(database_path: Path, value: str) -> None:
+    """다른 세션이 같은 범위의 줄 하나를 지우고 먼저 저장한다(화면과 같은 저장소 길)."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database_path)
+    current = repository.load_global_display_order().rules
+    repository.replace_global_display_order(
+        current.loc[current["분류값"].ne(value)].reset_index(drop=True),
+        source="다른 세션의 저장",
+    )
+    clear_global_display_order_cache()
+
+
+def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: Path) -> None:
+    """A 가 직접 편집 표를 연 뒤 B 가 같은 범위의 줄을 지우고 저장했다. A 의 저장은 막히고 B 의
+    저장본이 남는다(Proc Rename 과 같은 버전 대조). 대조가 없으면 남의 저장으로 바뀐 줄 때문에
+    편집표가 새로 서며 A 의 편집을 버린 채 version 만 올리고 「저장했습니다」를 띄웠다
+    (2026-10-26 E2E). 그 회차가 그린 최신 저장본에서 다시 누르면 저장된다."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+
+    database_path = tmp_path / "display-order-conflict.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.text[-1].value == "v1|A=1;B=2;C=3"
+
+    _delete_row_as_another_session(database_path, "C")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=60)
+
+    assert not app.exception, [item.message for item in app.exception]
+    errors = [str(error.value) for error in app.error]
+    assert any("다른 사용자가 먼저 표시순서를 저장해" in text for text in errors), errors
+    assert not app.success, [element.value for element in app.success]
+    assert app.text[-1].value == "v2|A=1;B=2"
+
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=60)
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [str(error.value) for error in app.error]
+    assert app.text[-1].value == "v3|A=1;B=99"
+    clear_global_display_order_cache()
+
+
+def test_a_double_press_of_the_display_order_save_reports_no_conflict(tmp_path: Path) -> None:
+    """「공용 표시순서 저장」 빠른 두 번 누름 — 둘째 누름이 첫 저장 전의 편집 시작 version 을 들고
+    와도 방금 한 제 저장을 「다른 사용자가 먼저 저장」이라 알리지 않는다(Proc Rename 과 같은
+    표지)."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+
+    database_path = tmp_path / "display-order-double.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v1|A=1;B=2;C=3"
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert app.text[-1].value == "v2|A=1;C=3;B=99"
+
+    app.session_state["display_order_base_version"] = 1
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.error, [str(error.value) for error in app.error]
+    assert any("공용 설정으로 저장했습니다" in element.value for element in app.success)
+    assert app.text[-1].value == "v2|A=1;C=3;B=99"
+    clear_global_display_order_cache()

@@ -1642,6 +1642,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다.
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
+  - 직접 편집 저장은 Proc Rename 과 같은 버전 대조(`BASE_VERSION_KEY` → `expected_version`)다. 범위 하나만 고쳐도
+    프로필 전체 version 을 본다 — 편집표가 `num_rows="dynamic"` 이라 데이터가 신원에 들어가, 남의 저장으로 범위 줄이
+    바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을 버린다. 대조가 없으면 지금 저장본을 다시 쓰며 version 만 올리고
+    「저장했습니다」를 띄웠다(2026-10-26 E2E, `tests/test_display_order_management.py`).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
@@ -1899,8 +1903,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
   온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
-  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
-  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
+  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename·표시순서 직접 편집·판정 기준·
+  확보율 보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -2752,7 +2756,7 @@ RQ_MODULE
     위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
-    표시명·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
+    표시명·표시순서(직접 편집)·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
     이다. Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
@@ -3883,12 +3887,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     보면 빈 입력 거절(「제목을 입력하세요.」)이 방금 성공한 자리에 남았다(2026-10-26 E2E). `write_once` 는 쓴 시각도 적고,
     입력이 모두 빈 제출이 `write_guard.TRAILING_PRESS_SECONDS`(1초) 안에 오면(`just_written`) 쓰지 않고 방금 성공을 다시
     알린다. 적은 것이 하나라도 있거나 창이 지나면 정상 제출이다(VOC 새 글·답변, `tests/test_voc_page.py`).
-  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
+  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename·표시순서 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
     회차가 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라 저장소가 거부하고, 방금 한 제 저장을 「다른 사용자가
     먼저 저장」이라 알렸다(2026-10-26 E2E). 저장 전에 `write_guard.profile_save_marks()` 로 받은 dict 에 성공한
     `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
     (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
-    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
+    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·
+    `tests/test_display_order_management.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

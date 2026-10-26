@@ -19,7 +19,12 @@ from capa_simulation.persistence import (
     display_order_store,
     sync_state,
 )
-from capa_simulation.persistence._sql_helpers import connect, load_profile_header, transaction
+from capa_simulation.persistence._sql_helpers import (
+    ProfileVersionConflict,
+    connect,
+    load_profile_header,
+    transaction,
+)
 from capa_simulation.persistence.cache import (
     clear_scenario_repository,
     load_scenario_snapshot,
@@ -354,6 +359,33 @@ def test_global_display_order_migrates_and_replaces_independently(tmp_path: Path
     assert repository.load_revision(snapshot.revision.revision_id).tables["RQ_DISPLAY_ORDER"][
         "분류값"
     ].tolist() == ["Product-B"]
+
+
+def test_a_display_order_save_started_from_an_older_version_is_refused(tmp_path: Path) -> None:
+    """직접 편집을 시작한 뒤 다른 사람이 표시순서를 저장했으면 덮지 않는다(공정 표시명과 같은 버전
+    대조). 거부된 저장은 아무것도 쓰지 않아 version·저장본이 남의 저장 그대로다."""
+    repository = _repository(tmp_path / "scenario.duckdb")
+    initial = repository.initialize_global_display_order(_reference_tables()["RQ_DISPLAY_ORDER"])
+    repository.replace_global_display_order(
+        initial.rules.assign(분류값="B 의 값"), source="B 의 저장"
+    )
+
+    with pytest.raises(ProfileVersionConflict, match="다른 사용자가 먼저 표시순서를"):
+        repository.replace_global_display_order(
+            initial.rules.assign(분류값="A 의 값"),
+            source="A 의 저장",
+            expected_version=initial.version,
+        )
+
+    profile = repository.load_global_display_order()
+    assert (profile.version, profile.source) == (initial.version + 1, "B 의 저장")
+    assert profile.rules["분류값"].unique().tolist() == ["B 의 값"]
+    saved = repository.replace_global_display_order(
+        initial.rules.assign(분류값="A 의 값"),
+        source="A 의 저장",
+        expected_version=profile.version,
+    )
+    assert saved.version == profile.version + 1
 
 
 def test_global_display_order_init_marks_sync_dirty_only_when_it_writes(

@@ -445,12 +445,15 @@ class DuckDBScenarioRepository:
         *,
         source: str,
         tolerated_clashes: Collection[ClashKey] = (),
+        expected_version: int | None = None,
     ) -> GlobalDisplayOrder:
         """Atomically replace the shared profile without creating scenario revisions.
 
         `tolerated_clashes` 는 범위 하나를 고치는 직접 편집 저장만 준다 — 다른 범위에 이미 있던
         겹친 분류값(`display_order_editor.clashes_outside_scope`)이다. 비워 두면(붙여넣기·CSV·
-        일괄 교체) 프로필 어디에든 겹침이 있으면 막는다.
+        일괄 교체) 프로필 어디에든 겹침이 있으면 막는다. 직접 편집은 `expected_version`(편집을
+        시작할 때 본 version)도 넘기고, 쓰기 잠금 안에서 저장본과 다르면
+        `ProfileVersionConflict`(ValueError)로 거부한다 — 공정 표시명과 같은 버전 대조다.
         """
         prepared_rules = prepare_global_display_order_rules(
             rules, tolerated_clashes=tolerated_clashes
@@ -458,7 +461,10 @@ class DuckDBScenarioRepository:
         source_label = required_text(source, "표시순서 변경 출처")
         with self._write_transaction() as connection:
             display_order_store.replace_global_display_order(
-                connection, prepared_rules, source=source_label
+                connection,
+                prepared_rules,
+                source=source_label,
+                expected_version=expected_version,
             )
         return self.load_global_display_order()
 

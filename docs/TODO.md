@@ -820,6 +820,15 @@
 
 ### 화면
 
+- (2026-10-26) **Admin 표시순서 직접 편집 저장은 버전 대조다**(브라우저 E2E lens dynamic-admin, 밤사이 권장대로) — A·B 가 같은
+  범위(생산 계획/수율)를 연 뒤 B 가 한 줄을 지우고 저장하면, A 의 저장 회차에 편집표(`num_rows="dynamic"` — 데이터가 신원에 든다)가
+  새로 서며 A 가 고친 값표시순서를 버린 채 지금 저장본을 다시 써 version 만 올리고 「저장했습니다」 를 띄웠다. Proc Rename 과 같은
+  결로 편집을 시작한 회차의 version(`BASE_VERSION_KEY`)을 저장소에 넘기고(`replace_global_display_order(expected_version=…)` →
+  `require_profile_version`) 어긋나면 저장 버튼 위에 「다른 사용자가 먼저 표시순서를 저장해…」 를 띄운다. 빠른 두 번 누름은
+  `write_guard` 제 저장 표지로 거르고, 「현재 전체 교체」 를 확인받는 Excel 붙여넣기는 대조하지 않는다(AGENTS 5장 25). 대안: 고른
+  범위의 줄만 견주어 다른 범위 저장은 통과 — 범위 지문을 따로 두어야 하고 AGENTS 25 의 「프로필 version」 규칙에서 벗어난다. 관련:
+  `components/display_order_management.py`·`persistence/display_order_store.py`·`tests/test_display_order_management.py`·
+  `tests/test_duckdb_repository.py`
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을
