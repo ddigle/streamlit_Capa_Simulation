@@ -277,7 +277,7 @@ def test_clone_form_clears_after_saving_and_refuses_a_taken_name(tmp_path: Path)
     assert not app.exception
 
     _fill_clone(app, "복제 A", "CLONE-A")
-    assert any("복제 A을(를) 저장했습니다" in item.value for item in app.success)
+    assert any("복제 A를 저장했습니다" in item.value for item in app.success)
     assert _clone_inputs(app) == {
         "시나리오명": "",
         "원천 시뮬레이션 코드": "",
