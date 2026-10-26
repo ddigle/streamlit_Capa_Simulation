@@ -162,12 +162,9 @@ def render_upeh_assumption_controls(
     return UpehAssumption(percent=value, start=first, end=last)
 
 
-def apply_upeh_percent(value: int, rerun_app: bool = False) -> None:
-    """% 칸에 값을 적는 콜백(범위 안으로 깎는다). `rerun_app` 이면 앱 전체 회차로 올린다 —
-    프래그먼트 안 단추가 프래그먼트 밖 계산(조건 카드·계획)을 다시 세우게."""
+def apply_upeh_percent(value: int) -> None:
+    """% 칸에 값을 적는 콜백(범위 안으로 깎는다)."""
     st.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = clamp_percent(value)
-    if rerun_app:
-        st.rerun()
 
 
 def upeh_badge(source: UpehAssumption | UpehToken) -> str:
@@ -185,13 +182,9 @@ def render_inverse(
     goal: str,
     key: str,
     current: int | None = None,
-    rerun_app: bool = False,
 ) -> None:
     """역산 한 줄 — 「구간 안 단축 0 → UPEH ≥ 118%」 과 「이 값으로」 단추(그 값이 지금 값과 다를
-    때만).
-
-    `rerun_app` 은 프래그먼트 안에 그릴 때 준다(`apply_upeh_percent`).
-    """
+    때만)."""
     value = inverse.button_value
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.caption(inverse_text(goal, inverse), width="content")
@@ -202,6 +195,6 @@ def render_inverse(
                 type="tertiary",
                 icon=":material/arrow_upward:" if current is None or value > current else None,
                 on_click=apply_upeh_percent,
-                args=(value, rerun_app),
+                args=(value,),
                 help=f"UPEH 가정을 {value}% 로 둡니다(적용 구간은 그대로).",
             )

@@ -2037,6 +2037,21 @@ def test_copy_facts_count_each_direction_without_a_verdict(
     assert facts[-1].conflicts == reference_conflicts
 
 
+def test_the_in_day_conflict_cell_of_the_copy_line_sums_every_received_day() -> None:
+    """요약 줄 끝 「하루 안 충돌」 은 받은 날 전부(기준 날 포함)의 합이다 — 날마다 같은 꼴로
+    충돌하면 하루 값의 날 수 배가 찍힌다(사내 2227 「1,597」 과 1430 요약 「6,388 = 1,597 × 4」).
+    앞 네 칸은 견준 날만 더한다."""
+    twice = pd.concat([_day(), _day(bump=9)], ignore_index=True)
+    probe = _DayProbe(dict.fromkeys(DAYS[:4], twice))
+    result = checks.check_copies(
+        probe, VALID_A, QueryWindow(start_date=DAYS[0], end_date=DAYS[3]), extra=False
+    )
+
+    assert [facts.conflicts for facts in result.days] == [12, 12, 12, 12]
+    assert sum(1 for facts in result.days if facts.compared) == 3
+    assert checks.copy_note(1, result) == "- 8-5C1 표본 4일 · 3 · 0 · 0 · 0 · 0 · 48"
+
+
 def test_the_reference_row_carries_its_own_counts() -> None:
     reference = _facts([_day(), _day(lines=(0, 1))])[-1]
 
