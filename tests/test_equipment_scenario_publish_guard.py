@@ -40,6 +40,7 @@ from capa_simulation.components.equipment_scenario_management import (
     publish_seen_refusal,
     publish_seen_token,
     release_words,
+    scenario_rows,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
@@ -297,6 +298,56 @@ def test_the_preview_names_an_older_official_revision_the_session_does_not_hold(
 
     captions = [str(item.value) for item in app.caption]
     assert "지금 공식 v1 · 「운영 일정」 r1 → 새 공식 v2 · 「운영 일정」 r2" in captions
+
+
+def test_the_scenario_table_names_the_official_revision_beside_its_release(
+    tmp_path: Path,
+) -> None:
+    """E2E r3 #99 — 공식 v1 은 「운영 일정」 r1 인데 그 시나리오 최신은 r2 다. 시나리오 표
+    「상태」 가 「공식 v1 · r1」 로 리비전을 함께 적어(「최신」 칸은 r2) 공식이 최신이 아니라는
+    것이 표에서 바로 보인다."""
+    repository = _seeded(tmp_path)
+    session = _session(repository)
+    repository.save_equipment(
+        _request(
+            session,
+            equipment=_set(session.equipment, "EQ-02", "Qual일정", "2026-08-24"),
+            publish_official=False,
+        )
+    )
+    setup = _clone(repository)
+    app = _tab(repository.database_path)
+    app.session_state[SELECTION_KEY] = {
+        "scenario_id": setup.equipment_scenario_id,
+        "schedule_revision_id": None,
+    }
+    _ok(app.run())
+
+    table = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
+    rows = {
+        name: (status, latest)
+        for name, status, latest in zip(
+            table["설비 시나리오"], table["상태"], table["최신"], strict=True
+        )
+    }
+    assert rows["운영 일정"] == ("공식 v1 · r1", "r2"), rows
+    assert rows[setup.scenario_name][0] == "활성"
+
+
+def test_the_scenario_table_keeps_the_release_alone_when_the_revision_is_unknown() -> None:
+    """공식 리비전 번호를 찾지 못하면(목록 한도 밖) 「공식 vN」 만 적는다 — 틀린 번호를 짓지
+    않는다."""
+    operations = EquipmentScenarioSummary(
+        OPERATIONS, "운영 일정", "ACTIVE", latest_schedule_revision_id="s14", latest_revision_no=14
+    )
+    catalog = EquipmentScenarioCatalog(
+        scenarios=(operations,),
+        latest_release=EquipmentRelease(3, OPERATIONS, "s12", datetime(2026, 10, 24)),
+    )
+    session = EquipmentSession(catalog, operations, "s14")
+
+    assert scenario_rows(session)["상태"].tolist() == ["공식 v3"]
+    assert scenario_rows(session, official_revision_no=12)["상태"].tolist() == ["공식 v3 · r12"]
 
 
 def test_the_continue_confirm_key_changes_with_any_number_in_its_label() -> None:

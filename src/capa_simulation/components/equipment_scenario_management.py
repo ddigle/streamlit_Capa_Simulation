@@ -424,21 +424,27 @@ def _repeat_held_refusal(conflicts: dict[str, tuple[str, float]], name: str) -> 
         _refused(held)
 
 
-def scenario_rows(session: EquipmentSession) -> pd.DataFrame:
-    """시나리오 표 — 이름·상태·최신·리비전 수·저장된 배치 차이. 공식은 「공식 vN」, 그 밖은
-    「활성」.
+def scenario_rows(
+    session: EquipmentSession, *, official_revision_no: int | None = None
+) -> pd.DataFrame:
+    """시나리오 표 — 이름·상태·최신·리비전 수·저장된 배치 차이. 공식은 「공식 vN · rM」(rM 은 공식
+    발행 리비전 — 그 시나리오 최신이 아닐 수 있다), 그 밖은 「활성」. 공식 리비전 번호를 모르면
+    (`official_revision_no` 가 None — 목록 한도 밖) 「공식 vN」 만 적는다.
 
     「저장된 배치 차이」 는 최신 리비전에 **저장된** 차이 행 수(원시 — 「호기 3행·요소 1개」)다.
     목록 표에는 실효(지금 공식과 실제로 다른 것)를 셀 재료가 없어 원시만 적는다(설계 8-2·검토 F4) —
     공식과 같아진 행은 다음 저장·발행 때 정리된다."""
     official_id = session.catalog.official_scenario_id
     release_no = session.catalog.release_no
+    official_status = f"공식 v{release_no}" + (
+        f" · r{official_revision_no}" if official_revision_no is not None else ""
+    )
     return pd.DataFrame(
         [
             {
                 "설비 시나리오": item.scenario_name,
                 "상태": (
-                    f"공식 v{release_no}"
+                    official_status
                     if item.equipment_scenario_id == official_id and release_no is not None
                     else "활성"
                 ),
@@ -696,7 +702,12 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         "시나리오는 일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 "
         "요소·Main 설비명 위치)를 따로 듭니다 — 만들기는 복제로만 합니다."
     )
-    st.dataframe(scenario_rows(session), hide_index=True, width="stretch", placeholder="")
+    st.dataframe(
+        scenario_rows(session, official_revision_no=_official_revision_no(database_path, session)),
+        hide_index=True,
+        width="stretch",
+        placeholder="",
+    )
     traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
     with st.container():
         if traced:
@@ -1899,6 +1910,21 @@ def _official_revisions(
         return load_equipment_schedule_revisions(database_path, release.equipment_scenario_id)
     except BOOTSTRAP_ERRORS:
         return ()
+
+
+def _official_revision_no(database_path: str, session: EquipmentSession) -> int | None:
+    """지금 공식 발행 리비전의 번호(시나리오 표 「상태」 — 「공식 v3 · r5」). 발행 확인 글과 같은
+    길로 찾는다(그 시나리오 최신·이 세션의 스냅샷·공식 시나리오 리비전 목록 — `_revision_no`).
+    발행이 없거나 어디에도 없으면 None."""
+    release = session.catalog.latest_release
+    if release is None:
+        return None
+    return _revision_no(
+        session,
+        release.schedule_revision_id,
+        session.catalog.scenario(release.equipment_scenario_id),
+        _official_revisions(database_path, session),
+    )
 
 
 def _render_publish(
