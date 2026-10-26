@@ -2392,8 +2392,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **이대로 이어 쓰기** 확인 체크 key 꼬리는 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전 번호·빠지는 호기 수 —
     `continue_confirm_key`)이다(되돌리기 체크와 같은 까닭). 발행 번호 0 은 「v0」 이 아니라 「발행 없음」(`release_words`)이다.
   - **배치 차이(설비 0031 — S4)**. 시나리오 표 「저장된 배치 차이」 는 최신의 **저장된** 행(원시 — 「호기 3행·요소 1개」 ·
-    `EquipmentScenarioSummary.latest_layout_rows`), 리비전 표 「배치」 는 그 리비전의 저장된 행이다(목록에는 실효를 셀 재료가 없다
-    — 설계 8-2). 옛 판(0031 을 모르는 배포)이 차이 있는 리비전 뒤에 저장한 리비전(옛 코드 흔적 — 목록 셈 `layout_trace_count` 와
+    `EquipmentScenarioSummary.latest_layout_rows`), 리비전 표 「배치」 는 그 리비전의 저장된 행이다. 저장된 행 뒤 괄호에 지금 공식과 견준
+    실효 표지 — 「(공식과 같음)」·「(실효 호기 2대 · 지운 호기 1행)」(`layout_effect_words`) — 를 붙이는데, 재료는 발행 확인 글과
+    **같은 판정·같은 캐시 칸**(`_latest_layout_previews` → `load_layout_publish_preview(공통 최신, 최신, 최신)`)이라 배치 차이가 있는
+    시나리오의 **최신**만 센다(시나리오 표 전부와 리비전 표 최신 줄 — 옛 리비전 줄은 원시, 판정을 읽지 못한 시나리오도 원시). 칸이
+    시나리오 수보다 적으면 회차마다 합친 본문을 다시 지어 판정 캐시 칸을 32 로 둔다(`LAYOUT_PUBLISH_PREVIEW_CACHE_ENTRIES`, E2E #11·#82). 옛 판(0031 을 모르는 배포)이 차이 있는 리비전 뒤에 저장한 리비전(옛 코드 흔적 — 목록 셈 `layout_trace_count` 와
     같은 규칙 `layout_trace_sources`)은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 「rT 은 옛 판이 저장해 rN 의 가정 배치가
     빠졌습니다 — rN 으로 되돌리기」 경고, 시나리오 표 아래에 흔적이 있는 시나리오 한 줄. 저장은 막지 않는다(설계 14장).
     「배치 차이 모두 지우기」(`clearable_layout` — 가정 시나리오 최신에 차이가 있을 때만)는 확인 체크 key 꼬리가 (시나리오, 최신

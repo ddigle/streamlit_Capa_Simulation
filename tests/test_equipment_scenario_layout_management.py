@@ -45,12 +45,14 @@ from capa_simulation.components.equipment_scenario_management import (
     clear_layout_lines,
     clear_layout_message,
     clearable_layout,
+    layout_effect_words,
     layout_trace_sentence,
     layout_trace_sources,
     publish_layout_lines,
     publish_result_message,
     restore_layout_sentence,
     revision_rows,
+    stored_layout_cell,
     stored_layout_words,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -123,6 +125,32 @@ def test_the_tables_name_the_stored_layout_rows_and_the_old_code_traces() -> Non
     assert "r4로 되돌리기" in sentence
     assert "모두 2개" in sentence
     assert layout_trace_sentence(_scenario(), [_revision(1), _revision(2, "d2")]) is None
+
+
+def test_the_stored_rows_carry_their_effect_against_the_official() -> None:
+    """E2E #11·#82 — 저장된 행 수 옆 괄호에 지금 공식과 견준 실효를 적는다. 공식과 같아졌으면
+    「공식과 같음」, 실제로 다르면 발행 막힘 글과 같은 「실효 호기 n대」, 공통 대장에서 지운 호기의
+    행은 「지운 호기 n행」 으로 따로 센다. 판정이 없거나 저장된 행이 없으면 원시 그대로다."""
+    caught_up = LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1)
+    assert layout_effect_words(caught_up) == "(공식과 같음)"
+    assert stored_layout_cell("호기 1행", caught_up) == "호기 1행 (공식과 같음)"
+    deleted = LayoutPublishPreview(action="clean", stored_units=1, newest_rows=1, orphan_units=1)
+    assert layout_effect_words(deleted) == "(공식과 같음 · 지운 호기 1행)"
+    differs = LayoutPublishPreview(
+        action="blocked",
+        stored_units=3,
+        stored_marks=1,
+        newest_rows=4,
+        units=2,
+        marks=1,
+        orphan_units=1,
+    )
+    assert stored_layout_cell("호기 3행·요소 1개", differs) == (
+        "호기 3행·요소 1개 (실효 호기 2대·요소 1개 · 지운 호기 1행)"
+    )
+    assert stored_layout_cell("호기 1행", None) == "호기 1행"
+    assert stored_layout_cell("", LayoutPublishPreview()) == ""
+    assert layout_effect_words(LayoutPublishPreview()) == ""
 
 
 def test_the_clear_button_belongs_to_assumption_scenarios_with_a_difference() -> None:
@@ -457,9 +485,9 @@ def test_the_section_shows_the_layout_columns_and_blocks_publishing(tmp_path: Pa
 
     scenarios = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
     by_name = dict(zip(scenarios["설비 시나리오"], scenarios["저장된 배치 차이"], strict=True))
-    assert by_name == {"운영 일정": "", "셋업 실무": "호기 1행"}
+    assert by_name == {"운영 일정": "", "셋업 실무": "호기 1행 (실효 호기 1대)"}
     revisions = next(frame.value for frame in app.dataframe if "리비전명" in frame.value)
-    assert revisions["배치"].tolist()[0] == "호기 1행"
+    assert revisions["배치"].tolist()[0] == "호기 1행 (실효 호기 1대)"
     assert app.selectbox(key=REVISION_KEY).value == latest
     publish = next(button for button in app.button if button.key == PUBLISH_BUTTON_KEY)
     assert publish.disabled
@@ -575,6 +603,27 @@ def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_pat
             [latest],
         ).fetchone()
     assert rows == (1,)
+
+
+def test_the_tables_mark_a_difference_that_caught_up_with_the_official(tmp_path: Path) -> None:
+    """E2E #11 — 「셋업 실무」 r2 의 EQ-01 X=50 을 공식도 같은 자리로 옮겨 실효가 0 이 됐다.
+    시나리오 표·리비전 표 최신 줄이 「호기 1행 (공식과 같음)」 이라 발행 팝업을 열지 않아도 보이고,
+    옛 줄은 원시 그대로다(실효는 최신만 센다)."""
+    repository, setup, _ = _moved_setup(tmp_path)
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    clear_equipment_repository()
+    app = _ok(_section(tmp_path, setup).run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    _ok(app.run())
+
+    scenarios = next(frame.value for frame in app.dataframe if "설비 시나리오" in frame.value)
+    by_name = dict(zip(scenarios["설비 시나리오"], scenarios["저장된 배치 차이"], strict=True))
+    assert by_name["셋업 실무"] == "호기 1행 (공식과 같음)", by_name
+    revisions = next(frame.value for frame in app.dataframe if "리비전명" in frame.value)
+    assert revisions["배치"].tolist() == ["호기 1행 (공식과 같음)", ""]
 
 
 def test_a_cleaning_publish_moves_the_session_and_revision_box_to_the_new_revision(

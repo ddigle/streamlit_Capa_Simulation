@@ -9,15 +9,17 @@
 자리). 다른 설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 구획으로
 옮긴다(`open_equipment_scenario_management`).
 
-- **시나리오 표**: 이름·상태(공식 vN / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시 행 —
-  설비 0031)·올라와 있음. 고른 시나리오에 「시나리오 이름 바꾸기」 와, 가정 시나리오 최신에 배치
-  차이가 있으면 「배치 차이 모두 지우기」(차이만 비운 새 리비전 — 설계 6-6). 옛 판(0031 을 모르는
+- **시나리오 표**: 이름·상태(공식 vN · rM / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시
+  행 — 설비 0031 — 와 괄호 안 실효 표지 「공식과 같음」·「실효 호기 n대」·「지운 호기 n행」)·올라와
+  있음. 고른 시나리오에 「시나리오 이름 바꾸기」 와, 가정 시나리오 최신에 배치 차이가 있으면 「배치
+  차이 모두 지우기」(차이만 비운 새 리비전 — 설계 6-6). 옛 판(0031 을 모르는
   배포)이 저장해 가정 배치가 빠진 리비전이 있으면 그 시나리오 이름과 수를 한 줄로(설계 14장).
 - **리비전 표**: 고른 시나리오의 일정 리비전(r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동
-  행·배치·공식·메모). 「배치」 는 저장된 배치 차이 행 수, 옛 판 흔적은 「옛 판 저장 — rN 배치 빠짐」
-  이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을 적는다. 표와 리비전 상자는 최근
-  `SCHEDULE_REVISION_LIST_LIMIT` 줄까지이고, 표 아래 한 줄이 늘 전체 수와 출처별 수를 적는다(「전체
-  12줄(이관 10 · 저장 2)」, 한도에 걸리면 「최근 50줄 · 전체 82줄(…) — 더 옛 32줄은 …」).
+  행·배치·공식·메모). 「배치」 는 저장된 배치 차이 행 수(최신 줄에는 시나리오 표와 같은 실효 표지),
+  옛 판 흔적은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을
+  적는다. 표와 리비전 상자는 최근 `SCHEDULE_REVISION_LIST_LIMIT` 줄까지이고, 표 아래 한 줄이 늘
+  전체 수와 출처별 수를 적는다(「전체 12줄(이관 10 · 저장 2)」, 한도에 걸리면 「최근 50줄 · 전체
+  82줄(…) — 더 옛 32줄은 …」).
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
   불러오기」), 「이 리비전으로 되돌리기」(E7 — 그 일정으로 같은 시나리오에 새 리비전, 바뀌는 호기
   수와 「일정 없음」 이 되는 호기를 보이고 확인 체크 뒤에), 「여기서 새 시나리오」(E7 — 그 리비전을
@@ -40,7 +42,7 @@ id 키 캐시에서 받는다 — 이 구획을 그리는 회차에만 읽는다
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 import pandas as pd
@@ -149,6 +151,7 @@ from capa_simulation.services.korean_particle import (
 from capa_simulation.services.layout_overlay import (
     EMPTY_LAYOUT_DIGEST,
     cleaned_layout_words,
+    layout_counts_words,
     layout_publish_blocked_words,
     settled_layout_reason,
 )
@@ -425,15 +428,20 @@ def _repeat_held_refusal(conflicts: dict[str, tuple[str, float]], name: str) -> 
 
 
 def scenario_rows(
-    session: EquipmentSession, *, official_revision_no: int | None = None
+    session: EquipmentSession,
+    *,
+    official_revision_no: int | None = None,
+    layout_previews: Mapping[str, LayoutPublishPreview] | None = None,
 ) -> pd.DataFrame:
     """시나리오 표 — 이름·상태·최신·리비전 수·저장된 배치 차이. 공식은 「공식 vN · rM」(rM 은 공식
     발행 리비전 — 그 시나리오 최신이 아닐 수 있다), 그 밖은 「활성」. 공식 리비전 번호를 모르면
     (`official_revision_no` 가 None — 목록 한도 밖) 「공식 vN」 만 적는다.
 
     「저장된 배치 차이」 는 최신 리비전에 **저장된** 차이 행 수(원시 — 「호기 3행·요소 1개」)다.
-    목록 표에는 실효(지금 공식과 실제로 다른 것)를 셀 재료가 없어 원시만 적는다(설계 8-2·검토 F4) —
-    공식과 같아진 행은 다음 저장·발행 때 정리된다."""
+    `layout_previews`(시나리오 id → 그 최신의 발행 배치 판정 — `_latest_layout_previews`)가 있으면
+    괄호 안에 실효 표지를 붙인다(`layout_effect_words` — 「호기 1행 (공식과 같음)」). 판정이 없는
+    시나리오(읽지 못함)는 원시만이다 — 공식과 같아진 행은 다음 저장·발행 때 정리된다(설계 8-2)."""
+    previews = layout_previews or {}
     official_id = session.catalog.official_scenario_id
     release_no = session.catalog.release_no
     official_status = f"공식 v{release_no}" + (
@@ -450,7 +458,10 @@ def scenario_rows(
                 ),
                 "최신": f"r{item.latest_revision_no}" if item.latest_revision_no else "",
                 "리비전 수": item.revision_count,
-                "저장된 배치 차이": stored_layout_words(*item.latest_layout_rows),
+                "저장된 배치 차이": stored_layout_cell(
+                    stored_layout_words(*item.latest_layout_rows),
+                    previews.get(item.equipment_scenario_id),
+                ),
                 "올라와 있음": "●" if item.equipment_scenario_id == session.scenario_id else "",
             }
             for item in session.catalog.scenarios
@@ -464,13 +475,16 @@ def revision_rows(
     common_numbers: dict[str, int],
     official_id: str | None,
     official_no: int | None,
+    layout_previews: Mapping[str, LayoutPublishPreview] | None = None,
 ) -> pd.DataFrame:
     """리비전 표 — r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동 행·배치·공식·메모.
 
-    「배치」 는 그 리비전에 저장된 배치 차이 행 수(원시)다. 옛 판(설비 0031 을 모르는 코드)이 저장해
-    앞 리비전의 가정 배치가 빠진 리비전(옛 코드 흔적 — 설계 14장)은 「옛 판 저장 — rN 배치
-    빠짐」."""
+    「배치」 는 그 리비전에 저장된 배치 차이 행 수(원시)다. `layout_previews`(일정 리비전 id → 그
+    리비전의 발행 배치 판정)에 든 리비전 — 화면은 그 시나리오 최신 하나(시나리오 표와 같은 판정)를
+    넘긴다 — 은 괄호 안 실효 표지를 붙인다. 옛 판(설비 0031 을 모르는 코드)이 저장해 앞 리비전의
+    가정 배치가 빠진 리비전(옛 코드 흔적 — 설계 14장)은 「옛 판 저장 — rN 배치 빠짐」."""
     traces = layout_trace_sources(revisions)
+    previews = layout_previews or {}
     return pd.DataFrame(
         [
             {
@@ -489,8 +503,11 @@ def revision_rows(
                 "배치": (
                     f"옛 판 저장 — r{traces[item.revision_no]} 배치 빠짐"
                     if item.revision_no in traces
-                    else stored_layout_words(
-                        item.layout_unit_count, item.layout_mark_count, item.layout_label_count
+                    else stored_layout_cell(
+                        stored_layout_words(
+                            item.layout_unit_count, item.layout_mark_count, item.layout_label_count
+                        ),
+                        previews.get(item.schedule_revision_id),
                     )
                 ),
                 "공식": (
@@ -518,6 +535,53 @@ def stored_layout_words(units: int, marks: int, labels: int) -> str:
         if count
     ]
     return "·".join(parts)
+
+
+def layout_effect_words(preview: LayoutPublishPreview) -> str:
+    """저장된 배치 차이 옆 괄호 표지 — 지금 공식과 견준 실효(발행 쓰기와 같은 판정
+    `load_layout_publish_preview`, E2E #11·#82). 실제로 다른 것이 있으면 「실효 호기 2대」(호기는
+    설비 단위 — 발행 막힘 글과 같은 셈), 없으면 「공식과 같음」, 공통 대장에서 지운 호기의 행이
+    있으면 「지운 호기 n행」 을 덧붙인다(그 행은 같아진 것이 아니라 버린 것이다 — 설계 5-1). 저장된
+    행이 없으면 빈 글."""
+    if not preview.stored_rows:
+        return ""
+    effective = layout_counts_words(preview.units, preview.marks, preview.labels)
+    parts = [f"실효 {effective}" if effective else "공식과 같음"]
+    if preview.orphan_units:
+        parts.append(f"지운 호기 {preview.orphan_units:,}행")
+    return "(" + " · ".join(parts) + ")"
+
+
+def stored_layout_cell(stored: str, preview: LayoutPublishPreview | None) -> str:
+    """「저장된 배치 차이」·「배치」 칸 한 칸 — 원시 행 수 뒤에 실효 표지(판정이 있을 때만)."""
+    effect = layout_effect_words(preview) if stored and preview is not None else ""
+    return f"{stored} {effect}" if effect else stored
+
+
+def _latest_layout_previews(
+    database_path: str, session: EquipmentSession
+) -> dict[str, LayoutPublishPreview]:
+    """시나리오 id → 그 최신의 발행 배치 판정(저장된 배치 차이가 있는 시나리오만 — 「공식으로
+    발행」 확인 글과 같은 판정·같은 캐시 칸). 공통 대장이 없거나 읽지 못한 시나리오는 빠진다 — 표가
+    원시 행만 적는다."""
+    try:
+        common_id = latest_equipment_revision_id(database_path)
+    except BOOTSTRAP_ERRORS:
+        return {}
+    if common_id is None:
+        return {}
+    previews: dict[str, LayoutPublishPreview] = {}
+    for item in session.catalog.scenarios:
+        latest_id = item.latest_schedule_revision_id
+        if latest_id is None or not any(item.latest_layout_rows):
+            continue
+        try:
+            previews[item.equipment_scenario_id] = load_layout_publish_preview(
+                database_path, common_id, latest_id, latest_id
+            )
+        except BOOTSTRAP_ERRORS:
+            continue
+    return previews
 
 
 def _has_layout(revision: EquipmentScheduleRevisionSummary) -> bool:
@@ -702,8 +766,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         "시나리오는 일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층 도면 "
         "요소·Main 설비명 위치)를 따로 듭니다 — 만들기는 복제로만 합니다."
     )
+    layout_previews = _latest_layout_previews(database_path, session)
     st.dataframe(
-        scenario_rows(session, official_revision_no=_official_revision_no(database_path, session)),
+        scenario_rows(
+            session,
+            official_revision_no=_official_revision_no(database_path, session),
+            layout_previews=layout_previews,
+        ),
         hide_index=True,
         width="stretch",
         placeholder="",
@@ -784,6 +853,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             common_numbers=common_numbers,
             official_id=official_id,
             official_no=official_no,
+            # 실효 표지는 그 시나리오 최신 줄만 — 시나리오 표와 같은 판정이다(옛 리비전은 원시).
+            layout_previews=(
+                {scenario.latest_schedule_revision_id: layout_previews[selected_id]}
+                if scenario.latest_schedule_revision_id is not None
+                and selected_id in layout_previews
+                else None
+            ),
         ),
         hide_index=True,
         width="stretch",
