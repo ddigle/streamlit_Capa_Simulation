@@ -1550,7 +1550,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     핀은 가리킬 때만 보이고 숨은 동안 누름을 받지 않는다(`pointer-events: none` — 터치로 탭 이름 오른쪽을 누르면 고정이
     됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
-  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤)를 같은 iframe 에 싣는다(`extra_scripts`).
+  머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름)를 같은 iframe 에
+  싣는다(`extra_scripts`).
   - 앱 안 테마 전환 API 가 없어 `localStorage` 테마 키를 적고 새로고침한다. 정본은 앱 키 `capa-theme`
     (`THEME_APP_KEY`), 규칙은 `THEME_RULE_SCRIPT`(`capaTheme`) 한 벌이고 다른 스크립트는 이것만 부른다.
   - 열릴 때의 새로고침(키를 고쳐 적었거나 `?theme` 이 다를 때 — `reloadOnOpen`)은 **문서를 연 주소**에서 빠진 인자를
@@ -1604,6 +1605,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대신). 실행 중이면 멈출 때까지 기다렸다 인쇄하고, 어두운 테마면 `DARK_PRINT_CONFIRM` 으로 먼저 묻는다.
 - `src/capa_simulation/components/plotly_touch_scroll.py` — 칸 선택(`on_select`)을 켠 Plotly 그림 위에서 시작한
   터치가 화면을 스크롤하게 하는 스크립트다. 대상 key 는 `app.py` 의 `CELL_SELECT_CHART_KEYS` 다.
+- `src/capa_simulation/components/cell_press_guard.py` — 누르면 공정 Capa 상세로 옮기는 HOME 세 월 그림
+  (`HOME_CELL_CHART_KEYS`)의 둘째 누름을 옮기는 동안 거르는 스크립트다(테마 버튼 iframe 의 `extra_scripts`).
+  - 칸 더블클릭(0.08~0.15초)의 둘째 누름은 아직 떠 있는 HOME 그림에 닿아 **떠나는 HOME 프래그먼트의 회차**를 HOME
+    주소로 청했다. 그 회차는 옮긴 화면 회차 뒤에 돌며 화면이 바뀌었다는 새 세션 메시지로 프런트가 본문을 비우고(1.63
+    `clearAppState`), 프래그먼트는 이제 없어(「Couldn't find fragment」) 공정 Capa 상세 본문이 빈 채 남았다(2026-10-27
+    E2E). 프래그먼트 회차에서는 앱 스크립트가 돌지 않아 서버가 거를 자리가 없다.
+  - 부모 문서 캡처 단계에서 그 그림들 위의 `mousedown` 이 창을 열고, 그 뒤 `HOLD_MIN_MS`(0.5초) 안이거나 앱 회차가 도는
+    동안(`stApp` 의 `data-test-script-state`, 길어야 `HOLD_MAX_MS`) 그 그림들 위의 누름(`pointerdown`·`mousedown`·
+    `dblclick`)을 Plotly 까지 내려보내지 않는다. 첫 누름의 `mouseup`·`click` 은 건드리지 않는다. 판정은 순수 구획
+    `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼

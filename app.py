@@ -15,6 +15,7 @@ from capa_simulation.components.app_header import (
     render_shell_style,
 )
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
+from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
     equipment_scenario_dialog_is_open,
@@ -200,7 +201,10 @@ render_intro_overlay()
 # 돌아오는 길이고, 요약이 준비돼야 입장 화면 JS 가 누를 수 있게 한다. 칸 선택을 켠 그림(HOME 두
 # 월 그림·공정 Capa 상세 결합 캔버스·가용설비 비교 시트·제약 시뮬레이션 그래프와 계산표 —
 # `CELL_SELECT_CHART_KEYS`) 위에서 시작한
-# 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)도 여기 싣는다.
+# 터치가 화면을 스크롤하게 하는 막이(`plotly_touch_scroll`)와, 누르면 공정 Capa 상세로
+# 옮기는 HOME 세 월 그림의 둘째 누름을 옮기는 동안 거르는 거름(`cell_press_guard` —
+# 더블클릭의 둘째 누름이 떠나는 HOME 프래그먼트 회차를 청해 옮긴 화면 본문을 비웠다)도
+# 여기 싣는다.
 #
 # **입장 화면 바로 뒤, 부트스트랩보다 앞이다.** 첫 방문·테마 키가 어긋난 로드는 이 iframe 의
 # 스크립트가 새로고침하고 그 세션은 버려진다. 앞에서 보내야 버려질 세션이 부트스트랩·요약을 돌기
@@ -222,6 +226,7 @@ render_theme_toggle(
         summary_label_script(),
         print_toolbar_script(),
         plotly_touch_scroll_script(CELL_SELECT_CHART_KEYS),
+        cell_press_guard_script(HOME_CELL_CHART_KEYS),
     )
 )
 
