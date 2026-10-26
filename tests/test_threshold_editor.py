@@ -306,3 +306,46 @@ def test_a_double_press_after_another_session_saved_keeps_the_refusal(
         assert not list(app.error), [element.value for element in app.error]
         assert profile.version == 2
     clear_global_securement_threshold_cache()
+
+
+def test_a_single_press_after_a_held_double_press_saves_from_the_latest_version(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장 뒤 옛 화면에서 두 번 누르면 둘 다 거부된다. 그 뒤 최신 화면을 보고 새 값을 적어
+    한 번 누른 저장은 저장된다(2026-10-26 E2E).
+
+    둘째 누름의 회차가 거부 뒤 회차(제출 아님 — 본 version 을 적는 자리)를 끊고, 그 둘째 누름은
+    거부 표지에 걸려 본 version 을 적지 않고 끝났다. 최신 저장본을 그린 그 회차를 보고 4초 뒤 누른
+    저장이 「편집 시작 v0 · 지금 v1」 로 또 거부됐다. 끊긴 회차는 본 version 을 옛 값으로 되살려
+    흉내 낸다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = _app(database)
+    DuckDBScenarioRepository(database).replace_global_securement_threshold(
+        1.17, 1.0, empty_securement_threshold_rows(), source="다른 세션", expected_version=0
+    )
+    from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
+
+    clear_global_securement_threshold_cache()
+    app.number_input[0].set_value(122.0)
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in element.value for element in app.error)
+
+    app.session_state[THRESHOLD_BASE_VERSION_KEY] = 0
+    app._run(widget_state=pressed)
+    assert any("다른 사용자가 먼저" in element.value for element in app.error)
+    assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 1
+
+    # 거부 표지의 창이 지났다 — 최신 화면을 보고 다시 누른 저장이다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app.number_input[0].set_value(173.0)
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert not list(app.error), [element.value for element in app.error]
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.version == 2
+    assert abs(profile.default_secure - 1.73) < 1e-9
+    clear_global_securement_threshold_cache()

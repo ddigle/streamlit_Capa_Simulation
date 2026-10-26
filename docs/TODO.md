@@ -776,6 +776,14 @@
   를 빠르게 두 번 누르면 둘째 누름의 회차에 고른 보관본이 다음 보관본으로 바뀐 채(`prune_choice`) 같은 key 의 단추가 서 있어 다른
   보관본까지 되돌릴 수 있어 보인다(본문 단추·`summary` 는 그 회차의 고름). 브라우저로 재현하지 않았다 — 재현되면 지운 id 거름
   (VOC 글 삭제의 `DELETE_HANDLED_KEY` 꼴)으로 막는다.
+- [ ] **거부 표지 회차의 본 값 적기 — 남은 자리 셋(2026-10-26 E2E r5 후속)** — 남의 저장 뒤 옛 화면 두 번 누름의 둘째 누름이
+  거부 뒤 회차(제출 아님)를 끊고 `held_profile_conflict` 갈래에서 본 값을 적지 않고 끝나면, 최신을 보고 창 뒤에 한 번 누른 저장이
+  옛 본 값으로 또 거부됐다. HOME Preference 판정 기준·확보율 보정은 그 갈래가 그린 최신 토큰을 `remember_seen` 으로 적게
+  고쳤다(AGENTS 9장). 같은 꼴이 남은 곳: Admin 공정 표시명(`process_rename_management`)·공용 표시순서 직접 편집
+  (`display_order_management`)·공식버전 자동 갱신 설정(`auto_official_update_tab`) — 다른 갈래(Admin 영역)가 같은 때 고치던
+  파일이라 두었다. 갈래마다 한 줄(`remember_seen(…, 그린 version)`)과 `tests/test_threshold_editor.py` 의
+  `…held_double_press…` 꼴 시험을 더한다. Cut-off(`cutoff_management`)는 충돌 회차가 초안·출발점을 다시 세우는 꼴이라 같은
+  결함인지부터 본다.
 
 ### 보류 후보 브랜치
 

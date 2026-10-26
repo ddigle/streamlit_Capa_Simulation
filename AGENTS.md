@@ -4155,8 +4155,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     회차가 최신을 그린 직후에 닿은 둘째 누름(옛 화면의 입력)은 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 의
     거부 표지가 거른다 — 거부를 받으면 그 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음
     제출은 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`) — 그 회차가 넘어온 거부 글(`take_refusal`)을 이미
-    그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
-    대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
+    그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 그 둘째 누름이 거부 뒤 회차(제출 아님)를 끊으면 본
+    값을 적을 회차가 없으므로, 거부를 다시 알리는 회차가 자기가 그린 최신 저장본의 토큰을 적는다(`remember_seen` 의 유일한
+    제출 회차 예외 — 적지 않으면 최신을 보고 창 뒤에 한 번 누른 저장이 「편집 시작 v(옛)」 으로 또 거부됐다, 2026-10-26 E2E
+    판정 기준·확보율 보정. 공정 표시명·표시순서·자동 갱신 설정은 아직 — `docs/TODO.md`). 창이 지나면 새 화면을 보고 다시 누른
+    저장이라 평소대로 대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
