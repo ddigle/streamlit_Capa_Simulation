@@ -39,6 +39,7 @@ from capa_simulation.auto_update_scheduler import ENV_VAR
 from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
+    RUN_RESULT_KEY,
     UNCOUNTED_DEMAND_MARK,
 )
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
@@ -184,6 +185,24 @@ def test_the_status_line_blocks_the_tildes_of_the_official_release_name(database
 
     assert "공식 v1 W40 · W40\\~공식\\~확정안 (시나리오명에서 읽은 주차)" in text
     assert "W40~공식~확정안" not in text
+
+
+def test_the_run_result_blocks_the_tildes_of_the_names_in_its_reason(database: Path) -> None:
+    """「지금 실행」 결과 알림의 사유는 회차 기록과 같은 글이라 저장한 시나리오 이름을 날로 담는다
+    — 알림 상자(마크다운)에서 물결표가 지움선이 되지 않는다."""
+    _with_w40(database)
+    app = AppTest.from_string(TAB_SCRIPT.format(path=str(database)), default_timeout=180)
+    app.session_state[RUN_RESULT_KEY] = {
+        "status": STATUS_PUBLISHED,
+        "message": "지금 실행 회차 — 등록·발행. 「PSM~W41~X」 을 공식으로 발행했습니다.",
+        "warning": "「공정~표시~D」 수요가 소요대수에 들지 않았습니다.",
+    }
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+
+    alerts = [text for _, _, text in _alerts(app)]
+    assert "지금 실행 회차 — 등록·발행. 「PSM\\~W41\\~X」 을 공식으로 발행했습니다." in alerts
+    assert "「공정\\~표시\\~D」 수요가 소요대수에 들지 않았습니다." in alerts
 
 
 def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:

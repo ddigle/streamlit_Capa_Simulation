@@ -58,7 +58,11 @@ from capa_simulation.auto_update_scheduler import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
-from capa_simulation.components.literal_markdown import literal_markdown, quoted
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.write_guard import (
@@ -550,14 +554,16 @@ def _render_run_result(repository: DuckDBScenarioRepository) -> None:
     if not isinstance(held, dict):
         return
     status = held.get("status")
-    message = str(held.get("message") or "")
+    # 사유는 회차 기록(표 칸 — 평문)과 같은 글이라 짓는 곳(`_RunLog.finish`)이 아니라 여기서
+    # 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다.
+    message = markdown_safe_tildes(held.get("message") or "")
     if status == STATUS_RUNNING:
         _poll_running_round(repository)
         return
     if status == STATUS_PUBLISHED:
         st.success(message, icon=":material/publish:")
         # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
-        warning = str(held.get("warning") or "")
+        warning = markdown_safe_tildes(held.get("warning") or "")
         if warning:
             st.warning(warning, icon=":material/warning:")
     elif status == STATUS_SKIPPED:
