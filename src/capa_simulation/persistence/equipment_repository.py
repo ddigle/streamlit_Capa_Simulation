@@ -647,6 +647,12 @@ class LayoutPublishPreview:
       리비전이 최신이면 같은 값). 막힘 글은 실제로 공식과 다른 쪽만 「실효」 로 적는다.
     - `orphan_units`·`newest_orphan_units` — 저장된 호기 차이 행 가운데 공통 대장에서 지운 호기의 행
       수(정규화가 버린다 — 설계 5-1). 정리·막힘 글이 그 행을 「공식과 같아진」 행으로 세지 않는다.
+    - `restore_same_schedule`·`restore_same_layout` — 막힌 옛 리비전(`is_newest` 거짓)을 그
+      시나리오 최신 자리에 되돌리면 일정·비가동이 모두 같은가, 되돌릴 가정 배치가 최신과 같은가
+      (`_restore_preview` 의 `changed_units == 0`·`restored_layout_same` — 되돌리기 쓰기와 같은
+      재료). 역할(공식 시나리오인가)은 바뀌는 입력이라 `block(official=)` 이
+      `restore_writes_nothing` 과 같은 규칙으로 합친다. 막힘 글이 단추가 서지 않는 되돌리기를
+      안내하지 않게 한다(E2E r5).
     """
 
     action: Literal["publish", "clean", "blocked"] = "publish"
@@ -663,6 +669,8 @@ class LayoutPublishPreview:
     newest_labels: int = 0
     orphan_units: int = 0
     newest_orphan_units: int = 0
+    restore_same_schedule: bool = False
+    restore_same_layout: bool = False
 
     @property
     def stored_rows(self) -> int:
@@ -670,10 +678,18 @@ class LayoutPublishPreview:
         return self.stored_units + self.stored_marks + self.stored_labels
 
     def block(
-        self, scenario_name: str, revision_no: int, newest_revision_no: int, *, official: bool
+        self,
+        scenario_name: str,
+        revision_no: int,
+        newest_revision_no: int,
+        *,
+        official: bool,
+        newest_released: bool = False,
     ) -> PublishBlock:
         """막힘 글 재료(`layout_publish_blocked_words`) — 확인 팝업과 발행 쓰기 거부가 같은 글을
-        낸다."""
+        낸다. `newest_released` 는 그 시나리오 최신이 지금 최신 공식 발행인가다. 되돌리기가 쓸 것이
+        없는가는 `equipment_scenario.restore_writes_nothing` 과 같은 규칙이다 — 공식 시나리오는 배치
+        차이를 버리므로 일정·비가동만, 가정 시나리오는 되돌릴 가정 배치까지."""
         return PublishBlock(
             scenario_name=scenario_name,
             revision_no=revision_no,
@@ -685,6 +701,10 @@ class LayoutPublishPreview:
             official=official,
             orphan_rows=self.orphan_units,
             newest_orphan_rows=self.orphan_units if self.is_newest else self.newest_orphan_units,
+            restore_writes_nothing=not self.is_newest
+            and self.restore_same_schedule
+            and (official or self.restore_same_layout),
+            newest_released=newest_released,
         )
 
 
@@ -2086,6 +2106,7 @@ class DuckDBEquipmentRepository:
                 connection,
                 target,
                 newest_schedule_revision_id=newest_schedule_revision_id,
+                common_revision_id=common_revision_id,
                 snapshot=lambda: read_merged(connection, common_revision_id, schedule_revision_id),
             )
 
@@ -3523,14 +3544,17 @@ def _layout_publish_preview(
     target: EquipmentScheduleRevisionSummary,
     *,
     newest_schedule_revision_id: str | None,
+    common_revision_id: str,
     snapshot: Callable[[], EquipmentSnapshot],
 ) -> LayoutPublishPreview:
     """공식 발행의 배치 판정 한 곳(설계 6-5) — 발행 쓰기와 확인 팝업이 같이 쓴다.
 
     발행할 리비전과 그 시나리오 최신의 배치 차이를 지금 공식(공통 최신 + 층 현행값)으로 정규화해,
     저장된 행이 둘 다 없으면 "publish", 행은 있지만 정규화하면 비고 발행할 리비전이 최신이면
-    "clean", 그 밖은 "blocked"(실효 수). `snapshot` 은 발행할 리비전을 공통 최신과 합친 한 벌을
-    부를 때 읽는다 — 차이가 없으면 읽지 않는다.
+    "clean", 그 밖은 "blocked"(실효 수). `snapshot` 은 발행할 리비전을 공통 최신
+    (`common_revision_id`)과 합친 한 벌을 부를 때 읽는다 — 차이가 없으면 읽지 않는다. 막힌 옛
+    리비전은 그 리비전으로 되돌리기가 쓸 것이 있는지도 잰다(`_restore_preview` — 되돌리기 쓰기와
+    같은 재료, 막힘 글의 빠져나갈 길).
     """
     selected = read_layout_overlay(connection, target)
     is_newest = newest_schedule_revision_id == target.schedule_revision_id
@@ -3557,7 +3581,7 @@ def _layout_publish_preview(
         return replace(stored, action="clean")
     # 발행할 리비전과 최신의 실효를 따로 센다 — 막힘 글이 실제로 다른 쪽만 「실효」 로 적는다.
     latest = normalized if is_newest else normalize_layout_overlay(newest, official, floors)
-    return replace(
+    blocked = replace(
         stored,
         action="blocked",
         units=overlay_unit_count(normalized, official),
@@ -3566,6 +3590,16 @@ def _layout_publish_preview(
         newest_units=overlay_unit_count(latest, official),
         newest_marks=latest.mark_count,
         newest_labels=latest.label_count,
+    )
+    if is_newest:
+        return blocked
+    restore, _, _ = _restore_preview(
+        connection, common_revision_id, newest_schedule_revision_id, target
+    )
+    return replace(
+        blocked,
+        restore_same_schedule=restore.changed_units == 0,
+        restore_same_layout=restore.restored_layout_same,
     )
 
 
@@ -3591,6 +3625,7 @@ def _layout_publishable(
         connection,
         target,
         newest_schedule_revision_id=scenario.latest_schedule_revision_id,
+        common_revision_id=common_revision_id,
         snapshot=lambda: snapshot,
     )
     if preview.action == "publish":
@@ -3612,6 +3647,9 @@ def _layout_publishable(
     official = release is not None and (
         str(release["equipment_scenario_id"]) == scenario.equipment_scenario_id
     )
+    newest_released = release is not None and (
+        str(release["schedule_revision_id"]) == scenario.latest_schedule_revision_id
+    )
     raise EquipmentLayoutPublishBlocked(
         scenario.scenario_name,
         target.revision_no,
@@ -3624,6 +3662,7 @@ def _layout_publishable(
                 target.revision_no,
                 scenario.latest_revision_no or target.revision_no,
                 official=official,
+                newest_released=newest_released,
             )
         ),
     )

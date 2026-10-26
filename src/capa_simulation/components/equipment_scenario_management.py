@@ -1561,14 +1561,16 @@ def publish_layout_lines(
     preview: LayoutPublishPreview,
     *,
     official: bool = False,
+    newest_released: bool = False,
 ) -> tuple[list[str], bool]:
     """발행 확인 팝업의 배치 줄 — (줄, 막힘). 발행 쓰기와 같은 판정(`load_layout_publish_preview`)을
     미리 읽어 막히면 그 까닭을(「발행」 단추를 끈다), 공식과 같아진 차이만 남았으면 정리 리비전으로
     발행한다는 것을 적는다(설계 6-5 — 머리 「배치는 공식과 같습니다」 와 발행 거부가 함께 뜨지
     않게). 셈은 「실효 n대(저장된 차이 m행)」 꼴 하나다(설계 8-2). 막힘 글은 발행 쓰기 거부와 같은
     한 곳(`layout_publish_blocked_words`)이다 — 실제로 공식과 다른 쪽만 「실효」 로 적고, 옛
-    리비전은 그 경우에 서는 길(되돌린 뒤 지우기·최신 발행)을 안내한다. `official` 은 그 시나리오가
-    지금 공식 설비 시나리오인가다."""
+    리비전은 그 경우에 서는 길(되돌린 뒤 지우기·최신 발행)을 안내한다 — 되돌리기가 쓸 것이 없으면
+    그 단추가 서지 않으므로 안내하지 않는다(E2E r5). `official` 은 그 시나리오가 지금 공식 설비
+    시나리오인가, `newest_released` 는 그 시나리오 최신이 지금 최신 공식 발행인가다."""
     if preview.action == "publish":
         return [], False
     name = literal_markdown(scenario.scenario_name)
@@ -1594,6 +1596,7 @@ def publish_layout_lines(
         revision.revision_no,
         scenario.latest_revision_no or revision.revision_no,
         official=official,
+        newest_released=newest_released,
     )
     return [layout_publish_blocked_words(block)], True
 
@@ -1778,11 +1781,14 @@ def _render_publish(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}")
         return
+    release = session.catalog.latest_release
     layout_lines, blocked = publish_layout_lines(
         scenario,
         revision,
         layout,
         official=scenario.equipment_scenario_id == session.official_scenario_id,
+        newest_released=release is not None
+        and release.schedule_revision_id == scenario.latest_schedule_revision_id,
     )
     for line in layout_lines:
         if blocked:

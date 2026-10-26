@@ -2208,7 +2208,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     검토 F4). 막힘 글은 까닭 셋으로 갈린다 — 고른 리비전에 공식과 다른 배치(「실효 … — 저장된 차이 m행」, 최신이면 공식에서
     옮기기·「배치 차이 모두 지우기」, 옛 리비전이면 그것으로는 풀리지 않아 「이 리비전으로 되돌리기」 뒤 지우고 발행), 옛 리비전에
     남은 행이 지금 공식과 같음(「공식과 다른 배치」 라 하지 않고 되돌린 뒤 발행 — 정리 발행은 최신만), 고른 리비전에는 없고 최신에
-    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 공통 대장에서 지운 호기의 저장된 행
+    행이 남음(실효가 있으면 그 수, 없으면 「지금 공식과 같음」 과 최신 발행). 옛 리비전으로 되돌려도 쓸 것이 없으면
+    (`LayoutPublishPreview.restore_same_schedule`·`restore_same_layout` — `_layout_publish_preview` 가 막힌 옛 리비전만
+    `_restore_preview` 로 재고, `block(official=)` 이 `restore_writes_nothing` 과 같은 규칙으로 합친다) 그 팝오버에 단추가
+    없으므로 되돌리기를 안내하지 않고 최신 발행(가정이면 최신을 비운 뒤), 최신이 이미 공식이면(`newest_released`) 「따로 발행할
+    것이 없습니다」 를 적는다(E2E r5). 공통 대장에서 지운 호기의 저장된 행
     (`LayoutPublishPreview.orphan_units`·`newest_orphan_units` → `PublishBlock.orphan_rows`)은 「공식과 같아진」 행이 아니라
     버린 행이라 정리·막힘·발행 뒤 글이 「지운 호기의 배치 차이 n행」 으로 따로 말한다(`layout_overlay.cleaned_layout_words`·
     `settled_layout_reason`, E2E r3) — Space 머리 첫 줄의 「공식과 같아진 것은 … 정리됩니다」 꼬리도 그 행(`layout_orphans`)을
