@@ -1825,9 +1825,10 @@ def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path
     picker = app.radio(key="home_key_process_preset_pick")
     assert picker.options == ["A 그룹", "B 그룹"]
     assert picker.value == "A 그룹"
+    # 캡션은 마크다운이라 공정 표시명의 구두점을 막아 싣는다 — 그림은 「DEMO_Chip」 그대로다.
     assert list(picker.proto.captions) == [
-        "1공정 · DEMO_Chip_Attach",
-        "2공정 · DEMO_Final_Test · DEMO_Wafer_Inspect",
+        "1공정 · DEMO\\_Chip\\_Attach",
+        "2공정 · DEMO\\_Final\\_Test · DEMO\\_Wafer\\_Inspect",
     ]
 
     # 팝업이 고른 값을 적는 칸(위젯이 아닌 세션 값)을 바꾸면 히트맵이 따라간다. 팝업 본문의 적용은
@@ -2066,7 +2067,7 @@ def test_a_preset_absent_from_this_screen_says_so_instead_of_asking_to_choose(
     app.button(key="home_key_process_field").click().run()
     assert not list(app.exception), [element.message for element in app.exception]
     (caption,) = app.radio(key="home_key_process_preset_pick").proto.captions
-    assert caption == "그릴 공정 없음 · 이 화면에 없음: ONLY_ELSEWHERE"
+    assert caption == "그릴 공정 없음 · 이 화면에 없음: ONLY\\_ELSEWHERE"
 
 
 def test_a_long_section_title_stays_on_one_line_and_is_escaped() -> None:
