@@ -364,7 +364,9 @@ def held_profile_conflict(marks: Mapping[str, tuple[str, float]], name: str) -> 
 
     그렇다면 이번 제출은 거부된 누름과 같은 단추의 둘째 누름이다 — 옛 화면의 입력을 들었고, 거부한
     회차가 올려 둔 편집 시작 version 으로는 대조를 지난다. 부르는 쪽은 저장하지 않고 이 글을 다시
-    알린다. 창이 지난 제출은 새 화면을 보고 다시 누른 저장이라 `None` 이다.
+    알린다 — 다만 이 회차가 `take_refusal` 로 같은 글을 이미 그렸으면 다시 그리지 않는다(둘째 누름이
+    거부 뒤 회차를 글을 꺼내기 전에 끊으면 그 글이 이 회차로 넘어와, 같은 상자 둘이 겹쳐 섰다 —
+    2026-10-26 E2E). 창이 지난 제출은 새 화면을 보고 다시 누른 저장이라 `None` 이다.
     """
     entry = marks.get(name)
     if not isinstance(entry, tuple) or len(entry) != 2:

@@ -417,8 +417,10 @@ def _render_settings_form(
     held = held_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
-        # 알린다(write_guard). 「바뀐 값이 없습니다」로도 바꾸지 않는다.
-        notice.error(held)
+        # 알린다(write_guard). 「바뀐 값이 없습니다」로도 바꾸지 않는다. 이 회차가 거부 회차의 글을
+        # 이미 꺼내 그렸으면 한 번만(Proc Rename·표시순서와 같은 꼴).
+        if refused != held:
+            notice.error(held)
         return
     if not isinstance(submitted_base, int):
         # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하면 남의 저장을 모르는 채 덮는다.
