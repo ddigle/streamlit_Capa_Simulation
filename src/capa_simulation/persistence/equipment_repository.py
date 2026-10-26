@@ -2286,8 +2286,10 @@ class DuckDBEquipmentRepository:
         *,
         expected_version: int | None,
         source: str,
-    ) -> bool:
-        """동·층 사용 상태를 갈아 쓴다(비활성 층 → 사유 코드, 30개 층 전체 초안). 썼으면 True.
+    ) -> int | None:
+        """동·층 사용 상태를 갈아 쓴다(비활성 층 → 사유 코드, 30개 층 전체 초안). 썼으면 새 version,
+        같은 내용이라 쓰지 않았으면 None — 화면은 그 version 을 제 저장 짝으로 적는다(쓴 뒤 다시
+        읽으면 그 사이 남의 저장이 짝에 들어간다).
 
         설비 리비전을 만들지 않는다 — 설비 시나리오·공식 발행과 무관한 공용 현행값이다(S6).
         `expected_version` 은 화면이 편집을 시작할 때 본 version 이다 — 쓰기 잠금 안에서 지금
@@ -2307,10 +2309,10 @@ class DuckDBEquipmentRepository:
             )
             current = read_floor_states(connection)
             if current.rows == rows:
-                return False
+                return None
             write_floor_states(connection, current, rows, source=source)
             outcome.wrote = True
-        return True
+        return current.version + 1
 
     def save_shortening_filter_months(
         self, start_month: object, end_month: object, *, source: str

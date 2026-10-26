@@ -7,9 +7,10 @@
 문구(「다른 사용자가 먼저 … 화면을 다시 불러와」)는 고칠 칸을 말하지 않는다 — 다시 불러오면 공통
 편집까지 잃는다. 설비 마스터 탭만 고칠 것 줄로 막고, 사이드바 설비 시나리오 팝업 「저장」·Space
 「배치 저장」 은 저장소 거부로 끝났다(2026-10-26 E2E). 세 길은 이제 같은
-판정(`stale_save_reasons`)으로 어느 쓰기보다 먼저 멈춘다 — 탭은 고칠 것 줄(「아래 목록에서」), 표 밖
-두 자리는 거부 글(「가용설비 현황 › 설비 마스터 「저장 전 변경」 에서」)이고 고칠 길(되돌리면 공통
-칸은 저장된다)은 같다. 저장은 0건이다.
+판정(`stale_save_reasons`)으로 설비 쪽을 쓰기 전에 멈춘다 — 탭은 고칠 것 줄(「아래 목록에서」), 표
+밖 두 자리는 거부 글(「가용설비 현황 › 설비 마스터 「저장 전 변경」 에서」)이고 고칠 길(되돌리면
+공통 칸은 저장된다)은 같다. 설비 저장은 0건이다. FAB 전체 배치 대기분은 별도 쓰기라 그 앞에서
+저장되고 거부 글이 그 사실을 함께 말한다(설비 저장이 막혀도 FAB 는 막지 않는다 — 9장).
 """
 
 from __future__ import annotations
@@ -69,7 +70,8 @@ def _release_repository() -> Iterator[None]:
 
 
 def _page_with_edits(page: Path, database: Path) -> str:
-    """편집본에 `edits`((설비명, 칸, 값))를 처음 한 번 넣고 실제 페이지를 돌리는 스크립트."""
+    """편집본에 `edits`((설비명, 칸, 값))를 처음 한 번 넣고 실제 페이지를 돌리는 스크립트. 세션 칸
+    `fab` 이 있으면 그 이름의 FAB 블록 하나도 대기분으로 함께 둔다."""
     simulation = database.with_name(f"{database.stem}_simulation.duckdb")
     return f"""
 from pathlib import Path
@@ -94,6 +96,22 @@ if edits and not st.session_state.get("edited"):
     for name, column, value in edits:
         edited.loc[edited["설비명"].eq(name), column] = value
     replace_equipment_buffer((frames[0], edited, frames[2]))
+    fab = st.session_state.get("fab")
+    if fab:
+        from capa_simulation.components.equipment_data_workspace import stage_fab_layout
+        from capa_simulation.services.fab_layout import (
+            fab_marks_fingerprint,
+            prepare_fab_layout_marks,
+        )
+
+        stage_fab_layout(
+            None,
+            prepare_fab_layout_marks(
+                [{{"id": fab, "kind": "block", "x": 1, "y": 1, "w": 5, "h": 3, "link": "C1 2F"}}],
+                (101.0, 62.0),
+            ),
+            base=(None, fab_marks_fingerprint(())),
+        )
     st.session_state["edited"] = True
 page_source = Path({str(page)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(page)!r}, "exec"), {{"__name__": "__main__"}})
@@ -202,6 +220,35 @@ def test_the_space_layout_save_refuses_with_the_same_judgement(tmp_path: Path) -
     line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
     assert any(line in text for text in _errors(app)), _errors(app)
     assert not any("다른 사용자가 먼저" in text for text in _errors(app))
+    assert len(repository.list_revisions()) == before
+
+
+def test_a_stale_space_layout_save_still_writes_the_pending_fab_layout(tmp_path: Path) -> None:
+    """낡은 세션의 Space 「배치 저장」 에 FAB 전체 배치 대기분이 있으면 FAB 는 저장하고 설비 쪽만
+    같은 글로 막는다 — FAB 는 설비 리비전과 무관한 별도 쓰기라 설비 저장의 거부가 막지 않는다(예전
+    그대로). 낡은 세션 검사를 FAB 쓰기 **앞**으로 올리면 FAB 대기분도 쓰지 않고 멈춰 이 시험이
+    실패한다 — 그 차례 바꿈은 사용자 확인 전이다(2026-10-26 리뷰)."""
+    from capa_simulation.components.equipment_data_workspace import PENDING_FAB_KEY
+
+    repository, setup = _two_scenarios(tmp_path)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    app = AppTest.from_string(
+        _page_with_edits(SPACE_PAGE, repository.database_path), default_timeout=90
+    )
+    app.session_state["fab"] = "MINE"
+    _start(app, setup, pinned)
+    assert PENDING_FAB_KEY in app.session_state
+    _stale(repository, setup)
+    before = len(repository.list_revisions())
+    app.run()
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    errors = _errors(app)
+    assert any(line in text and "FAB 전체 배치는 저장했지만" in text for text in errors), errors
+    assert [mark.mark_id for mark in repository.load_fab_layout_marks()] == ["MINE"]
+    assert PENDING_FAB_KEY not in app.session_state
     assert len(repository.list_revisions()) == before
 
 

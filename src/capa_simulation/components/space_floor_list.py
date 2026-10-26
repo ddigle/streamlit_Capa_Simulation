@@ -488,7 +488,7 @@ def _write(database_path: str, draft: Draft, base: Base) -> None:
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     try:
-        wrote = repository.save_floor_states(draft, expected_version=base[0], source=SOURCE)
+        stored = repository.save_floor_states(draft, expected_version=base[0], source=SOURCE)
     except ProfileVersionConflict as exc:
         clear_floor_state_cache()
         if is_own_save(FLOOR_STATE_SAVE_NAME, exc.expected, exc.stored, save_marks):
@@ -509,17 +509,13 @@ def _write(database_path: str, draft: Draft, base: Base) -> None:
             + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)),
         )
         return
-    if not wrote:
+    if stored is None:
         st.session_state.pop(CONFIRM_KEY, None)
         _notice("info", "바뀐 층이 없습니다.")
         return
+    # 저장된 version 은 쓰기의 결과다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어간다.
+    remember_own_save(FLOOR_STATE_SAVE_NAME, base[0], stored, save_marks)
     clear_floor_state_cache()
-    try:
-        stored = load_floor_states(database_path).version
-    except BOOTSTRAP_ERRORS:
-        stored = None
-    if stored is not None:
-        remember_own_save(FLOOR_STATE_SAVE_NAME, base[0], stored, save_marks)
     _saved(draft)
 
 

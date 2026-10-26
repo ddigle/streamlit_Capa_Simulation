@@ -44,7 +44,12 @@ from test_admin_area_page import _rename_component_script
 from test_all_pages_render import _page_script as _scenario_page_script
 from test_auto_official_update_tab import _field, _tab, _with_w40
 from test_equipment_master_tab_scenarios import OPERATIONS, _page
+from test_equipment_scenario_layout_management import _moved_setup, _section
+from test_equipment_scenario_layout_management import _texts as _section_texts
+from test_equipment_scenario_repository import _request as _equipment_request
 from test_equipment_scenario_repository import _seeded
+from test_equipment_scenario_repository import _session as _equipment_session
+from test_equipment_scenario_repository import _set as _equipment_set
 from test_scenario_management_page import (
     PAGE_PATH,
     _check_row,
@@ -66,7 +71,17 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_CHANGES,
     SIDE_KEY,
 )
+from capa_simulation.components.equipment_scenario_management import (
+    CLEAR_LAYOUT_BUTTON_KEY,
+    CLEAR_LAYOUT_CONFIRM_KEY,
+    FLASH_KEY,
+    PENDING_REVISION_KEY,
+    PUBLISH_BUTTON_KEY,
+    REVISION_KEY,
+    SCENARIO_KEY,
+)
 from capa_simulation.components.scenario_management import REVISION_EDITOR_KEY
+from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.cache import (
     clear_global_execution_capacity_cache,
     clear_global_process_rename_cache,
@@ -1102,6 +1117,245 @@ def test_an_old_screen_double_press_after_another_equipment_save_keeps_the_refus
 
     assert any("다른 사용자가 먼저" in text for text in _texts(app, "error")), _texts(app, "error")
     assert len(repository.list_revisions()) == before
+
+
+# 설비 「공식으로 발행」 — 정리 리비전 ------------------------------------------------
+
+
+def test_a_double_press_of_a_cleaning_publish_moves_like_the_first_press(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공식과 같아진 차이만 남은 최신 rN 의 「공식으로 발행」 은 정리 리비전 rN+1 을 발행하고 리비전
+    상자·세션을 그리로 옮긴다. 더블클릭의 첫 회차가 발행 직후(옮기기 전 첫 세션 칸 접근에서) 끊기면
+    둘째 회차는 옛 r2 를 고른 채 「최신이 아닌 리비전은 정리해 발행하지 않습니다」 로 단추가 꺼져
+    둘째 누름이 버려지고, 성공 알림도 없이 세션·리비전 상자가 옛 r2 에 남았다(「최신 r3 있음」 —
+    2026-10-26 리뷰 뒤 재현). 첫 회차가 쓰기 전에 받아 둔 표지에 뒷정리를 적고 다음 회차가 구획 맨
+    위에서 잇는다 — 첫 누름처럼 정리 번호를 알리고 옮긴다. 창은 시험이 정한다(회차 사이 시간이
+    들쭉날쭉하다)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository, setup, latest = _moved_setup(tmp_path)
+    official = _equipment_session(repository)
+    repository.save_equipment(
+        _equipment_request(
+            official, equipment=_equipment_set(official.equipment, "EQ-01", "X좌표", 50.0)
+        )
+    )
+    clear_equipment_repository()
+    app = _section(tmp_path, setup).run()
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key=REVISION_KEY).value == latest
+    app.button(key=PUBLISH_BUTTON_KEY).click()
+
+    _press_twice(
+        app,
+        monkeypatch,
+        app._tree.get_widget_states(),
+        cls=DuckDBEquipmentRepository,
+        write="publish_equipment_release",
+    )
+
+    newest = repository.list_schedule_revisions(setup, limit=1)[0]
+    assert (newest.revision_no, newest.origin) == (3, "layout_clear")
+    release = repository.latest_equipment_release()
+    assert release is not None
+    assert (release.release_no, release.schedule_revision_id) == (2, newest.schedule_revision_id)
+    assert _texts(app, "error") == []
+    texts = _section_texts(app)
+    assert any(
+        "공식 v2로 발행했습니다" in text
+        and "정리한 r3." in text
+        and "이 세션을 r3으로 옮겼습니다." in text
+        for text in texts
+    ), texts
+    assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
+    assert app.selectbox(key=REVISION_KEY).value == newest.schedule_revision_id
+    clear_equipment_repository()
+
+
+def _published_again_page(database: str, scenario_id: str, revision_id: str) -> None:
+    """둘째 회차가 첫 쓰기 전 화면을 그려(두 회차가 겹친다) 발행 단추가 살아 제 저장 갈래에 닿은 꼴
+    — 그 갈래(`_published_again`)만 한 번 부른다."""
+    from pathlib import Path
+
+    import streamlit as st
+
+    import capa_simulation.settings as settings
+    from capa_simulation.components import equipment_scenario_management as section
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+    from capa_simulation.persistence.equipment_cache import load_equipment_schedule_revisions
+
+    settings.EQUIPMENT_DUCKDB_PATH = Path(database)
+    if st.session_state.get("called"):
+        return
+    st.session_state["called"] = True
+    session = resolve_equipment_session(database)
+    scenario = session.catalog.scenario(scenario_id)
+    assert scenario is not None
+    revision = next(
+        item
+        for item in load_equipment_schedule_revisions(database, scenario_id)
+        if item.schedule_revision_id == revision_id
+    )
+    section._published_again(
+        database, session, scenario, revision, 2, None, section._follow_marks()
+    )
+
+
+def test_the_own_publish_branch_follows_the_cleaning_revision_and_names_it(
+    tmp_path: Path,
+) -> None:
+    """제 발행 갈래 — 정리 리비전(r3)으로 발행했으면 첫 누름처럼 리비전 상자·세션을 r3 으로 옮기고
+    「정리한 r3」 을 알린다. 예전에는 「「셋업 실무」 r2.」 로 알리고 옮기지 않았다(2026-10-26
+    리뷰)."""
+    repository, setup, latest = _moved_setup(tmp_path)
+    official = _equipment_session(repository)
+    repository.save_equipment(
+        _equipment_request(
+            official, equipment=_equipment_set(official.equipment, "EQ-01", "X좌표", 50.0)
+        )
+    )
+    published = repository.publish_equipment_release(
+        latest, released_by=None, note=None, expected_latest_release_no=1
+    )
+    assert published.schedule_revision_id != latest
+    clear_equipment_repository()
+    app = AppTest.from_function(
+        _published_again_page,
+        args=(str(repository.database_path), setup, latest),
+        default_timeout=60,
+    )
+    app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": latest}
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    flash = str(app.session_state[FLASH_KEY])
+    assert "공식 v2로 발행했습니다" in flash and "정리한 r3." in flash, flash
+    assert "이 세션을 r3으로 옮겼습니다." in flash, flash
+    assert app.session_state[PENDING_REVISION_KEY] == published.schedule_revision_id
+    assert (
+        app.session_state[SELECTION_KEY]["schedule_revision_id"] == published.schedule_revision_id
+    )
+    clear_equipment_repository()
+
+
+def test_a_double_press_of_the_layout_clear_moves_like_the_first_press(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「배치 차이 모두 지우기」 더블클릭 — 첫 회차가 새 리비전(r3)을 쓰고 옮기기 전에 끊기면 둘째
+    회차에는 지울 차이가 없어 단추가 서지 않아 둘째 누름이 버려지고, 세션·리비전 상자가 옛 r2 에
+    남았다. 다음 회차가 표지를 보고 잇는다(위 발행과 같은 꼴)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    repository, setup, _ = _moved_setup(tmp_path)
+    app = _section(tmp_path, setup).run()
+    app.selectbox(key=SCENARIO_KEY).set_value(setup)
+    app.run()
+    (confirm,) = [box for box in app.checkbox if str(box.key).startswith(CLEAR_LAYOUT_CONFIRM_KEY)]
+    confirm.check().run()
+    app.button(key=CLEAR_LAYOUT_BUTTON_KEY).click()
+
+    _press_twice(
+        app,
+        monkeypatch,
+        app._tree.get_widget_states(),
+        cls=DuckDBEquipmentRepository,
+        write="clear_layout_overlay",
+    )
+
+    revisions = repository.list_schedule_revisions(setup)
+    assert [item.origin for item in revisions].count("layout_clear") == 1
+    newest = revisions[0]
+    assert (newest.revision_no, newest.origin) == (3, "layout_clear")
+    assert _texts(app, "error") == []
+    texts = _section_texts(app)
+    assert any("배치 차이를 모두 지운 r3을 저장했습니다" in text for text in texts), texts
+    assert app.session_state[SELECTION_KEY]["schedule_revision_id"] == newest.schedule_revision_id
+    assert app.selectbox(key=REVISION_KEY).value == newest.schedule_revision_id
+    clear_equipment_repository()
+
+
+# 짝의 저장된 값은 쓰기 결과 -------------------------------------------------------
+
+
+def test_another_save_right_after_mine_is_not_taken_for_my_equipment_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grid: Calls
+) -> None:
+    """제 저장 짝의 「저장된 값」 을 쓰기 뒤 저장소에서 다시 읽으면, 그 사이(수 ms) 남이 저장했을 때
+    남의 값이 짝에 들어가 옛 화면 둘째 누름의 충돌 `(본 값, 남의 값)` 이 짝과 같아졌다 — 「다른
+    사용자가 먼저」 대신 성공을 알리고 세션을 남의 리비전으로 옮겼다(2026-10-26 리뷰). 짝은 쓰기
+    결과로 만든다."""
+    from test_equipment_scenario_repository import _request, _session, _set
+
+    repository = _seeded(tmp_path)
+    app = _page(repository, OPERATIONS)
+    pressed = _equipment_pressed(app, grid, "내 이력")
+    original = DuckDBEquipmentRepository.save_equipment
+    theirs_saved: list[object] = []
+
+    def mine_then_theirs(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> Any:
+        result = original(self, *args, **kwargs)
+        if not theirs_saved:
+            theirs = _session(repository)
+            theirs_saved.append(
+                original(
+                    repository,
+                    _request(
+                        theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 이력")
+                    ),
+                )
+            )
+        return result
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "save_equipment", mine_then_theirs)
+    before = len(repository.list_revisions())
+
+    _press_twice(app, monkeypatch, pressed, cls=DuckDBEquipmentRepository, write="save_equipment")
+
+    assert theirs_saved
+    assert any("다른 사용자가 먼저" in text for text in _texts(app, "error")), _texts(app, "error")
+    assert not any("공통 대장 r" in text for text in _texts(app, "success")), _texts(app, "success")
+    assert len(repository.list_revisions()) == before + 2
+
+
+def _floor_write_with_another_save(database: str) -> None:
+    """층 사용 설정을 한 번 쓰고(본 version 0), 그 쓰기 바로 뒤 남이 한 번 더 쓴다 — 적힌 제 저장
+    짝을 세션 칸에 꺼내 둔다."""
+    import streamlit as st
+
+    from capa_simulation.components import space_floor_list as floors
+    from capa_simulation.components.write_guard import own_save_marks
+
+    floors._write(database, {("C1", "1F"): "UNUSED"}, (0, ()))
+    st.session_state["mark"] = own_save_marks().get(floors.FLOOR_STATE_SAVE_NAME)
+
+
+def test_another_floor_save_right_after_mine_is_not_taken_for_mine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """층 사용 설정도 같다 — 짝의 저장된 version 은 쓰기가 돌려준 값이다(남의 저장 version 이
+    아니다)."""
+    database = tmp_path / "floors.duckdb"
+    repository = DuckDBEquipmentRepository(database)
+    repository.initialize()
+    clear_equipment_repository()
+    original = DuckDBEquipmentRepository.save_floor_states
+
+    def mine_then_theirs(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> Any:
+        monkeypatch.setattr(DuckDBEquipmentRepository, "save_floor_states", original)
+        written = original(self, *args, **kwargs)
+        original(self, {("C2", "1F"): "UNUSED"}, expected_version=None, source="남")
+        return written
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "save_floor_states", mine_then_theirs)
+    app = AppTest.from_function(
+        _floor_write_with_another_save, args=(str(database),), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["mark"] == (0, 1)
+    assert repository.load_floor_states().version == 2
+    clear_equipment_repository()
 
 
 # ------------------------------------------------------------------ 일부러 정한 자리

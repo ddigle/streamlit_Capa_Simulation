@@ -1816,12 +1816,6 @@ def save_equipment_buffer(
             f"기존 보유대수에 지우지 않은 예시 행이 {len(leftovers)}건 남아 있습니다. "
             "실제 값으로 고치거나 지운 뒤 저장하세요."
         )
-    # 낡은 세션의 낡기 전 편집(지운 호기·고친 일정 칸)은 저장소가 공통 칸까지 거부한다 — 세 저장 길
-    # (설비 마스터 탭·사이드바 팝업·Space 배치 저장)이 어느 쓰기보다 먼저 같은 글로 멈춘다. 탭은
-    # 같은 판정을 「저장하기 전에 고칠 것」 줄로도 보인다(`stale_save_reasons`).
-    stale = stale_save_refusal(frames, basis)
-    if stale is not None:
-        raise ValueError(stale)
     # FAB 는 별도 쓰기라 그 거부(남이 먼저 저장·검증 실패)가 설비 저장을 막지 않는다. 거부된 FAB
     # 대기분은 남긴다 — 설비 저장이 편집본을 비우면서 대기분도 지우므로 끝나고 다시 얹는다.
     fab_pending = pending_fab_layout()
@@ -1867,8 +1861,9 @@ def save_equipment_buffer(
 
 def equipment_write_token(database_path: str, scenario_id: str) -> tuple[str, str, int] | None:
     """설비 쓰기의 제 저장 판정 토큰 — (공통 대장 최신 id, 그 설비 시나리오 최신 일정 리비전 id,
-    최신 공식 번호). 캐시가 아니라 저장소에서 바로 읽는다(쓰기 직후·거부 직후에 부른다). 읽지 못하면
-    None(제 저장으로 보지 않는다 — `write_guard.is_own_save`)."""
+    최신 공식 번호). 캐시가 아니라 저장소에서 바로 읽는다 — 거부 직후에 부른다(그 거부의 「지금
+    값」). 쓰기에 성공한 쪽의 짝은 쓰기 결과로 만든다(쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에
+    들어간다). 읽지 못하면 None(제 저장으로 보지 않는다 — `write_guard.is_own_save`)."""
     repository = get_equipment_repository(database_path)
     try:
         common = repository.latest_revision_id() or ""
@@ -1909,6 +1904,13 @@ def _save_equipment_frames(
     violations = saved_master_violations(frames[1])
     if violations:
         raise ValueError(module_layout_message(violations))
+    # 낡은 세션의 낡기 전 편집(지운 호기·고친 일정 칸)은 저장소가 공통 칸까지 거부한다 — 설비 쪽을
+    # 쓰기 전에 같은 글로 멈춘다(설비 마스터 탭·사이드바 팝업·Space 배치 저장 모두 여기를 지난다).
+    # 탭은 같은 판정을 「저장하기 전에 고칠 것」 줄로도 보인다(`stale_save_reasons`). FAB 대기분은
+    # 별도 쓰기라 이 거부와 상관없이 앞에서 이미 썼다 — 거부 글이 그 사실을 함께 말한다.
+    stale = stale_save_refusal(frames, basis)
+    if stale is not None:
+        raise ValueError(stale)
     base = seen(_BASE_KEY)
     if not isinstance(base, dict):
         raise ValueError("편집본이 아직 서지 않아 저장하지 않았습니다. 화면을 다시 불러오세요.")
@@ -1982,9 +1984,18 @@ def _save_equipment_frames(
         moved = current[1] if current[1] and current[1] != expected[1] else None
         _after_equipment_save(scenario_id, moved)
         return held_notice(own_name) or SAVED_AGAIN_MESSAGE
-    stored = equipment_write_token(str(repository.database_path), scenario_id)
-    if result.wrote_revision and stored is not None:
-        remember_own_save(own_name, expected, stored[:2], save_marks)
+    if result.wrote_revision:
+        # 저장된 값은 이 쓰기의 결과다 — 쓴 뒤 저장소를 다시 읽으면 그 사이 남의 저장이 짝에 들어가
+        # 남의 저장 뒤 충돌을 제 저장으로 알아본다(쓰기 잠금 안의 결과라 그대로 지금 최신이다).
+        stored = (
+            result.common.revision_id
+            if result.common is not None
+            else request.base_common_revision_id,
+            result.schedule.schedule_revision_id
+            if result.schedule is not None
+            else request.base_schedule_revision_id or "",
+        )
+        remember_own_save(own_name, expected, stored, save_marks)
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
     # 문구는 대기분이 아니라 **저장 결과**로 만든다(검토 F18b) — 가정 역할의 도면 요소·Main 설비명
     # 위치는 층 현행값이 아니라 그 시나리오 새 리비전의 배치 차이로 갔다.
