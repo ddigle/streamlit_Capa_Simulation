@@ -22,6 +22,7 @@ import streamlit.elements.lib.policies as policies
 from shortening_script import shortening_script
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.required_shortening_panel as required_shortening_panel
 from capa_simulation.components.required_shortening_panel import (
     SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
@@ -29,6 +30,7 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_START_KEY,
     SHORTENING_UPEH_VIEW_KEY,
     _card_table,
+    _LobRows,
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -721,6 +723,67 @@ def test_seeding_the_filter_raises_no_widget_value_warning(
     clear_equipment_repository()
 
 
+# ------------------------------------------------------- 계획 · LOB 요약 글 넘침
+
+
+def _class_style(body: str, classes: list[str]) -> dict[str, str]:
+    """`<style>` 의 한 클래스 규칙(`.이름 {…}`)을 적힌 차례대로 합친 선언 — 뒤 규칙이 앞 것을
+    덮는다(같은 우선순위의 CSS 차례)."""
+    wanted = {f".{name}" for name in classes}
+    style: dict[str, str] = {}
+    for selector, block in re.findall(r"(?m)^(\.[\w-]+) \{([^{}]*)\}", body):
+        if selector in wanted:
+            for declaration in block.split(";"):
+                if ":" in declaration:
+                    name, value = declaration.split(":", 1)
+                    style[name.strip()] = value.strip()
+    return style
+
+
+def _lob_section(body: str) -> str:
+    return body.split('aria-label="계획 · LOB 요약"', 1)[1].split("</section>", 1)[0]
+
+
+def test_bn_process_names_end_inside_their_month_cell(tmp_path: Path) -> None:
+    """B/N 아래 공정 이름은 달 칸(84px) 안에서 말줄임으로 끝나고 전체 이름은 풍선이다 — `nowrap`
+    만 두면 칸을 넘어 옆 달 이름과 포개졌다(2026-10-26 E2E — 1440px 에서 이름 60개 가운데 41개)."""
+    app = _run(_database(tmp_path))
+
+    assert not app.exception, [element.message for element in app.exception]
+    body = _html(app)
+    names = re.findall(r'<span class="([^"]*)" title="([^"]*)">([^<]*)</span>', _lob_section(body))
+    assert names
+    for classes, title, text in names:
+        assert title == text
+        style = _class_style(body, classes.split())
+        assert style.get("white-space") == "nowrap"
+        assert style.get("max-width") == "100%"
+        assert style.get("overflow") == "hidden"
+        assert style.get("text-overflow") == "ellipsis"
+    clear_equipment_repository()
+
+
+def test_a_long_plan_error_wraps_inside_the_lob_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계획 값을 못 읽은 까닭은 길 수 있다 — 한 줄(`nowrap`)이면 상자 오른쪽 밖으로 나가므로 줄을
+    바꾼다."""
+    reason = "까닭 " * 80
+    monkeypatch.setattr(
+        required_shortening_panel, "_lob_rows", lambda _context, _months: _LobRows({}, {}, reason)
+    )
+    app = _run(_database(tmp_path))
+
+    assert not app.exception, [element.message for element in app.exception]
+    body = _html(app)
+    found = re.search(r'<div class="([^"]*)">계획 값을 읽지 못했습니다 — ([^<]*)</div>', body)
+    assert found is not None
+    assert found.group(2) == reason
+    style = _class_style(body, found.group(1).split())
+    assert style.get("white-space") == "normal"
+    clear_equipment_repository()
+
+
 # ------------------------------------------------------- 공정 표시명(Proc Rename)
 
 
@@ -744,7 +807,7 @@ def test_process_display_names_label_the_screen_but_values_stay_original(tmp_pat
     body = _html(app)
     assert f'title="원본 공정명 {first}"' in body
     # 고른 공정 하나라 B/N 아래 공정 이름은 그 공정이다.
-    assert '<span class="shk-sub" title="표시-첫공정">표시-첫공정</span>' in body
+    assert '<span class="shk-sub shk-bn-name" title="표시-첫공정">표시-첫공정</span>' in body
     _, units = _csv(app, "equipment_shortening_units_csv")
     assert set(units["공정"]) <= {first}
     for key in (
