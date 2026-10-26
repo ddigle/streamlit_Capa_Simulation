@@ -310,3 +310,151 @@ def test_the_hand_made_key_net_catches_the_old_shapes() -> None:
     for sample in samples:
         assert _hand_made_generation_keys(ast.parse(sample)), sample
     assert not _hand_made_generation_keys(ast.parse('f"{_keyed(KEY)}__{revision_id}"'))
+
+
+_INPUT_WIDGETS = frozenset(
+    {
+        "checkbox",
+        "color_picker",
+        "date_input",
+        "multiselect",
+        "number_input",
+        "pills",
+        "radio",
+        "segmented_control",
+        "select_slider",
+        "selectbox",
+        "slider",
+        "text_area",
+        "text_input",
+        "time_input",
+        "toggle",
+    }
+)
+
+
+def _is_popover(item: ast.withitem) -> bool:
+    call = item.context_expr
+    return (
+        isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "popover"
+    )
+
+
+def _popover_bodies(node: ast.AST) -> list[ast.stmt]:
+    statements: list[ast.stmt] = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.With) and any(_is_popover(item) for item in child.items):
+            statements.extend(child.body)
+    return statements
+
+
+def _called_names(statements: list[ast.stmt]) -> set[str]:
+    return {
+        call.func.id
+        for statement in statements
+        for call in ast.walk(statement)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    }
+
+
+def _input_keys(statements: list[ast.stmt]) -> dict[str, int]:
+    keys: dict[str, int] = {}
+    for statement in statements:
+        for call in ast.walk(statement):
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr in _INPUT_WIDGETS
+            ):
+                continue
+            for keyword in call.keywords:
+                if keyword.arg == "key":
+                    keys[ast.dump(keyword.value)] = call.lineno
+    return keys
+
+
+def _session_writes(function: ast.FunctionDef) -> dict[str, int]:
+    writes: dict[str, int] = {}
+    for node in ast.walk(function):
+        targets = node.targets if isinstance(node, ast.Assign) else []
+        for target in targets:
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.value, ast.Attribute)
+                and target.value.attr == "session_state"
+            ):
+                writes[ast.dump(target.slice)] = node.lineno
+    return writes
+
+
+def _popup_prefills(tree: ast.Module) -> list[int]:
+    """팝오버 안에 그리는 입력 칸 key 에, 그 칸을 그리는 함수가 세션 대입으로 적는 줄.
+
+    팝오버 안 함수는 같은 모듈의 `with ….popover(…)` 블록에서 부르는 함수와 그 함수들이 부르는
+    함수다. 그 밖의 함수는 제 `with ….popover(…)` 블록 안 칸만 본다.
+    """
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    inside = _called_names(_popover_bodies(tree)) & set(functions)
+    frontier = set(inside)
+    while frontier:
+        reached = set()
+        for name in frontier:
+            reached |= _called_names(functions[name].body) & set(functions)
+        frontier = reached - inside
+        inside |= frontier
+    lines: list[int] = []
+    for name, function in functions.items():
+        region = function.body if name in inside else _popover_bodies(function)
+        keys = _input_keys(region)
+        lines.extend(line for key, line in _session_writes(function).items() if key in keys)
+    return sorted(lines)
+
+
+def _ui_sources() -> list[Path]:
+    paths = [ROOT / "app.py", *sorted((ROOT / "app_pages").glob("*.py"))]
+    paths += sorted((ROOT / "src" / "capa_simulation" / "components").rglob("*.py"))
+    return [path for path in paths if path != HELPER]
+
+
+def test_no_popup_field_is_prefilled_by_a_session_assignment() -> None:
+    found = [
+        f"{path.relative_to(ROOT)}:{line}"
+        for path in _ui_sources()
+        for line in _popup_prefills(_parse(path))
+    ]
+    assert not found, (
+        "닫힌 팝오버 칸은 세션 대입으로 한 번 적으면 한 회차 뒤 빈 칸으로 선다 — "
+        f"components/widget_generation.seed_field 로 세운다: {found}"
+    )
+
+
+def test_the_popup_prefill_net_catches_the_old_shape() -> None:
+    sample = """
+def _render_rename():
+    key = f"{_keyed(RENAME_KEY)}__{scenario_id}"
+    if key not in st.session_state:
+        st.session_state[key] = current
+    st.text_input("이름", key=key)
+
+def _section():
+    with st.popover("이름 바꾸기"):
+        _render_rename()
+
+def _toolbar():
+    with st.popover("메모"):
+        st.session_state["memo_text"] = ""
+        st.text_area("메모", key="memo_text")
+"""
+    assert len(_popup_prefills(ast.parse(sample))) == 2
+    seeded = """
+def _render_rename():
+    field = seed_field(GENERATION_KEY, RENAME_KEY, current, suffix=suffix)
+    st.text_input("이름", key=field.key)
+
+def _section():
+    with st.popover("이름 바꾸기"):
+        _render_rename()
+"""
+    assert not _popup_prefills(ast.parse(seeded))
