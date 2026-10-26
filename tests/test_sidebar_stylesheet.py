@@ -437,3 +437,37 @@ def test_alerts_in_the_conditions_panel_sit_on_the_surface() -> None:
             f'.st-key-{CONDITIONS_BOX_KEY} [data-testid="stAlert"]',
         ]
     ]
+
+
+_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def _rules(block: str) -> list[tuple[list[str], str]]:
+    """`선택자 묶음 { 본문 }` 들. `@media`·`@keyframes` 안쪽 규칙도 한 겹으로 나온다."""
+    return [
+        ([selector.strip() for selector in selectors.split(",")], body)
+        for selectors, body in _RULE.findall(block)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("active_href", "link"),
+    [
+        ("", '.st-key-home_navigation a[data-testid="stPageLink-NavLink"]'),
+        ("capa_chatbot", '[data-testid="stPageLink-NavLink"][href="capa_chatbot"]'),
+    ],
+)
+def test_home_and_current_page_links_draw_a_keyboard_focus_ring(
+    active_href: str, link: str
+) -> None:
+    """HOME·지금 화면 링크의 `:focus-visible` 은 평소·`:hover` 와 한 묶음(같은 면)이라 Tab 으로
+    초점이 와도 그림이 그대로였다(2026-10-26 E2E). Streamlit 은 `:focus` 윤곽을 지우므로 따로 2px
+    `ACCENT` 윤곽을 둘러야 초점이 보인다(design_system 3-2 의 값 칸과 같다)."""
+    rings = [
+        body
+        for selectors, body in _rules(_style_block(active_href))
+        if all(selector.endswith(":focus-visible") for selector in selectors)
+        and any(link in selector for selector in selectors)
+    ]
+
+    assert any(f"outline: 2px solid {tokens.ACCENT}" in body for body in rings), rings

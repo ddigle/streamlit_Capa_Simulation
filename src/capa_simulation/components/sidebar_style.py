@@ -222,6 +222,15 @@ def build_sidebar_stylesheet(
         {active_link} p {{
             color: {tokens.ACCENT};
         }}"""
+        # 키보드 초점은 위 묶음과 **따로** 그린다. 묶음의 `:focus-visible` 은 emotion 의 초점 배경을
+        # 덮으려는 것이라 평소와 같은 그림이고, Streamlit 은 `:focus` 에 `outline: none` 을 둬 대신
+        # 그려지는 윤곽도 없다 — Tab 으로 지금 화면 링크에 와도 그림이 바뀌지 않았다(2026-10-26
+        # E2E). 조건 값 칸과 같은 2px `ACCENT` 윤곽을 2px 띄워 두른다(design_system 3-2).
+        f"""
+        {active_link}:focus-visible {{
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
+        }}"""
         # 헤더 두 글줄이 이미 3px ACCENT 막대를 쓴다. 같은 막대를 지금 있는 자리에도 세우면 헤더와
         # 사이드바가 한 언어를 쓴다. 여백은 **모든 링크**에 주고 막대만 활성에 켠다 — 활성에만 주면
         # 라벨 시작 위치가 들쭉날쭉해진다.
@@ -304,6 +313,13 @@ def build_sidebar_stylesheet(
         {HOME_LINK} p {{
             text-align: center;
             color: {tokens.ACCENT};
+        }}"""
+        # 키보드 초점은 활성 링크와 같은 까닭으로 따로 윤곽을 두른다 — 위 묶음의 `:focus-visible` 은
+        # 평소와 같은 면이라 HOME 링크에 초점이 와도 그림이 그대로였다.
+        f"""
+        {HOME_LINK}:focus-visible {{
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
         }}"""
         # 마우스가 스칠 때 광택 띠가 한 번 지나간다. 평소에는 왼쪽 밖에 세워 두므로 가만히 있는
         # 화면에서는 아무것도 움직이지 않는다.
