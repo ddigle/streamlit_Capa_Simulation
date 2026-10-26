@@ -663,15 +663,23 @@ def test_example_flag_and_clear_follow_the_original() -> None:
 
 
 # 원본 「표에 넣기」 를 node 로 돌려 뽑은 값 — (붙여 넣은 글, 넣은 달(목표, 호기 글), 토스트 글자).
+# 토스트 글자는 열두 줄을 넘을 때만 원본과 다르다(버린 줄 수를 덧붙임).
 PASTE_CASES: dict[str, tuple[str | None, tuple[tuple[float | None, str], ...], str]] = {
     # 둘째 칸부터 끝까지는 띄어쓰기로 이어 호기 글이 된다(편집표 붙여넣기는 셋째 칸을 버린다).
     "columns": ("19.3456\tU1\tU2", ((19.3456, "U1 U2"),), "1개월을 넣었습니다."),
     # 공백뿐인 줄(엑셀의 두 칸이 다 빈 줄 「\t」 도)은 건너뛰어 그 아래 달이 당겨진다.
     "blank lines": ("18\r\n\r\n  \t \n20.5\t\n", ((18.0, ""), (20.5, "")), "2개월을 넣었습니다."),
+    # 열두 줄을 넘으면 원본은 말없이 앞 열두 줄만 넣었다 — 앱은 버린 줄 수를 덧붙인다(원본과 다른
+    # 글자는 이것 하나다).
     "thirteen lines": (
         "\n".join(f"{20 + index}\tV{index}" for index in range(13)),
         tuple((float(20 + index), f"V{index}") for index in range(12)),
-        "12개월을 넣었습니다.",
+        "12개월을 넣었습니다. 열두 달을 넘은 1줄(빈 줄을 빼고 13번째 줄부터)은 넣지 않았습니다.",
+    ),
+    "fifteen lines with blanks": (
+        "\n\n".join(f"{20 + index}" for index in range(15)),
+        tuple((float(20 + index), "") for index in range(12)),
+        "12개월을 넣었습니다. 열두 달을 넘은 3줄(빈 줄을 빼고 13번째 줄부터)은 넣지 않았습니다.",
     ),
     "empty": ("", (), NO_PASTED_LINES_MESSAGE),
     "spaces only": (" \n\t\n", (), NO_PASTED_LINES_MESSAGE),

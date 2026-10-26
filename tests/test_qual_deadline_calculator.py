@@ -361,6 +361,19 @@ def test_the_paste_box_fills_months_from_january_like_the_original() -> None:
     assert not app.success
 
 
+def test_pasting_more_than_twelve_lines_says_how_many_were_left_out() -> None:
+    """열세 줄 이상 붙여 넣으면 원본은 말없이 앞 열두 줄만 넣고 「12개월을 넣었습니다」 라고만
+    했다(2026-10-25 E2E #113) — 넣지 않은 줄 수를 알림에 덧붙인다."""
+    app = _component()
+    _paste(app, "\n".join(f"{20 + index}\tV{index}" for index in range(14)))
+
+    assert [element.value for element in app.success] == [
+        "12개월을 넣었습니다. 열두 달을 넘은 2줄(빈 줄을 빼고 13번째 줄부터)은 넣지 않았습니다."
+    ]
+    stored = app.session_state[MONTHS_KEY]
+    assert stored.loc[11, [TARGET_COLUMN, UNITS_COLUMN]].tolist() == [31.0, "V11"]
+
+
 def test_pasting_replaces_editor_edits_of_those_months() -> None:
     """편집표 델타는 행 위치라 그대로 두면 붙여 넣은 값을 다시 덮는다 — 넣으면 편집표를 새로
     세운다."""

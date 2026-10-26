@@ -344,11 +344,23 @@ class PastedMonths:
     line_count: int
 
     @property
+    def dropped_lines(self) -> int:
+        """열두 달을 넘어 넣지 않은 줄 수(공백뿐인 줄은 세지 않는다)."""
+        return max(0, self.line_count - MONTHS_PER_YEAR)
+
+    @property
     def message(self) -> str:
-        """「표에 넣기」 알림 — 원본 토스트 글자 그대로다."""
+        """「표에 넣기」 알림 — 원본 토스트 글자 그대로다. 열두 줄을 넘으면 원본은 말없이 앞 열두
+        줄만 넣었는데, 버린 줄 수를 덧붙인다(2026-10-25 E2E)."""
         if not self.line_count:
             return NO_PASTED_LINES_MESSAGE
-        return f"{min(MONTHS_PER_YEAR, self.line_count)}개월을 넣었습니다."
+        filled = f"{min(MONTHS_PER_YEAR, self.line_count)}개월을 넣었습니다."
+        if not self.dropped_lines:
+            return filled
+        return (
+            f"{filled} 열두 달을 넘은 {self.dropped_lines}줄(빈 줄을 빼고 13번째 줄부터)은 "
+            "넣지 않았습니다."
+        )
 
 
 def parse_pasted_months(text: str | None) -> PastedMonths:
