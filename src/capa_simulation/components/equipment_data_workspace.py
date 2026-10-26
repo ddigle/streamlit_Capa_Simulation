@@ -2603,7 +2603,12 @@ def build_import_review(
         equipment = merged
         downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)
         baseline = prepare_equipment_baseline(baseline)
-        scope = _paste_scope_notice(paste, new_rows=int(changes["Import구분"].eq("신규").sum()))
+        # 가정 세션에서 「배치 칸도 붙여넣기」 를 끄면 붙여넣은 배치 열은 있던 호기에 들지 않는다 —
+        # 「붙여넣은 열 n개(…)만 바꿉니다」 가 그 열을 바꾸는 열로 세면 앞 줄과 어긋났다(E2E).
+        held = layout_pasted if layout_role == "overlay" and not paste_layout else []
+        scope = _paste_scope_notice(
+            paste, new_rows=int(changes["Import구분"].eq("신규").sum()), held=held
+        )
         if scope is not None:
             notices.append(scope)
         if paste.cleared_cells:
@@ -2715,14 +2720,24 @@ def _paste_layout_review(
     )
 
 
-def _paste_scope_notice(paste: EquipmentPaste, *, new_rows: int) -> str | None:
-    """붙여넣은 열과 그대로 두는 열을 한 줄로. 모든 열을 붙여넣었으면 말할 것이 없다."""
+def _paste_scope_notice(
+    paste: EquipmentPaste, *, new_rows: int, held: Sequence[str] = ()
+) -> str | None:
+    """붙여넣은 열과 그대로 두는 열을 한 줄로. 모든 열을 붙여넣었으면 말할 것이 없다.
+
+    `held` 는 붙여넣었지만 있던 호기에는 넣지 않는 열이다(가정 세션 「배치 칸도 붙여넣기」 끔 —
+    배치 일곱 칸은 새 호기에만 든다). 바꾸는 열에서 빼고 따로 한 문장으로 적는다."""
     kept = paste.kept_columns
     if not kept:
         return None
-    pasted = [column for column in paste.columns if column != EQUIPMENT_ID_COLUMN]
+    held = [column for column in paste.columns if column in held]
+    pasted = [
+        column for column in paste.columns if column != EQUIPMENT_ID_COLUMN and column not in held
+    ]
     # 짧은 쪽 이름을 적는다 — 서른 개를 늘어놓으면 읽히지 않는다.
-    if len(pasted) <= len(kept):
+    if not pasted:
+        text = "기존 호기는 바꾸는 열이 없습니다."
+    elif len(pasted) <= len(kept):
         text = (
             f"붙여넣은 열 {len(pasted)}개({' · '.join(pasted)})만 바꿉니다 — 나머지 "
             f"{len(kept)}개 열은 기존 호기의 값을 그대로 둡니다."
@@ -2732,8 +2747,11 @@ def _paste_scope_notice(paste: EquipmentPaste, *, new_rows: int) -> str | None:
             f"붙여넣은 열 {len(pasted)}개만 바꿉니다 — 붙여넣지 않은 {len(kept)}개 열"
             f"({' · '.join(kept)})은 기존 호기의 값을 그대로 둡니다."
         )
+    if held:
+        text += f" 붙여넣은 배치 칸({' · '.join(held)})은 새 호기에만 넣습니다."
     if new_rows:
-        text += f" 새 호기 {new_rows:,}건은 그 열이 빈칸입니다."
+        blank = "붙여넣지 않은 열이" if held else "그 열이"
+        text += f" 새 호기 {new_rows:,}건은 {blank} 빈칸입니다."
     return text
 
 
