@@ -862,6 +862,115 @@ def test_the_st_definition_line_reads_upeh_times_minutes_st_over_sixty(
         f"{ST_DEFINITION_LINE} — MI {mi} · p5 · 중앙 · p95 1 · 1 · 1 · 1 ±5% 안 {mi} / "
         f"Main(계산에 쓰지 않음) {main} · p5 · 중앙 · p95 60 · 60 · 60 · 1 ±5% 안 0"
     ]
+    # 리비전 1 에 MI 행이 있으면 대신 보지 않고 요약 꼴도 예전 그대로다.
+    assert ST_FALLBACK_LINE not in output
+    assert re.search(rf"^- 8-2T {mi} · 1 · {mi} #\d\d$", output, re.MULTILINE)
+
+
+ST_FALLBACK_LINE = (
+    "- ST 정의 대조(대신) — 리비전 1 에 UPEH·ST 가 둘 다 양수인 MI 행이 없어 가장 최근에 "
+    "저장한 리비전 가운데 그런 MI 행이 있는 것"
+)
+
+
+def _add_upeh_revision(path: Path, *, mi_area: str = "MI") -> int:
+    """리비전 1 은 그대로 두고(내장 시드는 MI 행에 ST 만 적는다) 같은 시나리오에 리비전 하나를
+    더한다 — `RQ_UPEH` 만 싣고 MI 행 UPEH 를 `60 ÷ ST`(정의대로 → 1)로 채운다. `mi_area` 를 바꾸면
+    그 행의 Area 를 그 글로 적는다(MI 행이 없는 리비전). 그 행 수를 낸다.
+
+    대신 볼 리비전은 `RQ_UPEH` 만 읽으므로 나머지 표는 싣지 않는다 — 표지값 이름을 심은 시드는
+    프리셋 공정과 맞지 않아 저장소의 리비전 저장을 지나지 못한다."""
+    table = REVISION_TABLES["RQ_UPEH"]
+    mi = """lower(trim("Area_Name")) = 'mi' AND "ST" > 0"""
+    with duckdb.connect(str(path)) as connection:
+        row = connection.execute(
+            "SELECT scenario_id, min_by(revision_id, revision_no), max(revision_no) "
+            "FROM app_meta.scenario_revision GROUP BY scenario_id"
+        ).fetchone()
+        assert row is not None
+        scenario_id, parent, number = str(row[0]), str(row[1]), int(row[2])
+        revision_id = f"st-{number + 1}"
+        # 만든 시각은 앞 리비전보다 늘 뒤다(같은 시각이면 차례가 id 로 갈린다).
+        connection.execute(
+            "INSERT INTO app_meta.scenario_revision (revision_id, scenario_id, revision_no, "
+            "revision_name, parent_revision_id, reference_hash, created_at) "
+            "SELECT ?, ?, ?, ?, ?, reference_hash, created_at + to_seconds(?) "
+            "FROM app_meta.scenario_revision WHERE revision_id = ?",
+            [revision_id, scenario_id, number + 1, f"ST {number + 1}", parent, number, parent],
+        )
+        connection.execute(
+            f"INSERT INTO rev_data.{table} SELECT * REPLACE (? AS revision_id, "
+            f'CASE WHEN {mi} THEN 60.0 / "ST" ELSE "UPEH" END AS "UPEH", '
+            f'CASE WHEN {mi} THEN ? ELSE "Area_Name" END AS "Area_Name") '
+            f"FROM rev_data.{table} WHERE revision_id = ?",
+            [revision_id, mi_area, parent],
+        )
+        count = connection.execute(
+            f"SELECT count(*) FROM rev_data.{table} WHERE revision_id = ? AND {mi}", [parent]
+        ).fetchone()
+        assert count is not None
+        return int(count[0])
+
+
+def test_the_st_definition_falls_back_to_the_latest_revision_with_mi_rows(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`202610231430` 리뷰 사외 요청 5 — 리비전 1 `RQ_UPEH` 에 UPEH·ST 가 둘 다 양수인 MI 행이 없어
+    정의 대조가 판정 불가였다. 가장 최근에 저장한 리비전 가운데 그런 MI 행이 있는 것을 대신 보고
+    그 차례(저장 차례 k/N — 이름·번호는 찍지 않는다)를 함께 찍는다. 요약 첫 칸은 늘 리비전 1 의
+    수다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    mi = _add_upeh_revision(path)
+    assert mi > 0
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert f"{ST_DEFINITION_LINE} — UPEH·ST 가 둘 다 양수인 행 0" in output
+    fallback = [line for line in output.splitlines() if line.startswith(ST_FALLBACK_LINE)]
+    assert fallback == [
+        f"{ST_FALLBACK_LINE}(저장 차례 2/2)의 `RQ_UPEH` — MI {mi} · p5 · 중앙 · p95 1 · 1 · 1 · "
+        f"1 ±5% 안 {mi} / Main(계산에 쓰지 않음) 0"
+    ]
+    summary = next(line for line in _summary(output) if line.startswith("- 8-2T "))
+    assert re.fullmatch(rf"- 8-2T 0 · 대신 2/2 · {mi} · 1 · {mi} #\d\d", summary)
+    # 확인 코드는 그 줄의 수(대신 칸의 k/N 포함)로 다시 셈한다 — 사외 `--check-summary` 가 잡는다.
+    assert checks.check_transcript([summary]) == []
+    assert checks.check_transcript([summary.replace("2/2", "1/2")]) != []
+
+
+def test_the_st_definition_says_when_no_revision_has_mi_rows(
+    simulation_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """리비전이 하나뿐이고 그것에 MI 행이 없으면 대신 볼 것이 「없음」 이라고 찍는다."""
+    code, output = _run(capsys, "--only", "legacy", "--database", str(simulation_db))
+
+    assert code == 0
+    assert f"{ST_FALLBACK_LINE} — 없음" in output
+    summary = next(line for line in _summary(output) if line.startswith("- 8-2T "))
+    assert re.fullmatch(r"- 8-2T 0 · 대신 없음 #\d\d", summary)
+
+
+def test_the_st_reference_skips_revisions_without_mi_rows(
+    simulation_db: Path, tmp_path: Path
+) -> None:
+    """후보는 UPEH·ST 가 둘 다 양수인 행이 있는 리비전이지만 MI 행이 없으면 건너뛴다 — 그보다 앞에
+    저장한 MI 행 리비전을 고른다. 리비전 1 은 고르지 않는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _add_upeh_revision(path)
+    _add_upeh_revision(path, mi_area="Main")
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation = duckdb.connect(str(path), read_only=True)
+    try:
+        assert checks.load_source(session) is not None
+        picked = checks.load_st_reference(session)
+    finally:
+        session.close()
+    assert isinstance(picked, checks.StReference)
+    assert (picked.order, picked.total) == (2, 3)
 
 
 def _plant_route_wafers(path: Path) -> int:
