@@ -947,6 +947,36 @@ def test_tab_stays_inside_the_overlay_while_it_is_open() -> None:
     assert 'document.removeEventListener("focusin", onFocusIn);' in js
 
 
+def test_the_phone_summary_does_not_overflow_and_shows_the_release_chip_whole() -> None:
+    """390px Summary 무대의 가로 scrollWidth 가 639 였다(E2E) — 읽기 도구용 표에 바로 1px 를 주면
+    표는 내용 폭으로 늘어 무대를 넘친다. 표는 1px 칸 안에 두어 칸의 overflow 가 넘침을 가둔다.
+    머리 칩(공식버전 이름)은 휴대폰 폭 머리 줄에 70px 남짓만 남아 「70공정 합…」 으로 잘렸다 —
+    520px 이하에서는 토글 줄 오른쪽으로 내려 남는 폭을 다 쓰고 두 줄까지 접는다. 넓은 창의 머리
+    줄은 그대로다."""
+    html = (ASSETS / "intro.html").read_text(encoding="utf-8")
+    css = (ASSETS / "intro.css").read_text(encoding="utf-8")
+    assert '<div class="sr"><table data-slot="table"></table></div>' in html
+    assert "<table class=" not in html
+    sr = re.search(r"\n\.sr \{([^}]*)\}", css)
+    assert sr is not None and "overflow: hidden;" in sr.group(1) and "width: 1px;" in sr.group(1)
+    # 토글 셋과 칩을 싼 칸은 넓은 창에서 상자가 없다 — 머리 줄 flex 항목은 그대로 둘이다.
+    assert re.search(r"\n\.tail \{\s*display: contents;\s*\}", css)
+    head = html[html.index('<header class="head">') : html.index("</header>")]
+    assert '<span class="tail"><span class="toggles"' in head
+    phone = re.search(r"@media \(max-width: 520px\) \{(.*?)\n\}", css, re.S)
+    assert phone is not None
+    tail = re.search(r"\.tail \{([^}]*)\}", phone.group(1))
+    assert tail is not None
+    for rule in ("position: absolute;", "top: 40px;", "left: 0;", "right: 0;", "display: flex;"):
+        assert rule in tail.group(1), rule
+    assert re.search(r"\.tail \.toggles \{\s*position: static;", phone.group(1))
+    chip = re.search(r"\.asof \.chip \{([^}]*)\}", phone.group(1))
+    assert chip is not None
+    assert "-webkit-line-clamp: 2;" in chip.group(1) and "white-space: normal;" in chip.group(1)
+    # 위아래 여백은 테두리다 — padding 이면 접힌 셋째 줄이 그 여백에 비친다.
+    assert "padding: 0 7px;" in chip.group(1) and "border-block:" in chip.group(1)
+
+
 # --------------------------------------------------------- Summary 토글 셋(선행 B/O·선행 입고·GAP)
 
 

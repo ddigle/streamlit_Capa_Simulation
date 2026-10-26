@@ -1746,6 +1746,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 앱으로 들어갈 때 초점 — 사이드바 라벨로 연 Summary 는 그 라벨로 돌려주고, 연 단추가 없는 입장(처음 입장 화면·거기서
     연 Summary·티저)은 화면 탭 줄의 지금 탭(그림자 DOM 안), 탭 줄이 없으면 본문 첫 제목에 둔다(`LANDING_FOCUS` — 탭 줄
     key·`aria-current` 표지를 `data.landing` 으로 받는다). 두지 않으면 body 에 남았다.
+  - 무대(`.stage`)는 옆으로 넘치지 않는다 — 읽기 도구용 표는 1px 칸(`div.sr`) 안에 둔다(표에 바로 1px 를 주면 내용 폭으로
+    늘어 390px 무대가 639px 로 넘쳤다). 520px 이하에서는 머리 칩(공식버전 이름)이 토글 셋과 함께 둘째 줄(`.tail`)로 내려
+    남는 폭을 쓰고 두 줄까지 접는다 — 넓은 창에서 `.tail` 은 `display: contents` 라 머리 줄은 그대로다.
 - `src/capa_simulation/components/history_guard.py` — 탭 줄 JS(`page_tabs.js`)의 기록 지킴이 두 구획(`<tabs-history>`·
   `<tabs-history-install>`)을 떼어 입장 화면 등록 JS 앞에 싣는 글로 낸다. 글은 탭 줄 자산 한 벌이다(옮기지 않는다 — 두 벌이면
   한쪽만 고쳐 다른 지킴이가 먼저 걸린다). 컴포넌트를 등록하지 않아 `page_tabs` 를 불러오지 않는 모듈이 쓸 수 있다.
