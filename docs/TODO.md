@@ -674,6 +674,10 @@
   「`{path.name}` 을」)·`inspect_revision_calculations.py`(「`{path.name}` 을」)·`sync_object_storage.py`(「{key} 를」)·
   `apply_deploy_package.py`(「송장 형식 {version} 을」 — 패키지를 import 하지 않으므로 고정 명사로). 정할 것: 그물에 `scripts/` 를
   더하고 고치기(권장 — 사내 런북이 찍힌 글을 견주는 줄이 없는지 먼저 본다) / 리뷰 몫으로 두기(지금).
+- [ ] **가용설비 현황 `Static 대비 일정` 근거 글의 식 셋도 `formula_text` 로**(2026-10-26 formula-operands-consistent 후속) —
+  `availability_gap_panel` 의 「보유 + 대여 = 합」·「GAP = 설비 일정 − Static = 값」·「설비 일정 기준 가용 = 보유 + 대여」 가 아직
+  깎은 인수에 「=」 다. 같은 파일을 markdown-literal-sinks 주제가 고치는 중이라 이번에 두었다 — 그 병합 뒤 비교 시트 풍선과 같은
+  「≈」 길(`equals_mark` + `written_value`)로 고치고 `tests/test_formula_text.py` 의 `PENDING` 에서 뺀다.
 
 - [~] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없는 순수 유지보수 비용이라 다른 일 뒤로 둔다.
   분류 컬럼 폭 계산과 `go.Table` 두 벌 조립은 `monthly_table_base` 로 올렸다. **남은 것**: 격자 머리 여섯 호출과 반복 접두
@@ -867,6 +871,32 @@
     코드라고 밝혔다(스크립트는 위 2장 「코드 정리」).
   관련: `services/korean_particle.py`·`components/space_layout_editor_assets/editor.js`·`tests/test_particle_sites.py`·
   `tests/test_korean_particle.py`
+- (2026-10-26) **화면 식 글은 적힌 수로 다시 셈해도 맞게 — 식 글 도우미 `components/formula_text.py` 하나**(리팩토링
+  formula-operands-consistent, 밤사이 권장대로) — 식 글을 짓는 곳마다 인수를 따로 깎고 결과는 깎기 전 값으로 내서, E2E 2·3회차에
+  고친 두 화면(제약 시뮬레이션 고른 달 계산·표준 목표 로직 분석) 밖에도 같은 어긋남이 남았다(「보유 54.0 − 대여 4.1 = 50.0」, 풍선
+  「확보율 105% = 가용 0.5 ÷ 소요 0.4」, 「0.02 × 120% = 0.03」). 검산 길 둘(「≈」 — 공정 Capa 상세 `_equals_mark`, 자릿수 늘리기 —
+  제약 시뮬레이션 `_consistent_digits`·`_operand_text`)을 새 모듈로 옮기고 화면마다 지금 길을 지킨다. 처리 없던 자리는 「≈」 로
+  — 공정 Capa 상세 근거 카드 다섯(① 가정 소요·① 원수요 부하량 ÷ 실효 대당 Capa·② 보유 − 대여·② 기존보유 + 호기·③ 원인 총보유 ÷
+  소요)과 캔버스 풍선 다섯(① 가용·가정 소요·확보율·과부족, ② 목표 과부족 — 두 과부족 식 줄과 ① 원수요 부하량 줄은 등호가 없어
+  어긋날 때만 줄 앞에 「≈」), 제약 시뮬레이션 계산표 풍선 둘(필요·기존 가용), 가용설비 현황 비교 시트 풍선 넷(Static 가용·보유·
+  가용·GAP — 「0 이 되는 값은 한 자리 더」 서식이라 적힌 글자에서 수를 읽는다. Static 가용은 원값부터 다른 ⚠ 달에 「≈」 를 두지
+  않는다). 결과 값·판정·올림 규칙은 그대로다. 대안: 처리 없던 자리도 자릿수 늘리기 — 같은 값이 두 줄에서 다른 자리로 적히고
+  (1단계 1.94 · 5단계 1.9389) 풍선 글이 더 길어진다. 비가동 몫 「n대 × d/w일」 은 인수가 정수라 늘 맞아 손대지 않았다(가드
+  허용 목록). 시험: 값 격자 검산 그물과 식 꼴 f-string 마다 이 모듈을 거치는지 보는 AST 가드(`tests/test_formula_text.py` — 모든 자리가 「=」 이던 때를 흉내 내면
+  열세 묶음이 실패). 리뷰 후속(같은 날): 가드가 함수 단위라 한 번만 불러도 다른 식이 지나가고, 결과가 앞 줄인 등호 없는 식 줄과
+  조각 잇기(`text += f" − …"`·`{' − '.join(…)}`)를 못 봐 ② 목표 과부족 풍선이 빠졌다 — f-string 마다 보고(그 안에서 이 모듈의
+  이름이나 그것에서 나온 지역 이름을 써야 한다) 두 꼴도 식으로 읽게 했다. 리뷰가 되돌려 본 다섯 자리(② 기존보유 + 호기·비교 시트
+  GAP·과부족 「≈」 앞붙임·기존 가용 풍선·4단계)와 목표 과부족·Static 가용 풍선이 모두 잡힌다. 결과를 다른 글에 둔 식(① 원수요 부하량
+  줄)·연산 글자를 끼운 값으로 넣는 식(표준 목표 `{operator}`)은 여전히 못 봐 시험 머리에 적고 그물에 이름을 댔다. 풍선 글을 바꿔
+  그림 모양 버전을 올렸다(`CANVAS_SCHEMA_VERSION` 6·`CONSTRAINT_FIGURE_SCHEMA_VERSION` 5·비교 시트 `_SHEET_SCHEMA_VERSION` 3 —
+  AGENTS 5장 16). 권장대로 정한 것(대안): 등호 없는 식 줄은 어긋날 때만 앞에 「≈」(대안: 늘 「= 결과」 를 붙임 — 맞는 칸의 글도
+  바뀐다), 비교 시트 모양 버전도 지금 올림(markdown-literal-sinks 가지와 겹치는 줄이 없다 — 대안: 그 병합 뒤로 미룸). 3회차 표준
+  목표 로직 분석 고침(아래)의 자릿수 고르기도 옮겼다 — 인수마다 따로 늘리는 꼴은 `formula_text.consistent_places`, 세 줄 짓기는
+  같은 파일의 순수 함수 `logic_formula_text` 이고, 화면 글자 꼴(`_operand_text`)과
+  `Decimal` 다시 셈하기는 페이지에 남겼다(옛 줄 짓기와 무작위 2만 값에서 글자가 같다 — 아래 기록의 「한 모듈로 묶지 않았다」 는
+  글자 꼴만 그대로다). 관련: `components/formula_text.py`·`process_capa_view.py`·`process_capa_canvas.py`·
+  `constraint_simulation_view.py`·`constraint_simulation_figures.py`·`availability_sheet_canvas.py`·
+  `app_pages/standard_target_capa.py`·AGENTS 3·6·8장
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을
