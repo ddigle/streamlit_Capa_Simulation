@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
+
+import capa_simulation.components.write_guard as write_guard
 
 
 def test_display_order_management_renders_global_profile(tmp_path: Path) -> None:
@@ -379,7 +382,9 @@ def _delete_row_as_another_session(database_path: Path, value: str) -> None:
     clear_global_display_order_cache()
 
 
-def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: Path) -> None:
+def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A 가 직접 편집 표를 연 뒤 B 가 같은 범위의 줄을 지우고 저장했다. A 의 저장은 막히고 B 의
     저장본이 남는다(Proc Rename 과 같은 버전 대조). 대조가 없으면 남의 저장으로 바뀐 줄 때문에
     편집표가 새로 서며 A 의 편집을 버린 채 version 만 올리고 「저장했습니다」를 띄웠다
@@ -402,11 +407,46 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: 
     assert not app.success, [element.value for element in app.success]
     assert app.text[-1].value == "v2|A=1;B=2"
 
+    # 새 화면을 보고 다시 누른 저장이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
+    # 지났다. AppTest 의 회차 사이는 그 창보다 짧아 창은 시험이 정한다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     next(button for button in app.button if button.label == "공용 표시순서 저장").click()
     app.run(timeout=60)
     assert not app.exception, [item.message for item in app.exception]
     assert not app.error, [str(error.value) for error in app.error]
     assert app.text[-1].value == "v3|A=1;B=99"
+    clear_global_display_order_cache()
+
+
+def test_a_double_press_after_a_newer_shared_profile_keeps_the_refusal(tmp_path: Path) -> None:
+    """B 가 먼저 저장한 뒤 A 가 옛 화면에서 「공용 표시순서 저장」을 빠르게 두 번 누른다(Proc Rename
+    과 같은 꼴). 첫 누름은 거부되고 그 회차가 출발점을 지운다. 둘째 누름은 옛 화면의 편집을 든 채
+    최신 version 으로 대조를 지나 B 의 저장을 덮을 수 있었다. 거부 직후의 둘째 누름은 저장하지 않고
+    그 거부를 다시 알린다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값을 한 번 더 보낸다.
+    """
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database_path = tmp_path / "display-order-conflict-double.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v1|A=1;B=2;C=3"
+
+    _delete_row_as_another_session(database_path, "C")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert any("다른 사용자가 먼저 표시순서를 저장해" in str(error.value) for error in app.error)
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    errors = [str(error.value) for error in app.error]
+    assert len(errors) == 1 and "다른 사용자가 먼저 표시순서를 저장해" in errors[0], errors
+    assert not app.success, [element.value for element in app.success]
+    assert app.text[-1].value == "v2|A=1;B=2"
+    stored = DuckDBScenarioRepository(database_path).load_global_display_order()
+    assert stored.source == "다른 세션의 저장"
     clear_global_display_order_cache()
 
 

@@ -916,7 +916,10 @@
   새로 서며 A 가 고친 값표시순서를 버린 채 지금 저장본을 다시 써 version 만 올리고 「저장했습니다」 를 띄웠다. Proc Rename 과 같은
   결로 편집을 시작한 회차의 version(`BASE_VERSION_KEY`)을 저장소에 넘기고(`replace_global_display_order(expected_version=…)` →
   `require_profile_version`) 어긋나면 저장 버튼 위에 「다른 사용자가 먼저 표시순서를 저장해…」 를 띄운다. 빠른 두 번 누름은
-  `write_guard` 제 저장 표지로 거르고, 「현재 전체 교체」 를 확인받는 Excel 붙여넣기는 대조하지 않는다(AGENTS 5장 25). 대안: 고른
+  `write_guard` 제 저장 표지로 거르고, 「현재 전체 교체」 를 확인받는 Excel 붙여넣기는 대조하지 않는다(AGENTS 5장 25). integ/1026
+  병합에서 같은 날 다른 가지가 버전 대조 저장 모두에 건 충돌 표지(`held_profile_conflict` — 남의 저장에 거부된 누름의 1초 안
+  둘째 누름은 저장하지 않고 거부를 다시 알림)도 이 저장에 걸었다 — 출발점을 지우는 꼴이라 둘째 누름이 옛 편집으로 B 의 저장을
+  덮었다(시험으로 확인). 대안: 고른
   범위의 줄만 견주어 다른 범위 저장은 통과 — 범위 지문을 따로 두어야 하고 AGENTS 25 의 「프로필 version」 규칙에서 벗어난다. 관련:
   `components/display_order_management.py`·`persistence/display_order_store.py`·`tests/test_display_order_management.py`·
   `tests/test_duckdb_repository.py`

@@ -19,7 +19,13 @@ from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
-from capa_simulation.components.write_guard import is_own_profile_save, profile_save_marks
+from capa_simulation.components.write_guard import (
+    held_profile_conflict,
+    is_own_profile_save,
+    note_profile_conflict,
+    profile_conflict_marks,
+    profile_save_marks,
+)
 from capa_simulation.io.reference_cache import apply_global_display_order
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
@@ -185,7 +191,9 @@ def _render_direct_editor(
     그 사이 다른 사람이 저장했으면 저장소가 거부한다. 편집표는 줄을 더하고 지울 수 있어 데이터가
     신원에 들어가므로, 남의 저장으로 범위 줄이 바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을
     버린다. 대조 없이 그대로 저장하면 지금 저장본을 다시 쓰며 version 만 올리고 성공을 알렸다
-    (2026-10-26 E2E).
+    (2026-10-26 E2E). 빠른 두 번 누름은 Proc Rename 과 같은 `write_guard` 표지로 거른다 — 제 저장의
+    둘째 거부는 성공을 다시 알리고, 남의 저장에 거부된 누름의 둘째 누름은 저장하지 않고 그 거부를
+    다시 알린다.
     """
     submitted_base = st.session_state.get(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
@@ -256,10 +264,17 @@ def _render_direct_editor(
         st.session_state[BASE_VERSION_KEY] = version
         return
     expected_version = submitted_base if isinstance(submitted_base, int) else version
-    # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-    st.session_state[BASE_VERSION_KEY] = version
     # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = profile_save_marks()
+    conflict_marks = profile_conflict_marks()
+    held = held_profile_conflict(conflict_marks, DISPLAY_ORDER_SAVE_NAME)
+    # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+    st.session_state[BASE_VERSION_KEY] = version
+    if held is not None:
+        # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 편집이라 저장하지 않고 그 거부를 다시
+        # 알린다(write_guard).
+        save_status.error(held)
+        return
     try:
         revised = replace_display_order_scope(
             display_order,
@@ -286,11 +301,16 @@ def _render_direct_editor(
         if mistakes:
             st.session_state[LABEL_WARNINGS_KEY] = mistakes
     except ProfileVersionConflict as exc:
+        own = is_own_profile_save(DISPLAY_ORDER_SAVE_NAME, exc.expected, exc.stored, save_marks)
+        if not own:
+            note_profile_conflict(
+                conflict_marks, DISPLAY_ORDER_SAVE_NAME, bootstrap_error_message(exc)
+            )
         # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
         # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
         clear_global_display_order_cache()
         st.session_state.pop(BASE_VERSION_KEY, None)
-        if is_own_profile_save(DISPLAY_ORDER_SAVE_NAME, exc.expected, exc.stored):
+        if own:
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
             queue_flash("display_order_flash", DISPLAY_ORDER_SAVED_MESSAGE)
             st.rerun()

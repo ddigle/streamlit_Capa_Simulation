@@ -1668,7 +1668,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 직접 편집 저장은 Proc Rename 과 같은 버전 대조(`BASE_VERSION_KEY` → `expected_version`)다. 범위 하나만 고쳐도
     프로필 전체 version 을 본다 — 편집표가 `num_rows="dynamic"` 이라 데이터가 신원에 들어가, 남의 저장으로 범위 줄이
     바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을 버린다. 대조가 없으면 지금 저장본을 다시 쓰며 version 만 올리고
-    「저장했습니다」를 띄웠다(2026-10-26 E2E, `tests/test_display_order_management.py`).
+    「저장했습니다」를 띄웠다(2026-10-26 E2E, `tests/test_display_order_management.py`). 빠른 두 번 누름은 Proc Rename 과
+    같은 `write_guard` 표지(제 저장 표지·충돌 표지)로 거른다(9장).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
@@ -1931,7 +1932,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename·표시순서 직접 편집·판정 기준·
   확보율 보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다. 거꾸로 남의 저장에 거부된
   누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — Proc Rename·판정 기준·확보율 보정과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을
+  알린다 — Proc Rename·표시순서 직접 편집·판정 기준·확보율 보정과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을
   지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·
   「삭제」 가 쓴다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
@@ -3972,12 +3973,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·
     `tests/test_display_order_management.py`).
   - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부한 회차는 최신 저장본을 그리며 편집 시작 version 을 그
-    version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
+    version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·표시순서 직접 편집·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
     둘째 누름이 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이 「저장했습니다」로 바뀌고 입력은 말없이
     버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E). 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 에
     거부 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은 저장하지 않고 그
     거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로 대조한다 —
-    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 세 시험·`tests/test_auto_official_update_tab.py`).
+    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 네 시험·`tests/test_auto_official_update_tab.py`).
   - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
     세대·이미 지운 글·고칠 대상이 바뀌어 잠긴 단추 — 잠긴 단추의 누름은 Streamlit 이 버린다). 첫 쓰기의 성공 알림은 앞
     회차가 이미 꺼내 그렸으므로 그 회차가 화면을 다시 그리며 알림을 지워, 한 건 쓰였는데 아무 알림도 남지 않았다
