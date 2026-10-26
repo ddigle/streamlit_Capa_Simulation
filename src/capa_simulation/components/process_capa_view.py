@@ -1655,9 +1655,14 @@ def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str])
 
     미달 공정이 없으면 그리지 않는다. 콜백(`step_to_process`)이 공정 상자 값과 그 공정의 첫 미달
     달을 적고 앱 전체 회차로 다시 돈다 — 머리 줄은 프래그먼트 밖이다.
+
+    단추 라벨은 갈 곳을 말하는 글(「다음 미달 공정: …」)이라 읽기 도구가 그 이름으로 읽고, 화면에는
+    그 글을 시각적으로만 숨기고(sr-only) 기호 ◀ ▶ 를 CSS 생성 글(대체 글 없음)로 보인다
+    (`_STEP_BUTTON_STYLE`). 풍선은 전처럼 공정명 · 최저 확보율이다.
     """
     if steps.total == 0:
         return
+    st.html(_STEP_BUTTON_STYLE)
     _step_button("◀", steps.previous, key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY, label_of=label_of)
     st.caption(
         f"미달 {steps.position}/{steps.total}"
@@ -1672,12 +1677,42 @@ def render_process_steps(steps: ProcessSteps, *, label_of: Callable[[str], str])
     _step_button("▶", steps.following, key=PROCESS_DETAIL_NEXT_PROCESS_KEY, label_of=label_of)
 
 
+# 머리 ◀ ▶ 단추 — 라벨 글은 읽기 도구에만 남기고(1px 상자 밖을 자른다 — `display: none` 이면
+# 접근 이름에서도 빠진다), 기호는 `::before` 생성 글로 그린다. 생성 글의 대체 글을 비워(`/ ""`)
+# 접근 이름에 기호가 끼지 않는다.
+_STEP_BUTTON_MARKS = {
+    PROCESS_DETAIL_PREVIOUS_PROCESS_KEY: "◀",
+    PROCESS_DETAIL_NEXT_PROCESS_KEY: "▶",
+}
+_STEP_BUTTON_STYLE = (
+    "<style>"
+    + "".join(
+        f'.st-key-{key} button [data-testid="stMarkdownContainer"]{{position:absolute!important;'
+        "width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);"
+        "white-space:nowrap}"
+        f'.st-key-{key} button::before{{content:"{mark}" / ""}}'
+        for key, mark in _STEP_BUTTON_MARKS.items()
+    )
+    + "</style>"
+)
+
+
+def step_button_label(mark: str, step: ProcessStep | None, label_of: Callable[[str], str]) -> str:
+    """머리 ◀ ▶ 단추의 라벨(곧 접근 이름) — 「다음 미달 공정: Laser Marking · 최저 1.1%」, 갈
+    곳이 없으면 「다음 미달 공정 없음」. 공정 표시명은 사람 글이라 마크다운 글자 그대로 막는다."""
+    direction = "이전" if mark == "◀" else "다음"
+    if step is None:
+        return f"{direction} 미달 공정 없음"
+    rate = f" · 최저 {step.minimum_rate:.1%}" if step.minimum_rate is not None else ""
+    return f"{direction} 미달 공정: {literal_markdown(label_of(step.process))}{rate}"
+
+
 def _step_button(
     mark: str, step: ProcessStep | None, *, key: str, label_of: Callable[[str], str]
 ) -> None:
     if step is None:
         st.button(
-            mark,
+            step_button_label(mark, step, label_of),
             key=key,
             type="tertiary",
             disabled=True,
@@ -1686,7 +1721,7 @@ def _step_button(
         return
     rate = f" · 최저 {step.minimum_rate:.1%}" if step.minimum_rate is not None else ""
     st.button(
-        mark,
+        step_button_label(mark, step, label_of),
         key=key,
         type="tertiary",
         help=f"{literal_markdown(label_of(step.process))}{rate}",

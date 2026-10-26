@@ -45,6 +45,7 @@ from capa_simulation.components.process_capa_view import (
     NEXT_MONTH_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
+    step_button_label,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
 from capa_simulation.components.shortening_board import (
@@ -75,6 +76,7 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_SPLIT_KEY,
     PROCESS_DETAIL_VIEW_FRAGMENT_KEY,
     ProcessDetailRequest,
+    ProcessStep,
     shortening_card_query_params,
 )
 from capa_simulation.services.month_columns import month_label
@@ -712,6 +714,38 @@ def test_the_header_steps_through_shortfall_processes(
     app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).click()
     _ok(app.run())
     assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == first
+
+
+def test_the_header_step_buttons_are_named_by_where_they_go(
+    strict_databases: tuple[Path, Path],
+) -> None:
+    """머리 ◀ ▶ 는 기호만 보이지만 접근 이름(라벨)은 갈 곳 — 「다음 미달 공정: <공정명> · 최저
+    …」 다(E2E 2026-10-26 — 이름이 「◀」·「▶」 뿐이라 읽기 도구가 갈 곳을 몰랐다). 라벨 글은
+    화면에서 시각적으로만 숨기고 기호를 대체 글 없는 생성 글로 그린다. 풍선은 그대로다."""
+    app = _ok(_app(strict_databases).run())
+    previous = app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY)
+    following = app.button(key=PROCESS_DETAIL_NEXT_PROCESS_KEY)
+
+    assert previous.label == "이전 미달 공정 없음" and previous.proto.disabled
+    assert following.label.startswith("다음 미달 공정: ") and " · 최저 " in following.label
+    help_text = str(following.proto.help)
+    assert following.label == f"다음 미달 공정: {help_text}"
+    style = next(body for body in _html(app) if PROCESS_DETAIL_NEXT_PROCESS_KEY in body)
+    assert 'content:"◀" / ""' in style and 'content:"▶" / ""' in style
+    assert "clip-path:inset(50%)" in style and "display:none" not in style
+
+    following.click()
+    _ok(app.run())
+    second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    assert app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).label.startswith("이전 미달 공정: ")
+    assert second
+
+
+def test_the_step_label_keeps_a_renamed_process_as_written() -> None:
+    step = ProcessStep("DEMO_Chip_Attach", 0.011, 202611)
+    label = step_button_label("▶", step, lambda _: "Chip Attach 1~2차/3~4차")
+    assert label == f"다음 미달 공정: {literal_markdown('Chip Attach 1~2차/3~4차')} · 최저 1.1%"
+    assert step_button_label("◀", None, str) == "이전 미달 공정 없음"
 
 
 def test_the_cause_row_marks_owned_shortfalls_for_investment(
