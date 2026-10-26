@@ -87,6 +87,16 @@ function nextCell(rowCount, colCount, from, dir, editable, limit) {
   }
   return null
 }
+
+// 화살표가 옮겨 갈 칸(행 id·칸 번호). `ids` 는 **화면 차례의 모든 줄**이다 — 지운 줄도 줄이라, 지운 줄에 남은
+// 초점에서 ↓ 는 아랫줄로 가고(맨 첫 줄로 뛰지 않는다) 화살표로 지운 줄에 돌아와 Space 로 되살릴 수 있다. 지금 칸을
+// 못 찾으면 움직이지 않는다.
+function moveFocus(ids, cols, at, dir) {
+  const from = { row: ids.indexOf(at.id), col: cols.indexOf(at.col) }
+  if (from.row < 0 || from.col < 0) return null
+  const next = nextCell(ids.length, cols.length, from, dir, () => true, 1)
+  return next ? { id: ids[next.row], col: cols[next.col] } : null
+}
 // </grid-nav>
 
 // <grid-outbox>
@@ -1295,16 +1305,28 @@ function buildSelection(S, bar) {
     S.selected = new Set()
     send(S)
     paintSelection(S)
+    refocusTable(S, rows[0].id)
   })
   remove.disabled = deletable.length === 0
   if (lock) remove.title = lock
   bar.appendChild(remove)
   bar.appendChild(button('emg-btn is-small is-ghost', '선택 풀기', () => {
+    const first = rows[0].id
     S.selected = new Set()
     S.anchor = null
     paintSelection(S)
-    paintWindow(S)
+    refocusTable(S, first)
   }))
+}
+
+// 고른 줄 띠가 닫히는 단추(지우기·선택 풀기)는 누른 단추가 사라진다 — 초점을 표 본문의 초점 칸(없으면 고른 첫 줄의
+// 설비명)으로 돌린다. 그대로 두면 문서 맨 앞(BODY)으로 빠져 다음 Tab 이 사이드바 머리로 간다.
+function refocusTable(S, fallbackId) {
+  const known = S.focus && S.model.ordered.some((row) => row.id === S.focus.id)
+  if (!known) S.focus = { id: fallbackId, col: S.model.nameCol }
+  ensureVisible(S, S.focus.id)
+  S.wantFocus = true
+  paintWindow(S)
 }
 
 function headCell(S, k) {
@@ -1475,9 +1497,9 @@ function rowElement(S, row, index) {
   }
   if (tag === 'new') open.appendChild(el('span', 'emg-tag is-new', '새 호기'))
   if (tag === 'deleted') open.appendChild(el('span', 'emg-tag is-deleted', '지움'))
-  const nameTip = [errors[model.nameCol] !== undefined ? '오류: ' + errors[model.nameCol] : '', changed[model.nameCol] !== undefined ? '저장본: ' + changed[model.nameCol] : '', row.alert || '', '누르면 오른쪽에 이 호기의 모든 칸이 열립니다']
+  const nameTip = [errors[model.nameCol] !== undefined ? '오류: ' + errors[model.nameCol] : '', changed[model.nameCol] !== undefined ? '저장본: ' + changed[model.nameCol] : '', row.alert || '', tag === 'deleted' ? '지운 호기 — Space 로 되살립니다' : '', '누르면 오른쪽에 이 호기의 모든 칸이 열립니다']
   open.title = nameTip.filter(Boolean).join('\n')
-  open.setAttribute('aria-label', (name || '새 호기') + ' 상세 열기')
+  open.setAttribute('aria-label', (name || '새 호기') + ' 상세 열기' + (tag === 'deleted' ? ' (지운 호기 — Space 로 되살리기)' : ''))
   nameCell.appendChild(open)
   node.appendChild(nameCell)
   model.visible.forEach((k) => node.appendChild(cellElement(S, row, k)))
@@ -1720,10 +1742,9 @@ function onBodyKey(S, event) {
   if (moves[event.key]) {
     event.preventDefault()
     const columns = [model.nameCol].concat(model.visible)
-    const from = { row: live.findIndex((row) => row.id === id), col: columns.indexOf(col) }
-    const next = nextCell(live.length, columns.length, from, moves[event.key], () => true, 1)
+    const next = moveFocus(model.ordered.map((row) => row.id), columns, { id, col }, moves[event.key])
     if (next) {
-      S.focus = { id: live[next.row].id, col: columns[next.col] }
+      S.focus = next
       ensureVisible(S, S.focus.id)
       S.wantFocus = true
       paintWindow(S)
@@ -1731,9 +1752,14 @@ function onBodyKey(S, event) {
     return
   }
   if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    // Space = 그 줄 고르기(Shift+Space 는 기준 줄부터 범위) — 체크 칸은 Tab 정지가 아니다.
+    // Space = 그 줄의 체크 칸 — 산 줄은 고르기(Shift+Space 는 기준 줄부터 범위), 지운 줄은 되살리기. 체크 칸은
+    // Tab 정지가 아니다.
     event.preventDefault()
     if (live.some((row) => row.id === id)) toggleRow(S, id, event.shiftKey)
+    else if (model.ordered.some((row) => row.id === id && row.tag === 'deleted')) {
+      enqueue(S, { op: 'restore', ids: [id] }, [])
+      send(S)
+    }
     return
   }
   if (col === model.nameCol) return

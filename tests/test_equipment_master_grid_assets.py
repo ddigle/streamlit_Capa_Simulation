@@ -162,6 +162,48 @@ def test_the_grid_body_has_one_tab_stop_and_space_picks_a_row() -> None:
     assert key.index("event.key === ' '") < key.index("event.key.length === 1")
 
 
+def test_a_deleted_row_stays_on_the_keyboard_path() -> None:
+    """지운 줄에 남은 초점에서 ↓ 가 맨 첫 줄로 뛰고(산 줄 목록에서 −1 → 0) 지운 줄의 「되살리기」 에
+    키보드로 닿지 못했다(2026-10-26 E2E). 화살표는 화면 차례의 모든 줄(`model.ordered`)을 걷고, 지운
+    줄의 Space 는 그 줄의 체크 칸 자리 「되살리기」 다. 고른 줄 띠를 닫는 단추(지우기·선택 풀기)는
+    초점을 표로 돌린다."""
+    key = _function("onBodyKey")
+    assert "moveFocus(model.ordered.map((row) => row.id)" in key
+    assert "live.findIndex" not in key.split("event.key === ' '")[0]
+    space = key[key.index("event.key === ' '") : key.index("if (col === model.nameCol) return")]
+    assert "toggleRow(S, id, event.shiftKey)" in space and "{ op: 'restore', ids: [id] }" in space
+    selection = _function("buildSelection")
+    assert selection.count("refocusTable(S, ") == 2
+    refocus = _function("refocusTable")
+    assert "S.wantFocus = true" in refocus and "ensureVisible(S, S.focus.id)" in refocus
+    runner = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  moves: input.cases.map((c) => moveFocus(c.ids, c.cols, c.at, c.dir)),
+}))
+"""
+    ids = ["s:A", "s:B", "s:C"]  # s:B 가 지운 줄이다 — 화면 차례 그대로 든다.
+    cols = [0, 2, 3]
+    cases = [
+        {"at": {"id": "s:B", "col": 0}, "dir": "down"},
+        {"at": {"id": "s:B", "col": 0}, "dir": "up"},
+        {"at": {"id": "s:A", "col": 0}, "dir": "down"},
+        {"at": {"id": "s:C", "col": 3}, "dir": "down"},
+        {"at": {"id": "s:B", "col": 2}, "dir": "right"},
+        {"at": {"id": "s:Z", "col": 0}, "dir": "down"},
+    ]
+    result = _node({"cases": [{"ids": ids, "cols": cols, **case} for case in cases]}, runner=runner)
+
+    assert result["moves"] == [
+        {"id": "s:C", "col": 0},
+        {"id": "s:A", "col": 0},
+        {"id": "s:B", "col": 0},
+        None,
+        {"id": "s:B", "col": 3},
+        None,
+    ]
+
+
 def test_a_returning_load_does_not_steal_focus_from_the_table() -> None:
     assert "focusIsFree(host)" in _function("drawLoader")
     assert "S.refocus = null" in JS[JS.index("listen(S, host, 'focusout'") :]
