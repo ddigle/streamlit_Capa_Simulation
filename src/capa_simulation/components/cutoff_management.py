@@ -27,6 +27,7 @@ from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     clear_process_cutoff_cache,
     load_process_cutoff,
@@ -203,11 +204,12 @@ def render_cutoff_management(
             clear_process_cutoff_cache()
             _reset_draft(load_process_cutoff(str(repository.database_path)))
             st.session_state[_CONFLICT_KEY] = (
-                f"{exc} 최신 저장본으로 다시 열었으니 확인한 뒤 다시 고치세요."
+                f"{bootstrap_error_message(exc)} 최신 저장본으로 다시 열었으니 확인한 뒤 다시 "
+                "고치세요."
             )
             st.rerun()
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(bootstrap_error_message(exc))
         else:
             # 다음 회차가 저장된 값을 읽는다 — Static 대비 일정·필요 단축 일정이 이 값으로 센다.
             clear_process_cutoff_cache()

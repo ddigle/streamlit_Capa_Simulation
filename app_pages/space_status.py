@@ -1263,10 +1263,8 @@ def _render_layout_warnings(
     except ValueError as exc:
         # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다).
         st.caption(
-            markdown_safe_tildes(
-                ":material/error: 가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 "
-                f"편집이 있어 겹침 경고를 계산하지 못했습니다: {exc}"
-            )
+            ":material/error: 가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 "
+            f"편집이 있어 겹침 경고를 계산하지 못했습니다: {bootstrap_error_message(exc)}"
         )
         return
     # 경고는 설비명을 싣는다(「NEW~01~」) — 물결표를 막는다.
@@ -1370,7 +1368,8 @@ def _render_layout_editor(
             _render_layer_rest_caption(pinned_today=as_of != today)
         st.error(
             "가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 편집이 있어 배치 "
-            f"편집기를 열 수 없습니다. 설비 마스터 탭에서 고치거나 버린 뒤 여세요: {exc}"
+            "편집기를 열 수 없습니다. 설비 마스터 탭에서 고치거나 버린 뒤 여세요: "
+            + bootstrap_error_message(exc)
         )
         return
     renames = pending_unit_renames()
@@ -1502,7 +1501,7 @@ def _render_layout_editor(
         sizes = module_group_sizes(inputs.items, inputs.ghosts)
         next_labels = next_group_labels(group_labels, applied, sizes)
     except ValueError as exc:
-        st.error(markdown_safe_tildes(f"적용하지 못했습니다: {exc}"))
+        st.error(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
@@ -1636,7 +1635,7 @@ def _render_fab_editor(
         # 요소를 모두 지웠으면 기본 배치를 그린다 — 그것도 영역 안이어야 한다(저장 때와 같은 검사).
         require_fab_layout_fits(next_canvas, next_marks)
     except ValueError as exc:
-        st.error(markdown_safe_tildes(f"적용하지 못했습니다: {exc}"))
+        st.error(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     # 저장값과 같아진 쪽은 대기분에서 뺀다. 견주는 기준은 그리는 저장값(요소가 없으면 기본
     # 배치)이고, 저장 때 대조할 본 값은 실제 저장 행이다(캔버스 행이 없으면 None, 요소가 없으면 빈

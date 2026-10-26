@@ -38,7 +38,7 @@ import pandas as pd
 import streamlit as st
 
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import quoted
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_timeline import (
     month_day,
@@ -55,7 +55,7 @@ from capa_simulation.components.widget_generation import (
     write_once_value,
 )
 from capa_simulation.design import tokens
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
+from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     clear_shortening_baseline_cache,
     get_equipment_repository,
@@ -236,7 +236,9 @@ def load_selected_baseline(
     try:
         return load_shortening_baseline(database_path, baseline_id)
     except BOOTSTRAP_ERRORS as exc:
-        st.warning(f"기준선을 읽지 못해 진척 비교를 하지 않았습니다 — {exc}")
+        st.warning(
+            f"기준선을 읽지 못해 진척 비교를 하지 않았습니다 — {bootstrap_error_message(exc)}"
+        )
         return None
 
 
@@ -357,8 +359,8 @@ def _render_save_form(save: BaselineSaveContext) -> None:
 def _render_delete(database_path: str, selected: ShorteningBaselineSummary) -> None:
     # 기준선 이름은 사람이 적은 글이다 — 캡션·알림(토스트)은 마크다운이라 글자 그대로 막는다.
     st.caption(
-        f"「{literal_markdown(selected.name)}」 기준선을 지웁니다. 모든 사용자의 목록에서 사라지고 "
-        "되돌릴 수 없습니다."
+        f"{quoted(selected.name)} 기준선을 지웁니다. 모든 사용자의 목록에서 사라지고 되돌릴 수 "
+        "없습니다."
     )
     # 확인 칸은 기준선마다 다르다 — 한 기준선에서 체크해 둔 채 다른 기준선을 고르면 한 번에 지워지지
     # 않게. `persist_state` 를 주지 않는다(AGENTS 9장 — 확인용 체크박스).
@@ -455,7 +457,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
         )
     except BOOTSTRAP_ERRORS as exc:
         # 같은 이름 거절은 적은 이름을 싣는다(`save_shortening_baseline`).
-        _notice("warning", f"기준선을 저장하지 않았습니다 — {markdown_safe_tildes(exc)}")
+        _notice("warning", f"기준선을 저장하지 않았습니다 — {bootstrap_error_message(exc)}")
         return
     if written is None:
         return
@@ -467,7 +469,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
         (
             "기준선을 저장했습니다."
             if summary is None
-            else f"기준선을 저장했습니다 — 「{literal_markdown(summary.name)}」."
+            else f"기준선을 저장했습니다 — {quoted(summary.name)}."
         )
         + " 「진척 비교」에서 고르면 지금 결과와 견줍니다.",
     )
@@ -491,7 +493,7 @@ def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
     try:
         deleted = get_equipment_repository(database_path).delete_shortening_baseline(baseline_id)
     except BOOTSTRAP_ERRORS as exc:
-        _notice("warning", f"기준선을 지우지 못했습니다 — {markdown_safe_tildes(exc)}")
+        _notice("warning", f"기준선을 지우지 못했습니다 — {bootstrap_error_message(exc)}")
         return
     # 이미 지워졌으면(다른 세션이 먼저 지웠다) 이 세션은 쓰지 않았다 — 목록 캐시만 비우고
     # 비교를 끈다. 목록은 프래그먼트가 회차마다 다시 읽으므로 앱 전체 회차 표지는 쓴 때만 남긴다.
@@ -499,13 +501,10 @@ def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
     clear_shortening_baseline_cache()
     st.session_state[SHORTENING_COMPARE_KEY] = NO_COMPARISON
     if not deleted:
-        _notice(
-            "warning",
-            f"이미 지워진 기준선입니다 — 「{literal_markdown(name)}」. 목록을 다시 읽었습니다.",
-        )
+        _notice("warning", f"이미 지워진 기준선입니다 — {quoted(name)}. 목록을 다시 읽었습니다.")
         return
     st.session_state[_BASELINE_WRITTEN_KEY] = True
-    _notice("success", f"기준선을 지웠습니다 — 「{literal_markdown(name)}」.")
+    _notice("success", f"기준선을 지웠습니다 — {quoted(name)}.")
 
 
 # ------------------------------------------------------------------ 데이터 고르기

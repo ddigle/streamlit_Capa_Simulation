@@ -26,6 +26,7 @@ import streamlit as st
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
@@ -121,7 +122,10 @@ def _original_line(exc: BaseException) -> str:
 
 
 def bootstrap_error_message(
-    exc: BaseException, *, database_paths: Sequence[Path] = (DUCKDB_PATH,)
+    exc: BaseException,
+    *,
+    database_paths: Sequence[Path] = (DUCKDB_PATH,),
+    markdown: bool = True,
 ) -> str:
     """화면에 보여 줄 오류 문구.
 
@@ -131,8 +135,16 @@ def bootstrap_error_message(
     권한」에, 그 밖의 열기 실패(`_OPEN_FAILURE_MARKERS`)는 「다른 프로그램·파일 권한과
     경로」에 맞춘다. 어느 갈래도 아니면 「작업이 실패했다」만 말한다. 쓰기 실패와 그 밖은
     조치가 원인을 다 짚지 못하므로 원문(`_original_line`)을 붙인다. 나머지 예외는 서비스
-    계층이 이미 한국어로 만든 문장이라 그대로 쓴다. 서명은 그대로 둔다 — 화면 수십 곳과
-    동기화 스크립트가 같은 꼴로 부른다.
+    계층이 이미 한국어로 만든 문장이라 글은 그대로 쓴다. 화면 수십 곳과 동기화 스크립트가 같은
+    꼴로 부른다.
+
+    **나머지 예외 글은 물결표를 막아 돌려준다**(`markdown_safe_tildes`, `markdown=False` 면
+    원문). 저장소·서비스 예외 글은 사람이 지은 이름(「E2E~가정~A」·「10~12월 증설」)을 날로 담고,
+    돌려준 글은 거의 다 알림 상자·캡션(마크다운)으로 간다 — 그리는 자리마다 막으면 한 자리를
+    고칠 때 옆 자리가 남는다(2026-10-26 E2E). 받은 글을 `markdown_safe_tildes`·`literal_markdown`
+    으로 다시 감싸지 않는다 — DuckDB 글의 코드 칸 경로 물결표나 막은 `\\~` 가 글자로 보인다
+    (`tests/test_markdown_sink_guard.py`). 마크다운이 아닌 자리(콘솔·JSON·`st.code`·Plotly 풍선·
+    `html.escape` 한 HTML)로 가는 글만 `markdown=False` 로 받는다.
 
     잠금을 쥔 것이 **이 앱 자신**이면 닫을 것이 없다(2026-10-01, E2E G1-D0). 한 서버가
     모든 브라우저 창·탭을 받으므로 창을 닫는 것은 조치가 아니다 — 예전 문구가 「다른 창을
@@ -144,7 +156,7 @@ def bootstrap_error_message(
     멀쩡한 시뮬레이션 파일을 들여다보게 된다.
     """
     if not isinstance(exc, duckdb.Error):
-        return str(exc)
+        return markdown_safe_tildes(exc) if markdown else str(exc)
     files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
     if is_own_process_lock(exc):
         return (

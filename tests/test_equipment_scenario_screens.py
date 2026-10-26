@@ -231,6 +231,20 @@ def test_the_shortening_basis_carries_the_label_and_the_compare_note() -> None:
     assert assumption.compare_note.startswith("지금 = 셋업 실무 r4 · 기준선 = 공식")
 
 
+def test_the_compare_note_blocks_the_scenario_name_but_the_link_label_stays_raw() -> None:
+    """진척 비교 머리 캡션(마크다운)에만 가는 글이라 거기서 막는다 — 카드 링크 `eq` 는 날
+    이름이다."""
+    catalog = _catalog()
+    renamed = replace(catalog.scenarios[1], scenario_name="셋업~가정~X")
+    catalog = replace(catalog, scenarios=(catalog.scenarios[0], renamed))
+
+    basis = shortening_equipment_basis(EquipmentSession(catalog, renamed, "b4"))
+
+    assert basis.label == "셋업~가정~X r4"
+    assert basis.compare_note is not None
+    assert basis.compare_note.startswith("지금 = 셋업\\~가정\\~X r4 · 기준선 = 공식")
+
+
 def test_the_unscheduled_notice_says_how_many_and_what_to_do() -> None:
     assert unscheduled_notice(0) is None
     line = unscheduled_notice(2)
@@ -295,6 +309,16 @@ def test_the_card_link_carries_eq_and_the_band_tail_only_when_it_differs() -> No
     )
     assert equipment_band_tail("공식 v3", "공식 v3") is None
     assert equipment_band_tail(None, "공식 v3") is None
+    # 캡션(마크다운)으로 간다 — 주소 인자 `eq` 는 누구나 링크로 적어 보내고, 이 화면 쪽은 사람이
+    # 지은 이름이다. 물결표는 지움선이, `![x](주소)` 는 보는 사람마다 그 주소를 부르는 이미지가
+    # 된다.
+    assert equipment_band_tail("E2E~가정~X r9", "B~안 r2") == (
+        "카드는 「E2E\\~가정\\~X r9」 기준 — 이 화면은 B\\~안 r2"
+    )
+    image = equipment_band_tail("![x](http://127.0.0.1:9/probe.png) r9", "공식 v3")
+    assert image is not None and "![x](" not in image and "\\!\\[x\\]\\(" in image
+    # 견줌은 막기 전의 글로 한다 — 같은 이름이면 띠 끝이 없다.
+    assert equipment_band_tail("B~안 r2", "B~안 r2") is None
 
 
 def test_the_publish_preview_puts_the_current_and_the_new_official_side_by_side() -> None:

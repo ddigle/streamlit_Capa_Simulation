@@ -58,6 +58,11 @@ from capa_simulation.auto_update_scheduler import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.write_guard import (
@@ -238,14 +243,14 @@ def _render_status(
             # 켜져 있으면 예약 회차가 이 까닭으로 멈춘다 — 오류다. 꺼져 있으면 켤 때 막히는 것을
             # 미리 알리는 상태 한 줄이다(켜거나 「지금 실행」을 누르면 그때 오류로 막는다).
             if config.enabled:
-                st.error(str(exc), icon=":material/error:")
+                st.error(bootstrap_error_message(exc), icon=":material/error:")
             else:
-                st.markdown(f"**현재 공식버전** · :red[주차 없음] — {exc}")
+                st.markdown(f"**현재 공식버전** · :red[주차 없음] — {bootstrap_error_message(exc)}")
         except BOOTSTRAP_ERRORS as exc:
             st.error("현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc))
         else:
             st.markdown(
-                f"**현재 공식버전** · {baseline.label} · {baseline.release_name} "
+                f"**현재 공식버전** · {baseline.label} · {literal_markdown(baseline.release_name)} "
                 f"({baseline.week_source}에서 읽은 주차)"
             )
 
@@ -253,7 +258,7 @@ def _render_status(
 def _config_line(config: AutoUpdateConfig) -> str:
     switch = "켜짐" if config.enabled else "꺼짐"
     return (
-        f"{switch} · 매일 {time_text(config.check_time)} · 키워드 「{config.keyword}」 · "
+        f"{switch} · 매일 {time_text(config.check_time)} · 키워드 {quoted(config.keyword)} · "
         f"기준 확보율 {percent_text(config.threshold)}"
     )
 
@@ -399,7 +404,7 @@ def _render_settings_form(
             threshold=round(float(threshold_percent), 4) / 100,
         )
     except ValueError as exc:
-        notice.error(str(exc))
+        notice.error(bootstrap_error_message(exc))
         return
     if updated == config and expected_version == settings.version:
         notice.info("바뀐 값이 없습니다.")
@@ -409,7 +414,7 @@ def _render_settings_form(
         try:
             current_official_baseline(repository)
         except MissingOfficialWeek as exc:
-            notice.error(str(exc), icon=":material/error:")
+            notice.error(bootstrap_error_message(exc), icon=":material/error:")
             return
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
@@ -422,8 +427,8 @@ def _render_settings_form(
             source=SETTINGS_SOURCE,
         )
     except BOOTSTRAP_ERRORS as exc:
-        # 버전 충돌과 검증 실패는 ValueError 이고 원문이 무엇을 할지 말한다.
-        message = str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc)
+        # 버전 충돌과 검증 실패는 ValueError 이고 원문이 무엇을 할지 말한다(물결표만 막아 그대로).
+        message = bootstrap_error_message(exc)
         if isinstance(exc, AutoOfficialUpdateSettingsConflict):
             note_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME, message)
         notice.error(message)
@@ -466,7 +471,7 @@ def _render_run_now(
         # 실행할 때도 먼저 막는다. 회차를 잡지 않으므로 기록도 남지 않는다.
         current_official_baseline(repository)
     except MissingOfficialWeek as exc:
-        notice.error(str(exc), icon=":material/error:")
+        notice.error(bootstrap_error_message(exc), icon=":material/error:")
         return
     except BOOTSTRAP_ERRORS as exc:
         notice.error(bootstrap_error_message(exc))
@@ -549,14 +554,16 @@ def _render_run_result(repository: DuckDBScenarioRepository) -> None:
     if not isinstance(held, dict):
         return
     status = held.get("status")
-    message = str(held.get("message") or "")
+    # 사유는 회차 기록(표 칸 — 평문)과 같은 글이라 짓는 곳(`_RunLog.finish`)이 아니라 여기서
+    # 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다.
+    message = markdown_safe_tildes(held.get("message") or "")
     if status == STATUS_RUNNING:
         _poll_running_round(repository)
         return
     if status == STATUS_PUBLISHED:
         st.success(message, icon=":material/publish:")
         # 허락하면서 하는 경고는 화면 발행(`scenario_management`)과 같이 성공 알림 밑에 따로 띄운다.
-        warning = str(held.get("warning") or "")
+        warning = markdown_safe_tildes(held.get("warning") or "")
         if warning:
             st.warning(warning, icon=":material/warning:")
     elif status == STATUS_SKIPPED:

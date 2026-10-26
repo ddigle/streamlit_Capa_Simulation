@@ -384,7 +384,9 @@ def load_space_layer(
             demand, frames, cutoff, tuple(months), today
         )
     except ValueError as exc:
-        return ShorteningStop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+        return ShorteningStop(
+            "error", f"필요 단축 일정을 계산하지 못했습니다 — {bootstrap_error_message(exc)}"
+        )
     if not keyed.plan.processes:
         return ShorteningStop(
             "info",
@@ -427,7 +429,9 @@ def render_layer_basis(
     months = space_layer.months
     span = f"{_month_text(months[0])}~{_month_text(months[-1])}" if months else "달 없음"
     equipment = (
-        "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
+        "설비 샘플(데모)"
+        if sample
+        else f"설비 시나리오 「{literal_markdown(_equipment_basis_text(session))}」"
     )
     st.caption(
         f":material/grid_view: 필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario} · {span} · "

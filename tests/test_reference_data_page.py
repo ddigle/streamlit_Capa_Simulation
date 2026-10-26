@@ -1727,7 +1727,8 @@ def test_a_pasted_ratio_outside_the_grid_range_is_refused_in_the_dialog() -> Non
     )
 
     errors = [str(error.value) for error in app.error]
-    assert any("0 ~ 1" in error and "'85'" in error for error in errors), errors
+    # 알림 상자는 마크다운이라 범위 물결표를 `\~` 로 막아 싣는다(bootstrap_error_message).
+    assert any(r"0 \~ 1" in error and "'85'" in error for error in errors), errors
     assert "test_month_updates" not in app.session_state
 
 

@@ -114,6 +114,7 @@ from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KE
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
+    bootstrap_error_message,
     prune_list_selection,
 )
 from capa_simulation.persistence.equipment_cache import (
@@ -409,7 +410,9 @@ def _prepare(
             demand, (baseline, equipment, downtime), cutoff, tuple(months), today
         )
     except ValueError as exc:
-        return ShorteningStop("error", f"필요 단축 일정을 계산하지 못했습니다 — {exc}")
+        return ShorteningStop(
+            "error", f"필요 단축 일정을 계산하지 못했습니다 — {bootstrap_error_message(exc)}"
+        )
     key = official.key
     plan = official.plan
 
@@ -1231,7 +1234,7 @@ def _render_assumption_compare(
     try:
         assumed = prepared.assumed()
     except ValueError as exc:
-        st.error(f"UPEH 가정 계획을 계산하지 못했습니다 — {exc}")
+        st.error(f"UPEH 가정 계획을 계산하지 못했습니다 — {bootstrap_error_message(exc)}")
         return
     months, labels = list(prepared.months), prepared.labels
     token = simulation_cache.shortening_key_token(assumed.key)

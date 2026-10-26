@@ -855,7 +855,8 @@ def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
         ),
         scenario_name=TILDE_NAME,
     )
-    assert saved.count(f"「{TILDE_NAME}」") >= 2, saved
+    # 저장 결과 글은 이름을 quoted 로 막아 짓는다(그리는 자리에서 다시 막아도 같다).
+    assert saved.count(f"「{TILDE_ESCAPED}」") >= 2, saved
     notice = (
         f"「{TILDE_NAME}」 r1 을 지금 공통 대장과 합칠 수 없어 「{TILDE_NAME}」 r2 로 열었습니다 — "
         "저장하지 않은 설비 편집은 버렸습니다."

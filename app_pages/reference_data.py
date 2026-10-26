@@ -677,7 +677,7 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
             effective_end_month,
         )
     except (KeyError, ValueError) as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
     months_label = ", ".join(str(month) for month in step_result.affected_months)
     st.session_state["capacity_step_flash"] = (
@@ -1150,9 +1150,9 @@ for editor, edited_table, applied in editor_results:
         # 표 위 `변경사항 적용` 에서 난 오류는 그 버튼 바로 아래 자리에 쓴다.
         notice = editor_notice(editor.editor_key)
         if notice is not None:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
         else:
             with editor.tab:
-                st.error(str(exc))
+                st.error(bootstrap_error_message(exc))
         st.stop()
     st.rerun()

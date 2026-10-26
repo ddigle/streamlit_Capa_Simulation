@@ -32,6 +32,7 @@ from capa_simulation.components.equipment_data_workspace import (
     reset_equipment_drafts,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
+from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     latest_equipment_revision_id,
     load_equipment_scenario_catalog,
@@ -640,7 +641,7 @@ def select_equipment_scenario(
         try:
             load_merged_equipment_snapshot(database_path, common_id, schedule_revision_id)
         except EquipmentScenarioIncompatible as error:
-            return str(error)
+            return bootstrap_error_message(error)
         except KeyError:
             return "그 리비전을 찾을 수 없습니다 — 목록을 다시 보세요."
     reset_equipment_drafts(keep_fab=True)

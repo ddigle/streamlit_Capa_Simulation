@@ -1331,8 +1331,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     write`·`Failed to commit` — 「저장되지 않았습니다. 디스크 공간과 쓰기 권한」), 그 밖의 열기 실패(`IOException` 의
     `Cannot open`·`Could not set lock` — 다른 프로그램·파일 권한과 경로), 어느 것도 아니면 「데이터베이스 작업이
     실패했습니다」다. 쓰기 실패와 그 밖에는 원문(종류 이름 + 앞 300자, 줄바꿈을 접은 코드 표기)을 붙인다. 그 밖의
-    예외는 서비스가 만든 한국어 문장 그대로다. 서명(`database_paths` — 어느 DB 인지는 부르는 쪽이 안다)은 화면 수십
-    곳과 `scripts/sync_object_storage.py` 가 같은 꼴로 부르므로 바꾸지 않는다.
+    예외는 서비스가 만든 한국어 문장에서 **물결표만 막아**(`markdown_safe_tildes`) 돌려준다 — 저장소·서비스 예외 글은
+    사람이 지은 이름을 날로 담고 돌려준 글은 거의 다 알림 상자·캡션(마크다운)으로 간다. 이미 막힌 `\~` 는 다시 막지
+    않는다. 마크다운이 아닌 자리(콘솔 — `scripts/sync_object_storage.py`, JSON·`st.code`·Plotly 풍선·`html.escape` 한
+    HTML)만 `markdown=False` 로 원문을 받는다. `database_paths`(어느 DB 인지는 부르는 쪽이 안다)는 화면 수십 곳이 같은
+    꼴로 부른다.
   - `scenario_capacity_and_demand`·`stop_calculation_on_error` 는 계산이 멈추면(ValueError) 사이드바를 「계산
     멈춤」으로 바꾸고 다시 던진다(뒤의 것은 시나리오 수준 오류만 나는 호출에만). 계산 함수는 부를 때
     `simulation_cache` 모듈에서 찾는다 — 페이지 테스트가 그 속성을 바꾼다.
@@ -4157,27 +4160,52 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고
   빈 줄에서 HTML 블록이 끊겨 적은 사람이 보던 글과 달라진다. 글만이면 `st.text`, HTML 로 감싸야 하면 `html.escape` 한
   뒤 `st.html` 로 넘긴다. 제목·이름처럼 마크다운으로 그려지는 자리(`st.expander` 라벨·`st.caption`·`st.markdown`·
-  알림 상자)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
+  알림 상자·위젯 라벨·풍선)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
-  보는 사람마다 그 주소를 부르는 이미지가 된다. 조사 도우미는 escape 의 `\` 를 건너뛰므로 감싼 뒤의 글로 골라도
-  escape 하기 전과 같은 조사다(「WB\(2\)」→「는」, `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다.
-  `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown` 이면 두 번
+  보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
+  `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
   막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
-- 앱이 지은 거부·안내 문구를 알림 상자(`st.error`·`st.warning`·`st.info`·`st.success`)에 넣을 때 그 문구가 범위 물결표(「동은
-  C1~C5, 층은 1F~6F」)를 품을 수 있으면 `literal_markdown.markdown_safe_tildes` 로 감싼다 — 물결표 둘이면 가운데가 지움선이 된다.
-  구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다
-  (`tests/test_equipment_master_tab.py`). 저장소 예외 글(`str(exc)`·`bootstrap_error_message(exc)`)도 같다 — 날 이름(남이 먼저 바꾼
-  설비 시나리오 이름·리비전명, 「「…」 r2를 저장해」)을 담으므로 그 글을 넣는 알림 상자는 감싼다(시나리오 관리 설비 시나리오 구획의
-  거절 알림 `REFUSED_KEY` 는 그리는 자리 한 곳에서, 사이드바 설비 시나리오 팝업 저장 실패도). 설비 시나리오 이름을 싣는 잠금·빨리
-  감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도 그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가
-  담을 때 막는다(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄 아래 팝업
-  저장 알림(`save_result_message`)·세션 이동 알림(`EquipmentSession.notice` — 사이드바 줄·시나리오 관리 구획)과 Space 층 끄기
-  확인의 가정 배치 덧줄도 그리는 자리에서 막는다(`tests/test_equipment_scenario_layout_management.py`). 필요 단축 일정 기준선
-  이름(저장·지우기 알림 토스트·「기준선 지우기」 확인 글)은 `literal_markdown`, 그 알림에 실리는 저장·지우기 실패 예외 글은
-  `markdown_safe_tildes` 다(`tests/test_shortening_progress_tab.py`). 「기준선 저장」 거절 글(`baseline_equipment_refusal`)은 지을
-  때 설비 시나리오 이름을 `literal_markdown` 으로 막는다(`tests/test_equipment_scenario_screens.py`). Guide 원문(`guides/*.md`)은
-  `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
-  (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
+- **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를
+  고칠 때 옆 자리가 남는다(2026-10-26 E2E 1~3회차). 시험이 지키는 범위는 아래 「지키는 시험」 에 적은 만큼이다.
+  - **예외 글은 `bootstrap_error_message(exc)`** — 알림 상자·캡션·토스트에 `str(exc)`·`f"{exc}"` 를 바로 싣지 않는다
+    (DuckDB 가 아닌 예외는 물결표를 막은 원문, 3장 `page_bootstrap.py`). 「`str(exc) if isinstance(exc, ValueError) else
+    bootstrap_error_message(exc)`」 도 같은 값이라 쓰지 않는다. 세션 칸에 담아 다음 회차에 그리는 거절 글·도우미에 넘기는
+    글·돌려주는 실패 글도 지을 때 이 길을 탄다. 돌려받은 글을 `markdown_safe_tildes`·`literal_markdown` 으로 다시 감싸지
+    않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의 코드 칸 경로 물결표는 `\~` 로 보인다), 뒤의 것은 막은
+    `\~` 를 다시 막아 글자로 보인다.
+  - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
+    없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 `korean_particle` 로 고른다 — 끝의
+    `」` 와 escape 의 `\` 를 건너뛰므로 막기 전의 이름·「이름」·막은 글 어느 것으로 골라도 같은 조사다(「WB\(2\)」→「는」,
+    `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다. 필요 단축 일정 기준선 이름(저장·지우기 알림 토스트·
+    「기준선 지우기」 확인 글 — `tests/test_shortening_progress_tab.py`)과 「기준선 저장」 거절 글
+    (`baseline_equipment_refusal` 이 지을 때 설비 시나리오 이름 — `tests/test_equipment_scenario_screens.py`)도 이 길이다.
+  - **문구를 짓는 함수**도 이름을 끼울 때 위 둘을 쓴다. 다만 그 글이 평문 자리(표 칸·JS 설비 마스터 표·배치 편집기·
+    조사 고르기)로도 가면 짓는 곳에서 막지 않는다 — 거기서는 `\~` 가 글자로 보인다. 그런 함수(세션 알림
+    `EquipmentSession.notice`·Space 잠금·빨리 감기 글 `space_edit_mode`·낡은 세션 잠금 글 등)는
+    `tests/test_markdown_sink_guard.py` 의 `PLAIN_TEXT_BUILDERS` 에 까닭과 함께 적고, 마크다운으로 그리는 자리에서
+    `markdown_safe_tildes` 로 막는다 — Space 머리 알림 줄·잠금 줄·꺼진 「배치 편집」 풍선, rerun 건너 그리는 Space 성공 글은
+    담을 때(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`), 사이드바 설비 시나리오 줄의 팝업 저장 알림
+    (`save_result_message`)·저장 실패·세션 이동 알림과 시나리오 관리 구획의 세션 이동 알림·거절 알림(`REFUSED_KEY` — 그리는
+    자리 한 곳), Space 층 끄기 확인의 가정 배치 덧줄(`tests/test_equipment_scenario_layout_management.py`·
+    `tests/test_equipment_scenario_screens.py`, E2E r3).
+  - 앱이 지은 거부·안내 문구가 범위 물결표(「동은 C1~C5, 층은 1F~6F」)를 품으면 알림 상자에 넣을 때
+    `markdown_safe_tildes` 로 감싼다 — 구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는
+    규칙 시험이 고정하므로 상수는 그대로 둔다(`tests/test_equipment_master_tab.py`). Guide 원문(`guides/*.md`)은
+    `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다(`tests/test_page_guide.py` 가 모든 Guide 를 본다).
+  - 지키는 시험과 그 범위(UI 모듈 = `app.py`·`app_pages/`·`components/`·`src/capa_simulation/` 꼭대기 모듈):
+    - `tests/test_markdown_sink_guard.py`(AST). ① UI 모듈의 `except … as exc` 안에서 예외를 글로 바꾸는 꼴(`str(exc)`·
+      `f"{exc}"`·`.format(exc)`·`%`)은 **어디에 쓰든**(마크다운 자리 인자·대입·도우미 인자·세션 칸·돌려주는 값) 실패하고,
+      마크다운 자리 인자에 `exc` 를 그대로 넘겨도 실패한다. 지나가는 것은 막는 함수 안·`raise`·로그·평문 자리(`st.code`·
+      `st.text`·`st.json`·`html.escape`)·까닭 가르기(`"lock" in str(exc)`)와, 마크다운이 아닌 곳으로만 보내는 함수
+      (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
+      `bootstrap_error_message`(다시 감싸기). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS` 만.
+      **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
+      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글.
+      이것은 이 절의 규칙대로 짓거나 그리는 자리에서 막고 아래 화면 그물·리뷰가 본다.
+    - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
+      (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
+      열린 화면의 기본 상태만 본다 — 탭 안·누른 뒤·거절 뒤의 글은 그 화면 시험이 따로 본다.
+    - `tests/test_literal_markdown.py`(단위).
 
 ### 스크립트와 컴포넌트
 

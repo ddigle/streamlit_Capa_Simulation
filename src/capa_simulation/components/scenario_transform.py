@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
@@ -219,10 +220,9 @@ def render_derived_save(
     already_saved = isinstance(saved, dict) and saved.get("request") == request
     if already_saved and isinstance(saved, dict):
         saved_name = str(saved["name"])
-        st.success(
-            f"새 시나리오 ‘{saved_name}’{object_particle(saved_name)} 저장했습니다. 목록 관리에서 "
-            "불러올 수 있습니다."
-        )
+        # 사람이 지은 이름이라 알림 상자(마크다운)에서 막고, 조사는 막기 전의 이름으로 고른다.
+        shown = f"‘{literal_markdown(saved_name)}’{object_particle(saved_name)}"
+        st.success(f"새 시나리오 {shown} 저장했습니다. 목록 관리에서 불러올 수 있습니다.")
         if isinstance(saved.get("warning"), str):
             st.warning(saved["warning"], icon=":material/warning:")
     st.caption(

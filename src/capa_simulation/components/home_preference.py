@@ -26,7 +26,7 @@ import streamlit as st
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_main_cases import render_main_case_picker
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
@@ -927,7 +927,7 @@ def render_threshold_editor(
             )
         except BOOTSTRAP_ERRORS as exc:
             # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
-            message = str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc)
+            message = bootstrap_error_message(exc)
             own = isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
                 THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks
             )
@@ -1341,7 +1341,7 @@ def _render_summary_note_editor(
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         clear_global_summary_note_cache()
         queue_flash(
@@ -1410,7 +1410,7 @@ def _render_top5_band_editor(
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         clear_global_top5_band_cache()
         queue_flash("home_top5_band_flash", "B/N Top5 확보율 구간을 저장했습니다.")
@@ -1593,7 +1593,7 @@ def _render_key_process_editor(
             persist_state="session",
         )
         if names:
-            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 「{names[0]}」입니다.")
+            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 {quoted(names[0])}입니다.")
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         known_options = set(process_options)
@@ -1661,7 +1661,7 @@ def _render_key_process_editor(
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         clear_global_key_process_cache()
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
@@ -1669,7 +1669,7 @@ def _render_key_process_editor(
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(
             KEY_PROCESS_FLASH_KEY,
-            f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",
+            f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
 
@@ -1704,7 +1704,7 @@ def _render_key_process_preset_actions(
             help="맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다.",
         )
         # 라벨에 이름을 넣어 프리셋마다 다른 칸이 되게 한다 — 다른 프리셋으로 옮기면 체크가 풀린다.
-        confirmed = st.checkbox(f"「{target}」 삭제 확인")
+        confirmed = st.checkbox(f"{quoted(target)} 삭제 확인")
         delete = st.button(
             "프리셋 삭제",
             icon=":material/delete:",
@@ -1718,10 +1718,10 @@ def _render_key_process_preset_actions(
             *(entry for entry in profile.presets if entry[0] == target),
             *(entry for entry in profile.presets if entry[0] != target),
         ]
-        message = f"「{target}」{object_particle(target)} 기본 프리셋으로 옮겼습니다."
+        message = f"{quoted(target)}{object_particle(target)} 기본 프리셋으로 옮겼습니다."
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
-        message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
+        message = f"프리셋 {quoted(target)}{object_particle(target)} 지웠습니다."
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     marks = notice_marks()
     try:
@@ -1732,7 +1732,7 @@ def _render_key_process_preset_actions(
         st.error(bootstrap_error_message(exc))
         return
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(bootstrap_error_message(exc))
         return
     note_notice(marks, KEY_PROCESS_FLASH_KEY, message)
     clear_global_key_process_cache()
@@ -1861,9 +1861,10 @@ def _render_execution_editor(
                 expected_version=expected_version,
             )
         except ProfileVersionConflict as exc:
+            message = bootstrap_error_message(exc)
             own = is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks)
             if not own:
-                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, str(exc))
+                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
             # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
             # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
             clear_global_execution_capacity_cache()
@@ -1872,13 +1873,13 @@ def _render_execution_editor(
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
                 st.rerun(scope="app")
-            notice.error(str(exc))
+            notice.error(message)
             return
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
-            notice.error(str(exc))
+            notice.error(bootstrap_error_message(exc))
             return
         save_marks[EXECUTION_SAVE_NAME] = (expected_version, saved.version)
         queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)

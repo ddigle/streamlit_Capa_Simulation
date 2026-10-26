@@ -21,7 +21,11 @@ from capa_simulation.components.equipment_save_fields import (
     EquipmentSaveBasis,
     EquipmentSaveFields,
 )
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
     TableView,
@@ -1154,9 +1158,9 @@ def _csv_scenario_mismatch(file_name: str | None, scenario_name: str | None) -> 
     if named == _file_name_part(scenario_name):
         return None
     return (
-        f"올린 CSV 는 다른 설비 시나리오(「{named.replace('_', ' ')}」)에서 내려받은 「현재 "
-        f"데이터」 입니다 — 지금 세션은 「{scenario_name}」 입니다. 배치·일정 칸이 그 시나리오의 "
-        "값이면 이 시나리오의 배치·일정이 그 값으로 바뀝니다."
+        f"올린 CSV 는 다른 설비 시나리오({quoted(named.replace('_', ' '))})에서 내려받은 「현재 "
+        f"데이터」 입니다 — 지금 세션은 {quoted(scenario_name)} 입니다. 배치·일정 칸이 그 "
+        "시나리오의 값이면 이 시나리오의 배치·일정이 그 값으로 바뀝니다."
     )
 
 
@@ -2018,7 +2022,7 @@ def save_result_message(result: EquipmentSaveResult, *, scenario_name: str | Non
     if result.common is not None:
         written.append(f"공통 대장 r{result.common.revision_no}")
     if result.schedule is not None:
-        label = f"「{scenario_name}」 " if scenario_name else "설비 시나리오 일정 "
+        label = f"{quoted(scenario_name)} " if scenario_name else "설비 시나리오 일정 "
         written.append(f"{label}r{result.schedule.revision_no}")
     sentences = [
         f"설비 데이터를 저장했습니다 — {' · '.join(written)}."
@@ -2067,7 +2071,7 @@ def overlay_saved_sentence(result: EquipmentSaveResult, *, scenario_name: str | 
     """가정 배치를 저장한 한 문장 — 그 리비전의 공식과 다른 호기 · 도면 요소 · Main 설비명 위치 수
     (0 인 것은 뺀다, Space 머리 알림과 같은 꼴 — 설계 8-2). 요소·이름표만 옮긴 저장도 무엇이
     저장됐는지 말한다. 모두 0 이면 이제 공식 배치와 같다는 말이다(차이를 모두 걷은 저장)."""
-    place = f"「{scenario_name}」" if scenario_name else "이 설비 시나리오"
+    place = quoted(scenario_name, empty="이 설비 시나리오")
     parts = []
     if result.layout_overlay_units:
         parts.append(f"공식과 다른 호기 {result.layout_overlay_units:,}대")
@@ -2090,7 +2094,7 @@ def _propagated_words(item: PropagatedRevision) -> str:
     if item.downtime:
         parts.append(f"비가동 {len(item.downtime):,}건")
     detail = f"({' · '.join(parts)})" if parts else ""
-    return f"「{item.scenario_name}」 r{item.revision_no}{detail}"
+    return f"{quoted(item.scenario_name)} r{item.revision_no}{detail}"
 
 
 def floor_layout_words(canvases: object, marks: object, labels: object) -> str:

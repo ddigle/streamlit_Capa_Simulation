@@ -50,7 +50,7 @@ from capa_simulation.components.equipment_scenario_status import (
     render_equipment_scenario_row,
     render_legacy_trace_warning,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
@@ -209,7 +209,7 @@ if requested_process is not None:
     else:
         # 주소 인자 글이 그대로 오므로 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
         missing_label = process_labels.label(requested_process)
-        missing = f"「{literal_markdown(missing_label)}」{topic_particle(f'「{missing_label}」')}"
+        missing = f"「{literal_markdown(missing_label)}」{topic_particle(missing_label)}"
         notices.warning(
             f"넘겨받은 공정 {missing} 시나리오·조회기간에 없어 첫 공정을 엽니다.",
             icon=":material/help:",
@@ -577,7 +577,12 @@ try:
     )
     result: ConstraintResult = simulate_constraint(month_inputs, conditions)
 except (KeyError, ValueError) as exc:
-    message = exc.args[0] if isinstance(exc, KeyError) and exc.args else str(exc)
+    # KeyError 는 따옴표 없는 첫 인자(빠진 이름)를 싣는다 — 이름이라 물결표를 막는다.
+    message = (
+        markdown_safe_tildes(exc.args[0])
+        if isinstance(exc, KeyError) and exc.args
+        else bootstrap_error_message(exc)
+    )
     render_header(process, f"**{literal_markdown(process_label)}** · {literal_markdown(product)}")
     st.error(f"제약 시뮬레이션을 계산하지 못했습니다 — {message}")
     st.stop()

@@ -56,7 +56,11 @@ from capa_simulation.components.equipment_save_fields import (
     PUBLISH_OFFICIAL_LABEL,
     SAVED_BY_LABEL,
 )
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.tab_state import remember_open_tab
 from capa_simulation.components.widget_generation import (
     bump,
@@ -384,10 +388,10 @@ def layout_trace_sentence(
     traces = layout_trace_sources(revisions)
     if not traces and not scenario.layout_trace_count:
         return None
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     if not traces:
         return (
-            f"「{name}」 에 옛 판이 저장해 앞 리비전의 가정 배치가 빠진 리비전이 "
+            f"{name} 에 옛 판이 저장해 앞 리비전의 가정 배치가 빠진 리비전이 "
             f"{scenario.layout_trace_count:,}개 있습니다(아래 표보다 옛 리비전) — 빠지기 전 "
             "리비전으로 되돌리면(이 리비전으로 되돌리기) 되살아납니다."
         )
@@ -399,7 +403,7 @@ def layout_trace_sentence(
         else ""
     )
     return (
-        f"「{name}」 r{latest}{topic_particle(f'r{latest}')} 옛 판이 저장해 {source}의 가정 배치가 "
+        f"{name} r{latest}{topic_particle(f'r{latest}')} 옛 판이 저장해 {source}의 가정 배치가 "
         f"빠졌습니다 — {with_direction_particle(source)} 되돌리기(이 리비전으로 되돌리기)로 "
         f"되살립니다.{more} 옛 판으로 저장하지 않게 런북 4-2 「되돌림」 을 보세요."
     )
@@ -484,9 +488,10 @@ def render_equipment_scenario_section(*, notice_slot: DeltaGenerator | None = No
     )
     # 세션 이동 알림은 한 회차뿐이다 — 늘 서 있는 칸 안에 그려 빠지는 회차에 구획 본문(팝오버 줄)이
     # 한 칸 당겨지지 않게 한다(`POPOVER_GENERATION_KEY`).
-    # 알림은 날 설비 시나리오 이름을 담는다 — 물결표가 지움선이 되지 않게 막는다.
     with st.container():
         if session.notice:
+            # 알림은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다).
+            # 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 물결표를 막는다.
             notice = markdown_safe_tildes(session.notice)
             if notice_slot is not None and not session.unmerged:
                 notice_slot.warning(notice, icon=":material/sync_problem:")
@@ -578,9 +583,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             for item in load_equipment_revision_summaries(database_path, latest_common)
         }
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
-        )
+        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
     release = session.catalog.latest_release
     official_id = release.schedule_revision_id if release is not None else None
@@ -668,9 +671,9 @@ def _render_load(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
 ) -> None:
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
-    st.caption(f"「{name}」 {with_object_particle(title)} 이 세션의 설비 시나리오로 올립니다.")
+    st.caption(f"{name} {with_object_particle(title)} 이 세션의 설비 시나리오로 올립니다.")
     discard = True
     if has_unsaved_equipment_edits():
         discard = st.checkbox("변경을 버리고 불러오기", key=DISCARD_KEY)
@@ -687,7 +690,7 @@ def _render_load(
             st.error(markdown_safe_tildes(failure))
             return
         st.session_state[FLASH_KEY] = (
-            f"설비 시나리오 「{name}」 {with_object_particle(title)} 불러왔습니다."
+            f"설비 시나리오 {name} {with_object_particle(title)} 불러왔습니다."
         )
         st.rerun()
 
@@ -789,12 +792,12 @@ def restore_preview_lines(
     바뀌는 호기 수·비가동 행 수·일정 없음이 되는 호기, 그 리비전 뒤에 공통 대장에 든 호기의 「일정
     없음」(늘 적는다), 그대로인 것(사이 리비전·공통 대장·다른 시나리오), 공식 시나리오면 발행 규칙.
     """
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
     latest_no = scenario.latest_revision_no or 0
     new_title = f"r{latest_no + 1}"
     lines = [
-        f"「{name}」 {title}의 일정(날짜 여섯·시나리오 메모·비가동)으로 되돌립니다 — 최신 "
+        f"{name} {title}의 일정(날짜 여섯·시나리오 메모·비가동)으로 되돌립니다 — 최신 "
         f"r{latest_no} 위에 새 리비전 {new_title}{object_particle(new_title)} 저장하고 "
         f"{title}~{with_topic_particle(f'r{latest_no}')} 그대로 남습니다.",
         f"**일정이나 비가동이 바뀌는 호기 {preview.changed_units:,}대** · 비가동 "
@@ -908,13 +911,13 @@ def restore_result_message(
     kept_unsaved: bool,
 ) -> str:
     """되돌리기 뒤 알림 — 새 리비전·바뀐 호기 수·배치 차이·발행·세션 이동."""
-    name = literal_markdown(scenario_name)
+    name = quoted(scenario_name)
     title = f"r{revision.revision_no}"
     if result.schedule is None:
-        return f"「{name}」 최신과 {title}의 일정·비가동이 같아 새 리비전을 만들지 않았습니다."
+        return f"{name} 최신과 {title}의 일정·비가동이 같아 새 리비전을 만들지 않았습니다."
     created = f"r{result.schedule.revision_no}"
     sentences = [
-        f"「{name}」 {with_direction_particle(title + '의 일정')} 되돌려 "
+        f"{name} {with_direction_particle(title + '의 일정')} 되돌려 "
         f"{with_object_particle(created)} 저장했습니다(일정이 바뀐 호기 "
         f"{result.preview.changed_units:,}대)."
     ]
@@ -979,7 +982,7 @@ def _render_restore(
         common_id = _latest_common_id(database_path)
         preview = _preview_for(database_path, common_id, scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(markdown_safe_tildes(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}"))
+        st.error(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}")
         return
     release_no = session.catalog.release_no or 0
     seen = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
@@ -1069,7 +1072,7 @@ def _render_restore(
         )
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.error(markdown_safe_tildes(f"되돌리지 못했습니다: {bootstrap_error_message(exc)}"))
+        st.error(f"되돌리지 못했습니다: {bootstrap_error_message(exc)}")
         return
     moved = False
     kept_unsaved = False
@@ -1106,20 +1109,16 @@ def _render_branch(
     출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
     대장에 든 호기는 일정 없음이다.
     """
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
     st.caption(
-        f"「{name}」 {title}의 일정·시나리오 메모·비가동을 지금 공통 대장과 합쳐 새 설비 시나리오 "
+        f"{name} {title}의 일정·시나리오 메모·비가동을 지금 공통 대장과 합쳐 새 설비 시나리오 "
         "r1 로 옮깁니다. 이 시나리오는 그대로입니다."
     )
     try:
         preview = _preview_for(database_path, _latest_common_id(database_path), scenario, revision)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(
-                f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}"
-            )
-        )
+        st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
         return
     st.caption(branch_unscheduled_sentence(revision, preview))
     # 칸 key 의 세대가 만들기 쓰기의 세대이기도 하다(`write_once_value`).
@@ -1149,18 +1148,14 @@ def _render_branch(
                 fingerprint=(revision.schedule_revision_id, new_name, created_by),
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(
-                markdown_safe_tildes(
-                    f"새 시나리오를 만들지 못했습니다: {bootstrap_error_message(exc)}"
-                )
-            )
+            st.error(f"새 시나리오를 만들지 못했습니다: {bootstrap_error_message(exc)}")
             return
         if written is None:
             return
         created = written.value
         made = new_name if created is None else created.scenario_name
         _written(
-            f"「{name}」 {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
+            f"{name} {title}에서 설비 시나리오 「{literal_markdown(made)}」 "
             "r1 을 만들었습니다 — 설비 화면의 사이드바 설비 시나리오 줄이나 이 구획의 「이 리비전 "
             "불러오기」로 올립니다.",
             release=written.release,
@@ -1208,14 +1203,10 @@ def _render_revision_name(
             )
         except EquipmentScheduleRevisionNameMoved as exc:
             # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
-            _refused(f"리비전명을 바꾸지 않았습니다 — {exc}")
+            _refused(f"리비전명을 바꾸지 않았습니다 — {bootstrap_error_message(exc)}")
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.error(
-                markdown_safe_tildes(
-                    f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}"
-                )
-            )
+            st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
         shown = schedule_revision_title(renamed)
         _written(
@@ -1245,15 +1236,13 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
             )
         except EquipmentScenarioNameMoved as exc:
             # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
-            _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {exc}")
+            _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {bootstrap_error_message(exc)}")
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.error(
-                markdown_safe_tildes(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
-            )
+            st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        quoted = f"「{literal_markdown(renamed.scenario_name)}」"
-        _written(f"설비 시나리오 이름을 {with_direction_particle(quoted)} 했습니다.")
+        renamed_to = with_direction_particle(quoted(renamed.scenario_name))
+        _written(f"설비 시나리오 이름을 {renamed_to} 했습니다.")
 
 
 def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSummary) -> bool:
@@ -1271,13 +1260,13 @@ def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSumma
 
 def clear_layout_lines(scenario: EquipmentScenarioSummary) -> list[str]:
     """「배치 차이 모두 지우기」 확인 글(Markdown 줄) — 무엇을 비우고 무엇이 그대로인지."""
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     latest_no = scenario.latest_revision_no or 0
     latest = f"r{latest_no}"
     new_title = f"r{latest_no + 1}"
     stored = stored_layout_words(*scenario.latest_layout_rows) or "저장된 차이"
     return [
-        f"「{name}」 최신 {latest}의 일정·비가동은 그대로 두고 배치 차이({stored})만 비운 새 "
+        f"{name} 최신 {latest}의 일정·비가동은 그대로 두고 배치 차이({stored})만 비운 새 "
         f"리비전 {new_title}{object_particle(new_title)} 저장합니다 — 이 설비 시나리오의 Space "
         "배치가 공식 배치로 돌아갑니다(공식에서 고친 자리를 다시 따라갑니다).",
         f"{with_topic_particle(latest)} 그대로 남습니다 — 배치안을 되살리려면 그 리비전을 고르고 "
@@ -1294,12 +1283,12 @@ def clear_layout_message(
     kept_unsaved: bool,
 ) -> str:
     """「배치 차이 모두 지우기」 뒤 알림 — 새 리비전·세션 이동."""
-    name = literal_markdown(scenario_name)
+    name = quoted(scenario_name)
     if created is None:
-        return f"「{name}」 최신에 지울 배치 차이가 없어 새 리비전을 만들지 않았습니다."
+        return f"{name} 최신에 지울 배치 차이가 없어 새 리비전을 만들지 않았습니다."
     title = f"r{created.revision_no}"
     sentences = [
-        f"「{name}」 의 배치 차이를 모두 지운 {with_object_particle(title)} 저장했습니다 — 이 "
+        f"{name} 의 배치 차이를 모두 지운 {with_object_particle(title)} 저장했습니다 — 이 "
         "설비 시나리오의 배치는 이제 공식 배치를 따릅니다."
     ]
     if moved:
@@ -1355,9 +1344,7 @@ def _render_clear_layout(
         )
         return
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(f"배치 차이를 지우지 못했습니다: {bootstrap_error_message(exc)}")
-        )
+        st.error(f"배치 차이를 지우지 못했습니다: {bootstrap_error_message(exc)}")
         return
     moved = False
     kept_unsaved = False
@@ -1533,9 +1520,9 @@ def publish_seen_refusal(
     latest = f"r{scenario.latest_revision_no}"
     if not isinstance(was_no, int) or scenario.latest_revision_no is None:
         return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     return (
-        f"확인 글을 본 뒤 「{name}」 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "
+        f"확인 글을 본 뒤 {name} 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "
         f"않았습니다 — 다른 사용자가 그 사이 {with_object_particle(latest)} 저장했습니다. 바뀐 "
         "확인 글을 다시 보고 발행하세요."
     )
@@ -1586,11 +1573,7 @@ def _render_publish(
             scenario.latest_schedule_revision_id,
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(
-                f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}"
-            )
-        )
+        st.error(f"발행 확인 글을 만들지 못했습니다: {bootstrap_error_message(exc)}")
         return
     layout_lines, blocked = publish_layout_lines(
         scenario,
@@ -1647,7 +1630,7 @@ def _render_publish(
             _refused(literal_markdown(str(exc)))
             return
         except BOOTSTRAP_ERRORS as exc:
-            st.error(markdown_safe_tildes(f"발행하지 못했습니다: {bootstrap_error_message(exc)}"))
+            st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
             return
         cleaned = published.schedule_revision_id != revision.schedule_revision_id
         moved = kept_unsaved = False
@@ -1684,9 +1667,9 @@ def publish_result_message(
     """「공식으로 발행」 뒤 알림 — 정리 리비전으로 발행했으면(`cleaned_no`) 그 번호와 세션 이동.
     `layout` 은 확인 글이 읽은 배치 판정이다 — 정리한 행이 공통 대장에서 지운 호기의 것이면 그렇게
     말한다(없거나 정리 판정이 아니면 「공식과 같아진 배치 차이」)."""
-    name = literal_markdown(scenario_name)
+    name = quoted(scenario_name)
     release = f"v{release_no}"
-    head = f"공식 {with_direction_particle(release)} 발행했습니다 — 「{name}」 "
+    head = f"공식 {with_direction_particle(release)} 발행했습니다 — {name} "
     if cleaned_no is None:
         return head + f"r{revision.revision_no}."
     title = f"r{cleaned_no}"
@@ -1771,9 +1754,7 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
     try:
         review = load_legacy_trace_review(database_path)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}")
-        )
+        st.error(f"옛 배포 흔적을 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
     if review.refusal is not None:
         st.error(
@@ -1797,6 +1778,6 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
                 expected_trace_count=count, note="이대로 이어 쓰기"
             )
         except BOOTSTRAP_ERRORS as exc:
-            st.error(markdown_safe_tildes(f"이어 쓰지 못했습니다: {bootstrap_error_message(exc)}"))
+            st.error(f"이어 쓰지 못했습니다: {bootstrap_error_message(exc)}")
             return
         _written("옛 배포 흔적을 확인했습니다 — 설비 저장을 다시 할 수 있습니다.")

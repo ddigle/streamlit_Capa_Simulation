@@ -52,7 +52,11 @@ from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
@@ -190,7 +194,7 @@ def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
 
     까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지 않은 리비전. 시나리오가
     없거나(빈 설비 DB) 공식 발행 쌍이면 None. 글은 마크다운 자리(`st.info`·토스트)에 그대로 싣도록
-    시나리오 이름을 `literal_markdown` 으로 막아 둔다.
+    시나리오 이름을 `quoted` 로 막아 둔다.
     """
     if session is not None and session.unmerged:
         return (
@@ -201,15 +205,15 @@ def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
         return None
     official = f"공식 v{session.release_no}" if session.release_no is not None else "공식"
     # 거절 글은 알림 상자·토스트(마크다운)로 그린다 — 시나리오 이름은 사람이 적은 글이라 막는다.
-    name = literal_markdown(session.scenario_name)
+    name = quoted(session.scenario_name)
     if session.is_assumption:
         return (
-            f"가정 설비 시나리오(「{name}」 r{session.revision_no})를 보는 중이라 "
+            f"가정 설비 시나리오({name} r{session.revision_no})를 보는 중이라 "
             f"기준선을 저장하지 않습니다 — 진척 비교 기준선은 공식 설비 시나리오({official})에서만 "
             "저장합니다. 사이드바 설비 시나리오에서 공식을 불러온 뒤 저장하세요."
         )
     return (
-        f"발행하지 않은 리비전(「{name}」 r{session.revision_no} — 공식은 "
+        f"발행하지 않은 리비전({name} r{session.revision_no} — 공식은 "
         f"{official})을 보는 중이라 기준선을 저장하지 않습니다 — 공식으로 발행하거나 공식 "
         "리비전을 불러온 뒤 저장하세요."
     )
@@ -221,7 +225,12 @@ def shortening_equipment_basis(session: EquipmentSession) -> ShorteningEquipment
     label = equipment_basis_label(session)
     note = None
     if session.scenario is not None and not session.is_official_pair:
-        note = f"지금 = {label} · 기준선 = 공식(진척 비교 기준선은 공식 설비 시나리오에서 저장)"
+        # 진척 비교 머리 캡션(마크다운)에만 간다 — `label` 은 카드 링크 주소 인자에도 가므로
+        # 날로 두고 이 글에서만 막는다.
+        note = (
+            f"지금 = {literal_markdown(label)} · 기준선 = 공식(진척 비교 기준선은 공식 설비 "
+            "시나리오에서 저장)"
+        )
     return ShorteningEquipmentBasis(
         schedule_revision_id=schedule.schedule_revision_id if schedule is not None else None,
         schedule_revision_no=schedule.revision_no if schedule is not None else None,
@@ -309,6 +318,7 @@ def render_equipment_scenario_row(
             if isinstance(flash, str):
                 st.success(markdown_safe_tildes(flash))
             if session.notice:
+                # 세션 알림은 설비 마스터 표(평문)에도 가는 글이라 짓는 곳이 아니라 여기서 막는다.
                 st.warning(markdown_safe_tildes(session.notice), icon=":material/sync_problem:")
 
 
@@ -412,9 +422,7 @@ def _render_load(database_path: str, session: EquipmentSession, *, unsaved: bool
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_scenario)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(
-            markdown_safe_tildes(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
-        )
+        st.error(f"리비전 목록을 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
     revision_by_id = {item.schedule_revision_id: item for item in revisions}
     if revision_by_id:
@@ -613,10 +621,8 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(
-            markdown_safe_tildes(
-                "저장하지 못했습니다: "
-                + bootstrap_error_message(exc, database_paths=(Path(database_path),))
-            )
+            "저장하지 못했습니다: "
+            + bootstrap_error_message(exc, database_paths=(Path(database_path),))
         )
         return
     bump(SAVE_NOTE_GENERATION_KEY)

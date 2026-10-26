@@ -48,6 +48,7 @@ import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.home_state import (
     ADVANCE_TOGGLE_KEY,
@@ -893,7 +894,10 @@ def equipment_band_tail(card: str | None, here: str | None) -> str | None:
     """출처 띠 끝 — 카드가 본 설비 시나리오(`eq`)가 이 화면의 기준과 다를 때만 그 사실 한 마디.
 
     예: 「카드는 「셋업 실무 r4」 기준 — 이 화면은 공식 v3」. 같거나 어느 한쪽을 모르면 None.
+    캡션(마크다운)으로 가므로 둘 다 막는다 — `card` 는 누구나 링크로 적어 보내는 주소 인자이고
+    (`![x](주소)` 면 보는 사람마다 그 주소를 부른다), `here` 는 사람이 지은 설비 시나리오 이름이다.
+    견줌은 막기 전의 글로 한다.
     """
     if not card or not here or card == here:
         return None
-    return f"카드는 「{card}」 기준 — 이 화면은 {here}"
+    return f"카드는 {quoted(card)} 기준 — 이 화면은 {literal_markdown(here)}"
