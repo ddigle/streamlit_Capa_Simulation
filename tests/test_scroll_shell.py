@@ -3,7 +3,12 @@
 import re
 from pathlib import Path
 
-from capa_simulation.components.scroll_shell import min_width_scroll_rules, scroll_shell_style
+from capa_simulation.components.scroll_shell import (
+    PLOTLY_MIN_CHART_WIDTH_PX,
+    min_width_scroll_rules,
+    scroll_shell_style,
+)
+from capa_simulation.design import tokens
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -118,3 +123,29 @@ def test_scroll_shell_css_is_not_duplicated_in_pages_or_components() -> None:
     ]
 
     assert not offenders, f"scroll_shell.horizontal_scroll_canvas 를 쓰세요: {offenders}"
+
+
+def test_a_one_month_canvas_is_not_narrower_than_the_plotly_floor() -> None:
+    """조회기간 한 달이면 월 칸 캔버스가 100px 인데 Streamlit 1.63 은 `width="stretch"` 그림을
+    150px 아래로 그리지 않아 상자 오른쪽 1/3 이 잘렸다(2026-10-26 E2E — HOME 넷·생산 계획·산출
+    결과·공정 Capa 상세·제약 시뮬레이션 월별 표). 캔버스를 그 폭 아래로 좁히지 않는다. 두 달
+    이상은 그대로다."""
+    one_month = _rules(
+        scroll_shell_style(
+            "demo_month",
+            content_width_px=1 * tokens.MONTH_COLUMN_WIDTH_PX,
+            hide_native_scrollbar=True,
+        )
+    )
+    two_months = _rules(
+        scroll_shell_style(
+            "demo_month",
+            content_width_px=2 * tokens.MONTH_COLUMN_WIDTH_PX,
+            hide_native_scrollbar=True,
+        )
+    )
+
+    assert PLOTLY_MIN_CHART_WIDTH_PX == 150
+    assert f"width: {PLOTLY_MIN_CHART_WIDTH_PX}px !important;" in one_month
+    assert f"min-width: {PLOTLY_MIN_CHART_WIDTH_PX}px !important;" in one_month
+    assert f"width: {2 * tokens.MONTH_COLUMN_WIDTH_PX}px !important;" in two_months

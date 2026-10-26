@@ -50,12 +50,20 @@ def _scroll_box_rules(
     return "\n".join(rules)
 
 
+# Streamlit 1.63 `st.plotly_chart(width="stretch")` 가 그리는 가장 좁은 폭(프런트엔드
+# `Math.max(칸 폭, 150)`). 캔버스가 이보다 좁으면 그림이 150px 로 그려져 상자 밖이 잘린다 — 조회기간
+# 한 달(100px)에서 월 머리·도넛·Top5 막대의 오른쪽 1/3 이 사라졌다(2026-10-26 E2E). 셸 안은 모두
+# `width="stretch"` Plotly 그림이라 캔버스를 이 폭 아래로 좁히지 않는다.
+PLOTLY_MIN_CHART_WIDTH_PX = 150
+
+
 def _canvas_rules(key: str, content_width_px: float) -> str:
+    width = max(content_width_px, PLOTLY_MIN_CHART_WIDTH_PX)
     return "\n".join(
         [
             f".st-key-{key}_canvas {{",
-            f"    width: {content_width_px}px !important;",
-            f"    min-width: {content_width_px}px !important;",
+            f"    width: {width}px !important;",
+            f"    min-width: {width}px !important;",
             "    max-width: none !important;",
             "}",
         ]
@@ -145,6 +153,9 @@ def horizontal_scroll_canvas(
     gap: Gap | None = "small",
 ) -> Iterator[None]:
     """`{key}_scroll` 스크롤 상자와 `{key}_canvas` 고정 폭 캔버스를 열고 안을 채우게 한다.
+
+    캔버스 폭은 `content_width_px` 이되 `PLOTLY_MIN_CHART_WIDTH_PX` 보다 좁히지 않는다 — 한 달
+    조회의 월 칸(100px)에서도 그림이 상자 안에 다 들어간다.
 
     `key` 는 기존 DOM 클래스를 그대로 쓰기 위한 접두어다. Streamlit 은 컨테이너 key 를
     `.st-key-<key>` 클래스로 내보내므로 이 이름이 바뀌면 붙어 있던 CSS 가 끊어진다.

@@ -1710,7 +1710,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_plotly_fast_path.py`). 격자 도우미는 `append_layout_items` 에 모으기만 하고 표 모듈이
     `flush_layout_items` 한 번으로 반영한다(`tests/test_monthly_table_grid.py`).
 - `src/capa_simulation/components/scroll_shell.py` — 월별 표·HOME·재공 현황이 함께 쓰는 가로 스크롤 상자와 고정 폭
-  캔버스, 분류 칸 폭을 px 로 못박는 `split_scroll_columns_style` 이다. key 를 바꾸면 CSS 가 끊어진다. 폭을 못박지 않는
+  캔버스, 분류 칸 폭을 px 로 못박는 `split_scroll_columns_style` 이다. key 를 바꾸면 CSS 가 끊어진다. 캔버스는
+  `PLOTLY_MIN_CHART_WIDTH_PX`(150 — Streamlit 1.63 이 `width="stretch"` 그림을 그 아래로 그리지 않는다)보다 좁히지 않아 한 달
+  조회의 월 칸(100px)에서도 그림이 잘리지 않는다. 폭을 못박지 않는
   변형(`min_width_scroll_rules` · `min_width_scroll_canvas` — 캔버스에 가장 좁은 폭만 걸어 넓으면 칸을 채우고 좁을 때만
   스크롤, 규칙은 호출자 `<style>` 에 섞는다)은 제약 시뮬레이션 그래프가 쓴다. 셸 CSS(`overflow-x: auto`)를 다른 모듈에
   손으로 적지 않는다(`tests/test_scroll_shell.py`).
