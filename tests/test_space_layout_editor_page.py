@@ -508,6 +508,29 @@ def test_a_new_as_of_that_changes_the_roster_resets_the_editor(
     clear_equipment_repository()
 
 
+def test_the_pinned_date_caption_picks_its_particle_by_the_date(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """배치 편집 안내의 「기준일은 편집하는 동안 … 고정입니다」 는 날짜 끝소리로 조사를 고른다
+    — 끝자리 0·3·6(영·삼·육)은 「으로」, 그 밖은 「로」. 「2026-10-26 로」 처럼 못박아 두면 그런
+    날마다 틀렸다(2026-10-26 E2E)."""
+    app, _ = _open_editor(tmp_path)
+    today = date.today()
+    days = [today + timedelta(days=offset) for offset in range(1, 20)]
+    eu = next(day for day in days if day.isoformat()[-1] in "036")
+    ro = next(day for day in days if day.isoformat()[-1] in "1245789")
+
+    for day, particle in ((eu, "으로"), (ro, "로")):
+        app.session_state["space_status_as_of"] = day
+        app.run()
+
+        assert not app.exception, [item.message for item in app.exception]
+        caption = next(item.value for item in app.caption if "고정입니다" in item.value)
+        assert f"{day.isoformat()}{particle} 고정입니다" in caption, caption
+        assert f"{day.isoformat()} 로" not in caption
+    clear_equipment_repository()
+
+
 def test_a_save_error_is_shown_once_even_without_pending_changes(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -765,6 +788,6 @@ def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_
 
     assert not app.exception, [item.message for item in app.exception]
     (flash,) = [item.value for item in app.success if "편집본에 적용했습니다" in item.value]
-    assert "보낸 층 C2 2F 는 비활성 층입니다" in flash
+    assert "보낸 층 C2 2F는 비활성 층입니다" in flash
     assert "C2 2F" not in editor_calls[-1]["floors"]
     clear_equipment_repository()

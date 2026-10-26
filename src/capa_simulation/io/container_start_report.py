@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Final
 
 from capa_simulation import settings
+from capa_simulation.services.korean_particle import with_subject_particle
 
 # C-DEP 배포 설정의 환경변수 표에 넣는 key. 값은 사람마다 다르고 비밀이라 저장소·배포 ZIP 에
 # 두지 않는다.
@@ -234,10 +235,10 @@ def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | Non
         names = "·".join(f"`{name}`" for name in withheld)
         return (
             f"서버 시작 점검 결과가 없습니다 — 시작 스크립트(`{START_SCRIPT}`)가 돌지 않은 "
-            f"것으로 보입니다. 그 스크립트가 앱에 넘기지 않는 CD 환경변수 {names} 가 앱에 "
-            "그대로 있습니다. C-DEP 이 이미지의 시작 명령(`CMD`) 대신 다른 명령으로 앱을 띄운 "
-            "것으로 보이고, 그러면 시작 스크립트로 설치·로그인 토큰을 갖출 수 없습니다 — 이 "
-            "문구를 그대로 알려 주세요."
+            "것으로 보입니다. 그 스크립트가 앱에 넘기지 않는 CD 환경변수 "
+            f"{with_subject_particle(names)} 앱에 그대로 있습니다. C-DEP 이 이미지의 시작 "
+            "명령(`CMD`) 대신 다른 명령으로 앱을 띄운 것으로 보이고, 그러면 시작 스크립트로 "
+            "설치·로그인 토큰을 갖출 수 없습니다 — 이 문구를 그대로 알려 주세요."
         )
     return (
         f"서버 시작 점검 결과가 없습니다 — CD 환경변수 `{ARTIFACTORY_USER_ENV}` 는 들어왔는데 "

@@ -436,7 +436,7 @@ def test_coordless_siblings_must_land_in_their_cells_when_the_group_moves() -> N
     rows = result.set_index("설비명").loc[["G3-A", "G3-B", "G3-C", "G3-D"]]
     assert rows["X좌표"].notna().all() and set(rows["동"]) == {"C1"}
     prepare_equipment_master(result, floor_canvases={FLOOR: CANVAS})
-    with pytest.raises(ValueError, match="G3-B, G3-C, G3-D 가 묶음 범위에 놓이지 않았습니다"):
+    with pytest.raises(ValueError, match=r"G3-B, G3-C, G3-D이\(가\) 묶음 범위에 놓이지 않았습니다"):
         _parse({"changes": [_placed("G3-A", (70.0, 40.0, 20.0, 12.0))]}, master, editor_items=items)
 
 
@@ -1213,7 +1213,10 @@ def test_a_group_is_picked_and_dropped_whole() -> None:
     assert "onePerGroup(" in select
     assert "S.selection = new Set(onePerGroup(drag.additive" in JS
     down = _between("svg.onpointerdown = (event) => {", "svg.onpointermove = (event) => {")
-    assert "const bundle = (moduleMembers(item) || [item]).map((m) => m.id)" in down
+    assert "toggleSelected(item)" in down
+    # Shift/Ctrl+클릭과 키보드 Ctrl+Enter 가 함께 쓰는 갈래다.
+    toggle = _between("function toggleSelected(item) {", "function canvasItemOf(node) {")
+    assert "const bundle = (moduleMembers(item) || [item]).map((m) => m.id)" in toggle
     remove = _between("function removeItems(list) {", "function sendItems(list, floor) {")
     assert "expanded(list.filter((m) => isUnit(m) && !m.created))" in remove
     send = _between("function sendItems(list, floor) {", "const renameTarget = (item) => {")

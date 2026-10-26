@@ -774,7 +774,7 @@ def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     probe = _app(database)
     _turn_on(_ok(probe.run()))
     building, floor = _busiest_floor(_views(editor_calls, "fab")[-1])
-    note = "공정소분류 필터에 「Final Test」가 없어"
+    note = "공정소분류 필터에 「Final Test」이(가) 없어"
 
     app = _app(database)
     app.session_state["space_status_process_filter"] = ["Mold"]

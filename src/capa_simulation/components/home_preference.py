@@ -133,7 +133,11 @@ from capa_simulation.services.key_process import (
     normalize_preset_name,
     resolve_preset_name,
 )
-from capa_simulation.services.korean_particle import object_particle, with_object_particle
+from capa_simulation.services.korean_particle import (
+    object_particle,
+    with_object_particle,
+    with_topic_particle,
+)
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.monthly_amount import amounts_by_month
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
@@ -1030,9 +1034,9 @@ def _reject_hidden_reversed_months(
     ]
     if hidden:
         raise ValueError(
-            f"조회기간 밖 달 {_month_labels(hidden)}은(는) 이 기본값과 합치면 경고 기준이 확보 "
-            "기준보다 큽니다. 표에 보이지 않는 달이라 조회기간을 넓혀 그 달을 고치거나, "
-            "「조회기간 밖 월별 기준 지우기」를 체크하고 저장하세요."
+            f"조회기간 밖 달 {with_topic_particle(_month_labels(hidden))} 이 기본값과 합치면 경고 "
+            "기준이 확보 기준보다 큽니다. 표에 보이지 않는 달이라 조회기간을 넓혀 그 달을 "
+            "고치거나, 「조회기간 밖 월별 기준 지우기」를 체크하고 저장하세요."
         )
 
 

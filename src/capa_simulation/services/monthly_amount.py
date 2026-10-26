@@ -16,6 +16,7 @@ from collections.abc import Sequence
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_exact_columns
+from capa_simulation.services.korean_particle import with_topic_particle
 
 MONTH_COLUMN = "생산계획년월"
 
@@ -43,7 +44,7 @@ def prepare_monthly_amounts(
     그대로다 — 음수도 뜻이 있는 값이다. `subject` 는 오류 문구의 주어다(예: 「선행 물량」).
     """
     if not isinstance(frame, pd.DataFrame):
-        raise TypeError(f"{subject}은(는) pandas DataFrame이어야 합니다.")
+        raise TypeError(f"{with_topic_particle(subject)} pandas DataFrame이어야 합니다.")
     columns = (MONTH_COLUMN, value_column)
     require_exact_columns(frame.columns, columns, f"{subject} 컬럼")
     if frame.empty:

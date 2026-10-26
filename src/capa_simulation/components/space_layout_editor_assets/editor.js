@@ -107,6 +107,9 @@ export default function (component) {
   const HANDLE_PX = 9
   // 보기 화면 덧표시(화면 px) — 선택 후광의 띄움, 「!」·운영 비가동 표식의 반지름, 겹침 꼭지 삼각의 변.
   const HALO_GAP_PX = 3
+  // 키보드 초점 테(호기·편집의 도면 요소)의 띄움(화면 px). 보기의 선택 후광(HALO_GAP_PX)보다 밖이라 둘이 겹쳐도 따로 보인다.
+  // CSS outline 은 SVG 안에서 도면 배율로 커져(확대하면 수십 px) 쓰지 않는다.
+  const FOCUS_GAP_PX = 5
   const BADGE_PX = 7
   const CORNER_PX = 11
   const GROUP_PAD = 0.6
@@ -169,8 +172,8 @@ export default function (component) {
   const UNIT_LABEL_MIN_PX = 7
   const fontInk = (item) => (item.fontColor && markColors[item.fontColor] ? `var(--sle-mark-text-${item.fontColor})` : '')
   const HINT = FAB
-    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
-    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
+    ? '층 블록·영역·글자를 끌어 옮기고 손잡이로 크기를 바꿉니다. 층 블록의 연결 층·색은 아래 선택 칸에서 고릅니다 · 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+C/V 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+Z 실행 취소'
+    : '호기·요소를 끌어 옮기고, 고른 것의 모서리·변 손잡이로 크기를 바꿉니다. Main 설비 모듈 묶음은 묶음 범위만 옮기고 키웁니다(안은 바둑판 자동 배치). 끌면 다른 것의 변·가운데 선에 붙습니다(Alt 누른 채면 안 붙음) · 빈 곳을 끌거나 Shift/Ctrl+클릭으로 여러 개 · Tab 으로 가서 Enter 로 고르기(Ctrl+Enter 더하기·빼기) · Ctrl+A 전체 · Ctrl+C/V 도면 요소 복사·붙여넣기 · Ctrl+휠 확대 · Space+끌기 화면 이동 · 방향키 이동 · Ctrl+방향키 크기 · Ctrl+Z 실행 취소'
 
   const q = (selector) => host.querySelector(selector)
   // 글자·속성은 바뀐 때만 쓴다 — 같은 값을 다시 써도 그 줄의 배치·칠이 다시 돈다(회차·페이더 프레임마다 부른다).
@@ -255,7 +258,7 @@ export default function (component) {
   const pickBox = q('.sle-pick')
   const pickHint = FAB
     ? '층 블록을 누르면 그 층이 열립니다 · Tab 으로 블록을 고르고 Enter · Ctrl+휠 확대 · 확대 뒤 끌어서 화면 옮기기'
-    : '호기를 누르면 정보가 여기 뜨고 아래 표가 그 설비 줄만 보입니다 · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
+    : '호기를 누르면 정보가 여기 뜨고 아래 표가 그 설비 줄만 보입니다 · Tab 으로 호기를 고르고 Enter · Ctrl+휠 확대 · 끌어서 이동 · 더블클릭 확대/전체 보기'
   if (pickBox.dataset.hint !== pickHint) pickBox.dataset.hint = pickHint
   setAttr(svg, 'aria-label', !VIEW ? '층 배치 도면 편집기' : FAB ? 'S.PKG FAB 전체 배치도' : '층 배치 도면')
 
@@ -268,6 +271,46 @@ export default function (component) {
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi))
   // 가장 작은 크기는 저장 정밀도 한 칸이다. 격자 간격에 묶으면 격자 2 에서 1.5 기둥이 건드리기만 해도 커진다.
   const minSize = () => 1 / SCALE
+
+  // ---------------------------------------------------------------- 값 뒤 조사(순수 함수)
+  // 파이썬 `services/korean_particle.py` 와 같은 표다 — 한글 음절은 종성, 숫자는 한국어로 읽은 끝 글자, `%` 는
+  // 받침 없음, 고정 어휘의 영문 끝(층 이름의 F·DB·size·Capa·Kea)은 읽기 표, 감싼 따옴표·괄호·굵게·백슬래시는
+  // 건너뛰고, 읽지 못하는 끝(그 밖의 영문)은 `을(를)` 꼴이다.
+  // `tests/test_particle_sites.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 파이썬과 대조한다. 한쪽을 고치면 다른 쪽도 고친다.
+  // <josa>
+  const JOSA_KNOWN_FINAL = { 0: 21, 1: 8, 2: 0, 3: 16, 4: 0, 5: 0, 6: 1, 7: 8, 8: 8, 9: 0, '%': 0 }
+  const JOSA_LATIN_TAIL_FINAL = [['F', 0], ['DB', 0], ['size', 0], ['Capa', 0], ['Kea', 0]]
+  const JOSA_SKIPPED_TAIL = '"\'`)]」』*\\'
+  // 조사 종류 → [받침 있을 때, 없을 때, 읽지 못할 때].
+  const JOSA_FORMS = {
+    을: ['을', '를', '을(를)'],
+    은: ['은', '는', '은(는)'],
+    이: ['이', '가', '이(가)'],
+    으로: ['으로', '로', '(으)로'],
+  }
+  function josaFinal(word) {
+    const chars = Array.from(String(word).trim())
+    let end = chars.length
+    while (end && (/\s/u.test(chars[end - 1]) || JOSA_SKIPPED_TAIL.includes(chars[end - 1]))) end -= 1
+    if (!end) return null
+    const char = chars[end - 1]
+    const code = char.codePointAt(0)
+    if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28
+    if (Object.prototype.hasOwnProperty.call(JOSA_KNOWN_FINAL, char)) return JOSA_KNOWN_FINAL[char]
+    const head = chars.slice(0, end).join('')
+    const known = JOSA_LATIN_TAIL_FINAL.find(([tail]) => head.endsWith(tail))
+    return known ? known[1] : null
+  }
+  // `word` 와 그 끝소리에 맞는 `kind`(을·은·이·으로) 조사를 붙여 돌려준다. `으로` 는 받침이 없거나 ㄹ 이면 `로` 다.
+  function withJosa(word, kind) {
+    const text = String(word)
+    const final = josaFinal(text)
+    const [closed, open, unknown] = JOSA_FORMS[kind]
+    if (final === null) return text + unknown
+    if (kind === '으로') return text + (final === 0 || final === 8 ? open : closed)
+    return text + (final ? closed : open)
+  }
+  // </josa>
 
   // ---------------------------------------------------------------- 모듈 묶음 바둑판(순수 함수)
   // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`module_cells`·`tile_module_group`·
@@ -1512,6 +1555,11 @@ export default function (component) {
   }
 
   function positionHandles(group, item, top) {
+    const ring = group.querySelector('.sle-focus-ring')
+    if (ring) {
+      const gap = FOCUS_GAP_PX * unitsPerPx()
+      setBox(ring, item.x - gap, top - gap, item.w + gap * 2, item.h + gap * 2)
+    }
     // 손잡이는 화면 px 로 크기를 정해 작은 호기에서도 잡힌다. 모서리·변의 가운데에 걸친다.
     const hs = HANDLE_PX * unitsPerPx()
     const xs = { w: item.x, c: item.x + item.w / 2, e: item.x + item.w }
@@ -1745,6 +1793,8 @@ export default function (component) {
   }
 
   function appendHandles(group) {
+    // 키보드 초점 테 — 상자 밖으로 띄운 강조색 테이고 초점이 있을 때만 보인다(CSS). 손잡이 아래에 깐다.
+    group.append(el('rect', { class: 'sle-focus-ring', rx: 0.6 }))
     for (const dir of HANDLE_DIRS) {
       const handle = el('rect', { class: 'sle-handle' })
       handle.dataset.dir = dir
@@ -1786,6 +1836,10 @@ export default function (component) {
     } else {
       group.append(rect, label, tip)
     }
+    // 호기는 키보드로도 고른다 — Tab 이 상자마다 서고 Enter·Space 가 누르기와 같다(`host.onkeydown`). 이름은 풍선 글
+    // (<title>)이다. 보기에서 기준일에 숨은 상자(visibility)는 초점도 받지 않는다.
+    group.setAttribute('tabindex', '0')
+    group.setAttribute('role', 'button')
     appendHandles(group)
     paintUnit(group, item)
     position(group, item)
@@ -1834,6 +1888,10 @@ export default function (component) {
       group.setAttribute('role', 'button')
       group.onfocus = () => { if (S.showBlockHint) S.showBlockHint(group) }
       group.onblur = () => { if (S.showBlockHint) S.showBlockHint(null) }
+    } else if (!VIEW) {
+      // 편집에서는 도면 요소도 호기처럼 Tab 으로 가서 Enter·Space 로 고른다(`host.onkeydown`).
+      group.setAttribute('tabindex', '0')
+      group.setAttribute('role', 'button')
     }
     appendHandles(group)
     position(group, item)
@@ -1925,6 +1983,23 @@ export default function (component) {
       return chip
     }
     chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다${list.length >= 2 ? '(범위 안 바둑판)' : ''}` : lead.label
+    // 칩은 키보드로도 놓고 고른다 — 이름이 단추다(칩 전체가 단추면 「×」 단추가 단추 안에 든다). Enter 는 끌어 놓기와 같다 —
+    // 지금 보이는 도면 가운데에 놓는다(고른 칩 여럿 가운데 하나면 함께, Alt 는 정렬선에 붙이지 않음). Space 는 누르기와 같다 —
+    // 그 칩 하나를 고르고 Ctrl(⌘)은 더하거나 빼고 Shift 는 범위다.
+    text.tabIndex = 0
+    text.setAttribute('role', 'button')
+    text.setAttribute('aria-label', [
+      lead.group ? `Main 설비 ${lead.group}` : lead.label, size.textContent, lead.floorless ? '층 미정' : '',
+      list.some((m) => m.isNew) ? '신규' : '',
+    ].filter(Boolean).join(' · ') + ' — Enter 도면에 놓기 · Space 고르기')
+    text.onkeydown = (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.repeat || S.drag) return
+      if (event.key === ' ') pickChip(lead, list, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })
+      else placeChipByKey(lead, list, event.altKey)
+    }
     chip.onpointerdown = (event) => {
       // Ctrl(⌘)을 누른 채 누르면 서랍 안에서 한 대씩 더하거나 빼고, Shift 는 기준 칩(마지막으로 그냥·Ctrl 로 누른 칩)부터 그
       // 칩까지 지금 보이는 차례로 고른다(Ctrl+Shift 는 그 범위를 더한다). 고른 칩 하나를 끌면 고른 것이 모두 함께 놓인다.
@@ -1948,6 +2023,8 @@ export default function (component) {
       remove.className = 'sle-chip-remove'
       remove.textContent = '×'
       remove.title = '추가 취소'
+      // 낭독기에는 글자 「×」 가 아니라 할 일과 그 호기 이름이다.
+      remove.setAttribute('aria-label', `${lead.group || lead.label} 추가 취소`)
       remove.onpointerdown = (event) => event.stopPropagation()
       remove.onclick = () => removeItems([lead])
       chip.append(remove)
@@ -1955,10 +2032,53 @@ export default function (component) {
     return chip
   }
 
+  // 다시 그리면 상자·칩이 새 노드라 초점을 쥐었던 노드가 사라진다(초점이 BODY 로 빠진다). 그리기 전에 초점이 어디였는지
+  // 적어 두고(`focusSpot`) 그린 뒤 같은 것(같은 id)의 새 노드에 돌려준다(`restoreFocus`) — 키보드로 고르고 옮기고 놓는 동안
+  // 초점을 잃지 않게.
+  function focusSpot() {
+    const node = host.getRootNode().activeElement
+    if (!node || node === svg || !host.contains(node)) return null
+    const item = canvasItemOf(node)
+    if (item) return { kind: 'item', id: item.dataset.id }
+    const chip = node.closest ? node.closest('.sle-chip') : null
+    if (!chip || chip.parentNode !== trayList) return null
+    const shown = [...trayList.children].filter((c) => !c.hidden)
+    return { kind: node.classList.contains('sle-chip-remove') ? 'remove' : 'chip', id: chip.dataset.id, index: shown.indexOf(chip) }
+  }
+  function restoreFocus(spot) {
+    if (!spot) return
+    const now = host.getRootNode().activeElement
+    if (now && now !== svg && host.contains(now)) return
+    const focus = (node) => node.focus({ preventScroll: true })
+    if (spot.kind === 'item') {
+      // 트레이로 뺐거나 지운 것이면 도면에 둔다(Delete 를 이어 누를 수 있다).
+      const group = S.groups.get(spot.id)
+      focus(group && group.hasAttribute('tabindex') ? group : svg)
+      return
+    }
+    const shown = [...trayList.children].filter((c) => !c.hidden)
+    const chip = shown.find((c) => c.dataset.id === spot.id)
+    if (chip) {
+      focus((spot.kind === 'remove' && chip.querySelector('.sle-chip-remove')) || chip.querySelector('.sle-chip-name'))
+      return
+    }
+    // 그 칩이 서랍에서 사라졌으면(「×」 로 추가를 취소했다) 같은 자리의 이웃 칩(뒤 칩, 없으면 앞 칩 — 이름 단추가 초점을
+    // 받지 않는 칩은 건너뛴다), 칩이 없으면 검색 칸에 둔다 — 초점이 BODY 로 빠지면 Tab 이 문서 처음부터 다시 돈다.
+    const names = shown.map((c) => c.querySelector('.sle-chip-name'))
+    const at = Math.max(spot.index, 0)
+    const able = (i) => Boolean(names[i] && names[i].hasAttribute('tabindex'))
+    let pick = -1
+    for (let i = at; i < names.length && pick < 0; i += 1) if (able(i)) pick = i
+    for (let i = Math.min(at, names.length) - 1; i >= 0 && pick < 0; i -= 1) if (able(i)) pick = i
+    if (pick >= 0) focus(names[pick])
+    else focus(trayBox.hidden ? svg : traySearch)
+  }
+
   function renderItems() {
     // 서랍 목록을 비웠다 다시 채우는 동안 목록 높이가 줄어 브라우저가 서랍 스크롤을 맨 위로 잘라 낸다. 놓은 뒤에도
     // 보던 자리에서 이어 놓게 그 자리를 기억했다 되돌린다(2026-10-08 사용자 요청).
     const trayScroll = trayBox.scrollTop
+    const focused = focusSpot()
     layer.replaceChildren()
     zonesLayer.replaceChildren()
     marksLayer.replaceChildren()
@@ -1999,6 +2119,7 @@ export default function (component) {
     markSelection()
     markOverlaps()
     showSummary()
+    restoreFocus(focused)
   }
 
   // 단계·라벨은 같은 epoch 안에서도 바뀐다(테마 전환·기준일). 기하는 그대로 두고 칠·글자만 다시 쓴다.
@@ -2252,6 +2373,8 @@ export default function (component) {
       const selected = S.selection.has(id) && !(item && item.group && bundles.has(item.group))
       group.classList.toggle('is-selected', selected)
       group.classList.toggle('is-grouped', together.has(id) && !selected)
+      // 키보드로 고르는 상자(초점을 받는 호기·요소)는 골라졌는지를 낭독기에도 알린다. FAB 보기의 층 블록은 여는 단추다.
+      if (!(VIEW && FAB) && group.hasAttribute('tabindex')) setAttr(group, 'aria-pressed', String(selected || together.has(id)))
     }
     // 여러 개를 고르면 크기 손잡이를 감춘다(크기는 숫자 칸·Ctrl+방향키로 함께 바꾼다).
     svg.classList.toggle('is-multi', S.selection.size > 1)
@@ -2560,7 +2683,7 @@ export default function (component) {
           ? '먼저 적용하세요 — 적용하지 않은 FAB 편집이 있습니다'
           : blockOff(mark)
             ? '비활성 층 — 층 목록 표 「비활성 층」에서 엽니다'
-            : `${mark.link || '연결 층'} 을 엽니다`
+            : `${withJosa(mark.link || '연결 층', '을')} 엽니다`
       }
     }
   }
@@ -2655,7 +2778,7 @@ export default function (component) {
       else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
       add(`모듈 ${mods.length}대는 범위 안 ${cols}×${rows} 바둑판에 자동으로 섭니다 — 범위를 끌어 옮기고 테두리 손잡이로 키웁니다`)
       const hidden = mods.filter((m) => m.ghost).map((m) => m.id)
-      if (hidden.length) add(`숨은 모듈 ${hidden.join(', ')}(레이아웃표시 N·도면 이탈)는 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
+      if (hidden.length) add(`숨은 모듈(레이아웃표시 N·도면 이탈) ${withJosa(hidden.join(', '), '은')} 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
       if (untiledModules(item)) add(`${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다`)
       const sized = sizeNote(mods)
       if (sized) add(sized)
@@ -2719,6 +2842,23 @@ export default function (component) {
 
   function select(id) {
     setSelection(id ? [id] : [], id)
+  }
+
+  // Shift/Ctrl+클릭·Ctrl+Enter 는 고른 것에 더하거나 뺀다. 모듈 묶음은 묶음째 — 그 묶음이 골라져 있으면 뺀다.
+  function toggleSelected(item) {
+    const ids = new Set(S.selection)
+    const bundle = (moduleMembers(item) || [item]).map((m) => m.id)
+    const had = bundle.some((id) => ids.has(id))
+    for (const id of bundle) ids.delete(id)
+    if (!had) ids.add(item.id)
+    setSelection([...ids], had ? null : item.id)
+  }
+
+  // 키 눌림·초점을 받은 노드가 도면의 호기·요소 상자(초점을 받는 `.sle-item`)면 그 상자. 첫 그리기(`renderItems`)보다 뒤에
+  // 적혀 있어 끌어올려지는 함수 선언이다.
+  function canvasItemOf(node) {
+    const group = node && node !== svg && node.closest ? node.closest('.sle-item') : null
+    return group && svg.contains(group) && group.hasAttribute('tabindex') ? group : null
   }
 
   // 서랍 열림은 같은 편집기의 다음 실행에도 이어진다(S 에 둔다). 접으면 서랍 몫으로 옮긴 화면을 제자리로 돌린다.
@@ -2907,6 +3047,20 @@ export default function (component) {
   function placeManyFromTray(lead, picked, p, free) {
     const list = picked.flatMap((entry) => entry.list)
     placeFromTray(lead, list, p, `${picked.length}개(${list.length}대)`, free)
+  }
+
+  // 칩에서 Enter — 끌어 놓기의 키보드 길. 놓는 점은 지금 보이는 도면 가운데(열린 서랍이 덮은 오른쪽은 빼고)이고, 고른 칩
+  // 여럿 가운데 하나면 끌 때처럼 함께 놓는다. 놓았으면 초점을 놓은 호기로 옮긴다 — 이어서 방향키로 자리를 다듬는다.
+  // 못 놓았으면(편집 영역보다 큼 — 까닭은 편집 영역 칸 알림) 초점은 칩에 남는다.
+  function placeChipByKey(lead, list, free) {
+    const picked = pickedTrayEntries()
+    const together = picked.length > 1 && picked.some((entry) => entry.lead.id === lead.id)
+    const p = { x: S.view.x + Math.max(viewW() - trayReserve(), 0) / 2, top: S.view.top + viewH() / 2 }
+    if (together) placeManyFromTray(lead, picked, p, free)
+    else placeFromTray(lead, list, p, undefined, free)
+    if (!onCanvas(lead) && !list.some(onCanvas)) return
+    const group = S.groups.get(S.selected) || [...S.selection].map((id) => S.groups.get(id)).find(Boolean)
+    if (group) group.focus({ preventScroll: true })
   }
 
   // 크기를 빌려 줄 종류 — Main 설비 모듈 묶음의 모듈('module')과 그 밖의 호기('unit')는 서로 빌리지 않는다(모듈 크기는 묶음
@@ -3255,7 +3409,7 @@ export default function (component) {
   // 가운데를 축으로 90° 돌린다(상자 폭·높이가 바뀐다).
   function rotateMark(item) {
     if (item.h > W() || item.w > H()) {
-      S.note = `돌리면 ${item.h}×${item.w} 이 되어 편집 영역 ${W()}×${H()} 를 넘어 돌리지 않았습니다`
+      S.note = `돌리면 ${item.h}×${withJosa(item.w, '이')} 되어 편집 영역 ${W()}×${withJosa(H(), '을')} 넘어 돌리지 않았습니다`
       updateStatus()
       return
     }
@@ -3745,13 +3899,8 @@ export default function (component) {
     const item = S.items.get(group.dataset.id)
     if (!item) return
     if (additive) {
-      // Shift/Ctrl+클릭은 고른 것에 더하거나 뺀다(끌지 않는다). 모듈 묶음은 묶음째 — 그 묶음이 골라져 있으면 뺀다.
-      const ids = new Set(S.selection)
-      const bundle = (moduleMembers(item) || [item]).map((m) => m.id)
-      const had = bundle.some((id) => ids.has(id))
-      for (const id of bundle) ids.delete(id)
-      if (!had) ids.add(item.id)
-      setSelection([...ids], had ? null : item.id)
+      // Shift/Ctrl+클릭은 고른 것에 더하거나 뺀다(끌지 않는다).
+      toggleSelected(item)
       return
     }
     const chosen = selectedItems()
@@ -3972,6 +4121,15 @@ export default function (component) {
         openFloor(S.items.get(block.dataset.id))
         return
       }
+      // 층 보기의 호기에 초점이 있으면 Enter·Space 가 누르기와 같다 — 그 호기 정보 한 줄과 아래 표(`pick`).
+      const unitNode = FAB ? null : canvasItemOf(event.target)
+      if (unitNode && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+        if (!S.items.has(unitNode.dataset.id)) return
+        select(unitNode.dataset.id)
+        notePick()
+        return
+      }
       const step = 0.1
       const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
       if (event.key === '+' || event.key === '=') zoomAt(S.view.z * ZOOM_STEP)
@@ -3989,6 +4147,17 @@ export default function (component) {
     const ctrl = event.ctrlKey || event.metaKey
     if (ctrl && event.key.toLowerCase() === 'z' && !typing) { event.preventDefault(); undo(); return }
     if (typing) return
+    // Tab 으로 초점이 온 호기·요소는 Enter·Space 가 누르기와 같다 — 그것 하나를 고르고, Ctrl(⌘)·Shift 는 고른 것에 더하거나
+    // 뺀다(Shift/Ctrl+클릭). 고른 뒤의 방향키(옮기기)·Ctrl+방향키(크기)·Delete(빼기·지우기)는 도면에서와 같다.
+    const focusedItem = canvasItemOf(event.target)
+    if (focusedItem && (event.key === 'Enter' || event.key === ' ') && !event.altKey) {
+      event.preventDefault()
+      const item = S.items.get(focusedItem.dataset.id)
+      if (!item || S.drag) return
+      if (ctrl || event.shiftKey) toggleSelected(item)
+      else select(item.id)
+      return
+    }
     if (event.key === ' ' && event.target === svg) {
       event.preventDefault()
       S.spaceDown = true
@@ -4013,9 +4182,9 @@ export default function (component) {
     if (ctrl && letter === 'v') { if (pasteMarks(event.altKey)) event.preventDefault(); return }
     const chosen = selectedItems()
     const standing = chosen.filter(onCanvas)
-    // 지우기는 도면에 포커스가 있을 때만 — 툴바 단추를 누른 뒤 Backspace 가 고른 것을 지우지 않게.
+    // 지우기는 도면(또는 도면의 호기·요소)에 포커스가 있을 때만 — 툴바 단추를 누른 뒤 Backspace 가 고른 것을 지우지 않게.
     if (event.key === 'Delete' || event.key === 'Backspace') {
-      if (!chosen.length || event.target !== svg) return
+      if (!chosen.length || (event.target !== svg && !focusedItem)) return
       event.preventDefault()
       removeItems(chosen)
       return
@@ -4168,7 +4337,7 @@ export default function (component) {
     const clash = id ? nameClash(id, { created: true, label: id, group: null }, false) : null
     let error = ''
     if (!id) error = '설비명을 적어 주세요.'
-    else if (clash) error = `${id} 는 이미 있는 이름입니다(${clash}).`
+    else if (clash) error = `${withJosa(id, '은')} 이미 있는 이름입니다(${clash}).`
     else if (!newProcess.value) error = '공정을 골라 주세요.'
     else if (!(w > 0 && h > 0 && w <= MAX_EXTENT && h <= MAX_EXTENT)) error = `크기는 0 보다 크고 ${MAX_EXTENT} 이하여야 합니다.`
     const existing = newKind.value === 'existing'
@@ -4572,10 +4741,11 @@ export default function (component) {
     setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
       + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 설비 마스터에서 고칩니다.')
   }
-  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit5`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
-  // 준다. 회차의 글자를 쓴 뒤와 크기가 바뀔 때(`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
+  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit6`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
+  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 회차의 글자를 쓴 뒤와 크기가 바뀔 때
+  // (`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
   const toolbar = q('.sle-toolbar')
-  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5']
+  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
   function fitFabBar() {
     toolbar.classList.remove(...FIT_STEPS)
     if (!(VIEW && FAB) || !toolbar.clientWidth) return

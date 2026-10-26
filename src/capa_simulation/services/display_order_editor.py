@@ -19,6 +19,7 @@ from capa_simulation.services.display_order_scopes import (
     TAB_WF_RATIO,
 )
 from capa_simulation.services.frame_contracts import match_key, require_columns
+from capa_simulation.services.korean_particle import with_topic_particle
 
 DISPLAY_ORDER_COLUMNS = (
     "페이지 구분",
@@ -286,7 +287,7 @@ def ensure_route_sequence_rules(
 def _required_text(value: str, label: str) -> str:
     result = value.strip()
     if not result:
-        raise ValueError(f"{label}은(는) 비어 있을 수 없습니다.")
+        raise ValueError(f"{with_topic_particle(label)} 비어 있을 수 없습니다.")
     return result
 
 

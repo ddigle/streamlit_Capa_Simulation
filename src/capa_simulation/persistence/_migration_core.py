@@ -26,6 +26,7 @@ from importlib.resources import files
 import duckdb
 
 from capa_simulation.persistence._sql_helpers import transaction
+from capa_simulation.services.korean_particle import with_subject_particle
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -141,9 +142,9 @@ def apply_migrations_to(
     schema_ahead = find_schema_ahead(applied, migrations, database_name=database_name)
     if schema_ahead is not None:
         _LOGGER.warning(
-            "%s 가 이 코드보다 새 버전입니다(DB %d · 코드 %d). 예전 배포로 되돌린 상태일 수 "
+            "%s 이 코드보다 새 버전입니다(DB %d · 코드 %d). 예전 배포로 되돌린 상태일 수 "
             "있습니다. 막지 않고 계속합니다.",
-            schema_ahead.database_name,
+            with_subject_particle(schema_ahead.database_name),
             schema_ahead.database_version,
             schema_ahead.code_version,
         )

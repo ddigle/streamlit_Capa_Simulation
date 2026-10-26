@@ -695,7 +695,9 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
         "function fitFabBar() {",
         "// ---------------------------------------------------------------- 높이 손잡이",
     )
-    assert "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5']" in JS
+    assert (
+        "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']" in JS
+    )
     assert fit.index("toolbar.classList.remove(...FIT_STEPS)") < fit.index("if (!(VIEW && FAB)")
     assert "if (toolbar.scrollWidth <= toolbar.clientWidth) return" in fit
     resize = _between("S.onResize = () => {", "if (!S.ro && typeof ResizeObserver")
@@ -709,7 +711,7 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     assert "display: none" in _rule(".sle-toolbar.is-fit3 .sle-totoday-tail")
     # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.
     last = _rule(".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary")
-    assert "min-width: 0" in last and "text-overflow: ellipsis" in last
+    assert "text-overflow: ellipsis" in last
     # 요약 글(겹쳐 숨긴 반입 예정 대수를 붙인 것)이 그대로 풍선이다(`showSummary`).
     summary = _between("function showSummary() {", "function overlapPairs() {")
     assert "setText(node, text)" in summary and "setAttr(node, 'title', text)" in summary
@@ -717,6 +719,34 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     assert "ellipsis" not in _rule(".sle-flagnote")
     assert "flex: none" in _rule(".sle-toolbar > *")
     assert "flex" not in _rule(".sle-summary")
+
+
+def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_line() -> None:
+    """390px 휴대폰 폭에서는 확대 묶음(268px)만으로 FAB 도구 줄(327px)이 거의 차 ④·⑤
+    말줄임이 기준일을 2px(「2」 조각)·요약을 9px(「배」)로 깎았다(2026-10-26 E2E).
+
+    말줄임은 앞머리가 읽히는 폭까지만 주고(기준일 4em·요약 6em), 그래도 넘치면 ⑥
+    기준일·「오늘」·미확인·요약을 둘째 줄로 내린다 — 보기에서 숨는 빈 칸이 온 폭 줄바꿈이
+    된다. 한 줄 설계의 까닭(고를 때 높이가 튀지 않음)은 두 줄도 창 폭으로만 정해져 그대로다."""
+    assert "\n.sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }" in CSS
+    assert "\n.sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }" in CSS
+    assert "min-width: 0" not in _rule(
+        ".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary"
+    )
+    wrap = _rule(".sle-toolbar.is-fit6")
+    assert "flex-wrap: wrap" in wrap and "height: auto" in wrap
+    spacer = _rule(".sle.is-view .sle-toolbar.is-fit6 .sle-spacer")
+    assert "display: block" in spacer and "flex: 0 0 100%" in spacer
+    # 빈 칸은 선택 줄 바로 뒤, 기준일·미확인·요약 앞이다 — 첫 줄은 확대 묶음과 선택 줄.
+    toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-panels')]
+    assert (
+        toolbar.index('class="sle-pick')
+        < toolbar.index('class="sle-spacer"')
+        < toolbar.index('class="sle-asof')
+        < toolbar.index('class="sle-summary')
+    )
+    # ⑥ 은 ⑤ 뒤 마지막 차례다(읽히는 말줄임이 되면 둘째 줄로 내리지 않는다).
+    assert "'is-fit5', 'is-fit6']" in JS
 
 
 def test_the_pre_arrival_ring_is_drawn_thick() -> None:

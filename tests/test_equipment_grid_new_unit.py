@@ -252,7 +252,7 @@ def test_joining_a_module_group_locks_coordinates_and_needs_the_groups_values() 
     assert set(wrong.locks) == {"X좌표", "Y좌표", "Xsize", "Ysize"}
     assert wrong.values[eg.COLUMN_INDEX["X좌표"]] == ""
     # 모듈 행끼리 같아야 하는 칸(동·층 등)이 묶음과 다르면 저장 규칙이 막는다.
-    assert wrong.errors["동"] == "같은 Main 설비의 모듈 행은 동 이 같아야 합니다"
+    assert wrong.errors["동"] == "같은 Main 설비의 모듈 행은 동이 같아야 합니다"
     right = _check(
         _draft(
             설비명="GRP-1E",

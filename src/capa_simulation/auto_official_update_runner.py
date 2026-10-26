@@ -110,6 +110,7 @@ from capa_simulation.services.auto_official_update import (
 )
 from capa_simulation.services.bigdataquery_catalog_view import registration_prefill
 from capa_simulation.services.core_data_pipeline import fetch_core_data_dataset
+from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.securement_rate import calculate_securement_rate
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
@@ -121,8 +122,7 @@ ALREADY_CLAIMED_MESSAGE: Final = "이 회차는 이미 돌았습니다 — 같�
 INTERRUPTED_REASON: Final = "앱이 이 회차를 끝내기 전에 꺼져 중단됐습니다."
 # 등록한 뒤 발행까지 가지 못한 회차의 사유 끝에 붙인다. 그 코드는 다시 받지 않는다.
 REGISTERED_NOT_PUBLISHED_NOTE: Final = (
-    "등록한 시나리오 「{name}」는 남겼습니다 — 같은 코드는 다시 받지 않으니 확인한 뒤 손으로 "
-    "발행하세요."
+    "등록한 시나리오 {name} 남겼습니다 — 같은 코드는 다시 받지 않으니 확인한 뒤 손으로 발행하세요."
 )
 # 「지금 편집본 복제」가 만든 시나리오의 출처 종류. 부모 리비전이 없다.
 CLONE_SOURCE_TYPE: Final = "DUCKDB_SCENARIO_CLONE"
@@ -277,7 +277,9 @@ def run_auto_official_update(
             # 신호(KeyboardInterrupt·Streamlit 의 rerun/stop)를 삼키지 않는다. 배경 스레드는
             # 예약 쪽이 받아 스레드를 지킨다(`auto_update_scheduler`).
             _LOGGER.exception(
-                "공식버전 자동 갱신 회차 %s 가 %s 단계에서 멈췄습니다.", run_id, log.stage
+                "공식버전 자동 갱신 회차 %s %s 단계에서 멈췄습니다.",
+                with_subject_particle(str(run_id)),
+                log.stage,
             )
             log.fail(exc)
             if not isinstance(exc, Exception):
@@ -316,7 +318,9 @@ class _RunLog:
 
     def finish(self, status: RunStatus, reason: str, **values: object) -> None:
         if status != STATUS_PUBLISHED and self.registered_name is not None:
-            note = REGISTERED_NOT_PUBLISHED_NOTE.format(name=self.registered_name)
+            note = REGISTERED_NOT_PUBLISHED_NOTE.format(
+                name=with_topic_particle(f"「{self.registered_name}」")
+            )
             reason = f"{reason.rstrip().rstrip('.')}. {note}"
         payload: dict[str, object] = {
             "status": status,
