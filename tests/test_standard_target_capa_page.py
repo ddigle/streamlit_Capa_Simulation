@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import streamlit as st
+from fragment_browser import install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
 
@@ -775,3 +776,58 @@ def test_an_empty_availability_stops_only_the_views_that_multiply_by_it() -> Non
     metrics = {element.label: element.value for element in app.metric}
     assert metrics["대당 일 Capa"] != "-"
     assert "일 표준 가능량 (매)" in metrics
+
+
+# 「입력 초기화」 를 세는 가짜 저장소 — 지우면 다음 읽기부터 가용설비가 비어 화면이 입력 안내 뒤
+# `st.stop()` 으로 멈춘다(운영과 같은 꼴).
+CLEARING_SCRIPT = TEST_SCRIPT.replace(
+    "    def load_standard_target_availability(self):\n        return availability.copy()\n",
+    "    def load_standard_target_availability(self):\n"
+    "        if st.session_state.get('availability_cleared'):\n"
+    '            return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])\n'
+    "        return availability.copy()\n",
+).replace(
+    "    def clear_standard_target_availability(self):\n        return None\n",
+    "    def clear_standard_target_availability(self):\n"
+    "        st.session_state['availability_cleared'] = True\n"
+    "        st.session_state['clear_calls'] = st.session_state.get('clear_calls', 0) + 1\n",
+)
+assert CLEARING_SCRIPT.count("availability_cleared") == 2
+
+
+def test_a_second_press_of_the_closed_clear_dialog_does_not_rerun_its_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「입력 초기화」 를 사람 속도(0.15~0.3초)로 두 번 누르면 앱 전체가 흰 화면이 됐다(2026-10-27
+    E2E — 「Cannot set a node at a delta path」).
+
+    지운 뒤의 앱 전체 회차는 가용설비가 비어 입력 안내 갈래로 가는데, 그 갈래가 `st.stop()` 으로
+    멈추면 Streamlit 이 그 회차에 그리지 않은 프래그먼트(닫힌 팝업)를 저장소에서 지우지 않는다. 둘째
+    누름은 닫힌 팝업의 프래그먼트 회차를 청해 저장소에 남은 팝업 본문이 다시 돌았고(한 번 더
+    지웠다), 그 회차가 브라우저가 걷은 팝업 자리에 요소를 보냈다. 진짜 프래그먼트 회차로 두 누름을
+    돌려, 둘째 회차가 팝업 본문을 돌리지 않고(그 프래그먼트의 델타가 없다) 지우기도 한 번인지 본다.
+    """
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(CLEARING_SCRIPT, default_timeout=60).run()
+    app = app.button(key="open_standard_target_availability_clear").click().run()
+    app = app.checkbox(key="standard_target_clear_confirm").check().run()
+    assert not app.exception
+    dialog = browser.fragment_of("clear_standard_target_availability")
+
+    app.button(key="clear_standard_target_availability").click()
+    pressed = app._tree.get_widget_states()
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert app.session_state["clear_calls"] == 1
+    assert "주차별 가용설비 입력을 비웠습니다." in [item.value for item in app.success]
+
+    # 둘째 누름 — 브라우저는 닫히기 전 팝업의 같은 단추 누름을 그 팝업의 프래그먼트 회차로 보낸다.
+    app._run(widget_state=pressed)
+    stale = [
+        message
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta" and message.delta.fragment_id == dialog
+    ]
+    assert not stale, "닫힌 팝업의 본문이 다시 돌아 걷힌 팝업 자리에 요소를 보냈다"
+    assert app.session_state["clear_calls"] == 1

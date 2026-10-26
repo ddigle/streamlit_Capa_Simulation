@@ -14,6 +14,7 @@ from streamlit.testing.v1.errors import AppTestError
 from test_all_pages_render import _page_script
 from widget_browser import BrowserTables
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.pick_edit_table import (
     ShownTable,
@@ -713,7 +714,9 @@ def test_rename_archive_and_delete_refresh_the_cached_main_cases(tmp_path: Path)
     assert load_global_main_cases(database).case(2) == (None, None)
 
 
-def test_the_archived_box_shows_what_the_next_restore_and_delete_act_on(tmp_path: Path) -> None:
+def test_the_archived_box_shows_what_the_next_restore_and_delete_act_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """되돌리기·영구 삭제 뒤 보관본 상자의 **브라우저 글자**가 서버의 선택과 같다.
 
     처리한 시나리오의 선택을 지우기(`pop`)만 하면 서버는 첫 보관본을 쓰는데 브라우저는 처리한
@@ -781,7 +784,9 @@ def test_the_archived_box_shows_what_the_next_restore_and_delete_act_on(tmp_path
     assert confirm.proto.set_value
     assert confirm.value == ""
 
-    # 다음 「되돌리기」 는 보이던 것을 되돌린다.
+    # 다음 「되돌리기」 는 보이던 것을 되돌린다. 고름이 바뀐 직후의 누름은 사람이 바뀐 고름을 보고
+    # 누른 것이 아니라 걸지 않는다(`prune_named_choice`) — 창이 지난 누름으로 본다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     click("scenario_archived_restore")
     assert status_of(remaining[0]) == "ACTIVE"
 

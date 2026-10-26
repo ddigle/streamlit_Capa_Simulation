@@ -35,7 +35,10 @@ class FragmentBrowser:
 
     `fragment_queue` 가 비어 있으면 앱 전체 회차다. `started` 는 마지막 `run()` 안에서 시작한
     회차마다의 `fragment_ids_this_run`(앱 전체 회차와 콜백만 도는 회차는 `[]`)이고, `messages` 는 그
-    `run()` 이 내보낸 메시지다. 프래그먼트 회차의 `run()` 이 돌려주는 요소 트리는 그 회차가 보낸
+    `run()` 이 내보낸 메시지(뒤 회차가 같은 자리로 갈아 끼우거나 새 회차가 비운 것은 빠진 큐)다.
+    `emitted` 는 그 `run()` 안의 모든 회차가 내보낸 메시지 전부다 — 한 `run()` 안에서 프래그먼트
+    회차 뒤에 앱 전체 회차가 이어지면 앞 회차의 델타는 큐에서 빠지므로, 앞 회차가 무엇을 보냈는지는
+    이것으로 본다. 프래그먼트 회차의 `run()` 이 돌려주는 요소 트리는 그 회차가 보낸
     델타뿐이다(사이드바 위젯을 누르려면 앱 전체 회차를 한 번 돌린다).
     """
 
@@ -43,6 +46,7 @@ class FragmentBrowser:
     fragment_queue: list[str] = field(default_factory=list)
     started: list[list[str]] = field(default_factory=list)
     messages: list[ForwardMsg] = field(default_factory=list)
+    emitted: list[ForwardMsg] = field(default_factory=list)
 
     def fragment_of(self, widget_key: str) -> str:
         """그 키의 위젯을 그린 프래그먼트 — 브라우저가 프래그먼트 회차를 청할 때 보내는 id 다."""
@@ -103,6 +107,11 @@ def install_fragment_browser(monkeypatch: pytest.MonkeyPatch) -> FragmentBrowser
                 if event == ScriptRunnerEvent.SCRIPT_STARTED
             ]
             state.messages = list(self.forward_msgs())
+            state.emitted = [
+                data["forward_msg"]
+                for event, data in zip(self.events, self.event_data, strict=False)
+                if event == ScriptRunnerEvent.ENQUEUE_FORWARD_MSG
+            ]
             return tree
 
     monkeypatch.setattr(app_test_module, "LocalScriptRunner", _BrowserLikeRunner)

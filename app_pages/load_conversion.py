@@ -23,6 +23,7 @@ from capa_simulation.components.editor_state import (
     editor_has_edits,
     editor_widget_key,
 )
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
@@ -36,10 +37,7 @@ from capa_simulation.components.month_editor import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.reference_csv_tools import (
-    queue_reference_import_flash,
-    render_reference_clipboard_form,
-)
+from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     register_pending_edits,
@@ -50,6 +48,7 @@ from capa_simulation.components.scenario_edit_bar import (
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_table_heading
+from capa_simulation.components.write_guard import note_notice, notice_marks
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -188,6 +187,10 @@ PLAN_APPLIED_FLASH_KEY = "pkg_plan_applied_flash"
 PRODUCT_REGISTERED_FLASH_KEY = "virtual_product_registered_flash"
 PLAN_PASTE_KEY = "rq_pkg_plan_csv"
 YIELD_PASTE_KEY = "rq_yield_csv"
+# 작업 줄 알림 칸 — 붙여넣기·적용·등록 알림이 같은 아이콘의 성공 알림으로 선다.
+PLAN_PASTE_FLASH_KEY = f"{PLAN_PASTE_KEY}_flash"
+YIELD_FLASH_KEY = f"{YIELD_PASTE_KEY}_flash"
+APPLIED_ICON = ":material/published_with_changes:"
 # 적용 버튼 툴팁. 「적용해야 반영된다」는 동작을 좌우하는 안내라 Guide 로만 보내지 않고
 # 버튼에 남긴다(2026-09-28 사용자 결정).
 PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드가 이 계획으로 다시 계산됩니다."
@@ -290,18 +293,17 @@ def _dialog_is_open(name: str) -> bool:
     return st.session_state.get(DIALOG_KEY) == name
 
 
-def _render_flashes(*keys: str) -> None:
-    """작업 줄 바로 아래에 완료 알림을 띄운다. 팝업이 남긴 알림도 여기서 뜬다.
+def _queue_done(key: str, message: str) -> None:
+    """작업 줄 알림 칸 `key` 에 완료 알림을 담고 쓰기 알림 표지에도 적는다 — 적용·붙여넣기·등록이
+    성공한 바로 뒤에 부른다.
 
-    칸은 알림이 없어도 선다 — 적용·붙여넣기는 `st.rerun()` 으로 끊기고 다음 회차에 알림이 생기므로,
-    알림 수만큼 아래 편집표(key 있는 블록)가 밀리면 옛 자리에 흐린 사본이 남는다(AGENTS 9장 「조건부
-    알림」 — `flash.render_flash` 와 같은 칸).
+    「…변경사항 적용」 을 0.3초 간격으로 두 번 누르면 둘째 누름은 적용 뒤 잠긴 단추에 닿아 버려지고,
+    그 회차가 화면을 다시 그리며 앞 회차가 꺼내 그린 알림을 지웠다(2026-10-27 E2E). 표지에 적은
+    알림은 그 창(`write_guard.TRAILING_PRESS_SECONDS`) 안의 회차가 다시
+    그린다(`flash.render_flash`). 표지는 dict 칸이라 끊기지 않으므로 담기보다 먼저 적는다.
     """
-    slot = st.container()
-    for key in keys:
-        message = st.session_state.pop(key, None)
-        if isinstance(message, str):
-            slot.success(message, icon=":material/published_with_changes:")
+    note_notice(notice_marks(), key, message, icon=APPLIED_ICON)
+    queue_flash(key, message, icon=APPLIED_ICON)
 
 
 def _render_locked_yield_rows(locked: pd.DataFrame) -> None:
@@ -352,8 +354,8 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     st.session_state[PLAN_STAGED_KEY] = imported
     # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 브라우저까지 비운다.
     discard_editor(PLAN_EDITOR_KEY)
-    queue_reference_import_flash(
-        PLAN_PASTE_KEY,
+    _queue_done(
+        PLAN_PASTE_FLASH_KEY,
         "붙여넣기 표를 PKG PLAN 탭에 반영했습니다. "
         "확인 후 「PKG PLAN 변경사항 적용」을 눌러야 전역 계획값에 반영됩니다.",
     )
@@ -378,8 +380,8 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
         effective_start_month,
         effective_end_month,
     )
-    queue_reference_import_flash(
-        YIELD_PASTE_KEY,
+    _queue_done(
+        YIELD_FLASH_KEY,
         f"RQ_YLD {origin} 활성 시나리오에 적용했습니다.{note} "
         "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
     )
@@ -516,7 +518,8 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     # 알림은 다음 회차에 `st.success`(마크다운)로 그린다 — 사람이 적은 제품정보·Stack 은 막아
     # 싣는다(「HBM4~시제~」 의 물결표가 지움선, `*1*` 이 기울임이 되지 않게).
     normalized = request.normalized()
-    st.session_state[PRODUCT_REGISTERED_FLASH_KEY] = (
+    _queue_done(
+        PRODUCT_REGISTERED_FLASH_KEY,
         f"가상 제품 {literal_markdown(normalized.product)} · "
         f"{with_object_particle(literal_markdown(normalized.stack))} "
         f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다."
@@ -526,7 +529,7 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
             f" 적용하지 않았던 {'·'.join(dropped_edits)} 표 편집도 버렸습니다."
             if dropped_edits
             else ""
-        )
+        ),
     )
     _close_dialog()
     st.rerun()
@@ -588,7 +591,7 @@ with pkg_plan_tab:
             )
     # 적용이 막힌 까닭도 작업 줄 바로 아래다 — 적용 처리는 표 뒤에서 돌지만 알림은 여기 선다.
     plan_notice = st.empty()
-    _render_flashes(PLAN_APPLIED_FLASH_KEY, f"{PLAN_PASTE_KEY}_flash", PRODUCT_REGISTERED_FLASH_KEY)
+    render_flash(PLAN_APPLIED_FLASH_KEY, PLAN_PASTE_FLASH_KEY, PRODUCT_REGISTERED_FLASH_KEY)
     if _dialog_is_open(PLAN_PASTE_DIALOG):
         _plan_paste_dialog(
             plan_editor_source,
@@ -680,7 +683,7 @@ with yield_tab:
                     help="수율 표에서 적용하지 않은 편집을 버립니다.",
                 )
         yield_notice = st.empty()
-        _render_flashes(f"{YIELD_PASTE_KEY}_flash")
+        render_flash(YIELD_FLASH_KEY)
         _render_locked_yield_rows(locked_yield_rows)
         if _dialog_is_open(YIELD_PASTE_DIALOG):
             _yield_paste_dialog(
@@ -764,13 +767,14 @@ if apply_plan:
     except ValueError as exc:
         plan_notice.error(bootstrap_error_message(exc))
     else:
-        st.session_state.pop(PLAN_STAGED_KEY, None)
-        st.session_state[PLAN_APPLIED_FLASH_KEY] = (
+        _queue_done(
+            PLAN_APPLIED_FLASH_KEY,
             f"PKG PLAN을 전역 계획값에 반영했습니다. "
             f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
             f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
-            "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요."
+            "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
         )
+        st.session_state.pop(PLAN_STAGED_KEY, None)
         mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, PLAN_STAGED_KEY))
         st.rerun()
 

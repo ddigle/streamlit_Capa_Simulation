@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -26,6 +27,7 @@ import streamlit as st
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.persistence.cache import load_global_securement_threshold
@@ -306,6 +308,81 @@ def prune_choice(key: str, options: Sequence[str], *, default: str | None) -> st
     value = str(saved) if saved is not None and str(saved) in set(options) else default
     st.session_state[key] = value
     return value
+
+
+# `prune_named_choice` 가 세션에 드는 이름 수의 상한 — 이름 바꾸기마다 하나씩 는다.
+_REMEMBERED_NAMES_LIMIT = 256
+
+
+@dataclass(frozen=True)
+class NamedChoice:
+    """`prune_named_choice` 의 답 — 고른 값과, 이 회차의 쓰기 단추 누름을 그 값에 걸면 안 되는가.
+
+    `moved` 는 고른 항목이 이 회차에 사라져 `default` 로 바꿨거나, 그렇게 바꾼 지
+    `write_guard.TRAILING_PRESS_SECONDS` 가 지나지 않아 바꾼 값이 그대로인 회차다.
+    """
+
+    value: str
+    moved: bool
+
+
+def prune_named_choice(key: str, names: Mapping[str, str], *, default: str) -> NamedChoice:
+    """`prune_choice` 에 선택지 글자(`names` — 값 → `format_func` 글자)를 더한 짝. 쓰기 단추의
+    대상을 고르는 상자에 쓴다.
+
+    Streamlit 1.63 선택 상자는 고른 항목의 글자를 주고받는다. 빠른 두 번 누름의 둘째 회차는
+    브라우저가 아직 첫 누름 전 글자를 보내는데, 첫 누름이 그 글자를 바꿨거나(이름 바꾸기) 그 항목을
+    선택지에서 뺐으면(보관본 되돌리기·지우기) 지금 선택지로 풀리지 않는다. `prune_choice` 는 그
+    자리를 기본값으로 바꾸고, 같은 회차의 단추 누름이 고르지 않은 항목에 걸렸다(2026-10-27 E2E —
+    설비 시나리오 「이름 바꾸기」 가 운영 일정에 같은 이름 쓰기를 하고 그 성공을 알림, 보관함
+    「되돌리기」 가 다른 보관본까지 되돌림). 그래서 둘을 가른다.
+
+    - 앞 회차들이 그린 글자를 세션에 들어 두고(`{key}__names` — 글자 → 값), 풀리지 않은 글자가 그중
+      하나이고 그 값이 아직 선택지에 있으면 그 값을 잇는다 — 글자만 바뀐 항목은 고름이 그대로다.
+    - 그래도 선택지에 없으면 `default` 로 바꾸고 `moved` 다. 바꾼 값과 시각을 적어 두고
+      (`{key}__moved`) 그 창 안의 회차도 `moved` 다 — 바뀐 고름을 받은 브라우저에서 곧바로 닿은
+      누름도 사람이 바뀐 고름을 보고 누른 것이 아니다.
+
+    부르는 쪽은 `moved` 인 회차의 쓰기 단추 누름을 그 값에 걸지 않는다. 위젯 앞에서 매 회차 부르고
+    값은 `prune_choice` 처럼 세션에 되쓴다.
+    """
+    names_key = f"{key}__names"
+    moved_key = f"{key}__moved"
+    remembered = st.session_state.get(names_key)
+    if not isinstance(remembered, dict):
+        remembered = {}
+    saved = st.session_state.get(key)
+    shown = {label: option for option, label in names.items()}
+    value: str | None = None
+    if saved is not None:
+        text = str(saved)
+        if text in names:
+            value = text
+        elif text in shown:
+            value = shown[text]
+        elif remembered.get(text) in names:
+            value = str(remembered[text])
+    moved = saved is not None and value is None
+    picked = default if value is None else value
+    st.session_state[key] = picked
+    for option, label in names.items():
+        remembered.pop(label, None)
+        remembered[label] = option
+    while len(remembered) > _REMEMBERED_NAMES_LIMIT:
+        remembered.pop(next(iter(remembered)))
+    st.session_state[names_key] = remembered
+    if moved:
+        st.session_state[moved_key] = (picked, time.monotonic())
+        return NamedChoice(picked, True)
+    record = st.session_state.get(moved_key)
+    recently = (
+        isinstance(record, tuple)
+        and len(record) == 2
+        and record[0] == picked
+        and isinstance(record[1], float)
+        and time.monotonic() - record[1] < write_guard.TRAILING_PRESS_SECONDS
+    )
+    return NamedChoice(picked, recently)
 
 
 def load_page_context() -> PageContext:

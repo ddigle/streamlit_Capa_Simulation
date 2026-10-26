@@ -15,6 +15,7 @@ from streamlit.testing.v1.element_tree import Dataframe, ElementTree
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.services.korean_particle import with_object_particle
 
@@ -806,11 +807,15 @@ def _plan_editor_path(app: AppTest) -> tuple[int, ...]:
     return found[0]
 
 
-def test_the_plan_notices_stand_in_one_slot_above_the_editor(seeded_database: Path) -> None:
+def test_the_plan_notices_stand_in_one_slot_above_the_editor(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """붙여넣기·적용 알림은 작업 줄 아래 늘 서 있는 칸에 선다 — 생기고 빠져도 PKG PLAN 편집표의
     자리가 그대로다. 두 동작은 `st.rerun()` 으로 끊기고 다음 회차에 알림이 생기므로, 밀리면
     브라우저에 옛 편집표의 흐린 사본이 남는다(AGENTS 9장 「조건부 알림」). 여기서는 그 원인인 자리
-    밀림을 잰다."""
+    밀림을 잰다. 알림이 빠지는 회차를 보려고 쓰기 알림 표지의 창은 0 으로 둔다(창 안의 회차는 알림을
+    다시 그린다 — 아래 두 번 누름 시험)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     assert not list(app.exception)
     before = _plan_editor_path(app)
@@ -841,3 +846,61 @@ def test_the_plan_editor_shows_the_applied_plan_right_after_apply(seeded_databas
     assert not list(app.exception)
 
     assert _plan_grid_total(app) == pytest.approx(before * 0.5)
+
+
+APPLIED_ICON = ":material/published_with_changes:"
+
+
+def _applied(app: AppTest, text: str) -> list[str | None]:
+    """그 글이 든 성공 알림의 아이콘들(알림이 없으면 빈 목록)."""
+    return [item.icon for item in app.success if text in str(item.value)]
+
+
+def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「PKG PLAN 변경사항 적용」 을 0.3~0.35초 간격으로 두 번 누르면 적용은 되는데 성공 알림이
+    사라졌다(2026-10-27 E2E 3/4). 둘째 누름은 적용 뒤 잠긴 단추에 닿아 버려지고, 그 회차가 화면을
+    다시 그리며 앞 회차가 꺼내 그린 알림을 지웠다. 쓰기 직후 적어 둔 알림 표지로 창 안의 회차가 같은
+    아이콘으로 다시 그린다 — 창이 지난 회차는 그리지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    _paste(app, _clipboard_text(app, scale=0.5))
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+    assert app.button(key="apply_pkg_plan_changes").disabled
+
+    # 둘째 누름의 회차 — 잠긴 단추의 누름은 버려져 아무것도 하지 않고 화면만 다시 그린다.
+    app.run()
+    assert not list(app.exception)
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app.run()
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == []
+
+
+def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「수율 변경사항 적용」 도 같다(2026-10-27 E2E 4/6)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    grid = _yield_grid(app)
+    month = next(column for column in grid.columns if str(column).isdigit())
+    edit = {
+        "edited_rows": {0: {month: 0.5}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.run()
+    app.session_state[_widget_key(app, "yield_editor")] = edit
+    app.button(key="apply_yield_changes").click().run()
+    assert not list(app.exception)
+    assert _applied(app, "RQ_YLD 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+
+    app.run()
+    assert not list(app.exception)
+    assert _applied(app, "RQ_YLD 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
