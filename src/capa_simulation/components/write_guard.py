@@ -124,10 +124,12 @@ SEEN_MISSING_MESSAGE = (
 # `time.monotonic()` 이다.
 PROFILE_CONFLICTS_KEY = "write_guard_profile_conflicts"
 
-# 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`, 아이콘)).
+# 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`, 아이콘,
+# 종류)).
 RECENT_NOTICES_KEY = "write_guard_recent_notices"
-# 쓰기 알림 표지 한 칸 — (알림 글, 쓴 시각, 아이콘 — 아이콘 없는 성공 알림은 None).
-NoticeMark: TypeAlias = tuple[str, float, str | None]
+# 쓰기 알림 표지 한 칸 — (알림 글, 쓴 시각, 아이콘 — 아이콘 없는 알림은 None, 알림 종류 — `flash` 의
+# 종류 글자, 보통 "success").
+NoticeMark: TypeAlias = tuple[str, float, str | None, str]
 
 # 이 세션이 마지막으로 마친 출발점 대조 저장(저장 이름 → (출발점, 결과, 쓴 시각)).
 # `save_once` 가 적는다.
@@ -447,35 +449,43 @@ def notice_marks() -> dict[str, NoticeMark]:
 
 
 def note_notice(
-    marks: dict[str, NoticeMark], key: str, message: str, *, icon: str | None = None
+    marks: dict[str, NoticeMark],
+    key: str,
+    message: str,
+    *,
+    icon: str | None = None,
+    kind: str = "success",
 ) -> None:
-    """`key` 칸에 낼 쓰기 알림(`message`)과 지금 시각을 적는다. `icon` 은 그 성공 알림의 아이콘이다
-    — 다시 그릴 때 첫 알림과 같은 꼴로 선다."""
-    marks[key] = (message, time.monotonic(), icon)
+    """`key` 칸에 낼 쓰기 알림(`message`)과 지금 시각을 적는다. `icon`·`kind` 는 그 알림의 아이콘과
+    종류(`flash` 의 종류 글자 — 작은 편집표 삭제 알림은 "info")다 — 다시 그릴 때 첫 알림과 같은 꼴로
+    선다."""
+    marks[key] = (message, time.monotonic(), icon, kind)
 
 
-def held_flash(key: str) -> tuple[str, str | None] | None:
-    """`key` 칸의 쓰기 알림이 `TRAILING_PRESS_SECONDS` 안에 났으면 (그 글, 아이콘).
+def held_flash(key: str) -> tuple[str, str | None, str] | None:
+    """`key` 칸의 쓰기 알림이 `TRAILING_PRESS_SECONDS` 안에 났으면 (그 글, 아이콘, 종류).
 
     그 창 안의 회차는 같은 단추의 빠른 둘째 누름일 수 있다 — 쓰지 않고 끝나 첫 쓰기의 알림을 지운다.
-    부르는 쪽(`flash.render_flash`)은 담아 둔 알림이 없을 때 이 알림을 그 자리에 성공으로 다시
-    그린다. 아이콘 없이 적은 옛 꼴(글, 시각)도 읽는다.
+    부르는 쪽(`flash.render_flash`)은 담아 둔 알림이 없을 때 이 알림을 그 자리에 같은 꼴로 다시
+    그린다. 아이콘·종류 없이 적은 옛 꼴(글, 시각[, 아이콘])도 읽는다(종류는 성공).
     """
     marks = st.session_state.get(RECENT_NOTICES_KEY)
     if not isinstance(marks, dict):
         return None
     entry = marks.get(key)
-    if not isinstance(entry, tuple) or len(entry) not in (2, 3):
+    if not isinstance(entry, tuple) or len(entry) not in (2, 3, 4):
         return None
     message, moment, *rest = entry
     icon = rest[0] if rest else None
+    kind = rest[1] if len(rest) > 1 else "success"
     if (
         not isinstance(message, str)
         or not isinstance(moment, float)
         or not (icon is None or isinstance(icon, str))
+        or not isinstance(kind, str)
     ):
         return None
-    return (message, icon) if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
+    return (message, icon, kind) if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
 
 
 def held_notice(key: str) -> str | None:

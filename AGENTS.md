@@ -1987,7 +1987,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이 다른 칸만 (파일, 함수, 칸) 으로 까닭과
   함께 허용 목록에 둔다(9장 「조건부 알림」).
   담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
-  `write_guard.held_flash` 로 그 글을 적어 둔 아이콘(`note_notice(…, icon=)`)과 함께 성공으로 다시 그린다 — 아주 빠른 둘째
+  `write_guard.held_flash` 로 그 글을 적어 둔 아이콘·종류(`note_notice(…, icon=, kind=)` — 종류는 보통 성공)로 다시 그린다 — 아주 빠른 둘째
   누름의 회차가 앞 회차의 알림을 지우지 않게 모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
 - `src/capa_simulation/components/widget_generation.py` — 서버 값을 브라우저가 든 위젯에 닿게 하는 **한 길**(9장 「닫힌
   팝업 안」·「쓰기 콜백」). 세대 칸 읽기(`generation` — `write_guard.current_generation` 과 같은 읽기)·세대 key 짓기
@@ -4195,10 +4195,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     회차가 이미 꺼내 그렸으므로 그 회차가 화면을 다시 그리며 알림을 지워, 한 건 쓰였는데 아무 알림도 남지 않았다
     (2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 지나간 세대의 누름이 `just_written` 창 안이면
     성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
-    시각을 적어(`note_notice` — 아이콘 있는 성공 알림은 `icon=` 도) 그 창 안의 회차가 같은 꼴로 다시 그린다(VOC 글
-    삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」·리비전 불러오기
-    `scenario_status.load_saved_revision` — HOME 주요 Case 칩을 0.15~0.3초 간격으로 두 번 누르면 둘째 누름은 이미 올린 짝이라
-    아무것도 하지 않고 「…을 불러왔습니다.」 를 지웠다, 2026-10-26 E2E). 첫 회차가
+    시각을 적어(`note_notice` — 아이콘 있는 성공 알림은 `icon=` 도, 성공이 아닌 알림은 `kind=` 도) 그 창 안의 회차가 같은
+    꼴로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름
+    저장」·리비전 불러오기 `scenario_status.load_saved_revision` — HOME 주요 Case 칩을 0.15~0.3초 간격으로 두 번 누르면 둘째
+    누름은 이미 올린 짝이라 아무것도 하지 않고 「…을 불러왔습니다.」 를 지웠다, 2026-10-26 E2E. 가용설비 현황 작은 편집표의
+    「삭제 확정」·「방금 삭제 되돌리기」·「예시 행 n건 지우기」 의 info 알림도 — 둘째 누름이 첫 회차가 꺼낸 단추에 닿아 그 알림을
+    지웠다, 2026-10-27 E2E, `tests/test_equipment_bulk_delete_page.py`. 뺄 예시 행이 없는 「예시 행 지우기」 누름은 옛 화면의 둘째라
+    아무것도 하지 않는다). 첫 회차가
     콜백만 마치고 화면을 다시 그리기 전에 닿은 둘째 누름은 단추가 아직 열려 있어 콜백이 고친 것 없이 도는데, 그 창 안이면
     「고친 것이 없습니다」 로 방금 성공을 덮지 않는다(`tests/test_scenario_save_double_press.py`). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
     `held_notice` 를 따로 부르지 않는다(VOC 머리 칸도 `render_flash` 칸이다). 창이 지난 옛 화면의 누름은

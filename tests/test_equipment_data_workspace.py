@@ -24,8 +24,10 @@ from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 from test_equipment_master_tab import _TAIL, FAKE_SAVE_KEY, FAKE_SAVE_RESULT_KEY
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_scenario_save_double_press import _first_callback, _press_again
 from widget_browser import BrowserTables
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
@@ -394,6 +396,30 @@ def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_clic
     # 예시 행을 빼면 저장할 것이 없다 — 빈 저장소에 빈 리비전을 만들지 않는다(결정 모음).
     assert _repository(path).list_revisions() == []
     assert any(NOTHING_TO_SAVE in text for text in _texts(app, "info"))
+
+
+def test_a_double_press_on_dropping_example_rows_keeps_the_first_notice(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「예시 행 n건 지우기」 의 둘째 누름이 첫 회차가 단추를 다시 그리기 전의 옛 화면에 닿으면
+    콜백이 뺄 행 없이 다시 돌아 「예시 행 0건을 편집본에서 뺐습니다」 로 첫 알림을 덮었다(2026-10-27
+    E2E 「삭제 확정」 과 같은 결함류). 뺄 행이 없는 누름은 아무것도 하지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = _app(tmp_path / "equipment.duckdb")
+    _preview(app, _baseline_template_text(), target="기존 보유대수")
+    _put(app)
+    app.session_state[TABLE_KEY] = "기존 보유대수"
+    _ok(app.run())
+    app.button(key=EXAMPLE_DROP_BUTTON_KEY).click()
+    pressed = app._tree.get_widget_states()
+
+    _first_callback(app, monkeypatch, "_drop_example_rows")
+    _press_again(app, pressed)
+
+    infos = _texts(app, "info")
+    assert any("예시 행 1건을 편집본에서 뺐습니다" in text for text in infos), infos
+    assert not any("예시 행 0건" in text for text in infos), infos
+    assert app.session_state[BUFFER_KEY][0].empty
 
 
 def test_saving_the_template_example_row_without_dropping_it_is_still_blocked(
