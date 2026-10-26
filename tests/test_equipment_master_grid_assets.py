@@ -78,6 +78,30 @@ def test_placeholders_use_the_muted_ink_of_the_theme() -> None:
     assert "color: var(--emg-muted)" in rule.group("body") and "opacity: 1" in rule.group("body")
 
 
+def test_the_shift_days_stay_with_their_unit_and_blank_dates_show_the_pattern() -> None:
+    """고른 줄 띠가 좁으면(1500px) 「반입·Qual 일정 [7]」 다음의 단위 「일」 만 다음 줄로
+    넘어가 칸과 떨어졌다 — 이름·날 수 칸·「일」·밀기 단추를 한 덩이(`emg-shift`, 안에서 줄을
+    바꾸지 않음)로 둔다. 빈 날짜 칸 자리표시는 실제 날짜(「2026-11-09」)라 값처럼 읽혔다 —
+    꼴(YYYY-MM-DD)을 적는다(2026-10-25 E2E #26·#28)."""
+    selection = _function("buildSelection")
+    group = selection[
+        selection.index("el('span', 'emg-shift')") : selection.index("bar.appendChild(shiftGroup)")
+    ]
+    for part in (
+        "shiftGroup.appendChild(el('span', null, '반입·Qual 일정'))",
+        "shiftGroup.appendChild(days)",
+        "shiftGroup.appendChild(el('span', null, '일'))",
+        "shiftGroup.appendChild(shift)",
+    ):
+        assert part in group, part
+    rule = re.search(r"\n\.emg-shift\s*\{(?P<body>[^}]*)\}", CSS)
+    assert rule and "flex-wrap: nowrap" in rule.group("body")
+    assert "const DATE_PLACEHOLDER = 'YYYY-MM-DD'" in JS
+    dated = [line for line in JS.splitlines() if "placeholder = " in line and "'date'" in line]
+    assert len(dated) == 4 and all("DATE_PLACEHOLDER" in line for line in dated), dated
+    assert not re.search(r"placeholder = [^\n]*'\d{4}-\d{2}-\d{2}", JS)
+
+
 def test_the_registered_css_carries_no_comments() -> None:
     """등록 CSS 는 data 가 바뀐 회차마다 요소와 함께 다시 간다 — 주석을 싣지 않는다."""
     assert "/*" not in CSS

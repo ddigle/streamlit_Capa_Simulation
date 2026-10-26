@@ -1605,7 +1605,12 @@ def new_unit_check(
     if context.new_rows_locked:
         hint = context.stale_lock or NEW_ROWS_LOCK_REASON
     elif errors:
-        named = " · ".join(column for column in EQUIPMENT_COLUMNS if column in errors)
+        # 칸 이름은 체크 상자 차례(에러 없이 추가하려면 → Y/N 셋 → 가용대수 → 도면) 다음 표 차례다 —
+        # 표 차례만 따르면 「공정소분류 · 설비명」 처럼 체크 상자와 거꾸로 읽혔다(E2E).
+        order = (*required_columns, *NEW_UNIT_FLAGS, *NEW_UNIT_CALC, *NEW_UNIT_MAP)
+        named = " · ".join(
+            column for column in dict.fromkeys((*order, *EQUIPMENT_COLUMNS)) if column in errors
+        )
         hint = f"아직 추가할 수 없습니다 — {named} 칸을 확인합니다"
     else:
         hint = "추가할 수 있습니다"

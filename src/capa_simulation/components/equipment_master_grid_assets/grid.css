@@ -454,6 +454,14 @@
   text-align: right;
 }
 
+.emg-shift {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .emg-vsep {
   width: 1px;
   height: 24px;

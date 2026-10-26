@@ -361,6 +361,8 @@ const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
 const COLSET_KEY = 'capa.equipmentGrid.colSet'
+// 빈 날짜 칸 자리표시 — 꼴만 적는다. 실제 날짜(「2026-11-09」)를 적으면 어두운 테마에서 값처럼 읽혔다(E2E).
+const DATE_PLACEHOLDER = 'YYYY-MM-DD'
 // 저장 갈래 꼬리표(칸 머리·상세 묶음·값 넣기 칸·변경 줄). 공통·상태 칸은 꼬리표 없이 「공통」 이다.
 const SCOPE_LABELS = { scenario: '시나리오', layout: '배치' }
 const SCOPE_SHORT = { scenario: '시', layout: '배' }
@@ -1317,7 +1319,7 @@ function buildSelection(S, bar) {
   } else {
     const input = el('input', 'emg-input')
     input.value = S.bulkValue
-    input.placeholder = column.kind === 'date' ? '2026-11-09 (비우면 지움)' : '값 (비우면 지움)'
+    input.placeholder = column.kind === 'date' ? DATE_PLACEHOLDER + ' (비우면 지움)' : '값 (비우면 지움)'
     input.setAttribute('aria-label', '넣을 값')
     input.dataset.fk = 'bulk-value'
     input.addEventListener('input', () => {
@@ -1330,13 +1332,15 @@ function buildSelection(S, bar) {
   repaintApply()
   bar.appendChild(apply)
   bar.appendChild(el('span', 'emg-vsep'))
-  bar.appendChild(el('span', null, '반입·Qual 일정'))
+  // 「반입·Qual 일정 [n] 일 밀기」 는 한 덩이로 줄을 바꾼다 — 줄이 좁으면 단위 「일」 만 다음 줄로 넘어가 칸과 떨어졌다(E2E).
+  const shiftGroup = el('span', 'emg-shift')
+  shiftGroup.appendChild(el('span', null, '반입·Qual 일정'))
   const days = el('input', 'emg-input emg-days')
   days.value = S.days
   days.setAttribute('aria-label', '밀 날 수')
   days.dataset.fk = 'bulk-days'
-  bar.appendChild(days)
-  bar.appendChild(el('span', null, '일'))
+  shiftGroup.appendChild(days)
+  shiftGroup.appendChild(el('span', null, '일'))
   const dateCols = columns.map((c, k) => (c.name === '반입일정' || c.name === 'Qual일정' ? k : -1)).filter((k) => k >= 0)
   const shift = button('emg-btn is-small', '', () => {
     const value = parseDays(S.days)
@@ -1357,7 +1361,8 @@ function buildSelection(S, bar) {
   })
   days.addEventListener('keydown', stopKeys)
   repaintShift()
-  bar.appendChild(shift)
+  shiftGroup.appendChild(shift)
+  bar.appendChild(shiftGroup)
   bar.appendChild(el('span', 'emg-vsep'))
   const lock = S.data.deleteLock
   const deletable = rows.filter((row) => !(lock && row.tag !== 'new'))
@@ -1594,7 +1599,7 @@ function cellElement(S, row, k) {
   if (editing && column.kind !== 'choice') {
     cell.classList.add('is-editing')
     const input = textEditor('emg-ed', S.edit.draft)
-    input.placeholder = column.kind === 'date' ? '2026-11-09' : ''
+    input.placeholder = column.kind === 'date' ? DATE_PLACEHOLDER : ''
     input.setAttribute('aria-label', label)
     cell.appendChild(input)
     return cell
@@ -2251,7 +2256,7 @@ function newField(S, column, k, mark) {
     input.id = id
     input.dataset.fk = 'n' + k
     input.disabled = Boolean(mark.lock)
-    if (column.kind === 'date') input.placeholder = '2026-11-09'
+    if (column.kind === 'date') input.placeholder = DATE_PLACEHOLDER
     if (column.kind === 'name') input.placeholder = '예: WBA-11'
     input.addEventListener('input', () => {
       S.nd.values[k] = input.value
@@ -2331,7 +2336,7 @@ function detailField(S, unit, column, k, sets, reasons) {
     input.id = id
     input.dataset.fk = 'f' + k
     input.disabled = Boolean(lock)
-    if (column.kind === 'date') input.placeholder = '2026-11-09'
+    if (column.kind === 'date') input.placeholder = DATE_PLACEHOLDER
     input.addEventListener('input', () => S.drafts.set(k, input.value))
     input.addEventListener('keydown', (event) => {
       stopKeys(event)

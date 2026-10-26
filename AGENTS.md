@@ -1585,7 +1585,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게). 표지 색은 새 토큰 없이 팔레트(오류 선·강조·배치 머리 면·머리
     면)이고 글자(필수·가용대수·도면)가 함께 간다.
     자리표시 글은 `--emg-muted`(TEXT_MUTED)로 그린다 — 브라우저 기본 #757575 는 테마를 몰라 어두운 바탕에서 4.5:1 에 못 미친다(Space
-    배치 편집기 입력도 `--sle-muted`).
+    배치 편집기 입력도 `--sle-muted`). 빈 날짜 칸 자리표시는 꼴(`DATE_PLACEHOLDER` — `YYYY-MM-DD`)이다(실제 날짜는 값처럼 읽힌다).
+    새 호기 칸 막힘 힌트의 칸 이름은 체크 상자 차례(에러 없이 → Y/N → 가용대수 → 도면) 다음 표 차례다. 고른 줄 띠의 「반입·Qual
+    일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
