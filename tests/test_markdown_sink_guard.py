@@ -191,7 +191,7 @@ def _markdown_sink_arguments(call: ast.Call) -> list[ast.expr]:
     return [*call.args, *(kw.value for kw in call.keywords if kw.arg in MARKDOWN_KEYWORDS)]
 
 
-def _is_name(expr: ast.expr, name: str) -> bool:
+def _is_name(expr: ast.AST, name: str) -> bool:
     return isinstance(expr, ast.Name) and expr.id == name
 
 
