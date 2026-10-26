@@ -932,6 +932,21 @@ def test_the_discarded_notice_blocks_the_tildes_of_the_dropped_units() -> None:
     assert "빠진 호기 1대(DA\\~21\\~R)의 편집은 뺐습니다" in notice, notice
 
 
+def test_the_reapplied_notice_lists_the_dropped_renames() -> None:
+    """E2E r6 — 위치는 다시 얹고 그 호기의 Space 이름 바꿈은 버렸는데 알림이 버린 것에 이름 바꿈을
+    적지 않아, 이름 바꿈도 남았다고 읽혔다. 버린 편집에 「이름 바꿈 n건」 을 적는다."""
+    moved = ReappliedLayout(equipment=pd.DataFrame(), reapplied=1)
+
+    notice = discarded_notice("공통 대장 r8", overlay_dropped=1, reapplied=moved, renames_dropped=1)
+    plain = discarded_notice("공통 대장 r8", overlay_dropped=1, reapplied=moved)
+
+    assert "그 위에 다시 얹었습니다" in notice, notice
+    assert "(설비 마스터 칸·이름 바꿈 1건·도면 요소·Main 설비명 위치)은 버렸습니다" in notice, (
+        notice
+    )
+    assert "이름 바꿈" not in plain, plain
+
+
 def test_the_discarded_notice_names_the_dropped_units_when_nothing_was_reapplied() -> None:
     """E2E r6 — 저장 안 한 가정 배치 편집이 남이 지운 호기에만 있었으면 다시 얹은 것은 0대다. 그
     갈래도 빠진 호기와 그 까닭을 적고, 이제 없는 호기를 「최신 위에서 다시 옮기세요」 라 하지

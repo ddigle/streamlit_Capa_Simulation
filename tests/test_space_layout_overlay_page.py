@@ -927,6 +927,37 @@ def test_an_edit_only_of_a_unit_someone_else_deleted_names_it_in_the_notice(
     assert "다시 옮기세요" not in notices[0], notices
 
 
+def test_a_rename_dropped_with_a_reapplied_move_is_told(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 가정 세션에서 EQ-02 를 옮기고 이름을 EQ-02T 로 바꿔 적용한 뒤 남이 공통 대장을
+    저장하면 위치는 다시 얹고 이름 바꿈은 버린다(의도). 알림이 버린 것에 이름 바꿈을 적지 않아
+    이름도 남았다고 읽혔다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+        "renames": [{"kind": "unit", "from": "EQ-02", "to": "EQ-02T"}],
+    }
+    _ok(app.run())
+    assert not app.error, [item.value for item in app.error]
+    assert any("이름 바꿈 1건" in text for text in _texts(app)), _texts(app)
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-01", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    notice = next(str(item.value) for item in app.warning if "다시 얹었습니다" in str(item.value))
+    assert "이름 바꿈 1건" in notice, notice
+    assert _buffer_x(app, "EQ-02") == 60.0
+
+
 def test_a_reapplied_editor_group_keeps_its_approval_and_saves(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

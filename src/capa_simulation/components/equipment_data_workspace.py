@@ -169,6 +169,7 @@ from capa_simulation.services.layout_overlay import (
 from capa_simulation.services.space_layout_edit import (
     ModuleLayout,
     PendingRenames,
+    live_renames,
     module_layout_message,
     module_layout_violations,
     natural_name_key,
@@ -604,6 +605,9 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     swapped = previous is not None and previous != token
     overlay_dropped = _stamped_overlay_edits() if swapped else 0
     reapply = _reapply_material(previous, token) if swapped else None
+    # 저장 안 한 이름 바꿈은 다시 얹지 않고 버린다 — 다시 얹은 알림이 그 수를 버린 것에 적는다(같은
+    # 호기의 위치만 다시 얹고 이름은 돌아가 이름도 남았다고 읽혔다, E2E r6).
+    renames_dropped = _live_rename_count() if reapply is not None else 0
     # 옛 저장본의 (설비명, 호기 키) — 남이 이름을 바꾼 호기의 표 행 id 를 새 이름으로 옮길 재료.
     old_unit_keys = tuple(draft_unit_keys().items()) if swapped else ()
     if st.session_state.get(DRAFT_REVISION_KEY) != token:
@@ -649,7 +653,12 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             number = _replaced_by_words(previous, latest_snapshot)
             queue_flash(
                 DISCARDED_NOTICE_KEY,
-                discarded_notice(number, overlay_dropped=overlay_dropped, reapplied=reapplied),
+                discarded_notice(
+                    number,
+                    overlay_dropped=overlay_dropped,
+                    reapplied=reapplied,
+                    renames_dropped=renames_dropped,
+                ),
                 kind="warning",
                 icon=":material/sync_problem:",
             )
@@ -1329,6 +1338,18 @@ def live_layout_role() -> str | None:
     return None
 
 
+def _live_rename_count() -> int:
+    """저장 안 한 이름 바꿈 수 — Space 저장 안 한 배치 상자 「이름 바꿈 n건」 과 같은 셈
+    (`live_renames` — 설비명·Main 설비 바꿈마다 한 건). 편집본을 다시 세우기 **전**(옛 저장본
+    사본)에 센다."""
+    pending = pending_unit_renames()
+    buffer = st.session_state.get(BUFFER_KEY)
+    if not pending or not isinstance(buffer, tuple):
+        return 0
+    live = live_renames(pending, _saved_master(), buffer[1])
+    return len(live.units) + len(live.groups)
+
+
 def _stamped_overlay_edits() -> int:
     """가정 역할로 찍힌 배치 편집의 호기 수(편집본 대 저장본 사본) — 남의 저장으로 편집본을 다시
     세울 때 버림 알림에 따로 적는다. 가정 역할이 아니거나 편집본이 없으면 0."""
@@ -1388,13 +1409,20 @@ def _reapply_layout(
 
 
 def discarded_notice(
-    number: str, *, overlay_dropped: int, reapplied: ReappliedLayout | None
+    number: str,
+    *,
+    overlay_dropped: int,
+    reapplied: ReappliedLayout | None,
+    renames_dropped: int = 0,
 ) -> str:
     """남의 저장으로 편집본을 다시 세운 회차의 알림(한 번). 가정 배치 편집을 새 저장본 위에 다시
     얹었으면 그 수와 빠진 호기를 따로 적는다(설계 9장) — 그 밖의 저장 안 한 편집(설비 마스터 칸·
     도면 요소·Main 설비명 위치)은 지금처럼 버렸다. 다시 얹을 편집이 남이 지운 호기에만 있었으면
     (다시 얹은 0대) 버렸다는 일반 글에 그 호기와 까닭을 적고, 그 호기는 「최신 위에서 다시
-    옮기세요」 에 세지 않는다(E2E r6 — 이제 없는 호기를 다시 옮기라 했다)."""
+    옮기세요」 에 세지 않는다(E2E r6 — 이제 없는 호기를 다시 옮기라 했다). `renames_dropped` 는 버린
+    저장 안 한 이름 바꿈 수다 — 다시 얹은 갈래는 버린 것에 「이름 바꿈 n건」 을 적는다(같은 호기의
+    위치만 다시 얹고 이름은 돌아가, 적지 않으면 이름 바꿈도 남았다고 읽혔다 — E2E r6). 버린 갈래는
+    「설비 편집(설비 마스터·Space 배치)을 버리고」 가 이미 모두 말한다."""
     head = f"다른 사용자가 {number}{object_particle(number)} 저장해, "
     gone = reapplied.dropped if reapplied is not None else ()
     # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
@@ -1405,11 +1433,12 @@ def discarded_notice(
         else ""
     )
     if reapplied is not None and reapplied.reapplied:
+        renamed = f"이름 바꿈 {renames_dropped:,}건·" if renames_dropped else ""
         return (
             head + "최신 저장본으로 다시 열고 저장하지 않은 가정 배치 편집 "
             f"{reapplied.reapplied:,}대(호기 위치)는 그 위에 다시 얹었습니다.{dropped} 그 밖의 "
-            "저장하지 않은 설비 편집(설비 마스터 칸·도면 요소·Main 설비명 위치)은 버렸습니다 — "
-            "배치를 확인하고 저장하세요."
+            f"저장하지 않은 설비 편집(설비 마스터 칸·{renamed}도면 요소·Main 설비명 위치)은 "
+            "버렸습니다 — 배치를 확인하고 저장하세요."
         )
     # 남이 지운 호기의 편집은 다시 옮길 수 없다 — 그 밖의 버린 가정 배치 편집만 다시 옮기라 한다.
     rest = max(overlay_dropped - len(gone), 0)
