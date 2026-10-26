@@ -1436,7 +1436,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   비움·새로 든 설비명을 목록 맨 위로·표 토스트(되돌리기)·넣은 편집본에 배치 편집이 있으면 그때의 역할 찍기(`stamp_layout_role` —
   넣고 나중에 저장하므로 그 사이 역할이 바뀌면 저장소가 막는다, 설계 6-2) — 뒤 열림 칸을 지우고 앱을 다시 돌린다. 팝업을 닫으면
   (`_close_dialog` — on_dismiss) 미리보기도 거두고, 여는 콜백(`open_equipment_import` — 표 불러오기 줄 `dialog` 트리거도)도 남은
-  미리보기를 거둔다(닫힌 회차에 입력 칸이 버려져 다시 열면 빈 입력에 옛 미리보기만 남는다). 팝업 안 폼 제출은 앱 범위
+  미리보기를 거둔다(닫힌 회차에 입력 칸이 버려져 다시 열면 빈 입력에 옛 미리보기만 남는다). `_close_dialog` 는 닫힌 수
+  (`IMPORT_CLOSED_KEY`)도 올린다 — 표 불러오기 data `dialogClosed` 로 실려, 그 불러오기 단추로 연 팝업이 닫힌 회차에 초점이
+  아무 데도 없으면 여는 단추로 돌린다(Streamlit 은 그림자 DOM 안 단추로 돌려주지 못해 BODY 로 빠진다). 팝업 안 폼 제출은 앱 범위
   `st.rerun()` 이다(앱 회차에서 `scope="fragment"` 는 오류). 팝업 알림은 작은 편집표 알림 칸과 가른 제 칸(`IMPORT_*_KEY`)이다.
   새 방문 회차의 미리보기 거두기는 페이지가 매 회차 부르는 `withdraw_preview_on_new_visit`.
 - `src/capa_simulation/components/equipment_master_grid.py` (+ `equipment_master_grid_assets/` HTML·CSS·JS) — 가용설비 현황

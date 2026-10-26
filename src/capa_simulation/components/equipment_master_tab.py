@@ -112,7 +112,10 @@ from capa_simulation.components.equipment_data_workspace import (
 from capa_simulation.components.equipment_data_workspace import (
     _confirmation_master as confirmation_master,
 )
-from capa_simulation.components.equipment_import_dialog import open_equipment_import
+from capa_simulation.components.equipment_import_dialog import (
+    import_closed_count,
+    open_equipment_import,
+)
 from capa_simulation.components.equipment_save_fields import (
     ASSUMPTION_PROPAGATE_WARNING,
     DEFAULT_PROPAGATE_NEW_UNITS,
@@ -1124,6 +1127,7 @@ def _render_grid_card(
                 alert_ids=alert_ids,
                 first_data=latest_snapshot is None and not view.index.live,
                 new_enabled=True,
+                dialog_closed=import_closed_count(),
             ),
             on_load=_on_load,
             on_clear=_on_clear,

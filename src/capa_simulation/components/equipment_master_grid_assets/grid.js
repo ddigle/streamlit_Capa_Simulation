@@ -414,6 +414,7 @@ function freshState() {
     note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
+    dialogOpener: null, dialogClosed: null,
   }
 }
 
@@ -586,7 +587,7 @@ function drawLoader(host, S, data) {
     fresh.disabled = Boolean(data.newRowsLocked)
     bar.appendChild(fresh)
   }
-  bar.appendChild(button('emg-btn', '엑셀·CSV로 한꺼번에', () => S.setTrigger('dialog', { name: 'import' })))
+  bar.appendChild(importButton(S, 'emg-btn', 'import-bar'))
   const loaded = Array.isArray(data.loaded) ? data.loaded.length : 0
   const total = Number(data.total) || 0
   // 불러온 수는 전체(살아 있는 호기)와 같은 기준 — 지울 목록에 든 호기는 표에 남아도 세지 않는다.
@@ -606,10 +607,28 @@ function drawLoader(host, S, data) {
   S.painting = false
   const focus = S.refocus
   S.refocus = null
-  if (focus === 'search' && S.searchInput && focusIsFree(host)) {
+  // 이 불러오기가 연 「엑셀·CSV로 한꺼번에」 팝업이 닫혔다(파이썬이 닫힐 때마다 센 수 `dialogClosed`) — Streamlit 은 닫은
+  // 뒤 초점을 그림자 DOM 안 여는 단추로 돌려주지 못해 BODY 로 빠진다. 초점이 아무 데도 없으면 여는 단추로 돌린다.
+  const closed = Number(data.dialogClosed) || 0
+  const opener = S.dialogClosed !== null && closed !== S.dialogClosed ? S.dialogOpener : null
+  S.dialogClosed = closed
+  if (opener) S.dialogOpener = null
+  const back = opener ? root.querySelector('[data-fk="' + opener + '"]') || root.querySelector('[data-fk="import-bar"]') : null
+  if (back && focusIsFree(host)) back.focus()
+  else if (focus === 'search' && S.searchInput && focusIsFree(host)) {
     S.searchInput.focus()
     S.searchInput.setSelectionRange(S.query.length, S.query.length)
   } else restoreFocus(host, saved)
+}
+
+// 「엑셀·CSV로 한꺼번에」 — 누른 단추(`fk`)를 적어 두고 팝업이 닫힌 회차에 초점을 그리로 돌린다(`drawLoader`).
+function importButton(S, cls, fk) {
+  const press = button(cls, '엑셀·CSV로 한꺼번에', () => {
+    S.dialogOpener = fk
+    S.setTrigger('dialog', { name: 'import' })
+  })
+  press.dataset.fk = fk
+  return press
 }
 
 // 불러오기 회차가 돌아와 찾기 칸에 초점을 돌려줘도 되는가 — 초점이 아무 데도 없거나(다시 그리며 지운 칸) 이 불러오기
@@ -641,7 +660,7 @@ function emptyState(S, data, alertIds, total) {
   if (data.firstData) {
     box.appendChild(el('b', null, '첫 데이터는 엑셀·CSV로 한꺼번에 붙여 넣습니다'))
     box.appendChild(el('span', 'emg-muted', '저장된 설비 데이터가 아직 없습니다. 붙여 넣은 뒤 「저장 전 변경」 에서 리비전을 저장합니다.'))
-    buttons.appendChild(button('emg-btn is-primary', '엑셀·CSV로 한꺼번에', () => S.setTrigger('dialog', { name: 'import' })))
+    buttons.appendChild(importButton(S, 'emg-btn is-primary', 'import-first'))
     if (data.newEnabled) {
       const fresh = button('emg-btn', '+ 새 호기', () => S.setTrigger('new', {}))
       fresh.disabled = Boolean(data.newRowsLocked)

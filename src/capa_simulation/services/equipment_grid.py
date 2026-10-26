@@ -1070,10 +1070,13 @@ def loader_data(
     alert_ids: Sequence[str] = (),
     first_data: bool = False,
     new_enabled: bool = False,
+    dialog_closed: int = 0,
 ) -> dict[str, Any]:
     """불러오기 마운트(`loader`)의 data. `new_enabled` 면 「+ 새 호기」 단추가 선다(개편 단계 C —
     누르면 오른쪽 칸 「새 호기」, 낡은 세션이면 꺼진다). 살아 있는 호기 전부(편집본 차례)의 설비명과
     조건 칸 값을 싣는다 — 이름·조건 칸이 바뀔 때만 바뀌어, 다른 칸만 고친 회차에는 같은 메시지다.
+    `dialog_closed` 는 「엑셀·CSV로 한꺼번에」 팝업이 닫힌 수다 — 바뀐 회차에 그 불러오기가 연
+    팝업이면 초점을 여는 단추로 돌린다(`dialogClosed`).
 
     - `names` — 설비명. 행 id 는 `s:` + 설비명이 아닌 자리만 `ids`(자리 → id)에 싣는다(새 호기·이름
       바꾼 호기).
@@ -1131,6 +1134,7 @@ def loader_data(
         "firstData": first_data,
         "newEnabled": new_enabled,
         "newRowsLocked": view.context.new_rows_locked,
+        "dialogClosed": dialog_closed,
     }
 
 

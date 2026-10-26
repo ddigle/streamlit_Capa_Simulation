@@ -905,3 +905,43 @@ process.stdout.write(JSON.stringify(results))
         "backToToggle": True,
         "left": {"open": False, "expanded": "false"},
     }
+
+
+def test_closing_the_import_dialog_returns_focus_to_the_button_that_opened_it() -> None:
+    """불러오기 줄 「엑셀·CSV로 한꺼번에」 로 연 팝업을 Esc·닫기로 닫으면 초점이 BODY 로 빠지고 다음
+    Tab 이 사이드바 머리로 갔다(2026-10-26 E2E — Streamlit 이 그림자 DOM 안 여는 단추로 돌려주지
+    못한다). 팝업이 닫힌 수(`dialogClosed`)가 바뀐 회차에 이 불러오기가 연 팝업이고 초점이 아무
+    데도 없으면 여는 단추로 돌린다 — 다른 칸에 초점이 있거나 다른 길로 연 팝업이면 그대로 둔다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const at = (closed) => Object.assign({}, input.data, { dialogClosed: closed })
+const label = () => (document.activeElement ? document.activeElement.textContent : null)
+mount(at(0))
+let opener = buttonOf('엑셀·CSV로 한꺼번에')
+opener.focus()
+opener.click()
+document.activeElement = null
+mount(at(1))
+results.returned = label()
+results.marked = buttonOf('엑셀·CSV로 한꺼번에').dataset.fk
+document.activeElement = null
+mount(at(2))
+results.notOpenedHere = label()
+buttonOf('엑셀·CSV로 한꺼번에').click()
+const elsewhere = new FakeNode('input')
+elsewhere.focus()
+mount(at(3))
+results.busy = document.activeElement === elsewhere
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "returned": "엑셀·CSV로 한꺼번에",
+        "marked": "import-bar",
+        "notOpenedHere": None,
+        "busy": True,
+    }
