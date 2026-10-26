@@ -704,7 +704,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그것 하나, Ctrl·Shift 는 `toggleSelected`; 층 보기는 `select` + `notePick`). 서랍 칩은 이름(`sle-chip-name`)이 단추라
     「×」 와 나란하다 — Enter 는 보이는 도면 가운데(서랍 몫 `trayReserve` 를 뺀)에 놓고 초점을 놓은 호기로(`placeChipByKey`),
     Space 는 `pickChip`. 초점 테는 화면 px 로 띄운 rect(`sle-focus-ring`, `FOCUS_GAP_PX`)다 — SVG 안의 outline 은 배율로
-    커진다. `renderItems` 는 그리기 전 초점(`focusSpot`)을 같은 id 의 새 노드로 돌려준다(`restoreFocus`). 시험은
+    커진다. `renderItems` 는 그리기 전 초점(`focusSpot`)을 같은 id 의 새 노드로 돌려주고(`restoreFocus`), 칩이 사라졌으면
+    (「×」 추가 취소 — 낭독 이름은 「<호기> 추가 취소」) 같은 자리의 이웃 칩, 없으면 검색 칸에 둔다(BODY 로 빠지지 않게). 시험은
     `tests/test_space_editor_keyboard.py`(되돌리기는 node).
     - 도면 요소 복사·붙여넣기(`copyMarks`·`pasteMarks`): 호기는 복사하지 않는다. 클립보드는 범위별 sessionStorage
       (`capa.space.clipboard.<floor|fab>`) + 페이지 안 쪽지(`window.__capaSpaceClipboard`)이고 모든 읽기·쓰기가 try 안이다.

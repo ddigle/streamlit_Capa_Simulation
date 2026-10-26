@@ -265,3 +265,51 @@ def test_a_redraw_gives_focus_back_to_the_same_unit_or_chip() -> None:
     render = _js_decl("function renderItems() {")
     assert render.index("const focused = focusSpot()") < render.index("layer.replaceChildren()")
     assert render.index("showSummary()") < render.index("restoreFocus(focused)\n  }\n")
+
+
+def test_cancelling_a_new_chip_names_its_unit_and_keeps_focus_in_the_tray() -> None:
+    """방금 넣은 호기 칩의 「×」(추가 취소)는 낭독 이름이 「×」 가 아니라 「KBTEST-02 추가
+    취소」 이고, 누르면 초점이 BODY 로 빠지지 않고 서랍에 남는다 — 같은 자리의 이웃 칩, 마지막
+    칩이었으면 앞 칩, 칩이 하나도 없으면 검색 칸(2026-10-26 E2E)."""
+    chip = _between("function buildChip(", "function renderItems()")
+    remove = chip[chip.index("remove.className = 'sle-chip-remove'") :]
+    assert "remove.setAttribute('aria-label', `${lead.group || lead.label} 추가 취소`)" in remove
+    assert "remove.onclick = () => removeItems([lead])" in remove
+
+    chips = [["A", False, False], ["N2", True, False], ["N3", True, False]]
+    cases = [
+        {
+            "name": "middle",
+            "focus": "remove:N2",
+            "before": {"units": [], "chips": chips},
+            "after": {"units": [], "chips": [chips[0], chips[2]]},
+        },
+        {
+            "name": "last",
+            "focus": "remove:N3",
+            "before": {"units": [], "chips": chips},
+            "after": {"units": [], "chips": chips[:2]},
+        },
+        {
+            "name": "only",
+            "focus": "remove:N2",
+            "before": {"units": [], "chips": [chips[1]]},
+            "after": {"units": [], "chips": []},
+        },
+        {
+            # 검색으로 가린 칩은 건너뛴다.
+            "name": "hidden_neighbour",
+            "focus": "remove:N2",
+            "before": {"units": [], "chips": chips},
+            "after": {"units": [], "chips": [chips[0], ["N3", True, True], ["Z", False, False]]},
+        },
+    ]
+
+    result = _focus_after_redraw(cases)
+
+    assert result == {
+        "middle": "chip:N3",
+        "last": "chip:N2",
+        "only": "search",
+        "hidden_neighbour": "chip:Z",
+    }

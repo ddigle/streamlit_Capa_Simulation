@@ -1983,6 +1983,8 @@ export default function (component) {
       remove.className = 'sle-chip-remove'
       remove.textContent = '×'
       remove.title = '추가 취소'
+      // 낭독기에는 글자 「×」 가 아니라 할 일과 그 호기 이름이다.
+      remove.setAttribute('aria-label', `${lead.group || lead.label} 추가 취소`)
       remove.onpointerdown = (event) => event.stopPropagation()
       remove.onclick = () => removeItems([lead])
       chip.append(remove)
@@ -2014,10 +2016,18 @@ export default function (component) {
       focus(group && group.hasAttribute('tabindex') ? group : svg)
       return
     }
-    const chip = [...trayList.children].find((c) => c.dataset.id === spot.id && !c.hidden)
+    const shown = [...trayList.children].filter((c) => !c.hidden)
+    const chip = shown.find((c) => c.dataset.id === spot.id)
     if (chip) {
       focus((spot.kind === 'remove' && chip.querySelector('.sle-chip-remove')) || chip.querySelector('.sle-chip-name'))
+      return
     }
+    // 그 칩이 서랍에서 사라졌으면(「×」 로 추가를 취소했다) 같은 자리의 이웃 칩, 칩이 없으면 검색 칸에 둔다 — 초점이
+    // BODY 로 빠지면 Tab 이 문서 처음부터 다시 돈다.
+    const next = shown[Math.min(Math.max(spot.index, 0), shown.length - 1)]
+    const name = next && next.querySelector('.sle-chip-name')
+    if (name && name.hasAttribute('tabindex')) focus(name)
+    else focus(trayBox.hidden ? svg : traySearch)
   }
 
   function renderItems() {
