@@ -1278,18 +1278,12 @@ def test_a_double_press_of_the_layout_clear_moves_like_the_first_press(
 # 짝의 저장된 값은 쓰기 결과 -------------------------------------------------------
 
 
-def test_another_save_right_after_mine_is_not_taken_for_my_equipment_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grid: Calls
-) -> None:
-    """제 저장 짝의 「저장된 값」 을 쓰기 뒤 저장소에서 다시 읽으면, 그 사이(수 ms) 남이 저장했을 때
-    남의 값이 짝에 들어가 옛 화면 둘째 누름의 충돌 `(본 값, 남의 값)` 이 짝과 같아졌다 — 「다른
-    사용자가 먼저」 대신 성공을 알리고 세션을 남의 리비전으로 옮겼다(2026-10-26 리뷰). 짝은 쓰기
-    결과로 만든다."""
+def _mine_then_theirs_equipment_save(
+    repository: DuckDBEquipmentRepository, monkeypatch: pytest.MonkeyPatch
+) -> list[object]:
+    """설비 저장마다 제 쓰기 바로 뒤(수 ms) 남이 한 번 더 쓴다 — 남의 저장 결과를 모아 돌려준다."""
     from test_equipment_scenario_repository import _request, _session, _set
 
-    repository = _seeded(tmp_path)
-    app = _page(repository, OPERATIONS)
-    pressed = _equipment_pressed(app, grid, "내 이력")
     original = DuckDBEquipmentRepository.save_equipment
     theirs_saved: list[object] = []
 
@@ -1308,6 +1302,22 @@ def test_another_save_right_after_mine_is_not_taken_for_my_equipment_save(
         return result
 
     monkeypatch.setattr(DuckDBEquipmentRepository, "save_equipment", mine_then_theirs)
+    return theirs_saved
+
+
+def test_another_save_right_after_mine_is_not_taken_for_my_equipment_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grid: Calls, no_trailing_window: None
+) -> None:
+    """제 저장 짝의 「저장된 값」 을 쓰기 뒤 저장소에서 다시 읽으면, 그 사이(수 ms) 남이 저장했을 때
+    남의 값이 짝에 들어가 옛 화면 둘째 누름의 충돌 `(본 값, 남의 값)` 이 짝과 같아졌다 — 「다른
+    사용자가 먼저」 대신 성공을 알리고 세션을 남의 리비전으로 옮겼다(2026-10-26 리뷰). 짝은 쓰기
+    결과로 만든다. 같은 출발점의 둘째 누름은 창 안이면 `write_guard.save_once` 가 저장소에 가지 않고
+    첫 결과를 돌려주므로(아래 시험), 창을 0 으로 두어 둘째 누름이 저장소의 거부와 제 저장 판정에
+    닿게 한다."""
+    repository = _seeded(tmp_path)
+    app = _page(repository, OPERATIONS)
+    pressed = _equipment_pressed(app, grid, "내 이력")
+    theirs_saved = _mine_then_theirs_equipment_save(repository, monkeypatch)
     before = len(repository.list_revisions())
 
     _press_twice(app, monkeypatch, pressed, cls=DuckDBEquipmentRepository, write="save_equipment")
@@ -1315,6 +1325,28 @@ def test_another_save_right_after_mine_is_not_taken_for_my_equipment_save(
     assert theirs_saved
     assert any("다른 사용자가 먼저" in text for text in _texts(app, "error")), _texts(app, "error")
     assert not any("공통 대장 r" in text for text in _texts(app, "success")), _texts(app, "success")
+    assert len(repository.list_revisions()) == before + 2
+
+
+def test_another_save_right_after_mine_leaves_the_window_press_on_my_own_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grid: Calls
+) -> None:
+    """같은 경합에서 창(`TRAILING_PRESS_SECONDS`) 안의 둘째 누름은 출발점이 같아
+    `write_guard.save_once` 가 첫 누름의 결과(제 리비전)를 돌려준다 — 저장소에 다시 가지 않고, 남의
+    리비전을 제 저장으로 알리지도 않는다."""
+    repository = _seeded(tmp_path)
+    app = _page(repository, OPERATIONS)
+    pressed = _equipment_pressed(app, grid, "내 이력")
+    theirs_saved = _mine_then_theirs_equipment_save(repository, monkeypatch)
+    before = len(repository.list_revisions())
+
+    _press_twice(app, monkeypatch, pressed, cls=DuckDBEquipmentRepository, write="save_equipment")
+
+    assert theirs_saved
+    assert _texts(app, "error") == []
+    successes = _texts(app, "success")
+    assert any(f"공통 대장 r{before + 1}" in text for text in successes), successes
+    assert not any(f"공통 대장 r{before + 2}" in text for text in successes), successes
     assert len(repository.list_revisions()) == before + 2
 
 
