@@ -58,7 +58,7 @@ from capa_simulation.auto_update_scheduler import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
-from capa_simulation.components.literal_markdown import quoted
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.write_guard import (
@@ -246,7 +246,7 @@ def _render_status(
             st.error("현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc))
         else:
             st.markdown(
-                f"**현재 공식버전** · {baseline.label} · {baseline.release_name} "
+                f"**현재 공식버전** · {baseline.label} · {literal_markdown(baseline.release_name)} "
                 f"({baseline.week_source}에서 읽은 주차)"
             )
 

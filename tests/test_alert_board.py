@@ -66,3 +66,16 @@ def test_a_density_error_after_a_clean_capacity_run_also_stops() -> None:
 
     assert alerts[0].level == "error"
     assert alerts[0].message.startswith("구분_EQ 0 이하")
+
+
+def test_a_stopped_calculation_blocks_the_tilde_of_the_name_it_carries() -> None:
+    """계산 멈춤 글은 계산 오류 원문이라 걸린 칸의 이름을 날로 담는다 — 알림 상자에서 막는다."""
+    stopped = CapacityOutcome(
+        unit_capacity=None, required_equipment=None, error="26.07 「제품~가정~A」 UPEH 없음"
+    )
+    alerts = collect_alerts(stopped, None)
+
+    assert alerts[0].message.startswith("26.07 「제품\\~가정\\~A」 UPEH 없음 — 조회기간과")
+    assert collect_alerts(_outcome(), "「공정~표시~D」 구분_EQ 0 이하")[0].message.startswith(
+        "「공정\\~표시\\~D」"
+    )

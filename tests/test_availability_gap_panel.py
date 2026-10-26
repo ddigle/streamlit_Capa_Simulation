@@ -885,9 +885,9 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
     open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
     assert not app.exception
-    # 공정 하나면 근거 카드 표에 `공정` 칸이 없고 제목이 표시명을 적는다.
+    # 공정 하나면 근거 카드 표에 `공정` 칸이 없고 제목이 표시명을 적는다(사람이 적은 글이라 막는다).
     assert "공정" not in _evidence(app)[0].columns
-    assert "표시-DA" in " ".join(item.value for item in app.markdown)
+    assert "표시\\-DA" in " ".join(item.value for item in app.markdown)
 
     # 전체 합계면 근거 카드 호기 표의 `공정` 칸이 표시명이다.
     app.selectbox(key=PROCESS_FILTER_KEY).select("전체 합계").run()
@@ -907,6 +907,20 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"표시-DA"}
     assert app.session_state[PROCESS_FILTER_KEY] == "Die Attach"
+
+
+def test_the_evidence_title_blocks_the_tildes_of_a_display_name() -> None:
+    """공정 표시명은 사람이 적은 글이다 — 근거 카드 머리(마크다운)에서 「공정~표시~D」 의 가운데가
+    지움선이 되지 않는다(공정 Capa 상세 「산출 근거」 머리와 같은 꼴)."""
+    app = _run(label_map={"Die Attach": "공정~표시~D"})
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    _select_view(app, "분류별 내역")
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
+    app.run()
+    assert not app.exception
+
+    titles = [str(item.value) for item in app.markdown if str(item.value).startswith("#####")]
+    assert titles and all(title.endswith("· 공정\\~표시\\~D") for title in titles), titles
 
 
 def test_name_mismatch_notices_keep_the_original_process_names() -> None:

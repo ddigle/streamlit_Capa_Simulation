@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import time
+from datetime import datetime, time
 from pathlib import Path
 
 import pytest
@@ -22,6 +22,7 @@ from auto_update_fakes import (
     fixed_clock,
     new_repository,
     official_w40,
+    register_code,
     source_frame,
 )
 from fragment_browser import install_fragment_browser
@@ -164,6 +165,25 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
     assert _field(app.number_input, "기준 확보율(%)").value == 80.0  # type: ignore[attr-defined]
     assert "아직 돈 회차가 없습니다." in {str(element.value) for element in app.caption}
     assert not app.error
+
+
+def test_the_status_line_blocks_the_tildes_of_the_official_release_name(database: Path) -> None:
+    """공식버전명은 사람이 지은 글이다 — 「현재 공식버전」 줄(마크다운)에서 「W43~공식~확정안」 의
+    가운데가 지움선이 되지 않는다(2026-10-26 리뷰 — 바로 위 두 줄은 막고 이 줄만 날로 실었다)."""
+    repository = new_repository(database)
+    snapshot = register_code(
+        repository, code="SIM-W40", name="PSM W40", registered_at=datetime(2026, 10, 5, 9, 0)
+    )
+    repository.publish_official_revision(
+        snapshot.scenario.scenario_id,
+        snapshot.revision.revision_id,
+        release_name="W40~공식~확정안",
+    )
+
+    text = _markdown(_tab(database))
+
+    assert "공식 v1 W40 · W40\\~공식\\~확정안 (시나리오명에서 읽은 주차)" in text
+    assert "W40~공식~확정안" not in text
 
 
 def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:

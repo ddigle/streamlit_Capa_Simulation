@@ -55,7 +55,9 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
     STALE_SCENARIO_EDITS,
     TABLE_KEY,
+    save_target,
 )
+from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -825,3 +827,10 @@ def test_import_refusals_keep_the_tildes_of_a_pasted_name(
 
     errors = _texts(app, "error")
     assert any(shown in error for error in errors), errors
+
+
+def test_the_save_hint_names_the_scenario_in_brackets_even_without_a_basis() -> None:
+    """저장 안내 「시나리오 칸은 「…」 에 새 리비전으로」 — 이름은 막고, 출발점이 없어도 낫표는
+    남는다."""
+    assert save_target(EquipmentSaveBasis("s1", "셋업~가정~A")) == "「셋업\\~가정\\~A」"
+    assert save_target(None) == "「이 설비 시나리오」"

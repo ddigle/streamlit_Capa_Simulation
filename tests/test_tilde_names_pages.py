@@ -39,6 +39,7 @@ from capa_simulation.navigation import (
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.process_detail_state import shortening_card_query_params
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -53,6 +54,8 @@ EQUIPMENT_REVISION_NAME = "B~안~2"
 UNIT_NAME = "NEW~01~C"
 PROCESS_LABEL = "공정~표시~D"
 VOC_TITLE = "VOC~제목~E"
+# 필요 단축 일정 카드 링크의 주소 인자 `eq` — 누구나 링크로 적어 보낸다.
+CARD_EQUIPMENT = "카드~가정~F r9"
 NAMES = (
     SCENARIO_NAME,
     REVISION_NAME,
@@ -62,6 +65,7 @@ NAMES = (
     UNIT_NAME,
     PROCESS_LABEL,
     VOC_TITLE,
+    CARD_EQUIPMENT,
 )
 
 
@@ -240,6 +244,31 @@ def _visit_with_process(
 ) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
     app.query_params["process"] = process
     return _visit(app, (PROCESS_CAPA_DETAIL, CONSTRAINT_SIMULATION))
+
+
+def test_a_card_link_equipment_name_is_blocked_on_the_process_detail_band(
+    _app: tuple[AppTest, str, str],
+) -> None:
+    """필요 단축 일정 카드 링크로 연 공정 Capa 상세 — 출처 띠 끝 「카드는 「…」 기준」 은 주소 인자
+    `eq` 를 싣는다(2026-10-26 리뷰 — 「E2E~가정~X r9」 가 지움선, `![x](주소)` 는 이미지가 됐다)."""
+    app, process, _ = _app
+    _ok(app.run())
+    for key, value in shortening_card_query_params(
+        process=process,
+        month=None,
+        target=1.1,
+        start_month=202601,
+        end_month=202612,
+        shortened=1,
+        new=0,
+        theme=None,
+        equipment=CARD_EQUIPMENT,
+    ).items():
+        app.query_params[key] = value
+    bare, blocked = _visit(app, (PROCESS_CAPA_DETAIL,))
+
+    assert not {page: found for page, found in bare.items() if found}
+    assert CARD_EQUIPMENT in blocked[PROCESS_CAPA_DETAIL.title]
 
 
 def test_tilde_names_are_blocked_in_an_assumption_equipment_session(

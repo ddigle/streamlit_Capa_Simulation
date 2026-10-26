@@ -24,6 +24,7 @@ import streamlit as st
 
 from capa_simulation.components.capacity_assumption_notice import assumption_message
 from capa_simulation.components.capacity_gate import density_error
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
@@ -54,7 +55,9 @@ class Alert(NamedTuple):
 def collect_alerts(outcome: CapacityOutcome, density: str | None) -> list[Alert]:
     """전체 기간 계산 결과와 Density 환산 오류로 알림 셋을 늘 같은 차례로 낸다.
 
-    없는 알림도 칸은 둔다 — 「없음」 이 보여야 그 알림을 확인했다는 것을 안다.
+    없는 알림도 칸은 둔다 — 「없음」 이 보여야 그 알림을 확인했다는 것을 안다. 계산 멈춤 글은
+    계산의 `ValueError` 원문이라 걸린 칸의 제품·공정 이름을 날로 담는다 — 알림 상자(마크다운)로
+    가므로 물결표를 막는다(저장·발행 검사 `capacity_gate` 와 같다).
     """
     stopped = outcome.error or density
     if stopped is not None:
@@ -62,8 +65,8 @@ def collect_alerts(outcome: CapacityOutcome, density: str | None) -> list[Alert]
             Alert(
                 "계산 멈춤",
                 "error",
-                f"{stopped} — 조회기간과 상관없이 계산 화면이 멈춥니다. `기준 정보` 화면은 "
-                "열리므로 그 달을 고쳐 새 리비전으로 저장하면 풀립니다.",
+                f"{markdown_safe_tildes(stopped)} — 조회기간과 상관없이 계산 화면이 멈춥니다. "
+                "`기준 정보` 화면은 열리므로 그 달을 고쳐 새 리비전으로 저장하면 풀립니다.",
             ),
             Alert("소요대수에 들지 않은 수요", "unknown", _STOPPED_NOTE),
             Alert("측정률 가정", "unknown", _STOPPED_NOTE),

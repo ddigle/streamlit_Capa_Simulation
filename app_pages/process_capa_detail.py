@@ -452,9 +452,9 @@ if entry.origin is not None:
         entry.origin,
         month_text=month_label(origin_month) if origin_month is not None else "-",
     )
-    # HOME 칸 방문은 공식 설비 시나리오다 — 띠 끝에 그 기준을 적는다.
+    # HOME 칸 방문은 공식 설비 시나리오다 — 띠 끝에 그 기준을 적는다(사람이 지은 이름이라 막는다).
     if equipment_here is not None:
-        band = f"{band} · 설비는 {equipment_here} 기준"
+        band = f"{band} · 설비는 {literal_markdown(equipment_here)} 기준"
     st.caption(f"{ORIGIN_BAND_ICON} {band}")
 if entry.shortening_origin is not None:
     # 주소 인자로 받은 그 카드의 값만 적는다 — 필요 단축 일정의 세션 칸·공용 프로필은 읽지 않는다.

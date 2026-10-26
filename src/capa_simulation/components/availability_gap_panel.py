@@ -72,7 +72,7 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLLBAR_KEY,
 )
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
-from capa_simulation.components.literal_markdown import quoted
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.month_sheet_canvas import EMPTY, canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_labels import ProcessLabels
@@ -818,7 +818,8 @@ def _render_evidence(bundle: GapSheetBundle, cell: tuple[int, str] | None) -> No
         month, row = cell
         group = ROW_GROUPS[row]
         st.markdown(
-            f"##### {month_label(month)} · {group} {ROW_ITEMS[row]} · {bundle.process_label}"
+            f"##### {month_label(month)} · {group} {ROW_ITEMS[row]} · "
+            f"{literal_markdown(bundle.process_label)}"
         )
         if bundle.view.value(row, month) is None:
             reason = reason_text(bundle.view.reason(row, month)) or "맞댈 값이 없습니다"

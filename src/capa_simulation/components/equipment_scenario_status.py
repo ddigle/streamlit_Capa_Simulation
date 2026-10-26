@@ -221,7 +221,12 @@ def shortening_equipment_basis(session: EquipmentSession) -> ShorteningEquipment
     label = equipment_basis_label(session)
     note = None
     if session.scenario is not None and not session.is_official_pair:
-        note = f"지금 = {label} · 기준선 = 공식(진척 비교 기준선은 공식 설비 시나리오에서 저장)"
+        # 진척 비교 머리 캡션(마크다운)에만 간다 — `label` 은 카드 링크 주소 인자에도 가므로
+        # 날로 두고 이 글에서만 막는다.
+        note = (
+            f"지금 = {literal_markdown(label)} · 기준선 = 공식(진척 비교 기준선은 공식 설비 "
+            "시나리오에서 저장)"
+        )
     return ShorteningEquipmentBasis(
         schedule_revision_id=schedule.schedule_revision_id if schedule is not None else None,
         schedule_revision_no=schedule.revision_no if schedule is not None else None,

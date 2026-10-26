@@ -1149,6 +1149,11 @@ def _render_grid_card(
         )
 
 
+def save_target(basis: EquipmentSaveBasis | None) -> str:
+    """저장 안내가 가리키는 설비 시나리오 — 막은 「이름」, 출발점이 없으면 「이 설비 시나리오」."""
+    return quoted(basis.scenario_name) if basis is not None else "「이 설비 시나리오」"
+
+
 def _render_save_section(
     repository: DuckDBEquipmentRepository,
     *,
@@ -1191,7 +1196,7 @@ def _render_save_section(
             st.checkbox(removal.confirm_label(), key=f"{REMOVAL_CONFIRM_KEY}__{removal.token}")
     counts = change_counts(view)
     errors = counts.errors
-    scenario = quoted(basis.scenario_name) if basis is not None else "이 설비 시나리오"
+    scenario = save_target(basis)
     if session.legacy_trace_count:
         hint = legacy_trace_message(session.legacy_trace_count)
     elif errors:
