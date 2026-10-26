@@ -7,6 +7,7 @@ from capa_simulation.components.source_quality import (
     GRADE_COLUMN,
     MISSING_RATE_COLUMN,
     build_source_quality_table,
+    source_quality_warning,
 )
 
 
@@ -64,3 +65,40 @@ def test_empty_profile_returns_the_display_columns() -> None:
 
     assert table.empty
     assert MISSING_RATE_COLUMN in table.columns
+
+
+def test_the_warning_counts_each_problem_grade_on_its_own() -> None:
+    """수와 문구가 맞아야 한다 — 「절반 이상 결측」 을 「비어 있거나 상수」 수에 넣지 않는다
+    (E2E r1)."""
+    table = build_source_quality_table(
+        _profile(
+            [
+                ("정상", 0, 40),
+                ("상수1", 0, 1),
+                ("상수2", 0, 1),
+                ("절반결측", 60, 12),
+                ("빈컬럼", 100, 0),
+            ]
+        ),
+        source_rows=100,
+    )
+
+    warning = source_quality_warning(table)
+
+    assert warning is not None
+    assert warning.startswith("5개 컬럼 중 4개가 정상이 아닙니다 — ")
+    assert "비어 있음 1개 · 절반 이상 결측 1개 · 상수 2개." in warning
+    assert "비어 있거나 상수" not in warning
+
+
+def test_the_warning_leaves_out_grades_with_no_columns_and_is_none_when_all_normal() -> None:
+    only_constant = build_source_quality_table(
+        _profile([("정상", 0, 40), ("상수", 0, 1)]), source_rows=100
+    )
+    all_normal = build_source_quality_table(_profile([("정상", 0, 40)]), source_rows=100)
+
+    assert source_quality_warning(only_constant) == (
+        "2개 컬럼 중 1개가 정상이 아닙니다 — 상수 1개. 계산에 쓰는 컬럼이면 제외 목록으로 "
+        "나타납니다."
+    )
+    assert source_quality_warning(all_normal) is None
