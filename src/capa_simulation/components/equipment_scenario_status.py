@@ -28,6 +28,7 @@ import streamlit as st
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation.components.app_header import (
+    STATUS_UNSAVED,
     UNMERGED_STATUS,
     equipment_header_suffix,
     refresh_equipment_header,
@@ -268,9 +269,13 @@ def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
     """이름 줄 배지 하나 — 미저장 → 일정 없이 엶 → 공식 vN → 낡음 → 가정 배치 → 저장된 리비전
     차례(공식 쌍은 배치 차이가 없어 「공식 vN」 과 겹치지 않고, 낡음이 더 급하다 — 설계 8-2).
     「가정 배치」 재료는 세션 라벨의 판정(`EquipmentSession.layout_differs`)이라 그리는 동안
-    저장소를 부르지 않는다."""
+    저장소를 부르지 않는다.
+
+    미저장이면서 낡았으면 둘을 한 배지에 잇는다(「미저장 변경 · 최신 r5 있음」) — 미저장이 먼저라
+    낡음이 가려지면 그 편집을 저장하려 할 때에야 남이 먼저 저장해 거절된다는 것을 안다(공식 발행
+    쌍이어도 낡으면 저장은 같은 까닭으로 거절된다)."""
     if unsaved:
-        return ":orange-badge[미저장 변경]"
+        return f":orange-badge[{unsaved_status(session)}]"
     if session.scenario is None:
         return ""
     if session.unmerged:
@@ -282,6 +287,14 @@ def equipment_status_badge(session: EquipmentSession, *, unsaved: bool) -> str:
     if session.layout_differs:
         return f":violet-badge[{LAYOUT_BADGE}]"
     return ":gray-badge[저장된 리비전]"
+
+
+def unsaved_status(session: EquipmentSession) -> str:
+    """미저장 배지 글 — 낡은 세션이면 「미저장 변경 · 최신 rM 있음」, 아니면 「미저장 변경」.
+    머리 띠 꼬리(`equipment_header_suffix`)도 라벨 dict 로 같은 글을 낸다."""
+    if session.stale and session.latest_revision_no is not None:
+        return f"{STATUS_UNSAVED} · 최신 r{session.latest_revision_no} 있음"
+    return STATUS_UNSAVED
 
 
 def render_equipment_scenario_row(

@@ -267,7 +267,11 @@ def test_the_header_suffix_follows_the_badge_order() -> None:
         "layout_differs": True,
     }
     assert equipment_header_suffix(label) == "설비 시나리오 · 운영 일정 · r12 · 공식 v3"
+    # 미저장이면서 낡았으면 배지처럼 둘을 함께 적는다 — 미저장이 낡음을 가리지 않는다.
     assert equipment_header_suffix(label, unsaved=True) == (
+        "설비 시나리오 · 운영 일정 · r12 · 미저장 변경 · 최신 r14 있음"
+    )
+    assert equipment_header_suffix({**label, "stale": False}, unsaved=True) == (
         "설비 시나리오 · 운영 일정 · r12 · 미저장 변경"
     )
     stale = {**label, "official_pair": False}
