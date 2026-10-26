@@ -1073,6 +1073,36 @@ def test_a_shortened_unit_hover_is_three_short_lines() -> None:
     assert "Qual 26.11.15 → 목표 26.10.23" in _unit_hover(event, date(2027, 1, 5))
 
 
+def test_a_unit_month_cell_hover_shows_that_months_gain() -> None:
+    """③ 단축 · 추가N 줄의 달 칸 풍선은 그 달 몫을 적는다 — 줄 이름 칸의 「+0.03대」 는 대상 월
+    구간의 몫(호기 하나의 요약)이라, 뒤 달 칸에 그대로 띄우면 그 달 증분으로 잘못 읽힌다(E2E
+    2026-10-26). 그 달 몫이 없는 달 칸은 숫자를 뺀다."""
+    dynamic = _dynamic()
+    events = dynamic.unit_events
+    event = events.loc[events["호기"].astype(str).eq("EQ-22")].iloc[0]
+    shares = dict(event["월별 늘어난 환산대수"])
+    target_month = int(event["대상 월"])
+    later = next(month for month in sorted(shares) if month > target_month)
+    canvas = _canvas(dynamic=dynamic)
+    label = _label_hovers(canvas)["unit:EQ-22"]
+    cells = {
+        int(data[CUSTOMDATA_MONTH]): str(data[CUSTOMDATA_HOVER])
+        for data, _, _ in _targets(canvas)
+        if data[CUSTOMDATA_ROW] == "unit:EQ-22" and data[CUSTOMDATA_HOVER]
+    }
+
+    assert f"기여 +{float(event['늘어난 환산대수']):,.2f}대" in label
+    assert f"이 달 +{shares[target_month]:,.2f}대" in cells[target_month]
+    assert f"이 달 +{shares[later]:,.2f}대" in cells[later]
+    assert f"+{float(event['늘어난 환산대수']):,.2f}대" not in cells[later]
+    # 줄 수와 다른 줄은 줄 이름 칸 풍선과 같다.
+    assert len(cells[later].split("<br>")) == len(label.split("<br>"))
+    assert cells[later].split("<br>")[0] == label.split("<br>")[0]
+    for month, hover in cells.items():
+        if month not in shares:
+            assert "이 달" not in hover and "대" not in hover.split("<br>")[1]
+
+
 def test_unit_hovers_stay_within_three_lines_and_an_assumption_adds_the_fourth() -> None:
     dynamic = _dynamic()
     official = _label_hovers(_canvas(dynamic=dynamic))
@@ -1580,7 +1610,9 @@ def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_chang
     assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
     unit_hover = _label_hovers(canvas)["unit:EQ-21"]
     assert unit_hover.split("<br>")[-1] == f"UPEH 가정 계획 · 공식 {MINUS}45일 → 가정 0일"
-    assert _row_hover(canvas, "unit:EQ-21") == unit_hover
+    cell_lines = _row_hover(canvas, "unit:EQ-21").split("<br>")
+    assert cell_lines[0] == unit_hover.split("<br>")[0]
+    assert cell_lines[-1] == unit_hover.split("<br>")[-1]
 
 
 def _compare_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:

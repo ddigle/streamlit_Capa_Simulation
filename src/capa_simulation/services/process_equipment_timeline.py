@@ -119,6 +119,7 @@ __all__ = [
     "dynamic_readiness",
     "exiting_unit_rows",
     "keep_released_units",
+    "month_share",
     "new_unit_rows",
     "production_position",
     "unit_events",
@@ -209,6 +210,7 @@ UNIT_EVENT_COLUMNS = (
     "목표 기여 시작",
     "단축일수",
     "늘어난 환산대수",
+    "월별 늘어난 환산대수",
     "반입 전",
     "대상 월",
     "해소 기여 월",
@@ -222,7 +224,9 @@ UNIT_EVENT_COLUMNS = (
 
 - `줄` — `ROW_SHORTENED`·`ROW_NEW`·`ROW_VIRTUAL`.
 - 단축 칸(`목표 Qual`~`해소 기여 월`)은 계획(`LevelPlan.units`)의 값이다. `반입 전` 은 목표 Qual 이
-  반입일정보다 이른가, `해소 기여 월` 은 `YYYYMM` 정수 튜플이다.
+  반입일정보다 이른가, `해소 기여 월` 은 `YYYYMM` 정수 튜플이다. `늘어난 환산대수` 는 대상 월
+  구간의 몫(호기 하나의 요약), `월별 늘어난 환산대수` 는 달마다의 몫 `((YYYYMM, 몫), …)` 이다 —
+  한 달의 증분은 그 달 몫이다(`required_shortening.UNIT_PLAN_COLUMNS`).
 - 단축 줄의 `Qual일정`(곧 `기여 시작` = 그 다음 날)과 `모듈 수` 는 계획의 `기존 Qual`·`모듈 수` 다 —
   ●→◀ 길이가 `단축일수` 와 맞게 하려는 것이다. 계획은 정지·반출/이설 예정이나 Qual상태 「완료」
   모듈을 묶음에서 빼므로(단축 후보) 묶음의 가장 늦은 Qual 과 다를 수 있다. 그때 갈린 모듈은
@@ -941,6 +945,9 @@ def _event(
         "늘어난 환산대수": (
             math.nan if plan is None else float(str(plan.get("늘어난 환산대수", math.nan)))
         ),
+        "월별 늘어난 환산대수": ()
+        if plan is None
+        else _month_shares(plan.get("월별 늘어난 환산대수")),
         "반입 전": bool(
             kind == ROW_SHORTENED
             and target is not None
@@ -957,6 +964,27 @@ def _event(
         "목표 기여 위치": x(target_start),
         "반출이설 위치": x(exit_day),
     }
+
+
+def _month_shares(value: object) -> tuple[tuple[int, float], ...]:
+    """계획의 `월별 늘어난 환산대수`(`((YYYYMM, 몫), …)`)를 그대로 — 칸이 없거나 비면 빈 튜플."""
+    if not isinstance(value, (tuple, list)):
+        return ()
+    return tuple(
+        (int(str(item[0])), float(str(item[1])))
+        for item in value
+        if isinstance(item, (tuple, list)) and len(item) == 2
+    )
+
+
+def month_share(shares: object, month: int) -> float | None:
+    """`월별 늘어난 환산대수` 에서 그 달 몫 — 칸이 없으면(튜플이 아니면) None, 그 달이 없으면 0."""
+    if not isinstance(shares, (tuple, list)):
+        return None
+    for item_month, share in _month_shares(shares):
+        if item_month == month:
+            return share
+    return 0.0
 
 
 def _month_tuple(value: object) -> tuple[int, ...]:
