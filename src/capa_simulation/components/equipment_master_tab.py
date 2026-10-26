@@ -1053,7 +1053,10 @@ def _render_notices(
             saved = (
                 latest_snapshot.equipment if latest_snapshot is not None else frames[1].iloc[0:0]
             )
-            for message in inactive_floor_warnings(frames[1], saved, floor_states):
+            # 사유·호기 이름은 사람 글이다 — 글자 그대로 막아 끼운다.
+            for message in inactive_floor_warnings(
+                frames[1], saved, floor_states, escape=literal_markdown
+            ):
                 st.warning(message, icon=":material/block:")
 
 

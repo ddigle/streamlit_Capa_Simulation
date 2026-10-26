@@ -1,4 +1,4 @@
-# Purpose: Space 층 목록의 사용 칸·비활성 층 접힘·사용 편집(동 머리·확인·충돌·샘플 잠금)을 검사한다.
+# Purpose: Space 층 목록의 사용 칸·비활성 층 접힘·사용 편집(사유 글·동 머리·확인·잠금)을 검사한다.
 
 """Space FAB 전체의 층 목록 표와 `사용 편집`(2026-10-24 사용자 결정 S1~S6).
 
@@ -24,6 +24,7 @@ from test_space_layout_edit import _master
 from widget_browser import BrowserTables
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_floor_list import (
     BASE_KEY,
@@ -190,7 +191,8 @@ def test_a_building_head_turns_its_six_floors_off_at_once(tmp_path: Path) -> Non
     }
     editor = next(table for table in app.dataframe if "호기" in table.value.columns).value
     c5 = editor.loc[editor["동"].eq("C5")]
-    assert not c5["사용"].any() and c5["사유"].eq("생산라인 아님(사무·창고 등)").all()
+    # 옛 코드는 그 글로 보인다(직접 적는 칸 — 2026-10-26 결정).
+    assert not c5["사용"].any() and c5["사유"].eq("생산라인 아님").all()
 
     _press(app, tables, SAVE_BUTTON_KEY)
 
@@ -207,14 +209,14 @@ def test_a_cell_edit_turns_the_building_head_to_mixed_on_the_next_run(tmp_path: 
     head = app.segmented_control(key="space_floor_state_bulk_C2")
     assert head.value == "ACTIVE" and head.label == "C2"
 
-    tables.edit(_editor_key(app), _position("C2", "3F"), "사유", "생산라인 아님(사무·창고 등)")
+    tables.edit(_editor_key(app), _position("C2", "3F"), "사유", "생산라인 아님")
     tables.run()
     _ok(app)
 
     head = app.segmented_control(key="space_floor_state_bulk_C2")
     assert head.value is None
     assert head.label == "C2 · 사용 5/6"
-    # 사용 층의 사유를 고른 뜻은 끄기다.
+    # 사용 층에 사유를 적은 뜻은 끄기다. 옛 코드의 글을 그대로 적으면 그 코드다.
     assert app.session_state[DRAFT_KEY] == {"C2 3F": "NOT_LINE"}
     clear_equipment_repository()
 
@@ -238,11 +240,14 @@ def test_cell_edits_keep_the_same_editor_widget_so_the_view_stays_put(tmp_path: 
     editor = next(table for table in app.dataframe if "호기" in table.value.columns).value
     assert editor["사유"].tolist()[last] == "사용 안 함"
 
-    # 사용 층에서 사유를 고르면 그 사유로 끈다 — 이것도 같은 위젯.
-    tables.edit(key, _position("C2", "3F"), "사유", "생산라인 아님(사무·창고 등)")
+    # 사용 층에 사유를 적으면 그 사유로 끈다 — 이것도 같은 위젯. 앞뒤 공백은 뗀다.
+    tables.edit(key, _position("C2", "3F"), "사유", " 생산라인 아님(사무·창고 등) ")
     tables.run()
     _ok(app)
-    assert app.session_state[DRAFT_KEY] == {"C2 3F": "NOT_LINE", "C5 6F": "UNUSED"}
+    assert app.session_state[DRAFT_KEY] == {
+        "C2 3F": "생산라인 아님(사무·창고 등)",
+        "C5 6F": "UNUSED",
+    }
     assert _editor_key(app) == key and tables.widget_id(key) == widget
 
     # 다시 켠다 — 같은 위젯이고 남은 편집을 다시 접어도 같다.
@@ -251,7 +256,7 @@ def test_cell_edits_keep_the_same_editor_widget_so_the_view_stays_put(tmp_path: 
     _ok(app)
     tables.run()
     _ok(app)
-    assert app.session_state[DRAFT_KEY] == {"C2 3F": "NOT_LINE"}
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": "생산라인 아님(사무·창고 등)"}
     assert _editor_key(app) == key and tables.widget_id(key) == widget
     assert any("바뀐 층 1개" in caption.value for caption in app.caption)
 
@@ -299,13 +304,13 @@ def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
 def test_changing_only_the_reason_does_not_ask(tmp_path: Path) -> None:
     database = _database(tmp_path, {("C1", "1F"): "UNUSED"})
     app, tables = _start_editing(database)
-    tables.edit(_editor_key(app), _position("C1", "1F"), "사유", "생산라인 아님(사무·창고 등)")
+    tables.edit(_editor_key(app), _position("C1", "1F"), "사유", "창고(임시)")
     tables.run()
 
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert not any("호기" in item.value for item in app.warning)
-    assert _states(database) == {("C1", "1F"): "NOT_LINE"}
+    assert _states(database) == {("C1", "1F"): "창고(임시)"}
     assert _version(database) == 2
     clear_equipment_repository()
 
@@ -493,6 +498,169 @@ def test_the_fab_summary_tells_how_many_units_sit_on_inactive_floors(
     fab = [data for data in _stub_editor if data.get("scope") == "fab"][-1]
     assert str(fab["summary"]).endswith(" · 비활성 층 3대")
     assert fab["linkStats"]["C1 1F"]["inactive"] == "사용 안 함"
+    clear_equipment_repository()
+
+
+# 마크다운으로 읽히면 지움선·기울임·링크·수식이 되는 글자를 담은 사유(20자 안).
+REASON_WITH_MARKS = "A~B~C *굵* [x](y)$1$"
+
+
+def _editor_frame(app: AppTest) -> pd.DataFrame:
+    return next(table for table in app.dataframe if "호기" in table.value.columns).value
+
+
+def test_the_reason_column_takes_free_text_up_to_twenty_characters(tmp_path: Path) -> None:
+    """사유 칸은 직접 적는 글 칸이다(2026-10-26 결정) — 20자, 도움말에 예시 두 문구, `string`
+    고정."""
+    app, _ = _start_editing(_database(tmp_path))
+    editor = next(table for table in app.dataframe if "호기" in table.value.columns)
+    config = json.loads(editor.proto.columns)["사유"]
+    assert config["type_config"] == {"type": "text", "max_chars": 20}
+    # 풍선은 마크다운이라 예시 글의 괄호를 막아 싣는다(보이는 글은 괄호 그대로).
+    assert f"{quoted('사용 안 함')} · {quoted('생산라인 아님(사무·창고 등)')}" in config["help"]
+    assert "생산라인 아님\\(사무·창고 등\\)" in config["help"]
+    assert str(editor.value["사유"].dtype) == "string"
+    clear_equipment_repository()
+
+
+def test_a_typed_reason_is_saved_and_shown_as_written_after_reloading(
+    tmp_path: Path, _stub_editor: list[dict[str, Any]]
+) -> None:
+    """적기 → 저장 → 다시 열기. 앞뒤 공백만 떼고 목록 표·도면 블록·편집표가 적은 글 그대로다."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    tables.edit(_editor_key(app), _position("C2", "3F"), "사유", "  설비 반입 대기  ")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": "설비 반입 대기"}
+    assert app.segmented_control(key="space_floor_state_bulk_C2").label == "C2 · 사용 5/6"
+
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert _states(database) == {("C2", "3F"): "설비 반입 대기"}
+    assert any("비활성 1개(설비 반입 대기 1)" in item.value for item in app.success)
+
+    clear_equipment_repository()
+    reloaded, tables = _start_editing(database)
+    _, inactive = _floor_tables(_app(database).run())
+    assert inactive[["동", "층", "사유"]].values.tolist() == [["C2", "3F", "설비 반입 대기"]]
+    fab = [data for data in _stub_editor if data.get("scope") == "fab"][-1]
+    assert fab["linkStats"]["C2 3F"]["inactive"] == "설비 반입 대기"
+    assert _editor_frame(reloaded)["사유"].tolist()[_position("C2", "3F")] == "설비 반입 대기"
+
+    # 같은 글을 다시 적어도(공백만 다름) 바뀐 층이 아니다.
+    tables.edit(_editor_key(reloaded), _position("C2", "3F"), "사유", "설비 반입 대기 ")
+    tables.run()
+    _press(reloaded, tables, SAVE_BUTTON_KEY)
+    assert any("바뀐 층이 없습니다" in item.value for item in reloaded.info)
+    assert _version(database) == 1
+    clear_equipment_repository()
+
+
+def test_legacy_codes_keep_their_labels_and_retyping_a_label_changes_nothing(
+    tmp_path: Path,
+) -> None:
+    """옛 코드 `UNUSED`·`NOT_LINE` 는 지금 글 그대로 보이고, 그 글을 그대로 적으면 그 코드다."""
+    database = _database(tmp_path, {("C1", "2F"): "UNUSED", ("C4", "1F"): "NOT_LINE"})
+    _, inactive = _floor_tables(_app(database).run())
+    assert inactive["사유"].tolist() == ["사용 안 함", "생산라인 아님"]
+
+    app, tables = _start_editing(database)
+    reasons = _editor_frame(app)["사유"].tolist()
+    assert reasons[_position("C1", "2F")] == "사용 안 함"
+    assert reasons[_position("C4", "1F")] == "생산라인 아님"
+    tables.edit(_editor_key(app), _position("C4", "1F"), "사유", "생산라인 아님")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C1 2F": "UNUSED", "C4 1F": "NOT_LINE"}
+    assert any("바뀐 층 0개" in caption.value for caption in app.caption)
+
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
+    assert _states(database) == {("C1", "2F"): "UNUSED", ("C4", "1F"): "NOT_LINE"}
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize(
+    ("typed", "refusal"),
+    [
+        ("가" * 21, "C2 3F 사유는 20자까지입니다(지금 21자)"),
+        ("창\n고", "C2 3F 사유에 줄바꿈·탭 같은 제어 문자는 넣을 수 없습니다"),
+    ],
+    ids=["21자", "줄바꿈"],
+)
+def test_a_reason_that_cannot_be_stored_is_refused_on_save(
+    tmp_path: Path, typed: str, refusal: str
+) -> None:
+    """브라우저 칸은 20자에서 끊지만(붙여넣기도) 저장 입구가 한 번 더 본다 — 거절은 알림 칸이고 쓰지
+    않으며 편집은 남는다."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    tables.edit(_editor_key(app), _position("C2", "3F"), "사유", typed)
+    tables.run()
+    _ok(app)
+
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert any(refusal in item.value for item in app.error)
+    assert _version(database) == 0
+    assert app.toggle(key=EDIT_TOGGLE_KEY).value
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": typed}
+    clear_equipment_repository()
+
+
+def test_a_reason_with_markdown_characters_is_drawn_as_written(
+    tmp_path: Path, _stub_editor: list[dict[str, Any]]
+) -> None:
+    """사유는 마크다운으로 읽지 않는다 — 배너·성공 알림은 `literal_markdown` 으로 막고, 표·도면 블록
+    (JS 가 textContent 로 싣는다)에는 적은 글 그대로다."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    tables.edit(_editor_key(app), _position("C1", "3F"), "사유", REASON_WITH_MARKS)
+    tables.run()
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert _states(database) == {("C1", "3F"): REASON_WITH_MARKS}
+    (saved,) = [item.value for item in app.success]
+    assert f"비활성 1개({literal_markdown(REASON_WITH_MARKS)} 1)" in saved
+    assert REASON_WITH_MARKS not in saved
+    _, inactive = _floor_tables(app)
+    assert inactive["사유"].tolist() == [REASON_WITH_MARKS]
+    fab = [data for data in _stub_editor if data.get("scope") == "fab"][-1]
+    assert fab["linkStats"]["C1 3F"]["inactive"] == REASON_WITH_MARKS
+
+    clear_equipment_repository()
+    opened = _app(database, floor="C1-3F").run()
+    _ok(opened)
+    (banner,) = [item.value for item in opened.info if "이 층은 비활성" in item.value]
+    assert f"이 층은 비활성({literal_markdown(REASON_WITH_MARKS)})입니다" in banner
+    assert REASON_WITH_MARKS not in banner
+    clear_equipment_repository()
+
+
+def test_the_theme_marker_sees_a_typed_reason(tmp_path: Path) -> None:
+    """적은 사유도 탭 점·떠나기 확인·테마 표지가 페이지보다 먼저 센다 — 저장본과 같은 글로 되적으면
+    내린다."""
+    database = _database(tmp_path, {("C1", "3F"): "창고"})
+    app = AppTest.from_string(_marker_first_script(database), default_timeout=90)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    tables = BrowserTables(app)
+    tables.run()
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    tables.run()
+    _ok(app)
+    assert app.session_state["marker_before_page"] is False
+
+    tables.edit(_editor_key(app), _position("C1", "3F"), "사유", "창고 2")
+    tables.run()
+    _ok(app)
+    assert app.session_state["marker_before_page"] is True
+
+    tables.edit(_editor_key(app), _position("C1", "3F"), "사유", " 창고 ")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C1 3F": "창고"}
+    assert app.session_state["marker_before_page"] is False
     clear_equipment_repository()
 
 

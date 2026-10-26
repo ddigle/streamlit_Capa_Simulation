@@ -2288,7 +2288,8 @@ class DuckDBEquipmentRepository:
         expected_version: int | None,
         source: str,
     ) -> int | None:
-        """동·층 사용 상태를 갈아 쓴다(비활성 층 → 사유 코드, 30개 층 전체 초안). 썼으면 새 version,
+        """동·층 사용 상태를 갈아 쓴다(비활성 층 → 사유, 30개 층 전체 초안 — 사유 글 검증은
+        `prepare_floor_states`, 받을 수 없으면 쓰기 전에 `ValueError`). 썼으면 새 version,
         같은 내용이라 쓰지 않았으면 None — 화면은 그 version 을 제 저장 짝으로 적는다(쓴 뒤 다시
         읽으면 그 사이 남의 저장이 짝에 들어간다).
 

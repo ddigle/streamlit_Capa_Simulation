@@ -5,13 +5,17 @@
 - **보기**(`사용 편집` 꺼짐): 사용 층 표(행을 고르면 그 층을 연다)와, 비활성 층이 있으면 그 아래
   접힌 「비활성 층 n개」 — 거기서도 행을 골라 연다(호기가 남은 층 대비, S3).
 - **편집**(`사용 편집` 켜짐): 위에서 아래로 저장 줄 · 끄기 확인 · 알림 · 동 머리 줄 · 30줄 편집표.
-  초안은 세션(층 이름 → 사유 코드, 비활성 층만)이고 편집을 시작할 때 본 저장본 `(version, rows)` 를
+  초안은 세션(층 이름 → 사유, 비활성 층만)이고 편집을 시작할 때 본 저장본 `(version, rows)` 를
   함께 둔다 — 저장은 그 version 으로 대조한다(`ProfileVersionConflict`). 편집표의 칸 편집은
   회차마다(그리고 단추 콜백 첫머리에서) 초안에 **접는다** — 편집표는 늘 접은 초안을 그린다.
 - 칸 편집은 위젯에 남은 채(같은 위젯 — 보던 스크롤·초점이 남는다) 접은 초안 위에 다시 얹혀
   보인다. 새 위젯으로 세우는 것은 그렇게 보일 값이 접은 값과 다를 때뿐이다(비활성 층의 사유를
   지움 등). `사유` 칸은 `string` 으로 고정한다 — 모두 비어도 Arrow 타입이 같아야 첫 끄기에 위젯
   서명(Streamlit 1.63 은 칸 타입을 넣는다)이 바뀌지 않는다.
+- `사유` 는 직접 적는 글 칸이다(2026-10-26 결정 — 20자까지, 앞뒤 공백을 뗌). 비우고 끄면 「사용 안
+  함」, 옛 코드는 그 글로 보이고 그 글을 그대로 적으면 그 코드다(`floor_state.floor_reason_code`).
+  받을 수 없는 글(길이·제어 문자)은 `저장` 이 알림 칸에서 거절한다. 사유 글은 표·편집표에는 그대로,
+  마크다운 자리(성공 알림)에는 `literal_markdown` 으로 막아 싣는다.
 - 동 머리(`st.segmented_control`)는 key 위젯이라 처음 만든 뒤 `default=` 를 보지 않는다(정체가
   key + `click_mode` 뿐). 그래서 그리기 전에 **회차마다** 초안의 그 동 상태를 세션에 적는다 —
   세대를 올리지 않는 칸 편집 뒤에도 머리가 맞는다.
@@ -42,7 +46,11 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
-from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
@@ -67,14 +75,16 @@ from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.floor_state import (
     ACTIVE_STATE,
     DEFAULT_FLOOR_REASON,
-    FLOOR_REASON_CHOICES,
+    FLOOR_REASON_EXAMPLES,
     FLOOR_REASON_LABELS,
-    FLOOR_REASONS,
+    FLOOR_REASON_MAX_CHARS,
     FloorStates,
     building_active_count,
     building_state,
+    floor_reason_code,
     inactive_label,
     newly_inactive,
+    prepare_floor_states,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -96,8 +106,8 @@ INACTIVE_TABLE_KEY = "space_status_floor_table_inactive"
 INACTIVE_EXPANDER_KEY = "space_floor_inactive_expander"
 # 표 머리 `사용 편집` 토글. `value=` 를 주지 않는다 — 저장 콜백·샘플 잠금이 세션에 적는다.
 EDIT_TOGGLE_KEY = "space_floor_state_edit"
-# 초안(「C1 3F」 → 사유 코드, 비활성 층만)과 편집을 시작할 때 본 저장본 (version, rows). base 는
-# 초안을 세우는 자리에서만 적는다(`write_guard.remember_seen`).
+# 초안(「C1 3F」 → 사유 — 옛 코드 또는 적은 글, 비활성 층만)과 편집을 시작할 때 본 저장본
+# (version, rows). base 는 초안을 세우는 자리에서만 적는다(`write_guard.remember_seen`).
 DRAFT_KEY = "space_floor_state_draft_v1"
 BASE_KEY = "space_floor_state_base_v1"
 # 이 세션이 한 층 사용 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
@@ -122,17 +132,22 @@ _USE_COLUMN = "사용"
 _REASON_COLUMN = "사유"
 _UNITS_COLUMN = "호기"
 _BULK_LABELS = {ACTIVE_STATE: "사용", **FLOOR_REASON_LABELS}
-_REASON_BY_TEXT = {
-    **{code: code for code in FLOOR_REASONS},
-    **{label: code for code, label in FLOOR_REASON_LABELS.items()},
-    **{label: code for code, label in FLOOR_REASON_CHOICES.items()},
-}
+# 성공 알림에 사유마다 이름을 적는 가짓수(나머지는 「외 n가지」).
+_SAVED_REASON_LIMIT = 5
 
 SAMPLE_LOCKED = "샘플 데이터를 보는 중에는 층 사용 설정을 바꾸지 않습니다."
 _TOGGLE_HELP = (
-    "층마다 사용·비활성(사용 안 함·생산라인 아님)을 고칩니다. 모두에게 같은 공용 설정이고 설비 "
+    "층마다 사용·비활성과 그 사유(직접 적는 글)를 고칩니다. 모두에게 같은 공용 설정이고 설비 "
     "시나리오와 상관없습니다. 끈 층은 FAB 도면에서 회색 빗금으로 흐려지고 층 목록 맨 아래 「비활성 "
     "층」 으로 내려갑니다. 저장하지 않고 스위치를 끄면 고친 것은 버립니다."
+)
+# 칸 풍선은 마크다운이다 — 예시 글의 괄호도 `quoted` 로 막는다.
+_REASON_HELP = (
+    f"비활성 층의 사유를 {FLOOR_REASON_MAX_CHARS}자까지 직접 적습니다 — 예: "
+    + " · ".join(quoted(example) for example in FLOOR_REASON_EXAMPLES)
+    + f". 비운 채 끄면 {quoted(FLOOR_REASON_LABELS[DEFAULT_FLOOR_REASON])} 이고, 사용 층에 "
+    "사유를 적으면 그 사유로 끕니다. 적은 글 그대로 보입니다(FAB 도면 블록에서는 길면 줄이고 "
+    "풍선에 다 보입니다)."
 )
 _PLACED_HELP = "도면에 그린 설비입니다. Main 설비로 묶은 모듈 행은 합쳐 1대입니다."
 _UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
@@ -314,13 +329,6 @@ def floor_state_draft_pending() -> bool:
 # ---------------------------------------------------------------- 편집표 접기
 
 
-def _reason_code(value: object) -> str | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    text = str(value).strip()
-    return _REASON_BY_TEXT.get(text, DEFAULT_FLOOR_REASON) if text else None
-
-
 def _widget_edits() -> dict[int, Mapping[str, object]]:
     state = st.session_state.get(editor_widget_key(EDITOR_KEY))
     rows = state.get("edited_rows") if isinstance(state, Mapping) else None
@@ -337,12 +345,13 @@ def _folded_row(base: str | None, change: Mapping[str, object]) -> str | None:
     바뀌지 않은 것으로 본다.
 
     - `사용` 을 켰으면 사용(사유 없음).
-    - 사용 층의 `사유` 를 골랐으면 그 사유로 끈다 — 사유를 고른 뜻이 끄기다.
+    - 사용 층에 `사유` 를 적었으면 그 사유로 끈다 — 사유를 적은 뜻이 끄기다.
     - `사용` 을 껐는데 사유가 비었으면 「사용 안 함」(비활성에는 늘 사유가 있다 — S1).
-    두 칸이 그린 값과 함께 달라졌으면 켜기가 먼저다."""
+    사유 칸 글은 `floor_reason_code` 로 읽는다(앞뒤 공백을 떼고, 옛 코드의 글은 그 코드) — 그린 글을
+    그대로 다시 적으면 바뀌지 않은 것이다. 두 칸이 그린 값과 함께 달라졌으면 켜기가 먼저다."""
     use_value = change.get(_USE_COLUMN)
     use_changed = _USE_COLUMN in change and bool(use_value) != (base is None)
-    reason = _reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else base
+    reason = floor_reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else base
     reason_changed = _REASON_COLUMN in change and reason != base
     if use_changed and bool(use_value):
         return None
@@ -357,11 +366,11 @@ def _folded_row(base: str | None, change: Mapping[str, object]) -> str | None:
 
 
 def _shown_after_fold(after: str | None, change: Mapping[str, object]) -> tuple[bool, str | None]:
-    """다음 회차 위젯이 보일 (사용, 사유 코드) — 접은 값 `after` 를 그린 위에 남은 칸 편집을
+    """다음 회차 위젯이 보일 (사용, 사유) — 접은 값 `after` 를 그린 위에 남은 칸 편집을
     얹은 것. 다시 세우지 않으면 칸 편집은 위젯에 그대로 남아 접은 초안을 그린 데이터 위에 얹혀
     보인다."""
     use = bool(change[_USE_COLUMN]) if _USE_COLUMN in change else after is None
-    reason = _reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else after
+    reason = floor_reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else after
     return use, reason
 
 
@@ -369,8 +378,8 @@ def _folded(draft: Draft, edits: Mapping[int, Mapping[str, object]]) -> tuple[Dr
     """초안에 칸 편집을 접은 값과, 새 위젯으로 세워야 하는가 — 세션을 고치지 않는다.
 
     다시 세우는 것은 다음 회차에 보일 값(접은 값 + 남은 편집)이 접은 값과 다를 때뿐이다 — 비활성
-    층의 사유를 지움(보이는 빈 사유 ≠ 「사용 안 함」), 사유를 고른 줄을 다시 켬 등. 끄기(빈 사유는
-    그린 데이터가 채운다)·켜기·사용 층의 사유 고르기는 같은 위젯이라 보던 스크롤·초점이 남는다.
+    층의 사유를 지움(보이는 빈 사유 ≠ 「사용 안 함」), 사유를 적은 줄을 다시 켬 등. 끄기(빈 사유는
+    그린 데이터가 채운다)·켜기·사용 층의 사유 적기는 같은 위젯이라 보던 스크롤·초점이 남는다.
     같은 편집을 두 번 접어도 같다(남은 편집은 회차마다 다시 접힌다)."""
     folded = dict(draft)
     remount = False
@@ -477,13 +486,22 @@ def _notice(kind: FlashKind, text: str) -> None:
 
 
 def _saved_message(draft: Mapping[FloorKey, str]) -> str:
+    """성공 알림(마크다운 자리) — 사유 글마다 층 수(`FLOOR_KEYS` 에 처음 나온 차례). 사유는 사람이
+    적은 글이라 `literal_markdown` 으로 막고, `_SAVED_REASON_LIMIT` 가지 넘게는 「외 n가지」 로
+    줄인다."""
     if not draft:
         return "층 사용 설정을 저장했습니다 — 모든 층 사용."
+    counts: dict[str, int] = {}
+    for key in FLOOR_KEYS:
+        if key in draft:
+            label = inactive_label(draft[key])
+            counts[label] = counts.get(label, 0) + 1
     by_reason = [
-        f"{label} {sum(1 for reason in draft.values() if reason == code)}"
-        for code, label in FLOOR_REASON_LABELS.items()
-        if any(reason == code for reason in draft.values())
+        f"{literal_markdown(label)} {count}"
+        for label, count in list(counts.items())[:_SAVED_REASON_LIMIT]
     ]
+    if len(counts) > _SAVED_REASON_LIMIT:
+        by_reason.append(f"외 {len(counts) - _SAVED_REASON_LIMIT}가지")
     return f"층 사용 설정을 저장했습니다 — 비활성 {len(draft)}개({' · '.join(by_reason)})."
 
 
@@ -535,12 +553,19 @@ def _saved(draft: Draft) -> None:
 
 
 def _save(database_path: str, generation: int, counts: Mapping[str, int]) -> None:
-    """`저장` 콜백. 호기가 남은 층을 새로 끄면 확인을 띄우고 끝낸다(S4)."""
+    """`저장` 콜백. 받을 수 없는 사유 글(길이·제어 문자)이면 알림 칸에서 거절하고, 호기가 남은 층을
+    새로 끄면 확인을 띄우고 끝낸다(S4)."""
     if generation != _generation():
         return
     draft = _fold()
     base = _stored_base()
     if base is None:
+        return
+    try:
+        prepare_floor_states(draft)
+    except ValueError as exc:
+        st.session_state.pop(CONFIRM_KEY, None)
+        _notice("error", f"층 사용 설정을 저장하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     risky = _risky(draft, base, counts, database_path)
     if risky:
@@ -784,8 +809,9 @@ def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list
 
 
 def _render_buildings(draft: Draft) -> None:
-    """동 머리 줄 — 동마다 「사용 · 사용 안 함 · 생산라인 아님」. 값은 회차마다 초안에서 세션에
-    적는다(`default=` 없음, key 에 세대 없음). 섞인 동은 고른 것 없음 + 「사용 4/6」."""
+    """동 머리 줄 — 동마다 「사용 · 사용 안 함 · 생산라인 아님」(옛 코드 둘로 한꺼번에 끈다). 값은
+    회차마다 초안에서 세션에 적는다(`default=` 없음, key 에 세대 없음). 섞인 동과 직접 적은 사유로
+    끈 동은 고른 것 없음 + 「사용 4/6」(`building_state`)."""
     generation = _generation()
     with st.container(
         horizontal=True,
@@ -817,20 +843,18 @@ def _render_editor(
     counts: Mapping[FloorKey, int],
     placements: Mapping[FloorKey, FloorPlacement],
 ) -> None:
-    """30줄 편집표. 줄 차례는 `FLOOR_KEYS` 고정이고 늘 접은 초안을 그린다. `사유` 칸은 `string` 으로
-    고정한다 — 모든 층이 사용이면 None 뿐이라 Arrow `null` 이 되고, 첫 끄기에 `string` 으로 바뀌면
-    위젯 서명이 달라져 새 위젯이 선다(보던 스크롤·초점이 사라진다)."""
+    """30줄 편집표. 줄 차례는 `FLOOR_KEYS` 고정이고 늘 접은 초안을 그린다. `사유` 칸은 직접 적는
+    글 칸(`FLOOR_REASON_MAX_CHARS` 자)이고 비활성 층은 그 사유의 화면 글(`inactive_label` — 옛
+    코드는 그 글, 적은 글은 그대로)을 그린다. `string` 으로 고정한다 — 모든 층이 사용이면 None
+    뿐이라 Arrow `null` 이 되고, 첫 끄기에 `string` 으로 바뀌면 위젯 서명이 달라져 새 위젯이
+    선다(보던 스크롤·초점이 사라진다)."""
     frame = pd.DataFrame(
         [
             {
                 "동": key[0],
                 "층": key[1],
                 _USE_COLUMN: key not in draft,
-                _REASON_COLUMN: (
-                    FLOOR_REASON_CHOICES.get(draft[key], inactive_label(draft[key]))
-                    if key in draft
-                    else None
-                ),
+                _REASON_COLUMN: inactive_label(draft[key]) if key in draft else None,
                 _UNITS_COLUMN: int(counts.get(key, 0)),
                 "배치대수": placements[key].placed if key in placements else 0.0,
                 "미배치대수": placements[key].unplaced if key in placements else 0.0,
@@ -848,9 +872,8 @@ def _render_editor(
         disabled=["동", "층", _UNITS_COLUMN, "배치대수", "미배치대수"],
         column_config={
             _USE_COLUMN: st.column_config.CheckboxColumn(help=_USE_HELP),
-            _REASON_COLUMN: st.column_config.SelectboxColumn(
-                options=list(FLOOR_REASON_CHOICES.values()),
-                help="비활성 층의 사유입니다. 사용 층에서 사유를 고르면 그 사유로 끕니다.",
+            _REASON_COLUMN: st.column_config.TextColumn(
+                max_chars=FLOOR_REASON_MAX_CHARS, help=_REASON_HELP
             ),
             _UNITS_COLUMN: st.column_config.NumberColumn(format="%d", help=_UNITS_HELP),
             "배치대수": st.column_config.NumberColumn(format="localized", help=_PLACED_HELP),

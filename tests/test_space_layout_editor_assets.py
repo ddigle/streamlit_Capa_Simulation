@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from test_space_module_group import _js_decl, _node
+
 from capa_simulation.components import space_layout_editor
 from capa_simulation.design import tokens
 from capa_simulation.services.equipment_contract import (
@@ -205,12 +207,13 @@ def test_the_inspector_open_is_locked_while_fab_edits_are_unapplied() -> None:
 
 
 def test_an_inactive_floor_block_is_grey_hatched_and_never_opens() -> None:
-    """비활성 층(사용 안 함·생산라인 아님)을 가리키는 블록은 회색 면 + 영역 빗금 + 흐린 사유 글자로
-    그리고, 보기에서 눌러도·Enter 로도 열리지 않으며 고르지도 않는다(강조 테두리가 서지 않는다).
-    편집에서는 그대로 옮기고 [열기] 만 꺼진다. 사유는 연결 층의 `linkStats.inactive` 에서 온다."""
+    """비활성 층을 가리키는 블록은 회색 면 + 영역 빗금 + 흐린 사유 글자로 그리고, 보기에서 눌러도·
+    Enter 로도 열리지 않으며 고르지도 않는다(강조 테두리가 서지 않는다). 편집에서는 그대로 옮기고
+    [열기] 만 꺼진다. 사유는 연결 층의 `linkStats.inactive` 에서 온다(줄임·글자 그대로는 아래 node
+    시험)."""
     assert "LINK_STATS[item.link].inactive" in JS
     # 사유 줄이 대수 줄을 대신한다(풍선에는 대수가 남고 「누르면 열기」 는 없다).
-    assert "if (blockOff(item)) return [blockHead(item), blockOff(item)]" in JS
+    assert "if (blockOff(item)) return [String(blockHead(item)), clipOff(blockOff(item))]" in JS
     assert (
         "[blockHead(item), '비활성', blockOff(item), stats.placed, stats.unplaced, stats.layout]"
         in JS
@@ -243,6 +246,84 @@ def test_an_inactive_floor_block_is_grey_hatched_and_never_opens() -> None:
     assert "stroke: var(--sle-frame)" in _rule(
         ".sle.is-view.is-fab .mark-block.is-inactive:hover .sle-block-border"
     )
+
+
+_OFF_DECLS = (
+    "const blockHead = ",
+    "const blockOff = ",
+    "const BLOCK_OFF_CHARS = ",
+    "const clipOff = ",
+    "const blockLines = ",
+    "const opensFloor = ",
+    "const blockTip = ",
+)
+_OFF_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const VIEW = true
+const FAB = true
+const LINK_STATS = input.stats
+%s
+const out = {}
+for (const item of input.items) {
+  out[item.link] = { lines: blockLines(item), tip: blockTip(item), opens: opensFloor(item) }
+}
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_an_inactive_block_shortens_a_long_reason_and_the_tip_keeps_it_whole() -> None:
+    """사유는 직접 적는 글이다(2026-10-26 결정 — 20자까지). 블록 안 줄은 8글자까지이고 넘으면
+    7글자 + 「…」(코드 포인트로 센다 — 이모지 반쪽이 남지 않는다), 풍선에는 다 보인다. 마크다운·
+    HTML 글자도 글자 그대로 싣는다(node 로 선언을 그대로 돌린다)."""
+    reasons = {
+        "C1 1F": "생산라인 아님",
+        "C1 2F": "생산라인 아님(사무·창고 등)",
+        "C1 3F": "12345678",
+        "C1 4F": "123456789",
+        "C1 5F": "\U0001f600" * 9,
+        "C1 6F": "<b>x</b> & ~y~ *z*",
+        "C2 1F": "창고 임시보 관리구역",
+    }
+    stats = {
+        link: {"placed": "배치 3대", "unplaced": "미배치 1대", "inactive": reason}
+        for link, reason in reasons.items()
+    }
+    stats["C2 2F"] = {"placed": "배치 2대", "occupancy": "점유율 1.0%"}
+    items = [{"kind": "block", "link": link, "label": ""} for link in stats]
+    decls = "\n".join(_js_decl(head) for head in _OFF_DECLS)
+    out = _node(_OFF_RUNNER % decls, {"stats": stats, "items": items})
+
+    shown = {link: out[link]["lines"] for link in reasons}
+    assert shown == {
+        "C1 1F": ["C1 1F", "생산라인 아님"],
+        "C1 2F": ["C1 2F", "생산라인 아님…"],
+        "C1 3F": ["C1 3F", "12345678"],
+        "C1 4F": ["C1 4F", "1234567…"],
+        "C1 5F": ["C1 5F", "\U0001f600" * 7 + "…"],
+        "C1 6F": ["C1 6F", "<b>x</b…"],
+        # 자른 끝의 빈칸은 뗀다.
+        "C2 1F": ["C2 1F", "창고 임시보…"],
+    }
+    for link, reason in reasons.items():
+        assert out[link]["tip"] == f"{link} · 비활성 · {reason} · 배치 3대 · 미배치 1대"
+        assert out[link]["opens"] is False
+    assert out["C2 2F"] == {
+        "lines": ["C2 2F", "배치 2대"],
+        "tip": "C2 2F · 배치 2대 · 점유율 1.0% · 누르면 열기",
+        "opens": True,
+    }
+
+
+def test_a_reason_reaches_the_page_only_as_text() -> None:
+    """사유 글은 사람이 적은 글이다 — 편집기는 HTML 로 읽는 길이 아예 없고(`innerHTML` 류 없음),
+    블록 글자·풍선·선택 줄은 `textContent`·`title` 로만 싣는다."""
+    for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+        assert sink not in JS
+    assert "node.textContent = value" in JS
+    draw = JS[JS.index("const tip = group.querySelector('title')") :]
+    assert "if (tip) tip.textContent = words" in draw
+    hint = JS[JS.index("S.showBlockHint = (group) => {") : JS.index("const opensFromInspector")]
+    assert "pickBox.textContent = `${item.link} · 비활성(${blockOff(item)})" in hint
 
 
 def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:

@@ -898,14 +898,22 @@ export default function (component) {
   })
   // 층 블록 글자: 첫 줄은 이름(없으면 연결 층), 다음 줄은 배치·미배치 대수. 풍선에는 점유율까지.
   const blockHead = (item) => item.label || item.link || '연결 없음'
-  // 비활성 층(사용 안 함·생산라인 아님)을 가리키는 블록의 사유 글. 연결 층의 `linkStats.inactive` 에서 온다 — 회색 빗금으로
-  // 그리고 보기에서 눌러도 열지 않는다(그 층은 층 목록 표 「비활성 층」에서 연다). 사용 층이면 빈 글.
+  // 비활성 층을 가리키는 블록의 사유 글. 연결 층의 `linkStats.inactive` 에서 온다 — 사람이 직접 적은 글(20자까지, 옛 코드는
+  // 「사용 안 함」·「생산라인 아님」)이라 늘 textContent·title 로만 싣는다(HTML 로 읽지 않는다). 회색 빗금으로 그리고 보기에서
+  // 눌러도 열지 않는다(그 층은 층 목록 표 「비활성 층」에서 연다). 사용 층이면 빈 글.
   const blockOff = (item) => (item && item.kind === 'block' && item.link && LINK_STATS[item.link] && LINK_STATS[item.link].inactive) || ''
+  // 블록 안 사유 줄은 BLOCK_OFF_CHARS 글자까지 — 넘으면 앞을 남기고 「…」 로 줄인다(글자 맞춤이 긴 줄 하나에 끌려 작아지지 않게).
+  // 자른 끝의 빈칸은 뗀다. 풍선·선택 줄에는 다 보인다. 글자는 코드 포인트로 센다(이모지 반쪽이 남지 않게).
+  const BLOCK_OFF_CHARS = 8
+  const clipOff = (text) => {
+    const chars = Array.from(String(text))
+    return chars.length > BLOCK_OFF_CHARS ? `${chars.slice(0, BLOCK_OFF_CHARS - 1).join('').trimEnd()}…` : String(text)
+  }
   const blockLines = (item) => {
     const stats = LINK_STATS[item.link] || {}
     // 비활성 블록은 대수 줄 대신 사유다(대수는 풍선에 남는다). 「필요 단축」 을 켠 동안은 대수 줄 뒤에 단축 줄(`short` —
     // 「단축 3대 · 최대 −18일」, 비활성 층에는 오지 않는다)이 붙는다.
-    if (blockOff(item)) return [blockHead(item), blockOff(item)].map(String)
+    if (blockOff(item)) return [String(blockHead(item)), clipOff(blockOff(item))]
     return [blockHead(item), stats.placed, stats.unplaced, stats.short].filter(Boolean).map(String)
   }
   const opensFloor = (item) => Boolean(VIEW && FAB && item && item.kind === 'block' && item.link && !blockOff(item))

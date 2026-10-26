@@ -28,7 +28,7 @@ _FLOOR_ORDER = {key: index for index, key in enumerate(FLOOR_KEYS)}
 def read_floor_states(connection: duckdb.DuckDBPyConnection) -> FloorStates:
     """머리와 비활성 층 행. 머리가 없으면 version 0 이다 — 머리 없이 층 행만 있는 DB(손으로 넣은
     행)도 version 0 으로 읽고 행은 그대로 싣는다. FAB 의 30개 층 밖 행은 버린다(그릴 자리가 없다).
-    사유는 저장된 글 그대로다(모르는 사유는 화면이 「비활성」 으로 그린다)."""
+    사유는 저장된 글 그대로다(옛 코드든 적은 글이든 — 화면 글은 `inactive_label`)."""
     header = connection.execute(
         """
         SELECT version, source, updated_at

@@ -401,7 +401,7 @@ E2E). 값은 팔레트의 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`)�
     1.8:1 이라 짙은 테(`SPACE_RING_EXIT_OUTLINE`)를 한 겹 두르고, 어둡게는 노랑 혼자 넉넉해 짙은 테 값이
     캔버스색이다. 선택 후광(`SPACE_RING_HALO`)은 `ACCENT` 다. `tests/test_design_tokens.py` 가 두 대비를
     고정한다.
-  - 비활성 층 블록(사용 안 함·생산라인 아님, 설비 `0029`)은 `SPACE_BLOCK_OFF_FILL`(밝게는 기본 블록 면보다 옅은 회색,
+  - 비활성 층 블록(설비 `0029` — 사유는 직접 적은 글이고 블록 안 줄은 8글자를 넘으면 「…」, 풍선에는 다)은 `SPACE_BLOCK_OFF_FILL`(밝게는 기본 블록 면보다 옅은 회색,
     어둡게는 캔버스에 가까운 어두운 회색) 면에 영역 빗금 무늬 `#sle-hatch` 와 `TEXT_MUTED` 사유 글자다. 사유·머리
     글자(`TEXT_MUTED`·`SPACE_TEXT`)는 두 테마의 그 면 위 4.5:1 이상이고 고른 블록 색·「글자 색」 은 달지 않는다.
   - 색 기준 「필요 단축」(2026-10-24)의 단축 일수 구간 넷은 `SPACE_SHORT_FILLS`·`SPACE_SHORT_INKS`(키 `s` 1–7일 · `m` 8–14일 ·

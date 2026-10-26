@@ -143,9 +143,51 @@ def test_invalid_values_are_refused_before_any_write(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "equipment.duckdb")
     with pytest.raises(ValueError, match="FAB 의 층이 아닙니다"):
         repository.save_floor_states({("C9", "1F"): "UNUSED"}, expected_version=0, source="t")
-    with pytest.raises(ValueError, match="사유"):
-        repository.save_floor_states({("C1", "1F"): "OFFICE"}, expected_version=0, source="t")
+    with pytest.raises(ValueError, match="사유는 20자까지입니다"):
+        repository.save_floor_states({("C1", "1F"): "가" * 21}, expected_version=0, source="t")
+    with pytest.raises(ValueError, match="제어 문자"):
+        repository.save_floor_states({("C1", "1F"): "창\r\n고"}, expected_version=0, source="t")
     assert repository.load_floor_states().version == 0
+
+
+def test_free_text_reasons_round_trip_as_written(tmp_path: Path) -> None:
+    """직접 적은 사유(2026-10-26 결정)는 앞뒤 공백만 떼고 `reason` 칸에 그대로 — 마크다운 글자도
+    그대로 읽힌다. 옛 코드의 글을 적으면 코드로, 같은 사유를 다시 적으면 쓰지 않는다."""
+    repository = _repository(tmp_path / "equipment.duckdb")
+    written = "A~B~C *굵* [x](y)$1$"
+    assert repository.save_floor_states(
+        {("C1", "1F"): f"  {written} ", ("C2", "3F"): "생산라인 아님", ("C3", "4F"): "창고"},
+        expected_version=0,
+        source="t",
+    )
+    states = repository.load_floor_states()
+    assert states.rows == (
+        ("C1", "1F", written),
+        ("C2", "3F", "NOT_LINE"),
+        ("C3", "4F", "창고"),
+    )
+    assert (
+        repository.save_floor_states(
+            {("C1", "1F"): written, ("C2", "3F"): "NOT_LINE", ("C3", "4F"): " 창고 "},
+            expected_version=1,
+            source="t",
+        )
+        is None
+    )
+    # 사유만 바꾼 층은 그 행만 고친다.
+    assert (
+        repository.save_floor_states(
+            {("C1", "1F"): written, ("C2", "3F"): "사무동 연결 통로", ("C3", "4F"): "창고"},
+            expected_version=1,
+            source="t",
+        )
+        == 2
+    )
+    assert repository.load_floor_states().inactive == {
+        ("C1", "1F"): written,
+        ("C2", "3F"): "사무동 연결 통로",
+        ("C3", "4F"): "창고",
+    }
 
 
 def test_floor_states_do_not_touch_equipment_revisions_or_scenarios(tmp_path: Path) -> None:

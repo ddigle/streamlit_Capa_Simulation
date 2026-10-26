@@ -60,7 +60,7 @@ from capa_simulation.components.floor_layout_upload import (
     render_fab_layout_drawing_editor,
     render_floor_layout_editor,
 )
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.sample_data import (
@@ -2015,12 +2015,13 @@ else:
                 "호기가 있습니다: " + ", ".join(map(str, invalid_rows))
             )
     # 비활성 층을 연 회차(층 목록 표 「비활성 층」·주소)의 배너. 자리는 늘 선다 — 남이 층을 켜고
-    # 끌 때 아래 층 상세가 밀리지 않게.
+    # 끌 때 아래 층 상세가 밀리지 않게. 사유는 사람이 적은 글이라 글자 그대로 막는다.
     with st.container(key="space_floor_inactive_notice_slot"):
         selected_reason = floor_states.reason_of(selected)
         if selected_reason is not None:
+            reason_text = literal_markdown(inactive_label(selected_reason))
             st.info(
-                f":material/block: 이 층은 비활성({inactive_label(selected_reason)})입니다 — FAB "
+                f":material/block: 이 층은 비활성({reason_text})입니다 — FAB "
                 "도면·층 바로 가기·「다른 층으로 보내기」에서 빠집니다. 호기는 그대로이고 FAB 전체 "
                 "층 목록 표의 「사용 편집」에서 다시 켭니다."
             )
