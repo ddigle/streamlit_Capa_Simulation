@@ -4133,6 +4133,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     보면 빈 입력 거절(「제목을 입력하세요.」)이 방금 성공한 자리에 남았다(2026-10-26 E2E). `write_once` 는 쓴 시각도 적고,
     입력이 모두 빈 제출이 `write_guard.TRAILING_PRESS_SECONDS`(1초) 안에 오면(`just_written`) 쓰지 않고 방금 성공을 다시
     알린다. 적은 것이 하나라도 있거나 창이 지나면 정상 제출이다(VOC 새 글·답변, `tests/test_voc_page.py`).
+  - **토글 단추**(누르면 같은 자리에 반대 동작의 단추가 서는 단추 — VOC 「답변 완료로 표시」 ↔ 「미답변으로 되돌리기」)는 첫
+    회차가 약 0.2초 안에 끝나 0.2~0.45초 간격 더블클릭의 둘째 누름이 새 세대의 반대 단추에 닿는다 — 세대가 맞아 첫 표시를
+    알림 없이 되돌렸다(2026-10-27 E2E). 콜백은 바로 앞 세대 쓰기의 `TRAILING_PRESS_SECONDS` 안에 온 새 세대 누름
+    (`write_guard.pressed_on_replacement`)을 쓰지 않는다. 일부러 되돌리려면 창(1초)이 지난 뒤 다시 누른다
+    (`tests/test_voc_page.py`).
   - **비교 후 쓰기의 본 값**(`write_guard.remember_seen`·`seen`). 저장소에 넘기는 대조 값(`expected_*`)은 사용자가 본 화면의 값이다.
     본문에서 저장하는 폼은 폼을 제출하지 않은 회차에만 그 회차가 그린 저장본의 토큰을 적고, 제출 회차는 적은 값을 그대로 넘긴다 —
     「칸이 없으면 지금 값」 대체(`… if isinstance(…) else settings.version`)와 「결과가 무엇이든 이 회차 값으로 올림」 은 남의

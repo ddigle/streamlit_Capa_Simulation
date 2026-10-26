@@ -417,6 +417,33 @@ def test_a_second_press_of_resolve_or_reply_does_not_repeat_it(tmp_path: Path) -
 
 
 @pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_press_on_the_replacing_unresolve_button_right_after_resolving_does_not_undo_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """「답변 완료로 표시」를 0.2~0.45초 간격으로 두 번 누르면, 첫 회차가 끝나 같은 자리에 선 새
+    세대의 「미답변으로 되돌리기」 에 둘째 누름이 닿아 글이 다시 미답변이 됐다(2026-10-27 E2E —
+    알림도 없었다). 그 단추는 세대가 맞아 지나간 화면 거름에 걸리지 않는다. 쓰기 직후
+    `TRAILING_PRESS_SECONDS` 안의 그 누름은 더블클릭의 둘째로 보고 되돌리지 않는다. 창이 지난 누름은
+    일부러 되돌리는 것이다. AppTest 의 두 회차 사이 시간이 들쭉날쭉해 창은 시험이 정한다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.button(key=f"voc_resolve_{post_id}").click().run()
+    assert _posts(database_path) == [("펼침 확인", True)]
+
+    next(button for button in app.button if button.label == "미답변으로 되돌리기").click().run()
+
+    assert not app.exception
+    assert _posts(database_path) == [("펼침 확인", trailing)]
+    labels = [button.label for button in app.button]
+    assert ("미답변으로 되돌리기" in labels) is trailing
+    assert ("답변 완료로 표시" in labels) is not trailing
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
 def test_a_second_press_of_a_finished_delete_writes_nothing_and_notifies_only_its_tail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
 ) -> None:
