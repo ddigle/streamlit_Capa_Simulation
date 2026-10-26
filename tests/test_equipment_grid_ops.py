@@ -623,6 +623,16 @@ def test_reverting_a_new_unit_removes_it_and_a_deleted_unit_comes_back() -> None
     assert buffer_matches_saved(saved, state.frames)
 
 
+def test_dropping_a_new_unit_says_its_name_with_the_right_particle() -> None:
+    """「이 호기 되돌리기」 로 새 호기를 빼면 토스트 조사가 「를」 로 못박혀 「NEW-E2E-01를
+    뺐습니다」 였다(2026-10-26 E2E). 설비명 끝소리로 고른다 — 끝 숫자 1(일)은 「을」, 2(이)는
+    「를」."""
+    for name, words in (("NEW-E2E-01", "NEW-E2E-01을"), ("NEW-E2E-02", "NEW-E2E-02를")):
+        state = _with_new(_state(_saved()), name)
+        result = _apply(state, _op("revert", 1, id=f"n:{name}", col=None))
+        assert result.toast == f"새 호기 {words} 뺐습니다", result.toast
+
+
 # ------------------------------------------------------------------ 이름 바꿈(같은 호기)
 
 
