@@ -457,7 +457,7 @@ Space 현황 FAB 전체 아래 층 목록 표의 `사용 편집` 에서 층마�
 | `guide_example_seed.py` | 예시판이 띄울 합성 시나리오 DB 를 만든다(생성기 `--example` 의 시드 단계) |
 | `page_guide_core.py` · `page_guide_capture.py` · `page_guide_helpers.js` | 생성기 부품 — 조립 · 덮어쓰기(순수), Playwright 촬영, 페이지 도우미 |
 | **배포·병행 개발** | |
-| `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그면 멈춤) |
+| `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다 |
 | `container_start.py` | C-DEP CD 이미지의 `CMD` — 환경변수로 `bigdataquery` 설치·로그인 토큰 파일을 갖추고 결과를 남긴 뒤 앱(`streamlit run app.py --server.port 8080`)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
 | `new_worktree.ps1` | 병행 개발용 작업 폴더를 브랜치·가상환경·격리 확인까지 한 번에 만든다 |

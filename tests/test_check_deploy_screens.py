@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import duckdb
 import pytest
@@ -1615,36 +1615,48 @@ def test_the_drawer_floorless_count_reads_what_the_editor_hangs_on_a_chip() -> N
     service = _text(PROJECT_ROOT / "src" / "capa_simulation" / "services" / "space_layout_edit.py")
     assert '"floorless": bool(row["_floorless"]),' in service
     assert '"group": str(parent) if _present(parent) else None,' in service
-    for name in ("chip.__entry", "unit.floorless", "unit.group"):
+    for name in ("chip.__entry", "unit.floorless", "unit.group", "groups"):
         assert name in screens._TRAY_JS
+    # 칩 하나가 묶음 하나다 — 묶음 칩 수가 표에서 그 묶음들이 차지하는 대수다.
+    assert "const list = item.group ? members(item).filter(keep) : [item]" in editor
 
 
 def test_the_drawer_head_splits_the_drawer_into_this_floor_and_floorless_units() -> None:
     """`202610231430` 리뷰 사외 요청 2 — 서랍이 층 미정 호기까지 실어 서랍 N 이 표 N 보다 큰
     것이 네 배포 이어 `ng` 였다. 머리가 서랍 N 을 이 층 몫과 층 미정으로 갈라 찍고 이 층 몫을 표와
     견준다."""
-    line = screens.summarize_drawer_counts(6, 160.0, 549, 389, 0)
+    line = screens.summarize_drawer_counts(6, 160.0, 549, 389, 0, 0)
     assert line == (
         "미배치 있는 층 6개 · 연 층 표 160대 · 서랍 549대 = 이 층 160대 + 층 미정 389대 · "
         "이 층 표와 같음"
     )
     # 층 미정이 없으면 예전처럼 서랍 N 이 표 N 과 같다.
-    assert screens.summarize_drawer_counts(1, 4.0, 4, 0, 0).endswith(
+    assert screens.summarize_drawer_counts(1, 4.0, 4, 0, 0, 0).endswith(
         "서랍 4대 = 이 층 4대 + 층 미정 0대 · 이 층 표와 같음"
     )
-    # 묶음 모듈은 서랍이 한 대씩, 표는 설비지분으로 센다 — 다르면 까닭을 함께 찍는다.
-    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4).endswith(
-        "이 층 6대 + 층 미정 2대 · 이 층 표와 다름(묶음 모듈 4대)"
-    )
-    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 0).endswith("이 층 표와 다름")
-    # 칩에서 층 미정을 셀 수 없으면 견주지 않는다.
-    assert screens.summarize_drawer_counts(2, 3.0, 8, None, None) == (
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 0, 0).endswith("이 층 표와 다름")
+    # 칩에서 층 미정 · 묶음을 셀 수 없으면 견주지 않는다.
+    assert screens.summarize_drawer_counts(2, 3.0, 8, None, None, None) == (
         "미배치 있는 층 2개 · 연 층 표 3대 · 서랍 8대(층 미정 못 셈)"
     )
-    # 지분 합인 표 N 의 소수도 그대로 견준다.
-    assert screens.summarize_drawer_counts(1, 2.5, 5, 2, 1).endswith(
-        "이 층 3대 + 층 미정 2대 · 이 층 표와 다름(묶음 모듈 1대)"
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4, None).endswith("(층 미정 못 셈)")
+
+
+def test_the_drawer_head_explains_a_difference_only_by_the_bundle_surplus() -> None:
+    """묶음 모듈은 서랍이 한 대씩, 표는 설비지분(묶음 하나가 1대)으로 센다(2026-10-26 리뷰 — 차이가
+    얼마든 「다름(묶음 모듈 m대)」 으로 넘기면 줄이 스스로 검산되지 않는다). 묶음 g개 · 모듈 m대면
+    넘침이 m − g 대라 `이 층 a = 표 N + 넘침` 이 설 때만 묶음으로 설명된다 — 그 식을 줄에 적는다."""
+    # 4모듈 묶음 하나 — 이 층 6대 = 표 3대 + 넘침 3대.
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4, 1).endswith(
+        "서랍 8대 = 이 층 6대 + 층 미정 2대 · 이 층 표와 다름 · 묶음 1개 모듈 4대 · "
+        "이 층 6대 = 표 3대 + 묶음 넘침 3대"
     )
+    # 묶음 둘이면 넘침은 2대뿐이라 표 3대를 설명하지 못한다(묶음 밖 차이 1대).
+    assert screens.summarize_drawer_counts(2, 3.0, 8, 2, 4, 2).endswith(
+        "이 층 표와 다름 · 묶음 2개 모듈 4대 · 묶음으로 설명 안 됨"
+    )
+    # 지분 합인 표 N 의 소수도 그대로 견준다 — 묶음 넘침은 정수라 설명되지 않는다.
+    assert screens.summarize_drawer_counts(1, 2.5, 5, 2, 1, 1).endswith("묶음으로 설명 안 됨")
 
 
 @pytest.mark.parametrize(
@@ -2787,7 +2799,9 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
     - 7-19 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
       사내 이관 확인」 줄의 항목 수가 그 표의 수와 같다. 그 배포 뒤에 더한 항목은 TODO 「다음 배포 —
-      화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다).
+      화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다). 앞머리만 같아도
+      통과하므로 7장을 고치지 않은 다음 배포는 빌더가 막는다(`build_deploy_package.
+      runbook_screen_count_mismatch` — 아래 시험이 빌더의 셈과 `ITEMS` 를 묶는다).
     """
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
     chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
@@ -2827,6 +2841,14 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
         assert f"`A {items} = 기록 {items} + 미기록 0 + 안함 0`" in later
         for item in added:
             assert f"`{item.key}`" in later
+
+
+def test_the_builder_counts_the_same_items_as_the_script_lists() -> None:
+    """빌더는 앱 모듈을 불러오지 않으려고 `ITEMS` 선언을 글로 센다 — 그 셈이 `--list` 와 같아야 7장
+    화면 확인 수 대조가 선다."""
+    import build_deploy_package
+
+    assert build_deploy_package.screen_item_count(PROJECT_ROOT) == len(ITEMS)
 
 
 # ------------------------------------------------------- Static 대비 일정 비교 시트(`gap_sheet`)
@@ -3725,6 +3747,125 @@ def test_the_entry_sections_item_restores_the_chips_even_when_a_path_fails() -> 
     assert "_choose_segment(screen, key, option)" in gap_source.split("finally:")[-1]
 
 
+class _EntryScreen:
+    """`check_entry_sections` 의 두 길 가름만 보는 가짜 화면 — 연 페이지와 콘솔 줄 수만 든다."""
+
+    def __init__(self, console: list[int] | None = None) -> None:
+        self.where = ""
+        self.opened: list[str] = []
+        self.current_step: str | None = None
+        self._console = iter(console or [])
+        self.console = None if console is None else SimpleNamespace(count=self._count)
+
+    def _count(self, needle: str) -> int:
+        return next(self._console)
+
+    def step(self, name: str) -> None:
+        self.current_step = name
+
+    def open_page(self, suffix: str) -> None:
+        self.where = suffix
+        self.opened.append(suffix)
+
+    def path(self) -> str:
+        return f"/{self.where}"
+
+    def poll(self, read: Callable[[], Any], *, timeout: float, accept: Any = bool) -> Any:
+        return read()
+
+
+def _entry_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    screen: _EntryScreen,
+    *,
+    home: Callable[[], str | None],
+    gap: Callable[[], str],
+) -> list[str]:
+    """두 길을 가짜로 갈아 끼운다. 「구획」 칩 접기는 그 페이지가 열려 있을 때만 된다(아니면 칩이
+    없다) — 돌려주는 목록에 칩을 접은 페이지를 차례로 적는다."""
+    folded: list[str] = []
+
+    def set_sections(_: object, wanted: object) -> bool:
+        folded.append(screen.where)
+        return screen.where == screens.PROCESS_DETAIL_PAGE
+
+    def click_home(_: object) -> str | None:
+        screen.where = "home"
+        return home()
+
+    def gap_entry(_: object) -> str:
+        screen.where = screens.EQUIPMENT_PAGE
+        return gap()
+
+    monkeypatch.setattr(screens, "_wait_sections", lambda _: [True, False, False, False])
+    monkeypatch.setattr(screens, "_set_sections", set_sections)
+    monkeypatch.setattr(screens, "_click_home_cell", click_home)
+    monkeypatch.setattr(screens, "_gap_link_entry", gap_entry)
+    return folded
+
+
+def _raise(exc: BaseException) -> Callable[[], Any]:
+    def run() -> Any:
+        raise exc
+
+    return run
+
+
+def test_a_home_path_that_stops_still_leaves_the_link_path_and_the_warning_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-10-26 리뷰 — ④ 길이 HOME 길에 묶여 HOME 칸 누름이 예외(1430 대행의 `TimeoutError`)로
+    끝나면 대행 칸 셋(들어온 길 1 · 4 · 경고 0줄)을 한꺼번에 잃었다. 이제 HOME 길만 `멈춤(종류)` 로
+    적고, 공정 Capa 상세를 다시 열어 구획을 접은 뒤 ④ 길을 돌며, 경고 줄은 그때까지를 센다."""
+    screen = _EntryScreen(console=[2, 2])
+    folded = _entry_paths(
+        monkeypatch,
+        screen,
+        home=_raise(TimeoutError("화면이 멈추지 않았다")),
+        gap=lambda: "④ 비가동 만 펼침",
+    )
+
+    line = screens.check_entry_sections(cast(Screen, screen))
+
+    assert line == (
+        "구획 모두 접음 · HOME 칸 → 멈춤(TimeoutError) · 콘솔 경고 0줄 · 근거 카드 링크 → "
+        "④ 비가동 만 펼침 · 구획 되돌림"
+    )
+    assert "화면이 멈추지 않았다" not in line
+    # 접기는 늘 공정 Capa 상세에서 — 처음 · HOME 길 뒤(다시 열고) · 끝 되돌림.
+    assert folded == [screens.PROCESS_DETAIL_PAGE] * 3
+    assert screen.opened.count(screens.PROCESS_DETAIL_PAGE) == 3
+
+
+def test_a_home_path_without_a_cell_still_runs_the_link_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HOME 에 누를 칸이 없으면(결함 아님) 예전에는 ④ 칸이 「안 해 봄」 이었다 — 이제 ④ 길은
+    돈다."""
+    screen = _EntryScreen()
+    _entry_paths(
+        monkeypatch, screen, home=lambda: "주요공정 그림 없음", gap=lambda: "④ 비가동 만 펼침"
+    )
+
+    line = screens.check_entry_sections(cast(Screen, screen))
+
+    assert (
+        "HOME 칸 → 주요공정 그림 없음 · 콘솔 경고 못 셈 · 근거 카드 링크 → ④ 비가동 만 펼침" in line
+    )
+
+
+def test_a_link_path_that_stops_keeps_the_home_cell(monkeypatch: pytest.MonkeyPatch) -> None:
+    screen = _EntryScreen(console=[0, 1])
+    _entry_paths(monkeypatch, screen, home=lambda: None, gap=_raise(RuntimeError("공정 ZZ")))
+
+    line = screens.check_entry_sections(cast(Screen, screen))
+
+    assert line == (
+        "구획 모두 접음 · HOME 칸 → ① 공식 만 펼침 · 콘솔 경고 1줄 · 근거 카드 링크 → "
+        "멈춤(RuntimeError) · 구획 되돌림"
+    )
+
+
 def test_the_upeh_help_item_reads_what_the_app_draws() -> None:
     page = _text(PROJECT_ROOT / "app_pages" / "reference_data.py")
     help_line = next(line for line in page.splitlines() if line.strip().startswith('"RQ_UPEH": "'))
@@ -3773,6 +3914,31 @@ def test_the_zone_summary_carries_counts_only() -> None:
         "글자 정렬 칸 없음 · 적용 안 함 · 편집 못 끔"
     )
     assert "스위치 없음" in screens.summarize_space_zone_fields(8, 1, None, True)
+    # 편집기가 그 층 그림으로 서지 않은 층은 「봄」 에 넣지 않고 따로 센다 — 「영역 없음」 이 결함
+    # 아님으로 읽히는 것은 못 본 층이 없을 때뿐이다.
+    assert screens.summarize_space_zone_fields(12, None, None, True, missed=2) == (
+        "영역 없음(층 12개 봄 · 못 본 층 2개)"
+    )
+
+
+def test_the_zone_count_waits_for_the_editor_of_the_chosen_floor() -> None:
+    """2026-10-26 리뷰 — 층마다 5초만 기다려 무거운 층의 영역을 놓치면 「영역 없음」 이 결함
+    아님으로 읽혔다. 영역 수는 편집기 머리 이름(`.sle-title`)이 고른 층일 때만 내고, 고른 층 값도
+    확인한다. 편집기는 보기 화면에도 그 머리에 층 이름(「동 층」)을 싣는다."""
+    editor = _text(COMPONENTS / "space_layout_editor_assets" / "editor.js")
+    html = _text(COMPONENTS / "space_layout_editor_assets" / "editor.html")
+    view = _text(COMPONENTS / "space_layout_editor.py")
+    assert "setText(q('.sle-title'), data.title || '')" in editor
+    assert "const svg = q('.sle-canvas')" in editor
+    assert '<span class="sle-title sle-edit-only"></span>' in html
+    assert '"title": floor_label(floor),' in view
+    from capa_simulation.services.fab_layout import floor_label
+
+    assert floor_label(("C1", "1F")) == "C1 1F"
+    source = inspect.getsource(screens.check_space_zone_fields)
+    assert 'screen.selectbox_value("층 바로 가기") != label' in source
+    assert "timeout=ZONE_FLOOR_DRAW_SECONDS" in source
+    assert screens.ZONE_SELECTOR in screens._ZONE_COUNT_JS
 
 
 def test_the_new_items_never_write() -> None:

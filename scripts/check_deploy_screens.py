@@ -2082,8 +2082,9 @@ _BOX_LEFT_JS = """(el) => el.getBoundingClientRect().x"""
 # 칩마다 편집기가 단 `__entry`(대표 호기와 함께 놓일 호기 목록)에서 층 미정 호기(`floorless` — 동이
 # 비었거나 같은 동에 층만 빈 호기, 편집기가 「층 미정」 꼬리표를 다는 그것)와 묶음 모듈(`group`)을
 # 센다. 층 목록 표 `미배치대수` 는 그 층 동·층이 적힌 호기만 설비지분으로 센다 — 서랍 N 에서 층
-# 미정을 빼면 표 N 이고, 묶음 모듈은 서랍이 한 대씩 세어 표보다 클 수 있다. `__entry` 가 없는 칩이
-# 하나라도 있으면(편집기 판이 다르면) 두 수는 null 이다.
+# 미정을 빼면 표 N 이고, 묶음 모듈은 서랍이 한 대씩 세어 표보다 클 수 있다. 칩 하나가 묶음 하나라
+# (편집기 `trayEntries`) 이 층 몫 모듈이 든 묶음 칩 수 `groups` 도 센다 — 묶음 하나는 표에서 1대다.
+# `__entry` 가 없는 칩이 하나라도 있으면(편집기 판이 다르면) 세 수는 null 이다.
 _TRAY_JS = """(tray) => {
   if (tray.hidden) return null;
   const chips = [...tray.querySelectorAll(".sle-tray-list .sle-chip")];
@@ -2096,18 +2097,23 @@ _TRAY_JS = """(tray) => {
   const count = (tray.querySelector(".sle-tray-count") || {}).textContent || "";
   let floorless = 0;
   let modules = 0;
+  let groups = 0;
   let readable = true;
   for (const chip of chips) {
     const list = chip.__entry && Array.isArray(chip.__entry.list) ? chip.__entry.list : null;
     if (!list) { readable = false; continue; }
+    let grouped = 0;
     for (const unit of list) {
       if (unit.floorless) floorless += 1;
-      else if (unit.group) modules += 1;
+      else if (unit.group) grouped += 1;
     }
+    modules += grouped;
+    if (grouped) groups += 1;
   }
   return {
     chips: names.length, violations, count, first: names[0] || "",
     floorless: readable ? floorless : null, modules: readable ? modules : null,
+    groups: readable ? groups : null,
   };
 }"""
 _TRAY_STATE_JS = """(tray) => {
@@ -2508,25 +2514,31 @@ def summarize_drawer_counts(
     total: int,
     floorless: int | None,
     modules: int | None,
+    groups: int | None,
 ) -> str:
     """서랍 머리 — 층 수 · 연 층 표 N · 서랍 N 과 그 안의 층 미정 · 이 층 몫을 표와 견준 것.
 
     서랍은 이 층 동·층의 미배치에 **층 미정 호기**(동이 비었거나 같은 동에 층만 빈 — 모든 층의
     서랍에 함께 뜬다)를 더해 싣는다. 그래서 기대는 `서랍 N ≥ 표 N` 이고 `서랍 N − 층 미정 = 이 층
     몫` 이 표 N 과 같다. 묶음 모듈은 서랍이 한 대씩, 표는 설비지분(묶음 하나가 1대)으로 세어 이 층
-    몫이 표보다 클 수 있다 — 그때는 `다름(묶음 모듈 m대)` 로 까닭을 함께 찍는다. 층 미정을 셀 수
+    몫이 표보다 클 수 있다 — 묶음 g개에 모듈 m대면 넘침은 m − g 대라 `이 층 a = 표 N + 묶음 넘침
+    (m − g)` 가 서야 묶음으로 설명된다. 서면 그 식을 줄에 적어(`--check-summary` 가 옮겨 적은 수를
+    다시 셈한다) 스스로 검산되고, 서지 않으면 `묶음으로 설명 안 됨` 이다(발견). 층 미정을 셀 수
     없으면(편집기 판이 다름) 견주지 않는다."""
     head = f"미배치 있는 층 {floors}개 · 연 층 표 {table:g}대 · 서랍 {total}대"
-    if floorless is None or modules is None or total < 0:
+    if floorless is None or modules is None or groups is None or total < 0:
         return f"{head}(층 미정 못 셈)"
     own = total - floorless
+    split = f"{head} = 이 층 {own}대 + 층 미정 {floorless}대"
     if abs(own - table) < 0.005:
-        verdict = "표와 같음"
-    elif modules:
-        verdict = f"표와 다름(묶음 모듈 {modules}대)"
-    else:
-        verdict = "표와 다름"
-    return f"{head} = 이 층 {own}대 + 층 미정 {floorless}대 · 이 층 {verdict}"
+        return f"{split} · 이 층 표와 같음"
+    if not modules:
+        return f"{split} · 이 층 표와 다름"
+    surplus = modules - groups
+    bundles = f"{split} · 이 층 표와 다름 · 묶음 {groups}개 모듈 {modules}대"
+    if abs(own - surplus - table) < 0.005:
+        return f"{bundles} · 이 층 {own}대 = 표 {table:g}대 + 묶음 넘침 {surplus}대"
+    return f"{bundles} · 묶음으로 설명 안 됨"
 
 
 def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
@@ -2538,7 +2550,9 @@ def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
     total_match = re.fullmatch(r"(\d+)대", str(tray["count"]).strip())
     total = int(total_match.group(1)) if total_match else -1
     head = (
-        summarize_drawer_counts(floors, unplaced, total, tray["floorless"], tray["modules"])
+        summarize_drawer_counts(
+            floors, unplaced, total, tray["floorless"], tray["modules"], tray.get("groups")
+        )
         + f" · 칩 {tray['chips']}개 오름차순 위반 {tray['violations']}"
     )
     first = str(tray["first"])
@@ -4692,11 +4706,30 @@ def _gap_link_entry(screen: Screen) -> str:
             _choose_segment(screen, key, option)
 
 
+def stopped_path(exc: BaseException) -> str:
+    """한 길이 예외로 멈췄을 때 그 칸에 적는 글 — 예외 종류만(문구는 식별값을 실을 수 있다)."""
+    return f"멈춤({type(exc).__name__})"
+
+
+def _home_entry(screen: Screen) -> tuple[str, int | None]:
+    """HOME 칸 → ① 길 — (그 칸 글, 그 사이 콘솔 경고 줄 수). 길이 예외로 멈춰도 `멈춤(종류)` 로
+    적고 경고 줄은 그때까지를 센다 — 이 길 하나가 깨져도 ④ 길과 경고 칸을 잃지 않는다."""
+    before = console_lines(screen, FRAGMENT_CALLBACK_WARNING)
+    try:
+        home = _click_home_cell(screen) or opened_section_text(_wait_sections(screen), 0)
+    except Exception as exc:  # noqa: BLE001 — 이 길만 멈춤으로 적고 ④ 길은 돈다
+        home = stopped_path(exc)
+    after = settled_console_lines(screen, FRAGMENT_CALLBACK_WARNING, before)
+    return home, None if before is None or after is None else after - before
+
+
 def check_entry_sections(screen: Screen) -> str:
     """공정 Capa 상세 「구획」 칩을 모두 접은 뒤 밖에서 들어오면 그 길의 구획만 다시 펴지는가 —
     HOME `주요공정 확보율` 칸 → ①, 가용설비 현황 Static 대비 일정 근거 카드의 ④ 링크 → ④. HOME
-    칸을 누르는 동안 앱 콘솔에 프래그먼트 콜백 경고가 몇 줄 섰는지도 센다(줄 수만). 칩 · 공정 상자 ·
-    전환은 세션 값이고 끝에 되돌린다 — DB 에 쓰지 않는다. 공정 이름은 찍지 않는다."""
+    칸을 누르는 동안 앱 콘솔에 프래그먼트 콜백 경고가 몇 줄 섰는지도 센다(줄 수만). 두 길은 따로
+    돈다 — HOME 쪽이 누를 칸이 없거나 예외로 멈춰도 공정 Capa 상세를 다시 열어 구획을 접고 ④ 길을
+    잰다(멈춘 길은 `멈춤(종류)`). 칩 · 공정 상자 · 전환은 세션 값이고 끝에 되돌린다 — DB 에 쓰지
+    않는다. 공정 이름은 찍지 않는다."""
     screen.step("페이지 열기")
     screen.open_page(PROCESS_DETAIL_PAGE)
     # 처음 그림(새 세션은 넷 다 펼침)으로 되돌린다 — 칩 수가 다르면 모두 편다.
@@ -4710,16 +4743,18 @@ def check_entry_sections(screen: Screen) -> str:
         collapsed = _set_sections(screen, False)
         if collapsed:
             screen.step("HOME 칸 누르기")
-            before = console_lines(screen, FRAGMENT_CALLBACK_WARNING)
-            refused = _click_home_cell(screen)
-            after = settled_console_lines(screen, FRAGMENT_CALLBACK_WARNING, before)
-            if before is not None and after is not None:
-                warnings = after - before
-            home = refused or opened_section_text(_wait_sections(screen), 0)
+            home, warnings = _home_entry(screen)
             screen.step("구획 다시 접기")
-            if refused is None and _set_sections(screen, False):
+            if not screen.path().rstrip("/").endswith(PROCESS_DETAIL_PAGE):
+                screen.open_page(PROCESS_DETAIL_PAGE)
+            if _set_sections(screen, False):
                 screen.step("근거 카드 링크")
-                gap = _gap_link_entry(screen)
+                try:
+                    gap = _gap_link_entry(screen)
+                except Exception as exc:  # noqa: BLE001 — 이 길만 멈춤으로 적는다
+                    gap = stopped_path(exc)
+            else:
+                gap = "다시 못 접음"
     finally:
         screen.step("구획 되돌리기")
         if not screen.path().rstrip("/").endswith(PROCESS_DETAIL_PAGE):
@@ -4796,14 +4831,41 @@ ZONE_TAG_SELECTOR: Final = ".sle-mark.mark-zone .sle-zone-tag"
 ZONE_FIELDS: Final = (".sle-mark-border", ".sle-mark-align")
 # 영역 요소가 선 층을 찾을 때 여는 층 수의 상한(층 목록 표 `배치대수` 차례).
 ZONE_FLOOR_LIMIT: Final = 12
+# 층을 고른 뒤 편집기가 그 층 그림(머리 이름 = 고른 층)으로 서기를 기다리는 시간(초).
+ZONE_FLOOR_DRAW_SECONDS: Final = 30
+# 편집기 그림 뿌리(그림자 DOM 안 — 로케이터가 뚫는다). 그 뿌리의 머리 이름(`.sle-title`, 보기
+# 화면에서는 숨지만 글은 층 이름 「동 층」 이다)이 고른 층일 때만 영역 수를 낸다. 아니면 null.
+ZONE_CANVAS_SELECTOR: Final = ".sle-canvas"
+_ZONE_COUNT_JS = f"""(canvases, label) => {{
+  for (const svg of canvases) {{
+    const title = svg.getRootNode().querySelector(".sle-title");
+    if (title && (title.textContent || "").trim() === label) {{
+      return svg.querySelectorAll("{ZONE_SELECTOR}").length;
+    }}
+  }}
+  return null;
+}}"""
+
+
+def _zone_count(canvases: Any, label: str) -> int | None:
+    """`label` 층 그림으로 선 편집기의 영역 요소 수. 그 층 그림이 아직 없으면 None."""
+    found = canvases.evaluate_all(_ZONE_COUNT_JS, label)
+    return None if found is None else int(found)
 
 
 def summarize_space_zone_fields(
-    looked: int, found_at: int | None, fields: Sequence[bool] | None, switched_off: bool
+    looked: int,
+    found_at: int | None,
+    fields: Sequence[bool] | None,
+    switched_off: bool,
+    *,
+    missed: int = 0,
 ) -> str:
-    """영역 칸 한 줄 — 영역이 선 층을 몇째에 찾았나, 고른 영역의 `테두리` · `글자 정렬` 칸."""
+    """영역 칸 한 줄 — 영역이 선 층을 몇째에 찾았나, 고른 영역의 `테두리` · `글자 정렬` 칸. 영역을
+    못 찾았으면 연 층 수와, 그 가운데 편집기가 그 층 그림으로 서지 않아 못 본 층 수(`missed`)."""
     if found_at is None:
-        return f"영역 없음(층 {looked}개 봄)"
+        unseen = f" · 못 본 층 {missed}개" if missed else ""
+        return f"영역 없음(층 {looked}개 봄{unseen})"
     if fields is None:
         return f"영역 있는 층 {found_at}번째 · `배치 편집` 스위치 없음"
     border, align = fields
@@ -4832,16 +4894,33 @@ def check_space_zone_fields(screen: Screen) -> str:
         ((row[0], row[1], _number(row[2])) for row in rows if row[0] and row[1]),
         key=lambda floor: -floor[2],
     )[:ZONE_FLOOR_LIMIT]
-    zones = screen.page.locator(ZONE_SELECTOR)
+    canvases = screen.page.locator(ZONE_CANVAS_SELECTOR)
     found_at: int | None = None
+    missed = 0
     screen.step("영역 있는 층 찾기")
     for position, (building, floor, _) in enumerate(floors, start=1):
-        screen.choose_by_typing("층 바로 가기", f"{building} {floor}")
-        if screen.poll(zones.count, timeout=5, accept=lambda count: count > 0):
+        label = f"{building} {floor}"
+        screen.choose_by_typing("층 바로 가기", label)
+        # 고른 층이 맞고 편집기가 그 층 그림으로 섰을 때만 영역 수를 믿는다 — 앞 층 그림이 남은 채
+        # 세면 영역이 있는 층을 「없음」 으로 건너뛴다(호기가 많은 층은 그림이 늦게 선다).
+        if screen.selectbox_value("층 바로 가기") != label:
+            missed += 1
+            continue
+
+        def count_here(chosen: str = label) -> int | None:
+            return _zone_count(canvases, chosen)
+
+        drawn = screen.poll(
+            count_here, timeout=ZONE_FLOOR_DRAW_SECONDS, accept=lambda count: count is not None
+        )
+        if drawn is None:
+            missed += 1
+            continue
+        if drawn or screen.poll(count_here, timeout=2, accept=bool):
             found_at = position
             break
     if found_at is None:
-        return summarize_space_zone_fields(len(floors), None, None, True)
+        return summarize_space_zone_fields(len(floors), None, None, True, missed=missed)
     screen.step("배치 편집")
     if not screen.switch("배치 편집", True):
         return summarize_space_zone_fields(len(floors), found_at, None, True)

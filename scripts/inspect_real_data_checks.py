@@ -1279,10 +1279,13 @@ class StReference:
     total: int
 
 
-# 대신 볼 리비전 후보 — UPEH·ST 가 둘 다 양수인 행이 하나라도 있는 리비전(Area 는 파이썬이 가른다).
+# 대신 볼 리비전 후보 — UPEH·ST 가 둘 다 양수이고 Area 가 MI 일 수 있는 행이 하나라도 있는 리비전.
+# Area 맞춤의 끝 판정은 파이썬 `match_key`(앞뒤 공백 · 대소문자)가 한다 — SQL 은 그보다 넓게만
+# 거른다(`mi` 를 품은 값). Main 행만 양수인 리비전마다 `RQ_UPEH` 전체를 읽지 않게 한다.
 _ST_CANDIDATES_SQL: Final = (
     "SELECT DISTINCT revision_id FROM rev_data.{table} "
-    'WHERE TRY_CAST("UPEH" AS DOUBLE) > 0 AND TRY_CAST("ST" AS DOUBLE) > 0'
+    'WHERE TRY_CAST("UPEH" AS DOUBLE) > 0 AND TRY_CAST("ST" AS DOUBLE) > 0 '
+    """AND lower("Area_Name") LIKE '%mi%'"""
 )
 
 

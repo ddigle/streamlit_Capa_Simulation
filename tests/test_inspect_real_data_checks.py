@@ -27,6 +27,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -954,14 +955,46 @@ def test_the_st_definition_says_when_no_revision_has_mi_rows(
 
 
 def test_the_st_reference_skips_revisions_without_mi_rows(
-    simulation_db: Path, tmp_path: Path
+    simulation_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """후보는 UPEH·ST 가 둘 다 양수인 행이 있는 리비전이지만 MI 행이 없으면 건너뛴다 — 그보다 앞에
-    저장한 MI 행 리비전을 고른다. 리비전 1 은 고르지 않는다."""
+    """후보는 UPEH·ST 가 둘 다 양수인 MI 행이 있을 법한 리비전이고, MI 행이 없으면 건너뛴다 — 그보다
+    앞에 저장한 MI 행 리비전을 고른다. 리비전 1 은 고르지 않는다. Main 행만 양수인 리비전은 후보
+    SQL 이 걸러 `RQ_UPEH` 를 읽지도 않는다(사내 리비전 수십 개마다 큰 표를 읽던 비용 — 8장 시간
+    예산)."""
     path = tmp_path / "capa_simulation.duckdb"
     path.write_bytes(simulation_db.read_bytes())
     _add_upeh_revision(path)
     _add_upeh_revision(path, mi_area="Main")
+    loaded: list[str] = []
+    from capa_simulation.persistence._sql_helpers import load_frame as real_load_frame
+
+    def counting_load_frame(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        loaded.append(str(kwargs.get("owner_id")))
+        return real_load_frame(*args, **kwargs)
+
+    session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
+    session.simulation = duckdb.connect(str(path), read_only=True)
+    try:
+        assert checks.load_source(session) is not None
+        loaded.clear()
+        monkeypatch.setattr(checks, "load_frame", counting_load_frame)
+        picked = checks.load_st_reference(session)
+    finally:
+        session.close()
+    assert isinstance(picked, checks.StReference)
+    assert (picked.order, picked.total) == (2, 3)
+    assert len(loaded) == 1
+
+
+@pytest.mark.parametrize("area", [" mi ", "Mi", "MI"])
+def test_the_st_candidates_keep_every_area_the_python_match_reads_as_mi(
+    simulation_db: Path, tmp_path: Path, area: str
+) -> None:
+    """후보 SQL 의 MI 거름은 파이썬 맞춤(`match_key` — 앞뒤 공백 · 대소문자)보다 넓어야 한다 —
+    좁으면 대신 볼 리비전을 「없음」 으로 놓친다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    _add_upeh_revision(path, mi_area=area)
     session = checks.Session(simulation_path=path, equipment_path=path, dataset_id=None)
     session.simulation = duckdb.connect(str(path), read_only=True)
     try:
@@ -970,7 +1003,7 @@ def test_the_st_reference_skips_revisions_without_mi_rows(
     finally:
         session.close()
     assert isinstance(picked, checks.StReference)
-    assert (picked.order, picked.total) == (2, 3)
+    assert (picked.order, picked.total) == (2, 2)
 
 
 def _plant_route_wafers(path: Path) -> int:
@@ -2794,6 +2827,29 @@ def test_a_compressed_review_in_the_template_form_checks_clean() -> None:
     assert checks.check_transcript(uncoded) == [
         f"줄 {census + 1} — 8장 요약 줄인데 확인 코드(`#NN`)가 없다"
     ]
+
+
+@pytest.mark.parametrize("separator", [" · ", "; ", ";", ", "])
+def test_the_screen_drawer_line_checks_its_own_sums_in_a_transcript(separator: str) -> None:
+    """화면 확인 `space_drawer` 줄은 손으로 옮긴 압축본의 A 칸에 그대로 실린다 — 그 줄 안의
+    `서랍 M = 이 층 a + 층 미정 f` 와 묶음 설명 식 `이 층 a = 표 N + 묶음 넘침 e` 를
+    `--check-summary` 가 다시 셈한다(TODO 「다음 배포 — 화면 확인 항목」 의 기대 꼴). 칸 가름을 바꿔
+    쓰거나 천 단위 쉼표를 넣어도 맞는 줄은 통과하고 수 하나를 잘못 옮긴 줄은 걸린다."""
+    tail = " · 칩 7개 오름차순 위반 0 · 검색 됨(2/7대) · 빈 알림 있음 · Esc 지움"
+    plain = check_deploy_screens.summarize_drawer_counts(6, 160.0, 549, 389, 0, 0) + tail
+    bundled = check_deploy_screens.summarize_drawer_counts(2, 1340.0, 1549, 200, 12, 3) + tail
+    assert "이 층 1349대 = 표 1340대 + 묶음 넘침 9대" in bundled
+    for line, slip in (
+        (plain, ("이 층 160대", "이 층 150대")),
+        (bundled, ("서랍 1549대", "서랍 1,594대")),
+        (bundled, ("묶음 넘침 9대", "묶음 넘침 8대")),
+    ):
+        typed = f"A ok space_drawer {line.replace(' · ', separator)}"
+        assert checks.check_transcript([typed]) == [], separator
+        assert checks.check_transcript([typed.replace("1549", "1,549")]) == [], separator
+        assert checks.check_transcript([typed.replace(*slip)]) == [
+            "줄 1 — 줄 안 검산 식이 서지 않는다"
+        ], (separator, slip)
 
 
 def test_summary_lines_copied_with_keyboard_separators_still_check() -> None:
