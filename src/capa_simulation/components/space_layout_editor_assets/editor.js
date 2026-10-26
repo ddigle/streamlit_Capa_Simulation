@@ -311,6 +311,9 @@ export default function (component) {
     return text + (final ? closed : open)
   }
   // </josa>
+  // 조사만 — 괄호처럼 낱말과 조사 사이에 다른 글이 설 때(「샘플1 (14×8)이」 — 괄호 뒤 조사는 괄호 앞 낱말에
+  // 붙는다, 파이썬 `subject_particle` 꼴).
+  const josaOf = (word, kind) => withJosa(word, kind).slice(String(word).length)
 
   // ---------------------------------------------------------------- 모듈 묶음 바둑판(순수 함수)
   // 파이썬 `services/space_layout_edit` 의 `module_grid`·`natural_name_key`·`module_cells`·`tile_module_group`·
@@ -3122,7 +3125,8 @@ export default function (component) {
   function placeFromTray(lead, list, p, name, free) {
     const { pieces, cols, rows, cellW, cellH, footprint } = trayPlan(list)
     if (footprint.w > W() || footprint.h > H()) {
-      S.note = `${name || lead.group || lead.label} (${footprint.w}×${footprint.h}) 가 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
+      const who = name || lead.group || lead.label
+      S.note = `${who} (${footprint.w}×${footprint.h})${josaOf(who, '이')} 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
       updateStatus()
       return
     }

@@ -23,7 +23,7 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
 from widget_browser import BrowserTables
 
-from capa_simulation.components import space_layout_editor
+from capa_simulation.components import space_layout_editor, write_guard
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_floor_list import (
     BASE_KEY,
@@ -311,7 +311,7 @@ def test_changing_only_the_reason_does_not_ask(tmp_path: Path) -> None:
 
 
 def test_a_save_after_someone_else_saved_is_refused_and_the_draft_is_rebuilt(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     database = _database(tmp_path)
     app, tables = _start_editing(database)
@@ -330,11 +330,63 @@ def test_a_save_after_someone_else_saved_is_refused_and_the_draft_is_rebuilt(
     assert app.session_state[DRAFT_KEY] == {"C4 6F": "NOT_LINE"}
     assert app.session_state[BASE_KEY][0] == 1
 
-    # 다시 고치면 최신 위에 저장된다.
+    # 거부 표지 창(`write_guard.TRAILING_PRESS_SECONDS`)이 지난 뒤 다시 고치면 최신 위에 저장된다 —
+    # 창 안의 저장은 거부된 누름의 둘째 누름으로 본다(아래 빠른 두 번 누름 시험).
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     tables.edit(_editor_key(app), _position("C2", "2F"), "사용", False)
     tables.run()
     _press(app, tables, SAVE_BUTTON_KEY)
     assert _states(database) == {("C2", "2F"): "UNUSED", ("C4", "6F"): "NOT_LINE"}
+    clear_equipment_repository()
+
+
+_C1 = {("C1", floor): "NOT_LINE" for floor in ("1F", "2F", "3F", "4F", "5F", "6F")}
+
+
+def _refusals(app: AppTest) -> list[str]:
+    return [item.value for item in app.warning if "다른 사용자가 먼저 층 사용 설정을" in item.value]
+
+
+def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남이 C1 을 「생산라인 아님」 으로 저장한 뒤 옛 화면에서 C1 동 머리를 「사용 안 함」 으로
+    바꾸고 「끄고 저장」 을 빠르게 두 번 누른다(2026-10-26 E2E 5회차). 둘째 누름은 옛 화면의 위젯
+    값을 그대로 보낸다 — 동 머리 값(내 옛 변경)이 거부 회차가 올린 새 세대로 다시 얹히고, 거부
+    알림은 둘째 회차가 다시 그리며 사라져, 다음 저장이 남의 저장을 말없이 덮었다. 거부는 남고
+    초안은 최신 그대로다."""
+    # 둘째 회차가 거부 표지 창(`TRAILING_PRESS_SECONDS`) 안에 들게 — AppTest 회차는 브라우저보다
+    # 느리다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 600.0)
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    DuckDBEquipmentRepository(database).save_floor_states(_C1, expected_version=0, source="남")
+    app.segmented_control(key="space_floor_state_bulk_C1").set_value("UNUSED")
+    tables.run()
+    _ok(app)
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert any("호기 3대" in item.value for item in app.warning)
+    app.button(key=CONFIRM_BUTTON_KEY).click()
+    pressed = tables._states()
+
+    app._run(widget_state=pressed)
+    _ok(app)
+    assert len(_refusals(app)) == 1
+    app._run(widget_state=pressed)
+    _ok(app)
+
+    assert len(_refusals(app)) == 1, [item.value for item in app.warning]
+    assert app.session_state[DRAFT_KEY] == {f"C1 {floor}": "NOT_LINE" for _, floor in _C1}
+    assert app.session_state[BASE_KEY][0] == 1
+    assert any("바뀐 층 0개" in item.value for item in app.caption)
+    # 창 안의 저장도 옛 화면의 누름으로 보고 쓰지 않는다 — 거부를 다시 알린다.
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert len(_refusals(app)) == 1 and _version(database) == 1
+    # 창이 지나면 새 화면을 보고 누른 저장이다 — 바뀐 것이 없어 남의 저장이 그대로다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert any("바뀐 층이 없습니다" in item.value for item in app.info)
+    assert _states(database) == _C1 and _version(database) == 1
     clear_equipment_repository()
 
 

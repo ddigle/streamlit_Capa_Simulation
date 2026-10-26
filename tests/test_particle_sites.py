@@ -22,10 +22,11 @@
   글이 바뀌면 이 시험이 잡는다. 도우미가 읽지 못하는 끝(영문)은 `_READINGS` 의 읽기로 견준다.
 - **`str.format`·`%s` 틀** — f-string 이 아닌 글(문장으로 선 글·docstring 빼고)의 `{…}`·`%s` 바로
   뒤(괄호를 사이에 둔 꼴 포함) 고정 조사와 갈래 꼴.
-- **JS** — `src/**/*.js` 의 `${…}` 바로 뒤(괄호를 사이에 둔 꼴 포함) 고정 조사와 갈래 꼴. 괄호
-  앞 낱말이 고정 글인 꼴(「최신(r${n})이」)은 `${…}` 가 괄호 안이라 걸리지 않는다. 배치 편집기는
-  `editor.js` 의 `withJosa` 를 쓰고, 그 표가 파이썬과 같은 답을 내는지 node 로 대조한다
-  (node·bun 이 없으면 건너뛰고 CI 에서는 실패 — `test_space_module_group._node`).
+- **JS** — `src/**/*.js` 의 `${…}` 바로 뒤(괄호를 사이에 둔 꼴·괄호 앞을 띄운 꼴 포함) 고정
+  조사와 갈래 꼴. 괄호 앞 낱말이 고정 글인 꼴(「최신(r${n})이」)은 `${…}` 가 괄호 안이라 걸리지
+  않는다. 배치 편집기는 `editor.js` 의 `withJosa`(괄호 뒤 조사는 `josaOf`)를 쓰고, 그 표가
+  파이썬과 같은 답을 내는지 node 로 대조한다(node·bun 이 없으면 건너뛰고 CI 에서는 실패 —
+  `test_space_module_group._node`).
 """
 
 from __future__ import annotations
@@ -83,8 +84,8 @@ _BOUNDARY = r"(?=[\s.,·—:;)」』!?`]|$)"
 # 본다)를 뺀 것. 도우미가 건너뛰는 기호를 늘리면 그물도 따라 넓어진다.
 _CLOSER_CHARS = _SKIPPED_TAIL.replace(")", "")
 _CLOSERS = f"[{re.escape(_CLOSER_CHARS)}]*"
-# 값 뒤에 괄호를 사이에 둔 꼴(「{a}({b}) 가」) — 조사는 괄호 앞 값에 붙는다.
-_PAREN_GAP = rf"(?:\([^()]*\){_CLOSERS})?"
+# 값 뒤에 괄호를 사이에 둔 꼴(「{a}({b}) 가」·띄운 「${a} (${b}) 가」) — 조사는 괄호 앞 값에 붙는다.
+_PAREN_GAP = rf"(?:\s?\([^()]*\){_CLOSERS})?"
 # 끼운 값 바로 뒤 글의 머리 — 붙은 꼴, 한 칸 띄운 꼴(이 빼고), 손으로 박은 갈래 꼴.
 _FIXED_HEAD = re.compile(
     rf"^{_CLOSERS}(?:(?:{_PARTICLES})|\s(?:{_SPACED_PARTICLES})){_BOUNDARY}"
@@ -374,8 +375,11 @@ def test_the_guard_catches_every_fixed_form() -> None:
     assert not any(_TEMPLATE_SITE.search(text) for text in ["{list}\n이 화면을", "최신(r{n})이"])
     js_caught = ["`${id} 는 이미`", "`${w}이 되어`", "`'${x}'을 지웠`", "`${a}(${b})는`"]
     js_caught += ["`${a}(레이아웃표시 N)는 그리지`", "`${x}을(를)`"]
+    # 괄호 앞을 띄운 꼴도 괄호 앞 값의 조사다(2026-10-26 E2E 5회차 — 서랍 「샘플1 (14×8) 가」).
+    js_caught += ["`${name} (${w}×${h}) 가 편집 영역`"]
     assert all(_JS_SITE.search(text) for text in js_caught)
     js_passed = ["`${withJosa(id, '은')} 이미`", "`최신(r${n})이`", "`(${n}개)를`"]
+    js_passed += ["`${who} (${w}×${h})${josaOf(who, '이')} 편집`", "`최신 (${n}) 가`"]
     assert not any(_JS_SITE.search(text) for text in js_passed)
 
 
@@ -470,6 +474,29 @@ def test_the_editor_josa_matches_the_python_helper() -> None:
     cases = [[word, kind] for word in _JS_WORDS for kind in _PY_WITH]
     result: Any = _node(_JS_RUNNER % block.group("body"), {"cases": cases})
     assert list(result) == [_PY_WITH[kind](word) for word, kind in cases]
+
+
+_JOSA_OF = re.compile(r"^\s*const josaOf = .*$", re.M)
+_JOSA_OF_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+%s
+%s
+process.stdout.write(JSON.stringify(input.words.map((word) => josaOf(word, '이'))))
+"""
+
+
+def test_the_tray_note_picks_the_particle_after_the_size_by_the_name() -> None:
+    """서랍에서 편집 영역보다 큰 덩이를 놓으면 「샘플1 (14×8)이 편집 영역 …」 — 괄호 뒤 조사는
+    괄호 앞 이름의 끝소리로 고른다(2026-10-26 E2E 5회차 — 「) 가」 를 못박아 「샘플1 (14×8) 가」
+    였다). 칩을 여럿 고르면 이름이 「2개(2대)」 다. `josaOf` 는 `withJosa` 의 조사만이다."""
+    script = (space_layout_editor._ASSETS / "editor.js").read_text(encoding="utf-8")
+    block = _JOSA_BLOCK.search(script)
+    line = _JOSA_OF.search(script)
+    assert block and line, "editor.js 의 조사 구획·josaOf 를 못 찾았다"
+    assert "(${footprint.w}×${footprint.h})${josaOf(who, '이')} 편집 영역" in script
+    words = ["샘플1", "2개(2대)", "C2", "EQ-01", "MOD-1"]
+    result: Any = _node(_JOSA_OF_RUNNER % (block.group("body"), line.group(0)), {"words": words})
+    assert list(result) == [subject_particle(word) for word in words]
 
 
 # ---------------------------------------------------- 고친 자리 — 받침 있는·없는 이름 둘

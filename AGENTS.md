@@ -620,7 +620,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `string` 으로 고정한다(9장 「편집표와 내려받기」). 쓰기 단추는 그린 회차의 세대를 인자로 받아 옛 누름을 거른다.
   - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
     저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
-    칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 토글이 꺼진 채 그려지는 회차는 남은 초안을
+    칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 충돌은 거부 표지(`note_profile_conflict`)를 초안을
+    다시 세우기 **전에** 적는다 — 창 안의 저장은 쓰지 않고 초안을 최신으로 다시 세운 채 거부를 다시 알리고, 동 머리 콜백은
+    옛 화면의 동 머리 값(빠른 둘째 누름이 다시 실어 온 내 옛 변경)을 받지 않으며, 알림 칸은 담아 둔 알림이 없으면 그 거부를
+    다시 그린다(2026-10-26 E2E 5회차 — 「끄고 저장」 두 번에 알림이 사라지고 다음 저장이 남의 저장을 덮었다,
+    `tests/test_space_floor_state_page.py`). 토글이 꺼진 채 그려지는 회차는 남은 초안을
     지운다(층을 열면 토글 위젯 상태가 버려진다). `floor_state_draft_pending()` 은 세션만 읽는 Space 탭 점·떠나기
     확인·테마 전환 표지다(`page_tabs.page_unsaved_marks`·`leave_notice` — Space 가 지금 화면일 때만) — `app.py` 가
     페이지보다 먼저 부르므로 이 회차 편집표 위젯 상태의 칸 편집까지 (적지 않고) 접어 저장본과 견준다.
@@ -1993,8 +1997,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   안에서 함께 한다(`save_remembered`) — 겹친 둘째 회차는 그 뒤에야 저장소에 가 짝을 본다. 저장소에 가기 전에 첫 쓰기의 새
   값을 보고 거절하는 발행 확인 글 대조는 그 잠금을 거쳐 판정한다(`is_own_save_settled`). 거꾸로 남의
   저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off(충돌 회차가 초안·출발점을 최신으로 다시
-  세우는 자리라 표지가 없으면 둘째 누름이 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮는다). 쓰지 않고 끝나는 아주 빠른
+  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off·Space 층 사용(충돌 회차가 초안·출발점을
+  최신으로 다시 세우는 자리라 표지가 없으면 둘째 누름이 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을
+  최신 위에 얹는다). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
   글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
   설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
@@ -3719,7 +3724,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   둘 수 있고, 시험이 그 상수의 실제 글(서식 지정까지)로 견준다 — 끝이 영문이면 시험의 읽기 표(`_READINGS`)에 읽기를
   적는다. 괄호 뒤 조사는 괄호 앞 낱말에 붙는다 — 그 낱말이 고정 글이면(「최신(r6)이」) 그대로 두고, 끼운 값이면 그 값으로
   고른다(「{mark_id}({name}){subject_particle(mark_id)}」 — 괄호째 `with_*` 에 넘기면 도우미가 닫는 괄호를 건너뛰어 괄호 안
-  끝소리를 읽는다). 한 칸 띄운 「이」는 지시어(「{x} 이
+  끝소리를 읽는다). 배치 편집기 JS 는 조사만 내는 `josaOf` 로 같은 꼴을 짓는다(「${who} (${w}×${h})${josaOf(who, '이')}」 —
+  괄호 앞을 띄운 꼴도 시험이 본다, 2026-10-26 E2E 5회차 서랍 알림). 한 칸 띄운 「이」는 지시어(「{x} 이
   시나리오」)와 갈리지 않아 시험이 보지 않는다 — 리뷰 몫이다. 고르기 어려우면 고정 명사를 사이에 둔다(「「…」 공정은」·
   「{label} 값은」). 한 라벨에만 쓰는 고정 문구(값을 끼우지 않는 글)는 그 라벨에 맞춘 조사를 그대로 둔다.
 - **화면 사용 설명은 본문이 아니라 Guide 에 둔다.** 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 이고 화면이
@@ -4153,7 +4159,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
     대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
-    `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
   - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
@@ -4342,7 +4348,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
       마크다운 자리 인자에 `exc` 를 그대로 넘겨도 실패한다. 지나가는 것은 막는 함수 안·`raise`·로그·평문 자리(`st.code`·
       `st.text`·`st.json`·`html.escape`)·까닭 가르기(`"lock" in str(exc)`)와, 마크다운이 아닌 곳으로만 보내는 함수
       (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
-      `bootstrap_error_message`(다시 감싸기). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS` 만.
+      `bootstrap_error_message`(다시 감싸기)와, `literal_markdown`·`quoted` 안의 이미 막은 글을 짓는 함수(`ESCAPED_BUILDERS`
+      — 설비 시나리오 값 칸 글 `equipment_value_label` 등. 다시 막으면 `\` 가 글자로 보인다 — 2026-10-26 E2E 5회차 필요
+      단축 기준 캡션). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS`·`ESCAPED_BUILDERS` 만.
       **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
       그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글,
       세션 칸에 담았다 다음 회차에 그리는 알림 글(PKG PLAN 「가상 제품 등록」 완료 알림 — 담을 때 제품정보·Stack 을

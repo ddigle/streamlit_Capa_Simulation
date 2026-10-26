@@ -18,6 +18,9 @@
 - 막은 글을 다시 감싸지 않는다: `markdown_safe_tildes`·`literal_markdown`·`quoted` 안에
   `bootstrap_error_message` 를 넣지 않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의
   코드 칸 경로 물결표는 `\\~` 로 보인다), 뒤의 둘은 막은 `\\~` 의 `\\` 를 다시 막아 글자로 보인다.
+  이미 막은 글을 지어 돌려주는 함수(`ESCAPED_BUILDERS` — 이름을 `literal_markdown` 으로 막아 짓는
+  설비 시나리오 값 칸 글 등)도 같다 — `「」` 안에 그대로 끼우고 `literal_markdown`·`quoted` 로 다시
+  감싸지 않는다(2026-10-26 E2E 5회차 — 필요 단축 기준 캡션의 「가정\\~R5\\~X」).
 - 이름: UI 모듈 f-string 의 `「{식}」` 에서 식은 `quoted`·`literal_markdown`·`markdown_safe_tildes`
   (또는 숫자 서식·대문자 상수·앱이 지은 라벨 함수)여야 한다 — 보통은 `「{name}」` 대신
   `{quoted(name)}`.
@@ -84,6 +87,24 @@ APP_LABELS: dict[str, str] = {
     "confirm_label": "지워질 일정의 시나리오·호기 수만 세는 확인 칸 이름(equipment_data_workspace)",
 }
 
+# 이미 막은 글을 돌려주는 함수 — 사람이 지은 이름을 `literal_markdown`·`quoted`(또는 이 목록의 다른
+# 함수)로 막아 짓는다. 「」 안에 그대로 끼워도 되고, `literal_markdown`·`quoted` 로 다시 감싸면 막은
+# `\\~` 의 `\\` 가 다시 막혀 글자로 보인다(이 둘 안에 넣으면 `double_findings`).
+ESCAPED_BUILDERS: dict[str, str] = {
+    "equipment_value_label": (
+        "설비 시나리오 값 칸 글 「운영 일정 · r12」(equipment_scenario_status)"
+    ),
+    "equipment_field_label": (
+        "사이드바 설비 시나리오 값 칸 글 — 줄인 이름(equipment_scenario_status)"
+    ),
+    "_equipment_basis_text": (
+        "필요 단축 기준 캡션의 설비 쪽 — equipment_value_label 에 「공식 vN」·「가정」 꼬리"
+        "(space_shortening_view)"
+    ),
+}
+# 막은 글을 다시 막는 함수 — `markdown_safe_tildes` 는 막힌 `\\~` 를 다시 막지 않아 빠진다.
+REESCAPING_GUARDS = frozenset({"literal_markdown", "quoted"})
+
 # 예외 글을 마크다운이 아닌 곳으로만 보내는 함수 — 이 함수 안의 except 는 예외 글 그물을 비킨다.
 PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/capacity_gate.py", "density_error"): (
@@ -148,10 +169,6 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
     ("src/capa_simulation/equipment_scenario_activation.py", "_move_after_incompatible"): (
         "세션 알림 — 설비 마스터 표(JS) 잠금 글에도 간다. 알림 상자는 그리는 자리에서 글 통째로 "
         "literal_markdown"
-    ),
-    ("app_pages/space_status.py", "_session_place"): (
-        "Space 팝오버 설명 글 조각 — 이름은 equipment_value_label 이 이미 literal_markdown 으로 "
-        "막았다(그 함수 이름을 그물이 모른다). 그리는 자리(캡션)는 markdown_safe_tildes"
     ),
 }
 
@@ -279,11 +296,17 @@ class _Scanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        if _call_name(node.func) in GUARDS - {"bootstrap_error_message"} and any(
-            isinstance(inner, ast.Call) and _call_name(inner.func) == "bootstrap_error_message"
+        called = _call_name(node.func)
+        inner_calls = {
+            _call_name(inner.func)
             for argument in node.args
             for inner in ast.walk(argument)
-        ):
+            if isinstance(inner, ast.Call)
+        }
+        if (
+            called in GUARDS - {"bootstrap_error_message"}
+            and "bootstrap_error_message" in inner_calls
+        ) or (called in REESCAPING_GUARDS and inner_calls & set(ESCAPED_BUILDERS)):
             self.double_findings.append(self._finding(node))
         self.generic_visit(node)
 
@@ -329,7 +352,7 @@ def _quoted_value_is_guarded(value: ast.FormattedValue) -> bool:
         return True
     if isinstance(expr, ast.Call):
         name = _call_name(expr.func)
-        return name in GUARDS or name in APP_LABELS
+        return name in GUARDS or name in APP_LABELS or name in ESCAPED_BUILDERS
     return _is_constant_reference(expr)
 
 
@@ -370,8 +393,8 @@ def test_blocked_exception_text_is_not_blocked_again() -> None:
     findings = [str(item) for scanner in _scan() for item in scanner.double_findings]
 
     assert not findings, (
-        "bootstrap_error_message 가 돌려준 글을 다시 감쌌습니다 — 이미 막힌 글입니다:\n"
-        + "\n".join(findings)
+        "bootstrap_error_message·ESCAPED_BUILDERS 가 돌려준 글을 다시 감쌌습니다 — 이미 막힌 "
+        "글입니다:\n" + "\n".join(findings)
     )
 
 
@@ -395,6 +418,21 @@ def test_every_plain_text_builder_still_quotes_a_name() -> None:
     used = {(item.path, item.function) for scanner in _scan() for item in scanner.name_findings}
 
     assert not set(PLAIN_TEXT_BUILDERS) - used
+
+
+def test_every_escaped_builder_still_blocks_the_name_it_builds_with() -> None:
+    """`ESCAPED_BUILDERS` 가 낡지 않는다 — 함수가 사라졌거나 더는 이름을 막지 않으면(막는 함수·
+    목록의 다른 함수를 부르지 않으면) 목록에서 빼고 그 글을 그리는 자리에서 막는다."""
+    bodies: dict[str, ast.AST] = {}
+    for path in UI_MODULES:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.FunctionDef) and node.name in ESCAPED_BUILDERS:
+                bodies[node.name] = node
+    assert set(bodies) == set(ESCAPED_BUILDERS)
+    blocking = REESCAPING_GUARDS | set(ESCAPED_BUILDERS)
+    for name, body in bodies.items():
+        called = {_call_name(inner.func) for inner in ast.walk(body) if isinstance(inner, ast.Call)}
+        assert called & (blocking - {name}), name
 
 
 def test_every_app_label_function_is_still_quoted_somewhere() -> None:
@@ -477,3 +515,19 @@ st.error(f"못 했습니다: {bootstrap_error_message(exc)}")
 """)
 
     assert [item.line for item in scanner.double_findings] == [2, 3]
+
+
+def test_the_guard_catches_an_escaped_builder_blocked_again() -> None:
+    """이미 막은 글을 짓는 함수(`ESCAPED_BUILDERS`)는 「」 안에 그대로 끼워도 되고,
+    `literal_markdown`·`quoted` 로 다시 감싸면 잡는다 — 필요 단축 기준 캡션이 「가정\\~R5\\~X」 로
+    보였다(2026-10-26 E2E 5회차). 물결표만 막는 `markdown_safe_tildes` 는 막힌 물결표를 건드리지
+    않아 지나간다."""
+    scanner = _sample_scanner("""
+st.caption(f"설비 시나리오 「{equipment_value_label(session)}」 기준")
+st.caption(f"설비 시나리오 「{literal_markdown(_equipment_basis_text(session))}」 기준")
+st.caption(quoted(equipment_field_label(session)))
+st.caption(markdown_safe_tildes(f"{equipment_value_label(session)} 저장"))
+""")
+
+    assert [item.line for item in scanner.double_findings] == [3, 4]
+    assert scanner.name_findings == []

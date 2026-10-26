@@ -41,14 +41,17 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
-from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
+from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     forget_seen,
+    held_profile_conflict,
     is_own_save,
+    note_profile_conflict,
     own_save_marks,
+    profile_conflict_marks,
     remember_own_save,
     remember_seen,
     seen,
@@ -412,10 +415,23 @@ def _toggle_changed(database_path: str) -> None:
         _forget()
 
 
+def _refused_just_now() -> str | None:
+    """남의 저장에 거부된 층 사용 저장이 `TRAILING_PRESS_SECONDS` 안에 있었으면 그 거부 알림 글."""
+    return held_profile_conflict(profile_conflict_marks(), FLOOR_STATE_SAVE_NAME)
+
+
 def _bulk_changed(building: str, generation: int) -> None:
     """동 머리 콜백 — 그 동 6개 층을 한꺼번에. 받은 값이 None(같은 칸을 다시 눌러 풀림)이면 아무것도
-    바꾸지 않는다(다음 회차의 세션 적기가 원래 값으로 되세운다)."""
+    바꾸지 않는다(다음 회차의 세션 적기가 원래 값으로 되세운다).
+
+    남의 저장에 거부된 직후(`write_guard` 창 안)의 동 머리 값은 받지 않는다. 거부 회차가 초안을
+    최신으로 다시 세우고 동 머리를 최신 값으로 적었는데, 그 회차가 브라우저에 닿기 전에 누른 둘째
+    누름이 옛 화면의 동 머리 값(내 옛 변경)을 다시 실어 온다 — 세대는 거부 회차가 올린 새 세대라
+    그대로 받으면 최신 위에 옛 변경이 얹혀 다음 저장이 남의 저장을 말없이 덮었다(2026-10-26 E2E
+    5회차)."""
     if generation != _generation():
+        return
+    if _refused_just_now() is not None:
         return
     draft = _fold()
     value = st.session_state.get(f"{_BULK_PREFIX}{building}")
@@ -489,10 +505,21 @@ def _saved_message(draft: Mapping[FloorKey, str]) -> str:
 
 def _write(database_path: str, draft: Draft, base: Base) -> None:
     """저장소에 쓴다 — 성공이면 캐시를 비우고 flash·토글 끄기, 충돌이면 초안을 최신으로 다시
-    세운다."""
+    세운다.
+
+    충돌은 거부 표지(`write_guard.note_profile_conflict`)를 초안을 다시 세우기 **전에** 적는다. 그
+    창 안의 다음 저장은 거부된 누름의 둘째 누름이다 — 거부 회차가 다시 세운 출발점(최신 version)
+    으로는 옛 화면의 입력이 대조를 지나므로 쓰지 않고, 초안을 최신으로 다시 세운 채 그 거부를 다시
+    알린다."""
     repository = get_equipment_repository(database_path)
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
+    conflict_marks = profile_conflict_marks()
+    held = held_profile_conflict(conflict_marks, FLOOR_STATE_SAVE_NAME)
+    if held is not None:
+        _start(load_floor_states(database_path))
+        _notice("warning", held)
+        return
     try:
         stored = repository.save_floor_states(draft, expected_version=base[0], source=SOURCE)
     except ProfileVersionConflict as exc:
@@ -502,12 +529,15 @@ def _write(database_path: str, draft: Draft, base: Base) -> None:
             # 뒷정리(알림·토글 끄기)가 끊겼을 수 있어 여기서 다시 한다.
             _saved(draft)
             return
-        _start(load_floor_states(database_path))
-        _notice(
-            "warning",
+        message = (
             f"{bootstrap_error_message(exc)} 편집표를 최신 저장본으로 다시 세웠습니다 — 다시 고친 "
-            "뒤 저장하세요.",
+            "뒤 저장하세요."
         )
+        # dict 칸 쓰기라 끊기지 않는다 — 아래 세션 칸 쓰기가 둘째 누름의 회차에 끊겨도 표지는
+        # 남는다.
+        note_profile_conflict(conflict_marks, FLOOR_STATE_SAVE_NAME, message)
+        _start(load_floor_states(database_path))
+        _notice("warning", message)
         return
     except BOOTSTRAP_ERRORS as exc:
         _notice(
@@ -709,8 +739,16 @@ def _render_tables(
 
 
 def _render_notices() -> None:
-    """성공 flash 와 그 밖의 알림(충돌·검증 오류·바뀐 층 없음). 그린 뒤 지운다."""
-    render_flash(FLASH_KEY, NOTICE_KEY)
+    """성공 flash 와 그 밖의 알림(충돌·검증 오류·바뀐 층 없음). 그린 뒤 지운다.
+
+    담아 둔 알림이 없고 남의 저장에 거부된 지 `write_guard` 창 안이면 그 거부를 다시 그린다 — 거부
+    회차가 꺼내 그린 알림을 빠른 둘째 누름의 회차(쓰지 않고 끝난다)가 화면을 다시 그리며 지웠다
+    (2026-10-26 E2E 5회차)."""
+    queued = pending_flash(NOTICE_KEY) is not None
+    slot = render_flash(FLASH_KEY, NOTICE_KEY)
+    held = None if queued else _refused_just_now()
+    if held is not None:
+        slot.warning(markdown_safe_tildes(held), icon=":material/sync_problem:")
 
 
 def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
