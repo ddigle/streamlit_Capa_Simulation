@@ -33,6 +33,7 @@ from capa_simulation.components.equipment_data_workspace import (
     rebase_floor_canvas,
     stage_floor_canvas,
 )
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -221,15 +222,19 @@ def _marks_extent(
 
 
 def overlay_unit_words(outside: tuple[tuple[str, int], ...]) -> str:
-    """「가정 배치 「셋업 실무」 호기 2대 · 「배치안」 호기 1대」 — 캔버스 밖 가정 차이 호기."""
-    return " · ".join(f"가정 배치 「{name}」 호기 {count:,}대" for name, count in outside)
+    """「가정 배치 「셋업 실무」 호기 2대 · 「배치안」 호기 1대」 — 캔버스 밖 가정 차이 호기.
+    경고·캡션(마크다운)에 싣는다 — 설비 시나리오 이름(「10~12월 증설」)은 글자 그대로 보이게
+    막는다."""
+    return " · ".join(
+        f"가정 배치 「{literal_markdown(name)}」 호기 {count:,}대" for name, count in outside
+    )
 
 
 def overlay_mark_words(names: tuple[str, ...]) -> str:
     """「(가정 배치 「셋업 실무」 의 요소 포함 — 그 설비 시나리오에서 옮기세요)」 — 없으면 빈 글."""
     if not names:
         return ""
-    shown = ", ".join(f"「{name}」" for name in names)
+    shown = ", ".join(f"「{literal_markdown(name)}」" for name in names)
     return f" 가정 배치 {shown} 의 요소도 밖입니다 — 그 설비 시나리오의 Space 에서 옮기세요."
 
 
@@ -460,8 +465,9 @@ def _floor_layout_dialog(
 
 
 def _unit_names(names: list[str], limit: int = 5) -> str:
-    """`DEMO-EQ01, DEMO-EQ02 외 3대(5대)` — 경고 한 줄에 실을 이탈 호기."""
-    shown = ", ".join(names[:limit])
+    """`DEMO-EQ01, DEMO-EQ02 외 3대(5대)` — 경고 한 줄(마크다운)에 실을 이탈 호기. 설비명의 물결표는
+    막는다(「NEW~01~」 이 지움선이 되지 않게)."""
+    shown = markdown_safe_tildes(", ".join(names[:limit]))
     more = f" 외 {len(names) - limit}대" if len(names) > limit else ""
     return f"{shown}{more}({len(names)}대)"
 

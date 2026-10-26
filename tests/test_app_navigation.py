@@ -567,12 +567,16 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
 def test_every_run_paints_the_accent_button_text_for_its_theme(
     _app: AppTest, mode: str, colour: str
 ) -> None:
-    """강조색으로 칠한 단추(primary·primary 폼 제출)의 글자색 스타일을 매 회차 그 회차 테마로
-    보낸다 — 어두운 테마의 밝은 강조색 위 Streamlit 흰 글자는 1.86:1 이었다(표준 목표 「가용설비
-    붙여넣기」). 밝은 테마는 흰 글자 그대로다."""
-    from capa_simulation.components.accent_button_style import ACCENT_BUTTON_SELECTORS
+    """강조색으로 칠한 단추(primary·primary 폼 제출)·multiselect 고른 칩의 글자색 스타일을 매 회차
+    그 회차 테마로 보낸다 — 어두운 테마의 밝은 강조색 위 Streamlit 흰 글자는 1.86:1 이었다(표준 목표
+    「가용설비 붙여넣기」·표준 대비 재공 현황 조회 조건 칩). 밝은 테마는 흰 글자 그대로다."""
+    from capa_simulation.components.accent_button_style import (
+        ACCENT_BUTTON_SELECTORS,
+        ACCENT_CHIP_SELECTORS,
+    )
 
-    rule = f"{', '.join(ACCENT_BUTTON_SELECTORS)} {{ color: {colour}; }}"
+    selectors = (*ACCENT_BUTTON_SELECTORS, *ACCENT_CHIP_SELECTORS)
+    rule = f"{', '.join(selectors)} {{ color: {colour}; }}"
     _app.query_params["theme"] = mode
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]

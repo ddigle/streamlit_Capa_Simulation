@@ -638,6 +638,8 @@ class LayoutPublishPreview:
     - `units`·`marks`·`labels` — 발행할 리비전의 실효 수(지금 공식으로 정규화한 뒤 — 호기는 설비
       단위). `newest_units`·`newest_marks`·`newest_labels` — 그 시나리오 최신의 실효 수(발행할
       리비전이 최신이면 같은 값). 막힘 글은 실제로 공식과 다른 쪽만 「실효」 로 적는다.
+    - `orphan_units`·`newest_orphan_units` — 저장된 호기 차이 행 가운데 공통 대장에서 지운 호기의 행
+      수(정규화가 버린다 — 설계 5-1). 정리·막힘 글이 그 행을 「공식과 같아진」 행으로 세지 않는다.
     """
 
     action: Literal["publish", "clean", "blocked"] = "publish"
@@ -652,6 +654,8 @@ class LayoutPublishPreview:
     newest_units: int = 0
     newest_marks: int = 0
     newest_labels: int = 0
+    orphan_units: int = 0
+    newest_orphan_units: int = 0
 
     @property
     def stored_rows(self) -> int:
@@ -672,6 +676,8 @@ class LayoutPublishPreview:
             effective=(self.units, self.marks, self.labels),
             newest_effective=(self.newest_units, self.newest_marks, self.newest_labels),
             official=official,
+            orphan_rows=self.orphan_units,
+            newest_orphan_rows=self.orphan_units if self.is_newest else self.newest_orphan_units,
         )
 
 
@@ -3524,6 +3530,12 @@ def _layout_publish_preview(
     if not selected and not newest:
         return stored
     official = _official_layout(snapshot())
+    # 공통에서 지운 호기의 행은 정규화가 버린다 — 「공식과 같아진」 행과 따로 센다(정리·막힘 글).
+    stored = replace(
+        stored,
+        orphan_units=_orphan_unit_rows(selected, official),
+        newest_orphan_units=_orphan_unit_rows(newest, official),
+    )
     floors = _stored_floors(connection, {*selected.floors, *newest.floors})
     normalized = normalize_layout_overlay(selected, official, floors)
     if is_newest and not normalized:
@@ -3540,6 +3552,11 @@ def _layout_publish_preview(
         newest_marks=latest.mark_count,
         newest_labels=latest.label_count,
     )
+
+
+def _orphan_unit_rows(overlay: LayoutOverlay, official: LayoutBase) -> int:
+    """저장된 호기 차이 행 가운데 지금 공통 대장에 없는 호기 키의 행 수(정규화 1 — 버리는 행)."""
+    return sum(1 for key, _, _ in overlay.units if key not in official.places)
 
 
 def _layout_publishable(

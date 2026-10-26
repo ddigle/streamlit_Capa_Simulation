@@ -1074,7 +1074,8 @@ class PublishBlock:
     """공식 발행 막힘 글의 재료(설계 6-5) — 발행할 리비전(`revision_no`)과 그 시나리오 최신
     (`newest_revision_no`)의 저장된 차이 행 수(원시)와 지금 공식으로 정규화한 실효 수(호기는 설비
     단위). `official` 은 그 시나리오가 지금 공식 설비 시나리오인가다(되돌리면 차이를 버린다 —
-    I2)."""
+    I2). `orphan_rows`·`newest_orphan_rows` 는 저장된 행 가운데 공통 대장에서 지운 호기의 행 수다 —
+    그 행은 「공식과 같아진」 행이 아니라 버린 행이다(설계 5-1)."""
 
     scenario_name: str
     revision_no: int
@@ -1084,10 +1085,37 @@ class PublishBlock:
     effective: tuple[int, int, int] = (0, 0, 0)
     newest_effective: tuple[int, int, int] = (0, 0, 0)
     official: bool = False
+    orphan_rows: int = 0
+    newest_orphan_rows: int = 0
 
     @property
     def is_newest(self) -> bool:
         return self.revision_no == self.newest_revision_no
+
+
+def cleaned_layout_words(rows: int, orphans: int, *, counts: bool = True) -> str:
+    """정리(비울) 저장된 배치 차이 한 마디 — 지금 공식과 같아진 행과 공통 대장에서 지운 호기의 행을
+    가른다(지운 호기의 차이는 같아진 것이 아니라 버린 것이다 — 설계 5-1). `rows` 는 저장된 행 모두,
+    `orphans` 는 그 가운데 지운 호기의 행이다. 「공식과 같아진 배치 차이 2행과 지운 호기의 배치 차이
+    1행」 — `counts` 가 거짓이면 수 없이 「공식과 같아진 배치 차이와 지운 호기의 배치 차이」."""
+    same = max(rows - orphans, 0)
+    parts = []
+    if same or not orphans:
+        parts.append("공식과 같아진 배치 차이" + (f" {same:,}행" if counts else ""))
+    if orphans:
+        parts.append("지운 호기의 배치 차이" + (f" {orphans:,}행" if counts else ""))
+    # 「…행과」·「…차이와」 — 앞말 끝소리가 정해져 있다.
+    return ("과 " if counts else "와 ").join(parts)
+
+
+def settled_layout_reason(rows: int, orphans: int, *, ending: Literal["습니다", "지만"]) -> str:
+    """저장된 배치 차이가 공식과 다르지 않은 까닭 — 「지금 공식과 같아졌습니다」·「공통 대장에서
+    지운 호기의 것입니다」·「지금 공식과 같아졌거나 공통 대장에서 지운 호기의 것입니다」(`ending`
+    이 「지만」 이면 「…같아졌지만」·「…것이지만」)."""
+    if not orphans:
+        return f"지금 공식과 같아졌{ending}"
+    head = "지금 공식과 같아졌거나 " if rows > orphans else ""
+    return f"{head}공통 대장에서 지운 호기의 {'것입니다' if ending == '습니다' else '것이지만'}"
 
 
 def layout_publish_blocked_words(block: PublishBlock) -> str:
@@ -1127,12 +1155,19 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
             "지우기」(최신만 비웁니다)로는 풀리지 않습니다 — " + restore + finish + keep
         )
     if block.stored_rows:
+        # 지운 호기의 행은 「공식과 같아진」 행이 아니다 — 따로 말한다(E2E r3).
+        reason = settled_layout_reason(block.stored_rows, block.orphan_rows, ending="지만")
+        dropped = (
+            cleaned_layout_words(block.stored_rows, block.orphan_rows, counts=False)
+            if block.orphan_rows
+            else "공식과 같아진 차이"
+        )
         return (
-            f"「{name}」 {title}에 저장된 배치 차이 {block.stored_rows:,}행은 지금 공식과 "
-            f"같아졌지만, 최신({latest})이 아닌 리비전은 정리해 발행하지 않습니다(정리 발행은 최신 "
+            f"「{name}」 {title}에 저장된 배치 차이 {block.stored_rows:,}행은 {reason}, "
+            f"최신({latest})이 아닌 리비전은 정리해 발행하지 않습니다(정리 발행은 최신 "
             "리비전만 — 공식 설비 시나리오의 리비전에는 배치 차이 행이 남지 않아야 합니다). "
             + restore
-            + " 그 최신을 발행하세요(되돌리기는 공식과 같아진 차이를 빼고 씁니다)."
+            + f" 그 최신을 발행하세요(되돌리기는 {with_object_particle(dropped)} 빼고 씁니다)."
         )
     newest = layout_counts_words(*block.newest_effective)
     if newest:
@@ -1142,12 +1177,22 @@ def layout_publish_blocked_words(block: PublishBlock) -> str:
             f"(공식 설비 시나리오의 최신에는 배치 차이가 없어야 합니다) — {later} 「배치 차이 모두 "
             "지우기」 로 최신을 공식 배치로 돌린 뒤 발행하세요." + keep
         )
+    orphans = block.newest_orphan_rows
+    if not orphans:
+        settled, later_cleaned = "지금 공식과 같음", "공식과 같아진 차이"
+    else:
+        settled = (
+            "지금 공식과 같거나 공통 대장에서 지운 호기의 것"
+            if block.newest_rows > orphans
+            else "공통 대장에서 지운 호기의 것"
+        )
+        later_cleaned = cleaned_layout_words(block.newest_rows, orphans, counts=False)
     return (
         f"「{name}」 {title}에는 배치 차이가 없지만 최신 {latest}에 저장된 배치 차이 "
-        f"{block.newest_rows:,}행(지금 공식과 같음)이 남아 있어 공식으로 발행하지 않습니다(공식 "
+        f"{block.newest_rows:,}행({settled})이 남아 있어 공식으로 발행하지 않습니다(공식 "
         "설비 시나리오의 최신에는 배치 차이 행이 없어야 합니다). 「배치 차이 모두 지우기」 로 "
-        f"최신을 비운 뒤 발행하거나, 최신 {with_object_particle(latest)} 발행하세요(공식과 같아진 "
-        "차이는 그때 정리됩니다)."
+        f"최신을 비운 뒤 발행하거나, 최신 {with_object_particle(latest)} 발행하세요"
+        f"({with_topic_particle(later_cleaned)} 그때 정리됩니다)."
     )
 
 

@@ -567,10 +567,11 @@ with notices:
     render_legacy_trace_warning(equipment_session)
     if not using_sample_equipment:
         for line, kind in space_layout_notices(equipment_session, floor_differences):
+            # 줄은 설비 시나리오 이름·Main 설비명을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
             if kind == "info":
-                st.info(line, icon=":material/compare:")
+                st.info(markdown_safe_tildes(line), icon=":material/compare:")
             else:
-                st.caption(f":material/layers: {line}")
+                st.caption(f":material/layers: {markdown_safe_tildes(line)}")
     unscheduled_line = unscheduled_notice(
         unscheduled_count, official=equipment_session.is_official_pair
     )
@@ -892,6 +893,13 @@ def _scenario_place() -> str:
     return f"「{name}」" if name else "이 설비 시나리오"
 
 
+def _queue_space_flash(message: str) -> None:
+    """Space 알림 칸(`SPACE_FLASH_KEY`)에 성공 글을 담는다. 그 글은 `st.success` 로 그려지는데
+    설비 시나리오 이름(「10~12월 증설」)을 싣는다 — 물결표를 `\\~` 로 막아 담는다(한 글에 이름이 두
+    번 나오면 물결표 하나짜리 이름도 지움선 짝이 된다)."""
+    queue_flash(SPACE_FLASH_KEY, markdown_safe_tildes(message))
+
+
 def _official_target(session: EquipmentSession) -> tuple[str, str | None]:
     """「공식 설비 시나리오로 바꾸기」 가 옮겨 갈 (시나리오, 일정 리비전) — 최신 공식 발행, 없으면
     공식으로 볼 시나리오의 최신."""
@@ -929,7 +937,7 @@ def _switch_scenario(
     if failure is not None:
         st.session_state[SWITCH_ERROR_KEY] = failure
         return
-    queue_flash(SPACE_FLASH_KEY, done)
+    _queue_space_flash(done)
 
 
 def _render_switch_popover(
@@ -942,7 +950,7 @@ def _render_switch_popover(
 ) -> None:
     """설비 시나리오를 옮기는 팝오버 하나 — 미저장 편집이면 「변경을 버리고 불러오기」 체크 뒤."""
     with st.popover(label, icon=":material/swap_horiz:"):
-        st.caption(explanation)
+        st.caption(markdown_safe_tildes(explanation))
         discard = True
         if has_unsaved_equipment_edits():
             discard = st.checkbox("변경을 버리고 불러오기", key=f"{key}_discard")
@@ -975,7 +983,9 @@ def _render_edit_lock_line() -> None:
     「배치 변경만 버리기」 는 저장 안 한 배치 상자에 선다(그 변경이 있을 때만)."""
     if not edit_mode.layout_editable and edit_mode.lock_reason:
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.caption(f":material/lock: {edit_mode.lock_reason}", width="content")
+            st.caption(
+                f":material/lock: {markdown_safe_tildes(edit_mode.lock_reason)}", width="content"
+            )
             if edit_mode.lock_action == "latest":
                 latest = equipment_session.latest_revision_no
                 _render_switch_popover(
@@ -992,7 +1002,7 @@ def _render_edit_lock_line() -> None:
                     ),
                 )
     elif edit_mode.notice:
-        st.caption(f":material/fast_forward: {edit_mode.notice}")
+        st.caption(f":material/fast_forward: {markdown_safe_tildes(edit_mode.notice)}")
 
 
 def _render_unsaved_layout_panel(frames: Frames | None) -> None:
@@ -1118,14 +1128,13 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             + (f" {SAMPLE_SAVE_BLOCKED}" if fab_save_blocked else "")
         )
         if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
-            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다.
+            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다. 빨리
+            # 감기 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 바로 아래 줄
+            # (`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
             st.caption(
-                f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 — "
-                "공식 배치는 바뀌지 않습니다."
-                + (
-                    f" {edit_mode.notice}"
-                    if edit_mode.fast_forward_from is not None and edit_mode.notice
-                    else ""
+                markdown_safe_tildes(
+                    f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
+                    "— 공식 배치는 바뀌지 않습니다."
                 )
             )
         if layout_locked:
@@ -1254,20 +1263,22 @@ def _render_layout_warnings(
     except ValueError as exc:
         # 저장·버리기는 둔다(저장하면 같은 까닭으로 막히고, 버리면 풀린다).
         st.caption(
-            ":material/error: 가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 "
-            f"편집이 있어 겹침 경고를 계산하지 못했습니다: {exc}"
+            markdown_safe_tildes(
+                ":material/error: 가용설비 현황 설비 마스터 탭에 검증을 통과하지 못한 저장 안 한 "
+                f"편집이 있어 겹침 경고를 계산하지 못했습니다: {exc}"
+            )
         )
         return
+    # 경고는 설비명을 싣는다(「NEW~01~」) — 물결표를 막는다.
     for warning in layout_warnings(status, {**_stored_marks_for(status, set(marks)), **marks}):
-        st.caption(f":material/warning: {warning}")
+        st.caption(f":material/warning: {markdown_safe_tildes(warning)}")
 
 
 def _discard_layout_only() -> None:
     """「배치 변경만 버리기」 콜백 — 배치 일곱 칸·층 대기분·찍힌 역할만 버린다(설계 8-6)."""
     st.session_state.pop(SAVE_ERROR_KEY, None)
     discard_layout_edits()
-    queue_flash(
-        SPACE_FLASH_KEY,
+    _queue_space_flash(
         "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집과 이름 바꿈은 남아 있습니다.",
     )
 
@@ -1314,7 +1325,7 @@ def _save_space_layout(
         )
         return
     st.session_state[SAVE_NOTE_NONCE_KEY] = int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0)) + 1
-    queue_flash(SPACE_FLASH_KEY, message)
+    _queue_space_flash(message)
 
 
 def _stored_marks_for(
@@ -1387,7 +1398,7 @@ def _render_layout_editor(
     if not edit_mode.new_units:
         options = {**options, "disabled": new_unit_reason or "새 호기를 넣지 않습니다."}
         if new_unit_reason:
-            st.caption(f":material/lock_clock: {new_unit_reason}")
+            st.caption(f":material/lock_clock: {markdown_safe_tildes(new_unit_reason)}")
     if layer_requested:
         # 필요 단축 보기는 편집 중 쉰다(결정 D7) — 편집기는 공정구분 기본 색이고 배지·흐림·고정 줄이
         # 없다. 층 상세의 쉬는 까닭 한 줄은 여기만 적는다(본문 조작 줄은 FAB 편집만).
@@ -1559,8 +1570,7 @@ def _render_layout_editor(
         if equipment_session.layout_role == "overlay"
         else ""
     )
-    queue_flash(
-        SPACE_FLASH_KEY,
+    _queue_space_flash(
         f"{building} {floor} 배치를 편집본에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
         + overlay_note
         + renamed
@@ -1643,8 +1653,7 @@ def _render_fab_editor(
         base=base,
     )
     doubled = duplicate_block_links(next_marks)
-    queue_flash(
-        SPACE_FLASH_KEY,
+    _queue_space_flash(
         "S.PKG FAB 전체 배치를 이 세션에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
         + (f" 같은 층을 가리키는 블록이 있습니다: {', '.join(doubled)}." if doubled else ""),
     )
@@ -2134,7 +2143,11 @@ else:
                         value=False,
                         key=LOCKED_EDIT_TOGGLE_KEY,
                         disabled=True,
-                        help=edit_mode.lock_reason,
+                        help=(
+                            markdown_safe_tildes(edit_mode.lock_reason)
+                            if edit_mode.lock_reason
+                            else None
+                        ),
                     )
             st.space("stretch")
             # 보기는 기준일의 색·테·덧표시별 대수(미확인은 오늘 기준 설비 수)다. 편집 중에는

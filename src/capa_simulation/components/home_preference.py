@@ -35,7 +35,16 @@ from capa_simulation.components.profile_caption import (
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
-from capa_simulation.components.write_guard import is_own_profile_save, profile_save_marks
+from capa_simulation.components.write_guard import (
+    held_notice,
+    held_profile_conflict,
+    is_own_profile_save,
+    note_notice,
+    note_profile_conflict,
+    notice_marks,
+    profile_conflict_marks,
+    profile_save_marks,
+)
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
     ADVANCE_SHIPMENT_TOGGLE_KEY as ADVANCE_SHIPMENT_TOGGLE_KEY,
@@ -159,6 +168,8 @@ THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
 THRESHOLD_FLASH_KEY = "home_threshold_flash"
 # 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
+# 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
+KEY_PROCESS_FLASH_KEY = "home_key_process_flash"
 THRESHOLD_SAVED_MESSAGE = "확보율 판정 기준을 공용 설정으로 저장했습니다."
 # 판정 기준 입력이 빠진 자리(HOME 공정 필터 팝업 머리·Static Capa)에 남기는 한 줄. 두 화면이 같은
 # 글자를 쓴다.
@@ -890,10 +901,17 @@ def render_threshold_editor(
         expected_version = (
             submitted_base if isinstance(submitted_base, int) else threshold_profile.version
         )
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME)
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
+            # 다시 알린다(write_guard).
+            notice.error(held)
+            return
         try:
             saved = _save_thresholds(
                 database_path,
@@ -908,17 +926,21 @@ def render_threshold_editor(
                 clear_outside=clear_outside,
             )
         except BOOTSTRAP_ERRORS as exc:
+            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
+            message = str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc)
+            own = isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
+                THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks
+            )
+            if isinstance(exc, ProfileVersionConflict) and not own:
+                note_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME, message)
             # 충돌이면 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신
             # 저장본을 그리게 캐시를 비운다.
             clear_global_securement_threshold_cache()
-            if isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
-                THRESHOLD_SAVE_NAME, exc.expected, exc.stored
-            ):
+            if own:
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
                 st.rerun(scope="app")
-            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
-            notice.error(str(exc) if isinstance(exc, ValueError) else bootstrap_error_message(exc))
+            notice.error(message)
         else:
             save_marks[THRESHOLD_SAVE_NAME] = (expected_version, saved.version)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
@@ -1602,7 +1624,7 @@ def _render_key_process_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
-                render_flash("home_key_process_flash")
+                _render_key_process_flash()
             selected = st.multiselect(
                 "공정",
                 options=[*process_options, *absent],
@@ -1646,10 +1668,26 @@ def _render_key_process_editor(
         if not is_new and st.session_state.get(KEY_PROCESS_PRESET_KEY) == target:
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(
-            "home_key_process_flash",
+            KEY_PROCESS_FLASH_KEY,
             f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
+
+
+def _render_key_process_flash() -> None:
+    """프리셋 카드의 저장 결과 알림. 담아 둔 알림이 없어도 `기본으로`·`삭제` 를 방금 했으면 다시
+    그린다.
+
+    두 단추를 빠르게 두 번 누르면(0.15초) 둘째 누름은 옛 화면의 단추에 닿는데, 그 회차에는 고칠
+    프리셋이 바뀌어 단추가 잠겨 있다 — Streamlit 이 잠긴 단추의 누름을 버려 그 회차는 아무것도 하지
+    않고, 앞 회차가 꺼내 그린 알림만 지웠다(2026-10-26 E2E). 그 꼬리 회차에도 같은 알림을 그린다
+    (`write_guard.held_notice`).
+    """
+    if render_flash(KEY_PROCESS_FLASH_KEY):
+        return
+    held = held_notice(KEY_PROCESS_FLASH_KEY)
+    if held is not None:
+        st.success(held)
 
 
 def _render_key_process_preset_actions(
@@ -1684,6 +1722,8 @@ def _render_key_process_preset_actions(
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
         message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    marks = notice_marks()
     try:
         get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집"
@@ -1694,8 +1734,9 @@ def _render_key_process_preset_actions(
     except ValueError as exc:
         st.error(str(exc))
         return
+    note_notice(marks, KEY_PROCESS_FLASH_KEY, message)
     clear_global_key_process_cache()
-    queue_flash("home_key_process_flash", message)
+    queue_flash(KEY_PROCESS_FLASH_KEY, message)
     st.rerun(scope="app")
 
 
@@ -1801,10 +1842,17 @@ def _render_execution_editor(
         expected_version = (
             submitted_base if isinstance(submitted_base, int) else execution_profile.version
         )
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME)
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
+            # 다시 알린다(write_guard).
+            notice.error(held)
+            return
         try:
             saved = _save_execution_capacity(
                 database_path,
@@ -1813,11 +1861,14 @@ def _render_execution_editor(
                 expected_version=expected_version,
             )
         except ProfileVersionConflict as exc:
+            own = is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks)
+            if not own:
+                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, str(exc))
             # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
             # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
             clear_global_execution_capacity_cache()
             st.session_state.pop(EXECUTION_BASE_VERSION_KEY, None)
-            if is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored):
+            if own:
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
                 st.rerun(scope="app")
