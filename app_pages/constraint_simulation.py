@@ -124,6 +124,7 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintConditions,
     ConstraintResult,
     constraint_month_inputs,
+    new_units_usable_from,
     simulate_constraint,
 )
 from capa_simulation.services.korean_particle import topic_particle
@@ -174,8 +175,8 @@ OWNED_HELP = (
 NEW_UNITS_HELP = (
     "기여 시작(Qual 다음 날)이 기준일 이후인 신규 호기(공정 Capa 상세 ③ 과 같은 날짜)는 셋업 때 "
     "제약 제품으로 Qual 한다고 보고, 들어오는 그 달 제약 몫 증가분까지 개조 없이 씁니다. 그보다 "
-    "많은 신규와 기간 전에 들어온 신규는 기존 제품에 쓰여 그 뒤로는 일반 설비와 같습니다(제약에 "
-    "쓰려면 개조)."
+    "많은 신규와 기간 전에 들어온 신규(기여 시작이 제약 기간 첫 달 W/D 첫날보다 앞 — 그 앞 달에 "
+    "며칠만 붙은 호기도)는 기존 제품에 쓰여 그 뒤로는 일반 설비와 같습니다(제약에 쓰려면 개조)."
 )
 
 
@@ -579,6 +580,7 @@ try:
         ),
     )
     # 신규 몫 — 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른다. 켠 회차에만.
+    # 제약 기간 첫 달 W/D 첫날 전에 기여를 시작한 신규는 몫에서 뺀다(기간 전 신규 — 사용자 답 1-3).
     new_shares: NewUnitAvailability | None = None
     if new_unit_since is not None:
         new_shares = new_unit_availability(
@@ -590,6 +592,7 @@ try:
                 cutoff,
             ),
             since=new_unit_since,
+            usable_from=new_units_usable_from(period.start, int(readiness.cutoff_days)),
         )
 except BOOTSTRAP_ERRORS as exc:
     render_header(
@@ -619,14 +622,20 @@ if process not in plan.processes:
 
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
-    """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름."""
+    """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름, 그중 제약
+    기간 전에 기여를 시작해 일반 설비로 보는 호기 수."""
     if not shares.units:
         return "기준일 이후 기여를 시작하는 신규 설비가 없습니다."
     names = ", ".join(literal_markdown(name) for name in shares.units[:4])
     more = f" 외 {len(shares.units) - 4}대" if len(shares.units) > 4 else ""
+    early = (
+        f" — 그중 제약 기간 전에 기여를 시작한 {len(shares.early)}대는 일반 설비(개조)"
+        if shares.early
+        else ""
+    )
     return (
         f"기준일 이후 기여 시작 신규 설비 {len(shares.units)}대(조회기간에 가용 "
-        f"{shares.in_axis}대) · {names}{more}"
+        f"{shares.in_axis}대) · {names}{more}{early}"
     )
 
 

@@ -35,9 +35,12 @@ Streamlit·세션·캐시·DB 를 보지 않는다. pandas 는 어댑터(`constr
 - **신규 설비는 개조 없이** `new_unit_since`(기준일) — 기준일 이후 기여를 시작하는 신규 호기는 셋업
   때 제약 제품으로 Qual 할 수 있어 **들어오는 그 달에만** 개조 없이 제약에 붙인다. 그 달 새로 붙는
   정수 대수(`ConstraintMonthInput.new_arrivals`)는 신규 몫 누적의 내림 차이 `floor(A_new(m)) −
-  floor(A_new(앞 달))` 이다(`new_unit_arrivals` — 반 달만 붙는 신규는 다음 달 몫으로 넘어간다). 그
-  달 증가분보다 많은 신규와 기간 전에 들어온 신규는 기존 제품 몫이 되어 그 뒤로 일반 설비와
-  같다(제약에 쓰려면 개조).
+  floor(A_new(앞 달))` 이다(`new_unit_arrivals` — 기간 안에서 반 달만 붙는 신규는 다음 달 몫으로
+  넘어간다). 그 달 증가분보다 많은 신규와 기간 전에 들어온 신규는 기존 제품 몫이 되어 그 뒤로 일반
+  설비와 같다(제약에 쓰려면 개조, 사용자 답 1-2·1-3). 「기간 전」 은 기여 시작이 제약 기간 첫 달 W/D
+  첫날(`new_units_usable_from`)보다 앞인 호기다 — 그 앞 달 W/D 구간 가운데 들어와 내림 차이로는
+  기간 첫 달 대수가 되는 호기도 그 앞 달에 기존 제품에 쓰였으므로 A_new 에 넣지 않는다(어댑터
+  앞에서 거른다 — `process_equipment_timeline.new_unit_availability(usable_from=)`).
 
 제약 몫이 늘 때(가정 2 의 늘어난 대수 `growth = pool − pool(앞 달)`) ① 보유(아직 쓰지 않은 만큼) →
 ② 그 달 새로 붙은 신규 → ③ 개조 차례로 채우고 **③ 만 개조 창을 낸다**(`increment`). 가정 3(줄이지
@@ -93,6 +96,7 @@ __all__ = [
     "constraint_month_inputs",
     "modification_window",
     "new_unit_arrivals",
+    "new_units_usable_from",
     "required_units",
     "secure",
     "simulate_constraint",
@@ -429,8 +433,10 @@ def new_unit_arrivals(shares: Sequence[float], *, before: float = 0.0) -> tuple[
 
     `shares` 는 보이는 달 차례의 A_new(m), `before` 는 첫 달 바로 앞 달의 값이다(그 달보다 먼저
     들어온 신규를 첫 달 몫으로 세지 않게). 누적을 내림해 빼므로 반 달만 붙는 신규(0.5)는 다음 달
-    몫이고, 0.5 둘이 한 달에 붙으면 그 달 1대다. 신규 몫이 줄었다가(정지·반출) 다시 느는 달은 다시
-    붙은 몫만 센다.
+    몫이고, 0.5 둘이 한 달에 붙으면 그 달 1대다. 신규 몫이 줄었다가(정지·반출) 뒤 달에 다시 느는
+    달은 다시 붙은 몫만 센다. 호기를 따라가지 않는 합의 차이라 **같은 달**에 한 신규가 나가고 다른
+    신규가 들어오면 서로 지워 그 달 새로 붙는 대수가 0 이 된다(개조를 더 내는 쪽 — AGENTS 6장 「대수
+    모델」).
     """
     previous = _whole_units(before)
     arrivals: list[int] = []
@@ -439,6 +445,16 @@ def new_unit_arrivals(shares: Sequence[float], *, before: float = 0.0) -> tuple[
         arrivals.append(max(0, current - previous))
         previous = current
     return tuple(arrivals)
+
+
+def new_units_usable_from(period_start: int, cutoff_days: int) -> date:
+    """「신규 설비는 개조 없이」 로 쓸 수 있는 신규의 기여 시작 첫날 = 제약 기간 첫 달 W/D 첫날.
+
+    그보다 앞서 기여를 시작한 신규는 제약 기간 전에 기존 제품에 쓰였으므로 일반 설비다(사용자 답
+    1-3 — 기간 첫 달 몫도 개조 창). 그 앞 달 W/D 구간 가운데 들어온 호기는 그 달 몫이 1 이 안 돼
+    `new_unit_arrivals` 의 내림 차이로는 기간 첫 달 대수가 되므로 이 날로 먼저 걸러야 한다.
+    """
+    return wd_window(period_start, cutoff_days).first_day
 
 
 def required_units(demand: float, target: float) -> int:
@@ -837,9 +853,10 @@ def constraint_month_inputs(
       만큼 어긋나 Re 가 0 이 아닌 잡음이 되지 않게.
     - `general_target(m)` 은 그 달 기준 확보율(비율)이다.
     - `new_units` 는 「신규 설비는 개조 없이」 를 켰을 때만 준다 — 달마다 A_new(m)
-      (`process_equipment_timeline.new_unit_availability`, 없는 달은 0), `new_units_before` 는 첫
-      보이는 달 바로 앞 달의 값이다. 그 둘로 달마다 새로 붙는 정수 대수(`new_unit_arrivals`)를
-      싣는다. 0 이상의 유한한 수가 아니면 `ValueError` 다.
+      (`process_equipment_timeline.new_unit_availability`, 없는 달은 0 — 기간 전 신규를 빼도록
+      `usable_from=new_units_usable_from(...)` 로 거른 값), `new_units_before` 는 첫 보이는 달 바로
+      앞 달의 값이다. 그 둘로 달마다 새로 붙는 정수 대수(`new_unit_arrivals`)를 싣는다. 0 이상의
+      유한한 수가 아니면 `ValueError` 다.
     """
     key = str(process).strip()
     names = process_months["공정"].astype("string").str.strip()

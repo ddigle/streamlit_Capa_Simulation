@@ -42,7 +42,9 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintMonthInput,
     ConstraintResult,
     constraint_month_inputs,
+    modification_window,
     new_unit_arrivals,
+    new_units_usable_from,
     simulate_constraint,
 )
 
@@ -254,7 +256,13 @@ def test_new_units_cover_only_their_own_month_and_leftovers_become_ordinary() ->
 
 
 def test_new_units_arriving_before_the_period_do_not_help_its_first_month() -> None:
-    """기간 앞(03·05월)에만 들어온 신규는 일반 설비다 — 창·확보율이 1판과 같다."""
+    """기간 앞(03·05월)에만 들어온 신규는 일반 설비다 — 창·확보율이 1판과 같다.
+
+    기간 앞 달 W/D 가운데 들어와 그 달 몫이 1 이 안 되는 신규는 내림 차이로는 기간 첫 달 대수가
+    된다 — 그 호기는 어댑터 앞에서 `new_units_usable_from` 으로 걸러 A_new 에 들지 않는다(설비 일정
+    시험 `test_a_unit_half_into_the_month_before_the_period_is_not_a_first_month_arrival` 과 화면
+    시험 `test_a_new_unit_that_started_in_the_month_before_the_period_is_ordinary`).
+    """
     result = simulate_constraint(
         _with_arrivals({202703: 5, 202705: 6}), replace(CONDITIONS, new_unit_since=SINCE)
     )
@@ -318,6 +326,24 @@ def test_the_counters_restart_in_the_first_period_month_of_sparse_months() -> No
 
 
 # ------------------------------------------------------------------ 새로 붙는 대수(내림 차이)
+
+
+@pytest.mark.parametrize(
+    ("period_start", "cutoff", "expected"),
+    [
+        (202706, 7, date(2027, 5, 25)),
+        (202701, 7, date(2026, 12, 25)),
+        (202706, 0, date(2027, 6, 1)),
+    ],
+)
+def test_new_units_are_usable_from_the_first_wd_day_of_the_period(
+    period_start: int, cutoff: int, expected: date
+) -> None:
+    """기간 전 신규의 경계는 제약 기간 첫 달 W/D 첫날(그 달 1일 − Cut-off)이다 — 6월 몫 개조 창의
+    끝 경계와 같은 날(하네스 5/25)."""
+    assert new_units_usable_from(period_start, cutoff) == expected
+    window = modification_window(period_start, units=1, days=30, cutoff_days=cutoff)
+    assert new_units_usable_from(period_start, cutoff) == window.end
 
 
 @pytest.mark.parametrize(

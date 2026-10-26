@@ -733,25 +733,35 @@ class NewUnitAvailability(NamedTuple):
     units: tuple[str, ...]
     """신규로 본 설비키(③ 의 「호기」) — `new_units` 차례(기여 시작 → 호기 번호)."""
 
+    early: tuple[str, ...]
+    """`units` 가운데 기여 시작이 `usable_from` 보다 앞이라 몫에서 뺀 호기(같은 차례). 제약
+    시뮬레이션에서는 제약 기간 전에 기존 제품에 쓰인 일반 설비다(사용자 답 1-3)."""
+
     in_axis: int
-    """그중 축의 어느 달에 몫이 있는 호기 수(축 뒤 호기·축 앞에 정지·반출된 호기는 몫이 0 이다)."""
+    """`units` 가운데 축의 어느 달에 몫이 있는 호기 수(축 뒤 호기·축 앞에 정지·반출된 호기는 몫이
+    0 이다). `early` 도 센다 — 화면 글 「조회기간에 가용 n대」 의 n 이다."""
 
     before: float
     """축 첫 달 바로 앞 달의 몫 — 그 달보다 먼저 들어온 신규를 첫 달 몫으로 세지 않게."""
 
     months: tuple[tuple[int, float], ...]
-    """축의 달마다 `(YYYYMM, 몫)` — 0 인 달도 든다."""
+    """축의 달마다 `(YYYYMM, 몫)` — 0 인 달도 든다. `early` 는 들지 않는다."""
 
     def by_month(self) -> dict[int, float]:
         return dict(self.months)
 
 
 def new_unit_availability(
-    timeline: ProcessEquipmentTimeline, *, since: date
+    timeline: ProcessEquipmentTimeline, *, since: date, usable_from: date | None = None
 ) -> NewUnitAvailability:
     """`new_units` 가운데 기여 시작(Qual 다음 날 — 묶음은 가장 늦은 모듈)이 `since` 이후(그날
     포함)인 호기의 달마다 몫. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ③·④ 와 같은 객체)을 거르기만
     한다.
+
+    `usable_from` 을 주면 기여 시작이 그날보다 앞인 호기는 `units` 에 남기되 몫(`months`·`before`)
+    에서 빼고 `early` 에 적는다 — 제약 시뮬레이션은 제약 기간 첫 달 W/D 첫날
+    (`constraint_simulation.new_units_usable_from`)을 준다. 그 앞 달 W/D 구간 가운데 들어온 호기는
+    내림 차이로는 기간 첫 달에 새로 붙는 대수가 되지만 그 앞 달에 이미 기존 제품에 쓰였다.
 
     모듈 이름으로 거른다 — 묶음 안에 대상이 아닌 모듈(보관 Y·사용기준 밖)이 섞여도 `new_units` 가 센
     모듈만 든다(이름은 `모듈별 Qual` 튜플에서 꺼내 「, 」 로 이은 `설비명` 을 쪼개지 않는다). 축 첫
@@ -759,37 +769,56 @@ def new_unit_availability(
     시작 뒤로 앞 달 W/D 구간과 겹친 일수를 곱해 낸다 — 축 첫 달 전에 정지·반출된 신규 모듈은 세지
     않는다.
     """
+    first_counted = since if usable_from is None else max(since, usable_from)
     starts: dict[str, date] = {}
+    listed: set[str] = set()
     units: list[str] = []
+    early: list[str] = []
     for row in _records(timeline.new_units):
         start = _as_date(row["기여 시작"])
         if start is None or start < since:
             continue
-        units.append(str(row["호기"]))
-        pairs = row["모듈별 Qual"]
-        if isinstance(pairs, tuple) and pairs:
-            for name, qual in pairs:
-                day = _as_date(qual)
-                starts[str(name).strip()] = day + _ONE_DAY if day is not None else start
+        unit = str(row["호기"])
+        units.append(unit)
+        modules = _module_starts(row, start)
+        listed.update(modules)
+        if start < first_counted:
+            early.append(unit)
         else:
-            starts[str(row[EQUIPMENT_ID_COLUMN]).strip()] = start
+            starts.update(modules)
     frame = timeline.unit_months
-    chosen = frame.loc[frame[EQUIPMENT_ID_COLUMN].astype(str).isin(set(starts)).to_numpy()]
+    names = frame[EQUIPMENT_ID_COLUMN].astype(str)
+    seen = frame.loc[names.isin(listed).to_numpy()]
+    present = {
+        str(key)
+        for key, value in zip(seen["설비키"], seen["비가동 없음 환산대수"], strict=True)
+        if float(value) > 0
+    }
+    chosen = frame.loc[names.isin(set(starts)).to_numpy()]
     totals: dict[int, float] = {}
-    present: set[str] = set()
-    for month, key, value in zip(
-        chosen["생산계획년월"], chosen["설비키"], chosen["비가동 없음 환산대수"], strict=True
-    ):
+    for month, value in zip(chosen["생산계획년월"], chosen["비가동 없음 환산대수"], strict=True):
         totals[int(month)] = totals.get(int(month), 0.0) + float(value)
-        if float(value) > 0:
-            present.add(str(key))
     return NewUnitAvailability(
         since=since,
         units=tuple(units),
+        early=tuple(early),
         in_axis=sum(1 for unit in units if unit in present),
         before=_share_before_axis(timeline, chosen, starts),
         months=tuple((month, _tidy(totals.get(month, 0.0))) for month in timeline.months),
     )
+
+
+def _module_starts(row: Mapping[str, object], start: date) -> dict[str, date]:
+    """`new_units` 한 행의 모듈 이름 → 그 모듈 기여 시작(제 Qual 다음 날 — 날짜가 없으면 묶음
+    날짜)."""
+    pairs = row["모듈별 Qual"]
+    if isinstance(pairs, tuple) and pairs:
+        modules: dict[str, date] = {}
+        for name, qual in pairs:
+            day = _as_date(qual)
+            modules[str(name).strip()] = day + _ONE_DAY if day is not None else start
+        return modules
+    return {str(row[EQUIPMENT_ID_COLUMN]).strip(): start}
 
 
 def _share_before_axis(

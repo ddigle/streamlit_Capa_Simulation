@@ -31,6 +31,7 @@ from test_required_shortening import (
 )
 
 from capa_simulation.services import simulation_cache
+from capa_simulation.services.constraint_simulation import new_units_usable_from
 from capa_simulation.services.process_cutoff import prepare_process_cutoff
 from capa_simulation.services.process_equipment_timeline import (
     ARROW_COLUMNS,
@@ -969,6 +970,54 @@ def test_a_unit_half_into_the_month_before_the_axis_counts_its_share() -> None:
     )
     assert shares.before == pytest.approx(15 / 30)
     assert [value for _, value in shares.months] == pytest.approx([1.0, 1.0, 1.0])
+    assert shares.early == ()
+
+
+def test_usable_from_keeps_units_that_started_before_it_out_of_the_share() -> None:
+    """기준일 3/1 · 쓸 수 있는 첫날 = 6월 W/D 첫날(5/22, 6월부터의 제약 기간).
+
+    EARLY1(3/2)·EQ2(5/16)은 그 앞에 기여를 시작해 `early` 다 — 호기 목록과 「조회기간에 가용」
+    셈에는 남고 몫에서 빠진다. 몫 = EQ1(6/6~) 6월 15/30 · 7월 1 + G1 6월 M1 1/6 · 7월 1.0. 남은
+    신규는 4월 W/D 와 겹치지 않아 before 0 이다.
+    """
+    rows, _ = _new_unit_fixture()
+    timeline = _timeline(rows)
+    assert timeline.cutoff_days is not None
+    first_day = new_units_usable_from(JUNE, timeline.cutoff_days)
+    assert first_day == date(2026, 5, 22)
+    shares = new_unit_availability(timeline, since=date(2026, 3, 1), usable_from=first_day)
+    assert shares.units == ("EARLY1", "EQ2", "EQ1", "G1", "LATE1")
+    assert shares.early == ("EARLY1", "EQ2")
+    assert shares.in_axis == 4
+    assert shares.before == 0.0
+    assert [value for _, value in shares.months] == pytest.approx([0.0, 15 / 30 + 1 / 6, 2.0])
+
+
+def test_a_unit_half_into_the_month_before_the_period_is_not_a_first_month_arrival() -> None:
+    """축 앞 달(4월 W/D) 가운데 들어온 N1 은 몫이 15/30 이라 내림 차이로는 5월에 새로 붙는 1대지만,
+    제약 기간이 5월부터면 기간 전 신규다 — 5월 W/D 첫날(4/21)로 거르면 몫에서 빠진다."""
+    timeline = _timeline([_unit("N1", date(2026, 4, 5), arrival=date(2026, 3, 1))])
+    assert timeline.cutoff_days is not None
+    shares = new_unit_availability(
+        timeline,
+        since=date(2026, 1, 1),
+        usable_from=new_units_usable_from(MAY, timeline.cutoff_days),
+    )
+    assert shares.early == ("N1",)
+    assert shares.before == 0.0
+    assert [value for _, value in shares.months] == [0.0, 0.0, 0.0]
+    assert shares.in_axis == 1
+
+
+def test_the_reference_day_after_usable_from_leaves_nothing_early() -> None:
+    """기준일이 쓸 수 있는 첫날보다 뒤면 기준일이 이긴다 — 이른 호기가 없다."""
+    rows, _ = _new_unit_fixture()
+    plain = new_unit_availability(_timeline(rows), since=date(2026, 6, 12))
+    later = new_unit_availability(
+        _timeline(rows), since=date(2026, 6, 12), usable_from=date(2026, 5, 21)
+    )
+    assert later == plain
+    assert later.early == ()
 
 
 def test_operating_downtime_does_not_change_the_new_unit_share() -> None:

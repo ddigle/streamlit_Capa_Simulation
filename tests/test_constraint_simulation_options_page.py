@@ -4,11 +4,17 @@
 """제약 시뮬레이션 2판 옵션 화면(AppTest — 하네스는 `tests/test_constraint_simulation_page.py`).
 
 설비 DB 는 시드 공정 하나(`DEMO_Chip_Attach`)에 기존보유 4대 + Qual 끝난 기존 신규 8대(2025-01-10)에
-**축 안에서 붙는 신규 한 대**(`CA-N1` — Qual 2025-12-20, 기여 시작 12/21)를 더한다. Cut-off 7 이면
-1월 W/D (2025-12-24, 2026-01-24] 를 다 덮고 12월 W/D 는 4/31 만 덮어 1월에 새로 붙는 1대다(반 달
-몫은 다음 달 몫). 시드 소요가 작아 제약 몫은 기간 첫 달(26.01) 1대뿐이다 — 숫자는 손계산 시험
-(`tests/test_constraint_simulation_options.py`)이 보고, 여기서는 칸·글·캐시·오류 갈래를 본다. 시험은
-오늘에 기대지 않게 기준일 칸을 늘 직접 적는다.
+**신규 한 대**를 더한 두 벌이다. Cut-off 7 이면 제약 기간 첫 달(26.01) W/D 는 (2025-12-24,
+2026-01-24] 이고 시드 소요가 작아 제약 몫은 그 달 1대뿐이다.
+
+- `CA-N1`(Qual 2025-12-20, 기여 시작 12/21) — 12월 W/D 의 4/31 만 덮고 1월을 다 덮는다. 내림
+  차이로는 1월에 새로 붙는 1대지만 기여 시작이 1월 W/D 첫날(12/25)보다 앞이라 **기간 전 신규**다 —
+  12월에 기존 제품에 쓰였으므로 1월 몫은 개조 창으로 채운다(사용자 답 1-3).
+- `CA-N2`(Qual 2025-12-24, 기여 시작 12/25 = 1월 W/D 첫날) — 1월에 들어오는 신규라 1월 몫 1대를 개조
+  없이 덮는다.
+
+숫자는 손계산 시험(`tests/test_constraint_simulation_options.py`)이 보고, 여기서는 칸·글·캐시·오류
+갈래를 본다. 시험은 오늘에 기대지 않게 기준일 칸을 늘 직접 적는다.
 """
 
 from __future__ import annotations
@@ -45,12 +51,13 @@ from capa_simulation.constraint_simulation_state import (
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.process_equipment_timeline import build_process_equipment_timeline
 
-NEW_UNIT = "CA-N1"
+EARLY_UNIT = "CA-N1"
+NEW_UNIT = "CA-N2"
 BEFORE_NEW_UNIT = date(2025, 12, 1)
 AFTER_NEW_UNIT = date(2026, 2, 1)
 
 
-def _options_database(path: Path) -> Path:
+def _options_database(path: Path, *, new_unit: str, qual: date) -> Path:
     repository = DuckDBEquipmentRepository(path)
     repository.initialize()
     units = [
@@ -59,9 +66,7 @@ def _options_database(path: Path) -> Path:
         )
         for index in range(1, 9)
     ]
-    units.append(
-        _unit(NEW_UNIT, date(2025, 12, 20), process=DYNAMIC_PROCESS, arrival=date(2025, 12, 1))
-    )
+    units.append(_unit(new_unit, qual, process=DYNAMIC_PROCESS, arrival=date(2025, 12, 1)))
     baseline = pd.DataFrame(
         {"공정": [DYNAMIC_PROCESS], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
     )
@@ -72,8 +77,20 @@ def _options_database(path: Path) -> Path:
 
 @pytest.fixture(scope="module")
 def option_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """신규가 기간 앞 달 가운데 들어온 벌(`CA-N1`)."""
     root = tmp_path_factory.mktemp("constraint_simulation_options")
-    return root / "scenario.duckdb", _options_database(root / "equipment.duckdb")
+    return root / "scenario.duckdb", _options_database(
+        root / "equipment.duckdb", new_unit=EARLY_UNIT, qual=date(2025, 12, 20)
+    )
+
+
+@pytest.fixture(scope="module")
+def arriving_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """신규가 기간 첫 달 W/D 첫날에 들어오는 벌(`CA-N2`)."""
+    root = tmp_path_factory.mktemp("constraint_simulation_options_arriving")
+    return root / "scenario.duckdb", _options_database(
+        root / "equipment.duckdb", new_unit=NEW_UNIT, qual=date(2025, 12, 24)
+    )
 
 
 @pytest.fixture()
@@ -161,11 +178,12 @@ def test_owned_units_replace_the_modification_and_say_so(
 
 
 def test_new_units_follow_the_reference_day_through_one_shared_timeline(
-    option_databases: tuple[Path, Path], timeline_builds: list[str]
+    arriving_databases: tuple[Path, Path], timeline_builds: list[str]
 ) -> None:
-    """기준일 12/1 이면 CA-N1(기여 시작 12/21)이 신규라 1월 몫 1대를 개조 없이 덮는다. 기준일만
-    바꾸면 같은 설비 일정 칸을 다시 쓴다(기준일은 캐시 키 밖) — 2/1 이면 신규가 없어 1판과 같다."""
-    app = _with_new_units(_opened(option_databases), BEFORE_NEW_UNIT)
+    """기준일 12/1 이면 CA-N2(기여 시작 12/25 = 1월 W/D 첫날)가 신규라 1월 몫 1대를 개조 없이
+    덮는다. 기준일만 바꾸면 같은 설비 일정 칸을 다시 쓴다(기준일은 캐시 키 밖) — 2/1 이면 신규가
+    없어 1판과 같다."""
+    app = _with_new_units(_opened(arriving_databases), BEFORE_NEW_UNIT)
     assert not app.date_input(key=CONSTRAINT_NEW_SINCE_KEY).disabled
     captions = _plain(_captions(app))
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {NEW_UNIT}" in captions
@@ -183,11 +201,28 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert timeline_builds == [DYNAMIC_PROCESS]
 
 
+def test_a_new_unit_that_started_in_the_month_before_the_period_is_ordinary(
+    option_databases: tuple[Path, Path],
+) -> None:
+    """CA-N1 은 기준일(12/1) 뒤 신규지만 제약 기간 첫 달 W/D 첫날(12/25) 전인 12/21 부터 기여해
+    12월에 기존 제품에 쓰였다 — 1월 몫 1대는 개조 창이다(사용자 답 1-3). 내림 차이만 보면 1월에
+    새로 붙는 1대라 개조 0대로 셌다."""
+    app = _with_new_units(_opened(option_databases), BEFORE_NEW_UNIT)
+    captions = _plain(_captions(app))
+    assert (
+        f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {EARLY_UNIT} — 그중 제약 기간 "
+        "전에 기여를 시작한 1대는 일반 설비(개조)"
+    ) in captions
+    assert _metric(app, "개조 대수") == "1대"
+    assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 0 · 개조 1"
+    assert "신규 설비 0대(기준일 2025-12-01 이후 기여 시작 · 들어온 달 몫만)" in captions
+
+
 def test_the_detail_page_and_this_page_share_one_timeline(
-    option_databases: tuple[Path, Path], timeline_builds: list[str]
+    arriving_databases: tuple[Path, Path], timeline_builds: list[str]
 ) -> None:
     """공정 Capa 상세 → 이 화면(신규 켬): 설비 일정은 상세에서만 돈다(같은 키 — 새 캐시 없음)."""
-    app = _app(option_databases)
+    app = _app(arriving_databases)
     app.session_state[CONSTRAINT_NEW_UNITS_KEY] = True
     app.session_state[CONSTRAINT_NEW_SINCE_KEY] = BEFORE_NEW_UNIT
     app.session_state["_test_page"] = "detail"
