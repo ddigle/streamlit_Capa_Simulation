@@ -51,6 +51,7 @@ from capa_simulation.components.constraint_simulation_figures import (
 from capa_simulation.components.constraint_simulation_view import (
     FREE_ONLY_TEXT,
     LATE_SUFFIX,
+    SHORT_INLINE_LIMIT,
     WAIT_LATE_SUFFIX,
     default_month,
     free_units_line,
@@ -60,6 +61,7 @@ from capa_simulation.components.constraint_simulation_view import (
     render_constraint_kpis,
     schedule_lines,
     short_lines,
+    short_month_lines,
     waiting_lines,
 )
 from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_MONTH, CUSTOMDATA_ROW, MINUS
@@ -698,7 +700,8 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
         rows,
         replace(CONDITIONS, period_start=202706, period_end=202706, constraint_target=1.0),
     )
-    assert short_lines(result).startswith("27.06: 필요 6대 중 5대만 배정")
+    assert short_lines(result).startswith("27.06: 전용 6대 중 5대만 배정")
+    assert short_month_lines(result) == []
     assert overdrawn_lines(result) == [
         "27.05: 개조 비가동 5.81대가 가용 5대보다 많습니다 — 이 공정 설비로는 이 개조 일정이 "
         "서지 않습니다."
@@ -706,6 +709,32 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
     assert short_lines(_run()) == ""
     may = month_steps(result.month(202705), result, LABELS, show_proportional=False)
     assert "0 으로 둡니다" in may.steps[3].note
+
+
+def test_the_short_line_names_the_dedicated_units_and_folds_many_months() -> None:
+    """모자란 달의 값은 그 달 필요(need)가 아니라 전용(dedicated)이다 — 기간 안 소요가 0 으로 내려도
+    개조한 전용 6대를 유지하는 달(202707)에 「필요 6대」 라고 적었다(2026-10-25 E2E). 모자란 달이
+    `SHORT_INLINE_LIMIT` 보다 많으면 한 줄에는 달 수·첫·끝 달만 적고 달마다 값은 접힌 줄로 간다."""
+    rows = tuple(
+        ConstraintMonthInput(month, 8.0, demand, 5.0, 1.1)
+        for month, demand in zip(
+            (202705, 202706, 202707, 202708, 202709, 202710), (0, 6, 0, 6, 6, 6), strict=True
+        )
+    )
+    result = simulate_constraint(
+        rows,
+        replace(CONDITIONS, period_start=202706, period_end=202710, constraint_target=1.0),
+    )
+    july = result.month(202707)
+    assert (july.need, july.dedicated, july.short) == (0, 6, True)
+    assert len(result.short_months) == 5 > SHORT_INLINE_LIMIT
+    line = short_lines(result)
+    assert line.startswith("전용 대수를 다 배정하지 못한 달 5개월(27.06–27.10 사이) — ")
+    assert "필요" not in line
+    details = short_month_lines(result)
+    assert len(details) == 5
+    assert details[1].startswith("27.07: 전용 6대 중 ")
+    assert all(": 전용 6대 중 " in text for text in details)
 
 
 # ------------------------------------------------------------------ 요약 넷

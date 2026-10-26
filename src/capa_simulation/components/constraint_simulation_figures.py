@@ -1091,7 +1091,7 @@ def _allocated_cell(row: ConstraintMonth, conditions: ConstraintConditions) -> C
             bold=True,
             fill=tokens.STATUS_SHORTAGE,
             hover=(
-                f"{_head(row)} · 가용이 모자라 필요 {row.dedicated}대 중 {row.allocated}대만 배정"
+                f"{_head(row)} · 가용이 모자라 전용 {row.dedicated}대 중 {row.allocated}대만 배정"
                 + tail
             ),
         )

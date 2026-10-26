@@ -114,6 +114,8 @@ from capa_simulation.sidebar_status import rerun_app_unless_alone
 __all__ = [
     "KPI_ROW_KEY",
     "SCHEDULE_CARD_KEY",
+    "SHORT_INLINE_LIMIT",
+    "SHORT_MONTHS_EXPANDER_KEY",
     "STEPS_CARD_KEY",
     "ConstraintView",
     "MonthStep",
@@ -131,6 +133,7 @@ __all__ = [
     "schedule_lines",
     "settle_selected_month",
     "short_lines",
+    "short_month_lines",
     "top_row_style",
     "waiting_lines",
 ]
@@ -176,6 +179,12 @@ WAITING_DEFINITION: Final = (
 )
 LATE_SUFFIX: Final = " — 이미 지난 날짜(개조를 이미 시작했어야 합니다)"
 WAIT_LATE_SUFFIX: Final = " — 이미 지난 날짜(셋업 때 이미 제약용으로 붙였어야 합니다)"
+# 가용이 모자란 달을 한 줄에 달마다 적는 상한 — 넘으면 달 수만 적고 달마다 값은 접는다(30개월이 캡션
+# 한 줄로 늘어졌다, 2026-10-25 E2E).
+SHORT_INLINE_LIMIT: Final = 3
+SHORT_REASON_TEXT: Final = "제약 제품을 먼저 채우고 남는 것이 없어 기존 제품이 0 에 가깝습니다."
+# 「달마다 보기」 펼침 — 모자란 달이 많을 때만 선다.
+SHORT_MONTHS_EXPANDER_KEY: Final = "constraint_sim_short_months"
 
 
 class ConstraintView(NamedTuple):
@@ -623,16 +632,38 @@ def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> lis
     return lines
 
 
+def _short_month_text(row: ConstraintMonth) -> str:
+    """모자란 달 하나 — 「27.06: 전용 6대 중 5대만 배정」. 값은 그 달 필요(need)가 아니라 떼어 줄
+    전용 대수(dedicated)다 — 소요가 0 인 달도 이미 개조한 전용을 유지한다."""
+    return f"{month_label(row.month)}: 전용 {row.dedicated}대 중 {row.allocated}대만 배정"
+
+
 def short_lines(result: ConstraintResult) -> str:
-    """가용이 모자란 달 한 줄. 없으면 빈 글자."""
+    """가용이 모자란 달 한 줄. 없으면 빈 글자.
+
+    달이 `SHORT_INLINE_LIMIT` 개 이하면 달마다 값을 한 줄에 적고, 그보다 많으면 달 수와 첫·끝 달만
+    적는다 — 달마다 값은 접힌 「달마다 보기」(`short_month_lines`)가 든다(30개월이 한 줄로 늘어지지
+    않게)."""
     rows = [row for row in result.months if row.short]
     if not rows:
         return ""
-    parts = " · ".join(
-        f"{month_label(row.month)}: 필요 {row.dedicated}대 중 {row.allocated}대만 배정"
-        for row in rows
-    )
-    return f"{parts} — 제약 제품을 먼저 채우고 남는 것이 없어 기존 제품이 0 에 가깝습니다."
+    if len(rows) <= SHORT_INLINE_LIMIT:
+        head = " · ".join(_short_month_text(row) for row in rows)
+    else:
+        head = (
+            f"전용 대수를 다 배정하지 못한 달 {len(rows)}개월"
+            f"({month_label(rows[0].month)}–{month_label(rows[-1].month)} 사이)"
+        )
+    return f"{head} — {SHORT_REASON_TEXT}"
+
+
+def short_month_lines(result: ConstraintResult) -> list[str]:
+    """접힌 「달마다 보기」 의 줄 — 모자란 달이 `SHORT_INLINE_LIMIT` 개보다 많을 때만. 아니면 빈
+    목록(한 줄 `short_lines` 가 이미 달마다 값을 적는다)."""
+    rows = [row for row in result.months if row.short]
+    if len(rows) <= SHORT_INLINE_LIMIT:
+        return []
+    return [_short_month_text(row) for row in rows]
 
 
 def overdrawn_lines(result: ConstraintResult) -> list[str]:
@@ -819,12 +850,16 @@ def render_constraint_view(view: ConstraintView) -> None:
         # 가용이 모자란 달 — 있을 때만 서는 알림이라 늘 서 있는 칸 안에 그린다.
         with st.container():
             shortage = short_lines(result)
+            shortage_months = short_month_lines(result)
             overdrawn = overdrawn_lines(result)
             if shortage or overdrawn:
                 with st.container(border=True):
                     st.markdown("**가용이 모자란 달**")
                     if shortage:
                         st.caption(shortage)
+                    if shortage_months:
+                        with st.expander("달마다 보기", key=SHORT_MONTHS_EXPANDER_KEY):
+                            st.caption("  \n".join(shortage_months))
                     for line in overdrawn:
                         st.caption(f":material/warning: {line}")
 
