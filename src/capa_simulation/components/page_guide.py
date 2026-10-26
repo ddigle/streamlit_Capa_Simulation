@@ -66,6 +66,9 @@ from capa_simulation.page_bootstrap import forget_page_dialogs
 from capa_simulation.settings import PROJECT_ROOT
 
 GUIDE_TRIGGER_KEY = "page_guide_trigger"
+# 대화상자 본문 칸. 좁은 창(390px)에서 넓은 표가 칸을 넘어 대화상자 전체를 옆으로 밀고 오른쪽 칸이
+# 잘렸다 — 이 칸 안의 표만 제 폭 안에서 옆으로 굴린다(`_BASE_STYLE`).
+GUIDE_BODY_KEY = "page_guide_body"
 # id 와 툴바 차례는 다른 툴바 단추와 함께 `theme_toggle` 한 곳에 있다(`TOOLBAR_BUTTON_ORDER`).
 BUTTON_ID = GUIDE_BUTTON_ID
 GUIDE_DIR = Path(__file__).resolve().parents[1] / "guides"
@@ -215,11 +218,13 @@ _SCRIPT = """
 """
 
 # 기본은 감춘다. 가이드를 단 페이지만 `render_page_guide` 가 보이게 한다. 숨은 트리거 버튼은
-# 언제나 감춘다 — 본문에 「Guide」 버튼이 하나 더 보이면 안 된다.
+# 언제나 감춘다 — 본문에 「Guide」 버튼이 하나 더 보이면 안 된다. 대화상자 본문의 표는 제 칸 폭을
+# 넘으면 그 표만 옆으로 굴린다(넘침이 대화상자를 밀어 오른쪽 열이 잘리고 가로 바퀴로도 못 본다).
 _BASE_STYLE = f"""
 <style>
 #{BUTTON_ID} {{ display: none !important; }}
 .st-key-{GUIDE_TRIGGER_KEY} {{ display: none !important; }}
+.st-key-{GUIDE_BODY_KEY} table {{ display: block; max-width: 100%; overflow-x: auto; }}
 </style>
 """
 _SHOW_STYLE = f"<style>html body #{BUTTON_ID} {{ display: inline-block !important; }}</style>"
@@ -288,6 +293,7 @@ def render_page_guide(page: str, *, title: str, howto: str | None = None) -> Non
 def _open_guide(title: str, body: str) -> None:
     @st.dialog(f"Guide · {title}", width="large")
     def _guide() -> None:
-        st.markdown(body)
+        with st.container(key=GUIDE_BODY_KEY):
+            st.markdown(body)
 
     _guide()

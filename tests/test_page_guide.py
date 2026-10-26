@@ -356,3 +356,40 @@ def test_guide_ranges_escape_the_tilde(page: str) -> None:
     글의 물결표는 원문에서 `\\~` 로 막는다(같은 화면의 `schedule_lines` 와 같은 꼴)."""
     found = _tilde_lines((GUIDES / f"{page}.md").read_text(encoding="utf-8"))
     assert not found, "물결표를 \\~ 로 막습니다(지움선이 됩니다):\n" + "\n".join(found)
+
+
+def test_a_wide_guide_table_scrolls_inside_its_own_box() -> None:
+    """390px 창에서 가용설비 현황 Guide 의 「묶음·보유·대여·가용」 표(400px)가 칸(320px)을 넘어
+    대화상자를 옆으로 밀고 「가용」 열이 잘렸다(2026-10-26 E2E). 본문은 키 붙은 칸에 들고, 그 칸의
+    표만 제 폭 안에서 옆으로 굴린다 — 기본 규칙은 모든 화면이 매 회차 깐다."""
+    from streamlit.testing.v1 import AppTest
+
+    assert re.search(
+        rf"\.st-key-{page_guide.GUIDE_BODY_KEY} table \{{ display: block; max-width: 100%; "
+        r"overflow-x: auto; \}",
+        page_guide._BASE_STYLE,
+    )
+    app = AppTest.from_string(
+        "from capa_simulation.components.page_guide import render_page_guide\n"
+        'render_page_guide("available_equipment_status", title="가용설비 현황")\n'
+    ).run()
+    app.button(key=page_guide.GUIDE_TRIGGER_KEY).click().run()
+
+    assert not app.exception
+    bodies = _markdown_under_key(app._tree, page_guide.GUIDE_BODY_KEY)
+    assert any("| 묶음 | 보유 | 대여 | 가용 |" in body for body in bodies), bodies
+
+
+def _markdown_under_key(node: object, key: str, inside: bool = False) -> list[str]:
+    """`st.container(key=key)` 블록 안의 마크다운 글 — 블록 id 가 `…-<key>` 로 끝난다."""
+    proto = getattr(node, "proto", None)
+    block_id = getattr(proto, "id", "") if proto is not None else ""
+    inside = inside or (isinstance(block_id, str) and block_id.endswith(f"-{key}"))
+    found = (
+        [str(getattr(node, "value", ""))] if inside and type(node).__name__ == "Markdown" else []
+    )
+    children = getattr(node, "children", None)
+    if isinstance(children, dict):
+        for child in children.values():
+            found += _markdown_under_key(child, key, inside)
+    return found
