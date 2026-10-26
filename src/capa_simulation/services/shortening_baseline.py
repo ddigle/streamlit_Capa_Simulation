@@ -39,12 +39,14 @@ __all__ = [
     "BASELINE_NAME_MAX_LENGTH",
     "BASELINE_SAVED_BY_MAX_LENGTH",
     "BASELINE_UNIT_COLUMNS",
+    "BaselineNameTakenError",
     "BaselineProvenance",
     "ShorteningBaseline",
     "ShorteningBaselineDraft",
     "ShorteningBaselineSummary",
     "ShorteningEquipmentBasis",
     "baseline_label",
+    "baseline_name_taken_message",
     "baseline_units_frame",
     "default_baseline_name",
     "freeze_plan",
@@ -171,6 +173,25 @@ class ShorteningBaseline:
         """고른 목표의 호기 표(목표 칸 없이). 그 목표에 단축할 호기가 없었으면 빈 표다."""
         chosen = self.units.loc[self.units[LEVEL_COLUMN].eq(level_percent(level))]
         return chosen.drop(columns=LEVEL_COLUMN).reset_index(drop=True)
+
+
+def baseline_name_taken_message(name: str) -> str:
+    """같은 이름 거절 글. 화면은 막은 이름(`literal_markdown`)을 넣어 다시 짓는다."""
+    return f"같은 이름의 기준선이 이미 있습니다: {name}"
+
+
+class BaselineNameTakenError(ValueError):
+    """같은 이름의 기준선이 이미 있다(저장 쪽 `save_shortening_baseline` 이 거절한다).
+
+    글은 평문이다(스크립트·로그). 이름은 사람 글이라 `name` 으로도 실어, 마크다운으로 그리는 화면
+    (거절 토스트)이 이름을 글자 그대로 막아 같은 문장을 다시 짓게 한다 — 물결표만 막는 오류 글
+    길(`bootstrap_error_message`)로는 「R6B *중요* 안」 의 별표가 기울임, `[안내](http://…)` 가
+    누를 수 있는 링크가 됐다(2026-10-27 E2E).
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(baseline_name_taken_message(name))
 
 
 def default_baseline_name(day: date) -> str:

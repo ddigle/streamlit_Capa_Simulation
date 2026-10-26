@@ -275,6 +275,32 @@ def test_a_baseline_name_with_tildes_reads_as_written_in_the_notices_and_the_del
     clear_equipment_repository()
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["R6B *중요* 안", "R6B **굵게** 안", "R6B [안내](http://e.com) 끝", "R6B `코드` $x$ 안"],
+)
+def test_the_same_name_refusal_shows_the_name_as_written(tmp_path: Path, name: str) -> None:
+    """같은 이름 거절 토스트는 적은 이름을 글자 그대로 싣는다 — 예외 글을
+    `bootstrap_error_message`(물결표만 막는다)로만 넘기면 별표가 기울임·굵게, `[안내](…)` 가 누를
+    수 있는 링크가 됐다(2026-10-27 E2E). 저장소 예외는 이름을 속성으로도 싣고 화면이
+    `literal_markdown` 으로 다시 짓는다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run(database_path)
+    app = _name_input(app).set_value(name).run()
+    app = _save_button(app).click().run()
+    assert literal_markdown(name) in _toasts(app)
+
+    app = _name_input(app).set_value(name).run()
+    app = _save_button(app).click().run()
+    refused = _toasts(app)
+    assert not app.exception
+    taken = f"같은 이름의 기준선이 이미 있습니다: {literal_markdown(name)}"
+    assert f"기준선을 저장하지 않았습니다 — {taken}" in refused
+    assert name not in refused
+    assert len(DuckDBEquipmentRepository(database_path).list_shortening_baselines()) == 1
+    clear_equipment_repository()
+
+
 def test_a_unit_renamed_after_the_baseline_is_flagged_as_a_possible_rename(
     tmp_path: Path,
 ) -> None:
