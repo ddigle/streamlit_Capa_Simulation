@@ -18,7 +18,8 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 - **정본 칸**(위젯 아님) — 제약 확보율(정수 %)·기준 확보율(`None` = HOME 판정 기준, 아니면 %
   실수)·개조 기간(정수 일). 버튼과 직접 입력 칸 둘이 한 정본을 나눠
   쓴다(`components/preset_number_field.py`).
-- **고른 달**(위젯 아님)과 두 그림의 칸 누름 세대(한 칸 — 어느 그림을 눌러도 둘 다 새 요소가 된다).
+- **고른 달**(위젯 아님)과 사용자가 눌러 고른 적이 있는가 표지, 두 그림의 칸 누름 세대(한 칸 — 어느
+  그림을 눌러도 둘 다 새 요소가 된다).
 - **주소 인자 막이**(위젯 아님) — 마지막으로 적용한 `?process=` 값(`CONSTRAINT_QUERY_SEEN_KEY`).
 
 제약 시작·끝 상자는 정수 달 선택지라 `page_bootstrap.prune_choice`(글자 선택지 전용)를 쓰지 않고
@@ -50,6 +51,7 @@ __all__ = [
     "CONSTRAINT_MOD_DAYS_KEY",
     "CONSTRAINT_MOD_DAYS_PILLS_KEY",
     "CONSTRAINT_MONTH_KEY",
+    "CONSTRAINT_MONTH_PICKED_KEY",
     "CONSTRAINT_NEW_SINCE_KEY",
     "CONSTRAINT_NEW_UNITS_KEY",
     "CONSTRAINT_OWNED_KEY",
@@ -116,6 +118,11 @@ CONSTRAINT_MOD_DAYS_INPUT_KEY: Final = "constraint_sim_mod_days_input"
 # ------------------------------------------------------------------ 본문
 # 고른 달(`YYYYMM`). 그래프 칸·계산표 칸 누름 콜백이 적고, 마지막 누름이 이긴다.
 CONSTRAINT_MONTH_KEY: Final = "constraint_sim_month"
+# 사용자가 달 칸을 눌러 고른 적이 있는가(위젯 아님). 누르기 전에는 고른 달이 기본 달(영향 시작 →
+# 기간 시작 → 첫 달)을 따라가 조건(공정·제품·기간·확보율)이 바뀌면 그 조건의 기본 달로 다시 선다 —
+# 기간을 옮겨도 기간 밖 달 계산 카드가 남지 않게(2026-10-25 E2E). 누른 뒤에는 그 달이 보이는 동안
+# 그대로다.
+CONSTRAINT_MONTH_PICKED_KEY: Final = "constraint_sim_month_picked"
 # 칸 선택을 켠 그림 둘 — `app.py` 의 `CELL_SELECT_CHART_KEYS` 에 든다(터치 스크롤 막이). 계산표는
 # 가로로 스크롤되는 **월 Figure** 의 key 다(라벨 Figure 는 `staticPlot`).
 CONSTRAINT_CHART_KEY: Final = "constraint_sim_rate_chart"

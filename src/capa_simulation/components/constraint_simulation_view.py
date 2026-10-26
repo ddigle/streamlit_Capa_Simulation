@@ -94,6 +94,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
     CONSTRAINT_FIGURE_MEMO_KEY,
     CONSTRAINT_MONTH_KEY,
+    CONSTRAINT_MONTH_PICKED_KEY,
     CONSTRAINT_PROPORTIONAL_KEY,
     CONSTRAINT_SELECT_GENERATION_KEY,
     CONSTRAINT_SHEET_KEY,
@@ -238,13 +239,22 @@ def default_month(result: ConstraintResult) -> int:
 
 
 def settle_selected_month(result: ConstraintResult) -> int:
-    """앱 전체 회차마다 고른 달 칸을 잡는다 — 보이는 달 밖이거나 없으면 기본 달을 **적는다**."""
+    """앱 전체 회차마다 고른 달 칸을 잡는다.
+
+    사용자가 달 칸을 눌러 고른 적이 있고(`CONSTRAINT_MONTH_PICKED_KEY`) 그 달이 보이면 그대로다.
+    아니면 기본 달(`default_month`)을 **다를 때만** 적는다 — 누르기 전에는 조건이 바뀔 때마다 그
+    조건의 영향 시작 달로 다시 선다(기간 밖 달 계산이 남지 않게). 누른 달이 보이는 달 밖으로 나가면
+    표지를 내려 다시 기본 달을 따른다."""
     months = {row.month for row in result.months}
     held = st.session_state.get(CONSTRAINT_MONTH_KEY)
-    if isinstance(held, int) and not isinstance(held, bool) and held in months:
-        return held
+    visible = isinstance(held, int) and not isinstance(held, bool) and held in months
+    if st.session_state.get(CONSTRAINT_MONTH_PICKED_KEY) is True:
+        if visible and isinstance(held, int):
+            return held
+        st.session_state[CONSTRAINT_MONTH_PICKED_KEY] = False
     chosen = default_month(result)
-    st.session_state[CONSTRAINT_MONTH_KEY] = chosen
+    if held != chosen:
+        st.session_state[CONSTRAINT_MONTH_KEY] = chosen
     return chosen
 
 
@@ -259,6 +269,7 @@ def _viewed_month(result: ConstraintResult) -> int:
 def _apply_pick(month: int | None, months: Sequence[int], widget_key: str) -> None:
     if month is not None and month in set(int(value) for value in months):
         st.session_state[CONSTRAINT_MONTH_KEY] = int(month)
+        st.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
     generation = st.session_state.get(CONSTRAINT_SELECT_GENERATION_KEY, 0)
     st.session_state[CONSTRAINT_SELECT_GENERATION_KEY] = (
         int(generation) + 1 if isinstance(generation, int) else 1

@@ -47,6 +47,7 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MOD_DAYS_PILLS_KEY,
     CONSTRAINT_MODIFY_KEY,
     CONSTRAINT_MONTH_KEY,
+    CONSTRAINT_MONTH_PICKED_KEY,
     CONSTRAINT_PERIOD_END_KEY,
     CONSTRAINT_PERIOD_START_KEY,
     CONSTRAINT_PROCESS_KEY,
@@ -779,7 +780,9 @@ def test_conditions_and_the_picked_month_survive_a_round_trip_and_get_pruned(
     app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).set_value(110)
     app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value("DEMO PRODUCT B")
     _ok(app.run())
+    # 달 칸 누름 콜백이 적는 두 칸(고른 달 · 눌러 고른 표지).
     app.session_state[CONSTRAINT_MONTH_KEY] = 202604
+    app.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
     _ok(app.run())
 
     app.session_state["_test_page"] = "away"
@@ -802,6 +805,42 @@ def test_conditions_and_the_picked_month_survive_a_round_trip_and_get_pruned(
     app.run()
     assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == FIRST_PRODUCT
     assert app.session_state[CONSTRAINT_PRODUCT_KEY] == FIRST_PRODUCT
+
+
+def _picked_title_month(app: AppTest) -> int:
+    """고른 달 계산 카드 제목(「**26.08 · …**」)의 달."""
+    titles = [text for text in _markdown(app) if re.match(r"\*\*\d\d\.\d\d · ", text)]
+    assert len(titles) == 1, _markdown(app)
+    year, month = titles[0][2:7].split(".")
+    return 200000 + int(year) * 100 + int(month)
+
+
+def test_the_selected_month_follows_the_conditions_until_a_month_is_clicked(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """달 칸을 누르기 전에는 조건이 바뀔 때마다 고른 달이 그 조건의 기본 달(영향 시작)로 다시 선다 —
+    제약 기간을 옮겼는데 고른 달 계산이 기간 밖 달에 남았다(2026-10-25 E2E #14·#105). 누른 뒤에는
+    그 달이 보이는 동안 그대로다."""
+    app = _opened(dynamic_databases)
+    assert CONSTRAINT_MONTH_PICKED_KEY not in app.session_state
+    first = app.session_state[CONSTRAINT_MONTH_KEY]
+    assert _picked_title_month(app) == first
+
+    app.selectbox(key=CONSTRAINT_PERIOD_START_KEY).set_value(202608)
+    _ok(app.run())
+    # 개조 비가동은 기간 첫 달 W/D 첫날 앞이라 영향 시작은 기간 첫 달이거나 그 앞 달이다.
+    moved = app.session_state[CONSTRAINT_MONTH_KEY]
+    assert moved != first and moved in (202607, 202608)
+    assert _picked_title_month(app) == moved
+
+    # 눌러 고른 달은 조건이 바뀌어도 남는다.
+    app.session_state[CONSTRAINT_MONTH_KEY] = 202610
+    app.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
+    _ok(app.run())
+    app.selectbox(key=CONSTRAINT_PERIOD_START_KEY).set_value(202609)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_MONTH_KEY] == 202610
+    assert _picked_title_month(app) == 202610
 
 
 # ------------------------------------------------------------------ 오류 갈래
@@ -948,6 +987,7 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
 
     browser.fragment_queue = [view]
     app.session_state[CONSTRAINT_MONTH_KEY] = 202609
+    app.session_state[CONSTRAINT_MONTH_PICKED_KEY] = True
     _ok(app.run())
     assert browser.started == [[view]]
     assert set(_event_slots(browser.messages)) == full_slots
