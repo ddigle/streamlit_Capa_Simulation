@@ -320,11 +320,11 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
         ['[data-testid="stSidebarUserContent"] > div'],
         ['[data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"]'],
     ]
-    # 캡션 칸의 음수 아래 여백을 걷어 글이 카드 밖으로 흐르지 않는다.
+    # 캡션 칸의 음수 아래 여백을 걷어 글이 카드 밖으로 흐르지 않고, 흐림을 걷어 대비를 지킨다.
     caption = _declarations(
         block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"]']
     )
-    assert caption == ["margin-bottom: 0"]
+    assert caption == ["margin-bottom: 0", "opacity: 1"]
     # 글은 작은 보조색, 메일 링크는 두 테마 모두 토큰의 `ACCENT` 다.
     text = _declarations(block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p'])
     assert f"color: {tokens.TEXT_MUTED}" in text
@@ -471,3 +471,28 @@ def test_home_and_current_page_links_draw_a_keyboard_focus_ring(
     ]
 
     assert any(f"outline: 2px solid {tokens.ACCENT}" in body for body in rings), rings
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_muted_sidebar_captions_drop_the_caption_opacity(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Streamlit 1.63 은 캡션 칸에 `opacity: 0.6` 을 건다. 그 위 글자를 `TEXT_MUTED` 로 덮으면
+    흐림이 겹쳐 구역 제목·조건 이름 줄·앱 정보 작은 글이 2.29~3.08:1 이었다(2026-10-26 E2E).
+    글자를 `TEXT_MUTED` 로 칠하는 캡션은 모두 그 칸의 흐림을 걷는다(`opacity: 1`)."""
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    rules = _rules(_style_block())
+    caption = '[data-testid="stCaptionContainer"]'
+    muted = {
+        selector.removesuffix(" p")
+        for selectors, body in rules
+        if f"color: {tokens.TEXT_MUTED}" in body
+        for selector in selectors
+        if selector.endswith(f"{caption} p")
+    }
+    opaque = {
+        selector for selectors, body in rules if "opacity: 1;" in body for selector in selectors
+    }
+
+    assert muted, "TEXT_MUTED 캡션 규칙을 찾지 못했습니다"
+    assert sorted(muted - opaque) == []

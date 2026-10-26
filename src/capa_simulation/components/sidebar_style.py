@@ -138,6 +138,12 @@ def build_sidebar_stylesheet(
         f'.st-key-{section.key} [data-testid="stCaptionContainer"] p'
         for section in SIDEBAR_SECTIONS
     )
+    # 그 캡션 칸. Streamlit 1.63 은 캡션 칸에 `opacity: 0.6`(theme.opacities.secondary)을 건다 —
+    # 글자를 `TEXT_MUTED` 로 덮은 위에 그 흐림이 겹쳐 작은 글 대비가 2.29~3.08:1 로
+    # 떨어졌다(2026-10-26 E2E). 색이 이미 보조색이라 흐림을 걷는다(`TEXT_MUTED` 만이면 4.5:1 이상).
+    section_caption_selectors = _SELECTOR_JOINER.join(
+        f'.st-key-{section.key} [data-testid="stCaptionContainer"]' for section in SIDEBAR_SECTIONS
+    )
     section_title_selectors = _SELECTOR_JOINER.join(
         f'.st-key-{section.key} > [data-testid="stElementContainer"]:first-child'
         ' [data-testid="stCaptionContainer"] p'
@@ -422,6 +428,9 @@ def build_sidebar_stylesheet(
             margin-bottom: -0.12rem;
             padding: 0 0.3rem;
         }}
+        {section_caption_selectors} {{
+            opacity: 1;
+        }}
         {section_text_selectors} {{
             font-size: 0.75rem;
             line-height: 1.25;
@@ -656,10 +665,11 @@ def build_sidebar_stylesheet(
         # 작은 글 두 줄 — 크기는 구역 제목의 설명 글(0.75rem)과 같다. 좁은 사이드바에서는 줄이
         # 접히고, 띄어 쓸 곳이 없는 메일 주소도 칸 안에서 끊는다. Streamlit 은 캡션 칸에 아래 음수
         # 여백(-1rem)을 걸어 다음 요소에 붙이는데, 여기서는 그만큼 글이 카드 밖으로 흘러 바닥 아래로
-        # 잘린다(실측 14px) — 걷는다.
+        # 잘린다(실측 14px) — 걷는다. 캡션 흐림(`opacity`)도 구역 제목과 같은 까닭으로 걷는다.
         f"""
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] {{
             margin-bottom: 0;
+            opacity: 1;
         }}
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p {{
             margin: 0;
@@ -742,7 +752,7 @@ def _conditions_panel_style() -> str:
         }}"""
         # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
         # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로
-        # 올라붙는다.
+        # 올라붙는다. 캡션 흐림(`opacity`)도 걷는다 — 패널 면 위 `TEXT_MUTED` 에 겹쳐 2.29:1 이었다.
         f"""
         {name_row} {{
             min-height: 1.15rem;
@@ -750,6 +760,7 @@ def _conditions_panel_style() -> str:
         }}
         {name_row} [data-testid="stCaptionContainer"] {{
             margin-bottom: 0;
+            opacity: 1;
         }}
         {name_row} [data-testid="stCaptionContainer"] p {{
             margin: 0;
