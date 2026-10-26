@@ -1766,9 +1766,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
-    보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 둘이다 — 화면
-    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래)와 큰 제목 칸 sr-only
-    (`PAGE_TITLE_SELECTOR`). 인쇄에는 제목이 보인다.
+    보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 셋이다 — 화면
+    탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래), 큰 제목 칸 sr-only
+    (`PAGE_TITLE_SELECTOR`), 모달 동안 탭 줄 흐림(`#root[inert]` — 1.63 은 `st.dialog` 가 열리면 앱 뿌리에 `inert` 를 단다,
+    탭 줄 누름이 말없이 먹혔다). 인쇄에는 제목이 보인다.
   - 툴바 비움 폭과 진행 막대 자리(`_status_slot_css`)는 툴바 실측값이다(`tests/test_app_header.py`).
   - 회차마다 소켓으로 다시 가는 스타일이라 CSS 안에 주석을 두지 않는다 — 규칙 설명은 그 조각 바로 위 파이썬 주석이다
     (9장 「스크립트와 컴포넌트」).
