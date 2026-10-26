@@ -427,6 +427,24 @@ def test_an_earlier_pull_carries_into_later_months() -> None:
     assert june["단축후가용대수"] == pytest.approx(12.0)
 
 
+def test_the_month_shares_add_up_to_each_months_gain() -> None:
+    """`월별 늘어난 환산대수` 는 달마다 늘어난 몫이다 — 한 달의 「가용 → 단축 후」 증분은 그 달
+    몫의 합이고, `늘어난 환산대수` 는 대상 월(5월) 구간의 몫뿐이다. 5월의 반 대를 메우려 7/15 →
+    5/5 로 당긴 EQ1 은 6월 구간 전체도 덮는다(공정 Capa 상세 ④ 단축 근거가 뒤 달에 그 달 몫을
+    적어야 식이 맞는다)."""
+    level = _plan([_unit("EQ1", date(2026, 7, 15))], {MAY: 10.5, JUNE: 10.5}).at(1.0)
+    units = _units(level)
+    shares = dict(units["EQ1"]["월별 늘어난 환산대수"])
+
+    assert shares[MAY] == pytest.approx(units["EQ1"]["늘어난 환산대수"])
+    assert shares[JUNE] == pytest.approx(1.0)
+    assert shares[JUNE] != pytest.approx(units["EQ1"]["늘어난 환산대수"])
+    for month in (MAY, JUNE):
+        row = _month(level, month)
+        total = sum(dict(unit["월별 늘어난 환산대수"]).get(month, 0.0) for unit in units.values())
+        assert row["단축후가용대수"] - row["가용대수"] == pytest.approx(total)
+
+
 def test_a_later_month_names_what_covered_it() -> None:
     """손대지 않고 채워진 달은 앞 달의 무엇이 채웠는지 말한다 — 단축이면 단축, 가상 호기면 신규."""
     pulled = _plan([_unit("EQ1", date(2026, 7, 15))], {MAY: 11.0, JUNE: 11.0}).at(1.0)

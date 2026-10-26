@@ -188,7 +188,8 @@ def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
     """진척 비교 기준선을 저장하지 않을 설비 쪽 까닭 — 세션이 **공식 발행 쌍**이 아니면(E5).
 
     까닭은 둘로 가른다 — 가정 설비 시나리오, 또는 공식 시나리오의 발행하지 않은 리비전. 시나리오가
-    없거나(빈 설비 DB) 공식 발행 쌍이면 None.
+    없거나(빈 설비 DB) 공식 발행 쌍이면 None. 글은 마크다운 자리(`st.info`·토스트)에 그대로 싣도록
+    시나리오 이름을 `literal_markdown` 으로 막아 둔다.
     """
     if session is not None and session.unmerged:
         return (
@@ -198,14 +199,16 @@ def baseline_equipment_refusal(session: EquipmentSession | None) -> str | None:
     if session is None or session.scenario is None or session.is_official_pair:
         return None
     official = f"공식 v{session.release_no}" if session.release_no is not None else "공식"
+    # 거절 글은 알림 상자·토스트(마크다운)로 그린다 — 시나리오 이름은 사람이 적은 글이라 막는다.
+    name = literal_markdown(session.scenario_name)
     if session.is_assumption:
         return (
-            f"가정 설비 시나리오(「{session.scenario_name}」 r{session.revision_no})를 보는 중이라 "
+            f"가정 설비 시나리오(「{name}」 r{session.revision_no})를 보는 중이라 "
             f"기준선을 저장하지 않습니다 — 진척 비교 기준선은 공식 설비 시나리오({official})에서만 "
             "저장합니다. 사이드바 설비 시나리오에서 공식을 불러온 뒤 저장하세요."
         )
     return (
-        f"발행하지 않은 리비전(「{session.scenario_name}」 r{session.revision_no} — 공식은 "
+        f"발행하지 않은 리비전(「{name}」 r{session.revision_no} — 공식은 "
         f"{official})을 보는 중이라 기준선을 저장하지 않습니다 — 공식으로 발행하거나 공식 "
         "리비전을 불러온 뒤 저장하세요."
     )

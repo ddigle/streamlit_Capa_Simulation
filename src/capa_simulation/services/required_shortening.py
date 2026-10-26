@@ -205,7 +205,17 @@ UNIT_PLAN_COLUMNS = (
     "대상 월",
     "해소 기여 월",
     "모듈 수",
+    "월별 늘어난 환산대수",
 )
+"""호기 표(`LevelPlan.units`)의 칸.
+
+- `늘어난 환산대수` 는 **당긴 달(대상 월) 구간에서** 늘어난 몫의 합이다 — 「호기별」 CSV·기준선이
+  싣는 호기 하나의 요약 값이다.
+- `월별 늘어난 환산대수` 는 그 호기를 당겨(추가N 은 더해) **달마다** 늘어난 몫
+  `((YYYYMM, 몫), …)` 튜플이다(몫이 0 보다 큰 달만, 달 차례). 앞 달에 당긴 호기는 뒤 달 구간도
+  덮어 뒤 달 가용을 올리므로, 한 달의 「가용 → 단축 후」 증분은 그 달 몫의 합이다(공정 Capa 상세
+  ④ 단축 근거·③ 호기 풍선). CSV·기준선에는 싣지 않는다.
+"""
 
 LEVEL_COLUMN = "목표 확보율(%)"
 """내보내기 표의 목표 칸. 백분율 정수다(`level_percent`) — 다섯 값은 90·100·110·120·130 이고, 달마다
@@ -1022,6 +1032,7 @@ def _unit_rows(process: str, outcome: _ProcessOutcome) -> list[dict[str, object]
                 "대상 월": state.pulled_months[0] if state.pulled_months else None,
                 "해소 기여 월": _month_list(state.extra, short_months),
                 "모듈 수": len(state.unit.modules),
+                "월별 늘어난 환산대수": _month_shares(state.extra),
             }
         )
     for virtual in outcome.virtuals:
@@ -1038,6 +1049,7 @@ def _unit_rows(process: str, outcome: _ProcessOutcome) -> list[dict[str, object]
                 "대상 월": virtual.month,
                 "해소 기여 월": _month_list(virtual.extra, short_months),
                 "모듈 수": 1,
+                "월별 늘어난 환산대수": _month_shares(virtual.extra),
             }
         )
     return rows
@@ -1048,6 +1060,15 @@ def _month_list(extra: Mapping[int, float], short_months: set[int]) -> str:
         str(month)
         for month, value in sorted(extra.items())
         if month in short_months and round(value, _DECIMALS) > 0
+    )
+
+
+def _month_shares(extra: Mapping[int, float]) -> tuple[tuple[int, float], ...]:
+    """달마다 늘어난 몫 — 0 보다 큰 달만, 달 차례(`월별 늘어난 환산대수`)."""
+    return tuple(
+        (month, round(value, _DECIMALS))
+        for month, value in sorted(extra.items())
+        if round(value, _DECIMALS) > 0
     )
 
 

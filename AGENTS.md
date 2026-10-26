@@ -254,7 +254,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - HOME 표시 확보율 줄은 HOME 과 같은 함수(`home_display_rates`)·같은 캐시 키로 낸다. 「구획」·「제품별 소요대수」·
     「분류」는 「상세는 카드」의 예외로 본문 표 도구 줄이다. 출처 띠는 캡션 한 줄이다(`docs/design_system.md` 2-3).
   - 밖에서 들어온 회차는 그 길(`from`)의 구획을 다시 편다(HOME → ①, `gap` → ④, `shortening` → ③). 머리 ◀▶ 는 미달
-    공정을 최저 확보율 차례로 넘기고(세션 값, 공정별 요약은 세션 칸에 한 벌), KPI 아래·근거 패널은 부족 원인마다
+    공정을 최저 확보율 차례로 넘기고(세션 값, 공정별 요약은 세션 칸에 한 벌 — 단추 라벨은 접근 이름 「다음 미달 공정: …」
+    이고 화면에서는 그 글을 sr-only 로 숨긴 채 기호를 `::before` 생성 글로 그린다), KPI 아래·근거 패널은 부족 원인마다
     다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 → 필요 단축 일정)을 단다.
   - UPEH 가정(조건 카드 끝 「이 세션만」)이 켜지면 가정 요약(이미 받은 확보율 행에 ÷f — 캐시 밖)과 가정 계획(계획 키 끝
     칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
@@ -4111,7 +4112,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도 그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가
   담을 때 막는다(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄 아래 팝업
   저장 알림(`save_result_message`)·세션 이동 알림(`EquipmentSession.notice` — 사이드바 줄·시나리오 관리 구획)과 Space 층 끄기
-  확인의 가정 배치 덧줄도 그리는 자리에서 막는다(`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은
+  확인의 가정 배치 덧줄도 그리는 자리에서 막는다(`tests/test_equipment_scenario_layout_management.py`). 필요 단축 일정 기준선
+  이름(저장·지우기 알림 토스트·「기준선 지우기」 확인 글)은 `literal_markdown`, 그 알림에 실리는 저장·지우기 실패 예외 글은
+  `markdown_safe_tildes` 다(`tests/test_shortening_progress_tab.py`). 「기준선 저장」 거절 글(`baseline_equipment_refusal`)은 지을
+  때 설비 시나리오 이름을 `literal_markdown` 으로 막는다(`tests/test_equipment_scenario_screens.py`). Guide 원문(`guides/*.md`)은
   `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
   (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
