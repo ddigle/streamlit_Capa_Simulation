@@ -180,6 +180,7 @@ from capa_simulation.services.process_cutoff import (
     process_cutoff_fingerprint,
 )
 from capa_simulation.services.shortening_baseline import (
+    BaselineNameTakenError,
     ShorteningBaseline,
     ShorteningBaselineDraft,
     ShorteningBaselineSummary,
@@ -2410,15 +2411,16 @@ class DuckDBEquipmentRepository:
     ) -> ShorteningBaselineSummary:
         """필요 단축 일정 기준선을 새로 저장한다(0021). 고칠 수 없는 공용 기록이다.
 
-        같은 이름이 있으면 `ValueError` 로 거절한다 — 견주기와 넣기를 한 쓰기 잠금·트랜잭션에서
-        해서 두 사람이 같은 이름을 동시에 저장해도 하나만 들어간다. 저장 시각은 이 PC 의 벽시계다
-        (목록의 저장일이 사용자가 본 날과 같아야 한다).
+        같은 이름이 있으면 `BaselineNameTakenError`(`ValueError` — 이름을 속성으로도 싣는다)로
+        거절한다 — 견주기와 넣기를 한 쓰기 잠금·트랜잭션에서 해서 두 사람이 같은 이름을 동시에
+        저장해도 하나만 들어간다. 저장 시각은 이 PC 의 벽시계다(목록의 저장일이 사용자가 본 날과
+        같아야 한다).
         """
         baseline_id = uuid4().hex
         moment = (saved_at or datetime.now()).replace(microsecond=0)
         with self._write_transaction() as connection:
             if baseline_name_exists(connection, draft.name):
-                raise ValueError(f"같은 이름의 기준선이 이미 있습니다: {draft.name}")
+                raise BaselineNameTakenError(draft.name)
             insert_baseline(connection, baseline_id=baseline_id, draft=draft, saved_at=moment)
         source = draft.provenance
         return ShorteningBaselineSummary(

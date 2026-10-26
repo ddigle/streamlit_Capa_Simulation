@@ -1918,7 +1918,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `inactive_floor_warnings`(막지 않음). Streamlit·DB 를 모른다. **설비 마스터 저장 검사(C1~C5·1F~6F)는 그대로다**(S5).
 - `src/capa_simulation/services/shortening_baseline.py` — 필요 단축 일정 기준선(설비 DB `0021`) 모델과 규칙. 기준선은
   저장한 그때 계획을 얼린 고칠 수 없는 기록이다(`freeze_plan` → `ShorteningBaselineDraft`, `normalize_baseline_name`·
-  `baseline_label`·`normalize_baseline_units`).
+  `baseline_label`·`normalize_baseline_units`). 같은 이름 거절은 `BaselineNameTakenError`(`ValueError` — 이름을 `name` 으로도
+  실어 화면이 글자 그대로 막아 다시 짓는다, 9장 「막는 길은 셋」).
   - 설비 쪽 출처(`ShorteningEquipmentBasis` — 공통 rN · 설비 시나리오 이름 · 일정 rN · 공식 vN, 설비 `0027` 의 가리키는 칸
     넷)도 기준선에 싣는다. 기준선은 세션이 **공식 발행 쌍**일 때만 저장한다(E5 — 거부 까닭은 「가정 설비 시나리오」 와
     「발행하지 않은 리비전」 둘, `equipment_scenario_status.baseline_equipment_refusal`).
@@ -4337,7 +4338,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     않는다 — 앞의 것은 같은 값이라 길이 둘로 보이고(DuckDB 글의 코드 칸 경로 물결표는 `\~` 로 보인다), 뒤의 것은 막은
     `\~` 를 다시 막아 글자로 보인다. 이 길은 물결표만 막아 예외 글 속 이름의 별표·`$` 는 꾸밈이 된다 — 사람 이름을 늘어놓는
     예외는 이름을 속성으로도 싣고 화면이 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다(Proc Rename 1:1 위반
-    `ProcessRenameDuplicateError.names` → `process_rename_management._save_error_message`).
+    `ProcessRenameDuplicateError.names` → `process_rename_management._save_error_message`, 필요 단축 일정 기준선 같은 이름
+    거절 `BaselineNameTakenError.name` → `shortening_progress_panel._save_error_message` — `tests/test_shortening_progress_tab.py`).
   - **문구에 끼우는 이름은 `quoted(이름)`**(`components/literal_markdown.py` — 「이름」 으로 감싸고 `literal_markdown`,
     없으면 `empty=` 의 대신 쓸 말). 「`{이름}`」 처럼 날로 끼우지 않는다. 조사는 `korean_particle` 로 고른다 — 끝의
     `」` 와 escape 의 `\` 를 건너뛰므로 막기 전의 이름·「이름」·막은 글 어느 것으로 골라도 같은 조사다(「WB\(2\)」→「는」,

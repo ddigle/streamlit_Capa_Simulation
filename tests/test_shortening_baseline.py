@@ -30,6 +30,7 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.shortening_baseline import (
     BASELINE_UNIT_COLUMNS,
+    BaselineNameTakenError,
     BaselineProvenance,
     ShorteningBaselineDraft,
     baseline_label,
@@ -229,8 +230,10 @@ def test_a_duplicate_or_blank_name_is_refused_and_nothing_is_written(tmp_path: P
     repository.save_shortening_baseline(freeze_plan(plan, name="9월 정기"))
     before = _counts(path)
 
-    with pytest.raises(ValueError, match="같은 이름의 기준선이 이미 있습니다: 9월 정기"):
+    with pytest.raises(ValueError, match="같은 이름의 기준선이 이미 있습니다: 9월 정기") as refused:
         repository.save_shortening_baseline(freeze_plan(plan, name=" 9월 정기 "))
+    # 화면이 이름을 글자 그대로 막아 다시 짓도록 이름을 속성으로도 싣는다.
+    assert isinstance(refused.value, BaselineNameTakenError) and refused.value.name == "9월 정기"
     with pytest.raises(ValueError, match="이름을 적어"):
         freeze_plan(plan, name="  ")
 

@@ -38,7 +38,7 @@ import pandas as pd
 import streamlit as st
 
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.literal_markdown import quoted
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_timeline import (
     month_day,
@@ -71,10 +71,12 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.shortening_baseline import (
     BASELINE_NAME_MAX_LENGTH,
     BASELINE_SAVED_BY_MAX_LENGTH,
+    BaselineNameTakenError,
     BaselineProvenance,
     ShorteningBaseline,
     ShorteningBaselineSummary,
     baseline_label,
+    baseline_name_taken_message,
     default_baseline_name,
     freeze_plan,
     normalize_saved_by,
@@ -460,8 +462,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
             fingerprint=fingerprint,
         )
     except BOOTSTRAP_ERRORS as exc:
-        # 같은 이름 거절은 적은 이름을 싣는다(`save_shortening_baseline`).
-        _notice("warning", f"기준선을 저장하지 않았습니다 — {bootstrap_error_message(exc)}")
+        _notice("warning", f"기준선을 저장하지 않았습니다 — {_save_error_message(exc)}")
         return
     if written is None:
         return
@@ -479,6 +480,16 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
     )
     bump(_BASELINE_FORM_GENERATION_KEY)
     written.release()
+
+
+def _save_error_message(exc: BaseException) -> str:
+    """「기준선 저장」 거절 글. 같은 이름 거절(`BaselineNameTakenError`)은 적은 이름을 싣는데,
+    토스트는 마크다운이라 그 이름을 `literal_markdown` 으로 막아 같은 문장을 다시 짓는다 —
+    `bootstrap_error_message` 는 물결표만 막아 「R6B *중요* 안」 의 별표가 기울임,
+    `[안내](http://…)` 가 링크가 됐다(2026-10-27 E2E). 나머지는 `bootstrap_error_message` 다."""
+    if isinstance(exc, BaselineNameTakenError):
+        return baseline_name_taken_message(literal_markdown(exc.name))
+    return bootstrap_error_message(exc)
 
 
 def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
