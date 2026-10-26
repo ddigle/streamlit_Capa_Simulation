@@ -387,15 +387,89 @@ def test_every_ui_write_call_is_in_the_ledger() -> None:
     assert not stale, f"이제 없는 쓰기 호출이 장부에 남았다: {stale}"
 
 
+_GUARDS = {"write_once", "write_once_value"}
+
+
+def _call_name(call: ast.Call) -> str | None:
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return None
+
+
+def _unguarded_writes(scope: ast.AST, write: str) -> list[int]:
+    """`scope` 안의 `write` 호출 가운데 세대 거름의 `write` 인자(람다, 또는 이름으로 넘긴 안쪽 함수)
+    **밖**에 있는 것의 줄 번호. 이름만 보면 쓰기를 거름 밖에서 먼저 부르고 결과만 `lambda: made` 로
+    감싸도, 같은 함수에 같은 쓰기를 하나 더 두어도 지나간다(2026-10-26 리뷰)."""
+    nested = {
+        node.name: node
+        for node in ast.walk(scope)
+        if isinstance(node, ast.FunctionDef) and node is not scope
+    }
+    inside: set[int] = set()
+    for call in ast.walk(scope):
+        if not isinstance(call, ast.Call) or _call_name(call) not in _GUARDS:
+            continue
+        given = [*call.args[2:3], *(item.value for item in call.keywords if item.arg == "write")]
+        for argument in given:
+            body: ast.AST | None = argument if isinstance(argument, ast.Lambda) else None
+            if isinstance(argument, ast.Name):
+                body = nested.get(argument.id)
+            if body is not None:
+                inside.update(id(node) for node in ast.walk(body))
+    return sorted(
+        call.lineno
+        for call in ast.walk(scope)
+        if isinstance(call, ast.Call) and _call_name(call) == write and id(call) not in inside
+    )
+
+
 def test_write_once_entries_go_through_the_generation_guard() -> None:
-    """`write_once` 줄은 그 바깥 함수가 세대 거름을 지나고, 세대 거름을 지나는 쓰기는 그 줄이다."""
+    """`write_once` 줄의 쓰기 호출은 **모두** 세대 거름의 `write` 인자 안에 있고, 세대 거름을 지나는
+    쓰기는 그 줄이다."""
     calls = _write_calls()
     for key, scope in calls.items():
-        guarded = bool(_called(scope) & {"write_once", "write_once_value"})
+        guarded = bool(_called(scope) & _GUARDS)
         if LEDGER.get(key) == WRITE_ONCE:
             assert guarded, f"{key} 는 write_once 줄인데 세대 거름을 지나지 않는다"
+            outside = _unguarded_writes(scope, key[2])
+            assert not outside, f"{key} 의 쓰기가 세대 거름의 write 인자 밖에 있다(줄 {outside})"
         elif guarded and key[1] != "<module>":
             assert LEDGER.get(key) == WRITE_ONCE, f"{key} 는 세대 거름을 지난다 — 장부를 고친다"
+
+
+def test_the_guard_placement_net_catches_a_write_outside_the_guard() -> None:
+    """거름 밖에서 먼저 쓰고 결과만 감싼 꼴, 같은 쓰기를 거름 밖에 하나 더 둔 꼴을 잡는다."""
+    hoisted = ast.parse(
+        """
+def _save():
+    made = repository.create_scenario(request)
+    written = write_once_value(KEY, generation, lambda: made, fingerprint=name)
+"""
+    )
+    doubled = ast.parse(
+        """
+def _save():
+    written = write_once_value(
+        KEY, generation, lambda: repository.create_scenario(request), fingerprint=name
+    )
+    repository.create_scenario(request)
+"""
+    )
+    nested = ast.parse(
+        """
+def _save():
+    def run():
+        return repository.create_scenario(request)
+
+    written = write_once_value(KEY, generation, run, fingerprint=name)
+"""
+    )
+    assert _unguarded_writes(hoisted.body[0], "create_scenario") == [3]
+    assert _unguarded_writes(doubled.body[0], "create_scenario") == [6]
+    assert _unguarded_writes(nested.body[0], "create_scenario") == []
 
 
 # ------------------------------------------------------------------ 겹친 저장
