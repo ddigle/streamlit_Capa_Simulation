@@ -70,6 +70,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
@@ -844,7 +845,9 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
         trace = None
     with st.container(border=True, key=EVIDENCE_PANEL_KEY):
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.markdown(f"**산출 근거 · {month_label(month)} · {view.process_label}**")
+            st.markdown(
+                f"**산출 근거 · {month_label(month)} · {literal_markdown(view.process_label)}**"
+            )
             st.space("stretch")
             st.button(
                 f"◀ {month_label(previous)}" if previous is not None else "◀ 첫 달",
@@ -1686,7 +1689,7 @@ def _step_button(
         mark,
         key=key,
         type="tertiary",
-        help=f"{label_of(step.process)}{rate}",
+        help=f"{literal_markdown(label_of(step.process))}{rate}",
         on_click=step_to_process,
         args=(step.process, step.month),
     )
