@@ -1423,10 +1423,15 @@ def discarded_notice(
     )
 
 
-def discard_layout_edits() -> None:
+def discard_layout_edits() -> bool:
     """「배치 변경만 버리기」 — 편집본의 배치 일곱 칸을 저장본 값으로 되돌리고(새 호기는 자리
     없이) 층 대기분(캔버스·도면 요소·Main 설비명 위치)·편집기 모듈 모양·찍힌 역할을 비운다. 공통·
-    일정 칸 편집과 이름 바꿈, FAB 전체 배치 대기분은 남긴다(설계 8-6·검토 M5). 콜백에서 부른다."""
+    일정 칸 편집과 이름 바꿈, FAB 전체 배치 대기분은 남긴다(설계 8-6·검토 M5). 콜백에서 부른다.
+
+    버린 뒤 설비 편집이 남았는가를 돌려준다. 남은 것이 없으면(편집본이 저장본과 내용까지 같고 이름
+    바꿈·표 칸 초안이 없다) 세운 세대를 지금 세대로 옮긴다 — 버리기도 편집본을 바꿔 세대를 올리므로
+    그대로 두면 세대 판정(`has_unsaved_equipment_edits`)이 편집이 남았다고 보아 「미저장 변경」
+    배지·탭 점·불러오기의 「변경을 버리고」 체크가 남았다(2026-10-27 E2E)."""
     buffer = st.session_state.get(BUFFER_KEY)
     if isinstance(buffer, tuple):
         saved = _saved_master()
@@ -1442,6 +1447,29 @@ def discard_layout_edits() -> None:
         LAYOUT_ROLE_KEY,
     ):
         st.session_state.pop(key, None)
+    if has_unsaved_equipment_edits() and _buffer_is_saved():
+        st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
+    return has_unsaved_equipment_edits()
+
+
+def _buffer_is_saved() -> bool:
+    """편집본이 세운 저장본 사본과 내용까지 같고 저장 안 한 이름 바꿈·설비 마스터 표 칸 초안이
+    없는가(세 표 모두 — 날짜 칸 시각 단위만 다른 것은 같다고 본다, `same_frame_content`)."""
+    buffer = st.session_state.get(BUFFER_KEY)
+    saved = tuple(
+        st.session_state.get(key)
+        for key in (BASELINE_DRAFT_KEY, EQUIPMENT_DRAFT_KEY, DOWNTIME_DRAFT_KEY)
+    )
+    if not isinstance(buffer, tuple) or len(buffer) != len(saved):
+        return False
+    if pending_unit_renames() or grid_overlay():
+        return False
+    return all(
+        isinstance(left, pd.DataFrame)
+        and isinstance(right, pd.DataFrame)
+        and same_frame_content(left, right)
+        for left, right in zip(saved, buffer, strict=True)
+    )
 
 
 def layout_paste_refusal(

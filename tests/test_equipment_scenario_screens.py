@@ -844,6 +844,54 @@ def test_space_refuses_an_official_layout_edit_once_its_scenario_lost_the_offici
     assert official is not None and _value_of(official, "EQ-01", "X좌표") == 10
 
 
+def test_discarding_the_only_locked_layout_edit_leaves_no_unsaved_edit(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """잠긴 배치를 「배치 변경만 버리기」 로 버려 남은 편집이 0건이면 「미저장 변경」 배지·탭 점이
+    꺼지고 불러오기가 「변경을 버리고」 체크를 요구하지 않는다(2026-10-27 E2E — 버리기도 편집본
+    세대를 올려 세대 판정이 편집이 남았다고 봤고, 알림도 「다른 편집과 이름 바꿈은 남아 있습니다」
+    였다)."""
+    from capa_simulation.components.equipment_data_workspace import (
+        BUFFER_GENERATION_KEY,
+        BUFFER_KEY,
+        LAYOUT_ROLE_KEY,
+    )
+
+    repository = _repository(tmp_path)
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    moved = equipment.copy()
+    moved.loc[moved["설비명"].eq("EQ-01"), "X좌표"] = 40.0
+    app.session_state[BUFFER_KEY] = (baseline, moved, downtime)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.session_state[LAYOUT_ROLE_KEY] = "official"
+    _ok(app.run())
+    clone = _clone(repository)
+    assert clone.latest_schedule_revision_id is not None
+    repository.publish_equipment_release(
+        clone.latest_schedule_revision_id,
+        released_by=None,
+        note=None,
+        expected_latest_release_no=1,
+    )
+    clear_equipment_scenario_cache()
+    _ok(app.run())
+    assert any("미저장 변경" in text for text in _texts(app))
+
+    app.button(key="space_layout_discard_layout").click()
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert not any("미저장 변경" in text for text in texts), texts
+    assert not any("남아 있습니다" in text for text in texts), texts
+    assert any("배치 변경만 버렸습니다" in text for text in texts), texts
+    state: Any = app.session_state
+    seeded = state["equipment_workspace_seeded_generation_v1"]
+    assert int(state[BUFFER_GENERATION_KEY]) <= int(seeded)
+    assert not any(item.label == "변경을 버리고 불러오기" for item in app.checkbox)
+
+
 def test_space_layout_save_refuses_removing_a_unit_another_scenario_schedules(
     _shell: AppTest, tmp_path: Path
 ) -> None:

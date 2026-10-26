@@ -1298,9 +1298,12 @@ def _render_layout_warnings(
 def _discard_layout_only() -> None:
     """「배치 변경만 버리기」 콜백 — 배치 일곱 칸·층 대기분·찍힌 역할만 버린다(설계 8-6)."""
     st.session_state.pop(SAVE_ERROR_KEY, None)
-    discard_layout_edits()
+    remaining = discard_layout_edits()
+    # 남은 설비 편집이 없으면 「남아 있습니다」 라고 하지 않는다(2026-10-27 E2E).
     _queue_space_flash(
-        "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집과 이름 바꿈은 남아 있습니다.",
+        "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집과 이름 바꿈은 남아 있습니다."
+        if remaining
+        else "배치 변경만 버렸습니다 — 저장 안 한 설비 편집은 이제 없습니다.",
     )
 
 
