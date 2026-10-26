@@ -33,7 +33,7 @@
   — 충돌을 받은 회차는 거부를 담아(`queue_refusal`) 앱을 다시 돌리고, 그 다음 회차(제출 아님)가
   최신을 그리며 적는다. 초안을 세울 때 출발점을 함께 두는 편집(Cut-off·층 사용·설비 편집본)은 초안을
   세우는 자리에서 적는다. 콜백 쓰기는 그린 회차의 값을 콜백 인자로 받으므로 따로 적지 않는다. 토큰은
-  `int`·`str`·`tuple` 어느 것이든 된다.
+  `int`·`str`·`tuple` 어느 것이든 된다(이름 붙은 묶음은 `dict`).
 - **제 저장 판정**(`own_save_marks`·`remember_own_save`·`is_own_save`). 둘째 누름의 회차가 첫 저장의
   rerun 회차(또는 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가 거부하고, 화면은 방금
   한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E). 저장 전에 `own_save_marks`
@@ -67,8 +67,9 @@ from typing import TypeAlias
 
 import streamlit as st
 
-# 본 값·제 저장 짝의 토큰 — 프로필 version(int)·지문·이름(str)·여러 값의 짝(tuple).
-SeenToken: TypeAlias = int | str | tuple[object, ...]
+# 본 값·제 저장 짝의 토큰 — 프로필 version(int)·지문·이름(str)·여러 값의 짝(tuple)·편집본 출발점처럼
+# 이름 붙은 값 묶음(dict).
+SeenToken: TypeAlias = int | str | tuple[object, ...] | dict[str, object]
 
 # 쓰기를 마친 세대의 표지(세대 칸 이름 → 그 세대). 세션마다 하나이고 처음 쓰는 콜백이
 # 잠금 안에서 건다.
@@ -175,7 +176,7 @@ def seen(name: str) -> SeenToken | None:
     그 회차가 본 값을 적는다).
     """
     value = st.session_state.get(name)
-    if isinstance(value, bool) or not isinstance(value, int | str | tuple):
+    if isinstance(value, bool) or not isinstance(value, int | str | tuple | dict):
         return None
     return value
 

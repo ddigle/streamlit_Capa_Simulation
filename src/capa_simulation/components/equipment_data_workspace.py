@@ -36,6 +36,8 @@ from capa_simulation.components.write_guard import (
     notice_marks,
     own_save_marks,
     remember_own_save,
+    remember_seen,
+    seen,
 )
 from capa_simulation.navigation import (
     EQUIPMENT_MASTER_TAB,
@@ -636,7 +638,8 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
                 number, overlay_dropped=overlay_dropped, reapplied=reapplied
             )
         st.session_state[_REVISION_KEY] = token
-        st.session_state[_BASE_KEY] = _base_of(latest_snapshot)
+        # 편집본이 나온 저장본 — 저장이 대조하는 본 값이다(write_guard). 편집본을 세울 때만 적는다.
+        remember_seen(_BASE_KEY, _base_of(latest_snapshot))
         # 선택·삭제 대기·되돌리기·이름 바꿈·미저장 층 배치는 옛 편집본의 것이다. 새 저장본 위에서
         # 쓰이면 안 된다.
         stale = [
@@ -1906,7 +1909,7 @@ def _save_equipment_frames(
     violations = saved_master_violations(frames[1])
     if violations:
         raise ValueError(module_layout_message(violations))
-    base = st.session_state.get(_BASE_KEY)
+    base = seen(_BASE_KEY)
     if not isinstance(base, dict):
         raise ValueError("편집본이 아직 서지 않아 저장하지 않았습니다. 화면을 다시 불러오세요.")
     canvases = pending_floor_canvases()
@@ -1976,7 +1979,8 @@ def _save_equipment_frames(
             raise
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 뒷정리
         # (편집본 비우기·세션 옮기기)가 끊겼을 수 있어 여기서 다시 하고 그 알림을 다시 낸다.
-        _after_equipment_save(scenario_id, current[1] or None)
+        moved = current[1] if current[1] and current[1] != expected[1] else None
+        _after_equipment_save(scenario_id, moved)
         return held_notice(own_name) or SAVED_AGAIN_MESSAGE
     stored = equipment_write_token(str(repository.database_path), scenario_id)
     if result.wrote_revision and stored is not None:

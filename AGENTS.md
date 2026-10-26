@@ -1384,9 +1384,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
     낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edits`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
-    고칠 것」 줄이다. 낡은 세션의 뒤 둘은 표 밖 저장 자리도 같은 판정으로 막는다 — `equipment_data_workspace.stale_save_refusal`
-    을 사이드바 팝업 「저장」 이 경고 글에, `save_equipment_buffer` 가 거부 글에 쓴다(Space 「배치 저장」 도 — 저장소의
-    「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시 불러오면 공통 편집까지 잃는다). 일정 확인 갈래는 내용 지문
+    고칠 것」 줄이다. 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
+    고칠 것 줄로, 사이드바 팝업 「저장」 은 경고 글로(`stale_save_refusal`) 보이고, 저장은 `save_equipment_buffer` 의 저장 전
+    검사(FAB 쓰기 앞)가 같은 글로 막는다(Space 「배치 저장」 도 — 저장소의 「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지
+    않고 다시 불러오면 공통 편집까지 잃는다, `tests/test_equipment_save_preflight.py`). 일정 확인 갈래는 내용 지문
     캐시(`get_schedule_confirmation_issues`).
   - **받기**: 표·오른쪽 칸 두 마운트의 출납을 `apply_outbox` 하나가 `pending_ops`(마운트별 seq 기억 `equipment_grid_applied_v1`)·
     `apply_ops`(그린 회차의 `GridContext` 를 콜백 인자로 묶는다)·`apply_master_grid_result` 로 반영하고, 토스트는 마지막 op 를 보낸
@@ -1891,15 +1892,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
-- `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
-  쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
-  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
-  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
-  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다. 거꾸로 남의 저장에 거부된
-  누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 위 셋과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는
-  알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가
-  쓴다(9장).
+- `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`)과 **비교 후
+  쓰기의 한 길**. 세대 비교와 쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에
+  적어, 두 회차에 겹쳐 온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금
+  VOC 만 쓴다. 비교 후 쓰기(공용 프로필 version·Cut-off 지문·리비전명·공식 번호·설비 이름·설비 리비전 짝)는 셋을 여기서만 한다 —
+  **본 값**(`remember_seen`·`seen`·`forget_seen` — 폼을 제출하지 않은 회차에만 적고 대체값 없이 돌려준다, 이름에 BASE·SEEN 이 든
+  세션 칸은 이 모듈만 적는다), **제 저장 판정**(`own_save_marks`·`remember_own_save`·`is_own_save` — (본 값, 저장된 값) 짝이
+  정확히 같을 때만, 토큰은 int·str·tuple·dict; 옛 이름 `profile_save_marks`·`is_own_profile_save` 는 별칭), **거부
+  넘김**(`queue_refusal`·`take_refusal` — 충돌 회차는 본 값을 올리지 않고 거부를 다음 회차에 그린다). 화면에서 충돌 예외 10종을
+  잡는 자리는 모두 제 저장을 판정해 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」 으로 알리지 않는다 — 자동 갱신
+  설정·Cut-off·리비전명·공식 지정·층 사용·주요 Case·판정 기준·확보율 보정·Proc Rename·설비 시나리오 이름·리비전명·되돌리기·배치
+  차이 지우기·발행·설비 리비전 저장(`tests/test_write_guard_cas.py` 의 AST 그물). 거꾸로 남의 저장에 거부된 누름의 둘째 누름은
+  충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시 알린다 — 판정 기준·확보율 보정·Proc
+  Rename·자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림
+  표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가 쓰고, 설비 리비전
+  저장의 제 저장이 첫 누름의 알림을 다시 내는 데도 쓴다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -1929,7 +1936,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (역 patch 는 그 위에서 맞지 않는다). `follow_unit_renames` 는 행 조각 단계(와 그 앞 단계)를 버린다(`after_row_steps`).
   - **칸 초안이 남으면 어느 저장 길도 저장하지 않는다**(`save_equipment_buffer` 첫머리 — `unsaved_grid_drafts`, 살아 있는 행의
     초안만 센다). 초안은 편집본 밖이라 사이드바 팝업·Space 「배치 저장」 이 모른 채 저장하면 저장 성공이 초안을 지워 친 글이
-    사라진다. FAB 대기분만 쓰는 길(`frames is None`)은 막지 않는다.
+    사라진다. FAB 대기분만 쓰는 길(`frames is None`)은 막지 않는다. 낡은 세션의 낡기 전 편집(지운 호기·고친 일정 칸)도
+    같은 자리(예시 행 뒤, FAB 쓰기 앞)에서 막는다(`stale_save_refusal`). 저장소 `save_equipment` 는 이 함수만 부른다 — 설비
+    리비전 저장의 제 저장 판정(`EquipmentRevisionConflict` 를 받으면 저장소에서 바로 읽은 (공통 최신, 시나리오 최신) 짝을
+    `is_own_save` 로 보고 첫 누름의 뒷정리를 잇는다 — `equipment_write_token`)도 여기 한 곳이다.
   - 작은 편집표(`render_small_editor` — 기존 보유대수·비가동 일정, 개편 명세 4-7)는 **폼 밖**이고(명세의 「작은 폼」 에서 바꿈 —
     폼 안 편집은 제출 전까지 서버에 오지 않아 탭 점·떠나기 확인이 볼 수 없었다, 리뷰 rs-b1y) 보기 설정·고르기 칸·일괄 삭제·
     「편집본에 적용」(`_remember_edits`)이고 단추는 보통 단추다(`_selection_buttons`·`_render_bulk_delete_status`). 일괄 삭제
@@ -2754,7 +2764,11 @@ RQ_MODULE
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
     이다. Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
-    확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 숫자 칸에는 key 를 두지 않는다.
+    확인받는 붙여넣기는 대조하지 않고, 저장본을 보여 주는 숫자 칸에는 key 를 두지 않는다. 넘기는 대조 값은 **본 값**
+    (`write_guard.seen`)이다 — 폼을 제출하지 않은 회차·초안을 세운 자리에만 적고(`remember_seen`), 없으면 지금 값으로
+    대체하지 않고 「다시 불러와」 로 막는다(`expected_version=None` 은 대조하지 않는다는 뜻이라 대체보다 더 위험하다).
+    충돌 회차는 본 값을 올리지 않는다. 예외 하나 — Cut-off 는 「지문 없는 옛 세션(초안만 있음)은 지금 저장본이 출발점」
+    으로 일부러 정했다(`tests/test_write_guard_cas.py`). 충돌을 받으면 제 저장인지 먼저 본다(`is_own_save`, 9장).
 26. **보이지 않는 저장값은 남긴다.** 공용 프로필 편집기는 지금 화면(조회기간·시나리오·맞댄 공정)에 보이는 칸만
     갈아 끼우고 보이지 않는 달·공정은 그대로 둔다 — 범위를 좁힌 채 저장한 사람이 모르는 새 남의 값을 날리지 않게.
     「모두 비움」처럼 전체의 뜻을 바꾸는 선택만 보이는 대로 저장한다.
@@ -2793,7 +2807,9 @@ RQ_MODULE
       사이드바 배지를 「최신 r14 있음」 으로, 설비 마스터 탭 맨 위에 「「운영 일정」 r14 가 더 새롭습니다 — … 사이드바 「설비 시나리오」
       에서 최신 r14 를 불러오세요」 를 세우고 일정 여섯·시나리오 메모 칸과 비가동 표·행 추가를 잠근다(막힌 뒤에 버리는 일이
       없게 — 붙여넣기 미리보기도 `stale_paste_refusal`). 공통 칸은 그대로 저장된다. 남이 공통을 저장하면 지금처럼 편집본을 다시 세우고 「공통 대장
-      rN」 으로 알린다(일정 쪽 편집을 새 공통 위로 옮기는 것은 2단계).
+      rN」 으로 알린다(일정 쪽 편집을 새 공통 위로 옮기는 것은 2단계). 잠기기 **전에** 고친 일정·시나리오 메모 칸과 지운 호기는
+      세 저장 길(설비 마스터 탭·사이드바 팝업 「저장」·Space 「배치 저장」) 모두 같은 판정(`stale_save_reasons`)으로 쓰기 전에
+      막는다 — `save_equipment_buffer` 의 저장 전 검사 한 곳이고, 그 칸을 되돌리면 공통 칸은 저장된다.
     - **교차 검증**(3장 `equipment_repository`)이 각 시나리오 최신과 최신 공식 발행을 늘 합쳐지게 지킨다. 그 밖의 옛
       리비전은 막힐 수 있고, 세션이 그런 쌍을 들면 `resolve_equipment_session` 이 시나리오 최신 → 공식으로 옮기고 알린다.
     - **일정 없음** 호기(그 시나리오에 일정 행이 없는 호기 — 함께 넣기를 끄고 넣은 호기)는 그 시나리오 계산·Space 에서
@@ -3879,19 +3895,31 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     보면 빈 입력 거절(「제목을 입력하세요.」)이 방금 성공한 자리에 남았다(2026-10-26 E2E). `write_once` 는 쓴 시각도 적고,
     입력이 모두 빈 제출이 `write_guard.TRAILING_PRESS_SECONDS`(1초) 안에 오면(`just_written`) 쓰지 않고 방금 성공을 다시
     알린다. 적은 것이 하나라도 있거나 창이 지나면 정상 제출이다(VOC 새 글·답변, `tests/test_voc_page.py`).
-  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
-    회차가 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라 저장소가 거부하고, 방금 한 제 저장을 「다른 사용자가
-    먼저 저장」이라 알렸다(2026-10-26 E2E). 저장 전에 `write_guard.profile_save_marks()` 로 받은 dict 에 성공한
-    `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
-    (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
-    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
-  - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부한 회차는 최신 저장본을 그리며 편집 시작 version 을 그
-    version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
-    둘째 누름이 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이 「저장했습니다」로 바뀌고 입력은 말없이
-    버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E). 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 에
-    거부 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은 저장하지 않고 그
-    거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로 대조한다 —
-    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 세 시험·`tests/test_auto_official_update_tab.py`).
+  - **비교 후 쓰기의 본 값**(`write_guard.remember_seen`·`seen`). 저장소에 넘기는 대조 값(`expected_*`)은 사용자가 본 화면의 값이다.
+    본문에서 저장하는 폼은 폼을 제출하지 않은 회차에만 그 회차가 그린 저장본의 토큰을 적고, 제출 회차는 적은 값을 그대로 넘긴다 —
+    「칸이 없으면 지금 값」 대체(`… if isinstance(…) else settings.version`)와 「결과가 무엇이든 이 회차 값으로 올림」 은 남의
+    저장 뒤 한 회차만 돌아도 대조를 지나게 해, 옛 화면 더블클릭이 거부를 지우고 남의 저장을 덮었다(2026-10-26 E2E 3회차). 칸이
+    없으면 저장하지 않고 「다시 불러와」(`SEEN_MISSING_MESSAGE`)를 알린다. 충돌 회차도 올리지 않는다 — 거부를 `queue_refusal` 로
+    담아 앱을 다시 돌리고, 그 회차(제출 아님)가 최신을 그리며 본 값을 적고 거부를 그린다(`take_refusal`). 초안과 출발점을 함께
+    세우는 편집(Cut-off 지문·층 사용 base·설비 편집본 출발점)은 초안을 세우는 자리에서 적고, 콜백 쓰기는 그린 회차의 값을 콜백
+    인자로 받는다. 팝업이 보인 값(공식 지정 「지금 공식」)도 지정 단추를 누르지 않은 회차에 적는다 — 누른 회차에 다시 읽은 번호를
+    넘기면 첫 지정 뒤 둘째 누름이 공식을 하나 더 세웠다. 이름에 BASE·SEEN 이 든 세션 칸은 write_guard 만
+    적는다(`tests/test_write_guard_cas.py` 의 그물 — 허용은 대조 값이 아닌 탐색 표지·입력 칸 몇).
+  - **제 저장 판정.** 둘째 누름의 회차가 첫 저장의 rerun 회차(콜백이면 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가
+    거부하고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E — 버전 대조 저장·리비전명·공식
+    지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`
+    짝을 적고(`remember_own_save`), 충돌 예외의 `(본 값, 지금 값)` 이 **정확히** 그 짝이면(`is_own_save`) 거부 대신 저장 성공을
+    다시 알리고 끊겼을 뒷정리(초안 비우기·세션 옮기기)를 잇는다. 예외가 지금 값을 싣지 않으면(자동 갱신 설정·Cut-off·설비 쪽)
+    저장소에서 바로 다시 읽는다. 그 사이 남이 저장했으면 지금 값이 짝과 달라 거부를 그대로 알린다. 화면에서 충돌 예외 10종을 잡는
+    자리는 모두 이 판정을 부른다(같은 그물). 시험은 첫 회차의 쓰기 직후 그 회차에 멈춤을 걸고(`ScriptRequests.request_stop`) 같은
+    위젯 값으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다 — 네 자리(리비전명·공식 지정·설비 「리비전 저장」·자동 갱신
+    설정)에서 더블클릭은 한 번 쓰고 성공만, 남의 저장 뒤 옛 화면 더블클릭은 둘 다 거부다.
+  - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부 회차가 본 값을 올리지 않으므로 그 누름은 다시 거부된다. 거부 뒤 다음
+    회차가 최신을 그린 직후에 닿은 둘째 누름(옛 화면의 입력)은 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 의
+    거부 표지가 거른다 — 거부를 받으면 그 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음
+    제출은 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
+    대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
+    `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_auto_official_update_tab.py`).
   - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
     세대·이미 지운 글·고칠 대상이 바뀌어 잠긴 단추 — 잠긴 단추의 누름은 Streamlit 이 버린다). 첫 쓰기의 성공 알림은 앞
     회차가 이미 꺼내 그렸으므로 그 회차가 화면을 다시 그리며 알림을 지워, 한 건 쓰였는데 아무 알림도 남지 않았다
