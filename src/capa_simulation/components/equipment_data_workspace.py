@@ -1043,10 +1043,13 @@ def draft_unit_keys() -> dict[str, str]:
     return {str(name): str(key) for name, key in value}
 
 
-def _sample_names(names: Sequence[str], limit: int = 3) -> str:
-    """「APW01, APW02 외 3」 — 자연 정렬 앞 `limit` 개."""
+def _sample_names(
+    names: Sequence[str], limit: int = 3, *, shown: Callable[[str], str] = str
+) -> str:
+    """「APW01, APW02 외 3」 — 자연 정렬 앞 `limit` 개. 정렬은 이름으로 하고 적는 글은 `shown`
+    (마크다운으로만 가는 글은 `markdown_safe_tildes` — 「DA~21~R」 가 지움선이 되지 않게)."""
     ordered = sorted(names, key=natural_name_key)
-    head = ", ".join(ordered[:limit])
+    head = ", ".join(shown(name) for name in ordered[:limit])
     return head if len(ordered) <= limit else f"{head} 외 {len(ordered) - limit}"
 
 
@@ -1086,9 +1089,12 @@ class RemovalElsewhere:
         return all(name in seen and set(scenarios) <= seen[name] for name, scenarios in self.units)
 
     def message(self) -> str:
+        """저장 칸 경고·저장 거절 글(마크다운으로만 간다) — 호기 이름은 물결표를, 시나리오 이름은
+        구두점을 막아 싣는다."""
         scenarios = "·".join(f"「{literal_markdown(name)}」" for name in self.scenarios)
+        units = _sample_names(sorted(self.names), shown=markdown_safe_tildes)
         return (
-            f"지우는 호기 {len(self.units):,}대({_sample_names(sorted(self.names))})는 다른 설비 "
+            f"지우는 호기 {len(self.units):,}대({units})는 다른 설비 "
             f"시나리오 {len(self.scenarios):,}개({scenarios})에도 일정이 있습니다 — 저장하면 공통 "
             "대장에서 빠져 그 설비 시나리오에서도 일정·비가동과 함께 빠집니다. 이 시나리오에서만 "
             "빼려면 지우지 말고 정지·반출/이설일정을 적으세요."
@@ -1389,9 +1395,11 @@ def discarded_notice(
     도면 요소·Main 설비명 위치)은 지금처럼 버렸다."""
     head = f"다른 사용자가 {number}{object_particle(number)} 저장해, "
     if reapplied is not None and reapplied.reapplied:
+        # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
+        names = markdown_safe_tildes(", ".join(reapplied.dropped[:3]))
         dropped = (
             f" 그 사이 공통 대장에서 빠진 호기 {len(reapplied.dropped):,}대"
-            f"({', '.join(reapplied.dropped[:3])}{' 외' if len(reapplied.dropped) > 3 else ''})의 "
+            f"({names}{' 외' if len(reapplied.dropped) > 3 else ''})의 "
             "편집은 뺐습니다."
             if reapplied.dropped
             else ""
@@ -2766,7 +2774,8 @@ def _deletion_message(plan: DeletionPlan) -> str:
     """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠지는지. 호기 지우기는 설비 마스터
     표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
     count = plan.target_count
-    samples = ", ".join(plan.sample_keys())
+    # 경고 상자·알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명의 물결표를 막는다.
+    samples = markdown_safe_tildes(", ".join(plan.sample_keys()))
     more = " 외" if count > len(plan.sample_keys()) else ""
     if plan.target == BASELINE_TARGET:
         head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"

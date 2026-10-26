@@ -566,6 +566,21 @@ def test_a_held_process_keeps_its_value_when_its_text_changes_in_the_browser() -
     assert any("공정소분류: Wire Bond (Other)" in item.value for item in app.caption)
 
 
+def test_the_filter_caption_blocks_the_tildes_of_the_chosen_process() -> None:
+    """Main 의 걸린 조건 줄(캡션 — 마크다운)은 고른 공정 이름을 날로 실어 「공정소분류: E2E~공정~X」
+    가 「E2E<del>공정</del>X」 로 그려졌다(2026-10-26 E2E r5). 이름의 물결표를 막는다."""
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["extra_unit_process"] = "E2E~공정~X"
+    app.run()
+    assert not app.exception
+
+    app.multiselect(key=SMALL_PROCESS_KEY).set_value(["E2E~공정~X"]).run()
+    assert not app.exception
+
+    filters = [str(item.value) for item in app.caption if "공정소분류:" in str(item.value)]
+    assert filters == [":material/filter_alt: 공정소분류: E2E\\~공정\\~X"], filters
+
+
 def test_the_question_buttons_wrap_instead_of_running_off_a_narrow_window() -> None:
     """「볼 내용」 다섯 단추 줄은 한 줄(nowrap)이라 390px 창에서 「단계 전환」 이 화면 밖으로 잘렸다
     (E2E) — 그 칸(`st-key-` + `QUESTION_KEY`)의 단추 줄을 접는 스타일을 함께 그린다."""

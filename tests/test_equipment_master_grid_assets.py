@@ -916,6 +916,63 @@ process.stdout.write(JSON.stringify(results))
     }
 
 
+def test_a_press_on_the_text_or_margin_of_a_loader_popover_keeps_it_open() -> None:
+    """팝오버 안 안내 글·여백을 누르면 초점이 초점 받는 가장 가까운 조상(본문 stMain)으로 가
+    relatedTarget 이 감싸개 밖이 되고, 위의 「나감 닫기」 가 패널을 닫았다(2026-10-26 E2E r5 회귀 —
+    f03490a 에서는 열린 채였다). 패널 안 누름에서 온 나감은 닫지 않는다(공정·조건 두 팝오버).
+    누름이 지나간 뒤의 Tab 나감과 패널 밖 누름은 그대로 닫는다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const main = new FakeNode('section')
+main.appendChild(parentElement)
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
+const openPanel = (label) => {
+  const toggle = buttonOf(label)
+  toggle.focus()
+  toggle.click()
+  return { toggle, panel: toggle.parentNode.children[1] }
+}
+const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTarget: target })
+;(async () => {
+  mount(input.data)
+  const outside = buttonOf('일정 확인 필요')
+  const spots = [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]
+  for (const [label, spot] of spots) {
+    let { toggle, panel } = openPanel(label)
+    const row = {}
+    fire(panel.querySelector(spot), 'mousedown')
+    leaveTo(main)
+    row.text = !panel.hidden
+    fire(panel, 'mousedown')
+    leaveTo(main)
+    row.margin = !panel.hidden
+    await tick()
+    leaveTo(outside)
+    row.tabOut = { open: !panel.hidden, expanded: toggle.getAttribute('aria-expanded') }
+    ;({ toggle, panel } = openPanel(label))
+    fire(outside, 'mousedown')
+    leaveTo(main)
+    row.pressOutside = !panel.hidden
+    await tick()
+    results[label] = row
+  }
+  process.stdout.write(JSON.stringify(results))
+})()
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    expected = {
+        "text": True,
+        "margin": True,
+        "tabOut": {"open": False, "expanded": "false"},
+        "pressOutside": False,
+    }
+    assert result == {"조건으로 불러오기": expected, "공정으로 불러오기": expected}
+
+
 def test_closing_the_import_dialog_returns_focus_to_the_button_that_opened_it() -> None:
     """불러오기 줄 「엑셀·CSV로 한꺼번에」 로 연 팝업을 Esc·닫기로 닫으면 초점이 BODY 로 빠지고 다음
     Tab 이 사이드바 머리로 갔다(2026-10-26 E2E — Streamlit 이 그림자 DOM 안 여는 단추로 돌려주지

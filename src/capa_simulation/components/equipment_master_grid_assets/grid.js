@@ -852,9 +852,16 @@ function popover(S, name, label, build, wide) {
   })
   // 초점이 패널·여는 단추 밖으로 나가면(Tab) 닫는다 — 열린 채 남으면 초점이 간 칸(오른쪽 호기 상세 등)을 덮고, 그 칸의 Esc
   // 는 패널에 닿지 않는다. 받을 칸이 없는 나감(다시 지으며 지운 칸·창 밖)은 닫지 않는다. 초점은 옮겨 간 칸에 둔다.
+  // 패널 안 글자·여백을 누른 나감도 닫지 않는다 — 초점을 못 받는 칸을 누르면 초점이 초점 받는 가장 가까운 조상(본문
+  // stMain)으로 가 relatedTarget 이 감싸개 밖이 된다. 누름 뒤 초점 이동은 같은 일 안이라 다음 일에 표를 걷는다.
+  let pressed = false
+  wrap.addEventListener('mousedown', () => {
+    pressed = true
+    setTimeout(() => { pressed = false }, 0)
+  })
   wrap.addEventListener('focusout', (event) => {
     const next = event.relatedTarget
-    if (S.pop !== name || !next || wrap.contains(next)) return
+    if (S.pop !== name || pressed || !next || wrap.contains(next)) return
     S.pop = null
     paint()
   })

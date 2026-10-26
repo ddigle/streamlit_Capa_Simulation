@@ -195,3 +195,26 @@ def test_an_empty_selection_never_builds_row_keys(monkeypatch: pytest.MonkeyPatc
 
     assert flags.tolist() == [False] * len(downtime)
     assert flags.dtype == "bool"
+
+
+def test_the_deletion_notice_blocks_the_tildes_of_the_names_in_its_keys() -> None:
+    """작은 편집표 삭제 확인·결과 글(경고 상자·알림 칸 — 마크다운)은 키에 든 공정명·설비명을 날로
+    실어 「E2E~공정~X」 의 가운데가 지움선이 됐다(2026-10-26 E2E r5 와 같은 결함류). 막는다."""
+    baseline, equipment, downtime = _frames()
+    baseline.loc[len(baseline)] = {"공정": "E2E~공정~X", "분류": "전체", "기존보유대수": 1}
+    downtime.loc[len(downtime)] = {
+        "설비명": "DA~21~R",
+        "비가동유형": "PM",
+        "시작일": pd.Timestamp("2026-10-09"),
+    }
+    frames = (baseline, equipment, downtime)
+
+    by_process = workspace._deletion_message(
+        plan_deletion(frames, BASELINE_TARGET, {("E2E~공정~X", "전체")})
+    )
+    by_unit = workspace._deletion_message(
+        plan_deletion(frames, DOWNTIME_TARGET, {("DA~21~R", "PM", "2026-10-09")})
+    )
+
+    assert "대상: E2E\\~공정\\~X · 전체." in by_process, by_process
+    assert "대상: DA\\~21\\~R · PM · 2026-10-09." in by_unit, by_unit

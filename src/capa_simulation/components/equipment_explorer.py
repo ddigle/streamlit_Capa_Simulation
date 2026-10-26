@@ -684,7 +684,8 @@ def render_equipment_explorer(
         if transition_schedule != "전체":
             active_filters.append(f"일정상태: {transition_schedule}")
     if active_filters:
-        st.caption(":material/filter_alt: " + " · ".join(active_filters))
+        # 고른 값은 사람이 적은 이름(공정 등)이다 — 「E2E~공정~X」 가 지움선이 되지 않게 막는다.
+        st.caption(":material/filter_alt: " + markdown_safe_tildes(" · ".join(active_filters)))
     filtered = equipment
     for column, values in filters:
         if values:

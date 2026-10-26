@@ -1053,8 +1053,9 @@ def _render_notices(
             saved = (
                 latest_snapshot.equipment if latest_snapshot is not None else frames[1].iloc[0:0]
             )
+            # 서비스가 지은 글이라 호기 이름을 날로 담는다 — 그리는 자리에서 물결표를 막는다.
             for message in inactive_floor_warnings(frames[1], saved, floor_states):
-                st.warning(message, icon=":material/block:")
+                st.warning(markdown_safe_tildes(message), icon=":material/block:")
 
 
 def _render_downloads(

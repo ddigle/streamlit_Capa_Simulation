@@ -43,11 +43,13 @@ def _filter_app() -> None:
     from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
     from capa_simulation.services.process_cutoff import prepare_process_cutoff
 
+    # `line_a` 는 첫 라인 이름을 갈아 낀다 — 물결표 이름 시험용.
+    line_a = str(st.session_state.get("line_a", "Line-A"))
     units = pd.DataFrame(
         {
             "설비명": ["EQ-1", "EQ-2", "EQ-3"],
             "공정소분류": ["Die Attach", "Die Attach", "Etch"],
-            "공정구분": ["Line-A", "Line-B", "Line-A"],
+            "공정구분": [line_a, "Line-B", line_a],
             "Model": ["M-1", "M-2", " "],
         }
     )
@@ -81,8 +83,11 @@ def _filter_app() -> None:
     )
 
 
-def _run() -> AppTest:
-    app = AppTest.from_function(_filter_app, default_timeout=30).run()
+def _run(**state: object) -> AppTest:
+    app = AppTest.from_function(_filter_app, default_timeout=30)
+    for key, value in state.items():
+        app.session_state[key] = value
+    app.run()
     assert not app.exception
     app.segmented_control(key=RESULT_VIEW_KEY).set_value("분류별 내역").run()
     assert not app.exception
@@ -186,3 +191,13 @@ def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
     captions = " ".join(caption.value for caption in app.caption)
     assert "호기 1개만 더합니다" in captions
     assert _available(app) == 1.0
+
+
+def test_the_filter_caption_blocks_the_tildes_of_the_chosen_values() -> None:
+    """본문의 「호기 필터 · 공정구분: …」 캡션(마크다운)은 고른 값을 날로 실어 「L~A~X」 의 가운데가
+    지움선이 됐다(2026-10-26 E2E r5 와 같은 결함류 — Summary 걸린 조건 줄). 물결표를 막는다."""
+    app = _run(line_a="L~A~X")
+    _filter(app, "공정구분", ["L~A~X"])
+
+    captions = [str(item.value) for item in app.caption if "호기 필터 ·" in str(item.value)]
+    assert captions and all("호기 필터 · 공정구분: L\\~A\\~X —" in text for text in captions)
