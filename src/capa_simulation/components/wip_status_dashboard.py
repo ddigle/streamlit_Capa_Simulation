@@ -21,9 +21,39 @@ from capa_simulation.services.wip_status import (
 )
 
 WIP_GRID_CELL_WIDTH_PX = 340
-WIP_GRID_CELL_HEIGHT_PX = 330
+# 칸 하나(축 영역)의 높이.
+WIP_GRID_CELL_HEIGHT_PX = 300
+# 줄 사이 틈. 아래 줄 칸의 두 줄 제목(12px 서체, 약 31px)과 위 줄 칸의 -45° 날짜 눈금(9px 서체,
+# 축에서 띄운 자리까지 약 30px)이 함께 들어가고, 눈금과 제목 사이가 약 18px 떠 제목이 위 칸이 아니라
+# 아래 칸 것으로 읽힌다(64px 이면 브라우저에서 2px 만 떴다). 그림 폭·높이가 px 고정이라 창 크기와
+# 상관없이 이 틈이 선다.
+WIP_GRID_ROW_GAP_PX = 80
+# 위 여백은 범례와 첫 줄 제목, 아래 여백은 마지막 줄 날짜 눈금 자리다.
+_GRID_MARGIN_TOP_PX = 92
+_GRID_MARGIN_BOTTOM_PX = 50
 # 직전 회차에 만든 격자 Figure 한 벌과 그 입력 사본(세션 칸). `remembered_wip_status_grid_figure`.
 WIP_GRID_FIGURE_MEMO_KEY = "wip_status_grid_figure_memo"
+
+
+def wip_grid_height_px(rows: int) -> int:
+    """격자 그림 높이 — 위·아래 여백 + 줄마다 칸 높이 + 줄 사이마다 `WIP_GRID_ROW_GAP_PX`."""
+    return max(
+        420,
+        _GRID_MARGIN_TOP_PX
+        + _GRID_MARGIN_BOTTOM_PX
+        + rows * WIP_GRID_CELL_HEIGHT_PX
+        + max(rows - 1, 0) * WIP_GRID_ROW_GAP_PX,
+    )
+
+
+def wip_grid_vertical_spacing(rows: int) -> float:
+    """`make_subplots` 의 줄 사이 비율. 축 영역(그림 높이 − 위·아래 여백)에 대한 줄 사이 틈이다.
+
+    비율을 격자 높이에 고정 px 를 나눈 값으로 두면 틈이 약 27px 라, 두 줄 제목과 위 칸의 기울인
+    날짜 눈금이 겹쳤다(2026-10-26 E2E — 3줄 × 5칸에서 제목 10개).
+    """
+    plot_height = wip_grid_height_px(rows) - _GRID_MARGIN_TOP_PX - _GRID_MARGIN_BOTTOM_PX
+    return WIP_GRID_ROW_GAP_PX / plot_height
 
 
 def remembered_wip_status_grid_figure(
@@ -116,7 +146,7 @@ def build_wip_status_grid_figure(
         cols=cols,
         subplot_titles=titles,
         horizontal_spacing=min(0.045, 18 / max(cols * WIP_GRID_CELL_WIDTH_PX, 1)),
-        vertical_spacing=min(0.07, 28 / max(rows * WIP_GRID_CELL_HEIGHT_PX, 1)),
+        vertical_spacing=wip_grid_vertical_spacing(rows),
     )
     legend_seen: set[str] = set()
     all_dates = [timestamp.date() for timestamp in pd.date_range(start_date, end_date, freq="D")]
@@ -184,7 +214,7 @@ def build_wip_status_grid_figure(
 
     figure.update_layout(axis_layout)
     figure_width = max(430, cols * WIP_GRID_CELL_WIDTH_PX + 90)
-    figure_height = max(420, rows * WIP_GRID_CELL_HEIGHT_PX + 110)
+    figure_height = wip_grid_height_px(rows)
     figure.update_layout(
         width=figure_width,
         height=figure_height,
@@ -194,7 +224,7 @@ def build_wip_status_grid_figure(
         **chart_canvas_layout(font_size=11),
         hoverlabel={"font": {"family": tokens.FONT_FAMILY}},
         hovermode="closest",
-        margin={"l": 54, "r": 24, "t": 92, "b": 50},
+        margin={"l": 54, "r": 24, "t": _GRID_MARGIN_TOP_PX, "b": _GRID_MARGIN_BOTTOM_PX},
         legend={
             "orientation": "h",
             "x": 0,

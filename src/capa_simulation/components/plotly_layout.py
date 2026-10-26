@@ -173,6 +173,20 @@ def chart_canvas_layout(*, font_size: int) -> dict[str, Any]:
     }
 
 
+def apply_axis_text_color(figure: go.Figure) -> None:
+    """모든 x·y 축의 눈금·축 제목 글자를 `TEXT_MUTED` 로 준다. **토큰은 부를 때 읽는다.**
+
+    `layout.font.color` 만 주면 축 글자는 따라오지 않는다 — `st.plotly_chart` 의 기본
+    `theme="streamlit"` 이 축 `tickfont`·`title.font` 색을 테마 회색(Streamlit gray70)으로 따로
+    채워, 밝은 테마 캔버스(`CHART_CANVAS`) 위 대비가 3.50:1 이었다(2026-10-26 E2E).
+    `TEXT_MUTED` 는 두 테마의 캔버스 위에서 4.5:1 이상이다
+    (`tests/test_chart_axis_text_contrast.py`).
+    """
+    color = tokens.TEXT_MUTED
+    figure.update_xaxes(tickfont_color=color, title_font_color=color)
+    figure.update_yaxes(tickfont_color=color, title_font_color=color)
+
+
 # ---------------------------------------------------------------- 표 칸 글자를 표 밖에서 그리기
 #
 # `go.Table` 은 칸 글자에 마크업(`<b>`·`<br>`)이 있으면 칸마다 "그린 다음 재서 옮기는" 길로

@@ -808,6 +808,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   고정 셀 Plotly 재공 격자(재공·유입·Flow 막대와 표준 가능량 기준선)를 만든다.
   - 화면은 `remembered_wip_status_grid_figure` 로 부른다 — 직전 Figure 한 벌을 세션에 두고 입력이 `DataFrame.equals`
     로 같으면 다시 쓴다. Streamlit 캐시가 아니라 캐시 경계 밖이다.
+  - 칸 높이(`WIP_GRID_CELL_HEIGHT_PX`)와 줄 사이(`WIP_GRID_ROW_GAP_PX`)는 px 고정이고 그림 높이·줄 사이 비율은 그 둘에서
+    셈한다(`wip_grid_height_px`·`wip_grid_vertical_spacing`) — 줄 사이는 아래 칸의 두 줄 제목과 위 칸의 -45° 날짜 눈금을 함께
+    담고도 사이가 떠야 한다.
 - `src/capa_simulation/components/grouped_monthly_table.py` — 환산 결과처럼 편집하지 않는 월별 표를 고정 분류 영역 +
   스크롤 월 영역 Plotly 표로 그린다. 계층 그룹·제품/양산구분 Total·전체 합계 행을 넣고 같은 구조의 CSV 프레임을
   만든다. 계산 원본은 바꾸지 않는다.
@@ -1662,6 +1665,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다.
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
+  - 직접 편집 저장은 Proc Rename 과 같은 버전 대조(`BASE_VERSION_KEY` → `expected_version`)다. 범위 하나만 고쳐도
+    프로필 전체 version 을 본다 — 편집표가 `num_rows="dynamic"` 이라 데이터가 신원에 들어가, 남의 저장으로 범위 줄이
+    바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을 버린다. 대조가 없으면 지금 저장본을 다시 쓰며 version 만 올리고
+    「저장했습니다」를 띄웠다(2026-10-26 E2E, `tests/test_display_order_management.py`).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
   - 줄 차례 지문만 바뀌어 적용 전 편집을 버린 회차는 결과(`SourceReset.row_order_dropped`)를 화면이 탭 묶음 위 알림 칸에
@@ -1921,12 +1928,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
   온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
-  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
-  보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다. 거꾸로 남의 저장에 거부된
+  버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename·표시순서 직접 편집·판정 기준·
+  확보율 보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다. 거꾸로 남의 저장에 거부된
   누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 위 셋과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는
-  알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가
-  쓴다(9장).
+  알린다 — Proc Rename·판정 기준·확보율 보정과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을
+  지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·
+  「삭제」 가 쓴다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -2252,6 +2259,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 도형·주석은 `append_layout_items` 로 모아 Figure 를 돌려주는 쪽이 `flush_layout_items` 를 한 번 부른다(빠뜨리면
     테두리·라벨이 사라진다, `tests/test_plotly_layout.py`). flush·`figure_from_spec` 의 빠른 경로는 비공개 `_validate`
     라 `plotly>=5.24,<7` 에 기댄다(`tests/test_plotly_fast_path.py`).
+  - `chart_canvas_layout` 은 캔버스 두 바탕색과 `layout.font` 만 준다 — `st.plotly_chart` 기본 `theme="streamlit"` 이 축
+    눈금·축 제목 글자색을 테마 회색(밝게 `#808495`, 캔버스 위 3.50:1)으로 따로 채우므로, 축 글자를 따로 주지 않는 그림은
+    `apply_axis_text_color`(모든 x·y 축 `TEXT_MUTED`, 두 테마 4.5:1 이상)를 마지막에 부른다. 지금 실적 세 화면
+    (`performance_actual_screen`)·Dynamic Capa(`dynamic_capacity_dashboard`)가 부른다(`tests/test_chart_axis_text_contrast.py`).
   - 표 칸 글자를 표 밖에서 그리는 도우미 — `table_text_layer`(`TableText` 벌마다 글자 trace 와 숨긴 축. 넘칠 수 있는
     글자(`table_text_max_width_px`)만 그 열을 덮는 축 `xaxis2`… 에 얹어 `go.Table` 처럼 열 경계 ±1px 에서 자른다.
     자르는 축이 있으면 `plot_bgcolor` 는 투명이다 — 겹치는 축 바탕이 `layer: below` 도형을 덮는다), `table_text_y`
@@ -2800,7 +2811,7 @@ RQ_MODULE
     위젯」).
 25. **버전 대조.** 편집표로 고치는 공용 프로필은 편집을 시작할 때 본 `version`(표 전체 교체 초안이면 내용 지문)을
     넘기고, 저장소는 쓰기 잠금 안에서 저장본과 다르면 거부한다 — 옛 초안이 그 사이 남의 저장을 덮지 않게. 공정
-    표시명·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
+    표시명·표시순서(직접 편집)·확보율 보정은 `require_profile_version` → `ProfileVersionConflict`, 판정 기준은
     `SecurementThresholdConflict`, 자동 갱신 설정은 자체 대조, 설비 Cut-off 는 초안 지문(`process_cutoff_fingerprint`)
     이다. Space 층 사용 설정(설비 `0029`)은 `require_profile_version(schema="equipment_ops")` 다. 새 편집 프로필은
     `require_profile_version` 을 쓴다. 충돌이면 최신 저장본으로 초안을 다시 세운다. 「현재 전체 교체」를
@@ -3953,12 +3964,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     보면 빈 입력 거절(「제목을 입력하세요.」)이 방금 성공한 자리에 남았다(2026-10-26 E2E). `write_once` 는 쓴 시각도 적고,
     입력이 모두 빈 제출이 `write_guard.TRAILING_PRESS_SECONDS`(1초) 안에 오면(`just_written`) 쓰지 않고 방금 성공을 다시
     알린다. 적은 것이 하나라도 있거나 창이 지나면 정상 제출이다(VOC 새 글·답변, `tests/test_voc_page.py`).
-  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
+  - 본문에서 저장하고 `st.rerun()` 하는 **버전 대조 저장**(Proc Rename·표시순서 직접 편집·판정 기준·확보율 보정)은 둘째 누름의
     회차가 rerun 회차를 끊으면 편집 시작 version 이 저장 전 그대로라 저장소가 거부하고, 방금 한 제 저장을 「다른 사용자가
     먼저 저장」이라 알렸다(2026-10-26 E2E). 저장 전에 `write_guard.profile_save_marks()` 로 받은 dict 에 성공한
     `(편집 시작, 저장된)` version 짝을 적고, `ProfileVersionConflict` 의 `expected`·`stored` 가 그 짝이면
     (`is_own_profile_save`) 거부 대신 저장 성공을 다시 알린다. 그 사이 남이 저장했으면 지금 version 이 짝과 달라 거부를
-    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`).
+    그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·
+    `tests/test_display_order_management.py`).
   - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부한 회차는 최신 저장본을 그리며 편집 시작 version 을 그
     version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
     둘째 누름이 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이 「저장했습니다」로 바뀌고 입력은 말없이

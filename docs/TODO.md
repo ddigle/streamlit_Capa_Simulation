@@ -897,6 +897,29 @@
   글자 꼴만 그대로다). 관련: `components/formula_text.py`·`process_capa_view.py`·`process_capa_canvas.py`·
   `constraint_simulation_view.py`·`constraint_simulation_figures.py`·`availability_sheet_canvas.py`·
   `app_pages/standard_target_capa.py`·AGENTS 3·6·8장
+- (2026-10-26) **표준 대비 재공 현황 격자의 줄 사이는 px 고정 80px 다**(브라우저 E2E lens dynamic-admin, 밤사이 권장대로) — 줄
+  사이 비율을 `28 ÷ (줄 수 × 칸 높이)` 로 두어 틈이 약 27px 라, 둘째 줄부터의 두 줄 칸 제목(「STEP · 공정」 / 제품)이 바로 위 칸의
+  -45° 날짜 눈금과 겹쳤다(3줄 × 5칸에서 제목 10개). 그림 높이를 위·아래 여백 + 줄마다 칸 300px + 줄 사이마다 80px 로 셈하고
+  `make_subplots` 의 줄 사이 비율을 그 축 영역에서 낸다(`wip_grid_height_px`·`wip_grid_vertical_spacing`). 64px 는 겹침은
+  없었으나 눈금과 제목 사이가 2px 라 제목이 위 칸 것처럼 읽혀 80px 로 두었다. 대안: 칸 제목을 한 줄로 줄이기 — 제품명이 길면
+  340px 칸을 넘는다. 관련: `components/wip_status_dashboard.py`·`tests/test_wip_status_dashboard.py`.
+- (2026-10-26) **실적 세 화면·Dynamic Capa 그림의 축 눈금 글자는 `TEXT_MUTED` 다**(브라우저 E2E lens dynamic-admin, 밤사이
+  권장대로) — 그림이 `layout.font.color` 만 주어 `st.plotly_chart` 기본 테마가 축 눈금을 테마 회색(밝게 `#808495`)으로 채워
+  캔버스 위 3.50:1 이었다(효율·UPEH·수율 추이·우선순위·Gap 격자, Dynamic Capa 공정별 실현 수준·손실 구조·일별 추이). 공용
+  `plotly_layout.apply_axis_text_color` 로 모든 x·y 축 눈금·축 제목을 `TEXT_MUTED`(밝게 5.19:1 · 어둡게 6.74:1)로 준다 —
+  같은 앱의 제약 시뮬레이션·재공 현황 그림과 같은 색이다. 대안: `TEXT`(본문 글자색) — 축 글자가 막대 숫자·범례와 같은
+  무게가 되어 위계가 사라진다. 관련: `components/plotly_layout.py`·`components/performance_actual_screen.py`·
+  `components/dynamic_capacity_dashboard.py`·`tests/test_chart_axis_text_contrast.py`. 남은 것(이 고침 밖): 풍선(`hoverlabel`)
+  글자색을 주지 않는 그림은 테마가 풍선 글자도 같은 회색으로 채운다(대비는 재지 않음).
+- (2026-10-26) **Admin 표시순서 직접 편집 저장은 버전 대조다**(브라우저 E2E lens dynamic-admin, 밤사이 권장대로) — A·B 가 같은
+  범위(생산 계획/수율)를 연 뒤 B 가 한 줄을 지우고 저장하면, A 의 저장 회차에 편집표(`num_rows="dynamic"` — 데이터가 신원에 든다)가
+  새로 서며 A 가 고친 값표시순서를 버린 채 지금 저장본을 다시 써 version 만 올리고 「저장했습니다」 를 띄웠다. Proc Rename 과 같은
+  결로 편집을 시작한 회차의 version(`BASE_VERSION_KEY`)을 저장소에 넘기고(`replace_global_display_order(expected_version=…)` →
+  `require_profile_version`) 어긋나면 저장 버튼 위에 「다른 사용자가 먼저 표시순서를 저장해…」 를 띄운다. 빠른 두 번 누름은
+  `write_guard` 제 저장 표지로 거르고, 「현재 전체 교체」 를 확인받는 Excel 붙여넣기는 대조하지 않는다(AGENTS 5장 25). 대안: 고른
+  범위의 줄만 견주어 다른 범위 저장은 통과 — 범위 지문을 따로 두어야 하고 AGENTS 25 의 「프로필 version」 규칙에서 벗어난다. 관련:
+  `components/display_order_management.py`·`persistence/display_order_store.py`·`tests/test_display_order_management.py`·
+  `tests/test_duckdb_repository.py`
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을

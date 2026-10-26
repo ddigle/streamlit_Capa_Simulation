@@ -19,12 +19,15 @@ from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.write_guard import is_own_profile_save, profile_save_marks
 from capa_simulation.io.reference_cache import apply_global_display_order
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.cache import (
     clear_global_display_order_cache,
     load_global_display_order,
 )
+from capa_simulation.persistence.models import GlobalDisplayOrder
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.display_order_csv import (
     display_order_from_clipboard,
@@ -50,6 +53,11 @@ DISPLAY_ORDER_EDITOR_KEY = "display_order_editor"
 # 저장 뒤 「화면 표시명」 경고의 자리. 저장 성공은 곧바로 `st.rerun()` 하므로 그 회차에
 # 그린 경고는 화면에 닿지 않는다. 성공 문구처럼 세션에 담았다가 다음 회차에 한 번 그린다.
 LABEL_WARNINGS_KEY = "display_order_label_warnings"
+# 직접 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다.
+BASE_VERSION_KEY = "display_order_base_version"
+# 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+DISPLAY_ORDER_SAVE_NAME = "display_order_direct_edit"
+DISPLAY_ORDER_SAVED_MESSAGE = "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다."
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -111,7 +119,7 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order)
-    _render_direct_editor(repository, display_order)
+    _render_direct_editor(repository, display_order, profile.version)
 
 
 @st.dialog("Excel 붙여넣기 · 표시순서", width="large", on_dismiss=close_admin_dialog)
@@ -169,7 +177,17 @@ def _clipboard_dialog(
 def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     display_order: pd.DataFrame,
+    version: int,
 ) -> None:
+    """범위 하나의 직접 편집 표. 저장은 **버전 대조**다 — Proc Rename 과 같은 결로 편집을 시작한
+    회차의 version 을 세션(`BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다.
+
+    그 사이 다른 사람이 저장했으면 저장소가 거부한다. 편집표는 줄을 더하고 지울 수 있어 데이터가
+    신원에 들어가므로, 남의 저장으로 범위 줄이 바뀐 회차에는 편집표가 새로 서며 적어 둔 편집을
+    버린다. 대조 없이 그대로 저장하면 지금 저장본을 다시 쓰며 version 만 올리고 성공을 알렸다
+    (2026-10-26 E2E).
+    """
+    submitted_base = st.session_state.get(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
     pages = display_order["페이지 구분"].drop_duplicates().tolist()
     selected_page = st.selectbox(
@@ -235,7 +253,13 @@ def _render_direct_editor(
             key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
         )
     if not submitted:
+        st.session_state[BASE_VERSION_KEY] = version
         return
+    expected_version = submitted_base if isinstance(submitted_base, int) else version
+    # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+    st.session_state[BASE_VERSION_KEY] = version
+    # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = profile_save_marks()
     try:
         revised = replace_display_order_scope(
             display_order,
@@ -247,25 +271,34 @@ def _render_direct_editor(
         # 고른 범위만 바꾸는 저장이다. 다른 범위에 이미 있던 겹친 분류값은 저장 사슬 끝까지 넘겨,
         # 두 범위에 예전 겹침이 있어도 한 범위씩 고쳐 저장할 수 있게 한다. 고른 범위 안의 겹침과
         # 새로 생긴 겹침은 그대로 막힌다.
-        _save_global_display_order(
+        saved = _save_global_display_order(
             repository,
             revised,
             source=source,
             tolerated_clashes=clashes_outside_scope(
                 display_order, str(selected_page), str(selected_tab)
             ),
+            expected_version=expected_version,
         )
+        save_marks[DISPLAY_ORDER_SAVE_NAME] = (expected_version, saved.version)
         # 표시명을 적으면 저장은 통과하고 정렬만 조용히 걸리지 않는다. 막지 않고 알린다.
         mistakes = display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
         if mistakes:
             st.session_state[LABEL_WARNINGS_KEY] = mistakes
+    except ProfileVersionConflict as exc:
+        # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
+        # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
+        clear_global_display_order_cache()
+        st.session_state.pop(BASE_VERSION_KEY, None)
+        if is_own_profile_save(DISPLAY_ORDER_SAVE_NAME, exc.expected, exc.stored):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+            queue_flash("display_order_flash", DISPLAY_ORDER_SAVED_MESSAGE)
+            st.rerun()
+        save_status.error(bootstrap_error_message(exc))
     except BOOTSTRAP_ERRORS as exc:
         save_status.error(bootstrap_error_message(exc))
     else:
-        queue_flash(
-            "display_order_flash",
-            "표시순서를 모든 시나리오의 공용 설정으로 저장했습니다.",
-        )
+        queue_flash("display_order_flash", DISPLAY_ORDER_SAVED_MESSAGE)
         st.rerun()
 
 
@@ -309,14 +342,19 @@ def _save_global_display_order(
     *,
     source: str,
     tolerated_clashes: Collection[ClashKey] = (),
-) -> None:
+    expected_version: int | None = None,
+) -> GlobalDisplayOrder:
     """저장한다. 붙여넣기는 프로필 전체를 바꾸므로 `tolerated_clashes` 없이 부른다.
 
-    입장 화면 Summary 도 이 차례로 그리므로 그 세션의 확인을 비운다.
+    붙여넣기는 「현재 전체 교체」를 확인받는 일이라 `expected_version` 없이 부른다(버전 대조는
+    직접 편집). 입장 화면 Summary 도 이 차례로 그리므로 그 세션의 확인을 비운다.
     """
     validated = validate_display_order(display_order, tolerated_clashes=tolerated_clashes)
     profile = repository.replace_global_display_order(
-        validated, source=source, tolerated_clashes=tolerated_clashes
+        validated,
+        source=source,
+        tolerated_clashes=tolerated_clashes,
+        expected_version=expected_version,
     )
     clear_global_display_order_cache()
     forget_intro_summary_check()
@@ -324,3 +362,4 @@ def _save_global_display_order(
         apply_global_display_order(profile.rules)
     except RuntimeError:
         pass
+    return profile
