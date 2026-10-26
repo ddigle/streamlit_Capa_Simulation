@@ -52,6 +52,7 @@ from capa_simulation.components.plotly_layout import (
     flush_layout_items,
 )
 from capa_simulation.design import tokens
+from capa_simulation.services.korean_particle import subject_particle
 from capa_simulation.services.modification_schedule import (
     ScheduleBatch,
     ScheduleMonth,
@@ -149,16 +150,17 @@ def _blocked_reason(result: ScheduleResult) -> str:
     cause = None if shortfall is None else shortfall.cause
     if cause == "window":
         target = "기한" if shortfall is not None and shortfall.by_deadline else "조회기간 끝"
+        particle = subject_particle(target)
         if result.last_day < result.first_day:
             return (
-                f"{target}({result.last_day.isoformat()})이 넣을 수 있는 첫날"
+                f"{target}({result.last_day.isoformat()}){particle} 넣을 수 있는 첫날"
                 f"({result.first_day.isoformat()})보다 앞입니다"
             )
         span = (result.last_day - result.first_day).days + 1
         return (
             f"넣을 수 있는 첫날({result.first_day.isoformat()}) \\~ {target}"
-            f"({result.last_day.isoformat()})이 {span}일로 개조 기간 {conditions.days}일보다 "
-            "짧습니다"
+            f"({result.last_day.isoformat()}){particle} {span}일로 개조 기간 "
+            f"{conditions.days}일보다 짧습니다"
         )
     if cause == "concurrent":
         return (

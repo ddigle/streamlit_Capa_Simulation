@@ -106,7 +106,7 @@ from capa_simulation.services.constraint_simulation import (
     NewUnit,
     NewUnitAssignment,
 )
-from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.korean_particle import with_object_particle, with_topic_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.sidebar_status import rerun_app_unless_alone
@@ -542,9 +542,8 @@ def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
     free = free_parts(
         conditions, f"보유 제약 설비 {row.owned_increment}대", f"신규 설비 {row.new_increment}대"
     )
-    return (
-        f"이 달 늘어난 전용 {row.growth}대 — {' · '.join(free)}는 개조 없이, 개조 {row.increment}대"
-    )
+    joined = with_topic_particle(" · ".join(free))
+    return f"이 달 늘어난 전용 {row.growth}대 — {joined} 개조 없이, 개조 {row.increment}대"
 
 
 def free_units_line(result: ConstraintResult) -> str:
