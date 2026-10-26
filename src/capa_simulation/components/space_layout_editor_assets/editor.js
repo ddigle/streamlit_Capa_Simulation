@@ -2695,7 +2695,7 @@ export default function (component) {
       else add('트레이(미배치) — 위 칸에서 다른 층으로 보낼 수 있습니다')
       add(`모듈 ${mods.length}대는 범위 안 ${cols}×${rows} 바둑판에 자동으로 섭니다 — 범위를 끌어 옮기고 테두리 손잡이로 키웁니다`)
       const hidden = mods.filter((m) => m.ghost).map((m) => m.id)
-      if (hidden.length) add(`숨은 모듈 ${hidden.join(', ')}(레이아웃표시 N·도면 이탈)는 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
+      if (hidden.length) add(`숨은 모듈(레이아웃표시 N·도면 이탈) ${withJosa(hidden.join(', '), '은')} 그리지 않고 제 칸(점선)을 비워 둡니다 — 묶음과 함께 옮겨집니다`)
       if (untiledModules(item)) add(`${mods.length}등분이 아님 — 옮기거나 크기를 바꾸면 범위 안에 다시 놓입니다`)
       const sized = sizeNote(mods)
       if (sized) add(sized)

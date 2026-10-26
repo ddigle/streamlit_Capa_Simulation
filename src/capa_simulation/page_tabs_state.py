@@ -65,7 +65,10 @@ VALID_TABS: Final = frozenset(spec.path for spec in ALL_SPECS)
 _SPECS: Final = {spec.path: spec for spec in ALL_SPECS}
 _IMPLEMENTING: Final = f" {IMPLEMENTING_SUFFIX}"
 # 상한 알림 글. 탭 줄 JS 도 같은 틀로 그 자리에서 알린다(`components/page_tabs.TEXT["limit"]`).
-LIMIT_NOTICE: Final = "탭은 {max}개까지 엽니다 — 「{label}」을(를) 열려면 안 쓰는 탭을 닫아 주세요."
+# 화면 이름은 JS 도 채우므로 조사는 고정 명사 「화면」 에 붙인다(AGENTS 8장).
+LIMIT_NOTICE: Final = (
+    "탭은 {max}개까지 엽니다 — 「{label}」 화면을 열려면 안 쓰는 탭을 닫아 주세요."
+)
 
 
 @dataclass(frozen=True)

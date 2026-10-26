@@ -4,25 +4,28 @@
 
 조사 도우미가 생긴 뒤에도(2026-10-05 E2E) 쓰는 것이 자리마다 고르는 일이라 회차마다 고친 자리만
 고쳐지고 같은 꼴이 다른 파일에서 다시 나왔다(2026-10-25 E2E 1·2회차 — 「공식 v4 으로」·「4 을」·
-「27-06 가」). 이 시험이 그 꼴을 저장소 전체에서 막는다. 허용 목록은 없다.
+「27-06 가」). 이 시험이 그 꼴을 앱 코드(`app.py`·`app_pages`·`src`) 전체에서 막는다. 허용 목록은
+없다. `scripts/` 출력은 훑지 않는다 — 리뷰 몫이다(AGENTS 8장).
 
-- **f-string** — `app.py`·`app_pages`·`src` 를 AST 로 훑어 끼운 값(`FormattedValue`) 바로 뒤 글이
-  (닫는 `」』`*` 뒤) 고정 조사(을·를·은·는·이·가·으로·로·과·와)로 시작하면 실패한다. 붙은 꼴
-  (「{x}을」)과 한 칸 띄운 꼴(「{x} 을」), 손으로 박은 갈래 꼴(「{x}은(는)」·「**{x}** 이(가)」)을
-  모두 본다.
-- **빼는 것** — 「)」 로 시작하는 꼴(「최신(r{n})이」 — 조사가 괄호 앞 낱말에 붙는다), 앞 값이
-  `*_particle(…)` 호출인 꼴(「{with_topic_particle(x)} 이 기본값과」 — 뒤 「이」 는 지시어다).
-  **한 칸 띄운 「이」** 는 지시어(「{x} 이 시나리오」)와 갈리지 않아 잡지 않는다 — 진짜 조사였던 넷
-  (bigdataquery 모듈 이름·스냅샷 마이그레이션 버전·제약 시뮬레이션 공정·모듈 행 칸)은 고쳤고, 그
-  꼴의 재발은 리뷰 몫이다.
+- **f-string** — 앱 코드를 AST 로 훑어 끼운 값(`FormattedValue`) 바로 뒤 글이(닫는 따옴표·낫표·
+  굵게·백틱·백슬래시·「]」 뒤 — 도우미가 끝소리를 볼 때 건너뛰는 기호에서 「)」 를 뺀 것) 고정
+  조사(을·를·은·는·이·가·으로·로·과·와)로 시작하면 실패한다. 붙은 꼴(「{x}을」)과 한 칸 띄운 꼴
+  (「{x} 을」), 손으로 박은 갈래 꼴(「{x}은(는)」·「**{x}** 이(가)」)을 모두 본다.
+- **괄호** — 괄호 뒤 조사는 괄호 앞 낱말에 붙는다. 그 낱말이 끼운 값이면(「{id}({name}) 가」·
+  「{id}(고정 글)는」) 괄호 뒤 글을 같은 규칙으로 보고, 고정 글이면(「최신(r{n})이」) 뺀다.
+- **빼는 것** — 앞 값이 `*_particle(…)` 호출인 꼴(「{with_topic_particle(x)} 이 기본값과」 — 뒤
+  「이」 는 지시어다). **한 칸 띄운 「이」** 는 지시어(「{x} 이 시나리오」)와 갈리지 않아 잡지
+  않는다 — 진짜 조사였던 넷(bigdataquery 모듈 이름·스냅샷 마이그레이션 버전·제약 시뮬레이션 공정·
+  모듈 행 칸)은 고쳤고, 그 꼴의 재발은 리뷰 몫이다.
 - **상수 뒤 조사** — 값이 ALL_CAPS 상수(이름·모듈 속성)이면 고정 조사를 두어도 된다. 대신 그 모듈을
   불러 실제 값(서식 지정까지 입힌 글)으로 `korean_particle` 이 같은 조사를 고르는지 단언한다 — 상수
   글이 바뀌면 이 시험이 잡는다. 도우미가 읽지 못하는 끝(영문)은 `_READINGS` 의 읽기로 견준다.
 - **`str.format`·`%s` 틀** — f-string 이 아닌 글(문장으로 선 글·docstring 빼고)의 `{…}`·`%s` 바로
-  뒤 고정 조사.
-- **JS** — `src/**/*.js` 의 `${…}` 바로 뒤 고정 조사. 배치 편집기는 `editor.js` 의 `withJosa` 를
-  쓰고, 그 표가 파이썬과 같은 답을 내는지 node 로 대조한다(node·bun 이 없으면 건너뛰고 CI 에서는
-  실패 — `test_space_module_group._node`).
+  뒤(괄호를 사이에 둔 꼴 포함) 고정 조사와 갈래 꼴.
+- **JS** — `src/**/*.js` 의 `${…}` 바로 뒤(괄호를 사이에 둔 꼴 포함) 고정 조사와 갈래 꼴. 괄호
+  앞 낱말이 고정 글인 꼴(「최신(r${n})이」)은 `${…}` 가 괄호 안이라 걸리지 않는다. 배치 편집기는
+  `editor.js` 의 `withJosa` 를 쓰고, 그 표가 파이썬과 같은 답을 내는지 node 로 대조한다
+  (node·bun 이 없으면 건너뛰고 CI 에서는 실패 — `test_space_module_group._node`).
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ import math
 import re
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
 import pytest
@@ -42,6 +45,7 @@ from test_space_module_group import _node
 from capa_simulation.components import space_layout_editor
 from capa_simulation.io import object_storage
 from capa_simulation.page_bootstrap import schema_ahead_message
+from capa_simulation.page_tabs_state import LIMIT_NOTICE, MAX_TABS, limit_notice
 from capa_simulation.persistence._migration_core import SchemaAheadOfCode
 from capa_simulation.persistence._sql_helpers import required_text
 from capa_simulation.services import (
@@ -51,9 +55,11 @@ from capa_simulation.services import (
     securement_threshold,
     space_layout_edit,
 )
+from capa_simulation.services.floor_layout_mark import mark_box
 from capa_simulation.services.floor_layout_profile import normalize_canvas_size
 from capa_simulation.services.frame_contracts import normalize_month_column
 from capa_simulation.services.korean_particle import (
+    _SKIPPED_TAIL,
     direction_particle,
     object_particle,
     subject_particle,
@@ -71,8 +77,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _PARTICLES = "을|를|은|는|이|가|으로|로|과|와"
 _SPACED_PARTICLES = "을|를|은|는|가|으로|로|과|와"
 _HEDGED = r"\(으\)로|을\(를\)|은\(는\)|이\(가\)"
-_BOUNDARY = r"(?=[\s.,·—:;)」』!?]|$)"
-_CLOSERS = "[」』`*]*"
+# 조사 뒤 — 띄움·문장 부호·닫는 기호·글 끝(JS 는 템플릿을 닫는 백틱).
+_BOUNDARY = r"(?=[\s.,·—:;)」』!?`]|$)"
+# 값을 감싸 닫는 기호 — 도우미가 끝소리를 볼 때 건너뛰는 기호에서 「)」(아래 괄호 규칙이 따로
+# 본다)를 뺀 것. 도우미가 건너뛰는 기호를 늘리면 그물도 따라 넓어진다.
+_CLOSER_CHARS = _SKIPPED_TAIL.replace(")", "")
+_CLOSERS = f"[{re.escape(_CLOSER_CHARS)}]*"
+# 값 뒤에 괄호를 사이에 둔 꼴(「{a}({b}) 가」) — 조사는 괄호 앞 값에 붙는다.
+_PAREN_GAP = rf"(?:\([^()]*\){_CLOSERS})?"
 # 끼운 값 바로 뒤 글의 머리 — 붙은 꼴, 한 칸 띄운 꼴(이 빼고), 손으로 박은 갈래 꼴.
 _FIXED_HEAD = re.compile(
     rf"^{_CLOSERS}(?:(?:{_PARTICLES})|\s(?:{_SPACED_PARTICLES})){_BOUNDARY}"
@@ -82,13 +94,13 @@ _FIXED_HEAD = re.compile(
 _CONSTANT_HEAD = re.compile(
     rf"^{_CLOSERS}(?:(?P<attached>{_PARTICLES})|\s(?P<spaced>{_SPACED_PARTICLES})){_BOUNDARY}"
 )
-_TEMPLATE_SITE = re.compile(
-    rf"(?:\{{[^{{}}]*\}}|%[sdr]){_CLOSERS}(?:{_PARTICLES}|\s(?:{_SPACED_PARTICLES})){_BOUNDARY}"
-)
-_JS_SITE = re.compile(
-    rf"\$\{{[^}}]*\}}{_CLOSERS}"
+# 틀 자리 뒤 — 붙은 꼴·띄운 꼴(이 빼고)·갈래 꼴. 괄호를 사이에 둔 꼴도 본다.
+_TAIL = (
+    rf"{_CLOSERS}{_PAREN_GAP}"
     rf"(?:(?:{_PARTICLES}|\s(?:{_SPACED_PARTICLES})){_BOUNDARY}|\s?(?:{_HEDGED}))"
 )
+_TEMPLATE_SITE = re.compile(rf"(?:\{{[^{{}}]*\}}|%[sdr]){_TAIL}")
+_JS_SITE = re.compile(rf"\$\{{[^}}]*\}}{_TAIL}")
 _JOSA_BLOCK = re.compile(r"// <josa>\n(?P<body>.*?)\n\s*// </josa>", re.S)
 
 # 도우미가 읽지 못하는 끝(영문)으로 끝나는 상수의 끝 낱말 읽기. 상수 글이 바뀌면 이 표에서 빠져
@@ -150,18 +162,76 @@ def _is_particle_call(node: ast.expr) -> bool:
     return isinstance(name, str) and name.endswith("_particle")
 
 
-def _value_sites(tree: ast.AST) -> Iterator[tuple[ast.FormattedValue, str, int]]:
+class _ValueSite(NamedTuple):
+    """f-string 에 끼운 값과 그 바로 뒤 글. `parts`·`slot`(값의 자리)로 괄호 앞 낱말을 찾는다."""
+
+    value: ast.FormattedValue
+    text: str
+    line: int
+    parts: list[ast.expr]
+    slot: int
+
+
+def _value_sites(tree: ast.AST) -> Iterator[_ValueSite]:
     """f-string 안에서 끼운 값과 그 바로 뒤 글(·줄 번호)의 쌍."""
     for node in ast.walk(tree):
         if not isinstance(node, ast.JoinedStr):
             continue
-        for value, following in zip(node.values, node.values[1:], strict=False):
+        for index, (value, following) in enumerate(zip(node.values, node.values[1:], strict=False)):
             if (
                 isinstance(value, ast.FormattedValue)
                 and isinstance(following, ast.Constant)
                 and isinstance(following.value, str)
             ):
-                yield value, following.value, following.lineno
+                yield _ValueSite(value, following.value, following.lineno, node.values, index)
+
+
+def _value_opens_the_parenthesis(parts: list[ast.expr], index: int) -> bool:
+    """`parts[index]` 뒤 「)」 의 짝 「(」 바로 앞(공백·닫는 기호 건너)이 끼운 값인가.
+
+    괄호 뒤 조사는 괄호 앞 낱말에 붙는다 — 그 낱말이 끼운 값이면 조사도 그 값으로 골라야 한다
+    (「{id}({name}) 가」). 고정 글이면(「최신(r{n})이」) 조사는 그 글에 맞춘 것이다.
+    """
+    depth = 0
+    for position in range(index - 1, -1, -1):
+        part = parts[position]
+        if not (isinstance(part, ast.Constant) and isinstance(part.value, str)):
+            continue
+        text = part.value
+        for offset in range(len(text) - 1, -1, -1):
+            if text[offset] == ")":
+                depth += 1
+            elif text[offset] == "(" and depth:
+                depth -= 1
+            elif text[offset] == "(":
+                if text[:offset].rstrip().rstrip(_CLOSER_CHARS):
+                    return False
+                return position > 0 and isinstance(parts[position - 1], ast.FormattedValue)
+    return False
+
+
+def _after_leading_parenthesis(text: str) -> str | None:
+    """「(」 로 시작하는 글에서 그 괄호를 닫은 뒤의 글. 이 글 안에서 닫히지 않으면 `None`."""
+    depth = 0
+    for offset, char in enumerate(text):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if not depth:
+                return text[offset + 1 :]
+    return None
+
+
+def _particle_heads(site: _ValueSite) -> list[str]:
+    """고정 조사가 붙었는지 볼 글 — 값 바로 뒤, 괄호를 사이에 두었으면 그 괄호 뒤."""
+    if site.text.startswith(")"):
+        return [site.text[1:]] if _value_opens_the_parenthesis(site.parts, site.slot) else []
+    heads = [site.text]
+    if site.text.startswith("("):
+        rest = _after_leading_parenthesis(site.text)
+        heads += [] if rest is None else [rest]
+    return heads
 
 
 def _site(path: Path, value: ast.FormattedValue, text: str, line: int) -> str:
@@ -173,18 +243,25 @@ def _trees() -> Iterator[tuple[Path, ast.Module]]:
         yield path, ast.parse(path.read_text(encoding="utf-8"))
 
 
+def _fixed_particle_sites(tree: ast.AST) -> Iterator[_ValueSite]:
+    """값 뒤에 못박은 조사 자리(상수 뒤 조사는 아래 상수 시험 몫이라 뺀다)."""
+    for site in _value_sites(tree):
+        if _is_particle_call(site.value.value):
+            continue
+        if not any(_FIXED_HEAD.match(head) for head in _particle_heads(site)):
+            continue
+        if _is_constant(site.value.value) and _CONSTANT_HEAD.match(site.text):
+            continue  # 아래 상수 시험이 실제 값으로 견준다.
+        yield site
+
+
 def test_no_fixed_particle_follows_an_interpolated_value() -> None:
     """런타임 값 뒤 조사는 `with_*_particle`·`*_particle` 로 고른다 — 붙은·띄운·갈래 꼴 모두."""
-    offenders: list[str] = []
-    for path, tree in _trees():
-        for value, text, line in _value_sites(tree):
-            if text.startswith(")") or _is_particle_call(value.value):
-                continue
-            if not _FIXED_HEAD.match(text):
-                continue
-            if _is_constant(value.value) and _CONSTANT_HEAD.match(text):
-                continue  # 아래 상수 시험이 실제 값으로 견준다.
-            offenders.append(_site(path, value, text, line))
+    offenders = [
+        _site(path, site.value, site.text, site.line)
+        for path, tree in _trees()
+        for site in _fixed_particle_sites(tree)
+    ]
     assert not offenders, "값 뒤에 못박은 조사 — korean_particle 로 고르세요:\n" + "\n".join(
         offenders
     )
@@ -210,10 +287,11 @@ def _rendered(value: ast.FormattedValue, namespace: dict[str, Any]) -> tuple[obj
 
 def _constant_sites() -> Iterator[tuple[Path, ast.FormattedValue, str, int, str]]:
     for path, tree in _trees():
-        for value, text, line in _value_sites(tree):
-            match = _CONSTANT_HEAD.match(text)
-            if match and _is_constant(value.value):
-                yield path, value, text, line, match["attached"] or match["spaced"]
+        for site in _value_sites(tree):
+            match = _CONSTANT_HEAD.match(site.text)
+            if match and _is_constant(site.value.value):
+                particle = match["attached"] or match["spaced"]
+                yield path, site.value, site.text, site.line, particle
 
 
 def test_constants_before_a_fixed_particle_end_in_the_matching_sound() -> None:
@@ -281,13 +359,66 @@ def test_no_fixed_particle_follows_a_js_template_value() -> None:
 def test_the_guard_catches_every_fixed_form() -> None:
     """그물 자체 — 고친 꼴은 걸리고 남겨 둔 꼴(괄호 뒤·지시어 「이」·도우미 뒤)은 걸리지 않는다."""
     caught = ["을 저장", "를", "」은 ", "** 가 ", " 로 고정", "과 함께", "은(는) 비어", " 이(가) "]
+    caught += ["'을 지웠", '"을 지웠', "]는", "`이 "]
     passed = [" 이 시나리오", "의 칸", "개를", "이다", "으로써", "로부터", " 이상"]
     assert all(_FIXED_HEAD.match(text) for text in caught)
     assert not any(_FIXED_HEAD.match(text) for text in passed)
-    assert _TEMPLATE_SITE.search("회차 %s 가 멈췄습니다") and _TEMPLATE_SITE.search("「{name}」는")
-    assert not _TEMPLATE_SITE.search("{list}\n이 화면을")
-    assert _JS_SITE.search("`${id} 는 이미`") and _JS_SITE.search("`${w}이 되어`")
-    assert not _JS_SITE.search("`${withJosa(id, '은')} 이미`")
+    templates = [
+        "회차 %s 가 멈췄습니다",
+        "「{name}」는",
+        "「{label}」을(를) 열려면",
+        "'{x}'을",
+        "{a}({b}) 가",
+    ]
+    assert all(_TEMPLATE_SITE.search(text) for text in templates)
+    assert not any(_TEMPLATE_SITE.search(text) for text in ["{list}\n이 화면을", "최신(r{n})이"])
+    js_caught = ["`${id} 는 이미`", "`${w}이 되어`", "`'${x}'을 지웠`", "`${a}(${b})는`"]
+    js_caught += ["`${a}(레이아웃표시 N)는 그리지`", "`${x}을(를)`"]
+    assert all(_JS_SITE.search(text) for text in js_caught)
+    js_passed = ["`${withJosa(id, '은')} 이미`", "`최신(r${n})이`", "`(${n}개)를`"]
+    assert not any(_JS_SITE.search(text) for text in js_passed)
+
+
+def _fixed_in(source: str) -> list[str]:
+    """한 줄 소스의 f-string 에서 그물이 잡는 자리(끼운 값 + 뒤 글)."""
+    return [
+        f"{ast.unparse(site.value.value)}|{site.text}"
+        for site in _fixed_particle_sites(ast.parse(source))
+    ]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'f"도면 요소 {mark_id}({name}) 가 캔버스"',
+        'f"{a} ({b})이 바뀜"',
+        'f"「{a}」({b})는"',
+        'f"{a}({b}·{c})를"',
+        'f"{a}(고정 글) 가"',
+        'f"{a}(r{n}) 가"',
+        "f\"'{name}'을 지웠습니다\"",
+        "f'\"{name}\"을 지웠습니다'",
+    ],
+)
+def test_the_guard_reads_the_word_before_a_parenthesis(source: str) -> None:
+    """괄호 뒤 조사는 괄호 앞 낱말에 붙는다 — 그 낱말이 끼운 값이면 괄호 뒤 고정 조사도 잡는다."""
+    assert _fixed_in(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'f"최신(r{n})이 기본"',
+        'f"최신 ({n}) 가"',
+        'f"({n}) 가"',
+        'f"{a}({b}){subject_particle(a)} 캔버스"',
+        'f"{a}(r{n}) {subject_particle(a)}"',
+        'f"{a}({b})"',
+    ],
+)
+def test_the_guard_leaves_a_parenthesis_after_fixed_text(source: str) -> None:
+    """괄호 앞이 고정 글이거나 조사를 도우미로 고른 꼴은 지나간다."""
+    assert not _fixed_in(source)
 
 
 _JS_WORDS = [
@@ -432,6 +563,25 @@ def test_service_errors_choose_the_particle_from_the_label(
 ) -> None:
     """서비스 오류 문구 — 끼운 라벨의 끝소리로 조사를 고른다(「{label}은(는)」 등 고정이었다)."""
     assert expected in _raised(call)
+
+
+@pytest.mark.parametrize(
+    ("mark_id", "expected"),
+    [
+        ("MK-lzx1y-3", "도면 요소 MK-lzx1y-3(영역)이 캔버스 100 × 60을 벗어났습니다."),
+        ("MK-lzx1y-2", "도면 요소 MK-lzx1y-2(영역)가 캔버스 100 × 60을 벗어났습니다."),
+    ],
+)
+def test_mark_outside_the_canvas_follows_the_mark_id(mark_id: str, expected: str) -> None:
+    """괄호 뒤 조사는 괄호 앞 요소 id 의 끝소리를 따른다(「{id}({name}) 가」 고정이었다)."""
+    raw = {"x": 95, "y": 0, "w": 10, "h": 10}
+    assert _raised(lambda: mark_box(raw, mark_id, "영역", (100, 60))) == expected
+
+
+def test_tab_limit_notice_puts_the_particle_on_a_fixed_noun() -> None:
+    """탭 줄 JS 도 같은 틀을 채우므로 조사는 고정 명사 「화면」 에 붙는다(「을(를)」 이었다)."""
+    assert "「생산 계획」 화면을 열려면" in limit_notice("생산 계획")
+    assert "「Space 현황」 화면을 열려면" in LIMIT_NOTICE.format(max=MAX_TABS, label="Space 현황")
 
 
 @pytest.mark.parametrize(
