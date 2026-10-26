@@ -67,6 +67,15 @@ def test_every_css_variable_comes_from_the_palette_and_no_colour_is_written() ->
         assert "rgb(" not in text and "rgba(" not in text
 
 
+def test_placeholders_use_the_muted_ink_of_the_theme() -> None:
+    """자리표시 글(「설비명으로 불러오기」 등)이 브라우저 기본 #757575 라 어두운 테마 바탕
+    #1C1C21 에서 3.68:1 이었다(2026-10-26 E2E). 앱 토큰 TEXT_MUTED(`--emg-muted` — 두 테마 모든
+    칸 바탕에서 4.5:1 이상)로 그리고 흐리게 하지 않는다."""
+    rule = re.search(r"\.emg input::placeholder\s*\{(?P<body>[^}]*)\}", CSS)
+    assert rule, "grid.css 에 자리표시 규칙이 없다"
+    assert "color: var(--emg-muted)" in rule.group("body") and "opacity: 1" in rule.group("body")
+
+
 def test_the_registered_css_carries_no_comments() -> None:
     """등록 CSS 는 data 가 바뀐 회차마다 요소와 함께 다시 간다 — 주석을 싣지 않는다."""
     assert "/*" not in CSS

@@ -322,6 +322,8 @@
 }
 .sle input[type="text"] { width: 9em; }
 .sle input:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }
+/* 자리표시 글은 TEXT_MUTED 다 — 브라우저 기본(#757575)은 테마를 모르고 어두운 바탕에서 4.5:1 에 못 미친다. */
+.sle input::placeholder { color: var(--sle-muted); opacity: 1; }
 .sle input:disabled { opacity: 0.45; }
 .sle input[type="checkbox"] { accent-color: var(--sle-accent); margin: 0; }
 .sle button.sle-nudge { padding: 0 8px; min-width: 27px; }
