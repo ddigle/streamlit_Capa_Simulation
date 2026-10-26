@@ -110,6 +110,7 @@ __all__ = [
     "UNIT_EVENT_COLUMNS",
     "UNIT_MONTH_COLUMNS",
     "DynamicReadiness",
+    "NewUnitAvailability",
     "ProcessEquipmentTimeline",
     "ProductionPosition",
     "availability_bridge",
@@ -119,6 +120,7 @@ __all__ = [
     "dynamic_readiness",
     "exiting_unit_rows",
     "keep_released_units",
+    "new_unit_availability",
     "new_unit_rows",
     "production_position",
     "unit_events",
@@ -717,6 +719,100 @@ def new_unit_rows(
     frame["모듈 수"] = frame["모듈 수"].astype("int64")
     frame["축 안"] = frame["축 안"].astype("bool")
     return frame
+
+
+class NewUnitAvailability(NamedTuple):
+    """기준일 이후 기여를 시작하는 신규 호기와 그 몫 — 제약 시뮬레이션 「신규 설비는 개조 없이」.
+
+    몫은 `unit_months` 의 **비가동 없음** 환산대수 합이다 — 운영 비가동은 그 호기가 들어온 날을
+    바꾸지 않으므로 「그 달 새로 붙은 대수」 를 셀 때 빼지 않는다(정지·반출/이설·W/D
+    일할·환산비·사용기준은 A 와 같은 규칙으로 들어 있다).
+    """
+
+    since: date
+    units: tuple[str, ...]
+    """신규로 본 설비키(③ 의 「호기」) — `new_units` 차례(기여 시작 → 호기 번호)."""
+
+    in_axis: int
+    """그중 기여 시작이 축 안인 호기 수(축 뒤 호기는 몫이 0 이다)."""
+
+    before: float
+    """축 첫 달 바로 앞 달의 몫 — 그 달보다 먼저 들어온 신규를 첫 달 몫으로 세지 않게."""
+
+    months: tuple[tuple[int, float], ...]
+    """축의 달마다 `(YYYYMM, 몫)` — 0 인 달도 든다."""
+
+    def by_month(self) -> dict[int, float]:
+        return dict(self.months)
+
+
+def new_unit_availability(
+    timeline: ProcessEquipmentTimeline, *, since: date
+) -> NewUnitAvailability:
+    """`new_units` 가운데 기여 시작(Qual 다음 날 — 묶음은 가장 늦은 모듈)이 `since` 이후(그날
+    포함)인 호기의 달마다 몫. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ③·④ 와 같은 객체)을 거르기만
+    한다.
+
+    모듈 이름으로 거른다 — 묶음 안에 대상이 아닌 모듈(보관 Y·사용기준 밖)이 섞여도 `new_units` 가 센
+    모듈만 든다(이름은 `모듈별 Qual` 튜플에서 꺼내 「, 」 로 이은 `설비명` 을 쪼개지 않는다). 축 첫
+    달 앞 달의 몫(`before`)은 축 첫 달 행의 하루 몫(환산대수 × 구간일수 ÷ 기여일수)에 그 모듈 기여
+    시작 뒤로 앞 달 W/D 구간과 겹친 일수를 곱해 낸다 — 축 첫 달 전에 정지·반출된 신규 모듈은 세지
+    않는다.
+    """
+    starts: dict[str, date] = {}
+    units: list[str] = []
+    in_axis = 0
+    for row in _records(timeline.new_units):
+        start = _as_date(row["기여 시작"])
+        if start is None or start < since:
+            continue
+        units.append(str(row["호기"]))
+        in_axis += int(bool(row["축 안"]))
+        pairs = row["모듈별 Qual"]
+        if isinstance(pairs, tuple) and pairs:
+            for name, qual in pairs:
+                day = _as_date(qual)
+                starts[str(name).strip()] = day + _ONE_DAY if day is not None else start
+        else:
+            starts[str(row[EQUIPMENT_ID_COLUMN]).strip()] = start
+    frame = timeline.unit_months
+    chosen = frame.loc[frame[EQUIPMENT_ID_COLUMN].astype(str).isin(set(starts)).to_numpy()]
+    totals: dict[int, float] = {}
+    for month, value in zip(chosen["생산계획년월"], chosen["비가동 없음 환산대수"], strict=True):
+        totals[int(month)] = totals.get(int(month), 0.0) + float(value)
+    return NewUnitAvailability(
+        since=since,
+        units=tuple(units),
+        in_axis=in_axis,
+        before=_share_before_axis(timeline, chosen, starts),
+        months=tuple((month, _tidy(totals.get(month, 0.0))) for month in timeline.months),
+    )
+
+
+def _share_before_axis(
+    timeline: ProcessEquipmentTimeline, chosen: pd.DataFrame, starts: Mapping[str, date]
+) -> float:
+    if not timeline.months or timeline.cutoff_days is None or chosen.empty:
+        return 0.0
+    first = timeline.months[0]
+    year, month = divmod(first, 100)
+    previous = wd_window((year - 1) * 100 + 12 if month == 1 else first - 1, timeline.cutoff_days)
+    total = 0.0
+    rows = chosen.loc[chosen["생산계획년월"].astype("int64").eq(first).to_numpy()]
+    for unit, value, used, span in zip(
+        rows[EQUIPMENT_ID_COLUMN],
+        rows["비가동 없음 환산대수"],
+        rows["비가동 없음 기여일수"],
+        rows["구간일수"],
+        strict=True,
+    ):
+        if int(used) <= 0:
+            continue
+        # 환산대수 = 환산비 × 기여일수 ÷ 구간일수 — 거꾸로 환산비를 내 앞 달 겹친 일수에 곱한다.
+        ratio = float(value) * int(span) / int(used)
+        overlap = previous.overlap_days(starts[str(unit)], previous.boundary_end)
+        total += ratio * overlap / previous.days
+    return _tidy(total)
 
 
 def exiting_unit_rows(

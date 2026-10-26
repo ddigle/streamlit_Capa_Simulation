@@ -50,6 +50,7 @@ from capa_simulation.services.process_equipment_timeline import (
     ProcessEquipmentTimeline,
     build_process_equipment_timeline,
     dynamic_readiness,
+    new_unit_availability,
     production_position,
     unit_events,
 )
@@ -900,3 +901,99 @@ def test_a_cutoff_change_moves_the_cells_and_the_key() -> None:
     )
     assert (near.cutoff_days, far.cutoff_days) == (10, 30)
     assert list(near.arrows["꼬리 위치"]) != list(far.arrows["꼬리 위치"])
+
+
+# ------------------------------------------------------------------ 기준일 이후 신규 몫(제약
+# 시뮬레이션)
+
+
+def test_new_unit_availability_keeps_units_starting_on_or_after_the_reference_day() -> None:
+    """기준일 6/12 — 기여 시작 6/21 인 G1(묶음은 가장 늦은 모듈)과 축 뒤 LATE1 만 신규다.
+
+    몫은 모듈마다 — M1(Qual 6/10, 환산 0.5)은 6월 구간 6/11~6/20 10일 → 0.5 × 10/30 = 1/6, M2(Qual
+    6/20)는 6월 0. 7월은 둘 다 온 달 0.5 + 0.5 = 1.0. LATE1(8/21)은 축 뒤라 0 이다.
+    EQ1(6/6)·EQ2(5/16)· EARLY1(3/2)·OLD1(기존 Y)·ST1(보관)·GEN1(범용)은 신규가 아니다.
+    """
+    rows, _ = _new_unit_fixture()
+    shares = new_unit_availability(_timeline(rows), since=date(2026, 6, 12))
+    assert shares.since == date(2026, 6, 12)
+    assert shares.units == ("G1", "LATE1")
+    assert shares.in_axis == 1
+    assert shares.before == 0.0
+    assert [month for month, _ in shares.months] == list(AXIS)
+    assert [value for _, value in shares.months] == pytest.approx([0.0, 1 / 6, 1.0])
+    assert shares.by_month() == dict(shares.months)
+
+
+@pytest.mark.parametrize(
+    ("since", "units", "june", "july"),
+    [
+        (date(2026, 6, 21), ("G1", "LATE1"), 1 / 6, 1.0),
+        (date(2026, 6, 22), ("LATE1",), 0.0, 0.0),
+    ],
+)
+def test_the_reference_day_itself_counts_as_after(
+    since: date, units: tuple[str, ...], june: float, july: float
+) -> None:
+    """「이후」 는 그날을 넣는다 — G1 기여 시작(6/21)이 기준일이면 들고 하루 뒤면 빠진다."""
+    rows, _ = _new_unit_fixture()
+    shares = new_unit_availability(_timeline(rows), since=since)
+    assert shares.units == units
+    assert [value for _, value in shares.months] == pytest.approx([0.0, june, july])
+
+
+def test_the_share_before_the_axis_counts_units_that_came_earlier() -> None:
+    """기준일 3/1 — EARLY1(3/2)·EQ2(5/16)·EQ1(6/6)·G1(6/21)·LATE1 이 신규다.
+
+    5월 = EARLY1 1 + EQ2 5/16~5/21 6일 → 6/31. 6월 = EARLY1 1 + EQ2 1 + EQ1 6/6~6/20 15/30 + M1 1/6.
+    7월 = EARLY1 1 + EQ2 6/21~6/30 10/31(7/1 정지 당일부터 빠짐) + EQ1 1 + G1 1.0. 축 앞 4월 구간
+    (3/21, 4/20] 은 EARLY1 이 온 달(5월 행의 환산비 1 × 30/30)이고 EQ2 는 겹치지 않는다 — before
+    1.0. 그래서 EARLY1 은 5월에 새로 붙은 신규가 아니다(기간 전에 들어온 신규).
+    """
+    rows, _ = _new_unit_fixture()
+    shares = new_unit_availability(_timeline(rows), since=date(2026, 3, 1))
+    assert shares.units == ("EARLY1", "EQ2", "EQ1", "G1", "LATE1")
+    assert shares.in_axis == 3
+    assert shares.before == pytest.approx(1.0)
+    assert [value for _, value in shares.months] == pytest.approx(
+        [1 + 6 / 31, 2 + 15 / 30 + 1 / 6, 3 + 10 / 31]
+    )
+
+
+def test_a_unit_half_into_the_month_before_the_axis_counts_its_share() -> None:
+    """축 앞 달 가운데 들어온 신규는 그 달 몫만 before 에 든다 — 4/5 Qual(4/6~4/20 15일) → 15/30."""
+    shares = new_unit_availability(
+        _timeline([_unit("N1", date(2026, 4, 5), arrival=date(2026, 3, 1))]),
+        since=date(2026, 1, 1),
+    )
+    assert shares.before == pytest.approx(15 / 30)
+    assert [value for _, value in shares.months] == pytest.approx([1.0, 1.0, 1.0])
+
+
+def test_operating_downtime_does_not_change_the_new_unit_share() -> None:
+    """운영 비가동은 들어온 날을 바꾸지 않는다 — 몫은 비가동 없음 환산대수다(가용대수는 준다)."""
+    rows, _ = _new_unit_fixture()
+    downtime = _downtime([("M1", date(2026, 7, 1), date(2026, 7, 10))])
+    quiet = new_unit_availability(_timeline(rows), since=date(2026, 6, 12))
+    down_timeline = _timeline(rows, downtime)
+    down = new_unit_availability(down_timeline, since=date(2026, 6, 12))
+    assert down.months == quiet.months
+    assert down_timeline.bridge["가용대수"].iloc[2] < _timeline(rows).bridge["가용대수"].iloc[2]
+
+
+def test_the_new_unit_share_stays_within_the_fleet_availability() -> None:
+    """합성 fleet 모든 공정 — 아주 이른 기준일의 몫은 그 달 비가동 없는 호기 가용 이하, 아주 늦은
+    기준일은 호기도 몫도 없다."""
+    equipment, downtime, baseline, cutoff = _fleet()
+    for process in sorted(set(equipment["공정소분류"].astype(str))):
+        timeline = build_process_equipment_timeline(
+            equipment, downtime, baseline, cutoff, process=process, months=MONTHS
+        )
+        free = timeline.unit_months.groupby("생산계획년월")["비가동 없음 환산대수"].sum()
+        early = new_unit_availability(timeline, since=date(1900, 1, 1))
+        for month, value in early.months:
+            assert 0.0 <= value <= float(free.get(month, 0.0)) + 1e-9
+        late = new_unit_availability(timeline, since=date(2999, 1, 1))
+        assert late.units == ()
+        assert late.before == 0.0
+        assert all(value == 0.0 for _, value in late.months)
