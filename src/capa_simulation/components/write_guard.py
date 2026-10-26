@@ -75,6 +75,15 @@
 단추에 닿아 세대 거름을 지나 첫 쓰기를 되돌렸다(2026-10-27 E2E — VOC 답변 완료 표시). 그 콜백은
 바로 앞 세대 쓰기의 창 안에 온 누름(`pressed_on_replacement`)을 쓰지 않는다.
 
+**본문이 받는 컴포넌트 제출**(Space 배치 편집기 「적용」)은 받아들인 회차가 세션에 얹고 `st.rerun()`
+으로 편집기를 새 epoch 로 다시 세운다. 브라우저가 새 값을 받기 전에 같은 단추를 한 번 더
+누르면(0.2~0.6초) 둘째 제출은 옛 epoch 를 들어 「다시 서는 사이에 누른 적용이라 반영하지
+않았습니다」 경고만 남고 첫 적용의 성공 알림은 사라졌다 — 실제로는 적용됐다(2026-10-27 E2E).
+받아들인 제출은 그 입력 지문과 시각을 적고(`note_submission`), 옛 epoch 의 제출이
+`TRAILING_PRESS_SECONDS` 안에 **같은 입력**으로 오면(`just_submitted`) 경고하지 않는다. 첫 적용의
+성공 알림은 `note_notice` 로 적어 그 회차가 다시 그린다. 입력이 다르면 옛 화면에서 더 고친 것이라
+전처럼 경고한다.
+
 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치 저장」·사이드바
 팝업 저장, FAB 전체 배치)은 콜백에서 저장하고 뒷정리로 편집본을 비워 출발점을 옮긴다. 둘째
 누름의 회차가 첫 콜백을 DB 쓰기 뒤에 끊으면 출발점이 그대로라, 둘째 콜백이 옛 출발점으로 다시
@@ -144,6 +153,10 @@ NoticeMark: TypeAlias = tuple[str, float, str | None]
 # 이 세션이 마지막으로 마친 출발점 대조 저장(저장 이름 → (출발점, 결과, 쓴 시각)).
 # `save_once` 가 적는다.
 OWN_SAVES_KEY = "write_guard_own_saves"
+
+# 이 세션이 마지막으로 받아들인 컴포넌트 제출(제출 이름 → (입력 지문, 받은 시각)).
+# `note_submission` 이 적는다.
+RECENT_SUBMISSIONS_KEY = "write_guard_recent_submissions"
 
 _Outcome = TypeVar("_Outcome")
 
@@ -282,6 +295,35 @@ def pressed_on_replacement(counter_key: str, generation: int) -> bool:
         return False
     mark = marks.get(counter_key)
     return isinstance(mark, tuple) and mark[0] == generation - 1
+
+
+def note_submission(name: str, fingerprint: Hashable) -> None:
+    """`name` 제출(본문이 받는 컴포넌트 값 — 편집기 「적용」)을 받아들였다고 적는다 — 입력 지문과
+    지금 시각. 세션에 얹은 **뒤**, 화면을 다시 세우기(`st.rerun()`) 전에 부른다. dict 칸 쓰기라 둘째
+    누름의 회차가 멈춤을 건 자리에서도 끊기지 않는다."""
+    _session_dict(RECENT_SUBMISSIONS_KEY)[name] = (fingerprint, time.monotonic())
+
+
+def just_submitted(name: str, fingerprint: Hashable) -> bool:
+    """`name` 제출을 같은 입력(`fingerprint`)으로 `TRAILING_PRESS_SECONDS` 안에 받아들였는가.
+
+    그렇다면 지금 온 옛 화면(지나간 epoch)의 제출은 같은 단추를 한 번 더 누른 꼬리다 — 그 입력은
+    이미 얹었다. 부르는 쪽은 「반영하지 않았습니다」 를 알리지 않고 넘긴다(첫 제출의 성공 알림은
+    `note_notice` 로 적어 `flash.render_flash` 가 다시 그린다). 입력이 다르면 거짓이다 — 옛 화면에서
+    더 고친 제출이다.
+    """
+    marks = st.session_state.get(RECENT_SUBMISSIONS_KEY)
+    if not isinstance(marks, dict):
+        return False
+    entry = marks.get(name)
+    if not isinstance(entry, tuple) or len(entry) != 2:
+        return False
+    recorded, moment = entry
+    return (
+        recorded == fingerprint
+        and isinstance(moment, float)
+        and time.monotonic() - moment < TRAILING_PRESS_SECONDS
+    )
 
 
 def remember_seen(name: str, token: SeenToken) -> None:

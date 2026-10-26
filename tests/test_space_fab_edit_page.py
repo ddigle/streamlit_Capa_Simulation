@@ -16,7 +16,7 @@ from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 
-from capa_simulation.components import space_layout_editor
+from capa_simulation.components import space_layout_editor, write_guard
 from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -352,6 +352,33 @@ def test_a_stale_fab_apply_says_the_drawing_was_reloaded(
     clear_equipment_repository()
 
 
+def test_a_second_press_of_the_same_fab_apply_keeps_the_success_without_blaming_others(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FAB 「적용」 을 0.2~0.25초 간격으로 두 번 누르면 둘째 누름이 옛 epoch 의 같은 적용을 보내
+    「그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) … 다시 고친 뒤 적용하세요」 경고가 섰다 — 첫
+    적용은 이미 들어가 있어 경고대로 다시 고치면 이동이 두 번 들어갔다(2026-10-27 E2E). 같은
+    입력이면 경고하지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 30.0)
+    app = _app(tmp_path / "fab_apply_twice.duckdb", saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    payload = {"epoch": data["epoch"], "changes": [], "canvas": None, "marks": _edited_marks(data)}
+    app.session_state[FAKE_APPLY_KEY] = dict(payload)
+    app.run()
+    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    applied = _fab_calls(editor_calls, editing=True)[-1]
+
+    app.session_state[FAKE_APPLY_KEY] = dict(payload)
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("FAB 도면이 바뀌어" in item.value for item in app.warning)
+    assert any("이 세션에 적용했습니다" in item.value for item in app.success)
+    assert _fab_calls(editor_calls, editing=True)[-1]["epoch"] == applied["epoch"]
+    clear_equipment_repository()
+
+
 def test_a_block_without_a_floor_is_refused(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -631,4 +658,49 @@ def test_a_floor_state_save_keeps_the_fab_editor_epoch_and_its_open_is_filtered(
     app.run()
     assert not app.exception
     assert "space_status_selected_building" not in app.session_state
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("finished", [True, False], ids=["첫 콜백 끝남", "첫 콜백 끊김"])
+def test_a_fab_save_pressed_twice_keeps_its_success(
+    tmp_path: Path,
+    editor_calls: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    finished: bool,
+) -> None:
+    """FAB 만 바뀐 「배치 저장」 을 0.15~0.5초 간격으로 두 번 누르면 첫 콜백이 FAB 를 쓰고
+    대기분을 비운 뒤라 둘째 콜백이 「바뀐 내용이 없어 저장하지 않았습니다.」 로 첫 성공 알림을
+    덮었다 — 실제로는 저장됐다(2026-10-27 E2E). 첫 콜백이 끝까지 돌았든 뒷정리 중에 끊겼든 성공
+    알림이 남는다."""
+    from test_equipment_save_double_press import _press_again_from_the_old_screen, _race_save
+
+    database = tmp_path / "fab_double.duckdb"
+    app = _app(database, saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    edited = _edited_marks(data)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": edited,
+    }
+    app.run()
+    app.button(key="space_layout_save").click()
+
+    if finished:
+        _press_again_from_the_old_screen(app, monkeypatch, callback="_save_space_layout")
+    else:
+        # 경합 틀은 첫 콜백을 설비 쪽 저장 안에서 1초 세워 둔다 — 둘째 콜백은 그동안 세션 잠금을
+        # 기다린다(느린 설비 쪽 대조와 같은 꼴). 첫 FAB 알림은 둘째 누름이 저장에 들어올
+        # 때 보므로 창(1초)을 넓히지 않아도 남는다.
+        _race_save(app, monkeypatch, callback="_save_space_layout")
+
+    assert not app.exception, [item.message for item in app.exception]
+    texts = [str(item.value) for item in (*app.error, *app.warning, *app.info, *app.success)]
+    assert any("FAB 전체 배치를 저장했습니다" in text for text in texts), texts
+    assert not any("바뀐 내용이 없어" in text for text in texts), texts
+    repository = DuckDBEquipmentRepository(database)
+    assert len(repository.list_revisions()) == 1
+    assert len(repository.load_fab_layout_marks()) == len(edited)
     clear_equipment_repository()

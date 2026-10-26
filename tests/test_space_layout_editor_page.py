@@ -19,7 +19,8 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
 
-from capa_simulation.components import space_layout_editor
+from capa_simulation.components import space_layout_editor, write_guard
+from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_floor_layout_cache,
@@ -421,6 +422,48 @@ def test_an_apply_from_an_old_editor_is_not_applied(
     assert not app.exception
     assert any("다시 서는 사이" in item.value for item in app.warning)
     assert all(item["placed"] for item in editor_calls[-1]["items"])
+    clear_equipment_repository()
+
+
+def test_a_second_press_of_the_same_apply_keeps_the_success_and_applies_once(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「적용」 을 사람 속도(0.45~0.6초)로 두 번 누르면 둘째 누름이 브라우저가 새 epoch 를 받기 전의
+    같은 적용을 보낸다 — 「다시 서는 사이에 누른 적용이라 반영하지 않았습니다」 경고만 남고 첫
+    적용의 성공 알림은 사라졌는데 자리는 적용됐다(2026-10-27 E2E). 같은 입력의 옛 epoch 제출은
+    경고하지 않고 첫 성공 알림이 남는다. 입력이 다른 옛 epoch 제출은 전처럼 경고한다."""
+    # 시험 회차는 브라우저보다 느리다 — 창(1초)을 넓혀 두 누름 사이 회차 시간을 맞춘다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 30.0)
+    app, _ = _open_editor(tmp_path)
+    epoch = editor_calls[-1]["epoch"]
+    payload = {
+        "epoch": epoch,
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.session_state[FAKE_APPLY_KEY] = dict(payload)
+    app.run()
+    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    generation = app.session_state[BUFFER_GENERATION_KEY]
+
+    app.session_state[FAKE_APPLY_KEY] = dict(payload)
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("다시 서는 사이" in item.value for item in app.warning)
+    assert any("편집본에 적용했습니다" in item.value for item in app.success)
+    # 둘째 누름은 얹지 않았다 — 편집본 세대가 그대로다.
+    assert app.session_state[BUFFER_GENERATION_KEY] == generation
+    moved = next(item for item in editor_calls[-1]["items"] if item["id"] == "EQ-01")
+    assert (moved["x"], moved["y"]) == (40.0, 20.0)
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        **payload,
+        "changes": [{"id": "EQ-01", "placed": True, "x": 50, "y": 20, "w": 12, "h": 7}],
+    }
+    app.run()
+    assert any("다시 서는 사이" in item.value for item in app.warning)
     clear_equipment_repository()
 
 

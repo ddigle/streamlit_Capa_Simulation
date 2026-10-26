@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date
 from functools import partial
 from typing import Any
@@ -127,6 +128,13 @@ from capa_simulation.components.space_shortening_view import (
     valid_focus,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.write_guard import (
+    NoticeMark,
+    just_submitted,
+    note_notice,
+    note_submission,
+    notice_marks,
+)
 from capa_simulation.equipment_scenario_activation import (
     CANVAS_LOCK_REASON,
     FAB_LOCK_REASON,
@@ -1176,6 +1184,8 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             )
         if not changes.empty:
             with st.expander(f"바뀐 호기 {len(changes)}건", key=CHANGES_EXPANDER_KEY):
+                # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
+                toolbar_clearance()
                 st.dataframe(changes, hide_index=True, width="stretch")
         if not names.empty:
             # 이름 바꿈은 설비 마스터의 설비명(묶음이면 Main 설비) 자체를 바꾼다(2026-10-08 사용자
@@ -1231,7 +1241,10 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 key=SAVE_BUTTON_KEY,
                 on_click=_save_space_layout,
                 args=(frames, note_key, equipment_database_path, equipment_session.save_basis()),
-                kwargs={"assumption": equipment_session.is_assumption},
+                kwargs={
+                    "assumption": equipment_session.is_assumption,
+                    "drawn": _save_generation(),
+                },
                 disabled=fab_save_blocked or layout_locked,
                 help=(
                     SAMPLE_SAVE_BLOCKED
@@ -1290,9 +1303,12 @@ def _render_layout_warnings(
 def _discard_layout_only() -> None:
     """「배치 변경만 버리기」 콜백 — 배치 일곱 칸·층 대기분·찍힌 역할만 버린다(설계 8-6)."""
     st.session_state.pop(SAVE_ERROR_KEY, None)
-    discard_layout_edits()
+    remaining = discard_layout_edits()
+    # 남은 설비 편집이 없으면 「남아 있습니다」 라고 하지 않는다(2026-10-27 E2E).
     _queue_space_flash(
-        "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집과 이름 바꿈은 남아 있습니다.",
+        "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집과 이름 바꿈은 남아 있습니다."
+        if remaining
+        else "배치 변경만 버렸습니다 — 저장 안 한 설비 편집은 이제 없습니다.",
     )
 
 
@@ -1315,12 +1331,23 @@ def _save_space_layout(
     fields_prefix: str = SPACE_SAVE_FIELDS_PREFIX,
     *,
     assumption: bool = False,
+    drawn: int | None = None,
 ) -> None:
     """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다. FAB 전체
     배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다. 저장은 바뀐 쪽만
     — 세 표가 그대로면 층 값만 쓴다. `basis` 는 세션의 설비 시나리오다 — 공식이면 공식 배치에,
     가정이면 그 시나리오 새 리비전의 배치 차이에 간다(저장소가 역할로 가른다). `assumption` 이면
-    저장 칸이 가정 세션 꼴이다(함께 넣기 기본 끔 — Q1)."""
+    저장 칸이 가정 세션 꼴이다(함께 넣기 기본 끔 — Q1). `drawn` 은 단추를 그린 회차의 저장
+    세대(`_save_generation`)다."""
+    if drawn is not None and drawn != _save_generation():
+        # 그린 회차의 저장 세대(변경 메모 칸 번호)가 지금과 다르다 — 이 세션이 그 사이 이미
+        # 저장한 옛 화면의 누름이다(같은 단추를 0.15~0.5초 간격으로 두 번 눌러 첫 콜백이 끝까지 돈
+        # 뒤 닿음). 쓰지 않고 알리지도 않는다 — 첫 저장의 성공 알림은 담아 둔 칸이나 아래에 적은
+        # 알림 표지로 남는다(`flash.render_flash`). 다시 저장하면 비운 편집본으로 「편집본이 아직
+        # 서지 않아 …」·「바뀐 내용이 없어 …」 가 첫 성공을 덮었다(2026-10-27 E2E, AGENTS 9장).
+        return
+    # 알림 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    notices = notice_marks()
     note = st.session_state.get(note_key)
     try:
         message = save_equipment_buffer(
@@ -1337,8 +1364,15 @@ def _save_space_layout(
             exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
         )
         return
+    note_notice(notices, SPACE_FLASH_KEY, markdown_safe_tildes(message))
     st.session_state[SAVE_NOTE_NONCE_KEY] = int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0)) + 1
     _queue_space_flash(message)
+
+
+def _save_generation() -> int:
+    """Space 「배치 저장」 의 저장 세대(「변경 메모」 칸 key 끝 번호 — 저장에 성공할 때마다 오른다).
+    저장 단추는 그린 회차의 이 번호를 콜백 인자로 받아 지금과 견준다."""
+    return int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))
 
 
 def _stored_marks_for(
@@ -1446,8 +1480,9 @@ def _render_layout_editor(
             roster,
         )
     )
+    editor_key = f"space_layout_editor_{building}_{floor}"
     submission = render_space_layout_editor(
-        key=f"space_layout_editor_{building}_{floor}",
+        key=editor_key,
         epoch=epoch,
         title=f"{building} {floor}",
         inputs=inputs,
@@ -1468,8 +1503,12 @@ def _render_layout_editor(
     )
     if submission is None:
         return
+    submitted = _submission_print(submission.payload)
     if submission.stale:
-        st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
+        # 방금 받아들인 적용과 같은 입력이면 같은 단추를 한 번 더 누른 꼬리다 — 이미 얹었다(첫
+        # 적용의 성공 알림은 알림 칸이 다시 그린다, `write_guard.just_submitted`).
+        if not just_submitted(editor_key, submitted):
+            st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
         return
     try:
         applied = parse_editor_apply(
@@ -1520,6 +1559,9 @@ def _render_layout_editor(
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
+    # 알림 표지 dict 는 세션에 얹기 전에 받아 둔다 — 그 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수
+    # 있다.
+    notices = notice_marks()
     replace_equipment_buffer((frames[0], master, downtime))
     # 이 적용이 옮기거나 빼거나 보낸 모듈 묶음의 적용 뒤 모양 — 저장 검사가 그 모양 그대로인 묶음을
     # 편집기 결과로 보고 통과시킨다(설비 마스터의 모듈 좌표·크기 막기, `saved_master_violations`).
@@ -1584,13 +1626,35 @@ def _render_layout_editor(
         if equipment_session.layout_role == "overlay"
         else ""
     )
-    _queue_space_flash(
+    _note_applied(
+        notices,
+        editor_key,
+        submitted,
         f"{building} {floor} 배치를 편집본에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
         + overlay_note
         + renamed
         + sent_note,
     )
     st.rerun()
+
+
+def _submission_print(payload: Mapping[str, Any]) -> str:
+    """편집기 적용값의 입력 지문 — 같은 적용을 두 번 보냈는지 가린다(epoch 포함)."""
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()
+    ).hexdigest()
+
+
+def _note_applied(
+    notices: dict[str, NoticeMark], editor_key: str, submitted: str, message: str
+) -> None:
+    """받아들인 편집기 적용을 적고(`note_submission`) 성공 알림을 담는다. 알림은 표지에도 적는다 —
+    브라우저가 새 epoch 를 받기 전에 같은 「적용」 을 한 번 더 누르면 그 회차가 옛 epoch 의 같은
+    적용을 받는다. 그 회차는 경고하지 않고(`just_submitted`) 알림 칸이 이 알림을 다시 그린다
+    (2026-10-27 E2E — 성공 알림이 사라지고 「반영하지 않았습니다」 만 남았다)."""
+    note_submission(editor_key, submitted)
+    note_notice(notices, SPACE_FLASH_KEY, markdown_safe_tildes(message))
+    _queue_space_flash(message)
 
 
 def _render_fab_editor(
@@ -1634,11 +1698,14 @@ def _render_fab_editor(
     )
     if submission is None:
         return
+    submitted = _submission_print(submission.payload)
     if submission.stale:
-        st.warning(
-            "그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) 편집기를 새 값으로 다시 "
-            "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요."
-        )
+        # 방금 받아들인 적용과 같은 입력이면 같은 단추를 한 번 더 누른 꼬리다(층 편집기와 같다).
+        if not just_submitted(FAB_EDITOR_KEY, submitted):
+            st.warning(
+                "그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) 편집기를 새 값으로 다시 "
+                "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요."
+            )
         return
     try:
         applied = parse_fab_editor_apply(submission.payload, canvas)
@@ -1659,6 +1726,7 @@ def _render_fab_editor(
         fab_profile.canvas_size if fab_profile is not None else None,
         fab_marks_fingerprint(fab_stored_marks),
     )
+    notices = notice_marks()
     stage_fab_layout(
         None if next_canvas == stored_canvas else next_canvas,
         None
@@ -1667,7 +1735,10 @@ def _render_fab_editor(
         base=base,
     )
     doubled = duplicate_block_links(next_marks)
-    _queue_space_flash(
+    _note_applied(
+        notices,
+        FAB_EDITOR_KEY,
+        submitted,
         "S.PKG FAB 전체 배치를 이 세션에 적용했습니다. 저장해야 다른 사람 화면에 반영됩니다."
         + (f" 같은 층을 가리키는 블록이 있습니다: {', '.join(doubled)}." if doubled else ""),
     )

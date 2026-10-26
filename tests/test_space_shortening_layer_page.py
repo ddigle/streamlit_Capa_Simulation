@@ -1095,3 +1095,26 @@ def test_the_floor_panel_names_the_chosen_process_when_it_has_nothing_to_shorten
     assert f"**:material/event_upcoming: {head}**" in texts
     captions = [str(item.value) for item in app.caption]
     assert any(caption.startswith(empty) for caption in captions), captions
+
+
+def test_the_floor_process_chips_show_process_names_literally() -> None:
+    """「이 층 공정」 칩(`st.pills` — 선택지 글은 마크다운으로 그려진다)은 공정소분류 이름의 물결표·
+    별표를 글자 그대로 싣는다. 「Die~Attach~2」 가 지움선, 「LG*테스트*」 가 기울임으로 그려졌다 —
+    같은 칸의 머리 줄은 바르게 보였다(2026-10-27 E2E). 고른 값은 공정 이름 원본 그대로다."""
+    chips = {
+        "Die~Attach~2": "Die~Attach~2 · 단축 없음",
+        "LG*테스트*": "LG*테스트* · 2대 최대 −81일",
+    }
+    app = AppTest.from_function(_floor_panel, args=(chips, None, 0.9), default_timeout=30).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    pills: Any = next(
+        item for item in app.get("button_group") if getattr(item, "label", None) == "이 층 공정"
+    )
+    assert [str(option.content) for option in pills.proto.options] == [
+        literal_markdown(text) for text in chips.values()
+    ]
+    pills.set_value("LG*테스트*")
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[process_chip_key(("C1", "2F"))] == "LG*테스트*"

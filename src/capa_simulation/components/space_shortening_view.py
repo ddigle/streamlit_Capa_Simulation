@@ -701,7 +701,11 @@ def render_floor_layer_panel(
             st.pills(
                 "이 층 공정",
                 options=list(floor_layer.chips),
-                format_func=lambda process: floor_layer.chips.get(process, process),
+                # 선택지 글은 마크다운으로 그려진다 — 공정소분류 이름(「Die~Attach~2」)은 글자
+                # 그대로(2026-10-27 E2E). 고른 값은 이름 원본이다.
+                format_func=lambda process: literal_markdown(
+                    floor_layer.chips.get(process, process)
+                ),
                 selection_mode="single",
                 key=process_chip_key(floor),
                 help=(
