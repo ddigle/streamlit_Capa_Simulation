@@ -37,6 +37,7 @@ from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    SeenToken,
     held_profile_conflict,
     is_own_save,
     note_notice,
@@ -923,7 +924,7 @@ def render_threshold_editor(
             st.rerun(scope="app")
         expected_version = submitted_base
         try:
-            saved = _save_thresholds(
+            _save_thresholds(
                 database_path,
                 months=months,
                 month_labels=month_labels,
@@ -934,6 +935,7 @@ def render_threshold_editor(
                 expected_version=expected_version,
                 source=note.strip() or "웹 직접 편집",
                 clear_outside=clear_outside,
+                save_marks=save_marks,
             )
         except ProfileVersionConflict as exc:
             # 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신 저장본을 그리게
@@ -953,7 +955,6 @@ def render_threshold_editor(
             # 그대로).
             notice.error(bootstrap_error_message(exc))
         else:
-            remember_own_save(THRESHOLD_SAVE_NAME, expected_version, saved.version, save_marks)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             st.rerun(scope="app")
 
@@ -970,6 +971,7 @@ def _save_thresholds(
     expected_version: int,
     source: str,
     clear_outside: bool = False,
+    save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalSecurementThreshold:
     """표에 보이는 달만 갈아 끼우고 조회기간 밖 저장분은 그대로 둔다(선행 B/O 와 같은 규칙).
 
@@ -995,6 +997,10 @@ def _save_thresholds(
         source=source,
         expected_version=expected_version,
     )
+    # 제 저장 짝은 저장소에 쓴 **바로 뒤**, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기)
+    # **앞**에 적는다 — 뒷정리는 둘째 누름의 회차에 끊길 수 있는 자리다(write_guard).
+    if save_marks is not None:
+        remember_own_save(THRESHOLD_SAVE_NAME, expected_version, saved.version, save_marks)
     clear_global_securement_threshold_cache()
     # 입장 화면 Summary 도 같은 기준으로 판정한다(새 기준의 지문으로 새로 만든다).
     _recheck_intro_summary()

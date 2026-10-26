@@ -23,6 +23,7 @@ from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    SeenToken,
     held_profile_conflict,
     is_own_save,
     note_profile_conflict,
@@ -268,11 +269,12 @@ def _render_direct_editor(
         revised = drop_blank_process_rename_rows(
             pd.DataFrame(edited, columns=list(PROCESS_RENAME_COLUMNS))
         )
-        saved = _save_process_rename(
+        _save_process_rename(
             repository,
             revised,
             source=note.strip() or "웹 직접 편집",
             expected_version=expected_version,
+            save_marks=save_marks,
         )
     except ProfileVersionConflict as exc:
         # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을 그리게
@@ -290,7 +292,6 @@ def _render_direct_editor(
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        remember_own_save(PROCESS_RENAME_SAVE_NAME, expected_version, saved.version, save_marks)
         queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
         st.rerun()
 
@@ -301,17 +302,24 @@ def _save_process_rename(
     *,
     source: str,
     expected_version: int | None = None,
+    save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalProcessRename:
     """검증 → 교체 저장 → 캐시 폐기 → 입장 화면 Summary 확인 비우기(그 표시명으로 그린다).
 
     1:1 위반은 반드시 파이썬 `ValueError` 로 먼저 낸다. DB 의 UNIQUE 는 마지막 방어선이고
     그 위반은 `duckdb.ConstraintException` 이라 화면 오류 문구로 바뀌지 않는다. 붙여넣기는
     「현재 전체 교체」를 확인받는 일이라 `expected_version` 없이 부른다(버전 대조는 직접 편집).
+
+    직접 편집은 저장 전에 받아 둔 제 저장 표지(`save_marks`)를 넘긴다. 짝은 저장소에 쓴 **바로
+    뒤**, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기) **앞**에 적는다 — 뒷정리는 둘째 누름의
+    회차에 끊길 수 있는 자리다(write_guard, 2026-10-26 E2E).
     """
     prepared = prepare_process_rename_rules(rules)
     saved = repository.replace_global_process_rename(
         prepared, source=source, expected_version=expected_version
     )
+    if expected_version is not None and save_marks is not None:
+        remember_own_save(PROCESS_RENAME_SAVE_NAME, expected_version, saved.version, save_marks)
     clear_global_process_rename_cache()
     forget_intro_summary_check()
     return saved

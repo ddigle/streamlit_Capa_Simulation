@@ -22,6 +22,7 @@ from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    SeenToken,
     held_profile_conflict,
     is_own_save,
     note_profile_conflict,
@@ -309,7 +310,7 @@ def _render_direct_editor(
         # 고른 범위만 바꾸는 저장이다. 다른 범위에 이미 있던 겹친 분류값은 저장 사슬 끝까지 넘겨,
         # 두 범위에 예전 겹침이 있어도 한 범위씩 고쳐 저장할 수 있게 한다. 고른 범위 안의 겹침과
         # 새로 생긴 겹침은 그대로 막힌다.
-        saved = _save_global_display_order(
+        _save_global_display_order(
             repository,
             revised,
             source=source,
@@ -317,8 +318,8 @@ def _render_direct_editor(
                 display_order, str(selected_page), str(selected_tab)
             ),
             expected_version=expected_version,
+            save_marks=save_marks,
         )
-        remember_own_save(DISPLAY_ORDER_SAVE_NAME, expected_version, saved.version, save_marks)
         # 표시명을 적으면 저장은 통과하고 정렬만 조용히 걸리지 않는다. 막지 않고 알린다.
         mistakes = display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
         if mistakes:
@@ -384,11 +385,17 @@ def _save_global_display_order(
     source: str,
     tolerated_clashes: Collection[ClashKey] = (),
     expected_version: int | None = None,
+    save_marks: dict[str, tuple[SeenToken, SeenToken]] | None = None,
 ) -> GlobalDisplayOrder:
     """저장한다. 붙여넣기는 프로필 전체를 바꾸므로 `tolerated_clashes` 없이 부른다.
 
     붙여넣기는 「현재 전체 교체」를 확인받는 일이라 `expected_version` 없이 부른다(버전 대조는
     직접 편집). 입장 화면 Summary 도 이 차례로 그리므로 그 세션의 확인을 비운다.
+
+    직접 편집은 저장 전에 받아 둔 제 저장 표지(`save_marks`)를 넘긴다. 짝은 저장소에 쓴 **바로
+    뒤**, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기·세션 표시순서 갈아 끼우기) **앞**에 적는다
+    — 뒷정리는 둘째 누름의 회차에 끊길 수 있는 자리라, 거기서 끊기면 짝이 적히지 않아 둘째 누름이
+    방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E, write_guard).
     """
     validated = validate_display_order(display_order, tolerated_clashes=tolerated_clashes)
     profile = repository.replace_global_display_order(
@@ -397,6 +404,8 @@ def _save_global_display_order(
         tolerated_clashes=tolerated_clashes,
         expected_version=expected_version,
     )
+    if expected_version is not None and save_marks is not None:
+        remember_own_save(DISPLAY_ORDER_SAVE_NAME, expected_version, profile.version, save_marks)
     clear_global_display_order_cache()
     forget_intro_summary_check()
     try:
