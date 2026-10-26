@@ -233,8 +233,10 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "_save_processes",
         "save_shortening_filter_processes",
     ): SAME_REPLACE,
+    # 이름·차례 버전 대조 위에, 첫 콜백이 쓰고 편집을 비우기 전에 끊긴 둘째 누름은 `save_once` 가
+    # 저장소에 가지 않고 첫 결과를 돌려준다(출발점은 그 이름·순서 편집).
     (f"{_PARTS}/scenario_management.py", "_save_list_edits", "apply_scenario_list_edits"): (
-        VERSION_CHECK
+        START_POINT
     ),
     (f"{_PARTS}/scenario_management.py", "save_revision_name", "rename_revision"): VERSION_CHECK,
     (f"{_PARTS}/scenario_management.py", "save_revision_names", "rename_revisions"): (

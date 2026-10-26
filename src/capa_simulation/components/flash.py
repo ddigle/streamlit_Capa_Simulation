@@ -24,10 +24,10 @@
 **끊긴 회차에도 남는다.** 아주 빠른 두 번 누름은 둘째 누름이 옛 화면의 단추에 닿아 그 회차가
 쓰지 않고 끝나는데, 첫 쓰기의 알림은 앞 회차가 이미 꺼내 그려 둘째 회차가 화면을 다시 그리며
 지웠다(2026-10-26 E2E — VOC 글 삭제·Preference 프리셋 삭제). 쓰기 전에
-`write_guard.notice_marks()` 로 받은 dict 에 알림과 시각을 적은 칸(`write_guard.note_notice`)은
-담아 둔 알림이 없는 회차에도 `TRAILING_PRESS_SECONDS` 안이면 `render_flash` 가 그 글을 다시
-그린다(`write_guard.held_notice`) — 칸마다 따로 짓지 않고 모든 칸이 이 길을 받는다. 적지 않은
-칸은 그대로 한 번만 그린다.
+`write_guard.notice_marks()` 로 받은 dict 에 알림과 시각(과 아이콘)을 적은
+칸(`write_guard.note_notice`)은 담아 둔 알림이 없는 회차에도 `TRAILING_PRESS_SECONDS` 안이면
+`render_flash` 가 그 글을 같은 아이콘으로 다시 그린다(`write_guard.held_flash`) — 칸마다 따로 짓지
+않고 모든 칸이 이 길을 받는다. 적지 않은 칸은 그대로 한 번만 그린다.
 
 **한 번만 그린다.** 꺼낸 알림은 비운다. 비우지 않으면 그 뒤 모든 rerun 에 같은 문구가 남아, 사용자가
 방금 저장한 것인지 아까 저장한 것인지 알 수 없게 된다. 다음 동작까지 남아야 하는 칸(VOC 지운 글의
@@ -42,7 +42,7 @@ from typing import Literal, NamedTuple, get_args
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation.components.write_guard import held_notice
+from capa_simulation.components.write_guard import held_flash
 
 FlashKind = Literal["success", "info", "warning", "error"]
 _KINDS: frozenset[str] = frozenset(get_args(FlashKind))
@@ -84,14 +84,15 @@ def render_flash(*keys: str) -> DeltaGenerator:
 
     칸은 알림이 없어도 선다 — 뒤 형제의 순번이 알림 유무로 밀리지 않는다. 돌려받은 칸에 같은
     동작의 실패 문구나 그 자리에 함께 설 알림을 더 쓸 수 있다. 담아 둔 알림이 없는 칸은 쓰기 직후
-    적어 둔 알림(`write_guard.held_notice`)이 창 안이면 그 글을 성공으로 다시 그린다.
+    적어 둔 알림(`write_guard.held_flash`)이 창 안이면 그 글을 적어 둔 아이콘과 함께 성공으로 다시
+    그린다.
     """
     slot = st.container()
     for key in keys:
         note = _note(st.session_state.pop(key, None))
         if note is None:
-            held = held_notice(key)
-            note = None if held is None else FlashNote("success", held)
+            held = held_flash(key)
+            note = None if held is None else FlashNote("success", held[0], held[1])
         if note is not None:
             _draw(slot, note)
     return slot

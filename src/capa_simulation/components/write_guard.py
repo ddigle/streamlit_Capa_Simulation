@@ -119,8 +119,10 @@ SEEN_MISSING_MESSAGE = (
 # `time.monotonic()` 이다.
 PROFILE_CONFLICTS_KEY = "write_guard_profile_conflicts"
 
-# 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`)).
+# 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`, 아이콘)).
 RECENT_NOTICES_KEY = "write_guard_recent_notices"
+# 쓰기 알림 표지 한 칸 — (알림 글, 쓴 시각, 아이콘 — 아이콘 없는 성공 알림은 None).
+NoticeMark: TypeAlias = tuple[str, float, str | None]
 
 # 이 세션이 마지막으로 마친 출발점 대조 저장(저장 이름 → (출발점, 결과, 쓴 시각)).
 # `save_once` 가 적는다.
@@ -371,8 +373,8 @@ def held_profile_conflict(marks: Mapping[str, tuple[str, float]], name: str) -> 
     return message if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
 
 
-def notice_marks() -> dict[str, tuple[str, float]]:
-    """쓰기 알림 표지 dict(알림 칸 이름 → (알림 글, 쓴 시각)).
+def notice_marks() -> dict[str, NoticeMark]:
+    """쓰기 알림 표지 dict(알림 칸 이름 → (알림 글, 쓴 시각, 아이콘)).
 
     쓰기 **전에** 받아 두고 쓰기에 성공하면 곧바로 `note_notice` 로 적는다(dict 칸 쓰기는 끊기지
     않는다 — 그 뒤 `queue_flash` 같은 세션 칸 쓰기는 둘째 누름의 회차에 끊길 수 있다).
@@ -380,24 +382,39 @@ def notice_marks() -> dict[str, tuple[str, float]]:
     return cast("dict[str, Any]", _session_dict(RECENT_NOTICES_KEY))
 
 
-def note_notice(marks: dict[str, tuple[str, float]], key: str, message: str) -> None:
-    """`key` 칸에 낼 쓰기 알림(`message`)과 지금 시각을 적는다."""
-    marks[key] = (message, time.monotonic())
+def note_notice(
+    marks: dict[str, NoticeMark], key: str, message: str, *, icon: str | None = None
+) -> None:
+    """`key` 칸에 낼 쓰기 알림(`message`)과 지금 시각을 적는다. `icon` 은 그 성공 알림의 아이콘이다
+    — 다시 그릴 때 첫 알림과 같은 꼴로 선다."""
+    marks[key] = (message, time.monotonic(), icon)
 
 
-def held_notice(key: str) -> str | None:
-    """`key` 칸의 쓰기 알림이 `TRAILING_PRESS_SECONDS` 안에 났으면 그 글.
+def held_flash(key: str) -> tuple[str, str | None] | None:
+    """`key` 칸의 쓰기 알림이 `TRAILING_PRESS_SECONDS` 안에 났으면 (그 글, 아이콘).
 
     그 창 안의 회차는 같은 단추의 빠른 둘째 누름일 수 있다 — 쓰지 않고 끝나 첫 쓰기의 알림을 지운다.
-    부르는 쪽은 담아 둔 알림(`flash.render_flash`)이 없을 때 이 글을 그 자리에 다시 그린다.
+    부르는 쪽(`flash.render_flash`)은 담아 둔 알림이 없을 때 이 알림을 그 자리에 성공으로 다시
+    그린다. 아이콘 없이 적은 옛 꼴(글, 시각)도 읽는다.
     """
     marks = st.session_state.get(RECENT_NOTICES_KEY)
     if not isinstance(marks, dict):
         return None
     entry = marks.get(key)
-    if not isinstance(entry, tuple) or len(entry) != 2:
+    if not isinstance(entry, tuple) or len(entry) not in (2, 3):
         return None
-    message, moment = entry
-    if not isinstance(message, str) or not isinstance(moment, float):
+    message, moment, *rest = entry
+    icon = rest[0] if rest else None
+    if (
+        not isinstance(message, str)
+        or not isinstance(moment, float)
+        or not (icon is None or isinstance(icon, str))
+    ):
         return None
-    return message if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
+    return (message, icon) if time.monotonic() - moment < TRAILING_PRESS_SECONDS else None
+
+
+def held_notice(key: str) -> str | None:
+    """`key` 칸의 쓰기 알림이 `TRAILING_PRESS_SECONDS` 안에 났으면 그 글(`held_flash` 의 글)."""
+    held = held_flash(key)
+    return None if held is None else held[0]
