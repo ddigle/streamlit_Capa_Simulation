@@ -3252,6 +3252,22 @@ SMALL_EDITOR_NOTE = (
     "옮길 때는 묻습니다) — 「편집본에 적용」 을 누른 뒤 옮깁니다. 저장은 오른쪽 「저장 전 변경」 "
     "한 곳입니다."
 )
+# 작은 편집표의 필수 칸(`required=True`). Streamlit 은 필수 칸이 빈 새 줄을 서버에 보내지 않아
+# (브라우저가 그 줄을 편집 상태에서 빼고, 적용 뒤 편집표를 다시 세우면 사라진다) 버린 줄 수를 셀 수
+# 없다 — 넣기 전에 알린다.
+SMALL_EDITOR_REQUIRED = {
+    BASELINE_TARGET: ("공정", "분류", "기존 보유대수"),
+    DOWNTIME_TARGET: (EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
+}
+
+
+def small_editor_required_note(target: str) -> str:
+    """작은 편집표 아래 한 줄 — 필수 칸을 다 채우지 않은 새 줄은 「편집본에 적용」 때 버려진다."""
+    columns = "·".join(SMALL_EDITOR_REQUIRED[target])
+    return (
+        f"새 줄은 필수 칸({columns})을 모두 채워야 들어갑니다 — 하나라도 비운 새 줄은 「편집본에 "
+        "적용」 때 버려집니다."
+    )
 
 
 def small_editor_edits() -> list[str]:
@@ -3400,7 +3416,7 @@ def render_small_editor(
                 locked_columns=tuple(downtime.columns) if stale else (),
                 fixed_rows=stale,
             )
-        st.caption(SMALL_EDITOR_NOTE)
+        st.caption(f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}")
     if not any(
         (
             apply_clicked,

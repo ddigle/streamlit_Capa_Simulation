@@ -825,6 +825,30 @@ def test_blank_cells_in_the_small_editors_render_empty_not_none(tmp_path: Path) 
             assert proto.placeholder == ""
 
 
+def test_each_small_editor_says_a_new_row_needs_its_required_cells_before_applying(
+    tmp_path: Path,
+) -> None:
+    """필수 칸이 빈 새 줄은 Streamlit 이 서버에 보내지 않아 「편집본에 적용」 뒤 말없이
+    사라졌다(E2E — 비가동 일정 새 줄에 설비명만 넣고 적용). 버린 줄 수는 서버가 셀 수 없으니 표 아래
+    한 줄이 넣기 전에 그 표의 필수 칸을 적어 알린다."""
+    repository = _repository(tmp_path / "equipment.duckdb")
+    repository.save_snapshot(
+        empty_equipment_baseline(), _master(["EQ-01"]), empty_downtime_schedule(), note="원본"
+    )
+    app = _app(tmp_path / "equipment.duckdb")
+    for table, columns in (
+        ("기존 보유대수", "공정·분류·기존 보유대수"),
+        ("비가동 일정", "설비명·비가동유형·시작일"),
+    ):
+        app.session_state[TABLE_KEY] = table
+        _ok(app.run())
+        expected = (
+            f"새 줄은 필수 칸({columns})을 모두 채워야 들어갑니다 — 하나라도 비운 새 줄은 "
+            "「편집본에 적용」 때 버려집니다."
+        )
+        assert any(text.startswith(expected) for text in _texts(app, "caption")), table
+
+
 def test_a_small_editor_apply_on_the_run_that_saw_someone_elses_save_is_not_applied(
     tmp_path: Path,
 ) -> None:
