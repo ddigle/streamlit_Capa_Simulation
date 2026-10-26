@@ -700,6 +700,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       `sizeFrom` 이고 상태 줄에 「크기를 … 에서 불러옴」을 쓴다(`trayPlan`).
     - 서랍 Shift 범위(`pickChip`): 기준 칩(마지막으로 그냥·Ctrl 로 누른 칩, `S.trayAnchor`)부터 누른 칩까지 지금 보이는
       차례, Ctrl+Shift 는 더하기, 묶음 칩은 한 칸.
+  - **키보드**(2026-10-26 E2E — 마우스 없이는 호기 하나를 고르거나 칩을 놓을 길이 없었다). 호기 상자(편집·층 보기)와 편집의
+    도면 요소는 Tab 자리(`tabindex`·`role=button`·`aria-pressed`)이고 Enter·Space 가 누르기다(`host.onkeydown` — 편집은
+    그것 하나, Ctrl·Shift 는 `toggleSelected`; 층 보기는 `select` + `notePick`). 서랍 칩은 이름(`sle-chip-name`)이 단추라
+    「×」 와 나란하다 — Enter 는 보이는 도면 가운데(서랍 몫 `trayReserve` 를 뺀)에 놓고 초점을 놓은 호기로(`placeChipByKey`),
+    Space 는 `pickChip`. 초점 테는 화면 px 로 띄운 rect(`sle-focus-ring`, `FOCUS_GAP_PX`)다 — SVG 안의 outline 은 배율로
+    커진다. `renderItems` 는 그리기 전 초점(`focusSpot`)을 같은 id 의 새 노드로 돌려주고(`restoreFocus`), 칩이 사라졌으면
+    (「×」 추가 취소 — 낭독 이름은 「<호기> 추가 취소」) 같은 자리의 이웃 칩, 없으면 검색 칸에 둔다(BODY 로 빠지지 않게). 시험은
+    `tests/test_space_editor_keyboard.py`(되돌리기는 node).
     - 도면 요소 복사·붙여넣기(`copyMarks`·`pasteMarks`): 호기는 복사하지 않는다. 클립보드는 범위별 sessionStorage
       (`capa.space.clipboard.<floor|fab>`) + 페이지 안 쪽지(`window.__capaSpaceClipboard`)이고 모든 읽기·쓰기가 try 안이다.
       마우스가 도면 위면 그 자리가 묶음 가운데(`dropSpot`), 아니면 원본에서 max(격자, 1)씩 비켜(거듭하면 더) 붙인다. 영역
