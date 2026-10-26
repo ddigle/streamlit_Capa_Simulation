@@ -21,6 +21,7 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.table_view_controls import (
@@ -103,10 +104,12 @@ def render_cutoff_management(
 
     missing = missing_cutoff_processes(equipment_processes, stored)
     if missing:
+        # 원본 공정명을 그대로 새 행에 옮겨 적는 글이다 — 물결표가 지움선이 되면 옮긴 이름이 맞지
+        # 않는다. 「빠집니다」 굵게는 살리고 이름의 물결표만 막는다.
         st.warning(
             f"설비는 있는데 Cut-off 를 적지 않은 공정 {len(missing)}개는 "
-            f"월별 가용대수 산출에서 **빠집니다** — {', '.join(missing[:10])}"
-            + (" …" if len(missing) > 10 else "")
+            f"월별 가용대수 산출에서 **빠집니다** — "
+            f"{markdown_safe_tildes(', '.join(missing[:10]))}" + (" …" if len(missing) > 10 else "")
         )
     elif equipment_processes:
         st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")

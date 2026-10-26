@@ -42,6 +42,7 @@ from capa_simulation.components.equipment_data_workspace import (
     PREVIEW_KEY,
     TARGET_KEY,
     build_import_review,
+    discarded_notice,
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
 from capa_simulation.components.equipment_master_tab import (
@@ -81,6 +82,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_equipment_baseline,
     prepare_equipment_master,
 )
+from capa_simulation.services.layout_overlay import ReappliedLayout
 
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 
@@ -886,6 +888,48 @@ def test_inactive_floors_leave_the_location_choices_but_present_values_stay(
     _save(app)
     assert not app.error, _texts(app, "error")
     assert len(repository.list_revisions()) == 2
+
+
+def test_the_inactive_floor_warning_blocks_the_tildes_of_the_moved_unit(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """비활성 층으로 옮긴 호기 경고는 서비스가 지은 글이라 호기 이름을 날로 담는다 — 경고 상자
+    (마크다운)에서 「DA~21~R」 의 가운데가 지움선이 됐다(2026-10-26 E2E r5). 그리는 자리에서
+    막는다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _located_master([("EQ-C4", "C4", "1F"), ("DA~21~R", "C4", "2F")]),
+        empty_downtime_schedule(),
+    )
+    repository.save_floor_states({("C5", "6F"): "NOT_LINE"}, expected_version=0, source="test")
+    clear_equipment_repository()
+    app = _app(path)
+
+    _preview(
+        app,
+        _located_master([("EQ-C4", "C4", "1F"), ("DA~21~R", "C5", "6F")]).to_csv(
+            index=False, sep="\t"
+        ),
+    )
+    _put(app)
+
+    warnings = [text for text in _texts(app, "warning") if "비활성 층으로 옮긴 호기" in text]
+    assert warnings, _texts(app, "warning")
+    assert all("DA\\~21\\~R" in text and "DA~21~R" not in text for text in warnings), warnings
+
+
+def test_the_discarded_notice_blocks_the_tildes_of_the_dropped_units() -> None:
+    """남의 저장으로 편집본을 다시 세운 알림(알림 칸 — 마크다운)은 공통 대장에서 빠진 호기 이름을
+    날로 실어 「DA~21~R」 의 가운데가 지움선이 됐다(2026-10-26 E2E r5 와 같은 결함류). 막는다."""
+    notice = discarded_notice(
+        "공통 r3",
+        overlay_dropped=0,
+        reapplied=ReappliedLayout(equipment=pd.DataFrame(), reapplied=1, dropped=("DA~21~R",)),
+    )
+
+    assert "빠진 호기 1대(DA\\~21\\~R)의 편집은 뺐습니다" in notice, notice
 
 
 def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:

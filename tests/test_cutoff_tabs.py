@@ -104,6 +104,34 @@ def test_a_process_without_a_cutoff_is_surfaced_not_silently_dropped(tmp_path: P
     clear_equipment_repository()
 
 
+def _cutoff_body(database_path: str) -> None:
+    """「설정」 팝업 본문만 — 설비 공정 둘(하나는 물결표 이름)에 Cut-off 가 없다."""
+    from pathlib import Path
+
+    from capa_simulation.components.cutoff_management import render_cutoff_management
+    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+    repository = DuckDBEquipmentRepository(Path(database_path))
+    repository.initialize()
+    render_cutoff_management(repository, equipment_processes=["E2E~공정~X", "SAMPLE1"])
+
+
+def test_the_missing_cutoff_warning_blocks_the_tildes_of_the_process_names(
+    tmp_path: Path,
+) -> None:
+    """「Cut-off 를 적지 않은 공정」 경고는 그 이름을 그대로 새 행에 옮겨 적으라는 글인데, 원본
+    공정명 「E2E~공정~X」 의 물결표가 지움선이 되어 「E2E공정X」 로 보였다(2026-10-26 E2E r5).
+    이름의 물결표만 막고 「빠집니다」 굵게는 둔다."""
+    app = AppTest.from_function(
+        _cutoff_body, args=(str(tmp_path / "availability.duckdb"),), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    (warning,) = [str(item.value) for item in app.warning if "Cut-off 를 적지" in str(item.value)]
+    assert warning.endswith("**빠집니다** — E2E\\~공정\\~X, SAMPLE1"), warning
+    clear_equipment_repository()
+
+
 def test_the_cutoff_editor_has_its_own_view_controls(tmp_path: Path) -> None:
     """편집표에는 컬럼 선택·행 필터가 붙는다. 다른 편집표와 세션 키가 겹치면 안 된다."""
     app = _run(tmp_path / "availability.duckdb")

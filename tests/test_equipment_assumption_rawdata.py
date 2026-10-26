@@ -53,6 +53,7 @@ from capa_simulation.equipment_scenario_activation import (
     _default_selection,
 )
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
+from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_scenario_cache,
@@ -420,6 +421,21 @@ def test_the_removal_check_covers_what_it_saw() -> None:
     assert len({one.token, two.token, more.token}) == 3
     # 시나리오 차례는 지문을 바꾸지 않는다.
     assert two.token == RemovalElsewhere((("EQ-02", ("두 번째 가정", "셋업 실무")),)).token
+
+
+def test_the_removal_warning_blocks_the_tildes_of_the_unit_names_too() -> None:
+    """지우는 호기 경고(저장 칸 경고 상자·저장 거절 글 — 마크다운)는 시나리오 이름은 막고 호기
+    이름은 날로 실어 「지우는 호기 1대(DA<del>21</del>R)」 로 그렸다(2026-10-26 E2E r5). 호기 이름의
+    물결표도 막는다 — 막은 글은 거절 글(`bootstrap_error_message`)을 지나도 두 번 막히지 않는다."""
+    removal = RemovalElsewhere((("DA~21~R", ("E2E~가정~A",)), ("EQ-02", ("E2E~가정~A",))))
+
+    message = removal.message()
+
+    assert "지우는 호기 2대(DA\\~21\\~R, EQ-02)는" in message
+    assert "(「E2E\\~가정\\~A」)" in message
+    assert "DA~21~R" not in message
+    refusal = bootstrap_error_message(ValueError(removal.refusal()))
+    assert "(DA\\~21\\~R, EQ-02)" in refusal and "\\\\~" not in refusal
 
 
 def _popup_without_eq02(database: str, page_file: str) -> None:

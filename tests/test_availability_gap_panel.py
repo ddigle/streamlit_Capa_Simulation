@@ -211,6 +211,14 @@ def _panel_app() -> None:
             columns=EQUIPMENT_COLUMNS,
         )
 
+    # `renames` 는 설비 쪽 이름(설비명·공정소분류 값)을 갈아 낀다 — 물결표 이름 시험용.
+    renames = st.session_state.get("renames")
+    if renames:
+        spans = spans.replace(renames)
+        cutoff = cutoff.replace(renames)
+        if counterfactual is not None:
+            counterfactual = counterfactual.replace(renames)
+
     # 공정 표시명. 켜면 `Die Attach`·`Wire Bond` 만 표시명이 있다 — `Etch`·`Probe` 는 원본이다.
     # `label_map` 은 그 매핑을 갈아 낀다.
     label_map = st.session_state.get("label_map")
@@ -963,6 +971,16 @@ def test_name_mismatch_notices_keep_the_original_process_names() -> None:
     assert "아래 이름은 공정 표시명이 아니라 원본 공정명입니다" in warnings
 
 
+def test_name_mismatch_notices_block_the_tildes_of_the_original_names() -> None:
+    """한쪽에만 있는 공정 경고(마크다운)는 원본 공정명을 날로 실어 「E2E~공정~X」 를
+    「E2E<del>공정</del>X」 로 그렸다(2026-10-26 E2E r5). 이름의 물결표만 막고 목록 표시는 둔다."""
+    app = _run(wire_bond_units=True, renames={"Wire Bond": "E2E~공정~X"})
+
+    (warning,) = [str(item.value) for item in app.warning if "맞지 않는" in str(item.value)]
+    assert "\n- 설비에는 있는데 기준정보에 없는 공정 1개: E2E\\~공정\\~X" in warning, warning
+    assert "E2E~공정~X" not in warning
+
+
 def test_the_original_name_notes_appear_only_when_a_listed_name_is_relabelled() -> None:
     """표시명이 하나도 없으면 경고·캡션이 예전 문장 그대로다 — 「상자에는 표시명으로 보입니다」 를
     적을 까닭이 없다(2026-10-10 재검증)."""
@@ -1096,6 +1114,20 @@ def test_downtime_is_lent_only_where_it_cut_availability() -> None:
     assert units["손실 기여일수"].tolist() == [5]
     captions = " ".join(item.value for item in app.caption)
     assert "가용을 깎지 않은 비가동 1호기(EQ-S" in captions
+
+
+def test_the_idle_downtime_note_blocks_the_tildes_of_the_unit_names() -> None:
+    """근거 카드의 「가용을 깎지 않은 비가동」 줄(캡션)은 설비명을 날로 실었다 — 「EQ~S~R」 의
+    가운데가 지움선이 된다(2026-10-26 E2E r5 와 같은 결함류). 물결표를 막는다."""
+    app = _run(downtime=True, renames={"EQ-S": "EQ~S~R"})
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    _select_view(app, "분류별 내역")
+    open_cell(app, MONTH, ROW_SCHEDULE_LENT)
+    app.run()
+    assert not app.exception
+
+    notes = [str(item.value) for item in app.caption if "가용을 깎지 않은 비가동" in item.value]
+    assert notes and all("1호기(EQ\\~S\\~R —" in note for note in notes), notes
 
 
 def _detail_link_app() -> None:
