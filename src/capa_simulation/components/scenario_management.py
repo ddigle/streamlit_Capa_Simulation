@@ -68,12 +68,17 @@ from capa_simulation.components.widget_generation import (
 )
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    NoticeMark,
     SeenToken,
+    held_notice,
     is_own_save,
+    note_notice,
+    notice_marks,
     own_save_marks,
     queue_refusal,
     remember_own_save,
     remember_seen,
+    save_once,
     seen,
     take_refusal,
 )
@@ -210,6 +215,9 @@ OFFICIAL_SEEN_KEY = "scenario_official_seen_release_no"
 # `REVISION_NAME_SAVE_NAME:<리비전 id>` 다.
 OFFICIAL_SAVE_NAME = "scenario_official_release"
 REVISION_NAME_SAVE_NAME = "scenario_revision_name"
+# 목록 「변경 저장」 의 출발점 대조 저장 이름(`write_guard.save_once` — 출발점은 그 저장의 이름·순서
+# 편집과 순서의 본 차례).
+LIST_SAVE_NAME = "scenario_list_edits"
 SELECT_COLUMN = "선택"
 ORDER_COLUMN = "순서"
 NAME_COLUMN = "시나리오명"
@@ -375,6 +383,19 @@ def _notify(key: str, kind: FlashKind, text: str) -> None:
     queue_flash(key, text, kind=kind, icon=_NOTICE_ICONS.get(kind))
 
 
+def _note_saved(notices: dict[str, NoticeMark], key: str, text: str) -> None:
+    """쓰기에 성공한 바로 뒤 그 성공 알림을 알림 표지에 적는다(`write_guard.note_notice` — 쓰기 전에
+    받아 둔 dict 라 끊기지 않는다).
+
+    「변경 저장」·「이름 저장」 을 사람 속도로 두 번 누르면(0.15~0.2초) 둘째 누름은 옛 화면의
+    단추에 닿는다 — 그 회차에 단추가 이미 잠겼으면 Streamlit 이 누름을 버리고, 아직 열려 있었으면
+    콜백이 고친 것 없이 돈다. 어느 쪽이든 그 회차가 첫 누름의 성공 알림을 지웠다(2026-10-26 E2E).
+    창(`TRAILING_PRESS_SECONDS`) 안의 회차는 그 칸의 `render_flash` 가 이 알림을 같은 아이콘으로
+    다시 그린다.
+    """
+    note_notice(notices, key, text, icon=_NOTICE_ICONS["success"])
+
+
 def _render_list_toolbar(
     database_path: str,
     base_ids: Sequence[str],
@@ -498,12 +519,26 @@ def _save_list_edits(
     draft = peek_table(LIST_EDITOR_KEY, base_ids, base_names, LIST_COLUMNS)
     renames = changed_names(draft, base_names)
     if not renames and draft.order is None:
-        _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
+        # 방금 저장한 같은 단추의 빠른 둘째 누름이면 알림 칸이 그 성공을 다시 그린다 — 「고친 것이
+        # 없습니다」 로 덮지 않는다(`_note_saved`).
+        if held_notice(LIST_NOTICE_KEY) is None:
+            _notify(LIST_NOTICE_KEY, "info", "고친 것이 없습니다.")
         return
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    notices = notice_marks()
     try:
         with pinned_connections(Path(database_path)):
-            get_scenario_repository(database_path).apply_scenario_list_edits(
-                renames, draft.order, expected_order=draft.order_base
+            repository = get_scenario_repository(database_path)
+            # 같은 편집의 둘째 누름(첫 콜백이 쓴 뒤 편집을 비우기 전에 끊긴 꼴)은 저장소에 다시 가지
+            # 않는다 — 다시 가면 보고 고친 이름이 이미 바뀌어 제 저장을 「다른 사용자가 먼저 이름을
+            # 바꿨습니다」 로 거부한다(write_guard.save_once).
+            save_once(
+                LIST_SAVE_NAME,
+                (tuple(sorted(renames.items())), draft.order, draft.order_base),
+                lambda: repository.apply_scenario_list_edits(
+                    renames, draft.order, expected_order=draft.order_base
+                ),
+                wrote=lambda _: True,
             )
     except BatchEditRefused as exc:
         rows = table_rows(draft, base_ids)
@@ -539,6 +574,8 @@ def _save_list_edits(
         _notify(LIST_NOTICE_KEY, "error", bootstrap_error_message(exc))
         store_draft(LIST_EDITOR_KEY, draft)
         return
+    saved_message = list_saved_message(len(renames), reordered=draft.order is not None)
+    _note_saved(notices, LIST_NOTICE_KEY, saved_message)
     if renames:
         # 스냅샷 payload 는 시나리오명을 함께 담는다. 비우지 않으면 그 리비전에서 파생한 시나리오의
         # 원천명·출처 메모에 옛 이름이 남는다. 비교 대상이 이 시나리오면 저장소가 그 프로필
@@ -553,11 +590,7 @@ def _save_list_edits(
         for scenario_id, (_, renamed) in renames.items():
             rename_active_scenario_label(scenario_id, renamed)
     forget_table_edits(LIST_EDITOR_KEY)
-    _notify(
-        LIST_NOTICE_KEY,
-        "success",
-        list_saved_message(len(renames), reordered=draft.order is not None),
-    )
+    _notify(LIST_NOTICE_KEY, "success", saved_message)
 
 
 def _row_place(place: str, name: str) -> str:
@@ -1026,10 +1059,13 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
     draft = peek_table(REVISION_EDITOR_KEY, list(by_id), base_names, REVISION_COLUMNS)
     renames = changed_names(draft, base_names)
     if not renames:
-        _notify(CARD_NOTICE_KEY, "info", "고친 리비전명이 없습니다.")
+        # 방금 저장한 같은 단추의 빠른 둘째 누름이면 알림 칸이 그 성공을 다시 그린다(`_note_saved`).
+        if held_notice(CARD_NOTICE_KEY) is None:
+            _notify(CARD_NOTICE_KEY, "info", "고친 리비전명이 없습니다.")
         return
     # 표지 dict 는 저장 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
+    notices = notice_marks()
     try:
         saved = save_revision_names(database_path, renames, save_marks)
     except BatchEditRefused as exc:
@@ -1052,7 +1088,7 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
                 if revision_id in by_id
             ]
             _after_revision_rename(renamed)
-            _revision_names_saved(renamed)
+            _revision_names_saved(renamed, notices)
             return
         _notify(
             CARD_NOTICE_KEY,
@@ -1082,17 +1118,18 @@ def _save_revision_names_clicked(database_path: str, revisions: Sequence[Revisio
         _notify(CARD_NOTICE_KEY, "error", bootstrap_error_message(exc))
         store_draft(REVISION_EDITOR_KEY, draft)
         return
-    _revision_names_saved(saved)
+    _revision_names_saved(saved, notices)
 
 
-def _revision_names_saved(saved: Sequence[RevisionSummary]) -> None:
-    forget_table_edits(REVISION_EDITOR_KEY)
-    _notify(
-        CARD_NOTICE_KEY,
-        "success",
-        "리비전명을 저장했습니다: "
-        + ", ".join(literal_markdown(revision_label(revision)) for revision in saved),
+def _revision_names_saved(saved: Sequence[RevisionSummary], notices: dict[str, NoticeMark]) -> None:
+    """리비전명 저장 뒤 — 성공 알림을 알림 표지에 먼저 적고(`_note_saved` — 끊기지 않는다) 이름
+    편집을 비운 뒤 다음 회차 알림으로 담는다."""
+    message = "리비전명을 저장했습니다: " + ", ".join(
+        literal_markdown(revision_label(revision)) for revision in saved
     )
+    _note_saved(notices, CARD_NOTICE_KEY, message)
+    forget_table_edits(REVISION_EDITOR_KEY)
+    _notify(CARD_NOTICE_KEY, "success", message)
 
 
 def _revision_name_save_name(revision_id: str) -> str:
@@ -1384,8 +1421,14 @@ def official_confirm_key(revision_id: str) -> str:
 
 
 def official_virtual_product_warning(records: Sequence[VirtualProductRecord]) -> str:
-    """공식버전 지정 전에 보일 가상 제품 확인 문장. 제품 · Stack 을 모두 적는다."""
-    products = ", ".join(f"{record.product} · {record.stack}" for record in records)
+    """공식버전 지정 전에 보일 가상 제품 확인 문장. 제품 · Stack 을 모두 적는다.
+
+    `st.warning`(마크다운)으로 그리므로 사람이 적은 제품정보·Stack 은 막아 싣는다.
+    """
+    products = ", ".join(
+        f"{literal_markdown(record.product)} · {literal_markdown(record.stack)}"
+        for record in records
+    )
     return (
         f"이 리비전에는 가상 제품 {len(records)}건이 포함되어 있습니다({products}). "
         "실적과 대조할 수 없는 값입니다. 그대로 공식버전으로 지정할까요?"

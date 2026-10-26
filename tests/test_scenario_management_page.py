@@ -40,6 +40,7 @@ from capa_simulation.components.scenario_management import (
     REVISION_SAVE_GUIDE,
     _official_rename_notes,
     official_confirm_key,
+    official_virtual_product_warning,
 )
 from capa_simulation.persistence.cache import (
     clear_global_comparison_scenario_cache,
@@ -856,7 +857,7 @@ def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmati
     app = AppTest.from_string(script, default_timeout=120)
     _open_official(app, saved.scenario.scenario_id, revision_id)
     assert (
-        "이 리비전에는 가상 제품 1건이 포함되어 있습니다(DEMO_VIRTUAL · 8H). "
+        "이 리비전에는 가상 제품 1건이 포함되어 있습니다(DEMO\\_VIRTUAL · 8H). "
         "실적과 대조할 수 없는 값입니다. 그대로 공식버전으로 지정할까요?"
     ) in [item.value for item in app.warning]
     assert _official_button(app).disabled
@@ -895,6 +896,23 @@ def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmati
     assert any(item.value.startswith("공식 v2 · ") for item in app.success)
     # 지정하면 팝업이 닫힌다.
     assert OFFICIAL_DIALOG_KEY not in app.session_state
+
+
+def test_the_official_virtual_product_warning_draws_the_typed_names_literally() -> None:
+    """공식 지정 확인의 가상 제품 목록은 `st.warning`(마크다운)으로 그린다 — 사람이 적은
+    제품정보·Stack 의 물결표·별표가 지움선·기울임이 되지 않게 막아 싣는다(2026-10-26 E2E 같은 꼴 —
+    가상 제품 등록 알림)."""
+    record = VirtualProductRecord(
+        product="HBM4~시제~",
+        stack="E2E~가상~*1*",
+        source_product="DEMO PRODUCT A",
+        source_stack="8H",
+    )
+    warning = official_virtual_product_warning([record])
+    assert (
+        f"가상 제품 1건이 포함되어 있습니다({literal_markdown('HBM4~시제~')} · "
+        f"{literal_markdown('E2E~가상~*1*')})."
+    ) in warning, warning
 
 
 def test_official_release_without_virtual_products_asks_nothing(tmp_path: Path) -> None:

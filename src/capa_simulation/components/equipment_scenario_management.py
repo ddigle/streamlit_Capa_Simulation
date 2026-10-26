@@ -76,10 +76,12 @@ from capa_simulation.components.widget_generation import (
 )
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
+    SeenToken,
     is_own_save,
+    is_own_save_settled,
     own_save_marks,
-    remember_own_save,
     remember_seen,
+    save_remembered,
     seen,
 )
 from capa_simulation.equipment_scenario_activation import (
@@ -903,6 +905,49 @@ def branch_unscheduled_sentence(
     )
 
 
+def branch_layout_sentence(
+    revision: EquipmentScheduleRevisionSummary, preview: ScheduleRestorePreview
+) -> str:
+    """「여기서 새 시나리오」 가 배치 차이(설비 0031)에 하는 일 한 문장 — 그 리비전에 저장된 차이가
+    없으면 빈 글.
+
+    새 r1 은 그 리비전의 일정과 함께 **배치 차이도** 지금 공통·층 현행값으로 정규화해 든다(저장소
+    `clone_equipment_scenario` — 설계 6-6). 글은 되돌리기 확인 글처럼 실제로 옮길 차이
+    (`restored_layout_*` — 같은 정규화)로 적고, 그 뒤 지운 호기·공식과 같아진 행이 빠지면 그 사실과
+    그때와 자리가 다른 손대지 않은 호기 수(`layout_moved_since`)를 적는다(`restore_layout_sentence`
+    와 같은 재료 — 확인 글과 실제 쓰기가 갈리지 않게). 2026-10-26 E2E — 확인 글이 일정·메모·비가동만
+    말해 함께 옮겨지는 가정 배치를 빠뜨렸다.
+    """
+    title = f"r{revision.revision_no}"
+    stored = stored_layout_words(
+        preview.layout_unit_rows, preview.layout_mark_rows, preview.layout_label_rows
+    )
+    if not stored:
+        return ""
+    copied = stored_layout_words(
+        preview.restored_layout_unit_rows,
+        preview.restored_layout_mark_rows,
+        preview.restored_layout_label_rows,
+    )
+    if not copied:
+        return (
+            f"{title}에 저장된 배치 차이({stored})는 그 뒤 지운 호기이거나 지금 공식과 같아져 옮길 "
+            "것이 없습니다 — 새 시나리오는 공식 배치를 따릅니다."
+        )
+    moved = (
+        " 그때 손대지 않은 호기는 지금 공식 자리를 따르므로 그때와 자리가 다른 호기 "
+        f"{preview.layout_moved_since:,}대가 있습니다(이력 「그때 그대로」 와 다름)."
+        if preview.layout_moved_since
+        else ""
+    )
+    if stored != copied:
+        return (
+            f"{title}의 가정 배치(옮길 차이 {copied})도 새 시나리오로 옮깁니다 — {title}에 저장된 "
+            f"차이({stored}) 가운데 그 뒤 지운 호기·지금 공식과 같아진 것은 빠집니다.{moved}"
+        )
+    return f"{title}의 가정 배치(저장된 차이 {stored})도 새 시나리오로 옮깁니다.{moved}"
+
+
 def restore_preview_lines(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
@@ -1167,18 +1212,39 @@ def _render_restore(
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = own_save_marks()
     follows = _follow_marks()
+
+    def restored_token(result: ScheduleRestoreResult) -> SeenToken | None:
+        # 저장된 값은 이 쓰기의 결과다(공통은 대조만 하고 쓰지 않는다, 발행은 했을 때만 번호가
+        # 바뀐다) — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어간다.
+        if result.schedule is None:
+            return None
+        return (
+            common_id,
+            result.schedule.schedule_revision_id,
+            result.release_no if result.release_no is not None else release_no,
+        )
+
     try:
+        repository = get_equipment_repository(database_path)
         # 대조값은 확인 체크를 묶은 값 그대로다 — 확인 글을 그린 값과 저장소가 대조하는 값이 같다.
-        result = get_equipment_repository(database_path).restore_schedule_revision(
-            chosen,
-            expected_common_revision_id=common_id,
-            expected_latest_schedule_revision_id=scenario.latest_schedule_revision_id,
-            saved_by=saved_by or None,
-            note=note or None,
-            revision_name=revision_name or None,
-            publish_official=publish,
-            expected_release_no=release_no,
-            expected_layout_role="official" if official_scenario else "overlay",
+        # 쓰기와 제 저장 짝 적기는 세션의 잠금 안에서 함께 한다 — 겹쳐 온 둘째 누름이 그 틈에
+        # 거부되면 짝이 없어 제 되돌리기를 「다른 사용자가 저장」 으로 알린다(write_guard).
+        result = save_remembered(
+            own_name,
+            expected,
+            lambda: repository.restore_schedule_revision(
+                chosen,
+                expected_common_revision_id=common_id,
+                expected_latest_schedule_revision_id=scenario.latest_schedule_revision_id,
+                saved_by=saved_by or None,
+                note=note or None,
+                revision_name=revision_name or None,
+                publish_official=publish,
+                expected_release_no=release_no,
+                expected_layout_role="official" if official_scenario else "overlay",
+            ),
+            stored=restored_token,
+            marks=save_marks,
         )
     except EquipmentLayoutRoleChanged:
         # 확인 글(배치 차이를 버리나 되살리나)을 정한 역할이 그 사이 남의 발행으로 바뀌었다.
@@ -1211,15 +1277,6 @@ def _render_restore(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"되돌리지 못했습니다: {bootstrap_error_message(exc)}")
         return
-    if result.schedule is not None:
-        # 저장된 값은 이 쓰기의 결과다(공통은 대조만 하고 쓰지 않는다, 발행은 했을 때만 번호가
-        # 바뀐다) — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어간다.
-        stored = (
-            common_id,
-            result.schedule.schedule_revision_id,
-            result.release_no if result.release_no is not None else release_no,
-        )
-        remember_own_save(own_name, expected, stored, save_marks)
 
     def restored(moved: bool, kept_unsaved: bool) -> str:
         return restore_result_message(
@@ -1247,7 +1304,8 @@ def _render_branch(
     """「여기서 새 시나리오」(E7) — 고른 리비전의 일정을 r1 로 든 새 설비 시나리오(복제로만 만든다).
 
     출처는 고른 리비전이고, 새 r1 은 그 리비전을 지금 공통 대장과 합친 일정이라 그 리비전 뒤에 공통
-    대장에 든 호기는 일정 없음이다.
+    대장에 든 호기는 일정 없음이다. 그 리비전에 배치 차이가 있으면 정규화해 함께 옮긴다 — 확인 글이
+    그것도 적는다(`branch_layout_sentence`).
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1261,6 +1319,9 @@ def _render_branch(
         st.error(f"이 리비전에서 새 시나리오를 만들 수 없습니다: {bootstrap_error_message(exc)}")
         return
     st.caption(branch_unscheduled_sentence(revision, preview))
+    layout = branch_layout_sentence(revision, preview)
+    if layout:
+        st.caption(layout)
     # 칸 key 의 세대가 만들기 쓰기의 세대이기도 하다(`write_once_value`).
     branch_generation = _generation()
     new_name = st.text_input(
@@ -1341,10 +1402,18 @@ def _render_revision_name(
         # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
         try:
-            renamed = get_equipment_repository(database_path).rename_schedule_revision(
-                revision.schedule_revision_id,
-                name=label,
-                expected_name=seen_name or None,
+            repository = get_equipment_repository(database_path)
+            # 쓰기와 제 저장 짝 적기는 세션의 잠금 안에서 함께 한다(write_guard.save_remembered).
+            renamed = save_remembered(
+                own_name,
+                seen_name,
+                lambda: repository.rename_schedule_revision(
+                    revision.schedule_revision_id,
+                    name=label,
+                    expected_name=seen_name or None,
+                ),
+                stored=lambda renamed: renamed.revision_name or "",
+                marks=save_marks,
             )
         except EquipmentScheduleRevisionNameMoved as exc:
             if is_own_save(own_name, seen_name, exc.current or "", save_marks):
@@ -1356,7 +1425,6 @@ def _render_revision_name(
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        remember_own_save(own_name, seen_name, renamed.revision_name or "", save_marks)
         _written(_revision_name_message(scenario, renamed, renamed.revision_name))
 
 
@@ -1392,10 +1460,18 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
         # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = own_save_marks()
         try:
-            renamed = get_equipment_repository(database_path).rename_equipment_scenario(
-                scenario.equipment_scenario_id,
-                name=name,
-                expected_name=seen_name,
+            repository = get_equipment_repository(database_path)
+            # 쓰기와 제 저장 짝 적기는 세션의 잠금 안에서 함께 한다(write_guard.save_remembered).
+            renamed = save_remembered(
+                own_name,
+                seen_name,
+                lambda: repository.rename_equipment_scenario(
+                    scenario.equipment_scenario_id,
+                    name=name,
+                    expected_name=seen_name,
+                ),
+                stored=lambda renamed: renamed.scenario_name,
+                marks=save_marks,
             )
         except EquipmentScenarioNameMoved as exc:
             if is_own_save(own_name, seen_name, exc.current, save_marks):
@@ -1407,7 +1483,6 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        remember_own_save(own_name, seen_name, renamed.scenario_name, save_marks)
         _written(_scenario_renamed_message(renamed.scenario_name))
 
 
@@ -1505,11 +1580,19 @@ def _render_clear_layout(
     save_marks = own_save_marks()
     follows = _follow_marks()
     try:
-        created = get_equipment_repository(database_path).clear_layout_overlay(
-            scenario.equipment_scenario_id,
-            expected_latest_schedule_revision_id=scenario.latest_schedule_revision_id,
-            saved_by=saved_by or None,
-            note=note or None,
+        repository = get_equipment_repository(database_path)
+        # 쓰기와 제 저장 짝 적기는 세션의 잠금 안에서 함께 한다(write_guard.save_remembered).
+        created = save_remembered(
+            own_name,
+            latest_id,
+            lambda: repository.clear_layout_overlay(
+                scenario.equipment_scenario_id,
+                expected_latest_schedule_revision_id=scenario.latest_schedule_revision_id,
+                saved_by=saved_by or None,
+                note=note or None,
+            ),
+            stored=lambda created: created.schedule_revision_id if created is not None else None,
+            marks=save_marks,
         )
     except EquipmentRevisionConflict as exc:
         current = equipment_write_token(database_path, scenario.equipment_scenario_id)
@@ -1532,7 +1615,6 @@ def _render_clear_layout(
         )
 
     if created is not None:
-        remember_own_save(own_name, latest_id, created.schedule_revision_id, save_marks)
         # 그 리비전에서 남은 일을 이어 하게(공식 발행 등) 리비전 상자·세션을 새 리비전에 둔다.
         _follow_and_announce(
             database_path,
@@ -1808,7 +1890,10 @@ def _render_publish(
         release_no=release_no,
     )
     if refusal is not None:
-        if isinstance(seen_release, int) and is_own_save(
+        # 목록은 첫 누름의 커밋 뒤 DB 지문으로 새로 읽힌다 — 겹쳐 온 둘째 회차가 그 새 번호를
+        # 보고 여기 닿았을 때 첫 회차가 아직 짝을 적기 전일 수 있어, 그 쓰기가 끝난 뒤에
+        # 본다(write_guard).
+        if isinstance(seen_release, int) and is_own_save_settled(
             PUBLISH_SAVE_NAME, seen_release, release_no, save_marks
         ):
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 발행했다(write_guard).
@@ -1818,13 +1903,23 @@ def _render_publish(
         _refused(refusal)
         return
     try:
+        repository = get_equipment_repository(database_path)
         # 대조값은 누르기 전 확인 글이 보인 번호다(위 대조로 지금 목록 번호와 같다) — 목록
-        # 캐시가 늦어 그 사이의 발행을 못 봤으면 저장소가 쓰기 잠금 안에서 거절한다.
-        published = get_equipment_repository(database_path).publish_equipment_release(
-            revision.schedule_revision_id,
-            released_by=released_by or None,
-            note=note or None,
-            expected_latest_release_no=release_no or None,
+        # 캐시가 늦어 그 사이의 발행을 못 봤으면 저장소가 쓰기 잠금 안에서 거절한다. 발행과 제
+        # 저장 짝 적기는 세션의 잠금 안에서 함께 한다 — 더블클릭의 둘째 회차가 낡은 목록으로 첫
+        # 발행 뒤·짝 적기 전에 저장소에 가 거부되면 짝이 없어 제 발행을 「공식이 바뀌어 발행하지
+        # 않았습니다」 로 알렸다(2026-10-26 E2E, 고부하 간헐).
+        published = save_remembered(
+            PUBLISH_SAVE_NAME,
+            release_no,
+            lambda: repository.publish_equipment_release(
+                revision.schedule_revision_id,
+                released_by=released_by or None,
+                note=note or None,
+                expected_latest_release_no=release_no or None,
+            ),
+            stored=lambda release: release.release_no,
+            marks=save_marks,
         )
     except EquipmentReleaseMoved as exc:
         if is_own_save(PUBLISH_SAVE_NAME, exc.expected, exc.current, save_marks):
@@ -1845,7 +1940,6 @@ def _render_publish(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
         return
-    remember_own_save(PUBLISH_SAVE_NAME, release_no, published.release_no, save_marks)
     cleaned = published.schedule_revision_id != revision.schedule_revision_id
 
     def published_message(moved: bool, kept_unsaved: bool) -> str:

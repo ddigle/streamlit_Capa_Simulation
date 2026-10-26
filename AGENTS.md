@@ -1958,8 +1958,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이 다른 칸만 (파일, 함수, 칸) 으로 까닭과
   함께 허용 목록에 둔다(9장 「조건부 알림」).
   담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
-  `write_guard.held_notice` 로 그 글을 성공으로 다시 그린다 — 아주 빠른 둘째 누름의 회차가 앞 회차의 알림을 지우지 않게
-  모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
+  `write_guard.held_flash` 로 그 글을 적어 둔 아이콘(`note_notice(…, icon=)`)과 함께 성공으로 다시 그린다 — 아주 빠른 둘째
+  누름의 회차가 앞 회차의 알림을 지우지 않게 모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
 - `src/capa_simulation/components/widget_generation.py` — 서버 값을 브라우저가 든 위젯에 닿게 하는 **한 길**(9장 「닫힌
   팝업 안」·「쓰기 콜백」). 세대 칸 읽기(`generation` — `write_guard.current_generation` 과 같은 읽기)·세대 key 짓기
   (`widget_key` — 꼴 `__g`·`_g`·`__`·`__p` 와 `bare_zero` 로 옛 key 글자를 바이트까지 지킨다)·세대 올리기(`bump` — 뒷정리 맨
@@ -1986,17 +1986,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   리비전 저장(`tests/test_write_guard_cas.py` 의 AST 그물). HOME 주요 Case 의 시나리오 대조 충돌은 지금 짝이 고른 짝일 수
   없어(대조 없는 쓰기이고, 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금 짝과 같으면 쓰지 않음」 이 거른다) 판정하지 않는다 —
   그물이 이름으로 빼 둔다(`NOT_OWN_SAVE_CONFLICTS`). 제 저장 짝의 「저장된 값」 은 쓰기 결과(저장소가 돌려준 version·새
-  리비전 id)로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어가 남의 저장 뒤 충돌을 제 저장으로 안다. 거꾸로 남의
+  리비전 id)로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어가 남의 저장 뒤 충돌을 제 저장으로 안다. 시나리오 관리
+  설비 시나리오 구획의 쓰기 다섯(공식으로 발행·이름 바꾸기·리비전명·배치 차이 지우기·되돌리기)은 쓰기와 짝 적기를 세션의 잠금
+  안에서 함께 한다(`save_remembered`) — 겹친 둘째 회차는 그 뒤에야 저장소에 가 짝을 본다. 저장소에 가기 전에 첫 쓰기의 새
+  값을 보고 거절하는 발행 확인 글 대조는 그 잠금을 거쳐 판정한다(`is_own_save_settled`). 거꾸로 남의
   저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
   알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off(충돌 회차가 초안·출발점을 최신으로 다시
   세우는 자리라 표지가 없으면 둘째 누름이 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮는다). 쓰지 않고 끝나는 아주 빠른
-  둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와
-  HOME 주요공정 프리셋 「기본으로」·「삭제」 가 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
+  둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
+  글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
   설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
   쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장).
   출발점 대조 저장의 `save_once` 는 설비 편집본 저장(`equipment_data_workspace._save_equipment_frames` — 설비 마스터
-  「리비전 저장」·Space 「배치 저장」·사이드바 팝업 저장)과 FAB 전체 배치 쓰기(`save_pending_fab_layout`)가 쓴다(9장,
-  `tests/test_equipment_save_double_press.py`). 설비 편집본 저장은 그 창을 지나 저장소에 거부된 둘째 누름을 위 제 저장 판정으로
+  「리비전 저장」·Space 「배치 저장」·사이드바 팝업 저장)과 FAB 전체 배치 쓰기(`save_pending_fab_layout`), 시뮬레이션
+  시나리오 목록 「변경 저장」(`scenario_management._save_list_edits` — 출발점은 그 이름·순서 편집)이 쓴다(9장,
+  `tests/test_equipment_save_double_press.py`·`tests/test_scenario_save_double_press.py`). 설비 편집본 저장은 그 창을 지나 저장소에 거부된 둘째 누름을 위 제 저장 판정으로
   알아본다.
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
@@ -2167,7 +2171,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 알림으로 까닭이 보인다. 단추 처리도 체크를 다시 본다(`not clicked or not agreed`). 값이 그대로인데 캐시가
     늦어 저장소가 그 사이 쓰기를 보면 `EquipmentRevisionConflict`·`EquipmentReleaseMoved` 로 거절한다(`_refused`).
   - **여기서 새 시나리오**는 1단계 복제(만들기는 복제로만)의 출처를 고른 리비전으로 넓힌 것이다 — 안내가 새 시나리오의 일정
-    없음 수와 그 리비전 뒤에 든 호기 수를 적는다. 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 + 층 현행값
+    없음 수와 그 리비전 뒤에 든 호기 수를 적고, 그 리비전에 배치 차이가 있으면 새 r1 로 함께 옮기는 차이(정규화 — 되돌리기와
+    같은 `restored_layout_*`, 빠지는 행·그때와 자리가 다른 호기 수 포함)도 적는다(`branch_layout_sentence` — 2026-10-26 E2E,
+    확인 글이 일정·메모·비가동만 말했다). 확인 재료는 둘 다 `load_schedule_restore_preview`(불변 리비전 id 셋 + 층 현행값
     쓰기 세대 키) 한 칸.
   - **리비전명**은 칸을 세울 때 본 이름을 따로 들고(`…__seen`) 그 이름으로 비교 후 쓰기를 한다 — 칸이 고치지 않은 채면 남이
     바꾼 이름으로 다시 선다. 비우면 지운다. **시나리오 이름 바꾸기**도 같은 꼴이다 — 팝오버 안 칸은 매 회차 그려져 key 가
@@ -4122,7 +4128,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     들어간다. **짝은 저장소에 쓴 바로 뒤, 세션 칸을 건드리는 뒷정리(입장 화면 확인 비우기·세션 표시순서 갈아 끼우기 등) 앞에
     적는다** — 저장 도우미가 뒷정리까지 하면 받아 둔 표지 dict 를 도우미에 넘겨 그 안에서 적는다. 뒷정리에서 끊기면 짝이 적히지
     않아 둘째 누름이 제 저장을 「다른 사용자가 먼저」 로 알렸다(2026-10-26 E2E — 표시순서 6회 중 5회, Proc Rename·판정 기준도
-    같은 꼴). 그 사이 남이 저장했으면 지금 값이 짝과 달라 거부를 그대로 알린다. 화면에서 충돌 예외 10종을 잡는 자리는 제 저장일
+    같은 꼴). 그 사이 남이 저장했으면 지금 값이 짝과 달라 거부를 그대로 알린다. 쓰기와 짝 적기 사이가 비면 그 틈도 탈이다 —
+    Streamlit 1.63 `runner.fastReruns` 는 둘째 누름에서 첫 회차를 멈추라고만 하고 새 회차를 곧바로 세워 두 회차가 겹쳐 돈다.
+    둘째 회차가 낡은 목록으로 끝까지 돌아 첫 쓰기 뒤·짝 적기 전에 저장소에 거부되면 짝이 없어 제 발행을 「확인 글을 본 뒤
+    공식이 바뀌어 발행하지 않았습니다」 로 알렸다(2026-10-26 E2E — 설비 「공식으로 발행」, 고부하 간헐). 설비 시나리오 구획의
+    쓰기 다섯은 `write_guard.save_remembered` 로 쓰기와 짝 적기를 세션의 잠금 안에서 함께 하고, 저장소에 가기 전에 첫 쓰기의
+    새 값을 보고 거절하는 발행 확인 글 대조는 `is_own_save_settled` 로 그 잠금을 거쳐 판정한다
+    (`tests/test_equipment_scenario_double_press.py` — 둘째 회차를 첫 쓰기 전 화면으로 쓰기 앞까지 세워 둔 겹침). 화면에서 충돌 예외 10종을 잡는 자리는 제 저장일
     수 없는 충돌(HOME 주요 Case 의 시나리오 대조)을 빼고 모두 이 판정을 부른다(같은 그물). 시험은 첫 회차의 쓰기 직후 그 회차에
     멈춤을 걸고(`ScriptRequests.request_stop`) 같은 위젯 값으로 둘째 회차를 다른 스레드의 `app._run` 으로 세운다 — 일곱
     자리(리비전명·공식 지정·설비 「리비전 저장」·자동 갱신 설정·표시순서·Proc Rename·판정 기준)에서 더블클릭은 한 번 쓰고 성공만,
@@ -4143,8 +4155,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     회차가 이미 꺼내 그렸으므로 그 회차가 화면을 다시 그리며 알림을 지워, 한 건 쓰였는데 아무 알림도 남지 않았다
     (2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 지나간 세대의 누름이 `just_written` 창 안이면
     성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
-    시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
-    「기본으로」·「삭제」). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
+    시각을 적어(`note_notice` — 아이콘 있는 성공 알림은 `icon=` 도) 그 창 안의 회차가 같은 꼴로 다시 그린다(VOC 글
+    삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」). 첫 회차가
+    콜백만 마치고 화면을 다시 그리기 전에 닿은 둘째 누름은 단추가 아직 열려 있어 콜백이 고친 것 없이 도는데, 그 창 안이면
+    「고친 것이 없습니다」 로 방금 성공을 덮지 않는다(`tests/test_scenario_save_double_press.py`). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
     `held_notice` 를 따로 부르지 않는다(VOC 머리 칸도 `render_flash` 칸이다). 창이 지난 옛 화면의 누름은
     전처럼 알리지 않는다(`tests/test_voc_page.py`·`tests/test_key_process_preset_messages.py`·
     `tests/test_flash_messages.py` 의 끊긴 회차 시험). 자동 갱신 설정 폼도 저장 성공 알림을 `note_notice` 로 적는다 — 새
@@ -4157,7 +4171,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     E2E). 저장은 `write_guard.save_once(이름, 출발점, 저장, wrote=)` 로 한다 — 저장과 「이 출발점은 저장했다」 표지를 그
     세션의 잠금 안에서 하고, 같은 출발점의 둘째 누름(`TRAILING_PRESS_SECONDS` 안)에는 저장소에 가지 않고 첫 결과를 돌려줘 뒷정리·
     성공 알림을 잇는다. 아무것도 쓰지 않은 저장은 표지를 남기지 않는다. 시험은 첫 콜백이 쓴 바로 뒤 둘째 회차를 세운다
-    (`tests/test_equipment_save_double_press.py`). 창을 지나 저장소에 거부된 둘째 누름은 위 제 저장 판정(설비 리비전 짝 —
+    (`tests/test_equipment_save_double_press.py`). 시뮬레이션 시나리오 목록 「변경 저장」 도 같다 — 첫 콜백이 쓴 뒤 편집을
+    비우기 전에 끊기면 둘째 콜백이 같은 이름 편집을 다시 보내 제 저장을 「다른 사용자가 먼저 이름을 바꿨습니다」 로
+    거부했다(출발점은 그 이름·순서 편집, `tests/test_scenario_save_double_press.py`). 창을 지나 저장소에 거부된 둘째 누름은 위 제 저장 판정(설비 리비전 짝 —
     쓰기 결과로 적는다)이 알아본다(`tests/test_write_guard_cas.py` — 창을 0 으로 둔 경합).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
@@ -4314,7 +4330,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
       (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
       `bootstrap_error_message`(다시 감싸기). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS` 만.
       **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
-      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글.
+      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글,
+      세션 칸에 담았다 다음 회차에 그리는 알림 글(PKG PLAN 「가상 제품 등록」 완료 알림 — 담을 때 제품정보·Stack 을
+      `literal_markdown` 으로 막는다, `tests/test_load_conversion_plan_apply.py`). 공식 지정 확인·월 머지 경고의 가상 제품
+      키도 그리는 글을 지을 때 막는다(머지 출처 메모는 평문이라 그대로).
       이것은 이 절의 규칙대로 짓거나 그리는 자리에서 막고 아래 화면 그물·리뷰가 본다.
     - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
       (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
