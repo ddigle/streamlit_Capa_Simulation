@@ -1620,6 +1620,8 @@ def _style() -> str:
 .shk-grid > div.shk-row-muted {{align-items:flex-start;text-align:left;color:{tokens.TEXT_MUTED}}}
 .shk-num {{font-family:{display};font-weight:700;font-size:14px}}
 .shk-sub {{font-size:10.5px;color:{tokens.TEXT_MUTED};white-space:nowrap}}
+.shk-bn-name {{max-width:100%;overflow:hidden;text-overflow:ellipsis}}
+.shk-lob-error {{white-space:normal;overflow-wrap:anywhere}}
 .shk-muted {{color:{tokens.TEXT_MUTED}}}
 .shk-chip {{font-weight:700;font-size:12.5px;padding:2px 8px;border-radius:999px;
   color:{tokens.TEXT};font-variant-numeric:tabular-nums}}
@@ -1784,12 +1786,14 @@ def _lob_markup(
                 continue
             rate, process = found
             name = _escape(labels.label(process))
+            # 이름은 달 칸 폭에서 말줄임으로 끝난다 — 넘으면 옆 달 이름과 포개진다(전체는 풍선).
             rows.append(
                 f"<div>{_rate_chip(rate, month, thresholds)}"
-                f'<span class="shk-sub" title="{name}">{name}</span></div>'
+                f'<span class="shk-sub shk-bn-name" title="{name}">{name}</span></div>'
             )
+    # 까닭 글은 길 수 있어 줄을 바꾼다 — 한 줄이면 상자 오른쪽 밖으로 나간다.
     error = (
-        f'<div class="shk-sub">계획 값을 읽지 못했습니다 — {_escape(lob.error)}</div>'
+        f'<div class="shk-sub shk-lob-error">계획 값을 읽지 못했습니다 — {_escape(lob.error)}</div>'
         if lob.error
         else ""
     )

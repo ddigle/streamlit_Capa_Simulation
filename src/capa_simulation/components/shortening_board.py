@@ -40,6 +40,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL, SPACE_STATUS
 from capa_simulation.process_detail_state import shortening_card_query_params
@@ -414,6 +415,9 @@ def render_progress_board(
         order = board_order(board, order_name, compared=compared)
         ranked = board.set_index("공정").loc[order].reset_index()
         key = f"{_BOARD_KEY}_{_board_generation()}"
+        # 표 도구 막대가 바로 위 「기한 임박(일)」 −/+ 를 덮지 않게 띄운다(AGENTS 9장 「표 도구
+        # 막대」 — 붙어 있으면 + 누름이 막대의 전체 화면 단추에 먹혔다, 2026-10-26 E2E).
+        toolbar_clearance()
         st.dataframe(
             _board_view(ranked, labels, compared=compared),
             hide_index=True,

@@ -565,6 +565,8 @@ def _render_results(result: QualDeadlineResult) -> None:
         label="호기별 결과 CSV",
     )
     if unit_rows:
+        # 표 도구 막대가 바로 위 제목 줄의 CSV 단추에 닿지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+        toolbar_clearance()
         st.dataframe(
             _units_styler(unit_rows),
             hide_index=True,
@@ -611,6 +613,7 @@ def _render_results(result: QualDeadlineResult) -> None:
         label="월 점검 CSV",
     )
     check_rows = check_table_rows(result)
+    toolbar_clearance()
     st.dataframe(
         _checks_styler(check_rows),
         hide_index=True,

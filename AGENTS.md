@@ -2287,14 +2287,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   80~150·1 단위·곧바로 반영, 「UPEH 적용 시작/끝」, 「100% 로」)과 배지·역산 한 줄·「이 값으로」. 구간 선택지는
   `assumption_month_options`(조회기간 ∩ 이번 달 이후) 하나이고, 세 칸 모두 위젯 앞에서 `carry_shared_widget_value` 를
   부른다(`tests/test_upeh_assumption_controls.py` — 앱 전체로 페이지를 옮긴 첫 회차까지).
-- `src/capa_simulation/components/preset_number_field.py` — 미리 정한 값 버튼(`st.pills`, `required=True`)과 늘 지금 값을
+- `src/capa_simulation/components/preset_number_field.py` — 미리 정한 값 버튼(`st.pills`, `required=False`)과 늘 지금 값을
   보이는 직접 입력 숫자 칸을 **정본 한 칸**(위젯 아닌 세션 칸)으로 묶는다(제약 시뮬레이션 D10). 두 위젯 칸은 위젯 앞에서 매
   회차 정본에서 다시 서되 **다를 때만** 적고(같은 값을 적으면 `set_value` 가 회차마다 가서 치다 만 숫자를 덮는다), 콜백이 정본을
   적는다. 버튼 콜백은 숫자 칸 세대도 올려 칸을 **새 key** 로 다시 세운다 — 1.63 숫자 칸은 범위 밖 글(301)을 확정하지 않은 채
   쥐고 그동안 서버 값을 무시하므로, 같은 key 로는 버튼 값이 칸에 서지 않고 빨간 표시가 남는다. 칸에 치고 Enter 없이 버튼을
   누르면 칸 확정과 버튼 누름이 한 회차에 들어 두 콜백이 함께 도는데, **어느 차례든 버튼이 이긴다** — 숫자 칸 콜백은 자기 key 가
   지금 세대 key 와 다르면(버튼 콜백이 먼저 세대를 올렸으면) 적지 않는다(1.63 은 버튼 콜백이 먼저라 친 값이 덮었다, 2026-10-26
-  E2E). `None` 버튼(「HOME 기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
+  E2E). **이미 켜진 버튼**을 눌러도 같다 — `required=True` 는 그 누름을 프런트가 삼켜 콜백이 없었으므로(친 값이 이겼다,
+  2026-10-26 E2E) 풀 수 있게 두고, 풀린 `None` 은 「켜진 버튼 다시 누름」 으로 읽어 서버가 마지막으로 켠 버튼(`_lit_key` —
+  맞춤 값이 되어도 남는다)으로 정본을 적는다. 맞춤 값은 버튼 칸이 `None` 이 아니라 **숨은 맞춤 버튼**(`CUSTOM_OPTION` — 버튼 줄
+  끝, `[role="radiogroup"] > button:last-child` 를 CSS 로 숨김)이 켜진 꼴이다 — 그래야 풀린 `None` 이 늘 「바뀜」 으로 콜백에
+  닿는다(맞춤 값을 `None` 으로 두면 사람 손 빠르기 0.15초 누름에서 칸 확정 회차가 먼저 버튼 칸을 `None` 으로 적고, 그 회차를
+  받기 전의 브라우저가 켜진 버튼을 풀어 같은 `None` 을 보내 콜백이 없었다 — 2026-10-26 사본 앱). `None` 버튼(「HOME
+  기준」)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다. `persist_state` 를 주지 않는다. 켜진 버튼
   주의 색(`tone="warning"`)은 1.63 pills 의 켜진 단추 `button[role="radio"][aria-checked="true"]`(`ACTIVE_PILL_SELECTOR` — 옛
   `stBaseButton-pillsActive` testid 는 그리지 않는다)에 걸고, 면색 위 글자는 `TEXT` 다.
 - `src/capa_simulation/components/constraint_simulation_figures.py` — 제약 시뮬레이션의 월별 확보율 그래프(수 축 — 개조
@@ -3961,7 +3967,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   안내와 가르고, 켜진 동안은 카드가 접혀 있어도 보이게 머리 배지·효과 한 줄·CSV 표지로 알린다. 제약 시뮬레이션의
   확보율·개조 묶음도 이 꼴이다(조건 전체가 저장하지 않는 가정이라 머리 한 줄이 늘 조건을 말한다).
 - **버튼 + 직접 입력은 정본 한 칸 + 매 회차 다시 서는 위젯 둘이다**(`components/preset_number_field.py`). 정본은 위젯 아닌
-  세션 칸이고 버튼(`st.pills`, `required=True` — 고른 버튼을 다시 눌러도 풀리지 않는다)·숫자 칸 key 는 위젯 앞에서 정본에서
+  세션 칸이고 버튼(`st.pills`, `required=False` — 켜진 버튼을 다시 누르면 콜백이 그 버튼으로 되세운다, 맞춤 값은 숨은 맞춤
+  버튼)·숫자 칸 key 는 위젯 앞에서 정본에서
   내되 **다를 때만** 적는다. 콜백이 정본을 적고, 버튼 콜백은 숫자 칸을 새 key 로 다시 세운다(범위 밖 글을 쥔 칸은 서버
   값을 무시한다). 친 글의 확정과 버튼 누름이 한 회차에 겹치면 버튼이 이긴다(옛 세대 key 의 숫자 칸 콜백은 적지 않는다). 「맞춤 값일 때만 보이는 빈 글자 칸」 은 `value=None` 과 세션 심기를 함께
   써야 해 두지 않는다 — 숫자 칸은 늘 지금 값을 보인다(D10).
@@ -4187,7 +4194,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 ✕ 로 지울 수 없다). 오른쪽 끝까지
   늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」)과 바로 위 CSV 단추(Cut-off 잠긴 보기·제외 목록)도
   같은 띄움을 둔다. `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
-  대입은 건너뛴다)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고, 띄움 숫자 정의가 이 모듈 하나인지 본다.
+  대입은 건너뛰고, 표가 `if` 의 첫 문장이면 그 `if` 앞 문장)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고,
+  띄움 숫자 정의가 이 모듈 하나인지 본다. 형제가 부르는 도우미 함수(같은 파일·`capa_simulation` 에서 들여온 함수, `@st.dialog`
+  는 빼고) 안까지 본다 — 위 줄을 `_render_controls()` 같은 도우미로 그리면 그물이 못 봐 필요 단축 일정 진척 보드 표가 「기한
+  임박(일)」 + 를 덮었다(2026-10-26 E2E — 누름이 막대의 전체 화면 단추에 먹혔다).
 - **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
   `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
   갈아 끼울 때(Import 저장·편집 버퍼 교체)도 같다 — 옛 delta 가 새 프레임에 얹혀 Import 가 조용히 되돌려진다. 「변경사항
