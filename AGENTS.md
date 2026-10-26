@@ -4058,11 +4058,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다
   (`tests/test_equipment_master_tab.py`). 저장소 예외 글(`str(exc)`·`bootstrap_error_message(exc)`)도 같다 — 날 이름(남이 먼저 바꾼
   설비 시나리오 이름·리비전명, 「「…」 r2를 저장해」)을 담으므로 그 글을 넣는 알림 상자는 감싼다(시나리오 관리 설비 시나리오 구획의
-  거절 알림 `REFUSED_KEY` 는 그리는 자리 한 곳에서, 사이드바 설비 시나리오 팝업 저장 실패도). 설비 시나리오 이름을 싣는 잠금·빨리 감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도
-  그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가 담을 때 막는다(`_queue_space_flash` —
-  `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄의 팝업 저장 알림·세션 이동 알림
-  (`session.notice`)과 시나리오 관리 구획의 세션 이동 알림, Space 층 끄기 확인의 가정 배치 덧줄도 그리는 자리에서 막는다
-  (`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
+  거절 알림 `REFUSED_KEY` 는 그리는 자리 한 곳에서, 사이드바 설비 시나리오 팝업 저장 실패도). 설비 시나리오 이름을 싣는 잠금·빨리
+  감기 글(`space_edit_mode`)·머리 알림 줄·저장 결과도 그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가
+  담을 때 막는다(`_queue_space_flash` — `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄 아래 팝업
+  저장 알림(`save_result_message`)·세션 이동 알림(`EquipmentSession.notice` — 사이드바 줄·시나리오 관리 구획)과 Space 층 끄기
+  확인의 가정 배치 덧줄도 그리는 자리에서 막는다(`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은
+  `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
   (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
 ### 스크립트와 컴포넌트
