@@ -2385,7 +2385,8 @@ function drawChanges(S, root, data) {
   }
   const units = Array.isArray(data.units) ? data.units : []
   if (!units.length && !data.others) {
-    root.appendChild(el('p', 'emg-side-empty', '아직 고친 것이 없습니다.'))
+    // 못 읽은 칸 초안 같은 고칠 것만 있으면 위 「저장하기 전에 고칠 것」 과 어긋나지 않게 말한다.
+    root.appendChild(el('p', 'emg-side-empty', errors.length ? '고친 값은 없고 고칠 칸이 있습니다.' : '아직 고친 것이 없습니다.'))
     return
   }
   const list = el('div', 'emg-changes')
