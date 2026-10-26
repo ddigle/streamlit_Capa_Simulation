@@ -1296,7 +1296,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `SAMPLE_BASELINE_COUNTS` 는 생성기 `PROCESS_SPECS` 를 옮긴 것이라 함께 고친다(`tests/test_equipment_availability.py`).
 - `src/capa_simulation/services/chatbot_samples.py` — Capa Chatbot 답변 대본(결론·근거 표·산식·한계)이다. 순위·Gap 은
   원본 공정명으로 셈하고 결론·질문·조건의 공정 이름만 부르는 쪽이 넘긴 글자 함수(`process_name`)로 적는다 — 표시명
-  모듈은 import 하지 않는다(8장).
+  모듈은 import 하지 않는다(8장). 근거 표의 비율 칸은 실적 화면 우선순위 표와 같은 `percent` 꼴이다 — 대본이 칸 →
+  (머리, 서식)을 `SampleAnswer.evidence_columns` 에 글로만 싣고 화면이 `st.column_config` 로 바꾼다. 단위가 줄마다 다른
+  「왜 부족해?」 근거는 그 지표 화면 꼴의 글자다(`metric_value_text`·`metric_gap_text`). 「기준 미달」 결론은 센 기준(상태
+  「개선 필요」·「관찰」 — 마지막 달까지 연속 미달)을 밝힌다.
 - `src/capa_simulation/services/floor_layout_mark.py` — 층 도면 비설비 요소의 계약·검증(`prepare_floor_layout_marks`)이다.
   층 단위 전체 교체라 어긋난 항목 하나에 통째로 거부한다(7장).
   - 영역만 테두리 모양·이름표 정렬(`ZONE_BORDER_STYLES`·`ZONE_LABEL_ALIGNS`, 첫 값이 처음 값이자 옛 행의 값 —

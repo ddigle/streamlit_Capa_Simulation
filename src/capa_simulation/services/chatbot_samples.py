@@ -17,7 +17,7 @@ LLM 응답으로 채우면 된다 — 화면을 다시 뜯지 않는다.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -30,6 +30,7 @@ from capa_simulation.services.korean_particle import (
 from capa_simulation.services.performance_actuals import (
     ALL_METRICS,
     EFFICIENCY_METRIC,
+    MetricSpec,
     build_gap_table,
     build_monthly_actual_demo,
     build_priority_table,
@@ -37,6 +38,15 @@ from capa_simulation.services.performance_actuals import (
 
 # 공정 이름을 화면 글자로 적는 함수. 받는 값은 원본 공정명이다.
 ProcessName = Callable[[str], str]
+
+# 근거 표 칸의 (화면 머리 — None 이면 칸 이름 그대로, 숫자 서식). 서식은
+# `st.column_config.NumberColumn` 의 `format` 글이다 — 이 모듈은 화면을 모르므로 글로만 싣고 화면이
+# 칸 설정으로 바꾼다. 비율 칸은 옆 화면(실적 우선순위 표)과 같은 `percent`(0.82 → 82%)다.
+EvidenceColumn = tuple[str | None, str]
+_PERCENT: EvidenceColumn = (None, "percent")
+_POINT_GAP: EvidenceColumn = ("Gap (%p)", "percent")
+_SHARE: EvidenceColumn = (None, "percent")
+_MONTHS: EvidenceColumn = ("연속 미달(개월)", "%d")
 
 
 @dataclass(frozen=True)
@@ -54,6 +64,8 @@ class SampleAnswer:
     evidence_caption: str
     conditions: tuple[str, ...]
     limits: tuple[str, ...] = field(default_factory=tuple)
+    # 근거 표 칸 → (머리, 숫자 서식). 없는 칸은 표 기본 서식이다.
+    evidence_columns: Mapping[str, EvidenceColumn] = field(default_factory=dict)
 
 
 def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
@@ -85,20 +97,32 @@ def _shortfall_answer(
     )
     worst = trouble.iloc[0] if not trouble.empty else None
     worst_name = process_name(str(worst["공정"])) if worst is not None else ""
+    # 「기준에 못 미치는」 이 무엇을 세는지 밝힌다 — 상태(마지막 달까지 연속 미달)로 센다. 기간 평균
+    # Gap 이 음수여도 마지막 달에 기준을 넘은 공정은 정상이라 세지 않는다(E2E r1).
+    basis = f"{window} 기준으로 효율이 마지막 달까지 연속 미달인 공정(상태 「개선 필요」·「관찰」)"
     conclusion = (
-        f"{window} 기준으로 효율이 기준에 못 미치는 공정은 {len(trouble):,}개입니다. "
+        f"{basis}은 {len(trouble):,}개입니다. "
         f"가장 나쁜 곳은 **{worst_name}** {direction_particle(worst_name)} "
         f"기간 평균 {float(worst['Gap']):.1%}p, "
         f"{int(worst['연속 미달'])}개월 연속 미달입니다."
         if worst is not None
-        else f"{window} 기준으로 효율이 기준에 못 미치는 공정이 없습니다."
+        else f"{basis}이 없습니다."
     )
     return SampleAnswer(
         key="shortfall",
         question="이번 기간에 기준 미달인 공정 알려줘",
         conclusion=conclusion,
         evidence=evidence,
-        evidence_caption="효율 실적 화면의 우선순위 표와 같은 값입니다.",
+        evidence_caption=(
+            "효율 실적 화면의 우선순위 표와 같은 값입니다 — 상태가 정상이 아닌 줄만 옮겼습니다. "
+            "기간 평균 Gap 이 음수여도 마지막 달에 기준을 넘었으면 정상입니다."
+        ),
+        evidence_columns={
+            "기준 효율": _PERCENT,
+            "실적 효율": _PERCENT,
+            "Gap": _POINT_GAP,
+            "연속 미달": _MONTHS,
+        },
         conditions=(
             f"조회기간 {window} · 양산 구분 「양산」",
             "Gap = 실적 효율 − 기준 효율 (%p)",
@@ -109,6 +133,8 @@ def _shortfall_answer(
 
 
 def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName) -> SampleAnswer:
+    # 지표마다 단위가 달라(효율·수율은 비율, UPEH 는 개수) 칸 하나에 서식 하나를 걸 수 없다 — 줄마다
+    # 그 지표 화면과 같은 꼴의 글자로 적는다(효율 82.0% · UPEH 2,400 · Gap −10.9%p).
     rows: list[dict[str, object]] = []
     for metric in ALL_METRICS:
         priority = build_priority_table(monthly, metric, ["공정"])
@@ -116,9 +142,9 @@ def _cause_answer(monthly: pd.DataFrame, window: str, process_name: ProcessName)
         rows.append(
             {
                 "지표": metric.name,
-                "기준": float(worst[metric.standard_column]),
-                "실적": float(worst[metric.actual_column]),
-                "Gap": float(worst["Gap"]),
+                "기준": metric_value_text(float(worst[metric.standard_column]), metric),
+                "실적": metric_value_text(float(worst[metric.actual_column]), metric),
+                "Gap": metric_gap_text(float(worst["Gap"]), metric),
                 "단위": metric.gap_unit,
                 "공정": str(worst["공정"]),
             }
@@ -160,6 +186,13 @@ def _priority_answer(monthly: pd.DataFrame, window: str, process_name: ProcessNa
         ),
         evidence=evidence.reset_index(drop=True),
         evidence_caption="점수 = 미달폭 × 영향 비중 × 연속 미달 가중.",
+        evidence_columns={
+            "우선순위": (None, "%d"),
+            "Gap": _POINT_GAP,
+            "영향 비중": _SHARE,
+            "연속 미달": _MONTHS,
+            "점수": (None, "%.1f"),
+        },
         conditions=(
             f"조회기간 {window}",
             "영향 비중은 **PKG 환산 물량** 기준입니다 — WF 매와 CHIP Kea 를 그대로 더하면 "
@@ -183,9 +216,28 @@ def _reference_answer(monthly: pd.DataFrame, window: str) -> SampleAnswer:
         ),
         evidence=evidence.rename(columns={"제품정보": "제품"}).reset_index(drop=True),
         evidence_caption="공정 × 제품 조합을 미달폭 순으로 다섯 줄만 잘랐습니다.",
+        evidence_columns={
+            "기준 효율": _PERCENT,
+            "실적 효율": _PERCENT,
+            "Gap": _POINT_GAP,
+            "영향 비중": _SHARE,
+        },
         conditions=(
             f"조회기간 {window} · 공정 × 제품",
             "Stack·WF 속성까지 더 내려갈 수 있습니다",
         ),
         limits=("물량이 아주 작은 조합도 같은 줄에 섞입니다. 영향 비중을 함께 보세요.",),
     )
+
+
+def metric_value_text(value: float, metric: MetricSpec) -> str:
+    """지표 값 한 칸 — 그 지표 화면과 같은 꼴(비율 지표는 `82.0%`, UPEH 는 `2,400`)."""
+    if metric.value_format == "percent":
+        return f"{value:.{metric.value_decimals}%}"
+    return f"{value:,.{metric.value_decimals}f}"
+
+
+def metric_gap_text(gap: float, metric: MetricSpec) -> str:
+    """Gap 한 칸 — 차이는 `%p`(효율·수율), 비율은 `%`(UPEH). 소수 자릿수는 그 지표의 Gap
+    자릿수다."""
+    return f"{gap:.{metric.gap_decimals}%}{metric.gap_suffix}"

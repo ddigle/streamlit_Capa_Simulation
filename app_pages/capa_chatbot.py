@@ -103,7 +103,18 @@ def _render_answer(answer: SampleAnswer) -> None:
         st.markdown(answer.conclusion)
         with st.expander(":material/table_view: 근거", expanded=True):
             st.caption(answer.evidence_caption)
-            st.dataframe(answer.evidence, hide_index=True, width="stretch")
+            # 비율 칸은 옆 화면(실적 우선순위 표)과 같은 꼴(82% · −10.93%)이다 — 소수(0.82)로 두면
+            # 캡션이 말한 「같은 값」 과 서식이 어긋났다(E2E r1).
+            st.dataframe(
+                answer.evidence,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    column: st.column_config.NumberColumn(label, format=number_format)
+                    for column, (label, number_format) in answer.evidence_columns.items()
+                    if column in answer.evidence.columns
+                },
+            )
         with st.expander(":material/rule: 사용한 조건과 산식", expanded=False):
             st.markdown("\n".join(f"- {item}" for item in answer.conditions))
         if answer.limits:

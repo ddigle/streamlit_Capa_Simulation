@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "capa_chatbot.py"
 TRANSCRIPT_KEY = "capa_chatbot_transcript"
 # 받은 답의 근거 표를 고치는 화면 — 페이지를 돌린 뒤 받은 답마다 근거 표의 행을 지운다(제자리 고침).
 EDITING_SCRIPT = f"""
+import json
 from pathlib import Path
 
 page = Path({str(PAGE)!r})
@@ -216,3 +218,46 @@ def test_a_new_display_name_rebuilds_the_answers_and_keeps_the_conversation(
     assert app.button(key="capa_chatbot_example_1").label == after[1].question
     assert app.button(key="capa_chatbot_example_1").disabled
     assert len(answer_builds) == 2
+
+
+def _column_formats(frame: Any) -> dict[str, tuple[str | None, str | None]]:
+    """표 칸 설정(`st.column_config`)에서 칸 → (머리, 숫자 서식)."""
+    config = json.loads(frame.proto.columns or "{}")
+    return {
+        column: (
+            settings.get("label"),
+            (settings.get("type_config") or {}).get("format"),
+        )
+        for column, settings in config.items()
+    }
+
+
+def test_the_evidence_ratios_use_the_same_percent_format_as_the_actual_screens() -> None:
+    """근거 표 비율이 0.82·-0.1093 소수로 보였는데 캡션은 「효율 실적 화면의 우선순위 표와 같은
+    값」 이다 — 그 표는 82%·-10.93% 꼴이라 서식을 맞춘다(E2E r1). 단위가 줄마다 다른 「왜
+    부족해?」 근거는 그 지표 화면의 꼴로 적은 글자다."""
+    app = _start()
+    for index in (1, 2, 3):
+        app.button(key=f"capa_chatbot_example_{index}").click().run()
+    shortfall, cause, priority, reference = list(app.dataframe)
+
+    assert _column_formats(shortfall)["기준 효율"] == (None, "percent")
+    assert _column_formats(shortfall)["Gap"] == ("Gap (%p)", "percent")
+    assert _column_formats(priority)["영향 비중"] == (None, "percent")
+    assert _column_formats(reference)["실적 효율"] == (None, "percent")
+    efficiency = cause.value.set_index("지표")
+    assert str(efficiency.loc["효율", "기준"]).endswith("%")
+    assert str(efficiency.loc["효율", "Gap"]).endswith("%p")
+    assert not str(efficiency.loc["UPEH", "기준"]).endswith("%")
+
+
+def test_the_shortfall_conclusion_names_what_it_counts() -> None:
+    """「효율이 기준에 못 미치는 공정은 4개」 는 기간 평균 Gap 이 음수인 정상 공정까지 세면 5개라
+    헷갈렸다(E2E r1). 결론은 센 기준(마지막 달까지 연속 미달 — 상태 「개선 필요」·「관찰」)을 밝히고
+    그 수는 근거 표 줄 수다."""
+    answer = build_sample_answers()[0]
+
+    assert "효율이 기준에 못 미치는 공정은" not in answer.conclusion
+    assert "마지막 달까지 연속 미달인 공정(상태 「개선 필요」·「관찰」)은 " in answer.conclusion
+    assert f"은 {len(answer.evidence)}개입니다." in answer.conclusion
+    assert set(answer.evidence["상태"]) <= {"개선 필요", "관찰"}
