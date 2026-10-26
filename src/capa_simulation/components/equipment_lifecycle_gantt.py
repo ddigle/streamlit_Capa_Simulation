@@ -32,6 +32,13 @@ from capa_simulation.services.equipment_contract import (
 )
 
 ROW_HEIGHT_PX = 22
+# x 축 눈금 글 — Plotly 기본(「Oct 4 2026」) 대신 앱의 꼴이다. Plotly 는 눈금 간격(`dtick`)에
+# 맞는 첫 칸을 쓴다: 날·주 눈금(Plotly 의 날 단위 간격은 14일까지)은 「2026-10-04」, 달 눈금부터는
+# 화면 달 칸과 같은 「26.10」(`month_columns.month_label`).
+DATE_TICK_FORMAT_STOPS = (
+    {"dtickrange": [None, 14 * 86_400_000], "value": "%Y-%m-%d"},
+    {"dtickrange": ["M1", None], "value": "%y.%m"},
+)
 CHART_CHROME_PX = 110
 MAX_CHART_HEIGHT_PX = 820
 # 호기가 이보다 많으면 줄 이름이 겹쳐 아무것도 못 읽는다. 자를 때는 몇 대를 잘랐는지 적는다.
@@ -105,7 +112,12 @@ def build_equipment_lifecycle_gantt(
         bargap=0.25,
     )
     figure.update_yaxes(autorange="reversed", title=None, showgrid=False)
-    figure.update_xaxes(title=None, gridcolor=tokens.BORDER, showgrid=True)
+    figure.update_xaxes(
+        title=None,
+        gridcolor=tokens.BORDER,
+        showgrid=True,
+        tickformatstops=[dict(stop) for stop in DATE_TICK_FORMAT_STOPS],
+    )
     return figure, hidden_units
 
 

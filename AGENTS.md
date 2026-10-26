@@ -4084,6 +4084,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 월별 컬럼은 선택한 유효 조회기간만 전개한다. **월 표기와 월 축은 한 벌이다** — 조회기간·시나리오 월 `YYYY-MM` 은
   `settings.format_month`, 표의 월 칸 `YY.MM` 은 `month_columns.month_label` 이고 화면 모듈이 사본을 두지 않는다. 표·
   차트·스크롤 폭은 `month_columns` 가 만든 라벨 목록 하나를 보고, 연간 Total 은 1~12월이 모두 조회범위 안인 해에만 둔다.
+  글 속 달 구간(UPEH 가정 배지·CSV 표지 「UPEH 가정 110% · 26.07–26.12」)도 `month_label` 이다 — 「26-07」 같은 사본 꼴을
+  두지 않는다. Plotly 날짜 x 축(설비 생애주기 Gantt)은 기본 눈금(「Oct 4 2026」)을 두지 않고 날·주 눈금은 `YYYY-MM-DD`,
+  달 눈금부터는 `YY.MM` 이다(`equipment_lifecycle_gantt.DATE_TICK_FORMAT_STOPS`).
 - 연간 Total 칸에는 물량(Density·Wafer 계획·계획 세부수량)만 합계를 적고 Capa·확보율·B/N 칸은 비운다 — 월별 Capa 의
   단순 합은 연간 Capa 가 아니라 그 해 투입 가능량으로 잘못 읽힌다.
 - 주요 표의 분류 컬럼은 고정하고 월 컬럼은 필요할 때 가로 스크롤한다.
