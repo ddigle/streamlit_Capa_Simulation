@@ -54,6 +54,7 @@ import streamlit as st
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.constraint_simulation_figures import (
+    ABOVE_MARK,
     CONSTRAINT_FIGURE_SCHEMA_VERSION,
     MINIMUM_UNIT_WORDS,
     ConstraintLabels,
@@ -66,6 +67,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     general_label,
     minimum_unit,
     month_name,
+    rate_axis,
     rate_figure,
     rate_text,
     signed_points,
@@ -854,7 +856,17 @@ def render_constraint_view(view: ConstraintView) -> None:
     with st.container(horizontal=True, gap="medium", key=TOP_ROW_KEY):
         with st.container(border=True, key=CHART_CARD_KEY):
             st.markdown("**월별 확보율**")
-            st.caption("달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간")
+            above = rate_axis(
+                result, view.labels, show_proportional=bool(show_proportional)
+            ).above_months
+            st.caption(
+                "달 칸을 누르면 그 달의 계산이 나옵니다 · 옅은 칠 = 제약 기간"
+                + (
+                    f" · {ABOVE_MARK} = 그래프 위로 넘친 제약 제품 확보율(값은 풍선)"
+                    if above
+                    else ""
+                )
+            )
             # 좁은 카드에서는 이 상자 안에서 가로로 스크롤한다(`top_row_style`). 그림 위 터치
             # 스와이프는 `app.py` 의 터치 스크롤 막이가 브라우저 스크롤로 넘긴다.
             with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):

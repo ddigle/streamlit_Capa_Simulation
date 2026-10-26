@@ -108,14 +108,17 @@ from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
 
 __all__ = [
+    "ABOVE_MARK",
     "CHART_HEIGHT_PX",
     "CONSTRAINT_FIGURE_SCHEMA_VERSION",
     "END_LABEL_GAP_PX",
     "END_LABEL_MIN_PLOT_PX",
     "MINIMUM_UNIT_WORDS",
     "MONTH_SLOT_PX",
+    "RATE_AXIS_STRETCH",
     "ROW_IDS",
     "ConstraintLabels",
+    "RateAxis",
     "SheetCanvas",
     "build_sheet_canvas",
     "chart_min_width_px",
@@ -128,6 +131,7 @@ __all__ = [
     "minimum_unit",
     "month_name",
     "new_unit_fate",
+    "rate_axis",
     "rate_figure",
     "rate_text",
     "signed_points",
@@ -136,7 +140,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 8
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 9
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -158,6 +162,11 @@ _PERIOD_OPACITY: Final = 0.08
 _SELECTED_OPACITY: Final = 0.10
 # 값 줄 라벨을 구획 제목보다 들인다(Static 대비 일정 비교 시트와 같다).
 _VALUE_LABEL_INDENT_PX: Final = 12
+# y 축 — 제약 제품 점은 다른 선·기준으로 잡은 범위 폭의 이 배만큼 위까지만 축에 넣는다(`rate_axis`).
+# 1 이면 다른 선들이 그림 칸 높이의 절반 아래로 눌리지 않는다. 넘는 점은 위 끝 ▲.
+RATE_AXIS_STRETCH: Final = 1.0
+ABOVE_MARK: Final = "▲"
+_ABOVE_MARKER_SIZE: Final = 10
 # 소요가 1대 미만인 달에 올림으로 떼는 대수의 말(`minimum_unit`).
 MINIMUM_UNIT_WORDS: Final = "최소 1대"
 # 「제약 없을 때 대비」 칸이 빈칸인 차이(%p).
@@ -397,7 +406,9 @@ def _first_waiting_month(item: NewUnitAssignment, result: ConstraintResult) -> i
     return item.month
 
 
-def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
+def _hit_hover(
+    row: ConstraintMonth, conditions: ConstraintConditions, *, above: bool = False
+) -> str:
     parts = [
         f"<b>{html.escape(month_label(row.month))}</b>",
         f"기존 {rate_text(row.existing_rate)}",
@@ -407,6 +418,7 @@ def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
         parts.append(
             f"제약 {rate_text(row.constrained_rate)}"
             + (f"({MINIMUM_UNIT_WORDS})" if minimum_unit(row) else "")
+            + (f" {ABOVE_MARK} 그래프 위 끝 넘음" if above else "")
         )
     text = " · ".join(parts)
     split = dedicated_split_text(row, conditions) if row.in_period else ""
@@ -455,6 +467,46 @@ def _axis_bounds(values: Sequence[float]) -> tuple[float, float]:
     return float(low), float(high if high > low else low + 10)
 
 
+class RateAxis(NamedTuple):
+    """월별 확보율 그래프의 y 축 — 범위와 위 끝을 넘어 ▲ 로 찍는 제약 제품 점의 달."""
+
+    low: float
+    high: float
+    above_months: tuple[int, ...]
+
+
+def rate_axis(
+    result: ConstraintResult, labels: ConstraintLabels, *, show_proportional: bool
+) -> RateAxis:
+    """y 축 범위. 제약 제품 선을 뺀 선(제약 없을 때·기존·비중대로)·기준·제약 목표로 먼저 잡고
+    (`_axis_bounds`), 제약 제품 점은 그 범위 폭만큼 위(`RATE_AXIS_STRETCH`)까지만 축에 넣는다 —
+    소요가 아주 작은 달의 제약 확보율(4031%)이 축을 늘려 기존 제품 선과 기준선이 바닥에 눌리지
+    않게(2026-10-25 E2E #13·#107). 그보다 큰 점은 위 끝에 ▲ 로 찍고 값은 풍선이 말한다."""
+    rows = result.months
+    core: list[float] = [row.general_target * 100 for row in rows] + [float(labels.target_percent)]
+    for row in rows:
+        core += [
+            value
+            for value in (
+                _percent(row.baseline_rate),
+                _percent(row.existing_rate),
+                _percent(row.proportional_existing_rate)
+                if show_proportional and row.in_period
+                else None,
+            )
+            if value is not None
+        ]
+    core_low, core_high = _axis_bounds(core)
+    ceiling = core_high + RATE_AXIS_STRETCH * (core_high - core_low)
+    constrained = [
+        (row.month, value)
+        for row in rows
+        if row.in_period and (value := _percent(row.constrained_rate)) is not None
+    ]
+    low, high = _axis_bounds(core + [value for _, value in constrained if value <= ceiling])
+    return RateAxis(low, high, tuple(month for month, value in constrained if value > high))
+
+
 def rate_figure(
     result: ConstraintResult,
     labels: ConstraintLabels,
@@ -481,10 +533,10 @@ def rate_figure(
         _percent(row.proportional_existing_rate) if row.in_period else None for row in rows
     ]
     general = [row.general_target * 100 for row in rows]
-    shown = [*baseline, *existing, *constrained, *(proportional if show_proportional else [])]
-    low, high = _axis_bounds(
-        [value for value in shown if value is not None] + general + [target_percent]
-    )
+    low, high, above_months = rate_axis(result, labels, show_proportional=show_proportional)
+    above = [row.month in above_months for row in rows]
+    # 위 끝을 넘는 제약 제품 점은 위 끝에 ▲ 로 찍는다(값은 표적 풍선).
+    constrained = [high if over else value for value, over in zip(constrained, above, strict=True)]
 
     windows = result.windows
     waits = [item for item in result.assignments if item.days > 0]
@@ -511,7 +563,10 @@ def rate_figure(
             "base": [low] * count,
             "width": [1.0] * count,
             "marker": {"color": tokens.HIT_TARGET, "line": {"width": 0}},
-            "customdata": [[row.month, _hit_hover(row, result.conditions)] for row in rows],
+            "customdata": [
+                [row.month, _hit_hover(row, result.conditions, above=over)]
+                for row, over in zip(rows, above, strict=True)
+            ],
             "hovertemplate": "%{customdata[1]}<extra></extra>",
             "showlegend": False,
             "name": "",
@@ -581,9 +636,12 @@ def rate_figure(
             # 요소 대비(3:1)를 넘게 한다(새 색 토큰을 두지 않는다).
             "marker": {
                 "color": tokens.STATUS_WARNING,
-                "size": 7,
+                "size": [_ABOVE_MARKER_SIZE if over else 7 for over in above],
+                "symbol": ["triangle-up" if over else "circle" for over in above],
                 "line": {"color": tokens.LINE, "width": 1},
             },
+            # 위 끝에 찍은 ▲ 가 그림 칸 경계에서 반으로 잘리지 않게.
+            "cliponaxis": not any(above),
             "hoverinfo": "skip",
             "name": "제약 제품",
         }

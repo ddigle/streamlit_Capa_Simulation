@@ -96,7 +96,11 @@ def _spec(figure: Any) -> dict[str, Any]:
 
 
 def _traces(figure: Any, name: str) -> list[dict[str, Any]]:
-    return [trace for trace in _spec(figure)["data"] if trace.get("name") == name]
+    return _traces_in(_spec(figure), name)
+
+
+def _traces_in(spec: dict[str, Any], name: str) -> list[dict[str, Any]]:
+    return [trace for trace in spec["data"] if trace.get("name") == name]
 
 
 # ------------------------------------------------------------------ 서식
@@ -265,6 +269,48 @@ def test_the_rate_figure_moves_close_end_labels_apart() -> None:
     assert tie["제약"][0] == pytest.approx(tie["기준"][0])
     far = anchors(LABELS)
     assert far["제약"] == (120.0, "middle") and far["기준"][1] == "middle"
+
+
+def test_a_huge_constrained_rate_is_pinned_to_the_top_with_a_triangle() -> None:
+    """제약 소요가 0.025대인 달의 제약 확보율 4000% 가 y 축을 4000% 까지 늘려 기존 제품 선과
+    기준선이 바닥에 눌렸다(2026-10-25 E2E #13·#107). 축은 다른 선·기준으로 잡고 제약 제품 점은 그
+    범위 폭만큼 위까지만 넣는다 — 넘는 점은 위 끝에 ▲(잘리지 않게 `cliponaxis` 끔)·풍선에 값과
+    「▲ 그래프 위 끝 넘음」. 넘는 점이 없으면 축과 점은 예전 그대로다."""
+    product = (0, 0, 0, 0, 0, 0.025, 6, 7, 8, 8, 9, 9, 10, 10, 11)
+    result = _run(product=product)
+    axis = figures.rate_axis(result, LABELS, show_proportional=True)
+    assert axis.above_months == (202706,)
+    assert axis.high <= 300
+    spec = _spec(rate_figure(result, LABELS, selected_month=None, show_proportional=True))
+    assert spec["layout"]["yaxis"]["range"] == [axis.low, axis.high]
+    (line,) = _traces_in(spec, "제약 제품")
+    index = [row.month for row in result.months].index(202706)
+    assert line["y"][index] == axis.high
+    assert line["marker"]["symbol"][index] == "triangle-up"
+    assert line["marker"]["symbol"][index + 1] == "circle"
+    assert line["cliponaxis"] is False
+    hover = spec["data"][0]["customdata"][index][1]
+    assert "제약 4000.0%(최소 1대) ▲ 그래프 위 끝 넘음" in hover
+
+    plain = _run()
+    assert figures.rate_axis(plain, LABELS, show_proportional=True).above_months == ()
+    plain_spec = _spec(rate_figure(plain, LABELS, selected_month=None, show_proportional=True))
+    every = [
+        value * 100
+        for row in plain.months
+        for value in (
+            row.baseline_rate,
+            row.existing_rate,
+            row.constrained_rate if row.in_period else None,
+            row.proportional_existing_rate if row.in_period else None,
+            row.general_target,
+        )
+        if value is not None
+    ] + [float(LABELS.target_percent)]
+    assert plain_spec["layout"]["yaxis"]["range"] == list(figures._axis_bounds(every))
+    (plain_line,) = _traces_in(plain_spec, "제약 제품")
+    assert set(plain_line["marker"]["symbol"]) == {"circle"}
+    assert plain_line["cliponaxis"] is True
 
 
 def test_the_constrained_and_proportional_lines_stay_inside_the_period() -> None:
@@ -904,8 +950,8 @@ def _new(*, owned: int = 0) -> ConstraintResult:
 def test_the_schema_version_moved_with_the_new_rows() -> None:
     """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
     16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이고, 8 은
-    그래프 풍선에 「최소 1대」 를 곁들인 판이다."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 8
+    그래프 풍선에 「최소 1대」 를 곁들인 판, 9 는 y 축 상한을 자르고 넘는 점을 ▲ 로 찍은 판이다."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 9
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
