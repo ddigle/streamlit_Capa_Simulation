@@ -124,7 +124,7 @@ from capa_simulation.services.key_process import (
     normalize_preset_name,
     resolve_preset_name,
 )
-from capa_simulation.services.korean_particle import object_particle
+from capa_simulation.services.korean_particle import object_particle, with_object_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.monthly_amount import amounts_by_month
 from capa_simulation.services.product_share import PRODUCT_SHARE_BASES
@@ -1379,7 +1379,7 @@ def _render_top5_band_editor(
                 top5_band_profile,
                 empty=(
                     f"기본값 {top5_band_profile.min_rate:.0%}~"
-                    f"{top5_band_profile.max_rate:.0%} 을 씁니다"
+                    f"{with_object_particle(f'{top5_band_profile.max_rate:.0%}')} 씁니다"
                 ),
             )
         )

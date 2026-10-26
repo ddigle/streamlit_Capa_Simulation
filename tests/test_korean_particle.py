@@ -23,6 +23,7 @@ from capa_simulation.services.korean_particle import (
         ("7", "을"),
         ("10", "을"),
         ("「주요 공정」", "을"),
+        ("85%", "를"),
         ("Customer", "을(를)"),
         ("", "을(를)"),
     ],
