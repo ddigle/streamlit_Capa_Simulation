@@ -137,6 +137,13 @@ function rebaseBox(box, base) {
   box.ops = []
   return had
 }
+
+// 아직 ack 가 오지 않은 같은 op(이름과 인자가 모두 같은 것)가 보낼 목록에 있는가. 띠 「넣기」·「밀기」, 상세 「되살리기」 같은
+// 단추의 더블클릭은 둘째 누름이 첫 op 의 회차가 돌아오기 전(단추를 다시 그리기 전)에 닿는다 — 그 누름은 보내지 않는다.
+function hasPendingOp(box, op) {
+  const keys = Object.keys(op)
+  return box.ops.some((queued) => keys.every((key) => JSON.stringify(queued[key]) === JSON.stringify(op[key])))
+}
 // </grid-outbox>
 
 // <grid-match>
@@ -487,6 +494,16 @@ function send(S) {
 function schedule(S) {
   if (S.timer) clearTimeout(S.timer)
   S.timer = setTimeout(() => send(S), SEND_MS)
+}
+
+// 단추 하나가 보내는 op — 같은 op 가 아직 회차에서 돌아오지 않았으면(더블클릭의 둘째 누름) 보내지 않는다. 밀기는 두 번 밀렸고
+// (토스트 「되돌리기」 는 한 번만 되돌린다), 넣기·되살리기·지우기·되돌리기는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를
+// 되살렸습니다」)가 첫 결과와 그 「되돌리기」 를 덮었다(2026-10-27 E2E). 둘째 누름이라 버렸으면 거짓.
+function sendOnce(S, op, cells) {
+  if (hasPendingOp(S.box, op)) return false
+  enqueue(S, op, cells)
+  send(S)
+  return true
 }
 
 function enqueue(S, op, cells) {
@@ -1315,9 +1332,7 @@ function buildSelection(S, bar) {
     const targets = rows.map((row) => row.id)
     const cells = []
     for (const row of rows) for (const k of dateCols) if (!locked(row, k) && shiftIso(String(row.values[k] || ''), value)) cells.push([row.id, k, shiftIso(String(row.values[k]), value)])
-    enqueue(S, { op: 'shift', ids: targets, days: value }, cells)
-    send(S)
-    paintWindow(S)
+    if (sendOnce(S, { op: 'shift', ids: targets, days: value }, cells)) paintWindow(S)
   })
   const repaintShift = () => {
     const k = planShift(rows, dateCols, parseDays(S.days), locked)

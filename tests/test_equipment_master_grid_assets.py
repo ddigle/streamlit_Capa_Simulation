@@ -619,6 +619,44 @@ def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed
     assert re.search(r"\.emg-toast\s*\{[^}]*scroll-margin-top:\s*80px", CSS)
 
 
+_PENDING_RUNNER = """
+const box = createBox()
+rebaseBox(box, 'b1')
+const shift = { op: 'shift', ids: ['a', 'b'], days: 7 }
+const out = { before: hasPendingOp(box, shift) }
+queueOp(box, shift, 100, 1)
+out.same = hasPendingOp(box, { op: 'shift', ids: ['a', 'b'], days: 7 })
+out.otherDays = hasPendingOp(box, { op: 'shift', ids: ['a', 'b'], days: 3 })
+out.otherIds = hasPendingOp(box, { op: 'shift', ids: ['b', 'a'], days: 7 })
+out.otherOp = hasPendingOp(box, { op: 'set', ids: ['a', 'b'] })
+ackBox(box, 1)
+out.acked = hasPendingOp(box, shift)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_double_press_on_an_op_button_sends_the_op_once() -> None:
+    """선택 띠 「밀기」 를 더블클릭하면 둘째 누름이 첫 op 의 회차가 돌아오기 전에 같은 띠의 단추에
+    닿아 shift op 를 하나 더 보냈다 — 날짜가 두 번 밀리고 토스트 「되돌리기」 는 한 번만
+    되돌렸다(2026-10-27 E2E). 단추 op 는 같은 op 가 아직 ack 되지 않았으면 보내지 않는다(`sendOnce`
+    — `hasPendingOp`). 다른 인자(밀 날 수·줄)나 ack 뒤의 누름은 보낸다."""
+    assert _node({}, _PENDING_RUNNER) == {
+        "before": False,
+        "same": True,
+        "otherDays": False,
+        "otherIds": False,
+        "otherOp": False,
+        "acked": False,
+    }
+    once = {"buildSelection": ["{ op: 'shift', ids: targets"]}
+    for name, ops in once.items():
+        body = JS[JS.index(f"function {name}(") :]
+        body = body[: body.index("\n}\n")]
+        for op in ops:
+            assert f"sendOnce(S, {op}" in body, (name, op)
+            assert f"enqueue(S, {op}" not in body, (name, op)
+
+
 def test_the_narrow_check_head_rule_outranks_the_wide_one() -> None:
     """좁은 화면 체크 줄 머리(한 줄 차지)는 넓은 규칙(116px)보다 특정도가 높아야 한다 — 미디어
     규칙이 파일 앞에 있어 같은 선택자면 뒤의 넓은 규칙이 이긴다."""
