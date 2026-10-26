@@ -1350,7 +1350,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     활성 시나리오 `RQ_REQB` 의 데이터 범위를 붙인다. 소요대수를 읽지 못한 갈래의 문구와 섞지 않는다.
   - `date_range_value`·`prune_list_selection`·`prune_choice` 가 위젯 값 정리다. 뒤의 둘은 위젯 앞에서 매 회차
     세션에 되쓴다(`pop` 하지 않는다). `prune_choice` 는 글자 선택지 전용이다(`str(saved) in options`) — 정수 달 상자는
-    제 화면이 잡는다(`constraint_simulation_state.settle_period`). `render_schema_ahead_warning` 은 DB 가 코드보다 새
+    제 화면이 잡는다(`constraint_simulation_state.settle_period`). `prune_named_choice` 는 쓰기 단추의 대상을 고르는
+    상자의 짝이다(9장 「글자가 바뀌는 것을 피할 수 없는 상자」). `render_schema_ahead_warning` 은 DB 가 코드보다 새
     버전일 때 경고한다.
   - `process_page_inputs(database_path)` 는 공정 하나를 보는 두 화면(공정 Capa 상세·제약 시뮬레이션)의 공통 진입이다 —
     판정 기준 → 공통 진입 → 유효 기간(`RQ_REQB`) → 시나리오 키 → 확보율(멈추면 「계산 멈춤」) → 달·공정 선택지를 **같은
@@ -3817,7 +3818,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   적어(`prune_choice`·`prune_list_selection`) 브라우저에 새 글자를 보낸다. 적지 않으면 브라우저가 옛 글자를
   되보내 다음 회차에 그 글자가 id 자리에 들어가거나, 선택이 빈 값으로 풀리거나, **예외 없이 첫 항목으로
   조용히 바뀐다**(옛 시나리오 관리 카드 리비전 상자에서 r2 를 고르고 누른 「시나리오 불러오기」가 최신 r3 을 올렸다 —
-  2026-10-22 AppTest 실측). 시나리오 관리 목록 관리(C안)의 두 편집표는 고름을 글자가 아니라 행 id 초안으로 들어
+  2026-10-22 AppTest 실측). **쓰기 단추의 대상을 고르는 상자**(시나리오 관리 보관함 「보관본」)는
+  `page_bootstrap.prune_named_choice` 로 잡는다 — 빠른 두 번 누름의 둘째 회차는 브라우저가 첫 누름 전 글자를 보내는데,
+  첫 누름이 그 항목을 선택지에서 뺐으면 `prune_choice` 가 고름을 첫 항목으로 바꾸고 같은 회차의 단추 누름이 고르지 않은
+  항목에 걸렸다(보관함 「되돌리기」 가 다른 보관본까지 되돌림, 2026-10-27 E2E). `prune_named_choice` 는 앞 회차들이 그린
+  글자를 들어 글자만 바뀐 항목은 그대로 잇고, 정말 빠진 항목이면 바꾼 회차와 그 뒤 `TRAILING_PRESS_SECONDS` 안의 회차를
+  `moved` 로 알린다 — 부르는 쪽은 그 회차의 쓰기 누름을 걸지 않는다(보관함은 이 세션이 방금 쓴 것이면 그 성공 알림을, 남이
+  먼저 처리한 것이면 「그 사이 보관함에서 빠졌습니다」 를 낸다, `tests/test_scenario_archive_double_press.py`). 시나리오
+  관리 목록 관리(C안)의 두 편집표는 고름을 글자가 아니라 행 id 초안으로 들어
   (`components/pick_edit_table.py`) 이 목록에 들지 않는다. 그래서 시험은 「예외 없음」이 아니라 **누른 회차에 실제로 걸린
   대상 id** 로 잰다. 일반 `AppTest.run()` 은 회차마다
   세션 값으로 글자를 다시 만들어 이 결함을 보지 못한다 — 브라우저처럼 글자를 들고 다니는

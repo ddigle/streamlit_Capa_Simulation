@@ -246,7 +246,10 @@ LEDGER: dict[tuple[str, str, str], str] = {
         VERSION_CHECK
     ),
     (f"{_PARTS}/scenario_management.py", "_render_archive", "archive_scenario"): STATE_CHANGE,
-    (f"{_PARTS}/scenario_management.py", "_restore_scenario", "restore_scenario"): STATE_CHANGE,
+    # 보관본 하나의 상태 바꾸기 위에, 첫 쓰기 전 목록을 그린 겹친 둘째 누름은 `save_once` 가
+    # 저장소에 가지 않고 첫 결과를 돌려준다(출발점은 그 보관본 id). 고른 보관본이 빠져 고름을
+    # 바꾼 회차의 「되돌리기」 는 쓰지 않는다(`page_bootstrap.prune_named_choice`).
+    (f"{_PARTS}/scenario_management.py", "_restore_scenario", "restore_scenario"): START_POINT,
     (f"{_PARTS}/scenario_management.py", "_render_delete", "delete_scenario"): STATE_CHANGE,
     (f"{_PARTS}/scenario_management.py", "_render_clone", "create_scenario"): WRITE_ONCE,
     (f"{_PARTS}/scenario_status.py", "_render_revision_save", "save_revision"): WRITE_ONCE,
