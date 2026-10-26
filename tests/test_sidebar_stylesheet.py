@@ -450,27 +450,29 @@ def _rules(block: str) -> list[tuple[list[str], str]]:
     ]
 
 
-@pytest.mark.parametrize(
-    ("active_href", "link"),
-    [
-        ("", '.st-key-home_navigation a[data-testid="stPageLink-NavLink"]'),
-        ("capa_chatbot", '[data-testid="stPageLink-NavLink"][href="capa_chatbot"]'),
-    ],
-)
-def test_home_and_current_page_links_draw_a_keyboard_focus_ring(
-    active_href: str, link: str
-) -> None:
-    """HOME·지금 화면 링크의 `:focus-visible` 은 평소·`:hover` 와 한 묶음(같은 면)이라 Tab 으로
-    초점이 와도 그림이 그대로였다(2026-10-26 E2E). Streamlit 은 `:focus` 윤곽을 지우므로 따로 2px
-    `ACCENT` 윤곽을 둘러야 초점이 보인다(design_system 3-2 의 값 칸과 같다)."""
-    rings = [
-        body
-        for selectors, body in _rules(_style_block(active_href))
-        if all(selector.endswith(":focus-visible") for selector in selectors)
-        and any(link in selector for selector in selectors)
-    ]
+_NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'
+
+
+@pytest.mark.parametrize("active_href", ["", "capa_chatbot", "dynamic_capa"])
+def test_every_sidebar_page_link_draws_a_keyboard_focus_ring(active_href: str) -> None:
+    """Streamlit 은 `:focus` 윤곽을 지우고 `:focus-visible` 에 hover 와 같은 옅은 칠만 깐다.
+
+    HOME·지금 화면 링크만 2px `ACCENT` 윤곽을 둘러(2026-10-26 E2E) 그 밖의 링크(최상위
+    「Capa Chatbot」·「시나리오 관리」, 묶음 안 하위 링크)는 Tab 으로 닿아도 hover 와 구별되지
+    않았다(2026-10-27 E2E). 윤곽은 활성 여부를 가리지 않는 모든 사이드바 페이지 링크 선택자
+    하나에 걸린다(design_system 3-1·3-2)."""
+    rules = _rules(_style_block(active_href))
+    rings = [body for selectors, body in rules if selectors == [f"{_NAV_LINK}:focus-visible"]]
 
     assert any(f"outline: 2px solid {tokens.ACCENT}" in body for body in rings), rings
+    assert any("outline-offset: 2px" in body for body in rings), rings
+    # 뒤의 다른 링크 규칙이 윤곽을 다시 지우지 않는다.
+    assert not [
+        selectors
+        for selectors, body in rules
+        if any("stPageLink-NavLink" in selector for selector in selectors)
+        and re.search(r"outline\s*:\s*(none|0)\b", body)
+    ]
 
 
 @pytest.mark.parametrize("mode", ["light", "dark"])

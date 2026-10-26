@@ -1363,6 +1363,12 @@
   다음 배포 런북 7장 HOME 줄 후보: 한 달 조회 월 칸·물결표 프리셋 이름·Summary 공지 두 문맥 거부. 관련: `components/home_preference.py`·
   `sidebar_style.py`·`scroll_shell.py`·`theme_toggle.py`·`process_picker.py`·`process_rename_management.py`·
   `tests/test_preference_profile_conflicts.py`·`tests/test_key_process_tilde_names.py`·`tests/test_process_label_tilde_sinks.py`
+- (2026-10-27) **사이드바 페이지 링크의 키보드 초점 윤곽은 모든 링크에 하나의 규칙이다**(브라우저 E2E r7 home, 밤사이 권장대로) —
+  위 (2)가 HOME·지금 화면 링크에만 윤곽을 둘러, 그 밖의 링크(최상위 「Capa Chatbot (구현중)」·「시나리오 관리」, Static Capa
+  등 묶음 안 하위 링크)는 Tab 으로 닿아도 hover 와 같은 옅은 회색 칠뿐이었다(`outline: none`). 사이드바 페이지 링크 선택자
+  하나의 `:focus-visible` 에 2px 띄운 2px `ACCENT` 윤곽을 두르고 HOME·지금 화면 따로 규칙 둘은 지웠다(그림은 같다). 정한 것(대안):
+  윤곽은 HOME·지금 화면과 같은 2px `ACCENT` 윤곽이다. 대안: 묶음 요약 줄·`Support` 와 같은 2.8px 청록 링(`box-shadow`) — 링크의
+  hover·활성 그림이 이미 `box-shadow` 를 써서 겹친다. 배포 때 할 일은 없다. 관련: `sidebar_style.py`·`tests/test_sidebar_stylesheet.py`
 - (2026-10-26) **값 뒤 조사는 `korean_particle` 한 길 — 끼운 값 뒤 고정 조사 0곳**(리팩토링 `particle-single-path`, 밤사이
   권장대로) — E2E 회차마다 고친 자리만 고쳐지고 같은 꼴(「공식 v4 으로」·「4 을」·「27-06 가」)이 다른 파일에서 다시 나오던 것:
   f-string 에 끼운 런타임 값 뒤 고정 조사(붙은 꼴·한 칸 띄운 꼴·손으로 박은 「은(는)」·「(으)로」 꼴, 진짜 조사였던 띄운 「이」 넷)를
