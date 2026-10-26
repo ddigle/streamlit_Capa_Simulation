@@ -618,7 +618,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `string` 으로 고정한다(9장 「편집표와 내려받기」). 쓰기 단추는 그린 회차의 세대를 인자로 받아 옛 누름을 거른다.
   - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
     저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
-    칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 토글이 꺼진 채 그려지는 회차는 남은 초안을
+    칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 충돌은 거부 표지(`note_profile_conflict`)를 초안을
+    다시 세우기 **전에** 적는다 — 창 안의 저장은 쓰지 않고 초안을 최신으로 다시 세운 채 거부를 다시 알리고, 동 머리 콜백은
+    옛 화면의 동 머리 값(빠른 둘째 누름이 다시 실어 온 내 옛 변경)을 받지 않으며, 알림 칸은 담아 둔 알림이 없으면 그 거부를
+    다시 그린다(2026-10-26 E2E 5회차 — 「끄고 저장」 두 번에 알림이 사라지고 다음 저장이 남의 저장을 덮었다,
+    `tests/test_space_floor_state_page.py`). 토글이 꺼진 채 그려지는 회차는 남은 초안을
     지운다(층을 열면 토글 위젯 상태가 버려진다). `floor_state_draft_pending()` 은 세션만 읽는 Space 탭 점·떠나기
     확인·테마 전환 표지다(`page_tabs.page_unsaved_marks`·`leave_notice` — Space 가 지금 화면일 때만) — `app.py` 가
     페이지보다 먼저 부르므로 이 회차 편집표 위젯 상태의 칸 편집까지 (적지 않고) 접어 저장본과 견준다.
@@ -1987,8 +1991,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그물이 이름으로 빼 둔다(`NOT_OWN_SAVE_CONFLICTS`). 제 저장 짝의 「저장된 값」 은 쓰기 결과(저장소가 돌려준 version·새
   리비전 id)로 적는다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어가 남의 저장 뒤 충돌을 제 저장으로 안다. 거꾸로 남의
   저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
-  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off(충돌 회차가 초안·출발점을 최신으로 다시
-  세우는 자리라 표지가 없으면 둘째 누름이 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮는다). 쓰지 않고 끝나는 아주 빠른
+  알린다 — 판정 기준·확보율 보정·Proc Rename·표시순서 직접 편집·자동 갱신 설정·Cut-off·Space 층 사용(충돌 회차가 초안·출발점을
+  최신으로 다시 세우는 자리라 표지가 없으면 둘째 누름이 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮거나, 옛 화면의 값을
+  최신 위에 얹는다). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와
   HOME 주요공정 프리셋 「기본으로」·「삭제」 가 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
   설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
@@ -4120,7 +4125,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     제출은 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
     대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
-    `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
+    `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
     (2026-10-26 리뷰). 그래서 표지를 초안을 다시 세우기 **전에** 적는다. 거부 글도 dict 칸(`queue_refusal`)으로 넘긴다.
   - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
