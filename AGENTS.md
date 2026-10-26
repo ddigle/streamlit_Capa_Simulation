@@ -1958,7 +1958,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 일정 기준은 반사실이다(보유 = 기존보유 + 비가동만 비운 구간의 가용, 대여 = 가용 − 보유). 「—」 칸은 까닭
     (`REASON_*`)을 갖고 값은 반올림하지 않는다.
 - `src/capa_simulation/services/key_process.py` — HOME 주요공정 히트맵의 공정 상한(`KEY_PROCESS_LIMIT`)·프리셋 규칙
-  (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음).
+  (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음). 이름 하나에
+  걸린 거부(같은 이름·공정 없는 프리셋)는 `PresetNameError`(`template`·`name`)라 화면이 막은 이름으로 다시 짓는다 — 물결표만
+  막는 오류 글 길로는 이름의 `*k*` 가 기울임이 됐다(2026-10-26 E2E). 사이드바 칸·팝업 라디오(`format_func=literal_markdown`)·
+  미리보기 캡션도 이름·표시명을 `literal_markdown` 으로 싣는다.
 - `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.

@@ -30,7 +30,7 @@ from capa_simulation.components.home_rendering import (
     LOB_MONTHS_CHART_KEY,
     open_clicked_home_cell,
 )
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.plotly_layout import table_text_y
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
@@ -1946,6 +1946,27 @@ def test_a_preset_with_a_duplicate_name_is_refused(tmp_path: Path) -> None:
     _save_preset(app, "A 그룹", ["DEMO_Final_Test"])
 
     assert any("같은 이름의 프리셋" in item.value for item in app.error)
+
+
+def test_a_preset_name_with_markdown_marks_reads_literally_everywhere(tmp_path: Path) -> None:
+    """프리셋 이름 「P~1~2 *k*」 의 물결표·별표가 사이드바 `주요공정 히트맵` 칸·팝업 라디오·같은
+    이름 거부 오류에서 마크다운(지움선·기울임)으로 그려졌다(2026-10-26 E2E — 칸이
+    `P<del>1</del>2 <em>k</em> · 1공정`). 세 자리 모두 글자 그대로 싣는다."""
+    name = "P~1~2 *k*"
+    app, _ = _preset_app(tmp_path, [(name, ["DEMO_Chip_Attach"])])
+
+    assert app.button(key="home_key_process_field").label == f"{literal_markdown(name)} · 1공정"
+    app.button(key="home_key_process_field").click().run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    picker = app.radio(key="home_key_process_preset_pick")
+    assert picker.options == [literal_markdown(name)]
+    assert picker.value == name
+
+    app.selectbox(key="home_key_process_preset_edit").set_value("＋ 새 프리셋").run()
+    _save_preset(app, name, ["DEMO_Final_Test"])
+
+    errors = [str(item.value) for item in app.error]
+    assert f"같은 이름의 프리셋이 이미 있습니다: {quoted(name)}" in errors, errors
 
 
 def _preset_app(tmp_path: Path, presets: list[tuple[str, list[str]]]) -> tuple[AppTest, Any]:
