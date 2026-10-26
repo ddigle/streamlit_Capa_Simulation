@@ -157,7 +157,15 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press", "tabs-links", "tabs-edges")
+_SECTIONS = (
+    "tabs-history",
+    "tabs-hold",
+    "tabs-queue",
+    "tabs-press",
+    "tabs-links",
+    "tabs-edges",
+    "tabs-focus",
+)
 
 
 def _sections() -> str:
@@ -698,3 +706,73 @@ def test_an_overflowing_strip_marks_the_side_that_has_more_tabs() -> None:
     # 지금 탭을 보이게 굴릴 때도 흐림 폭만큼 띄운다 — 가장자리 탭이 흐림 밑에 깔리지 않게.
     assert "const EDGE_PX = 32" in JS and "black 2rem" in CSS
     assert "left - EDGE_PX" in JS and "list.clientWidth + EDGE_PX" in JS
+
+
+_FOCUS_RUNNER = """
+const ids = ['home', 'plan', 'ref', 'calc']
+const MS = 10000
+const out = {
+  middle: focusAfterClose(ids, 'plan'),
+  last: focusAfterClose(ids, 'calc'),
+  first: focusAfterClose(ids, 'home'),
+  alone: focusAfterClose(['home'], 'home'),
+  missing: focusAfterClose(ids, 'gone'),
+  // 키보드 누름 뒤 옮긴 화면이 다 섰고 초점이 body 로 빠졌고 다른 입력이 없다 — 돌려준다.
+  lost: refocusAfterMove(1000, 990, true, false, 2000, MS),
+  sameMs: refocusAfterMove(1000, 1000, true, false, 2000, MS),
+  // 옮긴 화면 회차가 아직 돈다 — 기다리던 누름은 잠깐 뒤 보내도 초점은 화면이 다 서야 본다.
+  running: refocusAfterMove(1000, 990, false, true, 2500, MS),
+  // 회차가 끝내 끝나지 않아도 키보드 누름에서 `ms` 가 지나면 그때 본다.
+  overdue: refocusAfterMove(1000, 990, true, true, 11000, MS),
+  // 초점이 탭 줄·본문 어딘가에 남았다 — 두기.
+  kept: refocusAfterMove(1000, 990, false, false, 2000, MS),
+  // 그 뒤 사용자가 키·포인터로 움직였다 — 기다리는 중이어도 그만둔다.
+  moved: refocusAfterMove(1000, 1500, true, false, 2000, MS),
+  movedWhileRunning: refocusAfterMove(1000, 1500, true, true, 2000, MS),
+  // 마우스로 누른 이동이다 — 두기.
+  mouse: refocusAfterMove(null, -Infinity, true, false, 2000, MS),
+}
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_keyboard_focus_stays_on_the_strip_when_a_tab_closes_or_the_screen_moves() -> None:
+    """키보드로 탭 × 에서 Enter·Space 를 누르면 숨긴 단추의 초점이 body 로 빠졌다(E2E d16). 초점이
+    있던 탭을 닫으면 숨기기 **전에** 이웃 탭으로 옮긴다 — 서버가 지금 탭을 닫고 옮겨 가는 이웃과
+    같은 규칙(오른쪽, 없으면 왼쪽)이다. 키보드로 옮긴 화면이 다 선 뒤 초점이 body 로 빠졌으면(그
+    사이 다른 입력이 없을 때만) 지금 탭으로 돌려준다. 기다리던 누름은 옮긴 화면 회차가 끝나기
+    전에도 보내므로(`MOVED_GRACE_MS`) 초점은 그 회차가 다 설 때까지 따로 기다린다."""
+    out = _node(_FOCUS_RUNNER)
+
+    assert (out["middle"], out["last"], out["first"]) == ("ref", "ref", "plan")
+    assert out["alone"] is None and out["missing"] is None
+    assert (out["lost"], out["sameMs"], out["overdue"]) == ("focus", "focus", "focus")
+    assert out["running"] == "wait"
+    assert (out["kept"], out["moved"], out["movedWhileRunning"], out["mouse"]) == (
+        "drop",
+        "drop",
+        "drop",
+        "drop",
+    )
+    close_now = JS[JS.index("const closeNow = (item) => {") :]
+    close_now = close_now[: close_now.index("\n  }\n")]
+    assert "item.contains(shadow.activeElement)" in close_now
+    # 이웃은 보이는 차례(목록 DOM)로 고른다 — 만든 차례(`S.items`)는 고정한 탭이 왼쪽으로 옮긴
+    # 차례와 어긋난다.
+    assert "[...list.children].filter((other) => !other.hidden)" in close_now
+    assert close_now.index("next.__parts.tab.focus(") < close_now.index("item.hidden = true")
+    # 키보드 누름(`detail` 0)만 적고, 옮긴 화면이 다 서면(`settle` 이 더 보낼 누름이 없을 때)
+    # 돌려줄지 본다.
+    assert "if (event.detail === 0) S.keyPressAt = Date.now()" in JS
+    settle = JS[JS.index("function settle() {") : JS.index("const appRunning = () => {")]
+    assert "else restoreFocus()" in settle
+    # 회차가 아직 돌면(`MOVED_GRACE_MS` 로 기다리던 누름을 먼저 보냈을 수 있다) 다 설 때까지
+    # 다시 본다.
+    restore = JS[JS.index("function restoreFocus() {") :]
+    restore = restore[: restore.index("\n  }\n")]
+    verdict = "refocusAfterMove(S.keyPressAt, S.inputAt, lost, appRunning(), Date.now(), BUSY_MS)"
+    assert verdict in restore
+    assert "S.focusTimer = setTimeout(() => restoreFocus(), SETTLE_POLL_MS)" in restore
+    assert "clearTimeout(S.focusTimer)" in JS[JS.index("  return () => {") :]
+    assert "document.addEventListener(type, S.onInput, true)" in JS
+    assert "document.removeEventListener(type, S.onInput, true)" in JS

@@ -15,6 +15,8 @@
 // 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만
 // 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
 // 목록이 옆으로 넘치면(좁은 창·탭이 많을 때) 더 있는 쪽 가장자리를 흐리고 화살표 표지를 단다(`<tabs-edges>`).
+// 키보드 초점은 탭 줄 안에 남긴다(`<tabs-focus>`) — 초점이 있던 탭을 닫으면 이웃 탭으로 옮기고, 키보드로 화면을 옮긴
+// 뒤 초점이 body 로 빠졌으면 지금 탭으로 돌려준다.
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
@@ -196,6 +198,28 @@ function overflowEdges(scrollLeft, scrollWidth, clientWidth) {
   return { start: scrollLeft > 1, end: scrollLeft < max - 1 }
 }
 // </tabs-edges>
+
+// <tabs-focus>
+// 초점이 있던 탭을 닫을 때 초점을 옮길 탭 — 서버가 지금 탭을 닫고 옮겨 가는 이웃과 같은 규칙(오른쪽 이웃, 없으면 왼쪽
+// 이웃 — `page_tabs_state.closed`)이다. `ids` 는 닫기 전 보이는 탭 차례다. 닫는 탭이 없거나 남는 탭이 없으면 null.
+function focusAfterClose(ids, closing) {
+  const index = ids.indexOf(closing)
+  if (index < 0) return null
+  const rest = ids.filter((id) => id !== closing)
+  if (rest.length === 0) return null
+  return rest[Math.min(index, rest.length - 1)]
+}
+// 키보드로 옮긴 화면이 다 선 뒤 초점을 지금 탭에 돌려줄까 — 'focus'(돌려준다)·'wait'(다시 본다)·'drop'(그만둔다).
+// 키보드 누름(`pressAt`)이 있었고 그 뒤 다른 입력(`inputAt` — 키·포인터)이 없을 때만 보고, 사용자가 이미 다른 자리로 옮긴
+// 초점은 두지 않는다. 옮긴 화면 회차가 아직 돌면(`running`) 키보드 누름에서 `ms` 까지 기다린다 — 기다리던 누름은 그 회차가
+// 끝나기 전에도 보내지만(`<tabs-queue>` 의 `graceMs`), 초점은 화면이 다 서야 제자리가 정해진다. 그 뒤 초점이 body 로
+// 빠졌으면(`lost`) 돌려준다.
+function refocusAfterMove(pressAt, inputAt, lost, running, now, ms) {
+  if (pressAt === null || inputAt > pressAt) return 'drop'
+  if (running && now - pressAt < ms) return 'wait'
+  return lost ? 'focus' : 'drop'
+}
+// </tabs-focus>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -254,7 +278,7 @@ export default function (component) {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
-    onScroll: null, resizer: null,
+    onScroll: null, resizer: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
   // 이미 걸었다(`<tabs-history-install>`). 이것은 그 JS 가 서지 못한 문서의 안전망이다.
@@ -418,11 +442,28 @@ export default function (component) {
     }
     const item = next === null ? null : S.items.get(next)
     if (item) sendSelect(item)
+    else restoreFocus()
   }
   const appRunning = () => {
     const root = document.querySelector(APP_ROOT)
     const run = root ? root.getAttribute('data-test-script-state') : null
     return run === 'running' || run === 'rerunRequested'
+  }
+  // 키보드로 옮긴 이동이 끝났다 — 그 화면 회차가 다 선 뒤 초점이 body 로 빠졌으면 지금 탭으로 돌려준다(`<tabs-focus>`).
+  function restoreFocus() {
+    clearTimeout(S.focusTimer)
+    if (S.keyPressAt === null) return
+    const focused = document.activeElement
+    const lost = !focused || focused === document.body
+    const verdict = refocusAfterMove(S.keyPressAt, S.inputAt, lost, appRunning(), Date.now(), BUSY_MS)
+    if (verdict === 'wait') {
+      S.focusTimer = setTimeout(() => restoreFocus(), SETTLE_POLL_MS)
+      return
+    }
+    S.keyPressAt = null
+    if (verdict !== 'focus') return
+    const item = S.items.get(S.data.active)
+    if (item && !item.hidden) item.__parts.tab.focus({ preventScroll: true })
   }
   // 떠나는 누름을 편집표 편집 회차가 돌아올 때까지 붙든다(`<tabs-hold>`). 붙든 동안 또 누르면 마지막 누름만 남는다.
   const holding = (item, go) => {
@@ -485,6 +526,14 @@ export default function (component) {
     if (item.__parts.close.hidden) return
     const leaving = id === S.data.active
     if (leaving && !leaveOk()) return
+    // 초점이 그 탭(× 등)에 있었으면 숨기기 전에 이웃 탭으로 옮긴다 — 숨긴 단추의 초점은 body 로 빠졌다(E2E). 이웃은
+    // 보이는 차례(목록 DOM)로 고른다 — `S.items` 는 만든 차례라 고정해 왼쪽으로 옮긴 탭과 어긋난다.
+    const shadow = nav.getRootNode()
+    if (shadow.activeElement && item.contains(shadow.activeElement)) {
+      const open = [...list.children].filter((other) => !other.hidden).map((other) => other.dataset.id)
+      const next = S.items.get(focusAfterClose(open, id))
+      if (next) next.__parts.tab.focus({ preventScroll: true })
+    }
     // 곧바로 숨긴다 — 다음 회차가 목록에서 뺄 때까지 기다림이 보이지 않게.
     item.hidden = true
     // 지금 탭을 닫으면 서버가 이웃으로 옮긴다 — 그 이동도 기록 한 칸·한 번에 하나다.
@@ -516,6 +565,8 @@ export default function (component) {
     const pinning = button.classList.contains('capa-tabs-pin')
     if (closing || pinning) event.stopPropagation()
     if (stray(event, item)) return
+    // 키보드(Enter·Space)로 누른 단추는 `detail` 이 0 이다 — 옮긴 화면이 다 선 뒤 초점을 돌려줄지 볼 때 쓴다.
+    if (event.detail === 0) S.keyPressAt = Date.now()
     if (closing) {
       pressed(event, item)
       close(item)
@@ -577,6 +628,13 @@ export default function (component) {
     }
     for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.addEventListener(type, S.onEdit, true)
   }
+  if (!S.onInput) {
+    // 키·포인터 입력 시각 — 키보드로 옮긴 뒤 사용자가 스스로 초점을 옮겼는지 본다(`<tabs-focus>`).
+    S.onInput = () => {
+      S.inputAt = Date.now()
+    }
+    for (const type of ['keydown', 'pointerdown']) document.addEventListener(type, S.onInput, true)
+  }
   if (!S.onLink) {
     // 왼쪽 단추 누름만 본다 — Streamlit 은 보조 키를 눌러도 같은 창에서 옮긴다. 가운데 단추(새 브라우저 탭)는
     // 새 접속이라 막지 않는다. 새 창으로 여는 바깥 링크도 그대로다.
@@ -611,6 +669,7 @@ export default function (component) {
     clearTimeout(S.busyTimer)
     clearTimeout(S.settleTimer)
     clearTimeout(S.holdTimer)
+    clearTimeout(S.focusTimer)
     if (S.onEdit) {
       for (const type of ['focusin', 'keydown', 'paste', 'cut', 'input']) document.removeEventListener(type, S.onEdit, true)
     }
@@ -621,6 +680,10 @@ export default function (component) {
     S.onFonts = null
     if (S.onLink) document.removeEventListener('click', S.onLink, true)
     S.onLink = null
+    if (S.onInput) {
+      for (const type of ['keydown', 'pointerdown']) document.removeEventListener(type, S.onInput, true)
+    }
+    S.onInput = null
     if (S.onScroll) list.removeEventListener('scroll', S.onScroll)
     S.onScroll = null
     if (S.resizer) S.resizer.disconnect()
