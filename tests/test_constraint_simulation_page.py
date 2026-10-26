@@ -138,9 +138,9 @@ finally:
 """
 
 
-def _equipment_database(path: Path) -> Path:
-    """시드 공정 하나에 기존보유 4대 + Qual 끝난 신규 8대·Cut-off 7 — 모든 달 설비 일정 기준 가용
-    12."""
+def _equipment_database(path: Path, process: str = DYNAMIC_PROCESS) -> Path:
+    """시드 공정 하나(`process`)에 기존보유 4대 + Qual 끝난 신규 8대·Cut-off 7 — 모든 달 설비 일정
+    기준 가용 12."""
     repository = DuckDBEquipmentRepository(path)
     repository.initialize()
     master = _master(
@@ -148,17 +148,17 @@ def _equipment_database(path: Path) -> Path:
             _unit(
                 f"CA-{index:02d}",
                 date(2025, 1, 10),
-                process=DYNAMIC_PROCESS,
+                process=process,
                 arrival=date(2024, 12, 1),
             )
             for index in range(1, 9)
         ]
     )
     baseline = pd.DataFrame(
-        {"공정": [DYNAMIC_PROCESS], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
+        {"공정": [process], "분류": ["전체"], "기존보유대수": [4.0], "비고": [None]}
     )
     repository.save_snapshot(baseline, master, _downtime([]))
-    repository.save_process_cutoff(_cutoff(7, DYNAMIC_PROCESS))
+    repository.save_process_cutoff(_cutoff(7, process))
     return path
 
 
@@ -317,18 +317,39 @@ def test_the_process_param_is_taken_once_and_the_theme_stays(
     assert back[0]["query_params"] == {"process": DYNAMIC_PROCESS, "theme": "dark"}
 
 
-def test_an_unknown_process_param_warns_and_opens_the_first_process(
+def test_an_unknown_process_param_warns_and_opens_the_first_ready_process(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
+    """넘겨받은 공정이 선택지에 없으면 처음 열 때와 같은 기본 공정(설비 일정이 서는 첫 공정)을 열고
+    알림이 연 공정을 말한다."""
     app = _app(dynamic_databases)
     app.query_params["process"] = "없는_공정"
     _ok(app.run())
     warnings = " ".join(str(item.value) for item in app.warning)
     assert "넘겨받은 공정" in warnings and "없는\\_공정" in warnings
-    assert (
-        app.selectbox(key=CONSTRAINT_PROCESS_KEY).value
-        == app.selectbox(key=CONSTRAINT_PROCESS_KEY).options[0]
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert "엽니다" in warnings and DYNAMIC_PROCESS.replace("_", "\\_") in warnings
+
+
+def test_the_sidebar_first_open_picks_the_first_process_with_an_equipment_schedule(
+    tmp_path: Path,
+) -> None:
+    """사이드바로 처음 열면(공정 칸이 빔) 첫 공정이 아니라 설비 일정이 서는 첫 공정이다 — 첫 화면이
+    까닭 카드가 아니라 계산이게(2026-10-25 E2E #106). 설비는 첫 공정이 아닌 공정 하나에만 둔다.
+    고른 공정은 그 뒤로 그대로다."""
+    databases = (
+        tmp_path / "scenario.duckdb",
+        _equipment_database(tmp_path / "equipment.duckdb", OTHER_PROCESS),
     )
+    app = _ok(_app(databases).run())
+    options = app.selectbox(key=CONSTRAINT_PROCESS_KEY).options
+    assert options[0] != OTHER_PROCESS
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == OTHER_PROCESS
+    assert app.metric
+    assert _has_chart(app, CONSTRAINT_CHART_KEY)
+    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(options[0])
+    _ok(app.run())
+    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == options[0]
 
 
 def _assumed_scenario_databases(tmp_path: Path) -> tuple[tuple[Path, Path], dict[str, str]]:

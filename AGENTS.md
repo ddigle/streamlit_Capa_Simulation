@@ -342,7 +342,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 한 번
     적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY` 에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
     덮지 않게 하고, 인자가 걷힌 회차에 비운다(공정 Capa 상세 `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이). 공정
-    선택지는 공정 Capa 상세와 같은 전 공정이고(D12) 설비 일정이 서지 않으면 까닭 카드 한 장(`readiness.badge`·`detail`, 판정을
+    선택지는 공정 Capa 상세와 같은 전 공정이고(D12) 공정 칸이 비었거나 선택지에 없는 회차(사이드바로 처음 열기 등)의 기본은
+    설비 일정이 서는 첫 공정(`first_ready_process` — 까닭 카드와 같은 `dynamic_readiness`, 없으면 첫 공정)이다. 설비 일정이
+    서지 않으면 까닭 카드 한 장(`readiness.badge`·`detail`, 판정을
     지나도 계획에 없는 공정은 「계획에 공정 없음」·「Cut-off 미기재」)으로 멈춘다.
   - 오류는 넷으로 가른다 — 공통 진입(카드 캡션), 제품별 소요 받기(카드 캡션 + 본문 「제품별 소요를 읽지 못했습니다 — {글}」 —
     「소요가 있는 제품이 없다」 안내와 가른다), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
