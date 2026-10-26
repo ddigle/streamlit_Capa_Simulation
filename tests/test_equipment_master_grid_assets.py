@@ -1291,3 +1291,83 @@ process.stdout.write(JSON.stringify(results))
         "underStrip": {"scrolled": {"block": "start"}, "margin": "102px"},
     }
     assert f"const PAGE_TABS_STRIP = '{PAGE_TABS_SELECTOR}'" in JS
+
+
+def test_a_loader_popover_closes_after_its_load_and_on_another_loader_button() -> None:
+    """「조건으로 불러오기」 로 불러온 뒤나 불러오기 줄의 다른 단추를 누른 뒤에도 팝오버가 열린 채
+    오른쪽 칸을 덮었다(2026-10-25 E2E #29). 패널 안에서 불러오면 바로 닫고 초점은 여는 단추로,
+    불러오기 줄의 다른 단추(다른 팝오버의 여는 단추도)를 누르면 그 단추를 지우지 않고 패널만
+    닫는다. 패널 안 누름은 닫지 않는다."""
+    runner = (
+        _FAKE_DOM
+        + """
+const docListeners = {}
+document.addEventListener = (type, handler) => {
+  ;(docListeners[type] = docListeners[type] || []).push(handler)
+}
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const triggers = []
+globalThis.__mount({
+  data: input.data, parentElement, setStateValue() {},
+  setTriggerValue(name, value) { triggers.push([name, value.kind]) },
+})
+const buttonOf = (label) => host.querySelectorAll('button').find(
+  (node) => node.textContent.startsWith(label))
+const press = (node) => {
+  const path = []
+  for (let at = node; at; at = at.parentNode) path.push(at)
+  for (const handler of docListeners.mousedown || []) {
+    handler({ target: node, composedPath: () => path })
+  }
+}
+const isOpen = (toggle) => !toggle.parentNode.children[1].hidden
+const results = {}
+// 조건 팝오버 — 패널 안 누름은 닫지 않고, 다른 단추 누름은 그 단추를 남긴 채 닫는다.
+let toggle = buttonOf('조건으로 불러오기')
+toggle.click()
+const inside = toggle.parentNode.children[1].querySelector('[data-fk="cond-val-0"]')
+press(inside)
+results.insidePress = isOpen(toggle)
+const alerts = buttonOf('일정 확인 필요')
+press(alerts)
+results.otherButton = {
+  open: isOpen(toggle),
+  expanded: toggle.getAttribute('aria-expanded'),
+  kept: host.contains(alerts),
+}
+// 공정 팝오버를 연 채 조건 여는 단추를 누르면 공정 쪽이 닫힌다.
+const byProcess = buttonOf('공정으로 불러오기')
+byProcess.click()
+press(toggle)
+toggle.click()
+results.otherToggle = { process: isOpen(byProcess), conditions: isOpen(toggle) }
+// 조건으로 불러오기 — 값을 고르고 「맞는 n대 불러오기」 를 누르면 바로 닫고 여는 단추로 초점.
+const value = toggle.parentNode.children[1].querySelector('[data-fk="cond-val-0"]')
+value.value = '0'
+fire(value, 'change')
+buttonOf('맞는 ').click()
+results.conditionsLoad = {
+  open: isOpen(toggle),
+  focus: document.activeElement === toggle,
+  trigger: triggers[triggers.length - 1],
+}
+// 공정으로 불러오기 — 공정 하나를 누르면 바로 닫는다.
+byProcess.click()
+buttonOf('DEMO-P2').click()
+results.processLoad = { open: isOpen(byProcess), trigger: triggers[triggers.length - 1] }
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "insidePress": True,
+        "otherButton": {"open": False, "expanded": "false", "kept": True},
+        "otherToggle": {"process": False, "conditions": True},
+        "conditionsLoad": {"open": False, "focus": True, "trigger": ["load", "conditions"]},
+        "processLoad": {"open": False, "trigger": ["load", "process"]},
+    }

@@ -433,7 +433,7 @@ function freshState() {
   return {
     mount: newMount(), box: createBox(), pending: new Map(), timer: 0, base: null, view: null,
     selected: new Set(), anchor: null, sort: null, colSet: null, edit: null, focus: null, toastClosed: null,
-    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, procQuery: '', conds: [{ col: 4, text: null }],
+    note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
     dialogOpener: null, dialogClosed: null,
@@ -864,6 +864,8 @@ function popover(S, name, label, build, wide) {
   caret.innerHTML = ICONS.down
   toggle.appendChild(caret)
   toggle.setAttribute('aria-haspopup', 'dialog')
+  // 패널 안에서 불러오고 닫으면 초점이 여는 단추로 온다 — 불러오기 회차가 다시 지어도 그 단추로 돌아온다(data-fk).
+  toggle.dataset.fk = 'pop-' + name
   const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', label)
@@ -909,7 +911,7 @@ function popover(S, name, label, build, wide) {
     panel.textContent = ''
     panel.style.left = ''
     if (!open) return
-    build(panel, paint)
+    build(panel, paint, close)
     const rect = panel.getBoundingClientRect()
     const shift = popoverShift(rect.left, rect.width, document.documentElement.clientWidth, 8)
     if (shift) panel.style.left = shift + 'px'
@@ -918,11 +920,26 @@ function popover(S, name, label, build, wide) {
   wrap.appendChild(toggle)
   wrap.appendChild(panel)
   paint()
+  // 문서 mousedown 이 불러오기 줄의 다른 단추 누름에 이 팝오버만 닫는다(`closeOtherPress`) — 다시 짓지 않는다.
+  S.pops[name] = { wrap, hide: () => {
+    if (S.pop !== name) return
+    S.pop = null
+    paint()
+  } }
   return wrap
 }
 
+// 불러오기 줄 안에서 열린 팝오버 밖(일정 확인 필요·+ 새 호기·엑셀·CSV·목록 비우기·전체 불러오기·찾기·다른 팝오버)을 누르면 그
+// 팝오버를 닫는다 — 열린 채 남아 오른쪽 칸을 덮었다(E2E). 누른 단추가 지워지면 click 이 서지 않으므로 다시 짓지 않고 패널만 닫는다.
+function closeOtherPress(S, path, target) {
+  const open = S.pops[S.pop]
+  if (!open) return
+  const within = path ? path.includes(open.wrap) : open.wrap.contains(target)
+  if (!within) open.hide()
+}
+
 function processPopover(S, model) {
-  return popover(S, 'process', '공정으로 불러오기', (panel) => {
+  return popover(S, 'process', '공정으로 불러오기', (panel, repaint, done) => {
     const find = el('input', 'emg-input')
     find.placeholder = '공정 이름 찾기'
     find.setAttribute('aria-label', '공정 이름 찾기')
@@ -941,7 +958,7 @@ function processPopover(S, model) {
           const value = label === '(빈칸)' ? '' : label
           const code = k < 0 ? -1 : (model.conds.values[k] || []).indexOf(value)
           const rows = code < 0 ? [] : matchConditions(model.columns, [{ col: k, value: code }], model.names.length)
-          S.pop = null
+          done()
           load(S, 'process', rows.map((row) => model.ids[row]), [], '공정 ' + label, { process: label })
         })
         option.appendChild(el('span', null, label))
@@ -961,7 +978,7 @@ function processPopover(S, model) {
 function conditionPopover(S, model) {
   const columns = model.conds.columns || []
   const values = model.conds.values || []
-  return popover(S, 'conditions', '조건으로 불러오기', (panel, repaint) => {
+  return popover(S, 'conditions', '조건으로 불러오기', (panel, repaint, done) => {
     panel.appendChild(el('span', 'emg-muted', '칸과 값을 골라 모두 맞는 호기를 불러옵니다.'))
     S.conds = S.conds.filter((pick) => pick.col >= 0 && pick.col < columns.length)
     if (!S.conds.length) S.conds = [{ col: Math.max(columns.indexOf('동'), 0), text: null }]
@@ -1032,7 +1049,7 @@ function conditionPopover(S, model) {
     const rows = picked.length ? matchConditions(model.columns, picked, model.names.length) : []
     const go = button('emg-btn is-small is-primary', '맞는 ' + rows.length.toLocaleString() + '대 불러오기', () => {
       const label = picked.map((pick) => columns[pick.col] + ' ' + ((values[pick.col] || [])[pick.value] || '(빈칸)')).join(' · ')
-      S.pop = null
+      done()
       load(S, 'conditions', rows.map((row) => model.ids[row]), [], '조건 「' + label + '」')
     })
     go.dataset.fk = 'cond-go'
@@ -2478,11 +2495,15 @@ export default function (component) {
     listen(S, document, 'visibilitychange', () => send(S))
     listen(S, document, 'mousedown', (event) => {
       // 그림자 DOM 밖에서 보면 대상이 호스트로 바뀐다 — 지나온 길(composedPath)로 안쪽 누름을 가른다.
-      const inside = typeof event.composedPath === 'function' ? event.composedPath().includes(host) : host.contains(event.target)
-      if (S.pop && S.pop !== 'search' && !inside) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : null
+      const inside = path ? path.includes(host) : host.contains(event.target)
+      if (!S.pop || S.pop === 'search') return
+      if (!inside) {
         S.pop = null
         if (S.data && S.data.mode === 'loader') drawLoader(host, S, S.data)
+        return
       }
+      closeOtherPress(S, path, event.target)
     })
   }
   if (data.mode === 'loader') drawLoader(host, S, data)
