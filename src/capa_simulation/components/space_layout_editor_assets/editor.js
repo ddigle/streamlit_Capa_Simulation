@@ -4697,10 +4697,11 @@ export default function (component) {
     setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
       + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 설비 마스터에서 고칩니다.')
   }
-  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit5`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
-  // 준다. 회차의 글자를 쓴 뒤와 크기가 바뀔 때(`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
+  // FAB 도구 줄이 넘치면 접는 차례(`is-fit1`~`is-fit6`, CSS 「FAB 도구 줄」)를 하나씩 더한다 — 요약은 마지막에야
+  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 회차의 글자를 쓴 뒤와 크기가 바뀔 때
+  // (`S.onResize`) 다시 잰다. 층·편집 도구 줄은 건드리지 않는다.
   const toolbar = q('.sle-toolbar')
-  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5']
+  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
   function fitFabBar() {
     toolbar.classList.remove(...FIT_STEPS)
     if (!(VIEW && FAB) || !toolbar.clientWidth) return
