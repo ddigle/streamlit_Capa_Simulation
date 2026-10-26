@@ -1,5 +1,7 @@
 # Purpose: 시나리오 관리 페이지의 목록·리비전 편집표·공식 지정 팝업·보관함·복제를 AppTest 로 잰다.
 
+import json
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
@@ -412,6 +414,50 @@ def test_clone_refuses_an_edit_that_breaks_the_calculation(tmp_path: Path) -> No
     assert any("이번 편집이 깨뜨린" in item.value for item in app.error)
     assert len(repository.list_scenarios()) == before
     assert _clone_inputs(app)["시나리오명"] == "깨진 편집 복제"
+
+
+def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계산 검사 거절·경고 글은 알림 상자(마크다운)다 — 오류 예시 키(편집한 칸 값)의 물결표 둘이
+    지움선(「P<del>Q</del>R」)이 되지 않는다. 복제 거절·복제 뒤 경고·공식 지정 거절 세 자리."""
+    import capa_simulation.components.scenario_management as scenario_management
+    from capa_simulation.components.capacity_gate import GateVerdict
+
+    message = "오류: RQ_UPEH 에 없는 공정이 있습니다: 1건, 예시 ['P~Q~R']"
+    shown = message.replace("~", "\\~")
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+
+    monkeypatch.setattr(
+        scenario_management, "revision_save_verdict", lambda *args: GateVerdict(False, message)
+    )
+    app = AppTest.from_string(script, default_timeout=120).run()
+    app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
+    _fill_clone(app, "물결표 거절 복제", "CLONE-TILDE-REFUSED")
+    assert [item.value for item in app.error] == [shown]
+
+    monkeypatch.setattr(
+        scenario_management, "revision_save_verdict", lambda *args: GateVerdict(True, message)
+    )
+    _fill_clone(app, "물결표 경고 복제", "CLONE-TILDE-WARNED")
+    assert shown in [item.value for item in app.warning]
+
+    monkeypatch.setattr(
+        scenario_management, "official_publish_verdict", lambda *args: GateVerdict(False, message)
+    )
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, release.scenario_id, release.revision_id)
+    _official_button(app).click()
+    app.run()
+    assert not app.exception
+    assert [item.value for item in app.error] == [shown]
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == release.release_no
 
 
 def _register_virtual(app: AppTest, product: str) -> VirtualProductRecord:
@@ -1982,3 +2028,66 @@ def test_a_revision_name_changed_elsewhere_is_not_overwritten_after_more_runs(
     assert _revision_frame(app)["리비전명"].tolist() == names
     assert _draft(app, REVISION_EDITOR_KEY).picked == probe.revision_id
     assert app.button(key="scenario_card_save_names").disabled
+
+
+# 편집표 머리는 캔버스(Glide)라 칸보다 긴 글자가 말줄임표 없이 잘린다. 머리 글자는 굵은 14px —
+# 한글·전각은 한 자 14px, 띄어쓰기는 4px, 그 밖은 8px 로 넉넉히 잡는다. 왼쪽·오른쪽 여백이 8px
+# 씩이고, 고칠 수 있는 칸은 머리에 편집 아이콘(18px × 1.3 → 24px)이 서서 글자가 그만큼 오른쪽에서
+# 시작한다.
+_HEADER_PADDING_PX = 8
+_EDITABLE_ICON_PX = 24
+
+
+def _header_fit_px(title: str, *, editable: bool) -> int:
+    text = sum(
+        14 if unicodedata.east_asian_width(char) in "WF" else 4 if char == " " else 8
+        for char in title
+    )
+    return text + 2 * _HEADER_PADDING_PX + (_EDITABLE_ICON_PX if editable else 0)
+
+
+def _clipped_headers(element: Any) -> list[tuple[str, int, int]]:
+    """편집표의 칸 가운데 머리 글자가 칸 폭에 다 들어가지 않는 것 — (머리, 칸 폭, 필요한 폭)."""
+    columns: dict[str, dict[str, Any]] = json.loads(element.proto.columns)
+    clipped = []
+    for name, config in columns.items():
+        width = config.get("width")
+        if not isinstance(width, int):
+            continue
+        title = str(config.get("label") or name)
+        need = _header_fit_px(title, editable=not config.get("disabled", False))
+        if width < need:
+            clipped.append((title, width, need))
+    return clipped
+
+
+def test_list_and_revision_table_headers_fit_their_columns(tmp_path: Path) -> None:
+    """목록 표 「선택」「순서」「최신 리비전」, 리비전 표 「고름」 머리가 칸 안에 다 보인다.
+
+    칸 폭은 표가 좁으면 그 값 밑으로 줄지 않아(표 안 가로 스크롤) 어느 창 폭에서도 머리가 그 값에
+    들어가야 한다(2026-10-26 E2E — 44px 칸에서 「선ㅌ」「순ㅅ」 로 잘렸다).
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _check_row(app, release.scenario_id)
+    app.run()
+
+    assert not app.exception
+    editors = {
+        name: element
+        for element in app.dataframe
+        if element.proto.editing_mode
+        for name in ("선택", "고름")
+        if name in element.value.columns
+    }
+    assert set(editors) == {"선택", "고름"}
+    assert {name: _clipped_headers(element) for name, element in editors.items()} == {
+        "선택": [],
+        "고름": [],
+    }

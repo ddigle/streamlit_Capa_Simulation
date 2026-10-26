@@ -9,6 +9,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -292,6 +293,24 @@ def test_save_keeps_source_and_draft_and_changed_years_refresh_the_preview(sourc
     assert app.session_state[ACTIVE_SCENARIO_KEY] == sentinel
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == "별개 활성 리비전"
     assert _save_button(app).disabled
+
+
+def test_a_saved_name_with_tildes_is_shown_as_typed(source: Source) -> None:
+    """저장 알림은 마크다운이다 — 이름의 물결표 둘이 지움선(「26<del>27 Shift</del>1」)이 되지
+    않는다."""
+    repository, database, original = source
+    app = _app(database, original)
+    app.number_input(key="scenario_shift_years").set_value(1).run()
+    app.text_input(key="scenario_shift_name").set_value("26~27 Shift~1")
+
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert [item.value for item in app.success] == [
+        f"새 시나리오 ‘{literal_markdown('26~27 Shift~1')}’을 저장했습니다. 목록 관리에서 "
+        "불러올 수 있습니다."
+    ]
+    assert "26~27 Shift~1" in {item.scenario_name for item in repository.list_scenarios()}
 
 
 def test_source_defaults_to_active_revision_and_preserves_explicit_selection(

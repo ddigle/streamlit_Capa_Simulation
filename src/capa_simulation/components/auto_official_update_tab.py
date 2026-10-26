@@ -225,7 +225,7 @@ def _render_status(
             ]
             if status.last_tick_at is not None and status.last_outcome is not None:
                 last = status.last_outcome
-                detail = f" — {last.message}" if last.message else ""
+                detail = f" — {markdown_safe_tildes(last.message)}" if last.message else ""
                 parts.append(
                     f"마지막 확인 {format(status.last_tick_at, '%Y-%m-%d %H:%M:%S')} "
                     f"{last.label}{detail}"
@@ -473,7 +473,11 @@ def _render_settings_form(
         return
     else:
         remember_own_save(SETTINGS_SAVE_NAME, expected_version, saved.version, save_marks)
-        message = f"{SETTINGS_SAVED_PREFIX} — {describe_config_change(config, updated)}"
+        # 바뀐 내용은 키워드를 날로 담는다 — 알림 상자(마크다운)에서 물결표가 지움선이 되지 않게.
+        message = (
+            f"{SETTINGS_SAVED_PREFIX} — "
+            f"{markdown_safe_tildes(describe_config_change(config, updated))}"
+        )
         # 빠른 두 번 누름의 둘째가 이 알림을 다시 낸다(write_guard.held_notice).
         note_notice(messages, SETTINGS_FLASH_KEY, message)
         queue_flash(SETTINGS_FLASH_KEY, message)
@@ -570,7 +574,7 @@ def _render_run_now(
     st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
     run = result.run
     if run is None:
-        notice.warning(result.not_run_reason or "회차를 잡지 못했습니다.")
+        notice.warning(markdown_safe_tildes(result.not_run_reason or "회차를 잡지 못했습니다."))
         return
     _hold_run_result(run)
     st.rerun()

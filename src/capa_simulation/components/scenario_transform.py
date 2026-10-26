@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.capacity_gate import derived_save_verdict
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.widget_generation import bump, generation, write_once_value
 from capa_simulation.page_bootstrap import (
@@ -219,12 +219,14 @@ def render_derived_save(
     saved = st.session_state.get(saved_key)
     already_saved = isinstance(saved, dict) and saved.get("request") == request
     if already_saved and isinstance(saved, dict):
+        # 알림 상자는 마크다운이다 — 사람이 적은 이름은 글자 그대로(「26~27 Shift~1」 의 물결표가
+        # 지움선이 되지 않게), 계산 검사 경고는 원본 이름을 품으므로 물결표만 막는다. 조사는 막기
+        # 전의 이름으로 고른다.
         saved_name = str(saved["name"])
-        # 사람이 지은 이름이라 알림 상자(마크다운)에서 막고, 조사는 막기 전의 이름으로 고른다.
         shown = f"‘{literal_markdown(saved_name)}’{object_particle(saved_name)}"
         st.success(f"새 시나리오 {shown} 저장했습니다. 목록 관리에서 불러올 수 있습니다.")
         if isinstance(saved.get("warning"), str):
-            st.warning(saved["warning"], icon=":material/warning:")
+            st.warning(markdown_safe_tildes(saved["warning"]), icon=":material/warning:")
     st.caption(
         "지금 올라와 있는 편집본과 원본 시나리오는 그대로입니다. 새 시나리오의 조회기간·포함공정은 "
         "결과 전체이며, 확보·경고 기준은 원본(머지는 베이스)을 따릅니다."
@@ -264,7 +266,7 @@ def render_derived_save(
     with st.spinner("저장 전에 결과의 Capa 계산을 검사하는 중입니다..."):
         verdict = derived_save_verdict(tables, gate_sources or (source,))
     if not verdict.allowed:
-        st.error(verdict.message)
+        st.error(markdown_safe_tildes(verdict.message))
         return
     preset = replace(
         source.preset,

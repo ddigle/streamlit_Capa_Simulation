@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import datetime, time
 from pathlib import Path
 
@@ -35,20 +36,22 @@ from capa_simulation.auto_official_update_runner import (
     auto_off_marks,
     run_auto_official_update,
 )
-from capa_simulation.auto_update_scheduler import ENV_VAR
+from capa_simulation.auto_update_scheduler import ENV_VAR, SchedulerStatus, TickOutcome
 from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
     UNCOUNTED_DEMAND_MARK,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
 from capa_simulation.components.required_exclusion_notice import UNCOUNTED_DEMAND_LEAD
-from capa_simulation.persistence.models import ScenarioPreset
+from capa_simulation.persistence.models import AutoOfficialUpdateRun, ScenarioPreset
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.auto_official_update import (
     MISSING_WEEK_MESSAGE,
     STATUS_PUBLISHED,
     STATUS_RUNNING,
+    STATUS_SKIPPED,
     TRIGGER_MANUAL,
     AutoUpdateConfig,
     auto_off_mark,
@@ -219,6 +222,113 @@ def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:
     assert not app.error
     assert "주차 없음" in _markdown(app)
     assert MISSING_WEEK_MESSAGE in _markdown(app)
+
+
+def _republish(repository: DuckDBScenarioRepository, release_name: str) -> None:
+    """지금 최신 공식버전의 리비전을 이 이름으로 다시 발행한다(새 번호)."""
+    latest = repository.latest_official_release()
+    assert latest is not None
+    repository.publish_official_revision(
+        latest.scenario_id, latest.revision_id, release_name=release_name
+    )
+
+
+def test_the_status_lines_keep_tildes_in_the_release_name_and_keyword(database: Path) -> None:
+    """「현재 공식버전」 줄의 공식버전명과 설정 줄의 키워드는 마크다운이다 — 물결표 둘이 지움선
+    (「W43<del>W44 확정</del>본」)이 되지 않고 적은 글자 그대로 보인다."""
+    repository = _with_w40(database)
+    _republish(repository, "PSM W40 확정~본~")
+    repository.replace_auto_official_update_settings(
+        AutoUpdateConfig(enabled=False, check_time=time(7, 0), keyword="P~S~M", threshold=0.8),
+        expected_version=0,
+    )
+
+    text = _markdown(app := _tab(database))
+
+    assert f"공식 v2 W40 · {literal_markdown('PSM W40 확정~본~')} (" in text
+    assert f"키워드 「{literal_markdown('P~S~M')}」" in text
+    assert not app.error
+
+
+def test_a_release_name_with_two_weeks_keeps_its_tildes_in_the_status_and_refusals(
+    database: Path,
+) -> None:
+    """주차를 정할 수 없다는 줄·오류 상자에 든 공식버전명의 물결표도 지움선이 되지 않는다 — 꺼져
+    있을 때의 상태 줄, 켜져 있을 때의 오류 상자, 켜기·지금 실행 거절."""
+    repository = _without_week(database)
+    _republish(repository, "W43~W44 확정~본")
+    shown = "「W43\\~W44 확정\\~본」"
+
+    app = _tab(database)
+    assert shown in _markdown(app)
+    assert "「W43~W44" not in _markdown(app)
+
+    _field(app.toggle, "자동 갱신 켜기").set_value(True)  # type: ignore[attr-defined]
+    app = _submit_settings(app)
+    assert [shown in str(element.value) for element in app.error] == [True]
+
+    next(button for button in app.button if button.label == "지금 실행").click().run()
+    assert [shown in str(element.value) for element in app.error] == [True]
+
+    settings = repository.load_auto_official_update_settings()
+    repository.replace_auto_official_update_settings(
+        replace(settings.config, enabled=True), expected_version=settings.version
+    )
+    app = _tab(database)
+    assert [shown in str(element.value) for element in app.error] == [True]
+
+
+def test_a_run_result_and_the_scheduler_line_keep_tildes(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「지금 실행」 결과 알림과 예약 상태 캡션의 마지막 확인 글도 물결표를 막는다 — 회차 사유·예외
+    글은 키워드·시뮬레이션명·공식버전명을 날로 담는다."""
+    import capa_simulation.components.auto_official_update_tab as tab
+
+    _with_w40(database)
+
+    class _Scheduler:
+        def status(self) -> SchedulerStatus:
+            return SchedulerStatus(
+                started_at=datetime(2026, 10, 12, 7, 0),
+                last_tick_at=NOW,
+                last_outcome=TickOutcome("settings_error", NOW, message="「A~B~C」 오류"),
+                pending_day=None,
+                alive=True,
+                tick_seconds=60.0,
+            )
+
+    monkeypatch.setattr(tab, "running_scheduler", lambda: _Scheduler())
+    # 결과 알림은 담는 곳(`_hold_run_result`)에서 막는다 — 끊긴 회차를 기록에서 찾은 셈으로 담는다.
+    skipped = AutoOfficialUpdateRun(
+        run_id="run-tilde",
+        run_key="manual-tilde",
+        trigger_kind="MANUAL",
+        run_date=NOW.date(),
+        status=STATUS_SKIPPED,
+        stage="done",
+        started_at=NOW,
+        finished_at=NOW,
+        keyword="X~Y~Z",
+        threshold=0.8,
+        settings_version=1,
+        reason="새 코드 없음 — 「X~Y~Z」",
+    )
+    held: list[bool] = []
+
+    def _recover(_repository: object) -> bool:
+        if not held:
+            held.append(True)
+            tab._hold_run_result(skipped)
+        return False
+
+    monkeypatch.setattr(tab, "_recover_run_result", _recover)
+    app = AppTest.from_string(TAB_SCRIPT.format(path=str(database)), default_timeout=180)
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert any("「X\\~Y\\~Z」" in str(element.value) for element in app.info)
+    assert any("「A\\~B\\~C」 오류" in str(element.value) for element in app.caption)
 
 
 # ---------------------------------------------------------------------------

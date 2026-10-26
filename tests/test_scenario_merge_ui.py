@@ -554,6 +554,41 @@ def test_a_refused_derived_save_writes_nothing(
     assert any("원본부터 있던 오류" in item.value for item in app.warning)
 
 
+def test_the_save_notices_keep_tildes_in_names_as_typed(
+    sources: Sources, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 알림·계산 검사 거절·경고는 마크다운이다 — 이름의 물결표가 지움선이 되지 않는다."""
+    import capa_simulation.components.scenario_transform as scenario_transform
+    from capa_simulation.components.capacity_gate import GateVerdict
+
+    repository, database, base, donor = sources
+    refusal = "이 결과는 Capa 계산이 실패해 저장하지 않았습니다. 오류: 「P~Q~R」 칸"
+    monkeypatch.setattr(
+        scenario_transform, "derived_save_verdict", lambda *args: GateVerdict(False, refusal)
+    )
+    app = _app(database, base, donor)
+    app.text_input(key="scenario_merge_name").set_value("머지~결과~본")
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert [item.value for item in app.error] == [refusal.replace("~", "\\~")]
+
+    warning = "원본(베이스~2027~)부터 있던 Capa 계산 오류가 결과에도 남아 있습니다."
+    monkeypatch.setattr(
+        scenario_transform, "derived_save_verdict", lambda *args: GateVerdict(True, warning)
+    )
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert [item.value for item in app.success if "새 시나리오" in item.value] == [
+        "새 시나리오 ‘머지\\~결과\\~본’을 저장했습니다. 목록 관리에서 불러올 수 있습니다."
+    ]
+    assert [item.value for item in app.warning if "원본(" in item.value] == [
+        warning.replace("~", "\\~")
+    ]
+    assert "머지~결과~본" in {item.scenario_name for item in repository.list_scenarios()}
+
+
 def _activate(app: AppTest, snapshot: ScenarioSnapshot) -> None:
     app.session_state[ACTIVE_PERSISTED_SCENARIO_ID_KEY] = snapshot.scenario.scenario_id
     app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] = snapshot.revision.revision_id

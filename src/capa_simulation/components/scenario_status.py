@@ -38,7 +38,7 @@ from capa_simulation.components.capacity_gate import revision_save_verdict
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
@@ -632,7 +632,7 @@ def _render_revision_save(
             active_scenario = ensure_active_scenario(reference_tables, reference_version)
             verdict = revision_save_verdict(reference_version, active_scenario, reference_tables)
             if not verdict.allowed:
-                st.error(verdict.message)
+                st.error(markdown_safe_tildes(verdict.message))
                 return
             revision_tables = revision_tables_for_save(active_scenario, reference_tables)
             # 활성화가 세션의 가상 제품 목록을 비우므로 그 전에 읽는다. 불러온 리비전의
@@ -678,8 +678,12 @@ def _render_revision_save(
         st.error(_revision_save_failure(written, bootstrap_error_message(exc)))
         return
     if verdict.message:
+        # 계산 검사 경고는 오류의 예시 키(편집한 칸 값)를 날로 담는다 — 물결표를 막는다.
         queue_flash(
-            SIDEBAR_FLASH_WARNING_KEY, verdict.message, kind="warning", icon=":material/warning:"
+            SIDEBAR_FLASH_WARNING_KEY,
+            markdown_safe_tildes(verdict.message),
+            kind="warning",
+            icon=":material/warning:",
         )
     _settle(
         "신규 리비전을 저장했습니다."

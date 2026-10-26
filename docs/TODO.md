@@ -1193,6 +1193,19 @@
     고른다(「공정소분류가」·「NEW-E2E-01을」). 설비 마스터 탭 시나리오 알약은 `literal_badge`(st.badge 가 `[`·`]` 를 스스로 막는다).
   관련: `components/write_guard.py`·`components/equipment_data_workspace.py`·`equipment_master_grid_assets/`·`components/page_guide.py`·
   `services/process_cutoff.py`·`components/availability_gap_panel.py`·`tests/test_equipment_save_double_press.py`
+- (2026-10-26) **시나리오 관리 편집표 좁은 칸·파생 저장·자동 갱신 탭의 물결표**(브라우저 E2E lens static, 권장대로, 사본 앱
+  8595 확인) — (1) 목록 표 「선택」「순서」·리비전 표 「고름」 은 44 → 72px, 「최신 리비전」 은 70 → 90px. 늘린 몫은 시나리오명
+  (300 → 262)·원천 코드(240 → 202)·메모(260 → 232)에서 덜어 칸 폭 합을 그대로 둔다 — 1280px 창 표 폭 945px 에 가로 스크롤이
+  새로 생기지 않는다(390px 창은 전처럼 표 안 가로 스크롤). 대안: 머리를 한 글자(「✓」「#」)로 줄이기 — 칸이 무엇인지 풍선을
+  열어야 안다. (2) 연도 Shift·월 머지 저장 알림의 이름은 `literal_markdown`, 같은 함수의 계산 검사 거절·경고는 물결표만 막는다.
+  (3) 자동 갱신 탭은 결함 자리(현재 공식버전 줄) 말고도 같은 갈래(키워드·주차 없음 거절·설정 저장 알림·지금 실행 결과·예약
+  캡션)를 함께 막았다. 대안: 결함 두 줄만 고치기 — 키워드·회차 사유의 물결표가 같은 꼴로 남는다. (4) (2) 의 계산 검사 글
+  (`capacity_gate` — 오류 예시 키는 편집한 칸 값)이 서는 다른 자리 — 지금 편집본 복제 거절·저장 뒤 경고, 공식 지정 거절,
+  사이드바 팝업 리비전 저장 거절·경고 — 도 물결표만 막았다. integ/1026 에 합치며 알림 칸이 `flash.render_flash` 한 길로
+  바뀐 자리(목록 관리·사이드바 팝업 경고, 공식 지정 경고)는 그리는 곳이 아니라 담는 곳(`queue_flash`)에서 막고, 자동 갱신
+  설정 저장 알림의 바뀐 내용도 담을 때 막는다(나머지는 `bootstrap_error_message`·`quoted` 길이 이미 막았다). 다음 배포 런북
+  7장 「Static」 줄에 넷을 더한다. 관련:
+  `components/scenario_management.py`·`scenario_transform.py`·`auto_official_update_tab.py`·`scenario_status.py`
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을
