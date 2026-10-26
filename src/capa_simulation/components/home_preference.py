@@ -35,6 +35,7 @@ from capa_simulation.components.profile_caption import (
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     held_profile_conflict,
@@ -866,6 +867,9 @@ def render_threshold_editor(
                     # 달 칸은 늘 float64 다 — 두 줄 모두 빈 달이 Arrow null 이면 남의 저장으로 첫
                     # 값이 들어온 회차에 데이터 서명이 바뀌어 폼 안의 보내지 않은 편집이 사라진다.
                 ).astype({label: "float64" for label in month_labels})
+                # 표 도구 막대가 바로 위 「기본 경고 기준(%)」 −/+ 를 덮지 않게 띄운다(AGENTS 9장
+                # 「표 도구 막대」 — 오른쪽 칸 숫자 칸이라 단추가 표 오른쪽 끝 위에 선다).
+                toolbar_clearance()
                 edited = st.data_editor(
                     table,
                     key=THRESHOLD_EDITOR_KEY,
