@@ -27,7 +27,11 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_main_cases import render_main_case_picker
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import (
+    literal_markdown,
+    markdown_safe_tildes,
+    quoted,
+)
 from capa_simulation.components.monthly_table_base import text_width_units
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
@@ -1490,7 +1494,8 @@ def render_key_process_field(
     )
     if condition_field(
         KEY_PROCESS_FIELD_LABEL,
-        f"{applied} · {shown_count}공정",
+        # 값 칸은 버튼 라벨(마크다운)이다 — 프리셋 이름의 「A~B」 가 지움선이 되지 않게 막는다.
+        f"{literal_markdown(applied)} · {shown_count}공정",
         slug="key_process",
         key=KEY_PROCESS_FIELD_KEY,
         icon=KEY_PROCESS_ICON,
@@ -1543,6 +1548,8 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     choice = st.radio(
         "프리셋",
         options=list(names),
+        # 선택지 글은 마크다운이다 — 값은 이름 그대로 두고 보이는 글만 막는다.
+        format_func=literal_markdown,
         captions=list(previews),
         key=KEY_PROCESS_PICK_KEY,
         label_visibility="collapsed",
@@ -1628,7 +1635,7 @@ def _render_key_process_editor(
             persist_state="session",
         )
         if names:
-            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 「{names[0]}」입니다.")
+            st.caption(f"기본 프리셋(새로 연 HOME 이 처음 보는 것)은 {quoted(names[0])}입니다.")
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         stale = _stale_key_process_target(seen, profile, target, current)
@@ -1710,7 +1717,7 @@ def _render_key_process_editor(
             st.session_state[KEY_PROCESS_PRESET_KEY] = new_name
         queue_flash(
             KEY_PROCESS_FLASH_KEY,
-            f"프리셋 「{new_name}」{object_particle(new_name)} 저장했습니다.",
+            f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
 
@@ -1737,7 +1744,7 @@ def _render_key_process_preset_actions(
             help="맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다.",
         )
         # 라벨에 이름을 넣어 프리셋마다 다른 칸이 되게 한다 — 다른 프리셋으로 옮기면 체크가 풀린다.
-        confirmed = st.checkbox(f"「{target}」 삭제 확인")
+        confirmed = st.checkbox(f"{quoted(target)} 삭제 확인")
         delete = st.button(
             "프리셋 삭제",
             icon=":material/delete:",
@@ -1751,10 +1758,10 @@ def _render_key_process_preset_actions(
             *(entry for entry in profile.presets if entry[0] == target),
             *(entry for entry in profile.presets if entry[0] != target),
         ]
-        message = f"「{target}」{object_particle(target)} 기본 프리셋으로 옮겼습니다."
+        message = f"{quoted(target)}{object_particle(target)} 기본 프리셋으로 옮겼습니다."
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
-        message = f"프리셋 「{target}」{object_particle(target)} 지웠습니다."
+        message = f"프리셋 {quoted(target)}{object_particle(target)} 지웠습니다."
     if stale is not None:
         _reject_key_process_write(stale, st.container())
         return
@@ -1804,7 +1811,8 @@ def _reject_key_process_write(exc: BaseException, notice: DeltaGenerator) -> Non
     충돌이 이 세션의 빠른 두 번 누름이면(`is_own_profile_save`) 거부 대신 저장을 다시 알린다.
     """
     if not isinstance(exc, ProfileVersionConflict):
-        notice.error(bootstrap_error_message(exc))
+        # 이름 중복 거부(「같은 이름의 프리셋이 이미 있습니다: …」)는 사람이 적은 이름을 싣는다.
+        notice.error(markdown_safe_tildes(bootstrap_error_message(exc)))
         return
     # 다음 회차가 최신 저장본을 그리게 비운다 — 앱 밖의 쓰기면 이 회차가 읽은 것도 낡았다.
     clear_global_key_process_cache()

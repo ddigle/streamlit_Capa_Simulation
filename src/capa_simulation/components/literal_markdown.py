@@ -35,3 +35,16 @@ def markdown_safe_tildes(text: object) -> str:
     이미 막힌 물결표(`\\~`, 예: `literal_markdown` 을 지난 이름)는 다시 막지 않는다.
     """
     return _BARE_TILDE.sub(r"\\~", str(text))
+
+
+def quoted(name: object, *, empty: str = "「」") -> str:
+    """`「name」` — 문구에 끼우는 이름을 낫표로 감싸고 `literal_markdown` 으로 막는다.
+
+    이름이 없거나(`None`) 빈 글이면 `empty` 를 돌려준다(「이 설비 시나리오」 처럼 이름 대신 쓸
+    말). 조사는 막기 전의 이름으로 고른다(`object_particle(name)`) — 막은 글의 `\\` 를 끝 글자로
+    읽지 않게.
+    """
+    text = "" if name is None else str(name)
+    if not text:
+        return empty
+    return f"「{literal_markdown(text)}」"
