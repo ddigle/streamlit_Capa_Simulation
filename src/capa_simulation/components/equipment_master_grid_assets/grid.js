@@ -831,6 +831,14 @@ function popover(S, name, label, build, wide) {
     stopKeys(event)
     close()
   })
+  // 초점이 패널·여는 단추 밖으로 나가면(Tab) 닫는다 — 열린 채 남으면 초점이 간 칸(오른쪽 호기 상세 등)을 덮고, 그 칸의 Esc
+  // 는 패널에 닿지 않는다. 받을 칸이 없는 나감(다시 지으며 지운 칸·창 밖)은 닫지 않는다. 초점은 옮겨 간 칸에 둔다.
+  wrap.addEventListener('focusout', (event) => {
+    const next = event.relatedTarget
+    if (S.pop !== name || !next || wrap.contains(next)) return
+    S.pop = null
+    paint()
+  })
   const paint = () => {
     const open = S.pop === name
     // 고르는 칸을 바꾸면 패널을 다시 짓는다 — 쓰던 칸(data-fk)에 초점을 돌려줘 키보드로 이어 쓴다.

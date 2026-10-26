@@ -846,3 +846,62 @@ def test_both_loader_popovers_close_on_escape_right_after_opening() -> None:
     assert result["repaint"] == {"focus": "조건 값 1", "open": True}
     assert result["toggle"] == {"closed": True, "stopped": True}
     assert result["closedToggle"] == {"stopped": False}
+
+
+# 가짜 DOM(위 러너의 앞부분 — FakeNode·fire·document)만 떼어 다른 단계를 붙인다.
+_FAKE_DOM = _FAKE_DOM_RUNNER[: _FAKE_DOM_RUNNER.index("const input = JSON.parse")]
+_MOUNT_LOADER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const mount = (data) => globalThis.__mount({
+  data, parentElement, setStateValue() {}, setTriggerValue() {},
+})
+const buttonOf = (label) => host.querySelectorAll('button').find(
+  (node) => node.textContent.startsWith(label))
+const results = {}
+"""
+
+
+def _fake_dom_source() -> str:
+    assert JS.count(_MOUNT_HEAD) == 1
+    return JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
+
+
+def test_a_loader_popover_closes_when_the_keyboard_leaves_it() -> None:
+    """「조건으로 불러오기 ▾」 를 연 채 Tab 으로 패널 밖(「일정 확인 필요」 단추)에 가면 패널이
+    열린 채 남아 초점 받은 오른쪽 호기 상세 칸을 덮었고, 그 칸의 Esc 로도 닫히지 않았다(2026-10-26
+    E2E). 초점이 패널·여는 단추 밖으로 나가면 닫는다 — 패널 안 칸끼리 옮김과 다시 지으며 지운
+    칸(받을 칸 없음)은 닫지 않는다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+mount(input.data)
+const toggle = buttonOf('조건으로 불러오기')
+const panel = toggle.parentNode.children[1]
+toggle.focus()
+toggle.click()
+const inside = document.activeElement
+const other = panel.querySelectorAll('select, input, button').find((node) => node !== inside)
+fire(inside, 'focusout', { relatedTarget: other })
+results.withinPanel = !panel.hidden
+fire(inside, 'focusout', { relatedTarget: null })
+results.repaint = !panel.hidden
+fire(inside, 'focusout', { relatedTarget: toggle })
+results.backToToggle = !panel.hidden
+const outside = buttonOf('일정 확인 필요')
+fire(inside, 'focusout', { relatedTarget: outside })
+results.left = { open: !panel.hidden, expanded: toggle.getAttribute('aria-expanded') }
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "withinPanel": True,
+        "repaint": True,
+        "backToToggle": True,
+        "left": {"open": False, "expanded": "false"},
+    }
