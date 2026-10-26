@@ -1202,7 +1202,7 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             _render_layout_warnings(frames, marks)
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"저장하지 못했습니다: {error}"))
-        note_key = _save_note_key()
+        note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
         # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을
         # 만들지 않으니 칸을 두지 않는다.
         fab_only = fab_only_layout and not others and not side_tables
@@ -1241,7 +1241,10 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
                 key=SAVE_BUTTON_KEY,
                 on_click=_save_space_layout,
                 args=(frames, note_key, equipment_database_path, equipment_session.save_basis()),
-                kwargs={"assumption": equipment_session.is_assumption},
+                kwargs={
+                    "assumption": equipment_session.is_assumption,
+                    "drawn": _save_generation(),
+                },
                 disabled=fab_save_blocked or layout_locked,
                 help=(
                     SAMPLE_SAVE_BLOCKED
@@ -1328,13 +1331,15 @@ def _save_space_layout(
     fields_prefix: str = SPACE_SAVE_FIELDS_PREFIX,
     *,
     assumption: bool = False,
+    drawn: int | None = None,
 ) -> None:
     """`배치 저장` 콜백. 편집본(세 표)과 미저장 층 배치를 한 번에 쓰고 알림을 남긴다. FAB 전체
     배치는 그 앞에 따로 쓴다(설비 리비전 없음). `frames` 가 None 이면 FAB 만 쓴다. 저장은 바뀐 쪽만
     — 세 표가 그대로면 층 값만 쓴다. `basis` 는 세션의 설비 시나리오다 — 공식이면 공식 배치에,
     가정이면 그 시나리오 새 리비전의 배치 차이에 간다(저장소가 역할로 가른다). `assumption` 이면
-    저장 칸이 가정 세션 꼴이다(함께 넣기 기본 끔 — Q1)."""
-    if note_key != _save_note_key():
+    저장 칸이 가정 세션 꼴이다(함께 넣기 기본 끔 — Q1). `drawn` 은 단추를 그린 회차의 저장
+    세대(`_save_generation`)다."""
+    if drawn is not None and drawn != _save_generation():
         # 그린 회차의 저장 세대(변경 메모 칸 번호)가 지금과 다르다 — 이 세션이 그 사이 이미
         # 저장한 옛 화면의 누름이다(같은 단추를 0.15~0.5초 간격으로 두 번 눌러 첫 콜백이 끝까지 돈
         # 뒤 닿음). 쓰지 않고 알리지도 않는다 — 첫 저장의 성공 알림은 담아 둔 칸이나 아래에 적은
@@ -1364,10 +1369,10 @@ def _save_space_layout(
     _queue_space_flash(message)
 
 
-def _save_note_key() -> str:
-    """지금 「변경 메모」 칸 key — 끝 번호가 Space 「배치 저장」 의 저장 세대다(저장에 성공할 때마다
-    오른다). 저장 단추는 그린 회차의 이 key 를 콜백 인자로 받아 지금과 견준다."""
-    return f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
+def _save_generation() -> int:
+    """Space 「배치 저장」 의 저장 세대(「변경 메모」 칸 key 끝 번호 — 저장에 성공할 때마다 오른다).
+    저장 단추는 그린 회차의 이 번호를 콜백 인자로 받아 지금과 견준다."""
+    return int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))
 
 
 def _stored_marks_for(
