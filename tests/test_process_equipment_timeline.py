@@ -953,7 +953,8 @@ def test_the_share_before_the_axis_counts_units_that_came_earlier() -> None:
     rows, _ = _new_unit_fixture()
     shares = new_unit_availability(_timeline(rows), since=date(2026, 3, 1))
     assert shares.units == ("EARLY1", "EQ2", "EQ1", "G1", "LATE1")
-    assert shares.in_axis == 3
+    # 조회기간에 몫이 있는 호기 — 축 뒤 LATE1 만 빠진다(EARLY1 은 축 앞에 들어왔지만 축 안에 가용).
+    assert shares.in_axis == 4
     assert shares.before == pytest.approx(1.0)
     assert [value for _, value in shares.months] == pytest.approx(
         [1 + 6 / 31, 2 + 15 / 30 + 1 / 6, 3 + 10 / 31]

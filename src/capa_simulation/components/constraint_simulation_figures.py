@@ -41,6 +41,11 @@
 −)은 감소 글자색(`DELTA_DECREASE`), 기간 안 달 머리는 옅은 칠(`header_hook`), 고른 달은 열
 테두리(`finish_hook`)다.
 
+보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
+대수를 「보유 · 신규 · 개조」 로 나눠 보인다(`dedicated_split_text`) — 계산표 공정 전체 구획에
+「새로 붙는 신규 설비」, 개조 구획에 「늘어난 전용 대수」·「보유 제약 설비로」·「신규 설비로」 행,
+배정 칸·표적 풍선에 구성 한 줄. 걸리지 않으면 1판 그림 그대로다.
+
 대수는 모두 환산 대수다(가용이 호기별 환산비를 곱한 값 — `services/constraint_simulation.py`).
 """
 
@@ -78,6 +83,7 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.constraint_simulation import (
+    ConstraintConditions,
     ConstraintMonth,
     ConstraintResult,
     ModificationWindow,
@@ -101,6 +107,7 @@ __all__ = [
     "chart_min_width_px",
     "chart_point_month",
     "day_position",
+    "dedicated_split_text",
     "end_label_anchors",
     "general_label",
     "month_name",
@@ -111,7 +118,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 4
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 5
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -141,6 +148,7 @@ ROW_IDS: Final = (
     "title:process",
     "required",
     "available",
+    "new_arrivals",
     "baseline_rate",
     "title:product",
     "constrained_demand",
@@ -148,6 +156,9 @@ ROW_IDS: Final = (
     "allocated",
     "constrained_rate",
     "title:modification",
+    "growth",
+    "owned_increment",
+    "new_increment",
     "increment",
     "downtime",
     "title:existing",
@@ -157,7 +168,8 @@ ROW_IDS: Final = (
     "rate_delta",
     "proportional_rate",
 )
-"""계산표 행 id 의 차례(개조·비중 행은 켬일 때만 선다)."""
+"""계산표 행 id 의 차례(개조·비중 행은 켬일 때만, 「새로 붙는 신규」·「늘어난
+전용」·「보유로」·「신규로」 는 그 옵션이 걸릴 때만 선다)."""
 
 
 @dataclass(frozen=True)
@@ -226,6 +238,20 @@ def signed_points(value: float | None) -> str:
 def month_name(month: int) -> str:
     """「27년 6월」 — 개조 몫을 적는 꼴."""
     return f"{month // 100 % 100:02d}년 {month % 100}월"
+
+
+def dedicated_split_text(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
+    """전용 대수의 구성 — 「전용 10대 = 보유 4 · 신규 3 · 개조 3」. 걸린 옵션의 몫만 적는다. 나눠
+    보이지 않는 조건(`splits_dedicated` 거짓)이나 전용 0 이면 빈 글자."""
+    if not conditions.splits_dedicated or row.dedicated <= 0:
+        return ""
+    parts: list[str] = []
+    if conditions.uses_owned_units:
+        parts.append(f"보유 {row.owned_dedicated}")
+    if conditions.uses_new_units:
+        parts.append(f"신규 {row.new_dedicated}")
+    parts.append(f"개조 {row.modified_dedicated}")
+    return f"전용 {row.dedicated}대 = {' · '.join(parts)}"
 
 
 def general_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
@@ -298,7 +324,7 @@ def _first_overlapped_month(window: ModificationWindow, result: ConstraintResult
     return window.month
 
 
-def _hit_hover(row: ConstraintMonth) -> str:
+def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
     parts = [
         f"<b>{html.escape(month_label(row.month))}</b>",
         f"기존 {rate_text(row.existing_rate)}",
@@ -307,6 +333,9 @@ def _hit_hover(row: ConstraintMonth) -> str:
     if row.in_period and row.constrained_rate is not None:
         parts.append(f"제약 {rate_text(row.constrained_rate)}")
     text = " · ".join(parts)
+    split = dedicated_split_text(row, conditions) if row.in_period else ""
+    if split:
+        text += f"<br>{html.escape(split)}"
     if row.downtime > 0:
         text += f"<br>개조 중 비가동 {MINUS}{units_text(row.downtime)}대"
     return text + "<br>누르면 이 달 계산"
@@ -397,7 +426,7 @@ def rate_figure(
             "base": [low] * count,
             "width": [1.0] * count,
             "marker": {"color": tokens.HIT_TARGET, "line": {"width": 0}},
-            "customdata": [[row.month, _hit_hover(row)] for row in rows],
+            "customdata": [[row.month, _hit_hover(row, result.conditions)] for row in rows],
             "hovertemplate": "%{customdata[1]}<extra></extra>",
             "showlegend": False,
             "name": "",
@@ -696,6 +725,7 @@ def build_sheet_canvas(
     if not axis:
         raise ValueError("월별 계산표의 달이 비었습니다.")
     target = labels.target_percent
+    conditions = result.conditions
     rows: list[Row] = [
         Row(
             "header",
@@ -712,6 +742,12 @@ def build_sheet_canvas(
         _row(
             "available", "가용대수 (개조 전)", rows_in, lambda row: Cell(units_text(row.available))
         ),
+    ]
+    if conditions.uses_new_units:
+        rows.append(
+            _row("new_arrivals", "새로 붙는 신규 설비 (기준일 이후)", rows_in, _arrivals_cell)
+        )
+    rows += [
         _row(
             "baseline_rate",
             "확보율 — 제약 없을 때",
@@ -730,7 +766,12 @@ def build_sheet_canvas(
             rows_in,
             lambda row: _need_cell(row, target),
         ),
-        _row("allocated", "배정 가용 (전용)", rows_in, _allocated_cell),
+        _row(
+            "allocated",
+            "배정 가용 (전용)",
+            rows_in,
+            lambda row: _allocated_cell(row, conditions),
+        ),
         _row(
             "constrained_rate",
             "확보율",
@@ -743,9 +784,36 @@ def build_sheet_canvas(
             ),
         ),
     ]
-    if result.conditions.modifies:
+    if conditions.modifies:
+        rows.append(title_row("modification", "개조", "그 달 W/D 일할 · 환산 대수"))
+        if conditions.splits_dedicated:
+            rows.append(
+                _row(
+                    "growth",
+                    "늘어난 전용 대수 (그 달)",
+                    rows_in,
+                    lambda row: _count_cell(row.growth, bold=True),
+                )
+            )
+        if conditions.uses_owned_units:
+            rows.append(
+                _row(
+                    "owned_increment",
+                    "보유 제약 설비로",
+                    rows_in,
+                    lambda row: _count_cell(row.owned_increment),
+                )
+            )
+        if conditions.uses_new_units:
+            rows.append(
+                _row(
+                    "new_increment",
+                    "신규 설비로 (개조 없음)",
+                    rows_in,
+                    lambda row: _count_cell(row.new_increment),
+                )
+            )
         rows += [
-            title_row("modification", "개조", "그 달 W/D 일할 · 환산 대수"),
             _row(
                 "increment",
                 "개조에 들어가는 대수 (그 달 몫)",
@@ -901,9 +969,11 @@ def _need_cell(row: ConstraintMonth, target: int) -> Cell:
     )
 
 
-def _allocated_cell(row: ConstraintMonth) -> Cell:
+def _allocated_cell(row: ConstraintMonth, conditions: ConstraintConditions) -> Cell:
     if not row.in_period:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 기간 밖")
+    split = dedicated_split_text(row, conditions)
+    tail = f"<br>{html.escape(split)}" if split else ""
     if row.short:
         return Cell(
             str(row.allocated),
@@ -911,14 +981,43 @@ def _allocated_cell(row: ConstraintMonth) -> Cell:
             fill=tokens.STATUS_SHORTAGE,
             hover=(
                 f"{_head(row)} · 가용이 모자라 필요 {row.dedicated}대 중 {row.allocated}대만 배정"
+                + tail
             ),
         )
-    note = (
-        f"이미 개조한 {row.dedicated}대는 전용으로 남습니다"
-        if row.dedicated > row.need
-        else "제약 확보율을 먼저 맞춘 정수 대수"
+    if row.dedicated > row.need:
+        note = (
+            f"전용 {row.dedicated}대는 기간 안에서 그대로 남습니다"
+            if split
+            else f"이미 개조한 {row.dedicated}대는 전용으로 남습니다"
+        )
+    else:
+        note = "제약 확보율을 먼저 맞춘 정수 대수"
+    return Cell(str(row.allocated), bold=True, hover=f"{_head(row)} · {note}{tail}")
+
+
+def _count_cell(value: int, *, bold: bool = False) -> Cell:
+    """정수 대수 칸 — 0 이면 빈칸."""
+    return Cell(str(value) if value > 0 else "", bold=bold and value > 0)
+
+
+def _arrivals_cell(row: ConstraintMonth) -> Cell:
+    """그 달 새로 붙는 신규 설비 — 몫 누적의 내림 차이. 쓰지 않은 몫은 기존 제품 몫이다."""
+    hover = (
+        f"{_head(row)} · 기준일 이후 신규 몫 {units_text(row.new_available)}대"
+        f" → 새로 붙는 {row.new_arrivals}대(누적 내림의 차이)"
     )
-    return Cell(str(row.allocated), bold=True, hover=f"{_head(row)} · {note}")
+    if row.new_arrivals > 0:
+        if not row.in_period:
+            hover += "<br>제약 기간 밖이라 기존 제품 몫 — 나중에 제약에 쓰려면 개조"
+        else:
+            hover += f"<br>제약에 개조 없이 {row.new_increment}대"
+            if row.unused_arrivals:
+                hover += f" · 기존 제품 몫 {row.unused_arrivals}대(나중에 제약에 쓰려면 개조)"
+    return Cell(
+        str(row.new_arrivals) if row.new_arrivals > 0 else "",
+        muted=row.new_arrivals == 0,
+        hover=hover,
+    )
 
 
 def _downtime_cell(row: ConstraintMonth) -> Cell:

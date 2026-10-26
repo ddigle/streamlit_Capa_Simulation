@@ -11,7 +11,10 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 접두다(`tests/test_session_key_collisions.py`).
 
 - **위젯 칸**(`persist_state="session"`) — 공정·제약 제품·제약 시작·제약 끝 상자, 「개조
-  필요」·「소요 비중대로 나눴을 때 함께 보기」 토글.
+  필요」·「신규 설비는 개조 없이」·「소요 비중대로 나눴을 때 함께 보기」 토글, 보유 제약 설비 숫자
+  칸(환산 대수 정수 — 미리 정할 버튼 값이 뜻이 없는 사실 값이라 D10 버튼을 두지 않는다)과 신규 설비
+  기준일 날짜 칸(2026-10-26 사용자 결정). 위젯 앞에서 칸이 없거나 틀린 꼴일 때만 심는다
+  (`seed_owned_units`·`seed_new_since`·`seed_toggle`).
 - **정본 칸**(위젯 아님) — 제약 확보율(정수 %)·기준 확보율(`None` = HOME 판정 기준, 아니면 %
   실수)·개조 기간(정수 일). 버튼과 직접 입력 칸 둘이 한 정본을 나눠
   쓴다(`components/preset_number_field.py`).
@@ -28,6 +31,7 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date, datetime
 from typing import Final, NamedTuple
 
 import streamlit as st
@@ -46,6 +50,9 @@ __all__ = [
     "CONSTRAINT_MOD_DAYS_KEY",
     "CONSTRAINT_MOD_DAYS_PILLS_KEY",
     "CONSTRAINT_MONTH_KEY",
+    "CONSTRAINT_NEW_SINCE_KEY",
+    "CONSTRAINT_NEW_UNITS_KEY",
+    "CONSTRAINT_OWNED_KEY",
     "CONSTRAINT_PERIOD_END_KEY",
     "CONSTRAINT_PERIOD_START_KEY",
     "CONSTRAINT_PROCESS_KEY",
@@ -61,6 +68,8 @@ __all__ = [
     "CONSTRAINT_VIEW_FRAGMENT_KEY",
     "DEFAULT_MODIFY",
     "DEFAULT_MOD_DAYS",
+    "DEFAULT_NEW_UNITS",
+    "DEFAULT_OWNED_UNITS",
     "DEFAULT_PROPORTIONAL",
     "DEFAULT_TARGET_PERCENT",
     "GENERAL_PRESETS",
@@ -71,6 +80,8 @@ __all__ = [
     "constraint_query_params",
     "follow_period_end",
     "follow_period_start",
+    "seed_new_since",
+    "seed_owned_units",
     "seed_toggle",
     "settle_period",
     "take_constraint_process_request",
@@ -82,6 +93,11 @@ CONSTRAINT_PRODUCT_KEY: Final = "constraint_sim_product"
 CONSTRAINT_PERIOD_START_KEY: Final = "constraint_sim_period_start"
 CONSTRAINT_PERIOD_END_KEY: Final = "constraint_sim_period_end"
 CONSTRAINT_MODIFY_KEY: Final = "constraint_sim_modify"
+# 개조 묶음의 2판 옵션(개조 끔이면 잠긴다) — 보유 제약 설비(숫자 칸)·신규 설비는 개조 없이(토글)·그
+# 기준일(날짜 칸).
+CONSTRAINT_OWNED_KEY: Final = "constraint_sim_owned_units"
+CONSTRAINT_NEW_UNITS_KEY: Final = "constraint_sim_new_units"
+CONSTRAINT_NEW_SINCE_KEY: Final = "constraint_sim_new_since"
 # 본문 보기 전환(프래그먼트 안) — 하위 보기 전환은 본문이다(AGENTS 9장).
 CONSTRAINT_PROPORTIONAL_KEY: Final = "constraint_sim_proportional"
 
@@ -123,6 +139,9 @@ MOD_DAY_PRESETS: Final = (15, 30, 45, 60, 90)
 DEFAULT_TARGET_PERCENT: Final = 120
 DEFAULT_MOD_DAYS: Final = 30
 DEFAULT_MODIFY: Final = True
+# 2판 옵션은 꺼 둔다 — 1판 결과가 조용히 바뀌지 않게(사용자 「옵션으로」). 기준일 기본값은 오늘이다.
+DEFAULT_OWNED_UNITS: Final = 0
+DEFAULT_NEW_UNITS: Final = False
 DEFAULT_PROPORTIONAL: Final = True
 # 제품별 소요 표의 행 상한 — 「그 밖」 묶음이 생기지 않게 크게 둔다(그 표는 행을 다 더하면 공정
 # 소요다).
@@ -171,6 +190,22 @@ def seed_toggle(key: str, default: bool) -> None:
     """토글 칸이 없을 때만 기본값을 심는다(위젯에 `value=` 를 주지 않는다 — AGENTS 9장)."""
     if not isinstance(st.session_state.get(key), bool):
         st.session_state[key] = bool(default)
+
+
+def seed_owned_units(maximum: int) -> None:
+    """보유 제약 설비 칸이 0~`maximum` 정수가 아니면 기본값(0)을 심는다 — 범위 밖 옛 값이 숫자 칸
+    예외가 되지 않게. 같은 값은 다시 적지 않는다."""
+    value = st.session_state.get(CONSTRAINT_OWNED_KEY)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        st.session_state[CONSTRAINT_OWNED_KEY] = DEFAULT_OWNED_UNITS
+
+
+def seed_new_since(today: date) -> None:
+    """기준일 칸이 날짜가 아니면 오늘을 심는다. 자정을 넘긴 세션은 그날 값 그대로다(이 세션만의
+    가정 — 칸에 보이는 값이 곧 계산 값)."""
+    value = st.session_state.get(CONSTRAINT_NEW_SINCE_KEY)
+    if not isinstance(value, date) or isinstance(value, datetime):
+        st.session_state[CONSTRAINT_NEW_SINCE_KEY] = today
 
 
 # ------------------------------------------------------------------ 제약 기간 상자 둘

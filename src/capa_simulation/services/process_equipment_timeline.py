@@ -734,7 +734,7 @@ class NewUnitAvailability(NamedTuple):
     """신규로 본 설비키(③ 의 「호기」) — `new_units` 차례(기여 시작 → 호기 번호)."""
 
     in_axis: int
-    """그중 기여 시작이 축 안인 호기 수(축 뒤 호기는 몫이 0 이다)."""
+    """그중 축의 어느 달에 몫이 있는 호기 수(축 뒤 호기·축 앞에 정지·반출된 호기는 몫이 0 이다)."""
 
     before: float
     """축 첫 달 바로 앞 달의 몫 — 그 달보다 먼저 들어온 신규를 첫 달 몫으로 세지 않게."""
@@ -761,13 +761,11 @@ def new_unit_availability(
     """
     starts: dict[str, date] = {}
     units: list[str] = []
-    in_axis = 0
     for row in _records(timeline.new_units):
         start = _as_date(row["기여 시작"])
         if start is None or start < since:
             continue
         units.append(str(row["호기"]))
-        in_axis += int(bool(row["축 안"]))
         pairs = row["모듈별 Qual"]
         if isinstance(pairs, tuple) and pairs:
             for name, qual in pairs:
@@ -778,12 +776,17 @@ def new_unit_availability(
     frame = timeline.unit_months
     chosen = frame.loc[frame[EQUIPMENT_ID_COLUMN].astype(str).isin(set(starts)).to_numpy()]
     totals: dict[int, float] = {}
-    for month, value in zip(chosen["생산계획년월"], chosen["비가동 없음 환산대수"], strict=True):
+    present: set[str] = set()
+    for month, key, value in zip(
+        chosen["생산계획년월"], chosen["설비키"], chosen["비가동 없음 환산대수"], strict=True
+    ):
         totals[int(month)] = totals.get(int(month), 0.0) + float(value)
+        if float(value) > 0:
+            present.add(str(key))
     return NewUnitAvailability(
         since=since,
         units=tuple(units),
-        in_axis=in_axis,
+        in_axis=sum(1 for unit in units if unit in present),
         before=_share_before_axis(timeline, chosen, starts),
         months=tuple((month, _tidy(totals.get(month, 0.0))) for month in timeline.months),
     )

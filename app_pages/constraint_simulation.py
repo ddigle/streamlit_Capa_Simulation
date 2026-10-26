@@ -28,6 +28,11 @@
 
 본문은 머리 한 줄 → 출처 띠 → 요약 넷(프래그먼트 밖) → 본문
 프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
+
+개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 설비」 숫자 칸(환산
+대수, 기본 0)과 「신규 설비는 개조 없이」 토글 + 기준일(기본 오늘). 신규 몫 A_new(m) 은 새 캐시 없이
+공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(`get_process_equipment_timeline` — 같은 키)을 기준일로 거른
+값이고(`new_unit_availability`), 옵션을 켠 회차에만 받는다. 기준일은 어떤 캐시 키에도 들지 않는다.
 """
 
 from datetime import date
@@ -65,6 +70,9 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MOD_DAYS_KEY,
     CONSTRAINT_MOD_DAYS_PILLS_KEY,
     CONSTRAINT_MODIFY_KEY,
+    CONSTRAINT_NEW_SINCE_KEY,
+    CONSTRAINT_NEW_UNITS_KEY,
+    CONSTRAINT_OWNED_KEY,
     CONSTRAINT_PERIOD_END_KEY,
     CONSTRAINT_PERIOD_START_KEY,
     CONSTRAINT_PROCESS_KEY,
@@ -75,12 +83,15 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_TARGET_PILLS_KEY,
     DEFAULT_MOD_DAYS,
     DEFAULT_MODIFY,
+    DEFAULT_NEW_UNITS,
     DEFAULT_TARGET_PERCENT,
     GENERAL_PRESETS,
     MOD_DAY_PRESETS,
     TARGET_PRESETS,
     follow_period_end,
     follow_period_start,
+    seed_new_since,
+    seed_owned_units,
     seed_toggle,
     settle_period,
     take_constraint_process_request,
@@ -108,6 +119,7 @@ from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
     MODIFICATION_DAYS_RANGE,
+    OWNED_UNITS_RANGE,
     TARGET_RANGE,
     ConstraintConditions,
     ConstraintResult,
@@ -119,13 +131,17 @@ from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
 from capa_simulation.services.process_equipment_timeline import (
     DynamicReadiness,
+    NewUnitAvailability,
     dynamic_readiness,
+    new_unit_availability,
 )
 from capa_simulation.services.required_shortening import target_from_thresholds
 from capa_simulation.services.securement_threshold import securement_threshold_caption
 from capa_simulation.services.simulation_cache import (
+    get_process_equipment_timeline,
     get_process_product_demand,
     load_required_shortening_for_target,
+    process_timeline_key_from_shortening,
     required_shortening_cache_key,
     required_shortening_target_cache_key,
     scenario_required_equipment,
@@ -150,6 +166,17 @@ SESSION_NOTE = (
     "확보율·HOME·필요 단축 일정은 그대로입니다."
 )
 AVAILABLE_EQUIPMENT_PAGE = AVAILABLE_EQUIPMENT_STATUS.path
+OWNED_HELP = (
+    "이미 제약 제품을 돌릴 수 있게 개조·Qual 된 설비(환산 대수). 설비 일정 기준 가용 안에 "
+    "든다고 보고, 제약 몫이 늘 때 먼저 써 그만큼 개조하지 않습니다. 쓰지 않는 동안과 기간 밖에는 "
+    "기존 제품에 씁니다. 「신규 설비는 개조 없이」 에 드는 호기는 빼고 적으세요(두 번 셉니다)."
+)
+NEW_UNITS_HELP = (
+    "기여 시작(Qual 다음 날)이 기준일 이후인 신규 호기(공정 Capa 상세 ③ 과 같은 날짜)는 셋업 때 "
+    "제약 제품으로 Qual 한다고 보고, 들어오는 그 달 제약 몫 증가분까지 개조 없이 씁니다. 그보다 "
+    "많은 신규와 기간 전에 들어온 신규는 기존 제품에 쓰여 그 뒤로는 일반 설비와 같습니다(제약에 "
+    "쓰려면 개조)."
+)
 
 
 # 주소 `?process=` 는 **무엇보다 먼저** 꺼내고 그 키 하나만 지운다 — 부트스트랩이 멈춘 회차에도
@@ -403,6 +430,40 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         preset_label=lambda value: f"{value:g}일" if value is not None else "",
         disabled=not modify,
     )
+    # 2판 옵션 — 늘 그리고 개조 끔이면 잠근다(갈래마다 카드 모양이 같다). 보유 대수는 사람마다 아는
+    # 사실 값이라 D10 버튼을 두지 않는다.
+    seed_owned_units(OWNED_UNITS_RANGE[1])
+    owned_units = st.number_input(
+        "보유 제약 설비 (환산 대수)",
+        min_value=OWNED_UNITS_RANGE[0],
+        max_value=OWNED_UNITS_RANGE[1],
+        step=1,
+        key=CONSTRAINT_OWNED_KEY,
+        persist_state="session",
+        disabled=not modify,
+        help=OWNED_HELP,
+    )
+    seed_toggle(CONSTRAINT_NEW_UNITS_KEY, DEFAULT_NEW_UNITS)
+    new_units_on = st.toggle(
+        "신규 설비는 개조 없이",
+        key=CONSTRAINT_NEW_UNITS_KEY,
+        persist_state="session",
+        disabled=not modify,
+        help=NEW_UNITS_HELP,
+    )
+    seed_new_since(today)
+    new_since = st.date_input(
+        "신규 기준일",
+        key=CONSTRAINT_NEW_SINCE_KEY,
+        persist_state="session",
+        format="YYYY-MM-DD",
+        disabled=not (modify and new_units_on),
+        help="기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다.",
+    )
+    # 개조 끔이면 두 옵션은 걸리지 않는다 — 결과·머리에 걸리지 않은 조건이 남지 않게 넘기지 않는다.
+    owned_value = int(owned_units) if modify and isinstance(owned_units, int) else 0
+    new_unit_since = new_since if modify and new_units_on and isinstance(new_since, date) else None
+    new_units_slot = st.container()
     cutoff_slot = st.container()
 
 
@@ -517,6 +578,19 @@ try:
             reference_tables=context.reference_tables,
         ),
     )
+    # 신규 몫 — 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른다. 켠 회차에만.
+    new_shares: NewUnitAvailability | None = None
+    if new_unit_since is not None:
+        new_shares = new_unit_availability(
+            get_process_equipment_timeline(
+                process_timeline_key_from_shortening(shortening_key, process),
+                equipment,
+                downtime,
+                baseline,
+                cutoff,
+            ),
+            since=new_unit_since,
+        )
 except BOOTSTRAP_ERRORS as exc:
     render_header(
         process, f"**{literal_markdown(process_label)}** :blue-badge[설비 일정 없음: 계산 오류]"
@@ -544,6 +618,18 @@ if process not in plan.processes:
     st.stop()
 
 
+def new_units_caption(shares: NewUnitAvailability) -> str:
+    """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름."""
+    if not shares.units:
+        return "기준일 이후 기여를 시작하는 신규 설비가 없습니다."
+    names = ", ".join(literal_markdown(name) for name in shares.units[:4])
+    more = f" 외 {len(shares.units) - 4}대" if len(shares.units) > 4 else ""
+    return (
+        f"기준일 이후 기여 시작 신규 설비 {len(shares.units)}대(조회기간에 가용 "
+        f"{shares.in_axis}대) · {names}{more}"
+    )
+
+
 def general_target(month: int) -> float:
     """그 달 기준 확보율(비율) — HOME 이면 공용 판정 기준의 그 달 값, 아니면 고른 스칼라."""
     if general_value is None:
@@ -562,7 +648,12 @@ conditions = ConstraintConditions(
         else None
     ),
     cutoff_days=int(readiness.cutoff_days),
+    owned_units=owned_value,
+    new_unit_since=new_unit_since,
 )
+with new_units_slot:
+    if new_shares is not None:
+        st.caption(new_units_caption(new_shares))
 try:
     month_inputs = constraint_month_inputs(
         plan.at(target_level).process_months,
@@ -571,6 +662,8 @@ try:
         product=product,
         months=months,
         general_target=general_target,
+        new_units=new_shares.by_month() if new_shares is not None else None,
+        new_units_before=new_shares.before if new_shares is not None else 0.0,
     )
     result: ConstraintResult = simulate_constraint(month_inputs, conditions)
 except (KeyError, ValueError) as exc:
@@ -592,6 +685,10 @@ period_text = (
     else f"{month_label(period.start)}–{month_label(period.end)}"
 )
 modification_text = f"개조 {conditions.modification_days}일" if conditions.modifies else "개조 없음"
+if conditions.uses_owned_units:
+    modification_text += f" · 보유 제약 {conditions.owned_units}대"
+if conditions.uses_new_units and new_unit_since is not None:
+    modification_text += f" · 신규 개조 없이({new_unit_since.isoformat()}~)"
 render_header(
     process,
     f"**{literal_markdown(process_label)}** · {literal_markdown(product)} · {period_text} · "
@@ -619,6 +716,11 @@ band = (
 upeh_percent = st.session_state.get(UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT)
 if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
     band += " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
+if new_shares is not None:
+    band += (
+        f" · 신규 = 기여 시작 {new_shares.since.isoformat()} 이후 호기 {len(new_shares.units)}대"
+        "(공정 Capa 상세 ③ 과 같은 날짜)"
+    )
 st.caption(band)
 if period.moved:
     st.info("조회기간이 바뀌어 제약 기간을 보이는 달로 옮겼습니다.", icon=":material/event_busy:")

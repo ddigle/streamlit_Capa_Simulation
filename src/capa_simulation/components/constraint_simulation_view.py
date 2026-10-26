@@ -32,6 +32,11 @@
 캐시가 아니다). 키는 그림 모양 버전·테마·계산 결과(값으로 같다)·화면 글자·고른 달·비중 토글·세대다.
 
 요약 넷(`render_constraint_kpis`)은 고른 달·보기와 무관해 프래그먼트 밖에서 페이지가 그린다.
+
+보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
+대수를 「보유 · 신규 · 개조」 로 나눠 적는다 — 2·3단계 회색 줄, 요약 넷 「개조 대수」(값 = 실제로
+개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 일정 카드 머리 한 줄(`free_units_line`). 걸리지
+않으면 1판 글 그대로다.
 """
 
 from __future__ import annotations
@@ -53,6 +58,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     build_sheet_canvas,
     chart_min_width_px,
     chart_point_month,
+    dedicated_split_text,
     general_label,
     month_name,
     rate_figure,
@@ -88,6 +94,7 @@ from capa_simulation.constraint_simulation_state import (
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.constraint_simulation import (
+    ConstraintConditions,
     ConstraintMonth,
     ConstraintResult,
     ModificationWindow,
@@ -104,6 +111,7 @@ __all__ = [
     "MonthStep",
     "MonthSteps",
     "default_month",
+    "free_units_line",
     "month_steps",
     "overdrawn_lines",
     "pick_chart_month",
@@ -144,6 +152,7 @@ SCHEDULE_DEFINITION: Final = (
     "잡습니다. 그동안 그 대수는 공정 전체 가용대수에서 빠집니다(달마다 W/D 일수 비율)."
 )
 NO_WINDOWS_TEXT: Final = "개조가 필요한 달이 없습니다."
+FREE_ONLY_TEXT: Final = "늘어난 전용 대수를 모두 보유·신규 설비로 채워 개조가 없습니다."
 MODIFY_OFF_TEXT: Final = "개조를 켜면 제약 제품에 떼어 줄 대수만큼 개조 비가동이 잡힙니다."
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
@@ -368,12 +377,21 @@ def month_steps(
         body2 = f"{product} 소요 없음 — 전용 **{row.dedicated}대** 유지"
     else:
         body2 = "제약 제품에 따로 떼는 대수 없음"
+    conditions = result.conditions
+    # 구성 글은 수와 정해진 낱말뿐이라 escape 하지 않는다(「=」 가 「\=」 로 보이지 않게).
+    split = dedicated_split_text(row, conditions) if row.in_period else ""
     if row.in_period and modifies and row.dedicated > row.need:
-        note2 = f"이미 개조한 {row.dedicated}대는 전용으로 남습니다(줄여도 되돌리지 않음)."
+        note2 = (
+            f"전용 {row.dedicated}대는 기간 안에서 그대로 남습니다(줄여도 되돌리지 않음)."
+            if split
+            else f"이미 개조한 {row.dedicated}대는 전용으로 남습니다(줄여도 되돌리지 않음)."
+        )
     elif row.in_period and row.constrained_demand > 0:
         note2 = "제약 확보율을 먼저 맞추도록 정수로 올립니다."
     else:
         note2 = ""
+    if split:
+        note2 = f"{split} · {note2}" if note2 else split
     step2 = MonthStep(body2, note2)
 
     if not modifies:
@@ -393,6 +411,14 @@ def month_steps(
             notes.append(f"이 달 몫 {row.increment}대는 앞 달에 개조를 마칩니다.")
         if row.overdrawn:
             notes.append("비가동이 가용보다 많아 쓸 수 있는 가용은 0 입니다.")
+        growth_note = _growth_note(row, conditions)
+        if growth_note:
+            notes.insert(0, growth_note)
+        if conditions.uses_new_units and row.unused_arrivals > 0:
+            notes.append(
+                f"새로 붙은 신규 {row.new_arrivals}대 중 {row.unused_arrivals}대는 기존 제품 몫"
+                "입니다(나중에 제약에 쓰려면 개조)."
+            )
         step3 = MonthStep(body3, " · ".join(notes))
 
     available_shown = units_text(row.existing_available)
@@ -475,6 +501,38 @@ def month_steps(
         verdict_secure=row.existing_secure,
         proportional=proportional,
     )
+
+
+def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
+    """3단계 회색 줄 머리 — 「이 달 늘어난 전용 6대 — 보유 제약 설비 4대 · 신규 설비 0대는 개조
+    없이, 개조 2대」. 나눠 보이지 않거나 늘어난 대수가 없으면 빈 글자."""
+    if not conditions.splits_dedicated or row.growth <= 0:
+        return ""
+    free: list[str] = []
+    if conditions.uses_owned_units:
+        free.append(f"보유 제약 설비 {row.owned_increment}대")
+    if conditions.uses_new_units:
+        free.append(f"신규 설비 {row.new_increment}대")
+    return (
+        f"이 달 늘어난 전용 {row.growth}대 — {' · '.join(free)}는 개조 없이, 개조 {row.increment}대"
+    )
+
+
+def free_units_line(result: ConstraintResult) -> str:
+    """개조 일정 카드 머리 한 줄 — 개조 없이 쓰는 전용(보유·신규). 나눠 보이지 않으면 빈 글자."""
+    conditions = result.conditions
+    if not conditions.splits_dedicated:
+        return ""
+    kpis = result.kpis
+    parts: list[str] = []
+    if conditions.uses_owned_units:
+        parts.append(f"보유 제약 설비 {kpis.owned_used}대(입력 {conditions.owned_units}대 중)")
+    if conditions.uses_new_units and conditions.new_unit_since is not None:
+        parts.append(
+            f"신규 설비 {kpis.new_used}대(기준일 {conditions.new_unit_since.isoformat()} 이후 기여 "
+            "시작 · 들어온 달 몫만)"
+        )
+    return "개조 없이 쓰는 전용 — " + " · ".join(parts)
 
 
 def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> list[str]:
@@ -584,8 +642,28 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             ),
         )
 
+        splits = result.conditions.splits_dedicated
         if kpis.max_dedicated is None:
             value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
+        elif splits and kpis.max_dedicated > 0:
+            # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다.
+            modified = kpis.modified_units or 0
+            pieces = []
+            if result.conditions.uses_owned_units:
+                pieces.append(f"보유 {kpis.owned_used}")
+            if result.conditions.uses_new_units:
+                pieces.append(f"신규 {kpis.new_used}")
+            pieces.append(f"개조 {modified}")
+            value4 = f"{modified}대"
+            caption4 = f"전용 최대 {kpis.max_dedicated}대 = {' · '.join(pieces)}"
+            if kpis.window_count == 0:
+                caption4 += " — 개조 비가동 없음"
+            else:
+                caption4 += f"({kpis.window_count}번)" + (
+                    f" · 첫 비가동 {kpis.first_downtime_day.isoformat()}"
+                    if kpis.first_downtime_day is not None
+                    else ""
+                )
         elif kpis.window_count == 0:
             # 제약 기간에 제약 제품 소요가 없으면 떼어 줄 대수도 개조 창도 없다 — 「0번에 나눠
             # 개조」 가 아니라 그 뜻을 바로 적는다(값 「0대」 는 명세 2-6 「max pool 대」 그대로).
@@ -606,6 +684,12 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
                 "제약 기간 안에서 제약 제품 전용으로 개조하는 가장 큰 대수(환산 대수)입니다 — "
                 "늘어나는 달마다 늘어난 대수만 그 달 앞에 새로 개조하고, 기간 안에서는 줄이지 "
                 "않습니다."
+                + (
+                    " 보유 제약 설비·그 달 들어온 신규 설비는 개조 없이 먼저 쓰고 남는 몫만 "
+                    "개조합니다 — 값은 실제로 개조하는 대수, 회색 줄은 전용 최대의 구성입니다."
+                    if splits
+                    else ""
+                )
             ),
         )
 
@@ -785,10 +869,14 @@ def _render_schedule(view: ConstraintView) -> None:
     with st.container(border=True, key=SCHEDULE_CARD_KEY):
         st.markdown("**개조 일정**")
         with st.container():
+            free_line = free_units_line(result)
+            if free_line:
+                st.caption(free_line)
             if not result.conditions.modifies:
                 st.caption(MODIFY_OFF_TEXT)
             elif not result.windows:
-                st.caption(NO_WINDOWS_TEXT)
+                freed = result.kpis.owned_used + result.kpis.new_used
+                st.caption(FREE_ONLY_TEXT if free_line and freed > 0 else NO_WINDOWS_TEXT)
             for line in schedule_lines(result.windows, today=view.today):
                 st.markdown(line)
             if result.starts_before_range:

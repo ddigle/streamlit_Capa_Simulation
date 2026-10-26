@@ -64,8 +64,8 @@ def _windows(result: ConstraintResult) -> list[tuple[int, int]]:
 
 
 def _assert_conserved(result: ConstraintResult) -> None:
-    """개조 켬이면 달마다 구성 합 = 전용, 늘어난 대수 = pool − 앞 달 pool, 창 대수 합 = 개조 대수.
-    """
+    """개조 켬이면 달마다 구성 합 = 전용, 늘어난 대수 = pool − 앞 달 pool, 창 대수 합 = 개조
+    대수다."""
     previous_pool, previous_inside = 0, False
     for row in result.months:
         carried = previous_pool if row.in_period and previous_inside else 0
@@ -84,8 +84,8 @@ def _assert_conserved(result: ConstraintResult) -> None:
 
 
 def test_the_defaults_leave_every_value_of_the_first_version() -> None:
-    """보유 0 · 신규 끔이면 결과가 1판과 같다 — 달마다 신규 대수가 실려 와도 끈 옵션은 보지 않는다.
-    """
+    """보유 0 · 신규 끔이면 결과가 1판과 같다 — 달마다 신규 대수가 실려 와도 끈 옵션은 보지
+    않는다."""
     plain = _run()
     carried = simulate_constraint(_with_arrivals({202706: 4, 202707: 2}), CONDITIONS)
     assert carried == plain
@@ -165,8 +165,8 @@ def test_six_owned_units_clear_may_and_start_the_impact_in_june() -> None:
 
 
 def test_owned_units_left_over_are_used_when_the_need_grows_later() -> None:
-    """보유 7 — 6월 6대를 보유로 쓰고 남은 1대가 7월 증가 2대 중 1대를 덮는다(남는 동안은 기존 몫).
-    """
+    """보유 7 — 6월 6대를 보유로 쓰고 남은 1대가 7월 증가 2대 중 1대를 덮는다(남는 동안은
+    기존 몫)."""
     result = simulate_constraint(_inputs(), replace(CONDITIONS, owned_units=7))
 
     assert _windows(result) == [(202707, 1), (202708, 1), (202709, 1), (202711, 1)]
