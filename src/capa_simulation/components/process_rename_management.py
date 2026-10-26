@@ -22,11 +22,17 @@ from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.write_guard import (
+    SEEN_MISSING_MESSAGE,
     held_profile_conflict,
-    is_own_profile_save,
+    is_own_save,
     note_profile_conflict,
+    own_save_marks,
     profile_conflict_marks,
-    profile_save_marks,
+    queue_refusal,
+    remember_own_save,
+    remember_seen,
+    seen,
+    take_refusal,
 )
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
@@ -53,7 +59,7 @@ CLIPBOARD_CONFIRM_KEY = "admin_area_process_rename_clipboard_confirm"
 EDITOR_KEY = "admin_area_process_rename_editor"
 # 직접 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다.
 BASE_VERSION_KEY = "admin_area_process_rename_base_version"
-# 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+# 이 세션이 한 직접 편집 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 PROCESS_RENAME_SAVE_NAME = "admin_area_process_rename"
 PROCESS_RENAME_SAVED_MESSAGE = "공정 표시명을 공용 설정으로 저장했습니다."
 
@@ -188,7 +194,7 @@ def _render_direct_editor(
     세션(`BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가
     거부한다(그대로 쓰면 그 사람이 넣은 표시명을 모르는 채 덮는다)."""
     current = profile.rules
-    submitted_base = st.session_state.get(BASE_VERSION_KEY)
+    submitted_base = seen(BASE_VERSION_KEY)
     st.markdown("#### 직접 편집")
     if available_processes:
         with st.expander(f"보유 공정 {len(available_processes):,}개", icon=":material/list:"):
@@ -229,21 +235,28 @@ def _render_direct_editor(
             },
             key=EDITOR_KEY,
         )
+    refused = take_refusal(PROCESS_RENAME_SAVE_NAME)
+    if refused is not None:
+        st.error(refused)
     if not submitted:
-        st.session_state[BASE_VERSION_KEY] = profile.version
+        # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
+        # (write_guard).
+        remember_seen(BASE_VERSION_KEY, profile.version)
         return
-    expected_version = submitted_base if isinstance(submitted_base, int) else profile.version
     # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
-    save_marks = profile_save_marks()
+    save_marks = own_save_marks()
     conflict_marks = profile_conflict_marks()
     held = held_profile_conflict(conflict_marks, PROCESS_RENAME_SAVE_NAME)
-    # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-    st.session_state[BASE_VERSION_KEY] = profile.version
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
         # 알린다(write_guard).
         st.error(held)
         return
+    if not isinstance(submitted_base, int):
+        # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
+        queue_refusal(PROCESS_RENAME_SAVE_NAME, SEEN_MISSING_MESSAGE)
+        st.rerun()
+    expected_version = submitted_base
     try:
         revised = drop_blank_process_rename_rows(
             pd.DataFrame(edited, columns=list(PROCESS_RENAME_COLUMNS))
@@ -255,24 +268,22 @@ def _render_direct_editor(
             expected_version=expected_version,
         )
     except ProfileVersionConflict as exc:
-        own = is_own_profile_save(PROCESS_RENAME_SAVE_NAME, exc.expected, exc.stored, save_marks)
-        if not own:
-            note_profile_conflict(
-                conflict_marks, PROCESS_RENAME_SAVE_NAME, bootstrap_error_message(exc)
-            )
-        # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
-        # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
+        # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을 그리게
+        # 캐시를 비운다. 이 회차는 본 version 을 올리지 않는다 — 다음 회차(제출 아님)가 최신을
+        # 그리며 적는다.
         clear_global_process_rename_cache()
-        st.session_state.pop(BASE_VERSION_KEY, None)
-        if own:
+        if is_own_save(PROCESS_RENAME_SAVE_NAME, exc.expected, exc.stored, save_marks):
             # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
             queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
-            st.rerun()
-        st.error(bootstrap_error_message(exc))
+        else:
+            message = bootstrap_error_message(exc)
+            note_profile_conflict(conflict_marks, PROCESS_RENAME_SAVE_NAME, message)
+            queue_refusal(PROCESS_RENAME_SAVE_NAME, message)
+        st.rerun()
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))
     else:
-        save_marks[PROCESS_RENAME_SAVE_NAME] = (expected_version, saved.version)
+        remember_own_save(PROCESS_RENAME_SAVE_NAME, expected_version, saved.version, save_marks)
         queue_flash("process_rename_flash", PROCESS_RENAME_SAVED_MESSAGE)
         st.rerun()
 

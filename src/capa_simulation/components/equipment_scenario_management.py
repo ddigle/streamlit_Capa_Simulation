@@ -37,7 +37,9 @@ id 키 캐시에서 받는다 — 이 구획을 그리는 회차에만 읽는다
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 
 import pandas as pd
 import streamlit as st
@@ -46,8 +48,10 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
+from capa_simulation.components import write_guard
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
+    equipment_write_token,
     has_unsaved_equipment_edits,
     schedule_revision_title,
 )
@@ -68,6 +72,14 @@ from capa_simulation.components.widget_generation import (
     seed_field,
     widget_key,
     write_once_value,
+)
+from capa_simulation.components.write_guard import (
+    SEEN_MISSING_MESSAGE,
+    is_own_save,
+    own_save_marks,
+    remember_own_save,
+    remember_seen,
+    seen,
 )
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
@@ -186,6 +198,13 @@ PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 # 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신이 아닙니다」 로 말없이 발행하지
 # 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
+# 구획 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<시나리오·리비전 id>`). 빠른
+# 두 번 누름의 둘째가 받는 「다른 사용자가 먼저」 를 제 저장으로 알아본다.
+RESTORE_SAVE_NAME = "equipment_scenario_restore"
+CLEAR_LAYOUT_SAVE_NAME = "equipment_scenario_clear_layout"
+PUBLISH_SAVE_NAME = "equipment_scenario_publish"
+REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
+SCENARIO_NAME_SAVE_NAME = "equipment_scenario_name"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
 CLEAR_LAYOUT_BY_KEY = "equipment_scenario_manage_clear_layout_by_v1"
 CLEAR_LAYOUT_NOTE_KEY = "equipment_scenario_manage_clear_layout_note_v1"
@@ -204,6 +223,11 @@ REFUSED_KEY = "equipment_scenario_manage_refused_v1"
 # 되돌리기가 만든 리비전 — 다음 회차 리비전 상자를 그리기 전에 그 리비전으로 옮긴다(위젯을 그린
 # 뒤에는 그 칸을 고칠 수 없다).
 PENDING_REVISION_KEY = "equipment_scenario_manage_pending_revision_v1"
+# 새 리비전을 쓴 쓰기(되돌리기·배치 차이 지우기·정리 발행)의 뒷정리(리비전 상자·세션 옮기기)가 남은
+# 자리 — 쓰기 이름 → `_PendingFollow`. 쓴 직후 첫 세션 칸 접근은 더블클릭 둘째 누름의 회차에 끊기고
+# (write_guard), 둘째 누름은 첫 쓰기 뒤 꺼지거나 사라진 단추라 버려져 화면이 옛 리비전에 남았다.
+# 쓰기 전에 받아 둔 이 dict 칸에 적고(끊기지 않는다), 끊겼으면 다음 회차가 구획 맨 위에서 잇는다.
+FOLLOWS_KEY = "equipment_scenario_manage_follows_v1"
 # 입력 칸 세대 — 쓰기에 성공한 회차에 올라 다음 회차에 빈 칸으로 선다(옛 값을 되보내지 않게).
 GENERATION_KEY = "equipment_scenario_manage_generation_v1"
 # 구획의 팝오버 일곱(시나리오 줄 둘·리비전 줄 다섯). key 꼬리는 팝오버 세대
@@ -258,6 +282,101 @@ def _written(message: str, *, release: Callable[[], None] | None = None) -> None
     if release is not None:
         release()
     st.rerun()
+
+
+def _written_again(
+    database_path: str,
+    session: EquipmentSession,
+    scenario: EquipmentScenarioSummary,
+    latest_id: str,
+    done: str,
+) -> None:
+    """같은 단추의 빠른 두 번 누름의 둘째가 받은 거부 — 첫 누름이 이미 그 시나리오에 새 리비전
+    (`latest_id`)을 썼다. 첫 누름의 뒷정리(리비전 상자·세션 옮기기)가 끊겼을 수 있어 다시 하고
+    성공을 알린다(`write_guard.is_own_save`)."""
+    moved = kept_unsaved = False
+    if latest_id:
+        moved, kept_unsaved = _follow_new_revision(database_path, session, scenario, latest_id)
+    sentences = [f"「{literal_markdown(scenario.scenario_name)}」 {done}."]
+    if moved:
+        sentences.append("이 세션을 새 리비전으로 옮겼습니다.")
+    elif kept_unsaved:
+        sentences.append(
+            "이 세션에는 저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다 — 사이드바 "
+            "「설비 시나리오」 에서 최신 리비전을 불러올 수 있습니다."
+        )
+    _written(" ".join(sentences))
+
+
+@dataclass(frozen=True)
+class _PendingFollow:
+    """끊겼을 수 있는 뒷정리 — 그 시나리오·새 리비전, (옮김, 편집 때문에 남김)으로 알림 글을 만드는
+    함수, 적은 시각(`time.monotonic()`)."""
+
+    scenario_id: str
+    schedule_revision_id: str
+    message: Callable[[bool, bool], str]
+    at: float
+
+
+def _follow_marks() -> dict[str, _PendingFollow]:
+    """뒷정리 표지 dict(`FOLLOWS_KEY`) — 쓰기 **전에** 받아 둔다(쓴 뒤 세션 칸 접근은 끊길 수
+    있다)."""
+    marks = st.session_state.get(FOLLOWS_KEY)
+    if not isinstance(marks, dict):
+        marks = {}
+        st.session_state[FOLLOWS_KEY] = marks
+    return marks
+
+
+def _follow_and_announce(
+    database_path: str,
+    session: EquipmentSession,
+    scenario: EquipmentScenarioSummary,
+    schedule_revision_id: str,
+    message: Callable[[bool, bool], str],
+    *,
+    name: str,
+    follows: dict[str, _PendingFollow],
+) -> None:
+    """쓰기가 그 시나리오의 새 리비전(`schedule_revision_id`)을 만든 뒤 — 뒷정리 표지를 먼저
+    적고(dict 칸이라 끊기지 않는다) 리비전 상자·세션을 옮긴 뒤 표지를 지우고 알린다
+    (`message(옮김, 편집 때문에 남김)`). 옮기다 끊기면 다음 회차가 표지를 보고 잇는다
+    (`_resume_follows`)."""
+    follows[name] = _PendingFollow(
+        scenario.equipment_scenario_id, schedule_revision_id, message, time.monotonic()
+    )
+    moved, kept_unsaved = _follow_new_revision(
+        database_path, session, scenario, schedule_revision_id
+    )
+    follows.pop(name, None)
+    _written(message(moved, kept_unsaved))
+
+
+def _resume_follows(database_path: str, session: EquipmentSession) -> None:
+    """앞 회차에서 끊긴 뒷정리를 잇고 그 쓰기의 알림을 낸다 — 구획 맨 위(리비전 상자를 그리기 전)에
+    부른다. 창(`write_guard.TRAILING_PRESS_SECONDS`) 안의 표지만 잇는다 — 그 창 안의 회차는 같은
+    단추의 둘째 누름이다. 창이 지난 표지는 버린다(한참 뒤 세션이 말없이 옮겨 가지 않게)."""
+    marks = st.session_state.get(FOLLOWS_KEY)
+    if not isinstance(marks, dict) or not marks:
+        return
+    for name in list(marks):
+        pending = marks.get(name)
+        if (
+            not isinstance(pending, _PendingFollow)
+            or time.monotonic() - pending.at >= write_guard.TRAILING_PRESS_SECONDS
+        ):
+            marks.pop(name, None)
+            continue
+        scenario = session.catalog.scenario(pending.scenario_id)
+        if scenario is None:
+            marks.pop(name, None)
+            continue
+        moved, kept_unsaved = _follow_new_revision(
+            database_path, session, scenario, pending.schedule_revision_id
+        )
+        marks.pop(name, None)
+        _written(pending.message(moved, kept_unsaved))
 
 
 def _refused(message: str) -> None:
@@ -507,6 +626,9 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     닫힌 채 세우고, 알림·옛 배포 흔적·옛 판 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게
     늘 서 있는 칸 안에 그린다(`POPOVER_GENERATION_KEY`).
     """
+    # 앞 회차(더블클릭의 첫 누름)가 새 리비전을 쓰고 뒷정리 전에 끊겼으면 여기서 잇는다 — 리비전
+    # 상자를 그리기 전이어야 한다(`PENDING_REVISION_KEY`).
+    _resume_follows(database_path, session)
     flash = st.session_state.pop(FLASH_KEY, None)
     refused = st.session_state.pop(REFUSED_KEY, None)
     if (
@@ -985,7 +1107,7 @@ def _render_restore(
         st.error(f"되돌릴 수 없습니다: {bootstrap_error_message(exc)}")
         return
     release_no = session.catalog.release_no or 0
-    seen = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
+    seen_token = restore_seen_token(scenario, revision, common_id=common_id, release_no=release_no)
     official_scenario = session.official_scenario_id == scenario.equipment_scenario_id
     for line in restore_preview_lines(
         scenario, revision, preview, official_scenario=official_scenario
@@ -1015,7 +1137,7 @@ def _render_restore(
         )
     if (
         isinstance(agreed_before, str)
-        and agreed_before != seen
+        and agreed_before != seen_token
         and agreed_before.startswith(f"{scenario.equipment_scenario_id}__{chosen}__")
     ):
         st.warning(
@@ -1024,10 +1146,11 @@ def _render_restore(
             icon=":material/sync_problem:",
         )
     agreed = st.checkbox(
-        restore_confirm_label(revision, preview), key=f"{_keyed(RESTORE_CONFIRM_KEY)}__{seen}"
+        restore_confirm_label(revision, preview),
+        key=f"{_keyed(RESTORE_CONFIRM_KEY)}__{seen_token}",
     )
     if agreed:
-        st.session_state[RESTORE_AGREED_KEY] = seen
+        st.session_state[RESTORE_AGREED_KEY] = seen_token
     clicked = st.button(
         "되돌리기",
         icon=":material/history:",
@@ -1038,6 +1161,11 @@ def _render_restore(
     )
     if not clicked or not agreed:
         return
+    own_name = f"{RESTORE_SAVE_NAME}:{scenario.equipment_scenario_id}"
+    expected = (common_id, scenario.latest_schedule_revision_id or "", release_no)
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
+    follows = _follow_marks()
     try:
         # 대조값은 확인 체크를 묶은 값 그대로다 — 확인 글을 그린 값과 저장소가 대조하는 값이 같다.
         result = get_equipment_repository(database_path).restore_schedule_revision(
@@ -1059,6 +1187,10 @@ def _render_restore(
         )
         return
     except EquipmentRevisionConflict as exc:
+        current = equipment_write_token(database_path, scenario.equipment_scenario_id)
+        if is_own_save(own_name, expected, current, save_marks) and current is not None:
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 되돌렸다(write_guard).
+            _written_again(database_path, session, scenario, current[1], "되돌렸습니다")
         # 확인 글의 수가 그 사이 바뀌었다 — 목록·공통 최신을 다시 읽어 새 확인 글을 보인다.
         _refused(
             f"그 사이 다른 사용자가 {with_object_particle(exc.newest)} 저장해 되돌리지 "
@@ -1066,6 +1198,10 @@ def _render_restore(
         )
         return
     except EquipmentReleaseMoved as exc:
+        current = equipment_write_token(database_path, scenario.equipment_scenario_id)
+        if is_own_save(own_name, expected, current, save_marks) and current is not None:
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 되돌리고 발행했다(write_guard).
+            _written_again(database_path, session, scenario, current[1], "되돌렸습니다")
         _refused(
             f"그 사이 다른 공식 발행(지금 공식 v{exc.current})이 있어 되돌리지 않았습니다 — 다시 "
             "보고 되돌리세요."
@@ -1074,29 +1210,32 @@ def _render_restore(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"되돌리지 못했습니다: {bootstrap_error_message(exc)}")
         return
-    moved = False
-    kept_unsaved = False
     if result.schedule is not None:
-        st.session_state[PENDING_REVISION_KEY] = result.schedule.schedule_revision_id
-    if result.schedule is not None and session.scenario_id == scenario.equipment_scenario_id:
-        if has_unsaved_equipment_edits():
-            kept_unsaved = True
-        else:
-            clear_equipment_scenario_cache()
-            moved = (
-                select_equipment_scenario(
-                    database_path,
-                    scenario.equipment_scenario_id,
-                    result.schedule.schedule_revision_id,
-                    discard=True,
-                )
-                is None
-            )
-    _written(
-        restore_result_message(
+        # 저장된 값은 이 쓰기의 결과다(공통은 대조만 하고 쓰지 않는다, 발행은 했을 때만 번호가
+        # 바뀐다) — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어간다.
+        stored = (
+            common_id,
+            result.schedule.schedule_revision_id,
+            result.release_no if result.release_no is not None else release_no,
+        )
+        remember_own_save(own_name, expected, stored, save_marks)
+
+    def restored(moved: bool, kept_unsaved: bool) -> str:
+        return restore_result_message(
             scenario.scenario_name, revision, result, moved=moved, kept_unsaved=kept_unsaved
         )
-    )
+
+    if result.schedule is not None:
+        _follow_and_announce(
+            database_path,
+            session,
+            scenario,
+            result.schedule.schedule_revision_id,
+            restored,
+            name=own_name,
+            follows=follows,
+        )
+    _written(restored(False, False))
 
 
 def _render_branch(
@@ -1194,26 +1333,42 @@ def _render_revision_name(
         key=REVISION_NAME_BUTTON_KEY,
         width="stretch",
     ):
+        # 칸을 세울 때 본 이름이다 — 빈 이름은 「이름 없음」 을 본 것이다(대체값이 아니다).
+        held = seen(field.seen_key)
+        seen_name = held if isinstance(held, str) else ""
+        own_name = f"{REVISION_NAME_SAVE_NAME}:{revision.schedule_revision_id}"
+        # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = own_save_marks()
         try:
-            seen_name = st.session_state.get(field.seen_key)
             renamed = get_equipment_repository(database_path).rename_schedule_revision(
                 revision.schedule_revision_id,
                 name=label,
-                expected_name=seen_name if isinstance(seen_name, str) and seen_name else None,
+                expected_name=seen_name or None,
             )
         except EquipmentScheduleRevisionNameMoved as exc:
+            if is_own_save(own_name, seen_name, exc.current or "", save_marks):
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 바꿨다(write_guard).
+                _written(_revision_name_message(scenario, revision, exc.current))
             # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
             _refused(f"리비전명을 바꾸지 않았습니다 — {bootstrap_error_message(exc)}")
             return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"리비전명을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        shown = schedule_revision_title(renamed)
-        _written(
-            f"「{literal_markdown(scenario.scenario_name)}」 "
-            f"{literal_markdown(shown)} — 리비전명을 "
-            + ("지웠습니다." if renamed.revision_name is None else "저장했습니다.")
-        )
+        remember_own_save(own_name, seen_name, renamed.revision_name or "", save_marks)
+        _written(_revision_name_message(scenario, renamed, renamed.revision_name))
+
+
+def _revision_name_message(
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    name: str | None,
+) -> str:
+    shown = schedule_revision_title(replace(revision, revision_name=name))
+    return (
+        f"「{literal_markdown(scenario.scenario_name)}」 {literal_markdown(shown)} — 리비전명을 "
+        + ("지웠습니다." if name is None else "저장했습니다.")
+    )
 
 
 def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> None:
@@ -1227,22 +1382,36 @@ def _render_rename(database_path: str, scenario: EquipmentScenarioSummary) -> No
     )
     name = st.text_input("이름", key=field.key)
     if st.button("이름 바꾸기", type="primary", key=RENAME_BUTTON_KEY, width="stretch"):
-        seen_name = st.session_state.get(field.seen_key)
+        seen_name = seen(field.seen_key)
+        if not isinstance(seen_name, str):
+            # 칸을 세울 때 본 이름을 모른다 — 지금 이름으로 대체하면 남의 바꿈을 모르는 채 덮는다.
+            _refused(SEEN_MISSING_MESSAGE)
+            return
+        own_name = f"{SCENARIO_NAME_SAVE_NAME}:{scenario.equipment_scenario_id}"
+        # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+        save_marks = own_save_marks()
         try:
             renamed = get_equipment_repository(database_path).rename_equipment_scenario(
                 scenario.equipment_scenario_id,
                 name=name,
-                expected_name=seen_name if isinstance(seen_name, str) else current,
+                expected_name=seen_name,
             )
         except EquipmentScenarioNameMoved as exc:
+            if is_own_save(own_name, seen_name, exc.current, save_marks):
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 바꿨다(write_guard).
+                _written(_scenario_renamed_message(exc.current))
             # 남이 먼저 바꿨다 — 다음 회차가 목록에서 지금 이름을 읽어 칸을 다시 세운다.
             _refused(f"설비 시나리오 이름을 바꾸지 않았습니다 — {bootstrap_error_message(exc)}")
             return
         except BOOTSTRAP_ERRORS as exc:
             st.error(f"이름을 바꾸지 못했습니다: {bootstrap_error_message(exc)}")
             return
-        renamed_to = with_direction_particle(quoted(renamed.scenario_name))
-        _written(f"설비 시나리오 이름을 {renamed_to} 했습니다.")
+        remember_own_save(own_name, seen_name, renamed.scenario_name, save_marks)
+        _written(_scenario_renamed_message(renamed.scenario_name))
+
+
+def _scenario_renamed_message(name: str) -> str:
+    return f"설비 시나리오 이름을 {with_direction_particle(quoted(name))} 했습니다."
 
 
 def clearable_layout(session: EquipmentSession, scenario: EquipmentScenarioSummary) -> bool:
@@ -1330,6 +1499,10 @@ def _render_clear_layout(
         width="stretch",
     ):
         return
+    own_name = f"{CLEAR_LAYOUT_SAVE_NAME}:{scenario.equipment_scenario_id}"
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
+    follows = _follow_marks()
     try:
         created = get_equipment_repository(database_path).clear_layout_overlay(
             scenario.equipment_scenario_id,
@@ -1338,6 +1511,10 @@ def _render_clear_layout(
             note=note or None,
         )
     except EquipmentRevisionConflict as exc:
+        current = equipment_write_token(database_path, scenario.equipment_scenario_id)
+        if current is not None and is_own_save(own_name, latest_id, current[1], save_marks):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 지웠다(write_guard).
+            _written_again(database_path, session, scenario, current[1], "배치 차이를 지웠습니다")
         _refused(
             f"그 사이 다른 사용자가 {with_object_particle(exc.newest)} 저장해 배치 차이를 지우지 "
             "않았습니다 — 바뀐 확인 글을 다시 보고 지우세요."
@@ -1346,19 +1523,26 @@ def _render_clear_layout(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"배치 차이를 지우지 못했습니다: {bootstrap_error_message(exc)}")
         return
-    moved = False
-    kept_unsaved = False
-    if created is not None:
-        # 그 리비전에서 남은 일을 이어 하게(공식 발행 등) 리비전 상자·세션을 새 리비전에 둔다.
-        moved, kept_unsaved = _follow_new_revision(
-            database_path, session, scenario, created.schedule_revision_id
-        )
     clear_equipment_snapshot_cache()
-    _written(
-        clear_layout_message(
+
+    def cleared(moved: bool, kept_unsaved: bool) -> str:
+        return clear_layout_message(
             scenario.scenario_name, created, moved=moved, kept_unsaved=kept_unsaved
         )
-    )
+
+    if created is not None:
+        remember_own_save(own_name, latest_id, created.schedule_revision_id, save_marks)
+        # 그 리비전에서 남은 일을 이어 하게(공식 발행 등) 리비전 상자·세션을 새 리비전에 둔다.
+        _follow_and_announce(
+            database_path,
+            session,
+            scenario,
+            created.schedule_revision_id,
+            cleared,
+            name=own_name,
+            follows=follows,
+        )
+    _written(cleared(False, False))
 
 
 def publish_layout_lines(
@@ -1528,6 +1712,15 @@ def publish_seen_refusal(
     )
 
 
+def _publish_seen_before(held: object) -> dict[str, object] | None:
+    """`write_guard.seen` 에 (이름, 값) 짝 묶음으로 적은 발행 확인 글 값을 `publish_seen_token` 꼴로
+    되돌린다. 없거나 꼴이 다르면 None(`publish_seen_refusal` 이 「다시 그렸습니다」 로 거절한다)."""
+    if not isinstance(held, tuple):
+        return None
+    pairs = [item for item in held if isinstance(item, tuple) and len(item) == 2]
+    return {str(key): value for key, value in pairs} if len(pairs) == len(held) else None
+
+
 def release_words(release_no: int) -> str:
     """공식 발행 번호 한 마디 — 「v3」, 발행이 없던 0 은 「발행 없음」(「v0」 이라 적지 않는다)."""
     return f"v{release_no}" if release_no > 0 else "발행 없음"
@@ -1553,8 +1746,8 @@ def _render_publish(
     scenario: EquipmentScenarioSummary,
     revision: EquipmentScheduleRevisionSummary,
 ) -> None:
-    # 앞 회차(누르기 전)에 그린 확인 글의 값 — 이번 회차 값으로 바꿔 두기 전에 꺼낸다.
-    seen_before = st.session_state.pop(PUBLISH_SEEN_KEY, None)
+    # 앞 회차(누르기 전)에 그린 확인 글의 값 — 단추를 누르지 않은 회차만 적는다(write_guard).
+    seen_before = _publish_seen_before(seen(PUBLISH_SEEN_KEY))
     release_no = session.catalog.release_no or 0
     for line in publish_preview(
         session,
@@ -1586,72 +1779,167 @@ def _render_publish(
             st.error(line, icon=":material/block:")
         else:
             st.caption(f":material/layers: {line}")
-    st.session_state[PUBLISH_SEEN_KEY] = publish_seen_token(scenario, revision, release_no)
+    token = tuple(publish_seen_token(scenario, revision, release_no).items())
     st.caption(
         "공식은 새 세션(Space 포함 — 처음 연 화면)·공정 Capa 상세(HOME 칸)·진척 비교 기준선이 보는 "
         "설비 시나리오입니다. 발행은 append-only 입니다."
     )
     released_by = st.text_input("발행자(선택)", key=_keyed(PUBLISH_BY_KEY))
     note = st.text_input("발행 메모(선택)", key=_keyed(PUBLISH_NOTE_KEY))
-    if st.button(
+    if not st.button(
         "공식으로 발행",
         type="primary",
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
         disabled=blocked,
     ):
-        refusal = publish_seen_refusal(
-            seen_before,
-            scenario=scenario,
-            schedule_revision_id=revision.schedule_revision_id,
-            release_no=release_no,
+        # 이 회차가 그린 확인 글이 다음 누름이 본 글이다 — 누른 회차에는 적지 않는다.
+        remember_seen(PUBLISH_SEEN_KEY, token)
+        return
+    seen_release = seen_before.get("release_no") if seen_before is not None else None
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
+    follows = _follow_marks()
+    refusal = publish_seen_refusal(
+        seen_before,
+        scenario=scenario,
+        schedule_revision_id=revision.schedule_revision_id,
+        release_no=release_no,
+    )
+    if refusal is not None:
+        if isinstance(seen_release, int) and is_own_save(
+            PUBLISH_SAVE_NAME, seen_release, release_no, save_marks
+        ):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 발행했다(write_guard).
+            _published_again(
+                database_path, session, scenario, revision, release_no, layout, follows
+            )
+        _refused(refusal)
+        return
+    try:
+        # 대조값은 누르기 전 확인 글이 보인 번호다(위 대조로 지금 목록 번호와 같다) — 목록
+        # 캐시가 늦어 그 사이의 발행을 못 봤으면 저장소가 쓰기 잠금 안에서 거절한다.
+        published = get_equipment_repository(database_path).publish_equipment_release(
+            revision.schedule_revision_id,
+            released_by=released_by or None,
+            note=note or None,
+            expected_latest_release_no=release_no or None,
         )
-        if refusal is not None:
-            _refused(refusal)
-            return
-        try:
-            # 대조값은 누르기 전 확인 글이 보인 번호다(위 대조로 지금 목록 번호와 같다) — 목록
-            # 캐시가 늦어 그 사이의 발행을 못 봤으면 저장소가 쓰기 잠금 안에서 거절한다.
-            published = get_equipment_repository(database_path).publish_equipment_release(
-                revision.schedule_revision_id,
-                released_by=released_by or None,
-                note=note or None,
-                expected_latest_release_no=release_no or None,
+    except EquipmentReleaseMoved as exc:
+        if is_own_save(PUBLISH_SAVE_NAME, exc.expected, exc.current, save_marks):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 발행했다(write_guard).
+            _published_again(
+                database_path, session, scenario, revision, exc.current, layout, follows
             )
-        except EquipmentReleaseMoved as exc:
-            _refused(
-                f"확인 글을 본 뒤 공식이 바뀌어({release_words(exc.expected)} → 지금 "
-                f"{release_words(exc.current)}) 발행하지 않았습니다 — 바뀐 확인 글을 다시 보고 "
-                "발행하세요."
-            )
-            return
-        except EquipmentLayoutPublishBlocked as exc:
-            # 확인 글을 그린 뒤 남이 배치를 저장했다 — 목록을 다시 읽어 막힘 글을 보인다.
-            _refused(literal_markdown(str(exc)))
-            return
-        except BOOTSTRAP_ERRORS as exc:
-            st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
-            return
-        cleaned = published.schedule_revision_id != revision.schedule_revision_id
-        moved = kept_unsaved = False
-        if cleaned:
-            # 정리 리비전 rN+1 로 발행했다 — 「배치 차이 모두 지우기」 처럼 리비전 상자와 (그
-            # 시나리오를 보던) 세션을 새 리비전으로 옮긴다. 남기면 세션이 옛 rN 에 남아 낡음·Space
-            # 배치 잠금·빨간 막힘 글(옛 리비전의 남은 행)이 바로 선다(S4 리뷰).
-            moved, kept_unsaved = _follow_new_revision(
-                database_path, session, scenario, published.schedule_revision_id
-            )
-        _written(
-            publish_result_message(
-                scenario.scenario_name,
-                revision,
-                published.release_no,
-                cleaned_no=(scenario.latest_revision_no or 0) + 1 if cleaned else None,
-                layout=layout,
-                moved=moved,
-                kept_unsaved=kept_unsaved,
-            )
+        _refused(
+            f"확인 글을 본 뒤 공식이 바뀌어({release_words(exc.expected)} → 지금 "
+            f"{release_words(exc.current)}) 발행하지 않았습니다 — 바뀐 확인 글을 다시 보고 "
+            "발행하세요."
         )
+        return
+    except EquipmentLayoutPublishBlocked as exc:
+        # 확인 글을 그린 뒤 남이 배치를 저장했다 — 목록을 다시 읽어 막힘 글을 보인다.
+        _refused(literal_markdown(str(exc)))
+        return
+    except BOOTSTRAP_ERRORS as exc:
+        st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
+        return
+    remember_own_save(PUBLISH_SAVE_NAME, release_no, published.release_no, save_marks)
+    cleaned = published.schedule_revision_id != revision.schedule_revision_id
+
+    def published_message(moved: bool, kept_unsaved: bool) -> str:
+        return publish_result_message(
+            scenario.scenario_name,
+            revision,
+            published.release_no,
+            cleaned_no=(scenario.latest_revision_no or 0) + 1 if cleaned else None,
+            layout=layout,
+            moved=moved,
+            kept_unsaved=kept_unsaved,
+        )
+
+    if cleaned:
+        # 정리 리비전 rN+1 로 발행했다 — 「배치 차이 모두 지우기」 처럼 리비전 상자와 (그
+        # 시나리오를 보던) 세션을 새 리비전으로 옮긴다. 남기면 세션이 옛 rN 에 남아 낡음·Space
+        # 배치 잠금·빨간 막힘 글(옛 리비전의 남은 행)이 바로 선다(S4 리뷰).
+        _follow_and_announce(
+            database_path,
+            session,
+            scenario,
+            published.schedule_revision_id,
+            published_message,
+            name=PUBLISH_SAVE_NAME,
+            follows=follows,
+        )
+    _written(published_message(False, False))
+
+
+def _published_again(
+    database_path: str,
+    session: EquipmentSession,
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    release_no: int,
+    layout: LayoutPublishPreview | None,
+    follows: dict[str, _PendingFollow],
+) -> None:
+    """빠른 두 번 누름의 둘째가 받은 발행 거부가 제 발행(공식 `release_no`)이었다 — 첫 누름의
+    뒷정리가 끊겼을 수 있다(둘째 회차가 첫 쓰기 전 화면을 그렸으면 단추가 살아 여기에 닿는다). 정리
+    리비전(rN+1)으로 발행했으면 첫 누름처럼 리비전 상자와 (그 시나리오를 보던) 세션을 그 리비전으로
+    옮기고, 첫 누름이 낸 알림(정리 번호 포함)을 다시 낸다. 무엇을 발행했는지는 저장소에서 바로
+    읽는다(`_released_revision`) — 읽지 못하면 고른 리비전 그대로의 알림이다."""
+    released = _released_revision(database_path, scenario.equipment_scenario_id, release_no)
+    cleaned_no = (
+        released.revision_no
+        if released is not None and released.schedule_revision_id != revision.schedule_revision_id
+        else None
+    )
+
+    def published_message(moved: bool, kept_unsaved: bool) -> str:
+        return publish_result_message(
+            scenario.scenario_name,
+            revision,
+            release_no,
+            cleaned_no=cleaned_no,
+            layout=layout,
+            moved=moved,
+            kept_unsaved=kept_unsaved,
+        )
+
+    if released is not None and cleaned_no is not None:
+        _follow_and_announce(
+            database_path,
+            session,
+            scenario,
+            released.schedule_revision_id,
+            published_message,
+            name=PUBLISH_SAVE_NAME,
+            follows=follows,
+        )
+    _written(published_message(False, False))
+
+
+def _released_revision(
+    database_path: str, scenario_id: str, release_no: int
+) -> EquipmentScheduleRevisionSummary | None:
+    """공식 `release_no` 가 지금 최신 발행이고 그 설비 시나리오의 것이면 그 발행이 가리킨 일정
+    리비전. 캐시가 아니라 저장소에서 바로 읽는다(거부 직후에 부른다). 아니거나 읽지 못하면 None."""
+    repository = get_equipment_repository(database_path)
+    try:
+        release = repository.load_scenario_catalog().latest_release
+        if (
+            release is None
+            or release.release_no != release_no
+            or release.equipment_scenario_id != scenario_id
+        ):
+            return None
+        revisions = repository.list_schedule_revisions(scenario_id)
+    except BOOTSTRAP_ERRORS:
+        return None
+    return next(
+        (item for item in revisions if item.schedule_revision_id == release.schedule_revision_id),
+        None,
+    )
 
 
 def publish_result_message(

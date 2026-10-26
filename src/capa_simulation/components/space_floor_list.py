@@ -45,6 +45,14 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
 from capa_simulation.components.space_layout import FloorPlacement
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
+from capa_simulation.components.write_guard import (
+    forget_seen,
+    is_own_save,
+    own_save_marks,
+    remember_own_save,
+    remember_seen,
+    seen,
+)
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_cache import (
@@ -88,9 +96,12 @@ INACTIVE_TABLE_KEY = "space_status_floor_table_inactive"
 INACTIVE_EXPANDER_KEY = "space_floor_inactive_expander"
 # 표 머리 `사용 편집` 토글. `value=` 를 주지 않는다 — 저장 콜백·샘플 잠금이 세션에 적는다.
 EDIT_TOGGLE_KEY = "space_floor_state_edit"
-# 초안(「C1 3F」 → 사유 코드, 비활성 층만)과 편집을 시작할 때 본 저장본 (version, rows).
+# 초안(「C1 3F」 → 사유 코드, 비활성 층만)과 편집을 시작할 때 본 저장본 (version, rows). base 는
+# 초안을 세우는 자리에서만 적는다(`write_guard.remember_seen`).
 DRAFT_KEY = "space_floor_state_draft_v1"
 BASE_KEY = "space_floor_state_base_v1"
+# 이 세션이 한 층 사용 저장의 제 저장 표지 이름(`write_guard.own_save_marks`).
+FLOOR_STATE_SAVE_NAME = "space_floor_states"
 # 동 머리·확인·저장 단추 콜백이 받는 세대. 편집표 위젯 key 세대(`editor_widget_key`)와 늘 함께
 # 오른다.
 GENERATION_KEY = "space_floor_state_gen_v1"
@@ -224,7 +235,7 @@ def _store_draft(draft: Mapping[FloorKey, str]) -> None:
 
 
 def _stored_base() -> Base | None:
-    held = st.session_state.get(BASE_KEY)
+    held = seen(BASE_KEY)
     if (
         isinstance(held, tuple)
         and len(held) == 2
@@ -261,15 +272,16 @@ def _remount() -> None:
 def _start(states: FloorStates) -> None:
     """초안 = 저장본, base = 저장본 (version, rows). 확인 대기는 버린다."""
     _store_draft(states.inactive)
-    st.session_state[BASE_KEY] = _base_of(states)
+    remember_seen(BASE_KEY, _base_of(states))
     st.session_state.pop(CONFIRM_KEY, None)
     _remount()
 
 
 def _forget() -> None:
     """초안·base·확인을 지운다(편집을 끈 회차 — 저장하지 않은 변경은 버린다)."""
-    for key in (DRAFT_KEY, BASE_KEY, CONFIRM_KEY):
+    for key in (DRAFT_KEY, CONFIRM_KEY):
         st.session_state.pop(key, None)
+    forget_seen(BASE_KEY)
 
 
 def discard_floor_state_draft() -> None:
@@ -473,10 +485,17 @@ def _write(database_path: str, draft: Draft, base: Base) -> None:
     """저장소에 쓴다 — 성공이면 캐시를 비우고 flash·토글 끄기, 충돌이면 초안을 최신으로 다시
     세운다."""
     repository = get_equipment_repository(database_path)
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    save_marks = own_save_marks()
     try:
-        wrote = repository.save_floor_states(draft, expected_version=base[0], source=SOURCE)
+        stored = repository.save_floor_states(draft, expected_version=base[0], source=SOURCE)
     except ProfileVersionConflict as exc:
         clear_floor_state_cache()
+        if is_own_save(FLOOR_STATE_SAVE_NAME, exc.expected, exc.stored, save_marks):
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의
+            # 뒷정리(알림·토글 끄기)가 끊겼을 수 있어 여기서 다시 한다.
+            _saved(draft)
+            return
         _start(load_floor_states(database_path))
         _notice(
             "warning",
@@ -491,11 +510,18 @@ def _write(database_path: str, draft: Draft, base: Base) -> None:
             + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)),
         )
         return
-    if not wrote:
+    if stored is None:
         st.session_state.pop(CONFIRM_KEY, None)
         _notice("info", "바뀐 층이 없습니다.")
         return
+    # 저장된 version 은 쓰기의 결과다 — 쓴 뒤 다시 읽으면 그 사이 남의 저장이 짝에 들어간다.
+    remember_own_save(FLOOR_STATE_SAVE_NAME, base[0], stored, save_marks)
     clear_floor_state_cache()
+    _saved(draft)
+
+
+def _saved(draft: Draft) -> None:
+    """저장 뒤 이 세션의 뒷정리 — 성공 flash 를 담고 토글을 끄고 초안을 버린다."""
     queue_flash(FLASH_KEY, _saved_message(draft))
     # 콜백은 본문보다 먼저 돈다 — 토글을 그리기 전이라 값을 적을 수 있다.
     st.session_state[EDIT_TOGGLE_KEY] = False

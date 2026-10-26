@@ -67,6 +67,7 @@ from capa_simulation.components.equipment_data_workspace import (
     NOTHING_SAVED_MESSAGE,
     REMOVAL_CONFIRM_KEY,
     SAVE_FIELDS_PREFIX,
+    STALE_SCENARIO_EDITS_TAB,
     Frames,
     LayoutMode,
     _example_row_count,
@@ -104,6 +105,7 @@ from capa_simulation.components.equipment_data_workspace import (
     saved_master_violations,
     settle_grid_toasts,
     stale_delete_lock,
+    stale_save_reasons,
     stamp_layout_role,
 )
 from capa_simulation.components.equipment_data_workspace import (
@@ -196,7 +198,6 @@ from capa_simulation.services.equipment_grid import (
     pending_ops,
     prune_loaded,
     save_id_map,
-    stale_scenario_edits,
     text_matrix,
     undo_top,
     unit_texts,
@@ -461,13 +462,9 @@ def _changed_rows(saved: pd.DataFrame, buffer: pd.DataFrame) -> int:
     return max(sum((after - before).values()), sum((before - after).values()))
 
 
-# 낡기 전에 고친 시나리오 칸 — 일정이 바뀐 저장은 저장소가 늘 거부하므로 저장 전에 그 칸을 알린다.
-# 칸을 되돌리면 공통 칸은 저장된다(칸 되돌리기는 낡은 세션의 잠금을 보지 않는다).
-STALE_SCENARIO_EDITS: Final = (
-    "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
-    "않습니다 — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 "
-    "불러와 다시 고칩니다"
-)
+# 낡기 전에 고친 시나리오 칸의 고칠 것 줄 — 저장 길 셋이 같은 판정을 쓴다
+# (`equipment_data_workspace.stale_save_reasons`).
+STALE_SCENARIO_EDITS: Final = STALE_SCENARIO_EDITS_TAB
 
 
 def _table_errors(
@@ -514,16 +511,9 @@ def _table_errors(
         if found is not None:
             errors.append(f"{found[1]} · Main 설비 — {found[0]}")
     if context.delete_lock:
-        index = grid_index(frames[1], saved[1], renames)
-        if index.deleted:
-            errors.append(
-                f"낡은 세션이라 지운 호기 {len(index.deleted):,}대는 저장되지 않습니다 — "
-                "되살리거나 "
-                "최신을 불러오세요"
-            )
-        cells, units = stale_scenario_edits(frames[1], saved[1], renames)
-        if cells:
-            errors.append(STALE_SCENARIO_EDITS.format(cells=cells, units=units))
+        # 낡은 세션 — 저장(`save_equipment_buffer`)이 같은 판정으로 거부한다. 탭은 고칠 것 줄로
+        # 보인다.
+        errors.extend(stale_save_reasons(frames[1], saved[1], renames, in_tab=True))
     return errors
 
 

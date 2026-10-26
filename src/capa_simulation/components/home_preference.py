@@ -36,14 +36,20 @@ from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.write_guard import (
+    SEEN_MISSING_MESSAGE,
     held_notice,
     held_profile_conflict,
-    is_own_profile_save,
+    is_own_save,
     note_notice,
     note_profile_conflict,
     notice_marks,
+    own_save_marks,
     profile_conflict_marks,
-    profile_save_marks,
+    queue_refusal,
+    remember_own_save,
+    remember_seen,
+    seen,
+    take_refusal,
 )
 from capa_simulation.design import tokens
 from capa_simulation.home_state import (
@@ -149,7 +155,7 @@ EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
 # 확보율 보정 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다(판정 기준과 같다).
 EXECUTION_BASE_VERSION_KEY = "home_preference_execution_base_version"
-# 이 세션이 한 확보율 보정 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+# 이 세션이 한 확보율 보정 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 EXECUTION_SAVE_NAME = "home_preference_execution"
 EXECUTION_SAVED_MESSAGE = "확보율 보정을 저장했습니다."
 COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
@@ -166,7 +172,7 @@ THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
 # **앞 회차(사용자가 보고 고친 화면)** 의 version 을 대조해야 다른 세션의 먼저 저장을 잡는다.
 THRESHOLD_BASE_VERSION_KEY = "home_preference_threshold_base_version"
 THRESHOLD_FLASH_KEY = "home_threshold_flash"
-# 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.profile_save_marks`)과 성공 알림.
+# 이 세션이 한 판정 기준 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
 THRESHOLD_SAVE_NAME = "home_preference_threshold"
 # 주요공정 프리셋 카드의 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 KEY_PROCESS_FLASH_KEY = "home_key_process_flash"
@@ -788,7 +794,7 @@ def render_threshold_editor(
     없앴다). 월별 표의 빈칸은 그 달 그 항목이 기본값을 따른다. 입력은 퍼센트(119.5)이고 저장은
     비율(1.195)이다. 저장은 공용 프로필 교체이며 편집을 시작할 때 본 version 과 대조한다.
     """
-    submitted_base = st.session_state.get(THRESHOLD_BASE_VERSION_KEY)
+    submitted_base = seen(THRESHOLD_BASE_VERSION_KEY)
     with st.container(border=True):
         st.markdown("#### :material/rule: 확보율 판정 기준")
         st.caption(
@@ -821,6 +827,9 @@ def render_threshold_editor(
             notice = st.container()
             with notice:
                 render_flash(THRESHOLD_FLASH_KEY)
+                refused = take_refusal(THRESHOLD_SAVE_NAME)
+                if refused is not None:
+                    st.error(refused)
             # **`key` 를 두지 않는다.** Top5 대역과 같은 이유다 — 키가 붙은 칸은 한 번 그려진 뒤
             # 세션 값을 써서, 다른 사람이 바꾼 기본값을 이 화면이 못 본 채 저장 한 번으로 되돌린다.
             secure_column, warning_column = st.columns(2)
@@ -895,23 +904,25 @@ def render_threshold_editor(
                 )
             )
         if not submitted:
-            st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
+            # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
+            # (write_guard).
+            remember_seen(THRESHOLD_BASE_VERSION_KEY, threshold_profile.version)
             _render_threshold_out_of_range_notice(months, threshold_profile)
             return
-        expected_version = (
-            submitted_base if isinstance(submitted_base, int) else threshold_profile.version
-        )
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
-        save_marks = profile_save_marks()
+        save_marks = own_save_marks()
         conflict_marks = profile_conflict_marks()
         held = held_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME)
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[THRESHOLD_BASE_VERSION_KEY] = threshold_profile.version
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
             # 다시 알린다(write_guard).
             notice.error(held)
             return
+        if not isinstance(submitted_base, int):
+            # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
+            queue_refusal(THRESHOLD_SAVE_NAME, SEEN_MISSING_MESSAGE)
+            st.rerun(scope="app")
+        expected_version = submitted_base
         try:
             saved = _save_thresholds(
                 database_path,
@@ -925,24 +936,25 @@ def render_threshold_editor(
                 source=note.strip() or "웹 직접 편집",
                 clear_outside=clear_outside,
             )
-        except BOOTSTRAP_ERRORS as exc:
-            # 검증 실패(어느 달인지)와 버전 충돌은 ValueError 이고 원문이 고칠 곳을 말한다.
-            message = bootstrap_error_message(exc)
-            own = isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
-                THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks
-            )
-            if isinstance(exc, ProfileVersionConflict) and not own:
-                note_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME, message)
-            # 충돌이면 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신
-            # 저장본을 그리게 캐시를 비운다.
+        except ProfileVersionConflict as exc:
+            # 다른 세션이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신 저장본을 그리게
+            # 캐시를 비운다. 이 회차는 본 version 을 올리지 않는다 — 다음 회차(제출 아님)가 적는다.
             clear_global_securement_threshold_cache()
-            if own:
+            if is_own_save(THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks):
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
-                st.rerun(scope="app")
-            notice.error(message)
+            else:
+                # 버전 충돌의 원문이 무엇을 할지 말한다(물결표만 막아 그대로).
+                message = bootstrap_error_message(exc)
+                note_profile_conflict(conflict_marks, THRESHOLD_SAVE_NAME, message)
+                queue_refusal(THRESHOLD_SAVE_NAME, message)
+            st.rerun(scope="app")
+        except BOOTSTRAP_ERRORS as exc:
+            # 검증 실패(어느 달인지)는 ValueError 이고 원문이 고칠 곳을 말한다(물결표만 막아
+            # 그대로).
+            notice.error(bootstrap_error_message(exc))
         else:
-            save_marks[THRESHOLD_SAVE_NAME] = (expected_version, saved.version)
+            remember_own_save(THRESHOLD_SAVE_NAME, expected_version, saved.version, save_marks)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             st.rerun(scope="app")
 
@@ -1772,7 +1784,7 @@ def _render_execution_editor(
     저장은 **버전 대조**다 — 편집을 시작한 회차의 version 을 세션(`EXECUTION_BASE_VERSION_KEY`)에
     두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가 거부한다.
     """
-    submitted_base = st.session_state.get(EXECUTION_BASE_VERSION_KEY)
+    submitted_base = seen(EXECUTION_BASE_VERSION_KEY)
     with st.container(border=True):
         st.markdown("#### :material/exposure: 확보율 보정")
         st.caption(
@@ -1799,6 +1811,9 @@ def _render_execution_editor(
             notice = st.container()
             with notice:
                 render_flash("home_execution_flash")
+                refused = take_refusal(EXECUTION_SAVE_NAME)
+                if refused is not None:
+                    st.error(refused)
             edited = st.data_editor(
                 table,
                 key=EXECUTION_EDITOR_KEY,
@@ -1836,23 +1851,25 @@ def _render_execution_editor(
                 },
             )
         if not submitted:
-            st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
+            # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
+            # (write_guard).
+            remember_seen(EXECUTION_BASE_VERSION_KEY, execution_profile.version)
             _render_execution_notices(unmatched, clamped, process_labels)
             return
-        expected_version = (
-            submitted_base if isinstance(submitted_base, int) else execution_profile.version
-        )
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
-        save_marks = profile_save_marks()
+        save_marks = own_save_marks()
         conflict_marks = profile_conflict_marks()
         held = held_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME)
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[EXECUTION_BASE_VERSION_KEY] = execution_profile.version
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
             # 다시 알린다(write_guard).
             notice.error(held)
             return
+        if not isinstance(submitted_base, int):
+            # 편집을 시작한 version 을 모른다 — 지금 version 으로 대체하지 않는다(write_guard).
+            queue_refusal(EXECUTION_SAVE_NAME, SEEN_MISSING_MESSAGE)
+            st.rerun(scope="app")
+        expected_version = submitted_base
         try:
             saved = _save_execution_capacity(
                 database_path,
@@ -1861,27 +1878,25 @@ def _render_execution_editor(
                 expected_version=expected_version,
             )
         except ProfileVersionConflict as exc:
-            message = bootstrap_error_message(exc)
-            own = is_own_profile_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks)
-            if not own:
-                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
             # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다. 다음 회차가 최신 저장본을
-            # 그리고 그 version 에서 출발하게 캐시와 출발점을 비운다.
+            # 그리게 캐시를 비운다. 이 회차는 본 version 을 올리지 않는다 — 다음 회차(제출 아님)가
+            # 최신을 그리며 적는다.
             clear_global_execution_capacity_cache()
-            st.session_state.pop(EXECUTION_BASE_VERSION_KEY, None)
-            if own:
+            if is_own_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks):
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
-                st.rerun(scope="app")
-            notice.error(message)
-            return
+            else:
+                message = bootstrap_error_message(exc)
+                note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
+                queue_refusal(EXECUTION_SAVE_NAME, message)
+            st.rerun(scope="app")
         except BOOTSTRAP_ERRORS as exc:
             notice.error(bootstrap_error_message(exc))
             return
         except ValueError as exc:
             notice.error(bootstrap_error_message(exc))
             return
-        save_marks[EXECUTION_SAVE_NAME] = (expected_version, saved.version)
+        remember_own_save(EXECUTION_SAVE_NAME, expected_version, saved.version, save_marks)
         queue_flash("home_execution_flash", EXECUTION_SAVED_MESSAGE)
         st.rerun(scope="app")
 
