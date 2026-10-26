@@ -304,7 +304,7 @@ BROKEN = {
     "모듈 행 동이 갈림": _Broken(
         "unit_group_mixed",
         _mixed_building,
-        _exact("같은 Main 설비의 모듈 행은 동 이 같아야 합니다: ['GRP-1']"),
+        _exact("같은 Main 설비의 모듈 행은 동이 같아야 합니다: ['GRP-1']"),
         _modules,
     ),
     "Y/N 밖": _Broken(
@@ -467,7 +467,16 @@ def test_the_rejection_text_is_byte_for_byte_the_old_text() -> None:
     frame.at[1, "동"] = "C2"
     with pytest.raises(ValueError) as mixed:
         prepare_equipment_master(frame)
-    assert str(mixed.value) == "같은 Main 설비의 모듈 행은 동 이 같아야 합니다: ['GRP-1']"
+    assert str(mixed.value) == "같은 Main 설비의 모듈 행은 동이 같아야 합니다: ['GRP-1']"
+
+    # 받침 없는 칸 이름은 「가」 — 「공정소분류 이 같아야」 로 조사가 못박혀 있었다(2026-10-26 E2E).
+    frame = _modules()
+    frame.at[1, "공정소분류"] = "DEMO-다른공정"
+    with pytest.raises(ValueError) as process:
+        prepare_equipment_master(frame)
+    assert str(process.value) == (
+        "같은 Main 설비의 모듈 행은 공정소분류가 같아야 합니다: ['GRP-1']"
+    )
 
     frame = _master()
     frame.at[0, "Qual실적"] = "2026-12-01"
@@ -510,7 +519,7 @@ def test_a_rejection_lists_at_most_five_examples() -> None:
     frame.loc[1::2, "동"] = frame["동"].map(lambda value: "C5" if value != "C5" else "C4")
     with pytest.raises(ValueError) as mixed:
         prepare_equipment_master(frame)
-    assert str(mixed.value) == f"같은 Main 설비의 모듈 행은 동 이 같아야 합니다: {groups[:5]}"
+    assert str(mixed.value) == f"같은 Main 설비의 모듈 행은 동이 같아야 합니다: {groups[:5]}"
 
 
 def test_within_a_rule_cells_come_column_by_column_then_row_by_row() -> None:

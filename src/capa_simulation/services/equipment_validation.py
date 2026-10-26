@@ -82,6 +82,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorKey,
 )
 from capa_simulation.services.frame_contracts import require_columns, scalar_match_key
+from capa_simulation.services.korean_particle import subject_particle
 
 
 def prepare_equipment_baseline(
@@ -307,7 +308,8 @@ def _missing_text_message(label: str, column: str) -> str:
 
 
 def _unit_group_mixed_message(column: str) -> str:
-    return f"같은 Main 설비의 모듈 행은 {column} 이 같아야 합니다"
+    # 칸 이름 끝소리로 조사를 고른다 — 공정소분류·공정구분 등은 「가」, 동·층은 「이」.
+    return f"같은 Main 설비의 모듈 행은 {column}{subject_particle(column)} 같아야 합니다"
 
 
 def _flag_message(column: str) -> str:
