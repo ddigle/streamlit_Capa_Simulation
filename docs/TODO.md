@@ -923,6 +923,32 @@
   범위의 줄만 견주어 다른 범위 저장은 통과 — 범위 지문을 따로 두어야 하고 AGENTS 25 의 「프로필 version」 규칙에서 벗어난다. 관련:
   `components/display_order_management.py`·`persistence/display_order_store.py`·`tests/test_display_order_management.py`·
   `tests/test_duckdb_repository.py`
+- (2026-10-26) **설비 영역 E2E lens 결함 열하나 고침**(브라우저 E2E lens equipment, 밤사이 권장대로) — 정한 동작은 그대로다.
+  사본 앱(사외 WSL 8591, 운영 DB 사본)에서 저장 두 번 누름(0.05·0.15·0.3초)·지운 줄 키보드·팝업 초점·팝오버 나감·Guide 표(390px)·
+  자리표시 색(어두운 테마)·교차검증 표·Cut-off 머리를 다시 봤다(알약·조사 글·Space 두 번 누름은 AppTest 로만).
+  - 설비 마스터 「리비전 저장」·Space 「배치 저장」·사이드바 팝업 저장·FAB 쓰기의 빠른 두 번 누름은 같은 출발점이면 저장소에 다시
+    가지 않고 첫 결과로 뒷정리·성공 알림을 잇는다(`write_guard.save_once`, 9장). 대안: 저장소 거부(`EquipmentRevisionConflict`)를
+    받은 뒤 지금 최신이 제 저장인지 DB 를 다시 읽어 가리기 — 층 값·FAB 거부는 다른 예외라 길이 셋으로 갈린다. **남은 것**: 첫
+    콜백이 쓰고 뒷정리 전에 **다른 위젯** 누름으로 끊기면(저장 단추 둘째 누름이 아님) 다음 회차의 `ensure_equipment_drafts` 가
+    여전히 「다른 사용자가 저장해 … 다시 열었습니다」 로 알린다 — 사외 재현 없음, 고치려면 편집본 세우기가 제 저장 표지를 봐야 한다.
+  - 설비 마스터 표 지운 줄 — 화살표는 화면 차례의 모든 줄을 걷고(`moveFocus`), 지운 줄의 Space 는 「되살리기」 다(산 줄은 그대로
+    고르기). 대안: 지운 줄의 「되살리기」 아이콘을 그 줄에 초점이 있을 때만 Tab 정지로 — 로빙 규칙(본문 Tab 정지 하나)이 깨진다.
+    「선택 n대 지우기」·「선택 풀기」 는 초점을 표의 초점 칸으로 돌린다.
+  - 「엑셀·CSV로 한꺼번에」 팝업이 닫히면(넣은 뒤·Esc·닫기) 초점을 여는 단추로 돌린다 — 닫힌 수를 불러오기 data
+    (`dialogClosed`)에 실어 그 회차에 표가 돌린다. 대안: 그림자 호스트를 초점 받게 해 Streamlit 이 돌려준 초점을 단추로 넘기기 —
+    1.63 팝업의 초점 반환 대상에 기대는 비공식 길이다.
+  - 불러오기 팝오버(공정·조건)는 초점이 패널·여는 단추 밖으로 나가면 닫는다. 대안: 문서 Esc 로 닫기 — 초점 받은 칸을 덮는 것은 남는다.
+  - Cut-off 화면 글은 계산과 같은 내림 일수로 적고, 적은 값에 소수가 있으면 「35일(35.8일 내림)」(`cutoff_days_words` — Static 대비
+    일정 머리·제약 시뮬레이션 조건 줄·공정 Capa 상세 머리). 「설정」 팝업은 적은 값 그대로이고 칸 풍선에 내림 규칙을 적었다.
+    대안: 모든 화면에 적은 값 — 필요 단축 일정 카드·기준선(정수 저장)까지 원값을 실어 나르는 길이 넓어진다. 필요 단축 일정 카드와
+    공정 Capa 상세 ② 머리 줄(「생산월(Cut-off 34일)」)은 내림 일수만 적는다.
+  - 확보율 교차검증 표는 두 확보율을 %(NumberColumn `percent`), 차이를 보이는 두 확보율의 차로 %p(`%+.1f%%p`, 값은 %p 수 —
+    표 내려받기의 그 칸도 %p 수다). 대안: 차이를 비율로 두고 머리에 「(%p)」 + `percent` — 칸이 「−27%」 로 보인다.
+  - Guide 대화상자 표는 제 칸 안에서 옆으로 굴린다(`page_guide_body` 칸의 표 `display:block`·`overflow:auto` — 모든 화면 Guide).
+  - 자리표시 글은 TEXT_MUTED(`--emg-muted`·Space 편집기 `--sle-muted`). 모듈 일관성 오류·새 호기 빼기 알림의 조사는 끝소리로
+    고른다(「공정소분류가」·「NEW-E2E-01을」). 설비 마스터 탭 시나리오 알약은 `literal_badge`(st.badge 가 `[`·`]` 를 스스로 막는다).
+  관련: `components/write_guard.py`·`components/equipment_data_workspace.py`·`equipment_master_grid_assets/`·`components/page_guide.py`·
+  `services/process_cutoff.py`·`components/availability_gap_panel.py`·`tests/test_equipment_save_double_press.py`
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을

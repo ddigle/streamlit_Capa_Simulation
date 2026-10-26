@@ -133,7 +133,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     processes_in,
     span_date_range,
 )
-from capa_simulation.services.process_cutoff import cutoff_lookup
+from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
 from capa_simulation.services.simulation_cache import (
     DynamicMonthlyCacheKey,
     ScenarioCacheKey,
@@ -210,6 +210,13 @@ _UNIT_NUMBER_FORMAT["환산비"] = st.column_config.NumberColumn(format="%.2f")
 _CROSS_CHECK_HEADERS = {
     "Dynamic가용대수": "일정기준가용대수",
     "Dynamic확보율": "일정기준확보율",
+}
+# 확보율 교차검증 표의 숫자 꼴 — 확보율은 %(다른 화면과 같은 `percent`), 차이는 %p(표에 넣을 때
+# 100 을 곱한다).
+_CROSS_CHECK_FORMAT = {
+    "Static확보율": st.column_config.NumberColumn(format="percent"),
+    "일정기준확보율": st.column_config.NumberColumn(format="percent"),
+    "확보율차이": st.column_config.NumberColumn(format="%+.1f%%p"),
 }
 # 그림을 바꾸는 꼴이 바뀌면 올린다 — 세션에 남은 옛 그림을 쓰지 않는다.
 _SHEET_SCHEMA_VERSION = 3
@@ -599,8 +606,9 @@ def _key_digest(key: object) -> str:
 def _schedule_detail(process: str | None, cutoff: pd.DataFrame) -> str:
     """설비 일정 기준 제목의 세부 글 — 출처·축·Cut-off(라벨 칸 한 줄). 「칸을 누르면」 안내는
     시트 위 도구 줄과 풍선이 맡는다."""
-    days = cutoff_lookup(cutoff).get(process) if process is not None else None
-    production = f"Cut-off {days:g}일" if days is not None else "Cut-off 공정별"
+    days = cutoff_setting(cutoff, process) if process is not None else None
+    # 계산(`wd_window`)은 적은 값을 내림해 쓴다 — 다른 화면처럼 그 일수로 적고 내림을 함께 둔다.
+    production = f"Cut-off {cutoff_days_words(days)}" if days is not None else "Cut-off 공정별"
     return f"설비 DB · 환산대수 · {production}"
 
 
@@ -1464,8 +1472,18 @@ def _render_securement_cross_check(
         ],
     ].copy()
     display["생산계획년월"] = display["생산계획년월"].map(lambda month: month_label(int(month)))
-    display = display.rename(columns=_CROSS_CHECK_HEADERS)
-    st.dataframe(labels.frame(display.round(3)), hide_index=True, width="stretch")
+    display = display.rename(columns=_CROSS_CHECK_HEADERS).round(3)
+    # 확보율은 다른 화면(HOME·Static Capa)처럼 %, 차이는 %p 로 보인다 — 비율 그대로(1.093·−0.364)
+    # 면 같은 확보율이 이 표에서만 다른 단위로 읽힌다. 차이는 **보이는 두 확보율**의 차를 %p 수로
+    # 적는다 — 깎기 전 값의 차를 깎으면 145.8% · 118.7% 옆에 −27.0%p 가 서 검산이 어긋난다(9장
+    # 「화면 숫자는 검산되어야 한다」). 곱한 뒤 다시 깎아 끝자리 잡음이 내려받기에 남지 않게 한다.
+    display["확보율차이"] = ((display["일정기준확보율"] - display["Static확보율"]) * 100).round(1)
+    st.dataframe(
+        labels.frame(display),
+        hide_index=True,
+        width="stretch",
+        column_config=_CROSS_CHECK_FORMAT,
+    )
 
 
 def _frame_loader(frame: pd.DataFrame) -> Callable[[], pd.DataFrame]:

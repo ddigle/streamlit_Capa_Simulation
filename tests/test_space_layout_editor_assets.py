@@ -31,6 +31,14 @@ def _rule(selector: str) -> str:
     return match.group(1)
 
 
+def test_placeholders_use_the_muted_ink_of_the_theme() -> None:
+    """미배치 호기 찾기·새 호기 설비명 칸의 자리표시 글이 브라우저 기본(#757575)이면 어두운 테마
+    바탕에서 4.5:1 에 못 미친다(설비 마스터 표와 같은 꼴, 2026-10-26 E2E). TEXT_MUTED 로 그린다."""
+    rule = re.search(r"\.sle input::placeholder\s*\{(?P<body>[^}]*)\}", CSS)
+    assert rule, "editor.css 에 자리표시 규칙이 없다"
+    assert "color: var(--sle-muted)" in rule.group("body") and "opacity: 1" in rule.group("body")
+
+
 def test_every_css_variable_comes_from_the_palette() -> None:
     """색은 등록 CSS 가 아니라 회차마다 `data.palette` 로 온다.
 

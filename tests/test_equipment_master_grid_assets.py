@@ -67,6 +67,15 @@ def test_every_css_variable_comes_from_the_palette_and_no_colour_is_written() ->
         assert "rgb(" not in text and "rgba(" not in text
 
 
+def test_placeholders_use_the_muted_ink_of_the_theme() -> None:
+    """자리표시 글(「설비명으로 불러오기」 등)이 브라우저 기본 #757575 라 어두운 테마 바탕
+    #1C1C21 에서 3.68:1 이었다(2026-10-26 E2E). 앱 토큰 TEXT_MUTED(`--emg-muted` — 두 테마 모든
+    칸 바탕에서 4.5:1 이상)로 그리고 흐리게 하지 않는다."""
+    rule = re.search(r"\.emg input::placeholder\s*\{(?P<body>[^}]*)\}", CSS)
+    assert rule, "grid.css 에 자리표시 규칙이 없다"
+    assert "color: var(--emg-muted)" in rule.group("body") and "opacity: 1" in rule.group("body")
+
+
 def test_the_registered_css_carries_no_comments() -> None:
     """등록 CSS 는 data 가 바뀐 회차마다 요소와 함께 다시 간다 — 주석을 싣지 않는다."""
     assert "/*" not in CSS
@@ -160,6 +169,48 @@ def test_the_grid_body_has_one_tab_stop_and_space_picks_a_row() -> None:
     key = _function("onBodyKey")
     assert "event.key === ' '" in key and "toggleRow(S, id, event.shiftKey)" in key
     assert key.index("event.key === ' '") < key.index("event.key.length === 1")
+
+
+def test_a_deleted_row_stays_on_the_keyboard_path() -> None:
+    """지운 줄에 남은 초점에서 ↓ 가 맨 첫 줄로 뛰고(산 줄 목록에서 −1 → 0) 지운 줄의 「되살리기」 에
+    키보드로 닿지 못했다(2026-10-26 E2E). 화살표는 화면 차례의 모든 줄(`model.ordered`)을 걷고, 지운
+    줄의 Space 는 그 줄의 체크 칸 자리 「되살리기」 다. 고른 줄 띠를 닫는 단추(지우기·선택 풀기)는
+    초점을 표로 돌린다."""
+    key = _function("onBodyKey")
+    assert "moveFocus(model.ordered.map((row) => row.id)" in key
+    assert "live.findIndex" not in key.split("event.key === ' '")[0]
+    space = key[key.index("event.key === ' '") : key.index("if (col === model.nameCol) return")]
+    assert "toggleRow(S, id, event.shiftKey)" in space and "{ op: 'restore', ids: [id] }" in space
+    selection = _function("buildSelection")
+    assert selection.count("refocusTable(S, ") == 2
+    refocus = _function("refocusTable")
+    assert "S.wantFocus = true" in refocus and "ensureVisible(S, S.focus.id)" in refocus
+    runner = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  moves: input.cases.map((c) => moveFocus(c.ids, c.cols, c.at, c.dir)),
+}))
+"""
+    ids = ["s:A", "s:B", "s:C"]  # s:B 가 지운 줄이다 — 화면 차례 그대로 든다.
+    cols = [0, 2, 3]
+    cases = [
+        {"at": {"id": "s:B", "col": 0}, "dir": "down"},
+        {"at": {"id": "s:B", "col": 0}, "dir": "up"},
+        {"at": {"id": "s:A", "col": 0}, "dir": "down"},
+        {"at": {"id": "s:C", "col": 3}, "dir": "down"},
+        {"at": {"id": "s:B", "col": 2}, "dir": "right"},
+        {"at": {"id": "s:Z", "col": 0}, "dir": "down"},
+    ]
+    result = _node({"cases": [{"ids": ids, "cols": cols, **case} for case in cases]}, runner=runner)
+
+    assert result["moves"] == [
+        {"id": "s:C", "col": 0},
+        {"id": "s:A", "col": 0},
+        {"id": "s:B", "col": 0},
+        None,
+        {"id": "s:B", "col": 3},
+        None,
+    ]
 
 
 def test_a_returning_load_does_not_steal_focus_from_the_table() -> None:
@@ -804,3 +855,102 @@ def test_both_loader_popovers_close_on_escape_right_after_opening() -> None:
     assert result["repaint"] == {"focus": "조건 값 1", "open": True}
     assert result["toggle"] == {"closed": True, "stopped": True}
     assert result["closedToggle"] == {"stopped": False}
+
+
+# 가짜 DOM(위 러너의 앞부분 — FakeNode·fire·document)만 떼어 다른 단계를 붙인다.
+_FAKE_DOM = _FAKE_DOM_RUNNER[: _FAKE_DOM_RUNNER.index("const input = JSON.parse")]
+_MOUNT_LOADER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const mount = (data) => globalThis.__mount({
+  data, parentElement, setStateValue() {}, setTriggerValue() {},
+})
+const buttonOf = (label) => host.querySelectorAll('button').find(
+  (node) => node.textContent.startsWith(label))
+const results = {}
+"""
+
+
+def _fake_dom_source() -> str:
+    assert JS.count(_MOUNT_HEAD) == 1
+    return JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
+
+
+def test_a_loader_popover_closes_when_the_keyboard_leaves_it() -> None:
+    """「조건으로 불러오기 ▾」 를 연 채 Tab 으로 패널 밖(「일정 확인 필요」 단추)에 가면 패널이
+    열린 채 남아 초점 받은 오른쪽 호기 상세 칸을 덮었고, 그 칸의 Esc 로도 닫히지 않았다(2026-10-26
+    E2E). 초점이 패널·여는 단추 밖으로 나가면 닫는다 — 패널 안 칸끼리 옮김과 다시 지으며 지운
+    칸(받을 칸 없음)은 닫지 않는다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+mount(input.data)
+const toggle = buttonOf('조건으로 불러오기')
+const panel = toggle.parentNode.children[1]
+toggle.focus()
+toggle.click()
+const inside = document.activeElement
+const other = panel.querySelectorAll('select, input, button').find((node) => node !== inside)
+fire(inside, 'focusout', { relatedTarget: other })
+results.withinPanel = !panel.hidden
+fire(inside, 'focusout', { relatedTarget: null })
+results.repaint = !panel.hidden
+fire(inside, 'focusout', { relatedTarget: toggle })
+results.backToToggle = !panel.hidden
+const outside = buttonOf('일정 확인 필요')
+fire(inside, 'focusout', { relatedTarget: outside })
+results.left = { open: !panel.hidden, expanded: toggle.getAttribute('aria-expanded') }
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "withinPanel": True,
+        "repaint": True,
+        "backToToggle": True,
+        "left": {"open": False, "expanded": "false"},
+    }
+
+
+def test_closing_the_import_dialog_returns_focus_to_the_button_that_opened_it() -> None:
+    """불러오기 줄 「엑셀·CSV로 한꺼번에」 로 연 팝업을 Esc·닫기로 닫으면 초점이 BODY 로 빠지고 다음
+    Tab 이 사이드바 머리로 갔다(2026-10-26 E2E — Streamlit 이 그림자 DOM 안 여는 단추로 돌려주지
+    못한다). 팝업이 닫힌 수(`dialogClosed`)가 바뀐 회차에 이 불러오기가 연 팝업이고 초점이 아무
+    데도 없으면 여는 단추로 돌린다 — 다른 칸에 초점이 있거나 다른 길로 연 팝업이면 그대로 둔다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const at = (closed) => Object.assign({}, input.data, { dialogClosed: closed })
+const label = () => (document.activeElement ? document.activeElement.textContent : null)
+mount(at(0))
+let opener = buttonOf('엑셀·CSV로 한꺼번에')
+opener.focus()
+opener.click()
+document.activeElement = null
+mount(at(1))
+results.returned = label()
+results.marked = buttonOf('엑셀·CSV로 한꺼번에').dataset.fk
+document.activeElement = null
+mount(at(2))
+results.notOpenedHere = label()
+buttonOf('엑셀·CSV로 한꺼번에').click()
+const elsewhere = new FakeNode('input')
+elsewhere.focus()
+mount(at(3))
+results.busy = document.activeElement === elsewhere
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    assert result == {
+        "returned": "엑셀·CSV로 한꺼번에",
+        "marked": "import-bar",
+        "notOpenedHere": None,
+        "busy": True,
+    }

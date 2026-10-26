@@ -146,6 +146,17 @@ def test_the_first_data_goes_through_the_import_dialog_and_one_revision_save(
     assert list(app.session_state[GRID_LOADED_KEY]) == ["s:DA-01", "s:DA-02"]
 
 
+def test_the_loader_learns_each_close_of_the_import_dialog(tmp_path: Path, grid: Calls) -> None:
+    """팝업이 닫힐 때마다(넣은 뒤·Esc·바깥 누름 — `_close_dialog`) 표 불러오기 data 의
+    `dialogClosed` 가 오른다 — 그 회차에 표가 초점을 여는 단추로 돌린다(그림자 DOM 안 단추라
+    Streamlit 이 돌려주지 못한다, 2026-10-26 E2E)."""
+    app = _app(tmp_path / "equipment.duckdb")
+    assert last(grid, emg.LOADER_KEY)["dialogClosed"] == 0
+    _import(app, _rows("DA-01"))
+
+    assert last(grid, emg.LOADER_KEY)["dialogClosed"] == 1
+
+
 def test_a_cell_edit_from_the_grid_outbox_lands_in_the_buffer_and_marks_the_tab(
     tmp_path: Path, grid: Calls
 ) -> None:

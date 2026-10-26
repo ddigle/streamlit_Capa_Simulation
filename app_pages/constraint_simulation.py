@@ -117,6 +117,7 @@ from capa_simulation.services.constraint_simulation import (
 from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
+from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
 from capa_simulation.services.process_equipment_timeline import (
     DynamicReadiness,
     dynamic_readiness,
@@ -452,9 +453,11 @@ if not equipment_error:
         process=process,
     )
 if readiness is not None and readiness.cutoff_days is not None:
+    # 팝업에는 적은 값(35.8)이 그대로 보이고 계산은 내림한 일수(35)를 쓴다 — 둘을 함께 적는다.
+    setting = cutoff_setting(cutoff, process)
     cutoff_line = (
-        f"Cut-off {readiness.cutoff_days}일 — 가용설비 현황 「설정」 팝업의 공정별 값(모든 설비 "
-        "시나리오 공용)"
+        f"Cut-off {cutoff_days_words(setting if setting is not None else readiness.cutoff_days)}"
+        " — 가용설비 현황 「설정」 팝업의 공정별 값(모든 설비 시나리오 공용)"
     )
 with cutoff_slot:
     st.caption(cutoff_line)

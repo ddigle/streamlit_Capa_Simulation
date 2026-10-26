@@ -93,6 +93,10 @@ IMPORT_APPLY_LABEL: Final = "편집본에 넣기"
 # 팝업 안 알림 — 작은 편집표 알림 칸과 가른다(팝업이 그 글을 가져가지 않게).
 IMPORT_ERROR_KEY: Final = "equipment_import_error_v1"
 IMPORT_NOTICE_KEY: Final = "equipment_import_notice_v1"
+# 팝업이 닫힌 수(넣은 뒤·Esc·바깥 누름 — `_close_dialog`). 표 불러오기 data 에 실려, 그 불러오기의
+# 단추로 연 팝업이 닫힌 회차에 초점을 여는 단추로 돌린다(Streamlit 은 그림자 DOM 안 단추로 돌려주지
+# 못해 BODY 로 빠진다).
+IMPORT_CLOSED_KEY: Final = "equipment_import_closed_v1"
 FIX_FIRST_HINT: Final = (
     "편집본 설비 마스터에 고칠 것이 남아 있으면 미리보기도 막힙니다 — 「저장 전 변경」 의 고칠 "
     "것을 "
@@ -126,6 +130,13 @@ def _close_dialog() -> None:
     입력이 없다는 오류로 막힌다(옛 입력 탭은 늘 그려 둘이 함께 살았다)."""
     st.session_state.pop(EQUIPMENT_DIALOG_KEY, None)
     st.session_state.pop(PREVIEW_KEY, None)
+    st.session_state[IMPORT_CLOSED_KEY] = import_closed_count() + 1
+
+
+def import_closed_count() -> int:
+    """이 세션에서 팝업이 닫힌 수(`IMPORT_CLOSED_KEY`). 표 불러오기 data 의 `dialogClosed` 다."""
+    value = st.session_state.get(IMPORT_CLOSED_KEY, 0)
+    return value if isinstance(value, int) else 0
 
 
 def withdraw_preview_on_new_visit() -> None:

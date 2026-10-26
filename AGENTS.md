@@ -1443,7 +1443,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   비움·새로 든 설비명을 목록 맨 위로·표 토스트(되돌리기)·넣은 편집본에 배치 편집이 있으면 그때의 역할 찍기(`stamp_layout_role` —
   넣고 나중에 저장하므로 그 사이 역할이 바뀌면 저장소가 막는다, 설계 6-2) — 뒤 열림 칸을 지우고 앱을 다시 돌린다. 팝업을 닫으면
   (`_close_dialog` — on_dismiss) 미리보기도 거두고, 여는 콜백(`open_equipment_import` — 표 불러오기 줄 `dialog` 트리거도)도 남은
-  미리보기를 거둔다(닫힌 회차에 입력 칸이 버려져 다시 열면 빈 입력에 옛 미리보기만 남는다). 팝업 안 폼 제출은 앱 범위
+  미리보기를 거둔다(닫힌 회차에 입력 칸이 버려져 다시 열면 빈 입력에 옛 미리보기만 남는다). `_close_dialog` 는 닫힌 수
+  (`IMPORT_CLOSED_KEY`)도 올린다 — 표 불러오기 data `dialogClosed` 로 실려, 그 불러오기 단추로 연 팝업이 닫힌 회차에 초점이
+  아무 데도 없으면 여는 단추로 돌린다(Streamlit 은 그림자 DOM 안 단추로 돌려주지 못해 BODY 로 빠진다). 팝업 안 폼 제출은 앱 범위
   `st.rerun()` 이다(앱 회차에서 `scope="fragment"` 는 오류). 팝업 알림은 작은 편집표 알림 칸과 가른 제 칸(`IMPORT_*_KEY`)이다.
   새 방문 회차의 미리보기 거두기는 페이지가 매 회차 부르는 `withdraw_preview_on_new_visit`.
 - `src/capa_simulation/components/equipment_master_grid.py` (+ `equipment_master_grid_assets/` HTML·CSS·JS) — 가용설비 현황
@@ -1468,7 +1470,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차가 돌아와도 초점이 표 등 불러오기 밖에 있으면 찾기 칸으로 가져오지 않는다(`focusIsFree`). 팝오버는 화면 오른쪽 밖으로
     나가면 왼쪽으로 당긴다(`popoverShift`). 팝오버를 열면 초점을 패널 안 첫 칸으로 옮기고(`enterPanel` — 공정은 찾기 칸, 조건은
     첫 조건 칸) Esc 는 패널에서도, 열린 채 돌아온 여는 단추에서도 닫는다(닫히면 초점은 여는 단추 — 닫힌 단추의 Esc 는 막지 않는다).
-    표 본문의 Tab 정지는 초점 칸 하나(체크·「−」 는 `tabIndex -1`, 칸 위 Space = 줄 고르기).
+    초점이 패널·여는 단추 밖으로 나가면(Tab) 닫는다 — 초점은 옮겨 간 칸에 두고, 받을 칸 없는 나감(다시 지으며 지운 칸·창 밖)은 닫지 않는다.
+    표 본문의 Tab 정지는 초점 칸 하나(체크·「−」 는 `tabIndex -1`, 칸 위 Space = 그 줄의 체크 칸 — 산 줄은 고르기, 지운 줄은
+    되살리기). 화살표는 화면 차례의 모든 줄을 걷는다(`moveFocus` — 지운 줄도 줄이다, 지금 칸을 못 찾으면 움직이지 않는다). 고른 줄
+    띠를 닫는 단추(「선택 n대 지우기」·「선택 풀기」)는 누른 단추가 사라지므로 초점을 표의 초점 칸으로 돌린다(`refocusTable`).
     「새 호기」 칸(`drawNew`)은 브라우저 초안을 들고(받은 초안은 번호가 클 때만 — `adoptDraft`), 체크 상자 칸은 판정이 지금 초안의
     것이면 그 판정, 아니면 칸이 찼는지만 보이고(`tierDone`), 칸 오류는 그 칸을 만졌거나 값이 있을 때만 — 다만 늘 필수인 칸이
     아니면(다른 칸 값 때문에 막는 칸) 만지지 않아도 보이고(`showsError`), 「호기 추가」 는 필수 칸이 찼고 지금 초안의 판정이 막지
@@ -1478,6 +1483,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `needsReveal`, 토스트 `scroll-margin-top` 이 머리 띠를 비킨다) — 그 칸이 처음 선 회차이거나 「되돌리기」 가 달린 토스트만(칸 안에서
     고치다 받은 거절 한 줄로 쓰던 자리를 잃지 않게). 표지 색은 새 토큰 없이 팔레트(오류 선·강조·배치 머리 면·머리
     면)이고 글자(필수·가용대수·도면)가 함께 간다.
+    자리표시 글은 `--emg-muted`(TEXT_MUTED)로 그린다 — 브라우저 기본 #757575 는 테마를 몰라 어두운 바탕에서 4.5:1 에 못 미친다(Space
+    배치 편집기 입력도 `--sle-muted`).
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/page_tabs.py` (+ `page_tabs_assets/` HTML·CSS·JS) — 머리 띠 아래 화면 탭 줄
   (Components v2, 그림자 DOM)이다. **`app.py` 에서만 불러온다**(모듈이 컴포넌트를 등록한다 — `test_benchmark_home.py`).
@@ -1544,7 +1551,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/page_guide.py` — 헤더 툴바 맨 왼쪽 `Guide` 버튼과 화면별 사용 안내
   대화상자다. 원문은 패키지 안 `guides/<페이지 파일 이름>.md` 다.
   - 툴바 버튼이 본문의 숨은 버튼(`page_guide_trigger`)을 대신 누르고 파이썬이 `st.dialog` 로 연다.
-    `render_page_guide` 를 부른 화면에만 버튼이 보인다.
+    `render_page_guide` 를 부른 화면에만 버튼이 보인다. 대화상자 본문은 키 붙은 칸(`GUIDE_BODY_KEY`)에 들고, 기본 규칙
+    (`_BASE_STYLE`)이 그 칸의 표를 제 폭 안에서 옆으로 굴린다(`display: block`·`overflow: auto` — 고정 폭 캔버스를 여는
+    `scroll_shell` 셸이 아니다) — 좁은 창(390px)에서 넓은 표가 대화상자를 밀어 오른쪽 열이 잘리고 가로 바퀴로도 못 보던
+    것(2026-10-26 E2E).
   - 따라하기 가이드를 단 화면(`render_page_guide(..., howto=<가이드>)` — 지금은 HOME 의 `lob`)은 `find_howto_guide`
     가 사내판 `static/guides/local/<가이드>.html`(git 무시) → 예시판 `static/guides/howto/<가이드>.html`(추적) → md
     대화상자 차례로 고른다. 고른 주소(문서 기준 상대 `app/static/guides/…` — WebIDE `/proxy/<포트>/` 접두에서도 맞다)를
@@ -1855,6 +1865,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`RUN_DAY` 를 쓰면 설비 DB 가 시뮬레이션 DB 를 읽는다).
 - `src/capa_simulation/services/process_cutoff.py` — 공정별 Cut-off 입력 표의 계약·검증과 조회 사전(`cutoff_lookup`).
   없는 공정과 0 은 다르다 — 0 은 달력 월 그대로, 없으면 산출에서 빠지므로 화면이 `missing_cutoff_processes` 로 드러낸다.
+  화면 글은 계산(`wd_window`)이 쓰는 내림 일수로 적고, 적은 값(`cutoff_setting`)에 소수가 있으면 내림을 함께 적는다
+  (`cutoff_days_words` — 「35일(35.8일 내림)」, Static 대비 일정 머리·제약 시뮬레이션 조건 줄·공정 Capa 상세 머리). 「설정」
+  팝업만 적은 값 그대로다(2026-10-26 E2E — 같은 공정이 화면마다 35일·35.8일로 갈렸다).
 - `src/capa_simulation/services/qual_deadline.py` — Qual 마감 계산기(2026-10-22, 10-07 계산기 한 장을 옮김)의 계산과
   화면·복사 글자. Cut-off·연도·직전 달 가용대수·월별 목표·신규 호기로 호기마다 Qual 완료 마감을 낸다. 어느 DB 도 열지 않는다.
   - 구간은 `wd_window` 그대로, 몫은 완료 다음 날부터다. 모자람 ≥ 1 이면 마감 = 구간 앞 경계(몫 1), < 1 이면 모자란 날 수만큼
@@ -1935,6 +1948,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   알린다 — Proc Rename·표시순서 직접 편집·판정 기준·확보율 보정과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을
   지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·
   「삭제」 가 쓴다(9장).
+  출발점 대조 저장의 `save_once` 는 설비 편집본 저장(`equipment_data_workspace._save_equipment_frames` — 설비 마스터
+  「리비전 저장」·Space 「배치 저장」·사이드바 팝업 저장)과 FAB 전체 배치 쓰기(`save_pending_fab_layout`)가 쓴다(9장,
+  `tests/test_equipment_save_double_press.py`).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3987,6 +4003,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
     「기본으로」·「삭제」). 창이 지난 옛 화면의 누름은 전처럼 알리지 않는다(`tests/test_voc_page.py`·
     `tests/test_key_process_preset_messages.py`).
+  - 콜백에서 저장하고 뒷정리로 출발점을 옮기는 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치
+    저장」·사이드바 팝업 저장, FAB 전체 배치)은 둘째 누름의 회차가 첫 콜백을 DB 쓰기 뒤·`reset_equipment_drafts` 전에 끊으면
+    출발점(`buffer_base`)이 그대로라, 둘째 콜백이 옛 출발점으로 다시 저장하다 저장소에 거부되고 「다른 사용자가 먼저 저장해
+    저장하지 않았습니다」·「다른 사용자가 저장해 … 편집을 버리고 다시 열었습니다」 를 함께 알렸다(리비전은 한 건, 2026-10-26
+    E2E). 저장은 `write_guard.save_once(이름, 출발점, 저장, wrote=)` 로 한다 — 저장과 「이 출발점은 저장했다」 표지를 프로세스
+    잠금 하나 안에서 하고, 같은 출발점의 둘째 누름(`TRAILING_PRESS_SECONDS` 안)에는 저장소에 가지 않고 첫 결과를 돌려줘 뒷정리·
+    성공 알림을 잇는다. 아무것도 쓰지 않은 저장은 표지를 남기지 않는다. 시험은 첫 콜백이 쓴 바로 뒤 둘째 회차를 세운다
+    (`tests/test_equipment_save_double_press.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).
@@ -4091,6 +4115,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 조사 도우미는 escape 의 `\` 를 건너뛰므로 감싼 뒤의 글로 골라도
   escape 하기 전과 같은 조사다(「WB\(2\)」→「는」, `tests/test_korean_particle.py`) — 감싸는 차례에 매이지 않는다.
+  `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown` 이면 두 번
+  막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
 - 앱이 지은 거부·안내 문구를 알림 상자(`st.error`·`st.warning`·`st.info`·`st.success`)에 넣을 때 그 문구가 범위 물결표(「동은
   C1~C5, 층은 1F~6F」)를 품을 수 있으면 `literal_markdown.markdown_safe_tildes` 로 감싼다 — 물결표 둘이면 가운데가 지움선이 된다.
   구두점 전부가 아니라 `~` 만 막아 문구에 일부러 넣은 굵게·코드는 산다. 문구 바이트는 규칙 시험이 고정하므로 상수는 그대로 둔다

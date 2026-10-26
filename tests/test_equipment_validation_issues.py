@@ -469,6 +469,15 @@ def test_the_rejection_text_is_byte_for_byte_the_old_text() -> None:
         prepare_equipment_master(frame)
     assert str(mixed.value) == "같은 Main 설비의 모듈 행은 동이 같아야 합니다: ['GRP-1']"
 
+    # 받침 없는 칸 이름은 「가」 — 칸 이름 끝소리로 조사를 고른다.
+    frame = _modules()
+    frame.at[1, "공정소분류"] = "DEMO-다른공정"
+    with pytest.raises(ValueError) as process:
+        prepare_equipment_master(frame)
+    assert str(process.value) == (
+        "같은 Main 설비의 모듈 행은 공정소분류가 같아야 합니다: ['GRP-1']"
+    )
+
     frame = _master()
     frame.at[0, "Qual실적"] = "2026-12-01"
     with pytest.raises(ValueError) as future:

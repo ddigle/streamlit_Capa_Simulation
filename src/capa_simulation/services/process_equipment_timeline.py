@@ -90,7 +90,7 @@ from capa_simulation.services.monthly_equipment_availability import (
     BASELINE_CATEGORY,
     build_monthly_equipment_contributions,
 )
-from capa_simulation.services.process_cutoff import ALL_PRODUCTS, cutoff_lookup
+from capa_simulation.services.process_cutoff import ALL_PRODUCTS, cutoff_setting
 from capa_simulation.services.required_shortening import KIND_NEW, KIND_SHORTENED, unit_number
 from capa_simulation.services.wd_window import WdWindow, wd_window
 
@@ -449,13 +449,9 @@ def dynamic_readiness(
 
 
 def _cutoff_days(cutoff: pd.DataFrame | None, process: str) -> int | None:
-    if cutoff is None or cutoff.empty:
-        return None
-    lookup = {str(name).strip(): days for name, days in cutoff_lookup(cutoff).items()}
-    days = lookup.get(process)
-    if days is None or (isinstance(days, float) and math.isnan(days)):
-        return None
-    return int(days)
+    """계산이 쓰는 그 공정의 Cut-off 일수 — 적은 값(`cutoff_setting`)을 내림한 일수."""
+    days = cutoff_setting(cutoff, process)
+    return None if days is None else int(days)
 
 
 def _process_mask(values: pd.Series, process: str) -> pd.Series:

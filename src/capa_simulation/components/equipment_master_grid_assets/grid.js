@@ -87,6 +87,16 @@ function nextCell(rowCount, colCount, from, dir, editable, limit) {
   }
   return null
 }
+
+// 화살표가 옮겨 갈 칸(행 id·칸 번호). `ids` 는 **화면 차례의 모든 줄**이다 — 지운 줄도 줄이라, 지운 줄에 남은
+// 초점에서 ↓ 는 아랫줄로 가고(맨 첫 줄로 뛰지 않는다) 화살표로 지운 줄에 돌아와 Space 로 되살릴 수 있다. 지금 칸을
+// 못 찾으면 움직이지 않는다.
+function moveFocus(ids, cols, at, dir) {
+  const from = { row: ids.indexOf(at.id), col: cols.indexOf(at.col) }
+  if (from.row < 0 || from.col < 0) return null
+  const next = nextCell(ids.length, cols.length, from, dir, () => true, 1)
+  return next ? { id: ids[next.row], col: cols[next.col] } : null
+}
 // </grid-nav>
 
 // <grid-outbox>
@@ -404,6 +414,7 @@ function freshState() {
     note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
     nd: null, ndSent: [], ndTouched: new Set(), ndDirty: new Set(), copyQuery: '',
+    dialogOpener: null, dialogClosed: null,
   }
 }
 
@@ -576,7 +587,7 @@ function drawLoader(host, S, data) {
     fresh.disabled = Boolean(data.newRowsLocked)
     bar.appendChild(fresh)
   }
-  bar.appendChild(button('emg-btn', '엑셀·CSV로 한꺼번에', () => S.setTrigger('dialog', { name: 'import' })))
+  bar.appendChild(importButton(S, 'emg-btn', 'import-bar'))
   const loaded = Array.isArray(data.loaded) ? data.loaded.length : 0
   const total = Number(data.total) || 0
   // 불러온 수는 전체(살아 있는 호기)와 같은 기준 — 지울 목록에 든 호기는 표에 남아도 세지 않는다.
@@ -596,10 +607,28 @@ function drawLoader(host, S, data) {
   S.painting = false
   const focus = S.refocus
   S.refocus = null
-  if (focus === 'search' && S.searchInput && focusIsFree(host)) {
+  // 이 불러오기가 연 「엑셀·CSV로 한꺼번에」 팝업이 닫혔다(파이썬이 닫힐 때마다 센 수 `dialogClosed`) — Streamlit 은 닫은
+  // 뒤 초점을 그림자 DOM 안 여는 단추로 돌려주지 못해 BODY 로 빠진다. 초점이 아무 데도 없으면 여는 단추로 돌린다.
+  const closed = Number(data.dialogClosed) || 0
+  const opener = S.dialogClosed !== null && closed !== S.dialogClosed ? S.dialogOpener : null
+  S.dialogClosed = closed
+  if (opener) S.dialogOpener = null
+  const back = opener ? root.querySelector('[data-fk="' + opener + '"]') || root.querySelector('[data-fk="import-bar"]') : null
+  if (back && focusIsFree(host)) back.focus()
+  else if (focus === 'search' && S.searchInput && focusIsFree(host)) {
     S.searchInput.focus()
     S.searchInput.setSelectionRange(S.query.length, S.query.length)
   } else restoreFocus(host, saved)
+}
+
+// 「엑셀·CSV로 한꺼번에」 — 누른 단추(`fk`)를 적어 두고 팝업이 닫힌 회차에 초점을 그리로 돌린다(`drawLoader`).
+function importButton(S, cls, fk) {
+  const press = button(cls, '엑셀·CSV로 한꺼번에', () => {
+    S.dialogOpener = fk
+    S.setTrigger('dialog', { name: 'import' })
+  })
+  press.dataset.fk = fk
+  return press
 }
 
 // 불러오기 회차가 돌아와 찾기 칸에 초점을 돌려줘도 되는가 — 초점이 아무 데도 없거나(다시 그리며 지운 칸) 이 불러오기
@@ -631,7 +660,7 @@ function emptyState(S, data, alertIds, total) {
   if (data.firstData) {
     box.appendChild(el('b', null, '첫 데이터는 엑셀·CSV로 한꺼번에 붙여 넣습니다'))
     box.appendChild(el('span', 'emg-muted', '저장된 설비 데이터가 아직 없습니다. 붙여 넣은 뒤 「저장 전 변경」 에서 리비전을 저장합니다.'))
-    buttons.appendChild(button('emg-btn is-primary', '엑셀·CSV로 한꺼번에', () => S.setTrigger('dialog', { name: 'import' })))
+    buttons.appendChild(importButton(S, 'emg-btn is-primary', 'import-first'))
     if (data.newEnabled) {
       const fresh = button('emg-btn', '+ 새 호기', () => S.setTrigger('new', {}))
       fresh.disabled = Boolean(data.newRowsLocked)
@@ -820,6 +849,14 @@ function popover(S, name, label, build, wide) {
     if (event.key !== 'Escape' || S.pop !== name) return
     stopKeys(event)
     close()
+  })
+  // 초점이 패널·여는 단추 밖으로 나가면(Tab) 닫는다 — 열린 채 남으면 초점이 간 칸(오른쪽 호기 상세 등)을 덮고, 그 칸의 Esc
+  // 는 패널에 닿지 않는다. 받을 칸이 없는 나감(다시 지으며 지운 칸·창 밖)은 닫지 않는다. 초점은 옮겨 간 칸에 둔다.
+  wrap.addEventListener('focusout', (event) => {
+    const next = event.relatedTarget
+    if (S.pop !== name || !next || wrap.contains(next)) return
+    S.pop = null
+    paint()
   })
   const paint = () => {
     const open = S.pop === name
@@ -1295,16 +1332,28 @@ function buildSelection(S, bar) {
     S.selected = new Set()
     send(S)
     paintSelection(S)
+    refocusTable(S, rows[0].id)
   })
   remove.disabled = deletable.length === 0
   if (lock) remove.title = lock
   bar.appendChild(remove)
   bar.appendChild(button('emg-btn is-small is-ghost', '선택 풀기', () => {
+    const first = rows[0].id
     S.selected = new Set()
     S.anchor = null
     paintSelection(S)
-    paintWindow(S)
+    refocusTable(S, first)
   }))
+}
+
+// 고른 줄 띠가 닫히는 단추(지우기·선택 풀기)는 누른 단추가 사라진다 — 초점을 표 본문의 초점 칸(없으면 고른 첫 줄의
+// 설비명)으로 돌린다. 그대로 두면 문서 맨 앞(BODY)으로 빠져 다음 Tab 이 사이드바 머리로 간다.
+function refocusTable(S, fallbackId) {
+  const known = S.focus && S.model.ordered.some((row) => row.id === S.focus.id)
+  if (!known) S.focus = { id: fallbackId, col: S.model.nameCol }
+  ensureVisible(S, S.focus.id)
+  S.wantFocus = true
+  paintWindow(S)
 }
 
 function headCell(S, k) {
@@ -1475,9 +1524,9 @@ function rowElement(S, row, index) {
   }
   if (tag === 'new') open.appendChild(el('span', 'emg-tag is-new', '새 호기'))
   if (tag === 'deleted') open.appendChild(el('span', 'emg-tag is-deleted', '지움'))
-  const nameTip = [errors[model.nameCol] !== undefined ? '오류: ' + errors[model.nameCol] : '', changed[model.nameCol] !== undefined ? '저장본: ' + changed[model.nameCol] : '', row.alert || '', '누르면 오른쪽에 이 호기의 모든 칸이 열립니다']
+  const nameTip = [errors[model.nameCol] !== undefined ? '오류: ' + errors[model.nameCol] : '', changed[model.nameCol] !== undefined ? '저장본: ' + changed[model.nameCol] : '', row.alert || '', tag === 'deleted' ? '지운 호기 — Space 로 되살립니다' : '', '누르면 오른쪽에 이 호기의 모든 칸이 열립니다']
   open.title = nameTip.filter(Boolean).join('\n')
-  open.setAttribute('aria-label', (name || '새 호기') + ' 상세 열기')
+  open.setAttribute('aria-label', (name || '새 호기') + ' 상세 열기' + (tag === 'deleted' ? ' (지운 호기 — Space 로 되살리기)' : ''))
   nameCell.appendChild(open)
   node.appendChild(nameCell)
   model.visible.forEach((k) => node.appendChild(cellElement(S, row, k)))
@@ -1720,10 +1769,9 @@ function onBodyKey(S, event) {
   if (moves[event.key]) {
     event.preventDefault()
     const columns = [model.nameCol].concat(model.visible)
-    const from = { row: live.findIndex((row) => row.id === id), col: columns.indexOf(col) }
-    const next = nextCell(live.length, columns.length, from, moves[event.key], () => true, 1)
+    const next = moveFocus(model.ordered.map((row) => row.id), columns, { id, col }, moves[event.key])
     if (next) {
-      S.focus = { id: live[next.row].id, col: columns[next.col] }
+      S.focus = next
       ensureVisible(S, S.focus.id)
       S.wantFocus = true
       paintWindow(S)
@@ -1731,9 +1779,14 @@ function onBodyKey(S, event) {
     return
   }
   if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    // Space = 그 줄 고르기(Shift+Space 는 기준 줄부터 범위) — 체크 칸은 Tab 정지가 아니다.
+    // Space = 그 줄의 체크 칸 — 산 줄은 고르기(Shift+Space 는 기준 줄부터 범위), 지운 줄은 되살리기. 체크 칸은
+    // Tab 정지가 아니다.
     event.preventDefault()
     if (live.some((row) => row.id === id)) toggleRow(S, id, event.shiftKey)
+    else if (model.ordered.some((row) => row.id === id && row.tag === 'deleted')) {
+      enqueue(S, { op: 'restore', ids: [id] }, [])
+      send(S)
+    }
     return
   }
   if (col === model.nameCol) return

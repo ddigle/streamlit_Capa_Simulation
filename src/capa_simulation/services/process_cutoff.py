@@ -30,6 +30,7 @@ Cut-off 는 「그 공정 이후의 공정~입고(마지막 공정)까지 TAT �
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Iterable
 
 import pandas as pd
@@ -242,6 +243,30 @@ def cutoff_lookup(cutoff: pd.DataFrame) -> dict[str, float]:
         str(process): float(days)
         for process, days in zip(scoped["공정"], scoped["Cutoff일수"], strict=True)
     }
+
+
+def cutoff_setting(cutoff: pd.DataFrame | None, process: str) -> float | None:
+    """그 공정에 적은 Cutoff일수(소수 그대로). 표가 없거나 그 공정이 없거나 비었으면 None.
+
+    공정 이름은 앞뒤 공백을 떼고 맞댄다. 계산은 이 값을 내림해 일 단위로 쓴다(`wd_window`).
+    """
+    if cutoff is None or cutoff.empty:
+        return None
+    lookup = {str(name).strip(): days for name, days in cutoff_lookup(cutoff).items()}
+    days = lookup.get(str(process).strip())
+    if days is None or math.isnan(days):
+        return None
+    return days
+
+
+def cutoff_days_words(days: float) -> str:
+    """Cut-off 일수 글 — 계산이 쓰는 일 단위(소수는 내림, `wd_window`)로 적고, 내림했으면 적은
+    값을 함께 둔다(「35일(35.8일 내림)」). 화면마다 계산과 같은 수가 보이고, 「설정」 팝업의 35.8
+    과도 어긋나 보이지 않는다."""
+    applied = int(days)
+    if applied == days:
+        return f"{applied}일"
+    return f"{applied}일({days:g}일 내림)"
 
 
 def missing_cutoff_processes(processes: Iterable[str], cutoff: pd.DataFrame) -> list[str]:
