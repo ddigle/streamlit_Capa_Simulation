@@ -110,11 +110,11 @@ def _scenario(repository: DuckDBEquipmentRepository, scenario_id: str) -> Any:
     )
 
 
-def _overlay(tmp_path: Path) -> tuple[DuckDBEquipmentRepository, str]:
-    """「운영 일정」 r1(공식 v1) + 복제한 「셋업 실무」 — r2 에서 EQ-01 을 X=50 으로 옮긴 가정
-    배치."""
+def _overlay(tmp_path: Path, name: str = "셋업 실무") -> tuple[DuckDBEquipmentRepository, str]:
+    """「운영 일정」 r1(공식 v1) + 복제한 「셋업 실무」(`name`) — r2 에서 EQ-01 을 X=50 으로 옮긴
+    가정 배치."""
     repository = _seeded(tmp_path)
-    clone = _clone(repository)
+    clone = _clone(repository, name)
     mine = _session(repository, clone.equipment_scenario_id)
     repository.save_equipment(
         _request(
@@ -285,6 +285,27 @@ def test_a_stale_assumption_with_the_same_layout_fast_forwards(
     assert str(latest.loc["EQ-02", "Qual일정"])[:10] == "2026-09-01"
 
 
+def test_the_fast_forward_line_is_written_once_beside_an_unsaved_layout(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """적용해 둔 배치 변경이 있는 채 그 시나리오에 남의 일정 저장이 들어왔다(빨리 감기) — 저장 안
+    한 배치 상자 캡션과 바로 아래 ▸▸ 줄이 같은 빨리 감기 글을 두 번 적지 않는다(한 화면에 한 번 —
+    E2E r3, 잠금 까닭과 같은 꼴)."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
+    )
+    clear_equipment_repository()
+    _ok(app.run())
+
+    texts = _texts(app)
+    assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in texts)
+    assert sum(text.count("더 새롭지만 배치는 같습니다") for text in texts) == 1, texts
+
+
 def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -323,6 +344,156 @@ def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
     assert any("가정이던 때의 배치 차이" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
+
+
+# 물결표가 둘인 설비 시나리오 이름 — 막지 않으면 「가정<del>R3</del>X」 로 그려진다. 막힌 꼴은
+# `\~`(마크다운이 물결표 글자 그대로 그린다)다.
+TILDE_NAME = "가정~R3~X"
+TILDE_ESCAPED = "가정\\~R3\\~X"
+
+
+def _assert_tildes_escaped(app: AppTest) -> None:
+    """이름이 실린 마크다운 글(본문·사이드바 글·풍선) 모두가 물결표를 막았다."""
+    texts = [
+        *_texts(app),
+        *(str(item.help) for item in app.toggle if item.help),
+        *(str(item.help) for item in app.button if item.help),
+    ]
+    named = [text for text in texts if "R3" in text]
+    assert named
+    bare = [text for text in named if re.search(r"(?<!\\)~", text)]
+    assert not bare, bare
+
+
+def test_a_deleted_units_difference_is_named_once_in_the_space_head(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r3 — 가정 배치 차이가 공통 대장에서 지운 호기의 것뿐이면 머리 첫 줄은 「배치는 공식과
+    같습니다」 뿐이고(「공식과 같아진 것은 … 정리됩니다」 꼬리 없음), 그 행은 둘째 줄 「지운 호기의
+    배치 차이 1행은 버렸습니다」 가 한 번 말한다."""
+    repository, setup = _overlay(tmp_path)
+    theirs = _session(repository)
+    kept = theirs.equipment.loc[~theirs.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = theirs.downtime.loc[~theirs.downtime["설비명"].eq("EQ-01")].reset_index(drop=True)
+    repository.save_equipment(_request(theirs, equipment=kept, downtime=downtime))
+    app = _ok(_space(tmp_path, setup).run())
+
+    texts = _texts(app)
+    assert any("가정 설비 시나리오 · 배치는 공식과 같습니다" in text for text in texts), texts
+    assert any("지운 호기의 배치 차이 1행은 버렸습니다" in text for text in texts), texts
+    assert not any("공식과 같아진 것은" in text for text in texts), texts
+
+
+def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notices(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 시나리오 이름 「가정~R3~X」 — 적용 알림·저장 안 한 배치 상자 캡션·저장 알림(이름이 두 번
+    나와 물결표 하나짜리 이름도 짝이 맞는다)이 물결표를 막아 지움선이 되지 않는다(E2E r3)."""
+    _, setup = _overlay(tmp_path, TILDE_NAME)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+
+    assert any(
+        f"저장하면 「{TILDE_ESCAPED}」의 가정 배치로" in str(item.value) for item in app.success
+    )
+    assert any(
+        f"「{TILDE_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_tildes_escaped(app)
+
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+    saved = next(str(item.value) for item in app.success if "저장했습니다" in str(item.value))
+    assert saved.count(f"「{TILDE_ESCAPED}」") >= 2, saved
+    _assert_tildes_escaped(app)
+
+
+def test_a_tilde_scenario_name_keeps_its_tildes_in_the_fast_forward_and_editor_lines(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """낡은 가정 세션(배치 같음 — 빨리 감기)의 ▸▸ 줄과 편집기 위 「새 호기를 넣지 않습니다」 줄이
+    이름의 물결표를 막는다."""
+    repository, setup = _overlay(tmp_path, TILDE_NAME)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"))
+    )
+    app = _ok(_space(tmp_path, setup, pinned).run())
+    assert any(
+        f"「{TILDE_ESCAPED}」 r3" in str(item.value)
+        and "더 새롭지만 배치는 같습니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_tildes_escaped(app)
+
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    _ok(app)
+    assert any(
+        f"「{TILDE_ESCAPED}」" in str(item.value) and "새 호기를 넣지 않습니다" in str(item.value)
+        for item in app.caption
+    )
+    _assert_tildes_escaped(app)
+
+
+def test_a_tilde_scenario_name_keeps_its_tildes_in_the_lock_line_and_its_popover(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """낡은 가정 세션(남이 다른 배치를 저장 — 잠금)의 잠금 줄·꺼진 「배치 편집」 풍선·「최신 r3
+    불러오기」 팝오버 글이 이름의 물결표를 막는다."""
+    repository, setup = _overlay(tmp_path, TILDE_NAME)
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app = _ok(_space(tmp_path, setup, pinned).run())
+
+    assert any(
+        f"「{TILDE_ESCAPED}」 r3 에 다른 배치가 저장됐습니다" in str(item.value)
+        for item in app.caption
+    )
+    locked = app.toggle(key="space_layout_edit_mode_locked")
+    assert TILDE_ESCAPED in str(locked.help)
+    assert any(f"세션을 「{TILDE_ESCAPED} · r2」 에서" in str(item.value) for item in app.caption)
+    _assert_tildes_escaped(app)
+
+
+def test_a_tilde_scenario_name_keeps_its_tildes_in_an_old_official_revision_head(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정이던 때의 리비전을 연 공식 시나리오 세션 — 머리 알림(「…이(가) 가정이던 때의
+    배치안입니다」)과 잠금 줄이 이름의 물결표를 막는다."""
+    repository, setup = _overlay(tmp_path, TILDE_NAME)
+    overlaid = _scenario(repository, setup).latest_schedule_revision_id
+    cleared = repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=overlaid)
+    assert cleared is not None
+    repository.publish_equipment_release(
+        cleared.schedule_revision_id, released_by=None, note=None, expected_latest_release_no=1
+    )
+    app = _ok(_space(tmp_path, setup, overlaid).run())
+
+    assert any(
+        f"「{TILDE_ESCAPED}」" in str(item.value) and "가정이던 때의 배치안" in str(item.value)
+        for item in app.info
+    )
+    _assert_tildes_escaped(app)
+
+
+def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> None:
+    """층 캔버스 팝업의 경고 재료 — 가정 설비 시나리오 이름과 이탈 호기 설비명의 물결표를 막는다."""
+    from capa_simulation.components.floor_layout_upload import (
+        _unit_names,
+        overlay_mark_words,
+        overlay_unit_words,
+    )
+
+    assert overlay_unit_words((("10~12월 증설", 2),)) == "가정 배치 「10\\~12월 증설」 호기 2대"
+    assert "가정 배치 「10\\~12월 증설」 의 요소도 밖입니다" in overlay_mark_words(
+        ("10~12월 증설",)
+    )
+    assert _unit_names(["NEW~01~", "EQ-02"]) == "NEW\\~01\\~, EQ-02(2대)"
 
 
 def test_an_assumption_session_locks_fab_canvas_and_floor_use(
@@ -572,10 +743,10 @@ def test_the_subject_particle_reads_the_final_sound() -> None:
     assert subject_particle("ABC") == "이(가)"
 
 
-def _moved_floor(tmp_path: Path) -> tuple[DuckDBEquipmentRepository, str]:
-    """「셋업 실무」 의 가정 배치에서 EQ-01 만 C1 2F 로 옮겼다(공식 C1 2F 는 비었다)."""
+def _moved_floor(tmp_path: Path, name: str = "셋업 실무") -> tuple[DuckDBEquipmentRepository, str]:
+    """「셋업 실무」(`name`) 의 가정 배치에서 EQ-01 만 C1 2F 로 옮겼다(공식 C1 2F 는 비었다)."""
     repository = _seeded(tmp_path)
-    clone = _clone(repository)
+    clone = _clone(repository, name)
     mine = _session(repository, clone.equipment_scenario_id)
     repository.save_equipment(
         _request(
@@ -638,6 +809,73 @@ def test_turning_off_a_floor_only_an_assumption_uses_asks_with_the_overlay_line(
     app.button(key=CONFIRM_BUTTON_KEY).click()
     _ok(tables.run())
     assert repository.load_floor_states().inactive == {("C1", "2F"): "UNUSED"}
+
+
+def test_the_floor_off_overlay_line_keeps_tildes_in_the_scenario_name(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r3 같은 꼴 — 층 끄기 확인의 덧줄(「가정 설비 시나리오 「…」 의 배치에서 …」)이 설비
+    시나리오 이름의 물결표를 막는다(「가정<del>R3</del>X」 가 되지 않게)."""
+    repository, _ = _moved_floor(tmp_path, TILDE_NAME)
+    app = _space(tmp_path, OPERATIONS, floor=False)
+    tables = BrowserTables(app)
+    _ok(tables.run())
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(True)
+    _ok(tables.run())
+    tables.edit(_floor_editor_key(app), FLOOR_KEYS.index(("C1", "2F")), "사용", False)
+    _ok(tables.run())
+    app.button(key=FLOOR_SAVE_BUTTON_KEY).click()
+    _ok(tables.run())
+
+    assert CONFIRM_KEY in app.session_state
+    assert any(
+        f"가정 설비 시나리오 「{TILDE_ESCAPED}」 의 배치에서 C1 2F 에 놓인 호기 1대도"
+        in str(item.value)
+        for item in app.caption
+    )
+    _assert_tildes_escaped(app)
+
+
+def test_the_sidebar_row_keeps_tildes_in_its_save_flash_and_session_notice(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E2E r3 같은 꼴 — Space 사이드바 설비 시나리오 줄의 팝업 저장 알림(가정 배치 저장은 이름이
+    두 번 나와 물결표 하나짜리 이름도 짝이 맞는다)과 세션 이동 알림이 이름의 물결표를 막는다."""
+    from dataclasses import replace
+    from datetime import datetime
+
+    import capa_simulation.equipment_scenario_activation as activation
+    from capa_simulation.components.equipment_scenario_status import FLASH_KEY as ROW_FLASH_KEY
+
+    _, setup = _overlay(tmp_path, TILDE_NAME)
+    schedule = EquipmentScheduleRevisionSummary("s3", setup, 3, "save", datetime(2026, 10, 26))
+    saved = save_result_message(
+        EquipmentSaveResult(
+            common=None, schedule=schedule, layout_overlay_written=True, layout_overlay_units=1
+        ),
+        scenario_name=TILDE_NAME,
+    )
+    assert saved.count(f"「{TILDE_NAME}」") >= 2, saved
+    notice = (
+        f"「{TILDE_NAME}」 r1 을 지금 공통 대장과 합칠 수 없어 「{TILDE_NAME}」 r2 로 열었습니다 — "
+        "저장하지 않은 설비 편집은 버렸습니다."
+    )
+    resolve = activation.resolve_equipment_session
+    monkeypatch.setattr(
+        activation,
+        "resolve_equipment_session",
+        lambda path: replace(resolve(path), notice=notice),
+    )
+    app = _space(tmp_path, setup)
+    app.session_state[ROW_FLASH_KEY] = saved
+    _ok(app.run())
+
+    flashes = [str(item.value) for item in app.sidebar.success]
+    notices = [str(item.value) for item in app.sidebar.warning]
+    assert any(text.count(f"「{TILDE_ESCAPED}」") >= 2 for text in flashes), flashes
+    assert any(f"「{TILDE_ESCAPED}」 r2 로 열었습니다" in text for text in notices), notices
+    bare = [text for text in [*flashes, *notices] if re.search(r"(?<!\\)~", text)]
+    assert not bare, bare
 
 
 def test_an_assumption_save_of_marks_only_names_what_it_saved() -> None:
