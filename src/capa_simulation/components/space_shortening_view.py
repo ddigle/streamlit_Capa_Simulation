@@ -401,7 +401,10 @@ def load_space_layer(
 
 
 def _equipment_basis_text(session: EquipmentSession) -> str:
-    """기준 캡션의 설비 쪽 — 「운영 일정 · r12 · 공식 v3」·「셋업 실무 · r4 · 가정」."""
+    """기준 캡션의 설비 쪽 — 「운영 일정 · r12 · 공식 v3」·「셋업 실무 · r4 · 가정」.
+
+    이미 마크다운에 싣는 글이다 — 시나리오 이름은 `equipment_value_label` 이 `literal_markdown` 으로
+    막았다. 한 번 더 막으면 `\\` 자체가 막혀 「가정\\~R5」 처럼 역슬래시가 글자로 보인다."""
     text = equipment_value_label(session)
     if session.is_official_pair and session.release_no is not None:
         return f"{text} · 공식 v{session.release_no}"
@@ -429,9 +432,7 @@ def render_layer_basis(
     months = space_layer.months
     span = f"{_month_text(months[0])}~{_month_text(months[-1])}" if months else "달 없음"
     equipment = (
-        "설비 샘플(데모)"
-        if sample
-        else f"설비 시나리오 「{literal_markdown(_equipment_basis_text(session))}」"
+        "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
     )
     st.caption(
         f":material/grid_view: 필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario} · {span} · "

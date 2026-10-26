@@ -29,6 +29,7 @@ import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components import space_layout_editor, space_shortening_view
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_SPACE,
@@ -406,6 +407,27 @@ def test_an_assumption_session_shares_the_shortening_key_and_names_its_scenario(
     official_key = plan_keys["keys"][-1]
     assert official_key != board_key
     assert official_key[1] != board_key[1]
+
+
+def test_the_basis_caption_blocks_the_assumption_name_only_once(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """구두점이 든 가정 설비 시나리오 이름은 기준 캡션에서 한 번만 막힌다 — 두 번 막으면 `\\` 자체가
+    막혀 「가정\\~R5\\~X \\(10\\-12월\\)」 처럼 역슬래시가 글자로 보였다(2026-10-26 E2E 5회차)."""
+    name = "가정~R5~X (10-12월)"
+    repository = _saved_database(tmp_path)
+    clone = _clone(repository, name)
+    space = _app(tmp_path / "equipment.duckdb")
+    space.session_state[SELECTION_KEY] = {
+        "scenario_id": clone.equipment_scenario_id,
+        "schedule_revision_id": None,
+    }
+    _turn_on(_ok(space.run()))
+
+    basis = [text for text in _texts(space) if "필요 단축 · 설비 시나리오" in text]
+    assert len(basis) == 1, basis
+    assert f"설비 시나리오 「{literal_markdown(name)} · r1 · 가정」 기준" in basis[0], basis
+    assert "\\\\" not in basis[0], basis
 
 
 # ------------------------------------------------------------------ T-P7·T-P11 못 읽음

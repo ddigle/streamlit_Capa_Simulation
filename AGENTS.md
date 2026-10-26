@@ -4285,7 +4285,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
       마크다운 자리 인자에 `exc` 를 그대로 넘겨도 실패한다. 지나가는 것은 막는 함수 안·`raise`·로그·평문 자리(`st.code`·
       `st.text`·`st.json`·`html.escape`)·까닭 가르기(`"lock" in str(exc)`)와, 마크다운이 아닌 곳으로만 보내는 함수
       (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
-      `bootstrap_error_message`(다시 감싸기). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS` 만.
+      `bootstrap_error_message`(다시 감싸기)와, `literal_markdown`·`quoted` 안의 이미 막은 글을 짓는 함수(`ESCAPED_BUILDERS`
+      — 설비 시나리오 값 칸 글 `equipment_value_label` 등. 다시 막으면 `\` 가 글자로 보인다 — 2026-10-26 E2E 5회차 필요
+      단축 기준 캡션). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS`·`ESCAPED_BUILDERS` 만.
       **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
       그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글.
       이것은 이 절의 규칙대로 짓거나 그리는 자리에서 막고 아래 화면 그물·리뷰가 본다.
