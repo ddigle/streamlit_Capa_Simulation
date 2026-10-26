@@ -820,6 +820,14 @@
 
 ### 화면
 
+- (2026-10-26) **실적 세 화면·Dynamic Capa 그림의 축 눈금 글자는 `TEXT_MUTED` 다**(브라우저 E2E lens dynamic-admin, 밤사이
+  권장대로) — 그림이 `layout.font.color` 만 주어 `st.plotly_chart` 기본 테마가 축 눈금을 테마 회색(밝게 `#808495`)으로 채워
+  캔버스 위 3.50:1 이었다(효율·UPEH·수율 추이·우선순위·Gap 격자, Dynamic Capa 공정별 실현 수준·손실 구조·일별 추이). 공용
+  `plotly_layout.apply_axis_text_color` 로 모든 x·y 축 눈금·축 제목을 `TEXT_MUTED`(밝게 5.19:1 · 어둡게 6.74:1)로 준다 —
+  같은 앱의 제약 시뮬레이션·재공 현황 그림과 같은 색이다. 대안: `TEXT`(본문 글자색) — 축 글자가 막대 숫자·범례와 같은
+  무게가 되어 위계가 사라진다. 관련: `components/plotly_layout.py`·`components/performance_actual_screen.py`·
+  `components/dynamic_capacity_dashboard.py`·`tests/test_chart_axis_text_contrast.py`. 남은 것(이 고침 밖): 풍선(`hoverlabel`)
+  글자색을 주지 않는 그림은 테마가 풍선 글자도 같은 회색으로 채운다(대비는 재지 않음).
 - (2026-10-26) **Admin 표시순서 직접 편집 저장은 버전 대조다**(브라우저 E2E lens dynamic-admin, 밤사이 권장대로) — A·B 가 같은
   범위(생산 계획/수율)를 연 뒤 B 가 한 줄을 지우고 저장하면, A 의 저장 회차에 편집표(`num_rows="dynamic"` — 데이터가 신원에 든다)가
   새로 서며 A 가 고친 값표시순서를 버린 채 지금 저장본을 다시 써 version 만 올리고 「저장했습니다」 를 띄웠다. Proc Rename 과 같은

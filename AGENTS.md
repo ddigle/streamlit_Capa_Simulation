@@ -2226,6 +2226,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 도형·주석은 `append_layout_items` 로 모아 Figure 를 돌려주는 쪽이 `flush_layout_items` 를 한 번 부른다(빠뜨리면
     테두리·라벨이 사라진다, `tests/test_plotly_layout.py`). flush·`figure_from_spec` 의 빠른 경로는 비공개 `_validate`
     라 `plotly>=5.24,<7` 에 기댄다(`tests/test_plotly_fast_path.py`).
+  - `chart_canvas_layout` 은 캔버스 두 바탕색과 `layout.font` 만 준다 — `st.plotly_chart` 기본 `theme="streamlit"` 이 축
+    눈금·축 제목 글자색을 테마 회색(밝게 `#808495`, 캔버스 위 3.50:1)으로 따로 채우므로, 축 글자를 따로 주지 않는 그림은
+    `apply_axis_text_color`(모든 x·y 축 `TEXT_MUTED`, 두 테마 4.5:1 이상)를 마지막에 부른다. 지금 실적 세 화면
+    (`performance_actual_screen`)·Dynamic Capa(`dynamic_capacity_dashboard`)가 부른다(`tests/test_chart_axis_text_contrast.py`).
   - 표 칸 글자를 표 밖에서 그리는 도우미 — `table_text_layer`(`TableText` 벌마다 글자 trace 와 숨긴 축. 넘칠 수 있는
     글자(`table_text_max_width_px`)만 그 열을 덮는 축 `xaxis2`… 에 얹어 `go.Table` 처럼 열 경계 ±1px 에서 자른다.
     자르는 축이 있으면 `plot_bgcolor` 는 투명이다 — 겹치는 축 바탕이 `layer: below` 도형을 덮는다), `table_text_y`

@@ -7,7 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
-from capa_simulation.components.plotly_layout import chart_canvas_layout
+from capa_simulation.components.plotly_layout import apply_axis_text_color, chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import tokens
 from capa_simulation.services.dynamic_capacity import aggregate_dynamic_capacity
@@ -163,3 +163,4 @@ def _apply_common_layout(figure: go.Figure) -> None:
     figure.update_yaxes(
         gridcolor=tokens.HEADER_BACKGROUND, zeroline=False, linecolor=tokens.HEADER_BACKGROUND
     )
+    apply_axis_text_color(figure)

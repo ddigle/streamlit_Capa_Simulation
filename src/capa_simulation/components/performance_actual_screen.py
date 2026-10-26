@@ -22,7 +22,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from capa_simulation.components.plotly_layout import chart_canvas_layout
+from capa_simulation.components.plotly_layout import apply_axis_text_color, chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.sample_data import (
     render_pending_source,
@@ -428,6 +428,7 @@ def _trend_figure(trend: pd.DataFrame, metric: MetricSpec) -> go.Figure:
     figure.update_yaxes(
         title=None, gridcolor=tokens.BORDER, zeroline=False, tickformat=_value_tick_format(metric)
     )
+    apply_axis_text_color(figure)
     return figure
 
 
@@ -499,6 +500,7 @@ def _priority_figure(
         range=_priority_range(ordered["Gap"]),
     )
     figure.update_yaxes(title=None, showgrid=False, **axis.layout())
+    apply_axis_text_color(figure)
     return figure
 
 
@@ -561,4 +563,5 @@ def _gap_matrix_figure(
     )
     figure.update_xaxes(type="category", title=None, side="top")
     figure.update_yaxes(autorange="reversed", title=None, **axis.layout())
+    apply_axis_text_color(figure)
     return figure
