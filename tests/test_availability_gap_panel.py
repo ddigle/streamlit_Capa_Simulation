@@ -325,7 +325,14 @@ def test_only_the_selected_result_is_drawn_and_counts_keep_their_axes() -> None:
     assert row["일정기준가용대수"] == 4.5
     assert row["Static확보율"] == 0.6
     assert row["일정기준확보율"] == 0.45
-    assert row["확보율차이"] == -0.15
+    # 차이는 %p 수다(비율 −0.15 로 적어 다른 화면의 %·%p 와 단위가 어긋났다 — 2026-10-26 E2E).
+    assert row["확보율차이"] == pytest.approx(-15.0)
+    formats = {
+        name: config.get("type_config", {}).get("format")
+        for name, config in json.loads(app.dataframe[0].proto.columns).items()
+    }
+    assert formats["Static확보율"] == formats["일정기준확보율"] == "percent"
+    assert formats["확보율차이"] == "%+.1f%%p"
 
     _select_view(app, "가용대수 비교")
     assert len(app.get("plotly_chart")) == 1
