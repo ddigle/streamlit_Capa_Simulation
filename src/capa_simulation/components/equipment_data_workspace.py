@@ -1793,6 +1793,19 @@ FAB_DISCARD_HINT = (
 SAVED_AGAIN_MESSAGE = "설비 데이터를 저장했습니다."
 
 
+def common_conflict_reopened(newest: str) -> str:
+    """편집본을 세우기 **전**(콜백)에 돈 저장이 남의 공통 대장 저장에 거부됐을 때의 글.
+
+    그 회차 본문이 편집본을 그 저장본으로 다시 세우며(`ensure_equipment_drafts`) 머리에 무엇을 다시
+    얹고 버렸는지 알린다(`discarded_notice`). 저장소의 공용 거부 글(「화면을 다시 불러와 …」)을
+    그대로 두면 그 알림과 다른 길을 말해, 안내대로 브라우저를 새로 불러온 사용자가 다시 얹은 가정
+    배치 편집까지 잃었다(2026-10-27 E2E)."""
+    return (
+        f"다른 사용자가 먼저 {with_object_particle(newest)} 저장해 저장하지 않았습니다 — 이 화면을 "
+        "그 저장본으로 다시 열었습니다(위 알림). 남은 편집을 확인한 뒤 다시 저장하세요."
+    )
+
+
 def save_equipment_buffer(
     repository: DuckDBEquipmentRepository,
     frames: Frames | None,
@@ -1801,6 +1814,7 @@ def save_equipment_buffer(
     basis: EquipmentSaveBasis | None = None,
     fields: EquipmentSaveFields | None = None,
     removal_confirmed: RemovalElsewhere | None = None,
+    reopens: bool = False,
 ) -> str:
     """편집본(세 표)과 미저장 층 캔버스·도면 요소를 **한 트랜잭션**에 저장하고 알림 문구를 돌려준다.
 
@@ -1822,6 +1836,10 @@ def save_equipment_buffer(
     시나리오). 저장 때 다시 센 삭제가 그것으로 덮이지 않으면(확인하지 않은 호기, 본 뒤 그 호기
     일정이 든 시나리오가 늘어남) 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의 저장도 같은
     까닭으로 막힌다.
+
+    `reopens` 는 이 저장이 그 회차 편집본을 세우기 전(콜백 — 설비 마스터 「리비전 저장」·Space
+    「배치 저장」)에 돈다는 뜻이다. 남이 먼저 공통 대장을 저장해 거부되면 같은 회차 본문이 편집본을
+    그 저장본으로 다시 세우므로 거부 글도 그 길을 말한다(`common_conflict_reopened`).
     """
     if frames is None:
         return FAB_SAVED_MESSAGE if save_pending_fab_layout(repository) else NOTHING_SAVED_MESSAGE
@@ -1856,6 +1874,7 @@ def save_equipment_buffer(
             fields=fields,
             fab_saved=fab_saved,
             removal_confirmed=removal_confirmed,
+            reopens=reopens,
         )
     except BOOTSTRAP_ERRORS as exc:
         if not (fab_saved or fab_error):
@@ -1917,6 +1936,7 @@ def _save_equipment_frames(
     fields: EquipmentSaveFields | None,
     fab_saved: bool,
     removal_confirmed: RemovalElsewhere | None = None,
+    reopens: bool = False,
 ) -> str:
     """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션).
 
@@ -2007,11 +2027,15 @@ def _save_equipment_frames(
             lambda: repository.save_equipment(request),
             wrote=_wrote_anything,
         )
-    except EquipmentRevisionConflict:
+    except EquipmentRevisionConflict as exc:
         # 창(`TRAILING_PRESS_SECONDS`)을 지나 닿은 둘째 누름은 저장소가 거부한다 — 그 거부가 제 저장
         # 짝이면 제 저장으로 알아본다.
         current = equipment_write_token(str(repository.database_path), scenario_id)
         if current is None or not is_own_save(own_name, expected, current[:2], save_marks):
+            if reopens and exc.side == "common":
+                # 같은 회차 본문이 편집본을 남의 저장본으로 다시 세운다 — 그 머리 알림과 같은 길을
+                # 말한다(「화면을 다시 불러와」 를 따르면 다시 얹은 편집을 잃는다).
+                raise ValueError(common_conflict_reopened(exc.newest)) from exc
             raise
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 첫 누름의 뒷정리
         # (편집본 비우기·세션 옮기기)가 끊겼을 수 있어 여기서 다시 하고 그 알림을 다시 낸다.

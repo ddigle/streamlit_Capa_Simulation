@@ -929,6 +929,8 @@ def _save_revision(
             basis=basis,
             fields=save_fields_from_state(SAVE_FIELDS_PREFIX),
             removal_confirmed=removal_confirmed,
+            # 콜백이라 이 회차 편집본을 세우기 전이다 — 남의 공통 저장 거부면 본문이 다시 세운다.
+            reopens=True,
         )
     except BOOTSTRAP_ERRORS as exc:
         _result("error", bootstrap_error_message(exc, database_paths=(repository.database_path,)))

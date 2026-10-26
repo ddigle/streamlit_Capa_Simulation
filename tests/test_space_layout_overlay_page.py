@@ -796,6 +796,40 @@ def test_a_common_save_by_someone_else_reapplies_the_assumption_layout_edits(
     assert newest.latest_layout_unit_count == 2
 
 
+def test_a_save_pressed_right_after_someone_elses_common_save_says_the_reopen_path(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 남이 공통 대장을 저장한 직후(편집본을 다시 세우기 전) 「배치 저장」 을 누르면
+    콜백이 옛 출발점으로 저장하다 거부된다. 같은 회차 본문이 편집본을 다시 세우며 「…다시
+    얹었습니다 … 배치를 확인하고 저장하세요」 를 알리는데, 거부 글은 「화면을 다시 불러와 …」 라
+    서로 다른 길을 말했고 안내대로 새로 불러오면 다시 얹은 편집을 잃었다. 거부 글도 다시 열었다고
+    말하고, 한 번 더 누르면 다시 얹은 편집이 저장된다."""
+    repository, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    _apply_eq02(app, editor_calls)
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "설비이력", "남의 공통 편집"))
+    )
+    clear_equipment_repository()
+
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+
+    texts = _texts(app)
+    assert any("그 위에 다시 얹었습니다" in str(item.value) for item in app.warning), texts
+    errors = [str(item.value) for item in app.error]
+    assert len(errors) == 1, errors
+    assert "공통 대장 r2" in errors[0] and "이 화면을 그 저장본으로 다시 열었습니다" in errors[0]
+    assert not any("화면을 다시 불러와" in text for text in texts), texts
+    assert _scenario(repository, setup).latest_revision_no == 2
+
+    app.button(key="space_layout_save").click().run()
+    _ok(app)
+    assert not app.error, [item.value for item in app.error]
+    assert _scenario(repository, setup).latest_layout_unit_count == 2
+
+
 def test_a_unit_someone_else_deleted_is_left_out_of_the_reapplied_edits(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

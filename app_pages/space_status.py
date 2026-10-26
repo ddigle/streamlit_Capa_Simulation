@@ -1329,6 +1329,8 @@ def _save_space_layout(
             note if isinstance(note, str) else "",
             basis=basis,
             fields=save_fields_from_state(fields_prefix, assumption=assumption),
+            # 콜백이라 이 회차 편집본을 세우기 전이다 — 남의 공통 저장 거부면 본문이 다시 세운다.
+            reopens=True,
         )
     except BOOTSTRAP_ERRORS as exc:
         # 검증·충돌(ValueError)만이 아니라 DuckDB 잠금 같은 저장 실패도 문구로 남긴다 — 콜백에서
