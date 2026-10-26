@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
+from capa_simulation.services.korean_particle import with_topic_particle
+
 # 도면이 없는 층의 캔버스. 기존 좌표 계약(X 0~100, Y 0~60)이 그대로 산다.
 DEFAULT_CANVAS_WIDTH: Final = 100.0
 DEFAULT_CANVAS_HEIGHT: Final = 60.0
@@ -111,12 +113,13 @@ def normalize_canvas_size(width: float, height: float) -> CanvasSize:
         try:
             number = float(value)
         except (TypeError, ValueError) as exc:
-            raise ValueError(f"{label}은(는) 숫자여야 합니다.") from exc
+            raise ValueError(f"{with_topic_particle(label)} 숫자여야 합니다.") from exc
         if not math.isfinite(number):
-            raise ValueError(f"{label}은(는) 숫자여야 합니다.")
+            raise ValueError(f"{with_topic_particle(label)} 숫자여야 합니다.")
         if number < MIN_CANVAS_EXTENT or number > MAX_CANVAS_EXTENT:
             raise ValueError(
-                f"{label}은(는) {MIN_CANVAS_EXTENT:g}~{MAX_CANVAS_EXTENT:g} 범위여야 합니다."
+                f"{with_topic_particle(label)} {MIN_CANVAS_EXTENT:g}~{MAX_CANVAS_EXTENT:g} "
+                "범위여야 합니다."
             )
         values.append(rounded_to_canvas(number))
     return values[0], values[1]

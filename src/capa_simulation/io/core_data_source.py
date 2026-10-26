@@ -16,6 +16,7 @@ from typing import Literal, Protocol, cast
 import pandas as pd
 
 from capa_simulation.services.frame_contracts import require_exact_columns
+from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_filter import valid_month_mask
 from capa_simulation.settings import PROJECT_ROOT
 
@@ -65,7 +66,7 @@ class CoreDataBatch:
         ):
             value = cast(str, getattr(self, field_name)).strip()
             if not value:
-                raise ValueError(f"{label}은(는) 비어 있을 수 없습니다.")
+                raise ValueError(f"{with_topic_particle(label)} 비어 있을 수 없습니다.")
             object.__setattr__(self, field_name, value)
         if not isinstance(self.frame, pd.DataFrame):
             raise TypeError("Core Data 원천은 pandas DataFrame이어야 합니다.")

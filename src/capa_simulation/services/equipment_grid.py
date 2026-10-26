@@ -2723,7 +2723,7 @@ def _revert_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         return result.step
     if result.dropped:
         if result.step is not None:
-            work.say(f"새 호기 {label}를 뺐습니다", undo=True)
+            work.say(f"새 호기 {with_object_particle(label)} 뺐습니다", undo=True)
         return result.step
     where = f"{label} {column}" if column is not None else label
     text = f"저장본 값으로 되돌림 — {where} {result.cells:,}칸" if result.cells else ""

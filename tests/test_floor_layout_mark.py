@@ -72,7 +72,7 @@ def test_marks_are_normalized_to_the_editor_contract() -> None:
         ([_mark(kind="window")], "종류를 알 수 없습니다"),
         ([_mark("bad id")], "id 는"),
         ([_mark("A"), _mark("A")], "겹칩니다"),
-        ([_mark(x=95)], "캔버스 100 × 60 를 벗어났습니다"),
+        ([_mark(x=95)], "캔버스 100 × 60을 벗어났습니다"),
         ([_mark(w=0)], "0 보다 커야"),
         ([_mark(rot=45)], "회전은"),
         ([_mark(x=float("nan"))], "숫자여야"),

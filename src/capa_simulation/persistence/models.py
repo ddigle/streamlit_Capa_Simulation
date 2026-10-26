@@ -18,6 +18,7 @@ from capa_simulation.services.auto_official_update import (
     RunStatus,
     TriggerKind,
 )
+from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.securement_threshold import (
     SecurementThresholds,
     build_securement_thresholds,
@@ -370,7 +371,7 @@ class ScenarioPreset:
     def __post_init__(self) -> None:
         for value, label in ((self.start_month, "조회 시작월"), (self.end_month, "조회 종료월")):
             if value <= 0 or value % 100 not in range(1, 13):
-                raise ValueError(f"{label}은 YYYYMM 형식이어야 합니다.")
+                raise ValueError(f"{with_topic_particle(label)} YYYYMM 형식이어야 합니다.")
         if self.start_month > self.end_month:
             raise ValueError("조회 시작월은 종료월보다 늦을 수 없습니다.")
         if self.warning_threshold < 0:

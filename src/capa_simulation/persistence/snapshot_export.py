@@ -39,6 +39,7 @@ from capa_simulation import settings
 from capa_simulation.persistence._sql_helpers import DUCKDB_BLOCK_SIZE, connect, copy_database
 from capa_simulation.persistence.equipment_migration_runner import load_equipment_migrations
 from capa_simulation.persistence.migration_runner import load_migrations
+from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.object_storage_manifest import (
     MIGRATION_SCHEMA,
     DatasetName,
@@ -192,7 +193,8 @@ def verify_snapshot(
         comparison = compare_migration_version(file_version=file_version, code_version=code_version)
         if comparison == "newer":
             raise RuntimeError(
-                f"스냅샷의 마이그레이션 버전 {file_version} 이 이 배포본({code_version})보다 "
+                f"스냅샷의 마이그레이션 버전 {with_subject_particle(str(file_version))} 이 "
+                f"배포본({code_version})보다 "
                 "최신입니다. 앱을 최신 배포본으로 올린 뒤 다시 받으세요."
             )
     except Exception:

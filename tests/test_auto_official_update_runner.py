@@ -843,7 +843,7 @@ def test_only_processes_without_a_rate_left_is_not_published(
     assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "judge")
     assert run.reason is not None
     assert "남는 공정 1개가 모두 확보율로 판정할 수 없는 공정" in run.reason
-    assert "등록한 시나리오 「PSM W41 (SIM-W41)」는 남겼습니다" in run.reason
+    assert "등록한 시나리오 「PSM W41 (SIM-W41)」은 남겼습니다" in run.reason
     assert run.filtered_revision_id is None
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 

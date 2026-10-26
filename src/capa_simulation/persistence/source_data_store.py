@@ -13,6 +13,7 @@ from capa_simulation.io.core_data_source import (
 )
 from capa_simulation.persistence._sql_helpers import insert_by_name
 from capa_simulation.persistence.models import ScenarioCreate
+from capa_simulation.services.korean_particle import with_subject_particle
 
 
 def validate_declared_source_metadata(
@@ -32,7 +33,9 @@ def validate_declared_source_metadata(
         (metadata.source_data_hash, data_hash, "데이터 해시"),
     ):
         if declared is not None and declared != computed:
-            raise ValueError(f"선언한 원천 {label}가 Core Data와 일치하지 않습니다.")
+            raise ValueError(
+                f"선언한 원천 {with_subject_particle(label)} Core Data와 일치하지 않습니다."
+            )
 
 
 def validate_immutable_source_code(

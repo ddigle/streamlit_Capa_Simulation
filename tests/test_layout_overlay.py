@@ -437,7 +437,7 @@ def test_an_overlay_split_refuses_grouping_units_on_different_official_floors() 
     )
 
     assert split.refusal is not None
-    assert "X 은 공식 C2 3F" in split.refusal and "묶음 G 은 C1 1F" in split.refusal
+    assert "X은(는) 공식 C2 3F" in split.refusal and "묶음 G은(는) C1 1F" in split.refusal
 
 
 def test_grouping_units_on_the_same_official_floor_is_accepted_in_an_overlay_split() -> None:

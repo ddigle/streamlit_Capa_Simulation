@@ -28,6 +28,7 @@ from capa_simulation.services.display_order_scopes import (
     TAB_PKG_PLAN,
 )
 from capa_simulation.services.frame_contracts import require_exact_columns
+from capa_simulation.services.korean_particle import with_topic_particle
 from capa_simulation.services.month_columns import month_label
 
 PAST_MONTH_COLUMNS = ("생산계획년월", "Density", "Wafer Total")
@@ -261,7 +262,7 @@ def prepare_past_table(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.Data
     """
     table_name = _TABLE_NAMES[columns]
     if not isinstance(frame, pd.DataFrame):
-        raise TypeError(f"{table_name}은(는) pandas DataFrame이어야 합니다.")
+        raise TypeError(f"{with_topic_particle(table_name)} pandas DataFrame이어야 합니다.")
     require_exact_columns(frame.columns, columns, f"{table_name} 컬럼")
     if frame.empty:
         return empty_past_table(columns)
