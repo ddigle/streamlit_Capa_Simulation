@@ -43,10 +43,10 @@
 테두리(`finish_hook`)다.
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
-대수를 `FILL_ORDER` 차례(지금 「보유 · 신규 · 개조」)로 나눠 보인다(`dedicated_split_text`) —
-계산표 공정 전체 구획에 「들어오는 신규 설비」, 개조 구획에 「늘어난 전용 대수」·「보유 제약
-설비로」·「신규 설비로」·「신규 대기」 행, 배정 칸·표적 풍선에 구성 한 줄(신규 대기가 있으면 그
-줄도). 걸리지 않으면 1판 그림 그대로다.
+대수를 `FILL_ORDER` 차례(지금 「신규 · 보유 · 개조」)로 나눠 보인다(`dedicated_split_text`) —
+계산표 공정 전체 구획에 「들어오는 신규 설비」, 개조 구획에 「늘어난 전용 대수」·「신규
+설비로」·「보유 제약 설비로」(`FILL_ORDER` 차례)·「신규 대기」 행, 배정 칸·표적 풍선에 구성 한
+줄(신규 대기가 있으면 그 줄도). 걸리지 않으면 1판 그림 그대로다.
 
 대수는 모두 환산 대수다(가용이 호기별 환산비를 곱한 값 — `services/constraint_simulation.py`).
 """
@@ -85,11 +85,13 @@ from capa_simulation.components.plotly_layout import (
 )
 from capa_simulation.design import tokens
 from capa_simulation.services.constraint_simulation import (
+    FILL_NEW,
     FILL_ORDER,
     FILL_OWNED,
     ConstraintConditions,
     ConstraintMonth,
     ConstraintResult,
+    FillSource,
     ModificationWindow,
     NewUnit,
     NewUnitAssignment,
@@ -127,7 +129,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 6
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 7
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -152,6 +154,12 @@ _VALUE_LABEL_INDENT_PX: Final = 12
 # 「제약 없을 때 대비」 칸이 빈칸인 차이(%p).
 _DELTA_HIDDEN_POINTS: Final = 0.05
 
+_FILL_ROW_IDS: Final[Mapping[FillSource, str]] = {
+    FILL_OWNED: "owned_increment",
+    FILL_NEW: "new_increment",
+}
+"""채우는 몫마다의 계산표 행 id — 두 행은 `FILL_ORDER` 차례로 선다."""
+
 ROW_IDS: Final = (
     "header",
     "title:process",
@@ -166,8 +174,7 @@ ROW_IDS: Final = (
     "constrained_rate",
     "title:modification",
     "growth",
-    "owned_increment",
-    "new_increment",
+    *(_FILL_ROW_IDS[source] for source in FILL_ORDER),
     "increment",
     "downtime",
     "waiting",
@@ -179,7 +186,8 @@ ROW_IDS: Final = (
     "proportional_rate",
 )
 """계산표 행 id 의 차례(개조·비중 행은 켬일 때만, 「들어오는 신규」·「늘어난
-전용」·「보유로」·「신규로」·「신규 대기」 는 그 옵션이 걸릴 때만 선다)."""
+전용」·「신규로」·「보유로」·「신규 대기」 는 그 옵션이 걸릴 때만 선다). 「신규로」·「보유로」 는
+`FILL_ORDER` 차례다(채우는 차례가 곧 위에서 아래)."""
 
 
 @dataclass(frozen=True)
@@ -264,7 +272,7 @@ def free_parts(conditions: ConstraintConditions, owned: str, new: str) -> list[s
 
 
 def dedicated_split_text(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
-    """전용 대수의 구성 — 「전용 10대 = 보유 4 · 신규 3 · 개조 3」(`FILL_ORDER` 차례). 걸린 옵션의
+    """전용 대수의 구성 — 「전용 10대 = 신규 3 · 보유 4 · 개조 3」(`FILL_ORDER` 차례). 걸린 옵션의
     몫만 적는다. 나눠 보이지 않는 조건(`splits_dedicated` 거짓)이나 전용 0 이면 빈 글자."""
     if not conditions.splits_dedicated or row.dedicated <= 0:
         return ""
@@ -886,24 +894,26 @@ def build_sheet_canvas(
                     lambda row: _count_cell(row.growth, bold=True),
                 )
             )
-        if conditions.uses_owned_units:
-            rows.append(
-                _row(
-                    "owned_increment",
-                    "보유 제약 설비로",
-                    rows_in,
-                    lambda row: _count_cell(row.owned_increment),
+        for source in FILL_ORDER:
+            if source == FILL_OWNED:
+                if conditions.uses_owned_units:
+                    rows.append(
+                        _row(
+                            _FILL_ROW_IDS[FILL_OWNED],
+                            "보유 제약 설비로",
+                            rows_in,
+                            lambda row: _count_cell(row.owned_increment),
+                        )
+                    )
+            elif conditions.uses_new_units:
+                rows.append(
+                    _row(
+                        _FILL_ROW_IDS[FILL_NEW],
+                        "신규 설비로 (개조 없음)",
+                        rows_in,
+                        lambda row: _count_cell(row.new_increment),
+                    )
                 )
-            )
-        if conditions.uses_new_units:
-            rows.append(
-                _row(
-                    "new_increment",
-                    "신규 설비로 (개조 없음)",
-                    rows_in,
-                    lambda row: _count_cell(row.new_increment),
-                )
-            )
         rows += [
             _row(
                 "increment",
@@ -1103,8 +1113,8 @@ def new_unit_fate(unit: NewUnit, result: ConstraintResult) -> str:
         else f"{month_name(item.month)} 몫 전용({waiting_text(item)})"
         for item in pieces
     ]
-    left = unit.units - sum(item.units for item in pieces)
-    if left > 1e-9:
+    left = result.left_units(unit)
+    if left > 0:
         days = result.conditions.modification_days or 0
         reason = f"개조 {days}일 안에 늘어날 전용 없음"
         parts.append(

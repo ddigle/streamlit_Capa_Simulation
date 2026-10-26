@@ -429,6 +429,8 @@ def test_the_sheet_rows_follow_the_mock_order() -> None:
         show_proportional=True,
     )
     assert every.row_ids == ROW_IDS
+    # 「신규 설비로」·「보유 제약 설비로」 는 채우는 차례(`FILL_ORDER` — 신규 → 보유)로 선다.
+    assert every.row_ids.index("new_increment") < every.row_ids.index("owned_increment")
     off = build_sheet_canvas(
         _run(replace(CONDITIONS, modification_days=None)),
         LABELS,
@@ -773,8 +775,8 @@ def _new(*, owned: int = 0) -> ConstraintResult:
 
 def test_the_schema_version_moved_with_the_new_rows() -> None:
     """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
-    16)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 6
+    16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이다."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 7
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
@@ -825,7 +827,7 @@ def test_the_sheet_splits_the_growth_and_shows_the_wait() -> None:
     texts = [text for _, text in _texts(canvas)]
     assert f"{MINUS}0.48" in texts and f"{MINUS}0.77" in texts
     allocated = _cells(canvas, "allocated")
-    assert "전용 6대 = 보유 2 · 신규 2 · 개조 2" in allocated[202706]
+    assert "전용 6대 = 신규 2 · 보유 2 · 개조 2" in allocated[202706]
     available = _cells(canvas, "existing_available")
     assert "− 신규 대기 0.48" in available[202705]
 
@@ -843,14 +845,15 @@ def test_the_split_text_names_only_the_options_in_use() -> None:
 
 
 def test_the_split_text_follows_the_fill_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    """구성 글은 `FILL_ORDER` 차례다 — 차례를 바꾸면 글도 따라간다(값은 서비스가 다시 센다)."""
+    """구성 글은 `FILL_ORDER` 차례다(지금 신규 → 보유) — 차례를 바꾸면 글도 따라간다(값은 서비스가
+    다시 센다)."""
     both = _new(owned=2)
     assert dedicated_split_text(both.month(202706), both.conditions).startswith(
-        "전용 6대 = 보유 2 · 신규 2"
-    )
-    monkeypatch.setattr(figures, "FILL_ORDER", (FILL_NEW, FILL_OWNED))
-    assert dedicated_split_text(both.month(202706), both.conditions).startswith(
         "전용 6대 = 신규 2 · 보유 2"
+    )
+    monkeypatch.setattr(figures, "FILL_ORDER", (FILL_OWNED, FILL_NEW))
+    assert dedicated_split_text(both.month(202706), both.conditions).startswith(
+        "전용 6대 = 보유 2 · 신규 2"
     )
 
 
@@ -961,8 +964,8 @@ def test_the_schedule_card_names_the_units_used_without_modification() -> None:
     assert free_units_line(_owned()) == "개조 없이 쓰는 전용 — 보유 제약 설비 4대(입력 4대 중)"
     line = free_units_line(_new(owned=3))
     assert line == (
-        "개조 없이 쓰는 전용 — 보유 제약 설비 3대(입력 3대 중) · 신규 설비 4대(기준일 2026-10-26 "
-        "이후 기여 시작 · 개조 30일 안에 늘어날 전용에 붙임)"
+        "개조 없이 쓰는 전용 — 신규 설비 4대(기준일 2026-10-26 이후 기여 시작 · 개조 30일 안에 "
+        "늘어날 전용에 붙임) · 보유 제약 설비 3대(입력 3대 중)"
     )
     assert FREE_ONLY_TEXT.startswith("늘어난 전용 대수를 모두 보유·신규 설비로 채워")
 
@@ -987,6 +990,37 @@ def test_the_schedule_card_lists_the_waits_and_the_ordinary_units() -> None:
     assert waiting_lines(_run().assignments, today=date(2026, 10, 26)) == []
 
 
+def test_a_partly_attached_unit_is_named_with_its_leftover() -> None:
+    """환산 1.5 인 신규 C(5/25)는 6월 몫에 1대가 붙고 0.5대가 남는다 — 화면 글은 C 를 「붙음」 과
+    「기존 제품 몫」 으로 통째로 함께 적지 않고 남는 0.50대만 기존 제품 몫으로 적는다(2026-10-26
+    리뷰). 일반 설비 대수도 호기 수가 아니라 남는 몫의 환산 합이다."""
+    result = simulate_constraint(_inputs(), NEW_ON, (_unit("C", date(2027, 5, 25), units=1.5),))
+    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
+    note = june.steps[2].note
+    assert "이 달 몫 신규 C 1대 — 대기 없음(W/D 첫날 기여 시작)" in note
+    assert (
+        "이 달 들어온 신규 C 남는 0.50대 — 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫" in note
+    )
+    assert "이 달 들어온 신규 C —" not in note
+    assert ordinary_line(result) == (
+        "일반 설비가 된 신규 0.50대 — C 남는 0.50대 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 "
+        "몫(제약에 쓰려면 개조)"
+    )
+    # 같은 호기의 계산표 풍선(`new_unit_fate`)과 같은 말이다.
+    assert figures.new_unit_fate(result.new_units[0], result) == (
+        "27년 6월 몫 1대 전용(대기 없음(W/D 첫날 기여 시작)) · 남는 0.50대 일반 설비(개조 30일 "
+        "안에 늘어날 전용 없음)"
+    )
+
+
+def test_the_ordinary_line_counts_leftovers_and_hosts_beyond_four() -> None:
+    """일반 설비가 된 신규가 넷을 넘으면 이름 넷 뒤에 「외 n호기」 — 대수(환산 합)와 섞이지 않게
+    호기로 센다. 기간 끝 뒤(2028)에 들어온 여섯 대는 붙일 증가가 없다."""
+    units = tuple(_unit(f"L{index}", date(2028, 1, index + 1)) for index in range(6))
+    result = simulate_constraint(_inputs(), NEW_ON, units)
+    assert ordinary_line(result).startswith("일반 설비가 된 신규 6대 — L0, L1, L2, L3 외 2호기 · ")
+
+
 def test_the_modification_kpi_counts_only_the_modified_units(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -995,6 +1029,6 @@ def test_the_modification_kpi_counts_only_the_modified_units(
     cards = _kpi_cards(monkeypatch, _owned())
     assert cards["개조 대수"] == ("7대", "전용 최대 11대 = 보유 4 · 개조 7")
     cards = _kpi_cards(monkeypatch, _new(owned=3))
-    assert cards["개조 대수"] == ("4대", "전용 최대 11대 = 보유 3 · 신규 4 · 개조 4")
+    assert cards["개조 대수"] == ("4대", "전용 최대 11대 = 신규 4 · 보유 3 · 개조 4")
     cards = _kpi_cards(monkeypatch, _new())
     assert cards["개조 대수"] == ("7대", "전용 최대 11대 = 신규 4 · 개조 7")

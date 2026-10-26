@@ -34,7 +34,7 @@
 요약 넷(`render_constraint_kpis`)은 고른 달·보기와 무관해 프래그먼트 밖에서 페이지가 그린다.
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
-대수를 `FILL_ORDER` 차례(지금 「보유 · 신규 · 개조」)로 나눠 적는다 — 2·3단계 회색 줄, 요약 넷
+대수를 `FILL_ORDER` 차례(지금 「신규 · 보유 · 개조」)로 나눠 적는다 — 2·3단계 회색 줄, 요약 넷
 「개조 대수」(값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 일정 카드 머리 한
 줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 일정 카드의 「신규 대기」
 줄(`waiting_lines`)과 일반 설비가 된 신규 한 줄(`ordinary_line`)에 선다. 걸리지 않으면 1판 글
@@ -102,6 +102,7 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintMonth,
     ConstraintResult,
     ModificationWindow,
+    NewUnit,
     NewUnitAssignment,
 )
 from capa_simulation.services.month_columns import month_label
@@ -542,10 +543,11 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
     if growth_note:
         notes.insert(0, growth_note)
     if takes_new:
-        left = set(result.ordinary_units)
-        ordinary = [unit for unit in result.units_starting_in(row.month) if unit in left]
+        ordinary = [
+            unit for unit in result.units_starting_in(row.month) if result.left_units(unit) > 0
+        ]
         if ordinary:
-            names = ", ".join(literal_markdown(unit.name) for unit in ordinary)
+            names = ", ".join(_ordinary_name(unit, result) for unit in ordinary)
             notes.append(
                 f"이 달 들어온 신규 {names} — 개조 {conditions.modification_days}일 안에 늘어날 "
                 "전용이 없어 기존 제품 몫입니다(나중에 제약에 쓰려면 개조)."
@@ -554,8 +556,8 @@ def _modification_step(row: ConstraintMonth, result: ConstraintResult) -> MonthS
 
 
 def _growth_note(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
-    """3단계 회색 줄 머리 — 「이 달 늘어난 전용 6대 — 보유 제약 설비 4대 · 신규 설비 0대는 개조
-    없이, 개조 2대」(`FILL_ORDER` 차례). 나눠 보이지 않거나 늘어난 대수가 없으면 빈 글자."""
+    """3단계 회색 줄 머리 — 「이 달 늘어난 전용 6대 — 신규 설비 1대 · 보유 제약 설비 4대는 개조
+    없이, 개조 1대」(`FILL_ORDER` 차례). 나눠 보이지 않거나 늘어난 대수가 없으면 빈 글자."""
     if not conditions.splits_dedicated or row.growth <= 0:
         return ""
     free = free_parts(
@@ -603,16 +605,26 @@ def _markdown_waiting(item: NewUnitAssignment) -> str:
     return markdown_safe_tildes(waiting_text(item))
 
 
+def _ordinary_name(unit: NewUnit, result: ConstraintResult) -> str:
+    """일반 설비가 된 신규의 이름 — 일부만 붙은 호기(환산비가 1 이 아님)는 「C 남는 0.5대」 로
+    남는 몫을 붙인다(같은 호기를 「붙음」 과 「기존 제품 몫」 으로 함께 적지 않게)."""
+    name = literal_markdown(unit.name)
+    if result.assigned_units(unit) > 0:
+        return f"{name} 남는 {units_text(result.left_units(unit))}대"
+    return name
+
+
 def ordinary_line(result: ConstraintResult) -> str:
-    """일반 설비가 된 신규 한 줄 — 개조 일수 안에 늘어날 전용이 없어 기존 제품 몫. 없으면 빈
-    글자."""
+    """일반 설비가 된 신규 한 줄 — 개조 일수 안에 늘어날 전용이 없어 기존 제품 몫. 대수는 남는
+    몫의 환산 합이다(`left_units` — 일부만 붙은 호기는 남는 몫만). 없으면 빈 글자."""
     units = result.ordinary_units
     if not units:
         return ""
-    names = ", ".join(literal_markdown(unit.name) for unit in units[:4])
-    more = f" 외 {len(units) - 4}대" if len(units) > 4 else ""
+    total = sum(result.left_units(unit) for unit in units)
+    names = ", ".join(_ordinary_name(unit, result) for unit in units[:4])
+    more = f" 외 {len(units) - 4}호기" if len(units) > 4 else ""
     return (
-        f"일반 설비가 된 신규 {len(units)}대 — {names}{more} · 개조 "
+        f"일반 설비가 된 신규 {units_text(total)}대 — {names}{more} · 개조 "
         f"{result.conditions.modification_days}일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
         "쓰려면 개조)"
     )

@@ -12,7 +12,8 @@
 W/D 첫날(그 달 1일 − 7일)은 06 5/25 · 07 6/24 · 08 7/25 · 09 8/25 · 11 10/25, W/D 구간은 5월
 4/24~5/24(31일) · 6월 5/25~6/23(30일) · 7월 6/24~7/24(31일)이다.
 
-채우는 차례는 `FILL_ORDER`(지금 ① 보유 → ② 신규) 뒤 남는 몫이 ③ 개조이고 ③ 만 창을 낸다. 신규
+채우는 차례는 `FILL_ORDER`(① 신규 → ② 보유 — 2026-10-26 오후 사용자 답) 뒤 남는 몫이 ③ 개조이고
+③ 만 창을 낸다. 신규
 호기는 기여 시작 d 에서 개조 일수 D 안에 아직 채우지 않은 증가(그 달 W/D 첫날 t — `0 ≤ t − d ≤ D`)가
 있으면 붙고 `[d, t)` 가 신규 대기(개조 비가동처럼 W/D 일할)다. 없으면 일반 설비다(2026-10-26 오후
 사용자 결정 — 「같은 달 증가분만」·「반 달 신규는 다음 달」 을 대신한다).
@@ -290,7 +291,7 @@ def test_a_unit_arriving_before_the_period_within_d_is_dedicated_early() -> None
     """5/10 — 제약 기간 전이지만 6월 증가(5/25)가 15일 뒤라 미리 붙인다(옛 답 1-3 이면 개조).
 
     6월 증가 6 = 신규 1 + 개조 5. 5월 = 개조 5 × 30/31 + 대기 1 × 15/31 = 165/31 → 기존 (48 −
-    165/31) ÷ 42 = 101.62%(1판 100.46%).
+    165/31) ÷ 42 = 101.61%(1판 100.46%).
     """
     result = _new(_unit("N1", date(2027, 5, 10)))
 
@@ -298,7 +299,7 @@ def test_a_unit_arriving_before_the_period_within_d_is_dedicated_early() -> None
     may = result.month(202705)
     assert may.downtime + may.waiting == pytest.approx(165 / 31)
     assert may.existing_rate == pytest.approx((48 - 165 / 31) / 42)
-    assert may.existing_rate == _pct(101.62)
+    assert may.existing_rate == _pct(101.61)
     assert result.kpis.modified_units == 10
     _assert_conserved(result)
 
@@ -344,11 +345,13 @@ def test_units_are_taken_in_arrival_order() -> None:
     _assert_conserved(result)
 
 
-def test_owned_then_new_then_modification() -> None:
+def test_new_then_owned_then_modification() -> None:
     """보유 4 + 신규 5/20(6월) · 6/24(7월 W/D 첫날).
 
-    6월 증가 6 = 보유 4 + 신규 1 + 개조 1 → 5월 = 30/31 + 대기 5/31. 7월 증가 2 = 신규 1(대기 0) +
-    개조 1 → 6월 비가동 1. 개조 창 (06 1) (07 1) (08 1) (09 1) (11 1).
+    6월 증가 6 = 신규 1(5/20 — 대기 5일) + 보유 4 + 개조 1 → 5월 = 30/31 + 대기 5/31. 7월 증가 2 =
+    신규 1(대기 0) + 개조 1(보유는 6월에 다 씀) → 6월 비가동 1. 개조 창 (06 1) (07 1) (08 1) (09 1)
+    (11 1). 이 보기는 보유가 6월에 다 쓰여 차례(신규 먼저 · 보유 먼저)를 바꿔도 수가 같다 — 차례가
+    수를 바꾸는 보기는 `test_the_fill_order_is_one_constant`.
     """
     result = _new(_unit("N1", date(2027, 5, 20)), _unit("N2", JULY_FIRST), owned=4)
 
@@ -372,13 +375,14 @@ def test_owned_then_new_then_modification() -> None:
 @pytest.mark.parametrize(
     ("days", "order", "expected"),
     [
-        # 지금 차례(보유 → 신규) — 6월 증가 2 는 보유, 두 신규는 7월 증가(30일 뒤)에 붙어 30일 대기.
-        (30, (FILL_OWNED, FILL_NEW), ((2, 0, 0), (0, 2, 0), 2.0)),
-        # 사용자 답 차례(신규 → 보유 — 리뷰 권장) — 신규는 들어온 날 붙어 대기 0, 7월은 보유.
+        # 지금 차례(신규 → 보유 — 2026-10-26 오후 사용자 답) — 신규는 들어온 날 붙어 대기 0, 7월은
+        # 보유.
         (30, (FILL_NEW, FILL_OWNED), ((0, 2, 0), (2, 0, 0), 0.0)),
-        # 개조 15일 — 지금 차례면 두 신규가 7월 증가(30일 뒤)에 닿지 않아 일반 설비, 7월은 개조 2.
-        (15, (FILL_OWNED, FILL_NEW), ((2, 0, 0), (0, 0, 2), 0.0)),
+        # 옛 차례(보유 → 신규) — 6월 증가 2 는 보유, 두 신규는 7월 증가(30일 뒤)에 붙어 30일 대기.
+        (30, (FILL_OWNED, FILL_NEW), ((2, 0, 0), (0, 2, 0), 2.0)),
+        # 개조 15일 — 옛 차례면 두 신규가 7월 증가(30일 뒤)에 닿지 않아 일반 설비, 7월은 개조 2.
         (15, (FILL_NEW, FILL_OWNED), ((0, 2, 0), (2, 0, 0), 0.0)),
+        (15, (FILL_OWNED, FILL_NEW), ((2, 0, 0), (0, 0, 2), 0.0)),
     ],
 )
 def test_the_fill_order_is_one_constant(
@@ -387,10 +391,10 @@ def test_the_fill_order_is_one_constant(
     order: tuple[FillSource, ...],
     expected: tuple[tuple[int, int, int], tuple[int, int, int], float],
 ) -> None:
-    """채우는 차례는 `FILL_ORDER` 하나다(지금 보유 → 신규, 사용자 답 신규 → 보유는 아직 안 넣음).
-    보유 2 · 5/25 신규 두 대 · 필요 6월 2 → 7월 4(합성) — 차례가 개조·대기를 바꾼다. 6월 대기는 그
-    6월 W/D(30일)에 든다."""
-    assert constraint_simulation.FILL_ORDER == (FILL_OWNED, FILL_NEW)
+    """채우는 차례는 `FILL_ORDER` 하나다(신규 → 보유 — 2026-10-26 오후 사용자 답, 그 전은 보유 →
+    신규). 보유 2 · 5/25 신규 두 대 · 필요 6월 2 → 7월 4(합성) — 차례가 개조·대기를 바꾼다. 6월
+    대기는 그 6월 W/D(30일)에 든다."""
+    assert constraint_simulation.FILL_ORDER == (FILL_NEW, FILL_OWNED)
     monkeypatch.setattr(constraint_simulation, "FILL_ORDER", order)
     result = simulate_constraint(
         [
@@ -405,6 +409,54 @@ def test_the_fill_order_is_one_constant(
     assert (june.owned_increment, june.new_increment, june.increment) == first
     assert (july.owned_increment, july.new_increment, july.increment) == second
     assert june.waiting == pytest.approx(waiting)
+
+
+def test_new_units_go_before_owned_units() -> None:
+    """상수 그대로(교체 없이) — 그날 붙일 수 있는 신규를 먼저 쓰고 보유를 뒤 증가에 남긴다.
+
+    위 합성 보기(개조 30일): 6월 증가 2 = 신규 2(5/25 = 6월 W/D 첫날, 대기 0), 7월 증가 2 = 보유 2 —
+    개조 0 · 대기 0. 옛 차례(보유 먼저)는 같은 보기에서 신규 두 대가 30일 기다렸다.
+    """
+    result = simulate_constraint(
+        [
+            _one(202706, required=20, available=30, demand=2),
+            _one(202707, required=20, available=30, demand=4),
+        ],
+        ConstraintConditions(202706, 202707, 1.0, 30, 7, owned_units=2, new_unit_since=SINCE),
+        (_unit("N1", JUNE_FIRST), _unit("N2", JUNE_FIRST)),
+    )
+    june, july = result.month(202706), result.month(202707)
+    assert (june.new_increment, june.owned_increment, june.increment) == (2, 0, 0)
+    assert (july.new_increment, july.owned_increment, july.increment) == (0, 2, 0)
+    assert _assignments(result) == [("N1", 202706, 1.0, 0), ("N2", 202706, 1.0, 0)]
+    assert result.windows == ()
+    assert all(row.waiting == 0.0 for row in result.months)
+    _assert_conserved(result)
+
+
+def test_new_first_waits_even_when_the_owned_units_would_cover_the_period() -> None:
+    """신규 먼저의 대가 — 보유만으로 기간을 다 덮어도 그날 붙일 수 있는 신규를 먼저 붙여 대기가
+    선다(합성: 보유 2 · 5/20 신규 한 대 · 필요 6월 2 그대로, 개조 30일).
+
+    6월 증가 2 = 신규 1(5/20 → 5/25, 대기 5일) + 보유 1. 5월 W/D(4/24~5/24, 31일)에 대기 1 × 5/31 이
+    빠진다. 보유 먼저였다면 보유 2 로 덮고 그 신규는 일반 설비라 대기가 없다. 개조는 둘 다 0 이다.
+    """
+    months = [
+        _one(202705, required=20, available=30),
+        _one(202706, required=20, available=30, demand=2),
+        _one(202707, required=20, available=30, demand=2),
+    ]
+    conditions = ConstraintConditions(
+        202706, 202707, 1.0, 30, 7, owned_units=2, new_unit_since=SINCE
+    )
+    result = simulate_constraint(months, conditions, (_unit("N1", date(2027, 5, 20)),))
+    june = result.month(202706)
+    assert (june.new_increment, june.owned_increment, june.increment) == (1, 1, 0)
+    assert _assignments(result) == [("N1", 202706, 1.0, 5)]
+    assert result.month(202705).waiting == pytest.approx(5 / 31)
+    assert result.kpis.modified_units == 0
+    assert result.kpis.owned_used == 1
+    _assert_conserved(result)
 
 
 def test_a_unit_leaving_before_the_growth_is_not_dedicated() -> None:
@@ -425,8 +477,11 @@ def test_fractional_units_are_split_like_modifications() -> None:
     big = _new(_unit("C", JUNE_FIRST, units=1.5))
     assert _assignments(big) == [("C", 202706, 1.0, 0)]
     assert big.month(202707).new_increment == 0
+    # C 는 일부만 붙었다 — 일반 설비 목록에 들지만 기존 제품 몫이 된 것은 남는 0.5대뿐이다.
     assert [unit.name for unit in big.ordinary_units] == ["C"]
     assert big.assigned_units(big.new_units[0]) == pytest.approx(1.0)
+    assert big.left_units(big.new_units[0]) == 0.5
+    assert halves.left_units(halves.new_units[0]) == 0.0
 
 
 def test_a_wait_before_the_first_shown_month_is_flagged() -> None:
