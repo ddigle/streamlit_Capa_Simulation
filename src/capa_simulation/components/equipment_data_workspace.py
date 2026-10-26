@@ -1759,11 +1759,15 @@ def rebase_fab_canvas(canvas: CanvasSize | None) -> None:
 
 
 def save_pending_fab_layout(repository: DuckDBEquipmentRepository) -> bool:
-    """미저장 FAB 배치를 쓴다(설비 리비전 없음). 썼으면 대기분·도면 캐시를 비우고 True."""
+    """미저장 FAB 배치를 쓴다(설비 리비전 없음). 썼으면 대기분·도면 캐시를 비우고 True. 쓴 성공
+    알림은 `FAB_SAVE_NAME` 칸에 적는다 — 대기분을 비운 뒤 닿은 같은 단추의 둘째 누름이 첫 성공을
+    다시 낸다(`save_equipment_buffer`)."""
     pending = pending_fab_layout()
     if pending is None:
         return False
     marks = [mark.editor_payload() for mark in pending.marks] if pending.marks is not None else None
+    # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
+    messages = notice_marks()
     # 같은 대기분의 둘째 누름(첫 콜백이 쓰고 대기분을 비우기 전에 끊김)은 다시 쓰지 않는다 — 옛 본
     # 저장값으로 가면 제 저장을 남의 저장으로 거부당한다(`write_guard.save_once`).
     wrote = save_once(
@@ -1772,6 +1776,8 @@ def save_pending_fab_layout(repository: DuckDBEquipmentRepository) -> bool:
         lambda: repository.save_fab_layout(canvas=pending.canvas, marks=marks, base=pending.base),
         wrote=bool,
     )
+    if wrote:
+        note_notice(messages, FAB_SAVE_NAME, FAB_SAVED_MESSAGE)
     st.session_state.pop(PENDING_FAB_KEY, None)
     if wrote:
         clear_floor_layout_cache()
@@ -1791,6 +1797,14 @@ FAB_DISCARD_HINT = (
 # 빠른 두 번 누름의 둘째가 제 저장을 알아봤는데 첫 누름의 알림이 창(`TRAILING_PRESS_SECONDS`)을
 # 지났을 때.
 SAVED_AGAIN_MESSAGE = "설비 데이터를 저장했습니다."
+
+
+def _nothing_saved(name: str) -> str:
+    """이 누름이 아무것도 쓰지 않았을 때의 알림. 같은 단추의 첫 누름이 `name` 칸에 적은 성공 알림이
+    창(`TRAILING_PRESS_SECONDS`) 안이면 그 알림이다 — 첫 콜백이 쓰고 대기분을 비운 뒤 닿은 둘째
+    누름은 쓸 것이 없어, 「바뀐 내용이 없어 …」 로 방금 저장의 성공 알림을 덮었다(2026-10-27 E2E —
+    FAB 만 바뀐 Space 「배치 저장」 0.15~0.5초 두 번 누름)."""
+    return held_notice(name) or NOTHING_SAVED_MESSAGE
 
 
 def save_equipment_buffer(
@@ -1824,7 +1838,11 @@ def save_equipment_buffer(
     까닭으로 막힌다.
     """
     if frames is None:
-        return FAB_SAVED_MESSAGE if save_pending_fab_layout(repository) else NOTHING_SAVED_MESSAGE
+        return (
+            FAB_SAVED_MESSAGE
+            if save_pending_fab_layout(repository)
+            else _nothing_saved(FAB_SAVE_NAME)
+        )
     drafts = unsaved_grid_drafts(frames)
     if drafts:
         # 칸 초안은 편집본 밖이다 — 이 저장 길(사이드바 팝업·Space 배치 저장)이 모른 채 저장하면
@@ -2037,8 +2055,9 @@ def _save_equipment_frames(
         floor_layout_words(canvases, marks, labels) if result.floor_values_written else ""
     )
     if not _wrote_anything(result):
-        # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
-        return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
+        # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다. 이 누름이 FAB 도 쓰지
+        # 않았으면 같은 단추의 첫 누름이 방금 낸 성공 알림을 잇는다(`_nothing_saved`).
+        return FAB_SAVED_MESSAGE if fab_saved else _nothing_saved(FAB_SAVE_NAME)
     layouts = f" {floor_layouts}도 함께 저장했습니다." if floor_layouts else ""
     if not result.wrote_revision:
         message = (

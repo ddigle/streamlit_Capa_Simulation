@@ -16,7 +16,7 @@ from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
 
-from capa_simulation.components import space_layout_editor
+from capa_simulation.components import space_layout_editor, write_guard
 from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -631,4 +631,49 @@ def test_a_floor_state_save_keeps_the_fab_editor_epoch_and_its_open_is_filtered(
     app.run()
     assert not app.exception
     assert "space_status_selected_building" not in app.session_state
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("finished", [True, False], ids=["첫 콜백 끝남", "첫 콜백 끊김"])
+def test_a_fab_save_pressed_twice_keeps_its_success(
+    tmp_path: Path,
+    editor_calls: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    finished: bool,
+) -> None:
+    """FAB 만 바뀐 「배치 저장」 을 0.15~0.5초 간격으로 두 번 누르면 첫 콜백이 FAB 를 쓰고
+    대기분을 비운 뒤라 둘째 콜백이 「바뀐 내용이 없어 저장하지 않았습니다.」 로 첫 성공 알림을
+    덮었다 — 실제로는 저장됐다(2026-10-27 E2E). 첫 콜백이 끝까지 돌았든 뒷정리 중에 끊겼든 성공
+    알림이 남는다."""
+    from test_equipment_save_double_press import _press_again_from_the_old_screen, _race_save
+
+    database = tmp_path / "fab_double.duckdb"
+    app = _app(database, saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    edited = _edited_marks(data)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": edited,
+    }
+    app.run()
+    app.button(key="space_layout_save").click()
+
+    if finished:
+        _press_again_from_the_old_screen(app, monkeypatch, callback="_save_space_layout")
+    else:
+        # 시험의 경합 틀은 첫 콜백을 설비 쓰기 안에서 1초 세워 둔다(둘째 회차는 그동안 세션 잠금을
+        # 기다린다) — 브라우저에서는 ms 차이라 알림 창(1초)을 넘지 않는다. 창을 넓혀 그 틀만 맞춘다.
+        monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 10.0)
+        _race_save(app, monkeypatch, callback="_save_space_layout")
+
+    assert not app.exception, [item.message for item in app.exception]
+    texts = [str(item.value) for item in (*app.error, *app.warning, *app.info, *app.success)]
+    assert any("FAB 전체 배치를 저장했습니다" in text for text in texts), texts
+    assert not any("바뀐 내용이 없어" in text for text in texts), texts
+    repository = DuckDBEquipmentRepository(database)
+    assert len(repository.list_revisions()) == 1
+    assert len(repository.load_fab_layout_marks()) == len(edited)
     clear_equipment_repository()

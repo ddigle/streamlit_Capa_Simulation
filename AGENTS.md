@@ -4207,6 +4207,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     비우기 전에 끊기면 둘째 콜백이 같은 이름 편집을 다시 보내 제 저장을 「다른 사용자가 먼저 이름을 바꿨습니다」 로
     거부했다(출발점은 그 이름·순서 편집, `tests/test_scenario_save_double_press.py`). 창을 지나 저장소에 거부된 둘째 누름은 위 제 저장 판정(설비 리비전 짝 —
     쓰기 결과로 적는다)이 알아본다(`tests/test_write_guard_cas.py` — 창을 0 으로 둔 경합).
+    첫 콜백이 **끝까지** 돈 뒤(편집본·FAB 대기분을 비우고 알림을 담은 뒤) 옛 화면의 같은 단추가 한 번 더 닿는 0.15~0.5초
+    두 번 누름도 있다 — Space 「배치 저장」 은 그린 회차의 저장 세대(「변경 메모」 칸 key 끝 번호 `_save_note_key`)를 콜백
+    인자로 받아 지금과 다르면 쓰지도 알리지도 않고, 성공 알림은 `note_notice(…, SPACE_FLASH_KEY, …)` 로 적어 그 회차가 다시
+    그린다(예전에는 비운 편집본으로 다시 저장해 「편집본이 아직 서지 않아 …」·「바뀐 내용이 없어 …」 가 첫 성공을 덮었다,
+    2026-10-27 E2E). FAB 대기분 쓰기(`save_pending_fab_layout`)는 성공 알림을 `FAB_SAVE_NAME` 칸에 적고, 대기분을 비운 뒤 닿아
+    아무것도 쓰지 않은 누름은 창 안이면 「바뀐 내용이 없어 …」 대신 그 알림을 돌려준다(`_nothing_saved` — 설비 마스터 탭·사이드바
+    팝업 저장도 지나는 길, `tests/test_equipment_save_double_press.py`·`tests/test_space_fab_edit_page.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

@@ -202,3 +202,94 @@ def test_a_second_press_of_the_same_fab_pending_does_not_report_a_conflict(
     assert app.session_state["second"] is True
     assert app.session_state["pending_left"] is False
     assert [mark.mark_id for mark in repository.load_fab_layout_marks()] == ["B"]
+
+
+def _press_again_from_the_old_screen(
+    app: AppTest, monkeypatch: pytest.MonkeyPatch, *, callback: str
+) -> None:
+    """누른 화면의 같은 저장 누름 둘 — 첫 콜백(`callback` 이름의 위젯 콜백)이 **끝까지** 돈 뒤(쓰기·
+    뒷정리·알림 담기) 둘째 누름이 옛 화면의 단추로 닿는다. 첫 콜백 뒤 회차가 화면을 다 그리기 전에
+    닿은 누름이라 그 단추의 콜백 인자는 옛 화면 것이다(0.15~0.5초 간격, 2026-10-27 E2E). 첫 콜백을
+    회차 밖에서 부르고, 둘째 누름의 회차(`app._run`)가 콜백을 다시 부른 뒤 화면을 그린다."""
+    pressed = app._tree.get_widget_states()
+    shared = app.session_state._state
+    metadata = next(
+        meta
+        for meta in shared._new_widget_state.widget_metadata.values()
+        if getattr(meta.callback, "__name__", None) == callback
+    )
+    pressed_callback = metadata.callback
+    assert pressed_callback is not None
+    first_state = SafeSessionState(shared, lambda: None)
+    with monkeypatch.context() as patch:
+        patch.setattr(session_state_proxy, "get_session_state", lambda: first_state)
+        pressed_callback(*(metadata.callback_args or ()), **(metadata.callback_kwargs or {}))
+    app._run(widget_state=pressed)
+
+
+def test_a_space_layout_save_pressed_again_from_the_old_screen_keeps_its_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """첫 콜백이 저장·뒷정리를 마친 뒤 옛 화면의 「배치 저장」 이 한 번 더 닿아도 다시 저장하지 않고
+    성공 알림만 남는다 — 그린 회차의 저장 세대(변경 메모 칸 번호)가 지금과 다르면 옛 화면의 누름이다
+    (AGENTS 9장 쓰기 단추 세대)."""
+    app, database = _open_editor(tmp_path)
+    master = app.session_state[BUFFER_KEY][1].copy()
+    master.loc[master["설비명"].eq("EQ-01"), "X좌표"] = 21.0
+    _edit_rawdata(app, master)
+    app.button(key="space_layout_save").click()
+
+    _press_again_from_the_old_screen(app, monkeypatch, callback="_save_space_layout")
+
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    assert len(repository.list_revisions()) == 2
+    texts = _texts(app)
+    assert not [text for text in texts if "저장하지 못" in text or "바뀐 내용이 없어" in text], (
+        texts
+    )
+    assert any("설비 데이터를 저장했습니다" in text for text in texts), texts
+
+
+def _fab_saved_then_pressed_again(database: str) -> None:
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        save_equipment_buffer,
+        stage_fab_layout,
+    )
+    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+    from capa_simulation.services.fab_layout import fab_marks_fingerprint, prepare_fab_layout_marks
+
+    repository = DuckDBEquipmentRepository(__import__("pathlib").Path(database))
+    stage_fab_layout(
+        None,
+        prepare_fab_layout_marks(
+            [{"id": "B", "kind": "block", "x": 1, "y": 1, "w": 5, "h": 3, "link": "C1 2F"}],
+            (101.0, 62.0),
+        ),
+        base=(None, fab_marks_fingerprint(())),
+    )
+    # 설비 저장본이 없는 화면(`frames` None)의 저장 — 첫 누름이 끝까지 돌아 대기분을 비운 뒤
+    # 둘째 누름.
+    st.session_state["first"] = save_equipment_buffer(repository, None, "")
+    st.session_state["second"] = save_equipment_buffer(repository, None, "")
+
+
+def test_a_fab_save_pressed_again_after_it_finished_repeats_its_success(tmp_path: Path) -> None:
+    """FAB 대기분만 저장한 첫 누름이 대기분을 비운 뒤 닿은 둘째 누름은 「바뀐 내용이 없어 …」 로 첫
+    성공 알림을 덮었다(2026-10-27 E2E). 창(`TRAILING_PRESS_SECONDS`) 안이면 첫 성공을 다시 낸다 —
+    설비 마스터 탭·사이드바 팝업 저장도 같은 함수를 지난다."""
+    from capa_simulation.components.equipment_data_workspace import FAB_SAVED_MESSAGE
+
+    database = tmp_path / "fab_again.duckdb"
+    repository = DuckDBEquipmentRepository(database)
+    repository.initialize()
+    app = AppTest.from_function(
+        _fab_saved_then_pressed_again, args=(str(database),), default_timeout=30
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state["first"] == FAB_SAVED_MESSAGE
+    assert app.session_state["second"] == FAB_SAVED_MESSAGE
+    assert [mark.mark_id for mark in repository.load_fab_layout_marks()] == ["B"]
