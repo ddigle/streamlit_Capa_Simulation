@@ -1521,7 +1521,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       편집표를 숨기는 고르기를 새로 두면 판정에 그 고르기를 같이 넣는다.
   - 기록 한 칸(`page_tabs.js` 의 순수 구획 `<tabs-history>`, `tests/test_page_tabs_assets.py` 가 node 로 돌린다) — 문서의
     `history.pushState` 를 한 번 감싸(`window.__capaHistoryGuard`) 지금 경로와 같은 경로의 쌓기를 **늘** 칸
-    바꾸기(`replaceState`)로 돌린다. Streamlit 1.63 프런트는 서버의 주소 인자 바꾸기(`page_info_changed`)마다 지금 경로로
+    바꾸기(`replaceState`)로 돌린다. 거는 것(`<tabs-history-install>` 의 `installHistoryGuard`)은 회차 맨 앞의 입장 화면
+    JS 가 모듈을 읽는 순간 먼저 하고(`history_guard.py`) 탭 줄은 안전망으로 부른다 — 탭 줄은 페이지 바로 앞이라, 새 브라우저
+    탭으로 링크 인자 화면에 들어오면 첫 회차의 인자 지우기가 탭 줄 JS 보다 먼저 닿아 기록이 한 칸 더 쌓였다(2026-10-26 E2E). Streamlit 1.63 프런트는 서버의 주소 인자 바꾸기(`page_info_changed`)마다 지금 경로로
     한 칸 쌓는다 — `st.switch_page` 가 떠나는 화면 경로로 먼저 쌓는 한 칸, 링크 인자를 받아 지우는 화면이 인자 달린 칸
     뒤에 또 쌓는 칸(뒤로가기로 인자 달린 칸에 닿으면 다시 지우며 또 쌓아 그 화면을 떠나지 못했다). 걸고 풀지 않는다.
     `st.switch_page` 의 첫 쌓기는 떠나는 칸 주소를 옮길 화면 인자로 바꾸므로(HOME 칸 → `/?process=…&from=home`), 인자를
@@ -1534,6 +1536,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮기기 전에 보낸 누름은 프런트가 아직 떠나는 화면에 있다고 믿고 그 화면 주소로 회차를 청했고, 옮긴 화면이 도는 동안
     보낸 누름은 그 화면 부품들의 회차 요청과 서버에서 합쳐지며 트리거 값이 떨어졌다(1.63 `_coalesce_widget_states` 는
     단추 트리거만 남기고 컴포넌트 트리거는 새 요청 값으로 덮는다). 다른 탭 닫기·고정은 기다리지 않는다.
+  - 닫기·고정 누름은 곧 목록을 움직인다(닫은 탭은 누르자마자 숨겨 이웃이 당겨 오고, 고정한 탭은 다음 data 에서 왼쪽으로
+    간다). 그 뒤 `DOUBLE_PRESS_MS`(0.5초) 안에 `DOUBLE_PRESS_PX`(8px) 안의 같은 자리로 온 포인터 누름이 **다른 탭**에 닿으면
+    버린다(순수 구획 `<tabs-press>`) — × 더블클릭의 둘째 누름이 밀려 온 이웃 탭을 닫거나(같은 프레임의 'close' 둘은 마지막
+    것만 서버에 닿아 누른 탭은 남았다) 지금 탭을 고정했다(2026-10-26 E2E). 같은 탭의 둘째 누름(핀 두 번)과 키보드 누름
+    (`detail` 0 — 좌표가 없다)은 그대로다.
   - 상한(10개) — JS 가 사이드바·본문 화면 링크(`stPageLink-NavLink`) 누름을 문서 capture 단계에서 먼저 받아, 열린 탭이
     아닌 화면이면 막고 그 자리에서 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 그래도 들어온 이동(뒤로·
     앞으로가기 — Streamlit 의 `popstate` 처리기가 먼저 돌아 막지 못한다)은 `route_page_tabs` 가 직전 화면으로 되돌리고
@@ -1612,6 +1619,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `intro_summary` 의 trigger 둘뿐이다 — 「준비 중」 GAP 다시 받기(`refresh`)와 Introduce 티저 받기(`teaser`).
   - 부분 글꼴 둘(`archivo-capa.woff2`·`archivo-capa-number.woff2`, `OFL.txt`)에 없는 글자를 쓰면
     `FONT_SUBSET_TEXT` 를 고치고 다시 만든다. 심볼 넷(`static/icons/capa_mark.svg` 포함)은 `test_intro_overlay` 가 맞춘다.
+  - 등록 JS 맨 앞에 브라우저 기록 지킴이(`history_guard.history_guard_script()`)가 실려 모듈을 읽는 순간 건다 — 회차 맨
+    앞 요소라 링크 인자 화면이 첫 회차에 인자를 지우는 주소 메시지보다 먼저다(3장 `page_tabs.py` 「기록 한 칸」).
+- `src/capa_simulation/components/history_guard.py` — 탭 줄 JS(`page_tabs.js`)의 기록 지킴이 두 구획(`<tabs-history>`·
+  `<tabs-history-install>`)을 떼어 입장 화면 등록 JS 앞에 싣는 글로 낸다. 글은 탭 줄 자산 한 벌이다(옮기지 않는다 — 두 벌이면
+  한쪽만 고쳐 다른 지킴이가 먼저 걸린다). 컴포넌트를 등록하지 않아 `page_tabs` 를 불러오지 않는 모듈이 쓸 수 있다.
 - `src/capa_simulation/components/intro_summary.py` — 입장 화면 Summary 의 값(최신 공식버전 요약 + 토글 셋
   `toggles`)과 Introduce 티저 칸(`teaser`)을 `capa_intro_summary` 로 보내고 사이드바 앱 이름 라벨을 세운다. 계산은
   `services/official_summary.py`.
@@ -1950,7 +1962,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 설비 일정 기준은 반사실이다(보유 = 기존보유 + 비가동만 비운 구간의 가용, 대여 = 가용 − 보유). 「—」 칸은 까닭
     (`REASON_*`)을 갖고 값은 반올림하지 않는다.
 - `src/capa_simulation/services/key_process.py` — HOME 주요공정 히트맵의 공정 상한(`KEY_PROCESS_LIMIT`)·프리셋 규칙
-  (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음).
+  (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음). 이름 하나에
+  걸린 거부(같은 이름·공정 없는 프리셋)는 `PresetNameError`(`template`·`name`)라 화면이 막은 이름으로 다시 짓는다 — 물결표만
+  막는 오류 글 길로는 이름의 `*k*` 가 기울임이 됐다(2026-10-26 E2E). 사이드바 칸·팝업 라디오(`format_func=literal_markdown`)·
+  미리보기 캡션도 이름·표시명을 `literal_markdown` 으로 싣는다.
 - `src/capa_simulation/components/revision_label.py` — 리비전을 가리키는 글자 「r{번호} · {리비전명}」 한 곳(시나리오 관리
   공식 지정 팝업·알림·사이드바 팝업·HOME 비교 리비전·파생 원본·월 머지 표). 리비전명은 고칠 수 있어 이 글자를 선택지로
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
@@ -4156,8 +4171,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     회차가 최신을 그린 직후에 닿은 둘째 누름(옛 화면의 입력)은 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 의
     거부 표지가 거른다 — 거부를 받으면 그 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음
     제출은 저장하지 않고 그 거부를 다시 알린다(`held_profile_conflict`) — 그 회차가 넘어온 거부 글(`take_refusal`)을 이미
-    그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로
-    대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
+    그렸으면 다시 그리지 않는다(같은 상자 둘이 겹쳐 섰다, 2026-10-26 E2E). 그 둘째 누름이 거부 뒤 회차(제출 아님)를 끊으면 본
+    값을 적을 회차가 없으므로, 거부를 다시 알리는 회차가 자기가 그린 최신 저장본의 토큰을 적는다(`remember_seen` 의 유일한
+    제출 회차 예외 — 적지 않으면 최신을 보고 창 뒤에 한 번 누른 저장이 「편집 시작 v(옛)」 으로 또 거부됐다, 2026-10-26 E2E
+    판정 기준·확보율 보정. 공정 표시명·표시순서·자동 갱신 설정은 아직 — `docs/TODO.md`). 창이 지나면 새 화면을 보고 다시 누른
+    저장이라 평소대로 대조한다 — 거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(`tests/test_threshold_editor.py`·
     `tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·`tests/test_display_order_management.py`·
     `tests/test_auto_official_update_tab.py`·`tests/test_cutoff_tabs.py`·`tests/test_space_floor_state_page.py`). Cut-off 는 충돌 회차가 초안·출발점을 최신으로 다시 세우는 자리라(5장 25) 표지가 없으면 둘째
     누름이 고친 칸 없이 대조를 지나 같은 내용을 다시 쓰며 「저장했습니다」 로 거부를 덮고, 버려진 편집이 말없이 지나갔다
@@ -4168,7 +4186,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 지나간 세대의 누름이 `just_written` 창 안이면
     성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
     시각을 적어(`note_notice` — 아이콘 있는 성공 알림은 `icon=` 도) 그 창 안의 회차가 같은 꼴로 다시 그린다(VOC 글
-    삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」). 첫 회차가
+    삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·시뮬레이션 시나리오 목록 「변경 저장」·리비전 「이름 저장」·리비전 불러오기
+    `scenario_status.load_saved_revision` — HOME 주요 Case 칩을 0.15~0.3초 간격으로 두 번 누르면 둘째 누름은 이미 올린 짝이라
+    아무것도 하지 않고 「…을 불러왔습니다.」 를 지웠다, 2026-10-26 E2E). 첫 회차가
     콜백만 마치고 화면을 다시 그리기 전에 닿은 둘째 누름은 단추가 아직 열려 있어 콜백이 고친 것 없이 도는데, 그 창 안이면
     「고친 것이 없습니다」 로 방금 성공을 덮지 않는다(`tests/test_scenario_save_double_press.py`). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
     `held_notice` 를 따로 부르지 않는다(VOC 머리 칸도 `render_flash` 칸이다). 창이 지난 옛 화면의 누름은

@@ -57,6 +57,7 @@ from capa_simulation.components.widget_generation import (
     widget_key,
     write_once_value,
 )
+from capa_simulation.components.write_guard import note_notice, notice_marks
 from capa_simulation.io.reference_cache import (
     get_effective_reference_tables,
     get_effective_reference_version,
@@ -273,7 +274,14 @@ def load_saved_revision(database_path: str, revision_id: str) -> str | None:
     알림을 남기고 적용 전 편집 목록을 비우고 팝업을 닫는다(`_settle`). 앱 전체를 다시 돌리는 것은
     부르는 쪽 몫이다 — 팝업은 `st.rerun()` 하고, 칩은 콜백이라 뒤이은 회차가 곧 새 시나리오의
     회차다. 못 올렸으면 활성 시나리오는 그대로다. DB 핀(`pinned_connections`)은 부르는 쪽이 잡는다.
+
+    올린 알림은 쓰기 알림 표지에도 적는다(`write_guard.note_notice`) — 칩을 0.15~0.3초 간격으로
+    두 번 누르면 둘째 누름은 이미 올린 짝이라 아무것도 하지 않고 끝나는데, 첫 회차가 꺼내 그린
+    알림을 그 회차가 다시 그리며 지웠다(2026-10-26 E2E). 표지가 있으면 그 창 안의 회차가 알림
+    칸(`render_flash`)에 같은 글을 다시 그린다. 표지 dict 는 활성화 **전에** 받는다 — 그 뒤 세션
+    칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     """
+    marks = notice_marks()
     try:
         snapshot = load_scenario_snapshot(database_path, revision_id)
         blocked = revision_block_reason(snapshot.tables)
@@ -282,11 +290,13 @@ def load_saved_revision(database_path: str, revision_id: str) -> str | None:
         activate_persisted_snapshot(snapshot)
     except BOOTSTRAP_ERRORS as exc:
         return f"리비전을 불러오지 못했습니다: {bootstrap_error_message(exc)}"
-    _settle(
+    message = (
         f"{literal_markdown(snapshot.scenario.scenario_name)} "
         f"r{snapshot.revision.revision_no}"
         f"{object_particle(str(snapshot.revision.revision_no))} 불러왔습니다."
     )
+    note_notice(marks, SIDEBAR_FLASH_KEY, message)
+    _settle(message)
     return None
 
 

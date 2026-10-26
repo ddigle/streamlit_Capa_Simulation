@@ -23,6 +23,20 @@ from collections.abc import Iterable, Sequence
 KEY_PROCESS_LIMIT = 15
 
 
+class PresetNameError(ValueError):
+    """프리셋 이름 하나에 걸린 검증 실패(같은 이름·공정 없는 프리셋).
+
+    예외 글은 이름을 낫표로 감싸 날로 담는다. 마크다운 자리(알림 상자)에 그리는 화면은 `template`
+    의 `{name}` 에 막은 이름(`literal_markdown.quoted`)을 넣어 다시 짓는다 — 물결표만 막는 오류 글
+    길(`bootstrap_error_message`)로는 「P~1~2 *k*」 의 `*k*` 가 기울임이 됐다(2026-10-26 E2E).
+    """
+
+    def __init__(self, template: str, name: str) -> None:
+        super().__init__(template.format(name=f"「{name}」"))
+        self.template = template
+        self.name = name
+
+
 def normalize_key_processes(values: Iterable[str]) -> tuple[str, ...]:
     """저장·적용 공용 정규화. 빈 값과 중복을 버리고 첫 등장 차례를 지킨다.
 
@@ -73,10 +87,10 @@ def normalize_key_process_presets(
     for raw_name, raw_processes in presets:
         name = normalize_preset_name(raw_name)
         if name in seen:
-            raise ValueError(f"같은 이름의 프리셋이 이미 있습니다: {name}")
+            raise PresetNameError("같은 이름의 프리셋이 이미 있습니다: {name}", name)
         processes = normalize_key_processes(raw_processes)
         if not processes:
-            raise ValueError(f"프리셋 「{name}」에 공정을 하나 이상 고르세요.")
+            raise PresetNameError("프리셋 {name}에 공정을 하나 이상 고르세요.", name)
         seen.add(name)
         normalized.append((name, processes))
     if len(normalized) > KEY_PROCESS_PRESET_LIMIT:

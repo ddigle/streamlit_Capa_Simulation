@@ -14,6 +14,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.scenario_status as target
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.capacity_gate import GateVerdict
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
@@ -305,7 +306,9 @@ def test_the_badge_says_official_saved_or_unsaved_in_that_order() -> None:
     assert scenario_status_badge(active_revision_id=None, official=None, unsaved=False) == ""
 
 
-def test_the_dialog_selects_and_loads_another_revision(sidebar_app: AppTest) -> None:
+def test_the_dialog_selects_and_loads_another_revision(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app = _open(sidebar_app.run())
     # 팝업은 올라와 있는 값으로 연다 — 닫힌 뒤에 「골랐지만 불러오지 않은 선택」이 남지 않는다.
     assert app.selectbox(key=SIDEBAR_SCENARIO_KEY).value == "scenario-1"
@@ -332,6 +335,8 @@ def test_the_dialog_selects_and_loads_another_revision(sidebar_app: AppTest) -> 
     # 성공하면 팝업을 닫고 알림은 필드 아래에 다음 회차 한 번 선다.
     assert SCENARIO_DIALOG_KEY not in app.session_state
     assert [item.value for item in app.success] == ["증산안 r1을 불러왔습니다."]
+    # 쓰기 알림 표지의 창(빠른 두 번 누름의 꼬리 회차가 같은 알림을 다시 그린다)이 지난 회차다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.run()
     assert [item.value for item in app.success] == []
 

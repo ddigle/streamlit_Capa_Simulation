@@ -132,6 +132,7 @@ from capa_simulation.services.execution_capacity import (
 from capa_simulation.services.key_process import (
     KEY_PROCESS_LIMIT,
     PRESET_NAME_LIMIT,
+    PresetNameError,
     normalize_preset_name,
     resolve_preset_name,
 )
@@ -920,7 +921,10 @@ def render_threshold_editor(
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
             # 다시 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한 번만
-            # (2026-10-26 E2E — 둘째 누름이 거부 뒤 회차를 글을 꺼내기 전에 끊는다).
+            # (2026-10-26 E2E — 둘째 누름이 거부 뒤 회차를 글을 꺼내기 전에 끊는다). 이 회차가 그린
+            # 최신 저장본이 사용자가 보게 될 화면이라 본 version 은 적는다 — 둘째 누름이 거부 뒤
+            # 회차(제출 아님)를 끊어 그 회차가 적지 못했다.
+            remember_seen(THRESHOLD_BASE_VERSION_KEY, threshold_profile.version)
             if refused != held:
                 notice.error(held)
             return
@@ -1487,7 +1491,9 @@ def render_key_process_field(
     )
     if condition_field(
         KEY_PROCESS_FIELD_LABEL,
-        f"{applied} · {shown_count}공정",
+        # 값 칸은 버튼 라벨이라 마크다운으로 그려진다 — 사람이 지은 프리셋 이름은 글자 그대로
+        # 싣는다(「P~1~2 *k*」 가 지움선·기울임이 됐다, 2026-10-26 E2E).
+        f"{literal_markdown(applied)} · {shown_count}공정",
         slug="key_process",
         key=KEY_PROCESS_FIELD_KEY,
         icon=KEY_PROCESS_ICON,
@@ -1547,6 +1553,9 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     choice = st.radio(
         "프리셋",
         options=list(names),
+        # 선택지 글자는 마크다운으로 그려진다 — 프리셋 이름은 글자 그대로(이름의 순수 함수라
+        # 회차마다 같은 글자다 — AGENTS 9장 선택 상자 라벨 규칙에 걸리지 않는다).
+        format_func=literal_markdown,
         captions=list(previews),
         key=KEY_PROCESS_PICK_KEY,
         label_visibility="collapsed",
@@ -1688,10 +1697,7 @@ def _render_key_process_editor(
                 presets, source="웹 직접 편집"
             )
         except BOOTSTRAP_ERRORS as exc:
-            notice.error(bootstrap_error_message(exc))
-            return
-        except ValueError as exc:
-            notice.error(bootstrap_error_message(exc))
+            notice.error(_key_process_error_message(exc))
             return
         clear_global_key_process_cache()
         _queue_selection(KEY_PROCESS_EDIT_TARGET_KEY, new_name)
@@ -1702,6 +1708,15 @@ def _render_key_process_editor(
             f"프리셋 {quoted(new_name)}{object_particle(new_name)} 저장했습니다.",
         )
         st.rerun(scope="app")
+
+
+def _key_process_error_message(exc: BaseException) -> str:
+    """프리셋 저장 실패 알림 글. 이름 하나에 걸린 실패(`PresetNameError`)는 막은 이름으로 다시
+    짓는다 — 오류 글 길(`bootstrap_error_message`)은 물결표만 막아 이름의 `*k*` 가 기울임이
+    됐다(2026-10-26 E2E). `ValueError` 는 `BOOTSTRAP_ERRORS` 에 들어 있다."""
+    if isinstance(exc, PresetNameError):
+        return exc.template.format(name=quoted(exc.name))
+    return bootstrap_error_message(exc)
 
 
 def _render_key_process_flash() -> None:
@@ -1755,10 +1770,7 @@ def _render_key_process_preset_actions(
             presets, source="웹 직접 편집"
         )
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
-        return
-    except ValueError as exc:
-        st.error(bootstrap_error_message(exc))
+        st.error(_key_process_error_message(exc))
         return
     note_notice(marks, KEY_PROCESS_FLASH_KEY, message)
     clear_global_key_process_cache()
@@ -1877,7 +1889,9 @@ def _render_execution_editor(
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
             # 다시 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한 번만
-            # (판정 기준과 같은 꼴).
+            # (판정 기준과 같은 꼴). 본 version 은 이 회차가 그린 최신 저장본으로 적는다(판정
+            # 기준과 같다 — 둘째 누름이 끊은 거부 뒤 회차 몫).
+            remember_seen(EXECUTION_BASE_VERSION_KEY, execution_profile.version)
             if refused != held:
                 notice.error(held)
             return

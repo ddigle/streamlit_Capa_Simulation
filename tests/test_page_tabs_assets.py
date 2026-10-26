@@ -1,4 +1,4 @@
-# Purpose: 탭 줄 자산의 트리거·접근성·색 계약을 글자로, 기록·누름 기다림 구획을 node 로 검사한다.
+# Purpose: 탭 줄 자산의 트리거·접근성·색 계약을 글자로, 기록·누름 구획을 node 로 검사한다.
 
 """AppTest 는 탭 줄 JS 를 돌리지 못한다. 자산 글자로 드러나는 약속을 여기서 붙잡고, DOM 을 모르는
 순수 구획(`// <tabs-…>`)은 node(없으면 bun)로 떼어 돌린다 — 없으면 건너뛰고 CI 에서는 실패한다.
@@ -127,7 +127,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue")
+_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press")
 
 
 def _sections() -> str:
@@ -139,14 +139,15 @@ def _sections() -> str:
     return "\n".join(parts)
 
 
-def _node(runner: str) -> Any:
+def _node(runner: str, *, prelude: str | None = None) -> Any:
+    """`prelude`(기본은 순수 구획들) 뒤에 `runner` 를 붙여 node 로 돌리고 찍은 JSON 을 읽는다."""
     runtime = shutil.which("node") or shutil.which("bun")
     if runtime is None:
         if os.environ.get("GITHUB_ACTIONS") == "true":
             pytest.fail("CI 러너에 node 가 없다 — 탭 줄 JS 구획 시험을 건너뛸 수 없다")
         pytest.skip("node·bun 이 없다 — CI 에서 돈다")
     completed = subprocess.run(
-        [runtime, "-e", _sections() + "\n" + runner],
+        [runtime, "-e", (_sections() if prelude is None else prelude) + "\n" + runner],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -389,3 +390,112 @@ def test_moving_taps_arm_the_queue_first_and_the_history_guard_is_one_per_docume
     assert "window.__capaHistoryGuard = guardHistory(window.history" in JS
     # 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다(1.63 프런트 속성).
     assert "data-test-script-state" in JS and "'running'" in JS
+
+
+_PRESS_RUNNER = """
+const MS = 500
+const PX = 8
+const out = {}
+// 「기준 정보」(ref) × 를 (300, 20) 에서 누른 직후 —
+// 숨긴 자리로 「산출 결과」(calc) 의 × 나 핀이 당겨 왔다.
+const last = { id: 'ref', at: 1000, x: 300, y: 20 }
+out.doubleClick = strayPress(last, 'calc', 1002, 300, 20, MS, PX)
+out.slowSecond = strayPress(last, 'calc', 1300, 301, 21, MS, PX)
+// 더블클릭 창이 지난 누름·자리를 옮긴 누름·같은 탭의 둘째 누름(핀 두 번)은 그대로 받는다.
+out.afterWindow = strayPress(last, 'calc', 1500, 300, 20, MS, PX)
+out.moved = strayPress(last, 'calc', 1100, 340, 20, MS, PX)
+out.sameTab = strayPress(last, 'ref', 1002, 300, 20, MS, PX)
+out.first = strayPress(null, 'calc', 1002, 300, 20, MS, PX)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_second_press_that_lands_on_the_tab_that_slid_under_the_pointer_is_dropped() -> None:
+    """× 를 더블클릭하면 누른 탭은 남고 × 자리로 밀려 들어온 이웃 탭이 닫혔다 — 닫은 탭을 누르자마자
+    숨겨 이웃이 당겨 오고, 같은 프레임의 'close' 둘은 마지막 것만 서버에 닿았다(E2E 결함 — 지금 탭의
+    왼쪽 탭이면 지금 탭이 고정되고, 0.3초 간격 두 번이면 탭 둘이 닫혔다). 닫기·고정 뒤 더블클릭
+    창(0.5초) 안에 같은 자리로 온 누름이 다른 탭에 닿으면 버린다."""
+    out = _node(_PRESS_RUNNER)
+
+    assert out == {
+        "doubleClick": True,
+        "slowSecond": True,
+        "afterWindow": False,
+        "moved": False,
+        "sameTab": False,
+        "first": False,
+    }
+
+
+def test_every_press_on_the_strip_consults_the_double_press_guard_first() -> None:
+    """× ·핀·탭 누름과 가운데 단추 닫기 모두 보내기 전에 앞 닫기·고정 누름의 꼬리인지
+    본다. 닫기·고정만 그 누름을 적는다(고르기는 목록을 움직이지 않는다). 키보드로 누른
+    단추(`detail` 0)는 좌표가 없어 보지 않는다."""
+    click = JS[JS.index("list.onclick = (event) => {") :]
+    click = click[: click.index("\n  }\n")]
+    assert click.index("if (stray(event, item)) return") < click.index("close(item)")
+    assert click.index("if (stray(event, item)) return") < click.index("S.send('pin'")
+    assert click.index("if (stray(event, item)) return") < click.index("select(item)")
+    assert click.count("pressed(event, item)") == 2
+    aux = JS[JS.index("list.onauxclick = (event) => {") :]
+    aux = aux[: aux.index("\n  }\n")]
+    assert aux.index("if (stray(event, item)) return") < aux.index("pressed(event, item)")
+    assert aux.index("pressed(event, item)") < aux.index("close(item)")
+    assert "event.detail > 0" in JS
+
+
+_INSTALL_PRELUDE = """
+const calls = []
+globalThis.window = {
+  location: { href: 'http://app.test/constraint_simulation?process=A&theme=light' },
+  history: {
+    state: {},
+    pushState(state, title, url) { calls.push(['push', String(url)]) },
+    replaceState(state, title, url) { calls.push(['replace', String(url)]) },
+  },
+}
+"""
+
+_INSTALL_RUNNER = """
+const first = window.__capaHistoryGuard
+installHistoryGuard()
+// 첫 회차가 링크 인자를 지운다 — Streamlit 프런트가 지금 경로로 쌓는다.
+window.history.pushState({}, '', '/constraint_simulation?theme=light')
+process.stdout.write(JSON.stringify({
+  installed: first === window.history,
+  once: window.__capaHistoryGuard === first,
+  calls,
+}))
+"""
+
+
+def test_the_intro_overlay_installs_the_history_guard_before_the_first_run_drops_link_args() -> (
+    None
+):
+    """새 브라우저 탭으로 링크 인자 화면(제약 시뮬레이션·공정 Capa 상세 `?process=`)에 들어오면 그
+    화면이 첫 회차에 인자를 지우는 주소 메시지가 탭 줄 JS 가 마운트되기 전에 닿아(탭 줄은 페이지
+    바로 앞이다) 기록이 한 칸 더 쌓였다 — 뒤로가기 첫 번이 화면은 그대로 둔 채 주소의 인자만
+    되살렸다(2026-10-26 E2E). 회차 맨 앞(부트스트랩 전)의 입장 화면 JS 가 모듈을 읽는 순간
+    지킴이를 건다. 글은 탭 줄 자산의 구획 그대로이고 탭 줄도 같은 함수를 안전망으로 부른다."""
+    from capa_simulation.components import intro_overlay
+    from capa_simulation.components.history_guard import history_guard_script
+
+    guard = history_guard_script()
+    registered = intro_overlay._registered_js()
+    assert registered.startswith(guard)
+    assert guard.rstrip().endswith("installHistoryGuard()")
+    assert registered.index("installHistoryGuard()") < registered.index("export default")
+    for name in ("tabs-history", "tabs-history-install"):
+        body = re.search(rf"// <{name}>\n(?P<body>.*?)\n// </{name}>", JS, re.S)
+        assert body is not None and body.group("body") in guard
+    strip = JS[JS.index("export default function") :]
+    assert "installHistoryGuard()" in strip
+    assert "guardHistory(" not in strip
+
+    out = _node(_INSTALL_RUNNER, prelude=_INSTALL_PRELUDE + guard)
+
+    assert out == {
+        "installed": True,
+        "once": True,
+        "calls": [["replace", "/constraint_simulation?theme=light"]],
+    }

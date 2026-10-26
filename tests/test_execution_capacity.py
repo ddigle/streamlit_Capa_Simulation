@@ -323,3 +323,62 @@ _render_execution_editor(
     profile = repository.load_global_execution_capacity()
     assert (profile.version, profile.source) == (2, "B 의 저장")
     clear_global_execution_capacity_cache()
+
+
+def test_a_single_press_after_a_held_double_press_saves_the_execution_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장 뒤 옛 화면 두 번 누름이 둘 다 거부된 다음, 최신 화면을 보고 한 번 누른
+    저장은 저장된다 — 둘째 누름이 거부 뒤 회차를 끊고 거부 표지에 걸려 끝나도 그 회차가 그린
+    최신 version 을 본 값으로 적는다(판정 기준과 같은 2026-10-26 E2E). 끊긴 회차는 본 version 을
+    옛 값으로 되살려 흉내 낸다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _scenario_repository(database_path)
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, "")]), source="A 가 본 것"
+    )
+    script = f"""
+import pandas as pd
+
+from capa_simulation.components.flash import render_flash
+from capa_simulation.components.home_preference import _render_execution_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.persistence.cache import load_global_execution_capacity
+
+database_path = {str(database_path)!r}
+render_flash("home_execution_flash")
+_render_execution_editor(
+    months=[202607, 202608],
+    execution_profile=load_global_execution_capacity(database_path),
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    unmatched=pd.DataFrame(),
+    clamped=pd.DataFrame(),
+    database_path=database_path,
+)
+"""
+    clear_global_execution_capacity_cache()
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert not app.exception
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, ""), (202608, "DEMO_B", -5.0, "B")]), source="B 의 저장"
+    )
+    clear_global_execution_capacity_cache()
+    next(button for button in app.button if button.label == "확보율 보정 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in str(item.value) for item in app.error)
+
+    app.session_state[EXECUTION_BASE_VERSION_KEY] = 1
+    app._run(widget_state=pressed)
+    assert any("다른 사용자가 먼저" in str(item.value) for item in app.error)
+    assert repository.load_global_execution_capacity().version == 2
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
+
+    assert not app.exception
+    assert not app.error, [str(item.value) for item in app.error]
+    assert repository.load_global_execution_capacity().version == 3
+    clear_global_execution_capacity_cache()

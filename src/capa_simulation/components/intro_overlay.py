@@ -78,6 +78,7 @@ from typing import Any
 
 import streamlit as st
 
+from capa_simulation.components.history_guard import history_guard_script
 from capa_simulation.components.home_rendering import HOME_LOADING_STAGES
 from capa_simulation.components.theme_toggle import THEME_BUTTON_ID, THEME_RULE_SCRIPT
 from capa_simulation.design import tokens
@@ -142,7 +143,8 @@ def _asset_text(name: str) -> str:
 
 
 def _registered_js() -> str:
-    """intro.js 앞에 화면 틀·스타일·글꼴과 테마 키 규칙을 붙인다. 등록 때 한 번만 만든다.
+    """intro.js 앞에 기록 지킴이·화면 틀·스타일·글꼴과 테마 키 규칙을 붙인다. 등록 때 한 번
+    만든다.
 
     테마 키 규칙(`theme_toggle.THEME_RULE_SCRIPT`)은 테마 버튼이 쓰는 것과 **같은 문자열**이다 —
     새로고침할지를 같은 규칙으로 미리 보려는 것이고, 입장 화면의 색과는 상관이 없다. 서식은
@@ -152,6 +154,9 @@ def _registered_js() -> str:
     font = base64.b64encode((_ASSETS / "archivo-capa.woff2").read_bytes()).decode("ascii")
     number = base64.b64encode((_ASSETS / "archivo-capa-number.woff2").read_bytes()).decode("ascii")
     prelude = (
+        # 브라우저 기록 지킴이 — 모듈을 읽는 순간 건다(`history_guard`). 이 요소가 회차 맨
+        # 앞이라 링크 인자 화면이 첫 회차에 인자를 지우는 주소 메시지보다 먼저다.
+        history_guard_script(),
         f"const OVERLAY_HTML = {json.dumps(_asset_text('intro.html'))};",
         f"const OVERLAY_CSS = {json.dumps(_asset_text('intro.css'))};",
         f'const FONT_DATA = "{font}";',
