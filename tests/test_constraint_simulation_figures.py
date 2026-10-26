@@ -889,19 +889,11 @@ def test_the_schedule_card_names_the_units_used_without_modification() -> None:
 def test_the_modification_kpi_counts_only_the_modified_units(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성(보유 4 → 11 = 4 + 7, 다섯 번)."""
+    """값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성(보유 4 → 11 = 4 + 7). 회색 줄은
+    카드 넷이 한 줄에 서게 짧다 — 창 수·첫 비가동은 개조 일정 카드가 말한다."""
     cards = _kpi_cards(monkeypatch, _owned())
-    assert cards["개조 대수"] == (
-        "7대",
-        "전용 최대 11대 = 보유 4 · 개조 7(5번) · 첫 비가동 2027-04-25",
-    )
+    assert cards["개조 대수"] == ("7대", "전용 최대 11대 = 보유 4 · 개조 7")
     cards = _kpi_cards(monkeypatch, _new(FREE_ARRIVALS, owned=3))
-    assert cards["개조 대수"] == (
-        "0대",
-        "전용 최대 11대 = 보유 3 · 신규 8 · 개조 0 — 개조 비가동 없음",
-    )
+    assert cards["개조 대수"] == ("0대", "전용 최대 11대 = 보유 3 · 신규 8 · 개조 0")
     cards = _kpi_cards(monkeypatch, _new(NEW_ARRIVALS))
-    assert cards["개조 대수"] == (
-        "5대",
-        "전용 최대 11대 = 신규 6 · 개조 5(4번) · 첫 비가동 2027-04-25",
-    )
+    assert cards["개조 대수"] == ("5대", "전용 최대 11대 = 신규 6 · 개조 5")

@@ -149,9 +149,7 @@ def test_owned_units_replace_the_modification_and_say_so(
     app.number_input(key=CONSTRAINT_OWNED_KEY).set_value(1)
     _ok(app.run())
     assert _metric(app, "개조 대수") == "0대"
-    assert _metric_caption(app, "개조 대수") == (
-        "전용 최대 1대 = 보유 1 · 개조 0 — 개조 비가동 없음"
-    )
+    assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 보유 1 · 개조 0"
     assert "보유 제약 1대" in _header_line(app)
     captions = _captions(app)
     assert "개조 없이 쓰는 전용 — 보유 제약 설비 1대(입력 1대 중)" in captions
@@ -174,9 +172,7 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert "신규 = 기여 시작 2025-12-01 이후 호기 1대(공정 Capa 상세 ③ 과 같은 날짜)" in captions
     assert "신규 개조 없이(2025-12-01~)" in _header_line(app)
     assert _metric(app, "개조 대수") == "0대"
-    assert _metric_caption(app, "개조 대수") == (
-        "전용 최대 1대 = 신규 1 · 개조 0 — 개조 비가동 없음"
-    )
+    assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"
     assert "신규 설비 1대(기준일 2025-12-01 이후 기여 시작 · 들어온 달 몫만)" in captions
     assert timeline_builds == [DYNAMIC_PROCESS]
 

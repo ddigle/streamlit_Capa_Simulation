@@ -646,7 +646,9 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
         if kpis.max_dedicated is None:
             value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
         elif splits and kpis.max_dedicated > 0:
-            # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다.
+            # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다. 회색 줄은
+            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창 수·첫 비가동은 개조 일정 카드가
+            # 말한다(2026-10-26 사본 앱 1440px: 긴 줄이면 넷째 카드가 아래 줄로 내려갔다).
             modified = kpis.modified_units or 0
             pieces = []
             if result.conditions.uses_owned_units:
@@ -656,14 +658,6 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             pieces.append(f"개조 {modified}")
             value4 = f"{modified}대"
             caption4 = f"전용 최대 {kpis.max_dedicated}대 = {' · '.join(pieces)}"
-            if kpis.window_count == 0:
-                caption4 += " — 개조 비가동 없음"
-            else:
-                caption4 += f"({kpis.window_count}번)" + (
-                    f" · 첫 비가동 {kpis.first_downtime_day.isoformat()}"
-                    if kpis.first_downtime_day is not None
-                    else ""
-                )
         elif kpis.window_count == 0:
             # 제약 기간에 제약 제품 소요가 없으면 떼어 줄 대수도 개조 창도 없다 — 「0번에 나눠
             # 개조」 가 아니라 그 뜻을 바로 적는다(값 「0대」 는 명세 2-6 「max pool 대」 그대로).
