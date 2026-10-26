@@ -3591,7 +3591,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   예외 처리 공정 안내, Dynamic Capa 관리 우선순위, 가용설비 현황 Main 의 `공정소분류` 칸 — 공정별
   내역·비가동 호기·호기 목록·Qual 호기 목록·전환 일정 목록 — 과 Static 대비 일정의 칸 호기·호기 목록·
   확보율 교차검증 표, Capa Chatbot 근거 표)와 화면용 안내 문구(Main 의 걸린 조건 줄, Capa Chatbot 대본의 결론·질문·
-  조건 — 대본 함수가 페이지가 넘긴 `ProcessLabels.label` 로 적는다),
+  조건 — 대본 함수가 페이지가 넘긴 함수(`ProcessLabels.label` 을 `literal_markdown` 으로 감싼 것 — 세 칸이
+  마크다운이다, 9장)로 적는다),
   ⑤ `st.data_editor` 분류 컬럼의 `st.column_config.SelectboxColumn(format_func=)` 라벨.
   월별 편집기의 분류 컬럼은 언제나 한 컬럼이고 표시용 컬럼을 따로 두지 않는다. 편집표는 ② 의 「같은
   글자면 다른 값」 결함이 없다 — 칸은 옵션 `value` 로 찾아 `label` 을 그리고, 고르기·붙여넣기·복사가 모두
@@ -4250,6 +4251,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   알림 상자·위젯 라벨·풍선)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
+  공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
+  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
+  `tests/test_process_label_markdown_sinks.py`).
   `st.badge` 라벨은 `literal_badge` 로 감싼다 — `st.badge` 가 `[`·`]` 를 스스로 막아(1.63), `literal_markdown`(·`quoted`)이면 두 번
   막혀 「\[가정\]」 처럼 역슬래시가 보인다(`tests/test_literal_markdown.py` 가 `st.badge` 라벨 안의 `literal_markdown` 을 찾는다).
 - **이름이 마크다운 자리로 들어오는 길은 셋이고 막는 길도 하나씩이다.** 그리는 자리마다 막을 것을 고르면 한 자리를

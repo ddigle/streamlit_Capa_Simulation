@@ -60,7 +60,9 @@ def build_sample_answers(process_name: ProcessName = str) -> list[SampleAnswer]:
     """추천 질문 네 개와 그 답. 순서는 실제로 묻게 되는 차례다.
 
     무엇이 나쁜가 → 왜 나쁜가 → 무엇부터 할까 → 데이터는 믿을 만한가. `process_name` 은
-    결론·질문·조건에 공정 이름을 적는 함수다(화면은 공용 표시명 — 조사도 그 글자로 고른다).
+    결론·질문·조건에 공정 이름을 적는 함수다(화면은 공용 표시명 — 조사도 그 글자로 고른다). 세
+    칸은 마크다운으로 그려지므로 화면은 마크다운을 막은 표시명을 적는 함수를 넘긴다 — 조사 고르기는
+    막은 글자의 `\\` 를 건너뛰어 같은 조사다.
     """
     monthly = build_monthly_actual_demo()
     months = sorted(int(value) for value in monthly["생산계획년월"].unique())

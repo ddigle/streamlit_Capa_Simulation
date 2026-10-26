@@ -27,6 +27,7 @@ from capa_simulation.components.dynamic_capacity_dashboard import (
     build_capacity_waterfall_figure,
     build_process_comparison_figure,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -131,8 +132,10 @@ def _render_summary(
     else:
         worst = needs_action.iloc[0]
         worst_rate = f"{float(worst['Capa 실현률']):.0%}"
+        # 공정 표시명은 사람 글이라 막아 끼운다(물결표·별표가 지움선·기울임이 되지 않게 —
+        # AGENTS 9장).
         st.warning(
-            f"**{labels.label(worst['공정'])}** 의 Capa 실현률이 "
+            f"**{literal_markdown(labels.label(worst['공정']))}** 의 Capa 실현률이 "
             f"{with_direction_particle(worst_rate)} 가장 낮습니다. 설비 성능 실현률은 "
             f"{float(worst['설비 성능 실현률']):.0%}, 가용 Capa 활용률은 "
             f"{float(worst['가용 Capa 활용률']):.0%} 입니다 — 성능과 활용 중 어느 쪽이 "
@@ -398,8 +401,8 @@ def _render_detail(
     with waterfall_column.container(border=True):
         st.markdown("#### :material/waterfall_chart: Capa 손실 구조")
         st.caption(
-            f"선택한 {labels.label(process)} 공정의 표준 Capa부터 실제 실적까지를 "
-            f"{with_direction_particle(unit_label)} 연결합니다."
+            f"선택한 {literal_markdown(labels.label(process))} 공정의 표준 Capa부터 실제 "
+            f"실적까지를 {with_direction_particle(unit_label)} 연결합니다."
         )
         st.plotly_chart(
             build_capacity_waterfall_figure(detail_summary),
