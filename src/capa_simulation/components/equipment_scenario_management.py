@@ -884,7 +884,11 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         hide_index=True,
         width="stretch",
         placeholder="",
-        column_config={"저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")},
+        column_config={
+            "저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+            # 최신 줄의 실효 괄호(「호기 1행 (공식과 같음)」)가 잘리지 않을 만큼.
+            "배치": st.column_config.TextColumn(width="medium"),
+        },
     )
     # 표가 목록 한도(최근 n줄)에 걸려도 전체 수와 출처별 수를 늘 한 줄로 — 늘 서 있어 아래 칸 자리가
     # 그대로다.
