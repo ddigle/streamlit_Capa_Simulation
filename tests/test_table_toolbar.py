@@ -9,6 +9,7 @@
 """
 
 import ast
+import functools
 import re
 from pathlib import Path
 
@@ -157,46 +158,156 @@ def _is_clearance(stmt: ast.stmt) -> bool:
     )
 
 
+SOURCE_ROOT = PROJECT_ROOT / "src"
+_Function = ast.FunctionDef | ast.AsyncFunctionDef
+
+
+@functools.cache
+def _tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"))
+
+
+@functools.cache
+def _definitions(path: Path) -> dict[str, list[_Function]]:
+    """파일 안의 함수 정의(이름 → 정의들) — 안쪽 함수까지."""
+    found: dict[str, list[_Function]] = {}
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.setdefault(node.name, []).append(node)
+    return found
+
+
+def _module_path(module: str) -> Path | None:
+    base = SOURCE_ROOT.joinpath(*module.split("."))
+    for candidate in (base.with_suffix(".py"), base / "__init__.py"):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+@functools.cache
+def _imported(path: Path) -> dict[str, tuple[Path, str]]:
+    """`from capa_simulation… import 이름` 으로 들여온 이름 → (정의한 파일, 원래 이름)."""
+    found: dict[str, tuple[Path, str]] = {}
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("capa_simulation"):
+            source = _module_path(str(node.module))
+            if source is not None:
+                for alias in node.names:
+                    found[alias.asname or alias.name] = (source, alias.name)
+    return found
+
+
+def _bare_calls(node: ast.AST) -> set[str]:
+    """`이름(…)` 꼴로 부르는 이름 — 도우미 함수를 따라갈 후보다(`x.이름(…)` 은 따라가지 않는다)."""
+    return {
+        item.func.id
+        for item in ast.walk(node)
+        if isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
+    }
+
+
+def _is_dialog(function: _Function) -> bool:
+    """`@st.dialog` 함수는 대화상자 안에 그린다 — 표 위 줄에 서지 않는다."""
+    return any(
+        ast.unparse(decorator).startswith("st.dialog") for decorator in function.decorator_list
+    )
+
+
+def _reach(path: Path, stmt: ast.stmt) -> tuple[set[str], bool]:
+    """문장이 부르는 이름과 `st.…` 를 부르는지 — 같은 파일의 도우미 함수와 `capa_simulation` 에서
+    들여온 도우미 함수 안까지 따라간다(2026-10-26 E2E — 보드 표 위 줄 `_render_controls()` 가 품은
+    숫자 칸을 그물이 못 봤다)."""
+    names = _called_names(stmt)
+    draws = _draws(stmt)
+    pending = [(path, name) for name in _bare_calls(stmt)]
+    seen: set[tuple[Path, str]] = set()
+    while pending:
+        where, name = pending.pop()
+        if (where, name) in seen:
+            continue
+        seen.add((where, name))
+        local = _definitions(where).get(name)
+        if local is None:
+            target = _imported(where).get(name)
+            if target is not None:
+                pending.append(target)
+            continue
+        for function in local:
+            if _is_dialog(function):
+                continue
+            for inner in function.body:
+                names |= _called_names(inner)
+                draws = draws or _draws(inner)
+                pending.extend((where, called) for called in _bare_calls(inner))
+    return names, draws
+
+
 def _tables_after_pressables() -> tuple[list[tuple[str, str, int]], int]:
-    """(위 형제가 누를 것을 품는데 띄움이 없는 표 (파일, 함수, 줄)), 띄움을 둔 표의 수."""
+    """(위 형제가 누를 것을 품는데 띄움이 없는 표 (파일, 함수, 줄)), 띄움을 둔 표의 수.
+
+    위 형제는 그리지 않는 대입을 건너뛴 바로 앞 문장이고, 표가 `if` 의 첫 문장이면 그 `if` 앞
+    문장이다. 형제가 부르는 도우미 함수 안까지 본다(`_reach`).
+    """
     missing: list[tuple[str, str, int]] = []
     cleared = 0
     for path in [*_sources(), OWNER]:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = _tree(path)
         owners: dict[int, str] = {}
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for inner in ast.walk(node):
                     owners.setdefault(id(inner), node.name)
+        # 문장 → (그 문장을 품은 노드, 그 노드의 문장 목록, 목록 안 자리).
+        places: dict[int, tuple[ast.AST, list[ast.stmt], int]] = {}
         for node in ast.walk(tree):
             for field in ("body", "orelse", "finalbody"):
                 body = getattr(node, field, None)
-                if not isinstance(body, list):
-                    continue
-                for index, stmt in enumerate(body):
-                    if not (isinstance(stmt, ast.stmt) and _is_table(stmt)):
-                        continue
-                    before = index - 1
-                    while (
-                        before >= 0
-                        and isinstance(body[before], (ast.Assign, ast.AnnAssign, ast.AugAssign))
-                        and not _draws(body[before])
-                    ):
-                        before -= 1
-                    if before < 0:
-                        continue
-                    previous = body[before]
-                    if _is_clearance(previous):
-                        cleared += 1
-                    elif _called_names(previous) & PRESSABLE:
-                        missing.append(
-                            (
-                                path.relative_to(PROJECT_ROOT).as_posix(),
-                                owners.get(id(stmt), ""),
-                                stmt.lineno,
-                            )
-                        )
+                if isinstance(body, list):
+                    for index, stmt in enumerate(body):
+                        if isinstance(stmt, ast.stmt):
+                            places[id(stmt)] = (node, body, index)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.stmt) and _is_table(node)):
+                continue
+            previous = _previous_sibling(path, node, places)
+            if previous is None:
+                continue
+            if _is_clearance(previous):
+                cleared += 1
+            elif _reach(path, previous)[0] & PRESSABLE:
+                missing.append(
+                    (
+                        path.relative_to(PROJECT_ROOT).as_posix(),
+                        owners.get(id(node), ""),
+                        node.lineno,
+                    )
+                )
     return missing, cleared
+
+
+def _previous_sibling(
+    path: Path,
+    stmt: ast.stmt,
+    places: dict[int, tuple[ast.AST, list[ast.stmt], int]],
+) -> ast.stmt | None:
+    """화면에서 표 바로 위에 서는 문장 — 그리지 않는 대입은 건너뛰고, `if` 의 첫 문장이면 그 앞."""
+    current: ast.stmt = stmt
+    while id(current) in places:
+        owner, body, index = places[id(current)]
+        before = index - 1
+        while (
+            before >= 0
+            and isinstance(body[before], (ast.Assign, ast.AnnAssign, ast.AugAssign))
+            and not _reach(path, body[before])[1]
+        ):
+            before -= 1
+        if before >= 0:
+            return body[before]
+        if not isinstance(owner, ast.If):
+            return None
+        current = owner
+    return None
 
 
 def test_a_table_under_a_pressable_row_keeps_the_toolbar_clearance() -> None:
