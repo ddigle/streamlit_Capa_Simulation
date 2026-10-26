@@ -1679,7 +1679,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/editor_state.py` — 편집표에 고친 것이 남았는가(`editor_has_edits`)와 편집을
   브라우저까지 버리는 초기화(`discard_editor`)다.
   - 키가 있는 편집표는 모두 세대 번호를 붙인 `editor_widget_key` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
-    `discard_editor` 를 부른다 — 세션만 지우면 브라우저가 옛 편집을 다음 회차에 되보낸다.
+    `discard_editor` 를 부른다 — 세션만 지우면 브라우저가 옛 편집을 다음 회차에 되보낸다. key 짓기와 세대 올리기는
+    `widget_generation`(`widget_key`·`bump`)이 한다.
 - `src/capa_simulation/components/pick_edit_table.py` — 고름 하나와 이름(·순서) 칸을 바로 고치는 편집표(시나리오 관리
   목록·리비전 표)의 미저장 초안(`TableDraft` — 이름·이름 기준·화면 차례·차례 기준·고른 행, 모두 행 id)과 접기·위젯
   key 다. 이름 기준(`name_base`)은 그 칸을 처음 고친 편집이 붙은 표가 보인 저장 이름이고(`ShownTable.names`),
@@ -1894,9 +1895,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 저장 성공 문구를 세션에 담았다가 다음 실행에서 그 버튼과 같은 상자 안에
   그린다(`st.success` 바로 뒤 `st.rerun()` 이면 문구가 그려지지 않는다, `tests/test_flash_messages.py`).
+- `src/capa_simulation/components/widget_generation.py` — 서버 값을 브라우저가 든 위젯에 닿게 하는 **한 길**(9장 「닫힌
+  팝업 안」·「쓰기 콜백」). 세대 칸 읽기(`generation` — `write_guard.current_generation` 과 같은 읽기)·세대 key 짓기
+  (`widget_key` — 꼴 `__g`·`_g`·`__`·`__p` 와 `bare_zero` 로 옛 key 글자를 바이트까지 지킨다)·세대 올리기(`bump` — 뒷정리 맨
+  끝)·닫힌 팝오버 칸 채우기(`seed_field` — 고치지 않은 동안 매 회차 싣고 본 값 `…__seen` 을 든다)·세대마다 한 번 쓰기
+  (`write_once_value` — `write_guard.write_once` 위에 그 세대 쓰기의 결과를 세션 dict 에 들어 겹쳐 온 둘째 회차가 끊긴 첫
+  회차의 뒷정리를 그 결과로 잇는다. 뒷정리 뒤 `release()` 로 놓는다). `write_guard` 는 고치지 않고 `write_once`·
+  `current_generation` 만 부른다. 이 모듈 밖에서 세대 꼬리 글자를 짓지 않는다(`tests/test_widget_generation.py`).
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
-  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
+  온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). VOC 는 `write_once` 를 바로 부르고,
+  그 밖의 덧붙이기 쓰기는 `widget_generation.write_once_value` 로 부른다.
   버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
   보정이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지 않는다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
@@ -2065,7 +2074,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **리비전명**은 칸을 세울 때 본 이름을 따로 들고(`…__seen`) 그 이름으로 비교 후 쓰기를 한다 — 칸이 고치지 않은 채면 남이
     바꾼 이름으로 다시 선다. 비우면 지운다. **시나리오 이름 바꾸기**도 같은 꼴이다 — 팝오버 안 칸은 매 회차 그려져 key 가
     남으므로 그 회차 목록 이름을 `expected_name` 으로 넘기면 대조가 늘 통과해 남의 이름 바꿈을 말없이 덮는다(2026-10-26 E2E).
-    두 칸 모두 고치지 않은 칸은 **매 회차** 지금 이름을 다시 적는다(`_settle_compare_field`) — 닫힌 팝오버 안 칸은 브라우저에
+    두 칸 모두 고치지 않은 칸은 **매 회차** 지금 이름을 다시 적는다(`widget_generation.seed_field`) — 닫힌 팝오버 안 칸은 브라우저에
     마운트되지 않아 나중에 열 때 마지막 회차가 실어 보낸 값으로만 서므로, 처음 세운 회차에만 적으면 한 회차 뒤에 연 칸이 빈
     칸으로 서고 그대로 누른 「리비전명 저장」 이 이름을 지웠다(2026-10-26 E2E 3회차, 9장 「닫힌 팝업 안」).
   - **공식으로 발행**은 확인 글을 그린 회차의 {고른 리비전, 공식 번호}를 `PUBLISH_SEEN_KEY` 에 남기고, 단추를 누른 회차에 그
@@ -3583,7 +3592,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸 값**(`set_value`)으로 서고, 없으면 빈 기본값으로 선다 — 비우는 칸이 아니라 지금 값으로 세워
   둘 칸(설비 시나리오 구획의 리비전명·시나리오 이름)은 한 회차만 적지 말고 고치지 않은 동안 **매
   회차** 다시 적는다(2026-10-26 E2E — 한 회차 뒤에 연 칸이 빈 칸으로 서 그대로 저장하면 이름이
-  지워졌다, `tests/test_equipment_scenario_name_fields.py`). 글 칸은 Enter·포커스 빼기에 확정되어 그 회차의 칸 값이
+  지워졌다, `tests/test_equipment_scenario_name_fields.py`). **이 둘은 `components/widget_generation`
+  으로만 한다** — key 세대는 `widget_key`·`bump`(꼴 넷 `__g`·`_g`·`__`·`__p` 를 인자로 받아 옛 key 글자를
+  바이트까지 지킨다), 닫힌 팝오버 칸 채우기는 `seed_field` 다. 세대 꼬리 글자를 손으로 짓거나 팝오버 안
+  칸 key 에 그 함수가 세션 대입으로 값을 미리 적으면 `tests/test_widget_generation.py` 의 AST 그물이
+  실패한다(다이얼로그는 열린 회차에만 그려져 그 회차의 칸이 마운트된 채라 그물이 보지 않는다). 글 칸은 Enter·포커스 빼기에 확정되어 그 회차의 칸 값이
   이미 친 글이므로 같은 값을 매 회차 적어도 치던 글을 덮지 않는다 — 범위 밖 글을 확정하지 않고 쥐는 숫자 칸은 **다를 때만**
   적는다(`preset_number_field`). **세션 키로 여는 팝업의 초안**(사이드바 시나리오
   팝업의 시나리오·리비전 선택)은 여는 콜백이 위젯이 만들어지기 전에 올라와 있는 값으로 **적는다** —
@@ -3865,7 +3878,18 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   위젯의 상태를 버린다(팝업 본문 프래그먼트의 저장 성공 처리는 바로 위의 예외다).
 - **쓰기 콜백은 빠른 두 번 누름을 거른다.** Streamlit 1.63 은 지나간 위젯의 콜백 정보를 지우지 않아 옛 화면의 누름도
   콜백에 닿는다. 공용 기록을 쓰는 단추는 그린 회차의 key 세대를 콜백 인자로 받아 지금 세대와 다르면 쓰지도 알리지도
-  않고, 폼·팝오버 key 에도 같은 세대를 붙인다(같은 key 면 옛 누름이 새 폼의 인자로 콜백된다).
+  않고, 폼·팝오버 key 에도 같은 세대를 붙인다(같은 key 면 옛 누름이 새 폼의 인자로 콜백된다). **세대 대조와 쓰기는
+  `components/widget_generation`(`write_once_value` — 아래 `write_once` 위에 그 세대 쓰기의 결과를 든다)으로만 한다** —
+  덧붙이기 쓰기(새 리비전·새 시나리오·복제·기준선·가용설비 붙여넣기·VOC)는 모두 그 길이고, 화면의 저장소 쓰기 호출은
+  (파일, 함수, 쓰기)마다 두 번 누름을 무엇으로 거르는지 `tests/test_write_entry_points.py` 의 장부에 한 줄씩 적는다(장부에
+  없는 쓰기가 생기면 실패한다).
+  - **본문 폼 저장**(사이드바 「신규 리비전 저장」·시나리오 만들기·파생 저장·설비 시나리오 복제·가용설비 붙여넣기 — 스피너가
+    몇 초 돈다)도 같다. 스피너 도는 중 둘째 누름이 닿으면 첫 회차는 쓴 뒤 끊겨 활성화·알림·세대 올리기를 못 하고, 둘째
+    회차가 같은 세대·같은 입력으로 다시 썼다 — 같은 리비전이 두 건 서거나 같은 이름 거절이 방금 한 저장 자리에 섰다. 세대는
+    폼 칸 key 와 같은 세대 칸이고(그 회차 그릴 때 읽는다), `write_once_value` 가 든 결과(새 스냅샷)로 둘째 회차가 끊긴
+    뒷정리를 잇는다. 쓰기 예외는 표지를 남기지 않아 다시 누르면 다시 쓴다. 쓴 뒤 활성화가 실패하면 다시 누를 때 쓰지 않고
+    활성화만 다시 한다. 시험은 쓰기가 끝나는 순간 그 회차에 멈춤을 걸고 누른 화면의 위젯 값을 한 번 더 보낸다
+    (`tests/test_write_entry_points.py` 의 `_SecondPress`).
   - 세션 칸 비교만으로는 **겹쳐 오는** 두 누름을 막지 못한다. 브라우저 더블클릭은 둘째 누름이 닿는 순간
     `runner.fastReruns`(기본 켜짐)가 돌던 회차에 멈춤을 걸고 새 회차를 세워, 두 콜백이 다른 스레드에서 수 ms 차이로 같은
     세대를 보고 둘 다 쓴다 — 세션 칸 잠금(`SafeSessionState`)이 회차마다 따로다. 멈춤을 받은 첫 콜백은 쓴 뒤 다음 세션 칸
