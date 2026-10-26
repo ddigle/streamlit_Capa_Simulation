@@ -69,11 +69,11 @@ SOURCE = ROOT / "src" / "capa_simulation"
 WRITE_ONCE = "write_once — 그린 회차의 세대·입력 지문마다 한 번"
 VERSION_CHECK = "버전 대조 — 편집 시작에 본 version·이름·지문·차례와 견줘 다르면 거부(T3)"
 SAME_REPLACE = "같은 내용 교체 — 공용 행·도면을 통째로 바꿔 두 번 써도 같은 상태"
-SELF_FILTER = "자체 거름 — 설비 마스터 편집본 지문"
 STATE_CHANGE = "대상 하나의 상태 바꾸기 — 지우기·보관·되살리기·비우기(지운 id 거름 포함)"
 NAME_UNIQUE = "이름 유일 — 저장소가 같은 이름을 거절한다"
 BOOTSTRAP = "부트스트랩 — 빈 저장소의 첫 시드·세션 첫 활성화"
 RUN_CLAIM = "실행 잠금 — 저장소가 한 실행만 받는다"
+START_POINT = "출발점 대조 — save_once 가 같은 출발점의 겹친 둘째 누름에 첫 결과를 돌려준다"
 
 _PAGES = "app_pages"
 _PARTS = "src/capa_simulation/components"
@@ -104,16 +104,20 @@ LEDGER: dict[tuple[str, str, str], str] = {
     (f"{_PARTS}/cutoff_management.py", "render_cutoff_management", "save_process_cutoff"): (
         VERSION_CHECK
     ),
+    # 직접 편집은 편집 시작 version 과 대조하고 제 저장·충돌 표지를 쓴다. 붙여넣기는 「현재 전체
+    # 교체」 를 확인받아 version 없이 통째로 바꾼다(같은 내용 교체).
     (
         f"{_PARTS}/display_order_management.py",
         "_save_global_display_order",
         "replace_global_display_order",
-    ): SAME_REPLACE,
+    ): VERSION_CHECK,
+    # 저장소의 버전 대조(FAB)·편집본 지문(설비) 위에, 첫 콜백이 쓰고 출발점을 옮기기 전에 끊긴 둘째
+    # 누름은 `save_once` 가 저장소에 가지 않고 첫 결과를 돌려준다.
     (f"{_PARTS}/equipment_data_workspace.py", "save_pending_fab_layout", "save_fab_layout"): (
-        VERSION_CHECK
+        START_POINT
     ),
     (f"{_PARTS}/equipment_data_workspace.py", "_save_equipment_frames", "save_equipment"): (
-        SELF_FILTER
+        START_POINT
     ),
     (
         f"{_PARTS}/equipment_scenario_management.py",
@@ -399,10 +403,13 @@ def _call_name(call: ast.Call) -> str | None:
     return None
 
 
-def _unguarded_writes(scope: ast.AST, write: str) -> list[int]:
+def _unguarded_writes(
+    scope: ast.AST, write: str, *, guards: set[str] = _GUARDS, keyword: str = "write"
+) -> list[int]:
     """`scope` 안의 `write` 호출 가운데 세대 거름의 `write` 인자(람다, 또는 이름으로 넘긴 안쪽 함수)
     **밖**에 있는 것의 줄 번호. 이름만 보면 쓰기를 거름 밖에서 먼저 부르고 결과만 `lambda: made` 로
-    감싸도, 같은 함수에 같은 쓰기를 하나 더 두어도 지나간다(2026-10-26 리뷰)."""
+    감싸도, 같은 함수에 같은 쓰기를 하나 더 두어도 지나간다(2026-10-26 리뷰). 출발점 대조는
+    `guards={"save_once"}`·`keyword="save"` 로 같은 셋째 인자를 본다."""
     nested = {
         node.name: node
         for node in ast.walk(scope)
@@ -410,9 +417,9 @@ def _unguarded_writes(scope: ast.AST, write: str) -> list[int]:
     }
     inside: set[int] = set()
     for call in ast.walk(scope):
-        if not isinstance(call, ast.Call) or _call_name(call) not in _GUARDS:
+        if not isinstance(call, ast.Call) or _call_name(call) not in guards:
             continue
-        given = [*call.args[2:3], *(item.value for item in call.keywords if item.arg == "write")]
+        given = [*call.args[2:3], *(item.value for item in call.keywords if item.arg == keyword)]
         for argument in given:
             body: ast.AST | None = argument if isinstance(argument, ast.Lambda) else None
             if isinstance(argument, ast.Name):
@@ -438,6 +445,19 @@ def test_write_once_entries_go_through_the_generation_guard() -> None:
             assert not outside, f"{key} 의 쓰기가 세대 거름의 write 인자 밖에 있다(줄 {outside})"
         elif guarded and key[1] != "<module>":
             assert LEDGER.get(key) == WRITE_ONCE, f"{key} 는 세대 거름을 지난다 — 장부를 고친다"
+
+
+def test_start_point_entries_go_through_save_once() -> None:
+    """출발점 대조 줄의 쓰기 호출은 **모두** `save_once` 의 `save` 인자 안에 있고, `save_once` 를
+    지나는 쓰기는 그 줄이다."""
+    for key, scope in _write_calls().items():
+        through = "save_once" in _called(scope)
+        if LEDGER.get(key) == START_POINT:
+            assert through, f"{key} 는 출발점 대조 줄인데 save_once 를 지나지 않는다"
+            outside = _unguarded_writes(scope, key[2], guards={"save_once"}, keyword="save")
+            assert not outside, f"{key} 의 쓰기가 save_once 의 save 인자 밖에 있다(줄 {outside})"
+        elif through:
+            assert LEDGER.get(key) == START_POINT, f"{key} 는 save_once 를 지난다 — 장부를 고친다"
 
 
 def test_the_guard_placement_net_catches_a_write_outside_the_guard() -> None:
