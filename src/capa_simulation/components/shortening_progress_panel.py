@@ -431,8 +431,8 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
     provenance = replace(
         save.provenance, saved_by=normalize_saved_by(st.session_state.get(_BASELINE_SAVED_BY_KEY))
     )
-    repository = get_equipment_repository(save.database_path)
     try:
+        repository = get_equipment_repository(save.database_path)
         written = write_once_value(
             _BASELINE_FORM_GENERATION_KEY,
             generation,

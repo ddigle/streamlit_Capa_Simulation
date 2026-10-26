@@ -1121,8 +1121,8 @@ def _render_branch(
         key=CLONE_BUTTON_KEY,
         width="stretch",
     ):
-        repository = get_equipment_repository(database_path)
         try:
+            repository = get_equipment_repository(database_path)
             # 같은 세대의 누름은 한 번만 만든다 — 겹쳐 온 둘째 회차는 쓰지 않고(같은 이름이라
             # 거절됐다) 첫 회차가 만든 시나리오로 끊긴 뒷정리를 잇는다.
             written = write_once_value(
