@@ -279,6 +279,8 @@ def test_the_even_objective_raises_the_lowest_month_as_high_as_possible() -> Non
     assert result.lowest_month == FEB
     assert result.lowest_margin == pytest.approx(best, abs=1e-9)
     assert result.month(FEB).threshold == pytest.approx(1.0 + best, abs=1e-6)
+    # 올린 δ 때문에만 비는 달은 「개조 없이도 미달」 이 아니다.
+    assert not any(row.blocked for row in result.months)
     _assert_keeps_every_month(result)
 
 

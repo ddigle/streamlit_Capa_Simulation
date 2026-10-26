@@ -197,7 +197,9 @@ class ScheduleMonth:
     """그 W/D 구간에 넣을 수 있는 날이 있다(가장 이른 시작 ~ 끝 날 상한과 겹친다)."""
 
     blocked: bool
-    """개조 없이도 배치 기준 미달 — 비가동을 넣지 않은 달."""
+    """개조 없이도 G(m) + 안전 여유 미달 — 비가동을 넣지 않은 달(C11). 「가장 고르게」 가 올린 δ
+    때문에만 비는 달은 아니다(그런 달은 개조 뒤 확보율이 배치 기준 밑이라 비가동이 들지 못할
+    뿐이다)."""
 
     downtime_unit_days: int
     """그 W/D 구간에 든 개조 비가동 대·일 합."""
@@ -206,7 +208,7 @@ class ScheduleMonth:
     """환산 비가동 대수 = 대·일 ÷ W/D 일수."""
 
     slack: float
-    """개조 여유(대) = A − 배치 기준 × R. 음수면 개조 없이도 미달."""
+    """배치 기준 여유(대) = A − 배치 기준 × R. 음수면 그 기준으로는 비가동이 들 수 없다."""
 
     baseline_rate: float | None
     """개조 전 = A ÷ R. R 0 이면 None."""
@@ -657,7 +659,7 @@ def _result(
                 general_target=row.general_target,
                 threshold=targets[index],
                 open=month_end >= 0 and month_start <= model.limit_offset,
-                blocked=not model.ok(index, 0, targets[index]),
+                blocked=not model.ok(index, 0, row.general_target + conditions.margin),
                 downtime_unit_days=used[index],
                 downtime=downtime,
                 slack=row.available - targets[index] * row.required,

@@ -319,7 +319,7 @@ def _start_label(month: int, *, cutoff_days: int | None, today: date) -> str:
     if cutoff_days is None:
         return f"{month_label(month)} W/D 첫날부터"
     first = wd_window(month, cutoff_days).first_day
-    return f"{month_label(month)} W/D 첫날({first.isoformat()})부터"
+    return f"{month_label(month)} W/D 첫날({first:%m-%d})부터"
 
 
 def _deadline_label(month: int, *, cutoff_days: int | None) -> str:
@@ -328,7 +328,7 @@ def _deadline_label(month: int, *, cutoff_days: int | None) -> str:
     if cutoff_days is None:
         return f"{month_label(month)} W/D 첫날 전까지"
     last = wd_window(month, cutoff_days).first_day - timedelta(days=1)
-    return f"{month_label(month)} W/D 첫날 전({last.isoformat()})까지"
+    return f"{month_label(month)} W/D 첫날 전({last:%m-%d}까지)"
 
 
 # ================================================================== 조건 카드

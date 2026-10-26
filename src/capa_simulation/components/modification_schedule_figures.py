@@ -101,6 +101,17 @@ def general_text(labels: ScheduleLabels, result: ScheduleResult) -> str:
     return "HOME(월별)"
 
 
+def _line_label(labels: ScheduleLabels, result: ScheduleResult) -> str:
+    """기준선 끝 글 — 「110%」·「(월별)」. 「HOME」 은 머리 한 줄이 말한다(오른쪽 여백이 좁다 — 제약
+    모드 그래프와 같다)."""
+    if labels.general_percent is not None:
+        return f"{labels.general_percent:g}%"
+    targets = {row.general_target for row in result.months}
+    if len(targets) == 1:
+        return threshold_percent_label(next(iter(targets)))
+    return "(월별)"
+
+
 def relief_points(value: float) -> str:
     """필요한 기준 완화(비율)를 0.01%p **올림** 글자로 — 적힌 만큼 낮추면 늘 들어간다."""
     points = math.ceil(value * 10_000 - 1e-6) / 100
@@ -203,7 +214,7 @@ def _hover(row: ScheduleMonth) -> str:
     elif not row.open:
         parts.append("넣을 수 없는 달(시작 앞 · 기한 뒤)")
     else:
-        parts.append(f"개조 여유 {units_text(row.slack)}대")
+        parts.append(f"배치 기준 여유 {units_text(row.slack)}대")
     return "<br>".join(parts)
 
 
@@ -409,7 +420,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
             "y": general[-1],
             "xref": "x",
             "yref": "y",
-            "text": html.escape(f"기준 {general_text(labels, result)}"),
+            "text": html.escape(f"기준 {_line_label(labels, result)}"),
             "showarrow": False,
             "xanchor": "left",
             "yanchor": "top" if shows_shift else "middle",
