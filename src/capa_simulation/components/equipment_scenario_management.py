@@ -77,10 +77,13 @@ from capa_simulation.components.widget_generation import (
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
+    held_notice,
     held_profile_conflict,
     is_own_save,
     is_own_save_settled,
+    note_notice,
     note_profile_conflict,
+    notice_marks,
     own_save_marks,
     profile_conflict_marks,
     remember_seen,
@@ -1728,7 +1731,10 @@ def publish_preview(
 
     지금 공식의 리비전 번호는 그 시나리오 최신·이 세션의 스냅샷·`official_revisions`(공식 시나리오의
     리비전 목록) 차례로 찾는다 — 공식이 그 시나리오 최신이 아니고 이 세션이 그것을 들고 있지 않으면
-    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다.
+    목록에서만 나온다. 어디에도 없으면(목록 한도 밖) 번호를 적지 않는다. 고른 리비전이 이미 지금
+    공식이면 발행해도 쓰지 않으므로(저장소가 그 발행을 돌려준다) 「→ 새 공식」 을 적지 않고 지금
+    공식과 그 사실만 적는다(2026-10-27 E2E — 「→ 새 공식 v3」 아래 「발행해도 바뀌지 않습니다」 가
+    섰다).
     """
     release = session.catalog.latest_release
     current = "공식 발행 없음"
@@ -1742,8 +1748,11 @@ def publish_preview(
             f" r{official_revision}" if official_revision is not None else ""
         )
     next_no = (release.release_no if release is not None else 0) + 1
+    released = release is not None and release.schedule_revision_id == revision.schedule_revision_id
     lines = [
-        f"{current} → 새 공식 v{next_no} · 「{literal_markdown(scenario.scenario_name)}」 "
+        current
+        if released
+        else f"{current} → 새 공식 v{next_no} · 「{literal_markdown(scenario.scenario_name)}」 "
         f"r{revision.revision_no}"
     ]
     if revision.schedule_revision_id != scenario.latest_schedule_revision_id:
@@ -1752,7 +1761,7 @@ def publish_preview(
             f"「{literal_markdown(scenario.scenario_name)}」 의 최신"
             f"(r{scenario.latest_revision_no})이 아닙니다."
         )
-    if release is not None and release.schedule_revision_id == revision.schedule_revision_id:
+    if released:
         lines.append("이미 공식 발행인 리비전입니다 — 발행해도 바뀌지 않습니다.")
     return lines
 
@@ -1936,6 +1945,7 @@ def _render_publish(
     # (2026-10-27 E2E 곁 자리). 쓰지 않고 거부를 다시 알린다(write_guard).
     _repeat_held_refusal(conflicts, PUBLISH_SAVE_NAME)
     save_marks = own_save_marks()
+    messages = notice_marks()
     follows = _follow_marks()
     refusal = publish_seen_refusal(
         seen_before,
@@ -1972,7 +1982,10 @@ def _render_publish(
                 note=note or None,
                 expected_latest_release_no=release_no or None,
             ),
-            stored=lambda release: release.release_no,
+            # 이미 지금 공식인 리비전이면 저장소가 쓰지 않고 그 발행을 돌려준다 — 쓴 것이 아니라
+            # 제 저장 짝을 적지 않는다(적으면 첫 발행의 짝을 덮어 옛 화면의 누름을 남의 발행으로
+            # 안다).
+            stored=lambda release: release.release_no if release.release_no != release_no else None,
             marks=save_marks,
         )
     except EquipmentReleaseMoved as exc:
@@ -1996,6 +2009,14 @@ def _render_publish(
     except BOOTSTRAP_ERRORS as exc:
         st.error(f"발행하지 못했습니다: {bootstrap_error_message(exc)}")
         return
+    if release_no and published.release_no == release_no:
+        # 고른 리비전이 이미 지금 공식이라 아무것도 쓰지 않았다 — 새 발행처럼 알리지 않는다. 다만
+        # 방금 이 세션이 발행한 그 리비전에 닿은 빠른 둘째 누름이면(첫 회차가 다시 그린 화면의
+        # 단추) 첫 발행의 알림을 다시 낸다(write_guard.held_notice).
+        _written(
+            held_notice(PUBLISH_SAVE_NAME)
+            or already_released_message(scenario.scenario_name, revision, published.release_no)
+        )
     cleaned = published.schedule_revision_id != revision.schedule_revision_id
 
     def published_message(moved: bool, kept_unsaved: bool) -> str:
@@ -2022,7 +2043,21 @@ def _render_publish(
             name=PUBLISH_SAVE_NAME,
             follows=follows,
         )
+    # 첫 회차가 다시 그린 화면에 닿은 빠른 둘째 누름은 그 리비전이 이미 공식이라 쓰지 않는다 — 이
+    # 알림을 다시 낸다(위 「이미 공식」 갈래). dict 칸이라 끊기지 않는다.
+    note_notice(messages, PUBLISH_SAVE_NAME, published_message(False, False))
     _written(published_message(False, False))
+
+
+def already_released_message(
+    scenario_name: str, revision: EquipmentScheduleRevisionSummary, release_no: int
+) -> str:
+    """「공식으로 발행」 을 누른 리비전이 이미 지금 공식일 때 — 쓰지 않았다는 것을 적는다."""
+    title = f"r{revision.revision_no}"
+    return (
+        f"{quoted(scenario_name)} {with_topic_particle(title)} 이미 공식 v{release_no}입니다 — "
+        "새로 발행하지 않았습니다."
+    )
 
 
 def _published_again(
