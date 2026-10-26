@@ -599,9 +599,22 @@ def _saved(draft: Draft) -> None:
     _forget()
 
 
+def _stored_version(database_path: str) -> int | None:
+    """저장소의 지금 층 사용 version(캐시를 거치지 않는다 — 다른 PC 의 저장도 본다). 못 읽으면
+    None."""
+    try:
+        return get_equipment_repository(database_path).load_floor_states().version
+    except BOOTSTRAP_ERRORS:
+        return None
+
+
 def _save(database_path: str, generation: int, counts: Mapping[str, int]) -> None:
     """`저장` 콜백. 받을 수 없는 사유 글(길이·제어 문자)이면 알림 칸에서 거절하고, 호기가 남은 층을
-    새로 끄면 확인을 띄우고 끝낸다(S4)."""
+    새로 끄면 확인을 띄우고 끝낸다(S4).
+
+    확인을 띄우기 전에 저장본 version 을 본다 — 남이 먼저 저장했으면 「끄고 저장」 을 눌러도
+    반영되지 않으므로 헛된 확인을 건너뛰고 곧장 쓰기에 보내 저장소의 대조가 거부(또는 겹쳐 온 제
+    저장)를 알리게 한다(E2E r3). 못 읽으면 전처럼 확인한다."""
     if generation != _generation():
         return
     draft = _fold()
@@ -616,6 +629,11 @@ def _save(database_path: str, generation: int, counts: Mapping[str, int]) -> Non
         return
     risky = _risky(draft, base, counts, database_path)
     if risky:
+        stored = _stored_version(database_path)
+        if stored is not None and stored != base[0]:
+            st.session_state.pop(CONFIRM_KEY, None)
+            _write(database_path, draft, base)
+            return
         st.session_state[CONFIRM_KEY] = (_generation(), risky)
         return
     st.session_state.pop(CONFIRM_KEY, None)

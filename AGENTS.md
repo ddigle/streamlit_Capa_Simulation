@@ -678,6 +678,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않고 편집은 남는다 — 제어 문자 거절 글은 「그 칸을 지우고 다시 적으세요」 를 붙인다). 동 머리는 옛 코드 둘만 고른다 — 직접 적은 사유로 끈 동은 고른 것 없음 + 「C2 · 사용 0/6」(`building_state`).
     성공 알림은 사유마다 층 수이고 사유를 `literal_markdown` 으로 막는다(다섯 가지 넘으면 「외 n가지」).
   - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
+    확인을 띄우기 전에 저장소의 지금 version 을 캐시 없이 읽어(`_stored_version`) 편집 시작 version 과 다르면 확인 없이
+    곧장 쓰기에 보낸다 — 대조가 거부(또는 겹쳐 온 제 저장)를 알려 헛된 확인을 한 번 덜 받는다(못 읽으면 전처럼 확인).
     저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
     칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 충돌은 거부 표지(`note_profile_conflict`)를 초안을
     다시 세우기 **전에** 적는다 — 창 안의 저장은 쓰지 않고 초안을 최신으로 다시 세운 채 거부를 다시 알리고, 동 머리 콜백은

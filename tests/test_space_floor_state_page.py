@@ -352,26 +352,34 @@ def _refusals(app: AppTest) -> list[str]:
     return [item.value for item in app.warning if "다른 사용자가 먼저 층 사용 설정을" in item.value]
 
 
+@pytest.mark.parametrize("other_saves_first", [True, False], ids=["before-save", "during-confirm"])
 def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest_draft(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, other_saves_first: bool
 ) -> None:
-    """남이 C1 을 「생산라인 아님」 으로 저장한 뒤 옛 화면에서 C1 동 머리를 「사용 안 함」 으로
-    바꾸고 「끄고 저장」 을 빠르게 두 번 누른다(2026-10-26 E2E 5회차). 둘째 누름은 옛 화면의 위젯
-    값을 그대로 보낸다 — 동 머리 값(내 옛 변경)이 거부 회차가 올린 새 세대로 다시 얹히고, 거부
-    알림은 둘째 회차가 다시 그리며 사라져, 다음 저장이 남의 저장을 말없이 덮었다. 거부는 남고
-    초안은 최신 그대로다."""
+    """남이 C1 을 「생산라인 아님」 으로 저장하고, 옛 화면에서 C1 동 머리를 「사용 안 함」 으로 바꾼
+    저장 누름이 빠르게 두 번 간다(2026-10-26 E2E 5회차). 남이 「저장」 전에 저장했으면 끄기 확인을
+    건너뛰고 「저장」 누름이 곧장 거부되고(I73), 확인을 띄운 뒤에 저장했으면 「끄고 저장」 누름이
+    거부된다. 둘째 누름은 옛 화면의 위젯 값을 그대로 보낸다 — 동 머리 값(내 옛 변경)이 거부 회차가
+    올린 새 세대로 다시 얹히고, 거부 알림은 둘째 회차가 다시 그리며 사라져, 다음 저장이 남의 저장을
+    말없이 덮었다. 거부는 남고 초안은 최신 그대로다."""
     # 둘째 회차가 거부 표지 창(`TRAILING_PRESS_SECONDS`) 안에 들게 — AppTest 회차는 브라우저보다
     # 느리다.
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 600.0)
     database = _database(tmp_path)
     app, tables = _start_editing(database)
-    DuckDBEquipmentRepository(database).save_floor_states(_C1, expected_version=0, source="남")
+    repository = DuckDBEquipmentRepository(database)
+    if other_saves_first:
+        repository.save_floor_states(_C1, expected_version=0, source="남")
     app.segmented_control(key="space_floor_state_bulk_C1").set_value("UNUSED")
     tables.run()
     _ok(app)
-    _press(app, tables, SAVE_BUTTON_KEY)
-    assert any("호기 3대" in item.value for item in app.warning)
-    app.button(key=CONFIRM_BUTTON_KEY).click()
+    if other_saves_first:
+        app.button(key=SAVE_BUTTON_KEY).click()
+    else:
+        _press(app, tables, SAVE_BUTTON_KEY)
+        assert any("호기 3대" in item.value for item in app.warning)
+        repository.save_floor_states(_C1, expected_version=0, source="남")
+        app.button(key=CONFIRM_BUTTON_KEY).click()
     pressed = tables._states()
 
     app._run(widget_state=pressed)
@@ -381,6 +389,7 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
     _ok(app)
 
     assert len(_refusals(app)) == 1, [item.value for item in app.warning]
+    assert not any("호기 3대" in item.value for item in app.warning)
     assert app.session_state[DRAFT_KEY] == {f"C1 {floor}": "NOT_LINE" for _, floor in _C1}
     assert app.session_state[BASE_KEY][0] == 1
     assert any("바뀐 층 0개" in item.value for item in app.caption)
@@ -392,6 +401,29 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
     _press(app, tables, SAVE_BUTTON_KEY)
     assert any("바뀐 층이 없습니다" in item.value for item in app.info)
     assert _states(database) == _C1 and _version(database) == 1
+
+
+def test_turning_off_a_floor_with_units_after_someone_else_saved_skips_the_confirm(
+    tmp_path: Path,
+) -> None:
+    """남이 먼저 저장한 뒤 호기가 남은 층을 끄고 「저장」 하면 끄기 확인을 먼저 받고, 「끄고 저장」
+    뒤에야 「다른 사용자가 먼저 … 반영하지 않았습니다」 가 떴다(E2E r3). 결국 반영되지 않을 확인을
+    건너뛰고 곧장 거부를 알린다 — 초안은 최신 저장본으로 다시 선다."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    DuckDBEquipmentRepository(database).save_floor_states(
+        {("C4", "6F"): "NOT_LINE"}, expected_version=0, source="남"
+    )
+    tables.edit(_editor_key(app), _position("C1", "1F"), "사용", False)
+    tables.run()
+
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert CONFIRM_KEY not in app.session_state
+    assert not any("호기 3대" in item.value for item in app.warning)
+    assert any("다른 사용자가 먼저 층 사용 설정을 저장해" in item.value for item in app.warning)
+    assert _states(database) == {("C4", "6F"): "NOT_LINE"}
+    assert app.session_state[BASE_KEY][0] == 1
     clear_equipment_repository()
 
 
