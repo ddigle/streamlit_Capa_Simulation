@@ -584,7 +584,8 @@ def test_home_process_dialog_buttons_keep_original_callback_and_selection_values
         if isinstance(node, ast.Call) and ast.unparse(node.func) == "st.button"
     )
     keywords = {keyword.arg: ast.unparse(keyword.value) for keyword in button.keywords}
-    assert ast.unparse(button.args[0]) == "label"
+    # 라벨은 표시명이되 마크다운 자리라 막아 싣는다(「CoW~검사~A」 의 물결표가 지움선이 되지 않게).
+    assert ast.unparse(button.args[0]) == "literal_markdown(label)"
     assert "label = format_func(item.process)" in ast.unparse(renderer)
     assert keywords["on_click"] == "on_toggle"
     assert keywords["args"] == "(item.process,)"
