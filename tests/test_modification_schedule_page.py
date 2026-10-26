@@ -48,6 +48,9 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
+    CONSTRAINT_NEW_SINCE_KEY,
+    CONSTRAINT_NEW_UNITS_KEY,
+    CONSTRAINT_OWNED_KEY,
     CONSTRAINT_PROCESS_KEY,
     CONSTRAINT_PRODUCT_KEY,
 )
@@ -200,6 +203,10 @@ def test_the_constraint_mode_is_the_default_and_the_switch_stands_on_top(
     assert list(switch.options) == ["제약 영향", "개조 일정"]
     assert _has_widget(app, "selectbox", CONSTRAINT_PRODUCT_KEY)
     assert not _has_widget(app, "number_input", SCHEDULE_UNITS_KEY)
+    # 2판 옵션(보유 · 신규)은 제약 영향 모드 카드에 선다.
+    assert _has_widget(app, "number_input", CONSTRAINT_OWNED_KEY)
+    assert _has_widget(app, "toggle", CONSTRAINT_NEW_UNITS_KEY)
+    assert _has_widget(app, "date_input", CONSTRAINT_NEW_SINCE_KEY)
 
 
 def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
@@ -210,6 +217,10 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     # 카드 — 제약 제품·제약 기간 칸은 서지 않고 개조 일정 칸이 선다(공정 칸은 같은 칸).
     assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
     assert not _has_widget(app, "selectbox", CONSTRAINT_PRODUCT_KEY)
+    # 2판 옵션(보유 · 신규)은 제약 영향 모드 카드에만 선다.
+    assert not _has_widget(app, "number_input", CONSTRAINT_OWNED_KEY)
+    assert not _has_widget(app, "toggle", CONSTRAINT_NEW_UNITS_KEY)
+    assert not _has_widget(app, "date_input", CONSTRAINT_NEW_SINCE_KEY)
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4
     assert app.session_state[SCHEDULE_DAYS_KEY] == 30
     assert app.button_group(key=SCHEDULE_CONCURRENT_PILLS_KEY).value == "__none__"
