@@ -321,6 +321,52 @@ def test_the_import_dialog_pastes_only_the_pasted_columns(tmp_path: Path, grid: 
     assert EQUIPMENT_DIALOG_KEY not in app.session_state
 
 
+def _tsv(frame: pd.DataFrame) -> str:
+    """표를 엑셀에서 복사한 꼴(탭·줄바꿈)로 — 날짜는 `YYYY-MM-DD`, 빈 칸은 빈 글."""
+
+    def text(value: Any) -> str:
+        if pd.isna(value):
+            return ""
+        return f"{value:%Y-%m-%d}" if isinstance(value, pd.Timestamp) else str(value)
+
+    rows = ["\t".join(text(value) for value in row) for row in frame.itertuples(index=False)]
+    return "\n".join(["\t".join(frame.columns), *rows])
+
+
+def test_an_import_that_changes_nothing_leaves_no_unsaved_edit(tmp_path: Path, grid: Calls) -> None:
+    """지금 값 그대로인 붙여넣기·CSV(날짜 칸 포함)를 넣어도 편집본 세대가 오르지 않는다 — 저장본
+    사본의 날짜 칸은 `datetime64[us]`, 넣은 표는 `[ns]` 라 `DataFrame.equals` 가 「바뀜」 으로 읽어
+    「저장 전 변경」 0건인데 「미저장 변경」·탭 점·떠나기 확인이 남았다(E2E). 비가동 일정도 같고,
+    낡은 세션은 그대로인 비가동 붙여넣기를 거절하지 않는다."""
+    from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
+
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    generation = app.session_state[BUFFER_GENERATION_KEY]
+    frames = app.session_state[BUFFER_KEY]
+    assert frames[1]["반입일정"].dtype == "datetime64[us]"
+    _preview(app, _tsv(frames[1][["설비명", "반입일정", "Qual일정"]]))
+    app.button(key=IMPORT_APPLY_BUTTON_KEY).click()
+    _ok(app.run())
+    assert app.session_state[BUFFER_GENERATION_KEY] == generation
+
+    text = _tsv(frames[2])
+    _preview(app, text, target="비가동 일정")
+    app.button(key=IMPORT_APPLY_BUTTON_KEY).click()
+    _ok(app.run())
+    assert app.session_state[BUFFER_GENERATION_KEY] == generation
+
+    pinned = _scenario(repository, setup).latest_schedule_revision_id
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    stale = _page(repository, setup, pinned)
+    _preview(stale, text, target="비가동 일정")
+    assert isinstance(stale.session_state[PREVIEW_KEY], ImportReview)
+    assert not any("낡은 리비전에 넣지 않습니다" in line for line in _texts(stale, "error"))
+
+
 def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     tmp_path: Path, grid: Calls
 ) -> None:
