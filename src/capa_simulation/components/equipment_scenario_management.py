@@ -93,7 +93,7 @@ from capa_simulation.navigation import SCENARIO_MANAGEMENT
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
-    prune_choice,
+    prune_named_choice,
     render_schema_ahead_warning,
 )
 from capa_simulation.page_tabs_state import refused_at_tab_limit
@@ -682,7 +682,16 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     default_scenario = (
         session.scenario_id if session.scenario_id in scenarios else next(iter(scenarios))
     )
-    selected_id = prune_choice(SCENARIO_KEY, list(scenarios), default=default_scenario)
+    # 상자 글자는 시나리오 이름이라 「이름 바꾸기」 가 바꾼다. 빠른 두 번 누름의 둘째 회차는
+    # 브라우저가 아직 옛 이름을 보내는데, 그 이름을 풀지 못하면 고름이 세션 시나리오(운영 일정)로
+    # 튀고 같은 회차의 「이름 바꾸기」 누름이 운영 일정에 같은 이름 쓰기를 하고 그 이름으로 성공을
+    # 알렸다(2026-10-27 E2E). 앞 회차들이 그린 이름으로 고른 시나리오를
+    # 잇는다(`prune_named_choice`).
+    selected_id = prune_named_choice(
+        SCENARIO_KEY,
+        {scenario_id: item.scenario_name for scenario_id, item in scenarios.items()},
+        default=default_scenario,
+    ).value
     with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
         st.selectbox(
             "설비 시나리오",
@@ -748,13 +757,17 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     pending = st.session_state.pop(PENDING_REVISION_KEY, None)
     if isinstance(pending, str) and pending in by_id:
         st.session_state[REVISION_KEY] = pending
-    chosen_id = prune_choice(REVISION_KEY, list(by_id), default=default_revision)
+    # 리비전 상자 글자에는 리비전명이 들어 「리비전명」 저장이 바꾼다 — 시나리오 상자와 같은
+    # 까닭으로 앞 회차들이 그린 글자로 고른 리비전을 잇는다.
+    labels = {
+        revision_id: _revision_label(revision, official_id=official_id, official_no=official_no)
+        for revision_id, revision in by_id.items()
+    }
+    chosen_id = prune_named_choice(REVISION_KEY, labels, default=default_revision).value
     st.selectbox(
         "리비전",
         options=list(by_id),
-        format_func=lambda value: _revision_label(
-            by_id[value], official_id=official_id, official_no=official_no
-        ),
+        format_func=lambda value: labels[value],
         key=REVISION_KEY,
     )
     chosen = by_id[chosen_id]

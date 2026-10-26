@@ -1,4 +1,4 @@
-# Purpose: 설비 시나리오 구획 쓰기의 겹친 더블클릭이 제 쓰기를 남의 쓰기로 거절하지 않는지 본다.
+# Purpose: 설비 시나리오 구획 쓰기의 더블클릭이 제 쓰기를 거절하거나 고른 대상을 바꾸지 않는지 본다.
 
 """시나리오 관리 › 설비 시나리오 구획의 비교 후 쓰기 다섯 — 「공식으로 발행」(2026-10-26 E2E, 고부하
 간헐 1/7)과 같은 꼴의 이름 바꾸기·리비전명·배치 차이 지우기·되돌리기.
@@ -29,6 +29,7 @@ from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_layout_management import _moved_setup, _section
 from test_equipment_scenario_repository import OPERATIONS, _clone, _seeded
 from test_equipment_scenario_screens import _moved_on, _restore_confirm, _revision_id
+from widget_browser import BrowserChoice
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_scenario_management as section
@@ -252,3 +253,80 @@ def test_a_double_press_of_the_restore_never_says_someone_else_saved(
         2,
         1,
     ]
+
+
+def _successes(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.success]
+
+
+def test_a_second_rename_press_with_the_old_name_keeps_the_renamed_scenario(
+    tmp_path: Path,
+) -> None:
+    """「이름 바꾸기」 를 0.2초 간격으로 두 번 누르면 설비 시나리오 상자가 운영 일정으로 튀고 「…
+    「운영 일정」으로 했습니다.」 만 남았다(2026-10-27 E2E 4/6). 둘째 누름의 회차는 브라우저가 아직
+    옛 이름 글자를 보내 지금 선택지로 풀리지 않았고, 고름이 세션 시나리오로 바뀐 채 같은 회차의 단추
+    누름이 그 시나리오에 같은 이름 쓰기를 하고 그 이름으로 성공을 알렸다. 앞 회차가 그린 이름으로
+    고른 시나리오를 잇는다 — 상자는 그대로이고 알림은 새 이름이다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository, "E2E 가정 B").equipment_scenario_id
+    app = _section(tmp_path, OPERATIONS)
+    browser = BrowserChoice(app, "selectbox", SCENARIO_KEY)
+    _ok(browser.start())
+    browser.pick("E2E 가정 B")
+    _ok(browser.run())
+    assert app.session_state[SCENARIO_KEY] == setup
+
+    app.text_input(key=f"{RENAME_KEY}__{setup}").input("E2E 가정 T0")
+    app.button(key=RENAME_BUTTON_KEY).click()
+    _ok(browser.run())
+    assert "설비 시나리오 이름을 「E2E 가정 T0」으로 했습니다." in _successes(app)
+
+    # 둘째 누름 — 브라우저는 아직 옛 이름 글자를 든 채 같은 단추를 누른다.
+    browser.wire = "E2E 가정 B"
+    app.button(key=RENAME_BUTTON_KEY).click()
+    _ok(browser.run())
+    assert app.session_state[SCENARIO_KEY] == setup
+    assert browser.wire == "E2E 가정 T0"
+    assert "설비 시나리오 이름을 「E2E 가정 T0」으로 했습니다." in _successes(app)
+    assert not any("운영 일정" in text for text in _successes(app)), _successes(app)
+    names = {
+        item.equipment_scenario_id: item.scenario_name
+        for item in repository.list_equipment_scenarios()
+    }
+    assert names[setup] == "E2E 가정 T0"
+
+
+def test_a_second_revision_name_press_with_the_old_label_keeps_the_picked_revision(
+    tmp_path: Path,
+) -> None:
+    """리비전 상자 글자에도 리비전명이 든다 — 「리비전명 저장」 의 빠른 둘째 누름은 브라우저가 옛
+    글자(이름 바꾸기 전)를 보내고, 풀지 못하면 고름이 최신 리비전으로 튀어 그 리비전에 같은 이름
+    쓰기를 하고 「r2 — 리비전명을 지웠습니다.」 를 알렸다(설비 시나리오 이름 바꾸기와 같은 꼴). 고른
+    리비전을 잇는다."""
+    repository = _seeded(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _section(tmp_path, OPERATIONS)
+    browser = BrowserChoice(app, "selectbox", REVISION_KEY)
+    _ok(browser.start())
+    (old_label,) = [label for label in browser.options() if label.startswith("r1")]
+    browser.pick(old_label)
+    _ok(browser.run())
+    assert app.session_state[REVISION_KEY] == first
+
+    app.text_input(key=f"{REVISION_NAME_KEY}__{first}").input("첫 이름표")
+    app.button(key=REVISION_NAME_BUTTON_KEY).click()
+    _ok(browser.run())
+    assert browser.wire != old_label
+
+    browser.wire = old_label
+    app.button(key=REVISION_NAME_BUTTON_KEY).click()
+    _ok(browser.run())
+    assert app.session_state[REVISION_KEY] == first
+    assert not any("지웠습니다" in text for text in _successes(app)), _successes(app)
+    assert any("리비전명을 저장했습니다" in text for text in _successes(app)), _successes(app)
+    names = {
+        item.revision_no: item.revision_name
+        for item in repository.list_schedule_revisions(OPERATIONS)
+    }
+    assert names == {1: "첫 이름표", 2: None}
