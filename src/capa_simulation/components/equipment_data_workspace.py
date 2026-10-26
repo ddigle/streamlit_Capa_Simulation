@@ -29,6 +29,7 @@ from capa_simulation.components.table_view_controls import (
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.components.write_guard import save_once
 from capa_simulation.navigation import (
     EQUIPMENT_MASTER_TAB,
     EQUIPMENT_TAB_KEY,
@@ -160,6 +161,9 @@ from capa_simulation.services.space_layout_edit import (
 )
 
 FLASH_KEY = "equipment_status_flash"
+# 빠른 두 번 누름 거름(`write_guard.save_once`)의 저장 이름 — 설비 편집본 저장과 FAB 전체 배치 쓰기.
+EQUIPMENT_SAVE_NAME = "equipment_buffer"
+FAB_SAVE_NAME = "equipment_fab_layout"
 # 설비 마스터 탭 표 고르기의 작은 편집표 둘(기존 보유대수·비가동 일정 — `render_small_editor`).
 BASELINE_EDITOR_KEY = "equipment_baseline_editor_v3"
 DOWNTIME_EDITOR_KEY = "equipment_downtime_editor_v3"
@@ -1726,12 +1730,14 @@ def save_pending_fab_layout(repository: DuckDBEquipmentRepository) -> bool:
     pending = pending_fab_layout()
     if pending is None:
         return False
-    wrote = repository.save_fab_layout(
-        canvas=pending.canvas,
-        marks=(
-            [mark.editor_payload() for mark in pending.marks] if pending.marks is not None else None
-        ),
-        base=pending.base,
+    marks = [mark.editor_payload() for mark in pending.marks] if pending.marks is not None else None
+    # 같은 대기분의 둘째 누름(첫 콜백이 쓰고 대기분을 비우기 전에 끊김)은 다시 쓰지 않는다 — 옛 본
+    # 저장값으로 가면 제 저장을 남의 저장으로 거부당한다(`write_guard.save_once`).
+    wrote = save_once(
+        FAB_SAVE_NAME,
+        pending,
+        lambda: repository.save_fab_layout(canvas=pending.canvas, marks=marks, base=pending.base),
+        wrote=bool,
     )
     st.session_state.pop(PENDING_FAB_KEY, None)
     if wrote:
@@ -1927,14 +1933,23 @@ def _save_equipment_frames(
             frames[1], renames.units, floor_values=bool(canvases or marks or labels), basis=basis
         ),
     )
-    result = repository.save_equipment(request)
+    # 출발점(`buffer_base`)은 아래 뒷정리(`reset_equipment_drafts`)가 옮긴다. 빠른 두 번 누름의 둘째
+    # 회차가 첫 콜백을 DB 쓰기 뒤·뒷정리 전에 끊으면 출발점이 그대로라, 둘째 콜백이 옛 출발점으로
+    # 다시 저장하다 거부되고 제 저장을 「다른 사용자가 먼저 저장」 으로 알렸다(2026-10-26 E2E). 같은
+    # 출발점의 둘째 누름은 저장하지 않고 첫 결과로 뒷정리·알림을 잇는다.
+    result = save_once(
+        EQUIPMENT_SAVE_NAME,
+        (buffer_base(), scenario_id),
+        lambda: repository.save_equipment(request),
+        wrote=_wrote_anything,
+    )
     fab = " S.PKG FAB 전체 배치도 저장했습니다." if fab_saved else ""
     # 문구는 대기분이 아니라 **저장 결과**로 만든다(검토 F18b) — 가정 역할의 도면 요소·Main 설비명
     # 위치는 층 현행값이 아니라 그 시나리오 새 리비전의 배치 차이로 갔다.
     floor_layouts = (
         floor_layout_words(canvases, marks, labels) if result.floor_values_written else ""
     )
-    if not result.wrote_revision and not result.floor_values_written and result.release_no is None:
+    if not _wrote_anything(result):
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다.
         return FAB_SAVED_MESSAGE if fab_saved else NOTHING_SAVED_MESSAGE
     clear_equipment_snapshot_cache()
@@ -1960,6 +1975,11 @@ def _save_equipment_frames(
         return f"설비 마스터가 바뀌지 않아 새 리비전 없이 {floor_layouts}만 저장했습니다.{fab}"
     name = basis.scenario_name if basis is not None else None
     return save_result_message(result, scenario_name=name) + layouts + fab
+
+
+def _wrote_anything(result: EquipmentSaveResult) -> bool:
+    """설비 저장이 무엇이든 썼는가(리비전·층 현행값·공식 발행). 아니면 편집본을 그대로 둔다."""
+    return result.wrote_revision or result.floor_values_written or result.release_no is not None
 
 
 def _layout_role_of(

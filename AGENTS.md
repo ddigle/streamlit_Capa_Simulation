@@ -1922,7 +1922,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
   알린다 — 위 셋과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는
   알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가
-  쓴다(9장).
+  쓴다(9장). 출발점 대조 저장의
+  `save_once` 는 설비 편집본 저장(`equipment_data_workspace._save_equipment_frames` — 설비 마스터 「리비전 저장」·Space
+  「배치 저장」·사이드바 팝업 저장)과 FAB 전체 배치 쓰기(`save_pending_fab_layout`)가 쓴다(9장,
+  `tests/test_equipment_save_double_press.py`).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3929,6 +3932,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
     「기본으로」·「삭제」). 창이 지난 옛 화면의 누름은 전처럼 알리지 않는다(`tests/test_voc_page.py`·
     `tests/test_key_process_preset_messages.py`).
+  - 콜백에서 저장하고 뒷정리로 출발점을 옮기는 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치
+    저장」·사이드바 팝업 저장, FAB 전체 배치)은 둘째 누름의 회차가 첫 콜백을 DB 쓰기 뒤·`reset_equipment_drafts` 전에 끊으면
+    출발점(`buffer_base`)이 그대로라, 둘째 콜백이 옛 출발점으로 다시 저장하다 저장소에 거부되고 「다른 사용자가 먼저 저장해
+    저장하지 않았습니다」·「다른 사용자가 저장해 … 편집을 버리고 다시 열었습니다」 를 함께 알렸다(리비전은 한 건, 2026-10-26
+    E2E). 저장은 `write_guard.save_once(이름, 출발점, 저장, wrote=)` 로 한다 — 저장과 「이 출발점은 저장했다」 표지를 프로세스
+    잠금 하나 안에서 하고, 같은 출발점의 둘째 누름(`TRAILING_PRESS_SECONDS` 안)에는 저장소에 가지 않고 첫 결과를 돌려줘 뒷정리·
+    성공 알림을 잇는다. 아무것도 쓰지 않은 저장은 표지를 남기지 않는다. 시험은 첫 콜백이 쓴 바로 뒤 둘째 회차를 세운다
+    (`tests/test_equipment_save_double_press.py`).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

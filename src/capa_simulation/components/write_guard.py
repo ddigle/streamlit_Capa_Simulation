@@ -45,6 +45,13 @@
 알아보고 성공을 다시 알린다. 누름이 회차에 닿지 않는 단추(잠긴 단추는 Streamlit 이 값을 버린다)는
 쓰기 전에 `notice_marks` 로 받아 둔 dict 에 알림과 시각을 적고(`note_notice`), 그 창 안의 회차가
 `held_notice` 로 다시 그린다.
+
+**출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치 저장」·사이드바
+팝업 저장, FAB 전체 배치)은 콜백에서 저장하고 뒷정리로 편집본을 비워 출발점을 옮긴다. 둘째
+누름의 회차가 첫 콜백을 DB 쓰기 뒤에 끊으면 출발점이 그대로라, 둘째 콜백이 옛 출발점으로 다시
+저장하다 저장소에 거부되고 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E).
+`save_once` 는 저장과 「이 출발점은 저장했다」 표지를 한 잠금 안에서 하고, 같은 출발점의 둘째
+누름에는 저장하지 않고 첫 저장의 결과를 돌려준다 — 부르는 쪽은 그 결과로 뒷정리·알림을 잇는다.
 """
 
 from __future__ import annotations
@@ -52,6 +59,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Mapping
+from typing import TypeVar, cast
 
 import streamlit as st
 
@@ -74,6 +82,12 @@ PROFILE_CONFLICTS_KEY = "write_guard_profile_conflicts"
 
 # 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`)).
 RECENT_NOTICES_KEY = "write_guard_recent_notices"
+
+# 이 세션이 마지막으로 마친 출발점 대조 저장(저장 이름 → (출발점, 결과, 쓴 시각)).
+# `save_once` 가 적는다.
+OWN_SAVES_KEY = "write_guard_own_saves"
+
+_Outcome = TypeVar("_Outcome")
 
 # 세션을 가리지 않는 잠금 하나다. 두 회차의 세션 칸 잠금이 따로라 세션 안에 둘 자리가
 # 없고, 잠그는 동안 하는 일은 기록 한 줄 쓰기다.
@@ -113,6 +127,45 @@ def write_once(counter_key: str, generation: int, write: Callable[[], object]) -
             marks[counter_key] = generation
             recent[counter_key] = time.monotonic()
     return True
+
+
+def save_once(
+    name: str,
+    start: object,
+    save: Callable[[], _Outcome],
+    *,
+    wrote: Callable[[_Outcome], bool],
+) -> _Outcome:
+    """출발점 `start` 의 `name` 저장을 한 번만 하고, 겹쳐 온 둘째 누름에는 첫 결과를 돌려준다.
+
+    `start` 는 저장이 끝나면 뒷정리가 옮기는 값이다(설비 편집본이면 `buffer_base` — 저장본 쌍
+    토큰과 씨뿌린 세대). 첫 콜백이 DB 에 쓴 뒤 뒷정리 전에 끊기면 출발점이 그대로 남는다. 그
+    출발점으로 다시 부르면 `save` 를 부르지 않고 첫 결과를 돌려준다 — 옛 출발점으로 저장소에 다시
+    가면 남의 저장으로 거부된다. `wrote(결과)` 가 참일 때만 표지를 남긴다(아무것도 쓰지 않은
+    저장은 뒷정리도 출발점을 옮기지 않으므로 다음 누름이 다시 저장해야 한다).
+
+    표지는 `TRAILING_PRESS_SECONDS` 안에서만 본다 — 겹쳐 온 둘째 누름은 첫 쓰기가 끝나자마자
+    이 잠금을 얻으므로 그 안이고, 오래 뒤 같은 출발점이 다시 오는 일(같은 FAB 배치를 되돌려 다시
+    적용 등)은 표지로 막지 않는다. `save` 가 던진 예외는 그대로 나가고 표지도 남지 않는다.
+    `save` 안에서 세션 칸을 읽지 않는다(`write_once` 와 같은 까닭).
+    """
+    with _WRITE_LOCK:
+        marks = st.session_state.get(OWN_SAVES_KEY)
+        if not isinstance(marks, dict):
+            marks = {}
+            st.session_state[OWN_SAVES_KEY] = marks
+        recorded = marks.get(name)
+        if (
+            isinstance(recorded, tuple)
+            and len(recorded) == 3
+            and recorded[0] == start
+            and time.monotonic() - recorded[2] < TRAILING_PRESS_SECONDS
+        ):
+            return cast(_Outcome, recorded[1])
+        outcome = save()
+        if wrote(outcome):
+            marks[name] = (start, outcome, time.monotonic())
+        return outcome
 
 
 def just_written(counter_key: str) -> bool:
