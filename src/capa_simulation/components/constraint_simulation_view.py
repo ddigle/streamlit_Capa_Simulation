@@ -43,7 +43,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 from functools import partial
 from typing import Final, NamedTuple
@@ -72,7 +72,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     units_text,
     waiting_text,
 )
-from capa_simulation.components.formula_text import consistent_digits, operand_text
+from capa_simulation.components.formula_text import digits_within, operand_text, shared_digits
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.month_sheet_canvas import canvas_point
@@ -342,9 +342,13 @@ def month_steps(
     """고른 달의 계산 다섯 단계 — 순수 함수(세션·그림을 보지 않는다).
 
     단계 식(1·2·4·5단계)은 적힌 수로 다시 셈해도 적힌 결과가 나와야 한다 — 대수는 둘째
-    자리(`units_text`)로 적고, 깎은 인수로 어긋날 때만 그 식의 인수를 한 자리씩 더 적는다
-    (`formula_text.consistent_digits`·`operand_text` — 「0.02 × 120% = 0.03」 이 아니라
-    「0.021 × 120% = 0.03」). 어느 자릿수로도 못 맞추면 둘째 자리와 「≈」 다."""
+    자리(`units_text`)로 적고, 깎은 인수로 어긋날 때만 인수를 한 자리씩 더 적는다
+    (`formula_text.operand_text` — 「0.02 × 120% = 0.03」 이 아니라 「0.021 × 120% = 0.03」).
+    늘리는 자릿수는 **카드에 한 벌**이다 — 네 식이 함께 맞는 가장 적은 자릿수(`shared_digits`)로
+    모든 식의 인수를 적어 같은 수(1·5단계의 기존 소요, 1·2단계의 제약 소요, 3·4단계의 비가동)가
+    「1.96」·「1.9637」 두 꼴로 보이지 않게 한다. 그런 자릿수가 없을 때만 식마다 고르고
+    (`digits_within` → `consistent_digits`), 그 식이 어느 자릿수로도 못 맞추면 둘째 자리와 「≈」 다.
+    굵은 결과(소요·기존 가용·확보율)는 늘 화면 자릿수다."""
     product = literal_markdown(labels.product)
     process = literal_markdown(labels.process_label)
     modifies = result.conditions.modifies
@@ -352,12 +356,49 @@ def month_steps(
 
     title = f"{month_label(row.month)} · {process}" + (" · 제약 기간" if row.in_period else "")
     required_shown = units_text(row.required)
-    split_digits, split_sign = consistent_digits(
-        lambda digits: units_text(
+
+    def split_sum(digits: int) -> str:
+        return units_text(
             round(row.existing_demand, digits) + round(row.constrained_demand, digits)
-        ),
-        required_shown,
-    )
+        )
+
+    def demand_product(digits: int) -> str:
+        return f"{round(row.constrained_demand, digits) * target / 100:.2f}"
+
+    def usable_rest(digits: int) -> str:
+        # 적힌 수로 「공정 가용 − 개조 중 − 신규 대기 − 제약 배정」 을 다시 셈한다 — 비가동이
+        # 가용보다 많으면 쓸 수 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은
+        # 차례다.
+        return units_text(
+            max(
+                0.0,
+                round(row.available, digits)
+                - round(row.downtime, digits)
+                - round(row.waiting, digits),
+            )
+            - row.allocated
+        )
+
+    def existing_ratio(digits: int) -> str:
+        demand = round(row.existing_demand, digits)
+        return rate_text(round(row.existing_available, digits) / demand) if demand else ""
+
+    has_need = row.in_period and row.constrained_demand > 0
+    product_text = f"{row.constrained_demand * target / 100:.2f}"
+    available_shown = units_text(row.existing_available)
+    has_subtraction = row.downtime > 0 or row.waiting > 0 or row.allocated > 0
+    rate_shown = rate_text(row.existing_rate)
+    # 이 카드에 서는 식들(1단계는 늘, 나머지는 그 식이 설 때만).
+    card_formulas: list[tuple[Callable[[int], str], str]] = [(split_sum, required_shown)]
+    if has_need:
+        card_formulas.append((demand_product, product_text))
+    if has_subtraction:
+        card_formulas.append((usable_rest, available_shown))
+    if row.existing_rate is not None:
+        card_formulas.append((existing_ratio, rate_shown))
+    card_digits = shared_digits(card_formulas)
+
+    split_digits, split_sign = digits_within(card_digits, split_sum, required_shown)
     step1 = MonthStep(
         f"소요 **{required_shown}대** {split_sign} 기존 "
         f"{operand_text(row.existing_demand, split_digits, units_text)} + "
@@ -367,12 +408,8 @@ def month_steps(
         else f"제약 기간 밖이라 {product} 도 기존 제품에 함께 셉니다.",
     )
 
-    if row.in_period and row.constrained_demand > 0:
-        product_text = f"{row.constrained_demand * target / 100:.2f}"
-        demand_digits, demand_sign = consistent_digits(
-            lambda digits: f"{round(row.constrained_demand, digits) * target / 100:.2f}",
-            product_text,
-        )
+    if has_need:
+        demand_digits, demand_sign = digits_within(card_digits, demand_product, product_text)
         demand_text = operand_text(row.constrained_demand, demand_digits, units_text)
         body2 = (
             f"{product} 필요 대수 = {demand_text} × {target}% {demand_sign} {product_text} → "
@@ -409,29 +446,19 @@ def month_steps(
     else:
         step3 = _modification_step(row, result)
 
-    available_shown = units_text(row.existing_available)
-    # 적힌 수로 「공정 가용 − 개조 중 − 신규 대기 − 제약 배정」 을 다시 셈한다 — 비가동이 가용보다
-    # 많으면 쓸 수 있는 가용을 0 으로 두는 것까지 서비스(`simulate_constraint`)와 같은 차례다.
-    available_digits, available_sign = consistent_digits(
-        lambda digits: units_text(
-            max(
-                0.0,
-                round(row.available, digits)
-                - round(row.downtime, digits)
-                - round(row.waiting, digits),
-            )
-            - row.allocated
-        ),
-        available_shown,
-    )
-    pieces = [operand_text(row.available, available_digits, units_text)]
+    available_digits, available_sign = digits_within(card_digits, usable_rest, available_shown)
+    usable = [operand_text(row.available, available_digits, units_text)]
     note_pieces = ["공정 가용"]
     if row.downtime > 0:
-        pieces.append(operand_text(row.downtime, available_digits, units_text))
+        usable.append(operand_text(row.downtime, available_digits, units_text))
         note_pieces.append("개조 중")
     if row.waiting > 0:
-        pieces.append(operand_text(row.waiting, available_digits, units_text))
+        usable.append(operand_text(row.waiting, available_digits, units_text))
         note_pieces.append("신규 대기")
+    # 비가동이 가용보다 많으면 쓸 수 있는 가용을 0 으로 둔다 — 「9 − 16.45 = 0」 이 아니라 식에
+    # 「max(0, 9 − 16.45)」 로 보인다(2026-10-25 E2E #110).
+    usable_text = " − ".join(usable)
+    pieces = [f"max(0, {usable_text})" if row.overdrawn else usable_text]
     if row.allocated > 0:
         pieces.append(str(row.allocated))
         note_pieces.append("제약 배정")
@@ -442,7 +469,7 @@ def month_steps(
         note4 += " · 비가동이 가용보다 많아 쓸 수 있는 가용을 0 으로 둡니다"
     body4 = (
         f"기존 가용 = {' − '.join(pieces)} {available_sign} **{available_shown}대**"
-        if len(pieces) > 1
+        if has_subtraction
         else f"기존 가용 = 공정 가용 **{available_shown}대**"
     )
     step4 = MonthStep(body4, note4)
@@ -453,13 +480,7 @@ def month_steps(
         note5 = f"제약 없을 때 {rate_text(row.baseline_rate)}"
         if row.baseline_rate is not None:
             note5 += f" · {signed_points(row.existing_rate - row.baseline_rate)}"
-        rate_shown = rate_text(row.existing_rate)
-
-        def recomputed(digits: int) -> str:
-            demand = round(row.existing_demand, digits)
-            return rate_text(round(row.existing_available, digits) / demand) if demand else ""
-
-        rate_digits, rate_sign = consistent_digits(recomputed, rate_shown)
+        rate_digits, rate_sign = digits_within(card_digits, existing_ratio, rate_shown)
         available_text = operand_text(row.existing_available, rate_digits, units_text)
         demand_text = operand_text(row.existing_demand, rate_digits, units_text)
         step5 = MonthStep(

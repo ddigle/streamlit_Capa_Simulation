@@ -16,7 +16,10 @@
   같은 자릿수로 한 자리씩(여섯째 자리까지) 더 적고, 그래도 못 맞추면 화면 자릿수와 「≈」. 제약
   시뮬레이션 고른 달 계산 다섯 단계. 인수마다 따로 늘리는 꼴(`consistent_places` — 더 적는 자리
   수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다(이미 맞는 큰 수까지 길어지지
-  않게).
+  않게). 한 카드의 여러 식이 같은 수를 인수로 나눠 쓰면(고른 달 1단계와 5단계의 기존 소요) 식마다
+  따로 늘리면 같은 수가 「1.96」·「1.9637」 두 꼴로 보인다 — 그 카드는 모든 식이 함께 맞는 가장
+  적은 자릿수 하나(`shared_digits`)로 인수를 적고, 그런 자릿수가 없을 때만 식마다
+  고른다(`digits_within`).
 
 `parse_formula` 는 식 글 한 줄을 읽어 다시 셈하는 **시험용 읽기**다 — 화면 그리기 길에서
 부르지 않는다. 순수 함수만 둔다(세션·캐시·DB 를 보지 않는다).
@@ -71,6 +74,23 @@ def consistent_digits(compute: Callable[[int], str], shown: str) -> tuple[int, s
         if compute(digits) == shown:
             return digits, EQUALS
     return OPERAND_DIGITS[0], APPROX
+
+
+def shared_digits(formulas: Sequence[tuple[Callable[[int], str], str]]) -> int | None:
+    """(`compute`, `shown`) 식 모두가 `consistent_digits` 처럼 적힌 결과와 같아지는 가장 적은 **한**
+    자릿수. 한 후보로 모두 맞추지 못하면 `None` 이다(식마다 고른다 — `digits_within`)."""
+    for digits in OPERAND_DIGITS:
+        if all(compute(digits) == shown for compute, shown in formulas):
+            return digits
+    return None
+
+
+def digits_within(shared: int | None, compute: Callable[[int], str], shown: str) -> tuple[int, str]:
+    """카드 한 자릿수 `shared`(`shared_digits`)가 있으면 그 자릿수와 「=」, 없으면 이 식 혼자의
+    `consistent_digits`."""
+    if shared is not None:
+        return shared, EQUALS
+    return consistent_digits(compute, shown)
 
 
 def consistent_places(

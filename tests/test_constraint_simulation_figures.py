@@ -643,11 +643,83 @@ def test_the_existing_available_step_recomputes_from_the_written_numbers(
     )
     body = month_steps(row, result, LABELS, show_proportional=False).steps[3].body
     assert "≈" not in body
-    *operands, written_available = _written_numbers(body)
+    # 비가동이 가용보다 많은 달은 식이 「max(0, 가용 − 개조 중)」 이다 — 그 0 은 인수가 아니다.
+    assert ("max(0, " in body) is (available - downtime < 0)
+    *operands, written_available = _written_numbers(body.replace("max(0, ", "("))
     written_usable = max(0.0, operands[0] - (operands[1] if downtime > 0 else 0.0))
     written_allocated = operands[-1] if allocated > 0 else 0
     assert units_text(written_usable - written_allocated) == units_text(written_available)
     assert units_text(usable - allocated) == units_text(written_available)
+
+
+def test_an_overdrawn_month_shows_the_zero_floor_in_the_formula() -> None:
+    """과개조 달 4단계는 「기존 가용 = 9 − 16.45 = 0대」 가 아니라 「max(0, 9 − 16.45) = 0대」 다 —
+    0 이 되는 까닭이 식에 보인다(2026-10-25 E2E #110)."""
+    result = _run()
+    row = replace(
+        result.month(202705),
+        available=9.0,
+        downtime=16.45,
+        usable=0.0,
+        overdrawn=True,
+        allocated=0,
+        existing_available=0.0,
+    )
+    step = month_steps(row, result, LABELS, show_proportional=False).steps[3]
+    assert step.body == "기존 가용 = max(0, 9 − 16.45) = **0대**"
+    assert step.note.endswith("비가동이 가용보다 많아 쓸 수 있는 가용을 0 으로 둡니다")
+    # 신규 대기도 쓸 수 있는 가용에서 빠지므로 0 바닥 괄호 안에 들고, 제약 배정은 괄호 밖이다.
+    waiting = replace(row, downtime=5.0, waiting=6.25, allocated=0)
+    body = month_steps(waiting, result, LABELS, show_proportional=False).steps[3].body
+    assert body == "기존 가용 = max(0, 9 − 5 − 6.25) = **0대**"
+
+
+def _operand_after(text: str, name: str) -> str:
+    """식 글에서 `name` 바로 뒤 수 글자(「기존 1.9637」 → 「1.9637」)."""
+    match = re.search(rf"{re.escape(name)} (\d[\d,]*(?:\.\d+)?)", text)
+    assert match is not None, text
+    return match.group(1)
+
+
+def test_one_quantity_keeps_one_form_across_the_month_steps() -> None:
+    """같은 달 1단계 「소요 1.96대 = 기존 1.96」 과 5단계 「3 ÷ 1.9637」 처럼 같은 수가 두 꼴로
+    보이지 않는다(2026-10-25 E2E #109) — 카드에 서는 식이 함께 맞는 한 자릿수로 모든 인수를 적는다.
+    굵은 결과는 화면 자릿수 그대로다."""
+    result = _run()
+    row = replace(
+        result.month(202705),
+        required=1.9637,
+        existing_demand=1.9637,
+        constrained_demand=0.0,
+        downtime=0.0,
+        downtime_shares=(),
+        usable=3.0,
+        overdrawn=False,
+        allocated=0,
+        available=3.0,
+        existing_available=3.0,
+        existing_rate=3.0 / 1.9637,
+    )
+    steps = month_steps(row, result, LABELS, show_proportional=False).steps
+    assert steps[0].body == "소요 **1.96대** = 기존 1.9637 + HBM라E 0"
+    assert steps[4].body == "기존 확보율 = 3 ÷ 1.9637 = **152.8%**"
+
+    # 기간 안 — 1단계·2단계의 제약 소요, 1단계·5단계의 기존 소요, 4단계·5단계의 가용이 한 꼴이다.
+    june = result.month(202706)
+    for existing, constrained in ((38.123, 4.8771), (2.0041, 0.0249), (141.2649, 1.3649)):
+        inside = replace(
+            june,
+            required=existing + constrained,
+            existing_demand=existing,
+            constrained_demand=constrained,
+            existing_rate=june.existing_available / existing,
+        )
+        steps = month_steps(inside, result, LABELS, show_proportional=False).steps
+        assert all("≈" not in step.body for step in steps)
+        assert _operand_after(steps[0].body, "기존") == _operand_after(steps[4].body, "÷")
+        assert _operand_after(steps[0].body, "HBM라E") == _operand_after(
+            steps[1].body, "필요 대수 ="
+        )
 
 
 def test_a_step_that_no_digits_can_match_says_approximately() -> None:
