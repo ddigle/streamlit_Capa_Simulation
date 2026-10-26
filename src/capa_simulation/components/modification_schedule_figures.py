@@ -20,7 +20,8 @@ rate_figure`)와 같은 틀이다.
   않는다). 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%p) 미달」 이라고 적는다 — 그 달 확보율이
   기준 자체는 넘을 수 있다.
 - 아래 띠(y2): 차수마다 가로 막대 하나(`base` = 시작 위치, `x` = 길이, 글 = 대수). 겹치는 차수는
-  아래 줄로 내린다.
+  아래 줄로 내린다. 막대가 짧아 글이 하한(`_BAR_TEXT_MIN_PX`)보다 작아질 자리면 글을 숨긴다
+  (`uniformtext` hide — 읽을 수 없게 줄이지 않는다). 대수는 그 막대 풍선과 차수 목록에 늘 있다.
 - 달마다 보이지 않는 표적 막대(`HIT_TARGET`)가 풍선을 받는다. 누름은 받지 않는다(이 모드는 달을
   고르지 않는다).
 
@@ -65,12 +66,13 @@ __all__ = [
     "batch_line",
     "general_text",
     "relief_points",
+    "relief_text",
     "schedule_figure",
     "shortfall_lines",
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 2
+SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 3
 _MARGIN_LEFT_PX: Final = 52
 _MARGIN_RIGHT_PX: Final = 76
 _BAND_TOP: Final = 0.14
@@ -79,6 +81,10 @@ _BLOCKED_OPACITY: Final = 0.10
 _CLOSED_OPACITY: Final = 0.06
 # 배치 기준선을 기준선과 따로 그리는 차이(%p) — 이보다 작으면 같은 선이다.
 _SHIFT_HIDDEN_POINTS: Final = 0.005
+# 차수 막대 글(「N대」)의 글자 크기(px)와 그 아래로는 줄이지 않는 하한 — 막대가 짧아 하한보다 작아질
+# 자리면 Plotly 가 글을 숨긴다(`uniformtext` hide). 대수는 풍선과 차수 목록에 남는다.
+_BAR_TEXT_PX: Final = 11
+_BAR_TEXT_MIN_PX: Final = 10
 
 
 @dataclass(frozen=True)
@@ -115,9 +121,16 @@ def _line_label(labels: ScheduleLabels, result: ScheduleResult) -> str:
 
 
 def relief_points(value: float) -> str:
-    """필요한 기준 완화(비율)를 0.01%p **올림** 글자로 — 적힌 만큼 낮추면 늘 들어간다."""
+    """기준을 낮춰야 하는 폭(비율, 양수)을 0.01%p **올림** 글자로 — 적힌 만큼 낮추면 늘 들어간다."""
     points = math.ceil(value * 10_000 - 1e-6) / 100
     return f"{max(points, 0.01):.2f}%p"
+
+
+def relief_text(value: float) -> str:
+    """기준을 낮춰야 하는 폭 한 마디 — 「기준 1.71%p 낮추기」(양수로 적는다 — 부호 붙은 「완화
+    −1.71%p」 는 낮추는지 올리는지가 거꾸로 읽혔다). 기한 칸 캡션과 대안 셋 셋째 줄이 같은
+    글이다."""
+    return f"기준 {relief_points(value)} 낮추기"
 
 
 def batch_line(number: int, batch: ScheduleBatch) -> str:
@@ -158,7 +171,9 @@ def _blocked_reason(result: ScheduleResult) -> str:
 def shortfall_lines(result: ScheduleResult) -> list[str]:
     """다 넣지 못했을 때의 대안 셋(C12). 다 넣었으면 빈 목록.
 
-    완전 탐색이 마디 한도에 걸렸으면(`exact` 거짓) 「이 계산으로 찾은 범위」 라고 끝에 적는다.
+    셋째 줄은 낮출 폭(「기준 1.71%p 낮추기」)이거나, 0% 까지 낮춰도 못 넣으면 그 까닭이다. 완전
+    탐색이 마디 한도에 걸렸으면(`exact` 거짓) 「이 계산으로 찾은 범위」 라고 끝에 적고, 「적힌 만큼
+    낮추면 들어간다」 는 괄호는 낮출 폭이 적혔을 때만 붙인다(까닭만 적혔으면 낮출 폭이 없다).
     """
     shortfall = result.shortfall
     if shortfall is None:
@@ -185,17 +200,22 @@ def shortfall_lines(result: ScheduleResult) -> list[str]:
         )
     target = "기한" if shortfall.by_deadline else "조회기간"
     lines.append(
-        f"{target} 안에 다 넣으려면 필요한 기준 완화: "
+        f"{target} 안에 다 넣으려면: "
         + (
-            f"**{MINUS}{relief_points(shortfall.relief)}**"
+            f"**{relief_text(shortfall.relief)}**"
             if shortfall.relief is not None
             else _blocked_reason(result)
         )
     )
     if not shortfall.exact:
         lines.append(
-            "탐색 한도에 걸려 위 수는 **이 계산으로 찾은 범위**입니다 — 실제로는 더 넣거나 "
-            "덜 낮춰도 될 수 있습니다(적힌 완화만큼 낮추면 들어가는 것은 그대로입니다)."
+            "탐색 한도에 걸려 위 수는 **이 계산으로 찾은 범위**입니다 — 실제로는 "
+            + (
+                "더 넣거나 덜 낮춰도 될 수 있습니다(적힌 만큼 기준을 낮추면 들어가는 것은 "
+                "그대로입니다)."
+                if shortfall.relief is not None
+                else "더 넣거나 기준을 낮춰 다 넣을 수도 있습니다."
+            )
         )
     return lines
 
@@ -365,7 +385,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
                 "textposition": "inside",
                 "insidetextanchor": "middle",
                 "textangle": 0,
-                "textfont": {"color": tokens.TEXT, "size": 11},
+                "textfont": {"color": tokens.TEXT, "size": _BAR_TEXT_PX},
                 "customdata": [
                     [index, _batch_hover(index, batch)] for index, batch in enumerate(batches, 1)
                 ],
@@ -382,6 +402,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
         "font": {"color": tokens.TEXT, "family": tokens.FONT_FAMILY, "size": 12},
         "barmode": "overlay",
         "bargap": 0,
+        "uniformtext": {"minsize": _BAR_TEXT_MIN_PX, "mode": "hide"},
         "dragmode": False,
         "hovermode": "closest",
         "hoverlabel": {

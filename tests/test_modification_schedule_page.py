@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from test_constraint_simulation_page import (
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.modification_schedule_figures import (
     ScheduleLabels,
+    batch_line,
     schedule_figure,
     shortfall_lines,
 )
@@ -68,6 +70,7 @@ from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.modification_schedule import (
     ScheduleConditions,
     ScheduleMonthInput,
+    ScheduleResult,
     plan_modification_schedule,
 )
 from capa_simulation.services.required_shortening import plan_required_shortening
@@ -512,14 +515,133 @@ def test_the_month_hover_names_the_placement_threshold_when_a_margin_is_set() ->
     assert "개조 없이도 기준 미달" not in hovers[0]
 
 
-def test_shortfall_lines_name_the_concurrency_cap_and_an_unfinished_search() -> None:
+def _capped_by_concurrency() -> ScheduleResult:
+    """동시 상한 1대 · 10대 × 30일 — 조회기간 석 달에 다 못 넣고, 기준을 0% 까지 낮춰도 상한이
+    막는다."""
     months = [ScheduleMonthInput(month, 10.0, 20.0, 1.0) for month in (202701, 202702, 202703)]
-    capped = plan_modification_schedule(
+    return plan_modification_schedule(
         months,
         ScheduleConditions(
             units=10, days=30, cutoff_days=0, earliest=date(2027, 1, 1), concurrent=1
         ),
     )
+
+
+def _missed_by_relief() -> ScheduleResult:
+    """2대 × 31일을 2/28 까지 — 1대뿐이고, 기준을 2/310 = 0.645%p 낮추면 다 든다(손계산은
+    `tests/test_modification_schedule.py` 의 「대안 셋」 시험)."""
+    months = [ScheduleMonthInput(month, 10.0, 11.0, 1.0) for month in (202701, 202702, 202703)]
+    return plan_modification_schedule(
+        months,
+        ScheduleConditions(
+            units=2, days=31, cutoff_days=0, earliest=date(2027, 1, 1), deadline=date(2027, 2, 28)
+        ),
+    )
+
+
+def _unfinished(result: ScheduleResult) -> ScheduleResult:
+    """대안 셋 탐색이 마디 한도에 걸린 꼴(`exact` 거짓) — 작은 문제로는 한도에 닿지 않아 값만
+    바꾼다."""
+    assert result.shortfall is not None
+    return replace(result, shortfall=replace(result.shortfall, exact=False))
+
+
+def test_shortfall_lines_name_the_concurrency_cap_and_an_unfinished_search() -> None:
+    capped = _capped_by_concurrency()
     lines = " ".join(shortfall_lines(capped))
     assert "동시 개조 상한 1대가 막습니다" in lines
     assert "이 계산으로 찾은 범위" not in lines
+
+
+def test_the_alternatives_say_how_far_to_lower_the_target_as_a_positive_number() -> None:
+    """셋째 줄은 「기준 0.65%p 낮추기」 — 부호 붙은 「필요한 기준 완화: −0.65%p」 는 낮추는지
+    올리는지가 거꾸로 읽혔다(2026-10-26 사용자 결정). 0.645%p 는 0.01%p 올림이다."""
+    lines = shortfall_lines(_missed_by_relief())
+
+    assert lines == [
+        "기한(2027-02-28)까지 넣을 수 있는 대수: **1 / 2대**",
+        "기한 없이 기준을 지키면 끝나는 날: **2027-03-03** (27.03 W/D)",
+        "기한 안에 다 넣으려면: **기준 0.65%p 낮추기**",
+    ]
+    assert "완화" not in " ".join(lines) and "\u2212" not in " ".join(lines)
+
+
+def _kpi_app() -> None:
+    """요약 넷만 그리는 호스트 — 결과는 `_missed_by_relief` 와 같은 계산이다(스크립트는 혼자
+    서야 한다)."""
+    from datetime import date
+
+    from capa_simulation.components.modification_schedule_figures import ScheduleLabels
+    from capa_simulation.components.modification_schedule_view import render_schedule_kpis
+    from capa_simulation.services.modification_schedule import (
+        ScheduleConditions,
+        ScheduleMonthInput,
+        plan_modification_schedule,
+    )
+
+    months = [ScheduleMonthInput(month, 10.0, 11.0, 1.0) for month in (202701, 202702, 202703)]
+    result = plan_modification_schedule(
+        months,
+        ScheduleConditions(
+            units=2, days=31, cutoff_days=0, earliest=date(2027, 1, 1), deadline=date(2027, 2, 28)
+        ),
+    )
+    render_schedule_kpis(result, ScheduleLabels(process_label="P", general_percent=100.0))
+
+
+def test_the_deadline_card_says_how_far_to_lower_the_target_as_a_positive_number() -> None:
+    """못 맞춘 기한 칸 캡션도 대안 셋과 같은 글 「기준 0.65%p 낮추기」 이고, 풍선이 그 글을 풀어
+    말한다."""
+    app = AppTest.from_function(_kpi_app, default_timeout=30)
+    _ok(app.run())
+
+    assert _metric(app, "기한") == ("못 맞춤", "1대 남음 · 기준 0.65%p 낮추기")
+    deadline = next(metric for metric in app.metric if metric.label == "기한")
+    assert "「기준 n%p 낮추기」" in str(deadline.proto.help)
+    shown = " ".join(
+        f"{metric.value} {metric.proto.delta} {metric.proto.help}" for metric in app.metric
+    )
+    assert "완화" not in shown
+
+
+def test_the_written_relief_bracket_follows_only_a_relief_number() -> None:
+    """탐색 한도에 걸린 대안 셋 — 「적힌 만큼 낮추면 들어간다」 괄호는 낮출 폭이 적혔을 때만 붙는다.
+    동시 상한 같은 까닭만 적혔으면 적힌 폭이 없어 괄호도 「덜 낮춰도」 도 없다."""
+    cause_only = shortfall_lines(_unfinished(_capped_by_concurrency()))
+    assert "동시 개조 상한 1대가 막습니다" in cause_only[-2]
+    assert "이 계산으로 찾은 범위" in cause_only[-1]
+    assert "그대로입니다" not in cause_only[-1]
+    assert "덜 낮춰도" not in cause_only[-1]
+    assert "적힌" not in " ".join(cause_only)
+
+    with_relief = shortfall_lines(_unfinished(_missed_by_relief()))
+    assert with_relief[-1] == (
+        "탐색 한도에 걸려 위 수는 **이 계산으로 찾은 범위**입니다 — 실제로는 더 넣거나 "
+        "덜 낮춰도 될 수 있습니다(적힌 만큼 기준을 낮추면 들어가는 것은 그대로입니다)."
+    )
+
+
+def test_batch_bar_labels_hide_rather_than_shrink_below_the_minimum_size() -> None:
+    """하루짜리 차수 셋은 달 칸 1/31 폭 막대라 「N대」 가 들어가지 않는다 — Plotly 가 글을 읽을 수
+    없게 줄이지 않고 하한 아래면 숨기며(`uniformtext` hide), 대수는 그 막대 풍선과 차수 목록에
+    남는다."""
+    months = [ScheduleMonthInput(month, 10.0, 20.0, 1.0) for month in (202701, 202702, 202703)]
+    result = plan_modification_schedule(
+        months,
+        ScheduleConditions(units=3, days=1, cutoff_days=0, earliest=date(2027, 1, 1), concurrent=1),
+    )
+    assert len(result.batches) == 3
+    figure = schedule_figure(result, ScheduleLabels(process_label="P", general_percent=100.0))
+
+    uniform = figure.layout.uniformtext
+    assert uniform.mode == "hide"
+    assert uniform.minsize is not None and uniform.minsize >= 10
+    (bars,) = [trace for trace in figure.data if trace.orientation == "h"]
+    assert bars.textposition == "inside"
+    assert bars.textfont.size >= uniform.minsize
+    for number, (batch, text, (index, hover)) in enumerate(
+        zip(result.batches, bars.text, bars.customdata, strict=True), start=1
+    ):
+        assert text == f"{batch.units}대" and index == number
+        assert f"{batch.units}대 개조" in hover
+        assert f"**{batch.units}대**" in batch_line(number, batch)

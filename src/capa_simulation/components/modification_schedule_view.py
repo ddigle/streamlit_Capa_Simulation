@@ -50,11 +50,10 @@ from capa_simulation.components.modification_schedule_figures import (
     ScheduleLabels,
     batch_line,
     general_text,
-    relief_points,
+    relief_text,
     schedule_figure,
     shortfall_lines,
 )
-from capa_simulation.components.month_sheet_canvas import MINUS
 from capa_simulation.components.plotly_layout import hover_chart_config
 from capa_simulation.components.preset_number_field import render_preset_number_field
 from capa_simulation.components.process_labels import ProcessLabels
@@ -195,9 +194,10 @@ DOUBLE_COUNT_NOTE: Final = (
     "개조는 가용에서 이미 빠져 있어 두 번 빠집니다."
 )
 CHART_NOTE: Final = (
-    "아래 띠 = 차수별 개조 비가동(글 = 대수) · 옅은 빨강 칠 = 개조 없이도 기준(+ 안전 여유) "
-    "미달이라 넣지 않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · 기한 뒤) · 막대는 W/D 구간 "
-    "좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다"
+    "아래 띠 = 차수별 개조 비가동(글 = 대수 — 글이 들지 않는 막대는 풍선에) · 옅은 빨강 칠 = 개조 "
+    "없이도 기준(+ 안전 여유) 미달이라 넣지 않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · "
+    "기한 뒤) · 막대는 W/D 구간 좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 "
+    "있습니다"
 )
 LIST_NOTE: Final = (
     "차수 = 같은 날 시작하는 묶음 · 날짜는 비가동 첫날 ~ 마지막 날(다음 날부터 일반 "
@@ -860,7 +860,7 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
                 f"{result.remaining}대 남음"
                 + (" · 가장 빨리로 배치" if result.fell_back else "")
                 + (
-                    f" · 필요 완화 {MINUS}{relief_points(shortfall.relief)}"
+                    f" · {relief_text(shortfall.relief)}"
                     if shortfall is not None and shortfall.relief is not None
                     else ""
                 )
@@ -871,7 +871,11 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
             key="constraint_sim_sched_kpi_deadline",
             tone=tone4,
             caption=caption4,
-            help="기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다.",
+            help=(
+                "기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다. 못 맞추면 남은 대수와, "
+                "기한(없으면 조회기간 끝) 안에 다 넣으려면 기준을 얼마나 낮춰야 하는지(「기준 n%p "
+                "낮추기」 — 0.01%p 올림이라 적힌 만큼 낮추면 들어갑니다)를 적습니다."
+            ),
         )
 
 
