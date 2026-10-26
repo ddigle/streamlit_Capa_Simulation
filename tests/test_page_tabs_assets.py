@@ -100,6 +100,28 @@ def test_a_hidden_pin_takes_no_taps_and_touch_devices_pin_only_the_current_tab()
     assert hidden in touch.group(1) and "display: none" in touch.group(1)
 
 
+def _rem(body: str, name: str) -> float:
+    match = re.search(rf"(?<![-\w]){name}: ([\d.]+)rem;", body)
+    assert match is not None, name
+    return float(match.group(1))
+
+
+def test_the_current_tab_keeps_room_for_its_name_when_the_strip_is_crowded() -> None:
+    """탭 10개면 모두 최소 폭으로 줄고 지금 탭은 핀·× 가 자리를 먹어 이름이 「A.」 로 줄었다(1024px
+    E2E). 지금 탭의 최소 폭은 다른 탭보다 넓다. 좁은 창(휴대폰 폭)에서는 고정하지 않은 지금 탭의
+    핀도 두지 않는다 — 고정한 탭의 핀(고정 풀기)은 남는다."""
+    item = _rem(_rule(".capa-tabs-item"), "min-width")
+    active = _rem(_rule(".capa-tabs-item.is-active"), "min-width")
+    assert active >= item + 4
+    narrow = re.search(r"@media \(max-width: 640px\)\s*\{(.*?)\n\}", CSS, re.S)
+    assert narrow is not None
+    rule = re.search(
+        r"\.capa-tabs-item\.is-active:not\(\.is-pinned\) \.capa-tabs-pin \{([^}]*)\}",
+        narrow.group(1),
+    )
+    assert rule is not None and "display: none" in rule.group(1)
+
+
 def test_the_pin_keeps_one_name_and_tells_its_state_with_aria_pressed() -> None:
     """이름까지 「고정 풀기」로 바꾸면 읽기 도구가 상태를 두 번 말한다."""
     assert "text.unpin" not in JS and "unpin" not in page_tabs.TEXT

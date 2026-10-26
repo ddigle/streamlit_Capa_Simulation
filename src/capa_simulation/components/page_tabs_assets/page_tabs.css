@@ -52,7 +52,10 @@
   background: color-mix(in srgb, var(--st-text-color) 6%, transparent);
 }
 
+/* 지금 탭은 탭이 많아 모두 최소 폭으로 줄어도 이름 몇 글자가 남게 더 넓게 둔다 — 핀·× 가 자리를 먹어 1024px · 탭
+   10개에서 지금 탭 이름이 「A.」 로 줄었다. */
 .capa-tabs-item.is-active {
+  min-width: 10.5rem;
   border-color: color-mix(in srgb, var(--st-text-color) 15%, transparent);
   background: var(--st-background-color);
   box-shadow: inset 0 2px 0 var(--st-primary-color);
@@ -189,6 +192,14 @@
 /* 가리킬 수 없는 기기(터치)에서는 그 핀을 아예 두지 않는다 — 고정은 지금 탭에서 한다. */
 @media (hover: none) {
   .capa-tabs-item:not(.is-pinned):not(.is-active) .capa-tabs-pin {
+    display: none;
+  }
+}
+
+/* 좁은 창(휴대폰 폭)에서는 지금 탭의 핀도 두지 않아 그 자리를 이름에 준다 — 고정은 넓은 창에서 한다. 이미 고정한
+   탭의 핀(고정 풀기)은 남는다. */
+@media (max-width: 640px) {
+  .capa-tabs-item.is-active:not(.is-pinned) .capa-tabs-pin {
     display: none;
   }
 }
