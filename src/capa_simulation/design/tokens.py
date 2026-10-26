@@ -245,7 +245,7 @@ _LIGHT: Final[dict[str, Any]] = {
     "SPACE_GRID": "#E5E8EB",
     # FAB 도면 층 블록의 기본 면(색 키를 고르지 않은 블록). 캔버스보다 한 단 짙다.
     "SPACE_BLOCK_FILL": "#E7EDF2",
-    # 비활성 층 블록(사용 안 함·생산라인 아님)의 면. 기본 블록 면보다 옅은 회색이고 그 위에 영역
+    # 비활성 층 블록(사유는 직접 적은 글)의 면. 기본 블록 면보다 옅은 회색이고 그 위에 영역
     # 빗금 무늬(`#sle-hatch`)와 TEXT_MUTED 사유 글자가 선다(TEXT_MUTED·SPACE_TEXT 모두 4.5:1 이상).
     "SPACE_BLOCK_OFF_FILL": "#F0F1F3",
     # Space 도면 요소 이름표의 「글자 색」. 키는 영역 색 키(`floor_layout_mark.MARK_COLOR_KEYS`)와

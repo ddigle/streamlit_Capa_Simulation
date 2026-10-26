@@ -56,6 +56,7 @@ from capa_simulation.components.equipment_master_tab import (
     TABLE_KEY,
 )
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.navigation import (
     EQUIPMENT_MASTER_TAB,
     EQUIPMENT_SUMMARY_TAB,
@@ -1024,6 +1025,35 @@ def test_the_inactive_floor_warning_and_dropped_notice_keep_the_stars_of_unit_na
         reapplied=ReappliedLayout(equipment=pd.DataFrame(), reapplied=1, dropped=("DA*31*R",)),
     )
     assert "빠진 호기 1대(DA\\*31\\*R)의 편집은 뺐습니다" in notice, notice
+
+
+def test_the_inactive_floor_warning_shows_a_typed_reason_as_written(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """저장 미리보기 경고는 마크다운 자리다 — 직접 적은 사유(2026-10-26)의 물결표·별표는 지움선·
+    기울임이 되지 않게 막아 싣는다(`literal_markdown`). 옮긴 호기 이름도 적힌다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _located_master([("EQ-C4", "C4", "1F"), ("EQ-NONE", None, None)]),
+        empty_downtime_schedule(),
+    )
+    repository.save_floor_states({("C2", "3F"): "창고~임시~*"}, expected_version=0, source="t")
+    clear_equipment_repository()
+    app = _app(path)
+
+    _preview(
+        app,
+        _located_master([("EQ-C4", "C4", "1F"), ("EQ-NONE", "C2", "3F")]).to_csv(
+            index=False, sep="\t"
+        ),
+    )
+    _put(app)
+    (warning,) = [text for text in _texts(app, "warning") if "비활성 층으로 옮긴 호기" in text]
+    assert "C2 3F 창고\\~임시\\~\\*" in warning
+    assert "창고~임시~" not in warning
+    assert warning.endswith(f": {literal_markdown('EQ-NONE')}")
 
 
 def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:

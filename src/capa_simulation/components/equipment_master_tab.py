@@ -1078,10 +1078,12 @@ def _render_notices(
             saved = (
                 latest_snapshot.equipment if latest_snapshot is not None else frames[1].iloc[0:0]
             )
-            # 서비스가 지은 글이라 호기 이름을 날로 담는다(앱 꾸밈 없음) — 그리는 자리에서 글 통째로
-            # 구두점을 막는다. 물결표만 막으면 「DA*31*R」 의 별표가 기울임이 됐다(2026-10-27 E2E).
-            for message in inactive_floor_warnings(frames[1], saved, floor_states):
-                st.warning(literal_markdown(message), icon=":material/block:")
+            # 사유·호기 이름은 사람 글이다 — 짓는 함수가 하나씩 막아 끼운다(`escape`). 물결표만
+            # 막으면 「DA*31*R」 의 별표가 기울임이 됐다(2026-10-27 E2E).
+            for message in inactive_floor_warnings(
+                frames[1], saved, floor_states, escape=literal_markdown
+            ):
+                st.warning(message, icon=":material/block:")
 
 
 def _render_downloads(

@@ -432,13 +432,17 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   화면이 코드의 기본 배치를 그린다. 검사는 `services/fab_layout.py`.
 - `floor_state_profile`·`floor_state`(설비 마이그레이션 29): Space 동·층 사용 상태(2026-10-24 결정 S1~S6). 머리는
   `profile_id = 1` 한 행(`version`·`source`·`updated_at` — 저장마다 version+1, 한 번도 저장하지 않았으면 행이 없어
-  version 0)이고, 층 표는 **비활성 층만** 한 행(`building`·`floor_name`·`reason` — `UNUSED` 사용 안 함·`NOT_LINE`
-  생산라인 아님, PK (동, 층))이다. 행이 없는 층은 사용이다. 저장은 화면이 편집을 시작할 때 본 version 을 대조하고
+  version 0)이고, 층 표는 **비활성 층만** 한 행(`building`·`floor_name`·`reason` — 직접 적은 사유 글(20자, 앞뒤 공백 뗌 —
+  2026-10-26 결정, VARCHAR 에 CHECK 가 없어 마이그레이션 없음) 또는 옛 코드 `UNUSED` 사용 안 함·`NOT_LINE` 생산라인 아님,
+  PK (동, 층))이다. 행이 없는 층은 사용이다. 저장은 화면이 편집을 시작할 때 본 version 을 대조하고
   (`require_profile_version(schema="equipment_ops")`) 바뀐 층만 고친다 — 다시 켠 층 DELETE · 사유만 바꾼 층 UPDATE ·
   새로 끈 층 INSERT(`persistence/floor_state_store.py`). 설비 시나리오·리비전과 무관한 공용 현행값이라 소유 칸이 없고,
-  설비 마스터의 동·층 값과 저장 검사는 건드리지 않는다(Space 목록·도면과 층 고르기에서 숨길지만 정한다). 사유 허용값과
-  30개 층 범위는 `services/floor_state.prepare_floor_states` 가 보고, 읽기는 30개 밖 행을 버리며 모르는 사유는 「비활성」
-  으로 그린다.
+  설비 마스터의 동·층 값과 저장 검사는 건드리지 않는다(Space 목록·도면과 층 고르기에서 숨길지만 정한다). 사유 길이·글자
+  (20자·제어 문자 없음)와 30개 층 범위는 `services/floor_state.prepare_floor_states` 가 보고, 읽기는 30개 밖 행을 버리며
+  사유 글은 그대로 그린다(빈 사유만 「비활성」). 짝 없는 서로게이트(브라우저가 20단위에서 자른 이모지 반쪽)는 DuckDB 에
+  닿으면 DB 를 무효로 만들므로 저장 입구가 뗀다. 옛 판(배포 `202610260700` 이하)은 옛 코드 둘 밖의 글을 「비활성」 으로
+  읽어 화면은 깨지지 않지만, 그 판의 저장 입구는 옛 코드 둘만 받아 직접 적은 층이 남아 있으면 그 층들의 사유를 다시 고르거나
+  켜기 전까지 층 사용 저장이 거절된다.
 - `process_cutoff`(마이그레이션 9): 공정별 Cut-off(그 공정 이후 입고까지의 표준 납기) 일수.
   `(process_name, product_scope)` PK 이고 `product_scope` 는 지금 모두 `'*'`(공정 전체 — 나중
   제품 축 자리)다. TAT·공정 선후관계가 저장소에 없어 파생값이 아니라 사람이 적는 원장이고,

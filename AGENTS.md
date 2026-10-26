@@ -494,11 +494,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `space_layout.row_unit_shares` — 범례·배치 대수와 같은 칸, 일부 모듈만 반입한 묶음의 반입 전 모듈은 0)를 싣는다.
   - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
     목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
-    FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다 — 뷰어 epoch 에 상태 지문(`floor_states_fingerprint`,
-    배율은 그대로)을 넣고 편집기 epoch 에는 넣지 않으며(적용 전 FAB 편집을 지킨다), 뷰어·편집기 `on_open` 은 그린 회차의
+    FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다(사유는 사람이 직접 적은 글 — 블록 안 줄은 8글자를
+    넘으면 「…」 로 줄이고 풍선·선택 줄에는 다 싣는다, `editor.js` `clipOff`·`textContent` 만) — 뷰어 epoch 에 상태
+    지문(`floor_states_fingerprint`, 배율은 그대로)을 넣고 편집기 epoch 에는 넣지 않으며(적용 전 FAB 편집을 지킨다), 뷰어·편집기 `on_open` 은 그린 회차의
     비활성 층을 서버에서도 거른다(`_open_unless_inactive`). `층 바로 가기`·배치 편집기 `다른 층으로 보내기` 선택지는
     `selectable_floor_keys(keep=연 층)` 이다(글자는 「C1 3F」 그대로 — 상태는 배너). 주소 `?floor=` 가 비활성 층이어도 열고
-    늘 서는 칸(`space_floor_inactive_notice_slot`)에 배너를 세운다. 적용 검사(`parse_editor_apply(floors=ALL_FLOORS)`)·
+    늘 서는 칸(`space_floor_inactive_notice_slot`)에 배너를 세운다(사유는 `literal_markdown`). 적용 검사(`parse_editor_apply(floors=ALL_FLOORS)`)·
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
@@ -622,11 +623,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   사용 층 표(`사용` 칸, 행 고르기 = 층 열기)와 늘 서는 자리 칸 안의 접힌 「비활성 층 n개」 표(거기서도 연다), 표 머리
   `사용 편집` 토글을 켜면 저장 줄 · 끄기 확인 · 알림 · 동 머리 줄(`st.segmented_control` 다섯 — 값은 회차마다 초안에서
   세션에 적고 `default=`·세대 꼬리 없음) · 30줄 편집표다.
-  - 초안(「C1 3F」 → 사유 코드)·편집 시작 저장본 `(version, rows)`·확인 대기·단추 세대는 세션 칸이고, 편집표 칸 편집은
-    회차마다·콜백 첫머리에 초안으로 접는다(`_fold` — 빈 사유는 「사용 안 함」, 사용 층에서 사유를 고르면 끄기). 칸 편집은
-    위젯에 남아 접은 초안을 그린 위에 얹혀 보이므로, 다시 세우는 것(`discard_editor`)은 그렇게 보일 값이 접은 값과 다를
-    때뿐이다(비활성 층의 사유 지움 등) — 끄기·켜기·사유 고르기는 같은 위젯이라 보던 스크롤·초점이 남는다. `사유` 칸은
-    `string` 으로 고정한다(9장 「편집표와 내려받기」). 쓰기 단추는 그린 회차의 세대를 인자로 받아 옛 누름을 거른다.
+  - 초안(「C1 3F」 → 사유 — 옛 코드 또는 적은 글)·편집 시작 저장본 `(version, rows)`·확인 대기·단추 세대는 세션 칸이고,
+    편집표 칸 편집은 회차마다·콜백 첫머리에 초안으로 접는다(`_fold` — 빈 사유는 「사용 안 함」, 사용 층에 사유를 적으면
+    끄기). 칸 편집은 위젯에 남아 접은 초안을 그린 위에 얹혀 보이므로, 다시 세우는 것(`discard_editor`)은 그렇게 보일 값이
+    접은 값과 다를 때뿐이다(비활성 층의 사유 지움, 「UNUSED」 처럼 그린 글과 다르게 접히는 글, 이모지 반쪽이 남은 글 등 —
+    견주기는 보이는 칸 글로 한다) — 끄기·켜기·사유 적기는 같은 위젯이라 보던 스크롤·초점이 남는다.
+    `사유` 칸은 `string` 으로 고정한다(9장 「편집표와 내려받기」). 쓰기 단추는 그린 회차의 세대를 인자로 받아 옛 누름을 거른다.
+  - **`사유` 는 직접 적는 글 칸**이다(2026-10-26 결정 — S1 의 고르기를 바꿈): `TextColumn(max_chars=20)`, 도움말에 예시 두
+    문구(`FLOOR_REASON_EXAMPLES`). 칸 글은 `floor_reason_code` 로 읽는다 — 짝 없는 서로게이트와 앞뒤 공백을 떼고, 비면
+    사유 없음(끄면 「사용 안 함」), 옛 코드의 글(「사용 안 함」·「생산라인 아님」)이나 코드 글자(「UNUSED」·「NOT_LINE」)는
+    그 코드라 그린 글을 그대로 되적으면 바뀌지 않은 것이다(저장된 글로는 옛 코드와 가를 수 없어 코드 글자도 그 글로 보인다).
+    편집표는 `reason_cell_text`(옛 코드 → 그 글, 적은 글 → 저장할 글 그대로 — 줄바꿈·탭도 빈칸으로 바꾸지 않는다)를
+    그린다 — 도면·배너의 `inactive_label` 처럼 바꿔 그리면 칸을 새로 세운 뒤 `저장` 이 거절하는 까닭이 보이지 않는다.
+    브라우저 칸은 **UTF-16 단위로** 20에서 끊는다(붙여넣기도 — Streamlit 1.63 `max_chars`). 그래서 이모지(2단위)는 2자로
+    세고, 20번째 단위에 걸린 이모지는 반쪽(짝 없는 서로게이트)만 온다 — Arrow·DuckDB 가 UTF-8 로 싣지 못해 편집표가 깨지고
+    저장은 DB 를 무효로 만드므로(`FatalException`) `floor_reason_code` 가 떼고 `_REFUSED_CATEGORIES` 에 Cs 도 둔다.
+    `저장` 이 `prepare_floor_states` 로 먼저 보고 받을 수 없는 글(길이·제어 문자)은 알림 칸 `st.error` 로 거절한다(쓰지
+    않고 편집은 남는다 — 제어 문자 거절 글은 「그 칸을 지우고 다시 적으세요」 를 붙인다). 동 머리는 옛 코드 둘만 고른다 — 직접 적은 사유로 끈 동은 고른 것 없음 + 「C2 · 사용 0/6」(`building_state`).
+    성공 알림은 사유마다 층 수이고 사유를 `literal_markdown` 으로 막는다(다섯 가지 넘으면 「외 n가지」).
   - 호기가 남은 층을 새로 끄면 막지 않고 확인한다(호기 수는 편집 모드 본문이 센 `floor_unit_counts` 를 콜백 인자로).
     저장은 `save_floor_states(expected_version=…)` → 성공이면 `clear_floor_state_cache`·flash·토글 끄기, 충돌이면 알림
     칸 `st.warning` 과 초안을 최신으로 다시 세움, 같은 내용이면 `st.info`. 충돌은 거부 표지(`note_profile_conflict`)를 초안을
@@ -1946,9 +1960,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `effective_filter_months`·`filter_month_window` 는 필요 단축 일정 시작·끝 월 칸의 심기를 **읽기만** 해 같은 달을 낸다(Space
   필요 단축 보기 — 세션 값은 인자로 받는다).
 - `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
-  `FloorStates`(비활성 층만의 (동, 층, 사유 코드) 행 — `UNUSED` 사용 안 함·`NOT_LINE` 생산라인 아님)와 규칙. 저장 입구
-  `prepare_floor_states`(30개 층·사유 둘만, 빈 값 = 사용)만 엄격하고 읽기는 관용이다(모르는 사유는 `inactive_label` 이
-  「비활성」). 동 머리(`building_state`·`with_building`), 끄기 확인 대상(`newly_inactive` — 사유만 바꾼 층은 아님)과 층별 설비
+  `FloorStates`(비활성 층만의 (동, 층, 사유) 행 — 사유는 직접 적은 글이고 옛 코드 `UNUSED` 사용 안 함·`NOT_LINE` 생산라인
+  아님도 그대로 둔다, 2026-10-26 결정)와 규칙. 저장 입구 `prepare_floor_states`(30개 층, 빈 값 = 사용, 사유는
+  `floor_reason_code` — 짝 없는 서로게이트·앞뒤 공백 뗌, 옛 코드의 글·코드 글자는 그 코드 — 를 거쳐 `floor_reason_refusal`
+  이 20자·제어 문자(Cc·Cf·Zl·Zp·Cs)를 거절, 거절 글에 사람 글을 싣지 않는다)만 엄격하고 읽기는 관용이다(`inactive_label` —
+  옛 코드는 그 글, 적은 글은 길이를 보지 않고 그대로, 빈 사유만 「비활성」, 제어 문자는 빈칸. 편집표 칸만은
+  `reason_cell_text` — 저장할 글 그대로). 사유 글을 고치거나 막지 않는다 — 마크다운 자리는 그리는 쪽이
+  `literal_markdown`(저장 미리보기 경고는 `inactive_floor_warnings(escape=)`). 동 머리(`building_state` — 옛 코드만 값,
+  `with_building`), 끄기 확인 대상(`newly_inactive` — 사유만 바꾼 층은 아님)과 층별 설비
   대수(`floor_unit_counts` — 도면 이탈 제외·레이아웃 Y/N 모두·설비키), 층 고르기 거르기(`selectable_floor_keys` — 연 층은
   남김, 설비 마스터 탭 칸 단위 `master_location_options` — 표에 있는 값은 남김, 짝 단위 `floors_by_building` — 표 `층` 칸
   정의의 `optionsBy` 로 실려 `grid.js` `choiceOptions` 가 그 줄의 동으로 좁힌다), 저장 미리보기 경고
@@ -4381,6 +4400,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   가 눌렸다(2026-10-27 E2E — Space 「저장 안 한 배치 변경」 의 「바뀐 호기 n건」). 펼침 안 첫 표 앞에도 띄움을 둔다(그물이
   `if` 를 지나 펼침 블록까지 올라가 본다). 그물을 넓힌 날 이미 있던 다른 영역 자리는 `EXPANDER_CLEARANCE_PENDING` 에 적어 두고
   그 영역 고침에서 지운다(docs/TODO.md).
+- **글 칸 `TextColumn(max_chars=n)` 은 브라우저가 UTF-16 단위로 자른다**(Streamlit 1.63 `validateInput` 의
+  `slice(0, n)` — 붙여넣기도). 이모지(2단위)가 n 번째 단위에 걸리면 반쪽(짝 없는 서로게이트)만 서버로 와서, 그 글을 다시
+  그리면 Arrow 가 `UnicodeEncodeError` 로 편집표를 깨고 DuckDB 에 쓰면 `FatalException` 으로 그 DB 를 무효로 만든다(2026-10-26
+  리뷰 — Space 층 사유). 칸 값을 읽는 자리에서 U+D800~U+DFFF 를 뗀다(`floor_state.floor_reason_code`). `st.text_input`·
+  `st.text_area` 의 `max_chars` 는 넘는 입력을 받지 않을 뿐 자르지 않아 이 길이 아니다.
 - **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
   `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
   갈아 끼울 때(Import 저장·편집 버퍼 교체)도 같다 — 옛 delta 가 새 프레임에 얹혀 Import 가 조용히 되돌려진다. 「변경사항
@@ -4444,7 +4468,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고
   빈 줄에서 HTML 블록이 끊겨 적은 사람이 보던 글과 달라진다. 글만이면 `st.text`, HTML 로 감싸야 하면 `html.escape` 한
   뒤 `st.html` 로 넘긴다. 제목·이름처럼 마크다운으로 그려지는 자리(`st.expander` 라벨·`st.caption`·`st.markdown`·
-  알림 상자·위젯 라벨·풍선)에 넣는 사람 글과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
+  알림 상자·위젯 라벨·풍선)에 넣는 사람 글(Space 층 사용 사유 — 비활성 층 배너·`사용 편집` 성공 알림·설비 마스터 탭 저장
+  미리보기 경고 포함)과 주소 인자 글(공정 Capa 상세의 `?process=` — 누구나 링크로 적어 보낸다)은
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
   공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·

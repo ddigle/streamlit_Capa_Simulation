@@ -3988,6 +3988,15 @@ SPACE_FLOOR_STATE_SWITCH: Final = "사용 편집"
 SPACE_FLOOR_USE_COLUMN: Final = "사용"
 SPACE_FLOOR_EDIT_COLUMNS: Final = ("사용", "사유", "호기")
 _INACTIVE_COUNT = re.compile(r"비활성 층 (\d+)개")
+# 편집표 칸을 연(Enter) 뒤 Glide 가 `#portal` 에 세우는 칸 편집기 — 글 칸은 `textarea.gdg-input`,
+# 고르기 칸은 목록이다.
+_CELL_EDITOR_JS = """() => {
+  const portal = document.querySelector('#portal');
+  return {
+    open: Boolean(portal && portal.querySelector('[id^="gdg-overlay"]')),
+    text: portal ? portal.querySelectorAll('textarea.gdg-input').length : 0,
+  };
+}"""
 
 
 def summarize_space_floor_state(
@@ -3996,11 +4005,14 @@ def summarize_space_floor_state(
     inactive: int | None,
     grey: int,
     edit_columns: bool | None,
+    reason_text: bool | None = None,
 ) -> str:
     """층 사용 칸 확인 결과 — 개수·있음/없음만. 층 이름은 찍지 않는다.
 
     `rows` None 은 사용 칸 없음, `inactive` 는 「비활성 층 n개」 펼침의 n(없으면 0), `edit_columns`
-    None 은 스위치 없음이다. 회색 블록 수와 비활성 n 이 다르면 그 차이를 적는다."""
+    None 은 스위치 없음이다. 회색 블록 수와 비활성 n 이 다르면 그 차이를 적는다. 편집 칸이 있으면
+    `reason_text`(사유 칸을 열면 글 입력 칸이 서는가 — 2026-10-26 직접 입력, None 은 열지 못함)를
+    붙인다."""
     if rows is None:
         return "사용 칸 없음"
     folded = inactive or 0
@@ -4014,15 +4026,48 @@ def summarize_space_floor_state(
         parts.append("스위치 없음")
     elif edit_columns:
         parts.append(f"편집 칸 {'·'.join(SPACE_FLOOR_EDIT_COLUMNS)} 있음")
+        parts.append(
+            "사유 칸 열지 못함"
+            if reason_text is None
+            else ("사유 직접 입력" if reason_text else "사유 직접 입력 아님")
+        )
     else:
         parts.append("편집 칸 없음")
     return " · ".join(parts)
 
 
+def _reason_cell_takes_text(screen: Screen, editor: Any) -> bool | None:
+    """편집표 첫 줄의 `사유` 칸을 키보드로 열어(Enter) 글 입력 칸이 서는지 본다 — 옛 판(고르기 칸)은
+    목록이 선다. 곧바로 Esc 로 닫아 아무것도 바꾸지 않는다. 칸을 못 열면 None."""
+    first = screen.column_index(editor, "동")
+    reason = screen.column_index(editor, "사유")
+    if first is None or reason is None:
+        return None
+    editor.scroll_into_view_if_needed()
+    box = editor.bounding_box()
+    if not box:
+        return None
+    # 머리 줄 아래 첫 줄의 첫 칸(`동` — 잠긴 칸이라 고르기만 한다)에서 방향키로 옮긴다.
+    screen.page.mouse.click(box["x"] + 30, box["y"] + 48)
+    for _ in range(reason - first):
+        screen.page.keyboard.press("ArrowRight")
+    screen.page.keyboard.press("Enter")
+    try:
+        found = screen.poll(
+            lambda: screen.js(_CELL_EDITOR_JS), timeout=5, accept=lambda value: value["open"]
+        )
+    finally:
+        screen.page.keyboard.press("Escape")
+    if not found["open"]:
+        return None
+    return int(found["text"]) > 0
+
+
 def check_space_floor_state(screen: Screen) -> str:
     """Space 층 사용 칸 — FAB 전체 층 목록 표의 `사용` 칸 줄 수·참 개수, 접힌 「비활성 층 n개」, FAB
-    도면의 회색 블록 수, `사용 편집` 을 켠 편집표 칸(`사용`·`사유`·`호기`). **저장하지 않고** 끈다
-    (세션만 — DB 쓰기 없음). 층 이름은 찍지 않는다."""
+    도면의 회색 블록 수, `사용 편집` 을 켠 편집표 칸(`사용`·`사유`·`호기`)과 사유 칸이 직접 입력
+    칸인지(첫 줄 사유 칸을 열었다 Esc 로 닫는다). **저장하지 않고** 끈다(세션만 — DB 쓰기 없음).
+    층 이름·사유 글은 찍지 않는다."""
     screen.step("페이지 열기")
     screen.open_space_overview()
     screen.step("층 목록")
@@ -4045,6 +4090,7 @@ def check_space_floor_state(screen: Screen) -> str:
     screen.step("사용 편집")
     if not screen.switch(SPACE_FLOOR_STATE_SWITCH, True):
         return summarize_space_floor_state(len(values), in_use, inactive, int(grey), None)
+    reason_text: bool | None = None
     try:
         try:
             editor, _ = screen.grid_with_column("호기", timeout=20)
@@ -4054,9 +4100,14 @@ def check_space_floor_state(screen: Screen) -> str:
             edit_columns = all(
                 screen.column_index(editor, name) is not None for name in SPACE_FLOOR_EDIT_COLUMNS
             )
+            if edit_columns:
+                screen.step("사유 칸")
+                reason_text = _reason_cell_takes_text(screen, editor)
     finally:
         screen.switch(SPACE_FLOOR_STATE_SWITCH, False)
-    return summarize_space_floor_state(len(values), in_use, inactive, int(grey), edit_columns)
+    return summarize_space_floor_state(
+        len(values), in_use, inactive, int(grey), edit_columns, reason_text
+    )
 
 
 # 본문 탭 이름(`role="tab"`) 전부 — 옛 탭 이름이 어디에든 남았는지 셀 때만. 아이콘 글자(`table_rows`
