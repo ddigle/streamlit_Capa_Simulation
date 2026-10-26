@@ -262,6 +262,15 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         " `space_edit_lock_slot`)에서 꺼낸다"
     ),
     (
+        "src/capa_simulation/components/equipment_data_workspace.py",
+        "dismiss_discarded_notice",
+        "DISCARDED_NOTICE_KEY",
+    ): (
+        "닫을 때까지 남는 꼴 — 남의 저장이 내 편집을 버렸다는 경고는 「알림 닫기」 를 누를 때까지"
+        " 선다(한 회차만 서면 늦게 본 사람이 까닭을 모른다, E2E #66). 그리기는 늘 서 있는"
+        " `render_reopen_notices` 칸이고 읽기만 한다 — 이 닫기 콜백만 비운다"
+    ),
+    (
         "src/capa_simulation/components/display_order_management.py",
         "_render_label_warnings",
         "LABEL_WARNINGS_KEY",

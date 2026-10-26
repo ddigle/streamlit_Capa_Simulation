@@ -44,6 +44,7 @@ from capa_simulation.components.equipment_data_workspace import (
     PASTE_LAYOUT_KEY,
     PREVIEW_BUTTON_KEY,
     PREVIEW_KEY,
+    REOPEN_DISMISS_KEY,
     TARGET_KEY,
     ImportReview,
 )
@@ -64,6 +65,7 @@ from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.korean_particle import object_particle
 
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 OPERATIONS = "operations"
@@ -618,6 +620,64 @@ def test_a_unit_another_user_renames_stays_loaded_and_open_under_its_new_name(
     clear_equipment_repository()
     _ok(app.run())
     assert [row["id"] for row in last(grid, emg.GRID_KEY)["rows"]] == ["s:EQ-01"]
+
+
+def _rename_theirs(repository: DuckDBEquipmentRepository, old: str, new: str) -> None:
+    """다른 사용자가 공식 세션에서 저장본 호기 이름을 바꿔 공통을 저장한다."""
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, old, "설비명", new), renames={new: old})
+    )
+    clear_equipment_repository()
+
+
+def test_a_reopen_by_someone_elses_common_save_is_told_even_without_my_edits(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """남이 공통 대장을 저장해 편집본을 다시 세울 때 내 편집이 없으면 아무 알림도 없어 목록·이름이
+    바뀐 까닭을 알 수 없었다(E2E #38). 그 회차에 머리 알림 칸에 「다른 사용자가 공통 대장 rN을
+    저장해 최신 저장본으로 다시 열었습니다 · 이름 바뀐 호기 n대」 를 한 번 띄운다(버림 경고는 서지
+    않는다)."""
+    repository, _setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _rename_theirs(repository, "EQ-02", "EQ-02R")
+    _ok(app.run())
+
+    saved = f"공통 대장 r{repository.list_revisions()[0].revision_no}"
+    reopened = [item for item in app.info if "다시 열었습니다" in str(item.value)]
+    assert [str(item.value) for item in reopened] == [
+        f"다른 사용자가 {saved}{object_particle(saved)} 저장해 최신 저장본으로 다시 열었습니다"
+        " · 이름 바뀐 호기 1대"
+    ]
+    assert reopened[0].proto.icon == ":material/sync:"
+    assert not any("다시 열었습니다" in text for text in _texts(app, "warning"))
+    assert not [item for item in app.button if item.key == REOPEN_DISMISS_KEY]
+    _ok(app.run())
+    assert not any("다시 열었습니다" in str(item.value) for item in app.info)
+
+
+def test_the_discarded_edits_warning_stays_until_it_is_closed(tmp_path: Path, grid: Calls) -> None:
+    """남의 저장이 내 편집을 버렸다는 경고는 한 회차만 서서 바로 다음 조작에 사라졌다 — 화면을 늦게
+    본 사람은 편집이 사라진 까닭을 몰랐다(E2E #66). 「알림 닫기」 를 누를 때까지 남긴다."""
+    repository, _setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    _load_all(app, grid)
+    send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "내 고침"})
+    _rename_theirs(repository, "EQ-02", "EQ-02R")
+    _ok(app.run())
+
+    def discarded() -> list[str]:
+        return [text for text in _texts(app, "warning") if "버리고 최신 저장본으로" in text]
+
+    assert len(discarded()) == 1
+    assert not any("다시 열었습니다" in str(item.value) for item in app.info)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    _ok(app.run())
+    assert len(discarded()) == 1
+    app.button(key=REOPEN_DISMISS_KEY).click()
+    _ok(app.run())
+    assert discarded() == []
 
 
 def test_an_outbox_and_the_save_click_in_one_rerun_are_saved_together(

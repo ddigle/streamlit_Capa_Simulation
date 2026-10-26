@@ -242,7 +242,7 @@ def _switching(database: str) -> None:
         ensure_equipment_drafts,
         pending_fab_layout,
         pop_drafts_replaced,
-        render_discarded_notice,
+        render_reopen_notices,
         replace_equipment_buffer,
         stage_fab_layout,
     )
@@ -293,7 +293,7 @@ def _switching(database: str) -> None:
         st.session_state["fab_kept"] = pending_fab_layout() is not None
     else:
         st.session_state["replaced"] = pop_drafts_replaced()
-        render_discarded_notice()
+        render_reopen_notices()
         st.session_state["now"] = (session.scenario_name, session.revision_no)
 
 
@@ -327,9 +327,11 @@ def _own_save(database: str, change: str) -> None:
     import streamlit as st
 
     from capa_simulation.components.equipment_data_workspace import (
+        REOPENED_NOTICE_KEY,
         ensure_equipment_drafts,
         save_equipment_buffer,
     )
+    from capa_simulation.components.flash import pending_flash
     from capa_simulation.equipment_scenario_activation import resolve_equipment_session
     from capa_simulation.persistence.equipment_cache import get_equipment_repository
 
@@ -338,6 +340,7 @@ def _own_save(database: str, change: str) -> None:
     session = resolve_equipment_session(database)
     frames = ensure_equipment_drafts(session.snapshot)
     st.session_state.setdefault("revisions", []).append(session.revision_no)
+    st.session_state.setdefault("reopened", []).append(pending_flash(REOPENED_NOTICE_KEY))
     if step == 1:
         edited = frames[1].copy()
         if change == "schedule":
@@ -366,6 +369,8 @@ def test_an_own_schedule_save_moves_the_selection_and_a_common_save_keeps_it(
 
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state["revisions"] == revisions
+    # 제 저장 뒤 다시 세우는 회차는 「다른 사용자가 … 다시 열었습니다」 가 아니다.
+    assert app.session_state["reopened"] == [None, None, None]
     message = app.session_state["message"]
     if change == "schedule":
         assert "「운영 일정」 r2" in message and "공식 v2" in message

@@ -2199,7 +2199,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     불러온 목록 `GRID_LOADED_KEY`·상세 id `GRID_DETAIL_KEY` 는 남긴다. 남의 저장으로 다시 세울 때 그 저장이 이름을 바꾼 저장본
     호기는 옛·새 저장본의 호기 키로 이어 두 칸의 id 를 `s:새` 로 옮긴다(`equipment_grid.renamed_saved_ids` — 행 id 가 저장본
     설비명이라 옮기지 않으면 살아 있는 호기가 말없이 빠졌다, E2E eq-flows). 자기 저장 뒤는 설비 마스터 탭 저장 길이 `save_id_map`
-    으로 옮긴다. `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
+    으로 옮긴다. 남의 저장으로 다시 세운 알림은 `render_reopen_notices` 한 곳이다(가용설비 현황·Space 현황·필요 단축 일정의
+    머리 알림 칸 안) — 버린 편집이 있으면 경고(`DISCARDED_NOTICE_KEY`)를 「알림 닫기」 까지 남기고(한 회차만 서면 늦게 본 사람이
+    까닭을 모른다 — `flash` 를 지나지 않는 수명이라 `tests/test_flash_messages.py` 허용 목록에 있다), 없으면 `flash` 안내 한
+    번(`REOPENED_NOTICE_KEY` — 그 저장과 이름 바뀐 저장본 호기 수. `st.toast` 가 아니다 — 필요 단축 일정의 이벤트 칸 토스트
+    자리를 밀지 않게). `apply_master_grid_result` 는 **내용이 바뀐 표의 편집표만**
     버리고(오른쪽 칸 출납이 작은 편집표의 적용 전 편집을 지우지 않게) 되돌리기 목록은 결과의 것을 쓴다. 표 밖 길
     (`_remember_edits` — Space 적용·작은 편집표 적용·엑셀·CSV 넣기)이 편집본 내용을 바꾸면 표 되돌리기를 비우고 토스트로 알린다
     (역 patch 는 그 위에서 맞지 않는다). `follow_unit_renames` 는 행 조각 단계(와 그 앞 단계)를 버린다(`after_row_steps`).

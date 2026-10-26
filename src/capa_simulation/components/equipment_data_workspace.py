@@ -324,8 +324,16 @@ EDITOR_MODULE_LAYOUTS_KEY = "equipment_editor_module_layouts_v1"
 LAYOUT_ROLE_KEY = "equipment_layout_role_v1"
 # 편집본 배치 편집 판정 메모 — (열쇠, 있음). `buffer_has_layout_edits`.
 LAYOUT_EDITS_MEMO_KEY = "equipment_layout_edits_memo_v1"
-# 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때 한 번 띄우는 알림.
+# 다른 사람이 새 리비전을 저장해 이 세션의 저장 안 한 편집을 버렸을 때의 알림 — 화면을 늦게 본
+# 사람도 까닭을 알게 「알림 닫기」 를 누를 때까지(또는 다음 버림 알림이 덮을 때까지) 남긴다.
 DISCARDED_NOTICE_KEY = "equipment_workspace_discarded_v1"
+# 다른 사람의 저장으로 편집본을 다시 세웠지만 버린 편집이 없을 때 한 번 띄우는 알림(목록·이름이
+# 바뀐 까닭 — 이름 바뀐 호기 수). `flash` 한 칸이다.
+REOPENED_NOTICE_KEY = "equipment_workspace_reopened_v1"
+DISMISS_DISCARDED_LABEL = "알림 닫기"
+# 세 화면(가용설비 현황·Space 현황·필요 단축 일정)이 같은 key 로 그리는 「알림 닫기」 단추(한
+# 회차에 한 화면만 돈다).
+REOPEN_DISMISS_KEY = "equipment_reopen_dismiss_v1"
 # 이번 회차 맨 위에서 편집본을 새 저장본으로 갈아 끼웠다는 표시. 그 회차의 작은 편집표 제출은 옛
 # 편집본 위의 것이라 반영하지 않는다 — 페이지가 `pop_drafts_replaced` 로 한 번 읽는다(표 출납은
 # `base` 대조로 같은 규칙).
@@ -578,12 +586,50 @@ def pop_drafts_replaced() -> bool:
     return st.session_state.pop(DRAFTS_REPLACED_KEY, False) is True
 
 
-def render_discarded_notice() -> None:
-    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림을 한 번 그린다(`flash` 한 칸).
+def discarded_notice_text() -> str | None:
+    """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림 — 「알림 닫기」 전까지 남는다."""
+    value = st.session_state.get(DISCARDED_NOTICE_KEY)
+    return value if isinstance(value, str) else None
 
-    편집본을 세운(`ensure_equipment_drafts`) 뒤 페이지 머리 알림 칸 안에서 부른다.
+
+def dismiss_discarded_notice() -> None:
+    """「알림 닫기」 콜백 — 버림 알림을 걷는다."""
+    st.session_state.pop(DISCARDED_NOTICE_KEY, None)
+
+
+def reopened_notice(number: str, *, renamed: int) -> str:
+    """버린 편집 없이 다른 사람의 저장으로 편집본을 다시 세운 회차의 알림 — 그 저장(「공통 대장
+    r16」)과 이름 바뀐 저장본 호기 수(목록·상세가 새 이름으로 옮는다)."""
+    text = f"다른 사용자가 {number}{object_particle(number)} 저장해 최신 저장본으로 다시 열었습니다"
+    if renamed:
+        text += f" · 이름 바뀐 호기 {renamed:,}대"
+    return text
+
+
+def render_reopen_notices() -> None:
+    """다른 사람의 저장으로 편집본을 다시 세운 알림 둘을 페이지 머리 알림 칸 안에 그린다.
+
+    버린 편집이 없었으면 「… 다시 열었습니다 · 이름 바뀐 호기 n대」 를 한 번(`flash` 한 칸),
+    있었으면 버렸다는 경고와 「알림 닫기」를 **누를 때까지** 남긴다 — 한 회차만 서면 화면을 늦게
+    본 사람이 편집이 사라진 까닭을 모른다(E2E #66). 다음 버림 알림이 오면 그것으로 바뀐다. 두 칸
+    모두 알림 유무와 상관없이 늘 서 있어 뒤 형제의 자리를 밀지 않는다. 편집본을
+    세운(`ensure_equipment_drafts`) 뒤 부른다 — 가용설비 현황·Space 현황·필요 단축 일정이 같은
+    세션 칸을 본다.
     """
-    render_flash(DISCARDED_NOTICE_KEY)
+    render_flash(REOPENED_NOTICE_KEY)
+    slot = st.container()
+    notice = discarded_notice_text()
+    if notice is None:
+        return
+    with slot:
+        st.warning(notice, icon=":material/sync_problem:")
+        st.button(
+            DISMISS_DISCARDED_LABEL,
+            icon=":material/close:",
+            type="tertiary",
+            key=REOPEN_DISMISS_KEY,
+            on_click=dismiss_discarded_notice,
+        )
 
 
 def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames:
@@ -650,19 +696,28 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             if reapply is not None and latest_snapshot is not None
             else None
         )
-        if replaced and has_unsaved_equipment_edits():
+        moved = (
+            renamed_saved_ids(old_unit_keys, latest_snapshot.unit_key_pairs)
+            if replaced and latest_snapshot is not None
+            else {}
+        )
+        if replaced:
             number = _replaced_by_words(previous, latest_snapshot)
-            queue_flash(
-                DISCARDED_NOTICE_KEY,
-                discarded_notice(
+            if has_unsaved_equipment_edits():
+                # 닫을 때까지 남긴다(`render_reopen_notices`) — 다음 버림 알림이 덮는다.
+                st.session_state[DISCARDED_NOTICE_KEY] = discarded_notice(
                     number,
                     overlay_dropped=overlay_dropped,
                     reapplied=reapplied,
                     renames_dropped=renames_dropped,
-                ),
-                kind="warning",
-                icon=":material/sync_problem:",
-            )
+                )
+            else:
+                queue_flash(
+                    REOPENED_NOTICE_KEY,
+                    reopened_notice(number, renamed=len(moved)),
+                    kind="info",
+                    icon=":material/sync:",
+                )
         st.session_state[_REVISION_KEY] = token
         # 편집본이 나온 저장본 — 저장이 대조하는 본 값이다(write_guard). 편집본을 세울 때만 적는다.
         remember_seen(_BASE_KEY, _base_of(latest_snapshot))
@@ -692,10 +747,8 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
                 stale.append(LAYOUT_ROLE_KEY)
         for key in stale:
             st.session_state.pop(key, None)
-        if replaced and latest_snapshot is not None:
-            _follow_saved_unit_renames(
-                renamed_saved_ids(old_unit_keys, latest_snapshot.unit_key_pairs)
-            )
+        if moved:
+            _follow_saved_unit_renames(moved)
         _bump_buffer_generation()
         st.session_state[_SEEDED_GENERATION_KEY] = equipment_buffer_generation()
         if reapplied is not None and reapplied.reapplied:
