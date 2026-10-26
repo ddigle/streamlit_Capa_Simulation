@@ -1277,9 +1277,7 @@ function buildSelection(S, bar) {
   const apply = button('emg-btn is-small is-primary', '', () => {
     const targets = rows.filter((row) => !locked(row, col)).map((row) => row.id)
     if (!targets.length || !ready) return
-    enqueue(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))
-    send(S)
-    paintWindow(S)
+    if (sendOnce(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))) paintWindow(S)
   })
   const repaintApply = () => {
     const m = count()
@@ -1510,10 +1508,7 @@ function rowElement(S, row, index) {
   const name = values[model.nameCol] || ''
   const check = el('div', 'emg-c emg-w-chk emg-c-chk')
   if (tag === 'deleted') {
-    const back = icon('undo', name + ' 되살리기', () => {
-      enqueue(S, { op: 'restore', ids: [row.id] }, [])
-      send(S)
-    })
+    const back = icon('undo', name + ' 되살리기', () => sendOnce(S, { op: 'restore', ids: [row.id] }, []))
     back.title = '되살리기'
     back.tabIndex = -1
     check.appendChild(back)
@@ -1805,10 +1800,7 @@ function onBodyKey(S, event) {
     // Tab 정지가 아니다.
     event.preventDefault()
     if (live.some((row) => row.id === id)) toggleRow(S, id, event.shiftKey)
-    else if (model.ordered.some((row) => row.id === id && row.tag === 'deleted')) {
-      enqueue(S, { op: 'restore', ids: [id] }, [])
-      send(S)
-    }
+    else if (model.ordered.some((row) => row.id === id && row.tag === 'deleted')) sendOnce(S, { op: 'restore', ids: [id] }, [])
     return
   }
   if (col === model.nameCol) return
@@ -1956,10 +1948,7 @@ function drawDetail(S, root, data) {
       const line = el('div', 'emg-official')
       line.appendChild(el('span', 'emg-muted', String(unit.official.text || '')))
       const count = Number(unit.official.count) || 1
-      const back = button('emg-link', '공식 자리로 되돌리기' + (count > 1 ? ' (묶음 ' + count + '대)' : ''), () => {
-        enqueue(S, { op: 'official', id: unit.id }, [])
-        send(S)
-      })
+      const back = button('emg-link', '공식 자리로 되돌리기' + (count > 1 ? ' (묶음 ' + count + '대)' : ''), () => sendOnce(S, { op: 'official', id: unit.id }, []))
       back.title = '이 호기의 배치 일곱 칸을 공식 값으로 — 저장하면 이 설비 시나리오의 배치 차이에서 빠집니다'
       line.appendChild(back)
       box.appendChild(line)
@@ -1991,15 +1980,9 @@ function drawDetail(S, root, data) {
   root.appendChild(downtime)
   const actions = el('div', 'emg-side-actions')
   if (unit.tag === 'deleted') {
-    actions.appendChild(button('emg-btn', '되살리기', () => {
-      enqueue(S, { op: 'restore', ids: [unit.id] }, [])
-      send(S)
-    }))
+    actions.appendChild(button('emg-btn', '되살리기', () => sendOnce(S, { op: 'restore', ids: [unit.id] }, [])))
   } else {
-    const remove = button('emg-btn is-danger', '이 호기 지우기', () => {
-      enqueue(S, { op: 'delete', ids: [unit.id] }, [])
-      send(S)
-    })
+    const remove = button('emg-btn is-danger', '이 호기 지우기', () => sendOnce(S, { op: 'delete', ids: [unit.id] }, []))
     remove.disabled = !unit.deletable
     if (unit.deleteLock) remove.title = unit.deleteLock
     actions.appendChild(remove)
@@ -2402,10 +2385,7 @@ function drawChanges(S, root, data) {
     if (unit.tag === 'new') head.appendChild(el('span', 'emg-tag is-new', '새 호기'))
     if (unit.tag === 'deleted') head.appendChild(el('span', 'emg-tag is-deleted', '지움'))
     head.appendChild(el('span', 'emg-grow'))
-    head.appendChild(button('emg-link', '이 호기 되돌리기', () => {
-      enqueue(S, { op: 'revert', id: unit.id, col: null }, [])
-      send(S)
-    }))
+    head.appendChild(button('emg-link', '이 호기 되돌리기', () => sendOnce(S, { op: 'revert', id: unit.id, col: null }, [])))
     box.appendChild(head)
     for (const [col, scope, before, after] of unit.lines || []) {
       const line = el('div', 'emg-line')
@@ -2417,10 +2397,7 @@ function drawChanges(S, root, data) {
       value.appendChild(el('span', null, ' → '))
       value.appendChild(el('b', null, after || '(빈칸)'))
       line.appendChild(value)
-      line.appendChild(icon('undo', col + ' 되돌리기', () => {
-        enqueue(S, { op: 'revert', id: unit.id, col }, [])
-        send(S)
-      }))
+      line.appendChild(icon('undo', col + ' 되돌리기', () => sendOnce(S, { op: 'revert', id: unit.id, col }, [])))
       box.appendChild(line)
     }
     list.appendChild(box)

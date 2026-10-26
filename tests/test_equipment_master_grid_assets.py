@@ -637,9 +637,10 @@ process.stdout.write(JSON.stringify(out))
 
 def test_a_double_press_on_an_op_button_sends_the_op_once() -> None:
     """선택 띠 「밀기」 를 더블클릭하면 둘째 누름이 첫 op 의 회차가 돌아오기 전에 같은 띠의 단추에
-    닿아 shift op 를 하나 더 보냈다 — 날짜가 두 번 밀리고 토스트 「되돌리기」 는 한 번만
-    되돌렸다(2026-10-27 E2E). 단추 op 는 같은 op 가 아직 ack 되지 않았으면 보내지 않는다(`sendOnce`
-    — `hasPendingOp`). 다른 인자(밀 날 수·줄)나 ack 뒤의 누름은 보낸다."""
+    닿아 shift op 를 하나 더 보냈다 — 날짜가 두 번 밀리고 토스트 「되돌리기」 는 한 번만 되돌렸다.
+    「넣기」·상세 「되살리기」 는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를 되살렸습니다」)가 첫
+    결과와 그 「되돌리기」 를 덮었다(2026-10-27 E2E). 단추 op 는 같은 op 가 아직 ack 되지 않았으면
+    보내지 않는다(`sendOnce` — `hasPendingOp`). 다른 인자(밀 날 수·줄)나 ack 뒤의 누름은 보낸다."""
     assert _node({}, _PENDING_RUNNER) == {
         "before": False,
         "same": True,
@@ -648,7 +649,20 @@ def test_a_double_press_on_an_op_button_sends_the_op_once() -> None:
         "otherOp": False,
         "acked": False,
     }
-    once = {"buildSelection": ["{ op: 'shift', ids: targets"]}
+    once = {
+        "buildSelection": ["{ op: 'set', ids: targets", "{ op: 'shift', ids: targets"],
+        "rowElement": ["{ op: 'restore', ids: [row.id] }"],
+        "onBodyKey": ["{ op: 'restore', ids: [id] }"],
+        "drawDetail": [
+            "{ op: 'official', id: unit.id }",
+            "{ op: 'restore', ids: [unit.id] }",
+            "{ op: 'delete', ids: [unit.id] }",
+        ],
+        "drawChanges": [
+            "{ op: 'revert', id: unit.id, col: null }",
+            "{ op: 'revert', id: unit.id, col }",
+        ],
+    }
     for name, ops in once.items():
         body = JS[JS.index(f"function {name}(") :]
         body = body[: body.index("\n}\n")]
