@@ -18,6 +18,8 @@
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
 // 닫기·고정은 누르자마자 목록을 움직이므로, 그 뒤 같은 자리로 온 더블클릭의 둘째 누름이 다른 탭에 닿으면 버린다(`<tabs-press>`).
+// 테마 단추·새로고침은 새 세션이라 세션이 든 설비 시나리오가 공식으로 돌아간다. 문서를 떠날 때 띠 CSS 변수(공식 발행 쌍이
+// 아닌 설비 시나리오 이름)를 이 탭의 `sessionStorage` 에 적고, 새로 읽은 문서에서 한 번 알린다(`<tabs-return>`).
 const ICON_FONT = 'Material Symbols Rounded'
 const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const NOTICE_MS = 8000
@@ -38,6 +40,15 @@ const HOLD_MS = 400
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
 const DOUBLE_PRESS_PX = 8
+// 새로 읽으면 공식으로 돌아갈 설비 시나리오(띠 CSS 변수 — 파이썬 `app_header.EQUIPMENT_RETURN_VARIABLE`)와, 문서를 떠날 때
+// 그 값을 적는 이 탭의 `sessionStorage` 칸. 테마 단추는 새로 읽기 직전에 `THEME_SWITCH_KEY`(파이썬
+// `theme_toggle.THEME_SWITCH_STORAGE_KEY`)를 남겨 알림 글을 가른다.
+const RETURN_VARIABLE = '--capa-equipment-return'
+const RETURN_KEY = 'capa-equipment-return'
+const THEME_SWITCH_KEY = 'capa-theme-switch'
+const RETURN_NOTICE_MS = 15000
+// 알린 칸을 지우기까지. 이 안에 문서가 떠나면(테마 키를 맞추는 새로고침) 다음 문서가 다시 알린다.
+const RETURN_KEEP_MS = 3000
 
 // <tabs-history>
 // 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
@@ -183,6 +194,35 @@ function linkVerdict(pages, open, max, href, opening) {
   return count >= Number(max) ? 'refuse' : 'open'
 }
 // </tabs-links>
+// <tabs-return>
+// 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」. `returnMark` 는 띠 CSS 변수 값(따옴표 친 퍼센트 인코딩 글,
+// 공식 발행 쌍이면 `none`)을 이름 글로 푼다 — 못 읽으면 빈 글. `returnRecord` 는 문서를 떠날 때 적을 값이다 — 이름이 있으면
+// `{label, cause}`(테마 단추면 'theme', 아니면 'reload'), 없으면 null(적어 둔 것을 그대로 둔다 — 알리기 전에 떠난 문서의
+// 몫을 지우지 않는다). `returnNotice` 는 적어 둔 값으로 알릴 글을 짓는다(`text.themed`·`text.returned` 의 `{label}`).
+function returnMark(raw) {
+  const match = /^\s*(["'])(.*)\1\s*$/.exec(String(raw || ''))
+  if (!match) return ''
+  try {
+    return decodeURIComponent(match[2])
+  } catch (error) {
+    return ''
+  }
+}
+function returnRecord(label, themed) {
+  return label ? JSON.stringify({ label, cause: themed ? 'theme' : 'reload' }) : null
+}
+function returnNotice(stored, text) {
+  let record = null
+  try {
+    record = JSON.parse(stored || 'null')
+  } catch (error) {
+    return ''
+  }
+  if (!record || typeof record.label !== 'string' || !record.label) return ''
+  const template = String((record.cause === 'theme' ? text.themed : text.returned) || '')
+  return template ? template.split('{label}').join(record.label) : ''
+}
+// </tabs-return>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -507,17 +547,52 @@ export default function (component) {
     close(item)
   }
 
-  const flash = (message) => {
+  const flash = (message, ms = NOTICE_MS) => {
     setText(notice, String(message || ''))
     notice.hidden = false
     clearTimeout(S.noticeTimer)
-    S.noticeTimer = setTimeout(() => { notice.hidden = true }, NOTICE_MS)
+    S.noticeTimer = setTimeout(() => { notice.hidden = true }, ms)
   }
   // 서버가 남긴 상한 알림은 새 일련번호가 올 때 한 번 띄우고 잠시 뒤 걷는다.
   const message = data.notice
   if (message && typeof message.id === 'number' && message.id !== S.noticeId) {
     S.noticeId = message.id
     flash(message.text)
+  }
+
+  // 새로 읽은 문서 — 앞 문서의 세션이 공식 발행 쌍이 아닌 설비 시나리오였으면 한 번 알린다(`<tabs-return>`). 문서에 한
+  // 번이다(탭 줄이 다시 마운트돼도). 알린 칸은 잠시 뒤 지운다 — 그 전에 문서가 떠나면 다음 문서가 다시 알린다.
+  if (!window.__capaReturnChecked) {
+    window.__capaReturnChecked = true
+    let stored = null
+    try {
+      stored = window.sessionStorage.getItem(RETURN_KEY)
+    } catch (error) {
+      stored = null
+    }
+    const message = returnNotice(stored, text)
+    if (message) flash(message, RETURN_NOTICE_MS)
+    if (stored !== null) {
+      setTimeout(() => {
+        try {
+          if (window.sessionStorage.getItem(RETURN_KEY) === stored) window.sessionStorage.removeItem(RETURN_KEY)
+        } catch (error) { /* 저장소를 못 쓰면 그대로 둔다 */ }
+      }, message ? RETURN_KEEP_MS : 0)
+    }
+  }
+  // 문서를 떠날 때(새로고침·테마 단추·탭 닫기) 띠 CSS 변수를 적는다. 처리기는 문서에 하나이고 걸고 풀지 않는다.
+  if (!window.__capaReturnWatch) {
+    window.__capaReturnWatch = true
+    window.addEventListener('pagehide', () => {
+      try {
+        const storage = window.sessionStorage
+        const themed = storage.getItem(THEME_SWITCH_KEY) !== null
+        storage.removeItem(THEME_SWITCH_KEY)
+        const raw = window.getComputedStyle(document.documentElement).getPropertyValue(RETURN_VARIABLE)
+        const record = returnRecord(returnMark(raw), themed)
+        if (record !== null) storage.setItem(RETURN_KEY, record)
+      } catch (error) { /* 저장소를 못 쓰면 알리지 않는다 */ }
+    })
   }
 
   // 탭 상한에 걸리는 주소(`url_path`, HOME 은 빈 글자)인가 — 아는 화면이고, 열린 탭(닫는 중이라 숨긴 탭은 뺀다)과

@@ -10,6 +10,7 @@ from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.accent_button_style import render_accent_button_style
 from capa_simulation.components.app_credits import render_app_credits
 from capa_simulation.components.app_header import (
+    equipment_return_mark,
     remembered_equipment_suffix,
     render_app_header,
     render_shell_style,
@@ -55,6 +56,7 @@ from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
 from capa_simulation.design import theme
+from capa_simulation.equipment_scenario_activation import remembered_equipment_label
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
@@ -306,12 +308,15 @@ with pinned_connections(DUCKDB_PATH):
     # 설비 시나리오를 읽는 화면은 아래 줄 끝에 설비 시나리오 꼬리를 단다 — 그 글은 페이지가 지난
     # 회차에 남긴 세션 값이다(설비 DB 를 읽지 않는다). 그 회차에 바뀌면 페이지가 띠를 다시 그린다.
     active_tab = None if current_spec is None else active_condition_tab(current_spec)
+    # 「새로 읽으면 공식으로 돌아감」 표지(테마 단추·새로고침 뒤 탭 줄이 알린다)는 화면과 상관없는
+    # 세션 값이라 모든 화면에 싣는다. 설비 화면이 그 회차에 고르면 띠를 다시 보내며 덮는다.
     render_app_header(
         equipment_suffix=(
             remembered_equipment_suffix()
             if current_spec is not None and current_spec.reads_equipment_scenario_on(active_tab)
             else None
-        )
+        ),
+        equipment_return=equipment_return_mark(remembered_equipment_label()),
     )
     with st.sidebar.container(key="home_navigation"):
         st.page_link(pages.home, width="stretch")

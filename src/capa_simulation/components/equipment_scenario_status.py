@@ -30,6 +30,7 @@ import capa_simulation.settings as settings
 from capa_simulation.components.app_header import (
     UNMERGED_STATUS,
     equipment_header_suffix,
+    equipment_return_mark,
     refresh_equipment_header,
     short_scenario_name,
 )
@@ -66,6 +67,7 @@ from capa_simulation.components.widget_generation import bump, generation, widge
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     current_selection,
+    remembered_equipment_label,
     resolve_equipment_session,
     select_equipment_scenario,
 )
@@ -300,7 +302,11 @@ def render_equipment_scenario_row(
     flash = st.session_state.pop(FLASH_KEY, None)
     unsaved = has_unsaved_equipment_edits() and locked_reason is None
     # 머리 띠 아래 줄 끝의 설비 시나리오 꼬리 — 이 회차 목록으로 정해 같은 회차에 맞춘다.
-    refresh_equipment_header(equipment_header_suffix(session.label(), unsaved=unsaved))
+    # 「새로 읽으면 공식으로 돌아감」 표지는 그리는 쪽(잠근 꼴은 공식)이 아니라 세션 라벨로 정한다.
+    refresh_equipment_header(
+        equipment_header_suffix(session.label(), unsaved=unsaved),
+        equipment_return=equipment_return_mark(remembered_equipment_label()),
+    )
     value = equipment_field_label(session)
     if locked_reason is not None:
         value = f"{value} {FIXED_LOCK_REASON}"

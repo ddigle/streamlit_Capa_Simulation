@@ -378,3 +378,18 @@ def test_the_print_button_asks_first_in_the_dark_theme_and_prints_at_once_in_lig
     for unsafe in ('"', "\\", "\n", "\r"):
         assert unsafe not in print_button.DARK_PRINT_CONFIRM
     assert "Light" in print_button.DARK_PRINT_CONFIRM
+
+
+def test_the_theme_button_marks_the_switch_before_it_reloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """새로 읽은 문서가 「테마를 바꾸며 … 설비 시나리오가 공식으로 돌아왔습니다」 로 알리게(개선
+    거리 I1), 테마 단추는 새로고침 직전에 이 탭의 `sessionStorage` 에 표지를 남긴다 — 탭 줄
+    JS 가 문서를 떠날 때 읽는다."""
+    frames, _, _ = _render(monkeypatch)
+    theme_toggle.render_theme_toggle()
+
+    click = frames[0][frames[0].index("button.onclick") :]
+    mark = f'sessionStorage.setItem("{theme_toggle.THEME_SWITCH_STORAGE_KEY}", "1")'
+    assert mark in click
+    assert click.index("capaTheme.choose(") < click.index(mark) < click.index("location.reload()")

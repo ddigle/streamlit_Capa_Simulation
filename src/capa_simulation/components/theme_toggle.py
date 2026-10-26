@@ -123,6 +123,10 @@ THEME_RELOAD_GUARD_PREFIX = "capa-theme-reloaded-"
 # 설명) 값을 iframe 에 싣지 않고, 매 회차 그리는 사이드바 스타일 끝에 CSS 변수로 단다
 # (`unsaved_edits_marker`). 버튼은 누르는 순간 그 변수를 읽는다.
 UNSAVED_EDITS_CSS_VARIABLE = "--capa-unsaved-edits"
+# 테마 단추가 새로 읽기 직전에 이 탭의 `sessionStorage` 에 남기는 표지. 탭 줄 JS 가 문서를 떠날
+# 때 읽고 지워, 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」 를 테마 전환 글로 낸다
+# (`page_tabs.js` 의 `<tabs-return>`).
+THEME_SWITCH_STORAGE_KEY = "capa-theme-switch"
 UNSAVED_EDITS_CONFIRM = (
     "저장하지 않은 변경이 있습니다. 테마를 바꾸면 화면을 새로 읽어 이 변경이 사라집니다. "
     "계속할까요?"
@@ -428,6 +432,8 @@ _SCRIPT = """
       // `localStorage` 는 Streamlit 크롬이 읽고 조회 인자는 파이썬이 읽는다. 같은 선택을
       // 두 곳에 적어야 화면과 그림이 같은 테마를 본다.
       syncParam(next.toLowerCase());
+      // 새로 읽은 문서가 「테마를 바꾸며 … 공식으로 돌아왔습니다」 로 알리게 남긴다(탭 줄 JS).
+      try { parentWindow.sessionStorage.setItem("%(switch_key)s", "1"); } catch (error) {}
       parentWindow.location.reload();
     };
     // 툴바 맨 오른쪽이다(차례 규칙 `capaToolbar` — Guide · Print · 테마).
@@ -477,6 +483,7 @@ def render_theme_toggle(extra_scripts: Sequence[str] = ()) -> None:
             "param": THEME_QUERY_PARAM,
             "unsaved_var": UNSAVED_EDITS_CSS_VARIABLE,
             "unsaved_confirm": UNSAVED_EDITS_CONFIRM,
+            "switch_key": THEME_SWITCH_STORAGE_KEY,
             # 버튼은 **반대 테마의 옷**을 입는다. 어두운 화면에서는 밝은 팔레트의 면과
             # 글자색을, 밝은 화면에서는 어두운 팔레트의 것을 쓴다.
             "dark_fill": tokens.palette_value("light", "SURFACE"),

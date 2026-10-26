@@ -127,7 +127,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press", "tabs-links")
+_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press", "tabs-links", "tabs-return")
 
 
 def _sections() -> str:
@@ -628,3 +628,71 @@ def test_the_intro_overlay_installs_the_history_guard_before_the_first_run_drops
         "once": True,
         "calls": [["replace", "/constraint_simulation?theme=light"]],
     }
+
+
+# ---------------------------------------- 새로 읽은 문서의 공식 복귀 알림(개선 거리 I1)
+
+_RETURN_RUNNER = """
+const text = %s
+const out = {}
+// 띠 CSS 변수 — 따옴표 친 퍼센트 인코딩 글이면 이름, `none`·빈 값·깨진 글이면 빈 글.
+out.marks = [
+  returnMark(' "%%E3%%80%%8C%%EC%%85%%8B%%EC%%97%%85%%20B%%E3%%80%%8D%%20r8"'),
+  returnMark("'%%EA%%B0%%80'"),
+  returnMark('none'),
+  returnMark(''),
+  returnMark('"%%E3%%80"'),
+]
+// 떠날 때 적을 값 — 이름이 없으면 적지 않는다(앞 문서 몫을 지우지 않는다).
+out.records = [
+  returnRecord('「셋업 B」 r8', true),
+  returnRecord('「셋업 B」 r8', false),
+  returnRecord('', true),
+]
+// 새로 읽은 문서의 알림 — 테마 단추와 새로고침이 다른 글이다. 적어 둔 값이 없거나 꼴이
+// 어긋나면 알리지 않는다.
+out.notices = [
+  returnNotice(out.records[0], text),
+  returnNotice(out.records[1], text),
+  returnNotice(null, text),
+  returnNotice('{', text),
+  returnNotice('{"label": ""}', text),
+]
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_reloaded_document_tells_once_that_the_equipment_scenario_went_back_to_official() -> None:
+    """테마 단추·새로고침은 새 세션이라 가정 설비 시나리오가 아무 확인 없이 공식으로 돌아갔다(E2E
+    1~3회차 — 「셋업 실무 r8 → 운영 일정 r6 공식 v3」, 개선 거리 I1). 앞 세션이 공식 발행 쌍이 아닐
+    때만 띠 CSS 변수에 그 이름이 실리고, 문서를 떠날 때 적어 새로 읽은 문서가 한 번 알린다 — 새
+    세션마다 알리지 않는다."""
+    out = _node(_RETURN_RUNNER % json.dumps(page_tabs.TEXT, ensure_ascii=False))
+
+    assert out["marks"] == ["「셋업 B」 r8", "가", "", "", ""]
+    assert [json.loads(record) if record else None for record in out["records"]] == [
+        {"label": "「셋업 B」 r8", "cause": "theme"},
+        {"label": "「셋업 B」 r8", "cause": "reload"},
+        None,
+    ]
+    themed, reloaded, *rest = out["notices"]
+    assert themed == page_tabs.THEME_RETURN_NOTICE.format(label="「셋업 B」 r8")
+    assert reloaded == page_tabs.RETURN_NOTICE.format(label="「셋업 B」 r8")
+    assert themed.startswith("테마를 바꾸며") and reloaded.startswith("새로고침해")
+    assert rest == ["", "", ""]
+
+
+def test_the_return_notice_reads_the_header_variable_and_the_theme_switch_mark() -> None:
+    """변수 이름은 띠(`app_header`)와, 테마 표지는 테마 단추(`theme_toggle`)와 같은 글이다. 떠날 때
+    적는 처리기와 알리기는 문서에 하나다(탭 줄이 다시 마운트돼도 두 번 알리지 않는다)."""
+    from capa_simulation.components.app_header import EQUIPMENT_RETURN_VARIABLE
+    from capa_simulation.components.theme_toggle import THEME_SWITCH_STORAGE_KEY
+
+    assert f"const RETURN_VARIABLE = '{EQUIPMENT_RETURN_VARIABLE}'" in JS
+    assert f"const THEME_SWITCH_KEY = '{THEME_SWITCH_STORAGE_KEY}'" in JS
+    assert "if (!window.__capaReturnWatch) {" in JS
+    assert "window.addEventListener('pagehide'," in JS
+    assert "if (!window.__capaReturnChecked) {" in JS
+    assert "flash(message, RETURN_NOTICE_MS)" in JS
+    # 알리기 전에 떠난 문서의 몫은 지우지 않는다 — 떠날 때 이름이 없으면 적지 않는다.
+    assert "if (record !== null) storage.setItem(RETURN_KEY, record)" in JS

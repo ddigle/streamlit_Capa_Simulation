@@ -1603,6 +1603,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       입력이 5초 안이면, 앱 회차가 끝나고 새 data 가 오거나 0.4초가 지날 때까지, 최대 `BUSY_MS`). 붙들지 않으면 확인
       없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 편집표는 glide 격자(`stDataFrame`)와 칸 편집기 틀(`gdg-clip-region`)로
       알아본다 — 탭 줄 밖의 떠나기(테마 단추)는 이 붙들기를 지나지 않는다.
+  - 새로 읽은 문서의 「설비 시나리오가 공식으로 돌아왔습니다」(순수 구획 `<tabs-return>`) — 문서를 떠날 때(`pagehide`, 문서에
+    처리기 하나) 띠 CSS 변수 `--capa-equipment-return`(`app_header.EQUIPMENT_RETURN_VARIABLE`)에 이름이 있으면 탭의
+    `sessionStorage`(`capa-equipment-return`)에 `{label, cause}` 를 적고, 새 문서의 첫 그리기에서 한 번 알림 칸에 띄운다(15초,
+    글은 `TEXT["returned"]`·`TEXT["themed"]`). 알린 칸은 3초 뒤 지운다 — 그 전에 문서가 떠나면(테마 키 맞추기 새로고침) 다음
+    문서가 다시 알린다. 떠날 때 이름이 없으면 적지 않는다(알리기 전에 떠난 문서의 몫을 지우지 않는다).
     - 탭 줄은 페이지보다 먼저 그리므로 「이번 회차에 그 편집표를 그리는가」 를 위젯 값으로 미리 본다 — 작은 편집표는 바깥 탭이
       ① 이고 표 고르기(`equipment_data_workspace.MASTER_TABLE_KEY`)가 그 표일 때만 센다. 고르기를 바꾼 회차에는 편집표 위젯
       상태가 회차 끝까지 세션에 남아, 그대로 세면 이미 사라진 편집에 「사라집니다 — 떠날까요?」 를 한 회차 동안 물었다.
@@ -1762,6 +1767,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `intro_summary.latest_official_revision` 만 읽는다(`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
     이스케이프한다. 설비 시나리오를 읽는 화면은 아랫줄 끝에 「설비 시나리오 · 운영 일정 · r12 · 공식 v3」(상태 차례는 사이드바
     배지와 같다 — 「가정 배치」 포함)을 단다 — 꼬리는 페이지가 정해 `refresh_equipment_header` 로 그 회차에 한 번 더 보낸다(9장).
+  - 같은 띠 CSS 가 **늘** `EQUIPMENT_RETURN_VARIABLE`(`--capa-equipment-return`)을 정한다 — 세션 설비 시나리오가 최신 공식
+    발행 쌍이 아니면 「「셋업 B」 r8」(퍼센트 인코딩 글, `equipment_return_mark`), 아니면 `none`. 그리는 쪽(잠근 꼴은 공식)이
+    아니라 세션 라벨(`equipment_scenario_activation.remembered_equipment_label`)로 정하고, `app.py` 와 사이드바 설비 시나리오 줄
+    (같은 회차에 띠를 다시 보낸다)이 함께 넘긴다. 테마 단추·새로고침은 새 세션이라 공식으로 돌아가는데(E5), 탭 줄 JS 가 문서를
+    떠날 때(`pagehide`) 이 값을 탭의 `sessionStorage` 에 적고 새로 읽은 문서가 탭 줄 알림 칸에 한 번 알린다(`page_tabs.js`
+    `<tabs-return>` — 테마 단추면 `theme_toggle.THEME_SWITCH_STORAGE_KEY` 표지로 테마 글). 서버에 아무것도 남기지 않고, 앞
+    세션이 공식 발행 쌍이었으면 알리지 않는다 — 새 세션마다 알리지 않는다(개선 거리 I1).
   - `app.py` 가 입장 화면 요약 뒤에 한 번 부르고, 껍데기 스타일(`render_shell_style()`)은 부트스트랩 앞에서
     보낸다. 인쇄 규칙은 그 안 `@media print` 한 덩어리다(탭 줄도 뺀다). 화면 덩어리(`@media screen`)는 둘이다 — 화면
     탭 줄을 머리 띠 밑에 붙이는 sticky(`PAGE_TABS_SELECTOR`, z-index 100 — 펼침 목록·팝업 아래)와 큰 제목 칸 sr-only
