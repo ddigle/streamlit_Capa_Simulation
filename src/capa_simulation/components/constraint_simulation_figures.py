@@ -112,6 +112,7 @@ __all__ = [
     "CONSTRAINT_FIGURE_SCHEMA_VERSION",
     "END_LABEL_GAP_PX",
     "END_LABEL_MIN_PLOT_PX",
+    "MINIMUM_UNIT_WORDS",
     "MONTH_SLOT_PX",
     "ROW_IDS",
     "ConstraintLabels",
@@ -124,8 +125,9 @@ __all__ = [
     "end_label_anchors",
     "free_parts",
     "general_label",
-    "new_unit_fate",
+    "minimum_unit",
     "month_name",
+    "new_unit_fate",
     "rate_figure",
     "rate_text",
     "signed_points",
@@ -134,7 +136,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 7
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 8
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -156,6 +158,8 @@ _PERIOD_OPACITY: Final = 0.08
 _SELECTED_OPACITY: Final = 0.10
 # 값 줄 라벨을 구획 제목보다 들인다(Static 대비 일정 비교 시트와 같다).
 _VALUE_LABEL_INDENT_PX: Final = 12
+# 소요가 1대 미만인 달에 올림으로 떼는 대수의 말(`minimum_unit`).
+MINIMUM_UNIT_WORDS: Final = "최소 1대"
 # 「제약 없을 때 대비」 칸이 빈칸인 차이(%p).
 _DELTA_HIDDEN_POINTS: Final = 0.05
 
@@ -256,6 +260,13 @@ def signed_points(value: float | None) -> str:
     if points < 0:
         return f"{MINUS}{abs(points):.1f}%p"
     return "0.0%p"
+
+
+def minimum_unit(row: ConstraintMonth) -> bool:
+    """제약 소요가 1대 미만인데 필요 대수를 올림해 1대를 뗀 달(기간 안). 제약 확보율이 아주 크게
+    나오는 까닭이다 — 소요 0.025대에 1대면 4000% 다(2026-10-25 E2E). 화면은 「필요 1대(최소)」 처럼
+    그 사실을 곁들인다."""
+    return row.in_period and 0 < row.constrained_demand < 1 and row.need == 1
 
 
 def month_name(month: int) -> str:
@@ -393,7 +404,10 @@ def _hit_hover(row: ConstraintMonth, conditions: ConstraintConditions) -> str:
         f"제약 없을 때 {rate_text(row.baseline_rate)}",
     ]
     if row.in_period and row.constrained_rate is not None:
-        parts.append(f"제약 {rate_text(row.constrained_rate)}")
+        parts.append(
+            f"제약 {rate_text(row.constrained_rate)}"
+            + (f"({MINIMUM_UNIT_WORDS})" if minimum_unit(row) else "")
+        )
     text = " · ".join(parts)
     split = dedicated_split_text(row, conditions) if row.in_period else ""
     if split:
@@ -876,17 +890,7 @@ def build_sheet_canvas(
             rows_in,
             lambda row: _allocated_cell(row, conditions),
         ),
-        _row(
-            "constrained_rate",
-            "확보율",
-            rows_in,
-            lambda row: Cell(
-                rate_text(row.constrained_rate) if row.in_period else "",
-                muted=not row.in_period,
-                fill=_shortage_fill(row.met),
-                bold=row.met is False,
-            ),
-        ),
+        _row("constrained_rate", "확보율", rows_in, _constrained_rate_cell),
     ]
     if conditions.modifies:
         rows.append(title_row("modification", "개조", "그 달 W/D 일할 · 환산 대수"))
@@ -1064,6 +1068,22 @@ def _constrained_demand_cell(row: ConstraintMonth) -> Cell:
     return Cell("", muted=True, hover=hover)
 
 
+def _constrained_rate_cell(row: ConstraintMonth) -> Cell:
+    """제약 제품 확보율 칸. 소요가 1대 미만인데 1대를 뗀 달은 풍선이 그 까닭을 말한다."""
+    cell = Cell(
+        rate_text(row.constrained_rate) if row.in_period else "",
+        muted=not row.in_period,
+        fill=_shortage_fill(row.met),
+        bold=row.met is False,
+    )
+    if minimum_unit(row):
+        cell.hover = (
+            f"{_head(row)} · 확보율 — 소요 {units_text(row.constrained_demand)}대가 1대 미만이라도 "
+            "최소 1대를 떼어 크게 나옵니다"
+        )
+    return cell
+
+
 def _need_cell(row: ConstraintMonth, target: int) -> Cell:
     """제약 필요 대수 칸 — 풍선 「소요 × 제약 % = 곱 → 정수」. 적힌 소요(둘째 자리)로 다시 셈한 곱이
     적힌 곱과 다르면 「≈」 다(고른 달 계산 2단계는 같은 식의 인수 자릿수를 늘린다)."""
@@ -1075,7 +1095,7 @@ def _need_cell(row: ConstraintMonth, target: int) -> Cell:
         str(row.need),
         hover=(
             f"{_head(row)} · {units_text(row.constrained_demand)} × {target}% {mark} "
-            f"{product} → {row.need}대"
+            f"{product} → {row.need}대" + ("(최소)" if minimum_unit(row) else "")
         ),
     )
 

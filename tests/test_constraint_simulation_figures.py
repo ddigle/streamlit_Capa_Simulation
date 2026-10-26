@@ -664,6 +664,33 @@ def test_a_step_that_no_digits_can_match_says_approximately() -> None:
     assert body == "소요 **100대** ≈ 기존 90.12 + HBM라E 4"
 
 
+def test_a_constraint_demand_below_one_unit_says_the_minimum_one_unit() -> None:
+    """제약 소요가 1대 미만(0.025대)이면 필요 대수를 올림해 1대를 떼 제약 제품 확보율이 4000% 다 —
+    고른 달 2단계·결과 상자·계산표 두 칸 풍선·그래프 풍선이 「최소 1대」 를 곁들여 그 까닭을
+    말한다(2026-10-25 E2E #64). 소요가 1대 이상인 달에는 붙지 않는다."""
+    product = (0, 0, 0, 0, 0, 0.025, 6, 7, 8, 8, 9, 9, 10, 10, 11)
+    result = _run(product=product)
+    june = result.month(202706)
+    assert (june.need, june.allocated) == (1, 1)
+    assert figures.minimum_unit(june)
+    steps = month_steps(june, result, LABELS, show_proportional=False)
+    assert steps.steps[1].body == "HBM라E 필요 대수 = 0.025 × 120% = 0.03 → **1대**(최소)"
+    assert steps.steps[1].note.startswith("소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다")
+    assert steps.verdict.endswith("제약 제품 4000.0% (제약 120% 충족 · 소요 1대 미만에 최소 1대)")
+    assert figures._need_cell(june, 120).hover.endswith("→ 1대(최소)")
+    rate_hover = figures._constrained_rate_cell(june).hover
+    assert "0.03대가 1대 미만이라도 최소 1대를 떼어" in rate_hover
+    assert "제약 4000.0%(최소 1대)" in figures._hit_hover(june, result.conditions)
+
+    july = result.month(202707)
+    assert not figures.minimum_unit(july)
+    july_steps = month_steps(july, result, LABELS, show_proportional=False)
+    assert "(최소)" not in july_steps.steps[1].body
+    assert "최소" not in july_steps.verdict
+    assert "최소" not in figures._hit_hover(july, result.conditions)
+    assert "최소" not in figures._need_cell(july, 120).hover
+
+
 def test_a_dedicated_pool_above_need_says_it_stays() -> None:
     """누적 최대 — 202710 소요가 8 → 7 로 줄어도 전용 10대가 남는다(합성 한 줄)."""
     product = (0, 0, 0, 0, 0, 5, 6, 7, 8, 7, 9, 9, 10, 10, 11)
@@ -804,8 +831,9 @@ def _new(*, owned: int = 0) -> ConstraintResult:
 
 def test_the_schema_version_moved_with_the_new_rows() -> None:
     """계산표 행·띠 막대가 바뀌었다 — 세션 memo 의 옛 그림을 쓰지 않게 그림 버전을 올렸다(AGENTS 5장
-    16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이다."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 7
+    16). 7 은 「신규 설비로」·「보유 제약 설비로」 행이 채우는 차례(신규 → 보유)로 선 판이고, 8 은
+    그래프 풍선에 「최소 1대」 를 곁들인 판이다."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 8
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
