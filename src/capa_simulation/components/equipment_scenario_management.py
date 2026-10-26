@@ -1492,9 +1492,9 @@ def publish_seen_refusal(
     latest = f"r{scenario.latest_revision_no}"
     if not isinstance(was_no, int) or scenario.latest_revision_no is None:
         return "발행 확인 글을 다시 그렸습니다 — 바뀐 확인 글을 보고 다시 누르세요."
-    name = literal_markdown(scenario.scenario_name)
+    name = quoted(scenario.scenario_name)
     return (
-        f"확인 글을 본 뒤 「{name}」 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "
+        f"확인 글을 본 뒤 {name} 의 최신이 바뀌어(r{was_no} → 지금 {latest}) 발행하지 "
         f"않았습니다 — 다른 사용자가 그 사이 {with_object_particle(latest)} 저장했습니다. 바뀐 "
         "확인 글을 다시 보고 발행하세요."
     )
