@@ -356,35 +356,49 @@ def _level_nodes(statement: ast.stmt) -> list[ast.AST]:
     return nodes
 
 
-def _taken(scope: ast.AST, nodes: list[ast.AST]) -> dict[int, tuple[str, int]]:
-    """스코프에서 칸을 **꺼내는** 읽기 (노드 id → (칸, 줄)).
-
-    `pop` 은 늘 꺼내기다. `get`·`[]` 읽기는 같은 단(한 블록)에서 그 칸을 비울 때만 꺼내기다 —
-    `get` 뒤 `del` 로 되돌린 옛 꼴은 잡고, 고른 값을 읽다가 맞지 않을 때만 갈래 안에서 비우는
-    칸(선택 주소·확인 대기)은 꺼내기가 아니다.
-    """
+def _blocks(scope: ast.AST, nodes: list[ast.AST]) -> list[list[ast.AST]]:
+    """스코프의 블록(본문·갈래·`with`·`for` 안 …)마다 그 단의 노드(`_level_nodes`)."""
     blocks: list[list[ast.stmt]] = [getattr(scope, "body", [])]
     for node in nodes:
         for field in _BLOCK_FIELDS:
             block = getattr(node, field, None)
             if isinstance(block, list):
                 blocks.append([item for item in block if isinstance(item, ast.stmt)])
+    return [[node for statement in block for node in _level_nodes(statement)] for block in blocks]
+
+
+def _reads(nodes: list[ast.AST]) -> dict[int, tuple[str, int]]:
+    """세션 칸을 읽는 식 (노드 id → (칸, 줄)) — `pop`·`get`·`[]`."""
+    reads: dict[int, tuple[str, int]] = {}
+    for node in nodes:
+        key = _read_key(node)
+        if key is not None and isinstance(node, (ast.Call, ast.Subscript)):
+            reads[id(node)] = (key, node.lineno)
+    return reads
+
+
+def _taken(blocks: list[list[ast.AST]]) -> dict[int, tuple[str, int]]:
+    """스코프에서 칸을 **꺼내는** 읽기 (노드 id → (칸, 줄)).
+
+    `pop` 은 늘 꺼내기다. `get`·`[]` 읽기는 같은 단(한 블록)에서 그 칸을 비울 때만 꺼내기다 —
+    `get` 뒤 `del` 로 되돌린 옛 꼴은 잡고, 고른 값을 읽다가 맞지 않을 때만 갈래 안에서 비우는
+    칸(선택 주소·확인 대기)은 꺼내기가 아니다. 바깥에서 읽어 두고 갈래 안에서 비우며 그 자리에서
+    그리는 꼴은 `_cleared_and_drawn` 이 본다.
+    """
     taken: dict[int, tuple[str, int]] = {}
-    for block in blocks:
-        levels = [_level_nodes(statement) for statement in block]
-        cleared = {key for level in levels for node in level for key in _cleared_keys(node)}
-        for level in levels:
-            for node in level:
-                key = _read_key(node)
-                if key is None or not isinstance(node, (ast.Call, ast.Subscript)):
-                    continue
-                popped = (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "pop"
-                )
-                if popped or key in cleared:
-                    taken[id(node)] = (key, node.lineno)
+    for level in blocks:
+        cleared = {key for node in level for key in _cleared_keys(node)}
+        for node in level:
+            key = _read_key(node)
+            if key is None or not isinstance(node, (ast.Call, ast.Subscript)):
+                continue
+            popped = (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "pop"
+            )
+            if popped or key in cleared:
+                taken[id(node)] = (key, node.lineno)
     return taken
 
 
@@ -429,22 +443,49 @@ def _carried(
     return carried
 
 
+def _alert_arguments(node: ast.AST) -> list[ast.expr]:
+    """알림 요소(로거가 아닌 `success`·`info`·`warning`·`error`·`exception`·`toast`) 부름의 인자."""
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _ALERTS
+        and ast.unparse(node.func.value).split(".")[-1].lower() not in _LOGGERS
+    ):
+        return []
+    return [*node.args, *(keyword.value for keyword in node.keywords)]
+
+
 def _drawn(nodes: list[ast.AST], taken: dict[int, tuple[str, int]]) -> dict[str, int]:
     """꺼낸 칸의 값이 알림 요소에 들어가는 칸 → 꺼낸 줄."""
     carried = _carried(nodes, taken)
     drawn: dict[str, int] = {}
     for node in nodes:
-        if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in _ALERTS
-            and ast.unparse(node.func.value).split(".")[-1].lower() not in _LOGGERS
-        ):
-            continue
-        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+        for argument in _alert_arguments(node):
             for key, line in _sources(argument, taken, carried):
                 drawn.setdefault(key, line)
     return drawn
+
+
+def _cleared_and_drawn(nodes: list[ast.AST], blocks: list[list[ast.AST]]) -> dict[str, int]:
+    """한 블록이 칸을 비우고 **같은 블록에서** 그 칸의 값을 알림 요소로 그리는 칸 → 비운 줄.
+
+    값은 어디서 읽어 두었든(바깥 블록의 `get` 과 그 값을 이어 받은 이름까지) 본다 —
+    `flash = get(칸)` 뒤 `if flash:` 갈래 안에서 `del` 하고 그리는 옛 꼴을 잡는다. 비우는 갈래와
+    그리는 갈래가 다르면(확인 대기 칸 — 맞지 않을 때만 비우고 다른 갈래에서 묻는다) 잡지 않는다.
+    """
+    reads = _reads(nodes)
+    carried = _carried(nodes, reads)
+    found: dict[str, int] = {}
+    for level in blocks:
+        cleared = {key: getattr(node, "lineno", 0) for node in level for key in _cleared_keys(node)}
+        if not cleared:
+            continue
+        for node in level:
+            for argument in _alert_arguments(node):
+                for key, _line in _sources(argument, reads, carried):
+                    if key in cleared:
+                        found.setdefault(key, cleared[key])
+    return found
 
 
 def _notice_sites(tree: ast.Module) -> dict[tuple[str, str], int]:
@@ -455,7 +496,8 @@ def _notice_sites(tree: ast.Module) -> dict[tuple[str, str], int]:
       `pop_discarded_notice`)도 잡는다.
     - **그리기 그물** — 한 스코프에서 꺼낸 칸의 값(그 값에서 이름 붙여 이어 받은 값까지)이 알림 요소
       (`success`·`info`·`warning`·`error`·`exception`·`toast`)에 들어가는 자리. 칸 이름(ERROR·
-      RESULT·WARNINGS …)과 꺼내는 꼴(`pop`, `get` 뒤 `del`)을 가리지 않는다.
+      RESULT·WARNINGS …)과 꺼내는 꼴(`pop`, `get` 뒤 `del`)을 가리지 않는다. 바깥 블록에서 읽어
+      두고 한 갈래 안에서 비우며 그 갈래에서 그리는 꼴도 같다(`_cleared_and_drawn`).
     """
     scopes: list[tuple[str, ast.AST]] = [("", tree)]
     scopes += [
@@ -471,8 +513,11 @@ def _notice_sites(tree: ast.Module) -> dict[tuple[str, str], int]:
                 named = any(word in key.upper() for word in ("FLASH", "NOTICE"))
                 if named or any(word in name.lower() for word in ("flash", "notice")):
                     found.setdefault((name, key), getattr(node, "lineno", 0))
-        taken = _taken(scope, nodes)
+        blocks = _blocks(scope, nodes)
+        taken = _taken(blocks)
         for key, line in (_drawn(nodes, taken) if taken else {}).items():
+            found.setdefault((name, key), line)
+        for key, line in _cleared_and_drawn(nodes, blocks).items():
             found.setdefault((name, key), line)
     return found
 
@@ -555,6 +600,15 @@ def warnings(slot):
     "꺼내며 곧바로 그리기": """
 import streamlit as st
 st.error(st.session_state.pop(POST_ERROR_KEY, ""))
+""",
+    "바깥에서 get, 갈래 안에서 del 뒤 그리기 — 이름이 RESULT": """
+import streamlit as st
+
+def draw():
+    result = st.session_state.get(SAVE_RESULT_KEY)
+    if isinstance(result, str):
+        del st.session_state[SAVE_RESULT_KEY]
+        st.info(result)
 """,
 }
 

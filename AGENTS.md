@@ -1922,8 +1922,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   돌려준다 — 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의 실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤
   `st.rerun()` 이면 문구가 그려지지 않는다). 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
   AST 그물 둘이 막는다 — 이름에 FLASH·NOTICE 가 든 칸을 비우는(`pop`·`del`) 자리와, 이름과 상관없이 꺼낸 칸(`pop`,
-  같은 블록의 `get`·`[]` 뒤 `del`)의 값이 알림 요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이
-  다른 칸만 (파일, 함수, 칸) 으로 까닭과 함께 허용 목록에 둔다(9장 「조건부 알림」).
+  같은 블록의 `get`·`[]` 뒤 `del`, 바깥에서 읽어 두고 한 갈래 안에서 비우며 그 갈래에서 그리는 꼴)의 값이 알림
+  요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이 다른 칸만 (파일, 함수, 칸) 으로 까닭과
+  함께 허용 목록에 둔다(9장 「조건부 알림」).
   담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
   `write_guard.held_notice` 로 그 글을 성공으로 다시 그린다 — 아주 빠른 둘째 누름의 회차가 앞 회차의 알림을 지우지 않게
   모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
