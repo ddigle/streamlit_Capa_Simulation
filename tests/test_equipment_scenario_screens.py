@@ -67,6 +67,7 @@ from capa_simulation.components.equipment_scenario_management import (
     publish_preview,
     restore_confirm_label,
     restore_layout_sentence,
+    restore_preview_lines,
     restore_result_message,
     session_heading,
 )
@@ -1382,6 +1383,10 @@ def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothin
     assert any("모두 같아 되돌릴 것이 없습니다" in text for text in texts)
     assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_CONFIRM_KEY)]
     assert not [button for button in app.button if button.key == RESTORE_BUTTON_KEY]
+    # 발행 체크도 서지 않으므로 「아래 발행 체크가 켜져 있고 …」 줄도 없다(없는 체크를 가리키지
+    # 않게).
+    assert not [box for box in app.checkbox if str(box.key).startswith(RESTORE_PUBLISH_KEY)]
+    assert not any("아래 발행 체크" in text for text in texts)
 
 
 def test_the_restore_words_say_what_happens_to_the_layout_difference() -> None:
@@ -1588,6 +1593,26 @@ def test_the_restore_sentences_say_none_when_no_unit_came_after_the_revision() -
     assert branch_unscheduled_sentence(first, ScheduleRestorePreview()) == (
         "r1에는 일정이 없는 호기가 없습니다(0대) — 새 시나리오의 모든 호기가 일정을 듭니다."
     )
+
+
+def test_the_publish_rule_line_stands_only_where_the_restore_offers_a_publish_check() -> None:
+    """공식 설비 시나리오의 되돌리기 확인 글 끝 발행 규칙 줄은 「아래 발행 체크」 를 가리킨다 —
+    되돌릴 것이 없어 체크·단추가 서지 않는 리비전에서는 싣지 않는다(E2E r3 static). 가정
+    시나리오에는 늘 없다."""
+    scenario = EquipmentScenarioSummary(
+        "s", "운영 일정", "ACTIVE", latest_schedule_revision_id="s3", latest_revision_no=3
+    )
+    chosen = _summary(2)
+    changes = ScheduleRestorePreview(changed_units=2)
+    nothing = ScheduleRestorePreview()
+
+    def publish_lines(preview: ScheduleRestorePreview, *, official: bool) -> list[str]:
+        lines = restore_preview_lines(scenario, chosen, preview, official_scenario=official)
+        return [line for line in lines if "아래 발행 체크" in line]
+
+    assert len(publish_lines(changes, official=True)) == 1
+    assert publish_lines(nothing, official=True) == []
+    assert publish_lines(changes, official=False) == []
 
 
 def test_the_tab_starts_a_new_scenario_from_an_old_revision(

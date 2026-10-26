@@ -1011,6 +1011,8 @@ def restore_preview_lines(
 
     바뀌는 호기 수·비가동 행 수·일정 없음이 되는 호기, 그 리비전 뒤에 공통 대장에 든 호기의 「일정
     없음」(늘 적는다), 그대로인 것(사이 리비전·공통 대장·다른 시나리오), 공식 시나리오면 발행 규칙.
+    발행 규칙 줄은 「아래 발행 체크」 를 가리키므로 되돌릴 것이 없어(`restore_writes_nothing`) 체크·
+    단추가 서지 않는 회차에는 싣지 않는다.
     """
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
@@ -1030,7 +1032,7 @@ def restore_preview_lines(
     layout = restore_layout_sentence(revision, preview, official_scenario=official_scenario)
     if layout:
         lines.append(layout)
-    if official_scenario:
+    if official_scenario and not restore_writes_nothing(preview, official_scenario=True):
         lines.append(
             "공식 설비 시나리오입니다 — 아래 발행 체크가 켜져 있고 그 사이 발행하지 않은 더 새 "
             "리비전이 없으면 새 리비전을 공식으로 발행합니다."
