@@ -111,7 +111,7 @@ def _palette() -> dict[str, str]:
         "surface": tokens.SURFACE,
         # FAB 층 블록의 기본 면(색 키를 고르지 않은 블록).
         "block": tokens.SPACE_BLOCK_FILL,
-        # 비활성 층(사용 안 함·생산라인 아님) 블록의 면 — 위에 영역 빗금과 흐린 사유 글자.
+        # 비활성 층 블록의 면 — 위에 영역 빗금과 흐린 사유 글자(직접 적은 사유, 길면 줄임).
         "block-off": tokens.SPACE_BLOCK_OFF_FILL,
         # 무대 바탕 — 편집 영역 둘레의 여백이 이 색이다.
         "stage": tokens.SURFACE_PAGE,

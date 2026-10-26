@@ -190,6 +190,23 @@ def test_free_text_reasons_round_trip_as_written(tmp_path: Path) -> None:
     }
 
 
+def test_an_emoji_half_never_reaches_duckdb(tmp_path: Path) -> None:
+    """브라우저가 20단위에서 자른 이모지 반쪽(짝 없는 서로게이트)은 DuckDB 에 닿으면 그 DB 를
+    무효로 만든다(`FatalException` — 2026-10-26 리뷰) — 저장 입구가 떼어 남은 글만 쓰고, DB 는
+    계속 쓴다."""
+    repository = _repository(tmp_path / "equipment.duckdb")
+    assert repository.save_floor_states(
+        {("C2", "3F"): "가" * 19 + "\ud83d", ("C2", "4F"): "창고\U0001f600"},
+        expected_version=0,
+        source="t",
+    )
+    assert repository.load_floor_states().inactive == {
+        ("C2", "3F"): "가" * 19,
+        ("C2", "4F"): "창고\U0001f600",
+    }
+    assert repository.save_floor_states({}, expected_version=1, source="t") == 2
+
+
 def test_floor_states_do_not_touch_equipment_revisions_or_scenarios(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "equipment.duckdb")
     saved = repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="r1")

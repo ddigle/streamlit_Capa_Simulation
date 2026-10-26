@@ -29,6 +29,7 @@ from capa_simulation.services.floor_state import (
     master_location_options,
     newly_inactive,
     prepare_floor_states,
+    reason_cell_text,
     selectable_floor_keys,
     with_building,
 )
@@ -55,6 +56,7 @@ def test_prepare_keeps_floor_key_order_and_reads_blank_as_in_use() -> None:
         ({("C2", "3F"): "창고\n임시"}, "C2 3F 사유에 줄바꿈·탭 같은 제어 문자는"),
         ({("C2", "3F"): "창고\t임시"}, "제어 문자"),
         ({("C2", "3F"): "창고\u202e임시"}, "제어 문자"),
+        ({("C2", "3F"): "창고\u200b"}, "그 칸을 지우고 다시 적으세요"),
     ],
 )
 def test_prepare_refuses_unknown_floors_and_reasons(
@@ -116,6 +118,38 @@ def test_reason_code_reads_blank_as_no_reason() -> None:
     assert floor_reason_code("생산라인 아님") == "NOT_LINE"
     assert floor_reason_code(" 창고 ") == "창고"
     assert prepare_floor_states({("C1", "1F"): "  "}) == ()
+
+
+def test_an_emoji_half_cut_by_the_browser_is_dropped_before_it_reaches_the_draft() -> None:
+    """브라우저 글 칸은 UTF-16 단위로 20에서 자른다 — 경계에 걸린 이모지는 반쪽(짝 없는 서로게이트)
+    으로 온다. UTF-8 로 싣지 못하는 글자라 칸 값을 읽을 때 떼고, 저장 입구·그리기도 막는다."""
+    half = "가" * 19 + "\ud83d"
+    assert floor_reason_code(half) == "가" * 19
+    assert floor_reason_code(" \udc00 ") is None
+    assert floor_reason_code("창고\U0001f600") == "창고\U0001f600"
+    assert prepare_floor_states({("C2", "3F"): half}) == (("C2", "3F", "가" * 19),)
+    assert floor_reason_refusal("창고\ud83d") is not None
+    assert inactive_label("창고\ud83d임시") == "창고 임시"
+    assert reason_cell_text("창고\ud83d") == "창고"
+
+
+def test_the_editor_cell_shows_the_text_it_will_store() -> None:
+    """편집표 칸은 저장할 글 그대로다 — 줄바꿈·탭을 빈칸으로 바꿔 그리면(`inactive_label`) 보이는
+    글로는 `저장` 이 무엇을 거절하는지 알 수 없다. 옛 코드는 그 글, 빈 사유는 「비활성」."""
+    assert reason_cell_text("UNUSED") == "사용 안 함"
+    assert reason_cell_text("NOT_LINE") == "생산라인 아님"
+    assert reason_cell_text("창고\n임시") == "창고\n임시"
+    assert reason_cell_text("창고\t임시") == "창고\t임시"
+    assert reason_cell_text("") == "비활성"
+    assert reason_cell_text("A~B~C") == "A~B~C"
+
+
+def test_typing_a_legacy_code_stores_that_code() -> None:
+    """옛 코드 글자를 그대로 적어도 그 코드다 — 저장된 글로는 옛 코드와 가를 수 없어 그 글로
+    보인다."""
+    assert floor_reason_code("UNUSED") == "UNUSED"
+    assert floor_reason_code(" NOT_LINE ") == "NOT_LINE"
+    assert inactive_label(floor_reason_code("UNUSED") or "") == "사용 안 함"
 
 
 def test_states_read_helpers() -> None:

@@ -13,9 +13,11 @@
   지움 등). `사유` 칸은 `string` 으로 고정한다 — 모두 비어도 Arrow 타입이 같아야 첫 끄기에 위젯
   서명(Streamlit 1.63 은 칸 타입을 넣는다)이 바뀌지 않는다.
 - `사유` 는 직접 적는 글 칸이다(2026-10-26 결정 — 20자까지, 앞뒤 공백을 뗌). 비우고 끄면 「사용 안
-  함」, 옛 코드는 그 글로 보이고 그 글을 그대로 적으면 그 코드다(`floor_state.floor_reason_code`).
-  받을 수 없는 글(길이·제어 문자)은 `저장` 이 알림 칸에서 거절한다. 사유 글은 표·편집표에는 그대로,
-  마크다운 자리(성공 알림)에는 `literal_markdown` 으로 막아 싣는다.
+  함」, 옛 코드는 그 글로 보이고 그 글이나 코드 글자를 그대로 적으면 그 코드다
+  (`floor_state.floor_reason_code` — 브라우저가 20자에서 자른 이모지 반쪽도 여기서 뗀다). 받을 수
+  없는 글(길이·제어 문자)은 `저장` 이 알림 칸에서 거절한다. 편집표 칸은 저장할 글을 제어 문자까지
+  그대로 그린다(`reason_cell_text` — 거절한 글을 칸에서 보고 고친다). 사유 글은 표·편집표에는
+  그대로, 마크다운 자리(성공 알림)에는 `literal_markdown` 으로 막아 싣는다.
 - 동 머리(`st.segmented_control`)는 key 위젯이라 처음 만든 뒤 `default=` 를 보지 않는다(정체가
   key + `click_mode` 뿐). 그래서 그리기 전에 **회차마다** 초안의 그 동 상태를 세션에 적는다 —
   세대를 올리지 않는 칸 편집 뒤에도 머리가 맞는다.
@@ -85,6 +87,7 @@ from capa_simulation.services.floor_state import (
     inactive_label,
     newly_inactive,
     prepare_floor_states,
+    reason_cell_text,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
@@ -365,13 +368,27 @@ def _folded_row(base: str | None, change: Mapping[str, object]) -> str | None:
     return base
 
 
+def _drawn(after: str | None) -> tuple[bool, str | None]:
+    """접은 값 `after` 를 새로 그리면 보일 (사용, 사유 칸 글)."""
+    return after is None, None if after is None else reason_cell_text(after)
+
+
+def _typed_text(value: object) -> str | None:
+    """칸에 남은 사유 편집이 보이는 글(앞뒤 공백만 뗀다 — 보이는 글로 견준다). 비면 None."""
+    if value is None or (isinstance(value, float) and pd.isna(value)) or value is pd.NA:
+        return None
+    return str(value).strip() or None
+
+
 def _shown_after_fold(after: str | None, change: Mapping[str, object]) -> tuple[bool, str | None]:
-    """다음 회차 위젯이 보일 (사용, 사유) — 접은 값 `after` 를 그린 위에 남은 칸 편집을
+    """다음 회차 위젯이 보일 (사용, 사유 칸 글) — 접은 값 `after` 를 그린 위에 남은 칸 편집을
     얹은 것. 다시 세우지 않으면 칸 편집은 위젯에 그대로 남아 접은 초안을 그린 데이터 위에 얹혀
-    보인다."""
+    보인다. 사유는 적은 글 그대로라 「UNUSED」 처럼 그린 글(「사용 안 함」)과 다르게 접히는 글,
+    브라우저가 자른 이모지 반쪽이 남은 글은 그린 값과 달라 새로 세운다."""
     use = bool(change[_USE_COLUMN]) if _USE_COLUMN in change else after is None
-    reason = floor_reason_code(change[_REASON_COLUMN]) if _REASON_COLUMN in change else after
-    return use, reason
+    if _REASON_COLUMN in change:
+        return use, _typed_text(change[_REASON_COLUMN])
+    return use, _drawn(after)[1]
 
 
 def _folded(draft: Draft, edits: Mapping[int, Mapping[str, object]]) -> tuple[Draft, bool]:
@@ -392,7 +409,7 @@ def _folded(draft: Draft, edits: Mapping[int, Mapping[str, object]]) -> tuple[Dr
             folded.pop(key, None)
         else:
             folded[key] = after
-        if _shown_after_fold(after, change) != (after is None, after):
+        if _shown_after_fold(after, change) != _drawn(after):
             remount = True
     return folded, remount
 
@@ -844,17 +861,18 @@ def _render_editor(
     placements: Mapping[FloorKey, FloorPlacement],
 ) -> None:
     """30줄 편집표. 줄 차례는 `FLOOR_KEYS` 고정이고 늘 접은 초안을 그린다. `사유` 칸은 직접 적는
-    글 칸(`FLOOR_REASON_MAX_CHARS` 자)이고 비활성 층은 그 사유의 화면 글(`inactive_label` — 옛
-    코드는 그 글, 적은 글은 그대로)을 그린다. `string` 으로 고정한다 — 모든 층이 사용이면 None
-    뿐이라 Arrow `null` 이 되고, 첫 끄기에 `string` 으로 바뀌면 위젯 서명이 달라져 새 위젯이
-    선다(보던 스크롤·초점이 사라진다)."""
+    글 칸(`FLOOR_REASON_MAX_CHARS` 자)이고 비활성 층은 저장할 글(`reason_cell_text` — 옛 코드는 그
+    글, 적은 글은 제어 문자까지 그대로)을 그린다 — 도면·배너처럼 빈칸으로 바꿔 그리면 `저장` 이
+    거절한 까닭이 칸에 보이지 않는다. `string` 으로 고정한다 — 모든 층이 사용이면 None 뿐이라 Arrow
+    `null` 이 되고, 첫 끄기에 `string` 으로 바뀌면 위젯 서명이 달라져 새 위젯이 선다(보던 스크롤·
+    초점이 사라진다)."""
     frame = pd.DataFrame(
         [
             {
                 "동": key[0],
                 "층": key[1],
                 _USE_COLUMN: key not in draft,
-                _REASON_COLUMN: inactive_label(draft[key]) if key in draft else None,
+                _REASON_COLUMN: reason_cell_text(draft[key]) if key in draft else None,
                 _UNITS_COLUMN: int(counts.get(key, 0)),
                 "배치대수": placements[key].placed if key in placements else 0.0,
                 "미배치대수": placements[key].unplaced if key in placements else 0.0,

@@ -8,15 +8,19 @@
 - 층마다 「사용」(기본, 행 없음) 또는 「비활성」 하나다. 비활성에는 늘 사유가 붙는다 — 사람이
   직접 적는 글(앞뒤 공백을 뗀 20자까지, 제어 문자·줄바꿈 없음 — 2026-10-26 결정)을 `reason` 칸에
   그대로 저장한다. 비우고 끄면 `UNUSED`(사용 안 함)다. 옛 고르기 코드 `UNUSED`·`NOT_LINE`(생산라인
-  아님)은 지금 글 그대로 보이고, 그 짧은 글을 그대로 적으면 그 코드로 저장한다(`floor_reason_code`).
+  아님)은 지금 글 그대로 보이고, 그 짧은 글이나 코드 글자를 그대로 적으면 그 코드로 저장한다
+  (`floor_reason_code` — 저장된 글로는 옛 코드와 가를 수 없어 「UNUSED」 도 「사용 안 함」 으로
+  보인다).
 - 모두에게 같은 공용 현행값이고 설비 시나리오·설비 리비전과 무관하다(S6).
 - **저장 검사는 그대로다**(S5) — 설비 마스터의 동·층 범위(C1~C5·1F~6F)는 비활성 층도 통과한다.
   비활성은 Space 목록·도면과 층 고르기(층 바로 가기·「다른 층으로 보내기」·설비 마스터 탭 동·층
   칸)에서만 숨긴다.
 - 읽기는 관용이다 — 저장소가 읽은 행에 모르는 동·층이 있으면 버리고, 사유 글은 길이를 보지 않고
-  그대로 그린다(`inactive_label` — 빈 사유만 「비활성」, 제어 문자는 빈칸). 저장 입구
-  (`prepare_floor_states`)만 엄격하다. 사유 글은 사람 글이라 마크다운 자리에서는 그리는 쪽이
-  막는다(`literal_markdown`) — 이 모듈은 글을 고치지 않는다.
+  그대로 그린다(`inactive_label` — 빈 사유만 「비활성」, 제어 문자는 빈칸). 편집표 칸만은 저장할
+  글을 제어 문자까지 그대로 싣는다(`reason_cell_text` — `저장` 이 거절한 글을 칸에서 보고 고치게).
+  저장 입구(`prepare_floor_states`)만 엄격하다. 사유 글은 사람 글이라 마크다운 자리에서는 그리는
+  쪽이 막는다(`literal_markdown`) — 이 모듈은 글을 고치지 않는다(짝 없는 서로게이트만 뗀다 —
+  `floor_reason_code`).
 """
 
 from __future__ import annotations
@@ -63,6 +67,7 @@ __all__ = [
     "newly_inactive",
     "prepare_floor_states",
     "present_location_values",
+    "reason_cell_text",
     "selectable_floor_keys",
     "with_building",
 ]
@@ -85,8 +90,12 @@ DEFAULT_FLOOR_REASON: Final = "UNUSED"
 ACTIVE_STATE: Final = "ACTIVE"
 # 빈 사유(손으로 넣은 행)의 글.
 _UNKNOWN_REASON_LABEL: Final = "비활성"
-# 사유 글에 넣을 수 없는 글자 갈래 — 제어(Cc)·서식(Cf, 방향 바꿈·폭 없는 글자)·줄/문단 나눔(Zl·Zp).
-_REFUSED_CATEGORIES: Final = frozenset({"Cc", "Cf", "Zl", "Zp"})
+# 사유 글에 넣을 수 없는 글자 갈래 — 제어(Cc)·서식(Cf, 방향 바꿈·폭 없는 글자)·줄/문단 나눔(Zl·Zp)·
+# 짝 없는 서로게이트(Cs — UTF-8 로 못 싣는다. 편집표 칸에서 온 것은 `floor_reason_code` 가 먼저
+# 뗀다).
+_REFUSED_CATEGORIES: Final = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
+# UTF-16 서로게이트 자리(U+D800~U+DFFF). 파이썬 글에 남은 것은 늘 짝이 없다.
+_SURROGATES: Final = range(0xD800, 0xE000)
 # 저장 미리보기 경고에 이름을 적는 호기 수.
 _WARNING_NAME_LIMIT: Final = 5
 
@@ -138,6 +147,10 @@ def _refused(char: str) -> bool:
     return unicodedata.category(char) in _REFUSED_CATEGORIES
 
 
+def _without_surrogates(text: str) -> str:
+    return "".join(char for char in text if ord(char) not in _SURROGATES)
+
+
 def inactive_label(reason: str) -> str:
     """저장된 사유 → 화면 글. 옛 코드는 그 글(「사용 안 함」·「생산라인 아님」), 그 밖의 글은 적은
     글 그대로다(길이는 보지 않는다 — 읽기에서 막지 않는다). 빈 사유는 「비활성」, 제어 문자는
@@ -149,12 +162,30 @@ def inactive_label(reason: str) -> str:
     return text or _UNKNOWN_REASON_LABEL
 
 
+def reason_cell_text(reason: str) -> str:
+    """편집표 `사유` 칸에 그릴 글. 옛 코드는 그 글, 그 밖에는 저장할 글 그대로다 — 줄바꿈·탭 같은
+    제어 문자도 빈칸으로 바꾸지 않는다(`inactive_label` 과 다르다). 바꿔 그리면 보이는 글에는 없는
+    글자로 `저장` 이 거절해 무엇을 고칠지 알 수 없다. 빈 사유는 「비활성」, 짝 없는 서로게이트는
+    뗀다(Arrow 가 UTF-8 로 싣지 못해 편집표가 깨진다)."""
+    label = FLOOR_REASON_LABELS.get(reason)
+    if label is not None:
+        return label
+    return _without_surrogates(str(reason)) or _UNKNOWN_REASON_LABEL
+
+
 def floor_reason_code(value: object) -> str | None:
-    """편집표 사유 칸 값 → 저장할 사유(검증 전). 앞뒤 공백을 떼고, 비면 None(사유 없음), 옛 코드의
-    글과 같으면 그 코드(「사용 안 함」 → `UNUSED`), 그 밖에는 뗀 글 그대로다."""
+    """편집표 사유 칸 값 → 저장할 사유(검증 전). 짝 없는 서로게이트와 앞뒤 공백을 떼고, 비면
+    None(사유 없음), 옛 코드의 글과 같으면 그 코드(「사용 안 함」 → `UNUSED`), 그 밖에는 뗀 글
+    그대로다.
+
+    서로게이트를 떼는 까닭 — Streamlit 1.63 글 칸의 `max_chars` 는 브라우저가 UTF-16 단위로 자른다.
+    이모지(2단위)가 20번째 단위에 걸리면 반쪽만 서버로 오고, 그 글은 Arrow·DuckDB 가 UTF-8 로 싣지
+    못한다(편집표가 깨지고 저장은 DB 를 무효로 만든다). 잘린 반쪽은 사람이 적은 글자가 아니다.
+    옛 코드 글자(「UNUSED」·「NOT_LINE」)를 그대로 적어도 그 코드다 — 저장된 글로는 옛 코드와 가를
+    수 없어 그 글(「사용 안 함」·「생산라인 아님」)로 보인다."""
     if value is None or (isinstance(value, float) and pd.isna(value)) or value is pd.NA:
         return None
-    text = str(value).strip()
+    text = _without_surrogates(str(value)).strip()
     if not text:
         return None
     for code, label in FLOOR_REASON_LABELS.items():
@@ -169,7 +200,10 @@ def floor_reason_refusal(reason: str) -> str | None:
     if len(reason) > FLOOR_REASON_MAX_CHARS:
         return f"사유는 {FLOOR_REASON_MAX_CHARS}자까지입니다(지금 {len(reason)}자)"
     if any(_refused(char) for char in reason):
-        return "사유에 줄바꿈·탭 같은 제어 문자는 넣을 수 없습니다"
+        return (
+            "사유에 줄바꿈·탭 같은 제어 문자는 넣을 수 없습니다(보이지 않는 글자일 수 있습니다 — "
+            "그 칸을 지우고 다시 적으세요)"
+        )
     return None
 
 

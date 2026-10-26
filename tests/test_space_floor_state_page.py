@@ -592,8 +592,8 @@ def test_legacy_codes_keep_their_labels_and_retyping_a_label_changes_nothing(
 def test_a_reason_that_cannot_be_stored_is_refused_on_save(
     tmp_path: Path, typed: str, refusal: str
 ) -> None:
-    """브라우저 칸은 20자에서 끊지만(붙여넣기도) 저장 입구가 한 번 더 본다 — 거절은 알림 칸이고 쓰지
-    않으며 편집은 남는다."""
+    """브라우저 칸은 UTF-16 20단위에서 끊지만(붙여넣기도) 저장 입구가 한 번 더 본다 — 거절은 알림
+    칸이고 쓰지 않으며 편집은 남는다."""
     database = _database(tmp_path)
     app, tables = _start_editing(database)
     tables.edit(_editor_key(app), _position("C2", "3F"), "사유", typed)
@@ -606,6 +606,75 @@ def test_a_reason_that_cannot_be_stored_is_refused_on_save(
     assert _version(database) == 0
     assert app.toggle(key=EDIT_TOGGLE_KEY).value
     assert app.session_state[DRAFT_KEY] == {"C2 3F": typed}
+    clear_equipment_repository()
+
+
+def test_a_refused_reason_stays_visible_in_its_cell_after_the_editor_is_rebuilt(
+    tmp_path: Path,
+) -> None:
+    """거절된 글은 편집표를 새로 세운 뒤에도 칸에 그대로다 — 도면·배너처럼 줄바꿈을 빈칸으로 그리면
+    보이는 글로는 무엇을 고칠지 알 수 없다(2026-10-26 리뷰). 칸을 다시 적으면 저장된다."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    tables.edit(_editor_key(app), _position("C1", "5F"), "사유", "가나\n다라")
+    tables.run()
+    _ok(app)
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert any("C1 5F 사유에 줄바꿈·탭 같은 제어 문자는" in item.value for item in app.error)
+    assert any("그 칸을 지우고 다시 적으세요" in item.value for item in app.error)
+
+    # 다른 동 머리로 편집표를 새로 세운다(끄고 다시 켬).
+    key = _editor_key(app)
+    for value in ("UNUSED", "ACTIVE"):
+        app.segmented_control(key="space_floor_state_bulk_C3").set_value(value)
+        tables.run()
+        _ok(app)
+    assert _editor_key(app) != key
+    assert app.session_state[DRAFT_KEY] == {"C1 5F": "가나\n다라"}
+    assert _editor_frame(app)["사유"].tolist()[_position("C1", "5F")] == "가나\n다라"
+
+    tables.edit(_editor_key(app), _position("C1", "5F"), "사유", "가나 다라")
+    tables.run()
+    _ok(app)
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert _states(database) == {("C1", "5F"): "가나 다라"}
+    clear_equipment_repository()
+
+
+def test_an_emoji_cut_in_half_at_the_twenty_unit_limit_is_dropped(tmp_path: Path) -> None:
+    """브라우저 글 칸의 `max_chars` 는 UTF-16 단위로 자른다 — 「가」×19 + 이모지(2단위)는 이모지
+    반쪽(짝 없는 서로게이트)으로 온다. 그 반쪽은 Arrow·DuckDB 가 UTF-8 로 싣지 못해 편집표가 깨지고
+    저장은 DB 를 무효로 만든다 — 접을 때 떼고, 반쪽이 남은 칸은 새로 세운다(2026-10-26 리뷰)."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    key = _editor_key(app)
+    cut = ("가" * 19 + "\U0001f600").encode("utf-16-le", "surrogatepass")[:40]
+    typed = cut.decode("utf-16-le", "surrogatepass")
+    assert typed == "가" * 19 + "\ud83d"
+    tables.edit(key, _position("C2", "3F"), "사유", typed)
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C2 3F": "가" * 19}
+    assert _editor_key(app) != key
+    assert _editor_frame(app)["사유"].tolist()[_position("C2", "3F")] == "가" * 19
+
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert _states(database) == {("C2", "3F"): "가" * 19}
+    clear_equipment_repository()
+
+
+def test_typing_a_legacy_code_shows_its_label_at_once(tmp_path: Path) -> None:
+    """옛 코드 글자 「UNUSED」·「NOT_LINE」 을 그대로 적으면 그 코드다 — 저장된 글로는 옛 코드와
+    가를 수 없다. 칸은 곧바로 그 글(「생산라인 아님」)로 새로 세워 저장 뒤와 같게 보인다."""
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    key = _editor_key(app)
+    tables.edit(key, _position("C4", "2F"), "사유", "NOT_LINE")
+    tables.run()
+    _ok(app)
+    assert app.session_state[DRAFT_KEY] == {"C4 2F": "NOT_LINE"}
+    assert _editor_key(app) != key
+    assert _editor_frame(app)["사유"].tolist()[_position("C4", "2F")] == "생산라인 아님"
     clear_equipment_repository()
 
 
