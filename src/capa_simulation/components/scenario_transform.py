@@ -296,6 +296,9 @@ def render_derived_save(
                 note=full_note,
                 virtual_products=records,
             ),
+            # 같은 요청의 같은 이름·메모만 한 저장이다 — 끊긴 쓰기 뒤 이름을 바꿔 누른 저장은
+            # 새로 쓴다.
+            fingerprint=(request, name, note),
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc))

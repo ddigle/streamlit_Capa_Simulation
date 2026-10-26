@@ -1548,8 +1548,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 return
             revision_source = revision_tables_for_save(active_scenario, reference_tables)
             preset = _compatible_preset(capture_scenario_preset(revision_source), revision_source)
+            parent_revision_id = active_persisted_revision_id()
             virtual_products = revision_virtual_product_rows(
-                repository, active_persisted_revision_id(), revision_source
+                repository, parent_revision_id, revision_source
             )
             request = ScenarioCreate(
                 scenario_name=scenario_name,
@@ -1560,9 +1561,10 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 source_registered_at=None,
             )
             note_text = note.strip() or None
-            # 같은 세대의 저장은 한 번만 쓴다 — 스피너 도는 동안 한 번 더 누른 둘째 회차는 쓰지
-            # 않고(같은 이름이라 「이미 있는 이름」 으로 거절됐다), 첫 회차가 만든 시나리오로 끊긴
-            # 뒷정리를 잇는다. 입력은 모두 위에서 읽었다.
+            # 같은 세대·같은 입력의 저장은 한 번만 쓴다 — 스피너 도는 동안 한 번 더 누른 둘째
+            # 회차는 쓰지 않고(같은 이름이라 「이미 있는 이름」 으로 거절됐다), 첫 회차가 만든
+            # 시나리오로 끊긴 뒷정리를 잇는다. 지문은 복제하는 편집본(토큰·리비전)과 적은 칸이다 —
+            # 끊긴 쓰기 뒤 다른 이름이나 편집으로 누른 저장은 새로 쓴다. 입력은 모두 위에서 읽었다.
             written = write_once_value(
                 CLONE_FORM_GENERATION_KEY,
                 create_generation,
@@ -1575,6 +1577,15 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                     revision_name=revision_name,
                     note=note_text,
                     virtual_products=virtual_products,
+                ),
+                fingerprint=(
+                    active_scenario["content_token"],
+                    parent_revision_id,
+                    scenario_name,
+                    source_code,
+                    source_name,
+                    revision_name,
+                    note_text,
                 ),
             )
     except BOOTSTRAP_ERRORS as exc:

@@ -420,7 +420,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
 
     `generation` 은 단추를 그린 회차의 폼 세대다. 지금 세대와 다르면 이미 저장에 쓰인 폼의
     제출이 한 번 더 들어온 것(빠른 두 번 누름)이라 쓰지도 알리지도 않는다 — 알리면 앞 저장의
-    성공 알림을 「같은 이름」 거절로 덮는다. 그 거름과 겹쳐 온 같은 세대의 두 누름은
+    성공 알림을 「같은 이름」 거절로 덮는다. 그 거름과 겹쳐 온 같은 세대·같은 입력의 두 누름은
     `write_once_value` 가 한다(얼리기·이름 검사도 그 안이라 지나간 누름은 거절도 알리지 않는다).
     """
     if save.refusal is not None:
@@ -431,6 +431,16 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
     provenance = replace(
         save.provenance, saved_by=normalize_saved_by(st.session_state.get(_BASELINE_SAVED_BY_KEY))
     )
+    # 같은 이름·출처·계획의 누름만 한 저장이다 — 끊긴 쓰기 뒤 이름이나 계획을 바꿔 누른 저장은 새로
+    # 쓴다(`write_once_value`).
+    fingerprint = (
+        name,
+        provenance,
+        save.plan.months,
+        save.plan.today,
+        save.plan.processes,
+        tuple(sorted(save.plan.cutoff_days.items())),
+    )
     try:
         repository = get_equipment_repository(save.database_path)
         written = write_once_value(
@@ -439,6 +449,7 @@ def _save_baseline(save: BaselineSaveContext, name_key: str, generation: int) ->
             lambda: repository.save_shortening_baseline(
                 freeze_plan(save.plan, name=name, provenance=provenance)
             ),
+            fingerprint=fingerprint,
         )
     except BOOTSTRAP_ERRORS as exc:
         _notice("warning", f"기준선을 저장하지 않았습니다 — {exc}")

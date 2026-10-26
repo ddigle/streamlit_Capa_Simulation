@@ -17,10 +17,11 @@
   값을 다시 적어 늘 실어 보낸다. key 세대만 바꾼 새 칸도 같다 — 새 칸은 빈 기본값으로
   서므로 비울 때는 `bump` 하나로 되지만, 서버 값으로 채우려면 실어 보내야 한다.
 
-쓰기 단추도 같은 세대를 쓴다. 그린 회차의 세대(`generation`)를 쓰기에 넘기면
-`write_guard.write_once` 가 지나간 화면의 누름과 겹쳐 온 두 번 누름을 세대마다 한 번으로
-거른다. 겹쳐 온 둘째 회차는 쓰지 않고 끊긴 첫 회차의 뒷정리를 잇는데, 뒷정리가 쓰기의
-결과(새 리비전·시나리오)를 써야 하면 그 결과를 `write_once_value` 가 세대와 함께 든다.
+쓰기 단추도 같은 세대를 쓴다. 그린 회차의 세대(`generation`)와 그 쓰기의 입력 지문
+(`fingerprint`)을 쓰기에 넘기면 `write_guard.write_once` 가 지나간 화면의 누름과 겹쳐 온 두 번
+누름을 같은 입력마다 한 번으로 거른다. 겹쳐 온 둘째 회차는 쓰지 않고 끊긴 첫 회차의 뒷정리를
+잇는데, 뒷정리가 쓰기의 결과(새 리비전·시나리오)를 써야 하면 그 결과를 `write_once_value` 가
+세대·지문과 함께 든다. 끊긴 쓰기 뒤 다른 내용을 적어 누른 저장은 지문이 달라 새로 쓴다.
 
 key 꼴은 넷이다. 옛 key 글자를 바이트까지 지킨다 — 바뀌면 배포 직후 열려 있던 세션의 칸이
 한 번 비거나 새로 선다. `style` 이 꼬리 앞 글자이고, `bare_zero` 면 세대 0 은 바탕 key
@@ -43,7 +44,7 @@ key 꼴은 넷이다. 옛 key 글자를 바이트까지 지킨다 — 바뀌면 
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 from typing import Generic, Literal, TypeVar, cast
 
@@ -66,7 +67,7 @@ KeyStyle = Literal["__g", "_g", "__", "__p"]
 
 T = TypeVar("T")
 
-# 쓰기 결과(세대 칸 이름 → (그 세대, 결과)). 세션마다 하나이고 `write_once_value` 가 쓰기
+# 쓰기 결과(세대 칸 이름 → (그 세대, 입력 지문, 결과)). 세션마다 하나이고 `write_once_value` 가 쓰기
 # **전에** 받아 둔다 — dict 칸 쓰기는 둘째 누름의 회차가 멈춤을 건 자리에서도 끊기지 않는다
 # (`write_guard` 의 표지와 같은 까닭).
 WRITE_RESULTS_KEY = "widget_generation_write_results"
@@ -143,19 +144,26 @@ def seed_field(
 class Written(Generic[T]):
     """`write_once_value` 가 이 세대의 쓰기를 마쳤을 때의 답.
 
-    `value` 는 그 쓰기의 결과다 — 이 누름이 썼든, 겹쳐 온 같은 세대의 누름이 쓰고 뒷정리 전에
-    끊겼든. 결과를 들지 못했으면(같은 세대 칸을 나눠 쓰는 다른 쓰기가 표지를 남겼다) `None`
-    이다. 뒷정리를 마친 뒤 `release()` 로 든 결과를 놓는다 — 큰 스냅샷을 세션에 붙잡아 두지
-    않게.
+    `value` 는 그 쓰기의 결과다 — 이 누름이 썼든, 겹쳐 온 같은 누름(같은 세대·같은 지문)이 쓰고
+    뒷정리 전에 끊겼든. 결과를 들지 못했으면(같은 세대 칸을 나눠 쓰는 다른 쓰기가 표지를 남겼다)
+    `None` 이다. 뒷정리를 마친 뒤 `release()` 로 든 결과를 놓는다 — 큰 스냅샷을 세션에 붙잡아 두지
+    않게. 놓지 못하고 끝난 결과(끊긴 회차·쓴 뒤 뒷정리 실패)는 그 세대 칸의 다음 쓰기가 바꿔 든다 —
+    세대 칸마다 하나만 남는다.
     """
 
     value: T | None
     _results: dict[str, object] = field(repr=False, compare=False)
     _counter_key: str = field(repr=False, compare=False)
+    _mark: tuple[int, Hashable] = field(repr=False, compare=False)
 
     def release(self) -> None:
-        """든 결과를 놓는다 — dict 칸 지우기라 끊기지 않는다. 세대 올리기(`bump`) 뒤에 부른다."""
-        self._results.pop(self._counter_key, None)
+        """든 결과를 놓는다 — dict 칸 지우기라 끊기지 않는다. 세대 올리기(`bump`) 뒤에 부른다.
+
+        그 사이 다른 입력의 쓰기가 같은 칸에 든 결과는 놓지 않는다.
+        """
+        held = self._results.get(self._counter_key)
+        if isinstance(held, tuple) and held[:2] == self._mark:
+            self._results.pop(self._counter_key, None)
 
 
 def _write_results() -> dict[str, object]:
@@ -168,14 +176,23 @@ def _write_results() -> dict[str, object]:
 
 
 def write_once_value(
-    counter_key: str, generation: int, write: Callable[[], T]
+    counter_key: str,
+    generation: int,
+    write: Callable[[], T],
+    *,
+    fingerprint: Hashable,
 ) -> Written[T] | None:
-    """`write_guard.write_once` 로 `write` 를 세대마다 한 번 부르고 그 결과를 세대와 함께 든다.
+    """`write_guard.write_once` 로 `write` 를 같은 입력마다 한 번 부르고 결과를 세대·지문과 든다.
+
+    `fingerprint` 는 그 쓰기의 입력이다(`write_guard.write_once`) — 적은 이름·메모·붙여넣은 글과
+    쓰는 대상(시나리오·리비전 id, 편집본 `content_token`)을 부르기 전에 읽어 짓는다. 시각·난수처럼
+    회차마다 바뀌는 값은 넣지 않는다.
 
     - `None` — 지나간 화면의 누름이다(지금 세대가 다르다). 쓰지 않았다. 부르는 쪽은 알리지
       않는다.
-    - `Written` — 이 세대의 쓰기가 끝났다. 부르는 쪽은 `value` 로 뒷정리를 하고 **세대 올리기를
-      맨 끝**에 둔다. 그 앞에서 끊기면 다음 누름이 같은 결과로 뒷정리를 잇는다.
+    - `Written` — 이 세대의 이 입력 쓰기가 끝났다. 부르는 쪽은 `value` 로 뒷정리를 하고 **세대
+      올리기를 맨 끝**에 둔다. 그 앞에서 끊기면 같은 입력의 다음 누름이 같은 결과로 뒷정리를 잇고,
+      다른 입력의 누름은 새로 쓴다.
 
     `write` 안에서 세션 칸을 읽지 않는다 — 입력은 부르기 전에 읽어 둔다. `write` 가 던진 예외는
     그대로 나가고 표지를 남기지 않으므로 다시 누르면 다시 쓴다.
@@ -183,12 +200,22 @@ def write_once_value(
     results = _write_results()
 
     def run() -> None:
-        results[counter_key] = (generation, write())
+        results[counter_key] = (generation, fingerprint, write())
 
-    if not write_once(counter_key, generation, run):
+    if not write_once(counter_key, generation, run, fingerprint=fingerprint):
         return None
     held = results.get(counter_key)
     value: T | None = None
-    if isinstance(held, tuple) and len(held) == 2 and held[0] == generation:
-        value = cast("T", held[1])
-    return Written(value=value, _results=results, _counter_key=counter_key)
+    if (
+        isinstance(held, tuple)
+        and len(held) == 3
+        and held[0] == generation
+        and held[1] == fingerprint
+    ):
+        value = cast("T", held[2])
+    return Written(
+        value=value,
+        _results=results,
+        _counter_key=counter_key,
+        _mark=(generation, fingerprint),
+    )

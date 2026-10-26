@@ -134,9 +134,9 @@ def _text(key: str) -> str:
 # 단추를 그린 회차의 세대를 인자로 받아 지금 세대와 다르면 쓰지도 알리지도 않는다. 옛 화면의 누름도
 # 콜백에 닿고(Streamlit 은 지나간 위젯의 콜백 정보를 지우지 않는다), key 가 같으면 새로 그린 단추의
 # 인자로 불려 방금 남긴 글을 또 남기거나 방금 바꾼 답변 완료를 되돌린다. 같은 세대의
-# 누름이 두 회차에 겹쳐 오는 더블클릭은 `write_once` 가 세대마다 한 번만 쓴다 — 입력은
-# 그 앞에서 읽어 두고, 세대 올리기는 뒷정리의 맨 끝이다(그 앞에서 끊긴 콜백의 뒷정리를
-# 겹쳐 온 콜백이 잇는다).
+# 누름이 두 회차에 겹쳐 오는 더블클릭은 `write_once` 가 같은 입력(지문)마다 한 번만 쓴다 —
+# 입력은 그 앞에서 읽어 두고, 세대 올리기는 뒷정리의 맨 끝이다(그 앞에서 끊긴 콜백의 뒷정리를
+# 겹쳐 온 콜백이 잇는다). 끊긴 쓰기 뒤 글을 고쳐 누른 올리기는 지문이 달라 새로 쓴다.
 
 
 def _submit_post(database_path: str, generation: int) -> None:
@@ -162,6 +162,7 @@ def _submit_post(database_path: str, generation: int) -> None:
             lambda: repository.create_voc_post(
                 category=category, title=title, body=body, author=author
             ),
+            fingerprint=(category, title, body, author),
         )
     except BOOTSTRAP_ERRORS as exc:
         st.session_state[POST_FORM_ERROR_KEY] = bootstrap_error_message(exc)
@@ -195,6 +196,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
             generation_key,
             generation,
             lambda: repository.create_voc_reply(post_id=post_id, body=body, author=author),
+            fingerprint=(body, author),
         )
     except VocPostGoneError as exc:
         st.session_state[GONE_NOTICE_KEY] = (str(exc), body)
@@ -222,6 +224,7 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
             generation_key,
             generation,
             lambda: repository.set_voc_post_resolved(post_id, resolved=resolved),
+            fingerprint=resolved,
         )
     except VocPostGoneError as exc:
         st.session_state[GONE_NOTICE_KEY] = (str(exc), "")

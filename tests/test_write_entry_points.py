@@ -66,7 +66,7 @@ SOURCE = ROOT / "src" / "capa_simulation"
 
 # ------------------------------------------------------------------ 장부
 
-WRITE_ONCE = "write_once — 그린 회차의 세대마다 한 번"
+WRITE_ONCE = "write_once — 그린 회차의 세대·입력 지문마다 한 번"
 VERSION_CHECK = "버전 대조 — 편집 시작에 본 version·이름·지문·차례와 견줘 다르면 거부(T3)"
 SAME_REPLACE = "같은 내용 교체 — 공용 행·도면을 통째로 바꿔 두 번 써도 같은 상태"
 SELF_FILTER = "자체 거름 — 설비 마스터 편집본 지문"
@@ -657,3 +657,224 @@ def test_a_second_press_of_the_baseline_save_saves_once(
     assert "기준선을 저장했습니다 — 「겹친 기준선」" in _toasts(app)
     assert "저장하지 않았습니다" not in _toasts(app)
     assert app.session_state[_BASELINE_FORM_GENERATION_KEY] == 1
+
+
+# ------------------------------------------------------------------ 끊긴 쓰기 뒤의 다른 입력
+#
+# 쓴 뒤 **둘째 누름이 아닌** 조작(스피너 중 다른 단추·팝업 닫기·페이지 이동)이 회차를 끊으면
+# 표지와 든 결과는 남고 세대는 그대로다. 세대만 보던 표지는 그 뒤 다른 내용을 적어 누른 저장을
+# 「이미 썼다」 로 보고 쓰지 않은 채 옛 결과로 성공을 알렸다(2026-10-26 리뷰). 표지는 입력 지문도
+# 들어 새 입력은 새로 쓴다. 시험은 첫 쓰기가 끝나는 순간 그 회차에 멈춤을 걸고(`_SecondPress`),
+# 누르기 전 화면의 위젯 값으로 한 회차를 더 돌린 뒤(제출이 아닌 조작) 다른 입력으로 다시 누른다.
+
+
+def _press_and_cut(app: AppTest, button: Button) -> AppTest:
+    """`button` 을 누른 회차가 쓴 뒤 끊기고, 그 다음 회차는 누름이 아닌 조작의 회차다."""
+    before = app._tree.get_widget_states()
+    button.click()
+    app.run()
+    app._run(widget_state=before)
+    return _ok(app.run())
+
+
+def _sidebar_save_button(app: AppTest) -> Button:
+    return next(item for item in app.button if item.label == "신규 리비전 저장")
+
+
+def test_a_differently_named_sidebar_save_after_an_interrupted_one_writes(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사이드바 「신규 리비전 저장」 — 첫 저장 뒤 끊긴 세션에서 다른 이름으로 누른 저장이 쓰이지
+    않고 「신규 리비전 r2를 저장했습니다」 와 첫 저장 스냅샷 활성화로 끝났다."""
+    press = _SecondPress()
+    monkeypatch.setattr(FakeRepository, "save_revision", press.wrap(FakeRepository.save_revision))
+    app = _open_save(sidebar_app.run())
+    app.text_input(key=scenario_status.SAVE_REVISION_NAME_KEY).set_value("첫 저장안")
+    app = _ok(app.run())
+
+    app = _press_and_cut(app, _sidebar_save_button(app))
+    assert press.tries == 1
+    app.text_input(key=scenario_status.SAVE_REVISION_NAME_KEY).set_value("둘째 저장안")
+    app = _ok(app.run())
+    _sidebar_save_button(app).click()
+    app = _ok(app.run())
+
+    assert press.tries == 2
+    assert app.session_state["test_saved_revision_name"] == "둘째 저장안"
+    assert app.session_state["test_activation_path"] == "저장"
+    assert app.session_state[scenario_status.SAVE_FORM_GENERATION_KEY] == 1
+
+
+def test_a_same_named_sidebar_save_of_new_edits_after_an_interrupted_one_writes(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 이름이라도 그 사이 편집을 적용했으면(편집본 토큰이 바뀜) 새 저장이다 — 옛 스냅샷을
+    활성화하면 적용한 편집이 말없이 사라졌다."""
+    press = _SecondPress()
+    monkeypatch.setattr(FakeRepository, "save_revision", press.wrap(FakeRepository.save_revision))
+    original = sidebar_replacements()["ensure_active_scenario"]
+
+    def active(tables: object, version: int) -> dict[str, object]:
+        scenario: dict[str, object] = dict(original(tables, version))
+        scenario["content_token"] = st.session_state.get("test_content_token", "처음 편집본")
+        return scenario
+
+    with patch.object(scenario_status, "ensure_active_scenario", active):
+        app = _open_save(sidebar_app.run())
+        app.text_input(key=scenario_status.SAVE_REVISION_NAME_KEY).set_value("같은 이름")
+        app = _ok(app.run())
+        app = _press_and_cut(app, _sidebar_save_button(app))
+        app.session_state["test_content_token"] = "편집을 적용한 편집본"
+        app = _ok(app.run())
+        _sidebar_save_button(app).click()
+        app = _ok(app.run())
+
+    assert press.tries == 2
+    assert app.session_state[scenario_status.SAVE_FORM_GENERATION_KEY] == 1
+
+
+def test_a_sidebar_save_whose_activation_fails_says_it_saved_and_reloads_on_the_next_press(
+    sidebar_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """쓴 뒤 활성화가 실패하면 「저장하지 못했습니다」 가 아니라 저장했다고 알린다(리비전은 이미
+    DB 에 있다). 같은 입력으로 다시 누르면 다시 쓰지 않고 든 결과로 불러오기만 다시 한다."""
+    writes: list[str] = []
+    original_save = FakeRepository.save_revision
+
+    def counted(self: FakeRepository, *args: Any, **kwargs: Any) -> Any:
+        writes.append(str(kwargs["revision_name"]))
+        return original_save(self, *args, **kwargs)
+
+    monkeypatch.setattr(FakeRepository, "save_revision", counted)
+    activate = sidebar_replacements()["activate_saved_revision"]
+    attempts: list[int] = []
+
+    def flaky(snapshot: object) -> None:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("활성화 실패 대역")
+        activate(snapshot)
+
+    with patch.object(scenario_status, "activate_saved_revision", flaky):
+        app = _open_save(sidebar_app.run())
+        app.text_input(key=scenario_status.SAVE_REVISION_NAME_KEY).set_value("불러오기 실패안")
+        app = _ok(app.run())
+        _sidebar_save_button(app).click()
+        app = _ok(app.run())
+
+        errors = [str(item.value) for item in app.error]
+        assert any("신규 리비전 r2를 저장했지만" in text for text in errors), errors
+        assert not any("저장하지 못했습니다" in text for text in errors), errors
+        assert writes == ["불러오기 실패안"]
+
+        _sidebar_save_button(app).click()
+        app = _ok(app.run())
+
+    assert writes == ["불러오기 실패안"]
+    assert len(attempts) == 2
+    assert app.session_state["test_activation_path"] == "저장"
+    assert app.session_state[scenario_status.SAVE_FORM_GENERATION_KEY] == 1
+
+
+def _fill_clone(app: AppTest, name: str) -> None:
+    for widget in app.text_input:
+        if not str(widget.key or "").startswith("scenario_create_"):
+            continue
+        value = {"시나리오명": name, "원천 시뮬레이션 코드": "RACE-1"}.get(widget.label)
+        widget.set_value(value if value is not None else "끊긴 원천")
+
+
+def test_a_differently_named_clone_after_an_interrupted_one_creates_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시나리오 관리 「신규 시나리오 저장」 — 끊긴 첫 복제 뒤 다른 이름의 복제가 만들어지지 않고
+    첫 복제의 이름으로 성공이 떴다(2026-10-26 리뷰 — 브라우저 재현과 같은 꼴)."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script("app_pages/scenario_management.py", database_path, tmp_path / "eq.duckdb")
+    app = _ok(AppTest.from_string(script, default_timeout=120).run())
+    app = _ok(app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run())
+    _fill_clone(app, "끊긴 첫 복제")
+    press = _SecondPress()
+    monkeypatch.setattr(
+        DuckDBScenarioRepository,
+        "create_scenario",
+        press.wrap(DuckDBScenarioRepository.create_scenario),
+    )
+
+    app = _press_and_cut(
+        app, next(item for item in app.button if item.label == "신규 시나리오 저장")
+    )
+    _fill_clone(app, "끊긴 뒤 둘째 복제")
+    app = _ok(app.run())
+    next(item for item in app.button if item.label == "신규 시나리오 저장").click()
+    app = _ok(app.run())
+
+    assert press.tries == 2
+    names = {
+        item.scenario_name
+        for item in DuckDBScenarioRepository(database_path).list_scenarios(include_archived=True)
+    }
+    assert {"끊긴 첫 복제", "끊긴 뒤 둘째 복제"} <= names
+    assert _successes(app, "끊긴 뒤 둘째 복제") == 1
+    assert _successes(app, "끊긴 첫 복제") == 0
+
+
+# 붙여 쓴 표도 적는다 — 멈춤을 건 뒤의 세션 칸 접근은 끊기므로 멈춤 앞에 둔다.
+_AVAILABILITY_LOG = _AVAILABILITY_RACE.replace(
+    _AVAILABILITY_SAVE,
+    _AVAILABILITY_SAVE
+    + '        st.session_state.setdefault("race_saved", []).append(data.copy())\n',
+)
+
+
+def test_a_different_paste_after_an_interrupted_one_saves_it() -> None:
+    """표준 목표 「붙여넣기 적용」 — 끊긴 첫 붙여넣기 뒤 다른 표를 붙여 누른 적용이 쓰이지 않고
+    성공만 떴다(저장값은 첫 표 그대로)."""
+    st.cache_data.clear()
+    assert _AVAILABILITY_LOG.count("race_saved") == 1
+    script = STANDARD_TARGET_SCRIPT.replace(_AVAILABILITY_SAVE, _AVAILABILITY_LOG)
+    app = _ok(AppTest.from_string(script, default_timeout=60).run())
+    app = _ok(app.button(key="open_standard_target_availability_paste").click().run())
+    area = "standard_target_availability_clipboard_text"
+    app.text_area(key=area).set_value("공정\tWeeknum\t가용대수\nProcess-B\t26-W32\t3\n")
+
+    app = _press_and_cut(app, next(item for item in app.button if item.label == "붙여넣기 적용"))
+    app.text_area(key=area).set_value("공정\tWeeknum\t가용대수\nProcess-B\t26-W32\t7\n")
+    app = _ok(app.run())
+    next(item for item in app.button if item.label == "붙여넣기 적용").click()
+    app = _ok(app.run())
+
+    assert app.session_state["race_writes"] == 2
+    saved = app.session_state["race_saved"][-1]
+    assert saved["가용대수"].tolist() == [7]
+    assert _successes(app, "주차별 가용설비 최신본을 저장했습니다") == 1
+    st.cache_data.clear()
+
+
+@pytest.mark.usefixtures("_fresh_equipment_repository")
+def test_a_differently_named_baseline_after_an_interrupted_one_saves_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「기준선 저장」(콜백) — 끊긴 첫 저장 뒤 다른 이름으로 누른 저장이 쓰이지 않고 첫 기준선
+    이름으로 성공이 떴다."""
+    database_path, _ = _saved_database(tmp_path)
+    app = _run_shortening_page(database_path)
+    app = _ok(_name_input(app).set_value("끊긴 첫 기준선").run())
+    press = _SecondPress()
+    monkeypatch.setattr(
+        DuckDBEquipmentRepository,
+        "save_shortening_baseline",
+        press.wrap(DuckDBEquipmentRepository.save_shortening_baseline),
+    )
+
+    app = _press_and_cut(app, _save_button(app))
+    app = _ok(_name_input(app).set_value("끊긴 뒤 둘째 기준선").run())
+    _save_button(app).click()
+    app = _ok(app.run())
+
+    assert press.tries == 2
+    names = {
+        item.name for item in DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+    }
+    assert names == {"끊긴 첫 기준선", "끊긴 뒤 둘째 기준선"}
+    assert "기준선을 저장했습니다 — 「끊긴 뒤 둘째 기준선」" in _toasts(app)

@@ -1137,14 +1137,16 @@ def _render_branch(
     ):
         try:
             repository = get_equipment_repository(database_path)
-            # 같은 세대의 누름은 한 번만 만든다 — 겹쳐 온 둘째 회차는 쓰지 않고(같은 이름이라
-            # 거절됐다) 첫 회차가 만든 시나리오로 끊긴 뒷정리를 잇는다.
+            # 같은 세대·같은 입력의 누름은 한 번만 만든다 — 겹쳐 온 둘째 회차는 쓰지 않고(같은
+            # 이름이라 거절됐다) 첫 회차가 만든 시나리오로 끊긴 뒷정리를 잇는다. 끊긴 쓰기 뒤 다른
+            # 이름으로 누른 만들기는 새로 쓴다.
             written = write_once_value(
                 GENERATION_KEY,
                 branch_generation,
                 lambda: repository.clone_equipment_scenario(
                     revision.schedule_revision_id, name=new_name, created_by=created_by or None
                 ),
+                fingerprint=(revision.schedule_revision_id, new_name, created_by),
             )
         except BOOTSTRAP_ERRORS as exc:
             st.error(

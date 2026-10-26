@@ -902,11 +902,13 @@ def _paste_dialog() -> None:
         pasted = parse_weekly_availability_clipboard(
             clipboard_text, known_processes=process_options
         )
-        # 같은 세대의 누름은 한 번만 쓴다 — 겹쳐 온 둘째 회차는 쓰지 않고 뒷정리만 잇는다.
+        # 같은 세대·같은 붙여넣기의 누름은 한 번만 쓴다 — 겹쳐 온 둘째 회차는 쓰지 않고 뒷정리만
+        # 잇는다. 끊긴 쓰기 뒤 다른 표를 붙여 누른 적용은 새로 쓴다.
         written = write_once_value(
             AVAILABILITY_SAVE_GENERATION_KEY,
             paste_generation,
             lambda: equipment_repository.save_standard_target_availability(pasted),
+            fingerprint=clipboard_text,
         )
     except BOOTSTRAP_ERRORS as exc:
         st.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))

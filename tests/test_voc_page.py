@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.runtime.state import session_state_proxy
 from streamlit.runtime.state.safe_session_state import SafeSessionState
 from streamlit.testing.v1 import AppTest
@@ -701,3 +702,46 @@ def test_a_very_fast_second_press_on_the_old_reply_form_keeps_the_success(
     assert len(DuckDBScenarioRepository(database_path).list_voc_replies()) == 1
     shown = [message.value for message in app.success]
     assert shown == (["답변을 남겼습니다."] if trailing else [])
+
+
+def test_an_edited_post_after_an_interrupted_one_posts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """글을 올린 회차가 쓴 뒤 둘째 누름이 아닌 조작에 끊기면 세대는 그대로다. 그 뒤 글을 고쳐
+    누른 올리기를 세대만 보는 표지가 「이미 썼다」 로 보고 쓰지 않은 채 성공을 알리고 폼을
+    비웠다 — 고친 글이 말없이 사라졌다(2026-10-26 리뷰). 표지는 입력 지문도 들어 고친 글은 새로
+    올린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("검증자A")
+    app.text_input(key="voc_post_title").input("제목 A")
+    app.text_area(key="voc_post_body").input("내용 A")
+    app.run()
+    original = DuckDBScenarioRepository.create_voc_post
+    writes: list[str] = []
+
+    def cut_after_the_first(self: DuckDBScenarioRepository, **kwargs: Any) -> str:
+        post_id = original(self, **kwargs)
+        writes.append(str(kwargs["title"]))
+        if len(writes) == 1:
+            context = get_script_run_ctx()
+            assert context is not None and context.script_requests is not None
+            context.script_requests.request_stop()
+        return post_id
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "create_voc_post", cut_after_the_first)
+    before = app._tree.get_widget_states()
+    next(button for button in app.button if button.label == "글 올리기").click()
+    app.run()
+    app._run(widget_state=before)
+    app.run()
+    assert writes == ["제목 A"]
+
+    app.text_input(key="voc_post_title").input("제목 B")
+    app.text_area(key="voc_post_body").input("고친 내용 B")
+    _click(app, "글 올리기")
+
+    assert not app.exception
+    assert writes == ["제목 A", "제목 B"]
+    assert sorted(_posts(database_path)) == [("제목 A", False), ("제목 B", False)]
+    assert "글을 올렸습니다." in [message.value for message in app.success]
