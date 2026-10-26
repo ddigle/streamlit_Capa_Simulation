@@ -106,6 +106,7 @@ from capa_simulation.components.equipment_data_workspace import (
     settle_grid_toasts,
     stale_delete_lock,
     stale_save_reasons,
+    stale_save_refusal,
     stamp_layout_role,
 )
 from capa_simulation.components.equipment_data_workspace import (
@@ -125,6 +126,7 @@ from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
     save_fields_from_state,
 )
+from capa_simulation.components.equipment_scenario_status import render_load_latest_button
 from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     IMPORT_DIALOG,
@@ -250,6 +252,8 @@ MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
 # 저장 구획의 단추·결과 칸.
 SAVE_BUTTON_KEY: Final = "equipment_master_save_v1"
+# 낡은 세션 저장 거절 곁 「최신 rN 불러오기(변경 버림)」.
+LOAD_LATEST_BUTTON_KEY: Final = "equipment_master_load_latest_v1"
 UNDO_BUTTON_KEY: Final = "equipment_master_undo_v1"
 # 「한 단계 되돌리기」 누름 세대(정수)·쓰기 표지 이름. 단추는 그린 회차의 값을 콜백 인자로 받아,
 # 지금 값과 다르거나 앞 되돌리기의 창 안이면 더블클릭의 둘째 누름이라 아무것도 되돌리지
@@ -1280,7 +1284,14 @@ def _render_save_section(
                 "drawn_base": context.base,
             },
         )
-    render_flash(SAVE_RESULT_KEY)
+    slot = render_flash(SAVE_RESULT_KEY)
+    # 낡은 세션의 낡기 전 편집(버려질 칸·지운 호기)이 저장을 막으면 그 거절 곁에서 최신으로 옮긴다 —
+    # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다.
+    if stale_save_refusal(frames, basis) is not None:
+        with slot:
+            render_load_latest_button(
+                str(repository.database_path), session, key=LOAD_LATEST_BUTTON_KEY
+            )
 
 
 def _render_new_unit(

@@ -1003,7 +1003,7 @@ def test_a_stale_popup_save_names_the_schedule_cells_to_undo_before_and_after_th
     app.run()
     assert not app.exception, [item.message for item in app.exception]
 
-    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1, spots="EQ\\-01 시나리오 메모")
     warnings = [str(item.value) for item in app.warning]
     assert any("공통 칸만 저장됩니다" in text for text in warnings)
     assert line in warnings
@@ -1209,3 +1209,56 @@ def test_the_popup_save_note_names_the_small_editors_apply_button(tmp_path: Path
     )
     assert note.endswith(UNAPPLIED_SMALL_EDITS_NOTE)
     assert not any("보기 적용" in caption or "폼에서" in caption for caption in captions)
+
+
+def test_a_stale_popup_save_offers_loading_the_latest_beside_the_refusal(tmp_path: Path) -> None:
+    """낡은 세션 팝업 「저장」 의 거절 곁에 「최신 rN 불러오기(변경 버림)」 — 누르면 세션이 그 설비
+    시나리오 최신으로 옮고 저장 안 한 편집은 버려지며 사이드바 줄이 불러왔다고 알린다(E2E #79 —
+    거절 글만 있어 사이드바 팝업 「불러오기」 로 다시 찾아가야 했다)."""
+    from capa_simulation.components.equipment_data_workspace import BUFFER_KEY
+    from capa_simulation.components.equipment_scenario_status import (
+        EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        FLASH_KEY,
+        LOAD_LATEST_BUTTON_KEY,
+        SAVE_MODE,
+    )
+
+    repository = _seeded(tmp_path)
+    clone = _clone(repository, "셋업 실무")
+    app = AppTest.from_function(
+        _popup_with_edits,
+        args=(str(repository.database_path), Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+        default_timeout=60,
+    )
+    _select(app, clone.equipment_scenario_id, clone.latest_schedule_revision_id)
+    app.session_state["edits"] = [("EQ-01", "시나리오 메모", "낡기 전 메모")]
+    app.run()
+    theirs = _session(repository, clone.equipment_scenario_id)
+    repository.save_equipment(
+        _request(
+            theirs,
+            clone.equipment_scenario_id,
+            equipment=_set(theirs.equipment, "EQ-02", "Qual일정", "2026-09-01"),
+        )
+    )
+    app.session_state[EQUIPMENT_SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    button = app.button(key=LOAD_LATEST_BUTTON_KEY)
+    assert button.label == "최신 r2 불러오기(변경 버림)"
+    button.click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    latest = next(
+        item
+        for item in repository.list_equipment_scenarios()
+        if item.equipment_scenario_id == clone.equipment_scenario_id
+    )
+    assert app.session_state[SELECTION_KEY] == {
+        "scenario_id": clone.equipment_scenario_id,
+        "schedule_revision_id": latest.latest_schedule_revision_id,
+    }
+    assert "r2" in app.session_state[FLASH_KEY] and "불러왔습니다" in app.session_state[FLASH_KEY]
+    memos = app.session_state[BUFFER_KEY][1]["시나리오 메모"].astype("string")
+    assert not memos.eq("낡기 전 메모").fillna(False).any()

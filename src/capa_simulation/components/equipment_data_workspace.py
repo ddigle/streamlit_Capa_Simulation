@@ -130,7 +130,7 @@ from capa_simulation.services.equipment_grid import (
     move_ids,
     prune_overlay,
     renamed_saved_ids,
-    stale_scenario_edits,
+    stale_scenario_edit_spots,
     undo_from_state,
     undo_to_state,
 )
@@ -3104,22 +3104,39 @@ def stale_delete_lock(basis: EquipmentSaveBasis) -> str:
 # 전에 고칠 것」 줄(그 아래 목록이 「저장 전 변경」 이다)로, 표 밖 저장 자리(사이드바 설비 시나리오
 # 팝업 「저장」·Space 「배치 저장」)는 경고·거부 글로 같은 판정(`stale_save_reasons`)을 보인다.
 STALE_DELETED_UNITS_TAB = (
-    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 되살리거나 최신을 불러오세요"
+    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다(버려질 호기: {names}) — 되살리거나 "
+    "최신을 불러오세요"
 )
 STALE_SCENARIO_EDITS_TAB = (
     "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
-    "않습니다 — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 "
-    "불러와 다시 고칩니다"
+    "않습니다(버려질 칸: {spots}) — 아래 목록에서 그 칸을 되돌리면(↶) 공통 칸은 저장됩니다. 일정을 "
+    "살리려면 최신을 불러와 다시 고칩니다"
 )
 STALE_DELETED_UNITS_ELSEWHERE = (
-    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다 — 가용설비 현황 › 설비 마스터에서 "
-    "되살리거나 최신을 불러오세요."
+    "낡은 세션이라 지운 호기 {units:,}대는 저장되지 않습니다(버려질 호기: {names}) — 가용설비 "
+    "현황 › 설비 마스터에서 되살리거나 최신을 불러오세요."
 )
 STALE_SCENARIO_EDITS_ELSEWHERE = (
     "낡은 세션이 되기 전에 고친 일정·시나리오 메모 칸 {cells:,}개(호기 {units:,}대)는 저장되지 "
-    "않습니다 — 가용설비 현황 › 설비 마스터 「저장 전 변경」 에서 그 칸을 되돌리면(↶) 공통 칸은 "
-    "저장됩니다. 일정을 살리려면 최신을 불러와 다시 고칩니다."
+    "않습니다(버려질 칸: {spots}) — 가용설비 현황 › 설비 마스터 「저장 전 변경」 에서 그 칸을 "
+    "되돌리면(↶) 공통 칸은 저장됩니다. 일정을 살리려면 최신을 불러와 다시 고칩니다."
 )
+# 버려질 칸·호기 목록에 이름을 적는 호기 수(나머지는 「외 n대」).
+STALE_LISTED_UNITS = 3
+
+
+def stale_spots_words(spots: Sequence[tuple[str, Sequence[str]]]) -> str:
+    """버려질 칸 목록 — 「EQ-01 반입일정·Qual일정, EQ-02 시나리오 메모 외 2대」(앞 셋)."""
+    shown = ", ".join(f"{name} {'·'.join(columns)}" for name, columns in spots[:STALE_LISTED_UNITS])
+    rest = len(spots) - STALE_LISTED_UNITS
+    return f"{shown} 외 {rest:,}대" if rest > 0 else shown
+
+
+def stale_names_words(names: Sequence[str]) -> str:
+    """버려질 호기 목록 — 「EQ-03, EQ-04 외 1대」(앞 셋)."""
+    shown = ", ".join(names[:STALE_LISTED_UNITS])
+    rest = len(names) - STALE_LISTED_UNITS
+    return f"{shown} 외 {rest:,}대" if rest > 0 else shown
 
 
 def stale_save_reasons(
@@ -3136,20 +3153,35 @@ def stale_save_reasons(
     불러오면 공통 편집까지 잃는다. 그래서 저장 전에 그 칸과 고칠 길(그 칸을 되돌리면 공통 칸은
     저장된다)을 알린다. 세 저장 길이 이 한 판정을 쓴다 — 설비 마스터 탭의 고칠 것 줄(`in_tab`),
     사이드바 팝업 「저장」 의 경고 글, 저장(`save_equipment_buffer`)의 거부 글. 견줌은 「바뀐 칸」
-    표지와 같은 글자 견줌(`stale_scenario_edits`)이다. 비가동 일정 표의 낡기 전 편집은 세지 않는다
-    (저장소가 거부한다)."""
+    표지와 같은 글자 견줌(`stale_scenario_edit_spots`)이고, 버려질 칸·호기는 앞 셋까지 이름을 적는다
+    (나머지는 「외 n대」). 탭 줄은 평문 자리(설비 마스터 표)라 이름을 날로, 표 밖 줄은 마크다운
+    자리(경고·거부 글)라 이름마다 `literal_markdown` 으로 막는다. 비가동 일정 표의 낡기 전 편집은
+    세지 않는다(저장소가 거부한다)."""
     deleted_line, edits_line = (
         (STALE_DELETED_UNITS_TAB, STALE_SCENARIO_EDITS_TAB)
         if in_tab
         else (STALE_DELETED_UNITS_ELSEWHERE, STALE_SCENARIO_EDITS_ELSEWHERE)
     )
+
+    def mark(name: str) -> str:
+        return name if in_tab else literal_markdown(name)
+
     lines: list[str] = []
-    deleted = len(grid_index(master, saved_master, renames).deleted)
-    if deleted:
-        lines.append(deleted_line.format(units=deleted))
-    cells, units = stale_scenario_edits(master, saved_master, renames)
-    if cells:
-        lines.append(edits_line.format(cells=cells, units=units))
+    index = grid_index(master, saved_master, renames)
+    deleted = [mark(name) for row_id in index.deleted if (name := index.saved_name(row_id))]
+    if index.deleted:
+        lines.append(
+            deleted_line.format(units=len(index.deleted), names=stale_names_words(deleted))
+        )
+    spots = [
+        (mark(name), columns)
+        for name, columns in stale_scenario_edit_spots(master, saved_master, renames)
+    ]
+    if spots:
+        cells = sum(len(columns) for _, columns in spots)
+        lines.append(
+            edits_line.format(cells=cells, units=len(spots), spots=stale_spots_words(spots))
+        )
     return lines
 
 

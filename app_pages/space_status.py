@@ -54,6 +54,7 @@ from capa_simulation.components.equipment_scenario_status import (
     equipment_value_label,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
+    render_load_latest_button,
     unscheduled_notice,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -321,6 +322,8 @@ SWITCH_TO_OFFICIAL_KEY = "space_switch_to_official"
 # 층 배치 편집이 잠긴 회차(남이 그 시나리오에 다른 배치를 저장·가정이던 때 리비전)의 「최신 rM
 # 불러오기」, 꺼진 「배치 편집」 토글, 저장 안 한 상자의 「배치 변경만 버리기」.
 LOAD_LATEST_KEY = "space_load_latest"
+# 「배치 저장」 의 낡은 세션 거절 곁 「최신 rN 불러오기(변경 버림)」.
+SAVE_LOAD_LATEST_KEY = "space_save_load_latest"
 LOCKED_EDIT_TOGGLE_KEY = "space_layout_edit_mode_locked"
 DISCARD_LAYOUT_BUTTON_KEY = "space_layout_discard_layout"
 # 도면 「색 기준」(공정구분 | 투자Capa | 필요 단축)과 그 기준의 그룹 체크(2026-10-16 사용자 결정).
@@ -1212,6 +1215,10 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> None:
             _render_layout_warnings(frames, marks)
         if isinstance(error, str):
             st.error(markdown_safe_tildes(f"저장하지 못했습니다: {error}"))
+            # 낡은 세션의 저장 거절 곁에서 최신으로 옮긴다(설비 마스터 탭·사이드바 팝업과 같음).
+            render_load_latest_button(
+                equipment_database_path, equipment_session, key=SAVE_LOAD_LATEST_KEY
+            )
         note_key = f"{SAVE_NOTE_KEY}_{int(st.session_state.get(SAVE_NOTE_NONCE_KEY, 0))}"
         # 메모는 설비 리비전에만 남는다. 설비 쪽 차이가 하나도 없는(FAB 만 바뀐) 저장은 리비전을
         # 만들지 않으니 칸을 두지 않는다.

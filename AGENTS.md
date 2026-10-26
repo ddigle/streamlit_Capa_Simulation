@@ -1499,8 +1499,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 표 단위로 막는 것(기존 보유대수·비가동 일정 검증·예시 행·모듈 바둑판·가정 묶음 거부·
-    낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edits`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
-    고칠 것」 줄이다. 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
+    낡은 세션의 지운 호기·낡기 전에 고친 시나리오 칸 — `stale_scenario_edit_spots`, 칸을 되돌리면 공통 칸은 저장된다)은 「저장하기 전에
+    고칠 것」 줄이다. 낡은 세션의 두 줄은 버려질 호기·칸 이름을 앞 셋까지 적고(「버려질 칸: EQ-01 반입일정·Qual일정, … 외 n대」),
+    세 저장 자리(탭 저장 구획·팝업 「저장」·Space 저장 오류 곁)에 「최신 rN 불러오기(변경 버림)」 단추가 선다
+    (`equipment_scenario_status.render_load_latest_button` — 팝업 「불러오기」 와 같은 `select_equipment_scenario`, 공통 칸 편집도
+    버린다고 풍선이 말한다). 낡은 세션의 뒤 둘은 세 저장 길이 한 판정(`equipment_data_workspace.stale_save_reasons`)을 쓴다 — 탭은 이
     고칠 것 줄로, 사이드바 팝업 「저장」 은 경고 글로(`stale_save_refusal`) 보이고, 저장은 `save_equipment_buffer` 의 설비 쪽
     저장 전 검사(`_save_equipment_frames` 첫머리 — FAB 전체 배치 대기분은 별도 쓰기라 그 앞에서 저장되고 거부 글이 함께
     말한다)가 같은 글로 막는다(Space 「배치 저장」 도 — 저장소의 「다른 사용자가 먼저 …」 거부는 고칠 칸을 말하지 않고 다시

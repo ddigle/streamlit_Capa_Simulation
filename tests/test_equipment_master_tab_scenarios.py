@@ -845,7 +845,7 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     _ok(app.run())
 
-    line = STALE_SCENARIO_EDITS.format(cells=1, units=1)
+    line = STALE_SCENARIO_EDITS.format(cells=1, units=1, spots="EQ-01 시나리오 메모")
     changes = last(grid, emg.side_key("changes"))
     assert any(line in " ".join(map(str, item)) for item in changes["errors"])
     assert any("「저장 전 변경」 에서 되돌려야" in text for text in _texts(app, "warning"))
@@ -861,6 +861,47 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     _save(app)
     assert len(repository.list_revisions()) == before + 1
     assert _buffer_value(app, "EQ-01", "설비이력") == "공통 이력"
+
+
+def test_a_stale_save_refusal_in_the_tab_sits_beside_a_load_latest_button(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """낡은 세션의 낡기 전 편집이 「리비전 저장」 을 막으면 저장 구획에 「최신 rN 불러오기(변경
+    버림)」 가 선다 — 누르면 세션이 그 설비 시나리오 최신으로 옮고 편집은 버려진다(E2E #79). 버려질
+    칸은 「저장하기 전에 고칠 것」 줄이 이름으로 적는다. 막을 편집이 없으면 단추도 없다."""
+    from capa_simulation.components.equipment_master_tab import LOAD_LATEST_BUTTON_KEY
+
+    repository, setup = _two_scenarios(tmp_path)
+    app = _page(repository, setup)
+    _load_all(app, grid)
+    send_ops(
+        app,
+        grid,
+        {"op": "cell", "id": "s:EQ-01", "col": "시나리오 메모", "text": "낡기 전 메모"},
+    )
+    theirs = _session(repository, setup)
+    repository.save_equipment(
+        _request(theirs, setup, equipment=_set(theirs.equipment, "EQ-02", "X좌표", 70.0))
+    )
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    _ok(app.run())
+    changes = last(grid, emg.side_key("changes"))
+    assert any(
+        "버려질 칸: EQ-01 시나리오 메모" in " ".join(map(str, item)) for item in changes["errors"]
+    )
+
+    latest = _scenario(repository, setup)
+    button = app.button(key=LOAD_LATEST_BUTTON_KEY)
+    assert button.label == f"최신 r{latest.latest_revision_no} 불러오기(변경 버림)"
+    button.click()
+    _ok(app.run())
+
+    assert app.session_state[SELECTION_KEY] == {
+        "scenario_id": setup,
+        "schedule_revision_id": latest.latest_schedule_revision_id,
+    }
+    assert str(_buffer_value(app, "EQ-01", "시나리오 메모")) != "낡기 전 메모"
+    assert not any(item.key == LOAD_LATEST_BUTTON_KEY for item in app.button)
 
 
 def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_tab(

@@ -53,6 +53,7 @@ from capa_simulation.components.equipment_save_fields import (
     render_equipment_save_fields,
 )
 from capa_simulation.components.equipment_scenario_management import render_legacy_trace_goto
+from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -117,6 +118,8 @@ FLOOR_DRAFT_DISCARD_NOTE = (
 )
 LOAD_BUTTON_KEY = "sidebar_equipment_load_revision"
 SAVE_BUTTON_KEY = "sidebar_equipment_save"
+# 팝업 「저장」 구획의 낡은 세션 「최신 rN 불러오기(변경 버림)」.
+LOAD_LATEST_BUTTON_KEY = "sidebar_equipment_load_latest"
 SAVE_NOTE_KEY = "sidebar_equipment_save_note"
 # 메모 칸 key 세대 — 저장에 성공한 회차에만 올라 다음에 빈 칸으로 선다(닫힌 팝업의 칸은 세션에 빈
 # 값을 적어도 브라우저가 옛 값을 되보낸다 — `scenario_status.save_field_key` 와 같은 까닭).
@@ -583,6 +586,64 @@ def loaded_revision_message(scenario_name: str, revision_no: int) -> str:
     return f"설비 시나리오 「{literal_markdown(scenario_name)}」 {revision} 불러왔습니다."
 
 
+# 낡은 세션 저장 거절 곁의 「최신 rN 불러오기(변경 버림)」 실패 글 — 다음 회차 그 단추 아래에
+# 한 번(`flash` 한 칸).
+LOAD_LATEST_ERROR_KEY = "equipment_load_latest_error_v1"
+
+
+def load_latest_label(latest_no: int) -> str:
+    return f"최신 r{latest_no} 불러오기(변경 버림)"
+
+
+def render_load_latest_button(database_path: str, session: EquipmentSession, *, key: str) -> None:
+    """낡은 세션의 저장 거절 곁 「최신 rN 불러오기(변경 버림)」 — 세션을 그 설비 시나리오의 최신
+    일정 리비전으로 옮기고 저장 안 한 설비 편집은 모두 버린다(팝업 「불러오기」 와 같은
+    `select_equipment_scenario`, 저장 안 한 FAB 전체 배치는 남는다). 다시 불러오면 무엇을 잃는지는
+    곁의 거절 글(버려질 칸)이 말하고, 단추 풍선이 공통 칸 편집도 함께 버린다고 적는다. 낡은 세션이
+    아니면 그리지 않는다(남은 실패 글도 걷는다 — 낡지 않은 세션에는 뜻이 없다)."""
+    scenario = session.scenario
+    latest_no = session.latest_revision_no
+    if (
+        not session.stale
+        or scenario is None
+        or latest_no is None
+        or scenario.latest_schedule_revision_id is None
+    ):
+        st.session_state.pop(LOAD_LATEST_ERROR_KEY, None)
+        return
+    st.button(
+        load_latest_label(latest_no),
+        key=key,
+        icon=":material/download:",
+        help=(
+            "저장하지 않은 설비 편집(공통 칸 편집 포함)을 모두 버리고 이 설비 시나리오의 최신 "
+            f"r{latest_no} 위에서 다시 엽니다 — 공통 칸 편집을 살리려면 버려질 칸을 되돌려 먼저 "
+            "저장합니다."
+        ),
+        on_click=_load_latest,
+        args=(
+            database_path,
+            scenario.equipment_scenario_id,
+            scenario.latest_schedule_revision_id,
+            scenario.scenario_name,
+            latest_no,
+        ),
+    )
+    render_flash(LOAD_LATEST_ERROR_KEY)
+
+
+def _load_latest(
+    database_path: str, scenario_id: str, revision_id: str, scenario_name: str, latest_no: int
+) -> None:
+    """「최신 rN 불러오기(변경 버림)」 콜백 — 옮기면 사이드바 줄 알림, 못 옮기면 단추 아래 한 줄."""
+    failure = select_equipment_scenario(database_path, scenario_id, revision_id, discard=True)
+    if failure is not None:
+        queue_flash(LOAD_LATEST_ERROR_KEY, markdown_safe_tildes(failure), kind="error")
+        return
+    close_equipment_scenario_dialog()
+    st.session_state[FLASH_KEY] = loaded_revision_message(scenario_name, latest_no)
+
+
 def _render_save(database_path: str, session: EquipmentSession) -> None:
     """저장 구획 — 지금 편집본을 이 설비 시나리오에(바뀐 쪽만). 작은 편집표(기존 보유대수·비가동
     일정)에서 아직 「편집본에 적용」 하지 않은 편집은 편집본에 없어 저장되지 않는다."""
@@ -607,6 +668,7 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         refusal = stale_save_refusal(buffer, basis)
         if refusal is not None:
             st.warning(markdown_safe_tildes(refusal), icon=":material/block:")
+        render_load_latest_button(database_path, session, key=LOAD_LATEST_BUTTON_KEY)
     if not has_changes:
         st.caption("저장할 변경이 없습니다.")
     note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")
