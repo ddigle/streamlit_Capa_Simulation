@@ -4000,7 +4000,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   그리는 자리에서 막고, rerun 건너 그리는 성공 글(`queue_flash`)은 Space 가 담을 때 막는다(`_queue_space_flash` —
   `tests/test_space_layout_overlay_page.py`, E2E r3). 사이드바 설비 시나리오 줄의 팝업 저장 알림·세션 이동 알림
   (`session.notice`)과 시나리오 관리 구획의 세션 이동 알림, Space 층 끄기 확인의 가정 배치 덧줄도 그리는 자리에서 막는다
-  (`tests/test_equipment_scenario_layout_management.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
+  (`tests/test_equipment_scenario_layout_management.py`). 필요 단축 일정 기준선 이름(저장·지우기 알림 토스트·「기준선 지우기」
+  확인 글)은 `literal_markdown`, 그 알림에 실리는 저장·지우기 실패 예외 글은 `markdown_safe_tildes` 다
+  (`tests/test_shortening_progress_tab.py`). Guide 원문(`guides/*.md`)은 `st.markdown` 으로 그대로 가므로 원문에서 `\~` 로 막는다
   (`tests/test_page_guide.py` 가 모든 Guide 를 본다).
 
 ### 스크립트와 컴포넌트
