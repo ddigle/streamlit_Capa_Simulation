@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
@@ -78,6 +79,7 @@ from capa_simulation.components.equipment_scenario_status import (
     unscheduled_notice,
 )
 from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON_KEY
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.pick_edit_table import (
     TableDraft,
     draft_session_key,
@@ -179,6 +181,42 @@ def test_baseline_saving_is_refused_off_the_official_pair_with_two_reasons() -> 
     refusal = baseline_equipment_refusal(unpublished)
     assert refusal is not None and refusal.startswith("발행하지 않은 리비전(「운영 일정」 r14")
     assert "공식은 공식 v3" in refusal
+
+
+def test_the_baseline_refusal_keeps_the_scenario_name_as_written() -> None:
+    """거절 글은 「기준선 저장」 팝오버의 `st.info`·토스트(마크다운)로 그린다 — 「셋업~실무~A」 의
+    물결표 짝이 지움선이 되지 않게 이름을 막는다(E2E 2026-10-26). 두 갈래 모두다."""
+    name = "셋업~실무~A"
+    catalog = EquipmentScenarioCatalog(
+        scenarios=(
+            EquipmentScenarioSummary(
+                "operations",
+                name,
+                "ACTIVE",
+                list_order=1,
+                latest_schedule_revision_id="s14",
+                latest_revision_no=14,
+                revision_count=14,
+            ),
+            EquipmentScenarioSummary(
+                "setup",
+                name,
+                "ACTIVE",
+                latest_schedule_revision_id="b4",
+                latest_revision_no=4,
+                revision_count=4,
+            ),
+        ),
+        latest_release=EquipmentRelease(3, "operations", "s12", datetime(2026, 10, 24)),
+    )
+    for session in (
+        EquipmentSession(catalog, catalog.scenarios[1], "b4"),
+        EquipmentSession(catalog, catalog.scenarios[0], "s14"),
+    ):
+        refusal = baseline_equipment_refusal(session)
+        assert refusal is not None
+        assert f"「{literal_markdown(name)}」" in refusal
+        assert not re.search(r"(?<!\\)~", refusal)
 
 
 def test_the_shortening_basis_carries_the_label_and_the_compare_note() -> None:
