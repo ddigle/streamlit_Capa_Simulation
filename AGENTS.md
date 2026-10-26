@@ -541,7 +541,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
-    CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다.
+    CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 편 상태는 기억 칸(`remembered_expander`)이라
+    다른 화면에 다녀와도 접히지 않는다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
   - 계산에 닿지 않는다 — 시나리오·조회기간을 읽지 않고 `load_page_context()` 를 부르지 않는다.
