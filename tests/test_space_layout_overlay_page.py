@@ -347,6 +347,74 @@ def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(
     assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
 
 
+def _settled_old_official(tmp_path: Path) -> tuple[DuckDBEquipmentRepository, str, str]:
+    """「셋업 실무」 r2 의 차이(EQ-01 X=50)를 공식에서도 같은 자리로 옮긴 뒤 r2 를 발행한 저장소 —
+    발행이 차이를 비운 정리 리비전 r3 을 공식으로 냈다. (저장소, 셋업 id, 옛 r2 id)."""
+    repository, setup = _overlay(tmp_path)
+    overlaid = _scenario(repository, setup).latest_schedule_revision_id
+    assert overlaid is not None
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.publish_equipment_release(
+        overlaid, released_by=None, note=None, expected_latest_release_no=release.release_no
+    )
+    newest = _scenario(repository, setup)
+    assert newest.latest_revision_no == 3 and newest.latest_layout_unit_count == 0
+    return repository, setup, overlaid
+
+
+def test_an_old_official_revision_whose_difference_now_matches_says_it_once(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r5 — 가정이던 때의 차이가 지금 공식과 같아졌고 정리는 최신 r3 에서 끝났다. 옛 r2 를 연
+    머리 알림은 「공식과 다른 배치(저장된 차이)를 담고 있습니다」 와 「공식과 같아진 것은 다음
+    저장·발행 때 정리됩니다」 를 한 줄에 붙여 서로 어긋나게 말하지 않고, 저장된 차이가 지금 공식과
+    같다는 것 하나만 말한다(그리는 배치도 공식과 같다)."""
+    _, setup, overlaid = _settled_old_official(tmp_path)
+    app = _ok(_space(tmp_path, setup, overlaid).run())
+
+    texts = _texts(app)
+    head = [text for text in texts if "가정이던 때의 배치안" in text]
+    assert len(head) == 1, texts
+    assert "이 리비전에 저장된 배치 차이(호기 1대)는 지금 공식과 같습니다" in head[0], head
+    assert not any("공식과 다른 배치" in text for text in texts), texts
+    assert not any("정리됩니다" in text for text in texts), texts
+    assert not any("가정이던 때의 배치안" in str(item.value) for item in app.info)
+    assert _x_of(_viewer(editor_calls), "EQ-01") == 50.0
+
+
+def test_an_old_official_revision_tail_does_not_promise_a_cleanup(tmp_path: Path) -> None:
+    """공식 시나리오의 옛 리비전(가정이던 때)은 불변이라 「다음 저장·발행 때 정리됩니다」 가 맞지
+    않는다 — 실효 차이가 남고 저장된 행 일부만 공식과 같아졌으면 꼬리는 그 나머지가 지금 공식과
+    같다고만 적는다(E2E r5)."""
+    from dataclasses import replace
+
+    from capa_simulation.components.space_floor_layout import space_layout_notices
+    from capa_simulation.equipment_scenario_activation import EquipmentSession
+
+    repository, setup, overlaid = _settled_old_official(tmp_path)
+    snapshot = _session(repository, setup, overlaid)
+    assert snapshot.schedule is not None
+    # 저장된 도면 요소 2개 가운데 1개만 지금도 공식과 다르다(실효 1).
+    snapshot = replace(snapshot, schedule=replace(snapshot.schedule, layout_mark_count=2))
+    catalog = repository.load_scenario_catalog()
+    session = EquipmentSession(catalog, catalog.scenario(setup), overlaid, snapshot=snapshot)
+    assert not session.is_assumption
+
+    ((line, kind), *_) = space_layout_notices(session, (1, 0))
+
+    assert kind == "info"
+    assert line.startswith("이 리비전은 공식과 다른 배치(도면 요소 1개)를 담고 있습니다"), line
+    assert line.endswith("(저장된 차이 호기 1대·요소 2개 가운데 나머지는 지금 공식과 같습니다)"), (
+        line
+    )
+    assert "정리됩니다" not in line
+
+
 # 물결표가 둘인 설비 시나리오 이름 — 막지 않으면 「가정<del>R3</del>X」 로 그려진다. 막힌 꼴은
 # `\~`(마크다운이 물결표 글자 그대로 그린다)다.
 TILDE_NAME = "가정~R3~X"

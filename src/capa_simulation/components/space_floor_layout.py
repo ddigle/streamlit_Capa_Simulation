@@ -102,7 +102,9 @@ def space_layout_notices(
     """Space 머리 알림 칸의 배치 줄 — (글, 꼴 "info"|"caption") 차례(설계 8-2). 역할이 아니라
     **그리는 스냅샷**으로 정한다 — 합친 본문 캐시는 역할을 키에 못 담아, 공식 시나리오의 가정이던
     때 리비전도 그 차이가 그대로 그려진다(검토 M8). `floor_differences` 는 도면 요소·Main 설비명
-    위치 실효 수(`floor_layout_differences`)다."""
+    위치 실효 수(`floor_layout_differences`)다. 공식 시나리오의 그 옛 리비전은 실효 차이가
+    있으면 「공식과 다른 배치」 info, 저장된 차이가 모두 지금 공식과 같으면 그 사실 하나만
+    캡션으로 적는다."""
     snapshot = session.snapshot
     if snapshot is None or session.unmerged:
         return []
@@ -129,21 +131,38 @@ def space_layout_notices(
     # 공통 대장에서 지운 호기의 행(`layout_orphans`)은 「공식과 같아진」 것이 아니다 — 아래 따로 선
     # 줄(「지운 호기의 배치 차이 n행은 버렸습니다」)이 말하므로 꼬리에서 뺀다(E2E r3).
     live_units = max(stored_units - snapshot.layout_orphans, 0)
-    if (live_units and not difference.units) or stored_marks > marks or stored_labels > labels:
-        stored = layout_counts_words(live_units, stored_marks, stored_labels)
+    settled = bool(
+        (live_units and not difference.units) or stored_marks > marks or stored_labels > labels
+    )
+    stored = layout_counts_words(live_units, stored_marks, stored_labels)
+    if settled:
         tail = f"(저장된 차이 {stored} — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)"
     lines: list[tuple[str, str]] = []
     name = quoted(session.scenario_name, empty="이 설비 시나리오")
     if not session.is_assumption:
-        # 공식 설비 시나리오의 옛 리비전 — 그 시나리오가 가정이던 때 저장한 배치안이다.
-        lines.append(
-            (
-                f"이 리비전은 공식과 다른 배치({' · '.join(parts) or '저장된 차이'})를 담고 "
-                f"있습니다 — {name}{subject_particle(session.scenario_name or name)} 가정이던 때의 "
-                f"배치안입니다.{tail}",
-                "info",
-            )
+        # 공식 설비 시나리오의 옛 리비전 — 그 시나리오가 가정이던 때 저장한 배치안이다. 리비전은
+        # 불변이고 정리는 최신에서 하므로(정리 발행·「배치 차이 모두 지우기」) 「다음 저장·발행 때
+        # 정리됩니다」 를 적지 않는다. 실효 차이가 없으면 「공식과 다른 배치」 라 하지 않고 저장된
+        # 차이가 지금 공식과 같다는 것 하나만 말한다(E2E r5 — 두 말이 한 줄에 붙어 어긋났다).
+        origin = (
+            f"{name}{subject_particle(session.scenario_name or name)} 가정이던 때의 배치안입니다."
         )
+        if parts:
+            rest = f"(저장된 차이 {stored} 가운데 나머지는 지금 공식과 같습니다)" if settled else ""
+            lines.append(
+                (
+                    f"이 리비전은 공식과 다른 배치({' · '.join(parts)})를 담고 있습니다 — "
+                    f"{origin}{rest}",
+                    "info",
+                )
+            )
+        else:
+            same = (
+                f"이 리비전에 저장된 배치 차이({stored})는 지금 공식과 같습니다"
+                if stored
+                else "이 리비전의 배치는 공식과 같습니다"
+            )
+            lines.append((f"{same} — {origin}", "caption"))
     elif parts:
         lines.append((f"가정 배치 · {' · '.join(parts)}{tail}", "info"))
     else:
