@@ -274,15 +274,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         "한 저장의 표시명 실수 여러 줄(dict) — 알림 하나가 아니다. 저장 성공 칸"
         '(`render_flash("display_order_flash")` 가 돌려준 칸) 안에 그려 자리는 그 칸이 고정한다'
     ),
-    (
-        "src/capa_simulation/components/cutoff_management.py",
-        "render_cutoff_management",
-        "_CONFLICT_KEY",
-    ): (
-        "Cut-off 충돌 거부 — 저장 대조 갈래(`refactor/write-cas-seen-own-save`)가 이 칸을 쓰기"
-        " 거부 표지(`write_guard.queue_refusal`)로 옮기며 늘 서 있는 칸에 넣는다. 그 갈래가"
-        " 들어가면 지운다"
-    ),
 }
 FLASH_OWNER = COMPONENTS / "flash.py"
 # 알림을 그리는 요소. 로거의 `error`·`warning` 은 화면이 아니다.

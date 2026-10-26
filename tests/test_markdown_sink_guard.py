@@ -118,7 +118,7 @@ PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
 PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
     ("src/capa_simulation/auto_official_update_runner.py", "finish"): (
         "자동 갱신 회차 사유 — 회차 기록(기록 표 칸 — 평문)에 남는다. 「지금 실행」 결과 알림은 "
-        "그리는 자리(auto_official_update_tab._render_run_result)에서 markdown_safe_tildes"
+        "알림 칸에 담는 자리(auto_official_update_tab._hold_run_result)에서 markdown_safe_tildes"
     ),
     ("src/capa_simulation/components/auto_official_update_tab.py", "run_history_frame"): (
         "자동 갱신 기록 표의 칸 글(st.dataframe — 마크다운이 아니다)"
