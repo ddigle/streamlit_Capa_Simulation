@@ -378,8 +378,9 @@ def _input_keys(statements: list[ast.stmt]) -> dict[str, int]:
 def _session_writes(function: ast.FunctionDef) -> dict[str, int]:
     writes: dict[str, int] = {}
     for node in ast.walk(function):
-        targets = node.targets if isinstance(node, ast.Assign) else []
-        for target in targets:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
             if (
                 isinstance(target, ast.Subscript)
                 and isinstance(target.value, ast.Attribute)
