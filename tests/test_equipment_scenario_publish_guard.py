@@ -30,6 +30,7 @@ from test_equipment_scenario_repository import (
     _set,
 )
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.equipment_scenario_management import (
     CONTINUE_BUTTON_KEY,
     PUBLISH_BUTTON_KEY,
@@ -144,7 +145,7 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """「셋업 실무」 r1 을 발행하려고 확인 글(지금 공식 v1 → 새 공식 v2)을 본 사이 남이 「운영
     일정」 을 저장해 v2 를 냈다. 누르면 v3 으로 내지 않고 거절하며, 바뀐 확인 글을 본 뒤 다시 누르면
@@ -174,6 +175,9 @@ def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
     )
     assert any("지금 공식 v2" in str(item.value) for item in app.caption)
 
+    # 바뀐 확인 글을 보고 다시 누른 발행이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
+    # 지났다. AppTest 의 회차 사이는 그 창보다 짧을 수 있어 0 으로 둔다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.button(key=PUBLISH_BUTTON_KEY).click()
     _ok(app.run())
     release = repository.latest_equipment_release()
@@ -181,7 +185,9 @@ def test_a_release_by_someone_else_after_the_preview_is_not_overtaken_silently(
     assert release.equipment_scenario_id == setup.equipment_scenario_id
 
 
-def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(tmp_path: Path) -> None:
+def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """「운영 일정」 최신 r2(공식 v1 = r1)를 발행하려고 확인 글(최신이 아니라는 줄 없음)을 본 사이
     남이 r3 을 저장했다. 누르면 r2 를 내지 않고 거절하며, 다시 그린 확인 글이 「r2는 … 의
     최신(r3)이 아닙니다」 를 보인다. 그 글을 본 뒤 다시 누르면 r2 를 낸다(최신이 아닌 리비전 발행은
@@ -221,6 +227,8 @@ def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(tmp_pat
     )
     assert "r2는 「운영 일정」 의 최신(r3)이 아닙니다." in [str(item.value) for item in app.caption]
 
+    # 바뀐 확인 글을 보고 다시 누른 발행이다(창이 지났다 — 위 시험과 같은 까닭).
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app.button(key=PUBLISH_BUTTON_KEY).click()
     _ok(app.run())
     release = repository.latest_equipment_release()
