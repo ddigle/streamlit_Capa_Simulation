@@ -142,6 +142,7 @@ from capa_simulation.services.process_equipment_timeline import (
     ROW_SHORTENED,
     ROW_VIRTUAL,
     DynamicReadiness,
+    month_share,
     production_position,
 )
 from capa_simulation.services.required_shortening import (
@@ -1163,7 +1164,12 @@ def shortening_card(dynamic: DynamicView, month: int) -> EvidenceCard | None:
 
 
 def contributing_units(unit_events: pd.DataFrame, month: int, *, today: date) -> list[str]:
-    """그 달을 메운 호기 줄 — 대상 월이 그 달이거나 해소 기여 월에 그 달이 든 단축·추가N."""
+    """그 달을 메운 호기 줄 — 대상 월이 그 달이거나 해소 기여 월에 그 달이 든 단축·추가N.
+
+    괄호의 증분은 **그 달** 몫(`월별 늘어난 환산대수`)이다 — 호기 표의 `늘어난 환산대수` 는 대상 월
+    구간의 몫이라, 앞 달에 당긴 호기를 뒤 달 카드에 적으면 식(가용 + 호기 증분 = 단축 후)이 맞지
+    않는다. 그 달 몫을 모르면 「-」다.
+    """
     if unit_events.empty:
         return []
     lines: list[str] = []
@@ -1176,7 +1182,7 @@ def contributing_units(unit_events: pd.DataFrame, month: int, *, today: date) ->
         if target_month != month and month not in resolved:
             continue
         unit = str(record.get("호기"))
-        gain = _number(record.get("늘어난 환산대수"))
+        gain = month_share(record.get("월별 늘어난 환산대수"), month)
         gain_text = f"+{gain:,.2f}" if gain is not None else _EMPTY
         target = _as_date(record.get("목표 Qual"))
         if kind == ROW_VIRTUAL:

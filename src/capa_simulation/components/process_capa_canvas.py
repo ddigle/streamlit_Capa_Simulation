@@ -27,7 +27,10 @@
 **③ 풍선은 세 줄이고 그림 위에서만 뜬다**(2026-10-24 사용자 결정 (가)) — 「호기 · −N일 · Model」,
 「Qual MM.DD → 목표 MM.DD · MM.DD부터 기여 +0.10대」, 「해소 YY.MM · ⚠ 반입 전」(`_unit_hover`).
 반입일·Qual상태·대상 월은 그림 표지(◆ · ● 색)와 CSV 가 말해 적지 않고, UPEH 가정 계획만 넷째
-줄이다. 그 호기 그림(선·화살표·표지와 붙은 글자)이 걸친 달 칸과 줄 이름 칸(라벨 Figure 의
+줄이다. 줄 이름 칸의 「+0.10대」 는 호기 하나의 요약(대상 월 구간의 몫 — CSV
+`늘어난 환산대수`)이고, 단축 · 추가N 줄의 **달 칸**은 그 자리에 그 달 몫 「· 이 달 +0.57대」 를
+적는다(그 달 몫이 없으면 숫자를 뺀다) — 앞 달에 당긴 호기가 뒤 달을 메운 몫은 대상 월 몫과
+다르다. 그 호기 그림(선·화살표·표지와 붙은 글자)이 걸친 달 칸과 줄 이름 칸(라벨 Figure 의
 `label_hover`)에서만 뜨고, 빈 달 칸은 풍선 없는 표적이라 누르면 그 달만 골라진다. 풍선 칸과 그림은
 한 자리(`_unit_marks`)에서 낸다 — 표지는 반지름까지, 붙은 글자는 어림 폭의 몫
 (`_SPAN_TEXT_SHARE`)까지 센다(어림만 달 경계를 넘은 빈 칸에 풍선이 뜨지 않게).
@@ -156,6 +159,7 @@ from capa_simulation.services.process_equipment_timeline import (
     EXIT_KIND_RELOCATION,
     ROW_SHORTENED,
     ROW_VIRTUAL,
+    month_share,
     production_position,
 )
 from capa_simulation.services.required_shortening import (
@@ -1071,9 +1075,14 @@ def _unit_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_
         # 풍선은 그 호기 그림이 걸친 달 칸과 줄 이름 칸에서만 뜬다. 빈 달 칸도 칸은 두어(풍선 없는
         # 표적) 줄 어디를 눌러도 그 열의 달이 골라진다.
         span = _unit_span(_unit_marks(kind, record, axis, dynamic), len(axis))
-        for index in range(len(axis)):
+        for index, month in enumerate(axis):
             inside = span is not None and span[0] <= index <= span[1]
-            row.cells[index] = _Cell(hover=row.label_hover if inside else "")
+            hover = ""
+            if inside:
+                hover = (
+                    _unit_cell_hover(record, dynamic, month) if kind == "event" else row.label_hover
+                )
+            row.cells[index] = _Cell(hover=hover)
         rows.append(row)
     if not rows:
         rows.append(_note_row("no_new_units", "조회기간에 새로 붙는 설비가 없습니다"))
@@ -1100,23 +1109,13 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
         detail = f"반입 {_day(arrival, today)} · Qual {_day(qual, today)}" + (
             f" · {confirmation}" if confirmation else ""
         )
-    hover = _unit_hover(event, today)
+    hover = _unit_hover(event, today) + _assumption_line(event, dynamic)
     released = False
-    if dynamic.official_pulls is not None:
-        # UPEH 가정 계획만 넷째 줄 — 표지와, 공식과 단축일수가 다른 호기면
-        # 「공식 −N일 → 가정 −M일」.
-        mark = "UPEH 가정 계획"
-        change = dynamic.official_pulls.get(unit)
-        if change is not None:
-            official_days, assumed_days = change
-            mark += f" · 공식 {_MINUS}{official_days}일 → 가정 " + (
-                f"{_MINUS}{assumed_days}일" if assumed_days else "0일"
-            )
-            # 가정으로 단축이 필요 없어진 호기 — 흐린 줄로 남긴다(P5).
-            if kind != ROW_SHORTENED:
-                released = True
-                detail = f"가정으로 단축 불필요 · 공식 {_MINUS}{official_days}일"
-        hover += f"<br>{mark}"
+    change = None if dynamic.official_pulls is None else dynamic.official_pulls.get(unit)
+    # 가정으로 단축이 필요 없어진 호기 — 흐린 줄로 남긴다(P5).
+    if change is not None and kind != ROW_SHORTENED:
+        released = True
+        detail = f"가정으로 단축 불필요 · 공식 {_MINUS}{change[0]}일"
     return _Row(
         f"{ROW_UNIT_PREFIX}{unit}",
         _UNIT,
@@ -1129,6 +1128,26 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
         payload=("event", dict(event)),
         label_hover=hover,
     )
+
+
+def _assumption_line(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> str:
+    """UPEH 가정 계획만 붙는 넷째 줄(앞 `<br>` 포함) — 표지와, 공식과 단축일수가 다른 호기면
+    「공식 −N일 → 가정 −M일」. 공식 계획이면 빈 글자."""
+    if dynamic.official_pulls is None:
+        return ""
+    mark = "UPEH 가정 계획"
+    change = dynamic.official_pulls.get(str(event.get("호기")))
+    if change is not None:
+        official_days, assumed_days = change
+        mark += f" · 공식 {_MINUS}{official_days}일 → 가정 " + (
+            f"{_MINUS}{assumed_days}일" if assumed_days else "0일"
+        )
+    return f"<br>{mark}"
+
+
+def _unit_cell_hover(event: Mapping[str, object], dynamic: DynamicCanvasInput, month: int) -> str:
+    """③ 호기 줄 달 칸의 풍선 — 줄 이름 칸 풍선과 같은 줄이되 증분은 그 달 몫이다."""
+    return _unit_hover(event, dynamic.today, month=month) + _assumption_line(event, dynamic)
 
 
 def _exit_row(record: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
@@ -1162,7 +1181,7 @@ def _module_text(record: Mapping[str, object]) -> str:
     return f" · 모듈 {modules}" if modules > 1 else ""
 
 
-def _unit_hover(event: Mapping[str, object], today: date) -> str:
+def _unit_hover(event: Mapping[str, object], today: date, *, month: int | None = None) -> str:
     """③ 호기 줄 풍선 — 세 줄까지. 그림 표지(◆ 반입 · ● 색 = Qual상태)와 줄 라벨·CSV 가 이미 말하는
     반입일·Qual상태·대상 월은 적지 않는다. 날짜는 줄 라벨과 같은 짧은 꼴(올해 밖이면 연도)이다.
 
@@ -1172,7 +1191,9 @@ def _unit_hover(event: Mapping[str, object], today: date) -> str:
     - 3줄 — 해소 기여 월(단축 · 추가N 만 — 해소 눈금이 서는 줄) · 「⚠ 반입 전」 · 정지·반출/이설일 ·
       모듈마다 Qual 이 갈리면 그 범위. 조각이 없으면 줄이 없다.
 
-    UPEH 가정 계획의 넷째 줄은 `_unit_row` 가 붙인다.
+    `month` 를 주면(달 칸 풍선) 단축 · 추가N 의 증분을 그 달 몫 「· 이 달 +0.57대」 로 적는다 —
+    그 달 몫이 0 이면 숫자를 빼고, 몫을 모르면(칸 없음) 요약 값 그대로다. UPEH 가정 계획의 넷째
+    줄은 `_assumption_line` 이 붙인다.
     """
     kind = str(event.get("줄"))
     first = [html.escape(str(event.get("호기")))]
@@ -1185,6 +1206,9 @@ def _unit_hover(event: Mapping[str, object], today: date) -> str:
     lines = [" · ".join(first) + _module_text(event)]
     gain = _number(event.get("늘어난 환산대수"))
     contribution = " 기여" + (f" +{gain:,.2f}대" if gain is not None else "")
+    share = None if month is None else month_share(event.get("월별 늘어난 환산대수"), month)
+    if share is not None:
+        contribution = " 기여" + (f" · 이 달 +{share:,.2f}대" if round(share, 2) > 0 else "")
     target = _as_date(event.get("목표 Qual"))
     target_start = _as_date(event.get("목표 기여 시작")) or _next_day(target)
     if kind == ROW_SHORTENED:
