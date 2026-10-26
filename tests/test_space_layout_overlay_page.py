@@ -978,7 +978,7 @@ def test_an_edit_only_of_a_unit_someone_else_deleted_names_it_in_the_notice(
 
     notices = [str(item.value) for item in app.warning if "다시 열었습니다" in str(item.value)]
     assert len(notices) == 1, [str(item.value) for item in app.warning]
-    assert "빠진 호기 1대(EQ-01)의 편집은 뺐습니다" in notices[0], notices
+    assert "빠진 호기 1대(EQ\\-01)의 편집은 뺐습니다" in notices[0], notices
     assert "다시 옮기세요" not in notices[0], notices
 
 
@@ -1388,7 +1388,7 @@ def test_another_save_does_not_leave_the_badge_one_run_behind(
     # 다시 얹을 것이 없는 버림 알림 — 빠진 호기와 까닭을 적는다(E2E r6).
     assert any(
         "버리고 최신 저장본으로 다시 열었습니다" in str(item.value)
-        and "빠진 호기 1대(EQ-02)의 편집은 뺐습니다" in str(item.value)
+        and "빠진 호기 1대(EQ\\-02)의 편집은 뺐습니다" in str(item.value)
         for item in app.warning
     ), [str(item.value) for item in app.warning]
     assert str(app.session_state[EQUIPMENT_HEADER_LABEL_KEY]["suffix"]).endswith("가정 배치")
