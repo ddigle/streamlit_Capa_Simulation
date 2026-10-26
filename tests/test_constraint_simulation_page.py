@@ -757,6 +757,47 @@ def test_the_period_boxes_keep_their_months_when_other_widgets_rerun(
     assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
 
 
+def test_the_period_follows_the_product_until_the_boxes_are_edited(
+    dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상자를 고치기 전에는 제약 기간이 기본값(그 제품의 첫 소요 달 ~ 보이는 마지막 달)을 따라가
+    제품을 바꾸면 그 제품의 첫 소요 달로 다시 선다 — 앞 제품의 기간이 남아 「소요가 없어」 안내만
+    보였다(2026-10-25 E2E #15). 상자를 고친 뒤에는 제품을 바꿔도 그대로다.
+
+    제품 B 의 26.01~26.04 소요를 A 로 옮겨(공정 합은 그대로) B 의 첫 소요 달을 26.05 로 둔다."""
+    original = simulation_cache.get_process_product_demand
+
+    def later_b(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        table = original(*args, **kwargs).copy()
+        names = table["제품정보"].astype("string")
+        a_row = table.index[names.eq(FIRST_PRODUCT).fillna(False)][0]
+        b_rows = table.index[names.eq("DEMO PRODUCT B").fillna(False)]
+        for column in ("202601", "202602", "202603", "202604"):
+            moved = float(pd.to_numeric(table.loc[b_rows, column]).sum())
+            table.loc[a_row, column] = float(table.loc[a_row, column]) + moved
+            table.loc[b_rows, column] = 0.0
+        return table
+
+    monkeypatch.setattr(simulation_cache, "get_process_product_demand", later_b)
+    app = _opened(dynamic_databases)
+    assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == FIRST_PRODUCT
+    assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202601
+
+    app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value("DEMO PRODUCT B")
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202605
+    assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
+    assert not any("소요가 없어" in str(item.value) for item in app.info)
+
+    # 상자를 고친 뒤에는 제품을 바꿔도 그대로다.
+    app.selectbox(key=CONSTRAINT_PERIOD_START_KEY).set_value(202607)
+    _ok(app.run())
+    app.selectbox(key=CONSTRAINT_PRODUCT_KEY).set_value(FIRST_PRODUCT)
+    _ok(app.run())
+    assert app.session_state[CONSTRAINT_PERIOD_START_KEY] == 202607
+    assert app.session_state[CONSTRAINT_PERIOD_END_KEY] == 202612
+
+
 def test_a_narrower_period_rewrites_the_constraint_months_with_a_note(
     dynamic_databases: tuple[Path, Path],
 ) -> None:

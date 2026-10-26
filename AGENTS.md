@@ -1018,8 +1018,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `take_constraint_process_request`)과 칸 선택 그림 key 둘(`app.py` `CELL_SELECT_CHART_KEYS`)을 UI 없이 선언한다. 공정 Capa
   상세 머리 링크와 `app.py` 가 import 한다.
   - 제약 시작·끝 상자는 정수 달 선택지라 `prune_choice`(글자 선택지 전용)가 아니라 `settle_period` 가 위젯 앞에서 매 회차
-    잡는다 — 칸이 없으면 기본값(그 제품의 첫 소요 달 ~ 보이는 마지막 달), 보이는 달 밖이면 가장 가까운 달을 **다를 때만**
-    적는다. 엇갈림은 `on_change` 콜백 둘(`follow_period_start`·`follow_period_end`)이 다른 상자 칸을 맞춘다(승인 초안 그대로).
+    잡는다 — 사용자가 상자를 고치기 전에는 늘 기본값(그 제품의 첫 소요 달 ~ 보이는 마지막 달 — 제품·공정을 바꾸면 그 제품의
+    첫 소요 달로 다시 선다, 2026-10-25 E2E), 고친 뒤에는 그 값이 보이는 달 밖일 때만 가장 가까운 달을, **다를 때만** 적는다.
+    엇갈림은 `on_change` 콜백 둘(`follow_period_start`·`follow_period_end`)이 다른 상자 칸을 맞추고(승인 초안 그대로) 「고침」
+    표지(`CONSTRAINT_PERIOD_EDITED_KEY`)를 세운다.
     범위 `st.select_slider` 는 쓰지 않는다 — 1.63 은 `value=` 없이는 범위로 서지 않아 손잡이를 움직이면 첫 달 하나로 떨어진다.
   - 보유 제약 설비 숫자 칸·신규 기준일 날짜 칸은 위젯 앞에서 틀린 꼴(범위 밖 정수·날짜 아님)일 때만 기본값을 심는다
     (`seed_owned_units`·`seed_new_since`) — 범위 밖 옛 값이 위젯 예외가 되지 않게. 기준일은 자정을 넘긴 세션에서도 그날 값

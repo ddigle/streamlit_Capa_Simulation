@@ -23,10 +23,11 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 - **주소 인자 막이**(위젯 아님) — 마지막으로 적용한 `?process=` 값(`CONSTRAINT_QUERY_SEEN_KEY`).
 
 제약 시작·끝 상자는 정수 달 선택지라 `page_bootstrap.prune_choice`(글자 선택지 전용)를 쓰지 않고
-`settle_period` 가 위젯 앞에서 매 회차 잡는다 — 칸이 없으면 기본값, 보이는 달 밖이면 가장 가까운
-보이는 달을 적고, 바뀐 칸만 적는다(pop 하지 않는다 — AGENTS 9장). 엇갈림은 승인
+`settle_period` 가 위젯 앞에서 매 회차 잡는다 — 사용자가 상자를 고치기 전에는 기본값(그 제품의 첫
+소요 달 ~ 보이는 마지막 달)을 따라가고, 고친 뒤에는 그 값이 보이는 달 밖일 때만 가장 가까운 보이는
+달을 적는다. 바뀐 칸만 적는다(pop 하지 않는다 — AGENTS 9장). 엇갈림은 승인
 초안(`onStart`·`onEnd`)대로 `on_change` 콜백(`follow_period_start`·`follow_period_end`)이 다른 상자
-칸을 맞춘다.
+칸을 맞추고 「고침」 표지(`CONSTRAINT_PERIOD_EDITED_KEY`)를 세운다.
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ __all__ = [
     "CONSTRAINT_NEW_SINCE_KEY",
     "CONSTRAINT_NEW_UNITS_KEY",
     "CONSTRAINT_OWNED_KEY",
+    "CONSTRAINT_PERIOD_EDITED_KEY",
     "CONSTRAINT_PERIOD_END_KEY",
     "CONSTRAINT_PERIOD_START_KEY",
     "CONSTRAINT_PROCESS_KEY",
@@ -94,6 +96,10 @@ CONSTRAINT_PROCESS_KEY: Final = "constraint_sim_process"
 CONSTRAINT_PRODUCT_KEY: Final = "constraint_sim_product"
 CONSTRAINT_PERIOD_START_KEY: Final = "constraint_sim_period_start"
 CONSTRAINT_PERIOD_END_KEY: Final = "constraint_sim_period_end"
+# 사용자가 제약 시작·끝 상자를 고친 적이 있는가(위젯 아님 — 두 상자의 `on_change` 콜백이 세운다).
+# 고치기 전에는 기간이 기본값(D8 — 그 제품의 첫 소요 달 ~ 보이는 마지막 달)을 따라가 제품·공정을
+# 바꾸면 그 제품의 첫 소요 달로 다시 선다(`settle_period`).
+CONSTRAINT_PERIOD_EDITED_KEY: Final = "constraint_sim_period_edited"
 CONSTRAINT_MODIFY_KEY: Final = "constraint_sim_modify"
 # 개조 묶음의 2판 옵션(개조 끔이면 잠긴다) — 보유 제약 설비(숫자 칸)·신규 설비는 개조 없이(토글)·그
 # 기준일(날짜 칸).
@@ -249,8 +255,12 @@ def _held_month(key: str) -> int | None:
 def settle_period(months: Sequence[int], *, default_start: int) -> SettledPeriod:
     """제약 시작·끝 상자 칸을 위젯 앞에서 잡는다. **다를 때만** 적는다(같은 값을 다시 적지 않는다).
 
-    - 칸이 없으면 기본값(D8) — 시작은 `default_start`(그 제품의 첫 소요 달), 끝은 보이는 마지막 달.
-    - 보이는 달 밖이면 가장 가까운 보이는 달로 적는다(`moved`).
+    - 사용자가 상자를 고치기 전(`CONSTRAINT_PERIOD_EDITED_KEY` 없음)에는 늘 기본값(D8) — 시작은
+      `default_start`(그 제품의 첫 소요 달), 끝은 보이는 마지막 달. 제품·공정을 바꾸면 그 제품의
+      첫 소요 달로 다시 선다 — 앞 제품의 기간이 남아 「소요가 없다」 안내만 보이지 않게(2026-10-25
+      E2E).
+    - 고친 뒤에는 그 값 그대로이고, 보이는 달 밖이면 가장 가까운 보이는 달로 적는다.
+    - 어느 쪽이든 앞 값이 보이는 달 밖이라 옮겼으면 `moved` 다(조회기간이 좁아짐 — 화면이 알린다).
     - 시작이 끝보다 뒤면(조회기간을 옮긴 뒤 가까운 달끼리 엇갈림) 끝을 시작으로 적는다.
     `months` 가 비면 `ValueError` 다(부르는 쪽이 먼저 멈춘다).
     """
@@ -259,18 +269,20 @@ def settle_period(months: Sequence[int], *, default_start: int) -> SettledPeriod
         raise ValueError("보이는 달이 없어 제약 기간을 정할 수 없습니다.")
     allowed = set(visible)
     seed_start = int(default_start) if int(default_start) in allowed else visible[0]
+    follows_default = st.session_state.get(CONSTRAINT_PERIOD_EDITED_KEY) is not True
     moved = False
 
     def settle(key: str, fallback: int) -> int:
         nonlocal moved
         held = _held_month(key)
-        if held is None:
+        if held is not None and held not in allowed:
+            moved = True
+        if held is None or follows_default:
             value = fallback
         elif held in allowed:
             value = held
         else:
             value = _nearest(held, visible)
-            moved = True
         if st.session_state.get(key) != value:
             st.session_state[key] = value
         return value
@@ -284,7 +296,9 @@ def settle_period(months: Sequence[int], *, default_start: int) -> SettledPeriod
 
 
 def follow_period_start() -> None:
-    """「제약 시작」 상자 콜백 — 시작을 끝 뒤로 고르면 끝이 시작으로 따라온다(초안 `onStart`)."""
+    """「제약 시작」 상자 콜백 — 시작을 끝 뒤로 고르면 끝이 시작으로 따라온다(초안 `onStart`).
+    사용자가 기간을 고쳤다는 표지를 세운다(그 뒤로 기간은 기본값을 따라가지 않는다)."""
+    st.session_state[CONSTRAINT_PERIOD_EDITED_KEY] = True
     start = _held_month(CONSTRAINT_PERIOD_START_KEY)
     end = _held_month(CONSTRAINT_PERIOD_END_KEY)
     if start is not None and end is not None and start > end:
@@ -292,7 +306,9 @@ def follow_period_start() -> None:
 
 
 def follow_period_end() -> None:
-    """「제약 끝」 상자 콜백 — 끝을 시작 앞으로 고르면 시작이 끝으로 따라온다(초안 `onEnd`)."""
+    """「제약 끝」 상자 콜백 — 끝을 시작 앞으로 고르면 시작이 끝으로 따라온다(초안 `onEnd`).
+    사용자가 기간을 고쳤다는 표지를 세운다."""
+    st.session_state[CONSTRAINT_PERIOD_EDITED_KEY] = True
     start = _held_month(CONSTRAINT_PERIOD_START_KEY)
     end = _held_month(CONSTRAINT_PERIOD_END_KEY)
     if start is not None and end is not None and end < start:
