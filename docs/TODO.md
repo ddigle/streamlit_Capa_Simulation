@@ -728,9 +728,8 @@
   든다 — 칸 이름·`get` 뒤 `del` 꼴 무관)을 더했고, 허용 목록은 (파일, 함수, 칸) 이다. 다른 갈래가 같은 파일을 고치는 중이라 두고
   `FLASH_POP_ALLOWED` 에 까닭과 함께 남긴 것: 설비 시나리오 줄 사이드바 알림(`equipment_scenario_status.FLASH_KEY`), 설비 시나리오
   구획 작업·거절 알림(`equipment_scenario_management` `FLASH_KEY`·`REFUSED_KEY` — 그린 회차에 팝오버 세대를 올리므로 `pending_flash`
-  로 먼저 보고 둘을 함께 옮긴다), 환산 화면 작업 줄 알림(`load_conversion._render_flashes` — 그리는 자리가 아이콘을 정한다.
-  `queue_reference_import_flash` 가 아이콘을 받게 한 뒤 옮긴다. 그동안 그리는 칸은 늘 서 있게 고쳐 붙여넣기·적용 알림이 아래
-  PKG PLAN 편집표를 밀지 않는다). 앞 둘의 막던 갈래(저장 대조 `write-cas-seen-own-save`·위젯 세대 `widget-generation-single-path`)는
+  로 먼저 보고 둘을 함께 옮긴다). 환산 화면 작업 줄 알림(`load_conversion._render_flashes`)은 2026-10-27 E2E r6 static 에서
+  `render_flash` 로 옮겼다 — 담는 쪽이 아이콘(`queue_flash(…, icon=)`)과 쓰기 알림 표지를 함께 적는다. 앞 둘의 막던 갈래(저장 대조 `write-cas-seen-own-save`·위젯 세대 `widget-generation-single-path`)는
   `integ/1026` 에 합쳐졌다 — 이제 옮길 수 있다. Cut-off 충돌 거부는 저장 대조 갈래가 `write_guard.queue_refusal`·`take_refusal`
   로 옮겨 허용 줄을 합칠 때 지웠다. 수명·자리가
   달라 그대로 두는 것: VOC 지운 글 칸·기준선 shown 칸·STEP 탭 알림·월 편집표 `st.empty` 자리·Space 배치 저장 실패(회차의 상자

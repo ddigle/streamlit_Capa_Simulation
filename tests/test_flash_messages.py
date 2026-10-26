@@ -228,11 +228,6 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         "render_month_editor",
         "_notice_key(editor_key)",
     ): ("알림이 아니라 그 자리(`st.empty`) 손잡이를 비운다"),
-    ("app_pages/load_conversion.py", "_render_flashes", "key"): (
-        "그리는 자리가 아이콘을 정한다 — 담는 도우미(`queue_reference_import_flash`)를 기준정보"
-        " 편집기와 함께 쓰고 아이콘이 다르다. 담는 쪽이 아이콘을 받게 한 뒤 옮긴다(그동안 그리는"
-        " 칸은 늘 선다 — `tests/test_load_conversion_plan_apply.py`)"
-    ),
     (
         "src/capa_simulation/components/equipment_scenario_management.py",
         "render_equipment_scenario_management",
