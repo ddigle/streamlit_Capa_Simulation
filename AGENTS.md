@@ -4020,7 +4020,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   보낸다. 회차마다 달라지는 값(테마 등)은 브라우저 쪽에서 읽는다(`capaTheme.resolve`).
 - 스크립트를 싣는 칸은 `st.iframe` 이다 — `st.html` 은 스크립트를 실행하지 않고 `components.v1.html` 은 회차마다 폐기
   예고를 찍는다. 헤더 툴바·사이드바 머리칸에 단추를 다는 스크립트는 iframe 을 따로 두지 않고 테마 버튼 iframe 의
-  `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다).
+  `extra_scripts` 로 싣는다(접은 iframe 도 본문 맨 위에 요소 간격 한 칸을 먹는다). 접는 규칙(`theme_toggle._COLLAPSE_STYLE`)은
+  높이 0 과 함께 `visibility: hidden` 을 건다 — 높이 0 이어도 iframe 은 Tab 정지이고 낭독기에 「st.iframe」 으로 읽혔다
+  (`tests/test_theme_toggle.py`).
 - **모든 화면에 걸친 컴포넌트(화면 탭 줄)는 `app.py` 에서 고정 key 로, 앞에 조건부 칸 없이 그린다.**
   `navigation.run()` 밖이라 요소 id 에 주 스크립트 해시가 들어가 화면을 옮겨도 같은 요소다 — 페이지 안에서 그리면
   화면마다 다시 마운트된다. 그 앞 본문에 생겼다 사라지는 칸(스키마 경고 등)을 두면 순번이 밀려 다시 마운트된다
