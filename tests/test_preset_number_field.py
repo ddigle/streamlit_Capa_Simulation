@@ -25,6 +25,10 @@ import capa_simulation.components.widget_generation as widget_generation
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.preset_number_field import (
     ACTIVE_PILL_SELECTOR,
+    CUSTOM_OPTION,
+    PILL_BUTTONS_SELECTOR,
+    _custom_style,
+    _option_of,
     _pick_number,
     _pick_preset,
     _tone_style,
@@ -107,3 +111,75 @@ def test_a_typed_value_alone_still_becomes_the_value(monkeypatch: pytest.MonkeyP
     _pick_number(_VALUE, _INPUT, f"{_INPUT}__2", True)
     assert state[_VALUE] == 175
     assert state[f"{_INPUT}__generation"] == 2
+
+
+_LIT = f"{_PILLS}__lit"
+
+
+@pytest.mark.parametrize("preset_first", [True, False])
+def test_the_lit_button_pressed_after_typing_wins_either_order(
+    monkeypatch: pytest.MonkeyPatch, preset_first: bool
+) -> None:
+    """켜진 120% 를 다시 누르면 프런트가 풀어 버튼 칸이 `None` 이다 — 같은 회차에 친 166 이 확정돼도
+    어느 차례든 정본은 마지막으로 켠 120 이고 칸 세대가 오른다(2026-10-26 E2E)."""
+    state: dict[str, object] = {_VALUE: 120, _PILLS: None, _LIT: 120, _INPUT: 166}
+    _fake_session(monkeypatch, state)
+
+    def press() -> None:
+        _pick_preset(_VALUE, _PILLS, _INPUT, True)
+
+    def commit() -> None:
+        _pick_number(_VALUE, _INPUT, _INPUT, True)
+
+    for callback in (press, commit) if preset_first else (commit, press):
+        callback()
+    assert state[_VALUE] == 120
+    assert state[f"{_INPUT}__generation"] == 1
+
+
+def test_the_lit_button_survives_a_typed_value_committed_in_an_earlier_rerun(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """칸 확정이 먼저 회차를 돌려 정본이 166 · 버튼이 모두 꺼진 뒤에 「다시 누름」(`None`)이 와도
+    마지막으로 켠 버튼(「HOME 기준」 표지 포함)으로 선다 — 맞춤 값이 되어도 그 칸은 남는다."""
+    state: dict[str, object] = {_VALUE: 166, _PILLS: None, _LIT: preset_number_field.NONE_OPTION}
+    _fake_session(monkeypatch, state)
+    _pick_preset(_VALUE, _PILLS, _INPUT, True)
+    assert state[_VALUE] is None
+    assert state[f"{_INPUT}__generation"] == 1
+
+
+def test_nothing_lit_and_no_button_leaves_the_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """켠 적 없는 버튼 칸이 `None` 이면 정본도 세대도 그대로다."""
+    state: dict[str, object] = {_VALUE: 166, _PILLS: None}
+    _fake_session(monkeypatch, state)
+    _pick_preset(_VALUE, _PILLS, _INPUT, True)
+    assert state[_VALUE] == 166
+    assert f"{_INPUT}__generation" not in state
+
+
+def test_a_custom_value_lights_the_hidden_last_button() -> None:
+    """맞춤 값은 버튼 칸이 `None` 이 아니라 숨은 맞춤 버튼이다 — `None` 은 켜진 버튼을 풀었을 때만
+    온다. 그 버튼은 버튼 줄 끝이고 CSS 가 숨긴다(1.63 pills 는 `radiogroup` 아래 단추가 차례로)."""
+    presets = (100.0, None, 120.0)
+    assert _option_of(120.0, presets) == 120.0
+    assert _option_of(None, presets) == preset_number_field.NONE_OPTION
+    assert _option_of(125.0, presets) == CUSTOM_OPTION
+    assert _option_of(None, (100.0, 120.0)) == CUSTOM_OPTION
+    assert PILL_BUTTONS_SELECTOR == '[role="radiogroup"] > button'
+    style = _custom_style("constraint_sim_target_pills")
+    assert (
+        f".st-key-constraint_sim_target_pills {PILL_BUTTONS_SELECTOR}:last-child "
+        "{ display: none !important; }"
+    ) in style
+
+
+def test_the_hidden_custom_button_is_never_taken_as_a_press(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """숨은 맞춤 버튼 값이 와도(누를 수 없지만) 정본·세대를 건드리지 않는다."""
+    state: dict[str, object] = {_VALUE: 166, _PILLS: CUSTOM_OPTION, _LIT: 120}
+    _fake_session(monkeypatch, state)
+    _pick_preset(_VALUE, _PILLS, _INPUT, True)
+    assert state[_VALUE] == 166
+    assert f"{_INPUT}__generation" not in state

@@ -4,9 +4,18 @@
 
 **정본은 위젯이 아닌 한 칸**(`value_key`)이다. 두 위젯은 그 칸에서 매 회차 다시 선다.
 
-- **버튼**(`st.pills`, 한 개 고름, `required=True`) — 정본이 버튼 값이면 그 버튼이 켜지고, 맞춤
-  값이면 모두 꺼진다. 1.63 의 `required=True` 는 고른 버튼을 다시 눌러도 아무 일이 없다(선택 해제를
-  프레임워크가 막는다). 콜백은 받은 값이 있을 때만 정본을 그 값으로 적는다.
+- **버튼**(`st.pills`, 한 개 고름, `required=False`) — 정본이 버튼 값이면 그 버튼이 켜지고, 맞춤
+  값이면 보이는 버튼은 모두 꺼진다. 콜백은 받은 버튼 값으로 정본을 적는다. **켜진 버튼을 다시
+  누르면** 프런트가 그 버튼을 풀어 `None` 을 보내는데, 그것은 「그 버튼을 다시 누름」 이다 —
+  콜백은 서버가 마지막으로 켠 버튼(`_lit_key` 칸 — 맞춤 값이 되어도 지우지 않는다)으로 정본을
+  적고, 그리기가 그 버튼을 다시 켠다. `required=True` 는 켜진 버튼 누름을 프런트가 삼켜 콜백이
+  없었다 — 칸에 치고 Enter 없이 켜진 버튼을 누르면 친 값이 이겼다(2026-10-26 E2E).
+- **맞춤 값은 숨은 버튼 하나가 켜진 꼴이다**(`CUSTOM_OPTION` — 버튼 줄 끝, CSS 로 숨긴다). 버튼
+  칸이 `None` 이 되는 것은 켜진 버튼을 풀었을 때뿐이라야 그 `None` 이 늘 「바뀜」 으로 콜백에
+  닿는다. 맞춤 값을 `None` 으로 두면, 사람 손 빠르기의 누름(누르고 떼기 사이 0.1초 남짓)에서는 칸
+  확정 회차가 버튼 칸을 먼저 `None` 으로 적고, 프런트가 그 회차를 받기 전에 뗀 누름이 켜진 버튼을
+  풀어 같은 `None` 을 보내 콜백이 없었다(2026-10-26 사본 앱 — 즉시 누름·0.6초 누름은 버튼이
+  이겼고 0.15초 누름만 친 값이 이겼다).
 - **숫자 칸**(`st.number_input`, 라벨 접음) — 늘 지금 값을 보인다(정본이 `None` 이면 `fallback`).
   콜백이 정본을 그 값으로 적고, 범위는 위젯이 막는다. 버튼 값과 같으면 그 버튼이 켜진 꼴로 다시
   선다.
@@ -22,7 +31,9 @@
   확정되고, 그 확정과 버튼 누름이 한 회차로 합쳐지면 두 콜백이 함께 돈다 — 차례는 프레임워크가
   정한다(1.63 은 버튼이 먼저라 숫자 칸 콜백이 버튼 값을 덮었다, 2026-10-26 E2E). 숫자 칸 콜백은 자기
   key 가 지금 세대의 key 와 다르면(같은 회차에 버튼 콜백이 먼저 세대를 올렸으면) 적지 않고, 버튼
-  콜백이 나중이면 그것이 덮으므로 어느 차례든 마지막에 누른 버튼이 정본이 된다.
+  콜백이 나중이면 그것이 덮으므로 어느 차례든 마지막에 누른 버튼이 정본이 된다. 누른 버튼이 이미
+  켜져 있던 것이어도 같다(위 「다시 누름」) — 칸 확정이 먼저 회차를 돌려 버튼이 꺼져도 마지막으로 켠
+  버튼은 남아 있다.
 - `persist_state` 는 주지 않는다 — 정본이 위젯 아닌 칸이라 페이지를 오가도 남고, 위젯 칸은 매 회차
   정본에서 다시 선다.
 
@@ -43,10 +54,13 @@ import streamlit as st
 from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.design import tokens
 
-__all__ = ["NONE_OPTION", "render_preset_number_field"]
+__all__ = ["CUSTOM_OPTION", "NONE_OPTION", "render_preset_number_field"]
 
 NONE_OPTION: Final = "__none__"
 """버튼 칸에서 `None` 버튼을 가리키는 글자 표지."""
+
+CUSTOM_OPTION: Final = "__custom__"
+"""버튼 칸에서 맞춤 값(버튼에 없는 값)을 가리키는 숨은 버튼 표지 — 버튼 줄 끝, CSS 로 숨긴다."""
 
 _MISSING: Final = object()
 
@@ -67,18 +81,23 @@ def _valid(
     return minimum <= float(value) <= maximum
 
 
-def _option_of(value: float | None, presets: Sequence[float | None]) -> float | str | None:
-    """정본 값이 버튼 값이면 그 버튼(`None` 은 표지), 아니면 None(모두 꺼짐)."""
+def _option_of(value: float | None, presets: Sequence[float | None]) -> float | str:
+    """정본 값이 버튼 값이면 그 버튼(`None` 은 표지), 아니면 숨은 맞춤 버튼(보이는 버튼은 꺼짐)."""
     if value is None:
-        return NONE_OPTION if None in presets else None
+        return NONE_OPTION if None in presets else CUSTOM_OPTION
     for preset in presets:
         if preset is not None and float(preset) == float(value):
             return preset
-    return None
+    return CUSTOM_OPTION
 
 
 def _generation_key(input_key: str) -> str:
     return f"{input_key}__generation"
+
+
+def _lit_key(pills_key: str) -> str:
+    """서버가 마지막으로 켠 버튼 칸 — 켜진 버튼을 다시 누르면(`None` 이 온다) 이 버튼이다."""
+    return f"{pills_key}__lit"
 
 
 def _input_widget_key(input_key: str) -> str:
@@ -93,12 +112,16 @@ def _write_if_changed(key: str, value: object) -> None:
 
 
 def _pick_preset(value_key: str, pills_key: str, input_key: str, integer: bool) -> None:
-    """버튼 콜백 — 고른 버튼이 있을 때만 정본을 그 값으로(`None` 버튼은 `None`).
+    """버튼 콜백 — 누른 버튼 값으로 정본을 적는다(`None` 버튼은 `None`).
 
-    정본을 적으면 숫자 칸 세대도 올린다 — 칸이 쥐고 있던 범위 밖 글을 버리고 새 값으로 선다.
+    버튼 칸이 `None` 이면 켜진 버튼을 다시 누른 것이다(프런트가 풀었다) — 서버가 마지막으로 켠
+    버튼을 누른 값으로 본다. 정본을 적으면 숫자 칸 세대도 올린다 — 칸이 쥐고 있던 글(범위 밖 글,
+    같은 회차에 확정된 친 값)을 버리고 버튼 값으로 선다.
     """
     picked = st.session_state.get(pills_key)
     if picked is None:
+        picked = st.session_state.get(_lit_key(pills_key))
+    if picked is None or picked == CUSTOM_OPTION:
         return
     if picked == NONE_OPTION:
         st.session_state[value_key] = None
@@ -143,6 +166,18 @@ def _tone_style(pills_key: str, tone: PresetTone) -> str:
     )
 
 
+# 버튼 줄의 단추 — 1.63 pills 는 `role="radiogroup"` 아래 단추가 고를 값 차례대로 바로 선다.
+PILL_BUTTONS_SELECTOR: Final = '[role="radiogroup"] > button'
+
+
+def _custom_style(pills_key: str) -> str:
+    """버튼 줄 끝의 맞춤 버튼(`CUSTOM_OPTION`)을 숨긴다 — 켜져도 보이지 않고 누를 수 없다."""
+    return (
+        f"<style>.st-key-{pills_key} {PILL_BUTTONS_SELECTOR}:last-child "
+        "{ display: none !important; }</style>"
+    )
+
+
 def render_preset_number_field(
     label: str,
     *,
@@ -177,22 +212,29 @@ def render_preset_number_field(
     shown = canonical if canonical is not None else float(fallback)
     shown = min(max(shown, float(minimum)), float(maximum))
     widget_key = _input_widget_key(input_key)
-    _write_if_changed(pills_key, _option_of(canonical, presets))
+    lit = _option_of(canonical, presets)
+    _write_if_changed(pills_key, lit)
+    if lit != CUSTOM_OPTION:
+        _write_if_changed(_lit_key(pills_key), lit)
     _write_if_changed(widget_key, _number(shown, integer))
 
-    options: list[float | str] = [NONE_OPTION if preset is None else preset for preset in presets]
+    options: list[float | str] = [
+        *(NONE_OPTION if preset is None else preset for preset in presets),
+        CUSTOM_OPTION,
+    ]
 
     def format_option(option: float | str) -> str:
+        if option == CUSTOM_OPTION:
+            return "맞춤"
         return preset_label(None if option == NONE_OPTION else float(option))
 
-    style = _tone_style(pills_key, tone)
-    if style:
-        st.html(style)
+    st.html(_custom_style(pills_key) + _tone_style(pills_key, tone))
     st.pills(
         label,
         options,
         selection_mode="single",
-        required=True,
+        # 켜진 버튼 누름도 콜백에 닿게 풀 수 있게 둔다 — 풀린 `None` 은 콜백이 그 버튼으로 되돌린다.
+        required=False,
         format_func=format_option,
         key=pills_key,
         on_change=_pick_preset,

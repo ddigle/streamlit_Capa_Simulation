@@ -28,12 +28,15 @@ import pandas as pd
 import pytest
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
+from streamlit.proto.WidgetStates_pb2 import WidgetState
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import ButtonGroup
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.preset_number_field import CUSTOM_OPTION
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
@@ -346,20 +349,39 @@ def test_the_target_buttons_and_the_typed_value_share_one_value(
     assert "제약 130%" in _header_line(app)
     assert "130% 를 맞춥니다" in _metric_caption(app, "제약 제품 확보율 충족")
 
-    # 버튼에 없는 값을 적으면 버튼이 모두 꺼진다.
+    # 버튼에 없는 값을 적으면 보이는 버튼이 모두 꺼진다(숨은 맞춤 버튼이 켜진 꼴).
     app.number_input(key=_target_input_key(app)).set_value(125)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 125
-    assert app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).value is None
+    assert app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).value == CUSTOM_OPTION
     assert "제약 125%" in _header_line(app)
 
-    # 같은 버튼을 다시 눌러도(`required=True`) 값이 그대로다.
+    # 켜진 버튼을 다시 누르면 프런트가 풀어 `None` 이 온다 — 값은 그대로이고 버튼은 다시 켜진다.
     app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).set_value(140)
     _ok(app.run())
-    app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).set_value(140)
+    _press_lit(app, CONSTRAINT_TARGET_PILLS_KEY)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 140
     assert app.button_group(key=CONSTRAINT_TARGET_PILLS_KEY).value == 140
+
+
+class _ReleasedButtonGroup(ButtonGroup[object]):
+    """켜진 버튼을 다시 눌러 프런트가 푼 버튼 칸 — 빈 선택을 보낸다. AppTest 의 `set_value(None)` 은
+    「바꾸지 않음」(세션 값을 그대로 보냄)이라 빈 선택을 싣지 못한다."""
+
+    @property
+    def _widget_state(self) -> WidgetState:
+        state = WidgetState()
+        state.id = self.id
+        state.string_array_value.SetInParent()
+        return state
+
+
+def _press_lit(app: AppTest, key: str) -> None:
+    """켜진 버튼 다시 누름 — 다음 `run()` 에 그 버튼 칸의 빈 선택이 간다."""
+    group = app.button_group(key=key)
+    assert group.value is not None
+    group.__class__ = _ReleasedButtonGroup
 
 
 def _target_input_key(app: AppTest) -> str:
@@ -466,11 +488,99 @@ def test_a_button_pressed_right_after_typing_wins_over_the_typed_value(
     assert app.number_input(key=shown_key).value == pressed
     assert header in _header_line(app)
 
-    # 대조 — 친 값만 확정하면(버튼을 누르지 않음) 친 값이 정본이고 버튼이 모두 꺼진다.
+    # 대조 — 친 값만 확정하면(버튼을 누르지 않음) 친 값이 정본이고 보이는 버튼이 모두 꺼진다.
     app.number_input(key=shown_key).set_value(typed)
     _ok(app.run())
     assert app.session_state[value_key] == typed
-    assert app.button_group(key=pills_key).value is None
+    assert app.button_group(key=pills_key).value == CUSTOM_OPTION
+
+
+@pytest.mark.parametrize(
+    ("label", "pills_key", "value_key", "lit", "typed", "header"),
+    [
+        ("제약 확보율", CONSTRAINT_TARGET_PILLS_KEY, CONSTRAINT_TARGET_KEY, 120, 166, "제약 120%"),
+        (
+            "기준 확보율",
+            CONSTRAINT_GENERAL_PILLS_KEY,
+            CONSTRAINT_GENERAL_KEY,
+            None,
+            112.0,
+            "기준 HOME",
+        ),
+        ("개조 기간", CONSTRAINT_MOD_DAYS_PILLS_KEY, CONSTRAINT_MOD_DAYS_KEY, 30, 50, "개조 30일"),
+    ],
+)
+def test_pressing_the_lit_button_right_after_typing_keeps_the_button_value(
+    dynamic_databases: tuple[Path, Path],
+    label: str,
+    pills_key: str,
+    value_key: str,
+    lit: int | None,
+    typed: float,
+    header: str,
+) -> None:
+    """칸에 치고 Enter 없이 **이미 켜진** 버튼을 눌러도 버튼이 이긴다 — 켜진 버튼 누름은 프런트가
+    그 버튼을 풀어(`None`) 보내고, 콜백이 마지막으로 켠 버튼으로 되돌린다(2026-10-26 E2E —
+    `required=True` 는 그 누름을 삼켜 친 166 이 적혔다). 정본·버튼·칸 모두 버튼 값이다."""
+    app = _opened(dynamic_databases)
+    field = f"{label} 직접 입력"
+    assert app.session_state[value_key] == lit
+    shown_option = "__none__" if lit is None else lit
+    assert app.button_group(key=pills_key).value == shown_option
+
+    (typed_key,) = _typed_field_keys(app, field)
+    app.number_input(key=typed_key).set_value(typed)
+    _press_lit(app, pills_key)
+    _ok(app.run())
+    assert app.session_state[value_key] == lit
+    assert app.button_group(key=pills_key).value == shown_option
+    (shown_key,) = _typed_field_keys(app, field)
+    assert shown_key != typed_key
+    assert app.number_input(key=shown_key).value != typed
+    assert header in _header_line(app)
+
+
+@pytest.mark.parametrize(
+    ("label", "pills_key", "value_key", "lit", "typed", "header"),
+    [
+        ("제약 확보율", CONSTRAINT_TARGET_PILLS_KEY, CONSTRAINT_TARGET_KEY, 120, 166, "제약 120%"),
+        (
+            "기준 확보율",
+            CONSTRAINT_GENERAL_PILLS_KEY,
+            CONSTRAINT_GENERAL_KEY,
+            None,
+            112.0,
+            "기준 HOME",
+        ),
+        ("개조 기간", CONSTRAINT_MOD_DAYS_PILLS_KEY, CONSTRAINT_MOD_DAYS_KEY, 30, 50, "개조 30일"),
+    ],
+)
+def test_the_lit_button_wins_even_when_the_typed_value_ran_its_own_rerun_first(
+    dynamic_databases: tuple[Path, Path],
+    label: str,
+    pills_key: str,
+    value_key: str,
+    lit: int | None,
+    typed: float,
+    header: str,
+) -> None:
+    """사람 손 빠르기로 누르면 칸 확정이 먼저 한 회차를 돌리고(정본이 친 값, 버튼은 숨은 맞춤
+    버튼), 그 회차를 아직 받지 못한 브라우저는 켜진 채 보이던 버튼을 풀어 `None` 을 보낸다 — 그래도
+    버튼 값이 이긴다(2026-10-26 사본 앱 — 0.15초 누름에서 친 값이 이겼다). 맞춤 값의 버튼 칸이
+    `None` 이면 이 `None` 이 바뀜이 아니라 콜백이 없다."""
+    app = _opened(dynamic_databases)
+    field = f"{label} 직접 입력"
+    (typed_key,) = _typed_field_keys(app, field)
+    app.number_input(key=typed_key).set_value(typed)
+    _ok(app.run())
+    assert app.session_state[value_key] == typed
+    assert app.button_group(key=pills_key).value == CUSTOM_OPTION
+
+    _press_lit(app, pills_key)
+    _ok(app.run())
+    assert app.session_state[value_key] == lit
+    assert app.button_group(key=pills_key).value == ("__none__" if lit is None else lit)
+    assert header in _header_line(app)
 
 
 def test_the_general_target_takes_half_percent_and_home(
