@@ -157,7 +157,7 @@ def test_the_strip_refuses_page_links_at_the_limit_before_streamlit_moves() -> N
 
 # ---------------------------------------------------------------- JS 순수 구획(node)
 
-_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press", "tabs-links")
+_SECTIONS = ("tabs-history", "tabs-hold", "tabs-queue", "tabs-press", "tabs-links", "tabs-edges")
 
 
 def _sections() -> str:
@@ -658,3 +658,43 @@ def test_the_intro_overlay_installs_the_history_guard_before_the_first_run_drops
         "once": True,
         "calls": [["replace", "/constraint_simulation?theme=light"]],
     }
+
+
+_EDGES_RUNNER = """
+const out = {
+  fits: overflowEdges(0, 355, 355),
+  start: overflowEdges(0, 649, 355),
+  middle: overflowEdges(140.5, 649, 355),
+  end: overflowEdges(294, 649, 355),
+  nearEnd: overflowEdges(293.4, 649, 355),
+  subpixel: overflowEdges(0, 355.6, 355),
+}
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_an_overflowing_strip_marks_the_side_that_has_more_tabs() -> None:
+    """390px 에서 탭이 여럿이면 목록이 지금 탭 쪽으로 굴러 HOME 등 왼쪽 탭이 화면 밖에 있는데,
+    넘친다는 표지가 없어 더 있는 줄 몰랐다(E2E — 목록 scrollWidth 649 / clientWidth 355). 넘치면
+    탭이 더 있는 쪽에만 가장자리 흐림과 화살표를 단다 — 굴릴 때·목록 폭이 바뀔 때·data 가 바뀔 때
+    다시 본다."""
+    out = _node(_EDGES_RUNNER)
+
+    assert out["fits"] == {"start": False, "end": False}
+    assert out["start"] == {"start": False, "end": True}
+    assert out["middle"] == {"start": True, "end": True}
+    assert out["end"] == {"start": True, "end": False}
+    assert out["nearEnd"] == {"start": True, "end": False}
+    assert out["subpixel"] == {"start": False, "end": False}
+    assert "list.addEventListener('scroll', S.onScroll, { passive: true })" in JS
+    assert "list.removeEventListener('scroll', S.onScroll)" in JS
+    assert "S.resizer.observe(list)" in JS and "S.resizer.disconnect()" in JS
+    for side, edge in (("start", "before"), ("end", "after")):
+        assert f"nav.classList.toggle('has-more-{side}', more.{side})" in JS
+        assert "mask-image" in _rule(f".capa-tabs.has-more-{side} .capa-tabs-list")
+        assert f".capa-tabs.has-more-{side}::{edge}" in CSS
+    marks = _rule(".capa-tabs::before,\n.capa-tabs::after")
+    assert "pointer-events: none" in marks and "opacity: 0" in marks
+    # 지금 탭을 보이게 굴릴 때도 흐림 폭만큼 띄운다 — 가장자리 탭이 흐림 밑에 깔리지 않게.
+    assert "const EDGE_PX = 32" in JS and "black 2rem" in CSS
+    assert "left - EDGE_PX" in JS and "list.clientWidth + EDGE_PX" in JS

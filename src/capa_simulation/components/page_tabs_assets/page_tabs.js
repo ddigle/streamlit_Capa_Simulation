@@ -14,6 +14,7 @@
 // 그 회차가 끝나거나 잠깐 지날 때까지 기다렸다 마지막 것만 보낸다(`<tabs-queue>`). 아래 `// <tabs-…>` 구획은 DOM 을
 // 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_page_tabs_assets.py`). 지킴이를 거는 `<tabs-history-install>` 만
 // 창을 만지고, 입장 화면 JS 가 `<tabs-history>` 와 함께 떼어 싣는다(`components/history_guard.py`).
+// 목록이 옆으로 넘치면(좁은 창·탭이 많을 때) 더 있는 쪽 가장자리를 흐리고 화살표 표지를 단다(`<tabs-edges>`).
 // 떠나기 확인은 앞 회차 data 의 `leave` 로 정한다. 편집표 칸을 쓰는 중이거나 막 적용(Enter)한 직후에 누르면 그 편집을 실은
 // 회차가 아직 돌아오지 않아 `leave` 가 비어 있었다 — 확인 없이 옮기고 편집이 말없이 사라졌다(E2E 결함). 그래서 편집표에서
 // 막 손을 뗀 누름은 그 회차가 돌아올 때까지 잠깐 붙들었다가 새 `leave` 로 묻는다(`<tabs-hold>`).
@@ -38,6 +39,8 @@ const HOLD_MS = 400
 // 손떨림 너비.
 const DOUBLE_PRESS_MS = 500
 const DOUBLE_PRESS_PX = 8
+// 넘친 목록 가장자리 흐림 폭(`page_tabs.css` 의 2rem). 지금 탭을 보이게 굴릴 때도 이만큼 띄워 흐림 밖에 둔다.
+const EDGE_PX = 32
 
 // <tabs-history>
 // 화면 이동 한 번이 브라우저 기록을 한 칸만 쌓게 한다. Streamlit 1.63 프런트는 서버가 주소 인자를 바꿀 때마다
@@ -183,6 +186,16 @@ function linkVerdict(pages, open, max, href, opening) {
   return count >= Number(max) ? 'refuse' : 'open'
 }
 // </tabs-links>
+
+// <tabs-edges>
+// 가로로 넘친 목록의 어느 쪽에 탭이 더 있는가 — {start, end}. 넘치지 않으면 둘 다 거짓이다. 굴린 위치는 소수 px 일 수
+// 있어 1px 안쪽은 끝으로 본다.
+function overflowEdges(scrollLeft, scrollWidth, clientWidth) {
+  const max = scrollWidth - clientWidth
+  if (!(max > 1)) return { start: false, end: false }
+  return { start: scrollLeft > 1, end: scrollLeft < max - 1 }
+}
+// </tabs-edges>
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const CLOSE_PATH = 'M4 4 L12 12 M12 4 L4 12'
 const PIN_PATH = 'M6 2 H10 L9.5 6 L12 8.5 V10 H8.75 V14.5 L8 15 L7.25 14.5 V10 H4 V8.5 L6.5 6 Z'
@@ -241,6 +254,7 @@ export default function (component) {
     items: new Map(), noticeId: null, noticeTimer: 0, busyTimer: 0, lastActive: null, onFonts: null,
     onLink: null, linkFlight: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0,
+    onScroll: null, resizer: null,
   })
   // 기록 지킴이는 문서에 하나다 — 탭 줄이 다시 마운트돼도 `pushState` 를 두 번 감싸지 않는다. 보통은 입장 화면 JS 가
   // 이미 걸었다(`<tabs-history-install>`). 이것은 그 JS 가 서지 못한 문서의 안전망이다.
@@ -259,7 +273,10 @@ export default function (component) {
   // 사이드바와 같은 Material 아이콘. 글꼴이 아직 없으면 아이콘을 빼고 글만 둔다(글꼴 이름 글자가 보이지 않게).
   nav.classList.toggle('has-icons', iconFontLoaded())
   if (!S.onFonts && document.fonts && document.fonts.addEventListener) {
-    S.onFonts = () => nav.classList.toggle('has-icons', iconFontLoaded())
+    S.onFonts = () => {
+      nav.classList.toggle('has-icons', iconFontLoaded())
+      if (S.onScroll) S.onScroll()
+    }
     document.fonts.addEventListener('loadingdone', S.onFonts)
   }
 
@@ -346,9 +363,25 @@ export default function (component) {
     S.lastActive = data.active
     const left = current.offsetLeft
     const right = left + current.offsetWidth
-    if (left < list.scrollLeft) list.scrollLeft = Math.max(0, left - 8)
-    else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth + 8
+    if (left < list.scrollLeft + EDGE_PX) list.scrollLeft = Math.max(0, left - EDGE_PX)
+    else if (right > list.scrollLeft + list.clientWidth - EDGE_PX) list.scrollLeft = right - list.clientWidth + EDGE_PX
   }
+  // 넘친 목록의 가장자리 표지(`<tabs-edges>`) — 굴릴 때·목록 폭이 바뀔 때·data 가 바뀔 때 다시 본다.
+  if (!S.onScroll) {
+    S.onScroll = () => {
+      const more = overflowEdges(list.scrollLeft, list.scrollWidth, list.clientWidth)
+      nav.classList.toggle('has-more-start', more.start)
+      nav.classList.toggle('has-more-end', more.end)
+    }
+    list.addEventListener('scroll', S.onScroll, { passive: true })
+    if (typeof ResizeObserver === 'function') {
+      S.resizer = new ResizeObserver(() => {
+        if (S.onScroll) S.onScroll()
+      })
+      S.resizer.observe(list)
+    }
+  }
+  S.onScroll()
 
   const leaveOk = () => !S.data.leave || window.confirm(fill(text.leave, { list: S.data.leave }))
   const busy = (item) => {
@@ -588,5 +621,9 @@ export default function (component) {
     S.onFonts = null
     if (S.onLink) document.removeEventListener('click', S.onLink, true)
     S.onLink = null
+    if (S.onScroll) list.removeEventListener('scroll', S.onScroll)
+    S.onScroll = null
+    if (S.resizer) S.resizer.disconnect()
+    S.resizer = null
   }
 }

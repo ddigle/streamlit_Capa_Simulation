@@ -27,6 +27,51 @@
   scrollbar-width: thin;
 }
 
+/* 목록이 옆으로 넘치면 탭이 더 있는 쪽 가장자리를 흐리고 작은 화살표를 둔다 — JS 가 `has-more-start`·`has-more-end` 를
+   단다(`<tabs-edges>`). 390px 에서 HOME 등 왼쪽 탭이 화면 밖에 있는 줄 모르기 쉬웠다. 화살표는 표지일 뿐 누름을 받지
+   않는다 — 목록은 그대로 옆으로 굴린다. 흐림 폭(2rem)은 JS 의 `EDGE_PX` 와 같다. */
+.capa-tabs.has-more-start .capa-tabs-list {
+  mask-image: linear-gradient(to right, transparent, black 2rem);
+}
+
+.capa-tabs.has-more-end .capa-tabs-list {
+  mask-image: linear-gradient(to left, transparent, black 2rem);
+}
+
+.capa-tabs.has-more-start.has-more-end .capa-tabs-list {
+  mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+}
+
+.capa-tabs::before,
+.capa-tabs::after {
+  content: "";
+  position: absolute;
+  bottom: 0.9375rem;
+  z-index: 1;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border: solid color-mix(in srgb, var(--st-text-color) 60%, transparent);
+  border-width: 0 0 2px 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.capa-tabs::before {
+  left: 0.375rem;
+  transform: rotate(45deg);
+}
+
+.capa-tabs::after {
+  right: 0.375rem;
+  transform: rotate(-135deg);
+}
+
+.capa-tabs.has-more-start::before,
+.capa-tabs.has-more-end::after {
+  opacity: 1;
+}
+
 .capa-tabs-item {
   position: relative;
   display: flex;

@@ -1652,6 +1652,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다. 640px 이하 창에서는 고정하지 않은 지금 탭의 핀도
     두지 않는다(이름 자리). 지금 탭의 최소 폭(10.5rem)은 다른 탭(5.5rem)보다 넓다 — 탭이 많아 모두 최소 폭이면 지금 탭
     이름이 핀·× 에 밀려 「A.」 로 줄었다.
+  - 목록이 옆으로 넘치면 탭이 더 있는 쪽 가장자리를 흐리고(목록 `mask-image`, 2rem) 누름을 받지 않는 화살표 표지를 단다
+    (`page_tabs.js` 의 순수 구획 `<tabs-edges>` 가 `has-more-start`·`has-more-end` 를 정한다 — 굴릴 때·목록 폭이 바뀔 때·data
+    가 바뀔 때). 지금 탭을 보이게 굴릴 때는 흐림 폭만큼(`EDGE_PX`) 띄운다.
 - `src/capa_simulation/components/theme_toggle.py` — 헤더 툴바 슬롯에 밝게/어둡게 버튼을 얹고, 툴바·사이드바
   머리칸에 단추를 다는 다른 스크립트(Guide·Print·사이드바 라벨·터치 스크롤·HOME 칸 둘째 누름 거름)를 같은 iframe 에
   싣는다(`extra_scripts`).
