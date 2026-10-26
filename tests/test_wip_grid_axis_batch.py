@@ -20,6 +20,7 @@ from capa_simulation.components.wip_status_dashboard import (
     _add_cell_traces,
     build_wip_status_grid_figure,
     wip_grid_height_px,
+    wip_grid_legend_y,
     wip_grid_vertical_spacing,
 )
 from capa_simulation.design import tokens
@@ -125,7 +126,7 @@ def _per_cell_axis_reference(
         legend={
             "orientation": "h",
             "x": 0,
-            "y": 1.055,
+            "y": wip_grid_legend_y(rows),
             "xanchor": "left",
             "yanchor": "bottom",
             "font": {"size": 11},

@@ -817,7 +817,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     로 같으면 다시 쓴다. Streamlit 캐시가 아니라 캐시 경계 밖이다.
   - 칸 높이(`WIP_GRID_CELL_HEIGHT_PX`)와 줄 사이(`WIP_GRID_ROW_GAP_PX`)는 px 고정이고 그림 높이·줄 사이 비율은 그 둘에서
     셈한다(`wip_grid_height_px`·`wip_grid_vertical_spacing`) — 줄 사이는 아래 칸의 두 줄 제목과 위 칸의 -45° 날짜 눈금을 함께
-    담고도 사이가 떠야 한다.
+    담고도 사이가 떠야 한다. 범례도 첫 줄 칸 위로 px 고정이다(`wip_grid_legend_y`) — 범례 y 를 축 영역 비율로 고정하면 1줄
+    격자에서 첫 줄 제목과 겹치고, 4줄부터는 위 여백을 넘어 plotly 가 여백을 늘린다.
 - `src/capa_simulation/components/grouped_monthly_table.py` — 환산 결과처럼 편집하지 않는 월별 표를 고정 분류 영역 +
   스크롤 월 영역 Plotly 표로 그린다. 계층 그룹·제품/양산구분 Total·전체 합계 행을 넣고 같은 구조의 CSV 프레임을
   만든다. 계산 원본은 바꾸지 않는다.
