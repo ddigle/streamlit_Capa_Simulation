@@ -51,7 +51,10 @@
 
 `None` 버튼(「HOME 기준」 같은 「값 없음」 버튼)은 버튼 칸에 글자 표지(`NONE_OPTION`)로 든다 — 버튼
 칸의 `None` 은 「모두 꺼짐」 이라 겹치지 않게. 그때 숫자 칸은 `fallback` 을 보이고, 그 값을 그대로
-다시 적으면 값이 안 바뀌어 콜백이 없으므로 정본은 `None` 그대로다(Guide 한 줄).
+다시 적으면 값이 안 바뀌어 콜백이 없으므로 정본은 `None` 그대로다(Guide 한 줄). 그 함정이
+자연스럽게 생기는 칸(동시 개조 상한 — 「없음」 일 때 보일 값이 마땅치 않고, 다른 입력을 따라
+움직이면 「지금 그 값」 을 치는 일이 잦다)은 `none_placeholder` 를 준다 — 정본이 `None` 이면 숫자
+칸이 **비고** 자리표시 글을 보여, 어떤 수를 쳐도 값이 바뀌어 콜백이 돈다.
 
 `step` 이 정수면 정본·숫자 칸 모두 `int` 로 접는다(위젯은 min·max·step 의 수 형이 같아야 한다).
 """
@@ -236,11 +239,13 @@ def render_preset_number_field(
     disabled: bool = False,
     help: str | None = None,
     tone: PresetTone = "accent",
+    none_placeholder: str | None = None,
 ) -> float | None:
     """버튼 줄과 숫자 칸을 지금 컨테이너에 그리고 정본 값을 돌려준다.
 
     정본 칸이 없거나 쓸 수 없는 값이면 `default` 를 심는다. `fallback` 은 정본이 `None` 일 때 숫자
-    칸이 보일 값이다(HOME 기준이면 기본 확보 기준 %).
+    칸이 보일 값이다(HOME 기준이면 기본 확보 기준 %). `none_placeholder` 를 주면 정본이 `None` 일 때
+    숫자 칸을 비우고 그 글을 자리표시로 보인다(`fallback` 은 쓰지 않는다).
     """
     integer = float(step).is_integer() and float(minimum).is_integer()
     held = st.session_state.get(value_key, _MISSING)
@@ -249,18 +254,25 @@ def render_preset_number_field(
     value = st.session_state.get(value_key)
     canonical: float | None = None if value is None else float(value)
 
-    shown = canonical if canonical is not None else float(fallback)
-    shown = min(max(shown, float(minimum)), float(maximum))
     widget_key = _input_widget_key(input_key)
     lit = _option_of(canonical, presets)
     _write_if_changed(pills_key, lit)
     if lit != CUSTOM_OPTION:
         _write_if_changed(_lit_key(pills_key), lit)
-    field_value = _number(shown, integer)
+    field_value: float | int | None
+    if canonical is None and none_placeholder is not None:
+        field_value = None
+    else:
+        shown = canonical if canonical is not None else float(fallback)
+        shown = min(max(shown, float(minimum)), float(maximum))
+        field_value = _number(shown, integer)
     # 적지 않은 회차에만 지금 값을 기본값으로 싣는다 — 끊긴 회차가 `set_value` 를 보내지 못한 새 key
     # 칸도 최소값이 아니라 이 값으로 선다(모듈 머리말). 적은 회차에 함께 주면 Streamlit 이 경고한다.
+    # 자리표시 칸(`none_placeholder`)의 빈 값은 싣지 않는다 — 세션 칸이 `None` 이면 Streamlit 이
+    # 기본값을 `None` 으로 바꿔 빈 칸으로 세운다.
+    written = _write_if_changed(widget_key, field_value)
     field_default: float | int | Literal["min"] = (
-        "min" if _write_if_changed(widget_key, field_value) else field_value
+        "min" if written or field_value is None else field_value
     )
 
     options: list[float | str] = [
@@ -300,6 +312,7 @@ def render_preset_number_field(
             args=(value_key, input_key, widget_key, integer, _shown_decimals(number_format)),
             disabled=disabled,
             label_visibility="collapsed",
+            placeholder=none_placeholder,
             width=132,
         )
         st.caption(f"{unit} 직접 입력", width="content")
