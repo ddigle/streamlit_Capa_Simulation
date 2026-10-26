@@ -8,6 +8,7 @@ from collections.abc import Collection
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.admin_dialog import (
     admin_dialog_is_open,
@@ -104,8 +105,10 @@ def render_display_order_management(repository: DuckDBScenarioRepository) -> Non
             on_click=open_admin_dialog,
             args=(PASTE_DIALOG,),
         )
-    render_flash("display_order_flash")
-    _render_label_warnings()
+    # 저장 성공과 그 저장의 표시명 경고는 같은 칸이다 — 경고 수만큼 아래 직접 편집(key 있는
+    # 편집표)이 밀리면 저장 회차(`st.rerun()` 으로 끊김)의 옛 자리에 흐린 사본이 남는다(AGENTS 9장
+    # 「조건부 알림」).
+    _render_label_warnings(render_flash("display_order_flash"))
     if clashes:
         _render_clash_warning(clashes)
 
@@ -291,15 +294,15 @@ def _render_clash_warning(clashes: list[ValueClash]) -> None:
     )
 
 
-def _render_label_warnings() -> None:
-    """저장한 회차에 담아 둔 표시명 경고를 성공 문구 바로 아래에 한 번 그리고 비운다."""
+def _render_label_warnings(slot: DeltaGenerator) -> None:
+    """저장한 회차에 담아 둔 표시명 경고를 성공 문구 칸(`slot`) 안 그 아래에 한 번 그리고 비운다."""
     mistakes = st.session_state.pop(LABEL_WARNINGS_KEY, None)
     if not isinstance(mistakes, dict):
         return
     for typed, column in mistakes.items():
         # 이름 뒤에 조사를 붙이지 않는다. `Customer` 같은 영문 이름은 받침을 가릴 수 없어
         # 「`Customer` 을」로 틀렸다(2026-10-05 E2E).
-        st.warning(
+        slot.warning(
             "화면 표시명을 적었습니다. 정렬은 원본 컬럼명을 보므로 원본 컬럼명으로 바꿔 적어야 "
             f"걸립니다: `{typed}` → `{column}`",
             icon=":material/help:",

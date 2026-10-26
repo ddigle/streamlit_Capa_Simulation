@@ -290,11 +290,17 @@ def _dialog_is_open(name: str) -> bool:
 
 
 def _render_flashes(*keys: str) -> None:
-    """작업 줄 바로 아래에 완료 알림을 띄운다. 팝업이 남긴 알림도 여기서 뜬다."""
+    """작업 줄 바로 아래에 완료 알림을 띄운다. 팝업이 남긴 알림도 여기서 뜬다.
+
+    칸은 알림이 없어도 선다 — 적용·붙여넣기는 `st.rerun()` 으로 끊기고 다음 회차에 알림이 생기므로,
+    알림 수만큼 아래 편집표(key 있는 블록)가 밀리면 옛 자리에 흐린 사본이 남는다(AGENTS 9장 「조건부
+    알림」 — `flash.render_flash` 와 같은 칸).
+    """
+    slot = st.container()
     for key in keys:
         message = st.session_state.pop(key, None)
         if isinstance(message, str):
-            st.success(message, icon=":material/published_with_changes:")
+            slot.success(message, icon=":material/published_with_changes:")
 
 
 def _render_locked_yield_rows(locked: pd.DataFrame) -> None:
