@@ -871,6 +871,47 @@
   적는다(`_settle_compare_field` — 비교 후 쓰기의 본 이름도 그대로 함께). 고치던 칸은 그대로 둔다. 대안: 칸 key 에 지금 이름을 실어
   `value=` 기본값으로 세우기 — 남이 이름을 바꾼 회차에 고치던 글자를 말없이 버리고 거절 대신 덮는다. 관련:
   `components/equipment_scenario_management.py`·`tests/test_equipment_scenario_name_fields.py`
+- (2026-10-26) **Space 현황의 설비 시나리오 이름 물결표를 막는다**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 「10~12월 증설」·
+  「가정~R3~X」 같은 이름이 Space 의 저장·적용 알림, 저장 안 한 배치 상자 캡션, 잠금·빨리 감기 줄과 꺼진 「배치 편집」 풍선,
+  「최신 rM 불러오기」 팝오버 글, 편집기 위 「새 호기를 넣지 않습니다」 줄, 머리 알림(옛 공식 리비전의 「…가정이던 때의
+  배치안」 포함)에서 지움선이 되던 것(한 글에 이름이 두 번 나오면 물결표 하나짜리 이름도 짝이 맞는다). 그리는 자리에서
+  `markdown_safe_tildes` 로 막고, rerun 건너 그리는 성공 글은 Space 가 담을 때 막는다(`_queue_space_flash`). 같은 화면의 층
+  캔버스 팝업 경고(가정 배치 시나리오 이름 · 이탈 호기 설비명)와 배치 겹침 경고(설비명)도 같이 막았다. 같은 꼴로 Space 층 끄기
+  확인의 가정 배치 덧줄, 사이드바 설비 시나리오 줄의 팝업 저장 알림(가정 배치 저장은 이름이 두 번)·세션 이동 알림(「…」 r1 을
+  … 「…」 r2 로 열었습니다), 시나리오 관리 구획의 세션 이동 알림도 그리는 자리에서 막았다. 대안: 공용
+  `render_flash` 가 늘 막기 — 다른 화면 성공 글까지 바뀌어 이 고침 밖이다. 관련: `app_pages/space_status.py`·
+  `components/floor_layout_upload.py`·`components/space_floor_list.py`·`components/equipment_scenario_status.py`·
+  `components/equipment_scenario_management.py`·`tests/test_space_layout_overlay_page.py`·
+  `tests/test_equipment_scenario_layout_management.py`. 남은 같은 꼴(이 영역 밖): 필요 단축 일정 기준선 저장 거부 글
+  (`baseline_equipment_refusal` — 이름 한 번이라 물결표 둘 이상인 이름만)
+- (2026-10-26) **시나리오 관리 설비 시나리오 구획 캡션에 가정 배치를 넣는다**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 캡션이
+  「설비 시나리오는 일정 여섯·시나리오 메모·비가동만 따로 듭니다」 라 해 같은 구획의 「저장된 배치 차이」 칸·「배치 차이 모두 지우기」·
+  발행 막힘과 어긋나던 것(2단계 `0031` 뒤 고치지 않은 글): 「…일정 여섯·시나리오 메모·비가동과 가정 배치(공식과 다른 호기 위치·층
+  도면 요소·Main 설비명 위치)를 따로 듭니다 — 만들기는 복제로만 합니다.」 같은 낡은 말이던 가용설비 현황 Guide 첫 단락(「Space
+  좌표 … 는 공통이라 어느 시나리오에서 고쳐도 모든 시나리오에 같고」)은 Space 좌표를 공통 목록에서 빼고 「공식 배치가 공통이고,
+  가정 설비 시나리오에서 고친 자리는 그 시나리오의 가정 배치로 따로 저장됩니다」 한 문장으로 옮겼다. 대안: 공식을 고른 회차에는 옛 글 그대로 —
+  캡션은 구획 전체(모든 시나리오)를 말하므로 하나로 둔다. 관련: `components/equipment_scenario_management.py`·
+  `guides/available_equipment_status.md`·`tests/test_equipment_scenario_layout_management.py`
+- (2026-10-26) **지운 호기의 배치 차이를 「공식과 같아진」 차이로 세지 않는다**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 가정
+  설비 시나리오의 저장된 배치 차이가 그 뒤 공통 대장에서 지운 호기의 것이면 Space 머리 첫 줄이 「배치는 공식과 같습니다(저장된
+  차이 호기 1대 — 공식과 같아진 것은 다음 저장·발행 때 정리됩니다)」, 둘째 줄이 「지운 호기의 배치 차이 1행은 버렸습니다」 로 같은
+  1행을 두 가지로 말하고, 「공식으로 발행」 확인 글이 「… 공식과 같아졌습니다 — 공식과 같아진 배치 차이 1행을 정리한 r8로
+  발행합니다」 라 하던 것: 머리 꼬리는 지운 호기의 행(`layout_orphans`)을 빼고 세고(그 행은 둘째 줄이 말한다), 발행 판정은 그 행을
+  따로 센다(`LayoutPublishPreview.orphan_units`·`newest_orphan_units` — 정규화 1단계가 버리는 행). 정리 확인 글은 「…는 공통 대장에서
+  지운 호기의 것입니다 — 지운 호기의 배치 차이 1행을 정리한 r8로 발행합니다」(섞이면 「…같아졌거나 … 것입니다 — 공식과 같아진 배치
+  차이 n행과 지운 호기의 배치 차이 k행을 정리한 …」), 같은 꼴이 옛 리비전 막힘 글 두 갈래(「…것이지만」·「(공통 대장에서 지운 호기의
+  것)」)와 발행 뒤 알림(「…의 지운 호기의 배치 차이를 정리한 r8.」)에도 선다(같은 결함의 곁자리라 함께 고쳤다). 지운 호기가 없는
+  글은 바이트 그대로다. 정리 리비전의 DB 메모(「공식과 같아진 배치 차이 정리」)는 저장 값이라 그대로 두었다. 대안: 지운 호기의
+  행도 「공식과 같아진」 행에 묶어 두고 Space 둘째 줄만 지우기 — 지운 호기가 어디에도 말해지지 않는다. 관련:
+  `components/space_floor_layout.py`·`components/equipment_scenario_management.py`·`services/layout_overlay.py`·
+  `persistence/equipment_repository.py`·`tests/test_equipment_scenario_layout_management.py`·
+  `tests/test_equipment_layout_overlay_repository.py`·`tests/test_space_layout_overlay_page.py`
+- (2026-10-26) **Space 배치 빨리 감기 글도 ▸▸ 줄에 한 번만**(브라우저 E2E r3 eq-flows, 밤사이 권장대로) — 적용해 둔 배치 변경이
+  있는 채 그 가정 시나리오에 남의 일정 저장이 들어온 회차(배치 지문 같음 — 빨리 감기)에 저장 안 한 배치 상자 캡션 끝과 바로
+  아래 ▸▸ 줄이 「「가정 V19」 r2가 더 새롭지만 배치는 같습니다 — …(일정 칸은 그대로 잠금).」 을 두 번 적던 것: 상자 캡션은
+  「…의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 않습니다.」 만 두고 빨리 감기 글은 ▸▸ 줄이 적는다(아래 잠금
+  까닭과 같은 꼴). 대안: 상자에 두고 ▸▸ 줄을 빼기 — 배치 변경이 없는 회차에는 상자가 없어 글이 사라진다. 관련:
+  `app_pages/space_status.py`·`tests/test_space_layout_overlay_page.py`
 - (2026-10-26) **Space 층 배치 잠금 까닭은 잠금 줄에 한 번만**(브라우저 E2E r2 eq-flows, 밤사이 권장대로) — 층 배치가 잠긴
   회차(남이 그 가정 시나리오에 다른 배치를 저장·공식 시나리오가 바뀜)에 저장 안 한 배치 상자의 캡션과 바로 아래 잠금 줄이 같은
   까닭(「「가정 R3」 r10 에 다른 배치가 저장됐습니다 — … 최신 r10을 불러오세요」 등)을 두 번 적던 것: 상자는 「배치 편집이 잠겨
