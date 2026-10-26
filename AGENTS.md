@@ -1914,7 +1914,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   버전 대조 저장의 제 저장 표지(`profile_save_marks`·`is_own_profile_save`)는 Proc Rename 직접 편집·판정 기준·확보율
   보정·Summary 공지·Top5 구간·주요공정 프리셋이 써서 빠른 두 번 누름의 둘째 거부를 「다른 사용자가 먼저 저장」으로 알리지
   않는다. 거꾸로 남의 저장에 거부된 누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로
-  저장하지 않고 그 거부를 다시 알린다 — Proc Rename 직접 편집·판정 기준·확보율 보정과 자동 갱신 설정. 쓰지 않고 끝나는
+  저장하지 않고 그 거부를 다시 알린다 — Proc Rename 직접 편집·판정 기준·확보율 보정·Summary 공지·Top5 구간·주요공정
+  프리셋(저장·기본으로·삭제)과 자동 갱신 설정. 쓰지 않고 끝나는
   아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`)는
   VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가 쓴다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
@@ -3912,12 +3913,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     그대로 알린다(`tests/test_threshold_editor.py`·`tests/test_execution_capacity.py`·`tests/test_admin_area_page.py`·
     `tests/test_preference_profile_conflicts.py`).
   - 거꾸로 **남의 저장에 거부된** 누름의 둘째 누름 — 거부한 회차는 최신 저장본을 그리며 편집 시작 version 을 그
-    version 으로 올리거나(판정 기준·자동 갱신 설정) 지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
+    version 으로 올리거나(판정 기준·자동 갱신 설정·Summary 공지·Top5 구간 — 주요공정 프리셋은 본 고칠 프리셋을 새로 적는다)
+    지운다(Proc Rename·확보율 보정). 사용자가 새 화면을 보기 전에 닿은
     둘째 누름이 옛 화면의 입력을 든 채 그 version 으로 대조를 지나, 거부 알림이 「저장했습니다」로 바뀌고 입력은 말없이
     버려지거나 남의 새 저장을 덮었다(2026-10-26 E2E). 저장 전에 `write_guard.profile_conflict_marks()` 로 받은 dict 에
     거부 알림과 시각을 곧바로 적고(`note_profile_conflict`), `TRAILING_PRESS_SECONDS` 안의 다음 제출은 저장하지 않고 그
     거부를 다시 알린다(`held_profile_conflict`). 창이 지나면 새 화면을 보고 다시 누른 저장이라 평소대로 대조한다 —
-    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 세 시험·`tests/test_auto_official_update_tab.py`).
+    거부 뒤 곧바로 다시 누르는 AppTest 는 창을 0 으로 둔다(위 세 시험·`tests/test_auto_official_update_tab.py`·
+    `tests/test_preference_profile_conflicts.py`).
   - **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿아 그 회차가 쓰지 않고 끝난다(지나간
     세대·이미 지운 글·고칠 대상이 바뀌어 잠긴 단추 — 잠긴 단추의 누름은 Streamlit 이 버린다). 첫 쓰기의 성공 알림은 앞
     회차가 이미 꺼내 그렸으므로 그 회차가 화면을 다시 그리며 알림을 지워, 한 건 쓰였는데 아무 알림도 남지 않았다

@@ -1355,13 +1355,20 @@ def _render_summary_note_editor(
         expected_version = (
             submitted_base if isinstance(submitted_base, int) else summary_profile.version
         )
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[SUMMARY_BASE_VERSION_KEY] = summary_profile.version
         message = (
             "Summary 공지를 저장했습니다." if str(note).strip() else "Summary 공지를 내렸습니다."
         )
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, SUMMARY_SAVE_NAME)
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[SUMMARY_BASE_VERSION_KEY] = summary_profile.version
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를
+            # 다시 알린다(write_guard).
+            notice.error(held)
+            return
         try:
             saved = get_scenario_repository(database_path).replace_global_summary_note(
                 str(note),
@@ -1369,16 +1376,18 @@ def _render_summary_note_editor(
                 expected_version=expected_version,
             )
         except BOOTSTRAP_ERRORS as exc:
+            error = bootstrap_error_message(exc)
+            own = _note_profile_rejection(
+                exc, SUMMARY_SAVE_NAME, error, save_marks=save_marks, conflict_marks=conflict_marks
+            )
             # 충돌이면 남이 저장한 것이 아직 이 화면에 없을 수 있다. 다음 회차가 최신 저장본을
             # 그리게 캐시를 비운다.
             clear_global_summary_note_cache()
-            if isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
-                SUMMARY_SAVE_NAME, exc.expected, exc.stored
-            ):
+            if own:
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_summary_note_flash", message)
                 st.rerun(scope="app")
-            notice.error(bootstrap_error_message(exc))
+            notice.error(error)
             return
         save_marks[SUMMARY_SAVE_NAME] = (expected_version, saved.version)
         clear_global_summary_note_cache()
@@ -1440,10 +1449,16 @@ def _render_top5_band_editor(
         expected_version = (
             submitted_base if isinstance(submitted_base, int) else top5_band_profile.version
         )
-        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
-        st.session_state[TOP5_BASE_VERSION_KEY] = top5_band_profile.version
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, TOP5_SAVE_NAME)
+        # 결과가 무엇이든 다음 저장은 이 회차가 그린 저장본에서 출발한다.
+        st.session_state[TOP5_BASE_VERSION_KEY] = top5_band_profile.version
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다(Summary 공지와 같다).
+            notice.error(held)
+            return
         try:
             saved = get_scenario_repository(database_path).replace_global_top5_band(
                 float(minimum) / 100,
@@ -1452,20 +1467,45 @@ def _render_top5_band_editor(
                 expected_version=expected_version,
             )
         except BOOTSTRAP_ERRORS as exc:
+            error = bootstrap_error_message(exc)
+            own = _note_profile_rejection(
+                exc, TOP5_SAVE_NAME, error, save_marks=save_marks, conflict_marks=conflict_marks
+            )
             # 충돌이면 다음 회차가 최신 저장본을 그리게 캐시를 비운다(Summary 공지와 같다).
             clear_global_top5_band_cache()
-            if isinstance(exc, ProfileVersionConflict) and is_own_profile_save(
-                TOP5_SAVE_NAME, exc.expected, exc.stored
-            ):
+            if own:
                 # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
                 queue_flash("home_top5_band_flash", TOP5_SAVED_MESSAGE)
                 st.rerun(scope="app")
-            notice.error(bootstrap_error_message(exc))
+            notice.error(error)
             return
         save_marks[TOP5_SAVE_NAME] = (expected_version, saved.version)
         clear_global_top5_band_cache()
         queue_flash("home_top5_band_flash", TOP5_SAVED_MESSAGE)
         st.rerun(scope="app")
+
+
+def _note_profile_rejection(
+    exc: BaseException,
+    name: str,
+    message: str,
+    *,
+    save_marks: Mapping[str, tuple[int, int]],
+    conflict_marks: dict[str, tuple[str, float]],
+) -> bool:
+    """버전 대조 저장(`name`)이 거부된 뒤의 표지. 이 세션의 빠른 두 번 누름(제 저장)이면 True.
+
+    남의 저장 때문에 거부됐으면 그 알림(`message`)을 충돌 표지에 곧바로 적는다 — 거부한 회차가
+    편집 시작 version 을 최신으로 올리므로, 사용자가 새 화면을 보기 전에 닿은 둘째 누름이 옛 화면의
+    입력으로 대조를 지나 「저장했습니다」 를 띄우지 않게(`write_guard.held_profile_conflict`). 표지
+    dict 는 쓰기 전에 받아 둔 것이라 세션 칸을 읽지 않는다.
+    """
+    if not isinstance(exc, ProfileVersionConflict):
+        return False
+    if is_own_profile_save(name, exc.expected, exc.stored, save_marks):
+        return True
+    note_profile_conflict(conflict_marks, name, message)
+    return False
 
 
 def _apply_pending_selection(key: str) -> None:
@@ -1717,11 +1757,18 @@ def _render_key_process_editor(
             _render_key_process_preset_actions(profile, target, database_path, stale=stale)
         if not submitted:
             return
-        if stale is not None:
-            _reject_key_process_write(stale, notice)
-            return
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
         save_marks = profile_save_marks()
+        conflict_marks = profile_conflict_marks()
+        held = held_profile_conflict(conflict_marks, KEY_PROCESS_SAVE_NAME)
+        if held is not None:
+            # 남의 저장에 거부된 누름의 둘째 누름이다 — 거부한 회차가 고칠 프리셋을 새로 적어 두어
+            # 대조를 지나므로, 옛 화면의 입력으로 저장하지 않고 그 거부를 다시 알린다(write_guard).
+            notice.error(held)
+            return
+        if stale is not None:
+            _reject_key_process_write(stale, notice, save_marks, conflict_marks)
+            return
         try:
             new_name = normalize_preset_name(name)
             entry = (new_name, tuple(selected))
@@ -1737,7 +1784,7 @@ def _render_key_process_editor(
                 presets, source="웹 직접 편집", expected_version=profile.version
             )
         except BOOTSTRAP_ERRORS as exc:
-            _reject_key_process_write(exc, notice)
+            _reject_key_process_write(exc, notice, save_marks, conflict_marks)
             return
         save_marks[KEY_PROCESS_SAVE_NAME] = (profile.version, saved.version)
         clear_global_key_process_cache()
@@ -1807,18 +1854,24 @@ def _render_key_process_preset_actions(
     else:
         presets = [entry for entry in profile.presets if entry[0] != target]
         message = f"프리셋 {quoted(target)}{object_particle(target)} 지웠습니다."
-    if stale is not None:
-        _reject_key_process_write(stale, st.container())
-        return
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
     save_marks = profile_save_marks()
+    conflict_marks = profile_conflict_marks()
     marks = notice_marks()
+    held = held_profile_conflict(conflict_marks, KEY_PROCESS_SAVE_NAME)
+    if held is not None:
+        # 남의 저장에 거부된 쓰기의 둘째 누름이다(편집 카드의 저장과 같다).
+        st.error(held)
+        return
+    if stale is not None:
+        _reject_key_process_write(stale, st.container(), save_marks, conflict_marks)
+        return
     try:
         saved = get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집", expected_version=profile.version
         )
     except BOOTSTRAP_ERRORS as exc:
-        _reject_key_process_write(exc, st.container())
+        _reject_key_process_write(exc, st.container(), save_marks, conflict_marks)
         return
     save_marks[KEY_PROCESS_SAVE_NAME] = (profile.version, saved.version)
     note_notice(marks, KEY_PROCESS_FLASH_KEY, message)
@@ -1853,23 +1906,34 @@ def _stale_key_process_target(
     )
 
 
-def _reject_key_process_write(exc: BaseException, notice: DeltaGenerator) -> None:
+def _reject_key_process_write(
+    exc: BaseException,
+    notice: DeltaGenerator,
+    save_marks: Mapping[str, tuple[int, int]],
+    conflict_marks: dict[str, tuple[str, float]],
+) -> None:
     """주요공정 프리셋 쓰기(저장·기본으로·삭제)가 거부된 뒤. 버전 충돌이면 캐시를 비운다.
 
-    충돌이 이 세션의 빠른 두 번 누름이면(`is_own_profile_save`) 거부 대신 저장을 다시 알린다.
+    충돌이 이 세션의 빠른 두 번 누름이면(`is_own_profile_save`) 거부 대신 저장을 다시 알리고, 남의
+    저장 때문이면 충돌 표지에 적어 그 둘째 누름도 거부한다(`_note_profile_rejection`). 표지 dict 는
+    쓰기 전에 받아 둔 것이다.
     """
     if not isinstance(exc, ProfileVersionConflict):
         # 이름 중복 거부(「같은 이름의 프리셋이 이미 있습니다: …」)는 사람이 적은 이름을 싣는다.
         notice.error(markdown_safe_tildes(bootstrap_error_message(exc)))
         return
+    message = bootstrap_error_message(exc)
+    own = _note_profile_rejection(
+        exc, KEY_PROCESS_SAVE_NAME, message, save_marks=save_marks, conflict_marks=conflict_marks
+    )
     # 다음 회차가 최신 저장본을 그리게 비운다 — 앱 밖의 쓰기면 이 회차가 읽은 것도 낡았다.
     clear_global_key_process_cache()
-    if is_own_profile_save(KEY_PROCESS_SAVE_NAME, exc.expected, exc.stored):
+    if own:
         # 첫 누름이 남긴 이름 있는 알림이 아직 그려지지 않았으면 그것을 둔다.
         if not st.session_state.get(KEY_PROCESS_FLASH_KEY):
             queue_flash(KEY_PROCESS_FLASH_KEY, KEY_PROCESS_SAVED_MESSAGE)
         st.rerun(scope="app")
-    notice.error(bootstrap_error_message(exc))
+    notice.error(message)
 
 
 def _render_key_process_notice(absent: Sequence[str], process_labels: ProcessLabels) -> None:

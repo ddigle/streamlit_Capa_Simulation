@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
     KEY_PROCESS_SEEN_KEY,
     SUMMARY_BASE_VERSION_KEY,
@@ -266,3 +267,86 @@ def test_a_double_press_reports_the_save_not_a_conflict(
     assert not list(app.exception), [element.message for element in app.exception]
     assert not _errors(app), _errors(app)
     assert _successes(app) == [saved_message]
+
+
+def _other_session_saves(database: Path, editor: str) -> None:
+    """다른 세션이 먼저 저장한다 — 이 화면이 그린 저장본을 낡게 만든다."""
+    repository = DuckDBScenarioRepository(database)
+    if editor == "summary":
+        repository.replace_global_summary_note("B 공지", source="다른 세션", expected_version=0)
+        clear_global_summary_note_cache()
+    elif editor == "top5":
+        repository.replace_global_top5_band(0.5, 1.5, source="다른 세션", expected_version=0)
+        clear_global_top5_band_cache()
+    else:
+        repository.replace_global_key_process_presets(
+            [("기본", PROCESSES[:1]), ("뒤 묶음", PROCESSES[1:])],
+            source="다른 세션",
+            expected_version=1,
+        )
+        clear_global_key_process_cache()
+
+
+def _stored_version(database: Path, editor: str) -> int:
+    repository = DuckDBScenarioRepository(database)
+    if editor == "summary":
+        return repository.load_global_summary_note().version
+    if editor == "top5":
+        return repository.load_global_top5_band().version
+    return repository.load_global_key_process().version
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+@pytest.mark.parametrize(
+    ("editor", "label", "first_version"),
+    [
+        ("summary", "Summary 저장", 1),
+        ("top5", "확보율 구간 저장", 1),
+        ("key_process", "프리셋 저장", 2),
+        ("key_process_default", "기본으로", 2),
+    ],
+)
+def test_a_double_press_after_another_session_saved_keeps_the_refusal(
+    database: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    editor: str,
+    label: str,
+    first_version: int,
+    window: float,
+    trailing: bool,
+) -> None:
+    """B 가 먼저 저장한 뒤 A 가 옛 화면에서 저장을 빠르게 두 번 누른다(판정 기준과 같은 꼴 —
+    `tests/test_threshold_editor.py`).
+
+    첫 누름은 거부되지만 그 회차가 편집 시작 version(프리셋은 본 고칠 프리셋)을 최신으로 올려, 둘째
+    누름이 옛 화면의 입력을 든 채 대조를 지나 저장하고 「저장했습니다」 를 띄웠다 — key 없는 칸이 새
+    저장본으로 서서 A 의 입력은 버려진다. 거부 직후(`TRAILING_PRESS_SECONDS`)의 둘째 누름은 저장하지
+    않고 그 거부를 다시 알린다. 창이 지난 누름은 새 화면을 보고 다시 누른 저장이라 평소대로
+    대조한다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    app = _app(database)
+    if editor == "key_process_default":
+        app.selectbox[0].set_value("뒤 묶음")
+        app = app.run()
+    _other_session_saves(database, editor.removesuffix("_default"))
+    app.text_area[0].input("A 공지 — 옛 화면")
+    app.number_input[1].set_value(180.0)
+    app.text_input[0].input("A 이름")
+    next(button for button in app.button if button.label == label).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in message for message in _errors(app)), _errors(app)
+
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    stored = _stored_version(database, editor.removesuffix("_default"))
+    if trailing:
+        errors = _errors(app)
+        assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+        assert not _successes(app)
+        assert stored == first_version
+    else:
+        assert not _errors(app), _errors(app)
+        assert stored == first_version + 1
