@@ -67,7 +67,7 @@ from capa_simulation.services.floor_layout_profile import (
     image_pixel_size,
     normalize_canvas_size,
 )
-from capa_simulation.services.korean_particle import with_direction_particle
+from capa_simulation.services.korean_particle import with_direction_particle, with_subject_particle
 
 # 이 화면의 위젯 키는 모두 이 접두에서 파생한다. 리터럴 접두를 자리마다 다시
 # 적으면 다른 모듈과 겹쳐도 `test_session_key_collisions` 가 볼 축이 없다.
@@ -338,7 +338,8 @@ def _floor_layout_dialog(
         overlay_outside = overlay.units_outside((target_width, target_height))
         if outside_units:
             st.warning(
-                f"이 캔버스에서는 {target.title} 호기 {_unit_names(outside_units)}가 범위를 "
+                f"이 캔버스에서는 {target.title} 호기 "
+                f"{with_subject_particle(_unit_names(outside_units))} 범위를 "
                 "벗어납니다. 이대로 저장하면 **가용설비 현황**의 설비 마스터 저장이 전부 "
                 "막힙니다 — 저장은 마스터 전체를 한 번에 검증하므로 다른 동·층만 고쳐도 같은 "
                 "오류가 납니다. 레이아웃표시 N 이거나 조건 카드로 걸러 층 도면에 안 보이는 호기도 "
@@ -348,7 +349,8 @@ def _floor_layout_dialog(
         if overlay_outside:
             # 가정 차이 호기는 공식 호기처럼 막지 않는다 — 그 설비 시나리오의 다음 저장만 막힌다.
             st.warning(
-                f"이 캔버스에서는 {overlay_unit_words(overlay_outside)}가 범위를 벗어납니다 — "
+                f"이 캔버스에서는 {with_subject_particle(overlay_unit_words(overlay_outside))} "
+                "범위를 벗어납니다 — "
                 "공식 배치는 그대로 저장되지만 그 설비 시나리오의 다음 저장이 막힙니다. 그 "
                 "시나리오의 Space 에서 먼저 옮기세요.",
                 icon=":material/warning:",
@@ -377,7 +379,8 @@ def _floor_layout_dialog(
                 parts.append(overlay_unit_words(overlay_stranded))
             st.caption(
                 f":material/warning: 지우면 캔버스가 기본 {default_width:g} × "
-                f"{with_direction_particle(f'{default_height:g}')} 돌아가 {' · '.join(parts)}가 "
+                f"{with_direction_particle(f'{default_height:g}')} 돌아가 "
+                f"{with_subject_particle(' · '.join(parts))} "
                 "범위를 벗어납니다 — 그대로 지우면 그 호기가 든 설비 마스터 저장이 막힙니다."
             )
             delete_confirmed = st.checkbox(

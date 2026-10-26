@@ -663,6 +663,18 @@
 
 ### 코드 정리(리팩토링 잔여)
 
+- [ ] **값 뒤 조사 그물 밖 한 자리**(2026-10-26 `particle-single-path` 후속) — `bigdataquery_registration` 의 문자열 더하기
+  「" 과 ".join(…) + " 이(가)"」(고정 글 둘이라 틀린 조사는 아니다). 다른 갈래가 같은 때 고치던 파일이라 두었다. 그물
+  (`tests/test_particle_sites.py`)은 문자열 더하기·`join` 구분자를 보지 않는다. (`page_tabs_state.LIMIT_NOTICE` 의
+  「「{label}」을(를)」 은 같은 날 리뷰 후속에서 고정 명사 「화면」 에 붙여 고쳤다.)
+- [ ] **스크립트 출력의 값 뒤 고정 조사 14곳**(2026-10-26 `particle-single-path` 리뷰) — 그물은 `app.py`·`app_pages`·`src` 만
+  훑는다(AGENTS 8장). 같은 그물을 `scripts/` 에 대면 14곳이 나온다 — `build_deploy_package.py`(「태그 {tag} 가 이미」·
+  「{tag} 를 남기지」·「{upstream} 을」·「{remote[:7]})과」)·`check_deploy_screens.py`(「포트 {args.port} 를」 둘·「가 아직」)·
+  `build_page_guide.py`(「{args.port} 는」)·`container_start.py`(「{title} 를」)·`inspect_real_data_checks.py`(「{label} 를」·
+  「`{path.name}` 을」)·`inspect_revision_calculations.py`(「`{path.name}` 을」)·`sync_object_storage.py`(「{key} 를」)·
+  `apply_deploy_package.py`(「송장 형식 {version} 을」 — 패키지를 import 하지 않으므로 고정 명사로). 정할 것: 그물에 `scripts/` 를
+  더하고 고치기(권장 — 사내 런북이 찍힌 글을 견주는 줄이 없는지 먼저 본다) / 리뷰 몫으로 두기(지금).
+
 - [~] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없는 순수 유지보수 비용이라 다른 일 뒤로 둔다.
   분류 컬럼 폭 계산과 `go.Table` 두 벌 조립은 `monthly_table_base` 로 올렸다. **남은 것**: 격자 머리 여섯 호출과 반복 접두
   생략 루프 — 두 모듈의 `_add_table_grid` 머리, `grouped_monthly_table._grouped_values`·
@@ -830,6 +842,31 @@
 
 ### 화면
 
+- (2026-10-26) **값 뒤 조사는 `korean_particle` 한 길 — 끼운 값 뒤 고정 조사 0곳**(리팩토링 `particle-single-path`, 밤사이
+  권장대로) — E2E 회차마다 고친 자리만 고쳐지고 같은 꼴(「공식 v4 으로」·「4 을」·「27-06 가」)이 다른 파일에서 다시 나오던 것:
+  f-string 에 끼운 런타임 값 뒤 고정 조사(붙은 꼴·한 칸 띄운 꼴·손으로 박은 「은(는)」·「(으)로」 꼴, 진짜 조사였던 띄운 「이」 넷)를
+  모두 `with_*_particle` 로 바꾸고(띄운 꼴은 붙은 꼴 — 「r1을」), `with_subject_particle` 을 더했고, 도우미가 escape 의 `\` 와
+  `%`(받침 없음)를 읽게 했다 — `literal_markdown` 으로 감싼 뒤 골라도 같은 조사다(AGENTS 9장의 차례 제약을 지웠다). 배치
+  편집기 JS 세 자리는 같은 표의 `withJosa`. `tests/test_particle_sites.py` 가 AST 로 f-string·`str.format`·`%s` 틀·JS `${…}`
+  뒤 고정 조사를 막고(허용 목록 없음), ALL_CAPS 상수 뒤 조사는 그 상수의 실제 글로 견준다(영문 끝은 시험의 읽기 표). 정한 것(대안):
+  - 영문 끝은 갈래 꼴이 규칙이지만 이 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름 「C1 1F」의 `F`·「설비 DB」의 `DB`·
+    「Xsize」의 `size`·「투자Capa」의 `Capa`·단위 `Kea`)는 도우미의 읽기 표(`_LATIN_TAIL_FINAL`, JS 같은 표)로 읽는다 — 사람이 고른
+    「C2 2F 는」·「설비 DB 가」·「Xsize를」 이 도우미로 옮기며 갈래 꼴로 떨어지지 않게. 사람이 붙인 이름(「Final Test」·「EQ-X」·
+    「셋업 B」)·CD 환경변수·모듈 이름은 갈래 꼴 그대로다(「「Final Test」이(가) 없어」 — 전에는 「가」). 대안: 표 없이 모두
+    갈래 꼴(명세 그대로 — 「Xsize을(를)」·「설비 DB이(가)」)·영문 자모 읽기 전체(약어와 낱말이 갈리지 않아 「USER」가 「알」).
+  - 굵게 감싼 이름은 닫는 `**` 와 조사 사이를 한 칸 띄운다(`**{x}** {subject_particle(x)}` — 붙이면 `)` 로 끝나는 이름에서
+    굵게가 풀린다). 대안: 붙이기(「**WB(2)**가」 가 굵게 없이 찍힌다).
+  - 시험은 갈래 꼴(「{x}은(는)」)도 막는다(명세는 뺐다 — 모두 고쳤으므로 다시 들지 않게). `str.format` 틀은 처음에 고정 조사만
+    보고 `page_tabs_state.LIMIT_NOTICE` 의 「「{label}」을(를)」 을 두었다 — 같은 날 리뷰 후속에서 갈래 꼴도 보게 하고 고쳤다(아래).
+  - 상수 뒤 조사는 띄운 꼴도 그대로 두고 검사만 한다(「`CAPA_ARTIFACTORY_USER` 는」). 대안: 붙은 꼴로 맞추기(문구만 바뀐다).
+  - 리뷰 후속(같은 날): 그물이 「)」 로 시작하는 뒤 글을 모두 빼서 괄호 앞 낱말이 끼운 값인 꼴(「도면 요소 {mark_id}({name}) 가」·
+    JS 「${hidden.join(', ')}(레이아웃표시 N·도면 이탈)는」)을 놓쳤다 — 이제 괄호 앞이 끼운 값이면 괄호 뒤 글을 보고, 두 자리를
+    `subject_particle(mark_id)`·`withJosa` 로 고쳤다(JS 는 「숨은 모듈(레이아웃표시 N·도면 이탈) {목록}은」 — 괄호를 「숨은 모듈」 뒤로).
+    `str.format` 틀도 갈래 꼴을 보고 탭 상한 알림은 「「{label}」 화면을」(탭 줄 JS 도 같은 틀을 채운다 — 대안: 이름 있는 예외로
+    두기·JS 에 조사 표 더하기), 닫는 기호는 도우미가 건너뛰는 기호(따옴표·`]`·백슬래시)까지 넓혔다. AGENTS 8장은 시험 범위가 앱
+    코드라고 밝혔다(스크립트는 위 2장 「코드 정리」).
+  관련: `services/korean_particle.py`·`components/space_layout_editor_assets/editor.js`·`tests/test_particle_sites.py`·
+  `tests/test_korean_particle.py`
 - (2026-10-26) **표준 목표 로직 분석 식은 적힌 수로 다시 셈해도 적힌 결과가 나온다**(브라우저 E2E r3 static, 밤사이 권장대로) — 식의
   인수를 모두 둘째 자리(RUN_DAY·가용대수는 첫째)로 깎아 적고 결과는 원값으로 내서 「54,698.63 ÷ 1.49 = 36,615.71」(적힌 수로는
   36,710.49)·「1,181.15 × 40.0 = 47,246.08」(47,246.00)처럼 어긋났다(계산은 맞음). 제약 시뮬레이션 고른 달 계산의 규칙(r2 에서 고침)을

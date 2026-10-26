@@ -46,6 +46,9 @@ USAGE_EXCLUDED_COLUMNS: Final = (
     UNIT_KEY_COLUMN,
     UNIT_SHARE_COLUMN,
 )
+# 알림 줄의 사용기준 글자. 뒤 조사는 마지막 값(EDP)의 읽기를 따른다 — 값을 바꾸면
+# `tests/test_particle_sites.py` 의 상수 읽기 표가 조사를 다시 견준다.
+_COUNTED_BASIS_TEXT: Final = "·".join(COUNTED_USAGE_BASIS)
 
 
 def usage_excluded_equipment(equipment: pd.DataFrame) -> pd.DataFrame:
@@ -102,11 +105,9 @@ def usage_exclusion_notice(
     count = usage_excluded_count(excluded, processes=processes, unit_ids=unit_ids)
     if count <= 0:
         return None
-    basis = "·".join(COUNTED_USAGE_BASIS)
-    # 조사는 마지막 값(EDP)의 읽기를 따른다 — 값을 바꾸면 조사도 같이 본다.
     return (
-        f"사용기준이 {basis} 가 아닌 {format_unit_count(count)}대(설비 마스터 기준)는 가용대수에서 "
-        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+        f"사용기준이 {_COUNTED_BASIS_TEXT} 가 아닌 {format_unit_count(count)}대"
+        "(설비 마스터 기준)는 가용대수에서 뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
     )
 
 

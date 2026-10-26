@@ -32,6 +32,7 @@ from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import prune_list_selection
+from capa_simulation.services.korean_particle import subject_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.performance_actuals import (
     MetricSpec,
@@ -140,8 +141,11 @@ def _render_summary(
         st.success(f"{metric.name} 기준을 석 달 넘게 못 맞춘 공정이 없습니다.")
     else:
         worst = needs_action.iloc[0]
+        # 굵게 닫는 `**` 바로 뒤에 한글이 붙으면 이름이 `)` 로 끝날 때 굵게가 풀린다 — 조사는
+        # 한 칸 띄운다.
+        worst_name = labels.label(worst["공정"])
         st.warning(
-            f"**{labels.label(worst['공정'])}** 이(가) {int(worst['연속 미달'])}개월 연속 "
+            f"**{worst_name}** {subject_particle(worst_name)} {int(worst['연속 미달'])}개월 연속 "
             f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
             f"{float(worst['Gap']):.{metric.gap_decimals}%}{metric.gap_suffix}, 영향 물량 비중 "
             f"{float(worst['영향 비중']):.0%}. 개선 필요 공정은 모두 {len(needs_action):,}개입니다."

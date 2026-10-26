@@ -34,6 +34,7 @@ from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
+from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -206,7 +207,7 @@ def bootstrap_error_message(
 def schema_ahead_message(notice: SchemaAheadOfCode) -> str:
     """DB 가 이 코드보다 새 버전일 때 화면에 띄울 문구. 어느 DB 인지와 두 버전을 적는다."""
     return (
-        f"{notice.database_name} 가 이 코드보다 새 버전입니다"
+        f"{with_subject_particle(notice.database_name)} 이 코드보다 새 버전입니다"
         f"(DB {notice.database_version} · 코드 {notice.code_version}). "
         "예전 배포로 되돌린 상태일 수 있습니다. 화면은 그대로 쓸 수 있지만, 새 버전이 더한 "
         "표·열은 이 코드가 읽지도 쓰지도 않습니다. 되돌린 것이 아니라면 최신 배포를 다시 "

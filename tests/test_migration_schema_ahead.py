@@ -112,7 +112,7 @@ def test_the_screen_message_names_the_database_and_both_versions() -> None:
         SchemaAheadOfCode(database_name="설비 DB", database_version=13, code_version=11)
     )
 
-    assert message.startswith("설비 DB 가 이 코드보다 새 버전입니다(DB 13 · 코드 11).")
+    assert message.startswith("설비 DB가 이 코드보다 새 버전입니다(DB 13 · 코드 11).")
     assert "예전 배포로 되돌린 상태일 수 있습니다" in message
 
 

@@ -194,7 +194,8 @@ def pointer_from_json(text: str, *, pointer_key: str) -> Pointer:
     schema = payload.get("schema")
     if schema != POINTER_SCHEMA_VERSION:
         raise ValueError(
-            f"포인터 스키마 {schema} 를 이 버전이 읽지 못합니다(기대 {POINTER_SCHEMA_VERSION}). "
+            f"포인터 스키마 {with_object_particle(str(schema))} 이 버전이 읽지 못합니다"
+            f"(기대 {POINTER_SCHEMA_VERSION}). "
             "앱을 최신 배포본으로 올린 뒤 다시 시도하세요."
         )
     database = payload.get("database")

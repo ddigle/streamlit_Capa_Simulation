@@ -56,12 +56,12 @@ def test_stored_rules_keep_normalized_values() -> None:
 
 
 def test_duplicate_display_name_is_rejected_at_input() -> None:
-    with pytest.raises(ValueError, match="표시명이\\(가\\) 중복"):
+    with pytest.raises(ValueError, match="표시명이 중복"):
         validate_process_rename_frame(_rules([("SAW", "절단"), ("MOLD", "절단")]))
 
 
 def test_duplicate_source_process_is_rejected_at_input() -> None:
-    with pytest.raises(ValueError, match="원본 공정명이\\(가\\) 중복"):
+    with pytest.raises(ValueError, match="원본 공정명이 중복"):
         validate_process_rename_frame(_rules([("SAW", "절단"), ("SAW", "쏘잉")]))
 
 
@@ -72,7 +72,7 @@ def test_duplicate_detection_sees_through_no_break_space() -> None:
 
 
 def test_blank_value_is_rejected() -> None:
-    with pytest.raises(ValueError, match="표시명은\\(는\\) 비어 있을 수 없습니다"):
+    with pytest.raises(ValueError, match="표시명은 비어 있을 수 없습니다"):
         validate_process_rename_frame(_rules([("SAW", "  ")]))
 
 

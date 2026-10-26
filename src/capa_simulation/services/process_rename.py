@@ -14,6 +14,7 @@ import pandas as pd
 
 from capa_simulation.services.clipboard_table import parse_clipboard_table
 from capa_simulation.services.frame_contracts import require_exact_columns
+from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 
 PROCESS_RENAME_COLUMNS = ("공정", "표시명")
 
@@ -55,13 +56,13 @@ def validate_process_rename_frame(frame: pd.DataFrame) -> None:
     }
     for column, label in (("공정", "원본 공정명"), ("표시명", "표시명")):
         if any(not value for value in normalized[column]):
-            raise ValueError(f"{label}은(는) 비어 있을 수 없습니다.")
+            raise ValueError(f"{with_topic_particle(label)} 비어 있을 수 없습니다.")
         duplicates = sorted(
             {value for value in normalized[column] if normalized[column].count(value) > 1}
         )
         if duplicates:
             raise ValueError(
-                f"{label}이(가) 중복되었습니다: {', '.join(duplicates[:5])}. "
+                f"{with_subject_particle(label)} 중복되었습니다: {', '.join(duplicates[:5])}. "
                 "원본 공정과 표시명은 항상 1:1이어야 합니다."
             )
 

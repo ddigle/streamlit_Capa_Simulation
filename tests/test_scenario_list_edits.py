@@ -288,7 +288,7 @@ def test_list_edits_refuse_everything_when_one_row_is_refused(tmp_path: Path) ->
         )
 
     problems = dict(refused.value.problems)
-    assert problems[first] == "시나리오명은(는) 비어 있을 수 없습니다."
+    assert problems[first] == "시나리오명은 비어 있을 수 없습니다."
     assert problems[second] == DUPLICATE_SCENARIO_NAME_MESSAGE
     assert problems[third] == "다른 사용자가 먼저 이름을 바꿨습니다(지금: 남이 바꾼 셋)."
     assert problems[None] == SCENARIO_LIST_MOVED_MESSAGE
@@ -335,7 +335,7 @@ def test_revision_names_are_renamed_together_or_not_at_all(tmp_path: Path) -> No
         )
     assert dict(refused.value.problems) == {
         second.revision_id: "다른 사용자가 먼저 이름을 바꿨습니다(지금: 필터).",
-        first.revision_id: "리비전명은(는) 비어 있을 수 없습니다.",
+        first.revision_id: "리비전명은 비어 있을 수 없습니다.",
     }
     assert [item.revision_name for item in repository.list_revisions(scenario_id)] == [
         "필터",

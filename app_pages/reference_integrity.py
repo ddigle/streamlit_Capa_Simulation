@@ -52,6 +52,7 @@ from capa_simulation.services.dynamic_capacity import (
     build_dynamic_capacity_demo,
     filter_dynamic_capacity,
 )
+from capa_simulation.services.korean_particle import with_direction_particle
 
 _ALL = "전체"
 PROCESS_FILTER_KEY = "dynamic_capacity_process_filter"
@@ -129,9 +130,10 @@ def _render_summary(
         st.success("Capa 실현률이 판정 기준을 밑도는 공정이 없습니다.")
     else:
         worst = needs_action.iloc[0]
+        worst_rate = f"{float(worst['Capa 실현률']):.0%}"
         st.warning(
             f"**{labels.label(worst['공정'])}** 의 Capa 실현률이 "
-            f"{float(worst['Capa 실현률']):.0%} 로 가장 낮습니다. 설비 성능 실현률은 "
+            f"{with_direction_particle(worst_rate)} 가장 낮습니다. 설비 성능 실현률은 "
             f"{float(worst['설비 성능 실현률']):.0%}, 가용 Capa 활용률은 "
             f"{float(worst['가용 Capa 활용률']):.0%} 입니다 — 성능과 활용 중 어느 쪽이 "
             f"더 깎아먹는지가 다음 화면을 정합니다. 개선 필요 공정은 모두 "
@@ -397,7 +399,7 @@ def _render_detail(
         st.markdown("#### :material/waterfall_chart: Capa 손실 구조")
         st.caption(
             f"선택한 {labels.label(process)} 공정의 표준 Capa부터 실제 실적까지를 "
-            f"{unit_label}로 연결합니다."
+            f"{with_direction_particle(unit_label)} 연결합니다."
         )
         st.plotly_chart(
             build_capacity_waterfall_figure(detail_summary),

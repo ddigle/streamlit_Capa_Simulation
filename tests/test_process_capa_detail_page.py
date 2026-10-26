@@ -450,7 +450,7 @@ def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) 
             "![x](http://h/p.png) [링크](http://h/q) A~B~C",
             f"「{literal_markdown('![x](http://h/p.png) [링크](http://h/q) A~B~C')}」은(는) ",
         ),
-        # 조사는 escape 하기 전의 이름으로 고른다 — `\)` 의 `\` 로 고르면 「은(는)」이 된다.
+        # 끝이 `\)` 로 escape 된 이름도 조사 도우미가 `\` 를 건너뛰어 「2」의 끝소리로 고른다.
         ("WB(2)", "「WB\\(2\\)」는 "),
     ],
     ids=["markdown", "particle"],

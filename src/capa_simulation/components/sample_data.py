@@ -27,6 +27,7 @@ from collections.abc import Sequence
 
 import streamlit as st
 
+from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.shared_widget_state import carry_shared_widget_value
 
 SAMPLE_TOGGLE_KEY = "dynamic_capa_sample_data"
@@ -57,8 +58,8 @@ def render_sample_switch(*, key: str, source: str) -> bool:
             if enabled:
                 st.markdown(
                     ":orange-badge[:material/science: 합성 샘플] "
-                    f"화면의 모든 수치는 **실적이 아닙니다.** {source} 가 붙으면 같은 자리에 "
-                    "실데이터가 들어옵니다."
+                    "화면의 모든 수치는 **실적이 아닙니다.** "
+                    f"{with_subject_particle(source)} 붙으면 같은 자리에 실데이터가 들어옵니다."
                 )
             else:
                 st.markdown(
@@ -81,5 +82,5 @@ def render_pending_source(
     """
     with st.container(border=True):
         st.markdown(f"#### :material/pending: {subject}")
-        st.caption(f"{source} 가 붙으면 아래 값이 이 자리에 들어옵니다.")
+        st.caption(f"{with_subject_particle(source)} 붙으면 아래 값이 이 자리에 들어옵니다.")
         st.markdown("\n".join(f"- {item}" for item in expects))
