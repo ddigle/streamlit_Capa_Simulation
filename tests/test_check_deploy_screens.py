@@ -2795,14 +2795,14 @@ def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_sam
 
 
 def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
-    """런북 7장(이번 몫 7-19)이 가리키는 단추 글·기대 꼴·A 표·항목 수가 앱·스크립트와 맞는다
-    (2026-10-25 리뷰). 사내 에이전트는 런북 글 그대로 찾는다.
+    """런북 7장(앞 몫 7-19 · 이번 몫 7-23)이 가리키는 단추 글·기대 꼴·A 표·항목 수가 앱·스크립트와
+    맞는다(2026-10-25 리뷰). 사내 에이전트는 런북 글 그대로 찾는다.
 
-    - B 손 확인의 공정 Capa 상세 다음 화면 단추는 앱 글 그대로다(없는 「… 에서 보기」 가 아니다).
-    - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 이 배포의 39열 기대
-      (`새 이름 8/8`)로 읽는다.
+    - 7-19 B 손 확인의 공정 Capa 상세 다음 화면 단추는 앱 글 그대로다(없는 「… 에서 보기」 가 아니다).
+    - 7-18 머리 「7-18 항목의 새 자리」 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로
+      읽는다(7-18 은 하지 않지만 다른 절이 그 표를 부른다).
     - 개편 A 가 바꾼 Space 층 상세 표 위 줄 「… 의 설비 마스터 n줄」 이 그 표에 있다.
-    - 7-19 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
+    - 7-23 A 표의 키가 `--list`(`ITEMS`) 앞머리 차례와 같고, 런북 압축본 기대와 TODO 「다음 배포 —
       사내 이관 확인」 줄의 항목 수가 그 표의 수와 같다. 그 배포 뒤에 더한 항목은 TODO 「다음 배포 —
       화면 확인 항목」 줄이 키와 `ITEMS` 전체 수를 적는다(7장은 그 배포의 기록이다). 앞머리만 같아도
       통과하므로 7장을 고치지 않은 다음 배포는 빌더가 막는다(`build_deploy_package.
@@ -2810,13 +2810,14 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     """
     runbook = _text(PROJECT_ROOT / "docs" / "internal_update_runbook.md")
     chapter = runbook.split("\n## 7. ", 1)[1].split("\n## 8. ", 1)[0]
-    draft = chapter.split("### 7-19. ", 1)[1].split("### 7-20. ", 1)[0]
+    previous = chapter.split("### 7-19. ", 1)[1].split("### 7-20. ", 1)[0]
+    draft = chapter.split("### 7-23. ", 1)[1].split("### 7-5. ", 1)[0]
     view = _text(COMPONENTS / "process_capa_view.py")
     assert 'f"가용 불일치 {kpis.mismatch_months}개월 — 가용설비 현황"' in view
     assert '"이 달 가용 불일치 — 가용설비 현황"' in view
-    assert "`가용 불일치 n개월 — 가용설비 현황`" in draft
-    assert "`이 달 가용 불일치 — 가용설비 현황`" in draft
-    assert "에서 보기」 다음 화면 단추" not in draft
+    assert "`가용 불일치 n개월 — 가용설비 현황`" in previous
+    assert "`이 달 가용 불일치 — 가용설비 현황`" in previous
+    assert "에서 보기」 다음 화면 단추" not in previous
 
     places = chapter.split("**7-18 항목의 새 자리**", 1)[1].split("**DB 에 쓰지 않는다**", 1)[0]
     headers_row = next(line for line in places.splitlines() if "| A `equipment_headers` |" in line)
