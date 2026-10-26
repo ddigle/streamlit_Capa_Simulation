@@ -234,6 +234,10 @@ HOME 제목 줄의 칠한 주요 Case 칩(`home_main_case_chips`)은 칩 모양 
 색을 정하는 자리는 `config.toml` 이고 **알림 상자와 배지가 서로 다른 슬롯을 본다** —
 `st.success`→`greenColor`, `st.info`→`blueColor`, `st.warning`→`yellowColor` 다. 경고를
 주황으로 만드는 것은 `orangeColor` 가 아니라 `yellowColor` 이므로 둘을 같은 값으로 둔다.
+빨강(`redColor` — `:red-badge[]`·`:red[]`·`st.error`·`st.metric` 감소 delta)도 적는다. 비워 두면
+Streamlit 기본 빨강이라 배지 글자 대비가 4.3:1 로 작은 글자 기준(4.5:1)에 못 미친다(2026-10-26
+E2E). 값은 팔레트의 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`)이고, 다섯 슬롯의 글자·바탕
+대비는 `tests/test_design_tokens.py` 가 두 테마에서 잰다.
 
 **적용·저장하지 않은 편집**도 같은 주황이다 — 사이드바 시나리오 줄(이름 줄)의 `미저장 변경` 배지
 (`:orange-badge[]`)·그 값 칸 왼쪽 3px 띠와, 적용하지 않은 편집이 남은 탭 이름 옆의 점(`tokens.PENDING_MARK`,

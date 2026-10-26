@@ -1,9 +1,12 @@
 # Purpose: 색·서체가 design/tokens.py 밖으로 새지 않는지 검사한다.
 
+import colorsys
 import itertools
 import math
 import re
 from pathlib import Path
+
+import pytest
 
 from capa_simulation.design import tokens
 
@@ -372,6 +375,53 @@ def test_the_dark_theme_block_covers_the_same_keys() -> None:
     dark = set(_theme_colors("[theme.dark]"))
 
     assert not light - dark, f"어두운 테마에 없는 키: {sorted(light - dark)}"
+
+
+# 배지(`:green-badge[]` 등)·알림 상자·`st.metric` delta 가 보는 Streamlit 색 슬롯. 글자색은
+# Streamlit 1.63 이 슬롯 값을 밝은 테마는 15% 어둡게, 어두운 테마는 15% 밝게(HSL 명도) 해 낸다
+# (`theme.<color>TextColor` 기본값).
+BADGE_COLOR_SLOTS = ("green", "blue", "orange", "yellow", "red")
+
+
+def _shift_lightness(hex_color: str, amount: float) -> str:
+    """color2k `darken`/`lighten` 과 같다 — HSL 명도에 `amount` 를 더하고 0~1 로 자른다."""
+    red, green, blue = (int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+    lightness = min(1.0, max(0.0, lightness + amount))
+    channels = colorsys.hls_to_rgb(hue, lightness, saturation)
+    return "#" + "".join(f"{round(channel * 255):02X}" for channel in channels)
+
+
+@pytest.mark.parametrize(("section", "shift"), [("[theme]", -0.15), ("[theme.dark]", 0.15)])
+def test_badge_slots_read_as_small_text_with_palette_colours(section: str, shift: float) -> None:
+    """배지 글자(12px)는 제 바탕에서 4.5:1 이상이다. 슬롯을 비우면 Streamlit 기본 빨강이 4.3:1
+    로 떨어져(E2E 2026-10-26 — 집중 관리·투자 검토 대상·지표 감소 delta) 다섯 슬롯을 모두 적는다.
+    빨강은 팔레트의 오류 선·면과 같은 값이다."""
+    declared = _theme_colors(section)
+    missing = [
+        f"{slot}{suffix}"
+        for slot in BADGE_COLOR_SLOTS
+        for suffix in ("Color", "BackgroundColor")
+        if f"{slot}{suffix}" not in declared
+    ]
+    assert not missing, f"{section} 에 없는 배지 슬롯: {missing}"
+    for slot in BADGE_COLOR_SLOTS:
+        ink = _shift_lightness(declared[f"{slot}Color"], shift)
+        ratio = contrast_ratio(ink, declared[f"{slot}BackgroundColor"])
+        assert ratio >= SMALL_TEXT_MINIMUM, f"{section} {slot}: {ink} 대비 {ratio:.2f}"
+    palette = tokens._PALETTES["light" if section == "[theme]" else "dark"]
+    assert declared["redColor"].upper() == palette["GRID_ERROR_LINE"].upper()
+    assert declared["redBackgroundColor"].upper() == palette["GRID_ERROR_FILL"].upper()
+
+
+def test_the_lightness_shift_matches_the_measured_streamlit_badge_ink() -> None:
+    """글자색 어림이 브라우저 실측(E2E 2026-10-26, 밝은 테마 배지 글자)과 채널마다 1 안에서 같다 —
+    초록 #0B5A54 → #031715, 파랑 #1D4ED8 → #143694(반올림 자리만 다르다)."""
+    for color, measured in (("#0B5A54", "#031715"), ("#1D4ED8", "#143694")):
+        shifted = _shift_lightness(color, -0.15)
+        assert all(
+            abs(int(shifted[i : i + 2], 16) - int(measured[i : i + 2], 16)) <= 1 for i in (1, 3, 5)
+        ), (color, shifted, measured)
 
 
 def test_both_palettes_declare_exactly_the_same_names() -> None:

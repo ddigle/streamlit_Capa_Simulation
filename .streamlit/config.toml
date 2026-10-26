@@ -73,6 +73,12 @@ orangeBackgroundColor = "#F6EBDC"
 # 주황과 같은 값으로 두어 `:orange-badge[]` 와 경고 상자가 같은 뜻·같은 색이 되게 한다.
 yellowColor = "#B45309"
 yellowBackgroundColor = "#F6EBDC"
+# 빨강 슬롯 — `:red-badge[]`(집중 관리·투자 검토 대상)·`:red[]`·`st.error`·`st.metric` 감소 delta 가
+# 본다. 비워 두면 Streamlit 기본 빨강(글자 #bd4043 / 바탕 10% 면)이라 12px 배지 대비가 4.3:1 로
+# 작은 글자 기준(4.5:1)에 못 미쳤다. 값은 팔레트의 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`)이고,
+# 글자색은 Streamlit 이 이 값을 15% 어둡게 해 낸다(`tests/test_design_tokens.py` 가 대비를 잰다).
+redColor = "#E11D48"
+redBackgroundColor = "#FFE4E6"
 
 [theme.sidebar]
 backgroundColor = "#FFFFFF"
@@ -111,6 +117,9 @@ orangeColor = "#F0B37A"
 orangeBackgroundColor = "#33271A"
 yellowColor = "#F0B37A"
 yellowBackgroundColor = "#33271A"
+# 빨강 — 어두운 쪽 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`). 글자색은 15% 밝게 낸다.
+redColor = "#FB7185"
+redBackgroundColor = "#3D1A22"
 
 [theme.dark.sidebar]
 backgroundColor = "#1C1C21"
