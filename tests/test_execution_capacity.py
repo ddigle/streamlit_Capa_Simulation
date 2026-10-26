@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import EXECUTION_BASE_VERSION_KEY
 from capa_simulation.persistence import DuckDBScenarioRepository
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
@@ -169,7 +170,9 @@ def test_a_save_started_from_an_older_version_is_refused(tmp_path: Path) -> None
     assert saved.version == 3
 
 
-def test_the_execution_editor_refuses_to_overwrite_a_newer_save(tmp_path: Path) -> None:
+def test_the_execution_editor_refuses_to_overwrite_a_newer_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """화면: A 가 편집기를 연 뒤 B 가 저장했다. A 의 저장은 막히고 B 의 저장본이 남는다. 그 회차가
     그린 최신 저장본에서 다시 누르면 저장된다."""
     database_path = tmp_path / "scenario.duckdb"
@@ -211,6 +214,9 @@ _render_execution_editor(
     profile = repository.load_global_execution_capacity()
     assert (profile.version, profile.source) == (2, "B 의 저장")
 
+    # 새 화면을 보고 다시 누른 저장이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
+    # 지났다. AppTest 의 회차 사이는 그 창보다 짧아 창은 시험이 정한다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     next(button for button in app.button if button.label == "확보율 보정 저장").click().run()
     assert not app.exception
     assert not app.error, [str(item.value) for item in app.error]
@@ -263,4 +269,57 @@ _render_execution_editor(
     assert not app.error, [str(item.value) for item in app.error]
     assert "확보율 보정을 저장했습니다." in [str(item.value) for item in app.success]
     assert repository.load_global_execution_capacity().version == 2
+    clear_global_execution_capacity_cache()
+
+
+def test_a_double_press_after_a_newer_save_keeps_the_refusal(tmp_path: Path) -> None:
+    """B 가 먼저 저장한 뒤 A 가 옛 화면에서 「확보율 보정 저장」을 빠르게 두 번 누른다
+    (2026-10-26 E2E). 첫 누름의 거부가 출발점을 지워 둘째 누름이 최신 version 으로 대조를
+    지났고, 옛 표로 B 의 저장을 덮은 채 성공만 남았다. 거부 직후의 둘째 누름은 저장하지 않고
+    그 거부를 다시 알린다."""
+    database_path = tmp_path / "scenario.duckdb"
+    repository = _scenario_repository(database_path)
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, "")]), source="A 가 본 것"
+    )
+    script = f"""
+import pandas as pd
+
+from capa_simulation.components.flash import render_flash
+from capa_simulation.components.home_preference import _render_execution_editor
+from capa_simulation.components.process_labels import process_labels_from_rules
+from capa_simulation.persistence.cache import load_global_execution_capacity
+
+database_path = {str(database_path)!r}
+render_flash("home_execution_flash")
+_render_execution_editor(
+    months=[202607, 202608],
+    execution_profile=load_global_execution_capacity(database_path),
+    process_options=["DEMO_A", "DEMO_B"],
+    process_labels=process_labels_from_rules(pd.DataFrame()),
+    unmatched=pd.DataFrame(),
+    clamped=pd.DataFrame(),
+    database_path=database_path,
+)
+"""
+    clear_global_execution_capacity_cache()
+    app = AppTest.from_string(script, default_timeout=60).run()
+    assert not app.exception
+    repository.replace_global_execution_capacity(
+        _rows([(202607, "DEMO_A", -10.0, ""), (202608, "DEMO_B", -5.0, "B")]), source="B 의 저장"
+    )
+    clear_global_execution_capacity_cache()
+    next(button for button in app.button if button.label == "확보율 보정 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert any("다른 사용자가 먼저" in str(item.value) for item in app.error)
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception
+    errors = [str(item.value) for item in app.error]
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not app.success
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "B 의 저장")
     clear_global_execution_capacity_cache()

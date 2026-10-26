@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -266,7 +267,9 @@ def test_display_name_equal_to_another_owned_process_warns_but_still_saves(
     assert "설비 마스터에만 있는 공정은 여기서 검사하지 않습니다" in collision
 
 
-def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: Path) -> None:
+def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A 가 직접 편집 표를 연 뒤 B 가 표시명을 저장했다. A 의 저장은 막히고 B 의 저장본이 남는다
     (판정 기준과 같은 버전 대조). 그 회차가 그린 최신 저장본에서 다시 누르면 저장된다."""
     database_path = tmp_path / "rename-conflict.duckdb"
@@ -292,10 +295,50 @@ def test_direct_edit_save_refuses_to_overwrite_a_newer_shared_profile(tmp_path: 
     assert any("다른 사용자가 먼저" in text for text in errors), errors
     assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
 
+    # 새 화면을 보고 다시 누른 저장이다 — 거부 직후 둘째 누름의 창(`TRAILING_PRESS_SECONDS`)이
+    # 지났다. AppTest 의 회차 사이는 그 창보다 짧아 창은 시험이 정한다.
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
     app.run(timeout=60)
     assert not list(app.error), [str(error.value) for error in app.error]
     assert app.text[-1].value == "v3|SAW>절단;MOLD>성형"
+    clear_global_process_rename_cache()
+
+
+def test_a_double_press_after_a_newer_shared_profile_keeps_the_refusal(tmp_path: Path) -> None:
+    """B 가 먼저 저장한 뒤 A 가 옛 화면에서 「공용 공정 표시명 저장」을 빠르게 두 번 누른다
+    (2026-10-26 E2E). 첫 누름은 거부되고 그 회차가 출발점을 지운다. 둘째 누름은 옛 화면의 표를
+    든 채 최신 version 으로 대조를 지나 저장했고, 거부 알림 대신 성공만 남았다. 거부 직후의 둘째
+    누름은 저장하지 않고 그 거부를 다시 알린다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯
+    값을 한 번 더 보낸다.
+    """
+    database_path = tmp_path / "rename-conflict-double.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="A 가 본 것"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    assert app.text[-1].value == "v1|SAW>절단"
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단"), ("MOLD", "성형")], columns=["공정", "표시명"]),
+        source="B 의 저장",
+    )
+    clear_global_process_rename_cache()
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert any("다른 사용자가 먼저" in str(error.value) for error in app.error)
+
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [str(error.value) for error in app.error]
+    assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
+    assert not app.success
+    assert app.text[-1].value == "v2|SAW>절단;MOLD>성형"
+    assert repository.load_global_process_rename().source == "B 의 저장"
     clear_global_process_rename_cache()
 
 
