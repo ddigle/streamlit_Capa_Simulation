@@ -15,8 +15,10 @@ rate_figure`)와 같은 틀이다.
 - 선: 개조 전(`TEXT_MUTED` 파선) · 개조 뒤(`ACCENT` 굵게, 점은 기준 미달이면 `STATUS_SHORTAGE`) ·
   기준선(달마다 G 가 다르면 `hv` 계단) · 안전 여유나 「가장 고르게」 로 기준을 올렸으면 배치 기준선
   (점선). 오른쪽 끝 글은 글자색(`TEXT_MUTED`)이다.
-- 개조 없이도 배치 기준 미달이라 비가동을 넣지 않은 달은 옅은 부족색 칠, 넣을 수 없는 달(가장 이른
-  시작 앞·끝 날 상한 뒤)은 옅은 회색 칠이다(도형 `opacity` — 새 색 토큰을 두지 않는다).
+- 개조 없이도 배치 기준(기준 + 안전 여유) 미달이라 비가동을 넣지 않은 달은 옅은 부족색 칠, 넣을 수
+  없는 달(가장 이른 시작 앞·끝 날 상한 뒤)은 옅은 회색 칠이다(도형 `opacity` — 새 색 토큰을 두지
+  않는다). 안전 여유가 있으면 풍선이 「배치 기준(기준 +n%p) 미달」 이라고 적는다 — 그 달 확보율이
+  기준 자체는 넘을 수 있다.
 - 아래 띠(y2): 차수마다 가로 막대 하나(`base` = 시작 위치, `x` = 길이, 글 = 대수). 겹치는 차수는
   아래 줄로 내린다.
 - 달마다 보이지 않는 표적 막대(`HIT_TARGET`)가 풍선을 받는다. 누름은 받지 않는다(이 모드는 달을
@@ -68,7 +70,7 @@ __all__ = [
 ]
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 1
+SCHEDULE_FIGURE_SCHEMA_VERSION: Final = 2
 _MARGIN_LEFT_PX: Final = 52
 _MARGIN_RIGHT_PX: Final = 76
 _BAND_TOP: Final = 0.14
@@ -127,8 +129,37 @@ def batch_line(number: int, batch: ScheduleBatch) -> str:
     )
 
 
+def _blocked_reason(result: ScheduleResult) -> str:
+    """기준을 0% 까지 낮춰도 못 넣는 까닭 한 마디(`ScheduleShortfall.cause`)."""
+    shortfall = result.shortfall
+    conditions = result.conditions
+    cause = None if shortfall is None else shortfall.cause
+    if cause == "window":
+        target = "기한" if shortfall is not None and shortfall.by_deadline else "조회기간 끝"
+        if result.last_day < result.first_day:
+            return (
+                f"{target}({result.last_day.isoformat()})이 넣을 수 있는 첫날"
+                f"({result.first_day.isoformat()})보다 앞입니다"
+            )
+        span = (result.last_day - result.first_day).days + 1
+        return (
+            f"넣을 수 있는 첫날({result.first_day.isoformat()}) \\~ {target}"
+            f"({result.last_day.isoformat()})이 {span}일로 개조 기간 {conditions.days}일보다 "
+            "짧습니다"
+        )
+    if cause == "concurrent":
+        return (
+            f"동시 개조 상한 {conditions.concurrent}대가 막습니다 — 상한을 올리면 기준을 지키며 더 "
+            "넣을 수 있습니다"
+        )
+    return "기준을 0% 까지 낮춰도 들어가지 않습니다(그 공정 가용 · 같은 날 가용 대수가 모자랍니다)"
+
+
 def shortfall_lines(result: ScheduleResult) -> list[str]:
-    """다 넣지 못했을 때의 대안 셋(C12). 다 넣었으면 빈 목록."""
+    """다 넣지 못했을 때의 대안 셋(C12). 다 넣었으면 빈 목록.
+
+    완전 탐색이 마디 한도에 걸렸으면(`exact` 거짓) 「이 계산으로 찾은 범위」 라고 끝에 적는다.
+    """
     shortfall = result.shortfall
     if shortfall is None:
         return []
@@ -158,9 +189,14 @@ def shortfall_lines(result: ScheduleResult) -> list[str]:
         + (
             f"**{MINUS}{relief_points(shortfall.relief)}**"
             if shortfall.relief is not None
-            else "기준을 0% 까지 낮춰도 들어가지 않습니다(개조 기간·가용이 모자랍니다)"
+            else _blocked_reason(result)
         )
     )
+    if not shortfall.exact:
+        lines.append(
+            "탐색 한도에 걸려 위 수는 **이 계산으로 찾은 범위**입니다 — 실제로는 더 넣거나 "
+            "덜 낮춰도 될 수 있습니다(적힌 완화만큼 낮추면 들어가는 것은 그대로입니다)."
+        )
     return lines
 
 
@@ -197,7 +233,7 @@ def _lanes(spans: Sequence[tuple[float, float]]) -> list[int]:
     return chosen
 
 
-def _hover(row: ScheduleMonth) -> str:
+def _hover(row: ScheduleMonth, margin: float) -> str:
     parts = [
         f"<b>{html.escape(month_label(row.month))}</b>"
         f" · W/D {row.window_first_day.isoformat()} ~ {row.window_last_day.isoformat()}",
@@ -210,7 +246,11 @@ def _hover(row: ScheduleMonth) -> str:
             f"개조 비가동 {MINUS}{units_text(row.downtime)}대({row.downtime_unit_days:,}대·일)"
         )
     if row.blocked:
-        parts.append("개조 없이도 기준 미달 — 넣지 않음")
+        parts.append(
+            f"개조 없이도 배치 기준(기준 {signed_points(margin)}) 미달 — 넣지 않음"
+            if margin > 0
+            else "개조 없이도 기준 미달 — 넣지 않음"
+        )
     elif not row.open:
         parts.append("넣을 수 없는 달(시작 앞 · 기한 뒤)")
     else:
@@ -265,7 +305,7 @@ def schedule_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figure
             "base": [low] * count,
             "width": [1.0] * count,
             "marker": {"color": tokens.HIT_TARGET, "line": {"width": 0}},
-            "customdata": [[row.month, _hover(row)] for row in rows],
+            "customdata": [[row.month, _hover(row, result.conditions.margin)] for row in rows],
             "hovertemplate": "%{customdata[1]}<extra></extra>",
             "showlegend": False,
             "name": "",

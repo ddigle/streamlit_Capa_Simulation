@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 화면의 「개조 일정」 모드 — 모드 전환·조건 카드·본문·대안 셋·왕복·계획
-# 공유· 쓰기 없음을 본다.
+# 공유· 쓰기 없음과 그 모드 그림·글 조각을 본다.
 
 """「개조 일정」 모드(AppTest).
 
@@ -31,7 +31,17 @@ from test_constraint_simulation_page import (
 )
 
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.modification_schedule_view import DOUBLE_COUNT_NOTE
+from capa_simulation.components.modification_schedule_figures import (
+    ScheduleLabels,
+    schedule_figure,
+    shortfall_lines,
+)
+from capa_simulation.components.modification_schedule_view import (
+    DOUBLE_COUNT_NOTE,
+    FELL_BACK_LABEL,
+    UNITS_HELP,
+    deadline_options,
+)
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
     CONSTRAINT_GENERAL_KEY,
@@ -42,6 +52,8 @@ from capa_simulation.constraint_simulation_state import (
 from capa_simulation.modification_schedule_state import (
     CONSTRAINT_MODE_KEY,
     SCHEDULE_CHART_KEY,
+    SCHEDULE_CONCURRENT_INPUT_KEY,
+    SCHEDULE_CONCURRENT_KEY,
     SCHEDULE_CONCURRENT_PILLS_KEY,
     SCHEDULE_DAYS_KEY,
     SCHEDULE_DAYS_PILLS_KEY,
@@ -53,13 +65,18 @@ from capa_simulation.modification_schedule_state import (
 from capa_simulation.navigation import CONSTRAINT_SIMULATION
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.services.modification_schedule import (
+    ScheduleConditions,
+    ScheduleMonthInput,
+    plan_modification_schedule,
+)
 from capa_simulation.services.required_shortening import plan_required_shortening
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / CONSTRAINT_SIMULATION.path
 TODAY = date(2026, 1, 15)
 TODAY_LINE = "today = date.today()"
-SCHEDULE_KPIS = ["개조 완료", "최대 동시 개조", "개조 달 최저 확보율", "기한"]
+SCHEDULE_KPIS = ["개조 완료", "최대 동시 개조", "개조 달 최저 여유", "기한"]
 
 
 def _page_script(database_path: Path, equipment_path: Path) -> str:
@@ -237,7 +254,10 @@ def test_the_figure_draws_one_bar_per_batch_on_the_wd_coordinate(
 def test_a_deadline_that_cannot_hold_the_window_reports_the_alternatives(
     databases: tuple[Path, Path],
 ) -> None:
-    """기한 「26.02 W/D 첫날 전」 = 1/24 — 1/16 부터 9일뿐이라 30일 개조는 한 대도 못 넣는다."""
+    """기한 「26.02 W/D 첫날 전」 = 1/24 — 1/16 부터 9일뿐이라 30일 개조는 한 대도 못 넣는다.
+
+    대안 셋째 줄은 원인을 가용이 아니라 짧은 창으로 짚는다.
+    """
     app = _schedule(databases)
     app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202602)
     _ok(app.run())
@@ -248,14 +268,54 @@ def test_a_deadline_that_cannot_hold_the_window_reports_the_alternatives(
     assert "**다 넣지 못했습니다 — 대안**" in markdown
     assert "기한(2026-01-24)까지 넣을 수 있는 대수: **0 / 4대**" in markdown
     assert "기한 없이 기준을 지키면 끝나는 날: **2026-02-14** (26.02 W/D)" in markdown
-    assert "기준을 0% 까지 낮춰도 들어가지 않습니다" in markdown
+    assert (
+        "넣을 수 있는 첫날(2026-01-16) \\~ 기한(2026-01-24)이 9일로 개조 기간 30일보다 짧습니다"
+        in markdown
+    )
+    assert "기준을 0% 까지 낮춰도" not in markdown
     assert "넣을 수 있는 차수가 없습니다." in _captions(app)
 
 
+def test_the_deadline_offers_only_months_after_the_chosen_start(
+    databases: tuple[Path, Path],
+) -> None:
+    """시작 「26.03 W/D 첫날(02-22)부터」 면 기한은 26.04 부터다 — 고른 기한이 시작보다 앞이 되면
+    「없음」 으로 돌아간다."""
+    app = _schedule(databases)
+    app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202603)
+    _ok(app.run())
+    app.selectbox(key=SCHEDULE_START_KEY).set_value(202603)
+    _ok(app.run())
+
+    options = app.selectbox(key=SCHEDULE_DEADLINE_KEY).options
+    assert options[0].startswith("없음") and options[1].startswith("26.04 ")
+    assert app.session_state[SCHEDULE_DEADLINE_KEY] == 0
+
+
+def test_deadline_options_follow_the_start() -> None:
+    months = [202601, 202602, 202603, 202604]
+    assert deadline_options(months, cutoff_days=7, today=TODAY) == [0, 202602, 202603, 202604]
+    assert deadline_options(months, cutoff_days=7, today=TODAY, start_month=202603) == [0, 202604]
+    assert deadline_options(months, cutoff_days=None, today=TODAY, start_month=202603) == [
+        0,
+        *months,
+    ]
+
+
+def _points(text: str) -> float:
+    """「+94,821.1%p」 꼴 글자에서 %p 수 하나."""
+    found = re.search(r"([+\u2212-]?[\d,]+\.\d)%p", text)
+    assert found is not None, text
+    return float(found.group(1).replace(",", "").replace("\u2212", "-"))
+
+
 def test_the_even_objective_opens_only_with_a_deadline(databases: tuple[Path, Path]) -> None:
+    """「가장 고르게」 는 기한이 있어야 열리고, 열리면 「가장 빨리」 보다 최저 여유가 크다 — 여유가
+    큰 공정(내장 시드 확보율 수천 %)에서도 고정 위 끝(+100%p)에 멈추지 않는다."""
     app = _schedule(databases)
     app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202606)
     _ok(app.run())
+    earliest_margin = _points(_metric(app, "개조 달 최저 여유")[0])
     objective = app.button_group(key=SCHEDULE_OBJECTIVE_KEY)
     assert not objective.disabled
     objective.set_value("even")
@@ -263,6 +323,11 @@ def test_the_even_objective_opens_only_with_a_deadline(databases: tuple[Path, Pa
 
     value, caption = _metric(app, "기한")
     assert value == "맞춤" and "가장 고르게 기준 +" in caption
+    applied = _points(caption)
+    even_margin = _points(_metric(app, "개조 달 최저 여유")[0])
+    assert applied > 100.0
+    assert even_margin > earliest_margin
+    assert even_margin == pytest.approx(applied, abs=0.05)
     assert "가장 고르게" in _header(app)
 
     # 기한을 걷으면 「가장 빨리」 로 적고 잠근다.
@@ -272,7 +337,54 @@ def test_the_even_objective_opens_only_with_a_deadline(databases: tuple[Path, Pa
     assert app.button_group(key=SCHEDULE_OBJECTIVE_KEY).disabled
 
 
+def test_an_even_run_that_misses_the_deadline_says_it_placed_the_earliest_way(
+    databases: tuple[Path, Path],
+) -> None:
+    """「가장 고르게」 인데 여유만으로도 기한을 못 맞추면 「가장 빨리」 로 놓았다고 머리·기한 칸이
+    적는다."""
+    app = _schedule(databases)
+    app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202602)
+    _ok(app.run())
+    app.button_group(key=SCHEDULE_OBJECTIVE_KEY).set_value("even")
+    _ok(app.run())
+
+    assert FELL_BACK_LABEL in _header(app)
+    value, caption = _metric(app, "기한")
+    assert value == "못 맞춤" and "가장 빨리로 배치" in caption
+
+
+def test_the_tightest_margin_kpi_reads_the_margin_first(databases: tuple[Path, Path]) -> None:
+    """요약 셋째 칸은 기준 대비 여유(%p)가 값이고 그 달 확보율이 캡션이다 — HOME 기준 109.5% 에
+    딱 붙은 「가장 빨리」 결과가 「기준 110%」 옆에서 미달처럼 읽히지 않게."""
+    app = _schedule(databases)
+    value, caption = _metric(app, "개조 달 최저 여유")
+    assert value.startswith("+") and value.endswith("%p")
+    assert " · 확보율 " in caption
+
+
 # ------------------------------------------------------------------ 상태
+
+
+def test_typing_the_shown_concurrency_value_keeps_the_cap(databases: tuple[Path, Path]) -> None:
+    """동시 상한 「없음」 이면 칸이 빈다 — 4를 치면 상한 4대가 정본이 되고, 대수를 늘려도 그대로다
+    (칸이 개조 대수를 보이던 때는 같은 값을 쳐도 콜백이 돌지 않아 상한이 조용히 사라졌다)."""
+    app = _schedule(databases)
+    assert app.number_input(key=SCHEDULE_CONCURRENT_INPUT_KEY).value is None
+    app.number_input(key=SCHEDULE_CONCURRENT_INPUT_KEY).set_value(4)
+    _ok(app.run())
+    assert app.session_state[SCHEDULE_CONCURRENT_KEY] == 4
+    app.number_input(key=SCHEDULE_UNITS_KEY).set_value(10)
+    _ok(app.run())
+
+    assert _metric(app, "최대 동시 개조")[1] == "상한 4대"
+    assert "동시 4대까지" in _header(app)
+
+
+def test_the_units_help_says_which_units_to_count(databases: tuple[Path, Path]) -> None:
+    app = _schedule(databases)
+    help_text = str(app.number_input(key=SCHEDULE_UNITS_KEY).help)
+    assert help_text == UNITS_HELP
+    assert "아직 개조하지 않은" in help_text and "개조된 채 들어오는 신규" in help_text
 
 
 def test_schedule_conditions_and_the_mode_survive_a_round_trip(
@@ -373,3 +485,41 @@ def test_both_modes_share_one_plan_and_the_schedule_mode_writes_nothing(
     _ok(app.run())
     assert app.metric
     assert len(calls) == constraint_calls
+
+
+# ------------------------------------------------------------------ 그림·글 조각(순수)
+
+
+def _blocked_by_margin() -> Any:
+    """기준 110% · 여유 3%p · 1월 개조 전 111% — 기준은 넘지만 배치 기준(113%)에는 못 미친다."""
+    months = [
+        ScheduleMonthInput(202701, 10.0, 11.1, 1.1),
+        ScheduleMonthInput(202702, 10.0, 14.0, 1.1),
+    ]
+    return plan_modification_schedule(
+        months,
+        ScheduleConditions(units=1, days=10, cutoff_days=0, earliest=date(2027, 1, 1), margin=0.03),
+    )
+
+
+def test_the_month_hover_names_the_placement_threshold_when_a_margin_is_set() -> None:
+    result = _blocked_by_margin()
+    assert result.month(202701).blocked and result.month(202701).secure_after
+    figure = schedule_figure(result, ScheduleLabels(process_label="P", general_percent=110.0))
+    hovers = [row[1] for row in figure.data[0].customdata]
+
+    assert "개조 없이도 배치 기준(기준 +3.0%p) 미달 — 넣지 않음" in hovers[0]
+    assert "개조 없이도 기준 미달" not in hovers[0]
+
+
+def test_shortfall_lines_name_the_concurrency_cap_and_an_unfinished_search() -> None:
+    months = [ScheduleMonthInput(month, 10.0, 20.0, 1.0) for month in (202701, 202702, 202703)]
+    capped = plan_modification_schedule(
+        months,
+        ScheduleConditions(
+            units=10, days=30, cutoff_days=0, earliest=date(2027, 1, 1), concurrent=1
+        ),
+    )
+    lines = " ".join(shortfall_lines(capped))
+    assert "동시 개조 상한 1대가 막습니다" in lines
+    assert "이 계산으로 찾은 범위" not in lines

@@ -129,6 +129,7 @@ from capa_simulation.services.modification_schedule import (
     UNITS_RANGE,
     Objective,
     ScheduleConditions,
+    ScheduleMonth,
     ScheduleMonthInput,
     ScheduleResult,
     plan_modification_schedule,
@@ -160,7 +161,9 @@ __all__ = [
     "DOUBLE_COUNT_NOTE",
     "KPI_ROW_KEY",
     "LIST_CARD_KEY",
+    "FELL_BACK_LABEL",
     "SHORTFALL_CARD_KEY",
+    "UNITS_HELP",
     "ReasonCard",
     "ScheduleChoice",
     "ScheduleModeContext",
@@ -184,7 +187,7 @@ LIST_CARD_KEY: Final = "constraint_sim_sched_list"
 SHORTFALL_CARD_KEY: Final = "constraint_sim_sched_shortfall"
 _MEMO_LIMIT: Final = 4
 # 결과 모양(서비스 dataclass)을 바꾸면 올린다 — 세션 memo 의 옛 결과를 쓰지 않게.
-_RESULT_SCHEMA_VERSION: Final = 1
+_RESULT_SCHEMA_VERSION: Final = 2
 _EMPTY: Final = "—"
 
 DOUBLE_COUNT_NOTE: Final = (
@@ -192,8 +195,8 @@ DOUBLE_COUNT_NOTE: Final = (
     "개조는 가용에서 이미 빠져 있어 두 번 빠집니다."
 )
 CHART_NOTE: Final = (
-    "아래 띠 = 차수별 개조 비가동(글 = 대수) · 옅은 빨강 칠 = 개조 없이도 기준 미달이라 "
-    "넣지 않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · 기한 뒤) · 막대는 W/D 구간 "
+    "아래 띠 = 차수별 개조 비가동(글 = 대수) · 옅은 빨강 칠 = 개조 없이도 기준(+ 안전 여유) "
+    "미달이라 넣지 않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · 기한 뒤) · 막대는 W/D 구간 "
     "좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다"
 )
 LIST_NOTE: Final = (
@@ -201,6 +204,12 @@ LIST_NOTE: Final = (
     "가용) · 끝은 걸친 W/D 달별 일수 · 대수는 환산 대수(호기는 고르지 않음)"
 )
 NO_BATCH_TEXT: Final = "넣을 수 있는 차수가 없습니다."
+UNITS_HELP: Final = (
+    "개조할 설비 대수(환산 대수) — 지금 있는 설비 가운데 **아직 개조하지 않은** 대수입니다. 이미 "
+    "개조를 마쳤거나 제약 제품 전용으로 들고 있는 설비, 개조된 채 들어오는 신규 설비는 빼고 "
+    "넣으세요. 어느 호기인지는 고르지 않습니다."
+)
+FELL_BACK_LABEL: Final = "가장 고르게 → 가장 빨리로 배치"
 
 
 class ReasonCard(Protocol):
@@ -300,15 +309,21 @@ def start_options(months: Sequence[int], *, cutoff_days: int | None, today: date
     return [NO_CHOICE, *chosen]
 
 
-def deadline_options(months: Sequence[int], *, cutoff_days: int | None, today: date) -> list[int]:
-    """기한 상자 선택지 — 「없음」 + 「X월 W/D 첫날 전」 이 내일 이후인 달(Cut-off 를 모르면 모든
-    달)."""
-    tomorrow = today + timedelta(days=1)
+def deadline_options(
+    months: Sequence[int],
+    *,
+    cutoff_days: int | None,
+    today: date,
+    start_month: int = NO_CHOICE,
+) -> list[int]:
+    """기한 상자 선택지 — 「없음」 + 「X월 W/D 첫날 전」 이 고른 시작(내일 또는 그 달 W/D
+    첫날) 이후인 달(Cut-off 를 모르면 모든 달). 시작보다 앞선 기한은 고를 수 없다."""
+    first = earliest_day(start_month, cutoff_days=cutoff_days, today=today)
     chosen = [
         int(month)
         for month in months
         if cutoff_days is None
-        or wd_window(int(month), cutoff_days).first_day - timedelta(days=1) >= tomorrow
+        or wd_window(int(month), cutoff_days).first_day - timedelta(days=1) >= first
     ]
     return [NO_CHOICE, *chosen]
 
@@ -351,7 +366,7 @@ def _render_conditions(
         format="%d",
         key=SCHEDULE_UNITS_KEY,
         persist_state="session",
-        help="개조할 설비 대수(환산 대수). 어느 호기인지는 고르지 않습니다.",
+        help=UNITS_HELP,
     )
     units_value = int(units)
     days = render_preset_number_field(
@@ -384,12 +399,14 @@ def _render_conditions(
         step=1,
         unit="대",
         number_format="%d",
-        fallback=min(max(units_value, CONCURRENT_RANGE[0]), CONCURRENT_RANGE[1]),
+        fallback=CONCURRENT_RANGE[0],
         preset_label=lambda value: "없음" if value is None else f"{value:g}대",
         help=(
-            "같은 날 개조 중인 대수의 상한(인력·부품·업체). 「없음」 이면 결과에 최대 동시 대수를 "
-            "보입니다 — 「없음」 일 때 칸은 개조 대수를 보입니다."
+            "같은 날 개조 중인 대수의 상한(인력·부품·업체). 「없음」 이면 칸이 비고 결과에 "
+            "최대 동시 대수를 보입니다. 어느 쪽이든 같은 날 개조 대수는 그 달 가용(환산 대수 "
+            "내림)을 넘지 않습니다."
         ),
+        none_placeholder="없음",
     )
 
     st.caption("**일정**")
@@ -403,7 +420,9 @@ def _render_conditions(
         format_func=lambda month: _start_label(int(month), cutoff_days=cutoff_days, today=today),
         help="가장 이른 개조 시작. 이미 지난 W/D 구간에는 넣지 않습니다.",
     )
-    deadlines = deadline_options(months, cutoff_days=cutoff_days, today=today)
+    deadlines = deadline_options(
+        months, cutoff_days=cutoff_days, today=today, start_month=int(start_month)
+    )
     settle_choice(SCHEDULE_DEADLINE_KEY, deadlines)
     deadline_month = st.selectbox(
         "기한",
@@ -411,7 +430,10 @@ def _render_conditions(
         key=SCHEDULE_DEADLINE_KEY,
         persist_state="session",
         format_func=lambda month: _deadline_label(int(month), cutoff_days=cutoff_days),
-        help="모든 개조를 마칠 날 — 「X월 W/D 첫날 전」 이면 X월 생산부터 개조 비가동이 없습니다.",
+        help=(
+            "모든 개조를 마칠 날 — 「X월 W/D 첫날 전」 이면 X월 생산부터 개조 비가동이 없습니다. "
+            "고른 시작보다 뒤인 달만 나옵니다."
+        ),
     )
     seed_toggle(SCHEDULE_ALIGNED_KEY, False)
     aligned = st.toggle(
@@ -483,7 +505,8 @@ def _render_conditions(
         disabled=not has_deadline,
         help=(
             "가장 빨리 — 모든 달 기준을 지키며 가장 이른 달에 끝냅니다. 가장 고르게(기한이 "
-            "있을 때만) — 기한 안에서 개조가 든 달의 가장 낮은 확보율을 가장 높게 둡니다."
+            "있을 때만) — 기한 안에서 개조가 든 달의 기준 대비 여유(확보율 − 그 달 기준) 가운데 "
+            "가장 작은 것을 가장 크게 둡니다. 여유만으로도 기한을 못 맞추면 가장 빨리로 배치합니다."
         ),
     )
     chosen: Objective = "even" if objective == "even" and has_deadline else "earliest"
@@ -717,7 +740,7 @@ def _header_line(bold: str, result: ScheduleResult, labels: ScheduleLabels) -> s
         f"개조 {conditions.units}대 × {conditions.days}일",
         f"기준 {literal_markdown(general_text(labels, result))}"
         + (f" +{conditions.margin * 100:g}%p" if conditions.margin > 0 else ""),
-        OBJECTIVE_LABELS[conditions.objective],
+        FELL_BACK_LABEL if result.fell_back else OBJECTIVE_LABELS[conditions.objective],
         "동시 상한 없음"
         if conditions.concurrent is None
         else f"동시 {conditions.concurrent}대까지",
@@ -797,22 +820,24 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
             caption=(
                 "상한 없음" if conditions.concurrent is None else f"상한 {conditions.concurrent}대"
             ),
-            help="같은 날 개조 중인 가장 많은 대수(환산)입니다 — 인력·부품이 받쳐 주는지 보세요.",
-        )
-        lowest = result.month(result.lowest_month) if result.lowest_month is not None else None
-        render_status_metric(
-            "개조 달 최저 확보율",
-            rate_text(result.lowest_rate) if lowest is not None else _EMPTY,
-            key="constraint_sim_sched_kpi_lowest",
-            tone="neutral" if lowest is None or lowest.secure_after else "critical",
-            caption=(
-                f"{month_label(lowest.month)} · 기준 대비 {signed_points(result.lowest_margin)}"
-                if lowest is not None
-                else "개조 비가동이 든 달이 없습니다"
-            ),
             help=(
-                f"개조 비가동이 든 달 가운데 개조 뒤 확보율이 가장 낮은 달입니다(기준 "
-                f"{general_text(labels, result)}). 기준을 지키는 것은 늘 보장합니다."
+                "같은 날 개조 중인 가장 많은 대수(환산)입니다 — 인력·부품이 받쳐 주는지 "
+                "보세요. 같은 날 개조 대수는 그 달 가용(환산 대수 내림)을 넘지 않게 배치합니다."
+            ),
+        )
+        tightest = (
+            result.month(result.tightest_month) if result.tightest_month is not None else None
+        )
+        render_status_metric(
+            "개조 달 최저 여유",
+            signed_points(result.tightest_margin) if tightest is not None else _EMPTY,
+            key="constraint_sim_sched_kpi_lowest",
+            tone="neutral" if tightest is None or tightest.secure_after else "critical",
+            caption=_tightest_caption(result, tightest),
+            help=(
+                "개조 비가동이 든 달 가운데 기준 대비 여유(개조 뒤 확보율 − 그 달 기준)가 "
+                f"가장 작은 달입니다(기준 {general_text(labels, result)}). 「가장 고르게」 는 이 "
+                "값을 가장 크게 둡니다. 기준을 지키는 것은 늘 보장합니다 — 0.0%p 이상입니다."
             ),
         )
         tone4: MetricTone
@@ -822,17 +847,23 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
         elif result.complete:
             tone4, value4 = "good", "맞춤"
             caption4 = f"{conditions.deadline.isoformat()} 까지" + (
-                f" · 가장 고르게 기준 {signed_points(result.applied_margin)}"
+                " · 가장 빨리로 배치"
+                if result.fell_back
+                else f" · 가장 고르게 기준 {signed_points(result.applied_margin)}"
                 if conditions.objective == "even"
                 else ""
             )
         else:
             tone4, value4 = "critical", "못 맞춤"
             shortfall = result.shortfall
-            caption4 = f"{result.remaining}대 남음" + (
-                f" · 필요 완화 {MINUS}{relief_points(shortfall.relief)}"
-                if shortfall is not None and shortfall.relief is not None
-                else ""
+            caption4 = (
+                f"{result.remaining}대 남음"
+                + (" · 가장 빨리로 배치" if result.fell_back else "")
+                + (
+                    f" · 필요 완화 {MINUS}{relief_points(shortfall.relief)}"
+                    if shortfall is not None and shortfall.relief is not None
+                    else ""
+                )
             )
         render_status_metric(
             "기한",
@@ -842,6 +873,14 @@ def render_schedule_kpis(result: ScheduleResult, labels: ScheduleLabels) -> None
             caption=caption4,
             help="기한(「X월 W/D 첫날 전」)까지 모든 개조를 마치는가입니다.",
         )
+
+
+def _tightest_caption(result: ScheduleResult, tightest: ScheduleMonth | None) -> str:
+    if tightest is not None:
+        return f"{month_label(tightest.month)} · 확보율 {rate_text(result.tightest_rate)}"
+    if any(row.downtime_unit_days > 0 for row in result.months):
+        return "개조가 든 달이 모두 소요 0 입니다"
+    return "개조 비가동이 든 달이 없습니다"
 
 
 # ================================================================== 본문
