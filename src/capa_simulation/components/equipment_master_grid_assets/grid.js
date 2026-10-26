@@ -379,6 +379,17 @@ function el(tag, className, text) {
   return node
 }
 
+// 글 칸 편집기 — 줄바꿈이 든 값(엑셀 Alt+Enter 칸을 가져온 것)은 여러 줄 칸(textarea)으로 연다. 한 줄 칸(input)은 줄바꿈을
+// 지워 「첫째⏎둘째」 가 「첫째둘째」 로 들어가, 끝에 한 글자만 붙여도(호기 상세는 Enter 만 눌러도) 줄바꿈이 말없이 빠진 값이 바뀐
+// 칸으로 남았다(2026-10-27 E2E). Enter 는 두 칸 모두 확정이다 — 줄을 새로 넣는 길은 없고 있던 줄바꿈을 지킨다.
+function textEditor(className, value) {
+  const lines = String(value || '').split('\n').length
+  const node = el(lines > 1 ? 'textarea' : 'input', className)
+  if (lines > 1) node.rows = Math.min(lines, 6)
+  node.value = value
+  return node
+}
+
 function button(className, text, onClick) {
   const node = el('button', className, text)
   node.type = 'button'
@@ -1579,8 +1590,7 @@ function cellElement(S, row, k) {
   const label = ((row.values || [])[model.nameCol] || '새 호기') + ' ' + column.name + ' ' + (value || '빈칸')
   if (editing && column.kind !== 'choice') {
     cell.classList.add('is-editing')
-    const input = el('input', 'emg-ed')
-    input.value = S.edit.draft
+    const input = textEditor('emg-ed', S.edit.draft)
     input.placeholder = column.kind === 'date' ? '2026-11-09' : ''
     input.setAttribute('aria-label', label)
     cell.appendChild(input)
@@ -2234,10 +2244,9 @@ function newField(S, column, k, mark) {
     }
     field.appendChild(chips)
   } else {
-    const input = el('input', 'emg-input')
+    const input = textEditor('emg-input', value)
     input.id = id
     input.dataset.fk = 'n' + k
-    input.value = value
     input.disabled = Boolean(mark.lock)
     if (column.kind === 'date') input.placeholder = '2026-11-09'
     if (column.kind === 'name') input.placeholder = '예: WBA-11'
@@ -2315,10 +2324,9 @@ function detailField(S, unit, column, k, sets, reasons) {
     }
     field.appendChild(chips)
   } else {
-    const input = el('input', 'emg-input')
+    const input = textEditor('emg-input', S.drafts.has(k) ? S.drafts.get(k) : shown)
     input.id = id
     input.dataset.fk = 'f' + k
-    input.value = S.drafts.has(k) ? S.drafts.get(k) : shown
     input.disabled = Boolean(lock)
     if (column.kind === 'date') input.placeholder = '2026-11-09'
     input.addEventListener('input', () => S.drafts.set(k, input.value))

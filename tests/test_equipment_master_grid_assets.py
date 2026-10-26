@@ -671,6 +671,50 @@ def test_a_double_press_on_an_op_button_sends_the_op_once() -> None:
             assert f"enqueue(S, {op}" not in body, (name, op)
 
 
+_EDITOR_RUNNER = """
+const editors = {}
+const values = [
+  ['multi', '첫째\\n둘째'], ['single', '한 줄'], ['empty', ''],
+  ['tall', 'a\\nb\\nc\\nd\\ne\\nf\\ng\\nh'],
+]
+for (const [name, value] of values) {
+  const node = textEditor('emg-ed', value)
+  const rows = node.rows === undefined ? null : node.rows
+  editors[name] = { tag: node.tagName, value: node.value, rows }
+}
+process.stdout.write(JSON.stringify(editors))
+"""
+
+
+def test_a_multi_line_value_opens_a_multi_line_editor_that_keeps_its_line_breaks() -> None:
+    """엑셀 Alt+Enter 칸(줄바꿈 든 값)을 표 칸·호기 상세 칸에서 고치면 한 줄 칸(input)이 줄바꿈을
+    지워, 끝에 「!」 만 붙여도(상세는 Enter 만 눌러도) 「첫째 둘째 → 첫째둘째!」 가 바뀐 칸으로
+    남았다(2026-10-27 E2E). 줄바꿈이 든 값은 여러 줄 칸(textarea)으로 열어 값을 그대로 둔다 — 한
+    줄 값은 전처럼 input 이다. 두 편집기와 「새 호기」 칸(가져오기로 든 값)이 모두 이 길로만 칸을
+    짓는다."""
+    parts = []
+    for name in ("el", "textEditor"):
+        body = JS[JS.index(f"function {name}(") :]
+        parts.append(body[: body.index("\n}\n") + 2])
+    source = _FAKE_DOM + "\n".join(parts) + _EDITOR_RUNNER
+    result = _node({}, "", source=source)
+
+    assert result == {
+        "multi": {"tag": "TEXTAREA", "value": "첫째\n둘째", "rows": 2},
+        "single": {"tag": "INPUT", "value": "한 줄", "rows": None},
+        "empty": {"tag": "INPUT", "value": "", "rows": None},
+        "tall": {"tag": "TEXTAREA", "value": "a\nb\nc\nd\ne\nf\ng\nh", "rows": 6},
+    }
+    assert "textEditor('emg-ed', S.edit.draft)" in _function("cellElement")
+    assert "textEditor('emg-input', S.drafts.has(k) ? S.drafts.get(k) : shown)" in _function(
+        "detailField"
+    )
+    assert "textEditor('emg-input', value)\n    input.id = id\n    input.dataset.fk = 'n' + k" in JS
+    assert "el('input', 'emg-ed')" not in JS
+    assert "el('input', 'emg-input')\n    input.id = id" not in JS
+    assert re.search(r"\.emg textarea\s*\{[^}]*resize:\s*none", CSS)
+
+
 def test_the_narrow_check_head_rule_outranks_the_wide_one() -> None:
     """좁은 화면 체크 줄 머리(한 줄 차지)는 넓은 규칙(116px)보다 특정도가 높아야 한다 — 미디어
     규칙이 파일 앞에 있어 같은 선택자면 뒤의 넓은 규칙이 이긴다."""
