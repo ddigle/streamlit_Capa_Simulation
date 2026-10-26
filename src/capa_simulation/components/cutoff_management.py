@@ -29,6 +29,7 @@ from capa_simulation.components.table_view_controls import (
     render_table_view_controls,
 )
 from capa_simulation.components.write_guard import (
+    forget_seen,
     held_profile_conflict,
     is_own_save,
     note_profile_conflict,
@@ -57,7 +58,12 @@ from capa_simulation.services.process_cutoff import (
     process_cutoff_fingerprint,
 )
 
-__all__ = ["CUTOFF_BASE_KEY", "CUTOFF_DRAFT_KEY", "render_cutoff_management"]
+__all__ = [
+    "CUTOFF_BASE_KEY",
+    "CUTOFF_DRAFT_KEY",
+    "forget_cutoff_draft",
+    "render_cutoff_management",
+]
 
 CUTOFF_DRAFT_KEY = "equipment_cutoff_draft_v1"
 # 초안이 출발한 저장본의 지문(`process_cutoff_fingerprint`). 저장 회차에 저장소가 대조한다. 초안을
@@ -72,6 +78,20 @@ _FLASH_KEY = "equipment_cutoff_flash_v1"
 _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 
 
+def forget_cutoff_draft() -> None:
+    """초안·출발점·편집표를 걷는다 — 「설정」 팝업을 새로 열 때(`open_equipment_settings`) 부른다.
+
+    초안은 그리는 회차마다 다시 적히므로, 걷지 않으면 한 번 열어 본 세션은 그때 저장본의 사본을
+    계속 보였다 — 남이 AVI-PKG 를 12 로 저장한 뒤 다시 열어도 옛 값이었고, 고치지 않은 채 누른
+    저장이 「다른 사용자가 먼저 …」 로 거부됐다(바깥 화면은 저장본으로 센다, 2026-10-27 E2E). 다음에
+    그리는 회차가 최신 저장본에서 초안과 출발점을 다시 세운다. 팝업은 「닫으면 저장하지 않은 칸은
+    사라진다」 이므로 여는 때 걷는 것과 뜻이 같다(닫힘은 X·Esc 말고 페이지 이동으로도 와 여는 쪽에
+    둔다)."""
+    st.session_state.pop(CUTOFF_DRAFT_KEY, None)
+    forget_seen(CUTOFF_BASE_KEY)
+    discard_editor(_EDITOR_KEY)
+
+
 def render_cutoff_management(
     repository: DuckDBEquipmentRepository,
     *,
@@ -83,7 +103,8 @@ def render_cutoff_management(
 
     `locked_reason` 을 주면 표를 읽기 전용으로 보이고(저장값 그대로) 「설비 공정으로 채우기」·저장을
     세우지 않는다 — Cut-off 는 모든 설비 시나리오 공용이라 가정 설비 시나리오에서는 고치지 않는다
-    (E3). 잠근 동안 초안(세션 칸)은 건드리지 않는다 — 공식으로 돌아가면 하던 편집이 그대로 선다.
+    (E3). 잠근 동안 초안(세션 칸)은 건드리지 않는다. 초안은 팝업이 열린 동안만 산다 — 팝업을 새로
+    열면 `forget_cutoff_draft` 가 걷어 최신 저장본에서 다시 선다.
 
     돌려주는 것이 편집 중인 값이 아니라 저장된 값인 것은, Static 대비 일정의 GAP 계산이 저장되지
     않은 초안으로 숫자를 내면 안 되기 때문이다(그 화면은 저장된 값을 캐시 경계에서 직접 읽는다).

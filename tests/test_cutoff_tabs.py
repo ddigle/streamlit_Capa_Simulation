@@ -211,6 +211,42 @@ def test_filling_from_equipment_processes_keeps_the_values_already_written() -> 
     assert add_missing_cutoff_rows(draft, ["Die Attach"]) is draft
 
 
+def test_reopening_settings_shows_a_cutoff_saved_by_someone_else(tmp_path: Path) -> None:
+    """A 가 「설정」 을 열어 보고 닫은 뒤 B 가 AVI-PKG 를 12 로 저장하면, A 가 다시 열어도 옛
+    값(45)이 보였고 고치지 않은 채 누른 저장이 「다른 사용자가 먼저 …」 로 거부됐다(2026-10-27
+    E2E) — 초안이 그리는 회차마다 다시 적혀 닫아도 남았다. 새로 열면 초안을 걷어 최신 저장본에서
+    연다."""
+    from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
+
+    database_path = tmp_path / "availability.duckdb"
+    outsider = DuckDBEquipmentRepository(database_path)
+    outsider.initialize()
+    outsider.save_process_cutoff(
+        pd.DataFrame({"공정": ["AVI-PKG"], "Cutoff일수": [45.0], "비고": [None]})
+    )
+    clear_equipment_repository()
+    app = _run(database_path)
+    assert app.session_state[CUTOFF_DRAFT_KEY]["Cutoff일수"].tolist() == [45.0]
+    del app.session_state[EQUIPMENT_DIALOG_KEY]
+    app.run()
+
+    outsider.save_process_cutoff(
+        pd.DataFrame({"공정": ["AVI-PKG"], "Cutoff일수": [12.0], "비고": [None]})
+    )
+    clear_process_cutoff_cache()
+    _open_settings(app)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.session_state[CUTOFF_DRAFT_KEY]["Cutoff일수"].tolist() == [12.0]
+    next(button for button in app.button if button.label == "Cut-off 저장").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    warnings = [str(item.value) for item in app.warning]
+    assert not any("다른 사용자가 먼저" in text for text in warnings), warnings
+    assert any("Cut-off 1건을 저장했습니다" in str(item.value) for item in app.success)
+    assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0]
+    clear_equipment_repository()
+
+
 def test_a_cutoff_saved_by_someone_else_is_not_erased_by_an_older_draft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
