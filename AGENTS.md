@@ -1917,8 +1917,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   icon)`(kind 는 success·info·warning·error, 아이콘 없는 성공은 글만 담는다)로 세션에 담고, 다음 실행에서
   `render_flash(*keys)` 가 알림이 있든 없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 한 번 그리고 그 칸을
   돌려준다 — 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의 실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤
-  `st.rerun()` 이면 문구가 그려지지 않는다). 이름에 FLASH·NOTICE 가 든 칸을 이 모듈 밖에서 꺼내는 꼴은
-  `tests/test_flash_messages.py` 의 AST 그물이 막고, 수명이 다른 칸만 까닭과 함께 허용 목록에 둔다(9장 「조건부 알림」).
+  `st.rerun()` 이면 문구가 그려지지 않는다). 이 모듈 밖에서 알림 칸을 꺼내는 꼴은 `tests/test_flash_messages.py` 의
+  AST 그물 둘이 막는다 — 이름에 FLASH·NOTICE 가 든 칸을 비우는(`pop`·`del`) 자리와, 이름과 상관없이 꺼낸 칸(`pop`,
+  같은 블록의 `get`·`[]` 뒤 `del`)의 값이 알림 요소(`success`·`info`·`warning`·`error`·`toast`)에 드는 자리. 수명이
+  다른 칸만 (파일, 함수, 칸) 으로 까닭과 함께 허용 목록에 둔다(9장 「조건부 알림」).
   담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
   `write_guard.held_notice` 로 그 글을 성공으로 다시 그린다 — 아주 빠른 둘째 누름의 회차가 앞 회차의 알림을 지우지 않게
   모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
@@ -3711,11 +3713,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (`tests/test_popover_keys.py` 가 소스를 훑고, 오류가 서는 회차에도 블록 id 가 같은지 본다).
   - **알림 칸은 `components/flash.py` 한 길이다.** 콜백·본문의 결과는 `queue_flash` 로 담고 그 칸은 `render_flash` 로
     그린다 — 칸마다 `session_state.pop` 해 `st.success` 따위로 그리는 길을 따로 두면 끊긴 회차·자리 밀림 고침이 그
-    칸에만 가지 않는다(2026-10-26 리팩토링 — 칸 열여섯을 옮겼다). `render_flash` 는 알림이 없어도 칸 하나를 세워
-    이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패 문구를 쓴다. 다음 동작까지 남아야 하는 칸(VOC
-    지운 글의 적어 둔 답변, 필요 단축 일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP),
-    페이지가 같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표)은 `tests/test_flash_messages.py` 의 허용 목록에
-    까닭과 함께 둔다.
+    칸에만 가지 않는다(2026-10-26 리팩토링 — 칸 열여섯을 옮겼고, 리뷰 뒤 설비 마스터 탭 저장 결과·VOC 머리 알림과 글
+    쓰기·글 상자 실패·Space 설비 시나리오 바꾸기 실패를 더 옮겼다). 실패만 내는 칸도 같다(`kind="error"`).
+    `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
+    문구나 같은 동작의 경고 여러 줄(표시순서 저장의 표시명 경고)을 쓴다. 다음 동작까지 남아야 하는 칸(VOC 지운 글의
+    적어 둔 답변, 필요 단축 일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP), 페이지가
+    같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표), 회차의 상자 유무로 두 자리 가운데 하나에 서는 칸(Space 배치
+    저장 실패)은 `tests/test_flash_messages.py` 의 허용 목록에 까닭과 함께 둔다. 그물은 이름(FLASH·NOTICE)만 보지 않고
+    꺼낸 값이 알림 요소에 드는지를 본다 — ERROR·RESULT·WARNINGS 이름 칸이나 `get` 뒤 `del` 로 되돌린 꼴도 잡는다.
   - **key 가 있어도 자리는 고정한다(2026-10-05 E2E).** 저장 회차(알림 없음)를 `st.rerun()` 으로
     끊고 다음 회차(알림 있음)에서 key 있는 탭 묶음이 한 칸 밀리면, 옛 자리에 회색 사본이 남아
     새로고침 전까지 다른 페이지까지 따라왔다(설비 마스터 탭(옛 RawData) 두 번째 저장). 수가 바뀌는 알림은
@@ -3946,7 +3951,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
     시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
     「기본으로」·「삭제」). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
-    `held_notice` 를 따로 부르지 않는다(VOC 머리 칸만 아직 flash 밖이라 콜백이 직접 읽는다). 창이 지난 옛 화면의 누름은
+    `held_notice` 를 따로 부르지 않는다(VOC 머리 칸도 `render_flash` 칸이다). 창이 지난 옛 화면의 누름은
     전처럼 알리지 않는다(`tests/test_voc_page.py`·`tests/test_key_process_preset_messages.py`·
     `tests/test_flash_messages.py` 의 끊긴 회차 시험).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.

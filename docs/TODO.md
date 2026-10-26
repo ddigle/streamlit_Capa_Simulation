@@ -664,15 +664,21 @@
 ### 코드 정리(리팩토링 잔여)
 
 - [ ] **알림 칸 flash 한 길 — 남은 칸(2026-10-26 리팩토링 `notice-slot-toolbar` 후속)** — 칸 열여섯을 `components/flash.py`
-  (`queue_flash`·`render_flash`)로 옮겼다. 다른 갈래가 같은 파일을 고치는 중이라 이번에 두고 `tests/test_flash_messages.py`
-  `FLASH_POP_ALLOWED` 에 까닭과 함께 남긴 것: VOC 머리 알림(`voc.FLASH_KEY` — 3회차 빠른 두 번 누름 고침과 위젯 세대 갈래 뒤),
-  설비 시나리오 줄 사이드바 알림(`equipment_scenario_status.FLASH_KEY`), 설비 시나리오 구획 알림(`equipment_scenario_management`
-  — 그린 회차에 팝오버 세대를 올리므로 `pending_flash` 로 먼저 보고 옮긴다), 환산 화면 작업 줄 알림(`load_conversion._render_flashes`
-  — 그리는 자리가 아이콘을 정한다. `queue_reference_import_flash` 가 아이콘을 받게 한 뒤 옮긴다). 수명이 달라 그대로 두는 것:
-  VOC 지운 글 칸·기준선 shown 칸·STEP 탭 알림·월 편집표 `st.empty` 자리. 화면 탭 상한 알림(`page_tabs_state`)은 탭 줄 JS 가
-  일련번호로 띄우는 컴포넌트 data 라 `st` 알림 길이 아니다(옮기지 않음). `equipment_data_workspace.FLASH_KEY`
-  (「equipment_status_flash」)는 쓰는 곳이 없는 죽은 칸이다(D 걷기에서 쓰는 쪽만 걷혔다) — 가용설비 현황이 `render_flash` 로
-  읽기만 한다. 지울지는 다음 정리 때.
+  (`queue_flash`·`render_flash`)로 옮겼고, 리뷰 뒤 다섯(설비 마스터 탭 저장 결과·VOC 머리 알림·VOC 글 쓰기 실패·글 상자 실패·
+  Space 설비 시나리오 바꾸기 실패)을 더 옮겼다. VOC 글 삭제의 빠른 두 번 누름 다시 알리기는 이제 `render_flash` 한 길이다(콜백
+  사본을 걷었다). `tests/test_flash_messages.py` 그물은 이름(FLASH·NOTICE) 그물에 **그리기 그물**(꺼낸 칸의 값이 알림 요소에
+  든다 — 칸 이름·`get` 뒤 `del` 꼴 무관)을 더했고, 허용 목록은 (파일, 함수, 칸) 이다. 다른 갈래가 같은 파일을 고치는 중이라 두고
+  `FLASH_POP_ALLOWED` 에 까닭과 함께 남긴 것: 설비 시나리오 줄 사이드바 알림(`equipment_scenario_status.FLASH_KEY`), 설비 시나리오
+  구획 작업·거절 알림(`equipment_scenario_management` `FLASH_KEY`·`REFUSED_KEY` — 그린 회차에 팝오버 세대를 올리므로 `pending_flash`
+  로 먼저 보고 둘을 함께 옮긴다), Cut-off 충돌 거부(`cutoff_management._CONFLICT_KEY` — 저장 대조 갈래
+  `refactor/write-cas-seen-own-save` 가 쓰기 거부 표지로 옮기며 늘 서 있는 칸에 넣는다. 그 갈래를 합칠 때 허용 줄을 지운다), 환산
+  화면 작업 줄 알림(`load_conversion._render_flashes` — 그리는 자리가 아이콘을 정한다. `queue_reference_import_flash` 가 아이콘을
+  받게 한 뒤 옮긴다. 그동안 그리는 칸은 늘 서 있게 고쳐 붙여넣기·적용 알림이 아래 PKG PLAN 편집표를 밀지 않는다). 수명·자리가
+  달라 그대로 두는 것: VOC 지운 글 칸·기준선 shown 칸·STEP 탭 알림·월 편집표 `st.empty` 자리·Space 배치 저장 실패(회차의 상자
+  유무로 두 자리)·표시순서 표시명 경고(한 저장의 여러 줄 — 저장 성공 칸 안에 그린다). 화면 탭 상한 알림(`page_tabs_state`)은
+  탭 줄 JS 가 일련번호로 띄우는 컴포넌트 data 라 `st` 알림 길이 아니다(옮기지 않음).
+  `equipment_data_workspace.FLASH_KEY`(「equipment_status_flash」)는 쓰는 곳이 없는 죽은 칸이다(D 걷기에서 쓰는 쪽만 걷혔다) —
+  가용설비 현황이 `render_flash` 로 읽기만 한다. 지울지는 다음 정리 때.
 - [ ] **다음 배포 — 알림 칸·팝오버 key·표 앞 띄움(2026-10-26 리팩토링)** — 배포 직후 열려 있던 팝오버 넷(Space 저장 칸·버리기·
   시나리오 바꾸기, 필요 단축 일정 「기준선 지우기」)과 라벨이 바뀌는 확장 패널 여덟은 새 key 로 한 번 닫히고 접힌다. 설비 설정
   Cut-off 잠긴 보기·제외 목록·Admin 공용 표시순서·Proc Rename 표가 표 도구 막대 띄움(24px)만큼 내려간다. 사내 화면 확인 항목은
