@@ -1473,9 +1473,11 @@ def _render_securement_cross_check(
     ].copy()
     display["생산계획년월"] = display["생산계획년월"].map(lambda month: month_label(int(month)))
     display = display.rename(columns=_CROSS_CHECK_HEADERS).round(3)
-    # 확보율은 다른 화면(HOME·Static Capa)처럼 %, 차이는 %p 로 보인다 — 비율 그대로(1.093·−0.364)면
-    # 같은 확보율이 이 표에서만 다른 단위로 읽힌다. 차이는 %p 수로 바꿔 부호와 함께 적는다.
-    display["확보율차이"] = display["확보율차이"] * 100
+    # 확보율은 다른 화면(HOME·Static Capa)처럼 %, 차이는 %p 로 보인다 — 비율 그대로(1.093·−0.364)
+    # 면 같은 확보율이 이 표에서만 다른 단위로 읽힌다. 차이는 **보이는 두 확보율**의 차를 %p 수로
+    # 적는다 — 깎기 전 값의 차를 깎으면 145.8% · 118.7% 옆에 −27.0%p 가 서 검산이 어긋난다(9장
+    # 「화면 숫자는 검산되어야 한다」). 곱한 뒤 다시 깎아 끝자리 잡음이 내려받기에 남지 않게 한다.
+    display["확보율차이"] = ((display["일정기준확보율"] - display["Static확보율"]) * 100).round(1)
     st.dataframe(
         labels.frame(display),
         hide_index=True,
