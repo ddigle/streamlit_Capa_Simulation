@@ -9,8 +9,9 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 
 **무엇을 싣는가**(2026-10-06 사용자 결정). 이 세션에 **적용 중인 시나리오**다(`header_lines`).
 - 위 줄(굵게): `{시나리오명} · r{N} {리비전명} · {상태}` — 상태는 `공식 v{N}`(최신
-  공식버전)·`저장된 리비전`·`미저장 변경`(적용했지만 저장하지 않은 편집 — 사이드바 시나리오
-  상자의 「미저장 변경」과 같은 판정 `has_unsaved_scenario_changes`).
+  공식버전)·`최신 r{M} 있음`(그 시나리오에 더 새 리비전 — 남의 저장)·`저장된 리비전`·`미저장
+  변경`(적용했지만 저장하지 않은 편집 — 사이드바 시나리오 상자의 「미저장 변경」과 같은 판정
+  `has_unsaved_scenario_changes`).
 - 아래 줄(옅게): `{시뮬레이션 코드} · 적용 {YY.MM}–{YY.MM} · {원천} {YY.MM.DD} 등록`. 시나리오
   기간은 생산계획에 있는 첫 달·끝 달이고 조회기간이 아니다(조회기간은 사이드바 조건 카드에 이미
   있다). 공식버전이 아니면 등록일 대신 리비전 저장일(`{YY.MM.DD} 저장`)이다.
@@ -21,7 +22,8 @@ Streamlit 은 헤더(`stHeader`)에 위젯을 넣는 공식 API 를 주지 않�
 **HOME 을 무겁게 하지 않는다**(2026-10-03 사용자 원칙). 이 글은 회차마다 DB 를 보지 않는다 —
 시나리오 이름표는 활성화할 때 세션에 떠 둔 값(`scenario_activation.active_scenario_label`),
 최신 공식버전은 입장 화면 요약이 `RECHECK_SECONDS` 에 한 번 확인해 세션에 둔 값
-(`intro_summary.latest_official_revision`), 미저장 여부는 세션 판정이다.
+(`intro_summary.latest_official_revision`), 더 새 리비전은 `app.py` 가 같은 주기로 확인해 둔 값
+(`scenario_activation.newer_active_revision_no`), 미저장 여부는 세션 판정이다.
 
 대가는 가상요소의 한계다. 줄마다 글 한 덩어리와 스타일 하나뿐이라 한 줄 안에서 굵기나
 색을 섞지 못하고, 링크·버튼처럼 누를 수 있는 것도 못 넣는다. 그래서 상태는 칩이 아니라 위 줄 끝의
@@ -92,6 +94,7 @@ from capa_simulation.scenario_activation import (
     ActiveScenarioLabel,
     active_scenario_label,
     has_unsaved_scenario_changes,
+    newer_active_revision_no,
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.settings import APP_LABEL, APP_SUBTITLE
@@ -110,6 +113,8 @@ _CSV_SOURCE_PREFIX = "CSV_CORE_DATA"
 STATUS_OFFICIAL = "공식 v{release_no}"
 STATUS_SAVED = "저장된 리비전"
 STATUS_UNSAVED = "미저장 변경"
+# 올라와 있는 리비전보다 새 리비전이 그 시나리오에 있음(사이드바 배지와 같은 말 — 설비 꼬리도 같다).
+STATUS_NEWER = "최신 r{revision_no} 있음"
 # 그리는 설비 시나리오 리비전의 배치가 공식과 다르다(가정 배치 — 사이드바 배지 「가정 배치」 와 같은
 # 말).
 STATUS_LAYOUT = "가정 배치"
@@ -552,11 +557,14 @@ def header_lines(
     *,
     official: tuple[str, int] | None,
     unsaved: bool,
+    newer_revision_no: int | None = None,
 ) -> tuple[str, str]:
     """머리 띠 두 줄(위·아래). 이름표가 없으면 앱 이름의 메인 라벨(위)과 부제(아래)다.
 
     `official` 은 최신 공식버전의 (리비전 id, 번호)다. 올라와 있는 리비전이 그것이면 공식버전이다.
-    미저장 변경이 있으면 상태는 그것이 먼저다 — 사이드바 시나리오 줄의 배지와 같은 차례다.
+    미저장 변경이 있으면 상태는 그것이 먼저다 — 사이드바 시나리오 줄의 배지와 같은 차례다(미저장
+    → 공식 vN → 최신 rN 있음 → 저장된 리비전). `newer_revision_no` 는 그 시나리오에 더 새 리비전이
+    있을 때 그 번호다(`scenario_activation.newer_active_revision_no`).
     """
     if label is None:
         return APP_LABEL, APP_SUBTITLE
@@ -565,6 +573,8 @@ def header_lines(
         status = STATUS_UNSAVED
     elif official is not None and is_official:
         status = STATUS_OFFICIAL.format(release_no=official[1])
+    elif newer_revision_no is not None:
+        status = STATUS_NEWER.format(revision_no=newer_revision_no)
     else:
         status = STATUS_SAVED
     top = f"{label.scenario_name} · r{label.revision_no} {label.revision_name} · {status}"
@@ -728,7 +738,7 @@ def equipment_header_suffix(
     elif label.get("official_pair") and isinstance(release_no, int):
         parts.append(STATUS_OFFICIAL.format(release_no=release_no))
     elif label.get("stale") and isinstance(latest_no, int):
-        parts.append(f"최신 r{latest_no} 있음")
+        parts.append(STATUS_NEWER.format(revision_no=latest_no))
     elif label.get("layout_differs"):
         parts.append(STATUS_LAYOUT)
     else:
@@ -761,6 +771,7 @@ def render_app_header(*, equipment_suffix: str | None = None) -> None:
         active_scenario_label(),
         official=latest_official_revision(),
         unsaved=has_unsaved_scenario_changes(),
+        newer_revision_no=newer_active_revision_no(),
     )
     narrow: str | None = None
     if equipment_suffix:

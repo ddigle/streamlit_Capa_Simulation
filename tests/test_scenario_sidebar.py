@@ -183,6 +183,9 @@ def sidebar_replacements() -> dict[str, Any]:
         "active_persisted_revision_id": lambda: "revision-1",
         "active_scenario_label": lambda: st.session_state.get("test_label", LABEL),
         "latest_official_revision": lambda: st.session_state.get("test_official"),
+        # `app.py` 가 30초에 한 번 확인해 둔 「더 새 리비전」(세션 값). 확인 자체는 따로 검증한다
+        # (`test_scenario_activation.py`).
+        "newer_active_revision_no": lambda: st.session_state.get("test_newer"),
         "has_unsaved_scenario_changes": lambda: bool(st.session_state.get("test_unsaved", False)),
         "discard_unsaved_scenario_changes": lambda _tables, version: st.session_state.__setitem__(
             "test_reset_to_version", version
@@ -307,6 +310,38 @@ def test_the_badge_says_official_saved_or_unsaved_in_that_order() -> None:
         == ":orange-badge[미저장 변경]"
     )
     assert scenario_status_badge(active_revision_id=None, official=None, unsaved=False) == ""
+
+
+def test_the_badge_says_a_newer_revision_after_official_and_before_saved() -> None:
+    """E2E #102 — 남이 그 시나리오에 새 리비전을 저장했으면 「최신 rN 있음」(설비 시나리오 줄과 같은
+    말). 미저장·공식 vN 이 먼저다 — 보는 리비전이 공식이면 공식 배지 그대로다."""
+    assert (
+        scenario_status_badge(
+            active_revision_id="r2", official=("r1", 4), unsaved=False, newer_revision_no=3
+        )
+        == ":orange-badge[최신 r3 있음]"
+    )
+    assert (
+        scenario_status_badge(
+            active_revision_id="r1", official=("r1", 4), unsaved=False, newer_revision_no=3
+        )
+        == ":green-badge[공식 v4]"
+    )
+    assert (
+        scenario_status_badge(
+            active_revision_id="r2", official=None, unsaved=True, newer_revision_no=3
+        )
+        == ":orange-badge[미저장 변경]"
+    )
+
+
+def test_the_field_shows_a_newer_revision_from_the_session_only(sidebar_app: AppTest) -> None:
+    """필드는 확인해 둔 세션 값만 읽어 「최신 r3 있음」 을 단다 — 저장소는 여전히 읽지 않는다."""
+    sidebar_app.session_state["test_newer"] = 3
+    app = sidebar_app.run()
+    assert not app.exception
+    assert ":orange-badge[최신 r3 있음]" in [item.value for item in app.caption]
+    assert "test_repository_reads" not in app.session_state
 
 
 def test_the_dialog_selects_and_loads_another_revision(

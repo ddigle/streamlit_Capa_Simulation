@@ -85,6 +85,8 @@ from capa_simulation.scenario_activation import (
     active_scenario_label,
     discard_unsaved_scenario_changes,
     has_unsaved_scenario_changes,
+    newer_active_revision_no,
+    remember_active_scenario_latest,
 )
 from capa_simulation.scenario_preset_state import capture_scenario_preset
 from capa_simulation.scenario_state import ensure_active_scenario
@@ -130,7 +132,8 @@ _NOTE_PREVIEW_LIMIT = 40
 def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
     """패널의 시나리오 줄. **세션만 읽는다** — 회차마다 저장소를 보지 않는다.
 
-    이름 줄 오른쪽에 상태 배지 하나(공식 vN / 저장된 리비전 / 미저장 변경), 값 칸에
+    이름 줄 오른쪽에 상태 배지 하나(미저장 변경 / 공식 vN / 최신 rN 있음 / 저장된 리비전 — 낡음은
+    `app.py` 가 30초에 한 번 확인해 둔 세션 값 `newer_active_revision_no`), 값 칸에
     「시나리오명 · rN」. 저장하지 않은 편집이 있으면 값 칸 왼쪽에 주황 띠가 서고 팝업이 저장
     구획으로 열린다. 불러오기·저장 알림은 다음 회차에 한 번, 값 칸 바로 아래에 선다.
 
@@ -157,6 +160,7 @@ def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
             active_revision_id=active_persisted_revision_id(),
             official=latest_official_revision(),
             unsaved=unsaved,
+            newer_revision_no=newer_active_revision_no(),
         ),
         pending=unsaved,
         on_click=open_scenario_dialog,
@@ -185,11 +189,16 @@ def scenario_status_badge(
     active_revision_id: str | None,
     official: tuple[str, int] | None,
     unsaved: bool,
+    newer_revision_no: int | None = None,
 ) -> str:
-    """시나리오 이름 줄의 배지 하나. 미저장이 먼저다 — 머리 띠(`header_lines`)와 같은 차례.
+    """시나리오 이름 줄의 배지 하나. 미저장 → 공식 vN → 최신 rN 있음 → 저장된 리비전 차례다 —
+    머리 띠(`header_lines`)와 같고, 설비 시나리오 줄(공식 발행이면 「공식 vN」 그대로)과 같은
+    꼴이다.
 
     `official` 은 이 세션이 마지막으로 확인한 최신 공식버전(리비전 id, 번호)이다. 머리 띠와 같은
     값이라 신선도도 같다(30초에 한 번, 이 세션에서 공식버전을 지정하면 곧바로).
+    `newer_revision_no` 는 그 시나리오에 올라와 있는 리비전보다 새 리비전이 있을 때 그 최신
+    번호다(E2E #102 — 남의 저장).
     """
     if unsaved:
         return ":orange-badge[미저장 변경]"
@@ -197,6 +206,8 @@ def scenario_status_badge(
         return ""
     if official is not None and official[0] == active_revision_id:
         return f":green-badge[공식 v{official[1]}]"
+    if newer_revision_no is not None:
+        return f":orange-badge[최신 r{newer_revision_no} 있음]"
     return ":gray-badge[저장된 리비전]"
 
 
@@ -355,10 +366,17 @@ def _render_dialog_body(
         st.error(f"시나리오 저장소를 읽지 못했습니다: {bootstrap_error_message(exc)}")
         return
 
+    active_listed = next(
+        (scenario for scenario in scenarios if scenario.scenario_id == active_scenario_id), None
+    )
+    if active_listed is not None:
+        # 방금 읽은 목록이 그 시나리오의 최신이다 — 줄 배지도 다음 회차에 이 값을 쓴다.
+        remember_active_scenario_latest(active_listed.scenario_id, active_listed.active_revision_no)
     _render_dialog_header(
         active_revision_id=active_revision_id,
         official=(official.revision_id, official.release_no) if official is not None else None,
         unsaved=unsaved,
+        newer_revision_no=newer_active_revision_no(),
     )
     if not scenarios:
         st.info("저장된 시나리오가 없습니다.")
@@ -413,12 +431,19 @@ def _render_rename_route(*, on_management_page: bool) -> None:
 
 
 def _render_dialog_header(
-    *, active_revision_id: str | None, official: tuple[str, int] | None, unsaved: bool
+    *,
+    active_revision_id: str | None,
+    official: tuple[str, int] | None,
+    unsaved: bool,
+    newer_revision_no: int | None = None,
 ) -> None:
     """지금 올라와 있는 것 한 줄과 그 상태 배지. 이 팝업이 무엇을 바꾸는지의 기준점이다."""
     label = active_scenario_label()
     badge = scenario_status_badge(
-        active_revision_id=active_revision_id, official=official, unsaved=unsaved
+        active_revision_id=active_revision_id,
+        official=official,
+        unsaved=unsaved,
+        newer_revision_no=newer_revision_no,
     )
     if label is None:
         st.caption("올라와 있는 리비전이 없습니다. 아래에서 불러오세요.")
