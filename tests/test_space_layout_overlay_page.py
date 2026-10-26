@@ -415,6 +415,43 @@ def test_an_old_official_revision_tail_does_not_promise_a_cleanup(tmp_path: Path
     assert "정리됩니다" not in line
 
 
+def test_an_old_official_revision_with_only_a_deleted_units_row_says_one_thing(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """E2E r6 — 「셋업 실무」 가 가정이던 때의 r2(EQ-01 배치 차이 1행)를 두고 차이를 지운 r3 을
+    공식으로 낸 뒤 공통 대장에서 EQ-01 을 지웠다. r2 를 연 Space 머리는 「배치는 공식과 같습니다」,
+    「지운 호기의 배치 차이 1행은 버렸습니다 — 다음 저장 때 빠집니다」, 잠금 줄 「가정이던 때의 배치
+    차이(호기 1대)가 있어 잠갔습니다」 를 함께 세웠다 — 지운 호기의 행을 잠금 까닭으로 세지 않고,
+    불변인 옛 리비전에 정리를 약속하지 않는다. 잠금 자체는 그대로다(저장소가 그 리비전의 차이 행으로
+    공식 배치 고침을 거부한다)."""
+    repository, setup = _overlay(tmp_path)
+    overlaid = _scenario(repository, setup).latest_schedule_revision_id
+    assert overlaid is not None
+    cleared = repository.clear_layout_overlay(setup, expected_latest_schedule_revision_id=overlaid)
+    assert cleared is not None
+    repository.publish_equipment_release(
+        cleared.schedule_revision_id, released_by=None, note=None, expected_latest_release_no=1
+    )
+    official = _session(repository, setup)
+    kept = official.equipment.loc[~official.equipment["설비명"].eq("EQ-01")].reset_index(drop=True)
+    downtime = official.downtime.loc[~official.downtime["설비명"].eq("EQ-01")].reset_index(
+        drop=True
+    )
+    repository.save_equipment(_request(official, setup, equipment=kept, downtime=downtime))
+
+    app = _ok(_space(tmp_path, setup, overlaid).run())
+
+    texts = _texts(app)
+    assert any("이 리비전의 배치는 공식과 같습니다" in text for text in texts), texts
+    assert any("지운 호기의 배치 차이 1행은 버렸습니다" in text for text in texts), texts
+    assert not any("다음 저장 때 빠집니다" in text for text in texts), texts
+    locks = [text for text in texts if "배치 편집을 잠갔습니다" in text]
+    assert len(locks) == 1, texts
+    assert "호기 1대" not in locks[0] and "배치 차이(" not in locks[0], locks
+    assert "가정이던 때 저장한 리비전이라" in locks[0], locks
+    assert app.toggle(key="space_layout_edit_mode_locked").disabled
+
+
 # 물결표가 둘인 설비 시나리오 이름 — 막지 않으면 「가정<del>R3</del>X」 로 그려진다. 막힌 꼴은
 # `\~`(마크다운이 물결표 글자 그대로 그린다)다.
 TILDE_NAME = "가정~R3~X"

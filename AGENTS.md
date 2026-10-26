@@ -2255,7 +2255,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`LayoutPublishPreview.orphan_units`·`newest_orphan_units` → `PublishBlock.orphan_rows`)은 「공식과 같아진」 행이 아니라
     버린 행이라 정리·막힘·발행 뒤 글이 「지운 호기의 배치 차이 n행」 으로 따로 말한다(`layout_overlay.cleaned_layout_words`·
     `settled_layout_reason`, E2E r3) — Space 머리 첫 줄의 「공식과 같아진 것은 … 정리됩니다」 꼬리도 그 행(`layout_orphans`)을
-    빼고 센다(둘째 줄 「지운 호기의 배치 차이 n행은 버렸습니다」 가 말한다). 정리 발행 뒤에는 「배치 차이 모두 지우기」 처럼 리비전
+    빼고 센다(둘째 줄 「지운 호기의 배치 차이 n행은 버렸습니다」 가 말한다). 공식 시나리오의 가정이던 때 리비전을 잠그는 줄
+    (`space_edit_mode`)도 같은 셈(`EquipmentSession.live_layout_rows`)이라 남은 것이 지운 호기의 행뿐이면 수 없이 「가정이던 때
+    저장한 리비전이라 잠갔습니다」 이고, 그 옛 리비전(불변)의 둘째 줄은 「다음 저장 때 빠집니다」 를 붙이지 않는다(E2E r6 —
+    「배치는 공식과 같습니다」 옆에 「배치 차이(호기 1대)가 있어 잠갔습니다」 가 섰다). 잠금은 그대로다 — 저장소가 그 리비전의 차이
+    행으로 공식 배치 고침을 거부한다. 정리 발행 뒤에는 「배치 차이 모두 지우기」 처럼 리비전
     상자와 그 시나리오를 보던 세션을 새 리비전으로 옮긴다(`_follow_new_revision` — 저장 안 한 편집이 있으면 남김, S4 리뷰).
     새 리비전을 쓴 쓰기(되돌리기·배치 차이 지우기·정리 발행)는 옮기기에 앞서 그 뒷정리를 dict 칸(`FOLLOWS_KEY` — 쓰기 전에
     받아 둔다)에 적는다(`_follow_and_announce`) — 더블클릭의 첫 회차가 쓴 직후 끊기면 둘째 누름은 꺼지거나 사라진 단추라
