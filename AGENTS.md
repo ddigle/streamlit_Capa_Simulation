@@ -2400,7 +2400,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 규칙 `layout_trace_sources`)은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 「rT 은 옛 판이 저장해 rN 의 가정 배치가
     빠졌습니다 — rN 으로 되돌리기」 경고, 시나리오 표 아래에 흔적이 있는 시나리오 한 줄. 저장은 막지 않는다(설계 14장).
     「배치 차이 모두 지우기」(`clearable_layout` — 가정 시나리오 최신에 차이가 있을 때만)는 확인 체크 key 꼬리가 (시나리오, 최신
-    id)라 남의 저장 뒤 체크가 풀리고, `clear_layout_overlay(expected_latest_schedule_revision_id=)` 뒤 이 세션이 그 시나리오를
+    id)라 남의 저장 뒤 체크가 풀리고 — 켠 회차의 값(`CLEAR_LAYOUT_AGREED_KEY`)과 다음 회차 최신을 견줘 「확인한 뒤 … 의 최신이
+    바뀌어(r2 → 지금 r3) … 확인 체크를 풀었습니다」 를 한 번 알린다(팝오버 안 체크 칸 위, 지울 것이 없어 단추째 사라졌으면 시나리오 줄
+    아래 늘 서 있는 칸 — `clear_layout_unchecked_notice`, 되돌리기와 같은 꼴. 제 쓰기·거절은 `_written`·`_refused` 가 그 값을 비워
+    알리지 않는다, E2E #9·#56) — `clear_layout_overlay(expected_latest_schedule_revision_id=)` 뒤 이 세션이 그 시나리오를
     보고 저장 안 한 편집이 없으면 새 리비전으로 옮긴다(되돌리기와 같다). 「공식으로 발행」 은 발행 쓰기와 **같은 판정**
     (`equipment_repository._layout_publish_preview` → `load_layout_publish_preview` — 불변 id 셋 + 층 현행값 세대 키)을 미리 읽어
     막히면 단추를 끄고 막힘 글(`layout_publish_blocked_words` — 발행 쓰기 거부와 같은 한 곳)을 적으며, 공식과 같아진 차이만

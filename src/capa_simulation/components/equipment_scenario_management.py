@@ -228,6 +228,10 @@ CLEAR_LAYOUT_BY_KEY = "equipment_scenario_manage_clear_layout_by_v1"
 CLEAR_LAYOUT_NOTE_KEY = "equipment_scenario_manage_clear_layout_note_v1"
 CLEAR_LAYOUT_CONFIRM_KEY = "equipment_scenario_manage_clear_layout_confirm_v1"
 CLEAR_LAYOUT_BUTTON_KEY = "equipment_scenario_manage_clear_layout_v1"
+# 「배치 차이 모두 지우기」 확인 체크가 켜진 회차의 {시나리오, 그 최신 id·번호}. 체크 key 꼬리가 그
+# 시나리오 최신 id 라 그 사이 누가 저장하면 체크가 말없이 풀리고, 지울 것이 없어지면 단추째 사라진다
+# — 다음 회차에 이 값과 견줘 그 까닭을 한 번 알린다(되돌리기 `RESTORE_AGREED_KEY` 와 같은 꼴).
+CLEAR_LAYOUT_AGREED_KEY = "equipment_scenario_manage_clear_layout_agreed_v1"
 CONTINUE_BUTTON_KEY = "equipment_scenario_manage_continue_v1"
 # 「이대로 이어 쓰기」 확인 체크. key 꼬리에 체크 글을 정하는 값 셋(흔적 수·옛 배포 리비전
 # 번호·빠지는 호기 수)을 붙인다 — 그 값이 바뀌면 체크가 풀린 새 칸으로 서서 본 적 없는 글로 이어
@@ -296,6 +300,7 @@ def _written(message: str, *, release: Callable[[], None] | None = None) -> None
     clear_equipment_scenario_cache()
     st.session_state[FLASH_KEY] = message
     st.session_state.pop(RESTORE_AGREED_KEY, None)
+    st.session_state.pop(CLEAR_LAYOUT_AGREED_KEY, None)
     bump(GENERATION_KEY)
     if release is not None:
         release()
@@ -404,6 +409,7 @@ def _refused(message: str) -> None:
     st.session_state[REFUSED_KEY] = message
     bump(GENERATION_KEY)
     st.session_state.pop(RESTORE_AGREED_KEY, None)
+    st.session_state.pop(CLEAR_LAYOUT_AGREED_KEY, None)
     st.rerun()
 
 
@@ -802,6 +808,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         {scenario_id: item.scenario_name for scenario_id, item in scenarios.items()},
         default=default_scenario,
     ).value
+    # 앞 회차에 켠 「배치 차이 모두 지우기」 확인 — 그 사이 최신이 바뀌어 체크가 풀렸으면 알린다.
+    clearable = clearable_layout(session, scenarios[selected_id])
+    clear_notice = clear_layout_unchecked_notice(
+        st.session_state.pop(CLEAR_LAYOUT_AGREED_KEY, None),
+        scenarios[selected_id],
+        clearable=clearable,
+    )
     with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
         st.selectbox(
             "설비 시나리오",
@@ -814,13 +827,20 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         ):
             _render_rename(database_path, scenarios[selected_id])
         # 가정 설비 시나리오 최신에 배치 차이가 있을 때만(공식 시나리오에는 지울 것이 없다 — I2).
-        if clearable_layout(session, scenarios[selected_id]):
+        if clearable:
             with st.popover(
                 "배치 차이 모두 지우기",
                 icon=":material/layers_clear:",
                 key=_popover_key(CLEAR_LAYOUT_POPOVER_KEY),
             ):
-                _render_clear_layout(database_path, session, scenarios[selected_id])
+                _render_clear_layout(
+                    database_path, session, scenarios[selected_id], notice=clear_notice
+                )
+    # 단추째 사라진 회차의 알림 자리 — 늘 서 있는 칸이라 알림이 생기고 빠져도 아래 팝오버 줄이
+    # 밀리지 않는다.
+    with st.container():
+        if clear_notice is not None and not clearable:
+            st.warning(clear_notice, icon=":material/sync_problem:")
     scenario = scenarios[selected_id]
     try:
         revisions = load_equipment_schedule_revisions(database_path, selected_id)
@@ -1676,6 +1696,30 @@ def clear_layout_lines(scenario: EquipmentScenarioSummary) -> list[str]:
     ]
 
 
+def clear_layout_unchecked_notice(
+    before: object, scenario: EquipmentScenarioSummary, *, clearable: bool
+) -> str | None:
+    """「배치 차이 모두 지우기」 확인 체크를 켠 뒤 그 시나리오 최신이 바뀌어 체크가 풀렸으면 그 까닭
+    한 줄(E2E #9·#56 — 「이 리비전으로 되돌리기」 와 같은 꼴). `before` 는 앞 회차에 남긴 값
+    (`CLEAR_LAYOUT_AGREED_KEY`)이다. 다른 시나리오의 것이거나 최신이 그대로면 None. `clearable` 이
+    거짓이면(새 최신에 지울 배치 차이가 없어 단추째 사라짐) 그 사실을 함께 적는다."""
+    if not isinstance(before, dict) or before.get("scenario") != scenario.equipment_scenario_id:
+        return None
+    if before.get("latest") == scenario.latest_schedule_revision_id:
+        return None
+    was_no = before.get("latest_no")
+    now_no = scenario.latest_revision_no
+    moved = f"(r{was_no} → 지금 r{now_no})" if isinstance(was_no, int) and now_no else ""
+    head = (
+        f"확인한 뒤 {quoted(scenario.scenario_name)} 의 최신이 바뀌어{moved} 「배치 차이 모두 "
+        "지우기」 확인 체크를 풀었습니다"
+    )
+    if clearable:
+        return head + " — 바뀐 확인 글을 다시 보고 체크하세요."
+    latest = f"최신 r{now_no}" if now_no else "새 최신"
+    return head + f" — {latest}에는 지울 배치 차이가 없어 단추를 거뒀습니다."
+
+
 def clear_layout_message(
     scenario_name: str,
     created: EquipmentScheduleRevisionSummary | None,
@@ -1703,12 +1747,17 @@ def clear_layout_message(
 
 
 def _render_clear_layout(
-    database_path: str, session: EquipmentSession, scenario: EquipmentScenarioSummary
+    database_path: str,
+    session: EquipmentSession,
+    scenario: EquipmentScenarioSummary,
+    *,
+    notice: str | None = None,
 ) -> None:
     """「배치 차이 모두 지우기」(설계 6-6 — 저장소 `clear_layout_overlay`). 확인 체크는 그 시나리오
     최신 id 에 묶인다 — 그 사이 남이 저장해 최신이 바뀌면 체크가 풀린 새 칸이 서고, 캐시가 늦어 못
     봤으면 저장소가 낡음으로 거절한다. 이 세션이 그 시나리오를 보고 있고 저장하지 않은 설비 편집이
-    없으면 세션을 새 리비전으로 옮긴다(되돌리기와 같다)."""
+    없으면 세션을 새 리비전으로 옮긴다(되돌리기와 같다). `notice` 는 앞 회차에 켠 체크가 그렇게
+    풀렸다는 알림이다(`clear_layout_unchecked_notice`) — 체크 칸 바로 위에 적는다."""
     if session.legacy_trace_count:
         st.caption(legacy_trace_message(session.legacy_trace_count))
         return
@@ -1718,18 +1767,27 @@ def _render_clear_layout(
     suffix = f"{scenario.equipment_scenario_id}__{latest_id}"
     note = st.text_input("변경 메모(선택)", key=f"{_keyed(CLEAR_LAYOUT_NOTE_KEY)}__{suffix}")
     saved_by = st.text_input(SAVED_BY_LABEL, key=f"{_keyed(CLEAR_LAYOUT_BY_KEY)}__{suffix}")
+    if notice is not None:
+        st.warning(notice, icon=":material/sync_problem:")
     agreed = st.checkbox(
         "배치 차이를 모두 지우고 공식 배치로 돌립니다",
         key=f"{_keyed(CLEAR_LAYOUT_CONFIRM_KEY)}__{suffix}",
     )
-    if not st.button(
+    if agreed:
+        st.session_state[CLEAR_LAYOUT_AGREED_KEY] = {
+            "scenario": scenario.equipment_scenario_id,
+            "latest": scenario.latest_schedule_revision_id,
+            "latest_no": scenario.latest_revision_no,
+        }
+    clicked = st.button(
         "배치 차이 모두 지우기",
         icon=":material/layers_clear:",
         type="primary",
         disabled=not agreed,
         key=CLEAR_LAYOUT_BUTTON_KEY,
         width="stretch",
-    ):
+    )
+    if not clicked or not agreed:
         return
     own_name = f"{CLEAR_LAYOUT_SAVE_NAME}:{scenario.equipment_scenario_id}"
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
