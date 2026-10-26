@@ -938,7 +938,8 @@ const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTa
 ;(async () => {
   mount(input.data)
   const outside = buttonOf('일정 확인 필요')
-  for (const [label, spot] of [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]) {
+  const spots = [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]
+  for (const [label, spot] of spots) {
     let { toggle, panel } = openPanel(label)
     const row = {}
     fire(panel.querySelector(spot), 'mousedown')
