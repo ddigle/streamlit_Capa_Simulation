@@ -1829,12 +1829,13 @@ FAB_DISCARD_HINT = (
 SAVED_AGAIN_MESSAGE = "설비 데이터를 저장했습니다."
 
 
-def _nothing_saved(name: str) -> str:
-    """이 누름이 아무것도 쓰지 않았을 때의 알림. 같은 단추의 첫 누름이 `name` 칸에 적은 성공 알림이
-    창(`TRAILING_PRESS_SECONDS`) 안이면 그 알림이다 — 첫 콜백이 쓰고 대기분을 비운 뒤 닿은 둘째
-    누름은 쓸 것이 없어, 「바뀐 내용이 없어 …」 로 방금 저장의 성공 알림을 덮었다(2026-10-27 E2E —
-    FAB 만 바뀐 Space 「배치 저장」 0.15~0.5초 두 번 누름)."""
-    return held_notice(name) or NOTHING_SAVED_MESSAGE
+def _fab_tail() -> str | None:
+    """이 누름 앞에 같은 단추의 첫 누름이 FAB 대기분을 막 썼으면(`FAB_SAVE_NAME` 칸의 알림이 창
+    `TRAILING_PRESS_SECONDS` 안이고 대기분이 이제 없다) 그 성공 알림. 첫 콜백이 쓰고 대기분을 비운
+    뒤 닿은 둘째 누름은 쓸 것이 없어 「바뀐 내용이 없어 …」 로 방금 저장의 성공 알림을 덮었다
+    (2026-10-27 E2E — FAB 만 바뀐 Space 「배치 저장」 0.15~0.5초 두 번 누름). 저장에 **들어올 때**
+    본다 — 설비 쪽 대조를 마친 뒤에 보면 그 사이 창이 지날 수 있다(사외 사본 앱 브라우저 확인)."""
+    return held_notice(FAB_SAVE_NAME) if pending_fab_layout() is None else None
 
 
 def save_equipment_buffer(
@@ -1867,11 +1868,12 @@ def save_equipment_buffer(
     일정이 든 시나리오가 늘어남) 저장하지 않는다 — 그 체크가 없는 자리(Space·팝업)의 저장도 같은
     까닭으로 막힌다.
     """
+    fab_tail = _fab_tail()
     if frames is None:
         return (
             FAB_SAVED_MESSAGE
             if save_pending_fab_layout(repository)
-            else _nothing_saved(FAB_SAVE_NAME)
+            else fab_tail or NOTHING_SAVED_MESSAGE
         )
     drafts = unsaved_grid_drafts(frames)
     if drafts:
@@ -1903,6 +1905,7 @@ def save_equipment_buffer(
             basis=basis,
             fields=fields,
             fab_saved=fab_saved,
+            fab_tail=fab_tail,
             removal_confirmed=removal_confirmed,
         )
     except BOOTSTRAP_ERRORS as exc:
@@ -1964,9 +1967,12 @@ def _save_equipment_frames(
     basis: EquipmentSaveBasis | None,
     fields: EquipmentSaveFields | None,
     fab_saved: bool,
+    fab_tail: str | None = None,
     removal_confirmed: RemovalElsewhere | None = None,
 ) -> str:
-    """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션).
+    """`save_equipment_buffer` 의 설비 쪽(공통·일정 + 층 캔버스·요소 한 트랜잭션). `fab_tail` 은
+    같은 단추의 첫 누름이 막 낸 FAB 저장 알림이다(`_fab_tail`) — 이 누름이 아무것도 쓰지 않으면 그
+    알림을 잇는다.
 
     설비 마스터를 쓰는 모든 저장(설비 마스터 탭 「리비전 저장」 — 표·붙여넣기·CSV·작은 편집표 —,
     Space 배치 저장, 팝업 저장)이 이 한 곳을 지나므로 모듈 묶음 좌표·크기
@@ -2086,8 +2092,8 @@ def _save_equipment_frames(
     )
     if not _wrote_anything(result):
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다. 이 누름이 FAB 도 쓰지
-        # 않았으면 같은 단추의 첫 누름이 방금 낸 성공 알림을 잇는다(`_nothing_saved`).
-        return FAB_SAVED_MESSAGE if fab_saved else _nothing_saved(FAB_SAVE_NAME)
+        # 않았으면 같은 단추의 첫 누름이 방금 낸 FAB 성공 알림을 잇는다(`_fab_tail`).
+        return FAB_SAVED_MESSAGE if fab_saved else fab_tail or NOTHING_SAVED_MESSAGE
     layouts = f" {floor_layouts}도 함께 저장했습니다." if floor_layouts else ""
     if not result.wrote_revision:
         message = (

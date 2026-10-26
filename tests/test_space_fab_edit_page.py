@@ -691,9 +691,9 @@ def test_a_fab_save_pressed_twice_keeps_its_success(
     if finished:
         _press_again_from_the_old_screen(app, monkeypatch, callback="_save_space_layout")
     else:
-        # 시험의 경합 틀은 첫 콜백을 설비 쓰기 안에서 1초 세워 둔다(둘째 회차는 그동안 세션 잠금을
-        # 기다린다) — 브라우저에서는 ms 차이라 알림 창(1초)을 넘지 않는다. 창을 넓혀 그 틀만 맞춘다.
-        monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 10.0)
+        # 경합 틀은 첫 콜백을 설비 쪽 저장 안에서 1초 세워 둔다 — 둘째 콜백은 그동안 세션 잠금을
+        # 기다린다(느린 설비 쪽 대조와 같은 꼴). 첫 FAB 알림은 둘째 누름이 저장에 들어올
+        # 때 보므로 창(1초)을 넓히지 않아도 남는다.
         _race_save(app, monkeypatch, callback="_save_space_layout")
 
     assert not app.exception, [item.message for item in app.exception]
