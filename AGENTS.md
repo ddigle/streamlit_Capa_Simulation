@@ -1763,7 +1763,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장은 **버전 대조**이고 월별 값은 보이는 달만 갈아 끼운다(`services/monthly_amount.py`). 주요공정 프리셋은 묶음
     전체 교체라 편집 카드(프래그먼트)가 회차마다 캐시에서 다시 읽는다(`tests/test_home_key_process_fragment.py`).
     프리셋 「기본으로」·「삭제」 의 알림은 빠른 둘째 누름(잠긴 단추에 닿아 아무것도 하지 않는 회차)에도 다시 선다
-    (`write_guard.held_notice`, `tests/test_key_process_preset_messages.py`).
+    (쓰기 직후 `write_guard.note_notice` 로 적고 `flash.render_flash` 가 다시 그린다, `tests/test_key_process_preset_messages.py`).
   - `Past Data 포함` 을 끄면 과거 세 표를 행만 비운 사본(version 0)으로 바꾼다 — 끈 분기를 곳곳에 심지 않는다.
 - `src/capa_simulation/components/home_main_cases.py` — HOME `Preference` 의 「주요 Case」 상자(2026-10-23 사용자 요청).
   HOME 슬롯은 셋 고정이고 슬롯 1 은 지금 최신 공식버전이라 상자 첫 줄에 글로만 보인다(공식 지정은 시나리오 관리). Case1·
@@ -1907,6 +1907,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   돌려준다 — 뒤 형제 자리가 알림 유무로 밀리지 않고 같은 동작의 실패 문구도 그 칸에 쓴다(`st.success` 바로 뒤
   `st.rerun()` 이면 문구가 그려지지 않는다). 이름에 FLASH·NOTICE 가 든 칸을 이 모듈 밖에서 꺼내는 꼴은
   `tests/test_flash_messages.py` 의 AST 그물이 막고, 수명이 다른 칸만 까닭과 함께 허용 목록에 둔다(9장 「조건부 알림」).
+  담아 둔 알림이 없는 칸은 쓰기 직후 적어 둔 알림(`write_guard.note_notice`)이 `TRAILING_PRESS_SECONDS` 안이면
+  `write_guard.held_notice` 로 그 글을 성공으로 다시 그린다 — 아주 빠른 둘째 누름의 회차가 앞 회차의 알림을 지우지 않게
+  모든 칸이 이 길을 받는다(적지 않은 칸은 그대로 한 번만 그린다, 9장).
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`). 세대 비교와
   쓰기를 프로세스 잠금 하나 안에서 하고 「이 세대는 썼다」 를 세션의 dict 표지(`WRITE_MARKS_KEY`)에 적어, 두 회차에 겹쳐
   온 같은 세대의 누름(더블클릭)도 세대마다 한 번만 쓴다(9장, `tests/test_voc_page.py`). `write_once` 는 지금 VOC 만 쓴다.
@@ -1915,7 +1918,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   누름의 둘째 누름은 충돌 표지(`profile_conflict_marks`·`held_profile_conflict`)로 저장하지 않고 그 거부를 다시
   알린다 — 위 셋과 자동 갱신 설정. 쓰지 않고 끝나는 아주 빠른 둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는
   알림 표지(`notice_marks`·`note_notice`·`held_notice`)는 VOC 글 삭제와 HOME 주요공정 프리셋 「기본으로」·「삭제」 가
-  쓴다(9장).
+  적고, 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장).
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
@@ -3927,8 +3930,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     (2026-10-26 E2E — VOC 글 올리기·Preference 프리셋 삭제). 세대 쓰기는 지나간 세대의 누름이 `just_written` 창 안이면
     성공을 다시 알리고(VOC 새 글·답변), 세대가 없는 쓰기는 쓰기 전에 받은 `write_guard.notice_marks()` dict 에 알림과
     시각을 적어(`note_notice`) 그 창 안의 회차가 `held_notice` 로 다시 그린다(VOC 글 삭제·HOME 주요공정 프리셋
-    「기본으로」·「삭제」). 창이 지난 옛 화면의 누름은 전처럼 알리지 않는다(`tests/test_voc_page.py`·
-    `tests/test_key_process_preset_messages.py`).
+    「기본으로」·「삭제」). 다시 그리기는 `flash.render_flash` 한 길이라 알림을 적는 칸이면 어디든 받는다 — 칸마다
+    `held_notice` 를 따로 부르지 않는다(VOC 머리 칸만 아직 flash 밖이라 콜백이 직접 읽는다). 창이 지난 옛 화면의 누름은
+    전처럼 알리지 않는다(`tests/test_voc_page.py`·`tests/test_key_process_preset_messages.py`·
+    `tests/test_flash_messages.py` 의 끊긴 회차 시험).
 - **저장 성공 문구는 flash 로 낸다.** `st.success(...)` 바로 뒤의 `st.rerun()` 은 그 문구를 한 번도 그리지 않는다.
   `components/flash.py` 로 세션에 담아 다음 회차에 그 버튼과 같은 상자 안에 그린다 — 실패도 그 자리에 떠 성공과 실패가
   같은 자리에서 답한다(`tests/test_flash_messages.py` 의 AST 그물이 같은 함정을 소스에서 찾는다).

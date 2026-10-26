@@ -16,7 +16,10 @@
 import ast
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
+
+import capa_simulation.components.write_guard as write_guard
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = PROJECT_ROOT / "src" / "capa_simulation" / "components"
@@ -331,3 +334,79 @@ def test_the_slot_from_render_flash_is_not_read_as_drew_or_not() -> None:
         "render_flash 의 돌려준 칸은 늘 참입니다 — 그렸는지는 pending_flash 로 먼저 보세요:\n"
         + "\n".join(offenders)
     )
+
+
+HELD = """
+import streamlit as st
+from streamlit.runtime.scriptrunner_utils.exceptions import StopException
+
+from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.write_guard import note_notice, notice_marks
+
+
+def _delete() -> None:
+    # 쓰기 전에 표지 dict 를 받고 쓰기 직후 적는다 — 그 뒤 세션 칸 쓰기는 끊길 수 있다.
+    marks = notice_marks()
+    st.session_state["deleted"] = st.session_state.get("deleted", 0) + 1
+    note_notice(marks, "demo_flash", "지웠습니다.")
+    if st.session_state.get("cut") is True:
+        raise StopException()
+    queue_flash("demo_flash", "지웠습니다.")
+
+
+render_flash("demo_flash")
+st.button(
+    "지우기",
+    key="demo_delete",
+    on_click=_delete,
+    disabled=st.session_state.get("deleted", 0) > 0,
+)
+"""
+
+
+@pytest.mark.parametrize(("window", "kept"), [(3600.0, True), (0.0, False)])
+def test_a_quick_second_press_on_a_locked_button_keeps_the_notice(
+    monkeypatch: pytest.MonkeyPatch, window: float, kept: bool
+) -> None:
+    """아주 빠른 둘째 누름은 옛 화면의 단추에 닿는데 그 회차에는 단추가 잠겨 Streamlit 이 누름을
+    버린다 — 그 회차가 앞 회차가 꺼내 그린 알림을 지웠다(2026-10-26 E2E). 쓰기 직후 적어 둔 알림은
+    창(`TRAILING_PRESS_SECONDS`) 안이면 `render_flash` 가 다시 그린다. AppTest 는 누른 화면의 위젯
+    값을 붙잡아 한 번 더 보낸다(창은 시험이 정한다)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    app = AppTest.from_string(HELD).run()
+    app.button(key="demo_delete").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert [element.value for element in app.success] == ["지웠습니다."]
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state["deleted"] == 1
+    assert [element.value for element in app.success] == (["지웠습니다."] if kept else [])
+
+
+@pytest.mark.parametrize(("window", "kept"), [(3600.0, True), (0.0, False)])
+def test_a_notice_noted_before_a_cut_callback_reaches_the_last_screen(
+    monkeypatch: pytest.MonkeyPatch, window: float, kept: bool
+) -> None:
+    """첫 회차가 끊겨도 마지막 화면에 알림이 남는다 — 3회차 경합 시험(`tests/test_voc_page.py`
+    `_race`)의 flash 단위 꼴.
+
+    둘째 누름이 닿으면 Streamlit 은 돌던 회차에 멈춤을 걸고, 멈춤을 받은 첫 콜백은 쓴 뒤 다음 세션
+    칸 접근에서 `StopException` 으로 끊겨 `queue_flash` 에 닿지 못한다. 쓰기 직후 dict 에 적어 둔
+    알림(`note_notice`)은 끊기지 않아 둘째 회차의 `render_flash` 가 그린다.
+    """
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    app = AppTest.from_string(HELD)
+    app.session_state["cut"] = True
+    app.run()
+    app.button(key="demo_delete").click().run()
+    assert app.session_state["deleted"] == 1
+    assert "demo_flash" not in app.session_state
+
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state["deleted"] == 1
+    assert [element.value for element in app.success] == (["지웠습니다."] if kept else [])
