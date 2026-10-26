@@ -1384,8 +1384,14 @@ def official_confirm_key(revision_id: str) -> str:
 
 
 def official_virtual_product_warning(records: Sequence[VirtualProductRecord]) -> str:
-    """공식버전 지정 전에 보일 가상 제품 확인 문장. 제품 · Stack 을 모두 적는다."""
-    products = ", ".join(f"{record.product} · {record.stack}" for record in records)
+    """공식버전 지정 전에 보일 가상 제품 확인 문장. 제품 · Stack 을 모두 적는다.
+
+    `st.warning`(마크다운)으로 그리므로 사람이 적은 제품정보·Stack 은 막아 싣는다.
+    """
+    products = ", ".join(
+        f"{literal_markdown(record.product)} · {literal_markdown(record.stack)}"
+        for record in records
+    )
     return (
         f"이 리비전에는 가상 제품 {len(records)}건이 포함되어 있습니다({products}). "
         "실적과 대조할 수 없는 값입니다. 그대로 공식버전으로 지정할까요?"

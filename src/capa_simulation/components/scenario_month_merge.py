@@ -5,6 +5,7 @@ from typing import cast
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_transform import (
     month_table_summary,
@@ -182,14 +183,14 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     if history.mixed:
         st.warning(
             f"한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키가 {len(history.mixed)}개 "
-            f"있습니다: {_record_keys(history.mixed)}. 결과에서 그 제품은 달마다 그 달 원본의 "
-            "값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 공식버전 지정 "
-            "때 확인을 받습니다."
+            f"있습니다: {_record_keys(history.mixed, markdown=True)}. 결과에서 그 제품은 달마다 "
+            "그 달 원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 "
+            "공식버전 지정 때 확인을 받습니다."
         )
     if history.dropped:
         st.warning(
             f"결과 표에 그 제품이 없는 가상제품 이력 {len(history.dropped)}건은 보존하지 "
-            f"않습니다: {_record_keys(history.dropped)}."
+            f"않습니다: {_record_keys(history.dropped, markdown=True)}."
         )
     differences = comparison.loc[comparison["비교"].ne("같음"), "표"].tolist()
     provenance = (
@@ -239,8 +240,13 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     )
 
 
-def _record_keys(records: tuple[VirtualProductRecord, ...]) -> str:
-    shown = ", ".join(f"{record.product} · {record.stack}" for record in records[:5])
+def _record_keys(records: tuple[VirtualProductRecord, ...], *, markdown: bool = False) -> str:
+    """가상 제품 키 다섯까지(「제품 · Stack」)와 나머지 건수. `markdown` 이면 경고 상자(마크다운)에
+    싣는 글이라 사람이 적은 제품정보·Stack 을 막는다 — 출처 메모(평문)는 그대로 싣는다."""
+    escape = literal_markdown if markdown else str
+    shown = ", ".join(
+        f"{escape(record.product)} · {escape(record.stack)}" for record in records[:5]
+    )
     return shown + (f" 외 {len(records) - 5}건" if len(records) > 5 else "")
 
 

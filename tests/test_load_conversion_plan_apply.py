@@ -15,6 +15,8 @@ from streamlit.testing.v1.element_tree import Dataframe, ElementTree
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
+from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.services.korean_particle import with_object_particle
 
 PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "load_conversion.py"
 
@@ -171,7 +173,7 @@ def test_virtual_product_registration_adds_the_key_to_every_clone_table(
     assert not list(app.exception)
     # 등록하면 팝업이 닫히고, 다음 할 일(계획 수량 입력)을 알림이 작업 줄 아래에서 말한다.
     assert "load_conversion_open_dialog" not in app.session_state
-    assert any("DEMO_VIRTUAL_X" in item.value for item in app.success)
+    assert any(literal_markdown("DEMO_VIRTUAL_X") in item.value for item in app.success)
     # 복제된 계획 달이 조회기간 안이면 새 제품은 표에 바로 선다 — 입력하라고 말한다.
     assert any("아래 표에서 계획 수량을 입력하세요" in item.value for item in app.success)
 
@@ -184,6 +186,29 @@ def test_virtual_product_registration_adds_the_key_to_every_clone_table(
     cloned_plan = plan.loc[plan["제품정보"].eq("DEMO_VIRTUAL_X")]
     assert not cloned_plan.empty
     assert cloned_plan["생산수량"].astype(float).sum() == 0.0
+
+
+def test_the_registration_notices_draw_the_typed_names_literally(
+    seeded_database: Path,
+) -> None:
+    """등록 완료 알림은 다음 회차에 `st.success`(마크다운)로 그린다 — 사람이 적은 제품정보·Stack 을
+    날로 끼우면 「HBM4~시제~」 의 물결표가 지움선(<del>)이 되어 사라지고 `*1*` 은 기울임이
+    되었다(2026-10-26 E2E). 막아 실어 적은 글자 그대로 보인다."""
+    from capa_simulation.services.virtual_product import available_source_products
+
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    source = available_source_products(app.session_state["active_scenario"]["tables"]).iloc[0]
+    assert str(source["Stack"]) != "E2E~가상~*1*"
+
+    _register(app, "HBM4~시제~", "E2E~가상~*1*")
+    assert not list(app.exception)
+
+    (notice,) = [item.value for item in app.success if "등록했습니다" in item.value]
+    assert notice.startswith(
+        f"가상 제품 {literal_markdown('HBM4~시제~')} · "
+        f"{with_object_particle(literal_markdown('E2E~가상~*1*'))} 등록했습니다."
+    ), notice
+    assert "HBM4~시제~" not in notice and "*1*" not in notice
 
 
 def test_registered_virtual_product_appears_in_the_plan_editor(
@@ -570,7 +595,9 @@ def test_registering_a_product_planned_only_outside_the_period_says_to_widen_it(
     _register(app, "DEMO_VIRTUAL_Z", "8H")
     assert not list(app.exception)
 
-    messages = [item.value for item in app.success if "DEMO_VIRTUAL_Z" in item.value]
+    messages = [
+        item.value for item in app.success if literal_markdown("DEMO_VIRTUAL_Z") in item.value
+    ]
     assert messages
     assert "조회기간을 넓혀야 PKG PLAN 표에 나타납니다" in messages[0]
     assert "202601" in messages[0]

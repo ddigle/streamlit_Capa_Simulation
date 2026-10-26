@@ -27,6 +27,7 @@ from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.month_editor import (
     PASTE_DROPS_EDITS_NOTICE,
     classification_styled,
@@ -512,9 +513,12 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
             f"넓혀야 PKG PLAN 표에 나타납니다(복제된 계획 달: {shown_months or '없음'})."
         )
     )
+    # 알림은 다음 회차에 `st.success`(마크다운)로 그린다 — 사람이 적은 제품정보·Stack 은 막아
+    # 싣는다(「HBM4~시제~」 의 물결표가 지움선, `*1*` 이 기울임이 되지 않게).
+    normalized = request.normalized()
     st.session_state[PRODUCT_REGISTERED_FLASH_KEY] = (
-        f"가상 제품 {request.normalized().product} · "
-        f"{with_object_particle(request.normalized().stack)} "
+        f"가상 제품 {literal_markdown(normalized.product)} · "
+        f"{with_object_particle(literal_markdown(normalized.stack))} "
         f"등록했습니다. 기준정보 {len(updates)}종을 복제했습니다."
         + plan_row_hint
         + (" 적용하지 않았던 붙여넣기 표는 버렸습니다 — 다시 붙여넣으세요." if staged_paste else "")

@@ -10,6 +10,8 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button
 from test_duckdb_repository import _metadata, _reference_tables
 
+from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.scenario_month_merge import _record_keys
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -478,6 +480,16 @@ def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) 
     assert not _save_button(app).disabled
 
 
+def test_the_merge_warnings_draw_the_virtual_product_keys_literally() -> None:
+    """섞인 키·빠진 이력 경고는 `st.warning`(마크다운)이다 — 사람이 적은 제품정보·Stack 을 막아
+    싣는다(2026-10-26 E2E 같은 꼴 — 가상 제품 등록 알림). 출처 메모(평문)는 그대로다."""
+    record = VirtualProductRecord("HBM4~시제~", "E2E~가상~*1*", "DEMO PRODUCT A", "8H")
+    assert _record_keys((record,), markdown=True) == (
+        f"{literal_markdown('HBM4~시제~')} · {literal_markdown('E2E~가상~*1*')}"
+    )
+    assert _record_keys((record,)) == "HBM4~시제~ · E2E~가상~*1*"
+
+
 def test_virtual_history_follows_the_result_and_a_clash_is_warned(sources: Sources) -> None:
     """감사 D1·D4: 이력은 결과 표에 남은 제품만 적고, 다른 쪽에선 실제 제품인 키를 알린다.
 
@@ -491,8 +503,10 @@ def test_virtual_history_follows_the_result_and_a_clash_is_warned(sources: Sourc
     app = _app(database, base, donor)
 
     warnings = [item.value for item in app.warning]
-    assert any("Product-A · 8H" in item and "실제 제품" in item for item in warnings)
-    assert any("Product-Gone · 8H" in item for item in warnings)
+    # 경고는 마크다운이라 키를 막아 싣는다(`-` 도 `\-`).
+    clash_key = f"{literal_markdown('Product-A')} · 8H"
+    assert any(clash_key in item and "실제 제품" in item for item in warnings)
+    assert any(f"{literal_markdown('Product-Gone')} · 8H" in item for item in warnings)
     app.text_input(key="scenario_merge_name").set_value("이력 정리 머지")
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]

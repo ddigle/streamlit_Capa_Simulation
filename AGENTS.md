@@ -4287,7 +4287,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
       (`PLAIN_EXCEPTION_TEXT` — 까닭과 함께)뿐이다. ② `markdown_safe_tildes`·`literal_markdown`·`quoted` 안의
       `bootstrap_error_message`(다시 감싸기). ③ f-string 의 「{식}」 은 막는 함수·숫자 서식·대문자 상수·`APP_LABELS` 만.
       **보지 못하는 것**: 예외의 속성(`exc.reason`), 서비스 계층이 지어 돌려준 글(`CapacityOutcome.error` — 알림 모음은
-      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글.
+      그리는 자리에서 막는다), 낫표 밖에 날로 끼운 이름(`f"… · {label}"`·`st.markdown(f"##### … {name}")`), 주소 인자 글,
+      세션 칸에 담았다 다음 회차에 그리는 알림 글(PKG PLAN 「가상 제품 등록」 완료 알림 — 담을 때 제품정보·Stack 을
+      `literal_markdown` 으로 막는다, `tests/test_load_conversion_plan_apply.py`). 공식 지정 확인·월 머지 경고의 가상 제품
+      키도 그리는 글을 지을 때 막는다(머지 출처 메모는 평문이라 그대로).
       이것은 이 절의 규칙대로 짓거나 그리는 자리에서 막고 아래 화면 그물·리뷰가 본다.
     - `tests/test_tilde_names_pages.py`(화면) — 물결표 이름 DB 로 HOME·시나리오 관리·가용설비 현황·Space·공정 Capa 상세
       (필요 단축 일정 카드 링크의 `eq` 포함)·필요 단축 일정·제약 시뮬레이션·Admin Area·VOC 를 열어 마크다운 요소를 본다.
