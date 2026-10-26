@@ -20,6 +20,7 @@ import pytest
 from grid_fake import Calls, install_fake_grid, last, load, send_ops
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
@@ -34,6 +35,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_KEY,
     TABLE_KEY,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -282,7 +284,9 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     # 전 변경」 의 「리비전 저장」 이다(개편 D — 런북 7-21·Guide 의 글과 같다).
     tail = "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
     warning = next(str(item.value) for item in app.warning if "지웁니다" in str(item.value))
-    assert warning.startswith(f"비가동 일정 {count:,}건을 편집본에서 지웁니다. 대상: {machine}")
+    assert warning.startswith(
+        f"비가동 일정 {count:,}건을 편집본에서 지웁니다. 대상: {literal_markdown(machine)}"
+    )
     assert warning.endswith(tail) and "설비 데이터 저장" not in warning
     app.button(key=CONFIRM_DELETE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
@@ -291,4 +295,50 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert len(_downtime_machines(app)) == seed.downtime_count - count
     assert _machines(app) == sorted(seed.machines)  # 비가동만 지운다
     app.button(key=UNDO_DELETE_BUTTON_KEY).click().run()
+    assert len(_downtime_machines(app)) == seed.downtime_count
+
+
+def _infos(app: AppTest, needle: str) -> list[str]:
+    return [str(item.value) for item in app.info if needle in str(item.value)]
+
+
+@pytest.mark.parametrize(("window", "kept"), [(3600.0, True), (0.0, False)])
+def test_a_double_press_on_confirm_and_undo_keeps_their_notices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, grid: Calls, window: float, kept: bool
+) -> None:
+    """작은 편집표 「삭제 확정」 을 사람 속도(0.2초)로 두 번 누르면 둘째 누름은 첫 회차가 꺼낸 확인
+    대기의 단추에 닿아 아무것도 하지 않는 회차가 되는데, 첫 회차가 꺼내 그린 「…편집본에서
+    지웠습니다」 를 그 회차가 지웠다(2026-10-27 E2E 5/9 — 행은 한 번만 지워짐). 「방금 삭제
+    되돌리기」 도 같다. 쓰기 알림 표지가 창 안이면 같은 info 꼴로 다시 그린다 — 창이 0 이면 옛
+    동작이다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    seed = _seeded(tmp_path)
+    app = _app(seed)
+    app.session_state[TABLE_KEY] = DOWNTIME_TARGET
+    app.run()
+    machine = sorted(set(_downtime_machines(app)))[0]
+    count = _downtime_machines(app).count(machine)
+    app.multiselect(key=DOWNTIME_FILTER_KEY).set_value([machine])
+    app.button(key=DOWNTIME_SELECT_MATCHING_KEY).click().run()
+    app.button(key=DOWNTIME_DELETE_SELECTED_KEY).click().run()
+    app.button(key=CONFIRM_DELETE_BUTTON_KEY).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(_infos(app, "편집본에서 지웠습니다")) == 1
+
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(_infos(app, "편집본에서 지웠습니다")) == (1 if kept else 0)
+    assert len(_downtime_machines(app)) == seed.downtime_count - count
+    assert _infos(app, "저장하기 전까지 되돌릴 수 있습니다")
+
+    app.button(key=UNDO_DELETE_BUTTON_KEY).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert len(_infos(app, "방금 지운 행을 편집본에 되살렸습니다")) == 1
+    app._run(widget_state=pressed)
+    assert not app.exception, [item.message for item in app.exception]
+    assert len(_infos(app, "방금 지운 행을 편집본에 되살렸습니다")) == (1 if kept else 0)
     assert len(_downtime_machines(app)) == seed.downtime_count

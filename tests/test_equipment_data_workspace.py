@@ -24,8 +24,10 @@ from pandas.testing import assert_frame_equal
 from streamlit.testing.v1 import AppTest
 from test_equipment_master_tab import _TAIL, FAKE_SAVE_KEY, FAKE_SAVE_RESULT_KEY
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_scenario_save_double_press import _first_callback, _press_again
 from widget_browser import BrowserTables
 
+import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
@@ -394,6 +396,30 @@ def test_the_template_example_row_is_flagged_before_save_and_cleared_in_one_clic
     # 예시 행을 빼면 저장할 것이 없다 — 빈 저장소에 빈 리비전을 만들지 않는다(결정 모음).
     assert _repository(path).list_revisions() == []
     assert any(NOTHING_TO_SAVE in text for text in _texts(app, "info"))
+
+
+def test_a_double_press_on_dropping_example_rows_keeps_the_first_notice(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「예시 행 n건 지우기」 의 둘째 누름이 첫 회차가 단추를 다시 그리기 전의 옛 화면에 닿으면
+    콜백이 뺄 행 없이 다시 돌아 「예시 행 0건을 편집본에서 뺐습니다」 로 첫 알림을 덮었다(2026-10-27
+    E2E 「삭제 확정」 과 같은 결함류). 뺄 행이 없는 누름은 아무것도 하지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    app = _app(tmp_path / "equipment.duckdb")
+    _preview(app, _baseline_template_text(), target="기존 보유대수")
+    _put(app)
+    app.session_state[TABLE_KEY] = "기존 보유대수"
+    _ok(app.run())
+    app.button(key=EXAMPLE_DROP_BUTTON_KEY).click()
+    pressed = app._tree.get_widget_states()
+
+    _first_callback(app, monkeypatch, "_drop_example_rows")
+    _press_again(app, pressed)
+
+    infos = _texts(app, "info")
+    assert any("예시 행 1건을 편집본에서 뺐습니다" in text for text in infos), infos
+    assert not any("예시 행 0건" in text for text in infos), infos
+    assert app.session_state[BUFFER_KEY][0].empty
 
 
 def test_saving_the_template_example_row_without_dropping_it_is_still_blocked(
@@ -962,6 +988,42 @@ def test_the_discarded_notice_names_the_dropped_units_when_nothing_was_reapplied
     more = discarded_notice("공통 대장 r8", overlay_dropped=3, reapplied=gone)
     assert "빠진 호기 1대(샘플1)의 편집은 뺐습니다" in more, more
     assert "그 밖의 가정 배치 편집 2대도 버렸습니다 — 최신 위에서 다시 옮기세요." in more, more
+
+
+def test_the_inactive_floor_warning_and_dropped_notice_keep_the_stars_of_unit_names(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """설비명 「DA*31*R」 의 별표 짝이 비활성 층 경고·다시 세움 알림(마크다운)에서 기울임이 되어
+    「DA31R」 로 보였다 — 물결표만 막았다(2026-10-27 E2E). 서비스가 지은 경고는 글 통째로, 이름
+    목록은 이름마다 구두점을 막는다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _repository(path)
+    repository.save_snapshot(
+        empty_equipment_baseline(),
+        _located_master([("EQ-C4", "C4", "1F"), ("DA*31*R", "C4", "2F")]),
+        empty_downtime_schedule(),
+    )
+    repository.save_floor_states({("C5", "6F"): "NOT_LINE"}, expected_version=0, source="test")
+    clear_equipment_repository()
+    app = _app(path)
+
+    _preview(
+        app,
+        _located_master([("EQ-C4", "C4", "1F"), ("DA*31*R", "C5", "6F")]).to_csv(
+            index=False, sep="\t"
+        ),
+    )
+    _put(app)
+
+    warnings = [text for text in _texts(app, "warning") if "비활성 층으로 옮긴 호기" in text]
+    assert warnings, _texts(app, "warning")
+    assert all("DA\\*31\\*R" in text and "DA*31*R" not in text for text in warnings), warnings
+    notice = discarded_notice(
+        "공통 r3",
+        overlay_dropped=0,
+        reapplied=ReappliedLayout(equipment=pd.DataFrame(), reapplied=1, dropped=("DA*31*R",)),
+    )
+    assert "빠진 호기 1대(DA\\*31\\*R)의 편집은 뺐습니다" in notice, notice
 
 
 def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:

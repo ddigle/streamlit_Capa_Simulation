@@ -137,6 +137,13 @@ function rebaseBox(box, base) {
   box.ops = []
   return had
 }
+
+// 아직 ack 가 오지 않은 같은 op(이름과 인자가 모두 같은 것)가 보낼 목록에 있는가. 띠 「넣기」·「밀기」, 상세 「되살리기」 같은
+// 단추의 더블클릭은 둘째 누름이 첫 op 의 회차가 돌아오기 전(단추를 다시 그리기 전)에 닿는다 — 그 누름은 보내지 않는다.
+function hasPendingOp(box, op) {
+  const keys = Object.keys(op)
+  return box.ops.some((queued) => keys.every((key) => JSON.stringify(queued[key]) === JSON.stringify(op[key])))
+}
 // </grid-outbox>
 
 // <grid-match>
@@ -372,6 +379,17 @@ function el(tag, className, text) {
   return node
 }
 
+// 글 칸 편집기 — 줄바꿈이 든 값(엑셀 Alt+Enter 칸을 가져온 것)은 여러 줄 칸(textarea)으로 연다. 한 줄 칸(input)은 줄바꿈을
+// 지워 「첫째⏎둘째」 가 「첫째둘째」 로 들어가, 끝에 한 글자만 붙여도(호기 상세는 Enter 만 눌러도) 줄바꿈이 말없이 빠진 값이 바뀐
+// 칸으로 남았다(2026-10-27 E2E). Enter 는 두 칸 모두 확정이다 — 줄을 새로 넣는 길은 없고 있던 줄바꿈을 지킨다.
+function textEditor(className, value) {
+  const lines = String(value || '').split('\n').length
+  const node = el(lines > 1 ? 'textarea' : 'input', className)
+  if (lines > 1) node.rows = Math.min(lines, 6)
+  node.value = value
+  return node
+}
+
 function button(className, text, onClick) {
   const node = el('button', className, text)
   node.type = 'button'
@@ -487,6 +505,16 @@ function send(S) {
 function schedule(S) {
   if (S.timer) clearTimeout(S.timer)
   S.timer = setTimeout(() => send(S), SEND_MS)
+}
+
+// 단추 하나가 보내는 op — 같은 op 가 아직 회차에서 돌아오지 않았으면(더블클릭의 둘째 누름) 보내지 않는다. 밀기는 두 번 밀렸고
+// (토스트 「되돌리기」 는 한 번만 되돌린다), 넣기·되살리기·지우기·되돌리기는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를
+// 되살렸습니다」)가 첫 결과와 그 「되돌리기」 를 덮었다(2026-10-27 E2E). 둘째 누름이라 버렸으면 거짓.
+function sendOnce(S, op, cells) {
+  if (hasPendingOp(S.box, op)) return false
+  enqueue(S, op, cells)
+  send(S)
+  return true
 }
 
 function enqueue(S, op, cells) {
@@ -835,6 +863,9 @@ function popover(S, name, label, build, wide) {
   const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', label)
+  // 패널이 초점을 받는다(Tab 정지는 아님) — 안내 글·여백을 누르면 초점이 초점 받는 가장 가까운 조상으로 가는데, 패널이 그
+  // 조상이 아니면 본문 stMain 으로 빠져 Esc 가 패널의 keydown 에 닿지 않고 열린 채 남았다(2026-10-27 E2E).
+  panel.tabIndex = -1
   const close = () => {
     S.pop = null
     paint()
@@ -1260,9 +1291,7 @@ function buildSelection(S, bar) {
   const apply = button('emg-btn is-small is-primary', '', () => {
     const targets = rows.filter((row) => !locked(row, col)).map((row) => row.id)
     if (!targets.length || !ready) return
-    enqueue(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))
-    send(S)
-    paintWindow(S)
+    if (sendOnce(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))) paintWindow(S)
   })
   const repaintApply = () => {
     const m = count()
@@ -1315,9 +1344,7 @@ function buildSelection(S, bar) {
     const targets = rows.map((row) => row.id)
     const cells = []
     for (const row of rows) for (const k of dateCols) if (!locked(row, k) && shiftIso(String(row.values[k] || ''), value)) cells.push([row.id, k, shiftIso(String(row.values[k]), value)])
-    enqueue(S, { op: 'shift', ids: targets, days: value }, cells)
-    send(S)
-    paintWindow(S)
+    if (sendOnce(S, { op: 'shift', ids: targets, days: value }, cells)) paintWindow(S)
   })
   const repaintShift = () => {
     const k = planShift(rows, dateCols, parseDays(S.days), locked)
@@ -1495,10 +1522,7 @@ function rowElement(S, row, index) {
   const name = values[model.nameCol] || ''
   const check = el('div', 'emg-c emg-w-chk emg-c-chk')
   if (tag === 'deleted') {
-    const back = icon('undo', name + ' 되살리기', () => {
-      enqueue(S, { op: 'restore', ids: [row.id] }, [])
-      send(S)
-    })
+    const back = icon('undo', name + ' 되살리기', () => sendOnce(S, { op: 'restore', ids: [row.id] }, []))
     back.title = '되살리기'
     back.tabIndex = -1
     check.appendChild(back)
@@ -1569,8 +1593,7 @@ function cellElement(S, row, k) {
   const label = ((row.values || [])[model.nameCol] || '새 호기') + ' ' + column.name + ' ' + (value || '빈칸')
   if (editing && column.kind !== 'choice') {
     cell.classList.add('is-editing')
-    const input = el('input', 'emg-ed')
-    input.value = S.edit.draft
+    const input = textEditor('emg-ed', S.edit.draft)
     input.placeholder = column.kind === 'date' ? '2026-11-09' : ''
     input.setAttribute('aria-label', label)
     cell.appendChild(input)
@@ -1790,10 +1813,7 @@ function onBodyKey(S, event) {
     // Tab 정지가 아니다.
     event.preventDefault()
     if (live.some((row) => row.id === id)) toggleRow(S, id, event.shiftKey)
-    else if (model.ordered.some((row) => row.id === id && row.tag === 'deleted')) {
-      enqueue(S, { op: 'restore', ids: [id] }, [])
-      send(S)
-    }
+    else if (model.ordered.some((row) => row.id === id && row.tag === 'deleted')) sendOnce(S, { op: 'restore', ids: [id] }, [])
     return
   }
   if (col === model.nameCol) return
@@ -1941,10 +1961,7 @@ function drawDetail(S, root, data) {
       const line = el('div', 'emg-official')
       line.appendChild(el('span', 'emg-muted', String(unit.official.text || '')))
       const count = Number(unit.official.count) || 1
-      const back = button('emg-link', '공식 자리로 되돌리기' + (count > 1 ? ' (묶음 ' + count + '대)' : ''), () => {
-        enqueue(S, { op: 'official', id: unit.id }, [])
-        send(S)
-      })
+      const back = button('emg-link', '공식 자리로 되돌리기' + (count > 1 ? ' (묶음 ' + count + '대)' : ''), () => sendOnce(S, { op: 'official', id: unit.id }, []))
       back.title = '이 호기의 배치 일곱 칸을 공식 값으로 — 저장하면 이 설비 시나리오의 배치 차이에서 빠집니다'
       line.appendChild(back)
       box.appendChild(line)
@@ -1976,15 +1993,9 @@ function drawDetail(S, root, data) {
   root.appendChild(downtime)
   const actions = el('div', 'emg-side-actions')
   if (unit.tag === 'deleted') {
-    actions.appendChild(button('emg-btn', '되살리기', () => {
-      enqueue(S, { op: 'restore', ids: [unit.id] }, [])
-      send(S)
-    }))
+    actions.appendChild(button('emg-btn', '되살리기', () => sendOnce(S, { op: 'restore', ids: [unit.id] }, [])))
   } else {
-    const remove = button('emg-btn is-danger', '이 호기 지우기', () => {
-      enqueue(S, { op: 'delete', ids: [unit.id] }, [])
-      send(S)
-    })
+    const remove = button('emg-btn is-danger', '이 호기 지우기', () => sendOnce(S, { op: 'delete', ids: [unit.id] }, []))
     remove.disabled = !unit.deletable
     if (unit.deleteLock) remove.title = unit.deleteLock
     actions.appendChild(remove)
@@ -2236,10 +2247,9 @@ function newField(S, column, k, mark) {
     }
     field.appendChild(chips)
   } else {
-    const input = el('input', 'emg-input')
+    const input = textEditor('emg-input', value)
     input.id = id
     input.dataset.fk = 'n' + k
-    input.value = value
     input.disabled = Boolean(mark.lock)
     if (column.kind === 'date') input.placeholder = '2026-11-09'
     if (column.kind === 'name') input.placeholder = '예: WBA-11'
@@ -2317,10 +2327,9 @@ function detailField(S, unit, column, k, sets, reasons) {
     }
     field.appendChild(chips)
   } else {
-    const input = el('input', 'emg-input')
+    const input = textEditor('emg-input', S.drafts.has(k) ? S.drafts.get(k) : shown)
     input.id = id
     input.dataset.fk = 'f' + k
-    input.value = S.drafts.has(k) ? S.drafts.get(k) : shown
     input.disabled = Boolean(lock)
     if (column.kind === 'date') input.placeholder = '2026-11-09'
     input.addEventListener('input', () => S.drafts.set(k, input.value))
@@ -2387,10 +2396,7 @@ function drawChanges(S, root, data) {
     if (unit.tag === 'new') head.appendChild(el('span', 'emg-tag is-new', '새 호기'))
     if (unit.tag === 'deleted') head.appendChild(el('span', 'emg-tag is-deleted', '지움'))
     head.appendChild(el('span', 'emg-grow'))
-    head.appendChild(button('emg-link', '이 호기 되돌리기', () => {
-      enqueue(S, { op: 'revert', id: unit.id, col: null }, [])
-      send(S)
-    }))
+    head.appendChild(button('emg-link', '이 호기 되돌리기', () => sendOnce(S, { op: 'revert', id: unit.id, col: null }, [])))
     box.appendChild(head)
     for (const [col, scope, before, after] of unit.lines || []) {
       const line = el('div', 'emg-line')
@@ -2402,10 +2408,7 @@ function drawChanges(S, root, data) {
       value.appendChild(el('span', null, ' → '))
       value.appendChild(el('b', null, after || '(빈칸)'))
       line.appendChild(value)
-      line.appendChild(icon('undo', col + ' 되돌리기', () => {
-        enqueue(S, { op: 'revert', id: unit.id, col }, [])
-        send(S)
-      }))
+      line.appendChild(icon('undo', col + ' 되돌리기', () => sendOnce(S, { op: 'revert', id: unit.id, col }, [])))
       box.appendChild(line)
     }
     list.appendChild(box)

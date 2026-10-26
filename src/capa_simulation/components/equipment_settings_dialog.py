@@ -16,9 +16,10 @@
   화면(Static 대비 일정)도 그 회차에 새 Cut-off 로 다시 그려지고, 열림 칸이 남아 저장 결과(flash)가
   누른 단추 바로 아래에 선다.
 - **닫으면 제출하지 않은 표 편집은 사라진다** — 팝업 안 편집표는 닫힌 동안 마운트되지 않는다(초안
-  `CUTOFF_DRAFT_KEY` 는 마지막 저장 시도·「설비 공정으로 채우기」 까지만 든다). Guide 가 「닫기 전에
-  저장합니다」 라고 적는다. 화면 탭 줄의 점·떠나기 확인 대상이 아니다(Cut-off 초안은 판정 함수가
-  없다).
+  `CUTOFF_DRAFT_KEY` 는 마지막 저장 시도·「설비 공정으로 채우기」 까지만 든다). 새로 열면 그 초안도
+  걷어(`forget_cutoff_draft`) 최신 저장본에서 연다 — 걷지 않으면 남의 저장 뒤 다시 열어도 옛 값이
+  보였다(2026-10-27 E2E). Guide 가 「닫기 전에 저장합니다」 라고 적는다. 화면 탭 줄의 점·떠나기
+  확인 대상이 아니다(Cut-off 초안은 판정 함수가 없다).
 - 가정 설비 시나리오면 표가 읽기 전용이다(`PREFERENCE_LOCK_MESSAGE` — Cut-off 는 모든 설비 시나리오
   공용, E3).
 """
@@ -29,7 +30,10 @@ from collections.abc import Callable
 
 import streamlit as st
 
-from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.components.cutoff_management import (
+    forget_cutoff_draft,
+    render_cutoff_management,
+)
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.page_bootstrap import PAGE_DIALOG_SUFFIX, forget_page_dialogs
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -56,8 +60,10 @@ IMPORT_DIALOG = "import"
 
 
 def open_equipment_settings() -> None:
-    """「설정」 단추·「설정에서 보기」 의 콜백 — 다른 팝업 칸(사이드바 조건 팝업 등)부터 비운다."""
+    """「설정」 단추·「설정에서 보기」 의 콜백 — 다른 팝업 칸(사이드바 조건 팝업 등)부터 비우고,
+    지난번 열었을 때의 Cut-off 초안을 걷어 최신 저장본에서 연다(`forget_cutoff_draft`)."""
     forget_page_dialogs()
+    forget_cutoff_draft()
     st.session_state[EQUIPMENT_DIALOG_KEY] = SETTINGS_DIALOG
 
 

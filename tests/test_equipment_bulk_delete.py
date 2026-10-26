@@ -217,4 +217,5 @@ def test_the_deletion_notice_blocks_the_tildes_of_the_names_in_its_keys() -> Non
     )
 
     assert "대상: E2E\\~공정\\~X · 전체." in by_process, by_process
-    assert "대상: DA\\~21\\~R · PM · 2026-10-09." in by_unit, by_unit
+    # 키 조각마다 구두점을 막는다 — 날짜의 「-」 도 막힌다(화면 글은 같다, 2026-10-27 별표 고침).
+    assert "대상: DA\\~21\\~R · PM · 2026\\-10\\-09." in by_unit, by_unit

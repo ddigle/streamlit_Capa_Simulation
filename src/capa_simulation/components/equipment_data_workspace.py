@@ -24,7 +24,6 @@ from capa_simulation.components.equipment_save_fields import (
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
-    markdown_safe_tildes,
     quoted,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -1052,13 +1051,13 @@ def draft_unit_keys() -> dict[str, str]:
     return {str(name): str(key) for name, key in value}
 
 
-def _sample_names(
-    names: Sequence[str], limit: int = 3, *, shown: Callable[[str], str] = str
-) -> str:
-    """「APW01, APW02 외 3」 — 자연 정렬 앞 `limit` 개. 정렬은 이름으로 하고 적는 글은 `shown`
-    (마크다운으로만 가는 글은 `markdown_safe_tildes` — 「DA~21~R」 가 지움선이 되지 않게)."""
+def _sample_names(names: Sequence[str], limit: int = 3) -> str:
+    """「APW01, APW02 외 3」 — 자연 정렬 앞 `limit` 개. 정렬은 이름으로 하고 이름마다
+    `literal_markdown` 으로 막아 적는다 — 이 목록은 알림 상자·미리보기 알림·거절 글(마크다운)로만
+    간다. 물결표만 막으면(옛 `markdown_safe_tildes`) 「DA*31*R」 의 별표가 기울임이 되어 「DA31R」
+    로 보였다(2026-10-27 E2E)."""
     ordered = sorted(names, key=natural_name_key)
-    head = ", ".join(shown(name) for name in ordered[:limit])
+    head = ", ".join(literal_markdown(name) for name in ordered[:limit])
     return head if len(ordered) <= limit else f"{head} 외 {len(ordered) - limit}"
 
 
@@ -1098,10 +1097,10 @@ class RemovalElsewhere:
         return all(name in seen and set(scenarios) <= seen[name] for name, scenarios in self.units)
 
     def message(self) -> str:
-        """저장 칸 경고·저장 거절 글(마크다운으로만 간다) — 호기 이름은 물결표를, 시나리오 이름은
-        구두점을 막아 싣는다."""
+        """저장 칸 경고·저장 거절 글(마크다운으로만 간다) — 호기 이름·시나리오 이름 모두 구두점을
+        막아 싣는다."""
         scenarios = "·".join(f"「{literal_markdown(name)}」" for name in self.scenarios)
-        units = _sample_names(sorted(self.names), shown=markdown_safe_tildes)
+        units = _sample_names(sorted(self.names))
         return (
             f"지우는 호기 {len(self.units):,}대({units})는 다른 설비 "
             f"시나리오 {len(self.scenarios):,}개({scenarios})에도 일정이 있습니다 — 저장하면 공통 "
@@ -1425,8 +1424,9 @@ def discarded_notice(
     「설비 편집(설비 마스터·Space 배치)을 버리고」 가 이미 모두 말한다."""
     head = f"다른 사용자가 {number}{object_particle(number)} 저장해, "
     gone = reapplied.dropped if reapplied is not None else ()
-    # 알림 칸(마크다운)으로만 간다 — 설비명의 물결표를 막는다.
-    names = markdown_safe_tildes(", ".join(gone[:3])) + (" 외" if len(gone) > 3 else "")
+    # 알림 칸(마크다운)으로만 간다 — 설비명마다 구두점을 막는다(물결표·별표).
+    names = ", ".join(literal_markdown(name) for name in gone[:3])
+    names += " 외" if len(gone) > 3 else ""
     dropped = (
         f" 그 사이 공통 대장에서 빠진 호기 {len(gone):,}대({names})의 편집은 뺐습니다."
         if gone
@@ -2504,17 +2504,25 @@ def _drop_example_rows() -> None:
     **저장 검증은 건드리지 않는다.** 이것은 저장을 눌러야 알던 것을 누르기 전에 말하고
     한 번에 지우는 길일 뿐이다. 콜백은 위젯이 만들어지기 전에 돌므로 editor 키를 비우는
     것이 안전하고, `st.rerun` 은 부르지 않는다 — `on_click` 이 이미 한 회차를 돌린다.
+
+    단추는 예시 행이 있을 때만 서므로 뺄 행이 없는 누름은 더블클릭의 둘째(첫 회차가 단추를 다시
+    그리기 전의 옛 화면)다 — 편집본을 다시 세우지도 「예시 행 0건을 …」 으로 첫 알림을 덮지도
+    않는다. 알림은 쓰기 알림 표지에도 적어(`note_notice`) 그 둘째 회차가 지우지 않게 한다(2026-10-27
+    E2E 「삭제 확정」 과 같은 결함류).
     """
+    notices = notice_marks()
     frames: Frames = st.session_state[BUFFER_KEY]
     removed = _example_row_count(frames)
+    if not removed:
+        return
     st.session_state[DROP_EXAMPLE_ROWS_KEY] = True
     replace_equipment_buffer((_without_example_rows(frames[0]), frames[1], frames[2]))
-    queue_flash(
-        _NOTICE_KEY,
+    message = (
         f"예시 행 {removed:,}건을 편집본에서 뺐습니다. 다음 붙여넣기·CSV 미리보기도 예시 행을 빼고 "
-        "검토합니다 — 저장 검증은 그대로 돕니다.",
-        kind="info",
+        "검토합니다 — 저장 검증은 그대로 돕니다."
     )
+    note_notice(notices, _NOTICE_KEY, message, kind="info")
+    queue_flash(_NOTICE_KEY, message, kind="info")
 
 
 def build_import_review(
@@ -2606,7 +2614,8 @@ def build_import_review(
         if paste.case_variants:
             cautions.append(
                 f"대소문자만 다른 기존 호기가 있는데 새 호기로 더합니다: "
-                f"{describe_case_variants(paste.case_variants)}. 같은 설비면 설비명을 기존 표기 "
+                f"{describe_case_variants(paste.case_variants, shown=literal_markdown)}. 같은 "
+                "설비면 설비명을 기존 표기 "
                 "그대로 적어 다시 붙여넣으세요 — Space 이름 바꾸기는 대소문자·앞뒤 공백을 무시하고 "
                 "겹친 이름을 막습니다."
             )
@@ -2886,8 +2895,9 @@ def _deletion_message(plan: DeletionPlan) -> str:
     """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠지는지. 호기 지우기는 설비 마스터
     표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
     count = plan.target_count
-    # 경고 상자·알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명의 물결표를 막는다.
-    samples = markdown_safe_tildes(", ".join(plan.sample_keys()))
+    # 경고 상자·알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·
+    # 별표).
+    samples = ", ".join(literal_markdown(key) for key in plan.sample_keys())
     more = " 외" if count > len(plan.sample_keys()) else ""
     if plan.target == BASELINE_TARGET:
         head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"
@@ -2939,7 +2949,14 @@ def _apply_bulk_actions(
 
     **확인 대기는 어떤 제출이든 한 번 쓰고 버린다.** 삭제 버튼이 다시 세우지 않는 한 남지
     않는다 — 확인 상자가 누른 순간보다 오래 살아 있으면 나중에 다른 뜻으로 눌린다.
+
+    「삭제 확정」·「방금 삭제 되돌리기」 의 결과 알림은 쓰기 알림 표지에도 적는다(`note_notice` —
+    종류 info). 사람 속도의 더블클릭은 둘째 누름이 이미 사라진 단추(확인 대기·되돌릴 행을 첫 회차가
+    꺼냈다)에 닿아 아무것도 하지 않는 회차가 되는데, 첫 회차가 꺼내 그린 알림을 그 회차가 다시
+    그리며 지웠다(2026-10-27 E2E 「삭제 확정」 5/9). 표지가 창(`TRAILING_PRESS_SECONDS`) 안이면
+    알림 칸(`render_flash`)이 같은 꼴로 다시 그린다. 표지 dict 는 편집본을 바꾸기 **전에** 받는다.
     """
+    notices = notice_marks()
     frames: Frames = st.session_state[BUFFER_KEY]
     pending = st.session_state.pop(PENDING_DELETE_KEY, None)
     # 편집표에서 켠 선택은 다른 제출을 지나도 남는다. 보기를 바꾸면 풀린다.
@@ -2966,11 +2983,11 @@ def _apply_bulk_actions(
         target, keys = pending
         plan = plan_deletion(frames, target, keys)
         _store_changed_buffer(apply_deletion(frames, plan))
+        done = _deletion_message(plan).replace("지웁니다", "지웠습니다", 1)
+        note_notice(notices, _NOTICE_KEY, done, kind="info")
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
-        queue_flash(
-            _NOTICE_KEY, _deletion_message(plan).replace("지웁니다", "지웠습니다", 1), kind="info"
-        )
+        queue_flash(_NOTICE_KEY, done, kind="info")
     elif undo:
         removed = st.session_state.pop(LAST_REMOVED_KEY, None)
         if isinstance(removed, tuple):
@@ -2979,6 +2996,7 @@ def _apply_bulk_actions(
             message = "방금 지운 행을 편집본에 되살렸습니다."
             if skipped:
                 message += f" 그 사이 같은 키가 다시 생긴 {skipped:,}행은 건너뛰었습니다."
+            note_notice(notices, _NOTICE_KEY, message, kind="info")
             queue_flash(_NOTICE_KEY, message, kind="info")
     st.session_state[SELECTION_KEY] = selection
 

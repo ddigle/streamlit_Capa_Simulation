@@ -84,7 +84,7 @@ def render_flash(*keys: str) -> DeltaGenerator:
 
     칸은 알림이 없어도 선다 — 뒤 형제의 순번이 알림 유무로 밀리지 않는다. 돌려받은 칸에 같은
     동작의 실패 문구나 그 자리에 함께 설 알림을 더 쓸 수 있다. 담아 둔 알림이 없는 칸은 쓰기 직후
-    적어 둔 알림(`write_guard.held_flash`)이 창 안이면 그 글을 적어 둔 아이콘과 함께 성공으로 다시
+    적어 둔 알림(`write_guard.held_flash`)이 창 안이면 그 글을 적어 둔 아이콘·종류(보통 성공)로 다시
     그린다.
     """
     slot = st.container()
@@ -92,7 +92,7 @@ def render_flash(*keys: str) -> DeltaGenerator:
         note = _note(st.session_state.pop(key, None))
         if note is None:
             held = held_flash(key)
-            note = None if held is None else FlashNote("success", held[0], held[1])
+            note = None if held is None else _note((held[2], held[0], held[1]))
         if note is not None:
             _draw(slot, note)
     return slot

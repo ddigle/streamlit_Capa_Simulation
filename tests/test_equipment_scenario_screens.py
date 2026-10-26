@@ -920,7 +920,8 @@ def test_space_layout_save_refuses_removing_a_unit_another_scenario_schedules(
 
     assert len(repository.list_revisions()) == 1
     assert any(
-        "지우는 호기 1대(EQ-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다" in text
+        "지우는 호기 1대(EQ\\-02)는 다른 설비 시나리오 1개(「셋업 실무」)에도 일정이 있습니다"
+        in text
         and "저장하려면 가용설비 현황 설비 마스터 탭 저장 칸의" in text
         for text in _texts(app)
     )

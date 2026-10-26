@@ -202,7 +202,7 @@ def test_an_assumption_import_with_layout_cells_saves_as_that_scenarios_differen
     _ok(app.run())
     review = app.session_state[PREVIEW_KEY]
     assert review.candidate[1].set_index("설비명").loc["EQ-01", "X좌표"] == 55
-    assert any("가정 배치 1대(EQ-01)가 바뀝니다" in text for text in review.cautions)
+    assert any("가정 배치 1대(EQ\\-01)가 바뀝니다" in text for text in review.cautions)
     app.button(key=IMPORT_APPLY_BUTTON_KEY).click()
     _ok(app.run())
     assert _buffer_value(app, "EQ-01", "X좌표") == 55
@@ -394,7 +394,7 @@ def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     _ok(app.run())
     assert PREVIEW_KEY not in app.session_state
     assert any(
-        "붙여넣기가 있던 호기 1대(EQ-01)의 배치 칸을 바꿉니다" in text
+        "붙여넣기가 있던 호기 1대(EQ\\-01)의 배치 칸을 바꿉니다" in text
         for text in _texts(app, "error")
     )
 
@@ -900,3 +900,31 @@ def test_the_save_hint_names_the_scenario_in_brackets_even_without_a_basis() -> 
     남는다."""
     assert save_target(EquipmentSaveBasis("s1", "셋업~가정~A")) == "「셋업\\~가정\\~A」"
     assert save_target(None) == "「이 설비 시나리오」"
+
+
+def _metrics(app: AppTest) -> dict[str, str]:
+    return {str(item.label): str(item.value) for item in app.metric}
+
+
+def test_reimporting_the_current_data_counts_no_row_to_change(tmp_path: Path, grid: Calls) -> None:
+    """내려받은 「현재 데이터」 를 그대로 다시 올리면 미리보기가 「바뀔 행 2행 · 기존 대체 2건」
+    이라고 해 내려받기 캡션 「그대로 붙여넣어도 통과합니다」 와 어긋났다(E2E — 실제로 바뀐 칸 0).
+    바뀌는 줄만 세어 「바뀌는 값 없음 · 바뀔 행 0행」 이고 같은 값 그대로인 줄은 「변경 없음」 으로
+    센다. 한 칸을 고치면 그 줄만 바뀔 행이다."""
+    repository, _setup = _two_scenarios(tmp_path)
+    app = _page(repository, OPERATIONS)
+    master = app.session_state[BUFFER_KEY][1]
+
+    _preview(app, _tsv(master))
+    assert "**설비 마스터 · 바뀌는 값 없음 · 바뀔 행 0행**" in _texts(app, "markdown")
+    assert _metrics(app) == {"신규": "0건", "기존 대체": "0건", "변경 없음": f"{len(master)}건"}
+
+    edited = master.copy()
+    edited.loc[edited["설비명"].eq("EQ-02"), "담당자"] = "담당 바뀜"
+    _preview(app, _tsv(edited))
+    assert "**설비 마스터 · 바뀔 행 1행**" in _texts(app, "markdown")
+    assert _metrics(app) == {
+        "신규": "0건",
+        "기존 대체": "1건",
+        "변경 없음": f"{len(master) - 1}건",
+    }

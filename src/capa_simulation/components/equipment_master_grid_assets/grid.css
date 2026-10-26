@@ -18,9 +18,19 @@
 
 .emg button,
 .emg input,
-.emg select {
+.emg select,
+.emg textarea {
   font: inherit;
   color: inherit;
+}
+
+.emg textarea {
+  height: auto;
+  min-height: 34px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  resize: none;
+  white-space: pre-wrap;
 }
 
 .emg-btn {
@@ -231,6 +241,10 @@
   min-width: min(260px, calc(100vw - 16px));
   max-width: min(420px, calc(100vw - 16px));
   box-sizing: border-box;
+}
+
+.emg-pop:focus {
+  outline: none;
 }
 
 .emg-pop.is-wide {
@@ -687,6 +701,12 @@
   padding: 0 6px;
   outline: none;
   background: var(--emg-surface);
+}
+
+textarea.emg-ed {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .emg-dd {

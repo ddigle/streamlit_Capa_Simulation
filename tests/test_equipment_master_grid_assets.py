@@ -619,6 +619,102 @@ def test_redrawn_side_controls_keep_keyboard_focus_and_fresh_toasts_are_revealed
     assert re.search(r"\.emg-toast\s*\{[^}]*scroll-margin-top:\s*80px", CSS)
 
 
+_PENDING_RUNNER = """
+const box = createBox()
+rebaseBox(box, 'b1')
+const shift = { op: 'shift', ids: ['a', 'b'], days: 7 }
+const out = { before: hasPendingOp(box, shift) }
+queueOp(box, shift, 100, 1)
+out.same = hasPendingOp(box, { op: 'shift', ids: ['a', 'b'], days: 7 })
+out.otherDays = hasPendingOp(box, { op: 'shift', ids: ['a', 'b'], days: 3 })
+out.otherIds = hasPendingOp(box, { op: 'shift', ids: ['b', 'a'], days: 7 })
+out.otherOp = hasPendingOp(box, { op: 'set', ids: ['a', 'b'] })
+ackBox(box, 1)
+out.acked = hasPendingOp(box, shift)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def test_a_double_press_on_an_op_button_sends_the_op_once() -> None:
+    """선택 띠 「밀기」 를 더블클릭하면 둘째 누름이 첫 op 의 회차가 돌아오기 전에 같은 띠의 단추에
+    닿아 shift op 를 하나 더 보냈다 — 날짜가 두 번 밀리고 토스트 「되돌리기」 는 한 번만 되돌렸다.
+    「넣기」·상세 「되살리기」 는 둘째 op 의 헛결과 토스트(「0칸 바뀜」·「0대를 되살렸습니다」)가 첫
+    결과와 그 「되돌리기」 를 덮었다(2026-10-27 E2E). 단추 op 는 같은 op 가 아직 ack 되지 않았으면
+    보내지 않는다(`sendOnce` — `hasPendingOp`). 다른 인자(밀 날 수·줄)나 ack 뒤의 누름은 보낸다."""
+    assert _node({}, _PENDING_RUNNER) == {
+        "before": False,
+        "same": True,
+        "otherDays": False,
+        "otherIds": False,
+        "otherOp": False,
+        "acked": False,
+    }
+    once = {
+        "buildSelection": ["{ op: 'set', ids: targets", "{ op: 'shift', ids: targets"],
+        "rowElement": ["{ op: 'restore', ids: [row.id] }"],
+        "onBodyKey": ["{ op: 'restore', ids: [id] }"],
+        "drawDetail": [
+            "{ op: 'official', id: unit.id }",
+            "{ op: 'restore', ids: [unit.id] }",
+            "{ op: 'delete', ids: [unit.id] }",
+        ],
+        "drawChanges": [
+            "{ op: 'revert', id: unit.id, col: null }",
+            "{ op: 'revert', id: unit.id, col }",
+        ],
+    }
+    for name, ops in once.items():
+        body = JS[JS.index(f"function {name}(") :]
+        body = body[: body.index("\n}\n")]
+        for op in ops:
+            assert f"sendOnce(S, {op}" in body, (name, op)
+            assert f"enqueue(S, {op}" not in body, (name, op)
+
+
+_EDITOR_RUNNER = """
+const editors = {}
+const values = [
+  ['multi', '첫째\\n둘째'], ['single', '한 줄'], ['empty', ''],
+  ['tall', 'a\\nb\\nc\\nd\\ne\\nf\\ng\\nh'],
+]
+for (const [name, value] of values) {
+  const node = textEditor('emg-ed', value)
+  const rows = node.rows === undefined ? null : node.rows
+  editors[name] = { tag: node.tagName, value: node.value, rows }
+}
+process.stdout.write(JSON.stringify(editors))
+"""
+
+
+def test_a_multi_line_value_opens_a_multi_line_editor_that_keeps_its_line_breaks() -> None:
+    """엑셀 Alt+Enter 칸(줄바꿈 든 값)을 표 칸·호기 상세 칸에서 고치면 한 줄 칸(input)이 줄바꿈을
+    지워, 끝에 「!」 만 붙여도(상세는 Enter 만 눌러도) 「첫째 둘째 → 첫째둘째!」 가 바뀐 칸으로
+    남았다(2026-10-27 E2E). 줄바꿈이 든 값은 여러 줄 칸(textarea)으로 열어 값을 그대로 둔다 — 한
+    줄 값은 전처럼 input 이다. 두 편집기와 「새 호기」 칸(가져오기로 든 값)이 모두 이 길로만 칸을
+    짓는다."""
+    parts = []
+    for name in ("el", "textEditor"):
+        body = JS[JS.index(f"function {name}(") :]
+        parts.append(body[: body.index("\n}\n") + 2])
+    source = _FAKE_DOM + "\n".join(parts) + _EDITOR_RUNNER
+    result = _node({}, "", source=source)
+
+    assert result == {
+        "multi": {"tag": "TEXTAREA", "value": "첫째\n둘째", "rows": 2},
+        "single": {"tag": "INPUT", "value": "한 줄", "rows": None},
+        "empty": {"tag": "INPUT", "value": "", "rows": None},
+        "tall": {"tag": "TEXTAREA", "value": "a\nb\nc\nd\ne\nf\ng\nh", "rows": 6},
+    }
+    assert "textEditor('emg-ed', S.edit.draft)" in _function("cellElement")
+    assert "textEditor('emg-input', S.drafts.has(k) ? S.drafts.get(k) : shown)" in _function(
+        "detailField"
+    )
+    assert "textEditor('emg-input', value)\n    input.id = id\n    input.dataset.fk = 'n' + k" in JS
+    assert "el('input', 'emg-ed')" not in JS
+    assert "el('input', 'emg-input')\n    input.id = id" not in JS
+    assert re.search(r"\.emg textarea\s*\{[^}]*resize:\s*none", CSS)
+
+
 def test_the_narrow_check_head_rule_outranks_the_wide_one() -> None:
     """좁은 화면 체크 줄 머리(한 줄 차지)는 넓은 규칙(116px)보다 특정도가 높아야 한다 — 미디어
     규칙이 파일 앞에 있어 같은 선택자면 뒤의 넓은 규칙이 이긴다."""
@@ -971,6 +1067,62 @@ const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTa
         "pressOutside": False,
     }
     assert result == {"조건으로 불러오기": expected, "공정으로 불러오기": expected}
+
+
+def test_escape_closes_a_loader_popover_after_a_press_on_its_text_or_margin() -> None:
+    """팝오버 안 안내 글·여백을 누르면 패널은 열린 채 남지만(위 시험) 초점이 본문 stMain 으로
+    빠져, Esc 가 패널의 keydown 에 닿지 않고 두 번 눌러도 열린 채였다(2026-10-27 E2E — 여는
+    단추로만 닫혔다). 패널이 초점을 받아(`tabIndex -1`) 누름 뒤 초점이 패널에 머물고 Esc 가 닫는다 —
+    초점은 여는 단추로 돌아온다. 가짜 DOM 의 누름은 브라우저처럼 초점 받는 가장 가까운 조상(없으면
+    stMain)에 초점을 준다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const main = new FakeNode('section')
+main.appendChild(parentElement)
+const tags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']
+const focusable = (node) => tags.includes(node.tagName) || typeof node.tabIndex === 'number'
+const press = (node) => {
+  fire(node, 'mousedown')
+  let at = node
+  while (at && !focusable(at)) at = at.parentNode
+  const target = at || main
+  const before = document.activeElement
+  if (before && before !== target) fire(before, 'focusout', { relatedTarget: target })
+  target.focus()
+}
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
+;(async () => {
+  mount(input.data)
+  const spots = [['조건으로 불러오기', '.emg-muted'], ['공정으로 불러오기', '.emg-pop-list']]
+  for (const [label, spot] of spots) {
+    const toggle = buttonOf(label)
+    const panel = toggle.parentNode.children[1]
+    const row = {}
+    const targets = [['text', () => panel.querySelector(spot)], ['margin', () => panel]]
+    for (const [name, target] of targets) {
+      toggle.focus()
+      toggle.click()
+      await tick()
+      press(target())
+      await tick()
+      const open = !panel.hidden
+      fire(document.activeElement, 'keydown', { key: 'Escape' })
+      row[name] = { open, closed: panel.hidden, back: document.activeElement === toggle }
+    }
+    results[label] = row
+  }
+  process.stdout.write(JSON.stringify(results))
+})()
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    expected = {"open": True, "closed": True, "back": True}
+    row = {"text": expected, "margin": expected}
+    assert result == {"조건으로 불러오기": row, "공정으로 불러오기": row}
+    assert re.search(r"\.emg-pop:focus\s*\{\s*outline:\s*none", CSS)
 
 
 def test_closing_the_import_dialog_returns_focus_to_the_button_that_opened_it() -> None:

@@ -138,6 +138,7 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
+from capa_simulation.components.write_guard import current_generation, just_written, note_written
 from capa_simulation.equipment_scenario_activation import (
     UNMERGED_LOCK_REASON,
     EquipmentSession,
@@ -250,6 +251,10 @@ APPLIED_KEY: Final = "equipment_grid_applied_v1"
 # 저장 구획의 단추·결과 칸.
 SAVE_BUTTON_KEY: Final = "equipment_master_save_v1"
 UNDO_BUTTON_KEY: Final = "equipment_master_undo_v1"
+# 「한 단계 되돌리기」 누름 세대(정수)·쓰기 표지 이름. 단추는 그린 회차의 값을 콜백 인자로 받아,
+# 지금 값과 다르거나 앞 되돌리기의 창 안이면 더블클릭의 둘째 누름이라 아무것도 되돌리지
+# 않는다(`_undo_step`).
+UNDO_PRESS_KEY: Final = "equipment_master_undo_press_v1"
 DISCARD_POPOVER_KEY: Final = "equipment_master_discard_v1"
 DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
@@ -835,8 +840,28 @@ def _on_dialog(name: str) -> None:
 # ------------------------------------------------------------------ 저장 구획 콜백
 
 
-def _undo_step(context: GridContext, layout: LayoutMode) -> None:
+def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
+    """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다.
+
+    더블클릭(0.15초)은 한 번으로 친다. 옛 코드는 둘째 누름이 한 단계를 더 꺼내 메모3·메모2 가
+    함께 돌아갔고, 첫 회차의 알림(「되돌림: 메모3 고침」)을 둘째의 것이 덮었다(2026-10-27 E2E).
+    둘째 누름은 두 꼴로 닿는다 — 거르는 것도 둘이다.
+
+    - 첫 회차가 단추를 다시 그리기 **전**의 옛 화면 — `press`(그린 회차의 누름 세대
+      `UNDO_PRESS_KEY`)가 지금 세대와 다르다.
+    - 첫 회차가 단추를 다시 그린 **뒤** — 세대가 같아 그것만으로는 일부러 누른 다음 단계와 가를
+      수 없다. 첫 되돌리기에서 `write_guard.TRAILING_PRESS_SECONDS`(1초 — 사람 더블클릭 간격에
+      회차 한 번의 여유) 안의 누름은 같은 더블클릭으로 본다(`just_written`). 두 단계를
+      되돌리려면 결과를 보고 다시 누른다.
+
+    거른 누름은 되돌리지도 알리지도 않는다. 세대·시각은 되돌리기 **전에** 적는다 — 이 회차가 그
+    뒤에 끊기면 둘째 누름이 다시 되돌리지 않고 이번 누름이 빈손으로 끝날 뿐이다(다시 누르면
+    된다)."""
     apply_outbox(context, layout)
+    if press != current_generation(UNDO_PRESS_KEY) or just_written(UNDO_PRESS_KEY):
+        return
+    note_written(UNDO_PRESS_KEY)
+    st.session_state[UNDO_PRESS_KEY] = press + 1
     ops = [{"op": "undo", "base": context.base}]
     before = layout_memo_mark()
     result = apply_ops(_grid_state(), ops, context)
@@ -1053,9 +1078,10 @@ def _render_notices(
             saved = (
                 latest_snapshot.equipment if latest_snapshot is not None else frames[1].iloc[0:0]
             )
-            # 서비스가 지은 글이라 호기 이름을 날로 담는다 — 그리는 자리에서 물결표를 막는다.
+            # 서비스가 지은 글이라 호기 이름을 날로 담는다(앱 꾸밈 없음) — 그리는 자리에서 글 통째로
+            # 구두점을 막는다. 물결표만 막으면 「DA*31*R」 의 별표가 기울임이 됐다(2026-10-27 E2E).
             for message in inactive_floor_warnings(frames[1], saved, floor_states):
-                st.warning(markdown_safe_tildes(message), icon=":material/block:")
+                st.warning(literal_markdown(message), icon=":material/block:")
 
 
 def _render_downloads(
@@ -1220,7 +1246,7 @@ def _render_save_section(
             key=UNDO_BUTTON_KEY,
             icon=":material/undo:",
             on_click=_undo_step,
-            args=(context, layout),
+            args=(context, layout, current_generation(UNDO_PRESS_KEY)),
             disabled=not grid_undo_steps(),
         )
         with st.popover(DISCARD_LABEL, icon=":material/delete_sweep:", key=DISCARD_POPOVER_KEY):
