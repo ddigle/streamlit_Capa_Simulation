@@ -563,9 +563,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가용설비를 가용대수 빈칸으로 받는다(「행이 없습니다」 거절은 붙여넣기·저장 경로의 몫).
   - 로직 분석 식 세 줄(대당 Capa·대당 일 Capa·일 표준 가능량)도 **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다(제약
     시뮬레이션 고른 달 계산과 같은 규칙) — 결과는 원값의 둘째 자리 그대로 두고, 깎은 인수로 어긋날 때만 더 적는 자리 수의 합이
-    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`_formula_operands` — 「54,698.63 ÷ 1.49386
-    = 36,615.63」, 2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다). 그래도 못 맞추면 처음 자리로 적고 등호를 「≈」 로
-    둔다(9장 「화면 숫자는 검산되어야 한다」).
+    가장 작게(같으면 오른 인수 먼저) 인수를 한 자리씩, 여섯째 자리까지 더 적는다(`formula_text.consistent_places` — 「54,698.63
+    ÷ 1.49386 = 36,615.63」, 2026-10-26 E2E 3회차에 「÷ 1.49」 로 0.26% 어긋났다). 그래도 못 맞추면 처음 자리로 적고 등호를
+    「≈」 로 둔다(8장 「화면 숫자는 검산되어야 한다」). 세 줄 글은 같은 파일의 순수 함수 `logic_formula_text`(줄 하나는
+    `_formula_line`)가 짓고, 인수 글자 꼴(`_operand_text` — `_format_metric` 자리, 늘린 자리의 뒤 0 은 뗀다)과 적힌 글자로
+    다시 셈하기(`_recomputed`, `Decimal`)는 이 화면 것이라 페이지에 둔다.
 - `src/capa_simulation/components/reference_csv_tools.py` — 입력 RQ 월별 Wide 표의 UTF-8 CSV 양식 내려받기와 Excel
   붙여넣기 팝업 폼·적용 알림을 공통 제공한다(`render_reference_clipboard_form` 은 양식과 붙여넣기 칸만 그린다).
 - `src/capa_simulation/components/horizontal_scrollbar.py` — HOME 월별 영역과 동기화되는 Components v2 가로 스크롤바다.
@@ -2240,7 +2242,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   **콜백**이 한 칸(`CONSTRAINT_MONTH_KEY`)에 적고 세대 한 칸을 두 그림이 나눠 써 마지막 누름이 이긴다. 다섯 단계의 식(1단계
   「소요 = 기존 + 제약」·2단계 「소요 × % = 곱」·4단계 「가용 − 개조 중 − 배정 = 기존 가용」·5단계 「가용 ÷ 소요 = 확보율」)은
   **적힌 수로 다시 셈해도 적힌 결과**가 나와야 한다 — 둘째 자리로 깎은 인수로 어긋나면 그 식의 인수만 한 자리씩 더
-  적고(`_consistent_digits`, 여섯째 자리까지), 그래도 못 맞추면 둘째 자리로 적고 등호를 「≈」 로 둔다. 그림은 세션 memo(4칸 —
+  적고(`formula_text.consistent_digits`·`operand_text`, 여섯째 자리까지), 그래도 못 맞추면 둘째 자리로 적고 등호를 「≈」 로
+  둔다 — 식의 인수는 `formula_text` 로 짓는다(적힌 수로 검산, 8장). 계산표 풍선의 식은 「≈」 길이다. 그림은 세션 memo(4칸 —
   키는 계산 결과 값·화면 글자·고른 달·토글·세대·테마)다. 위 줄(그래프 카드 + 고른 달 계산 카드)은 가로 컨테이너 하나(3 : 2)이고
   줄이 `TOP_ROW_STACK_BELOW_PX`(900px)보다 좁으면 컨테이너 질의로 위아래로 쌓는다(`top_row_style` — 사이드바를 편 900px 창에서
   3 : 2 그대로면 그래프 그림 칸이 169px 로 줄어 달 누름이 어려웠다). 그래프는 카드 안 스크롤 상자 → 캔버스에 서고 캔버스는
@@ -2277,13 +2280,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_home_hidden_main_figures.py`). 그림 모양을 바꾸면 `HOME_FIGURE_SCHEMA_VERSION` 을 올린다.
   - 계획 세부수량은 `go.Table` 없이 면색 도형 + 글자 trace(data[0] 머리글, data[1] 값, 그 뒤 자르는 trace)다. 긴
     제품명·거래선은 제 칸 경계에서 잘린다. 머리글 띠 도형은 `plotly_layout.table_header_band` 하나다.
+- `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
+  글자와 등호를 고르는 순수 도우미(8장 「화면 숫자는 검산되어야 한다」). 길이 둘이고 화면마다 지금 쓰는 길을 지킨다 —
+  「≈」 길(`equals_mark` — 인수는 화면 자릿수, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 「=」 대신 「≈」, 적힌 글자에서
+  수를 읽는 `written_value`)은 공정 Capa 상세 근거 카드·결합 캔버스 풍선, 가용설비 현황 비교 시트 풍선, 제약 시뮬레이션
+  계산표 풍선이고, 자릿수 늘리기 길(`consistent_digits`·`operand_text` — 어긋날 때만 그 식의 인수를 모두 한 자리씩, 여섯째
+  자리까지, 끝내 못 맞추면 화면 자릿수와 「≈」)은 제약 시뮬레이션 고른 달 계산이고, 인수마다 따로 늘리는 꼴
+  (`consistent_places` — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다. 인수 글자 꼴은
+  화면마다 다르므로 쓰는 쪽이 넘긴다(`operand_text` 의 `plain`). 결과 값·판정·올림 규칙은 바꾸지 않는다.
+  `parse_formula` 는 시험용 읽기다(`tests/test_formula_text.py` — 값 격자로 지은 식 글을 읽어 다시 셈하는 검산 그물과, UI
+  모듈의 식 꼴 f-string 마다 이 모듈을 거치는지 보는 AST 가드 — 가드가 보는 꼴·보지 못하는 꼴과 허용·대기 목록은 그 시험
+  머리에 있다).
 - `src/capa_simulation/components/month_sheet_canvas.py` — 월 시트 캔버스 엔진(라벨·월 Figure 한 쌍의 `Row`·
   `Cell`·글자·표적·서식·`canvas_point`). 공정 Capa 상세·비교 시트·제약 시뮬레이션 계산표 셋이 훅(`row_hook` 등)으로 쓰는
   순수 함수다.
   - 풍선 글이 빈 칸은 둘째 표적 trace(`hoverinfo: "none"`)다 — 풍선 상자 없이 누르면 골라진다. `Row.label_hover` 를
     준 행만 라벨 Figure 에 줄 이름 칸 풍선 표적이 서고, 없으면 라벨 Figure 에 trace 가 없다.
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
-  함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다.
+  함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다. 풍선 식(Static 가용 = 보유 +
+  대여 · 보유 = 기존보유 + 호기 · 가용 = 보유 + 대여 · GAP = 설비 일정 − Static)은 적힌 글자에서 다시 셈해 어긋나면 「≈」 다
+  (`formula_text`). Static 가용 식 줄은 결과가 앞 줄이라 어긋날 때만 줄 앞에 두고, 원값부터 다른 ⚠ 달은 두지 않는다.
 - `src/capa_simulation/components/availability_sheet_keys.py` — 비교 시트 key(`GAP_SHEET_CHART_KEY` 등)를 가벼운 모듈에
   둔다 — `app.py` 가 패널·서비스를 import 하지 않고 터치 스크롤 막이(`components/plotly_touch_scroll.py`)에 넣게.
 - `src/capa_simulation/components/process_capa_canvas.py` — `공정 Capa 상세` 결합 월 캔버스(① 공식 요약 ② 설비 일정 기준
@@ -2298,11 +2314,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     눈금이 서는 줄(단축 · 추가N)만 적는다. 라벨 Figure 는 그 풍선이 있을 때만 hover 를 켠다(`process_capa_view`).
   - `assumption`(UPEH 가정)이면 ① 끝에 세 줄(구간 달만 값)이 서고 부족 띠·② 판정 대조는 가정 요약의 판정이다. 표지는
     바뀌는 행의 라벨·풍선에만(② 가용·전월 대비·④ 제외, 제목 줄 높이 그대로), 공식에서만 당긴 호기는 ③ 흐린 줄이다.
+  - 풍선의 식(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」·가정 소요 「공식 ÷ f」, ② 목표
+    과부족 「가용 − 목표대수」)은 칸 자릿수 인수로 다시 셈해 어긋나면 「≈」 다(`formula_text.equals_mark`). 두 과부족 식 줄은
+    결과가 앞 줄이고 등호가 없어 어긋날 때만 줄 앞에 둔다.
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
-  - 그림은 세션 칸(`CANVAS_MEMO_KEY`)에 기억한다(새 `st.cache_data` 없음). 근거 카드 식은 검산되어야 하고(어긋나면 `≈`)
+  - 그림은 세션 칸(`CANVAS_MEMO_KEY`)에 기억한다(새 `st.cache_data` 없음). 근거 카드 식(①~④ 와 원인 줄)은 검산되어야
+    하고(어긋나면 `≈` — `formula_text.equals_mark`, 등호 없는 ① 원수요 부하량 ÷ 실효 대당 Capa 줄은 카드의 소요와 어긋날
+    때만 줄 앞에)
     목표는 `target_label`(「110% (1.095)」)로 적는다.
   - 「구획」 칩(`st.pills`)은 선택지 넷을 늘 고정하고 칸이 없으면 넷 모두로 심는다(`seed_sections`). 접힘은 그림 기억
     키에 들고, 접힌 ③·④ 의 「더 보기」 는 숨는다. 화면을 옮기는 다음 화면 단추는 본문에서 옮긴다(프래그먼트 콜백 금지).
@@ -3332,6 +3353,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   문턱), `SUM_TOLERANCE` 1e-6 × max(1, R)(어댑터의 제품별 합 대조). 어댑터는 `R < Rc ≤ R + 1e-9` 와 「다른 제품 소요가 0 인
   달」 의 Rc 를 R 로 접는다 — 합하는 차례만 다른 두 근거의 잡음이 Re 에 남아 기존 확보율이 터지지 않게.
 - 어느 호기를 개조하는지 정하지 않는 대수 모델이다 — 실제 호기의 비가동·Qual 일정과 겹치면 이중 차감될 수 있다.
+- **화면 식 글.** 고른 달 계산 다섯 단계와 계산표 풍선의 식은 적힌 수로 다시 셈해도 적힌 결과가 나오게
+  `components/formula_text.py` 로 짓는다 — 단계는 자릿수 늘리기(`consistent_digits`), 풍선은 「≈」(`equals_mark`, 8장). 결과
+  값·정수 배정·판정은 그대로다.
 
 ### 계산 기간과 멈춤
 
@@ -3570,9 +3594,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **판정할 값이 없으면 0 으로 그리지 않는다.** 확보율이 없는 공정·달은 0% 가 아니라 「판정 없음」이다(`process_picker` 의
   판정 없음 구역) — 0 으로 그리면 없는 부족이 생긴다.
 - **화면 숫자는 검산되어야 한다.** 줄을 더해 칸이 되는 표·CSV 는 값을 반올림하지 않고 표시 서식만 자릿수를 정한다(0 아닌
-  값이 0 으로 적히면 자릿수를 늘린다). 식을 적는 근거 카드는 적은 자릿수로 다시 셈한 값이 결과와 다르면 `=` 대신 `≈` 를
-  쓴다. 숫자 글자는 말줄임으로 반만 자르지 않는다 — 잘린 「4」가 411대를 4대로 읽힌다. 넘치면 숫자 전체를 숨기고
-  풍선에 둔다.
+  값이 0 으로 적히면 자릿수를 늘린다). 식을 적는 근거 카드·풍선·단계 글은 적은 자릿수로 다시 셈한 값이 결과와 다르면 `=`
+  대신 `≈` 를 쓰거나(그 화면의 길) 인수 자릿수를 늘린다 — **식의 인수와 등호는 `components/formula_text.py` 로 짓는다**(적힌
+  수로 검산). 결과가 앞 줄이나 다른 줄에 있어 식 줄에 등호가 없으면 어긋날 때만 식 앞에 `≈` 를 둔다.
+  `tests/test_formula_text.py` 의 AST 가드는 식 꼴 f-string(같은 줄 등호, 결과가 앞 줄인 식 줄, 연산 글자로 잇는 조각)마다
+  이 모듈을 거치는지 보지만, 결과를 다른 글에 둔 식·연산 글자를 끼운 값으로 넣는 식은 보지 못한다 — 그런 식을 새로 지으면
+  그 시험의 검산 그물에 이름을 더한다. 숫자 글자는 말줄임으로 반만 자르지 않는다 — 잘린 「4」가 411대를 4대로 읽힌다.
+  넘치면 숫자 전체를 숨기고 풍선에 둔다.
 - 범위가 다른 같은 이름의 숫자(배치된 설비만 센 「가용」과 설비 마스터 전체의 「가용」)를 두 화면에 세우지 않는다 — 그
   숫자는 정의하는 화면 한 곳에만 둔다.
 - 조건부 안내·경고는 건수가 0 이면 아무것도 그리지 않는다 — 없는 날 자리를 차지하면 있는 날에도 읽히지 않는다(자리

@@ -212,7 +212,7 @@ _CROSS_CHECK_HEADERS = {
     "Dynamic확보율": "일정기준확보율",
 }
 # 그림을 바꾸는 꼴이 바뀌면 올린다 — 세션에 남은 옛 그림을 쓰지 않는다.
-_SHEET_SCHEMA_VERSION = 2
+_SHEET_SCHEMA_VERSION = 3
 _SHEET_MEMO_LIMIT = 4
 _TOTAL_ROW = "합계"
 
