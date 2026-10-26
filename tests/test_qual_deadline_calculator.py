@@ -263,15 +263,21 @@ def _column_widths(app: AppTest, index: int) -> dict[str, object]:
 
 
 def test_the_month_editor_fits_inside_the_input_box() -> None:
-    """편집표 세 칸 폭의 합이 입력 칸 안에 든다. 넘으면 표가 칸 안에서 가로로 넘어, 「신규 호기」
-    칸을 고칠 때 표가 오른쪽으로 밀려 「월」 칸이 가려진다(`large` 일 때 1600px 창에서 105px
-    넘쳤다)."""
-    widths = _column_widths(_component(), 0)
+    """편집표 세 칸 폭의 합이 가장 좁은 입력 칸(390px 창 — 270px) 안에 든다. 넘으면 표가 칸 안에서
+    가로로 넘어 「신규 호기」 머리가 오른쪽 끝에서 잘리고(2026-10-25 E2E #114 — 390px 에서 375px 칸
+    합), 그 칸을 고칠 때 표가 오른쪽으로 밀려 「월」 칸이 가려진다(`large` 일 때 1600px 창에서
+    105px 넘쳤다). 읽기만 하는 「월」 만 붙박는다 — 입력 칸을 붙박으면 값이 흐린 글자로 그려져
+    잠긴 칸처럼 보인다."""
+    app = _component()
+    widths = _column_widths(app, 0)
 
     assert list(widths) == [MONTH_COLUMN, TARGET_COLUMN, UNITS_COLUMN]
     assert all(isinstance(width, int) for width in widths.values())
     total = sum(int(str(width)) for width in widths.values())
-    assert total <= calculator._INPUTS_BOX_PX - calculator._BOX_CHROME_PX
+    assert total <= calculator._NARROW_EDITOR_PX
+    assert calculator._NARROW_EDITOR_PX < calculator._INPUTS_BOX_PX - calculator._BOX_CHROME_PX
+    config = json.loads(app.dataframe[0].proto.columns)
+    assert [name for name in widths if config[name].get("pinned")] == [MONTH_COLUMN]
 
 
 def test_the_unit_table_gives_the_memo_room_and_fits_the_side_by_side_results_box() -> None:
