@@ -301,6 +301,13 @@ def _quoted(name: str | None) -> str:
     return f"「{name}」" if name else "이 설비 시나리오"
 
 
+def _scenario_subject(name: str | None) -> str:
+    """「「가정 P」 시나리오가」 — 이름 바로 뒤에 조사를 붙이지 않고 고정 낱말 「시나리오」 뒤에
+    붙인다(라틴 글자로 끝나는 이름은 끝소리를 몰라 「이(가)」 가 된다). 이름이 없으면 「이 설비
+    시나리오가」."""
+    return f"{_quoted(name)} 시나리오가" if name else "이 설비 시나리오가"
+
+
 def stale_new_unit_reason(session: EquipmentSession) -> str:
     """낡은 세션(그 시나리오에 더 새 리비전)에서 새 호기 폼을 끈 까닭."""
     latest = f"r{session.latest_revision_no}" if session.latest_revision_no is not None else "최신"
@@ -327,8 +334,10 @@ def role_changed_reason(session: EquipmentSession, stamped: str, *, in_space: bo
         was = "공식 배치에 들어갈 편집이었음"
     else:
         was = f"{_quoted(session.scenario_name)} 의 가정 배치에 들어갈 편집이었음"
+    # 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 글자로 끝나는 이름(「가정 P」)은 「(으)로」 가
+    # 된다.
     moved = (
-        f"공식 설비 시나리오가 {with_direction_particle(_quoted(official_name))} 바뀌어"
+        f"공식 설비 시나리오가 바뀌어(지금 공식 {_quoted(official_name)})"
         if official_name
         else "공식 설비 시나리오가 바뀌어"
     )
@@ -379,13 +388,12 @@ def space_edit_mode(session: EquipmentSession, *, stamped_role: str | None) -> S
                 if session.latest_revision_no is not None
                 else "최신"
             )
-            name = _quoted(session.scenario_name)
+            owner = _scenario_subject(session.scenario_name)
             reason = (
-                f"이 리비전에는 {name}{subject_particle(name)} 가정이던 때의 배치 "
-                f"차이({counts})가 있어 배치 편집을 잠갔습니다"
+                f"이 리비전에는 {owner} 가정이던 때의 배치 차이({counts})가 있어 배치 편집을 "
+                "잠갔습니다"
                 if counts
-                else f"이 리비전은 {name}{subject_particle(name)} 가정이던 때 저장한 리비전이라 "
-                "배치 편집을 잠갔습니다"
+                else f"이 리비전은 {owner} 가정이던 때 저장한 리비전이라 배치 편집을 잠갔습니다"
             )
             return SpaceEditMode(
                 layout="locked",

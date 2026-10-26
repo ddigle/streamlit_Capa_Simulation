@@ -195,7 +195,7 @@ def test_a_double_press_of_the_scenario_rename_never_says_someone_else_renamed(
     outcome = _raced(app, monkeypatch, "rename_equipment_scenario")
 
     assert outcome.refused == []
-    assert _said(outcome, "설비 시나리오 이름을 「겹친 이름」으로 했습니다."), outcome
+    assert _said(outcome, "설비 시나리오 이름을 바꿨습니다 — 새 이름 「겹친 이름」."), outcome
     assert [item.scenario_name for item in repository.list_equipment_scenarios()] == ["겹친 이름"]
 
 
@@ -279,7 +279,7 @@ def test_a_second_rename_press_with_the_old_name_keeps_the_renamed_scenario(
     app.text_input(key=f"{RENAME_KEY}__{setup}").input("E2E 가정 T0")
     app.button(key=RENAME_BUTTON_KEY).click()
     _ok(browser.run())
-    assert "설비 시나리오 이름을 「E2E 가정 T0」으로 했습니다." in _successes(app)
+    assert "설비 시나리오 이름을 바꿨습니다 — 새 이름 「E2E 가정 T0」." in _successes(app)
 
     # 둘째 누름 — 브라우저는 아직 옛 이름 글자를 든 채 같은 단추를 누른다.
     browser.wire = "E2E 가정 B"
@@ -287,7 +287,7 @@ def test_a_second_rename_press_with_the_old_name_keeps_the_renamed_scenario(
     _ok(browser.run())
     assert app.session_state[SCENARIO_KEY] == setup
     assert browser.wire == "E2E 가정 T0"
-    assert "설비 시나리오 이름을 「E2E 가정 T0」으로 했습니다." in _successes(app)
+    assert "설비 시나리오 이름을 바꿨습니다 — 새 이름 「E2E 가정 T0」." in _successes(app)
     assert not any("운영 일정" in text for text in _successes(app)), _successes(app)
     names = {
         item.equipment_scenario_id: item.scenario_name

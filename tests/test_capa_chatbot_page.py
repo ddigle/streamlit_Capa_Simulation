@@ -192,6 +192,17 @@ def test_the_answers_use_the_shared_process_display_names(labels: dict[str, Proc
     assert all(value.startswith("표시공정") for frame in evidence for value in frame["공정"])
 
 
+def test_no_particle_follows_a_process_name_in_the_answers() -> None:
+    """공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름은 끝소리를 몰라 「은(는)」·「(으)로」
+    같은 겸용 조사가 됐다(「TC Bonding은(는) 왜 부족해?」 — E2E r2 #90)."""
+    answers = build_sample_answers(lambda _process: "Latin Name")
+
+    assert answers[1].question == "Latin Name — 왜 부족해?"
+    for answer in answers:
+        for text in (answer.question, answer.conclusion):
+            assert not [mark for mark in ("은(는)", "이(가)", "(으)로", "을(를)") if mark in text]
+
+
 def test_a_new_display_name_rebuilds_the_answers_and_keeps_the_conversation(
     labels: dict[str, ProcessLabels], answer_builds: list[int]
 ) -> None:
