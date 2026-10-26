@@ -626,22 +626,30 @@ def _render_scenario_list_editor(
         # 픽셀 값은 **최소 폭이 아니라 비율**이다. 합이 표 폭보다 작으면 Streamlit 이
         # 남는 폭을 비례로 나눠 준다. 그래서 좁힐 칸만 줄이면 소용이 없고 넓힐 칸을 함께
         # 키워야 비율이 바뀐다.
+        #
+        # 그래도 표가 좁으면 칸은 이 값 밑으로 줄지 않으므로(좁은 창은 표 안 가로 스크롤) 값은
+        # **머리 글자가 다 들어가는 폭**보다 작으면 안 된다 — 머리는 캔버스라 넘치면 말줄임표 없이
+        # 잘린다(44px 이면 「선ㅌ」). 고칠 수 있는 칸은 머리에 편집 아이콘이 서서 글자가 왼쪽 여백
+        # 8px + 아이콘 24px 뒤에서 시작한다(Glide 머리 그리기). 그래서 두 글자 「선택」「순서」 는
+        # 72px(여백 8 + 아이콘 24 + 굵은 14px 두 글자 약 28 + 오른쪽 여백 8 + 여유), 아이콘 없는
+        # 「최신 리비전」 은 90px 이다. 늘린 몫은 시나리오명·원천 코드에서 덜어 합(948)을 그대로
+        # 둔다 — 1280px 창의 표 폭(약 945px)에 가로 스크롤이 새로 생기지 않게.
         column_config={
-            SELECT_COLUMN: st.column_config.CheckboxColumn(SELECT_COLUMN, width=44),
+            SELECT_COLUMN: st.column_config.CheckboxColumn(SELECT_COLUMN, width=72),
             ORDER_COLUMN: st.column_config.NumberColumn(
                 ORDER_COLUMN,
                 min_value=1,
                 max_value=len(rows),
                 step=1,
                 required=True,
-                width=44,
+                width=72,
                 help="자리 번호를 넣으면 그 자리로 끼워 넣고 나머지는 한 칸씩 밀립니다.",
             ),
             NAME_COLUMN: st.column_config.TextColumn(
-                f"{NAME_COLUMN} ✎", width=300, required=True, help="두 번 눌러 바로 고칩니다."
+                f"{NAME_COLUMN} ✎", width=262, required=True, help="두 번 눌러 바로 고칩니다."
             ),
-            "원천 코드": st.column_config.TextColumn("원천 코드", width=240),
-            "최신 리비전": st.column_config.TextColumn("최신 리비전", width=70),
+            "원천 코드": st.column_config.TextColumn("원천 코드", width=202),
+            "최신 리비전": st.column_config.TextColumn("최신 리비전", width=90),
             "공식버전": st.column_config.TextColumn("공식버전", width=110),
             "최근 수정": st.column_config.DatetimeColumn(
                 "최근 수정", format="YYYY-MM-DD HH:mm", width=140
@@ -901,8 +909,11 @@ def _render_revision_editor(
         num_rows="fixed",
         hide_index=True,
         width="stretch",
+        # 칸 폭은 목록 표와 같은 규칙이다(`_render_scenario_list_editor`) — 고칠 수 있는 두 글자
+        # 「고름」 은 편집 아이콘 뒤에 글자가 다 들어가는 72px, 늘린 몫은 메모에서 덜어 합을 그대로
+        # 둔다.
         column_config={
-            REVISION_PICK_COLUMN: st.column_config.CheckboxColumn(REVISION_PICK_COLUMN, width=44),
+            REVISION_PICK_COLUMN: st.column_config.CheckboxColumn(REVISION_PICK_COLUMN, width=72),
             "r": st.column_config.TextColumn("r", width=44),
             REVISION_NAME_COLUMN: st.column_config.TextColumn(
                 f"{REVISION_NAME_COLUMN} ✎",
@@ -910,7 +921,7 @@ def _render_revision_editor(
                 required=True,
                 help="두 번 눌러 바로 고칩니다. 「이름 저장」을 눌러야 저장됩니다.",
             ),
-            "메모": st.column_config.TextColumn("메모", width=260),
+            "메모": st.column_config.TextColumn("메모", width=232),
             "저장일": st.column_config.DatetimeColumn("저장일", format="YY.MM.DD HH:mm", width=110),
             "부모": st.column_config.TextColumn("부모", width=50),
             "상태": st.column_config.TextColumn("상태", width=180),
