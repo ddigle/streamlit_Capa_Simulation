@@ -488,6 +488,9 @@ def _execute(
         inherited_off_count=len(inherited),
     )
     log.note(auto_off_count=len(auto_off), inherited_off_count=len(inherited))
+    # 공식버전이 되는 리비전 2 와 발행 메모에도 CS 빈 행 조각을 잇는다 — 공식버전 목록·리비전 2 만
+    # 보는 사람도 원천 일부를 뺀 판인 줄 알게. 실행 기록 사유에는 `finish` 가 따로 붙인다.
+    saved_note = " · ".join(part for part in (memo, log.blank_cs_memo) if part)
     # 확보율이 있어 판정할 수 있는 포함 공정. `RQ_REQB` 에만 있고 확보율 행이 없는 공정은 B/N 에
     # 나오지 않으므로, 그것만 남으면 B/N 이 빈 공식버전이 된다.
     judged_included = [process for process in included if process in minimums]
@@ -512,7 +515,7 @@ def _execute(
         replace(base.preset, included_processes=included),
         revision_name=FILTERED_REVISION_NAME,
         parent_revision_id=base.revision.revision_id,
-        note=memo,
+        note=saved_note,
     )
     filtered_revision_id = filtered.revision.revision_id
     repository.record_auto_official_update_exclusions(
@@ -526,7 +529,7 @@ def _execute(
             repository,
             filtered,
             release_name=official_release_name(filtered.scenario.scenario_name),
-            note=memo,
+            note=saved_note,
             expected_latest_release_no=baseline.release_no,
         )
     except OfficialReleaseMoved as exc:

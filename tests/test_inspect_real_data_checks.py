@@ -1114,7 +1114,10 @@ def test_the_legacy_block_counts_blank_cs_rows_dropped_like_the_registration(
 
     assert code == 0
     _assert_no_leak(output)
-    assert "- CS 가 빈 원천 행 2 (계획 1) — 파생에서 뺐다(등록과 같은 규칙)." in output
+    assert (
+        "- CS 가 빈 원천 행 2 (계획 1 · 경로 1 · 경로 일부 빠진 남은 계획 줄 0) — 파생에서 뺐다"
+        "(등록과 같은 규칙)." in output
+    )
     assert "파생 프레임을 만들지 못함" not in output
 
 

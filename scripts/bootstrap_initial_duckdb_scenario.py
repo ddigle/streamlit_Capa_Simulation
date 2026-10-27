@@ -140,9 +140,6 @@ def main() -> None:
         display_order = load_reference_tables(args.workbook.resolve())["RQ_DISPLAY_ORDER"]
     built = build_reference_tables_with_conflicts(core_data, display_order)
     reference_tables = built.tables
-    if built.blank_cs.dropped:
-        # 화면 등록과 같은 규칙 — 막지 않고 빼되, 몇 행을 뺐는지는 알리고 리비전 메모에 남긴다.
-        print(built.blank_cs.notice())
     start_month, end_month = available_month_range(
         reference_tables["RQ_PKG_PLAN"],
         "RQ_PKG_PLAN",
@@ -184,6 +181,10 @@ def main() -> None:
             if part
         ),
     )
+    if built.blank_cs.dropped:
+        # 화면 등록과 같은 규칙 — 막지 않고 빼되, 몇 행을 뺐는지는 알리고 리비전 메모에 남긴다.
+        # 「빼고 저장했습니다」 라 저장이 끝난 뒤에 찍는다.
+        print(built.blank_cs.notice())
     release = repository.publish_official_revision(
         snapshot.scenario.scenario_id,
         snapshot.revision.revision_id,

@@ -15,6 +15,7 @@ from capa_simulation.io.core_data_source import (
     CoreDataContract,
     normalize_core_data,
 )
+from capa_simulation.services.frame_contracts import normalize_demand_basis
 from capa_simulation.services.product_type import apply_edp_wf_division
 
 ACTIVE_CORE_COLUMNS = (
@@ -108,33 +109,59 @@ UNMAPPED_CS_EXAMPLE_LIMIT: Final = 10
 class BlankCsDrop:
     """CS 가 비어 양산구분(양산·ER)을 정할 수 없어 파생에서 뺀 원천 행 수.
 
-    `plan_rows` 는 그 가운데 계획 행(`계획기초정보여부 = Y` — PKG PLAN 에 실리는 행)이다. 등록
+    `plan_rows` 는 그 가운데 계획 행(`계획기초정보여부 = Y` — PKG PLAN 에 실리는 행)이고 나머지는
+    경로 행(`route_rows`)이다. `plans_missing_routes` 는 **남은** 계획 줄 가운데 뺀 경로 행 때문에
+    경로 일부를 잃었을 수 있는 줄 수다(`_plan_lines_losing_routes`) — 계획 행을 하나도 빼지 않았어도
+    소요대수가 줄 수 있고, 그 몫은 소요대수 밖 수요 경고에 잡히지 않을 수 있어 따로 센다. 등록
     결과 알림(`notice`)과 리비전 메모(`memo`)가 같은 수를 쓴다. 원천 스냅샷(typed raw)에는 받은
     행이 그대로 남는다 — 빼는 것은 RQ 표를 만드는 작업 프레임뿐이다.
     """
 
     rows: int = 0
     plan_rows: int = 0
+    plans_missing_routes: int = 0
 
     @property
     def dropped(self) -> bool:
         return self.rows > 0
 
+    @property
+    def route_rows(self) -> int:
+        """뺀 행 가운데 계획 행이 아닌 행(경로·기준정보 행) 수."""
+        return self.rows - self.plan_rows
+
     def notice(self) -> str:
-        """등록 결과 알림 한 문장. 뺀 행이 없으면 빈 글."""
+        """등록 결과 알림. 뺀 행이 없으면 빈 글."""
         if not self.dropped:
             return ""
-        return (
-            f"CS 가 빈 행 {self.rows:,}개(계획 {self.plan_rows:,}행)는 양산구분(양산·ER)을 정할 수 "
-            "없어 빼고 저장했습니다. 계산 표에서만 뺐고, 받은 원천 행(Admin Area 「원천 품질」)은 "
-            "그대로 남습니다."
+        counts = f"계획 {self.plan_rows:,}행 · 경로 {self.route_rows:,}행"
+        sentences = [
+            f"CS 가 빈 행 {self.rows:,}개({counts})는 양산구분(양산·ER)을 정할 수 없어 빼고 "
+            "저장했습니다."
+        ]
+        if self.plan_rows:
+            sentences.append("뺀 계획 행의 생산수량은 부하량·소요대수에 들지 않습니다.")
+        if self.plans_missing_routes:
+            sentences.append(
+                f"남은 계획 {self.plans_missing_routes:,}줄은 같은 달·제품의 경로 행이 함께 "
+                "빠져, 그 경로 공정의 소요대수가 줄 수 있습니다 — 이 몫은 「소요대수에 들지 않은 "
+                "수요」 경고에 잡히지 않을 수 있습니다."
+            )
+        sentences.append(
+            "계산 표에서만 뺐고, 받은 원천 행(Admin Area 「원천 품질」)은 그대로 남습니다."
         )
+        return " ".join(sentences)
 
     def memo(self) -> str:
         """리비전 메모에 붙이는 짧은 조각. 뺀 행이 없으면 빈 글."""
         if not self.dropped:
             return ""
-        return f"CS 빈 행 {self.rows:,}개(계획 {self.plan_rows:,}행) 뺌"
+        memo = (
+            f"CS 빈 행 {self.rows:,}개(계획 {self.plan_rows:,}행 · 경로 {self.route_rows:,}행) 뺌"
+        )
+        if self.plans_missing_routes:
+            memo = f"{memo} · 경로 일부 빠진 계획 {self.plans_missing_routes:,}줄"
+        return memo
 
 
 @dataclass(frozen=True)
@@ -151,13 +178,14 @@ def reject_unmapped_cs_codes(core: pd.DataFrame) -> None:
     막지 않으면 그 행의 양산구분이 비고, 첫 RQ 표의 업무 키 검사에서 「업무 키에 null 또는
     빈값이 있습니다: 양산구분」으로만 멈춰 어떤 코드 때문인지 알 길이 없었다(2026-09-30).
     `build_q_core_data` 를 거친 프레임을 받는다 — CS 가 빈 행은 거기서 이미 빠져, 여기 남는 것은
-    값이 있는데 규칙에 없는 코드뿐이다. 계획 행(`계획기초정보여부 = Y`) 수를 따로 적는다 — PKG
-    PLAN 에 실리는 행이다.
+    대개 값이 있는데 규칙에 없는 코드뿐이다. 그래도 빈 CS 는 `(빈값)` 으로 적는다 — 파생을 거치지
+    않은 프레임이 오면 코드 자리가 빈 문구가 된다. 계획 행(`계획기초정보여부 = Y`) 수를 따로 적는다
+    — PKG PLAN 에 실리는 행이다.
     """
     unmapped = core["양산구분"].isna()
     if not bool(unmapped.any()):
         return
-    codes = core.loc[unmapped, "CS"].astype("string")
+    codes = core.loc[unmapped, "CS"].astype("string").str.strip().fillna("").replace("", "(빈값)")
     plan = core.loc[unmapped, "계획기초정보여부"].astype("string").str.strip().eq("Y").fillna(False)
     counts = codes.value_counts()
     plan_counts = codes.loc[plan].value_counts()
@@ -188,7 +216,11 @@ def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
     if not bool(blank.any()):
         return core, BlankCsDrop()
     plan = core["계획기초정보여부"].eq("Y").fillna(False)
-    dropped = BlankCsDrop(rows=int(blank.sum()), plan_rows=int((blank & plan).sum()))
+    dropped = BlankCsDrop(
+        rows=int(blank.sum()),
+        plan_rows=int((blank & plan).sum()),
+        plans_missing_routes=_plan_lines_losing_routes(core, blank, plan),
+    )
     if bool(blank.all()):
         raise ValueError(
             f"원천 {len(core):,}행의 CS 가 모두 비어 있어 양산구분(양산·ER)을 정할 수 없습니다 — "
@@ -203,13 +235,71 @@ def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
     return core.loc[~blank].copy(), dropped
 
 
+# CS 가 빈 경로 행을 뺐을 때 남은 계획 줄이 그 경로를 잃었는지 맞대는 키. 계획 쪽은 `RQ_PKG_PLAN`
+# 업무 키에서 CS·양산구분을 뺀 것이다 — 뺀 행에는 CS 가 없어 그 둘로는 어느 계획의 경로였는지 알 수
+# 없다. 경로 쪽은 `RQ_REQB` 의 나머지 칸이다.
+_ROUTE_OWNER_KEYS: Final = ("생산계획년월", "제품정보", "Stack", "Capa Code", "Customer")
+_ROUTE_PATH_KEYS: Final = ("Area_Name", "공정", "소요기준", "WF 구분", "STEP_SEQ", "MCP_SEQ")
+
+
+def _plan_lines_losing_routes(core: pd.DataFrame, blank: pd.Series, plan: pd.Series) -> int:
+    """CS 가 빈 경로 행을 빼서 경로 일부를 잃었을 수 있는 **남은** 계획 줄(`RQ_PKG_PLAN` 키) 수.
+
+    `RQ_REQB` 경로 키에는 CS 가 있어 CS 가 빈 경로 행은 어느 계획에도 닿지 못한다. 그 행과 같은
+    달·제품정보·Stack·Capa Code·Customer 의 남은 계획이 같은 경로(Area·공정·소요기준·WF 구분·
+    STEP·MCP)를 CS 가 있는 다른 행으로 갖지 않으면, 그 몫의 부하는 남은 경로에만 붙고 빠진 공정은
+    그 몫 없이 계산된다. 그 소요기준·WF 구분의 경로가 하나도 남지 않으면 「그 소요기준·WF 구분 경로
+    없음」(세지 않는 사유)이 된다 — 어느 쪽도 소요대수 밖 수요 경고(`required_exclusion_counts`)에
+    잡히지 않을 수 있어 등록 때 센다. 계획 행을 하나도 빼지 않았어도 0 이 아닐 수 있다.
+
+    「잃었을 수 있는」 까닭: 그 행이 원래 어느 CS 의 경로였는지는 원천만 안다. 그래서 같은 달·제품의
+    남은 계획 줄마다 따로 맞대고, 그 줄이 같은 경로를 이미 가지면 세지 않는다. 행 단위 정규화
+    (`제품정보`·`Area_Name`)를 거친 프레임을 받고, 계산처럼 앞뒤 공백·대소문자를 무시하며 소요기준은
+    `WAFER` 를 `WF` 로 본다(`frame_contracts.duplicate_route_rows` 와 같은 꼴). `RQ_REQB` 처럼
+    `Area_Name` 이 빈 행은 경로로 치지 않는다.
+    """
+    route = core["Area_Name"].astype("string").str.strip().fillna("").ne("")
+    dropped_routes = blank & route
+    if not bool(dropped_routes.any()):
+        return 0
+    owner = list(_ROUTE_OWNER_KEYS)
+    path = list(_ROUTE_PATH_KEYS)
+    # 뺀 경로 행의 제품만 맞대면 된다 — 큰 원천에서 열두 칸 글자 키를 모든 행에 만들지 않게 먼저
+    # 거른다.
+    products = core["제품정보"].astype("string").str.strip().str.casefold()
+    related = products.isin(products.loc[dropped_routes].dropna().unique())
+    keys = _route_match_keys(core.loc[related], [*owner, "CS", *path])
+    lost_paths = keys.loc[dropped_routes[related], [*owner, *path]].drop_duplicates()
+    plan_lines = keys.loc[(plan & ~blank)[related], [*owner, "CS"]].drop_duplicates()
+    candidates = plan_lines.merge(lost_paths, on=owner)
+    if candidates.empty:
+        return 0
+    kept_routes = keys.loc[(route & ~blank)[related], [*owner, "CS", *path]].drop_duplicates()
+    matched = candidates.merge(kept_routes, how="left", on=[*owner, "CS", *path], indicator=True)
+    missing = matched.loc[matched["_merge"].eq("left_only"), [*owner, "CS"]]
+    return len(missing.drop_duplicates())
+
+
+def _route_match_keys(core: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """경로 맞대기용 글자 키. NULL 과 빈 글자를 같은 빈값(빈 글자)으로 맞춰 병합 키에 NA 를 두지
+    않는다."""
+    keys = pd.DataFrame(index=core.index)
+    for column in columns:
+        values = core[column].astype("string").str.strip()
+        if column == "소요기준":
+            values = normalize_demand_basis(values)
+        keys[column] = values.str.casefold().fillna("")
+    return keys
+
+
 def derive_q_core_data(
     source: pd.DataFrame,
     contract: CoreDataContract | None = None,
 ) -> DerivedCoreData:
     """`build_q_core_data` 와 같은 작업 프레임에 CS 가 비어 뺀 행 수를 함께 돌려준다.
 
-    등록 경로(`reference_transformer`)가 그 수를 결과 알림·리비전 메모로 올린다.
+    수는 계획 행·경로 행과 경로 일부 빠진 남은 계획 줄이다(`BlankCsDrop`). 등록 경로
+    (`reference_transformer`)가 그 수를 결과 알림·리비전 메모로 올린다.
     """
     normalized = normalize_core_data(source, contract)
     core = normalized.loc[:, list(ACTIVE_CORE_COLUMNS)].copy()
@@ -223,9 +313,6 @@ def derive_q_core_data(
     # 계획 행 표시. `RQ_PKG_PLAN` 이 `Y` 를 글자 그대로 고르므로 ` y ` 로 온 계획 행이 말없이 빠지지
     # 않게 여기서 맞춘다.
     core["계획기초정보여부"] = core["계획기초정보여부"].astype("string").str.strip().str.upper()
-    # CS 가 빈 행은 아래 정규화(가장 많이 쓰인 `WF 구분` 표기 고르기 등)보다 먼저 뺀다 — 남는
-    # 행만으로 표기를 고르고 표를 만든다.
-    core, blank_cs = _drop_blank_cs_rows(core)
     # BigDataQuery can represent blanks in product names with underscores. Keep
     # the typed raw snapshot unchanged, but normalize the RQ business key before
     # any table is derived so every downstream join receives the same value.
@@ -241,6 +328,10 @@ def derive_q_core_data(
     core["Area_Name"] = area_names
     core.loc[normalized_areas.eq("main").fillna(False), "Area_Name"] = "Main"
     core.loc[normalized_areas.eq("mi").fillna(False), "Area_Name"] = "MI"
+    # CS 가 빈 행은 프레임 전체를 보는 정규화(가장 많이 쓰인 `WF 구분` 표기 고르기 등)보다 먼저
+    # 뺀다 — 남는 행만으로 표기를 고르고 표를 만든다. 위 두 칸은 행마다 따로 바꾸는 정규화라 빼기
+    # 전에 해도 남는 행의 값이 같고, 뺀 경로 행을 남은 계획과 같은 꼴로 맞대려고 먼저 한다.
+    core, blank_cs = _drop_blank_cs_rows(core)
     core["양산구분"] = core["CS"].map(dict(CS_PRODUCTION_CLASSES)).astype("string")
     core["가용대수"] = core["설비보유"] - core["설비대여평가"]
     core["WF 구분"] = unify_case_variants(core["WF 구분"])

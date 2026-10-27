@@ -15,7 +15,11 @@ from capa_simulation.io.core_data_source import (
     normalize_core_data,
     read_core_data_csv,
 )
-from capa_simulation.services.core_data_derivation import BlankCsDrop
+from capa_simulation.services.core_data_derivation import (
+    BlankCsDrop,
+    derive_q_core_data,
+    reject_unmapped_cs_codes,
+)
 from capa_simulation.services.core_data_pipeline import (
     fetch_core_data_dataset,
     prepare_core_data_dataset,
@@ -336,10 +340,13 @@ def test_rows_with_a_blank_cs_are_dropped_and_counted_instead_of_blocking() -> N
     # 원천 스냅샷은 받은 그대로다 — 빼는 것은 표를 만드는 작업 프레임뿐이다.
     assert len(prepared.source_data) == 5
     assert prepared.source_data["CS"].isna().sum() == 1
-    assert prepared.blank_cs.notice().startswith(
-        "CS 가 빈 행 3개(계획 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+    assert prepared.blank_cs.route_rows == 1
+    assert prepared.blank_cs.notice() == (
+        "CS 가 빈 행 3개(계획 2행 · 경로 1행)는 양산구분(양산·ER)을 정할 수 없어 빼고 "
+        "저장했습니다. 뺀 계획 행의 생산수량은 부하량·소요대수에 들지 않습니다. 계산 표에서만 "
+        "뺐고, 받은 원천 행(Admin Area 「원천 품질」)은 그대로 남습니다."
     )
-    assert prepared.blank_cs.memo() == "CS 빈 행 3개(계획 2행) 뺌"
+    assert prepared.blank_cs.memo() == "CS 빈 행 3개(계획 2행 · 경로 1행) 뺌"
 
 
 def test_without_a_blank_cs_nothing_is_dropped_or_said() -> None:
@@ -380,6 +387,123 @@ def test_conflict_row_numbers_still_name_the_source_rows_after_a_blank_cs_drop()
     assert plan_conflicts["후보원천행번호"].tolist() == ["2 | 3"]
     assert plan_conflicts["선택원천행번호"].tolist() == [2]
     assert prepared.blank_cs == BlankCsDrop(rows=1, plan_rows=1)
+
+
+def _seed_source() -> pd.DataFrame:
+    """내장 합성 시드의 원천(샘플 관측 — 제품 둘 × 12달, 계획 행 하나에 CHIP·WF 경로 행 셋)."""
+    from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+
+    return build_builtin_seed_dataset().source_data.copy()
+
+
+def _product_routes(source: pd.DataFrame, product: str, basis: str) -> pd.Series:
+    return source["제품정보"].eq(product) & source["소요기준"].eq(basis).fillna(False)
+
+
+def test_dropping_only_route_rows_names_the_plan_lines_that_lose_a_route() -> None:
+    """계획 행을 하나도 빼지 않아도 경로 행을 빼면 남은 계획의 소요대수가 줄 수 있다(리뷰 지적).
+
+    합성 시드에서 `DEMO_PRODUCT_A` 의 WF 경로 행 12개만 CS 를 비우면 계획은 12줄 그대로인데
+    `DEMO_Wafer_Inspect` 로 가는 그 제품의 부하가 경로를 잃는다. 계산은 이 부하를 「그 소요기준·WF
+    구분 경로 없음」(세지 않는 사유)으로 두어 소요대수 밖 수요 경고에 잡히지 않으므로, 등록 알림·
+    메모가 그 계획 줄 수를 따로 적는다.
+    """
+    source = _seed_source()
+    source.loc[_product_routes(source, "DEMO_PRODUCT_A", "WF"), "CS"] = None
+
+    blank_cs = derive_q_core_data(source).blank_cs
+
+    assert blank_cs == BlankCsDrop(rows=12, plan_rows=0, plans_missing_routes=12)
+    assert blank_cs.route_rows == 12
+    assert blank_cs.memo() == "CS 빈 행 12개(계획 0행 · 경로 12행) 뺌 · 경로 일부 빠진 계획 12줄"
+    notice = blank_cs.notice()
+    assert (
+        "남은 계획 12줄은 같은 달·제품의 경로 행이 함께 빠져, 그 경로 공정의 소요대수가 줄 수"
+        in notice
+    )
+    assert "「소요대수에 들지 않은 수요」 경고에 잡히지 않을 수 있습니다" in notice
+    # 계획 행을 빼지 않았으면 생산수량 문장은 없다.
+    assert "뺀 계획 행의 생산수량" not in notice
+
+
+def test_the_routes_that_lose_their_plan_demand_stay_silent_in_the_exclusion_counts() -> None:
+    """위 경우를 계산에 돌리면 그 공정의 소요대수가 줄어도 소요대수 밖 수요 건수는 모두 0 이다.
+
+    등록 알림이 경로 일부 빠진 계획 줄을 따로 세는 까닭이다(합성 시드 — 샘플 관측).
+    """
+    from capa_simulation.services.builtin_seed import load_builtin_display_order
+    from capa_simulation.services.required_equipment import (
+        RequiredExclusionCounts,
+        required_exclusion_counts,
+    )
+    from capa_simulation.services.simulation_cache import full_capacity_outcome
+
+    def wafer_inspect_total(source: pd.DataFrame) -> tuple[float, RequiredExclusionCounts]:
+        tables = build_reference_tables(source, load_builtin_display_order())
+        outcome = full_capacity_outcome(tables, tables)
+        required = outcome.required_equipment
+        assert outcome.error is None and required is not None
+        total = float(required.loc[required["공정"].eq("DEMO_Wafer_Inspect"), "소요대수"].sum())
+        return total, required_exclusion_counts(required)
+
+    source = _seed_source()
+    before, _ = wafer_inspect_total(source)
+    source.loc[_product_routes(source, "DEMO_PRODUCT_A", "WF"), "CS"] = " "
+    after, counts = wafer_inspect_total(source)
+
+    assert 0 < after < before
+    assert counts == RequiredExclusionCounts()
+
+
+def test_blank_cs_copies_of_routes_the_plans_still_have_lose_nothing() -> None:
+    """같은 경로가 CS 있는 행으로 남아 있으면 경로를 잃은 계획이 아니다 — 경고 문장을 붙이지 않는다.
+
+    맞대기는 계산처럼 앞뒤 공백·대소문자를 무시하고 소요기준 `Wafer` 를 `WF` 로 본다.
+    """
+    source = _seed_source()
+    copies = source.loc[_product_routes(source, "DEMO_PRODUCT_A", "WF")].assign(
+        CS="  ", 소요기준="Wafer", Area_Name=" MAIN ", **{"WF 구분": "CORE"}
+    )
+    source = pd.concat([source, copies], ignore_index=True)
+
+    blank_cs = derive_q_core_data(source).blank_cs
+
+    assert blank_cs == BlankCsDrop(rows=12, plan_rows=0, plans_missing_routes=0)
+    assert blank_cs.memo() == "CS 빈 행 12개(계획 0행 · 경로 12행) 뺌"
+    assert "남은 계획" not in blank_cs.notice()
+
+
+def test_a_whole_plan_line_with_a_blank_cs_is_counted_as_plan_not_as_lost_routes() -> None:
+    """계획 행과 경로 행이 함께 비면 「계획 m행」에 들 뿐, 경로 일부 빠진 계획으로 세지 않는다.
+
+    그 달·제품의 계획 줄이 통째로 빠져 맞댈 남은 계획 줄이 없다(합성 시드 — 샘플 관측).
+    """
+    source = _seed_source()
+    line = source["제품정보"].eq("DEMO_PRODUCT_A") & source["생산계획년월"].eq(202601)
+    source.loc[line, "CS"] = ""
+
+    blank_cs = derive_q_core_data(source).blank_cs
+
+    assert blank_cs == BlankCsDrop(rows=4, plan_rows=1, plans_missing_routes=0)
+    assert blank_cs.memo() == "CS 빈 행 4개(계획 1행 · 경로 3행) 뺌"
+
+
+def test_an_underived_frame_with_a_blank_cs_still_names_the_blank_code() -> None:
+    """파생을 거치지 않은 프레임이 오면 빈 CS 를 `(빈값)` 으로 적는다 — 코드 자리가 비지 않게."""
+    core = pd.DataFrame(
+        {
+            "CS": pd.array([None, "  ", "MP", "ZX"], dtype="string"),
+            "양산구분": pd.array([None, None, "양산", None], dtype="string"),
+            "계획기초정보여부": pd.array(["Y", "N", "Y", "Y"], dtype="string"),
+        }
+    )
+
+    with pytest.raises(ValueError) as caught:
+        reject_unmapped_cs_codes(core)
+
+    message = str(caught.value)
+    assert "`(빈값)` 2행(계획 1행)" in message
+    assert "`ZX` 1행(계획 1행)" in message
 
 
 @pytest.mark.parametrize(

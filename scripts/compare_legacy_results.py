@@ -181,7 +181,9 @@ def main() -> int:
 
     print(
         f"데이터셋 {dataset_id} · 리비전 1 {revision_id} · 원천 {len(raw):,}행"
-        f" · CS 가 빈 행 {derived.blank_cs.rows:,}(계획 {derived.blank_cs.plan_rows:,}) 뺌"
+        f" · CS 가 빈 행 {derived.blank_cs.rows:,}(계획 {derived.blank_cs.plan_rows:,}"
+        f" · 경로 {derived.blank_cs.route_rows:,}) 뺌"
+        f" · 경로 일부 빠진 계획 {derived.blank_cs.plans_missing_routes:,}줄"
         f" · 대조 {len(core):,}행"
     )
     _report_candidate_columns(raw)

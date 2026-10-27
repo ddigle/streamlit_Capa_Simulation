@@ -2150,11 +2150,15 @@ def check_legacy(session: Session) -> list[str]:
         return [*lines, f"- 파생 프레임을 만들지 못함 — {_failure(exc)}", ""]
     core = derived.frame
     # 등록과 같은 규칙으로 CS 가 빈 행은 파생 프레임에서 빠진다 — 대조는 RQ 표와 같은 행 집합을
-    # 본다.
+    # 본다. 계획 행·경로 행 어느 쪽에서 비는지와 경로 일부를 잃었을 수 있는 남은 계획 줄 수는
+    # 실데이터만 답한다(등록 알림과 같은 셈 `BlankCsDrop`).
+    blank_cs = derived.blank_cs
     lines.extend(
         [
-            f"- CS 가 빈 원천 행 {derived.blank_cs.rows:,} (계획 {derived.blank_cs.plan_rows:,}) — "
-            "파생에서 뺐다(등록과 같은 규칙). 대조는 남은 행만 본다.",
+            f"- CS 가 빈 원천 행 {blank_cs.rows:,} (계획 {blank_cs.plan_rows:,} · 경로 "
+            f"{blank_cs.route_rows:,} · 경로 일부 빠진 남은 계획 줄 "
+            f"{blank_cs.plans_missing_routes:,})"
+            " — 파생에서 뺐다(등록과 같은 규칙). 대조는 남은 행만 본다.",
             "",
         ]
     )

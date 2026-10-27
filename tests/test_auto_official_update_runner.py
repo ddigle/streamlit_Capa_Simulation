@@ -463,7 +463,9 @@ def test_blank_cs_rows_are_dropped_and_named_in_the_run_log_apart_from_the_warni
     """자동 갱신도 화면 등록과 같이 CS 가 빈 행은 빼고 저장한다(2026-10-27 사용자 결정).
 
     뺀 수는 리비전 1 메모 끝과 실행 기록 사유의 발행 줄 끝에 남고, 소요대수 밖 수요 경고와는
-    섞이지 않는다 — 「지금 실행」 결과가 사유를 다시 갈라 경고만 따로 띄운다.
+    섞이지 않는다 — 「지금 실행」 결과가 사유를 다시 갈라 경고만 따로 띄운다. 공식버전이 되는
+    리비전 2 와 발행 메모에도 같은 조각이 붙어, 공식버전 목록만 보는 사람도 원천 일부를 뺀 판인
+    줄 안다.
     """
     _official_w40(repository)
     frame = _source(blank_first_plan=True)
@@ -482,14 +484,19 @@ def test_blank_cs_rows_are_dropped_and_named_in_the_run_log_apart_from_the_warni
     assert run.reason is not None
     head, warning = runner.split_published_reason(run.reason)
     assert head.startswith("공식 v2 발행 · W41 SIM-W41 · 자동 갱신 · ")
-    assert head.endswith(" · CS 빈 행 2개(계획 1행) 뺌")
+    memo = "CS 빈 행 2개(계획 1행 · 경로 1행) 뺌"
+    assert head.endswith(f" · {memo}")
+    assert head.count(memo) == 1
     assert warning.startswith("소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — ")
     assert "CS 빈 행" not in warning
     base = repository.load_revision(str(run.base_revision_id))
     assert base.revision.note is not None
-    assert base.revision.note.endswith(
-        "상세 조회기간 2026-10-05 ~ 2026-10-15 · CS 빈 행 2개(계획 1행) 뺌"
-    )
+    assert base.revision.note.endswith(f"상세 조회기간 2026-10-05 ~ 2026-10-15 · {memo}")
+    filtered = repository.load_revision(str(run.filtered_revision_id))
+    release = repository.latest_official_release()
+    assert release is not None
+    auto_memo = "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
+    assert filtered.revision.note == release.note == f"{auto_memo} · {memo}"
     assert base.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
     assert repository.load_source_row_count(base.scenario.scenario_id) == len(SEED_SOURCE)
 

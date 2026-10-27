@@ -1,7 +1,8 @@
-# Purpose: 초기 이관 CLI 가 가상 제품이 든 리비전을 플래그 없이 공식버전으로 지정하지 않는지 본다.
+# Purpose: 초기 이관 CLI 의 발행 조건(가상 제품 플래그)과 CS 빈 행 알림 시점(저장 뒤)을 본다.
 
 from __future__ import annotations
 
+import csv
 import importlib.util
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from capa_simulation.services.builtin_seed import (
     BUILTIN_SEED_MONTHS,
     build_builtin_seed_dataset,
     builtin_seed_processes,
+    load_builtin_display_order,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -101,3 +103,53 @@ def test_existing_scenario_with_virtual_products_is_not_published_without_the_fl
     assert release is not None
     scenario = repository.list_scenarios()[0]
     assert release.revision_id == scenario.active_revision_id
+
+
+def _core_data_csv_with_a_blank_cs(path: Path) -> int:
+    """합성 시드 원천의 마지막 계획 행 CS 를 비운 CSV. 원천 행 수를 돌려준다."""
+    source = build_builtin_seed_dataset().source_data.copy()
+    plans = source.index[source["계획기초정보여부"].eq("Y")]
+    source.loc[plans[-1], "CS"] = None
+    source.to_csv(path, index=False, encoding="cp949", quoting=csv.QUOTE_NONE, escapechar="\\")
+    return len(source)
+
+
+def test_the_blank_cs_notice_is_printed_only_after_the_scenario_is_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """「빼고 저장했습니다」 는 저장이 끝난 뒤에 찍는다 — 저장이 실패하면 찍지 않는다(리뷰 지적).
+
+    빈 저장소의 첫 이관이다. 표시순서를 읽는 XLSB 대신 내장 합성 표시순서를 넣는다.
+    """
+    script = _load_script()
+    monkeypatch.setattr(
+        script,
+        "load_reference_tables",
+        lambda _path: {"RQ_DISPLAY_ORDER": load_builtin_display_order()},
+    )
+    database_path = tmp_path / "scenario.duckdb"
+    csv_path = tmp_path / "Core_Data.csv"
+    _core_data_csv_with_a_blank_cs(csv_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [str(SCRIPT_PATH), "--database", str(database_path), "--core-data", str(csv_path)],
+    )
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("저장 실패(시험)")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(DuckDBScenarioRepository, "create_scenario", refuse)
+        with pytest.raises(ValueError, match="저장 실패"):
+            script.main()
+    assert "빼고 저장했습니다" not in capsys.readouterr().out
+
+    script.main()
+
+    assert "CS 가 빈 행 1개(계획 1행 · 경로 0행)는 양산구분" in capsys.readouterr().out
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    note = repository.load_revision(release.revision_id).revision.note
+    assert note is not None and note.endswith(" · CS 빈 행 1개(계획 1행 · 경로 0행) 뺌")

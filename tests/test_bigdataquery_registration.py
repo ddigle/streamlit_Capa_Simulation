@@ -130,7 +130,9 @@ def test_the_dropped_row_warning_stands_under_the_saved_notice() -> None:
     """저장 뒤 회차에 성공 알림과 CS 빈 행 경고가 같은 알림 칸에 차례로 서고, 한 번만 그린다."""
     from capa_simulation.components.flash import FlashNote
 
-    notice = "CS 가 빈 행 3개(계획 1행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+    notice = (
+        "CS 가 빈 행 3개(계획 1행 · 경로 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+    )
     app = _run(
         **{
             registration.REGISTRATION_FLASH_KEY: "「PSM W42」를 저장하고 r1을 올렸습니다.",
@@ -788,13 +790,14 @@ def test_rows_with_a_blank_cs_are_dropped_and_the_registration_still_saves(
     note = FlashNote(*app.session_state[registration.REGISTRATION_DROP_FLASH_KEY])
     assert note.kind == "warning"
     assert note.message.startswith(
-        "CS 가 빈 행 3개(계획 1행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
+        "CS 가 빈 행 3개(계획 1행 · 경로 2행)는 양산구분(양산·ER)을 정할 수 없어 빼고 저장했습니다."
     )
     repository = DuckDBScenarioRepository(database)
     [scenario] = repository.list_scenarios()
     snapshot = repository.load_revision(scenario.active_revision_id)
     assert snapshot.revision.note == (
-        "원천 PLAN 메모 · 상세 조회기간 2026-10-19 ~ 2026-10-27 · CS 빈 행 3개(계획 1행) 뺌"
+        "원천 PLAN 메모 · 상세 조회기간 2026-10-19 ~ 2026-10-27 · "
+        "CS 빈 행 3개(계획 1행 · 경로 2행) 뺌"
     )
     assert len(snapshot.tables["RQ_PKG_PLAN"]) == len(plans) - 1
     assert snapshot.tables["RQ_PKG_PLAN"]["양산구분"].notna().all()
