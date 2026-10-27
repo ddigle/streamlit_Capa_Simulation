@@ -125,6 +125,7 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
+    load_manual_downtime,
     load_process_cutoff,
 )
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
@@ -142,6 +143,7 @@ from capa_simulation.services.constraint_simulation import (
     simulate_constraint,
 )
 from capa_simulation.services.korean_particle import topic_particle
+from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
 from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
@@ -234,18 +236,23 @@ schedule_mode = render_mode_switch() == SCHEDULE_MODE
 equipment_session: EquipmentSession | None = None
 snapshot: EquipmentSnapshot | None = None
 cutoff = pd.DataFrame()
+# 입력 비가동 대수(가용설비 현황 › Preference — 공용, 설비 0032). 계획 키에 실린다(공정 Capa 상세와
+# 같은 가용).
+manual_downtime = ManualDowntime()
 equipment_error = ""
 try:
     equipment_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     equipment_session = resolve_equipment_session(equipment_path)
     snapshot = equipment_session.snapshot
     cutoff = load_process_cutoff(equipment_path)
+    manual_downtime = load_manual_downtime(equipment_path)
     with notices:
         render_schema_ahead_warning(get_equipment_repository(equipment_path).schema_ahead)
         render_legacy_trace_warning(equipment_session)
 except BOOTSTRAP_ERRORS as exc:
     snapshot = None
     cutoff = pd.DataFrame()
+    manual_downtime = ManualDowntime()
     equipment_error = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
 else:
     render_equipment_scenario_row(equipment_session)
@@ -311,6 +318,7 @@ if schedule_mode:
             cutoff=cutoff,
             equipment_error=equipment_error,
             today=today,
+            manual_downtime=manual_downtime,
             card_label=CARD_LABEL,
             card_name=CARD_NAME,
             card_icon=CARD_ICON,
@@ -612,6 +620,7 @@ shortening_key = required_shortening_cache_key(
     cutoff=cutoff,
     months=tuple(months),
     today=today,
+    manual_downtime=manual_downtime,
 )
 try:
     plan = load_required_shortening_for_target(
@@ -773,6 +782,10 @@ band = (
     + (f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)")
     + " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
 )
+# 계획이 실제로 건 칸으로 적는다 — 이 공정에 0 아닌 칸이 있을 때만.
+manual_note = manual_effect_band(plan.manual_downtime, (process,))
+if manual_note:
+    band += f" · {manual_note}"
 upeh_percent = st.session_state.get(UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT)
 if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
     band += " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"

@@ -1007,8 +1007,9 @@ def _assumed_demand_note(
 def availability_card(
     record: Mapping[str, object], bridge: Mapping[str, object] | None
 ) -> EvidenceCard:
-    """② 가용 — 보유 − 대여 = 가용(공식). 설비 일정이 서면 기존보유 + 호기 가용(참고). 두 식
-    모두 적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다."""
+    """② 가용 — 보유 − 대여 = 가용(공식). 설비 일정이 서면 기존보유 + 호기 가용(참고) — 그 달에
+    입력 비가동(가용설비 현황 › Preference)을 뺐으면 「− 입력 비가동」 이 붙는다. 두 식 모두
+    적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다."""
     owned = _number(record.get(OWNED_COLUMN))
     lent = _number(record.get(LENT_COLUMN))
     available = _number(record.get("가용대수"))
@@ -1027,15 +1028,19 @@ def availability_card(
         baseline = _number(bridge.get("기존보유"))
         units = _number(bridge.get("호기 가용"))
         total = _number(bridge.get("가용대수"))
+        removed = _number(bridge.get("입력 비가동 반영")) or 0.0
         total_mark = equals_mark(
             _one(total),
             _one(
-                None if baseline is None or units is None else round(baseline, 1) + round(units, 1)
+                None
+                if baseline is None or units is None
+                else round(baseline, 1) + round(units, 1) - round(removed, 1)
             ),
         )
+        manual_text = f" − 입력 비가동 {_one(removed)}" if removed > 0 else ""
         notes.append(
-            f"설비 일정 기준(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)} {total_mark} "
-            f"{_one(total)} (환산)"
+            f"설비 일정 기준(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)}{manual_text} "
+            f"{total_mark} {_one(total)} (환산)"
         )
     return EvidenceCard("② 가용", formula, tuple(notes))
 

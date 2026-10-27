@@ -81,15 +81,17 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
     # 운영 화면이라 상태 접미도 본문 배지도 없다(2026-10-19 사용자 요청).
     assert app.title[0].value == "가용설비 현황"
     assert not any("Data확보중" in element.value for element in app.markdown)
-    # 탭 둘(2026-10-24): ① 설비 마스터(처음 여는 탭) ② Summary(안쪽 Main·Static 대비 일정). Cut-off
-    # 는 머리 「설정」 팝업, Qual 마감 계산기는 필요 단축 일정 팝업, 설비 시나리오는 시나리오
-    # 관리다. 설비 마스터 안의 입력표 탭은 최상위 목록과 별개다.
+    # 탭 셋(2026-10-24 두 탭 개편, 2026-10-27 Preference): ① 설비 마스터(처음 여는 탭) ②
+    # Summary(안쪽 Main·Static 대비 일정) ③ Preference(입력 비가동 대수). Cut-off 는 머리 「설정」
+    # 팝업, Qual 마감 계산기는 필요 단축 일정 팝업, 설비 시나리오는 시나리오 관리다. 설비 마스터
+    # 안의 입력표 탭은 최상위 목록과 별개다.
     labels = [tab.label for tab in app.tabs]
     assert [label for label in labels if label.startswith(":material/")] == [
         ":material/table_rows: 설비 마스터",
         ":material/insights: Summary",
         ":material/dashboard: Main",
         ":material/compare_arrows: Static 대비 일정",
+        ":material/tune: Preference",
     ]
     assert any(button.key == SETTINGS_BUTTON_KEY for button in app.button)
     _open_tab(app, "Main")
@@ -441,6 +443,35 @@ def _seeded_equipment(database_path: Path) -> None:
         downtime,
         note="검사용",
     )
+    clear_equipment_repository()
+
+
+def test_the_preference_tab_lists_the_saved_processes_by_the_period_months(
+    tmp_path: Path,
+) -> None:
+    """③ Preference — 행은 저장본의 공정, 열은 사이드바 조회기간의 달이다(설비 0032 공용 프로필).
+
+    다른 탭을 보는 회차에도 폼은 서 있다(적은 칸을 지킨다) — 저장 이력만 열린 회차에 선다.
+    """
+    from capa_simulation.components.manual_downtime_tab import MANUAL_EDITOR_KEY
+    from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
+
+    database_path = tmp_path / "availability.duckdb"
+    _seeded_equipment(database_path)
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
+    app.session_state[MONTH_RANGE_KEY] = ("2026-07", "2026-09")
+    app.run()
+    assert not app.exception
+    hidden = next(frame for frame in app.dataframe if MANUAL_EDITOR_KEY in frame.proto.id)
+    assert hidden.value["공정"].tolist() == ["DEMO_PROC"]
+    assert not any(item.label.startswith(":material/history:") for item in app.expander)
+
+    app = _open_tab(app, "Preference")
+    assert not app.exception
+    editor = next(frame for frame in app.dataframe if MANUAL_EDITOR_KEY in frame.proto.id)
+    assert list(editor.value.columns) == ["공정", "202607", "202608", "202609"]
+    assert any(item.label.startswith(":material/history:") for item in app.expander)
     clear_equipment_repository()
 
 

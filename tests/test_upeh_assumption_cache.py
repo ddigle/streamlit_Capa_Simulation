@@ -27,6 +27,7 @@ import pytest
 from test_required_shortening import PROCESS, _baseline, _cutoff, _downtime, _master, _unit
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.required_shortening import (
     MonthlyTarget,
     ShorteningPlan,
@@ -87,6 +88,7 @@ def _key(token: UpehToken = ()) -> simulation_cache.RequiredShorteningCacheKey:
         cutoff=cutoff,
         months=(MAY, JUNE),
         today=TODAY,
+        manual_downtime=ManualDowntime(),
         upeh=token,
     )
 

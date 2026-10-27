@@ -29,6 +29,12 @@ GAP 세 행을 공정 Capa 상세 결합 캔버스 꼴(`availability_sheet_canva
 요청). 필터가 걸리면 설비 일정 기준 세 행은 걸린 호기만(실제·반사실 구간을 같은 호기로 좁힌다,
 기존보유 제외) 다시 더하고, Static·GAP 여섯 행은 「—」 다 — 걸러진 설비 일정을 거르지 않은 Static
 과 맞대면 GAP 이 거짓말을 한다.
+
+**입력 비가동**(가용설비 현황 › Preference — 공정 × 생산월 대수)은 설비 일정 기준 가용에서 더 뺀다
+(`manual_downtime` — 필요 단축 일정·공정 Capa 상세 ② 와 같은 칸·같은 멈춤 규칙). 시트는 그 몫을
+대여(비가동)에 싣고(보유는 그대로), 그림·확보율 교차검증도 뺀 가용을 쓴다. 근거 카드는 공정마다
+「입력 비가동」 한 줄로 보인다. 호기 필터 시트와 호기 목록은 호기 단위라 들지 않는다(기존보유와
+같다).
 """
 
 from __future__ import annotations
@@ -102,6 +108,7 @@ from capa_simulation.services.availability_sheet import (
     GAP_PAIRS,
     GAP_ROWS,
     KIND_BASELINE_LINE,
+    KIND_MANUAL_LINE,
     KIND_UNIT_LINE,
     REASON_STATIC_UNREADABLE,
     REASON_UNIT_FILTER,
@@ -119,6 +126,7 @@ from capa_simulation.services.availability_sheet import (
     SheetView,
     build_availability_sheet,
     downtime_without_loss,
+    manual_downtime_lines,
     sheet_view,
     unit_availability_breakdown,
 )
@@ -130,6 +138,12 @@ from capa_simulation.services.equipment_contract import (
     PARENT_EQUIPMENT_COLUMN,
     QUAL_STATUS_COLUMN,
     STORAGE_FLAG_COLUMN,
+)
+from capa_simulation.services.manual_downtime import (
+    MANUAL_DOWNTIME_BAND,
+    ManualDowntime,
+    manual_downtime_key,
+    manual_units_text,
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.monthly_equipment_availability import (
@@ -152,6 +166,7 @@ from capa_simulation.services.simulation_cache import (
     get_securement_cross_check,
     get_undated_equipment,
     get_usage_excluded_equipment,
+    securement_cross_check_cache_key,
     securement_cross_check_result,
 )
 from capa_simulation.services.undated_equipment import undated_equipment_notice
@@ -275,6 +290,7 @@ def render_availability_gap_panel(
     process_labels: ProcessLabels | None = None,
     downtime: pd.DataFrame | None = None,
     counterfactual_spans: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+    manual_downtime: ManualDowntime,
 ) -> None:
     """비교 탭 본문.
 
@@ -313,6 +329,11 @@ def render_availability_gap_panel(
     `no_demand_message` 는 조회기간에 소요대수가 없을 때의 안내를 만드는 함수다 — 페이지는
     `page_bootstrap.no_demand_message` 에 활성 상태를 묶어 넘겨 데이터 범위를 붙인다. 그 갈래에서만
     부른다. 주지 않으면 범위 없는 첫 문장(`NO_DEMAND_MESSAGE`)이다.
+
+    `manual_downtime` 은 입력 비가동 대수(설비 DB 공용 프로필 —
+    `equipment_cache.load_manual_downtime`)다. 조회 달로 좁힌 칸(`manual_downtime_key`)이 시트·
+    교차검증 캐시 키의 끝 칸이고, 그 칸을 설비 일정 기준 가용에서 뺀다(모듈 docstring). **필수
+    인자**다 — 빠뜨리면 이 탭만 뺀 가용이 다른 실행 화면과 갈린다.
     """
     if tab_is_hidden(owner_tab):
         return
@@ -363,6 +384,8 @@ def render_availability_gap_panel(
 
     if static_error:
         st.warning(f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {static_error}")
+    # 조회 달로 좁힌 입력 비가동 칸 — 시트·교차검증이 뺀다(캐시 키의 끝 칸과 같은 값).
+    manual_cells = manual_downtime_key(manual_downtime.rows, months)
 
     _render_unmatched(comparison.dynamic_only, comparison.static_only, labels)
 
@@ -421,11 +444,16 @@ def render_availability_gap_panel(
             static_availability=static,
             required_equipment=required_equipment,
             cache_key=(
-                None if required_equipment_key is None else (comparison_key, required_equipment_key)
+                None
+                if required_equipment_key is None
+                else securement_cross_check_cache_key(
+                    comparison_key, required_equipment_key, manual_downtime=manual_downtime
+                )
             ),
             process=process,
             labels=labels,
             no_demand_message=no_demand_message,
+            manual_cells=manual_cells,
         )
         return
 
@@ -474,6 +502,7 @@ def render_availability_gap_panel(
             static_owned=owned,
             static_lent=lent,
             static_available=static,
+            manual_downtime=manual_downtime,
         )
         sheet = get_availability_sheet(
             key,
@@ -527,11 +556,17 @@ def render_availability_gap_panel(
             st.caption(
                 ":material/filter_alt: 호기 필터 · "
                 + markdown_safe_tildes(" · ".join(applied))
-                + f" — 호기 {len(chosen_units):,}개만 더합니다. 기존보유는 호기 속성이 없어 "
-                "빠지고, Static·GAP 은 공정 단위 기준정보라 맞대지 않습니다(—)."
+                + f" — 호기 {len(chosen_units):,}개만 더합니다. 기존보유·입력 비가동은 호기 "
+                "속성이 없어 빠지고, Static·GAP 은 공정 단위 기준정보라 맞대지 않습니다(—)."
             )
     _render_undated_notice(undated, usage_excluded, scope, chosen_units)
     if detail_mode == "호기 목록":
+        if any(process_name in scope for process_name, _, _ in manual_cells):
+            st.caption(
+                ":material/event_busy: 입력 비가동(가용설비 현황 › Preference)은 호기에 잇지 않은 "
+                "공정 × 달 손실이라 이 목록에 없습니다 — `시트` 의 설비 일정 기준 대여(비가동)·"
+                "가용에는 듭니다."
+            )
         _render_unit_list(
             _scoped_contributions(
                 monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
@@ -586,7 +621,9 @@ def render_availability_gap_panel(
             process_label=process_label,
             scope=frozenset(scope),
             fingerprint=fingerprint,
-            schedule_detail=_schedule_detail(process, cutoff),
+            schedule_detail=_schedule_detail(
+                process, cutoff, manual=chosen_units is None and _has_manual(view)
+            ),
             contributions=contributions,
             labels=labels,
             conversion_ratios=conversion_ratios,
@@ -609,13 +646,20 @@ def _key_digest(key: object) -> str:
     return hashlib.sha1(repr(key).encode("utf-8")).hexdigest()[:16]
 
 
-def _schedule_detail(process: str | None, cutoff: pd.DataFrame) -> str:
+def _schedule_detail(process: str | None, cutoff: pd.DataFrame, *, manual: bool = False) -> str:
     """설비 일정 기준 제목의 세부 글 — 출처·축·Cut-off(라벨 칸 한 줄). 「칸을 누르면」 안내는
-    시트 위 도구 줄과 풍선이 맡는다."""
+    시트 위 도구 줄과 풍선이 맡는다. `manual` 이면(범위에 입력 비가동을 뺀 달이 있다) 꼬리에
+    「입력 비가동 반영」 — 공정 Capa 상세 ② 제목 꼬리와 같은 말이다."""
     days = cutoff_setting(cutoff, process) if process is not None else None
     # 계산(`wd_window`)은 적은 값을 내림해 쓴다 — 다른 화면처럼 그 일수로 적고 내림을 함께 둔다.
     production = f"Cut-off {cutoff_days_words(days)}" if days is not None else "Cut-off 공정별"
-    return f"설비 DB · 환산대수 · {production}"
+    tail = f" · {MANUAL_DOWNTIME_BAND}" if manual else ""
+    return f"설비 DB · 환산대수 · {production}{tail}"
+
+
+def _has_manual(view: SheetView) -> bool:
+    """범위 안 어느 달이든 입력 비가동을 가용에서 뺐는가(넣었지만 가용 0 이라 못 뺀 달도 든다)."""
+    return any(round(sum(view.manual_at(int(month))), 9) > 0 for month in view.months)
 
 
 # ================================================================== 시트 프래그먼트
@@ -940,16 +984,32 @@ def _render_schedule_evidence(
     )
     units = int(lines["구분"].eq(KIND_UNIT_LINE).sum())
     baseline_lines = int(lines["구분"].eq(KIND_BASELINE_LINE).sum())
+    # 입력 비가동은 호기 줄이 아니라 공정마다 한 줄이다 — 호기 필터 시트에는 없다(0).
+    manual_lines = (
+        manual_downtime_lines(bundle.sheet, month, bundle.scope)
+        if not bundle.unit_filtered
+        else lines.iloc[0:0]
+    )
+    removed, entered = view.manual_at(month) if not bundle.unit_filtered else (0.0, 0.0)
     if with_formula:
         available, owned, lent = (
             _text(row_id, view.value(row_id, month))
             for row_id in (ROW_SCHEDULE_AVAILABLE, ROW_SCHEDULE_OWNED, ROW_SCHEDULE_LENT)
         )
+        manual_text = (
+            f"(그 가운데 입력 비가동 {_text(ROW_SCHEDULE_LENT, -removed)})"
+            if round(removed, 9) > 0
+            else ""
+        )
         st.markdown(
-            f"설비 일정 기준 가용 {available} = 보유 {owned} + 대여(비가동) {lent} · "
+            f"설비 일정 기준 가용 {available} = 보유 {owned} + 대여(비가동) {lent}{manual_text} · "
             f"호기 {units:,} · 기존보유 {baseline_lines}줄"
         )
-    shown = _schedule_lines(lines, row, with_process=bundle.process is None)
+    shown = _schedule_lines(
+        pd.concat([lines, manual_lines], ignore_index=True) if not manual_lines.empty else lines,
+        row,
+        with_process=bundle.process is None,
+    )
     if shown.empty:
         st.caption(
             "이 칸에 기여한 호기가 없습니다."
@@ -972,8 +1032,19 @@ def _render_schedule_evidence(
         "정지·반출/이설은 대여가 아니라 보유 자체를 줄입니다(그날부터 뺌). `손실 기여일수` 는 "
         "정지·반출/이설일에 닿는 비가동을 그날부터 세어 `비가동 내역` 보다 하루 길 수 있습니다."
     )
+    if round(entered, 9) > 0 and row != ROW_SCHEDULE_OWNED:
+        over = (
+            f" 넣은 {manual_units_text(entered)}대 가운데 그 달 가용만큼만 뺐습니다(가용은 0 에서 "
+            "멈춤)."
+            if round(entered - removed, 9) > 0
+            else ""
+        )
+        notes.append(
+            "「입력 비가동」 줄은 가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동입니다 — "
+            "호기별 비가동과 별도 손실이라 대여(비가동)·가용에서 더 뺍니다(보유는 그대로)." + over
+        )
     if bundle.unit_filtered:
-        notes.append("호기 필터 중이라 기존보유는 들지 않습니다.")
+        notes.append("호기 필터 중이라 기존보유·입력 비가동은 들지 않습니다.")
     for note in notes:
         st.caption(note)
     if bundle.process is not None:
@@ -1020,8 +1091,10 @@ def _schedule_lines(lines: pd.DataFrame, row: str, *, with_process: bool = True)
         columns = ["공정", EQUIPMENT_ID_COLUMN, "환산비", "비가동 내역", "손실 기여일수"]
         columns += [BREAKDOWN_LENT_COLUMN]
     else:
-        chosen = lines.loc[lines["보유"].gt(0)].copy()
-        # 대여가 있는 호기를 위에 둔다(기존보유 줄이 맨 앞). 다 깎여 가용 0 인 호기도 남긴다.
+        # 입력 비가동 줄은 보유가 0 이라도 가용을 깎으므로 싣는다.
+        chosen = lines.loc[lines["보유"].gt(0) | lines["구분"].eq(KIND_MANUAL_LINE)].copy()
+        # 대여가 있는 호기를 위에 둔다(기존보유·입력 비가동 줄이 맨 앞). 다 깎여 가용 0 인 호기도
+        # 남긴다.
         chosen["_order"] = chosen["구분"].eq(KIND_UNIT_LINE).astype(int)
         chosen = chosen.sort_values(["_order", BREAKDOWN_LENT_COLUMN], kind="stable").drop(
             columns="_order"
@@ -1039,6 +1112,7 @@ def _schedule_lines(lines: pd.DataFrame, row: str, *, with_process: bool = True)
         table[EQUIPMENT_ID_COLUMN]
         .astype("object")
         .where(~baseline, "기존보유 · " + table["기존보유분류"].astype("string").fillna("전체"))
+        .where(~table["구분"].eq(KIND_MANUAL_LINE), "입력 비가동 · Preference")
     )
     modules = table["설비키"].notna() & table["설비키"].ne(table[EQUIPMENT_ID_COLUMN])
     if bool(modules.any()):
@@ -1379,6 +1453,7 @@ def _render_securement_cross_check(
     process: str | None,
     labels: ProcessLabels,
     no_demand_message: Callable[[], str] | None = None,
+    manual_cells: tuple[tuple[str, int, float], ...] = (),
 ) -> None:
     """같은 소요대수에 두 가용대수를 각각 나눈 확보율.
 
@@ -1393,6 +1468,8 @@ def _render_securement_cross_check(
     있으면 데이터 범위를 붙인다. 맞대지 못했거나 로더가 멈추면(`BOOTSTRAP_ERRORS`) 이 보기 안에서
     경고로 알린다. 표 머리의
     `Dynamic가용대수`·`Dynamic확보율` 은 보일 때만 「일정기준…」 으로 바꾼다(내부 컬럼 그대로).
+    `manual_cells` 는 조회 달로 좁힌 입력 비가동 칸이다 — 일정기준 가용에서 뺀다(키가 없는 길도
+    같은 칸으로 맞댄다).
     """
     st.markdown("##### :material/fact_check: 확보율 교차검증")
     if required_equipment is None:
@@ -1402,7 +1479,9 @@ def _render_securement_cross_check(
 
     try:
         result = (
-            securement_cross_check_result(static_availability, monthly, load())
+            securement_cross_check_result(
+                static_availability, monthly, load(), manual_downtime=manual_cells
+            )
             if cache_key is None
             else get_securement_cross_check(
                 cache_key,
@@ -1432,6 +1511,14 @@ def _render_securement_cross_check(
             f"({len(check.months)}개월). **설비 조회기간이 덮는 달로 좁혔습니다** — "
             "시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 만들지 않았으면 맞댈 수 "
             "없습니다. 조회기간을 넓히면 늘어납니다."
+        )
+    shown_manual = [units for name, _, units in manual_cells if process is None or name == process]
+    if shown_manual:
+        st.caption(
+            f":material/event_busy: 일정기준가용대수는 {MANUAL_DOWNTIME_BAND}"
+            f"({len(shown_manual)}칸 · 합 {manual_units_text(sum(shown_manual))}대) — 가용설비 "
+            "현황 › Preference 의 공정 × 달 비가동을 그 달 가용에서 뺀 값입니다(필요 단축 일정과 "
+            "같은 가용)."
         )
     if check.fallback_processes:
         st.caption(

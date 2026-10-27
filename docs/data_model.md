@@ -126,6 +126,8 @@ equipment_ops.floor_layout_group_label                    층 Main 설비명 위
 equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017·0025, layout_key 'FAB')
 equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요 단축 일정 공용 조회 조건(0019)
 equipment_ops.floor_state_profile  1 ── N floor_state        Space 층 사용 상태(0029, 행 = 비활성 층, PK 동·층)
+equipment_ops.manual_downtime_profile 1 ── N manual_downtime  입력 비가동 대수(0032, 행 = 0 아닌 (공정, 생산월), PK 공정·달)
+                                     └── N manual_downtime_save   저장 이력(0032, 저장 한 번 = 한 행, PK version)
 equipment_ops.shortening_baseline  1 ── N shortening_baseline_process      진척 비교 기준선(0021 — 고칠 수 없는
                                      └── N shortening_baseline_unit        기록, 새로 저장하거나 통째로 지운다)
 
@@ -443,6 +445,18 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   닿으면 DB 를 무효로 만들므로 저장 입구가 뗀다. 옛 판(배포 `202610260700` 이하)은 옛 코드 둘 밖의 글을 「비활성」 으로
   읽어 화면은 깨지지 않지만, 그 판의 저장 입구는 옛 코드 둘만 받아 직접 적은 층이 남아 있으면 그 층들의 사유를 다시 고르거나
   켜기 전까지 층 사용 저장이 거절된다.
+- `manual_downtime_profile`·`manual_downtime`·`manual_downtime_save`(설비 마이그레이션 32): **입력 비가동 대수**(2026-10-27
+  결정 — 호기에 잇지 않고 공정 × 생산월로 넣는 비가동, 가용설비 현황 「Preference」 탭). 머리는 `profile_id = 1` 한
+  행(`version`·마지막 저장의 `saved_by`·`note`·`updated_at` — 저장마다 version+1, 한 번도 저장하지 않았으면 행이 없어
+  version 0)이고, 칸 표는 **0 아닌 칸만** 한 행(`process_name` 원본 공정명·`production_month` `YYYYMM` 생산월·`units` 환산
+  대수 DOUBLE ≥ 0, PK (공정, 달))이다. 행이 없는 칸은 0 이다. 저장은 화면이 편집을 시작할 때 본 version 을 대조하고
+  (`require_profile_version(schema="equipment_ops")`) 화면이 보인 범위(조회기간 달 × 보인 공정)만 갈아 쓰되 바뀐 칸만
+  고친다 — 비운 칸 DELETE · 값만 바꾼 칸 UPDATE · 새 칸 INSERT(`persistence/manual_downtime_store.py`). 저장마다 이력 표에
+  한 행(version·저장 시각·저장자·메모·바뀐 칸 수·채운 칸 수·대수 합 — 넣기만 한다)을 더한다. 모든 설비 시나리오가 함께 쓰는
+  공용 현행값이라 소유 칸이 없고 외래 키도 없다. 값 범위(0 이상·상한 9999·달 꼴)는 `services/manual_downtime.prepare_manual_downtime`
+  이 본다. 계산에서는 실행 쪽 설비 일정 기준 가용(필요 단축 일정 계획 `가용대수`·가용설비 현황 Static 대비 일정의 설비 일정
+  기준 가용)에서 그 달 가용까지만 빼고(0 에서 멈춤), 계산 캐시 키는 계산할 달로 좁힌 칸 자체다(AGENTS 5장 34·6장 「입력
+  비가동 대수」).
 - `process_cutoff`(마이그레이션 9): 공정별 Cut-off(그 공정 이후 입고까지의 표준 납기) 일수.
   `(process_name, product_scope)` PK 이고 `product_scope` 는 지금 모두 `'*'`(공정 전체 — 나중
   제품 축 자리)다. TAT·공정 선후관계가 저장소에 없어 파생값이 아니라 사람이 적는 원장이고,

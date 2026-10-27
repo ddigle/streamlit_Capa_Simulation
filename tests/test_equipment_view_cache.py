@@ -30,6 +30,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
     build_monthly_equipment_contributions,
@@ -70,6 +71,7 @@ def test_shortening_csvs_are_built_once_per_plan_key_and_selection(
         "c",
         plan.months,
         plan.today.isoformat(),
+        (),
         (),
     )
     keyed = simulation_cache.KeyedShorteningPlan(key, plan)
@@ -421,6 +423,7 @@ def test_shortening_shares_the_span_cache_and_matches_a_fresh_plan(
             cutoff=cutoff,
             months=MONTHS,
             today=day,
+            manual_downtime=ManualDowntime(),
         )
         plan = simulation_cache.get_required_shortening(
             key,
@@ -481,6 +484,7 @@ def test_shortening_reads_the_demand_only_on_a_miss_and_follows_the_scenario_key
             cutoff=cutoff,
             months=MONTHS,
             today=today,
+            manual_downtime=ManualDowntime(),
         )
         return simulation_cache.get_required_shortening(
             key,
@@ -726,7 +730,9 @@ def test_cached_cross_check_follows_every_input(
         scenario_key: simulation_cache.ScenarioCacheKey,
     ) -> tuple[simulation_cache.SecurementCrossCheckCacheKey, CrossCheck, CrossCheck]:
         comparison_key, monthly, _ = _comparison(spans, baseline, cutoff, static, months, ratios)
-        key = (comparison_key, scenario_key)
+        key = simulation_cache.securement_cross_check_cache_key(
+            comparison_key, scenario_key, manual_downtime=ManualDowntime()
+        )
 
         def load() -> pd.DataFrame:
             loaded.append(scenario_key)
@@ -824,6 +830,7 @@ def _sheet(
         static_owned=owned,
         static_lent=lent,
         static_available=available,
+        manual_downtime=ManualDowntime(),
     )
     cached = simulation_cache.get_availability_sheet(
         key,
@@ -916,7 +923,7 @@ def test_a_sheet_without_a_counterfactual_is_its_own_entry() -> None:
     _, spans = _cached_spans(equipment, downtime, start, end)
     ratios = _ratios(equipment)
     _, monthly, _ = _comparison(spans, baseline, cutoff, available, MONTHS, ratios)
-    bare_key = (key[0], None, key[2], key[3], key[4])
+    bare_key = (key[0], None, key[2], key[3], key[4], key[5])
     bare = simulation_cache.get_availability_sheet(
         bare_key,
         _actual_monthly=monthly,

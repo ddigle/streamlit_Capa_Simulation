@@ -1737,6 +1737,8 @@ NEW_ITEM_KEYS = [
     "entry_sections",
     "upeh_help",
     "space_zone_fields",
+    # 2026-10-27 — 가용설비 현황 셋째 탭 「Preference」(입력 비가동 대수, 설비 0032).
+    "equipment_preference",
 ]
 
 
@@ -2714,10 +2716,14 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
         EQUIPMENT_SUMMARY_TAB_KEY,
         EQUIPMENT_SUMMARY_TABS,
         EQUIPMENT_TAB_KEY,
+        EQUIPMENT_TABS,
     )
 
     assert EQUIPMENT_MASTER_TAB.endswith(f" {screens.EQUIPMENT_MASTER_TAB}")
     assert EQUIPMENT_SUMMARY_TAB.endswith(f" {screens.EQUIPMENT_SUMMARY_TAB}")
+    assert [label.split(" ", 1)[1] for label in EQUIPMENT_TABS] == list(
+        screens.EQUIPMENT_OUTER_TABS
+    )
     assert [label.split(" ", 1)[1] for label in EQUIPMENT_SUMMARY_TABS] == list(
         screens.EQUIPMENT_SUMMARY_TABS
     )
@@ -2741,7 +2747,7 @@ def test_the_equipment_moves_contract_matches_the_app() -> None:
 
 
 def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
-    outer = ["table_rows 설비 마스터", "insights Summary"]
+    outer = ["table_rows 설비 마스터", "insights Summary", "tune Preference"]
     summary = ["dashboard Main", "compare_arrows Static 대비 일정"]
     anywhere = [*outer, "입력", "직접 편집", "저장 이력", "설비 마스터", "비가동 일정", *summary]
     text = screens.summarize_equipment_moves(
@@ -2751,15 +2757,16 @@ def test_the_equipment_moves_summary_is_fixed_words_and_counts() -> None:
         (True, True),
     )
     assert text == (
-        "탭 2/2 · Summary 안쪽 2/2 · 옛 탭 0곳 · 설정 — 팝업 제목 「설정」 같음 · Cut-off 표 "
+        "탭 3/3 · Summary 안쪽 2/2 · 옛 탭 0곳 · 설정 — 팝업 제목 「설정」 같음 · Cut-off 표 "
         "있음 · Esc 닫힘 · 필요 단축 일정 — 팝업 제목 「Qual 마감 계산기」 같음 · 지표 4/4 · "
         "Esc 닫힘 · 시나리오 관리 — 설비 시나리오 구획 표 있음 · 전환 되돌림"
     )
+    # 「Preference」 는 셋째 탭으로 다시 섰다(2026-10-27) — 옛 탭으로 세지 않고 바깥 셋에 든다.
     old_tabs = ["table_rows RawData", "tune Preference"]
     old = screens.summarize_equipment_moves(
         screens.EquipmentTabNames(old_tabs, [], old_tabs), None, None, None
     )
-    assert old.startswith("탭 0/2 · Summary 안쪽 0/2 · 옛 탭 2곳")
+    assert old.startswith("탭 1/3 · Summary 안쪽 0/2 · 옛 탭 1곳")
     assert "「설정」 단추 없음" in old and "「관리할 시나리오」 전환 없음" in old
 
 
@@ -2780,18 +2787,57 @@ def test_the_equipment_moves_outer_count_ignores_the_inner_editor_tab_of_the_sam
         None,
         None,
     )
-    assert text.startswith("탭 1/2 · Summary 안쪽 2/2 · 옛 탭 0곳")
+    assert text.startswith("탭 1/3 · Summary 안쪽 2/2 · 옛 탭 0곳")
     # 안쪽 탭 묶음의 「Main」 만 Summary 안쪽으로 센다 — 다른 자리의 같은 이름은 들지 않는다.
     stray = screens.summarize_equipment_moves(
-        screens.EquipmentTabNames(["table_rows 설비 마스터", "insights Summary"], [], summary),
+        screens.EquipmentTabNames(
+            ["table_rows 설비 마스터", "insights Summary", "tune Preference"], [], summary
+        ),
         None,
         None,
         None,
     )
-    assert stray.startswith("탭 2/2 · Summary 안쪽 0/2")
+    assert stray.startswith("탭 3/3 · Summary 안쪽 0/2")
     script = inspect.getsource(screens.check_equipment_moves)
     assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_TAB_KEY" in script
     assert "_KEYED_TAB_NAMES_JS, EQUIPMENT_SUMMARY_TAB_KEY" in script
+
+
+# ------------------------------------------ 가용설비 현황 Preference(`equipment_preference`)
+
+
+def test_the_equipment_preference_contract_matches_the_app() -> None:
+    """스크립트는 앱 모듈을 부르지 않고 값만 옮긴다 — 탭 이름·편집표 key·저장 단추 글·공정 칸·이력
+    제목·달 칸 머리 꼴이 앱과 같은지 여기서 본다."""
+    from capa_simulation.components import manual_downtime_tab as tab
+    from capa_simulation.navigation import EQUIPMENT_PREFERENCE_TAB
+    from capa_simulation.services.month_columns import month_label
+
+    assert EQUIPMENT_PREFERENCE_TAB.endswith(f" {screens.EQUIPMENT_PREFERENCE_TAB}")
+    assert screens.MANUAL_DOWNTIME_EDITOR_KEY == tab.MANUAL_EDITOR_KEY
+    assert screens.MANUAL_DOWNTIME_SAVE_BUTTON == tab.MANUAL_SAVE_BUTTON
+    assert screens.MANUAL_DOWNTIME_PROCESS_HEADER == tab.MANUAL_PROCESS_COLUMN
+    assert f'f":material/history: {screens.MANUAL_DOWNTIME_HISTORY_TITLE} ' in _text(
+        COMPONENTS / "manual_downtime_tab.py"
+    )
+    assert screens._MONTH_HEADER.match(month_label(202607))
+    assert not screens._MONTH_HEADER.match(screens.MANUAL_DOWNTIME_PROCESS_HEADER)
+    item = next(item for item in ITEMS if item.key == "equipment_preference")
+    assert not item.writes
+    script = inspect.getsource(screens.check_equipment_preference)
+    assert ".click()" not in script and "fill(" not in script
+
+
+def test_the_equipment_preference_summary_is_fixed_words_and_counts() -> None:
+    assert screens.summarize_equipment_preference(None, 0, None, False) == "입력 비가동 표 없음"
+    assert screens.summarize_equipment_preference(5, 12, True, True) == (
+        "입력 비가동 표 있음 · 공정 5 × 달 12 = 칸 60 · 저장 단추 있음 · 저장 이력 있음 · "
+        "저장 안 함"
+    )
+    locked = screens.summarize_equipment_preference(3, 4, False, False)
+    assert "칸 12" in locked and "저장 단추 잠김(가정 설비 시나리오)" in locked
+    assert "저장 이력 없음" in locked
+    assert "저장 단추 없음" in screens.summarize_equipment_preference(1, 1, None, True)
 
 
 def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:

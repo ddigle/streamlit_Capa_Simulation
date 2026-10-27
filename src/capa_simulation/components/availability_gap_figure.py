@@ -16,6 +16,10 @@ GAP 은 막대 위에 숫자로 적는다. 글자와 색은 시트의 GAP 가용
 적히면 흐린 글자). 부호만 보고 색을 고른다 — 좋고 나쁨이 아니라 방향이다. 맞댈 수 없는
 달(「—」)은 GAP 글자를 적지 않는다.
 
+**입력 비가동**(가용설비 현황 › Preference)을 뺀 달은 설비 일정 기준 가용이 그만큼 작다(시트와 같은
+값). 쌓는 두 조각은 합이 그 가용이 되게 `가용` 조각에서 먼저 덜고, 넘치면 `기존보유` 조각에서
+던다 — 조각이 음수로 아래로 쌓이지 않는다. 그 달 `가용` 풍선이 뺀 몫을 적는다.
+
 **화면 라벨은 「일할」이다.** 코드와 문서는 계속 「안분」이라 적지만 범례·설명은 사용자가
 고른 말을 쓴다 — 같은 뜻이다(날짜 비율로 나눠 세는 것).
 
@@ -92,8 +96,18 @@ def build_availability_gap_figure(view: SheetView) -> go.Figure:
     labels = [month_label(int(month)) for month in months]
     corner_radius = _corner_radius(len(months))
     dynamic = [view.value(ROW_SCHEDULE_AVAILABLE, month) or 0.0 for month in months]
-    baseline = [_number(view.baseline.get(month)) for month in months]
-    available = [total - base for total, base in zip(dynamic, baseline, strict=True)]
+    # 입력 비가동을 뺀 가용이 기존보유보다 작을 수 있다 — 두 조각을 0 이상으로 둔 채 합이 가용이게
+    # 한다(모듈 docstring).
+    available = [
+        max(total - _number(view.baseline.get(month)), 0.0)
+        for total, month in zip(dynamic, months, strict=True)
+    ]
+    baseline = [total - units for total, units in zip(dynamic, available, strict=True)]
+    removed = [view.manual_at(int(month))[0] for month in months]
+    manual_notes = [
+        f"<br>입력 비가동 −{value:.2f} 뺌(Preference)" if round(value, 9) > 0 else ""
+        for value in removed
+    ]
     static = [view.value(ROW_STATIC_AVAILABLE, month) or 0.0 for month in months]
     gaps = [view.value(ROW_GAP_AVAILABLE, month) for month in months]
 
@@ -128,7 +142,8 @@ def build_availability_gap_figure(view: SheetView) -> go.Figure:
         },
         offsetgroup="dynamic",
         legendgroup="dynamic",
-        hovertemplate="가용 %{y:.2f} (환산대수)<extra></extra>",
+        customdata=manual_notes,
+        hovertemplate="가용 %{y:.2f} (환산대수)%{customdata}<extra></extra>",
     )
     figure.add_bar(
         x=labels,

@@ -13,6 +13,12 @@
   Static 대비 일정 탭의 일정 기준 가용과 같은 줄에서 나온다. 비가동도 그대로 반영되고,
   사용기준이 HBM·EDP 인 호기만 들며, 실행일 전의 정지·반출/이설 예정 호기도 가용이면 든다(실행일
   당일부터는 빠진다).
+- 그 위에서 **입력 비가동 대수**(가용설비 현황 › Preference — 공정 × 생산월, 공용 프로필)를 더 뺀다
+  (`services/manual_downtime.apply_manual_downtime`, 2026-10-27 사용자 결정 — 호기별 비가동과 별도
+  손실). 그 달 가용보다 크면 가용은 0 에서 멈추고 `ShorteningPlan.manual_downtime` 의 `초과` 가 그
+  자리를 알린다. Static 대비 일정 탭(비교 시트·그림·확보율 교차검증)도 같은 칸을 같은 멈춤 규칙으로
+  빼므로(`availability_sheet`·`securement_cross_check`) 두 화면의 가용은 같다. 입력이 없으면 전과
+  같은 숫자다.
 - 소요는 시나리오의 소요대수를 `calculate_securement_rate` 로 `(월, 공정)` 에 모은 값이다 —
   확보율 교차검증(`securement_cross_check`)과 같은 함수, 같은 집계다.
 - 공정은 설비 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만
@@ -112,6 +118,11 @@ from capa_simulation.services.equipment_units import unit_keys
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
+)
+from capa_simulation.services.manual_downtime import (
+    ManualRow,
+    apply_manual_downtime,
+    empty_manual_downtime_effect,
 )
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
@@ -428,6 +439,13 @@ class ShorteningPlan:
     설비 마스터에서 나오므로 캐시 키의 마스터 내용 지문이 이것도 덮는다.
     """
 
+    manual_downtime: pd.DataFrame = field(default_factory=empty_manual_downtime_effect)
+    """맞댄 공정에 건 입력 비가동(`MANUAL_DOWNTIME_EFFECT_COLUMNS` — 공정·달·입력·뺀 몫·초과).
+
+    `process_months` 의 `가용대수` 는 이미 뺀 값이다. 칸이 없으면 빈 표다. 맞대지 않은 공정의 칸은
+    싣지 않는다(뺄 가용이 계산에 없다).
+    """
+
     def at(self, level: TargetLevel) -> LevelPlan:
         """고른 목표의 결과. 미리 계산하지 않은 목표면 KeyError 다.
 
@@ -547,6 +565,7 @@ def plan_required_shortening(
     today: date,
     levels: Sequence[TargetLevel] = TARGET_LEVELS,
     spans: pd.DataFrame | None = None,
+    manual_downtime: Sequence[ManualRow] = (),
 ) -> ShorteningPlan:
     """설비 마스터·비가동·기존보유·Cut-off·소요대수로 목표마다(기본 다섯 값) 단축 일정을 낸다.
 
@@ -557,6 +576,9 @@ def plan_required_shortening(
     `spans` 는 그 구간을 이미 만들어 둔 것이다(`simulation_cache` 가 Static 대비 일정과 나눠 쓰는
     캐시). **같은 마스터·비가동으로 `span_date_range(months, cutoff)` 범위를 `with_unit_share=True`
     로 만든 표여야 한다** — 주지 않으면 여기서 만든다.
+
+    `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key` — 계산할 달로 좁힌 0 아닌 칸)이다.
+    맞댄 공정의 칸만 가용에서 뺀다(`apply_manual_downtime`). 비면 전과 같은 계산이다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
     lookup = cutoff_lookup(cutoff)
@@ -602,8 +624,17 @@ def plan_required_shortening(
     candidates = [
         unit for unit in shortening_candidates(equipment, downtime) if unit.process in compared
     ]
+    compared_set = set(compared)
+    available, manual_effect = apply_manual_downtime(
+        dynamic_available_equipment(monthly, weighted=True),
+        tuple(
+            row
+            for row in manual_downtime
+            if str(row[0]).strip() in compared_set and int(row[1]) in ordered
+        ),
+    )
     plan_levels = plan_from_availability(
-        available=dynamic_available_equipment(monthly, weighted=True),
+        available=available,
         required=required,
         candidates=candidates,
         cutoff_days=cutoff_days,
@@ -623,6 +654,7 @@ def plan_required_shortening(
         missing_cutoff=tuple(missing_cutoff),
         candidate_units=len(candidates),
         unit_master=_unit_master(prepared, candidates),
+        manual_downtime=manual_effect,
     )
 
 

@@ -396,9 +396,24 @@ GAP_TAB: Final = "Static 대비 일정"
 # 부르지 않고 값만 옮긴다(테스트가 앱과 같은지 본다).
 EQUIPMENT_MASTER_TAB: Final = "설비 마스터"
 EQUIPMENT_SUMMARY_TAB: Final = "Summary"
+# 셋째 바깥 탭(2026-10-27 — 공정 × 생산월 입력 비가동 대수). 개편 전 「Preference」(Cut-off 표)와
+# 이름만 같다 — 그 Cut-off 는 지금도 머리 「설정」 팝업이다.
+EQUIPMENT_PREFERENCE_TAB: Final = "Preference"
+EQUIPMENT_OUTER_TABS: Final = (
+    EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_SUMMARY_TAB,
+    EQUIPMENT_PREFERENCE_TAB,
+)
 EQUIPMENT_SUMMARY_TABS: Final = ("Main", GAP_TAB)
-# 개편 전 바깥 탭 이름 — 화면에 남았는지 센다.
-EQUIPMENT_OLD_TABS: Final = ("RawData", "Preference", "Qual 마감 계산기", "설비 시나리오")
+# 개편 전 바깥 탭 이름 — 화면에 남았는지 센다(「Preference」 는 셋째 탭으로 다시 섰다 — 세지
+# 않는다).
+EQUIPMENT_OLD_TABS: Final = ("RawData", "Qual 마감 계산기", "설비 시나리오")
+# 가용설비 현황 ③ Preference 의 입력 비가동 편집표를 감싼 상자 key(`manual_downtime_tab` — 편집표
+# 위젯 key 는 출발 version 을 든다)와 그 폼 저장 단추 글. 저장은 누르지 않는다(DB 에 쓰지 않는다).
+MANUAL_DOWNTIME_EDITOR_KEY: Final = "equipment_manual_downtime_editor"
+MANUAL_DOWNTIME_SAVE_BUTTON: Final = "입력 비가동 저장"
+MANUAL_DOWNTIME_PROCESS_HEADER: Final = "공정"
+MANUAL_DOWNTIME_HISTORY_TITLE: Final = "저장 이력"
 # 바깥 탭 묶음·Summary 안쪽 탭 묶음의 `st.tabs` key(`st-key-<key>` 칸) — 제 탭만 센다.
 EQUIPMENT_TAB_KEY: Final = "equipment_active_tab"
 EQUIPMENT_SUMMARY_TAB_KEY: Final = "equipment_summary_tab"
@@ -4152,13 +4167,12 @@ def summarize_equipment_moves(
     def has(names: Sequence[str], label: str) -> bool:
         return any(name.strip() == label or name.strip().endswith(f" {label}") for name in names)
 
-    outer = [
-        label for label in (EQUIPMENT_MASTER_TAB, EQUIPMENT_SUMMARY_TAB) if has(tabs.outer, label)
-    ]
+    outer = [label for label in EQUIPMENT_OUTER_TABS if has(tabs.outer, label)]
     inner = [label for label in EQUIPMENT_SUMMARY_TABS if has(tabs.summary, label)]
     old = [label for label in EQUIPMENT_OLD_TABS if has(tabs.anywhere, label)]
     parts = [
-        f"탭 {len(outer)}/2 · Summary 안쪽 {len(inner)}/2 · 옛 탭 {len(old)}곳",
+        f"탭 {len(outer)}/{len(EQUIPMENT_OUTER_TABS)} · Summary 안쪽 {len(inner)}/2 · "
+        f"옛 탭 {len(old)}곳",
     ]
     if settings is None:
         parts.append("「설정」 단추 없음")
@@ -4267,6 +4281,80 @@ def check_equipment_moves(screen: Screen) -> str:
         restored = screen.js(_SEGMENT_JS, SCENARIO_KIND_KEY) == before
         section = (table, restored)
     return summarize_equipment_moves(tabs, settings, calculator, section)
+
+
+# ------------------------------------------------- 가용설비 현황 Preference 입력 비가동 표
+
+# 데이터 편집기 머리 칸 글자 전부 — 그린 칸만 DOM 에 있어 가로로 굴리며 모은다(처음 자리로
+# 되돌린다).
+_GRID_HEADER_NAMES_JS = """async (root) => {
+  const seen = new Set();
+  const read = () => root.querySelectorAll('[role="columnheader"]').forEach(
+    (h) => seen.add(h.textContent.replace(/\\s+/g, " ").trim()));
+  const scroller = root.querySelector(".dvn-scroller");
+  if (scroller) scroller.scrollLeft = 0;
+  await new Promise((r) => setTimeout(r, 250));
+  read();
+  if (scroller) {
+    for (let step = 0; step < 200; step += 1) {
+      const before = scroller.scrollLeft;
+      scroller.scrollLeft += Math.max(80, scroller.clientWidth * 0.5);
+      await new Promise((r) => setTimeout(r, 250));
+      read();
+      if (scroller.scrollLeft === before) break;
+    }
+    scroller.scrollLeft = 0;
+  }
+  return [...seen].filter((name) => name);
+}"""
+# 달 칸 머리(`YY.MM` — `month_label`).
+_MONTH_HEADER = re.compile(r"^\d{2}\.\d{2}$")
+
+
+def summarize_equipment_preference(
+    rows: int | None, months: int, save: bool | None, history: bool
+) -> str:
+    """Preference 확인 결과 — 공정 줄 수 × 달 칸 수, 저장 단추(누를 수 있음·잠김·없음), 저장
+    이력 펼침. 공정 이름·값은 찍지 않는다. 저장은 누르지 않는다."""
+    if rows is None:
+        return "입력 비가동 표 없음"
+    button = "없음" if save is None else ("있음" if save else "잠김(가정 설비 시나리오)")
+    return (
+        f"입력 비가동 표 있음 · 공정 {rows} × 달 {months} = 칸 {rows * months} · 저장 단추 "
+        f"{button} · 저장 이력 {'있음' if history else '없음'} · 저장 안 함"
+    )
+
+
+def check_equipment_preference(screen: Screen) -> str:
+    """가용설비 현황 ③ 「Preference」 — 입력 비가동 표(행 = 저장본 공정, 열 = 사이드바 조회기간의
+    달)의 공정 줄 수와 달 칸 수, 저장 단추, 저장 이력 펼침. **저장하지 않는다**(칸을 고치지도
+    않는다 — DB 쓰기 없음)."""
+    screen.step("페이지 열기")
+    screen.open_page(EQUIPMENT_PAGE)
+    screen.step("Preference 탭")
+    screen.open_tab(EQUIPMENT_PREFERENCE_TAB)
+    box = screen.page.locator(f'[data-testid="stMain"] .st-key-{MANUAL_DOWNTIME_EDITOR_KEY}')
+    found = screen.poll(lambda: box.count(), timeout=30, accept=bool)
+    if not found:
+        return summarize_equipment_preference(None, 0, None, False)
+    grid = box.first
+    screen.step("표 읽기")
+    process = screen.column_index(grid, MANUAL_DOWNTIME_PROCESS_HEADER)
+    if process is None:
+        return summarize_equipment_preference(None, 0, None, False)
+    rows = len(screen.grid_rows(grid, [process]))
+    headers = grid.evaluate(_GRID_HEADER_NAMES_JS) or []
+    months = sum(1 for name in headers if _MONTH_HEADER.match(str(name)))
+    button = screen.page.locator('[data-testid="stMain"] button').filter(
+        has_text=MANUAL_DOWNTIME_SAVE_BUTTON
+    )
+    save = None if not button.count() else bool(button.first.is_enabled())
+    history = bool(
+        screen.page.locator('[data-testid="stMain"] [data-testid="stExpander"]')
+        .filter(has_text=MANUAL_DOWNTIME_HISTORY_TITLE)
+        .count()
+    )
+    return summarize_equipment_preference(rows, months, save, history)
 
 
 # ------------------------------------------------------------------ Space 필요 단축 보기
@@ -5018,6 +5106,7 @@ ITEMS: tuple[Item, ...] = (
     Item("entry_sections", "공정 Capa 상세 들어온 길 구획", check_entry_sections),
     Item("upeh_help", "기준 정보 UPEH 월 칸 도움말", check_upeh_help),
     Item("space_zone_fields", "Space 배치 편집기 영역 칸", check_space_zone_fields),
+    Item("equipment_preference", "설비 Preference 입력 비가동 표", check_equipment_preference),
 )
 
 

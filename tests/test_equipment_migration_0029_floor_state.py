@@ -24,6 +24,10 @@ LATER_TABLES = (
     "equipment_schedule_layout_unit",
     "equipment_schedule_layout_mark",
     "equipment_schedule_layout_label",
+    # 설비 0032 — 입력 비가동 대수.
+    "manual_downtime_profile",
+    "manual_downtime",
+    "manual_downtime_save",
 )
 
 
@@ -115,7 +119,7 @@ def test_a_database_at_0027_keeps_every_other_row_and_gets_empty_tables(tmp_path
     assert not set(NEW_TABLES) & set(before)
     assert before["equipment_scenario"] == 1 and before["revision"] == 3
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 31, 32)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == {

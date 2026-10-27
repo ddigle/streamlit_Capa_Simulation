@@ -15,6 +15,8 @@
 - 공용 조회 조건(0019)을 못 읽으면 빈 프로필(= 코드 기본 달)로 계속한다 — 두 화면이 같이 물러선다.
 - 샘플 fleet 세 표(`shortening_frames`)와 계획(`load_official_shortening` — 공식 칸, UPEH 가정 토큰
   `()`).
+- 입력 비가동 대수(`manual_downtime_for` — 가용설비 현황 › Preference, 설비 0032)는 두 화면이 같은
+  값을 계획 키에 싣는다. 못 읽으면 예외를 그대로 올린다 — 빈 값으로 물러서면 가용이 말없이 커진다.
 
 아래로 내려가는 부름은 **모듈 속성으로** 한다(`page_bootstrap.load_page_context()`·
 `simulation_cache.…`·`equipment_cache.…`) — 시험이 모듈 속성을 갈아 끼워 부름을 센다. 공정
@@ -38,6 +40,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 
 __all__ = [
@@ -50,6 +53,7 @@ __all__ = [
     "ShorteningStop",
     "load_official_shortening",
     "load_shortening_demand",
+    "manual_downtime_for",
     "month_options",
     "shortening_filter_profile_or_default",
     "shortening_frames",
@@ -189,15 +193,26 @@ def shortening_frames(
     )
 
 
+def manual_downtime_for(database_path: str | None) -> ManualDowntime:
+    """입력 비가동 대수(공용 프로필). 경로가 없으면(컴포넌트만 띄운 자리) 빈 값이다. 못 읽으면
+    `BOOTSTRAP_ERRORS` 를 그대로 올린다 — 공용 조회 조건과 달리 빈 값으로 물러서지 않는다
+    (가용이 말없이 커진다)."""
+    if database_path is None:
+        return ManualDowntime()
+    return equipment_cache.load_manual_downtime(database_path)
+
+
 def load_official_shortening(
     demand: ShorteningDemand,
     frames: Frames,
     cutoff: pd.DataFrame,
     months: tuple[int, ...],
     today: date,
+    *,
+    manual_downtime: ManualDowntime,
 ) -> simulation_cache.KeyedShorteningPlan:
     """다섯 목표의 공식 계획(UPEH 가정 토큰 `()`)과 그 키. **두 화면의 키를 내는 함수가 이것
-    하나다.**
+    하나다.** `manual_downtime` 은 `manual_downtime_for` 로 읽은 입력 비가동이다(키에 실린다).
 
     설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다.
     """
@@ -210,6 +225,7 @@ def load_official_shortening(
         cutoff=cutoff,
         months=tuple(months),
         today=today,
+        manual_downtime=manual_downtime,
     )
     return simulation_cache.load_required_shortening(
         key, equipment, downtime, baseline, cutoff, required_equipment=demand.loader

@@ -117,6 +117,7 @@ from capa_simulation.persistence.cache import (
 )
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
+    load_manual_downtime,
     load_process_cutoff,
 )
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
@@ -148,6 +149,7 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_topic_particle,
 )
+from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
@@ -356,6 +358,8 @@ equipment_session: EquipmentSession | None = None
 shown_session: EquipmentSession | None = None
 snapshot: EquipmentSnapshot | None = None
 cutoff = pd.DataFrame()
+# 입력 비가동 대수(가용설비 현황 › Preference — 공용, 설비 0032). ②·④ 와 계획 키에 실린다.
+manual_downtime = ManualDowntime()
 equipment_error = ""
 try:
     equipment_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
@@ -368,12 +372,14 @@ try:
         shown_session = equipment_session
     snapshot = shown_session.snapshot
     cutoff = load_process_cutoff(equipment_path)
+    manual_downtime = load_manual_downtime(equipment_path)
     with equipment_notices:
         render_schema_ahead_warning(get_equipment_repository(equipment_path).schema_ahead)
         render_legacy_trace_warning(equipment_session)
 except BOOTSTRAP_ERRORS as exc:
     snapshot = None
     cutoff = pd.DataFrame()
+    manual_downtime = ManualDowntime()
     equipment_error = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
 else:
     if entry.equipment_basis == EQUIPMENT_BASIS_OFFICIAL:
@@ -677,6 +683,7 @@ if (
         cutoff=cutoff,
         months=tuple(months),
         today=today,
+        manual_downtime=manual_downtime,
     )
     official_target_key = required_shortening_target_cache_key(shortening_key, target)
     # UPEH 가정이면 같은 입력에 토큰만 바꾼 키 — 배수는 그 토큰에서만 나오고 가정 칸이 받는다.
@@ -785,6 +792,12 @@ if (
             parts.append(
                 f"오늘이 든 {with_topic_particle(month_label(today_month))} 남은 날만 셉니다"
             )
+        # 입력 비가동(가용설비 현황 › Preference)을 이 공정 가용에서 뺐으면 — 계획이 건 칸으로
+        # 적는다. 줄 자리는 ④ 첫 줄이고, 호기 일정이 없는 공정(④ 가 서지 않음)은 ② 아래 줄이다.
+        manual_note = manual_effect_band(plan.manual_downtime, (process,))
+        if manual_note:
+            manual_place = "④ 첫 줄" if readiness.has_units else "② 아래 줄"
+            parts.append(f"{manual_note} — ② 가용에서 뺐습니다({manual_place})")
         parts.append("단축 결과는 공식 확보율을 바꾸지 않습니다(설비 일정 기준 가용만 바뀜)")
         closing_notices.append(" · ".join(parts))
         export = unit_export_frame(plan, (target,), (process,))

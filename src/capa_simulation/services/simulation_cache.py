@@ -52,6 +52,12 @@ from capa_simulation.services.load_calculator import (
     split_editable_yield_rows,
     yield_to_edit_table,
 )
+from capa_simulation.services.manual_downtime import (
+    ManualDowntime,
+    ManualDowntimeKey,
+    manual_downtime_key,
+    manual_rows_for_process,
+)
 from capa_simulation.services.month_filter import MONTH_COLUMN, filter_month_range
 from capa_simulation.services.monthly_equipment_availability import (
     build_monthly_equipment_availability,
@@ -254,9 +260,10 @@ def frame_digest(frame: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
-# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰).
+# (시나리오 키, 설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 오늘, UPEH 가정 토큰, 입력 비가동
+# 칸).
 RequiredShorteningCacheKey = tuple[
-    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken
+    ScenarioCacheKey, str, str, str, str, tuple[int, ...], str, UpehToken, ManualDowntimeKey
 ]
 
 
@@ -269,6 +276,7 @@ def required_shortening_cache_key(
     cutoff: pd.DataFrame,
     months: tuple[int, ...],
     today: date,
+    manual_downtime: ManualDowntime,
     upeh: UpehToken = NO_ASSUMPTION,
 ) -> RequiredShorteningCacheKey:
     """필요 단축 일정 결과의 키. **소요대수는 해시하지 않고 시나리오 키가 대신한다.**
@@ -278,9 +286,15 @@ def required_shortening_cache_key(
     있어 리비전 번호가 아니라 내용 지문이다. 오늘이 바뀌면 바닥(`max(구간 앞, 오늘)`)이 달라지므로
     날짜도 키에 든다.
 
-    끝 칸은 **UPEH 가정 토큰**(`upeh_assumption.UpehToken`)이다 — 공식 계획은 `()`. 가정의 배수는 늘
-    이 칸에서만 나온다(`required_shortening_plan_demand`). 이 키를 쓰는 CSV·진척 캐시는 키만으로
-    칸이 갈린다.
+    여덟째 칸은 **UPEH 가정 토큰**(`upeh_assumption.UpehToken`)이다 — 공식 계획은 `()`.
+    가정의 배수는 늘 이 칸에서만 나온다(`required_shortening_plan_demand`). 이 키를 쓰는
+    CSV·진척 캐시는 키만으로 칸이 갈린다.
+
+    끝 칸은 **입력 비가동 칸**(가용설비 현황 › Preference, `manual_downtime_key` — 계산할 달로 좁힌
+    0 아닌 칸 그 자체)이다. 계산은 이 칸에서 입력 비가동을 다시 세운다(`_shortening_plan`) —
+    키와 다른 칸이 계산에 들어올 길이 없고, 저장으로 그 달 칸이 바뀌면 새 키다. 프로필 version 은
+    싣지 않는다(조회기간 밖 칸만 바꾼 저장이 계산을 가르지 않게). **필수 인자**다 — 실행 쪽 가용을
+    내는 모든 키가 이 칸을 싣는다(빠뜨리면 mypy 가 잡는다).
     """
     return (
         scenario_key,
@@ -291,15 +305,16 @@ def required_shortening_cache_key(
         tuple(int(month) for month in months),
         today.isoformat(),
         upeh,
+        manual_downtime_key(manual_downtime.rows, months),
     )
 
 
 def with_upeh_token(
     key: RequiredShorteningCacheKey, token: UpehToken
 ) -> RequiredShorteningCacheKey:
-    """같은 입력에 UPEH 가정 토큰만 바꾼 키 — 설비 쪽 네 지문을 다시 내지 않는다."""
-    scenario_key, equipment, downtime, baseline, cutoff, months, today, _ = key
-    return (scenario_key, equipment, downtime, baseline, cutoff, months, today, token)
+    """같은 입력에 UPEH 가정 토큰만 바꾼 키 — 설비 쪽 네 지문·입력 비가동 칸을 다시 내지 않는다."""
+    scenario_key, equipment, downtime, baseline, cutoff, months, today, _, manual = key
+    return (scenario_key, equipment, downtime, baseline, cutoff, months, today, token, manual)
 
 
 def shortening_key_token(key: RequiredShorteningCacheKey) -> UpehToken:
@@ -1842,7 +1857,7 @@ def _shortening_plan(
 ) -> ShorteningPlan:
     """공식·가정 계획 칸이 함께 쓰는 몸통. 소요대수는 **키의 토큰으로** 가정을 건 로더에서
     꺼낸다."""
-    _, equipment_digest, downtime_digest, _, _, months, today, token = cache_key
+    _, equipment_digest, downtime_digest, _, _, months, today, token, manual = cache_key
     demand = assumed_required_equipment(required_equipment, token)()
     span = span_date_range(months, cutoff) if months else None
     spans = (
@@ -1864,6 +1879,7 @@ def _shortening_plan(
         today=date.fromisoformat(today),
         levels=levels,
         spans=spans,
+        manual_downtime=manual,
     )
 
 
@@ -2150,9 +2166,10 @@ def get_monthly_equipment_contributions(
     )
 
 
-# (실제 월별 키, 비가동 비운 반사실 월별 키 — 없으면 None, RQ_EQP_OWN·LENT·AVBL 내용 지문)
+# (실제 월별 키, 비가동 비운 반사실 월별 키 — 없으면 None, RQ_EQP_OWN·LENT·AVBL 내용 지문, 입력
+# 비가동 칸)
 AvailabilitySheetCacheKey = tuple[
-    DynamicMonthlyCacheKey, DynamicMonthlyCacheKey | None, str, str, str
+    DynamicMonthlyCacheKey, DynamicMonthlyCacheKey | None, str, str, str, ManualDowntimeKey
 ]
 
 
@@ -2163,15 +2180,22 @@ def availability_sheet_cache_key(
     static_owned: pd.DataFrame,
     static_lent: pd.DataFrame,
     static_available: pd.DataFrame,
+    manual_downtime: ManualDowntime,
 ) -> AvailabilitySheetCacheKey:
     """`get_availability_sheet` 의 키. 월별 키 둘은 구간·기존보유·Cut-off·달·환산비 지문을 담고,
-    Static 세 표는 공정 × 월이라 작아 내용을 해시한다."""
+    Static 세 표는 공정 × 월이라 작아 내용을 해시한다.
+
+    끝 칸은 **입력 비가동 칸**(가용설비 현황 › Preference, `manual_downtime_key` — 시트의 달로 좁힌
+    0 아닌 칸 그 자체)이다. 시트는 이 칸을 설비 일정 기준 가용에서 뺀다 — 필요 단축 일정 키와 같은
+    칸이라 두 화면의 설비 일정 기준 가용이 같다. **필수 인자**다(빠뜨리면 mypy 가 잡는다).
+    """
     return (
         actual_key,
         free_key,
         frame_digest(static_owned),
         frame_digest(static_lent),
         frame_digest(static_available),
+        manual_downtime_key(manual_downtime.rows, actual_key[3]),
     )
 
 
@@ -2193,9 +2217,10 @@ def get_availability_sheet(
     `_free_spans` 는 같은 마스터·같은 범위에서 비가동만 비운 생애주기 구간이다(키의 반사실 월별
     키를 만든 그 구간 — 페이지는 `get_equipment_lifecycle_spans` 에 빈 비가동으로 받는다). 반사실
     키가 None 이면 보유·대여를 비운 시트다(「가용대수 비교」 그림 — 반사실 구간을 만들지 않는다).
-    프레임은 해시하지 않는다(`_` 인자 — 5만 행 표본 해시 함정).
+    프레임은 해시하지 않는다(`_` 인자 — 5만 행 표본 해시 함정). 입력 비가동은 키의 끝 칸에서 다시
+    세운다 — 키와 다른 칸이 시트에 들어올 길이 없다.
     """
-    actual_key, free_key, _, _, _ = cache_key
+    actual_key, free_key, _, _, _, manual = cache_key
     months = actual_key[3]
     free_monthly = (
         None
@@ -2211,6 +2236,7 @@ def get_availability_sheet(
         _static_lent,
         _static_available,
         months,
+        manual_downtime=manual,
     )
 
 
@@ -2289,8 +2315,22 @@ def get_lifecycle_gantt_spans(
     return _cached_lifecycle_gantt_spans(cache_key, equipment, downtime)
 
 
-# (Static 대비 일정 비교 키, 소요대수를 낸 시나리오 키)
-SecurementCrossCheckCacheKey = tuple[AvailabilityComparisonCacheKey, ScenarioCacheKey]
+# (Static 대비 일정 비교 키, 소요대수를 낸 시나리오 키, 입력 비가동 칸)
+SecurementCrossCheckCacheKey = tuple[
+    AvailabilityComparisonCacheKey, ScenarioCacheKey, ManualDowntimeKey
+]
+
+
+def securement_cross_check_cache_key(
+    comparison_key: AvailabilityComparisonCacheKey,
+    scenario_key: ScenarioCacheKey,
+    *,
+    manual_downtime: ManualDowntime,
+) -> SecurementCrossCheckCacheKey:
+    """`get_securement_cross_check` 의 키. 끝 칸은 입력 비가동 칸(비교의 달로 좁힌 0 아닌 칸 —
+    `manual_downtime_key`)이다 — 교차검증의 설비 일정 기준 가용이 그 칸을 뺀다. **필수 인자**다."""
+    months = comparison_key[0][3]
+    return (comparison_key, scenario_key, manual_downtime_key(manual_downtime.rows, months))
 
 
 class SecurementCrossCheckResult(NamedTuple):
@@ -2305,11 +2345,16 @@ class SecurementCrossCheckResult(NamedTuple):
 
 
 def securement_cross_check_result(
-    static: pd.DataFrame, monthly: pd.DataFrame, required_equipment: pd.DataFrame
+    static: pd.DataFrame,
+    monthly: pd.DataFrame,
+    required_equipment: pd.DataFrame,
+    *,
+    manual_downtime: ManualDowntimeKey,
 ) -> SecurementCrossCheckResult:
     """`cross_check_from_monthly` 를 맞댈 것이 있을 때만 부른다(캐시 없음).
 
     소요대수나 Static 이 비면 맞대지 않는다. 맞대지 못하면(`KeyError`·`ValueError`) 그대로 올라간다.
+    `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key`)이다 — 설비 일정 기준 가용에서 뺀다.
     """
     if required_equipment.empty:
         return SecurementCrossCheckResult(has_demand=False, check=None)
@@ -2317,7 +2362,9 @@ def securement_cross_check_result(
         return SecurementCrossCheckResult(has_demand=True, check=None)
     return SecurementCrossCheckResult(
         has_demand=True,
-        check=cross_check_from_monthly(static, monthly, required_equipment),
+        check=cross_check_from_monthly(
+            static, monthly, required_equipment, manual_downtime=manual_downtime
+        ),
     )
 
 
@@ -2339,9 +2386,12 @@ def get_securement_cross_check(
     **소요대수는 로더로 받아 빗나갈 때만 푼다** — 적중 회차에는 그 프레임을 풀지 않는다. 로더는 키의
     시나리오 키로 소요대수를 꺼내는 것(`scenario_required_equipment`)이어야 한다. 공정 선택·표시명·
     반올림은 캐시 밖이다. 맞대지 못하면(`KeyError`·`ValueError`) 캐시에 남지 않고 그대로 올라간다.
+    입력 비가동은 키의 끝 칸에서 다시 세운다(`securement_cross_check_cache_key`).
     """
-    del cache_key
-    return securement_cross_check_result(_static, _monthly, _required_equipment())
+    _, _, manual = cache_key
+    return securement_cross_check_result(
+        _static, _monthly, _required_equipment(), manual_downtime=manual
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -2615,8 +2665,10 @@ def load_required_shortening_for_target(
     )
 
 
-# (설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 공정)
-ProcessEquipmentTimelineCacheKey = tuple[str, str, str, str, tuple[int, ...], str]
+# (설비 마스터·비가동·기존보유·Cut-off 내용 지문, 달, 공정, 그 공정의 입력 비가동 (달, 대수))
+ProcessEquipmentTimelineCacheKey = tuple[
+    str, str, str, str, tuple[int, ...], str, tuple[tuple[int, float], ...]
+]
 
 
 def process_equipment_timeline_cache_key(
@@ -2627,19 +2679,23 @@ def process_equipment_timeline_cache_key(
     cutoff: pd.DataFrame,
     months: Sequence[int],
     process: str,
+    manual_downtime: ManualDowntime,
 ) -> ProcessEquipmentTimelineCacheKey:
     """`get_process_equipment_timeline` 의 키. 네 표는 거르기 전 그대로의 내용 지문이다.
 
     **오늘은 넣지 않는다** — 구간·호기별 기여는 오늘을 보지 않는다. 필요 단축 일정 키를 이미
     만들었으면 `process_timeline_key_from_shortening` 이 지문을 다시 계산하지 않고 같은 키를 낸다.
+    끝 칸은 그 공정의 입력 비가동(달로 좁힌 칸) — ② 전월 대비가 그 칸을 뺀다.
     """
+    ordered = tuple(sorted({int(month) for month in months}))
     return (
         frame_digest(equipment),
         frame_digest(downtime),
         frame_digest(baseline),
         frame_digest(cutoff),
-        tuple(sorted({int(month) for month in months})),
+        ordered,
         str(process).strip(),
+        manual_rows_for_process(manual_downtime_key(manual_downtime.rows, ordered), process),
     )
 
 
@@ -2647,8 +2703,9 @@ def process_timeline_key_from_shortening(
     shortening_key: RequiredShorteningCacheKey, process: str
 ) -> ProcessEquipmentTimelineCacheKey:
     """필요 단축 일정 키의 네 지문·달로 설비 일정 키를 낸다(같은 입력이면 위 함수와 같은 키)."""
-    # 오늘·UPEH 가정 토큰은 넣지 않는다 — 설비 일정은 수요와 오늘을 보지 않는다.
-    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _, _ = (
+    # 오늘·UPEH 가정 토큰은 넣지 않는다 — 설비 일정은 수요와 오늘을 보지 않는다. 입력 비가동은 그
+    # 공정 칸만 싣는다.
+    _, equipment_digest, downtime_digest, baseline_digest, cutoff_digest, months, _, _, manual = (
         shortening_key
     )
     return (
@@ -2658,6 +2715,7 @@ def process_timeline_key_from_shortening(
         cutoff_digest,
         tuple(sorted({int(month) for month in months})),
         str(process).strip(),
+        manual_rows_for_process(manual, process),
     )
 
 
@@ -2678,7 +2736,13 @@ def get_process_equipment_timeline(
     공정 하나·그 공정 축만큼이라 작다. 단축 계획(오늘이 드는 것)은 따로 받아 `unit_events` 로
     겹친다. 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다(캐시에 남지 않는다).
     """
-    *_, months, process = cache_key
+    *_, months, process, manual = cache_key
     return build_process_equipment_timeline(
-        _equipment, _downtime, _baseline, _cutoff, process=process, months=months
+        _equipment,
+        _downtime,
+        _baseline,
+        _cutoff,
+        process=process,
+        months=months,
+        manual_downtime=manual,
     )

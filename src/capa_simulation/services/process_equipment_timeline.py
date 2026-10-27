@@ -43,6 +43,11 @@
 없으면 호기의 가용은 반입·Qual 로 한 번 늘고 정지·반출/이설로 한 번 줄 뿐이라 갈림이 깨끗하다. 한
 호기가 앞 달에 늘고 이번 달에 나가면 그 호기의 몫은 순증감 한쪽에 든다.
 
+**입력 비가동 대수**(가용설비 현황 › Preference — 공정 × 생산월, 2026-10-27 사용자 결정)는 호기별
+비가동과 별도 손실이라 그 달 가용(`기존보유 + 호기 가용`)에서 더 뺀다 — 뺄 몫은
+`manual_downtime.clamp_manual_units`(그 달 가용에서 멈춘다)로 필요 단축 일정 계획과 같은 값이다.
+그 증감도 `비가동` 에 든다(`입력 비가동 반영` 칸이 그 가운데 입력 몫이다).
+
 ## Dynamic 판정
 
 설비 일정 구획은 저장본 → 공정 이름(설비 마스터 `공정소분류`·기존보유 `공정` 이 시뮬레이션
@@ -86,6 +91,7 @@ from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
 )
+from capa_simulation.services.manual_downtime import clamp_manual_units
 from capa_simulation.services.monthly_equipment_availability import (
     BASELINE_CATEGORY,
     build_monthly_equipment_contributions,
@@ -281,11 +287,17 @@ BRIDGE_COLUMNS = (
     "신규",
     "비가동",
     "반출이설",
+    "입력 비가동",
+    "입력 비가동 반영",
+    "입력 비가동 증감",
 )
 """② 전월 대비(`availability_bridge`). 환산대수다. 첫 달의 증감 칸은 NaN 이다.
 
-`가용대수 = 기존보유 + 호기 가용` 은 필요 단축 일정 계획의 `가용대수`(같은 공정·달)와 같고,
-`전월대비 = 신규 + 비가동 + 반출이설` 이다. `비가동` 은 손실이 줄면 + 다.
+`가용대수 = 기존보유 + 호기 가용 − 입력 비가동 반영` 은 필요 단축 일정 계획의 `가용대수`(같은
+공정·달)와 같고, `전월대비 = 신규 + 비가동 + 반출이설` 이다. `비가동` 은 손실이 줄면 + 다 — 호기별
+비가동 손실의 증감과 입력 비가동 반영의 증감(`입력 비가동 증감`, 그 가운데 입력 몫)을 더한 값이다.
+`입력 비가동` 은 그 달에 넣은 대수(0 = 없음), `입력 비가동 반영` 은 가용에서 실제로 뺀 몫(그
+달 가용에서 멈춘다 — 입력보다 작으면 넘친 것이다)이다.
 """
 
 ARROW_COLUMNS = (
@@ -513,6 +525,7 @@ def build_process_equipment_timeline(
     *,
     process: str,
     months: Sequence[int],
+    manual_downtime: Sequence[tuple[int, float]] = (),
 ) -> ProcessEquipmentTimeline:
     """공정 하나의 신규 호기·호기별 손실·전월 대비·비가동 화살표를 한 번에 만든다.
 
@@ -520,6 +533,9 @@ def build_process_equipment_timeline(
     모듈 묶음은 검증이 같은 공정으로 막아 두어 거르기가 묶음을 쪼개지 않는다. 비가동은 **거르기 전**
     마스터로 검증한다(필요 단축 일정과 같은 오류에서 멈춘다). 구간은 그 공정 축의 W/D 구간만큼
     만들고 공용 구간 캐시를 쓰지 않는다.
+
+    `manual_downtime` 은 그 공정의 입력 비가동 `(YYYYMM, 대수)` 다(`manual_rows_for_process`) — 전월
+    대비(`bridge`)에만 든다. 비면 전과 같다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
     name = str(process).strip()
@@ -582,7 +598,7 @@ def build_process_equipment_timeline(
         cutoff_days=days,
         new_units=new_units,
         unit_months=unit_months,
-        bridge=availability_bridge(actual, free, ordered),
+        bridge=availability_bridge(actual, free, ordered, manual_downtime=manual_downtime),
         arrows=arrows,
         baseline_units=float(
             pd.to_numeric(own_baseline.get("기존보유대수", pd.Series(dtype="float64"))).sum()
@@ -1140,31 +1156,46 @@ def _available_units(contributions: pd.DataFrame) -> pd.DataFrame:
 
 
 def availability_bridge(
-    actual: pd.DataFrame, counterfactual: pd.DataFrame, months: Sequence[int]
+    actual: pd.DataFrame,
+    counterfactual: pd.DataFrame,
+    months: Sequence[int],
+    *,
+    manual_downtime: Sequence[tuple[int, float]] = (),
 ) -> pd.DataFrame:
     """달마다 가용대수와 전월 대비 갈림(`BRIDGE_COLUMNS`).
 
     `actual`·`counterfactual` 은 `downtime_loss` 와 같은 두 기여 표다. 반사실의 호기별 증감이 + 면
-    신규, - 면 반출이설이고, 손실 합의 증감에 - 를 붙인 것이 비가동이다.
+    신규, - 면 반출이설이고, 손실 합의 증감에 - 를 붙인 것이 비가동이다. `manual_downtime` 은 그
+    공정의 입력 비가동 `(YYYYMM, 대수)` 다 — 그 달 가용에서 더 빼고(`clamp_manual_units`) 그 증감도
+    비가동에 넣는다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
     baseline = _baseline_by_month(actual)
     real = _units_by_month(actual)
     free = _units_by_month(counterfactual)
     units = sorted({unit for unit, _ in real} | {unit for unit, _ in free})
+    entered: dict[int, float] = {}
+    for month, value in manual_downtime:
+        entered[int(month)] = entered.get(int(month), 0.0) + float(value)
+    applied: dict[int, float] = {}
     rows: list[dict[str, object]] = []
     for index, month in enumerate(ordered):
         held = baseline.get(month, 0.0)
         own = sum(real.get((unit, month), 0.0) for unit in units)
+        removed, _ = clamp_manual_units(entered.get(month, 0.0), _tidy(held + own))
+        applied[month] = removed
         row: dict[str, object] = {
             "생산계획년월": month,
             "기존보유": held,
             "호기 가용": _tidy(own),
-            "가용대수": _tidy(held + own),
+            "가용대수": _tidy(held + own - removed),
             "전월대비": math.nan,
             "신규": math.nan,
             "비가동": math.nan,
             "반출이설": math.nan,
+            "입력 비가동": float(entered.get(month, 0.0)),
+            "입력 비가동 반영": removed,
+            "입력 비가동 증감": math.nan,
         }
         if index:
             previous = ordered[index - 1]
@@ -1180,15 +1211,19 @@ def availability_bridge(
                     lost += change
                 loss_now += free.get((unit, month), 0.0) - real.get((unit, month), 0.0)
                 loss_before += free.get((unit, previous), 0.0) - real.get((unit, previous), 0.0)
-            before_total = baseline.get(previous, 0.0) + sum(
-                real.get((unit, previous), 0.0) for unit in units
+            before_total = (
+                baseline.get(previous, 0.0)
+                + sum(real.get((unit, previous), 0.0) for unit in units)
+                - applied[previous]
             )
+            manual_change = applied[previous] - removed
             row.update(
                 {
-                    "전월대비": _tidy(held + own - before_total),
+                    "전월대비": _tidy(held + own - removed - before_total),
                     "신규": _tidy(gained),
-                    "비가동": _tidy(loss_before - loss_now),
+                    "비가동": _tidy(loss_before - loss_now + manual_change),
                     "반출이설": _tidy(lost),
+                    "입력 비가동 증감": _tidy(manual_change),
                 }
             )
         rows.append(row)
