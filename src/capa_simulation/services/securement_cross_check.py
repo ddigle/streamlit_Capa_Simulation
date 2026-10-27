@@ -45,11 +45,12 @@ Dynamic 은 Cut-off 원장에 적힌 공정만 덮는다. 나머지 공정은 `�
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 
 import pandas as pd
 
+from capa_simulation.services.manual_downtime import ManualRow, apply_manual_downtime
 from capa_simulation.services.monthly_equipment_availability import available_subtotal
 from capa_simulation.services.securement_rate import calculate_securement_rate
 
@@ -127,16 +128,22 @@ def cross_check_from_monthly(
     static_available: pd.DataFrame,
     monthly: pd.DataFrame,
     required_equipment: pd.DataFrame,
+    *,
+    manual_downtime: Sequence[ManualRow] = (),
 ) -> CrossCheck:
     """월별 Dynamic 분해(`build_monthly_equipment_availability`)로 맞댄다 — 화면이 부르는 길.
 
     분자는 환산 축 가용 소계(`dynamic_available_equipment`)이고, 덮는 달·공정은 분류와 상관없이 월별
     프레임의 행으로 정한다(`dynamic_coverage`). 그래서 Dynamic 공정의 가용 소계가 없는 달은 0 이다.
+    `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key` — 계산할 달로 좁힌 0 아닌 칸)이다 —
+    분자에서 더 뺀다(`apply_manual_downtime`, 그 달 가용에서 멈춤). 필요 단축 일정 계획·비교 시트의
+    설비 일정 기준 가용과 같은 값이다. 비면 전과 같다.
     """
     months, processes = dynamic_coverage(monthly)
+    dynamic, _ = apply_manual_downtime(dynamic_available_equipment(monthly), tuple(manual_downtime))
     return build_securement_cross_check(
         static_available,
-        dynamic_available_equipment(monthly),
+        dynamic,
         required_equipment,
         dynamic_months=months,
         dynamic_processes=processes,

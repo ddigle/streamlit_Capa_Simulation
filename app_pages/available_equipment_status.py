@@ -1,4 +1,4 @@
-# Purpose: 가용설비 현황 세 탭(설비 마스터·Summary·Preference)과 설정·CSV 팝업을 잇는다.
+# Purpose: 가용설비 현황 탭(마스터·Summary·Preference)과 설정·엑셀·CSV 팝업을 잇고 데모 경계를 둔다.
 
 """가용설비 현황 — 탭 셋(2026-10-24 사용자 결정 — 두 탭 개편, 2026-10-27 셋째 탭 「Preference」).
 
@@ -13,9 +13,10 @@
   열렸을 때만 돈다(`NestedTab`) — ① 을 보는 회차에 Main 탐색·Static 대비 일정 계산이 돌지 않는다.
 - ③ **Preference** — 공정 × 생산월 **입력 비가동 대수**(`components/manual_downtime_tab.py`, 설비
   0032 공용 프로필). 행은 저장본의 공정, 열은 사이드바 조회기간의 달이다(조회기간 줄만 선다 —
-  `navigation` 의 `period_labels`). 넣은 대수는 실행 관리 쪽 설비 일정 기준 가용에서 빠진다
-  (공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·Space 필요 단축). 이 화면의 Summary 는 호기 일정
-  그대로다. 폼은 숨은 회차에도 그린다(적은 칸을 지킨다) — 코드 차례는 Summary 뒤·설비 마스터
+  `navigation` 의 `period_labels`). 넣은 대수는 설비 일정 기준 가용에서 빠진다(공정 Capa 상세·
+  필요 단축 일정·제약 시뮬레이션·Space 필요 단축, 이 화면 Summary › Static 대비 일정의 설비 일정
+  기준 가용·그림·확보율 교차검증). Main 은 호기 상태라 그대로다. 폼은 숨은 회차에도 그린다(적은
+  칸을 지킨다) — 코드 차례는 Summary 뒤·설비 마스터
   앞이다(설비 마스터의 작은 편집표 `st.rerun()` 이 이 폼을 건너뛰지 않게). 가정 설비 시나리오에서는
   잠근다(Cut-off 와 같은 E3).
 - 머리 끝 「설정」 단추 → 공정별 Cut-off 팝업(`equipment_settings_dialog`), 탭 ① 「엑셀·CSV로
@@ -109,6 +110,7 @@ from capa_simulation.page_bootstrap import (
 from capa_simulation.persistence.equipment_cache import (
     get_equipment_repository,
     load_floor_layout_canvases,
+    load_manual_downtime,
     load_process_cutoff,
 )
 from capa_simulation.services.equipment_contract import (
@@ -119,7 +121,7 @@ from capa_simulation.services.equipment_samples import (
     sample_equipment_baseline,
     sample_equipment_master,
 )
-from capa_simulation.services.manual_downtime import period_months
+from capa_simulation.services.manual_downtime import ManualDowntime, period_months
 from capa_simulation.services.monthly_equipment_availability import processes_in, span_date_range
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
@@ -382,6 +384,18 @@ with gap_tab:
         # 저장하면 그 캐시를 비우고 앱 전체를 다시 돌린다). 저장되지 않은 팝업 표 편집으로 숫자를
         # 내지 않는다.
         stored_cutoff = load_process_cutoff(equipment_database_path)
+        # 입력 비가동 대수(③ Preference — 공용 프로필)도 캐시 경계에서 읽는다. 설비 일정 기준
+        # 가용에서 빼므로(필요 단축 일정·공정 Capa 상세와 같은 가용) 못 읽으면 빈 값으로 물러서지
+        # 않는다 — 가용이 말없이 커진다. 패널 대신 까닭을 알린다.
+        manual_downtime_error: str | None = None
+        gap_manual_downtime: ManualDowntime | None
+        try:
+            gap_manual_downtime = load_manual_downtime(equipment_database_path)
+        except BOOTSTRAP_ERRORS as exc:
+            gap_manual_downtime = None
+            manual_downtime_error = bootstrap_error_message(
+                exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)
+            )
         # **Static 은 시뮬레이션 DB 에 있다.** 이 페이지의 나머지 탭은 설비 DB 만 열고 활성
         # 시나리오가 없어도 열린다. 그래서 여기서만 예외를 잡아 이 탭 안에서 알리고, 다른
         # 탭을 막지 않는다 — 페이지가 통째로 죽으면 Cut-off 를 적으러 들어올 수도 없다.
@@ -443,6 +457,10 @@ with gap_tab:
         span_start = min(start_date, required_span[0]) if required_span else start_date
         span_end = max(end_date, required_span[1]) if required_span else end_date
         try:
+            if gap_manual_downtime is None:
+                # 입력 비가동을 못 읽은 회차 — 패널을 세우지 않고 이 탭 안에서만 알린다(다른 탭·폼은
+                # 그대로 그린다 — `st.stop()` 을 쓰지 않는다).
+                raise ValueError(f"입력 비가동 대수를 읽지 못했습니다 — {manual_downtime_error}")
             # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다. 보기·위젯을
             # 바꾸는 rerun 마다 다시 만들지 않도록 마스터·비가동 내용 지문과 범위로 캐시한다 —
             # 필요 단축 일정 화면과 같은 캐시라 범위가 같으면 한 벌을 나눈다.
@@ -507,6 +525,7 @@ with gap_tab:
                 process_labels=process_labels,
                 downtime=dashboard_downtime,
                 counterfactual_spans=gap_counterfactual_spans,
+                manual_downtime=gap_manual_downtime,
             )
 
 

@@ -54,6 +54,7 @@ def _panel_app() -> None:
 
     from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
     from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.services.manual_downtime import ManualDowntime
     from capa_simulation.services.process_cutoff import prepare_process_cutoff
     from capa_simulation.services.simulation_cache import frame_digest
 
@@ -262,6 +263,8 @@ def _panel_app() -> None:
         units=units,
         process_labels=labels,
         counterfactual_spans=counterfactual,
+        # `manual_rows` 는 입력 비가동 칸((공정, 달, 대수) — Preference 공용 프로필)이다.
+        manual_downtime=ManualDowntime(rows=tuple(st.session_state.get("manual_rows", ()))),
     )
 
 

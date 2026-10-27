@@ -268,7 +268,10 @@ LEDGER: dict[tuple[str, str, str], str] = {
         "delete_shortening_baseline",
     ): STATE_CHANGE,
     (f"{_PARTS}/space_floor_list.py", "_write", "save_floor_states"): VERSION_CHECK,
-    (f"{_PARTS}/manual_downtime_tab.py", "_render_editor", "save_manual_downtime"): VERSION_CHECK,
+    # 편집 시작 version 대조 위에, 같은 입력의 꼬리 누름(첫 저장 뒤 새로 그린 표에서 온 둘째
+    # 누름 — 저장소는 바뀐 것이 없다고 돌려준다)은 `save_once` 가 첫 결과로 성공을 다시
+    # 알린다(2026-10-27 리뷰).
+    (f"{_PARTS}/manual_downtime_tab.py", "_render_editor", "save_manual_downtime"): START_POINT,
 }
 
 

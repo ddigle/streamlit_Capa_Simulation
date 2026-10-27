@@ -408,8 +408,8 @@ EQUIPMENT_SUMMARY_TABS: Final = ("Main", GAP_TAB)
 # 개편 전 바깥 탭 이름 — 화면에 남았는지 센다(「Preference」 는 셋째 탭으로 다시 섰다 — 세지
 # 않는다).
 EQUIPMENT_OLD_TABS: Final = ("RawData", "Qual 마감 계산기", "설비 시나리오")
-# 가용설비 현황 ③ Preference 의 입력 비가동 편집표(`manual_downtime_tab` — `st.data_editor` key)와
-# 그 폼 저장 단추 글. 저장은 누르지 않는다(DB 에 쓰지 않는다).
+# 가용설비 현황 ③ Preference 의 입력 비가동 편집표를 감싼 상자 key(`manual_downtime_tab` — 편집표
+# 위젯 key 는 출발 version 을 든다)와 그 폼 저장 단추 글. 저장은 누르지 않는다(DB 에 쓰지 않는다).
 MANUAL_DOWNTIME_EDITOR_KEY: Final = "equipment_manual_downtime_editor"
 MANUAL_DOWNTIME_SAVE_BUTTON: Final = "입력 비가동 저장"
 MANUAL_DOWNTIME_PROCESS_HEADER: Final = "공정"

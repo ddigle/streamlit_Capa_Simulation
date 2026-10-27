@@ -41,6 +41,7 @@ def _filter_app() -> None:
     import streamlit as st
 
     from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
+    from capa_simulation.services.manual_downtime import ManualDowntime
     from capa_simulation.services.process_cutoff import prepare_process_cutoff
 
     # `line_a` 는 첫 라인 이름을 갈아 낀다 — 물결표 이름 시험용.
@@ -80,6 +81,7 @@ def _filter_app() -> None:
         owner_tab=SimpleNamespace(open=True),
         conditions=st.sidebar.container(),
         units=units,
+        manual_downtime=ManualDowntime(rows=tuple(st.session_state.get("manual_rows", ()))),
     )
 
 

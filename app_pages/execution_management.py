@@ -40,7 +40,7 @@ SUBPAGE_SUMMARIES: dict[str, str] = {
         "공정 하나에 미래 제약이 생기면 — 제약 제품 먼저, 기존 제품 확보율 영향과 개조 비가동"
     ),
     "app_pages/available_equipment_status.py": (
-        "설비 마스터 편집 · 설비 일정 기준 가용대수 · Static 대비 일정"
+        "설비 마스터 편집 · 설비 일정 기준 가용대수 · Static 대비 일정 · 입력 비가동(Preference)"
     ),
     "app_pages/space_status.py": "셋업 이행을 공간·호기로 — 반입 전·지연·미확인 표식",
     "app_pages/actual_efficiency.py": "효율 기준 대비 실적 Gap 과 개선 우선순위",

@@ -730,7 +730,9 @@ def test_cached_cross_check_follows_every_input(
         scenario_key: simulation_cache.ScenarioCacheKey,
     ) -> tuple[simulation_cache.SecurementCrossCheckCacheKey, CrossCheck, CrossCheck]:
         comparison_key, monthly, _ = _comparison(spans, baseline, cutoff, static, months, ratios)
-        key = (comparison_key, scenario_key)
+        key = simulation_cache.securement_cross_check_cache_key(
+            comparison_key, scenario_key, manual_downtime=ManualDowntime()
+        )
 
         def load() -> pd.DataFrame:
             loaded.append(scenario_key)
@@ -828,6 +830,7 @@ def _sheet(
         static_owned=owned,
         static_lent=lent,
         static_available=available,
+        manual_downtime=ManualDowntime(),
     )
     cached = simulation_cache.get_availability_sheet(
         key,
@@ -920,7 +923,7 @@ def test_a_sheet_without_a_counterfactual_is_its_own_entry() -> None:
     _, spans = _cached_spans(equipment, downtime, start, end)
     ratios = _ratios(equipment)
     _, monthly, _ = _comparison(spans, baseline, cutoff, available, MONTHS, ratios)
-    bare_key = (key[0], None, key[2], key[3], key[4])
+    bare_key = (key[0], None, key[2], key[3], key[4], key[5])
     bare = simulation_cache.get_availability_sheet(
         bare_key,
         _actual_monthly=monthly,

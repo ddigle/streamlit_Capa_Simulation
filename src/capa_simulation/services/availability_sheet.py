@@ -24,6 +24,12 @@
 - **대여(비가동)** = 가용 − 보유 ≤ 0. 행끼리 `보유 + 대여 = 가용` 이 부동소수 오차 안에서 선다. 셋업
   중·보관 호기에 걸린 비가동은 가용을 깎지 않았으므로 들지 않는다 — 호기 상태 분류의 `운영 비가동`
   과 다를 수 있는 까닭이다(공정 Capa 상세 ④ 의 흐린 화살표와 같은 뜻).
+- **입력 비가동**(가용설비 현황 › Preference — 공정 × 생산월 대수, `services/manual_downtime.py`)은
+  호기별 비가동과 별도 손실이라 가용에서 더 뺀다(`manual_downtime` 인자 — 계산할 달로 좁힌 칸).
+  뺄 몫은 그 (달, 공정) 가용 환산 소계에서 멈추고(`clamp_manual_units` — 필요 단축 일정 계획·공정
+  Capa 상세 ② 와 같은 규칙), 보유는 그대로라 그 몫이 대여(비가동)에 든다. 넣은 값·뺀 몫은
+  `입력 비가동`·`입력 비가동 반영` 칸이고 근거 카드가 한 줄(`manual_downtime_lines`)로 보인다.
+  호기 필터 시트(기존보유처럼 공정 단위라 들지 않는다)·Static 은 그대로다.
 
 세 행 모두 **환산 축**이다. GAP 도 설비 일정 기준(환산) − Static(대수)으로 맞댄다 — 확보율
 교차검증이 이미 두 값을 같은 확보율의 분자로 맞대므로 같은 잣대다(대수 축은 「호기 목록」의 `대수`
@@ -56,6 +62,11 @@ from typing import Final, cast
 import pandas as pd
 
 from capa_simulation.services.equipment_contract import EQUIPMENT_ID_COLUMN
+from capa_simulation.services.manual_downtime import (
+    ManualRow,
+    clamp_manual_units,
+    manual_units_text,
+)
 from capa_simulation.services.monthly_equipment_availability import (
     BASELINE_CATEGORY,
     available_subtotal,
@@ -74,7 +85,10 @@ __all__ = [
     "GROUP_SCHEDULE",
     "GROUP_STATIC",
     "KIND_BASELINE_LINE",
+    "KIND_MANUAL_LINE",
     "KIND_UNIT_LINE",
+    "MANUAL_APPLIED_COLUMN",
+    "MANUAL_ENTERED_COLUMN",
     "MISMATCH_COLUMN",
     "REASON_NO_DYNAMIC_MONTH",
     "REASON_NO_DYNAMIC_PROCESS",
@@ -100,6 +114,7 @@ __all__ = [
     "SheetView",
     "build_availability_sheet",
     "downtime_without_loss",
+    "manual_downtime_lines",
     "sheet_view",
     "unit_availability_breakdown",
 ]
@@ -151,6 +166,11 @@ ROW_ITEMS: Final[Mapping[str, str]] = {
 # 시트 프레임의 값 칸(월·공정 한 줄). GAP 은 범위를 정한 뒤(`sheet_view`) 뺀다.
 BASELINE_COLUMN: Final = BASELINE_CATEGORY.name
 MISMATCH_COLUMN: Final = "Static 불일치"
+# 입력 비가동 — 그 (달, 공정)에 넣은 대수와 가용에서 실제로 뺀 몫(그 달 가용에서 멈춘다). 공정 Capa
+# 상세 ② 전월 대비(`process_equipment_timeline.BRIDGE_COLUMNS`)와 같은 이름이다.
+MANUAL_ENTERED_COLUMN: Final = "입력 비가동"
+MANUAL_APPLIED_COLUMN: Final = "입력 비가동 반영"
+_MANUAL_COLUMNS: Final = (MANUAL_ENTERED_COLUMN, MANUAL_APPLIED_COLUMN)
 _VALUE_COLUMNS: Final = (*STATIC_ROWS, *SCHEDULE_ROWS)
 
 # ------------------------------------------------------------------ 「—」 까닭
@@ -164,6 +184,8 @@ REASON_STATIC_UNREADABLE: Final = "static_unreadable"
 # ------------------------------------------------------------------ 호기 분해
 KIND_BASELINE_LINE: Final = "기존보유"
 KIND_UNIT_LINE: Final = "호기"
+# 근거 카드의 입력 비가동 줄(공정마다 하나 — 호기에 잇지 않은 손실).
+KIND_MANUAL_LINE: Final = "입력 비가동"
 BREAKDOWN_LENT_COLUMN: Final = "대여 (비가동)"
 BREAKDOWN_COLUMNS: Final = (
     MONTH,
@@ -234,6 +256,17 @@ class SheetView:
     baseline: pd.Series = field(default_factory=lambda: pd.Series(dtype="float64"))
     """달 → 기존보유(설비 일정 기준 가용 안의 몫). 설비 일정 기준이 「—」 인 달은 NaN."""
 
+    manual: pd.Series = field(default_factory=lambda: pd.Series(dtype="float64"))
+    """달 → 가용에서 뺀 입력 비가동(설비 일정 기준 대여 안의 몫, ≥ 0). 설비 일정 기준이 「—」 인
+    달은 NaN, 입력이 없으면 0."""
+
+    manual_entered: pd.Series = field(default_factory=lambda: pd.Series(dtype="float64"))
+    """달 → 넣은 입력 비가동(뺀 몫보다 크면 그 달 가용에서 멈춘 것이다). `manual` 과 같은 「—」."""
+
+    def manual_at(self, month: int) -> tuple[float, float]:
+        """그 달 (뺀 몫, 넣은 값). 「—」 이거나 없으면 (0, 0)."""
+        return _finite(self.manual.get(month)), _finite(self.manual_entered.get(month))
+
     def value(self, row: str, month: int) -> float | None:
         """그 칸의 값. 「—」 면 None."""
         number = float(cast(float, self.values.at[row, month]))
@@ -253,6 +286,8 @@ def build_availability_sheet(
     static_lent: pd.DataFrame | None,
     static_available: pd.DataFrame | None,
     months: Sequence[int],
+    *,
+    manual_downtime: Sequence[ManualRow] = (),
 ) -> AvailabilitySheet:
     """월 × 공정 시트 프레임.
 
@@ -262,6 +297,10 @@ def build_availability_sheet(
     `RQ_EQP_OWN`(`설비보유`)·`RQ_EQP_LENT`(`설비대여평가`)·`RQ_EQP_AVBL`(`가용대수`)의 컬럼
     그대로다. 표마다 빈 칸은 0 이고, Static 쪽 공정 집합은 `RQ_EQP_AVBL` 로
     정한다(`availability_gap` 과 같은 `dynamic_only`·`static_only`).
+
+    `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key` — 계산할 달로 좁힌 0 아닌 칸)이다. 그
+    (달, 공정)의 가용 환산 소계에서 멈추게 빼고(모듈 docstring), 시트 밖 공정·달의 칸은 보지 않는다.
+    비면 전과 같은 시트다.
     """
     wanted = [int(month) for month in dict.fromkeys(months)]
     owned = _normalized(static_owned, "설비보유", wanted)
@@ -285,7 +324,11 @@ def build_availability_sheet(
     frame[ROW_STATIC_OWNED] = _aligned(owned, index)
     frame[ROW_STATIC_LENT] = -_aligned(lent, index)
     frame[ROW_STATIC_AVAILABLE] = _aligned(available, index)
-    frame[ROW_SCHEDULE_AVAILABLE] = _aligned(subtotal, index)
+    schedule_available = _aligned(subtotal, index)
+    entered, applied = _manual_cells(manual_downtime, schedule_available)
+    frame[MANUAL_ENTERED_COLUMN] = entered
+    frame[MANUAL_APPLIED_COLUMN] = applied
+    frame[ROW_SCHEDULE_AVAILABLE] = schedule_available - applied + 0.0
     if free_monthly is not None:
         free = _in_months(free_monthly, wanted)
         free_available = _category_sum(free, _AVAILABLE_CATEGORY)
@@ -314,7 +357,9 @@ def build_availability_sheet(
         else set()
     )
     return AvailabilitySheet(
-        rows=rows.loc[:, [*_KEYS, BASELINE_COLUMN, *_VALUE_COLUMNS, MISMATCH_COLUMN]],
+        rows=rows.loc[
+            :, [*_KEYS, BASELINE_COLUMN, *_VALUE_COLUMNS, *_MANUAL_COLUMNS, MISMATCH_COLUMN]
+        ],
         months=tuple(wanted),
         dynamic_processes=tuple(sorted(dynamic_processes)),
         static_processes=tuple(sorted(static_processes)),
@@ -339,7 +384,7 @@ def sheet_view(
     months = sheet.months
     scope = {str(name) for name in processes}
     scoped = sheet.rows.loc[sheet.rows["공정"].astype(str).isin(scope)]
-    columns = [BASELINE_COLUMN, *_VALUE_COLUMNS]
+    columns = [BASELINE_COLUMN, *_VALUE_COLUMNS, *_MANUAL_COLUMNS]
     sums = (
         scoped.groupby(MONTH)[columns].sum(min_count=1).reindex(list(months))
         if not scoped.empty
@@ -357,6 +402,8 @@ def sheet_view(
     )
     reasons: dict[tuple[str, int], str] = {}
     baseline = pd.Series(float("nan"), index=list(months), dtype="float64")
+    manual = pd.Series(float("nan"), index=list(months), dtype="float64")
+    manual_entered = pd.Series(float("nan"), index=list(months), dtype="float64")
     mismatch: set[int] = set()
     flagged = (
         set(scoped.loc[scoped[MISMATCH_COLUMN], MONTH].astype(int)) if not scoped.empty else set()
@@ -381,6 +428,8 @@ def sheet_view(
                 cells[row] = _number(record[row])
         if schedule_reason is None:
             baseline[month] = _number(record[BASELINE_COLUMN])
+            manual[month] = _number(record[MANUAL_APPLIED_COLUMN])
+            manual_entered[month] = _number(record[MANUAL_ENTERED_COLUMN])
         for row in STATIC_ROWS:
             if static_reason is None:
                 cells[row] = _number(record[row])
@@ -408,6 +457,8 @@ def sheet_view(
         reasons=reasons,
         mismatch=frozenset(mismatch),
         baseline=baseline,
+        manual=manual,
+        manual_entered=manual_entered,
     )
 
 
@@ -476,6 +527,29 @@ def _number(value: object) -> float:
     """범위의 합 한 칸. 범위에 줄이 없으면(NaN) 0 이다."""
     number = float(value)  # type: ignore[arg-type]
     return 0.0 if number != number else number
+
+
+def _finite(value: object) -> float:
+    """없는 값·NaN 은 0 이다(`SheetView.manual_at`)."""
+    return 0.0 if value is None else _number(value)
+
+
+def _manual_cells(rows: Sequence[ManualRow], available: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """시트 줄 차례의 (넣은 입력 비가동, 가용에서 뺀 몫). 시트 밖 (달, 공정)의 칸은 보지 않는다.
+
+    뺄 몫은 그 줄의 가용 환산 소계(`available`)에서 멈춘다(`clamp_manual_units`) — 설비 일정 기준
+    자료가 없는 공정·달은 가용이 0 이라 뺄 몫도 0 이다.
+    """
+    entered = pd.Series(0.0, index=available.index, dtype="float64")
+    applied = pd.Series(0.0, index=available.index, dtype="float64")
+    for process, month, units in rows:
+        key = (int(month), str(process).strip())
+        if key not in available.index:
+            continue
+        removed, _ = clamp_manual_units(float(units), float(available.loc[key]))
+        entered.loc[key] = float(units)
+        applied.loc[key] = removed
+    return entered, applied
 
 
 # ================================================================== 호기 분해
@@ -575,6 +649,53 @@ def unit_availability_breakdown(
         [MONTH, "공정", "_order", EQUIPMENT_ID_COLUMN], kind="stable", na_position="first"
     )
     return result.drop(columns="_order").loc[:, list(BREAKDOWN_COLUMNS)].reset_index(drop=True)
+
+
+def manual_downtime_lines(
+    sheet: AvailabilitySheet, month: int, processes: Collection[str]
+) -> pd.DataFrame:
+    """근거 카드의 입력 비가동 줄 — 그 달 `processes` 가운데 가용에서 뺀 몫이 있는 공정마다 한 줄.
+
+    호기 분해(`unit_availability_breakdown`)와 같은 칸(`BREAKDOWN_COLUMNS`)이다 — 보유 0,
+    대여·가용 = −뺀 몫이라 호기 줄과 함께 더하면 시트의 대여(비가동)·가용 칸이다. `비가동 내역` 은
+    넣은 값이고, 그 달 가용에서 멈췄으면 그렇다고 적는다.
+    """
+    rows = sheet.rows
+    wanted = {str(name) for name in processes}
+    chosen = rows.loc[
+        rows[MONTH].eq(int(month))
+        & rows["공정"].astype(str).isin(wanted)
+        & rows[MANUAL_APPLIED_COLUMN].gt(0)
+    ]
+    if chosen.empty:
+        return _empty_breakdown()
+    applied = chosen[MANUAL_APPLIED_COLUMN].astype("float64").to_numpy()
+    entered = [float(value) for value in chosen[MANUAL_ENTERED_COLUMN].astype("float64")]
+    notes = [
+        f"넣은 {manual_units_text(put)}대"
+        + (" — 그 달 가용에서 멈춤" if round(put - float(taken), 9) > 0 else "")
+        for put, taken in zip(entered, applied, strict=True)
+    ]
+    count = len(chosen)
+    return pd.DataFrame(
+        {
+            MONTH: chosen[MONTH].astype("int64").to_numpy(),
+            "공정": pd.array(chosen["공정"].astype(str).to_numpy(), dtype="string"),
+            "구분": [KIND_MANUAL_LINE] * count,
+            EQUIPMENT_ID_COLUMN: pd.array([pd.NA] * count, dtype="string"),
+            "설비키": pd.array([pd.NA] * count, dtype="string"),
+            "기존보유분류": pd.array([pd.NA] * count, dtype="string"),
+            "환산비": [float("nan")] * count,
+            "구간일수": pd.array([pd.NA] * count, dtype="Int64"),
+            "비가동 없음 기여일수": pd.array([pd.NA] * count, dtype="Int64"),
+            "손실 기여일수": pd.array([pd.NA] * count, dtype="Int64"),
+            "실제 기여일수": pd.array([pd.NA] * count, dtype="Int64"),
+            "보유": [0.0] * count,
+            BREAKDOWN_LENT_COLUMN: -applied + 0.0,
+            "가용": -applied + 0.0,
+            "비가동 내역": notes,
+        }
+    ).loc[:, list(BREAKDOWN_COLUMNS)]
 
 
 def downtime_without_loss(actual: pd.DataFrame, breakdown: pd.DataFrame) -> pd.DataFrame:

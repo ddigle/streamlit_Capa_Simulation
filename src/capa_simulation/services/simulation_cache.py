@@ -322,12 +322,6 @@ def shortening_key_token(key: RequiredShorteningCacheKey) -> UpehToken:
     return key[7]
 
 
-def shortening_key_manual(key: RequiredShorteningCacheKey) -> ManualDowntimeKey:
-    """계획 키의 입력 비가동 칸(계산할 달로 좁힌 0 아닌 칸 — 없으면 `()`). 출처 띠가 「입력 비가동
-    반영」 을 적을지 이것으로 본다 — 계산이 쓴 바로 그 칸이다."""
-    return key[8]
-
-
 def assumed_required_equipment(
     loader: Callable[[], pd.DataFrame], token: UpehToken
 ) -> Callable[[], pd.DataFrame]:
@@ -2172,9 +2166,10 @@ def get_monthly_equipment_contributions(
     )
 
 
-# (실제 월별 키, 비가동 비운 반사실 월별 키 — 없으면 None, RQ_EQP_OWN·LENT·AVBL 내용 지문)
+# (실제 월별 키, 비가동 비운 반사실 월별 키 — 없으면 None, RQ_EQP_OWN·LENT·AVBL 내용 지문, 입력
+# 비가동 칸)
 AvailabilitySheetCacheKey = tuple[
-    DynamicMonthlyCacheKey, DynamicMonthlyCacheKey | None, str, str, str
+    DynamicMonthlyCacheKey, DynamicMonthlyCacheKey | None, str, str, str, ManualDowntimeKey
 ]
 
 
@@ -2185,15 +2180,22 @@ def availability_sheet_cache_key(
     static_owned: pd.DataFrame,
     static_lent: pd.DataFrame,
     static_available: pd.DataFrame,
+    manual_downtime: ManualDowntime,
 ) -> AvailabilitySheetCacheKey:
     """`get_availability_sheet` 의 키. 월별 키 둘은 구간·기존보유·Cut-off·달·환산비 지문을 담고,
-    Static 세 표는 공정 × 월이라 작아 내용을 해시한다."""
+    Static 세 표는 공정 × 월이라 작아 내용을 해시한다.
+
+    끝 칸은 **입력 비가동 칸**(가용설비 현황 › Preference, `manual_downtime_key` — 시트의 달로 좁힌
+    0 아닌 칸 그 자체)이다. 시트는 이 칸을 설비 일정 기준 가용에서 뺀다 — 필요 단축 일정 키와 같은
+    칸이라 두 화면의 설비 일정 기준 가용이 같다. **필수 인자**다(빠뜨리면 mypy 가 잡는다).
+    """
     return (
         actual_key,
         free_key,
         frame_digest(static_owned),
         frame_digest(static_lent),
         frame_digest(static_available),
+        manual_downtime_key(manual_downtime.rows, actual_key[3]),
     )
 
 
@@ -2215,9 +2217,10 @@ def get_availability_sheet(
     `_free_spans` 는 같은 마스터·같은 범위에서 비가동만 비운 생애주기 구간이다(키의 반사실 월별
     키를 만든 그 구간 — 페이지는 `get_equipment_lifecycle_spans` 에 빈 비가동으로 받는다). 반사실
     키가 None 이면 보유·대여를 비운 시트다(「가용대수 비교」 그림 — 반사실 구간을 만들지 않는다).
-    프레임은 해시하지 않는다(`_` 인자 — 5만 행 표본 해시 함정).
+    프레임은 해시하지 않는다(`_` 인자 — 5만 행 표본 해시 함정). 입력 비가동은 키의 끝 칸에서 다시
+    세운다 — 키와 다른 칸이 시트에 들어올 길이 없다.
     """
-    actual_key, free_key, _, _, _ = cache_key
+    actual_key, free_key, _, _, _, manual = cache_key
     months = actual_key[3]
     free_monthly = (
         None
@@ -2233,6 +2236,7 @@ def get_availability_sheet(
         _static_lent,
         _static_available,
         months,
+        manual_downtime=manual,
     )
 
 
@@ -2311,8 +2315,22 @@ def get_lifecycle_gantt_spans(
     return _cached_lifecycle_gantt_spans(cache_key, equipment, downtime)
 
 
-# (Static 대비 일정 비교 키, 소요대수를 낸 시나리오 키)
-SecurementCrossCheckCacheKey = tuple[AvailabilityComparisonCacheKey, ScenarioCacheKey]
+# (Static 대비 일정 비교 키, 소요대수를 낸 시나리오 키, 입력 비가동 칸)
+SecurementCrossCheckCacheKey = tuple[
+    AvailabilityComparisonCacheKey, ScenarioCacheKey, ManualDowntimeKey
+]
+
+
+def securement_cross_check_cache_key(
+    comparison_key: AvailabilityComparisonCacheKey,
+    scenario_key: ScenarioCacheKey,
+    *,
+    manual_downtime: ManualDowntime,
+) -> SecurementCrossCheckCacheKey:
+    """`get_securement_cross_check` 의 키. 끝 칸은 입력 비가동 칸(비교의 달로 좁힌 0 아닌 칸 —
+    `manual_downtime_key`)이다 — 교차검증의 설비 일정 기준 가용이 그 칸을 뺀다. **필수 인자**다."""
+    months = comparison_key[0][3]
+    return (comparison_key, scenario_key, manual_downtime_key(manual_downtime.rows, months))
 
 
 class SecurementCrossCheckResult(NamedTuple):
@@ -2327,11 +2345,16 @@ class SecurementCrossCheckResult(NamedTuple):
 
 
 def securement_cross_check_result(
-    static: pd.DataFrame, monthly: pd.DataFrame, required_equipment: pd.DataFrame
+    static: pd.DataFrame,
+    monthly: pd.DataFrame,
+    required_equipment: pd.DataFrame,
+    *,
+    manual_downtime: ManualDowntimeKey,
 ) -> SecurementCrossCheckResult:
     """`cross_check_from_monthly` 를 맞댈 것이 있을 때만 부른다(캐시 없음).
 
     소요대수나 Static 이 비면 맞대지 않는다. 맞대지 못하면(`KeyError`·`ValueError`) 그대로 올라간다.
+    `manual_downtime` 은 입력 비가동 칸(`manual_downtime_key`)이다 — 설비 일정 기준 가용에서 뺀다.
     """
     if required_equipment.empty:
         return SecurementCrossCheckResult(has_demand=False, check=None)
@@ -2339,7 +2362,9 @@ def securement_cross_check_result(
         return SecurementCrossCheckResult(has_demand=True, check=None)
     return SecurementCrossCheckResult(
         has_demand=True,
-        check=cross_check_from_monthly(static, monthly, required_equipment),
+        check=cross_check_from_monthly(
+            static, monthly, required_equipment, manual_downtime=manual_downtime
+        ),
     )
 
 
@@ -2361,9 +2386,12 @@ def get_securement_cross_check(
     **소요대수는 로더로 받아 빗나갈 때만 푼다** — 적중 회차에는 그 프레임을 풀지 않는다. 로더는 키의
     시나리오 키로 소요대수를 꺼내는 것(`scenario_required_equipment`)이어야 한다. 공정 선택·표시명·
     반올림은 캐시 밖이다. 맞대지 못하면(`KeyError`·`ValueError`) 캐시에 남지 않고 그대로 올라간다.
+    입력 비가동은 키의 끝 칸에서 다시 세운다(`securement_cross_check_cache_key`).
     """
-    del cache_key
-    return securement_cross_check_result(_static, _monthly, _required_equipment())
+    _, _, manual = cache_key
+    return securement_cross_check_result(
+        _static, _monthly, _required_equipment(), manual_downtime=manual
+    )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)

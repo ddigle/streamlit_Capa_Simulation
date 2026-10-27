@@ -16,8 +16,9 @@
 - 그 위에서 **입력 비가동 대수**(가용설비 현황 › Preference — 공정 × 생산월, 공용 프로필)를 더 뺀다
   (`services/manual_downtime.apply_manual_downtime`, 2026-10-27 사용자 결정 — 호기별 비가동과 별도
   손실). 그 달 가용보다 크면 가용은 0 에서 멈추고 `ShorteningPlan.manual_downtime` 의 `초과` 가 그
-  자리를 알린다. 그래서 이 계획의 가용은 **Static 대비 일정 탭(호기 일정만)보다 입력 비가동만큼
-  작다**. 입력이 없으면 전과 같은 숫자다.
+  자리를 알린다. Static 대비 일정 탭(비교 시트·그림·확보율 교차검증)도 같은 칸을 같은 멈춤 규칙으로
+  빼므로(`availability_sheet`·`securement_cross_check`) 두 화면의 가용은 같다. 입력이 없으면 전과
+  같은 숫자다.
 - 소요는 시나리오의 소요대수를 `calculate_securement_rate` 로 `(월, 공정)` 에 모은 값이다 —
   확보율 교차검증(`securement_cross_check`)과 같은 함수, 같은 집계다.
 - 공정은 설비 마스터 `공정소분류` 와 시뮬레이션 `공정` 이 **같은 이름일 때만** 맞댄다. 한쪽에만

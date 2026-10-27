@@ -2,10 +2,11 @@
 
 """가용설비 현황 ③ 「Preference」 — 입력 비가동 대수(2026-10-27 사용자 결정).
 
-호기에 잇지 않고 **공정 × 생산월로 넣는 비가동 대수**(환산 대수, 소수)다. 넣은 대수는 실행 관리의
+호기에 잇지 않고 **공정 × 생산월로 넣는 비가동 대수**(환산 대수, 소수)다. 넣은 대수는 실행 쪽
 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용)에서 빠진다 — 공정 Capa 상세 ②·④, 필요 단축 일정,
-제약 시뮬레이션, Space 필요 단축 보기가 같이 바뀐다. HOME·Static 의 기준정보 가용과 주차별 가용,
-이 화면의 Summary(Main·Static 대비 일정)는 그대로다(규칙은 `services/manual_downtime.py`).
+제약 시뮬레이션, Space 필요 단축 보기, 이 화면 Summary › Static 대비 일정(그림·시트·확보율
+교차검증)이 같이 바뀐다. HOME·Static 의 기준정보 가용과 주차별 가용, Summary › Main(호기 상태)은
+그대로다(규칙은 `services/manual_downtime.py`).
 
 - **행은 공정, 열은 조회기간의 달**(사이드바 조회기간 — 생산월, 공정 Capa 상세와 같은 W/D 월)이다.
   공정은 지금 설비 시나리오 저장본의 공정(설비 마스터 `공정소분류` · 기존보유 `공정`)이고, 그 밖에
@@ -15,10 +16,25 @@
   저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가 거부하고 최신을 다시 그린다(확보율
   보정 편집표와 같은 길 — 제 저장의 빠른 두 번 누름은 성공으로, 거부 뒤 둘째 누름은 거부로 다시
   알린다). 저장은 **보이는 범위(조회기간 달 × 보이는 공정)만** 갈아 쓰고 그 밖의 저장 칸은 남긴다.
+- **편집표 key 는 표가 출발한 version 을 든다**(`manual_editor_key`). key 붙은 `num_rows="fixed"`
+  편집표는 데이터 서명(칸·행·형)이 같으면 같은 위젯이라, 값이 바뀌어도 브라우저가 보내지 않은 폼
+  편집을 그대로 들고 있다 — 남이 저장한 칸이 보이지 않은 채 본 version 만 최신으로 올라가 그
+  저장을 거부 없이 덮었다(2026-10-27 리뷰, 사본 앱 두 세션). 그래서 제출이 아닌 회차는 그 회차가
+  그린 저장본의 version 으로, 제출 회차는 본 version 으로 key 를 짓는다 — 「본 값」 과 「보이는
+  칸」 이 늘 같은 version 이다. 남이 저장하면(거부 뒤 포함) 보내지 않은 편집은 버려지고 최신이
+  선다. 제출 회차에 옛 key 의 편집이 들어오면 저장소가 거부한다. 바깥 상자는 늘 같은 key
+  (`MANUAL_EDITOR_KEY`)라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
+- **같은 입력의 꼬리 누름**(0.5~1초 간격 두 번 — 둘째 누름이 첫 저장 뒤 새로 그린 표에서 온다)은
+  저장소가 바뀐 것이 없다고 돌려줘 「저장하지 않았습니다」 가 성공 알림 자리를 차지했다
+  (2026-10-27 리뷰). 저장을 `write_guard.save_once` 로 하고 출발점 자리에 **저장할 입력의
+  지문**(보이는 공정·달과 0 아닌 칸 — `manual_downtime_digest`)을 준다 — 창 안의 같은 입력은 첫
+  결과로 성공을 다시 알린다.
 - **모든 설비 시나리오 공용**이다 — Cut-off 처럼 가정 설비 시나리오를 보는 동안에는 표를 잠근다
   (E3 와 같은 규칙. 시나리오별 값은 다음 몫).
 - 폼은 **숨은 탭에서도 그린다**(AGENTS 9장 — 적은 칸이 버려지지 않게). 저장 이력 표만 열린 회차에
-  읽어 그린다.
+  읽어 그린다. 다만 폼 안 편집은 제출 전까지 서버에 오지 않아 화면 탭 점·떠나기 확인
+  (`page_tabs`)이 보지 못한다 — 저장 전에 다른 화면으로 옮기면 적은 칸이 사라진다(탭 안내 글과
+  Guide 가 그렇게 적는다).
 """
 
 from __future__ import annotations
@@ -43,6 +59,7 @@ from capa_simulation.components.write_guard import (
     queue_refusal,
     remember_own_save,
     remember_seen,
+    save_once,
     seen,
     take_refusal,
 )
@@ -58,7 +75,9 @@ from capa_simulation.services.manual_downtime import (
     MANUAL_DOWNTIME_MAX_UNITS,
     ManualDowntime,
     ManualDowntimeSave,
+    manual_downtime_digest,
     manual_units_text,
+    prepare_manual_downtime,
 )
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
@@ -77,6 +96,7 @@ __all__ = [
     "MANUAL_UNCHANGED_MESSAGE",
     "edited_cells",
     "manual_editor_frame",
+    "manual_editor_key",
     "manual_tab_processes",
     "render_manual_downtime_tab",
 ]
@@ -92,12 +112,18 @@ MANUAL_SAVE_BUTTON: Final = "입력 비가동 저장"
 MANUAL_PROCESS_COLUMN: Final = "공정"
 MANUAL_SAVED_MESSAGE: Final = (
     "입력 비가동 대수를 저장했습니다 — 공정 Capa 상세 ②·④·필요 단축 일정·제약 시뮬레이션·"
-    "Space 필요 단축 보기가 새 값으로 계산합니다."
+    "Space 필요 단축 보기·Summary › Static 대비 일정이 새 값으로 계산합니다."
 )
 MANUAL_UNCHANGED_MESSAGE: Final = "바뀐 칸이 없어 저장하지 않았습니다."
 # 「설비 마스터에 없음」 공정 꼬리(저장된 값만 남은 공정).
 _ABSENT_SUFFIX: Final = " (설비 마스터에 없음)"
 _HISTORY_LIMIT: Final = 20
+
+
+def manual_editor_key(version: int) -> str:
+    """편집표 위젯 key — 표가 출발한 저장본 version 을 든다(모듈 docstring). 바깥 상자 key 는
+    `MANUAL_EDITOR_KEY` 그대로다."""
+    return f"{MANUAL_EDITOR_KEY}__v{int(version)}"
 
 
 def manual_tab_processes(
@@ -209,9 +235,9 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
     st.caption(
         "호기에 잇지 않고 **공정 × 달로 넣는 비가동 대수**(환산 대수, 소수 가능)입니다. "
         "호기별 비가동과 별도 손실로 **설비 일정 기준 가용대수**에서 더 뺍니다 — 공정 Capa "
-        "상세 ②·④, 필요 단축 일정, 제약 시뮬레이션, Space 필요 단축 보기가 같이 바뀝니다. "
-        "그 달 가용보다 크면 가용은 0 에서 멈춥니다. HOME·Static(기준정보 가용)·표준 목표·"
-        "표준 대비 재공(주차별 가용)·이 화면 Summary 는 그대로입니다."
+        "상세 ②·④, 필요 단축 일정, 제약 시뮬레이션, Space 필요 단축 보기, 이 화면 Summary › "
+        "Static 대비 일정이 같이 바뀝니다. 그 달 가용보다 크면 가용은 0 에서 멈춥니다. "
+        "HOME·Static(기준정보 가용)·표준 목표·표준 대비 재공(주차별 가용)은 그대로입니다."
     )
     period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
     outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
@@ -219,6 +245,10 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
         f"열은 조회기간({period})의 생산월 — 공정별 Cut-off 의 W/D 월(공정 Capa 상세와 같은 달). "
         "빈칸 = 0. 모든 설비 시나리오 공용입니다."
         + (f" 조회기간 밖에 저장된 {outside}칸은 그대로 둡니다." if outside else "")
+    )
+    st.caption(
+        ":material/warning: 적은 칸은 「입력 비가동 저장」 을 눌러야 남습니다 — 저장 전에 다른 "
+        "화면으로 옮기거나 그 사이 다른 사람이 저장하면 적은 칸은 버려지고 최신 저장본이 섭니다."
     )
     st.caption(profile_version_caption(profile, empty="아직 넣은 입력 비가동이 없습니다"))
 
@@ -259,9 +289,18 @@ def _render_editor(
             refused = take_refusal(MANUAL_SAVE_NAME)
             if refused is not None:
                 st.error(refused)
-        edited = st.data_editor(
+        # 편집표 key 는 표가 출발한 version — 제출 회차는 본 version, 그 밖은 이 회차가 그린
+        # 저장본(모듈 docstring). 남이 저장한 뒤의 회차는 새 위젯이라 보내지 않은 편집을 버리고
+        # 최신을 그린다. 이것은 **위젯 key** 일 뿐 대조 값이 아니다 — 저장소에 넘기는 대조 값은
+        # 아래 본 값(`submitted_base`) 그대로이고, 없으면 저장하지 않는다(write_guard).
+        if submitted and isinstance(submitted_base, int):
+            started = submitted_base
+        else:
+            started = profile.version
+        editor_box = st.container(key=MANUAL_EDITOR_KEY)
+        edited = editor_box.data_editor(
             frame,
-            key=MANUAL_EDITOR_KEY,
+            key=manual_editor_key(started),
             hide_index=True,
             num_rows="fixed",
             width="stretch",
@@ -305,15 +344,38 @@ def _render_editor(
         queue_refusal(MANUAL_SAVE_NAME, SEEN_MISSING_MESSAGE)
         st.rerun(scope="app")
     expected_version = submitted_base
+    cells = edited_cells(edited, processes, months)
+    raw: dict[tuple[object, object], object] = {key: value for key, value in cells.items()}
     try:
-        version = get_equipment_repository(database_path).save_manual_downtime(
-            edited_cells(edited, processes, months),
+        # 저장할 입력의 지문 — 같은 입력의 꼬리 누름을 첫 결과로 알린다(모듈 docstring).
+        start = (
+            tuple(processes),
+            tuple(int(month) for month in months),
+            manual_downtime_digest(prepare_manual_downtime(raw)),
+        )
+    except ValueError as exc:
+        notice.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        return
+    repository = get_equipment_repository(database_path)
+    reviewer = str(saved_by or "")
+    memo = str(note or "")
+
+    def save() -> int | None:
+        # 세션 칸을 읽지 않는다(`save_once` 의 잠금 안) — 짝은 미리 받아 둔 dict 에 적는다.
+        stored = repository.save_manual_downtime(
+            cells,
             processes=processes,
             months=months,
             expected_version=expected_version,
-            saved_by=str(saved_by or ""),
-            note=str(note or ""),
+            saved_by=reviewer,
+            note=memo,
         )
+        if stored is not None:
+            remember_own_save(MANUAL_SAVE_NAME, expected_version, stored, save_marks)
+        return stored
+
+    try:
+        version = save_once(MANUAL_SAVE_NAME, start, save, wrote=lambda stored: stored is not None)
     except ProfileVersionConflict as exc:
         # 앱 밖의 쓰기면 이 회차가 그린 저장본도 낡았을 수 있다 — 다음 회차가 최신을 그리게 비운다.
         # 이 회차는 본 version 을 올리지 않는다(다음 회차가 최신을 그리며 적는다).
@@ -335,7 +397,11 @@ def _render_editor(
     if version is None:
         notice.info(MANUAL_UNCHANGED_MESSAGE, icon=":material/info:")
         return
-    remember_own_save(MANUAL_SAVE_NAME, expected_version, version, save_marks)
+    if version <= expected_version:
+        # 같은 입력의 꼬리 누름 — 첫 누름이 이미 그 version 을 썼다(`save_once` 가 첫 결과를 돌려준
+        # 것). 제 저장 짝은 첫 누름이 적었으므로 바꾸지 않고 성공만 다시 알린다.
+        queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
+        st.rerun(scope="app")
     # 저장마다 공정 Capa 상세·필요 단축 일정 등의 계산 키(칸 자체)가 바뀐다 — 프로필 캐시만 비운다.
     clear_manual_downtime_cache()
     queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)

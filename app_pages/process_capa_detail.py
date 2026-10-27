@@ -793,10 +793,11 @@ if (
                 f"오늘이 든 {with_topic_particle(month_label(today_month))} 남은 날만 셉니다"
             )
         # 입력 비가동(가용설비 현황 › Preference)을 이 공정 가용에서 뺐으면 — 계획이 건 칸으로
-        # 적는다.
+        # 적는다. 줄 자리는 ④ 첫 줄이고, 호기 일정이 없는 공정(④ 가 서지 않음)은 ② 아래 줄이다.
         manual_note = manual_effect_band(plan.manual_downtime, (process,))
         if manual_note:
-            parts.append(f"{manual_note} — ② 가용에서 뺐습니다(④ 첫 줄)")
+            manual_place = "④ 첫 줄" if readiness.has_units else "② 아래 줄"
+            parts.append(f"{manual_note} — ② 가용에서 뺐습니다({manual_place})")
         parts.append("단축 결과는 공식 확보율을 바꾸지 않습니다(설비 일정 기준 가용만 바뀜)")
         closing_notices.append(" · ".join(parts))
         export = unit_export_frame(plan, (target,), (process,))

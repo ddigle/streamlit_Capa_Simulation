@@ -950,11 +950,12 @@ def _load_manual_downtime_payload(
 def load_manual_downtime(database_path: str) -> ManualDowntime:
     """입력 비가동 대수(`0032`, 리비전 없는 공용 현행값).
 
-    실행 관리 쪽 설비 일정 기준 가용을 내는 모든 화면(공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·
-    Space 필요 단축 보기)과 가용설비 현황 Preference 탭이 회차마다 읽는다. 층 사용 상태와 같은
-    방식이다 — 이 앱의 저장(Preference 탭 「저장」)이 성공한 직후 `clear_manual_downtime_cache` 로
-    비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의 쓰기를 맡는다. 계산 캐시는 이
-    값이 아니라 계산할 달로 좁힌 칸(`manual_downtime_key`)을 키에 싣는다.
+    설비 일정 기준 가용을 내는 모든 화면(공정 Capa 상세·필요 단축 일정·제약 시뮬레이션·Space 필요
+    단축 보기·가용설비 현황 Static 대비 일정)과 가용설비 현황 Preference 탭이 회차마다 읽는다. 층
+    사용 상태와 같은 방식이다 — 이 앱의 저장(Preference 탭 「저장」)이 성공한 직후
+    `clear_manual_downtime_cache` 로 비우고 쓰기 세대를 올리며, DB·WAL stat 과 TTL 이 프로세스 밖의
+    쓰기를 맡는다. 계산 캐시는 이 값이 아니라 계산할 달로 좁힌 칸(`manual_downtime_key`)을 키에
+    싣는다.
     """
     return ManualDowntime(
         **_load_manual_downtime_payload(

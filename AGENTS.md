@@ -2039,7 +2039,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     둘뿐이고(분류는 `집계분류`), `span_date_range` 는 첫 구간의 앞 경계부터 준다.
   - 대수 표와 호기 목록(`build_monthly_equipment_contributions`)은 같은 기여 줄(`_raw_rows`)에서 나온다.
 - `src/capa_simulation/services/securement_cross_check.py` — 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 설비 일정 기준
-  가용대수를 각각 나눠 확보율 두 벌을 낸다(화면은 `cross_check_from_monthly`).
+  가용대수를 각각 나눠 확보율 두 벌을 낸다(화면은 `cross_check_from_monthly` — 설비 일정 쪽 분자에서 입력 비가동
+  `manual_downtime=` 를 더 뺀다, 6장 「입력 비가동 대수」).
   - `calculate_securement_rate` 를 고치지 않고 가용대수 프레임만 바꿔 두 번 부른다. 설비 일정 쪽에 공정 자체가 없을 때만
     Static 으로 채워 `fallback_processes` 로 알린다. HOME·B/N 은 여전히 Static 을 본다.
 - `src/capa_simulation/services/required_shortening.py` — 일정 기준 가용이 소요대수 × 목표 확보율에 모자란 공정·월마다
@@ -2073,6 +2074,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `owned|lent|available`)와 호기 분해(`build_availability_sheet` → `sheet_view`·`unit_availability_breakdown`).
   - 설비 일정 기준은 반사실이다(보유 = 기존보유 + 비가동만 비운 구간의 가용, 대여 = 가용 − 보유). 「—」 칸은 까닭
     (`REASON_*`)을 갖고 값은 반올림하지 않는다.
+  - 입력 비가동(`manual_downtime=` — 키의 칸)은 가용에서 더 빼고(그 (달, 공정) 가용에서 멈춤) 보유는 그대로라 대여에 든다.
+    넣은 값·뺀 몫은 `입력 비가동`·`입력 비가동 반영` 칸, 근거 카드 줄은 `manual_downtime_lines`(공정마다 한 줄 — 호기 줄과
+    더하면 칸)다. 호기 필터 시트는 주지 않는다(호기 단위).
 - `src/capa_simulation/services/key_process.py` — HOME 주요공정 히트맵의 공정 상한(`KEY_PROCESS_LIMIT`)·프리셋 규칙
   (`normalize_key_process_presets`·`resolve_preset_name`). 고른 차례가 곧 행 순서다(빈 목록 = 고르지 않음). 이름 하나에
   걸린 거부(같은 이름·공정 없는 프리셋)는 `PresetNameError`(`template`·`name`)라 화면이 막은 이름으로 다시 짓는다 — 물결표만
@@ -2412,6 +2416,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   메모·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
   저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
   `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다.
+  - 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key` — 제출 회차는 본 version, 그 밖은 그린 저장본 version, 9장
+    「본 값과 보이는 칸」). 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인 `equipment_preference` 가 그 칸으로 찾는다.
+  - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
+    잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
   경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문).
@@ -2427,6 +2435,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 칸 누름 → 근거 카드(`pick_gap_sheet_cell`)는 같은 칸 다시 누름이 유일한 닫기이고 세대(`GAP_SHEET_GENERATION_KEY`)를
     `layout.meta` 에 싣는다. 시트·근거 카드는 키 붙은 프래그먼트다(`tests/test_availability_sheet_panel.py`).
   - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다.
+  - 입력 비가동(`manual_downtime` — **필수 인자**, 페이지가 `load_manual_downtime` 으로 읽어 넘긴다)을 시트·그림·확보율
+    교차검증의 설비 일정 기준 가용에서 뺀다(키 `availability_sheet_cache_key`·`securement_cross_check_cache_key` 의 끝 칸).
+    시트 머리·교차검증 위에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄. 호기 목록·호기 필터 시트에는 없다.
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드, 머리 `목표 확보율`·
   `진척 비교`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
@@ -3005,7 +3016,8 @@ RQ_MODULE
    「키 방침」). 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
    (`tests/test_equipment_view_cache.py` 가 입력마다 키가 갈리고 캐시 결과 = 새 계산인지 본다).
    **설비 운영 스냅샷을 읽는 시뮬레이션 쪽 페이지**도 있다 — `공정 Capa 상세` 는 설비 DB 의 설비 시나리오 스냅샷(방문
-   기준 — HOME 칸으로 들어온 방문은 그 방문 동안 공식, 그 밖은 세션 설비 시나리오, 32)·Cut-off 를 **읽기만** 해(쓰지 않는다,
+   기준 — HOME 칸으로 들어온 방문은 그 방문 동안 공식, 그 밖은 세션 설비 시나리오, 32)·Cut-off·입력 비가동 대수(`0032` 공용
+   프로필 — `load_manual_downtime`, 34)를 **읽기만** 해(쓰지 않는다,
    `PageSpec.uses_equipment_db`) 공정 하나의 소요대수와
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 같은 키 방침(15)의
    `simulation_cache` 래퍼(`get_required_shortening_for_target` — UPEH 가정이면 그 가정 칸, 31 —·
@@ -3014,7 +3026,7 @@ RQ_MODULE
    들어온 방문은 **주소 인자로 받은 출처 값만 적는다**(그 카드의 목표·기간·대수). 거꾸로 공정 Capa 상세가 필요 단축
    일정으로 옮길 때 적는 것은 그 화면의 「강조 공정」 세션 칸 하나다 — 공정 필터 칸(0019 세션 값)을 심으면 사용자가 그
    [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). `제약 시뮬레이션` 도 같은 예외다 — 설비 DB 의
-   설비 시나리오 스냅샷(늘 세션 설비 시나리오 — HOME 방문 잠금 없음)·Cut-off 를 **읽기만** 해 공정 하나의 소요대수(제품정보로
+   설비 시나리오 스냅샷(늘 세션 설비 시나리오 — HOME 방문 잠금 없음)·Cut-off·입력 비가동 대수(`0032`)를 **읽기만** 해 공정 하나의 소요대수(제품정보로
    나눔)와 맞댄다. 계획은 공정 Capa 상세와 같은 칸(`get_required_shortening_for_target` — **공식 칸만**, UPEH 가정 토큰
    없음)으로만 부르고, `0019`·`0021`·세션 칸은 읽지도 쓰지도 않으며 **어느 DB 에도 쓰지 않는다**(시뮬레이션·설비 둘 다 —
    `tests/test_constraint_simulation_page.py` 가 두 저장소의 쓰기를 터지는 대역으로 바꿔 본다). 설비 DB 를 여는
@@ -3205,9 +3217,12 @@ RQ_MODULE
     세운다(목표 `MonthlyTarget` 과 같은 길 — 키와 다른 칸이 계산에 들어올 길이 없다). `required_shortening_cache_key` ·
     `process_equipment_timeline_cache_key` 의 `manual_downtime=` 은 **필수 인자**라 빠뜨리면 mypy 가 잡는다. 프로필 version 은 싣지
     않는다 — 조회기간 밖 칸만 바꾼 저장은 계산을 가르지 않는다. 키 전용 캐시(CSV·진척·목표 칸)는 계획 키를 그대로 싣고, UPEH 토큰만
-    바꾼 키(`with_upeh_token`)도 칸을 그대로 든다. 시뮬레이션 쪽 키(`ScenarioCacheKey`·HOME·Static)와 주차별 가용·가용설비 현황
-    Summary(Static 대비 일정) 키에는 싣지 않는다 — 그 화면은 입력 비가동을 빼지 않는다(6장). 프로필은 설비 캐시 경계
-    (`equipment_cache.load_manual_downtime`)로만 읽는다.
+    바꾼 키(`with_upeh_token`)도 칸을 그대로 든다. 가용설비 현황 Static 대비 일정의 시트 키(`AvailabilitySheetCacheKey` 끝 칸)와
+    확보율 교차검증 키(`SecurementCrossCheckCacheKey` 끝 칸)도 그 달로 좁힌 칸을 싣고(`availability_sheet_cache_key`·
+    `securement_cross_check_cache_key` 의 `manual_downtime=` 필수), 계산 래퍼가 키의 칸으로 뺀다 — 두 화면의 설비 일정 기준 가용이
+    같은 값이다(2026-10-27 리뷰). 월별 분해·비교 키(`DynamicMonthlyCacheKey`·`AvailabilityComparisonCacheKey`)와 호기별 기여는
+    호기 단위라 싣지 않는다. 시뮬레이션 쪽 키(`ScenarioCacheKey`·HOME·Static)와 주차별 가용 키에는 싣지 않는다 — 그 화면은 입력
+    비가동을 빼지 않는다(6장). 프로필은 설비 캐시 경계(`equipment_cache.load_manual_downtime`)로만 읽는다.
 
 ## 6. 핵심 계산 규칙
 
@@ -3635,12 +3650,15 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
 
 - **값**은 환산 대수(소수, 0 이상)이고 빈칸은 0 이다. 달은 생산월(공정별 Cut-off 의 W/D 월 — 공정 Capa 상세 ② 와 같은 달)이고
   공정은 원본 공정명이다.
-- **빼는 곳**은 실행 관리의 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용 — 필요 단축 일정 계획의 `가용대수`)다. 호기별
-  비가동과 **별도 손실**이라 그 위에 더 뺀다: `가용 = max(0, 기존보유 + 호기 가용 − 입력)`. 입력이 그 달 가용보다 크면 가용은 0 에서
-  멈추고 넘친 칸을 알린다(`초과`). 그래서 공정 Capa 상세 ②·④·필요 단축 일정(그 위에서 단축을 다시 낸다)·제약 시뮬레이션(A = 그
-  가용)·Space 필요 단축 보기가 함께 바뀐다.
+- **빼는 곳**은 실행 쪽 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용 — 필요 단축 일정 계획의 `가용대수`)다(결정 1 —
+  「실행 가용대수에서 뺀다」). 호기별 비가동과 **별도 손실**이라 그 위에 더 뺀다: `가용 = max(0, 기존보유 + 호기 가용 − 입력)`.
+  입력이 그 달 가용보다 크면 가용은 0 에서 멈추고 넘친 칸을 알린다(`초과`). 그래서 공정 Capa 상세 ②·④·필요 단축 일정(그 위에서
+  단축을 다시 낸다)·제약 시뮬레이션(A = 그 가용)·Space 필요 단축 보기와 가용설비 현황 Static 대비 일정(그림·9행 시트의 설비
+  일정 기준 대여(비가동)·가용·확보율 교차검증 — 보유는 그대로라 그 몫이 대여에 든다)이 함께 바뀐다 — 모두 같은 칸·같은
+  멈춤 규칙(`clamp_manual_units`)이라 같은 값이다.
 - **바꾸지 않는 곳** — HOME·Static Capa·산출 결과의 기준정보 가용(공식 확보율), 주차별 가용(표준 목표·표준 대비 재공), 가용설비
-  현황 Summary(Main 호기 현황·Static 대비 일정 — 호기 일정만 보인다). 대수 축(`Dynamic가용대수`)은 그대로이고 환산 축에서만 뺀다.
+  현황 Summary › Main(호기 현황)·Static 대비 일정의 `호기 목록`·호기 필터 시트(호기 단위 값). 대수 축(`Dynamic가용대수`)은
+  그대로이고 환산 축에서만 뺀다.
 - 공정 Capa 상세 ② 전월 대비 「비가동」 은 그 달 뺀 몫의 증감을 품고(풍선 「입력 비가동 ±x 포함」), ④ 첫 줄 「월별 비가동
   대수(입력)」 이 달마다 넣은 대수를 보인다(축 안에 입력이 있을 때만 — 넘친 칸은 「⚠」). 필요 단축 일정·제약 시뮬레이션 출처 띠는
   계획이 건 칸이 있을 때 「입력 비가동 반영(n칸 · 합 x대[ · 가용 넘침 k칸])」 을 붙인다.
@@ -4473,6 +4491,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     받은 이름·BASE·SEEN 칸 읽기)에 상수·빈 묶음이 아닌 대체값을 다는 `… if … else …`·`… or …` 와 `expected_*` 에
     `.version`·`current` 를 대체로 다는 꼴. 충돌 판정은 그 예외 이름의 `except` 와 넓게 잡은 뒤 `if isinstance(exc, 충돌 예외)` 로
     가르는 갈래 둘 다 본다. 그물이 못 보는 것(그 밖의 이름으로 든 지금 값 등)은 아래 경합 시험이 행동으로 잡는다.
+  - **본 값과 보이는 칸은 같은 version 이어야 한다.** key 붙은 `num_rows="fixed"` 편집표는 데이터 서명(칸·행·형)이 같으면 같은
+    위젯이라, 폼 안에서 보내지 않은 편집을 브라우저가 그대로 들고 있다 — 남이 같은 칸을 저장한 뒤 회차가 한 번만 돌아도(탭 왕복)
+    본 값은 최신으로 오르는데 그 칸에는 남의 값이 아니라 제 편집이 보여, 저장이 거부 없이 남의 저장을 덮었다(2026-10-27 리뷰 —
+    Preference 입력 비가동, 사본 앱 두 세션. 거부 뒤에도 제 편집이 남아 1초 뒤 다시 누르면 덮었다). 그런 표는 위젯 key 에 **표가
+    출발한 version** 을 넣는다 — 제출 회차는 본 값, 그 밖은 그 회차가 그린 저장본 version(`manual_downtime_tab.manual_editor_key`).
+    남이 저장하면 보내지 않은 편집은 버려지고 최신이 서며(화면 안내·Guide 에 적는다), 제출 회차에 옛 key 의 편집이 오면 저장소가
+    거부한다. AppTest 는 회차 사이 편집표의 브라우저 편집을 잇지 않아 이 결함을 못 재현한다 — 시험은 key 가 version 을 따라가는지와
+    거부 뒤 최신이 서는지를 보고, 행동은 브라우저로 잰다. 같은 꼴(키 고정 편집표 + 폼 + `remember_seen`)인 HOME 판정 기준 월별
+    표·확보율 보정 편집표는 아직 재지 않았다(`docs/TODO.md`).
   - **제 저장 판정.** 둘째 누름의 회차가 첫 저장의 rerun 회차(콜백이면 첫 콜백의 뒷정리)를 끊으면 본 값이 저장 전 그대로라 저장소가
     거부하고, 화면은 방금 한 제 저장을 「다른 사용자가 먼저 저장」 이라 알렸다(2026-10-26 E2E — 버전 대조 저장(Proc Rename·표시순서
     직접 편집·판정 기준·확보율 보정·HOME Summary 공지·Top5 구간·주요공정 프리셋)·리비전명·공식 지정·설비 이름·Cut-off·설비 리비전 저장). 저장 전에 `write_guard.own_save_marks()` 로 받은 dict 에 성공한 `(본 값, 저장된 값)`

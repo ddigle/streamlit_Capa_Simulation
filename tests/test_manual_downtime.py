@@ -21,7 +21,6 @@ from capa_simulation.services.manual_downtime import (
     changed_cell_count,
     clamp_manual_units,
     manual_cell_value,
-    manual_downtime_band,
     manual_downtime_key,
     manual_effect_band,
     manual_rows_for_process,
@@ -188,8 +187,6 @@ def test_band_text_counts_cells_and_overdrawn_months() -> None:
     )
     assert manual_effect_band(effect) == f"{MANUAL_DOWNTIME_BAND}(2칸 · 합 2.5대 · 가용 넘침 1칸)"
     assert manual_effect_band(effect, (B,)) == ""
-    assert manual_downtime_band(((A, 202607, 1.0),)) == f"{MANUAL_DOWNTIME_BAND}(1칸 · 합 1대)"
-    assert manual_downtime_band(()) == ""
     assert [manual_units_text(value) for value in (1.5, 2.0, 0.126, 0.0)] == [
         "1.5",
         "2",

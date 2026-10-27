@@ -11,10 +11,12 @@
 - **값은 환산 대수**이고 소수를 받는다(0 이상). 빈칸은 0 이고 0 칸은 저장하지 않는다(행 없음 = 0).
   공정은 원본 공정명(설비 마스터 `공정소분류` = 시나리오 `공정`), 달은 `YYYYMM` 생산월(Cut-off W/D
   월 — 공정 Capa 상세와 같은 달)이다. 표시명(Proc Rename)은 닿지 않는다.
-- **빼는 곳**은 실행 관리의 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용)다(결정 1). 호기별
-  비가동과 **별도 손실**이라 그 위에 더 뺀다(결정 3). 그 달 가용보다 크면 가용은 0 에서 멈추고
-  넘친 자리를 알린다(`apply_manual_downtime` — `초과`). HOME·Static 의 기준정보 가용과 주차별 가용은
-  바꾸지 않는다.
+- **빼는 곳**은 실행 쪽 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용)다(결정 1 — 「실행
+  가용대수에서 뺀다」). 그 가용을 보이는 모든 자리 — 필요 단축 일정 계획·공정 Capa 상세 ②·제약
+  시뮬레이션·Space 필요 단축·가용설비 현황 Static 대비 일정(그림·시트·확보율 교차검증) — 가 같은
+  칸을 같은 규칙으로 뺀다. 호기별 비가동과 **별도 손실**이라 그 위에 더 뺀다(결정 3). 그 달 가용보다
+  크면 가용은 0 에서 멈추고 넘친 자리를 알린다(`apply_manual_downtime` — `초과`,
+  `clamp_manual_units`). HOME·Static 의 기준정보 가용과 주차별 가용은 바꾸지 않는다.
 - **저장은 보이는 범위만 갈아 쓴다**(`merge_visible_cells`) — 화면 표는 조회기간의 달·지금 공정만
   보이므로, 그 밖의 저장 칸은 그대로 남긴다(보이지 않는 값을 말없이 지우지 않는다).
 - 계산 캐시 키는 프로필 version 이 아니라 **계산할 달로 좁힌 칸 자체**(`manual_downtime_key`)다 —
@@ -36,7 +38,6 @@ import pandas as pd
 __all__ = [
     "MANUAL_DOWNTIME_BAND",
     "MANUAL_DOWNTIME_EFFECT_COLUMNS",
-    "MANUAL_DOWNTIME_LABEL",
     "MANUAL_DOWNTIME_MAX_UNITS",
     "ManualDowntime",
     "ManualDowntimeKey",
@@ -47,7 +48,6 @@ __all__ = [
     "clamp_manual_units",
     "empty_manual_downtime_effect",
     "manual_cell_value",
-    "manual_downtime_band",
     "manual_downtime_digest",
     "manual_downtime_key",
     "manual_effect_band",
@@ -59,9 +59,6 @@ __all__ = [
     "prepare_manual_downtime",
 ]
 
-# 화면 이름 — 공정 Capa 상세 ④ 행 라벨 「월별 비가동 대수(입력)」 과 「입력 비가동」 이 같은 것을
-# 부른다.
-MANUAL_DOWNTIME_LABEL: Final = "입력 비가동"
 # 출처 띠에 붙이는 말(결정 5) — 계산 키에 0 이 아닌 칸이 있을 때만 붙인다.
 MANUAL_DOWNTIME_BAND: Final = "입력 비가동 반영"
 # 한 칸의 상한(환산 대수). 오타(소수점 빠짐 — 1.5 를 15000)를 막는 문턱이다 — 공정 하나의 호기가
@@ -359,15 +356,6 @@ def overdrawn_rows(effect: pd.DataFrame) -> pd.DataFrame:
     return effect.loc[effect["초과"].astype("bool").to_numpy()].reset_index(drop=True)
 
 
-def manual_downtime_band(rows: Iterable[ManualRow]) -> str:
-    """출처 띠 꼬리 — 0 아닌 칸이 있으면 「입력 비가동 반영(n칸 · 합 x대)」, 없으면 빈 글자."""
-    found = [(process, month, units) for process, month, units in rows if units > 0]
-    if not found:
-        return ""
-    total = sum(units for _, _, units in found)
-    return f"{MANUAL_DOWNTIME_BAND}({len(found)}칸 · 합 {manual_units_text(total)}대)"
-
-
 def manual_effect_band(effect: pd.DataFrame, processes: Collection[str] | None = None) -> str:
     """출처 띠 꼬리 — 계획이 실제로 건 칸(`ShorteningPlan.manual_downtime`)으로 적는다.
 
@@ -397,6 +385,7 @@ def manual_units_text(value: float) -> str:
 
 
 def manual_downtime_digest(rows: Iterable[ManualRow]) -> str:
-    """칸 내용의 지문(저장 입력 지문·시험) — 같은 칸·같은 값이면 같다."""
+    """칸 내용의 지문 — 같은 칸·같은 값이면 같다. Preference 저장의 입력 지문(`save_once` — 같은
+    입력의 겹친 둘째 누름을 첫 결과로 알린다)이 쓴다."""
     payload = repr(sorted((str(p), int(m), round(float(u), _STORED_DECIMALS)) for p, m, u in rows))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

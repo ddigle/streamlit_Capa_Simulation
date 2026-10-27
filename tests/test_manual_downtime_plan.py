@@ -183,7 +183,8 @@ def test_a_save_inside_the_months_moves_the_key_and_one_outside_does_not() -> No
     empty = _key(ManualDowntime())
     saved = _key(ManualDowntime(rows=((PROCESS, JUNE, 1.0),), version=1))
     assert saved != empty
-    assert simulation_cache.shortening_key_manual(saved) == ((PROCESS, JUNE, 1.0),)
+    # 끝 칸이 계산할 달로 좁힌 칸 그 자체다.
+    assert saved[8] == ((PROCESS, JUNE, 1.0),)
     # 조회기간 밖 칸·version 만 다른 저장은 계산을 가르지 않는다.
     outside = _key(ManualDowntime(rows=((PROCESS, 202612, 4.0),), version=9))
     assert outside == empty
